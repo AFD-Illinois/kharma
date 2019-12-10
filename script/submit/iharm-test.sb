@@ -1,0 +1,25 @@
+#!/bin/bash
+
+# Submit the HARM test suite on Stampede
+# Must be run from script/test/
+# Script will choose ntasks and use ibrun as necessary
+
+#SBATCH -J iharm_test
+
+# flat-quadrant, normal
+#SBATCH -p flat-quadrant
+
+#SBATCH -N 1
+#SBATCH -n 1
+
+#SBATCH -t 4:00:00
+#SBATCH -o out-%j.txt
+
+# Record stuff about run
+date
+pwd
+
+module list
+
+# Use script for everything else
+./run_all_tests.sh

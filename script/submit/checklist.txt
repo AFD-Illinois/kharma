@@ -1,0 +1,14 @@
+HARM run checklist:
+
+1. Check loaded modules: only GCC and Intel 18.0.0 specifically are supported currently
+2. make -f /path/to/iharm3d/makefile PROB=torus (or whatever) to obtain local build archive
+3. modify build_archive/parameters.h with at least:
+	* Number of zones in each direction
+	* Number of processes in each dir (total 4x desired number of nodes for optimal efficiency)
+	* Reconstruction type
+	* Floor parameters
+4. make -f /path/to/iharm3d/makefile PROB=torus
+5. copy in desired param.dat and modify as necessary, probably at least:
+	* a
+	* mad_type
+6. sbatch -N (nodes) -p (queue) /path/to/iharm.sb

@@ -1,0 +1,47 @@
+### RUNTIME PARAMETERS FOR EHT COMPARISON PROBLEM ###
+
+# COORDINATES
+[dbl] tf = 10000.0
+[dbl] dt = 1.0e-06
+[dbl] Rout = 50.0
+
+# FLUID
+[dbl] gam = 1.333333
+[dbl] cour = 0.9
+
+[dbl] u_jitter = 4.0e-02
+
+# OUTPUT
+[dbl] DTd = 5.0
+[dbl] DTf = 10.0
+[dbl] DTl = 0.5
+[int] DTr = 10000
+[int] DTp = 100
+
+# Electrons
+# Not required for EHT, option set in parameters.h
+[dbl] game = 1.333333
+[dbl] gamp = 1.666667
+[dbl] fel0 = 0.01
+[dbl] tptemin = 0.001
+[dbl] tptemax = 1000.0
+
+# PROBLEM
+[dbl] rin = 6.0
+[dbl] rmax = 12.0
+
+[int] mad_type = 0
+[dbl] beta = 100.0
+
+[dbl] a = 0.9375
+[dbl] hslope = 0.3
+
+# NOT USED: B-field prescription details
+[dbl] rBstart = 25.0
+[dbl] rBend = 810.0
+[dbl] BHflux = 0.0
+
+# NOT USED: Funky MKS parameters
+[dbl] mks_smooth = 0.5
+[dbl] poly_xt = 0.82
+[dbl] poly_alpha = 14.0

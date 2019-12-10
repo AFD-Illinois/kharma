@@ -1,0 +1,36 @@
+### RUNTIME PARAMETERS ###
+
+# COORDINATES
+[dbl] tf = 50.0
+[dbl] dt = 1.0e-06
+[dbl] Rout = 20.0
+
+[dbl] mks_smooth = 0.5
+[dbl] poly_xt = 0.82
+[dbl] poly_alpha = 14.0
+
+# FLUID
+[dbl] gam = 1.666667
+[dbl] cour = 0.9
+
+# OUTPUT
+[dbl] DTd = 5.0
+[dbl] DTf = 5.0
+[dbl] DTl = 0.5
+[int] DTr = 10000
+[int] DTp = 100
+
+# Electrons
+[dbl] game = 1.333333
+[dbl] gamp = 1.666667
+[dbl] fel0 = 0.01
+[dbl] tptemin = 0.001
+[dbl] tptemax = 1000.0
+
+# PROBLEM
+[dbl] a = 0.0
+[dbl] hslope = 0.3
+[dbl] mdot = 1.0
+[dbl] rs = 8.0
+[dbl] Rhor = 2.5
+

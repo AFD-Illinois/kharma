@@ -1,0 +1,29 @@
+#!/bin/bash
+
+# Default job submission for HARM on KNL
+# Override w/ sbatch -J, -N, -p as necessary
+# Note: 4 tasks per node: N{1,2,3}CPU product should be 4*N parameter
+
+#SBATCH -J iharm
+
+# flat-quadrant, normal
+#SBATCH -p flat-quadrant
+
+#SBATCH -N 1
+
+#SBATCH --ntasks-per-node 4
+
+#SBATCH -t 48:00:00
+#SBATCH -o out-%j.txt
+
+# Schedule based on 2x hyperthreading, regardless of actual number of threads
+NUM_CPUS=$(grep ^cpu\\scores /proc/cpuinfo | uniq |  awk '{print $4}')
+export OMP_NUM_THREADS=$(( $NUM_CPUS * 2 / 4 ))
+
+# Record stuff about run
+date
+pwd
+
+module list
+
+ibrun tacc_affinity ./harm -p param.dat
