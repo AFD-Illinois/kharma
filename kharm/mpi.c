@@ -6,9 +6,8 @@
  *                                                                            *
  ******************************************************************************/
 
-#include "decs.h"
-
 #include <mpi.h>
+#include "decs.hpp"
 
 static MPI_Comm comm;
 static int neighbors[3][3][3];

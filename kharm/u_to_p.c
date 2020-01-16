@@ -7,7 +7,7 @@
  *                                                                            *
  ******************************************************************************/
 
-#include "decs.h"
+#include "decs.hpp"
 
 #define ERRTOL  1.e-8
 #define ITERMAX 8

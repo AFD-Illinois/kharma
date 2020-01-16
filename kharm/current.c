@@ -6,7 +6,7 @@
  *                                                                            *
  ******************************************************************************/
 
-#include "decs.h"
+#include "decs.hpp"
 
 double Fcon_calc(struct GridGeom *G, struct FluidState *S, int mu, int nu, int i, int j, int k);
 int antisym(int a, int b, int c, int d);

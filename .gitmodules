@@ -1,3 +1,6 @@
 [submodule "kokkos"]
 	path = kokkos
 	url = github:kokkos/kokkos
+[submodule "HighFive"]
+	path = HighFive
+	url = https://github.com/BlueBrain/HighFive.git

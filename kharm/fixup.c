@@ -6,7 +6,7 @@
  *                                                                            *
  ******************************************************************************/
 
-#include "decs.h"
+#include "decs.hpp"
 
 // Floor Codes: bit masks
 #define HIT_FLOOR_GEOM_RHO 1

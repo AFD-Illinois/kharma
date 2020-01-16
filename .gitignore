@@ -1,6 +1,10 @@
 # Build directory
 build/
 
+# Program output
+out-*.txt
+*.h5
+
 # Prerequisites
 *.d
 

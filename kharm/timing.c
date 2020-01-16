@@ -6,7 +6,7 @@
  *                                                                            *
  ******************************************************************************/
 
-#include "decs.h"
+#include "decs.hpp"
 
 static double timers[NUM_TIMERS];
 static double times[NUM_TIMERS];

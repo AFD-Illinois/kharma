@@ -5,7 +5,7 @@
 
 #pragma once
 
-#include "decs.h"
+#include "decs.hpp"
 
 struct of_geom {
     double gcon[NDIM][NDIM];

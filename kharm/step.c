@@ -6,7 +6,7 @@
  *                                                                            *
  ******************************************************************************/
 
-#include "decs.h"
+#include "decs.hpp"
 
 // Declarations
 double advance_fluid(struct GridGeom *G, struct FluidState *Si,

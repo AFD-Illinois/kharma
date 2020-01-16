@@ -6,7 +6,7 @@
  *                                                                            *
  ******************************************************************************/
 
-#include "decs.h"
+#include "decs.hpp"
 
 // Sanity checks: grid dimensions, supported boundary conditions
 #if N2 > 1 && N2 < NG

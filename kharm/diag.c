@@ -6,7 +6,7 @@
  *                                                                            *
  ******************************************************************************/
 
-#include "decs.h"
+#include "decs.hpp"
 
 // Evaluate flux based diagnostics; put results in global variables
 // Note this is still per-process

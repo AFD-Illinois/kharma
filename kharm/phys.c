@@ -6,7 +6,7 @@
  *                                                                            *
  ******************************************************************************/
 
-#include "decs.h"
+#include "decs.hpp"
 
 // MHD stress-energy tensor with first index up, second index down. A factor of
 // sqrt(4 pi) is absorbed into the definition of b.

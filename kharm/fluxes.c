@@ -6,7 +6,7 @@
  *                                                                            *
  ******************************************************************************/
 
-#include "decs.h"
+#include "decs.hpp"
 
 void lr_to_flux(struct GridGeom *G, struct FluidState *Sl,
   struct FluidState *Sr, int dir, int loc, GridPrim *flux, GridVector *ctop);

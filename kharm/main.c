@@ -6,11 +6,11 @@
  *                                                                            *
  ******************************************************************************/
 
-#include "decs.h"
 #include "defs.h"
 
 #include <time.h>
 #include <sys/stat.h>
+#include "decs.hpp"
 
 int main(int argc, char *argv[])
 {

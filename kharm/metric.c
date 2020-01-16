@@ -6,9 +6,8 @@
  *                                                                            *
  ******************************************************************************/
 
-#include "decs.h"
-
 #include <gsl/gsl_linalg.h>
+#include "decs.hpp"
 
 double MINOR(double m[16], int r0, int r1, int r2, int c0, int c1, int c2);
 void adjoint(double m[16], double adjOut[16]);

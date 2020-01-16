@@ -6,12 +6,11 @@
  *                                                                            *
  ******************************************************************************/
 
-#include "decs.h"
-
-#include "hdf5_utils.h"
-
 #include <sys/stat.h>
 #include <ctype.h>
+
+#include "decs.hpp"
+#include "hdf5_utils.hpp"
 
 // TODO move bsq to this scope?
 

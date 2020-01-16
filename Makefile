@@ -2,50 +2,62 @@
 # Most customizations/options are in a surrounding shell script,
 # to avoid unintended consequences with Kokkos' kind of intense make infra
 
-MAKEFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
+KHARM_PATH := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
+KOKKOS_PATH ?= $(KHARM_PATH)/kokkos
 
-KOKKOS_PATH ?= $(dir $(MAKEFILE_PATH))/kokkos
-SRC_DIR := $(dir $(MAKEFILE_PATH))/kharm
+SRC_DIR := $(KHARM_PATH)/kharm
+
 SRC = $(wildcard $(SRC_DIR)/*.cpp)
 OBJ = $(SRC:$(SRC_DIR)/%.cpp=%.o)
 
-default: build
-	@echo "Build Finished.  See above for any errors."
-
+KOKKOS_CXX_STANDARD=c++14
 CXXFLAGS = -O3 -I$(SRC_DIR)
 LDFLAGS ?=
 
 ifneq (,$(findstring Cuda,$(KOKKOS_DEVICES)))
-  CXX = $(KOKKOS_PATH)/bin/nvcc_wrapper
+  KOKKOS_DEVICES=Cuda,OpenMP
+  KOKKOS_ARCH=BDW,Volta70
+  CXX = $(KOKKOS_PATH)/bin/nvcc_wrapper --expt-extended-lambda
   EXE = $(addsuffix .cuda, $(shell basename $(SRC_DIR)))
-  CXXFLAGS += -I$(SRC_DIR) -I$(CUDA_PATH) -O3
+  INC += -I$(CUDA_PATH)
   LDFLAGS += -L$(CUDA_PATH)/lib64 -lcusparse
 else
   KOKKOS_DEVICES=OpenMP
-  CXX = g++
+  KOKKOS_ARCH=HSW
+  CXX = /usr/bin/h5c++
   EXE = $(addsuffix .host, $(shell basename $(SRC_DIR)))
 endif
 
+INC += -I$(KHARM_PATH)/HighFive/include
+
+# Mpich/Boost MPI (TODO generalize/machinefile)
+LDFLAGS += -L/usr/lib64/mpich/lib -lboost_mpi
+INC += -I/usr/include/mpich-x86_64/
+
+# Machine-specific overrides
+HOST := $(shell hostname)
+ifneq (,$(findstring stampede2,$(HOST)))
+	-include $(KHARM_PATH)/machines/stampede2.make
+endif
+-include $(MAKEFILE_PATH)/machines/$(HOST).make
+
+# Link with compiler to avoid confusion
 LINK ?= $(CXX)
+
+# Define >=1 target before including Kokkos Makefile
+default: $(EXE)
+
+clean:
+	@rm -f KokkosCore_config.* *.a *.o *.host *.cuda
 
 include $(KOKKOS_PATH)/Makefile.kokkos
 
 DEPFLAGS = -M
 
-LIB =
-
-
-build: $(EXE)
-
 $(EXE): $(OBJ) $(KOKKOS_LINK_DEPENDS)
 	$(LINK) $(KOKKOS_LDFLAGS) $(LINKFLAGS) $(EXTRA_PATH) $(OBJ) $(KOKKOS_LIBS) $(LIB) -o $(EXE)
 
-clean: 
-	rm -f *.a *.o *.cuda *.host
-
-# Compilation rules
-
-%.o:$(SRC_DIR)/%.cpp $(KOKKOS_CPP_DEPENDS)
-	$(CXX) $(KOKKOS_CPPFLAGS) $(KOKKOS_CXXFLAGS) $(CXXFLAGS) $(EXTRA_INC) -c $<
+%.o:$(SRC_DIR)/%.cpp $(KOKKOS_CPP_DEPENDS) |$(BUILD_DIR)
+	$(CXX) $(KOKKOS_CPPFLAGS) $(KOKKOS_CXXFLAGS) $(CXXFLAGS) $(INC) -c $< -o $@
 
 

@@ -6,7 +6,7 @@
  *                                                                            *
  ******************************************************************************/
 
-#include "decs.h"
+#include "decs.hpp"
 
 // Play some pre-processor games
 #if RECONSTRUCTION == LINEAR
