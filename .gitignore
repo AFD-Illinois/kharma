@@ -34,6 +34,9 @@ out-*.txt
 *.lib
 
 # Executables
+*.host
+*.cuda
+*.rocm
 *.exe
 *.out
 *.app
