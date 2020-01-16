@@ -18,17 +18,19 @@ namespace mpi = boost::mpi;
 #include <random>
 #include <sstream>
 
+using namespace Kokkos;
+
 int main (int argc, char **argv)
 {
   size_t ng = 3; // TODO add to dumps/take
 
-  mpi::environment env;
+  mpi::environment env(argc, argv);
   mpi::communicator world;
   Kokkos::initialize (argc, argv);
   {
     std::cout << "K/HARM v.alpha" << std::endl;
     std::cout << "Using Kokkos environment:" << std::endl;
-    Kokkos::DefaultExecutionSpace::print_configuration(std::cout);
+    DefaultExecutionSpace::print_configuration(std::cout);
     std::cout << std::endl;
 
     // TODO index math for MPI
@@ -49,8 +51,8 @@ int main (int argc, char **argv)
     auto h_prims = Kokkos::create_mirror_view(prims);
     auto h_prims_temp = Kokkos::create_mirror_view(prims);
 
-    MDRangePolicy<Rank<3>> all_range({0,0,0}, {n1,n2,n3});
-    parallel_for("diff_all", all_range,
+    MDRangePolicy<OpenMP, Rank<3>> all_range({0,0,0}, {n1,n2,n3});
+    Kokkos::parallel_for("diff_all", all_range,
                  KOKKOS_LAMBDA (int i, int j, int k) {
       for (int p=0; p < nprim; ++p) h_prims(i+ng,j+ng,k+ng,p) = h_prims_input(i,j,k,p);
     });
@@ -65,7 +67,7 @@ int main (int argc, char **argv)
 
 
   }
-  Kokkos::finalize (); // TODO additionally call on exceptions?
+  Kokkos::finalize(); // TODO additionally call on exceptions?
 
   return 0;
 }

@@ -2,7 +2,7 @@
 
 #export NVCC_WRAPPER_DEFAULT_COMPILER="g++"
 
-MAKE="make -f ../Makefile"
+MAKE="make -f ../Makefile -j"
 
 mkdir -p build
 cd build

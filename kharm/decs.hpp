@@ -20,9 +20,11 @@ typedef Kokkos::View<double***> GridScalar;
 typedef Kokkos::View<double***[NDIM]> GridVector;
 typedef Kokkos::View<double****> GridPrims;
 typedef Kokkos::View<double****, Kokkos::HostSpace> GridPrimsHost;
+#warning "Compiling with CUDA"
 #else
 typedef Kokkos::View<double***> GridScalar;
 typedef Kokkos::View<double***[NDIM]> GridVector;
 typedef Kokkos::View<double****> GridPrims;
 typedef GridPrims GridPrimsHost;
+#warning "Compiling with OpenMP Only"
 #endif

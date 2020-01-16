@@ -31,7 +31,7 @@ endif
 INC += -I$(KHARM_PATH)/HighFive/include
 
 # Mpich/Boost MPI (TODO generalize/machinefile)
-LDFLAGS += -L/usr/lib64/mpich/lib -lboost_mpi
+LDFLAGS += -L/usr/lib64/mpich/lib -lboost_mpi-mt
 INC += -I/usr/include/mpich-x86_64/
 
 # Machine-specific overrides
@@ -55,7 +55,7 @@ include $(KOKKOS_PATH)/Makefile.kokkos
 DEPFLAGS = -M
 
 $(EXE): $(OBJ) $(KOKKOS_LINK_DEPENDS)
-	$(LINK) $(KOKKOS_LDFLAGS) $(LINKFLAGS) $(EXTRA_PATH) $(OBJ) $(KOKKOS_LIBS) $(LIB) -o $(EXE)
+	$(LINK) $(KOKKOS_LDFLAGS) $(LDFLAGS) $(EXTRA_PATH) $(OBJ) $(KOKKOS_LIBS) $(LIB) -o $(EXE)
 
 %.o:$(SRC_DIR)/%.cpp $(KOKKOS_CPP_DEPENDS) |$(BUILD_DIR)
 	$(CXX) $(KOKKOS_CPPFLAGS) $(KOKKOS_CXXFLAGS) $(CXXFLAGS) $(INC) -c $< -o $@
