@@ -3,7 +3,7 @@
 # to avoid unintended consequences with Kokkos' kind of intense make infra
 
 KHARM_PATH := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
-KOKKOS_PATH ?= $(KHARM_PATH)/kokkos
+KOKKOS_PATH ?= $(KHARM_PATH)/external/kokkos
 
 SRC_DIR := $(KHARM_PATH)/kharm
 
