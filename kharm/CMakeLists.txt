@@ -10,19 +10,20 @@ else()
   set(EXE_NAME "kharm.host")
 endif()
 
-set (EXE_NAME_SRC
-  kharm.cpp
-  decs.hpp
-  diffuse.hpp
-  )
+AUX_SOURCE_DIRECTORY(${CMAKE_CURRENT_SOURCE_DIR} EXE_NAME_SRC)
+
+#set (EXE_NAME_SRC
+#  kharm.cpp
+#  )
 
 add_executable(${EXE_NAME}
   ${EXE_NAME_SRC})
 
-target_link_libraries(${EXE_NAME} ${MPI_C_LIBRARIES})
 target_link_libraries(${EXE_NAME} kokkos)
-target_link_libraries(${EXE_NAME} hwloc)
-if (KOKKOS_ENABLE_HWLOC)
-  list(APPEND CMAKE_PREFIX_PATH "/usr/lib64")
+if (USE_MPI)
+  target_link_libraries(${EXE_NAME} ${MPI_C_LIBRARIES})
+endif()
+
+if (Kokkos_ENABLE_HWLOC)
   target_link_libraries(${EXE_NAME} hwloc)
 endif()

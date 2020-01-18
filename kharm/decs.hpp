@@ -14,7 +14,7 @@
 #define DLOOP for(index_t dim = 0; dim < NDIM; ++dim)
 
 // Data structures common to all k-harm
-#if defined( KOKKOS_ENABLE_CUDA )
+#if defined( Kokkos_ENABLE_CUDA )
 // TODO MemSpace, HostSpace
 typedef Kokkos::View<double***> GridScalar;
 typedef Kokkos::View<double***[NDIM]> GridVector;

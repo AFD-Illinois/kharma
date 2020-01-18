@@ -5,6 +5,12 @@ build/
 out-*.txt
 *.h5
 
+# Editor documents
+.project
+.cproject
+.ptp-sync
+.vscode/
+
 # Prerequisites
 *.d
 
