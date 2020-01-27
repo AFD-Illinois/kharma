@@ -1,5 +1,6 @@
 /*
- * K/HARM -- Implementation of the HARM scheme for GRMHD made
+ * K/HARM -- Implementation of the HARM scheme for GRMHD,
+ * in C++ with Kokkos performance portability library
  *
  * Ben Prather
  */
@@ -7,8 +8,11 @@
 #include "decs.hpp"
 #include "diffuse.hpp"
 #include "self_init.hpp"
+#include "grid.hpp"
 
 #if USE_MPI
+// This is very not supported right now.
+// Question whether we even use Boost MPI or stick to native bindings
 #include <boost/mpi/environment.hpp>
 #include <boost/mpi/communicator.hpp>
 namespace mpi = boost::mpi;
@@ -20,8 +24,9 @@ namespace mpi = boost::mpi;
 #include <sstream>
 
 using namespace Kokkos;
+using namespace std;
 
-int main (int argc, char **argv)
+int main(int argc, char **argv)
 {
   size_t ng = 3; // TODO add to dumps/take
 
@@ -29,12 +34,12 @@ int main (int argc, char **argv)
   mpi::environment env(argc, argv);
   mpi::communicator world;
 #endif
-  Kokkos::initialize (argc, argv);
+  Kokkos::initialize(argc, argv);
   {
-    std::cout << "K/HARM v.alpha" << std::endl;
-    std::cout << "Using Kokkos environment:" << std::endl;
-    DefaultExecutionSpace::print_configuration(std::cout);
-    std::cout << std::endl;
+    std::cerr << "K/HARM v.alpha" << std::endl;
+    std::cerr << "Using Kokkos environment:" << std::endl;
+    DefaultExecutionSpace::print_configuration(std::cerr);
+    std::cerr << std::endl;
 
     // TODO make right for parallel HDF5 later
     // HighFive::File input(argv[1], HighFive::File::ReadOnly);
@@ -46,34 +51,42 @@ int main (int argc, char **argv)
     // std::cout << "Input size: " << n1 << "x" << n2 << "x" << n3 << "x" << nprim << std::endl;
 
     // Contiguous array of just n1xn2xn3 for input
-    // GridPrimsHost h_prims_input("prims_input", n1, n2, n3, nprim);
+    // GridVarsHost h_prims_input("prims_input", n1, n2, n3, nprim);
     // input.getDataSet("/prims").read(h_prims_input.data());
 
-    int n1 = 128, n2 = 128, n3 = 128, nprim = 8;
-    GridPrimsHost h_prims_input = mhdmodes(n1, n2, n3, nprim);
+    Grid G({128, 128, 128}, {0,0,0}, {1,1,1}, 3, 8);
+    cerr << "Grid init" << std::endl;
 
-    GridPrims prims("prims", n1+2*ng, n2+2*ng, n3+2*ng, nprim);
-    GridPrims prims_temp("prims_temp", n1+2*ng, n2+2*ng, n3+2*ng, nprim);
-    auto h_prims = Kokkos::create_mirror_view(prims);
-    auto h_prims_temp = Kokkos::create_mirror_view(prims);
+    GridVarsHost h_vars_input = mhdmodes(G, 0);
+    cerr << "Vars init" << std::endl;
 
-    MDRangePolicy<OpenMP, Rank<3>> all_range({0,0,0}, {n1,n2,n3});
-    Kokkos::parallel_for("diff_all", all_range,
-                 KOKKOS_LAMBDA (int i, int j, int k) {
-      for (int p=0; p < nprim; ++p) h_prims(i+ng,j+ng,k+ng,p) = h_prims_input(i,j,k,p);
-    });
+    GridVars vars("all_vars", G.gn1, G.gn2, G.gn3, G.nprim);
+    GridVars vars_temp("all_vars_temp", G.gn1, G.gn2, G.gn3, G.nprim);
+    auto h_vars = create_mirror_view(vars);
+    auto h_vars_temp = create_mirror_view(vars_temp);
+
+    // Copy input (no ghosts, Host order) into working array (ghosts, device order)
+    // deep_copy would do this automatically if not for ghosts (TODO try that?)
+    parallel_for("diff_all", *(G.bulk_0),
+                 KOKKOS_LAMBDA(int i, int j, int k) {
+                   for (int p = 0; p < G.nprim; ++p)
+                     h_vars(i + ng, j + ng, k + ng, p) = h_vars_input(i, j, k, p);
+                 });
 
     // copy TO DEVICE
-    Kokkos::deep_copy(prims, h_prims);
+    deep_copy(vars, h_vars);
 
-    for (int iter=0; iter<1000; iter++) {
-      diffuse_all(prims, prims_temp);
+    for (int iter = 0; iter < 1000; iter++)
+    {
+      if (iter % 2 == 0)
+        diffuse_all(vars, vars_temp);
+      else
+        diffuse_all(vars_temp, vars);
     }
 
-
-
+    deep_copy(h_vars, vars);
   }
-  Kokkos::finalize(); // TODO additionally call on exceptions?
+  Kokkos::finalize(); // Kokkos
 
   return 0;
 }

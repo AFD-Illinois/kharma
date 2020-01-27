@@ -7,6 +7,6 @@ Thus it is *not* guaranteed to be operable as work progresses!  See
 of the same algorithm.
 
 # Building
-While just running `make` should work, the provided script make.sh builds in a
-separate (git-ignored) directory and copies back the resulting executable,
-for cleanliness.
+K/HARM is built with CMake.  This can be done manually, or by looking through
+and editing the file `make.sh`, which has a sample set of flags for different
+compilation modes and architectures.

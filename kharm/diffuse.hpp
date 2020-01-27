@@ -3,7 +3,7 @@
 
 using namespace Kokkos;
 
-void diffuse_all(GridPrims in, GridPrims out)
+void diffuse_all(GridVars in, GridVars out)
 {
   MDRangePolicy<Rank<3>> in_range({1,1,1}, {in.extent(0)-1, in.extent(1)-1, in.extent(2)-1});
   int np = in.extent(3);
