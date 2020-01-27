@@ -9,6 +9,7 @@
 #include "diffuse.hpp"
 #include "self_init.hpp"
 #include "grid.hpp"
+#include "io.hpp"
 
 #if USE_MPI
 // This is very not supported right now.
@@ -36,9 +37,9 @@ int main(int argc, char **argv)
 #endif
   Kokkos::initialize(argc, argv);
   {
-    std::cerr << "K/HARM v.alpha" << std::endl;
+    std::cerr << "K/HARM version " << VERSION << std::endl;
     std::cerr << "Using Kokkos environment:" << std::endl;
-    DefaultExecutionSpace::print_configuration(std::cerr);
+    DefaultExecutionSpace::print_configuration(std::cerr, true);
     std::cerr << std::endl;
 
     // TODO make right for parallel HDF5 later
@@ -47,21 +48,22 @@ int main(int argc, char **argv)
     // int n1 = prims_shape[0];
     // int n2 = prims_shape[1];
     // int n3 = prims_shape[2];
-    // int nprim = prims_shape[3];
-    // std::cout << "Input size: " << n1 << "x" << n2 << "x" << n3 << "x" << nprim << std::endl;
+    // int nvar = prims_shape[3];
+    // std::cout << "Input size: " << n1 << "x" << n2 << "x" << n3 << "x" << nvar << std::endl;
 
     // Contiguous array of just n1xn2xn3 for input
-    // GridVarsHost h_prims_input("prims_input", n1, n2, n3, nprim);
+    // GridVarsHost h_prims_input("prims_input", n1, n2, n3, nvar);
     // input.getDataSet("/prims").read(h_prims_input.data());
 
-    Grid G({128, 128, 128}, {0,0,0}, {1,1,1}, 3, 8);
+    CoordinateSystem coords = Minkowski();
+    Grid G(coords, {128, 128, 128}, {0,0,0}, {1,1,1});
     cerr << "Grid init" << std::endl;
 
     GridVarsHost h_vars_input = mhdmodes(G, 0);
     cerr << "Vars init" << std::endl;
 
-    GridVars vars("all_vars", G.gn1, G.gn2, G.gn3, G.nprim);
-    GridVars vars_temp("all_vars_temp", G.gn1, G.gn2, G.gn3, G.nprim);
+    GridVars vars("all_vars", G.gn1, G.gn2, G.gn3, G.nvar);
+    GridVars vars_temp("all_vars_temp", G.gn1, G.gn2, G.gn3, G.nvar);
     auto h_vars = create_mirror_view(vars);
     auto h_vars_temp = create_mirror_view(vars_temp);
 
@@ -69,22 +71,28 @@ int main(int argc, char **argv)
     // deep_copy would do this automatically if not for ghosts (TODO try that?)
     parallel_for("diff_all", *(G.bulk_0),
                  KOKKOS_LAMBDA(int i, int j, int k) {
-                   for (int p = 0; p < G.nprim; ++p)
+                   for (int p = 0; p < G.nvar; ++p)
                      h_vars(i + ng, j + ng, k + ng, p) = h_vars_input(i, j, k, p);
                  });
 
     // copy TO DEVICE
     deep_copy(vars, h_vars);
 
-    for (int iter = 0; iter < 1000; iter++)
-    {
-      if (iter % 2 == 0)
-        diffuse_all(vars, vars_temp);
-      else
-        diffuse_all(vars_temp, vars);
-    }
+    cerr << "Starting iteration" << std::endl;
 
-    deep_copy(h_vars, vars);
+    for (int out_iter = 0; out_iter < 10; ++out_iter)
+    {
+      for (int iter = 0; iter < 10; ++iter)
+      {
+        if (iter % 2 == 0)
+          diffuse_all(vars, vars_temp);
+        else
+          diffuse_all(vars_temp, vars);
+      }
+
+      deep_copy(h_vars, vars);
+
+    }
   }
   Kokkos::finalize(); // Kokkos
 

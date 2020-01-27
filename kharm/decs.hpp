@@ -10,6 +10,7 @@
 #include <stdexcept>
 
 // Classic Macros^(TM)
+#define VERSION "kharm-alpha-0.1"
 #define NDIM 4
 #define DLOOP for(index_t dim = 0; dim < NDIM; ++dim)
 
@@ -20,11 +21,6 @@ typedef double Real;
 //typedef float Real;
 typedef double GReal;
 //typedef fload GReal;
-
-#if USE_MPI
-#else
-static const auto global_start = {0.0, 0.0, 0.0};
-#endif
 
 // Useful Enums to avoid lots of #defines
 enum prims{rho, u, u1, u2, u3, B1, B2, B3};
@@ -44,4 +40,8 @@ typedef Kokkos::View<Real***[NDIM]> GridVector;
 typedef Kokkos::View<Real****> GridVars;
 typedef GridVars GridVarsHost;
 #warning "Compiling with OpenMP Only"
+#endif
+
+#if DEBUG
+#warning "Compiling with debug"
 #endif

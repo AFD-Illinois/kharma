@@ -12,7 +12,7 @@ GridVarsHost mhdmodes(Grid &G, int nmode)
 {
     // TODO check nprim >= 8
     // TODO init
-    GridVarsHost p("prims_initial", G.n1, G.n2, G.n3, G.nprim);
+    GridVarsHost p("prims_initial", G.n1, G.n2, G.n3, G.nvar);
 
     // Mean state
     Real rho0 = 1.;
@@ -183,10 +183,10 @@ GridVarsHost mhdmodes(Grid &G, int nmode)
     Kokkos::parallel_for("mhdmodes_init", *(G.bulk_0),
         KOKKOS_LAMBDA (int i, int j, int k) {
             GReal X[NDIM];
-            ((Grid) G).coord(i, j, k, Loci::center, X);
+            std::cout << "Calling with " << i << j << k << Loci::center << std::endl;
+            G.coord(i, j, k, Loci::center, X);
 
             Real mode = amp * cos(k1 * X[1] + k2 * X[2] + k3 * X[3]);
-
             p(i, j, k, prims::rho) = rho0 + drho * mode;
             p(i, j, k, prims::u) = u0 + du * mode;
             p(i, j, k, prims::u1) = du1 * mode;
@@ -195,7 +195,6 @@ GridVarsHost mhdmodes(Grid &G, int nmode)
             p(i, j, k, prims::B1) = B10 + dB1 * mode;
             p(i, j, k, prims::B2) = B20 + dB2 * mode;
             p(i, j, k, prims::B3) = B30 + dB3 * mode;
-
         }
     );
 

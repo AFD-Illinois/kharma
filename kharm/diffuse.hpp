@@ -1,3 +1,6 @@
+/*
+ * diffuse: Simple non-physical diffusion kernel for tests
+ */
 
 #include "decs.hpp"
 

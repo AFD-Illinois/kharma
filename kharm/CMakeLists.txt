@@ -20,6 +20,8 @@ add_executable(${EXE_NAME}
   ${EXE_NAME_SRC})
 
 target_link_libraries(${EXE_NAME} kokkos)
+target_link_libraries(${EXE_NAME} hdf5)
+
 if (USE_MPI)
   target_compile_definitions(${EXE_NAME} PUBLIC USE_MPI)
   target_link_libraries(${EXE_NAME} ${MPI_C_LIBRARIES})
