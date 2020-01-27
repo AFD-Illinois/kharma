@@ -21,9 +21,15 @@ add_executable(${EXE_NAME}
 
 target_link_libraries(${EXE_NAME} kokkos)
 if (USE_MPI)
+  target_compile_definitions(${EXE_NAME} PUBLIC USE_MPI)
   target_link_libraries(${EXE_NAME} ${MPI_C_LIBRARIES})
 endif()
 
+if (Kokkos_ENABLE_CUDA)
+  target_compile_definitions(${EXE_NAME} PUBLIC Kokkos_ENABLE_CUDA)
+endif()
+
 if (Kokkos_ENABLE_HWLOC)
+  target_compile_definitions(${EXE_NAME} PUBLIC Kokkos_ENABLE_HWLOC)
   target_link_libraries(${EXE_NAME} hwloc)
 endif()
