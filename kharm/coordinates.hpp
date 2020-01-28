@@ -11,15 +11,19 @@
  */
 class CoordinateSystem {
     public:
-        template <typename T> T to_embed(T native);
-        template <typename T> T to_native(T embed);
+        template <typename T>
+        T to_embed(T native);
+
+        template <typename T>
+        T to_native(T embed);
     protected:
-        template <typename T> T dxdX(T native);
+        template <typename T>
+        T dxdX(T native);
 };
 
 /**
  * Class defining properties mapping a native coordinate system to minkowski space
  */
-class Minkowski: public CoordinateSystem {
+class Minkowski : public CoordinateSystem {
 
 };

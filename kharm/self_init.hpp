@@ -183,8 +183,8 @@ GridVarsHost mhdmodes(Grid &G, int nmode)
 
     cerr << "Before mhdmodes";
 
-    Kokkos::parallel_for("mhdmodes_init", *(G.h_bulk_0),
-        KOKKOS_LAMBDA (int i, int j, int k) {
+    Kokkos::parallel_for("mhdmodes_init", G.h_bulk_0(),
+        KOKKOS_LAMBDA (const int i, const int j, const int k) {
             GReal X[NDIM];
             G.coord(i, j, k, Loci::center, X);
 

@@ -9,51 +9,71 @@
 
 #include "decs.hpp"
 
+using namespace std;
+
 /**
  * Write a Grid-sized single variable (n1,n2,n3) to a file
  */
 template <typename T>
-void pack_write_scalar(H5F *outf, const Grid &G, const Kokkos::View<T ***, Kokkos::HostSpace> in, const char *name, const hsize_t hdf5_type)
+void pack_write_scalar(H5F *outf, const Grid &G, const T in, const char *name, const hsize_t hdf5_type, const bool write_ghosts=false)
 {
-    void *out = calloc(G.n1 * G.n2 * G.n3, sizeof(hdf5_type));
+    // Decide automatically whether we've got a bulk-only or ghost grid
+    void *out;
+    auto range = G.h_bulk_0();
+    int offset;
 
-    // Do some ungodly things with casts
-    // Please keep this code away from children
-    int ind = 0;
+    if(in.extent(0) == G.n1 &&
+        in.extent(1) == G.n2 &&
+        in.extent(2) == G.n3) {
+
+        range = G.h_bulk_0();
+        out = calloc(G.n1 * G.n2 * G.n3, sizeof(hdf5_type));
+        offset = 0;
+
+    } else if (in.extent(0) == G.gn1 &&
+                in.extent(1) == G.gn2 &&
+                in.extent(2) == G.gn3) {
+        if (write_ghosts) {
+            range = G.h_all_0();
+            out = calloc(G.gn1 * G.gn2 * G.gn3, sizeof(hdf5_type));
+            offset = 0;
+        } else {
+            range = G.h_bulk_0();
+            out = calloc(G.n1 * G.n2 * G.n3, sizeof(hdf5_type));
+            offset = G.ng;
+        }
+    } else {
+        throw std::invalid_argument("Input array is wrong size for grid");
+    }
+
+    // TODO can these be consolidated?
     if (hdf5_type == H5T_IEEE_F64LE)
     {
-        for (int i = G.ng; i < G.n1 + G.ng; ++i)
-            for (int j = G.ng; j < G.n2 + G.ng; ++j)
-                for (int k = G.ng; k < G.n3 + G.ng; ++k)
-                {
-                    ((double *)out)[ind] = (double)in(i, j, k);
-                    ++ind;
-                }
+        Kokkos::parallel_for("pack_double_scalar", range,
+            KOKKOS_LAMBDA (const int i, const int j, const int k) {
+                ((double *)out)[G.i3(i,j,k,write_ghosts)] = (double) in(i+offset, j+offset, k+offset);
+            }
+        );
     }
     else if (hdf5_type == H5T_IEEE_F32LE)
     {
-        for (int i = G.ng; i < G.n1 + G.ng; ++i)
-            for (int j = G.ng; j < G.n2 + G.ng; ++j)
-                for (int k = G.ng; k < G.n3 + G.ng; ++k)
-                {
-                    ((float *)out)[ind] = (float)in(i, j, k);
-                    ++ind;
-                }
+        Kokkos::parallel_for("pack_float_scalar", range,
+            KOKKOS_LAMBDA (const int i, const int j, const int k) {
+                ((float *)out)[G.i3(i,j,k,write_ghosts)] = (float) in(i+offset, j+offset, k+offset);
+            }
+        );
     }
     else if (hdf5_type == H5T_STD_I32LE)
     {
-        for (int i = G.ng; i < G.n1 + G.ng; ++i)
-            for (int j = G.ng; j < G.n2 + G.ng; ++j)
-                for (int k = G.ng; k < G.n3 + G.ng; ++k)
-                {
-                    ((int *)out)[ind] = in(i, j, k);
-                    ++ind;
-                }
+        Kokkos::parallel_for("pack_int_scalar", range,
+            KOKKOS_LAMBDA (const int i, const int j, const int k) {
+                ((int *)out)[G.i3(i,j,k,write_ghosts)] = (int) in(i+offset, j+offset, k+offset);
+            }
+        );
     }
     else
     {
-        fprintf(stderr, "Scalar type not supported!\n\n");
-        exit(-1);
+        throw std::invalid_argument("Passed unsupported scalar type");
     }
 
     hsize_t fdims[] = {G.n1tot, G.n2tot, G.n3tot};
@@ -70,48 +90,68 @@ void pack_write_scalar(H5F *outf, const Grid &G, const Kokkos::View<T ***, Kokko
  * Write a grid-sized vector (n1,n2,n3,len) to a file
  */
 template <typename T>
-void pack_write_vector(H5F *outf, const Grid &G, const Kokkos::View<T ****, Kokkos::HostSpace> in, const int len, const char *name, const hsize_t hdf5_type)
+void pack_write_vector(H5F *outf, const Grid &G, const T in, const int len, const char *name, const hsize_t hdf5_type, const bool write_ghosts=false)
 {
-    void *out = calloc(G.n1 * G.n2 * G.n3 * len, sizeof(hdf5_type));
+    // Decide automatically whether we've got a bulk-only or ghost grid
+    void *out;
+    auto range = G.h_bulk_0();
+    int offset;
 
-    int ind = 0;
+    if(in.extent(0) == G.n1 &&
+        in.extent(1) == G.n2 &&
+        in.extent(2) == G.n3) {
+
+        range = G.h_bulk_0();
+        out = calloc(G.n1 * G.n2 * G.n3 * len, sizeof(hdf5_type));
+        offset = 0;
+
+    } else if (in.extent(0) == G.gn1 &&
+                in.extent(1) == G.gn2 &&
+                in.extent(2) == G.gn3) {
+        if (write_ghosts) {
+            range = G.h_all_0();
+            out = calloc(G.gn1 * G.gn2 * G.gn3 * len, sizeof(hdf5_type));
+            offset = 0;
+        } else {
+            range = G.h_bulk_0();
+            out = calloc(G.n1 * G.n2 * G.n3 * len, sizeof(hdf5_type));
+            offset = G.ng;
+        }
+    } else {
+        throw std::invalid_argument("Input array is wrong size for grid");
+    }
+
+    // TODO can these be consolidated?
     if (hdf5_type == H5T_IEEE_F64LE)
     {
-        for (int i = G.ng; i < G.n1 + G.ng; ++i)
-            for (int j = G.ng; j < G.n2 + G.ng; ++j)
-                for (int k = G.ng; k < G.n3 + G.ng; ++k)
-                    for (int mu = 0; mu < len; mu++)
-                    {
-                        ((double *)out)[ind] = (double)in(i, j, k, mu);
-                        ++ind;
-                    }
+        Kokkos::parallel_for("pack_double_vec", range,
+            KOKKOS_LAMBDA (const int i, const int j, const int k) {
+                for (int p = 0; p < len; ++p)
+                    ((double *)out)[G.i4(i,j,k,p,write_ghosts)] = (double) in(i+offset, j+offset, k+offset, p);
+            }
+        );
     }
     else if (hdf5_type == H5T_IEEE_F32LE)
     {
-        for (int i = G.ng; i < G.n1 + G.ng; ++i)
-            for (int j = G.ng; j < G.n2 + G.ng; ++j)
-                for (int k = G.ng; k < G.n3 + G.ng; ++k)
-                    for (int mu = 0; mu < len; mu++)
-                    {
-                        ((float *)out)[ind] = (float)in(i, j, k, mu);
-                        ++ind;
-                    }
+        Kokkos::parallel_for("pack_float_vec", range,
+            KOKKOS_LAMBDA (const int i, const int j, const int k) {
+                for (int p = 0; p < len; ++p)
+                    ((float *)out)[G.i4(i,j,k,p,write_ghosts)] = (float) in(i+offset, j+offset, k+offset, p);
+            }
+        );
     }
     else if (hdf5_type == H5T_STD_I32LE)
     {
-        for (int i = G.ng; i < G.n1 + G.ng; ++i)
-            for (int j = G.ng; j < G.n2 + G.ng; ++j)
-                for (int k = G.ng; k < G.n3 + G.ng; ++k)
-                    for (int mu = 0; mu < len; mu++)
-                    {
-                        ((int *)out)[ind] = in(i, j, k, mu);
-                        ++ind;
-                    }
+        Kokkos::parallel_for("pack_int_vec", range,
+            KOKKOS_LAMBDA (const int i, const int j, const int k) {
+                for (int p = 0; p < len; ++p)
+                    ((int *)out)[G.i4(i,j,k,p,write_ghosts)] = (int) in(i+offset, j+offset, k+offset, p);
+            }
+        );
     }
     else
     {
-        fprintf(stderr, "Scalar type not supported!\n\n");
-        exit(-1);
+        throw std::invalid_argument("Passed unsupported scalar type");
     }
 
     hsize_t fdims[] = {G.n1tot, G.n2tot, G.n3tot, len};

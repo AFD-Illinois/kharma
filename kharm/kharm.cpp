@@ -56,24 +56,28 @@ int main(int argc, char **argv)
         // input.getDataSet("/prims").read(h_prims_input.data());
 
         CoordinateSystem coords = Minkowski();
-        Grid G(coords, {128, 128, 128}, {0,0,0}, {1,1,1});
+        Grid G({128, 128, 128}, {0.0, 0.0, 0.0}, {1.0, 1.0, 1.0});
         cerr << "Grid init" << std::endl;
 
         GridVarsHost h_vars_input = mhdmodes(G, 0);
         cerr << "Vars init" << std::endl;
+        dump(G, h_vars_input, Parameters(), "dump_0000.h5", true);
 
         GridVars vars("all_vars", G.gn1, G.gn2, G.gn3, G.nvar);
         GridVars vars_temp("all_vars_temp", G.gn1, G.gn2, G.gn3, G.nvar);
         auto m_vars = create_mirror_view(vars);
-        GridVarsHost h_vars("h_all_vars", G.gn1, G.gn2, G.gn3, G.nvar);
 
         // Copy input (no ghosts, Host order) into working array (ghosts, device order)
         // deep_copy would do this automatically if not for ghosts (TODO try that?)
-        parallel_for("diff_all", *(G.h_bulk_0),
-                    KOKKOS_LAMBDA(int i, int j, int k) {
-                    for (int p = 0; p < G.nvar; ++p)
-                        m_vars(i + G.ng, j + G.ng, k + G.ng, p) = h_vars_input(i, j, k, p);
-                    });
+        int ng = G.ng; int nvar = G.nvar;
+        parallel_for("copy_to_ghosts", G.h_bulk_0(),
+            KOKKOS_LAMBDA (const int i, const int j, const int k) {
+                    for (int p = 0; p < nvar; ++p)
+                        m_vars(i + ng, j + ng, k + ng, p) = h_vars_input(i, j, k, p);
+            }
+        );
+
+        // copy TO 
 
         // copy TO DEVICE
         deep_copy(vars, m_vars);
@@ -85,14 +89,13 @@ int main(int argc, char **argv)
             for (int iter = 0; iter < 10; ++iter)
             {
                 if (iter % 2 == 0)
-                diffuse_all(vars, vars_temp);
+                    diffuse_all(G, vars, vars_temp);
                 else
-                diffuse_all(vars_temp, vars);
+                    diffuse_all(G, vars_temp, vars);
             }
 
-        deep_copy(m_vars, vars);
-        deep_copy(h_vars, m_vars);
-        dump(G, h_vars, Parameters(), string_format("dump_%04d.h5", out_iter), true);
+            deep_copy(m_vars, vars);
+            dump(G, m_vars, Parameters(), string_format("dump_%04d.h5", out_iter+1), true);
         }
     }
     Kokkos::finalize();

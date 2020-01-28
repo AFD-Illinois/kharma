@@ -14,7 +14,12 @@
 
 #define HDF_STR_LEN 20
 
-void dump(Grid &G, GridVarsHost P, Parameters params, std::string fname, bool write_double=false)
+/**
+ * Dump state to a file.
+ * Templated to accommodate array orderings
+ */
+template <typename T>
+void dump(Grid &G, T P, Parameters params, std::string fname, bool write_double=false)
 {
     std::cout << "DUMP " << fname << std::endl;
 
