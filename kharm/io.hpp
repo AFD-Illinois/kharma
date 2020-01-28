@@ -12,8 +12,6 @@
 #include "hdf5_utils.hpp"
 #include "hdf5.h"
 
-#include <map>
-
 #if DEBUG
 #define OUT_H5_TYPE H5T_IEEE_F64LE
 #define OUT_TYPE double
@@ -24,7 +22,7 @@
 
 #define HDF_STR_LEN 20
 
-void dump(Grid &G, GridVarsHost P, std::map<std::string, double> params, std::string fname)
+void dump(Grid &G, GridVarsHost P, Parameters params, std::string fname)
 {
   std::cout << "DUMP " << fname << std::endl;
 

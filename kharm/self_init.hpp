@@ -183,7 +183,6 @@ GridVarsHost mhdmodes(Grid &G, int nmode)
     Kokkos::parallel_for("mhdmodes_init", *(G.bulk_0),
         KOKKOS_LAMBDA (int i, int j, int k) {
             GReal X[NDIM];
-            std::cout << "Calling with " << i << j << k << Loci::center << std::endl;
             G.coord(i, j, k, Loci::center, X);
 
             Real mode = amp * cos(k1 * X[1] + k2 * X[2] + k3 * X[3]);

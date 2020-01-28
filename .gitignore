@@ -1,9 +1,10 @@
 # Build directory
 build/
 
-# Program output
+# Program and debug output
 out-*.txt
 *.h5
+core.*
 
 # Editor documents
 .project

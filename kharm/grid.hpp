@@ -92,7 +92,6 @@ Grid::Grid(CoordinateSystem coords_in, std::vector<int> shape, std::vector<GReal
 
 #if USE_MPI
 Grid::Grid(std::vector<int> starti, std::vector<int> shape, std::vector<GReal> startx, std::vector<GReal> endx, int ng) :
-
 {
 
 }
@@ -117,22 +116,27 @@ KOKKOS_INLINE_FUNCTION void Grid::coord(int i, int j, int k, Loci loc, T X) cons
         X[1] = startx1 + (i - ng) * dx1;
         X[2] = startx2 + (j + 0.5 - ng) * dx2;
         X[3] = startx3 + (k + 0.5 - ng) * dx3;
+        break;
     case face2:
         X[1] = startx1 + (i + 0.5 - ng) * dx1;
         X[2] = startx2 + (j - ng) * dx2;
         X[3] = startx3 + (k + 0.5 - ng) * dx3;
+        break;
     case face3:
         X[1] = startx1 + (i + 0.5 - ng) * dx1;
         X[2] = startx2 + (j + 0.5 - ng) * dx2;
         X[3] = startx3 + (k - ng) * dx3;
+        break;
     case center:
         X[1] = startx1 + (i + 0.5 - ng) * dx1;
         X[2] = startx2 + (j + 0.5 - ng) * dx2;
         X[3] = startx3 + (k + 0.5 - ng) * dx3;
+        break;
     case corner:
         X[1] = startx1 + (i - ng) * dx1;
         X[2] = startx2 + (j - ng) * dx2;
         X[3] = startx3 + (k - ng) * dx3;
+        break;
 #if DEBUG
     default:
         throw std::runtime_error("Coordinate location not recognized!");

@@ -8,6 +8,7 @@
 
 #include <Kokkos_Core.hpp>
 #include <stdexcept>
+#include <map>
 
 // Classic Macros^(TM)
 #define VERSION "kharm-alpha-0.1"
@@ -21,6 +22,8 @@ typedef double Real;
 //typedef float Real;
 typedef double GReal;
 //typedef fload GReal;
+
+typedef std::map<std::string, double> Parameters;
 
 // Useful Enums to avoid lots of #defines
 enum prims{rho, u, u1, u2, u3, B1, B2, B3};

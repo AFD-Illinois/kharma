@@ -11,6 +11,8 @@
 #include "grid.hpp"
 #include "io.hpp"
 
+#include "utils.hpp"
+
 #if USE_MPI
 // This is very not supported right now.
 // Question whether we even use Boost MPI or stick to native bindings
@@ -39,7 +41,7 @@ int main(int argc, char **argv)
   {
     std::cerr << "K/HARM version " << VERSION << std::endl;
     std::cerr << "Using Kokkos environment:" << std::endl;
-    DefaultExecutionSpace::print_configuration(std::cerr, true);
+    DefaultExecutionSpace::print_configuration(std::cerr);
     std::cerr << std::endl;
 
     // TODO make right for parallel HDF5 later
@@ -91,7 +93,7 @@ int main(int argc, char **argv)
       }
 
       deep_copy(h_vars, vars);
-
+      dump(G, vars, Parameters(), string_format("dump_%04d.h5", out_iter));
     }
   }
   Kokkos::finalize(); // Kokkos
