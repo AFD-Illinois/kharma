@@ -27,7 +27,7 @@ void pack_write_scalar(H5F *outf, const Grid &G, const Kokkos::View<T ***, Kokko
                 for (int k = G.ng; k < G.n3 + G.ng; ++k)
                 {
                     ((double *)out)[ind] = (double)in(i, j, k);
-                    ind++;
+                    ++ind;
                 }
     }
     else if (hdf5_type == H5T_IEEE_F32LE)
@@ -37,7 +37,7 @@ void pack_write_scalar(H5F *outf, const Grid &G, const Kokkos::View<T ***, Kokko
                 for (int k = G.ng; k < G.n3 + G.ng; ++k)
                 {
                     ((float *)out)[ind] = (float)in(i, j, k);
-                    ind++;
+                    ++ind;
                 }
     }
     else if (hdf5_type == H5T_STD_I32LE)
@@ -47,7 +47,7 @@ void pack_write_scalar(H5F *outf, const Grid &G, const Kokkos::View<T ***, Kokko
                 for (int k = G.ng; k < G.n3 + G.ng; ++k)
                 {
                     ((int *)out)[ind] = in(i, j, k);
-                    ind++;
+                    ++ind;
                 }
     }
     else
@@ -83,7 +83,7 @@ void pack_write_vector(H5F *outf, const Grid &G, const Kokkos::View<T ****, Kokk
                     for (int mu = 0; mu < len; mu++)
                     {
                         ((double *)out)[ind] = (double)in(i, j, k, mu);
-                        ind++;
+                        ++ind;
                     }
     }
     else if (hdf5_type == H5T_IEEE_F32LE)
@@ -94,7 +94,7 @@ void pack_write_vector(H5F *outf, const Grid &G, const Kokkos::View<T ****, Kokk
                     for (int mu = 0; mu < len; mu++)
                     {
                         ((float *)out)[ind] = (float)in(i, j, k, mu);
-                        ind++;
+                        ++ind;
                     }
     }
     else if (hdf5_type == H5T_STD_I32LE)
@@ -105,7 +105,7 @@ void pack_write_vector(H5F *outf, const Grid &G, const Kokkos::View<T ****, Kokk
                     for (int mu = 0; mu < len; mu++)
                     {
                         ((int *)out)[ind] = in(i, j, k, mu);
-                        ind++;
+                        ++ind;
                     }
     }
     else
