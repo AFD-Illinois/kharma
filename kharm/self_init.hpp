@@ -7,6 +7,7 @@
 #include "grid.hpp"
 
 using namespace std::literals::complex_literals;
+using namespace std;
 
 GridVarsHost mhdmodes(Grid &G, int nmode)
 {
@@ -180,7 +181,9 @@ GridVarsHost mhdmodes(Grid &G, int nmode)
     // Override tf and the dump and log intervals
     Real tf = 2. * M_PI / fabs(omega.imag());
 
-    Kokkos::parallel_for("mhdmodes_init", *(G.bulk_0),
+    cerr << "Before mhdmodes";
+
+    Kokkos::parallel_for("mhdmodes_init", *(G.h_bulk_0),
         KOKKOS_LAMBDA (int i, int j, int k) {
             GReal X[NDIM];
             G.coord(i, j, k, Loci::center, X);
@@ -196,6 +199,8 @@ GridVarsHost mhdmodes(Grid &G, int nmode)
             p(i, j, k, prims::B3) = B30 + dB3 * mode;
         }
     );
+
+    cerr << "After mhdmodes";
 
     return p;
 }

@@ -15,6 +15,8 @@ endif()
 find_package(HDF5 REQUIRED)
 include_directories(${HDF5_INCLUDE_PATH})
 
+# TODO specifically parallel HDF5
+
 # SOURCES
 ### kokkos: Performance Portability
 add_subdirectory(external/kokkos)
@@ -32,7 +34,7 @@ add_subdirectory(kharm)
 
 ##################### PRINT CONFIGURE STATUS ######################
 message("===================================================")
-message("  ${PROJECT_NAME} build configuration:")
+message("  ${PROJECT_NAME} build configuration: ${CMAKE_BUILD_TYPE} ")
 message("===================================================")
 message("  C++ Compiler : ${CMAKE_CXX_COMPILER_ID} "
                          "${CMAKE_CXX_COMPILER_VERSION} "

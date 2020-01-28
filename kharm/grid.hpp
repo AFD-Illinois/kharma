@@ -41,7 +41,9 @@ public:
     CoordinateSystem coords;
 
     // Kokkos policies for iterating over this grid
-    MDRangePolicy<Rank<3>> *bulk_0, *bulk_ng, *all_0;
+    MDRangePolicy<Rank<3>> *bulk_0, *bulk_ng, *all_0;    
+    MDRangePolicy<OpenMP, Rank<3>> *h_bulk_0, *h_bulk_ng, *h_all_0;
+
 
     Grid(CoordinateSystem coords_in, std::vector<int> shape, std::vector<GReal> startx, std::vector<GReal> endx, int ng_in=3, int nvar_in=8);
 
@@ -50,7 +52,7 @@ public:
 #endif
 
     template<typename T>
-    void coord(int i, int j, int k, Loci loc, T X) const;
+    KOKKOS_INLINE_FUNCTION void coord(int i, int j, int k, Loci loc, T X) const;
 
 };
 
@@ -84,6 +86,7 @@ Grid::Grid(CoordinateSystem coords_in, std::vector<int> shape, std::vector<GReal
     dx3 = (endx[2] - startx3) / n3;
 
     bulk_0 = new MDRangePolicy<Rank<3>>({0, 0, 0}, {n1, n2, n3});
+    h_bulk_0 = new MDRangePolicy<OpenMP, Rank<3>>({0, 0, 0}, {n1, n2, n3});
     bulk_ng = new MDRangePolicy<Rank<3>>({ng, ng, ng}, {n1+ng, n2+ng, n3+ng});
     all_0 = new MDRangePolicy<Rank<3>>({0, 0, 0}, {n1+2*ng, n2+2*ng, n3+2*ng});
 
@@ -137,9 +140,5 @@ KOKKOS_INLINE_FUNCTION void Grid::coord(int i, int j, int k, Loci loc, T X) cons
         X[2] = startx2 + (j - ng) * dx2;
         X[3] = startx3 + (k - ng) * dx3;
         break;
-#if DEBUG
-    default:
-        throw std::runtime_error("Coordinate location not recognized!");
-#endif
     }
 }

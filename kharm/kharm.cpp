@@ -66,19 +66,19 @@ int main(int argc, char **argv)
 
     GridVars vars("all_vars", G.gn1, G.gn2, G.gn3, G.nvar);
     GridVars vars_temp("all_vars_temp", G.gn1, G.gn2, G.gn3, G.nvar);
-    auto h_vars = create_mirror_view(vars);
-    auto h_vars_temp = create_mirror_view(vars_temp);
+    auto m_vars = create_mirror_view(vars);
+    GridVarsHost h_vars("h_all_vars", G.gn1, G.gn2, G.gn3, G.nvar);
 
     // Copy input (no ghosts, Host order) into working array (ghosts, device order)
     // deep_copy would do this automatically if not for ghosts (TODO try that?)
-    parallel_for("diff_all", *(G.bulk_0),
+    parallel_for("diff_all", *(G.h_bulk_0),
                  KOKKOS_LAMBDA(int i, int j, int k) {
                    for (int p = 0; p < G.nvar; ++p)
-                     h_vars(i + ng, j + ng, k + ng, p) = h_vars_input(i, j, k, p);
+                     m_vars(i + ng, j + ng, k + ng, p) = h_vars_input(i, j, k, p);
                  });
 
     // copy TO DEVICE
-    deep_copy(vars, h_vars);
+    deep_copy(vars, m_vars);
 
     cerr << "Starting iteration" << std::endl;
 
@@ -92,11 +92,12 @@ int main(int argc, char **argv)
           diffuse_all(vars_temp, vars);
       }
 
-      deep_copy(h_vars, vars);
-      dump(G, vars, Parameters(), string_format("dump_%04d.h5", out_iter));
+      deep_copy(m_vars, vars);
+      deep_copy(h_vars, m_vars);
+      dump(G, h_vars, Parameters(), string_format("dump_%04d.h5", out_iter));
     }
   }
-  Kokkos::finalize(); // Kokkos
+  Kokkos::finalize();
 
   return 0;
 }

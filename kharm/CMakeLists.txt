@@ -12,15 +12,17 @@ endif()
 
 AUX_SOURCE_DIRECTORY(${CMAKE_CURRENT_SOURCE_DIR} EXE_NAME_SRC)
 
-#set (EXE_NAME_SRC
-#  kharm.cpp
-#  )
-
 add_executable(${EXE_NAME}
   ${EXE_NAME_SRC})
 
 target_link_libraries(${EXE_NAME} kokkos)
 target_link_libraries(${EXE_NAME} hdf5)
+
+# FLAGS
+set(CMAKE_CXX_FLAGS_DEBUG "-Wall")
+if(${CMAKE_BUILD_TYPE} STREQUAL "Debug")
+  target_compile_definitions(${EXE_NAME} PUBLIC DEBUG)
+endif()
 
 if (USE_MPI)
   target_compile_definitions(${EXE_NAME} PUBLIC USE_MPI)

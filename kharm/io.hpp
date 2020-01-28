@@ -50,7 +50,7 @@ void dump(Grid &G, GridVarsHost P, Parameters params, std::string fname)
   outf->write_single_val(&n3, "n3", H5T_STD_I32LE);
 
   int n_var = G.nvar;
-  outf->write_single_val(&n_var, "n_prim", H5T_STD_I32LE);
+  outf->write_single_val(&n_var, "n_prims", H5T_STD_I32LE);
   // TODO when grids get passives
   // TODO rename these in spec?
   int n_passive = 0;

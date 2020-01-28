@@ -5,6 +5,7 @@ build/
 out-*.txt
 *.h5
 core.*
+frames_*/
 
 # Editor documents
 .project
