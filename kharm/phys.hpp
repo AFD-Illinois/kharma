@@ -5,25 +5,36 @@
 
 #include "decs.hpp"
 
+#include "eos.hpp"
+
+KOKKOS_INLINE_FUNCTION double bsq_calc(const GridDerived D, const int i, const int j, const int k) {
+  return D.bcon(i,j,k,0) * D.bcov(i,j,k,0) +
+          D.bcon(i,j,k,1) * D.bcov(i,j,k,1) +
+          D.bcon(i,j,k,2) * D.bcov(i,j,k,2) +
+          D.bcon(i,j,k,3) * D.bcov(i,j,k,3);
+}
+
 /**
  * MHD stress-energy tensor with first index up, second index down. A factor of
  * sqrt(4 pi) is absorbed into the definition of b.
  * See Gammie & McKinney '04
  */
-KOKKOS_INLINE_FUNCTION void mhd_calc(GridVars P, GridDerived D, const int i, const int j, const int k, const int dir, Real *mhd)
+KOKKOS_INLINE_FUNCTION void mhd_calc(const GridVars P, const GridDerived D, const EOS eos,
+                                    const int i, const int j, const int k, const int dir,
+                                    Real *mhd)
 {
-  Real u, pres, w, bsq, eta, ptot;
+  Real u, pgas, w, bsq, eta, ptot;
 
   u = P(i, j, k, prims::u);
-  pres = (gam - 1.)*u;
-  w = pres + P(i, j, k, prims::rho) + u;
+  pgas = eos.p(u,0);
+  w = pgas + P(i, j, k, prims::rho) + u;
   bsq = bsq_calc(D, i, j, k);
   eta = w + bsq;
-  ptot = pres + 0.5*bsq;
+  ptot = pgas + 0.5*bsq;
 
   DLOOP1 {
     mhd[mu] = eta * D.ucon(i, j, k, dir) * D.ucov(i, j, k, mu) +
-              ptot * delta(dir, mu) -
+              ptot * (dir == mu) -
               D.bcon(i, j, k, dir) * D.bcov(i, j, k, mu);
   }
 }
@@ -31,7 +42,7 @@ KOKKOS_INLINE_FUNCTION void mhd_calc(GridVars P, GridDerived D, const int i, con
 /**
  * Turn the primitive variables at a location into 
  */
-KOKKOS_INLINE_FUNCTION void prim_to_flux(Grid &G, GridVars P, Derived D,
+KOKKOS_INLINE_FUNCTION void prim_to_flux(const Grid &G, const GridVars P, const GridDerived D, const EOS eos,
                     const int i, const int j, const int k, const Loci loc, const int dir,
                     GridVars flux)
 {
@@ -40,7 +51,7 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(Grid &G, GridVars P, Derived D,
   // Particle number flux
   flux(i, j, k, prims::rho) = P(i, j, k, prims::rho) * D.ucon(i, j, k, dir);
 
-  mhd_calc(P, D, i, j, k, dir, mhd);
+  mhd_calc(P, D, eos, i, j, k, dir, mhd);
 
   // MHD stress-energy tensor w/ first index up, second index down
   flux(i, j, k, prims::u) = mhd[0] + flux(i, j, k, prims::rho);
@@ -57,14 +68,14 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(Grid &G, GridVars P, Derived D,
                              D.bcon(i, j, k, dir) * D.ucon(i, j, k, 3);
 
     // Note for later all passives go here
-//   flux[KEL][k][j][i] = flux[RHO][k][j][i]*P[KEL][k][j][i];
-//   flux[KTOT][k][j][i] = flux[RHO][k][j][i]*P[KTOT][k][j][i];
+//   flux(i, j, k, KEL) = flux(i, j, k, prims::rho) * P(i, j, k, KEL);
+//   etc
 
   for (int p=0; p<G.nvar; ++p) flux(i, j, k, p) *= G.gdet(i, j, loc);
 }
 
 // calculate magnetic field four-vector
-KOKKOS_INLINE_FUNCTION void bcon_calc(const GridVars P, GridDerived D,
+KOKKOS_INLINE_FUNCTION void bcon_calc(const GridVars P, const GridDerived D,
                                     const int i, const int j, const int k,
                                     GridVector bcon)
 {
@@ -78,16 +89,16 @@ KOKKOS_INLINE_FUNCTION void bcon_calc(const GridVars P, GridDerived D,
 }
 
 // Find gamma-factor wrt normal observer
-KOKKOS_INLINE_FUNCTION double mhd_gamma_calc(Grid &G, struct FluidState *S,
+KOKKOS_INLINE_FUNCTION double mhd_gamma_calc(const Grid &G, const GridVars P,
                                     const int i, const int j, const int k,
                                     const Loci loc)
 {
-  Real qsq = G.gcov[loc][1][1][j][i] * P(i, j, k, prims::u1) * P(i, j, k, prims::u1)
-           + G.gcov[loc][2][2][j][i] * P(i, j, k, prims::u2) * P(i, j, k, prims::u2)
-           + G.gcov[loc][3][3][j][i] * P(i, j, k, prims::u3) * P(i, j, k, prims::u3)
-      + 2.*(G.gcov[loc][1][2][j][i] * P(i, j, k, prims::u1) * P(i, j, k, prims::u2)
-          + G.gcov[loc][1][3][j][i] * P(i, j, k, prims::u1) * P(i, j, k, prims::u3)
-          + G.gcov[loc][2][3][j][i] * P(i, j, k, prims::u2) * P(i, j, k, prims::u3));
+  Real qsq = G.gcov(loc, i, j, 1, 1) * P(i, j, k, prims::u1) * P(i, j, k, prims::u1)
+           + G.gcov(loc, i, j, 2, 2) * P(i, j, k, prims::u2) * P(i, j, k, prims::u2)
+           + G.gcov(loc, i, j, 3, 3) * P(i, j, k, prims::u3) * P(i, j, k, prims::u3)
+      + 2.*(G.gcov(loc, i, j, 1, 2) * P(i, j, k, prims::u1) * P(i, j, k, prims::u2)
+          + G.gcov(loc, i, j, 1, 3) * P(i, j, k, prims::u1) * P(i, j, k, prims::u3)
+          + G.gcov(loc, i, j, 2, 3) * P(i, j, k, prims::u2) * P(i, j, k, prims::u3));
 
 
 #if DEBUG
@@ -111,12 +122,12 @@ KOKKOS_INLINE_FUNCTION double mhd_gamma_calc(Grid &G, struct FluidState *S,
 }
 
 // Find contravariant four-velocity
-KOKKOS_INLINE_FUNCTION void ucon_calc(Grid &G, GridVars P,
+KOKKOS_INLINE_FUNCTION void ucon_calc(const Grid &G, const GridVars P,
                                 const int i, const int j, const int k, const Loci loc,
                                 GridVector ucon)
 {
-  double gamma = mhd_gamma_calc(G, S, i, j, k, loc);
-  double alpha = G.lapse[loc][j][i];
+  double gamma = mhd_gamma_calc(G, P, i, j, k, loc);
+  double alpha = 1./sqrt(-G.gcon(loc, i, j, 0, 0));
   ucon(i, j, k, 0) = gamma/alpha;
 
   for (int mu = 1; mu < NDIM; mu++) {
@@ -125,95 +136,105 @@ KOKKOS_INLINE_FUNCTION void ucon_calc(Grid &G, GridVars P,
   }
 }
 
-// Calculate ucon, ucov, bcon, bcov from primitive variables
-// TODO OLD individual calculation -- use vector
-KOKKOS_INLINE_FUNCTION void get_state(Grid &G, GridVars P,
+/**
+ * Calculate ucon, ucov, bcon, bcov from primitive variables
+ * Note each member of D must be allocated first
+ */
+KOKKOS_INLINE_FUNCTION void get_state(const Grid &G, const GridVars P,
                                     const int i, const int j, const int k, const Loci loc,
                                     GridDerived D)
 {
     ucon_calc(G, P, i, j, k, loc, D.ucon);
-    lower_grid(D.ucon, D.ucov, G, i, j, k, loc);
+    G.lower_grid(D.ucon, D.ucov, i, j, k, loc);
     bcon_calc(P, D, i, j, k, D.bcon);
-    lower_grid(D.bcon, D.bcov, G, i, j, k, loc);
+    G.lower_grid(D.bcon, D.bcov, i, j, k, loc);
 }
 
 // Calculate components of magnetosonic velocity from primitive variables
 // TODO this is a primary candidate for splitting/vectorizing
-KOKKOS_INLINE_FUNCTION void mhd_vchar(Grid &G, GridVars P, GridDerived D,
+KOKKOS_INLINE_FUNCTION void mhd_vchar(const Grid &G, const GridVars P, const GridDerived D, const EOS eos,
                                 const int i, const int j, const int k, const Loci loc, const int dir,
                                 GridScalar cmax, GridScalar cmin)
 {
-  Real discr, vp, vm, bsq, ee, ef, va2, cs2, cms2, u;
-  Real Acov[NDIM] = {0}, Bcov[NDIM] = {0}, Acon[NDIM] = {0}, Bcon[NDIM] = {0};
-  Real Asq, Bsq, Au, Bu, AB, Au2, Bu2, AuBu, A, B, C;
+    Real discr, vp, vm, bsq, ee, ef, va2, cs2, cms2, u;
+    Real Asq, Bsq, Au, Bu, AB, Au2, Bu2, AuBu, A, B, C;
+    Real Acov[NDIM] = {0}, Bcov[NDIM] = {0};
+    Real Acon[NDIM] = {0}, Bcon[NDIM] = {0};
 
-  Acov[dir] = 1.;
-  Bcov[0] = 1.;
+    Acov[dir] = 1.;
+    Bcov[0] = 1.;
 
-  DLOOP2 {
-    Acon[mu] += G.gcon[loc][mu][nu][j][i]*Acov[nu];
-    Bcon[mu] += G.gcon[loc][mu][nu][j][i]*Bcov[nu];
-  }
+    DLOOP2 {
+        Acon[mu] += G.gcon(loc, i, j, mu, nu) * Acov[nu];
+        Bcon[mu] += G.gcon(loc, i, j, mu, nu) * Bcov[nu];
+    }
 
-  // Find fast magnetosonic speed
-  bsq = bsq_calc(D, i, j, k);
-  u = P(i, j, k, prims::u);
-  ef = P(i, j, k, prims::rho) + gam*u;
-  ee = bsq + ef;
-  va2 = bsq/ee;
-  cs2 = gam*(gam - 1.)*u/ef;
+    // Find fast magnetosonic speed
+    bsq = bsq_calc(D, i, j, k);
+    u = P(i, j, k, prims::u);
+    ef = P(i, j, k, prims::rho) + eos.gam * u;
+    ee = bsq + ef;
+    va2 = bsq/ee;
+    cs2 = eos.gam * eos.p(u,0) / ef;
 
-  cms2 = cs2 + va2 - cs2*va2;
+    cms2 = cs2 + va2 - cs2*va2;
 
-  cms2 = (cms2 < 0) ? SMALL : cms2;
-  cms2 = (cms2 > 1) ? 1 : cms2;
+    cms2 = (cms2 < 0) ? SMALL : cms2;
+    cms2 = (cms2 > 1) ? 1 : cms2;
 
-  // Require that speed of wave measured by observer q.ucon is cms2
-  Asq = dot(Acon, Acov);
-  Bsq = dot(Bcon, Bcov);
-  Au = Bu = 0.;
-  DLOOP1 {
-    Au += Acov[mu]*ucon(i, j, k, mu);
-    Bu += Bcov[mu]*ucon(i, j, k, mu);
-  }
-  AB = dot(Acon, Bcov);
-  Au2 = Au*Au;
-  Bu2 = Bu*Bu;
-  AuBu = Au*Bu;
+    // Require that speed of wave measured by observer q.ucon is cms2
+    Asq = dot(Acon, Acov);
+    Bsq = dot(Bcon, Bcov);
+    Au = Bu = 0.;
+    DLOOP1 {
+        Au += Acov[mu] * D.ucon(i, j, k, mu);
+        Bu += Bcov[mu] * D.ucon(i, j, k, mu);
+    }
+    AB = dot(Acon, Bcov);
+    Au2 = Au*Au;
+    Bu2 = Bu*Bu;
+    AuBu = Au*Bu;
 
-  A = Bu2 - (Bsq + Bu2)*cms2;
-  B = 2.*(AuBu - (AB + AuBu)*cms2);
-  C = Au2 - (Asq + Au2)*cms2;
+    A = Bu2 - (Bsq + Bu2)*cms2;
+    B = 2.*(AuBu - (AB + AuBu)*cms2);
+    C = Au2 - (Asq + Au2)*cms2;
 
-  discr = B*B - 4.*A*C;
-  discr = (discr < 0.) ? 0. : discr;
-  discr = sqrt(discr);
+    discr = B*B - 4.*A*C;
+    discr = (discr < 0.) ? 0. : discr;
+    discr = sqrt(discr);
 
-  vp = -(-B + discr)/(2.*A);
-  vm = -(-B - discr)/(2.*A);
+    vp = -(-B + discr)/(2.*A);
+    vm = -(-B - discr)/(2.*A);
 
-  cmax(i, j, k) = (vp > vm) ? vp : vm;
-  cmin(i, j, k) = (vp > vm) ? vm : vp;
+    cmax(i, j, k) = (vp > vm) ? vp : vm;
+    cmin(i, j, k) = (vp > vm) ? vm : vp;
 }
 
 // Source terms for equations of motion
-KOKKOS_INLINE_FUNCTION void get_fluid_source(Grid &G, GridVars P, GridDerived D, GridScalar dU)
+// Note this is a single function for the state, so it is *not* INLINE_ETC
+void get_fluid_source(const Grid &G, const GridVars P, const GridDerived D,
+                                            const EOS eos, GridVars dU)
 {
-    static GridVars dP(G.gn1, G.gn2, G.gn3, G.nvar);
-    static GridDerived dD(G.gn1, G.gn2, G.gn3)
-    static GridVars dUw(G.gn1, G.gn2, G.gn3, G.nvar);
+    GridVars dP("dP", G.gn1, G.gn2, G.gn3, G.nvar);
+    GridDerived dD;
+    dD.ucon = GridVector("dD_ucon", G.gn1, G.gn2, G.gn3);
+    dD.ucov = GridVector("dD_ucov", G.gn1, G.gn2, G.gn3);
+    dD.bcon = GridVector("dD_bcon", G.gn1, G.gn2, G.gn3);
+    dD.bcov = GridVector("dD_bcov", G.gn1, G.gn2, G.gn3);
+    GridVars dUw("dUw", G.gn1, G.gn2, G.gn3, G.nvar);
 
-    Kokkos::parallel_for("fluid_source", G.bulk_plus(1),
+    Kokkos::parallel_for("fluid_source", G.bulk_ng(),
         KOKKOS_LAMBDA (const int i, const int j, const int k) {
             Real mhd[NDIM][NDIM]; // Too much local memory?
 
-            DLOOP1 mhd_calc(P, D, i, j, k, mu, mhd[mu]);
+            DLOOP1 mhd_calc(P, D, eos, i, j, k, mu, mhd[mu]);
 
             // Contract mhd stress tensor with connection
-            PLOOP dU(i, j, k, p) = 0.;
+            for(int p=0; p<G.nvar; ++p) dU(i, j, k, p) = 0.;
             DLOOP2 {
-            for (int gam = 0; gam < NDIM; gam++)
-                dU(i, j, k, prims::u+gam) += mhd[mu][nu]*G.conn(i, j, nu, gam, mu);
+                // Put all 4 values into U(UU,U1,U2,U3)
+                for (int lam = 0; lam < NDIM; lam++)
+                    dU(i, j, k, prims::u+lam) += mhd[mu][nu]*G.conn(i, j, nu, lam, mu);
             }
 
             for(int p=0; p<G.nvar; ++p) dU(i, j, k, p) *= G.gdet(Loci::center, i, j);
@@ -228,19 +249,19 @@ KOKKOS_INLINE_FUNCTION void get_fluid_source(Grid &G, GridVars P, GridDerived D,
 
             /* need coordinates to evaluate particle addtn rate */
             GReal X[NDIM];
-            G.coord(i, j, k, Loci::cent, X);
+            G.coord(i, j, k, Loci::center, X);
             GReal r, th;
-            bl_coord(X, &r, &th);
+            G.coords->ks_coord(X, r, th);
 
             /* here is the rate at which we're adding particles */
             /* this function is designed to concentrate effect in the
             funnel in black hole evolutions */
             Real drhopdt = 2.e-4 * pow(cos(th), 4) / pow(1. + r*r, 2) ;
 
-            dP(i, j, k, prims::rho) = drhopdt ;
+            dP(i, j, k, prims::u) = drhopdt;
 
             Real Tp = 10. ;  /* temp, in units of c^2, of new plasma */
-            dP(i, j, k, prims::u) = drhopdt*Tp*3. ;
+            dP(i, j, k, prims::u) = drhopdt*Tp*3.;
 
             /* Leave P[U{1,2,3}]=0 to add in particles in normal observer frame */
             /* Likewise leave P[BN]=0 */
@@ -248,21 +269,9 @@ KOKKOS_INLINE_FUNCTION void get_fluid_source(Grid &G, GridVars P, GridDerived D,
             /* add in plasma to the T^t_a component of the stress-energy tensor */
             /* notice that U already contains a factor of sqrt{-g} */
             get_state(G, dP, i, j, k, Loci::center, dD);
-            prim_to_flux(G, dP, dD, i, j, k, Loci::center, 0, dUw);
+            prim_to_flux(G, dP, dD, eos, i, j, k, Loci::center, 0, dUw);
 
-            dU(i, j, k, p) += dUw(i, j, k, p);
+            for(int p=0; p<G.nvar; ++p) dU(i, j, k, p) += dUw(i, j, k, p);
         }
     );
-}
-
-// Returns b.b (twice magnetic pressure)
-inline double bsq_calc(struct FluidState *S, int i, int j, int k)
-{
-
-  double bsq = 0.;
-  DLOOP1 {
-    bsq += bcon(i, j, k, mu)*bcov(i, j, k, mu);
-  }
-
-  return bsq;
 }

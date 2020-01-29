@@ -4,6 +4,7 @@ build/
 # Program and debug output
 out-*.txt
 *.h5
+*.png
 core.*
 frames_*/
 

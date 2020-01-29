@@ -11,21 +11,23 @@
 using namespace std;
 
 // Declarations
-double advance_fluid(const Grid &G, const GridVars vars_in, const GridVars vars_mid,
-                        GridVars vars_out, const double dt);
+double advance_fluid(const Grid &G, const EOS eos,
+                    const GridVars Pi, const GridVars Ps, GridVars Pf,
+                    const double dt, GridInt pflag);
 
 /**
  * Take one step.  Returns the Courant limit, to be used for the next step
  */
-double step(const Grid &G, const GridVars vars, const double dt)
+double step(const Grid &G, const EOS eos, const GridVars vars, const double dt)
 {
     // Don't re-allocate scratch space per step
     // TODO be more civilised about this
     // TODO save a version when we have to calculate current
-    static GridVars vars_tmp("vars_tmp", G.gn1, G.gn2, G.gn3, G.nvar);
+    GridVars vars_tmp("vars_tmp", G.gn1, G.gn2, G.gn3, G.nvar);
+    GridInt pflag("pflag", G.gn1, G.gn2, G.gn3);
 
     // Predictor step
-    advance_fluid(G, vars, vars, vars_tmp, 0.5 * dt);
+    advance_fluid(G, eos, vars, vars, vars_tmp, 0.5 * dt, pflag);
     FLAG("Advance Fluid Tmp");
 
     // Fixup routines: smooth over outlier zones
@@ -40,7 +42,7 @@ double step(const Grid &G, const GridVars vars, const double dt)
     // FLAG("Second bounds Tmp");
 
     // Corrector step
-    double ndt = advance_fluid(G, vars, vars_tmp, vars, dt);
+    double ndt = advance_fluid(G, eos, vars, vars_tmp, vars, dt, pflag);
     FLAG("Advance Fluid Full");
 
     // fixup(G, S);
@@ -56,66 +58,76 @@ double step(const Grid &G, const GridVars vars, const double dt)
     return std::min(0.9*ndt, 1.3*dt);
 }
 
-double advance_fluid(const Grid &G, const GridVars vars_in, const GridVars vars_mid, GridVars vars_out, const double dt)
+double advance_fluid(const Grid &G, const EOS eos,
+                    const GridVars Pi, const GridVars Ps, GridVars Pf,
+                    const double dt, GridInt pflag)
 {
-    static GridVars dU("dU", G.gn1, G.gn2, G.gn3, G.nvar);
-    static GridVars F1("F1", G.gn1, G.gn2, G.gn3, G.nvar);
-    static GridVars F2("F2", G.gn1, G.gn2, G.gn3, G.nvar);
-    static GridVars F3("F3", G.gn1, G.gn2, G.gn3, G.nvar);
+    GridVars Ui("Ui", G.gn1, G.gn2, G.gn3, G.nvar);
+    GridVars Uf("Uf", G.gn1, G.gn2, G.gn3, G.nvar);
+    GridVars dU("dU", G.gn1, G.gn2, G.gn3, G.nvar);
+    GridVars F1("F1", G.gn1, G.gn2, G.gn3, G.nvar);
+    GridVars F2("F2", G.gn1, G.gn2, G.gn3, G.nvar);
+    GridVars F3("F3", G.gn1, G.gn2, G.gn3, G.nvar);
+    GridDerived Dtmp;
+    Dtmp.ucon = GridVector("Dtmp_ucon", G.gn1, G.gn2, G.gn3);
+    Dtmp.ucov = GridVector("Dtmp_ucov", G.gn1, G.gn2, G.gn3);
+    Dtmp.bcon = GridVector("Dtmp_bcon", G.gn1, G.gn2, G.gn3);
+    Dtmp.bcov = GridVector("Dtmp_bcov", G.gn1, G.gn2, G.gn3);
 
-    // If the pointers are different, initialize final state to initial state
-    // TODO pretty sure this is unnecessary?
-    if (vars_in != vars_out) {
-        int np = G.nvar;
-        Kokkos::parallel_for("memcpy", G.all_0(),
-            KOKKOS_LAMBDA (const int i, const int j, const int k) {
-                for (int p=0; p < np; ++p)
-                    vars_out(i,j,k,p) = vars_in(i,j,k,p);
-            }
+    double ndt = get_flux(G, eos, Ps, F1, F2, F3);
 
-        );
-    }
-
-    double ndt = get_flux(G, vars_mid, F1, F2, F3);
-
-    // TODO next thing to add
+    // TODO to add after fixup
 // #if METRIC == MKS
-//     fix_flux(F);
+//     fix_flux(F1, F2, F3);
 // #endif
 
     //Constrained transport for B
-    flux_ct(F1, F2, F3);
+    flux_ct(G, F1, F2, F3);
 
     // Update Si to Sf
-    get_state(G, vars_mid, Loci::center, 0);
-    get_fluid_source(G, vars_mid, dU);
-
-    if (vars_in != vars_out) {
-        get_state(G, vars_in, Loci::center, 0);
-        prim_to_flux(G, vars_in, 0, Loci::center, 0, Ui);
-    }
-
-    Kokkos::parallel_for("finite_diff", G.bulk_ng(),
+    // TODO get_state_vec equivalent, just pass a slice
+    Kokkos::parallel_for("get_dU", G.bulk_ng(),
         KOKKOS_LAMBDA (const int i, const int j, const int k) {
-            for (int p=0; p < np; ++p)
+            get_state(G, Ps, i, j, k, Loci::center, Dtmp);
+        }
+    );
+    get_fluid_source(G, Ps, Dtmp, eos, dU);
+
+
+    Kokkos::parallel_for("get_Ui", G.bulk_ng(),
+        KOKKOS_LAMBDA (const int i, const int j, const int k) {
+            get_state(G, Pi, i, j, k, Loci::center, Dtmp);
+            prim_to_flux(G, Pi, Dtmp, eos, i, j, k, Loci::center, 0, Ui);
+        }
+    );
+
+    Kokkos::parallel_for("finite_diff", G.bulk_ng_p(),
+        KOKKOS_LAMBDA (const int i, const int j, const int k, const int p) {
                 Uf(i, j, k, p) = Ui(i, j, k, p) +
-                                    Dt * ((F1(i, j, k, p) - F1(i+1, j, k, p)) / G.dx1 +
+                                    dt * ((F1(i, j, k, p) - F1(i+1, j, k, p)) / G.dx1 +
                                         (F2(i, j, k, p) - F2(i, j+1, k, p)) / G.dx2 +
                                         (F3(i, j, k, p) - F3(i, j, k+1, p)) / G.dx3 +
                                         dU(i, j, k, p));
         }
+    );
 
-#pragma omp parallel for collapse(3)
-    ZLOOP
-    {
-        pflag[k][j][i] = cons_to_prim(G, Sf, i, j, k, Loci::center); // TODO is this worth having anywhere else? ...
+    // If the pointers are different, initialize final state to initial state
+    // This seeds the U_to_P iteration
+    if (Pi != Pf) {
+        Kokkos::parallel_for("memcpy", G.all_0_p(),
+            KOKKOS_LAMBDA (const int i, const int j, const int k, const int p) {
+                Pf(i,j,k,p) = Pi(i,j,k,p);
+            }
+        );
     }
 
-#pragma omp parallel for simd collapse(2)
-    ZLOOPALL
-    {
-        fail_save[k][j][i] = pflag[k][j][i];
-    }
+    // Finally, recover the primitives at the end of the substep
+    // Kokkos::parallel_for("cons_to_prim", G.bulk_ng(),
+    //     KOKKOS_LAMBDA (const int i, const int j, const int k) {
+    //         // TODO ever called on not the center? Maybe w/face fields?
+    //         pflag(i, j, k) = cons_to_prim(G, Uf, Pf, i, j, k, Loci::center);
+    //     }
+    // );
 
     return ndt;
 }

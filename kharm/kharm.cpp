@@ -33,21 +33,11 @@ int main(int argc, char **argv)
         DefaultExecutionSpace::print_configuration(std::cerr);
         std::cerr << std::endl;
 
-        // TODO make right for parallel HDF5 later
-        // HighFive::File input(argv[1], HighFive::File::ReadOnly);
-        // auto prims_shape = input.getDataSet("/prims").getDimensions();
-        // int n1 = prims_shape[0];
-        // int n2 = prims_shape[1];
-        // int n3 = prims_shape[2];
-        // int nvar = prims_shape[3];
-        // std::cout << "Input size: " << n1 << "x" << n2 << "x" << n3 << "x" << nvar << std::endl;
-
-        // Contiguous array of just n1xn2xn3 for input
-        // GridVarsHost h_prims_input("prims_input", n1, n2, n3, nvar);
-        // input.getDataSet("/prims").read(h_prims_input.data());
+        // TODO Read file here as primary input
 
         CoordinateSystem coords = Minkowski();
-        Grid G({128, 128, 128}, {0.0, 0.0, 0.0}, {1.0, 1.0, 1.0});
+        Grid G(&coords, {128, 128, 128}, {0.0, 0.0, 0.0}, {1.0, 1.0, 1.0});
+        EOS eos = Gammalaw(13/9);
         cerr << "Grid init" << std::endl;
 
         GridVarsHost h_vars_input = mhdmodes(G, 0);
@@ -67,21 +57,17 @@ int main(int argc, char **argv)
             }
         );
 
-        // copy TO 
-
         // copy TO DEVICE
         deep_copy(vars, m_vars);
 
         cerr << "Starting iteration" << std::endl;
 
+        double dt = 1.e-5;
         for (int out_iter = 0; out_iter < 10; ++out_iter)
         {
             for (int iter = 0; iter < 10; ++iter)
             {
-                if (iter % 2 == 0)
-                    diffuse_all(G, vars, vars_temp);
-                else
-                    diffuse_all(G, vars_temp, vars);
+                dt = step(G, eos, vars, dt);
             }
 
             deep_copy(m_vars, vars);

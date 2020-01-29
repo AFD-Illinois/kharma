@@ -17,6 +17,11 @@
 #define DLOOP2 for(int mu = 0; mu < NDIM; ++mu) for(int nu = 0; nu < NDIM; ++nu)
 // TODO PLOOP?  Rely on np being defined or get it from G?
 
+// Accuracy for numerical derivatives
+#define DELTA 1.e-5
+// Arbitrary small number >0
+#define SMALL 1.e-40
+
 // Precision flexibility:
 // Real is used for arrays & temps of physical variables & metric values
 // GReal is used for arrays & temps of grid locations
@@ -29,21 +34,39 @@ typedef std::map<std::string, double> Parameters;
 
 // Useful Enums to avoid lots of #defines
 enum prims{rho, u, u1, u2, u3, B1, B2, B3};
+#define NLOC 5
 enum Loci{face1, face2, face3, center, corner};
 
 // Data structures common to all k-harm
 #if defined( Kokkos_ENABLE_CUDA )
 // TODO MemSpace, HostSpace
 typedef Kokkos::View<Real***> GridScalar;
+typedef Kokkos::View<int***> GridInt;
 typedef Kokkos::View<Real***[NDIM]> GridVector;
 typedef Kokkos::View<Real****> GridVars;
 typedef Kokkos::View<Real****, Kokkos::HostSpace> GridVarsHost;
+
+// TODO these all start with NLOC but C++ is mean
+typedef Kokkos::View<Real***> GeomScalar;
+typedef Kokkos::View<Real***[NDIM][NDIM]> GeomTensor;
+// Connection coeffs are only recorded at zone center
+typedef Kokkos::View<Real**[NDIM][NDIM][NDIM]> GeomConn;
+
+// typedef Kokkos::View<Real***, Kokkos::HostSpace> GeomScalarHost;
+// typedef Kokkos::View<Real***[NDIM][NDIM], Kokkos::HostSpace> GeomTensorHost;
+// typedef Kokkos::View<Real**[NDIM][NDIM][NDIM], Kokkos::HostSpace> GeomConnHost;
+
 #warning "Compiling with CUDA"
 #else
 typedef Kokkos::View<Real***> GridScalar;
 typedef Kokkos::View<Real***[NDIM]> GridVector;
 typedef Kokkos::View<Real****> GridVars;
 typedef GridVars GridVarsHost;
+
+typedef Kokkos::View<Real***> GeomScalar;
+typedef Kokkos::View<Real***[NDIM][NDIM]> GeomTensor;
+typedef Kokkos::View<Real**[NDIM][NDIM][NDIM]> GeomConn;
+
 #warning "Compiling with OpenMP Only"
 #endif
 

@@ -5,8 +5,9 @@
 #include "decs.hpp"
 
 
-KOKKOS_INLINE_FUNCTION void weno(double x1, double x2, double x3, double x4, double x5, double *lout, double *rout);
-
+KOKKOS_INLINE_FUNCTION void weno(const double x1, const double x2, const double x3,
+                                const double x4, const double x5,
+                                double &lout, double &rout);
 // Use the pre-processor for poor man's multiple dispatch
 void reconstruct(const Grid &G, const GridVars P, GridVars Pl, GridVars Pr, const int dir)
 {
@@ -16,7 +17,7 @@ void reconstruct(const Grid &G, const GridVars P, GridVars Pl, GridVars Pr, cons
         {
             weno(P(i-2, j, k, p), P(i-1, j, k, p), P(i, j, k, p),
                  P(i+1, j, k, p), P(i+2, j, k, p),
-                 &Pl(i, j, k, p), &Pr(i, j, k, p));
+                 Pl(i, j, k, p), Pr(i, j, k, p));
         }
     );
   } else if (dir == 2) {
@@ -25,7 +26,7 @@ void reconstruct(const Grid &G, const GridVars P, GridVars Pl, GridVars Pr, cons
         {
             weno(P(i, j-2, k, p), P(i, j-1, k, p), P(i, j, k, p),
                  P(i, j+1, k, p), P(i, j+2, k, p),
-                 &Pl(i, j, k, p), &Pr(i, j, k, p));
+                 Pl(i, j, k, p), Pr(i, j, k, p));
         }
     );
   } else if (dir == 3) {
@@ -34,7 +35,7 @@ void reconstruct(const Grid &G, const GridVars P, GridVars Pl, GridVars Pr, cons
         {
             weno(P(i, j, k-2, p), P(i, j, k-1, p), P(i, j, k, p),
                  P(i, j, k+1, p), P(i, j, k+2, p),
-                 &Pl(i, j, k, p), &Pr(i, j, k, p));
+                 Pl(i, j, k, p), Pr(i, j, k, p));
         }
     );
   } else {

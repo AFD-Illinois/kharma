@@ -181,8 +181,6 @@ GridVarsHost mhdmodes(Grid &G, int nmode)
     // Override tf and the dump and log intervals
     Real tf = 2. * M_PI / fabs(omega.imag());
 
-    cerr << "Before mhdmodes";
-
     Kokkos::parallel_for("mhdmodes_init", G.h_bulk_0(),
         KOKKOS_LAMBDA (const int i, const int j, const int k) {
             GReal X[NDIM];
@@ -199,8 +197,6 @@ GridVarsHost mhdmodes(Grid &G, int nmode)
             p(i, j, k, prims::B3) = B30 + dB3 * mode;
         }
     );
-
-    cerr << "After mhdmodes";
 
     return p;
 }

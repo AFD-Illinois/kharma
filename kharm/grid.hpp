@@ -33,13 +33,25 @@ public:
     GReal startx1, startx2, startx3;
     GReal dx1, dx2, dx3;
 
-    // Constructors
-    Grid(std::vector<int> shape, std::vector<GReal> startx, std::vector<GReal> endx, int ng_in=3, int nvar_in=8);
-    Grid(std::vector<int> fullshape, std::vector<int> startn, std::vector<int> shape, std::vector<GReal> startx, std::vector<GReal> endx, int ng_in=3, int nvar_in=8);
+    CoordinateSystem *coords;
+    GeomConn conn;
+    GeomTensor gcon, gcov;
+    GeomScalar gdet, lapse;
 
-    // Coordinates.  Make as generic as we can
-    template<typename T>
-    KOKKOS_INLINE_FUNCTION void coord(int i, int j, int k, Loci loc, T X) const;
+    // Constructors
+    Grid(CoordinateSystem *coordinates, std::vector<int> shape, std::vector<GReal> startx, std::vector<GReal> endx, int ng_in=3, int nvar_in=8);
+    Grid(CoordinateSystem *coordinates, std::vector<int> fullshape, std::vector<int> startn, std::vector<int> shape, std::vector<GReal> startx, std::vector<GReal> endx, int ng_in=3, int nvar_in=8);
+    void init_grids();
+
+    // Coordinates of the grid, i.e. "native"
+    KOKKOS_INLINE_FUNCTION void coord(const int i, const int j, const int k, const Loci loc, Real X[NDIM]) const;
+
+    // Transformations using the cached geometry
+    // TODO could dramatically expand with enough loop fission
+    KOKKOS_INLINE_FUNCTION void lower_grid(const GridVector vcon, GridVector vcov,
+                                        const int i, const int j, const int k, const Loci loc) const;
+    KOKKOS_INLINE_FUNCTION void raise_grid(const GridVector vcov, GridVector vcon,
+                                        const int i, const int j, const int k, const Loci loc) const;
 
     // Indexing
     KOKKOS_INLINE_FUNCTION int i4(const int i, const int j, const int k, const int p, const bool use_ghosts=true) const
@@ -70,18 +82,22 @@ public:
 
     MDRangePolicy<Rank<3>> bulk_plus(const int i) const {return MDRangePolicy<Rank<3>>({ng-i, ng-i, ng-i}, {n1+ng+i, n2+ng+i, n3+ng+i});};
 
-    MDRangePolicy<Rank<4>> bulk_0_p() const {return MDRangePolicy<Rank<3>>({0, 0, 0, 0}, {n1, n2, n3, nvar});};
-    MDRangePolicy<Rank<4>> bulk_ng_p() const {return MDRangePolicy<Rank<3>>({ng, ng, ng, 0}, {n1+ng, n2+ng, n3+ng, nvar});};
-    MDRangePolicy<Rank<4>> all_0_p() const {return MDRangePolicy<Rank<3>>({0, 0, 0, 0}, {n1+2*ng, n2+2*ng, n3+2*ng, nvar});};
+    // Versions with 4th index for fluid variables
+    MDRangePolicy<Rank<4>> bulk_0_p() const {return MDRangePolicy<Rank<4>>({0, 0, 0, 0}, {n1, n2, n3, nvar});};
+    MDRangePolicy<Rank<4>> bulk_ng_p() const {return MDRangePolicy<Rank<4>>({ng, ng, ng, 0}, {n1+ng, n2+ng, n3+ng, nvar});};
+    MDRangePolicy<Rank<4>> all_0_p() const {return MDRangePolicy<Rank<4>>({0, 0, 0, 0}, {n1+2*ng, n2+2*ng, n3+2*ng, nvar});};
 
     MDRangePolicy<Rank<4>> bulk_plus_p(const int i) const {return MDRangePolicy<Rank<4>>({ng-i, ng-i, ng-i, 0}, {n1+ng+i, n2+ng+i, n3+ng+i, nvar});};
+
+    // TODO Versions for geometry stuff?
 
 };
 
 /**
  * Construct a grid which starts at 0 and covers the entire global space
  */
-Grid::Grid(std::vector<int> shape, std::vector<GReal> startx, std::vector<GReal> endx, int ng_in, int nvar_in)
+Grid::Grid(CoordinateSystem *coordinates, std::vector<int> shape, std::vector<GReal> startx,
+            std::vector<GReal> endx, const int ng_in, const int nvar_in)
 {
     nvar = nvar_in;
     ng = ng_in;
@@ -105,12 +121,18 @@ Grid::Grid(std::vector<int> shape, std::vector<GReal> startx, std::vector<GReal>
     dx1 = (endx[0] - startx1) / n1;
     dx2 = (endx[1] - startx2) / n2;
     dx3 = (endx[2] - startx3) / n3;
+
+    coords = coordinates;
+
+    init_grids();
 }
 
 /**
  * Construct a sub-grid starting at some point in a global space
  */
-Grid::Grid(std::vector<int> fullshape, std::vector<int> startn, std::vector<int> shape, std::vector<GReal> startx, std::vector<GReal> endx, int ng_in, int nvar_in)
+Grid::Grid(CoordinateSystem *coordinates, std::vector<int> fullshape, std::vector<int> startn,
+            std::vector<int> shape, std::vector<GReal> startx, std::vector<GReal> endx,
+            const int ng_in, const int nvar_in)
 {
     nvar = nvar_in;
     ng = ng_in;
@@ -138,14 +160,50 @@ Grid::Grid(std::vector<int> fullshape, std::vector<int> startn, std::vector<int>
     dx1 = (endx[0] - startx1) / n1;
     dx2 = (endx[1] - startx2) / n2;
     dx3 = (endx[2] - startx3) / n3;
+
+    coords = coordinates;
+
+    init_grids();
+}
+
+void Grid::init_grids() {
+    // Allocate and initialize all the device-side caches of geometry data
+    // Since it's axisymmetric and therefore reads are amortized, this is almost
+    // certainly waaaay faster than computing all geometry on the fly
+    gcon = GeomTensor("gcon", NLOC, n1, n2);
+    gcov = GeomTensor("gcov", NLOC, n1, n2);
+    gdet = GeomScalar("gdet", NLOC, n1, n2);
+    conn = GeomConn("conn", n1, n2);
+
+    // Cache gcon, gcov, gdet, and the connection coeffs
+    Kokkos::parallel_for("init_geom", MDRangePolicy<OpenMP,Rank<2>>({0, 0}, {n1+2*ng, n2+2*ng}),
+        KOKKOS_LAMBDA (const int i, const int j) {
+            GReal X[NDIM];
+            Real gcov_loc[NDIM][NDIM], gcon_loc[NDIM][NDIM];
+            for (int loc=0; loc < NLOC; ++loc) {
+                coord(i, j, 0, (Loci)loc, X);
+                coords->gcov_native(X, gcov_loc);
+                gdet(loc, i, j) = coords->gcon_native(gcov_loc, gcon_loc);
+                DLOOP2 {
+                    gcov(loc, i, j, mu, nu) = gcov_loc[mu][nu];
+                    gcon(loc, i, j, mu, nu) = gcon_loc[mu][nu];
+                }
+                if(loc == Loci::center) {
+                    Real conn_loc[NDIM][NDIM][NDIM];
+                    coords->conn_func(X, conn_loc);
+                    DLOOP2 for(int kap=0; kap<NDIM; ++kap)
+                        conn(i, j, mu, nu, kap) = conn_loc[mu][nu][kap];
+                }
+            }
+        }
+    );
 }
 
 /**
  * Function to return native coordinates of a grid
  * TODO is it more instruction-efficient to split this per location or have a separate one for centers?
  */
-template<typename T>
-KOKKOS_INLINE_FUNCTION void Grid::coord(int i, int j, int k, Loci loc, T X) const
+KOKKOS_INLINE_FUNCTION void Grid::coord(const int i, const int j, const int k, Loci loc, Real *X) const
 {
     X[0] = 0;
     switch (loc)
@@ -176,4 +234,16 @@ KOKKOS_INLINE_FUNCTION void Grid::coord(int i, int j, int k, Loci loc, T X) cons
         X[3] = startx3 + (n3start + k - ng) * dx3;
         break;
     }
+}
+
+KOKKOS_INLINE_FUNCTION void Grid::lower_grid(const GridVector vcon, GridVector vcov,
+                                        const int i, const int j, const int k, const Loci loc) const
+{
+    DLOOP2 vcov(i, j, k, mu) += gcov(loc, i, j, mu, nu) * vcon(i, j, k, nu);
+}
+
+KOKKOS_INLINE_FUNCTION void Grid::raise_grid(const GridVector vcov, GridVector vcon,
+                                        const int i, const int j, const int k, const Loci loc) const
+{
+    DLOOP2 vcon(i, j, k, mu) += gcon(loc, i, j, mu, nu) * vcov(i, j, k, nu);
 }
