@@ -5,15 +5,13 @@
  * Ben Prather
  */
 
+#include "utils.hpp"
 #include "decs.hpp"
-#include "diffuse.hpp"
+
 #include "self_init.hpp"
 #include "grid.hpp"
 #include "io.hpp"
-
 #include "step.hpp"
-
-#include "utils.hpp"
 
 #include <cmath>
 #include <iostream>
@@ -38,8 +36,8 @@ int main(int argc, char **argv)
         int ng = 3;
         int nvar = 8;
 
-        CoordinateSystem coords = Minkowski();
-        Grid G(&coords, {sz, sz, sz}, {0.0, 0.0, 0.0}, {1.0, 1.0, 1.0}, ng, nvar);
+        CoordinateSystem *coords = new Minkowski();
+        Grid G(coords, {sz, sz, sz}, {0.0, 0.0, 0.0}, {1.0, 1.0, 1.0}, ng, nvar);
         EOS eos = Gammalaw(13/9);
         cerr << "Grid allocated" << std::endl;
         G.init_grids();
@@ -78,6 +76,7 @@ int main(int argc, char **argv)
             deep_copy(m_vars, vars);
             dump(G, m_vars, Parameters(), string_format("dump_%04d.h5", out_iter+1), true);
         }
+        delete coords;
     }
     Kokkos::finalize();
 }

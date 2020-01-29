@@ -59,9 +59,7 @@ class CoordinateSystem {
                 }
             }
 
-            // now mu nu kap
-
-            // Need gcon for next bit
+            // Need gcon for raising index
             gcon_native(X, gcon);
 
             // Raise index to get \Gamma^lam_{nu mu}
