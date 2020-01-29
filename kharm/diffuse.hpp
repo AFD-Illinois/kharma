@@ -7,7 +7,8 @@
 
 using namespace Kokkos;
 
-void diffuse_all(Grid &G, GridVars in, GridVars out)
+template <class Coords>
+void diffuse_all(const Grid<Coords> &G, const GridVars in, GridVars out)
 {
     int np = G.nvar;
     Kokkos::parallel_for("diff_all", G.bulk_ng(),

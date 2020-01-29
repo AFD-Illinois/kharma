@@ -24,6 +24,7 @@ using namespace std;
 /**
  * Struct holding all parameters related to the logically Cartesian grid.  Purposefully minimal 
  */
+template<class Coords>
 class Grid
 {
 protected:
@@ -41,17 +42,17 @@ public:
     GReal startx1, startx2, startx3;
     GReal dx1, dx2, dx3;
 
-    CoordinateSystem coords;
+    Coords *coords;
 
     // TODO see if these slow anything.  Leaves me the option to return them analytically for e.g. very fast Minkowski
-    KOKKOS_INLINE_FUNCTION Real gcon(const Loci loc, const int i, const int j, const int mu, const int nu) const {return gcon_direct(loc, i, j, mu, nu);}
-    KOKKOS_INLINE_FUNCTION Real gcov(const Loci loc, const int i, const int j, const int mu, const int nu) const {return gcov_direct(loc, i, j, mu, nu);}
-    KOKKOS_INLINE_FUNCTION Real gdet(const Loci loc, const int i, const int j) const {return gdet_direct(loc, i, j);}
-    KOKKOS_INLINE_FUNCTION Real conn(const int i, const int j, const int mu, const int nu, const int lam) const {return conn_direct(i, j, mu, nu, lam);}
+    KOKKOS_INLINE_FUNCTION Real gcon(const Loci loc, const int i, const int j, const int mu, const int nu) const;
+    KOKKOS_INLINE_FUNCTION Real gcov(const Loci loc, const int i, const int j, const int mu, const int nu) const;
+    KOKKOS_INLINE_FUNCTION Real gdet(const Loci loc, const int i, const int j) const;
+    KOKKOS_INLINE_FUNCTION Real conn(const int i, const int j, const int mu, const int nu, const int lam) const;
 
     // Constructors
-    Grid(CoordinateSystem coordinates, std::vector<int> shape, std::vector<GReal> startx, std::vector<GReal> endx, int ng_in=3, int nvar_in=8);
-    Grid(CoordinateSystem coordinates, std::vector<int> fullshape, std::vector<int> startn, std::vector<int> shape, std::vector<GReal> startx, std::vector<GReal> endx, int ng_in=3, int nvar_in=8);
+    Grid(CoordinateSystem *coordinates, std::vector<int> shape, std::vector<GReal> startx, std::vector<GReal> endx, int ng_in=3, int nvar_in=8);
+    Grid(CoordinateSystem *coordinates, std::vector<int> fullshape, std::vector<int> startn, std::vector<int> shape, std::vector<GReal> startx, std::vector<GReal> endx, int ng_in=3, int nvar_in=8);
     void init_grids();
 
     // Coordinates of the grid, i.e. "native"
@@ -61,7 +62,7 @@ public:
     {
         Real X[NDIM];
         coord(i, j, k, loc, X);
-        coords.ks_coord(X, r, th);
+        coords->ks_coord(X, r, th);
     }
 
     // Transformations using the cached geometry
@@ -121,7 +122,8 @@ public:
 /**
  * Construct a grid which starts at 0 and covers the entire global space
  */
-Grid::Grid(CoordinateSystem coordinates, std::vector<int> shape, std::vector<GReal> startx,
+template<class Coords>
+Grid<Coords>::Grid(CoordinateSystem *coordinates, std::vector<int> shape, std::vector<GReal> startx,
             std::vector<GReal> endx, const int ng_in, const int nvar_in)
 {
     nvar = nvar_in;
@@ -147,13 +149,23 @@ Grid::Grid(CoordinateSystem coordinates, std::vector<int> shape, std::vector<GRe
     dx2 = (endx[1] - startx2) / n2;
     dx3 = (endx[2] - startx3) / n3;
 
-    coords = coordinates;
+    // TODO do I really want to manage this from here?
+    coords = new Coords();
+
+    // Allocate and initialize all the device-side caches of geometry data
+    // Since it's axisymmetric and therefore reads are amortized, this is almost
+    // certainly waaaay faster than computing all geometry on the fly
+    gcon_direct = GeomTensor("gcon", NLOC, n1, n2);
+    gcov_direct = GeomTensor("gcov", NLOC, n1, n2);
+    gdet_direct = GeomScalar("gdet", NLOC, n1, n2);
+    conn_direct = GeomConn("conn", n1, n2);
 }
 
 /**
  * Construct a sub-grid starting at some point in a global space
  */
-Grid::Grid(CoordinateSystem coordinates, std::vector<int> fullshape, std::vector<int> startn,
+template<class Coords>
+Grid<Coords>::Grid(CoordinateSystem *coordinates, std::vector<int> fullshape, std::vector<int> startn,
             std::vector<int> shape, std::vector<GReal> startx, std::vector<GReal> endx,
             const int ng_in, const int nvar_in)
 {
@@ -184,58 +196,107 @@ Grid::Grid(CoordinateSystem coordinates, std::vector<int> fullshape, std::vector
     dx2 = (endx[1] - startx2) / n2;
     dx3 = (endx[2] - startx3) / n3;
 
-    coords = coordinates;
+    coords = new Coords();
+
+    gcon_direct = GeomTensor("gcon", NLOC, n1, n2);
+    gcov_direct = GeomTensor("gcov", NLOC, n1, n2);
+    gdet_direct = GeomScalar("gdet", NLOC, n1, n2);
+    conn_direct = GeomConn("conn", n1, n2);
 }
 
-void Grid::init_grids() {
-    // Cache geometry.  Probably faster in most cases than re-computing due to amortization of reads
-    gcon_direct = GeomTensor("gcon", NLOC, gn1, gn2);
-    gcov_direct = GeomTensor("gcov", NLOC, gn1, gn2);
-    gdet_direct = GeomScalar("gdet", NLOC, gn1, gn2);
-    conn_direct = GeomConn("conn", gn1, gn2);
-
-    // Make local copies of grids because nothing is sacred and this-> is a mess
-    GeomTensor gcon_local = gcon_direct;
-    GeomTensor gcov_local = gcov_direct;
-    GeomScalar gdet_local = gdet_direct;
-    GeomConn conn_local = conn_direct;
-    CoordinateSystem cs = coords;
-
+// For most coordinate systems, cache the geometry and return the cached values when called
+template<class Coords>
+void Grid<Coords>::init_grids() {
     // Cache gcon, gcov, gdet, and the connection coeffs
-    Kokkos::parallel_for("init_geom", MDRangePolicy<Rank<2>>({0, 0}, {gn1, gn2}),
+    Kokkos::parallel_for("init_geom", MDRangePolicy<Rank<2>>({0, 0}, {n1+2*ng, n2+2*ng}),
         KOKKOS_LAMBDA (const int i, const int j) {
             GReal X[NDIM];
             Real gcov_loc[NDIM][NDIM], gcon_loc[NDIM][NDIM];
             for (int loc=0; loc < NLOC; ++loc) {
                 coord(i, j, 0, (Loci)loc, X);
-                cs.gcov_native(X, gcov_loc);
-                gdet_local(loc, i, j) = cs.gcon_native(gcov_loc, gcon_loc);
+                coords->gcov_native(X, gcov_loc);
+                gdet_direct((Loci)loc, i, j) = coords->gcon_native(gcov_loc, gcon_loc);
                 DLOOP2 {
-                    gcov_local(loc, i, j, mu, nu) = gcov_loc[mu][nu];
-                    gcon_local(loc, i, j, mu, nu) = gcon_loc[mu][nu];
+                    gcov_direct((Loci)loc, i, j, mu, nu) = gcov_loc[mu][nu];
+                    gcon_direct((Loci)loc, i, j, mu, nu) = gcon_loc[mu][nu];
                 }
             }
         }
     );
-    FLAG("Metric init");
-    // TODO this won't be zero forever.  Figure out what's up.
-    // Kokkos::parallel_for("init_conn", MDRangePolicy<Rank<2>>({0, 0}, {n1+2*ng, n2+2*ng}),
-    //     KOKKOS_LAMBDA (const int i, const int j) {
-    //         GReal X[NDIM];
-    //         coord(i, j, 0, Loci::center, X);
-    //         Real conn_loc[NDIM][NDIM][NDIM];
-    //         cs.conn_func(X, conn_loc);
-    //         DLOOP2 for(int kap=0; kap<NDIM; ++kap)
-    //             conn_local(i, j, mu, nu, kap) = conn_loc[mu][nu][kap];
-    //     }
-    // );
+    Kokkos::parallel_for("init_conn", MDRangePolicy<Rank<2>>({0, 0}, {n1+2*ng, n2+2*ng}),
+        KOKKOS_LAMBDA (const int i, const int j) {
+            GReal X[NDIM];
+            coord(i, j, 0, Loci::center, X);
+            Real conn_loc[NDIM][NDIM][NDIM];
+            coords->conn_func(X, conn_loc);
+            DLOOP2 for(int kap=0; kap<NDIM; ++kap)
+                conn_direct(i, j, mu, nu, kap) = conn_loc[mu][nu][kap];
+        }
+    );
+}
+template <class Coords>
+KOKKOS_INLINE_FUNCTION Real Grid<Coords>::gcon(const Loci loc, const int i, const int j, const int mu, const int nu) const
+{
+    return gcon_direct(loc, i, j, mu, nu);
+}
+template <class Coords>
+KOKKOS_INLINE_FUNCTION Real Grid<Coords>::gcov(const Loci loc, const int i, const int j, const int mu, const int nu) const
+{
+    return gcov_direct(loc, i, j, mu, nu);
+}
+template <class Coords>
+KOKKOS_INLINE_FUNCTION Real Grid<Coords>::gdet(const Loci loc, const int i, const int j) const
+{
+    return gdet_direct(loc, i, j);
+}
+template <class Coords>
+KOKKOS_INLINE_FUNCTION Real Grid<Coords>::conn(const int i, const int j, const int mu, const int nu, const int lam) const
+{
+    return conn_direct(i, j, mu, nu, lam);
+}
+
+// But in Minkowski, screw memory, we have the answers already
+template <>
+void Grid<Minkowski>::init_grids() {};
+template <>
+KOKKOS_INLINE_FUNCTION Real Grid<Minkowski>::gcon(const Loci loc, const int i, const int j, const int mu, const int nu) const
+{
+    if (mu == 0 && nu == 0 ) {
+        return -1;
+    } else if (mu == nu) {
+        return 1;
+    } else {
+        return 0;
+    }
+}
+template <>
+KOKKOS_INLINE_FUNCTION Real Grid<Minkowski>::gcov(const Loci loc, const int i, const int j, const int mu, const int nu) const
+{
+    if (mu == 0 && nu == 0 ) {
+        return -1;
+    } else if (mu == nu) {
+        return 1;
+    } else {
+        return 0;
+    }
+}
+template <>
+KOKKOS_INLINE_FUNCTION Real Grid<Minkowski>::gdet(const Loci loc, const int i, const int j) const
+{
+    return 1;
+}
+template <>
+KOKKOS_INLINE_FUNCTION Real Grid<Minkowski>::conn(const int i, const int j, const int mu, const int nu, const int lam) const
+{
+    return 0;
 }
 
 /**
  * Function to return native coordinates of a grid
  * TODO is it more instruction-efficient to split this per location or have a separate one for centers?
  */
-KOKKOS_INLINE_FUNCTION void Grid::coord(const int i, const int j, const int k, Loci loc, Real *X) const
+template <class Coords>
+KOKKOS_INLINE_FUNCTION void Grid<Coords>::coord(const int i, const int j, const int k, Loci loc, Real *X) const
 {
     X[0] = 0;
     switch (loc)
@@ -267,24 +328,30 @@ KOKKOS_INLINE_FUNCTION void Grid::coord(const int i, const int j, const int k, L
         break;
     }
 }
-KOKKOS_INLINE_FUNCTION void Grid::lower(const Real vcon[NDIM], Real vcov[NDIM],
+
+template <class Coords>
+KOKKOS_INLINE_FUNCTION void Grid<Coords>::lower(const Real vcon[NDIM], Real vcov[NDIM],
                                         const int i, const int j, const int k, const Loci loc) const
 {
     DLOOP2 vcov[mu] += gcov(loc, i, j, mu, nu) * vcon[nu];
 }
 
-KOKKOS_INLINE_FUNCTION void Grid::raise(const Real vcov[NDIM], Real vcon[NDIM],
+template <class Coords>
+KOKKOS_INLINE_FUNCTION void Grid<Coords>::raise(const Real vcov[NDIM], Real vcon[NDIM],
                                         const int i, const int j, const int k, const Loci loc) const
 {
     DLOOP2 vcon[mu] += gcon(loc, i, j, mu, nu) * vcov[nu];
 }
-KOKKOS_INLINE_FUNCTION void Grid::lower_grid(const GridVector vcon, GridVector vcov,
+
+template <class Coords>
+KOKKOS_INLINE_FUNCTION void Grid<Coords>::lower_grid(const GridVector vcon, GridVector vcov,
                                         const int i, const int j, const int k, const Loci loc) const
 {
     DLOOP2 vcov(i, j, k, mu) += gcov(loc, i, j, mu, nu) * vcon(i, j, k, nu);
 }
 
-KOKKOS_INLINE_FUNCTION void Grid::raise_grid(const GridVector vcov, GridVector vcon,
+template <class Coords>
+KOKKOS_INLINE_FUNCTION void Grid<Coords>::raise_grid(const GridVector vcov, GridVector vcon,
                                         const int i, const int j, const int k, const Loci loc) const
 {
     DLOOP2 vcon(i, j, k, mu) += gcon(loc, i, j, mu, nu) * vcov(i, j, k, nu);

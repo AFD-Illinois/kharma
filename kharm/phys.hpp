@@ -223,7 +223,7 @@ KOKKOS_INLINE_FUNCTION void mhd_vchar(const Grid &G, const GridVars P, const Gri
 // Source terms for equations of motion
 // Note this is a single function for the state, so it is *not* INLINE_ETC
 void get_fluid_source(const Grid &G, const GridVars P, const GridDerived D,
-                      const EOS eos, GridVars dU)
+                      const EOS eos, GridVars dU, bool wind=false)
 {
     GridVars dP("dP", G.gn1, G.gn2, G.gn3, G.nvar);
     GridDerived dD;
@@ -253,35 +253,35 @@ void get_fluid_source(const Grid &G, const GridVars P, const GridDerived D,
                                  dU(i, j, k, p) *= G.gdet(Loci::center, i, j);
                          });
 
-    // Add a small "wind" source term in RHO,UU
-    // Stolen shamelessly from iharm2d_v3
-    Kokkos::parallel_for("fluid_source", G.bulk_ng(),
+    if (wind) {
+        // Add a small "wind" source term in RHO,UU
+        // Stolen shamelessly from iharm2d_v3
+        Kokkos::parallel_for("fluid_source", G.bulk_ng(),
                          KOKKOS_LAMBDA(const int i, const int j, const int k) {
                              // TODO make these local rather than writing back?
 
-                             /* need coordinates to evaluate particle addtn rate */
+                             // Need coordinates to evaluate particle addtn rate
+                             // Note that makes the wind spherical-only
                              GReal r, th;
                              G.ks_coord(i, j, k, Loci::center, r, th);
 
-                             /* here is the rate at which we're adding particles */
-                             /* this function is designed to concentrate effect in the
-            funnel in black hole evolutions */
+                             // Particle addition rate: concentrate at poles & center
                              Real drhopdt = 2.e-4 * pow(cos(th), 4) / pow(1. + r * r, 2);
 
                              dP(i, j, k, prims::u) = drhopdt;
 
-                             Real Tp = 10.; /* temp, in units of c^2, of new plasma */
+                             Real Tp = 10.; // New fluid's temperature in units of c^2
                              dP(i, j, k, prims::u) = drhopdt * Tp * 3.;
 
-                             /* Leave P[U{1,2,3}]=0 to add in particles in normal observer frame */
-                             /* Likewise leave P[BN]=0 */
+                             // Leave everything else: we're inserting only fluid in normal observer frame
 
-                             /* add in plasma to the T^t_a component of the stress-energy tensor */
-                             /* notice that U already contains a factor of sqrt{-g} */
+                             // Add plasma to the T^t_a component of the stress-energy tensor
+                             // Notice that U already contains a factor of sqrt{-g}
                              get_state(G, dP, i, j, k, Loci::center, dD);
                              prim_to_flux(G, dP, dD, eos, i, j, k, Loci::center, 0, dUw);
 
                              for (int p = 0; p < G.nvar; ++p)
                                  dU(i, j, k, p) += dUw(i, j, k, p);
                          });
+    }
 }
