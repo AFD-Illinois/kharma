@@ -13,7 +13,9 @@
 // Classic Macros^(TM)
 #define VERSION "kharm-alpha-0.1"
 #define NDIM 4
-#define DLOOP for(index_t dim = 0; dim < NDIM; ++dim)
+#define DLOOP1 for(int mu = 0; mu < NDIM; ++mu)
+#define DLOOP2 for(int mu = 0; mu < NDIM; ++mu) for(int nu = 0; nu < NDIM; ++nu)
+// TODO PLOOP?  Rely on np being defined or get it from G?
 
 // Precision flexibility:
 // Real is used for arrays & temps of physical variables & metric values
@@ -44,6 +46,20 @@ typedef Kokkos::View<Real****> GridVars;
 typedef GridVars GridVarsHost;
 #warning "Compiling with OpenMP Only"
 #endif
+
+// Derived 4-vectors
+typedef struct {
+    Real ucon[NDIM];
+    Real ucov[NDIM];
+    Real bcon[NDIM];
+    Real bcov[NDIM];
+} Derived;
+typedef struct {
+    GridVector ucon;
+    GridVector ucov;
+    GridVector bcon;
+    GridVector bcov;
+} GridDerived;
 
 #if DEBUG
 #warning "Compiling with debug"

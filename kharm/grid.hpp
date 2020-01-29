@@ -68,6 +68,14 @@ public:
     MDRangePolicy<OpenMP,Rank<3>> h_bulk_ng() const {return MDRangePolicy<OpenMP,Rank<3>>({ng, ng, ng}, {n1+ng, n2+ng, n3+ng});};
     MDRangePolicy<OpenMP,Rank<3>> h_all_0() const {return MDRangePolicy<OpenMP,Rank<3>>({0, 0, 0}, {n1+2*ng, n2+2*ng, n3+2*ng});};
 
+    MDRangePolicy<Rank<3>> bulk_plus(const int i) const {return MDRangePolicy<Rank<3>>({ng-i, ng-i, ng-i}, {n1+ng+i, n2+ng+i, n3+ng+i});};
+
+    MDRangePolicy<Rank<4>> bulk_0_p() const {return MDRangePolicy<Rank<3>>({0, 0, 0, 0}, {n1, n2, n3, nvar});};
+    MDRangePolicy<Rank<4>> bulk_ng_p() const {return MDRangePolicy<Rank<3>>({ng, ng, ng, 0}, {n1+ng, n2+ng, n3+ng, nvar});};
+    MDRangePolicy<Rank<4>> all_0_p() const {return MDRangePolicy<Rank<3>>({0, 0, 0, 0}, {n1+2*ng, n2+2*ng, n3+2*ng, nvar});};
+
+    MDRangePolicy<Rank<4>> bulk_plus_p(const int i) const {return MDRangePolicy<Rank<4>>({ng-i, ng-i, ng-i, 0}, {n1+ng+i, n2+ng+i, n3+ng+i, nvar});};
+
 };
 
 /**
@@ -134,6 +142,7 @@ Grid::Grid(std::vector<int> fullshape, std::vector<int> startn, std::vector<int>
 
 /**
  * Function to return native coordinates of a grid
+ * TODO is it more instruction-efficient to split this per location or have a separate one for centers?
  */
 template<typename T>
 KOKKOS_INLINE_FUNCTION void Grid::coord(int i, int j, int k, Loci loc, T X) const

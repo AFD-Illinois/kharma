@@ -11,15 +11,9 @@
 #include "grid.hpp"
 #include "io.hpp"
 
-#include "utils.hpp"
+#include "step.hpp"
 
-#if USE_MPI
-// This is very not supported right now.
-// Question whether we even use Boost MPI or stick to native bindings
-#include <boost/mpi/environment.hpp>
-#include <boost/mpi/communicator.hpp>
-namespace mpi = boost::mpi;
-#endif
+#include "utils.hpp"
 
 #include <cmath>
 #include <iostream>
@@ -31,10 +25,7 @@ using namespace std;
 
 int main(int argc, char **argv)
 {
-#if USE_MPI
-    mpi::environment env(argc, argv);
-    mpi::communicator world;
-#endif
+    mpi_init(argc, argv);
     Kokkos::initialize();
     {
         std::cerr << "K/HARM version " << VERSION << std::endl;
@@ -64,7 +55,6 @@ int main(int argc, char **argv)
         dump(G, h_vars_input, Parameters(), "dump_0000.h5", true);
 
         GridVars vars("all_vars", G.gn1, G.gn2, G.gn3, G.nvar);
-        GridVars vars_temp("all_vars_temp", G.gn1, G.gn2, G.gn3, G.nvar);
         auto m_vars = create_mirror_view(vars);
 
         // Copy input (no ghosts, Host order) into working array (ghosts, device order)
