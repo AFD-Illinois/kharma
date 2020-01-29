@@ -5,8 +5,7 @@
 #include "decs.hpp"
 #include "mpi.hpp"
 #include "fluxes.hpp"
-
-#define FLAG(x) cout << x << endl;
+#include "U_to_P.hpp"
 
 using namespace std;
 
@@ -20,11 +19,13 @@ double advance_fluid(const Grid &G, const EOS eos,
  */
 double step(const Grid &G, const EOS eos, const GridVars vars, const double dt)
 {
+    FLAG("Start step")
     // Don't re-allocate scratch space per step
     // TODO be more civilised about this
-    // TODO save a version when we have to calculate current
+    // TODO save a copy of current state when we have to calculate j
     GridVars vars_tmp("vars_tmp", G.gn1, G.gn2, G.gn3, G.nvar);
     GridInt pflag("pflag", G.gn1, G.gn2, G.gn3);
+    FLAG("Allocate temporaries");
 
     // Predictor step
     advance_fluid(G, eos, vars, vars, vars_tmp, 0.5 * dt, pflag);
@@ -73,16 +74,17 @@ double advance_fluid(const Grid &G, const EOS eos,
     Dtmp.ucov = GridVector("Dtmp_ucov", G.gn1, G.gn2, G.gn3);
     Dtmp.bcon = GridVector("Dtmp_bcon", G.gn1, G.gn2, G.gn3);
     Dtmp.bcov = GridVector("Dtmp_bcov", G.gn1, G.gn2, G.gn3);
+    FLAG("Allocate flux temporaries");
 
+    // Get the fluxes in each direction on the zone faces
     double ndt = get_flux(G, eos, Ps, F1, F2, F3);
-
-    // TODO to add after fixup
-// #if METRIC == MKS
-//     fix_flux(F1, F2, F3);
-// #endif
-
-    //Constrained transport for B
+    FLAG("Get flux");
+    // Fix boundary fluxes
+//    fix_flux(F1, F2, F3);
+//    FLAG("Fix flux");
+    // Constrained transport for B
     flux_ct(G, F1, F2, F3);
+    FLAG("Flux CT");
 
     // Update Si to Sf
     // TODO get_state_vec equivalent, just pass a slice
@@ -92,14 +94,23 @@ double advance_fluid(const Grid &G, const EOS eos,
         }
     );
     get_fluid_source(G, Ps, Dtmp, eos, dU);
+    FLAG("Get source");
 
 
+    if (Pi != Ps) { // Only need this if Dtmp does not already hold the goods
+        Kokkos::parallel_for("get_Pi_D", G.bulk_ng(),
+            KOKKOS_LAMBDA (const int i, const int j, const int k) {
+                get_state(G, Pi, i, j, k, Loci::center, Dtmp);
+            }
+        );
+        FLAG("Get PiD");
+    }
     Kokkos::parallel_for("get_Ui", G.bulk_ng(),
         KOKKOS_LAMBDA (const int i, const int j, const int k) {
-            get_state(G, Pi, i, j, k, Loci::center, Dtmp);
             prim_to_flux(G, Pi, Dtmp, eos, i, j, k, Loci::center, 0, Ui);
         }
     );
+    FLAG("Get Ui");
 
     Kokkos::parallel_for("finite_diff", G.bulk_ng_p(),
         KOKKOS_LAMBDA (const int i, const int j, const int k, const int p) {
@@ -110,6 +121,7 @@ double advance_fluid(const Grid &G, const EOS eos,
                                         dU(i, j, k, p));
         }
     );
+    FLAG("Finite diff");
 
     // If the pointers are different, initialize final state to initial state
     // This seeds the U_to_P iteration
@@ -122,12 +134,12 @@ double advance_fluid(const Grid &G, const EOS eos,
     }
 
     // Finally, recover the primitives at the end of the substep
-    // Kokkos::parallel_for("cons_to_prim", G.bulk_ng(),
-    //     KOKKOS_LAMBDA (const int i, const int j, const int k) {
-    //         // TODO ever called on not the center? Maybe w/face fields?
-    //         pflag(i, j, k) = cons_to_prim(G, Uf, Pf, i, j, k, Loci::center);
-    //     }
-    // );
+    Kokkos::parallel_for("cons_to_prim", G.bulk_ng(),
+        KOKKOS_LAMBDA (const int i, const int j, const int k) {
+            // TODO ever called on not the center? Maybe w/face fields?
+            pflag(i, j, k) = U_to_P(G, Uf, eos, i, j, k, Loci::center, Pf);
+        }
+    );
 
     return ndt;
 }

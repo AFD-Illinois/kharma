@@ -38,6 +38,7 @@ enum prims{rho, u, u1, u2, u3, B1, B2, B3};
 enum Loci{face1, face2, face3, center, corner};
 
 // Data structures common to all k-harm
+// TODO something cute with the type checker to distinguish prims from cons?  Names seem fine.
 #if defined( Kokkos_ENABLE_CUDA )
 // TODO MemSpace, HostSpace
 typedef Kokkos::View<Real***> GridScalar;
@@ -84,6 +85,13 @@ typedef struct {
     GridVector bcov;
 } GridDerived;
 
+// TODO fix debug flag on CMake Debug target
 #if DEBUG
 #warning "Compiling with debug"
 #endif
+
+// #if DEBUG
+#define FLAG(x) cout << x << endl;
+// #else
+// #define FLAG(x)
+// #endif

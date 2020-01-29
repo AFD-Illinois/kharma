@@ -33,31 +33,36 @@ int main(int argc, char **argv)
         DefaultExecutionSpace::print_configuration(std::cerr);
         std::cerr << std::endl;
 
-        // TODO Read file here as primary input
+        // TODO read an input with grid size here
+        int sz = 128;
+        int ng = 3;
+        int nvar = 8;
 
         CoordinateSystem coords = Minkowski();
-        Grid G(&coords, {128, 128, 128}, {0.0, 0.0, 0.0}, {1.0, 1.0, 1.0});
+        Grid G(&coords, {sz, sz, sz}, {0.0, 0.0, 0.0}, {1.0, 1.0, 1.0}, ng, nvar);
         EOS eos = Gammalaw(13/9);
-        cerr << "Grid init" << std::endl;
+        cerr << "Grid allocated" << std::endl;
+        G.init_grids();
+        cerr << "Grid initialized" << std::endl;
 
+        // Allocate and initialize host primitives
         GridVarsHost h_vars_input = mhdmodes(G, 0);
-        cerr << "Vars init" << std::endl;
+        cerr << "Vars initialized" << std::endl;
         dump(G, h_vars_input, Parameters(), "dump_0000.h5", true);
 
+        // Allocate device memory and host mirror memory
         GridVars vars("all_vars", G.gn1, G.gn2, G.gn3, G.nvar);
         auto m_vars = create_mirror_view(vars);
+        cerr << "Memory initialized" << std::endl;
 
         // Copy input (no ghosts, Host order) into working array (ghosts, device order)
         // deep_copy would do this automatically if not for ghosts (TODO try that?)
-        int ng = G.ng; int nvar = G.nvar;
-        parallel_for("copy_to_ghosts", G.h_bulk_0(),
-            KOKKOS_LAMBDA (const int i, const int j, const int k) {
-                    for (int p = 0; p < nvar; ++p)
-                        m_vars(i + ng, j + ng, k + ng, p) = h_vars_input(i, j, k, p);
+        parallel_for("copy_to_ghosts", G.h_bulk_0_p(),
+            KOKKOS_LAMBDA (const int i, const int j, const int k, const int p) {
+                        m_vars(i + G.ng, j + G.ng, k + G.ng, p) = h_vars_input(i, j, k, p);
             }
         );
-
-        // copy TO DEVICE
+        cerr << "Copying to device" << endl;
         deep_copy(vars, m_vars);
 
         cerr << "Starting iteration" << std::endl;
