@@ -90,8 +90,8 @@ typedef struct {
 #warning "Compiling with debug"
 #endif
 
-// #if DEBUG
+#if DEBUG
 #define FLAG(x) cout << x << endl;
-// #else
-// #define FLAG(x)
-// #endif
+#else
+#define FLAG(x)
+#endif

@@ -1,6 +1,7 @@
 /*
  * Everything that doesn't fit somewhere else.  General C/C++ convenience functions. 
  */
+#pragma once
 
 #include <memory>
 #include <string>

@@ -261,7 +261,7 @@ void get_fluid_source(const Grid &G, const GridVars P, const GridDerived D,
 
                              /* need coordinates to evaluate particle addtn rate */
                              GReal r, th;
-                             //G.ks_coord(i, j, k, Loci::center, r, th);
+                             G.ks_coord(i, j, k, Loci::center, r, th);
 
                              /* here is the rate at which we're adding particles */
                              /* this function is designed to concentrate effect in the

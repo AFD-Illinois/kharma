@@ -41,7 +41,7 @@ public:
     GReal startx1, startx2, startx3;
     GReal dx1, dx2, dx3;
 
-    CoordinateSystem *coords;
+    CoordinateSystem coords;
 
     // TODO see if these slow anything.  Leaves me the option to return them analytically for e.g. very fast Minkowski
     KOKKOS_INLINE_FUNCTION Real gcon(const Loci loc, const int i, const int j, const int mu, const int nu) const {return gcon_direct(loc, i, j, mu, nu);}
@@ -50,8 +50,8 @@ public:
     KOKKOS_INLINE_FUNCTION Real conn(const int i, const int j, const int mu, const int nu, const int lam) const {return conn_direct(i, j, mu, nu, lam);}
 
     // Constructors
-    Grid(CoordinateSystem *coordinates, std::vector<int> shape, std::vector<GReal> startx, std::vector<GReal> endx, int ng_in=3, int nvar_in=8);
-    Grid(CoordinateSystem *coordinates, std::vector<int> fullshape, std::vector<int> startn, std::vector<int> shape, std::vector<GReal> startx, std::vector<GReal> endx, int ng_in=3, int nvar_in=8);
+    Grid(CoordinateSystem coordinates, std::vector<int> shape, std::vector<GReal> startx, std::vector<GReal> endx, int ng_in=3, int nvar_in=8);
+    Grid(CoordinateSystem coordinates, std::vector<int> fullshape, std::vector<int> startn, std::vector<int> shape, std::vector<GReal> startx, std::vector<GReal> endx, int ng_in=3, int nvar_in=8);
     void init_grids();
 
     // Coordinates of the grid, i.e. "native"
@@ -61,7 +61,7 @@ public:
     {
         Real X[NDIM];
         coord(i, j, k, loc, X);
-        coords->ks_coord(X, r, th);
+        coords.ks_coord(X, r, th);
     }
 
     // Transformations using the cached geometry
@@ -121,7 +121,7 @@ public:
 /**
  * Construct a grid which starts at 0 and covers the entire global space
  */
-Grid::Grid(CoordinateSystem *coordinates, std::vector<int> shape, std::vector<GReal> startx,
+Grid::Grid(CoordinateSystem coordinates, std::vector<int> shape, std::vector<GReal> startx,
             std::vector<GReal> endx, const int ng_in, const int nvar_in)
 {
     nvar = nvar_in;
@@ -147,22 +147,13 @@ Grid::Grid(CoordinateSystem *coordinates, std::vector<int> shape, std::vector<GR
     dx2 = (endx[1] - startx2) / n2;
     dx3 = (endx[2] - startx3) / n3;
 
-    // TODO do I really want to manage this from here?
     coords = coordinates;
-
-    // Allocate and initialize all the device-side caches of geometry data
-    // Since it's axisymmetric and therefore reads are amortized, this is almost
-    // certainly waaaay faster than computing all geometry on the fly
-    gcon_direct = GeomTensor("gcon", NLOC, n1, n2);
-    gcov_direct = GeomTensor("gcov", NLOC, n1, n2);
-    gdet_direct = GeomScalar("gdet", NLOC, n1, n2);
-    conn_direct = GeomConn("conn", n1, n2);
 }
 
 /**
  * Construct a sub-grid starting at some point in a global space
  */
-Grid::Grid(CoordinateSystem *coordinates, std::vector<int> fullshape, std::vector<int> startn,
+Grid::Grid(CoordinateSystem coordinates, std::vector<int> fullshape, std::vector<int> startn,
             std::vector<int> shape, std::vector<GReal> startx, std::vector<GReal> endx,
             const int ng_in, const int nvar_in)
 {
@@ -194,40 +185,49 @@ Grid::Grid(CoordinateSystem *coordinates, std::vector<int> fullshape, std::vecto
     dx3 = (endx[2] - startx3) / n3;
 
     coords = coordinates;
-
-    gcon_direct = GeomTensor("gcon", NLOC, n1, n2);
-    gcov_direct = GeomTensor("gcov", NLOC, n1, n2);
-    gdet_direct = GeomScalar("gdet", NLOC, n1, n2);
-    conn_direct = GeomConn("conn", n1, n2);
 }
 
 void Grid::init_grids() {
+    // Cache geometry.  Probably faster in most cases than re-computing due to amortization of reads
+    gcon_direct = GeomTensor("gcon", NLOC, gn1, gn2);
+    gcov_direct = GeomTensor("gcov", NLOC, gn1, gn2);
+    gdet_direct = GeomScalar("gdet", NLOC, gn1, gn2);
+    conn_direct = GeomConn("conn", gn1, gn2);
+
+    // Make local copies of grids because nothing is sacred and this-> is a mess
+    GeomTensor gcon_local = gcon_direct;
+    GeomTensor gcov_local = gcov_direct;
+    GeomScalar gdet_local = gdet_direct;
+    GeomConn conn_local = conn_direct;
+    CoordinateSystem cs = coords;
+
     // Cache gcon, gcov, gdet, and the connection coeffs
-    Kokkos::parallel_for("init_geom", MDRangePolicy<Rank<2>>({0, 0}, {n1+2*ng, n2+2*ng}),
+    Kokkos::parallel_for("init_geom", MDRangePolicy<Rank<2>>({0, 0}, {gn1, gn2}),
         KOKKOS_LAMBDA (const int i, const int j) {
             GReal X[NDIM];
             Real gcov_loc[NDIM][NDIM], gcon_loc[NDIM][NDIM];
             for (int loc=0; loc < NLOC; ++loc) {
                 coord(i, j, 0, (Loci)loc, X);
-                //coords->gcov_native(X, gcov_loc);
-                //gdet_direct((Loci)loc, i, j) = coords->gcon_native(gcov_loc, gcon_loc);
+                cs.gcov_native(X, gcov_loc);
+                gdet_local(loc, i, j) = cs.gcon_native(gcov_loc, gcon_loc);
                 DLOOP2 {
-                    gcov_direct((Loci)loc, i, j, mu, nu) = gcov_loc[mu][nu];
-                    gcon_direct((Loci)loc, i, j, mu, nu) = gcon_loc[mu][nu];
+                    gcov_local(loc, i, j, mu, nu) = gcov_loc[mu][nu];
+                    gcon_local(loc, i, j, mu, nu) = gcon_loc[mu][nu];
                 }
             }
         }
     );
-    Kokkos::parallel_for("init_conn", MDRangePolicy<Rank<2>>({0, 0}, {n1+2*ng, n2+2*ng}),
-        KOKKOS_LAMBDA (const int i, const int j) {
-            GReal X[NDIM];
-            coord(i, j, 0, Loci::center, X);
-            Real conn_loc[NDIM][NDIM][NDIM];
-            //coords->conn_func(X, conn_loc);
-            DLOOP2 for(int kap=0; kap<NDIM; ++kap)
-                conn_direct(i, j, mu, nu, kap) = conn_loc[mu][nu][kap];
-        }
-    );
+    FLAG("Metric init");
+    // Kokkos::parallel_for("init_conn", MDRangePolicy<Rank<2>>({0, 0}, {n1+2*ng, n2+2*ng}),
+    //     KOKKOS_LAMBDA (const int i, const int j) {
+    //         GReal X[NDIM];
+    //         coord(i, j, 0, Loci::center, X);
+    //         Real conn_loc[NDIM][NDIM][NDIM];
+    //         cs.conn_func(X, conn_loc);
+    //         DLOOP2 for(int kap=0; kap<NDIM; ++kap)
+    //             conn_local(i, j, mu, nu, kap) = conn_loc[mu][nu][kap];
+    //     }
+    // );
 }
 
 /**

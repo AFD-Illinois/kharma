@@ -2,6 +2,7 @@
  * Coordinates applying a time evolution to the fluid
  */
 
+#include "utils.hpp"
 #include "decs.hpp"
 #include "mpi.hpp"
 #include "fluxes.hpp"
@@ -19,12 +20,14 @@ double advance_fluid(const Grid &G, const EOS eos,
  */
 double step(const Grid &G, const EOS eos, const GridVars vars, const double dt)
 {
+    static GReal t;
+
     FLAG("Start step")
     // Don't re-allocate scratch space per step
     // TODO be more civilised about this
     // TODO save a copy of current state when we have to calculate j
-    GridVars vars_tmp("vars_tmp", G.gn1, G.gn2, G.gn3, G.nvar);
-    GridInt pflag("pflag", G.gn1, G.gn2, G.gn3);
+    static GridVars vars_tmp("vars_tmp", G.gn1, G.gn2, G.gn3, G.nvar);
+    static GridInt pflag("pflag", G.gn1, G.gn2, G.gn3);
     FLAG("Allocate temporaries");
 
     // Predictor step
@@ -54,6 +57,9 @@ double step(const Grid &G, const EOS eos, const GridVars vars, const double dt)
     // FLAG("Fixup U_to_P Full");
     // set_bounds(G, S);
     // FLAG("Second bounds Full");
+
+    t += dt;
+    cerr << string_format("t = %.5f", t ) << endl;
 
     // TODO take these from parameters...
     return std::min(0.9*ndt, 1.3*dt);

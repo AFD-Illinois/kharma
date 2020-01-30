@@ -19,6 +19,7 @@
 #include <iostream>
 #include <random>
 #include <sstream>
+#include <chrono>
 
 using namespace Kokkos;
 using namespace std;
@@ -39,7 +40,7 @@ int main(int argc, char **argv)
         int nvar = 8;
 
         CoordinateSystem coords = Minkowski();
-        Grid G(&coords, {sz, sz, sz}, {0.0, 0.0, 0.0}, {1.0, 1.0, 1.0}, ng, nvar);
+        Grid G(coords, {sz, sz, sz}, {0.0, 0.0, 0.0}, {1.0, 1.0, 1.0}, ng, nvar);
         EOS eos = Gammalaw(13/9);
         cerr << "Grid allocated" << std::endl;
         G.init_grids();
@@ -67,6 +68,7 @@ int main(int argc, char **argv)
 
         cerr << "Starting iteration" << std::endl;
 
+        auto start_time = std::chrono::high_resolution_clock::now();
         double dt = 1.e-5;
         for (int out_iter = 0; out_iter < 10; ++out_iter)
         {
@@ -74,6 +76,11 @@ int main(int argc, char **argv)
             {
                 dt = step(G, eos, vars, dt);
             }
+
+            auto now_time = std::chrono::high_resolution_clock::now();
+            std::chrono::duration<double> elapsed = now_time - start_time;
+
+            cerr << "ZCPS " << G.gn1*G.gn2*G.gn3*10*(out_iter+1)/elapsed.count() << endl;
 
             deep_copy(m_vars, vars);
             dump(G, m_vars, Parameters(), string_format("dump_%04d.h5", out_iter+1), true);

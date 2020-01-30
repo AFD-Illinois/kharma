@@ -3,7 +3,7 @@
 # TODO autodetection?  Machinefiles at least?
 
 if [[ "$*" == *"clean"* ]]; then
-  rm -rf build
+  rm -rf build kharm.*
   mkdir build
 fi
 
@@ -17,13 +17,13 @@ cmake3 ..\
     -DKokkos_ENABLE_OPENMP=ON \
     -DKokkos_ENABLE_CUDA=ON \
     -DKokkos_ENABLE_HWLOC=ON \
-    -DKokkos_ARCH_HSW=OFF \
-    -DKokkos_ARCH_BDW=ON \
+    -DKokkos_ARCH_HSW=ON \
+    -DKokkos_ARCH_BDW=OFF \
     -DKokkos_ARCH_KNL=OFF \
     -DKokkos_ARCH_POWER9=OFF \
-    -DKokkos_ARCH_KEPLER35=OFF \
+    -DKokkos_ARCH_KEPLER35=ON \
     -DKokkos_ARCH_MAXWELL52=OFF \
-    -DKokkos_ARCH_VOLTA70=ON \
+    -DKokkos_ARCH_VOLTA70=OFF \
     -DKokkos_ENABLE_CUDA_LAMBDA=ON
 fi
 
