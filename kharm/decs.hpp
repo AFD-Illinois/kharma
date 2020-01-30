@@ -39,13 +39,10 @@ enum Loci{face1, face2, face3, center, corner};
 
 // Data structures common to all k-harm
 // TODO something cute with the type checker to distinguish prims from cons?  Names seem fine.
-#if defined( Kokkos_ENABLE_CUDA )
-// TODO MemSpace, HostSpace
 typedef Kokkos::View<Real***> GridScalar;
 typedef Kokkos::View<int***> GridInt;
 typedef Kokkos::View<Real***[NDIM]> GridVector;
 typedef Kokkos::View<Real****> GridVars;
-typedef Kokkos::View<Real****, Kokkos::HostSpace> GridVarsHost;
 
 // TODO these all start with NLOC but C++ is mean
 typedef Kokkos::View<Real***> GeomScalar;
@@ -53,21 +50,11 @@ typedef Kokkos::View<Real***[NDIM][NDIM]> GeomTensor;
 // Connection coeffs are only recorded at zone center
 typedef Kokkos::View<Real**[NDIM][NDIM][NDIM]> GeomConn;
 
-// typedef Kokkos::View<Real***, Kokkos::HostSpace> GeomScalarHost;
-// typedef Kokkos::View<Real***[NDIM][NDIM], Kokkos::HostSpace> GeomTensorHost;
-// typedef Kokkos::View<Real**[NDIM][NDIM][NDIM], Kokkos::HostSpace> GeomConnHost;
-
+#if defined( Kokkos_ENABLE_CUDA )
+typedef Kokkos::View<Real****, Kokkos::HostSpace> GridVarsHost;
 #warning "Compiling with CUDA"
 #else
-typedef Kokkos::View<Real***> GridScalar;
-typedef Kokkos::View<Real***[NDIM]> GridVector;
-typedef Kokkos::View<Real****> GridVars;
 typedef GridVars GridVarsHost;
-
-typedef Kokkos::View<Real***> GeomScalar;
-typedef Kokkos::View<Real***[NDIM][NDIM]> GeomTensor;
-typedef Kokkos::View<Real**[NDIM][NDIM][NDIM]> GeomConn;
-
 #warning "Compiling with OpenMP Only"
 #endif
 

@@ -14,17 +14,18 @@ double ndt_min(const Grid &G, GridVector ctop);
  * Returns the maximum (ironically) possible timestep, by evaluating
  * the Courant condition in the entire domain and taking the minimum
  */
-Real ndt_min(const Grid &G, GridVector ctop)
+double ndt_min(const Grid &G, GridVector ctop)
 {
-    Real dt_min;
+    double dt_min;
+    Kokkos::Min<double> min_reducer(dt_min);
     Kokkos::parallel_reduce("ndt_min", G.bulk_ng(),
-        KOKKOS_LAMBDA (const int i, const int j, const int k, Real local_min) {
-            Real ndt_zone = 1 / (1 / (G.dx1 / ctop(i, j, k, 1)) +
+        KOKKOS_LAMBDA (const int &i, const int &j, const int &k, double &local_min) {
+            double ndt_zone = 1 / (1 / (G.dx1 / ctop(i, j, k, 1)) +
                                  1 / (G.dx2 / ctop(i, j, k, 2)) +
                                  1 / (G.dx3 / ctop(i, j, k, 3)));
             if (ndt_zone < local_min) local_min = ndt_zone;
         }
-    , Kokkos::Min<Real>(dt_min));
+    , min_reducer);
 
     // TODO MPI, record zone of minimum
 
