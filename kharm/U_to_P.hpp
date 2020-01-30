@@ -40,34 +40,34 @@ KOKKOS_INLINE_FUNCTION int U_to_P(const Grid &G, const GridVars U, const EOS eos
     P(i, j, k, prims::B2) = U(i, j, k, prims::B2) / gdet;
     P(i, j, k, prims::B3) = U(i, j, k, prims::B3) / gdet;
 
-    // Catch negative density
-    if (U(i, j, k, prims::rho) <= 0.)
+#if DEBUG
+    // Catch negative energy or density
+    if (U(i, j, k, prims::rho) <= 0. || U(i, j, k, prims::u) <= 0.)
     {
         return ERR_NEG_INPUT;
     }
+#endif
 
     // Convert from conserved variables to four-vectors
-    Real D = U(i, j, k, prims::rho) * lapse / gdet;
+    Real a_over_g = 1./sqrt(-G.gcon(loc, i, j, 0, 0)) / G.gdet(loc, i, j);
+    Real D = U(i, j, k, prims::rho) * a_over_g;
 
     Real Bcon[NDIM];
     Bcon[0] = 0.;
-    Bcon[1] = U(i, j, k, prims::B1) * lapse / gdet;
-    Bcon[2] = U(i, j, k, prims::B2) * lapse / gdet;
-    Bcon[3] = U(i, j, k, prims::B3) * lapse / gdet;
+    Bcon[1] = U(i, j, k, prims::B1) * a_over_g;
+    Bcon[2] = U(i, j, k, prims::B2) * a_over_g;
+    Bcon[3] = U(i, j, k, prims::B3) * a_over_g;
 
     Real Qcov[NDIM];
-    Qcov[0] = (U(i, j, k, prims::u) - U(i, j, k, prims::rho)) * lapse / gdet;
-    Qcov[1] = U(i, j, k, prims::u1) * lapse / gdet;
-    Qcov[2] = U(i, j, k, prims::u2) * lapse / gdet;
-    Qcov[3] = U(i, j, k, prims::u3) * lapse / gdet;
+    Qcov[0] = (U(i, j, k, prims::u) - U(i, j, k, prims::rho)) * a_over_g;
+    Qcov[1] = U(i, j, k, prims::u1) * a_over_g;
+    Qcov[2] = U(i, j, k, prims::u2) * a_over_g;
+    Qcov[3] = U(i, j, k, prims::u3) * a_over_g;
 
-    Real ncov[NDIM];
-    ncov[0] = -lapse;
-    ncov[1] = 0.;
-    ncov[2] = 0.;
-    ncov[3] = 0.;
+    Real ncov[NDIM] = {-lapse, 0, 0, 0};
 
     // Interlaced upper/lower operation
+    // TODO faster separately?
     Real Bcov[NDIM], Qcon[NDIM], ncon[NDIM];
     for (int mu = 0; mu < NDIM; mu++)
     {
@@ -81,7 +81,11 @@ KOKKOS_INLINE_FUNCTION int U_to_P(const Grid &G, const GridVars U, const EOS eos
             ncon[mu] += G.gcon(Loci::center, i, j, mu, nu) * ncov[nu];
         }
     }
-    //raise_grid(ncov, ncon, G, i, j, k, loc);
+
+    G.lower(Bcon, Bcov, i, j, k, loc);
+    G.raise(Qcov, Qcon, i, j, k, loc);
+    G.raise(ncov, ncon, i, j, k, loc);
+
     Real Bsq = dot(Bcon, Bcov);
     Real QdB = dot(Bcon, Qcov);
     Real Qdotn = dot(Qcon, ncov);

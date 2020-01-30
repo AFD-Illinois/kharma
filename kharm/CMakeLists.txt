@@ -20,13 +20,16 @@ target_link_libraries(${EXE_NAME} hdf5)
 
 # FLAGS
 set(CMAKE_CXX_FLAGS_DEBUG "-Wall")
-if(${CMAKE_BUILD_TYPE})
+if(CMAKE_BUILD_TYPE)
     if(${CMAKE_BUILD_TYPE} STREQUAL "Debug")
+        message("Debug build")
         target_compile_definitions(${EXE_NAME} PUBLIC DEBUG=1)
     else()
+        message("Explicit non-Debug build")
         target_compile_definitions(${EXE_NAME} PUBLIC DEBUG=0)
     endif()
 else()
+    message("Implicit non-Debug build")
     target_compile_definitions(${EXE_NAME} PUBLIC DEBUG=0)
 endif()
 

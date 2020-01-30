@@ -105,7 +105,8 @@ KOKKOS_INLINE_FUNCTION double mhd_gamma_calc(const Grid &G, const GridVars P,
             G.gcov(loc, i, j, 1, 3) * P(i, j, k, prims::u1) * P(i, j, k, prims::u3) +
             G.gcov(loc, i, j, 2, 3) * P(i, j, k, prims::u2) * P(i, j, k, prims::u3));
 
-#if DEBUG
+// TODO handle error propagation from kernels that don't like that kind of thing
+#if 0
     if (qsq < 0.)
     {
         if (fabs(qsq) > 1.E-10)

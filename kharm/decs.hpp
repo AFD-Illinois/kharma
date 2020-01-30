@@ -50,6 +50,9 @@ typedef Kokkos::View<Real***[NDIM][NDIM]> GeomTensor;
 // Connection coeffs are only recorded at zone center
 typedef Kokkos::View<Real**[NDIM][NDIM][NDIM]> GeomConn;
 
+#define KOKKOS_LAMBDA_3D KOKKOS_LAMBDA (const int &i, const int &j, const int &k)
+#define KOKKOS_LAMBDA_VARS KOKKOS_LAMBDA (const int &i, const int &j, const int &k, const int &p)
+
 #if defined( Kokkos_ENABLE_CUDA )
 typedef Kokkos::View<Real****, Kokkos::HostSpace> GridVarsHost;
 #warning "Compiling with CUDA"

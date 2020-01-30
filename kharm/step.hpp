@@ -26,8 +26,8 @@ double step(const Grid &G, const EOS eos, const GridVars vars, const double dt)
     // Don't re-allocate scratch space per step
     // TODO be more civilised about this
     // TODO save a copy of current state when we have to calculate j
-    static GridVars vars_tmp("vars_tmp", G.gn1, G.gn2, G.gn3, G.nvar);
-    static GridInt pflag("pflag", G.gn1, G.gn2, G.gn3);
+    GridVars vars_tmp("vars_tmp", G.gn1, G.gn2, G.gn3, G.nvar);
+    GridInt pflag("pflag", G.gn1, G.gn2, G.gn3);
     FLAG("Allocate temporaries");
 
     // Predictor step
@@ -59,7 +59,23 @@ double step(const Grid &G, const EOS eos, const GridVars vars, const double dt)
     // FLAG("Second bounds Full");
 
     t += dt;
-    cerr << string_format("t = %.5f", t ) << endl;
+
+    #define ERR_NEG_INPUT -100
+    #define ERR_MAX_ITER 1
+    #define ERR_UTSQ 2
+    #define ERR_GAMMA 3
+    #define ERR_RHO_NEGATIVE 6
+    #define ERR_U_NEGATIVE 7
+    #define ERR_BOTH_NEGATIVE 8
+
+    int pflags;
+    Kokkos::parallel_reduce("ndt_min", G.bulk_ng(),
+        KOKKOS_LAMBDA (const int &i, const int &j, const int &k, int &local_flags) {
+            local_flags += (pflag(i, j, k) == ERR_NEG_INPUT);
+        }
+    , pflags);
+
+    cerr << string_format("t = %.5f, %d pflags, %d floors", t, pflags, 0 ) << endl;
 
     // TODO take these from parameters...
     return std::min(0.9*ndt, 1.3*dt);
@@ -95,7 +111,7 @@ double advance_fluid(const Grid &G, const EOS eos,
     // Update Si to Sf
     // TODO get_state_vec equivalent, just pass a slice
     Kokkos::parallel_for("get_dU", G.bulk_ng(),
-        KOKKOS_LAMBDA (const int i, const int j, const int k) {
+        KOKKOS_LAMBDA_3D {
             get_state(G, Ps, i, j, k, Loci::center, Dtmp);
         }
     );
@@ -105,21 +121,21 @@ double advance_fluid(const Grid &G, const EOS eos,
 
     if (Pi != Ps) { // Only need this if Dtmp does not already hold the goods
         Kokkos::parallel_for("get_Pi_D", G.bulk_ng(),
-            KOKKOS_LAMBDA (const int i, const int j, const int k) {
+            KOKKOS_LAMBDA_3D {
                 get_state(G, Pi, i, j, k, Loci::center, Dtmp);
             }
         );
         FLAG("Get PiD");
     }
     Kokkos::parallel_for("get_Ui", G.bulk_ng(),
-        KOKKOS_LAMBDA (const int i, const int j, const int k) {
+        KOKKOS_LAMBDA_3D {
             prim_to_flux(G, Pi, Dtmp, eos, i, j, k, Loci::center, 0, Ui);
         }
     );
     FLAG("Get Ui");
 
     Kokkos::parallel_for("finite_diff", G.bulk_ng_p(),
-        KOKKOS_LAMBDA (const int i, const int j, const int k, const int p) {
+        KOKKOS_LAMBDA_VARS {
                 Uf(i, j, k, p) = Ui(i, j, k, p) +
                                     dt * ((F1(i, j, k, p) - F1(i+1, j, k, p)) / G.dx1 +
                                         (F2(i, j, k, p) - F2(i, j+1, k, p)) / G.dx2 +
@@ -133,7 +149,7 @@ double advance_fluid(const Grid &G, const EOS eos,
     // This seeds the U_to_P iteration
     if (Pi != Pf) {
         Kokkos::parallel_for("memcpy", G.all_0_p(),
-            KOKKOS_LAMBDA (const int i, const int j, const int k, const int p) {
+            KOKKOS_LAMBDA_VARS {
                 Pf(i,j,k,p) = Pi(i,j,k,p);
             }
         );
@@ -141,7 +157,7 @@ double advance_fluid(const Grid &G, const EOS eos,
 
     // Finally, recover the primitives at the end of the substep
     Kokkos::parallel_for("cons_to_prim", G.bulk_ng(),
-        KOKKOS_LAMBDA (const int i, const int j, const int k) {
+        KOKKOS_LAMBDA_3D {
             // TODO ever called on not the center? Maybe w/face fields?
             pflag(i, j, k) = U_to_P(G, Uf, eos, i, j, k, Loci::center, Pf);
         }

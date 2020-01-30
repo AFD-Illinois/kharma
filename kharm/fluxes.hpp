@@ -78,19 +78,19 @@ void lr_to_flux(const Grid &G, const EOS eos, const GridVars Pr, const GridVars 
     GridVars Pll("Pll", G.gn1, G.gn2, G.gn3, G.nvar);
     if (dir == 1) {
         Kokkos::parallel_for("offset_left_1", G.bulk_plus_p(1),
-            KOKKOS_LAMBDA (const int i, const int j, const int k, const int p) {
+            KOKKOS_LAMBDA_VARS {
                 Pll(i, j, k, p) = Pl(i-1, j, k, p);
             }
         );
     } else if (dir == 2) {
         Kokkos::parallel_for("offset_left_2", G.bulk_plus_p(1),
-            KOKKOS_LAMBDA (const int i, const int j, const int k, const int p) {
+            KOKKOS_LAMBDA_VARS {
                 Pll(i, j, k, p) = Pl(i, j-1, k, p);
             }
         );
     } else if (dir == 3) {
         Kokkos::parallel_for("offset_left_3", G.bulk_plus_p(1),
-            KOKKOS_LAMBDA (const int i, const int j, const int k, const int p) {
+            KOKKOS_LAMBDA_VARS {
                 Pll(i, j, k, p) = Pl(i, j, k-1, p);
             }
         );
@@ -99,7 +99,7 @@ void lr_to_flux(const Grid &G, const EOS eos, const GridVars Pr, const GridVars 
     //  ALL THIS IS BULK+1 (or better?)
     // TODO this is almost certainly too much for a single loop. Split and see
     Kokkos::parallel_for("vchar_l", G.bulk_plus(1),
-            KOKKOS_LAMBDA (const int i, const int j, const int k) {
+            KOKKOS_LAMBDA_3D {
                 get_state(G, Pll, i, j, k, loc, Dl);
 
                 prim_to_flux(G, Pll, Dl, eos, i, j, k, loc, 0, Ul); // dir==0 -> U instead of F in direction
@@ -110,7 +110,7 @@ void lr_to_flux(const Grid &G, const EOS eos, const GridVars Pr, const GridVars 
     );
 
     Kokkos::parallel_for("vchar_r", G.bulk_plus(1),
-            KOKKOS_LAMBDA (const int i, const int j, const int k) {
+            KOKKOS_LAMBDA_3D {
                 get_state(G, Pr, i, j, k, loc, Dr);
 
                 prim_to_flux(G, Pr, Dr, eos, i, j, k, loc, 0, Ur);
@@ -122,30 +122,29 @@ void lr_to_flux(const Grid &G, const EOS eos, const GridVars Pr, const GridVars 
 
 
     Kokkos::parallel_for("ctop", G.bulk_plus(1),
-        KOKKOS_LAMBDA (const int i, const int j, const int k)
-        {
+        KOKKOS_LAMBDA_3D {
             // TODO this seems wrong. What should the abs value policy actually be?
             Real cmax = fabs(max(max(0., cmaxL(i, j, k)), cmaxR(i, j, k)));
             Real cmin = fabs(max(max(0., -cminL(i, j, k)), -cminR(i, j, k)));
             ctop(i, j, k, dir) = max(cmax, cmin);
-#if DEBUG
-            if (isnan(1. / ctop(i, j, k, dir)))
-            {
-                std::cerr << format_string("ctop is 0 or NaN at zone: %i %i %i (%i) ", i, j, k, dir) << std::endl;
-                // double X[NDIM];
-                // double r, th;
-                // coord(i, j, k, CENT, X);
-                // bl_coord(X, &r, &th);
-                // printf("(r,th,phi = %f %f %f)\n", r, th, X[3]);
-                throw std::runtime_error("Ctop 0 or NaN, cannot continue")
-            }
-#endif
         }
     );
 
+#if DEBUG
+    // TODO consistent zone_loc tools
+    int nan_count;
+    Kokkos::parallel_reduce("any_nan", G.bulk_plus(1),
+        KOKKOS_LAMBDA (const int& i, const int& j, const int& k, int& nan_count_local) {
+            nan_count_local += isnan(1. / ctop(i, j, k, dir));
+        }
+    , nan_count);
+    if(nan_count > 0) {
+        throw std::runtime_error("Ctop 0 or NaN, cannot continue");
+    }
+#endif
+
     Kokkos::parallel_for("flux", G.bulk_plus_p(1),
-        KOKKOS_LAMBDA (const int i, const int j, const int k, const int p)
-        {
+        KOKKOS_LAMBDA_VARS {
             flux(i, j, k, p) = 0.5 * (fluxL(i, j, k, p) + fluxR(i, j, k, p) -
                                         ctop(i, j, k, dir) * (Ur(i, j, k, p) - Ul(i, j, k, p)));
         }
@@ -161,8 +160,7 @@ void flux_ct(const Grid G, GridVars F1, GridVars F2, GridVars F3)
     GridScalar emf3("emf3", G.gn1, G.gn2, G.gn3);
 
     Kokkos::parallel_for("flux_ct_emf", G.bulk_plus(1),
-        KOKKOS_LAMBDA (const int i, const int j, const int k)
-        {
+        KOKKOS_LAMBDA_3D {
             emf3(i, j, k) = 0.25 * (F1(i, j, k, prims::B2) + F1(i, j-1, k, prims::B2) - F2(i, j, k, prims::B1) - F2(i-1, j, k, prims::B1));
             emf2(i, j, k) = -0.25 * (F1(i, j, k, prims::B3) + F1(i, j, k-1, prims::B3) - F3(i, j, k, prims::B1) - F3(i-1, j, k, prims::B1));
             emf1(i, j, k) = 0.25 * (F2(i, j, k, prims::B3) + F2(i, j, k-1, prims::B3) - F3(i, j, k, prims::B2) - F3(i, j-1, k, prims::B2));
@@ -170,22 +168,19 @@ void flux_ct(const Grid G, GridVars F1, GridVars F2, GridVars F3)
 
         // Rewrite EMFs as fluxes, after Toth
     Kokkos::parallel_for("flux_ct_F1", G.bulk_plus(1),
-        KOKKOS_LAMBDA (const int i, const int j, const int k)
-        {
+        KOKKOS_LAMBDA_3D {
             F1(i, j, k, prims::B1) = 0.;
             F1(i, j, k, prims::B2) =  0.5 * (emf3(i, j, k) + emf3(i, j+1, k));
             F1(i, j, k, prims::B3) = -0.5 * (emf2(i, j, k) + emf2(i, j, k+1));
         });
     Kokkos::parallel_for("flux_ct_F2", G.bulk_plus(1),
-        KOKKOS_LAMBDA (const int i, const int j, const int k)
-        {
+        KOKKOS_LAMBDA_3D {
             F2(i, j, k, prims::B1) = -0.5 * (emf3(i, j, k) + emf3(i+1, j, k));
             F2(i, j, k, prims::B2) = 0.;
             F2(i, j, k, prims::B3) =  0.5 * (emf1(i, j, k) + emf1(i, j, k+1));
         });
     Kokkos::parallel_for("flux_ct_F3", G.bulk_plus(1),
-        KOKKOS_LAMBDA (const int i, const int j, const int k)
-        {
+        KOKKOS_LAMBDA_3D {
             F3(i, j, k, prims::B1) =  0.5 * (emf2(i, j, k) + emf2(i+1, j, k));
             F3(i, j, k, prims::B2) = -0.5 * (emf1(i, j, k) + emf1(i, j+1, k));
             F3(i, j, k, prims::B3) = 0.;
