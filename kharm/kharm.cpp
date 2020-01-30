@@ -83,7 +83,6 @@ int main(int argc, char **argv)
             deep_copy(m_vars, vars);
             dump(G, m_vars, Parameters(), string_format("dump_%04d.h5", out_iter+1), true);
         }
-        delete coords;
     }
     Kokkos::finalize();
 }
