@@ -160,6 +160,32 @@ KOKKOS_INLINE_FUNCTION double mhd_gamma_calc(const Grid &G, const Real P[],
 
     return sqrt(1. + qsq);
 }
+KOKKOS_INLINE_FUNCTION double mhd_gamma_calc(const GeomTensor gcov, const GridVars P,
+                                             const int i, const int j, const int k,
+                                             const Loci loc)
+{
+    Real qsq = gcov(loc, i, j, 1, 1) * P(i, j, k, prims::u1) * P(i, j, k, prims::u1) +
+    gcov(loc, i, j, 2, 2) * P(i, j, k, prims::u2) * P(i, j, k, prims::u2) +
+    gcov(loc, i, j, 3, 3) * P(i, j, k, prims::u3) * P(i, j, k, prims::u3) +
+    2. * (gcov(loc, i, j, 1, 2) * P(i, j, k, prims::u1) * P(i, j, k, prims::u2) +
+            gcov(loc, i, j, 1, 3) * P(i, j, k, prims::u1) * P(i, j, k, prims::u3) +
+            gcov(loc, i, j, 2, 3) * P(i, j, k, prims::u2) * P(i, j, k, prims::u3));
+
+    return sqrt(1. + qsq);
+}
+KOKKOS_INLINE_FUNCTION double mhd_gamma_calc(const GeomTensor gcov, const Real P[],
+                                             const int i, const int j, const int k,
+                                             const Loci loc)
+{
+    Real qsq = gcov(loc, i, j, 1, 1) * P[prims::u1] * P[prims::u1] +
+    gcov(loc, i, j, 2, 2) * P[prims::u2] * P[prims::u2] +
+    gcov(loc, i, j, 3, 3) * P[prims::u3] * P[prims::u3] +
+    2. * (gcov(loc, i, j, 1, 2) * P[prims::u1] * P[prims::u2] +
+            gcov(loc, i, j, 1, 3) * P[prims::u1] * P[prims::u3] +
+            gcov(loc, i, j, 2, 3) * P[prims::u2] * P[prims::u3]);
+
+    return sqrt(1. + qsq);
+}
 
 /**
  *  Find contravariant four-velocity
@@ -206,13 +232,27 @@ KOKKOS_INLINE_FUNCTION void ucon_calc(const Grid &G, const Real P[],
                             gamma * alpha * G.gcon(loc, i, j, 0, mu);
     }
 }
+KOKKOS_INLINE_FUNCTION void ucon_calc(const GeomTensor gcon, const GeomTensor gcov, const GridVars P,
+                                      const int i, const int j, const int k, const Loci loc,
+                                      Real ucon[NDIM])
+{
+    Real gamma = mhd_gamma_calc(gcov, P, i, j, k, loc);
+    Real alpha = 1. / sqrt(-gcon(loc, i, j, 0, 0));
+    ucon[0] = gamma / alpha;
+
+    for (int mu = 1; mu < NDIM; ++mu)
+    {
+        ucon[mu] = P(i, j, k, prims::u1 + mu - 1) -
+                            gamma * alpha * gcon(loc, i, j, 0, mu);
+    }
+}
 
 /**
  * Calculate ucon, ucov, bcon, bcov from primitive variables
  * Note each member of D must be allocated first
  */
 // Fully gridded version
-KOKKOS_INLINE_FUNCTION void get_state(const Grid &G, const GridVars P,
+KOKKOS_INLINE_FUNCTION void get_state(const Grid& G, const GridVars P,
                                       const int i, const int j, const int k, const Loci loc,
                                       GridDerived D)
 {
@@ -222,7 +262,7 @@ KOKKOS_INLINE_FUNCTION void get_state(const Grid &G, const GridVars P,
     G.lower(D.bcon, D.bcov, i, j, k, loc);
 }
 // Half-local version: immediate derived vars
-KOKKOS_INLINE_FUNCTION void get_state(const Grid &G, const GridVars P,
+KOKKOS_INLINE_FUNCTION void get_state(const Grid& G, const GridVars P,
                                       const int i, const int j, const int k, const Loci loc,
                                       Derived D)
 {
@@ -231,8 +271,17 @@ KOKKOS_INLINE_FUNCTION void get_state(const Grid &G, const GridVars P,
     bcon_calc(P, D, i, j, k, D.bcon);
     G.lower(D.bcon, D.bcov, i, j, k, loc);
 }
+KOKKOS_INLINE_FUNCTION void get_state(const GeomTensor gcon, const GeomTensor gcov, const GridVars P,
+                                      const int i, const int j, const int k, const Loci loc,
+                                      Derived D)
+{
+    ucon_calc(gcon, gcov, P, i, j, k, loc, D.ucon);
+    lower(D.ucon, gcov, D.ucov, i, j, k, loc);
+    bcon_calc(P, D, i, j, k, D.bcon);
+    lower(D.bcon, gcov, D.bcov, i, j, k, loc);
+}
 // Full-local: immediate prims and derived
-KOKKOS_INLINE_FUNCTION void get_state(const Grid &G, const Real P[],
+KOKKOS_INLINE_FUNCTION void get_state(const Grid& G, const Real P[],
                                       const int i, const int j, const int k, const Loci loc,
                                       Derived D)
 {
@@ -341,6 +390,38 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const Grid &G, const GridVars P, const 
     for (int p = 0; p < G.nvar; ++p)
         flux[p] *= G.gdet(loc, i, j);
 }
+KOKKOS_INLINE_FUNCTION void prim_to_flux(const GeomScalar gdet, const GridVars P, const Derived D, const EOS eos,
+                                         const int i, const int j, const int k, const Loci loc, const int dir,
+                                         Real flux[])
+{
+    Real mhd[NDIM];
+
+    // Particle number flux
+    flux[prims::rho] = P(i, j, k, prims::rho) * D.ucon[dir];
+
+    mhd_calc(P, D, eos, i, j, k, dir, mhd);
+
+    // MHD stress-energy tensor w/ first index up, second index down
+    flux[prims::u] = mhd[0] + flux[prims::rho];
+    flux[prims::u1] = mhd[1];
+    flux[prims::u2] = mhd[2];
+    flux[prims::u3] = mhd[3];
+
+    // Dual of Maxwell tensor
+    flux[prims::B1] = D.bcon[1] * D.ucon[dir] -
+                               D.bcon[dir] * D.ucon[1];
+    flux[prims::B2] = D.bcon[2] * D.ucon[dir] -
+                               D.bcon[dir] * D.ucon[2];
+    flux[prims::B3] = D.bcon[3] * D.ucon[dir] -
+                               D.bcon[dir] * D.ucon[3];
+
+    // Note for later all passives go here
+    //   flux[KEL] = flux[prims::rho] * P(i, j, k, KEL);
+    //   etc
+
+    for (int p = 0; p < P.extent(3); ++p)
+        flux[p] *= gdet(loc, i, j);
+}
 KOKKOS_INLINE_FUNCTION void prim_to_flux(const Grid &G, const Real P[], const Derived D, const EOS eos,
                                          const int i, const int j, const int k, const Loci loc, const int dir,
                                          Real flux[])
@@ -374,7 +455,10 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const Grid &G, const Real P[], const De
         flux[p] *= G.gdet(loc, i, j);
 }
 
-// Calculate components of magnetosonic velocity from primitive variables
+
+/**
+ *  Calculate components of magnetosonic velocity from primitive variables
+ */
 KOKKOS_INLINE_FUNCTION void mhd_vchar(const Grid &G, const GridVars P, const GridDerived D, const EOS eos,
                                       const int i, const int j, const int k, const Loci loc, const int dir,
                                       GridScalar cmax, GridScalar cmin)
@@ -509,6 +593,65 @@ KOKKOS_INLINE_FUNCTION void mhd_vchar(const Grid &G, const GridVars P, const Der
     {
         Acon[mu] += G.gcon(loc, i, j, mu, nu) * Acov[nu];
         Bcon[mu] += G.gcon(loc, i, j, mu, nu) * Bcov[nu];
+    }
+
+    // Find fast magnetosonic speed
+    bsq = bsq_calc(D);
+    u = P(i, j, k, prims::u);
+    ef = P(i, j, k, prims::rho) + eos.gam * u;
+    ee = bsq + ef;
+    va2 = bsq / ee;
+    cs2 = eos.gam * eos.p(0, u) / ef;
+
+    cms2 = cs2 + va2 - cs2 * va2;
+
+    cms2 = (cms2 < 0) ? SMALL : cms2;
+    cms2 = (cms2 > 1) ? 1 : cms2;
+
+    // Require that speed of wave measured by observer q.ucon is cms2
+    Asq = dot(Acon, Acov);
+    Bsq = dot(Bcon, Bcov);
+    Au = Bu = 0.;
+    DLOOP1
+    {
+        Au += Acov[mu] * D.ucon[mu];
+        Bu += Bcov[mu] * D.ucon[mu];
+    }
+    AB = dot(Acon, Bcov);
+    Au2 = Au * Au;
+    Bu2 = Bu * Bu;
+    AuBu = Au * Bu;
+
+    A = Bu2 - (Bsq + Bu2) * cms2;
+    B = 2. * (AuBu - (AB + AuBu) * cms2);
+    C = Au2 - (Asq + Au2) * cms2;
+
+    discr = B * B - 4. * A * C;
+    discr = (discr < 0.) ? 0. : discr;
+    discr = sqrt(discr);
+
+    vp = -(-B + discr) / (2. * A);
+    vm = -(-B - discr) / (2. * A);
+
+    cmax = (vp > vm) ? vp : vm;
+    cmin = (vp > vm) ? vm : vp;
+}
+KOKKOS_INLINE_FUNCTION void mhd_vchar(const GeomTensor gcon, const GridVars P, const Derived D, const EOS eos,
+                                      const int i, const int j, const int k, const Loci loc, const int dir,
+                                      Real& cmax, Real& cmin)
+{
+    Real discr, vp, vm, bsq, ee, ef, va2, cs2, cms2, u;
+    Real Asq, Bsq, Au, Bu, AB, Au2, Bu2, AuBu, A, B, C;
+    Real Acov[NDIM] = {0}, Bcov[NDIM] = {0};
+    Real Acon[NDIM] = {0}, Bcon[NDIM] = {0};
+
+    Acov[dir] = 1.;
+    Bcov[0] = 1.;
+
+    DLOOP2
+    {
+        Acon[mu] += gcon(loc, i, j, mu, nu) * Acov[nu];
+        Bcon[mu] += gcon(loc, i, j, mu, nu) * Bcov[nu];
     }
 
     // Find fast magnetosonic speed

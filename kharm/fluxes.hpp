@@ -42,10 +42,17 @@ double get_flux(const Grid &G, const EOS eos, const GridVars P, GridVars F1, Gri
     FLAG("Allocate recon temporaries");
 
     // Reconstruct primitives at left and right sides of faces, then find conserved variables
+    auto start_recon = TIME_NOW;
     reconstruct(G, P, Pl, Pr, 1);
     FLAG("Recon 1");
+    auto start_lr = TIME_NOW;
     lr_to_flux(G, eos, Pl, Pr, 1, Loci::face1, F1, ctop);
     FLAG("LR 1");
+    auto end = TIME_NOW;
+#if DEBUG
+    cerr << "Single recon: " << PRINT_SEC(start_lr - start_recon) << endl;
+    cerr << "Single lr: " << PRINT_SEC(end - start_lr) << endl;
+#endif
 
     reconstruct(G, P, Pl, Pr, 2);
     FLAG("Recon 2");
@@ -71,8 +78,9 @@ void lr_to_flux(const Grid &G, const EOS eos, const GridVars Pr, const GridVars 
     // GridVars Ul("Ul", G.gn1, G.gn2, G.gn3, G.nvar);
     // GridVars Ur("Ur", G.gn1, G.gn2, G.gn3, G.nvar);
 
+    auto start_left = TIME_NOW;
+
     // Offset "left" variables by one zone to line up L- and R-fluxes at *faces*
-    // These are un-macro'd to bundle OpenMP thread tasks rather than memory accesses
     GridVars Pll("Pll", G.gn1, G.gn2, G.gn3, G.nvar);
     if (dir == 1) {
         Kokkos::parallel_for("offset_left_1", G.bulk_plus_p(1),
@@ -95,9 +103,24 @@ void lr_to_flux(const Grid &G, const EOS eos, const GridVars Pr, const GridVars 
     }
     FLAG("Left-ization");
 
-    //  ALL THIS IS BULK+1 (or better?)
-    // TODO this is almost certainly too much for a single loop. Split and see
+    // TODO maybe faster to do a subview somehow.  Currently throws runtime errors
+    // const int s1 = (dir == 1), s2 = (dir == 2), s3 = (dir == 3);
+    // auto Pll = subview(Pl, Kokkos::make_pair(s1, G.gn1), Kokkos::make_pair(s2, G.gn2), Kokkos::make_pair(s3, G.gn3), ALL());
+    // if (dir == 1) {
+    //     Pll = subview(Pl, Kokkos::make_pair(1, G.gn1), ALL(), ALL(), ALL());
+    // } else if (dir == 2) {
+    //     Pll = subview(Pl, ALL(), Kokkos::make_pair(1, G.gn2), ALL(), ALL());
+    // } else if (dir == 3) {
+    //     Pll = subview(Pl, ALL(), ALL(), Kokkos::make_pair(1, G.gn3), ALL());
+    // }
+
+    auto start_uber = TIME_NOW;
+
+    //  LOOP FUSION BABY
     const int np = G.nvar;
+    // const GeomTensor gcon = G.gcon_direct;
+    // const GeomTensor gcov = G.gcov_direct;
+    // const GeomScalar gdet = G.gdet_direct;
     Kokkos::parallel_for("uber_flux", G.bulk_plus(1),
             KOKKOS_LAMBDA_3D {
                 Derived Dtmp;
@@ -105,18 +128,27 @@ void lr_to_flux(const Grid &G, const EOS eos, const GridVars Pr, const GridVars 
                 Real Ul[8], Ur[8];
                 Real cmaxL, cmaxR, cminL, cminR;
                 Real cmin, cmax;
+                //get_state(gcon, gcov, Pll, i, j, k, loc, Dtmp);
                 get_state(G, Pll, i, j, k, loc, Dtmp);
 
+                //prim_to_flux(gdet, Pll, Dtmp, eos, i, j, k, loc, 0, Ul); // dir==0 -> U instead of F in direction
+                //prim_to_flux(gdet, Pll, Dtmp, eos, i, j, k, loc, dir, fluxL);
                 prim_to_flux(G, Pll, Dtmp, eos, i, j, k, loc, 0, Ul); // dir==0 -> U instead of F in direction
                 prim_to_flux(G, Pll, Dtmp, eos, i, j, k, loc, dir, fluxL);
 
+
+                //mhd_vchar(gcon, Pll, Dtmp, eos, i, j, k, loc, dir, cmaxL, cminL);
                 mhd_vchar(G, Pll, Dtmp, eos, i, j, k, loc, dir, cmaxL, cminL);
 
+                //get_state(gcon, gcov, Pr, i, j, k, loc, Dtmp);
                 get_state(G, Pr, i, j, k, loc, Dtmp);
 
+                //prim_to_flux(gdet, Pr, Dtmp, eos, i, j, k, loc, 0, Ur);
+                //prim_to_flux(gdet, Pr, Dtmp, eos, i, j, k, loc, dir, fluxR);
                 prim_to_flux(G, Pr, Dtmp, eos, i, j, k, loc, 0, Ur);
                 prim_to_flux(G, Pr, Dtmp, eos, i, j, k, loc, dir, fluxR);
 
+                //mhd_vchar(gcon, Pr, Dtmp, eos, i, j, k, loc, dir, cmaxR, cminR);
                 mhd_vchar(G, Pr, Dtmp, eos, i, j, k, loc, dir, cmaxR, cminR);
 
                 cmax = fabs(max(max(0., cmaxL), cmaxR)); // TODO suspicious use of abs()
@@ -128,6 +160,13 @@ void lr_to_flux(const Grid &G, const EOS eos, const GridVars Pr, const GridVars 
             }
     );
     FLAG("Uber fluxcalc");
+
+    auto end = TIME_NOW;
+
+#if DEBUG
+    cerr << "Left: " << PRINT_SEC(start_uber - start_left) << endl;
+    cerr << "Uber flux: " << PRINT_SEC(end - start_uber) << endl;
+#endif
 
 #if DEBUG
     // TODO consistent zone_loc tools
@@ -152,7 +191,7 @@ void flux_ct(const Grid G, GridVars F1, GridVars F2, GridVars F3)
     GridScalar emf2("emf2", G.gn1, G.gn2, G.gn3);
     GridScalar emf3("emf3", G.gn1, G.gn2, G.gn3);
 
-    Kokkos::parallel_for("flux_ct_emf", G.bulk_plus(1),
+    Kokkos::parallel_for("flux_ct_emf", G.bulk_plus(2),
         KOKKOS_LAMBDA_3D {
             emf3(i, j, k) = 0.25 * (F1(i, j, k, prims::B2) + F1(i, j-1, k, prims::B2) - F2(i, j, k, prims::B1) - F2(i-1, j, k, prims::B1));
             emf2(i, j, k) = -0.25 * (F1(i, j, k, prims::B3) + F1(i, j, k-1, prims::B3) - F3(i, j, k, prims::B1) - F3(i-1, j, k, prims::B1));

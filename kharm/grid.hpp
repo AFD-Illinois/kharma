@@ -26,11 +26,6 @@ using namespace std;
  */
 class Grid
 {
-protected:
-    GeomTensor gcon_direct, gcov_direct;
-    GeomScalar gdet_direct;
-    GeomConn conn_direct;
-
 public:
     // TODO if we ditch AMR we can probably scrape up time making grids static
     // That or *very* disciplined pass-by-ref
@@ -40,6 +35,10 @@ public:
     int n1start, n2start, n3start;
     GReal startx1, startx2, startx3;
     GReal dx1, dx2, dx3;
+
+    GeomTensor gcon_direct, gcov_direct;
+    GeomScalar gdet_direct;
+    GeomConn conn_direct;
 
     CoordinateSystem coords;
 
@@ -274,7 +273,6 @@ KOKKOS_INLINE_FUNCTION void Grid::lower(const Real vcon[NDIM], Real vcov[NDIM],
 {
     DLOOP2 vcov[mu] += gcov(loc, i, j, mu, nu) * vcon[nu];
 }
-
 KOKKOS_INLINE_FUNCTION void Grid::raise(const Real vcov[NDIM], Real vcon[NDIM],
                                         const int i, const int j, const int k, const Loci loc) const
 {
@@ -285,9 +283,19 @@ KOKKOS_INLINE_FUNCTION void Grid::lower(const GridVector vcon, GridVector vcov,
 {
     DLOOP2 vcov(i, j, k, mu) += gcov(loc, i, j, mu, nu) * vcon(i, j, k, nu);
 }
-
 KOKKOS_INLINE_FUNCTION void Grid::raise(const GridVector vcov, GridVector vcon,
                                         const int i, const int j, const int k, const Loci loc) const
 {
     DLOOP2 vcon(i, j, k, mu) += gcon(loc, i, j, mu, nu) * vcov(i, j, k, nu);
+}
+
+KOKKOS_INLINE_FUNCTION void lower(const Real vcon[NDIM], const GeomTensor gcov, Real vcov[NDIM],
+                                        const int i, const int j, const int k, const Loci loc)
+{
+    DLOOP2 vcov[mu] += gcov(loc, i, j, mu, nu) * vcon[nu];
+}
+KOKKOS_INLINE_FUNCTION void lower(const GridVector vcon, const GeomTensor gcov, GridVector vcov,
+                                        const int i, const int j, const int k, const Loci loc)
+{
+    DLOOP2 vcov(i, j, k, mu) += gcov(loc, i, j, mu, nu) * vcon(i, j, k, nu);
 }
