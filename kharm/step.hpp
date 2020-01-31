@@ -92,11 +92,11 @@ double advance_fluid(const Grid &G, const EOS eos,
     GridVars F1("F1", G.gn1, G.gn2, G.gn3, G.nvar);
     GridVars F2("F2", G.gn1, G.gn2, G.gn3, G.nvar);
     GridVars F3("F3", G.gn1, G.gn2, G.gn3, G.nvar);
-    GridDerived Dtmp;
-    Dtmp.ucon = GridVector("Dtmp_ucon", G.gn1, G.gn2, G.gn3);
-    Dtmp.ucov = GridVector("Dtmp_ucov", G.gn1, G.gn2, G.gn3);
-    Dtmp.bcon = GridVector("Dtmp_bcon", G.gn1, G.gn2, G.gn3);
-    Dtmp.bcov = GridVector("Dtmp_bcov", G.gn1, G.gn2, G.gn3);
+    // GridDerived Dtmp;
+    // Dtmp.ucon = GridVector("Dtmp_ucon", G.gn1, G.gn2, G.gn3);
+    // Dtmp.ucov = GridVector("Dtmp_ucov", G.gn1, G.gn2, G.gn3);
+    // Dtmp.bcon = GridVector("Dtmp_bcon", G.gn1, G.gn2, G.gn3);
+    // Dtmp.bcov = GridVector("Dtmp_bcov", G.gn1, G.gn2, G.gn3);
     FLAG("Allocate flux temporaries");
 
     // Get the fluxes in each direction on the zone faces
@@ -113,10 +113,11 @@ double advance_fluid(const Grid &G, const EOS eos,
     // TODO get_state_vec equivalent, just pass a slice
     Kokkos::parallel_for("get_dU", G.bulk_ng(),
         KOKKOS_LAMBDA_3D {
+            Derived Dtmp;
             get_state(G, Ps, i, j, k, Loci::center, Dtmp);
+            get_fluid_source(G, Ps, Dtmp, eos, dU);
         }
     );
-    get_fluid_source(G, Ps, Dtmp, eos, dU); // TODO PAIN POINT
     FLAG("Get source");
 
 

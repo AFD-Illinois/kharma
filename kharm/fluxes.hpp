@@ -68,17 +68,6 @@ void lr_to_flux(const Grid &G, const EOS eos, const GridVars Pr, const GridVars 
     GridVars fluxR("fluxR", G.gn1, G.gn2, G.gn3, G.nvar);
     GridScalar cmaxL("cmaxL", G.gn1, G.gn2, G.gn3), cmaxR("cmaxR", G.gn1, G.gn2, G.gn3);
     GridScalar cminL("cminL", G.gn1, G.gn2, G.gn3), cminR("cminR", G.gn1, G.gn2, G.gn3);
-    // TODO constructors
-    GridDerived Dr;
-    //Dl.ucon = GridVector("Dl_ucon", G.gn1, G.gn2, G.gn3);
-    //Dl.ucov = GridVector("Dl_ucov", G.gn1, G.gn2, G.gn3);
-    //Dl.bcon = GridVector("Dl_bcon", G.gn1, G.gn2, G.gn3);
-    //Dl.bcov = GridVector("Dl_bcov", G.gn1, G.gn2, G.gn3);
-    Dr.ucon = GridVector("Dr_ucon", G.gn1, G.gn2, G.gn3);
-    Dr.ucov = GridVector("Dr_ucov", G.gn1, G.gn2, G.gn3);
-    Dr.bcon = GridVector("Dr_bcon", G.gn1, G.gn2, G.gn3);
-    Dr.bcov = GridVector("Dr_bcov", G.gn1, G.gn2, G.gn3);
-
     GridVars Ul("Ul", G.gn1, G.gn2, G.gn3, G.nvar);
     GridVars Ur("Ur", G.gn1, G.gn2, G.gn3, G.nvar);
 
@@ -106,8 +95,6 @@ void lr_to_flux(const Grid &G, const EOS eos, const GridVars Pr, const GridVars 
     }
     FLAG("Left");
 
-    auto start_left = std::chrono::high_resolution_clock::now();
-
     //  ALL THIS IS BULK+1 (or better?)
     // TODO this is almost certainly too much for a single loop. Split and see
     Kokkos::parallel_for("vchar_l", G.bulk_plus(1),
@@ -121,39 +108,20 @@ void lr_to_flux(const Grid &G, const EOS eos, const GridVars Pr, const GridVars 
                 mhd_vchar(G, Pll, Dl, eos, i, j, k, loc, dir, cmaxL, cminL);
             }
     );
-    auto end_left = TIME_NOW;
     FLAG("vchar_l");
 
-    auto start_right = TIME_NOW;
-    Kokkos::parallel_for("state_r", G.bulk_plus(1),
-        KOKKOS_LAMBDA_3D {
-            get_state(G, Pr, i, j, k, loc, Dr);
-        }
-    );
-
-    auto start_ptof = TIME_NOW;
-    Kokkos::parallel_for("ptof_r", G.bulk_plus(1),
-        KOKKOS_LAMBDA_3D {
-            prim_to_flux(G, Pr, Dr, eos, i, j, k, loc, 0, Ur);
-            prim_to_flux(G, Pr, Dr, eos, i, j, k, loc, dir, fluxR);
-        }
-    );
-
-    auto start_vchar = TIME_NOW;
     Kokkos::parallel_for("vchar_r", G.bulk_plus(1),
-        KOKKOS_LAMBDA_3D {
-            mhd_vchar(G, Pr, Dr, eos, i, j, k, loc, dir, cmaxR, cminR);
-        }
-    );
-    auto end_right = TIME_NOW;
-    FLAG("vchar_r");
+            KOKKOS_LAMBDA_3D {
+                Derived Dr;
+                get_state(G, Pr, i, j, k, loc, Dr);
 
-#if DEBUG
-    cerr << "Left: " << PRINT_SEC(end_left - start_left) << " Right: " << PRINT_SEC(end_right - start_right) << endl;
-    cerr << "Vchar: " << PRINT_SEC(end_right - start_vchar);
-    cerr << " Ptof: " << PRINT_SEC(start_vchar - start_ptof);
-    cerr << " State: " << PRINT_SEC(start_ptof - start_right) << endl;
-#endif
+                prim_to_flux(G, Pr, Dr, eos, i, j, k, loc, 0, Ur); // dir==0 -> U instead of F in direction
+                prim_to_flux(G, Pr, Dr, eos, i, j, k, loc, dir, fluxR);
+
+                mhd_vchar(G, Pr, Dr, eos, i, j, k, loc, dir, cmaxR, cminR);
+            }
+    );
+    FLAG("vchar_r");
 
     Kokkos::parallel_for("ctop", G.bulk_plus(1),
         KOKKOS_LAMBDA_3D {

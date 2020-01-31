@@ -15,7 +15,10 @@
 #define NDIM 4
 #define DLOOP1 for(int mu = 0; mu < NDIM; ++mu)
 #define DLOOP2 for(int mu = 0; mu < NDIM; ++mu) for(int nu = 0; nu < NDIM; ++nu)
-// TODO PLOOP?  Rely on np being defined or get it from G?
+// There may be more than 8 vars!!!!!
+// But only 8 are primitives. Sometimes we just need those together
+#define NPRIM 8
+#define PLOOP for(int mu = 0; mu < NPRIM; ++mu)
 
 // Accuracy for numerical derivatives
 #define DELTA 1.e-5

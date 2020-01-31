@@ -1,9 +1,9 @@
 /**
  * Equation of state
  */
+#pragma once
 
 #include "decs.hpp"
-
 class EOS {
     public:
         Real gam; // TODO eliminate this, and with it the last gamma-law dependence in HARM

@@ -14,10 +14,10 @@ cd build
 
 # TODO Faaaancy autodetection
 if [[ "$*" == *"clean"* ]]; then
-  if true; then # CUDA BUILD
+  if false; then # CUDA BUILD
     cmake3 ..\
     -DCMAKE_CXX_COMPILER=$PWD/../external/kokkos/bin/nvcc_wrapper \
-    -DCMAKE_BUILD_TYPE=Debug \
+    -DCMAKE_BUILD_TYPE=Release \
     -DUSE_MPI=OFF \
     -DKokkos_ENABLE_OPENMP=ON \
     -DKokkos_ENABLE_CUDA=ON \

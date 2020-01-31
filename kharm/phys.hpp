@@ -2,6 +2,7 @@
  * Physics functions
  * Purely device-side functions operating on local data or local parts of matrices.
  */
+#pragma once
 
 #include "decs.hpp"
 
