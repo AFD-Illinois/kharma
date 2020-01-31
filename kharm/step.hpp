@@ -9,6 +9,8 @@
 #include "U_to_P.hpp"
 #include "source.hpp"
 
+#include <chrono>
+
 using namespace std;
 
 // Declarations
@@ -87,19 +89,23 @@ double advance_fluid(const Grid &G, const EOS eos,
                     const double dt, GridInt pflag)
 {
     // GridVars Ui("Ui", G.gn1, G.gn2, G.gn3, G.nvar);
-    GridVars Uf("Uf", G.gn1, G.gn2, G.gn3, G.nvar);
     // GridVars dU("dU", G.gn1, G.gn2, G.gn3, G.nvar);
+    GridVars Uf("Uf", G.gn1, G.gn2, G.gn3, G.nvar);
     GridVars F1("F1", G.gn1, G.gn2, G.gn3, G.nvar);
     GridVars F2("F2", G.gn1, G.gn2, G.gn3, G.nvar);
     GridVars F3("F3", G.gn1, G.gn2, G.gn3, G.nvar);
     FLAG("Allocate flux temporaries");
 
+    auto start_get_flux = TIME_NOW;
     // Get the fluxes in each direction on the zone faces
     double ndt = get_flux(G, eos, Ps, F1, F2, F3);
     FLAG("Get flux");
+
     // Fix boundary fluxes
 //    fix_flux(F1, F2, F3);
 //    FLAG("Fix flux");
+
+    auto start_flux_ct = TIME_NOW;
     // Constrained transport for B
     flux_ct(G, F1, F2, F3);
     FLAG("Flux CT");
@@ -124,17 +130,18 @@ double advance_fluid(const Grid &G, const EOS eos,
     // );
     // FLAG("Get Ui");
 
+    auto start_uberkernel = TIME_NOW;
     const int np = G.nvar;
     Kokkos::parallel_for("finite_diff", G.bulk_ng(),
         KOKKOS_LAMBDA_3D {
             Derived Dtmp;
-            Real dU[12], Ui[12]; // TODO but what if we use >12 vars?
+            Real dU[8], Ui[8]; // TODO but what if we use >12 vars?
             get_state(G, Ps, i, j, k, Loci::center, Dtmp);
             get_fluid_source(G, Ps, Dtmp, eos, i, j, k, dU);
 
             if(Pi != Ps)
                 get_state(G, Pi, i, j, k, Loci::center, Dtmp);
-            prim_to_flux(G, Pi, Dtmp, eos, i, j, k, Loci::center, 0, Ui);
+            prim_to_flux(G, Pi, Dtmp, eos, i, j, k, Loci::center, 0, Ui); // (i, j, k, p)
 
             for(int p=0; p < np; ++p)
                 Uf(i, j, k, p) = Ui[p] +
@@ -146,6 +153,7 @@ double advance_fluid(const Grid &G, const EOS eos,
     );
     FLAG("Finite diff");
 
+    auto start_utop = TIME_NOW;
     // Finally, recover the primitives at the end of the substep
     Kokkos::parallel_for("cons_to_prim", G.bulk_ng(),
         KOKKOS_LAMBDA_3D {
@@ -154,6 +162,15 @@ double advance_fluid(const Grid &G, const EOS eos,
             pflag(i, j, k) = U_to_P(G, Uf, eos, i, j, k, Loci::center, Pf);
         }
     );
+
+    auto end = TIME_NOW;
+
+#if DEBUG
+    cerr << "Get Flux: " << PRINT_SEC(start_flux_ct - start_get_flux) << endl;
+    cerr << "Flux CT: " << PRINT_SEC(start_uberkernel - start_flux_ct) << endl;
+    cerr << "Uberkernel: " << PRINT_SEC(start_utop - start_uberkernel) << endl;
+    cerr << "U_to_P: " << PRINT_SEC(end - start_utop) << endl;
+#endif
 
     return ndt;
 }

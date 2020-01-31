@@ -12,8 +12,13 @@
 
 // Some crazy macros for std::chrono
 // TODO template and make less scary
+#if DEBUG
 #define PRINT_SEC(x) std::chrono::duration_cast<std::chrono::duration<double>>(x).count()
 #define TIME_NOW std::chrono::high_resolution_clock::now()
+#else
+#define PRINT_SEC(x)
+#define TIME_NOW 0.
+#endif
 
 // Thanks https://stackoverflow.com/questions/2342162/stdstring-formatting-like-sprintf
 template<typename ... Args>

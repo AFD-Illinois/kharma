@@ -64,12 +64,12 @@ double get_flux(const Grid &G, const EOS eos, const GridVars P, GridVars F1, Gri
 void lr_to_flux(const Grid &G, const EOS eos, const GridVars Pr, const GridVars Pl,
                 const int dir, const Loci loc, GridVars flux, GridVector ctop)
 {
-    GridVars fluxL("fluxL", G.gn1, G.gn2, G.gn3, G.nvar);
-    GridVars fluxR("fluxR", G.gn1, G.gn2, G.gn3, G.nvar);
-    GridScalar cmaxL("cmaxL", G.gn1, G.gn2, G.gn3), cmaxR("cmaxR", G.gn1, G.gn2, G.gn3);
-    GridScalar cminL("cminL", G.gn1, G.gn2, G.gn3), cminR("cminR", G.gn1, G.gn2, G.gn3);
-    GridVars Ul("Ul", G.gn1, G.gn2, G.gn3, G.nvar);
-    GridVars Ur("Ur", G.gn1, G.gn2, G.gn3, G.nvar);
+    // GridVars fluxL("fluxL", G.gn1, G.gn2, G.gn3, G.nvar);
+    // GridVars fluxR("fluxR", G.gn1, G.gn2, G.gn3, G.nvar);
+    // GridScalar cmaxL("cmaxL", G.gn1, G.gn2, G.gn3), cmaxR("cmaxR", G.gn1, G.gn2, G.gn3);
+    // GridScalar cminL("cminL", G.gn1, G.gn2, G.gn3), cminR("cminR", G.gn1, G.gn2, G.gn3);
+    // GridVars Ul("Ul", G.gn1, G.gn2, G.gn3, G.nvar);
+    // GridVars Ur("Ur", G.gn1, G.gn2, G.gn3, G.nvar);
 
     // Offset "left" variables by one zone to line up L- and R-fluxes at *faces*
     // These are un-macro'd to bundle OpenMP thread tasks rather than memory accesses
@@ -93,45 +93,41 @@ void lr_to_flux(const Grid &G, const EOS eos, const GridVars Pr, const GridVars 
             }
         );
     }
-    FLAG("Left");
+    FLAG("Left-ization");
 
     //  ALL THIS IS BULK+1 (or better?)
     // TODO this is almost certainly too much for a single loop. Split and see
-    Kokkos::parallel_for("vchar_l", G.bulk_plus(1),
+    const int np = G.nvar;
+    Kokkos::parallel_for("uber_flux", G.bulk_plus(1),
             KOKKOS_LAMBDA_3D {
-                Derived Dl;
-                get_state(G, Pll, i, j, k, loc, Dl);
+                Derived Dtmp;
+                Real fluxL[8], fluxR[8];
+                Real Ul[8], Ur[8];
+                Real cmaxL, cmaxR, cminL, cminR;
+                Real cmin, cmax;
+                get_state(G, Pll, i, j, k, loc, Dtmp);
 
-                prim_to_flux(G, Pll, Dl, eos, i, j, k, loc, 0, Ul); // dir==0 -> U instead of F in direction
-                prim_to_flux(G, Pll, Dl, eos, i, j, k, loc, dir, fluxL);
+                prim_to_flux(G, Pll, Dtmp, eos, i, j, k, loc, 0, Ul); // dir==0 -> U instead of F in direction
+                prim_to_flux(G, Pll, Dtmp, eos, i, j, k, loc, dir, fluxL);
 
-                mhd_vchar(G, Pll, Dl, eos, i, j, k, loc, dir, cmaxL, cminL);
+                mhd_vchar(G, Pll, Dtmp, eos, i, j, k, loc, dir, cmaxL, cminL);
+
+                get_state(G, Pr, i, j, k, loc, Dtmp);
+
+                prim_to_flux(G, Pr, Dtmp, eos, i, j, k, loc, 0, Ur);
+                prim_to_flux(G, Pr, Dtmp, eos, i, j, k, loc, dir, fluxR);
+
+                mhd_vchar(G, Pr, Dtmp, eos, i, j, k, loc, dir, cmaxR, cminR);
+
+                cmax = fabs(max(max(0., cmaxL), cmaxR)); // TODO suspicious use of abs()
+                cmin = fabs(max(max(0., -cminL), -cminR));
+                ctop(i, j, k, dir) = max(cmax, cmin);
+
+                for (int p=0; p<np; p++)
+                    flux(i, j, k, p) = 0.5 * (fluxL[p] + fluxR[p] - ctop(i, j, k, dir) * (Ur[p] - Ul[p]));
             }
     );
-    FLAG("vchar_l");
-
-    Kokkos::parallel_for("vchar_r", G.bulk_plus(1),
-            KOKKOS_LAMBDA_3D {
-                Derived Dr;
-                get_state(G, Pr, i, j, k, loc, Dr);
-
-                prim_to_flux(G, Pr, Dr, eos, i, j, k, loc, 0, Ur); // dir==0 -> U instead of F in direction
-                prim_to_flux(G, Pr, Dr, eos, i, j, k, loc, dir, fluxR);
-
-                mhd_vchar(G, Pr, Dr, eos, i, j, k, loc, dir, cmaxR, cminR);
-            }
-    );
-    FLAG("vchar_r");
-
-    Kokkos::parallel_for("ctop", G.bulk_plus(1),
-        KOKKOS_LAMBDA_3D {
-            // TODO this seems wrong. What should the abs value policy actually be?
-            Real cmax = fabs(max(max(0., cmaxL(i, j, k)), cmaxR(i, j, k)));
-            Real cmin = fabs(max(max(0., -cminL(i, j, k)), -cminR(i, j, k)));
-            ctop(i, j, k, dir) = max(cmax, cmin);
-        }
-    );
-    FLAG("ctop");
+    FLAG("Uber fluxcalc");
 
 #if DEBUG
     // TODO consistent zone_loc tools
@@ -146,14 +142,6 @@ void lr_to_flux(const Grid &G, const EOS eos, const GridVars Pr, const GridVars 
     }
     FLAG("any_nan");
 #endif
-
-    Kokkos::parallel_for("flux", G.bulk_plus_p(1),
-        KOKKOS_LAMBDA_VARS {
-            flux(i, j, k, p) = 0.5 * (fluxL(i, j, k, p) + fluxR(i, j, k, p) -
-                                        ctop(i, j, k, dir) * (Ur(i, j, k, p) - Ul(i, j, k, p)));
-        }
-    );
-    FLAG("Flux_calc");
 }
 
 void flux_ct(const Grid G, GridVars F1, GridVars F2, GridVars F3)
