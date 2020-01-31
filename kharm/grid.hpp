@@ -65,14 +65,16 @@ public:
     }
 
     // Transformations using the cached geometry
-    // TODO could dramatically expand with enough loop fission
+    // TODO could dramatically expand usage with enough loop fission
+    // Local versions on arrays
     KOKKOS_INLINE_FUNCTION void lower(const Real vcon[NDIM], Real vcov[NDIM],
                                         const int i, const int j, const int k, const Loci loc) const;
     KOKKOS_INLINE_FUNCTION void raise(const Real vcov[NDIM], Real vcon[NDIM],
                                         const int i, const int j, const int k, const Loci loc) const;
-    KOKKOS_INLINE_FUNCTION void lower_grid(const GridVector vcon, GridVector vcov,
+    // Versions on an element of a GridVector
+    KOKKOS_INLINE_FUNCTION void lower(const GridVector vcon, GridVector vcov,
                                         const int i, const int j, const int k, const Loci loc) const;
-    KOKKOS_INLINE_FUNCTION void raise_grid(const GridVector vcov, GridVector vcon,
+    KOKKOS_INLINE_FUNCTION void raise(const GridVector vcov, GridVector vcon,
                                         const int i, const int j, const int k, const Loci loc) const;
 
     // Indexing
@@ -278,13 +280,13 @@ KOKKOS_INLINE_FUNCTION void Grid::raise(const Real vcov[NDIM], Real vcon[NDIM],
 {
     DLOOP2 vcon[mu] += gcon(loc, i, j, mu, nu) * vcov[nu];
 }
-KOKKOS_INLINE_FUNCTION void Grid::lower_grid(const GridVector vcon, GridVector vcov,
+KOKKOS_INLINE_FUNCTION void Grid::lower(const GridVector vcon, GridVector vcov,
                                         const int i, const int j, const int k, const Loci loc) const
 {
     DLOOP2 vcov(i, j, k, mu) += gcov(loc, i, j, mu, nu) * vcon(i, j, k, nu);
 }
 
-KOKKOS_INLINE_FUNCTION void Grid::raise_grid(const GridVector vcov, GridVector vcon,
+KOKKOS_INLINE_FUNCTION void Grid::raise(const GridVector vcov, GridVector vcon,
                                         const int i, const int j, const int k, const Loci loc) const
 {
     DLOOP2 vcon(i, j, k, mu) += gcon(loc, i, j, mu, nu) * vcov(i, j, k, nu);

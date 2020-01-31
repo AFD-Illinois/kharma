@@ -3,9 +3,17 @@
  */
 #pragma once
 
+#include "decs.hpp"
+
 #include <memory>
 #include <string>
 #include <stdexcept>
+#include <chrono>
+
+// Some crazy macros for std::chrono
+// TODO template and make less scary
+#define PRINT_SEC(x) std::chrono::duration_cast<std::chrono::duration<double>>(x).count()
+#define TIME_NOW std::chrono::high_resolution_clock::now()
 
 // Thanks https://stackoverflow.com/questions/2342162/stdstring-formatting-like-sprintf
 template<typename ... Args>
@@ -16,4 +24,11 @@ std::string string_format( const std::string& format, Args ... args )
     std::unique_ptr<char[]> buf( new char[ size ] ); 
     snprintf( buf.get(), size, format.c_str(), args ... );
     return std::string( buf.get(), buf.get() + size - 1 ); // We don't want the '\0' inside
+}
+
+using namespace std; // This allows CUDA to override max & min
+// Thanks https://stackoverflow.com/questions/9323903/most-efficient-elegant-way-to-clip-a-number
+template <typename T>
+KOKKOS_INLINE_FUNCTION T clip(const T& n, const T& lower, const T& upper) {
+  return max(lower, min(n, upper));
 }

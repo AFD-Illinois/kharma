@@ -5,6 +5,8 @@
 
 #include "decs.hpp"
 
+#include "utils.hpp"
+
 #define ERRTOL 1.e-8
 #define ITERMAX 8
 #define GAMMAMAX 200
@@ -33,7 +35,6 @@ KOKKOS_INLINE_FUNCTION int U_to_P(const Grid &G, const GridVars U, const EOS eos
     int eflag = 0;
 
     Real gdet = G.gdet(loc, i, j);
-    Real lapse = 1./sqrt(-G.gcon(loc, i, j, 0, 0));
 
     // Update the primitive B-fields
     P(i, j, k, prims::B1) = U(i, j, k, prims::B1) / gdet;
@@ -64,10 +65,10 @@ KOKKOS_INLINE_FUNCTION int U_to_P(const Grid &G, const GridVars U, const EOS eos
     Qcov[2] = U(i, j, k, prims::u2) * a_over_g;
     Qcov[3] = U(i, j, k, prims::u3) * a_over_g;
 
-    Real ncov[NDIM] = {-lapse, 0, 0, 0};
+    Real ncov[NDIM] = {-1./sqrt(-G.gcon(loc, i, j, 0, 0)), 0, 0, 0};
 
     // Interlaced upper/lower operation
-    // TODO faster separately?
+    // TODO faster separately? Test
     Real Bcov[NDIM], Qcon[NDIM], ncon[NDIM];
     for (int mu = 0; mu < NDIM; mu++)
     {
@@ -81,19 +82,17 @@ KOKKOS_INLINE_FUNCTION int U_to_P(const Grid &G, const GridVars U, const EOS eos
             ncon[mu] += G.gcon(Loci::center, i, j, mu, nu) * ncov[nu];
         }
     }
-
-    G.lower(Bcon, Bcov, i, j, k, loc);
-    G.raise(Qcov, Qcon, i, j, k, loc);
-    G.raise(ncov, ncon, i, j, k, loc);
+    // G.lower(Bcon, Bcov, i, j, k, loc);
+    // G.raise(Qcov, Qcon, i, j, k, loc);
+    // G.raise(ncov, ncon, i, j, k, loc);
 
     Real Bsq = dot(Bcon, Bcov);
     Real QdB = dot(Bcon, Qcov);
     Real Qdotn = dot(Qcon, ncov);
-    Real Qsq = dot(Qcon, Qcov);
 
     Real Qtcon[NDIM];
     DLOOP1 Qtcon[mu] = Qcon[mu] + ncon[mu] * Qdotn;
-    Real Qtsq = Qsq + Qdotn * Qdotn;
+    Real Qtsq = dot(Qcon, Qcov) + pow(Qdotn, 2);
 
     // Set up eqtn for W'; this is the energy density
     Real Ep = -Qdotn - D;
@@ -114,22 +113,14 @@ KOKKOS_INLINE_FUNCTION int U_to_P(const Grid &G, const GridVars U, const EOS eos
 
     // Attempt a Halley/Muller/Bailey/Press step
     Real dedW = (errp - errm) / (Wpp - Wpm);
-    Real dedW2 = (errp - 2. * err + errm) / (h * h);
-    Real f = 0.5 * err * dedW2 / (dedW * dedW);
-    // Limit size of 2nd derivative correction
-    if (f < -0.3)
-        f = -0.3;
-    if (f > 0.3)
-        f = 0.3;
+    Real dedW2 = (errp - 2. * err + errm) / pow(h,2);
+    Real f = clip(0.5 * err * dedW2 / pow(dedW,2), -0.3, 0.3); // TODO take a hard look at this clip
 
-    Real dW = -err / dedW / (1. - f);
+    Real dW = clip(-err / dedW / (1. - f), -0.5*Wp, 2.0*Wp);
+
+// Wp, dW, err
     Real Wp1 = Wp;
     Real err1 = err;
-    // Limit size of step
-    if (dW < -0.5 * Wp)
-        dW = -0.5 * Wp;
-    if (dW > 2.0 * Wp)
-        dW = 2.0 * Wp;
 
     Wp += dW;
     err = err_eqn(eos, Bsq, D, Ep, QdB, Qtsq, Wp, eflag);
@@ -138,40 +129,29 @@ KOKKOS_INLINE_FUNCTION int U_to_P(const Grid &G, const GridVars U, const EOS eos
     int iter = 0;
     for (iter = 0; iter < ITERMAX; iter++)
     {
-        dW = (Wp1 - Wp) * err / (err - err1);
+        dW = clip((Wp1 - Wp) * err / (err - err1), -0.5*Wp, 2.0*Wp);
 
-        // TODO should this have limit applied?
         Wp1 = Wp;
         err1 = err;
-
-        // Normal secant increment is dW. Also limit guess to between 0.5 and 2
-        // times the current value
-        if (dW < -0.5 * Wp)
-            dW = -0.5 * Wp;
-        if (dW > 2.0 * Wp)
-            dW = 2.0 * Wp;
 
         Wp += dW;
 
         if (fabs(dW / Wp) < ERRTOL)
         {
-            //fprintf(stderr, "Breaking!\n");
             break;
         }
 
         err = err_eqn(eos, Bsq, D, Ep, QdB, Qtsq, Wp, eflag);
-        //fprintf(stderr, "%.15f ", err);
 
         if (fabs(err / Wp) < ERRTOL)
         {
-            //fprintf(stderr, "Breaking!\n");
             break;
         }
     }
     // Failure to converge; do not set primitives other than B
     if (iter == ITERMAX)
     {
-        return (1);
+        return ERR_MAX_ITER;
     }
 
     // Find utsq, gamma, rho0 from Wp
@@ -180,7 +160,7 @@ KOKKOS_INLINE_FUNCTION int U_to_P(const Grid &G, const GridVars U, const EOS eos
     // Find the scalars
     Real rho0 = D / gamma;
     Real W = Wp + D;
-    Real w = W / (gamma * gamma);
+    Real w = W / pow(gamma, 2);
     Real p = eos.p_w(rho0, w);
     Real u = w - (rho0 + p);
 
@@ -218,13 +198,12 @@ KOKKOS_INLINE_FUNCTION Real err_eqn(const EOS eos, const Real Bsq, const Real D,
 
     Real W = Wp + D;
     Real gamma = gamma_func(Bsq, D, QdB, Qtsq, Wp, eflag);
-    Real w = W / (gamma * gamma);
+    Real w = W / pow(gamma,2);
     Real rho0 = D / gamma;
     Real p = eos.p_w(rho0, w);
 
-    Real err = -Ep + Wp - p + 0.5 * Bsq + 0.5 * (Bsq * Qtsq - QdB * QdB) / ((Bsq + W) * (Bsq + W));
+    return -Ep + Wp - p + 0.5 * Bsq + 0.5 * (Bsq * Qtsq - QdB * QdB) / pow((Bsq + W),2);
 
-    return err;
 }
 
 /**
@@ -236,7 +215,7 @@ KOKKOS_INLINE_FUNCTION Real gamma_func(const Real Bsq, const Real D, const Real 
     Real QdBsq, W, utsq, gamma, W2, WB;
 
     QdBsq = QdB * QdB;
-    W = D + Wp;
+    W = Wp + D;
     W2 = W * W;
     WB = W + Bsq;
 
@@ -266,41 +245,12 @@ KOKKOS_INLINE_FUNCTION Real gamma_func(const Real Bsq, const Real D, const Real 
 KOKKOS_INLINE_FUNCTION Real Wp_func(const Grid &G, const GridVars P, const EOS eos,
                                     const int i, const int j, const int k, const Loci loc, int &eflag)
 {
-    Real rho0, u, utsq, gamma;
-    Real utcon[NDIM] = {0}, utcov[NDIM] = {0};
+    Real rho0, u, gamma;
 
     rho0 = P(i, j, k, prims::rho);
     u = P(i, j, k, prims::u);
 
-    utcon[0] = 0.;
-    utcon[1] = P(i, j, k, prims::u1);
-    utcon[2] = P(i, j, k, prims::u2);
-    utcon[3] = P(i, j, k, prims::u3);
-
-    // TODO can this be covered by the fluid_gamma in phys.c????
-    G.lower(utcon, utcov, i, j, k, loc);
-    for (int mu = 0; mu < NDIM; mu++)
-    {
-        utcov[mu] = 0.;
-        for (int nu = 0; nu < NDIM; nu++)
-        {
-            utcov[mu] += G.gcov(Loci::center, i, j, mu, nu) * utcon[nu];
-        }
-    }
-    utsq = dot(utcon, utcov);
-
-    // Catch utsq < 0
-    if ((utsq < 0.) && (fabs(utsq) < 1.e-13))
-    {
-        utsq = fabs(utsq);
-    }
-    if (utsq < 0. || utsq > 1.e3 * GAMMAMAX * GAMMAMAX)
-    {
-        eflag = ERR_UTSQ;
-        return rho0 + u; // Not sure what to do here...
-    }
-
-    gamma = sqrt(1. + fabs(utsq));
+    gamma = mhd_gamma_calc(G, P, i, j, k, loc);
 
     return (rho0 + u + eos.p(rho0, u)) * gamma * gamma - rho0 * gamma;
 }

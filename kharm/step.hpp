@@ -7,6 +7,7 @@
 #include "mpi.hpp"
 #include "fluxes.hpp"
 #include "U_to_P.hpp"
+#include "source.hpp"
 
 using namespace std;
 
@@ -71,7 +72,7 @@ double step(const Grid &G, const EOS eos, const GridVars vars, const double dt)
     int pflags;
     Kokkos::parallel_reduce("ndt_min", G.bulk_ng(),
         KOKKOS_LAMBDA (const int &i, const int &j, const int &k, int &local_flags) {
-            local_flags += (pflag(i, j, k) == ERR_NEG_INPUT);
+            local_flags += (pflag(i, j, k) == ERR_MAX_ITER);
         }
     , pflags);
 
@@ -115,7 +116,7 @@ double advance_fluid(const Grid &G, const EOS eos,
             get_state(G, Ps, i, j, k, Loci::center, Dtmp);
         }
     );
-    get_fluid_source(G, Ps, Dtmp, eos, dU);
+    get_fluid_source(G, Ps, Dtmp, eos, dU); // TODO PAIN POINT
     FLAG("Get source");
 
 

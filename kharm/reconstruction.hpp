@@ -13,7 +13,7 @@ void reconstruct(const Grid &G, const GridVars P, GridVars Pl, GridVars Pr, cons
 {
   if (dir == 1) {
     Kokkos::parallel_for("recon_1", G.bulk_plus_p(1),
-        KOKKOS_LAMBDA (const int i, const int j, const int k, const int p)
+        KOKKOS_LAMBDA_VARS
         {
             weno(P(i-2, j, k, p), P(i-1, j, k, p), P(i, j, k, p),
                  P(i+1, j, k, p), P(i+2, j, k, p),
@@ -22,7 +22,7 @@ void reconstruct(const Grid &G, const GridVars P, GridVars Pl, GridVars Pr, cons
     );
   } else if (dir == 2) {
     Kokkos::parallel_for("recon_2", G.bulk_plus_p(1),
-        KOKKOS_LAMBDA (const int i, const int j, const int k, const int p)
+        KOKKOS_LAMBDA_VARS
         {
             weno(P(i, j-2, k, p), P(i, j-1, k, p), P(i, j, k, p),
                  P(i, j+1, k, p), P(i, j+2, k, p),
@@ -31,7 +31,7 @@ void reconstruct(const Grid &G, const GridVars P, GridVars Pl, GridVars Pr, cons
     );
   } else if (dir == 3) {
     Kokkos::parallel_for("recon_3", G.bulk_plus_p(1),
-        KOKKOS_LAMBDA (const int i, const int j, const int k, const int p)
+        KOKKOS_LAMBDA_VARS
         {
             weno(P(i, j, k-2, p), P(i, j, k-1, p), P(i, j, k, p),
                  P(i, j, k+1, p), P(i, j, k+2, p),

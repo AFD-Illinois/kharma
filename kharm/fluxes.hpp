@@ -6,6 +6,8 @@
 #include "reconstruction.hpp"
 #include "phys.hpp"
 
+#include <chrono>
+
 void lr_to_flux(const Grid &G, const EOS eos, const GridVars Pr, const GridVars Pl,
                 const int dir, const Loci loc, GridVars flux, GridVector ctop);
 double ndt_min(const Grid &G, GridVector ctop);
@@ -37,16 +39,23 @@ double get_flux(const Grid &G, const EOS eos, const GridVars P, GridVars F1, Gri
     GridVars Pl("Pl", G.gn1, G.gn2, G.gn3, G.nvar);
     GridVars Pr("Pr", G.gn1, G.gn2, G.gn3, G.nvar);
     GridVector ctop("ctop", G.gn1, G.gn2, G.gn3);
+    FLAG("Allocate recon temporaries");
 
     // Reconstruct primitives at left and right sides of faces, then find conserved variables
     reconstruct(G, P, Pl, Pr, 1);
+    FLAG("Recon 1");
     lr_to_flux(G, eos, Pl, Pr, 1, Loci::face1, F1, ctop);
+    FLAG("LR 1");
 
     reconstruct(G, P, Pl, Pr, 2);
+    FLAG("Recon 2");
     lr_to_flux(G, eos, Pl, Pr, 2, Loci::face2, F2, ctop);
+    FLAG("LR 2");
 
     reconstruct(G, P, Pl, Pr, 3);
+    FLAG("Recon 3");
     lr_to_flux(G, eos, Pl, Pr, 3, Loci::face3, F3, ctop);
+    FLAG("LR 3");
 
     return ndt_min(G, ctop);
 }
@@ -60,11 +69,11 @@ void lr_to_flux(const Grid &G, const EOS eos, const GridVars Pr, const GridVars 
     GridScalar cmaxL("cmaxL", G.gn1, G.gn2, G.gn3), cmaxR("cmaxR", G.gn1, G.gn2, G.gn3);
     GridScalar cminL("cminL", G.gn1, G.gn2, G.gn3), cminR("cminR", G.gn1, G.gn2, G.gn3);
     // TODO constructors
-    GridDerived Dl, Dr;
-    Dl.ucon = GridVector("Dl_ucon", G.gn1, G.gn2, G.gn3);
-    Dl.ucov = GridVector("Dl_ucov", G.gn1, G.gn2, G.gn3);
-    Dl.bcon = GridVector("Dl_bcon", G.gn1, G.gn2, G.gn3);
-    Dl.bcov = GridVector("Dl_bcov", G.gn1, G.gn2, G.gn3);
+    GridDerived Dr;
+    //Dl.ucon = GridVector("Dl_ucon", G.gn1, G.gn2, G.gn3);
+    //Dl.ucov = GridVector("Dl_ucov", G.gn1, G.gn2, G.gn3);
+    //Dl.bcon = GridVector("Dl_bcon", G.gn1, G.gn2, G.gn3);
+    //Dl.bcov = GridVector("Dl_bcov", G.gn1, G.gn2, G.gn3);
     Dr.ucon = GridVector("Dr_ucon", G.gn1, G.gn2, G.gn3);
     Dr.ucov = GridVector("Dr_ucov", G.gn1, G.gn2, G.gn3);
     Dr.bcon = GridVector("Dr_bcon", G.gn1, G.gn2, G.gn3);
@@ -95,11 +104,15 @@ void lr_to_flux(const Grid &G, const EOS eos, const GridVars Pr, const GridVars 
             }
         );
     }
+    FLAG("Left");
+
+    auto start_left = std::chrono::high_resolution_clock::now();
 
     //  ALL THIS IS BULK+1 (or better?)
     // TODO this is almost certainly too much for a single loop. Split and see
     Kokkos::parallel_for("vchar_l", G.bulk_plus(1),
             KOKKOS_LAMBDA_3D {
+                Derived Dl;
                 get_state(G, Pll, i, j, k, loc, Dl);
 
                 prim_to_flux(G, Pll, Dl, eos, i, j, k, loc, 0, Ul); // dir==0 -> U instead of F in direction
@@ -108,18 +121,39 @@ void lr_to_flux(const Grid &G, const EOS eos, const GridVars Pr, const GridVars 
                 mhd_vchar(G, Pll, Dl, eos, i, j, k, loc, dir, cmaxL, cminL);
             }
     );
+    auto end_left = TIME_NOW;
+    FLAG("vchar_l");
 
-    Kokkos::parallel_for("vchar_r", G.bulk_plus(1),
-            KOKKOS_LAMBDA_3D {
-                get_state(G, Pr, i, j, k, loc, Dr);
-
-                prim_to_flux(G, Pr, Dr, eos, i, j, k, loc, 0, Ur);
-                prim_to_flux(G, Pr, Dr, eos, i, j, k, loc, dir, fluxR);
-
-                mhd_vchar(G, Pr, Dr, eos, i, j, k, loc, dir, cmaxR, cminR);
-            }
+    auto start_right = TIME_NOW;
+    Kokkos::parallel_for("state_r", G.bulk_plus(1),
+        KOKKOS_LAMBDA_3D {
+            get_state(G, Pr, i, j, k, loc, Dr);
+        }
     );
 
+    auto start_ptof = TIME_NOW;
+    Kokkos::parallel_for("ptof_r", G.bulk_plus(1),
+        KOKKOS_LAMBDA_3D {
+            prim_to_flux(G, Pr, Dr, eos, i, j, k, loc, 0, Ur);
+            prim_to_flux(G, Pr, Dr, eos, i, j, k, loc, dir, fluxR);
+        }
+    );
+
+    auto start_vchar = TIME_NOW;
+    Kokkos::parallel_for("vchar_r", G.bulk_plus(1),
+        KOKKOS_LAMBDA_3D {
+            mhd_vchar(G, Pr, Dr, eos, i, j, k, loc, dir, cmaxR, cminR);
+        }
+    );
+    auto end_right = TIME_NOW;
+    FLAG("vchar_r");
+
+#if DEBUG
+    cerr << "Left: " << PRINT_SEC(end_left - start_left) << " Right: " << PRINT_SEC(end_right - start_right) << endl;
+    cerr << "Vchar: " << PRINT_SEC(end_right - start_vchar);
+    cerr << " Ptof: " << PRINT_SEC(start_vchar - start_ptof);
+    cerr << " State: " << PRINT_SEC(start_ptof - start_right) << endl;
+#endif
 
     Kokkos::parallel_for("ctop", G.bulk_plus(1),
         KOKKOS_LAMBDA_3D {
@@ -129,6 +163,7 @@ void lr_to_flux(const Grid &G, const EOS eos, const GridVars Pr, const GridVars 
             ctop(i, j, k, dir) = max(cmax, cmin);
         }
     );
+    FLAG("ctop");
 
 #if DEBUG
     // TODO consistent zone_loc tools
@@ -141,6 +176,7 @@ void lr_to_flux(const Grid &G, const EOS eos, const GridVars Pr, const GridVars 
     if(nan_count > 0) {
         throw std::runtime_error("Ctop 0 or NaN, cannot continue");
     }
+    FLAG("any_nan");
 #endif
 
     Kokkos::parallel_for("flux", G.bulk_plus_p(1),
@@ -149,6 +185,7 @@ void lr_to_flux(const Grid &G, const EOS eos, const GridVars Pr, const GridVars 
                                         ctop(i, j, k, dir) * (Ur(i, j, k, p) - Ul(i, j, k, p)));
         }
     );
+    FLAG("Flux_calc");
 }
 
 void flux_ct(const Grid G, GridVars F1, GridVars F2, GridVars F3)
