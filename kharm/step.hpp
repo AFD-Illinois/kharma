@@ -19,9 +19,9 @@ double advance_fluid(const Grid &G, const EOS eos,
 /**
  * Take one step.  Returns the Courant limit, to be used for the next step
  */
-double step(const Grid &G, const EOS eos, const GridVars vars, const double dt)
+double step(const Grid &G, const EOS eos, GridVars vars, const double dt)
 {
-    static GReal t;
+    static double t;
 
     FLAG("Start step")
     // Don't re-allocate scratch space per step
@@ -86,17 +86,12 @@ double advance_fluid(const Grid &G, const EOS eos,
                     const GridVars Pi, const GridVars Ps, GridVars Pf,
                     const double dt, GridInt pflag)
 {
-    GridVars Ui("Ui", G.gn1, G.gn2, G.gn3, G.nvar);
+    // GridVars Ui("Ui", G.gn1, G.gn2, G.gn3, G.nvar);
     GridVars Uf("Uf", G.gn1, G.gn2, G.gn3, G.nvar);
-    GridVars dU("dU", G.gn1, G.gn2, G.gn3, G.nvar);
+    // GridVars dU("dU", G.gn1, G.gn2, G.gn3, G.nvar);
     GridVars F1("F1", G.gn1, G.gn2, G.gn3, G.nvar);
     GridVars F2("F2", G.gn1, G.gn2, G.gn3, G.nvar);
     GridVars F3("F3", G.gn1, G.gn2, G.gn3, G.nvar);
-    // GridDerived Dtmp;
-    // Dtmp.ucon = GridVector("Dtmp_ucon", G.gn1, G.gn2, G.gn3);
-    // Dtmp.ucov = GridVector("Dtmp_ucov", G.gn1, G.gn2, G.gn3);
-    // Dtmp.bcon = GridVector("Dtmp_bcon", G.gn1, G.gn2, G.gn3);
-    // Dtmp.bcov = GridVector("Dtmp_bcov", G.gn1, G.gn2, G.gn3);
     FLAG("Allocate flux temporaries");
 
     // Get the fluxes in each direction on the zone faces
@@ -111,58 +106,51 @@ double advance_fluid(const Grid &G, const EOS eos,
 
     // Update Si to Sf
     // TODO get_state_vec equivalent, just pass a slice
-    Kokkos::parallel_for("get_dU", G.bulk_ng(),
+    // Kokkos::parallel_for("get_dU", G.bulk_ng(),
+    //     KOKKOS_LAMBDA_3D {
+    //         Derived Dtmp;
+    //         get_state(G, Ps, i, j, k, Loci::center, Dtmp);
+    //         get_fluid_source(G, Ps, Dtmp, eos, i, j, k, dU);
+    //     }
+    // );
+    // FLAG("Get source");
+
+    // Kokkos::parallel_for("get_Ui", G.bulk_ng(),
+    //     KOKKOS_LAMBDA_3D {
+    //         Derived Dtmp;
+    //         get_state(G, Pi, i, j, k, Loci::center, Dtmp);
+    //         prim_to_flux(G, Pi, Dtmp, eos, i, j, k, Loci::center, 0, Ui);
+    //     }
+    // );
+    // FLAG("Get Ui");
+
+    const int np = G.nvar;
+    Kokkos::parallel_for("finite_diff", G.bulk_ng(),
         KOKKOS_LAMBDA_3D {
             Derived Dtmp;
+            Real dU[12], Ui[12]; // TODO but what if we use >12 vars?
             get_state(G, Ps, i, j, k, Loci::center, Dtmp);
             get_fluid_source(G, Ps, Dtmp, eos, i, j, k, dU);
-        }
-    );
-    FLAG("Get source");
 
-
-    // if (Pi != Ps) { // Only need this if Dtmp does not already hold the goods
-    //     Kokkos::parallel_for("get_Pi_D", G.bulk_ng(),
-    //         KOKKOS_LAMBDA_3D {
-    //             get_state(G, Pi, i, j, k, Loci::center, Dtmp);
-    //         }
-    //     );
-    //     FLAG("Get PiD");
-    // }
-    Kokkos::parallel_for("get_Ui", G.bulk_ng(),
-        KOKKOS_LAMBDA_3D {
-            Derived Dtmp;
-            get_state(G, Pi, i, j, k, Loci::center, Dtmp);
+            if(Pi != Ps)
+                get_state(G, Pi, i, j, k, Loci::center, Dtmp);
             prim_to_flux(G, Pi, Dtmp, eos, i, j, k, Loci::center, 0, Ui);
-        }
-    );
-    FLAG("Get Ui");
 
-    Kokkos::parallel_for("finite_diff", G.bulk_ng_p(),
-        KOKKOS_LAMBDA_VARS {
-                Uf(i, j, k, p) = Ui(i, j, k, p) +
+            for(int p=0; p < np; ++p)
+                Uf(i, j, k, p) = Ui[p] +
                                     dt * ((F1(i, j, k, p) - F1(i+1, j, k, p)) / G.dx1 +
                                         (F2(i, j, k, p) - F2(i, j+1, k, p)) / G.dx2 +
                                         (F3(i, j, k, p) - F3(i, j, k+1, p)) / G.dx3 +
-                                        dU(i, j, k, p));
+                                        dU[p]);
         }
     );
     FLAG("Finite diff");
-
-    // If the pointers are different, initialize final state to initial state
-    // This seeds the U_to_P iteration
-    if (Pi != Pf) {
-        Kokkos::parallel_for("memcpy", G.all_0_p(),
-            KOKKOS_LAMBDA_VARS {
-                Pf(i,j,k,p) = Pi(i,j,k,p);
-            }
-        );
-    }
 
     // Finally, recover the primitives at the end of the substep
     Kokkos::parallel_for("cons_to_prim", G.bulk_ng(),
         KOKKOS_LAMBDA_3D {
             // TODO ever called on not the center? Maybe w/face fields?
+            if (Pf != Pi) for(int p=0; p < np; ++p) Pf(i,j,k,p) = Pi(i,j,k,p); // Seed with initial state
             pflag(i, j, k) = U_to_P(G, Uf, eos, i, j, k, Loci::center, Pf);
         }
     );

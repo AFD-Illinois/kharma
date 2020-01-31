@@ -309,6 +309,38 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const Grid &G, const GridVars P, const 
     for (int p = 0; p < G.nvar; ++p)
         flux(i, j, k, p) *= G.gdet(loc, i, j);
 }
+KOKKOS_INLINE_FUNCTION void prim_to_flux(const Grid &G, const GridVars P, const Derived D, const EOS eos,
+                                         const int i, const int j, const int k, const Loci loc, const int dir,
+                                         Real flux[])
+{
+    Real mhd[NDIM];
+
+    // Particle number flux
+    flux[prims::rho] = P(i, j, k, prims::rho) * D.ucon[dir];
+
+    mhd_calc(P, D, eos, i, j, k, dir, mhd);
+
+    // MHD stress-energy tensor w/ first index up, second index down
+    flux[prims::u] = mhd[0] + flux[prims::rho];
+    flux[prims::u1] = mhd[1];
+    flux[prims::u2] = mhd[2];
+    flux[prims::u3] = mhd[3];
+
+    // Dual of Maxwell tensor
+    flux[prims::B1] = D.bcon[1] * D.ucon[dir] -
+                               D.bcon[dir] * D.ucon[1];
+    flux[prims::B2] = D.bcon[2] * D.ucon[dir] -
+                               D.bcon[dir] * D.ucon[2];
+    flux[prims::B3] = D.bcon[3] * D.ucon[dir] -
+                               D.bcon[dir] * D.ucon[3];
+
+    // Note for later all passives go here
+    //   flux[KEL] = flux[prims::rho] * P(i, j, k, KEL);
+    //   etc
+
+    for (int p = 0; p < G.nvar; ++p)
+        flux[p] *= G.gdet(loc, i, j);
+}
 KOKKOS_INLINE_FUNCTION void prim_to_flux(const Grid &G, const Real P[], const Derived D, const EOS eos,
                                          const int i, const int j, const int k, const Loci loc, const int dir,
                                          Real flux[])
