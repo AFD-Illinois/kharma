@@ -115,22 +115,24 @@ double advance_fluid(const Grid &G, const EOS eos,
         KOKKOS_LAMBDA_3D {
             Derived Dtmp;
             get_state(G, Ps, i, j, k, Loci::center, Dtmp);
-            get_fluid_source(G, Ps, Dtmp, eos, dU);
+            get_fluid_source(G, Ps, Dtmp, eos, i, j, k, dU);
         }
     );
     FLAG("Get source");
 
 
-    if (Pi != Ps) { // Only need this if Dtmp does not already hold the goods
-        Kokkos::parallel_for("get_Pi_D", G.bulk_ng(),
-            KOKKOS_LAMBDA_3D {
-                get_state(G, Pi, i, j, k, Loci::center, Dtmp);
-            }
-        );
-        FLAG("Get PiD");
-    }
+    // if (Pi != Ps) { // Only need this if Dtmp does not already hold the goods
+    //     Kokkos::parallel_for("get_Pi_D", G.bulk_ng(),
+    //         KOKKOS_LAMBDA_3D {
+    //             get_state(G, Pi, i, j, k, Loci::center, Dtmp);
+    //         }
+    //     );
+    //     FLAG("Get PiD");
+    // }
     Kokkos::parallel_for("get_Ui", G.bulk_ng(),
         KOKKOS_LAMBDA_3D {
+            Derived Dtmp;
+            get_state(G, Pi, i, j, k, Loci::center, Dtmp);
             prim_to_flux(G, Pi, Dtmp, eos, i, j, k, Loci::center, 0, Ui);
         }
     );

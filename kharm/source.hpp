@@ -92,7 +92,8 @@ KOKKOS_INLINE_FUNCTION void get_fluid_source(const Grid &G, const GridVars P, co
     if (wind) {
         // Need coordinates to evaluate particle addtn rate
         // Note that makes the wind spherical-only
-        Real dP[8], dUw[8];;
+        Real dP[8], dUw[8];
+        Derived dD;
         GReal r, th;
         G.ks_coord(i, j, k, Loci::center, r, th);
 
