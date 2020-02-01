@@ -68,8 +68,8 @@ void get_fluid_source(const Grid &G, const GridVars P, const GridDerived D,
                          });
     }
 }
-
-KOKKOS_INLINE_FUNCTION void get_fluid_source(const Grid &G, const GridVars P, const Derived D,
+template<typename DType>
+KOKKOS_INLINE_FUNCTION void get_fluid_source(const Grid &G, const GridVars P, const DType D,
                       const EOS eos, const int i, const int j, const int k, GridVars dU, bool wind=false)
 {
     Real mhd[NDIM][NDIM];
@@ -114,7 +114,8 @@ KOKKOS_INLINE_FUNCTION void get_fluid_source(const Grid &G, const GridVars P, co
             dU(i, j, k, p) += dUw[p];
     }
 }
-KOKKOS_INLINE_FUNCTION void get_fluid_source(const Grid &G, const GridVars P, const Derived D,
+template<typename DType>
+KOKKOS_INLINE_FUNCTION void get_fluid_source(const Grid &G, const GridVars P, const DType D,
                       const EOS eos, const int i, const int j, const int k, Real dU[], bool wind=false)
 {
     Real mhd[NDIM][NDIM];

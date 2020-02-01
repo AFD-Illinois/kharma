@@ -21,6 +21,8 @@ using namespace std;
 // MPI/grid less than full support
 // Passive variables
 
+#define FAST_CARTESIAN 1
+
 /**
  * Struct holding all parameters related to the logically Cartesian grid.  Purposefully minimal 
  */
@@ -43,11 +45,18 @@ public:
     CoordinateSystem coords;
 
     // TODO see if these slow anything.  Leaves me the option to return them analytically for e.g. very fast Minkowski
+
+#if FAST_CARTESIAN
+    KOKKOS_INLINE_FUNCTION Real gcon(const Loci loc, const int i, const int j, const int mu, const int nu) const {return -2*(mu == 0 && nu == 0) + (mu == nu);}
+    KOKKOS_INLINE_FUNCTION Real gcov(const Loci loc, const int i, const int j, const int mu, const int nu) const {return -2*(mu == 0 && nu == 0) + (mu == nu);}
+    KOKKOS_INLINE_FUNCTION Real gdet(const Loci loc, const int i, const int j) const {return 1;}
+    KOKKOS_INLINE_FUNCTION Real conn(const int i, const int j, const int mu, const int nu, const int lam) const {return 0;}
+#else
     KOKKOS_INLINE_FUNCTION Real gcon(const Loci loc, const int i, const int j, const int mu, const int nu) const {return gcon_direct(loc, i, j, mu, nu);}
     KOKKOS_INLINE_FUNCTION Real gcov(const Loci loc, const int i, const int j, const int mu, const int nu) const {return gcov_direct(loc, i, j, mu, nu);}
     KOKKOS_INLINE_FUNCTION Real gdet(const Loci loc, const int i, const int j) const {return gdet_direct(loc, i, j);}
     KOKKOS_INLINE_FUNCTION Real conn(const int i, const int j, const int mu, const int nu, const int lam) const {return conn_direct(i, j, mu, nu, lam);}
-
+#endif
     // Constructors
     Grid(CoordinateSystem coordinates, std::vector<int> shape, std::vector<GReal> startx, std::vector<GReal> endx, int ng_in=3, int nvar_in=8);
     Grid(CoordinateSystem coordinates, std::vector<int> fullshape, std::vector<int> startn, std::vector<int> shape, std::vector<GReal> startx, std::vector<GReal> endx, int ng_in=3, int nvar_in=8);
@@ -268,6 +277,28 @@ KOKKOS_INLINE_FUNCTION void Grid::coord(const int i, const int j, const int k, L
         break;
     }
 }
+
+#if FAST_CARTESIAN
+KOKKOS_INLINE_FUNCTION void Grid::lower(const Real vcon[NDIM], Real vcov[NDIM],
+                                        const int i, const int j, const int k, const Loci loc) const
+{ DLOOP1 vcov[mu] = (- (mu == 0)) * vcon[mu]; }
+KOKKOS_INLINE_FUNCTION void Grid::raise(const Real vcov[NDIM], Real vcon[NDIM],
+                                        const int i, const int j, const int k, const Loci loc) const
+{ DLOOP1 vcon[mu] = (- (mu == 0)) * vcov[mu]; }
+KOKKOS_INLINE_FUNCTION void Grid::lower(const GridVector vcon, GridVector vcov,
+                                        const int i, const int j, const int k, const Loci loc) const
+{ DLOOP1 vcov(i, j, k, mu) = (- (mu == 0)) * vcon(i, j, k, mu); }
+KOKKOS_INLINE_FUNCTION void Grid::raise(const GridVector vcov, GridVector vcon,
+                                        const int i, const int j, const int k, const Loci loc) const
+{ DLOOP1 vcon(i, j, k, mu) = (- (mu == 0)) * vcov(i, j, k, mu); }
+
+KOKKOS_INLINE_FUNCTION void lower(const Real vcon[NDIM], const GeomTensor gcov, Real vcov[NDIM],
+                                        const int i, const int j, const int k, const Loci loc)
+{ DLOOP1 vcov[mu] = (- (mu == 0)) * vcon[mu]; }
+KOKKOS_INLINE_FUNCTION void lower(const GridVector vcon, const GeomTensor gcov, GridVector vcov,
+                                        const int i, const int j, const int k, const Loci loc)
+{ DLOOP1 vcov(i, j, k, mu) = (- (mu == 0)) * vcon(i, j, k, mu); }
+#else
 KOKKOS_INLINE_FUNCTION void Grid::lower(const Real vcon[NDIM], Real vcov[NDIM],
                                         const int i, const int j, const int k, const Loci loc) const
 {
@@ -299,3 +330,4 @@ KOKKOS_INLINE_FUNCTION void lower(const GridVector vcon, const GeomTensor gcov, 
 {
     DLOOP2 vcov(i, j, k, mu) += gcov(loc, i, j, mu, nu) * vcon(i, j, k, nu);
 }
+#endif

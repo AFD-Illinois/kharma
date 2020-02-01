@@ -30,7 +30,7 @@ KOKKOS_INLINE_FUNCTION double bsq_calc(const Derived D)
  */
 KOKKOS_INLINE_FUNCTION void mhd_calc(const GridVars P, const GridDerived D, const EOS eos,
                                      const int i, const int j, const int k, const int dir,
-                                     Real *mhd)
+                                     Real mhd[NDIM])
 {
     Real u, pgas, w, bsq, eta, ptot;
 
@@ -50,7 +50,7 @@ KOKKOS_INLINE_FUNCTION void mhd_calc(const GridVars P, const GridDerived D, cons
 }
 KOKKOS_INLINE_FUNCTION void mhd_calc(const GridVars P, const Derived D, const EOS eos,
                                      const int i, const int j, const int k, const int dir,
-                                     Real *mhd)
+                                     Real mhd[NDIM])
 {
     Real u, pgas, w, bsq, eta, ptot;
 
@@ -70,7 +70,7 @@ KOKKOS_INLINE_FUNCTION void mhd_calc(const GridVars P, const Derived D, const EO
 }
 KOKKOS_INLINE_FUNCTION void mhd_calc(const Real P[], const Derived D, const EOS eos,
                                      const int i, const int j, const int k, const int dir,
-                                     Real *mhd)
+                                     Real mhd[NDIM])
 {
     Real u, pgas, w, bsq, eta, ptot;
 
@@ -264,7 +264,7 @@ KOKKOS_INLINE_FUNCTION void get_state(const Grid& G, const GridVars P,
 // Half-local version: immediate derived vars
 KOKKOS_INLINE_FUNCTION void get_state(const Grid& G, const GridVars P,
                                       const int i, const int j, const int k, const Loci loc,
-                                      Derived D)
+                                      Derived& D)
 {
     ucon_calc(G, P, i, j, k, loc, D.ucon);
     G.lower(D.ucon, D.ucov, i, j, k, loc);
@@ -273,7 +273,7 @@ KOKKOS_INLINE_FUNCTION void get_state(const Grid& G, const GridVars P,
 }
 KOKKOS_INLINE_FUNCTION void get_state(const GeomTensor gcon, const GeomTensor gcov, const GridVars P,
                                       const int i, const int j, const int k, const Loci loc,
-                                      Derived D)
+                                      Derived& D)
 {
     ucon_calc(gcon, gcov, P, i, j, k, loc, D.ucon);
     lower(D.ucon, gcov, D.ucov, i, j, k, loc);
@@ -283,7 +283,7 @@ KOKKOS_INLINE_FUNCTION void get_state(const GeomTensor gcon, const GeomTensor gc
 // Full-local: immediate prims and derived
 KOKKOS_INLINE_FUNCTION void get_state(const Grid& G, const Real P[],
                                       const int i, const int j, const int k, const Loci loc,
-                                      Derived D)
+                                      Derived& D)
 {
     ucon_calc(G, P, i, j, k, loc, D.ucon);
     G.lower(D.ucon, D.ucov, i, j, k, loc);

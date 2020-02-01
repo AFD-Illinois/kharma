@@ -13,7 +13,7 @@ mkdir -p build
 cd build
 
 if [[ "$*" == *"clean"* ]]; then
-  if true; then # CUDA BUILD
+  if false; then # CUDA BUILD
     cmake3 ..\
     -DCMAKE_CXX_COMPILER=$PWD/../external/kokkos/bin/nvcc_wrapper \
     -DCMAKE_BUILD_TYPE=Release \
@@ -29,8 +29,10 @@ if [[ "$*" == *"clean"* ]]; then
     -DKokkos_ARCH_VOLTA70=ON \
     -DKokkos_ENABLE_CUDA_LAMBDA=ON
   else #KNL BUILD
-    cmake3 ..\
+    cmake ..\
     -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_CXX_FLAGS="-I/opt/apps/intel18/hdf5/1.10.4/x86_64/include/ \
+			-L/opt/apps/intel18/hdf5/1.10.4/x86_64/lib/" \
     -DUSE_MPI=OFF \
     -DKokkos_ENABLE_OPENMP=ON \
     -DKokkos_ENABLE_CUDA=OFF \

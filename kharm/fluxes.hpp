@@ -5,6 +5,7 @@
 #include "decs.hpp"
 #include "reconstruction.hpp"
 #include "phys.hpp"
+#include "debug.hpp"
 
 #include <chrono>
 
@@ -44,6 +45,8 @@ double get_flux(const Grid &G, const EOS eos, const GridVars P, GridVars F1, Gri
     // Reconstruct primitives at left and right sides of faces, then find conserved variables
     auto start_recon = TIME_NOW;
     reconstruct(G, P, Pl, Pr, 1);
+    // print_a_cell(Pl, 11, 12, 13);
+    // print_a_cell(Pr, 11, 12, 13);
     FLAG("Recon 1");
     auto start_lr = TIME_NOW;
     lr_to_flux(G, eos, Pl, Pr, 1, Loci::face1, F1, ctop);

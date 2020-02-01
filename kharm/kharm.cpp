@@ -12,6 +12,7 @@
 #include "grid.hpp"
 #include "io.hpp"
 #include "step.hpp"
+#include "debug.hpp"
 
 #include <cmath>
 #include <iostream>
@@ -45,7 +46,7 @@ int main(int argc, char **argv)
         cerr << "Grid initialized" << std::endl;
 
         // Allocate and initialize host primitives
-        GridVarsHost h_vars_input = mhdmodes(G, 0);
+        GridVarsHost h_vars_input = mhdmodes(G, 1);
         cerr << "Vars initialized" << std::endl;
         dump(G, h_vars_input, Parameters(), "dump_0000.h5", true);
 
@@ -58,7 +59,7 @@ int main(int argc, char **argv)
         // deep_copy would do this automatically if not for ghosts (TODO try that?)
         parallel_for("copy_to_ghosts", G.h_bulk_0_p(),
             KOKKOS_LAMBDA (const int i, const int j, const int k, const int p) {
-                        m_vars(i + G.ng, j + G.ng, k + G.ng, p) = h_vars_input(i, j, k, p);
+                m_vars(i + G.ng, j + G.ng, k + G.ng, p) = h_vars_input(i, j, k, p);
             }
         );
         cerr << "Copying to device" << endl;

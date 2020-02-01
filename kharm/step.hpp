@@ -8,6 +8,7 @@
 #include "fluxes.hpp"
 #include "U_to_P.hpp"
 #include "source.hpp"
+#include "debug.hpp"
 
 #include <chrono>
 
@@ -88,18 +89,30 @@ double advance_fluid(const Grid &G, const EOS eos,
                     const GridVars Pi, const GridVars Ps, GridVars Pf,
                     const double dt, GridInt pflag)
 {
-    // GridVars Ui("Ui", G.gn1, G.gn2, G.gn3, G.nvar);
-    // GridVars dU("dU", G.gn1, G.gn2, G.gn3, G.nvar);
+    GridVars Ui("Ui", G.gn1, G.gn2, G.gn3, G.nvar);
+    GridVars dU("dU", G.gn1, G.gn2, G.gn3, G.nvar);
+    GridDerived Dtmp;
+    Dtmp.ucon = GridVector("Dtmp_ucon", G.gn1, G.gn2, G.gn3);
+    Dtmp.ucov = GridVector("Dtmp_ucov", G.gn1, G.gn2, G.gn3);
+    Dtmp.bcon = GridVector("Dtmp_bcon", G.gn1, G.gn2, G.gn3);
+    Dtmp.bcov = GridVector("Dtmp_bcov", G.gn1, G.gn2, G.gn3);
+
     GridVars Uf("Uf", G.gn1, G.gn2, G.gn3, G.nvar);
     GridVars F1("F1", G.gn1, G.gn2, G.gn3, G.nvar);
     GridVars F2("F2", G.gn1, G.gn2, G.gn3, G.nvar);
     GridVars F3("F3", G.gn1, G.gn2, G.gn3, G.nvar);
     FLAG("Allocate flux temporaries");
 
+    print_a_cell(Pi, 11, 12, 13);
+
     auto start_get_flux = TIME_NOW;
     // Get the fluxes in each direction on the zone faces
     double ndt = get_flux(G, eos, Ps, F1, F2, F3);
     FLAG("Get flux");
+
+    // print_a_cell(F1, 11, 12, 13);
+    // print_a_cell(F2, 11, 12, 13);
+    // print_a_cell(F3, 11, 12, 13);
 
     // Fix boundary fluxes
 //    fix_flux(F1, F2, F3);
@@ -110,32 +123,12 @@ double advance_fluid(const Grid &G, const EOS eos,
     flux_ct(G, F1, F2, F3);
     FLAG("Flux CT");
 
-    // Update Si to Sf
-    // TODO get_state_vec equivalent, just pass a slice
-    // Kokkos::parallel_for("get_dU", G.bulk_ng(),
-    //     KOKKOS_LAMBDA_3D {
-    //         Derived Dtmp;
-    //         get_state(G, Ps, i, j, k, Loci::center, Dtmp);
-    //         get_fluid_source(G, Ps, Dtmp, eos, i, j, k, dU);
-    //     }
-    // );
-    // FLAG("Get source");
-
-    // Kokkos::parallel_for("get_Ui", G.bulk_ng(),
-    //     KOKKOS_LAMBDA_3D {
-    //         Derived Dtmp;
-    //         get_state(G, Pi, i, j, k, Loci::center, Dtmp);
-    //         prim_to_flux(G, Pi, Dtmp, eos, i, j, k, Loci::center, 0, Ui);
-    //     }
-    // );
-    // FLAG("Get Ui");
-
     auto start_uberkernel = TIME_NOW;
     const int np = G.nvar;
-    Kokkos::parallel_for("finite_diff", G.bulk_ng(),
+    Kokkos::parallel_for("uber_diff", G.bulk_ng(),
         KOKKOS_LAMBDA_3D {
-            Derived Dtmp;
-            Real dU[8], Ui[8]; // TODO but what if we use >12 vars?
+            //Derived Dtmp;
+            //Real dU[8], Ui[8]; // TODO but what if we use >12 vars?
             get_state(G, Ps, i, j, k, Loci::center, Dtmp);
             get_fluid_source(G, Ps, Dtmp, eos, i, j, k, dU);
 
@@ -144,14 +137,19 @@ double advance_fluid(const Grid &G, const EOS eos,
             prim_to_flux(G, Pi, Dtmp, eos, i, j, k, Loci::center, 0, Ui); // (i, j, k, p)
 
             for(int p=0; p < np; ++p)
-                Uf(i, j, k, p) = Ui[p] +
+                Uf(i, j, k, p) = Ui(i, j, k, p) +
                                     dt * ((F1(i, j, k, p) - F1(i+1, j, k, p)) / G.dx1 +
                                         (F2(i, j, k, p) - F2(i, j+1, k, p)) / G.dx2 +
                                         (F3(i, j, k, p) - F3(i, j, k+1, p)) / G.dx3 +
-                                        dU[p]);
+                                        dU(i, j, k, p));
         }
     );
-    FLAG("Finite diff");
+    FLAG("Uber diff");
+
+    print_derived_at(Dtmp, 11, 12, 13);
+    print_a_cell(Ui, 11, 12, 13);
+    print_a_cell(dU, 11, 12, 13);
+    print_a_cell(Uf, 11, 12, 13);
 
     auto start_utop = TIME_NOW;
     // Finally, recover the primitives at the end of the substep
@@ -162,6 +160,8 @@ double advance_fluid(const Grid &G, const EOS eos,
             pflag(i, j, k) = U_to_P(G, Uf, eos, i, j, k, Loci::center, Pf);
         }
     );
+
+    print_a_cell(Pf, 11, 12, 13);
 
     auto end = TIME_NOW;
 

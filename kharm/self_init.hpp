@@ -9,7 +9,7 @@
 using namespace std::literals::complex_literals;
 using namespace std;
 
-GridVarsHost mhdmodes(Grid &G, int nmode)
+GridVarsHost mhdmodes(Grid &G, const int nmode)
 {
     // TODO check nprim >= 8
     // TODO init

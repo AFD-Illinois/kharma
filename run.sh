@@ -1,6 +1,8 @@
 #!/bin/bash
 
-
+if ! [ -z "$1" ]; then
+  export OMP_NUM_THREADS=$1
+fi
 
 # Alternately
 export OMP_PROC_BIND=spread
