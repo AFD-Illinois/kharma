@@ -12,9 +12,9 @@
  */
 class CoordinateSystem {
     public:
-        KOKKOS_FUNCTION virtual void ks_coord(GReal X[NDIM], Real &r, Real &th) const {};
-        KOKKOS_FUNCTION virtual void sph_coord(GReal X[NDIM], Real &r, Real &th, Real &phi) const {};
-        KOKKOS_FUNCTION virtual void cart_coord(GReal X[NDIM], Real &x, Real &y, Real &z) const {};
+        KOKKOS_FUNCTION virtual void ks_coord(GReal X[NDIM], GReal &r, GReal &th) const {};
+        KOKKOS_FUNCTION virtual void sph_coord(GReal X[NDIM], GReal &r, GReal &th, GReal &phi) const {};
+        KOKKOS_FUNCTION virtual void cart_coord(GReal X[NDIM], GReal &x, GReal &y, GReal &z) const {};
 
         KOKKOS_FUNCTION virtual void gcov_native(GReal X[NDIM], Real gcov[NDIM][NDIM]) const {};
         KOKKOS_FUNCTION virtual void gcon_native(GReal X[NDIM], Real gcon[NDIM][NDIM]) const {
@@ -26,10 +26,10 @@ class CoordinateSystem {
             Real gdet = invert(&gcov[0][0],&gcon[0][0]);
             return sqrt(fabs(gdet));
         };
-        KOKKOS_FUNCTION void conn_func(GReal X[NDIM], Real conn[NDIM][NDIM][NDIM]) const {
+        KOKKOS_FUNCTION virtual void conn_func(GReal X[NDIM], Real conn[NDIM][NDIM][NDIM]) const {
             Real tmp[NDIM][NDIM][NDIM];
             Real gcon[NDIM][NDIM];
-            Real Xh[NDIM], Xl[NDIM];
+            GReal Xh[NDIM], Xl[NDIM];
             Real gh[NDIM][NDIM];
             Real gl[NDIM][NDIM];
 
@@ -84,10 +84,16 @@ class CoordinateSystem {
  */
 class Minkowski : public CoordinateSystem {
     public:
-        KOKKOS_FUNCTION void cart_coord(GReal X[NDIM], Real &x, Real &y, Real &z) const {x = X[1]; y = X[2]; z = X[3];}
-        KOKKOS_FUNCTION void gcov_native(GReal X[NDIM], Real gcov[NDIM][NDIM]) const {DLOOP1 gcov[mu][mu] = -1 + 2*(mu != 0);}
-        KOKKOS_FUNCTION void gcon_native(GReal X[NDIM], Real gcon[NDIM][NDIM]) const {DLOOP1 gcon[mu][mu] = -1 + 2*(mu != 0);}
-
+        KOKKOS_FUNCTION void cart_coord(GReal X[NDIM], GReal &x, GReal &y, GReal &z) const
+            {x = X[1]; y = X[2]; z = X[3];}
+        KOKKOS_FUNCTION void gcov_native(GReal X[NDIM], Real gcov[NDIM][NDIM]) const
+            {DLOOP2 gcov[mu][nu] = (mu == nu) - 2*(mu == 0 && nu == 0);}
+        KOKKOS_FUNCTION void gcon_native(GReal X[NDIM], Real gcon[NDIM][NDIM]) const
+            {DLOOP2 gcon[mu][nu] = (mu == nu) - 2*(mu == 0 && nu == 0);}
+        KOKKOS_FUNCTION Real gcon_native(GReal gcov[NDIM][NDIM], Real gcon[NDIM][NDIM]) const
+            {DLOOP2 gcon[mu][nu] = (mu == nu) - 2*(mu == 0 && nu == 0); return 1;}
+        KOKKOS_FUNCTION void conn_func(GReal X[NDIM], Real conn[NDIM][NDIM][NDIM]) const
+            {DLOOP2 for(int lam=0; lam<NDIM; ++lam) conn[mu][nu][lam] = 0;}
 };
 
 // class KS : public CoordinateSystem {

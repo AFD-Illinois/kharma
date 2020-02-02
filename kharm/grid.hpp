@@ -5,6 +5,10 @@
  */
 #pragma once
 
+// Option to ignore coordinates entirely,
+// and basically just use flat-space SR
+#define FAST_CARTESIAN 1
+
 #include "decs.hpp"
 #include "coordinates.hpp"
 
@@ -16,12 +20,10 @@ using namespace Kokkos;
 using namespace std;
 
 // TODO list
-// Carrying geometry on grid loci
-// Grid/geom/linalg operations? (considering spatially-symmetric geom?)
-// MPI/grid less than full support
+// More individual grid operations (like raise/lower)?
+// MPI/grid less than full support. Do Domain Decomp here?
 // Passive variables
-
-#define FAST_CARTESIAN 1
+// Asymmetric in x3?
 
 /**
  * Struct holding all parameters related to the logically Cartesian grid.  Purposefully minimal 
@@ -44,8 +46,7 @@ public:
 
     CoordinateSystem coords;
 
-    // TODO see if these slow anything.  Leaves me the option to return them analytically for e.g. very fast Minkowski
-
+    // TODO does abstracting to functions slow the memory-access versions?
 #if FAST_CARTESIAN
     KOKKOS_INLINE_FUNCTION Real gcon(const Loci loc, const int i, const int j, const int mu, const int nu) const {return -2*(mu == 0 && nu == 0) + (mu == nu);}
     KOKKOS_INLINE_FUNCTION Real gcov(const Loci loc, const int i, const int j, const int mu, const int nu) const {return -2*(mu == 0 && nu == 0) + (mu == nu);}
@@ -63,11 +64,11 @@ public:
     void init_grids();
 
     // Coordinates of the grid, i.e. "native"
-    KOKKOS_INLINE_FUNCTION void coord(const int i, const int j, const int k, const Loci loc, Real X[NDIM], bool use_ghosts=true) const;
+    KOKKOS_INLINE_FUNCTION void coord(const int i, const int j, const int k, const Loci loc, GReal X[NDIM], bool use_ghosts=true) const;
     // TODO think on this.  More the domain of coords, but on the other hand, real convenient
-    KOKKOS_INLINE_FUNCTION void ks_coord(const int i, const int j, const int k, const Loci loc, Real &r, Real &th) const
+    KOKKOS_INLINE_FUNCTION void ks_coord(const int i, const int j, const int k, const Loci loc, GReal &r, GReal &th) const
     {
-        Real X[NDIM];
+        GReal X[NDIM];
         coord(i, j, k, loc, X);
         coords.ks_coord(X, r, th);
     }
@@ -102,6 +103,7 @@ public:
             return i*n2*n3 + j*n3 + k;
         }
     }
+    // TODO MPI buffer index
 
     // RangePolicies over grid.  Construct them on the fly to stay slim
     // TODO can I consolidate these?  Types are fun
@@ -134,6 +136,9 @@ public:
 
     MDRangePolicy<Rank<3>> bound_x3_l() const {return MDRangePolicy<Rank<3>>({0, 0, 0}, {n1+2*ng, n2+2*ng, ng});}
     MDRangePolicy<Rank<3>> bound_x3_r() const {return MDRangePolicy<Rank<3>>({0, 0, n3}, {n1+2*ng, n2+2*ng, n3+2*ng});}
+
+    // TODO MPI boundary stuff
+
 
     // TODO Versions for geometry stuff?
 
@@ -208,6 +213,9 @@ Grid::Grid(CoordinateSystem coordinates, std::vector<int> fullshape, std::vector
     coords = coordinates;
 }
 
+#if FAST_CARTESIAN
+void Grid::init_grids() {}
+#else
 void Grid::init_grids() {
     // Cache geometry.  Probably faster in most cases than re-computing due to amortization of reads
     gcon_direct = GeomTensor("gcon", NLOC, gn1, gn2);
@@ -251,12 +259,13 @@ void Grid::init_grids() {
     //     }
     // );
 }
+#endif
 
 /**
  * Function to return native coordinates of a grid
  * TODO is it more instruction-efficient to split this per location or have a separate one for centers?
  */
-KOKKOS_INLINE_FUNCTION void Grid::coord(const int i, const int j, const int k, Loci loc, Real *X, bool use_ghosts) const
+KOKKOS_INLINE_FUNCTION void Grid::coord(const int i, const int j, const int k, Loci loc, GReal *X, bool use_ghosts) const
 {
     X[0] = 0;
     switch (loc)

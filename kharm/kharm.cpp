@@ -25,7 +25,7 @@ using namespace std;
 
 int main(int argc, char **argv)
 {
-    mpi_init(argc, argv);
+    //mpi_init(argc, argv);
     Kokkos::initialize();
     {
         std::cerr << "K/HARM version " << VERSION << std::endl;
@@ -59,7 +59,7 @@ int main(int argc, char **argv)
         // Copy input (no ghosts, Host order) into working array (ghosts, device order)
         // deep_copy would do this automatically if not for ghosts (TODO try that?)
         parallel_for("copy_to_ghosts", G.h_bulk_0_p(),
-            KOKKOS_LAMBDA (const int i, const int j, const int k, const int p) {
+            KOKKOS_LAMBDA_VARS {
                 m_vars(i + G.ng, j + G.ng, k + G.ng, p) = h_vars_input(i, j, k, p);
             }
         );
@@ -69,7 +69,7 @@ int main(int argc, char **argv)
         cerr << "Starting iteration" << endl;
 
         auto walltime_start = std::chrono::high_resolution_clock::now();
-        double dt = 1.e-5;
+        double dt = 1.e-3;
         double t = 0;
         double tend = 0.5;
         double dump_cadence = 0.05;

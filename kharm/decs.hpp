@@ -31,7 +31,8 @@
 typedef double Real;
 //typedef float Real;
 typedef double GReal;
-//typedef fload GReal;
+//typedef float GReal;
+// TODO float Reals crash
 
 typedef std::map<std::string, double> Parameters;
 

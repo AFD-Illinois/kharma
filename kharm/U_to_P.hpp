@@ -65,26 +65,26 @@ KOKKOS_INLINE_FUNCTION int U_to_P(const Grid &G, const GridVars U, const EOS eos
     Qcov[2] = U(i, j, k, prims::u2) * a_over_g;
     Qcov[3] = U(i, j, k, prims::u3) * a_over_g;
 
-    Real ncov[NDIM] = {-1./sqrt(-G.gcon(loc, i, j, 0, 0)), 0, 0, 0};
+    Real ncov[NDIM] = {(Real) -1./sqrt(-G.gcon(loc, i, j, 0, 0)), 0, 0, 0};
 
-    // Interlaced upper/lower operation
-    // TODO faster separately? Test
     Real Bcov[NDIM], Qcon[NDIM], ncon[NDIM];
-    for (int mu = 0; mu < NDIM; mu++)
-    {
-        Bcov[mu] = 0.;
-        Qcon[mu] = 0.;
-        ncon[mu] = 0.;
-        for (int nu = 0; nu < NDIM; nu++)
-        {
-            Bcov[mu] += G.gcov(Loci::center, i, j, mu, nu) * Bcon[nu];
-            Qcon[mu] += G.gcon(Loci::center, i, j, mu, nu) * Qcov[nu];
-            ncon[mu] += G.gcon(Loci::center, i, j, mu, nu) * ncov[nu];
-        }
-    }
-    // G.lower(Bcon, Bcov, i, j, k, loc);
-    // G.raise(Qcov, Qcon, i, j, k, loc);
-    // G.raise(ncov, ncon, i, j, k, loc);
+    // Interlaced upper/lower operation
+    // for (int mu = 0; mu < NDIM; mu++)
+    // {
+    //     Bcov[mu] = 0.;
+    //     Qcon[mu] = 0.;
+    //     ncon[mu] = 0.;
+    //     for (int nu = 0; nu < NDIM; nu++)
+    //     {
+    //         Bcov[mu] += G.gcov(Loci::center, i, j, mu, nu) * Bcon[nu];
+    //         Qcon[mu] += G.gcon(Loci::center, i, j, mu, nu) * Qcov[nu];
+    //         ncon[mu] += G.gcon(Loci::center, i, j, mu, nu) * ncov[nu];
+    //     }
+    // }
+    // I think this is faster. TODO verify
+    G.lower(Bcon, Bcov, i, j, k, loc);
+    G.raise(Qcov, Qcon, i, j, k, loc);
+    G.raise(ncov, ncon, i, j, k, loc);
 
     Real Bsq = dot(Bcon, Bcov);
     Real QdB = dot(Bcon, Qcov);
@@ -129,7 +129,7 @@ KOKKOS_INLINE_FUNCTION int U_to_P(const Grid &G, const GridVars U, const EOS eos
     int iter = 0;
     for (iter = 0; iter < ITERMAX; iter++)
     {
-        dW = clip((Wp1 - Wp) * err / (err - err1), -0.5*Wp, 2.0*Wp);
+        dW = clip((Wp1 - Wp) * err / (err - err1), (Real) -0.5*Wp, (Real) 2.0*Wp);
 
         Wp1 = Wp;
         err1 = err;

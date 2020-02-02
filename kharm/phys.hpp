@@ -5,17 +5,16 @@
 #pragma once
 
 #include "decs.hpp"
-
 #include "eos.hpp"
 
-KOKKOS_INLINE_FUNCTION double bsq_calc(const GridDerived D, const int i, const int j, const int k)
+KOKKOS_INLINE_FUNCTION Real bsq_calc(const GridDerived D, const int i, const int j, const int k)
 {
     return D.bcon(i, j, k, 0) * D.bcov(i, j, k, 0) +
            D.bcon(i, j, k, 1) * D.bcov(i, j, k, 1) +
            D.bcon(i, j, k, 2) * D.bcov(i, j, k, 2) +
            D.bcon(i, j, k, 3) * D.bcov(i, j, k, 3);
 }
-KOKKOS_INLINE_FUNCTION double bsq_calc(const Derived D)
+KOKKOS_INLINE_FUNCTION Real bsq_calc(const Derived D)
 {
     return D.bcon[0] * D.bcov[0] +
            D.bcon[1] * D.bcov[1] +
@@ -148,7 +147,7 @@ KOKKOS_INLINE_FUNCTION void bcon_calc(const Real P[], Derived D,
 }
 
 // Find gamma-factor wrt normal observer
-KOKKOS_INLINE_FUNCTION double mhd_gamma_calc(const Grid &G, const GridVars P,
+KOKKOS_INLINE_FUNCTION Real mhd_gamma_calc(const Grid &G, const GridVars P,
                                              const int i, const int j, const int k,
                                              const Loci loc)
 {
@@ -161,7 +160,7 @@ KOKKOS_INLINE_FUNCTION double mhd_gamma_calc(const Grid &G, const GridVars P,
 
     return sqrt(1. + qsq);
 }
-KOKKOS_INLINE_FUNCTION double mhd_gamma_calc(const Grid &G, const Real P[],
+KOKKOS_INLINE_FUNCTION Real mhd_gamma_calc(const Grid &G, const Real P[],
                                              const int i, const int j, const int k,
                                              const Loci loc)
 {
@@ -174,7 +173,7 @@ KOKKOS_INLINE_FUNCTION double mhd_gamma_calc(const Grid &G, const Real P[],
 
     return sqrt(1. + qsq);
 }
-KOKKOS_INLINE_FUNCTION double mhd_gamma_calc(const GeomTensor gcov, const GridVars P,
+KOKKOS_INLINE_FUNCTION Real mhd_gamma_calc(const GeomTensor gcov, const GridVars P,
                                              const int i, const int j, const int k,
                                              const Loci loc)
 {
@@ -187,7 +186,7 @@ KOKKOS_INLINE_FUNCTION double mhd_gamma_calc(const GeomTensor gcov, const GridVa
 
     return sqrt(1. + qsq);
 }
-KOKKOS_INLINE_FUNCTION double mhd_gamma_calc(const GeomTensor gcov, const Real P[],
+KOKKOS_INLINE_FUNCTION Real mhd_gamma_calc(const GeomTensor gcov, const Real P[],
                                              const int i, const int j, const int k,
                                              const Loci loc)
 {

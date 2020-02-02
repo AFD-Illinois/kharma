@@ -11,7 +11,7 @@
 #include <chrono>
 
 // Some crazy macros for std::chrono
-// TODO template and make less scary
+// TODO make this less scary & weird
 #if DEBUG
 #define PRINT_SEC(x) std::chrono::duration_cast<std::chrono::duration<double>>(x).count()
 #define TIME_NOW std::chrono::high_resolution_clock::now()
