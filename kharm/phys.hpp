@@ -32,14 +32,26 @@ KOKKOS_INLINE_FUNCTION void mhd_calc(const GridVars P, const GridDerived D, cons
                                      const int i, const int j, const int k, const int dir,
                                      Real mhd[NDIM])
 {
-    Real u, pgas, w, bsq, eta, ptot;
+    Real rho, u, pgas, w, bsq, eta, ptot;
 
+    rho = P(i, j, k, prims::rho);
     u = P(i, j, k, prims::u);
-    pgas = eos.p(0, u);
-    w = pgas + P(i, j, k, prims::rho) + u;
+    pgas = eos.p(rho, u);
+    w = pgas + rho + u;
     bsq = bsq_calc(D, i, j, k);
     eta = w + bsq;
     ptot = pgas + 0.5 * bsq;
+
+#if defined( Kokkos_ENABLE_CUDA )
+#else
+#if DEBUG
+    if (i==11 && j==12 && k==13) {
+        cerr << string_format("rho, u, pgas, w, bsq, eta, ptot: %f %f %f %f %f %f %f",
+                            rho, u, pgas, w, bsq, eta, ptot) << endl;
+        cin.get();
+    }
+#endif
+#endif
 
     DLOOP1
     {
@@ -52,11 +64,12 @@ KOKKOS_INLINE_FUNCTION void mhd_calc(const GridVars P, const Derived D, const EO
                                      const int i, const int j, const int k, const int dir,
                                      Real mhd[NDIM])
 {
-    Real u, pgas, w, bsq, eta, ptot;
+    Real rho, u, pgas, w, bsq, eta, ptot;
 
+    rho = P(i, j, k, prims::rho);
     u = P(i, j, k, prims::u);
-    pgas = eos.p(0, u);
-    w = pgas + P(i, j, k, prims::rho) + u;
+    pgas = eos.p(rho, u);
+    w = pgas + rho + u;
     bsq = bsq_calc(D);
     eta = w + bsq;
     ptot = pgas + 0.5 * bsq;
@@ -72,11 +85,12 @@ KOKKOS_INLINE_FUNCTION void mhd_calc(const Real P[], const Derived D, const EOS 
                                      const int i, const int j, const int k, const int dir,
                                      Real mhd[NDIM])
 {
-    Real u, pgas, w, bsq, eta, ptot;
+    Real rho, u, pgas, w, bsq, eta, ptot;
 
+    rho = P[prims::rho];
     u = P[prims::u];
-    pgas = eos.p(0, u);
-    w = pgas + P[prims::rho] + u;
+    pgas = eos.p(rho, u);
+    w = pgas + rho + u;
     bsq = bsq_calc(D);
     eta = w + bsq;
     ptot = pgas + 0.5 * bsq;
@@ -109,8 +123,8 @@ KOKKOS_INLINE_FUNCTION void bcon_calc(const GridVars P, Derived D,
                                       Real bcon[NDIM])
 {
     bcon[0] = P(i, j, k, prims::B1) * D.ucov[1] +
-                       P(i, j, k, prims::B2) * D.ucov[2] +
-                       P(i, j, k, prims::B3) * D.ucov[3];
+                P(i, j, k, prims::B2) * D.ucov[2] +
+                P(i, j, k, prims::B3) * D.ucov[3];
     for (int mu = 1; mu < NDIM; ++mu)
     {
         bcon[mu] = (P(i, j, k, prims::B1 - 1 + mu) +
@@ -123,8 +137,8 @@ KOKKOS_INLINE_FUNCTION void bcon_calc(const Real P[], Derived D,
                                       Real bcon[NDIM])
 {
     bcon[0] = P[prims::B1] * D.ucov[1] +
-                       P[prims::B2] * D.ucov[2] +
-                       P[prims::B3] * D.ucov[3];
+                P[prims::B2] * D.ucov[2] +
+                P[prims::B3] * D.ucov[3];
     for (int mu = 1; mu < NDIM; ++mu)
     {
         bcon[mu] = (P[prims::B1 - 1 + mu] +
@@ -194,8 +208,8 @@ KOKKOS_INLINE_FUNCTION void ucon_calc(const Grid &G, const GridVars P,
                                       const int i, const int j, const int k, const Loci loc,
                                       GridVector ucon)
 {
-    double gamma = mhd_gamma_calc(G, P, i, j, k, loc);
-    double alpha = 1. / sqrt(-G.gcon(loc, i, j, 0, 0));
+    Real gamma = mhd_gamma_calc(G, P, i, j, k, loc);
+    Real alpha = 1. / sqrt(-G.gcon(loc, i, j, 0, 0));
     ucon(i, j, k, 0) = gamma / alpha;
 
     for (int mu = 1; mu < NDIM; ++mu)
@@ -306,7 +320,7 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const Grid &G, const GridVars P, const 
     mhd_calc(P, D, eos, i, j, k, dir, mhd);
 
     // MHD stress-energy tensor w/ first index up, second index down
-    flux(i, j, k, prims::u) = mhd[0] + flux(i, j, k, prims::rho);
+    flux(i, j, k, prims::u) =  mhd[0] + flux(i, j, k, prims::rho);
     flux(i, j, k, prims::u1) = mhd[1];
     flux(i, j, k, prims::u2) = mhd[2];
     flux(i, j, k, prims::u3) = mhd[3];

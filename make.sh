@@ -13,7 +13,7 @@ mkdir -p build
 cd build
 
 if [[ "$*" == *"clean"* ]]; then
-  if false; then # CUDA BUILD
+  if true; then # CUDA BUILD
     cmake3 ..\
     -DCMAKE_CXX_COMPILER=$PWD/../external/kokkos/bin/nvcc_wrapper \
     -DCMAKE_BUILD_TYPE=Release \
@@ -21,12 +21,12 @@ if [[ "$*" == *"clean"* ]]; then
     -DKokkos_ENABLE_OPENMP=ON \
     -DKokkos_ENABLE_CUDA=ON \
     -DKokkos_ENABLE_HWLOC=ON \
-    -DKokkos_ARCH_HSW=OFF \
-    -DKokkos_ARCH_BDW=ON \
+    -DKokkos_ARCH_HSW=ON \
+    -DKokkos_ARCH_BDW=OFF \
     -DKokkos_ARCH_POWER9=OFF \
-    -DKokkos_ARCH_KEPLER35=OFF \
+    -DKokkos_ARCH_KEPLER35=ON \
     -DKokkos_ARCH_MAXWELL52=OFF \
-    -DKokkos_ARCH_VOLTA70=ON \
+    -DKokkos_ARCH_VOLTA70=OFF \
     -DKokkos_ENABLE_CUDA_LAMBDA=ON
   else #KNL BUILD
     cmake ..\
@@ -37,9 +37,9 @@ if [[ "$*" == *"clean"* ]]; then
     -DKokkos_ENABLE_OPENMP=ON \
     -DKokkos_ENABLE_CUDA=OFF \
     -DKokkos_ENABLE_HWLOC=ON \
-    -DKokkos_ARCH_HSW=OFF \
+    -DKokkos_ARCH_HSW=ON \
     -DKokkos_ARCH_BDW=OFF \
-    -DKokkos_ARCH_KNL=ON \
+    -DKokkos_ARCH_KNL=OFF \
     -DKokkos_ARCH_POWER9=OFF
   fi
 fi

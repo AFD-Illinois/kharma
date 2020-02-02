@@ -25,24 +25,23 @@ void print_a_grid_cell(const GTType g, const int i, const int j) {
                             h(Loci::center,i,j,0,0), h(Loci::center,i,j,1,1), h(Loci::center,i,j,1,1),
                             h(Loci::center,i,j,1,1)) << std::endl;
 }
+void print_a_scalar(const GridScalar scalar, const int i, const int j, const int k) {
+    auto scalar_h = Kokkos::create_mirror_view(scalar);
+    Kokkos::deep_copy(scalar_h, scalar);
+    std::cerr << scalar_h.label() << string_format(" at %d %d %d is %f", i, j, k, scalar_h(i, j, k)) << std::endl;
+
+}
+void print_a_vec(const GridVector vec, const int i, const int j, const int k) {
+    auto vec_h = Kokkos::create_mirror_view(vec);
+    Kokkos::deep_copy(vec_h, vec);
+    std::cerr << vec_h.label() << string_format(" at %d %d %d is [%f %f %f %f]", i, j, k,
+                        vec_h(i,j,k,0), vec_h(i,j,k,1), vec_h(i,j,k,2), vec_h(i,j,k,3)) << std::endl;
+
+}
 void print_derived_at(const GridDerived D, const int i, const int j, const int k) {
-    auto ucon_h = Kokkos::create_mirror_view(D.ucon);
-    auto ucov_h = Kokkos::create_mirror_view(D.ucov);
-    auto bcon_h = Kokkos::create_mirror_view(D.bcon);
-    auto bcov_h = Kokkos::create_mirror_view(D.bcov);
-
-    Kokkos::deep_copy(ucon_h, D.ucon);
-    Kokkos::deep_copy(ucov_h, D.ucov);
-    Kokkos::deep_copy(bcon_h, D.bcon);
-    Kokkos::deep_copy(bcov_h, D.bcov);
-
-    std::cerr << string_format("DERIVED LOCATION %d %d %d",i,j,k) << std::endl;
-    std::cerr << ucon_h.label() << string_format(" is [%f %f %f %f]",
-                                    ucon_h(i,j,k,0), ucon_h(i,j,k,0), ucon_h(i,j,k,0), ucon_h(i,j,k,0)) << std::endl;
-    std::cerr << ucov_h.label() << string_format(" is [%f %f %f %f]",
-                                    ucov_h(i,j,k,0), ucov_h(i,j,k,0), ucov_h(i,j,k,0), ucov_h(i,j,k,0)) << std::endl;
-    std::cerr << bcon_h.label() << string_format(" is [%f %f %f %f]",
-                                    bcon_h(i,j,k,0), bcon_h(i,j,k,0), bcon_h(i,j,k,0), bcon_h(i,j,k,0)) << std::endl;
-    std::cerr << bcov_h.label() << string_format(" is [%f %f %f %f]",
-                                    bcov_h(i,j,k,0), bcov_h(i,j,k,0), bcov_h(i,j,k,0), bcov_h(i,j,k,0)) << std::endl;
+    std::cerr << string_format("DERIVED VARS",i,j,k) << std::endl;
+    print_a_vec(D.ucon, i, j, k);
+    print_a_vec(D.ucov, i, j, k);
+    print_a_vec(D.bcon, i, j, k);
+    print_a_vec(D.bcov, i, j, k);
 }

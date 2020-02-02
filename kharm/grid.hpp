@@ -63,7 +63,7 @@ public:
     void init_grids();
 
     // Coordinates of the grid, i.e. "native"
-    KOKKOS_INLINE_FUNCTION void coord(const int i, const int j, const int k, const Loci loc, Real X[NDIM]) const;
+    KOKKOS_INLINE_FUNCTION void coord(const int i, const int j, const int k, const Loci loc, Real X[NDIM], bool use_ghosts=true) const;
     // TODO think on this.  More the domain of coords, but on the other hand, real convenient
     KOKKOS_INLINE_FUNCTION void ks_coord(const int i, const int j, const int k, const Loci loc, Real &r, Real &th) const
     {
@@ -123,6 +123,17 @@ public:
     MDRangePolicy<OpenMP,Rank<4>> h_all_0_p() const {return MDRangePolicy<OpenMP,Rank<4>>({0, 0, 0, 0}, {n1+2*ng, n2+2*ng, n3+2*ng, nvar});}
 
     MDRangePolicy<Rank<4>> bulk_plus_p(const int i) const {return MDRangePolicy<Rank<4>>({ng-i, ng-i, ng-i, 0}, {n1+ng+i, n2+ng+i, n3+ng+i, nvar});}
+
+    // Boundaries
+    // TODO reverse these for speed?
+    MDRangePolicy<Rank<3>> bound_x1_l() const {return MDRangePolicy<Rank<3>>({0, ng, ng}, {ng, n2+ng, n3+ng});}
+    MDRangePolicy<Rank<3>> bound_x1_r() const {return MDRangePolicy<Rank<3>>({n1+ng, ng, ng}, {n1+2*ng, n2+ng, n3+ng});}
+
+    MDRangePolicy<Rank<3>> bound_x2_l() const {return MDRangePolicy<Rank<3>>({0, 0, ng}, {n1+2*ng, ng, n3+ng});}
+    MDRangePolicy<Rank<3>> bound_x2_r() const {return MDRangePolicy<Rank<3>>({0, n2, ng}, {n1+2*ng, n2+2*ng, n3+ng});}
+
+    MDRangePolicy<Rank<3>> bound_x3_l() const {return MDRangePolicy<Rank<3>>({0, 0, 0}, {n1+2*ng, n2+2*ng, ng});}
+    MDRangePolicy<Rank<3>> bound_x3_r() const {return MDRangePolicy<Rank<3>>({0, 0, n3}, {n1+2*ng, n2+2*ng, n3+2*ng});}
 
     // TODO Versions for geometry stuff?
 
@@ -245,35 +256,35 @@ void Grid::init_grids() {
  * Function to return native coordinates of a grid
  * TODO is it more instruction-efficient to split this per location or have a separate one for centers?
  */
-KOKKOS_INLINE_FUNCTION void Grid::coord(const int i, const int j, const int k, Loci loc, Real *X) const
+KOKKOS_INLINE_FUNCTION void Grid::coord(const int i, const int j, const int k, Loci loc, Real *X, bool use_ghosts) const
 {
     X[0] = 0;
     switch (loc)
     {
     case face1:
-        X[1] = startx1 + (n1start + i - ng) * dx1;
-        X[2] = startx2 + (n2start + j + 0.5 - ng) * dx2;
-        X[3] = startx3 + (n3start + k + 0.5 - ng) * dx3;
+        X[1] = startx1 + (n1start + i - (use_ghosts)*ng) * dx1;
+        X[2] = startx2 + (n2start + j + 0.5 - (use_ghosts)*ng) * dx2;
+        X[3] = startx3 + (n3start + k + 0.5 - (use_ghosts)*ng) * dx3;
         break;
     case face2:
-        X[1] = startx1 + (n1start + i + 0.5 - ng) * dx1;
-        X[2] = startx2 + (n2start + j - ng) * dx2;
-        X[3] = startx3 + (k + 0.5 - ng) * dx3;
+        X[1] = startx1 + (n1start + i + 0.5 - (use_ghosts)*ng) * dx1;
+        X[2] = startx2 + (n2start + j - (use_ghosts)*ng) * dx2;
+        X[3] = startx3 + (k + 0.5 - (use_ghosts)*ng) * dx3;
         break;
     case face3:
-        X[1] = startx1 + (n1start + i + 0.5 - ng) * dx1;
-        X[2] = startx2 + (n2start + j + 0.5 - ng) * dx2;
-        X[3] = startx3 + (n3start + k - ng) * dx3;
+        X[1] = startx1 + (n1start + i + 0.5 - (use_ghosts)*ng) * dx1;
+        X[2] = startx2 + (n2start + j + 0.5 - (use_ghosts)*ng) * dx2;
+        X[3] = startx3 + (n3start + k - (use_ghosts)*ng) * dx3;
         break;
     case center:
-        X[1] = startx1 + (n1start + i + 0.5 - ng) * dx1;
-        X[2] = startx2 + (n2start + j + 0.5 - ng) * dx2;
-        X[3] = startx3 + (n3start + k + 0.5 - ng) * dx3;
+        X[1] = startx1 + (n1start + i + 0.5 - (use_ghosts)*ng) * dx1;
+        X[2] = startx2 + (n2start + j + 0.5 - (use_ghosts)*ng) * dx2;
+        X[3] = startx3 + (n3start + k + 0.5 - (use_ghosts)*ng) * dx3;
         break;
     case corner:
-        X[1] = startx1 + (n1start + i - ng) * dx1;
-        X[2] = startx2 + (n2start + j - ng) * dx2;
-        X[3] = startx3 + (n3start + k - ng) * dx3;
+        X[1] = startx1 + (n1start + i - (use_ghosts)*ng) * dx1;
+        X[2] = startx2 + (n2start + j - (use_ghosts)*ng) * dx2;
+        X[3] = startx3 + (n3start + k - (use_ghosts)*ng) * dx3;
         break;
     }
 }
@@ -281,23 +292,23 @@ KOKKOS_INLINE_FUNCTION void Grid::coord(const int i, const int j, const int k, L
 #if FAST_CARTESIAN
 KOKKOS_INLINE_FUNCTION void Grid::lower(const Real vcon[NDIM], Real vcov[NDIM],
                                         const int i, const int j, const int k, const Loci loc) const
-{ DLOOP1 vcov[mu] = (- (mu == 0)) * vcon[mu]; }
+{ DLOOP1 vcov[mu] = (1 - 2*(mu == 0)) * vcon[mu]; }
 KOKKOS_INLINE_FUNCTION void Grid::raise(const Real vcov[NDIM], Real vcon[NDIM],
                                         const int i, const int j, const int k, const Loci loc) const
-{ DLOOP1 vcon[mu] = (- (mu == 0)) * vcov[mu]; }
+{ DLOOP1 vcon[mu] =(1 - 2*(mu == 0)) * vcov[mu]; }
 KOKKOS_INLINE_FUNCTION void Grid::lower(const GridVector vcon, GridVector vcov,
                                         const int i, const int j, const int k, const Loci loc) const
-{ DLOOP1 vcov(i, j, k, mu) = (- (mu == 0)) * vcon(i, j, k, mu); }
+{ DLOOP1 vcov(i, j, k, mu) = (1 - 2*(mu == 0)) * vcon(i, j, k, mu); }
 KOKKOS_INLINE_FUNCTION void Grid::raise(const GridVector vcov, GridVector vcon,
                                         const int i, const int j, const int k, const Loci loc) const
-{ DLOOP1 vcon(i, j, k, mu) = (- (mu == 0)) * vcov(i, j, k, mu); }
+{ DLOOP1 vcon(i, j, k, mu) = (1 - 2*(mu == 0)) * vcov(i, j, k, mu); }
 
 KOKKOS_INLINE_FUNCTION void lower(const Real vcon[NDIM], const GeomTensor gcov, Real vcov[NDIM],
                                         const int i, const int j, const int k, const Loci loc)
-{ DLOOP1 vcov[mu] = (- (mu == 0)) * vcon[mu]; }
+{ DLOOP1 vcov[mu] = (1 - 2*(mu == 0)) * vcon[mu]; }
 KOKKOS_INLINE_FUNCTION void lower(const GridVector vcon, const GeomTensor gcov, GridVector vcov,
                                         const int i, const int j, const int k, const Loci loc)
-{ DLOOP1 vcov(i, j, k, mu) = (- (mu == 0)) * vcon(i, j, k, mu); }
+{ DLOOP1 vcov(i, j, k, mu) = (1 - 2*(mu == 0)) * vcon(i, j, k, mu); }
 #else
 KOKKOS_INLINE_FUNCTION void Grid::lower(const Real vcon[NDIM], Real vcov[NDIM],
                                         const int i, const int j, const int k, const Loci loc) const

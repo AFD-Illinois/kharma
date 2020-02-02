@@ -8,6 +8,8 @@
 #include "fluxes.hpp"
 #include "U_to_P.hpp"
 #include "source.hpp"
+#include "boundaries.hpp"
+
 #include "debug.hpp"
 
 #include <chrono>
@@ -22,10 +24,8 @@ double advance_fluid(const Grid &G, const EOS eos,
 /**
  * Take one step.  Returns the Courant limit, to be used for the next step
  */
-double step(const Grid &G, const EOS eos, GridVars vars, const double dt)
+void step(const Grid& G, const EOS eos, GridVars vars, Parameters params, double& dt, double& t)
 {
-    static double t;
-
     FLAG("Start step")
     // Don't re-allocate scratch space per step
     // TODO be more civilised about this
@@ -46,8 +46,8 @@ double step(const Grid &G, const EOS eos, GridVars vars, const double dt)
     //FLAG("First bounds Tmp");
     // fixup_utoprim(G, vars_tmp);
     // FLAG("Fixup U_to_P Tmp");
-    // set_bounds(G, vars_tmp);
-    // FLAG("Second bounds Tmp");
+    set_bounds(G, vars_tmp, pflag, params);
+    FLAG("Full bounds Tmp");
 
     // Corrector step
     double ndt = advance_fluid(G, eos, vars, vars_tmp, vars, dt, pflag);
@@ -59,8 +59,8 @@ double step(const Grid &G, const EOS eos, GridVars vars, const double dt)
     //FLAG("First bounds Full");
     // fixup_utoprim(G, S);
     // FLAG("Fixup U_to_P Full");
-    // set_bounds(G, S);
-    // FLAG("Second bounds Full");
+    set_bounds(G, vars, pflag, params);
+    FLAG("Full bounds Full");
 
     t += dt;
 
@@ -79,23 +79,30 @@ double step(const Grid &G, const EOS eos, GridVars vars, const double dt)
         }
     , pflags);
 
-    cerr << string_format("t = %.5f, %d pflags, %d floors", t, pflags, 0 ) << endl;
+    // DEBUG
+    cerr << string_format("%d pflags, %d floors", t, pflags, 0 ) << endl;
 
-    // TODO take these from parameters...
-    return std::min(0.9*ndt, 1.3*dt);
+    dt = 0.9*ndt;
 }
 
 double advance_fluid(const Grid &G, const EOS eos,
                     const GridVars Pi, const GridVars Ps, GridVars Pf,
                     const double dt, GridInt pflag)
 {
-    GridVars Ui("Ui", G.gn1, G.gn2, G.gn3, G.nvar);
-    GridVars dU("dU", G.gn1, G.gn2, G.gn3, G.nvar);
+#if DEBUG
+    // GridVars Ui("Ui", G.gn1, G.gn2, G.gn3, G.nvar);
+    // GridVars dU("dU", G.gn1, G.gn2, G.gn3, G.nvar);
     GridDerived Dtmp;
     Dtmp.ucon = GridVector("Dtmp_ucon", G.gn1, G.gn2, G.gn3);
     Dtmp.ucov = GridVector("Dtmp_ucov", G.gn1, G.gn2, G.gn3);
     Dtmp.bcon = GridVector("Dtmp_bcon", G.gn1, G.gn2, G.gn3);
     Dtmp.bcov = GridVector("Dtmp_bcov", G.gn1, G.gn2, G.gn3);
+    GridVector mhd_stor("mhd_stor", G.gn1, G.gn2, G.gn3);
+    GridScalar gamma_stor("gamma_stor", G.gn1, G.gn2, G.gn3);
+#endif
+    // TODO Cuda is buggy when this is a local temp
+    GridVars Ui("Ui", G.gn1, G.gn2, G.gn3, G.nvar);
+    GridVars dU("dU", G.gn1, G.gn2, G.gn3, G.nvar);
 
     GridVars Uf("Uf", G.gn1, G.gn2, G.gn3, G.nvar);
     GridVars F1("F1", G.gn1, G.gn2, G.gn3, G.nvar);
@@ -103,7 +110,9 @@ double advance_fluid(const Grid &G, const EOS eos,
     GridVars F3("F3", G.gn1, G.gn2, G.gn3, G.nvar);
     FLAG("Allocate flux temporaries");
 
+#if DEBUG
     print_a_cell(Pi, 11, 12, 13);
+#endif
 
     auto start_get_flux = TIME_NOW;
     // Get the fluxes in each direction on the zone faces
@@ -127,29 +136,52 @@ double advance_fluid(const Grid &G, const EOS eos,
     const int np = G.nvar;
     Kokkos::parallel_for("uber_diff", G.bulk_ng(),
         KOKKOS_LAMBDA_3D {
-            //Derived Dtmp;
-            //Real dU[8], Ui[8]; // TODO but what if we use >12 vars?
-            get_state(G, Ps, i, j, k, Loci::center, Dtmp);
-            get_fluid_source(G, Ps, Dtmp, eos, i, j, k, dU);
+#if DEBUG
+#else
+            Derived Dtmp;
+            //Real dU[8], Ui[8]; // TODO but what if we use more vars?
+#endif
 
-            if(Pi != Ps)
-                get_state(G, Pi, i, j, k, Loci::center, Dtmp);
+            get_state(G, Pi, i, j, k, Loci::center, Dtmp);
             prim_to_flux(G, Pi, Dtmp, eos, i, j, k, Loci::center, 0, Ui); // (i, j, k, p)
 
+#if DEBUG
+            Real mhd[NDIM];
+            mhd_calc(Pi, Dtmp, eos, i, j, k, 0, mhd);
+            DLOOP1 mhd_stor(i, j, k, mu) = mhd[mu];
+#endif
+
+            if (Ps != Pi)
+                get_state(G, Ps, i, j, k, Loci::center, Dtmp);
+            get_fluid_source(G, Ps, Dtmp, eos, i, j, k, dU);
+
+#if 1
             for(int p=0; p < np; ++p)
                 Uf(i, j, k, p) = Ui(i, j, k, p) +
                                     dt * ((F1(i, j, k, p) - F1(i+1, j, k, p)) / G.dx1 +
                                         (F2(i, j, k, p) - F2(i, j+1, k, p)) / G.dx2 +
                                         (F3(i, j, k, p) - F3(i, j, k+1, p)) / G.dx3 +
                                         dU(i, j, k, p));
+#else
+            for(int p=0; p < np; ++p)
+                Uf(i, j, k, p) = Ui[p] +
+                                    dt * ((F1(i, j, k, p) - F1(i+1, j, k, p)) / G.dx1 +
+                                        (F2(i, j, k, p) - F2(i, j+1, k, p)) / G.dx2 +
+                                        (F3(i, j, k, p) - F3(i, j, k+1, p)) / G.dx3 +
+                                        dU[p]);
+#endif
         }
     );
     FLAG("Uber diff");
 
+#if DEBUG
     print_derived_at(Dtmp, 11, 12, 13);
+    print_a_vec(mhd_stor, 11, 12, 13);
+    print_a_scalar(gamma_stor, 11, 12, 13);
     print_a_cell(Ui, 11, 12, 13);
     print_a_cell(dU, 11, 12, 13);
     print_a_cell(Uf, 11, 12, 13);
+#endif
 
     auto start_utop = TIME_NOW;
     // Finally, recover the primitives at the end of the substep
@@ -161,7 +193,10 @@ double advance_fluid(const Grid &G, const EOS eos,
         }
     );
 
+#if DEBUG
     print_a_cell(Pf, 11, 12, 13);
+    cin.get();
+#endif
 
     auto end = TIME_NOW;
 

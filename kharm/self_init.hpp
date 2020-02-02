@@ -184,7 +184,7 @@ GridVarsHost mhdmodes(Grid &G, const int nmode)
     Kokkos::parallel_for("mhdmodes_init", G.h_bulk_0(),
         KOKKOS_LAMBDA (const int i, const int j, const int k) {
             GReal X[NDIM];
-            G.coord(i, j, k, Loci::center, X);
+            G.coord(i, j, k, Loci::center, X, false);
 
             Real mode = amp * cos(k1 * X[1] + k2 * X[2] + k3 * X[3]);
             p(i, j, k, prims::rho) = rho0 + drho * mode;
@@ -195,6 +195,14 @@ GridVarsHost mhdmodes(Grid &G, const int nmode)
             p(i, j, k, prims::B1) = B10 + dB1 * mode;
             p(i, j, k, prims::B2) = B20 + dB2 * mode;
             p(i, j, k, prims::B3) = B30 + dB3 * mode;
+
+            if (i == 11-3 && j == 12-3 && k == 13-3) {
+                printf("Zone is %d %d %d\n", i, j, k);
+                printf("Coord is %f %f %f\n", X[1], X[2], X[3]);
+                printf("Starting prims are %f %f %f %f %f %f %f %f\n", p(i, j, k, prims::rho), p(i, j, k, prims::u),
+                p(i, j, k, prims::u1), p(i, j, k, prims::u2), p(i, j, k, prims::u3), p(i, j, k, prims::B1),
+                p(i, j, k, prims::B2), p(i, j, k, prims::B3));
+            }
         }
     );
 
