@@ -111,7 +111,7 @@ double advance_fluid(const Grid &G, const EOS eos,
     FLAG("Allocate flux temporaries");
 
 #if DEBUG
-    print_a_cell(Pi, 11, 12, 13);
+    print_a_zone(Pi, 11, 12, 13);
 #endif
 
     auto start_get_flux = TIME_NOW;
@@ -119,9 +119,11 @@ double advance_fluid(const Grid &G, const EOS eos,
     double ndt = get_flux(G, eos, Ps, F1, F2, F3);
     FLAG("Get flux");
 
-    // print_a_cell(F1, 11, 12, 13);
-    // print_a_cell(F2, 11, 12, 13);
-    // print_a_cell(F3, 11, 12, 13);
+#if DEBUG
+    print_a_zone(F1, 11, 12, 13);
+    print_a_zone(F2, 11, 12, 13);
+    print_a_zone(F3, 11, 12, 13);
+#endif
 
     // Fix boundary fluxes
 //    fix_flux(F1, F2, F3);
@@ -149,6 +151,7 @@ double advance_fluid(const Grid &G, const EOS eos,
             Real mhd[NDIM];
             mhd_calc(Pi, Dtmp, eos, i, j, k, 0, mhd);
             DLOOP1 mhd_stor(i, j, k, mu) = mhd[mu];
+            gamma_stor(i, j, k) = mhd_gamma_calc(G, Pi, i, j, k, Loci::center);
 #endif
 
             if (Ps != Pi)
@@ -178,9 +181,9 @@ double advance_fluid(const Grid &G, const EOS eos,
     print_derived_at(Dtmp, 11, 12, 13);
     print_a_vec(mhd_stor, 11, 12, 13);
     print_a_scalar(gamma_stor, 11, 12, 13);
-    print_a_cell(Ui, 11, 12, 13);
-    print_a_cell(dU, 11, 12, 13);
-    print_a_cell(Uf, 11, 12, 13);
+    print_a_zone(Ui, 11, 12, 13);
+    print_a_zone(dU, 11, 12, 13);
+    print_a_zone(Uf, 11, 12, 13);
 #endif
 
     auto start_utop = TIME_NOW;
@@ -194,9 +197,10 @@ double advance_fluid(const Grid &G, const EOS eos,
     );
 
 #if DEBUG
-    print_a_cell(Pf, 11, 12, 13);
-    cin.get();
+    print_a_zone(Pf, 11, 12, 13);
 #endif
+
+    count_print_flags(pflag);
 
     auto end = TIME_NOW;
 

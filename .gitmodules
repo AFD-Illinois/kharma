@@ -1,4 +1,4 @@
 [submodule "external/kokkos"]
 	path = external/kokkos
 	url = https://github.com/kokkos/kokkos.git
-	branch = release-candidate-3.0
+	branch = master

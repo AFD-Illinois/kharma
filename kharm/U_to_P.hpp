@@ -11,14 +11,6 @@
 #define ITERMAX 8
 #define GAMMAMAX 200
 
-#define ERR_NEG_INPUT -100
-#define ERR_MAX_ITER 1
-#define ERR_UTSQ 2
-#define ERR_GAMMA 3
-#define ERR_RHO_NEGATIVE 6
-#define ERR_U_NEGATIVE 7
-#define ERR_BOTH_NEGATIVE 8
-
 KOKKOS_INLINE_FUNCTION Real err_eqn(const EOS eos, const Real Bsq, const Real D, const Real Ep, const Real QdB,
                                     const Real Qtsq, const Real Wp, int &eflag);
 KOKKOS_INLINE_FUNCTION Real gamma_func(const Real Bsq, const Real D, const Real QdB,

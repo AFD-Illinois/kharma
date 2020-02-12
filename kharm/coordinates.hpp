@@ -12,11 +12,11 @@
  */
 class CoordinateSystem {
     public:
-        KOKKOS_FUNCTION virtual void ks_coord(GReal X[NDIM], GReal &r, GReal &th) const {};
-        KOKKOS_FUNCTION virtual void sph_coord(GReal X[NDIM], GReal &r, GReal &th, GReal &phi) const {};
-        KOKKOS_FUNCTION virtual void cart_coord(GReal X[NDIM], GReal &x, GReal &y, GReal &z) const {};
+        KOKKOS_FUNCTION virtual void ks_coord(GReal X[NDIM], GReal &r, GReal &th) const = 0;
+        KOKKOS_FUNCTION virtual void sph_coord(GReal X[NDIM], GReal &r, GReal &th, GReal &phi) const = 0;
+        KOKKOS_FUNCTION virtual void cart_coord(GReal X[NDIM], GReal &x, GReal &y, GReal &z) const = 0;
 
-        KOKKOS_FUNCTION virtual void gcov_native(GReal X[NDIM], Real gcov[NDIM][NDIM]) const {};
+        KOKKOS_FUNCTION virtual void gcov_native(GReal X[NDIM], Real gcov[NDIM][NDIM]) const = 0;
         KOKKOS_FUNCTION virtual void gcon_native(GReal X[NDIM], Real gcon[NDIM][NDIM]) const {
             Real gcov[NDIM][NDIM];
             gcov_native(X, gcov);
@@ -75,8 +75,8 @@ class CoordinateSystem {
             }
         }
     protected:
-        KOKKOS_FUNCTION virtual void dxdX_to_native(Real X[NDIM], Real dxdX[NDIM][NDIM]) const {};
-        KOKKOS_FUNCTION virtual void dxdX_to_embed(Real X[NDIM], Real dxdX[NDIM][NDIM]) const {};
+        KOKKOS_FUNCTION virtual void dxdX_to_native(Real X[NDIM], Real dxdX[NDIM][NDIM]) const {}
+        KOKKOS_FUNCTION virtual void dxdX_to_embed(Real X[NDIM], Real dxdX[NDIM][NDIM]) const {}
 };
 
 /**
@@ -86,6 +86,9 @@ class Minkowski : public CoordinateSystem {
     public:
         KOKKOS_FUNCTION void cart_coord(GReal X[NDIM], GReal &x, GReal &y, GReal &z) const
             {x = X[1]; y = X[2]; z = X[3];}
+        KOKKOS_FUNCTION void ks_coord(GReal X[NDIM], GReal &r, GReal &th) const {}
+        KOKKOS_FUNCTION void sph_coord(GReal X[NDIM], GReal &r, GReal &th, GReal &phi) const {}
+
         KOKKOS_FUNCTION void gcov_native(GReal X[NDIM], Real gcov[NDIM][NDIM]) const
             {DLOOP2 gcov[mu][nu] = (mu == nu) - 2*(mu == 0 && nu == 0);}
         KOKKOS_FUNCTION void gcon_native(GReal X[NDIM], Real gcon[NDIM][NDIM]) const

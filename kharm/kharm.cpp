@@ -33,16 +33,25 @@ int main(int argc, char **argv)
         DefaultExecutionSpace::print_configuration(std::cerr);
         std::cerr << std::endl;
 
+        // TODO parse paraemeters and/or read restart here
+
+        // Allocate device-side objects
+        // TODO switch on problem spec and/or reading, move EOS device-side
+        EOS eos = EOS(4./3);
+        CoordinateSystem* coords = (CoordinateSystem*)Kokkos::kokkos_malloc(sizeof(Minkowski));
+        Kokkos::parallel_for("CreateObjects", 1,
+            KOKKOS_LAMBDA(const int&) {
+                new ((Minkowski*)coords) Minkowski();
+            }
+        );
+
         // TODO read an input with grid size here
         int sz = 128;
         int ng = 3;
         int nvar = 8;
 
         Parameters params;
-        CoordinateSystem coords = Minkowski();
         Grid G(coords, {sz, sz, sz}, {0.0, 0.0, 0.0}, {1.0, 1.0, 1.0}, ng, nvar);
-        EOS eos = EOS(4./3);
-        cerr << "Grid allocated" << std::endl;
         G.init_grids();
         cerr << "Grid initialized" << std::endl;
 
@@ -109,6 +118,14 @@ int main(int argc, char **argv)
             ++out_iter;
             dump_this_step = false;
         }
+
+        // Clean up device-side objects
+        Kokkos::parallel_for("DestroyObjects", 1,
+            KOKKOS_LAMBDA(const int&) {
+                coords->~CoordinateSystem();
+            }
+        );
+        Kokkos::kokkos_free(coords);
     }
     Kokkos::finalize();
 }

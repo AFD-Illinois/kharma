@@ -43,7 +43,7 @@ enum Loci{face1, face2, face3, center, corner};
 
 // Data structures common to all k-harm
 // TODO something cute with the type checker to distinguish prims from cons?  Names seem fine.
-typedef Kokkos::View<Real***, Kokkos::LayoutLeft> GridScalar;
+typedef Kokkos::View<Real***> GridScalar;
 typedef Kokkos::View<int***> GridInt;
 typedef Kokkos::View<Real***[NDIM]> GridVector;
 typedef Kokkos::View<Real****> GridVars;
@@ -89,3 +89,12 @@ typedef struct {
 #else
 #define FLAG(x)
 #endif
+
+// pflag codes, for indicating causes of inversion failures
+#define ERR_NEG_INPUT -100
+#define ERR_MAX_ITER 1
+#define ERR_UTSQ 2
+#define ERR_GAMMA 3
+#define ERR_RHO_NEGATIVE 6
+#define ERR_U_NEGATIVE 7
+#define ERR_BOTH_NEGATIVE 8

@@ -41,17 +41,6 @@ KOKKOS_INLINE_FUNCTION void mhd_calc(const GridVars P, const GridDerived D, cons
     eta = w + bsq;
     ptot = pgas + 0.5 * bsq;
 
-#if defined( Kokkos_ENABLE_CUDA )
-#else
-#if DEBUG
-    if (i==11 && j==12 && k==13) {
-        cerr << string_format("rho, u, pgas, w, bsq, eta, ptot: %f %f %f %f %f %f %f",
-                            rho, u, pgas, w, bsq, eta, ptot) << endl;
-        cin.get();
-    }
-#endif
-#endif
-
     DLOOP1
     {
         mhd[mu] = eta * D.ucon(i, j, k, dir) * D.ucov(i, j, k, mu) +

@@ -45,8 +45,6 @@ double get_flux(const Grid &G, const EOS eos, const GridVars P, GridVars F1, Gri
     // Reconstruct primitives at left and right sides of faces, then find conserved variables
     auto start_recon = TIME_NOW;
     reconstruct(G, P, Pl, Pr, 1);
-    // print_a_cell(Pl, 11, 12, 13);
-    // print_a_cell(Pr, 11, 12, 13);
     FLAG("Recon 1");
     auto start_lr = TIME_NOW;
     lr_to_flux(G, eos, Pl, Pr, 1, Loci::face1, F1, ctop);
@@ -55,6 +53,9 @@ double get_flux(const Grid &G, const EOS eos, const GridVars P, GridVars F1, Gri
 #if DEBUG
     cerr << "Single recon: " << PRINT_SEC(start_lr - start_recon) << endl;
     cerr << "Single lr: " << PRINT_SEC(end - start_lr) << endl;
+
+    print_a_zone(Pl, 11, 12, 13);
+    print_a_zone(Pr, 11, 12, 13);
 #endif
 
     reconstruct(G, P, Pl, Pr, 2);
@@ -74,12 +75,12 @@ double get_flux(const Grid &G, const EOS eos, const GridVars P, GridVars F1, Gri
 void lr_to_flux(const Grid &G, const EOS eos, const GridVars Pr, const GridVars Pl,
                 const int dir, const Loci loc, GridVars flux, GridVector ctop)
 {
-    // GridVars fluxL("fluxL", G.gn1, G.gn2, G.gn3, G.nvar);
-    // GridVars fluxR("fluxR", G.gn1, G.gn2, G.gn3, G.nvar);
-    // GridScalar cmaxL("cmaxL", G.gn1, G.gn2, G.gn3), cmaxR("cmaxR", G.gn1, G.gn2, G.gn3);
-    // GridScalar cminL("cminL", G.gn1, G.gn2, G.gn3), cminR("cminR", G.gn1, G.gn2, G.gn3);
-    // GridVars Ul("Ul", G.gn1, G.gn2, G.gn3, G.nvar);
-    // GridVars Ur("Ur", G.gn1, G.gn2, G.gn3, G.nvar);
+#if DEBUG
+    GridVars fluxL("fluxL", G.gn1, G.gn2, G.gn3, G.nvar);
+    GridVars fluxR("fluxR", G.gn1, G.gn2, G.gn3, G.nvar);
+    GridVars Ul("Ul", G.gn1, G.gn2, G.gn3, G.nvar);
+    GridVars Ur("Ur", G.gn1, G.gn2, G.gn3, G.nvar);
+#endif
 
     auto start_left = TIME_NOW;
 
@@ -121,45 +122,54 @@ void lr_to_flux(const Grid &G, const EOS eos, const GridVars Pr, const GridVars 
 
     //  LOOP FUSION BABY
     const int np = G.nvar;
-    // const GeomTensor gcon = G.gcon_direct;
-    // const GeomTensor gcov = G.gcov_direct;
-    // const GeomScalar gdet = G.gdet_direct;
     Kokkos::parallel_for("uber_flux", G.bulk_plus(1),
             KOKKOS_LAMBDA_3D {
                 Derived Dtmp;
-                Real fluxL[8], fluxR[8];
-                Real Ul[8], Ur[8];
                 Real cmaxL, cmaxR, cminL, cminR;
                 Real cmin, cmax;
-                //get_state(gcon, gcov, Pll, i, j, k, loc, Dtmp);
+#if 0
                 get_state(G, Pll, i, j, k, loc, Dtmp);
 
-                //prim_to_flux(gdet, Pll, Dtmp, eos, i, j, k, loc, 0, Ul); // dir==0 -> U instead of F in direction
-                //prim_to_flux(gdet, Pll, Dtmp, eos, i, j, k, loc, dir, fluxL);
                 prim_to_flux(G, Pll, Dtmp, eos, i, j, k, loc, 0, Ul); // dir==0 -> U instead of F in direction
                 prim_to_flux(G, Pll, Dtmp, eos, i, j, k, loc, dir, fluxL);
 
-
-                //mhd_vchar(gcon, Pll, Dtmp, eos, i, j, k, loc, dir, cmaxL, cminL);
                 mhd_vchar(G, Pll, Dtmp, eos, i, j, k, loc, dir, cmaxL, cminL);
 
-                //get_state(gcon, gcov, Pr, i, j, k, loc, Dtmp);
                 get_state(G, Pr, i, j, k, loc, Dtmp);
 
-                //prim_to_flux(gdet, Pr, Dtmp, eos, i, j, k, loc, 0, Ur);
-                //prim_to_flux(gdet, Pr, Dtmp, eos, i, j, k, loc, dir, fluxR);
                 prim_to_flux(G, Pr, Dtmp, eos, i, j, k, loc, 0, Ur);
                 prim_to_flux(G, Pr, Dtmp, eos, i, j, k, loc, dir, fluxR);
 
-                //mhd_vchar(gcon, Pr, Dtmp, eos, i, j, k, loc, dir, cmaxR, cminR);
                 mhd_vchar(G, Pr, Dtmp, eos, i, j, k, loc, dir, cmaxR, cminR);
+#else
+                Real fluxL[8], fluxR[8];
+                Real Ul[8], Ur[8];
 
+                get_state(G, Pll, i, j, k, loc, Dtmp);
+
+                prim_to_flux(G, Pll, Dtmp, eos, i, j, k, loc, 0, Ul); // dir==0 -> U instead of F in direction
+                prim_to_flux(G, Pll, Dtmp, eos, i, j, k, loc, dir, fluxL);
+
+                mhd_vchar(G, Pll, Dtmp, eos, i, j, k, loc, dir, cmaxL, cminL);
+
+                get_state(G, Pr, i, j, k, loc, Dtmp);
+
+                prim_to_flux(G, Pr, Dtmp, eos, i, j, k, loc, 0, Ur);
+                prim_to_flux(G, Pr, Dtmp, eos, i, j, k, loc, dir, fluxR);
+
+                mhd_vchar(G, Pr, Dtmp, eos, i, j, k, loc, dir, cmaxR, cminR);
+#endif
                 cmax = fabs(max(max(0., cmaxL), cmaxR)); // TODO suspicious use of abs()
                 cmin = fabs(max(max(0., -cminL), -cminR));
                 ctop(i, j, k, dir) = max(cmax, cmin);
-
+#if 0
+                for (int p=0; p<np; p++)
+                    flux(i, j, k, p) = 0.5 * (fluxL(i, j, k, p) + fluxR(i, j, k, p) -
+                        ctop(i, j, k, dir) * (Ur(i, j, k, p) - Ul(i, j, k, p)));
+#else
                 for (int p=0; p<np; p++)
                     flux(i, j, k, p) = 0.5 * (fluxL[p] + fluxR[p] - ctop(i, j, k, dir) * (Ur[p] - Ul[p]));
+#endif
             }
     );
     FLAG("Uber fluxcalc");
@@ -183,6 +193,12 @@ void lr_to_flux(const Grid &G, const EOS eos, const GridVars Pr, const GridVars 
         throw std::runtime_error("Ctop 0 or NaN, cannot continue");
     }
     FLAG("any_nan");
+
+    print_a_zone(fluxL, 11, 12, 13);
+    print_a_zone(fluxR, 11, 12, 13);
+
+    print_a_zone(Ul, 11, 12, 13);
+    print_a_zone(Ur, 11, 12, 13);
 #endif
 }
 

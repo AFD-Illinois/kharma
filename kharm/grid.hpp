@@ -7,7 +7,7 @@
 
 // Option to ignore coordinates entirely,
 // and basically just use flat-space SR
-#define FAST_CARTESIAN 1
+#define FAST_CARTESIAN 0
 
 #include "decs.hpp"
 #include "coordinates.hpp"
@@ -44,7 +44,9 @@ public:
     GeomScalar gdet_direct;
     GeomConn conn_direct;
 
-    CoordinateSystem coords;
+    // This will be a pointer to Device memory
+    // It will not be dereference-able in host code
+    CoordinateSystem* coords;
 
     // TODO does abstracting to functions slow the memory-access versions?
 #if FAST_CARTESIAN
@@ -59,18 +61,18 @@ public:
     KOKKOS_INLINE_FUNCTION Real conn(const int i, const int j, const int mu, const int nu, const int lam) const {return conn_direct(i, j, mu, nu, lam);}
 #endif
     // Constructors
-    Grid(CoordinateSystem coordinates, std::vector<int> shape, std::vector<GReal> startx, std::vector<GReal> endx, int ng_in=3, int nvar_in=8);
-    Grid(CoordinateSystem coordinates, std::vector<int> fullshape, std::vector<int> startn, std::vector<int> shape, std::vector<GReal> startx, std::vector<GReal> endx, int ng_in=3, int nvar_in=8);
+    Grid(CoordinateSystem* coordinates, std::vector<int> shape, std::vector<GReal> startx, std::vector<GReal> endx, int ng_in=3, int nvar_in=8);
+    Grid(CoordinateSystem* coordinates, std::vector<int> fullshape, std::vector<int> startn, std::vector<int> shape, std::vector<GReal> startx, std::vector<GReal> endx, int ng_in=3, int nvar_in=8);
     void init_grids();
 
     // Coordinates of the grid, i.e. "native"
     KOKKOS_INLINE_FUNCTION void coord(const int i, const int j, const int k, const Loci loc, GReal X[NDIM], bool use_ghosts=true) const;
-    // TODO think on this.  More the domain of coords, but on the other hand, real convenient
-    KOKKOS_INLINE_FUNCTION void ks_coord(const int i, const int j, const int k, const Loci loc, GReal &r, GReal &th) const
+    // TODO Fix this in general w/coords device-side.  Error on this in Minkowski
+    KOKKOS_FUNCTION void ks_coord(const int i, const int j, const int k, const Loci loc, GReal &r, GReal &th) const
     {
         GReal X[NDIM];
         coord(i, j, k, loc, X);
-        coords.ks_coord(X, r, th);
+        coords->ks_coord(X, r, th);
     }
 
     // Transformations using the cached geometry
@@ -86,7 +88,7 @@ public:
     KOKKOS_INLINE_FUNCTION void raise(const GridVector vcov, GridVector vcon,
                                         const int i, const int j, const int k, const Loci loc) const;
 
-    // Indexing
+    // Indexing. NOTE assumes forward indexing, not necessarily locations in memory on GPUs
     KOKKOS_INLINE_FUNCTION int i4(const int i, const int j, const int k, const int p, const bool use_ghosts=true) const
     {
         if (use_ghosts) {
@@ -147,7 +149,7 @@ public:
 /**
  * Construct a grid which starts at 0 and covers the entire global space
  */
-Grid::Grid(CoordinateSystem coordinates, std::vector<int> shape, std::vector<GReal> startx,
+Grid::Grid(CoordinateSystem* coordinates, std::vector<int> shape, std::vector<GReal> startx,
             std::vector<GReal> endx, const int ng_in, const int nvar_in)
 {
     nvar = nvar_in;
@@ -179,7 +181,7 @@ Grid::Grid(CoordinateSystem coordinates, std::vector<int> shape, std::vector<GRe
 /**
  * Construct a sub-grid starting at some point in a global space
  */
-Grid::Grid(CoordinateSystem coordinates, std::vector<int> fullshape, std::vector<int> startn,
+Grid::Grid(CoordinateSystem* coordinates, std::vector<int> fullshape, std::vector<int> startn,
             std::vector<int> shape, std::vector<GReal> startx, std::vector<GReal> endx,
             const int ng_in, const int nvar_in)
 {
@@ -223,22 +225,38 @@ void Grid::init_grids() {
     gdet_direct = GeomScalar("gdet", NLOC, gn1, gn2);
     conn_direct = GeomConn("conn", gn1, gn2);
 
-    // Make local copies of grids because nothing is sacred and this-> is a mess
+    // Member variables have an implicit this->
+    // Kokkos captures pointers to objects, not full objects
+    // Hence, you *CANNOT* use this->, or members, from inside kernels
     GeomTensor gcon_local = gcon_direct;
     GeomTensor gcov_local = gcov_direct;
     GeomScalar gdet_local = gdet_direct;
     GeomConn conn_local = conn_direct;
-    CoordinateSystem cs = coords;
+    CoordinateSystem* cs = coords;
 
     // Cache gcon, gcov, gdet, and the connection coeffs
+    // Kokkos::parallel_for("init_geom", MDRangePolicy<Rank<3>>({0, 0, 0}, {NLOC, gn1, gn2}),
+    //     KOKKOS_LAMBDA (const int& loc, const int& i, const int& j) {
+    //         GReal X[NDIM];
+    //         Real gcov_loc[NDIM][NDIM];
+    //         coord(i, j, 0, (Loci)loc, X);
+    //         cs->gcov_native(X, gcov_loc);
+    //         //DLOOP2 gcov_loc[mu][nu] = (mu == nu) - 2*(mu == 0 && nu == 0);
+    //         DLOOP2 {
+    //             gcov_local(loc, i, j, mu, nu) = gcov_loc[mu][nu];
+    //         }
+    //     }
+    // );
     Kokkos::parallel_for("init_geom", MDRangePolicy<Rank<2>>({0, 0}, {gn1, gn2}),
-        KOKKOS_LAMBDA (const int i, const int j) {
+        KOKKOS_LAMBDA (const int& i, const int& j) {
             GReal X[NDIM];
             Real gcov_loc[NDIM][NDIM], gcon_loc[NDIM][NDIM];
             for (int loc=0; loc < NLOC; ++loc) {
                 coord(i, j, 0, (Loci)loc, X);
-                cs.gcov_native(X, gcov_loc);
-                gdet_local(loc, i, j) = cs.gcon_native(gcov_loc, gcon_loc);
+                //cs->gcov_native(X, gcov_loc);
+                DLOOP2 gcov_loc[mu][nu] = (mu == nu) - 2*(mu == 0 && nu == 0);
+                //gdet_local(loc, i, j) = cs->gcon_native(gcov_loc, gcon_loc);
+                gdet_local(loc, i, j) = sqrt(fabs(invert(&gcov_loc[0][0],&gcon_loc[0][0])));
                 DLOOP2 {
                     gcov_local(loc, i, j, mu, nu) = gcov_loc[mu][nu];
                     gcon_local(loc, i, j, mu, nu) = gcon_loc[mu][nu];
@@ -246,18 +264,17 @@ void Grid::init_grids() {
             }
         }
     );
-    FLAG("Metric init");
-    // TODO this won't be zero forever.  Figure out what's up.
-    // Kokkos::parallel_for("init_conn", MDRangePolicy<Rank<2>>({0, 0}, {n1+2*ng, n2+2*ng}),
-    //     KOKKOS_LAMBDA (const int i, const int j) {
-    //         GReal X[NDIM];
-    //         coord(i, j, 0, Loci::center, X);
-    //         Real conn_loc[NDIM][NDIM][NDIM];
-    //         cs.conn_func(X, conn_loc);
-    //         DLOOP2 for(int kap=0; kap<NDIM; ++kap)
-    //             conn_local(i, j, mu, nu, kap) = conn_loc[mu][nu][kap];
-    //     }
-    // );
+    Kokkos::parallel_for("init_conn", MDRangePolicy<Rank<2>>({0, 0}, {gn1, gn2}),
+        KOKKOS_LAMBDA (const int& i, const int& j) {
+            GReal X[NDIM];
+            coord(i, j, 0, Loci::center, X);
+            Real conn_loc[NDIM][NDIM][NDIM];
+            //cs->conn_func(X, conn_loc);
+            DLOOP2 for(int kap=0; kap<NDIM; ++kap)
+                conn_local(i, j, mu, nu, kap) = conn_loc[mu][nu][kap];
+        }
+    );
+    FLAG("Grid metric init");
 }
 #endif
 
@@ -322,32 +339,39 @@ KOKKOS_INLINE_FUNCTION void lower(const GridVector vcon, const GeomTensor gcov, 
 KOKKOS_INLINE_FUNCTION void Grid::lower(const Real vcon[NDIM], Real vcov[NDIM],
                                         const int i, const int j, const int k, const Loci loc) const
 {
+    DLOOP1 vcov[mu] = 0;
     DLOOP2 vcov[mu] += gcov(loc, i, j, mu, nu) * vcon[nu];
 }
 KOKKOS_INLINE_FUNCTION void Grid::raise(const Real vcov[NDIM], Real vcon[NDIM],
                                         const int i, const int j, const int k, const Loci loc) const
 {
+    DLOOP1 vcon[mu] = 0;
     DLOOP2 vcon[mu] += gcon(loc, i, j, mu, nu) * vcov[nu];
 }
 KOKKOS_INLINE_FUNCTION void Grid::lower(const GridVector vcon, GridVector vcov,
                                         const int i, const int j, const int k, const Loci loc) const
 {
+    DLOOP1 vcov(i, j, k, mu) = 0;
     DLOOP2 vcov(i, j, k, mu) += gcov(loc, i, j, mu, nu) * vcon(i, j, k, nu);
 }
 KOKKOS_INLINE_FUNCTION void Grid::raise(const GridVector vcov, GridVector vcon,
                                         const int i, const int j, const int k, const Loci loc) const
 {
+    DLOOP1 vcon(i, j, k, mu) = 0;
     DLOOP2 vcon(i, j, k, mu) += gcon(loc, i, j, mu, nu) * vcov(i, j, k, nu);
 }
 
+// Versions not reliant on a grid object. TODO extend or extinguish
 KOKKOS_INLINE_FUNCTION void lower(const Real vcon[NDIM], const GeomTensor gcov, Real vcov[NDIM],
                                         const int i, const int j, const int k, const Loci loc)
 {
+    DLOOP1 vcov[mu] = 0;
     DLOOP2 vcov[mu] += gcov(loc, i, j, mu, nu) * vcon[nu];
 }
 KOKKOS_INLINE_FUNCTION void lower(const GridVector vcon, const GeomTensor gcov, GridVector vcov,
                                         const int i, const int j, const int k, const Loci loc)
 {
+    DLOOP1 vcov(i, j, k, mu) = 0;
     DLOOP2 vcov(i, j, k, mu) += gcov(loc, i, j, mu, nu) * vcon(i, j, k, nu);
 }
 #endif
