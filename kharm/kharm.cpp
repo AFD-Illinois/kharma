@@ -34,6 +34,8 @@ int main(int argc, char **argv)
         std::cerr << std::endl;
 
         // TODO parse paraemeters and/or read restart here
+        Parameters params;
+        params.verbose = 1;
 
         // Allocate device-side objects
         // TODO switch on problem spec and/or reading, move EOS device-side
@@ -50,12 +52,11 @@ int main(int argc, char **argv)
         int ng = 3;
         int nvar = 8;
 
-        Parameters params;
+        // Make the grid
         Grid G(coords, {sz, sz, sz}, {0.0, 0.0, 0.0}, {1.0, 1.0, 1.0}, ng, nvar);
-        G.init_grids();
         cerr << "Grid initialized" << std::endl;
 
-        // Allocate and initialize host primitives
+        // Make an array of the primitive variables
         GridVarsHost h_vars_input = mhdmodes(G, 1);
         cerr << "Vars initialized" << std::endl;
         dump(G, h_vars_input, params, "dump_0000.h5", true);

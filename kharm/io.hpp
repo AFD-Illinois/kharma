@@ -52,10 +52,10 @@ void dump(Grid &G, T P, Parameters params, std::string fname, bool write_double=
     outf->write_single_val(&n_passive, "n_prims_passive", H5T_STD_I32LE);
     //   outf->write_str_list(varNames, "prim_names", HDF_STR_LEN, G.nvar);
 
-
-    for (std::pair<std::string, double> param : params) {
-        outf->write_single_val(&(param.second), param.first.c_str(), H5T_IEEE_F64LE);
-    }
+    // Sometimes, C++ is very frustrating.  Structs are *stupid*.
+    // for (std::pair<std::string, double> param : params) {
+    //     outf->write_single_val(&(param.second), param.first.c_str(), H5T_IEEE_F64LE);
+    // }
     //   outf->write_single_val(&gam, "gam", H5T_IEEE_F64LE);
     //   outf->write_single_val(&game, "gam_e", H5T_IEEE_F64LE);
     //   outf->write_single_val(&gamp, "gam_p", H5T_IEEE_F64LE);

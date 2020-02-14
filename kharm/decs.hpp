@@ -34,7 +34,15 @@ typedef double GReal;
 //typedef float GReal;
 // TODO float Reals crash
 
-typedef std::map<std::string, double> Parameters;
+// TODO should this be minimal?  Most of it is only necessary for making a Coords, Grid, and stopping evolution
+typedef struct {
+    double a, hslope, mks_smooth, poly_xt, poly_alpha;
+    double tf;
+    int n1, n2, n3, ng;
+
+    // Options unrelated to fluid evolution
+    int verbose;
+} Parameters;
 
 // Useful Enums to avoid lots of #defines
 enum prims{rho, u, u1, u2, u3, B1, B2, B3};
@@ -48,7 +56,7 @@ typedef Kokkos::View<int***> GridInt;
 typedef Kokkos::View<Real***[NDIM]> GridVector;
 typedef Kokkos::View<Real****> GridVars;
 
-// TODO these all start with NLOC but C++ is mean
+// TODO these start with NLOC but C++ is mean
 typedef Kokkos::View<Real***> GeomScalar;
 typedef Kokkos::View<Real***[NDIM][NDIM]> GeomTensor;
 // Connection coeffs are only recorded at zone center

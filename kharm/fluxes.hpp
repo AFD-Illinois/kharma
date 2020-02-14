@@ -3,6 +3,8 @@
  */
 
 #include "decs.hpp"
+#include "for_loop.hpp"
+
 #include "reconstruction.hpp"
 #include "phys.hpp"
 #include "debug.hpp"
@@ -122,7 +124,7 @@ void lr_to_flux(const Grid &G, const EOS eos, const GridVars Pr, const GridVars 
 
     //  LOOP FUSION BABY
     const int np = G.nvar;
-    Kokkos::parallel_for("uber_flux", G.bulk_plus(1),
+    kharm_for("uber_flux", G.bulk_plus(1),
             KOKKOS_LAMBDA_3D {
                 Derived Dtmp;
                 Real cmaxL, cmaxR, cminL, cminR;

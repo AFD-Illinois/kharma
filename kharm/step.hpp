@@ -4,6 +4,8 @@
 
 #include "utils.hpp"
 #include "decs.hpp"
+#include "for_loop.hpp"
+
 #include "mpi.hpp"
 #include "fluxes.hpp"
 #include "U_to_P.hpp"
@@ -37,6 +39,7 @@ void step(const Grid& G, const EOS eos, GridVars vars, Parameters params, double
     // Predictor step
     advance_fluid(G, eos, vars, vars, vars_tmp, 0.5 * dt, pflag);
     FLAG("Advance Fluid Tmp");
+    if (params.verbose) count_print_flags(pflag);
 
     // Fixup routines: smooth over outlier zones
     // fixup(G, vars_tmp);
@@ -52,6 +55,7 @@ void step(const Grid& G, const EOS eos, GridVars vars, Parameters params, double
     // Corrector step
     double ndt = advance_fluid(G, eos, vars, vars_tmp, vars, dt, pflag);
     FLAG("Advance Fluid Full");
+    if (params.verbose) count_print_flags(pflag);
 
     // fixup(G, S);
     // FLAG("Fixup Full");
@@ -63,14 +67,6 @@ void step(const Grid& G, const EOS eos, GridVars vars, Parameters params, double
     FLAG("Full bounds Full");
 
     t += dt;
-
-    #define ERR_NEG_INPUT -100
-    #define ERR_MAX_ITER 1
-    #define ERR_UTSQ 2
-    #define ERR_GAMMA 3
-    #define ERR_RHO_NEGATIVE 6
-    #define ERR_U_NEGATIVE 7
-    #define ERR_BOTH_NEGATIVE 8
 
     int pflags;
     Kokkos::parallel_reduce("ndt_min", G.bulk_ng(),
@@ -136,7 +132,7 @@ double advance_fluid(const Grid &G, const EOS eos,
 
     auto start_uberkernel = TIME_NOW;
     const int np = G.nvar;
-    Kokkos::parallel_for("uber_diff", G.bulk_ng(),
+    parallel_for("uber_diff", G.bulk_ng(),
         KOKKOS_LAMBDA_3D {
 #if DEBUG
 #else
@@ -158,20 +154,20 @@ double advance_fluid(const Grid &G, const EOS eos,
                 get_state(G, Ps, i, j, k, Loci::center, Dtmp);
             get_fluid_source(G, Ps, Dtmp, eos, i, j, k, dU);
 
-#if 1
-            for(int p=0; p < np; ++p)
-                Uf(i, j, k, p) = Ui(i, j, k, p) +
-                                    dt * ((F1(i, j, k, p) - F1(i+1, j, k, p)) / G.dx1 +
-                                        (F2(i, j, k, p) - F2(i, j+1, k, p)) / G.dx2 +
-                                        (F3(i, j, k, p) - F3(i, j, k+1, p)) / G.dx3 +
-                                        dU(i, j, k, p));
-#else
+#if 0
             for(int p=0; p < np; ++p)
                 Uf(i, j, k, p) = Ui[p] +
                                     dt * ((F1(i, j, k, p) - F1(i+1, j, k, p)) / G.dx1 +
                                         (F2(i, j, k, p) - F2(i, j+1, k, p)) / G.dx2 +
                                         (F3(i, j, k, p) - F3(i, j, k+1, p)) / G.dx3 +
                                         dU[p]);
+#else
+            for(int p=0; p < np; ++p)
+                Uf(i, j, k, p) = Ui(i, j, k, p) +
+                                    dt * ((F1(i, j, k, p) - F1(i+1, j, k, p)) / G.dx1 +
+                                        (F2(i, j, k, p) - F2(i, j+1, k, p)) / G.dx2 +
+                                        (F3(i, j, k, p) - F3(i, j, k+1, p)) / G.dx3 +
+                                        dU(i, j, k, p));
 #endif
         }
     );
@@ -188,7 +184,7 @@ double advance_fluid(const Grid &G, const EOS eos,
 
     auto start_utop = TIME_NOW;
     // Finally, recover the primitives at the end of the substep
-    Kokkos::parallel_for("cons_to_prim", G.bulk_ng(),
+    parallel_for("cons_to_prim", G.bulk_ng(),
         KOKKOS_LAMBDA_3D {
             // TODO ever called on not the center? Maybe w/face fields?
             if (Pf != Pi) for(int p=0; p < np; ++p) Pf(i,j,k,p) = Pi(i,j,k,p); // Seed with initial state
@@ -199,8 +195,6 @@ double advance_fluid(const Grid &G, const EOS eos,
 #if DEBUG
     print_a_zone(Pf, 11, 12, 13);
 #endif
-
-    count_print_flags(pflag);
 
     auto end = TIME_NOW;
 
