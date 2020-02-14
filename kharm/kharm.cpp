@@ -36,21 +36,35 @@ int main(int argc, char **argv)
         // TODO parse paraemeters and/or read restart here
         Parameters params;
         params.verbose = 1;
-
-        // Allocate device-side objects
-        // TODO switch on problem spec and/or reading, move EOS device-side
-        EOS eos = EOS(4./3);
-        CoordinateSystem* coords = (CoordinateSystem*)Kokkos::kokkos_malloc(sizeof(Minkowski));
-        Kokkos::parallel_for("CreateObjects", 1,
-            KOKKOS_LAMBDA(const int&) {
-                new ((Minkowski*)coords) Minkowski();
-            }
-        );
-
-        // TODO read an input with grid size here
         int sz = 128;
         int ng = 3;
         int nvar = 8;
+
+        // Allocate device-side objects
+        EOS *eos;
+        eos = (EOS*)Kokkos::kokkos_malloc(sizeof(GammaLaw));
+        Kokkos::parallel_for("CreateEOS", 1,
+            KOKKOS_LAMBDA(const int&) {
+                new ((GammaLaw*)eos) GammaLaw(4./3);
+            }
+        );
+
+        CoordinateSystem* coords;
+        // if (true) {
+        //     coords = (CoordinateSystem*)Kokkos::kokkos_malloc(sizeof(FMKS));
+        //     Kokkos::parallel_for("CreateFMKS", 1,
+        //         KOKKOS_LAMBDA(const int&) {
+        //             new ((FMKS*)coords) FMKS();
+        //         }
+        //     );
+        // } else {
+            coords = (CoordinateSystem*)Kokkos::kokkos_malloc(sizeof(Minkowski));
+            Kokkos::parallel_for("CreateMinkowski", 1,
+                KOKKOS_LAMBDA(const int&) {
+                    new ((Minkowski*)coords) Minkowski();
+                }
+            );
+        // }
 
         // Make the grid
         Grid G(coords, {sz, sz, sz}, {0.0, 0.0, 0.0}, {1.0, 1.0, 1.0}, ng, nvar);
@@ -100,7 +114,7 @@ int main(int argc, char **argv)
                 dump_this_step = true;
             }
 
-            step(G, eos, vars, params, dt, t);
+            step(G, *eos, vars, params, dt, t);
             cerr << string_format("t = %.5f dt = %.5f", t, dt) << endl;
 
             if (out_iter % 10 == 0) {
