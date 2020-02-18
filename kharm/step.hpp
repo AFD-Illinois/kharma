@@ -19,14 +19,14 @@
 using namespace std;
 
 // Declarations
-double advance_fluid(const Grid &G, const EOS eos,
+double advance_fluid(const Grid &G, const EOS* eos,
                     const GridVars Pi, const GridVars Ps, GridVars Pf,
                     const double dt, GridInt pflag);
 
 /**
  * Take one step.  Returns the Courant limit, to be used for the next step
  */
-void step(const Grid& G, const EOS eos, GridVars vars, Parameters params, double& dt, double& t)
+void step(const Grid& G, const EOS* eos, GridVars vars, Parameters params, double& dt, double& t)
 {
     FLAG("Start step")
     // Don't re-allocate scratch space per step
@@ -81,7 +81,7 @@ void step(const Grid& G, const EOS eos, GridVars vars, Parameters params, double
     dt = 0.9*ndt;
 }
 
-double advance_fluid(const Grid &G, const EOS eos,
+double advance_fluid(const Grid &G, const EOS* eos,
                     const GridVars Pi, const GridVars Ps, GridVars Pf,
                     const double dt, GridInt pflag)
 {

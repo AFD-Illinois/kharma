@@ -6,7 +6,7 @@
 
 // Note this is a single function for the state, so it is *not* INLINE_ETC
 void get_fluid_source(const Grid &G, const GridVars P, const GridDerived D,
-                      const EOS eos, GridVars dU, bool wind=false)
+                      const EOS* eos, GridVars dU, bool wind=false)
 {
     Kokkos::parallel_for("fluid_source", G.bulk_ng(),
                          KOKKOS_LAMBDA(const int i, const int j, const int k) {
@@ -70,7 +70,7 @@ void get_fluid_source(const Grid &G, const GridVars P, const GridDerived D,
 }
 template<typename DType>
 KOKKOS_INLINE_FUNCTION void get_fluid_source(const Grid &G, const GridVars P, const DType D,
-                      const EOS eos, const int i, const int j, const int k, GridVars dU, bool wind=false)
+                      const EOS* eos, const int i, const int j, const int k, GridVars dU, bool wind=false)
 {
     Real mhd[NDIM][NDIM];
 
@@ -116,7 +116,7 @@ KOKKOS_INLINE_FUNCTION void get_fluid_source(const Grid &G, const GridVars P, co
 }
 template<typename DType>
 KOKKOS_INLINE_FUNCTION void get_fluid_source(const Grid &G, const GridVars P, const DType D,
-                      const EOS eos, const int i, const int j, const int k, Real dU[], bool wind=false)
+                      const EOS* eos, const int i, const int j, const int k, Real dU[], bool wind=false)
 {
     Real mhd[NDIM][NDIM];
 

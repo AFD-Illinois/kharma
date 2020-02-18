@@ -11,7 +11,7 @@
 
 #include <chrono>
 
-void lr_to_flux(const Grid &G, const EOS eos, const GridVars Pr, const GridVars Pl,
+void lr_to_flux(const Grid &G, const EOS* eos, const GridVars Pr, const GridVars Pl,
                 const int dir, const Loci loc, GridVars flux, GridVector ctop);
 double ndt_min(const Grid &G, GridVector ctop);
 
@@ -37,7 +37,7 @@ double ndt_min(const Grid &G, GridVector ctop)
   return dt_min;
 }
 
-double get_flux(const Grid &G, const EOS eos, const GridVars P, GridVars F1, GridVars F2, GridVars F3)
+double get_flux(const Grid &G, const EOS* eos, const GridVars P, GridVars F1, GridVars F2, GridVars F3)
 {
     GridVars Pl("Pl", G.gn1, G.gn2, G.gn3, G.nvar);
     GridVars Pr("Pr", G.gn1, G.gn2, G.gn3, G.nvar);
@@ -74,7 +74,7 @@ double get_flux(const Grid &G, const EOS eos, const GridVars P, GridVars F1, Gri
 }
 
 // Note that these are the primitives at the left and right of the *interface*
-void lr_to_flux(const Grid &G, const EOS eos, const GridVars Pr, const GridVars Pl,
+void lr_to_flux(const Grid &G, const EOS* eos, const GridVars Pr, const GridVars Pl,
                 const int dir, const Loci loc, GridVars flux, GridVector ctop)
 {
 #if DEBUG

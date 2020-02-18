@@ -114,7 +114,7 @@ int main(int argc, char **argv)
                 dump_this_step = true;
             }
 
-            step(G, *eos, vars, params, dt, t);
+            step(G, eos, vars, params, dt, t);
             cerr << string_format("t = %.5f dt = %.5f", t, dt) << endl;
 
             if (out_iter % 10 == 0) {

@@ -6,6 +6,10 @@
 #include "decs.hpp"
 #include "matrix.hpp"
 
+#define COORDSINGFIX 1
+#define SINGSMALL 1e-20
+
+
 /**
  * Abstract class defining any coordinate system.
  * All functions should be callable device-side.
@@ -16,7 +20,25 @@ class CoordinateSystem {
         KOKKOS_FUNCTION virtual void sph_coord(GReal X[NDIM], GReal &r, GReal &th, GReal &phi) const = 0;
         KOKKOS_FUNCTION virtual void cart_coord(GReal X[NDIM], GReal &x, GReal &y, GReal &z) const = 0;
 
-        KOKKOS_FUNCTION virtual void gcov_native(GReal X[NDIM], Real gcov[NDIM][NDIM]) const = 0;
+        KOKKOS_FUNCTION virtual void gcov_native(GReal X[NDIM], Real gcov[NDIM][NDIM]) const {
+            Real gcov_em[NDIM][NDIM], dxdX[NDIM][NDIM];
+
+            // Get the embedding system's metric
+            gcov_embed(X, gcov_em);
+
+            // Apply coordinate transformation to code coordinates X
+            dxdX_to_native(X, dxdX);
+
+            for (int mu = 0; mu < NDIM; mu++) {
+                for (int nu = 0; nu < NDIM; nu++) {
+                    for (int lam = 0; lam < NDIM; lam++) {
+                        for (int kap = 0; kap < NDIM; kap++) {
+                            gcov[mu][nu] += gcov_em[lam][kap]*dxdX[lam][mu]*dxdX[kap][nu];
+                        }
+                    }
+                }
+            }
+        };
         KOKKOS_FUNCTION virtual void gcon_native(GReal X[NDIM], Real gcon[NDIM][NDIM]) const {
             Real gcov[NDIM][NDIM];
             gcov_native(X, gcov);
@@ -74,9 +96,11 @@ class CoordinateSystem {
                 }
             }
         }
+
     protected:
-        KOKKOS_FUNCTION virtual void dxdX_to_native(Real X[NDIM], Real dxdX[NDIM][NDIM]) const {}
-        KOKKOS_FUNCTION virtual void dxdX_to_embed(Real X[NDIM], Real dxdX[NDIM][NDIM]) const {}
+        KOKKOS_FUNCTION virtual void gcov_embed(GReal X[NDIM], Real gcov[NDIM][NDIM]) const {}
+        KOKKOS_FUNCTION virtual void dxdX_to_native(GReal X[NDIM], Real dxdX[NDIM][NDIM]) const {}
+        KOKKOS_FUNCTION virtual void dxdX_to_embed(GReal X[NDIM], Real dxdX[NDIM][NDIM]) const {}
 };
 
 /**
@@ -99,95 +123,173 @@ class Minkowski : public CoordinateSystem {
             {DLOOP2 for(int lam=0; lam<NDIM; ++lam) conn[mu][nu][lam] = 0;}
 };
 
-// class KS : public CoordinateSystem {
-//     public:
-//         KS(double spin): a(spin) {};
+class KS : public CoordinateSystem {
+    public:
+        KS(double spin): a(spin) {};
 
-//         virtual void ks_coord(GReal X[NDIM], Real &r, Real &th) {
-//             r = r_of_X(X);
-//             th = th_of_X(X);
+        // TODO probably upstream these...
+        KOKKOS_FUNCTION void ks_coord(GReal X[NDIM], GReal &r, GReal &th) const {
+            r = r_of_X(X);
+            th = th_of_X(X);
 
-//   // Avoid singularity at polar axis
-// #if COORDSINGFIX
-//             if (fabs(th) < SINGSMALL) {
-//                 if ((th) >= 0)
-//                     th = SINGSMALL;
-//                 if ((*th) < 0)
-//                     th = -SINGSMALL;
-//             }
-//             if (fabs(M_PI - th) < SINGSMALL) {
-//                 if ((*th) >= M_PI)
-//                     th = M_PI + SINGSMALL;
-//                 if ((*th) < M_PI)
-//                     th = M_PI - SINGSMALL;
-//             }
-// #endif
-//         }
+  // Avoid singularity at polar axis
+#if COORDSINGFIX
+            if (fabs(th) < SINGSMALL) {
+                if (th >= 0)
+                    th = SINGSMALL;
+                if (th < 0)
+                    th = -SINGSMALL;
+            }
+            if (fabs(M_PI - th) < SINGSMALL) {
+                if (th >= M_PI)
+                    th = M_PI + SINGSMALL;
+                if (th < M_PI)
+                    th = M_PI - SINGSMALL;
+            }
+#endif
+        }
 
-//         virtual void sph_coord(GReal X[NDIM], Real &r, Real &th, Real &phi) {
-//             ks_coord(X, r, th);
-//             phi = phi_of_X(X);
-//         }
+        KOKKOS_FUNCTION void sph_coord(GReal X[NDIM], Real &r, Real &th, Real &phi) const {
+            ks_coord(X, r, th);
+            phi = phi_of_X(X);
+        }
 
-//         virtual void gcov_native(GReal X[NDIM], Real gcov[NDIM][NDIM]) {
-//             double sth, cth, s2, rho2;
-//             double r, th;
+        KOKKOS_FUNCTION void gcov_embed(GReal X[NDIM], Real gcov[NDIM][NDIM]) const {
+            Real sth, cth, s2, rho2;
+            GReal r, th;
 
-//             ks_coord(X, r, th);
+            ks_coord(X, r, th);
 
-//             cth = cos(th);
-//             sth = sin(th);
+            cth = cos(th);
+            sth = sin(th);
 
-//             s2 = sth*sth;
-//             rho2 = r*r + a*a*cth*cth;
+            s2 = sth*sth;
+            rho2 = r*r + a*a*cth*cth;
 
-//             double gcov_ks[NDIM][NDIM];
-//             gcov_ks[0][0] = -1. + 2.*r/rho2;
-//             gcov_ks[0][1] = 2.*r/rho2;
-//             gcov_ks[0][3] = -2.*a*r*s2/rho2;
+            gcov[0][0] = -1. + 2.*r/rho2;
+            gcov[0][1] = 2.*r/rho2;
+            gcov[0][3] = -2.*a*r*s2/rho2;
 
-//             gcov_ks[1][0] = gcov[0][1];
-//             gcov_ks[1][1] = 1. + 2.*r/rho2;
-//             gcov_ks[1][3] = -a*s2*(1. + 2.*r/rho2);
+            gcov[1][0] = gcov[0][1];
+            gcov[1][1] = 1. + 2.*r/rho2;
+            gcov[1][3] = -a*s2*(1. + 2.*r/rho2);
 
-//             gcov_ks[2][2] = rho2;
+            gcov[2][2] = rho2;
 
-//             gcov_ks[3][0] = gcov[0][3];
-//             gcov_ks[3][1] = gcov[1][3];
-//             gcov_ks[3][3] = s2*(rho2 + a*a*s2*(1. + 2.*r/rho2));
+            gcov[3][0] = gcov[0][3];
+            gcov[3][1] = gcov[1][3];
+            gcov[3][3] = s2*(rho2 + a*a*s2*(1. + 2.*r/rho2));
+        }
 
-//             // Apply coordinate transformation to code coordinates X
-//             double dxdX[NDIM][NDIM];
-//             dxdX_to_native(X, dxdX);
+        // For converting from BL
+        KOKKOS_FUNCTION void bl_to_ks(double X[NDIM], double ucon_bl[NDIM], double ucon_ks[NDIM])
+        {
+            double r, th;
+            ks_coord(X, r, th);
 
-//             for (int mu = 0; mu < NDIM; mu++) {
-//                 for (int nu = 0; nu < NDIM; nu++) {
-//                     for (int lam = 0; lam < NDIM; lam++) {
-//                         for (int kap = 0; kap < NDIM; kap++) {
-//                             gcov[mu][nu] += gcov_ks[lam][kap]*dxdX[lam][mu]*dxdX[kap][nu];
-//                         }
-//                     }
-//                 }
-//             }
-//         }
+            double trans[NDIM][NDIM];
+            DLOOP2 trans[mu][nu] = (mu == nu);
+            trans[0][1] = 2.*r/(r*r - 2.*r + a*a);
+            trans[3][1] = a/(r*r - 2.*r + a*a);
 
-//     protected:
-//         // BH Spin is a property of KS
-//         double a;
+            DLOOP1 ucon_ks[mu] = 0.;
+            DLOOP2 ucon_ks[mu] += trans[mu][nu]*ucon_bl[nu];
+        }
 
-//         virtual double r_of_X(Real X[NDIM]) {
-//             return X[1];
-//         }
-//         virtual double th_of_X(Real X[NDIM]) {
-//             return X[2];
-//         }
-//         virtual double phi_of_X(Real X[NDIM]) {
-//             return X[3];
-//         }
-//         virtual void dxdX_to_native(Real X[NDIM], Real dxdX[NDIM][NDIM]) {
-//             DLOOP1 dxdX[mu][mu] = 1;
-//         }
-//         virtual void dxdX_to_embed(Real X[NDIM], Real dxdX[NDIM][NDIM]) {
-//             DLOOP1 dxdX[mu][mu] = 1;
-//         }
-// };
+    protected:
+        // BH Spin is a property of KS
+        double a;
+
+        KOKKOS_FUNCTION GReal r_of_X(GReal X[NDIM]) const {
+            return X[1];
+        }
+        KOKKOS_FUNCTION GReal th_of_X(GReal X[NDIM]) const {
+            return X[2];
+        }
+        KOKKOS_FUNCTION GReal phi_of_X(GReal X[NDIM]) const {
+            return X[3];
+        }
+        KOKKOS_FUNCTION void dxdX_to_native(GReal X[NDIM], Real dxdX[NDIM][NDIM]) const {
+            DLOOP2 dxdX[mu][nu] = (mu == nu);
+        }
+        KOKKOS_FUNCTION void dxdX_to_embed(GReal X[NDIM], Real dxdX[NDIM][NDIM]) const {
+            DLOOP2 dxdX[mu][nu] = (mu == nu);
+        }
+};
+
+// TODO base class for embedding coordinate systems, base class for embedded
+class BL : public CoordinateSystem {
+    public:
+        BL(double spin): a(spin) {};
+
+        KOKKOS_FUNCTION void ks_coord(GReal X[NDIM], GReal &r, GReal &th) const {
+            r = r_of_X(X);
+            th = th_of_X(X);
+
+  // Avoid singularity at polar axis
+#if COORDSINGFIX
+            if (fabs(th) < SINGSMALL) {
+                if (th >= 0)
+                    th = SINGSMALL;
+                if (th < 0)
+                    th = -SINGSMALL;
+            }
+            if (fabs(M_PI - th) < SINGSMALL) {
+                if (th >= M_PI)
+                    th = M_PI + SINGSMALL;
+                if (th < M_PI)
+                    th = M_PI - SINGSMALL;
+            }
+#endif
+        }
+
+        KOKKOS_FUNCTION void sph_coord(GReal X[NDIM], GReal &r, GReal &th, GReal &phi) const {
+            ks_coord(X, r, th);
+            phi = phi_of_X(X);
+        }
+
+        KOKKOS_FUNCTION void gcov_embed(GReal X[NDIM], Real gcov[NDIM][NDIM]) const {
+            Real sth, cth, s2, a2, r2, DD, mu;
+            GReal r, th;
+
+            ks_coord(X, r, th);
+
+            cth = cos(th);
+            sth = sin(th);
+
+            sth = fabs(sin(th));
+            s2 = sth*sth;
+            cth = cos(th);
+            a2 = a*a;
+            r2 = r*r;
+            DD = 1. - 2./r + a2/r2;
+            mu = 1. + a2*cth*cth/r2;
+
+            gcov[0][0]  = -(1. - 2./(r*mu));
+            gcov[0][3]  = -2.*a*s2/(r*mu);
+            gcov[3][0]  = gcov[0][3];
+            gcov[1][1]   = mu/DD;
+            gcov[2][2]   = r2*mu;
+            gcov[3][3]   = r2*sth*sth*(1. + a2/r2 + 2.*a2*s2/(r2*r*mu));
+        }
+
+    protected:
+        // BH Spin is a property of BL
+        double a;
+
+        KOKKOS_FUNCTION double r_of_X(Real X[NDIM]) const {
+            return X[1];
+        }
+        KOKKOS_FUNCTION double th_of_X(Real X[NDIM]) const {
+            return X[2];
+        }
+        KOKKOS_FUNCTION double phi_of_X(Real X[NDIM]) const {
+            return X[3];
+        }
+        KOKKOS_FUNCTION void dxdX_to_native(Real X[NDIM], Real dxdX[NDIM][NDIM]) const {
+            DLOOP2 dxdX[mu][nu] = (mu == nu);
+        }
+        KOKKOS_FUNCTION void dxdX_to_embed(Real X[NDIM], Real dxdX[NDIM][NDIM]) const {
+            DLOOP2 dxdX[mu][nu] = (mu == nu);
+        }
+};
