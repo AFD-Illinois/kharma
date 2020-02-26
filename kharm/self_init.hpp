@@ -6,6 +6,7 @@
 #include "decs.hpp"
 #include "grid.hpp"
 #include "coordinates.hpp"
+#include "eos.hpp"
 
 // Rootfinding with GSL for analytic solution (use?)
 // #include <gsl/gsl_errno.h>
@@ -21,6 +22,8 @@ using namespace std;
  * 1. Slow mode
  * 2. Alfven wave
  * 3. Fast mode
+ * 
+ * Note this assumes ideal EOS with gamma=4/3!!!
  */
 GridVarsHost mhdmodes(Grid &G, const int nmode)
 {
@@ -198,81 +201,75 @@ GridVarsHost mhdmodes(Grid &G, const int nmode)
     Real tf = 2. * M_PI / fabs(omega.imag());
 
     Kokkos::parallel_for("mhdmodes_init", G.h_bulk_0(),
-                         KOKKOS_LAMBDA_3D {
-                             GReal X[NDIM];
-                             G.coord(i, j, k, Loci::center, X, false);
+        KOKKOS_LAMBDA_3D {
+            GReal X[NDIM];
+            G.coord(i, j, k, Loci::center, X, false);
 
-                             Real mode = amp * cos(k1 * X[1] + k2 * X[2] + k3 * X[3]);
-                             p(i, j, k, prims::rho) = rho0 + drho * mode;
-                             p(i, j, k, prims::u) = u0 + du * mode;
-                             p(i, j, k, prims::u1) = du1 * mode;
-                             p(i, j, k, prims::u2) = du2 * mode;
-                             p(i, j, k, prims::u3) = du3 * mode;
-                             p(i, j, k, prims::B1) = B10 + dB1 * mode;
-                             p(i, j, k, prims::B2) = B20 + dB2 * mode;
-                             p(i, j, k, prims::B3) = B30 + dB3 * mode;
-
-#if DEBUG
-                             if (i == 11 - 3 && j == 12 - 3 && k == 13 - 3)
-                             {
-                                 cerr << "Zone is %d %d %d\n", i, j, k);
-                                 cerr << "Coord is %f %f %f\n", X[1], X[2], X[3]);
-                                 cerr << "Starting prims are %f %f %f %f %f %f %f %f\n", p(i, j, k, prims::rho), p(i, j, k, prims::u),
-                                        p(i, j, k, prims::u1), p(i, j, k, prims::u2), p(i, j, k, prims::u3), p(i, j, k, prims::B1),
-                                        p(i, j, k, prims::B2), p(i, j, k, prims::B3));
-                             }
-#endif
-                         }
+            Real mode = amp * cos(k1 * X[1] + k2 * X[2] + k3 * X[3]);
+            p(i, j, k, prims::rho) = rho0 + drho * mode;
+            p(i, j, k, prims::u) = u0 + du * mode;
+            p(i, j, k, prims::u1) = du1 * mode;
+            p(i, j, k, prims::u2) = du2 * mode;
+            p(i, j, k, prims::u3) = du3 * mode;
+            p(i, j, k, prims::B1) = B10 + dB1 * mode;
+            p(i, j, k, prims::B2) = B20 + dB2 * mode;
+            p(i, j, k, prims::B3) = B30 + dB3 * mode;
+        }
     );
 
     return p;
 }
 
 // BONDI PROBLEM (TODO new file?)
-
-// Cache some constants
-Real C1, C2, n;
+template<typename Vars, typename Range>
+void get_prim_bondi(const Grid& G, Vars P, const EOS* eos, const Range range, const Real mdot, const Real rs);
 
 /**
  * Initialization of a Bondi problem with specified sonic point, BH mdot, and horizon radius
  * TODO this can/should be just mdot (and the grid ofc), if this problem is to be used as anything more than a test
  */
-GridVarsHost bondi(Grid &G, const Real mdot, const Real rs)
+GridVarsHost bondi(const Grid& G, const EOS* eos, const Real mdot, const Real rs)
 {
-
-    // TODO check nprim >= 8
-    // TODO init
-    GridVarsHost p("prims_initial", G.n1, G.n2, G.n3, G.nvar);
-
-
-
-    Kokkos::parallel_for("bondi_init", G.h_bulk_0(),
-                         KOKKOS_LAMBDA_3D {
-                             get_prim_bondi(G, P, i, j, k);
-                        }
-    );
-
 #if DEBUG
+    cerr << "mdot = " << mdot << endl;
+    cerr << "rs   = " << rs << endl;
     // TODO print zone?
-    cerr <<"a = %e Rhor = %e\n", a, Rhor);
-
-    cerr <<"mdot = %e\n", mdot);
-    cerr <<"rs   = %e\n", rs);
-    cerr <<"n    = %e\n", n);
-    cerr <<"C1   = %e\n", C1);
-    cerr <<"C2   = %e\n", C2);
 #endif
+
+    // Initialize with ghost zones
+    // get_prim_bondi will have to be device-side anyway for boundary conditions,
+    // and our default coordinates object is there anyway. 
+    GridVars p_d("prims_initial_all", G.gn1, G.gn2, G.gn3, G.nvar);
+    cerr << "Initialized prims array" << endl;
+
+    get_prim_bondi(G, p_d, eos, G.bulk_ng(), mdot, rs);
+    cerr << "Initialized bondi on device" << endl;
+
+    // Copy first to host
+    auto p_all = Kokkos::create_mirror(p_d);
+    Kokkos::deep_copy(p_all, p_d);
+    cerr << "Copied to host" << endl;
+
+    // Then subview and copy into final memory
+    // TODO see if this or the offset back in main() is faster
+    auto p_s = subview(p_all, Kokkos::make_pair(G.ng, G.ng + G.n1),
+                                Kokkos::make_pair(G.ng, G.ng + G.n2),
+                                Kokkos::make_pair(G.ng, G.ng + G.n3),
+                                ALL());
+    GridVarsHost p("prims_initial", G.n1, G.n2, G.n3, G.nvar);
+    Kokkos::deep_copy(p, p_s); // Get rid of the stride, it's annoying
+    cerr << "Copied on host" << endl;
 
     return p;
 }
 
 // Adapted from M. Chandra
-KOKKOS_INLINE_FUNCTION Real get_Tfunc(Real T, GReal r)
+KOKKOS_INLINE_FUNCTION Real get_Tfunc(const Real T, const GReal r, const Real C1, const Real C2, const Real n)
 {
     return pow(1. + (1. + n) * T, 2.) * (1. - 2. / r + pow(C1 / r / r / pow(T, n), 2.)) - C2;
 }
 
-KOKKOS_INLINE_FUNCTION Real get_T(GReal r)
+KOKKOS_INLINE_FUNCTION Real get_T(const GReal r, const Real C1, const Real C2, const Real n)
 {
     Real rtol = 1.e-12;
     Real ftol = 1.e-14;
@@ -282,12 +279,13 @@ KOKKOS_INLINE_FUNCTION Real get_T(GReal r)
     Real f0, f1, fh;
     Real T0, T1, Th;
     T0 = Tmin;
-    f0 = get_Tfunc(T0, r);
+    f0 = get_Tfunc(T0, r, C1, C2, n);
     T1 = Tmax;
-    f1 = get_Tfunc(T1, r);
+    f1 = get_Tfunc(T1, r, C1, C2, n);
+    if (f0 * f1 > 0) return -1;
 
     Th = (f1 * T0 - f0 * T1) / (f1 - f0);
-    fh = get_Tfunc(Th, r);
+    fh = get_Tfunc(Th, r, C1, C2, n);
     Real epsT = rtol * (Tmin + Tmax);
     while (fabs(Th - T0) > epsT && fabs(Th - T1) > epsT && fabs(fh) > ftol)
     {
@@ -303,7 +301,7 @@ KOKKOS_INLINE_FUNCTION Real get_T(GReal r)
         }
 
         Th = (f1 * T0 - f0 * T1) / (f1 - f0);
-        fh = get_Tfunc(Th, r);
+        fh = get_Tfunc(Th, r, C1, C2, n);
     }
 
     return Th;
@@ -325,7 +323,7 @@ KOKKOS_INLINE_FUNCTION void fourvel_to_prim(const Real gcon[NDIM][NDIM], const R
 /**
  * Set time component for consistency given a 3-velocity
  */
-KOKKOS_INLINE_FUNCTION void set_ut(Real gcov[NDIM][NDIM], Real ucon[NDIM])
+KOKKOS_INLINE_FUNCTION void set_ut(const Real gcov[NDIM][NDIM], Real ucon[NDIM])
 {
     Real AA, BB, CC;
 
@@ -344,57 +342,65 @@ KOKKOS_INLINE_FUNCTION void set_ut(Real gcov[NDIM][NDIM], Real ucon[NDIM])
     ucon[0] = (-BB - sqrt(discr)) / (2. * AA);
 }
 
-KOKKOS_INLINE_FUNCTION void get_prim_bondi(Grid& G, GridVars P, EOS* eos, int i, int j, int k)
+/**
+ * Get the Bondi solution at a particular zone.  Templated to be host- or device-side.
+ * Note this assumes that there are ghost zones!
+ */
+template<typename Vars, typename Range>
+void get_prim_bondi(const Grid& G, Vars P, const EOS* eos, const Range range, const Real mdot, const Real rs)
 {
-    static int firstc = 1;
-    if (firstc)
-    {
-        n = 1. / (eos->gam - 1.);
+    CoordinateEmbedding cs = *(G.coords); // TODO best way to do that?
+    Kokkos::parallel_for("bondi_calc", range,
+        KOKKOS_LAMBDA_3D {
+            // Solution constants
+            // TODO cache these?  State is awful
+            Real n = 1. / (eos->gam - 1.);
+            Real uc = sqrt(mdot / (2. * rs));
+            Real Vc = -sqrt(pow(uc, 2) / (1. - 3. * pow(uc, 2)));
+            Real Tc = -n * pow(Vc, 2) / ((n + 1.) * (n * pow(Vc, 2) - 1.));
+            Real C1 = uc * pow(rs, 2) * pow(Tc, n);
+            Real C2 = pow(1. + (1. + n) * Tc, 2) * (1. - 2. * mdot / rs + pow(C1, 2) / (pow(rs, 4) * pow(Tc, 2 * n)));
 
-        // Solution constants
-        Real uc = sqrt(mdot / (2. * rs));
-        Real Vc = -sqrt(pow(uc, 2) / (1. - 3. * pow(uc, 2)));
-        Real Tc = -n * pow(Vc, 2) / ((n + 1.) * (n * pow(Vc, 2) - 1.));
-        C1 = uc * pow(rs, 2) * pow(Tc, n);
-        C2 = pow(1. + (1. + n) * Tc, 2) * (1. - 2. * mdot / rs + pow(C1, 2) / (pow(rs, 4) * pow(Tc, 2 * n)));
+            // TODO this seems awkward.  Is this really the way to use my new tooling?
+            // Note some awkwardness is the fact we need both native coords and embedding r
+            GReal X[NDIM], Xembed[NDIM];
+            G.coord(i, j, k, Loci::center, X);
+            cs.coord_to_embed(X, Xembed);
+            // Any zone inside the horizon gets the horizon's values
+            int ii = i;
+            while (Xembed[1] < mpark::get<KSCoords>(cs.base).rhor())
+            {
+                ++ii;
+                G.coord(ii, j, k, Loci::center, X);
+                cs.coord_to_embed(X, Xembed);
+            }
+            GReal r = Xembed[1];
 
-        firstc = 0;
-    }
+            Real T = get_T(r, C1, C2, n);
+            if (T < 0) T = 0; // If you can't error, NaN
+            Real ur = -C1 / (pow(T, n) * pow(r, 2));
+            Real rho = pow(T, n);
+            Real u = rho * T * n;
 
-    G.ks_coord(i, j, k, &r, &th);
+            // Convert ur to native coordinates
+            Real ucon_bl[NDIM] = {0, ur, 0, 0};
+            Real ucon_mks[NDIM], u_prim[NDIM];
+            // TODO if using KS etc etc.
+            mpark::get<KSCoords>(cs.base).vec_from_bl(X, ucon_bl, ucon_mks);
 
-    while (r < Rhor)
-    {
-        i++;
-        G.ks_coord(i, j, k, &r, &th);
-    }
+            // Convert native 4-vector to primitive u-twiddle, see Gammie '04
+            Real gcon[NDIM][NDIM];
+            cs.gcon_native(X, gcon);
+            fourvel_to_prim(gcon, ucon_mks, u_prim);
 
-    Real T = get_T(r);
-    Real ur = -C1 / (pow(T, n) * pow(r, 2));
-    Real rho = pow(T, n);
-    Real u = rho * T * n;
-
-    // Convert ur to native coordinates
-    Real ucon_bl[NDIM] = {0, ur, 0, 0};
-    Real ucon_mks[NDIM], u_prim[NDIM];
-    G.coords->vec_bl_to_native(X, ucon_bl, ucon_mks);
-
-    // Convert native 4-vector to primitive u-twiddle, see Gammie '04
-    Real gcon[NDIM][NDIM];
-    G.coords->gcon_native(X, gcon);
-    fourvel_to_prim(gcon, ucon_mks, u_prim);
-
-    P(i, j, k, prims::rho) = rho;
-    P(i, j, k, prims::u) = u;
-    P(i, j, k, prims::u1) = u_prim[1];
-    P(i, j, k, prims::u2) = u_prim[2];
-    P(i, j, k, prims::u3) = u_prim[3];
-    P(i, j, k, prims::B1) = 0.;
-    P(i, j, k, prims::B2) = 0.;
-    P(i, j, k, prims::B3) = 0.;
-}
-
-KOKKOS_INLINE_FUNCTION void bound_gas_prob_x1r(Grid& , GridVars P, int i, int j, int k)
-{
-    get_prim_bondi(G, P, i, j, k);
+            P(i, j, k, prims::rho) = rho;
+            P(i, j, k, prims::u) = u;
+            P(i, j, k, prims::u1) = u_prim[1];
+            P(i, j, k, prims::u2) = u_prim[2];
+            P(i, j, k, prims::u3) = u_prim[3];
+            P(i, j, k, prims::B1) = 0.;
+            P(i, j, k, prims::B2) = 0.;
+            P(i, j, k, prims::B3) = 0.;
+        }
+    );
 }

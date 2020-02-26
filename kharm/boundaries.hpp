@@ -5,6 +5,7 @@
 
 #include "decs.hpp"
 #include "grid.hpp"
+#include "self_init.hpp"
 
 // TODO eliminate duplicate code AND somehow split doing left vs right
 void periodic_x1(const Grid& G, GridVars P, GridInt pflag)
@@ -126,11 +127,19 @@ void polar_x2(const Grid& G, GridVars P, GridInt pflag)
     );
 }
 
+void user_x1(const Grid& G, const EOS* eos, GridVars P, GridInt pflag) {
+    get_prim_bondi(G, P, eos, G.bound_x1_r(), 1.0, 8.0);
+}
 
-void set_bounds(const Grid& G, GridVars P, GridInt pflag, Parameters params)
+void set_bounds(const Grid& G, GridVars P, GridInt pflag, const EOS* eos, Parameters params)
 {
-    periodic_x1(G, P, pflag);
-    periodic_x2(G, P, pflag);
+    //periodic_x1(G, P, pflag);
+    //periodic_x2(G, P, pflag);
+    //periodic_x3(G, P, pflag);
+
+    outflow_x1(G, P, pflag);
+    user_x1(G, eos, P, pflag);
+    polar_x2(G, P, pflag);
     periodic_x3(G, P, pflag);
 }
 

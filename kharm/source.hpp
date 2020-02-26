@@ -40,32 +40,36 @@ void get_fluid_source(const Grid &G, const GridVars P, const GridDerived D,
         // Add a small "wind" source term in RHO,UU
         // Stolen shamelessly from iharm2d_v3
         Kokkos::parallel_for("fluid_source", G.bulk_ng(),
-                         KOKKOS_LAMBDA(const int i, const int j, const int k) {
-                             // TODO make these local rather than writing back?
+            KOKKOS_LAMBDA(const int i, const int j, const int k)
+            {
+                // TODO make these local
 
-                             // Need coordinates to evaluate particle addtn rate
-                             // Note that makes the wind spherical-only
-                             GReal r, th;
-                             G.ks_coord(i, j, k, Loci::center, r, th);
+                // Need coordinates to evaluate particle addtn rate
+                // Note that makes the wind spherical-only
+                // TODO grab this after ensuring embedding coords are spherical
+                GReal Xembed[NDIM];
+                G.coord_embed(i, j, k, Loci::center, Xembed);
+                GReal r = Xembed[1], th = Xembed[2];
 
-                             // Particle addition rate: concentrate at poles & center
-                             Real drhopdt = 2.e-4 * pow(cos(th), 4) / pow(1. + r * r, 2);
+                // Particle addition rate: concentrate at poles & center
+                Real drhopdt = 2.e-4 * pow(cos(th), 4) / pow(1. + r * r, 2);
 
-                             dP(i, j, k, prims::rho) = drhopdt;
+                dP(i, j, k, prims::rho) = drhopdt;
 
-                             Real Tp = 10.; // New fluid's temperature in units of c^2
-                             dP(i, j, k, prims::u) = drhopdt * Tp * 3.;
+                Real Tp = 10.; // New fluid's temperature in units of c^2
+                dP(i, j, k, prims::u) = drhopdt * Tp * 3.;
 
-                             // Leave everything else: we're inserting only fluid in normal observer frame
+                // Leave everything else: we're inserting only fluid in normal observer frame
 
-                             // Add plasma to the T^t_a component of the stress-energy tensor
-                             // Notice that U already contains a factor of sqrt{-g}
-                             get_state(G, dP, i, j, k, Loci::center, dD);
-                             prim_to_flux(G, dP, dD, eos, i, j, k, Loci::center, 0, dUw);
+                // Add plasma to the T^t_a component of the stress-energy tensor
+                // Notice that U already contains a factor of sqrt{-g}
+                get_state(G, dP, i, j, k, Loci::center, dD);
+                prim_to_flux(G, dP, dD, eos, i, j, k, Loci::center, 0, dUw);
 
-                             for (int p = 0; p < G.nvar; ++p)
-                                 dU(i, j, k, p) += dUw(i, j, k, p);
-                         });
+                for (int p = 0; p < G.nvar; ++p)
+                    dU(i, j, k, p) += dUw(i, j, k, p);
+            }
+        );
     }
 }
 template<typename DType>
@@ -92,8 +96,10 @@ KOKKOS_INLINE_FUNCTION void get_fluid_source(const Grid &G, const GridVars P, co
         // Note that makes the wind spherical-only
         Real dP[8], dUw[8];
         Derived dD;
-        GReal r, th;
-        G.ks_coord(i, j, k, Loci::center, r, th);
+        // TODO grab this after ensuring embedding coords are spherical
+        GReal Xembed[NDIM];
+        G.coord_embed(i, j, k, Loci::center, Xembed);
+        GReal r = Xembed[1], th = Xembed[2];
 
         // Particle addition rate: concentrate at poles & center
         Real drhopdt = 2.e-4 * pow(cos(th), 4) / pow(1. + r * r, 2);
@@ -138,8 +144,10 @@ KOKKOS_INLINE_FUNCTION void get_fluid_source(const Grid &G, const GridVars P, co
         // Note that makes the wind spherical-only
         Real dP[8], dUw[8];
         Derived dD;
-        GReal r, th;
-        G.ks_coord(i, j, k, Loci::center, r, th);
+        // TODO grab this after ensuring embedding coords are spherical
+        GReal Xembed[NDIM];
+        G.coord_embed(i, j, k, Loci::center, Xembed);
+        GReal r = Xembed[1], th = Xembed[2];
 
         // Particle addition rate: concentrate at poles & center
         Real drhopdt = 2.e-4 * pow(cos(th), 4) / pow(1. + r * r, 2);

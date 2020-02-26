@@ -1,22 +1,25 @@
 /**
  * Reasonably fast functions for inverting 4x4 matrices
  */
+#pragma once
+
+#include "Kokkos_Core.hpp"
 
 /**
  * NOT GR AWARE
  */
-KOKKOS_INLINE_FUNCTION Real dot(Real v1[NDIM], Real v2[NDIM]) {
+KOKKOS_INLINE_FUNCTION Real dot(const Real v1[NDIM], const Real v2[NDIM]) {
     return v1[0]*v2[0] + v1[1]*v2[1] + v1[2]*v2[2] + v1[3]*v2[3];
 }
 
-KOKKOS_INLINE_FUNCTION Real MINOR(Real m[16], int r0, int r1, int r2, int c0, int c1, int c2)
+KOKKOS_INLINE_FUNCTION Real MINOR(const Real m[16], int r0, int r1, int r2, int c0, int c1, int c2)
 {
   return m[4*r0+c0]*(m[4*r1+c1]*m[4*r2+c2] - m[4*r2+c1]*m[4*r1+c2]) -
          m[4*r0+c1]*(m[4*r1+c0]*m[4*r2+c2] - m[4*r2+c0]*m[4*r1+c2]) +
          m[4*r0+c2]*(m[4*r1+c0]*m[4*r2+c1] - m[4*r2+c0]*m[4*r1+c1]);
 }
 
-KOKKOS_INLINE_FUNCTION void adjoint(Real m[16], Real adjOut[16])
+KOKKOS_INLINE_FUNCTION void adjoint(const Real m[16], Real adjOut[16])
 {
   adjOut[ 0] =  MINOR(m,1,2,3,1,2,3);
   adjOut[ 1] = -MINOR(m,0,2,3,1,2,3);
@@ -39,7 +42,7 @@ KOKKOS_INLINE_FUNCTION void adjoint(Real m[16], Real adjOut[16])
   adjOut[15] =  MINOR(m,0,1,2,0,1,2);
 }
 
-KOKKOS_INLINE_FUNCTION Real determinant(Real m[16])
+KOKKOS_INLINE_FUNCTION Real determinant(const Real m[16])
 {
   return m[0]*MINOR(m,1,2,3,1,2,3) -
          m[1]*MINOR(m,1,2,3,0,2,3) +
@@ -47,7 +50,7 @@ KOKKOS_INLINE_FUNCTION Real determinant(Real m[16])
          m[3]*MINOR(m,1,2,3,0,1,2);
 }
 
-KOKKOS_INLINE_FUNCTION Real invert(Real *m, Real *invOut)
+KOKKOS_INLINE_FUNCTION Real invert(const Real *m, Real *invOut)
 {
   adjoint(m, invOut);
 

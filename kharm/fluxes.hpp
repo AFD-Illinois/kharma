@@ -195,7 +195,8 @@ void lr_to_flux(const Grid &G, const EOS* eos, const GridVars Pr, const GridVars
         throw std::runtime_error("Ctop 0 or NaN, cannot continue");
     }
     FLAG("any_nan");
-
+#endif
+#if 0
     print_a_zone(fluxL, 11, 12, 13);
     print_a_zone(fluxR, 11, 12, 13);
 

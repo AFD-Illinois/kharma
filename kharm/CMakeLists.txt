@@ -6,6 +6,7 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 #
 if (Kokkos_ENABLE_CUDA)
     set(EXE_NAME "kharm.cuda")
+    list(APPEND CMAKE_CXX_FLAGS "--expt-relaxed-constexpr")
 else()
     set(EXE_NAME "kharm.host")
 endif()
@@ -19,7 +20,7 @@ target_link_libraries(${EXE_NAME} kokkos)
 target_link_libraries(${EXE_NAME} hdf5)
 
 # FLAGS
-set(CMAKE_CXX_FLAGS_DEBUG "-Wall")
+list(APPEND CMAKE_CXX_FLAGS_DEBUG "-Wall")
 if(CMAKE_BUILD_TYPE)
     if(${CMAKE_BUILD_TYPE} STREQUAL "Debug")
         message("Debug build")

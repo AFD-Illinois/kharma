@@ -39,7 +39,7 @@ void step(const Grid& G, const EOS* eos, GridVars vars, Parameters params, doubl
     // Predictor step
     advance_fluid(G, eos, vars, vars, vars_tmp, 0.5 * dt, pflag);
     FLAG("Advance Fluid Tmp");
-    if (params.verbose) count_print_flags(pflag);
+    if (mpark::get<int>(params["verbose"])) count_print_flags(pflag);
 
     // Fixup routines: smooth over outlier zones
     // fixup(G, vars_tmp);
@@ -49,13 +49,13 @@ void step(const Grid& G, const EOS* eos, GridVars vars, Parameters params, doubl
     //FLAG("First bounds Tmp");
     // fixup_utoprim(G, vars_tmp);
     // FLAG("Fixup U_to_P Tmp");
-    set_bounds(G, vars_tmp, pflag, params);
+    set_bounds(G, vars_tmp, pflag, eos, params);
     FLAG("Full bounds Tmp");
 
     // Corrector step
     double ndt = advance_fluid(G, eos, vars, vars_tmp, vars, dt, pflag);
     FLAG("Advance Fluid Full");
-    if (params.verbose) count_print_flags(pflag);
+    if (mpark::get<int>(params["verbose"])) count_print_flags(pflag);
 
     // fixup(G, S);
     // FLAG("Fixup Full");
@@ -63,7 +63,7 @@ void step(const Grid& G, const EOS* eos, GridVars vars, Parameters params, doubl
     //FLAG("First bounds Full");
     // fixup_utoprim(G, S);
     // FLAG("Fixup U_to_P Full");
-    set_bounds(G, vars, pflag, params);
+    set_bounds(G, vars, pflag, eos, params);
     FLAG("Full bounds Full");
 
     t += dt;

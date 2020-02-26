@@ -1,5 +1,5 @@
 /*
- * Class representing a logically Cartesian grid of points in a CoordinateSystem, including:
+ * Class representing a logically Cartesian grid of points in a CoordinateEmbedding, including:
  * * Grid zone locations, start & end points
  * * Ghost or "halo" zones, iterators over grids with/without halos
  */
@@ -10,7 +10,7 @@
 #define FAST_CARTESIAN 0
 
 #include "decs.hpp"
-#include "coordinates.hpp"
+#include "coordinate_embedding.hpp"
 
 #include <vector>
 #include <memory>
@@ -50,7 +50,12 @@ public:
 
     // This will be a pointer to Device memory
     // It will not be dereference-able in host code
-    CoordinateSystem* coords;
+    CoordinateEmbedding* coords;
+
+    // Constructors
+    Grid(CoordinateEmbedding* coordinates, std::vector<int> shape, std::vector<GReal> startx, std::vector<GReal> endx, int ng_in=3, int nvar_in=8);
+    Grid(CoordinateEmbedding* coordinates, std::vector<int> fullshape, std::vector<int> startn, std::vector<int> shape, std::vector<GReal> startx, std::vector<GReal> endx, int ng_in=3, int nvar_in=8);
+
 
     // TODO does abstracting to functions slow the memory-access versions?
 #if FAST_CARTESIAN
@@ -64,19 +69,15 @@ public:
     KOKKOS_INLINE_FUNCTION Real gdet(const Loci loc, const int i, const int j) const {return gdet_direct(loc, i, j);}
     KOKKOS_INLINE_FUNCTION Real conn(const int i, const int j, const int mu, const int nu, const int lam) const {return conn_direct(i, j, mu, nu, lam);}
 #endif
-    // Constructors
-    Grid(CoordinateSystem* coordinates, std::vector<int> shape, std::vector<GReal> startx, std::vector<GReal> endx, int ng_in=3, int nvar_in=8);
-    Grid(CoordinateSystem* coordinates, std::vector<int> fullshape, std::vector<int> startn, std::vector<int> shape, std::vector<GReal> startx, std::vector<GReal> endx, int ng_in=3, int nvar_in=8);
-    //void init_grids();
 
     // Coordinates of the grid, i.e. "native"
     KOKKOS_INLINE_FUNCTION void coord(const int i, const int j, const int k, const Loci loc, GReal X[NDIM], bool use_ghosts=true) const;
-    // TODO Fix this in general w/coords device-side.  Error on this in Minkowski
-    KOKKOS_FUNCTION void ks_coord(const int i, const int j, const int k, const Loci loc, GReal &r, GReal &th) const
+    // Convenience function.  TODO more of these passthroughs?  Fewer?
+    KOKKOS_INLINE_FUNCTION void coord_embed(const int i, const int j, const int k, const Loci loc, GReal Xembed[NDIM]) const
     {
-        GReal X[NDIM];
-        coord(i, j, k, loc, X);
-        coords->ks_coord(X, r, th);
+        GReal Xnative[NDIM];
+        coord(i, j, k, loc, Xnative);
+        coords->coord_to_embed(Xnative, Xembed);
     }
 
     // Transformations using the cached geometry
@@ -92,7 +93,7 @@ public:
     KOKKOS_INLINE_FUNCTION void raise(const GridVector vcov, GridVector vcon,
                                         const int i, const int j, const int k, const Loci loc) const;
 
-    // Indexing. NOTE assumes forward indexing, not necessarily locations in memory on GPUs
+    // Indexing. TODO assumes forward indexing, auto-switch Right and Left
     KOKKOS_INLINE_FUNCTION int i4(const int i, const int j, const int k, const int p, const bool use_ghosts=true) const
     {
         if (use_ghosts) {
@@ -138,22 +139,22 @@ public:
     MDRangePolicy<Rank<3>> bound_x1_r() const {return MDRangePolicy<Rank<3>>({n1+ng, ng, ng}, {n1+2*ng, n2+ng, n3+ng});}
 
     MDRangePolicy<Rank<3>> bound_x2_l() const {return MDRangePolicy<Rank<3>>({0, 0, ng}, {n1+2*ng, ng, n3+ng});}
-    MDRangePolicy<Rank<3>> bound_x2_r() const {return MDRangePolicy<Rank<3>>({0, n2, ng}, {n1+2*ng, n2+2*ng, n3+ng});}
+    MDRangePolicy<Rank<3>> bound_x2_r() const {return MDRangePolicy<Rank<3>>({0, n2+ng, ng}, {n1+2*ng, n2+2*ng, n3+ng});}
 
     MDRangePolicy<Rank<3>> bound_x3_l() const {return MDRangePolicy<Rank<3>>({0, 0, 0}, {n1+2*ng, n2+2*ng, ng});}
-    MDRangePolicy<Rank<3>> bound_x3_r() const {return MDRangePolicy<Rank<3>>({0, 0, n3}, {n1+2*ng, n2+2*ng, n3+2*ng});}
+    MDRangePolicy<Rank<3>> bound_x3_r() const {return MDRangePolicy<Rank<3>>({0, 0, n3+ng}, {n1+2*ng, n2+2*ng, n3+2*ng});}
 
-    // TODO MPI boundary stuff
+    // TODO MPI boundary stuff: packing and unpacking
 
 
-    // TODO Versions for geometry stuff?
+    // TODO Versions of above in 2D for geometry stuff?
 
 };
 
 /**
  * Construct a grid which starts at 0 and covers the entire global space
  */
-Grid::Grid(CoordinateSystem* coordinates, std::vector<int> shape, std::vector<GReal> startx,
+Grid::Grid(CoordinateEmbedding* coordinates, std::vector<int> shape, std::vector<GReal> startx,
             std::vector<GReal> endx, const int ng_in, const int nvar_in)
 {
     nvar = nvar_in;
@@ -186,7 +187,7 @@ Grid::Grid(CoordinateSystem* coordinates, std::vector<int> shape, std::vector<GR
 /**
  * Construct a sub-grid starting at some point in a global space
  */
-Grid::Grid(CoordinateSystem* coordinates, std::vector<int> fullshape, std::vector<int> startn,
+Grid::Grid(CoordinateEmbedding* coordinates, std::vector<int> fullshape, std::vector<int> startn,
             std::vector<int> shape, std::vector<GReal> startx, std::vector<GReal> endx,
             const int ng_in, const int nvar_in)
 {
@@ -335,11 +336,11 @@ void init_grids(Grid& G) {
     // Member variables have an implicit this->
     // Kokkos captures pointers to objects, not full objects
     // Hence, you *CANNOT* use this->, or members, from inside kernels
-    GeomTensor gcon_local = G.gcon_direct;
-    GeomTensor gcov_local = G.gcov_direct;
-    GeomScalar gdet_local = G.gdet_direct;
-    GeomConn conn_local = G.conn_direct;
-    CoordinateSystem* cs = G.coords;
+    auto gcon_local = G.gcon_direct;
+    auto gcov_local = G.gcov_direct;
+    auto gdet_local = G.gdet_direct;
+    auto conn_local = G.conn_direct;
+    CoordinateEmbedding cs = *(G.coords);
 
     Kokkos::parallel_for("init_geom", MDRangePolicy<Rank<2>>({0, 0}, {G.gn1, G.gn2}),
         KOKKOS_LAMBDA (const int& i, const int& j) {
@@ -347,8 +348,8 @@ void init_grids(Grid& G) {
             Real gcov_loc[NDIM][NDIM], gcon_loc[NDIM][NDIM];
             for (int loc=0; loc < NLOC; ++loc) {
                 G.coord(i, j, 0, (Loci)loc, X);
-                cs->gcov_native(X, gcov_loc);
-                gdet_local(loc, i, j) = cs->gcon_native(gcov_loc, gcon_loc);
+                cs.gcov_native(X, gcov_loc);
+                gdet_local(loc, i, j) = cs.gcon_native(gcov_loc, gcon_loc);
                 DLOOP2 {
                     gcov_local(loc, i, j, mu, nu) = gcov_loc[mu][nu];
                     gcon_local(loc, i, j, mu, nu) = gcon_loc[mu][nu];
@@ -361,11 +362,12 @@ void init_grids(Grid& G) {
             GReal X[NDIM];
             G.coord(i, j, 0, Loci::center, X);
             Real conn_loc[NDIM][NDIM][NDIM];
-            cs->conn_func(X, conn_loc);
+            cs.conn_func(X, conn_loc);
             DLOOP2 for(int kap=0; kap<NDIM; ++kap)
                 conn_local(i, j, mu, nu, kap) = conn_loc[mu][nu][kap];
         }
     );
+
     FLAG("Grid metric init");
 }
 #endif
