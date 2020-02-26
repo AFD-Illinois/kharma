@@ -11,17 +11,17 @@
 #define ITERMAX 8
 #define GAMMAMAX 200
 
-KOKKOS_INLINE_FUNCTION Real err_eqn(const EOS eos, const Real Bsq, const Real D, const Real Ep, const Real QdB,
+KOKKOS_INLINE_FUNCTION Real err_eqn(const EOS* eos, const Real Bsq, const Real D, const Real Ep, const Real QdB,
                                     const Real Qtsq, const Real Wp, int &eflag);
 KOKKOS_INLINE_FUNCTION Real gamma_func(const Real Bsq, const Real D, const Real QdB,
                                         const Real Qtsq, const Real Wp, int &eflag);
-KOKKOS_INLINE_FUNCTION Real Wp_func(const Grid &G, const GridVars P, const EOS eos,
+KOKKOS_INLINE_FUNCTION Real Wp_func(const Grid &G, const GridVars P, const EOS* eos,
                                     const int i, const int j, const int k, const Loci loc, int &eflag);
 
 /**
  * Recover primitive variables
  */
-KOKKOS_INLINE_FUNCTION int U_to_P(const Grid &G, const GridVars U, const EOS eos,
+KOKKOS_INLINE_FUNCTION int U_to_P(const Grid &G, const GridVars U, const EOS* eos,
                                   const int i, const int j, const int k, const Loci loc, GridVars P)
 {
     int eflag = 0;
@@ -153,7 +153,7 @@ KOKKOS_INLINE_FUNCTION int U_to_P(const Grid &G, const GridVars U, const EOS eos
     Real rho0 = D / gamma;
     Real W = Wp + D;
     Real w = W / pow(gamma, 2);
-    Real p = eos.p_w(rho0, w);
+    Real p = eos->p_w(rho0, w);
     Real u = w - (rho0 + p);
 
     // Return without updating non-B primitives
@@ -184,7 +184,7 @@ KOKKOS_INLINE_FUNCTION int U_to_P(const Grid &G, const GridVars U, const EOS eos
 
 // TODO lighten up on checks in these functions in favor of sanity at the end
 // Document these
-KOKKOS_INLINE_FUNCTION Real err_eqn(const EOS eos, const Real Bsq, const Real D, const Real Ep, const Real QdB,
+KOKKOS_INLINE_FUNCTION Real err_eqn(const EOS* eos, const Real Bsq, const Real D, const Real Ep, const Real QdB,
                                     const Real Qtsq, const Real Wp, int &eflag)
 {
 
@@ -192,7 +192,7 @@ KOKKOS_INLINE_FUNCTION Real err_eqn(const EOS eos, const Real Bsq, const Real D,
     Real gamma = gamma_func(Bsq, D, QdB, Qtsq, Wp, eflag);
     Real w = W / pow(gamma,2);
     Real rho0 = D / gamma;
-    Real p = eos.p_w(rho0, w);
+    Real p = eos->p_w(rho0, w);
 
     return -Ep + Wp - p + 0.5 * Bsq + 0.5 * (Bsq * Qtsq - QdB * QdB) / pow((Bsq + W),2);
 
@@ -234,7 +234,7 @@ KOKKOS_INLINE_FUNCTION Real gamma_func(const Real Bsq, const Real D, const Real 
  * See Mignone & McKinney
  * TODO make local?  Index stuff seems weird
  */
-KOKKOS_INLINE_FUNCTION Real Wp_func(const Grid &G, const GridVars P, const EOS eos,
+KOKKOS_INLINE_FUNCTION Real Wp_func(const Grid &G, const GridVars P, const EOS* eos,
                                     const int i, const int j, const int k, const Loci loc, int &eflag)
 {
     Real rho0, u, gamma;
@@ -244,5 +244,5 @@ KOKKOS_INLINE_FUNCTION Real Wp_func(const Grid &G, const GridVars P, const EOS e
 
     gamma = mhd_gamma_calc(G, P, i, j, k, loc);
 
-    return (rho0 + u + eos.p(rho0, u)) * gamma * gamma - rho0 * gamma;
+    return (rho0 + u + eos->p(rho0, u)) * gamma * gamma - rho0 * gamma;
 }

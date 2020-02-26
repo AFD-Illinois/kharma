@@ -23,11 +23,8 @@ add_subdirectory(external/kokkos)
 # pass Kokkos include directories to our target application
 include_directories(${Kokkos_INCLUDE_DIRS_RET})
 
-### HighFive: HDF5 for C++
-# We don't need to compile this, it's header-only
-#add_subdirectory(external/HighFive)
-# include dirs
-#include_directories(${PROJECT_SOURCE_DIR}/external/HighFive/include)
+### mpark/variant
+include_directories(external/variant/include)
 
 ### K/HARM source
 add_subdirectory(kharm)

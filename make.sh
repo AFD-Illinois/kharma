@@ -14,9 +14,9 @@ cd build
 
 if [[ "$*" == *"clean"* ]]; then
   if true; then # CUDA BUILD
-    cmake3 ..\
+    cmake ..\
     -DCMAKE_CXX_COMPILER=$PWD/../external/kokkos/bin/nvcc_wrapper \
-    -DCMAKE_BUILD_TYPE=Debug \
+    -DCMAKE_BUILD_TYPE=Release \
     -DUSE_MPI=OFF \
     -DKokkos_ENABLE_OPENMP=ON \
     -DKokkos_ENABLE_CUDA=ON \
@@ -24,8 +24,9 @@ if [[ "$*" == *"clean"* ]]; then
     -DKokkos_ARCH_WSM=OFF \
     -DKokkos_ARCH_HSW=ON \
     -DKokkos_ARCH_BDW=OFF \
+    -DKokkos_ARCH_SKX=OFF \
     -DKokkos_ARCH_POWER9=OFF \
-    -DKokkos_ARCH_KEPLER35=ON \
+    -DKokkos_ARCH_KEPLER35=OFF \
     -DKokkos_ARCH_MAXWELL52=OFF \
     -DKokkos_ARCH_PASCAL60=OFF \
     -DKokkos_ARCH_VOLTA70=OFF \

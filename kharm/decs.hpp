@@ -7,6 +7,8 @@
 #pragma once
 
 #include <Kokkos_Core.hpp>
+#include <mpark/variant.hpp>
+
 #include <stdexcept>
 #include <map>
 
@@ -15,8 +17,8 @@
 #define NDIM 4
 #define DLOOP1 for(int mu = 0; mu < NDIM; ++mu)
 #define DLOOP2 for(int mu = 0; mu < NDIM; ++mu) for(int nu = 0; nu < NDIM; ++nu)
-// There may be more than 8 vars!!!!!
-// But only 8 are primitives. Sometimes we just need those together
+// There may be more than 8 variables, so don't use these
+// unless you *only* want the primitives
 #define NPRIM 8
 #define PLOOP for(int mu = 0; mu < NPRIM; ++mu)
 
@@ -32,22 +34,15 @@ typedef double Real;
 //typedef float Real;
 typedef double GReal;
 //typedef float GReal;
-// TODO float Reals crash
+// TODO float Reals crash. Hybridize w/double B?
 
-// TODO should this be minimal?  Most of it is only necessary for making a Coords, Grid, and stopping evolution
-typedef struct {
-    double a, hslope, mks_smooth, poly_xt, poly_alpha;
-    double tf;
-    int n1, n2, n3, ng;
-
-    // Options unrelated to fluid evolution
-    int verbose;
-} Parameters;
+// TODO take an arbitrary list + command line map and shove it all in here
+typedef struct std::map<std::string, mpark::variant<int, double, std::string>> Parameters;
 
 // Useful Enums to avoid lots of #defines
-enum prims{rho, u, u1, u2, u3, B1, B2, B3};
+enum prims{rho=0, u, u1, u2, u3, B1, B2, B3};
 #define NLOC 5
-enum Loci{face1, face2, face3, center, corner};
+enum Loci{face1=0, face2, face3, center, corner};
 
 // Data structures common to all k-harm
 // TODO something cute with the type checker to distinguish prims from cons?  Names seem fine.
@@ -87,18 +82,15 @@ typedef struct {
     GridVector bcov;
 } GridDerived;
 
-// TODO fix debug flag on CMake Debug target
 #if DEBUG
 #warning "Compiling with debug"
-#endif
-
-#if DEBUG
 #define FLAG(x) cout << x << endl;
 #else
 #define FLAG(x)
 #endif
 
 // pflag codes, for indicating causes of inversion failures
+// TODO enum?
 #define ERR_NEG_INPUT -100
 #define ERR_MAX_ITER 1
 #define ERR_UTSQ 2

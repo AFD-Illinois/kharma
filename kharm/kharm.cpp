@@ -23,10 +23,10 @@
 using namespace Kokkos;
 using namespace std;
 
-int main(int argc, char **argv)
+int main(int argc, char *argv[])
 {
     //mpi_init(argc, argv);
-    Kokkos::initialize();
+    Kokkos::initialize(argc, argv);
     {
         std::cerr << "K/HARM version " << VERSION << std::endl;
         std::cerr << "Using Kokkos environment:" << std::endl;
@@ -35,35 +35,46 @@ int main(int argc, char **argv)
 
         // TODO parse paraemeters and/or read restart here
         Parameters params;
-        params.verbose = 1;
-
-        // Allocate device-side objects
-        // TODO switch on problem spec and/or reading, move EOS device-side
-        EOS eos = EOS(4./3);
-        CoordinateSystem* coords = (CoordinateSystem*)Kokkos::kokkos_malloc(sizeof(Minkowski));
-        Kokkos::parallel_for("CreateObjects", 1,
-            KOKKOS_LAMBDA(const int&) {
-                new ((Minkowski*)coords) Minkowski();
-            }
-        );
-
-        // TODO read an input with grid size here
-        int sz = 128;
+        params.insert(std::make_pair("verbose", 1));
+        int side = 128;
+        auto sz = {side, side, side};
         int ng = 3;
         int nvar = 8;
+        double gam = 5./3;
+        double a = 0.0;
+        auto start = {1.9, 0.0, 0.0};
+        auto stop = {20.0, M_PI, 2*M_PI};
+        double tend = 10.0;
+        double dump_cadence = 0.5;
+        bool dump_every_step = false;
+
+        // Allocate device-side objects
+        EOS *eos;
+        eos = (EOS*)Kokkos::kokkos_malloc(sizeof(GammaLaw));
+        Kokkos::parallel_for("CreateEOS", 1,
+            KOKKOS_LAMBDA(const int&) {
+                new ((GammaLaw*)eos) GammaLaw(gam);
+            }
+        );
+        EOS *h_eos = new GammaLaw(gam);
+
+        SomeBaseCoords base_coords = KSCoords(a);
+        CoordinateEmbedding coords = CoordinateEmbedding(base_coords);
 
         // Make the grid
-        Grid G(coords, {sz, sz, sz}, {0.0, 0.0, 0.0}, {1.0, 1.0, 1.0}, ng, nvar);
+        Grid G(&coords, sz, start, stop, ng, nvar);
         cerr << "Grid initialized" << std::endl;
 
         // Make an array of the primitive variables
-        GridVarsHost h_vars_input = mhdmodes(G, 1);
+        //GridVarsHost h_vars_input("empty_in", G.n1, G.n2, G.n3, G.nvar);
+        //GridVarsHost h_vars_input = mhdmodes(G, 1);
+        GridVarsHost h_vars_input = bondi(G, eos, 1.0, 8.0); // Init is run device-side, since everything's already there
         cerr << "Vars initialized" << std::endl;
         dump(G, h_vars_input, params, "dump_0000.h5", true);
 
         // Allocate device memory and host mirror memory
         GridVars vars("all_vars", G.gn1, G.gn2, G.gn3, G.nvar);
-        auto m_vars = create_mirror_view(vars);
+        auto m_vars = create_mirror(vars);
         cerr << "Memory initialized" << std::endl;
 
         // Copy input (no ghosts, Host order) into working array (ghosts, device order)
@@ -81,11 +92,8 @@ int main(int argc, char **argv)
         auto walltime_start = std::chrono::high_resolution_clock::now();
         double dt = 1.e-3;
         double t = 0;
-        double tend = 0.5;
-        double dump_cadence = 0.05;
         double next_dump_t = t + dump_cadence;
         int dump_cnt = 1;
-        bool dump_every_step = false;
         bool dump_this_step = false;
 
         int out_iter = 0;
@@ -120,13 +128,17 @@ int main(int argc, char **argv)
             dump_this_step = false;
         }
 
+        // Clean up host-side objects
+        // delete h_coords, h_eos;
         // Clean up device-side objects
         Kokkos::parallel_for("DestroyObjects", 1,
             KOKKOS_LAMBDA(const int&) {
-                coords->~CoordinateSystem();
+                // coords->~CoordinateSystem();
+                eos->~EOS();
             }
         );
-        Kokkos::kokkos_free(coords);
+        // Kokkos::kokkos_free(coords);
+        Kokkos::kokkos_free(eos);
     }
     Kokkos::finalize();
 }

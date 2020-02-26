@@ -27,7 +27,7 @@ KOKKOS_INLINE_FUNCTION Real bsq_calc(const Derived D)
  * A factor of sqrt(4 pi) is absorbed into the definition of b.
  * See Gammie & McKinney '04
  */
-KOKKOS_INLINE_FUNCTION void mhd_calc(const GridVars P, const GridDerived D, const EOS eos,
+KOKKOS_INLINE_FUNCTION void mhd_calc(const GridVars P, const GridDerived D, const EOS* eos,
                                      const int i, const int j, const int k, const int dir,
                                      Real mhd[NDIM])
 {
@@ -35,7 +35,7 @@ KOKKOS_INLINE_FUNCTION void mhd_calc(const GridVars P, const GridDerived D, cons
 
     rho = P(i, j, k, prims::rho);
     u = P(i, j, k, prims::u);
-    pgas = eos.p(rho, u);
+    pgas = eos->p(rho, u);
     w = pgas + rho + u;
     bsq = bsq_calc(D, i, j, k);
     eta = w + bsq;
@@ -48,7 +48,7 @@ KOKKOS_INLINE_FUNCTION void mhd_calc(const GridVars P, const GridDerived D, cons
                   D.bcon(i, j, k, dir) * D.bcov(i, j, k, mu);
     }
 }
-KOKKOS_INLINE_FUNCTION void mhd_calc(const GridVars P, const Derived D, const EOS eos,
+KOKKOS_INLINE_FUNCTION void mhd_calc(const GridVars P, const Derived D, const EOS* eos,
                                      const int i, const int j, const int k, const int dir,
                                      Real mhd[NDIM])
 {
@@ -56,7 +56,7 @@ KOKKOS_INLINE_FUNCTION void mhd_calc(const GridVars P, const Derived D, const EO
 
     rho = P(i, j, k, prims::rho);
     u = P(i, j, k, prims::u);
-    pgas = eos.p(rho, u);
+    pgas = eos->p(rho, u);
     w = pgas + rho + u;
     bsq = bsq_calc(D);
     eta = w + bsq;
@@ -69,7 +69,7 @@ KOKKOS_INLINE_FUNCTION void mhd_calc(const GridVars P, const Derived D, const EO
                   D.bcon[dir] * D.bcov[mu];
     }
 }
-KOKKOS_INLINE_FUNCTION void mhd_calc(const Real P[], const Derived D, const EOS eos,
+KOKKOS_INLINE_FUNCTION void mhd_calc(const Real P[], const Derived D, const EOS* eos,
                                      const int i, const int j, const int k, const int dir,
                                      Real mhd[NDIM])
 {
@@ -77,7 +77,7 @@ KOKKOS_INLINE_FUNCTION void mhd_calc(const Real P[], const Derived D, const EOS 
 
     rho = P[prims::rho];
     u = P[prims::u];
-    pgas = eos.p(rho, u);
+    pgas = eos->p(rho, u);
     w = pgas + rho + u;
     bsq = bsq_calc(D);
     eta = w + bsq;
@@ -296,7 +296,7 @@ KOKKOS_INLINE_FUNCTION void get_state(const Grid& G, const Real P[],
 /**
  * Turn the primitive variables at a location into the local conserved variables, or fluxes at a face
  */
-KOKKOS_INLINE_FUNCTION void prim_to_flux(const Grid &G, const GridVars P, const GridDerived D, const EOS eos,
+KOKKOS_INLINE_FUNCTION void prim_to_flux(const Grid &G, const GridVars P, const GridDerived D, const EOS* eos,
                                          const int i, const int j, const int k, const Loci loc, const int dir,
                                          GridVars flux)
 {
@@ -328,7 +328,7 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const Grid &G, const GridVars P, const 
     for (int p = 0; p < G.nvar; ++p)
         flux(i, j, k, p) *= G.gdet(loc, i, j);
 }
-KOKKOS_INLINE_FUNCTION void prim_to_flux(const Grid &G, const GridVars P, const Derived D, const EOS eos,
+KOKKOS_INLINE_FUNCTION void prim_to_flux(const Grid &G, const GridVars P, const Derived D, const EOS* eos,
                                          const int i, const int j, const int k, const Loci loc, const int dir,
                                          GridVars flux)
 {
@@ -360,7 +360,7 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const Grid &G, const GridVars P, const 
     for (int p = 0; p < G.nvar; ++p)
         flux(i, j, k, p) *= G.gdet(loc, i, j);
 }
-KOKKOS_INLINE_FUNCTION void prim_to_flux(const Grid &G, const GridVars P, const Derived D, const EOS eos,
+KOKKOS_INLINE_FUNCTION void prim_to_flux(const Grid &G, const GridVars P, const Derived D, const EOS* eos,
                                          const int i, const int j, const int k, const Loci loc, const int dir,
                                          Real flux[])
 {
@@ -392,7 +392,7 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const Grid &G, const GridVars P, const 
     for (int p = 0; p < G.nvar; ++p)
         flux[p] *= G.gdet(loc, i, j);
 }
-KOKKOS_INLINE_FUNCTION void prim_to_flux(const GeomScalar gdet, const GridVars P, const Derived D, const EOS eos,
+KOKKOS_INLINE_FUNCTION void prim_to_flux(const GeomScalar gdet, const GridVars P, const Derived D, const EOS* eos,
                                          const int i, const int j, const int k, const Loci loc, const int dir,
                                          Real flux[])
 {
@@ -424,7 +424,7 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const GeomScalar gdet, const GridVars P
     for (int p = 0; p < P.extent(3); ++p)
         flux[p] *= gdet(loc, i, j);
 }
-KOKKOS_INLINE_FUNCTION void prim_to_flux(const Grid &G, const Real P[], const Derived D, const EOS eos,
+KOKKOS_INLINE_FUNCTION void prim_to_flux(const Grid &G, const Real P[], const Derived D, const EOS* eos,
                                          const int i, const int j, const int k, const Loci loc, const int dir,
                                          Real flux[])
 {
@@ -461,7 +461,7 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const Grid &G, const Real P[], const De
 /**
  *  Calculate components of magnetosonic velocity from primitive variables
  */
-KOKKOS_INLINE_FUNCTION void mhd_vchar(const Grid &G, const GridVars P, const GridDerived D, const EOS eos,
+KOKKOS_INLINE_FUNCTION void mhd_vchar(const Grid &G, const GridVars P, const GridDerived D, const EOS* eos,
                                       const int i, const int j, const int k, const Loci loc, const int dir,
                                       GridScalar cmax, GridScalar cmin)
 {
@@ -482,10 +482,10 @@ KOKKOS_INLINE_FUNCTION void mhd_vchar(const Grid &G, const GridVars P, const Gri
     // Find fast magnetosonic speed
     bsq = bsq_calc(D, i, j, k);
     u = P(i, j, k, prims::u);
-    ef = P(i, j, k, prims::rho) + eos.gam * u;
+    ef = P(i, j, k, prims::rho) + eos->gam * u;
     ee = bsq + ef;
     va2 = bsq / ee;
-    cs2 = eos.gam * eos.p(0, u) / ef;
+    cs2 = eos->gam * eos->p(0, u) / ef;
 
     cms2 = cs2 + va2 - cs2 * va2;
 
@@ -520,7 +520,7 @@ KOKKOS_INLINE_FUNCTION void mhd_vchar(const Grid &G, const GridVars P, const Gri
     cmax(i, j, k) = (vp > vm) ? vp : vm;
     cmin(i, j, k) = (vp > vm) ? vm : vp;
 }
-KOKKOS_INLINE_FUNCTION void mhd_vchar(const Grid &G, const GridVars P, const Derived D, const EOS eos,
+KOKKOS_INLINE_FUNCTION void mhd_vchar(const Grid &G, const GridVars P, const Derived D, const EOS* eos,
                                       const int i, const int j, const int k, const Loci loc, const int dir,
                                       GridScalar cmax, GridScalar cmin)
 {
@@ -541,10 +541,10 @@ KOKKOS_INLINE_FUNCTION void mhd_vchar(const Grid &G, const GridVars P, const Der
     // Find fast magnetosonic speed
     bsq = bsq_calc(D);
     u = P(i, j, k, prims::u);
-    ef = P(i, j, k, prims::rho) + eos.gam * u;
+    ef = P(i, j, k, prims::rho) + eos->gam * u;
     ee = bsq + ef;
     va2 = bsq / ee;
-    cs2 = eos.gam * eos.p(0, u) / ef;
+    cs2 = eos->gam * eos->p(0, u) / ef;
 
     cms2 = cs2 + va2 - cs2 * va2;
 
@@ -579,7 +579,7 @@ KOKKOS_INLINE_FUNCTION void mhd_vchar(const Grid &G, const GridVars P, const Der
     cmax(i, j, k) = (vp > vm) ? vp : vm;
     cmin(i, j, k) = (vp > vm) ? vm : vp;
 }
-KOKKOS_INLINE_FUNCTION void mhd_vchar(const Grid &G, const GridVars P, const Derived D, const EOS eos,
+KOKKOS_INLINE_FUNCTION void mhd_vchar(const Grid &G, const GridVars P, const Derived D, const EOS* eos,
                                       const int i, const int j, const int k, const Loci loc, const int dir,
                                       Real& cmax, Real& cmin)
 {
@@ -600,10 +600,10 @@ KOKKOS_INLINE_FUNCTION void mhd_vchar(const Grid &G, const GridVars P, const Der
     // Find fast magnetosonic speed
     bsq = bsq_calc(D);
     u = P(i, j, k, prims::u);
-    ef = P(i, j, k, prims::rho) + eos.gam * u;
+    ef = P(i, j, k, prims::rho) + eos->gam * u;
     ee = bsq + ef;
     va2 = bsq / ee;
-    cs2 = eos.gam * eos.p(0, u) / ef;
+    cs2 = eos->gam * eos->p(0, u) / ef;
 
     cms2 = cs2 + va2 - cs2 * va2;
 
@@ -638,7 +638,7 @@ KOKKOS_INLINE_FUNCTION void mhd_vchar(const Grid &G, const GridVars P, const Der
     cmax = (vp > vm) ? vp : vm;
     cmin = (vp > vm) ? vm : vp;
 }
-KOKKOS_INLINE_FUNCTION void mhd_vchar(const GeomTensor gcon, const GridVars P, const Derived D, const EOS eos,
+KOKKOS_INLINE_FUNCTION void mhd_vchar(const GeomTensor gcon, const GridVars P, const Derived D, const EOS* eos,
                                       const int i, const int j, const int k, const Loci loc, const int dir,
                                       Real& cmax, Real& cmin)
 {
@@ -659,10 +659,10 @@ KOKKOS_INLINE_FUNCTION void mhd_vchar(const GeomTensor gcon, const GridVars P, c
     // Find fast magnetosonic speed
     bsq = bsq_calc(D);
     u = P(i, j, k, prims::u);
-    ef = P(i, j, k, prims::rho) + eos.gam * u;
+    ef = P(i, j, k, prims::rho) + eos->gam * u;
     ee = bsq + ef;
     va2 = bsq / ee;
-    cs2 = eos.gam * eos.p(0, u) / ef;
+    cs2 = eos->gam * eos->p(0, u) / ef;
 
     cms2 = cs2 + va2 - cs2 * va2;
 

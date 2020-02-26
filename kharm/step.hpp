@@ -19,14 +19,14 @@
 using namespace std;
 
 // Declarations
-double advance_fluid(const Grid &G, const EOS eos,
+double advance_fluid(const Grid &G, const EOS* eos,
                     const GridVars Pi, const GridVars Ps, GridVars Pf,
                     const double dt, GridInt pflag);
 
 /**
  * Take one step.  Returns the Courant limit, to be used for the next step
  */
-void step(const Grid& G, const EOS eos, GridVars vars, Parameters params, double& dt, double& t)
+void step(const Grid& G, const EOS* eos, GridVars vars, Parameters params, double& dt, double& t)
 {
     FLAG("Start step")
     // Don't re-allocate scratch space per step
@@ -39,7 +39,7 @@ void step(const Grid& G, const EOS eos, GridVars vars, Parameters params, double
     // Predictor step
     advance_fluid(G, eos, vars, vars, vars_tmp, 0.5 * dt, pflag);
     FLAG("Advance Fluid Tmp");
-    if (params.verbose) count_print_flags(pflag);
+    if (mpark::get<int>(params["verbose"])) count_print_flags(pflag);
 
     // Fixup routines: smooth over outlier zones
     // fixup(G, vars_tmp);
@@ -49,13 +49,13 @@ void step(const Grid& G, const EOS eos, GridVars vars, Parameters params, double
     //FLAG("First bounds Tmp");
     // fixup_utoprim(G, vars_tmp);
     // FLAG("Fixup U_to_P Tmp");
-    set_bounds(G, vars_tmp, pflag, params);
+    set_bounds(G, vars_tmp, pflag, eos, params);
     FLAG("Full bounds Tmp");
 
     // Corrector step
     double ndt = advance_fluid(G, eos, vars, vars_tmp, vars, dt, pflag);
     FLAG("Advance Fluid Full");
-    if (params.verbose) count_print_flags(pflag);
+    if (mpark::get<int>(params["verbose"])) count_print_flags(pflag);
 
     // fixup(G, S);
     // FLAG("Fixup Full");
@@ -63,7 +63,7 @@ void step(const Grid& G, const EOS eos, GridVars vars, Parameters params, double
     //FLAG("First bounds Full");
     // fixup_utoprim(G, S);
     // FLAG("Fixup U_to_P Full");
-    set_bounds(G, vars, pflag, params);
+    set_bounds(G, vars, pflag, eos, params);
     FLAG("Full bounds Full");
 
     t += dt;
@@ -81,7 +81,7 @@ void step(const Grid& G, const EOS eos, GridVars vars, Parameters params, double
     dt = 0.9*ndt;
 }
 
-double advance_fluid(const Grid &G, const EOS eos,
+double advance_fluid(const Grid &G, const EOS* eos,
                     const GridVars Pi, const GridVars Ps, GridVars Pf,
                     const double dt, GridInt pflag)
 {
