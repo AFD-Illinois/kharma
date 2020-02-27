@@ -5,6 +5,7 @@
 
 #include "decs.hpp"
 #include "matrix.hpp"
+#include "coordinate_embedding.hpp"
 
 #include <mpark/variant.hpp>
 
@@ -199,17 +200,7 @@ class NullCartTransform {
         }
 };
 
-// Lay out the coordinate systems and transforms we'll use
-// Note some allowed combinations don't make sense, e.g. Minkowski+non-Null
-class BLCoords;
-class KSCoords;
-class MinkowskiCoords;
+// Bundle coordinates and transforms into umbrella variant types
+// I am 99% certain there's a way to add CoordinateEmbedding to this list.
 using SomeBaseCoords = mpark::variant<BLCoords, KSCoords, MinkowskiCoords>;
-
-class NullTransform;
-// class ModifyTransform;
-// class MoreModifyTransform;
-// class FunkyModifyTransform;
-// class MKS3Transform;
-// typedef mpark::variant<NullTransform, ModifyTransform, MoreModifyTransform, FunkyModifyTransform, MKS3Transform> SomeTransform;
 using SomeTransform = mpark::variant<NullSphTransform, NullCartTransform>;

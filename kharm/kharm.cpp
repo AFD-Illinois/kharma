@@ -35,7 +35,7 @@ int main(int argc, char *argv[])
 
         // TODO parse paraemeters and/or read restart here
         Parameters params;
-        params.insert(std::make_pair("verbose", 1));
+        params.insert(std::make_pair("verbose", 0));
         int side = 128;
         auto sz = {side, side, side};
         int ng = 3;
