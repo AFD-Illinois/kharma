@@ -124,7 +124,7 @@ void lr_to_flux(const Grid &G, const EOS* eos, const GridVars Pr, const GridVars
 
     //  LOOP FUSION BABY
     const int np = G.nvar;
-    kharm_for("uber_flux", G.bulk_plus(1),
+    abstract_for("uber_flux", G.bulk_plus(1),
             KOKKOS_LAMBDA_3D {
                 Derived Dtmp;
                 Real cmaxL, cmaxR, cminL, cminR;
