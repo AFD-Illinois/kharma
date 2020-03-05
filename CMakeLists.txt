@@ -1,48 +1,9 @@
-cmake_minimum_required(VERSION 3.10)
+# KHARMA CMake top file. Basically exists to include Parthenon and KHARMA CMake files in 1 build with the same options
 
-project(kharm CXX C)
+cmake_minimum_required(VERSION 3.13)
+project(kharma LANGUAGES C CXX)
+set (CMAKE_CXX_STANDARD 14)
 
-# Specify C++ standard
-set(CMAKE_CXX_STANDARD 14)
-set(CMAKE_CXX_EXTENSIONS OFF)
-
-# PREREQUISITES
-if (USE_MPI)
-    find_package(MPI REQUIRED)
-    include_directories(SYSTEM ${MPI_INCLUDE_PATH})
-endif()
-
-find_package(HDF5 REQUIRED)
-include_directories(${HDF5_INCLUDE_PATH})
-
-# TODO specifically parallel HDF5
-
-# SOURCES
-### kokkos: Performance Portability
-add_subdirectory(external/kokkos)
-# pass Kokkos include directories to our target application
-include_directories(${Kokkos_INCLUDE_DIRS_RET})
-
-### mpark/variant
-include_directories(external/variant/include)
-
-### K/HARM source
-add_subdirectory(kharm)
-
-##################### PRINT CONFIGURE STATUS ######################
-message("===================================================")
-message("  ${PROJECT_NAME} build configuration: ${CMAKE_BUILD_TYPE} ")
-message("===================================================")
-message("  C++ Compiler : ${CMAKE_CXX_COMPILER_ID} "
-                         "${CMAKE_CXX_COMPILER_VERSION} "
-                         "${CMAKE_CXX_COMPILER_WRAPPER}")
-message("                 ${CMAKE_CXX_COMPILER}")
-message("  Kokkos OpenMP enabled : ${Kokkos_ENABLE_OPENMP}")
-message("  Kokkos CUDA   enabled : ${Kokkos_ENABLE_CUDA}")
-if (Kokkos_ENABLE_CUDA)
-    message("  Kokkos CUDA   Lambda  : ${Kokkos_ENABLE_CUDA_LAMBDA}")
-    message("  Kokkos CUDA   flags   : ${Kokkos_CUDA_OPTIONS}")
-endif()
-message("  Kokkos HWLOC  enabled : ${Kokkos_ENABLE_HWLOC}")
-message("===================================================")
-
+# TODO don't build parthenon unit tests? Move to external/?
+add_subdirectory(parthenon)
+add_subdirectory(kharma)
