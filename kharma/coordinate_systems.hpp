@@ -1,5 +1,10 @@
 /*
- * coordinates.hpp:  A mess^(TM)
+ * coordinate_systems.hpp: Implementations of base and transformation functions used in coordinate_embedding.hpp
+ * 
+ * Currently implements:
+ * Minkowski space: Cartesian and Spherical coordinates
+ * Kerr Space: Spherical KS and BL coordinates as bases, with the "Funky" MKS transform implemented on top.
+ * TODO: MKS, CMKS, MKS3, Cartesian KS basis and transforms
  */
 #pragma once
 
@@ -12,10 +17,12 @@
 #define COORDSINGFIX 1
 #define SINGSMALL 1e-20
 
+using namespace parthenon;
+using GReal = Real;
+
 // Common function for non-invertible coordinate systems
 template<typename Function>
 void root_find(const GReal Xembed[NDIM], GReal Xnative[NDIM], Function coord_to_embed);
-
 
 /**
  * EMBEDDING SYSTEMS:

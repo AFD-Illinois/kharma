@@ -3,14 +3,14 @@
  */
 #pragma once
 
+#include "coordinate_systems.hpp"
 #include "decs.hpp"
 #include "matrix.hpp"
-#include "coordinates.hpp"
 
 /**
  * Coordinates in HARM are logically Cartesian -- that is, in some coordinate system they are evenly spaced
  * However, working in GR allows us to define that "native" or "transformed" coordinate system arbitrarily in relation to the
- * "base" or "embedding" coordinates, which are usually Kerr-Schild coordinates
+ * "base" or "embedding" coordinates, usually Spherical Kerr-Schild coordinates
  * 
  * That is, as long as we have a bijective map of base<->transformed coordinates, we can define the latter arbitrarily, which is
  * great for putting resolution where we need and not where we don't.
@@ -24,6 +24,7 @@
  * * dxdX_to_embed
  * * dxdX_to_native
  * 
+ * TODO put lower/raise in here?
  */
 class CoordinateEmbedding {
     public:

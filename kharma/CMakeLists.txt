@@ -11,6 +11,9 @@ endif()
 AUX_SOURCE_DIRECTORY(${CMAKE_CURRENT_SOURCE_DIR} EXE_NAME_SRC)
 AUX_SOURCE_DIRECTORY(${CMAKE_CURRENT_SOURCE_DIR}/prob EXE_NAME_SRC)
 
+include_directories(${CMAKE_CURRENT_SOURCE_DIR})
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/prob)
+
 add_executable(${EXE_NAME} ${EXE_NAME_SRC})
 
 target_link_libraries(${EXE_NAME} PUBLIC parthenon)
@@ -27,15 +30,6 @@ if(CMAKE_BUILD_TYPE)
 else()
     message("Implicit non-Debug build")
     target_compile_definitions(${EXE_NAME} PUBLIC DEBUG=0)
-endif()
-
-if (USE_MPI)
-    target_compile_definitions(${EXE_NAME} PUBLIC USE_MPI)
-    target_link_libraries(${EXE_NAME} ${MPI_C_LIBRARIES})
-endif()
-
-if (Kokkos_ENABLE_CUDA)
-    target_compile_definitions(${EXE_NAME} PUBLIC Kokkos_ENABLE_CUDA)
 endif()
 
 if (Kokkos_ENABLE_HWLOC)

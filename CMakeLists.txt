@@ -18,5 +18,3 @@ include_directories(external/variant/include)
 
 # KHARMA folder
 add_subdirectory(kharma)
-include_directories(kharma)
-include_directories(kharma/prob)

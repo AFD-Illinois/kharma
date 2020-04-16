@@ -42,10 +42,6 @@ if [[ "$*" == *"clean"* ]]; then
     -DKokkos_ENABLE_CUDA_LAMBDA=ON
   else #OpenMP BUILD
     cmake3 ..\
-    -DCMAKE_CXX_FLAGS="-I/opt/apps/intel18/hdf5/1.10.4/x86_64/include/ \
-			-L/opt/apps/intel18/hdf5/1.10.4/x86_64/lib/ \
-            -I/usr/include/mpich-x86_64/ \
-            -L/usr/lib64/mpich/lib/" \
     -DUSE_MPI=OFF \
     -DDISABLE_MPI=ON \
     -DKokkos_ENABLE_OPENMP=ON \
@@ -57,5 +53,5 @@ if [[ "$*" == *"clean"* ]]; then
   fi
 fi
 
-make -j
+make
 cp kharma/kharma.* ..
