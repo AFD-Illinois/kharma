@@ -10,6 +10,7 @@
 #include "bvals/bvals.hpp"
 #include "driver/multistage.hpp"
 
+#include "containers.hpp"
 #include "grmhd.hpp"
 #include "harm.hpp"
 
@@ -35,7 +36,7 @@ namespace parthenon {
         //     packages["scalars"] = BetterScalars::Initialize(pin.get());
         // }
 
-        // TODO electrons, like scalars but...
+        // TODO electrons, like scalars but w/heating step...
 
         return std::move(packages);
     }
@@ -46,99 +47,80 @@ namespace parthenon {
 TaskList HARMDriver::MakeTaskList(MeshBlock *pmb, int stage)
 {
     TaskList tl;
-    // we're going to populate our last with multiple kinds of tasks
-    // these lambdas just clean up the interface to adding tasks of the relevant kinds
-    auto AddMyTask =
-    [&tl, pmb, stage, this] (BlockStageNamesIntegratorTaskFunc func, TaskID dep) {
-    return tl.AddTask<BlockStageNamesIntegratorTask>(func,dep,pmb,stage,
-                                                        stage_name,integrator);
-    };
-    auto AddContainerTask =
-    [&tl] (ContainerTaskFunc func, TaskID dep, Container<Real>& rc) {
-    return tl.AddTask<ContainerTask>(func,dep,rc);
-    };
-    auto AddTwoContainerTask =
-    [&tl] (TwoContainerTaskFunc f, TaskID dep, Container<Real>& rc1, Container<Real>& rc2) {
-    return tl.AddTask<TwoContainerTask>(f,dep,rc1,rc2);
-    };
 
     TaskID none(0);
     // first make other useful containers
     if (stage == 1) {
         Container<Real>& base = pmb->real_containers.Get();
-        pmb->real_containers.Add("dUdt", base);
+
         for (int i=1; i<integrator->nstages; i++)
             pmb->real_containers.Add(stage_name[i], base);
     }
 
     // pull out the container we'll use to get fluxes and/or compute RHSs
     Container<Real>& sc0  = pmb->real_containers.Get(stage_name[stage-1]);
-    // pull out a container we'll use to store dU/dt.
-    // This is just -flux_divergence in this example
-    Container<Real>& dudt = pmb->real_containers.Get("dUdt");
     // pull out the container that will hold the updated state
-    // effectively, sc1 = sc0 + dudt*dt
     Container<Real>& sc1  = pmb->real_containers.Get(stage_name[stage]);
 
-    auto start_recv = AddContainerTask(Container<Real>::StartReceivingTask, none, sc1);
+    auto start_recv = AddContainerTask(tl, Container<Real>::StartReceivingTask, none, sc1);
 
-    auto advect_flux = AddContainerTask(GRMHD::CalculateFluxes, none, sc0);
+    auto derived = AddContainerTask(tl, GRMHD::FillDerived, none, sc0);
+    auto calculate_flux = AddContainerTask(tl, GRMHD::CalculateFluxes, derived, sc0);
+    auto apply_flux = AddTwoContainerTask(tl, GRMHD::ApplyFluxes, calculate_flux, sc0, base);
 
-    auto send_flux = AddContainerTask(Container<Real>::SendFluxCorrectionTask,
-                                    advect_flux, sc0);
-    auto recv_flux = AddContainerTask(Container<Real>::ReceiveFluxCorrectionTask,
-                                    advect_flux, sc0);
+    // TODO make sure these are nops and re-enable
+    // auto send_flux = AddContainerTask(tl, Container<Real>::SendFluxCorrectionTask,
+    //                                 advect_flux, sc0);
+    // auto recv_flux = AddContainerTask(tl, Container<Real>::ReceiveFluxCorrectionTask,
+    //                                 advect_flux, sc0);
 
     // compute the divergence of fluxes of conserved variables
-    auto flux_div = AddTwoContainerTask(parthenon::Update::FluxDivergence,
-                                        recv_flux, sc0, dudt);
-
-    // apply du/dt to all independent fields in the container
-    auto update_container = AddMyTask(UpdateContainer, flux_div);
+    auto flux_div = AddUpdateTask(tl, UpdateContainer, apply_flux, sc0);
 
     // update ghost cells
-    auto send = AddContainerTask(Container<Real>::SendBoundaryBuffersTask,
-                                update_container, sc1);
-    auto recv = AddContainerTask(Container<Real>::ReceiveBoundaryBuffersTask,
+    auto send = AddContainerTask(tl, Container<Real>::SendBoundaryBuffersTask,
+                                flux_div, sc1);
+    auto recv = AddContainerTask(tl, Container<Real>::ReceiveBoundaryBuffersTask,
                                 send, sc1);
-    auto fill_from_bufs = AddContainerTask(Container<Real>::SetBoundariesTask,
+    auto fill_from_bufs = AddContainerTask(tl, Container<Real>::SetBoundariesTask,
                                             recv, sc1);
-    auto clear_comm_flags = AddContainerTask(Container<Real>::ClearBoundaryTask,
+    auto clear_comm_flags = AddContainerTask(tl, Container<Real>::ClearBoundaryTask,
                                             fill_from_bufs, sc1);
 
-    auto prolongBound = tl.AddTask<BlockTask>([](MeshBlock *pmb) {
-    pmb->pbval->ProlongateBoundaries(0.0, 0.0);
-    return TaskStatus::complete;
-    }, fill_from_bufs, pmb);
+    // auto prolongBound = tl.AddTask<BlockTask>([](MeshBlock *pmb) {
+    //     pmb->pbval->ProlongateBoundaries(0.0, 0.0);
+    //     return TaskStatus::complete;
+    // }, fill_from_bufs, pmb);
 
     // set physical boundaries
-    auto set_bc = AddContainerTask(parthenon::ApplyBoundaryConditions,
-                                    prolongBound, sc1);
+    auto set_bc = AddContainerTask(tl, parthenon::ApplyBoundaryConditions,
+                                    fill_from_bufs, sc1);
 
-    // fill in derived fields
-    auto fill_derived = AddContainerTask(parthenon::FillDerivedVariables::FillDerived,
-                                        set_bc, sc1);
+    // fill in derived fields. TODO necessary?  Is this called before output?
+    // auto fill_derived = AddContainerTask(tl, parthenon::FillDerivedVariables::FillDerived,
+    //                                     set_bc, sc1);
 
     // estimate next time step
     if (stage == integrator->nstages) {
-        auto new_dt = AddContainerTask([](Container<Real>& rc) {
+        auto new_dt = AddContainerTask(tl, [](Container<Real>& rc) {
             MeshBlock *pmb = rc.pmy_block;
             pmb->SetBlockTimestep(parthenon::Update::EstimateTimestep(rc));
             return TaskStatus::complete;
-        }, fill_derived, sc1);
+        }, set_bc, sc1);
 
         // Update refinement
         if (pmesh->adaptive) {
-                auto tag_refine = tl.AddTask<BlockTask>([](MeshBlock *pmb) {
-                    pmb->pmr->CheckRefinementCondition();
-                    return TaskStatus::complete;
-                }, fill_derived, pmb);
+            auto tag_refine = tl.AddTask<BlockTask>([](MeshBlock *pmb) {
+                pmb->pmr->CheckRefinementCondition();
+                return TaskStatus::complete;
+            }, set_bc, pmb);
         }
+
         // Purge stages
         auto purge_stages = tl.AddTask<BlockTask>([](MeshBlock *pmb) {
-                pmb->real_containers.PurgeNonBase();
-                return TaskStatus::complete;
-            }, fill_derived, pmb);
+            pmb->real_containers.PurgeNonBase();
+            return TaskStatus::complete;
+        }, set_bc, pmb);
     }
     return tl;
 }

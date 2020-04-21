@@ -138,17 +138,20 @@ class CoordinateEmbedding {
             // Transform to native coordinates
             tensor_to_native(Xnative, gcov_em, gcov);
         }
-        KOKKOS_INLINE_FUNCTION void gcon_native(const GReal X[NDIM], Real gcon[NDIM][NDIM]) const
+        KOKKOS_INLINE_FUNCTION Real gcon_native(const GReal X[NDIM], Real gcon[NDIM][NDIM]) const
         {
             Real gcov[NDIM][NDIM];
             gcov_native(X, gcov);
-            gcon_native(gcov, gcon);
+            return gcon_native(gcov, gcon);
         }
         KOKKOS_INLINE_FUNCTION Real gcon_native(const Real gcov[NDIM][NDIM], Real gcon[NDIM][NDIM]) const
         {
-            Real gdet = invert(&gcov[0][0],&gcon[0][0]);
+            Real gdet = invert(&gcov[0][0], &gcon[0][0]);
             return sqrt(fabs(gdet));
         }
+
+
+
         KOKKOS_INLINE_FUNCTION void conn_func(const GReal X[NDIM], Real conn[NDIM][NDIM][NDIM]) const
         {
             Real tmp[NDIM][NDIM][NDIM];

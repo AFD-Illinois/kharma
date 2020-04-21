@@ -1,6 +1,6 @@
 # KHARMA CMake top file. Basically exists to include Parthenon and KHARMA CMake files in 1 build with the same options
 
-cmake_minimum_required(VERSION 3.13)
+cmake_minimum_required(VERSION 3.12)
 project(kharma LANGUAGES C CXX)
 set (CMAKE_CXX_STANDARD 14)
 
@@ -14,7 +14,6 @@ add_subdirectory(external/parthenon)
 include_directories(external/parthenon/src)
 # mpark::variant is header only, don't build anything
 include_directories(external/variant/include)
-
 
 # KHARMA folder
 add_subdirectory(kharma)

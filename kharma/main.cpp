@@ -10,6 +10,14 @@
 #include "decs.hpp"
 #include "harm.hpp"
 
+// Warn once *during compile* specifying whether CUDA is being used
+// This catches a lot of configuration mistakes
+#if defined( Kokkos_ENABLE_CUDA )
+#warning "Compiling with CUDA"
+#else
+#warning "Compiling with OpenMP Only"
+#endif
+
 using namespace parthenon;
 
 /**

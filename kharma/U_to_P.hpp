@@ -2,45 +2,31 @@
  * Variable inversion to recover primitive variables from conserved quantities
  * See Mignone & McKinney 2007
  */
-#pragma once
-
-#include "mesh/mesh.hpp"
 
 #include "decs.hpp"
-#include "eos.hpp"
+
 #include "utils.hpp"
 
 #define ERRTOL 1.e-8
 #define ITERMAX 8
 #define GAMMAMAX 200
 
-using namespace parthenon;
-
 KOKKOS_INLINE_FUNCTION Real err_eqn(const EOS* eos, const Real Bsq, const Real D, const Real Ep, const Real QdB,
-                                    const Real Qtsq, const Real Wp, int &eflag);
+                                    const Real Qtsq, const Real Wp, InversionStatus &eflag);
 KOKKOS_INLINE_FUNCTION Real gamma_func(const Real Bsq, const Real D, const Real QdB,
-                                        const Real Qtsq, const Real Wp, int &eflag);
-KOKKOS_INLINE_FUNCTION Real Wp_func(const CoordinateEmbedding &C, const CellVariable<Real> P, const EOS* eos,
+                                        const Real Qtsq, const Real Wp, InversionStatus &eflag);
+KOKKOS_INLINE_FUNCTION Real Wp_func(const Grid &G, const GridVars P, const EOS* eos,
                                     const int i, const int j, const int k, const Loci loc, InversionStatus &eflag);
 
 /**
  * Recover primitive variables
- * 
- * TODO does U_to_P ever need to be called from non-center, even with face-centered B fields?
  */
-KOKKOS_INLINE_FUNCTION InversionStatus U_to_P(MeshBlock *pmb, const CoordinateEmbedding &C, const EOS* eos,
-                                  const int i, const int j, const int k, const Loci loc)
+KOKKOS_INLINE_FUNCTION InversionStatus U_to_P(const Grid &G, const GridVars U, const EOS* eos,
+                                  const int i, const int j, const int k, const Loci loc, GridVars P)
 {
     InversionStatus eflag = InversionStatus::success;
 
-    Container<Real>& rc = pmb->real_containers.Get();
-    CellVariable<Real> U = rc.Get("c.c.bulk.cons");
-    CellVariable<Real> P = rc.Get("c.c.bulk.prims");
-
-    // TODO amend if ever not loci::cent
-    GReal x1 = C.coord
-
-    Real gdet = C.gdet(loc, i, j);
+    Real gdet = G.gdet(loc, i, j);
 
     // Update the primitive B-fields
     P(i, j, k, prims::B1) = U(i, j, k, prims::B1) / gdet;
@@ -51,7 +37,6 @@ KOKKOS_INLINE_FUNCTION InversionStatus U_to_P(MeshBlock *pmb, const CoordinateEm
     // Catch negative energy or density
     if (U(i, j, k, prims::rho) <= 0. || U(i, j, k, prims::u) <= 0.)
     {
-        // TODO print if OpenMP or something?
         return InversionStatus::neg_input;
     }
 #endif
@@ -76,19 +61,26 @@ KOKKOS_INLINE_FUNCTION InversionStatus U_to_P(MeshBlock *pmb, const CoordinateEm
 
     Real Bcov[NDIM], Qcon[NDIM], ncon[NDIM];
     // Interlaced upper/lower operation
-    // TODO are separate ops faster?
-    for (int mu = 0; mu < NDIM; mu++)
-    {
-        Bcov[mu] = 0.;
-        Qcon[mu] = 0.;
-        ncon[mu] = 0.;
-        for (int nu = 0; nu < NDIM; nu++)
-        {
-            Bcov[mu] += G.gcov(Loci::center, i, j, mu, nu) * Bcon[nu];
-            Qcon[mu] += G.gcon(Loci::center, i, j, mu, nu) * Qcov[nu];
-            ncon[mu] += G.gcon(Loci::center, i, j, mu, nu) * ncov[nu];
-        }
-    }
+    // for (int mu = 0; mu < NDIM; mu++)
+    // {
+    //     Bcov[mu] = 0.;
+    //     Qcon[mu] = 0.;
+    //     ncon[mu] = 0.;
+    //     for (int nu = 0; nu < NDIM; nu++)
+    //     {
+    //         Bcov[mu] += G.gcov(Loci::center, i, j, mu, nu) * Bcon[nu];
+    //         Qcon[mu] += G.gcon(Loci::center, i, j, mu, nu) * Qcov[nu];
+    //         ncon[mu] += G.gcon(Loci::center, i, j, mu, nu) * ncov[nu];
+    //     }
+    // }
+    // I think this is faster. TODO verify
+    G.lower(Bcon, Bcov, i, j, k, loc);
+    G.raise(Qcov, Qcon, i, j, k, loc);
+    G.raise(ncov, ncon, i, j, k, loc);
+
+    Real Bsq = dot(Bcon, Bcov);
+    Real QdB = dot(Bcon, Qcov);
+    Real Qdotn = dot(Qcon, ncov);
 
     Real Qtcon[NDIM];
     DLOOP1 Qtcon[mu] = Qcon[mu] + ncon[mu] * Qdotn;
@@ -118,7 +110,7 @@ KOKKOS_INLINE_FUNCTION InversionStatus U_to_P(MeshBlock *pmb, const CoordinateEm
 
     Real dW = clip(-err / dedW / (1. - f), -0.5*Wp, 2.0*Wp);
 
-    // Wp, dW, err
+// Wp, dW, err
     Real Wp1 = Wp;
     Real err1 = err;
 
@@ -193,7 +185,7 @@ KOKKOS_INLINE_FUNCTION InversionStatus U_to_P(MeshBlock *pmb, const CoordinateEm
 // TODO lighten up on checks in these functions in favor of sanity at the end
 // Document these
 KOKKOS_INLINE_FUNCTION Real err_eqn(const EOS* eos, const Real Bsq, const Real D, const Real Ep, const Real QdB,
-                                    const Real Qtsq, const Real Wp, int &eflag)
+                                    const Real Qtsq, const Real Wp, InversionStatus &eflag)
 {
 
     Real W = Wp + D;
@@ -210,7 +202,7 @@ KOKKOS_INLINE_FUNCTION Real err_eqn(const EOS* eos, const Real Bsq, const Real D
  * Fluid relativistic factor gamma in terms of inversion state variables
  */
 KOKKOS_INLINE_FUNCTION Real gamma_func(const Real Bsq, const Real D, const Real QdB,
-                                        const Real Qtsq, const Real Wp, int &eflag)
+                                        const Real Qtsq, const Real Wp, InversionStatus &eflag)
 {
     Real QdBsq, W, utsq, gamma, W2, WB;
 
@@ -227,11 +219,11 @@ KOKKOS_INLINE_FUNCTION Real gamma_func(const Real Bsq, const Real D, const Real 
     // Catch utsq < 0
     if (utsq < 0. || utsq > 1.e3 * GAMMAMAX * GAMMAMAX)
     {
-        eflag = ERR_UTSQ;
+        eflag = InversionStatus::bad_ut;
     }
     if (gamma < 1.)
     {
-        eflag = ERR_GAMMA;
+        eflag = InversionStatus::bad_gamma;
     }
 #endif
 
@@ -243,7 +235,7 @@ KOKKOS_INLINE_FUNCTION Real gamma_func(const Real Bsq, const Real D, const Real 
  * TODO make local?  Index stuff seems weird
  */
 KOKKOS_INLINE_FUNCTION Real Wp_func(const Grid &G, const GridVars P, const EOS* eos,
-                                    const int i, const int j, const int k, const Loci loc, int &eflag)
+                                    const int i, const int j, const int k, const Loci loc, InversionStatus &eflag)
 {
     Real rho0, u, gamma;
 

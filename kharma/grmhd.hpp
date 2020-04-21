@@ -17,7 +17,7 @@
 
 #include <memory>
 
-#include "interface/StateDescriptor.hpp"
+#include "interface/state_descriptor.hpp"
 #include "task_list/tasks.hpp"
 #include "parameter_input.hpp"
 
@@ -27,15 +27,14 @@ namespace GRMHD {
     // For declaring meshes, as well as the full intermediates we need (right & left fluxes etc)
     std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin);
 
-    // Necessary tasks for interface
-    TaskStatus FillDerived(Container<Real>& rc);  // TODO not sure how this fits with HARM's many, many derived vars
-    Real EstimateTimestep(Container<Real>& rc);
-
-    // Full task to advance fluid by a certain timestep
-    TaskStatus AdvanceFluid(Container<Real>& rc);
-
-    // Sub-tasks
-    TaskStatus ConstoPrim(Container<Real>& rc);
-    TaskStatus Reconstruct(Container<Real>& rc);
+    // Tasks to implement the interface:
+    // FillDerived should end up with all derived variables in the StateDescriptor in consistent state for e.g. output
+    // For HARM this means running U_to_P to recover primitives in all zones
+    void FillDerived(Container<Real>& rc);
+    // Reconstruct the primitives and calculate the LLF fluxes in each direction
     TaskStatus CalculateFluxes(Container<Real>& rc);
+    // Apply the fluxes to calculate dU/dt, the RHS of the PDE. Time integration is applied separately.
+    TaskStatus ApplyFluxes(Container<Real>& rc, Container<Real>& base);
+    // Estimate the next timestep. For pure GRMHD, this is the minimum signal crossing time of a zone on the block
+    Real EstimateTimestep(Container<Real>& rc);
 }

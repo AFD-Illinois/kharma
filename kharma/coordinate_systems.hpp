@@ -357,9 +357,9 @@ void root_find(const GReal Xembed[NDIM], GReal Xnative[NDIM], Function& coord_to
 
   if (Xembed[2] < M_PI / 2.) {
     Xa[2] = 0.;
-    Xb[2] = 0.5 + SMALL;
+    Xb[2] = 0.5 + SINGSMALL;
   } else {
-    Xa[2] = 0.5 - SMALL;
+    Xa[2] = 0.5 - SINGSMALL;
     Xb[2] = 1.;
   }
 

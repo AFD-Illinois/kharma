@@ -7,6 +7,9 @@
 
 using namespace parthenon;
 
+/**
+ * Override a parthenon method to generate the section of a problem redisiding in a given mesh block.
+ */
 void MeshBlock::ProblemGenerator(ParameterInput *pin)
 {
     auto prob = pin->GetOrAddString("Hydro", "problem", "mhdmodes");

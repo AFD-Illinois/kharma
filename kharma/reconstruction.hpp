@@ -15,42 +15,48 @@ KOKKOS_INLINE_FUNCTION void weno5(const Real x1, const Real x2, const Real x3,
                                 const Real x4, const Real x5,
                                 Real &lout, Real &rout);
 
-void WENO5X1(MeshBlock *pmb, ParArrayND<Real> pl, ParArrayND<Real> pr)
-{
-    auto& p = pmb->real_containers.Get("c.c.bulk.prims");
+// TODO these could be significantly faster in X2, X3.
+// Easiest to add WENO5 to Parthenon in its own style
 
-    pmb->par_for("recon_1", pmb->ks-1, pmb->ke+1, pmb->js-1, pmb->je+1, pmb->is-1, pmb->ie+1,
+void WENO5X1(Container<Real>& rc, ParArrayND<Real> Pl, ParArrayND<Real> Pr)
+{
+    auto& P = rc.Get("c.c.bulk.prims").data;
+    auto pmb = rc.pmy_block;
+
+    pmb->par_for("recon_1", pmb->ks-1, pmb->ke+1, pmb->js-1, pmb->je+1, pmb->is-1, pmb->ie+1, 0, NPRIM,
         KOKKOS_LAMBDA_VARS
         {
-            weno5(p(i-2, j, k, p), p(i-1, j, k, p), p(i, j, k, p),
-                 p(i+1, j, k, p), p(i+2, j, k, p),
-                 pl(i, j, k, p), pr(i, j, k, p));
+            weno5(P(i-2, j, k, p), P(i-1, j, k, p), P(i, j, k, p),
+                  P(i+1, j, k, p), P(i+2, j, k, p),
+                  Pl(i, j, k, p), Pr(i, j, k, p));
         }
     );
 }
-void WENO5X2(MeshBlock *pmb, ParArrayND<Real> pl, ParArrayND<Real> pr)
+void WENO5X2(Container<Real>& rc, ParArrayND<Real> Pl, ParArrayND<Real> Pr)
 {
-    auto& p = pmb->real_containers.Get("c.c.bulk.prims");
+    auto& P = rc.Get("c.c.bulk.prims").data;
+    auto pmb = rc.pmy_block;
 
-    pmb->par_for("recon_2", pmb->ks-1, pmb->ke+1, pmb->js-1, pmb->je+1, pmb->is-1, pmb->ie+1,
+    pmb->par_for("recon_2", pmb->ks-1, pmb->ke+1, pmb->js-1, pmb->je+1, pmb->is-1, pmb->ie+1, 0, NPRIM,
         KOKKOS_LAMBDA_VARS
         {
-            weno5(p(i, j-2, k, p), p(i, j-1, k, p), p(i, j, k, p),
-                 p(i, j+1, k, p), p(i, j+2, k, p),
-                 pl(i, j, k, p), pr(i, j, k, p));
+            weno5(P(i, j-2, k, p), P(i, j-1, k, p), P(i, j, k, p),
+                  P(i, j+1, k, p), P(i, j+2, k, p),
+                  Pl(i, j, k, p),  Pr(i, j, k, p));
         }
     );
 }
-void WENO5X3(MeshBlock *pmb, ParArrayND<Real> pl, ParArrayND<Real> pr)
+void WENO5X3(Container<Real>& rc, ParArrayND<Real> Pl, ParArrayND<Real> Pr)
 {
-    auto& p = pmb->real_containers.Get("c.c.bulk.prims");
+    auto& P = rc.Get("c.c.bulk.prims").data;
+    auto pmb = rc.pmy_block;
 
-    pmb->par_for("recon_3", pmb->ks-1, pmb->ke+1, pmb->js-1, pmb->je+1, pmb->is-1, pmb->ie+1,
+    pmb->par_for("recon_3", pmb->ks-1, pmb->ke+1, pmb->js-1, pmb->je+1, pmb->is-1, pmb->ie+1, 0, NPRIM,
         KOKKOS_LAMBDA_VARS
         {
-            weno5(p(i, j, k-2, p), p(i, j, k-1, p), p(i, j, k, p),
-                 p(i, j, k+1, p), p(i, j, k+2, p),
-                 pl(i, j, k, p), pr(i, j, k, p));
+            weno5(P(i, j, k-2, p), P(i, j, k-1, p), P(i, j, k, p),
+                  P(i, j, k+1, p), P(i, j, k+2, p),
+                  Pl(i, j, k, p),  Pr(i, j, k, p));
         }
     );
 }

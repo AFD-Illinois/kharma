@@ -3,8 +3,9 @@
  */
 #pragma once
 
+#include <complex>
+
 #include "decs.hpp"
-#include "coordinates.hpp"
 #include "eos.hpp"
 
 using namespace std::literals::complex_literals;
@@ -20,11 +21,10 @@ using namespace parthenon;
  * 
  * Note this assumes ideal EOS with gamma=4/3!!!
  */
-GridVarsHost mhdmodes(MeshBlock *pmb, int nmode)
+void mhdmodes(MeshBlock *pmb, int nmode)
 {
-    // TODO check nprim >= 8
-    // TODO init
-    p = pmb->real_containers.Get("c.c.bulk.prims")
+    auto rc = pmb->real_containers.Get();
+    auto P = rc.Get("c.c.bulk.prims").data;
 
     // Mean state
     Real rho0 = 1.;
@@ -195,20 +195,21 @@ GridVarsHost mhdmodes(MeshBlock *pmb, int nmode)
     // Override tf and the dump and log intervals
     Real tf = 2. * M_PI / fabs(omega.imag());
 
+    auto x1v = pmb->pcoord->x1v;
+    auto x2v = pmb->pcoord->x1v;
+    auto x3v = pmb->pcoord->x1v;
+
     pmb->par_for("mhdmodes_init", pmb->ks, pmb->ke, pmb->js, pmb->je, pmb->is, pmb->ie,
         KOKKOS_LAMBDA_3D {
-            GReal X[NDIM];
-            G.coord(i, j, k, Loci::center, X, false);
-
-            Real mode = amp * cos(k1 * X[1] + k2 * X[2] + k3 * X[3]);
-            p(i, j, k, prims::rho) = rho0 + drho * mode;
-            p(i, j, k, prims::u) = u0 + du * mode;
-            p(i, j, k, prims::u1) = du1 * mode;
-            p(i, j, k, prims::u2) = du2 * mode;
-            p(i, j, k, prims::u3) = du3 * mode;
-            p(i, j, k, prims::B1) = B10 + dB1 * mode;
-            p(i, j, k, prims::B2) = B20 + dB2 * mode;
-            p(i, j, k, prims::B3) = B30 + dB3 * mode;
+            Real mode = amp * cos(k1 * x1v(i) + k2 * x2v(j) + k3 * x3v(k));
+            P(i, j, k, prims::rho) = rho0 + drho * mode;
+            P(i, j, k, prims::u) = u0 + du * mode;
+            P(i, j, k, prims::u1) = du1 * mode;
+            P(i, j, k, prims::u2) = du2 * mode;
+            P(i, j, k, prims::u3) = du3 * mode;
+            P(i, j, k, prims::B1) = B10 + dB1 * mode;
+            P(i, j, k, prims::B2) = B20 + dB2 * mode;
+            P(i, j, k, prims::B3) = B30 + dB3 * mode;
         }
     );
     // TODO TODO prim_to_flux this to set cons!!
