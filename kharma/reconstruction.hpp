@@ -1,6 +1,6 @@
 /**
  * Reconstruction schemes specific to KHARMA.  Currently just WENO5, a.k.a. the best scheme.
- * 
+ *
  * TODO show Parthenon the light of WENO
  */
 #pragma once
@@ -20,43 +20,46 @@ KOKKOS_INLINE_FUNCTION void weno5(const Real x1, const Real x2, const Real x3,
 
 void WENO5X1(Container<Real>& rc, ParArrayND<Real> Pl, ParArrayND<Real> Pr)
 {
+    FLAG("Recon X1");
     auto& P = rc.Get("c.c.bulk.prims").data;
     auto pmb = rc.pmy_block;
 
-    pmb->par_for("recon_1", pmb->ks-1, pmb->ke+1, pmb->js-1, pmb->je+1, pmb->is-1, pmb->ie+1, 0, NPRIM,
+    pmb->par_for("recon_1", 0, NPRIM-1, pmb->is-1, pmb->ie+1, pmb->js-1, pmb->je+1, pmb->ks-1, pmb->ke+1,
         KOKKOS_LAMBDA_VARS
         {
-            weno5(P(i-2, j, k, p), P(i-1, j, k, p), P(i, j, k, p),
-                  P(i+1, j, k, p), P(i+2, j, k, p),
-                  Pl(i, j, k, p), Pr(i, j, k, p));
+            weno5(P(p, i-2, j, k), P(p, i-1, j, k), P(p, i, j, k),
+                  P(p, i+1, j, k), P(p, i+2, j, k),
+                  Pl(p, i, j, k), Pr(p, i, j, k));
         }
     );
 }
 void WENO5X2(Container<Real>& rc, ParArrayND<Real> Pl, ParArrayND<Real> Pr)
 {
+    FLAG("Recon X2");
     auto& P = rc.Get("c.c.bulk.prims").data;
     auto pmb = rc.pmy_block;
 
-    pmb->par_for("recon_2", pmb->ks-1, pmb->ke+1, pmb->js-1, pmb->je+1, pmb->is-1, pmb->ie+1, 0, NPRIM,
+    pmb->par_for("recon_2", 0, NPRIM-1, pmb->is-1, pmb->ie+1, pmb->js-1, pmb->je+1, pmb->ks-1, pmb->ke+1,
         KOKKOS_LAMBDA_VARS
         {
-            weno5(P(i, j-2, k, p), P(i, j-1, k, p), P(i, j, k, p),
-                  P(i, j+1, k, p), P(i, j+2, k, p),
-                  Pl(i, j, k, p),  Pr(i, j, k, p));
+            weno5(P(p, i, j-2, k), P(p, i, j-1, k), P(p, i, j, k),
+                  P(p, i, j+1, k), P(p, i, j+2, k),
+                  Pl(p, i, j, k),  Pr(p, i, j, k));
         }
     );
 }
 void WENO5X3(Container<Real>& rc, ParArrayND<Real> Pl, ParArrayND<Real> Pr)
 {
+    FLAG("Recon X3");
     auto& P = rc.Get("c.c.bulk.prims").data;
     auto pmb = rc.pmy_block;
 
-    pmb->par_for("recon_3", pmb->ks-1, pmb->ke+1, pmb->js-1, pmb->je+1, pmb->is-1, pmb->ie+1, 0, NPRIM,
+    pmb->par_for("recon_3", 0, NPRIM-1, pmb->is-1, pmb->ie+1, pmb->js-1, pmb->je+1, pmb->ks-1, pmb->ke+1,
         KOKKOS_LAMBDA_VARS
         {
-            weno5(P(i, j, k-2, p), P(i, j, k-1, p), P(i, j, k, p),
-                  P(i, j, k+1, p), P(i, j, k+2, p),
-                  Pl(i, j, k, p),  Pr(i, j, k, p));
+            weno5(P(p, i, j, k-2), P(p, i, j, k-1), P(p, i, j, k),
+                  P(p, i, j, k+1), P(p, i, j, k+2),
+                  Pl(p, i, j, k),  Pr(p, i, j, k));
         }
     );
 }

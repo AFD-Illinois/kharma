@@ -18,14 +18,13 @@ using namespace parthenon;
  * 1. Slow mode
  * 2. Alfven wave
  * 3. Fast mode
- * 
+ *
  * Note this assumes ideal EOS with gamma=4/3!!!
+ *
+ * Returns the stopping time corresponding to advection by 1 period
  */
-void mhdmodes(MeshBlock *pmb, int nmode)
+Real mhdmodes(MeshBlock *pmb, Grid G, GridVars P, int nmode)
 {
-    auto rc = pmb->real_containers.Get();
-    auto P = rc.Get("c.c.bulk.prims").data;
-
     // Mean state
     Real rho0 = 1.;
     Real u0 = 1.;  // TODO set U{n} on the fly for boosted entropy test
@@ -195,24 +194,22 @@ void mhdmodes(MeshBlock *pmb, int nmode)
     // Override tf and the dump and log intervals
     Real tf = 2. * M_PI / fabs(omega.imag());
 
-    auto x1v = pmb->pcoord->x1v;
-    auto x2v = pmb->pcoord->x1v;
-    auto x3v = pmb->pcoord->x1v;
-
-    pmb->par_for("mhdmodes_init", pmb->ks, pmb->ke, pmb->js, pmb->je, pmb->is, pmb->ie,
+    pmb->par_for("mhdmodes_init", pmb->is, pmb->ie, pmb->js, pmb->je, pmb->ks, pmb->ke,
         KOKKOS_LAMBDA_3D {
-            Real mode = amp * cos(k1 * x1v(i) + k2 * x2v(j) + k3 * x3v(k));
-            P(i, j, k, prims::rho) = rho0 + drho * mode;
-            P(i, j, k, prims::u) = u0 + du * mode;
-            P(i, j, k, prims::u1) = du1 * mode;
-            P(i, j, k, prims::u2) = du2 * mode;
-            P(i, j, k, prims::u3) = du3 * mode;
-            P(i, j, k, prims::B1) = B10 + dB1 * mode;
-            P(i, j, k, prims::B2) = B20 + dB2 * mode;
-            P(i, j, k, prims::B3) = B30 + dB3 * mode;
+            Real X[NDIM];
+            G.coord(i, j, k, Loci::center, X);
+
+            Real mode = amp * cos(k1 * X[1] + k2 * X[2] + k3 * X[3]);
+            P(prims::rho, i, j, k) = rho0 + drho * mode;
+            P(prims::u, i, j, k) = u0 + du * mode;
+            P(prims::u1, i, j, k) = du1 * mode;
+            P(prims::u2, i, j, k) = du2 * mode;
+            P(prims::u3, i, j, k) = du3 * mode;
+            P(prims::B1, i, j, k) = B10 + dB1 * mode;
+            P(prims::B2, i, j, k) = B20 + dB2 * mode;
+            P(prims::B3, i, j, k) = B30 + dB3 * mode;
         }
     );
-    // TODO TODO prim_to_flux this to set cons!!
 
-    return TaskStatus::complete;
+    return tf;
 }

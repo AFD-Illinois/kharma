@@ -2,6 +2,9 @@
 
 #include "mesh/mesh.hpp"
 
+#include "grid.hpp"
+#include "phys.hpp"
+
 #include "mhdmodes.hpp"
 //#include "bondi.hpp"
 
@@ -12,9 +15,31 @@ using namespace parthenon;
  */
 void MeshBlock::ProblemGenerator(ParameterInput *pin)
 {
-    auto prob = pin->GetOrAddString("Hydro", "problem", "mhdmodes");
+    auto pmb = this;
+    auto rc = pmb->real_containers.Get();
+    auto P = rc.Get("c.c.bulk.prims").data;
+    auto U = rc.Get("c.c.bulk.cons").data;
+
+    Grid G(pmb);
+    Real gamma = pmb->packages["GRMHD"]->Param<Real>("cfl");
+    EOS* eos = new GammaLaw(gamma);
+
+    auto prob = pin->GetOrAddString("job", "problem_id", "mhdmodes");
     if (prob == "mhdmodes") {
-        int nmode = pin->GetOrAddInteger("Hydro", "nmode", 1);
-        mhdmodes(pmb, nmode);
+        int nmode = pin->GetOrAddInteger("mhdmodes", "nmode", 1);
+        Real tf = mhdmodes(pmb, G, P, nmode);
+        if (nmode != 0) {
+            pin->SetReal("time", "tlim", tf);
+        }
+    } else if (prob == "bondi") {
+
     }
+    pmb->par_for("uber_flux", pmb->is, pmb->ie, pmb->js, pmb->je, pmb->ks, pmb->ke,
+        KOKKOS_LAMBDA_3D {
+            FourVectors Dtmp;
+            get_state(G, P, i, j, k, Loci::center, Dtmp);
+            prim_to_flux(G, P, Dtmp, eos, i, j, k, Loci::center, 0, U);
+        }
+    );
+    FLAG("Initialized problem"); // TODO this is going to get called in every meshblock...
 }

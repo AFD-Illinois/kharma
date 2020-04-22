@@ -2,6 +2,7 @@
  * Variable inversion to recover primitive variables from conserved quantities
  * See Mignone & McKinney 2007
  */
+#pragma once
 
 #include "decs.hpp"
 
@@ -29,13 +30,13 @@ KOKKOS_INLINE_FUNCTION InversionStatus U_to_P(const Grid &G, const GridVars U, c
     Real gdet = G.gdet(loc, i, j);
 
     // Update the primitive B-fields
-    P(i, j, k, prims::B1) = U(i, j, k, prims::B1) / gdet;
-    P(i, j, k, prims::B2) = U(i, j, k, prims::B2) / gdet;
-    P(i, j, k, prims::B3) = U(i, j, k, prims::B3) / gdet;
+    P(prims::B1, i, j, k) = U(prims::B1, i, j, k) / gdet;
+    P(prims::B2, i, j, k) = U(prims::B2, i, j, k) / gdet;
+    P(prims::B3, i, j, k) = U(prims::B3, i, j, k) / gdet;
 
 #if DEBUG
     // Catch negative energy or density
-    if (U(i, j, k, prims::rho) <= 0. || U(i, j, k, prims::u) <= 0.)
+    if (U(prims::rho, i, j, k) <= 0. || U(prims::u, i, j, k) <= 0.)
     {
         return InversionStatus::neg_input;
     }
@@ -43,19 +44,19 @@ KOKKOS_INLINE_FUNCTION InversionStatus U_to_P(const Grid &G, const GridVars U, c
 
     // Convert from conserved variables to four-vectors
     Real a_over_g = 1./sqrt(-G.gcon(loc, i, j, 0, 0)) / G.gdet(loc, i, j);
-    Real D = U(i, j, k, prims::rho) * a_over_g;
+    Real D = U(prims::rho, i, j, k) * a_over_g;
 
     Real Bcon[NDIM];
     Bcon[0] = 0.;
-    Bcon[1] = U(i, j, k, prims::B1) * a_over_g;
-    Bcon[2] = U(i, j, k, prims::B2) * a_over_g;
-    Bcon[3] = U(i, j, k, prims::B3) * a_over_g;
+    Bcon[1] = U(prims::B1, i, j, k) * a_over_g;
+    Bcon[2] = U(prims::B2, i, j, k) * a_over_g;
+    Bcon[3] = U(prims::B3, i, j, k) * a_over_g;
 
     Real Qcov[NDIM];
-    Qcov[0] = (U(i, j, k, prims::u) - U(i, j, k, prims::rho)) * a_over_g;
-    Qcov[1] = U(i, j, k, prims::u1) * a_over_g;
-    Qcov[2] = U(i, j, k, prims::u2) * a_over_g;
-    Qcov[3] = U(i, j, k, prims::u3) * a_over_g;
+    Qcov[0] = (U(prims::u, i, j, k) - U(prims::rho, i, j, k)) * a_over_g;
+    Qcov[1] = U(prims::u1, i, j, k) * a_over_g;
+    Qcov[2] = U(prims::u2, i, j, k) * a_over_g;
+    Qcov[3] = U(prims::u3, i, j, k) * a_over_g;
 
     Real ncov[NDIM] = {(Real) -1./sqrt(-G.gcon(loc, i, j, 0, 0)), 0, 0, 0};
 
@@ -171,13 +172,13 @@ KOKKOS_INLINE_FUNCTION InversionStatus U_to_P(const Grid &G, const GridVars U, c
     }
 
     // Set primitives
-    P(i, j, k, prims::rho) = rho0;
-    P(i, j, k, prims::u) = u;
+    P(prims::rho, i, j, k) = rho0;
+    P(prims::u, i, j, k) = u;
 
     // Find u(tilde); Eqn. 31 of Noble et al.
-    P(i, j, k, prims::u1) = (gamma / (W + Bsq)) * (Qtcon[1] + QdB * Bcon[1] / W);
-    P(i, j, k, prims::u2) = (gamma / (W + Bsq)) * (Qtcon[2] + QdB * Bcon[2] / W);
-    P(i, j, k, prims::u3) = (gamma / (W + Bsq)) * (Qtcon[3] + QdB * Bcon[3] / W);
+    P(prims::u1, i, j, k) = (gamma / (W + Bsq)) * (Qtcon[1] + QdB * Bcon[1] / W);
+    P(prims::u2, i, j, k) = (gamma / (W + Bsq)) * (Qtcon[2] + QdB * Bcon[2] / W);
+    P(prims::u3, i, j, k) = (gamma / (W + Bsq)) * (Qtcon[3] + QdB * Bcon[3] / W);
 
     return InversionStatus::success;
 }
@@ -239,8 +240,8 @@ KOKKOS_INLINE_FUNCTION Real Wp_func(const Grid &G, const GridVars P, const EOS* 
 {
     Real rho0, u, gamma;
 
-    rho0 = P(i, j, k, prims::rho);
-    u = P(i, j, k, prims::u);
+    rho0 = P(prims::rho, i, j, k);
+    u = P(prims::u, i, j, k);
 
     gamma = mhd_gamma_calc(G, P, i, j, k, loc);
 

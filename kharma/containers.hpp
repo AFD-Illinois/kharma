@@ -1,4 +1,5 @@
 // Tools for Containers
+#pragma once
 
 //#include "driver/driver.hpp"
 #include "driver/multistage.hpp"
@@ -49,15 +50,15 @@ class TwoContainerTask : public BaseTask {
 };
 
 // Couple of functions for working with container-based tasks.
-TaskID AddContainerTask(TaskList& tl, ContainerTaskFunc func, TaskID dep, Container<Real>& rc)
+inline TaskID AddContainerTask(TaskList& tl, ContainerTaskFunc func, TaskID dep, Container<Real>& rc)
 {
     return tl.AddTask<ContainerTask>(func,dep,rc);
 }
-TaskID AddTwoContainerTask(TaskList& tl, TwoContainerTaskFunc f, TaskID dep, Container<Real>& rc1, Container<Real>& rc2)
+inline TaskID AddTwoContainerTask(TaskList& tl, TwoContainerTaskFunc f, TaskID dep, Container<Real>& rc1, Container<Real>& rc2)
 {
     return tl.AddTask<TwoContainerTask>(f,dep,rc1,rc2);
 }
-TaskID AddUpdateTask(TaskList& tl, MeshBlock* pmb, int stage, const std::vector<std::string>& stage_name, Integrator* integrator, BlockStageNamesIntegratorTaskFunc f, TaskID dep)
+inline TaskID AddUpdateTask(TaskList& tl, MeshBlock* pmb, int stage, const std::vector<std::string>& stage_name, Integrator* integrator, BlockStageNamesIntegratorTaskFunc f, TaskID dep)
 {
     return tl.AddTask<BlockStageNamesIntegratorTask>(f, dep, pmb, stage, stage_name, integrator);
 }

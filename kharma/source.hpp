@@ -17,11 +17,11 @@ KOKKOS_INLINE_FUNCTION void get_fluid_source(const Grid& G, const GridVars& P, c
     {
         // Put all 4 values into U(UU,U1,U2,U3)
         for (int lam = 0; lam < NDIM; lam++)
-            dU(i, j, k, prims::u + lam) += mhd[mu][nu] * G.conn(i, j, nu, lam, mu);
+            dU(prims::u + lam, i, j, k) += mhd[mu][nu] * G.conn(i, j, nu, lam, mu);
     }
 
     for (int p = 0; p < NPRIM; ++p)
-        dU(i, j, k, p) *= G.gdet(Loci::center, i, j);
+        dU(p, i, j, k) *= G.gdet(Loci::center, i, j);
 
     if (wind) {
         // Need coordinates to evaluate particle addtn rate
@@ -49,7 +49,7 @@ KOKKOS_INLINE_FUNCTION void get_fluid_source(const Grid& G, const GridVars& P, c
         prim_to_flux(G, dP, dD, eos, i, j, k, Loci::center, 0, dUw);
 
         for (int p = 0; p < NPRIM; ++p)
-            dU(i, j, k, p) += dUw[p];
+            dU(p, i, j, k) += dUw[p];
     }
 }
 KOKKOS_INLINE_FUNCTION void get_fluid_source(const Grid &G, const GridVars P, const FourVectors& D,
@@ -95,7 +95,7 @@ KOKKOS_INLINE_FUNCTION void get_fluid_source(const Grid &G, const GridVars P, co
         get_state(G, dP, i, j, k, Loci::center, dD);
         prim_to_flux(G, dP, dD, eos, i, j, k, Loci::center, 0, dUw);
 
-        for (int p = 0; p < G.nvar; ++p)
+        for (int p = 0; p < NPRIM; ++p)
             dU[p] += dUw[p];
     }
 }

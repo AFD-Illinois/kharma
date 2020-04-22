@@ -6,7 +6,7 @@
 #include "globals.hpp"
 #include "mesh/mesh.hpp"
 #include "driver/multistage.hpp"
-#include "interface/StateDescriptor.hpp"
+#include "interface/state_descriptor.hpp"
 #include "task_list/tasks.hpp"
 
 using namespace parthenon;

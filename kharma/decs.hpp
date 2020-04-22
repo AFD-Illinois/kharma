@@ -52,7 +52,7 @@ using GridVars = parthenon::ParArrayND<Real>;
 
 // Specific lambdas for our array shapes
 #define KOKKOS_LAMBDA_3D KOKKOS_LAMBDA (const int &i, const int &j, const int &k)
-#define KOKKOS_LAMBDA_VARS KOKKOS_LAMBDA (const int &i, const int &j, const int &k, const int &p)
+#define KOKKOS_LAMBDA_VARS KOKKOS_LAMBDA (const int &p, const int &i, const int &j, const int &k)
 
 // Struct for derived 4-vectors at a point, usually calculated and needed together
 typedef struct {

@@ -10,10 +10,10 @@
 
 /*
  * These functions mostly have several overloads, related to local vs global variables.
- * 
+ *
  * One version usually takes a local cache e.g. P[NDIM] of a variable, in this case primitives in a single zone
  * The other version(s) take e.g. P, the pointer to all primitives, which will be indexed P(i,j,k) to get the zone's values
- * 
+ *
  * This allows easy fusing/splitting of loops, while avoiding unnecessary global writes of temporary variables
  */
 
@@ -36,8 +36,8 @@ KOKKOS_INLINE_FUNCTION void mhd_calc(const GridVars P, const FourVectors& D, con
 {
     Real rho, u, pgas, w, bsq, eta, ptot;
 
-    rho = P(i, j, k, prims::rho);
-    u =   P(i, j, k, prims::u);
+    rho = P(prims::rho, i, j, k);
+    u =   P(prims::u, i, j, k);
     pgas = eos->p(rho, u);
     w = pgas + rho + u;
     bsq = bsq_calc(D);
@@ -80,12 +80,12 @@ KOKKOS_INLINE_FUNCTION void bcon_calc(const GridVars P, FourVectors& D,
                                       const int i, const int j, const int k,
                                       Real bcon[NDIM])
 {
-    bcon[0] = P(i, j, k, prims::B1) * D.ucov[1] +
-              P(i, j, k, prims::B2) * D.ucov[2] +
-              P(i, j, k, prims::B3) * D.ucov[3];
+    bcon[0] = P(prims::B1, i, j, k) * D.ucov[1] +
+              P(prims::B2, i, j, k) * D.ucov[2] +
+              P(prims::B3, i, j, k) * D.ucov[3];
     for (int mu = 1; mu < NDIM; ++mu)
     {
-        bcon[mu] = (P(i, j, k, prims::B1 - 1 + mu) +
+        bcon[mu] = (P(prims::B1 - 1 + mu, i, j, k) +
                              bcon[0] * D.ucon[mu]) /
                             D.ucon[0];
     }
@@ -113,12 +113,12 @@ KOKKOS_INLINE_FUNCTION Real mhd_gamma_calc(const Grid &G, const GridVars P,
                                              const Loci loc)
 {
 
-    Real qsq = G.gcov(loc, i, j, 1, 1) * P(i, j, k, prims::u1) * P(i, j, k, prims::u1) +
-    G.gcov(loc, i, j, 2, 2) * P(i, j, k, prims::u2) * P(i, j, k, prims::u2) +
-    G.gcov(loc, i, j, 3, 3) * P(i, j, k, prims::u3) * P(i, j, k, prims::u3) +
-    2. * (G.gcov(loc, i, j, 1, 2) * P(i, j, k, prims::u1) * P(i, j, k, prims::u2) +
-            G.gcov(loc, i, j, 1, 3) * P(i, j, k, prims::u1) * P(i, j, k, prims::u3) +
-            G.gcov(loc, i, j, 2, 3) * P(i, j, k, prims::u2) * P(i, j, k, prims::u3));
+    Real qsq = G.gcov(loc, i, j, 1, 1) * P(prims::u1, i, j, k) * P(prims::u1, i, j, k) +
+    G.gcov(loc, i, j, 2, 2) * P(prims::u2, i, j, k) * P(prims::u2, i, j, k) +
+    G.gcov(loc, i, j, 3, 3) * P(prims::u3, i, j, k) * P(prims::u3, i, j, k) +
+    2. * (G.gcov(loc, i, j, 1, 2) * P(prims::u1, i, j, k) * P(prims::u2, i, j, k) +
+            G.gcov(loc, i, j, 1, 3) * P(prims::u1, i, j, k) * P(prims::u3, i, j, k) +
+            G.gcov(loc, i, j, 2, 3) * P(prims::u2, i, j, k) * P(prims::u3, i, j, k));
 
     return sqrt(1. + qsq);
 }
@@ -149,7 +149,7 @@ KOKKOS_INLINE_FUNCTION void ucon_calc(const Grid &G, const GridVars P,
 
     for (int mu = 1; mu < NDIM; ++mu)
     {
-        ucon[mu] = P(i, j, k, prims::u1 + mu - 1) -
+        ucon[mu] = P(prims::u1 + mu - 1, i, j, k) -
                             gamma * alpha * G.gcon(loc, i, j, 0, mu);
     }
 }
@@ -203,26 +203,26 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const Grid &G, const GridVars P, const 
     Real mhd[NDIM];
 
     // Particle number flux
-    flux(i, j, k, prims::rho) = P(i, j, k, prims::rho) * D.ucon[dir];
+    flux(prims::rho, i, j, k) = P(prims::rho, i, j, k) * D.ucon[dir];
 
     mhd_calc(P, D, eos, i, j, k, dir, mhd);
 
     // MHD stress-energy tensor w/ first index up, second index down
-    flux(i, j, k, prims::u) = mhd[0] + flux(i, j, k, prims::rho);
-    flux(i, j, k, prims::u1) = mhd[1];
-    flux(i, j, k, prims::u2) = mhd[2];
-    flux(i, j, k, prims::u3) = mhd[3];
+    flux(prims::u, i, j, k) = mhd[0] + flux(prims::rho, i, j, k);
+    flux(prims::u1, i, j, k) = mhd[1];
+    flux(prims::u2, i, j, k) = mhd[2];
+    flux(prims::u3, i, j, k) = mhd[3];
 
     // Dual of Maxwell tensor
-    flux(i, j, k, prims::B1) = D.bcon[1] * D.ucon[dir] -
+    flux(prims::B1, i, j, k) = D.bcon[1] * D.ucon[dir] -
                                D.bcon[dir] * D.ucon[1];
-    flux(i, j, k, prims::B2) = D.bcon[2] * D.ucon[dir] -
+    flux(prims::B2, i, j, k) = D.bcon[2] * D.ucon[dir] -
                                D.bcon[dir] * D.ucon[2];
-    flux(i, j, k, prims::B3) = D.bcon[3] * D.ucon[dir] -
+    flux(prims::B3, i, j, k) = D.bcon[3] * D.ucon[dir] -
                                D.bcon[dir] * D.ucon[3];
 
     for (int p = 0; p < NPRIM; ++p)
-        flux(i, j, k, p) *= G.gdet(loc, i, j);
+        flux(p, i, j, k) *= G.gdet(loc, i, j);
 }
 KOKKOS_INLINE_FUNCTION void prim_to_flux(const Grid &G, const GridVars P, const FourVectors D, const EOS* eos,
                                          const int i, const int j, const int k, const Loci loc, const int dir,
@@ -231,7 +231,7 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const Grid &G, const GridVars P, const 
     Real mhd[NDIM];
 
     // Particle number flux
-    flux[prims::rho] = P(i, j, k, prims::rho) * D.ucon[dir];
+    flux[prims::rho] = P(prims::rho, i, j, k) * D.ucon[dir];
 
     mhd_calc(P, D, eos, i, j, k, dir, mhd);
 
@@ -305,8 +305,8 @@ KOKKOS_INLINE_FUNCTION void mhd_vchar(const Grid &G, const GridVars P, const Fou
 
     // Find fast magnetosonic speed
     bsq = bsq_calc(D);
-    u =  P(i, j, k, prims::u);
-    ef = P(i, j, k, prims::rho) + eos->gam * u;
+    u =  P(prims::u, i, j, k);
+    ef = P(prims::rho, i, j, k) + eos->gam * u;
     ee = bsq + ef;
     va2 = bsq / ee;
     cs2 = eos->gam * eos->p(0, u) / ef;

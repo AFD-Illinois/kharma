@@ -42,6 +42,7 @@ if [[ "$*" == *"clean"* ]]; then
     -DKokkos_ENABLE_CUDA_LAMBDA=ON
   else #OpenMP BUILD
     cmake3 ..\
+    -DCMAKE_BUILD_TYPE=Debug \
     -DUSE_MPI=OFF \
     -DDISABLE_MPI=ON \
     -DKokkos_ENABLE_OPENMP=ON \
@@ -53,5 +54,5 @@ if [[ "$*" == *"clean"* ]]; then
   fi
 fi
 
-make
+make -j
 cp kharma/kharma.* ..

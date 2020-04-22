@@ -23,13 +23,13 @@ using namespace parthenon;
 /**
  * Main function for KHARMA.  Basically a wrapper calling a particular driver class to
  * handle fluid evolution.
- * 
+ *
  * Different driver classes can be switched out to implement different algorithms or
  * sets of physical processes, while re-using particular physics packages to mix and match
- * 
+ *
  * Currently available drivers:
  * HARM: GRMHD using LLF with zone-centered fields
- * 
+ *
  * Future drivers?
  * KHARMA: GRMHD using LLF with face-centered fields
  * bhlight: GRMHD with Monte Carlo particle transport
@@ -37,6 +37,7 @@ using namespace parthenon;
 int main(int argc, char *argv[]) {
   ParthenonManager pman;
 
+  FLAG("Initializing");
   auto manager_status = pman.ParthenonInit(argc, argv);
   if (manager_status == ParthenonStatus::complete) {
     pman.ParthenonFinalize();
@@ -46,6 +47,7 @@ int main(int argc, char *argv[]) {
     pman.ParthenonFinalize();
     return 1;
   }
+  FLAG("Initialized");
   ShowConfig();
 
   HARMDriver driver(pman.pinput.get(), pman.pmesh.get(), pman.pouts.get());

@@ -1,6 +1,6 @@
 /**
  * This physics package implements General-Relativistic Magnetohydrodynamics
- * 
+ *
  * Unlike MHD, GRMHD has two independent sets of variables: the conserved variables, and a set of "primitive" variables more
  * amenable to reconstruction.  To evolve the fluid, the conserved variables must be:
  * 1. Transformed to the primitives (ConsToPrim)
@@ -8,7 +8,7 @@
  * 3. Merge these components into fluxes at zone faces (LRToFlux)
  * 4. Transform *back* to conserved variable fluxes at faces (PrimToCons)
  * 5. Update conserved variables via finite-differencing (flux kernel in advance_fluid) ()
- * 
+ *
  * HARM3D puts step 1 at the bottom, and syncs primitive variables, but either set can be treated as "fundamental,"
  * depending on what is easier to carry around or debug, and whether Parthenon has a better time reconstructing or
  * finite-differencing a derived mesh.
