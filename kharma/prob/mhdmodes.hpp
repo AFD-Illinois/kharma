@@ -23,7 +23,7 @@ using namespace parthenon;
  *
  * Returns the stopping time corresponding to advection by 1 period
  */
-Real mhdmodes(MeshBlock *pmb, Grid G, GridVars P, int nmode)
+Real mhdmodes(MeshBlock *pmb, Grid G, GridVars P, int nmode, int dir)
 {
     // Mean state
     Real rho0 = 1.;
@@ -38,7 +38,6 @@ Real mhdmodes(MeshBlock *pmb, Grid G, GridVars P, int nmode)
     Real k3 = 2. * M_PI;
     // "Faux-2D" planar waves direction
     // Set to 0 for "full" 3D wave
-    int dir = 0;
     if (dir == 1)
         k1 = 0;
     if (dir == 2)

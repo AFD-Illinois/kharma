@@ -8,7 +8,7 @@ problem = GRMHD Modes
 problem_id = mhdmodes
 
 <mesh>
-refinement = static
+refinement = none
 numlevel = 1
 
 nx1 = 64
@@ -29,22 +29,19 @@ x3max = 1.0
 ix3_bc = periodic
 ox3_bc = periodic
 
-<meshblock>
-nx1 = 32
-nx2 = 32
-nx3 = 32
-
 <time>
-# This will be
+# This will be overridden depending on the problem
 tlim = 1.0
 integrator = rk2
+dt_min = 0.0001
 
 <GRMHD>
-cfl = 0.45
+cfl = 0.7
 gamma = 1.333333
 
 <mhdmodes>
 nmode = 1
+dir = 0
 
 <Graphics>
 variables = c.c.bulk.prims
@@ -52,5 +49,5 @@ variables = c.c.bulk.prims
 <output1>
 file_type = hdf5
 dt = 0.1
-variable = prim
+variable = c.c.bulk.prims
 

@@ -45,6 +45,8 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     params.Add("gamma", gamma);
     double cfl = pin->GetOrAddReal("GRMHD", "cfl", 0.9);
     params.Add("cfl", cfl);
+    double dt_min = pin->GetOrAddReal("time", "dt_min", 0.0001);
+    params.Add("dt_min", dt_min);
 
     // We generally carry around the conserved versions of varialbles, treating them as the fundamental ones
     // However, since most analysis tooling expects the primitives, we *output* those.
@@ -237,8 +239,15 @@ Real EstimateTimestep(Container<Real>& rc)
 
     // TODO MPI reduce, record zone and/or coordinate of the true minimum
 
+    // Sometimes this is called before ctop is initialized.  Catch weird dts and play it safe.
+    if (ndt == 0.0 || isnan(ndt) || ndt > 1) {
+        ndt = pmb->packages["GRMHD"]->Param<Real>("dt_min");
+    } else {
+        ndt *= pmb->packages["GRMHD"]->Param<Real>("cfl");
+    }
     FLAG("Estimated");
-    return ndt * pmb->packages["GRMHD"]->Param<Real>("cfl");
+    //fprintf(stderr, "dt = %g\n", ndt);
+    return ndt;
 }
 
 

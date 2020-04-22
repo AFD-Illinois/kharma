@@ -27,14 +27,15 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin)
     auto prob = pin->GetOrAddString("job", "problem_id", "mhdmodes");
     if (prob == "mhdmodes") {
         int nmode = pin->GetOrAddInteger("mhdmodes", "nmode", 1);
-        Real tf = mhdmodes(pmb, G, P, nmode);
+        int dir = pin->GetOrAddInteger("mhdmodes", "dir", 0);
+        Real tf = mhdmodes(pmb, G, P, nmode, dir);
         if (nmode != 0) {
             pin->SetReal("time", "tlim", tf);
         }
     } else if (prob == "bondi") {
 
     }
-    pmb->par_for("uber_flux", pmb->is, pmb->ie, pmb->js, pmb->je, pmb->ks, pmb->ke,
+    pmb->par_for("first_flux", pmb->is, pmb->ie, pmb->js, pmb->je, pmb->ks, pmb->ke,
         KOKKOS_LAMBDA_3D {
             FourVectors Dtmp;
             get_state(G, P, i, j, k, Loci::center, Dtmp);
