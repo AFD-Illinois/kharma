@@ -45,9 +45,14 @@ enum Loci{face1=0, face2, face3, center, corner};
 // The standard HARMDriver object will evolve the 8 primitives/conserved for GRMHD.
 // Anything extra should be handled by new physics packages
 #define NPRIM 8
-#define PLOOP for(int mu = 0; mu < NPRIM; ++mu)
+#define PLOOP for(int p = 0; p < NPRIM; ++p)
 enum prims{rho=0, u, u1, u2, u3, B1, B2, B3};
 
+// Emulate old names, for 2 reasons:
+// 1. Compat with files from K/HARM
+// 2. May be possible to make these more strongly typed in future
+using GridScalar = parthenon::ParArrayND<Real>;
+using GridVector = parthenon::ParArrayND<Real>;
 using GridVars = parthenon::ParArrayND<Real>;
 
 // Specific lambdas for our array shapes

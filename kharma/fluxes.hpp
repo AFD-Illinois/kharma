@@ -19,14 +19,12 @@ using namespace parthenon;
  * Also fills the "ctop" vector with the highest magnetosonic speed mhd_vchar -- used to estimate timestep later.
  *
  * Note that since this L and R are defined with respect to the *face*, they are actually the
- * opposite of the "r" and "l" above!
+ * opposite of the "r" and "l" in the caller, CalculateFluxes!
  */
 void LRToFlux(Container<Real>& rc, GridVars pl, GridVars pr, const int dir, GridVars flux)
 {
     FLAG("LR to flux");
     MeshBlock *pmb = rc.pmy_block;
-    int is = pmb->is, js = pmb->js, ks = pmb->ks;
-    int ie = pmb->ie, je = pmb->je, ke = pmb->ke;
 
     GridVars pll("pll", NPRIM, pmb->ncells1, pmb->ncells2, pmb->ncells3);
 
@@ -103,13 +101,15 @@ void LRToFlux(Container<Real>& rc, GridVars pl, GridVars pr, const int dir, Grid
                 cmin = fabs(max(max(0., -cminL), -cminR));
                 ctop(dir-1, i, j, k) = max(cmax, cmin);
 
-                for (int p=0; p < NPRIM; p++)
-                    flux(p, i, j, k) = 0.5 * (fluxL[p] + fluxR[p] - ctop(dir-1, i, j, k) * (Ur[p] - Ul[p]));
+                PLOOP flux(p, i, j, k) = 0.5 * (fluxL[p] + fluxR[p] - ctop(dir-1, i, j, k) * (Ur[p] - Ul[p]));
             }
     );
     FLAG("Uber fluxcalc");
 }
 
+/**
+ * Constrained transport.  Modify B-field fluxes to preserve divB==0 condition to machine precision
+ */
 void FluxCT(Container<Real>& rc, GridVars F1, GridVars F2, GridVars F3)
 {
     FLAG("Flux CT");
@@ -117,9 +117,9 @@ void FluxCT(Container<Real>& rc, GridVars F1, GridVars F2, GridVars F3)
     int is = pmb->is, js = pmb->js, ks = pmb->ks;
     int ie = pmb->ie, je = pmb->je, ke = pmb->ke;
     int n1 = pmb->ncells1, n2 = pmb->ncells2, n3 = pmb->ncells3;
-    GridVars emf1("emf1", n1, n2, n3);
-    GridVars emf2("emf2", n1, n2, n3);
-    GridVars emf3("emf3", n1, n2, n3);
+    GridScalar emf1("emf1", n1, n2, n3);
+    GridScalar emf2("emf2", n1, n2, n3);
+    GridScalar emf3("emf3", n1, n2, n3);
 
     pmb->par_for("flux_ct_emf", is-2, ie+2, js-2, je+2, ks-2, ke+2,
         KOKKOS_LAMBDA_3D {
@@ -130,6 +130,7 @@ void FluxCT(Container<Real>& rc, GridVars F1, GridVars F2, GridVars F3)
     );
 
     // Rewrite EMFs as fluxes, after Toth
+    // TODO worthwhile to split and only do +1 in relevant direction?
     pmb->par_for("flux_ct", is-1, ie+1, js-1, je+1, ks-1, ke+1,
         KOKKOS_LAMBDA_3D {
             F1(prims::B1, i, j, k) = 0.;
@@ -145,4 +146,58 @@ void FluxCT(Container<Real>& rc, GridVars F1, GridVars F2, GridVars F3)
             F3(prims::B3, i, j, k) = 0.;
         }
     );
+}
+
+double max_divb(Container<Real>& rc)
+{
+    FLAG("Calculating divB");
+    MeshBlock *pmb = rc.pmy_block;
+    auto is = pmb->is, js = pmb->js, ks = pmb->ks;
+    auto ie = pmb->ie, je = pmb->je, ke = pmb->ke;
+    auto dx1v = pmb->pcoord->dx1v;
+    auto dx2v = pmb->pcoord->dx2v;
+    auto dx3v = pmb->pcoord->dx3v;
+    GridVars P = rc.Get("c.c.bulk.prims").data;
+
+    Grid G(pmb);
+
+    double max_divb;
+    Kokkos::Max<double> max_reducer(max_divb);
+    Kokkos::parallel_reduce("divB", MDRangePolicy<Rank<3>>({is, js, ks}, {ie, je, ke}),
+        KOKKOS_LAMBDA (const int &i, const int &j, const int &k, double &local_max_divb) {
+            double local_divb = fabs(0.25*(
+                            P(prims::B1, i, j, k) * G.gdet(Loci::center, i, j)
+                            + P(prims::B1, i, j-1, k) * G.gdet(Loci::center, i, j-1)
+                            + P(prims::B1, i, j, k-1) * G.gdet(Loci::center, i, j)
+                            + P(prims::B1, i, j-1, k-1) * G.gdet(Loci::center, i, j-1)
+                            - P(prims::B1, i-1, j, k) * G.gdet(Loci::center, i-1, j)
+                            - P(prims::B1, i-1, j-1, k) * G.gdet(Loci::center, i-1, j-1)
+                            - P(prims::B1, i-1, j, k-1) * G.gdet(Loci::center, i-1, j)
+                            - P(prims::B1, i-1, j-1, k-1) * G.gdet(Loci::center, i-1, j-1)
+                            )/dx1v(i) +
+                            0.25*(
+                            P(prims::B2, i, j, k) * G.gdet(Loci::center, i, j)
+                            + P(prims::B2, i-1, j, k) * G.gdet(Loci::center, i-1, j)
+                            + P(prims::B2, i, j, k-1) * G.gdet(Loci::center, i, j)
+                            + P(prims::B2, i-1, j, k-1) * G.gdet(Loci::center, i-1, j)
+                            - P(prims::B2, i, j-1, k) * G.gdet(Loci::center, i, j-1)
+                            - P(prims::B2, i-1, j-1, k) * G.gdet(Loci::center, i-1, j-1)
+                            - P(prims::B2, i, j-1, k-1) * G.gdet(Loci::center, i, j-1)
+                            - P(prims::B2, i-1, j-1, k-1) * G.gdet(Loci::center, i-1, j-1)
+                            )/dx2v(j) +
+                            0.25*(
+                            P(prims::B3, i, j, k) * G.gdet(Loci::center, i, j)
+                            + P(prims::B3, i, j-1, k) * G.gdet(Loci::center, i, j-1)
+                            + P(prims::B3, i-1, j, k) * G.gdet(Loci::center, i-1, j)
+                            + P(prims::B3, i-1, j-1, k) * G.gdet(Loci::center, i-1, j-1)
+                            - P(prims::B3, i, j, k-1) * G.gdet(Loci::center, i, j)
+                            - P(prims::B3, i, j-1, k-1) * G.gdet(Loci::center, i, j-1)
+                            - P(prims::B3, i-1, j, k-1) * G.gdet(Loci::center, i-1, j)
+                            - P(prims::B3, i-1, j-1, k-1) * G.gdet(Loci::center, i-1, j-1)
+                            )/dx3v(k));
+            if (local_divb > local_max_divb) local_max_divb = local_divb;
+        }
+    , max_reducer);
+
+    return max_divb;
 }

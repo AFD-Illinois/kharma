@@ -193,7 +193,7 @@ Real mhdmodes(MeshBlock *pmb, Grid G, GridVars P, int nmode, int dir)
     // Override tf and the dump and log intervals
     Real tf = 2. * M_PI / fabs(omega.imag());
 
-    pmb->par_for("mhdmodes_init", pmb->is, pmb->ie, pmb->js, pmb->je, pmb->ks, pmb->ke,
+    pmb->par_for("mhdmodes_init", 0, pmb->ncells1-1, 0, pmb->ncells2-1, 0, pmb->ncells3-1,
         KOKKOS_LAMBDA_3D {
             Real X[NDIM];
             G.coord(i, j, k, Loci::center, X);

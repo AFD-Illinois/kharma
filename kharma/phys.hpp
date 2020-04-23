@@ -226,7 +226,7 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const Grid &G, const GridVars P, const 
 }
 KOKKOS_INLINE_FUNCTION void prim_to_flux(const Grid &G, const GridVars P, const FourVectors D, const EOS* eos,
                                          const int i, const int j, const int k, const Loci loc, const int dir,
-                                         Real flux[])
+                                         Real flux[NPRIM])
 {
     Real mhd[NDIM];
 
@@ -254,7 +254,7 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const Grid &G, const GridVars P, const 
 }
 KOKKOS_INLINE_FUNCTION void prim_to_flux(const Grid &G, const Real P[NPRIM], const FourVectors D, const EOS* eos,
                                          const int i, const int j, const int k, const Loci loc, const int dir,
-                                         Real flux[])
+                                         Real flux[NPRIM])
 {
     Real mhd[NDIM];
 

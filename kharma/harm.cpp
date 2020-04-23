@@ -10,6 +10,7 @@
 #include "bvals/bvals.hpp"
 #include "driver/multistage.hpp"
 
+#include "decs.hpp"
 #include "containers.hpp"
 #include "grmhd.hpp"
 #include "harm.hpp"
@@ -105,6 +106,12 @@ TaskList HARMDriver::MakeTaskList(MeshBlock *pmb, int stage)
     // fill in derived fields. TODO HARM has a special relationship to this w.r.t. U vs P.  Make sure this respects that.
     auto fill_derived = AddContainerTask(tl, parthenon::FillDerivedVariables::FillDerived,
                                         set_bc, sc1);
+#if DEBUG
+    // Additionally propagate the fluxes
+    auto copy_flux1 = AddCopyTask(tl, CopyFluxes, recv_flux, "c.c.bulk.F1", sc0, sc1);
+    auto copy_flux2 = AddCopyTask(tl, CopyFluxes, recv_flux, "c.c.bulk.F2", sc0, sc1);
+    auto copy_flux3 = AddCopyTask(tl, CopyFluxes, recv_flux, "c.c.bulk.F3", sc0, sc1);
+#endif
 
     // estimate next time step
     if (stage == integrator->nstages) {

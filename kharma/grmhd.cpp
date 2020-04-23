@@ -54,6 +54,8 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     std::vector<int> s_vector({3});
     std::vector<int> s_fluid({NPRIM-3});
     std::vector<int> s_prims({NPRIM});
+    // TODO arrange names/metadata to more accurately reflect e.g. variable locations and relations
+    // for now cells are too darn easy and I don't use any fancy face-centered features
     m = Metadata({m.Cell, m.Vector, m.FillGhost, m.Independent, m.Conserved}, s_prims);
     fluid_state->AddField("c.c.bulk.cons", m, DerivedOwnership::shared);
     // initialize metadata the same but length s_vector
@@ -68,7 +70,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     m = Metadata({m.Cell, m.Derived, m.Vector, m.OneCopy}, s_vector);
     fluid_state->AddField("c.c.bulk.ctop", m, DerivedOwnership::unique);
 
-    // Fluxes. TODO coax parthenon to store these as .flux[]
+    // Fluxes. TODO coax parthenon to store these as U.flux[0,1,2]
     m = Metadata({m.Cell, m.Derived, m.Vector, m.OneCopy}, s_prims);
     fluid_state->AddField("c.c.bulk.F1", m, DerivedOwnership::shared);
     fluid_state->AddField("c.c.bulk.F2", m, DerivedOwnership::shared);
@@ -76,9 +78,9 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     // TODO Probably jcon will go here too eventually. Does Parthenon have output-only calculations?
 
     // Flags for patching inverter errors
-    // TODO integer fields?  Some better way to do boundaries?
-    //m = Metadata({m.Cell, m.Intensive, m.Derived, m.OneCopy});
-    //fluid_state->AddField("bulk.pflag", m, DerivedOwnership::shared);
+    // TODO ask politely for integer fields in Parthenon, since this needs FillGhost
+    m = Metadata({m.Cell, m.Derived, m.OneCopy, m.FillGhost});
+    fluid_state->AddField("bulk.pflag", m, DerivedOwnership::shared);
 
     fluid_state->FillDerived = GRMHD::FillDerived;
     fluid_state->CheckRefinement = nullptr;
@@ -90,18 +92,15 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
  * Get the primitive variables, which in Parthenon's nomenclature are "derived"
  * Derived variables are updated before output and during the step so that we can work with them
  */
-void FillDerived(Container<Real>& rc) {
+void FillDerived(Container<Real>& rc)
+{
     FLAG("Filling Derived");
     MeshBlock *pmb = rc.pmy_block;
-    Coordinates *pcoord = pmb->pcoord.get();
-    auto is = pmb->is, js = pmb->js, ks = pmb->ks;
-    auto ie = pmb->ie, je = pmb->je, ke = pmb->ke;
 
-    auto U = rc.Get("c.c.bulk.cons").data;
-    auto P = rc.Get("c.c.bulk.prims").data;
+    GridVars U = rc.Get("c.c.bulk.cons").data;
+    GridVars P = rc.Get("c.c.bulk.prims").data;
 
-    //auto pflag = rc.Get("bulk.pflag"); // TODO this will need to be sync'd!
-    ParArrayND<int> pflag("pflag", pmb->ncells1, pmb->ncells2, pmb->ncells3);
+    GridVars pflag = rc.Get("bulk.pflag").data; // TODO remember to switch to ints
 
     // TODO how do I carry this around per-block and just update it when needed?
     // (or if not the Grid, then at least a coordinate system and EOS...)
@@ -114,12 +113,17 @@ void FillDerived(Container<Real>& rc) {
     // ghost zones are needed for reconstruction
     pmb->par_for("U_to_P", 0, pmb->ncells1-1, 0, pmb->ncells2-1, 0, pmb->ncells3-1,
         KOKKOS_LAMBDA_3D {
-            pflag(i, j, k) = U_to_P(G, U, eos, i, j, k, Loci::center, P);
+            pflag(i, j, k) = (Real) U_to_P(G, U, eos, i, j, k, Loci::center, P);
         }
     );
     FLAG("Filled");
 
-    // TODO if DEBUG check pflags
+#if DEBUG
+    // TODO this is actually a lot easier to calculate in the conserved vars,
+    // due to not needing metric.  But this was the routine I could copy.
+    double maxDivB = max_divb(rc);
+    fprintf(stderr, "Maximum divB: %g\n", maxDivB);
+#endif
 }
 
 /**
@@ -162,13 +166,12 @@ TaskStatus CalculateFluxes(Container<Real>& rc)
  * @param rc is the current stage's container
  * @param base is the base container containing the global dUdt term
  */
-TaskStatus ApplyFluxes(Container<Real>& rc, Container<Real>& dudt) {
+TaskStatus ApplyFluxes(Container<Real>& rc, Container<Real>& dudt)
+{
     FLAG("Applying fluxes");
     MeshBlock *pmb = rc.pmy_block;
-    Coordinates *pcoord = pmb->pcoord.get();
     auto is = pmb->is, js = pmb->js, ks = pmb->ks;
     auto ie = pmb->ie, je = pmb->je, ke = pmb->ke;
-    auto ni = ie-is, nj = je-js, nk = ke-ks;
     GridVars U = rc.Get("c.c.bulk.cons").data;
     GridVars F1 = rc.Get("c.c.bulk.F1").data;
     GridVars F2 = rc.Get("c.c.bulk.F2").data;
@@ -183,10 +186,9 @@ TaskStatus ApplyFluxes(Container<Real>& rc, Container<Real>& dudt) {
     // Unpack a bunch of variables for the kernel below
     auto dUdt = dudt.Get("c.c.bulk.cons").data;
     // We don't otherwise support irregular grids...
-    auto dx1v = pcoord->dx1v;
-    auto dx2v = pcoord->dx2v;
-    auto dx3v = pcoord->dx3v;
-    auto dt = pmb->pmy_mesh->dt;
+    auto dx1v = pmb->pcoord->dx1v;
+    auto dx2v = pmb->pcoord->dx2v;
+    auto dx3v = pmb->pcoord->dx3v;
 
     pmb->par_for("uber_diff", is, ie, js, je, ks, ke,
         KOKKOS_LAMBDA_3D {
@@ -196,11 +198,10 @@ TaskStatus ApplyFluxes(Container<Real>& rc, Container<Real>& dudt) {
             get_state(G, P, i, j, k, Loci::center, Dtmp);
             get_fluid_source(G, P, Dtmp, eos, i, j, k, dU);
 
-            for(int p=0; p < NPRIM; ++p)
-                dUdt(p, i, j, k) += (F1(p, i, j, k) - F1(p, i+1, j, k)) / dx1v(i) +
-                                  (F2(p, i, j, k) - F2(p, i, j+1, k)) / dx2v(j) +
-                                  (F3(p, i, j, k) - F3(p, i, j, k+1)) / dx3v(k) +
-                                  dU[p];
+            PLOOP dUdt(p, i, j, k) = (F1(p, i, j, k) - F1(p, i+1, j, k)) / dx1v(i) +
+                                    (F2(p, i, j, k) - F2(p, i, j+1, k)) / dx2v(j) +
+                                    (F3(p, i, j, k) - F3(p, i, j, k+1)) / dx3v(k) +
+                                    dU[p];
         }
     );
     FLAG("Applied");
@@ -212,7 +213,8 @@ TaskStatus ApplyFluxes(Container<Real>& rc, Container<Real>& dudt) {
  * Returns the minimum CFL timestep among all zones in the block,
  * multiplied by a proportion "cfl" for safety.
  *
- * TODO pretty sure this needs to be added to if there are new packages e.g. bhlight
+ * This is just for a particular MeshBlock/package, so don't rely on it
+ * Parthenon will take the minimum and put it in pmy_mesh->dt
  */
 Real EstimateTimestep(Container<Real>& rc)
 {
@@ -223,7 +225,7 @@ Real EstimateTimestep(Container<Real>& rc)
     auto dx1v = pmb->pcoord->dx1v;
     auto dx2v = pmb->pcoord->dx2v;
     auto dx3v = pmb->pcoord->dx3v;
-    auto ctop = rc.Get("c.c.bulk.ctop").data;
+    GridVector ctop = rc.Get("c.c.bulk.ctop").data;
 
     // TODO is there a parthenon par_reduce yet?
     double ndt;
@@ -237,10 +239,8 @@ Real EstimateTimestep(Container<Real>& rc)
         }
     , min_reducer);
 
-    // TODO MPI reduce, record zone and/or coordinate of the true minimum
-
     // Sometimes this is called before ctop is initialized.  Catch weird dts and play it safe.
-    if (ndt == 0.0 || isnan(ndt) || ndt > 1) {
+    if (ndt <= 0.0 || isnan(ndt) || ndt > 1) {
         ndt = pmb->packages["GRMHD"]->Param<Real>("dt_min");
     } else {
         ndt *= pmb->packages["GRMHD"]->Param<Real>("cfl");
