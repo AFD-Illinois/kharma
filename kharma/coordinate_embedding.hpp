@@ -60,71 +60,85 @@ class CoordinateEmbedding {
                 self.coord_to_native(Xembed, Xnative);
             }, transform);
         }
-        KOKKOS_INLINE_FUNCTION void dxdX_to_embed(const GReal Xnative[NDIM], Real dxdX[NDIM][NDIM]) const
+        KOKKOS_INLINE_FUNCTION void dxdX(const GReal Xnative[NDIM], Real dxdX[NDIM][NDIM]) const
         {
             mpark::visit( [&Xnative, &dxdX](const auto& self) {
-                self.dxdX_to_embed(Xnative, dxdX);
+                self.dxdX(Xnative, dxdX);
             }, transform);
         }
-        KOKKOS_INLINE_FUNCTION void dxdX_to_native(const GReal Xnative[NDIM], Real dxdX[NDIM][NDIM]) const
+        KOKKOS_INLINE_FUNCTION void dXdx(const GReal Xnative[NDIM], Real dXdx[NDIM][NDIM]) const
         {
-            mpark::visit( [&Xnative, &dxdX](const auto& self) {
-                self.dxdX_to_native(Xnative, dxdX);
+            mpark::visit( [&Xnative, &dXdx](const auto& self) {
+                self.dXdx(Xnative, dXdx);
             }, transform);
         }
 
-        // Then define the usual things we use dxdX *for*, to avoid lots of needless for loops
-        KOKKOS_INLINE_FUNCTION void vec_to_embed(const GReal Xnative[NDIM], const GReal vnative[NDIM], GReal vembed[NDIM]) const
+        // VECTOR TRANSFORMS
+        // Contravariant vectors:
+        KOKKOS_INLINE_FUNCTION void con_vec_to_embed(const GReal Xnative[NDIM], const GReal vcon_native[NDIM], GReal vcon_embed[NDIM]) const
         {
-            Real dxdX[NDIM][NDIM];
-            dxdX_to_embed(Xnative, dxdX);
+            Real dxdX_temp[NDIM][NDIM];
+            dxdX(Xnative, dxdX_temp);
             DLOOP1 {
-                vembed[mu] = 0;
+                vcon_embed[mu] = 0;
                 for(int nu=0; nu < NDIM; ++nu)
-                    vembed[mu] += dxdX[mu][nu] * vnative[nu];
+                    vcon_embed[mu] += dxdX_temp[mu][nu] * vcon_native[nu];
             }
         }
-        // TODO rethink this interface?
-        KOKKOS_INLINE_FUNCTION void vec_to_native(const GReal Xnative[NDIM], const GReal vembed[NDIM], GReal vnative[NDIM]) const
+        KOKKOS_INLINE_FUNCTION void con_vec_to_native(const GReal Xnative[NDIM], const GReal vcon_embed[NDIM], GReal vcon_native[NDIM]) const
         {
-            Real dxdX[NDIM][NDIM];
-            dxdX_to_native(Xnative, dxdX);
-            DLOOP1 {
-                vnative[mu] = 0;
+            Real dXdx_temp[NDIM][NDIM];
+            dXdx(Xnative, dXdx_temp);
+            DLOOP1 { // TODO is this faster, or DLOOP1/2?
+                vcon_native[mu] = 0;
                 for(int nu=0; nu < NDIM; ++nu)
-                    vnative[mu] += dxdX[mu][nu] * vembed[nu];
+                    vcon_native[mu] += dXdx_temp[mu][nu] * vcon_embed[nu];
             }
         }
-        KOKKOS_INLINE_FUNCTION void tensor_to_embed(const GReal Xnative[NDIM], const GReal tnative[NDIM][NDIM], GReal tembed[NDIM][NDIM]) const
+        // Covariant are opposite
+        KOKKOS_INLINE_FUNCTION void cov_vec_to_native(const GReal Xnative[NDIM], const GReal vcov_embed[NDIM], GReal vcov_native[NDIM]) const
+            {con_vec_to_embed(Xnative, vcov_embed, vcov_native);}
+        KOKKOS_INLINE_FUNCTION void cov_vec_to_embed(const GReal Xnative[NDIM], const GReal vcov_native[NDIM], GReal vcov_embed[NDIM]) const
+            {con_vec_to_native(Xnative, vcov_native, vcov_embed);}
+
+        // TENSOR TRANSFORMS
+        // Covariant first
+        KOKKOS_INLINE_FUNCTION void cov_tensor_to_embed(const GReal Xnative[NDIM], const GReal tcov_native[NDIM][NDIM], GReal tcov_embed[NDIM][NDIM]) const
         {
-            Real dxdX[NDIM][NDIM];
-            dxdX_to_embed(Xnative, dxdX);
+            Real dXdx_temp[NDIM][NDIM];
+            dXdx(Xnative, dXdx_temp);
 
             DLOOP2 {
-                tembed[mu][nu] = 0;
-                for (int lam = 0; lam < NDIM; lam++) {
-                    for (int kap = 0; kap < NDIM; kap++) {
-                        tembed[mu][nu] += tnative[lam][kap]*dxdX[lam][mu]*dxdX[kap][nu];
+                tcov_embed[mu][nu] = 0;
+                for (int lam = 0; lam < NDIM; ++lam) {
+                    for (int kap = 0; kap < NDIM; ++kap) {
+                        tcov_embed[mu][nu] += tcov_native[lam][kap]*dXdx_temp[lam][mu]*dXdx_temp[kap][nu];
                     }
                 }
             }
         }
-        KOKKOS_INLINE_FUNCTION void tensor_to_native(const GReal Xnative[NDIM], const GReal tembed[NDIM][NDIM], GReal tnative[NDIM][NDIM]) const
+        KOKKOS_INLINE_FUNCTION void cov_tensor_to_native(const GReal Xnative[NDIM], const GReal tcov_embed[NDIM][NDIM], GReal tcov_native[NDIM][NDIM]) const
         {
-            Real dxdX[NDIM][NDIM];
-            dxdX_to_native(Xnative, dxdX);
+            Real dxdX_temp[NDIM][NDIM];
+            dxdX(Xnative, dxdX_temp);
 
             DLOOP2 {
-                tnative[mu][nu] = 0;
+                tcov_native[mu][nu] = 0;
                 for (int lam = 0; lam < NDIM; lam++) {
                     for (int kap = 0; kap < NDIM; kap++) {
-                        tnative[mu][nu] += tembed[lam][kap]*dxdX[lam][mu]*dxdX[kap][nu];
+                        tcov_native[mu][nu] += tcov_embed[lam][kap]*dxdX_temp[lam][mu]*dxdX_temp[kap][nu];
                     }
                 }
             }
         }
+        // Con are opposite
+        KOKKOS_INLINE_FUNCTION void con_tensor_to_embed(const GReal Xnative[NDIM], const GReal tcon_native[NDIM][NDIM], GReal tcon_embed[NDIM][NDIM]) const
+            {cov_tensor_to_native(Xnative, tcon_native, tcon_embed);}
+        KOKKOS_INLINE_FUNCTION void con_tensor_to_native(const GReal Xnative[NDIM], const GReal tcon_embed[NDIM][NDIM], GReal tcon_native[NDIM][NDIM]) const
+            {cov_tensor_to_embed(Xnative, tcon_embed, tcon_native);}
 
         // And then some metric properties
+        // TODO gcon_embed, gdet_embed
         KOKKOS_INLINE_FUNCTION void gcov_native(const GReal Xnative[NDIM], Real gcov[NDIM][NDIM]) const
         {
             Real gcov_em[NDIM][NDIM];
@@ -136,7 +150,7 @@ class CoordinateEmbedding {
             gcov_embed(Xembed, gcov_em);
 
             // Transform to native coordinates
-            tensor_to_native(Xnative, gcov_em, gcov);
+            cov_tensor_to_native(Xnative, gcov_em, gcov);
         }
         KOKKOS_INLINE_FUNCTION Real gcon_native(const GReal X[NDIM], Real gcon[NDIM][NDIM]) const
         {

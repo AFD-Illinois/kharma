@@ -8,6 +8,7 @@
 #include "mesh/mesh.hpp"
 #include "coordinates/coordinates.hpp"
 
+#include "boundaries.hpp"
 #include "coordinate_embedding.hpp"
 #include "coordinate_systems.hpp"
 #include "decs.hpp"
@@ -35,7 +36,11 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     auto fluid_state = std::make_shared<StateDescriptor>("GRMHD");
     Params &params = fluid_state->AllParams();
 
-    // HARM is non-negotiably RK2 a.k.a. predictor-corrector for now
+    // Add the problem name, so we can be C++ noobs and special-case on string contents
+    std::string problem_name = pin->GetString("job", "problem_id");
+    params.Add("problem", problem_name);
+
+    // TODO do we need this?  Can we set it based on
     params.Add("order", 2);
 
     // There are only 2 parameters related to fluid evolution:
@@ -45,7 +50,9 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     params.Add("gamma", gamma);
     double cfl = pin->GetOrAddReal("GRMHD", "cfl", 0.9);
     params.Add("cfl", cfl);
-    double dt_min = pin->GetOrAddReal("time", "dt_min", 0.0001);
+    // Starting/minimum timestep, if something about the sound speed goes wonky
+    // Parthenon allows up to 2x higher dt per step, so it climbs to CFL quite fast
+    double dt_min = pin->GetOrAddReal("time", "dt_min", 1.e-5);
     params.Add("dt_min", dt_min);
 
     // Coordinate options for building Grids per-mesh
@@ -68,10 +75,13 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     GReal poly_alpha = pin->GetOrAddReal("coordinates", "poly_alpha", 14.0);
     params.Add("c_poly_alpha", poly_alpha);
 
+    cerr << "GRMHD using " << base_str << " base coordiantes with " << transform_str << " transform" << std::endl;
+
     // We generally carry around the conserved versions of varialbles, treating them as the fundamental ones
     // However, since most analysis tooling expects the primitives, we *output* those.
     Metadata m;
     std::vector<int> s_vector({3});
+    std::vector<int> s_fourvector({4});
     std::vector<int> s_fluid({NPRIM-3});
     std::vector<int> s_prims({NPRIM});
     // TODO arrange names/metadata to more accurately reflect e.g. variable locations and relations
@@ -86,7 +96,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     // metadata!
     // fluid_state->AddField("c.c.bulk.prims_B", m, DerivedOwnership::shared);
 
-    // Sound speed.  Easiest to keep here
+    // Max (i.e. positive) sound speed vector.  Easiest to keep here due to needing it for EstimateTimestep
     m = Metadata({m.Cell, m.Derived, m.Vector, m.OneCopy}, s_vector);
     fluid_state->AddField("c.c.bulk.ctop", m, DerivedOwnership::unique);
 
@@ -95,10 +105,11 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     fluid_state->AddField("c.c.bulk.F1", m, DerivedOwnership::shared);
     fluid_state->AddField("c.c.bulk.F2", m, DerivedOwnership::shared);
     fluid_state->AddField("c.c.bulk.F3", m, DerivedOwnership::shared);
-    // TODO Probably jcon will go here too eventually. Does Parthenon have output-only calculations?
+    // TODO Add jcon as an output-only calculation. Is that a thing?
+
 
     // Flags for patching inverter errors
-    // TODO ask politely for integer fields in Parthenon, since this needs FillGhost
+    // TODO integer fields in Parthenon? Flags need to be sync'd with FillGhost
     m = Metadata({m.Cell, m.Derived, m.OneCopy, m.FillGhost});
     fluid_state->AddField("bulk.pflag", m, DerivedOwnership::shared);
 
@@ -143,6 +154,8 @@ void FillDerived(Container<Real>& rc)
     // due to not needing metric.  But this was the routine I could copy.
     double maxDivB = max_divb(rc);
     fprintf(stderr, "Maximum divB: %g\n", maxDivB);
+
+    // TODO check pflag and print results
 #endif
 }
 
@@ -170,7 +183,8 @@ TaskStatus CalculateFluxes(Container<Real>& rc)
     WENO5X3(rc, pl, pr);
     LRToFlux(rc, pr, pl, 3, F3);
 
-    // Remember to fix boundary fluxes -- this will likely interact with Parthenon's version of the same...
+    // TODO necessary?  Definitely messes with Bondi problem currently, needs nuance
+    //FixFlux(rc, F1, F2, F3);
 
     // Constrained transport for B must be applied after everything, including fixing boundary fluxes
     FluxCT(rc, F1, F2, F3);

@@ -19,7 +19,7 @@ using Real = parthenon::Real;
 using GReal = double;
 
 // TODO make this MPI-aware
-#if DEBUG
+#if DEBUG_TRACE
 #define FLAG(x) std::cout << x << std::endl;
 #else
 #define FLAG(x)

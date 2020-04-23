@@ -148,8 +148,7 @@ void init_grids(Grid& G) {
             G.coord(i, j, 0, Loci::center, X);
             Real conn_loc[NDIM][NDIM][NDIM];
             cs.conn_native(X, conn_loc);
-            DLOOP2 for(int kap=0; kap<NDIM; ++kap)
-                conn_local(i, j, mu, nu, kap) = conn_loc[mu][nu][kap];
+            DLOOP3 conn_local(i, j, mu, nu, lam) = conn_loc[mu][nu][lam];
         }
     );
 

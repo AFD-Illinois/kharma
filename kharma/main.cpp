@@ -47,9 +47,10 @@ int main(int argc, char *argv[])
     FLAG("Initializing");
     auto manager_status = pman.ParthenonInit(argc, argv);
     auto pin = pman.pinput.get();
+    bool re_init = false;
 
-    // If coordinate system is KS or BL, reverse out x1min from Rout/Rhor to put 5 zones in EH
-    // Then re-init
+    // Sometimes we need to modify things that will affect the mesh/timeframe initialization
+    // If coordinate system is KS or BL, we reverse out x1min from Rout/Rhor to put 5 zones in EH
     auto coord_str = pin->GetOrAddString("coordinates", "base", "cartesian_minkowski");
     if (coord_str.find("minkowski") == std::string::npos) { // If we're not in flat space...
         // Define the base/embedding coordinate system Kerr-Schild
@@ -71,7 +72,13 @@ int main(int argc, char *argv[])
         GReal Rin = exp((n1 * log(Rhor) / 5.5 - log(Rout)) / (-1. + n1 / 5.5));
         std::vector<GReal> startx = {log(Rin), 0.0, 0.0};
         std::vector<GReal> stopx = {log(Rout), 1.0, 2*M_PI};
-        auto manager_status = pman.ParthenonInit(argc, argv);
+        re_init = true;
+    }
+
+    // Then re-initialize
+    if (re_init) {
+        FLAG("Re-initializing");
+        // TODO split Parthenon argument parsing from mesh initialization
     }
 
     if (manager_status == ParthenonStatus::complete) {

@@ -11,6 +11,8 @@
 #include "driver/multistage.hpp"
 
 #include "decs.hpp"
+
+#include "bondi.hpp"
 #include "containers.hpp"
 #include "grmhd.hpp"
 #include "harm.hpp"
@@ -68,8 +70,10 @@ TaskList HARMDriver::MakeTaskList(MeshBlock *pmb, int stage)
     auto start_recv = AddContainerTask(tl, Container<Real>::StartReceivingTask, none, sc1);
 
     // Fill the primitives array P by calculating U_to_P everywhere
+    // TODO very likely this can be dropped, since P/U begin the first step together and end each step sync'd too
     auto fill_prims = AddContainerTask(tl, parthenon::FillDerivedVariables::FillDerived,
                                         start_recv, sc0);
+
     // Calculate the LLF fluxes in each direction
     auto calculate_flux = AddContainerTask(tl, GRMHD::CalculateFluxes, fill_prims, sc0);
     // Apply these to create a single update dU/dt
@@ -99,9 +103,17 @@ TaskList HARMDriver::MakeTaskList(MeshBlock *pmb, int stage)
         return TaskStatus::complete;
     }, fill_from_bufs, pmb);
 
-    // set physical boundaries
-    auto set_bc = AddContainerTask(tl, parthenon::ApplyBoundaryConditions,
+    // Set physical boundaries. Special-case the Bondi problem's unique outer condition
+    // I will write a general user boundaries framework the *second* any other problem needs it.
+    TaskID set_bc;
+    if (pmb->packages["GRMHD"]->Param<std::string>("problem") == "bondi") {
+        auto set_parthenon_bc = AddContainerTask(tl, parthenon::ApplyBoundaryConditions,
+                                                prolong_bound, sc1);
+        set_bc = AddContainerTask(tl, ApplyBondiBoundary, set_parthenon_bc, sc1);
+    } else {
+        set_bc = AddContainerTask(tl, parthenon::ApplyBoundaryConditions,
                                     prolong_bound, sc1);
+    }
 
     // fill in derived fields. TODO HARM has a special relationship to this w.r.t. U vs P.  Make sure this respects that.
     auto fill_derived = AddContainerTask(tl, parthenon::FillDerivedVariables::FillDerived,
