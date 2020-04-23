@@ -6,10 +6,9 @@
 #include <map>
 
 // Libraries I need directly
-#include <mpark/variant.hpp>
 #include "Kokkos_Core.hpp"
 
-// Parthenon defs: Real, etc.  (srsly, athena?)
+// Parthenon defs
 #include "athena.hpp"
 
 // Stuff that's useful across the whole code
@@ -21,7 +20,6 @@ using GReal = double;
 
 // TODO make this MPI-aware
 #if DEBUG
-#warning "Compiling with debug"
 #define FLAG(x) std::cout << x << std::endl;
 #else
 #define FLAG(x)
@@ -54,6 +52,11 @@ enum prims{rho=0, u, u1, u2, u3, B1, B2, B3};
 using GridScalar = parthenon::ParArrayND<Real>;
 using GridVector = parthenon::ParArrayND<Real>;
 using GridVars = parthenon::ParArrayND<Real>;
+
+using GeomScalar = parthenon::ParArrayND<Real>;
+using GeomVector = parthenon::ParArrayND<Real>;
+using GeomTensor2 = parthenon::ParArrayND<Real>;
+using GeomTensor3 = parthenon::ParArrayND<Real>;
 
 // Specific lambdas for our array shapes
 #define KOKKOS_LAMBDA_3D KOKKOS_LAMBDA (const int &i, const int &j, const int &k)

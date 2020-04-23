@@ -48,6 +48,26 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     double dt_min = pin->GetOrAddReal("time", "dt_min", 0.0001);
     params.Add("dt_min", dt_min);
 
+    // Coordinate options for building Grids per-mesh
+    // It is probably easier to create a global CoordinateEmbedding pointer
+    // TODO defaults should probably be KS
+    std::string base_str = pin->GetOrAddString("coordinates", "base", "cartesian_minkowski");
+    params.Add("c_base", base_str);
+    std::string transform_str = pin->GetOrAddString("coordinates", "transform", "cartesian_null");
+    params.Add("c_transform", transform_str);
+    GReal startx1 = pin->GetOrAddReal("mesh", "x1min", 0);
+    params.Add("c_startx1", startx1);
+    GReal a = pin->GetOrAddReal("coordinates", "a", 0.9375);
+    params.Add("c_a", a);
+    GReal hslope = pin->GetOrAddReal("coordinates", "hslope", 0.3);
+    params.Add("c_hslope", hslope);
+    GReal mks_smooth = pin->GetOrAddReal("coordinates", "mks_smooth", 0.5);
+    params.Add("c_mks_smooth", mks_smooth);
+    GReal poly_xt = pin->GetOrAddReal("coordinates", "poly_xt", 0.82);
+    params.Add("c_poly_xt", poly_xt);
+    GReal poly_alpha = pin->GetOrAddReal("coordinates", "poly_alpha", 14.0);
+    params.Add("c_poly_alpha", poly_alpha);
+
     // We generally carry around the conserved versions of varialbles, treating them as the fundamental ones
     // However, since most analysis tooling expects the primitives, we *output* those.
     Metadata m;

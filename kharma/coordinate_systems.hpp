@@ -10,7 +10,6 @@
 
 #include "decs.hpp"
 #include "matrix.hpp"
-#include "coordinate_embedding.hpp"
 
 #include <mpark/variant.hpp>
 

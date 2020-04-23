@@ -18,7 +18,7 @@ void init_grids(Grid& G);
 
 // Option to ignore coordinates entirely,
 // and basically just use flat-space SR
-#define FAST_CARTESIAN 1
+#define FAST_CARTESIAN 0
 // Don't cache grids, just call into CoordinateEmbedding directly
 #define NO_CACHE 0
 
@@ -41,23 +41,24 @@ public:
     // It will not be dereference-able in host code
     CoordinateEmbedding* coords;
 
-    // Rather than the MeshBlock, just keep the arrays we need in here
+    // Store a MeshBlock pointer for host-side operations
+    MeshBlock *pmy_block;
+
+    // But also store directly what we'll need for coord() which is device-side
     ParArrayND<Real> x1f, x2f, x3f;
     ParArrayND<Real> x1v, x2v, x3v;
 
 
 #if FAST_CARTESIAN || NO_CACHE
 #else
-    GeomTensor gcon_direct, gcov_direct;
+    GeomTensor2 gcon_direct, gcov_direct;
     GeomScalar gdet_direct;
-    GeomConn conn_direct;
+    GeomTensor3 conn_direct;
 #endif
 
     // Constructors
-#if FAST_CARTESIAN
     Grid(MeshBlock* pmb);
-#endif
-    Grid(CoordinateEmbedding* coordinates, MeshBlock* pmb);
+    Grid(MeshBlock* pmb, CoordinateEmbedding* coordinates);
 
 
     // TODO I'm not sure if these can be faster
@@ -82,15 +83,51 @@ public:
     // TODO Finish
     // These will be VERY SLOW.  Better to switch to the below and cache locally if we go this route
     KOKKOS_INLINE_FUNCTION Real gcon(const Loci loc, const int i, const int j, const int mu, const int nu) const
-        {return gcon_direct(loc, i, j, mu, nu);}
+    {
+        GReal X[NDIM], gcon[NDIM][NDIM];
+        coord(i, j, 0, loc, X);
+        coords->gcon_native(X, gcon);
+        return gcon[mu][nu];
+    }
     KOKKOS_INLINE_FUNCTION Real gcov(const Loci loc, const int i, const int j, const int mu, const int nu) const
-        {return gcov_direct(loc, i, j, mu, nu);}
+    {
+        GReal X[NDIM], gcov[NDIM][NDIM];
+        coord(i, j, 0, loc, X);
+        coords->gcov_native(X, gcov);
+        return gcov[mu][nu];
+    }
     KOKKOS_INLINE_FUNCTION Real gdet(const Loci loc, const int i, const int j) const
-        {return gdet_direct(loc, i, j);}
+    {
+        GReal X[NDIM], gcon[NDIM][NDIM];
+        coord(i, j, 0, loc, X);
+        return coords->gcon_native(X, gcon);
+    }
     KOKKOS_INLINE_FUNCTION Real conn(const int i, const int j, const int mu, const int nu, const int lam) const
-        {return conn_direct(i, j, mu, nu, lam);}
+    {
+        GReal X[NDIM], conn[NDIM][NDIM][NDIM];
+        coord(i, j, 0, Loci::center, X);
+        coords->conn_native(X, conn);
+        return conn[mu][nu][lam];
+    }
 
-
+    KOKKOS_INLINE_FUNCTION void gcon(const Loci loc, const int i, const int j, Real gcon[NDIM][NDIM]) const
+    {
+        GReal X[NDIM];
+        coord(i, j, 0, loc, X);
+        coords->gcon_native(X, gcon);
+    }
+    KOKKOS_INLINE_FUNCTION void gcov(const Loci loc, const int i, const int j, Real gcov[NDIM][NDIM]) const
+    {
+        GReal X[NDIM];
+        coord(i, j, 0, loc, X);
+        coords->gcov_native(X, gcov);
+    }
+    KOKKOS_INLINE_FUNCTION void conn(const int i, const int j, Real conn[NDIM][NDIM][NDIM]) const
+    {
+        GReal X[NDIM];
+        coord(i, j, 0, Loci::center, X);
+        coords->conn_native(X, conn);
+    }
 #else
     KOKKOS_INLINE_FUNCTION Real gcon(const Loci loc, const int i, const int j, const int mu, const int nu) const
         {return gcon_direct(loc, i, j, mu, nu);}

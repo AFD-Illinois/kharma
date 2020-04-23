@@ -29,6 +29,10 @@ x3max = 1.0
 ix3_bc = periodic
 ox3_bc = periodic
 
+<coordinates>
+base = cartesian_minkowski
+transform = null
+
 <time>
 # This will be overridden depending on the problem
 tlim = 1.0

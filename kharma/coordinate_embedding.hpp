@@ -11,10 +11,10 @@
  * Coordinates in HARM are logically Cartesian -- that is, in some coordinate system they are evenly spaced
  * However, working in GR allows us to define that "native" or "transformed" coordinate system arbitrarily in relation to the
  * "base" or "embedding" coordinates, usually Spherical Kerr-Schild coordinates
- * 
+ *
  * That is, as long as we have a bijective map of base<->transformed coordinates, we can define the latter arbitrarily, which is
  * great for putting resolution where we need and not where we don't.
- * 
+ *
  * This class keeps track of the base coordinates and the map, which must be classes which are members of the SomeXX std::variant containers.
  * The BaseCoords class must implement:
  * * gcov_embed
@@ -23,7 +23,7 @@
  * * coord_to_native
  * * dxdX_to_embed
  * * dxdX_to_native
- * 
+ *
  * TODO put lower/raise in here?
  */
 class CoordinateEmbedding {
@@ -152,7 +152,7 @@ class CoordinateEmbedding {
 
 
 
-        KOKKOS_INLINE_FUNCTION void conn_func(const GReal X[NDIM], Real conn[NDIM][NDIM][NDIM]) const
+        KOKKOS_INLINE_FUNCTION void conn_native(const GReal X[NDIM], Real conn[NDIM][NDIM][NDIM]) const
         {
             Real tmp[NDIM][NDIM][NDIM];
             Real gcon[NDIM][NDIM];
@@ -179,8 +179,8 @@ class CoordinateEmbedding {
             for (int lam = 0; lam < NDIM; lam++) {
                 for (int nu = 0; nu < NDIM; nu++) {
                     for (int mu = 0; mu < NDIM; mu++) {
-                        tmp[lam][nu][mu] = 0.5 * (conn[nu][lam][mu] + 
-                                                  conn[mu][lam][nu] - 
+                        tmp[lam][nu][mu] = 0.5 * (conn[nu][lam][mu] +
+                                                  conn[mu][lam][nu] -
                                                   conn[mu][nu][lam]);
                     }
                 }
