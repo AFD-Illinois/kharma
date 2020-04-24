@@ -8,10 +8,12 @@
 #include "mesh/mesh.hpp"
 #include "coordinates/coordinates.hpp"
 
+#include "decs.hpp"
+
 #include "boundaries.hpp"
 #include "coordinate_embedding.hpp"
 #include "coordinate_systems.hpp"
-#include "decs.hpp"
+#include "debug.hpp"
 #include "fluxes.hpp"
 #include "grmhd.hpp"
 #include "phys.hpp"
@@ -64,7 +66,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     params.Add("c_transform", transform_str);
     GReal startx1 = pin->GetOrAddReal("mesh", "x1min", 0);
     params.Add("c_startx1", startx1);
-    GReal a = pin->GetOrAddReal("coordinates", "a", 0.9375);
+    GReal a = pin->GetOrAddReal("coordinates", "a", 0.0);
     params.Add("c_a", a);
     GReal hslope = pin->GetOrAddReal("coordinates", "hslope", 0.3);
     params.Add("c_hslope", hslope);
@@ -86,22 +88,22 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     std::vector<int> s_prims({NPRIM});
     // TODO arrange names/metadata to more accurately reflect e.g. variable locations and relations
     // for now cells are too darn easy and I don't use any fancy face-centered features
-    m = Metadata({m.Cell, m.Vector, m.FillGhost, m.Independent, m.Conserved}, s_prims);
+    m = Metadata({m.Cell, m.FillGhost, m.Independent, m.Restart, m.Conserved}, s_prims);
     fluid_state->AddField("c.c.bulk.cons", m, DerivedOwnership::shared);
     // initialize metadata the same but length s_vector
     // fluid_state->AddField("c.c.bulk.cons_B", m, DerivedOwnership::shared);
 
-    m = Metadata({m.Cell, m.Derived, m.Vector, m.OneCopy, m.Graphics}, s_prims);
+    m = Metadata({m.Cell, m.Derived, m.OneCopy, m.Graphics, m.Intensive}, s_prims);
     fluid_state->AddField("c.c.bulk.prims", m, DerivedOwnership::shared);
     // metadata!
     // fluid_state->AddField("c.c.bulk.prims_B", m, DerivedOwnership::shared);
 
     // Max (i.e. positive) sound speed vector.  Easiest to keep here due to needing it for EstimateTimestep
-    m = Metadata({m.Cell, m.Derived, m.Vector, m.OneCopy}, s_vector);
+    m = Metadata({m.Cell, m.Derived, m.OneCopy, m.Vector}, s_vector);
     fluid_state->AddField("c.c.bulk.ctop", m, DerivedOwnership::unique);
 
     // Fluxes. TODO coax parthenon to store these as U.flux[0,1,2]
-    m = Metadata({m.Cell, m.Derived, m.Vector, m.OneCopy}, s_prims);
+    m = Metadata({m.Cell, m.Derived, m.OneCopy}, s_prims);
     fluid_state->AddField("c.c.bulk.F1", m, DerivedOwnership::shared);
     fluid_state->AddField("c.c.bulk.F2", m, DerivedOwnership::shared);
     fluid_state->AddField("c.c.bulk.F3", m, DerivedOwnership::shared);
@@ -109,9 +111,10 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
 
 
     // Flags for patching inverter errors
-    // TODO integer fields in Parthenon? Flags need to be sync'd with FillGhost
-    m = Metadata({m.Cell, m.Derived, m.OneCopy, m.FillGhost});
-    fluid_state->AddField("bulk.pflag", m, DerivedOwnership::shared);
+    // TODO integer fields in Parthenon? Flags need to be sync'd with FillGhost,
+    // and would be nice to include in dumps/restarts as well
+    // m = Metadata({m.Cell, m.OneCopy, m.FillGhost, m.Independent, m.Graphics, m.Restart});
+    // fluid_state->AddField("bulk.pflag", m, DerivedOwnership::shared);
 
     fluid_state->FillDerived = GRMHD::FillDerived;
     fluid_state->CheckRefinement = nullptr;
@@ -131,7 +134,8 @@ void FillDerived(Container<Real>& rc)
     GridVars U = rc.Get("c.c.bulk.cons").data;
     GridVars P = rc.Get("c.c.bulk.prims").data;
 
-    GridVars pflag = rc.Get("bulk.pflag").data; // TODO remember to switch to ints
+    //GridVars pflag = rc.Get("bulk.pflag").data; // TODO remember to switch to ints
+    ParArrayND<int> pflag("pflag", pmb->ncells1, pmb->ncells2, pmb->ncells3);
 
     // TODO how do I carry this around per-block and just update it when needed?
     // (or if not the Grid, then at least a coordinate system and EOS...)
@@ -144,7 +148,7 @@ void FillDerived(Container<Real>& rc)
     // ghost zones are needed for reconstruction
     pmb->par_for("U_to_P", 0, pmb->ncells1-1, 0, pmb->ncells2-1, 0, pmb->ncells3-1,
         KOKKOS_LAMBDA_3D {
-            pflag(i, j, k) = (Real) U_to_P(G, U, eos, i, j, k, Loci::center, P);
+            pflag(i, j, k) = U_to_P(G, U, eos, i, j, k, Loci::center, P);
         }
     );
     FLAG("Filled");
@@ -155,7 +159,7 @@ void FillDerived(Container<Real>& rc)
     double maxDivB = max_divb(rc);
     fprintf(stderr, "Maximum divB: %g\n", maxDivB);
 
-    // TODO check pflag and print results
+    count_print_flags(pmb, pflag);
 #endif
 }
 
@@ -264,7 +268,7 @@ Real EstimateTimestep(Container<Real>& rc)
     // TODO is there a parthenon par_reduce yet?
     double ndt;
     Kokkos::Min<double> min_reducer(ndt);
-    Kokkos::parallel_reduce("ndt_min", MDRangePolicy<Rank<3>>({is, js, ks}, {ie, je, ke}),
+    Kokkos::parallel_reduce("ndt_min", MDRangePolicy<Rank<3>>({is, js, ks}, {ie+1, je+1, ke+1}),
         KOKKOS_LAMBDA (const int &i, const int &j, const int &k, double &local_min) {
             double ndt_zone = 1 / (1 / (dx1v(i) / ctop(0, i, j, k)) +
                                    1 / (dx2v(j) / ctop(1, i, j, k)) +
@@ -275,6 +279,7 @@ Real EstimateTimestep(Container<Real>& rc)
 
     // Sometimes this is called before ctop is initialized.  Catch weird dts and play it safe.
     if (ndt <= 0.0 || isnan(ndt) || ndt > 1) {
+        cerr << "ndt was unsafe: " << ndt << "! Using dt_min" << std::endl;
         ndt = pmb->packages["GRMHD"]->Param<Real>("dt_min");
     } else {
         ndt *= pmb->packages["GRMHD"]->Param<Real>("cfl");

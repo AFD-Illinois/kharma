@@ -66,6 +66,12 @@ TaskStatus ApplyBondiBoundary(Container<Real>& rc)
         }
     );
 
+    pmb->par_for("outflow_boundary", 0, NPRIM-1, 0, NGHOST-1, pmb->js, pmb->je, pmb->ks, pmb->ke,
+        KOKKOS_LAMBDA_VARS {
+            U(p, i, j, k) = U(p, NGHOST, j, k);
+        }
+    );
+
     FLAG("Done Bondi boundary");
 
     return TaskStatus::complete;
@@ -74,7 +80,7 @@ TaskStatus ApplyBondiBoundary(Container<Real>& rc)
 // Adapted from M. Chandra
 KOKKOS_INLINE_FUNCTION Real get_Tfunc(const Real T, const GReal r, const Real C1, const Real C2, const Real n)
 {
-    return pow(1. + (1. + n) * T, 2.) * (1. - 2. / r + pow(C1 / r / r / pow(T, n), 2.)) - C2;
+    return pow(1. + (1. + n) * T, 2.) * (1. - 2. / r + pow(C1 / pow(r,2) / pow(T, n), 2.)) - C2;
 }
 
 KOKKOS_INLINE_FUNCTION Real get_T(const GReal r, const Real C1, const Real C2, const Real n)
@@ -82,7 +88,7 @@ KOKKOS_INLINE_FUNCTION Real get_T(const GReal r, const Real C1, const Real C2, c
     Real rtol = 1.e-12;
     Real ftol = 1.e-14;
     Real Tmin = 0.6 * (sqrt(C2) - 1.) / (n + 1);
-    Real Tmax = pow(C1 * sqrt(2. / r / r / r), 1. / n);
+    Real Tmax = pow(C1 * sqrt(2. / pow(r,3)), 1. / n);
 
     Real f0, f1, fh;
     Real T0, T1, Th;
@@ -127,6 +133,20 @@ KOKKOS_INLINE_FUNCTION void fourvel_to_prim(const Real gcon[NDIM][NDIM], const R
     u_prim[2] = ucon[2] + ucon[0] * alpha2 * gcon[0][2];
     u_prim[3] = ucon[3] + ucon[0] * alpha2 * gcon[0][3];
 }
+// KOKKOS_INLINE_FUNCTION void fourvel_to_prim(const Real gcon[NDIM][NDIM], Real ucon[NDIM], Real u_prim[NDIM])
+// {
+//     Real beta[NDIM];
+//     Real alpha = 1.0/sqrt(-gcon[0][0]);
+//     beta[1] = alpha*alpha*gcon[0][1];
+//     beta[2] = alpha*alpha*gcon[0][2];
+//     beta[3] = alpha*alpha*gcon[0][3];
+//     Real gamma = ucon[0]*alpha;
+
+//     u_prim[0] = 0;
+//     u_prim[1] = ucon[1] + beta[1]*gamma/alpha;
+//     u_prim[2] = ucon[2] + beta[2]*gamma/alpha;
+//     u_prim[3] = ucon[3] + beta[3]*gamma/alpha;
+// }
 
 /**
  * Set time component for consistency given a 3-velocity
@@ -168,10 +188,13 @@ void get_prim_bondi(const Grid& G, GridVars P, const EOS* eos, const Real mdot, 
 
     // TODO this seems awkward.  Is this really the way to use my new tooling?
     // Note some awkwardness is the fact we need both native coords and embedding r
+    SphKSCoords ks = mpark::get<SphKSCoords>(G.coords->base);
+    SphBLCoords bl = SphBLCoords(ks.a);
+
     GReal X[NDIM], Xembed[NDIM];
     G.coord(i, j, k, Loci::center, X);
     G.coord_embed(i, j, k, Loci::center, Xembed);
-    Real Rhor = mpark::get<SphKSCoords>(G.coords->base).rhor();
+    Real Rhor = ks.rhor();
     // Any zone inside the horizon gets the horizon's values
     int ii = i;
     while (Xembed[1] < Rhor)
@@ -183,14 +206,10 @@ void get_prim_bondi(const Grid& G, GridVars P, const EOS* eos, const Real mdot, 
     GReal r = Xembed[1];
 
     Real T = get_T(r, C1, C2, n);
-    if (T < 0) T = 0; // If you can't error, NaN
+    //if (T < 0) T = 0; // If you can't error, NaN
     Real ur = -C1 / (pow(T, n) * pow(r, 2));
     Real rho = pow(T, n);
     Real u = rho * T * n;
-
-    // Grab coord references.  Note we only support KS native base coords
-    SphKSCoords ks = mpark::get<SphKSCoords>(G.coords->base);
-    SphBLCoords bl = SphBLCoords(ks.a);
 
     // Set u^t to make u^r a 4-vector
     Real ucon_bl[NDIM] = {0, ur, 0, 0};
@@ -209,21 +228,27 @@ void get_prim_bondi(const Grid& G, GridVars P, const EOS* eos, const Real mdot, 
     fourvel_to_prim(gcon, ucon_mks, u_prim);
 
 #if DEBUG
-    if (i == 11 && j == 12 && k == 13) {
+    static int fails = 0;
+    if (T < 0 || rho < 0 || u < 0) {
         Real ucov_mks[NDIM];
         G.lower(ucon_mks, ucov_mks, i, j, k, Loci::center);
         Real uu_mks = dot(ucon_mks, ucov_mks);
 
-        cerr << "Get Bondi in zone " << i << " " << j << " " << k << std::endl;
+        cerr << "Bondi Bad in zone " << i << " " << j << " " << k << std::endl;
         cerr << "Native X:  " << X[1] << " " << X[2] << " " << X[3] << std::endl;
         cerr << "Embed X:  " << Xembed[1] << " " << Xembed[2] << " " << Xembed[3] << std::endl;
         cerr << "gam, C1, C2, n, T: " << eos->gam << " " << C1 << " " << C2 << " " << n << " " << T << std::endl;
+        cerr << "Tmin, Tmax: " << 0.6 * (sqrt(C2) - 1.) / (n + 1) << " " << pow(C1 * sqrt(2. / pow(r,3)), 1. / n) << std::endl;
         cerr << "rho, u:  " << rho << " " << u << std::endl;
         cerr << "u [BL]:  " << ucon_bl[0] << " " << ucon_bl[1] << " " << ucon_bl[2] << " " << ucon_bl[3] << std::endl;
         cerr << "u [KS]:  " << ucon_ks[0] << " " << ucon_ks[1] << " " << ucon_ks[2] << " " << ucon_ks[3] << std::endl;
         cerr << "u [native]:  " << ucon_mks[0] << " " << ucon_mks[1] << " " << ucon_mks[2] << " " << ucon_mks[3] << std::endl;
         cerr << "u.u [native]:  " << uu_mks << std::endl;
         cerr << "u [prim]:  " << u_prim[1] << " " << u_prim[2] << " " << u_prim[3] << std::endl;
+        fails++;
+    }
+    if(fails > 100) {
+        exit(-1);
     }
 #endif
 

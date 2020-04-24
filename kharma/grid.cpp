@@ -49,7 +49,7 @@ Grid::Grid(MeshBlock* pmb): pmy_block(pmb)
     SomeBaseCoords base;
     if (base_str == "spherical_minkowski") {
         base.emplace<SphMinkowskiCoords>(SphMinkowskiCoords());
-    } else if (base_str == "cartesian_minkowski") {
+    } else if (base_str == "cartesian_minkowski" || base_str == "minkowski") {
         base.emplace<CartMinkowskiCoords>(CartMinkowskiCoords());
     } else if (base_str == "spherical_ks" || base_str == "ks") {
         base.emplace<SphKSCoords>(SphKSCoords(a));
@@ -60,7 +60,7 @@ Grid::Grid(MeshBlock* pmb): pmy_block(pmb)
     }
     SomeTransform transform;
     if (transform_str == "null") {
-        if (base_str == "cartesian_minkowski") {
+        if (base_str == "cartesian_minkowski") { // TODO if includes cartesian at all
             transform.emplace<CartNullTransform>(CartNullTransform());
         } else {
             transform.emplace<SphNullTransform>(SphNullTransform());
@@ -69,6 +69,8 @@ Grid::Grid(MeshBlock* pmb): pmy_block(pmb)
         transform.emplace<CartNullTransform>(CartNullTransform());
     } else if (base_str == "spherical_null") {
         transform.emplace<SphNullTransform>(SphNullTransform());
+    } else if (transform_str == "modified" || transform_str == "mks") {
+        transform.emplace<ModifyTransform>(ModifyTransform(hslope));
     } else if (transform_str == "funky" || transform_str == "fmks") {
         transform.emplace<FunkyTransform>(FunkyTransform(startx1, hslope, mks_smooth, poly_xt, poly_alpha));
     } else {

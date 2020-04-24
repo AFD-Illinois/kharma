@@ -227,6 +227,73 @@ class CartNullTransform {
 };
 
 /**
+ * Modified Kerr-Schild coordinates "MKS"
+ * Make sense only for spherical base systems!
+ */
+class ModifyTransform {
+    public:
+        const GReal hslope;
+
+        // Constructor
+        ModifyTransform(GReal hslope_in): hslope(hslope_in) {}
+
+        // Coordinate transformations
+        // Protect embedding theta from ever hitting 0 or Pi
+        KOKKOS_INLINE_FUNCTION void coord_to_embed(const GReal Xnative[NDIM], GReal Xembed[NDIM]) const
+        {
+            Xembed[0] = Xnative[0];
+            Xembed[1] = exp(Xnative[1]);
+
+            GReal th = M_PI*Xnative[2] + ((1. - hslope)/2.)*sin(2.*M_PI*Xnative[2]);
+#if COORDSINGFIX
+            if (fabs(th) < SINGSMALL) {
+                if (th >= 0)
+                    th = SINGSMALL;
+                if (th < 0)
+                    th = -SINGSMALL;
+            }
+            if (fabs(M_PI - th) < SINGSMALL) {
+                if (th >= M_PI)
+                    th = M_PI + SINGSMALL;
+                if (th < M_PI)
+                    th = M_PI - SINGSMALL;
+            }
+#endif
+            Xembed[2] = th;
+            Xembed[3] = Xnative[3];
+        }
+        KOKKOS_INLINE_FUNCTION void coord_to_native(const GReal Xembed[NDIM], GReal Xnative[NDIM]) const
+        {
+            Xnative[0] = Xembed[0];
+            Xnative[1] = log(Xembed[1]);
+            Xnative[3] = Xembed[3];
+            // Treat the special case
+            root_find(Xembed, Xnative, &ModifyTransform::coord_to_embed);
+        }
+        /**
+         * Transformation matrix for contravariant vectors to embedding, or covariant vectors to native
+         */
+        KOKKOS_INLINE_FUNCTION void dxdX(const GReal Xnative[NDIM], Real dxdX[NDIM][NDIM]) const
+        {
+            DLOOP2 dxdX[mu][nu] = 0;
+            dxdX[0][0] = 1.;
+            dxdX[1][1] = exp(Xnative[1]);
+            dxdX[2][2] = M_PI - (hslope - 1.)*M_PI*cos(2.*M_PI*Xnative[2]);
+            dxdX[3][3] = 1.;
+        }
+        /**
+         * Transformation matrix for contravariant vectors to native, or covariant vectors to embedding
+         */
+        KOKKOS_INLINE_FUNCTION void dXdx(const GReal Xnative[NDIM], Real dXdx[NDIM][NDIM]) const
+        {
+            // Lazy way.  Surely there's an analytic inverse to be had somewhere...
+            Real dxdX_tmp[NDIM][NDIM];
+            dxdX(Xnative, dxdX_tmp);
+            invert(&dxdX_tmp[0][0],&dXdx[0][0]);
+        }
+};
+
+/**
  * "Funky" Modified Kerr-Schild coordinates
  * Make sense only for spherical base systems!
  */
@@ -325,7 +392,7 @@ class FunkyTransform {
 // Bundle coordinates and transforms into umbrella variant types
 // I am 99% certain there's a way to add CoordinateEmbedding to this list.
 using SomeBaseCoords = mpark::variant<SphMinkowskiCoords, CartMinkowskiCoords, SphBLCoords, SphKSCoords>;
-using SomeTransform = mpark::variant<SphNullTransform, CartNullTransform, FunkyTransform>;
+using SomeTransform = mpark::variant<SphNullTransform, CartNullTransform, ModifyTransform, FunkyTransform>;
 
 /**
  * Root finder for X[2] since it is sometimes not analytically invertible

@@ -251,8 +251,7 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const Grid &G, const GridVars P, const 
     flux[prims::B3] = D.bcon[3] * D.ucon[dir] -
                                D.bcon[dir] * D.ucon[3];
 
-    for (int p = 0; p < NPRIM; ++p)
-        flux[p] *= G.gdet(loc, i, j);
+    PLOOP flux[p] *= G.gdet(loc, i, j);
 }
 KOKKOS_INLINE_FUNCTION void prim_to_flux(const Grid &G, const Real P[NPRIM], const FourVectors D, const EOS* eos,
                                          const int i, const int j, const int k, const Loci loc, const int dir,
@@ -279,8 +278,7 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const Grid &G, const Real P[NPRIM], con
     flux[prims::B3] = D.bcon[3] * D.ucon[dir] -
                                D.bcon[dir] * D.ucon[3];
 
-    for (int p = 0; p < NPRIM; ++p)
-        flux[p] *= G.gdet(loc, i, j);
+    PLOOP flux[p] *= G.gdet(loc, i, j);
 }
 
 

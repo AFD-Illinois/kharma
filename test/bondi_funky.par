@@ -12,16 +12,16 @@ refinement = none
 numlevel = 1
 
 nx1 = 64
-x1min = 0.5
-x1max = 5.0
+x1min = 0.9
+x1max = 3.0
 ix1_bc = outflow
 ox1_bc = outflow
 
 nx2 = 64
 x2min = 0.0
 x2max = 1.0
-ix2_bc = periodic
-ox2_bc = periodic
+ix2_bc = reflecting
+ox2_bc = reflecting
 
 nx3 = 64
 x3min = 0.0
@@ -31,8 +31,9 @@ ox3_bc = periodic
 
 <coordinates>
 base = spherical_ks
-transform = funky
+transform = mks
 a = 0.0
+hslope = 0.3
 
 <time>
 tlim = 1.0
@@ -48,10 +49,10 @@ mdot = 1.0
 rs = 8.0
 
 <Graphics>
-variables = c.c.bulk.prims
+variables = c.c.bulk.prims, c.c.bulk.cons, c.c.bulk.ctop
 
 <output1>
 file_type = hdf5
-dt = 0.1
+dt = 0.01
 variable = c.c.bulk.prims
 

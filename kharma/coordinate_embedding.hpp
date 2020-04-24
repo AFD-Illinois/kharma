@@ -164,8 +164,6 @@ class CoordinateEmbedding {
             return sqrt(fabs(gdet));
         }
 
-
-
         KOKKOS_INLINE_FUNCTION void conn_native(const GReal X[NDIM], Real conn[NDIM][NDIM][NDIM]) const
         {
             Real tmp[NDIM][NDIM][NDIM];

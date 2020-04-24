@@ -46,40 +46,40 @@ int main(int argc, char *argv[])
 
     FLAG("Initializing");
     auto manager_status = pman.ParthenonInit(argc, argv);
-    auto pin = pman.pinput.get();
-    bool re_init = false;
+    // auto pin = pman.pinput.get();
+    // bool re_init = false;
 
     // Sometimes we need to modify things that will affect the mesh/timeframe initialization
     // If coordinate system is KS or BL, we reverse out x1min from Rout/Rhor to put 5 zones in EH
-    auto coord_str = pin->GetOrAddString("coordinates", "base", "cartesian_minkowski");
-    if (coord_str.find("minkowski") == std::string::npos) { // If we're not in flat space...
-        // Define the base/embedding coordinate system Kerr-Schild
-        GReal a = pin->GetOrAddReal("coordinates", "a", 0.9375);
-        GReal Rhor;
-        if (coord_str.find("ks") != std::string::npos) {
-            auto base_coords = SphKSCoords(a);
-            Rhor = base_coords.rhor();
-        } else if (coord_str.find("bl") != std::string::npos) {
-            auto base_coords = SphBLCoords(a);
-            Rhor = base_coords.rhor();
-        } else {
-            throw std::invalid_argument("Unsupported coordinate system for determining Rin!");
-        }
-        GReal Rout = pin->GetOrAddReal("coordinates", "r_out", 100.);
-        // This will need to be revised for multi-level meshes
-        int n1 = pin->GetInteger("mesh", "nx1");
-        // Note this only applies to MKS/CMKS/FMKS
-        GReal Rin = exp((n1 * log(Rhor) / 5.5 - log(Rout)) / (-1. + n1 / 5.5));
-        std::vector<GReal> startx = {log(Rin), 0.0, 0.0};
-        std::vector<GReal> stopx = {log(Rout), 1.0, 2*M_PI};
-        re_init = true;
-    }
+    // auto coord_str = pin->GetOrAddString("coordinates", "base", "cartesian_minkowski");
+    // if (coord_str.find("minkowski") == std::string::npos) { // If we're not in flat space...
+    //     // Define the base/embedding coordinate system Kerr-Schild
+    //     GReal a = pin->GetOrAddReal("coordinates", "a", 0.9375);
+    //     GReal Rhor;
+    //     if (coord_str.find("ks") != std::string::npos) {
+    //         auto base_coords = SphKSCoords(a);
+    //         Rhor = base_coords.rhor();
+    //     } else if (coord_str.find("bl") != std::string::npos) {
+    //         auto base_coords = SphBLCoords(a);
+    //         Rhor = base_coords.rhor();
+    //     } else {
+    //         throw std::invalid_argument("Unsupported coordinate system for determining Rin!");
+    //     }
+    //     GReal Rout = pin->GetOrAddReal("coordinates", "r_out", 100.);
+    //     // This will need to be revised for multi-level meshes
+    //     int n1 = pin->GetInteger("mesh", "nx1");
+    //     // Note this only applies to MKS/CMKS/FMKS
+    //     GReal Rin = exp((n1 * log(Rhor) / 5.5 - log(Rout)) / (-1. + n1 / 5.5));
+    //     std::vector<GReal> startx = {log(Rin), 0.0, 0.0};
+    //     std::vector<GReal> stopx = {log(Rout), 1.0, 2*M_PI};
+    //     re_init = true;
+    // }
 
-    // Then re-initialize
-    if (re_init) {
-        FLAG("Re-initializing");
-        // TODO split Parthenon argument parsing from mesh initialization
-    }
+    // // Then re-initialize
+    // if (re_init) {
+    //     FLAG("Re-initializing");
+    //     // TODO split Parthenon argument parsing from mesh initialization
+    // }
 
     if (manager_status == ParthenonStatus::complete) {
         pman.ParthenonFinalize();
