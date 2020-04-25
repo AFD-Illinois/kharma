@@ -26,9 +26,9 @@ void LRToFlux(Container<Real>& rc, GridVars pl, GridVars pr, const int dir, Grid
     FLAG("LR to flux");
     MeshBlock *pmb = rc.pmy_block;
 
-    GridVars pll("pll", NPRIM, pmb->ncells1, pmb->ncells2, pmb->ncells3);
+    GridVars pll("pll", NPRIM, pmb->ncells3, pmb->ncells2, pmb->ncells1);
 
-    auto& ctop = rc.Get("c.c.bulk.ctop").data;
+    auto& ctop = rc.GetFace("f.f.bulk.ctop").data;
 
     // So far we don't need fluxes that don't match faces
     Loci loc;
@@ -97,18 +97,18 @@ void LRToFlux(Container<Real>& rc, GridVars pl, GridVars pr, const int dir, Grid
 
                 mhd_vchar(G, pr, Dtmp, eos, k, j, i, loc, dir, cmaxR, cminR);
 
-                cmax = fabs(max(max(0., cmaxL), cmaxR)); // TODO suspicious use of abs()
+                cmax = fabs(max(max(0.,  cmaxL),  cmaxR)); // TODO suspicious use of abs()
                 cmin = fabs(max(max(0., -cminL), -cminR));
-                ctop(dir-1, k, j, i) = max(cmax, cmin);
+                ctop(dir, k, j, i) = max(cmax, cmin);
 
-                PLOOP flux(p, k, j, i) = 0.5 * (fluxL[p] + fluxR[p] - ctop(dir-1, k, j, i) * (Ur[p] - Ul[p]));
+                PLOOP flux(p, k, j, i) = 0.5 * (fluxL[p] + fluxR[p] - ctop(dir, k, j, i) * (Ur[p] - Ul[p]));
             }
     );
     FLAG("Uber fluxcalc");
 }
 
 /**
- * Constrained transport.  Modify B-field fluxes to preserve divB==0 condition to machine precision
+ * Constrained transport.  Modify B-field fluxes to preserve divB==0 condition to machine precision per-step
  */
 void FluxCT(Container<Real>& rc)
 {
@@ -117,18 +117,18 @@ void FluxCT(Container<Real>& rc)
     int is = pmb->is, js = pmb->js, ks = pmb->ks;
     int ie = pmb->ie, je = pmb->je, ke = pmb->ke;
     int n1 = pmb->ncells1, n2 = pmb->ncells2, n3 = pmb->ncells3;
-    GridScalar emf1("emf1", n1, n2, n3);
-    GridScalar emf2("emf2", n1, n2, n3);
-    GridScalar emf3("emf3", n1, n2, n3);
+    GridScalar emf1("emf1", n3, n2, n1);
+    GridScalar emf2("emf2", n3, n2, n1);
+    GridScalar emf3("emf3", n3, n2, n1);
     GridVars F1 = rc.Get("c.c.bulk.cons").flux[0];
     GridVars F2 = rc.Get("c.c.bulk.cons").flux[1];
     GridVars F3 = rc.Get("c.c.bulk.cons").flux[2];
 
     pmb->par_for("flux_ct_emf", ks-2, ke+2, js-2, je+2, is-2, ie+2,
         KOKKOS_LAMBDA_3D {
-            emf3(k, j, i) = 0.25 * (F1(prims::B2, k, j, i) + F1(prims::B2, k, j-1, i) - F2(prims::B1, k, j, i) - F2(prims::B1, k, j, i-1));
+            emf3(k, j, i) =  0.25 * (F1(prims::B2, k, j, i) + F1(prims::B2, k, j-1, i) - F2(prims::B1, k, j, i) - F2(prims::B1, k, j, i-1));
             emf2(k, j, i) = -0.25 * (F1(prims::B3, k, j, i) + F1(prims::B3, k-1, j, i) - F3(prims::B1, k, j, i) - F3(prims::B1, k, j, i-1));
-            emf1(k, j, i) = 0.25 * (F2(prims::B3, k, j, i) + F2(prims::B3, k-1, j, i) - F3(prims::B2, k, j, i) - F3(prims::B2, k, j-1, i));
+            emf1(k, j, i) =  0.25 * (F2(prims::B3, k, j, i) + F2(prims::B3, k-1, j, i) - F3(prims::B2, k, j, i) - F3(prims::B2, k, j-1, i));
         }
     );
 
@@ -136,17 +136,17 @@ void FluxCT(Container<Real>& rc)
     // TODO worthwhile to split and only do +1 in relevant direction?
     pmb->par_for("flux_ct", ks-1, ke+1, js-1, je+1, is-1, ie+1,
         KOKKOS_LAMBDA_3D {
-            F1(prims::B1, k, j, i) = 0.;
+            F1(prims::B1, k, j, i) =  0.0;
             F1(prims::B2, k, j, i) =  0.5 * (emf3(k, j, i) + emf3(k, j+1, i));
             F1(prims::B3, k, j, i) = -0.5 * (emf2(k, j, i) + emf2(k+1, j, i));
 
             F2(prims::B1, k, j, i) = -0.5 * (emf3(k, j, i) + emf3(k, j, i+1));
-            F2(prims::B2, k, j, i) = 0.;
+            F2(prims::B2, k, j, i) =  0.0;
             F2(prims::B3, k, j, i) =  0.5 * (emf1(k, j, i) + emf1(k+1, j, i));
 
             F3(prims::B1, k, j, i) =  0.5 * (emf2(k, j, i) + emf2(k, j, i+1));
             F3(prims::B2, k, j, i) = -0.5 * (emf1(k, j, i) + emf1(k, j+1, i));
-            F3(prims::B3, k, j, i) = 0.;
+            F3(prims::B3, k, j, i) =  0.0;
         }
     );
 }

@@ -7,17 +7,15 @@
 
 TaskStatus ApplyCustomBoundaries(Container<Real>& rc)
 {
-    FLAG("Applying custom boundaries");
     MeshBlock *pmb = rc.pmy_block;
     GridVars U = rc.Get("c.c.bulk.cons").data;
 
     // TODO TODO only if mesh is the last in X1...
     // TODO inflow check?
     if (pmb->packages["GRMHD"]->Param<std::string>("problem") == "bondi") {
+        FLAG("Applying Bondi problem boundary");
         ApplyBondiBoundary(rc);
     }
-
-    FLAG("Applied");
 
     return TaskStatus::complete;
 }

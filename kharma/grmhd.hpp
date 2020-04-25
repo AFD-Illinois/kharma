@@ -31,10 +31,10 @@ namespace GRMHD {
     // FillDerived should end up with all derived variables in the StateDescriptor in consistent state for e.g. output
     // For HARM this means running U_to_P to recover primitives in all zones
     void FillDerived(Container<Real>& rc);
-    // Reconstruct the primitives and calculate the LLF fluxes in each direction
+    // Calculate the LLF fluxes in each direction
     TaskStatus CalculateFluxes(Container<Real>& rc);
-    // Apply the fluxes to calculate dU/dt, the RHS of the PDE. Time integration is applied separately.
-    TaskStatus ApplyFluxes(Container<Real>& rc, Container<Real>& base);
+    // Add the HARM source term to the RHS dudt
+    TaskStatus SourceTerm(Container<Real>& rc, Container<Real>& dudt);
     // Estimate the next timestep. For pure GRMHD, this is the minimum signal crossing time of a zone on the block
     Real EstimateTimestep(Container<Real>& rc);
 }

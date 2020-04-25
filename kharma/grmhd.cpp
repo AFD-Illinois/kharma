@@ -45,9 +45,6 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     std::string problem_name = pin->GetString("job", "problem_id");
     params.Add("problem", problem_name);
 
-    // TODO do we need this?  Can we set it based on
-    params.Add("order", 2);
-
     // There are only 2 parameters related to fluid evolution:
     // 1. Fluid gamma for EOS (TODO separate EOS class to make this broader)
     // 2. Proportion of courant condition for timesteps
@@ -102,15 +99,10 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     // fluid_state->AddField("c.c.bulk.prims_B", m, DerivedOwnership::shared);
 
     // Max (i.e. positive) sound speed vector.  Easiest to keep here due to needing it for EstimateTimestep
-    m = Metadata({m.Cell, m.Derived, m.OneCopy, m.Vector}, s_vector);
-    fluid_state->AddField("c.c.bulk.ctop", m, DerivedOwnership::unique);
+    m = Metadata({m.Face, m.Derived, m.OneCopy});
+    fluid_state->AddField("f.f.bulk.ctop", m, DerivedOwnership::unique);
 
-    // Fluxes. TODO coax parthenon to store these as U.flux[0,1,2]
-    m = Metadata({m.Cell, m.Derived, m.OneCopy}, s_prims);
-    // fluid_state->AddField("c.c.bulk.F1", m, DerivedOwnership::shared);
-    // fluid_state->AddField("c.c.bulk.F2", m, DerivedOwnership::shared);
-    // fluid_state->AddField("c.c.bulk.F3", m, DerivedOwnership::shared);
-    // TODO Add jcon as an output-only calculation. Is that a thing?
+    // TODO Add jcon as an output-only calculation, likely overriding MeshBlock::UserWorkBeforeOutput
 
 
     // Flags for patching inverter errors
@@ -159,12 +151,12 @@ void FillDerived(Container<Real>& rc)
     // We expect primitives all the way out to 3 ghost zones on all sides.  But we can only fix primitives with their neighbors.
     // This may actually mean we require the 4 ghost zones Parthenon "wants" us to have, if we need to use only fixed zones.
     // TODO alternatively do a bounds check in fix_U_to_P
-    pmb->par_for("fix_U_to_P", 1, pmb->ncells3-2, 1, pmb->ncells2-2, 1, pmb->ncells1-2,
-        KOKKOS_LAMBDA_3D {
-            fix_U_to_P(G, P, U, eos, pflag, k, j, i); // Returns fflag, whether any floors were hit.  TODO record...
-        }
-    );
-    FLAG("Corrected");
+    // pmb->par_for("fix_U_to_P", 1, pmb->ncells3-2, 1, pmb->ncells2-2, 1, pmb->ncells1-2,
+    //     KOKKOS_LAMBDA_3D {
+    //         fix_U_to_P(G, P, U, eos, pflag, k, j, i); // Returns fflag, whether any floors were hit.  TODO record...
+    //     }
+    // );
+    // FLAG("Corrected");
 
 #if DEBUG
     // TODO this is actually a lot easier to calculate in the conserved vars,
@@ -211,22 +203,14 @@ TaskStatus CalculateFluxes(Container<Real>& rc)
 }
 
 /**
- * Calculate dU/dt from a set of fluxes.
- * Needs prims and cons.flux components filled, by FillDerived and CalculateFluxes respectively
- *
- * @param rc is the current stage's container
- * @param base is the base container containing the global dUdt term
+ * Add HARM source term to RHS
  */
-TaskStatus ApplyFluxes(Container<Real>& rc, Container<Real>& dudt)
+TaskStatus SourceTerm(Container<Real>& rc, Container<Real>& dudt)
 {
-    FLAG("Applying fluxes");
+    FLAG("Adding source term");
     MeshBlock *pmb = rc.pmy_block;
     auto is = pmb->is, js = pmb->js, ks = pmb->ks;
     auto ie = pmb->ie, je = pmb->je, ke = pmb->ke;
-    GridVars U = rc.Get("c.c.bulk.cons").data;
-    GridVars F1 = rc.Get("c.c.bulk.cons").flux[0];
-    GridVars F2 = rc.Get("c.c.bulk.cons").flux[1];
-    GridVars F3 = rc.Get("c.c.bulk.cons").flux[2];
     GridVars P = rc.Get("c.c.bulk.prims").data;
 
     // TODO *sigh*
@@ -236,12 +220,8 @@ TaskStatus ApplyFluxes(Container<Real>& rc, Container<Real>& dudt)
 
     // Unpack a bunch of variables for the kernel below
     auto dUdt = dudt.Get("c.c.bulk.cons").data;
-    // We don't otherwise support irregular grids...
-    auto dx1v = pmb->pcoord->dx1v;
-    auto dx2v = pmb->pcoord->dx2v;
-    auto dx3v = pmb->pcoord->dx3v;
 
-    pmb->par_for("uber_diff", ks, ke, js, je, is, ie,
+    pmb->par_for("source_term", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D {
             // Calculate the source term and apply it in 1 go (since it's stencil-1)
             FourVectors Dtmp;
@@ -249,10 +229,7 @@ TaskStatus ApplyFluxes(Container<Real>& rc, Container<Real>& dudt)
             get_state(G, P, k, j, i, Loci::center, Dtmp);
             get_fluid_source(G, P, Dtmp, eos, k, j, i, dU);
 
-            PLOOP dUdt(p, k, j, i) = (F1(p, k, j, i) - F1(p, k, j, i+1)) / dx1v(i) +
-                                     (F2(p, k, j, i) - F2(p, k, j+1, i)) / dx2v(j) +
-                                     (F3(p, k, j, i) - F3(p, k+1, j, i)) / dx3v(k) +
-                                     dU[p];
+            PLOOP dUdt(p, k, j, i) += dU[p];
         }
     );
     FLAG("Applied");
@@ -276,16 +253,16 @@ Real EstimateTimestep(Container<Real>& rc)
     auto dx1v = pmb->pcoord->dx1v;
     auto dx2v = pmb->pcoord->dx2v;
     auto dx3v = pmb->pcoord->dx3v;
-    GridVector ctop = rc.Get("c.c.bulk.ctop").data;
+    auto& ctop = rc.GetFace("f.f.bulk.ctop").data;
 
     // TODO is there a parthenon par_reduce yet?
     double ndt;
     Kokkos::Min<double> min_reducer(ndt);
     Kokkos::parallel_reduce("ndt_min", MDRangePolicy<Rank<3>>({ks, js, is}, {ke+1, je+1, ie+1}),
-        KOKKOS_LAMBDA (const int &i, const int &j, const int &k, double &local_min) {
-            double ndt_zone = 1 / (1 / (dx1v(i) / ctop(0, k, j, i)) +
-                                   1 / (dx2v(j) / ctop(1, k, j, i)) +
-                                   1 / (dx3v(k) / ctop(2, k, j, i)));
+        KOKKOS_LAMBDA (const int &k, const int &j, const int &i, double &local_min) {
+            double ndt_zone = 1 / (1 / (dx1v(i) / ctop(1, k, j, i)) +
+                                   1 / (dx2v(j) / ctop(2, k, j, i)) +
+                                   1 / (dx3v(k) / ctop(3, k, j, i)));
             if (ndt_zone < local_min) local_min = ndt_zone;
         }
     , min_reducer);

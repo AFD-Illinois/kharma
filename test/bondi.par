@@ -35,7 +35,7 @@ transform = null
 a = 0.0
 
 <time>
-tlim = 1.0
+tlim = 5.0
 integrator = rk2
 dt_min = 0.0001
 
@@ -52,6 +52,6 @@ variables = c.c.bulk.prims
 
 <output1>
 file_type = hdf5
-dt = 0.1
+dt = 0.5
 variable = c.c.bulk.prims
 

@@ -42,14 +42,17 @@ if [[ "$*" == *"clean"* ]]; then
     -DKokkos_ENABLE_CUDA_LAMBDA=ON
   else #OpenMP BUILD
     cmake3 ..\
-    -DCMAKE_BUILD_TYPE=Debug \
+    -DCMAKE_BUILD_TYPE=Release \
     -DUSE_MPI=OFF \
     -DDISABLE_MPI=ON \
     -DKokkos_ENABLE_OPENMP=ON \
     -DKokkos_ENABLE_CUDA=OFF \
     -DKokkos_ENABLE_HWLOC=ON \
-    -DKokkos_ARCH_HSW=ON \
+    -DKokkos_ARCH_HSW=OFF \
     -DKokkos_ARCH_BDW=OFF \
+    -DKokkos_ARCH_SKX=ON \
+    -DKokkos_ARCH_AMDAVX=OFF \
+    -DKokkos_ARCH_EPYC=OFF \
     -DKokkos_ARCH_KNL=OFF
   fi
 fi

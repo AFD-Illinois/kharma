@@ -7,15 +7,16 @@
 KOKKOS_INLINE_FUNCTION void get_fluid_source(const Grid &G, const GridVars P, const FourVectors& D,
                       const EOS* eos, const int& k, const int& j, const int& i, Real dU[NPRIM], bool wind=false)
 {
+    // Get T^mu_nu
     Real mhd[NDIM][NDIM];
-
     DLOOP1 mhd_calc(P, D, eos, k, j, i, mu, mhd[mu]);
 
-    // Contract mhd stress tensor with connection
-    DLOOP3 dU[prims::u + lam] += mhd[mu][nu] * G.conn(j, i, nu, lam, mu);
+    // Initialize
+    PLOOP dU[p] = 0.;
 
-    for (int p = 0; p < NPRIM; ++p)
-        dU[p] *= G.gdet(Loci::center, j, i);
+    // Contract mhd stress tensor with connection, and multiply by metric dterminant
+    DLOOP3 dU[prims::u + lam] += mhd[mu][nu] * G.conn(j, i, nu, lam, mu);
+    DLOOP1 dU[prims::u + mu] *= G.gdet(Loci::center, j, i);
 
     if (wind) {
         // Need coordinates to evaluate particle addtn rate

@@ -207,8 +207,8 @@ KOKKOS_INLINE_FUNCTION int fix_U_to_P(const Grid& G, GridVars P, GridVars U, EOS
         FLOOP P(p, k, j, i) = sum[p]/wsum;
 
         // Make sure fixed values still abide by floors
-        fflag |= fixup_ceiling(G, P, k, j, i);
-        fflag |= fixup_floor(G, P, U, eos, k, j, i);
+        // fflag |= fixup_ceiling(G, P, k, j, i);
+        // fflag |= fixup_floor(G, P, U, eos, k, j, i);
     }
 
     return fflag;

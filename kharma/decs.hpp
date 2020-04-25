@@ -20,7 +20,7 @@ using GReal = double;
 
 // TODO make this MPI-aware
 // TODO add make.sh/CMake option for tracing directly
-#if DEBUG_TRACE
+#if DEBUG
 #define FLAG(x) std::cout << x << std::endl;
 #else
 #define FLAG(x)

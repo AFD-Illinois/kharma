@@ -64,7 +64,7 @@ TaskList HARMDriver::MakeTaskList(MeshBlock *pmb, int stage)
     // pull out the container we'll use to get fluxes and/or compute RHSs
     Container<Real>& sc0  = pmb->real_containers.Get(stage_name[stage-1]);
       // pull out a container we'll use to store dU/dt.
-    Container<Real> &dudt = pmb->real_containers.Get("dUdt");
+    Container<Real>& dudt = pmb->real_containers.Get("dUdt");
     // pull out the container that will hold the updated state
     Container<Real>& sc1  = pmb->real_containers.Get(stage_name[stage]);
 
@@ -72,26 +72,26 @@ TaskList HARMDriver::MakeTaskList(MeshBlock *pmb, int stage)
 
     // Fill the primitives array P by calculating U_to_P everywhere
     // TODO very likely this can be dropped, since P/U begin the first step together and end each step sync'd too
-    auto fill_prims = AddContainerTask(tl, parthenon::FillDerivedVariables::FillDerived,
-                                        start_recv, sc0);
+    // auto fill_prims = AddContainerTask(tl, parthenon::FillDerivedVariables::FillDerived,
+    //                                     start_recv, sc0);
 
     // Calculate the LLF fluxes in each direction
-    auto calculate_flux = AddContainerTask(tl, GRMHD::CalculateFluxes, fill_prims, sc0);
-    // Apply these to create a single update dU/dt
-    auto apply_flux = AddTwoContainerTask(tl, GRMHD::ApplyFluxes, calculate_flux, sc0, dudt);
+    auto calculate_flux = AddContainerTask(tl, GRMHD::CalculateFluxes, start_recv, sc0);
 
-    // TODO make sure these are nops for a single-level problem
     auto send_flux = AddContainerTask(tl, Container<Real>::SendFluxCorrectionTask,
-                                    apply_flux, sc0);
+                                    calculate_flux, sc0);
     auto recv_flux = AddContainerTask(tl, Container<Real>::ReceiveFluxCorrectionTask,
-                                    apply_flux, sc0);
+                                    calculate_flux, sc0);
 
+    // Apply fluxes to create a single update dU/dt
+    auto flux_divergence = AddTwoContainerTask(tl, Update::FluxDivergence, recv_flux, sc0, dudt);
+    auto source_term = AddTwoContainerTask(tl, GRMHD::SourceTerm, flux_divergence, sc0, dudt);
     // Apply dU/dt to update values from the last stage to fill the current one
-    auto flux_div = AddUpdateTask(tl, pmb, stage, stage_name, integrator, UpdateContainer, recv_flux);
+    auto update_container = AddUpdateTask(tl, pmb, stage, stage_name, integrator, UpdateContainer, source_term);
 
     // update ghost cells
     auto send = AddContainerTask(tl, Container<Real>::SendBoundaryBuffersTask,
-                                flux_div, sc1);
+                                update_container, sc1);
     auto recv = AddContainerTask(tl, Container<Real>::ReceiveBoundaryBuffersTask,
                                 send, sc1);
     auto fill_from_bufs = AddContainerTask(tl, Container<Real>::SetBoundariesTask,
@@ -114,13 +114,6 @@ TaskList HARMDriver::MakeTaskList(MeshBlock *pmb, int stage)
     auto fill_derived = AddContainerTask(tl, parthenon::FillDerivedVariables::FillDerived,
                                         set_custom_bc, sc1);
 
-#if DEBUG
-    // Additionally propagate the fluxes so we can output them correctly
-    // auto copy_flux1 = AddCopyTask(tl, CopyFluxes, recv_flux, "c.c.bulk.F1", sc0, sc1);
-    // auto copy_flux2 = AddCopyTask(tl, CopyFluxes, recv_flux, "c.c.bulk.F2", sc0, sc1);
-    // auto copy_flux3 = AddCopyTask(tl, CopyFluxes, recv_flux, "c.c.bulk.F3", sc0, sc1);
-#endif
-
     // estimate next time step
     if (stage == integrator->nstages) {
         auto new_dt = AddContainerTask(tl, [](Container<Real>& rc) {
@@ -137,11 +130,11 @@ TaskList HARMDriver::MakeTaskList(MeshBlock *pmb, int stage)
             }, set_custom_bc, pmb);
         }
 
-        // Purge stages
-        auto purge_stages = tl.AddTask<BlockTask>([](MeshBlock *pmb) {
-            pmb->real_containers.PurgeNonBase();
-            return TaskStatus::complete;
-        }, set_custom_bc, pmb);
+        // Purge stages -- needed if base container will be changed on the fly
+        // auto purge_stages = tl.AddTask<BlockTask>([](MeshBlock *pmb) {
+        //     pmb->real_containers.PurgeNonBase();
+        //     return TaskStatus::complete;
+        // }, set_custom_bc, pmb);
     }
     return tl;
 }

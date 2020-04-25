@@ -31,12 +31,12 @@ ox3_bc = periodic
 
 <coordinates>
 base = spherical_ks
-transform = mks
+transform = fmks
 a = 0.0
 hslope = 0.3
 
 <time>
-tlim = 1.0
+tlim = 5.0
 integrator = rk2
 dt_min = 0.0001
 
@@ -49,10 +49,10 @@ mdot = 1.0
 rs = 8.0
 
 <Graphics>
-variables = c.c.bulk.prims, c.c.bulk.cons, c.c.bulk.ctop
+variables = c.c.bulk.prims
 
 <output1>
 file_type = hdf5
-dt = 0.01
+dt = 0.5
 variable = c.c.bulk.prims
 
