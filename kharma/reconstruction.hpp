@@ -24,12 +24,12 @@ void WENO5X1(Container<Real>& rc, ParArrayND<Real> Pl, ParArrayND<Real> Pr)
     auto& P = rc.Get("c.c.bulk.prims").data;
     auto pmb = rc.pmy_block;
 
-    pmb->par_for("recon_1", 0, NPRIM-1, pmb->is-1, pmb->ie+1, pmb->js-1, pmb->je+1, pmb->ks-1, pmb->ke+1,
+    pmb->par_for("recon_1", 0, NPRIM-1, pmb->ks-1, pmb->ke+1, pmb->js-1, pmb->je+1, pmb->is-1, pmb->ie+1,
         KOKKOS_LAMBDA_VARS
         {
-            weno5(P(p, i-2, j, k), P(p, i-1, j, k), P(p, i, j, k),
-                  P(p, i+1, j, k), P(p, i+2, j, k),
-                  Pl(p, i, j, k), Pr(p, i, j, k));
+            weno5(P(p, k, j, i-2), P(p, k, j, i-1), P(p, k, j, i),
+                  P(p, k, j, i+1), P(p, k, j, i+2),
+                  Pl(p, k, j, i), Pr(p, k, j, i));
         }
     );
 }
@@ -39,12 +39,12 @@ void WENO5X2(Container<Real>& rc, ParArrayND<Real> Pl, ParArrayND<Real> Pr)
     auto& P = rc.Get("c.c.bulk.prims").data;
     auto pmb = rc.pmy_block;
 
-    pmb->par_for("recon_2", 0, NPRIM-1, pmb->is-1, pmb->ie+1, pmb->js-1, pmb->je+1, pmb->ks-1, pmb->ke+1,
+    pmb->par_for("recon_2", 0, NPRIM-1, pmb->ks-1, pmb->ke+1, pmb->js-1, pmb->je+1, pmb->is-1, pmb->ie+1,
         KOKKOS_LAMBDA_VARS
         {
-            weno5(P(p, i, j-2, k), P(p, i, j-1, k), P(p, i, j, k),
-                  P(p, i, j+1, k), P(p, i, j+2, k),
-                  Pl(p, i, j, k),  Pr(p, i, j, k));
+            weno5(P(p, k, j-2, i), P(p, k, j-1, i), P(p, k, j, i),
+                  P(p, k, j+1, i), P(p, k, j+2, i),
+                  Pl(p, k, j, i),  Pr(p, k, j, i));
         }
     );
 }
@@ -54,12 +54,12 @@ void WENO5X3(Container<Real>& rc, ParArrayND<Real> Pl, ParArrayND<Real> Pr)
     auto& P = rc.Get("c.c.bulk.prims").data;
     auto pmb = rc.pmy_block;
 
-    pmb->par_for("recon_3", 0, NPRIM-1, pmb->is-1, pmb->ie+1, pmb->js-1, pmb->je+1, pmb->ks-1, pmb->ke+1,
+    pmb->par_for("recon_3", 0, NPRIM-1, pmb->ks-1, pmb->ke+1, pmb->js-1, pmb->je+1, pmb->is-1, pmb->ie+1,
         KOKKOS_LAMBDA_VARS
         {
-            weno5(P(p, i, j, k-2), P(p, i, j, k-1), P(p, i, j, k),
-                  P(p, i, j, k+1), P(p, i, j, k+2),
-                  Pl(p, i, j, k),  Pr(p, i, j, k));
+            weno5(P(p, k-2, j, i), P(p, k-1, j, i), P(p, k, j, i),
+                  P(p, k+1, j, i), P(p, k+2, j, i),
+                  Pl(p, k, j, i),  Pr(p, k, j, i));
         }
     );
 }

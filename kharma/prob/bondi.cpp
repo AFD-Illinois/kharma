@@ -11,72 +11,49 @@ using namespace parthenon;
 using namespace std;
 
 void get_prim_bondi(const Grid& G, GridVars P, const EOS* eos, const Real mdot, const Real rs,
-                    const int& i, const int& j, const int& k);
+                    const int& k, const int& j, const int& i);
 
 /**
  * Initialization of a Bondi problem with specified sonic point, BH mdot, and horizon radius
  * TODO this can/should be just mdot (and the grid ofc), if this problem is to be used as anything more than a test
  */
-void bondi(MeshBlock *pmb, const Grid& G, GridVars P,
-                    const EOS* eos, const Real mdot, const Real rs)
+void InitializeBondi(MeshBlock *pmb, const Grid& G, GridVars P,
+                     const EOS* eos, const Real mdot, const Real rs)
 {
     FLAG("Initializing Bondi problem");
-#if DEBUG
-    cerr << "mdot = " << mdot << endl;
-    cerr << "rs   = " << rs << endl;
-#endif
 
-    pmb->par_for( "init_bondi", 0, pmb->ncells1-1, 0, pmb->ncells2-1, 0, pmb->ncells3-1,
+    pmb->par_for( "init_bondi", 0, pmb->ncells3-1, 0, pmb->ncells2-1, 0, pmb->ncells1-1,
         KOKKOS_LAMBDA_3D {
-            get_prim_bondi(G, P, eos, mdot, rs, i, j, k);
+            get_prim_bondi(G, P, eos, mdot, rs, k, j, i);
         }
     );
-
-    // TODO diagnostic output
 }
 
-TaskStatus ApplyBondiBoundary(Container<Real>& rc)
+void ApplyBondiBoundary(Container<Real>& rc)
 {
-    FLAG("Bondi boundary");
     MeshBlock *pmb = rc.pmy_block;
-    GridVars P = rc.Get("c.c.bulk.prims").data;
     GridVars U = rc.Get("c.c.bulk.cons").data;
+    GridVars P = rc.Get("c.c.bulk.prims").data;
 
     Grid G(pmb);
 
-    FLAG("Bondi boundary grid");
+    FLAG("Applying Bondi X1R boundary");
 
     Real gamma = pmb->packages["GRMHD"]->Param<Real>("gamma");
     Real mdot = pmb->packages["GRMHD"]->Param<Real>("mdot");
     Real rs = pmb->packages["GRMHD"]->Param<Real>("rs");
     EOS* eos = new GammaLaw(gamma);
 
-    FLAG("Bondi boundary params");
-
     // Just the X1 right boundary
-    // TODO TODO only if mesh is the last in X1...
-    // Note this only covers physical zones, but they aren't sync'd again in X2,3 until next step
-    // Given problem should be static, likely not a big deal
-    pmb->par_for("bondi_boundary", pmb->ncells1 - NGHOST, pmb->ncells1-1, pmb->js, pmb->je, pmb->ks, pmb->ke,
+    pmb->par_for("bondi_boundary", 0, pmb->ncells3-1, 0, pmb->ncells2-1, pmb->ncells1 - NGHOST, pmb->ncells1-1,
         KOKKOS_LAMBDA_3D {
             FourVectors Dtmp;
-            get_prim_bondi(G, P, eos, mdot, rs, i, j, k);
-            get_state(G, P, i, j, k, Loci::center, Dtmp);
-            prim_to_flux(G, P, Dtmp, eos, i, j, k, Loci::center, 0, U);
+            get_prim_bondi(G, P, eos, mdot, rs, k, j, i);
+            get_state(G, P, k, j, i, Loci::center, Dtmp);
+            prim_to_flux(G, P, Dtmp, eos, k, j, i, Loci::center, 0, U);
         }
     );
-
-    pmb->par_for("outflow_boundary", 0, NPRIM-1, 0, NGHOST-1, pmb->js, pmb->je, pmb->ks, pmb->ke,
-        KOKKOS_LAMBDA_VARS {
-            U(p, i, j, k) = U(p, NGHOST, j, k);
-        }
-    );
-
-    FLAG("Done Bondi boundary");
-
-    return TaskStatus::complete;
 }
-
 // Adapted from M. Chandra
 KOKKOS_INLINE_FUNCTION Real get_Tfunc(const Real T, const GReal r, const Real C1, const Real C2, const Real n)
 {
@@ -175,7 +152,7 @@ KOKKOS_INLINE_FUNCTION void set_ut(const Real gcov[NDIM][NDIM], Real ucon[NDIM])
  * Note this assumes that there are ghost zones!
  */
 void get_prim_bondi(const Grid& G, GridVars P, const EOS* eos, const Real mdot, const Real rs,
-                    const int& i, const int& j, const int& k)
+                    const int& k, const int& j, const int& i)
 {
     // Solution constants
     // TODO cache these?  State is awful
@@ -192,16 +169,16 @@ void get_prim_bondi(const Grid& G, GridVars P, const EOS* eos, const Real mdot, 
     SphBLCoords bl = SphBLCoords(ks.a);
 
     GReal X[NDIM], Xembed[NDIM];
-    G.coord(i, j, k, Loci::center, X);
-    G.coord_embed(i, j, k, Loci::center, Xembed);
+    G.coord(k, j, i, Loci::center, X);
+    G.coord_embed(k, j, i, Loci::center, Xembed);
     Real Rhor = ks.rhor();
     // Any zone inside the horizon gets the horizon's values
     int ii = i;
     while (Xembed[1] < Rhor)
     {
         ++ii;
-        G.coord(ii, j, k, Loci::center, X);
-        G.coord_embed(ii, j, k, Loci::center, Xembed);
+        G.coord(k, j, ii, Loci::center, X);
+        G.coord_embed(k, j, ii, Loci::center, Xembed);
     }
     GReal r = Xembed[1];
 
@@ -224,14 +201,14 @@ void get_prim_bondi(const Grid& G, GridVars P, const EOS* eos, const Real mdot, 
 
     // Convert native 4-vector to primitive u-twiddle, see Gammie '04
     Real gcon[NDIM][NDIM];
-    G.gcon(Loci::center, i, j, gcon);
+    G.gcon(Loci::center, j, i, gcon);
     fourvel_to_prim(gcon, ucon_mks, u_prim);
 
 #if DEBUG
     static int fails = 0;
     if (T < 0 || rho < 0 || u < 0) {
         Real ucov_mks[NDIM];
-        G.lower(ucon_mks, ucov_mks, i, j, k, Loci::center);
+        G.lower(ucon_mks, ucov_mks, k, j, i, Loci::center);
         Real uu_mks = dot(ucon_mks, ucov_mks);
 
         cerr << "Bondi Bad in zone " << i << " " << j << " " << k << std::endl;
@@ -252,12 +229,12 @@ void get_prim_bondi(const Grid& G, GridVars P, const EOS* eos, const Real mdot, 
     }
 #endif
 
-    P(prims::rho, i, j, k) = rho;
-    P(prims::u, i, j, k) = u;
-    P(prims::u1, i, j, k) = u_prim[1];
-    P(prims::u2, i, j, k) = u_prim[2];
-    P(prims::u3, i, j, k) = u_prim[3];
-    P(prims::B1, i, j, k) = 0.;
-    P(prims::B2, i, j, k) = 0.;
-    P(prims::B3, i, j, k) = 0.;
+    P(prims::rho, k, j, i) = rho;
+    P(prims::u, k, j, i) = u;
+    P(prims::u1, k, j, i) = u_prim[1];
+    P(prims::u2, k, j, i) = u_prim[2];
+    P(prims::u3, k, j, i) = u_prim[3];
+    P(prims::B1, k, j, i) = 0.;
+    P(prims::B2, k, j, i) = 0.;
+    P(prims::B3, k, j, i) = 0.;
 }

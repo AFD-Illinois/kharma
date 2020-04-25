@@ -42,25 +42,25 @@ void LRToFlux(Container<Real>& rc, GridVars pl, GridVars pr, const int dir, Grid
     // TODO can this be done without a copy/temporary? Fewer ranks?
     switch (dir) {
     case 1:
-        pmb->par_for("offset_left_1", 0, NPRIM-1, pmb->is-1, pmb->ie+1, pmb->js-1, pmb->je+1, pmb->ks-1, pmb->ke+1,
+        pmb->par_for("offset_left_1", 0, NPRIM-1, pmb->ks-1, pmb->ke+1, pmb->js-1, pmb->je+1, pmb->is-1, pmb->ie+1,
             KOKKOS_LAMBDA_VARS {
-                pll(p, i, j, k) = pl(p, i-1, j, k);
+                pll(p, k, j, i) = pl(p, k, j, i-1);
             }
         );
         loc = Loci::face1;
         break;
     case 2:
-        pmb->par_for("offset_left_2", 0, NPRIM-1, pmb->is-1, pmb->ie+1, pmb->js-1, pmb->je+1, pmb->ks-1, pmb->ke+1,
+        pmb->par_for("offset_left_2", 0, NPRIM-1, pmb->ks-1, pmb->ke+1, pmb->js-1, pmb->je+1, pmb->is-1, pmb->ie+1,
             KOKKOS_LAMBDA_VARS {
-                pll(p, i, j, k) = pl(p, i, j-1, k);
+                pll(p, k, j, i) = pl(p, k, j-1, i);
             }
         );
         loc = Loci::face2;
         break;
     case 3:
-        pmb->par_for("offset_left_3", 0, NPRIM-1, pmb->is-1, pmb->ie+1, pmb->js-1, pmb->je+1, pmb->ks-1, pmb->ke+1,
+        pmb->par_for("offset_left_3", 0, NPRIM-1, pmb->ks-1, pmb->ke+1, pmb->js-1, pmb->je+1, pmb->is-1, pmb->ie+1,
             KOKKOS_LAMBDA_VARS {
-                pll(p, i, j, k) = pl(p, i, j, k-1);
+                pll(p, k, j, i) = pl(p, k-1, j, i);
             }
         );
         loc = Loci::face3;
@@ -72,7 +72,7 @@ void LRToFlux(Container<Real>& rc, GridVars pl, GridVars pr, const int dir, Grid
     FLAG("Left offset");
 
     //  LOOP FUSION BABY
-    pmb->par_for("uber_flux", pmb->is-1, pmb->ie+1, pmb->js-1, pmb->je+1, pmb->ks-1, pmb->ke+1,
+    pmb->par_for("uber_flux", pmb->ks-1, pmb->ke+1, pmb->js-1, pmb->je+1, pmb->is-1, pmb->ie+1,
             KOKKOS_LAMBDA_3D {
                 FourVectors Dtmp;
                 Real cmaxL, cmaxR, cminL, cminR;
@@ -82,26 +82,26 @@ void LRToFlux(Container<Real>& rc, GridVars pl, GridVars pr, const int dir, Grid
                 Real Ul[8], Ur[8];
 
                 // Left
-                get_state(G, pll, i, j, k, loc, Dtmp);
+                get_state(G, pll, k, j, i, loc, Dtmp);
 
-                prim_to_flux(G, pll, Dtmp, eos, i, j, k, loc, 0, Ul); // dir==0 -> U instead of F in direction
-                prim_to_flux(G, pll, Dtmp, eos, i, j, k, loc, dir, fluxL);
+                prim_to_flux(G, pll, Dtmp, eos, k, j, i, loc, 0, Ul); // dir==0 -> U instead of F in direction
+                prim_to_flux(G, pll, Dtmp, eos, k, j, i, loc, dir, fluxL);
 
-                mhd_vchar(G, pll, Dtmp, eos, i, j, k, loc, dir, cmaxL, cminL);
+                mhd_vchar(G, pll, Dtmp, eos, k, j, i, loc, dir, cmaxL, cminL);
 
                 // Right
-                get_state(G, pr, i, j, k, loc, Dtmp);
+                get_state(G, pr, k, j, i, loc, Dtmp);
 
-                prim_to_flux(G, pr, Dtmp, eos, i, j, k, loc, 0, Ur);
-                prim_to_flux(G, pr, Dtmp, eos, i, j, k, loc, dir, fluxR);
+                prim_to_flux(G, pr, Dtmp, eos, k, j, i, loc, 0, Ur);
+                prim_to_flux(G, pr, Dtmp, eos, k, j, i, loc, dir, fluxR);
 
-                mhd_vchar(G, pr, Dtmp, eos, i, j, k, loc, dir, cmaxR, cminR);
+                mhd_vchar(G, pr, Dtmp, eos, k, j, i, loc, dir, cmaxR, cminR);
 
                 cmax = fabs(max(max(0., cmaxL), cmaxR)); // TODO suspicious use of abs()
                 cmin = fabs(max(max(0., -cminL), -cminR));
-                ctop(dir-1, i, j, k) = max(cmax, cmin);
+                ctop(dir-1, k, j, i) = max(cmax, cmin);
 
-                PLOOP flux(p, i, j, k) = 0.5 * (fluxL[p] + fluxR[p] - ctop(dir-1, i, j, k) * (Ur[p] - Ul[p]));
+                PLOOP flux(p, k, j, i) = 0.5 * (fluxL[p] + fluxR[p] - ctop(dir-1, k, j, i) * (Ur[p] - Ul[p]));
             }
     );
     FLAG("Uber fluxcalc");
@@ -110,7 +110,7 @@ void LRToFlux(Container<Real>& rc, GridVars pl, GridVars pr, const int dir, Grid
 /**
  * Constrained transport.  Modify B-field fluxes to preserve divB==0 condition to machine precision
  */
-void FluxCT(Container<Real>& rc, GridVars F1, GridVars F2, GridVars F3)
+void FluxCT(Container<Real>& rc)
 {
     FLAG("Flux CT");
     MeshBlock *pmb = rc.pmy_block;
@@ -120,35 +120,38 @@ void FluxCT(Container<Real>& rc, GridVars F1, GridVars F2, GridVars F3)
     GridScalar emf1("emf1", n1, n2, n3);
     GridScalar emf2("emf2", n1, n2, n3);
     GridScalar emf3("emf3", n1, n2, n3);
+    GridVars F1 = rc.Get("c.c.bulk.cons").flux[0];
+    GridVars F2 = rc.Get("c.c.bulk.cons").flux[1];
+    GridVars F3 = rc.Get("c.c.bulk.cons").flux[2];
 
-    pmb->par_for("flux_ct_emf", is-2, ie+2, js-2, je+2, ks-2, ke+2,
+    pmb->par_for("flux_ct_emf", ks-2, ke+2, js-2, je+2, is-2, ie+2,
         KOKKOS_LAMBDA_3D {
-            emf3(i, j, k) = 0.25 * (F1(prims::B2, i, j, k) + F1(prims::B2, i, j-1, k) - F2(prims::B1, i, j, k) - F2(prims::B1, i-1, j, k));
-            emf2(i, j, k) = -0.25 * (F1(prims::B3, i, j, k) + F1(prims::B3, i, j, k-1) - F3(prims::B1, i, j, k) - F3(prims::B1, i-1, j, k));
-            emf1(i, j, k) = 0.25 * (F2(prims::B3, i, j, k) + F2(prims::B3, i, j, k-1) - F3(prims::B2, i, j, k) - F3(prims::B2, i, j-1, k));
+            emf3(k, j, i) = 0.25 * (F1(prims::B2, k, j, i) + F1(prims::B2, k, j-1, i) - F2(prims::B1, k, j, i) - F2(prims::B1, k, j, i-1));
+            emf2(k, j, i) = -0.25 * (F1(prims::B3, k, j, i) + F1(prims::B3, k-1, j, i) - F3(prims::B1, k, j, i) - F3(prims::B1, k, j, i-1));
+            emf1(k, j, i) = 0.25 * (F2(prims::B3, k, j, i) + F2(prims::B3, k-1, j, i) - F3(prims::B2, k, j, i) - F3(prims::B2, k, j-1, i));
         }
     );
 
     // Rewrite EMFs as fluxes, after Toth
     // TODO worthwhile to split and only do +1 in relevant direction?
-    pmb->par_for("flux_ct", is-1, ie+1, js-1, je+1, ks-1, ke+1,
+    pmb->par_for("flux_ct", ks-1, ke+1, js-1, je+1, is-1, ie+1,
         KOKKOS_LAMBDA_3D {
-            F1(prims::B1, i, j, k) = 0.;
-            F1(prims::B2, i, j, k) =  0.5 * (emf3(i, j, k) + emf3(i, j+1, k));
-            F1(prims::B3, i, j, k) = -0.5 * (emf2(i, j, k) + emf2(i, j, k+1));
+            F1(prims::B1, k, j, i) = 0.;
+            F1(prims::B2, k, j, i) =  0.5 * (emf3(k, j, i) + emf3(k, j+1, i));
+            F1(prims::B3, k, j, i) = -0.5 * (emf2(k, j, i) + emf2(k+1, j, i));
 
-            F2(prims::B1, i, j, k) = -0.5 * (emf3(i, j, k) + emf3(i+1, j, k));
-            F2(prims::B2, i, j, k) = 0.;
-            F2(prims::B3, i, j, k) =  0.5 * (emf1(i, j, k) + emf1(i, j, k+1));
+            F2(prims::B1, k, j, i) = -0.5 * (emf3(k, j, i) + emf3(k, j, i+1));
+            F2(prims::B2, k, j, i) = 0.;
+            F2(prims::B3, k, j, i) =  0.5 * (emf1(k, j, i) + emf1(k+1, j, i));
 
-            F3(prims::B1, i, j, k) =  0.5 * (emf2(i, j, k) + emf2(i+1, j, k));
-            F3(prims::B2, i, j, k) = -0.5 * (emf1(i, j, k) + emf1(i, j+1, k));
-            F3(prims::B3, i, j, k) = 0.;
+            F3(prims::B1, k, j, i) =  0.5 * (emf2(k, j, i) + emf2(k, j, i+1));
+            F3(prims::B2, k, j, i) = -0.5 * (emf1(k, j, i) + emf1(k, j+1, i));
+            F3(prims::B3, k, j, i) = 0.;
         }
     );
 }
 
-double max_divb(Container<Real>& rc)
+double MaxDivB(Container<Real>& rc)
 {
     FLAG("Calculating divB");
     MeshBlock *pmb = rc.pmy_block;
@@ -163,37 +166,37 @@ double max_divb(Container<Real>& rc)
 
     double max_divb;
     Kokkos::Max<double> max_reducer(max_divb);
-    Kokkos::parallel_reduce("divB", MDRangePolicy<Rank<3>>({is, js, ks}, {ie, je, ke}),
+    Kokkos::parallel_reduce("divB", Kokkos::MDRangePolicy<Kokkos::Rank<3>>({is, js, ks}, {ie, je, ke}),
         KOKKOS_LAMBDA (const int &i, const int &j, const int &k, double &local_max_divb) {
             double local_divb = fabs(0.25*(
-                            P(prims::B1, i, j, k) * G.gdet(Loci::center, i, j)
-                            + P(prims::B1, i, j-1, k) * G.gdet(Loci::center, i, j-1)
-                            + P(prims::B1, i, j, k-1) * G.gdet(Loci::center, i, j)
-                            + P(prims::B1, i, j-1, k-1) * G.gdet(Loci::center, i, j-1)
-                            - P(prims::B1, i-1, j, k) * G.gdet(Loci::center, i-1, j)
-                            - P(prims::B1, i-1, j-1, k) * G.gdet(Loci::center, i-1, j-1)
-                            - P(prims::B1, i-1, j, k-1) * G.gdet(Loci::center, i-1, j)
-                            - P(prims::B1, i-1, j-1, k-1) * G.gdet(Loci::center, i-1, j-1)
+                            P(prims::B1, k, j, i) * G.gdet(Loci::center, j, i)
+                            + P(prims::B1, k, j-1, i) * G.gdet(Loci::center, j-1, i)
+                            + P(prims::B1, k-1, j, i) * G.gdet(Loci::center, j, i)
+                            + P(prims::B1, k-1, j-1, i) * G.gdet(Loci::center, j-1, i)
+                            - P(prims::B1, k, j, i-1) * G.gdet(Loci::center, j, i-1)
+                            - P(prims::B1, k, j-1, i-1) * G.gdet(Loci::center, j-1, i-1)
+                            - P(prims::B1, k-1, j, i-1) * G.gdet(Loci::center, j, i-1)
+                            - P(prims::B1, k-1, j-1, i-1) * G.gdet(Loci::center, j-1, i-1)
                             )/dx1v(i) +
                             0.25*(
-                            P(prims::B2, i, j, k) * G.gdet(Loci::center, i, j)
-                            + P(prims::B2, i-1, j, k) * G.gdet(Loci::center, i-1, j)
-                            + P(prims::B2, i, j, k-1) * G.gdet(Loci::center, i, j)
-                            + P(prims::B2, i-1, j, k-1) * G.gdet(Loci::center, i-1, j)
-                            - P(prims::B2, i, j-1, k) * G.gdet(Loci::center, i, j-1)
-                            - P(prims::B2, i-1, j-1, k) * G.gdet(Loci::center, i-1, j-1)
-                            - P(prims::B2, i, j-1, k-1) * G.gdet(Loci::center, i, j-1)
-                            - P(prims::B2, i-1, j-1, k-1) * G.gdet(Loci::center, i-1, j-1)
+                            P(prims::B2, k, j, i) * G.gdet(Loci::center, j, i)
+                            + P(prims::B2, k, j, i-1) * G.gdet(Loci::center, j, i-1)
+                            + P(prims::B2, k-1, j, i) * G.gdet(Loci::center, j, i)
+                            + P(prims::B2, k-1, j, i-1) * G.gdet(Loci::center, j, i-1)
+                            - P(prims::B2, k, j-1, i) * G.gdet(Loci::center, j-1, i)
+                            - P(prims::B2, k, j-1, i-1) * G.gdet(Loci::center, j-1, i-1)
+                            - P(prims::B2, k-1, j-1, i) * G.gdet(Loci::center, j-1, i)
+                            - P(prims::B2, k-1, j-1, i-1) * G.gdet(Loci::center, j-1, i-1)
                             )/dx2v(j) +
                             0.25*(
-                            P(prims::B3, i, j, k) * G.gdet(Loci::center, i, j)
-                            + P(prims::B3, i, j-1, k) * G.gdet(Loci::center, i, j-1)
-                            + P(prims::B3, i-1, j, k) * G.gdet(Loci::center, i-1, j)
-                            + P(prims::B3, i-1, j-1, k) * G.gdet(Loci::center, i-1, j-1)
-                            - P(prims::B3, i, j, k-1) * G.gdet(Loci::center, i, j)
-                            - P(prims::B3, i, j-1, k-1) * G.gdet(Loci::center, i, j-1)
-                            - P(prims::B3, i-1, j, k-1) * G.gdet(Loci::center, i-1, j)
-                            - P(prims::B3, i-1, j-1, k-1) * G.gdet(Loci::center, i-1, j-1)
+                            P(prims::B3, k, j, i) * G.gdet(Loci::center, j, i)
+                            + P(prims::B3, k, j-1, i) * G.gdet(Loci::center, j-1, i)
+                            + P(prims::B3, k, j, i-1) * G.gdet(Loci::center, j, i-1)
+                            + P(prims::B3, k, j-1, i-1) * G.gdet(Loci::center, j-1, i-1)
+                            - P(prims::B3, k-1, j, i) * G.gdet(Loci::center, j, i)
+                            - P(prims::B3, k-1, j-1, i) * G.gdet(Loci::center, j-1, i)
+                            - P(prims::B3, k-1, j, i-1) * G.gdet(Loci::center, j, i-1)
+                            - P(prims::B3, k-1, j-1, i-1) * G.gdet(Loci::center, j-1, i-1)
                             )/dx3v(k));
             if (local_divb > local_max_divb) local_max_divb = local_divb;
         }

@@ -24,6 +24,10 @@
 #warning "Compiling with debug"
 #endif
 
+#if NGHOST < 3
+#error "HARM needs 3 ghost cells!  Configure this in Parthenon CMakeLists!"
+#endif
+
 using namespace parthenon;
 
 /**

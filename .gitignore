@@ -51,3 +51,7 @@ frames_*/
 *.exe
 *.out
 *.app
+
+# Python files
+__pycache__/
+*.pyc

@@ -10,55 +10,54 @@
 
 #define ERRTOL 1.e-8
 #define ITERMAX 8
-#define GAMMAMAX 200
 
 KOKKOS_INLINE_FUNCTION Real err_eqn(const EOS* eos, const Real Bsq, const Real D, const Real Ep, const Real QdB,
                                     const Real Qtsq, const Real Wp, InversionStatus &eflag);
 KOKKOS_INLINE_FUNCTION Real gamma_func(const Real Bsq, const Real D, const Real QdB,
                                         const Real Qtsq, const Real Wp, InversionStatus &eflag);
 KOKKOS_INLINE_FUNCTION Real Wp_func(const Grid &G, const GridVars P, const EOS* eos,
-                                    const int i, const int j, const int k, const Loci loc, InversionStatus &eflag);
+                                    const int& k, const int& j, const int& i, const Loci loc, InversionStatus &eflag);
 
 /**
  * Recover primitive variables
  */
 KOKKOS_INLINE_FUNCTION InversionStatus U_to_P(const Grid &G, const GridVars U, const EOS* eos,
-                                  const int i, const int j, const int k, const Loci loc, GridVars P)
+                                  const int& k, const int& j, const int& i, const Loci loc, GridVars P)
 {
     InversionStatus eflag = InversionStatus::success;
 
-    Real gdet = G.gdet(loc, i, j);
+    Real gdet = G.gdet(loc, j, i);
 
     // Update the primitive B-fields
-    P(prims::B1, i, j, k) = U(prims::B1, i, j, k) / gdet;
-    P(prims::B2, i, j, k) = U(prims::B2, i, j, k) / gdet;
-    P(prims::B3, i, j, k) = U(prims::B3, i, j, k) / gdet;
+    P(prims::B1, k, j, i) = U(prims::B1, k, j, i) / gdet;
+    P(prims::B2, k, j, i) = U(prims::B2, k, j, i) / gdet;
+    P(prims::B3, k, j, i) = U(prims::B3, k, j, i) / gdet;
 
 #if DEBUG
     // Catch negative energy or density
-    if (U(prims::rho, i, j, k) <= 0. || U(prims::u, i, j, k) <= 0.)
+    if (U(prims::rho, k, j, i) <= 0. || U(prims::u, k, j, i) <= 0.)
     {
         return InversionStatus::neg_input;
     }
 #endif
 
     // Convert from conserved variables to four-vectors
-    Real a_over_g = 1./sqrt(-G.gcon(loc, i, j, 0, 0)) / G.gdet(loc, i, j);
-    Real D = U(prims::rho, i, j, k) * a_over_g;
+    Real a_over_g = 1./sqrt(-G.gcon(loc, j, i, 0, 0)) / G.gdet(loc, j, i);
+    Real D = U(prims::rho, k, j, i) * a_over_g;
 
     Real Bcon[NDIM];
     Bcon[0] = 0.;
-    Bcon[1] = U(prims::B1, i, j, k) * a_over_g;
-    Bcon[2] = U(prims::B2, i, j, k) * a_over_g;
-    Bcon[3] = U(prims::B3, i, j, k) * a_over_g;
+    Bcon[1] = U(prims::B1, k, j, i) * a_over_g;
+    Bcon[2] = U(prims::B2, k, j, i) * a_over_g;
+    Bcon[3] = U(prims::B3, k, j, i) * a_over_g;
 
     Real Qcov[NDIM];
-    Qcov[0] = (U(prims::u, i, j, k) - U(prims::rho, i, j, k)) * a_over_g;
-    Qcov[1] = U(prims::u1, i, j, k) * a_over_g;
-    Qcov[2] = U(prims::u2, i, j, k) * a_over_g;
-    Qcov[3] = U(prims::u3, i, j, k) * a_over_g;
+    Qcov[0] = (U(prims::u, k, j, i) - U(prims::rho, k, j, i)) * a_over_g;
+    Qcov[1] = U(prims::u1, k, j, i) * a_over_g;
+    Qcov[2] = U(prims::u2, k, j, i) * a_over_g;
+    Qcov[3] = U(prims::u3, k, j, i) * a_over_g;
 
-    Real ncov[NDIM] = {(Real) -1./sqrt(-G.gcon(loc, i, j, 0, 0)), 0, 0, 0};
+    Real ncov[NDIM] = {(Real) -1./sqrt(-G.gcon(loc, j, i, 0, 0)), 0, 0, 0};
 
     Real Bcov[NDIM], Qcon[NDIM], ncon[NDIM];
     // Interlaced upper/lower operation
@@ -69,15 +68,15 @@ KOKKOS_INLINE_FUNCTION InversionStatus U_to_P(const Grid &G, const GridVars U, c
     //     ncon[mu] = 0.;
     //     for (int nu = 0; nu < NDIM; nu++)
     //     {
-    //         Bcov[mu] += G.gcov(Loci::center, i, j, mu, nu) * Bcon[nu];
-    //         Qcon[mu] += G.gcon(Loci::center, i, j, mu, nu) * Qcov[nu];
-    //         ncon[mu] += G.gcon(Loci::center, i, j, mu, nu) * ncov[nu];
+    //         Bcov[mu] += G.gcov(Loci::center, j, i, mu, nu) * Bcon[nu];
+    //         Qcon[mu] += G.gcon(Loci::center, j, i, mu, nu) * Qcov[nu];
+    //         ncon[mu] += G.gcon(Loci::center, j, i, mu, nu) * ncov[nu];
     //     }
     // }
     // I think this is faster. TODO verify
-    G.lower(Bcon, Bcov, i, j, k, loc);
-    G.raise(Qcov, Qcon, i, j, k, loc);
-    G.raise(ncov, ncon, i, j, k, loc);
+    G.lower(Bcon, Bcov, k, j, i, loc);
+    G.raise(Qcov, Qcon, k, j, i, loc);
+    G.raise(ncov, ncon, k, j, i, loc);
 
     Real Bsq = dot(Bcon, Bcov);
     Real QdB = dot(Bcon, Qcov);
@@ -92,7 +91,7 @@ KOKKOS_INLINE_FUNCTION InversionStatus U_to_P(const Grid &G, const GridVars U, c
 
     // Numerical rootfinding
     // Take guesses from primitives.
-    Real Wp = Wp_func(G, P, eos, i, j, k, loc, eflag);
+    Real Wp = Wp_func(G, P, eos, k, j, i, loc, eflag);
     if (eflag)
         return eflag;
 
@@ -172,13 +171,13 @@ KOKKOS_INLINE_FUNCTION InversionStatus U_to_P(const Grid &G, const GridVars U, c
     }
 
     // Set primitives
-    P(prims::rho, i, j, k) = rho0;
-    P(prims::u, i, j, k) = u;
+    P(prims::rho, k, j, i) = rho0;
+    P(prims::u, k, j, i) = u;
 
     // Find u(tilde); Eqn. 31 of Noble et al.
-    P(prims::u1, i, j, k) = (gamma / (W + Bsq)) * (Qtcon[1] + QdB * Bcon[1] / W);
-    P(prims::u2, i, j, k) = (gamma / (W + Bsq)) * (Qtcon[2] + QdB * Bcon[2] / W);
-    P(prims::u3, i, j, k) = (gamma / (W + Bsq)) * (Qtcon[3] + QdB * Bcon[3] / W);
+    P(prims::u1, k, j, i) = (gamma / (W + Bsq)) * (Qtcon[1] + QdB * Bcon[1] / W);
+    P(prims::u2, k, j, i) = (gamma / (W + Bsq)) * (Qtcon[2] + QdB * Bcon[2] / W);
+    P(prims::u3, k, j, i) = (gamma / (W + Bsq)) * (Qtcon[3] + QdB * Bcon[3] / W);
 
     return InversionStatus::success;
 }
@@ -236,14 +235,14 @@ KOKKOS_INLINE_FUNCTION Real gamma_func(const Real Bsq, const Real D, const Real 
  * TODO make local?  Index stuff seems weird
  */
 KOKKOS_INLINE_FUNCTION Real Wp_func(const Grid &G, const GridVars P, const EOS* eos,
-                                    const int i, const int j, const int k, const Loci loc, InversionStatus &eflag)
+                                    const int& k, const int& j, const int& i, const Loci loc, InversionStatus &eflag)
 {
     Real rho0, u, gamma;
 
-    rho0 = P(prims::rho, i, j, k);
-    u = P(prims::u, i, j, k);
+    rho0 = P(prims::rho, k, j, i);
+    u = P(prims::u, k, j, i);
 
-    gamma = mhd_gamma_calc(G, P, i, j, k, loc);
+    gamma = mhd_gamma_calc(G, P, k, j, i, loc);
 
     return (rho0 + u + eos->p(rho0, u)) * gamma * gamma - rho0 * gamma;
 }

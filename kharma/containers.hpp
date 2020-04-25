@@ -25,7 +25,7 @@ TaskStatus UpdateContainer(MeshBlock *pmb, int stage,
 /**
  * Quick function to just copy a variable by name from one container to the next
  */
-TaskStatus CopyFluxes(std::string& var, Container<Real>& rc0, Container<Real>& rc1);
+TaskStatus CopyField(std::string& var, Container<Real>& rc0, Container<Real>& rc1);
 
 // Tools for adding container-based tasks to Parthenon integrator stage descriptions
 using ContainerTaskFunc = std::function<TaskStatus(Container<Real>&)>;

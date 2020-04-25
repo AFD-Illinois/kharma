@@ -23,7 +23,7 @@ using namespace parthenon;
  *
  * Returns the stopping time corresponding to advection by 1 period
  */
-void mhdmodes(MeshBlock *pmb, Grid G, GridVars P, int nmode, int dir)
+void InitializeMHDModes(MeshBlock *pmb, Grid G, GridVars P, int nmode, int dir)
 {
     // Mean state
     Real rho0 = 1.;
@@ -196,20 +196,20 @@ void mhdmodes(MeshBlock *pmb, Grid G, GridVars P, int nmode, int dir)
         // TODO set dump interval for constant number
     }
 
-    pmb->par_for("mhdmodes_init", 0, pmb->ncells1-1, 0, pmb->ncells2-1, 0, pmb->ncells3-1,
+    pmb->par_for("mhdmodes_init", 0, pmb->ncells3-1, 0, pmb->ncells2-1, 0, pmb->ncells1-1,
         KOKKOS_LAMBDA_3D {
             Real X[NDIM];
-            G.coord(i, j, k, Loci::center, X);
+            G.coord(k, j, i, Loci::center, X);
 
             Real mode = amp * cos(k1 * X[1] + k2 * X[2] + k3 * X[3]);
-            P(prims::rho, i, j, k) = rho0 + drho * mode;
-            P(prims::u, i, j, k) = u0 + du * mode;
-            P(prims::u1, i, j, k) = du1 * mode;
-            P(prims::u2, i, j, k) = du2 * mode;
-            P(prims::u3, i, j, k) = du3 * mode;
-            P(prims::B1, i, j, k) = B10 + dB1 * mode;
-            P(prims::B2, i, j, k) = B20 + dB2 * mode;
-            P(prims::B3, i, j, k) = B30 + dB3 * mode;
+            P(prims::rho, k, j, i) = rho0 + drho * mode;
+            P(prims::u, k, j, i) = u0 + du * mode;
+            P(prims::u1, k, j, i) = du1 * mode;
+            P(prims::u2, k, j, i) = du2 * mode;
+            P(prims::u3, k, j, i) = du3 * mode;
+            P(prims::B1, k, j, i) = B10 + dB1 * mode;
+            P(prims::B2, k, j, i) = B20 + dB2 * mode;
+            P(prims::B3, k, j, i) = B30 + dB3 * mode;
         }
     );
 }

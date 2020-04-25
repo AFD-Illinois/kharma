@@ -13,6 +13,7 @@
 #include "decs.hpp"
 
 #include "bondi.hpp"
+#include "boundaries.hpp"
 #include "containers.hpp"
 #include "grmhd.hpp"
 #include "harm.hpp"
@@ -105,24 +106,19 @@ TaskList HARMDriver::MakeTaskList(MeshBlock *pmb, int stage)
 
     // Set physical boundaries. Special-case the Bondi problem's unique outer condition
     // I will write a general user boundaries framework the *second* any other problem needs it.
-    TaskID set_bc;
-    if (pmb->packages["GRMHD"]->Param<std::string>("problem") == "bondi") {
-        auto set_parthenon_bc = AddContainerTask(tl, parthenon::ApplyBoundaryConditions,
-                                                prolong_bound, sc1);
-        set_bc = AddContainerTask(tl, ApplyBondiBoundary, set_parthenon_bc, sc1);
-    } else {
-        set_bc = AddContainerTask(tl, parthenon::ApplyBoundaryConditions,
-                                    prolong_bound, sc1);
-    }
+    auto set_parthenon_bc = AddContainerTask(tl, parthenon::ApplyBoundaryConditions,
+                                            prolong_bound, sc1);
+    auto set_custom_bc = AddContainerTask(tl, ApplyCustomBoundaries, set_parthenon_bc, sc1);
 
     // fill in derived fields. TODO HARM has a special relationship to this w.r.t. U vs P.  Make sure this respects that.
     auto fill_derived = AddContainerTask(tl, parthenon::FillDerivedVariables::FillDerived,
-                                        set_bc, sc1);
+                                        set_custom_bc, sc1);
+
 #if DEBUG
-    // Additionally propagate the fluxes
-    auto copy_flux1 = AddCopyTask(tl, CopyFluxes, recv_flux, "c.c.bulk.F1", sc0, sc1);
-    auto copy_flux2 = AddCopyTask(tl, CopyFluxes, recv_flux, "c.c.bulk.F2", sc0, sc1);
-    auto copy_flux3 = AddCopyTask(tl, CopyFluxes, recv_flux, "c.c.bulk.F3", sc0, sc1);
+    // Additionally propagate the fluxes so we can output them correctly
+    // auto copy_flux1 = AddCopyTask(tl, CopyFluxes, recv_flux, "c.c.bulk.F1", sc0, sc1);
+    // auto copy_flux2 = AddCopyTask(tl, CopyFluxes, recv_flux, "c.c.bulk.F2", sc0, sc1);
+    // auto copy_flux3 = AddCopyTask(tl, CopyFluxes, recv_flux, "c.c.bulk.F3", sc0, sc1);
 #endif
 
     // estimate next time step
@@ -131,21 +127,21 @@ TaskList HARMDriver::MakeTaskList(MeshBlock *pmb, int stage)
             MeshBlock *pmb = rc.pmy_block;
             pmb->SetBlockTimestep(parthenon::Update::EstimateTimestep(rc));
             return TaskStatus::complete;
-        }, set_bc, sc1);
+        }, set_custom_bc, sc1);
 
         // Update refinement
         if (pmesh->adaptive) {
             auto tag_refine = tl.AddTask<BlockTask>([](MeshBlock *pmb) {
                 pmb->pmr->CheckRefinementCondition();
                 return TaskStatus::complete;
-            }, set_bc, pmb);
+            }, set_custom_bc, pmb);
         }
 
         // Purge stages
         auto purge_stages = tl.AddTask<BlockTask>([](MeshBlock *pmb) {
             pmb->real_containers.PurgeNonBase();
             return TaskStatus::complete;
-        }, set_bc, pmb);
+        }, set_custom_bc, pmb);
     }
     return tl;
 }

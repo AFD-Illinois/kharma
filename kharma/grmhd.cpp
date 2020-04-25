@@ -14,6 +14,7 @@
 #include "coordinate_embedding.hpp"
 #include "coordinate_systems.hpp"
 #include "debug.hpp"
+#include "fixup.hpp"
 #include "fluxes.hpp"
 #include "grmhd.hpp"
 #include "phys.hpp"
@@ -21,6 +22,8 @@
 #include "U_to_P.hpp"
 
 using namespace parthenon;
+// Need to access these directly for reductions
+using namespace Kokkos;
 
 namespace GRMHD
 {
@@ -104,9 +107,9 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
 
     // Fluxes. TODO coax parthenon to store these as U.flux[0,1,2]
     m = Metadata({m.Cell, m.Derived, m.OneCopy}, s_prims);
-    fluid_state->AddField("c.c.bulk.F1", m, DerivedOwnership::shared);
-    fluid_state->AddField("c.c.bulk.F2", m, DerivedOwnership::shared);
-    fluid_state->AddField("c.c.bulk.F3", m, DerivedOwnership::shared);
+    // fluid_state->AddField("c.c.bulk.F1", m, DerivedOwnership::shared);
+    // fluid_state->AddField("c.c.bulk.F2", m, DerivedOwnership::shared);
+    // fluid_state->AddField("c.c.bulk.F3", m, DerivedOwnership::shared);
     // TODO Add jcon as an output-only calculation. Is that a thing?
 
 
@@ -135,7 +138,7 @@ void FillDerived(Container<Real>& rc)
     GridVars P = rc.Get("c.c.bulk.prims").data;
 
     //GridVars pflag = rc.Get("bulk.pflag").data; // TODO remember to switch to ints
-    ParArrayND<int> pflag("pflag", pmb->ncells1, pmb->ncells2, pmb->ncells3);
+    GridInt pflag("pflag", pmb->ncells3, pmb->ncells2, pmb->ncells1);
 
     // TODO how do I carry this around per-block and just update it when needed?
     // (or if not the Grid, then at least a coordinate system and EOS...)
@@ -146,20 +149,30 @@ void FillDerived(Container<Real>& rc)
     // Get the primitives from our conserved versions
     // Note this covers ghost zones!  This is intentional, as primitives in
     // ghost zones are needed for reconstruction
-    pmb->par_for("U_to_P", 0, pmb->ncells1-1, 0, pmb->ncells2-1, 0, pmb->ncells3-1,
+    pmb->par_for("U_to_P", 0, pmb->ncells3-1, 0, pmb->ncells2-1, 0, pmb->ncells1-1,
         KOKKOS_LAMBDA_3D {
-            pflag(i, j, k) = U_to_P(G, U, eos, i, j, k, Loci::center, P);
+            pflag(k, j, i) = U_to_P(G, U, eos, k, j, i, Loci::center, P);
         }
     );
     FLAG("Filled");
 
+    // We expect primitives all the way out to 3 ghost zones on all sides.  But we can only fix primitives with their neighbors.
+    // This may actually mean we require the 4 ghost zones Parthenon "wants" us to have, if we need to use only fixed zones.
+    // TODO alternatively do a bounds check in fix_U_to_P
+    pmb->par_for("fix_U_to_P", 1, pmb->ncells3-2, 1, pmb->ncells2-2, 1, pmb->ncells1-2,
+        KOKKOS_LAMBDA_3D {
+            fix_U_to_P(G, P, U, eos, pflag, k, j, i); // Returns fflag, whether any floors were hit.  TODO record...
+        }
+    );
+    FLAG("Corrected");
+
 #if DEBUG
     // TODO this is actually a lot easier to calculate in the conserved vars,
     // due to not needing metric.  But this was the routine I could copy.
-    double maxDivB = max_divb(rc);
+    double maxDivB = MaxDivB(rc);
     fprintf(stderr, "Maximum divB: %g\n", maxDivB);
 
-    count_print_flags(pmb, pflag);
+    count_print_pflags(pmb, pflag);
 #endif
 }
 
@@ -170,11 +183,11 @@ TaskStatus CalculateFluxes(Container<Real>& rc)
 {
     FLAG("Calculating Fluxes");
     MeshBlock *pmb = rc.pmy_block;
-    GridVars pl("pl", NPRIM, pmb->ncells1, pmb->ncells2, pmb->ncells3);
-    GridVars pr("pr", NPRIM, pmb->ncells1, pmb->ncells2, pmb->ncells3);
-    GridVars F1 = rc.Get("c.c.bulk.F1").data;
-    GridVars F2 = rc.Get("c.c.bulk.F2").data;
-    GridVars F3 = rc.Get("c.c.bulk.F3").data;
+    GridVars pl("pl", NPRIM, pmb->ncells3, pmb->ncells2, pmb->ncells1);
+    GridVars pr("pr", NPRIM, pmb->ncells3, pmb->ncells2, pmb->ncells1);
+    GridVars F1 = rc.Get("c.c.bulk.cons").flux[0];
+    GridVars F2 = rc.Get("c.c.bulk.cons").flux[1];
+    GridVars F3 = rc.Get("c.c.bulk.cons").flux[2];
 
     // Reconstruct primitives at left and right sides of faces
     WENO5X1(rc, pl, pr);
@@ -188,10 +201,10 @@ TaskStatus CalculateFluxes(Container<Real>& rc)
     LRToFlux(rc, pr, pl, 3, F3);
 
     // TODO necessary?  Definitely messes with Bondi problem currently, needs nuance
-    //FixFlux(rc, F1, F2, F3);
+    //FixFlux(rc);
 
     // Constrained transport for B must be applied after everything, including fixing boundary fluxes
-    FluxCT(rc, F1, F2, F3);
+    FluxCT(rc);
     FLAG("Calculated fluxes");
 
     return TaskStatus::complete;
@@ -211,9 +224,9 @@ TaskStatus ApplyFluxes(Container<Real>& rc, Container<Real>& dudt)
     auto is = pmb->is, js = pmb->js, ks = pmb->ks;
     auto ie = pmb->ie, je = pmb->je, ke = pmb->ke;
     GridVars U = rc.Get("c.c.bulk.cons").data;
-    GridVars F1 = rc.Get("c.c.bulk.F1").data;
-    GridVars F2 = rc.Get("c.c.bulk.F2").data;
-    GridVars F3 = rc.Get("c.c.bulk.F3").data;
+    GridVars F1 = rc.Get("c.c.bulk.cons").flux[0];
+    GridVars F2 = rc.Get("c.c.bulk.cons").flux[1];
+    GridVars F3 = rc.Get("c.c.bulk.cons").flux[2];
     GridVars P = rc.Get("c.c.bulk.prims").data;
 
     // TODO *sigh*
@@ -228,18 +241,18 @@ TaskStatus ApplyFluxes(Container<Real>& rc, Container<Real>& dudt)
     auto dx2v = pmb->pcoord->dx2v;
     auto dx3v = pmb->pcoord->dx3v;
 
-    pmb->par_for("uber_diff", is, ie, js, je, ks, ke,
+    pmb->par_for("uber_diff", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D {
             // Calculate the source term and apply it in 1 go (since it's stencil-1)
             FourVectors Dtmp;
             Real dU[NPRIM] = {0};
-            get_state(G, P, i, j, k, Loci::center, Dtmp);
-            get_fluid_source(G, P, Dtmp, eos, i, j, k, dU);
+            get_state(G, P, k, j, i, Loci::center, Dtmp);
+            get_fluid_source(G, P, Dtmp, eos, k, j, i, dU);
 
-            PLOOP dUdt(p, i, j, k) = (F1(p, i, j, k) - F1(p, i+1, j, k)) / dx1v(i) +
-                                    (F2(p, i, j, k) - F2(p, i, j+1, k)) / dx2v(j) +
-                                    (F3(p, i, j, k) - F3(p, i, j, k+1)) / dx3v(k) +
-                                    dU[p];
+            PLOOP dUdt(p, k, j, i) = (F1(p, k, j, i) - F1(p, k, j, i+1)) / dx1v(i) +
+                                     (F2(p, k, j, i) - F2(p, k, j+1, i)) / dx2v(j) +
+                                     (F3(p, k, j, i) - F3(p, k+1, j, i)) / dx3v(k) +
+                                     dU[p];
         }
     );
     FLAG("Applied");
@@ -268,11 +281,11 @@ Real EstimateTimestep(Container<Real>& rc)
     // TODO is there a parthenon par_reduce yet?
     double ndt;
     Kokkos::Min<double> min_reducer(ndt);
-    Kokkos::parallel_reduce("ndt_min", MDRangePolicy<Rank<3>>({is, js, ks}, {ie+1, je+1, ke+1}),
+    Kokkos::parallel_reduce("ndt_min", MDRangePolicy<Rank<3>>({ks, js, is}, {ke+1, je+1, ie+1}),
         KOKKOS_LAMBDA (const int &i, const int &j, const int &k, double &local_min) {
-            double ndt_zone = 1 / (1 / (dx1v(i) / ctop(0, i, j, k)) +
-                                   1 / (dx2v(j) / ctop(1, i, j, k)) +
-                                   1 / (dx3v(k) / ctop(2, i, j, k)));
+            double ndt_zone = 1 / (1 / (dx1v(i) / ctop(0, k, j, i)) +
+                                   1 / (dx2v(j) / ctop(1, k, j, i)) +
+                                   1 / (dx3v(k) / ctop(2, k, j, i)));
             if (ndt_zone < local_min) local_min = ndt_zone;
         }
     , min_reducer);
