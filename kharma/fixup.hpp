@@ -1,8 +1,9 @@
 // Fixups.  Apply limits and fix bad fluid values to maintain integrable state
 // ApplyFloors, FixUtoP
+#pragma once
 
 #include "decs.hpp"
-
+#include "eos.hpp"
 #include "phys.hpp"
 #include "U_to_P.hpp"
 
@@ -31,43 +32,15 @@
 #define BSQORHOMAX 100.
 #define BSQOUMAX   (BSQORHOMAX * UORHOMAX)
 
-KOKKOS_INLINE_FUNCTION int fixup_ceiling(const Grid& G, GridVars P, const int& k, const int& j, const int& i);
-KOKKOS_INLINE_FUNCTION int fixup_floor(const Grid& G, GridVars P, GridVars U, EOS *eos, const int& k, const int& j, const int& i);
-
 /**
  * Apply density and internal energy floors and ceilings
  */
-TaskStatus ApplyFloors(Container<Real>& rc)
-{
-    FLAG("Apply floors");
-    MeshBlock *pmb = rc.pmy_block;
-    GridVars P = rc.Get("c.c.bulk.prims").data;
-    GridVars U = rc.Get("c.c.bulk.cons").data;
+TaskStatus ApplyFloors(Container<Real>& rc);
 
-    GridInt fflag("fflag", pmb->ncells1, pmb->ncells2, pmb->ncells3);
-
-    Grid G(pmb);
-    Real gamma = pmb->packages["GRMHD"]->Param<Real>("gamma");
-    EOS* eos = new GammaLaw(gamma);
-
-    // Note floors are applied only to physical zones
-    // Therefore initialization, which requires initializing ghost zones, should *not* rely on a floors call for its operation
-    pmb->par_for("apply_floors", pmb->ks, pmb->ke, pmb->js, pmb->je, pmb->is, pmb->ie,
-        KOKKOS_LAMBDA_3D {
-            fflag(k, j, i) = 0;
-            fflag(k, j, i) |= fixup_ceiling(G, P, k, j, i);
-            fflag(k, j, i) |= fixup_floor(G, P, U, eos, k, j, i);
-        }
-    );
-
-#if DEBUG
-    // Print some diagnostic info about which floors were hit
-    count_print_fflags(pmb, fflag);
-#endif
-
-    FLAG("Applied");
-    return TaskStatus::complete;
-}
+/**
+ * Clear corner zones from being used for fixups
+ */
+void ClearCorners(MeshBlock *pmb, GridInt pflag);
 
 KOKKOS_INLINE_FUNCTION int fixup_ceiling(const Grid& G, GridVars P, const int& k, const int& j, const int& i)
 {
@@ -182,10 +155,6 @@ KOKKOS_INLINE_FUNCTION int fixup_floor(const Grid& G, GridVars P, GridVars U, EO
  */
 KOKKOS_INLINE_FUNCTION int fix_U_to_P(const Grid& G, GridVars P, GridVars U, EOS *eos, GridInt pflag, const int& k, const int& j, const int& i)
 {
-    // TODO Make sure we are not using/in the ill defined physical corner regions
-    // Requires asking Parthenon where we are on the global mesh
-    // May be unnecessary...
-
     int fflag = 0;
 
     if (pflag(k, j, i) != InversionStatus::success) {
@@ -204,11 +173,19 @@ KOKKOS_INLINE_FUNCTION int fix_U_to_P(const Grid& G, GridVars P, GridVars U, EOS
                 }
             }
         }
-        FLOOP P(p, k, j, i) = sum[p]/wsum;
 
-        // Make sure fixed values still abide by floors
-        // fflag |= fixup_ceiling(G, P, k, j, i);
-        // fflag |= fixup_floor(G, P, U, eos, k, j, i);
+        if(wsum < 1.e-10) {
+            // cerr << "fixup_utoprim: No usable neighbors at " << i << " " << j << " " << k << endl;
+            // TODO set to something ~okay here, or exit screaming
+            // This happens /very rarely/
+            //exit(-1);
+        } else {
+            FLOOP P(p, k, j, i) = sum[p]/wsum;
+
+            // Make sure fixed values still abide by floors
+            fflag |= fixup_ceiling(G, P, k, j, i);
+            fflag |= fixup_floor(G, P, U, eos, k, j, i);
+        }
     }
 
     return fflag;

@@ -151,12 +151,13 @@ void FillDerived(Container<Real>& rc)
     // We expect primitives all the way out to 3 ghost zones on all sides.  But we can only fix primitives with their neighbors.
     // This may actually mean we require the 4 ghost zones Parthenon "wants" us to have, if we need to use only fixed zones.
     // TODO alternatively do a bounds check in fix_U_to_P
-    // pmb->par_for("fix_U_to_P", 1, pmb->ncells3-2, 1, pmb->ncells2-2, 1, pmb->ncells1-2,
-    //     KOKKOS_LAMBDA_3D {
-    //         fix_U_to_P(G, P, U, eos, pflag, k, j, i); // Returns fflag, whether any floors were hit.  TODO record...
-    //     }
-    // );
-    // FLAG("Corrected");
+    ClearCorners(pmb, pflag); // Don't use zones in physical corners. TODO persist this?
+    pmb->par_for("fix_U_to_P", 1, pmb->ncells3-2, 1, pmb->ncells2-2, 1, pmb->ncells1-2,
+        KOKKOS_LAMBDA_3D {
+            fix_U_to_P(G, P, U, eos, pflag, k, j, i); // Returns fflag, whether any floors were hit.  TODO record...
+        }
+    );
+    FLAG("Corrected");
 
 #if DEBUG
     // TODO this is actually a lot easier to calculate in the conserved vars,

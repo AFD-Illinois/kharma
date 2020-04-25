@@ -15,6 +15,7 @@
 #include "bondi.hpp"
 #include "boundaries.hpp"
 #include "containers.hpp"
+#include "fixup.hpp"
 #include "grmhd.hpp"
 #include "harm.hpp"
 
@@ -110,9 +111,12 @@ TaskList HARMDriver::MakeTaskList(MeshBlock *pmb, int stage)
                                             prolong_bound, sc1);
     auto set_custom_bc = AddContainerTask(tl, ApplyCustomBoundaries, set_parthenon_bc, sc1);
 
-    // fill in derived fields. TODO HARM has a special relationship to this w.r.t. U vs P.  Make sure this respects that.
+    // Fill primitives
     auto fill_derived = AddContainerTask(tl, parthenon::FillDerivedVariables::FillDerived,
                                         set_custom_bc, sc1);
+
+    // Apply floor values at the end of a (sub) step.
+    auto apply_floors = AddContainerTask(tl, ApplyFloors, fill_derived, sc1);
 
     // estimate next time step
     if (stage == integrator->nstages) {
@@ -120,21 +124,21 @@ TaskList HARMDriver::MakeTaskList(MeshBlock *pmb, int stage)
             MeshBlock *pmb = rc.pmy_block;
             pmb->SetBlockTimestep(parthenon::Update::EstimateTimestep(rc));
             return TaskStatus::complete;
-        }, set_custom_bc, sc1);
+        }, apply_floors, sc1);
 
         // Update refinement
         if (pmesh->adaptive) {
             auto tag_refine = tl.AddTask<BlockTask>([](MeshBlock *pmb) {
                 pmb->pmr->CheckRefinementCondition();
                 return TaskStatus::complete;
-            }, set_custom_bc, pmb);
+            }, apply_floors, pmb);
         }
 
         // Purge stages -- needed if base container will be changed on the fly
         // auto purge_stages = tl.AddTask<BlockTask>([](MeshBlock *pmb) {
         //     pmb->real_containers.PurgeNonBase();
         //     return TaskStatus::complete;
-        // }, set_custom_bc, pmb);
+        // }, apply_floors, pmb);
     }
     return tl;
 }

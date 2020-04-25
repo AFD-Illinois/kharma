@@ -42,6 +42,7 @@ KOKKOS_INLINE_FUNCTION InversionStatus U_to_P(const Grid &G, const GridVars U, c
 #endif
 
     // Convert from conserved variables to four-vectors
+    // TODO try a version of this with cached gcov/con/det
     Real a_over_g = 1./sqrt(-G.gcon(loc, j, i, 0, 0)) / G.gdet(loc, j, i);
     Real D = U(prims::rho, k, j, i) * a_over_g;
 
@@ -60,20 +61,6 @@ KOKKOS_INLINE_FUNCTION InversionStatus U_to_P(const Grid &G, const GridVars U, c
     Real ncov[NDIM] = {(Real) -1./sqrt(-G.gcon(loc, j, i, 0, 0)), 0, 0, 0};
 
     Real Bcov[NDIM], Qcon[NDIM], ncon[NDIM];
-    // Interlaced upper/lower operation
-    // for (int mu = 0; mu < NDIM; mu++)
-    // {
-    //     Bcov[mu] = 0.;
-    //     Qcon[mu] = 0.;
-    //     ncon[mu] = 0.;
-    //     for (int nu = 0; nu < NDIM; nu++)
-    //     {
-    //         Bcov[mu] += G.gcov(Loci::center, j, i, mu, nu) * Bcon[nu];
-    //         Qcon[mu] += G.gcon(Loci::center, j, i, mu, nu) * Qcov[nu];
-    //         ncon[mu] += G.gcon(Loci::center, j, i, mu, nu) * ncov[nu];
-    //     }
-    // }
-    // I think this is faster. TODO verify
     G.lower(Bcon, Bcov, k, j, i, loc);
     G.raise(Qcov, Qcon, k, j, i, loc);
     G.raise(ncov, ncon, k, j, i, loc);
@@ -110,7 +97,7 @@ KOKKOS_INLINE_FUNCTION InversionStatus U_to_P(const Grid &G, const GridVars U, c
 
     Real dW = clip(-err / dedW / (1. - f), -0.5*Wp, 2.0*Wp);
 
-// Wp, dW, err
+    // Wp, dW, err
     Real Wp1 = Wp;
     Real err1 = err;
 
@@ -128,17 +115,11 @@ KOKKOS_INLINE_FUNCTION InversionStatus U_to_P(const Grid &G, const GridVars U, c
 
         Wp += dW;
 
-        if (fabs(dW / Wp) < ERRTOL)
-        {
-            break;
-        }
+        if (fabs(dW / Wp) < ERRTOL) break;
 
         err = err_eqn(eos, Bsq, D, Ep, QdB, Qtsq, Wp, eflag);
 
-        if (fabs(err / Wp) < ERRTOL)
-        {
-            break;
-        }
+        if (fabs(err / Wp) < ERRTOL) break;
     }
     // Failure to converge; do not set primitives other than B
     if (iter == ITERMAX)
@@ -187,14 +168,13 @@ KOKKOS_INLINE_FUNCTION InversionStatus U_to_P(const Grid &G, const GridVars U, c
 KOKKOS_INLINE_FUNCTION Real err_eqn(const EOS* eos, const Real Bsq, const Real D, const Real Ep, const Real QdB,
                                     const Real Qtsq, const Real Wp, InversionStatus &eflag)
 {
-
     Real W = Wp + D;
     Real gamma = gamma_func(Bsq, D, QdB, Qtsq, Wp, eflag);
     Real w = W / pow(gamma,2);
     Real rho0 = D / gamma;
     Real p = eos->p_w(rho0, w);
 
-    return -Ep + Wp - p + 0.5 * Bsq + 0.5 * (Bsq * Qtsq - QdB * QdB) / pow((Bsq + W),2);
+    return -Ep + Wp - p + 0.5 * Bsq + 0.5 * (Bsq * Qtsq - QdB * QdB) / pow((Bsq + W), 2);
 
 }
 
@@ -237,12 +217,16 @@ KOKKOS_INLINE_FUNCTION Real gamma_func(const Real Bsq, const Real D, const Real 
 KOKKOS_INLINE_FUNCTION Real Wp_func(const Grid &G, const GridVars P, const EOS* eos,
                                     const int& k, const int& j, const int& i, const Loci loc, InversionStatus &eflag)
 {
-    Real rho0, u, gamma;
+    Real rho0 = P(prims::rho, k, j, i);
+    Real u = P(prims::u, k, j, i);
 
-    rho0 = P(prims::rho, k, j, i);
-    u = P(prims::u, k, j, i);
-
-    gamma = mhd_gamma_calc(G, P, k, j, i, loc);
+    Real gamma = mhd_gamma_calc(G, P, k, j, i, loc);
+#if DEBUG
+    if (gamma < 1.)
+    {
+        eflag = InversionStatus::bad_gamma;
+    }
+#endif
 
     return (rho0 + u + eos->p(rho0, u)) * gamma * gamma - rho0 * gamma;
 }
