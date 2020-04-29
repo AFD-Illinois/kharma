@@ -95,7 +95,8 @@ if __name__ == "__main__":
             nnorm += 1
         norm /= nnorm
 
-        print("{} norm: {}".format(var, norm))
+        # Print name and norm on a single line for parsing
+        print("{} norm: {}".format(var, norm).replace('\n', ''))
         if np.any(norm) > 1e-2:
             no_diffs = False
 
