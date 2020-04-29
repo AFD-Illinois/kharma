@@ -24,8 +24,9 @@ if [[ "$*" == *"clean"* ]]; then
     # TODO unify MPI flags
     cmake3 ..\
     -DCMAKE_CXX_COMPILER=$PWD/../external/parthenon/external/Kokkos/bin/nvcc_wrapper \
-    -DUSE_MPI=OFF \
-    -DDISABLE_MPI=ON \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_PREFIX_PATH=/usr/lib64/mpich \
+    -DDISABLE_MPI=OFF \
     -DKokkos_ENABLE_OPENMP=ON \
     -DKokkos_ENABLE_CUDA=ON \
     -DKokkos_ENABLE_HWLOC=ON \
@@ -34,26 +35,26 @@ if [[ "$*" == *"clean"* ]]; then
     -DKokkos_ARCH_BDW=OFF \
     -DKokkos_ARCH_SKX=OFF \
     -DKokkos_ARCH_POWER9=OFF \
-    -DKokkos_ARCH_ARM
     -DKokkos_ARCH_KEPLER35=ON \
-    -DKokkos_ARCH_MAXWELL52=OFF \
     -DKokkos_ARCH_PASCAL60=OFF \
     -DKokkos_ARCH_VOLTA70=OFF \
+    -DKokkos_ARCH_TURING75=OFF \
     -DKokkos_ENABLE_CUDA_LAMBDA=ON
   else #OpenMP BUILD
     cmake3 ..\
     -DCMAKE_BUILD_TYPE=Release \
-    -DUSE_MPI=OFF \
-    -DDISABLE_MPI=ON \
+    -DCMAKE_PREFIX_PATH=/usr/lib64/mpich \
+    -DDISABLE_MPI=OFF \
     -DKokkos_ENABLE_OPENMP=ON \
     -DKokkos_ENABLE_CUDA=OFF \
     -DKokkos_ENABLE_HWLOC=ON \
-    -DKokkos_ARCH_HSW=OFF \
+    -DKokkos_ARCH_HSW=ON \
     -DKokkos_ARCH_BDW=OFF \
-    -DKokkos_ARCH_SKX=ON \
+    -DKokkos_ARCH_SKX=OFF \
+    -DKokkos_ARCH_KNL=OFF \
+    -DKokkos_ARCH_ARMV8_THUNDERX2=OFF \
     -DKokkos_ARCH_AMDAVX=OFF \
-    -DKokkos_ARCH_EPYC=OFF \
-    -DKokkos_ARCH_KNL=OFF
+    -DKokkos_ARCH_EPYC=OFF
   fi
 fi
 

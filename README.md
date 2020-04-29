@@ -12,5 +12,12 @@ KHARMA is built with CMake.  This can be done manually with the CMake CLI or GUI
 or by looking through and editing the file `make.sh`, which has a sample set of
 flags for different compilation modes and architectures.
 
+Quick start:
+
+```bash
+$ git submodule update --init --recursive
+$ ./make.sh clean
+```
+
 **Note** that you need to set the Parthenon option `NUMBER_GHOST_CELLS` to 4 (for WENO reconstruction),
 and the option `PAR_LOOP_LAYOUT` to "MDRANGE_LOOP" for better performance.
