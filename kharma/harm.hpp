@@ -17,6 +17,6 @@ using namespace parthenon;
  */
 class HARMDriver : public MultiStageBlockTaskDriver {
     public:
-        HARMDriver(ParameterInput *pin, Mesh *pm, Outputs *pout) : MultiStageBlockTaskDriver(pin, pm, pout) {}
+        HARMDriver(ParameterInput *pin, Mesh *pm) : MultiStageBlockTaskDriver(pin, pm) {}
         TaskList MakeTaskList(MeshBlock *pmb, int stage);
 };

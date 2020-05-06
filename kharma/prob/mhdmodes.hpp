@@ -23,7 +23,7 @@ using namespace parthenon;
  *
  * Returns the stopping time corresponding to advection by 1 period
  */
-void InitializeMHDModes(MeshBlock *pmb, Grid G, GridVars P, int nmode, int dir)
+Real InitializeMHDModes(MeshBlock *pmb, Grid G, GridVars P, int nmode, int dir)
 {
     // Mean state
     Real rho0 = 1.;
@@ -191,9 +191,11 @@ void InitializeMHDModes(MeshBlock *pmb, Grid G, GridVars P, int nmode, int dir)
     }
 
     // Override tf and the dump and log intervals
+    Real tf;
     if (nmode != 0) {
-        pmb->pmy_mesh->tlim = 2. * M_PI / fabs(omega.imag());
-        // TODO set dump interval for constant number
+        tf = 2. * M_PI / fabs(omega.imag());
+    } else {
+        tf = -1;
     }
 
     pmb->par_for("mhdmodes_init", 0, pmb->ncells3-1, 0, pmb->ncells2-1, 0, pmb->ncells1-1,
@@ -212,4 +214,6 @@ void InitializeMHDModes(MeshBlock *pmb, Grid G, GridVars P, int nmode, int dir)
             P(prims::B3, k, j, i) = B30 + dB3 * mode;
         }
     );
+
+    return tf;
 }

@@ -146,7 +146,7 @@ void init_grids(Grid& G) {
     CoordinateEmbedding cs = *(G.coords);
 
     G.pmy_block->par_for("init_geom", 0, n2-1, 0, n1-1,
-        KOKKOS_LAMBDA (const int& j, const int& i) {
+        KOKKOS_LAMBDA_2D {
             GReal X[NDIM];
             Real gcov_loc[NDIM][NDIM], gcon_loc[NDIM][NDIM];
             for (int loc=0; loc < NLOC; ++loc) {
@@ -161,7 +161,7 @@ void init_grids(Grid& G) {
         }
     );
     G.pmy_block->par_for("init_geom", 0, n2-1, 0, n1-1,
-        KOKKOS_LAMBDA (const int& j, const int& i) {
+        KOKKOS_LAMBDA_2D {
             GReal X[NDIM];
             G.coord(0, j, i, Loci::center, X);
             Real conn_loc[NDIM][NDIM][NDIM];

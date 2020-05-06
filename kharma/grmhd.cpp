@@ -42,7 +42,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     Params &params = fluid_state->AllParams();
 
     // Add the problem name, so we can be C++ noobs and special-case on string contents
-    std::string problem_name = pin->GetString("job", "problem_id");
+    std::string problem_name = pin->GetString("parthenon/job", "problem_id");
     params.Add("problem", problem_name);
 
     // There are only 2 parameters related to fluid evolution:
@@ -54,7 +54,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     params.Add("cfl", cfl);
     // Starting/minimum timestep, if something about the sound speed goes wonky
     // Parthenon allows up to 2x higher dt per step, so it climbs to CFL quite fast
-    double dt_min = pin->GetOrAddReal("time", "dt_min", 1.e-5);
+    double dt_min = pin->GetOrAddReal("parthenon/time", "dt_min", 1.e-5);
     params.Add("dt_min", dt_min);
 
     // Coordinate options for building Grids per-mesh
@@ -93,7 +93,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     // initialize metadata the same but length s_vector
     // fluid_state->AddField("c.c.bulk.cons_B", m, DerivedOwnership::shared);
 
-    m = Metadata({m.Cell, m.Derived, m.OneCopy, m.Graphics, m.Intensive}, s_prims);
+    m = Metadata({m.Cell, m.Derived, m.OneCopy, m.Intensive}, s_prims);
     fluid_state->AddField("c.c.bulk.prims", m, DerivedOwnership::shared);
     // metadata!
     // fluid_state->AddField("c.c.bulk.prims_B", m, DerivedOwnership::shared);
@@ -108,7 +108,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     // Flags for patching inverter errors
     // TODO integer fields in Parthenon? Flags need to be sync'd with FillGhost,
     // and would be nice to include in dumps/restarts as well
-    // m = Metadata({m.Cell, m.OneCopy, m.FillGhost, m.Independent, m.Graphics, m.Restart});
+    // m = Metadata({m.Cell, m.OneCopy, m.FillGhost, m.Independent, m.Restart});
     // fluid_state->AddField("bulk.pflag", m, DerivedOwnership::shared);
 
     fluid_state->FillDerived = GRMHD::FillDerived;
@@ -260,11 +260,11 @@ Real EstimateTimestep(Container<Real>& rc)
     double ndt;
     Kokkos::Min<double> min_reducer(ndt);
     Kokkos::parallel_reduce("ndt_min", MDRangePolicy<Rank<3>>({ks, js, is}, {ke+1, je+1, ie+1}),
-        KOKKOS_LAMBDA (const int &k, const int &j, const int &i, double &local_min) {
+        KOKKOS_LAMBDA_3D_REDUCE {
             double ndt_zone = 1 / (1 / (dx1v(i) / ctop(1, k, j, i)) +
                                    1 / (dx2v(j) / ctop(2, k, j, i)) +
                                    1 / (dx3v(k) / ctop(3, k, j, i)));
-            if (ndt_zone < local_min) local_min = ndt_zone;
+            if (ndt_zone < local_result) local_result = ndt_zone;
         }
     , min_reducer);
 

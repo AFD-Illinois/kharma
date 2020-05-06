@@ -26,13 +26,13 @@ namespace parthenon {
         Packages_t packages;
 
         // Turn off GRMHD only if set to false in input file
-        bool do_hydro = pin->GetOrAddBoolean("Physics", "GRMHD", true);
+        bool do_grmhd = pin->GetOrAddBoolean("Physics", "GRMHD", true);
         bool do_electrons = pin->GetOrAddBoolean("Physics", "howes_electrons", false);
 
         // enable other packages as needed
         bool do_scalars = pin->GetOrAddBoolean("Physics", "scalars", false);
 
-        if (do_hydro) {
+        if (do_grmhd) {
             packages["GRMHD"] = GRMHD::Initialize(pin.get());
         }
 

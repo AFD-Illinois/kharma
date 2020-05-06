@@ -36,7 +36,9 @@ void root_find(const GReal Xembed[NDIM], GReal Xnative[NDIM], Function coord_to_
 class CartMinkowskiCoords {
     public:
         KOKKOS_INLINE_FUNCTION void gcov_embed(const GReal Xembed[NDIM], Real gcov[NDIM][NDIM]) const
-            {DLOOP2 gcov[mu][nu] = (mu == nu) - 2*(mu == 0 && nu == 0);}
+        {
+            DLOOP2 gcov[mu][nu] = (mu == nu) - 2*(mu == 0 && nu == 0);
+        }
 };
 
 /**
@@ -46,7 +48,14 @@ class CartMinkowskiCoords {
 class SphMinkowskiCoords {
     public:
         KOKKOS_INLINE_FUNCTION void gcov_embed(const GReal Xembed[NDIM], Real gcov[NDIM][NDIM]) const
-            {} // TODO TODO TODO
+        {
+            GReal r = Xembed[1], sth = sin(Xembed[2]);
+
+            gcov[0][0] = 1.;
+            gcov[1][1] = 1.;
+            gcov[2][2] = r*r;
+            gcov[3][3] = pow(sth*r, 2);
+        }
 };
 
 /**

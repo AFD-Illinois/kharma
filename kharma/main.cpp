@@ -96,7 +96,7 @@ int main(int argc, char *argv[])
     FLAG("Initialized");
     ShowConfig();
 
-    HARMDriver driver(pman.pinput.get(), pman.pmesh.get(), pman.pouts.get());
+    HARMDriver driver(pman.pinput.get(), pman.pmesh.get());
 
     // start a timer
     pman.PreDriver();

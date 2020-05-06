@@ -6,6 +6,7 @@
 #include "grid.hpp"
 #include "eos.hpp"
 #include "phys.hpp"
+#include "prob_common.hpp"
 
 using namespace parthenon;
 using namespace std;
@@ -96,55 +97,6 @@ KOKKOS_INLINE_FUNCTION Real get_T(const GReal r, const Real C1, const Real C2, c
     }
 
     return Th;
-}
-
-/**
- * Make primitive velocities out of 4-velocity.  See Gammie '04
- * Returns in the given
- */
-KOKKOS_INLINE_FUNCTION void fourvel_to_prim(const Real gcon[NDIM][NDIM], const Real ucon[NDIM], Real u_prim[NDIM])
-{
-    Real alpha2 = -1.0 / gcon[0][0];
-    // Note gamma/alpha is ucon[0]
-    u_prim[1] = ucon[1] + ucon[0] * alpha2 * gcon[0][1];
-    u_prim[2] = ucon[2] + ucon[0] * alpha2 * gcon[0][2];
-    u_prim[3] = ucon[3] + ucon[0] * alpha2 * gcon[0][3];
-}
-// KOKKOS_INLINE_FUNCTION void fourvel_to_prim(const Real gcon[NDIM][NDIM], Real ucon[NDIM], Real u_prim[NDIM])
-// {
-//     Real beta[NDIM];
-//     Real alpha = 1.0/sqrt(-gcon[0][0]);
-//     beta[1] = alpha*alpha*gcon[0][1];
-//     beta[2] = alpha*alpha*gcon[0][2];
-//     beta[3] = alpha*alpha*gcon[0][3];
-//     Real gamma = ucon[0]*alpha;
-
-//     u_prim[0] = 0;
-//     u_prim[1] = ucon[1] + beta[1]*gamma/alpha;
-//     u_prim[2] = ucon[2] + beta[2]*gamma/alpha;
-//     u_prim[3] = ucon[3] + beta[3]*gamma/alpha;
-// }
-
-/**
- * Set time component for consistency given a 3-velocity
- */
-KOKKOS_INLINE_FUNCTION void set_ut(const Real gcov[NDIM][NDIM], Real ucon[NDIM])
-{
-    Real AA, BB, CC;
-
-    AA = gcov[0][0];
-    BB = 2. * (gcov[0][1] * ucon[1] +
-               gcov[0][2] * ucon[2] +
-               gcov[0][3] * ucon[3]);
-    CC = 1. + gcov[1][1] * ucon[1] * ucon[1] +
-         gcov[2][2] * ucon[2] * ucon[2] +
-         gcov[3][3] * ucon[3] * ucon[3] +
-         2. * (gcov[1][2] * ucon[1] * ucon[2] +
-               gcov[1][3] * ucon[1] * ucon[3] +
-               gcov[2][3] * ucon[2] * ucon[3]);
-
-    Real discr = BB * BB - 4. * AA * CC;
-    ucon[0] = (-BB - sqrt(discr)) / (2. * AA);
 }
 
 /**

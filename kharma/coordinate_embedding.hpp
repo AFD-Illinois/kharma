@@ -24,7 +24,8 @@
  * * dxdX_to_embed
  * * dxdX_to_native
  *
- * TODO put lower/raise in here?
+ * TODO keep notion of whether base coords are spherical, use to return guaranteed r,th,phi or x,y,z
+ * TODO implement an rhor() that calls through or returns 0? Or make required callthrough
  */
 class CoordinateEmbedding {
     public:

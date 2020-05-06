@@ -64,8 +64,10 @@ using GeomTensor2 = parthenon::ParArrayND<Real>;
 using GeomTensor3 = parthenon::ParArrayND<Real>;
 
 // Specific lambdas for our array shapes
+#define KOKKOS_LAMBDA_2D KOKKOS_LAMBDA (const int& j, const int& i)
 #define KOKKOS_LAMBDA_3D KOKKOS_LAMBDA (const int &k, const int &j, const int &i)
 #define KOKKOS_LAMBDA_VARS KOKKOS_LAMBDA (const int &p, const int &k, const int &j, const int &i)
+#define KOKKOS_LAMBDA_3D_REDUCE KOKKOS_LAMBDA (const int &k, const int &j, const int &i, double &local_result)
 
 // Struct for derived 4-vectors at a point, usually calculated and needed together
 typedef struct {
@@ -78,7 +80,7 @@ typedef struct {
 // Denote inversion failures (pflags). See U_to_P for status explanations
 enum InversionStatus{success=0, neg_input, max_iter, bad_ut, bad_gamma, neg_rho, neg_u, neg_rhou};
 
-// Floor codes are bit-masks, so it makes a lot less sense to use an enum
+// Floor codes are non-exclusive, so it makes a lot less sense to use an enum
 // See ApplyFloors for code explanations
 #define HIT_FLOOR_GEOM_RHO 1
 #define HIT_FLOOR_GEOM_U 2
