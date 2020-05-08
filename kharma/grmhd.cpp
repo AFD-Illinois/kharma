@@ -119,7 +119,10 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
 
 /**
  * Get the primitive variables, which in Parthenon's nomenclature are "derived"
- * Derived variables are updated before output and during the step so that we can work with them
+ * TODO check if this is done again before output...
+ * Note that this step also applies the floors and fixups. Basically it is:
+ * input: U, whatever form
+ * output: U and P match with inversion errors corrected, and obey floors
  */
 void FillDerived(Container<Real>& rc)
 {
@@ -129,8 +132,9 @@ void FillDerived(Container<Real>& rc)
     GridVars U = rc.Get("c.c.bulk.cons").data;
     GridVars P = rc.Get("c.c.bulk.prims").data;
 
-    //GridVars pflag = rc.Get("bulk.pflag").data; // TODO remember to switch to ints
+    //GridVars pflag = rc.Get("bulk.pflag").data; // TODO parthenon int variables
     GridInt pflag("pflag", pmb->ncells3, pmb->ncells2, pmb->ncells1);
+    GridInt fflag("fflag", pmb->ncells3, pmb->ncells2, pmb->ncells1);
 
     // TODO how do I carry this around per-block and just update it when needed?
     // (or if not the Grid, then at least a coordinate system and EOS...)
@@ -144,9 +148,15 @@ void FillDerived(Container<Real>& rc)
     pmb->par_for("U_to_P", 0, pmb->ncells3-1, 0, pmb->ncells2-1, 0, pmb->ncells1-1,
         KOKKOS_LAMBDA_3D {
             pflag(k, j, i) = U_to_P(G, U, eos, k, j, i, Loci::center, P);
+            fflag(k, j, i) = 0;
+            fflag(k, j, i) |= fixup_ceiling(G, P, U, eos, k, j, i);
+            fflag(k, j, i) |= fixup_floor(G, P, U, eos, k, j, i); // TODO this can generate a pflag
         }
     );
     FLAG("Filled");
+
+    //ApplyFloors(rc);
+    //FLAG("Floored");
 
     // We expect primitives all the way out to 3 ghost zones on all sides.  But we can only fix primitives with their neighbors.
     // This may actually mean we require the 4 ghost zones Parthenon "wants" us to have, if we need to use only fixed zones.
@@ -154,7 +164,7 @@ void FillDerived(Container<Real>& rc)
     ClearCorners(pmb, pflag); // Don't use zones in physical corners. TODO persist this?
     pmb->par_for("fix_U_to_P", 1, pmb->ncells3-2, 1, pmb->ncells2-2, 1, pmb->ncells1-2,
         KOKKOS_LAMBDA_3D {
-            fix_U_to_P(G, P, U, eos, pflag, k, j, i); // Returns fflag, whether any floors were hit.  TODO record...
+            fflag(k, j, i) |= fix_U_to_P(G, P, U, eos, pflag, k, j, i);
         }
     );
     FLAG("Corrected");
@@ -165,12 +175,15 @@ void FillDerived(Container<Real>& rc)
     double maxDivB = MaxDivB(rc);
     fprintf(stderr, "Maximum divB: %g\n", maxDivB);
 
-    count_print_pflags(pmb, pflag);
+    count_print_fflags(pmb, pflag, false);
+
+    count_print_pflags(pmb, pflag, false);
 #endif
 }
 
 /**
  * Calculate the LLF fluxes
+ * TODO split into 3 tasks and split FixFlux and FluxCT
  */
 TaskStatus CalculateFluxes(Container<Real>& rc)
 {
@@ -219,12 +232,13 @@ TaskStatus SourceTerm(Container<Real>& rc, Container<Real>& dudt)
     Real gamma = pmb->packages["GRMHD"]->Param<Real>("gamma");
     EOS* eos = new GammaLaw(gamma);
 
-    // Unpack a bunch of variables for the kernel below
+    // Unpack for kernel
     auto dUdt = dudt.Get("c.c.bulk.cons").data;
 
     pmb->par_for("source_term", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D {
             // Calculate the source term and apply it in 1 go (since it's stencil-1)
+            // TODO get rid of the intermediate by passing dUdt to global get_fluid_source
             FourVectors Dtmp;
             Real dU[NPRIM] = {0};
             get_state(G, P, k, j, i, Loci::center, Dtmp);
@@ -276,7 +290,6 @@ Real EstimateTimestep(Container<Real>& rc)
         ndt *= pmb->packages["GRMHD"]->Param<Real>("cfl");
     }
     FLAG("Estimated");
-    //fprintf(stderr, "dt = %g\n", ndt);
     return ndt;
 }
 

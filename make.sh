@@ -9,6 +9,12 @@ source scl_source enable devtoolset-8
 # Used to decide flags and call cmake
 # TODO autodetection?  Machinefiles?
 
+if [[ "$*" == *"debug"* ]]; then
+  TYPE=Debug
+else
+  TYPE=Release
+fi
+
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
 cd $SCRIPT_DIR
@@ -24,7 +30,7 @@ if [[ "$*" == *"clean"* ]]; then
     # TODO unify MPI flags
     cmake3 ..\
     -DCMAKE_CXX_COMPILER=$PWD/../external/parthenon/external/Kokkos/bin/nvcc_wrapper \
-    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_BUILD_TYPE=$TYPE \
     -DCMAKE_PREFIX_PATH=/usr/lib64/mpich \
     -DDISABLE_MPI=OFF \
     -DKokkos_ENABLE_OPENMP=ON \
@@ -42,7 +48,7 @@ if [[ "$*" == *"clean"* ]]; then
     -DKokkos_ENABLE_CUDA_LAMBDA=ON
   else #OpenMP BUILD
     cmake3 ..\
-    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_BUILD_TYPE=$TYPE \
     -DCMAKE_PREFIX_PATH=/usr/lib64/mpich \
     -DDISABLE_MPI=OFF \
     -DKokkos_ENABLE_OPENMP=ON \

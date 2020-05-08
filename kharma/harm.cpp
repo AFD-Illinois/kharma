@@ -48,13 +48,25 @@ namespace parthenon {
 
 } // namespace parthenon
 
-// Implement HARMDriver class methods
+/**
+ * All the tasks which constitute advancing the fluid in a mesh block by a stage.
+ * This includes calculation of necessary derived variables, reconstruction, calculation of fluxes,
+ * Application of fluxes and a source term to update zones, and finally calculation of the next
+ * timestep.
+ * 
+ * This section is heavily documented to avoid bugs.
+ */
 TaskList HARMDriver::MakeTaskList(MeshBlock *pmb, int stage)
 {
     TaskList tl;
 
     TaskID none(0);
-    // first make other useful containers
+    // Parthenon separates out stages of higher-order integrators with "containers"
+    // (a bundle of arrays capable of holding all Fields in the FluidState)
+    // One container per stage, filled and used to update the base container over the course of the step
+    // Additionally an accumulator dUdt is provided to temporarily store this stage's contribution to the RHS
+    // TODO: I believe the base container is guaranteed to hold last step's product until the end of this step,
+    // but need to check this.
     if (stage == 1) {
         Container<Real> &base = pmb->real_containers.Get();
         pmb->real_containers.Add("dUdt", base);
@@ -64,33 +76,37 @@ TaskList HARMDriver::MakeTaskList(MeshBlock *pmb, int stage)
 
     // pull out the container we'll use to get fluxes and/or compute RHSs
     Container<Real>& sc0  = pmb->real_containers.Get(stage_name[stage-1]);
-      // pull out a container we'll use to store dU/dt.
+    // pull out a container we'll use to store dU/dt.
     Container<Real>& dudt = pmb->real_containers.Get("dUdt");
     // pull out the container that will hold the updated state
     Container<Real>& sc1  = pmb->real_containers.Get(stage_name[stage]);
 
+    // TODO what does this do exactly?
     auto start_recv = AddContainerTask(tl, Container<Real>::StartReceivingTask, none, sc1);
 
-    // Fill the primitives array P by calculating U_to_P everywhere
-    // TODO very likely this can be dropped, since P/U begin the first step together and end each step sync'd too
-    // auto fill_prims = AddContainerTask(tl, parthenon::FillDerivedVariables::FillDerived,
-    //                                     start_recv, sc0);
-
     // Calculate the LLF fluxes in each direction
+    // This uses the primitives (P) to calculate fluxes to update the conserved variables (U)
+    // Hence the two should reflect *exactly* the same fluid state, which I'll term "lockstep"
     auto calculate_flux = AddContainerTask(tl, GRMHD::CalculateFluxes, start_recv, sc0);
+    // TODO this will be split and Flux_CT added separately afterward
 
+    // Exchange flux corrections due to AMR and physical boundaries
+    // Note this does NOT fix vector components since we bundle primitives
     auto send_flux = AddContainerTask(tl, Container<Real>::SendFluxCorrectionTask,
                                     calculate_flux, sc0);
     auto recv_flux = AddContainerTask(tl, Container<Real>::ReceiveFluxCorrectionTask,
                                     calculate_flux, sc0);
 
+    // TODO HARM's fix_flux for vector components
+
     // Apply fluxes to create a single update dU/dt
     auto flux_divergence = AddTwoContainerTask(tl, Update::FluxDivergence, recv_flux, sc0, dudt);
     auto source_term = AddTwoContainerTask(tl, GRMHD::SourceTerm, flux_divergence, sc0, dudt);
-    // Apply dU/dt to update values from the last stage to fill the current one
+    // Apply dU/dt to the stage's initial state sc0 to obtain the stage final state sc1
+    // Note this *only fills U* of sc1, so sc1 is out of lockstep
     auto update_container = AddUpdateTask(tl, pmb, stage, stage_name, integrator, UpdateContainer, source_term);
 
-    // update ghost cells
+    // Update ghost cells.  Only performed on U of sc1
     auto send = AddContainerTask(tl, Container<Real>::SendBoundaryBuffersTask,
                                 update_container, sc1);
     auto recv = AddContainerTask(tl, Container<Real>::ReceiveBoundaryBuffersTask,
@@ -105,18 +121,21 @@ TaskList HARMDriver::MakeTaskList(MeshBlock *pmb, int stage)
         return TaskStatus::complete;
     }, fill_from_bufs, pmb);
 
-    // Set physical boundaries. Special-case the Bondi problem's unique outer condition
-    // I will write a general user boundaries framework the *second* any other problem needs it.
+    // Set physical boundaries
+    // ApplyCustomBoundaries is only used for the Bondi test problem outer bound
+    // Note custom boundaries must but need only update U.
+    // TODO add physical inflow check to ApplyCustomBoundaries
     auto set_parthenon_bc = AddContainerTask(tl, parthenon::ApplyBoundaryConditions,
                                             prolong_bound, sc1);
     auto set_custom_bc = AddContainerTask(tl, ApplyCustomBoundaries, set_parthenon_bc, sc1);
 
-    // Fill primitives
+    // Fill primitives, bringing U and P back into lockstep
     auto fill_derived = AddContainerTask(tl, parthenon::FillDerivedVariables::FillDerived,
                                         set_custom_bc, sc1);
 
-    // Apply floor values at the end of a (sub) step.
-    auto apply_floors = AddContainerTask(tl, ApplyFloors, fill_derived, sc1);
+    // Apply floor values to sc1.  Note that all floor operations must *preserve* lockstep
+    // TODO with some attention to FillDerived, this can be eliminated.  Currently a subtle bug somewhere though
+    //auto apply_floors = AddContainerTask(tl, ApplyFloors, fill_derived, sc1);
 
     // estimate next time step
     if (stage == integrator->nstages) {
@@ -124,21 +143,15 @@ TaskList HARMDriver::MakeTaskList(MeshBlock *pmb, int stage)
             MeshBlock *pmb = rc.pmy_block;
             pmb->SetBlockTimestep(parthenon::Update::EstimateTimestep(rc));
             return TaskStatus::complete;
-        }, apply_floors, sc1);
+        }, fill_derived, sc0);
 
         // Update refinement
         if (pmesh->adaptive) {
             auto tag_refine = tl.AddTask<BlockTask>([](MeshBlock *pmb) {
                 pmb->pmr->CheckRefinementCondition();
                 return TaskStatus::complete;
-            }, apply_floors, pmb);
+            }, fill_derived, pmb);
         }
-
-        // Purge stages -- needed if base container will be changed on the fly
-        // auto purge_stages = tl.AddTask<BlockTask>([](MeshBlock *pmb) {
-        //     pmb->real_containers.PurgeNonBase();
-        //     return TaskStatus::complete;
-        // }, apply_floors, pmb);
     }
     return tl;
 }

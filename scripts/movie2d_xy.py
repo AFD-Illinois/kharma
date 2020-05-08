@@ -31,14 +31,14 @@ def read(filename, nGhost=0):
     f = phdf(filename)
     return f
 
-def plot_dump(xf, yf, q, name, with_mesh=False):
+def plot_dump(xf, yf, q, idx, name, with_mesh=False):
     fig = plt.figure()
     p = fig.add_subplot(111,aspect=1)
-    qmin = q[:,0,:,:,0].min()
-    qmax = q[:,0,:,:,0].max()
+    qmin = np.log(q[:,0,:,:,0].min())
+    qmax = np.log(q[:,0,:,:,0].max())
     NumBlocks = q.shape[0]
     for i in range(NumBlocks):
-        p.pcolormesh(xf[i,:], yf[i,:], q[i,0,:,:,0], vmin=qmin, vmax=qmax)
+        p.pcolormesh(yf[i,:], xf[i,:], np.log(q[i,:,q.shape[2]//2,:,idx].T), vmin=qmin, vmax=qmax)
         if with_mesh:
             rect = mpatches.Rectangle((xf[i,0],yf[i,0]),(xf[i,-1]-xf[i,0]),(yf[i,-1]-yf[i,0]),linewidth=0.225,edgecolor='k',facecolor='none')
             p.add_patch(rect)
@@ -47,17 +47,19 @@ def plot_dump(xf, yf, q, name, with_mesh=False):
 
 if __name__ == "__main__":
     addPath()
-    field = sys.argv[1]
+    field = 'c.c.bulk.prims'
+    idx = int(sys.argv[1])
     files = sys.argv[2:]
     dump_id = 0
     for f in files:
         data = read(f)
         print(data)
         xf = data.xf
-        yf = data.yf
+        yf = data.zf
         q = data.Get(field,False)
+        print("Zone 11,12,13 of each block: ", q[:,13,12,11,:])
         name = str(dump_id).rjust(4,'0') + ".png"
-        plot_dump(xf, yf, q, name, True)
+        plot_dump(xf, yf, q, idx, name, False)
         dump_id += 1
 
 

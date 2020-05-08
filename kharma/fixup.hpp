@@ -42,7 +42,12 @@ TaskStatus ApplyFloors(Container<Real>& rc);
  */
 void ClearCorners(MeshBlock *pmb, GridInt pflag);
 
-KOKKOS_INLINE_FUNCTION int fixup_ceiling(const Grid& G, GridVars P, const int& k, const int& j, const int& i)
+/**
+ * Apply a fluid velocity ceiling
+ * 
+ * LOCKSTEP: this function expects and should preserve P<->U
+ */
+KOKKOS_INLINE_FUNCTION int fixup_ceiling(const Grid& G, GridVars P, GridVars U, EOS *eos, const int& k, const int& j, const int& i)
 {
     int fflag = 0;
     // First apply ceilings:
@@ -56,10 +61,20 @@ KOKKOS_INLINE_FUNCTION int fixup_ceiling(const Grid& G, GridVars P, const int& k
         P(prims::u1, k, j, i) *= f;
         P(prims::u2, k, j, i) *= f;
         P(prims::u3, k, j, i) *= f;
+
+        FourVectors Dtmp;
+        get_state(G, P, k, j, i, Loci::center, Dtmp);
+        prim_to_flux(G, P, Dtmp, eos, k, j, i, Loci::center, 0, U);
     }
     return fflag;
 }
 
+/**
+ * Apply floors of several types in determining how to add mass and internal energy to preserve stability.
+ * All floors which might apply are recorded separately, then mass/energy are added in normal observer frame
+ * 
+ * LOCKSTEP: this function expects and should preserve P<->U
+ */
 KOKKOS_INLINE_FUNCTION int fixup_floor(const Grid& G, GridVars P, GridVars U, EOS *eos, const int& k, const int& j, const int& i)
 {
     int fflag = 0;
@@ -115,13 +130,14 @@ KOKKOS_INLINE_FUNCTION int fixup_floor(const Grid& G, GridVars P, GridVars U, EO
     // Evaluate highest RHO floor
     double rhoflr_max = max(max(rhoflr_geom, rhoflr_b), rhoflr_temp);
 
+    // Add the material in the normal observer frame, by:
     if (rhoflr_max > P(prims::rho, k, j, i) || uflr_max > P(prims::u, k, j, i)) { // Apply floors
 
-        // Initialize a dummy fluid parcel
+        // Initializing a dummy fluid parcel
         Real Pnew[NPRIM] = {0}, Unew[NPRIM] = {0};
         FourVectors Dnew = {0};
 
-        // Add mass and internal energy, but not velocity
+        // Add mass and internal energy to the primitives, but not velocity
         Pnew[prims::rho] = max(0., rhoflr_max - P(prims::rho, k, j, i));
         Pnew[prims::u] = max(0., uflr_max - P(prims::u, k, j, i));
 
@@ -132,32 +148,37 @@ KOKKOS_INLINE_FUNCTION int fixup_floor(const Grid& G, GridVars P, GridVars U, EO
         // And for the current state, by re-using Dtmp from above
         prim_to_flux(G, P, Dtmp, eos, k, j, i, Loci::center, 0, U);
 
-        // Add new conserved variables to current values
+        // Add new conserved mass/energy to the current "conserved" state
         PLOOP {
             U(p, k, j, i) += Unew[p];
+            // This is just the guess at primitive values, needed for U_to_P to converge.
             P(p, k, j, i) += Pnew[p];
         }
 
-        // Recover primitive variables
+        // Recover primitive variables from conserved versions
         // TODO record these and print, because it would suck to call this
         // function from inside fix_U_to_P and *still* get an inversion error
-        // pflag(k, j, i) =
-        U_to_P(G, U, eos, k, j, i, Loci::center, P);
+        InversionStatus pflag = U_to_P(G, U, eos, k, j, i, Loci::center, P);
+#if DEBUG
+        // Yell?  Combine the flags?
+#endif
     }
     return fflag;
 }
 
 /**
- * Smooth over inversion failures by averaging points from neighbors
+ * Smooth over inversion failures by averaging values from each neighboring zone
  * a.k.a. Diffusion?  What diffusion?  There is no diffusion here.
  *
- * TODO can we parallelize this function without losing determinism?
+ * TODO parallelize this
+ * LOCKSTEP: this function expects and should preserve P<->U
  */
 KOKKOS_INLINE_FUNCTION int fix_U_to_P(const Grid& G, GridVars P, GridVars U, EOS *eos, GridInt pflag, const int& k, const int& j, const int& i)
 {
     int fflag = 0;
 
-    if (pflag(k, j, i) != InversionStatus::success) {
+    // Negative flags are physical corners, which shouldn't be fixed
+    if (pflag(k, j, i) > InversionStatus::success) {
         double wsum = 0.;
         double sum[NFLUID] = {0};
         // For all neighboring cells...
@@ -175,16 +196,25 @@ KOKKOS_INLINE_FUNCTION int fix_U_to_P(const Grid& G, GridVars P, GridVars U, EOS
         }
 
         if(wsum < 1.e-10) {
-            // cerr << "fixup_utoprim: No usable neighbors at " << i << " " << j << " " << k << endl;
-            // TODO set to something ~okay here, or exit screaming
-            // This happens /very rarely/
+#if DEBUG
+            cerr << "fixup_utoprim: No usable neighbors at " << i << " " << j << " " << k << endl;
+#endif
+            // TODO set to something ~okay here and LOG IT, or exit screaming
+            // This should happen /very rarely/
             //exit(-1);
         } else {
+#if DEBUG
+            //FLOOP cerr << "Fixed " << p << ": " << P(p, k, j, i) << " to " << sum[p]/wsum << endl;
+#endif
             FLOOP P(p, k, j, i) = sum[p]/wsum;
 
             // Make sure fixed values still abide by floors
-            fflag |= fixup_ceiling(G, P, k, j, i);
+            fflag |= fixup_ceiling(G, P, U, eos, k, j, i);
             fflag |= fixup_floor(G, P, U, eos, k, j, i);
+            // Make sure the original conserved variables match
+            FourVectors Dtmp;
+            get_state(G, P, k, j, i, Loci::center, Dtmp);
+            prim_to_flux(G, P, Dtmp, eos, k, j, i, Loci::center, 0, U);
         }
     }
 

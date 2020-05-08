@@ -3,6 +3,7 @@
 #include "bvals/boundary_conditions.hpp"
 #include "mesh/mesh.hpp"
 
+#include "fixup.hpp"
 #include "grid.hpp"
 #include "phys.hpp"
 
@@ -76,6 +77,9 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin)
             prim_to_flux(G, P, Dtmp, eos, k, j, i, Loci::center, 0, U);
         }
     );
+
+    // Make sure any zero zones get floored before beginning driver
+    ApplyFloors(rc);
 
     FLAG("Initialized MeshBlock"); // TODO this called in every meshblock.  Avoid the spam somehow
 }

@@ -26,10 +26,10 @@ TaskStatus ApplyFloors(Container<Real>& rc)
 
     // Note floors are applied only to physical zones
     // Therefore initialization, which requires initializing ghost zones, should *not* rely on a floors call for its operation
-    pmb->par_for("apply_floors", pmb->ks, pmb->ke, pmb->js, pmb->je, pmb->is, pmb->ie,
+    pmb->par_for("apply_floors", 0, pmb->ncells3-1, 0, pmb->ncells2-1, 0, pmb->ncells1-1,
         KOKKOS_LAMBDA_3D {
             fflag(k, j, i) = 0;
-            fflag(k, j, i) |= fixup_ceiling(G, P, k, j, i);
+            fflag(k, j, i) |= fixup_ceiling(G, P, U, eos, k, j, i);
             fflag(k, j, i) |= fixup_floor(G, P, U, eos, k, j, i);
         }
     );
