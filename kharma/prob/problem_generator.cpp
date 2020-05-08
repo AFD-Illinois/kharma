@@ -59,7 +59,6 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin)
         int rng_seed = pin->GetOrAddInteger("torus", "rng_seed", 31337);
         PerturbU(pmb, P, u_jitter, rng_seed);
 
-        Real beta = pin->GetOrAddReal("torus", "beta", 100.0);
         Real min_rho_q = pin->GetOrAddReal("torus", "min_rho_q", 0.2);
         std::string b_field_type = pin->GetOrAddString("torus", "b_field_type", "sane");
         SeedBField(pmb, G, P, rin, min_rho_q, b_field_type);

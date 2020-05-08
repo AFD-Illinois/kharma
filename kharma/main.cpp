@@ -11,6 +11,8 @@
 
 #include "coordinate_systems.hpp"
 #include "harm.hpp"
+#include "mpi.hpp"
+#include "seed_B.hpp"
 
 // Warn once *during compile* specifying whether CUDA is being used
 // This catches a lot of configuration mistakes
@@ -96,7 +98,30 @@ int main(int argc, char *argv[])
     FLAG("Initialized");
     ShowConfig();
 
-    HARMDriver driver(pman.pinput.get(), pman.pmesh.get());
+    auto pin = pman.pinput.get();
+    if (pin->GetString("parthenon/job", "problem_id") == "torus" &&
+        pin->GetOrAddString("torus", "b_field_type", "none") != "none") {
+        // Normalize the magnetic field by first calculating the global min beta...
+        Real beta_min = 1e100;
+        MeshBlock *pmb = pman.pmesh->pblock;
+        while (pmb != nullptr) {
+            Real beta_local = GetLocalBetaMin(pmb);
+            if(beta_local < beta_min) beta_min = beta_local;
+            pmb = pmb->next;
+        }
+        beta_min = mpi_min(beta_min);
+
+        // Then normalizing by sqrt(beta/beta_min)
+        Real beta = pin->GetOrAddReal("torus", "beta_min", 100.);
+        Real factor = sqrt(beta/beta_min);
+        pmb = pman.pmesh->pblock;
+        while (pmb != nullptr) {
+            NormalizeBField(pmb, factor);
+            pmb = pmb->next;
+        }
+    }
+
+    HARMDriver driver(pin, pman.pmesh.get());
 
     // start a timer
     pman.PreDriver();

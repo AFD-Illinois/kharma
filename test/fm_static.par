@@ -44,13 +44,12 @@ gamma = 1.333333
 <torus>
 rin = 6.0
 rmax = 12.0
-u_jitter = 0.1
-b_field_type = sane
-beta_min = 100.
+u_jitter = 0.0
+b_field_type = none
 
 
 <parthenon/output0>
 file_type = hdf5
 dt = 1.0
-variables = c.c.bulk.prims
+variables = c.c.bulk.prims,f.f.bulk.ctop
 
