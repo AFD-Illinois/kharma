@@ -33,6 +33,11 @@ namespace GRMHD {
     void FillDerived(Container<Real>& rc);
     // Calculate the LLF fluxes in each direction
     TaskStatus CalculateFluxes(Container<Real>& rc);
+    // Split version to queue more tasks at once
+    TaskStatus CalculateFlux1(Container<Real>& rc);
+    TaskStatus CalculateFlux2(Container<Real>& rc);
+    TaskStatus CalculateFlux3(Container<Real>& rc);
+    TaskStatus FluxCT(Container<Real>& rc);
     // Add the HARM source term to the RHS dudt
     TaskStatus SourceTerm(Container<Real>& rc, Container<Real>& dudt);
     // Estimate the next timestep. For pure GRMHD, this is the minimum signal crossing time of a zone on the block

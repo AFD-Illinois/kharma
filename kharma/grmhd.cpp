@@ -183,7 +183,7 @@ void FillDerived(Container<Real>& rc)
 
 /**
  * Calculate the LLF fluxes
- * TODO split into 3 tasks and split FixFlux and FluxCT
+ * TODO is this faster than split version?
  */
 TaskStatus CalculateFluxes(Container<Real>& rc)
 {
@@ -206,13 +206,110 @@ TaskStatus CalculateFluxes(Container<Real>& rc)
     WENO5X3(rc, pl, pr);
     LRToFlux(rc, pr, pl, 3, F3);
 
-    // TODO necessary?  Definitely messes with Bondi problem currently, needs nuance
-    //FixFlux(rc);
-
-    // Constrained transport for B must be applied after everything, including fixing boundary fluxes
-    FluxCT(rc);
     FLAG("Calculated fluxes");
 
+    return TaskStatus::complete;
+}
+
+/**
+ * Calculate the LLF flux in 1 direction
+ */
+TaskStatus CalculateFlux1(Container<Real>& rc)
+{
+    FLAG("Calculating flux 1");
+    MeshBlock *pmb = rc.pmy_block;
+    GridVars pl("pl", NPRIM, pmb->ncells3, pmb->ncells2, pmb->ncells1);
+    GridVars pr("pr", NPRIM, pmb->ncells3, pmb->ncells2, pmb->ncells1);
+    GridVars F1 = rc.Get("c.c.bulk.cons").flux[0];
+
+    // Reconstruct primitives at left and right sides of faces
+    WENO5X1(rc, pl, pr);
+    // Calculate flux from values at left & right of face
+    LRToFlux(rc, pr, pl, 1, F1);
+
+    FLAG("Calculated flux 1");
+
+    return TaskStatus::complete;
+}
+/**
+ * Calculate the LLF flux in 2 direction
+ */
+TaskStatus CalculateFlux2(Container<Real>& rc)
+{
+    FLAG("Calculating flux 2");
+    MeshBlock *pmb = rc.pmy_block;
+    GridVars pl("pl", NPRIM, pmb->ncells3, pmb->ncells2, pmb->ncells1);
+    GridVars pr("pr", NPRIM, pmb->ncells3, pmb->ncells2, pmb->ncells1);
+    GridVars F2 = rc.Get("c.c.bulk.cons").flux[1];
+
+    WENO5X2(rc, pl, pr);
+    LRToFlux(rc, pr, pl, 2, F2);
+
+    FLAG("Calculated flux 2");
+
+    return TaskStatus::complete;
+}
+/**
+ * Calculate the LLF flux in 3 direction
+ */
+TaskStatus CalculateFlux3(Container<Real>& rc)
+{
+    FLAG("Calculating flux 3");
+    MeshBlock *pmb = rc.pmy_block;
+    GridVars pl("pl", NPRIM, pmb->ncells3, pmb->ncells2, pmb->ncells1);
+    GridVars pr("pr", NPRIM, pmb->ncells3, pmb->ncells2, pmb->ncells1);
+    GridVars F3 = rc.Get("c.c.bulk.cons").flux[2];
+
+    WENO5X3(rc, pl, pr);
+    LRToFlux(rc, pr, pl, 3, F3);
+
+    FLAG("Calculated flux 3");
+
+    return TaskStatus::complete;
+}
+
+/**
+ * Constrained transport.  Modify B-field fluxes to preserve divB==0 condition to machine precision per-step
+ */
+TaskStatus FluxCT(Container<Real>& rc)
+{
+    FLAG("Flux CT");
+    MeshBlock *pmb = rc.pmy_block;
+    int is = pmb->is, js = pmb->js, ks = pmb->ks;
+    int ie = pmb->ie, je = pmb->je, ke = pmb->ke;
+    int n1 = pmb->ncells1, n2 = pmb->ncells2, n3 = pmb->ncells3;
+    GridScalar emf1("emf1", n3, n2, n1);
+    GridScalar emf2("emf2", n3, n2, n1);
+    GridScalar emf3("emf3", n3, n2, n1);
+    GridVars F1 = rc.Get("c.c.bulk.cons").flux[0];
+    GridVars F2 = rc.Get("c.c.bulk.cons").flux[1];
+    GridVars F3 = rc.Get("c.c.bulk.cons").flux[2];
+
+    pmb->par_for("flux_ct_emf", ks-2, ke+2, js-2, je+2, is-2, ie+2,
+        KOKKOS_LAMBDA_3D {
+            emf3(k, j, i) =  0.25 * (F1(prims::B2, k, j, i) + F1(prims::B2, k, j-1, i) - F2(prims::B1, k, j, i) - F2(prims::B1, k, j, i-1));
+            emf2(k, j, i) = -0.25 * (F1(prims::B3, k, j, i) + F1(prims::B3, k-1, j, i) - F3(prims::B1, k, j, i) - F3(prims::B1, k, j, i-1));
+            emf1(k, j, i) =  0.25 * (F2(prims::B3, k, j, i) + F2(prims::B3, k-1, j, i) - F3(prims::B2, k, j, i) - F3(prims::B2, k, j-1, i));
+        }
+    );
+
+    // Rewrite EMFs as fluxes, after Toth
+    // TODO worthwhile to split and only do +1 in relevant direction?
+    pmb->par_for("flux_ct", ks-1, ke+1, js-1, je+1, is-1, ie+1,
+        KOKKOS_LAMBDA_3D {
+            F1(prims::B1, k, j, i) =  0.0;
+            F1(prims::B2, k, j, i) =  0.5 * (emf3(k, j, i) + emf3(k, j+1, i));
+            F1(prims::B3, k, j, i) = -0.5 * (emf2(k, j, i) + emf2(k+1, j, i));
+
+            F2(prims::B1, k, j, i) = -0.5 * (emf3(k, j, i) + emf3(k, j, i+1));
+            F2(prims::B2, k, j, i) =  0.0;
+            F2(prims::B3, k, j, i) =  0.5 * (emf1(k, j, i) + emf1(k+1, j, i));
+
+            F3(prims::B1, k, j, i) =  0.5 * (emf2(k, j, i) + emf2(k, j, i+1));
+            F3(prims::B2, k, j, i) = -0.5 * (emf1(k, j, i) + emf1(k, j+1, i));
+            F3(prims::B3, k, j, i) =  0.0;
+        }
+    );
     return TaskStatus::complete;
 }
 

@@ -87,15 +87,19 @@ TaskList HARMDriver::MakeTaskList(MeshBlock *pmb, int stage)
     // Calculate the LLF fluxes in each direction
     // This uses the primitives (P) to calculate fluxes to update the conserved variables (U)
     // Hence the two should reflect *exactly* the same fluid state, which I'll term "lockstep"
-    auto calculate_flux = AddContainerTask(tl, GRMHD::CalculateFluxes, start_recv, sc0);
-    // TODO this will be split and Flux_CT added separately afterward
+    auto calculate_flux1 = AddContainerTask(tl, GRMHD::CalculateFlux1, start_recv, sc0);
+    auto calculate_flux2 = AddContainerTask(tl, GRMHD::CalculateFlux2, start_recv, sc0);
+    auto calculate_flux3 = AddContainerTask(tl, GRMHD::CalculateFlux3, start_recv, sc0);
+    auto calculate_flux = calculate_flux1 | calculate_flux2 | calculate_flux3;
+    
+    auto flux_ct = AddContainerTask(tl, GRMHD::FluxCT, calculate_flux, sc0);
 
     // Exchange flux corrections due to AMR and physical boundaries
     // Note this does NOT fix vector components since we bundle primitives
     auto send_flux = AddContainerTask(tl, Container<Real>::SendFluxCorrectionTask,
-                                    calculate_flux, sc0);
+                                    flux_ct, sc0);
     auto recv_flux = AddContainerTask(tl, Container<Real>::ReceiveFluxCorrectionTask,
-                                    calculate_flux, sc0);
+                                    flux_ct, sc0);
 
     // TODO HARM's fix_flux for vector components
 
@@ -143,7 +147,7 @@ TaskList HARMDriver::MakeTaskList(MeshBlock *pmb, int stage)
             MeshBlock *pmb = rc.pmy_block;
             pmb->SetBlockTimestep(parthenon::Update::EstimateTimestep(rc));
             return TaskStatus::complete;
-        }, fill_derived, sc0);
+        }, calculate_flux, sc0);
 
         // Update refinement
         if (pmesh->adaptive) {
