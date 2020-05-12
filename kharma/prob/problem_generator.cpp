@@ -12,6 +12,7 @@
 #include "bondi.hpp"
 #include "fm_torus.hpp"
 #include "seed_B.hpp"
+//#include "bh_flux.hpp"
 
 using namespace parthenon;
 
@@ -44,8 +45,10 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin)
         Real mdot = pin->GetOrAddReal("bondi", "mdot", 1.0);
         Real rs = pin->GetOrAddReal("bondi", "rs", 8.0);
         // Add these to package properties, since they continue to be needed on boundaries
-        pmb->packages["GRMHD"]->AddParam<Real>("mdot", mdot);
-        pmb->packages["GRMHD"]->AddParam<Real>("rs", rs);
+        if(! (pmb->packages["GRMHD"]->AllParams().hasKey("mdot")))
+            pmb->packages["GRMHD"]->AddParam<Real>("mdot", mdot);
+        if(! (pmb->packages["GRMHD"]->AllParams().hasKey("rs")))
+            pmb->packages["GRMHD"]->AddParam<Real>("rs", rs);
 
         InitializeBondi(pmb, G, P, eos, mdot, rs);
 
@@ -66,7 +69,11 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin)
     } else if (prob == "legacy_restart") {
 
     }
-    // TODO if BHflux seed here
+    
+    Real BHflux = pin->GetOrAddReal("torus", "bhflux", 0.0);
+    if (BHflux > 0.) {
+        //SeedBHFlux(pmb, G, P, BHflux);
+    }
 
     // Initialize U
     pmb->par_for("first_U", 0, pmb->ncells3-1, 0, pmb->ncells2-1, 0, pmb->ncells1-1,
