@@ -18,7 +18,7 @@ enum BSeedType{sane, ryan, r3s3, gaussian};
  * @param min_rho_q is the minimum density at which there will be magnetic vector potential
  * @param b_field_type is one of "sane" "ryan" "r3s3" or "gaussian", described below (TODO test or remove opts)
  */
-void SeedBField(MeshBlock *pmb, Grid G, GridVars P,
+void SeedBField(MeshBlock *pmb, GRCoordinates G, GridVars P,
                 Real rin, Real min_rho_q, std::string b_field_type);
 /**
  * Get the minimum beta on the domain

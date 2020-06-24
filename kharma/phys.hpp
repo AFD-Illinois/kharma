@@ -5,14 +5,14 @@
 #pragma once
 
 #include "decs.hpp"
-#include "grid.hpp"
+#include "gr_coordinates.hpp"
 #include "eos.hpp"
 #include "utils.hpp"
 
 /*
  * These functions mostly have several overloads, related to local vs global variables.
  *
- * One version usually takes a local cache e.g. P[NDIM] of a variable, in this case primitives in a single zone
+ * One version usually takes a local cache e.g. P[GR_DIM] of a variable, in this case primitives in a single zone
  * The other version(s) take e.g. P, the pointer to all primitives, which will be indexed P(i,j,k) to get the zone's values
  *
  * This allows easy fusing/splitting of loops, while avoiding unnecessary global writes of temporary variables
@@ -33,7 +33,7 @@ KOKKOS_INLINE_FUNCTION Real bsq_calc(const FourVectors& D)
  */
 KOKKOS_INLINE_FUNCTION void mhd_calc(const GridVars P, const FourVectors& D, const EOS* eos,
                                      const int& k, const int& j, const int& i, const int dir,
-                                     Real mhd[NDIM])
+                                     Real mhd[GR_DIM])
 {
     Real rho, u, pgas, w, bsq, eta, ptot;
 
@@ -54,7 +54,7 @@ KOKKOS_INLINE_FUNCTION void mhd_calc(const GridVars P, const FourVectors& D, con
 }
 KOKKOS_INLINE_FUNCTION void mhd_calc(const Real P[NPRIM], const FourVectors& D, const EOS* eos,
                                      const int& k, const int& j, const int& i, const int dir,
-                                     Real mhd[NDIM])
+                                     Real mhd[GR_DIM])
 {
     Real rho, u, pgas, w, bsq, eta, ptot;
 
@@ -79,12 +79,12 @@ KOKKOS_INLINE_FUNCTION void mhd_calc(const Real P[NPRIM], const FourVectors& D, 
  */
 KOKKOS_INLINE_FUNCTION void bcon_calc(const GridVars P, FourVectors& D,
                                       const int& k, const int& j, const int& i,
-                                      Real bcon[NDIM])
+                                      Real bcon[GR_DIM])
 {
     bcon[0] = P(prims::B1, k, j, i) * D.ucov[1] +
               P(prims::B2, k, j, i) * D.ucov[2] +
               P(prims::B3, k, j, i) * D.ucov[3];
-    for (int mu = 1; mu < NDIM; ++mu)
+    for (int mu = 1; mu < GR_DIM; ++mu)
     {
         bcon[mu] = (P(prims::B1 - 1 + mu, k, j, i) +
                              bcon[0] * D.ucon[mu]) /
@@ -93,12 +93,12 @@ KOKKOS_INLINE_FUNCTION void bcon_calc(const GridVars P, FourVectors& D,
 }
 KOKKOS_INLINE_FUNCTION void bcon_calc(const Real P[NPRIM], FourVectors& D,
                                       const int& k, const int& j, const int& i,
-                                      Real bcon[NDIM])
+                                      Real bcon[GR_DIM])
 {
     bcon[0] = P[prims::B1] * D.ucov[1] +
                 P[prims::B2] * D.ucov[2] +
                 P[prims::B3] * D.ucov[3];
-    for (int mu = 1; mu < NDIM; ++mu)
+    for (int mu = 1; mu < GR_DIM; ++mu)
     {
         bcon[mu] = (P[prims::B1 - 1 + mu] +
                              bcon[0] * D.ucon[mu]) /
@@ -111,7 +111,7 @@ KOKKOS_INLINE_FUNCTION void bcon_calc(const Real P[NPRIM], FourVectors& D,
  *
  * TODO Error or print/clip if outside min or max value
  */
-KOKKOS_INLINE_FUNCTION Real mhd_gamma_calc(const Grid &G, const GridVars P,
+KOKKOS_INLINE_FUNCTION Real mhd_gamma_calc(const GRCoordinates &G, const GridVars P,
                                              const int& k, const int& j, const int& i,
                                              const Loci loc)
 {
@@ -125,7 +125,7 @@ KOKKOS_INLINE_FUNCTION Real mhd_gamma_calc(const Grid &G, const GridVars P,
 
     return sqrt(1. + qsq);
 }
-KOKKOS_INLINE_FUNCTION Real mhd_gamma_calc(const Grid &G, const Real P[NPRIM],
+KOKKOS_INLINE_FUNCTION Real mhd_gamma_calc(const GRCoordinates &G, const Real P[NPRIM],
                                              const int& k, const int& j, const int& i,
                                              const Loci loc)
 {
@@ -142,29 +142,29 @@ KOKKOS_INLINE_FUNCTION Real mhd_gamma_calc(const Grid &G, const Real P[NPRIM],
 /**
  *  Find contravariant four-velocity from the primitive 3-velocity
  */
-KOKKOS_INLINE_FUNCTION void ucon_calc(const Grid &G, const GridVars P,
+KOKKOS_INLINE_FUNCTION void ucon_calc(const GRCoordinates &G, const GridVars P,
                                       const int& k, const int& j, const int& i, const Loci loc,
-                                      Real ucon[NDIM])
+                                      Real ucon[GR_DIM])
 {
     Real gamma = mhd_gamma_calc(G, P, k, j, i, loc);
     Real alpha = 1. / sqrt(-G.gcon(loc, j, i, 0, 0));
     ucon[0] = gamma / alpha;
 
-    for (int mu = 1; mu < NDIM; ++mu)
+    for (int mu = 1; mu < GR_DIM; ++mu)
     {
         ucon[mu] = P(prims::u1 + mu - 1, k, j, i) -
                             gamma * alpha * G.gcon(loc, j, i, 0, mu);
     }
 }
-KOKKOS_INLINE_FUNCTION void ucon_calc(const Grid &G, const Real P[NPRIM],
+KOKKOS_INLINE_FUNCTION void ucon_calc(const GRCoordinates &G, const Real P[NPRIM],
                                       const int& k, const int& j, const int& i, const Loci loc,
-                                      Real ucon[NDIM])
+                                      Real ucon[GR_DIM])
 {
     Real gamma = mhd_gamma_calc(G, P, k, j, i, loc);
     Real alpha = 1. / sqrt(-G.gcon(loc, j, i, 0, 0));
     ucon[0] = gamma / alpha;
 
-    for (int mu = 1; mu < NDIM; ++mu)
+    for (int mu = 1; mu < GR_DIM; ++mu)
     {
         ucon[mu] = P[prims::u1 + mu - 1] -
                             gamma * alpha * G.gcon(loc, j, i, 0, mu);
@@ -175,7 +175,7 @@ KOKKOS_INLINE_FUNCTION void ucon_calc(const Grid &G, const Real P[NPRIM],
  * Calculate ucon, ucov, bcon, bcov from primitive variables
  * Note each member of D must be allocated first
  */
-KOKKOS_INLINE_FUNCTION void get_state(const Grid& G, const GridVars P,
+KOKKOS_INLINE_FUNCTION void get_state(const GRCoordinates& G, const GridVars P,
                                       const int& k, const int& j, const int& i, const Loci loc,
                                       FourVectors& D)
 {
@@ -185,7 +185,7 @@ KOKKOS_INLINE_FUNCTION void get_state(const Grid& G, const GridVars P,
     bcon_calc(P, D, k, j, i, D.bcon);
     G.lower(D.bcon, D.bcov, k, j, i, loc);
 }
-KOKKOS_INLINE_FUNCTION void get_state(const Grid& G, const Real P[NPRIM],
+KOKKOS_INLINE_FUNCTION void get_state(const GRCoordinates& G, const Real P[NPRIM],
                                       const int& k, const int& j, const int& i, const Loci loc,
                                       FourVectors& D)
 {
@@ -199,11 +199,11 @@ KOKKOS_INLINE_FUNCTION void get_state(const Grid& G, const Real P[NPRIM],
 /**
  * Turn the primitive variables at a location into the local conserved variables, or fluxes at a face
  */
-KOKKOS_INLINE_FUNCTION void prim_to_flux(const Grid &G, const GridVars P, const FourVectors D, const EOS* eos,
+KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const GridVars P, const FourVectors D, const EOS* eos,
                                          const int& k, const int& j, const int& i, const Loci loc, const int dir,
                                          GridVars flux)
 {
-    Real mhd[NDIM];
+    Real mhd[GR_DIM];
 
     // Particle number flux
     flux(prims::rho, k, j, i) = P(prims::rho, k, j, i) * D.ucon[dir];
@@ -226,11 +226,11 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const Grid &G, const GridVars P, const 
 
     PLOOP flux(p, k, j, i) *= G.gdet(loc, j, i);
 }
-KOKKOS_INLINE_FUNCTION void prim_to_flux(const Grid &G, const GridVars P, const FourVectors D, const EOS* eos,
+KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates &G, const GridVars P, const FourVectors D, const EOS* eos,
                                          const int& k, const int& j, const int& i, const Loci loc, const int dir,
                                          Real flux[NPRIM])
 {
-    Real mhd[NDIM];
+    Real mhd[GR_DIM];
 
     // Particle number flux
     flux[prims::rho] = P(prims::rho, k, j, i) * D.ucon[dir];
@@ -253,11 +253,11 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const Grid &G, const GridVars P, const 
 
     PLOOP flux[p] *= G.gdet(loc, j, i);
 }
-KOKKOS_INLINE_FUNCTION void prim_to_flux(const Grid &G, const Real P[NPRIM], const FourVectors D, const EOS* eos,
+KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates &G, const Real P[NPRIM], const FourVectors D, const EOS* eos,
                                          const int& k, const int& j, const int& i, const Loci loc, const int dir,
                                          Real flux[NPRIM])
 {
-    Real mhd[NDIM];
+    Real mhd[GR_DIM];
 
     // Particle number flux
     flux[prims::rho] = P[prims::rho] * D.ucon[dir];
@@ -285,14 +285,14 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const Grid &G, const Real P[NPRIM], con
 /**
  *  Calculate components of magnetosonic velocity from primitive variables
  */
-KOKKOS_INLINE_FUNCTION void mhd_vchar(const Grid &G, const GridVars P, const FourVectors D, const EOS* eos,
+KOKKOS_INLINE_FUNCTION void mhd_vchar(const GRCoordinates &G, const GridVars P, const FourVectors D, const EOS* eos,
                                       const int& k, const int& j, const int& i, const Loci loc, const int dir,
                                       Real& cmax, Real& cmin)
 {
     Real discr, vp, vm, bsq, ee, ef, va2, cs2, cms2, u;
     Real Asq, Bsq, Au, Bu, AB, Au2, Bu2, AuBu, A, B, C;
-    Real Acov[NDIM] = {0}, Bcov[NDIM] = {0};
-    Real Acon[NDIM] = {0}, Bcon[NDIM] = {0};
+    Real Acov[GR_DIM] = {0}, Bcov[GR_DIM] = {0};
+    Real Acon[GR_DIM] = {0}, Bcon[GR_DIM] = {0};
 
     Acov[dir] = 1.;
     Bcov[0] = 1.;

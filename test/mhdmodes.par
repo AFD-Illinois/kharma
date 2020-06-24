@@ -8,19 +8,19 @@ problem_id = mhdmodes
 refinement = none
 numlevel = 1
 
-nx1 = 64
+nx1 = 128
 x1min = 0.0
 x1max = 1.0
 ix1_bc = periodic
 ox1_bc = periodic
 
-nx2 = 64
+nx2 = 128
 x2min = 0.0
 x2max = 1.0
 ix2_bc = periodic
 ox2_bc = periodic
 
-nx3 = 64
+nx3 = 128
 x3min = 0.0
 x3max = 1.0
 ix3_bc = periodic

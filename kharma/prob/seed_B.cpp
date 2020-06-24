@@ -4,6 +4,10 @@
 
 #include "phys.hpp"
 
+#include "interface/container.hpp"
+#include "mesh/domain.hpp"
+#include "mesh/mesh.hpp"
+
 // Internal representation of the field initialization preference for quick switch
 // Mostly for fun; the loop for vector potential is 2D
 enum BSeedType{sane, ryan, r3s3, gaussian};
@@ -17,9 +21,13 @@ enum BSeedType{sane, ryan, r3s3, gaussian};
  * @param min_rho_q is the minimum density at which there will be magnetic vector potential
  * @param b_field_type is one of "sane" "ryan" "r3s3" or "gaussian", described below (TODO test or remove opts)
  */
-void SeedBField(MeshBlock *pmb, Grid G, GridVars P,
+void SeedBField(MeshBlock *pmb, GRCoordinates G, GridVars P,
                 Real rin, Real min_rho_q, std::string b_field_type)
 {
+    int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
+    int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
+    int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
+
     // Translate to an enum so we can avoid string comp inside,
     // as well as for good errors, many->one maps, etc.
     BSeedType b_field_flag = BSeedType::sane;
@@ -38,11 +46,11 @@ void SeedBField(MeshBlock *pmb, Grid G, GridVars P,
     }
 
     // Find the magnetic vector potential.  In X3 symmetry only A_phi is non-zero, so we keep track of that.
-    ParArrayND<Real> A("A", pmb->ncells2, pmb->ncells1);
+    ParArrayND<Real> A("A", n2, n1);
     // TODO figure out how much of this needs to be double instead of Real.  Any?
-    pmb->par_for("B_field_A", 1, pmb->ncells2-1, 1, pmb->ncells1-1,
+    pmb->par_for("B_field_A", 1, n2-1, 1, n1-1,
         KOKKOS_LAMBDA_2D {
-            GReal Xembed[NDIM];
+            GReal Xembed[GR_DIM];
             G.coord_embed(0, j, i, Loci::center, Xembed);
             GReal r = Xembed[1], th = Xembed[2];
 
@@ -80,18 +88,19 @@ void SeedBField(MeshBlock *pmb, Grid G, GridVars P,
     );
 
     // Calculate B-field
-    pmb->par_for("B_field_B", 0, pmb->ncells3-2, 0, pmb->ncells2-2, 0, pmb->ncells1-2,
+    auto coords = pmb->coords;
+    pmb->par_for("B_field_B", 0, n3-2, 0, n2-2, 0, n1-2,
         KOKKOS_LAMBDA_3D {
-            GReal X[NDIM], Xembed[NDIM];
+            GReal X[GR_DIM], Xembed[GR_DIM];
             G.coord(k, j, i, Loci::center, X);
             G.coord_embed(k, j, i, Loci::center, Xembed);
             GReal r = Xembed[1], th = Xembed[2];
 
             // Take a flux-ct step from the corner potentials
             P(prims::B1, k, j, i) = -(A(j, i) - A(j + 1, i) + A(j, i + 1) - A(j + 1, i + 1)) /
-                                (2. * pmb->pcoord->dx2v(j) * G.gdet(Loci::center, j, i));
+                                (2. * coords.dx2v(j) * G.gdet(Loci::center, j, i));
             P(prims::B2, k, j, i) = (A(j, i) + A(j + 1, i) - A(j, i + 1) - A(j + 1, i + 1)) /
-                                (2. * pmb->pcoord->dx1v(i) * G.gdet(Loci::center, j, i));
+                                (2. * coords.dx1v(i) * G.gdet(Loci::center, j, i));
             P(prims::B3, k, j, i) = 0.;
         }
     );
@@ -103,14 +112,16 @@ void SeedBField(MeshBlock *pmb, Grid G, GridVars P,
 Real GetLocalBetaMin(MeshBlock *pmb)
 {
     Container<Real> rc = pmb->real_containers.Get();
-    auto is = pmb->is, js = pmb->js, ks = pmb->ks;
-    auto ie = pmb->ie, je = pmb->je, ke = pmb->ke;
+    IndexDomain domain = IndexDomain::interior;
+    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
+    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
+    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
+    GRCoordinates G = pmb->coords;
+    GridVars P = rc.Get("c.c.bulk.prims").data;
 
     // TODO *sigh*
-    Grid G(pmb);
     Real gamma = pmb->packages["GRMHD"]->Param<Real>("gamma");
-    EOS* eos = new GammaLaw(gamma);
-    auto P = rc.Get("c.c.bulk.prims").data;
+    EOS* eos = CreateEOS(gamma);
 
     Real beta_min;
     Kokkos::Min<Real> min_reducer(beta_min);
@@ -139,14 +150,18 @@ Real GetLocalBetaMin(MeshBlock *pmb)
 void NormalizeBField(MeshBlock *pmb, Real factor)
 {
     Container<Real> rc = pmb->real_containers.Get();
-    // TODO *sigh*
-    Grid G(pmb);
-    Real gamma = pmb->packages["GRMHD"]->Param<Real>("gamma");
-    EOS* eos = new GammaLaw(gamma);
-    auto P = rc.Get("c.c.bulk.prims").data;
-    auto U = rc.Get("c.c.bulk.cons").data;
+    int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
+    int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
+    int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
+    GridVars P = rc.Get("c.c.bulk.prims").data;
+    GridVars U = rc.Get("c.c.bulk.cons").data;
+    GRCoordinates G = pmb->coords;
 
-    pmb->par_for("B_field_normalize", 0, pmb->ncells3-1, 0, pmb->ncells2-1, 0, pmb->ncells1-1,
+    // TODO *sigh*
+    Real gamma = pmb->packages["GRMHD"]->Param<Real>("gamma");
+    EOS* eos = CreateEOS(gamma);
+
+    pmb->par_for("B_field_normalize", 0, n3-1, 0, n2-1, 0, n1-1,
         KOKKOS_LAMBDA_3D {
             P(prims::B1, k, j, i) /= factor;
             P(prims::B2, k, j, i) /= factor;

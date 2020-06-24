@@ -6,7 +6,7 @@
 /**
  * Set time component for a consistent 4-velocity given a 3-velocity
  */
-KOKKOS_INLINE_FUNCTION void set_ut(const Real gcov[NDIM][NDIM], Real ucon[NDIM])
+KOKKOS_INLINE_FUNCTION void set_ut(const Real gcov[GR_DIM][GR_DIM], Real ucon[GR_DIM])
 {
     Real AA, BB, CC;
 
@@ -28,7 +28,7 @@ KOKKOS_INLINE_FUNCTION void set_ut(const Real gcov[NDIM][NDIM], Real ucon[NDIM])
 /**
  * Make primitive velocities u-twiddle out of 4-velocity.  See Gammie '04
  */
-KOKKOS_INLINE_FUNCTION void fourvel_to_prim(const Real gcon[NDIM][NDIM], const Real ucon[NDIM], Real u_prim[NDIM])
+KOKKOS_INLINE_FUNCTION void fourvel_to_prim(const Real gcon[GR_DIM][GR_DIM], const Real ucon[GR_DIM], Real u_prim[GR_DIM])
 {
     Real alpha2 = -1.0 / gcon[0][0];
     // Note gamma/alpha is ucon[0]

@@ -3,27 +3,31 @@
 
 #include "decs.hpp"
 
-#include "grid.hpp"
+#include "gr_coordinates.hpp"
 #include "eos.hpp"
 #include "phys.hpp"
 #include "prob_common.hpp"
 
-using namespace parthenon;
+#include "mesh/mesh.hpp"
+
 using namespace std;
 
-void get_prim_bondi(const Grid& G, GridVars P, const EOS* eos, const Real mdot, const Real rs,
-                    const int& k, const int& j, const int& i);
+KOKKOS_INLINE_FUNCTION void get_prim_bondi(const GRCoordinates& G, GridVars P, const EOS* eos, const Real mdot, const Real rs,
+                                            const int& k, const int& j, const int& i);
 
 /**
  * Initialization of a Bondi problem with specified sonic point, BH mdot, and horizon radius
  * TODO this can/should be just mdot (and the grid ofc), if this problem is to be used as anything more than a test
  */
-void InitializeBondi(MeshBlock *pmb, const Grid& G, GridVars P,
+void InitializeBondi(MeshBlock *pmb, const GRCoordinates& G, GridVars P,
                      const EOS* eos, const Real mdot, const Real rs)
 {
     FLAG("Initializing Bondi problem");
+    int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
+    int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
+    int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
 
-    pmb->par_for( "init_bondi", 0, pmb->ncells3-1, 0, pmb->ncells2-1, 0, pmb->ncells1-1,
+    pmb->par_for("init_bondi", 0, n3-1, 0, n2-1, 0, n1-1,
         KOKKOS_LAMBDA_3D {
             get_prim_bondi(G, P, eos, mdot, rs, k, j, i);
         }
@@ -35,18 +39,20 @@ void ApplyBondiBoundary(Container<Real>& rc)
     MeshBlock *pmb = rc.pmy_block;
     GridVars U = rc.Get("c.c.bulk.cons").data;
     GridVars P = rc.Get("c.c.bulk.prims").data;
-
-    Grid G(pmb);
+    int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
+    int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
+    int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
+    GRCoordinates G = pmb->coords;
 
     FLAG("Applying Bondi X1R boundary");
 
-    Real gamma = pmb->packages["GRMHD"]->Param<Real>("gamma");
     Real mdot = pmb->packages["GRMHD"]->Param<Real>("mdot");
     Real rs = pmb->packages["GRMHD"]->Param<Real>("rs");
-    EOS* eos = new GammaLaw(gamma);
+    Real gamma = pmb->packages["GRMHD"]->Param<Real>("gamma");
+    EOS* eos = CreateEOS(gamma);
 
     // Just the X1 right boundary
-    pmb->par_for("bondi_boundary", 0, pmb->ncells3-1, 0, pmb->ncells2-1, pmb->ncells1 - NGHOST, pmb->ncells1-1,
+    pmb->par_for("bondi_boundary", 0, n3-1, 0, n2-1, n1 - NGHOST, n1-1,
         KOKKOS_LAMBDA_3D {
             FourVectors Dtmp;
             get_prim_bondi(G, P, eos, mdot, rs, k, j, i);
@@ -103,7 +109,7 @@ KOKKOS_INLINE_FUNCTION Real get_T(const GReal r, const Real C1, const Real C2, c
  * Get the Bondi solution at a particular zone.  Templated to be host- or device-side.
  * Note this assumes that there are ghost zones!
  */
-void get_prim_bondi(const Grid& G, GridVars P, const EOS* eos, const Real mdot, const Real rs,
+KOKKOS_INLINE_FUNCTION void get_prim_bondi(const GRCoordinates& G, GridVars P, const EOS* eos, const Real mdot, const Real rs,
                     const int& k, const int& j, const int& i)
 {
     // Solution constants
@@ -120,7 +126,7 @@ void get_prim_bondi(const Grid& G, GridVars P, const EOS* eos, const Real mdot, 
     SphKSCoords ks = mpark::get<SphKSCoords>(G.coords->base);
     SphBLCoords bl = SphBLCoords(ks.a);
 
-    GReal X[NDIM], Xembed[NDIM];
+    GReal X[GR_DIM], Xembed[GR_DIM];
     G.coord(k, j, i, Loci::center, X);
     G.coord_embed(k, j, i, Loci::center, Xembed);
     Real Rhor = ks.rhor();
@@ -141,25 +147,26 @@ void get_prim_bondi(const Grid& G, GridVars P, const EOS* eos, const Real mdot, 
     Real u = rho * T * n;
 
     // Set u^t to make u^r a 4-vector
-    Real ucon_bl[NDIM] = {0, ur, 0, 0};
-    Real gcov_bl[NDIM][NDIM];
+    Real ucon_bl[GR_DIM] = {0, ur, 0, 0};
+    Real gcov_bl[GR_DIM][GR_DIM];
     bl.gcov_embed(Xembed, gcov_bl);
     set_ut(gcov_bl, ucon_bl);
 
     // Then transform that 4-vector to KS, then to native
-    Real ucon_ks[NDIM], ucon_mks[NDIM], u_prim[NDIM];
+    Real ucon_ks[GR_DIM], ucon_mks[GR_DIM], u_prim[GR_DIM];
     ks.vec_from_bl(Xembed, ucon_bl, ucon_ks);
     G.coords->con_vec_to_native(X, ucon_ks, ucon_mks);
 
     // Convert native 4-vector to primitive u-twiddle, see Gammie '04
-    Real gcon[NDIM][NDIM];
+    Real gcon[GR_DIM][GR_DIM];
     G.gcon(Loci::center, j, i, gcon);
     fourvel_to_prim(gcon, ucon_mks, u_prim);
 
-#if DEBUG
+#if DEBUG && 0
+    // TODO print in device-compatible way
     static int fails = 0;
     if (T < 0 || rho < 0 || u < 0) {
-        Real ucov_mks[NDIM];
+        Real ucov_mks[GR_DIM];
         G.lower(ucon_mks, ucov_mks, k, j, i, Loci::center);
         Real uu_mks = dot(ucon_mks, ucov_mks);
 

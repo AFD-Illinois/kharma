@@ -1,0 +1,267 @@
+	Compiling restart.c
+	Compiling current.c
+	Compiling fluxes.c
+	Compiling electrons.c
+	Compiling io.c
+	Compiling coord.c
+	Compiling metric.c
+	Compiling timing.c
+	Compiling step.c
+	Compiling fixup.c
+	Compiling reconstruction.c
+	Compiling mpi.c
+	Compiling pack.c
+	Compiling parameters.c
+	Compiling bounds.c
+	Compiling bl_coord.c
+	Compiling main.c
+	Compiling diag.c
+	Compiling hdf5_utils.c
+	Compiling phys.c
+	Compiling u_to_p.c
+	Compiling problem.c
+	Linking harm
+Completed build of prob: bondi
+CFLAGS: -std=gnu99 -O3 -march=core-avx2 -mtune=core-avx2 -flto -fopenmp -funroll-loops -mcmodel=large -g -Wall -Werror -DDEBUG=1
+	Compiling fluxes.c
+	Compiling restart.c
+	Compiling current.c
+	Compiling electrons.c
+	Compiling step.c
+	Compiling io.c
+	Compiling coord.c
+	Compiling metric.c
+	Compiling timing.c
+	Compiling fixup.c
+	Compiling reconstruction.c
+	Compiling mpi.c
+	Compiling pack.c
+	Compiling main.c
+	Compiling parameters.c
+	Compiling bounds.c
+	Compiling bl_coord.c
+	Compiling diag.c
+	Compiling hdf5_utils.c
+	Compiling u_to_p.c
+	Compiling phys.c
+	Compiling problem.c
+	Linking harm
+Completed build of prob: bondi
+CFLAGS: -std=gnu99 -O3 -march=core-avx2 -mtune=core-avx2 -flto -fopenmp -funroll-loops -mcmodel=large -g -Wall -Werror -DDEBUG=1
+Running 32-size bondi problem w/4 MPI procs, 14 threads each
+Done!
+	Compiling fluxes.c
+	Compiling restart.c
+	Compiling current.c
+	Compiling electrons.c
+	Compiling io.c
+	Compiling step.c
+	Compiling metric.c
+	Compiling coord.c
+	Compiling timing.c
+	Compiling fixup.c
+	Compiling reconstruction.c
+	Compiling mpi.c
+	Compiling parameters.c
+	Compiling pack.c
+	Compiling main.c
+	Compiling bounds.c
+	Compiling bl_coord.c
+	Compiling hdf5_utils.c
+	Compiling diag.c
+	Compiling phys.c
+	Compiling problem.c
+	Compiling u_to_p.c
+	Linking harm
+Completed build of prob: bondi
+CFLAGS: -std=gnu99 -O3 -march=core-avx2 -mtune=core-avx2 -flto -fopenmp -funroll-loops -mcmodel=large -g -Wall -Werror -DDEBUG=1
+Running 64-size bondi problem w/4 MPI procs, 14 threads each
+Done!
+	Compiling fluxes.c
+	Compiling restart.c
+	Compiling current.c
+	Compiling electrons.c
+	Compiling step.c
+	Compiling io.c
+	Compiling coord.c
+	Compiling metric.c
+	Compiling timing.c
+	Compiling fixup.c
+	Compiling reconstruction.c
+	Compiling mpi.c
+	Compiling pack.c
+	Compiling parameters.c
+	Compiling bounds.c
+	Compiling diag.c
+	Compiling main.c
+	Compiling hdf5_utils.c
+	Compiling bl_coord.c
+	Compiling u_to_p.c
+	Compiling phys.c
+	Compiling problem.c
+	Linking harm
+Completed build of prob: bondi
+CFLAGS: -std=gnu99 -O3 -march=core-avx2 -mtune=core-avx2 -flto -fopenmp -funroll-loops -mcmodel=large -g -Wall -Werror -DDEBUG=1
+Running 128-size bondi problem w/4 MPI procs, 14 threads each
+Done!
+	Compiling fluxes.c
+	Compiling restart.c
+	Compiling current.c
+	Compiling step.c
+	Compiling electrons.c
+	Compiling io.c
+	Compiling coord.c
+	Compiling timing.c
+	Compiling metric.c
+	Compiling mpi.c
+	Compiling fixup.c
+	Compiling reconstruction.c
+	Compiling pack.c
+	Compiling bounds.c
+	Compiling main.c
+	Compiling parameters.c
+	Compiling bl_coord.c
+	Compiling diag.c
+	Compiling hdf5_utils.c
+	Compiling u_to_p.c
+	Compiling phys.c
+	Compiling problem.c
+	Linking harm
+Completed build of prob: bondi
+CFLAGS: -std=gnu99 -O3 -march=core-avx2 -mtune=core-avx2 -flto -fopenmp -funroll-loops -mcmodel=large -g -Wall -Werror -DDEBUG=1
+Running 256-size bondi problem w/4 MPI procs, 14 threads each
+Done!
+/home/bprather/Code/iharm3d/script/test/convergence/results_bondi/plots
+Loaded header from code iharm-alpha-3.6, git rev 9deeb2d-dirty
+Loaded header from code iharm-alpha-3.6, git rev 9deeb2d-dirty
+Loaded header from code iharm-alpha-3.6, git rev 9deeb2d-dirty
+Loaded header from code iharm-alpha-3.6, git rev 9deeb2d-dirty
+Powerfit: -1.962519177040941 L1: [6.11574061e-06 1.66799094e-06 4.17627390e-07 1.04150213e-07]
+	Compiling restart.c
+	Compiling fluxes.c
+	Compiling current.c
+	Compiling step.c
+	Compiling electrons.c
+	Compiling io.c
+	Compiling coord.c
+	Compiling reconstruction.c
+	Compiling metric.c
+	Compiling mpi.c
+	Compiling timing.c
+	Compiling pack.c
+	Compiling parameters.c
+	Compiling fixup.c
+	Compiling bl_coord.c
+	Compiling bounds.c
+	Compiling main.c
+	Compiling hdf5_utils.c
+	Compiling u_to_p.c
+	Compiling diag.c
+	Compiling problem.c
+	Compiling phys.c
+	Linking harm
+Completed build of prob: mhdmodes
+CFLAGS: -std=gnu99 -O3 -march=core-avx2 -mtune=core-avx2 -flto -fopenmp -funroll-loops -mcmodel=large -g -Wall -Werror -DDEBUG=1
+	Compiling fluxes.c
+	Compiling restart.c
+	Compiling current.c
+	Compiling step.c
+	Compiling io.c
+	Compiling electrons.c
+	Compiling metric.c
+	Compiling coord.c
+	Compiling timing.c
+	Compiling fixup.c
+	Compiling mpi.c
+	Compiling bounds.c
+	Compiling reconstruction.c
+	Compiling pack.c
+	Compiling bl_coord.c
+	Compiling parameters.c
+	Compiling main.c
+	Compiling diag.c
+	Compiling hdf5_utils.c
+	Compiling u_to_p.c
+	Compiling phys.c
+	Compiling problem.c
+	Linking harm
+Completed build of prob: mhdmodes
+CFLAGS: -std=gnu99 -O3 -march=core-avx2 -mtune=core-avx2 -flto -fopenmp -funroll-loops -mcmodel=large -g -Wall -Werror -DDEBUG=1
+Running size 16 mode 1...
+Done!
+Running size 16 mode 2...
+Done!
+Running size 16 mode 3...
+Done!
+	Compiling fluxes.c
+	Compiling current.c
+	Compiling restart.c
+	Compiling step.c
+	Compiling electrons.c
+	Compiling io.c
+	Compiling coord.c
+	Compiling metric.c
+	Compiling timing.c
+	Compiling fixup.c
+	Compiling mpi.c
+	Compiling reconstruction.c
+	Compiling bounds.c
+	Compiling pack.c
+	Compiling main.c
+	Compiling parameters.c
+	Compiling bl_coord.c
+	Compiling hdf5_utils.c
+	Compiling diag.c
+	Compiling phys.c
+	Compiling problem.c
+	Compiling u_to_p.c
+	Linking harm
+Completed build of prob: mhdmodes
+CFLAGS: -std=gnu99 -O3 -march=core-avx2 -mtune=core-avx2 -flto -fopenmp -funroll-loops -mcmodel=large -g -Wall -Werror -DDEBUG=1
+Running size 32 mode 1...
+Done!
+Running size 32 mode 2...
+Done!
+Running size 32 mode 3...
+Done!
+	Compiling fluxes.c
+	Compiling current.c
+	Compiling restart.c
+	Compiling electrons.c
+	Compiling step.c
+	Compiling io.c
+	Compiling coord.c
+	Compiling metric.c
+	Compiling timing.c
+	Compiling reconstruction.c
+	Compiling pack.c
+	Compiling fixup.c
+	Compiling mpi.c
+	Compiling bounds.c
+	Compiling parameters.c
+	Compiling main.c
+	Compiling bl_coord.c
+	Compiling u_to_p.c
+	Compiling diag.c
+	Compiling hdf5_utils.c
+	Compiling phys.c
+	Compiling problem.c
+	Linking harm
+Completed build of prob: mhdmodes
+CFLAGS: -std=gnu99 -O3 -march=core-avx2 -mtune=core-avx2 -flto -fopenmp -funroll-loops -mcmodel=large -g -Wall -Werror -DDEBUG=1
+Running size 64 mode 1...
+Done!
+Running size 64 mode 2...
+Done!
+Running size 64 mode 3...
+Done!
+/home/bprather/Code/iharm3d/script/test/convergence/results_modes/plots
+Loaded header from code iharm-alpha-3.6, git rev 9deeb2d-dirty
+Loaded header from code iharm-alpha-3.6, git rev 9deeb2d-dirty
+Loaded header from code iharm-alpha-3.6, git rev 9deeb2d-dirty
+Loaded header from code iharm-alpha-3.6, git rev 9deeb2d-dirty
+Loaded header from code iharm-alpha-3.6, git rev 9deeb2d-dirty
+Loaded header from code iharm-alpha-3.6, git rev 9deeb2d-dirty
+Loaded header from code iharm-alpha-3.6, git rev 9deeb2d-dirty
+Loaded header from code iharm-alpha-3.6, git rev 9deeb2d-dirty
+Loaded header from code iharm-alpha-3.6, git rev 9deeb2d-dirty

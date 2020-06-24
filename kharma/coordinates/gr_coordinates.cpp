@@ -1,58 +1,51 @@
+/*
+ * Coordinate functions for GR 
+ */
 
-#include "grid.hpp"
+#include "decs.hpp"
 
+#include "gr_coordinates.hpp"
+
+#include "parameter_input.hpp"
+#include "mesh/domain.hpp"
+#include "mesh/mesh.hpp"
+
+// Internal function for initializing cache
+void init_GRCoordinates(GRCoordinates& G);
 
 #if FAST_CARTESIAN
 /**
- * Construct a cartesian grid
+ * Construct a cartesian GRCoordinates object
  */
-Grid::Grid(MeshBlock* pmb): pmy_block(pmb)
+GRCoordinates::GRCoordinates(const RegionSize &rs, ParameterInput *pin): UniformCartesian(rs, pin)
 {
-    // TODO use parthenon more directly via pass-through,
-    // or else take mesh bounds and re-calculate zone locations on the fly...
-    // at least this isn't a full copy or anything.  Just pointers.
-    x1f = pmb->pcoord->x1f;
-    x2f = pmb->pcoord->x2f;
-    x3f = pmb->pcoord->x3f;
-
-    x1v = pmb->pcoord->x1v;
-    x2v = pmb->pcoord->x2v;
-    x3v = pmb->pcoord->x3v;
-
+    // Cartesian is not spherical
+    spherical = false;
+}
+GRCoordinates::GRCoordinates(const GRCoordinates &src, int coarsen): UniformCartesian(src, coarsen)
+{
     // Cartesian is not spherical
     spherical = false;
 }
 #else
 /**
- * Construct a grid according to preferences set in the package
+ * Construct a GRCoordinates object according to preferences set in the package
  */
-Grid::Grid(MeshBlock* pmb): pmy_block(pmb)
+GRCoordinates::GRCoordinates(const RegionSize &rs, ParameterInput *pin): UniformCartesian(rs, pin)
 {
-    // TODO use parthenon more directly via pass-through,
-    // or else take mesh bounds and re-calculate zone locations on the fly...
-    // at least this isn't a full copy or anything.  Just pointers.
-    x1f = pmb->pcoord->x1f;
-    x2f = pmb->pcoord->x2f;
-    x3f = pmb->pcoord->x3f;
+    // This is effectively a constructor for the CoordinateEmbedding object,
+    // but in KHARMA, that object is only used through this one.
+    // And I want the option to use that code elsewhere as it's quite general & nice
+    // TODO are string allocations/comparisons bad in this constructor?
+    std::string base_str = pin->GetOrAddString("GRCoordinates", "base", "cartesian_minkowski");
+    std::string transform_str = pin->GetOrAddString("GRCoordinates", "transform", "null");
+    GReal startx1 = pin->GetReal("mesh", "x1min"); // This was needed for mesh.  Die without it.
+    GReal a = pin->GetOrAddReal("coordinates", "a", 0.0); // The rest have defaults
+    GReal hslope = pin->GetOrAddReal("coordinates", "hslope", 0.3);
+    GReal mks_smooth = pin->GetOrAddReal("coordinates", "mks_smooth", 0.5);
+    GReal poly_xt = pin->GetOrAddReal("coordinates", "poly_xt", 0.82);
+    GReal poly_alpha = pin->GetOrAddReal("coordinates", "poly_alpha", 14.0);
 
-    x1v = pmb->pcoord->x1v;
-    x2v = pmb->pcoord->x2v;
-    x3v = pmb->pcoord->x3v;
-
-    auto pkg = pmb->packages["GRMHD"];
-    std::string base_str = pkg->Param<std::string>("c_base");
-    std::string transform_str = pkg->Param<std::string>("c_transform");
-    GReal startx1 = pkg->Param<GReal>("c_startx1");
-    GReal a = pkg->Param<GReal>("c_a");
-    GReal hslope = pkg->Param<GReal>("c_hslope");
-    GReal mks_smooth = pkg->Param<GReal>("c_mks_smooth");
-    GReal poly_xt = pkg->Param<GReal>("c_poly_xt");
-    GReal poly_alpha = pkg->Param<GReal>("c_poly_alpha");
-
-    // This is effectively a constructor for the CoordinateEmbedding object
-    // but moving this logic there makes it Parthenon-reliant,
-    // and the alternative is like 18 difference constructors for the various argument lists
-    // so here we are.
     SomeBaseCoords base;
     if (base_str == "spherical_minkowski") {
         base.emplace<SphMinkowskiCoords>(SphMinkowskiCoords());
@@ -95,49 +88,39 @@ Grid::Grid(MeshBlock* pmb): pmy_block(pmb)
 
     coords = new CoordinateEmbedding(base, transform);
 
-    init_grids(*this);
+    init_GRCoordinates(*this);
+}
+GRCoordinates::GRCoordinates(const GRCoordinates &src, int coarsen): UniformCartesian(src, coarsen)
+{
+    std::cerr << "Calling the questionable constructor" << std::endl;
+    coords = src.coords;
+    init_GRCoordinates(*this);
 }
 #endif
 
 /**
- * Construct a grid with an existing CoordinateEmbedding object
- */
-Grid::Grid(MeshBlock* pmb, CoordinateEmbedding* coordinates): pmy_block(pmb), coords(coordinates)
-{
-    // TODO use parthenon more directly via pass-through,
-    // or else take mesh bounds and re-calculate zone locations on the fly...
-    // at least this isn't a full copy or anything.  Just pointers.
-    x1f = pmb->pcoord->x1f;
-    x2f = pmb->pcoord->x2f;
-    x3f = pmb->pcoord->x3f;
-
-    x1v = pmb->pcoord->x1v;
-    x2v = pmb->pcoord->x2v;
-    x3v = pmb->pcoord->x3v;
-
-    init_grids(*this);
-}
-
-/**
- * Initialize any cached geometry that Grid will need to return.
+ * Initialize any cached geometry that GRCoordinates will need to return.
  *
- * This needs to be defined *outside* of the Grid object, because of some
+ * This needs to be defined *outside* of the GRCoordinates object, because of some
  * fun issues with C++ Lambda capture, which Kokkos brings to the fore
  */
 #if FAST_CARTESIAN || NO_CACHE
-void init_grids(Grid& G) {}
+void init_GRCoordinates(GRCoordinates& G) {}
 #else
-void init_grids(Grid& G) {
-    // Cache geometry.  Probably faster in most cases than re-computing due to amortization of reads
-    int n1 = G.pmy_block->ncells1;
-    int n2 = G.pmy_block->ncells2;
-    G.gcon_direct = GeomTensor2("gcon", NLOC, n2, n1, NDIM, NDIM);
-    G.gcov_direct = GeomTensor2("gcov", NLOC, n2, n1, NDIM, NDIM);
+    // TODO need to either find a my_block pointer here, or find the sizes and
+    // use manual Kokkos calls instead of par_for
+void init_GRCoordinates(GRCoordinates& G) {
+    // Cache geometry.  May be faster than re-computing. May not be.
+    int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
+    int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
+    int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
+    G.gcon_direct = GeomTensor2("gcon", NLOC, n2, n1, GR_DIM, GR_DIM);
+    G.gcov_direct = GeomTensor2("gcov", NLOC, n2, n1, GR_DIM, GR_DIM);
     G.gdet_direct = GeomScalar("gdet", NLOC, n2, n1);
-    G.conn_direct = GeomTensor3("conn", n2, n1, NDIM, NDIM, NDIM);
+    G.conn_direct = GeomTensor3("conn", n2, n1, GR_DIM, GR_DIM, GR_DIM);
 
     // Member variables have an implicit this->
-    // Kokkos captures pointers to objects, not full objects
+    // C++ Lambdas (and therefore Kokkos Lambdas) capture pointers to objects, not full objects
     // Hence, you *CANNOT* use this->, or members, from inside kernels
     auto gcon_local = G.gcon_direct;
     auto gcov_local = G.gcov_direct;
@@ -145,10 +128,10 @@ void init_grids(Grid& G) {
     auto conn_local = G.conn_direct;
     CoordinateEmbedding cs = *(G.coords);
 
-    G.pmy_block->par_for("init_geom", 0, n2-1, 0, n1-1,
+    pmb->par_for("init_geom", 0, n2-1, 0, n1-1,
         KOKKOS_LAMBDA_2D {
-            GReal X[NDIM];
-            Real gcov_loc[NDIM][NDIM], gcon_loc[NDIM][NDIM];
+            GReal X[GR_DIM];
+            Real gcov_loc[GR_DIM][GR_DIM], gcon_loc[GR_DIM][GR_DIM];
             for (int loc=0; loc < NLOC; ++loc) {
                 G.coord(0, j, i, (Loci)loc, X);
                 cs.gcov_native(X, gcov_loc);
@@ -160,16 +143,16 @@ void init_grids(Grid& G) {
             }
         }
     );
-    G.pmy_block->par_for("init_geom", 0, n2-1, 0, n1-1,
+    pmb->par_for("init_geom", 0, n2-1, 0, n1-1,
         KOKKOS_LAMBDA_2D {
-            GReal X[NDIM];
+            GReal X[GR_DIM];
             G.coord(0, j, i, Loci::center, X);
-            Real conn_loc[NDIM][NDIM][NDIM];
+            Real conn_loc[GR_DIM][GR_DIM][GR_DIM];
             cs.conn_native(X, conn_loc);
             DLOOP3 conn_local(j, i, mu, nu, lam) = conn_loc[mu][nu][lam];
         }
     );
 
-    FLAG("Grid metric init");
+    FLAG("GRCoordinates metric init");
 }
 #endif

@@ -21,3 +21,4 @@ $ ./make.sh clean
 
 **Note** that you need to set the Parthenon option `NUMBER_GHOST_CELLS` to 4 (for WENO reconstruction),
 and the option `PAR_LOOP_LAYOUT` to "MDRANGE_LOOP" for better performance.
+Additionally, you'll need to set the `COORDINATE_TYPE` variable to `GRCoordinates`.

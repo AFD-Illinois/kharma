@@ -3,7 +3,6 @@
 # TODO if these things are necessary then...
 unset CPATH
 conda deactivate
-source scl_source enable devtoolset-8
 
 # Make script for KHARMA
 # Used to decide flags and call cmake
@@ -26,13 +25,19 @@ mkdir -p build
 cd build
 
 if [[ "$*" == *"clean"* ]]; then
-  if false; then # CUDA BUILD
+  if [[ "$*" == *"cuda"* ]]; then # CUDA BUILD
     # TODO unify MPI flags
     cmake3 ..\
     -DCMAKE_CXX_COMPILER=$PWD/../external/parthenon/external/Kokkos/bin/nvcc_wrapper \
     -DCMAKE_BUILD_TYPE=$TYPE \
     -DCMAKE_PREFIX_PATH=/usr/lib64/mpich \
-    -DDISABLE_MPI=OFF \
+    -DPAR_LOOP_LAYOUT="MANUAL1D_LOOP" \
+    -DPAR_LOOP_INNER_LAYOUT="SIMDFOR_INNER_LOOP" \
+    -DENABLE_UNIT_TESTS=OFF \
+    -DENABLE_INTEGRATION_TESTS=OFF \
+    -DENABLE_REGRESSION_TESTS=OFF \
+    -DENABLE_EXAMPLES=OFF \
+    -DPARTHENON_DISABLE_MPI=OFF \
     -DKokkos_ENABLE_OPENMP=ON \
     -DKokkos_ENABLE_CUDA=ON \
     -DKokkos_ENABLE_HWLOC=ON \
@@ -50,7 +55,13 @@ if [[ "$*" == *"clean"* ]]; then
     cmake3 ..\
     -DCMAKE_BUILD_TYPE=$TYPE \
     -DCMAKE_PREFIX_PATH=/usr/lib64/mpich \
-    -DDISABLE_MPI=OFF \
+    -DPAR_LOOP_LAYOUT="MANUAL1D_LOOP" \
+    -DPAR_LOOP_INNER_LAYOUT="SIMDFOR_INNER_LOOP" \
+    -DENABLE_UNIT_TESTS=OFF \
+    -DENABLE_INTEGRATION_TESTS=OFF \
+    -DENABLE_REGRESSION_TESTS=OFF \
+    -DENABLE_EXAMPLES=OFF \
+    -DPARTHENON_DISABLE_MPI=OFF \
     -DKokkos_ENABLE_OPENMP=ON \
     -DKokkos_ENABLE_CUDA=OFF \
     -DKokkos_ENABLE_HWLOC=ON \

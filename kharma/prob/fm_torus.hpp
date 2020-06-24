@@ -14,7 +14,7 @@
 #include <random>
 
 // Functions to initialize and manipulate the solution
-void InitializeFMTorus(MeshBlock *pmb, Grid& G, GridVars P, const EOS* eos,
+void InitializeFMTorus(MeshBlock *pmb, GRCoordinates& G, GridVars P, const EOS* eos,
                        GReal rin, GReal rmax, Real kappa);
 void PerturbU(MeshBlock *pmb, GridVars P, Real u_jitter, int rng_seed);
 
@@ -28,20 +28,24 @@ KOKKOS_INLINE_FUNCTION Real lnh_calc(const GReal a, const Real l, const GReal ri
  * @param rin is the torus innermost radius, in r_g
  * @param rmax is the radius of maximum density of the F-M torus in r_g
  */
-void InitializeFMTorus(MeshBlock *pmb, Grid& G, GridVars P, const EOS* eos,
+void InitializeFMTorus(MeshBlock *pmb, GRCoordinates& G, GridVars P, const EOS* eos,
                        GReal rin, GReal rmax, Real kappa=1.e-3)
 {
+    int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
+    int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
+    int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
+
     // Get coordinate system pointers for later
-    // Only compatible with KS coords as base
+    // Only compatible with KS coords as base (TODO BL for fun?)
     SphKSCoords ks = mpark::get<SphKSCoords>(G.coords->base);
     SphBLCoords bl = SphBLCoords(ks.a);
 
     // Fishbone-Moncrief parameters
     Real l = lfish_calc(ks.a, rmax);
 
-    pmb->par_for("fm_torus_init", 0, pmb->ncells3-1, 0, pmb->ncells2-1, 0, pmb->ncells1-1,
+    pmb->par_for("fm_torus_init", 0, n3-1, 0, n2-1, 0, n1-1,
         KOKKOS_LAMBDA_3D {
-            GReal X[NDIM], Xembed[NDIM];
+            GReal X[GR_DIM], Xembed[GR_DIM];
             G.coord(k, j, i, Loci::center, X);
             G.coord_embed(k, j, i, Loci::center, Xembed);
             GReal r = Xembed[1], th = Xembed[2];
@@ -77,18 +81,18 @@ void InitializeFMTorus(MeshBlock *pmb, Grid& G, GridVars P, const EOS* eos,
                             sqrt(SS / AA) * up1 / sth;
 
                 // Convert u^phi from 3-velocity to 4-velocity
-                Real ucon_bl[NDIM] = {0., 0, 0, up};
-                Real gcov_bl[NDIM][NDIM];
+                Real ucon_bl[GR_DIM] = {0., 0, 0, up};
+                Real gcov_bl[GR_DIM][GR_DIM];
                 bl.gcov_embed(Xembed, gcov_bl);
                 set_ut(gcov_bl, ucon_bl);
 
                 // Then transform that 4-vector to KS, then to native
-                Real ucon_ks[NDIM], ucon_mks[NDIM], u_prim[NDIM];
+                Real ucon_ks[GR_DIM], ucon_mks[GR_DIM], u_prim[GR_DIM];
                 ks.vec_from_bl(Xembed, ucon_bl, ucon_ks);
                 G.coords->con_vec_to_native(X, ucon_ks, ucon_mks);
 
                 // Convert native 4-vector to primitive u-twiddle, see Gammie '04
-                Real gcon[NDIM][NDIM];
+                Real gcon[GR_DIM][GR_DIM];
                 G.gcon(Loci::center, j, i, gcon);
                 fourvel_to_prim(gcon, ucon_mks, u_prim);
 
@@ -137,7 +141,7 @@ void InitializeFMTorus(MeshBlock *pmb, Grid& G, GridVars P, const EOS* eos,
         x += dx;
     }
 
-    pmb->par_for("fm_torus_normalize", 0, pmb->ncells3-1, 0, pmb->ncells2-1, 0, pmb->ncells1-1,
+    pmb->par_for("fm_torus_normalize", 0, n3-1, 0, n2-1, 0, n1-1,
         KOKKOS_LAMBDA_3D {
             P(prims::rho, k, j, i) /= rho_max;
             P(prims::u, k, j, i) /= rho_max;
@@ -155,17 +159,21 @@ void InitializeFMTorus(MeshBlock *pmb, Grid& G, GridVars P, const EOS* eos,
  */
 void PerturbU(MeshBlock *pmb, GridVars P, Real u_jitter, int rng_seed=31337)
 {
+    int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
+    int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
+    int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
+
     // Initialize RNG
     std::mt19937 gen(rng_seed);
     std::uniform_real_distribution<Real> dis(-u_jitter/2, u_jitter/2);
 
-    for(int k=0; k < pmb->ncells3; k++)
-        for(int j=0; j < pmb->ncells2; j++)
-            for(int i=0; i < pmb->ncells3; i++)
+    for(int k=0; k < n3; k++)
+        for(int j=0; j < n2; j++)
+            for(int i=0; i < n3; i++)
                 P(prims::u, k, j, i) *= 1. + u_jitter * dis(gen);
 
     // TODO option for parallel
-    // pmb->par_for("perturb_u", 0, pmb->ncells3-1, 0, pmb->ncells2-1, 0, pmb->ncells1-1,
+    // pmb->par_for("perturb_u", 0, n3-1, 0, n2-1, 0, n1-1,
     //     KOKKOS_LAMBDA_3D {
     //         P(prims::u, k, j, i) *= 1. + u_jitter * dis(gen);
     //     }

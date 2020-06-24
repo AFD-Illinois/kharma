@@ -4,7 +4,8 @@
 #include "mesh/mesh.hpp"
 
 #include "fixup.hpp"
-#include "grid.hpp"
+#include "floors.hpp"
+#include "gr_coordinates.hpp"
 #include "phys.hpp"
 
 // Problem initialization headers
@@ -17,29 +18,31 @@
 using namespace parthenon;
 
 /**
- * Override a parthenon method to generate the section of a problem redisiding in a given mesh block.
+ * Generate the initial condition on a meshblock
  *
  * This takes care of calling a problem initialization method with the correct parameters, then initializing the
  * conserved versions of variables from the problem's primitives, and syncing ghost zones for the first time.
  */
-void MeshBlock::ProblemGenerator(ParameterInput *pin)
+void InitializeProblem(ParameterInput *pin, MeshBlock *pmb)
 {
-    auto pmb = this;
     auto rc = pmb->real_containers.Get();
+    int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
+    int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
+    int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
     GridVars P = rc.Get("c.c.bulk.prims").data;
     GridVars U = rc.Get("c.c.bulk.cons").data;
 
-    Grid G(pmb);
+    GRCoordinates G = pmb->coords;
     Real gamma = pmb->packages["GRMHD"]->Param<Real>("gamma");
-    EOS* eos = new GammaLaw(gamma);
+    EOS* eos = CreateEOS(gamma);
 
-    auto prob = pin->GetString("parthenon/job", "problem_id"); // Required
+    auto prob = pin->GetString("parthenon/job", "problem_id"); // Required parameter
     if (prob == "mhdmodes") {
         int nmode = pin->GetOrAddInteger("mhdmodes", "nmode", 1);
         int dir = pin->GetOrAddInteger("mhdmodes", "dir", 0);
 
         Real tf = InitializeMHDModes(pmb, G, P, nmode, dir);
-        pin->SetReal("parthenon/time", "tlim", tf); // TODO if this doesn't work push it upstream as an issue
+        pin->SetReal("parthenon/time", "tlim", tf);
 
     } else if (prob == "bondi") {
         Real mdot = pin->GetOrAddReal("bondi", "mdot", 1.0);
@@ -76,7 +79,7 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin)
     }
 
     // Initialize U
-    pmb->par_for("first_U", 0, pmb->ncells3-1, 0, pmb->ncells2-1, 0, pmb->ncells1-1,
+    pmb->par_for("first_U", 0, n3-1, 0, n2-1, 0, n1-1,
         KOKKOS_LAMBDA_3D {
             FourVectors Dtmp;
             get_state(G, P, k, j, i, Loci::center, Dtmp);
@@ -87,5 +90,5 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin)
     // Make sure any zero zones get floored before beginning driver
     ApplyFloors(rc);
 
-    FLAG("Initialized MeshBlock"); // TODO this called in every meshblock.  Avoid the spam somehow
+    FLAG("Initialized Problem"); // TODO this called in every meshblock.  Avoid the spam somehow
 }

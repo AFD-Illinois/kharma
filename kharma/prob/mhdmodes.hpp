@@ -23,8 +23,12 @@ using namespace parthenon;
  *
  * Returns the stopping time corresponding to advection by 1 period
  */
-Real InitializeMHDModes(MeshBlock *pmb, Grid G, GridVars P, int nmode, int dir)
+Real InitializeMHDModes(MeshBlock *pmb, GRCoordinates G, GridVars P, int nmode, int dir)
 {
+    int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
+    int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
+    int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
+
     // Mean state
     Real rho0 = 1.;
     Real u0 = 1.;  // TODO set U{n} on the fly for boosted entropy test
@@ -198,9 +202,9 @@ Real InitializeMHDModes(MeshBlock *pmb, Grid G, GridVars P, int nmode, int dir)
         tf = -1;
     }
 
-    pmb->par_for("mhdmodes_init", 0, pmb->ncells3-1, 0, pmb->ncells2-1, 0, pmb->ncells1-1,
+    pmb->par_for("mhdmodes_init", 0, n3-1, 0, n2-1, 0, n1-1,
         KOKKOS_LAMBDA_3D {
-            Real X[NDIM];
+            Real X[GR_DIM];
             G.coord(k, j, i, Loci::center, X);
 
             Real mode = amp * cos(k1 * X[1] + k2 * X[2] + k3 * X[3]);

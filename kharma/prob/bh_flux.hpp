@@ -6,14 +6,14 @@
 // Add flux to BH horizon
 // Applicable to any Kerr-space GRMHD sim, run after import/initialization
 // Preserves divB==0 with Flux-CT step at end
-void SeedBHFlux(MeshBlock *pmb, Grid G, GridVars P, Real BHflux)
+void SeedBHFlux(MeshBlock *pmb, GRCoordinates G, GridVars P, Real BHflux)
 {
     // This adds a central flux based on specifying some BHflux
     // Initialize a net magnetic field inside the initial torus
     // TODO do this only for BHflux > SMALL
     pmb->par_for("BHflux_A", 0, N2, 0, N1,
         KOKKOS_LAMBDA_2D {
-            Real Xembed[NDIM];
+            Real Xembed[GR_DIM];
             G.coord_embed(k, j, i, Loci::corner, Xembed);
             Real r = Xembed[1], th = Xembed[2];
 
@@ -39,7 +39,7 @@ void SeedBHFlux(MeshBlock *pmb, Grid G, GridVars P, Real BHflux)
             // TODO coord, some distance to M_PI/2
             if (jglobal == N2TOT / 2)
             {
-                Real Xembed[NDIM];
+                Real Xembed[GR_DIM];
                 G.coord(k, j, i, Loci::center, Xembed);
                 Real r = Xembed[1], th = Xembed[2];
 
@@ -72,7 +72,7 @@ void SeedBHFlux(MeshBlock *pmb, Grid G, GridVars P, Real BHflux)
 
     norm = BHflux / (Phi + TINY_NUMBER);
 
-    pmb->par_for("BHflux_B", 0, pmb->ncells3-1, 0, pmb->ncells2-1, 0, pmb->ncells1-1,
+    pmb->par_for("BHflux_B", 0, n3-1, 0, n2-1, 0, n1-1,
         KOKKOS_LAMBDA_3D {
             // Flux-ct
             P(prims::B1, k, j, i) += -norm * (A(j, i) - A(j + 1, i) + A(j, i + 1) - A(j + 1, i + 1)) /

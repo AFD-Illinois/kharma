@@ -15,13 +15,13 @@ KOKKOS_INLINE_FUNCTION Real err_eqn(const EOS* eos, const Real Bsq, const Real D
                                     const Real Qtsq, const Real Wp, InversionStatus &eflag);
 KOKKOS_INLINE_FUNCTION Real gamma_func(const Real Bsq, const Real D, const Real QdB,
                                         const Real Qtsq, const Real Wp, InversionStatus &eflag);
-KOKKOS_INLINE_FUNCTION Real Wp_func(const Grid &G, const GridVars P, const EOS* eos,
+KOKKOS_INLINE_FUNCTION Real Wp_func(const GRCoordinates &G, const GridVars P, const EOS* eos,
                                     const int& k, const int& j, const int& i, const Loci loc, InversionStatus &eflag);
 
 /**
  * Recover primitive variables
  */
-KOKKOS_INLINE_FUNCTION InversionStatus U_to_P(const Grid &G, const GridVars U, const EOS* eos,
+KOKKOS_INLINE_FUNCTION InversionStatus U_to_P(const GRCoordinates &G, const GridVars U, const EOS* eos,
                                   const int& k, const int& j, const int& i, const Loci loc, GridVars P)
 {
     InversionStatus eflag = InversionStatus::success;
@@ -46,21 +46,21 @@ KOKKOS_INLINE_FUNCTION InversionStatus U_to_P(const Grid &G, const GridVars U, c
     Real a_over_g = 1./sqrt(-G.gcon(loc, j, i, 0, 0)) / G.gdet(loc, j, i);
     Real D = U(prims::rho, k, j, i) * a_over_g;
 
-    Real Bcon[NDIM];
+    Real Bcon[GR_DIM];
     Bcon[0] = 0.;
     Bcon[1] = U(prims::B1, k, j, i) * a_over_g;
     Bcon[2] = U(prims::B2, k, j, i) * a_over_g;
     Bcon[3] = U(prims::B3, k, j, i) * a_over_g;
 
-    Real Qcov[NDIM];
+    Real Qcov[GR_DIM];
     Qcov[0] = (U(prims::u, k, j, i) - U(prims::rho, k, j, i)) * a_over_g;
     Qcov[1] = U(prims::u1, k, j, i) * a_over_g;
     Qcov[2] = U(prims::u2, k, j, i) * a_over_g;
     Qcov[3] = U(prims::u3, k, j, i) * a_over_g;
 
-    Real ncov[NDIM] = {(Real) -1./sqrt(-G.gcon(loc, j, i, 0, 0)), 0, 0, 0};
+    Real ncov[GR_DIM] = {(Real) -1./sqrt(-G.gcon(loc, j, i, 0, 0)), 0, 0, 0};
 
-    Real Bcov[NDIM], Qcon[NDIM], ncon[NDIM];
+    Real Bcov[GR_DIM], Qcon[GR_DIM], ncon[GR_DIM];
     G.lower(Bcon, Bcov, k, j, i, loc);
     G.raise(Qcov, Qcon, k, j, i, loc);
     G.raise(ncov, ncon, k, j, i, loc);
@@ -69,7 +69,7 @@ KOKKOS_INLINE_FUNCTION InversionStatus U_to_P(const Grid &G, const GridVars U, c
     Real QdB = dot(Bcon, Qcov);
     Real Qdotn = dot(Qcon, ncov);
 
-    Real Qtcon[NDIM];
+    Real Qtcon[GR_DIM];
     DLOOP1 Qtcon[mu] = Qcon[mu] + ncon[mu] * Qdotn;
     Real Qtsq = dot(Qcon, Qcov) + pow(Qdotn, 2);
 
@@ -214,7 +214,7 @@ KOKKOS_INLINE_FUNCTION Real gamma_func(const Real Bsq, const Real D, const Real 
  * See Mignone & McKinney
  * TODO make local?  Index stuff seems weird
  */
-KOKKOS_INLINE_FUNCTION Real Wp_func(const Grid &G, const GridVars P, const EOS* eos,
+KOKKOS_INLINE_FUNCTION Real Wp_func(const GRCoordinates &G, const GridVars P, const EOS* eos,
                                     const int& k, const int& j, const int& i, const Loci loc, InversionStatus &eflag)
 {
     Real rho0 = P(prims::rho, k, j, i);

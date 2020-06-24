@@ -12,15 +12,8 @@
 #include "coordinate_systems.hpp"
 #include "harm.hpp"
 #include "mpi.hpp"
+#include "problem.hpp"
 #include "seed_B.hpp"
-
-// Warn once *during compile* specifying whether CUDA is being used
-// This catches a lot of configuration mistakes
-#if defined( Kokkos_ENABLE_CUDA )
-#warning "Compiling with CUDA"
-#else
-#warning "Compiling with OpenMP Only"
-#endif
 
 #if DEBUG
 #warning "Compiling with debug"
@@ -99,6 +92,18 @@ int main(int argc, char *argv[])
     ShowConfig();
 
     auto pin = pman.pinput.get();
+    // Initialize the problem on each meshblock
+    // TODO this is *instead* of defining MeshBlock::ProblemGenerator,
+    // which means that initial auto-refinement will *NOT* work.
+    // we're a ways from AMR yet so we'll cross that bridge etc.
+    MeshBlock *pmb = pman.pmesh->pblock;
+    while (pmb != nullptr) {
+        // Initialize the block
+        InitializeProblem(pin, pmb);
+        pmb = pmb->next;
+    }
+
+    // Normalize the field in a 2nd pass for torus problems
     if (pin->GetString("parthenon/job", "problem_id") == "torus" &&
         pin->GetOrAddString("torus", "b_field_type", "none") != "none") {
         // Normalize the magnetic field by first calculating the global min beta...
@@ -123,13 +128,7 @@ int main(int argc, char *argv[])
 
     HARMDriver driver(pin, pman.pmesh.get());
 
-    // start a timer
-    pman.PreDriver();
-
     auto driver_status = driver.Execute();
-
-    // Make final outputs, print diagnostics
-    pman.PostDriver(driver_status);
 
     // call MPI_Finalize if necessary
     pman.ParthenonFinalize();

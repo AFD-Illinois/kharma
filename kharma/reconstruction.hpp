@@ -5,8 +5,6 @@
  */
 #pragma once
 
-#include "athena.hpp"
-
 #include "decs.hpp"
 
 using namespace parthenon;
@@ -23,8 +21,12 @@ void WENO5X1(Container<Real>& rc, ParArrayND<Real> Pl, ParArrayND<Real> Pr)
     FLAG("Recon X1");
     auto& P = rc.Get("c.c.bulk.prims").data;
     auto pmb = rc.pmy_block;
+    IndexDomain domain = IndexDomain::interior;
+    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
+    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
+    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
 
-    pmb->par_for("recon_1", 0, NPRIM-1, pmb->ks-1, pmb->ke+1, pmb->js-1, pmb->je+1, pmb->is-1, pmb->ie+1,
+    pmb->par_for("recon_1", 0, NPRIM-1, ks-1, ke+1, js-1, je+1, is-1, ie+1,
         KOKKOS_LAMBDA_VARS
         {
             weno5(P(p, k, j, i-2), P(p, k, j, i-1), P(p, k, j, i),
@@ -38,8 +40,12 @@ void WENO5X2(Container<Real>& rc, ParArrayND<Real> Pl, ParArrayND<Real> Pr)
     FLAG("Recon X2");
     auto& P = rc.Get("c.c.bulk.prims").data;
     auto pmb = rc.pmy_block;
+    IndexDomain domain = IndexDomain::interior;
+    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
+    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
+    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
 
-    pmb->par_for("recon_2", 0, NPRIM-1, pmb->ks-1, pmb->ke+1, pmb->js-1, pmb->je+1, pmb->is-1, pmb->ie+1,
+    pmb->par_for("recon_2", 0, NPRIM-1, ks-1, ke+1, js-1, je+1, is-1, ie+1,
         KOKKOS_LAMBDA_VARS
         {
             weno5(P(p, k, j-2, i), P(p, k, j-1, i), P(p, k, j, i),
@@ -53,8 +59,12 @@ void WENO5X3(Container<Real>& rc, ParArrayND<Real> Pl, ParArrayND<Real> Pr)
     FLAG("Recon X3");
     auto& P = rc.Get("c.c.bulk.prims").data;
     auto pmb = rc.pmy_block;
+    IndexDomain domain = IndexDomain::interior;
+    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
+    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
+    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
 
-    pmb->par_for("recon_3", 0, NPRIM-1, pmb->ks-1, pmb->ke+1, pmb->js-1, pmb->je+1, pmb->is-1, pmb->ie+1,
+    pmb->par_for("recon_3", 0, NPRIM-1, ks-1, ke+1, js-1, je+1, is-1, ie+1,
         KOKKOS_LAMBDA_VARS
         {
             weno5(P(p, k-2, j, i), P(p, k-1, j, i), P(p, k, j, i),

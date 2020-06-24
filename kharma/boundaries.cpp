@@ -2,8 +2,14 @@
 
 #include "decs.hpp"
 
+#include "boundaries.hpp"
+
 #include "bondi.hpp"
 #include "phys.hpp"
+
+#include "basic_types.hpp"
+#include "mesh/domain.hpp"
+#include "mesh/mesh.hpp"
 
 TaskStatus ApplyCustomBoundaries(Container<Real>& rc)
 {
@@ -26,9 +32,9 @@ TaskStatus ApplyCustomBoundaries(Container<Real>& rc)
  *
  * @param type: 0 to check outflow from EH, 1 to check inflow from outer edge
  */
-KOKKOS_INLINE_FUNCTION void check_inflow(Grid &G, GridVars P, const int& k, const int& j, const int& i, int type)
+KOKKOS_INLINE_FUNCTION void check_inflow(GRCoordinates &G, GridVars P, const int& k, const int& j, const int& i, int type)
 {
-    Real ucon[NDIM];
+    Real ucon[GR_DIM];
     ucon_calc(G, P, k, j, i, Loci::center, ucon);
 
     if (((ucon[1] > 0.) && (type == 0)) ||
@@ -62,16 +68,23 @@ KOKKOS_INLINE_FUNCTION void check_inflow(Grid &G, GridVars P, const int& k, cons
 void FixFlux(Container<Real>& rc)
 {
     MeshBlock *pmb = rc.pmy_block;
-    GridVars F1 = rc.Get("c.c.bulk.cons").flux[0];
-    GridVars F2 = rc.Get("c.c.bulk.cons").flux[1];
-    GridVars F3 = rc.Get("c.c.bulk.cons").flux[2];
+    GridVars F1 = rc.Get("c.c.bulk.cons").flux[X1DIR];
+    GridVars F2 = rc.Get("c.c.bulk.cons").flux[X2DIR];
+    GridVars F3 = rc.Get("c.c.bulk.cons").flux[X3DIR];
 
-    int NG = pmb->cnghost, N1 = pmb->ncells1, N2 = pmb->ncells2;
+    IndexDomain domain = IndexDomain::interior;
+    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
+    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
+    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
+
+    int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
+    int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
+    int NG = NGHOST;
 
     // TODO check mesh block location
     //if (first in X1 and now inflow X1L)
     {
-        pmb->par_for("fix_flux_in_l", pmb->ks, pmb->ke, pmb->js, pmb->je,
+        pmb->par_for("fix_flux_in_l", ks, ke, js, je,
             KOKKOS_LAMBDA (const int& k, const int& j) {
                 F1(prims::rho, k, j, 0 + NG) = min(F1(prims::rho, k, j, 0 + NG), 0.);
             }
@@ -80,16 +93,16 @@ void FixFlux(Container<Real>& rc)
 
     //if (last in X1 and no inflow X1R)
     {
-        pmb->par_for("fix_flux_in_r", pmb->ks, pmb->ke, pmb->js, pmb->je,
+        pmb->par_for("fix_flux_in_r", ks, ke, js, je,
             KOKKOS_LAMBDA (const int& k, const int& j) {
-                F1(prims::rho, k, j, N1 + NG) = min(F1(prims::rho, k, j, N1 + NG), 0.);
+                F1(prims::rho, k, j, n1 + NG) = min(F1(prims::rho, k, j, n1 + NG), 0.);
             }
         );
     }
 
     //if (first in X2)
     {
-        pmb->par_for("fix_flux_b_l", pmb->ks, pmb->ke, pmb->is, pmb->ie,
+        pmb->par_for("fix_flux_b_l", ks, ke, is, ie,
             KOKKOS_LAMBDA (const int& k, const int& i) {
                 F1(prims::B2, k, -1 + NG, i) = -F1(prims::B2, k, 0 + NG, i);
                 F3(prims::B2, k, -1 + NG, i) = -F3(prims::B2, k, 0 + NG, i);
@@ -100,11 +113,11 @@ void FixFlux(Container<Real>& rc)
 
     //if (last in X2)
     {
-        pmb->par_for("fix_flux_b_r", pmb->ks, pmb->ke, pmb->is, pmb->ie,
+        pmb->par_for("fix_flux_b_r", ks, ke, is, ie,
             KOKKOS_LAMBDA (const int& k, const int& i) {
-                F1(prims::B2, k, N2 + NG, i) = -F1(prims::B2, k, N2 - 1 + NG, i);
-                F3(prims::B2, k, N2 + NG, i) = -F3(prims::B2, k, N2 - 1 + NG, i);
-                PLOOP F2(p, k, N2 + NG, i) = 0.;
+                F1(prims::B2, k, n2 + NG, i) = -F1(prims::B2, k, n2 - 1 + NG, i);
+                F3(prims::B2, k, n2 + NG, i) = -F3(prims::B2, k, n2 - 1 + NG, i);
+                PLOOP F2(p, k, n2 + NG, i) = 0.;
             }
         );
     }

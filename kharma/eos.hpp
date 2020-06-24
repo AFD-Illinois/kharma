@@ -23,3 +23,24 @@ class GammaLaw : public EOS {
         KOKKOS_FUNCTION Real p(Real rho, Real u)   const {return (gam - 1) * u;};
         KOKKOS_FUNCTION Real p_w(Real rho, Real w) const {return (w - rho) * (gam - 1) / gam;}
 };
+
+// Host functions for creating/deleting a device-side EOS function
+// TODO move to cpp
+inline EOS* CreateEOS(Real gamma) {
+        EOS *eos;
+        eos = (EOS*)Kokkos::kokkos_malloc(sizeof(GammaLaw));
+        Kokkos::parallel_for("CreateEOSObject", 1,
+            KOKKOS_LAMBDA(const int&) {
+                new ((GammaLaw*)eos) GammaLaw(gamma);
+            }
+        );
+        return eos;
+}
+inline void DelEOS(EOS* eos) {
+    Kokkos::parallel_for("DestroyEOSObject", 1,
+        KOKKOS_LAMBDA(const int&) {
+            eos->~EOS();
+        }
+    );
+    Kokkos::kokkos_free(eos);
+}

@@ -23,24 +23,32 @@ void LRToFlux(Container<Real>& rc, GridVars pl, GridVars pr, const int dir, Grid
 {
     FLAG("LR to flux");
     MeshBlock *pmb = rc.pmy_block;
+    IndexDomain domain = IndexDomain::interior;
+    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
+    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
+    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
+    int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
+    int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
+    int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
 
-    GridVars pll("pll", NPRIM, pmb->ncells3, pmb->ncells2, pmb->ncells1);
+    GRCoordinates G = pmb->coords;
+
+    GridVars pll("pll", NPRIM, n3, n2, n1);
 
     auto& ctop = rc.GetFace("f.f.bulk.ctop").data;
 
     // So far we don't need fluxes that don't match faces
     Loci loc;
 
-    // TODO *sigh*
-    Grid G(pmb);
+    // TODO don't construct EOSes.  Somehow.
     Real gamma = pmb->packages["GRMHD"]->Param<Real>("gamma");
-    EOS* eos = new GammaLaw(gamma);
+    EOS* eos = CreateEOS(gamma);
 
     // Offset "left" variables by one zone to line up L- and R-fluxes at *faces*
     // TODO can this be done without a copy/temporary? Fewer ranks?
     switch (dir) {
     case 1:
-        pmb->par_for("offset_left_1", 0, NPRIM-1, pmb->ks-1, pmb->ke+1, pmb->js-1, pmb->je+1, pmb->is-1, pmb->ie+1,
+        pmb->par_for("offset_left_1", 0, NPRIM-1, ks-1, ke+1, js-1, je+1, is-1, ie+1,
             KOKKOS_LAMBDA_VARS {
                 pll(p, k, j, i) = pl(p, k, j, i-1);
             }
@@ -48,7 +56,7 @@ void LRToFlux(Container<Real>& rc, GridVars pl, GridVars pr, const int dir, Grid
         loc = Loci::face1;
         break;
     case 2:
-        pmb->par_for("offset_left_2", 0, NPRIM-1, pmb->ks-1, pmb->ke+1, pmb->js-1, pmb->je+1, pmb->is-1, pmb->ie+1,
+        pmb->par_for("offset_left_2", 0, NPRIM-1, ks-1, ke+1, js-1, je+1, is-1, ie+1,
             KOKKOS_LAMBDA_VARS {
                 pll(p, k, j, i) = pl(p, k, j-1, i);
             }
@@ -56,7 +64,7 @@ void LRToFlux(Container<Real>& rc, GridVars pl, GridVars pr, const int dir, Grid
         loc = Loci::face2;
         break;
     case 3:
-        pmb->par_for("offset_left_3", 0, NPRIM-1, pmb->ks-1, pmb->ke+1, pmb->js-1, pmb->je+1, pmb->is-1, pmb->ie+1,
+        pmb->par_for("offset_left_3", 0, NPRIM-1, ks-1, ke+1, js-1, je+1, is-1, ie+1,
             KOKKOS_LAMBDA_VARS {
                 pll(p, k, j, i) = pl(p, k-1, j, i);
             }
@@ -70,7 +78,7 @@ void LRToFlux(Container<Real>& rc, GridVars pl, GridVars pr, const int dir, Grid
     FLAG("Left offset");
 
     //  LOOP FUSION BABY
-    pmb->par_for("uber_flux", pmb->ks-1, pmb->ke+1, pmb->js-1, pmb->je+1, pmb->is-1, pmb->ie+1,
+    pmb->par_for("uber_flux", ks-1, ke+1, js-1, je+1, is-1, ie+1,
             KOKKOS_LAMBDA_3D {
                 FourVectors Dtmp;
                 Real cmaxL, cmaxR, cminL, cminR;
@@ -109,19 +117,18 @@ double MaxDivB(Container<Real>& rc)
 {
     FLAG("Calculating divB");
     MeshBlock *pmb = rc.pmy_block;
-    auto is = pmb->is, js = pmb->js, ks = pmb->ks;
-    auto ie = pmb->ie, je = pmb->je, ke = pmb->ke;
-    auto dx1v = pmb->pcoord->dx1v;
-    auto dx2v = pmb->pcoord->dx2v;
-    auto dx3v = pmb->pcoord->dx3v;
-    GridVars P = rc.Get("c.c.bulk.prims").data;
+    IndexDomain domain = IndexDomain::interior;
+    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
+    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
+    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
 
-    Grid G(pmb);
+    GRCoordinates G = pmb->coords;
+    GridVars P = rc.Get("c.c.bulk.prims").data;
 
     double max_divb;
     Kokkos::Max<double> max_reducer(max_divb);
     Kokkos::parallel_reduce("divB", Kokkos::MDRangePolicy<Kokkos::Rank<3>>({is, js, ks}, {ie, je, ke}),
-        KOKKOS_LAMBDA (const int &i, const int &j, const int &k, double &local_max_divb) {
+        KOKKOS_LAMBDA_3D_REDUCE {
             double local_divb = fabs(0.25*(
                             P(prims::B1, k, j, i) * G.gdet(Loci::center, j, i)
                             + P(prims::B1, k, j-1, i) * G.gdet(Loci::center, j-1, i)
@@ -131,7 +138,7 @@ double MaxDivB(Container<Real>& rc)
                             - P(prims::B1, k, j-1, i-1) * G.gdet(Loci::center, j-1, i-1)
                             - P(prims::B1, k-1, j, i-1) * G.gdet(Loci::center, j, i-1)
                             - P(prims::B1, k-1, j-1, i-1) * G.gdet(Loci::center, j-1, i-1)
-                            )/dx1v(i) +
+                            )/G.dx1v(i) +
                             0.25*(
                             P(prims::B2, k, j, i) * G.gdet(Loci::center, j, i)
                             + P(prims::B2, k, j, i-1) * G.gdet(Loci::center, j, i-1)
@@ -141,7 +148,7 @@ double MaxDivB(Container<Real>& rc)
                             - P(prims::B2, k, j-1, i-1) * G.gdet(Loci::center, j-1, i-1)
                             - P(prims::B2, k-1, j-1, i) * G.gdet(Loci::center, j-1, i)
                             - P(prims::B2, k-1, j-1, i-1) * G.gdet(Loci::center, j-1, i-1)
-                            )/dx2v(j) +
+                            )/G.dx2v(j) +
                             0.25*(
                             P(prims::B3, k, j, i) * G.gdet(Loci::center, j, i)
                             + P(prims::B3, k, j-1, i) * G.gdet(Loci::center, j-1, i)
@@ -151,8 +158,8 @@ double MaxDivB(Container<Real>& rc)
                             - P(prims::B3, k-1, j-1, i) * G.gdet(Loci::center, j-1, i)
                             - P(prims::B3, k-1, j, i-1) * G.gdet(Loci::center, j, i-1)
                             - P(prims::B3, k-1, j-1, i-1) * G.gdet(Loci::center, j-1, i-1)
-                            )/dx3v(k));
-            if (local_divb > local_max_divb) local_max_divb = local_divb;
+                            )/G.dx3v(k));
+            if (local_divb > local_result) local_result = local_divb;
         }
     , max_reducer);
 

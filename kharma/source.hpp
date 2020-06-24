@@ -4,11 +4,11 @@
 #include "decs.hpp"
 #include "phys.hpp"
 
-KOKKOS_INLINE_FUNCTION void get_fluid_source(const Grid &G, const GridVars P, const FourVectors& D,
+KOKKOS_INLINE_FUNCTION void get_fluid_source(const GRCoordinates &G, const GridVars P, const FourVectors& D,
                       const EOS* eos, const int& k, const int& j, const int& i, Real dU[NPRIM], bool wind=false)
 {
     // Get T^mu_nu
-    Real mhd[NDIM][NDIM];
+    Real mhd[GR_DIM][GR_DIM];
     DLOOP1 mhd_calc(P, D, eos, k, j, i, mu, mhd[mu]);
 
     // Initialize
@@ -24,7 +24,7 @@ KOKKOS_INLINE_FUNCTION void get_fluid_source(const Grid &G, const GridVars P, co
         Real dP[8], dUw[8];
         FourVectors dD;
         // TODO grab this after ensuring embedding coords are spherical
-        GReal Xembed[NDIM];
+        GReal Xembed[GR_DIM];
         G.coord_embed(k, j, i, Loci::center, Xembed);
         GReal r = Xembed[1], th = Xembed[2];
 

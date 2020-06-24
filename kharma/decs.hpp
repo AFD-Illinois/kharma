@@ -9,7 +9,8 @@
 #include "Kokkos_Core.hpp"
 
 // Parthenon defs
-#include "athena.hpp"
+#include "parthenon_arrays.hpp"
+#include "parthenon_mpi.hpp"
 
 // Stuff that's useful across the whole code
 #define VERSION "kharma-alpha-0.1"
@@ -20,18 +21,18 @@ using GReal = double;
 
 // TODO make this MPI-aware
 // TODO add make.sh/CMake option for tracing directly
-#if DEBUG_TRACE
+#if DEBUG
 #define FLAG(x) std::cout << x << std::endl;
 #else
 #define FLAG(x)
 #endif
 
 // TODO split out GR header with these?
-#define NDIM 4
-#define DLOOP1 for(int mu = 0; mu < NDIM; ++mu)
-#define DLOOP2 DLOOP1 for(int nu = 0; nu < NDIM; ++nu)
-#define DLOOP3 DLOOP2 for(int lam = 0; lam < NDIM; ++lam)
-#define DLOOP4 DLOOP3 for(int kap = 0; kap < NDIM; ++kap)
+#define GR_DIM 4
+#define DLOOP1 for(int mu = 0; mu < GR_DIM; ++mu)
+#define DLOOP2 DLOOP1 for(int nu = 0; nu < GR_DIM; ++nu)
+#define DLOOP3 DLOOP2 for(int lam = 0; lam < GR_DIM; ++lam)
+#define DLOOP4 DLOOP3 for(int kap = 0; kap < GR_DIM; ++kap)
 
 // Useful Enums to avoid lots of #defines. TODO move to suitable headers
 #define NLOC 5
@@ -71,10 +72,10 @@ using GeomTensor3 = parthenon::ParArrayND<Real>;
 
 // Struct for derived 4-vectors at a point, usually calculated and needed together
 typedef struct {
-    parthenon::Real ucon[NDIM];
-    parthenon::Real ucov[NDIM];
-    parthenon::Real bcon[NDIM];
-    parthenon::Real bcov[NDIM];
+    parthenon::Real ucon[GR_DIM];
+    parthenon::Real ucov[GR_DIM];
+    parthenon::Real bcon[GR_DIM];
+    parthenon::Real bcov[GR_DIM];
 } FourVectors;
 
 // Denote inversion failures (pflags). See U_to_P for status explanations

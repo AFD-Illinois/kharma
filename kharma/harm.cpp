@@ -26,17 +26,21 @@ namespace parthenon {
         Packages_t packages;
 
         // Turn off GRMHD only if set to false in input file
-        bool do_grmhd = pin->GetOrAddBoolean("Physics", "GRMHD", true);
-        bool do_electrons = pin->GetOrAddBoolean("Physics", "howes_electrons", false);
+        bool do_grmhd = pin->GetOrAddBoolean("Packages", "GRMHD", true);
+        bool do_grhd = pin->GetOrAddBoolean("Packages", "GRHD", false);
+        bool do_electrons = pin->GetOrAddBoolean("Packages", "howes_electrons", false);
 
         // enable other packages as needed
-        bool do_scalars = pin->GetOrAddBoolean("Physics", "scalars", false);
+        bool do_scalars = pin->GetOrAddBoolean("Packages", "scalars", false);
 
+        // Just one base package: integrated B-fields, or not.
         if (do_grmhd) {
             packages["GRMHD"] = GRMHD::Initialize(pin.get());
+        } else if (do_grhd) {
+
         }
 
-        // TODO scalars. Or will Parthenon?
+        // Scalars can be added 
         // if (do_scalars) {
         //     packages["scalars"] = BetterScalars::Initialize(pin.get());
         // }

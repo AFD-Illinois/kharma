@@ -23,8 +23,12 @@ TaskStatus CopyField(std::string& var, Container<Real>& rc0, Container<Real>& rc
     MeshBlock *pmb = rc0.pmy_block;
     GridVars v0 = rc0.Get(var).data;
     GridVars v1 = rc1.Get(var).data;
+    IndexDomain domain = IndexDomain::interior;
+    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
+    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
+    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
 
-    pmb->par_for("copy_field", 0, NPRIM-1, pmb->ks, pmb->ke, pmb->js, pmb->je, pmb->is, pmb->ie,
+    pmb->par_for("copy_field", 0, NPRIM-1, ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_VARS {
             v1(p, k, j, i) = v0(p, k, j, i);
         }
