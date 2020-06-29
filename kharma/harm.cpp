@@ -135,7 +135,7 @@ TaskList HARMDriver::MakeTaskList(MeshBlock *pmb, int stage)
     // TODO add physical inflow check to ApplyCustomBoundaries
     auto set_parthenon_bc = AddContainerTask(tl, parthenon::ApplyBoundaryConditions,
                                             prolong_bound, sc1);
-    auto set_custom_bc = AddContainerTask(tl, ApplyCustomBoundaries, set_parthenon_bc, sc1);
+    auto set_custom_bc = AddContainerTask(tl, ApplyCustomBoundaries, prolong_bound, sc1);
 
     // Fill primitives, bringing U and P back into lockstep
     auto fill_derived = AddContainerTask(tl, parthenon::FillDerivedVariables::FillDerived,

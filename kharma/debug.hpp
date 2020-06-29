@@ -1,10 +1,10 @@
-
+// Debug tools
+#pragma once
 
 #include "decs.hpp"
 
 #include "mesh/mesh.hpp"
 
-using namespace parthenon;
 using namespace std;
 
 template<typename T>
@@ -89,3 +89,5 @@ void CountFFlags(MeshBlock *pmb, T fflag, IndexDomain domain=IndexDomain::interi
     if (n_ktot > 0) cerr << "KTOT: " << n_ktot << endl;
     cerr << endl;
 }
+
+double MaxDivB(Container<Real>& rc);

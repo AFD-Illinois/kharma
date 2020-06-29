@@ -14,7 +14,7 @@ using namespace std;
 
 // Option to ignore coordinates entirely,
 // and only use flat-space SR in Cartesian coordinates
-#define FAST_CARTESIAN 1
+#define FAST_CARTESIAN 0
 // Don't cache values of the metric, etc, just call into CoordinateEmbedding directly
 #define NO_CACHE 0
 
@@ -22,20 +22,21 @@ using namespace std;
  * Parthenon's UniformCartesian coordinate class keeps, for each meshblock,
  * cell locations on a global X,Y,Z grid.
  * We wish to map these "logically-Cartesian" coordinates to volumes of interest,
- * and luckily General Relativity makes this easy.
+ * with differential geometry and lots of caching
  */
 class GRCoordinates : public UniformCartesian
 {
 public:
-    // This will be a pointer to Device memory
-    // It will not be dereference-able in host code
-    CoordinateEmbedding* coords;
+    // Host-side coordinates object pointer
+    CoordinateEmbedding *coords;
 
     // Simple test for spherical coordinates or not
     // Needed for better errors, and switching up floor definitions
     bool spherical;
 
-
+    // UniformCartesian doesn't need domain size.  We do.
+    int n1, n2, n3;
+    // And optionally some caches
 #if FAST_CARTESIAN || NO_CACHE
 #else
     GeomTensor2 gcon_direct, gcov_direct;
@@ -111,7 +112,7 @@ KOKKOS_INLINE_FUNCTION void GRCoordinates::coord(const int& k, const int& j, con
 }
 
 // TODO speed here?  Last remaining coords call in cache system
-#if FAST_CARTESIAN
+#if FAST_CARTESIAN || 1
 KOKKOS_INLINE_FUNCTION void GRCoordinates::coord_embed(const int& k, const int& j, const int& i, const Loci& loc, GReal Xembed[GR_DIM]) const
 {
     // Only supports null transform

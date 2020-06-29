@@ -12,6 +12,9 @@
 
 /**
  * Apply density and internal energy floors and ceilings
+ * 
+ * Note that fixup_ceiling and fixup_floor are called from some other places for most applications
+ * This is still used by initialization (TODO should it be?)
  */
 TaskStatus ApplyFloors(Container<Real>& rc)
 {
@@ -44,6 +47,8 @@ TaskStatus ApplyFloors(Container<Real>& rc)
             fflag(k, j, i) |= fixup_floor(G, P, U, eos, k, j, i);
         }
     );
+
+    DelEOS(eos);
 
 #if DEBUG
     // Print some diagnostic info about which floors were hit

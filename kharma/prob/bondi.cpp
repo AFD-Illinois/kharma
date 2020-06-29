@@ -12,8 +12,8 @@
 
 using namespace std;
 
-KOKKOS_INLINE_FUNCTION void get_prim_bondi(const GRCoordinates& G, GridVars P, const EOS* eos, const Real mdot, const Real rs,
-                                            const int& k, const int& j, const int& i);
+KOKKOS_INLINE_FUNCTION void get_prim_bondi(const GRCoordinates& G, const CoordinateEmbedding& coords, GridVars P, const EOS* eos, const SphBLCoords& bl,  const SphKSCoords& ks, 
+                                            const Real mdot, const Real rs, const int& k, const int& j, const int& i);
 
 /**
  * Initialization of a Bondi problem with specified sonic point, BH mdot, and horizon radius
@@ -27,11 +27,15 @@ void InitializeBondi(MeshBlock *pmb, const GRCoordinates& G, GridVars P,
     int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
     int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
 
+    SphKSCoords ks = mpark::get<SphKSCoords>(G.coords->base);
+    SphBLCoords bl = SphBLCoords(ks.a);
+    CoordinateEmbedding cs = *(G.coords);
     pmb->par_for("init_bondi", 0, n3-1, 0, n2-1, 0, n1-1,
         KOKKOS_LAMBDA_3D {
-            get_prim_bondi(G, P, eos, mdot, rs, k, j, i);
+            get_prim_bondi(G, cs, P, eos, bl, ks, mdot, rs, k, j, i);
         }
     );
+    FLAG("Initialized Bondi");
 }
 
 void ApplyBondiBoundary(Container<Real>& rc)
@@ -52,14 +56,19 @@ void ApplyBondiBoundary(Container<Real>& rc)
     EOS* eos = CreateEOS(gamma);
 
     // Just the X1 right boundary
+    SphKSCoords ks = mpark::get<SphKSCoords>(G.coords->base);
+    SphBLCoords bl = SphBLCoords(ks.a);
+    CoordinateEmbedding cs = *(G.coords);
     pmb->par_for("bondi_boundary", 0, n3-1, 0, n2-1, n1 - NGHOST, n1-1,
         KOKKOS_LAMBDA_3D {
             FourVectors Dtmp;
-            get_prim_bondi(G, P, eos, mdot, rs, k, j, i);
+            get_prim_bondi(G, cs, P, eos, bl, ks, mdot, rs, k, j, i);
             get_state(G, P, k, j, i, Loci::center, Dtmp);
             prim_to_flux(G, P, Dtmp, eos, k, j, i, Loci::center, 0, U);
         }
     );
+
+    DelEOS(eos);
 }
 // Adapted from M. Chandra
 KOKKOS_INLINE_FUNCTION Real get_Tfunc(const Real T, const GReal r, const Real C1, const Real C2, const Real n)
@@ -87,13 +96,10 @@ KOKKOS_INLINE_FUNCTION Real get_T(const GReal r, const Real C1, const Real C2, c
     Real epsT = rtol * (Tmin + Tmax);
     while (fabs(Th - T0) > epsT && fabs(Th - T1) > epsT && fabs(fh) > ftol)
     {
-        if (fh * f0 < 0.)
-        {
+        if (fh * f0 < 0.) {
             T0 = Th;
             f0 = fh;
-        }
-        else
-        {
+        } else {
             T1 = Th;
             f1 = fh;
         }
@@ -106,11 +112,11 @@ KOKKOS_INLINE_FUNCTION Real get_T(const GReal r, const Real C1, const Real C2, c
 }
 
 /**
- * Get the Bondi solution at a particular zone.  Templated to be host- or device-side.
+ * Get the Bondi solution at a particular zone.  Can ideally be host- or device-side, but careful of EOS.
  * Note this assumes that there are ghost zones!
  */
-KOKKOS_INLINE_FUNCTION void get_prim_bondi(const GRCoordinates& G, GridVars P, const EOS* eos, const Real mdot, const Real rs,
-                    const int& k, const int& j, const int& i)
+KOKKOS_INLINE_FUNCTION void get_prim_bondi(const GRCoordinates& G, const CoordinateEmbedding& coords, GridVars P, const EOS* eos, const SphBLCoords& bl,  const SphKSCoords& ks, 
+                                            const Real mdot, const Real rs, const int& k, const int& j, const int& i)
 {
     // Solution constants
     // TODO cache these?  State is awful
@@ -120,11 +126,6 @@ KOKKOS_INLINE_FUNCTION void get_prim_bondi(const GRCoordinates& G, GridVars P, c
     Real Tc = -n * pow(Vc, 2) / ((n + 1.) * (n * pow(Vc, 2) - 1.));
     Real C1 = uc * pow(rs, 2) * pow(Tc, n);
     Real C2 = pow(1. + (1. + n) * Tc, 2) * (1. - 2. * mdot / rs + pow(C1, 2) / (pow(rs, 4) * pow(Tc, 2 * n)));
-
-    // TODO this seems awkward.  Is this really the way to use my new tooling?
-    // Note some awkwardness is the fact we need both native coords and embedding r
-    SphKSCoords ks = mpark::get<SphKSCoords>(G.coords->base);
-    SphBLCoords bl = SphBLCoords(ks.a);
 
     GReal X[GR_DIM], Xembed[GR_DIM];
     G.coord(k, j, i, Loci::center, X);
@@ -153,12 +154,12 @@ KOKKOS_INLINE_FUNCTION void get_prim_bondi(const GRCoordinates& G, GridVars P, c
     set_ut(gcov_bl, ucon_bl);
 
     // Then transform that 4-vector to KS, then to native
-    Real ucon_ks[GR_DIM], ucon_mks[GR_DIM], u_prim[GR_DIM];
+    Real ucon_ks[GR_DIM], ucon_mks[GR_DIM];
     ks.vec_from_bl(Xembed, ucon_bl, ucon_ks);
-    G.coords->con_vec_to_native(X, ucon_ks, ucon_mks);
+    coords.con_vec_to_native(X, ucon_ks, ucon_mks);
 
     // Convert native 4-vector to primitive u-twiddle, see Gammie '04
-    Real gcon[GR_DIM][GR_DIM];
+    Real gcon[GR_DIM][GR_DIM], u_prim[GR_DIM];
     G.gcon(Loci::center, j, i, gcon);
     fourvel_to_prim(gcon, ucon_mks, u_prim);
 

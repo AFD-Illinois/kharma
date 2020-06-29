@@ -19,9 +19,8 @@
 using namespace parthenon;
 using GReal = Real;
 
-// Common function for non-invertible coordinate systems
-template<typename Function>
-void root_find(const GReal Xembed[GR_DIM], GReal Xnative[GR_DIM], Function coord_to_embed);
+//template<typename Function>
+//KOKKOS_FUNCTION void root_find(const GReal Xembed[GR_DIM], GReal Xnative[GR_DIM], Function coord_to_embed);
 
 /**
  * EMBEDDING SYSTEMS:
@@ -67,7 +66,7 @@ class SphKSCoords {
         // BH Spin is a property of KS
         const GReal a;
 
-        KOKKOS_FUNCTION SphKSCoords(GReal spin): a(spin) {};
+        SphKSCoords(GReal spin): a(spin) {};
 
         KOKKOS_INLINE_FUNCTION void gcov_embed(const GReal Xembed[GR_DIM], Real gcov[GR_DIM][GR_DIM]) const
         {
@@ -130,7 +129,7 @@ class SphBLCoords {
         // BH Spin is a property of BL
         const GReal a;
 
-        KOKKOS_FUNCTION SphBLCoords(GReal spin): a(spin) {}
+        SphBLCoords(GReal spin): a(spin) {}
 
         KOKKOS_INLINE_FUNCTION void gcov_embed(const GReal Xembed[GR_DIM], Real gcov[GR_DIM][GR_DIM]) const
         {
@@ -244,7 +243,7 @@ class ModifyTransform {
         const GReal hslope;
 
         // Constructor
-        KOKKOS_FUNCTION ModifyTransform(GReal hslope_in): hslope(hslope_in) {}
+        ModifyTransform(GReal hslope_in): hslope(hslope_in) {}
 
         // Coordinate transformations
         // Protect embedding theta from ever hitting 0 or Pi
@@ -277,7 +276,7 @@ class ModifyTransform {
             Xnative[1] = log(Xembed[1]);
             Xnative[3] = Xembed[3];
             // Treat the special case
-            root_find(Xembed, Xnative, &ModifyTransform::coord_to_embed);
+            //root_find(Xembed, Xnative, &ModifyTransform::coord_to_embed);
         }
         /**
          * Transformation matrix for contravariant vectors to embedding, or covariant vectors to native
@@ -313,7 +312,7 @@ class FunkyTransform {
         GReal poly_norm; // TODO make this const and use a wrapper/factory to make these things?
 
         // Constructor
-        KOKKOS_FUNCTION FunkyTransform(GReal startx1_in, GReal hslope_in, GReal mks_smooth_in, GReal poly_xt_in, GReal poly_alpha_in):
+        FunkyTransform(GReal startx1_in, GReal hslope_in, GReal mks_smooth_in, GReal poly_xt_in, GReal poly_alpha_in):
             startx1(startx1_in), hslope(hslope_in), mks_smooth(mks_smooth_in), poly_xt(poly_xt_in), poly_alpha(poly_alpha_in)
             {
                 poly_norm = 0.5 * M_PI * 1./(1. + 1./(poly_alpha + 1.) * 1./pow(poly_xt, poly_alpha));
@@ -354,7 +353,7 @@ class FunkyTransform {
             Xnative[1] = log(Xembed[1]);
             Xnative[3] = Xembed[3];
             // Treat the special case
-            root_find(Xembed, Xnative, &FunkyTransform::coord_to_embed);
+            //root_find(Xembed, Xnative, &FunkyTransform::coord_to_embed);
         }
         /**
          * Transformation matrix for contravariant vectors to embedding, or covariant vectors to native
@@ -410,59 +409,59 @@ using SomeTransform = mpark::variant<SphNullTransform, CartNullTransform, Modify
  * @param Xnative output; but should have all native coordinates except X[2] already
  * @param coord_to_embed function taking the vector X to embedding coordinates
  */
-template<typename Function>
-void root_find(const GReal Xembed[GR_DIM], GReal Xnative[GR_DIM], Function& coord_to_embed)
-{
-  double th = Xembed[2];
-  double tha, thb, thc;
+// template<typename Function>
+// KOKKOS_FUNCTION void root_find(const GReal Xembed[GR_DIM], GReal Xnative[GR_DIM], Function& coord_to_embed)
+// {
+//   double th = Xembed[2];
+//   double tha, thb, thc;
 
-  // Currently only solves in X[2] but could be multi-dimensional
-  double Xa[GR_DIM], Xb[GR_DIM], Xc[GR_DIM], Xtmp[GR_DIM];
-  Xa[1] = Xnative[1];
-  Xa[3] = Xnative[3];
+//   // Currently only solves in X[2] but could be multi-dimensional
+//   double Xa[GR_DIM], Xb[GR_DIM], Xc[GR_DIM], Xtmp[GR_DIM];
+//   Xa[1] = Xnative[1];
+//   Xa[3] = Xnative[3];
 
-  Xb[1] = Xa[1];
-  Xb[3] = Xa[3];
-  Xc[1] = Xa[1];
-  Xc[3] = Xa[3];
+//   Xb[1] = Xa[1];
+//   Xb[3] = Xa[3];
+//   Xc[1] = Xa[1];
+//   Xc[3] = Xa[3];
 
-  if (Xembed[2] < M_PI / 2.) {
-    Xa[2] = 0.;
-    Xb[2] = 0.5 + SINGSMALL;
-  } else {
-    Xa[2] = 0.5 - SINGSMALL;
-    Xb[2] = 1.;
-  }
+//   if (Xembed[2] < M_PI / 2.) {
+//     Xa[2] = 0.;
+//     Xb[2] = 0.5 + SINGSMALL;
+//   } else {
+//     Xa[2] = 0.5 - SINGSMALL;
+//     Xb[2] = 1.;
+//   }
 
-  double tol = 1.e-9;
-  coord_to_embed(Xa, Xtmp);
-  tha = Xtmp[2];
-  coord_to_embed(Xb, Xtmp);
-  thb = Xtmp[2];
+//   double tol = 1.e-9;
+//   coord_to_embed(Xa, Xtmp);
+//   tha = Xtmp[2];
+//   coord_to_embed(Xb, Xtmp);
+//   thb = Xtmp[2];
 
-  // check limits first
-  if (fabs(tha-th) < tol) {
-    Xnative[2] = Xa[2];
-    return;
-  } else if (fabs(thb-th) < tol) {
-    Xnative[2] = Xb[2];
-    return;
-  }
+//   // check limits first
+//   if (fabs(tha-th) < tol) {
+//     Xnative[2] = Xa[2];
+//     return;
+//   } else if (fabs(thb-th) < tol) {
+//     Xnative[2] = Xb[2];
+//     return;
+//   }
 
-  // bisect for a bit
-  for (int i = 0; i < 1000; i++) {
-    Xc[2] = 0.5 * (Xa[2] + Xb[2]);
-    coord_to_embed(Xc, Xtmp);
-    thc = Xtmp[2];
+//   // bisect for a bit
+//   for (int i = 0; i < 1000; i++) {
+//     Xc[2] = 0.5 * (Xa[2] + Xb[2]);
+//     coord_to_embed(Xc, Xtmp);
+//     thc = Xtmp[2];
 
-    if ((thc - th) * (thb - th) < 0.)
-      Xa[2] = Xc[2];
-    else
-      Xb[2] = Xc[2];
+//     if ((thc - th) * (thb - th) < 0.)
+//       Xa[2] = Xc[2];
+//     else
+//       Xb[2] = Xc[2];
 
-    if (fabs(thc - th) < tol)
-      break;
-  }
+//     if (fabs(thc - th) < tol)
+//       break;
+//   }
 
-  Xnative[2] = Xc[2];
-}
+//   Xnative[2] = Xc[2];
+// }

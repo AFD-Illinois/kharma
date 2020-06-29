@@ -1,8 +1,7 @@
 #!/bin/bash
 
 # TODO if these things are necessary then...
-unset CPATH
-conda deactivate
+export NVCC_WRAPPER_DEFAULT_COMPILER=cuda-g++
 
 # Make script for KHARMA
 # Used to decide flags and call cmake
@@ -24,44 +23,54 @@ mkdir -p build
 
 cd build
 
+#-DCMAKE_CXX_COMPILER=$PWD/../external/parthenon/external/Kokkos/bin/nvcc_wrapper \
+
+
 if [[ "$*" == *"clean"* ]]; then
   if [[ "$*" == *"cuda"* ]]; then # CUDA BUILD
     # TODO unify MPI flags
-    cmake3 ..\
+    cmake ..\
     -DCMAKE_CXX_COMPILER=$PWD/../external/parthenon/external/Kokkos/bin/nvcc_wrapper \
     -DCMAKE_BUILD_TYPE=$TYPE \
     -DCMAKE_PREFIX_PATH=/usr/lib64/mpich \
-    -DPAR_LOOP_LAYOUT="MANUAL1D_LOOP" \
+    -DPAR_LOOP_LAYOUT="MDRANGE_LOOP" \
     -DPAR_LOOP_INNER_LAYOUT="SIMDFOR_INNER_LOOP" \
     -DENABLE_UNIT_TESTS=OFF \
     -DENABLE_INTEGRATION_TESTS=OFF \
     -DENABLE_REGRESSION_TESTS=OFF \
     -DENABLE_EXAMPLES=OFF \
     -DPARTHENON_DISABLE_MPI=OFF \
+    -DPARTHENON_NGHOST=4 \
+    -DPARTHENON_LINT_DEFAULT=OFF \
+    -DENABLE_COMPILER_WARNINGS=OFF \
     -DKokkos_ENABLE_OPENMP=ON \
     -DKokkos_ENABLE_CUDA=ON \
     -DKokkos_ENABLE_HWLOC=ON \
     -DKokkos_ARCH_WSM=OFF \
-    -DKokkos_ARCH_HSW=ON \
+    -DKokkos_ARCH_HSW=OFF \
     -DKokkos_ARCH_BDW=OFF \
     -DKokkos_ARCH_SKX=OFF \
+    -DKokkos_ARCH_AMDAVX=ON \
     -DKokkos_ARCH_POWER9=OFF \
-    -DKokkos_ARCH_KEPLER35=ON \
+    -DKokkos_ARCH_KEPLER35=OFF \
     -DKokkos_ARCH_PASCAL60=OFF \
     -DKokkos_ARCH_VOLTA70=OFF \
-    -DKokkos_ARCH_TURING75=OFF \
+    -DKokkos_ARCH_TURING75=ON \
     -DKokkos_ENABLE_CUDA_LAMBDA=ON
   else #OpenMP BUILD
-    cmake3 ..\
+    cmake ..\
     -DCMAKE_BUILD_TYPE=$TYPE \
     -DCMAKE_PREFIX_PATH=/usr/lib64/mpich \
-    -DPAR_LOOP_LAYOUT="MANUAL1D_LOOP" \
+    -DPAR_LOOP_LAYOUT="MDRANGE_LOOP" \
     -DPAR_LOOP_INNER_LAYOUT="SIMDFOR_INNER_LOOP" \
     -DENABLE_UNIT_TESTS=OFF \
     -DENABLE_INTEGRATION_TESTS=OFF \
     -DENABLE_REGRESSION_TESTS=OFF \
     -DENABLE_EXAMPLES=OFF \
     -DPARTHENON_DISABLE_MPI=OFF \
+    -DPARTHENON_NGHOST=4 \
+    -DPARTHENON_LINT_DEFAULT=OFF \
+    -DENABLE_COMPILER_WARNINGS=OFF \
     -DKokkos_ENABLE_OPENMP=ON \
     -DKokkos_ENABLE_CUDA=OFF \
     -DKokkos_ENABLE_HWLOC=ON \

@@ -65,9 +65,12 @@ using GeomTensor2 = parthenon::ParArrayND<Real>;
 using GeomTensor3 = parthenon::ParArrayND<Real>;
 
 // Specific lambdas for our array shapes
+#define KOKKOS_LAMBDA_1D KOKKOS_LAMBDA (const int& i)
 #define KOKKOS_LAMBDA_2D KOKKOS_LAMBDA (const int& j, const int& i)
 #define KOKKOS_LAMBDA_3D KOKKOS_LAMBDA (const int &k, const int &j, const int &i)
 #define KOKKOS_LAMBDA_VARS KOKKOS_LAMBDA (const int &p, const int &k, const int &j, const int &i)
+// TODO separate macros for return type if this becomes a thing?  Or don't macro at all
+#define KOKKOS_LAMBDA_1D_REDUCE KOKKOS_LAMBDA (const int &i, Real &local_result)
 #define KOKKOS_LAMBDA_3D_REDUCE KOKKOS_LAMBDA (const int &k, const int &j, const int &i, double &local_result)
 
 // Struct for derived 4-vectors at a point, usually calculated and needed together

@@ -140,12 +140,13 @@ void FillDerived(Container<Real>& rc)
     // This may actually mean we require the 4 ghost zones Parthenon "wants" us to have, if we need to use only fixed zones.
     // TODO alternatively do a bounds check in fix_U_to_P
     ClearCorners(pmb, pflag); // Don't use zones in physical corners. TODO persist this?
+    FLAG("Cleared corner flags");
     pmb->par_for("fix_U_to_P", 1, n3-2, 1, n2-2, 1, n1-2,
         KOKKOS_LAMBDA_3D {
             fflag(k, j, i) |= fix_U_to_P(G, P, U, eos, pflag, k, j, i);
         }
     );
-    FLAG("Corrected");
+    FLAG("Fixed failed inversions");
 
 #if DEBUG
     // TODO this does the calculation from primitives, but we could also
@@ -260,8 +261,10 @@ TaskStatus SourceTerm(Container<Real>& rc, Container<Real>& dudt)
             PLOOP dUdt(p, k, j, i) += dU[p];
         }
     );
-    FLAG("Applied");
 
+    DelEOS(eos);
+
+    FLAG("Applied");
     return TaskStatus::complete;
 }
 

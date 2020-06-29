@@ -44,7 +44,7 @@ KOKKOS_INLINE_FUNCTION int fix_U_to_P(const GRCoordinates& G, GridVars P, GridVa
 
         if(wsum < 1.e-10) {
 #if DEBUG
-            printf("fixup_utoprim: No usable neighbors at %d %d %d\n", i, j, k);
+            //printf("fixup_utoprim: No usable neighbors at %d %d %d\n", i, j, k);
 #endif
             // TODO set to something ~okay here and LOG IT, or exit screaming
             // This should happen /very rarely/

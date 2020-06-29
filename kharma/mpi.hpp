@@ -5,7 +5,8 @@
 // but consistent results are generated without it for free
 // Trust me it makes everything 1000x more readable
 
-// TODO is this how I want to do raw MPI comms?  Does Parthenon handle any of this? Should I hook into e.g. the comm?
+// TODO are there other convenience functions in Parthenon?
+// TODO single/double overloads if I use these
 
 #include "decs.hpp"
 

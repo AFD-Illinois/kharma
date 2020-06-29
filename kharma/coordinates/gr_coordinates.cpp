@@ -6,23 +6,23 @@
 
 #include "gr_coordinates.hpp"
 
+#include "Kokkos_Core.hpp"
+
 #include "parameter_input.hpp"
 #include "mesh/domain.hpp"
 #include "mesh/mesh.hpp"
 
+// This file doesn't have MeshBlock access, so it uses raw Kokkos calls
+using namespace Kokkos;
+
 // Internal function for initializing cache
-void init_GRCoordinates(GRCoordinates& G);
+void init_GRCoordinates(GRCoordinates& G, int n1, int n2, int n3);
 
 #if FAST_CARTESIAN
 /**
  * Construct a cartesian GRCoordinates object
  */
 GRCoordinates::GRCoordinates(const RegionSize &rs, ParameterInput *pin): UniformCartesian(rs, pin)
-{
-    // Cartesian is not spherical
-    spherical = false;
-}
-GRCoordinates::GRCoordinates(const GRCoordinates &src, int coarsen): UniformCartesian(src, coarsen)
 {
     // Cartesian is not spherical
     spherical = false;
@@ -37,9 +37,9 @@ GRCoordinates::GRCoordinates(const RegionSize &rs, ParameterInput *pin): Uniform
     // but in KHARMA, that object is only used through this one.
     // And I want the option to use that code elsewhere as it's quite general & nice
     // TODO are string allocations/comparisons bad in this constructor?
-    std::string base_str = pin->GetOrAddString("GRCoordinates", "base", "cartesian_minkowski");
-    std::string transform_str = pin->GetOrAddString("GRCoordinates", "transform", "null");
-    GReal startx1 = pin->GetReal("mesh", "x1min"); // This was needed for mesh.  Die without it.
+    std::string base_str = pin->GetOrAddString("coordinates", "base", "cartesian_minkowski");
+    std::string transform_str = pin->GetOrAddString("coordinates", "transform", "null");
+    GReal startx1 = pin->GetReal("parthenon/mesh", "x1min"); // This was needed for mesh.  Die without it.
     GReal a = pin->GetOrAddReal("coordinates", "a", 0.0); // The rest have defaults
     GReal hslope = pin->GetOrAddReal("coordinates", "hslope", 0.3);
     GReal mks_smooth = pin->GetOrAddReal("coordinates", "mks_smooth", 0.5);
@@ -70,10 +70,10 @@ GRCoordinates::GRCoordinates(const RegionSize &rs, ParameterInput *pin): Uniform
         } else {
             transform.emplace<CartNullTransform>(CartNullTransform());
         }
-    } else if (base_str == "cartesian_null") {
+    } else if (transform_str == "cartesian_null") {
         if (!spherical) throw std::invalid_argument("Transform is for cartesian coordinates!");
         transform.emplace<CartNullTransform>(CartNullTransform());
-    } else if (base_str == "spherical_null") {
+    } else if (transform_str == "spherical_null") {
         if (!spherical) throw std::invalid_argument("Transform is for spherical coordinates!");
         transform.emplace<SphNullTransform>(SphNullTransform());
     } else if (transform_str == "modified" || transform_str == "mks") {
@@ -88,15 +88,26 @@ GRCoordinates::GRCoordinates(const RegionSize &rs, ParameterInput *pin): Uniform
 
     coords = new CoordinateEmbedding(base, transform);
 
-    init_GRCoordinates(*this);
+    n1 = rs.nx1 + 2*NGHOST;
+    n2 = rs.nx2 > 1 ? rs.nx2 + 2*NGHOST : 1;
+    n3 = rs.nx3 > 1 ? rs.nx3 + 2*NGHOST : 1;
+
+    init_GRCoordinates(*this, n1, n2, n3);
 }
+#endif
+
+// OTHER CONSTRUCTORS: Same between implementations
+
 GRCoordinates::GRCoordinates(const GRCoordinates &src, int coarsen): UniformCartesian(src, coarsen)
 {
     std::cerr << "Calling the questionable constructor" << std::endl;
+    spherical = src.spherical;
     coords = src.coords;
-    init_GRCoordinates(*this);
+    n1 = src.n1/coarsen;
+    n2 = src.n2/coarsen;
+    n3 = src.n3/coarsen;
+    init_GRCoordinates(*this, n1, n2, n3);
 }
-#endif
 
 /**
  * Initialize any cached geometry that GRCoordinates will need to return.
@@ -105,15 +116,11 @@ GRCoordinates::GRCoordinates(const GRCoordinates &src, int coarsen): UniformCart
  * fun issues with C++ Lambda capture, which Kokkos brings to the fore
  */
 #if FAST_CARTESIAN || NO_CACHE
-void init_GRCoordinates(GRCoordinates& G) {}
+void init_GRCoordinates(GRCoordinates& G, int n1, int n2, int n3) {}
 #else
-    // TODO need to either find a my_block pointer here, or find the sizes and
-    // use manual Kokkos calls instead of par_for
-void init_GRCoordinates(GRCoordinates& G) {
+void init_GRCoordinates(GRCoordinates& G, int n1, int n2, int n3) {
+    cerr << "Creating GRCoordinate cache size " << n1 << " " << n2 << endl;
     // Cache geometry.  May be faster than re-computing. May not be.
-    int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
-    int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
-    int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
     G.gcon_direct = GeomTensor2("gcon", NLOC, n2, n1, GR_DIM, GR_DIM);
     G.gcov_direct = GeomTensor2("gcov", NLOC, n2, n1, GR_DIM, GR_DIM);
     G.gdet_direct = GeomScalar("gdet", NLOC, n2, n1);
@@ -128,7 +135,7 @@ void init_GRCoordinates(GRCoordinates& G) {
     auto conn_local = G.conn_direct;
     CoordinateEmbedding cs = *(G.coords);
 
-    pmb->par_for("init_geom", 0, n2-1, 0, n1-1,
+    Kokkos::parallel_for("init_geom", MDRangePolicy<Rank<2>>({0,0}, {n2, n1}),
         KOKKOS_LAMBDA_2D {
             GReal X[GR_DIM];
             Real gcov_loc[GR_DIM][GR_DIM], gcon_loc[GR_DIM][GR_DIM];
@@ -143,7 +150,7 @@ void init_GRCoordinates(GRCoordinates& G) {
             }
         }
     );
-    pmb->par_for("init_geom", 0, n2-1, 0, n1-1,
+    Kokkos::parallel_for("init_geom", MDRangePolicy<Rank<2>>({0,0}, {n2, n1}),
         KOKKOS_LAMBDA_2D {
             GReal X[GR_DIM];
             G.coord(0, j, i, Loci::center, X);

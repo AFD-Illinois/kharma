@@ -4,6 +4,8 @@
 
 #include "decs.hpp"
 
+using namespace Kokkos;
+
 TaskStatus UpdateContainer(MeshBlock *pmb, int stage,
                            std::vector<std::string>& stage_name,
                             Integrator* integrator) {
@@ -28,7 +30,8 @@ TaskStatus CopyField(std::string& var, Container<Real>& rc0, Container<Real>& rc
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
 
-    pmb->par_for("copy_field", 0, NPRIM-1, ks, ke, js, je, is, ie,
+    // TODO revisit this when par_for is restored to glory
+    Kokkos::parallel_for("copy_field", MDRangePolicy<Rank<4>>({0, ks, js, is}, {NPRIM, ke+1, je+1, ie+1}),
         KOKKOS_LAMBDA_VARS {
             v1(p, k, j, i) = v0(p, k, j, i);
         }

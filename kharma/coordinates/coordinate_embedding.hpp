@@ -32,12 +32,12 @@ class CoordinateEmbedding {
         SomeBaseCoords base;
         SomeTransform transform;
 
+        CoordinateEmbedding() = default;
         CoordinateEmbedding(SomeBaseCoords& base_in, SomeTransform& transform_in): base(base_in), transform(transform_in) {}
         // Alternate versions if some types have default constructors
         CoordinateEmbedding(SomeBaseCoords& base_in): base(base_in)
         {
-            // TODO detect Sph/Cart based on base type
-            // TODO eliminate these calls when the transform is null?  Maybe useful for kipole
+            // TODO keep track of sph/cartesian here instead of GRCoords
             transform = SphNullTransform();
         }
 

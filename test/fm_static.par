@@ -28,7 +28,7 @@ ox3_bc = periodic
 
 <coordinates>
 base = spherical_ks
-transform = fmks
+transform = null
 a = 0.0
 hslope = 0.3
 
@@ -50,6 +50,6 @@ b_field_type = none
 
 <parthenon/output0>
 file_type = hdf5
-dt = 1.0
+dt = 10.0
 variables = c.c.bulk.prims,f.f.bulk.ctop
 

@@ -63,7 +63,7 @@ KOKKOS_INLINE_FUNCTION void check_inflow(GRCoordinates &G, GridVars P, const int
 
 /**
  * Fix fluxes on domain boundaries. No inflow, correct B fields on reflecting conditions.
- * TODO I bet strongly that Parthenon does this, if given to understand B is a vector
+ * TODO Parthenon does this, if given to understand B is a vector
  */
 void FixFlux(Container<Real>& rc)
 {

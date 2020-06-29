@@ -8,6 +8,8 @@
  */
 void ClearCorners(MeshBlock *pmb, GridInt pflag) {
     // TODO make corner domains for the loop here
+    // TODO this doesn't work with <3 dimensions
+    FLAG("Clearing corners");
     IndexDomain domain = IndexDomain::interior;
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);

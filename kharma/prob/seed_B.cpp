@@ -89,13 +89,8 @@ void SeedBField(MeshBlock *pmb, GRCoordinates G, GridVars P,
 
     // Calculate B-field
     auto coords = pmb->coords;
-    pmb->par_for("B_field_B", 0, n3-2, 0, n2-2, 0, n1-2,
+    pmb->par_for("B_field_B", 0, n3-2, 1, n2-2, 1, n1-2,
         KOKKOS_LAMBDA_3D {
-            GReal X[GR_DIM], Xembed[GR_DIM];
-            G.coord(k, j, i, Loci::center, X);
-            G.coord_embed(k, j, i, Loci::center, Xembed);
-            GReal r = Xembed[1], th = Xembed[2];
-
             // Take a flux-ct step from the corner potentials
             P(prims::B1, k, j, i) = -(A(j, i) - A(j + 1, i) + A(j, i + 1) - A(j + 1, i + 1)) /
                                 (2. * coords.dx2v(j) * G.gdet(Loci::center, j, i));
@@ -139,6 +134,9 @@ Real GetLocalBetaMin(MeshBlock *pmb)
             if(beta_ij < local_result) local_result = beta_ij;
         }
     , min_reducer);
+
+    DelEOS(eos);
+
     return beta_min;
 }
 
@@ -173,4 +171,6 @@ void NormalizeBField(MeshBlock *pmb, Real factor)
 
         }
     );
+
+    DelEOS(eos);
 }

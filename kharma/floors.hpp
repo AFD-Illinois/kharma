@@ -40,11 +40,6 @@
 TaskStatus ApplyFloors(Container<Real>& rc);
 
 /**
- * Clear corner zones from being used for fixups
- */
-void ClearCorners(MeshBlock *pmb, GridInt pflag);
-
-/**
  * Apply a fluid velocity ceiling
  * 
  * LOCKSTEP: this function expects and should preserve P<->U

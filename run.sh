@@ -6,7 +6,7 @@ export OMP_PLACES=threads
 export KOKKOS_DEVICE_ID=0
 
 if [ -f kharma.cuda ]; then
-  ./kharma.cuda --kokkos-device-id=0 "$@"
+  ./kharma.cuda "$@"
 elif [ -f kharma.host ]; then
   ./kharma.host "$@"
 else
