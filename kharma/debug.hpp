@@ -7,6 +7,10 @@
 
 using namespace std;
 
+// Calculate maximum divergence of magnetic field, to check it is being preserved ==0
+double MaxDivB(Container<Real>& rc);
+
+// Templated functions for counting flags on arbitrary ()-indexed types
 template<typename T>
 void CountPFlags(MeshBlock *pmb, T pflag, IndexDomain domain=IndexDomain::entire)
 {
@@ -89,5 +93,3 @@ void CountFFlags(MeshBlock *pmb, T fflag, IndexDomain domain=IndexDomain::interi
     if (n_ktot > 0) cerr << "KTOT: " << n_ktot << endl;
     cerr << endl;
 }
-
-double MaxDivB(Container<Real>& rc);

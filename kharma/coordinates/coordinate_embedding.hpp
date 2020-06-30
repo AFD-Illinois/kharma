@@ -7,6 +7,8 @@
 #include "decs.hpp"
 #include "matrix.hpp"
 
+using namespace std;
+
 /**
  * Coordinates in HARM are logically Cartesian -- that is, in some coordinate system they are evenly spaced
  * However, working in GR allows us to define that "native" or "transformed" coordinate system arbitrarily in relation to the
@@ -32,13 +34,45 @@ class CoordinateEmbedding {
         SomeBaseCoords base;
         SomeTransform transform;
 
+        // Common code for constructors
+        void EmplaceSystems(const SomeBaseCoords& base_in, const SomeTransform& transform_in) {
+            // Isn't there some more elegant way to say "yeah the types are fine just copy da bits"?
+            if (mpark::holds_alternative<SphMinkowskiCoords>(base_in)) {
+                base.emplace<SphMinkowskiCoords>(mpark::get<SphMinkowskiCoords>(base_in));
+            } else if (mpark::holds_alternative<CartMinkowskiCoords>(base_in)) {
+                base.emplace<CartMinkowskiCoords>(mpark::get<CartMinkowskiCoords>(base_in));
+            } else if (mpark::holds_alternative<SphBLCoords>(base_in)) {
+                base.emplace<SphBLCoords>(mpark::get<SphBLCoords>(base_in));
+            } else if (mpark::holds_alternative<SphKSCoords>(base_in)) {
+                base.emplace<SphKSCoords>(mpark::get<SphKSCoords>(base_in));
+            } else {
+                throw std::invalid_argument("Tried to copy invalid base coordinates!");
+            }
+
+            if (mpark::holds_alternative<SphNullTransform>(transform_in)) {
+                transform.emplace<SphNullTransform>(mpark::get<SphNullTransform>(transform_in));
+            } else if (mpark::holds_alternative<CartNullTransform>(transform_in)) {
+                transform.emplace<CartNullTransform>(mpark::get<CartNullTransform>(transform_in));
+            } else if (mpark::holds_alternative<ModifyTransform>(transform_in)) {
+                transform.emplace<ModifyTransform>(mpark::get<ModifyTransform>(transform_in));
+            } else if (mpark::holds_alternative<FunkyTransform>(transform_in)) {
+                transform.emplace<FunkyTransform>(mpark::get<FunkyTransform>(transform_in));
+            } else {
+                throw std::invalid_argument("Tried to copy invalid coordinate transform!");
+            }
+        }
+
+        // Constructors
         CoordinateEmbedding() = default;
         CoordinateEmbedding(SomeBaseCoords& base_in, SomeTransform& transform_in): base(base_in), transform(transform_in) {}
-        // Alternate versions if some types have default constructors
-        CoordinateEmbedding(SomeBaseCoords& base_in): base(base_in)
+        CoordinateEmbedding(const CoordinateEmbedding& src)
         {
-            // TODO keep track of sph/cartesian here instead of GRCoords
-            transform = SphNullTransform();
+            EmplaceSystems(src.base, src.transform);
+        }
+        const CoordinateEmbedding& operator=(const CoordinateEmbedding& src)
+        {
+            EmplaceSystems(src.base, src.transform);
+            return *this;
         }
 
         // Spell out the interface we take from BaseCoords

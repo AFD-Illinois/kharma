@@ -27,9 +27,9 @@ void InitializeBondi(MeshBlock *pmb, const GRCoordinates& G, GridVars P,
     int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
     int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
 
-    SphKSCoords ks = mpark::get<SphKSCoords>(G.coords->base);
+    SphKSCoords ks = mpark::get<SphKSCoords>(G.coords.base);
     SphBLCoords bl = SphBLCoords(ks.a);
-    CoordinateEmbedding cs = *(G.coords);
+    CoordinateEmbedding cs = G.coords;
     pmb->par_for("init_bondi", 0, n3-1, 0, n2-1, 0, n1-1,
         KOKKOS_LAMBDA_3D {
             get_prim_bondi(G, cs, P, eos, bl, ks, mdot, rs, k, j, i);
@@ -56,9 +56,9 @@ void ApplyBondiBoundary(Container<Real>& rc)
     EOS* eos = CreateEOS(gamma);
 
     // Just the X1 right boundary
-    SphKSCoords ks = mpark::get<SphKSCoords>(G.coords->base);
+    SphKSCoords ks = mpark::get<SphKSCoords>(G.coords.base);
     SphBLCoords bl = SphBLCoords(ks.a);
-    CoordinateEmbedding cs = *(G.coords);
+    CoordinateEmbedding cs = G.coords;
     pmb->par_for("bondi_boundary", 0, n3-1, 0, n2-1, n1 - NGHOST, n1-1,
         KOKKOS_LAMBDA_3D {
             FourVectors Dtmp;
@@ -129,7 +129,7 @@ KOKKOS_INLINE_FUNCTION void get_prim_bondi(const GRCoordinates& G, const Coordin
 
     GReal X[GR_DIM], Xembed[GR_DIM];
     G.coord(k, j, i, Loci::center, X);
-    G.coord_embed(k, j, i, Loci::center, Xembed);
+    coords.coord_to_embed(X, Xembed);
     Real Rhor = ks.rhor();
     // Any zone inside the horizon gets the horizon's values
     int ii = i;
@@ -137,7 +137,7 @@ KOKKOS_INLINE_FUNCTION void get_prim_bondi(const GRCoordinates& G, const Coordin
     {
         ++ii;
         G.coord(k, j, ii, Loci::center, X);
-        G.coord_embed(k, j, ii, Loci::center, Xembed);
+        coords.coord_to_embed(X, Xembed);
     }
     GReal r = Xembed[1];
 

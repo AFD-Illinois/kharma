@@ -38,7 +38,7 @@ void InitializeFMTorus(MeshBlock *pmb, GRCoordinates& G, GridVars P, const EOS* 
 
     // Get coordinate system pointers for later
     // Only compatible with KS coords as base (TODO BL for fun?)
-    SphKSCoords ks = mpark::get<SphKSCoords>(G.coords->base);
+    SphKSCoords ks = mpark::get<SphKSCoords>(G.coords.base);
     SphBLCoords bl = SphBLCoords(ks.a);
 
     // Fishbone-Moncrief parameters
@@ -91,7 +91,7 @@ void InitializeFMTorus(MeshBlock *pmb, GRCoordinates& G, GridVars P, const EOS* 
                 // Then transform that 4-vector to KS, then to native
                 Real ucon_ks[GR_DIM], ucon_mks[GR_DIM];
                 ks.vec_from_bl(Xembed, ucon_bl, ucon_ks);
-                G.coords->con_vec_to_native(X, ucon_ks, ucon_mks);
+                G.coords.con_vec_to_native(X, ucon_ks, ucon_mks);
 
                 // Convert native 4-vector to primitive u-twiddle, see Gammie '04
                 Real gcon[GR_DIM][GR_DIM], u_prim[GR_DIM];

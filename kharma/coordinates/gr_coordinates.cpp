@@ -4,6 +4,7 @@
 
 #include "decs.hpp"
 
+#include "debug.hpp"
 #include "gr_coordinates.hpp"
 
 #include "Kokkos_Core.hpp"
@@ -86,7 +87,7 @@ GRCoordinates::GRCoordinates(const RegionSize &rs, ParameterInput *pin): Uniform
         throw std::invalid_argument("Unsupported coordinate transform!");
     }
 
-    coords = new CoordinateEmbedding(base, transform);
+    coords = CoordinateEmbedding(base, transform);
 
     n1 = rs.nx1 + 2*NGHOST;
     n2 = rs.nx2 > 1 ? rs.nx2 + 2*NGHOST : 1;
@@ -100,13 +101,47 @@ GRCoordinates::GRCoordinates(const RegionSize &rs, ParameterInput *pin): Uniform
 
 GRCoordinates::GRCoordinates(const GRCoordinates &src, int coarsen): UniformCartesian(src, coarsen)
 {
-    std::cerr << "Calling the questionable constructor" << std::endl;
+    //std::cerr << "Calling coarsen constructor" << std::endl;
     spherical = src.spherical;
     coords = src.coords;
     n1 = src.n1/coarsen;
     n2 = src.n2/coarsen;
     n3 = src.n3/coarsen;
     init_GRCoordinates(*this, n1, n2, n3);
+}
+
+GRCoordinates::GRCoordinates(const GRCoordinates &src): UniformCartesian(src)
+{
+    //std::cerr << "Calling copy constructor size " << src.n1 << " " << src.n2 << std::endl;
+    spherical = src.spherical;
+    coords = src.coords;
+    n1 = src.n1;
+    n2 = src.n2;
+    n3 = src.n3;
+#if !FAST_CARTESIAN && !NO_CACHE
+    gcon_direct = src.gcon_direct;
+    gcov_direct = src.gcov_direct;
+    gdet_direct = src.gdet_direct;
+    conn_direct = src.conn_direct;
+#endif
+}
+
+GRCoordinates GRCoordinates::operator=(const GRCoordinates& src)
+{
+    //std::cerr << "Calling assignment operator size " << src.n1 << " " << src.n2 << std::endl;
+    UniformCartesian::operator=(src);
+    spherical = src.spherical;
+    coords = src.coords;
+    n1 = src.n1;
+    n2 = src.n2;
+    n3 = src.n3;
+#if !FAST_CARTESIAN && !NO_CACHE
+    gcon_direct = src.gcon_direct;
+    gcov_direct = src.gcov_direct;
+    gdet_direct = src.gdet_direct;
+    conn_direct = src.conn_direct;
+#endif
+    return *this;
 }
 
 /**
@@ -133,7 +168,6 @@ void init_GRCoordinates(GRCoordinates& G, int n1, int n2, int n3) {
     auto gcov_local = G.gcov_direct;
     auto gdet_local = G.gdet_direct;
     auto conn_local = G.conn_direct;
-    CoordinateEmbedding cs = *(G.coords);
 
     Kokkos::parallel_for("init_geom", MDRangePolicy<Rank<2>>({0,0}, {n2, n1}),
         KOKKOS_LAMBDA_2D {
@@ -141,8 +175,8 @@ void init_GRCoordinates(GRCoordinates& G, int n1, int n2, int n3) {
             Real gcov_loc[GR_DIM][GR_DIM], gcon_loc[GR_DIM][GR_DIM];
             for (int loc=0; loc < NLOC; ++loc) {
                 G.coord(0, j, i, (Loci)loc, X);
-                cs.gcov_native(X, gcov_loc);
-                gdet_local(loc, j, i) = cs.gcon_native(gcov_loc, gcon_loc);
+                G.coords.gcov_native(X, gcov_loc);
+                gdet_local(loc, j, i) = G.coords.gcon_native(gcov_loc, gcon_loc);
                 DLOOP2 {
                     gcov_local(loc, j, i, mu, nu) = gcov_loc[mu][nu];
                     gcon_local(loc, j, i, mu, nu) = gcon_loc[mu][nu];
@@ -155,7 +189,7 @@ void init_GRCoordinates(GRCoordinates& G, int n1, int n2, int n3) {
             GReal X[GR_DIM];
             G.coord(0, j, i, Loci::center, X);
             Real conn_loc[GR_DIM][GR_DIM][GR_DIM];
-            cs.conn_native(X, conn_loc);
+            G.coords.conn_native(X, conn_loc);
             DLOOP3 conn_local(j, i, mu, nu, lam) = conn_loc[mu][nu][lam];
         }
     );
