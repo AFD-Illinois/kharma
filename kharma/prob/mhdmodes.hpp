@@ -61,7 +61,7 @@ Real InitializeMHDModes(MeshBlock *pmb, GRCoordinates G, GridVars P, int nmode, 
         B10 = 1.;
         if (nmode == 0)
         { // Entropy
-            omega = 2. * M_PI / 5. * 1i;
+            omega = 2. * M_PI / 5. * 1.i;
             drho = 1.;
         }
         else if (nmode == 1)
@@ -116,7 +116,7 @@ Real InitializeMHDModes(MeshBlock *pmb, GRCoordinates G, GridVars P, int nmode, 
 
         if (nmode == 0)
         { // Entropy
-            omega = 2. * M_PI / 5. * 1i;
+            omega = 2. * M_PI / 5. * 1.i;
             drho = 1.;
         }
         else if (nmode == 1)

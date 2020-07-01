@@ -54,7 +54,7 @@ int main(int argc, char *argv[])
         return 1;
     }
     FLAG("Parthenon Initialized");
-    ShowConfig();
+    if(MPIRank0()) ShowConfig();
 
     auto pin = pman.pinput.get();
     // Initialize the problem on each meshblock
@@ -81,7 +81,9 @@ int main(int argc, char *argv[])
             if(beta_local < beta_min) beta_min = beta_local;
             pmb = pmb->next;
         }
-        beta_min = mpi_min(beta_min);
+        beta_min = MPIMin(beta_min);
+
+        if(MPIRank0()) cerr << "Min beta of " << beta_min << endl;
 
         // Then normalizing by sqrt(beta/beta_min)
         Real beta = pin->GetOrAddReal("torus", "beta_min", 100.);

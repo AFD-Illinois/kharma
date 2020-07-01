@@ -12,6 +12,9 @@
 #include "parthenon_arrays.hpp"
 #include "parthenon_mpi.hpp"
 
+// MPI wrappers/awareness (or equivalent stubs)
+#include "mpi.hpp"
+
 // Stuff that's useful across the whole code
 #define VERSION "kharma-alpha-0.1"
 
@@ -19,10 +22,9 @@
 using Real = parthenon::Real;
 using GReal = double;
 
-// TODO make this MPI-aware
-// TODO add make.sh/CMake option for tracing directly
+// TODO add make.sh/CMake option for tracing vs just debug
 #if DEBUG
-#define FLAG(x) std::cout << x << std::endl;
+#define FLAG(x) if(MPIRank0()) std::cout << x << std::endl;
 #else
 #define FLAG(x)
 #endif
