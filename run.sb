@@ -18,4 +18,4 @@ export OMP_PLACES=threads
 # Schedule 2x hyperthreads on SXK or KNL. More on KNL *might* be useful      
 NUM_CPUS=$(grep ^cpu\\scores /proc/cpuinfo | uniq |  awk '{print $4}')
 export OMP_NUM_THREADS=$(( $NUM_CPUS * 2 ))
-ibrun ./kharma.host "$@"
+./kharma.host "$@"
