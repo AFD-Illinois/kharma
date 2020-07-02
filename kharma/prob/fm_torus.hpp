@@ -9,6 +9,7 @@
 
 #include "decs.hpp"
 #include "eos.hpp"
+#include "mpi.hpp"
 #include "prob_common.hpp"
 
 #include <random>
@@ -47,8 +48,8 @@ void InitializeFMTorus(MeshBlock *pmb, GRCoordinates& G, GridVars P, const EOS* 
     FLAG("Initializing rho");
     pmb->par_for("fm_torus_init", 0, n3-1, 0, n2-1, 0, n1-1,
         KOKKOS_LAMBDA_3D {
-            GReal X[GR_DIM], Xembed[GR_DIM];
-            G.coord(k, j, i, Loci::center, X);
+            GReal Xnative[GR_DIM], Xembed[GR_DIM];
+            G.coord(k, j, i, Loci::center, Xnative);
             G.coord_embed(k, j, i, Loci::center, Xembed);
             GReal r = Xembed[1], th = Xembed[2];
             GReal sth = sin(th);
@@ -91,7 +92,7 @@ void InitializeFMTorus(MeshBlock *pmb, GRCoordinates& G, GridVars P, const EOS* 
                 // Then transform that 4-vector to KS, then to native
                 Real ucon_ks[GR_DIM], ucon_mks[GR_DIM];
                 ks.vec_from_bl(Xembed, ucon_bl, ucon_ks);
-                G.coords.con_vec_to_native(X, ucon_ks, ucon_mks);
+                G.coords.con_vec_to_native(Xnative, ucon_ks, ucon_mks);
 
                 // Convert native 4-vector to primitive u-twiddle, see Gammie '04
                 Real gcon[GR_DIM][GR_DIM], u_prim[GR_DIM];
@@ -113,6 +114,7 @@ void InitializeFMTorus(MeshBlock *pmb, GRCoordinates& G, GridVars P, const EOS* 
     // Find rho_max "analytically" by looking over the whole mesh domain for the maximum in the midplane
     // Done device-side not for speed (should be fast regardless) but so that *eos dereferences correctly!
     // Note this will have to either repeat or change a bit to record u_max if that's needed...
+    // Also note this covers the full domain, so we don't need to MPI reduce 
     GReal xin = log(rin);
     GReal xout = pmb->pmy_mesh->mesh_size.x1max;
     GReal dx = 0.001;
