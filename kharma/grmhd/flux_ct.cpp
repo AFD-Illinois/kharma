@@ -8,15 +8,17 @@
 #include "mesh/domain.hpp"
 #include "mesh/mesh.hpp"
 
+using namespace parthenon;
+
 namespace GRMHD {
 
 /**
  * Constrained transport.  Modify B-field fluxes to preserve divB==0 condition to machine precision per-step
  */
-parthenon::TaskStatus FluxCT(parthenon::Container<Real>& rc)
+parthenon::TaskStatus FluxCT(std::shared_ptr<Container<Real>>& rc)
 {
     FLAG("Flux CT");
-    MeshBlock *pmb = rc.pmy_block;
+    MeshBlock *pmb = rc->pmy_block;
     IndexDomain domain = IndexDomain::interior;
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
@@ -29,9 +31,9 @@ parthenon::TaskStatus FluxCT(parthenon::Container<Real>& rc)
     GridScalar emf1("emf1", n3, n2, n1);
     GridScalar emf2("emf2", n3, n2, n1);
     GridScalar emf3("emf3", n3, n2, n1);
-    GridVars F1 = rc.Get("c.c.bulk.cons").flux[X1DIR];
-    GridVars F2 = rc.Get("c.c.bulk.cons").flux[X2DIR];
-    GridVars F3 = rc.Get("c.c.bulk.cons").flux[X3DIR];
+    GridVars F1 = rc->Get("c.c.bulk.cons").flux[X1DIR];
+    GridVars F2 = rc->Get("c.c.bulk.cons").flux[X2DIR];
+    GridVars F3 = rc->Get("c.c.bulk.cons").flux[X3DIR];
 
     pmb->par_for("flux_ct_emf", ks-2, ke+2, js-2, je+2, is-2, ie+2,
         KOKKOS_LAMBDA_3D {

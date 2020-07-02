@@ -16,10 +16,10 @@
  * Note that fixup_ceiling and fixup_floor are called from some other places for most applications
  * This is still used by initialization (TODO should it be?)
  */
-TaskStatus ApplyFloors(Container<Real>& rc)
+TaskStatus ApplyFloors(std::shared_ptr<Container<Real>>& rc)
 {
     FLAG("Apply floors");
-    MeshBlock *pmb = rc.pmy_block;
+    MeshBlock *pmb = rc->pmy_block;
     IndexDomain domain = IndexDomain::entire;
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
@@ -29,8 +29,8 @@ TaskStatus ApplyFloors(Container<Real>& rc)
     int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
     int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
 
-    GridVars P = rc.Get("c.c.bulk.prims").data;
-    GridVars U = rc.Get("c.c.bulk.cons").data;
+    GridVars P = rc->Get("c.c.bulk.prims").data;
+    GridVars U = rc->Get("c.c.bulk.cons").data;
     GRCoordinates G = pmb->coords;
 
     GridInt fflag("fflag", n3, n2, n1);

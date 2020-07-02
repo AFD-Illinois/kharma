@@ -83,12 +83,14 @@ int main(int argc, char *argv[])
         }
         beta_min = mpi_min(beta_min);
 
+        cerr << "Min beta of " << beta_min << endl;
+
         // Then normalizing by sqrt(beta/beta_min)
         Real beta = pin->GetOrAddReal("torus", "beta_min", 100.);
         Real factor = sqrt(beta/beta_min);
         pmb = pman.pmesh->pblock;
         while (pmb != nullptr) {
-            NormalizeBField(pmb, factor);
+            //NormalizeBField(pmb, factor);
             pmb = pmb->next;
         }
     }

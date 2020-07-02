@@ -11,10 +11,10 @@
 #include "mesh/domain.hpp"
 #include "mesh/mesh.hpp"
 
-TaskStatus ApplyCustomBoundaries(Container<Real>& rc)
+TaskStatus ApplyCustomBoundaries(std::shared_ptr<Container<Real>>& rc)
 {
-    MeshBlock *pmb = rc.pmy_block;
-    GridVars U = rc.Get("c.c.bulk.cons").data;
+    MeshBlock *pmb = rc->pmy_block;
+    GridVars U = rc->Get("c.c.bulk.cons").data;
 
     // TODO TODO only if mesh is the last in X1...
     // TODO inflow check?
@@ -65,12 +65,12 @@ KOKKOS_INLINE_FUNCTION void check_inflow(GRCoordinates &G, GridVars P, const int
  * Fix fluxes on domain boundaries. No inflow, correct B fields on reflecting conditions.
  * TODO Parthenon does this, if given to understand B is a vector
  */
-void FixFlux(Container<Real>& rc)
+void FixFlux(std::shared_ptr<Container<Real>>& rc)
 {
-    MeshBlock *pmb = rc.pmy_block;
-    GridVars F1 = rc.Get("c.c.bulk.cons").flux[X1DIR];
-    GridVars F2 = rc.Get("c.c.bulk.cons").flux[X2DIR];
-    GridVars F3 = rc.Get("c.c.bulk.cons").flux[X3DIR];
+    MeshBlock *pmb = rc->pmy_block;
+    GridVars F1 = rc->Get("c.c.bulk.cons").flux[X1DIR];
+    GridVars F2 = rc->Get("c.c.bulk.cons").flux[X2DIR];
+    GridVars F3 = rc->Get("c.c.bulk.cons").flux[X3DIR];
 
     IndexDomain domain = IndexDomain::interior;
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);

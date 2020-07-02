@@ -99,20 +99,20 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
  * input: U, whatever form
  * output: U and P match with inversion errors corrected, and obey floors
  */
-void FillDerived(Container<Real>& rc)
+void FillDerived(std::shared_ptr<Container<Real>>& rc)
 {
     FLAG("Filling Derived");
-    MeshBlock *pmb = rc.pmy_block;
+    MeshBlock *pmb = rc->pmy_block;
     GRCoordinates G = pmb->coords;
 
     int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
     int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
     int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
 
-    GridVars U = rc.Get("c.c.bulk.cons").data;
-    GridVars P = rc.Get("c.c.bulk.prims").data;
+    GridVars U = rc->Get("c.c.bulk.cons").data;
+    GridVars P = rc->Get("c.c.bulk.prims").data;
 
-    //GridVars pflag = rc.Get("bulk.pflag").data; // TODO parthenon int variables
+    //GridVars pflag = rc->Get("bulk.pflag").data; // TODO parthenon int variables
     GridInt pflag("pflag", n3, n2, n1);
     GridInt fflag("fflag", n3, n2, n1);
 
@@ -164,20 +164,23 @@ void FillDerived(Container<Real>& rc)
 
 /**
  * Calculate the LLF flux in 1 direction
+ * TODO this doesn't require full 3D pl/pr. Could merge recon and LR steps to save time *and* memory
+ * TODO Make this async by returning TaskStatus::running
  */
-TaskStatus CalculateFlux1(Container<Real>& rc)
+TaskStatus CalculateFlux1(std::shared_ptr<Container<Real>>& rc)
 {
     FLAG("Calculating flux 1");
-    MeshBlock *pmb = rc.pmy_block;
+    MeshBlock *pmb = rc->pmy_block;
     int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
     int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
     int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
     GridVars pl("pl", NPRIM, n3, n2, n1);
     GridVars pr("pr", NPRIM, n3, n2, n1);
-    GridVars F1 = rc.Get("c.c.bulk.cons").flux[X1DIR];
+    GridVars F1 = rc->Get("c.c.bulk.cons").flux[X1DIR];
 
     // Reconstruct primitives at left and right sides of faces
-    WENO5X1(rc, pl, pr);
+    //Reconstruction::WENO5X1(rc, pl, pr);
+    Reconstruction::LinearX1(rc, pl, pr);
     // Calculate flux from values at left & right of face
     LRToFlux(rc, pr, pl, 1, F1);
 
@@ -188,18 +191,19 @@ TaskStatus CalculateFlux1(Container<Real>& rc)
 /**
  * Calculate the LLF flux in 2 direction
  */
-TaskStatus CalculateFlux2(Container<Real>& rc)
+TaskStatus CalculateFlux2(std::shared_ptr<Container<Real>>& rc)
 {
     FLAG("Calculating flux 2");
-    MeshBlock *pmb = rc.pmy_block;
+    MeshBlock *pmb = rc->pmy_block;
     int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
     int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
     int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
     GridVars pl("pl", NPRIM, n3, n2, n1);
     GridVars pr("pr", NPRIM, n3, n2, n1);
-    GridVars F2 = rc.Get("c.c.bulk.cons").flux[X2DIR];
+    GridVars F2 = rc->Get("c.c.bulk.cons").flux[X2DIR];
 
-    WENO5X2(rc, pl, pr);
+    //Reconstruction::WENO5X2(rc, pl, pr);
+    Reconstruction::LinearX2(rc, pl, pr);
     LRToFlux(rc, pr, pl, 2, F2);
 
     FLAG("Calculated flux 2");
@@ -209,18 +213,19 @@ TaskStatus CalculateFlux2(Container<Real>& rc)
 /**
  * Calculate the LLF flux in 3 direction
  */
-TaskStatus CalculateFlux3(Container<Real>& rc)
+TaskStatus CalculateFlux3(std::shared_ptr<Container<Real>>& rc)
 {
     FLAG("Calculating flux 3");
-    MeshBlock *pmb = rc.pmy_block;
+    MeshBlock *pmb = rc->pmy_block;
     int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
     int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
     int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
     GridVars pl("pl", NPRIM, n3, n2, n1);
     GridVars pr("pr", NPRIM, n3, n2, n1);
-    GridVars F3 = rc.Get("c.c.bulk.cons").flux[X3DIR];
+    GridVars F3 = rc->Get("c.c.bulk.cons").flux[X3DIR];
 
-    WENO5X3(rc, pl, pr);
+    //Reconstruction::WENO5X3(rc, pl, pr);
+    Reconstruction::LinearX3(rc, pl, pr);
     LRToFlux(rc, pr, pl, 3, F3);
 
     FLAG("Calculated flux 3");
@@ -231,15 +236,15 @@ TaskStatus CalculateFlux3(Container<Real>& rc)
 /**
  * Add HARM source term to RHS
  */
-TaskStatus SourceTerm(Container<Real>& rc, Container<Real>& dudt)
+TaskStatus SourceTerm(std::shared_ptr<Container<Real>>& rc, std::shared_ptr<Container<Real>>& dudt)
 {
     FLAG("Adding source term");
-    MeshBlock *pmb = rc.pmy_block;
+    MeshBlock *pmb = rc->pmy_block;
     IndexDomain domain = IndexDomain::interior;
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
-    GridVars P = rc.Get("c.c.bulk.prims").data;
+    GridVars P = rc->Get("c.c.bulk.prims").data;
     GRCoordinates G = pmb->coords;
 
     // TODO *sigh*
@@ -247,12 +252,12 @@ TaskStatus SourceTerm(Container<Real>& rc, Container<Real>& dudt)
     EOS* eos = CreateEOS(gamma);
 
     // Unpack for kernel
-    auto dUdt = dudt.Get("c.c.bulk.cons").data;
+    auto dUdt = dudt->Get("c.c.bulk.cons").data;
 
     pmb->par_for("source_term", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D {
             // Calculate the source term and apply it in 1 go (since it's stencil-1)
-            // TODO get rid of the intermediate by passing dUdt to global get_fluid_source
+            // TODO pass global dU so as not to copy?
             FourVectors Dtmp;
             Real dU[NPRIM] = {0};
             get_state(G, P, k, j, i, Loci::center, Dtmp);
@@ -275,16 +280,16 @@ TaskStatus SourceTerm(Container<Real>& rc, Container<Real>& dudt)
  * This is just for a particular MeshBlock/package, so don't rely on it
  * Parthenon will take the minimum and put it in pmy_mesh->dt
  */
-Real EstimateTimestep(Container<Real>& rc)
+Real EstimateTimestep(std::shared_ptr<Container<Real>>& rc)
 {
     FLAG("Estimating timestep");
-    MeshBlock *pmb = rc.pmy_block;
+    MeshBlock *pmb = rc->pmy_block;
     IndexDomain domain = IndexDomain::interior;
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
     auto coords = pmb->coords;
-    auto& ctop = rc.GetFace("f.f.bulk.ctop").data;
+    auto& ctop = rc->GetFace("f.f.bulk.ctop").data;
 
     // TODO is there a parthenon par_reduce yet?
     double ndt;

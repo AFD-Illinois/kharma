@@ -25,12 +25,12 @@ using namespace parthenon;
  */
 void InitializeProblem(ParameterInput *pin, MeshBlock *pmb)
 {
-    auto rc = pmb->real_containers.Get();
+    auto& rc = pmb->real_containers.Get();
     int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
     int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
     int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
-    GridVars P = rc.Get("c.c.bulk.prims").data;
-    GridVars U = rc.Get("c.c.bulk.cons").data;
+    GridVars P = rc->Get("c.c.bulk.prims").data;
+    GridVars U = rc->Get("c.c.bulk.cons").data;
 
     GRCoordinates G = pmb->coords;
     Real gamma = pmb->packages["GRMHD"]->Param<Real>("gamma");

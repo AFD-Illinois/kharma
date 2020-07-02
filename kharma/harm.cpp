@@ -72,93 +72,95 @@ TaskList HARMDriver::MakeTaskList(MeshBlock *pmb, int stage)
     // TODO: I believe the base container is guaranteed to hold last step's product until the end of this step,
     // but need to check this.
     if (stage == 1) {
-        Container<Real> &base = pmb->real_containers.Get();
+        auto& base = pmb->real_containers.Get();
         pmb->real_containers.Add("dUdt", base);
         for (int i=1; i<integrator->nstages; i++)
             pmb->real_containers.Add(stage_name[i], base);
     }
 
     // pull out the container we'll use to get fluxes and/or compute RHSs
-    Container<Real>& sc0  = pmb->real_containers.Get(stage_name[stage-1]);
+    auto& sc0  = pmb->real_containers.Get(stage_name[stage-1]);
     // pull out a container we'll use to store dU/dt.
-    Container<Real>& dudt = pmb->real_containers.Get("dUdt");
+    auto& dudt = pmb->real_containers.Get("dUdt");
     // pull out the container that will hold the updated state
-    Container<Real>& sc1  = pmb->real_containers.Get(stage_name[stage]);
+    auto& sc1  = pmb->real_containers.Get(stage_name[stage]);
 
     // TODO what does this do exactly?
-    auto start_recv = AddContainerTask(tl, Container<Real>::StartReceivingTask, none, sc1);
+    auto t_start_recv = tl.AddTask(Container<Real>::StartReceivingTask, none, sc1);
 
     // Calculate the LLF fluxes in each direction
     // This uses the primitives (P) to calculate fluxes to update the conserved variables (U)
     // Hence the two should reflect *exactly* the same fluid state, which I'll term "lockstep"
-    auto calculate_flux1 = AddContainerTask(tl, GRMHD::CalculateFlux1, start_recv, sc0);
-    auto calculate_flux2 = AddContainerTask(tl, GRMHD::CalculateFlux2, start_recv, sc0);
-    auto calculate_flux3 = AddContainerTask(tl, GRMHD::CalculateFlux3, start_recv, sc0);
-    auto calculate_flux = calculate_flux1 | calculate_flux2 | calculate_flux3;
+    auto t_calculate_flux1 = tl.AddTask(GRMHD::CalculateFlux1, t_start_recv, sc0);
+    auto t_calculate_flux2 = tl.AddTask(GRMHD::CalculateFlux2, t_start_recv, sc0);
+    auto t_calculate_flux3 = tl.AddTask(GRMHD::CalculateFlux3, t_start_recv, sc0);
+    auto t_calculate_flux = t_calculate_flux1 | t_calculate_flux2 | t_calculate_flux3;
     
-    auto flux_ct = AddContainerTask(tl, GRMHD::FluxCT, calculate_flux, sc0);
+    auto t_flux_ct = tl.AddTask(GRMHD::FluxCT, t_calculate_flux, sc0);
 
     // Exchange flux corrections due to AMR and physical boundaries
     // Note this does NOT fix vector components since we bundle primitives
-    auto send_flux = AddContainerTask(tl, Container<Real>::SendFluxCorrectionTask,
-                                    flux_ct, sc0);
-    auto recv_flux = AddContainerTask(tl, Container<Real>::ReceiveFluxCorrectionTask,
-                                    flux_ct, sc0);
+    // TODO skip these if not SMR/AMR i.e. refinement=none or something like that
+    auto t_send_flux = tl.AddTask(Container<Real>::SendFluxCorrectionTask,
+                                    t_flux_ct, sc0);
+    auto t_recv_flux = tl.AddTask(Container<Real>::ReceiveFluxCorrectionTask,
+                                    t_flux_ct, sc0);
 
     // TODO HARM's fix_flux for vector components
 
     // Apply fluxes to create a single update dU/dt
-    auto flux_divergence = AddTwoContainerTask(tl, Update::FluxDivergence, recv_flux, sc0, dudt);
-    auto source_term = AddTwoContainerTask(tl, GRMHD::SourceTerm, flux_divergence, sc0, dudt);
+    auto t_flux_divergence = tl.AddTask(Update::FluxDivergence, t_recv_flux, sc0, dudt);
+    auto t_source_term = tl.AddTask(GRMHD::SourceTerm, t_flux_divergence, sc0, dudt);
     // Apply dU/dt to the stage's initial state sc0 to obtain the stage final state sc1
     // Note this *only fills U* of sc1, so sc1 is out of lockstep
-    auto update_container = AddUpdateTask(tl, pmb, stage, stage_name, integrator, UpdateContainer, source_term);
+    auto t_update_container = tl.AddTask(UpdateContainer, t_source_term, pmb, stage, stage_name, integrator);
 
     // Update ghost cells.  Only performed on U of sc1
-    auto send = AddContainerTask(tl, Container<Real>::SendBoundaryBuffersTask,
-                                update_container, sc1);
-    auto recv = AddContainerTask(tl, Container<Real>::ReceiveBoundaryBuffersTask,
-                                send, sc1);
-    auto fill_from_bufs = AddContainerTask(tl, Container<Real>::SetBoundariesTask,
-                                            recv, sc1);
-    auto clear_comm_flags = AddContainerTask(tl, Container<Real>::ClearBoundaryTask,
-                                            fill_from_bufs, sc1);
+    auto t_send = tl.AddTask(Container<Real>::SendBoundaryBuffersTask,
+                                t_update_container, sc1);
+    auto t_recv = tl.AddTask(Container<Real>::ReceiveBoundaryBuffersTask,
+                                t_update_container, sc1);
+    auto t_fill_from_bufs = tl.AddTask(Container<Real>::SetBoundariesTask,
+                                            t_recv, sc1);
+    auto t_clear_comm_flags = tl.AddTask(Container<Real>::ClearBoundaryTask,
+                                            t_fill_from_bufs, sc1);
 
-    auto prolong_bound = tl.AddTask<BlockTask>([](MeshBlock *pmb) {
+    auto t_prolong_bound = tl.AddTask([](MeshBlock *pmb) {
         pmb->pbval->ProlongateBoundaries(0.0, 0.0);
         return TaskStatus::complete;
-    }, fill_from_bufs, pmb);
+    }, t_fill_from_bufs, pmb);
 
     // Set physical boundaries
     // ApplyCustomBoundaries is only used for the Bondi test problem outer bound
     // Note custom boundaries must but need only update U.
     // TODO add physical inflow check to ApplyCustomBoundaries
-    auto set_parthenon_bc = AddContainerTask(tl, parthenon::ApplyBoundaryConditions,
-                                            prolong_bound, sc1);
-    auto set_custom_bc = AddContainerTask(tl, ApplyCustomBoundaries, prolong_bound, sc1);
+    auto t_set_parthenon_bc = tl.AddTask(parthenon::ApplyBoundaryConditions,
+                                            t_prolong_bound, sc1);
+    auto t_set_custom_bc = tl.AddTask(ApplyCustomBoundaries, t_set_parthenon_bc, sc1);
 
     // Fill primitives, bringing U and P back into lockstep
-    auto fill_derived = AddContainerTask(tl, parthenon::FillDerivedVariables::FillDerived,
-                                        set_custom_bc, sc1);
+    auto t_fill_derived = tl.AddTask(parthenon::FillDerivedVariables::FillDerived,
+                                        t_set_custom_bc, sc1);
 
-    // Apply floor values to sc1.  Note that all floor operations must *preserve* lockstep
-    // TODO with some attention to FillDerived, this can be eliminated.  Currently a subtle bug somewhere though
+    // Apply floor values to sc1.  Note that this must take valid U and give valid U,P
+    // TODO verify we don't need this, or that we don't need the counterpart in FillDerived
     //auto apply_floors = AddContainerTask(tl, ApplyFloors, fill_derived, sc1);
 
     // estimate next time step
     if (stage == integrator->nstages) {
-        auto new_dt = AddContainerTask(tl, [](Container<Real>& rc) {
-            MeshBlock *pmb = rc.pmy_block;
-            pmb->SetBlockTimestep(parthenon::Update::EstimateTimestep(rc));
-            return TaskStatus::complete;
-        }, calculate_flux, sc0);
+        auto new_dt = tl.AddTask(
+            [](std::shared_ptr<Container<Real>> &rc) {
+                MeshBlock *pmb = rc->pmy_block;
+                pmb->SetBlockTimestep(parthenon::Update::EstimateTimestep(rc));
+                return TaskStatus::complete;
+            }, t_fill_derived, sc1);
 
         // Update refinement
         if (pmesh->adaptive) {
-            auto tag_refine = tl.AddTask<BlockTask>([](MeshBlock *pmb) {
+            auto tag_refine = tl.AddTask([](MeshBlock *pmb) {
                 pmb->pmr->CheckRefinementCondition();
                 return TaskStatus::complete;
-            }, fill_derived, pmb);
+            }, t_fill_derived, pmb);
         }
     }
     return tl;

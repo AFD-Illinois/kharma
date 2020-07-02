@@ -6,17 +6,17 @@
 
 using namespace Kokkos;
 
-double MaxDivB(Container<Real>& rc)
+double MaxDivB(std::shared_ptr<Container<Real>>& rc)
 {
     FLAG("Calculating divB");
-    MeshBlock *pmb = rc.pmy_block;
+    MeshBlock *pmb = rc->pmy_block;
     IndexDomain domain = IndexDomain::interior;
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
 
     GRCoordinates G = pmb->coords;
-    GridVars P = rc.Get("c.c.bulk.prims").data;
+    GridVars P = rc->Get("c.c.bulk.prims").data;
 
     double max_divb;
     Kokkos::Max<double> max_reducer(max_divb);

@@ -37,7 +37,7 @@
 /**
  * Apply density and internal energy floors and ceilings
  */
-TaskStatus ApplyFloors(Container<Real>& rc);
+TaskStatus ApplyFloors(std::shared_ptr<Container<Real>>& rc);
 
 /**
  * Apply a fluid velocity ceiling

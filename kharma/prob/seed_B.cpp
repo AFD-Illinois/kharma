@@ -106,13 +106,13 @@ void SeedBField(MeshBlock *pmb, GRCoordinates G, GridVars P,
  */
 Real GetLocalBetaMin(MeshBlock *pmb)
 {
-    Container<Real> rc = pmb->real_containers.Get();
+    auto& rc = pmb->real_containers.Get();
     IndexDomain domain = IndexDomain::interior;
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
     GRCoordinates G = pmb->coords;
-    GridVars P = rc.Get("c.c.bulk.prims").data;
+    GridVars P = rc->Get("c.c.bulk.prims").data;
 
     // TODO *sigh*
     Real gamma = pmb->packages["GRMHD"]->Param<Real>("gamma");
@@ -147,12 +147,12 @@ Real GetLocalBetaMin(MeshBlock *pmb)
  */
 void NormalizeBField(MeshBlock *pmb, Real factor)
 {
-    Container<Real> rc = pmb->real_containers.Get();
+    auto& rc = pmb->real_containers.Get();
     int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
     int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
     int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
-    GridVars P = rc.Get("c.c.bulk.prims").data;
-    GridVars U = rc.Get("c.c.bulk.cons").data;
+    GridVars P = rc->Get("c.c.bulk.prims").data;
+    GridVars U = rc->Get("c.c.bulk.cons").data;
     GRCoordinates G = pmb->coords;
 
     // TODO *sigh*

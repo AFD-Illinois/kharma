@@ -11,20 +11,20 @@ TaskStatus UpdateContainer(MeshBlock *pmb, int stage,
                             Integrator* integrator) {
     const Real beta = integrator->beta[stage-1];
     Real dt = integrator->dt;
-    Container<Real>& base = pmb->real_containers.Get();
-    Container<Real>& cin = pmb->real_containers.Get(stage_name[stage-1]);
-    Container<Real>& cout = pmb->real_containers.Get(stage_name[stage]);
-    Container<Real>& dudt = pmb->real_containers.Get("dUdt");
+    auto& base = pmb->real_containers.Get();
+    auto& cin = pmb->real_containers.Get(stage_name[stage-1]);
+    auto& cout = pmb->real_containers.Get(stage_name[stage]);
+    auto& dudt = pmb->real_containers.Get("dUdt");
     parthenon::Update::AverageContainers(cin, base, beta);
     parthenon::Update::UpdateContainer(cin, dudt, beta*dt, cout);
     return TaskStatus::complete;
 }
 
-TaskStatus CopyField(std::string& var, Container<Real>& rc0, Container<Real>& rc1)
+TaskStatus CopyField(std::string& var, std::shared_ptr<Container<Real>>& rc0, std::shared_ptr<Container<Real>>& rc1)
 {
-    MeshBlock *pmb = rc0.pmy_block;
-    GridVars v0 = rc0.Get(var).data;
-    GridVars v1 = rc1.Get(var).data;
+    MeshBlock *pmb = rc0->pmy_block;
+    GridVars v0 = rc0->Get(var).data;
+    GridVars v1 = rc1->Get(var).data;
     IndexDomain domain = IndexDomain::interior;
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);

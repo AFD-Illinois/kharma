@@ -297,7 +297,7 @@ KOKKOS_INLINE_FUNCTION void mhd_vchar(const GRCoordinates &G, const GridVars P, 
     Acov[dir] = 1.;
     Bcov[0] = 1.;
 
-    DLOOP2
+    DLOOP2 // TODO use lower()
     {
         Acon[mu] += G.gcon(loc, j, i, mu, nu) * Acov[nu];
         Bcon[mu] += G.gcon(loc, j, i, mu, nu) * Bcov[nu];

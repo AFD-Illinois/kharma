@@ -23,8 +23,6 @@ mkdir -p build
 
 cd build
 
-#-DCMAKE_CXX_COMPILER=$PWD/../external/parthenon/external/Kokkos/bin/nvcc_wrapper \
-
 
 if [[ "$*" == *"clean"* ]]; then
   if [[ "$*" == *"cuda"* ]]; then # CUDA BUILD
@@ -33,11 +31,9 @@ if [[ "$*" == *"clean"* ]]; then
     -DCMAKE_CXX_COMPILER=$PWD/../external/parthenon/external/Kokkos/bin/nvcc_wrapper \
     -DCMAKE_BUILD_TYPE=$TYPE \
     -DCMAKE_PREFIX_PATH=/usr/lib64/mpich \
-    -DPAR_LOOP_LAYOUT="MDRANGE_LOOP" \
-    -DPAR_LOOP_INNER_LAYOUT="SIMDFOR_INNER_LOOP" \
-    -DENABLE_UNIT_TESTS=OFF \
-    -DENABLE_INTEGRATION_TESTS=OFF \
-    -DENABLE_REGRESSION_TESTS=OFF \
+    -DPAR_LOOP_LAYOUT="MANUAL1D_LOOP" \
+    -DPAR_LOOP_INNER_LAYOUT="TVR_INNER_LOOP" \
+    -DBUILD_TESTING=OFF \
     -DENABLE_EXAMPLES=OFF \
     -DPARTHENON_DISABLE_MPI=OFF \
     -DPARTHENON_NGHOST=4 \
@@ -61,11 +57,9 @@ if [[ "$*" == *"clean"* ]]; then
     cmake ..\
     -DCMAKE_BUILD_TYPE=$TYPE \
     -DCMAKE_PREFIX_PATH=/usr/lib64/mpich \
-    -DPAR_LOOP_LAYOUT="MDRANGE_LOOP" \
+    -DPAR_LOOP_LAYOUT="MANUAL1D_LOOP" \
     -DPAR_LOOP_INNER_LAYOUT="SIMDFOR_INNER_LOOP" \
-    -DENABLE_UNIT_TESTS=OFF \
-    -DENABLE_INTEGRATION_TESTS=OFF \
-    -DENABLE_REGRESSION_TESTS=OFF \
+    -DBUILD_TESTING=OFF \
     -DENABLE_EXAMPLES=OFF \
     -DPARTHENON_DISABLE_MPI=OFF \
     -DPARTHENON_NGHOST=4 \

@@ -38,11 +38,11 @@ void InitializeBondi(MeshBlock *pmb, const GRCoordinates& G, GridVars P,
     FLAG("Initialized Bondi");
 }
 
-void ApplyBondiBoundary(Container<Real>& rc)
+void ApplyBondiBoundary(std::shared_ptr<Container<Real>>& rc)
 {
-    MeshBlock *pmb = rc.pmy_block;
-    GridVars U = rc.Get("c.c.bulk.cons").data;
-    GridVars P = rc.Get("c.c.bulk.prims").data;
+    MeshBlock *pmb = rc->pmy_block;
+    GridVars U = rc->Get("c.c.bulk.cons").data;
+    GridVars P = rc->Get("c.c.bulk.prims").data;
     int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
     int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
     int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);

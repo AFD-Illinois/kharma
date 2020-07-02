@@ -18,7 +18,7 @@
 #include <memory>
 
 #include "interface/state_descriptor.hpp"
-#include "task_list/tasks.hpp"
+#include "tasks/task_list.hpp"
 #include "parameter_input.hpp"
 
 using namespace parthenon;
@@ -30,16 +30,16 @@ namespace GRMHD {
     // Tasks to implement the interface:
     // FillDerived should end up with all derived variables in the StateDescriptor in consistent state for e.g. output
     // For HARM this means running U_to_P to recover primitives in all zones
-    void FillDerived(Container<Real>& rc);
+    void FillDerived(std::shared_ptr<Container<Real>>& rc);
     // Calculate the LLF fluxes in each direction
-    TaskStatus CalculateFluxes(Container<Real>& rc);
+    TaskStatus CalculateFluxes(std::shared_ptr<Container<Real>>& rc);
     // Split version to queue more tasks at once
-    TaskStatus CalculateFlux1(Container<Real>& rc);
-    TaskStatus CalculateFlux2(Container<Real>& rc);
-    TaskStatus CalculateFlux3(Container<Real>& rc);
-    TaskStatus FluxCT(Container<Real>& rc);
+    TaskStatus CalculateFlux1(std::shared_ptr<Container<Real>>& rc);
+    TaskStatus CalculateFlux2(std::shared_ptr<Container<Real>>& rc);
+    TaskStatus CalculateFlux3(std::shared_ptr<Container<Real>>& rc);
+    TaskStatus FluxCT(std::shared_ptr<Container<Real>>& rc);
     // Add the HARM source term to the RHS dudt
-    TaskStatus SourceTerm(Container<Real>& rc, Container<Real>& dudt);
+    TaskStatus SourceTerm(std::shared_ptr<Container<Real>>& rc, std::shared_ptr<Container<Real>>& dudt);
     // Estimate the next timestep. For pure GRMHD, this is the minimum signal crossing time of a zone on the block
-    Real EstimateTimestep(Container<Real>& rc);
+    Real EstimateTimestep(std::shared_ptr<Container<Real>>& rc);
 }
