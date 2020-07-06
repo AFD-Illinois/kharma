@@ -78,7 +78,7 @@ KOKKOS_INLINE_FUNCTION int fixup_floor(const GRCoordinates& G, GridVars P, GridV
     // Then apply floors:
     // 1. Geometric hard floors, not based on fluid relationships
     Real rhoflr_geom, uflr_geom;
-    if(G.spherical) {
+    if(G.coords.spherical()) {
         GReal Xembed[GR_DIM];
         G.coord_embed(k, j, i, Loci::center, Xembed);
         GReal r = Xembed[1];

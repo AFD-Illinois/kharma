@@ -76,6 +76,12 @@ class CoordinateEmbedding {
         }
 
         // Spell out the interface we take from BaseCoords
+        KOKKOS_INLINE_FUNCTION bool spherical() const
+        {
+            return mpark::visit( [&](const auto& self) {
+                return self.spherical;
+            }, base);
+        }
         KOKKOS_INLINE_FUNCTION void gcov_embed(const GReal Xembed[GR_DIM], Real gcov[GR_DIM][GR_DIM]) const
         {
             mpark::visit( [&Xembed, &gcov](const auto& self) {

@@ -34,6 +34,7 @@ KOKKOS_FUNCTION void root_find(const GReal Xembed[GR_DIM], GReal Xnative[GR_DIM]
  */
 class CartMinkowskiCoords {
     public:
+        const bool spherical = false;
         KOKKOS_INLINE_FUNCTION void gcov_embed(const GReal Xembed[GR_DIM], Real gcov[GR_DIM][GR_DIM]) const
         {
             DLOOP2 gcov[mu][nu] = (mu == nu) - 2*(mu == 0 && nu == 0);
@@ -46,6 +47,7 @@ class CartMinkowskiCoords {
  */
 class SphMinkowskiCoords {
     public:
+        const bool spherical = true;
         KOKKOS_INLINE_FUNCTION void gcov_embed(const GReal Xembed[GR_DIM], Real gcov[GR_DIM][GR_DIM]) const
         {
             GReal r = Xembed[1], sth = sin(Xembed[2]);
@@ -65,6 +67,7 @@ class SphKSCoords {
     public:
         // BH Spin is a property of KS
         const GReal a;
+        const bool spherical = true;
 
         SphKSCoords(GReal spin): a(spin) {};
 
@@ -128,6 +131,7 @@ class SphBLCoords {
     public:
         // BH Spin is a property of BL
         const GReal a;
+        const bool spherical = true;
 
         SphBLCoords(GReal spin): a(spin) {}
 

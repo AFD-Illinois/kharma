@@ -9,11 +9,12 @@
 #include "phys.hpp"
 
 // Problem initialization headers
-#include "mhdmodes.hpp"
+//#include "bh_flux.hpp"
 #include "bondi.hpp"
 #include "fm_torus.hpp"
+#include "iharm_restart.hpp"
+#include "mhdmodes.hpp"
 #include "seed_B.hpp"
-//#include "bh_flux.hpp"
 
 using namespace parthenon;
 
@@ -41,7 +42,7 @@ void InitializeProblem(ParameterInput *pin, MeshBlock *pmb)
         int nmode = pin->GetOrAddInteger("mhdmodes", "nmode", 1);
         int dir = pin->GetOrAddInteger("mhdmodes", "dir", 0);
 
-        Real tf = InitializeMHDModes(pmb, G, P, nmode, dir);
+        double tf = InitializeMHDModes(pmb, G, P, nmode, dir);
         pin->SetReal("parthenon/time", "tlim", tf);
 
     } else if (prob == "bondi") {
@@ -61,12 +62,17 @@ void InitializeProblem(ParameterInput *pin, MeshBlock *pmb)
         FLAG("Initializing torus");
         InitializeFMTorus(pmb, G, P, eos, rin, rmax);
 
-    } else if (prob == "legacy_restart") {
-
+    } else if (prob == "iharm_restart") {
+        auto fname = pin->GetString("iharm_restart", "fname"); // Require this, don't guess
+        bool use_tf = pin->GetOrAddBoolean("iharm_restart", "use_tf", false);
+        double tf = ReadIharmRestart(pmb, G, P, fname);
+        if (use_tf) {
+            pin->SetReal("parthenon/time", "tlim", tf);
+        }
     }
 
     // TODO namespace these outside "torus"
-    if (prob != "legacy_restart") {
+    if (prob != "iharm_restart") {
         // TODO randomness is deterministic per-run I think (at least on OpenMP),
         // but not per-mesh-geometry/MPI geometry
         Real u_jitter = pin->GetOrAddReal("torus", "u_jitter", 0.0);

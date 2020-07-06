@@ -13,15 +13,20 @@ fi
 source deactivate
 echo $(which python)
 
+# Some OSes name modern CMake differently
 if command -v cmake3 > /dev/null 2>&1; then
-  # Then we're on Darwin.  Don't bother with Intel
   CMAKE=cmake3
-  CC_NATIVE=gcc
-  CXX_NATIVE=g++
 else
   CMAKE=cmake
+fi
+
+# Only use icc on Stampede
+if [[ $(hostname) == *"stampede2"* ]]; then
   CC_NATIVE=icc
   CXX_NATIVE=icpc
+else
+  CC_NATIVE=gcc
+  CXX_NATIVE=g++
 fi
 
 if [[ "$*" == *"debug"* ]]; then
@@ -75,7 +80,8 @@ if [[ "$*" == *"clean"* ]]; then
     -DKokkos_ARCH_PASCAL60=OFF \
     -DKokkos_ARCH_VOLTA70=OFF \
     -DKokkos_ARCH_TURING75=ON \
-    -DKokkos_ENABLE_CUDA_LAMBDA=ON
+    -DKokkos_ENABLE_CUDA_LAMBDA=ON \
+    -DKokkos_ENABLE_CUDA_CONSTEXPR=ON
   else #OpenMP BUILD
     $CMAKE ..\
     -DCMAKE_C_COMPILER=$CC_NATIVE \

@@ -3,7 +3,6 @@
 #
 if (Kokkos_ENABLE_CUDA)
     set(EXE_NAME "kharma.cuda")
-    list(APPEND CMAKE_CXX_FLAGS "--expt-relaxed-constexpr")
 else()
     set(EXE_NAME "kharma.host")
 endif()

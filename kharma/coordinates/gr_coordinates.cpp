@@ -21,16 +21,12 @@ void init_GRCoordinates(GRCoordinates& G, int n1, int n2, int n3);
 
 #if FAST_CARTESIAN
 /**
- * Construct a cartesian GRCoordinates object
+ * Fast Cartesian GRCoordinates just use the underlying UniformCartesian object for everything
  */
-GRCoordinates::GRCoordinates(const RegionSize &rs, ParameterInput *pin): UniformCartesian(rs, pin)
-{
-    // Cartesian is not spherical
-    spherical = false;
-}
+GRCoordinates::GRCoordinates(const RegionSize &rs, ParameterInput *pin): UniformCartesian(rs, pin) {}
 #else
 /**
- * Construct a GRCoordinates object according to preferences set in the package
+ * Construct a GRCoordinates object with a transformation according to preferences set in the package
  */
 GRCoordinates::GRCoordinates(const RegionSize &rs, ParameterInput *pin): UniformCartesian(rs, pin)
 {
@@ -50,19 +46,19 @@ GRCoordinates::GRCoordinates(const RegionSize &rs, ParameterInput *pin): Uniform
     SomeBaseCoords base;
     if (base_str == "spherical_minkowski") {
         base.emplace<SphMinkowskiCoords>(SphMinkowskiCoords());
-        spherical = true;
     } else if (base_str == "cartesian_minkowski" || base_str == "minkowski") {
         base.emplace<CartMinkowskiCoords>(CartMinkowskiCoords());
-        spherical = false;
     } else if (base_str == "spherical_ks" || base_str == "ks") {
         base.emplace<SphKSCoords>(SphKSCoords(a));
-        spherical = true;
     } else if (base_str == "spherical_bl" || base_str == "bl") {
         base.emplace<SphBLCoords>(SphBLCoords(a));
-        spherical = true;
     } else {
         throw std::invalid_argument("Unsupported base coordinates!");
     }
+
+    bool spherical = mpark::visit( [&](const auto& self) {
+                return self.spherical;
+            }, base);
 
     SomeTransform transform;
     if (transform_str == "null") {
@@ -102,7 +98,6 @@ GRCoordinates::GRCoordinates(const RegionSize &rs, ParameterInput *pin): Uniform
 GRCoordinates::GRCoordinates(const GRCoordinates &src, int coarsen): UniformCartesian(src, coarsen)
 {
     //std::cerr << "Calling coarsen constructor" << std::endl;
-    spherical = src.spherical;
     coords = src.coords;
     n1 = src.n1/coarsen;
     n2 = src.n2/coarsen;
@@ -113,7 +108,6 @@ GRCoordinates::GRCoordinates(const GRCoordinates &src, int coarsen): UniformCart
 GRCoordinates::GRCoordinates(const GRCoordinates &src): UniformCartesian(src)
 {
     //std::cerr << "Calling copy constructor size " << src.n1 << " " << src.n2 << std::endl;
-    spherical = src.spherical;
     coords = src.coords;
     n1 = src.n1;
     n2 = src.n2;
@@ -130,7 +124,6 @@ GRCoordinates GRCoordinates::operator=(const GRCoordinates& src)
 {
     //std::cerr << "Calling assignment operator size " << src.n1 << " " << src.n2 << std::endl;
     UniformCartesian::operator=(src);
-    spherical = src.spherical;
     coords = src.coords;
     n1 = src.n1;
     n2 = src.n2;

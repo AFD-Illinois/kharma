@@ -34,10 +34,6 @@ public:
     // but ensures it will get copied device-side by C++14 Lambdas, circumventing *so many* bugs
     CoordinateEmbedding coords;
 
-    // Simple test for spherical coordinates or not
-    // Needed for better errors, and switching up floor definitions
-    bool spherical;
-
     // UniformCartesian doesn't need domain size.  We do.
     int n1, n2, n3;
     // And optionally some caches
