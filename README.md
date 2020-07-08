@@ -12,13 +12,14 @@ KHARMA is built with CMake.  This can be done manually with the CMake CLI or GUI
 or by looking through and editing the file `make.sh`, which has a sample set of
 flags for different compilation modes and architectures.
 
-Quick start:
+After editing `make.sh` to taste, run:
 
 ```bash
 $ git submodule update --init --recursive
 $ ./make.sh clean
 ```
 
-**Note** that you need to set the Parthenon option `NUMBER_GHOST_CELLS` to 4 (for WENO reconstruction),
-and the option `PAR_LOOP_LAYOUT` to "MDRANGE_LOOP" for better performance.
-Additionally, you'll need to set the `COORDINATE_TYPE` variable to `GRCoordinates`.
+# Parthenon mirror
+For the moment, this code uses a mirror of parthenon from [here](https://github.com/bprather/parthenon),
+which changes the default coordinate system to KHARMA's GRCoordinates, and makes a couple changes geared
+toward GPU support.
