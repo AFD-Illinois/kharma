@@ -26,6 +26,8 @@ if(CMAKE_BUILD_TYPE)
     if(${CMAKE_BUILD_TYPE} STREQUAL "Debug")
         message("Debug build")
         target_compile_definitions(${EXE_NAME} PUBLIC DEBUG=1)
+        # Only for very verbose output
+        #target_compile_definitions(${EXE_NAME} PUBLIC DEBUG_TRACE=1)
     else()
         message("Explicit non-Debug build")
         target_compile_definitions(${EXE_NAME} PUBLIC DEBUG=0)

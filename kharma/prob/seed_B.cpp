@@ -55,9 +55,8 @@ void SeedBField(MeshBlock *pmb, GRCoordinates G, GridVars P,
             GReal r = Xembed[1], th = Xembed[2];
 
             // Find rho (later u?) at corners by averaging from adjacent centers
-            // TODO is this a thing Parthenon can do?
-            Real rho_av = 0.25 * (P(prims::rho, 0, j, i) + P(prims::rho, 0, j, i - 1) +
-                                  P(prims::rho, 0, j - 1, i) + P(prims::rho, 0, j - 1, i - 1));
+            Real rho_av = 0.25 * (P(prims::rho, NGHOST, j, i)     + P(prims::rho, NGHOST, j, i - 1) +
+                                  P(prims::rho, NGHOST, j - 1, i) + P(prims::rho, NGHOST, j - 1, i - 1));
 
             Real q;
             switch (b_field_flag)
@@ -81,6 +80,7 @@ void SeedBField(MeshBlock *pmb, GRCoordinates G, GridVars P,
                 Real sigma = 2 / sqrt(2 * log(2));
                 Real u = x / fabs(sigma);
                 q = (1 / (sqrt(2 * M_PI) * fabs(sigma))) * exp(-u * u / 2);
+                break;
             }
 
             A(j, i) = max(q, 0.);
@@ -88,14 +88,13 @@ void SeedBField(MeshBlock *pmb, GRCoordinates G, GridVars P,
     );
 
     // Calculate B-field
-    auto coords = pmb->coords;
-    pmb->par_for("B_field_B", 0, n3-2, 1, n2-2, 1, n1-2,
+    pmb->par_for("B_field_B", 0, n3-1, 0, n2-2, 0, n1-2,
         KOKKOS_LAMBDA_3D {
             // Take a flux-ct step from the corner potentials
             P(prims::B1, k, j, i) = -(A(j, i) - A(j + 1, i) + A(j, i + 1) - A(j + 1, i + 1)) /
-                                (2. * coords.dx2v(j) * G.gdet(Loci::center, j, i));
-            P(prims::B2, k, j, i) = (A(j, i) + A(j + 1, i) - A(j, i + 1) - A(j + 1, i + 1)) /
-                                (2. * coords.dx1v(i) * G.gdet(Loci::center, j, i));
+                                (2. * G.dx2v(j) * G.gdet(Loci::center, j, i));
+            P(prims::B2, k, j, i) =  (A(j, i) + A(j + 1, i) - A(j, i + 1) - A(j + 1, i + 1)) /
+                                (2. * G.dx1v(i) * G.gdet(Loci::center, j, i));
             P(prims::B3, k, j, i) = 0.;
         }
     );

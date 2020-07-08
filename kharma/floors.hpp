@@ -28,7 +28,7 @@
 // Maximum ratio of internal energy to density (i.e. Temperature)
 #define UORHOMAX   100.
 // Same for magnetic field (i.e. magnetization sigma)
-#define BSQORHOMAX 100.
+#define BSQORHOMAX 500.
 #define BSQOUMAX   (BSQORHOMAX * UORHOMAX)
 
 /**
@@ -106,6 +106,9 @@ KOKKOS_INLINE_FUNCTION int fixup_floor(const GRCoordinates& G, GridVars P, GridV
     // Take floors on U into account
     double rhoflr_temp = max(u / UORHOMAX, uflr_max / UORHOMAX);
 
+    // Evaluate max rho floor
+    double rhoflr_max = max(max(rhoflr_geom, rhoflr_b), rhoflr_temp);
+
 #if DEBUG
     // Record all the floors that were hit, even if there were multiple
     // Record Geometric floor hits
@@ -118,12 +121,10 @@ KOKKOS_INLINE_FUNCTION int fixup_floor(const GRCoordinates& G, GridVars P, GridV
     fflag |= (rhoflr_temp > rho) * HIT_FLOOR_TEMP; // Misnomer for consistency
 #endif
 
-    // Evaluate max rho floor
-    double rhoflr_max = max(max(rhoflr_geom, rhoflr_b), rhoflr_temp);
-
-    // Add the material in the normal observer frame, by:
+    InversionStatus pflag;
     if (rhoflr_max > rho || uflr_max > u) { // Apply floors
 
+        // Add the material in the normal observer frame, by:
         // Initializing a dummy fluid parcel
         Real Pnew[NPRIM] = {0}, Unew[NPRIM] = {0};
         FourVectors Dnew;
@@ -147,12 +148,7 @@ KOKKOS_INLINE_FUNCTION int fixup_floor(const GRCoordinates& G, GridVars P, GridV
         }
 
         // Recover primitive variables from conserved versions
-        // TODO record these and print, because it would suck to call this
-        // function from inside fix_U_to_P and *still* get an inversion error
-        InversionStatus pflag = U_to_P(G, U, eos, k, j, i, Loci::center, P);
-#if DEBUG
-        if (pflag != InversionStatus::success) printf("Inversion error in floors!\n"); // TODO Combine the flags?
-#endif
+        pflag = U_to_P(G, U, eos, k, j, i, Loci::center, P);
     }
-    return fflag;
+    return fflag + pflag;
 }

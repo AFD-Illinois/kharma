@@ -114,10 +114,10 @@ TaskList HARMDriver::MakeTaskList(MeshBlock *pmb, int stage)
     auto t_recv_flux = tl.AddTask(Container<Real>::ReceiveFluxCorrectionTask,
                                     t_flux_ct, sc0);
 
-    // TODO HARM's fix_flux for vector components
+    auto t_fix_flux = tl.AddTask(FixFlux, t_recv_flux, sc0);
 
     // Apply fluxes to create a single update dU/dt
-    auto t_flux_divergence = tl.AddTask(Update::FluxDivergence, t_recv_flux, sc0, dudt);
+    auto t_flux_divergence = tl.AddTask(Update::FluxDivergence, t_fix_flux, sc0, dudt);
     auto t_source_term = tl.AddTask(GRMHD::AddSourceTerm, t_flux_divergence, sc0, dudt);
     // Apply dU/dt to the stage's initial state sc0 to obtain the stage final state sc1
     // Note this *only fills U* of sc1, so sc1 is out of lockstep

@@ -180,7 +180,13 @@ void FillDerived(std::shared_ptr<Container<Real>>& rc)
             pflag(k, j, i) = U_to_P(G, U, eos, k, j, i, Loci::center, P);
             fflag(k, j, i) = 0;
             fflag(k, j, i) |= fixup_ceiling(G, P, U, eos, k, j, i);
-            fflag(k, j, i) |= fixup_floor(G, P, U, eos, k, j, i); // TODO this can generate a pflag
+            // Fixup_floor involves another U_to_P call.  Hide the pflag in bottom 5 bits and retrieve both
+            int comboflag = fixup_floor(G, P, U, eos, k, j, i);
+            int pflag_floor = comboflag % HIT_FLOOR_GEOM_RHO;
+            fflag(k, j, i) |= (comboflag - pflag_floor);
+            if (pflag_floor != 0) {
+                pflag(k, j, i) = pflag_floor;
+            }
         }
     );
     FLAG("Filled");

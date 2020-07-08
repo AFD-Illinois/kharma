@@ -23,7 +23,7 @@ using Real = parthenon::Real;
 using GReal = double;
 
 // TODO add make.sh/CMake option for tracing vs just debug
-#if DEBUG
+#if DEBUG_TRACE
 #define FLAG(x) if(MPIRank0()) std::cout << x << std::endl;
 #else
 #define FLAG(x)
@@ -90,14 +90,15 @@ enum InversionStatus{success=0, neg_input, max_iter, bad_ut, bad_gamma, neg_rho,
 enum ReconstructionType{linear_mc=0, ppm, weno5, mp5};
 
 // Floor codes are non-exclusive, so it makes a lot less sense to use an enum
+// Instead, we start them high enough that we can stick the enum in the bottom 5 bits
 // See ApplyFloors for code explanations
-#define HIT_FLOOR_GEOM_RHO 1
-#define HIT_FLOOR_GEOM_U 2
-#define HIT_FLOOR_B_RHO 4
-#define HIT_FLOOR_B_U 8
-#define HIT_FLOOR_TEMP 16
-#define HIT_FLOOR_GAMMA 32
-#define HIT_FLOOR_KTOT 64
+#define HIT_FLOOR_GEOM_RHO 32
+#define HIT_FLOOR_GEOM_U 64
+#define HIT_FLOOR_B_RHO 128
+#define HIT_FLOOR_B_U 256
+#define HIT_FLOOR_TEMP 512
+#define HIT_FLOOR_GAMMA 1024
+#define HIT_FLOOR_KTOT 2048
 
 // Most floors are in fixup.hpp only, but this one is needed by U_to_P
 // TODO of course they should be runtime prefs

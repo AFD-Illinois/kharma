@@ -34,11 +34,14 @@ ox3_bc = periodic
 <coordinates>
 base = spherical_ks
 transform = fmks
-a = 0.0
+a = 0.9375
 hslope = 0.3
+mks_smooth = 0.5
+poly_xt = 0.82
+poly_alpha = 14.0
 
 <parthenon/time>
-tlim = 1.0
+tlim = 3.0
 integrator = rk2
 dt_min = 0.0001
 
@@ -46,7 +49,7 @@ dt_min = 0.0001
 cfl = 0.9
 gamma = 1.333333
 reconstruction = weno5
-merge_reconstruction = false
+merge_reconstruction = true
 
 <torus>
 rin = 6.0
@@ -57,6 +60,6 @@ beta_min = 100.
 
 <parthenon/output0>
 file_type = hdf5
-dt = 10.0
+dt = 1.0
 variables = c.c.bulk.prims
 

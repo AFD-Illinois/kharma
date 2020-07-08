@@ -40,7 +40,7 @@ double ReadIharmRestart(MeshBlock *pmb, GRCoordinates G, GridVars P, std::string
     hdf5_read_single_val(version, "version", string_type);
     if (MPIRank0())
     {
-        fprintf(stderr, "Restarting from %s, file version %s\n\n", fname, version);
+        cout << "Restarting from " << fname << ", file version " << version << endl << endl;
     }
 
     // First check size

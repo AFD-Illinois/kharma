@@ -16,9 +16,34 @@ TaskStatus ApplyCustomBoundaries(std::shared_ptr<Container<Real>>& rc)
     MeshBlock *pmb = rc->pmy_block;
     GridVars U = rc->Get("c.c.bulk.cons").data;
 
-    // TODO TODO only if mesh is the last in X1...
-    // TODO inflow check?
-    if (pmb->packages["GRMHD"]->Param<std::string>("problem") == "bondi") {
+    int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
+    int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
+    int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
+    IndexRange ib = pmb->cellbounds.GetBoundsI(IndexDomain::interior);
+    IndexRange jb = pmb->cellbounds.GetBoundsJ(IndexDomain::interior);
+    IndexRange kb = pmb->cellbounds.GetBoundsK(IndexDomain::interior);
+
+    // Implement our own reflecting boundary for our primitives
+    if(pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::reflect) {
+        pmb->par_for("inner_x2_reflect", 0, NPRIM-1, kb.s, kb.e, 0, jb.s-1, 0, n1-1,
+            KOKKOS_LAMBDA_VARS {
+                Real reflect = ((p == prims::u2 || p == prims::B2) ? -1.0 : 1.0);
+                U(p, k, j, i) = reflect * U(p, k, 2 * jb.s - j - 1, i);
+            }
+        );
+    }
+    if(pmb->boundary_flag[BoundaryFace::outer_x2] == BoundaryFlag::reflect) {
+        pmb->par_for("outer_x2_reflect", 0, NPRIM-1, kb.s, kb.e, jb.e+1, n2-1, 0, n1-1,
+            KOKKOS_LAMBDA_VARS {
+                Real reflect = ((p == prims::u2 || p == prims::B2) ? -1.0 : 1.0);
+                U(p, k, j, i) = reflect * U(p, k, 2 * jb.e - j + 1, i);
+            }
+        );
+    }
+
+    // TODO check for inflow here too
+    if (pmb->boundary_flag[BoundaryFace::outer_x1] == BoundaryFlag::outflow &&
+        pmb->packages["GRMHD"]->Param<std::string>("problem") == "bondi") {
         FLAG("Applying Bondi problem boundary");
         ApplyBondiBoundary(rc);
     }
@@ -65,7 +90,7 @@ KOKKOS_INLINE_FUNCTION void check_inflow(GRCoordinates &G, GridVars P, const int
  * Fix fluxes on domain boundaries. No inflow, correct B fields on reflecting conditions.
  * TODO Parthenon does this, if given to understand B is a vector
  */
-void FixFlux(std::shared_ptr<Container<Real>>& rc)
+TaskStatus FixFlux(std::shared_ptr<Container<Real>>& rc)
 {
     MeshBlock *pmb = rc->pmy_block;
     GridVars F1 = rc->Get("c.c.bulk.cons").flux[X1DIR];
@@ -76,13 +101,10 @@ void FixFlux(std::shared_ptr<Container<Real>>& rc)
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
-
-    int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
-    int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
     int NG = NGHOST;
 
-    // TODO check mesh block location
-    //if (first in X1 and now inflow X1L)
+    // TODO option to allow inflow?
+    if (pmb->boundary_flag[BoundaryFace::inner_x1] == BoundaryFlag::outflow)
     {
         pmb->par_for("fix_flux_in_l", ks, ke, js, je,
             KOKKOS_LAMBDA (const int& k, const int& j) {
@@ -91,34 +113,36 @@ void FixFlux(std::shared_ptr<Container<Real>>& rc)
         );
     }
 
-    //if (last in X1 and no inflow X1R)
+    if (pmb->boundary_flag[BoundaryFace::outer_x1] == BoundaryFlag::outflow &&
+        !(pmb->packages["GRMHD"]->Param<std::string>("problem") == "bondi"))
     {
         pmb->par_for("fix_flux_in_r", ks, ke, js, je,
             KOKKOS_LAMBDA (const int& k, const int& j) {
-                F1(prims::rho, k, j, n1 + NG) = min(F1(prims::rho, k, j, n1 + NG), 0.);
+                F1(prims::rho, k, j, ie + NG) = min(F1(prims::rho, k, j, ie + NG), 0.);
             }
         );
     }
 
-    //if (first in X2)
+    if (pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::reflect)
     {
         pmb->par_for("fix_flux_b_l", ks, ke, is, ie,
             KOKKOS_LAMBDA (const int& k, const int& i) {
                 F1(prims::B2, k, -1 + NG, i) = -F1(prims::B2, k, 0 + NG, i);
                 F3(prims::B2, k, -1 + NG, i) = -F3(prims::B2, k, 0 + NG, i);
-                PLOOP F2(p, i, 0 + NG, k) = 0.;
+                PLOOP F2(p, k, 0 + NG, i) = 0.;
             }
         );
     }
 
-    //if (last in X2)
+    if (pmb->boundary_flag[BoundaryFace::outer_x2] == BoundaryFlag::reflect)
     {
         pmb->par_for("fix_flux_b_r", ks, ke, is, ie,
             KOKKOS_LAMBDA (const int& k, const int& i) {
-                F1(prims::B2, k, n2 + NG, i) = -F1(prims::B2, k, n2 - 1 + NG, i);
-                F3(prims::B2, k, n2 + NG, i) = -F3(prims::B2, k, n2 - 1 + NG, i);
-                PLOOP F2(p, k, n2 + NG, i) = 0.;
+                F1(prims::B2, k, je + NG, i) = -F1(prims::B2, k, je - 1 + NG, i);
+                F3(prims::B2, k, je + NG, i) = -F3(prims::B2, k, je - 1 + NG, i);
+                PLOOP F2(p, k, je + NG, i) = 0.;
             }
         );
     }
+    return TaskStatus::complete;
 }

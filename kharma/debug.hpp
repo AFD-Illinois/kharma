@@ -4,6 +4,7 @@
 #include "decs.hpp"
 
 #include "mesh/mesh.hpp"
+#include "mpi.hpp"
 
 using namespace std;
 
@@ -37,9 +38,16 @@ void CountPFlags(MeshBlock *pmb, T pflag, IndexDomain domain=IndexDomain::entire
         if (flag == InversionStatus::neg_rhou) ++n_neg_both;
     }
 
-    // TODO MPI
+    n_tot = MPISumInt(n_tot);
+    n_neg_in = MPISumInt(n_neg_in);
+    n_max_iter = MPISumInt(n_max_iter);
+    n_utsq = MPISumInt(n_utsq);
+    n_gamma = MPISumInt(n_gamma);
+    n_neg_rho = MPISumInt(n_neg_rho);
+    n_neg_u = MPISumInt(n_neg_u);
+    n_neg_both = MPISumInt(n_neg_both);
 
-    cerr << "PFLAGS: " << n_tot << endl;
+    cerr << "PFLAGS: " << n_tot << " (" << ((double) n_tot)/((ke-ks+1)*(je-js+1)*(ie-is+1))*100 << "% of all cells)" << endl;
     if (n_neg_in > 0) cerr << "Negative input: " << n_neg_in << endl;
     if (n_max_iter > 0) cerr << "Hit max iter: " << n_max_iter << endl;
     if (n_utsq > 0) cerr << "Velocity invalid: " << n_utsq << endl;
@@ -75,15 +83,16 @@ void CountFFlags(MeshBlock *pmb, T fflag, IndexDomain domain=IndexDomain::interi
         if (flag & HIT_FLOOR_KTOT) n_ktot++;
     }
 
-    // n_geom_rho = mpi_reduce_int(n_geom_rho);
-    // n_geom_u = mpi_reduce_int(n_geom_u);
-    // n_b_rho = mpi_reduce_int(n_b_rho);
-    // n_b_u = mpi_reduce_int(n_b_u);
-    // n_temp = mpi_reduce_int(n_temp);
-    // n_gamma = mpi_reduce_int(n_gamma);
-    // n_ktot = mpi_reduce_int(n_ktot);
+    n_tot = MPISumInt(n_tot);
+    n_geom_rho = MPISumInt(n_geom_rho);
+    n_geom_u = MPISumInt(n_geom_u);
+    n_b_rho = MPISumInt(n_b_rho);
+    n_b_u = MPISumInt(n_b_u);
+    n_temp = MPISumInt(n_temp);
+    n_gamma = MPISumInt(n_gamma);
+    n_ktot = MPISumInt(n_ktot);
 
-    cerr << "FLOORS: " << n_tot << endl;
+    cerr << "FLOORS: " << n_tot << " (" << ((double) n_tot)/((ke-ks+1)*(je-js+1)*(ie-is+1))*100 << "% of all cells)" << endl;
     if (n_geom_rho > 0) cerr << "GEOM_RHO: " << n_geom_rho << endl;
     if (n_geom_u > 0) cerr << "GEOM_U: " << n_geom_u << endl;
     if (n_b_rho > 0) cerr << "B_RHO: " << n_b_rho << endl;

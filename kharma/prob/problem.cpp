@@ -11,6 +11,7 @@
 // Problem initialization headers
 //#include "bh_flux.hpp"
 #include "bondi.hpp"
+#include "boundaries.hpp"
 #include "fm_torus.hpp"
 #include "iharm_restart.hpp"
 #include "mhdmodes.hpp"
@@ -96,6 +97,20 @@ void InitializeProblem(ParameterInput *pin, MeshBlock *pmb)
         }
     }
 
+    // Make sure any zero zones get floored before beginning driver
+    FLAG("First Floors");
+    ApplyFloors(rc);
+
+    // Sync boundaries
+    // Update ghost cells.  Only performed on U
+    Container<Real>::SendBoundaryBuffersTask(rc);
+    Container<Real>::ReceiveBoundaryBuffersTask(rc);
+    Container<Real>::SetBoundariesTask(rc);
+    Container<Real>::ClearBoundaryTask(rc);
+    // pmb->pbval->ProlongateBoundaries(0.0, 0.0);
+    parthenon::ApplyBoundaryConditions(rc);
+    ApplyCustomBoundaries(rc);
+
     // Initialize U
     FLAG("First P->U");
     pmb->par_for("first_U", 0, n3-1, 0, n2-1, 0, n1-1,
@@ -105,10 +120,6 @@ void InitializeProblem(ParameterInput *pin, MeshBlock *pmb)
             prim_to_flux(G, P, Dtmp, eos, k, j, i, Loci::center, 0, U);
         }
     );
-
-    // Make sure any zero zones get floored before beginning driver
-    FLAG("First Floors");
-    ApplyFloors(rc);
 
     DelEOS(eos);
 
