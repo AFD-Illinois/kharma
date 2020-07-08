@@ -86,6 +86,9 @@ typedef struct {
 // Denote inversion failures (pflags). See U_to_P for status explanations
 enum InversionStatus{success=0, neg_input, max_iter, bad_ut, bad_gamma, neg_rho, neg_u, neg_rhou};
 
+// Denote reconstruction algorithms
+enum ReconstructionType{linear_mc=0, ppm, weno5, mp5};
+
 // Floor codes are non-exclusive, so it makes a lot less sense to use an enum
 // See ApplyFloors for code explanations
 #define HIT_FLOOR_GEOM_RHO 1

@@ -43,8 +43,10 @@ integrator = rk2
 dt_min = 0.0001
 
 <GRMHD>
-cfl = 0.8
+cfl = 0.9
 gamma = 1.333333
+reconstruction = weno5
+merge_reconstruction = false
 
 <torus>
 rin = 6.0

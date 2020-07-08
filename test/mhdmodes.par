@@ -39,6 +39,8 @@ dt_min = 0.001
 <GRMHD>
 cfl = 0.9
 gamma = 1.333333
+reconstruction = weno5
+merge_reconstruction = true
 
 <mhdmodes>
 nmode = 1
@@ -46,6 +48,6 @@ dir = 0
 
 <parthenon/output0>
 file_type = hdf5
-dt = 0.5
+dt = 0.03
 variables = c.c.bulk.prims
 

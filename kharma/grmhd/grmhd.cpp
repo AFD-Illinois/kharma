@@ -45,46 +45,98 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     std::string problem_name = pin->GetString("parthenon/job", "problem_id");
     params.Add("problem", problem_name);
 
-    // There are only 2 parameters related to fluid evolution:
-    // 1. Fluid gamma for EOS (TODO separate EOS class to make this broader)
-    // 2. Proportion of courant condition for timesteps
+    // Fluid gamma for EOS (TODO separate EOS class to make this broader)
     double gamma = pin->GetOrAddReal("GRMHD", "gamma", 4. / 3);
     params.Add("gamma", gamma);
+
+    // Proportion of courant condition for timesteps
     double cfl = pin->GetOrAddReal("GRMHD", "cfl", 0.9);
     params.Add("cfl", cfl);
+
     // Starting/minimum timestep, if something about the sound speed goes wonky
     // Parthenon allows up to 2x higher dt per step, so it climbs to CFL quite fast
     double dt_min = pin->GetOrAddReal("parthenon/time", "dt_min", 1.e-5);
     params.Add("dt_min", dt_min);
 
+    // Reconstruction scheme: plm, weno5, ppm...
+    std::string recon = pin->GetOrAddString("GRMHD", "reconstruction", "weno5");
+    if (recon == "linear_mc") {
+        params.Add("recon", ReconstructionType::linear_mc);
+    } else if (recon == "ppm") {
+        params.Add("recon", ReconstructionType::ppm);
+    } else if (recon == "weno5") {
+        params.Add("recon", ReconstructionType::weno5);
+    } else if (recon == "mp5") {
+        params.Add("recon", ReconstructionType::mp5);
+    }
+
+    // Whether to split or merge recon kernels
+    bool merge_recon = pin->GetOrAddBoolean("GRMHD", "merge_reconstruction", true);
+    params.Add("merge_recon", merge_recon);
+
+    // Magnetic field centering option.  HARM traditionally uses cell-centered fields,
+    // but KHARMA is branching into face-centered.  Latter is required for SMR/AMR.
+    bool face_fields = false;
+    std::string centering = pin->GetOrAddString("GRMHD", "field_centering", "cell");
+    if (centering == "face") {
+        face_fields = true;
+        params.Add("face_fields", true);
+    } else {
+        face_fields = false;
+        params.Add("face_fields", false);
+        // TODO if SMR/AMR throw a fit
+    }
+
     // We generally carry around the conserved versions of varialbles, treating them as the fundamental ones
     // However, since most analysis tooling expects the primitives, we *output* those.
     std::vector<int> s_vector({3});
     std::vector<int> s_fourvector({4});
-    std::vector<int> s_fluid({NPRIM-3});
     std::vector<int> s_prims({NPRIM});
-    // TODO arrange names/metadata to more accurately reflect e.g. variable locations and relations
-    // for now cells are too darn easy and I don't use any fancy face-centered features
-    Metadata m = Metadata({Metadata::Cell, Metadata::FillGhost, Metadata::Independent,
+
+    Metadata m;
+    m = Metadata({Metadata::Cell, Metadata::Independent, Metadata::FillGhost,
                     Metadata::Restart, Metadata::Conserved}, s_prims);
     fluid_state->AddField("c.c.bulk.cons", m, DerivedOwnership::shared);
-    // initialize metadata the same but length s_vector
-    // fluid_state->AddField("c.c.bulk.cons_B", m, DerivedOwnership::shared);
-
     m = Metadata({Metadata::Cell, Metadata::Derived, Metadata::OneCopy, Metadata::Intensive}, s_prims);
     fluid_state->AddField("c.c.bulk.prims", m, DerivedOwnership::shared);
-    // metadata!
-    // fluid_state->AddField("c.c.bulk.prims_B", m, DerivedOwnership::shared);
+
+#if 0
+    // These versions split out the fields.  Someday...
+
+    Metadata m;
+    m = Metadata({Metadata::Cell, Metadata::Independent, Metadata::FillGhost,
+                    Metadata::Restart, Metadata::Conserved});
+    fluid_state->AddField("c.c.bulk.rho_C", m, DerivedOwnership::shared);
+    fluid_state->AddField("c.c.bulk.u_C", m, DerivedOwnership::shared);
+
+    m = Metadata({Metadata::Cell, Metadata::Independent, Metadata::FillGhost,
+                    Metadata::Restart, Metadata::Conserved, Metadata::Vector}, s_vector);
+    fluid_state->AddField("c.c.bulk.v_C", m, DerivedOwnership::shared);
+    if (!face_fields)
+    fluid_state->AddField("c.c.bulk.B_C", m, DerivedOwnership::shared);
+
+    m = Metadata({Metadata::Cell, Metadata::Derived, Metadata::OneCopy, Metadata::Intensive});
+    fluid_state->AddField("c.c.bulk.rho_P", m, DerivedOwnership::shared);
+    fluid_state->AddField("c.c.bulk.u_P", m, DerivedOwnership::shared);
+
+    m = Metadata({Metadata::Cell, Metadata::Derived, Metadata::OneCopy, Metadata::Intensive, Metadata::Vector}, s_vector);
+    fluid_state->AddField("c.c.bulk.v_P", m, DerivedOwnership::shared);
+    fluid_state->AddField("c.c.bulk.B_P", m, DerivedOwnership::shared);
+#endif
 
     // Max (i.e. positive) sound speed vector.  Easiest to keep here due to needing it for EstimateTimestep
-    m = Metadata({Metadata::Face, Metadata::Derived, Metadata::OneCopy});
+    m = Metadata({Metadata::Face, Metadata::Derived, Metadata::OneCopy, Metadata::Vector});
     fluid_state->AddField("f.f.bulk.ctop", m, DerivedOwnership::unique);
 
-    // TODO Add jcon as an output-only calculation, likely overriding MeshBlock::UserWorkBeforeOutput
-
+    // Add jcon as an output-only calculation, likely overriding MeshBlock::UserWorkBeforeOutput
+    m = Metadata({Metadata::Cell, Metadata::Derived, Metadata::OneCopy}, s_fourvector);
+    fluid_state->AddField("c.c.bulk.jcon", m, DerivedOwnership::unique);
 
     // TODO integer/flag fields in Parthenon
-    // Then move pflag and fflag here
+    // Or hack it with doubles/casts
+    // m = Metadata({Metadata::Face, Metadata::Derived, Metadata::OneCopy}, s_fourvector);
+    // fluid_state->AddField("c.c.bulk.pflag", m, DerivedOwnership::unique);
+    // fluid_state->AddField("c.c.bulk.fflag", m, DerivedOwnership::unique);
 
     fluid_state->FillDerived = GRMHD::FillDerived;
     fluid_state->CheckRefinement = nullptr;
@@ -163,80 +215,174 @@ void FillDerived(std::shared_ptr<Container<Real>>& rc)
 }
 
 /**
- * Calculate the LLF flux in 1 direction
- * TODO this doesn't require full 3D pl/pr. Could merge recon and LR steps to save time *and* memory
- * TODO Make this async by returning TaskStatus::running
+ * Calculate the LLF flux in a direction
+ * Note this is the sequential recon/LR version -- 
+ * an interleaved version is also available as ReconAndFlux
+ * TODO Make async?
  */
-TaskStatus CalculateFlux1(std::shared_ptr<Container<Real>>& rc)
+TaskStatus CalculateFlux(std::shared_ptr<Container<Real>>& rc, const int& dir)
 {
-    FLAG("Calculating flux 1");
+    FLAG(string_format("Calculating flux %d", dir));
     MeshBlock *pmb = rc->pmy_block;
     int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
     int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
     int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
     GridVars pl("pl", NPRIM, n3, n2, n1);
     GridVars pr("pr", NPRIM, n3, n2, n1);
-    GridVars F1 = rc->Get("c.c.bulk.cons").flux[X1DIR];
+    GridVars Flux = rc->Get("c.c.bulk.cons").flux[dir];
 
-    // Reconstruct primitives at left and right sides of faces
-    //Reconstruction::WENO5X1(rc, pl, pr);
-    Reconstruction::LinearX1(rc, pl, pr);
+    ReconstructionType recon = pmb->packages["GRMHD"]->Param<ReconstructionType>("recon");
+
+    // Reconstruct primitives on the faces
+    Reconstruction::ReconstructLR(rc, pl, pr, dir, recon);
+
     // Calculate flux from values at left & right of face
-    LRToFlux(rc, pr, pl, 1, F1);
+    LRToFlux(rc, pr, pl, dir, Flux);
 
-    FLAG("Calculated flux 1");
-
-    return TaskStatus::complete;
-}
-/**
- * Calculate the LLF flux in 2 direction
- */
-TaskStatus CalculateFlux2(std::shared_ptr<Container<Real>>& rc)
-{
-    FLAG("Calculating flux 2");
-    MeshBlock *pmb = rc->pmy_block;
-    int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
-    int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
-    int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
-    GridVars pl("pl", NPRIM, n3, n2, n1);
-    GridVars pr("pr", NPRIM, n3, n2, n1);
-    GridVars F2 = rc->Get("c.c.bulk.cons").flux[X2DIR];
-
-    //Reconstruction::WENO5X2(rc, pl, pr);
-    Reconstruction::LinearX2(rc, pl, pr);
-    LRToFlux(rc, pr, pl, 2, F2);
-
-    FLAG("Calculated flux 2");
+    FLAG(string_format("Calculated flux %d", dir));
 
     return TaskStatus::complete;
 }
+
 /**
- * Calculate the LLF flux in 3 direction
+ * Reconstruct primitives at a face, *and* turn them into the LLF flux
+ *
+ * Also fills the "ctop" vector with the highest magnetosonic speed mhd_vchar -- used to estimate timestep later.
+ *
  */
-TaskStatus CalculateFlux3(std::shared_ptr<Container<Real>>& rc)
+TaskStatus ReconAndFlux(std::shared_ptr<Container<Real>>& rc, const int& dir)
 {
-    FLAG("Calculating flux 3");
+    FLAG(string_format("Recon and flux X%d", dir));
     MeshBlock *pmb = rc->pmy_block;
+    IndexDomain domain = IndexDomain::interior;
+    int is = pmb->cellbounds.is(domain)-1, ie = pmb->cellbounds.ie(domain)+1;
+    int js = pmb->cellbounds.js(domain)-1, je = pmb->cellbounds.je(domain)+1;
+    int ks = pmb->cellbounds.ks(domain)-1, ke = pmb->cellbounds.ke(domain)+1;
     int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
     int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
     int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
-    GridVars pl("pl", NPRIM, n3, n2, n1);
-    GridVars pr("pr", NPRIM, n3, n2, n1);
-    GridVars F3 = rc->Get("c.c.bulk.cons").flux[X3DIR];
 
-    //Reconstruction::WENO5X3(rc, pl, pr);
-    Reconstruction::LinearX3(rc, pl, pr);
-    LRToFlux(rc, pr, pl, 3, F3);
+    auto& P = rc->Get("c.c.bulk.prims").data;
+    auto& flux = rc->Get("c.c.bulk.cons").flux[dir];
 
-    FLAG("Calculated flux 3");
+    GRCoordinates G = pmb->coords;
+    // TODO *sigh*
+    Real gamma = pmb->packages["GRMHD"]->Param<Real>("gamma");
+    EOS* eos = CreateEOS(gamma);
+    ReconstructionType recon = pmb->packages["GRMHD"]->Param<ReconstructionType>("recon");
 
+    auto& ctop = rc->GetFace("f.f.bulk.ctop").data;
+
+    // So far we don't need fluxes that don't match faces
+    Loci loc;
+    switch (dir) {
+    case X1DIR:
+        loc = Loci::face1;
+        break;
+    case X2DIR:
+        loc = Loci::face2;
+        break;
+    case X3DIR:
+        loc = Loci::face3;
+        break;
+    }
+
+    const int scratch_level = 1; // 0 is actual scratch (tiny); 1 is HBM
+    size_t scratch_size_in_bytes = parthenon::ScratchPad2D<Real>::shmem_size(NPRIM, n1);
+
+    pmb->par_for_outer(string_format("uberkernel_x%d", dir), 3 * scratch_size_in_bytes, scratch_level, ks, ke, js, je,
+        KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int& k, const int& j) {
+            ScratchPad2D<Real> ql(member.team_scratch(scratch_level), NPRIM, n1);
+            ScratchPad2D<Real> qr(member.team_scratch(scratch_level), NPRIM, n1);
+            ScratchPad2D<Real> q_unused(member.team_scratch(scratch_level), NPRIM, n1);
+
+            // get reconstructed state on faces
+            // TODO switch statements are fast... right? This dispatch table is a pain, but so is another variant
+            switch (recon) {
+            case ReconstructionType::linear_mc:
+                switch (dir) {
+                case X1DIR:
+                    Reconstruction::PiecewiseLinearX1(member, k, j, is, ie, P, ql, qr);
+                    break;
+                case X2DIR:
+                    Reconstruction::PiecewiseLinearX2(member, k, j - 1, is, ie, P, ql, q_unused);
+                    Reconstruction::PiecewiseLinearX2(member, k, j, is, ie, P, q_unused, qr);
+                    break;
+                case X3DIR:
+                    Reconstruction::PiecewiseLinearX3(member, k - 1, j, is, ie, P, ql, q_unused);
+                    Reconstruction::PiecewiseLinearX3(member, k, j, is, ie, P, q_unused, qr);
+                    break;
+                }
+                break;
+            case ReconstructionType::weno5:
+                switch (dir) {
+                case X1DIR:
+                    Reconstruction::WENO5X1(member, k, j, is, ie, P, ql, qr);
+                    break;
+                case X2DIR:
+                    Reconstruction::WENO5X2l(member, k, j - 1, is, ie, P, ql);
+                    Reconstruction::WENO5X2r(member, k, j, is, ie, P, qr);
+                    break;
+                case X3DIR:
+                    Reconstruction::WENO5X3l(member, k - 1, j, is, ie, P, ql);
+                    Reconstruction::WENO5X3r(member, k, j, is, ie, P, qr);
+                    break;
+                }
+                break;
+            }
+
+            // Sync all threads in the team so that scratch memory is consistent
+            member.team_barrier();
+
+            parthenon::par_for_inner(member, is, ie, [&](const int i) {
+                // Reverse the fluxes so that "left" and "right" are w.r.t. the *face*s
+                Real pl[NPRIM], pr[NPRIM];
+                PLOOP {
+                    pl[p] = ql(p, i);
+                    pr[p] = qr(p, i);
+                }
+
+                // LR -> flux
+                FourVectors Dtmp;
+                Real cmaxL, cmaxR, cminL, cminR;
+                Real cmin, cmax, ctop_loc;
+
+                Real fluxL[8], fluxR[8];
+                Real Ul[8], Ur[8];
+
+                // Left
+                get_state(G, pl, k, j, i, loc, Dtmp);
+                prim_to_flux(G, pl, Dtmp, eos, k, j, i, loc, 0, Ul); // dir==0 -> U instead of F in direction
+                prim_to_flux(G, pl, Dtmp, eos, k, j, i, loc, dir, fluxL);
+                mhd_vchar(G, pl, Dtmp, eos, k, j, i, loc, dir, cmaxL, cminL);
+
+                // Right
+                get_state(G, pr, k, j, i, loc, Dtmp);
+                // Note: these three can be done simultaneously if we want to get real fancy
+                prim_to_flux(G, pr, Dtmp, eos, k, j, i, loc, 0, Ur);
+                prim_to_flux(G, pr, Dtmp, eos, k, j, i, loc, dir, fluxR);
+                mhd_vchar(G, pr, Dtmp, eos, k, j, i, loc, dir, cmaxR, cminR);
+
+                cmax = fabs(max(max(0.,  cmaxL),  cmaxR));
+                cmin = fabs(max(max(0., -cminL), -cminR));
+                ctop_loc = max(cmax, cmin);
+
+                ctop(dir, k, j, i) = ctop_loc;
+                PLOOP flux(p, k, j, i) = 0.5 * (fluxL[p] + fluxR[p] - ctop_loc * (Ur[p] - Ul[p]));
+            });
+        }
+    );
+    
+    DelEOS(eos);
+
+    FLAG(string_format("Finished recon and flux X%d", dir));
     return TaskStatus::complete;
 }
 
 /**
  * Add HARM source term to RHS
  */
-TaskStatus SourceTerm(std::shared_ptr<Container<Real>>& rc, std::shared_ptr<Container<Real>>& dudt)
+TaskStatus AddSourceTerm(std::shared_ptr<Container<Real>>& rc, std::shared_ptr<Container<Real>>& dudt)
 {
     FLAG("Adding source term");
     MeshBlock *pmb = rc->pmy_block;
@@ -259,11 +405,8 @@ TaskStatus SourceTerm(std::shared_ptr<Container<Real>>& rc, std::shared_ptr<Cont
             // Calculate the source term and apply it in 1 go (since it's stencil-1)
             // TODO pass global dU so as not to copy?
             FourVectors Dtmp;
-            Real dU[NPRIM] = {0};
             get_state(G, P, k, j, i, Loci::center, Dtmp);
-            get_fluid_source(G, P, Dtmp, eos, k, j, i, dU);
-
-            PLOOP dUdt(p, k, j, i) += dU[p];
+            add_fluid_source(G, P, Dtmp, eos, k, j, i, dUdt);
         }
     );
 

@@ -21,9 +21,6 @@
 // and multiplied by an additional 0.01 for cartesian sims
 #define RHOMIN 1.e-6
 #define UUMIN  1.e-8
-// Hard limit values lest they scale too far
-#define RHOMINLIMIT 1.e-20
-#define UUMINLIMIT  1.e-20
 // Radius in M, around which to steepen floor prescription from r^-2 to r^-3
 #define FLOOR_R_CHAR 10.
 
@@ -88,20 +85,12 @@ KOKKOS_INLINE_FUNCTION int fixup_floor(const GRCoordinates& G, GridVars P, GridV
         Real rhoscal = pow(r, -2.) * 1 / (1 + r/FLOOR_R_CHAR);
         rhoflr_geom = RHOMIN*rhoscal;
         uflr_geom = UUMIN*pow(rhoscal, eos->gam);
-
-        // Impose overall minimum
-        // TODO These would only be hit at by r^-3 floors for r_out = 100,000M.  Worth keeping?
-        rhoflr_geom = max(rhoflr_geom, RHOMINLIMIT);
-        uflr_geom = max(uflr_geom, UUMINLIMIT);
     } else {
         rhoflr_geom = RHOMIN*1.e-2;
         uflr_geom = UUMIN*1.e-2;
     }
-
-    // Record Geometric floor hits
-    if (rhoflr_geom > P(prims::rho, k, j, i)) fflag |= HIT_FLOOR_GEOM_RHO;
-    if (uflr_geom > P(prims::u, k, j, i)) fflag |= HIT_FLOOR_GEOM_U;
-
+    Real rho = P(prims::rho, k, j, i);
+    Real u = P(prims::u, k, j, i);
 
     // 2. Magnetization ceilings: impose maximum magnetization sigma = bsq/rho, and inverse beta prop. to bsq/U
     FourVectors Dtmp;
@@ -110,33 +99,38 @@ KOKKOS_INLINE_FUNCTION int fixup_floor(const GRCoordinates& G, GridVars P, GridV
     double rhoflr_b = bsq/BSQORHOMAX;
     double uflr_b = bsq/BSQOUMAX;
 
-    // Record Magnetic floor hits
-    if (rhoflr_b > P(prims::rho, k, j, i)) fflag |= HIT_FLOOR_B_RHO;
-    if (uflr_b > P(prims::u, k, j, i)) fflag |= HIT_FLOOR_B_U;
-
-    // Evaluate highest U floor
+    // Evaluate max U floor, needed for temp ceiling below
     double uflr_max = max(uflr_geom, uflr_b);
 
     // 3. Temperature ceiling: impose maximum temperature u/rho
     // Take floors on U into account
-    double rhoflr_temp = max(P(prims::u, k, j, i) / UORHOMAX, uflr_max / UORHOMAX);
+    double rhoflr_temp = max(u / UORHOMAX, uflr_max / UORHOMAX);
 
+#if DEBUG
+    // Record all the floors that were hit, even if there were multiple
+    // Record Geometric floor hits
+    fflag |= (rhoflr_geom > rho) * HIT_FLOOR_GEOM_RHO;
+    fflag |= (uflr_geom > u) * HIT_FLOOR_GEOM_U;
+    // Record Magnetic floor hits
+    fflag |= (rhoflr_b > rho) * HIT_FLOOR_B_RHO;
+    fflag |= (uflr_b > u) * HIT_FLOOR_B_U;
     // Record hitting temperature ceiling
-    if (rhoflr_temp > P(prims::rho, k, j, i)) fflag |= HIT_FLOOR_TEMP; // Misnomer for consistency
+    fflag |= (rhoflr_temp > rho) * HIT_FLOOR_TEMP; // Misnomer for consistency
+#endif
 
-    // Evaluate highest RHO floor
+    // Evaluate max rho floor
     double rhoflr_max = max(max(rhoflr_geom, rhoflr_b), rhoflr_temp);
 
     // Add the material in the normal observer frame, by:
-    if (rhoflr_max > P(prims::rho, k, j, i) || uflr_max > P(prims::u, k, j, i)) { // Apply floors
+    if (rhoflr_max > rho || uflr_max > u) { // Apply floors
 
         // Initializing a dummy fluid parcel
         Real Pnew[NPRIM] = {0}, Unew[NPRIM] = {0};
-        FourVectors Dnew = {0};
+        FourVectors Dnew;
 
         // Add mass and internal energy to the primitives, but not velocity
-        Pnew[prims::rho] = max(0., rhoflr_max - P(prims::rho, k, j, i));
-        Pnew[prims::u] = max(0., uflr_max - P(prims::u, k, j, i));
+        Pnew[prims::rho] = max(0., rhoflr_max - rho);
+        Pnew[prims::u] = max(0., uflr_max - u);
 
         // Get conserved variables for the new parcel
         get_state(G, Pnew, k, j, i, Loci::center, Dnew);
@@ -157,7 +151,7 @@ KOKKOS_INLINE_FUNCTION int fixup_floor(const GRCoordinates& G, GridVars P, GridV
         // function from inside fix_U_to_P and *still* get an inversion error
         InversionStatus pflag = U_to_P(G, U, eos, k, j, i, Loci::center, P);
 #if DEBUG
-        // Yell?  Combine the flags?
+        if (pflag != InversionStatus::success) printf("Inversion error in floors!\n"); // TODO Combine the flags?
 #endif
     }
     return fflag;

@@ -4,24 +4,30 @@
 #include "decs.hpp"
 #include "phys.hpp"
 
-KOKKOS_INLINE_FUNCTION void get_fluid_source(const GRCoordinates &G, const GridVars P, const FourVectors& D,
-                      const EOS* eos, const int& k, const int& j, const int& i, Real dU[NPRIM], bool wind=false)
+KOKKOS_INLINE_FUNCTION void add_fluid_source(const GRCoordinates &G, const GridVars P, const FourVectors& D,
+                      const EOS* eos, const int& k, const int& j, const int& i, GridVars dU, bool wind=false)
 {
     // Get T^mu_nu
     Real mhd[GR_DIM][GR_DIM];
     DLOOP1 mhd_calc(P, D, eos, k, j, i, mu, mhd[mu]);
 
-    // Initialize
-    PLOOP dU[p] = 0.;
+    // Get the connection coefficients on the fly.  Seems *much* slower,
+    // maybe analytic connections would be faster
+    // GReal X[GR_DIM];
+    // Real conn[GR_DIM][GR_DIM][GR_DIM];
+    // G.coord(k, j, i, Loci::center, X);
+    // G.coords.conn_lower_native(X, conn);
 
+    // Initialize our addition [+U, +U1, +U2, +U3]
+    Real du_loc[GR_DIM] = {0};
     // Contract mhd stress tensor with connection, and multiply by metric dterminant
-    DLOOP3 dU[prims::u + lam] += mhd[mu][nu] * G.conn(j, i, nu, lam, mu);
-    DLOOP1 dU[prims::u + mu] *= G.gdet(Loci::center, j, i);
+    DLOOP3 du_loc[lam] += mhd[mu][nu] * G.conn(j, i, nu, mu, lam);
+    DLOOP1 dU(prims::u + mu, k, j, i) += du_loc[mu] * G.gdet(Loci::center, j, i);
 
     if (wind) {
         // Need coordinates to evaluate particle addtn rate
         // Note that makes the wind spherical-only
-        Real dP[8], dUw[8];
+        Real dP[NPRIM] = {0}, dUw[NPRIM] = {0};
         FourVectors dD;
         // TODO grab this after ensuring embedding coords are spherical
         GReal Xembed[GR_DIM];
@@ -43,6 +49,6 @@ KOKKOS_INLINE_FUNCTION void get_fluid_source(const GRCoordinates &G, const GridV
         get_state(G, dP, k, j, i, Loci::center, dD);
         prim_to_flux(G, dP, dD, eos, k, j, i, Loci::center, 0, dUw);
 
-        PLOOP dU[p] += dUw[p];
+        PLOOP dU(p, k, j, i) += dUw[p];
     }
 }

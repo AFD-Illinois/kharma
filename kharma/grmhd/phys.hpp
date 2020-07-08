@@ -339,3 +339,57 @@ KOKKOS_INLINE_FUNCTION void mhd_vchar(const GRCoordinates &G, const GridVars P, 
     cmax = (vp > vm) ? vp : vm;
     cmin = (vp > vm) ? vm : vp;
 }
+KOKKOS_INLINE_FUNCTION void mhd_vchar(const GRCoordinates &G, const Real P[NPRIM], const FourVectors D, const EOS* eos,
+                                      const int& k, const int& j, const int& i, const Loci loc, const int dir,
+                                      Real& cmax, Real& cmin)
+{
+    Real discr, vp, vm, bsq, ee, ef, va2, cs2, cms2, u;
+    Real Asq, Bsq, Au, Bu, AB, Au2, Bu2, AuBu, A, B, C;
+    Real Acov[GR_DIM] = {0}, Bcov[GR_DIM] = {0};
+    Real Acon[GR_DIM] = {0}, Bcon[GR_DIM] = {0};
+
+    Acov[dir] = 1.;
+    Bcov[0] = 1.;
+
+    DLOOP2 // TODO use lower()
+    {
+        Acon[mu] += G.gcon(loc, j, i, mu, nu) * Acov[nu];
+        Bcon[mu] += G.gcon(loc, j, i, mu, nu) * Bcov[nu];
+    }
+
+    // Find fast magnetosonic speed
+    bsq = bsq_calc(D);
+    u =  P[prims::u];
+    ef = P[prims::rho] + eos->gam * u;
+    ee = bsq + ef;
+    va2 = bsq / ee;
+    cs2 = eos->gam * eos->p(0, u) / ef;
+
+    cms2 = cs2 + va2 - cs2 * va2;
+
+    clip(cms2, 0., 1.);
+
+    // Require that speed of wave measured by observer q.ucon is cms2
+    Asq = dot(Acon, Acov);
+    Bsq = dot(Bcon, Bcov);
+    Au = dot(Acov, D.ucon);
+    Bu = dot(Bcov, D.ucon);
+    AB = dot(Acon, Bcov);
+    Au2 = Au * Au;
+    Bu2 = Bu * Bu;
+    AuBu = Au * Bu;
+
+    A = Bu2 - (Bsq + Bu2) * cms2;
+    B = 2. * (AuBu - (AB + AuBu) * cms2);
+    C = Au2 - (Asq + Au2) * cms2;
+
+    discr = B * B - 4. * A * C;
+    discr = (discr < 0.) ? 0. : discr;
+    discr = sqrt(discr);
+
+    vp = -(-B + discr) / (2. * A);
+    vm = -(-B - discr) / (2. * A);
+
+    cmax = (vp > vm) ? vp : vm;
+    cmin = (vp > vm) ? vm : vp;
+}

@@ -31,15 +31,14 @@ namespace GRMHD {
     // FillDerived should end up with all derived variables in the StateDescriptor in consistent state for e.g. output
     // For HARM this means running U_to_P to recover primitives in all zones
     void FillDerived(std::shared_ptr<Container<Real>>& rc);
-    // Calculate the LLF fluxes in each direction
-    TaskStatus CalculateFluxes(std::shared_ptr<Container<Real>>& rc);
-    // Split version to queue more tasks at once
-    TaskStatus CalculateFlux1(std::shared_ptr<Container<Real>>& rc);
-    TaskStatus CalculateFlux2(std::shared_ptr<Container<Real>>& rc);
-    TaskStatus CalculateFlux3(std::shared_ptr<Container<Real>>& rc);
+    // Calculate flux in a direction
+    TaskStatus CalculateFlux(std::shared_ptr<Container<Real>>& rc, const int& dir);
+    // Version of CalculateFlux integrating the reconstruction and LR->flux kernels for speed
+    TaskStatus ReconAndFlux(std::shared_ptr<Container<Real>>& rc, const int& dir);
+    // Constrained-transport step to preserve divB==0
     TaskStatus FluxCT(std::shared_ptr<Container<Real>>& rc);
     // Add the HARM source term to the RHS dudt
-    TaskStatus SourceTerm(std::shared_ptr<Container<Real>>& rc, std::shared_ptr<Container<Real>>& dudt);
+    TaskStatus AddSourceTerm(std::shared_ptr<Container<Real>>& rc, std::shared_ptr<Container<Real>>& dudt);
     // Estimate the next timestep. For pure GRMHD, this is the minimum signal crossing time of a zone on the block
     Real EstimateTimestep(std::shared_ptr<Container<Real>>& rc);
 }
