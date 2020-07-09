@@ -50,7 +50,6 @@ KOKKOS_INLINE_FUNCTION int fix_U_to_P(const GRCoordinates& G, GridVars P, GridVa
             // This should happen /very rarely/
             //exit(-1);
         } else {
-            // TODO print on debug in device-compat way?
             FLOOP P(p, k, j, i) = sum[p]/wsum;
 
             // Make sure fixed values still abide by floors

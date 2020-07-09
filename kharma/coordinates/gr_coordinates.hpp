@@ -3,14 +3,17 @@
  */
 #pragma once
 
-#include "coordinates/uniform_cartesian.hpp"
-
 #include "decs.hpp"
 
 #include "coordinate_embedding.hpp"
 #include "utils.hpp"
 
-// TODO standardize namespaces
+// Everywhere else we can just import <parthenon/parthenon.hpp>
+// Here we have to be careful of circular dependencies
+#include "coordinates/uniform_cartesian.hpp"
+
+// TODO standardize namespaces.
+// Also parthenon may not always like this namespace import...
 using namespace parthenon;
 using namespace std;
 

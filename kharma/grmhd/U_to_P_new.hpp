@@ -26,7 +26,9 @@ KOKKOS_INLINE_FUNCTION InversionStatus U_to_P(const GRCoordinates &G, const Grid
 {
     InversionStatus eflag = InversionStatus::success;
 
+    Real alpha = 1./sqrt(-G.gcon(loc, j, i, 0, 0));
     Real gdet = G.gdet(loc, j, i);
+    Real a_over_g = alpha / gdet;
 
     // Update the primitive B-fields
     P(prims::B1, k, j, i) = U(prims::B1, k, j, i) / gdet;
@@ -42,24 +44,23 @@ KOKKOS_INLINE_FUNCTION InversionStatus U_to_P(const GRCoordinates &G, const Grid
 #endif
 
     // Convert from conserved variables to four-vectors
-    // TODO try a version of this with cached gcov/con/det
-    Real a_over_g = 1./sqrt(-G.gcon(loc, j, i, 0, 0)) / G.gdet(loc, j, i);
     Real D = U(prims::rho, k, j, i) * a_over_g;
 
-    Real Bcon[GR_DIM];
-    Bcon[0] = 0.;
-    Bcon[1] = U(prims::B1, k, j, i) * a_over_g;
-    Bcon[2] = U(prims::B2, k, j, i) * a_over_g;
-    Bcon[3] = U(prims::B3, k, j, i) * a_over_g;
+    Real Bcon[GR_DIM] =
+           {0., 
+            U(prims::B1, k, j, i) * a_over_g,
+            U(prims::B2, k, j, i) * a_over_g,
+            U(prims::B3, k, j, i) * a_over_g};
 
-    Real Qcov[GR_DIM];
-    Qcov[0] = (U(prims::u, k, j, i) - U(prims::rho, k, j, i)) * a_over_g;
-    Qcov[1] = U(prims::u1, k, j, i) * a_over_g;
-    Qcov[2] = U(prims::u2, k, j, i) * a_over_g;
-    Qcov[3] = U(prims::u3, k, j, i) * a_over_g;
+    Real Qcov[GR_DIM] =
+          {(U(prims::u, k, j, i) - U(prims::rho, k, j, i)) * a_over_g,
+            U(prims::u1, k, j, i) * a_over_g,
+            U(prims::u2, k, j, i) * a_over_g,
+            U(prims::u3, k, j, i) * a_over_g};
 
-    Real ncov[GR_DIM] = {(Real) -1./sqrt(-G.gcon(loc, j, i, 0, 0)), 0, 0, 0};
+    Real ncov[GR_DIM] = {(Real) -alpha, 0., 0., 0.};
 
+    // TODO faster with on-the-fly gcon/cov?
     Real Bcov[GR_DIM], Qcon[GR_DIM], ncon[GR_DIM];
     G.lower(Bcon, Bcov, k, j, i, loc);
     G.raise(Qcov, Qcon, k, j, i, loc);
@@ -79,8 +80,9 @@ KOKKOS_INLINE_FUNCTION InversionStatus U_to_P(const GRCoordinates &G, const Grid
     // Numerical rootfinding
     // Take guesses from primitives.
     Real Wp = Wp_func(G, P, eos, k, j, i, loc, eflag);
-    if (eflag)
-        return eflag;
+# if DEBUG
+    if (eflag) return eflag;
+#endif
 
     // Step around the guess & evaluate errors
     Real Wpm = (1. - DELTA) * Wp; //heuristic
@@ -89,6 +91,9 @@ KOKKOS_INLINE_FUNCTION InversionStatus U_to_P(const GRCoordinates &G, const Grid
     Real errp = err_eqn(eos, Bsq, D, Ep, QdB, Qtsq, Wpp, eflag);
     Real err = err_eqn(eos, Bsq, D, Ep, QdB, Qtsq, Wp, eflag);
     Real errm = err_eqn(eos, Bsq, D, Ep, QdB, Qtsq, Wpm, eflag);
+# if DEBUG
+    if (eflag) return eflag;
+#endif
 
     // Attempt a Halley/Muller/Bailey/Press step
     Real dedW = (errp - errm) / (Wpp - Wpm);
@@ -129,8 +134,6 @@ KOKKOS_INLINE_FUNCTION InversionStatus U_to_P(const GRCoordinates &G, const Grid
 
     // Find utsq, gamma, rho0 from Wp
     Real gamma = gamma_func(Bsq, D, QdB, Qtsq, Wp, eflag);
-
-    // Find the scalars
     Real rho0 = D / gamma;
     Real W = Wp + D;
     Real w = W / pow(gamma, 2);
@@ -156,9 +159,10 @@ KOKKOS_INLINE_FUNCTION InversionStatus U_to_P(const GRCoordinates &G, const Grid
     P(prims::u, k, j, i) = u;
 
     // Find u(tilde); Eqn. 31 of Noble et al.
-    P(prims::u1, k, j, i) = (gamma / (W + Bsq)) * (Qtcon[1] + QdB * Bcon[1] / W);
-    P(prims::u2, k, j, i) = (gamma / (W + Bsq)) * (Qtcon[2] + QdB * Bcon[2] / W);
-    P(prims::u3, k, j, i) = (gamma / (W + Bsq)) * (Qtcon[3] + QdB * Bcon[3] / W);
+    Real pre = (gamma / (W + Bsq));
+    P(prims::u1, k, j, i) = pre * (Qtcon[1] + QdB * Bcon[1] / W);
+    P(prims::u2, k, j, i) = pre * (Qtcon[2] + QdB * Bcon[2] / W);
+    P(prims::u3, k, j, i) = pre * (Qtcon[3] + QdB * Bcon[3] / W);
 
     return InversionStatus::success;
 }
@@ -170,7 +174,7 @@ KOKKOS_INLINE_FUNCTION Real err_eqn(const EOS* eos, const Real Bsq, const Real D
 {
     Real W = Wp + D;
     Real gamma = gamma_func(Bsq, D, QdB, Qtsq, Wp, eflag);
-    Real w = W / pow(gamma,2);
+    Real w = W / (gamma * gamma);
     Real rho0 = D / gamma;
     Real p = eos->p_w(rho0, w);
 
@@ -184,15 +188,14 @@ KOKKOS_INLINE_FUNCTION Real err_eqn(const EOS* eos, const Real Bsq, const Real D
 KOKKOS_INLINE_FUNCTION Real gamma_func(const Real Bsq, const Real D, const Real QdB,
                                         const Real Qtsq, const Real Wp, InversionStatus &eflag)
 {
-    Real QdBsq, W, utsq, gamma, W2, WB;
+    Real W, utsq, gamma, W2, WB;
 
-    QdBsq = QdB * QdB;
-    W = Wp + D;
-    W2 = W * W;
+    Real W = Wp + D;
+    Real W2 = W * W;
     WB = W + Bsq;
 
     // This is basically inversion of eq. A7 of Mignone & McKinney
-    utsq = -((W + WB) * QdBsq + W2 * Qtsq) / (QdBsq * (W + WB) + W2 * (Qtsq - WB * WB));
+    utsq = -((2*W + Bsq) * QdB*QdB + W*W * Qtsq) / (QdB*QdB * (W + WB) + W*W * (Qtsq - WB*WB));
     gamma = sqrt(1. + fabs(utsq));
 
 #if DEBUG

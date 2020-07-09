@@ -102,9 +102,9 @@ if [[ "$*" == *"clean"* ]]; then
     -DKokkos_ARCH_HSW=OFF \
     -DKokkos_ARCH_BDW=OFF \
     -DKokkos_ARCH_SKX=OFF \
-    -DKokkos_ARCH_KNL=ON \
+    -DKokkos_ARCH_KNL=OFF \
     -DKokkos_ARCH_ARMV8_THUNDERX2=OFF \
-    -DKokkos_ARCH_AMDAVX=OFF \
+    -DKokkos_ARCH_AMDAVX=ON \
     -DKokkos_ARCH_EPYC=OFF
   fi
 fi

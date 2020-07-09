@@ -7,29 +7,7 @@
 #include "phys.hpp"
 #include "U_to_P.hpp"
 
-#include "interface/container.hpp"
-
-// TODO move these to runtime options with defaults
-// GAMMA FLOOR
-// Maximum gamma factor allowed for fluid velocity
-// Defined in decs.hpp since it's also needed by U_to_P
-//#define GAMMAMAX 200.
-
-// GEOMETRY FLOORS
-// Limiting values for density and internal energy
-// These are scaled with radius for spherical sims,
-// and multiplied by an additional 0.01 for cartesian sims
-#define RHOMIN 1.e-6
-#define UUMIN  1.e-8
-// Radius in M, around which to steepen floor prescription from r^-2 to r^-3
-#define FLOOR_R_CHAR 10.
-
-// RATIO CEILINGS
-// Maximum ratio of internal energy to density (i.e. Temperature)
-#define UORHOMAX   100.
-// Same for magnetic field (i.e. magnetization sigma)
-#define BSQORHOMAX 500.
-#define BSQOUMAX   (BSQORHOMAX * UORHOMAX)
+#include <parthenon/parthenon.hpp>
 
 /**
  * Apply density and internal energy floors and ceilings
@@ -39,7 +17,10 @@ TaskStatus ApplyFloors(std::shared_ptr<Container<Real>>& rc);
 /**
  * Apply a fluid velocity ceiling
  * 
- * LOCKSTEP: this function expects and should preserve P<->U
+ * @return fflag, a bitflag indicating whether each particular floor was hit, allowing representation of arbitrary combinations
+ * See decs.h for bit names.
+ * 
+ * LOCKSTEP: this function should preserve P<->U.  It does not require it on entry
  */
 KOKKOS_INLINE_FUNCTION int fixup_ceiling(const GRCoordinates& G, GridVars P, GridVars U, EOS *eos, const int& k, const int& j, const int& i)
 {
@@ -67,7 +48,10 @@ KOKKOS_INLINE_FUNCTION int fixup_ceiling(const GRCoordinates& G, GridVars P, Gri
  * Apply floors of several types in determining how to add mass and internal energy to preserve stability.
  * All floors which might apply are recorded separately, then mass/energy are added in normal observer frame
  * 
- * LOCKSTEP: this function expects and should preserve P<->U
+ * @return fflag + pflag: fflag is a flagset starting at the sixth bit from the right.  pflag is a number <32.
+ * This returns the sum, with the caller responsible for separating what's desired.
+ * 
+ * LOCKSTEP: this function should preserve P<->U. It does not require it on entry
  */
 KOKKOS_INLINE_FUNCTION int fixup_floor(const GRCoordinates& G, GridVars P, GridVars U, EOS *eos, const int& k, const int& j, const int& i)
 {
@@ -121,7 +105,7 @@ KOKKOS_INLINE_FUNCTION int fixup_floor(const GRCoordinates& G, GridVars P, GridV
     fflag |= (rhoflr_temp > rho) * HIT_FLOOR_TEMP; // Misnomer for consistency
 #endif
 
-    InversionStatus pflag;
+    InversionStatus pflag = InversionStatus::success;
     if (rhoflr_max > rho || uflr_max > u) { // Apply floors
 
         // Add the material in the normal observer frame, by:

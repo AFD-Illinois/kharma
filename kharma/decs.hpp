@@ -2,21 +2,21 @@
 
 #pragma once
 
-#include <stdexcept>
+// Standard libs we absolutely need everywhere
 #include <map>
+#include <memory>
+#include <stdexcept>
 
 // Libraries I need directly
 #include "Kokkos_Core.hpp"
 
-// Parthenon defs
+// Bare Parthenon defs
+// Anything more leads to circular deps from gr_coordinates.hpp
 #include "parthenon_arrays.hpp"
 #include "parthenon_mpi.hpp"
 
-// MPI wrappers/awareness (or equivalent stubs)
+// My set of MPI wrappers, stubbed out when MPI not present
 #include "mpi.hpp"
-
-// Stuff that's useful across the whole code
-#define VERSION "kharma-alpha-0.1"
 
 // Parthenon stole our type names
 using Real = parthenon::Real;
@@ -53,9 +53,7 @@ enum prims{rho=0, u, u1, u2, u3, B1, B2, B3};
 #define NFLUID 5
 #define FLOOP for(int p=0; p < NFLUID; p++)
 
-// Emulate old names, for 2 reasons:
-// 1. Compat with files from K/HARM
-// 2. May be possible to make these more strongly typed in future
+// Emulate old names for possible stronger typing...
 using GridScalar = parthenon::ParArrayND<Real>;
 using GridVector = parthenon::ParArrayND<Real>;
 using GridVars = parthenon::ParArrayND<Real>;
@@ -73,7 +71,10 @@ using GeomTensor3 = parthenon::ParArrayND<Real>;
 #define KOKKOS_LAMBDA_VARS KOKKOS_LAMBDA (const int &p, const int &k, const int &j, const int &i)
 // TODO separate macros for return type if this becomes a thing?  Or don't macro at all
 #define KOKKOS_LAMBDA_1D_REDUCE KOKKOS_LAMBDA (const int &i, Real &local_result)
+// This is used for timestep, which is explicitly double.  Lots of work would need to be done to Parthenon if Real != double though
 #define KOKKOS_LAMBDA_3D_REDUCE KOKKOS_LAMBDA (const int &k, const int &j, const int &i, double &local_result)
+
+// KHARMA TYPES
 
 // Struct for derived 4-vectors at a point, usually calculated and needed together
 typedef struct {
@@ -100,6 +101,25 @@ enum ReconstructionType{linear_mc=0, ppm, weno5, mp5};
 #define HIT_FLOOR_GAMMA 1024
 #define HIT_FLOOR_KTOT 2048
 
-// Most floors are in fixup.hpp only, but this one is needed by U_to_P
-// TODO of course they should be runtime prefs
+// KHARMA OPTIONS
+
+// GAMMA FLOOR
+// Maximum gamma factor allowed for fluid velocity
+// Defined in decs.hpp since it's also needed by U_to_P
 #define GAMMAMAX 200.
+
+// GEOMETRY FLOORS
+// Limiting values for density and internal energy
+// These are scaled with radius for spherical sims,
+// and multiplied by an additional 0.01 for cartesian sims
+#define RHOMIN 1.e-6
+#define UUMIN  1.e-8
+// Radius in M, around which to steepen floor prescription from r^-2 to r^-3
+#define FLOOR_R_CHAR 10.
+
+// RATIO CEILINGS
+// Maximum ratio of internal energy to density (i.e. Temperature)
+#define UORHOMAX   100.
+// Same for magnetic field (i.e. magnetization sigma)
+#define BSQORHOMAX 500.
+#define BSQOUMAX   (BSQORHOMAX * UORHOMAX)

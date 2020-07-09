@@ -27,9 +27,9 @@ ix3_bc = periodic
 ox3_bc = periodic
 
 <parthenon/meshblock>
-nx1 = 64
-nx2 = 64
-nx3 = 64
+nx1 = 72
+nx2 = 72
+nx3 = 72
 
 <coordinates>
 base = cartesian_minkowski
@@ -54,6 +54,6 @@ dir = 0
 <parthenon/output0>
 file_type = hdf5
 dt = 0.03
-variables = c.c.bulk.cons
+variables = c.c.bulk.prims
 ghost_zones = true
 

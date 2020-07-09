@@ -1,8 +1,6 @@
 // Fixups.  Apply limits and fix bad fluid values to maintain integrable state
 // ApplyFloors, FixUtoP
 
-#include "decs.hpp"
-
 #include "floors.hpp"
 
 #include "debug.hpp"
@@ -14,13 +12,15 @@
  * Apply density and internal energy floors and ceilings
  * 
  * Note that fixup_ceiling and fixup_floor are called from some other places for most applications
- * This is still used by initialization (TODO should it be?)
+ * This applies only to the physical zones.  It's used in initialization just before the first boundary sync.
+ * 
+ * LOCKSTEP: this function 
  */
 TaskStatus ApplyFloors(std::shared_ptr<Container<Real>>& rc)
 {
     FLAG("Apply floors");
     MeshBlock *pmb = rc->pmy_block;
-    IndexDomain domain = IndexDomain::entire;
+    IndexDomain domain = IndexDomain::interior;
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
@@ -39,12 +39,11 @@ TaskStatus ApplyFloors(std::shared_ptr<Container<Real>>& rc)
     EOS* eos = CreateEOS(gamma);
 
     // Note floors are applied only to physical zones
-    // Therefore initialization, which requires initializing ghost zones, should *not* rely on a floors call for its operation
     pmb->par_for("apply_floors", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D {
             fflag(k, j, i) = 0;
             fflag(k, j, i) |= fixup_ceiling(G, P, U, eos, k, j, i);
-            fflag(k, j, i) |= fixup_floor(G, P, U, eos, k, j, i);
+            fflag(k, j, i) |= (fixup_floor(G, P, U, eos, k, j, i) / HIT_FLOOR_GEOM_RHO) * HIT_FLOOR_GEOM_RHO;
         }
     );
 

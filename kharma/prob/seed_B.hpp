@@ -2,12 +2,7 @@
 #pragma once
 
 #include "decs.hpp"
-
-#include "phys.hpp"
-
-// Internal representation of the field initialization preference for quick switch
-// Mostly for fun; the loop for vector potential is 2D
-enum BSeedType{sane, ryan, r3s3, gaussian};
+#include <parthenon/parthenon.hpp>
 
 /**
  * Seed an axisymmetric initialization with magnetic field proportional to fluid density,
@@ -18,16 +13,23 @@ enum BSeedType{sane, ryan, r3s3, gaussian};
  * @param min_rho_q is the minimum density at which there will be magnetic vector potential
  * @param b_field_type is one of "sane" "ryan" "r3s3" or "gaussian", described below (TODO test or remove opts)
  */
-void SeedBField(MeshBlock *pmb, GRCoordinates G, GridVars P,
-                Real rin, Real min_rho_q, std::string b_field_type);
-/**
- * Get the minimum beta on the domain
- */
-Real GetLocalBetaMin(MeshBlock *pmb);
+TaskStatus SeedBField(std::shared_ptr<Container<Real>>& rc, ParameterInput *pin);
 
 /**
- * Normalize the magnetic field
- * 
- * LOCKSTEP: this function expects and should preserve P<->U
+ * Get the minimum value of plasma beta on the (physical, non-ghost) domain
  */
-void NormalizeBField(MeshBlock *pmb, Real factor);
+Real GetLocalBetaMin(std::shared_ptr<Container<Real>>& rc);
+
+/**
+ * Normalize the magnetic field by dividing by 'factor'
+ * 
+ * LOCKSTEP: this function expects and should preserve P==U
+ */
+TaskStatus NormalizeBField(std::shared_ptr<Container<Real>>& rc, Real factor);
+
+/**
+ * Add flux to BH horizon
+ * Applicable to any Kerr-space GRMHD sim, run after import/initialization
+ * Preserves divB==0 with a Flux-CT step at end
+ */
+//void SeedBHFlux(std::shared_ptr<Container<Real>>& rc, Real BHflux);

@@ -182,8 +182,9 @@ void FillDerived(std::shared_ptr<Container<Real>>& rc)
             fflag(k, j, i) |= fixup_ceiling(G, P, U, eos, k, j, i);
             // Fixup_floor involves another U_to_P call.  Hide the pflag in bottom 5 bits and retrieve both
             int comboflag = fixup_floor(G, P, U, eos, k, j, i);
+            fflag(k, j, i) |= (comboflag / HIT_FLOOR_GEOM_RHO) * HIT_FLOOR_GEOM_RHO;
+
             int pflag_floor = comboflag % HIT_FLOOR_GEOM_RHO;
-            fflag(k, j, i) |= (comboflag - pflag_floor);
             if (pflag_floor != 0) {
                 pflag(k, j, i) = pflag_floor;
             }
@@ -201,7 +202,8 @@ void FillDerived(std::shared_ptr<Container<Real>>& rc)
     FLAG("Cleared corner flags");
     pmb->par_for("fix_U_to_P", 1, n3-2, 1, n2-2, 1, n1-2,
         KOKKOS_LAMBDA_3D {
-            fflag(k, j, i) |= fix_U_to_P(G, P, U, eos, pflag, k, j, i);
+            // Ignore pflags incurred syncing after applying floors to averaged zones.  TODO why does such a thing even exist
+            fflag(k, j, i) |= (fix_U_to_P(G, P, U, eos, pflag, k, j, i) / HIT_FLOOR_GEOM_RHO) * HIT_FLOOR_GEOM_RHO;
         }
     );
     FLAG("Fixed failed inversions");
@@ -212,8 +214,9 @@ void FillDerived(std::shared_ptr<Container<Real>>& rc)
     double maxDivB = MaxDivB(rc);
     fprintf(stderr, "Maximum divB: %g\n", maxDivB);
 
+    auto fflag_host = fflag.GetHostMirrorAndCopy();
     auto pflag_host = pflag.GetHostMirrorAndCopy();
-    CountFFlags(pmb, pflag_host, IndexDomain::interior);
+    CountFFlags(pmb, fflag_host, IndexDomain::interior);
     CountPFlags(pmb, pflag_host, IndexDomain::interior);
 #endif
 

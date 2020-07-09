@@ -9,7 +9,7 @@
 using namespace std;
 
 // Calculate maximum divergence of magnetic field, to check it is being preserved ==0
-double MaxDivB(std::shared_ptr<Container<Real>>& rc);
+double MaxDivB(std::shared_ptr<Container<Real>>& rc, IndexDomain domain=IndexDomain::interior);
 
 // Templated functions for counting flags on arbitrary ()-indexed types
 template<typename T>

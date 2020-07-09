@@ -69,8 +69,7 @@ TaskList HARMDriver::MakeTaskList(MeshBlock *pmb, int stage)
     // (a bundle of arrays capable of holding all Fields in the FluidState)
     // One container per stage, filled and used to update the base container over the course of the step
     // Additionally an accumulator dUdt is provided to temporarily store this stage's contribution to the RHS
-    // TODO: I believe the base container is guaranteed to hold last step's product until the end of this step,
-    // but need to check this.
+    // TODO: Figure out when the step beginning and end are both accessible, for calculating jcon
     if (stage == 1) {
         auto& base = pmb->real_containers.Get();
         pmb->real_containers.Add("dUdt", base);
@@ -149,10 +148,6 @@ TaskList HARMDriver::MakeTaskList(MeshBlock *pmb, int stage)
     // Fill primitives, bringing U and P back into lockstep
     auto t_fill_derived = tl.AddTask(parthenon::FillDerivedVariables::FillDerived,
                                         t_set_custom_bc, sc1);
-
-    // Apply floor values to sc1.  Note that this must take valid U and give valid U,P
-    // TODO verify we don't need this, or that we don't need the counterpart in FillDerived
-    //auto apply_floors = AddContainerTask(tl, ApplyFloors, fill_derived, sc1);
 
     // estimate next time step
     if (stage == integrator->nstages) {

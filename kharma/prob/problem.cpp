@@ -1,36 +1,100 @@
 // Dispatch for all problems which can be generated
 
-#include "bvals/boundary_conditions.hpp"
-#include "mesh/mesh.hpp"
+#include "problem.hpp"
 
+#include "boundaries.hpp"
+#include "debug.hpp"
 #include "fixup.hpp"
 #include "floors.hpp"
 #include "gr_coordinates.hpp"
 #include "phys.hpp"
 
 // Problem initialization headers
-//#include "bh_flux.hpp"
 #include "bondi.hpp"
-#include "boundaries.hpp"
 #include "fm_torus.hpp"
 #include "iharm_restart.hpp"
 #include "mhdmodes.hpp"
 #include "seed_B.hpp"
 
+#include "bvals/boundary_conditions.hpp"
+#include "mesh/mesh.hpp"
+
 using namespace parthenon;
 
-/**
- * Generate the initial condition on a meshblock
- *
- * This takes care of calling a problem initialization method with the correct parameters, then initializing the
- * conserved versions of variables from the problem's primitives, and syncing ghost zones for the first time.
- */
-void InitializeProblem(ParameterInput *pin, MeshBlock *pmb)
+void InitializeMesh(ParameterInput *pin, Mesh *pmesh)
 {
-    auto& rc = pmb->real_containers.Get();
-    int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
-    int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
-    int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
+    // TODO this is *instead* of defining MeshBlock::ProblemGenerator,
+    // which means that initial auto-refinement will *NOT* work.
+    // we're a ways from AMR yet so we'll cross that bridge etc.
+
+    // Note this first step spits out valid P and U on *physical* zones
+    // TODO make a list of pmb pointers like Initialize does
+    MeshBlock *pmb = pmesh->pblock;
+    while (pmb != nullptr) {
+        // Initialize the base container with problem values
+        // This could be switched into task format without too much issue
+        auto& rc = pmb->real_containers.Get();
+        InitializeProblem(rc, pin);
+        pmb = pmb->next;
+    }
+    FLAG("Initialized Fluid");
+
+    // Add the field for torus problems as a second pass
+    // Preserves P==U and ends with all physical zones fully defined
+    if (pin->GetOrAddString("b_field", "type", "none") != "none") {
+        // Calculating B has a stencil outside physical zones
+        FLAG("Extra boundary sync for B");
+        //SyncAllBounds(pmesh);
+        pmesh->Initialize(0, pin);
+
+        FLAG("Seeding magnetic field");
+        // Seed the magnetic field and find the minimum beta
+        Real beta_min = 1e100;
+        pmb = pmesh->pblock;
+        while (pmb != nullptr) {
+            auto& rc = pmb->real_containers.Get();
+            SeedBField(rc, pin);
+        
+            // TODO add this after normalization instead?
+            // TODO options to add to horizon/renormalize B during run?
+            Real BHflux = pin->GetOrAddReal("b_field", "bhflux", 0.0);
+            if (BHflux > 0.) {
+                //SeedBHFlux(rc, BHflux);
+            }
+
+            Real beta_local = GetLocalBetaMin(rc);
+            if(beta_local < beta_min) beta_min = beta_local;
+            pmb = pmb->next;
+        }
+        beta_min = MPIMin(beta_min);
+
+        // Then normalize B by sqrt(beta/beta_min)
+        FLAG("Normalizing magnetic field");
+        Real beta = pin->GetOrAddReal("b_field", "beta_min", 100.);
+        Real factor = sqrt(beta/beta_min);
+        pmb = pmesh->pblock;
+        while (pmb != nullptr) {
+            auto& rc = pmb->real_containers.Get();
+            NormalizeBField(rc, factor);
+            pmb = pmb->next;
+        }
+    }
+    FLAG("Added B Field");
+
+    // Sync to fill the ghost zones
+    FLAG("Boundary sync");
+    //SyncAllBounds(pmesh);
+    pmesh->Initialize(0, pin);
+
+    FLAG("Initialized Mesh");
+}
+
+TaskStatus InitializeProblem(std::shared_ptr<Container<Real>>& rc, ParameterInput *pin)
+{
+    MeshBlock *pmb = rc->pmy_block;
+    int is = pmb->cellbounds.is(IndexDomain::interior), ie = pmb->cellbounds.ie(IndexDomain::interior);
+    int js = pmb->cellbounds.js(IndexDomain::interior), je = pmb->cellbounds.je(IndexDomain::interior);
+    int ks = pmb->cellbounds.ks(IndexDomain::interior), ke = pmb->cellbounds.ke(IndexDomain::interior);
     GridVars P = rc->Get("c.c.bulk.prims").data;
     GridVars U = rc->Get("c.c.bulk.cons").data;
 
@@ -72,48 +136,17 @@ void InitializeProblem(ParameterInput *pin, MeshBlock *pmb)
         }
     }
 
-    // TODO namespace these outside "torus"
-    if (prob != "iharm_restart") {
-        // TODO randomness is deterministic per-run I think (at least on OpenMP),
-        // but not per-mesh-geometry/MPI geometry
-        Real u_jitter = pin->GetOrAddReal("torus", "u_jitter", 0.0);
-        int rng_seed = pin->GetOrAddInteger("torus", "rng_seed", 31337);
-        if (u_jitter > 0.0) {
-            FLAG("Applying U perturbation");
-            PerturbU(pmb, P, u_jitter, rng_seed + pmb->gid);
-        }
-
-        Real rin = pin->GetOrAddReal("torus", "rin", 6.0); // Needed for MAD initializations
-        Real min_rho_q = pin->GetOrAddReal("torus", "min_rho_q", 0.2);
-        std::string b_field_type = pin->GetOrAddString("torus", "b_field_type", "none");
-        if (b_field_type != "none") {
-            FLAG("Seeding magnetic field");
-            SeedBField(pmb, G, P, rin, min_rho_q, b_field_type);
-        }
-        
-        Real BHflux = pin->GetOrAddReal("torus", "bhflux", 0.0);
-        if (BHflux > 0.) {
-            //SeedBHFlux(pmb, G, P, BHflux);
-        }
+    // TODO namespace this outside "torus," it could be added to anything
+    Real u_jitter = pin->GetOrAddReal("torus", "u_jitter", 0.0);
+    int rng_seed = pin->GetOrAddInteger("torus", "rng_seed", 31337);
+    if (u_jitter > 0.0) {
+        FLAG("Applying U perturbation");
+        PerturbU(pmb, P, u_jitter, rng_seed + pmb->gid);
     }
-
-    // Make sure any zero zones get floored before beginning driver
-    FLAG("First Floors");
-    ApplyFloors(rc);
-
-    // Sync boundaries
-    // Update ghost cells.  Only performed on U
-    Container<Real>::SendBoundaryBuffersTask(rc);
-    Container<Real>::ReceiveBoundaryBuffersTask(rc);
-    Container<Real>::SetBoundariesTask(rc);
-    Container<Real>::ClearBoundaryTask(rc);
-    // pmb->pbval->ProlongateBoundaries(0.0, 0.0);
-    parthenon::ApplyBoundaryConditions(rc);
-    ApplyCustomBoundaries(rc);
 
     // Initialize U
     FLAG("First P->U");
-    pmb->par_for("first_U", 0, n3-1, 0, n2-1, 0, n1-1,
+    pmb->par_for("first_U", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D {
             FourVectors Dtmp;
             get_state(G, P, k, j, i, Loci::center, Dtmp);
@@ -121,7 +154,42 @@ void InitializeProblem(ParameterInput *pin, MeshBlock *pmb)
         }
     );
 
-    DelEOS(eos);
+    // Apply any floors. Floors preserve P<->U so why not test that?
+    FLAG("First Floors");
+    ApplyFloors(rc);
 
-    FLAG("Initialized Problem"); // TODO this called in every meshblock.  Avoid the spam somehow
+    DelEOS(eos);
+    FLAG("Initialized Block");
+    return TaskStatus::complete;
+}
+
+void SyncAllBounds(Mesh *pmesh, ParameterInput *pin)
+{
+    // Update ghost cells. Only performed on U
+    MeshBlock *pmb = pmesh->pblock;
+    while (pmb != nullptr) {
+        auto& rc = pmb->real_containers.Get();
+        rc->ClearBoundary(BoundaryCommSubset::mesh_init);
+        rc->StartReceiving(BoundaryCommSubset::mesh_init);
+        rc->SendBoundaryBuffers();
+
+        pmb = pmb->next;
+    }
+
+    pmb = pmesh->pblock;
+    while (pmb != nullptr) {
+        auto& rc = pmb->real_containers.Get();
+        rc->ReceiveAndSetBoundariesWithWait();
+        rc->ClearBoundary(BoundaryCommSubset::mesh_init);
+        //pmb->pbval->ProlongateBoundaries(0.0, 0.0);
+
+        // Physical boundary conditions
+        parthenon::ApplyBoundaryConditions(rc);
+        ApplyCustomBoundaries(rc);
+
+        // Fill P again, including ghost zones
+        parthenon::FillDerivedVariables::FillDerived(rc);
+
+        pmb = pmb->next;
+    }
 }

@@ -19,20 +19,25 @@ using namespace parthenon;
  * 2. Alfven wave
  * 3. Fast mode
  *
- * Note this assumes ideal EOS with gamma=4/3!!!
+ * Note this assumes ideal EOS with gamma=4/3!
  *
  * Returns the stopping time corresponding to advection by 1 period
  */
 Real InitializeMHDModes(MeshBlock *pmb, GRCoordinates G, GridVars P, int nmode, int dir)
 {
-    int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
-    int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
-    int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
+    int is = pmb->cellbounds.is(IndexDomain::interior), ie = pmb->cellbounds.ie(IndexDomain::interior);
+    int js = pmb->cellbounds.js(IndexDomain::interior), je = pmb->cellbounds.je(IndexDomain::interior);
+    int ks = pmb->cellbounds.ks(IndexDomain::interior), ke = pmb->cellbounds.ke(IndexDomain::interior);
 
     // Mean state
     Real rho0 = 1.;
-    Real u0 = 1.;  // TODO set U{n} on the fly for boosted entropy test
-    Real B10 = 0.; // This is set later, see below
+    Real u0 = 1.;
+    // TODO try a boosted entropy test with uN0 > 0. Take as arguments?
+    Real u10 = 0.;
+    Real u20 = 0.;
+    Real u30 = 0.;
+    // B is set later, see below
+    Real B10 = 0.;
     Real B20 = 0.;
     Real B30 = 0.;
 
@@ -194,7 +199,7 @@ Real InitializeMHDModes(MeshBlock *pmb, GRCoordinates G, GridVars P, int nmode, 
         }
     }
 
-    // Override tf and the dump and log intervals
+    // Override end time to be exactly 1 period
     Real tf;
     if (nmode != 0) {
         tf = 2. * M_PI / fabs(omega.imag());
@@ -202,7 +207,7 @@ Real InitializeMHDModes(MeshBlock *pmb, GRCoordinates G, GridVars P, int nmode, 
         tf = -1;
     }
 
-    pmb->par_for("mhdmodes_init", 0, n3-1, 0, n2-1, 0, n1-1,
+    pmb->par_for("mhdmodes_init", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D {
             Real X[GR_DIM];
             G.coord(k, j, i, Loci::center, X);
@@ -210,9 +215,9 @@ Real InitializeMHDModes(MeshBlock *pmb, GRCoordinates G, GridVars P, int nmode, 
             Real mode = amp * cos(k1 * X[1] + k2 * X[2] + k3 * X[3]);
             P(prims::rho, k, j, i) = rho0 + drho * mode;
             P(prims::u, k, j, i) = u0 + du * mode;
-            P(prims::u1, k, j, i) = du1 * mode;
-            P(prims::u2, k, j, i) = du2 * mode;
-            P(prims::u3, k, j, i) = du3 * mode;
+            P(prims::u1, k, j, i) = u10 + du1 * mode;
+            P(prims::u2, k, j, i) = u20 + du2 * mode;
+            P(prims::u3, k, j, i) = u30 + du3 * mode;
             P(prims::B1, k, j, i) = B10 + dB1 * mode;
             P(prims::B2, k, j, i) = B20 + dB2 * mode;
             P(prims::B3, k, j, i) = B30 + dB3 * mode;

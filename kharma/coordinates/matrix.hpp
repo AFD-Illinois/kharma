@@ -58,7 +58,7 @@ KOKKOS_INLINE_FUNCTION Real invert(const Real *m, Real *invOut)
   Real det = determinant(m);
   Real inv_det = 1. / det;
   for (int i = 0; i < 16; ++i) {
-    invOut[i] = invOut[i]*inv_det;
+    invOut[i] *= inv_det;
   }
 
   return det;

@@ -9,6 +9,7 @@
 #pragma once
 
 #include "decs.hpp"
+
 #include "matrix.hpp"
 
 #include <mpark/variant.hpp>

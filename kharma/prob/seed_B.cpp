@@ -1,38 +1,35 @@
 // Seed a torus of some type with a magnetic field according to its density
 
-#include "decs.hpp"
+#include "seed_B.hpp"
 
 #include "phys.hpp"
 
-#include "interface/container.hpp"
-#include "mesh/domain.hpp"
-#include "mesh/mesh.hpp"
-
 // Internal representation of the field initialization preference for quick switch
-// Mostly for fun; the loop for vector potential is 2D
+// Avoids string comparsion in kernels
 enum BSeedType{sane, ryan, r3s3, gaussian};
 
-/**
- * Seed an axisymmetric initialization with magnetic field proportional to fluid density,
- * or density and radius, to create a SANE or MAD flow
- * Note this function expects a normalized P for which rho_max==1
- *
- * @param rin is the interior radius of the torus
- * @param min_rho_q is the minimum density at which there will be magnetic vector potential
- * @param b_field_type is one of "sane" "ryan" "r3s3" or "gaussian", described below (TODO test or remove opts)
- */
-void SeedBField(MeshBlock *pmb, GRCoordinates G, GridVars P,
-                Real rin, Real min_rho_q, std::string b_field_type)
+TaskStatus SeedBField(std::shared_ptr<Container<Real>>& rc, ParameterInput *pin)
 {
+    MeshBlock *pmb = rc->pmy_block;
+    IndexDomain domain = IndexDomain::interior;
+    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
+    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
+    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
     int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
     int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
-    int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
+
+    GRCoordinates G = pmb->coords;
+    GridVars P = rc->Get("c.c.bulk.prims").data;
+
+    Real rin = pin->GetOrAddReal("torus", "rin", 6.0);
+    Real min_rho_q = pin->GetOrAddReal("b_field", "min_rho_q", 0.2);
+    std::string b_field_type = pin->GetOrAddString("b_field", "type", "none");
 
     // Translate to an enum so we can avoid string comp inside,
     // as well as for good errors, many->one maps, etc.
     BSeedType b_field_flag = BSeedType::sane;
     if (b_field_type == "none") {
-        return;
+        return TaskStatus::complete;
     } else if (b_field_type == "sane") {
         b_field_flag = BSeedType::sane;
     } else if (b_field_type == "ryan") {
@@ -47,8 +44,8 @@ void SeedBField(MeshBlock *pmb, GRCoordinates G, GridVars P,
 
     // Find the magnetic vector potential.  In X3 symmetry only A_phi is non-zero, so we keep track of that.
     ParArrayND<Real> A("A", n2, n1);
-    // TODO figure out how much of this needs to be double instead of Real.  Any?
-    pmb->par_for("B_field_A", 1, n2-1, 1, n1-1,
+    // TODO figure out double vs Real here
+    pmb->par_for("B_field_A", js, je+1, is, ie+1,
         KOKKOS_LAMBDA_2D {
             GReal Xembed[GR_DIM];
             G.coord_embed(0, j, i, Loci::center, Xembed);
@@ -88,7 +85,7 @@ void SeedBField(MeshBlock *pmb, GRCoordinates G, GridVars P,
     );
 
     // Calculate B-field
-    pmb->par_for("B_field_B", 0, n3-1, 0, n2-2, 0, n1-2,
+    pmb->par_for("B_field_B", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D {
             // Take a flux-ct step from the corner potentials
             P(prims::B1, k, j, i) = -(A(j, i) - A(j + 1, i) + A(j, i + 1) - A(j + 1, i + 1)) /
@@ -98,14 +95,45 @@ void SeedBField(MeshBlock *pmb, GRCoordinates G, GridVars P,
             P(prims::B3, k, j, i) = 0.;
         }
     );
+
+    return TaskStatus::complete;
 }
 
-/**
- * Get the minimum beta on the domain
- */
-Real GetLocalBetaMin(MeshBlock *pmb)
+TaskStatus NormalizeBField(std::shared_ptr<Container<Real>>& rc, Real factor)
 {
-    auto& rc = pmb->real_containers.Get();
+    MeshBlock *pmb = rc->pmy_block;
+    IndexDomain domain = IndexDomain::interior;
+    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
+    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
+    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
+    GridVars P = rc->Get("c.c.bulk.prims").data;
+    GridVars U = rc->Get("c.c.bulk.cons").data;
+    GRCoordinates G = pmb->coords;
+
+    // TODO *sigh*
+    Real gamma = pmb->packages["GRMHD"]->Param<Real>("gamma");
+    EOS* eos = CreateEOS(gamma);
+
+    pmb->par_for("B_field_normalize", ks, ke, js, je, is, ie,
+        KOKKOS_LAMBDA_3D {
+            P(prims::B1, k, j, i) /= factor;
+            P(prims::B2, k, j, i) /= factor;
+            P(prims::B3, k, j, i) /= factor;
+
+            FourVectors Dtmp;
+            get_state(G, P, k, j, i, Loci::center, Dtmp);
+            prim_to_flux(G, P, Dtmp, eos, k, j, i, Loci::center, 0, U);
+
+        }
+    );
+
+    DelEOS(eos);
+    return TaskStatus::complete;
+}
+
+Real GetLocalBetaMin(std::shared_ptr<Container<Real>>& rc)
+{
+    MeshBlock *pmb = rc->pmy_block;
     IndexDomain domain = IndexDomain::interior;
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
@@ -139,37 +167,80 @@ Real GetLocalBetaMin(MeshBlock *pmb)
     return beta_min;
 }
 
-/**
- * Normalize the magnetic field
- * 
- * LOCKSTEP: this function expects and should preserve P<->U
- */
-void NormalizeBField(MeshBlock *pmb, Real factor)
-{
-    auto& rc = pmb->real_containers.Get();
-    int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
-    int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
-    int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
-    GridVars P = rc->Get("c.c.bulk.prims").data;
-    GridVars U = rc->Get("c.c.bulk.cons").data;
-    GRCoordinates G = pmb->coords;
+// void SeedBHFlux(MeshBlock *pmb, GRCoordinates G, GridVars P, Real BHflux)
+// {
+//     MeshBlock *pmb = rc->pmy_block;
+//     // This adds a central flux based on specifying some BHflux
+//     // Initialize a net magnetic field inside the initial torus
+//     // TODO do this only for BHflux > SMALL
+//     pmb->par_for("BHflux_A", 0, N2, 0, N1,
+//         KOKKOS_LAMBDA_2D {
+//             Real Xembed[GR_DIM];
+//             G.coord_embed(k, j, i, Loci::corner, Xembed);
+//             Real r = Xembed[1], th = Xembed[2];
 
-    // TODO *sigh*
-    Real gamma = pmb->packages["GRMHD"]->Param<Real>("gamma");
-    EOS* eos = CreateEOS(gamma);
+//             Real x = r * sin(th);
+//             Real z = r * cos(th);
+//             Real a_hyp = 20.;
+//             Real b_hyp = 60.;
+//             Real x_hyp = a_hyp * sqrt(1. + pow(z / b_hyp, 2));
 
-    pmb->par_for("B_field_normalize", 0, n3-1, 0, n2-1, 0, n1-1,
-        KOKKOS_LAMBDA_3D {
-            P(prims::B1, k, j, i) /= factor;
-            P(prims::B2, k, j, i) /= factor;
-            P(prims::B3, k, j, i) /= factor;
+//             Real q = (pow(x, 2) - pow(x_hyp, 2)) / pow(x_hyp, 2);
+//             if (x < x_hyp) {
+//                 A(j, i) = 10. * q;
+//             } else {
+//                 A(j, i) = 0.;
+//             }
+//         }
+//     );
 
-            FourVectors Dtmp;
-            get_state(G, P, k, j, i, Loci::center, Dtmp);
-            prim_to_flux(G, P, Dtmp, eos, k, j, i, Loci::center, 0, U);
+//     // Evaluate net flux
+//     Real Phi_proc = 0.;
+//     pmb->par_for("BHflux_B2net", 5, N1 - 1, 0, N2 - 1,
+//         KOKKOS_LAMBDA_2D {
+//             // TODO coord, some distance to M_PI/2
+//             if (jglobal == N2TOT / 2)
+//             {
+//                 Real Xembed[GR_DIM];
+//                 G.coord(k, j, i, Loci::center, Xembed);
+//                 Real r = Xembed[1], th = Xembed[2];
 
-        }
-    );
+//                 if (r < rin)
+//                 {
+//                     // Commented lines are unnecessary normalizations
+//                     Real B2net = (A(j, i) + A(j + 1, i) - A(j, i + 1) - A(j + 1, i + 1));
+//                     // / (2.*dx[1]*G.gdet(Loci::center, j, i));
+//                     Phi_proc += fabs(B2net) * M_PI / N3CPU;
+//                     // * 2.*dx[1]*G.gdet(Loci::center, j, i)
+//                 }
+//             }
+//         }
+//     );
 
-    DelEOS(eos);
-}
+//     // TODO ask if we're left bound in X1
+//     if (global_start[0] == 0)
+//     {
+//         // TODO probably not globally safe
+//         pmb->par_for("BHflux_B1net", 0, N2/2-1, 5+NG, 5+NG,
+//             KOKKOS_LAMBDA_2D {
+//                 Real B1net = -(A(j, i) - A(j + 1, i) + A(j, i + 1) - A(j + 1, i + 1));
+//                 // /(2.*dx[2]*G.gdet(Loci::center, j, i));
+//                 Phi_proc += fabs(B1net) * M_PI / N3CPU;
+//                 // * 2.*dx[2]*G.gdet(Loci::center, j, i)
+//             }
+//         );
+//     }
+//     Real Phi = mpi_reduce(Phi_proc); // TODO this also needs to be max over meshes!!
+
+//     Real norm = BHflux / (Phi + TINY_NUMBER);
+
+//     pmb->par_for("BHflux_B", 0, n3-1, 0, n2-1, 0, n1-1,
+//         KOKKOS_LAMBDA_3D {
+//             // Flux-ct
+//             P(prims::B1, k, j, i) += -norm * (A(j, i) - A(j + 1, i) + A(j, i + 1) - A(j + 1, i + 1)) /
+//                                         (2. * pmb->dx2v(j) * G.gdet(Loci::center, j, i));
+//             P(prims::B2, k, j, i) += norm * (A(j, i) + A(j + 1, i) - A(j, i + 1) - A(j + 1, i + 1)) /
+//                                         (2. * pmb->dx1v(i) * G.gdet(Loci::center, j, i));
+//         }
+//     );
+// }

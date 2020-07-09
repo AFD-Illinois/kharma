@@ -1,10 +1,5 @@
-/******************************************************************************
- *                                                                            *
- * HDF5_UTILS.C                                                               *
- *                                                                            *
- * FUNCTIONS FOR DEALING WITH HDF5                                            *
- *                                                                            *
- ******************************************************************************/
+// hdf5_utils straight from Illinois C codes
+// I grudgingly admit that C++ being a superset of C is neat
 
 #include "hdf5_utils.h"
 
