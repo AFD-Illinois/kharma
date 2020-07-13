@@ -44,8 +44,8 @@ void InitializeMesh(ParameterInput *pin, Mesh *pmesh)
     if (pin->GetOrAddString("b_field", "type", "none") != "none") {
         // Calculating B has a stencil outside physical zones
         FLAG("Extra boundary sync for B");
-        //SyncAllBounds(pmesh);
-        pmesh->Initialize(0, pin);
+        SyncAllBounds(pmesh);
+        //pmesh->Initialize(0, pin);
 
         FLAG("Seeding magnetic field");
         // Seed the magnetic field and find the minimum beta
@@ -83,8 +83,11 @@ void InitializeMesh(ParameterInput *pin, Mesh *pmesh)
 
     // Sync to fill the ghost zones
     FLAG("Boundary sync");
-    //SyncAllBounds(pmesh);
-    pmesh->Initialize(0, pin);
+    SyncAllBounds(pmesh);
+    //pmesh->Initialize(0, pin);
+
+    //Diagnostic(rc, IndexDomain::entire);
+
 
     FLAG("Initialized Mesh");
 }
@@ -92,9 +95,6 @@ void InitializeMesh(ParameterInput *pin, Mesh *pmesh)
 TaskStatus InitializeProblem(std::shared_ptr<Container<Real>>& rc, ParameterInput *pin)
 {
     MeshBlock *pmb = rc->pmy_block;
-    int is = pmb->cellbounds.is(IndexDomain::interior), ie = pmb->cellbounds.ie(IndexDomain::interior);
-    int js = pmb->cellbounds.js(IndexDomain::interior), je = pmb->cellbounds.je(IndexDomain::interior);
-    int ks = pmb->cellbounds.ks(IndexDomain::interior), ke = pmb->cellbounds.ke(IndexDomain::interior);
     GridVars P = rc->Get("c.c.bulk.prims").data;
     GridVars U = rc->Get("c.c.bulk.cons").data;
 
@@ -144,6 +144,10 @@ TaskStatus InitializeProblem(std::shared_ptr<Container<Real>>& rc, ParameterInpu
         PerturbU(pmb, P, u_jitter, rng_seed + pmb->gid);
     }
 
+    IndexDomain domain = IndexDomain::entire;
+    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
+    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
+    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
     // Initialize U
     FLAG("First P->U");
     pmb->par_for("first_U", ks, ke, js, je, is, ie,
@@ -154,16 +158,21 @@ TaskStatus InitializeProblem(std::shared_ptr<Container<Real>>& rc, ParameterInpu
         }
     );
 
+    //Diagnostic(rc, IndexDomain::entire);
+
     // Apply any floors. Floors preserve P<->U so why not test that?
     FLAG("First Floors");
     ApplyFloors(rc);
+
+    //Diagnostic(rc, IndexDomain::entire);
+
 
     DelEOS(eos);
     FLAG("Initialized Block");
     return TaskStatus::complete;
 }
 
-void SyncAllBounds(Mesh *pmesh, ParameterInput *pin)
+void SyncAllBounds(Mesh *pmesh)
 {
     // Update ghost cells. Only performed on U
     MeshBlock *pmb = pmesh->pblock;

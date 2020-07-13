@@ -25,10 +25,6 @@ using namespace parthenon;
  */
 Real InitializeMHDModes(MeshBlock *pmb, GRCoordinates G, GridVars P, int nmode, int dir)
 {
-    int is = pmb->cellbounds.is(IndexDomain::interior), ie = pmb->cellbounds.ie(IndexDomain::interior);
-    int js = pmb->cellbounds.js(IndexDomain::interior), je = pmb->cellbounds.je(IndexDomain::interior);
-    int ks = pmb->cellbounds.ks(IndexDomain::interior), ke = pmb->cellbounds.ke(IndexDomain::interior);
-
     // Mean state
     Real rho0 = 1.;
     Real u0 = 1.;
@@ -207,6 +203,10 @@ Real InitializeMHDModes(MeshBlock *pmb, GRCoordinates G, GridVars P, int nmode, 
         tf = -1;
     }
 
+    IndexDomain domain = IndexDomain::entire;
+    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
+    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
+    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
     pmb->par_for("mhdmodes_init", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D {
             Real X[GR_DIM];

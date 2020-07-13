@@ -8,10 +8,19 @@
 
 using namespace std;
 
-// Calculate maximum divergence of magnetic field, to check it is being preserved ==0
+/**
+ * Calculate maximum divergence of magnetic field, to check it is being preserved ==0
+ */
 double MaxDivB(std::shared_ptr<Container<Real>>& rc, IndexDomain domain=IndexDomain::interior);
 
-// Templated functions for counting flags on arbitrary ()-indexed types
+/**
+ * General diagnostic, currently used for tracking down bad cells related to U_to_P
+ */
+int Diagnostic(std::shared_ptr<Container<Real>>& rc, IndexDomain domain);
+
+/**
+ * Templated function for counting & printing pflags on arbitrary ()-indexed types
+ */
 template<typename T>
 void CountPFlags(MeshBlock *pmb, T pflag, IndexDomain domain=IndexDomain::entire)
 {
@@ -58,6 +67,9 @@ void CountPFlags(MeshBlock *pmb, T pflag, IndexDomain domain=IndexDomain::entire
     cerr << endl;
 }
 
+/**
+ * Templated function for counting & printing fflags on arbitrary ()-indexed types
+ */
 template<typename T>
 void CountFFlags(MeshBlock *pmb, T fflag, IndexDomain domain=IndexDomain::interior)
 {

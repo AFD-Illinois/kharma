@@ -172,6 +172,8 @@ void FillDerived(std::shared_ptr<Container<Real>>& rc)
     Real gamma = pmb->packages["GRMHD"]->Param<Real>("gamma");
     EOS* eos = CreateEOS(gamma);
 
+    //Diagnostic(rc, IndexDomain::entire);
+
     // Get the primitives from our conserved versions
     // Note this covers ghost zones!  This is intentional, as primitives in
     // ghost zones are needed for reconstruction

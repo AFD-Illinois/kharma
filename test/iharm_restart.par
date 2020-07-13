@@ -36,10 +36,10 @@ hslope = 0.3
 <parthenon/time>
 tlim = 10.0
 integrator = rk2
-dt_min = 0.0001
+dt_min = 0.00001
 
 <GRMHD>
-cfl = 0.8
+cfl = 0.9
 gamma = 1.444444
 
 <iharm_restart>
@@ -48,6 +48,6 @@ use_tf = false
 
 <parthenon/output0>
 file_type = hdf5
-dt = 1.0
-variables = c.c.bulk.prims
-
+dt = 0.1
+variables = c.c.bulk.prims, c.c.bulk.cons
+ghost_zones = true

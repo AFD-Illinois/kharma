@@ -20,10 +20,14 @@ import pyHARM.parameters as parameters
 # TODO parse these instead of hard-coding
 USEARRSPACE = True
 
-SIZE = 20
-#window = (0, SIZE, 0, SIZE)
-window = (-SIZE, SIZE, -SIZE, SIZE)
-# window=(-SIZE/4, SIZE/4, 0, SIZE)
+if not USEARRSPACE:
+    SIZE = 20
+    #window = (0, SIZE, 0, SIZE)
+    window = (-SIZE, SIZE, -SIZE, SIZE)
+    # window=(-SIZE/4, SIZE/4, 0, SIZE)
+else:
+    window = (-0.05, 1.05, -0.05, 1.05)
+
 pdf_window = (-10, 0)
 FIGX = 10
 FIGY = 10

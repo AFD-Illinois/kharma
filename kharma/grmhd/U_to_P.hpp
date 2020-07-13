@@ -35,7 +35,7 @@ KOKKOS_INLINE_FUNCTION InversionStatus U_to_P(const GRCoordinates &G, const Grid
 
 #if DEBUG
     // Catch negative energy or density
-    if (U(prims::rho, k, j, i) <= 0. || U(prims::u, k, j, i) <= 0.)
+    if (U(prims::rho, k, j, i) < 0.) //|| U(prims::u, k, j, i) < 0.  I don't think this is actually bad...
     {
         return InversionStatus::neg_input;
     }

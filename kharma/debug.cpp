@@ -6,6 +6,7 @@
 
 using namespace Kokkos;
 
+// TODO IndexDomain::entire will CRASH THIS
 double MaxDivB(std::shared_ptr<Container<Real>>& rc, IndexDomain domain)
 {
     FLAG("Calculating divB");
@@ -56,4 +57,29 @@ double MaxDivB(std::shared_ptr<Container<Real>>& rc, IndexDomain domain)
     , max_reducer);
 
     return max_divb;
+}
+
+int Diagnostic(std::shared_ptr<Container<Real>>& rc, IndexDomain domain)
+{
+    FLAG("Summing bad cells");
+    MeshBlock *pmb = rc->pmy_block;
+    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
+    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
+    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
+
+    GRCoordinates G = pmb->coords;
+    GridVars P = rc->Get("c.c.bulk.prims").data;
+    GridVars U = rc->Get("c.c.bulk.cons").data;
+
+    int nless;
+    Kokkos::Sum<int> sum_reducer(nless);
+    Kokkos::parallel_reduce("count_negative", MDRangePolicy<Rank<3>>({ks, js, is}, {ke, je, ie}),
+        KOKKOS_LAMBDA_3D_REDUCE_INT {
+            if (U(prims::rho, k, j, i) <= 0.) ++local_result;
+        }
+    , sum_reducer);
+
+    cerr << "Number of negative conserved rho,u: " << nless << endl;
+
+    return nless;
 }

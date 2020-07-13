@@ -53,7 +53,6 @@ dir = 0
 
 <parthenon/output0>
 file_type = hdf5
-dt = 0.03
-variables = c.c.bulk.cons
-ghost_zones = true
+dt = 1.0
+variables = c.c.bulk.prims
 
