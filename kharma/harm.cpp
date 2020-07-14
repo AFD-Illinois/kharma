@@ -89,8 +89,11 @@ TaskList HARMDriver::MakeTaskList(MeshBlock *pmb, int stage)
 
     // Calculate the LLF fluxes in each direction
     // This uses the primitives (P) to calculate fluxes to update the conserved variables (U)
-    // Hence the two should reflect *exactly* the same fluid state, which I'll term "lockstep"
-    // Can be done with separate kernels called from CalculateFlux, or a merged kernel in ReconAndFlux
+    // Hence the two should reflect *exactly* the same fluid state, hereafter "lockstep"
+
+    // Flux calc can be done with separate kernels called from CalculateFlux,
+    // or a merged kernel in ReconAndFlux.  TODO actual concurrency
+    // Assumes valid P, spits valid U fluxes
     TaskID t_calculate_flux1, t_calculate_flux2, t_calculate_flux3;
     if (pmb->packages["GRMHD"]->Param<bool>("merge_recon")) {
         auto t_calculate_flux1 = tl.AddTask(GRMHD::ReconAndFlux, t_start_recv, sc0, X1DIR);
@@ -103,15 +106,14 @@ TaskList HARMDriver::MakeTaskList(MeshBlock *pmb, int stage)
     }
     auto t_calculate_flux = t_calculate_flux1 | t_calculate_flux2 | t_calculate_flux3;
 
-    // Exchange flux corrections due to AMR and physical boundaries
-    // Note this does NOT fix vector components since we bundle primitives
-    // TODO figure out where these actually fit in AMR, skip them otherwise
-    auto t_send_flux = tl.AddTask(Container<Real>::SendFluxCorrectionTask,
-                                    t_calculate_flux, sc0);
-    auto t_recv_flux = tl.AddTask(Container<Real>::ReceiveFluxCorrectionTask,
-                                    t_calculate_flux, sc0);
+    // TODO add these sensibly for AMR/SMR runs
+    // auto t_send_flux = tl.AddTask(Container<Real>::SendFluxCorrectionTask,
+    //                                 t_calculate_flux, sc0);
+    // auto t_recv_flux = tl.AddTask(Container<Real>::ReceiveFluxCorrectionTask,
+    //                                 t_calculate_flux, sc0);
 
-    auto t_fix_flux = tl.AddTask(FixFlux, t_recv_flux, sc0);
+    // These operate totally on fluxes
+    auto t_fix_flux = tl.AddTask(FixFlux, t_calculate_flux, sc0);
     auto t_flux_ct = tl.AddTask(GRMHD::FluxCT, t_fix_flux, sc0);
 
     // Apply fluxes to create a single update dU/dt
@@ -131,17 +133,17 @@ TaskList HARMDriver::MakeTaskList(MeshBlock *pmb, int stage)
     auto t_clear_comm_flags = tl.AddTask(Container<Real>::ClearBoundaryTask,
                                             t_fill_from_bufs, sc1);
 
-    auto t_prolong_bound = tl.AddTask([](MeshBlock *pmb) {
-        pmb->pbval->ProlongateBoundaries(0.0, 0.0);
-        return TaskStatus::complete;
-    }, t_fill_from_bufs, pmb);
+    // TODO add sensibly for AMR runs
+    // auto t_prolong_bound = tl.AddTask([](MeshBlock *pmb) {
+    //     pmb->pbval->ProlongateBoundaries(0.0, 0.0);
+    //     return TaskStatus::complete;
+    // }, t_fill_from_bufs, pmb);
 
     // Set physical boundaries
-    // ApplyCustomBoundaries is only used for the Bondi test problem outer bound
-    // Note custom boundaries must but need only update U.
-    // TODO add physical inflow check to ApplyCustomBoundaries
+    // ApplyCustomBoundaries is a catch-all for things HARM needs done:
+    // Inflow checks, renormalizations, Bondi outer boundary
     auto t_set_parthenon_bc = tl.AddTask(parthenon::ApplyBoundaryConditions,
-                                            t_prolong_bound, sc1);
+                                            t_fill_from_bufs, sc1);
     auto t_set_custom_bc = tl.AddTask(ApplyCustomBoundaries, t_set_parthenon_bc, sc1);
 
     // Fill primitives, bringing U and P back into lockstep

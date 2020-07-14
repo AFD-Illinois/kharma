@@ -11,6 +11,8 @@
 #include "mesh/domain.hpp"
 #include "mesh/mesh.hpp"
 
+KOKKOS_INLINE_FUNCTION void check_inflow(const GRCoordinates &G, GridVars P, const int& k, const int& j, const int& i, int type);
+
 TaskStatus ApplyCustomBoundaries(std::shared_ptr<Container<Real>>& rc)
 {
     MeshBlock *pmb = rc->pmy_block;
@@ -39,6 +41,8 @@ TaskStatus ApplyCustomBoundaries(std::shared_ptr<Container<Real>>& rc)
                         P(p, k, j, i) *= G.gdet(Loci::center, j, ib.s) / G.gdet(Loci::center, j, i);
                     }
                 }
+                // Inflow check
+                check_inflow(G, P, k, j, i, 0);
                 // Recover conserved vars
                 FourVectors Dtmp;
                 get_state(G, P, k, j, i, Loci::center, Dtmp);
@@ -56,6 +60,8 @@ TaskStatus ApplyCustomBoundaries(std::shared_ptr<Container<Real>>& rc)
                         P(p, k, j, i) *= G.gdet(Loci::center, j, ib.e) / G.gdet(Loci::center, j, i);
                     }
                 }
+                // Inflow check
+                check_inflow(G, P, k, j, i, 1);
                 // Recover conserved vars
                 FourVectors Dtmp;
                 get_state(G, P, k, j, i, Loci::center, Dtmp);
@@ -99,7 +105,7 @@ TaskStatus ApplyCustomBoundaries(std::shared_ptr<Container<Real>>& rc)
  *
  * @param type: 0 to check outflow from EH, 1 to check inflow from outer edge
  */
-KOKKOS_INLINE_FUNCTION void check_inflow(GRCoordinates &G, GridVars P, const int& k, const int& j, const int& i, int type)
+KOKKOS_INLINE_FUNCTION void check_inflow(const GRCoordinates &G, GridVars P, const int& k, const int& j, const int& i, int type)
 {
     Real ucon[GR_DIM];
     ucon_calc(G, P, k, j, i, Loci::center, ucon);

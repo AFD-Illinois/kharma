@@ -107,7 +107,7 @@ enum ReconstructionType{linear_mc=0, ppm, weno5, mp5};
 // GAMMA FLOOR
 // Maximum gamma factor allowed for fluid velocity
 // Defined in decs.hpp since it's also needed by U_to_P
-#define GAMMAMAX 200.
+#define GAMMAMAX 50.
 
 // GEOMETRY FLOORS
 // Limiting values for density and internal energy
@@ -122,5 +122,5 @@ enum ReconstructionType{linear_mc=0, ppm, weno5, mp5};
 // Maximum ratio of internal energy to density (i.e. Temperature)
 #define UORHOMAX   100.
 // Same for magnetic field (i.e. magnetization sigma)
-#define BSQORHOMAX 500.
+#define BSQORHOMAX 100.
 #define BSQOUMAX   (BSQORHOMAX * UORHOMAX)

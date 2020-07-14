@@ -26,7 +26,7 @@ if not USEARRSPACE:
     window = (-SIZE, SIZE, -SIZE, SIZE)
     # window=(-SIZE/4, SIZE/4, 0, SIZE)
 else:
-    window = (-0.05, 1.05, -0.05, 1.05)
+    window = (0.0, 1.0, 0.0, 1.0)
 
 pdf_window = (-10, 0)
 FIGX = 10
@@ -48,7 +48,7 @@ if len(sys.argv) > 5:
 else:
     unit = 1
 
-params = {'include_ghost':True}
+params = {}
 parameters.parse_parthenon_dat(params, parfile)
 parameters.fix(params)
 dump = pyHARM.load_dump(dumpfile, params=params)
