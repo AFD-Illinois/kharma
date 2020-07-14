@@ -466,13 +466,14 @@ Real EstimateTimestep(std::shared_ptr<Container<Real>>& rc)
         }
     , min_reducer);
 
-    // Sometimes this is called before ctop is initialized.  Catch weird dts and play it safe.
-    if (ndt <= 0.0 || isnan(ndt) || ndt > 1) {
+    // Sometimes we come out with a silly timestep. Try to salvage it
+    if (ndt <= 0.0 || isnan(ndt) || ndt > 10) {
         cerr << "ndt was unsafe: " << ndt << "! Using dt_min" << std::endl;
         ndt = pmb->packages["GRMHD"]->Param<Real>("dt_min");
     } else {
         ndt *= pmb->packages["GRMHD"]->Param<Real>("cfl");
     }
+
     FLAG("Estimated");
     return ndt;
 }

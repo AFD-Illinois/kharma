@@ -10,20 +10,21 @@
 void InitializeFMTorus(MeshBlock *pmb, GRCoordinates& G, GridVars P, const EOS* eos,
                        GReal rin, GReal rmax, Real kappa)
 {
-    int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
-    int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
-    int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
+    IndexDomain domain = IndexDomain::entire;
+    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
+    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
+    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
 
     // Get coordinate system pointers for later
     // Only compatible with KS coords as base (TODO BL for fun?)
-    SphKSCoords ks = mpark::get<SphKSCoords>(G.coords.base);
-    SphBLCoords bl = SphBLCoords(ks.a);
+    SphKSCoords ksc = mpark::get<SphKSCoords>(G.coords.base);
+    SphBLCoords bl = SphBLCoords(ksc.a);
 
     // Fishbone-Moncrief parameters
-    Real l = lfish_calc(ks.a, rmax);
+    Real l = lfish_calc(ksc.a, rmax);
 
     FLAG("Initializing rho");
-    pmb->par_for("fm_torus_init", 0, n3-1, 0, n2-1, 0, n1-1,
+    pmb->par_for("fm_torus_init", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D {
             GReal Xnative[GR_DIM], Xembed[GR_DIM];
             G.coord(k, j, i, Loci::center, Xnative);
@@ -32,7 +33,7 @@ void InitializeFMTorus(MeshBlock *pmb, GRCoordinates& G, GridVars P, const EOS* 
             GReal sth = sin(th);
             GReal cth = cos(th);
 
-            Real lnh = lnh_calc(ks.a, l, rin, r, th);
+            Real lnh = lnh_calc(ksc.a, l, rin, r, th);
 
             // Region inside magnetized torus; u^i is calculated in
             // Boyer-Lindquist coordinates, as per Fishbone & Moncrief,
@@ -43,7 +44,7 @@ void InitializeFMTorus(MeshBlock *pmb, GRCoordinates& G, GridVars P, const EOS* 
                 GReal cth = cos(th);
 
                 Real r2 = pow(r, 2);
-                Real a2 = pow(ks.a, 2);
+                Real a2 = pow(ksc.a, 2);
                 Real DD = r2 - 2. * r + a2;
                 Real AA = pow(r2 + a2, 2) - DD * a2 * sth * sth;
                 Real SS = r2 + a2 * cth * cth;
@@ -57,7 +58,7 @@ void InitializeFMTorus(MeshBlock *pmb, GRCoordinates& G, GridVars P, const EOS* 
                 // Calculate u^phi
                 Real expm2chi = SS * SS * DD / (AA * AA * sth * sth);
                 Real up1 = sqrt((-1. + sqrt(1. + 4. * l * l * expm2chi)) / 2.);
-                Real up = 2. * ks.a * r * sqrt(1. + up1 * up1) / sqrt(AA * SS * DD) +
+                Real up = 2. * ksc.a * r * sqrt(1. + up1 * up1) / sqrt(AA * SS * DD) +
                             sqrt(SS / AA) * up1 / sth;
 
                 // Convert u^phi from 3-velocity to 4-velocity
@@ -68,7 +69,7 @@ void InitializeFMTorus(MeshBlock *pmb, GRCoordinates& G, GridVars P, const EOS* 
 
                 // Then transform that 4-vector to KS, then to native
                 Real ucon_ks[GR_DIM], ucon_mks[GR_DIM];
-                ks.vec_from_bl(Xembed, ucon_bl, ucon_ks);
+                ksc.vec_from_bl(Xembed, ucon_bl, ucon_ks);
                 G.coords.con_vec_to_native(Xnative, ucon_ks, ucon_mks);
 
                 // Convert native 4-vector to primitive u-twiddle, see Gammie '04
@@ -106,7 +107,7 @@ void InitializeFMTorus(MeshBlock *pmb, GRCoordinates& G, GridVars P, const EOS* 
             GReal th = M_PI/2;
 
             // Abbreviated version of the full primitives calculation
-            Real lnh = lnh_calc(ks.a, l, rin, r, th);
+            Real lnh = lnh_calc(ksc.a, l, rin, r, th);
 
             // Calculate rho
             Real hm1 = exp(lnh) - 1.;
@@ -120,7 +121,7 @@ void InitializeFMTorus(MeshBlock *pmb, GRCoordinates& G, GridVars P, const EOS* 
         }
     , max_reducer);
 
-    pmb->par_for("fm_torus_normalize", 0, n3-1, 0, n2-1, 0, n1-1,
+    pmb->par_for("fm_torus_normalize", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D {
             P(prims::rho, k, j, i) /= rho_max;
             P(prims::u, k, j, i) /= rho_max;
@@ -130,9 +131,10 @@ void InitializeFMTorus(MeshBlock *pmb, GRCoordinates& G, GridVars P, const EOS* 
 
 void PerturbU(MeshBlock *pmb, GridVars P, Real u_jitter, int rng_seed=31337)
 {
-    int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
-    int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
-    int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
+    IndexDomain domain = IndexDomain::entire;
+    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
+    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
+    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
     // Should only jitter physical zones...
 
     // SERIAL VERSION -- better determinism guarantee but CPU only
@@ -151,7 +153,7 @@ void PerturbU(MeshBlock *pmb, GridVars P, Real u_jitter, int rng_seed=31337)
     typedef typename Kokkos::Random_XorShift64_Pool<> RandPoolType;
     RandPoolType rand_pool(rng_seed);
     typedef typename RandPoolType::generator_type gen_type;
-    pmb->par_for("perturb_u", 0, n3-1, 0, n2-1, 0, n1-1,
+    pmb->par_for("perturb_u", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D {
             gen_type rgen = rand_pool.get_state();
             P(prims::u, k, j, i) *= 1. + Kokkos::rand<gen_type, Real>::draw(rgen, -u_jitter/2, u_jitter/2);
