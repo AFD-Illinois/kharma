@@ -14,22 +14,22 @@ x1max = 4.0
 ix1_bc = outflow
 ox1_bc = outflow
 
-nx2 = 192
+nx2 = 128
 x2min = 0.0
 x2max = 1.0
 ix2_bc = reflecting
 ox2_bc = reflecting
 
-nx3 = 192
+nx3 = 128
 x3min = 0.0
 x3max = 6.283185307179586
 ix3_bc = periodic
 ox3_bc = periodic
 
-#<parthenon/meshblock>
-#nx1 = 64
-#nx2 = 64
-#nx3 = 64
+<parthenon/meshblock>
+nx1 = 64
+nx2 = 64
+nx3 = 64
 
 <coordinates>
 base = spherical_ks
@@ -41,13 +41,13 @@ poly_xt = 0.82
 poly_alpha = 14.0
 
 <parthenon/time>
-tlim = 3.0
+tlim = 10000.0
 integrator = rk2
 dt_min = 0.0001
 
 <GRMHD>
 cfl = 0.9
-gamma = 1.333333
+gamma = 1.666666
 reconstruction = weno5
 merge_reconstruction = true
 
@@ -55,7 +55,9 @@ merge_reconstruction = true
 rin = 6.0
 rmax = 12.0
 u_jitter = 0.1
-b_field_type = sane
+
+<b_field>
+type = sane
 beta_min = 100.
 
 <parthenon/output0>

@@ -55,8 +55,8 @@ void InitializeMesh(ParameterInput *pin, Mesh *pmesh)
             auto& rc = pmb->real_containers.Get();
             SeedBField(rc, pin);
         
-            // TODO add this after normalization instead?
-            // TODO options to add to horizon/renormalize B during run?
+            // TODO should this be added after normalization?
+            // TODO option to add flux slowly during the run?
             Real BHflux = pin->GetOrAddReal("b_field", "bhflux", 0.0);
             if (BHflux > 0.) {
                 //SeedBHFlux(rc, BHflux);
@@ -67,17 +67,32 @@ void InitializeMesh(ParameterInput *pin, Mesh *pmesh)
             pmb = pmb->next;
         }
         beta_min = MPIMin(beta_min);
+#if DEBUG
+        cerr << "Beta min pre-norm: " << beta_min << endl;
+#endif
 
         // Then normalize B by sqrt(beta/beta_min)
         FLAG("Normalizing magnetic field");
         Real beta = pin->GetOrAddReal("b_field", "beta_min", 100.);
-        Real factor = sqrt(beta/beta_min);
+        Real norm = sqrt(beta_min/beta);
         pmb = pmesh->pblock;
         while (pmb != nullptr) {
             auto& rc = pmb->real_containers.Get();
-            NormalizeBField(rc, factor);
+            NormalizeBField(rc, norm);
             pmb = pmb->next;
         }
+#if DEBUG
+        // Do it again to check
+        beta_min = 1e100;
+        pmb = pmesh->pblock;
+        while (pmb != nullptr) {
+            auto& rc = pmb->real_containers.Get();
+            Real beta_local = GetLocalBetaMin(rc);
+            if(beta_local < beta_min) beta_min = beta_local;
+            pmb = pmb->next;
+        }
+        cerr << "Beta min post-norm: " << beta_min << endl;
+#endif
     }
     FLAG("Added B Field");
 

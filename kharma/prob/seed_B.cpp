@@ -21,9 +21,9 @@ TaskStatus SeedBField(std::shared_ptr<Container<Real>>& rc, ParameterInput *pin)
     GRCoordinates G = pmb->coords;
     GridVars P = rc->Get("c.c.bulk.prims").data;
 
-    Real rin = pin->GetOrAddReal("torus", "rin", 6.0);
+    Real rin;
     Real min_rho_q = pin->GetOrAddReal("b_field", "min_rho_q", 0.2);
-    std::string b_field_type = pin->GetOrAddString("b_field", "type", "none");
+    std::string b_field_type = pin->GetString("b_field", "type");
 
     // Translate to an enum so we can avoid string comp inside,
     // as well as for good errors, many->one maps, etc.
@@ -32,7 +32,7 @@ TaskStatus SeedBField(std::shared_ptr<Container<Real>>& rc, ParameterInput *pin)
         return TaskStatus::complete;
     } else if (b_field_type == "sane") {
         b_field_flag = BSeedType::sane;
-    } else if (b_field_type == "ryan") {
+    } else if (b_field_type == "mad" || b_field_type == "ryan") {
         b_field_flag = BSeedType::ryan;
     } else if (b_field_type == "r3s3") {
         b_field_flag = BSeedType::r3s3;
@@ -40,6 +40,18 @@ TaskStatus SeedBField(std::shared_ptr<Container<Real>>& rc, ParameterInput *pin)
         b_field_flag = BSeedType::gaussian;
     } else {
         throw std::invalid_argument("Magnetic field seed type not supported: " + b_field_type);
+    }
+
+    // Require and load rin if necessary
+    switch (b_field_flag)
+    {
+    case BSeedType::sane:
+        break;
+    case BSeedType::ryan:
+    case BSeedType::r3s3:
+    case BSeedType::gaussian:
+        rin = pin->GetReal("torus", "rin");
+        break;
     }
 
     // Find the magnetic vector potential.  In X3 symmetry only A_phi is non-zero, so we keep track of that.
@@ -93,13 +105,15 @@ TaskStatus SeedBField(std::shared_ptr<Container<Real>>& rc, ParameterInput *pin)
             P(prims::B2, k, j, i) =  (A(j, i) + A(j + 1, i) - A(j, i + 1) - A(j + 1, i + 1)) /
                                 (2. * G.dx1v(i) * G.gdet(Loci::center, j, i));
             P(prims::B3, k, j, i) = 0.;
+
+            // We don't need to update U here, since we're always going to normalize straightaway
         }
     );
 
     return TaskStatus::complete;
 }
 
-TaskStatus NormalizeBField(std::shared_ptr<Container<Real>>& rc, Real factor)
+TaskStatus NormalizeBField(std::shared_ptr<Container<Real>>& rc, Real norm)
 {
     MeshBlock *pmb = rc->pmy_block;
     IndexDomain domain = IndexDomain::entire;
@@ -116,14 +130,13 @@ TaskStatus NormalizeBField(std::shared_ptr<Container<Real>>& rc, Real factor)
 
     pmb->par_for("B_field_normalize", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D {
-            P(prims::B1, k, j, i) /= factor;
-            P(prims::B2, k, j, i) /= factor;
-            P(prims::B3, k, j, i) /= factor;
+            P(prims::B1, k, j, i) *= norm;
+            P(prims::B2, k, j, i) *= norm;
+            P(prims::B3, k, j, i) *= norm;
 
             FourVectors Dtmp;
             get_state(G, P, k, j, i, Loci::center, Dtmp);
             prim_to_flux(G, P, Dtmp, eos, k, j, i, Loci::center, 0, U);
-
         }
     );
 

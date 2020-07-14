@@ -115,8 +115,8 @@ void InitializeFMTorus(MeshBlock *pmb, GRCoordinates& G, GridVars P, const EOS* 
                                 1. / (eos->gam - 1.));
             //Real u = kappa * pow(rho, eos->gam) / (eos->gam - 1.);
 
-            // Record max
-            if (rho > local_result) local_result = rho;
+            // Record max.  Maybe more efficient to bail earlier?  Meh.
+            if (rho > local_result && r > rin) local_result = rho;
             //if (u > u_max) u_max = u;
         }
     , max_reducer);
