@@ -220,6 +220,15 @@ void FillDerived(std::shared_ptr<Container<Real>>& rc)
     auto pflag_host = pflag.GetHostMirrorAndCopy();
     CountFFlags(pmb, fflag_host, IndexDomain::interior);
     CountPFlags(pmb, pflag_host, IndexDomain::interior);
+#elif 0
+    auto fflag_host = fflag.GetHostMirrorAndCopy();
+    auto pflag_host = pflag.GetHostMirrorAndCopy();
+    cout << "PFLAGS interior: " << CountPFlags(pmb, pflag_host, IndexDomain::interior, false)
+         << " entire: " << CountPFlags(pmb, pflag_host, IndexDomain::entire, false) << endl;
+    cout << "FFLAGS interior: " << CountFFlags(pmb, fflag_host, IndexDomain::interior, false)
+         << " entire: " << CountFFlags(pmb, fflag_host, IndexDomain::entire, false) << endl;
+    cout << "DivB interior: " << MaxDivB(rc, IndexDomain::interior)
+         << " entire: " << MaxDivB(rc, IndexDomain::entire) << endl;
 #endif
 
     DelEOS(eos);

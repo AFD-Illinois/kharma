@@ -158,13 +158,9 @@ TaskStatus InitializeProblem(std::shared_ptr<Container<Real>>& rc, ParameterInpu
         }
     );
 
-    //Diagnostic(rc, IndexDomain::entire);
-
     // Apply any floors. Floors preserve P<->U so why not test that?
     FLAG("First Floors");
     ApplyFloors(rc);
-
-    //Diagnostic(rc, IndexDomain::entire);
 
 
     DelEOS(eos);

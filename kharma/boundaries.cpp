@@ -15,6 +15,8 @@ TaskStatus ApplyCustomBoundaries(std::shared_ptr<Container<Real>>& rc)
 {
     MeshBlock *pmb = rc->pmy_block;
     GridVars U = rc->Get("c.c.bulk.cons").data;
+    GridVars P = rc->Get("c.c.bulk.prims").data;
+    auto& G = pmb->coords;
 
     int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
     int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
@@ -23,7 +25,46 @@ TaskStatus ApplyCustomBoundaries(std::shared_ptr<Container<Real>>& rc)
     IndexRange jb = pmb->cellbounds.GetBoundsJ(IndexDomain::interior);
     IndexRange kb = pmb->cellbounds.GetBoundsK(IndexDomain::interior);
 
-    // Implement our own reflecting boundary for our primitives
+    Real gamma = pmb->packages["GRMHD"]->Param<Real>("gamma");
+    EOS* eos = CreateEOS(gamma);
+
+    // Implement the outflow boundaries on the primitives, since I know how to do that
+    if(pmb->boundary_flag[BoundaryFace::inner_x1] == BoundaryFlag::outflow) {
+        pmb->par_for("inner_x1_outflow", kb.s, kb.e, jb.s, jb.e, 0, ib.s-1,
+            KOKKOS_LAMBDA_3D {
+                // Apply boundary on primitives
+                PLOOP {
+                    P(p, k, j, i) = P(p, k, j, ib.s);
+                    if(p == prims::B1 || p == prims::B2 || p == prims::B3) {
+                        P(p, k, j, i) *= G.gdet(Loci::center, j, ib.s) / G.gdet(Loci::center, j, i);
+                    }
+                }
+                // Recover conserved vars
+                FourVectors Dtmp;
+                get_state(G, P, k, j, i, Loci::center, Dtmp);
+                prim_to_flux(G, P, Dtmp, eos, k, j, i, Loci::center, 0, U);
+            }
+        );
+    }
+    if(pmb->boundary_flag[BoundaryFace::outer_x1] == BoundaryFlag::outflow) {
+        pmb->par_for("outer_x1_outflow", kb.s, kb.e, jb.s, jb.e, ib.e+1, n1-1,
+            KOKKOS_LAMBDA_3D {
+                // Apply boundary on primitives
+                PLOOP {
+                    P(p, k, j, i) = P(p, k, j, ib.e);
+                    if(p == prims::B1 || p == prims::B2 || p == prims::B3) {
+                        P(p, k, j, i) *= G.gdet(Loci::center, j, ib.e) / G.gdet(Loci::center, j, i);
+                    }
+                }
+                // Recover conserved vars
+                FourVectors Dtmp;
+                get_state(G, P, k, j, i, Loci::center, Dtmp);
+                prim_to_flux(G, P, Dtmp, eos, k, j, i, Loci::center, 0, U);
+            }
+        );
+    }
+
+    // Implement our own reflecting boundary for our variables. TODO does this work in conserved?
     if(pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::reflect) {
         pmb->par_for("inner_x2_reflect", 0, NPRIM-1, kb.s, kb.e, 0, jb.s-1, 0, n1-1,
             KOKKOS_LAMBDA_VARS {
@@ -48,6 +89,7 @@ TaskStatus ApplyCustomBoundaries(std::shared_ptr<Container<Real>>& rc)
         ApplyBondiBoundary(rc);
     }
 
+    DelEOS(eos);
     return TaskStatus::complete;
 }
 

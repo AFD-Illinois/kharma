@@ -48,7 +48,7 @@ if len(sys.argv) > 5:
 else:
     unit = 1
 
-params = {}
+params = {'include_ghost':True}
 parameters.parse_parthenon_dat(params, parfile)
 parameters.fix(params)
 dump = pyHARM.load_dump(dumpfile, params=params)

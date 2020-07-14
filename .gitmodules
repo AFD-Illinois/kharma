@@ -1,7 +1,7 @@
 [submodule "parthenon"]
 	path = external/parthenon
 	url = https://github.com/bprather/parthenon.git
-	branch = kharma-no-merge
+	branch = kharma-no-merge-2
 [submodule "external/variant"]
 	path = external/variant
 	url = https://github.com/mpark/variant.git

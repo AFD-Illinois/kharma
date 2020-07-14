@@ -136,7 +136,7 @@ double ReadIharmRestart(MeshBlock *pmb, GRCoordinates G, GridVars P, std::string
     delete[] ptmp;
 
     // Deep copy to device
-    P.DeepCopy(DevExecSpace(), Phost);
+    P.DeepCopy(Phost);
 
     // Every iharm3d sim we'd be restarting had these
     outflow_x1(G, P, n1, n2, n3);

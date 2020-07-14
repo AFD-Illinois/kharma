@@ -102,21 +102,20 @@ TaskList HARMDriver::MakeTaskList(MeshBlock *pmb, int stage)
         auto t_calculate_flux3 = tl.AddTask(GRMHD::CalculateFlux, t_start_recv, sc0, X3DIR);
     }
     auto t_calculate_flux = t_calculate_flux1 | t_calculate_flux2 | t_calculate_flux3;
-    
-    auto t_flux_ct = tl.AddTask(GRMHD::FluxCT, t_calculate_flux, sc0);
 
     // Exchange flux corrections due to AMR and physical boundaries
     // Note this does NOT fix vector components since we bundle primitives
-    // TODO skip these if not SMR/AMR i.e. refinement=none or something like that
+    // TODO figure out where these actually fit in AMR, skip them otherwise
     auto t_send_flux = tl.AddTask(Container<Real>::SendFluxCorrectionTask,
-                                    t_flux_ct, sc0);
+                                    t_calculate_flux, sc0);
     auto t_recv_flux = tl.AddTask(Container<Real>::ReceiveFluxCorrectionTask,
-                                    t_flux_ct, sc0);
+                                    t_calculate_flux, sc0);
 
     auto t_fix_flux = tl.AddTask(FixFlux, t_recv_flux, sc0);
+    auto t_flux_ct = tl.AddTask(GRMHD::FluxCT, t_fix_flux, sc0);
 
     // Apply fluxes to create a single update dU/dt
-    auto t_flux_divergence = tl.AddTask(Update::FluxDivergence, t_fix_flux, sc0, dudt);
+    auto t_flux_divergence = tl.AddTask(Update::FluxDivergence, t_flux_ct, sc0, dudt);
     auto t_source_term = tl.AddTask(GRMHD::AddSourceTerm, t_flux_divergence, sc0, dudt);
     // Apply dU/dt to the stage's initial state sc0 to obtain the stage final state sc1
     // Note this *only fills U* of sc1, so sc1 is out of lockstep

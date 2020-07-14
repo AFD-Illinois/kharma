@@ -22,7 +22,7 @@ int Diagnostic(std::shared_ptr<Container<Real>>& rc, IndexDomain domain);
  * Templated function for counting & printing pflags on arbitrary ()-indexed types
  */
 template<typename T>
-void CountPFlags(MeshBlock *pmb, T pflag, IndexDomain domain=IndexDomain::entire)
+int CountPFlags(MeshBlock *pmb, T pflag, IndexDomain domain=IndexDomain::entire, bool print=true)
 {
     int n_tot = 0, n_neg_in = 0, n_max_iter = 0;
     int n_utsq = 0, n_gamma = 0, n_neg_u = 0, n_neg_rho = 0, n_neg_both = 0;
@@ -48,30 +48,33 @@ void CountPFlags(MeshBlock *pmb, T pflag, IndexDomain domain=IndexDomain::entire
     }
 
     n_tot = MPISumInt(n_tot);
-    n_neg_in = MPISumInt(n_neg_in);
-    n_max_iter = MPISumInt(n_max_iter);
-    n_utsq = MPISumInt(n_utsq);
-    n_gamma = MPISumInt(n_gamma);
-    n_neg_rho = MPISumInt(n_neg_rho);
-    n_neg_u = MPISumInt(n_neg_u);
-    n_neg_both = MPISumInt(n_neg_both);
+    if (print) {
+        n_neg_in = MPISumInt(n_neg_in);
+        n_max_iter = MPISumInt(n_max_iter);
+        n_utsq = MPISumInt(n_utsq);
+        n_gamma = MPISumInt(n_gamma);
+        n_neg_rho = MPISumInt(n_neg_rho);
+        n_neg_u = MPISumInt(n_neg_u);
+        n_neg_both = MPISumInt(n_neg_both);
 
-    cerr << "PFLAGS: " << n_tot << " (" << ((double) n_tot)/((ke-ks+1)*(je-js+1)*(ie-is+1))*100 << "% of all cells)" << endl;
-    if (n_neg_in > 0) cerr << "Negative input: " << n_neg_in << endl;
-    if (n_max_iter > 0) cerr << "Hit max iter: " << n_max_iter << endl;
-    if (n_utsq > 0) cerr << "Velocity invalid: " << n_utsq << endl;
-    if (n_gamma > 0) cerr << "Gamma invalid: " << n_gamma << endl;
-    if (n_neg_rho > 0) cerr << "Negative rho: " << n_neg_rho << endl;
-    if (n_neg_u > 0) cerr << "Negative U: " << n_neg_u << endl;
-    if (n_neg_both > 0) cerr << "Negative rho & U: " << n_neg_both << endl;
-    cerr << endl;
+        cerr << "PFLAGS: " << n_tot << " (" << ((double) n_tot)/((ke-ks+1)*(je-js+1)*(ie-is+1))*100 << "% of all cells)" << endl;
+        if (n_neg_in > 0) cerr << "Negative input: " << n_neg_in << endl;
+        if (n_max_iter > 0) cerr << "Hit max iter: " << n_max_iter << endl;
+        if (n_utsq > 0) cerr << "Velocity invalid: " << n_utsq << endl;
+        if (n_gamma > 0) cerr << "Gamma invalid: " << n_gamma << endl;
+        if (n_neg_rho > 0) cerr << "Negative rho: " << n_neg_rho << endl;
+        if (n_neg_u > 0) cerr << "Negative U: " << n_neg_u << endl;
+        if (n_neg_both > 0) cerr << "Negative rho & U: " << n_neg_both << endl;
+        cerr << endl;
+    }
+    return n_tot;
 }
 
 /**
  * Templated function for counting & printing fflags on arbitrary ()-indexed types
  */
 template<typename T>
-void CountFFlags(MeshBlock *pmb, T fflag, IndexDomain domain=IndexDomain::interior)
+int CountFFlags(MeshBlock *pmb, T fflag, IndexDomain domain=IndexDomain::interior, bool print=true)
 {
     int n_tot = 0, n_geom_rho = 0, n_geom_u = 0, n_b_rho = 0, n_b_u = 0, n_temp = 0, n_gamma = 0, n_ktot = 0;
 
@@ -96,21 +99,24 @@ void CountFFlags(MeshBlock *pmb, T fflag, IndexDomain domain=IndexDomain::interi
     }
 
     n_tot = MPISumInt(n_tot);
-    n_geom_rho = MPISumInt(n_geom_rho);
-    n_geom_u = MPISumInt(n_geom_u);
-    n_b_rho = MPISumInt(n_b_rho);
-    n_b_u = MPISumInt(n_b_u);
-    n_temp = MPISumInt(n_temp);
-    n_gamma = MPISumInt(n_gamma);
-    n_ktot = MPISumInt(n_ktot);
+    if (print) {
+        n_geom_rho = MPISumInt(n_geom_rho);
+        n_geom_u = MPISumInt(n_geom_u);
+        n_b_rho = MPISumInt(n_b_rho);
+        n_b_u = MPISumInt(n_b_u);
+        n_temp = MPISumInt(n_temp);
+        n_gamma = MPISumInt(n_gamma);
+        n_ktot = MPISumInt(n_ktot);
 
-    cerr << "FLOORS: " << n_tot << " (" << ((double) n_tot)/((ke-ks+1)*(je-js+1)*(ie-is+1))*100 << "% of all cells)" << endl;
-    if (n_geom_rho > 0) cerr << "GEOM_RHO: " << n_geom_rho << endl;
-    if (n_geom_u > 0) cerr << "GEOM_U: " << n_geom_u << endl;
-    if (n_b_rho > 0) cerr << "B_RHO: " << n_b_rho << endl;
-    if (n_b_u > 0) cerr << "B_U: " << n_b_u << endl;
-    if (n_temp > 0) cerr << "TEMPERATURE: " << n_temp << endl;
-    if (n_gamma > 0) cerr << "GAMMA: " << n_gamma << endl;
-    if (n_ktot > 0) cerr << "KTOT: " << n_ktot << endl;
-    cerr << endl;
+        cerr << "FLOORS: " << n_tot << " (" << ((double) n_tot)/((ke-ks+1)*(je-js+1)*(ie-is+1))*100 << "% of all cells)" << endl;
+        if (n_geom_rho > 0) cerr << "GEOM_RHO: " << n_geom_rho << endl;
+        if (n_geom_u > 0) cerr << "GEOM_U: " << n_geom_u << endl;
+        if (n_b_rho > 0) cerr << "B_RHO: " << n_b_rho << endl;
+        if (n_b_u > 0) cerr << "B_U: " << n_b_u << endl;
+        if (n_temp > 0) cerr << "TEMPERATURE: " << n_temp << endl;
+        if (n_gamma > 0) cerr << "GAMMA: " << n_gamma << endl;
+        if (n_ktot > 0) cerr << "KTOT: " << n_ktot << endl;
+        cerr << endl;
+    }
+    return n_tot;
 }
