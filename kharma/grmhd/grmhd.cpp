@@ -467,7 +467,8 @@ Real EstimateTimestep(std::shared_ptr<Container<Real>>& rc)
     , min_reducer);
 
     // Sometimes we come out with a silly timestep. Try to salvage it
-    if (ndt <= 0.0 || isnan(ndt) || ndt > 10) {
+    // TODO don't allow the *overall* timestep to be large, while allowing *blocks* to have large steps
+    if (ndt <= 0.0 || isnan(ndt) || ndt > 10000) {
         cerr << "ndt was unsafe: " << ndt << "! Using dt_min" << std::endl;
         ndt = pmb->packages["GRMHD"]->Param<Real>("dt_min");
     } else {
