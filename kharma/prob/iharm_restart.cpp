@@ -99,7 +99,7 @@ void ReadIharmRestartHeader(std::string fname, std::unique_ptr<ParameterInput>& 
         pin->SetString("parthenon/mesh", "ix3_bc", "periodic");
         pin->SetString("parthenon/mesh", "ox3_bc", "periodic");
     } else {
-        throw std::runtime_error("");
+        throw std::runtime_error("Unknown restart file format!");
     }
 
     // End HDF5 reads

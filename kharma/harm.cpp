@@ -30,8 +30,6 @@ Properties_t ParthenonManager::ProcessProperties(std::unique_ptr<ParameterInput>
     // Mostly this function is where I've chosen to mess with all Parthenon's parameters before
     // handing them over.  This includes reading restarts, setting native boundaries from KS, etc.
 
-    // TODO guess more things here.  I don't want to have to specify xXmin/max or BCs unless they're surprising
-
     // If we're restarting, read the restart file for a bunch of parameters
     std::string prob = pin->GetString("parthenon/job", "problem_id");
     if (prob == "iharm_restart") {
@@ -47,15 +45,15 @@ Properties_t ParthenonManager::ProcessProperties(std::unique_ptr<ParameterInput>
         // If xeh = log(Rhor), xin = log(Rin), and xout = log(Rout),
         // then we want xeh = xin + 5.5 * (xout - xin) / N1TOT, or solving/replacing:
         int n1tot = pin->GetInteger("parthenon/mesh", "nx1");
-        GReal Rout = pin->GetInteger("coordinates", "r_out");
-        Real a = pin->GetInteger("coordinates", "a");
+        GReal Rout = pin->GetReal("coordinates", "r_out");
+        Real a = pin->GetReal("coordinates", "a");
         GReal Rhor = 1 + sqrt(1 - a*a);
-        GReal Rin = exp((n1tot * log(Rhor) / 5.5 - log(Rout)) / (-1. + n1tot / 5.5));
-        GReal x1min = log(Rin);
         GReal x1max = log(Rout);
+        GReal x1min = (n1tot * log(Rhor) / 5.5 - x1max) / (-1. + n1tot / 5.5);
         if (x1min < 0.0) {
             throw std::invalid_argument("Not enough radial zones were specified to put 5 zones inside EH!");
         }
+        //cerr << "Setting x1min: " << x1min << " x1max " << x1max << " based on BH with a=" << a << endl;
         pin->SetReal("parthenon/mesh", "x1min", x1min);
         pin->SetReal("parthenon/mesh", "x1max", x1max);
     }
