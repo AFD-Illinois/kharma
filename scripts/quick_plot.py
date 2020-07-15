@@ -18,7 +18,7 @@ from pyHARM.ana.units import get_units_M87
 import pyHARM.parameters as parameters
 
 # TODO parse these instead of hard-coding
-USEARRSPACE = True
+USEARRSPACE = False
 
 if not USEARRSPACE:
     SIZE = 20
