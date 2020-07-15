@@ -42,6 +42,8 @@ int main(int argc, char *argv[])
 {
     ParthenonManager pman;
 
+    // Parthenon init includes Kokkos, MPI, parses parameters & cmdline,
+    // then calls ProcessPackages and ProcessProperties, then constructs the Mesh
     FLAG("Parthenon Initializing");
     auto manager_status = pman.ParthenonInit(argc, argv);
     if (manager_status == ParthenonStatus::complete) {
@@ -53,12 +55,17 @@ int main(int argc, char *argv[])
         return 1;
     }
     FLAG("Parthenon Initialized");
-    if(MPIRank0()) ShowConfig();
+    if(MPIRank0()) ShowConfig(); // TODO something less verbose
 
     auto pin = pman.pinput.get();
     auto pmesh = pman.pmesh.get();
+
+    // Write the problem to the mesh.
+    // Implemented separately outside of MeshBlock since
+    // GRMHD initializaitons involve global reductions
     InitializeMesh(pin, pmesh);
 
+    // Then construct & run the driver
     HARMDriver driver(pin, pmesh);
 
     FLAG("Executing Driver");

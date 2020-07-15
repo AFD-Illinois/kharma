@@ -33,12 +33,11 @@ GRCoordinates::GRCoordinates(const RegionSize &rs, ParameterInput *pin): Uniform
     // This is effectively a constructor for the CoordinateEmbedding object,
     // but in KHARMA, that object is only used through this one.
     // And I want the option to use that code elsewhere as it's quite general & nice
-    // TODO are string allocations/comparisons bad in this constructor?
-    std::string base_str = pin->GetOrAddString("coordinates", "base", "cartesian_minkowski");
-    std::string transform_str = pin->GetOrAddString("coordinates", "transform", "null");
-    GReal startx1 = pin->GetReal("parthenon/mesh", "x1min"); // This was needed for mesh.  Die without it.
-    GReal a = pin->GetOrAddReal("coordinates", "a", 0.0); // The rest have defaults
-    GReal hslope = pin->GetOrAddReal("coordinates", "hslope", 0.3);
+    std::string base_str = pin->GetString("coordinates", "base"); // Require every problem to specify very basic geometry
+    std::string transform_str = pin->GetString("coordinates", "transform");
+    GReal startx1 = pin->GetReal("parthenon/mesh", "x1min");
+    GReal a = pin->GetReal("coordinates", "a");
+    GReal hslope = pin->GetOrAddReal("coordinates", "hslope", 0.3); // The rest have very common defaults
     GReal mks_smooth = pin->GetOrAddReal("coordinates", "mks_smooth", 0.5);
     GReal poly_xt = pin->GetOrAddReal("coordinates", "poly_xt", 0.82);
     GReal poly_alpha = pin->GetOrAddReal("coordinates", "poly_alpha", 14.0);
@@ -67,12 +66,6 @@ GRCoordinates::GRCoordinates(const RegionSize &rs, ParameterInput *pin): Uniform
         } else {
             transform.emplace<CartNullTransform>(CartNullTransform());
         }
-    } else if (transform_str == "cartesian_null") {
-        if (!spherical) throw std::invalid_argument("Transform is for cartesian coordinates!");
-        transform.emplace<CartNullTransform>(CartNullTransform());
-    } else if (transform_str == "spherical_null") {
-        if (!spherical) throw std::invalid_argument("Transform is for spherical coordinates!");
-        transform.emplace<SphNullTransform>(SphNullTransform());
     } else if (transform_str == "modified" || transform_str == "mks") {
         if (!spherical) throw std::invalid_argument("Transform is for spherical coordinates!");
         transform.emplace<ModifyTransform>(ModifyTransform(hslope));

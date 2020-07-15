@@ -69,6 +69,7 @@ public:
     KOKKOS_INLINE_FUNCTION void coord(const int& k, const int& j, const int& i, const Loci& loc, GReal X[GR_DIM]) const;
     // Coordinates of the embedding system, usually r,th,phi[KS] or x1,x2,x3
     KOKKOS_INLINE_FUNCTION void coord_embed(const int& k, const int& j, const int& i, const Loci& loc, GReal Xembed[GR_DIM]) const;
+    // Coordinates in a specific 
 
     // Transformations using the cached geometry
     KOKKOS_INLINE_FUNCTION void lower(const Real vcon[GR_DIM], Real vcov[GR_DIM],

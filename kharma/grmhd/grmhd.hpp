@@ -17,9 +17,7 @@
 
 #include <memory>
 
-#include "interface/state_descriptor.hpp"
-#include "tasks/task_list.hpp"
-#include "parameter_input.hpp"
+#include "parthenon/parthenon.hpp"
 
 using namespace parthenon;
 

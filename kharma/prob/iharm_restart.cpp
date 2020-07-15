@@ -20,6 +20,92 @@ using namespace Kokkos;
 // Re-gridding algorithm
 // Start with multiple meshes i.e. find full file dimensions, where to start reading
 
+void ReadIharmRestartHeader(std::string fname, std::unique_ptr<ParameterInput>& pin)
+{
+    // Read the restart file and set parameters that need to be specified at early loading
+    hdf5_open(fname.c_str());
+
+    // Read everything from root
+    hdf5_set_directory("/");
+
+    // Get size
+    int n1file, n2file, n3file;
+    hdf5_read_single_val(&n1file, "n1", H5T_STD_I32LE);
+    hdf5_read_single_val(&n2file, "n2", H5T_STD_I32LE);
+    hdf5_read_single_val(&n3file, "n3", H5T_STD_I32LE);
+    pin->SetInteger("parthenon/mesh", "nx1", n1file);
+    pin->SetInteger("parthenon/mesh", "nx2", n2file);
+    pin->SetInteger("parthenon/mesh", "nx3", n3file);
+
+    double gam, cour;
+    hdf5_read_single_val(&gam, "gam", H5T_IEEE_F64LE);
+    hdf5_read_single_val(&cour, "cour", H5T_IEEE_F64LE);
+    pin->SetReal("GRMHD", "gamma", gam);
+    pin->SetReal("GRMHD", "cfl", cour);
+
+    if (hdf5_exists("a")) {
+        double a, hslope, Rout;
+        hdf5_read_single_val(&a, "a", H5T_IEEE_F64LE);
+        hdf5_read_single_val(&hslope, "hslope", H5T_IEEE_F64LE);
+        hdf5_read_single_val(&Rout, "Rout", H5T_IEEE_F64LE);
+        pin->SetReal("coordinates", "a", a);
+        pin->SetReal("coordinates", "hslope", hslope);
+        pin->SetReal("coordinates", "r_out", Rout);
+
+        // Sadly restarts did not record MKS vs FMKS
+        // Guess if not specified in parameter file
+        pin->SetString("coordinates", "base", "spherical_ks");
+        if (!pin->DoesParameterExist("coordinates", "transform")) {
+            pin->SetString("coordinates", "transform", "funky");
+        }
+
+        pin->SetReal("parthenon/mesh", "x2min", 0.0);
+        pin->SetReal("parthenon/mesh", "x2max", 1.0);
+        pin->SetReal("parthenon/mesh", "x3min", 0.0);
+        pin->SetReal("parthenon/mesh", "x3max", 2*M_PI);
+
+        // All MKS sims had the usual bcs
+        pin->SetString("parthenon/mesh", "ix1_bc", "outflow");
+        pin->SetString("parthenon/mesh", "ox1_bc", "outflow");
+        pin->SetString("parthenon/mesh", "ix2_bc", "reflecting");
+        pin->SetString("parthenon/mesh", "ox2_bc", "reflecting");
+        pin->SetString("parthenon/mesh", "ix3_bc", "periodic");
+        pin->SetString("parthenon/mesh", "ox3_bc", "periodic");
+    } else if (hdf5_exists("x1Min")) {
+        double x1min, x2min, x3min;
+        double x1max, x2max, x3max;
+        hdf5_read_single_val(&x1min, "x1Min", H5T_IEEE_F64LE);
+        hdf5_read_single_val(&x1max, "x1Max", H5T_IEEE_F64LE);
+        hdf5_read_single_val(&x2min, "x2Min", H5T_IEEE_F64LE);
+        hdf5_read_single_val(&x2max, "x2Max", H5T_IEEE_F64LE);
+        hdf5_read_single_val(&x3min, "x3Min", H5T_IEEE_F64LE);
+        hdf5_read_single_val(&x3max, "x3Max", H5T_IEEE_F64LE);
+        pin->SetReal("parthenon/mesh", "x1min", x1min);
+        pin->SetReal("parthenon/mesh", "x1max", x1max);
+        pin->SetReal("parthenon/mesh", "x2min", x2min);
+        pin->SetReal("parthenon/mesh", "x2max", x2max);
+        pin->SetReal("parthenon/mesh", "x3min", x3min);
+        pin->SetReal("parthenon/mesh", "x3max", x3max);
+
+        // Sims like this were of course cartesian
+        pin->SetString("coordinates", "base", "cartesian_minkowski");
+        pin->SetString("coordinates", "transform", "null");
+
+        // All cartesian sims were periodic
+        pin->SetString("parthenon/mesh", "ix1_bc", "periodic");
+        pin->SetString("parthenon/mesh", "ox1_bc", "periodic");
+        pin->SetString("parthenon/mesh", "ix2_bc", "periodic");
+        pin->SetString("parthenon/mesh", "ox2_bc", "periodic");
+        pin->SetString("parthenon/mesh", "ix3_bc", "periodic");
+        pin->SetString("parthenon/mesh", "ox3_bc", "periodic");
+    } else {
+        throw std::runtime_error("");
+    }
+
+    // End HDF5 reads
+    hdf5_close();
+}
+
 double ReadIharmRestart(MeshBlock *pmb, GRCoordinates G, GridVars P, std::string fname)
 {
     IndexDomain domain = IndexDomain::interior;
@@ -50,55 +136,10 @@ double ReadIharmRestart(MeshBlock *pmb, GRCoordinates G, GridVars P, std::string
         cout << "Restarting from " << fname << ", file version " << version << endl << endl;
     }
 
-    // First check size
-    int n1file, n2file, n3file;
-    hdf5_read_single_val(&n1file, "n1", H5T_STD_I32LE);
-    hdf5_read_single_val(&n2file, "n2", H5T_STD_I32LE);
-    hdf5_read_single_val(&n3file, "n3", H5T_STD_I32LE);
-    if (n1file != n1tot || n2file != n2tot || n3file != n3tot)
-    {
-        throw invalid_argument(string_format("Restart file is wrong size: %d %d %d!\nMesh size: %d %d %d",
-                    n1file, n2file, n3file, n1tot, n2tot, n3tot));
-    }
-
-    double gam;
-    hdf5_read_single_val(&gam, "gam", H5T_IEEE_F64LE);
-    double par_gam = pmb->packages["GRMHD"]->Param<Real>("gamma");
-    if (abs(gam - par_gam) > 0.01) {
-        throw invalid_argument(string_format("Expected gamma of %f but parameters specify %f", gam, par_gam));
-    }
-    // It's *incredibly* weird parthenon doesn't allow this yet
-    //if(MPIRank0()) cout << "Setting fluid gamma from restart: " << gam << endl;
-    //pmb->packages["GRMHD"]->AllParams().SetParam<Real>("gamma", gam);
-
+    // Get tf here and not when reading the header, since using this
+    // value *itself* depends on a parameter, "use_tf"
     Real tf;
     hdf5_read_single_val(&tf, "tf", H5T_IEEE_F64LE);
-
-    // TODO check this, and eventually create the grid/mesh after this...
-    // if (hdf5_exists("Rin")) {
-    //     hdf5_read_single_val(&Rin, "Rin", H5T_IEEE_F64LE);
-    //     hdf5_read_single_val(&Rout, "Rout", H5T_IEEE_F64LE);
-    //     hdf5_read_single_val(&a, "a", H5T_IEEE_F64LE);
-    //     hdf5_read_single_val(&hslope, "hslope", H5T_IEEE_F64LE);
-    // } else {
-    //     hdf5_read_single_val(&x1Min, "x1Min", H5T_IEEE_F64LE);
-    //     hdf5_read_single_val(&x1Max, "x1Max", H5T_IEEE_F64LE);
-    //     hdf5_read_single_val(&x2Min, "x2Min", H5T_IEEE_F64LE);
-    //     hdf5_read_single_val(&x2Max, "x2Max", H5T_IEEE_F64LE);
-    //     hdf5_read_single_val(&x3Min, "x3Min", H5T_IEEE_F64LE);
-    //     hdf5_read_single_val(&x3Max, "x3Max", H5T_IEEE_F64LE);
-    // }
-    // TODO are any of these really needed?  The codes are too different and no old runs have useful e-
-    // hdf5_read_single_val(&t, "t", H5T_IEEE_F64LE);
-    // hdf5_read_single_val(&nstep, "nstep", H5T_STD_I32LE);
-    // if(hdf5_exists("game")) {
-    //     hdf5_read_single_val(&game, "game", H5T_IEEE_F64LE);
-    //     hdf5_read_single_val(&gamp, "gamp", H5T_IEEE_F64LE);
-    //     hdf5_read_single_val(&fel0, "fel0", H5T_IEEE_F64LE);
-    // }
-    // hdf5_read_single_val(&restart_id, "restart_id", H5T_STD_I32LE);
-    // hdf5_read_single_val(&dump_cnt, "dump_cnt", H5T_STD_I32LE);
-    // hdf5_read_single_val(&dt, "dt", H5T_IEEE_F64LE);
 
     hsize_t nfprim;
     if(hdf5_exists("game")) {
@@ -139,6 +180,7 @@ double ReadIharmRestart(MeshBlock *pmb, GRCoordinates G, GridVars P, std::string
     P.DeepCopy(Phost);
 
     // Every iharm3d sim we'd be restarting had these
+    // TODO these need attention for one->many block restarts
     outflow_x1(G, P, n1, n2, n3);
     polar_x2(G, P, n1, n2, n3);
     periodic_x3(G, P, n1, n2, n3);

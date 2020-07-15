@@ -1,22 +1,22 @@
-// Functions defining the evolution of GRMHD fluid
+/**
+ * GRMHD package.  Manipulations on GRMHD 
+ */
+#include "grmhd.hpp"
 
 #include <memory>
 
 // Until Parthenon gets a reduce()
 #include "Kokkos_Core.hpp"
 
-#include "mesh/mesh.hpp"
-#include "coordinates/coordinates.hpp"
+#include "parthenon/parthenon.hpp"
 
 #include "decs.hpp"
 
 #include "boundaries.hpp"
-#include "coordinate_embedding.hpp"
-#include "coordinate_systems.hpp"
 #include "debug.hpp"
 #include "fixup.hpp"
 #include "fluxes.hpp"
-#include "grmhd.hpp"
+#include "gr_coordinates.hpp"
 #include "phys.hpp"
 #include "source.hpp"
 #include "U_to_P.hpp"
@@ -45,8 +45,8 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     std::string problem_name = pin->GetString("parthenon/job", "problem_id");
     params.Add("problem", problem_name);
 
-    // Fluid gamma for EOS (TODO separate EOS class to make this broader)
-    double gamma = pin->GetOrAddReal("GRMHD", "gamma", 4. / 3);
+    // Fluid gamma for EOS.  Don't guess this.
+    double gamma = pin->GetReal("GRMHD", "gamma");
     params.Add("gamma", gamma);
 
     // Proportion of courant condition for timesteps
@@ -76,6 +76,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
 
     // Magnetic field centering option.  HARM traditionally uses cell-centered fields,
     // but KHARMA is branching into face-centered.  Latter is required for SMR/AMR.
+    // TODO here or separate package?  Split GRHD from fields?
     bool face_fields = false;
     std::string centering = pin->GetOrAddString("GRMHD", "field_centering", "cell");
     if (centering == "face") {
@@ -132,12 +133,6 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     m = Metadata({Metadata::Cell, Metadata::Derived, Metadata::OneCopy}, s_fourvector);
     fluid_state->AddField("c.c.bulk.jcon", m, DerivedOwnership::unique);
 
-    // TODO integer/flag fields in Parthenon
-    // Or hack it with doubles/casts
-    // m = Metadata({Metadata::Face, Metadata::Derived, Metadata::OneCopy}, s_fourvector);
-    // fluid_state->AddField("c.c.bulk.pflag", m, DerivedOwnership::unique);
-    // fluid_state->AddField("c.c.bulk.fflag", m, DerivedOwnership::unique);
-
     fluid_state->FillDerived = GRMHD::FillDerived;
     fluid_state->CheckRefinement = nullptr;
     fluid_state->EstimateTimestep = GRMHD::EstimateTimestep;
@@ -164,7 +159,7 @@ void FillDerived(std::shared_ptr<Container<Real>>& rc)
     GridVars U = rc->Get("c.c.bulk.cons").data;
     GridVars P = rc->Get("c.c.bulk.prims").data;
 
-    //GridVars pflag = rc->Get("bulk.pflag").data; // TODO parthenon int variables
+    // TODO does pflag need to be sync'd if I just run U_to_P over ghost zones?
     GridInt pflag("pflag", n3, n2, n1);
     GridInt fflag("fflag", n3, n2, n1);
 
@@ -199,7 +194,7 @@ void FillDerived(std::shared_ptr<Container<Real>>& rc)
 
     // We expect primitives all the way out to 3 ghost zones on all sides.  But we can only fix primitives with their neighbors.
     // This may actually mean we require the 4 ghost zones Parthenon "wants" us to have, if we need to use only fixed zones.
-    // TODO alternatively do a bounds check in fix_U_to_P
+    // TODO or do a bounds check in fix_U_to_P and average the available zones
     ClearCorners(pmb, pflag); // Don't use zones in physical corners. TODO persist this?
     FLAG("Cleared corner flags");
     pmb->par_for("fix_U_to_P", 1, n3-2, 1, n2-2, 1, n1-2,

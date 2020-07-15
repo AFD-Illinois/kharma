@@ -1,14 +1,11 @@
 /*
  * HARM driver-specific things -- i.e. call the GRMHD physics module in
- * the correct RK2 LLF steps we know and love
+ * the correct LLF steps we know and love ~equiv. to step.c
  */
 
 #include <iostream>
 
-#include "parthenon_manager.hpp"
-#include "bvals/boundary_conditions.hpp"
-#include "bvals/bvals.hpp"
-#include "driver/multistage.hpp"
+#include "parthenon/parthenon.hpp"
 
 #include "decs.hpp"
 
@@ -19,36 +16,105 @@
 #include "grmhd.hpp"
 #include "harm.hpp"
 
-// Parthenon requires we override certain things
+// Any restart
+#include "iharm_restart.hpp"
+
+// Parthenon requires we override certain things. TODO move?
 namespace parthenon {
 
-    Packages_t ParthenonManager::ProcessPackages(std::unique_ptr<ParameterInput>& pin) {
-        Packages_t packages;
+Properties_t ParthenonManager::ProcessProperties(std::unique_ptr<ParameterInput>& pin)
+{
+    // TODO actually use this?  Just globals, basically, maybe useful for debug flags etc.
+    Properties_t properties;
 
-        // Turn off GRMHD only if set to false in input file
-        bool do_grmhd = pin->GetOrAddBoolean("Packages", "GRMHD", true);
-        bool do_grhd = pin->GetOrAddBoolean("Packages", "GRHD", false);
-        bool do_electrons = pin->GetOrAddBoolean("Packages", "howes_electrons", false);
+    // Mostly this function is where I've chosen to mess with all Parthenon's parameters before
+    // handing them over.  This includes reading restarts, setting native boundaries from KS, etc.
 
-        // enable other packages as needed
-        bool do_scalars = pin->GetOrAddBoolean("Packages", "scalars", false);
+    // TODO guess more things here.  I don't want to have to specify xXmin/max or BCs unless they're surprising
 
-        // Just one base package: integrated B-fields, or not.
-        if (do_grmhd) {
-            packages["GRMHD"] = GRMHD::Initialize(pin.get());
-        } else if (do_grhd) {
-
-        }
-
-        // Scalars can be added 
-        // if (do_scalars) {
-        //     packages["scalars"] = BetterScalars::Initialize(pin.get());
-        // }
-
-        // TODO electrons, like scalars but w/heating step...
-
-        return std::move(packages);
+    // If we're restarting, read the restart file for a bunch of parameters
+    std::string prob = pin->GetString("parthenon/job", "problem_id");
+    if (prob == "iharm_restart") {
+        ReadIharmRestartHeader(pin->GetString("iharm_restart", "fname"), pin);
     }
+
+    // TODO somehow only parse the coordinate system once, so we can know exactly whether we're spherical/modified
+    // So far every non-null transform is exp(x1) but who knows
+    std::string cb = pin->GetString("coordinates", "base");
+    std::string ctf = pin->GetString("coordinates", "transform");
+    if (ctf != "null") {
+        // Set Rin such that we have 5 zones completely inside the event horizon
+        // If xeh = log(Rhor), xin = log(Rin), and xout = log(Rout),
+        // then we want xeh = xin + 5.5 * (xout - xin) / N1TOT, or solving/replacing:
+        int n1tot = pin->GetInteger("parthenon/mesh", "nx1");
+        GReal Rout = pin->GetInteger("coordinates", "r_out");
+        Real a = pin->GetInteger("coordinates", "a");
+        GReal Rhor = 1 + sqrt(1 - a*a);
+        GReal Rin = exp((n1tot * log(Rhor) / 5.5 - log(Rout)) / (-1. + n1tot / 5.5));
+        GReal x1min = log(Rin);
+        GReal x1max = log(Rout);
+        if (x1min < 0.0) {
+            throw std::invalid_argument("Not enough radial zones were specified to put 5 zones inside EH!");
+        }
+        pin->SetReal("parthenon/mesh", "x1min", x1min);
+        pin->SetReal("parthenon/mesh", "x1max", x1max);
+    }
+    // Assumption: if we're in a spherical system...
+    if (cb == "spherical_ks" || cb == "ks" || cb == "spherical_bl" || cb == "bl" || cb == "spherical_minkowski") {
+        // ...then we definitely want spherical boundary conditions
+        // TODO only set all this if it isn't already
+        pin->SetString("parthenon/mesh", "ix1_bc", "outflow");
+        pin->SetString("parthenon/mesh", "ox1_bc", "outflow");
+        pin->SetString("parthenon/mesh", "ix2_bc", "reflecting");
+        pin->SetString("parthenon/mesh", "ox2_bc", "reflecting");
+        pin->SetString("parthenon/mesh", "ix3_bc", "periodic");
+        pin->SetString("parthenon/mesh", "ox3_bc", "periodic");
+
+        // We also know the bounds for most transforms in spherical.  Set them.
+        if (ctf == "none") {
+            pin->SetReal("parthenon/mesh", "x2min", 0.0);
+            pin->SetReal("parthenon/mesh", "x2max", M_PI);
+            pin->SetReal("parthenon/mesh", "x3min", 0.0);
+            pin->SetReal("parthenon/mesh", "x3max", 2*M_PI);
+        } else if (ctf == "modified" || ctf == "mks" || ctf == "funky" || ctf == "fmks") {
+            pin->SetReal("parthenon/mesh", "x2min", 0.0);
+            pin->SetReal("parthenon/mesh", "x2max", 1.0);
+            pin->SetReal("parthenon/mesh", "x3min", 0.0);
+            pin->SetReal("parthenon/mesh", "x3max", 2*M_PI);
+        } // TODO any other transforms/systems
+    }
+
+    return properties;
+}
+
+Packages_t ParthenonManager::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
+{
+    Packages_t packages;
+
+    // Turn off GRMHD only if set to false in input file
+    bool do_grmhd = pin->GetOrAddBoolean("Packages", "GRMHD", true);
+    bool do_grhd = pin->GetOrAddBoolean("Packages", "GRHD", false);
+    bool do_electrons = pin->GetOrAddBoolean("Packages", "howes_electrons", false);
+
+    // enable other packages as needed
+    bool do_scalars = pin->GetOrAddBoolean("Packages", "scalars", false);
+
+    // Just one base package: integrated B-fields, or not.
+    if (do_grmhd) {
+        packages["GRMHD"] = GRMHD::Initialize(pin.get());
+    } else if (do_grhd) {
+
+    }
+
+    // Scalars can be added 
+    // if (do_scalars) {
+    //     packages["scalars"] = BetterScalars::Initialize(pin.get());
+    // }
+
+    // TODO electrons, like scalars but w/heating step...
+
+    return std::move(packages);
+}
 
 } // namespace parthenon
 

@@ -3,11 +3,7 @@
 
 #include <memory>
 
-#include "globals.hpp"
-#include "mesh/mesh.hpp"
-#include "driver/multistage.hpp"
-#include "interface/state_descriptor.hpp"
-#include "tasks/task_list.hpp"
+#include "parthenon/parthenon.hpp"
 
 using namespace parthenon;
 

@@ -1,0 +1,26 @@
+# Restart from an iharm3d snapshot file
+
+<parthenon/job>
+problem_id = iharm_restart
+
+<parthenon/mesh>
+refinement = none
+numlevel = 1
+
+# ONLY ONE MESH
+
+<coordinates>
+transform = fmks
+
+<parthenon/time>
+tlim = 1.0
+dt_min = 0.00001
+
+<iharm_restart>
+fname = test/restart_192_gold.h5
+use_tf = false
+
+<parthenon/output0>
+file_type = hdf5
+dt = 1.0
+variables = c.c.bulk.prims
