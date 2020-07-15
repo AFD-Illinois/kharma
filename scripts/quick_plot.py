@@ -18,10 +18,10 @@ from pyHARM.ana.units import get_units_M87
 import pyHARM.parameters as parameters
 
 # TODO parse these instead of hard-coding
-USEARRSPACE = False
+USEARRSPACE = True
 
 if not USEARRSPACE:
-    SIZE = 20
+    SIZE = 50
     #window = (0, SIZE, 0, SIZE)
     window = (-SIZE, SIZE, -SIZE, SIZE)
     # window=(-SIZE/4, SIZE/4, 0, SIZE)

@@ -22,6 +22,7 @@ base = ks
 transform = fmks
 a = 0.0
 hslope = 0.3
+r_out = 30
 
 <parthenon/time>
 tlim = 10.0

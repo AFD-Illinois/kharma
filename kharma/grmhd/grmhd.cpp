@@ -449,7 +449,7 @@ Real EstimateTimestep(std::shared_ptr<Container<Real>>& rc)
     auto coords = pmb->coords;
     auto& ctop = rc->GetFace("f.f.bulk.ctop").data;
 
-    // TODO is there a parthenon par_reduce yet?
+    // TODO preserve location, needs custom (?) Kokkos Index type for 3D
     double ndt;
     Kokkos::Min<double> min_reducer(ndt);
     Kokkos::parallel_reduce("ndt_min", MDRangePolicy<Rank<3>>({ks, js, is}, {ke+1, je+1, ie+1}),
@@ -457,7 +457,9 @@ Real EstimateTimestep(std::shared_ptr<Container<Real>>& rc)
             double ndt_zone = 1 / (1 / (coords.dx1v(i) / ctop(1, k, j, i)) +
                                    1 / (coords.dx2v(j) / ctop(2, k, j, i)) +
                                    1 / (coords.dx3v(k) / ctop(3, k, j, i)));
-            if (ndt_zone < local_result) local_result = ndt_zone;
+            if (ndt_zone < local_result) {
+                local_result = ndt_zone;
+            }
         }
     , min_reducer);
 
