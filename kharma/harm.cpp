@@ -149,7 +149,8 @@ TaskList HARMDriver::MakeTaskList(MeshBlock *pmb, int stage)
     auto& sc1  = pmb->real_containers.Get(stage_name[stage]);
 
     // TODO what does this do exactly?
-    auto t_start_recv = tl.AddTask(Container<Real>::StartReceivingTask, none, sc1);
+    auto t_start_recv = tl.AddTask(&Container<Real>::StartReceiving, sc1.get(), none,
+                                   BoundaryCommSubset::all);
 
     // Calculate the LLF fluxes in each direction
     // This uses the primitives (P) to calculate fluxes to update the conserved variables (U)
@@ -170,11 +171,11 @@ TaskList HARMDriver::MakeTaskList(MeshBlock *pmb, int stage)
     }
     auto t_calculate_flux = t_calculate_flux1 | t_calculate_flux2 | t_calculate_flux3;
 
-    // TODO add these sensibly for AMR/SMR runs
-    // auto t_send_flux = tl.AddTask(Container<Real>::SendFluxCorrectionTask,
-    //                                 t_calculate_flux, sc0);
-    // auto t_recv_flux = tl.AddTask(Container<Real>::ReceiveFluxCorrectionTask,
-    //                                 t_calculate_flux, sc0);
+    // TODO add these sensibly for AMR/SMR runs (below Fix and/or CT?)
+//   auto t_send_flux =
+//       tl.AddTask(&Container<Real>::SendFluxCorrection, sc0.get(), t_calculate_flux);
+//   auto t_recv_flux =
+//       tl.AddTask(&Container<Real>::ReceiveFluxCorrection, sc0.get(), t_calculate_flux);
 
     // These operate totally on fluxes
     auto t_fix_flux = tl.AddTask(FixFlux, t_calculate_flux, sc0);
@@ -188,14 +189,12 @@ TaskList HARMDriver::MakeTaskList(MeshBlock *pmb, int stage)
     auto t_update_container = tl.AddTask(UpdateContainer, t_source_term, pmb, stage, stage_name, integrator);
 
     // Update ghost cells.  Only performed on U of sc1
-    auto t_send = tl.AddTask(Container<Real>::SendBoundaryBuffersTask,
-                                t_update_container, sc1);
-    auto t_recv = tl.AddTask(Container<Real>::ReceiveBoundaryBuffersTask,
-                                t_update_container, sc1);
-    auto t_fill_from_bufs = tl.AddTask(Container<Real>::SetBoundariesTask,
-                                            t_recv, sc1);
-    auto t_clear_comm_flags = tl.AddTask(Container<Real>::ClearBoundaryTask,
-                                            t_fill_from_bufs, sc1);
+  auto t_send =
+      tl.AddTask(&Container<Real>::SendBoundaryBuffers, sc1.get(), t_update_container);
+  auto t_recv = tl.AddTask(&Container<Real>::ReceiveBoundaryBuffers, sc1.get(), t_send);
+  auto t_fill_from_bufs = tl.AddTask(&Container<Real>::SetBoundaries, sc1.get(), t_recv);
+  auto t_clear_comm_flags = tl.AddTask(&Container<Real>::ClearBoundary, sc1.get(),
+                                     t_fill_from_bufs, BoundaryCommSubset::all);
 
     // TODO add sensibly for AMR runs
     // auto t_prolong_bound = tl.AddTask([](MeshBlock *pmb) {
