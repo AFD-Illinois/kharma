@@ -12,7 +12,7 @@
  * @param rin is the torus innermost radius, in r_g
  * @param rmax is the radius of maximum density of the F-M torus in r_g
  */
-void InitializeFMTorus(MeshBlock *pmb, GRCoordinates& G, GridVars P, const EOS* eos,
+void InitializeFMTorus(std::shared_ptr<MeshBlock> pmb, GRCoordinates& G, GridVars P, const EOS* eos,
                        GReal rin, GReal rmax, Real kappa=1.e-3);
 
 /**
@@ -23,7 +23,7 @@ void InitializeFMTorus(MeshBlock *pmb, GRCoordinates& G, GridVars P, const EOS* 
  * @param u_jitter see description
  * @param rng_seed is added to the MPI rank to seed the GSL RNG
  */
-void PerturbU(MeshBlock *pmb, GridVars P, Real u_jitter, int rng_seed);
+void PerturbU(std::shared_ptr<MeshBlock> pmb, GridVars P, Real u_jitter, int rng_seed);
 
 // Device-side expressions for FM variables
 KOKKOS_INLINE_FUNCTION Real lnh_calc(const GReal a, const Real l, const GReal rin, const GReal r, const GReal th)

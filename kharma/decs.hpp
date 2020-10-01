@@ -23,7 +23,7 @@ using Real = parthenon::Real;
 using GReal = double;
 
 // TODO add make.sh/CMake option for tracing vs just debug
-#if DEBUG_TRACE
+#if DEBUG
 #define FLAG(x) if(MPIRank0()) std::cout << x << std::endl;
 #else
 #define FLAG(x)
@@ -107,7 +107,7 @@ enum ReconstructionType{linear_mc=0, ppm, weno5, mp5};
 // GAMMA FLOOR
 // Maximum gamma factor allowed for fluid velocity
 // Defined in decs.hpp since it's also needed by U_to_P
-#define GAMMAMAX 50.
+#define GAMMAMAX 100.
 
 // GEOMETRY FLOORS
 // Limiting values for density and internal energy
@@ -120,7 +120,8 @@ enum ReconstructionType{linear_mc=0, ppm, weno5, mp5};
 
 // RATIO CEILINGS
 // Maximum ratio of internal energy to density (i.e. Temperature)
-#define UORHOMAX   100.
+#define UORHOMAX   50.
 // Same for magnetic field (i.e. magnetization sigma)
 #define BSQORHOMAX 100.
-#define BSQOUMAX   (BSQORHOMAX * UORHOMAX)
+// Disable a B-field-based floor on U
+#define BSQOUMAX   100000

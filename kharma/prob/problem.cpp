@@ -1,4 +1,36 @@
-// Dispatch for all problems which can be generated
+/* 
+ *  File: problem.cpp
+ *  
+ *  BSD 3-Clause License
+ *  
+ *  Copyright (c) 2020, AFD Group at UIUC
+ *  All rights reserved.
+ *  
+ *  Redistribution and use in source and binary forms, with or without
+ *  modification, are permitted provided that the following conditions are met:
+ *  
+ *  1. Redistributions of source code must retain the above copyright notice, this
+ *     list of conditions and the following disclaimer.
+ *  
+ *  2. Redistributions in binary form must reproduce the above copyright notice,
+ *     this list of conditions and the following disclaimer in the documentation
+ *     and/or other materials provided with the distribution.
+ *  
+ *  3. Neither the name of the copyright holder nor the names of its
+ *     contributors may be used to endorse or promote products derived from
+ *     this software without specific prior written permission.
+ *  
+ *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ *  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ *  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ *  DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ *  FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ *  DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ *  SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ *  CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ *  OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
 
 #include "problem.hpp"
 
@@ -14,6 +46,7 @@
 #include "fm_torus.hpp"
 #include "iharm_restart.hpp"
 #include "mhdmodes.hpp"
+#include "orszag_tang.hpp"
 #include "seed_B.hpp"
 
 #include "bvals/boundary_conditions.hpp"
@@ -21,21 +54,23 @@
 
 using namespace parthenon;
 
+// Dispatch for all problems which can be generated
+
 void InitializeMesh(ParameterInput *pin, Mesh *pmesh)
 {
     // TODO this is *instead* of defining MeshBlock::ProblemGenerator,
     // which means that initial auto-refinement will *NOT* work.
     // we're a ways from AMR yet so we'll cross that bridge etc.
+    FLAG("Initializing Mesh");
 
     // Note this first step spits out valid P and U on *physical* zones
-    // TODO make a list of pmb pointers like Initialize does
-    MeshBlock *pmb = pmesh->pblock;
-    while (pmb != nullptr) {
+    int nmb = pmesh->GetNumMeshBlocksThisRank(Globals::my_rank);
+    for (int i = 0; i < nmb; ++i) {
         // Initialize the base container with problem values
         // This could be switched into task format without too much issue
+        auto& pmb = pmesh->block_list[i];
         auto& rc = pmb->real_containers.Get();
         InitializeProblem(rc, pin);
-        pmb = pmb->next;
     }
     FLAG("Initialized Fluid");
 
@@ -50,8 +85,8 @@ void InitializeMesh(ParameterInput *pin, Mesh *pmesh)
         FLAG("Seeding magnetic field");
         // Seed the magnetic field and find the minimum beta
         Real beta_min = 1e100;
-        pmb = pmesh->pblock;
-        while (pmb != nullptr) {
+        for (int i = 0; i < nmb; ++i) {
+            auto& pmb = pmesh->block_list[i];
             auto& rc = pmb->real_containers.Get();
             SeedBField(rc, pin);
         
@@ -64,7 +99,6 @@ void InitializeMesh(ParameterInput *pin, Mesh *pmesh)
 
             Real beta_local = GetLocalBetaMin(rc);
             if(beta_local < beta_min) beta_min = beta_local;
-            pmb = pmb->next;
         }
         beta_min = MPIMin(beta_min);
 #if DEBUG
@@ -75,21 +109,19 @@ void InitializeMesh(ParameterInput *pin, Mesh *pmesh)
         FLAG("Normalizing magnetic field");
         Real beta = pin->GetOrAddReal("b_field", "beta_min", 100.);
         Real norm = sqrt(beta_min/beta);
-        pmb = pmesh->pblock;
-        while (pmb != nullptr) {
+        for (int i = 0; i < nmb; ++i) {
+            auto& pmb = pmesh->block_list[i];
             auto& rc = pmb->real_containers.Get();
             NormalizeBField(rc, norm);
-            pmb = pmb->next;
         }
 #if DEBUG
         // Do it again to check
         beta_min = 1e100;
-        pmb = pmesh->pblock;
-        while (pmb != nullptr) {
+        for (int i = 0; i < nmb; ++i) {
+            auto& pmb = pmesh->block_list[i];
             auto& rc = pmb->real_containers.Get();
             Real beta_local = GetLocalBetaMin(rc);
             if(beta_local < beta_min) beta_min = beta_local;
-            pmb = pmb->next;
         }
         cerr << "Beta min post-norm: " << beta_min << endl;
 #endif
@@ -109,7 +141,8 @@ void InitializeMesh(ParameterInput *pin, Mesh *pmesh)
 
 TaskStatus InitializeProblem(std::shared_ptr<Container<Real>>& rc, ParameterInput *pin)
 {
-    MeshBlock *pmb = rc->pmy_block;
+    FLAG("Initializing Block");
+    auto pmb = rc->GetBlockPointer();
     GridVars P = rc->Get("c.c.bulk.prims").data;
     GridVars U = rc->Get("c.c.bulk.cons").data;
 
@@ -124,6 +157,9 @@ TaskStatus InitializeProblem(std::shared_ptr<Container<Real>>& rc, ParameterInpu
 
         double tf = InitializeMHDModes(pmb, G, P, nmode, dir);
         pin->SetReal("parthenon/time", "tlim", tf);
+
+    } else if (prob == "orszag_tang") {
+        InitializeOrszagTang(pmb, G, P);
 
     } else if (prob == "bondi") {
         Real mdot = pin->GetOrAddReal("bondi", "mdot", 1.0);
@@ -186,18 +222,17 @@ TaskStatus InitializeProblem(std::shared_ptr<Container<Real>>& rc, ParameterInpu
 void SyncAllBounds(Mesh *pmesh)
 {
     // Update ghost cells. Only performed on U
-    MeshBlock *pmb = pmesh->pblock;
-    while (pmb != nullptr) {
+    int nmb = pmesh->GetNumMeshBlocksThisRank(Globals::my_rank);
+    for (int i = 0; i < nmb; ++i) {
+        auto& pmb = pmesh->block_list[i];
         auto& rc = pmb->real_containers.Get();
         rc->ClearBoundary(BoundaryCommSubset::mesh_init);
         rc->StartReceiving(BoundaryCommSubset::mesh_init);
         rc->SendBoundaryBuffers();
-
-        pmb = pmb->next;
     }
 
-    pmb = pmesh->pblock;
-    while (pmb != nullptr) {
+    for (int i = 0; i < nmb; ++i) {
+        auto& pmb = pmesh->block_list[i];
         auto& rc = pmb->real_containers.Get();
         rc->ReceiveAndSetBoundariesWithWait();
         rc->ClearBoundary(BoundaryCommSubset::mesh_init);
@@ -209,7 +244,5 @@ void SyncAllBounds(Mesh *pmesh)
 
         // Fill P again, including ghost zones
         parthenon::FillDerivedVariables::FillDerived(rc);
-
-        pmb = pmb->next;
     }
 }

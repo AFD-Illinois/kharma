@@ -57,6 +57,7 @@ if [[ "$*" == *"clean"* ]]; then
     # TODO unify MPI flags
     $CMAKE ..\
     -DCMAKE_CXX_COMPILER=$PWD/../external/parthenon/external/Kokkos/bin/nvcc_wrapper \
+    -DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc \
     -DCMAKE_BUILD_TYPE=$TYPE \
     -DCMAKE_PREFIX_PATH=/usr/lib64/mpich \
     -DPAR_LOOP_LAYOUT="MANUAL1D_LOOP" \

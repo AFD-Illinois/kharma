@@ -1,6 +1,35 @@
-/**
- * Physics functions
- * Purely device-side utility functions operating on local data or local parts of matrices.
+/* 
+ *  File: phys.hpp
+ *  
+ *  BSD 3-Clause License
+ *  
+ *  Copyright (c) 2020, AFD Group at UIUC
+ *  All rights reserved.
+ *  
+ *  Redistribution and use in source and binary forms, with or without
+ *  modification, are permitted provided that the following conditions are met:
+ *  
+ *  1. Redistributions of source code must retain the above copyright notice, this
+ *     list of conditions and the following disclaimer.
+ *  
+ *  2. Redistributions in binary form must reproduce the above copyright notice,
+ *     this list of conditions and the following disclaimer in the documentation
+ *     and/or other materials provided with the distribution.
+ *  
+ *  3. Neither the name of the copyright holder nor the names of its
+ *     contributors may be used to endorse or promote products derived from
+ *     this software without specific prior written permission.
+ *  
+ *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ *  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ *  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ *  DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ *  FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ *  DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ *  SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ *  CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ *  OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 #pragma once
 
@@ -9,7 +38,8 @@
 #include "eos.hpp"
 #include "utils.hpp"
 
-/*
+/**
+ * Device-side physics functions
  * These functions mostly have several overloads, related to local vs global variables.
  *
  * One version usually takes a local cache e.g. P[GR_DIM] of a variable, in this case primitives in a single zone
@@ -17,14 +47,6 @@
  *
  * This allows easy fusing/splitting of loops, while avoiding unnecessary global writes of temporary variables
  */
-
-KOKKOS_INLINE_FUNCTION Real bsq_calc(const FourVectors& D)
-{
-    return D.bcon[0] * D.bcov[0] +
-           D.bcon[1] * D.bcov[1] +
-           D.bcon[2] * D.bcov[2] +
-           D.bcon[3] * D.bcov[3];
-}
 
 /**
  * Get a row of the MHD stress-energy tensor with first index up, second index down.
@@ -41,7 +63,7 @@ KOKKOS_INLINE_FUNCTION void mhd_calc(const GridVars P, const FourVectors& D, con
     u =   P(prims::u, k, j, i);
     pgas = eos->p(rho, u);
     w = pgas + rho + u;
-    bsq = bsq_calc(D);
+    bsq = dot(D.bcon, D.bcov);
     eta = w + bsq;
     ptot = pgas + 0.5 * bsq;
 
@@ -62,7 +84,7 @@ KOKKOS_INLINE_FUNCTION void mhd_calc(const Real P[NPRIM], const FourVectors& D, 
     u = P[prims::u];
     pgas = eos->p(rho, u);
     w = pgas + rho + u;
-    bsq = bsq_calc(D);
+    bsq = dot(D.bcon, D.bcov);
     eta = w + bsq;
     ptot = pgas + 0.5 * bsq;
 
@@ -304,7 +326,7 @@ KOKKOS_INLINE_FUNCTION void mhd_vchar(const GRCoordinates &G, const GridVars P, 
     }
 
     // Find fast magnetosonic speed
-    bsq = bsq_calc(D);
+    bsq = dot(D.bcon, D.bcov);
     u =  P(prims::u, k, j, i);
     ef = P(prims::rho, k, j, i) + eos->gam * u;
     ee = bsq + ef;
@@ -358,7 +380,7 @@ KOKKOS_INLINE_FUNCTION void mhd_vchar(const GRCoordinates &G, const Real P[NPRIM
     }
 
     // Find fast magnetosonic speed
-    bsq = bsq_calc(D);
+    bsq = dot(D.bcon, D.bcov);
     u =  P[prims::u];
     ef = P[prims::rho] + eos->gam * u;
     ee = bsq + ef;

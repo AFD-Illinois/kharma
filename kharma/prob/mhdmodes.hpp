@@ -23,7 +23,7 @@ using namespace parthenon;
  *
  * Returns the stopping time corresponding to advection by 1 period
  */
-Real InitializeMHDModes(MeshBlock *pmb, GRCoordinates G, GridVars P, int nmode, int dir)
+Real InitializeMHDModes(std::shared_ptr<MeshBlock> pmb, GRCoordinates G, GridVars P, int nmode, int dir)
 {
     // Mean state
     Real rho0 = 1.;

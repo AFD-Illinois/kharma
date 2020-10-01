@@ -1,3 +1,13 @@
+__='
+   This is the default license template.
+   
+   File: mhdmodes_test.sh
+   Author: bprather
+   Copyright (c) 2020 bprather
+   
+   To edit this license information: Press Ctrl+Shift+P and press 'Create new License Template...'.
+'
+
 #!/bin/bash
 
 ./run.sh -i test/mhdmodes_convergence/mhdc16.par &>test/mhdmodes_convergence/log.out

@@ -19,6 +19,9 @@ $ git submodule update --init --recursive
 $ ./make.sh clean
 ```
 
+# Hacking
+KHARMA is split between header-defined functions and 
+
 # Parthenon mirror
 For the moment, this code uses a mirror of parthenon from [here](https://github.com/bprather/parthenon),
 which changes the default coordinate system to KHARMA's GRCoordinates, and makes a couple changes geared

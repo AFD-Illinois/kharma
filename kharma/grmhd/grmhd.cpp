@@ -1,3 +1,37 @@
+/* 
+ *  File: grmhd.cpp
+ *  
+ *  BSD 3-Clause License
+ *  
+ *  Copyright (c) 2020, AFD Group at UIUC
+ *  All rights reserved.
+ *  
+ *  Redistribution and use in source and binary forms, with or without
+ *  modification, are permitted provided that the following conditions are met:
+ *  
+ *  1. Redistributions of source code must retain the above copyright notice, this
+ *     list of conditions and the following disclaimer.
+ *  
+ *  2. Redistributions in binary form must reproduce the above copyright notice,
+ *     this list of conditions and the following disclaimer in the documentation
+ *     and/or other materials provided with the distribution.
+ *  
+ *  3. Neither the name of the copyright holder nor the names of its
+ *     contributors may be used to endorse or promote products derived from
+ *     this software without specific prior written permission.
+ *  
+ *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ *  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ *  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ *  DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ *  FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ *  DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ *  SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ *  CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ *  OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
 /**
  * GRMHD package.  Manipulations on GRMHD 
  */
@@ -68,15 +102,21 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
         params.Add("recon", ReconstructionType::weno5);
     } else if (recon == "mp5") {
         params.Add("recon", ReconstructionType::mp5);
-    }
+    }  // TODO error on bad value...
 
     // Whether to split or merge recon kernels
     bool merge_recon = pin->GetOrAddBoolean("GRMHD", "merge_reconstruction", true);
     params.Add("merge_recon", merge_recon);
+    bool simple_recon = pin->GetOrAddBoolean("GRMHD", "simple_reconstruction", false);
+    params.Add("simple_recon", simple_recon);
+
+    // Diagnostic data
+    int flag_verbose = pin->GetOrAddInteger("debug", "flag_verbose", 0);
+    params.Add("flag_verbose", flag_verbose);
 
     // Magnetic field centering option.  HARM traditionally uses cell-centered fields,
     // but KHARMA is branching into face-centered.  Latter is required for SMR/AMR.
-    // TODO here or separate package?  Split GRHD from fields?
+    // TODO Split GRHD from B fields?  Would go a long way toward new centering, etc, etc, etc.
     bool face_fields = false;
     std::string centering = pin->GetOrAddString("GRMHD", "field_centering", "cell");
     if (centering == "face") {
@@ -141,7 +181,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
 
 /**
  * Get the primitive variables, which in Parthenon's nomenclature are "derived"
- * TODO check if this is done again before output...
+ *
  * Note that this step also applies the floors and fixups. Basically it is:
  * input: U, whatever form
  * output: U and P match with inversion errors corrected, and obey floors
@@ -149,7 +189,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
 void FillDerived(std::shared_ptr<Container<Real>>& rc)
 {
     FLAG("Filling Derived");
-    MeshBlock *pmb = rc->pmy_block;
+    auto pmb = rc->GetBlockPointer();
     GRCoordinates G = pmb->coords;
 
     int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
@@ -159,7 +199,8 @@ void FillDerived(std::shared_ptr<Container<Real>>& rc)
     GridVars U = rc->Get("c.c.bulk.cons").data;
     GridVars P = rc->Get("c.c.bulk.prims").data;
 
-    // TODO does pflag need to be sync'd if I just run U_to_P over ghost zones?
+    // TODO I don't think the flags need a separate sync if I run U_to_P redundantly over ghost zones --
+    // it will just produce the same flags in the same zones for each process
     GridInt pflag("pflag", n3, n2, n1);
     GridInt fflag("fflag", n3, n2, n1);
 
@@ -172,11 +213,17 @@ void FillDerived(std::shared_ptr<Container<Real>>& rc)
     // Get the primitives from our conserved versions
     // Note this covers ghost zones!  This is intentional, as primitives in
     // ghost zones are needed for reconstruction
-    pmb->par_for("U_to_P", 0, n3-1, 0, n2-1, 0, n1-1,
+    IndexDomain domain = IndexDomain::entire;
+    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
+    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
+    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
+    pmb->par_for("U_to_P", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D {
             pflag(k, j, i) = U_to_P(G, U, eos, k, j, i, Loci::center, P);
+
+            // Apply the floors in the same pass
             fflag(k, j, i) = 0;
-            fflag(k, j, i) |= fixup_ceiling(G, P, U, eos, k, j, i);
+            fflag(k, j, i) |= gamma_ceiling(G, P, U, eos, k, j, i);
             // Fixup_floor involves another U_to_P call.  Hide the pflag in bottom 5 bits and retrieve both
             int comboflag = fixup_floor(G, P, U, eos, k, j, i);
             fflag(k, j, i) |= (comboflag / HIT_FLOOR_GEOM_RHO) * HIT_FLOOR_GEOM_RHO;
@@ -187,211 +234,80 @@ void FillDerived(std::shared_ptr<Container<Real>>& rc)
             }
         }
     );
-    FLAG("Filled");
+    FLAG("Filled and Floored");
 
+    // Done inline above
     //ApplyFloors(rc);
-    //FLAG("Floored");
 
-    // We expect primitives all the way out to 3 ghost zones on all sides.  But we can only fix primitives with their neighbors.
-    // This may actually mean we require the 4 ghost zones Parthenon "wants" us to have, if we need to use only fixed zones.
-    // TODO or do a bounds check in fix_U_to_P and average the available zones
-    ClearCorners(pmb, pflag); // Don't use zones in physical corners. TODO persist this?
-    FLAG("Cleared corner flags");
-    pmb->par_for("fix_U_to_P", 1, n3-2, 1, n2-2, 1, n1-2,
-        KOKKOS_LAMBDA_3D {
-            // Ignore pflags incurred syncing after applying floors to averaged zones.  TODO why does such a thing even exist
-            fflag(k, j, i) |= (fix_U_to_P(G, P, U, eos, pflag, k, j, i) / HIT_FLOOR_GEOM_RHO) * HIT_FLOOR_GEOM_RHO;
+    // Note I could separate this into a new step if pflag/fflag could be moved out
+    FixUtoP(rc, pflag, fflag);
+
+    // Debugging/diagnostic info about floor and inversion flags. Also could be separate if pflag/fflag are state variables.
+    int print_flags = pmb->packages["GRMHD"]->Param<int>("flag_verbose");
+    if (print_flags) {
+        auto fflag_host = fflag.GetHostMirrorAndCopy();
+        auto pflag_host = pflag.GetHostMirrorAndCopy();
+
+        if (print_flags == 2) {
+            CountPFlags(pmb, pflag_host, IndexDomain::interior, true);
+            CountFFlags(pmb, fflag_host, IndexDomain::interior, true);
+
+            // TODO verbose divb?
+            if (n3 > 1) {
+                cout << "DivB: " << MaxDivB(rc, IndexDomain::interior) << endl;
+            }
+        } else if (print_flags == 1) {
+            // TODO option for entire?
+            cout << "PFLAGS: " << CountPFlags(pmb, pflag_host, IndexDomain::interior, false) << endl;
+            cout << "FFLAGS: " << CountFFlags(pmb, fflag_host, IndexDomain::interior, false) << endl;
+
+            // TODO for divB: 2D version, conserved variables version
+            if (n3 > 1) {
+                cout << "DivB: " << MaxDivB(rc, IndexDomain::interior) << endl;
+            }
         }
-    );
-    FLAG("Fixed failed inversions");
-
-#if DEBUG
-    // TODO this does the calculation from primitives, but we could also
-    // use the conserved vars
-    double maxDivB = MaxDivB(rc);
-    fprintf(stderr, "Maximum divB: %g\n", maxDivB);
-
-    auto fflag_host = fflag.GetHostMirrorAndCopy();
-    auto pflag_host = pflag.GetHostMirrorAndCopy();
-    CountFFlags(pmb, fflag_host, IndexDomain::interior);
-    CountPFlags(pmb, pflag_host, IndexDomain::interior);
-#elif 0
-    auto fflag_host = fflag.GetHostMirrorAndCopy();
-    auto pflag_host = pflag.GetHostMirrorAndCopy();
-    cout << "PFLAGS interior: " << CountPFlags(pmb, pflag_host, IndexDomain::interior, false)
-         << " entire: " << CountPFlags(pmb, pflag_host, IndexDomain::entire, false) << endl;
-    cout << "FFLAGS interior: " << CountFFlags(pmb, fflag_host, IndexDomain::interior, false)
-         << " entire: " << CountFFlags(pmb, fflag_host, IndexDomain::entire, false) << endl;
-    cout << "DivB interior: " << MaxDivB(rc, IndexDomain::interior)
-         << " entire: " << MaxDivB(rc, IndexDomain::entire) << endl;
-#endif
+    }
 
     DelEOS(eos);
 }
 
 /**
  * Calculate the LLF flux in a direction
- * Note this is the sequential recon/LR version -- 
- * an interleaved version is also available as ReconAndFlux
- * TODO Make async?
  */
 TaskStatus CalculateFlux(std::shared_ptr<Container<Real>>& rc, const int& dir)
 {
     FLAG(string_format("Calculating flux %d", dir));
-    MeshBlock *pmb = rc->pmy_block;
-    int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
-    int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
-    int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
-    GridVars pl("pl", NPRIM, n3, n2, n1);
-    GridVars pr("pr", NPRIM, n3, n2, n1);
-    GridVars Flux = rc->Get("c.c.bulk.cons").flux[dir];
+    auto pmb = rc->GetBlockPointer();
 
-    ReconstructionType recon = pmb->packages["GRMHD"]->Param<ReconstructionType>("recon");
+    bool merge_recon = pmb->packages["GRMHD"]->Param<bool>("merge_recon");
+    bool simple_recon = pmb->packages["GRMHD"]->Param<bool>("simple_recon");
 
-    // Reconstruct primitives on the faces
-    Reconstruction::ReconstructLR(rc, pl, pr, dir, recon);
+    if (merge_recon) {
+        return LLF::ReconAndFlux(rc, dir);
+    } else {
+        int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
+        int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
+        int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
+        GridVars pl("pl", NPRIM, n3, n2, n1);
+        GridVars pr("pr", NPRIM, n3, n2, n1);
+        GridVars Flux = rc->Get("c.c.bulk.cons").flux[dir];
 
-    // Calculate flux from values at left & right of face
-    LRToFlux(rc, pr, pl, dir, Flux);
+        ReconstructionType recon = pmb->packages["GRMHD"]->Param<ReconstructionType>("recon");
 
-    FLAG(string_format("Calculated flux %d", dir));
-
-    return TaskStatus::complete;
-}
-
-/**
- * Reconstruct primitives at a face, *and* turn them into the LLF flux
- *
- * Also fills the "ctop" vector with the highest magnetosonic speed mhd_vchar -- used to estimate timestep later.
- *
- */
-TaskStatus ReconAndFlux(std::shared_ptr<Container<Real>>& rc, const int& dir)
-{
-    FLAG(string_format("Recon and flux X%d", dir));
-    MeshBlock *pmb = rc->pmy_block;
-    IndexDomain domain = IndexDomain::interior;
-    int is = pmb->cellbounds.is(domain)-1, ie = pmb->cellbounds.ie(domain)+1;
-    int js = pmb->cellbounds.js(domain)-1, je = pmb->cellbounds.je(domain)+1;
-    int ks = pmb->cellbounds.ks(domain)-1, ke = pmb->cellbounds.ke(domain)+1;
-    int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
-    int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
-    int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
-
-    auto& P = rc->Get("c.c.bulk.prims").data;
-    auto& flux = rc->Get("c.c.bulk.cons").flux[dir];
-
-    GRCoordinates G = pmb->coords;
-    // TODO *sigh*
-    Real gamma = pmb->packages["GRMHD"]->Param<Real>("gamma");
-    EOS* eos = CreateEOS(gamma);
-    ReconstructionType recon = pmb->packages["GRMHD"]->Param<ReconstructionType>("recon");
-
-    auto& ctop = rc->GetFace("f.f.bulk.ctop").data;
-
-    // So far we don't need fluxes that don't match faces
-    Loci loc;
-    switch (dir) {
-    case X1DIR:
-        loc = Loci::face1;
-        break;
-    case X2DIR:
-        loc = Loci::face2;
-        break;
-    case X3DIR:
-        loc = Loci::face3;
-        break;
-    }
-
-    const int scratch_level = 1; // 0 is actual scratch (tiny); 1 is HBM
-    size_t scratch_size_in_bytes = parthenon::ScratchPad2D<Real>::shmem_size(NPRIM, n1);
-
-    pmb->par_for_outer(string_format("uberkernel_x%d", dir), 3 * scratch_size_in_bytes, scratch_level, ks, ke, js, je,
-        KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int& k, const int& j) {
-            ScratchPad2D<Real> ql(member.team_scratch(scratch_level), NPRIM, n1);
-            ScratchPad2D<Real> qr(member.team_scratch(scratch_level), NPRIM, n1);
-            ScratchPad2D<Real> q_unused(member.team_scratch(scratch_level), NPRIM, n1);
-
-            // get reconstructed state on faces
-            // TODO switch statements are fast... right? This dispatch table is a pain, but so is another variant
-            switch (recon) {
-            case ReconstructionType::linear_mc:
-                switch (dir) {
-                case X1DIR:
-                    Reconstruction::PiecewiseLinearX1(member, k, j, is, ie, P, ql, qr);
-                    break;
-                case X2DIR:
-                    Reconstruction::PiecewiseLinearX2(member, k, j - 1, is, ie, P, ql, q_unused);
-                    Reconstruction::PiecewiseLinearX2(member, k, j, is, ie, P, q_unused, qr);
-                    break;
-                case X3DIR:
-                    Reconstruction::PiecewiseLinearX3(member, k - 1, j, is, ie, P, ql, q_unused);
-                    Reconstruction::PiecewiseLinearX3(member, k, j, is, ie, P, q_unused, qr);
-                    break;
-                }
-                break;
-            case ReconstructionType::weno5:
-                switch (dir) {
-                case X1DIR:
-                    Reconstruction::WENO5X1(member, k, j, is, ie, P, ql, qr);
-                    break;
-                case X2DIR:
-                    Reconstruction::WENO5X2l(member, k, j - 1, is, ie, P, ql);
-                    Reconstruction::WENO5X2r(member, k, j, is, ie, P, qr);
-                    break;
-                case X3DIR:
-                    Reconstruction::WENO5X3l(member, k - 1, j, is, ie, P, ql);
-                    Reconstruction::WENO5X3r(member, k, j, is, ie, P, qr);
-                    break;
-                }
-                break;
-            }
-
-            // Sync all threads in the team so that scratch memory is consistent
-            member.team_barrier();
-
-            parthenon::par_for_inner(member, is, ie, [&](const int i) {
-                // Reverse the fluxes so that "left" and "right" are w.r.t. the *face*s
-                Real pl[NPRIM], pr[NPRIM];
-                PLOOP {
-                    pl[p] = ql(p, i);
-                    pr[p] = qr(p, i);
-                }
-
-                // LR -> flux
-                FourVectors Dtmp;
-                Real cmaxL, cmaxR, cminL, cminR;
-                Real cmin, cmax, ctop_loc;
-
-                Real fluxL[8], fluxR[8];
-                Real Ul[8], Ur[8];
-
-                // Left
-                get_state(G, pl, k, j, i, loc, Dtmp);
-                prim_to_flux(G, pl, Dtmp, eos, k, j, i, loc, 0, Ul); // dir==0 -> U instead of F in direction
-                prim_to_flux(G, pl, Dtmp, eos, k, j, i, loc, dir, fluxL);
-                mhd_vchar(G, pl, Dtmp, eos, k, j, i, loc, dir, cmaxL, cminL);
-
-                // Right
-                get_state(G, pr, k, j, i, loc, Dtmp);
-                // Note: these three can be done simultaneously if we want to get real fancy
-                prim_to_flux(G, pr, Dtmp, eos, k, j, i, loc, 0, Ur);
-                prim_to_flux(G, pr, Dtmp, eos, k, j, i, loc, dir, fluxR);
-                mhd_vchar(G, pr, Dtmp, eos, k, j, i, loc, dir, cmaxR, cminR);
-
-                cmax = fabs(max(max(0.,  cmaxL),  cmaxR));
-                cmin = fabs(max(max(0., -cminL), -cminR));
-                ctop_loc = max(cmax, cmin);
-
-                ctop(dir, k, j, i) = ctop_loc;
-                PLOOP flux(p, k, j, i) = 0.5 * (fluxL[p] + fluxR[p] - ctop_loc * (Ur[p] - Ul[p]));
-            });
+        // Reconstruct primitives on the faces
+        if (simple_recon) {
+            Reconstruction::ReconstructLRSimple(rc, pl, pr, dir, recon);
+        } else {
+            Reconstruction::ReconstructLR(rc, pl, pr, dir, recon);
         }
-    );
-    
-    DelEOS(eos);
 
-    FLAG(string_format("Finished recon and flux X%d", dir));
-    return TaskStatus::complete;
+        // Calculate flux from values at left & right of face
+        LLF::LRToFlux(rc, pr, pl, dir, Flux);
+
+        FLAG(string_format("Calculated flux %d", dir));
+
+        return TaskStatus::complete;
+    }
 }
 
 /**
@@ -400,7 +316,7 @@ TaskStatus ReconAndFlux(std::shared_ptr<Container<Real>>& rc, const int& dir)
 TaskStatus AddSourceTerm(std::shared_ptr<Container<Real>>& rc, std::shared_ptr<Container<Real>>& dudt)
 {
     FLAG("Adding source term");
-    MeshBlock *pmb = rc->pmy_block;
+    auto pmb = rc->GetBlockPointer();
     IndexDomain domain = IndexDomain::interior;
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
@@ -418,7 +334,6 @@ TaskStatus AddSourceTerm(std::shared_ptr<Container<Real>>& rc, std::shared_ptr<C
     pmb->par_for("source_term", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D {
             // Calculate the source term and apply it in 1 go (since it's stencil-1)
-            // TODO pass global dU so as not to copy?
             FourVectors Dtmp;
             get_state(G, P, k, j, i, Loci::center, Dtmp);
             add_fluid_source(G, P, Dtmp, eos, k, j, i, dUdt);
@@ -441,7 +356,7 @@ TaskStatus AddSourceTerm(std::shared_ptr<Container<Real>>& rc, std::shared_ptr<C
 Real EstimateTimestep(std::shared_ptr<Container<Real>>& rc)
 {
     FLAG("Estimating timestep");
-    MeshBlock *pmb = rc->pmy_block;
+    auto pmb = rc->GetBlockPointer();
     IndexDomain domain = IndexDomain::interior;
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
@@ -464,7 +379,7 @@ Real EstimateTimestep(std::shared_ptr<Container<Real>>& rc)
     , min_reducer);
 
     // Sometimes we come out with a silly timestep. Try to salvage it
-    // TODO don't allow the *overall* timestep to be large, while allowing *blocks* to have large steps
+    // TODO don't allow the *overall* timestep to be >1, while still allowing *blocks* to have larger steps
     if (ndt <= 0.0 || isnan(ndt) || ndt > 10000) {
         cerr << "ndt was unsafe: " << ndt << "! Using dt_min" << std::endl;
         ndt = pmb->packages["GRMHD"]->Param<Real>("dt_min");

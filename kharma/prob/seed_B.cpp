@@ -1,3 +1,37 @@
+/* 
+ *  File: seed_B.cpp
+ *  
+ *  BSD 3-Clause License
+ *  
+ *  Copyright (c) 2020, AFD Group at UIUC
+ *  All rights reserved.
+ *  
+ *  Redistribution and use in source and binary forms, with or without
+ *  modification, are permitted provided that the following conditions are met:
+ *  
+ *  1. Redistributions of source code must retain the above copyright notice, this
+ *     list of conditions and the following disclaimer.
+ *  
+ *  2. Redistributions in binary form must reproduce the above copyright notice,
+ *     this list of conditions and the following disclaimer in the documentation
+ *     and/or other materials provided with the distribution.
+ *  
+ *  3. Neither the name of the copyright holder nor the names of its
+ *     contributors may be used to endorse or promote products derived from
+ *     this software without specific prior written permission.
+ *  
+ *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ *  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ *  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ *  DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ *  FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ *  DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ *  SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ *  CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ *  OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
 // Seed a torus of some type with a magnetic field according to its density
 
 #include "seed_B.hpp"
@@ -10,7 +44,7 @@ enum BSeedType{sane, ryan, r3s3, gaussian};
 
 TaskStatus SeedBField(std::shared_ptr<Container<Real>>& rc, ParameterInput *pin)
 {
-    MeshBlock *pmb = rc->pmy_block;
+    auto pmb = rc->GetBlockPointer();
     IndexDomain domain = IndexDomain::entire;
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
@@ -115,7 +149,7 @@ TaskStatus SeedBField(std::shared_ptr<Container<Real>>& rc, ParameterInput *pin)
 
 TaskStatus NormalizeBField(std::shared_ptr<Container<Real>>& rc, Real norm)
 {
-    MeshBlock *pmb = rc->pmy_block;
+    auto pmb = rc->GetBlockPointer();
     IndexDomain domain = IndexDomain::entire;
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
@@ -146,7 +180,7 @@ TaskStatus NormalizeBField(std::shared_ptr<Container<Real>>& rc, Real norm)
 
 Real GetLocalBetaMin(std::shared_ptr<Container<Real>>& rc)
 {
-    MeshBlock *pmb = rc->pmy_block;
+    auto pmb = rc->GetBlockPointer();
     IndexDomain domain = IndexDomain::interior;
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
@@ -165,7 +199,7 @@ Real GetLocalBetaMin(std::shared_ptr<Container<Real>>& rc)
         KOKKOS_LAMBDA_3D_REDUCE {
             FourVectors Dtmp;
             get_state(G, P, k, j, i, Loci::center, Dtmp);
-            double bsq_ij = bsq_calc(Dtmp);
+            double bsq_ij = dot(Dtmp.bcon, Dtmp.bcov);
 
             Real rho = P(prims::rho, k, j, i);
             Real u = P(prims::u, k, j, i);

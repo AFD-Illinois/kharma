@@ -1,5 +1,36 @@
-// Fixups.  Apply limits and fix bad fluid values to maintain integrable state
-// ApplyFloors, FixUtoP
+/* 
+ *  File: floors.cpp
+ *  
+ *  BSD 3-Clause License
+ *  
+ *  Copyright (c) 2020, AFD Group at UIUC
+ *  All rights reserved.
+ *  
+ *  Redistribution and use in source and binary forms, with or without
+ *  modification, are permitted provided that the following conditions are met:
+ *  
+ *  1. Redistributions of source code must retain the above copyright notice, this
+ *     list of conditions and the following disclaimer.
+ *  
+ *  2. Redistributions in binary form must reproduce the above copyright notice,
+ *     this list of conditions and the following disclaimer in the documentation
+ *     and/or other materials provided with the distribution.
+ *  
+ *  3. Neither the name of the copyright holder nor the names of its
+ *     contributors may be used to endorse or promote products derived from
+ *     this software without specific prior written permission.
+ *  
+ *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ *  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ *  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ *  DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ *  FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ *  DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ *  SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ *  CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ *  OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
 #pragma once
 
 #include "decs.hpp"
@@ -20,9 +51,9 @@ TaskStatus ApplyFloors(std::shared_ptr<Container<Real>>& rc);
  * @return fflag, a bitflag indicating whether each particular floor was hit, allowing representation of arbitrary combinations
  * See decs.h for bit names.
  * 
- * LOCKSTEP: this function should preserve P<->U.  It does not require it on entry
+ * LOCKSTEP: this function respects P and returns consistent P<->U
  */
-KOKKOS_INLINE_FUNCTION int fixup_ceiling(const GRCoordinates& G, GridVars P, GridVars U, EOS *eos, const int& k, const int& j, const int& i)
+KOKKOS_INLINE_FUNCTION int gamma_ceiling(const GRCoordinates& G, GridVars P, GridVars U, EOS *eos, const int& k, const int& j, const int& i)
 {
     int fflag = 0;
     // First apply ceilings:
@@ -51,7 +82,7 @@ KOKKOS_INLINE_FUNCTION int fixup_ceiling(const GRCoordinates& G, GridVars P, Gri
  * @return fflag + pflag: fflag is a flagset starting at the sixth bit from the right.  pflag is a number <32.
  * This returns the sum, with the caller responsible for separating what's desired.
  * 
- * LOCKSTEP: this function should preserve P<->U. It does not require it on entry
+ * LOCKSTEP: this function respects P and returns consistent P<->U
  */
 KOKKOS_INLINE_FUNCTION int fixup_floor(const GRCoordinates& G, GridVars P, GridVars U, EOS *eos, const int& k, const int& j, const int& i)
 {
@@ -79,7 +110,7 @@ KOKKOS_INLINE_FUNCTION int fixup_floor(const GRCoordinates& G, GridVars P, GridV
     // 2. Magnetization ceilings: impose maximum magnetization sigma = bsq/rho, and inverse beta prop. to bsq/U
     FourVectors Dtmp;
     get_state(G, P, k, j, i, Loci::center, Dtmp); // Recall this gets re-used below
-    double bsq = bsq_calc(Dtmp);
+    double bsq = dot(Dtmp.bcon, Dtmp.bcov);
     double rhoflr_b = bsq/BSQORHOMAX;
     double uflr_b = bsq/BSQOUMAX;
 
@@ -88,13 +119,12 @@ KOKKOS_INLINE_FUNCTION int fixup_floor(const GRCoordinates& G, GridVars P, GridV
 
     // 3. Temperature ceiling: impose maximum temperature u/rho
     // Take floors on U into account
-    double rhoflr_temp = max(u / UORHOMAX, uflr_max / UORHOMAX);
+    double rhoflr_temp = max(u, uflr_max) / UORHOMAX;
 
     // Evaluate max rho floor
     double rhoflr_max = max(max(rhoflr_geom, rhoflr_b), rhoflr_temp);
 
-#if DEBUG
-    // Record all the floors that were hit, even if there were multiple
+    // Record all the floors that were hit, using bitflags
     // Record Geometric floor hits
     fflag |= (rhoflr_geom > rho) * HIT_FLOOR_GEOM_RHO;
     fflag |= (uflr_geom > u) * HIT_FLOOR_GEOM_U;
@@ -103,7 +133,6 @@ KOKKOS_INLINE_FUNCTION int fixup_floor(const GRCoordinates& G, GridVars P, GridV
     fflag |= (uflr_b > u) * HIT_FLOOR_B_U;
     // Record hitting temperature ceiling
     fflag |= (rhoflr_temp > rho) * HIT_FLOOR_TEMP; // Misnomer for consistency
-#endif
 
     InversionStatus pflag = InversionStatus::success;
     if (rhoflr_max > rho || uflr_max > u) { // Apply floors

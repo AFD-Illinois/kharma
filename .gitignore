@@ -9,6 +9,7 @@ convergence.txt
 core.*
 frames_*/
 *.phdf
+*.rhdf
 *.xdmf
 
 # Editor documents

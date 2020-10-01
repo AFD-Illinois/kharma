@@ -1,3 +1,37 @@
+/* 
+ *  File: floors.cpp
+ *  
+ *  BSD 3-Clause License
+ *  
+ *  Copyright (c) 2020, AFD Group at UIUC
+ *  All rights reserved.
+ *  
+ *  Redistribution and use in source and binary forms, with or without
+ *  modification, are permitted provided that the following conditions are met:
+ *  
+ *  1. Redistributions of source code must retain the above copyright notice, this
+ *     list of conditions and the following disclaimer.
+ *  
+ *  2. Redistributions in binary form must reproduce the above copyright notice,
+ *     this list of conditions and the following disclaimer in the documentation
+ *     and/or other materials provided with the distribution.
+ *  
+ *  3. Neither the name of the copyright holder nor the names of its
+ *     contributors may be used to endorse or promote products derived from
+ *     this software without specific prior written permission.
+ *  
+ *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ *  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ *  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ *  DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ *  FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ *  DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ *  SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ *  CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ *  OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
 // Fixups.  Apply limits and fix bad fluid values to maintain integrable state
 // ApplyFloors, FixUtoP
 
@@ -6,7 +40,6 @@
 #include "debug.hpp"
 #include "fixup.hpp"
 #include "phys.hpp"
-#include "U_to_P.hpp"
 
 /**
  * Apply density and internal energy floors and ceilings
@@ -14,12 +47,12 @@
  * Note that fixup_ceiling and fixup_floor are called from some other places for most applications
  * This applies only to the physical zones.  It's used in initialization just before the first boundary sync.
  * 
- * LOCKSTEP: this function 
+ * LOCKSTEP: this function respects P and returns consistent P<->U
  */
 TaskStatus ApplyFloors(std::shared_ptr<Container<Real>>& rc)
 {
     FLAG("Apply floors");
-    MeshBlock *pmb = rc->pmy_block;
+    auto pmb = rc->GetBlockPointer();
     IndexDomain domain = IndexDomain::interior;
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
@@ -42,14 +75,14 @@ TaskStatus ApplyFloors(std::shared_ptr<Container<Real>>& rc)
     pmb->par_for("apply_floors", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D {
             fflag(k, j, i) = 0;
-            fflag(k, j, i) |= fixup_ceiling(G, P, U, eos, k, j, i);
+            fflag(k, j, i) |= gamma_ceiling(G, P, U, eos, k, j, i);
             fflag(k, j, i) |= (fixup_floor(G, P, U, eos, k, j, i) / HIT_FLOOR_GEOM_RHO) * HIT_FLOOR_GEOM_RHO;
         }
     );
 
     DelEOS(eos);
 
-#if DEBUG
+#if 0
     // Print some diagnostic info about which floors were hit
     CountFFlags(pmb, fflag.GetHostMirrorAndCopy());
 #endif

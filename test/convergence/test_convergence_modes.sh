@@ -1,3 +1,13 @@
+__='
+   This is the default license template.
+   
+   File: test_convergence_modes.sh
+   Author: bprather
+   Copyright (c) 2020 bprather
+   
+   To edit this license information: Press Ctrl+Shift+P and press 'Create new License Template...'.
+'
+
 #!/bin/bash
 
 source ../test_common.sh

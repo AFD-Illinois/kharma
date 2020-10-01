@@ -13,6 +13,18 @@ using namespace parthenon;
  */
 class HARMDriver : public MultiStageBlockTaskDriver {
     public:
-        HARMDriver(ParameterInput *pin, Mesh *pm) : MultiStageBlockTaskDriver(pin, pm) {}
+        /**
+         * Default constructor
+         */
+        HARMDriver(ParameterInput *pin, ApplicationInput *papp, Mesh *pm) : MultiStageBlockTaskDriver(pin, papp, pm) {}
+
+        /**
+         * All the tasks which constitute advancing the fluid in a mesh block by a stage.
+         * This includes calculation of necessary derived variables, reconstruction, calculation of fluxes,
+         * Application of fluxes and a source term to update zones, and finally calculation of the next
+         * timestep.
+         * 
+         * The function is heavily documented since order changes can introduce subtle bugs
+         */
         TaskList MakeTaskList(MeshBlock *pmb, int stage);
 };

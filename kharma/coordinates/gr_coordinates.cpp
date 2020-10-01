@@ -1,3 +1,37 @@
+/* 
+ *  File: gr_coordinates.cpp
+ *  
+ *  BSD 3-Clause License
+ *  
+ *  Copyright (c) 2020, AFD Group at UIUC
+ *  All rights reserved.
+ *  
+ *  Redistribution and use in source and binary forms, with or without
+ *  modification, are permitted provided that the following conditions are met:
+ *  
+ *  1. Redistributions of source code must retain the above copyright notice, this
+ *     list of conditions and the following disclaimer.
+ *  
+ *  2. Redistributions in binary form must reproduce the above copyright notice,
+ *     this list of conditions and the following disclaimer in the documentation
+ *     and/or other materials provided with the distribution.
+ *  
+ *  3. Neither the name of the copyright holder nor the names of its
+ *     contributors may be used to endorse or promote products derived from
+ *     this software without specific prior written permission.
+ *  
+ *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ *  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ *  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ *  DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ *  FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ *  DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ *  SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ *  CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ *  OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
 /*
  * Coordinate functions for GR 
  */
@@ -35,12 +69,6 @@ GRCoordinates::GRCoordinates(const RegionSize &rs, ParameterInput *pin): Uniform
     // And I want the option to use that code elsewhere as it's quite general & nice
     std::string base_str = pin->GetString("coordinates", "base"); // Require every problem to specify very basic geometry
     std::string transform_str = pin->GetString("coordinates", "transform");
-    GReal startx1 = pin->GetReal("parthenon/mesh", "x1min");
-    GReal a = pin->GetReal("coordinates", "a");
-    GReal hslope = pin->GetOrAddReal("coordinates", "hslope", 0.3); // The rest have very common defaults
-    GReal mks_smooth = pin->GetOrAddReal("coordinates", "mks_smooth", 0.5);
-    GReal poly_xt = pin->GetOrAddReal("coordinates", "poly_xt", 0.82);
-    GReal poly_alpha = pin->GetOrAddReal("coordinates", "poly_alpha", 14.0);
 
     SomeBaseCoords base;
     if (base_str == "spherical_minkowski") {
@@ -48,8 +76,10 @@ GRCoordinates::GRCoordinates(const RegionSize &rs, ParameterInput *pin): Uniform
     } else if (base_str == "cartesian_minkowski" || base_str == "minkowski") {
         base.emplace<CartMinkowskiCoords>(CartMinkowskiCoords());
     } else if (base_str == "spherical_ks" || base_str == "ks") {
+        GReal a = pin->GetReal("coordinates", "a");
         base.emplace<SphKSCoords>(SphKSCoords(a));
     } else if (base_str == "spherical_bl" || base_str == "bl") {
+        GReal a = pin->GetReal("coordinates", "a");
         base.emplace<SphBLCoords>(SphBLCoords(a));
     } else {
         throw std::invalid_argument("Unsupported base coordinates!");
@@ -68,9 +98,15 @@ GRCoordinates::GRCoordinates(const RegionSize &rs, ParameterInput *pin): Uniform
         }
     } else if (transform_str == "modified" || transform_str == "mks") {
         if (!spherical) throw std::invalid_argument("Transform is for spherical coordinates!");
+        GReal hslope = pin->GetOrAddReal("coordinates", "hslope", 0.3);
         transform.emplace<ModifyTransform>(ModifyTransform(hslope));
     } else if (transform_str == "funky" || transform_str == "fmks") {
         if (!spherical) throw std::invalid_argument("Transform is for spherical coordinates!");
+        GReal hslope = pin->GetOrAddReal("coordinates", "hslope", 0.3);
+        GReal startx1 = pin->GetReal("parthenon/mesh", "x1min");
+        GReal mks_smooth = pin->GetOrAddReal("coordinates", "mks_smooth", 0.5);
+        GReal poly_xt = pin->GetOrAddReal("coordinates", "poly_xt", 0.82);
+        GReal poly_alpha = pin->GetOrAddReal("coordinates", "poly_alpha", 14.0);
         transform.emplace<FunkyTransform>(FunkyTransform(startx1, hslope, mks_smooth, poly_xt, poly_alpha));
     } else {
         throw std::invalid_argument("Unsupported coordinate transform!");

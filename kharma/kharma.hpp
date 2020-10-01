@@ -1,5 +1,5 @@
 /* 
- *  File: fluxes.hpp
+ *  File: kharma.hpp
  *  
  *  BSD 3-Clause License
  *  
@@ -31,30 +31,23 @@
  *  OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-#pragma once
 
-#include "mesh/mesh.hpp"
-#include "coordinates/coordinates.hpp"
-
-#include "decs.hpp"
-
-#include "reconstruction.hpp"
-#include "phys.hpp"
-
-namespace LLF {
-/**
- * Take reconstructed primitives at left and right face, and construct the local Lax-Friedrichs flux
- *
- * Also fills the "ctop" vector with the highest magnetosonic speed mhd_vchar -- used to estimate timestep later.
- *
- * Note that since this L and R are defined with respect to the *face*, they are actually the
- * opposite of the "r" and "l" in the caller, CalculateFluxes!
- */
-TaskStatus LRToFlux(std::shared_ptr<Container<Real>>& rc, GridVars pl, GridVars pr, const int dir, GridVars flux);
+#include <parthenon/parthenon.hpp>
 
 /**
- * Reconstruct and calculate the flux, interleaved.  See Reconstruction namespace and LRToFlux for details
+ * General preferences for KHARMA.  Anything semi-driver-independent, like loading packages, etc.
  */
-TaskStatus ReconAndFlux(std::shared_ptr<Container<Real>>& rc, const int& dir);
+namespace KHARMA {
+    /**
+     * This is supposed to return a "Properties" object with any globals.
+     * 
+     * Instead I just use it to set pieces of ParameterInput that Parthenon needs but which
+     * are redundant after my parameters (e.g. x1in/x1out from rin, rout)
+     */
+    Properties_t ProcessProperties(std::unique_ptr<ParameterInput>& pin);
 
+    /**
+     * Currently just loads GRMHD.  Could also load GRHD only, scalars, e-, etc.
+     */
+    Packages_t ProcessPackages(std::unique_ptr<ParameterInput>& pin);
 }

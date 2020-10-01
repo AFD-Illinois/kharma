@@ -6,8 +6,8 @@
 // Trust me it makes everything 1000x more readable
 #pragma once
 
-// TODO are there other convenience functions in Parthenon?
-// TODO single/double overloads if I use these
+// TODO are there alternative convenience functions in Parthenon I should use?
+// TODO single/double overloads if I ever use floats
 
 #ifdef MPI_PARALLEL
 
