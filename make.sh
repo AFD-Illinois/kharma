@@ -6,19 +6,12 @@
 
 # Set the correct compiler on Fedora machines
 if [[ $(hostname) == "toolbox" ]]; then
-  export NVCC_WRAPPER_DEFAULT_COMPILER=cuda-g++
+  #export NVCC_WRAPPER_DEFAULT_COMPILER=cuda-g++
+  export PATH="/usr/local/cuda/bin/:$PATH"
 fi
 
 # Make conda go away.  Bad libraries. Bad.
-source deactivate
-echo $(which python)
-
-# Some OSes name modern CMake differently
-if command -v cmake3 > /dev/null 2>&1; then
-  CMAKE=cmake3
-else
-  CMAKE=cmake
-fi
+echo "If this is a Conda path deactivate your environment: $(which python)"
 
 # Only use icc on Stampede
 if [[ $(hostname) == *"stampede2"* ]]; then
@@ -35,27 +28,21 @@ else
   TYPE=Release
 fi
 
-if [[ "$*" == *"cuda"* ]]; then
-  USE_CUDA=1
-else
-  USE_CUDA=0
-fi
-
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-
+# "Clean" here is 
+SCRIPT_DIR=$( dirname "$0" )
 cd $SCRIPT_DIR
 if [[ "$*" == *"clean"* ]]; then
-  rm -rf build kharm.* core.*
+  rm -rf build
 fi
-mkdir -p build
 
+mkdir -p build
 cd build
 
 
 if [[ "$*" == *"clean"* ]]; then
   if [[ "$*" == *"cuda"* ]]; then # CUDA BUILD
     # TODO unify MPI flags
-    $CMAKE ..\
+    cmake ..\
     -DCMAKE_CXX_COMPILER=$PWD/../external/parthenon/external/Kokkos/bin/nvcc_wrapper \
     -DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc \
     -DCMAKE_BUILD_TYPE=$TYPE \
@@ -84,7 +71,7 @@ if [[ "$*" == *"clean"* ]]; then
     -DKokkos_ENABLE_CUDA_LAMBDA=ON \
     -DKokkos_ENABLE_CUDA_CONSTEXPR=ON
   else #OpenMP BUILD
-    $CMAKE ..\
+    cmake ..\
     -DCMAKE_C_COMPILER=$CC_NATIVE \
     -DCMAKE_CXX_COMPILER=$CXX_NATIVE \
     -DCMAKE_BUILD_TYPE=$TYPE \
@@ -105,8 +92,7 @@ if [[ "$*" == *"clean"* ]]; then
     -DKokkos_ARCH_SKX=OFF \
     -DKokkos_ARCH_KNL=OFF \
     -DKokkos_ARCH_ARMV8_THUNDERX2=OFF \
-    -DKokkos_ARCH_AMDAVX=ON \
-    -DKokkos_ARCH_EPYC=OFF
+    -DKokkos_ARCH_AMDAVX=ON
   fi
 fi
 

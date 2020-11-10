@@ -186,11 +186,11 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
  * input: U, whatever form
  * output: U and P match with inversion errors corrected, and obey floors
  */
-void FillDerived(std::shared_ptr<Container<Real>>& rc)
+void FillDerived(std::shared_ptr<MeshBlockData<Real>>& rc)
 {
     FLAG("Filling Derived");
     auto pmb = rc->GetBlockPointer();
-    GRCoordinates G = pmb->coords;
+    auto& G = pmb->coords;
 
     int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
     int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
@@ -274,7 +274,7 @@ void FillDerived(std::shared_ptr<Container<Real>>& rc)
 /**
  * Calculate the LLF flux in a direction
  */
-TaskStatus CalculateFlux(std::shared_ptr<Container<Real>>& rc, const int& dir)
+TaskStatus CalculateFlux(std::shared_ptr<MeshBlockData<Real>>& rc, const int& dir)
 {
     FLAG(string_format("Calculating flux %d", dir));
     auto pmb = rc->GetBlockPointer();
@@ -313,7 +313,7 @@ TaskStatus CalculateFlux(std::shared_ptr<Container<Real>>& rc, const int& dir)
 /**
  * Add HARM source term to RHS
  */
-TaskStatus AddSourceTerm(std::shared_ptr<Container<Real>>& rc, std::shared_ptr<Container<Real>>& dudt)
+TaskStatus AddSourceTerm(std::shared_ptr<MeshBlockData<Real>>& rc, std::shared_ptr<MeshBlockData<Real>>& dudt)
 {
     FLAG("Adding source term");
     auto pmb = rc->GetBlockPointer();
@@ -322,7 +322,7 @@ TaskStatus AddSourceTerm(std::shared_ptr<Container<Real>>& rc, std::shared_ptr<C
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
     GridVars P = rc->Get("c.c.bulk.prims").data;
-    GRCoordinates G = pmb->coords;
+    auto& G = pmb->coords;
 
     // TODO *sigh*
     Real gamma = pmb->packages["GRMHD"]->Param<Real>("gamma");
@@ -353,7 +353,7 @@ TaskStatus AddSourceTerm(std::shared_ptr<Container<Real>>& rc, std::shared_ptr<C
  * This is just for a particular MeshBlock/package, so don't rely on it
  * Parthenon will take the minimum and put it in pmy_mesh->dt
  */
-Real EstimateTimestep(std::shared_ptr<Container<Real>>& rc)
+Real EstimateTimestep(std::shared_ptr<MeshBlockData<Real>>& rc)
 {
     FLAG("Estimating timestep");
     auto pmb = rc->GetBlockPointer();
@@ -367,7 +367,7 @@ Real EstimateTimestep(std::shared_ptr<Container<Real>>& rc)
     // TODO preserve location, needs custom (?) Kokkos Index type for 3D
     double ndt;
     Kokkos::Min<double> min_reducer(ndt);
-    Kokkos::parallel_reduce("ndt_min", MDRangePolicy<Rank<3>>({ks, js, is}, {ke+1, je+1, ie+1}),
+    pmb->par_reduce("ndt_min", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D_REDUCE {
             double ndt_zone = 1 / (1 / (coords.dx1v(i) / ctop(1, k, j, i)) +
                                    1 / (coords.dx2v(j) / ctop(2, k, j, i)) +

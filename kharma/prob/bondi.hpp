@@ -7,7 +7,7 @@
 #include "gr_coordinates.hpp"
 #include "eos.hpp"
 
-#include "interface/container.hpp"
+#include <parthenon/parthenon.hpp>
 
 /**
  * Initialization of a Bondi problem with specified sonic point, BH mdot, and horizon radius
@@ -19,4 +19,4 @@ void InitializeBondi(std::shared_ptr<MeshBlock> pmb, const GRCoordinates& G, Gri
 /**
  * Apply the Bondi flow condition on right X1 boundary
  */
-void ApplyBondiBoundary(std::shared_ptr<Container<Real>>& rc);
+void ApplyBondiBoundary(std::shared_ptr<MeshBlockData<Real>>& rc);

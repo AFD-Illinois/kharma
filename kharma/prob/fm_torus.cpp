@@ -40,7 +40,7 @@
 #include <random>
 #include "Kokkos_Random.hpp"
 
-void InitializeFMTorus(std::shared_ptr<MeshBlock> pmb, GRCoordinates& G, GridVars P, const EOS* eos,
+void InitializeFMTorus(std::shared_ptr<MeshBlock> pmb, const GRCoordinates& G, GridVars P, const EOS* eos,
                        GReal rin, GReal rmax, Real kappa)
 {
     IndexDomain domain = IndexDomain::entire;
@@ -133,7 +133,7 @@ void InitializeFMTorus(std::shared_ptr<MeshBlock> pmb, GRCoordinates& G, GridVar
 
     Real rho_max = 0;
     Kokkos::Max<Real> max_reducer(rho_max);
-    Kokkos::parallel_reduce("fm_torus_maxrho", nx,
+    pmb->par_reduce("fm_torus_maxrho", 0, nx,
         KOKKOS_LAMBDA_1D_REDUCE {
             GReal x = xin + i*dx;
             GReal r = exp(x);

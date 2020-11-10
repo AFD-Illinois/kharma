@@ -12,9 +12,8 @@
  * @param rin is the torus innermost radius, in r_g
  * @param rmax is the radius of maximum density of the F-M torus in r_g
  */
-void InitializeFMTorus(std::shared_ptr<MeshBlock> pmb, GRCoordinates& G, GridVars P, const EOS* eos,
+void InitializeFMTorus(std::shared_ptr<MeshBlock> pmb, const GRCoordinates& G, GridVars P, const EOS* eos,
                        GReal rin, GReal rmax, Real kappa=1.e-3);
-
 /**
  * Perturb the internal energy by a uniform random proportion per cell.
  * Resulting internal energies will be between u \pm u*u_jitter/2

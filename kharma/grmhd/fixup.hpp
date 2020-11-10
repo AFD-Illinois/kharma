@@ -50,4 +50,4 @@ void ClearCorners(std::shared_ptr<MeshBlock> pmb, GridInt pflag);
  * TODO parallelize this
  * LOCKSTEP: this function expects and should preserve P<->U
  */
-void FixUtoP(std::shared_ptr<Container<Real>>& rc, GridInt pflag, GridInt fflag);
+void FixUtoP(std::shared_ptr<MeshBlockData<Real>>& rc, GridInt pflag, GridInt fflag);

@@ -62,7 +62,8 @@ if not USEARRSPACE:
     window = (-SIZE, SIZE, -SIZE, SIZE)
     # window=(-SIZE/4, SIZE/4, 0, SIZE)
 else:
-    window = (0.0, 1.0, 0.0, 1.0)
+    window = (0, 1, 0, 1)
+    #window = (-0.1, 1.1, -0.1, 1.1)
 
 pdf_window = (-10, 0)
 FIGX = 10
@@ -84,6 +85,7 @@ if len(sys.argv) > 5:
 else:
     unit = 1
 
+#params = {'include_ghost': True}
 params = {}
 parameters.parse_parthenon_dat(params, parfile)
 parameters.fix(params)

@@ -12,7 +12,12 @@
 
 #include "matrix.hpp"
 
+// Switch to the standard as soon as we can.  May be a while.
+#if __cplusplus >= 201703L
+using mpark = std;
+#else
 #include <mpark/variant.hpp>
+#endif
 
 #define COORDSINGFIX 1
 #define SINGSMALL 1e-20
@@ -70,7 +75,7 @@ class SphKSCoords {
         const GReal a;
         const bool spherical = true;
 
-        SphKSCoords(GReal spin): a(spin) {};
+        KOKKOS_FUNCTION SphKSCoords(GReal spin): a(spin) {};
 
         KOKKOS_INLINE_FUNCTION void gcov_embed(const GReal Xembed[GR_DIM], Real gcov[GR_DIM][GR_DIM]) const
         {
@@ -134,7 +139,7 @@ class SphBLCoords {
         const GReal a;
         const bool spherical = true;
 
-        SphBLCoords(GReal spin): a(spin) {}
+        KOKKOS_FUNCTION SphBLCoords(GReal spin): a(spin) {}
 
         KOKKOS_INLINE_FUNCTION void gcov_embed(const GReal Xembed[GR_DIM], Real gcov[GR_DIM][GR_DIM]) const
         {
@@ -248,7 +253,7 @@ class ModifyTransform {
         const GReal hslope;
 
         // Constructor
-        ModifyTransform(GReal hslope_in): hslope(hslope_in) {}
+        KOKKOS_FUNCTION ModifyTransform(GReal hslope_in): hslope(hslope_in) {}
 
         // Coordinate transformations
         // Protect embedding theta from ever hitting 0 or Pi
@@ -317,7 +322,7 @@ class FunkyTransform {
         GReal poly_norm; // TODO make this const and use a wrapper/factory to make these things?
 
         // Constructor
-        FunkyTransform(GReal startx1_in, GReal hslope_in, GReal mks_smooth_in, GReal poly_xt_in, GReal poly_alpha_in):
+        KOKKOS_FUNCTION FunkyTransform(GReal startx1_in, GReal hslope_in, GReal mks_smooth_in, GReal poly_xt_in, GReal poly_alpha_in):
             startx1(startx1_in), hslope(hslope_in), mks_smooth(mks_smooth_in), poly_xt(poly_xt_in), poly_alpha(poly_alpha_in)
             {
                 poly_norm = 0.5 * M_PI * 1./(1. + 1./(poly_alpha + 1.) * 1./pow(poly_xt, poly_alpha));
@@ -403,7 +408,7 @@ class FunkyTransform {
 };
 
 // Bundle coordinates and transforms into umbrella variant types
-// I am 99% certain there's a way to add CoordinateEmbedding to this list.
+// Note nesting isn't allowed -- do it yourself by calling the steps if that's really important...
 using SomeBaseCoords = mpark::variant<SphMinkowskiCoords, CartMinkowskiCoords, SphBLCoords, SphKSCoords>;
 using SomeTransform = mpark::variant<SphNullTransform, CartNullTransform, ModifyTransform, FunkyTransform>;
 

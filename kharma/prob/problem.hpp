@@ -40,7 +40,7 @@ void InitializeMesh(ParameterInput *pin, Mesh *pmesh);
  *                Note this can't yet replace Parthenon parameters, so they must be
  *                specified in input correctly.
  */
-TaskStatus InitializeProblem(std::shared_ptr<Container<Real>>& rc, ParameterInput *pin);
+TaskStatus InitializeProblem(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin);
 
 /**
  * Force a Parthenon boundary synchronization/ghost zone fill

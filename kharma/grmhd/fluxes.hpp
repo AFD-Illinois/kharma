@@ -50,11 +50,11 @@ namespace LLF {
  * Note that since this L and R are defined with respect to the *face*, they are actually the
  * opposite of the "r" and "l" in the caller, CalculateFluxes!
  */
-TaskStatus LRToFlux(std::shared_ptr<Container<Real>>& rc, GridVars pl, GridVars pr, const int dir, GridVars flux);
+TaskStatus LRToFlux(std::shared_ptr<MeshBlockData<Real>>& rc, GridVars pl, GridVars pr, const int dir, GridVars flux);
 
 /**
  * Reconstruct and calculate the flux, interleaved.  See Reconstruction namespace and LRToFlux for details
  */
-TaskStatus ReconAndFlux(std::shared_ptr<Container<Real>>& rc, const int& dir);
+TaskStatus ReconAndFlux(std::shared_ptr<MeshBlockData<Real>>& rc, const int& dir);
 
 }

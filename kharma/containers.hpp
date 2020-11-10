@@ -1,13 +1,7 @@
-// Tools for Containers
+// Tools for Containers -- sorry, MeshBlockDatas (??)
 #pragma once
 
-//#include "driver/driver.hpp"
-#include "driver/multistage.hpp"
-#include "interface/container.hpp"
-#include "interface/state_descriptor.hpp"
-#include "mesh/mesh.hpp"
-#include "tasks/task_list.hpp"
-
+#include <parthenon/parthenon.hpp>
 
 using namespace parthenon;
 
@@ -18,11 +12,11 @@ using namespace parthenon;
  * fills the next stage based on existing stages and dU/dt
  * (or rather its task does, namely the succinctly-named BlockStageNamesIntegratorTask)
  */
-TaskStatus UpdateContainer(MeshBlock *pmb, int stage,
+TaskStatus UpdateContainer(std::shared_ptr<MeshBlock>& pmb, int stage,
                            std::vector<std::string>& stage_name,
                            Integrator* integrator);
 
 /**
  * Quick function to just copy a variable by name from one container to the next
  */
-TaskStatus CopyField(std::string& var, std::shared_ptr<Container<Real>>& rc0, std::shared_ptr<Container<Real>>& rc1);
+TaskStatus CopyField(std::string& var, std::shared_ptr<MeshBlockData<Real>>& rc0, std::shared_ptr<MeshBlockData<Real>>& rc1);

@@ -71,7 +71,7 @@ void InitializeBondi(std::shared_ptr<MeshBlock> pmb, const GRCoordinates& G, Gri
     FLAG("Initialized Bondi");
 }
 
-void ApplyBondiBoundary(std::shared_ptr<Container<Real>>& rc)
+void ApplyBondiBoundary(std::shared_ptr<MeshBlockData<Real>>& rc)
 {
     auto pmb = rc->GetBlockPointer();
     GridVars U = rc->Get("c.c.bulk.cons").data;
@@ -79,7 +79,7 @@ void ApplyBondiBoundary(std::shared_ptr<Container<Real>>& rc)
     int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
     int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
     int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
-    GRCoordinates G = pmb->coords;
+    auto& G = pmb->coords;
 
     FLAG("Applying Bondi X1R boundary");
 

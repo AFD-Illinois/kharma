@@ -49,7 +49,7 @@
  * 
  * LOCKSTEP: this function respects P and returns consistent P<->U
  */
-TaskStatus ApplyFloors(std::shared_ptr<Container<Real>>& rc)
+TaskStatus ApplyFloors(std::shared_ptr<MeshBlockData<Real>>& rc)
 {
     FLAG("Apply floors");
     auto pmb = rc->GetBlockPointer();
@@ -64,7 +64,7 @@ TaskStatus ApplyFloors(std::shared_ptr<Container<Real>>& rc)
 
     GridVars P = rc->Get("c.c.bulk.prims").data;
     GridVars U = rc->Get("c.c.bulk.cons").data;
-    GRCoordinates G = pmb->coords;
+    auto& G = pmb->coords;
 
     GridInt fflag("fflag", n3, n2, n1);
 

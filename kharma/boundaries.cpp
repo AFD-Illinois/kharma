@@ -46,7 +46,7 @@
 KOKKOS_INLINE_FUNCTION void check_inflow(const GRCoordinates &G, GridVars P, const int& k, const int& j, const int& i, int type);
 
 
-TaskStatus ApplyCustomBoundaries(std::shared_ptr<Container<Real>>& rc)
+TaskStatus ApplyCustomBoundaries(std::shared_ptr<MeshBlockData<Real>>& rc)
 {
     auto pmb = rc->GetBlockPointer();
     GridVars U = rc->Get("c.c.bulk.cons").data;
@@ -178,7 +178,7 @@ KOKKOS_INLINE_FUNCTION void check_inflow(const GRCoordinates &G, GridVars P, con
  * Fix fluxes on domain boundaries. No inflow, correct B fields on reflecting conditions.
  * TODO Parthenon does this, if given to understand B is a vector
  */
-TaskStatus FixFlux(std::shared_ptr<Container<Real>>& rc)
+TaskStatus FixFlux(std::shared_ptr<MeshBlockData<Real>>& rc)
 {
     FLAG("Fixing boundary fluxes");
     auto pmb = rc->GetBlockPointer();

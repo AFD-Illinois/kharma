@@ -16,4 +16,4 @@ void ReadIharmRestartHeader(std::string fname, std::unique_ptr<ParameterInput>& 
  * 
  * Returns stop time tf of the original simulation, for e.g. replicating regression tests
  */
-double ReadIharmRestart(std::shared_ptr<MeshBlock> pmb, GRCoordinates G, GridVars P, std::string fname);
+double ReadIharmRestart(std::shared_ptr<MeshBlock> pmb, const GRCoordinates& G, GridVars P, std::string fname);

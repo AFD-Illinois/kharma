@@ -43,12 +43,12 @@ using namespace std;
 /**
  * Calculate maximum divergence of magnetic field, to check it is being preserved ==0
  */
-double MaxDivB(std::shared_ptr<Container<Real>>& rc, IndexDomain domain=IndexDomain::interior);
+double MaxDivB(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain=IndexDomain::interior);
 
 /**
  * General diagnostic, currently used for tracking down bad cells related to U_to_P
  */
-int Diagnostic(std::shared_ptr<Container<Real>>& rc, IndexDomain domain);
+int Diagnostic(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain);
 
 /**
  * The compiler is not so good with aliases.  Guide it.

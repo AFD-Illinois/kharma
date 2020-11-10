@@ -10,12 +10,12 @@ refinement = none
 numlevel = 1
 nx1 = 64
 nx2 = 64
-nx3 = 64
+nx3 = 1
 
 <parthenon/meshblock>
-nx1 = 32
-nx2 = 32
-nx3 = 32
+nx1 = 64
+nx2 = 64
+nx3 = 1
 
 <coordinates>
 base = ks
@@ -25,7 +25,7 @@ hslope = 0.3
 r_out = 30
 
 <parthenon/time>
-tlim = 10.0
+tlim = 100.0
 
 <GRMHD>
 cfl = 0.9

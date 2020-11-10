@@ -38,21 +38,21 @@
 
 using namespace Kokkos;
 
-TaskStatus UpdateContainer(MeshBlock *pmb, int stage,
+TaskStatus UpdateContainer(std::shared_ptr<MeshBlock>& pmb, int stage,
                            std::vector<std::string>& stage_name,
                             Integrator* integrator) {
     const Real beta = integrator->beta[stage-1];
     Real dt = integrator->dt;
-    auto& base = pmb->real_containers.Get();
-    auto& cin = pmb->real_containers.Get(stage_name[stage-1]);
-    auto& cout = pmb->real_containers.Get(stage_name[stage]);
-    auto& dudt = pmb->real_containers.Get("dUdt");
-    parthenon::Update::AverageContainers(cin, base, beta);
-    parthenon::Update::UpdateContainer(cin, dudt, beta*dt, cout);
+    auto& base = pmb->meshblock_data.Get();
+    auto& cin = pmb->meshblock_data.Get(stage_name[stage-1]);
+    auto& cout = pmb->meshblock_data.Get(stage_name[stage]);
+    auto& dudt = pmb->meshblock_data.Get("dUdt");
+    parthenon::Update::AverageMeshBlockData(cin, base, beta);
+    parthenon::Update::UpdateMeshBlockData(cin, dudt, beta*dt, cout);
     return TaskStatus::complete;
 }
 
-TaskStatus CopyField(std::string& var, std::shared_ptr<Container<Real>>& rc0, std::shared_ptr<Container<Real>>& rc1)
+TaskStatus CopyField(std::string& var, std::shared_ptr<MeshBlockData<Real>>& rc0, std::shared_ptr<MeshBlockData<Real>>& rc1)
 {
     auto pmb = rc0->GetBlockPointer();
     GridVars v0 = rc0->Get(var).data;

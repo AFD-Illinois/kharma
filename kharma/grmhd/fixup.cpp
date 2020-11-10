@@ -67,14 +67,14 @@ void ClearCorners(std::shared_ptr<MeshBlock> pmb, GridInt pflag) {
     FLAG("Cleared corner flags");
 }
 
-void FixUtoP(std::shared_ptr<Container<Real>>& rc, GridInt pflag, GridInt fflag)
+void FixUtoP(std::shared_ptr<MeshBlockData<Real>>& rc, GridInt pflag, GridInt fflag)
 {
     // We expect primitives all the way out to 3 ghost zones on all sides.  But we can only fix primitives with their neighbors.
     // This may actually mean we require the 4 ghost zones Parthenon "wants" us to have, if we need to use only fixed zones.
     // TODO or do a bounds check in fix_U_to_P and average the available zones
     FLAG("Fixing U to P inversions");
     auto pmb = rc->GetBlockPointer();
-    GRCoordinates G = pmb->coords;
+    auto& G = pmb->coords;
 
     ClearCorners(pmb, pflag); // Don't use zones in physical corners. TODO persistent pflag would be faster...
 

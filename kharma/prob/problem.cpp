@@ -69,7 +69,7 @@ void InitializeMesh(ParameterInput *pin, Mesh *pmesh)
         // Initialize the base container with problem values
         // This could be switched into task format without too much issue
         auto& pmb = pmesh->block_list[i];
-        auto& rc = pmb->real_containers.Get();
+        auto& rc = pmb->meshblock_data.Get();
         InitializeProblem(rc, pin);
     }
     FLAG("Initialized Fluid");
@@ -87,7 +87,7 @@ void InitializeMesh(ParameterInput *pin, Mesh *pmesh)
         Real beta_min = 1e100;
         for (int i = 0; i < nmb; ++i) {
             auto& pmb = pmesh->block_list[i];
-            auto& rc = pmb->real_containers.Get();
+            auto& rc = pmb->meshblock_data.Get();
             SeedBField(rc, pin);
         
             // TODO should this be added after normalization?
@@ -111,7 +111,7 @@ void InitializeMesh(ParameterInput *pin, Mesh *pmesh)
         Real norm = sqrt(beta_min/beta);
         for (int i = 0; i < nmb; ++i) {
             auto& pmb = pmesh->block_list[i];
-            auto& rc = pmb->real_containers.Get();
+            auto& rc = pmb->meshblock_data.Get();
             NormalizeBField(rc, norm);
         }
 #if DEBUG
@@ -119,7 +119,7 @@ void InitializeMesh(ParameterInput *pin, Mesh *pmesh)
         beta_min = 1e100;
         for (int i = 0; i < nmb; ++i) {
             auto& pmb = pmesh->block_list[i];
-            auto& rc = pmb->real_containers.Get();
+            auto& rc = pmb->meshblock_data.Get();
             Real beta_local = GetLocalBetaMin(rc);
             if(beta_local < beta_min) beta_min = beta_local;
         }
@@ -139,14 +139,14 @@ void InitializeMesh(ParameterInput *pin, Mesh *pmesh)
     FLAG("Initialized Mesh");
 }
 
-TaskStatus InitializeProblem(std::shared_ptr<Container<Real>>& rc, ParameterInput *pin)
+TaskStatus InitializeProblem(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin)
 {
     FLAG("Initializing Block");
     auto pmb = rc->GetBlockPointer();
     GridVars P = rc->Get("c.c.bulk.prims").data;
     GridVars U = rc->Get("c.c.bulk.cons").data;
 
-    GRCoordinates G = pmb->coords;
+    auto& G = pmb->coords;
     Real gamma = pmb->packages["GRMHD"]->Param<Real>("gamma");
     EOS* eos = CreateEOS(gamma);
 
@@ -225,7 +225,7 @@ void SyncAllBounds(Mesh *pmesh)
     int nmb = pmesh->GetNumMeshBlocksThisRank(Globals::my_rank);
     for (int i = 0; i < nmb; ++i) {
         auto& pmb = pmesh->block_list[i];
-        auto& rc = pmb->real_containers.Get();
+        auto& rc = pmb->meshblock_data.Get();
         rc->ClearBoundary(BoundaryCommSubset::mesh_init);
         rc->StartReceiving(BoundaryCommSubset::mesh_init);
         rc->SendBoundaryBuffers();
@@ -233,7 +233,7 @@ void SyncAllBounds(Mesh *pmesh)
 
     for (int i = 0; i < nmb; ++i) {
         auto& pmb = pmesh->block_list[i];
-        auto& rc = pmb->real_containers.Get();
+        auto& rc = pmb->meshblock_data.Get();
         rc->ReceiveAndSetBoundariesWithWait();
         rc->ClearBoundary(BoundaryCommSubset::mesh_init);
         //pmb->pbval->ProlongateBoundaries(0.0, 0.0);

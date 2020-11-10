@@ -325,11 +325,11 @@ KOKKOS_INLINE_FUNCTION void WENO5X3r(parthenon::team_mbr_t const &member, const 
 /**
  * Wrapper function to apply reconstruction over the whole grid instead of splitting
  */
-TaskStatus ReconstructLR(std::shared_ptr<Container<Real>>& rc, ParArrayND<Real> Pl, ParArrayND<Real> Pr, int dir, ReconstructionType recon);
+TaskStatus ReconstructLR(std::shared_ptr<MeshBlockData<Real>>& rc, ParArrayND<Real> Pl, ParArrayND<Real> Pr, int dir, ReconstructionType recon);
 
 /**
  * Simpler wrapper: emulate old HARM reconstruction exactly
  */
-TaskStatus ReconstructLRSimple(std::shared_ptr<Container<Real>>& rc, ParArrayND<Real> Pl, ParArrayND<Real> Pr, int dir, ReconstructionType recon);
+TaskStatus ReconstructLRSimple(std::shared_ptr<MeshBlockData<Real>>& rc, ParArrayND<Real> Pl, ParArrayND<Real> Pr, int dir, ReconstructionType recon);
 
 } // namespace Reconstruction

@@ -12,7 +12,7 @@ set(COORDINATE_TYPE UniformCartesian) # TODO: Make this an option when more are 
 set(PAR_LOOP_LAYOUT "MDRANGE_LOOP")
 set(PAR_LOOP_INNER_LAYOUT "SIMDFOR_INNER_LOOP")
 
-# Parthenon says it doesn't need MPI.  It lies.
+# Parthenon says it doesn't need MPI.  It just *strongly prefers* it, and so do we.
 find_package(MPI REQUIRED)
 include_directories(SYSTEM ${MPI_INCLUDE_PATH})
 find_package(OpenMP REQUIRED)

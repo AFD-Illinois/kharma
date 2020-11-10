@@ -40,7 +40,7 @@
 
 using namespace Kokkos;
 
-double MaxDivB(std::shared_ptr<Container<Real>>& rc, IndexDomain domain)
+double MaxDivB(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain)
 {
     FLAG("Calculating divB");
     auto pmb = rc->GetBlockPointer();
@@ -48,12 +48,12 @@ double MaxDivB(std::shared_ptr<Container<Real>>& rc, IndexDomain domain)
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
 
-    GRCoordinates G = pmb->coords;
+    auto& G = pmb->coords;
     GridVars P = rc->Get("c.c.bulk.prims").data;
 
     double max_divb;
     Kokkos::Max<double> max_reducer(max_divb);
-    Kokkos::parallel_reduce("divB", MDRangePolicy<Rank<3>>({ks+1, js+1, is+1}, {ke+1, je+1, ie+1}),
+    pmb->par_reduce("divB", ks+1, ke, js+1, je, is+1, ie,
         KOKKOS_LAMBDA_3D_REDUCE {
             double local_divb = fabs(0.25*(
                               P(prims::B1, k, j, i) * G.gdet(Loci::center, j, i)
@@ -92,7 +92,7 @@ double MaxDivB(std::shared_ptr<Container<Real>>& rc, IndexDomain domain)
     return max_divb;
 }
 
-int Diagnostic(std::shared_ptr<Container<Real>>& rc, IndexDomain domain)
+int Diagnostic(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain)
 {
     FLAG("Summing bad cells");
     auto pmb = rc->GetBlockPointer();
@@ -100,13 +100,13 @@ int Diagnostic(std::shared_ptr<Container<Real>>& rc, IndexDomain domain)
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
 
-    GRCoordinates G = pmb->coords;
+    auto& G = pmb->coords;
     GridVars P = rc->Get("c.c.bulk.prims").data;
     GridVars U = rc->Get("c.c.bulk.cons").data;
 
     int nless;
     Kokkos::Sum<int> sum_reducer(nless);
-    Kokkos::parallel_reduce("count_negative", MDRangePolicy<Rank<3>>({ks, js, is}, {ke, je, ie}),
+    pmb->par_reduce("count_negative", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D_REDUCE_INT {
             if (U(prims::rho, k, j, i) <= 0.) ++local_result;
         }

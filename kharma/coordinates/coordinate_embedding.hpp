@@ -36,7 +36,7 @@ class CoordinateEmbedding {
         SomeTransform transform;
 
         // Common code for constructors
-        void EmplaceSystems(const SomeBaseCoords& base_in, const SomeTransform& transform_in) {
+        KOKKOS_FUNCTION void EmplaceSystems(const SomeBaseCoords& base_in, const SomeTransform& transform_in) {
             // Isn't there some more elegant way to say "yeah the types are fine just copy da bits"?
             if (mpark::holds_alternative<SphMinkowskiCoords>(base_in)) {
                 base.emplace<SphMinkowskiCoords>(mpark::get<SphMinkowskiCoords>(base_in));
@@ -47,7 +47,8 @@ class CoordinateEmbedding {
             } else if (mpark::holds_alternative<SphKSCoords>(base_in)) {
                 base.emplace<SphKSCoords>(mpark::get<SphKSCoords>(base_in));
             } else {
-                throw std::invalid_argument("Tried to copy invalid base coordinates!");
+                printf("Tried to copy invalid base coordinates!");
+                //throw std::invalid_argument("Tried to copy invalid base coordinates!");
             }
 
             if (mpark::holds_alternative<SphNullTransform>(transform_in)) {
@@ -59,18 +60,19 @@ class CoordinateEmbedding {
             } else if (mpark::holds_alternative<FunkyTransform>(transform_in)) {
                 transform.emplace<FunkyTransform>(mpark::get<FunkyTransform>(transform_in));
             } else {
-                throw std::invalid_argument("Tried to copy invalid coordinate transform!");
+                printf("Tried to copy invalid coordinate transform!");
+                //throw std::invalid_argument("Tried to copy invalid coordinate transform!");
             }
         }
 
         // Constructors
         CoordinateEmbedding() = default;
-        CoordinateEmbedding(SomeBaseCoords& base_in, SomeTransform& transform_in): base(base_in), transform(transform_in) {}
-        CoordinateEmbedding(const CoordinateEmbedding& src)
+        KOKKOS_FUNCTION CoordinateEmbedding(SomeBaseCoords& base_in, SomeTransform& transform_in): base(base_in), transform(transform_in) {}
+        KOKKOS_FUNCTION CoordinateEmbedding(const CoordinateEmbedding& src)
         {
             EmplaceSystems(src.base, src.transform);
         }
-        const CoordinateEmbedding& operator=(const CoordinateEmbedding& src)
+        KOKKOS_FUNCTION const CoordinateEmbedding& operator=(const CoordinateEmbedding& src)
         {
             EmplaceSystems(src.base, src.transform);
             return *this;

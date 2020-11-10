@@ -51,18 +51,18 @@
 using namespace Kokkos;
 
 // Internal function for initializing cache
-void init_GRCoordinates(GRCoordinates& G, int n1, int n2, int n3);
+KOKKOS_FUNCTION void init_GRCoordinates(GRCoordinates& G, int n1, int n2, int n3);
 
 #if FAST_CARTESIAN
 /**
  * Fast Cartesian GRCoordinates just use the underlying UniformCartesian object for everything
  */
-GRCoordinates::GRCoordinates(const RegionSize &rs, ParameterInput *pin): UniformCartesian(rs, pin) {}
+KOKKOS_FUNCTION GRCoordinates::GRCoordinates(const RegionSize &rs, ParameterInput *pin): UniformCartesian(rs, pin) {}
 #else
 /**
  * Construct a GRCoordinates object with a transformation according to preferences set in the package
  */
-GRCoordinates::GRCoordinates(const RegionSize &rs, ParameterInput *pin): UniformCartesian(rs, pin)
+KOKKOS_FUNCTION GRCoordinates::GRCoordinates(const RegionSize &rs, ParameterInput *pin): UniformCartesian(rs, pin)
 {
     // This is effectively a constructor for the CoordinateEmbedding object,
     // but in KHARMA, that object is only used through this one.
@@ -124,7 +124,7 @@ GRCoordinates::GRCoordinates(const RegionSize &rs, ParameterInput *pin): Uniform
 
 // OTHER CONSTRUCTORS: Same between implementations
 
-GRCoordinates::GRCoordinates(const GRCoordinates &src, int coarsen): UniformCartesian(src, coarsen)
+KOKKOS_FUNCTION GRCoordinates::GRCoordinates(const GRCoordinates &src, int coarsen): UniformCartesian(src, coarsen)
 {
     //std::cerr << "Calling coarsen constructor" << std::endl;
     coords = src.coords;
@@ -134,7 +134,7 @@ GRCoordinates::GRCoordinates(const GRCoordinates &src, int coarsen): UniformCart
     init_GRCoordinates(*this, n1, n2, n3);
 }
 
-GRCoordinates::GRCoordinates(const GRCoordinates &src): UniformCartesian(src)
+KOKKOS_FUNCTION GRCoordinates::GRCoordinates(const GRCoordinates &src): UniformCartesian(src)
 {
     //std::cerr << "Calling copy constructor size " << src.n1 << " " << src.n2 << std::endl;
     coords = src.coords;
@@ -149,7 +149,7 @@ GRCoordinates::GRCoordinates(const GRCoordinates &src): UniformCartesian(src)
 #endif
 }
 
-GRCoordinates GRCoordinates::operator=(const GRCoordinates& src)
+KOKKOS_FUNCTION GRCoordinates GRCoordinates::operator=(const GRCoordinates& src)
 {
     //std::cerr << "Calling assignment operator size " << src.n1 << " " << src.n2 << std::endl;
     UniformCartesian::operator=(src);
@@ -173,9 +173,9 @@ GRCoordinates GRCoordinates::operator=(const GRCoordinates& src)
  * fun issues with C++ Lambda capture, which Kokkos brings to the fore
  */
 #if FAST_CARTESIAN || NO_CACHE
-void init_GRCoordinates(GRCoordinates& G, int n1, int n2, int n3) {}
+KOKKOS_FUNCTION void init_GRCoordinates(GRCoordinates& G, int n1, int n2, int n3) {}
 #else
-void init_GRCoordinates(GRCoordinates& G, int n1, int n2, int n3) {
+KOKKOS_FUNCTION void init_GRCoordinates(GRCoordinates& G, int n1, int n2, int n3) {
     cerr << "Creating GRCoordinate cache size " << n1 << " " << n2 << endl;
     // Cache geometry.  May be faster than re-computing. May not be.
     G.gcon_direct = GeomTensor2("gcon", NLOC, n2, n1, GR_DIM, GR_DIM);

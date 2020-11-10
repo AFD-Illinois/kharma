@@ -139,7 +139,7 @@ void ReadIharmRestartHeader(std::string fname, std::unique_ptr<ParameterInput>& 
     hdf5_close();
 }
 
-double ReadIharmRestart(std::shared_ptr<MeshBlock> pmb, GRCoordinates G, GridVars P, std::string fname)
+double ReadIharmRestart(std::shared_ptr<MeshBlock> pmb, const GRCoordinates& G, GridVars P, std::string fname)
 {
     IndexDomain domain = IndexDomain::interior;
     // Full mesh size

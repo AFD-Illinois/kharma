@@ -43,7 +43,7 @@
 
 namespace Reconstruction {
 
-TaskStatus ReconstructLR(std::shared_ptr<Container<Real>>& rc, ParArrayND<Real> Pl, ParArrayND<Real> Pr, int dir, ReconstructionType recon)
+TaskStatus ReconstructLR(std::shared_ptr<MeshBlockData<Real>>& rc, ParArrayND<Real> Pl, ParArrayND<Real> Pr, int dir, ReconstructionType recon)
 {
     FLAG(string_format("Reconstuct X%d", dir));
     auto& P = rc->Get("c.c.bulk.prims").data;
@@ -115,7 +115,7 @@ TaskStatus ReconstructLR(std::shared_ptr<Container<Real>>& rc, ParArrayND<Real> 
     return TaskStatus::complete;
 }
 
-TaskStatus ReconstructLRSimple(std::shared_ptr<Container<Real>>& rc, ParArrayND<Real> Pl, ParArrayND<Real> Pr, int dir, ReconstructionType recon)
+TaskStatus ReconstructLRSimple(std::shared_ptr<MeshBlockData<Real>>& rc, ParArrayND<Real> Pl, ParArrayND<Real> Pr, int dir, ReconstructionType recon)
 {
     FLAG(string_format("Reconstuct X%d", dir));
     auto& P = rc->Get("c.c.bulk.prims").data;

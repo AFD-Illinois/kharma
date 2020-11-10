@@ -43,7 +43,7 @@ namespace GRMHD {
 /**
  * Constrained transport.  Modify B-field fluxes to preserve divB==0 condition to machine precision per-step
  */
-parthenon::TaskStatus FluxCT(std::shared_ptr<Container<Real>>& rc)
+parthenon::TaskStatus FluxCT(std::shared_ptr<MeshBlockData<Real>>& rc)
 {
     FLAG("Flux CT");
     auto pmb = rc->GetBlockPointer();

@@ -40,7 +40,7 @@ using namespace parthenon;
 // LR to flux is up for deletion now ReconandFlux works reliably
 namespace LLF {
 
-TaskStatus LRToFlux(std::shared_ptr<Container<Real>>& rc, GridVars pl, GridVars pr, const int dir, GridVars flux)
+TaskStatus LRToFlux(std::shared_ptr<MeshBlockData<Real>>& rc, GridVars pl, GridVars pr, const int dir, GridVars flux)
 {
     FLAG("LR to flux");
     auto pmb = rc->GetBlockPointer();
@@ -55,7 +55,7 @@ TaskStatus LRToFlux(std::shared_ptr<Container<Real>>& rc, GridVars pl, GridVars 
     if (je == 0 && dir == X2DIR) return TaskStatus::complete;
     is = is - 2; ie = ie + 2;
 
-    GRCoordinates G = pmb->coords;
+    auto& G = pmb->coords;
     // TODO don't construct EOSes.  Somehow.
     Real gamma = pmb->packages["GRMHD"]->Param<Real>("gamma");
     EOS* eos = CreateEOS(gamma);
@@ -132,7 +132,7 @@ TaskStatus LRToFlux(std::shared_ptr<Container<Real>>& rc, GridVars pl, GridVars 
     return TaskStatus::complete;
 }
 
-TaskStatus ReconAndFlux(std::shared_ptr<Container<Real>>& rc, const int& dir)
+TaskStatus ReconAndFlux(std::shared_ptr<MeshBlockData<Real>>& rc, const int& dir)
 {
     FLAG(string_format("Recon and flux X%d", dir));
     auto pmb = rc->GetBlockPointer();
@@ -154,7 +154,7 @@ TaskStatus ReconAndFlux(std::shared_ptr<Container<Real>>& rc, const int& dir)
     auto& P = rc->Get("c.c.bulk.prims").data;
     auto& flux = rc->Get("c.c.bulk.cons").flux[dir];
 
-    GRCoordinates G = pmb->coords;
+    auto& G = pmb->coords;
     // TODO *sigh*
     Real gamma = pmb->packages["GRMHD"]->Param<Real>("gamma");
     EOS* eos = CreateEOS(gamma);

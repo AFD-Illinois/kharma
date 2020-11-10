@@ -34,7 +34,7 @@
 
 #include <iostream>
 
-#include "parthenon/parthenon.hpp"
+#include <parthenon/parthenon.hpp>
 
 #include "decs.hpp"
 
@@ -47,9 +47,12 @@
 
 #include "iharm_restart.hpp"
 
-TaskList HARMDriver::MakeTaskList(MeshBlock *pmb, int stage)
+TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
 {
-    TaskList tl;
+    // TODO graduate to the new block stuff if it sticks around
+    TaskCollection tc;
+    auto& tl = tc.AddRegion(1)[0];
+    auto& pmb = blocks[0];
 
     // Parthenon separates out stages of higher-order integrators with "containers"
     // (a bundle of arrays capable of holding all Fields in the FluidState)
@@ -57,22 +60,22 @@ TaskList HARMDriver::MakeTaskList(MeshBlock *pmb, int stage)
     // An accumulator dUdt is provided to temporarily store this stage's contribution to the RHS
     // TODO: Figure out when the step beginning and end are both accessible, for calculating jcon
     if (stage == 1) {
-        auto& base = pmb->real_containers.Get();
-        pmb->real_containers.Add("dUdt", base);
+        auto& base = pmb->meshblock_data.Get();
+        pmb->meshblock_data.Add("dUdt", base);
         for (int i=1; i<integrator->nstages; i++)
-            pmb->real_containers.Add(stage_name[i], base);
+            pmb->meshblock_data.Add(stage_name[i], base);
     }
 
     // pull out the container we'll use to get fluxes and/or compute RHSs
-    auto& sc0  = pmb->real_containers.Get(stage_name[stage-1]);
+    auto& sc0  = pmb->meshblock_data.Get(stage_name[stage-1]);
     // pull out a container we'll use to store dU/dt.
-    auto& dudt = pmb->real_containers.Get("dUdt");
+    auto& dudt = pmb->meshblock_data.Get("dUdt");
     // pull out the container that will hold the updated state
-    auto& sc1  = pmb->real_containers.Get(stage_name[stage]);
+    auto& sc1  = pmb->meshblock_data.Get(stage_name[stage]);
 
     // TODO what does this do exactly?
     TaskID t_none(0);
-    auto t_start_recv = tl.AddTask(t_none, &Container<Real>::StartReceiving, sc1.get(),
+    auto t_start_recv = tl.AddTask(t_none, &MeshBlockData<Real>::StartReceiving, sc1.get(),
                                    BoundaryCommSubset::all);
 
     // Calculate the LLF fluxes in each direction
@@ -87,16 +90,16 @@ TaskList HARMDriver::MakeTaskList(MeshBlock *pmb, int stage)
 
     // TODO add these sensibly for AMR/SMR runs (below Fix and/or CT?)
     // auto t_send_flux =
-    //     tl.AddTask(&Container<Real>::SendFluxCorrection, sc0.get(), t_calculate_flux);
+    //     tl.AddTask(&MeshBlockData<Real>::SendFluxCorrection, sc0.get(), t_calculate_flux);
     // auto t_recv_flux =
-    //     tl.AddTask(&Container<Real>::ReceiveFluxCorrection, sc0.get(), t_calculate_flux);
+    //     tl.AddTask(&MeshBlockData<Real>::ReceiveFluxCorrection, sc0.get(), t_calculate_flux);
 
     // These operate totally on fluxes
     auto t_fix_flux = tl.AddTask(t_calculate_flux, FixFlux, sc0);
     auto t_flux_ct = tl.AddTask(t_fix_flux, GRMHD::FluxCT, sc0);
 
     // Apply fluxes to create a single update dU/dt
-    auto t_flux_divergence = tl.AddTask(t_flux_ct, Update::FluxDivergence, sc0, dudt);
+    auto t_flux_divergence = tl.AddTask(t_flux_ct, Update::FluxDivergenceBlock, sc0, dudt);
     auto t_source_term = tl.AddTask(t_flux_divergence, GRMHD::AddSourceTerm, sc0, dudt);
     // Apply dU/dt to the stage's initial state sc0 to obtain the stage final state sc1
     // Note this *only fills U* of sc1, so sc1 is out of lockstep
@@ -104,10 +107,10 @@ TaskList HARMDriver::MakeTaskList(MeshBlock *pmb, int stage)
 
     // Update ghost cells.  Only performed on U of sc1
     auto t_send =
-        tl.AddTask(t_update_container, &Container<Real>::SendBoundaryBuffers, sc1.get());
-    auto t_recv = tl.AddTask(t_send, &Container<Real>::ReceiveBoundaryBuffers, sc1.get());
-    auto t_fill_from_bufs = tl.AddTask(t_recv, &Container<Real>::SetBoundaries, sc1.get());
-    auto t_clear_comm_flags = tl.AddTask(t_fill_from_bufs, &Container<Real>::ClearBoundary, sc1.get(),
+        tl.AddTask(t_update_container, &MeshBlockData<Real>::SendBoundaryBuffers, sc1.get());
+    auto t_recv = tl.AddTask(t_send, &MeshBlockData<Real>::ReceiveBoundaryBuffers, sc1.get());
+    auto t_fill_from_bufs = tl.AddTask(t_recv, &MeshBlockData<Real>::SetBoundaries, sc1.get());
+    auto t_clear_comm_flags = tl.AddTask(t_fill_from_bufs, &MeshBlockData<Real>::ClearBoundary, sc1.get(),
                                          BoundaryCommSubset::all);
 
     // TODO add sensibly for AMR runs
@@ -132,7 +135,7 @@ TaskList HARMDriver::MakeTaskList(MeshBlock *pmb, int stage)
     // estimate next time step
     if (stage == integrator->nstages) {
         auto new_dt = tl.AddTask(t_step_done,
-            [](std::shared_ptr<Container<Real>> &rc) {
+            [](std::shared_ptr<MeshBlockData<Real>> &rc) {
                 auto pmb = rc->GetBlockPointer();
                 pmb->SetBlockTimestep(parthenon::Update::EstimateTimestep(rc));
                 return TaskStatus::complete;
@@ -141,11 +144,11 @@ TaskList HARMDriver::MakeTaskList(MeshBlock *pmb, int stage)
         // Update refinement
         if (pmesh->adaptive) {
             auto tag_refine = tl.AddTask(t_step_done,
-            [](MeshBlock *pmb) {
+            [](std::shared_ptr<MeshBlock>& pmb) {
                 pmb->pmr->CheckRefinementCondition();
                 return TaskStatus::complete;
             }, pmb);
         }
     }
-    return tl;
+    return tc;
 }
