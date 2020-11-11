@@ -85,8 +85,7 @@ void ApplyBondiBoundary(std::shared_ptr<MeshBlockData<Real>>& rc)
 
     Real mdot = pmb->packages["GRMHD"]->Param<Real>("mdot");
     Real rs = pmb->packages["GRMHD"]->Param<Real>("rs");
-    Real gamma = pmb->packages["GRMHD"]->Param<Real>("gamma");
-    EOS* eos = CreateEOS(gamma);
+    EOS* eos = pmb->packages["GRMHD"]->Param<EOS*>("eos");
 
     // Just the X1 right boundary
     SphKSCoords ks = mpark::get<SphKSCoords>(G.coords.base);
@@ -100,8 +99,6 @@ void ApplyBondiBoundary(std::shared_ptr<MeshBlockData<Real>>& rc)
             prim_to_flux(G, P, Dtmp, eos, k, j, i, Loci::center, 0, U);
         }
     );
-
-    DelEOS(eos);
 }
 // Adapted from M. Chandra
 KOKKOS_INLINE_FUNCTION Real get_Tfunc(const Real T, const GReal r, const Real C1, const Real C2, const Real n)

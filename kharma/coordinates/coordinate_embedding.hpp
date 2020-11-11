@@ -36,6 +36,7 @@ class CoordinateEmbedding {
         SomeTransform transform;
 
         // Common code for constructors
+#pragma hd_warning_disable
         KOKKOS_FUNCTION void EmplaceSystems(const SomeBaseCoords& base_in, const SomeTransform& transform_in) {
             // Isn't there some more elegant way to say "yeah the types are fine just copy da bits"?
             if (mpark::holds_alternative<SphMinkowskiCoords>(base_in)) {
@@ -66,12 +67,16 @@ class CoordinateEmbedding {
         }
 
         // Constructors
+#pragma hd_warning_disable
         CoordinateEmbedding() = default;
+#pragma hd_warning_disable
         KOKKOS_FUNCTION CoordinateEmbedding(SomeBaseCoords& base_in, SomeTransform& transform_in): base(base_in), transform(transform_in) {}
+#pragma hd_warning_disable
         KOKKOS_FUNCTION CoordinateEmbedding(const CoordinateEmbedding& src)
         {
             EmplaceSystems(src.base, src.transform);
         }
+#pragma hd_warning_disable
         KOKKOS_FUNCTION const CoordinateEmbedding& operator=(const CoordinateEmbedding& src)
         {
             EmplaceSystems(src.base, src.transform);

@@ -39,7 +39,6 @@
 #include "decs.hpp"
 #include "bondi.hpp"
 #include "boundaries.hpp"
-#include "containers.hpp"
 #include "fixup.hpp"
 #include "grmhd.hpp"
 #include "harm.hpp"

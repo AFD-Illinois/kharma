@@ -23,7 +23,7 @@ using Real = parthenon::Real;
 using GReal = double;
 
 // TODO add make.sh/CMake option for tracing vs just debug
-#if DEBUG
+#if 0
 #define FLAG(x) if(MPIRank0()) std::cout << x << std::endl;
 #else
 #define FLAG(x)

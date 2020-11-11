@@ -60,8 +60,7 @@ TaskStatus ApplyCustomBoundaries(std::shared_ptr<MeshBlockData<Real>>& rc)
     IndexRange jb = pmb->cellbounds.GetBoundsJ(IndexDomain::interior);
     IndexRange kb = pmb->cellbounds.GetBoundsK(IndexDomain::interior);
 
-    Real gamma = pmb->packages["GRMHD"]->Param<Real>("gamma");
-    EOS* eos = CreateEOS(gamma);
+    EOS* eos = pmb->packages["GRMHD"]->Param<EOS*>("eos");
 
     // Implement the outflow boundaries on the primitives, since the inflow check needs that
     if(pmb->boundary_flag[BoundaryFace::inner_x1] == BoundaryFlag::outflow) {
@@ -135,7 +134,6 @@ TaskStatus ApplyCustomBoundaries(std::shared_ptr<MeshBlockData<Real>>& rc)
         ApplyBondiBoundary(rc);
     }
 
-    DelEOS(eos);
     return TaskStatus::complete;
 }
 

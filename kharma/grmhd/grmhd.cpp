@@ -79,9 +79,12 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     std::string problem_name = pin->GetString("parthenon/job", "problem_id");
     params.Add("problem", problem_name);
 
-    // Fluid gamma for EOS.  Don't guess this.
+    // Fluid gamma for ideal EOS.  Don't guess this.
     double gamma = pin->GetReal("GRMHD", "gamma");
     params.Add("gamma", gamma);
+    // Sometimes, you have to leak a few bytes in the name of science
+    EOS* eos = CreateEOS(gamma);
+    params.Add("eos", eos);
 
     // Proportion of courant condition for timesteps
     double cfl = pin->GetOrAddReal("GRMHD", "cfl", 0.9);
@@ -199,14 +202,14 @@ void FillDerived(std::shared_ptr<MeshBlockData<Real>>& rc)
     GridVars U = rc->Get("c.c.bulk.cons").data;
     GridVars P = rc->Get("c.c.bulk.prims").data;
 
-    // TODO I don't think the flags need a separate sync if I run U_to_P redundantly over ghost zones --
+    // I don't think the flags need a separate sync if I run U_to_P redundantly over ghost zones --
     // it will just produce the same flags in the same zones for each process
+    // TODO verify
     GridInt pflag("pflag", n3, n2, n1);
     GridInt fflag("fflag", n3, n2, n1);
 
-    // TODO See other EOS todos
-    Real gamma = pmb->packages["GRMHD"]->Param<Real>("gamma");
-    EOS* eos = CreateEOS(gamma);
+    EOS* eos = pmb->packages["GRMHD"]->Param<EOS*>("eos");
+
 
     //Diagnostic(rc, IndexDomain::entire);
 
@@ -267,8 +270,6 @@ void FillDerived(std::shared_ptr<MeshBlockData<Real>>& rc)
             }
         }
     }
-
-    DelEOS(eos);
 }
 
 /**
@@ -326,7 +327,7 @@ TaskStatus AddSourceTerm(std::shared_ptr<MeshBlockData<Real>>& rc, std::shared_p
 
     // TODO *sigh*
     Real gamma = pmb->packages["GRMHD"]->Param<Real>("gamma");
-    EOS* eos = CreateEOS(gamma);
+    EOS* eos = CreateEOS(pmb, gamma);
 
     // Unpack for kernel
     auto dUdt = dudt->Get("c.c.bulk.cons").data;
@@ -339,8 +340,6 @@ TaskStatus AddSourceTerm(std::shared_ptr<MeshBlockData<Real>>& rc, std::shared_p
             add_fluid_source(G, P, Dtmp, eos, k, j, i, dUdt);
         }
     );
-
-    DelEOS(eos);
 
     FLAG("Applied");
     return TaskStatus::complete;

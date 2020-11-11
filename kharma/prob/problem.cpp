@@ -147,8 +147,7 @@ TaskStatus InitializeProblem(std::shared_ptr<MeshBlockData<Real>>& rc, Parameter
     GridVars U = rc->Get("c.c.bulk.cons").data;
 
     auto& G = pmb->coords;
-    Real gamma = pmb->packages["GRMHD"]->Param<Real>("gamma");
-    EOS* eos = CreateEOS(gamma);
+    EOS* eos = pmb->packages["GRMHD"]->Param<EOS*>("eos");
 
     auto prob = pin->GetString("parthenon/job", "problem_id"); // Required parameter
     if (prob == "mhdmodes") {
@@ -213,8 +212,6 @@ TaskStatus InitializeProblem(std::shared_ptr<MeshBlockData<Real>>& rc, Parameter
     FLAG("First Floors");
     ApplyFloors(rc);
 
-
-    DelEOS(eos);
     FLAG("Initialized Block");
     return TaskStatus::complete;
 }

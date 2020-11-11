@@ -36,33 +36,25 @@
  * Coordinate functions for GR 
  */
 
-#include "decs.hpp"
-
-#include "debug.hpp"
 #include "gr_coordinates.hpp"
-
-#include "Kokkos_Core.hpp"
-
-#include "parameter_input.hpp"
-#include "mesh/domain.hpp"
-#include "mesh/mesh.hpp"
 
 // This file doesn't have MeshBlock access, so it uses raw Kokkos calls
 using namespace Kokkos;
-
-// Internal function for initializing cache
-KOKKOS_FUNCTION void init_GRCoordinates(GRCoordinates& G, int n1, int n2, int n3);
 
 #if FAST_CARTESIAN
 /**
  * Fast Cartesian GRCoordinates just use the underlying UniformCartesian object for everything
  */
-KOKKOS_FUNCTION GRCoordinates::GRCoordinates(const RegionSize &rs, ParameterInput *pin): UniformCartesian(rs, pin) {}
+GRCoordinates::GRCoordinates(const RegionSize &rs, ParameterInput *pin): UniformCartesian(rs, pin) {}
+GRCoordinates::GRCoordinates(const GRCoordinates &src, int coarsen): UniformCartesian(src, coarsen) {}
 #else
+// Internal function for initializing cache
+void init_GRCoordinates(GRCoordinates& G, int n1, int n2, int n3);
+
 /**
  * Construct a GRCoordinates object with a transformation according to preferences set in the package
  */
-KOKKOS_FUNCTION GRCoordinates::GRCoordinates(const RegionSize &rs, ParameterInput *pin): UniformCartesian(rs, pin)
+GRCoordinates::GRCoordinates(const RegionSize &rs, ParameterInput *pin): UniformCartesian(rs, pin)
 {
     // This is effectively a constructor for the CoordinateEmbedding object,
     // but in KHARMA, that object is only used through this one.
@@ -120,11 +112,9 @@ KOKKOS_FUNCTION GRCoordinates::GRCoordinates(const RegionSize &rs, ParameterInpu
 
     init_GRCoordinates(*this, n1, n2, n3);
 }
-#endif
 
-// OTHER CONSTRUCTORS: Same between implementations
 
-KOKKOS_FUNCTION GRCoordinates::GRCoordinates(const GRCoordinates &src, int coarsen): UniformCartesian(src, coarsen)
+GRCoordinates::GRCoordinates(const GRCoordinates &src, int coarsen): UniformCartesian(src, coarsen)
 {
     //std::cerr << "Calling coarsen constructor" << std::endl;
     coords = src.coords;
@@ -134,48 +124,13 @@ KOKKOS_FUNCTION GRCoordinates::GRCoordinates(const GRCoordinates &src, int coars
     init_GRCoordinates(*this, n1, n2, n3);
 }
 
-KOKKOS_FUNCTION GRCoordinates::GRCoordinates(const GRCoordinates &src): UniformCartesian(src)
-{
-    //std::cerr << "Calling copy constructor size " << src.n1 << " " << src.n2 << std::endl;
-    coords = src.coords;
-    n1 = src.n1;
-    n2 = src.n2;
-    n3 = src.n3;
-#if !FAST_CARTESIAN && !NO_CACHE
-    gcon_direct = src.gcon_direct;
-    gcov_direct = src.gcov_direct;
-    gdet_direct = src.gdet_direct;
-    conn_direct = src.conn_direct;
-#endif
-}
-
-KOKKOS_FUNCTION GRCoordinates GRCoordinates::operator=(const GRCoordinates& src)
-{
-    //std::cerr << "Calling assignment operator size " << src.n1 << " " << src.n2 << std::endl;
-    UniformCartesian::operator=(src);
-    coords = src.coords;
-    n1 = src.n1;
-    n2 = src.n2;
-    n3 = src.n3;
-#if !FAST_CARTESIAN && !NO_CACHE
-    gcon_direct = src.gcon_direct;
-    gcov_direct = src.gcov_direct;
-    gdet_direct = src.gdet_direct;
-    conn_direct = src.conn_direct;
-#endif
-    return *this;
-}
-
 /**
  * Initialize any cached geometry that GRCoordinates will need to return.
  *
  * This needs to be defined *outside* of the GRCoordinates object, because of some
  * fun issues with C++ Lambda capture, which Kokkos brings to the fore
  */
-#if FAST_CARTESIAN || NO_CACHE
-KOKKOS_FUNCTION void init_GRCoordinates(GRCoordinates& G, int n1, int n2, int n3) {}
-#else
-KOKKOS_FUNCTION void init_GRCoordinates(GRCoordinates& G, int n1, int n2, int n3) {
+void init_GRCoordinates(GRCoordinates& G, int n1, int n2, int n3) {
     cerr << "Creating GRCoordinate cache size " << n1 << " " << n2 << endl;
     // Cache geometry.  May be faster than re-computing. May not be.
     G.gcon_direct = GeomTensor2("gcon", NLOC, n2, n1, GR_DIM, GR_DIM);
@@ -218,4 +173,4 @@ KOKKOS_FUNCTION void init_GRCoordinates(GRCoordinates& G, int n1, int n2, int n3
 
     FLAG("GRCoordinates metric init");
 }
-#endif
+#endif // FAST_CARTESIAN

@@ -35,8 +35,15 @@
 
 #include "decs.hpp"
 
+#include <parthenon/parthenon.hpp>
+
 /**
  * Class representing an equation of state.  Currently still very tied to ideal EOSs
+ * 
+ * This is also an example of how to add a device-side abstract class -- that is,
+ * always call the constructor/destructor on the device side, but manage/pass the
+ * pointer on the host.
+ * Grid & CoordinateEmbedding are not like this because they should be usable host-side, too.
  */
 class EOS {
     // TODO when gam does not need to be public, we are ready for new eqns of state
@@ -60,20 +67,48 @@ class GammaLaw : public EOS {
 // Host functions for creating/deleting a device-side EOS function
 // TODO move to a .cpp & a separate namespace
 inline EOS* CreateEOS(Real gamma) {
-        EOS *eos;
-        eos = (EOS*)Kokkos::kokkos_malloc(sizeof(GammaLaw));
-        Kokkos::parallel_for("CreateEOSObject", 1,
-            KOKKOS_LAMBDA(const int&) {
-                new ((GammaLaw*)eos) GammaLaw(gamma);
-            }
-        );
-        return eos;
+    Kokkos::fence();
+    EOS *eos;
+    eos = (EOS*)Kokkos::kokkos_malloc(sizeof(GammaLaw));
+    Kokkos::parallel_for("CreateEOSObject", 1,
+        KOKKOS_LAMBDA(const int&) {
+            new ((GammaLaw*)eos) GammaLaw(gamma);
+        }
+    );
+    Kokkos::fence();
+    return eos;
 }
 inline void DelEOS(EOS* eos) {
+    Kokkos::fence();
     Kokkos::parallel_for("DestroyEOSObject", 1,
         KOKKOS_LAMBDA(const int&) {
             eos->~EOS();
         }
     );
+    Kokkos::fence();
     Kokkos::kokkos_free(eos);
+    Kokkos::fence();
+}
+inline EOS* CreateEOS(std::shared_ptr<MeshBlock> &pmb, Real gamma) {
+    Kokkos::fence();
+    EOS *eos;
+    eos = (EOS*)Kokkos::kokkos_malloc(sizeof(GammaLaw));
+    pmb->par_for("CreateEOSObject", 0, 0,
+        KOKKOS_LAMBDA(const int&) {
+            new ((GammaLaw*)eos) GammaLaw(gamma);
+        }
+    );
+    Kokkos::fence();
+    return eos;
+}
+inline void DelEOS(std::shared_ptr<MeshBlock> &pmb, EOS* eos) {
+    Kokkos::fence();
+    pmb->par_for("DestroyEOSObject", 0, 0,
+        KOKKOS_LAMBDA(const int&) {
+            eos->~EOS();
+        }
+    );
+    Kokkos::fence();
+    Kokkos::kokkos_free(eos);
+    Kokkos::fence();
 }

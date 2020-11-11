@@ -129,7 +129,7 @@ void InitializeFMTorus(std::shared_ptr<MeshBlock> pmb, const GRCoordinates& G, G
     GReal xin = log(rin);
     GReal xout = pmb->pmy_mesh->mesh_size.x1max;
     GReal dx = 0.001;
-    int nx = (xout - xin) / dx + 1;
+    int nx = (xout - xin) / dx;
 
     Real rho_max = 0;
     Kokkos::Max<Real> max_reducer(rho_max);

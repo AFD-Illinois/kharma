@@ -56,9 +56,7 @@ TaskStatus LRToFlux(std::shared_ptr<MeshBlockData<Real>>& rc, GridVars pl, GridV
     is = is - 2; ie = ie + 2;
 
     auto& G = pmb->coords;
-    // TODO don't construct EOSes.  Somehow.
-    Real gamma = pmb->packages["GRMHD"]->Param<Real>("gamma");
-    EOS* eos = CreateEOS(gamma);
+    EOS* eos = pmb->packages["GRMHD"]->Param<EOS*>("eos");
 
 
     auto& ctop = rc->GetFace("f.f.bulk.ctop").data;
@@ -125,8 +123,6 @@ TaskStatus LRToFlux(std::shared_ptr<MeshBlockData<Real>>& rc, GridVars pl, GridV
                 PLOOP flux(p, k, j, i) = 0.5 * (fluxL[p] + fluxR[p] - ctop_loc * (Ur[p] - Ul[p]));
             }
     );
-    
-    DelEOS(eos);
 
     FLAG("Uber fluxcalc");
     return TaskStatus::complete;
@@ -155,9 +151,7 @@ TaskStatus ReconAndFlux(std::shared_ptr<MeshBlockData<Real>>& rc, const int& dir
     auto& flux = rc->Get("c.c.bulk.cons").flux[dir];
 
     auto& G = pmb->coords;
-    // TODO *sigh*
-    Real gamma = pmb->packages["GRMHD"]->Param<Real>("gamma");
-    EOS* eos = CreateEOS(gamma);
+    EOS* eos = pmb->packages["GRMHD"]->Param<EOS*>("eos");
     ReconstructionType recon = pmb->packages["GRMHD"]->Param<ReconstructionType>("recon");
 
     auto& ctop = rc->GetFace("f.f.bulk.ctop").data;
@@ -268,8 +262,6 @@ TaskStatus ReconAndFlux(std::shared_ptr<MeshBlockData<Real>>& rc, const int& dir
             });
         }
     );
-    
-    DelEOS(eos);
 
     FLAG(string_format("Finished recon and flux X%d", dir));
     return TaskStatus::complete;

@@ -44,6 +44,8 @@ double MaxDivB(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain)
 {
     FLAG("Calculating divB");
     auto pmb = rc->GetBlockPointer();
+    // Note since it's a left-difference, the actual stencil of this function
+    // includes 1 ghost zone on the left in each direction!
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
@@ -53,7 +55,7 @@ double MaxDivB(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain)
 
     double max_divb;
     Kokkos::Max<double> max_reducer(max_divb);
-    pmb->par_reduce("divB", ks+1, ke, js+1, je, is+1, ie,
+    pmb->par_reduce("divB", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D_REDUCE {
             double local_divb = fabs(0.25*(
                               P(prims::B1, k, j, i) * G.gdet(Loci::center, j, i)

@@ -81,8 +81,7 @@ void FixUtoP(std::shared_ptr<MeshBlockData<Real>>& rc, GridInt pflag, GridInt ff
     GridVars U = rc->Get("c.c.bulk.cons").data;
     GridVars P = rc->Get("c.c.bulk.prims").data;
 
-    Real gamma = pmb->packages["GRMHD"]->Param<Real>("gamma");
-    EOS* eos = CreateEOS(gamma);
+    EOS* eos = pmb->packages["GRMHD"]->Param<EOS*>("eos");
 
     IndexDomain domain = IndexDomain::entire;
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
@@ -133,8 +132,6 @@ void FixUtoP(std::shared_ptr<MeshBlockData<Real>>& rc, GridInt pflag, GridInt ff
             }
         }
     );
-
-    DelEOS(eos);
 
     FLAG("Fixed U to P inversions");
 }

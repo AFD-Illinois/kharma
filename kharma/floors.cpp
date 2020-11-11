@@ -68,8 +68,7 @@ TaskStatus ApplyFloors(std::shared_ptr<MeshBlockData<Real>>& rc)
 
     GridInt fflag("fflag", n3, n2, n1);
 
-    Real gamma = pmb->packages["GRMHD"]->Param<Real>("gamma");
-    EOS* eos = CreateEOS(gamma);
+    EOS* eos = pmb->packages["GRMHD"]->Param<EOS*>("eos");
 
     // Note floors are applied only to physical zones
     pmb->par_for("apply_floors", ks, ke, js, je, is, ie,
@@ -79,8 +78,6 @@ TaskStatus ApplyFloors(std::shared_ptr<MeshBlockData<Real>>& rc)
             fflag(k, j, i) |= (fixup_floor(G, P, U, eos, k, j, i) / HIT_FLOOR_GEOM_RHO) * HIT_FLOOR_GEOM_RHO;
         }
     );
-
-    DelEOS(eos);
 
 #if 0
     // Print some diagnostic info about which floors were hit

@@ -6,6 +6,7 @@
 
 # Set the correct compiler on Fedora machines
 if [[ $(hostname) == "toolbox" ]]; then
+  module load mpi
   #export NVCC_WRAPPER_DEFAULT_COMPILER=cuda-g++
   export PATH="/usr/local/cuda/bin/:$PATH"
 fi
@@ -44,7 +45,6 @@ if [[ "$*" == *"clean"* ]]; then
     # TODO unify MPI flags
     cmake ..\
     -DCMAKE_CXX_COMPILER=$PWD/../external/parthenon/external/Kokkos/bin/nvcc_wrapper \
-    -DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc \
     -DCMAKE_BUILD_TYPE=$TYPE \
     -DCMAKE_PREFIX_PATH=/usr/lib64/mpich \
     -DPAR_LOOP_LAYOUT="MANUAL1D_LOOP" \
@@ -72,7 +72,6 @@ if [[ "$*" == *"clean"* ]]; then
     -DKokkos_ENABLE_CUDA_CONSTEXPR=ON
   else #OpenMP BUILD
     cmake ..\
-    -DCMAKE_C_COMPILER=$CC_NATIVE \
     -DCMAKE_CXX_COMPILER=$CXX_NATIVE \
     -DCMAKE_BUILD_TYPE=$TYPE \
     -DCMAKE_PREFIX_PATH=/usr/lib64/mpich \
@@ -96,5 +95,5 @@ if [[ "$*" == *"clean"* ]]; then
   fi
 fi
 
-make -j
+make -j12
 cp kharma/kharma.* ..
