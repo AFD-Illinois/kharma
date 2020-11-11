@@ -107,29 +107,33 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
         params.Add("recon", ReconstructionType::mp5);
     }  // TODO error on bad value...
 
-    // Whether to split or merge recon kernels
-    bool merge_recon = pin->GetOrAddBoolean("GRMHD", "merge_reconstruction", true);
-    params.Add("merge_recon", merge_recon);
-    bool simple_recon = pin->GetOrAddBoolean("GRMHD", "simple_reconstruction", false);
-    params.Add("simple_recon", simple_recon);
-
     // Diagnostic data
+    int verbose = pin->GetOrAddInteger("debug", "verbose", 0);
+    params.Add("verbose", verbose);
     int flag_verbose = pin->GetOrAddInteger("debug", "flag_verbose", 0);
     params.Add("flag_verbose", flag_verbose);
 
-    // Magnetic field centering option.  HARM traditionally uses cell-centered fields,
-    // but KHARMA is branching into face-centered.  Latter is required for SMR/AMR.
-    // TODO Split GRHD from B fields?  Would go a long way toward new centering, etc, etc, etc.
-    bool face_fields = false;
-    std::string centering = pin->GetOrAddString("GRMHD", "field_centering", "cell");
-    if (centering == "face") {
-        face_fields = true;
-        params.Add("face_fields", true);
-    } else {
-        face_fields = false;
-        params.Add("face_fields", false);
-        // TODO if SMR/AMR throw a fit
-    }
+    // Floor parameters
+    double rho_min_geom = pin->GetOrAddReal("floors", "rho_min_geom", 1.e-6);
+    params.Add("rho_min_geom", rho_min_geom);
+    double u_min_geom = pin->GetOrAddReal("floors", "u_min_geom", 1.e-8);
+    params.Add("u_min_geom", u_min_geom);
+    double floor_r_char = pin->GetOrAddReal("floors", "r_char", 10);
+    params.Add("floor_r_char", floor_r_char);
+
+    double bsq_over_rho_max = pin->GetOrAddReal("floors", "bsq_over_rho_max", 100);
+    params.Add("bsq_over_rho_max", bsq_over_rho_max);
+    double bsq_over_u_max = pin->GetOrAddReal("floors", "bsq_over_u_max", 10000);
+    params.Add("bsq_over_u_max", bsq_over_u_max);
+    double u_over_rho_max = pin->GetOrAddReal("floors", "u_over_rho_max", 100);
+    params.Add("u_over_rho_max", u_over_rho_max);
+    bool temp_adjust_u = pin->GetOrAddBoolean("floors", "temp_adjust_u", true);
+    params.Add("temp_adjust_u", temp_adjust_u);
+    double ktot_max = pin->GetOrAddReal("floors", "ktot_max", 3);
+    params.Add("ktot_max", ktot_max);
+
+    double gamma_max = pin->GetOrAddReal("floors", "gamma_max", 50);
+    params.Add("gamma_max", gamma_max);
 
     // We generally carry around the conserved versions of varialbles, treating them as the fundamental ones
     // However, since most analysis tooling expects the primitives, we *output* those.
@@ -143,30 +147,6 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     fluid_state->AddField("c.c.bulk.cons", m, DerivedOwnership::shared);
     m = Metadata({Metadata::Cell, Metadata::Derived, Metadata::OneCopy, Metadata::Intensive}, s_prims);
     fluid_state->AddField("c.c.bulk.prims", m, DerivedOwnership::shared);
-
-#if 0
-    // These versions split out the fields.  Someday...
-
-    Metadata m;
-    m = Metadata({Metadata::Cell, Metadata::Independent, Metadata::FillGhost,
-                    Metadata::Restart, Metadata::Conserved});
-    fluid_state->AddField("c.c.bulk.rho_C", m, DerivedOwnership::shared);
-    fluid_state->AddField("c.c.bulk.u_C", m, DerivedOwnership::shared);
-
-    m = Metadata({Metadata::Cell, Metadata::Independent, Metadata::FillGhost,
-                    Metadata::Restart, Metadata::Conserved, Metadata::Vector}, s_vector);
-    fluid_state->AddField("c.c.bulk.v_C", m, DerivedOwnership::shared);
-    if (!face_fields)
-    fluid_state->AddField("c.c.bulk.B_C", m, DerivedOwnership::shared);
-
-    m = Metadata({Metadata::Cell, Metadata::Derived, Metadata::OneCopy, Metadata::Intensive});
-    fluid_state->AddField("c.c.bulk.rho_P", m, DerivedOwnership::shared);
-    fluid_state->AddField("c.c.bulk.u_P", m, DerivedOwnership::shared);
-
-    m = Metadata({Metadata::Cell, Metadata::Derived, Metadata::OneCopy, Metadata::Intensive, Metadata::Vector}, s_vector);
-    fluid_state->AddField("c.c.bulk.v_P", m, DerivedOwnership::shared);
-    fluid_state->AddField("c.c.bulk.B_P", m, DerivedOwnership::shared);
-#endif
 
     // Max (i.e. positive) sound speed vector.  Easiest to keep here due to needing it for EstimateTimestep
     m = Metadata({Metadata::Face, Metadata::Derived, Metadata::OneCopy, Metadata::Vector});
@@ -211,6 +191,9 @@ void FillDerived(std::shared_ptr<MeshBlockData<Real>>& rc)
     EOS* eos = pmb->packages["GRMHD"]->Param<EOS*>("eos");
 
 
+    // Pull out a struct of just the actual floor values for speed
+    FloorPrescription floors = FloorPrescription(pmb->packages["GRMHD"]->AllParams());
+
     //Diagnostic(rc, IndexDomain::entire);
 
     // Get the primitives from our conserved versions
@@ -226,15 +209,17 @@ void FillDerived(std::shared_ptr<MeshBlockData<Real>>& rc)
 
             // Apply the floors in the same pass
             fflag(k, j, i) = 0;
-            fflag(k, j, i) |= gamma_ceiling(G, P, U, eos, k, j, i);
-            // Fixup_floor involves another U_to_P call.  Hide the pflag in bottom 5 bits and retrieve both
-            int comboflag = fixup_floor(G, P, U, eos, k, j, i);
-            fflag(k, j, i) |= (comboflag / HIT_FLOOR_GEOM_RHO) * HIT_FLOOR_GEOM_RHO;
 
+            // Fixup_floor involves another U_to_P call.  Hide the pflag in bottom 5 bits and retrieve both
+            int comboflag = apply_floors(G, P, U, eos, k, j, i, floors);
+            fflag(k, j, i) |= (comboflag / HIT_FLOOR_GEOM_RHO) * HIT_FLOOR_GEOM_RHO;
             int pflag_floor = comboflag % HIT_FLOOR_GEOM_RHO;
             if (pflag_floor != 0) {
                 pflag(k, j, i) = pflag_floor;
             }
+
+            // Apply ceilings *after* floors, to make the temperature ceiling better-behaved
+            fflag(k, j, i) |= apply_ceilings(G, P, U, eos, k, j, i, floors);
         }
     );
     FLAG("Filled and Floored");
@@ -261,53 +246,16 @@ void FillDerived(std::shared_ptr<MeshBlockData<Real>>& rc)
             }
         } else if (print_flags == 1) {
             // TODO option for entire?
-            cout << "PFLAGS: " << CountPFlags(pmb, pflag_host, IndexDomain::interior, false) << endl;
-            cout << "FFLAGS: " << CountFFlags(pmb, fflag_host, IndexDomain::interior, false) << endl;
+            int npflags = CountPFlags(pmb, pflag_host, IndexDomain::interior, false);
+            if (npflags > 0) cout << "PFLAGS: " << npflags << endl;
+            int nfflags = CountFFlags(pmb, fflag_host, IndexDomain::interior, false);
+            if (nfflags > 0) cout << "FFLAGS: " << nfflags << endl;
 
             // TODO for divB: 2D version, conserved variables version
             if (n3 > 1) {
                 cout << "DivB: " << MaxDivB(rc, IndexDomain::interior) << endl;
             }
         }
-    }
-}
-
-/**
- * Calculate the LLF flux in a direction
- */
-TaskStatus CalculateFlux(std::shared_ptr<MeshBlockData<Real>>& rc, const int& dir)
-{
-    FLAG(string_format("Calculating flux %d", dir));
-    auto pmb = rc->GetBlockPointer();
-
-    bool merge_recon = pmb->packages["GRMHD"]->Param<bool>("merge_recon");
-    bool simple_recon = pmb->packages["GRMHD"]->Param<bool>("simple_recon");
-
-    if (merge_recon) {
-        return LLF::ReconAndFlux(rc, dir);
-    } else {
-        int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
-        int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
-        int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
-        GridVars pl("pl", NPRIM, n3, n2, n1);
-        GridVars pr("pr", NPRIM, n3, n2, n1);
-        GridVars Flux = rc->Get("c.c.bulk.cons").flux[dir];
-
-        ReconstructionType recon = pmb->packages["GRMHD"]->Param<ReconstructionType>("recon");
-
-        // Reconstruct primitives on the faces
-        if (simple_recon) {
-            Reconstruction::ReconstructLRSimple(rc, pl, pr, dir, recon);
-        } else {
-            Reconstruction::ReconstructLR(rc, pl, pr, dir, recon);
-        }
-
-        // Calculate flux from values at left & right of face
-        LLF::LRToFlux(rc, pr, pl, dir, Flux);
-
-        FLAG(string_format("Calculated flux %d", dir));
-
-        return TaskStatus::complete;
     }
 }
 
@@ -325,9 +273,7 @@ TaskStatus AddSourceTerm(std::shared_ptr<MeshBlockData<Real>>& rc, std::shared_p
     GridVars P = rc->Get("c.c.bulk.prims").data;
     auto& G = pmb->coords;
 
-    // TODO *sigh*
-    Real gamma = pmb->packages["GRMHD"]->Param<Real>("gamma");
-    EOS* eos = CreateEOS(pmb, gamma);
+    EOS* eos = pmb->packages["GRMHD"]->Param<EOS*>("eos");
 
     // Unpack for kernel
     auto dUdt = dudt->Get("c.c.bulk.cons").data;

@@ -19,18 +19,18 @@ using namespace parthenon;
  * 
  * Stolen directly from iharm2d_v3
  */
-void InitializeOrszagTang(std::shared_ptr<MeshBlock> pmb, const GRCoordinates& G, const GridVars& P, Real tscale=0.05)
+void InitializeOrszagTang(MeshBlock *pmb, const GRCoordinates& G, const GridVars& P, Real tscale=0.05)
 {
     // Puts the current sheet in the middle of the domain
     Real phase = M_PI;
 
     Real gam = pmb->packages["GRMHD"]->Param<Real>("gamma");
 
-    IndexDomain domain = IndexDomain::entire;
-    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
-    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
-    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
-    pmb->par_for("ot_init", ks, ke, js, je, is, ie,
+    IndexDomain domain = IndexDomain::interior;
+    IndexRange ib = pmb->cellbounds.GetBoundsI(domain);
+    IndexRange jb = pmb->cellbounds.GetBoundsJ(domain);
+    IndexRange kb = pmb->cellbounds.GetBoundsK(domain);
+    pmb->par_for("ot_init", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_3D {
             Real X[GR_DIM];
             G.coord(k, j, i, Loci::center, X);
@@ -45,7 +45,7 @@ void InitializeOrszagTang(std::shared_ptr<MeshBlock> pmb, const GRCoordinates& G
         }
     );
     // Rescale primitive velocities & B field by tscale, and internal energy by the square.
-    pmb->par_for("ot_renorm", prims::u, NPRIM-1, ks, ke, js, je, is, ie,
+    pmb->par_for("ot_renorm", prims::u, NPRIM-1, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_VARS {
             P(p, k, j, i) *= tscale * (p == prims::u ? tscale : 1);
         }

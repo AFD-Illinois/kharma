@@ -1,17 +1,19 @@
 /**
  * This physics package implements General-Relativistic Magnetohydrodynamics
  *
- * Unlike MHD, GRMHD has two independent sets of variables: the conserved variables, and a set of "primitive" variables more
- * amenable to reconstruction.  To evolve the fluid, the conserved variables must be:
- * 1. Transformed to the primitives (ConsToPrim)
- * 2. Have the right- and left-going components reconstructed (ideally via WENO5) (Reconstruct)
- * 3. Merge these components into fluxes at zone faces (LRToFlux)
- * 4. Transform *back* to conserved variable fluxes at faces (PrimToCons)
- * 5. Update conserved variables via finite-differencing (flux kernel in advance_fluid) ()
+ * Unlike MHD, GRMHD has two independent sets of variables: the conserved variables, and a set of
+ * "primitive" variables more amenable to reconstruction.  To evolve the fluid, the conserved
+ * variables must be:
+ * 1. Transformed to the primitives
+ * 2. Reconstruct the right- and left-going components at zone faces
+ * 3. Transform back to conserved quantities and calculate the fluxes at faces
+ * 4. Update conserved variables using the divergence of conserved fluxes
+ * 
+ * (for higher-order schemes, this is more or less just repeated and added)
  *
- * HARM3D puts step 1 at the bottom, and syncs primitive variables, but either set can be treated as "fundamental,"
- * depending on what is easier to carry around or debug, and whether Parthenon has a better time reconstructing or
- * finite-differencing a derived mesh.
+ * iharm3d puts step 1 at the bottom, and syncs/fixes primitive variables between each step.
+ * KHARMA runs through the steps as listed, applying floors after step 1 as iharm3d does, but
+ * syncing the conserved variables 
  */
 #pragma once
 
@@ -29,10 +31,6 @@ namespace GRMHD {
     // FillDerived should end up with all derived variables in the StateDescriptor in consistent state for e.g. output
     // For HARM this means running U_to_P to recover primitives in all zones
     void FillDerived(std::shared_ptr<MeshBlockData<Real>>& rc);
-    // Calculate flux in a direction
-    TaskStatus CalculateFlux(std::shared_ptr<MeshBlockData<Real>>& rc, const int& dir);
-    // Version of CalculateFlux integrating the reconstruction and LR->flux kernels for speed
-    TaskStatus ReconAndFlux(std::shared_ptr<MeshBlockData<Real>>& rc, const int& dir);
     // Constrained-transport step to preserve divB==0
     TaskStatus FluxCT(std::shared_ptr<MeshBlockData<Real>>& rc);
     // Add the HARM source term to the RHS dudt

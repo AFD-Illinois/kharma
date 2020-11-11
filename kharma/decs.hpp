@@ -101,27 +101,3 @@ enum ReconstructionType{linear_mc=0, ppm, weno5, mp5};
 #define HIT_FLOOR_TEMP 512
 #define HIT_FLOOR_GAMMA 1024
 #define HIT_FLOOR_KTOT 2048
-
-// KHARMA OPTIONS
-
-// GAMMA FLOOR
-// Maximum gamma factor allowed for fluid velocity
-// Defined in decs.hpp since it's also needed by U_to_P
-#define GAMMAMAX 100.
-
-// GEOMETRY FLOORS
-// Limiting values for density and internal energy
-// These are scaled with radius for spherical sims,
-// and multiplied by an additional 0.01 for cartesian sims
-#define RHOMIN 1.e-6
-#define UUMIN  1.e-8
-// Radius in M, around which to steepen floor prescription from r^-2 to r^-3
-#define FLOOR_R_CHAR 10.
-
-// RATIO CEILINGS
-// Maximum ratio of internal energy to density (i.e. Temperature)
-#define UORHOMAX   50.
-// Same for magnetic field (i.e. magnetization sigma)
-#define BSQORHOMAX 100.
-// Disable a B-field-based floor on U
-#define BSQOUMAX   100000

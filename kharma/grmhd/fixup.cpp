@@ -35,8 +35,6 @@
 #include "fixup.hpp"
 
 void ClearCorners(std::shared_ptr<MeshBlock> pmb, GridInt pflag) {
-    // TODO add back all but the physical corners
-
     FLAG("Clearing corners");
     IndexDomain domain = IndexDomain::interior;
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
@@ -51,16 +49,16 @@ void ClearCorners(std::shared_ptr<MeshBlock> pmb, GridInt pflag) {
     bool outer_x2 = pmb->boundary_flag[BoundaryFace::outer_x2] != BoundaryFlag::block;
     bool outer_x3 = pmb->boundary_flag[BoundaryFace::outer_x3] != BoundaryFlag::block;
     
-    pmb->par_for("clear_corners", 0, max(ks-1, 0), 0, max(js-1, 0), 0, is-1,
+    pmb->par_for("clear_corners", 0, ks-1, 0, js-1, 0, is-1,
         KOKKOS_LAMBDA_3D {
             if (inner_x3 && inner_x2 && inner_x1) pflag(k, j, i) = -1;
-            if (inner_x3 && inner_x2 && outer_x1) pflag(k, j, ie+i) = -1;
-            if (inner_x3 && outer_x2 && inner_x1) pflag(k, je+j, i) = -1;
-            if (outer_x3 && inner_x2 && inner_x1) pflag(ke+k, j, i) = -1;
-            if (inner_x3 && outer_x2 && outer_x1) pflag(k, je+j, ie+i) = -1;
-            if (outer_x3 && inner_x2 && outer_x1) pflag(ke+k, j, ie+i) = -1;
-            if (outer_x3 && outer_x2 && inner_x1) pflag(ke+k, je+j, i) = -1;
-            if (outer_x3 && outer_x2 && outer_x1) pflag(ke+k, je+j, ie+i) = -1;
+            if (inner_x3 && inner_x2 && outer_x1) pflag(k, j, ie+1+i) = -1;
+            if (inner_x3 && outer_x2 && inner_x1) pflag(k, je+1+j, i) = -1;
+            if (outer_x3 && inner_x2 && inner_x1) pflag(ke+1+k, j, i) = -1;
+            if (inner_x3 && outer_x2 && outer_x1) pflag(k, je+1+j, ie+1+i) = -1;
+            if (outer_x3 && inner_x2 && outer_x1) pflag(ke+1+k, j, ie+1+i) = -1;
+            if (outer_x3 && outer_x2 && inner_x1) pflag(ke+1+k, je+1+j, i) = -1;
+            if (outer_x3 && outer_x2 && outer_x1) pflag(ke+1+k, je+1+j, ie+1+i) = -1;
         }
     );
 
@@ -76,17 +74,20 @@ void FixUtoP(std::shared_ptr<MeshBlockData<Real>>& rc, GridInt pflag, GridInt ff
     auto pmb = rc->GetBlockPointer();
     auto& G = pmb->coords;
 
-    ClearCorners(pmb, pflag); // Don't use zones in physical corners. TODO persistent pflag would be faster...
-
     GridVars U = rc->Get("c.c.bulk.cons").data;
     GridVars P = rc->Get("c.c.bulk.prims").data;
 
     EOS* eos = pmb->packages["GRMHD"]->Param<EOS*>("eos");
 
+    FloorPrescription floors = FloorPrescription(pmb->packages["GRMHD"]->AllParams());
+
     IndexDomain domain = IndexDomain::entire;
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
+
+    // This has done nothing but cause problems, and I don't know why...
+    //if (ke != 1) ClearCorners(pmb, pflag); // Don't use zones in 3D physical corners. TODO persistent pflag?
 
     // TODO This is a lot of if statements. Slow?
     pmb->par_for("fix_U_to_P", ks, ke, js, je, is, ie,
@@ -122,8 +123,8 @@ void FixUtoP(std::shared_ptr<MeshBlockData<Real>>& rc, GridInt pflag, GridInt ff
                     FLOOP P(p, k, j, i) = sum[p]/wsum;
 
                     // Make sure fixed values still abide by floors
-                    fflag(k, j, i) |= gamma_ceiling(G, P, U, eos, k, j, i);
-                    fflag(k, j, i) |= fixup_floor(G, P, U, eos, k, j, i);
+                    fflag(k, j, i) |= apply_floors(G, P, U, eos, k, j, i, floors);
+                    fflag(k, j, i) |= apply_ceilings(G, P, U, eos, k, j, i, floors);
                     // Make sure the original conserved variables match
                     FourVectors Dtmp;
                     get_state(G, P, k, j, i, Loci::center, Dtmp);

@@ -218,7 +218,7 @@ KOKKOS_INLINE_FUNCTION Real gamma_func(const Real Bsq, const Real D, const Real 
 
 #if DEBUG
     // Catch utsq < 0
-    if (utsq < 0. || utsq > 1.e3 * GAMMAMAX * GAMMAMAX)
+    if (utsq < 0. || utsq > 1.e7)
     {
         eflag = InversionStatus::bad_ut;
     }

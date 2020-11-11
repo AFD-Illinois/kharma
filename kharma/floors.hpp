@@ -40,30 +40,58 @@
 
 #include <parthenon/parthenon.hpp>
 
+class FloorPrescription {
+    public:
+        // Purely geometric limits
+        double rho_min_geom, u_min_geom, r_char;
+        // Dynamic limits on magnetization/temperature
+        double bsq_over_rho_max, bsq_over_u_max, u_over_rho_max;
+        bool temp_adjust_u;
+        // Limit entropy -- currently only for legacy but potentially useful
+        double ktot_max;
+        // Limit fluid Lorentz factor
+        double gamma_max;
+
+        FloorPrescription(parthenon::Params& params)
+        {
+            rho_min_geom = params.Get<Real>("rho_min_geom");
+            u_min_geom = params.Get<Real>("u_min_geom");
+            r_char = params.Get<Real>("floor_r_char");
+
+            bsq_over_rho_max = params.Get<Real>("bsq_over_rho_max");
+            bsq_over_u_max = params.Get<Real>("bsq_over_u_max");
+            u_over_rho_max = params.Get<Real>("u_over_rho_max");
+            temp_adjust_u = params.Get<bool>("temp_adjust_u");
+
+            ktot_max = params.Get<Real>("ktot_max");
+            gamma_max = params.Get<Real>("gamma_max");
+        }
+};
+
 /**
  * Apply density and internal energy floors and ceilings
  */
 TaskStatus ApplyFloors(std::shared_ptr<MeshBlockData<Real>>& rc);
 
 /**
- * Apply a fluid velocity ceiling
+ * Apply all ceilings, together, currently at most one on velocity and two on internal energy
  * 
  * @return fflag, a bitflag indicating whether each particular floor was hit, allowing representation of arbitrary combinations
  * See decs.h for bit names.
  * 
  * LOCKSTEP: this function respects P and returns consistent P<->U
  */
-KOKKOS_INLINE_FUNCTION int gamma_ceiling(const GRCoordinates& G, GridVars P, GridVars U, EOS *eos, const int& k, const int& j, const int& i)
+KOKKOS_INLINE_FUNCTION int apply_ceilings(const GRCoordinates& G, GridVars P, GridVars U, EOS *eos, const int& k, const int& j, const int& i, const FloorPrescription& floors)
 {
     int fflag = 0;
     // First apply ceilings:
     // 1. Limit gamma with respect to normal observer
     Real gamma = mhd_gamma_calc(G, P, k, j, i, Loci::center);
 
-    if (gamma > GAMMAMAX) {
+    if (gamma > floors.gamma_max) {
         fflag |= HIT_FLOOR_GAMMA;
 
-        Real f = sqrt((GAMMAMAX*GAMMAMAX - 1.)/(gamma*gamma - 1.));
+        Real f = sqrt((pow(floors.gamma_max, 2) - 1.)/(pow(gamma, 2) - 1.));
         P(prims::u1, k, j, i) *= f;
         P(prims::u2, k, j, i) *= f;
         P(prims::u3, k, j, i) *= f;
@@ -72,19 +100,33 @@ KOKKOS_INLINE_FUNCTION int gamma_ceiling(const GRCoordinates& G, GridVars P, Gri
         get_state(G, P, k, j, i, Loci::center, Dtmp);
         prim_to_flux(G, P, Dtmp, eos, k, j, i, Loci::center, 0, U);
     }
+
+    // Limit the entropy by controlling u, to avoid anomalous cooling from funnel wall
+    // Pretty much for matching legacy runs
+    Real ktot = (eos->gam - 1.) * P(prims::u, k, j, i) / pow(P(prims::rho, k, j, i), eos->gam);
+    if (ktot > floors.ktot_max) {
+        P(prims::u, k, j, i) = floors.ktot_max / ktot * P(prims::u, k, j, i);
+        fflag |= HIT_FLOOR_KTOT;
+    }
+
+    if (floors.temp_adjust_u && P(prims::u, k, j, i) / P(prims::rho, k, j, i) > floors.u_over_rho_max) {
+        P(prims::u, k, j, i) = floors.u_over_rho_max * P(prims::rho, k, j, i);
+        fflag |= HIT_FLOOR_TEMP;
+    }
+
     return fflag;
 }
 
 /**
  * Apply floors of several types in determining how to add mass and internal energy to preserve stability.
- * All floors which might apply are recorded separately, then mass/energy are added in normal observer frame
+ * All floors which might apply are recorded separately, then mass/energy are added *in normal observer frame*
  * 
  * @return fflag + pflag: fflag is a flagset starting at the sixth bit from the right.  pflag is a number <32.
  * This returns the sum, with the caller responsible for separating what's desired.
  * 
  * LOCKSTEP: this function respects P and returns consistent P<->U
  */
-KOKKOS_INLINE_FUNCTION int fixup_floor(const GRCoordinates& G, GridVars P, GridVars U, EOS *eos, const int& k, const int& j, const int& i)
+KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, GridVars P, GridVars U, EOS *eos, const int& k, const int& j, const int& i, const FloorPrescription& floors)
 {
     int fflag = 0;
     // Then apply floors:
@@ -97,12 +139,12 @@ KOKKOS_INLINE_FUNCTION int fixup_floor(const GRCoordinates& G, GridVars P, GridV
 
         // New, steeper floor in rho
         // Previously raw r^-2, r^-1.5
-        Real rhoscal = pow(r, -2.) * 1 / (1 + r/FLOOR_R_CHAR);
-        rhoflr_geom = RHOMIN*rhoscal;
-        uflr_geom = UUMIN*pow(rhoscal, eos->gam);
+        Real rhoscal = pow(r, -2.) * 1 / (1 + r / floors.r_char);
+        rhoflr_geom = floors.rho_min_geom * rhoscal;
+        uflr_geom = floors.u_min_geom * pow(rhoscal, eos->gam);
     } else {
-        rhoflr_geom = RHOMIN*1.e-2;
-        uflr_geom = UUMIN*1.e-2;
+        rhoflr_geom = floors.rho_min_geom * 1.e-2;
+        uflr_geom = floors.u_min_geom * 1.e-2;
     }
     Real rho = P(prims::rho, k, j, i);
     Real u = P(prims::u, k, j, i);
@@ -111,18 +153,26 @@ KOKKOS_INLINE_FUNCTION int fixup_floor(const GRCoordinates& G, GridVars P, GridV
     FourVectors Dtmp;
     get_state(G, P, k, j, i, Loci::center, Dtmp); // Recall this gets re-used below
     double bsq = dot(Dtmp.bcon, Dtmp.bcov);
-    double rhoflr_b = bsq/BSQORHOMAX;
-    double uflr_b = bsq/BSQOUMAX;
+    double rhoflr_b = bsq / floors.bsq_over_rho_max;
+    double uflr_b = bsq / floors.bsq_over_u_max;
 
     // Evaluate max U floor, needed for temp ceiling below
     double uflr_max = max(uflr_geom, uflr_b);
 
-    // 3. Temperature ceiling: impose maximum temperature u/rho
-    // Take floors on U into account
-    double rhoflr_temp = max(u, uflr_max) / UORHOMAX;
+    double rhoflr_max;
+    if (!floors.temp_adjust_u) {
+        // 3. Temperature ceiling: impose maximum temperature u/rho
+        // Take floors on U into account
+        double rhoflr_temp = max(u, uflr_max) / floors.u_over_rho_max;
+        // Record hitting temperature ceiling
+        fflag |= (rhoflr_temp > rho) * HIT_FLOOR_TEMP; // Misnomer for consistency
 
-    // Evaluate max rho floor
-    double rhoflr_max = max(max(rhoflr_geom, rhoflr_b), rhoflr_temp);
+        // Evaluate max rho floor
+        rhoflr_max = max(max(rhoflr_geom, rhoflr_b), rhoflr_temp);
+    } else {
+        // Evaluate max rho floor
+        rhoflr_max = max(rhoflr_geom, rhoflr_b);
+    }
 
     // Record all the floors that were hit, using bitflags
     // Record Geometric floor hits
@@ -131,8 +181,6 @@ KOKKOS_INLINE_FUNCTION int fixup_floor(const GRCoordinates& G, GridVars P, GridV
     // Record Magnetic floor hits
     fflag |= (rhoflr_b > rho) * HIT_FLOOR_B_RHO;
     fflag |= (uflr_b > u) * HIT_FLOOR_B_U;
-    // Record hitting temperature ceiling
-    fflag |= (rhoflr_temp > rho) * HIT_FLOOR_TEMP; // Misnomer for consistency
 
     InversionStatus pflag = InversionStatus::success;
     if (rhoflr_max > rho || uflr_max > u) { // Apply floors

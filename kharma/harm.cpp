@@ -41,6 +41,7 @@
 #include "bondi.hpp"
 #include "boundaries.hpp"
 #include "fixup.hpp"
+#include "fluxes.hpp"
 #include "grmhd.hpp"
 #include "harm.hpp"
 
@@ -104,9 +105,9 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         // This applies the floors to the primitives (P) and uses them to calculate fluxes
         // of the conserved variables (U)
         // All subsequent operations until FillDerived are applied only to U
-        auto t_calculate_flux1 = tl.AddTask(t_start_recv, GRMHD::CalculateFlux, sc0, X1DIR);
-        auto t_calculate_flux2 = tl.AddTask(t_start_recv, GRMHD::CalculateFlux, sc0, X2DIR);
-        auto t_calculate_flux3 = tl.AddTask(t_start_recv, GRMHD::CalculateFlux, sc0, X3DIR);
+        auto t_calculate_flux1 = tl.AddTask(t_start_recv, HLLE::GetFlux, sc0, X1DIR);
+        auto t_calculate_flux2 = tl.AddTask(t_start_recv, HLLE::GetFlux, sc0, X2DIR);
+        auto t_calculate_flux3 = tl.AddTask(t_start_recv, HLLE::GetFlux, sc0, X3DIR);
         auto t_calculate_flux = t_calculate_flux1 | t_calculate_flux2 | t_calculate_flux3;
 
         // These operate only on the conserved fluxes

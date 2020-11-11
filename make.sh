@@ -46,7 +46,7 @@ if [[ "$*" == *"clean"* ]]; then
     cmake ..\
     -DCMAKE_CXX_COMPILER=$PWD/../external/parthenon/external/Kokkos/bin/nvcc_wrapper \
     -DCMAKE_BUILD_TYPE=$TYPE \
-    -DCMAKE_PREFIX_PATH=/usr/lib64/mpich \
+    -DCMAKE_PREFIX_PATH=/usr/lib64/openmpi \
     -DPAR_LOOP_LAYOUT="MANUAL1D_LOOP" \
     -DPAR_LOOP_INNER_LAYOUT="TVR_INNER_LOOP" \
     -DBUILD_TESTING=OFF \
@@ -59,22 +59,21 @@ if [[ "$*" == *"clean"* ]]; then
     -DKokkos_ENABLE_CUDA=ON \
     -DKokkos_ENABLE_HWLOC=ON \
     -DKokkos_ARCH_WSM=OFF \
-    -DKokkos_ARCH_HSW=OFF \
+    -DKokkos_ARCH_HSW=ON \
     -DKokkos_ARCH_BDW=OFF \
     -DKokkos_ARCH_SKX=OFF \
-    -DKokkos_ARCH_AMDAVX=ON \
+    -DKokkos_ARCH_AMDAVX=OFF \
     -DKokkos_ARCH_POWER9=OFF \
-    -DKokkos_ARCH_KEPLER35=OFF \
-    -DKokkos_ARCH_PASCAL60=OFF \
+    -DKokkos_ARCH_KEPLER35=ON \
     -DKokkos_ARCH_VOLTA70=OFF \
-    -DKokkos_ARCH_TURING75=ON \
+    -DKokkos_ARCH_TURING75=OFF \
     -DKokkos_ENABLE_CUDA_LAMBDA=ON \
     -DKokkos_ENABLE_CUDA_CONSTEXPR=ON
   else #OpenMP BUILD
     cmake ..\
     -DCMAKE_CXX_COMPILER=$CXX_NATIVE \
     -DCMAKE_BUILD_TYPE=$TYPE \
-    -DCMAKE_PREFIX_PATH=/usr/lib64/mpich \
+    -DCMAKE_PREFIX_PATH=/usr/lib64/openmpi \
     -DPAR_LOOP_LAYOUT="MANUAL1D_LOOP" \
     -DPAR_LOOP_INNER_LAYOUT="SIMDFOR_INNER_LOOP" \
     -DBUILD_TESTING=OFF \
@@ -95,5 +94,5 @@ if [[ "$*" == *"clean"* ]]; then
   fi
 fi
 
-make -j12
+make -j40
 cp kharma/kharma.* ..

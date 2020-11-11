@@ -145,7 +145,7 @@ int CountPFlags(std::shared_ptr<MeshBlock> pmb, ParArrayNDIntHost pflag, IndexDo
     }
 
     n_tot = MPISumInt(n_tot);
-    if (print) {
+    if (print && n_tot > 0) {
         n_neg_in = MPISumInt(n_neg_in);
         n_max_iter = MPISumInt(n_max_iter);
         n_utsq = MPISumInt(n_utsq);
@@ -192,7 +192,7 @@ int CountFFlags(std::shared_ptr<MeshBlock> pmb, ParArrayNDIntHost fflag, IndexDo
     }
 
     n_tot = MPISumInt(n_tot);
-    if (print) {
+    if (print && n_tot > 0) {
         n_geom_rho = MPISumInt(n_geom_rho);
         n_geom_u = MPISumInt(n_geom_u);
         n_b_rho = MPISumInt(n_b_rho);
