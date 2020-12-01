@@ -106,7 +106,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     } else if (recon == "mp5") {
         params.Add("recon", ReconstructionType::mp5);
     } else {
-        throw std::argument_error("Reconstruction must be one of linear_mc, ppm, weno5, mp5!");
+        throw std::invalid_argument("Reconstruction must be one of linear_mc, ppm, weno5, mp5!");
     }
 
     // Diagnostic data

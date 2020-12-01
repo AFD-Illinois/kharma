@@ -8,7 +8,6 @@
 if [[ $(hostname) == "toolbox" ]]; then
   module load mpi
   #export NVCC_WRAPPER_DEFAULT_COMPILER=cuda-g++
-  export PATH="/usr/local/cuda/bin/:$PATH"
 fi
 
 # Make conda go away.  Bad libraries. Bad.
@@ -29,7 +28,7 @@ else
   TYPE=Release
 fi
 
-# "Clean" here is 
+# "Clean" here means clean & rebuild, both!
 SCRIPT_DIR=$( dirname "$0" )
 cd $SCRIPT_DIR
 if [[ "$*" == *"clean"* ]]; then
@@ -52,6 +51,7 @@ if [[ "$*" == *"clean"* ]]; then
     -DCMAKE_CXX_COMPILER=$PWD/../external/parthenon/external/Kokkos/bin/nvcc_wrapper \
     -DCMAKE_BUILD_TYPE=$TYPE \
     -DCMAKE_PREFIX_PATH=/usr/lib64/openmpi \
+    -DCUDAToolkit_INCLUDE_DIR=/usr/include/cuda \
     -DPAR_LOOP_LAYOUT="MANUAL1D_LOOP" \
     -DPAR_LOOP_INNER_LAYOUT="TVR_INNER_LOOP" \
     -DBUILD_TESTING=OFF \
