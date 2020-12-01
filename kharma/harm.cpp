@@ -35,6 +35,7 @@
 #include <iostream>
 
 #include <parthenon/parthenon.hpp>
+#include <interface/update.hpp>
 
 #include "decs.hpp"
 
@@ -48,8 +49,8 @@
 #include "iharm_restart.hpp"
 
 /**
- * Custom block update stolen from advection_driver, again.  Really not sure
- * why this isn't just a part of Parthenon.
+ * Custom block update stolen from advection_driver, again.
+ * Really not sure why this isn't just a part of Parthenon...
  */
 TaskStatus UpdateMeshBlockData(const int stage, Integrator *integrator,
                           std::shared_ptr<parthenon::MeshBlockData<Real>> &in,
@@ -58,15 +59,15 @@ TaskStatus UpdateMeshBlockData(const int stage, Integrator *integrator,
                           std::shared_ptr<parthenon::MeshBlockData<Real>> &out) {
   const Real beta = integrator->beta[stage - 1];
   const Real dt = integrator->dt;
-  parthenon::Update::AverageMeshBlockData(in, base, beta);
-  parthenon::Update::UpdateMeshBlockData(in, dudt, beta * dt, out);
+  parthenon::Update::AverageIndependentData(in, base, beta);
+  parthenon::Update::UpdateIndependentData(in, dudt, beta * dt, out);
   return TaskStatus::complete;
 }
 
 TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
 {
-    // TODO extra AMR flux steps in whatever form they look like when I get around to SMR/AMR :)
-    // same with updating refinement when maybe eventually AMR
+    // TODO extra Refinement flux steps in whatever form they look like when I get around to SMR :)
+    // Then same with updating refinement when maybe eventually AMR
     // TODO Figure out when in here to grab the beginning & end states & calculate jcon,
     // then only do so on output steps
 
@@ -87,7 +88,7 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         auto& base = pmb->meshblock_data.Get();
         if (stage == 1) {
             pmb->meshblock_data.Add("dUdt", base);
-            for (int i=1; i<integrator->nstages; i++)
+            for (int i=1; i < integrator->nstages; i++)
                 pmb->meshblock_data.Add(stage_name[i], base);
         }
 
@@ -101,8 +102,8 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         auto t_start_recv = tl.AddTask(t_none, &MeshBlockData<Real>::StartReceiving, sc1.get(),
                                     BoundaryCommSubset::all);
 
-        // Calculate the LLF fluxes in each direction
-        // This applies the floors to the primitives (P) and uses them to calculate fluxes
+        // Calculate the HLL fluxes in each direction
+        // This reconstructs the primitives (P) at faces and uses them to calculate fluxes
         // of the conserved variables (U)
         // All subsequent operations until FillDerived are applied only to U
         auto t_calculate_flux1 = tl.AddTask(t_start_recv, HLLE::GetFlux, sc0, X1DIR);
@@ -115,10 +116,16 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         auto t_flux_ct = tl.AddTask(t_fix_flux, GRMHD::FluxCT, sc0);
 
         // Apply the corrected fluxes to create a single update dU/dt
-        auto t_flux_divergence = tl.AddTask(t_flux_ct, Update::FluxDivergenceBlock, sc0, dudt);
-        auto t_source_term = tl.AddTask(t_flux_divergence, GRMHD::AddSourceTerm, sc0, dudt);
+        //auto t_flux_divergence = tl.AddTask(t_flux_ct, Update::FluxDivergence<MeshBlockData<Real>>, sc0, dudt);
+        // Add the source term.  NOTE THIS USES P!  But U hasn't been touched yet, just fluxes
+        //auto t_source_term = tl.AddTask(t_flux_divergence, GRMHD::AddSourceTerm, sc0, dudt);
+        //auto t_flux_apply = t_source_term;
+
+        // Alternative to above: combine the above and customize! TODO option?
+        auto t_flux_apply = tl.AddTask(t_flux_ct, GRMHD::ApplyFluxes, sc0, dudt);
+
         // Apply dU/dt to the stage's initial state sc0 to obtain the stage final state sc1
-        auto t_update_container = tl.AddTask(t_source_term, UpdateMeshBlockData, stage, integrator, sc0, base, dudt, sc1);
+        auto t_update_container = tl.AddTask(t_flux_apply, UpdateMeshBlockData, stage, integrator, sc0, base, dudt, sc1);
 
         // Update ghost cells.  Only performed on U of sc1
         auto t_send =
@@ -129,26 +136,20 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
                                             BoundaryCommSubset::all);
 
         // Set physical boundaries
-        // ApplyCustomBoundaries is a catch-all for things HARM needs done:
-        // Inflow checks, renormalizations, Bondi outer boundary
         // Only respects/updates U
-        auto t_set_parthenon_bc = tl.AddTask(t_fill_from_bufs, parthenon::ApplyBoundaryConditions, sc1);
+        //auto t_set_parthenon_bc = tl.AddTask(t_fill_from_bufs, parthenon::ApplyBoundaryConditions, sc1);
 
         // Fill primitives, bringing U and P back into lockstep
-        auto t_fill_derived = tl.AddTask(t_set_parthenon_bc, parthenon::FillDerivedVariables::FillDerived, sc1);
+        auto t_fill_derived = tl.AddTask(t_clear_comm_flags, Update::FillDerived<MeshBlockData<Real>>, sc1);
 
-        // Our boundaries require knowing P, so we separate them out.  They keep lockstep.
+        // ApplyCustomBoundaries is a catch-all for things HARM needs done:
+        // Inflow checks, renormalizations, Bondi outer boundary.  All keep lockstep.
         auto t_set_custom_bc = tl.AddTask(t_fill_derived, ApplyCustomBoundaries, sc1);
         auto t_step_done = t_set_custom_bc;
 
-        // estimate next time step
         if (stage == integrator->nstages) {
-            auto new_dt = tl.AddTask(t_step_done,
-                [](std::shared_ptr<MeshBlockData<Real>> &rc) {
-                    auto pmb = rc->GetBlockPointer();
-                    pmb->SetBlockTimestep(parthenon::Update::EstimateTimestep(rc));
-                    return TaskStatus::complete;
-                }, sc1);
+            // estimate next time step
+            auto new_dt = tl.AddTask(t_step_done, Update::EstimateTimestep<MeshBlockData<Real>>, sc1);
         }
     }
     return tc;

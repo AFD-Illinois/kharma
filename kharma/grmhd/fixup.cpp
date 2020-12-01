@@ -34,42 +34,10 @@
 
 #include "fixup.hpp"
 
-void ClearCorners(std::shared_ptr<MeshBlock> pmb, GridInt pflag) {
-    FLAG("Clearing corners");
-    IndexDomain domain = IndexDomain::interior;
-    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
-    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
-    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
-
-    // Is there a better way to check if I'm in a physical corner?
-    bool inner_x1 = pmb->boundary_flag[BoundaryFace::inner_x1] != BoundaryFlag::block;
-    bool inner_x2 = pmb->boundary_flag[BoundaryFace::inner_x2] != BoundaryFlag::block;
-    bool inner_x3 = pmb->boundary_flag[BoundaryFace::inner_x3] != BoundaryFlag::block;
-    bool outer_x1 = pmb->boundary_flag[BoundaryFace::outer_x1] != BoundaryFlag::block;
-    bool outer_x2 = pmb->boundary_flag[BoundaryFace::outer_x2] != BoundaryFlag::block;
-    bool outer_x3 = pmb->boundary_flag[BoundaryFace::outer_x3] != BoundaryFlag::block;
-    
-    pmb->par_for("clear_corners", 0, ks-1, 0, js-1, 0, is-1,
-        KOKKOS_LAMBDA_3D {
-            if (inner_x3 && inner_x2 && inner_x1) pflag(k, j, i) = -1;
-            if (inner_x3 && inner_x2 && outer_x1) pflag(k, j, ie+1+i) = -1;
-            if (inner_x3 && outer_x2 && inner_x1) pflag(k, je+1+j, i) = -1;
-            if (outer_x3 && inner_x2 && inner_x1) pflag(ke+1+k, j, i) = -1;
-            if (inner_x3 && outer_x2 && outer_x1) pflag(k, je+1+j, ie+1+i) = -1;
-            if (outer_x3 && inner_x2 && outer_x1) pflag(ke+1+k, j, ie+1+i) = -1;
-            if (outer_x3 && outer_x2 && inner_x1) pflag(ke+1+k, je+1+j, i) = -1;
-            if (outer_x3 && outer_x2 && outer_x1) pflag(ke+1+k, je+1+j, ie+1+i) = -1;
-        }
-    );
-
-    FLAG("Cleared corner flags");
-}
-
 void FixUtoP(std::shared_ptr<MeshBlockData<Real>>& rc, GridInt pflag, GridInt fflag)
 {
     // We expect primitives all the way out to 3 ghost zones on all sides.  But we can only fix primitives with their neighbors.
     // This may actually mean we require the 4 ghost zones Parthenon "wants" us to have, if we need to use only fixed zones.
-    // TODO or do a bounds check in fix_U_to_P and average the available zones
     FLAG("Fixing U to P inversions");
     auto pmb = rc->GetBlockPointer();
     auto& G = pmb->coords;
@@ -81,13 +49,18 @@ void FixUtoP(std::shared_ptr<MeshBlockData<Real>>& rc, GridInt pflag, GridInt ff
 
     FloorPrescription floors = FloorPrescription(pmb->packages["GRMHD"]->AllParams());
 
-    IndexDomain domain = IndexDomain::entire;
-    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
-    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
-    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
-
-    // This has done nothing but cause problems, and I don't know why...
-    //if (ke != 1) ClearCorners(pmb, pflag); // Don't use zones in 3D physical corners. TODO persistent pflag?
+    int is = pmb->boundary_flag[BoundaryFace::inner_x1] == BoundaryFlag::block ?
+                pmb->cellbounds.is(IndexDomain::entire) : pmb->cellbounds.is(IndexDomain::interior);
+    int ie = pmb->boundary_flag[BoundaryFace::outer_x1] == BoundaryFlag::block ?
+                pmb->cellbounds.ie(IndexDomain::entire) : pmb->cellbounds.ie(IndexDomain::interior);
+    int js = pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::block ?
+                pmb->cellbounds.js(IndexDomain::entire) : pmb->cellbounds.js(IndexDomain::interior);
+    int je = pmb->boundary_flag[BoundaryFace::outer_x2] == BoundaryFlag::block ?
+                pmb->cellbounds.je(IndexDomain::entire) : pmb->cellbounds.je(IndexDomain::interior);
+    int ks = pmb->boundary_flag[BoundaryFace::inner_x3] == BoundaryFlag::block ?
+                pmb->cellbounds.ks(IndexDomain::entire) : pmb->cellbounds.ks(IndexDomain::interior);
+    int ke = pmb->boundary_flag[BoundaryFace::outer_x3] == BoundaryFlag::block ?
+                pmb->cellbounds.ke(IndexDomain::entire) : pmb->cellbounds.ke(IndexDomain::interior);
 
     // TODO This is a lot of if statements. Slow?
     pmb->par_for("fix_U_to_P", ks, ke, js, je, is, ie,
@@ -116,19 +89,18 @@ void FixUtoP(std::shared_ptr<MeshBlockData<Real>>& rc, GridInt pflag, GridInt ff
 
                 if(wsum < 1.e-10) {
                     // TODO set a flag and handle it outside
-#if 0
-                    printf("No neighbors were available!\n");
-#endif
+                    //printf("No neighbors were available!\n");
                 } else {
+                    //printf("Original: %g %g %g %g %g\nReplacement: %g %g %g %g %g\n",
+                    //P(0, k, j, i), P(1, k, j, i), P(2, k, j, i), P(3, k, j, i), P(4, k, j, i),
+                    //sum[0]/wsum, sum[1]/wsum, sum[2]/wsum, sum[3]/wsum, sum[4]/wsum);
                     FLOOP P(p, k, j, i) = sum[p]/wsum;
+                    // Make sure to keep lockstep
+                    p_to_u(G, P, eos, k, j, i, U);
 
-                    // Make sure fixed values still abide by floors
+                    // Make sure fixed values still abide by floors (floors keep lockstep)
                     fflag(k, j, i) |= apply_floors(G, P, U, eos, k, j, i, floors);
                     fflag(k, j, i) |= apply_ceilings(G, P, U, eos, k, j, i, floors);
-                    // Make sure the original conserved variables match
-                    FourVectors Dtmp;
-                    get_state(G, P, k, j, i, Loci::center, Dtmp);
-                    prim_to_flux(G, P, Dtmp, eos, k, j, i, Loci::center, 0, U);
                 }
             }
         }

@@ -98,8 +98,8 @@ TaskStatus SeedBField(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *
             GReal r = Xembed[1], th = Xembed[2];
 
             // Find rho (later u?) at corners by averaging from adjacent centers
-            Real rho_av = 0.25 * (P(prims::rho, NGHOST, j, i)     + P(prims::rho, NGHOST, j, i - 1) +
-                                  P(prims::rho, NGHOST, j - 1, i) + P(prims::rho, NGHOST, j - 1, i - 1));
+            Real rho_av = 0.25 * (P(prims::rho, ks, j, i)     + P(prims::rho, ks, j, i - 1) +
+                                  P(prims::rho, ks, j - 1, i) + P(prims::rho, ks, j - 1, i - 1));
 
             Real q;
             switch (b_field_flag)
@@ -166,9 +166,7 @@ TaskStatus NormalizeBField(std::shared_ptr<MeshBlockData<Real>>& rc, Real norm)
             P(prims::B2, k, j, i) *= norm;
             P(prims::B3, k, j, i) *= norm;
 
-            FourVectors Dtmp;
-            get_state(G, P, k, j, i, Loci::center, Dtmp);
-            prim_to_flux(G, P, Dtmp, eos, k, j, i, Loci::center, 0, U);
+            p_to_u(G, P, eos, k, j, i, U);
         }
     );
 

@@ -105,13 +105,19 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
         params.Add("recon", ReconstructionType::weno5);
     } else if (recon == "mp5") {
         params.Add("recon", ReconstructionType::mp5);
-    }  // TODO error on bad value...
+    } else {
+        throw std::argument_error("Reconstruction must be one of linear_mc, ppm, weno5, mp5!");
+    }
 
     // Diagnostic data
     int verbose = pin->GetOrAddInteger("debug", "verbose", 0);
     params.Add("verbose", verbose);
     int flag_verbose = pin->GetOrAddInteger("debug", "flag_verbose", 0);
     params.Add("flag_verbose", flag_verbose);
+    bool flag_save = pin->GetOrAddBoolean("debug", "flag_save", false);
+    params.Add("flag_save", flag_save);
+    int extra_checks = pin->GetOrAddInteger("debug", "extra_checks", 0);
+    params.Add("extra_checks", flag_verbose);
 
     // Floor parameters
     double rho_min_geom = pin->GetOrAddReal("floors", "rho_min_geom", 1.e-6);
@@ -127,13 +133,16 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     params.Add("bsq_over_u_max", bsq_over_u_max);
     double u_over_rho_max = pin->GetOrAddReal("floors", "u_over_rho_max", 100);
     params.Add("u_over_rho_max", u_over_rho_max);
-    bool temp_adjust_u = pin->GetOrAddBoolean("floors", "temp_adjust_u", true);
-    params.Add("temp_adjust_u", temp_adjust_u);
     double ktot_max = pin->GetOrAddReal("floors", "ktot_max", 3);
     params.Add("ktot_max", ktot_max);
 
     double gamma_max = pin->GetOrAddReal("floors", "gamma_max", 50);
     params.Add("gamma_max", gamma_max);
+
+    bool temp_adjust_u = pin->GetOrAddBoolean("floors", "temp_adjust_u", false);
+    params.Add("temp_adjust_u", temp_adjust_u);
+    bool fluid_frame = pin->GetOrAddBoolean("floors", "fluid_frame", false);
+    params.Add("fluid_frame", fluid_frame);
 
     // We generally carry around the conserved versions of varialbles, treating them as the fundamental ones
     // However, since most analysis tooling expects the primitives, we *output* those.
@@ -148,28 +157,32 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     m = Metadata({Metadata::Cell, Metadata::Derived, Metadata::OneCopy, Metadata::Intensive}, s_prims);
     fluid_state->AddField("c.c.bulk.prims", m, DerivedOwnership::shared);
 
-    // Max (i.e. positive) sound speed vector.  Easiest to keep here due to needing it for EstimateTimestep
+    // Maximum signal speed (magnitude).  Calculated for flux updates but needed for deciding timestep
     m = Metadata({Metadata::Face, Metadata::Derived, Metadata::OneCopy, Metadata::Vector});
     fluid_state->AddField("f.f.bulk.ctop", m, DerivedOwnership::unique);
 
     // Add jcon as an output-only calculation, likely overriding MeshBlock::UserWorkBeforeOutput
-    m = Metadata({Metadata::Cell, Metadata::Derived, Metadata::OneCopy}, s_fourvector);
-    fluid_state->AddField("c.c.bulk.jcon", m, DerivedOwnership::unique);
+    // m = Metadata({Metadata::Cell, Metadata::Derived, Metadata::OneCopy}, s_fourvector);
+    // fluid_state->AddField("c.c.bulk.jcon", m, DerivedOwnership::unique);
 
-    fluid_state->FillDerived = GRMHD::FillDerived;
-    fluid_state->CheckRefinement = nullptr;
-    fluid_state->EstimateTimestep = GRMHD::EstimateTimestep;
+    m = Metadata({Metadata::Cell, Metadata::Derived, Metadata::OneCopy}, 1);
+    fluid_state->AddField("c.c.bulk.pflag", m, DerivedOwnership::unique);
+    fluid_state->AddField("c.c.bulk.fflag", m, DerivedOwnership::unique);
+
+    fluid_state->FillDerivedBlock = GRMHD::UtoP;
+    fluid_state->CheckRefinementBlock = nullptr;
+    fluid_state->EstimateTimestepBlock = GRMHD::EstimateTimestep;
     return fluid_state;
 }
 
 /**
- * Get the primitive variables, which in Parthenon's nomenclature are "derived"
+ * Get the primitive variables, which in Parthenon's nomenclature are "derived".
+ * Also applies floors to the calculated primitives, and fixes up any inversion errors
  *
- * Note that this step also applies the floors and fixups. Basically it is:
  * input: U, whatever form
  * output: U and P match with inversion errors corrected, and obey floors
  */
-void FillDerived(std::shared_ptr<MeshBlockData<Real>>& rc)
+void UtoP(std::shared_ptr<MeshBlockData<Real>>& rc)
 {
     FLAG("Filling Derived");
     auto pmb = rc->GetBlockPointer();
@@ -190,7 +203,6 @@ void FillDerived(std::shared_ptr<MeshBlockData<Real>>& rc)
 
     EOS* eos = pmb->packages["GRMHD"]->Param<EOS*>("eos");
 
-
     // Pull out a struct of just the actual floor values for speed
     FloorPrescription floors = FloorPrescription(pmb->packages["GRMHD"]->AllParams());
 
@@ -199,13 +211,21 @@ void FillDerived(std::shared_ptr<MeshBlockData<Real>>& rc)
     // Get the primitives from our conserved versions
     // Note this covers ghost zones!  This is intentional, as primitives in
     // ghost zones are needed for reconstruction
-    IndexDomain domain = IndexDomain::entire;
-    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
-    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
-    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
+    int is = pmb->boundary_flag[BoundaryFace::inner_x1] == BoundaryFlag::block ?
+                pmb->cellbounds.is(IndexDomain::entire) : pmb->cellbounds.is(IndexDomain::interior);
+    int ie = pmb->boundary_flag[BoundaryFace::outer_x1] == BoundaryFlag::block ?
+                pmb->cellbounds.ie(IndexDomain::entire) : pmb->cellbounds.ie(IndexDomain::interior);
+    int js = pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::block ?
+                pmb->cellbounds.js(IndexDomain::entire) : pmb->cellbounds.js(IndexDomain::interior);
+    int je = pmb->boundary_flag[BoundaryFace::outer_x2] == BoundaryFlag::block ?
+                pmb->cellbounds.je(IndexDomain::entire) : pmb->cellbounds.je(IndexDomain::interior);
+    int ks = pmb->boundary_flag[BoundaryFace::inner_x3] == BoundaryFlag::block ?
+                pmb->cellbounds.ks(IndexDomain::entire) : pmb->cellbounds.ks(IndexDomain::interior);
+    int ke = pmb->boundary_flag[BoundaryFace::outer_x3] == BoundaryFlag::block ?
+                pmb->cellbounds.ke(IndexDomain::entire) : pmb->cellbounds.ke(IndexDomain::interior);
     pmb->par_for("U_to_P", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D {
-            pflag(k, j, i) = U_to_P(G, U, eos, k, j, i, Loci::center, P);
+            pflag(k, j, i) = u_to_p(G, U, eos, k, j, i, Loci::center, P);
 
             // Apply the floors in the same pass
             fflag(k, j, i) = 0;
@@ -213,13 +233,14 @@ void FillDerived(std::shared_ptr<MeshBlockData<Real>>& rc)
             // Fixup_floor involves another U_to_P call.  Hide the pflag in bottom 5 bits and retrieve both
             int comboflag = apply_floors(G, P, U, eos, k, j, i, floors);
             fflag(k, j, i) |= (comboflag / HIT_FLOOR_GEOM_RHO) * HIT_FLOOR_GEOM_RHO;
-            int pflag_floor = comboflag % HIT_FLOOR_GEOM_RHO;
-            if (pflag_floor != 0) {
-                pflag(k, j, i) = pflag_floor;
-            }
+            // If the floor was applied (i.e. did an inversion), overwrite the original flag
+            if (fflag(k, j, i)) pflag(k, j, i) = comboflag % HIT_FLOOR_GEOM_RHO;
 
             // Apply ceilings *after* floors, to make the temperature ceiling better-behaved
-            fflag(k, j, i) |= apply_ceilings(G, P, U, eos, k, j, i, floors);
+            int fflag_c = apply_ceilings(G, P, U, eos, k, j, i, floors);
+            fflag(k, j, i) |= fflag_c;
+            // Since ceilings are applied without even a U_to_P call, avoid fixups
+            if (fflag_c) pflag(k, j, i) = InversionStatus::success;
         }
     );
     FLAG("Filled and Floored");
@@ -230,32 +251,32 @@ void FillDerived(std::shared_ptr<MeshBlockData<Real>>& rc)
     // Note I could separate this into a new step if pflag/fflag could be moved out
     FixUtoP(rc, pflag, fflag);
 
-    // Debugging/diagnostic info about floor and inversion flags. Also could be separate if pflag/fflag are state variables.
+    // Debugging/diagnostic info about floor and inversion flags.
+    // Also should be separate...
+    // Note we only print flags in the interior, borders are covered either by other blocks,
+    // or by the outflow/polar conditions later
     int print_flags = pmb->packages["GRMHD"]->Param<int>("flag_verbose");
-    if (print_flags) {
+    bool save_flags = pmb->packages["GRMHD"]->Param<bool>("flag_save");
+    if (print_flags > 0) {
         auto fflag_host = fflag.GetHostMirrorAndCopy();
         auto pflag_host = pflag.GetHostMirrorAndCopy();
+        int npflags = CountPFlags(pmb, pflag_host, IndexDomain::interior, print_flags);
+        int nfflags = CountFFlags(pmb, fflag_host, IndexDomain::interior, print_flags);
 
-        if (print_flags == 2) {
-            CountPFlags(pmb, pflag_host, IndexDomain::interior, true);
-            CountFFlags(pmb, fflag_host, IndexDomain::interior, true);
+        cerr << "DivB: " << MaxDivB(rc, IndexDomain::interior) << endl;
+        // Anything you want here
 
-            // TODO verbose divb?
-            if (n3 > 1) {
-                cout << "DivB: " << MaxDivB(rc, IndexDomain::interior) << endl;
+        //cerr << string_format("UtoP domain: %d-%d,%d-%d,%d-%d",is,ie,js,je,ks,ke) << endl;
+    }
+    if (save_flags) {
+        GridScalar pflag_save = rc->Get("c.c.bulk.pflag").data;
+        GridScalar fflag_save = rc->Get("c.c.bulk.pflag").data;
+        pmb->par_for("save_flags", ks, ke, js, je, is, ie,
+            KOKKOS_LAMBDA_3D {
+                pflag_save(k,j,i) = pflag(k,j,i);
+                fflag_save(k,j,i) = fflag(k,j,i);
             }
-        } else if (print_flags == 1) {
-            // TODO option for entire?
-            int npflags = CountPFlags(pmb, pflag_host, IndexDomain::interior, false);
-            if (npflags > 0) cout << "PFLAGS: " << npflags << endl;
-            int nfflags = CountFFlags(pmb, fflag_host, IndexDomain::interior, false);
-            if (nfflags > 0) cout << "FFLAGS: " << nfflags << endl;
-
-            // TODO for divB: 2D version, conserved variables version
-            if (n3 > 1) {
-                cout << "DivB: " << MaxDivB(rc, IndexDomain::interior) << endl;
-            }
-        }
+        );
     }
 }
 
@@ -288,6 +309,88 @@ TaskStatus AddSourceTerm(std::shared_ptr<MeshBlockData<Real>>& rc, std::shared_p
     );
 
     FLAG("Applied");
+    return TaskStatus::complete;
+}
+
+/**
+ * Calculate dU/dt from a set of fluxes.
+ * Shortcut for Parthenon's FluxDivergence & GRMHD's AddSourceTerm
+ *
+ * @param rc is the current stage's container
+ * @param base is the base container containing the global dUdt term
+ */
+TaskStatus ApplyFluxes2D(std::shared_ptr<MeshBlockData<Real>>& rc, std::shared_ptr<MeshBlockData<Real>>& dudt)
+{
+    FLAG("Applying fluxes");
+    auto pmb = rc->GetBlockPointer();
+    IndexDomain domain = IndexDomain::interior;
+    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
+    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
+    GridVars U = rc->Get("c.c.bulk.cons").data;
+    GridVars F1 = rc->Get("c.c.bulk.cons").flux[X1DIR];
+    GridVars F2 = rc->Get("c.c.bulk.cons").flux[X2DIR];
+    GridVars P = rc->Get("c.c.bulk.prims").data;
+    auto& G = pmb->coords;
+
+    EOS* eos = pmb->packages["GRMHD"]->Param<EOS*>("eos");
+
+    // Unpack for kernel
+    auto dUdt = dudt->Get("c.c.bulk.cons").data;
+
+    pmb->par_for("apply_fluxes", js, je, is, ie,
+        KOKKOS_LAMBDA_2D {
+            // Calculate the source term and apply it in 1 go (since it's stencil-1)
+            FourVectors Dtmp;
+            Real dU[NPRIM] = {0};
+            get_state(G, P, 0, j, i, Loci::center, Dtmp);
+            get_fluid_source(G, P, Dtmp, eos, 0, j, i, dU);
+
+            PLOOP dUdt(p, 0, j, i) = (F1(p, 0, j, i) - F1(p, 0, j, i+1)) / G.dx1v(i) +
+                                     (F2(p, 0, j, i) - F2(p, 0, j+1, i)) / G.dx2v(j) +
+                                     dU[p];
+        }
+    );
+    FLAG("Applied");
+
+    return TaskStatus::complete;
+}
+TaskStatus ApplyFluxes(std::shared_ptr<MeshBlockData<Real>>& rc, std::shared_ptr<MeshBlockData<Real>>& dudt)
+{
+    FLAG("Applying fluxes");
+    auto pmb = rc->GetBlockPointer();
+    IndexDomain domain = IndexDomain::interior;
+    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
+    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
+    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
+    if (ks == ke) return ApplyFluxes2D(rc, dudt);
+    GridVars U = rc->Get("c.c.bulk.cons").data;
+    GridVars F1 = rc->Get("c.c.bulk.cons").flux[X1DIR];
+    GridVars F2 = rc->Get("c.c.bulk.cons").flux[X2DIR];
+    GridVars F3 = rc->Get("c.c.bulk.cons").flux[X3DIR];
+    GridVars P = rc->Get("c.c.bulk.prims").data;
+    auto& G = pmb->coords;
+
+    EOS* eos = pmb->packages["GRMHD"]->Param<EOS*>("eos");
+
+    // Unpack for kernel
+    auto dUdt = dudt->Get("c.c.bulk.cons").data;
+
+    pmb->par_for("apply_fluxes", ks, ke, js, je, is, ie,
+        KOKKOS_LAMBDA_3D {
+            // Calculate the source term and apply it in 1 go (since it's stencil-1)
+            FourVectors Dtmp;
+            Real dU[NPRIM] = {0};
+            get_state(G, P, k, j, i, Loci::center, Dtmp);
+            get_fluid_source(G, P, Dtmp, eos, k, j, i, dU);
+
+            PLOOP dUdt(p, k, j, i) = (F1(p, k, j, i) - F1(p, k, j, i+1)) / G.dx1v(i) +
+                                     (F2(p, k, j, i) - F2(p, k, j+1, i)) / G.dx2v(j) +
+                                     (F3(p, k, j, i) - F3(p, k+1, j, i)) / G.dx3v(k) +
+                                     dU[p];
+        }
+    );
+    FLAG("Applied");
+
     return TaskStatus::complete;
 }
 

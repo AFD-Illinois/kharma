@@ -53,7 +53,7 @@ TaskStatus ApplyFloors(std::shared_ptr<MeshBlockData<Real>>& rc)
 {
     FLAG("Apply floors");
     auto pmb = rc->GetBlockPointer();
-    IndexDomain domain = IndexDomain::interior;
+    IndexDomain domain = IndexDomain::entire;
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);

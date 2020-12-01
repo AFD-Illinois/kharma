@@ -51,7 +51,7 @@ enum Loci{face1=0, face2, face3, center, corner};
 enum prims{rho=0, u, u1, u2, u3, B1, B2, B3};
 // Just the fluid variables, among the primitives
 #define NFLUID 5
-#define FLOOP for(int p=0; p < NFLUID; p++)
+#define FLOOP for(int p = 0; p < NFLUID; ++p)
 
 // Emulate old names for possible stronger typing...
 using GridScalar = parthenon::ParArrayND<Real>;
@@ -72,6 +72,7 @@ using GeomTensor3 = parthenon::ParArrayND<Real>;
 // TODO separate macros for return type if this becomes a thing?  Or don't macro at all
 #define KOKKOS_LAMBDA_1D_REDUCE KOKKOS_LAMBDA (const int &i, Real &local_result)
 // This is used for timestep and divB, which are explicitly double.  Lots of work would need to be done to Parthenon if Real != double though
+#define KOKKOS_LAMBDA_2D_REDUCE KOKKOS_LAMBDA (const int &j, const int &i, double &local_result)
 #define KOKKOS_LAMBDA_3D_REDUCE KOKKOS_LAMBDA (const int &k, const int &j, const int &i, double &local_result)
 #define KOKKOS_LAMBDA_3D_REDUCE_INT KOKKOS_LAMBDA (const int &k, const int &j, const int &i, int &local_result)
 

@@ -56,7 +56,12 @@ void InitializeFMTorus(MeshBlock *pmb, const GRCoordinates& G, GridVars P, const
     // Fishbone-Moncrief parameters
     Real l = lfish_calc(ksc.a, rmax);
 
-    FLAG("Initializing rho");
+    // Example of pulling stuff host-side. Maybe make all initializations print stuff like this?
+    // double gam_host;
+    // Kokkos::Max<Real> gam_reducer(gam_host);
+    // pmb->par_reduce("fm_torus_init", 0, 0, KOKKOS_LAMBDA_1D_REDUCE { local_result = eos->gam; }, gam_reducer);
+    // cout << string_format("Initializing Fishbone-Moncrief torus, gam=%g", gam_host) << endl;
+
     pmb->par_for("fm_torus_init", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D {
             GReal Xnative[GR_DIM], Xembed[GR_DIM];
@@ -71,7 +76,7 @@ void InitializeFMTorus(MeshBlock *pmb, const GRCoordinates& G, GridVars P, const
             // Region inside magnetized torus; u^i is calculated in
             // Boyer-Lindquist coordinates, as per Fishbone & Moncrief,
             // so it needs to be transformed at the end
-            // everything outside/else is initialized to 0 already
+            // everything outside is left 0 to be added by the floors
             if (lnh >= 0. && r >= rin) {
                 Real r2 = r*r;
                 Real a2 = ksc.a * ksc.a;
@@ -107,17 +112,13 @@ void InitializeFMTorus(MeshBlock *pmb, const GRCoordinates& G, GridVars P, const
                 G.gcon(Loci::center, j, i, gcon);
                 fourvel_to_prim(gcon, ucon_mks, u_prim);
 
-                P(prims::rho, k, j, i) = rho;
-                P(prims::u, k, j, i) = u;
-                P(prims::u1, k, j, i) = u_prim[1];
-                P(prims::u2, k, j, i) = u_prim[2];
-                P(prims::u3, k, j, i) = u_prim[3];
-            } else {
-                P(prims::rho, k, j, i) = 1e-13;
-                P(prims::u, k, j, i) = 1e-15;
-                P(prims::u1, k, j, i) = 0;
-                P(prims::u2, k, j, i) = 0;
-                P(prims::u3, k, j, i) = 0;
+                if (rho > 1.e-10 && u > 1.e-10 && u_prim[3] > 1.e-10) {
+                    P(prims::rho, k, j, i) = rho;
+                    P(prims::u, k, j, i) = u;
+                    P(prims::u1, k, j, i) = u_prim[1];
+                    P(prims::u2, k, j, i) = u_prim[2];
+                    P(prims::u3, k, j, i) = u_prim[3];
+                }
             }
         }
     );
@@ -189,7 +190,9 @@ void PerturbU(MeshBlock *pmb, GridVars P, Real u_jitter, int rng_seed=31337)
     pmb->par_for("perturb_u", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D {
             gen_type rgen = rand_pool.get_state();
-            P(prims::u, k, j, i) *= 1. + Kokkos::rand<gen_type, Real>::draw(rgen, -u_jitter/2, u_jitter/2);
+            if (P(prims::rho, k, j, i) > 1.e-5) {
+                P(prims::u, k, j, i) *= 1. + Kokkos::rand<gen_type, Real>::draw(rgen, -u_jitter/2, u_jitter/2);
+            }
             rand_pool.free_state(rgen);
         }
     );

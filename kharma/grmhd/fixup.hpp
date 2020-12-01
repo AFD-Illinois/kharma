@@ -39,11 +39,6 @@
 #include "floors.hpp"
 
 /**
- * Clear corner zones from being used for fixups
- */
-void ClearCorners(std::shared_ptr<MeshBlock> pmb, GridInt pflag);
-
-/**
  * Smooth over inversion failures by averaging values from each neighboring zone
  * a.k.a. Diffusion?  What diffusion?  There is no diffusion here.
  *

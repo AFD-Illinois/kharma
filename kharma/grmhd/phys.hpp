@@ -42,10 +42,10 @@
  * Device-side physics functions
  * These functions mostly have several overloads, related to local vs global variables.
  *
- * One version usually takes a local cache e.g. P[GR_DIM] of a variable, in this case primitives in a single zone
- * The other version(s) take e.g. P, the pointer to all primitives, which will be indexed P(i,j,k) to get the zone's values
+ * One version usually takes a local cache e.g. P[NPRIM] of state indexed P[p]
+ * The other version(s) take e.g. P, the pointer to the full array indexed by P(p,i,j,k)
  *
- * This allows easy fusing/splitting of loops, while avoiding unnecessary global writes of temporary variables
+ * This allows easy fusing/splitting of loops & use in different contexts
  */
 
 /**
@@ -97,7 +97,7 @@ KOKKOS_INLINE_FUNCTION void mhd_calc(const Real P[NPRIM], const FourVectors& D, 
 }
 
 /**
- *  Calculate magnetic field four-vector, see Gammie et al '03
+ * Calculate magnetic field four-vector, see Gammie et al '03
  */
 KOKKOS_INLINE_FUNCTION void bcon_calc(const GridVars P, FourVectors& D,
                                       const int& k, const int& j, const int& i,
@@ -129,7 +129,7 @@ KOKKOS_INLINE_FUNCTION void bcon_calc(const Real P[NPRIM], FourVectors& D,
 }
 
 /**
- *  Find gamma-factor of the fluid w.r.t. normal observer
+ * Find gamma-factor of the fluid w.r.t. normal observer
  *
  * TODO Error or print/clip if outside min or max value
  */
@@ -142,8 +142,8 @@ KOKKOS_INLINE_FUNCTION Real mhd_gamma_calc(const GRCoordinates &G, const GridVar
     G.gcov(loc, j, i, 2, 2) * P(prims::u2, k, j, i) * P(prims::u2, k, j, i) +
     G.gcov(loc, j, i, 3, 3) * P(prims::u3, k, j, i) * P(prims::u3, k, j, i) +
     2. * (G.gcov(loc, j, i, 1, 2) * P(prims::u1, k, j, i) * P(prims::u2, k, j, i) +
-            G.gcov(loc, j, i, 1, 3) * P(prims::u1, k, j, i) * P(prims::u3, k, j, i) +
-            G.gcov(loc, j, i, 2, 3) * P(prims::u2, k, j, i) * P(prims::u3, k, j, i));
+          G.gcov(loc, j, i, 1, 3) * P(prims::u1, k, j, i) * P(prims::u3, k, j, i) +
+          G.gcov(loc, j, i, 2, 3) * P(prims::u2, k, j, i) * P(prims::u3, k, j, i));
 
     return sqrt(1. + qsq);
 }
@@ -155,8 +155,8 @@ KOKKOS_INLINE_FUNCTION Real mhd_gamma_calc(const GRCoordinates &G, const Real P[
     G.gcov(loc, j, i, 2, 2) * P[prims::u2] * P[prims::u2] +
     G.gcov(loc, j, i, 3, 3) * P[prims::u3] * P[prims::u3] +
     2. * (G.gcov(loc, j, i, 1, 2) * P[prims::u1] * P[prims::u2] +
-            G.gcov(loc, j, i, 1, 3) * P[prims::u1] * P[prims::u3] +
-            G.gcov(loc, j, i, 2, 3) * P[prims::u2] * P[prims::u3]);
+          G.gcov(loc, j, i, 1, 3) * P[prims::u1] * P[prims::u3] +
+          G.gcov(loc, j, i, 2, 3) * P[prims::u2] * P[prims::u3]);
 
     return sqrt(1. + qsq);
 }
@@ -303,6 +303,36 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates &G, const Real P[NP
     PLOOP flux[p] *= G.gdet(loc, j, i);
 }
 
+/**
+ * Get the conserved variables corresponding to primitives in a zone
+ * 
+ * This is an alias of prim_to_flux at the center in zero direction, using a local cache of 4-vectors
+ */
+KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates &G, const GridVars P, const EOS* eos,
+                                         const int& k, const int& j, const int& i,
+                                         GridVars U)
+{
+    FourVectors Dtmp;
+    get_state(G, P, k, j, i, Loci::center, Dtmp);
+    prim_to_flux(G, P, Dtmp, eos, k, j, i, Loci::center, 0, U);
+}
+KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates &G, const GridVars P, const EOS* eos,
+                                         const int& k, const int& j, const int& i,
+                                         Real U[NPRIM])
+{
+    FourVectors Dtmp;
+    get_state(G, P, k, j, i, Loci::center, Dtmp);
+    prim_to_flux(G, P, Dtmp, eos, k, j, i, Loci::center, 0, U);
+}
+KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates &G, const Real P[NPRIM], const EOS* eos,
+                                         const int& k, const int& j, const int& i,
+                                         Real U[NPRIM])
+{
+    FourVectors Dtmp;
+    get_state(G, P, k, j, i, Loci::center, Dtmp);
+    prim_to_flux(G, P, Dtmp, eos, k, j, i, Loci::center, 0, U);
+}
+
 
 /**
  *  Calculate components of magnetosonic velocity from primitive variables
@@ -311,6 +341,7 @@ KOKKOS_INLINE_FUNCTION void mhd_vchar(const GRCoordinates &G, const GridVars P, 
                                       const int& k, const int& j, const int& i, const Loci loc, const int dir,
                                       Real& cmax, Real& cmin)
 {
+    // TODO code sharing...
     Real discr, vp, vm, bsq, ee, ef, va2, cs2, cms2, u;
     Real Asq, Bsq, Au, Bu, AB, Au2, Bu2, AuBu, A, B, C;
     Real Acov[GR_DIM] = {0}, Bcov[GR_DIM] = {0};

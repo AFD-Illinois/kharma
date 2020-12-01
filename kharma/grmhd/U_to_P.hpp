@@ -48,9 +48,9 @@ KOKKOS_INLINE_FUNCTION Real Wp_func(const GRCoordinates &G, const GridVars P, co
                                     const int& k, const int& j, const int& i, const Loci loc, InversionStatus &eflag);
 
 /**
- * Recover primitive variables via 1D Newtonian solve, see Mignone & McKinney '07
+ * Try to recover primitive variables in a zone via 1D Newtonian solve, see Mignone & McKinney '07
  */
-KOKKOS_INLINE_FUNCTION InversionStatus U_to_P(const GRCoordinates &G, const GridVars U, const EOS* eos,
+KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const GridVars U, const EOS* eos,
                                   const int& k, const int& j, const int& i, const Loci loc, GridVars P)
 {
     InversionStatus eflag = InversionStatus::success;
@@ -65,7 +65,7 @@ KOKKOS_INLINE_FUNCTION InversionStatus U_to_P(const GRCoordinates &G, const Grid
     P(prims::B3, k, j, i) = U(prims::B3, k, j, i) / gdet;
 
     // Catch negative density
-    if (U(prims::rho, k, j, i) < 0.) {
+    if (U(prims::rho, k, j, i) <= 0.) {
         return InversionStatus::neg_input;
     }
 
@@ -153,9 +153,10 @@ KOKKOS_INLINE_FUNCTION InversionStatus U_to_P(const GRCoordinates &G, const Grid
 
     // Find utsq, gamma, rho0 from Wp
     Real gamma = gamma_func(Bsq, D, QdB, Qtsq, Wp, eflag);
+    if (eflag) return eflag;
     Real rho0 = D / gamma;
     Real W = Wp + D;
-    Real w = W / pow(gamma, 2);
+    Real w = W / (gamma*gamma);
     Real p = eos->p_w(rho0, w);
     Real u = w - (rho0 + p);
 

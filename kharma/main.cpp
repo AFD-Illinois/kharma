@@ -72,17 +72,17 @@ int main(int argc, char *argv[])
 {
     ParthenonManager pman;
 
+    // TODO there's e.g. UserWorkBeforeOutput I might want to look into
     pman.app_input->ProcessPackages = KHARMA::ProcessPackages;
     pman.app_input->ProcessProperties = KHARMA::ProcessProperties;
     pman.app_input->ProblemGenerator = KHARMA::ProblemGenerator;
-    //pman.app_input->UserWorkAfterLoop = KHARMA::UserWorkAfterLoop;
-    //pman.app_input->SetFillDerivedFunctions = KHARMA::SetFillDerivedFunctions;
 
     // Parthenon init includes Kokkos, MPI, parses parameters & cmdline,
     // then calls ProcessPackages and ProcessProperties, then constructs the Mesh
     FLAG("Parthenon Initializing");
     auto manager_status = pman.ParthenonInit(argc, argv);
     if (manager_status == ParthenonStatus::complete) {
+        // TODO use this as an option to just write out the gridfile, initial mesh, etc.
         pman.ParthenonFinalize();
         return 0;
     }

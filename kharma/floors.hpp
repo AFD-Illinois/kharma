@@ -46,11 +46,12 @@ class FloorPrescription {
         double rho_min_geom, u_min_geom, r_char;
         // Dynamic limits on magnetization/temperature
         double bsq_over_rho_max, bsq_over_u_max, u_over_rho_max;
-        bool temp_adjust_u;
         // Limit entropy -- currently only for legacy but potentially useful
         double ktot_max;
         // Limit fluid Lorentz factor
         double gamma_max;
+        // Floor options
+        bool temp_adjust_u, fluid_frame;
 
         FloorPrescription(parthenon::Params& params)
         {
@@ -61,10 +62,11 @@ class FloorPrescription {
             bsq_over_rho_max = params.Get<Real>("bsq_over_rho_max");
             bsq_over_u_max = params.Get<Real>("bsq_over_u_max");
             u_over_rho_max = params.Get<Real>("u_over_rho_max");
-            temp_adjust_u = params.Get<bool>("temp_adjust_u");
-
             ktot_max = params.Get<Real>("ktot_max");
             gamma_max = params.Get<Real>("gamma_max");
+
+            temp_adjust_u = params.Get<bool>("temp_adjust_u");
+            fluid_frame = params.Get<bool>("fluid_frame");
         }
 };
 
@@ -96,22 +98,30 @@ KOKKOS_INLINE_FUNCTION int apply_ceilings(const GRCoordinates& G, GridVars P, Gr
         P(prims::u2, k, j, i) *= f;
         P(prims::u3, k, j, i) *= f;
 
-        FourVectors Dtmp;
-        get_state(G, P, k, j, i, Loci::center, Dtmp);
-        prim_to_flux(G, P, Dtmp, eos, k, j, i, Loci::center, 0, U);
+        // Keep lockstep!
+        p_to_u(G, P, eos, k, j, i, U);
     }
 
-    // Limit the entropy by controlling u, to avoid anomalous cooling from funnel wall
+    // 2. Limit the entropy by controlling u, to avoid anomalous cooling from funnel wall
     // Pretty much for matching legacy runs
     Real ktot = (eos->gam - 1.) * P(prims::u, k, j, i) / pow(P(prims::rho, k, j, i), eos->gam);
     if (ktot > floors.ktot_max) {
-        P(prims::u, k, j, i) = floors.ktot_max / ktot * P(prims::u, k, j, i);
         fflag |= HIT_FLOOR_KTOT;
+
+        P(prims::u, k, j, i) = floors.ktot_max / ktot * P(prims::u, k, j, i);
+
+        // Keep lockstep!
+        p_to_u(G, P, eos, k, j, i, U);
     }
 
+    // 3. Limit the temperature by controlling u.  Can optionally add density instead, implemented in apply_floors
     if (floors.temp_adjust_u && P(prims::u, k, j, i) / P(prims::rho, k, j, i) > floors.u_over_rho_max) {
-        P(prims::u, k, j, i) = floors.u_over_rho_max * P(prims::rho, k, j, i);
         fflag |= HIT_FLOOR_TEMP;
+
+        P(prims::u, k, j, i) = floors.u_over_rho_max * P(prims::rho, k, j, i);
+
+        // Keep lockstep!
+        p_to_u(G, P, eos, k, j, i, U);
     }
 
     return fflag;
@@ -183,33 +193,37 @@ KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, GridVars P, Grid
     fflag |= (uflr_b > u) * HIT_FLOOR_B_U;
 
     InversionStatus pflag = InversionStatus::success;
-    if (rhoflr_max > rho || uflr_max > u) { // Apply floors
+    if (floors.fluid_frame) {
+        P(prims::rho, k, j, i) += max(0., rhoflr_max - rho);
+        P(prims::u, k, j, i) += max(0., uflr_max - u);
+        p_to_u(G, P, eos, k, j, i, U);
+    } else {
+        if (rhoflr_max > rho || uflr_max > u) { // Apply floors
 
-        // Add the material in the normal observer frame, by:
-        // Initializing a dummy fluid parcel
-        Real Pnew[NPRIM] = {0}, Unew[NPRIM] = {0};
-        FourVectors Dnew;
+            // Add the material in the normal observer frame, by:
+            // Initializing a dummy fluid parcel
+            Real Pnew[NPRIM] = {0}, Unew[NPRIM] = {0};
 
-        // Add mass and internal energy to the primitives, but not velocity
-        Pnew[prims::rho] = max(0., rhoflr_max - rho);
-        Pnew[prims::u] = max(0., uflr_max - u);
+            // Add mass and internal energy to the primitives, but not velocity
+            Pnew[prims::rho] = max(0., rhoflr_max - rho);
+            Pnew[prims::u] = max(0., uflr_max - u);
 
-        // Get conserved variables for the new parcel
-        get_state(G, Pnew, k, j, i, Loci::center, Dnew);
-        prim_to_flux(G, Pnew, Dnew, eos, k, j, i, Loci::center, 0, Unew);
+            // Get conserved variables for the new parcel
+            p_to_u(G, Pnew, eos, k, j, i, Unew);
 
-        // And for the current state, by re-using Dtmp from above
-        prim_to_flux(G, P, Dtmp, eos, k, j, i, Loci::center, 0, U);
+            // And for the current state, by re-using Dtmp from above
+            prim_to_flux(G, P, Dtmp, eos, k, j, i, Loci::center, 0, U);
 
-        // Add new conserved mass/energy to the current "conserved" state
-        PLOOP {
-            U(p, k, j, i) += Unew[p];
-            // This is just the guess at primitive values, needed for U_to_P to converge.
-            P(p, k, j, i) += Pnew[p];
+            // Add new conserved mass/energy to the current "conserved" state
+            PLOOP {
+                U(p, k, j, i) += Unew[p];
+                // This is just the guess at primitive values, needed for U_to_P to converge.
+                P(p, k, j, i) += Pnew[p];
+            }
+
+            // Recover primitive variables from conserved versions
+            pflag = u_to_p(G, U, eos, k, j, i, Loci::center, P);
         }
-
-        // Recover primitive variables from conserved versions
-        pflag = U_to_P(G, U, eos, k, j, i, Loci::center, P);
     }
     return fflag + pflag;
 }

@@ -103,13 +103,16 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
 
     // TODO namespace this outside "torus," it could be added to anything
     Real u_jitter = pin->GetOrAddReal("torus", "u_jitter", 0.0);
-    int rng_seed = pin->GetOrAddInteger("torus", "rng_seed", 31337);
+    int rng_seed = pin->GetOrAddInteger("torus", "rng_seed", 1337);
     if (u_jitter > 0.0) {
         FLAG("Applying U perturbation");
         PerturbU(pmb, P, u_jitter, rng_seed + pmb->gid);
     }
 
-    IndexDomain domain = IndexDomain::entire; // TODO why does a boundary sync not obviate the need?
+    // We finish by filling the conserved variables U,
+    // which we'll treat as the independent/fundamental state.
+    // P is filled again from this later on
+    IndexDomain domain = IndexDomain::entire;
     IndexRange ib = pmb->cellbounds.GetBoundsI(domain);
     IndexRange jb = pmb->cellbounds.GetBoundsJ(domain);
     IndexRange kb = pmb->cellbounds.GetBoundsK(domain);
@@ -117,15 +120,13 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
     FLAG("First P->U");
     pmb->par_for("first_U", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_3D {
-            FourVectors Dtmp;
-            get_state(G, P, k, j, i, Loci::center, Dtmp);
-            prim_to_flux(G, P, Dtmp, eos, k, j, i, Loci::center, 0, U);
+            p_to_u(G, P, eos, k, j, i, U);
         }
     );
 
     // Apply any floors. Unnecessary as Parthenon does an initial FillDerived call
-    //FLAG("First Floors");
-    //ApplyFloors(rc);
+    FLAG("First Floors");
+    ApplyFloors(rc);
 
     FLAG("Initialized Block");
 }
@@ -221,6 +222,6 @@ void SyncAllBounds(Mesh *pmesh)
         ApplyCustomBoundaries(rc);
 
         // Fill P again, including ghost zones
-        parthenon::FillDerivedVariables::FillDerived(rc);
+        parthenon::Update::FillDerived(rc);
     }
 }

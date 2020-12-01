@@ -34,6 +34,8 @@
 
 #include "fluxes.hpp"
 
+#include "debug.hpp"
+
 using namespace parthenon;
 
 TaskStatus HLLE::GetFlux(std::shared_ptr<MeshBlockData<Real>>& rc, const int& dir)
@@ -45,11 +47,15 @@ TaskStatus HLLE::GetFlux(std::shared_ptr<MeshBlockData<Real>>& rc, const int& di
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
     // 1-zone halo in nontrivial dimensions. Don't calculate/allow fluxes in trivial dimensions
-    ks = (ks == 0) ? 0 : ks - 1; ke = (ke == 0) ? 0 : ke + 1;
+    int halo = 1;
+    ks = (ks == 0) ? 0 : ks - halo;
+    ke = (ke == 0) ? 0 : ke + halo;
     if (ke == 0 && dir == X3DIR) return TaskStatus::complete;
-    js = (js == 0) ? 0 : js - 1; je = (je == 0) ? 0 : je + 1;
+    js = (js == 0) ? 0 : js - halo;
+    je = (je == 0) ? 0 : je + halo;
     if (je == 0 && dir == X2DIR) return TaskStatus::complete;
-    is = is - 1; ie = ie + 1;
+    is = is - halo;
+    ie = ie + halo;
 
     int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
     int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
@@ -173,6 +179,10 @@ TaskStatus HLLE::GetFlux(std::shared_ptr<MeshBlockData<Real>>& rc, const int& di
             });
         }
     );
+
+    if (pmb->packages["GRMHD"]->Param<int>("extra_checks") > 0) {
+        CheckNaN(rc, dir); // Checks the ctop vector for bad things
+    }
 
     FLAG(string_format("Finished recon and flux X%d", dir));
     return TaskStatus::complete;

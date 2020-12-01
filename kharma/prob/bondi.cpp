@@ -96,10 +96,8 @@ void ApplyBondiBoundary(std::shared_ptr<MeshBlockData<Real>>& rc)
     int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
     pmb->par_for("bondi_boundary", kb.s, kb.e, jb.s, jb.e, ib.e+1, n1-1,
         KOKKOS_LAMBDA_3D {
-            FourVectors Dtmp;
             get_prim_bondi(G, cs, P, eos, bl, ks, mdot, rs, k, j, i);
-            get_state(G, P, k, j, i, Loci::center, Dtmp);
-            prim_to_flux(G, P, Dtmp, eos, k, j, i, Loci::center, 0, U);
+            p_to_u(G, P, eos, k, j, i, U);
         }
     );
 }

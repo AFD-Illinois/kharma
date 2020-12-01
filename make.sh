@@ -39,6 +39,11 @@ fi
 mkdir -p build
 cd build
 
+# CUDA loop options: MANUAL1D_LOOP > MDRANGE_LOOP, TPTTR_LOOP & TPTTRTVR_LOOP don't compile
+# Inner loop must be TVR_INNER_LOOP
+# OpenMP loop options for KNL:
+# Outer: SIMDFOR_LOOP;MANUAL1D_LOOP;MDRANGE_LOOP;TPTTR_LOOP;TPTVR_LOOP;TPTTRTVR_LOOP
+# Inner: SIMDFOR_INNER_LOOP;TVR_INNER_LOOP
 
 if [[ "$*" == *"clean"* ]]; then
   if [[ "$*" == *"cuda"* ]]; then # CUDA BUILD
@@ -59,14 +64,14 @@ if [[ "$*" == *"clean"* ]]; then
     -DKokkos_ENABLE_CUDA=ON \
     -DKokkos_ENABLE_HWLOC=ON \
     -DKokkos_ARCH_WSM=OFF \
-    -DKokkos_ARCH_HSW=ON \
+    -DKokkos_ARCH_HSW=OFF \
     -DKokkos_ARCH_BDW=OFF \
     -DKokkos_ARCH_SKX=OFF \
-    -DKokkos_ARCH_AMDAVX=OFF \
+    -DKokkos_ARCH_AMDAVX=ON \
     -DKokkos_ARCH_POWER9=OFF \
-    -DKokkos_ARCH_KEPLER35=ON \
+    -DKokkos_ARCH_KEPLER35=OFF \
     -DKokkos_ARCH_VOLTA70=OFF \
-    -DKokkos_ARCH_TURING75=OFF \
+    -DKokkos_ARCH_TURING75=ON \
     -DKokkos_ENABLE_CUDA_LAMBDA=ON \
     -DKokkos_ENABLE_CUDA_CONSTEXPR=ON
   else #OpenMP BUILD
@@ -94,5 +99,5 @@ if [[ "$*" == *"clean"* ]]; then
   fi
 fi
 
-make -j40
+make -j12
 cp kharma/kharma.* ..
