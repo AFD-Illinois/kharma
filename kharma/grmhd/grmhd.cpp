@@ -211,18 +211,19 @@ void UtoP(std::shared_ptr<MeshBlockData<Real>>& rc)
     // Get the primitives from our conserved versions
     // Note this covers ghost zones!  This is intentional, as primitives in
     // ghost zones are needed for reconstruction
-    int is = pmb->boundary_flag[BoundaryFace::inner_x1] == BoundaryFlag::block ?
-                pmb->cellbounds.is(IndexDomain::entire) : pmb->cellbounds.is(IndexDomain::interior);
-    int ie = pmb->boundary_flag[BoundaryFace::outer_x1] == BoundaryFlag::block ?
-                pmb->cellbounds.ie(IndexDomain::entire) : pmb->cellbounds.ie(IndexDomain::interior);
-    int js = pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::block ?
-                pmb->cellbounds.js(IndexDomain::entire) : pmb->cellbounds.js(IndexDomain::interior);
-    int je = pmb->boundary_flag[BoundaryFace::outer_x2] == BoundaryFlag::block ?
-                pmb->cellbounds.je(IndexDomain::entire) : pmb->cellbounds.je(IndexDomain::interior);
-    int ks = pmb->boundary_flag[BoundaryFace::inner_x3] == BoundaryFlag::block ?
-                pmb->cellbounds.ks(IndexDomain::entire) : pmb->cellbounds.ks(IndexDomain::interior);
-    int ke = pmb->boundary_flag[BoundaryFace::outer_x3] == BoundaryFlag::block ?
-                pmb->cellbounds.ke(IndexDomain::entire) : pmb->cellbounds.ke(IndexDomain::interior);
+    int is = is_physical_bound(pmb->boundary_flag[BoundaryFace::inner_x1]) ?
+                pmb->cellbounds.is(IndexDomain::interior) : pmb->cellbounds.is(IndexDomain::entire);
+    int ie = is_physical_bound(pmb->boundary_flag[BoundaryFace::outer_x1]) ?
+                pmb->cellbounds.ie(IndexDomain::interior) : pmb->cellbounds.ie(IndexDomain::entire);
+    int js = is_physical_bound(pmb->boundary_flag[BoundaryFace::inner_x2]) ?
+                pmb->cellbounds.js(IndexDomain::interior) : pmb->cellbounds.js(IndexDomain::entire);
+    int je = is_physical_bound(pmb->boundary_flag[BoundaryFace::outer_x2]) ?
+                pmb->cellbounds.je(IndexDomain::interior) : pmb->cellbounds.je(IndexDomain::entire);
+    int ks = is_physical_bound(pmb->boundary_flag[BoundaryFace::inner_x3]) ?
+                pmb->cellbounds.ks(IndexDomain::interior) : pmb->cellbounds.ks(IndexDomain::entire);
+    int ke = is_physical_bound(pmb->boundary_flag[BoundaryFace::outer_x3]) ?
+                pmb->cellbounds.ke(IndexDomain::interior) : pmb->cellbounds.ke(IndexDomain::entire);
+
     pmb->par_for("U_to_P", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D {
             pflag(k, j, i) = u_to_p(G, U, eos, k, j, i, Loci::center, P);

@@ -14,6 +14,7 @@
 // Anything more leads to circular deps from gr_coordinates.hpp
 #include "parthenon_arrays.hpp"
 #include "parthenon_mpi.hpp"
+#include "bvals/bvals_interfaces.hpp"
 
 // My set of MPI wrappers, stubbed out when MPI not present
 #include "mpi.hpp"
@@ -75,6 +76,12 @@ using GeomTensor3 = parthenon::ParArrayND<Real>;
 #define KOKKOS_LAMBDA_2D_REDUCE KOKKOS_LAMBDA (const int &j, const int &i, double &local_result)
 #define KOKKOS_LAMBDA_3D_REDUCE KOKKOS_LAMBDA (const int &k, const int &j, const int &i, double &local_result)
 #define KOKKOS_LAMBDA_3D_REDUCE_INT KOKKOS_LAMBDA (const int &k, const int &j, const int &i, int &local_result)
+
+// Save some typing
+KOKKOS_INLINE_FUNCTION bool is_physical_bound(parthenon::BoundaryFlag bflag) {
+    // TODO error on undef?
+    return bflag != parthenon::BoundaryFlag::block && bflag != parthenon::BoundaryFlag::periodic;
+}
 
 // KHARMA TYPES
 

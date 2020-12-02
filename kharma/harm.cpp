@@ -112,8 +112,8 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         auto t_calculate_flux = t_calculate_flux1 | t_calculate_flux2 | t_calculate_flux3;
 
         // These operate only on the conserved fluxes
-        auto t_fix_flux = tl.AddTask(t_calculate_flux, FixFlux, sc0);
-        auto t_flux_ct = tl.AddTask(t_fix_flux, GRMHD::FluxCT, sc0);
+        //auto t_fix_flux = tl.AddTask(t_calculate_flux, FixFlux, sc0);
+        auto t_flux_ct = tl.AddTask(t_calculate_flux, GRMHD::FluxCT, sc0);
 
         // Apply the corrected fluxes to create a single update dU/dt
         //auto t_flux_divergence = tl.AddTask(t_flux_ct, Update::FluxDivergence<MeshBlockData<Real>>, sc0, dudt);
