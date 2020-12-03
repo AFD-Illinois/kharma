@@ -180,6 +180,10 @@ TaskStatus HLLE::GetFlux(std::shared_ptr<MeshBlockData<Real>>& rc, const int& di
         }
     );
 
+    if (pmb->packages["GRMHD"]->Param<int>("extra_checks") > 0) {
+        CheckNaN(rc, dir);
+    }
+
     FLAG(string_format("Finished recon and flux X%d", dir));
     return TaskStatus::complete;
 }

@@ -127,13 +127,13 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     double floor_r_char = pin->GetOrAddReal("floors", "r_char", 10);
     params.Add("floor_r_char", floor_r_char);
 
-    double bsq_over_rho_max = pin->GetOrAddReal("floors", "bsq_over_rho_max", 100);
+    double bsq_over_rho_max = pin->GetOrAddReal("floors", "bsq_over_rho_max", 1e20);
     params.Add("bsq_over_rho_max", bsq_over_rho_max);
-    double bsq_over_u_max = pin->GetOrAddReal("floors", "bsq_over_u_max", 10000);
+    double bsq_over_u_max = pin->GetOrAddReal("floors", "bsq_over_u_max", 1e20);
     params.Add("bsq_over_u_max", bsq_over_u_max);
-    double u_over_rho_max = pin->GetOrAddReal("floors", "u_over_rho_max", 100);
+    double u_over_rho_max = pin->GetOrAddReal("floors", "u_over_rho_max", 1e20);
     params.Add("u_over_rho_max", u_over_rho_max);
-    double ktot_max = pin->GetOrAddReal("floors", "ktot_max", 3);
+    double ktot_max = pin->GetOrAddReal("floors", "ktot_max", 1e20);
     params.Add("ktot_max", ktot_max);
 
     double gamma_max = pin->GetOrAddReal("floors", "gamma_max", 50);
@@ -141,7 +141,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
 
     bool temp_adjust_u = pin->GetOrAddBoolean("floors", "temp_adjust_u", false);
     params.Add("temp_adjust_u", temp_adjust_u);
-    bool fluid_frame = pin->GetOrAddBoolean("floors", "fluid_frame", true);
+    bool fluid_frame = pin->GetOrAddBoolean("floors", "fluid_frame", false);
     params.Add("fluid_frame", fluid_frame);
 
     // We generally carry around the conserved versions of varialbles, treating them as the fundamental ones

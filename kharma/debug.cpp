@@ -232,8 +232,6 @@ TaskStatus Diagnostic(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain doma
     }
 
     if (pmb->packages["GRMHD"]->Param<int>("extra_checks") > 0) {
-        // Check the ctop vector for bad things
-        for (int dir = X1DIR; dir <= X3DIR; dir++) CheckNaN(rc, dir);
         // Check for negative values in the conserved vars
         int nless;
         Kokkos::Sum<int> sum_reducer(nless);
@@ -243,7 +241,9 @@ TaskStatus Diagnostic(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain doma
             }
         , sum_reducer);
 
-        cerr << "Number of negative conserved rho,u: " << nless << endl;
+        if (nless > 0) {
+            cerr << "Number of negative conserved rho,u: " << nless << endl;
+        }
     }
 
     return TaskStatus::complete;

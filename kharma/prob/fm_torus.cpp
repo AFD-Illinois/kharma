@@ -112,13 +112,11 @@ void InitializeFMTorus(MeshBlock *pmb, const GRCoordinates& G, GridVars P, const
                 G.gcon(Loci::center, j, i, gcon);
                 fourvel_to_prim(gcon, ucon_mks, u_prim);
 
-                if (rho > 1.e-10 && u > 1.e-10 && u_prim[3] > 1.e-10) {
-                    P(prims::rho, k, j, i) = rho;
-                    P(prims::u, k, j, i) = u;
-                    P(prims::u1, k, j, i) = u_prim[1];
-                    P(prims::u2, k, j, i) = u_prim[2];
-                    P(prims::u3, k, j, i) = u_prim[3];
-                }
+                P(prims::rho, k, j, i) = rho;
+                P(prims::u, k, j, i) = u;
+                P(prims::u1, k, j, i) = u_prim[1];
+                P(prims::u2, k, j, i) = u_prim[2];
+                P(prims::u3, k, j, i) = u_prim[3];
             }
         }
     );
