@@ -64,10 +64,41 @@ TaskStatus ApplyCustomBoundaries(std::shared_ptr<MeshBlockData<Real>>& rc)
 
     EOS* eos = pmb->packages["GRMHD"]->Param<EOS*>("eos");
 
+    // Big TODO: can these be implemented in the *conserved* variables?
+    // It would save much headache & wailing
+
+
+    if(pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::reflect) {
+        FLAG("Inner X2 reflect");
+        pmb->par_for("inner_x2_reflect", ks_e, ke_e, js_e, js-1, is, ie,
+            KOKKOS_LAMBDA_3D {
+                PLOOP {
+                    Real reflect = ((p == prims::u2 || p == prims::B2) ? -1.0 : 1.0);
+                    P(p, k, j, i) = reflect * P(p, k, (js - 1) + (js - j), i);
+                }
+                // Recover conserved vars
+                p_to_u(G, P, eos, k, j, i, U);
+            }
+        );
+    }
+    if(pmb->boundary_flag[BoundaryFace::outer_x2] == BoundaryFlag::reflect) {
+        FLAG("Outer X2 reflect");
+        pmb->par_for("outer_x2_reflect", ks_e, ke_e, je+1, je_e, is, ie,
+            KOKKOS_LAMBDA_3D {
+                PLOOP {
+                    Real reflect = ((p == prims::u2 || p == prims::B2) ? -1.0 : 1.0);
+                    P(p, k, j, i) = reflect * P(p, k, (je + 1) + (je - j), i);
+                }
+                // Recover conserved vars
+                p_to_u(G, P, eos, k, j, i, U);
+            }
+        );
+    }
+
     // Implement the outflow boundaries on the primitives, since the inflow check needs that
     if(pmb->boundary_flag[BoundaryFace::inner_x1] == BoundaryFlag::outflow) {
         FLAG("Inner X1 outflow");
-        pmb->par_for("inner_x1_outflow", ks, ke, js, je, is_e, is-1,
+        pmb->par_for("inner_x1_outflow", ks_e, ke_e, js_e, je_e, is_e, is-1,
             KOKKOS_LAMBDA_3D {
                 // Apply boundary on primitives
                 PLOOP {
@@ -85,7 +116,7 @@ TaskStatus ApplyCustomBoundaries(std::shared_ptr<MeshBlockData<Real>>& rc)
     }
     if(pmb->boundary_flag[BoundaryFace::outer_x1] == BoundaryFlag::outflow) {
         FLAG("Outer X1 outflow");
-        pmb->par_for("outer_x1_outflow", ks, ke, js, je, ie+1, ie_e,
+        pmb->par_for("outer_x1_outflow", ks_e, ke_e, js_e, je_e, ie+1, ie_e,
             KOKKOS_LAMBDA_3D {
                 // Apply boundary on primitives
                 PLOOP {
@@ -96,35 +127,6 @@ TaskStatus ApplyCustomBoundaries(std::shared_ptr<MeshBlockData<Real>>& rc)
                 }
                 // Inflow check
                 check_inflow(G, P, k, j, i, 1);
-                // Recover conserved vars
-                p_to_u(G, P, eos, k, j, i, U);
-            }
-        );
-    }
-
-    // Implement our own reflecting boundary for our variables. TODO does this work in conserved?
-    if(pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::reflect) {
-        FLAG("Inner X2 reflect");
-        pmb->par_for("inner_x2_reflect", ks, ke, js_e, js-1, is, ie,
-            KOKKOS_LAMBDA_3D {
-                PLOOP {
-                    Real reflect = ((p == prims::u2 || p == prims::B2) ? -1.0 : 1.0);
-                    P(p, k, j, i) = reflect * P(p, k, (js - 1) + (js - j), i);
-                }
-                // Recover conserved vars
-                p_to_u(G, P, eos, k, j, i, U);
-            }
-        );
-        FLAG(string_format("Reflected domain k,j,i %d-%d,%d-%d,%d-%d",kb.s, kb.e, 0, jb.s-1, 0, n1-1));
-    }
-    if(pmb->boundary_flag[BoundaryFace::outer_x2] == BoundaryFlag::reflect) {
-        FLAG("Outer X2 reflect");
-        pmb->par_for("outer_x2_reflect", ks, ke, je+1, je_e, is, ie,
-            KOKKOS_LAMBDA_3D {
-                PLOOP {
-                    Real reflect = ((p == prims::u2 || p == prims::B2) ? -1.0 : 1.0);
-                    P(p, k, j, i) = reflect * P(p, k, (je + 1) + (je - j), i);
-                }
                 // Recover conserved vars
                 p_to_u(G, P, eos, k, j, i, U);
             }

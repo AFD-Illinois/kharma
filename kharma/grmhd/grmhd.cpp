@@ -120,9 +120,9 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     params.Add("extra_checks", extra_checks);
 
     // Floor parameters
-    double rho_min_geom = pin->GetOrAddReal("floors", "rho_min_geom", 1.e-6);
+    double rho_min_geom = pin->GetOrAddReal("floors", "rho_min_geom", 1.e-5);
     params.Add("rho_min_geom", rho_min_geom);
-    double u_min_geom = pin->GetOrAddReal("floors", "u_min_geom", 1.e-8);
+    double u_min_geom = pin->GetOrAddReal("floors", "u_min_geom", 1.e-7);
     params.Add("u_min_geom", u_min_geom);
     double floor_r_char = pin->GetOrAddReal("floors", "r_char", 10);
     params.Add("floor_r_char", floor_r_char);
@@ -144,20 +144,21 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     bool fluid_frame = pin->GetOrAddBoolean("floors", "fluid_frame", false);
     params.Add("fluid_frame", fluid_frame);
 
-    // We generally carry around the conserved versions of varialbles, treating them as the fundamental ones
-    // However, since most analysis tooling expects the primitives, we *output* those.
     std::vector<int> s_vector({3});
     std::vector<int> s_fourvector({4});
     std::vector<int> s_prims({NPRIM});
 
-    Metadata m;
-    m = Metadata({Metadata::Cell, Metadata::Independent, Metadata::FillGhost,
+    // As mentioned elsewhere, KHARMA treats the conserved variables as the independent ones,
+    // and the primitives as "Derived."
+    // They're still necessary for reconstruction, and generally are the quantities in output files
+    Metadata m = Metadata({Metadata::Cell, Metadata::Independent, Metadata::FillGhost,
                     Metadata::Restart, Metadata::Conserved}, s_prims);
     fluid_state->AddField("c.c.bulk.cons", m, DerivedOwnership::shared);
     m = Metadata({Metadata::Cell, Metadata::Derived, Metadata::OneCopy, Metadata::Intensive, Metadata::Restart}, s_prims);
     fluid_state->AddField("c.c.bulk.prims", m, DerivedOwnership::shared);
 
-    // Maximum signal speed (magnitude).  Calculated for flux updates but needed for deciding timestep
+    // Maximum signal speed (magnitude).  Calculated in flux updates but needed for deciding timestep
+    // TODO figure out how to preserve either this or the timestep in restart files
     m = Metadata({Metadata::Face, Metadata::Derived, Metadata::OneCopy});
     fluid_state->AddField("f.f.bulk.ctop", m, DerivedOwnership::unique);
 
