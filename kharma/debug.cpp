@@ -96,7 +96,7 @@ double MaxDivB_P(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain)
 
     double max_divb;
     Kokkos::Max<double> max_reducer(max_divb);
-    pmb->par_reduce("divB", ks, ke, js, je, is, ie,
+    pmb->par_reduce("divB", ks+1, ke, js+1, je, is+1, ie,
         KOKKOS_LAMBDA_3D_REDUCE {
             double local_divb = fabs(0.25*(
                               P(prims::B1, k, j, i) * G.gdet(Loci::center, j, i)
@@ -152,7 +152,7 @@ double MaxDivB2D(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain)
 
     double max_divb;
     Kokkos::Max<double> max_reducer(max_divb);
-    pmb->par_reduce("divB", js, je, is, ie,
+    pmb->par_reduce("divB", js+1, je, is+1, ie,
         KOKKOS_LAMBDA_2D_REDUCE {
             double local_divb = fabs(0.5*(
                               U(prims::B1, 0, j, i) + U(prims::B1, 0, j-1, i)
@@ -188,7 +188,7 @@ double MaxDivB(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain)
 
     double max_divb;
     Kokkos::Max<double> max_reducer(max_divb);
-    pmb->par_reduce("divB", ks, ke, js, je, is, ie,
+    pmb->par_reduce("divB", ks+1, ke, js+1, je, is+1, ie,
         KOKKOS_LAMBDA_3D_REDUCE {
             double local_divb = fabs(0.25*(
                               U(prims::B1, k, j, i) + U(prims::B1, k, j-1, i)
@@ -215,9 +215,9 @@ double MaxDivB(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain)
     return max_divb;
 }
 
-int Diagnostic(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain)
+TaskStatus Diagnostic(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain)
 {
-    FLAG("Summing bad cells");
+    FLAG("Printing diagnostics");
     auto pmb = rc->GetBlockPointer();
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
@@ -227,17 +227,26 @@ int Diagnostic(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain)
     GridVars P = rc->Get("c.c.bulk.prims").data;
     GridVars U = rc->Get("c.c.bulk.cons").data;
 
-    int nless;
-    Kokkos::Sum<int> sum_reducer(nless);
-    pmb->par_reduce("count_negative", ks, ke, js, je, is, ie,
-        KOKKOS_LAMBDA_3D_REDUCE_INT {
-            if (U(prims::rho, k, j, i) <= 0.) ++local_result;
-        }
-    , sum_reducer);
+    if (pmb->packages["GRMHD"]->Param<int>("verbose") > 0) {
+        cerr << "DivB: " << MaxDivB(rc, domain) << endl;
+    }
 
-    cerr << "Number of negative conserved rho,u: " << nless << endl;
+    if (pmb->packages["GRMHD"]->Param<int>("extra_checks") > 0) {
+        // Check the ctop vector for bad things
+        for (int dir = X1DIR; dir <= X3DIR; dir++) CheckNaN(rc, dir);
+        // Check for negative values in the conserved vars
+        int nless;
+        Kokkos::Sum<int> sum_reducer(nless);
+        pmb->par_reduce("count_negative", ks, ke, js, je, is, ie,
+            KOKKOS_LAMBDA_3D_REDUCE_INT {
+                if (U(prims::rho, k, j, i) <= 0.) ++local_result;
+            }
+        , sum_reducer);
 
-    return nless;
+        cerr << "Number of negative conserved rho,u: " << nless << endl;
+    }
+
+    return TaskStatus::complete;
 }
 
 TaskStatus CheckNaN(std::shared_ptr<MeshBlockData<Real>>& rc, int dir, IndexDomain domain)

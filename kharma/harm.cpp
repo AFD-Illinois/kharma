@@ -41,6 +41,7 @@
 
 #include "bondi.hpp"
 #include "boundaries.hpp"
+#include "debug.hpp"
 #include "fixup.hpp"
 #include "fluxes.hpp"
 #include "grmhd.hpp"
@@ -112,8 +113,8 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         auto t_calculate_flux = t_calculate_flux1 | t_calculate_flux2 | t_calculate_flux3;
 
         // These operate only on the conserved fluxes
-        //auto t_fix_flux = tl.AddTask(t_calculate_flux, FixFlux, sc0);
-        auto t_flux_ct = tl.AddTask(t_calculate_flux, GRMHD::FluxCT, sc0);
+        auto t_fix_flux = tl.AddTask(t_calculate_flux, FixFlux, sc0);
+        auto t_flux_ct = tl.AddTask(t_fix_flux, GRMHD::FluxCT, sc0);
 
         // Apply the corrected fluxes to create a single update dU/dt
         //auto t_flux_divergence = tl.AddTask(t_flux_ct, Update::FluxDivergence<MeshBlockData<Real>>, sc0, dudt);
@@ -128,8 +129,7 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         auto t_update_container = tl.AddTask(t_flux_apply, UpdateMeshBlockData, stage, integrator, sc0, base, dudt, sc1);
 
         // Update ghost cells.  Only performed on U of sc1
-        auto t_send =
-            tl.AddTask(t_update_container, &MeshBlockData<Real>::SendBoundaryBuffers, sc1.get());
+        auto t_send = tl.AddTask(t_update_container, &MeshBlockData<Real>::SendBoundaryBuffers, sc1.get());
         auto t_recv = tl.AddTask(t_send, &MeshBlockData<Real>::ReceiveBoundaryBuffers, sc1.get());
         auto t_fill_from_bufs = tl.AddTask(t_recv, &MeshBlockData<Real>::SetBoundaries, sc1.get());
         auto t_clear_comm_flags = tl.AddTask(t_fill_from_bufs, &MeshBlockData<Real>::ClearBoundary, sc1.get(),
@@ -137,15 +137,21 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
 
         // Set physical boundaries
         // Only respects/updates U
-        //auto t_set_parthenon_bc = tl.AddTask(t_fill_from_bufs, parthenon::ApplyBoundaryConditions, sc1);
+        //auto t_set_parthenon_bc = tl.AddTask(t_clear_comm_flags, parthenon::ApplyBoundaryConditions, sc1);
+        //auto t_correct_parthenon_bc = tl.AddTask(t_clear_comm_flags, FixParthenonBoundaryConditions, sc1);
 
         // Fill primitives, bringing U and P back into lockstep
+        // TODO Update::FillDerived<MeshBlockData<Real>>
         auto t_fill_derived = tl.AddTask(t_clear_comm_flags, Update::FillDerived<MeshBlockData<Real>>, sc1);
 
         // ApplyCustomBoundaries is a catch-all for things HARM needs done:
         // Inflow checks, renormalizations, Bondi outer boundary.  All keep lockstep.
         auto t_set_custom_bc = tl.AddTask(t_fill_derived, ApplyCustomBoundaries, sc1);
-        auto t_step_done = t_set_custom_bc;
+
+        auto t_fill_derived2 = tl.AddTask(t_set_custom_bc, Update::FillDerived<MeshBlockData<Real>>, sc1);
+
+        auto t_diagnostics = tl.AddTask(t_fill_derived2, Diagnostic, sc1, IndexDomain::interior);
+        auto t_step_done = t_diagnostics;
 
         if (stage == integrator->nstages) {
             // estimate next time step

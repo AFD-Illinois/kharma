@@ -77,10 +77,16 @@ using GeomTensor3 = parthenon::ParArrayND<Real>;
 #define KOKKOS_LAMBDA_3D_REDUCE KOKKOS_LAMBDA (const int &k, const int &j, const int &i, double &local_result)
 #define KOKKOS_LAMBDA_3D_REDUCE_INT KOKKOS_LAMBDA (const int &k, const int &j, const int &i, int &local_result)
 
-// Save some typing
+/**
+ * Return whether a boundary is physical (i.e. border of the simulation) or not (internal/periodic)
+ * Ironically, the zones in non-physical boundaries are "physical" i.e. bulk, non-ghost zones,
+ * whereas those in non-physical boundaries
+ * UtoP needs to calculate primitives for physical zones (non-physical boundaries), i.e. when this function returns false.
+ */
 KOKKOS_INLINE_FUNCTION bool is_physical_bound(parthenon::BoundaryFlag bflag) {
     // TODO error on undef?
     return bflag != parthenon::BoundaryFlag::block && bflag != parthenon::BoundaryFlag::periodic;
+    //return false;
 }
 
 // KHARMA TYPES

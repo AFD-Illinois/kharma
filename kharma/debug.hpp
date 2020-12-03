@@ -51,9 +51,9 @@ double MaxDivB(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain=Inde
 double MaxDivB_P(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain=IndexDomain::interior);
 
 /**
- * General diagnostic, currently used for tracking down bad cells related to U_to_P
+ * Print any diagnostic values which don't require pflag/fflag to calculate/print
  */
-int Diagnostic(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain=IndexDomain::interior);
+TaskStatus Diagnostic(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain=IndexDomain::interior);
 
 /**
  * Check the max signal speed (ctop) for 0-values or NaNs.

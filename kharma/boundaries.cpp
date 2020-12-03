@@ -53,25 +53,27 @@ TaskStatus ApplyCustomBoundaries(std::shared_ptr<MeshBlockData<Real>>& rc)
     GridVars P = rc->Get("c.c.bulk.prims").data;
     auto& G = pmb->coords;
 
-    int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
-    int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
-    int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
-    IndexRange ib = pmb->cellbounds.GetBoundsI(IndexDomain::interior);
-    IndexRange jb = pmb->cellbounds.GetBoundsJ(IndexDomain::interior);
-    IndexRange kb = pmb->cellbounds.GetBoundsK(IndexDomain::interior);
+    IndexDomain domain = IndexDomain::interior;
+    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
+    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
+    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
+    domain = IndexDomain::entire;
+    int is_e = pmb->cellbounds.is(domain), ie_e = pmb->cellbounds.ie(domain);
+    int js_e = pmb->cellbounds.js(domain), je_e = pmb->cellbounds.je(domain);
+    int ks_e = pmb->cellbounds.ks(domain), ke_e = pmb->cellbounds.ke(domain);
 
     EOS* eos = pmb->packages["GRMHD"]->Param<EOS*>("eos");
 
     // Implement the outflow boundaries on the primitives, since the inflow check needs that
     if(pmb->boundary_flag[BoundaryFace::inner_x1] == BoundaryFlag::outflow) {
         FLAG("Inner X1 outflow");
-        pmb->par_for("inner_x1_outflow", kb.s, kb.e, jb.s, jb.e, 0, ib.s-1,
+        pmb->par_for("inner_x1_outflow", ks_e, ke_e, js, je, is_e, is-1,
             KOKKOS_LAMBDA_3D {
                 // Apply boundary on primitives
                 PLOOP {
-                    P(p, k, j, i) = P(p, k, j, ib.s);
+                    P(p, k, j, i) = P(p, k, j, is);
                     if(p == prims::B1 || p == prims::B2 || p == prims::B3) {
-                        P(p, k, j, i) *= G.gdet(Loci::center, j, ib.s) / G.gdet(Loci::center, j, i);
+                        P(p, k, j, i) *= G.gdet(Loci::center, j, is) / G.gdet(Loci::center, j, i);
                     }
                 }
                 // Inflow check
@@ -83,13 +85,13 @@ TaskStatus ApplyCustomBoundaries(std::shared_ptr<MeshBlockData<Real>>& rc)
     }
     if(pmb->boundary_flag[BoundaryFace::outer_x1] == BoundaryFlag::outflow) {
         FLAG("Outer X1 outflow");
-        pmb->par_for("outer_x1_outflow", kb.s, kb.e, jb.s, jb.e, ib.e+1, n1-1,
+        pmb->par_for("outer_x1_outflow", ks_e, ke_e, js, je, ie+1, ie_e,
             KOKKOS_LAMBDA_3D {
                 // Apply boundary on primitives
                 PLOOP {
-                    P(p, k, j, i) = P(p, k, j, ib.e);
+                    P(p, k, j, i) = P(p, k, j, ie);
                     if(p == prims::B1 || p == prims::B2 || p == prims::B3) {
-                        P(p, k, j, i) *= G.gdet(Loci::center, j, ib.e) / G.gdet(Loci::center, j, i);
+                        P(p, k, j, i) *= G.gdet(Loci::center, j, ie) / G.gdet(Loci::center, j, i);
                     }
                 }
                 // Inflow check
@@ -103,11 +105,11 @@ TaskStatus ApplyCustomBoundaries(std::shared_ptr<MeshBlockData<Real>>& rc)
     // Implement our own reflecting boundary for our variables. TODO does this work in conserved?
     if(pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::reflect) {
         FLAG("Inner X2 reflect");
-        pmb->par_for("inner_x2_reflect", kb.s, kb.e, 0, jb.s-1, 0, n1-1,
+        pmb->par_for("inner_x2_reflect", ks_e, ke_e, js_e, js-1, is_e, ie_e,
             KOKKOS_LAMBDA_3D {
                 PLOOP {
                     Real reflect = ((p == prims::u2 || p == prims::B2) ? -1.0 : 1.0);
-                    P(p, k, j, i) = reflect * P(p, k, jb.s + (jb.s - j - 1), i);
+                    P(p, k, j, i) = reflect * P(p, k, (js - 1) + (js - j), i);
                 }
                 // Recover conserved vars
                 p_to_u(G, P, eos, k, j, i, U);
@@ -117,11 +119,11 @@ TaskStatus ApplyCustomBoundaries(std::shared_ptr<MeshBlockData<Real>>& rc)
     }
     if(pmb->boundary_flag[BoundaryFace::outer_x2] == BoundaryFlag::reflect) {
         FLAG("Outer X2 reflect");
-        pmb->par_for("outer_x2_reflect", kb.s, kb.e, jb.e+1, n2-1, 0, n1-1,
+        pmb->par_for("outer_x2_reflect", ks_e, ke_e, je+1, je_e, is_e, ie_e,
             KOKKOS_LAMBDA_3D {
                 PLOOP {
                     Real reflect = ((p == prims::u2 || p == prims::B2) ? -1.0 : 1.0);
-                    P(p, k, j, i) = reflect * P(p, k, jb.e + (jb.e - j + 1), i);
+                    P(p, k, j, i) = reflect * P(p, k, (je + 1) + (je - j), i);
                 }
                 // Recover conserved vars
                 p_to_u(G, P, eos, k, j, i, U);
@@ -198,20 +200,22 @@ TaskStatus FixFlux(std::shared_ptr<MeshBlockData<Real>>& rc)
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
-    domain = IndexDomain::entire;
-    int is_e = pmb->cellbounds.is(domain), ie_e = pmb->cellbounds.ie(domain);
-    int js_e = pmb->cellbounds.js(domain), je_e = pmb->cellbounds.je(domain);
-    int ks_e = pmb->cellbounds.ks(domain), ke_e = pmb->cellbounds.ke(domain);
 
     GridVars F1 = rc->Get("c.c.bulk.cons").flux[X1DIR];
     GridVars F2 = rc->Get("c.c.bulk.cons").flux[X2DIR];
     GridVars F3;
-    if (ke_e > 0) F3 = rc->Get("c.c.bulk.cons").flux[X3DIR];
+    int ke_e;
+    if (ks != ke) {
+        ke_e = ke + 1;
+        F3 = rc->Get("c.c.bulk.cons").flux[X3DIR];
+    } else {
+        ke_e = ke;
+    }
 
     // TODO runtime option to allow inflow?
     if (pmb->boundary_flag[BoundaryFace::inner_x1] == BoundaryFlag::outflow)
     {
-        pmb->par_for("fix_flux_in_l", ks_e, ke_e, js_e, je_e, is, is,
+        pmb->par_for("fix_flux_in_l", ks, ke+1, js, je+1, is, is,
             KOKKOS_LAMBDA_3D {
                 F1(prims::rho, k, j, i) = min(F1(prims::rho, k, j, i), 0.);
             }
@@ -221,7 +225,7 @@ TaskStatus FixFlux(std::shared_ptr<MeshBlockData<Real>>& rc)
     if (pmb->boundary_flag[BoundaryFace::outer_x1] == BoundaryFlag::outflow &&
         !(pmb->packages["GRMHD"]->Param<std::string>("problem") == "bondi"))
     {
-        pmb->par_for("fix_flux_in_r", ks_e, ke_e, js_e, je_e, ie+1, ie+1,
+        pmb->par_for("fix_flux_in_r", ks, ke+1, js, je+1, ie+1, ie+1,
             KOKKOS_LAMBDA_3D {
                 F1(prims::rho, k, j, i) = max(F1(prims::rho, k, j, i), 0.);
             }
@@ -230,7 +234,7 @@ TaskStatus FixFlux(std::shared_ptr<MeshBlockData<Real>>& rc)
 
     if (pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::reflect)
     {
-        pmb->par_for("fix_flux_b_l", ks_e, ke_e, js, js, is_e, ie_e,
+        pmb->par_for("fix_flux_b_l", ks, ke+1, js, js, is, ie+1,
             KOKKOS_LAMBDA_3D {
                 PLOOP F2(p, k, j, i) = 0.;
                 // Make sure the emfs are also 0, for flux-ct
@@ -242,7 +246,7 @@ TaskStatus FixFlux(std::shared_ptr<MeshBlockData<Real>>& rc)
 
     if (pmb->boundary_flag[BoundaryFace::outer_x2] == BoundaryFlag::reflect)
     {
-        pmb->par_for("fix_flux_b_r", ks_e, ke_e, je+1, je+1, is_e, ie_e,
+        pmb->par_for("fix_flux_b_r", ks, ke+1, je+1, je+1, is, ie+1,
             KOKKOS_LAMBDA_3D {
                 PLOOP F2(p, k, j, i) = 0.;
                 // Make sure the emfs are also 0, for flux-ct

@@ -141,7 +141,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
 
     bool temp_adjust_u = pin->GetOrAddBoolean("floors", "temp_adjust_u", false);
     params.Add("temp_adjust_u", temp_adjust_u);
-    bool fluid_frame = pin->GetOrAddBoolean("floors", "fluid_frame", false);
+    bool fluid_frame = pin->GetOrAddBoolean("floors", "fluid_frame", true);
     params.Add("fluid_frame", fluid_frame);
 
     // We generally carry around the conserved versions of varialbles, treating them as the fundamental ones
@@ -154,20 +154,22 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     m = Metadata({Metadata::Cell, Metadata::Independent, Metadata::FillGhost,
                     Metadata::Restart, Metadata::Conserved}, s_prims);
     fluid_state->AddField("c.c.bulk.cons", m, DerivedOwnership::shared);
-    m = Metadata({Metadata::Cell, Metadata::Derived, Metadata::OneCopy, Metadata::Intensive}, s_prims);
+    m = Metadata({Metadata::Cell, Metadata::Derived, Metadata::OneCopy, Metadata::Intensive, Metadata::Restart}, s_prims);
     fluid_state->AddField("c.c.bulk.prims", m, DerivedOwnership::shared);
 
     // Maximum signal speed (magnitude).  Calculated for flux updates but needed for deciding timestep
-    m = Metadata({Metadata::Face, Metadata::Derived, Metadata::OneCopy, Metadata::Vector});
+    m = Metadata({Metadata::Face, Metadata::Derived, Metadata::OneCopy});
     fluid_state->AddField("f.f.bulk.ctop", m, DerivedOwnership::unique);
 
     // Add jcon as an output-only calculation, likely overriding MeshBlock::UserWorkBeforeOutput
     // m = Metadata({Metadata::Cell, Metadata::Derived, Metadata::OneCopy}, s_fourvector);
     // fluid_state->AddField("c.c.bulk.jcon", m, DerivedOwnership::unique);
 
-    m = Metadata({Metadata::Cell, Metadata::Derived, Metadata::OneCopy}, 1);
-    fluid_state->AddField("c.c.bulk.pflag", m, DerivedOwnership::unique);
-    fluid_state->AddField("c.c.bulk.fflag", m, DerivedOwnership::unique);
+    if (flag_save) {
+        m = Metadata({Metadata::Cell, Metadata::Derived, Metadata::OneCopy}, 1);
+        fluid_state->AddField("c.c.bulk.pflag", m, DerivedOwnership::unique);
+        fluid_state->AddField("c.c.bulk.fflag", m, DerivedOwnership::unique);
+    }
 
     fluid_state->FillDerivedBlock = GRMHD::UtoP;
     fluid_state->CheckRefinementBlock = nullptr;
@@ -264,9 +266,7 @@ void UtoP(std::shared_ptr<MeshBlockData<Real>>& rc)
         int npflags = CountPFlags(pmb, pflag_host, IndexDomain::interior, print_flags);
         int nfflags = CountFFlags(pmb, fflag_host, IndexDomain::interior, print_flags);
 
-        cerr << "DivB: " << MaxDivB(rc, IndexDomain::interior) << endl;
         // Anything you want here
-
         //cerr << string_format("UtoP domain: %d-%d,%d-%d,%d-%d",is,ie,js,je,ks,ke) << endl;
     }
     if (save_flags) {

@@ -8,6 +8,7 @@
 if [[ $(hostname) == "toolbox" ]]; then
   module load mpi
   #export NVCC_WRAPPER_DEFAULT_COMPILER=cuda-g++
+  export PATH="/usr/local/cuda/bin/:$PATH"
 fi
 
 # Make conda go away.  Bad libraries. Bad.
@@ -28,7 +29,7 @@ else
   TYPE=Release
 fi
 
-# "Clean" here means clean & rebuild, both!
+# "Clean" here is 
 SCRIPT_DIR=$( dirname "$0" )
 cd $SCRIPT_DIR
 if [[ "$*" == *"clean"* ]]; then
