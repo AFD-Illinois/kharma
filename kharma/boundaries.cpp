@@ -189,8 +189,7 @@ KOKKOS_INLINE_FUNCTION void check_inflow(const GRCoordinates &G, GridVars P, con
 }
 
 /**
- * Fix fluxes on domain boundaries. No inflow, correct B fields on reflecting conditions.
- * TODO Figure out how to namespace this & boundaries...
+ * Zero any flux through the pole, and ensure flux CT preserves divB there
  */
 TaskStatus FixFlux(std::shared_ptr<MeshBlockData<Real>>& rc)
 {
@@ -212,29 +211,9 @@ TaskStatus FixFlux(std::shared_ptr<MeshBlockData<Real>>& rc)
         ke_e = ke;
     }
 
-    // TODO runtime option to allow inflow?
-    if (pmb->boundary_flag[BoundaryFace::inner_x1] == BoundaryFlag::outflow)
-    {
-        pmb->par_for("fix_flux_in_l", ks, ke+1, js, je+1, is, is,
-            KOKKOS_LAMBDA_3D {
-                F1(prims::rho, k, j, i) = min(F1(prims::rho, k, j, i), 0.);
-            }
-        );
-    }
-
-    if (pmb->boundary_flag[BoundaryFace::outer_x1] == BoundaryFlag::outflow &&
-        !(pmb->packages["GRMHD"]->Param<std::string>("problem") == "bondi"))
-    {
-        pmb->par_for("fix_flux_in_r", ks, ke+1, js, je+1, ie+1, ie+1,
-            KOKKOS_LAMBDA_3D {
-                F1(prims::rho, k, j, i) = max(F1(prims::rho, k, j, i), 0.);
-            }
-        );
-    }
-
     if (pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::reflect)
     {
-        pmb->par_for("fix_flux_b_l", ks, ke+1, js, js, is, ie+1,
+        pmb->par_for("fix_flux_b_l", ks, ke_e, js, js, is, ie+1,
             KOKKOS_LAMBDA_3D {
                 PLOOP F2(p, k, j, i) = 0.;
                 // Make sure the emfs are also 0, for flux-ct
@@ -246,7 +225,7 @@ TaskStatus FixFlux(std::shared_ptr<MeshBlockData<Real>>& rc)
 
     if (pmb->boundary_flag[BoundaryFace::outer_x2] == BoundaryFlag::reflect)
     {
-        pmb->par_for("fix_flux_b_r", ks, ke+1, je+1, je+1, is, ie+1,
+        pmb->par_for("fix_flux_b_r", ks, ke_e, je+1, je+1, is, ie+1,
             KOKKOS_LAMBDA_3D {
                 PLOOP F2(p, k, j, i) = 0.;
                 // Make sure the emfs are also 0, for flux-ct

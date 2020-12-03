@@ -95,13 +95,13 @@ void FixUtoP(std::shared_ptr<MeshBlockData<Real>>& rc, GridInt pflag, GridInt ff
                     //P(0, k, j, i), P(1, k, j, i), P(2, k, j, i), P(3, k, j, i), P(4, k, j, i),
                     //sum[0]/wsum, sum[1]/wsum, sum[2]/wsum, sum[3]/wsum, sum[4]/wsum);
                     FLOOP P(p, k, j, i) = sum[p]/wsum;
-                    // Make sure to keep lockstep
-                    p_to_u(G, P, eos, k, j, i, U);
-
-                    // Make sure fixed values still abide by floors (floors keep lockstep)
-                    fflag(k, j, i) |= apply_floors(G, P, U, eos, k, j, i, floors);
-                    fflag(k, j, i) |= apply_ceilings(G, P, U, eos, k, j, i, floors);
                 }
+                // Make sure to keep lockstep
+                p_to_u(G, P, eos, k, j, i, U);
+
+                // Make sure fixed values still abide by floors (floors keep lockstep)
+                fflag(k, j, i) |= apply_floors(G, P, U, eos, k, j, i, floors);
+                fflag(k, j, i) |= apply_ceilings(G, P, U, eos, k, j, i, floors);
             }
         }
     );

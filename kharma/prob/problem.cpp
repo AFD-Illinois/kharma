@@ -103,7 +103,7 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
 
     // TODO namespace this outside "torus," it could be added to anything
     Real u_jitter = pin->GetOrAddReal("torus", "u_jitter", 0.0);
-    int rng_seed = pin->GetOrAddInteger("torus", "rng_seed", 1337);
+    int rng_seed = pin->GetOrAddInteger("torus", "rng_seed", 31337);
     if (u_jitter > 0.0) {
         FLAG("Applying U perturbation");
         PerturbU(pmb, P, u_jitter, rng_seed + pmb->gid);

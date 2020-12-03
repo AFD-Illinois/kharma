@@ -117,7 +117,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     bool flag_save = pin->GetOrAddBoolean("debug", "flag_save", false);
     params.Add("flag_save", flag_save);
     int extra_checks = pin->GetOrAddInteger("debug", "extra_checks", 0);
-    params.Add("extra_checks", flag_verbose);
+    params.Add("extra_checks", extra_checks);
 
     // Floor parameters
     double rho_min_geom = pin->GetOrAddReal("floors", "rho_min_geom", 1.e-6);
