@@ -54,101 +54,15 @@
 
 using namespace parthenon;
 
-// Dispatch for all problems which can be generated
-
-void InitializeMesh(ParameterInput *pin, Mesh *pmesh)
-{
-    // TODO this is *instead* of defining MeshBlock::ProblemGenerator,
-    // which means that initial auto-refinement will *NOT* work.
-    // we're a ways from AMR yet so we'll cross that bridge etc.
-    FLAG("Initializing Mesh");
-
-    // Note this first step spits out valid P and U on *physical* zones
-    int nmb = pmesh->GetNumMeshBlocksThisRank(Globals::my_rank);
-    for (int i = 0; i < nmb; ++i) {
-        // Initialize the base container with problem values
-        // This could be switched into task format without too much issue
-        auto& pmb = pmesh->block_list[i];
-        auto& rc = pmb->real_containers.Get();
-        InitializeProblem(rc, pin);
-    }
-    FLAG("Initialized Fluid");
-
-    // Add the field for torus problems as a second pass
-    // Preserves P==U and ends with all physical zones fully defined
-    if (pin->GetOrAddString("b_field", "type", "none") != "none") {
-        // Calculating B has a stencil outside physical zones
-        FLAG("Extra boundary sync for B");
-        SyncAllBounds(pmesh);
-        //pmesh->Initialize(0, pin);
-
-        FLAG("Seeding magnetic field");
-        // Seed the magnetic field and find the minimum beta
-        Real beta_min = 1e100;
-        for (int i = 0; i < nmb; ++i) {
-            auto& pmb = pmesh->block_list[i];
-            auto& rc = pmb->real_containers.Get();
-            SeedBField(rc, pin);
-        
-            // TODO should this be added after normalization?
-            // TODO option to add flux slowly during the run?
-            Real BHflux = pin->GetOrAddReal("b_field", "bhflux", 0.0);
-            if (BHflux > 0.) {
-                //SeedBHFlux(rc, BHflux);
-            }
-
-            Real beta_local = GetLocalBetaMin(rc);
-            if(beta_local < beta_min) beta_min = beta_local;
-        }
-        beta_min = MPIMin(beta_min);
-#if DEBUG
-        cerr << "Beta min pre-norm: " << beta_min << endl;
-#endif
-
-        // Then normalize B by sqrt(beta/beta_min)
-        FLAG("Normalizing magnetic field");
-        Real beta = pin->GetOrAddReal("b_field", "beta_min", 100.);
-        Real norm = sqrt(beta_min/beta);
-        for (int i = 0; i < nmb; ++i) {
-            auto& pmb = pmesh->block_list[i];
-            auto& rc = pmb->real_containers.Get();
-            NormalizeBField(rc, norm);
-        }
-#if DEBUG
-        // Do it again to check
-        beta_min = 1e100;
-        for (int i = 0; i < nmb; ++i) {
-            auto& pmb = pmesh->block_list[i];
-            auto& rc = pmb->real_containers.Get();
-            Real beta_local = GetLocalBetaMin(rc);
-            if(beta_local < beta_min) beta_min = beta_local;
-        }
-        cerr << "Beta min post-norm: " << beta_min << endl;
-#endif
-    }
-    FLAG("Added B Field");
-
-    // Sync to fill the ghost zones
-    FLAG("Boundary sync");
-    SyncAllBounds(pmesh);
-    //pmesh->Initialize(0, pin);
-
-    //Diagnostic(rc, IndexDomain::entire);
-
-
-    FLAG("Initialized Mesh");
-}
-
-TaskStatus InitializeProblem(std::shared_ptr<Container<Real>>& rc, ParameterInput *pin)
+void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
 {
     FLAG("Initializing Block");
-    auto pmb = rc->GetBlockPointer();
+    auto rc = pmb->meshblock_data.Get();
     GridVars P = rc->Get("c.c.bulk.prims").data;
     GridVars U = rc->Get("c.c.bulk.cons").data;
 
     GRCoordinates G = pmb->coords;
-    Real gamma = pmb->packages["GRMHD"]->Param<Real>("gamma");
-    EOS* eos = CreateEOS(gamma);
+    EOS* eos = pmb->packages["GRMHD"]->Param<EOS*>("eos");
 
     auto prob = pin->GetString("parthenon/job", "problem_id"); // Required parameter
     if (prob == "mhdmodes") {
@@ -195,28 +109,93 @@ TaskStatus InitializeProblem(std::shared_ptr<Container<Real>>& rc, ParameterInpu
         PerturbU(pmb, P, u_jitter, rng_seed + pmb->gid);
     }
 
+    // We finish by filling the conserved variables U,
+    // which we'll treat as the independent/fundamental state.
+    // P is filled again from this later on
     IndexDomain domain = IndexDomain::entire;
-    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
-    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
-    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
+    IndexRange ib = pmb->cellbounds.GetBoundsI(domain);
+    IndexRange jb = pmb->cellbounds.GetBoundsJ(domain);
+    IndexRange kb = pmb->cellbounds.GetBoundsK(domain);
     // Initialize U
     FLAG("First P->U");
-    pmb->par_for("first_U", ks, ke, js, je, is, ie,
+    pmb->par_for("first_U", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_3D {
-            FourVectors Dtmp;
-            get_state(G, P, k, j, i, Loci::center, Dtmp);
-            prim_to_flux(G, P, Dtmp, eos, k, j, i, Loci::center, 0, U);
+            p_to_u(G, P, eos, k, j, i, U);
         }
     );
 
-    // Apply any floors. Floors preserve P<->U so why not test that?
+    // Apply any floors. Unnecessary as Parthenon does an initial FillDerived call
     FLAG("First Floors");
     ApplyFloors(rc);
 
-
-    DelEOS(eos);
     FLAG("Initialized Block");
-    return TaskStatus::complete;
+}
+
+void PostInitialize(ParameterInput *pin, Mesh *pmesh)
+{
+    FLAG("Post-initialization started");
+
+    // Add the field for torus problems as a second pass
+    // Preserves P==U and ends with all physical zones fully defined
+    if (pin->GetOrAddString("b_field", "type", "none") != "none") {
+        // Calculating B has a stencil outside physical zones
+        FLAG("Extra boundary sync for B");
+        SyncAllBounds(pmesh);
+
+        FLAG("Seeding magnetic field");
+        // Seed the magnetic field and find the minimum beta
+        int nmb = pmesh->GetNumMeshBlocksThisRank(Globals::my_rank);
+        Real beta_min = 1e100;
+        for (int i = 0; i < nmb; ++i) {
+            auto& pmb = pmesh->block_list[i];
+            auto& rc = pmb->meshblock_data.Get();
+            SeedBField(rc, pin);
+        
+            // TODO should this be added after normalization?
+            // TODO option to add flux slowly during the run?
+            Real BHflux = pin->GetOrAddReal("b_field", "bhflux", 0.0);
+            if (BHflux > 0.) {
+                //SeedBHFlux(rc, BHflux);
+            }
+
+            Real beta_local = GetLocalBetaMin(rc);
+            if(beta_local < beta_min) beta_min = beta_local;
+        }
+        beta_min = MPIMin(beta_min);
+#if DEBUG
+        cerr << "Beta min pre-norm: " << beta_min << endl;
+#endif
+
+        // Then normalize B by sqrt(beta/beta_min)
+        FLAG("Normalizing magnetic field");
+        Real beta = pin->GetOrAddReal("b_field", "beta_min", 100.);
+        if (beta_min > 0) {
+            Real norm = sqrt(beta_min/beta);
+            for (int i = 0; i < nmb; ++i) {
+                auto& pmb = pmesh->block_list[i];
+                auto& rc = pmb->meshblock_data.Get();
+                NormalizeBField(rc, norm);
+            }
+        }
+#if DEBUG
+        // Do it again to check
+        beta_min = 1e100;
+        for (int i = 0; i < nmb; ++i) {
+            auto& pmb = pmesh->block_list[i];
+            auto& rc = pmb->meshblock_data.Get();
+            Real beta_local = GetLocalBetaMin(rc);
+            if(beta_local < beta_min) beta_min = beta_local;
+        }
+        cerr << "Beta min post-norm: " << beta_min << endl;
+#endif
+    }
+    FLAG("Added B Field");
+
+    // Sync to fill the ghost zones
+    FLAG("Boundary sync");
+    SyncAllBounds(pmesh);
+
+    FLAG("Post-initialization finished");
 }
 
 void SyncAllBounds(Mesh *pmesh)
@@ -225,7 +204,7 @@ void SyncAllBounds(Mesh *pmesh)
     int nmb = pmesh->GetNumMeshBlocksThisRank(Globals::my_rank);
     for (int i = 0; i < nmb; ++i) {
         auto& pmb = pmesh->block_list[i];
-        auto& rc = pmb->real_containers.Get();
+        auto& rc = pmb->meshblock_data.Get();
         rc->ClearBoundary(BoundaryCommSubset::mesh_init);
         rc->StartReceiving(BoundaryCommSubset::mesh_init);
         rc->SendBoundaryBuffers();
@@ -233,7 +212,7 @@ void SyncAllBounds(Mesh *pmesh)
 
     for (int i = 0; i < nmb; ++i) {
         auto& pmb = pmesh->block_list[i];
-        auto& rc = pmb->real_containers.Get();
+        auto& rc = pmb->meshblock_data.Get();
         rc->ReceiveAndSetBoundariesWithWait();
         rc->ClearBoundary(BoundaryCommSubset::mesh_init);
         //pmb->pbval->ProlongateBoundaries(0.0, 0.0);
@@ -243,6 +222,6 @@ void SyncAllBounds(Mesh *pmesh)
         ApplyCustomBoundaries(rc);
 
         // Fill P again, including ghost zones
-        parthenon::FillDerivedVariables::FillDerived(rc);
+        parthenon::Update::FillDerived(rc);
     }
 }

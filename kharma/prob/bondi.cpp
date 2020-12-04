@@ -52,18 +52,19 @@ KOKKOS_INLINE_FUNCTION void get_prim_bondi(const GRCoordinates& G, const Coordin
  * Initialization of a Bondi problem with specified sonic point, BH mdot, and horizon radius
  * TODO this can/should be just mdot (and the grid ofc), if this problem is to be used as anything more than a test
  */
-void InitializeBondi(std::shared_ptr<MeshBlock> pmb, const GRCoordinates& G, GridVars P,
+void InitializeBondi(MeshBlock *pmb, const GRCoordinates& G, GridVars P,
                      const EOS* eos, const Real mdot, const Real rs)
 {
     FLAG("Initializing Bondi problem");
-    int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
-    int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
-    int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
 
     SphKSCoords ks = mpark::get<SphKSCoords>(G.coords.base);
     SphBLCoords bl = SphBLCoords(ks.a);
     CoordinateEmbedding cs = G.coords;
-    pmb->par_for("init_bondi", 0, n3-1, 0, n2-1, 0, n1-1,
+
+    IndexRange ib = pmb->cellbounds.GetBoundsI(IndexDomain::entire);
+    IndexRange jb = pmb->cellbounds.GetBoundsJ(IndexDomain::entire);
+    IndexRange kb = pmb->cellbounds.GetBoundsK(IndexDomain::entire);
+    pmb->par_for("init_bondi", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_3D {
             get_prim_bondi(G, cs, P, eos, bl, ks, mdot, rs, k, j, i);
         }
@@ -71,37 +72,34 @@ void InitializeBondi(std::shared_ptr<MeshBlock> pmb, const GRCoordinates& G, Gri
     FLAG("Initialized Bondi");
 }
 
-void ApplyBondiBoundary(std::shared_ptr<Container<Real>>& rc)
+void ApplyBondiBoundary(std::shared_ptr<MeshBlockData<Real>>& rc)
 {
     auto pmb = rc->GetBlockPointer();
     GridVars U = rc->Get("c.c.bulk.cons").data;
     GridVars P = rc->Get("c.c.bulk.prims").data;
-    int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
-    int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
-    int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
     GRCoordinates G = pmb->coords;
 
     FLAG("Applying Bondi X1R boundary");
 
     Real mdot = pmb->packages["GRMHD"]->Param<Real>("mdot");
     Real rs = pmb->packages["GRMHD"]->Param<Real>("rs");
-    Real gamma = pmb->packages["GRMHD"]->Param<Real>("gamma");
-    EOS* eos = CreateEOS(gamma);
+    EOS* eos = pmb->packages["GRMHD"]->Param<EOS*>("eos");
 
     // Just the X1 right boundary
     SphKSCoords ks = mpark::get<SphKSCoords>(G.coords.base);
     SphBLCoords bl = SphBLCoords(ks.a);
     CoordinateEmbedding cs = G.coords;
-    pmb->par_for("bondi_boundary", 0, n3-1, 0, n2-1, n1 - NGHOST, n1-1,
+
+    IndexRange ib = pmb->cellbounds.GetBoundsI(IndexDomain::interior);
+    IndexRange jb = pmb->cellbounds.GetBoundsJ(IndexDomain::interior);
+    IndexRange kb = pmb->cellbounds.GetBoundsK(IndexDomain::interior);
+    int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
+    pmb->par_for("bondi_boundary", kb.s, kb.e, jb.s, jb.e, ib.e+1, n1-1,
         KOKKOS_LAMBDA_3D {
-            FourVectors Dtmp;
             get_prim_bondi(G, cs, P, eos, bl, ks, mdot, rs, k, j, i);
-            get_state(G, P, k, j, i, Loci::center, Dtmp);
-            prim_to_flux(G, P, Dtmp, eos, k, j, i, Loci::center, 0, U);
+            p_to_u(G, P, eos, k, j, i, U);
         }
     );
-
-    DelEOS(eos);
 }
 // Adapted from M. Chandra
 KOKKOS_INLINE_FUNCTION Real get_Tfunc(const Real T, const GReal r, const Real C1, const Real C2, const Real n)
@@ -152,7 +150,7 @@ KOKKOS_INLINE_FUNCTION void get_prim_bondi(const GRCoordinates& G, const Coordin
                                             const Real mdot, const Real rs, const int& k, const int& j, const int& i)
 {
     // Solution constants
-    // TODO cache these?  State is awful
+    // Ideally these could be cached but preformance isn't an issue here
     Real n = 1. / (eos->gam - 1.);
     Real uc = sqrt(mdot / (2. * rs));
     Real Vc = -sqrt(pow(uc, 2) / (1. - 3. * pow(uc, 2)));
@@ -165,6 +163,7 @@ KOKKOS_INLINE_FUNCTION void get_prim_bondi(const GRCoordinates& G, const Coordin
     coords.coord_to_embed(X, Xembed);
     Real Rhor = ks.rhor();
     // Any zone inside the horizon gets the horizon's values
+    // TODO There may be a more stable way to initialize inside the EH...
     int ii = i;
     while (Xembed[1] < Rhor)
     {

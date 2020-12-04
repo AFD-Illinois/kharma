@@ -12,9 +12,9 @@
  * 
  * LOCKSTEP: this function respects P and returns consistent P<->U
  */
-TaskStatus ApplyCustomBoundaries(std::shared_ptr<Container<Real>>& rc);
+TaskStatus ApplyCustomBoundaries(std::shared_ptr<MeshBlockData<Real>>& rc);
 
 /**
  * Fix fluxes on physical boundaries. Ensure no inflow flux, correct B fields on reflecting conditions.
  */
-TaskStatus FixFlux(std::shared_ptr<Container<Real>>& rc);
+TaskStatus FixFlux(std::shared_ptr<MeshBlockData<Real>>& rc);

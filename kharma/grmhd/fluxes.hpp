@@ -41,20 +41,13 @@
 #include "reconstruction.hpp"
 #include "phys.hpp"
 
-namespace LLF {
+namespace HLLE {
 /**
- * Take reconstructed primitives at left and right face, and construct the local Lax-Friedrichs flux
+ * Reconstruct the values of primitive variables at left and right zone faces,
+ * find the corresponding conserved variables, and construct their HLL fluxes
  *
- * Also fills the "ctop" vector with the highest magnetosonic speed mhd_vchar -- used to estimate timestep later.
- *
- * Note that since this L and R are defined with respect to the *face*, they are actually the
- * opposite of the "r" and "l" in the caller, CalculateFluxes!
+ * Also fills the "ctop" vector with the signal speed mhd_vchar -- used to estimate timestep later.
  */
-TaskStatus LRToFlux(std::shared_ptr<Container<Real>>& rc, GridVars pl, GridVars pr, const int dir, GridVars flux);
-
-/**
- * Reconstruct and calculate the flux, interleaved.  See Reconstruction namespace and LRToFlux for details
- */
-TaskStatus ReconAndFlux(std::shared_ptr<Container<Real>>& rc, const int& dir);
+TaskStatus GetFlux(std::shared_ptr<MeshBlockData<Real>>& rc, const int& dir);
 
 }

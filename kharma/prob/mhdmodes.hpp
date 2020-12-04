@@ -23,7 +23,7 @@ using namespace parthenon;
  *
  * Returns the stopping time corresponding to advection by 1 period
  */
-Real InitializeMHDModes(std::shared_ptr<MeshBlock> pmb, GRCoordinates G, GridVars P, int nmode, int dir)
+Real InitializeMHDModes(MeshBlock *pmb, GRCoordinates G, GridVars P, int nmode, int dir)
 {
     // Mean state
     Real rho0 = 1.;
@@ -203,11 +203,10 @@ Real InitializeMHDModes(std::shared_ptr<MeshBlock> pmb, GRCoordinates G, GridVar
         tf = -1;
     }
 
-    IndexDomain domain = IndexDomain::entire;
-    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
-    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
-    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
-    pmb->par_for("mhdmodes_init", ks, ke, js, je, is, ie,
+    IndexRange ib = pmb->cellbounds.GetBoundsI(IndexDomain::interior);
+    IndexRange jb = pmb->cellbounds.GetBoundsJ(IndexDomain::interior);
+    IndexRange kb = pmb->cellbounds.GetBoundsK(IndexDomain::interior);
+    pmb->par_for("mhdmodes_init", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_3D {
             Real X[GR_DIM];
             G.coord(k, j, i, Loci::center, X);

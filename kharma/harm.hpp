@@ -26,5 +26,5 @@ class HARMDriver : public MultiStageBlockTaskDriver {
          * 
          * The function is heavily documented since order changes can introduce subtle bugs
          */
-        TaskList MakeTaskList(MeshBlock *pmb, int stage);
+        TaskCollection MakeTaskCollection(BlockList_t &blocks, int stage);
 };

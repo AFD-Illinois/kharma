@@ -1,5 +1,6 @@
-# MAD model mirroring the simulation library
-# 20M/41M F-M torus, overall simulation size 1000M
+# SANE model mirroring the simulation library
+# Quite small by modern standards, 6M/12M F-M torus,
+# Overall simulation size 50M
 
 <parthenon/job>
 problem_id = torus
@@ -7,19 +8,19 @@ problem_id = torus
 <parthenon/mesh>
 refinement = none
 numlevel = 1
-nx1 = 288
+nx1 = 128
 nx2 = 128
-nx3 = 128
+nx3 = 1
 
 <parthenon/meshblock>
-nx1 = 288
-nx2 = 64
-nx3 = 64
+nx1 = 128
+nx2 = 128
+nx3 = 1
 
 <coordinates>
 base = spherical_ks
 transform = mks
-r_out = 1000
+r_out = 100
 a = 0.9375
 hslope = 0.3
 mks_smooth = 0.5
@@ -41,25 +42,23 @@ gamma = 1.666667
 reconstruction = weno5
 
 <torus>
-rin = 20.0
-rmax = 41.0
+rin = 6.0
+rmax = 12.0
 u_jitter = 0.1
 
 <b_field>
-type = mad
+type = sane
 beta_min = 100.
 
 <floors>
 rho_min_geom = 1e-5
 u_min_geom = 1e-7
-bsq_over_rho_max = 400
-u_over_rho_max = 3
 
 <parthenon/output0>
 file_type = hdf5
-dt = 5.0
+dt = 10.0
 variables = c.c.bulk.prims
 
 <parthenon/output1>
 file_type = rst
-dt = 100.0
+dt = 10.0

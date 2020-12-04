@@ -46,96 +46,99 @@
 KOKKOS_INLINE_FUNCTION void check_inflow(const GRCoordinates &G, GridVars P, const int& k, const int& j, const int& i, int type);
 
 
-TaskStatus ApplyCustomBoundaries(std::shared_ptr<Container<Real>>& rc)
+TaskStatus ApplyCustomBoundaries(std::shared_ptr<MeshBlockData<Real>>& rc)
 {
     auto pmb = rc->GetBlockPointer();
     GridVars U = rc->Get("c.c.bulk.cons").data;
     GridVars P = rc->Get("c.c.bulk.prims").data;
     auto& G = pmb->coords;
 
-    int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
-    int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
-    int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
-    IndexRange ib = pmb->cellbounds.GetBoundsI(IndexDomain::interior);
-    IndexRange jb = pmb->cellbounds.GetBoundsJ(IndexDomain::interior);
-    IndexRange kb = pmb->cellbounds.GetBoundsK(IndexDomain::interior);
+    IndexDomain domain = IndexDomain::interior;
+    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
+    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
+    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
+    domain = IndexDomain::entire;
+    int is_e = pmb->cellbounds.is(domain), ie_e = pmb->cellbounds.ie(domain);
+    int js_e = pmb->cellbounds.js(domain), je_e = pmb->cellbounds.je(domain);
+    int ks_e = pmb->cellbounds.ks(domain), ke_e = pmb->cellbounds.ke(domain);
 
-    Real gamma = pmb->packages["GRMHD"]->Param<Real>("gamma");
-    EOS* eos = CreateEOS(gamma);
+    EOS* eos = pmb->packages["GRMHD"]->Param<EOS*>("eos");
+
+    // Big TODO: can these be implemented in the *conserved* variables?
+    // It would save much headache & wailing
+
+
+    if(pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::reflect) {
+        FLAG("Inner X2 reflect");
+        pmb->par_for("inner_x2_reflect", ks_e, ke_e, js_e, js-1, is, ie,
+            KOKKOS_LAMBDA_3D {
+                PLOOP {
+                    Real reflect = ((p == prims::u2 || p == prims::B2) ? -1.0 : 1.0);
+                    P(p, k, j, i) = reflect * P(p, k, (js - 1) + (js - j), i);
+                }
+                // Recover conserved vars
+                p_to_u(G, P, eos, k, j, i, U);
+            }
+        );
+    }
+    if(pmb->boundary_flag[BoundaryFace::outer_x2] == BoundaryFlag::reflect) {
+        FLAG("Outer X2 reflect");
+        pmb->par_for("outer_x2_reflect", ks_e, ke_e, je+1, je_e, is, ie,
+            KOKKOS_LAMBDA_3D {
+                PLOOP {
+                    Real reflect = ((p == prims::u2 || p == prims::B2) ? -1.0 : 1.0);
+                    P(p, k, j, i) = reflect * P(p, k, (je + 1) + (je - j), i);
+                }
+                // Recover conserved vars
+                p_to_u(G, P, eos, k, j, i, U);
+            }
+        );
+    }
 
     // Implement the outflow boundaries on the primitives, since the inflow check needs that
     if(pmb->boundary_flag[BoundaryFace::inner_x1] == BoundaryFlag::outflow) {
-        pmb->par_for("inner_x1_outflow", kb.s, kb.e, jb.s, jb.e, 0, ib.s-1,
+        FLAG("Inner X1 outflow");
+        pmb->par_for("inner_x1_outflow", ks_e, ke_e, js_e, je_e, is_e, is-1,
             KOKKOS_LAMBDA_3D {
                 // Apply boundary on primitives
                 PLOOP {
-                    P(p, k, j, i) = P(p, k, j, ib.s);
+                    P(p, k, j, i) = P(p, k, j, is);
                     if(p == prims::B1 || p == prims::B2 || p == prims::B3) {
-                        P(p, k, j, i) *= G.gdet(Loci::center, j, ib.s) / G.gdet(Loci::center, j, i);
+                        P(p, k, j, i) *= G.gdet(Loci::center, j, is) / G.gdet(Loci::center, j, i);
                     }
                 }
                 // Inflow check
                 check_inflow(G, P, k, j, i, 0);
                 // Recover conserved vars
-                FourVectors Dtmp;
-                get_state(G, P, k, j, i, Loci::center, Dtmp);
-                prim_to_flux(G, P, Dtmp, eos, k, j, i, Loci::center, 0, U);
+                p_to_u(G, P, eos, k, j, i, U);
             }
         );
     }
     if(pmb->boundary_flag[BoundaryFace::outer_x1] == BoundaryFlag::outflow) {
-        pmb->par_for("outer_x1_outflow", kb.s, kb.e, jb.s, jb.e, ib.e+1, n1-1,
+        FLAG("Outer X1 outflow");
+        pmb->par_for("outer_x1_outflow", ks_e, ke_e, js_e, je_e, ie+1, ie_e,
             KOKKOS_LAMBDA_3D {
                 // Apply boundary on primitives
                 PLOOP {
-                    P(p, k, j, i) = P(p, k, j, ib.e);
+                    P(p, k, j, i) = P(p, k, j, ie);
                     if(p == prims::B1 || p == prims::B2 || p == prims::B3) {
-                        P(p, k, j, i) *= G.gdet(Loci::center, j, ib.e) / G.gdet(Loci::center, j, i);
+                        P(p, k, j, i) *= G.gdet(Loci::center, j, ie) / G.gdet(Loci::center, j, i);
                     }
                 }
                 // Inflow check
                 check_inflow(G, P, k, j, i, 1);
                 // Recover conserved vars
-                FourVectors Dtmp;
-                get_state(G, P, k, j, i, Loci::center, Dtmp);
-                prim_to_flux(G, P, Dtmp, eos, k, j, i, Loci::center, 0, U);
-            }
-        );
-    }
-
-    // Implement our own reflecting boundary for our variables. TODO does this work in conserved?
-    if(pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::reflect) {
-        pmb->par_for("inner_x2_reflect", 0, NPRIM-1, kb.s, kb.e, 0, jb.s-1, 0, n1-1,
-            KOKKOS_LAMBDA_VARS {
-                Real reflect = ((p == prims::u2 || p == prims::B2) ? -1.0 : 1.0);
-                P(p, k, j, i) = reflect * P(p, k, jb.s + (jb.s - j - 1), i);
-                // Recover conserved vars
-                FourVectors Dtmp;
-                get_state(G, P, k, j, i, Loci::center, Dtmp);
-                prim_to_flux(G, P, Dtmp, eos, k, j, i, Loci::center, 0, U);
-            }
-        );
-    }
-    if(pmb->boundary_flag[BoundaryFace::outer_x2] == BoundaryFlag::reflect) {
-        pmb->par_for("outer_x2_reflect", 0, NPRIM-1, kb.s, kb.e, jb.e+1, n2-1, 0, n1-1,
-            KOKKOS_LAMBDA_VARS {
-                Real reflect = ((p == prims::u2 || p == prims::B2) ? -1.0 : 1.0);
-                P(p, k, j, i) = reflect * P(p, k, jb.e + (jb.e - j + 1), i);
-                // Recover conserved vars
-                FourVectors Dtmp;
-                get_state(G, P, k, j, i, Loci::center, Dtmp);
-                prim_to_flux(G, P, Dtmp, eos, k, j, i, Loci::center, 0, U);
+                p_to_u(G, P, eos, k, j, i, U);
             }
         );
     }
 
     if (pmb->boundary_flag[BoundaryFace::outer_x1] == BoundaryFlag::outflow &&
         pmb->packages["GRMHD"]->Param<std::string>("problem") == "bondi") {
-        FLAG("Applying Bondi problem boundary");
+        FLAG("Bondi outer boundary");
         ApplyBondiBoundary(rc);
     }
 
-    DelEOS(eos);
     return TaskStatus::complete;
 }
 
@@ -161,12 +164,25 @@ KOKKOS_INLINE_FUNCTION void check_inflow(const GRCoordinates &G, GridVars P, con
         P(prims::u3, k, j, i) /= gamma;
 
         // Reset radial velocity so radial 4-velocity is zero
-        Real alpha = 1 / G.gcon(Loci::center, j, i, 0, 0);
+        Real alpha = 1. / sqrt(-G.gcon(Loci::center, j, i, 0, 0));
         Real beta1 = G.gcon(Loci::center, j, i, 0, 1) * alpha * alpha;
         P(prims::u1, k, j, i) = beta1 / alpha;
 
         // Now find new gamma and put it back in
-        gamma = mhd_gamma_calc(G, P, k, j, i, Loci::center);
+        // TODO abridge? Delete or record special cases? Are loops faster?
+        Real vsq = G.gcov(Loci::center, j, i, 1, 1) * P(prims::u1, k, j, i) * P(prims::u1, k, j, i) +
+        G.gcov(Loci::center, j, i, 2, 2) * P(prims::u2, k, j, i) * P(prims::u2, k, j, i) +
+        G.gcov(Loci::center, j, i, 3, 3) * P(prims::u3, k, j, i) * P(prims::u3, k, j, i) +
+        2. * (G.gcov(Loci::center, j, i, 1, 2) * P(prims::u1, k, j, i) * P(prims::u2, k, j, i) +
+              G.gcov(Loci::center, j, i, 1, 3) * P(prims::u1, k, j, i) * P(prims::u3, k, j, i) +
+              G.gcov(Loci::center, j, i, 2, 3) * P(prims::u2, k, j, i) * P(prims::u3, k, j, i));
+        
+        if (fabs(vsq) < 1.e-13) vsq = 1.e-13;
+        if (vsq >= 1.) {
+            vsq = 1. - 1./(50.*50.);
+        }
+
+        gamma = 1./sqrt(1. - vsq);
 
         P(prims::u1, k, j, i) *= gamma;
         P(prims::u2, k, j, i) *= gamma;
@@ -175,64 +191,48 @@ KOKKOS_INLINE_FUNCTION void check_inflow(const GRCoordinates &G, GridVars P, con
 }
 
 /**
- * Fix fluxes on domain boundaries. No inflow, correct B fields on reflecting conditions.
- * TODO Parthenon does this, if given to understand B is a vector
+ * Zero any flux through the pole, and ensure flux CT preserves divB there
  */
-TaskStatus FixFlux(std::shared_ptr<Container<Real>>& rc)
+TaskStatus FixFlux(std::shared_ptr<MeshBlockData<Real>>& rc)
 {
     FLAG("Fixing boundary fluxes");
     auto pmb = rc->GetBlockPointer();
-    GridVars F1 = rc->Get("c.c.bulk.cons").flux[X1DIR];
-    GridVars F2 = rc->Get("c.c.bulk.cons").flux[X2DIR];
-    GridVars F3 = rc->Get("c.c.bulk.cons").flux[X3DIR];
-
     IndexDomain domain = IndexDomain::interior;
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
-    domain = IndexDomain::entire;
-    int is_e = pmb->cellbounds.is(domain), ie_e = pmb->cellbounds.ie(domain);
-    int js_e = pmb->cellbounds.js(domain), je_e = pmb->cellbounds.je(domain);
-    int ks_e = pmb->cellbounds.ks(domain), ke_e = pmb->cellbounds.ke(domain);
 
-    // TODO option to allow inflow?
-    if (pmb->boundary_flag[BoundaryFace::inner_x1] == BoundaryFlag::outflow)
-    {
-        pmb->par_for("fix_flux_in_l", ks_e, ke_e, js_e, je_e,
-            KOKKOS_LAMBDA (const int& k, const int& j) {
-                F1(prims::rho, k, j, is) = min(F1(prims::rho, k, j, is), 0.);
-            }
-        );
-    }
-
-    if (pmb->boundary_flag[BoundaryFace::outer_x1] == BoundaryFlag::outflow &&
-        !(pmb->packages["GRMHD"]->Param<std::string>("problem") == "bondi"))
-    {
-        pmb->par_for("fix_flux_in_r", ks_e, ke_e, js_e, je_e,
-            KOKKOS_LAMBDA (const int& k, const int& j) {
-                F1(prims::rho, k, j, ie+1) = max(F1(prims::rho, k, j, ie+1), 0.);
-            }
-        );
+    GridVars F1 = rc->Get("c.c.bulk.cons").flux[X1DIR];
+    GridVars F2 = rc->Get("c.c.bulk.cons").flux[X2DIR];
+    GridVars F3;
+    int ke_e;
+    if (ks != ke) {
+        ke_e = ke + 1;
+        F3 = rc->Get("c.c.bulk.cons").flux[X3DIR];
+    } else {
+        ke_e = ke;
     }
 
     if (pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::reflect)
     {
-        pmb->par_for("fix_flux_b_l", ks_e, ke_e, is_e, ie_e,
-            KOKKOS_LAMBDA (const int& k, const int& i) {
-                F1(prims::B2, k, js - 1, i) = -F1(prims::B2, k, js, i);
-                F3(prims::B2, k, js - 1, i) = -F3(prims::B2, k, js, i);
-                PLOOP F2(p, k, js, i) = 0.;
+        pmb->par_for("fix_flux_b_l", ks, ke_e, js, js, is, ie+1,
+            KOKKOS_LAMBDA_3D {
+                PLOOP F2(p, k, j, i) = 0.;
+                // Make sure the emfs are also 0, for flux-ct
+                F1(prims::B2, k, j-1, i) = -F1(prims::B2, k, js, i);
+                if (ke_e > 0) F3(prims::B2, k, j-1, i) = -F3(prims::B2, k, js, i);
             }
         );
     }
 
     if (pmb->boundary_flag[BoundaryFace::outer_x2] == BoundaryFlag::reflect)
     {
-        pmb->par_for("fix_flux_b_r", ks_e, ke_e, is_e, ie_e,
-            KOKKOS_LAMBDA (const int& k, const int& i) {
-                F1(prims::B2, k, je + 1, i) = -F1(prims::B2, k, je, i);
-                F3(prims::B2, k, je + 1, i) = -F3(prims::B2, k, je, i);
-                PLOOP F2(p, k, je + 1, i) = 0.;
+        pmb->par_for("fix_flux_b_r", ks, ke_e, je+1, je+1, is, ie+1,
+            KOKKOS_LAMBDA_3D {
+                PLOOP F2(p, k, j, i) = 0.;
+                // Make sure the emfs are also 0, for flux-ct
+                F1(prims::B2, k, j, i) = -F1(prims::B2, k, je, i);
+                if (ke_e > 0) F3(prims::B2, k, j, i) = -F3(prims::B2, k, je, i);
             }
         );
     }

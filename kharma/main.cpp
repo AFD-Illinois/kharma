@@ -72,17 +72,17 @@ int main(int argc, char *argv[])
 {
     ParthenonManager pman;
 
+    // TODO there's e.g. UserWorkBeforeOutput I might want to look into
     pman.app_input->ProcessPackages = KHARMA::ProcessPackages;
     pman.app_input->ProcessProperties = KHARMA::ProcessProperties;
-    //pman.app_input->ProblemGenerator = KHARMA::ProblemGenerator;  // TODO does this work now?
-    //pman.app_input->UserWorkAfterLoop = KHARMA::UserWorkAfterLoop;
-    //pman.app_input->SetFillDerivedFunctions = KHARMA::SetFillDerivedFunctions;
+    pman.app_input->ProblemGenerator = KHARMA::ProblemGenerator;
 
     // Parthenon init includes Kokkos, MPI, parses parameters & cmdline,
     // then calls ProcessPackages and ProcessProperties, then constructs the Mesh
     FLAG("Parthenon Initializing");
     auto manager_status = pman.ParthenonInit(argc, argv);
     if (manager_status == ParthenonStatus::complete) {
+        // TODO use this as an option to just write out the gridfile, initial mesh, etc.
         pman.ParthenonFinalize();
         return 0;
     }
@@ -91,16 +91,21 @@ int main(int argc, char *argv[])
         return 1;
     }
     FLAG("Parthenon Initialized");
-    if(MPIRank0()) ShowConfig(); // TODO something less verbose
 
     auto pin = pman.pinput.get();
     auto pmesh = pman.pmesh.get();
     auto papp = pman.app_input.get();
 
+    if(pin->GetOrAddInteger("debug", "verbose", 0) && MPIRank0()) {
+        // This dumps the full Kokkos config, useful for double-checking
+        // that the compile did what we wanted
+        ShowConfig();
+    }
+
     // Write the problem to the mesh.
     // Implemented separately outside of MeshBlock since
     // GRMHD initializaitons involve global reductions
-    InitializeMesh(pin, pmesh);
+    PostInitialize(pin, pmesh);
 
     // Then construct & run the driver
     HARMDriver driver(pin, papp, pmesh);

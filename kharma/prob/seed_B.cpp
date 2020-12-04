@@ -42,7 +42,7 @@
 // Avoids string comparsion in kernels
 enum BSeedType{sane, ryan, r3s3, gaussian};
 
-TaskStatus SeedBField(std::shared_ptr<Container<Real>>& rc, ParameterInput *pin)
+TaskStatus SeedBField(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin)
 {
     auto pmb = rc->GetBlockPointer();
     IndexDomain domain = IndexDomain::entire;
@@ -52,7 +52,7 @@ TaskStatus SeedBField(std::shared_ptr<Container<Real>>& rc, ParameterInput *pin)
     int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
     int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
 
-    GRCoordinates G = pmb->coords;
+    auto& G = pmb->coords;
     GridVars P = rc->Get("c.c.bulk.prims").data;
 
     Real rin;
@@ -98,8 +98,8 @@ TaskStatus SeedBField(std::shared_ptr<Container<Real>>& rc, ParameterInput *pin)
             GReal r = Xembed[1], th = Xembed[2];
 
             // Find rho (later u?) at corners by averaging from adjacent centers
-            Real rho_av = 0.25 * (P(prims::rho, NGHOST, j, i)     + P(prims::rho, NGHOST, j, i - 1) +
-                                  P(prims::rho, NGHOST, j - 1, i) + P(prims::rho, NGHOST, j - 1, i - 1));
+            Real rho_av = 0.25 * (P(prims::rho, ks, j, i)     + P(prims::rho, ks, j, i - 1) +
+                                  P(prims::rho, ks, j - 1, i) + P(prims::rho, ks, j - 1, i - 1));
 
             Real q;
             switch (b_field_flag)
@@ -147,7 +147,7 @@ TaskStatus SeedBField(std::shared_ptr<Container<Real>>& rc, ParameterInput *pin)
     return TaskStatus::complete;
 }
 
-TaskStatus NormalizeBField(std::shared_ptr<Container<Real>>& rc, Real norm)
+TaskStatus NormalizeBField(std::shared_ptr<MeshBlockData<Real>>& rc, Real norm)
 {
     auto pmb = rc->GetBlockPointer();
     IndexDomain domain = IndexDomain::entire;
@@ -156,11 +156,9 @@ TaskStatus NormalizeBField(std::shared_ptr<Container<Real>>& rc, Real norm)
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
     GridVars P = rc->Get("c.c.bulk.prims").data;
     GridVars U = rc->Get("c.c.bulk.cons").data;
-    GRCoordinates G = pmb->coords;
+    auto& G = pmb->coords;
 
-    // TODO *sigh*
-    Real gamma = pmb->packages["GRMHD"]->Param<Real>("gamma");
-    EOS* eos = CreateEOS(gamma);
+    EOS* eos = pmb->packages["GRMHD"]->Param<EOS*>("eos");
 
     pmb->par_for("B_field_normalize", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D {
@@ -168,34 +166,28 @@ TaskStatus NormalizeBField(std::shared_ptr<Container<Real>>& rc, Real norm)
             P(prims::B2, k, j, i) *= norm;
             P(prims::B3, k, j, i) *= norm;
 
-            FourVectors Dtmp;
-            get_state(G, P, k, j, i, Loci::center, Dtmp);
-            prim_to_flux(G, P, Dtmp, eos, k, j, i, Loci::center, 0, U);
+            p_to_u(G, P, eos, k, j, i, U);
         }
     );
 
-    DelEOS(eos);
     return TaskStatus::complete;
 }
 
-Real GetLocalBetaMin(std::shared_ptr<Container<Real>>& rc)
+Real GetLocalBetaMin(std::shared_ptr<MeshBlockData<Real>>& rc)
 {
     auto pmb = rc->GetBlockPointer();
     IndexDomain domain = IndexDomain::interior;
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
-    GRCoordinates G = pmb->coords;
+    auto& G = pmb->coords;
     GridVars P = rc->Get("c.c.bulk.prims").data;
 
-    // TODO *sigh*
-    Real gamma = pmb->packages["GRMHD"]->Param<Real>("gamma");
-    EOS* eos = CreateEOS(gamma);
+    EOS* eos = pmb->packages["GRMHD"]->Param<EOS*>("eos");
 
     Real beta_min;
     Kokkos::Min<Real> min_reducer(beta_min);
-    Kokkos::parallel_reduce("B_field_betamin",
-        Kokkos::MDRangePolicy<Kokkos::Rank<3>>({ks, js, is}, {ke+1, je+1, ie+1}),
+    pmb->par_reduce("B_field_betamin", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D_REDUCE {
             FourVectors Dtmp;
             get_state(G, P, k, j, i, Loci::center, Dtmp);
@@ -208,8 +200,6 @@ Real GetLocalBetaMin(std::shared_ptr<Container<Real>>& rc)
             if(beta_ij < local_result) local_result = beta_ij;
         }
     , min_reducer);
-
-    DelEOS(eos);
 
     return beta_min;
 }

@@ -3,6 +3,7 @@ build/
 
 # Program and debug output
 out-*.txt
+*.json
 convergence.txt
 *.h5
 *.png

@@ -40,12 +40,16 @@
 
 // Everywhere else we can just import <parthenon/parthenon.hpp>
 // Here we have to be careful of circular dependencies
-#include "coordinates/uniform_cartesian.hpp"
+#include <coordinates/uniform_cartesian.hpp>
+#include <parameter_input.hpp>
 
-// TODO standardize namespaces.
+#include "Kokkos_Core.hpp"
+
+// TODO standardize namespaces, maybe fewer?
 // Also parthenon may not always like this namespace import...
 using namespace parthenon;
 using namespace std;
+using namespace Kokkos;
 
 // Option to ignore coordinates entirely,
 // and only use flat-space SR in Cartesian coordinates
@@ -78,14 +82,46 @@ public:
     GeomTensor3 conn_direct;
 #endif
 
-    // Constructors.  Must implement all parent constructors as Parthenon uses them all
-    // ... and some operator=
-    GRCoordinates(): UniformCartesian() {};
+    // "Full" constructors which generate new geometry caches
+    // these call Kokkos internally so we must ensure they're only called host-side
+#pragma hd_warning_disable
     GRCoordinates(const RegionSize &rs, ParameterInput *pin);
+#pragma hd_warning_disable
     GRCoordinates(const GRCoordinates &src, int coarsen);
 
-    GRCoordinates(const GRCoordinates& src);
-    GRCoordinates operator=(const GRCoordinates& src);
+    // Interim & copy constructors so that Parthenon can use us like a UniformCartesian object,
+    // that is, host- & device-side indiscriminately
+    KOKKOS_FUNCTION GRCoordinates(): UniformCartesian() {};
+    KOKKOS_FUNCTION GRCoordinates(const GRCoordinates &src): UniformCartesian(src)
+    {
+        //std::cerr << "Calling copy constructor size " << src.n1 << " " << src.n2 << std::endl;
+        coords = src.coords;
+        n1 = src.n1;
+        n2 = src.n2;
+        n3 = src.n3;
+    #if !FAST_CARTESIAN && !NO_CACHE
+        gcon_direct = src.gcon_direct;
+        gcov_direct = src.gcov_direct;
+        gdet_direct = src.gdet_direct;
+        conn_direct = src.conn_direct;
+    #endif
+    };
+    KOKKOS_FUNCTION GRCoordinates operator=(const GRCoordinates& src)
+    {
+        //std::cerr << "Calling assignment operator size " << src.n1 << " " << src.n2 << std::endl;
+        UniformCartesian::operator=(src);
+        coords = src.coords;
+        n1 = src.n1;
+        n2 = src.n2;
+        n3 = src.n3;
+    #if !FAST_CARTESIAN && !NO_CACHE
+        gcon_direct = src.gcon_direct;
+        gcov_direct = src.gcov_direct;
+        gdet_direct = src.gdet_direct;
+        conn_direct = src.conn_direct;
+    #endif
+        return *this;
+    };
 
     // TODO Test these vs going all-in on full-matrix versions and computing on the fly
     KOKKOS_INLINE_FUNCTION Real gcon(const Loci loc, const int& j, const int& i, const int mu, const int nu) const;
@@ -111,8 +147,6 @@ public:
 
     // TODO Indexing functions and named slices to make it comfy
 };
-
-// Define the inline functions in header since they don't cross translation units
 
 /**
  * Function to return native coordinates on the GRCoordinates

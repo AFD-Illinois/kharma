@@ -39,15 +39,10 @@
 #include "floors.hpp"
 
 /**
- * Clear corner zones from being used for fixups
- */
-void ClearCorners(std::shared_ptr<MeshBlock> pmb, GridInt pflag);
-
-/**
  * Smooth over inversion failures by averaging values from each neighboring zone
  * a.k.a. Diffusion?  What diffusion?  There is no diffusion here.
  *
  * TODO parallelize this
  * LOCKSTEP: this function expects and should preserve P<->U
  */
-void FixUtoP(std::shared_ptr<Container<Real>>& rc, GridInt pflag, GridInt fflag);
+void FixUtoP(std::shared_ptr<MeshBlockData<Real>>& rc, GridInt pflag, GridInt fflag);

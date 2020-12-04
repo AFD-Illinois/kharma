@@ -12,9 +12,8 @@
  * @param rin is the torus innermost radius, in r_g
  * @param rmax is the radius of maximum density of the F-M torus in r_g
  */
-void InitializeFMTorus(std::shared_ptr<MeshBlock> pmb, GRCoordinates& G, GridVars P, const EOS* eos,
+void InitializeFMTorus(MeshBlock *pmb, const GRCoordinates& G, GridVars P, const EOS* eos,
                        GReal rin, GReal rmax, Real kappa=1.e-3);
-
 /**
  * Perturb the internal energy by a uniform random proportion per cell.
  * Resulting internal energies will be between u \pm u*u_jitter/2
@@ -23,7 +22,7 @@ void InitializeFMTorus(std::shared_ptr<MeshBlock> pmb, GRCoordinates& G, GridVar
  * @param u_jitter see description
  * @param rng_seed is added to the MPI rank to seed the GSL RNG
  */
-void PerturbU(std::shared_ptr<MeshBlock> pmb, GridVars P, Real u_jitter, int rng_seed);
+void PerturbU(MeshBlock *pmb, GridVars P, Real u_jitter, int rng_seed);
 
 // Device-side expressions for FM variables
 KOKKOS_INLINE_FUNCTION Real lnh_calc(const GReal a, const Real l, const GReal rin, const GReal r, const GReal th)
@@ -46,8 +45,7 @@ KOKKOS_INLINE_FUNCTION Real lnh_calc(const GReal a, const Real l, const GReal ri
     Real AAin = pow(rin2 + a2, 2) - DDin * a2 * sthin * sthin;
     Real SSin = rin2 + a2 * cthin * cthin;
 
-    if (r >= rin)
-    {
+    if (r >= rin) {
         return
             0.5 *
                 log((1. +
@@ -67,9 +65,7 @@ KOKKOS_INLINE_FUNCTION Real lnh_calc(const GReal a, const Real l, const GReal ri
                 0.5 * sqrt(1. +
                         4. * (l * l * SSin * SSin) * DDin / (AAin * AAin * sthin * sthin)) -
                 2. * a * rin * l / AAin);
-    }
-    else
-    {
+    } else {
         return 1.;
     }
 }

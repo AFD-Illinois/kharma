@@ -139,7 +139,7 @@ void ReadIharmRestartHeader(std::string fname, std::unique_ptr<ParameterInput>& 
     hdf5_close();
 }
 
-double ReadIharmRestart(std::shared_ptr<MeshBlock> pmb, GRCoordinates G, GridVars P, std::string fname)
+double ReadIharmRestart(MeshBlock *pmb, GRCoordinates G, GridVars P, std::string fname)
 {
     IndexDomain domain = IndexDomain::interior;
     // Full mesh size
@@ -204,16 +204,17 @@ double ReadIharmRestart(std::shared_ptr<MeshBlock> pmb, GRCoordinates G, GridVar
     // Host-side copy into the mirror
     Kokkos::parallel_for("copy_restart_state", Kokkos::MDRangePolicy<Kokkos::OpenMP, Kokkos::Rank<4>>({0, ks, js, is}, {NPRIM, ke+1, je+1, ie+1}),
         KOKKOS_LAMBDA_VARS {
-            Phost(p, k, j, i) = ptmp[p*n3*n2*n1 + (k-NGHOST)*n2*n1 + (j-NGHOST)*n1 + (i-NGHOST)];
+            Phost(p, k, j, i) = ptmp[p*n3*n2*n1 + (k-ks)*n2*n1 + (j-js)*n1 + (i-is)];
         }
     );
     delete[] ptmp;
 
     // Deep copy to device
     P.DeepCopy(Phost);
+    Kokkos::fence();
 
     // Every iharm3d sim we'd be restarting had these
-    // TODO these need attention for one->many block restarts
+    // TODO Work out why we need to fill ghost zones here instead of doing a Parthenon sync
     outflow_x1(G, P, n1, n2, n3);
     polar_x2(G, P, n1, n2, n3);
     periodic_x3(G, P, n1, n2, n3);
@@ -260,7 +261,6 @@ void polar_x2(const GRCoordinates& G, GridVars P, int n1, int n2, int n3)
           int jrefl = NGHOST + (NGHOST - j) - 1;
           PLOOP P(p, k, j, i) = P(p, k, jrefl, i);
 
-          // TODO These are suspect...
           P(prims::u2, k, j, i) *= -1.;
           P(prims::B2, k, j, i) *= -1.;
         }
@@ -272,7 +272,6 @@ void polar_x2(const GRCoordinates& G, GridVars P, int n1, int n2, int n3)
           int jrefl = (NGHOST + n2) - (j - (NGHOST + n2)) - 1;
           PLOOP P(p, k, j, i) = P(p, k, jrefl, i);
 
-          // TODO These are suspect...
           P(prims::u2, k, j, i) *= -1.;
           P(prims::B2, k, j, i) *= -1.;
         }

@@ -40,7 +40,7 @@
 #include <random>
 #include "Kokkos_Random.hpp"
 
-void InitializeFMTorus(std::shared_ptr<MeshBlock> pmb, GRCoordinates& G, GridVars P, const EOS* eos,
+void InitializeFMTorus(MeshBlock *pmb, const GRCoordinates& G, GridVars P, const EOS* eos,
                        GReal rin, GReal rmax, Real kappa)
 {
     IndexDomain domain = IndexDomain::entire;
@@ -56,7 +56,12 @@ void InitializeFMTorus(std::shared_ptr<MeshBlock> pmb, GRCoordinates& G, GridVar
     // Fishbone-Moncrief parameters
     Real l = lfish_calc(ksc.a, rmax);
 
-    FLAG("Initializing rho");
+    // Example of pulling stuff host-side. Maybe make all initializations print stuff like this?
+    // double gam_host;
+    // Kokkos::Max<Real> gam_reducer(gam_host);
+    // pmb->par_reduce("fm_torus_init", 0, 0, KOKKOS_LAMBDA_1D_REDUCE { local_result = eos->gam; }, gam_reducer);
+    // cout << string_format("Initializing Fishbone-Moncrief torus, gam=%g", gam_host) << endl;
+
     pmb->par_for("fm_torus_init", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D {
             GReal Xnative[GR_DIM], Xembed[GR_DIM];
@@ -71,13 +76,10 @@ void InitializeFMTorus(std::shared_ptr<MeshBlock> pmb, GRCoordinates& G, GridVar
             // Region inside magnetized torus; u^i is calculated in
             // Boyer-Lindquist coordinates, as per Fishbone & Moncrief,
             // so it needs to be transformed at the end
-            // everything outside/else is initialized to 0 already
-            if (lnh > 0. && r > rin) {
-                GReal sth = sin(th);
-                GReal cth = cos(th);
-
-                Real r2 = pow(r, 2);
-                Real a2 = pow(ksc.a, 2);
+            // everything outside is left 0 to be added by the floors
+            if (lnh >= 0. && r >= rin) {
+                Real r2 = r*r;
+                Real a2 = ksc.a * ksc.a;
                 Real DD = r2 - 2. * r + a2;
                 Real AA = pow(r2 + a2, 2) - DD * a2 * sth * sth;
                 Real SS = r2 + a2 * cth * cth;
@@ -115,9 +117,6 @@ void InitializeFMTorus(std::shared_ptr<MeshBlock> pmb, GRCoordinates& G, GridVar
                 P(prims::u1, k, j, i) = u_prim[1];
                 P(prims::u2, k, j, i) = u_prim[2];
                 P(prims::u3, k, j, i) = u_prim[3];
-                P(prims::B1, k, j, i) = 0;
-                P(prims::B2, k, j, i) = 0;
-                P(prims::B3, k, j, i) = 0;
             }
         }
     );
@@ -129,11 +128,11 @@ void InitializeFMTorus(std::shared_ptr<MeshBlock> pmb, GRCoordinates& G, GridVar
     GReal xin = log(rin);
     GReal xout = pmb->pmy_mesh->mesh_size.x1max;
     GReal dx = 0.001;
-    int nx = (xout - xin) / dx + 1;
+    int nx = (xout - xin) / dx;
 
     Real rho_max = 0;
     Kokkos::Max<Real> max_reducer(rho_max);
-    Kokkos::parallel_reduce("fm_torus_maxrho", nx,
+    pmb->par_reduce("fm_torus_maxrho", 0, nx,
         KOKKOS_LAMBDA_1D_REDUCE {
             GReal x = xin + i*dx;
             GReal r = exp(x);
@@ -162,7 +161,7 @@ void InitializeFMTorus(std::shared_ptr<MeshBlock> pmb, GRCoordinates& G, GridVar
     );
 }
 
-void PerturbU(std::shared_ptr<MeshBlock> pmb, GridVars P, Real u_jitter, int rng_seed=31337)
+void PerturbU(MeshBlock *pmb, GridVars P, Real u_jitter, int rng_seed=31337)
 {
     IndexDomain domain = IndexDomain::entire;
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
@@ -189,7 +188,9 @@ void PerturbU(std::shared_ptr<MeshBlock> pmb, GridVars P, Real u_jitter, int rng
     pmb->par_for("perturb_u", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D {
             gen_type rgen = rand_pool.get_state();
-            P(prims::u, k, j, i) *= 1. + Kokkos::rand<gen_type, Real>::draw(rgen, -u_jitter/2, u_jitter/2);
+            if (P(prims::rho, k, j, i) > 1.e-5) {
+                P(prims::u, k, j, i) *= 1. + Kokkos::rand<gen_type, Real>::draw(rgen, -u_jitter/2, u_jitter/2);
+            }
             rand_pool.free_state(rgen);
         }
     );

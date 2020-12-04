@@ -14,6 +14,7 @@
 // Anything more leads to circular deps from gr_coordinates.hpp
 #include "parthenon_arrays.hpp"
 #include "parthenon_mpi.hpp"
+#include "bvals/bvals_interfaces.hpp"
 
 // My set of MPI wrappers, stubbed out when MPI not present
 #include "mpi.hpp"
@@ -23,7 +24,7 @@ using Real = parthenon::Real;
 using GReal = double;
 
 // TODO add make.sh/CMake option for tracing vs just debug
-#if DEBUG
+#if 0
 #define FLAG(x) if(MPIRank0()) std::cout << x << std::endl;
 #else
 #define FLAG(x)
@@ -51,7 +52,7 @@ enum Loci{face1=0, face2, face3, center, corner};
 enum prims{rho=0, u, u1, u2, u3, B1, B2, B3};
 // Just the fluid variables, among the primitives
 #define NFLUID 5
-#define FLOOP for(int p=0; p < NFLUID; p++)
+#define FLOOP for(int p = 0; p < NFLUID; ++p)
 
 // Emulate old names for possible stronger typing...
 using GridScalar = parthenon::ParArrayND<Real>;
@@ -72,8 +73,21 @@ using GeomTensor3 = parthenon::ParArrayND<Real>;
 // TODO separate macros for return type if this becomes a thing?  Or don't macro at all
 #define KOKKOS_LAMBDA_1D_REDUCE KOKKOS_LAMBDA (const int &i, Real &local_result)
 // This is used for timestep and divB, which are explicitly double.  Lots of work would need to be done to Parthenon if Real != double though
+#define KOKKOS_LAMBDA_2D_REDUCE KOKKOS_LAMBDA (const int &j, const int &i, double &local_result)
 #define KOKKOS_LAMBDA_3D_REDUCE KOKKOS_LAMBDA (const int &k, const int &j, const int &i, double &local_result)
 #define KOKKOS_LAMBDA_3D_REDUCE_INT KOKKOS_LAMBDA (const int &k, const int &j, const int &i, int &local_result)
+
+/**
+ * Return whether a boundary is physical (i.e. border of the simulation) or not (internal/periodic)
+ * Ironically, the zones in non-physical boundaries are "physical" i.e. bulk, non-ghost zones,
+ * whereas those in non-physical boundaries
+ * UtoP needs to calculate primitives for physical zones (non-physical boundaries), i.e. when this function returns false.
+ */
+KOKKOS_INLINE_FUNCTION bool is_physical_bound(parthenon::BoundaryFlag bflag) {
+    // TODO error on undef?
+    return bflag != parthenon::BoundaryFlag::block && bflag != parthenon::BoundaryFlag::periodic;
+    //return false;
+}
 
 // KHARMA TYPES
 
@@ -101,27 +115,3 @@ enum ReconstructionType{linear_mc=0, ppm, weno5, mp5};
 #define HIT_FLOOR_TEMP 512
 #define HIT_FLOOR_GAMMA 1024
 #define HIT_FLOOR_KTOT 2048
-
-// KHARMA OPTIONS
-
-// GAMMA FLOOR
-// Maximum gamma factor allowed for fluid velocity
-// Defined in decs.hpp since it's also needed by U_to_P
-#define GAMMAMAX 100.
-
-// GEOMETRY FLOORS
-// Limiting values for density and internal energy
-// These are scaled with radius for spherical sims,
-// and multiplied by an additional 0.01 for cartesian sims
-#define RHOMIN 1.e-6
-#define UUMIN  1.e-8
-// Radius in M, around which to steepen floor prescription from r^-2 to r^-3
-#define FLOOR_R_CHAR 10.
-
-// RATIO CEILINGS
-// Maximum ratio of internal energy to density (i.e. Temperature)
-#define UORHOMAX   50.
-// Same for magnetic field (i.e. magnetization sigma)
-#define BSQORHOMAX 100.
-// Disable a B-field-based floor on U
-#define BSQOUMAX   100000
