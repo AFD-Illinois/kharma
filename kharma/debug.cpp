@@ -217,6 +217,7 @@ double MaxDivB(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain)
 
 TaskStatus Diagnostic(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain)
 {
+    // TODO make the diagnostic full-mesh and insert it into the task list as such
     FLAG("Printing diagnostics");
     auto pmb = rc->GetBlockPointer();
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
@@ -228,6 +229,9 @@ TaskStatus Diagnostic(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain doma
     GridVars U = rc->Get("c.c.bulk.cons").data;
 
     if (pmb->packages["GRMHD"]->Param<int>("verbose") > 0) {
+        //double max_divb = MaxDivB(rc, domain);
+        //max_divb = MPIMax(max_divb);
+        //if(MPIRank0())
         cerr << "DivB: " << MaxDivB(rc, domain) << endl;
     }
 
