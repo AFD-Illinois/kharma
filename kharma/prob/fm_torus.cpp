@@ -56,11 +56,18 @@ void InitializeFMTorus(MeshBlock *pmb, const GRCoordinates& G, GridVars P, const
     // Fishbone-Moncrief parameters
     Real l = lfish_calc(ksc.a, rmax);
 
-    // Example of pulling stuff host-side. Maybe make all initializations print stuff like this?
-    // double gam_host;
-    // Kokkos::Max<Real> gam_reducer(gam_host);
-    // pmb->par_reduce("fm_torus_init", 0, 0, KOKKOS_LAMBDA_1D_REDUCE { local_result = eos->gam; }, gam_reducer);
-    // cout << string_format("Initializing Fishbone-Moncrief torus, gam=%g", gam_host) << endl;
+    if (pmb->packages["GRMHD"]->Param<int>("verbose") > 0) {
+        // Example of pulling stuff host-side. Maybe make all initializations print stuff like this?
+        double gam_host;
+        Kokkos::Max<Real> gam_reducer(gam_host);
+        pmb->par_reduce("fm_torus_init", 0, 0, KOKKOS_LAMBDA_1D_REDUCE { local_result = eos->gam; }, gam_reducer);
+        cout << "Initializing Fishbone-Moncrief torus:" << gam_host << endl;
+        cout << "rin = " << rin << endl;
+        cout << "rmax = " << rmax << endl;
+        cout << "kappa = " << kappa << endl;
+        cout << "fluid gamma = " << gam_host << endl;
+
+    }
 
     pmb->par_for("fm_torus_init", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D {
@@ -122,36 +129,64 @@ void InitializeFMTorus(MeshBlock *pmb, const GRCoordinates& G, GridVars P, const
     );
 
     // Find rho_max "analytically" by looking over the whole mesh domain for the maximum in the midplane
-    // Done device-side not for speed (should be fast regardless) but so that *eos dereferences correctly!
-    // Note this will have to either repeat or change a bit to record u_max if that's needed...
-    // Also note this covers the full domain, so we don't need to MPI reduce 
-    GReal xin = log(rin);
-    GReal xout = pmb->pmy_mesh->mesh_size.x1max;
+    // Done device-side both for speed (for large 2D meshes this may get bad), and so that *eos dereferences
+    // Note this covers the full domain from each rank: it doesn't need a grid so it's not a memory problem,
+    // and an MPI synch as is done for beta_min would be a headache
+    GReal x1min = pmb->pmy_mesh->mesh_size.x1min;
+    GReal x1max = pmb->pmy_mesh->mesh_size.x1max;
+    //GReal x2min = pmb->pmy_mesh->mesh_size.x2min;
+    //GReal x2max = pmb->pmy_mesh->mesh_size.x2max;
     GReal dx = 0.001;
-    int nx = (xout - xin) / dx;
+    int nx1 = (x1max - x1min) / dx;
+    //int nx2 = (x2max - x2min) / dx;
+
+    if (pmb->packages["GRMHD"]->Param<int>("verbose") > 0) {
+        cout << "Calculating maximum density:" << endl;
+        cout << "a = " << ksc.a << endl;
+        cout << "dx = " << dx << endl;
+        cout << "x1min->x1max: " << x1min << " " << x1max << endl;
+        cout << "nx1 = " << nx1 << endl;
+        //cout << "x2min->x2max: " << x2min << " " << x2max << endl;
+        //cout << "nx2 = " << nx2 << endl;
+    }
 
     Real rho_max = 0;
     Kokkos::Max<Real> max_reducer(rho_max);
-    pmb->par_reduce("fm_torus_maxrho", 0, nx,
-        KOKKOS_LAMBDA_1D_REDUCE {
-            GReal x = xin + i*dx;
-            GReal r = exp(x);
-            GReal th = M_PI/2;
+    pmb->par_reduce("fm_torus_maxrho", 0, 0, 0, nx1,
+        KOKKOS_LAMBDA_2D_REDUCE {
+            //GReal x2 = x2min + j*dx;
+            GReal x1 = x1min + i*dx;
+            GReal x2 = 0.5;
+
+            GReal Xnative[GR_DIM] = {0,x1,x2,0};
+            GReal Xembed[GR_DIM];
+            G.coords.coord_to_embed(Xnative, Xembed);
+            GReal r = Xembed[1], th = Xembed[2];
 
             // Abbreviated version of the full primitives calculation
+            //printf("lnh calc with %g %g %g %g %g\n", ksc.a, l, rin, r, th);
             Real lnh = lnh_calc(ksc.a, l, rin, r, th);
+            // if (lnh >= 0. || r >= rin) {
+            //     printf("a: %g l: %g lnh: %g r: %g th: %g\n", ksc.a, l, lnh, r, th);
+            // }
+            if (lnh >= 0. && r >= rin) {
+                // Calculate rho
+                Real hm1 = exp(lnh) - 1.;
+                Real rho = pow(hm1 * (eos->gam - 1.) / (kappa * eos->gam),
+                                    1. / (eos->gam - 1.));
+                //Real u = kappa * pow(rho, eos->gam) / (eos->gam - 1.);
 
-            // Calculate rho
-            Real hm1 = exp(lnh) - 1.;
-            Real rho = pow(hm1 * (eos->gam - 1.) / (kappa * eos->gam),
-                                1. / (eos->gam - 1.));
-            //Real u = kappa * pow(rho, eos->gam) / (eos->gam - 1.);
-
-            // Record max.  Maybe more efficient to bail earlier?  Meh.
-            if (rho > local_result && r > rin) local_result = rho;
-            //if (u > u_max) u_max = u;
+                // Record max.  Maybe more efficient to bail earlier?  Meh.
+                //printf("lnh: %g rho: %g\n", lnh, rho);
+                if (rho > local_result) local_result = rho;
+                //if (u > u_max) u_max = u;
+            }
         }
     , max_reducer);
+
+    if (pmb->packages["GRMHD"]->Param<int>("verbose") > 0) {
+        cout << "Initial maximum density is " << rho_max << endl;
+    }
 
     pmb->par_for("fm_torus_normalize", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D {

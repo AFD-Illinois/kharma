@@ -38,40 +38,40 @@ dump2 = pyHARM.load_dump(dump2file)
 
 N1 = dump1['n1']; N2 = dump1['n2']; N3 = dump1['n3']
 
-log_floor = -2
+log_floor = -8
 
 # TODO properly option log, rel, lim
 def plot_diff_xy(ax, var, rel=False, lim=None):
     if rel:
         if lim is not None:
             pplt.plot_xy(ax, dump1, np.abs((dump1[var] - dump2[var])/dump1[var]),
-            vmin=0, vmax=lim, label=var, cbar=False, arrayspace=USEARRSPACE, window=window)
+            vmin=0, vmax=lim, label=var, arrayspace=USEARRSPACE, window=window)
         else:
             pplt.plot_xy(ax, dump1, np.abs((dump1[var] - dump2[var])/dump1[var]),
-            label=var, cbar=False, arrayspace=USEARRSPACE, window=window)
+            label=var, arrayspace=USEARRSPACE, window=window)
     else:
         if lim is not None:
             pplt.plot_xy(ax, dump1, np.log10(np.abs(dump1[var] - dump2[var])),
-            vmin=log_floor, vmax=lim, label=var, cbar=False, arrayspace=USEARRSPACE, window=window)
+            vmin=log_floor, vmax=lim, label=var, arrayspace=USEARRSPACE, window=window)
         else:
             pplt.plot_xy(ax, dump1, np.log10(np.abs(dump1[var] - dump2[var])),
-            vmin=log_floor, vmax=0, label=var, cbar=False, arrayspace=USEARRSPACE, window=window)
+            vmin=log_floor, vmax=0, label=var, arrayspace=USEARRSPACE, window=window)
 
 def plot_diff_xz(ax, var, rel=False, lim=None):
     if rel:
         if lim is not None:
             pplt.plot_xz(ax, dump1, np.abs((dump1[var] - dump2[var])/dump1[var]),
-            vmin=0, vmax=lim, label=var, cbar=False, arrayspace=USEARRSPACE, window=window)
+            vmin=0, vmax=lim, label=var, arrayspace=USEARRSPACE, window=window)
         else:
             pplt.plot_xz(ax, dump1, np.abs((dump1[var] - dump2[var])/dump1[var]),
-            label=var, cbar=False, arrayspace=USEARRSPACE, window=window)
+            label=var, arrayspace=USEARRSPACE, window=window)
     else:
         if lim is not None:
             pplt.plot_xz(ax, dump1, np.log10(np.abs(dump1[var] - dump2[var])),
-            vmin=log_floor, vmax=lim, label=var, cbar=False, arrayspace=USEARRSPACE, window=window)
+            vmin=log_floor, vmax=lim, label=var, arrayspace=USEARRSPACE, window=window)
         else:
             pplt.plot_xz(ax, dump1, np.log10(np.abs(dump1[var] - dump2[var])),
-            vmin=log_floor, vmax=0, label=var, cbar=False, arrayspace=USEARRSPACE, window=window)
+            vmin=log_floor, vmax=0, label=var, arrayspace=USEARRSPACE, window=window)
 
 # Plot the difference
 nxplot = 3
@@ -81,7 +81,7 @@ vars = list(dump2['prim_names']) # Parthenon isn't dealing with KEL
 fig = plt.figure(figsize=(FIGX, FIGY))
 for i,name in enumerate(vars):
   ax = plt.subplot(nyplot, nxplot, i+1)
-  plot_diff_xz(ax, name)
+  plot_diff_xz(ax, name, rel=True, lim=1)
   ax.set_xlabel('')
   ax.set_ylabel('')
 
@@ -90,7 +90,7 @@ plt.tight_layout()
 plt.savefig(imname+"_xz.png", dpi=100)
 plt.close(fig)
 
-if dump1['n1'] > 1:
+if dump1['n3'] > 1:
     fig = plt.figure(figsize=(FIGX, FIGY))
     for i,name in enumerate(vars):
         ax = plt.subplot(nyplot, nxplot, i+1)

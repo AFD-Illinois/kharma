@@ -30,5 +30,5 @@ fi
 
 # TODO options based on hostname etc here
 $KHARMA_DIR/external/hpcbind/hpcbind --whole-system -- $KHARMA_DIR/$EXE_NAME "$@"
-#mpirun -n 2 $KHARMA_DIR/$EXE_NAME "$@"
+#mpirun -n 4 $KHARMA_DIR/$EXE_NAME "$@"
 #mpirun -n 2 $KHARMA_DIR/external/hpcbind/hpcbind --whole-system --distribute=2 -- $KHARMA_DIR/$EXE_NAME "$@"

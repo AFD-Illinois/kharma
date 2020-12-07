@@ -200,6 +200,51 @@ Real GetLocalBetaMin(std::shared_ptr<MeshBlockData<Real>>& rc)
             if(beta_ij < local_result) local_result = beta_ij;
         }
     , min_reducer);
-
     return beta_min;
+}
+Real GetLocalBsqMax(std::shared_ptr<MeshBlockData<Real>>& rc)
+{
+    auto pmb = rc->GetBlockPointer();
+    IndexDomain domain = IndexDomain::interior;
+    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
+    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
+    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
+    auto& G = pmb->coords;
+    GridVars P = rc->Get("c.c.bulk.prims").data;
+
+    Real bsq_max;
+    Kokkos::Max<Real> bsq_max_reducer(bsq_max);
+    pmb->par_reduce("B_field_bsqmax", ks, ke, js, je, is, ie,
+        KOKKOS_LAMBDA_3D_REDUCE {
+            FourVectors Dtmp;
+            get_state(G, P, k, j, i, Loci::center, Dtmp);
+            double bsq_ij = dot(Dtmp.bcon, Dtmp.bcov);
+            if(bsq_ij > local_result) local_result = bsq_ij;
+        }
+    , bsq_max_reducer);
+    return bsq_max;
+}
+Real GetLocalPMax(std::shared_ptr<MeshBlockData<Real>>& rc)
+{
+    auto pmb = rc->GetBlockPointer();
+    IndexDomain domain = IndexDomain::interior;
+    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
+    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
+    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
+    auto& G = pmb->coords;
+    GridVars P = rc->Get("c.c.bulk.prims").data;
+
+    EOS* eos = pmb->packages["GRMHD"]->Param<EOS*>("eos");
+
+    Real p_max;
+    Kokkos::Max<Real> p_max_reducer(p_max);
+    pmb->par_reduce("B_field_pmax", ks, ke, js, je, is, ie,
+        KOKKOS_LAMBDA_3D_REDUCE {
+            Real rho = P(prims::rho, k, j, i);
+            Real u = P(prims::u, k, j, i);
+            Real p_ij = eos->p(rho, u);
+            if(p_ij > local_result) local_result = p_ij;
+        }
+    , p_max_reducer);
+    return p_max;
 }

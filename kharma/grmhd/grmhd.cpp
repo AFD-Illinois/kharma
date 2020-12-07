@@ -144,6 +144,10 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     bool fluid_frame = pin->GetOrAddBoolean("floors", "fluid_frame", false);
     params.Add("fluid_frame", fluid_frame);
 
+    // TODO separate block?
+    bool wind_term = pin->GetOrAddBoolean("floors", "wind_term", false);
+    params.Add("wind_term", wind_term);
+
     std::vector<int> s_vector({3});
     std::vector<int> s_fourvector({4});
     std::vector<int> s_prims({NPRIM});
@@ -298,6 +302,8 @@ TaskStatus AddSourceTerm(std::shared_ptr<MeshBlockData<Real>>& rc, std::shared_p
 
     EOS* eos = pmb->packages["GRMHD"]->Param<EOS*>("eos");
 
+    bool wind_term = pmb->packages["GRMHD"]->Param<bool>("wind_term");
+
     // Unpack for kernel
     auto dUdt = dudt->Get("c.c.bulk.cons").data;
 
@@ -306,7 +312,7 @@ TaskStatus AddSourceTerm(std::shared_ptr<MeshBlockData<Real>>& rc, std::shared_p
             // Calculate the source term and apply it in 1 go (since it's stencil-1)
             FourVectors Dtmp;
             get_state(G, P, k, j, i, Loci::center, Dtmp);
-            add_fluid_source(G, P, Dtmp, eos, k, j, i, dUdt);
+            add_fluid_source(G, P, Dtmp, eos, k, j, i, dUdt, wind_term);
         }
     );
 
@@ -336,6 +342,8 @@ TaskStatus ApplyFluxes2D(std::shared_ptr<MeshBlockData<Real>>& rc, std::shared_p
 
     EOS* eos = pmb->packages["GRMHD"]->Param<EOS*>("eos");
 
+    bool wind_term = pmb->packages["GRMHD"]->Param<bool>("wind_term");
+
     // Unpack for kernel
     auto dUdt = dudt->Get("c.c.bulk.cons").data;
 
@@ -345,7 +353,7 @@ TaskStatus ApplyFluxes2D(std::shared_ptr<MeshBlockData<Real>>& rc, std::shared_p
             FourVectors Dtmp;
             Real dU[NPRIM] = {0};
             get_state(G, P, 0, j, i, Loci::center, Dtmp);
-            get_fluid_source(G, P, Dtmp, eos, 0, j, i, dU);
+            get_fluid_source(G, P, Dtmp, eos, 0, j, i, dU, wind_term);
 
             PLOOP dUdt(p, 0, j, i) = (F1(p, 0, j, i) - F1(p, 0, j, i+1)) / G.dx1v(i) +
                                      (F2(p, 0, j, i) - F2(p, 0, j+1, i)) / G.dx2v(j) +
@@ -374,6 +382,8 @@ TaskStatus ApplyFluxes(std::shared_ptr<MeshBlockData<Real>>& rc, std::shared_ptr
 
     EOS* eos = pmb->packages["GRMHD"]->Param<EOS*>("eos");
 
+    bool wind_term = pmb->packages["GRMHD"]->Param<bool>("wind_term");
+
     // Unpack for kernel
     auto dUdt = dudt->Get("c.c.bulk.cons").data;
 
@@ -383,7 +393,7 @@ TaskStatus ApplyFluxes(std::shared_ptr<MeshBlockData<Real>>& rc, std::shared_ptr
             FourVectors Dtmp;
             Real dU[NPRIM] = {0};
             get_state(G, P, k, j, i, Loci::center, Dtmp);
-            get_fluid_source(G, P, Dtmp, eos, k, j, i, dU);
+            get_fluid_source(G, P, Dtmp, eos, k, j, i, dU, wind_term);
 
             PLOOP dUdt(p, k, j, i) = (F1(p, k, j, i) - F1(p, k, j, i+1)) / G.dx1v(i) +
                                      (F2(p, k, j, i) - F2(p, k, j+1, i)) / G.dx2v(j) +
