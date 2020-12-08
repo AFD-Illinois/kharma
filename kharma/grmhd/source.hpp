@@ -41,7 +41,7 @@
  * Inline function to *add* the HARM source term to a set of conserved variables U
  */
 KOKKOS_INLINE_FUNCTION void add_fluid_source(const GRCoordinates &G, const GridVars P, const FourVectors& D,
-                      const EOS* eos, const int& k, const int& j, const int& i, GridVars dUdt, bool wind=false)
+                      const EOS* eos, const int& k, const int& j, const int& i, GridVars dUdt)
 {
     // Get T^mu_nu
     Real mhd[GR_DIM][GR_DIM];
@@ -53,32 +53,6 @@ KOKKOS_INLINE_FUNCTION void add_fluid_source(const GRCoordinates &G, const GridV
     DLOOP3 du_loc[lam] += mhd[mu][nu] * G.conn(j, i, nu, lam, mu);
     // Multiply by the metric determinant and add to the current value
     DLOOP1 dUdt(prims::u + mu, k, j, i) += du_loc[mu] * G.gdet(Loci::center, j, i);
-
-    if (wind) {
-        // Need coordinates to evaluate particle addtn rate
-        // Note that makes the wind spherical-only
-        Real dP[NPRIM] = {0}, dUw[NPRIM] = {0};
-        // TODO grab this after ensuring embedding coords are spherical
-        GReal Xembed[GR_DIM];
-        G.coord_embed(k, j, i, Loci::center, Xembed);
-        GReal r = Xembed[1], th = Xembed[2];
-
-        // Particle addition rate: concentrate at poles & center
-        Real drhopdt = 2.e-4 * pow(cos(th), 4) / pow(1. + r * r, 2);
-
-        dP[prims::rho] = drhopdt;
-
-        Real Tp = 10.; // New fluid's temperature in units of c^2
-        dP[prims::u] = drhopdt * Tp * 3.;
-
-        // Leave everything else: we're inserting only fluid in normal observer frame
-
-        // Add plasma to the T^t_a component of the stress-energy tensor
-        // Notice that U already contains a factor of sqrt{-g}
-        p_to_u(G, dP, eos, k, j, i, dUw);
-
-        PLOOP dUdt(p, k, j, i) += dUw[p];
-    }
 }
 
 /**
@@ -86,7 +60,7 @@ KOKKOS_INLINE_FUNCTION void add_fluid_source(const GRCoordinates &G, const GridV
  * Named differently because it clobbers input!
  */
 KOKKOS_INLINE_FUNCTION void get_fluid_source(const GRCoordinates &G, const GridVars P, const FourVectors& D,
-                      const EOS* eos, const int& k, const int& j, const int& i, Real dUdt[NPRIM], bool wind=false)
+                      const EOS* eos, const int& k, const int& j, const int& i, Real dUdt[NPRIM])
 {
     // Get T^mu_nu
     Real mhd[GR_DIM][GR_DIM];
@@ -99,30 +73,43 @@ KOKKOS_INLINE_FUNCTION void get_fluid_source(const GRCoordinates &G, const GridV
     // Multiply by the metric determinant and add to the current value
     PLOOP dUdt[p] = 0.;
     DLOOP1 dUdt[prims::u + mu] += du_loc[mu] * G.gdet(Loci::center, j, i);
+}
 
-    if (wind) {
-        // Need coordinates to evaluate particle addtn rate
-        // Note that makes the wind spherical-only
-        Real dP[NPRIM] = {0}, dUw[NPRIM] = {0};
-        // TODO grab this after ensuring embedding coords are spherical
-        GReal Xembed[GR_DIM];
-        G.coord_embed(k, j, i, Loci::center, Xembed);
-        GReal r = Xembed[1], th = Xembed[2];
+/**
+ * Both overloads of this function *add* the wind term to any existing value.
+ */
+KOKKOS_INLINE_FUNCTION void add_wind(const GRCoordinates &G,
+                      const EOS* eos, const int& k, const int& j, const int& i,
+                      const Real& n, const Real& Tp, Real dUdt[NPRIM]) {
+    Real dP[NPRIM] = {0}, dUw[NPRIM] = {0};
 
-        // Particle addition rate: concentrate at poles & center
-        Real drhopdt = 2.e-4 * pow(cos(th), 4) / pow(1. + r * r, 2);
+    // Need coordinates to evaluate particle addtn rate
+    // Note that makes the wind spherical-only, TODO ensure this
+    GReal Xembed[GR_DIM];
+    G.coord_embed(k, j, i, Loci::center, Xembed);
+    GReal r = Xembed[1], th = Xembed[2];
 
-        dP[prims::rho] = drhopdt;
+    // Particle addition rate: concentrate at poles & center
+    // TODO poles only w/e.g. cos2?
+    Real drhopdt = n * pow(cos(th), 4) / pow(1. + r * r, 2);
+    dP[prims::rho] = drhopdt;
 
-        Real Tp = 10.; // New fluid's temperature in units of c^2
-        dP[prims::u] = drhopdt * Tp * 3.;
+    dP[prims::u] = drhopdt * Tp * 3.;
 
-        // Leave everything else: we're inserting only fluid in normal observer frame
+    // Leave everything else: we're inserting only fluid in normal observer frame
 
-        // Add plasma to the T^t_a component of the stress-energy tensor
-        // Notice that U already contains a factor of sqrt{-g}
-        p_to_u(G, dP, eos, k, j, i, dUw);
+    // Add plasma to the T^t_a component of the stress-energy tensor
+    // Notice that U already contains a factor of sqrt{-g}
+    p_to_u(G, dP, eos, k, j, i, dUw);
 
-        PLOOP dUdt[p] += dUw[p];
-    }
+    PLOOP dUdt[p] += dUw[p];
+}
+KOKKOS_INLINE_FUNCTION void add_wind(const GRCoordinates &G, const EOS* eos,
+                                    const int& k, const int& j, const int& i,
+                                    const Real& n, const Real& Tp, GridVars dUdt) {
+    // Just call through.  We care more about playing with the source here
+    // (no pun intended) than we do speed.
+    Real dUw[NPRIM] = {0};
+    add_wind(G, eos, k, j, i, n, Tp, dUw);
+    PLOOP dUdt(p, k, j, i) += dUw[p];
 }
