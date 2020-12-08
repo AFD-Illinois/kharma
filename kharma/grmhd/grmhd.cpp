@@ -94,6 +94,8 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     // Parthenon allows up to 2x higher dt per step, so it climbs to CFL quite fast
     double dt_min = pin->GetOrAddReal("parthenon/time", "dt_min", 1.e-5);
     params.Add("dt_min", dt_min);
+    double max_dt_increase = pin->GetOrAddReal("parthenon/time", "max_dt_increase", 1.1);
+    params.Add("max_dt_increase", max_dt_increase);
 
     // Reconstruction scheme: plm, weno5, ppm...
     std::string recon = pin->GetOrAddString("GRMHD", "reconstruction", "weno5");
@@ -151,6 +153,8 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     params.Add("wind_n", wind_n);
     Real wind_Tp = pin->GetOrAddReal("floors", "wind_Tp", 10.);
     params.Add("wind_Tp", wind_Tp);
+    int wind_pow = pin->GetOrAddInteger("floors", "wind_pow", 4);
+    params.Add("wind_pow", wind_pow);
 
     std::vector<int> s_vector({3});
     std::vector<int> s_fourvector({4});
@@ -309,6 +313,7 @@ TaskStatus AddSourceTerm(std::shared_ptr<MeshBlockData<Real>>& rc, std::shared_p
     bool wind_term = pmb->packages["GRMHD"]->Param<bool>("wind_term");
     Real wind_n = pmb->packages["GRMHD"]->Param<Real>("wind_n");
     Real wind_Tp = pmb->packages["GRMHD"]->Param<Real>("wind_Tp");
+    int wind_pow = pmb->packages["GRMHD"]->Param<int>("wind_pow");
 
     // Unpack for kernel
     auto dUdt = dudt->Get("c.c.bulk.cons").data;
@@ -319,7 +324,7 @@ TaskStatus AddSourceTerm(std::shared_ptr<MeshBlockData<Real>>& rc, std::shared_p
             FourVectors Dtmp;
             get_state(G, P, k, j, i, Loci::center, Dtmp);
             add_fluid_source(G, P, Dtmp, eos, k, j, i, dUdt);
-            if (wind_term) add_wind(G, eos, 0, j, i, wind_n, wind_Tp, dUdt);
+            if (wind_term) add_wind(G, eos, 0, j, i, wind_n, wind_pow, wind_Tp, dUdt);
         }
     );
 
@@ -352,6 +357,7 @@ TaskStatus ApplyFluxes2D(std::shared_ptr<MeshBlockData<Real>>& rc, std::shared_p
     bool wind_term = pmb->packages["GRMHD"]->Param<bool>("wind_term");
     Real wind_n = pmb->packages["GRMHD"]->Param<Real>("wind_n");
     Real wind_Tp = pmb->packages["GRMHD"]->Param<Real>("wind_Tp");
+    int wind_pow = pmb->packages["GRMHD"]->Param<int>("wind_pow");
 
     // Unpack for kernel
     auto dUdt = dudt->Get("c.c.bulk.cons").data;
@@ -363,7 +369,7 @@ TaskStatus ApplyFluxes2D(std::shared_ptr<MeshBlockData<Real>>& rc, std::shared_p
             Real dU[NPRIM] = {0};
             get_state(G, P, 0, j, i, Loci::center, Dtmp);
             get_fluid_source(G, P, Dtmp, eos, 0, j, i, dU);
-            if (wind_term) add_wind(G, eos, 0, j, i, wind_n, wind_Tp, dU);
+            if (wind_term) add_wind(G, eos, 0, j, i, wind_n, wind_pow, wind_Tp, dU);
 
             PLOOP dUdt(p, 0, j, i) = (F1(p, 0, j, i) - F1(p, 0, j, i+1)) / G.dx1v(i) +
                                      (F2(p, 0, j, i) - F2(p, 0, j+1, i)) / G.dx2v(j) +
@@ -395,6 +401,7 @@ TaskStatus ApplyFluxes(std::shared_ptr<MeshBlockData<Real>>& rc, std::shared_ptr
     bool wind_term = pmb->packages["GRMHD"]->Param<bool>("wind_term");
     Real wind_n = pmb->packages["GRMHD"]->Param<Real>("wind_n");
     Real wind_Tp = pmb->packages["GRMHD"]->Param<Real>("wind_Tp");
+    int wind_pow = pmb->packages["GRMHD"]->Param<int>("wind_pow");
 
     // Unpack for kernel
     auto dUdt = dudt->Get("c.c.bulk.cons").data;
@@ -406,7 +413,7 @@ TaskStatus ApplyFluxes(std::shared_ptr<MeshBlockData<Real>>& rc, std::shared_ptr
             Real dU[NPRIM] = {0};
             get_state(G, P, k, j, i, Loci::center, Dtmp);
             get_fluid_source(G, P, Dtmp, eos, k, j, i, dU);
-            if (wind_term) add_wind(G, eos, 0, j, i, wind_n, wind_Tp, dU);
+            if (wind_term) add_wind(G, eos, 0, j, i, wind_n, wind_pow, wind_Tp, dU);
 
             PLOOP dUdt(p, k, j, i) = (F1(p, k, j, i) - F1(p, k, j, i+1)) / G.dx1v(i) +
                                      (F2(p, k, j, i) - F2(p, k, j+1, i)) / G.dx2v(j) +
@@ -437,6 +444,9 @@ Real EstimateTimestep(std::shared_ptr<MeshBlockData<Real>>& rc)
     auto coords = pmb->coords;
     auto& ctop = rc->GetFace("f.f.bulk.ctop").data;
 
+    // TODO parthenon takes a dt, or we could namespace ourselves into the driver to get integrator access...
+    static double last_dt = pmb->packages["GRMHD"]->Param<Real>("dt_min");
+
     // TODO preserve location, needs custom (?) Kokkos Index type for 3D
     double ndt;
     Kokkos::Min<double> min_reducer(ndt);
@@ -459,6 +469,18 @@ Real EstimateTimestep(std::shared_ptr<MeshBlockData<Real>>& rc)
     } else {
         ndt *= pmb->packages["GRMHD"]->Param<Real>("cfl");
     }
+
+    // Only allow the local dt to increase by a certain amount.  This also caps the global
+    // one, but preserves local values in case we substep I guess?
+    Real dt_limit = pmb->packages["GRMHD"]->Param<Real>("max_dt_increase") * last_dt;
+    if (ndt > dt_limit) {
+        if(pmb->packages["GRMHD"]->Param<int>("verbose") > 0){
+            cerr << "Limiting dt: " << dt_limit;
+        }
+        ndt = dt_limit;
+    }
+
+    last_dt = ndt;
 
     FLAG("Estimated");
     return ndt;

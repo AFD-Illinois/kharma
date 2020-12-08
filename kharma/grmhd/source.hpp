@@ -80,7 +80,7 @@ KOKKOS_INLINE_FUNCTION void get_fluid_source(const GRCoordinates &G, const GridV
  */
 KOKKOS_INLINE_FUNCTION void add_wind(const GRCoordinates &G,
                       const EOS* eos, const int& k, const int& j, const int& i,
-                      const Real& n, const Real& Tp, Real dUdt[NPRIM]) {
+                      const Real& n, const int& power, const Real& Tp, Real dUdt[NPRIM]) {
     Real dP[NPRIM] = {0}, dUw[NPRIM] = {0};
 
     // Need coordinates to evaluate particle addtn rate
@@ -91,7 +91,7 @@ KOKKOS_INLINE_FUNCTION void add_wind(const GRCoordinates &G,
 
     // Particle addition rate: concentrate at poles & center
     // TODO poles only w/e.g. cos2?
-    Real drhopdt = n * pow(cos(th), 4) / pow(1. + r * r, 2);
+    Real drhopdt = n * pow(cos(th), power) / pow(1. + r * r, 2);
     dP[prims::rho] = drhopdt;
 
     dP[prims::u] = drhopdt * Tp * 3.;
@@ -106,10 +106,10 @@ KOKKOS_INLINE_FUNCTION void add_wind(const GRCoordinates &G,
 }
 KOKKOS_INLINE_FUNCTION void add_wind(const GRCoordinates &G, const EOS* eos,
                                     const int& k, const int& j, const int& i,
-                                    const Real& n, const Real& Tp, GridVars dUdt) {
+                                    const Real& n, const int& power, const Real& Tp, GridVars dUdt) {
     // Just call through.  We care more about playing with the source here
     // (no pun intended) than we do speed.
     Real dUw[NPRIM] = {0};
-    add_wind(G, eos, k, j, i, n, Tp, dUw);
+    add_wind(G, eos, k, j, i, n, power, Tp, dUw);
     PLOOP dUdt(p, k, j, i) += dUw[p];
 }
