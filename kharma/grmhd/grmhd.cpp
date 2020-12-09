@@ -149,17 +149,18 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     bool fluid_frame = pin->GetOrAddBoolean("floors", "fluid_frame", false);
     params.Add("fluid_frame", fluid_frame);
 
-    // TODO separate block?
-    bool wind_term = pin->GetOrAddBoolean("floors", "wind_term", false);
+    bool wind_term = pin->GetOrAddBoolean("wind", "on", false);
     params.Add("wind_term", wind_term);
-    Real wind_n = pin->GetOrAddReal("floors", "wind_n", 2.e-4);
+    Real wind_n = pin->GetOrAddReal("wind", "ne", 2.e-4);
     params.Add("wind_n", wind_n);
-    Real wind_Tp = pin->GetOrAddReal("floors", "wind_Tp", 10.);
+    Real wind_Tp = pin->GetOrAddReal("wind", "Tp", 10.);
     params.Add("wind_Tp", wind_Tp);
-    int wind_pow = pin->GetOrAddInteger("floors", "wind_pow", 4);
+    int wind_pow = pin->GetOrAddInteger("wind", "pow", 4);
     params.Add("wind_pow", wind_pow);
-    Real wind_ramp = pin->GetOrAddReal("floors", "wind_ramp", 0.);
-    params.Add("wind_ramp", wind_ramp);
+    Real wind_ramp_start = pin->GetOrAddReal("wind", "ramp_start", 0.);
+    params.Add("wind_ramp_start", wind_ramp_start);
+    Real wind_ramp_end = pin->GetOrAddReal("wind", "ramp_end", 0.);
+    params.Add("wind_ramp_end", wind_ramp_end);
 
     std::vector<int> s_vector({3});
     std::vector<int> s_fourvector({4});
@@ -327,8 +328,14 @@ TaskStatus ApplyFluxes2D(SimTime tm, MeshBlockData<Real> *rc, MeshBlockData<Real
     Real wind_n = pmb->packages["GRMHD"]->Param<Real>("wind_n");
     Real wind_Tp = pmb->packages["GRMHD"]->Param<Real>("wind_Tp");
     int wind_pow = pmb->packages["GRMHD"]->Param<int>("wind_pow");
-    Real wind_ramp = pmb->packages["GRMHD"]->Param<Real>("wind_ramp");
-    Real current_wind_n = (wind_ramp > 0.0) ? min(tm.time / wind_ramp, 1.0) * wind_n : wind_n;
+    Real wind_ramp_start = pmb->packages["GRMHD"]->Param<Real>("wind_ramp_start");
+    Real wind_ramp_end = pmb->packages["GRMHD"]->Param<Real>("wind_ramp_end");
+    Real current_wind_n;
+    if (wind_ramp_end > 0.0) {
+        current_wind_n = min((tm.time - wind_ramp_start) / (wind_ramp_end - wind_ramp_start), 1.0) * wind_n;
+    } else {
+        current_wind_n = wind_n;
+    }
     //cerr << "Winding at " << current_wind_n << endl;
 
     // Unpack for kernel
@@ -374,8 +381,14 @@ TaskStatus ApplyFluxes(SimTime tm, MeshBlockData<Real> *rc, MeshBlockData<Real> 
     Real wind_n = pmb->packages["GRMHD"]->Param<Real>("wind_n");
     Real wind_Tp = pmb->packages["GRMHD"]->Param<Real>("wind_Tp");
     int wind_pow = pmb->packages["GRMHD"]->Param<int>("wind_pow");
-    Real wind_ramp = pmb->packages["GRMHD"]->Param<Real>("wind_ramp");
-    Real current_wind_n = (wind_ramp > 0.0) ? min(tm.time / wind_ramp, 1.0) * wind_n : wind_n;
+    Real wind_ramp_start = pmb->packages["GRMHD"]->Param<Real>("wind_ramp_start");
+    Real wind_ramp_end = pmb->packages["GRMHD"]->Param<Real>("wind_ramp_end");
+    Real current_wind_n;
+    if (wind_ramp_end > 0.0) {
+        current_wind_n = min((tm.time - wind_ramp_start) / (wind_ramp_end - wind_ramp_start), 1.0) * wind_n;
+    } else {
+        current_wind_n = wind_n;
+    }
     //cerr << "Winding at " << current_wind_n << endl;
 
     // Unpack for kernel
