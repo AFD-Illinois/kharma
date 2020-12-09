@@ -20,13 +20,6 @@ std::string string_format( const std::string& format, Args ... args )
     return std::string( buf.get(), buf.get() + size - 1 ); // We don't want the '\0' inside
 }
 
-using namespace std; // This allows CUDA to override max & min
-// Thanks https://stackoverflow.com/questions/9323903/most-efficient-elegant-way-to-clip-a-number
-template <typename T>
-KOKKOS_INLINE_FUNCTION T clip(const T& n, const T& lower, const T& upper) {
-  return max(lower, min(n, upper));
-}
-
 // The world needed these
 // Maybe not in this form
 KOKKOS_INLINE_FUNCTION void print_matrix(std::string name, double g[GR_DIM][GR_DIM], bool kill_on_nan=false)
@@ -49,4 +42,11 @@ KOKKOS_INLINE_FUNCTION void print_vector(std::string name, double v[GR_DIM], boo
     if (kill_on_nan) {
         DLOOP2 if (isnan(v[nu])) exit(-1);
     }
+}
+
+using namespace std; // This allows CUDA to override max & min
+// Thanks https://stackoverflow.com/questions/9323903/most-efficient-elegant-way-to-clip-a-number
+template <typename T>
+KOKKOS_INLINE_FUNCTION T clip(const T& n, const T& lower, const T& upper) {
+  return max(lower, min(n, upper));
 }

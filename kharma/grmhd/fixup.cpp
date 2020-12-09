@@ -34,7 +34,7 @@
 
 #include "fixup.hpp"
 
-void FixUtoP(std::shared_ptr<MeshBlockData<Real>>& rc, GridInt pflag, GridInt fflag)
+void FixUtoP(MeshBlockData<Real> *rc, GridInt pflag, GridInt fflag)
 {
     // We expect primitives all the way out to 3 ghost zones on all sides.  But we can only fix primitives with their neighbors.
     // This may actually mean we require the 4 ghost zones Parthenon "wants" us to have, if we need to use only fixed zones.

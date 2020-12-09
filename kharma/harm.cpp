@@ -60,8 +60,8 @@ TaskStatus UpdateMeshBlockData(const int stage, Integrator *integrator,
                           std::shared_ptr<parthenon::MeshBlockData<Real>> &out) {
   const Real beta = integrator->beta[stage - 1];
   const Real dt = integrator->dt;
-  parthenon::Update::AverageIndependentData(in, base, beta);
-  parthenon::Update::UpdateIndependentData(in, dudt, beta * dt, out);
+  parthenon::Update::AverageIndependentData(in.get(), base.get(), beta);
+  parthenon::Update::UpdateIndependentData(in.get(), dudt.get(), beta * dt, out.get());
   return TaskStatus::complete;
 }
 
@@ -116,14 +116,9 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         auto t_fix_flux = tl.AddTask(t_calculate_flux, FixFlux, sc0);
         auto t_flux_ct = tl.AddTask(t_fix_flux, GRMHD::FluxCT, sc0);
 
-        // Apply the corrected fluxes to create a single update dU/dt
-        //auto t_flux_divergence = tl.AddTask(t_flux_ct, Update::FluxDivergence<MeshBlockData<Real>>, sc0, dudt);
-        // Add the source term.  NOTE THIS USES P!  But U hasn't been touched yet, just fluxes
-        //auto t_source_term = tl.AddTask(t_flux_divergence, GRMHD::AddSourceTerm, sc0, dudt);
-        //auto t_flux_apply = t_source_term;
-
-        // Alternative to above: combine the above and customize! TODO option?
-        auto t_flux_apply = tl.AddTask(t_flux_ct, GRMHD::ApplyFluxes, sc0, dudt);
+        // Parthenon can calculate a flux divergence, but we save a kernel launch by also adding
+        // both the GRMHD source term and any "wind" source coefficients
+        auto t_flux_apply = tl.AddTask(t_flux_ct, GRMHD::ApplyFluxes, tm, sc0.get(), dudt.get());
 
         // Apply dU/dt to the stage's initial state sc0 to obtain the stage final state sc1
         auto t_update_container = tl.AddTask(t_flux_apply, UpdateMeshBlockData, stage, integrator, sc0, base, dudt, sc1);
@@ -135,13 +130,8 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         auto t_clear_comm_flags = tl.AddTask(t_fill_from_bufs, &MeshBlockData<Real>::ClearBoundary, sc1.get(),
                                             BoundaryCommSubset::all);
 
-        // Set physical boundaries
-        // Only respects/updates U
-        //auto t_set_parthenon_bc = tl.AddTask(t_clear_comm_flags, parthenon::ApplyBoundaryConditions, sc1);
-        //auto t_correct_parthenon_bc = tl.AddTask(t_clear_comm_flags, FixParthenonBoundaryConditions, sc1);
-
         // Fill primitives, bringing U and P back into lockstep
-        auto t_fill_derived = tl.AddTask(t_clear_comm_flags, Update::FillDerived<MeshBlockData<Real>>, sc1);
+        auto t_fill_derived = tl.AddTask(t_clear_comm_flags, Update::FillDerived<MeshBlockData<Real>>, sc1.get());
 
         // ApplyCustomBoundaries is a catch-all for things HARM needs done:
         // Inflow checks, renormalizations, Bondi outer boundary.  All keep lockstep.
@@ -152,7 +142,7 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
 
         if (stage == integrator->nstages) {
             // estimate next time step
-            auto new_dt = tl.AddTask(t_step_done, Update::EstimateTimestep<MeshBlockData<Real>>, sc1);
+            auto new_dt = tl.AddTask(t_step_done, Update::EstimateTimestep<MeshBlockData<Real>>, sc1.get());
         }
     }
     return tc;

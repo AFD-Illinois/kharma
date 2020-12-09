@@ -76,7 +76,8 @@ KOKKOS_INLINE_FUNCTION void get_fluid_source(const GRCoordinates &G, const GridV
 }
 
 /**
- * Both overloads of this function *add* the wind term to any existing value.
+ * Function to add a "wind" term: a purely geometry-based particle source term near the poles,
+ * which prevents too many fixups & floor hits on the coordinate pole.
  */
 KOKKOS_INLINE_FUNCTION void add_wind(const GRCoordinates &G,
                       const EOS* eos, const int& k, const int& j, const int& i,
@@ -103,13 +104,4 @@ KOKKOS_INLINE_FUNCTION void add_wind(const GRCoordinates &G,
     p_to_u(G, dP, eos, k, j, i, dUw);
 
     PLOOP dUdt[p] += dUw[p];
-}
-KOKKOS_INLINE_FUNCTION void add_wind(const GRCoordinates &G, const EOS* eos,
-                                    const int& k, const int& j, const int& i,
-                                    const Real& n, const int& power, const Real& Tp, GridVars dUdt) {
-    // Just call through.  We care more about playing with the source here
-    // (no pun intended) than we do speed.
-    Real dUw[NPRIM] = {0};
-    add_wind(G, eos, k, j, i, n, power, Tp, dUw);
-    PLOOP dUdt(p, k, j, i) += dUw[p];
 }

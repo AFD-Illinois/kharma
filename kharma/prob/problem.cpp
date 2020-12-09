@@ -255,6 +255,6 @@ void SyncAllBounds(Mesh *pmesh)
         ApplyCustomBoundaries(rc);
 
         // Fill P again, including ghost zones
-        parthenon::Update::FillDerived(rc);
+        parthenon::Update::FillDerived(rc.get());
     }
 }

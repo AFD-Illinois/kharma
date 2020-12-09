@@ -90,8 +90,11 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     double cfl = pin->GetOrAddReal("GRMHD", "cfl", 0.9);
     params.Add("cfl", cfl);
 
+    // Omit jcon calculation before dumps.  For optimum speed I guess?
+    double no_jcon = pin->GetOrAddBoolean("GRMHD", "no_jcon", false);
+    params.Add("no_jcon", no_jcon);
+
     // Starting/minimum timestep, if something about the sound speed goes wonky
-    // Parthenon allows up to 2x higher dt per step, so it climbs to CFL quite fast
     double dt_min = pin->GetOrAddReal("parthenon/time", "dt_min", 1.e-5);
     params.Add("dt_min", dt_min);
     double max_dt_increase = pin->GetOrAddReal("parthenon/time", "max_dt_increase", 1.1);
@@ -155,6 +158,8 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     params.Add("wind_Tp", wind_Tp);
     int wind_pow = pin->GetOrAddInteger("floors", "wind_pow", 4);
     params.Add("wind_pow", wind_pow);
+    Real wind_ramp = pin->GetOrAddReal("floors", "wind_ramp", 0.);
+    params.Add("wind_ramp", wind_ramp);
 
     std::vector<int> s_vector({3});
     std::vector<int> s_fourvector({4});
@@ -175,8 +180,10 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     fluid_state->AddField("f.f.bulk.ctop", m, DerivedOwnership::unique);
 
     // Add jcon as an output-only calculation, likely overriding MeshBlock::UserWorkBeforeOutput
-    // m = Metadata({Metadata::Cell, Metadata::Derived, Metadata::OneCopy}, s_fourvector);
-    // fluid_state->AddField("c.c.bulk.jcon", m, DerivedOwnership::unique);
+    if (!no_jcon) {
+        m = Metadata({Metadata::Cell, Metadata::Derived, Metadata::OneCopy}, s_fourvector);
+        fluid_state->AddField("c.c.bulk.jcon", m, DerivedOwnership::unique);
+    }
 
     if (flag_save) {
         m = Metadata({Metadata::Cell, Metadata::Derived, Metadata::OneCopy}, 1);
@@ -197,7 +204,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
  * input: U, whatever form
  * output: U and P match with inversion errors corrected, and obey floors
  */
-void UtoP(std::shared_ptr<MeshBlockData<Real>>& rc)
+void UtoP(MeshBlockData<Real> *rc)
 {
     FLAG("Filling Derived");
     auto pmb = rc->GetBlockPointer();
@@ -295,51 +302,13 @@ void UtoP(std::shared_ptr<MeshBlockData<Real>>& rc)
 }
 
 /**
- * Add HARM source term to RHS
- */
-TaskStatus AddSourceTerm(std::shared_ptr<MeshBlockData<Real>>& rc, std::shared_ptr<MeshBlockData<Real>>& dudt)
-{
-    FLAG("Adding source term");
-    auto pmb = rc->GetBlockPointer();
-    IndexDomain domain = IndexDomain::interior;
-    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
-    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
-    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
-    GridVars P = rc->Get("c.c.bulk.prims").data;
-    auto& G = pmb->coords;
-
-    EOS* eos = pmb->packages["GRMHD"]->Param<EOS*>("eos");
-
-    bool wind_term = pmb->packages["GRMHD"]->Param<bool>("wind_term");
-    Real wind_n = pmb->packages["GRMHD"]->Param<Real>("wind_n");
-    Real wind_Tp = pmb->packages["GRMHD"]->Param<Real>("wind_Tp");
-    int wind_pow = pmb->packages["GRMHD"]->Param<int>("wind_pow");
-
-    // Unpack for kernel
-    auto dUdt = dudt->Get("c.c.bulk.cons").data;
-
-    pmb->par_for("source_term", ks, ke, js, je, is, ie,
-        KOKKOS_LAMBDA_3D {
-            // Calculate the source term and apply it in 1 go (since it's stencil-1)
-            FourVectors Dtmp;
-            get_state(G, P, k, j, i, Loci::center, Dtmp);
-            add_fluid_source(G, P, Dtmp, eos, k, j, i, dUdt);
-            if (wind_term) add_wind(G, eos, 0, j, i, wind_n, wind_pow, wind_Tp, dUdt);
-        }
-    );
-
-    FLAG("Applied");
-    return TaskStatus::complete;
-}
-
-/**
  * Calculate dU/dt from a set of fluxes.
  * Shortcut for Parthenon's FluxDivergence & GRMHD's AddSourceTerm
  *
  * @param rc is the current stage's container
  * @param base is the base container containing the global dUdt term
  */
-TaskStatus ApplyFluxes2D(std::shared_ptr<MeshBlockData<Real>>& rc, std::shared_ptr<MeshBlockData<Real>>& dudt)
+TaskStatus ApplyFluxes2D(SimTime tm, MeshBlockData<Real> *rc, MeshBlockData<Real> *dudt)
 {
     FLAG("Applying fluxes");
     auto pmb = rc->GetBlockPointer();
@@ -358,6 +327,9 @@ TaskStatus ApplyFluxes2D(std::shared_ptr<MeshBlockData<Real>>& rc, std::shared_p
     Real wind_n = pmb->packages["GRMHD"]->Param<Real>("wind_n");
     Real wind_Tp = pmb->packages["GRMHD"]->Param<Real>("wind_Tp");
     int wind_pow = pmb->packages["GRMHD"]->Param<int>("wind_pow");
+    Real wind_ramp = pmb->packages["GRMHD"]->Param<Real>("wind_ramp");
+    Real current_wind_n = (wind_ramp > 0.0) ? min(tm.time / wind_ramp, 1.0) * wind_n : wind_n;
+    //cerr << "Winding at " << current_wind_n << endl;
 
     // Unpack for kernel
     auto dUdt = dudt->Get("c.c.bulk.cons").data;
@@ -369,7 +341,7 @@ TaskStatus ApplyFluxes2D(std::shared_ptr<MeshBlockData<Real>>& rc, std::shared_p
             Real dU[NPRIM] = {0};
             get_state(G, P, 0, j, i, Loci::center, Dtmp);
             get_fluid_source(G, P, Dtmp, eos, 0, j, i, dU);
-            if (wind_term) add_wind(G, eos, 0, j, i, wind_n, wind_pow, wind_Tp, dU);
+            if (wind_term) add_wind(G, eos, 0, j, i, current_wind_n, wind_pow, wind_Tp, dU);
 
             PLOOP dUdt(p, 0, j, i) = (F1(p, 0, j, i) - F1(p, 0, j, i+1)) / G.dx1v(i) +
                                      (F2(p, 0, j, i) - F2(p, 0, j+1, i)) / G.dx2v(j) +
@@ -380,7 +352,7 @@ TaskStatus ApplyFluxes2D(std::shared_ptr<MeshBlockData<Real>>& rc, std::shared_p
 
     return TaskStatus::complete;
 }
-TaskStatus ApplyFluxes(std::shared_ptr<MeshBlockData<Real>>& rc, std::shared_ptr<MeshBlockData<Real>>& dudt)
+TaskStatus ApplyFluxes(SimTime tm, MeshBlockData<Real> *rc, MeshBlockData<Real> *dudt)
 {
     FLAG("Applying fluxes");
     auto pmb = rc->GetBlockPointer();
@@ -388,7 +360,7 @@ TaskStatus ApplyFluxes(std::shared_ptr<MeshBlockData<Real>>& rc, std::shared_ptr
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
-    if (ks == ke) return ApplyFluxes2D(rc, dudt);
+    if (ks == ke) return ApplyFluxes2D(tm, rc, dudt);
     GridVars U = rc->Get("c.c.bulk.cons").data;
     GridVars F1 = rc->Get("c.c.bulk.cons").flux[X1DIR];
     GridVars F2 = rc->Get("c.c.bulk.cons").flux[X2DIR];
@@ -402,6 +374,9 @@ TaskStatus ApplyFluxes(std::shared_ptr<MeshBlockData<Real>>& rc, std::shared_ptr
     Real wind_n = pmb->packages["GRMHD"]->Param<Real>("wind_n");
     Real wind_Tp = pmb->packages["GRMHD"]->Param<Real>("wind_Tp");
     int wind_pow = pmb->packages["GRMHD"]->Param<int>("wind_pow");
+    Real wind_ramp = pmb->packages["GRMHD"]->Param<Real>("wind_ramp");
+    Real current_wind_n = (wind_ramp > 0.0) ? min(tm.time / wind_ramp, 1.0) * wind_n : wind_n;
+    //cerr << "Winding at " << current_wind_n << endl;
 
     // Unpack for kernel
     auto dUdt = dudt->Get("c.c.bulk.cons").data;
@@ -413,7 +388,7 @@ TaskStatus ApplyFluxes(std::shared_ptr<MeshBlockData<Real>>& rc, std::shared_ptr
             Real dU[NPRIM] = {0};
             get_state(G, P, k, j, i, Loci::center, Dtmp);
             get_fluid_source(G, P, Dtmp, eos, k, j, i, dU);
-            if (wind_term) add_wind(G, eos, 0, j, i, wind_n, wind_pow, wind_Tp, dU);
+            if (wind_term) add_wind(G, eos, 0, j, i, current_wind_n, wind_pow, wind_Tp, dU);
 
             PLOOP dUdt(p, k, j, i) = (F1(p, k, j, i) - F1(p, k, j, i+1)) / G.dx1v(i) +
                                      (F2(p, k, j, i) - F2(p, k, j+1, i)) / G.dx2v(j) +
@@ -433,7 +408,7 @@ TaskStatus ApplyFluxes(std::shared_ptr<MeshBlockData<Real>>& rc, std::shared_ptr
  * This is just for a particular MeshBlock/package, so don't rely on it
  * Parthenon will take the minimum and put it in pmy_mesh->dt
  */
-Real EstimateTimestep(std::shared_ptr<MeshBlockData<Real>>& rc)
+Real EstimateTimestep(MeshBlockData<Real> *rc)
 {
     FLAG("Estimating timestep");
     auto pmb = rc->GetBlockPointer();
