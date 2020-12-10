@@ -49,22 +49,6 @@
 
 #include "iharm_restart.hpp"
 
-/**
- * Custom block update stolen from advection_driver, again.
- * Really not sure why this isn't just a part of Parthenon...
- */
-TaskStatus UpdateMeshBlockData(const int stage, Integrator *integrator,
-                          std::shared_ptr<parthenon::MeshBlockData<Real>> &in,
-                          std::shared_ptr<parthenon::MeshBlockData<Real>> &base,
-                          std::shared_ptr<parthenon::MeshBlockData<Real>> &dudt,
-                          std::shared_ptr<parthenon::MeshBlockData<Real>> &out) {
-  const Real beta = integrator->beta[stage - 1];
-  const Real dt = integrator->dt;
-  parthenon::Update::AverageIndependentData(in.get(), base.get(), beta);
-  parthenon::Update::UpdateIndependentData(in.get(), dudt.get(), beta * dt, out.get());
-  return TaskStatus::complete;
-}
-
 TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
 {
     // TODO extra Refinement flux steps in whatever form they look like when I get around to SMR :)
@@ -73,32 +57,36 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
     // then only do so on output steps
 
     // TaskCollections are split into regions, each of which can be tackled by a specified number of independent threads.
-    // TODO describe final split
+    // We inherit our split, like most things in this function, from the advection_example in Parthenon
+    using namespace Update;
     TaskCollection tc;
-    TaskRegion &update_cons = tc.AddRegion(blocks.size());
     TaskID t_none(0);
+
+    const Real beta = integrator->beta[stage - 1];
+    const Real dt = integrator->dt;
+
+    auto num_task_lists_executed_independently = blocks.size();
+    TaskRegion &async_region1 = tc.AddRegion(num_task_lists_executed_independently);
 
     for (int i = 0; i < blocks.size(); i++) {
         auto &pmb = blocks[i];
-        auto &tl = update_cons[i];
-
-        // Parthenon separates out stages of higher-order integrators with "containers," er, MeshBlockData objects
-        // (they're just a bundle of NDarrays capable of holding the Fields in a FluidState)
-        // We use container per stage, filled and used over the course of the step to eventually update the base container
-        // An accumulator dUdt is provided to temporarily store this stage's contribution to the RHS
-        auto& base = pmb->meshblock_data.Get();
+        auto &tl = async_region1[i];
+        // first make other useful containers
         if (stage == 1) {
+            auto &base = pmb->meshblock_data.Get();
             pmb->meshblock_data.Add("dUdt", base);
-            for (int i=1; i < integrator->nstages; i++)
+            for (int i = 1; i < integrator->nstages; i++)
                 pmb->meshblock_data.Add(stage_name[i], base);
         }
 
         // pull out the container we'll use to get fluxes and/or compute RHSs
-        auto& sc0  = pmb->meshblock_data.Get(stage_name[stage-1]);
+        auto &sc0 = pmb->meshblock_data.Get(stage_name[stage - 1]);
         // pull out a container we'll use to store dU/dt.
-        auto& dudt = pmb->meshblock_data.Get("dUdt");
+        // This is just -flux_divergence in this example
+        auto &dudt = pmb->meshblock_data.Get("dUdt");
         // pull out the container that will hold the updated state
-        auto& sc1  = pmb->meshblock_data.Get(stage_name[stage]);
+        // effectively, sc1 = sc0 + dudt*dt
+        auto &sc1 = pmb->meshblock_data.Get(stage_name[stage]);
 
         auto t_start_recv = tl.AddTask(t_none, &MeshBlockData<Real>::StartReceiving, sc1.get(),
                                     BoundaryCommSubset::all);
@@ -112,38 +100,134 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         auto t_calculate_flux3 = tl.AddTask(t_start_recv, HLLE::GetFlux, sc0, X3DIR);
         auto t_calculate_flux = t_calculate_flux1 | t_calculate_flux2 | t_calculate_flux3;
 
-        // These operate only on the conserved fluxes
+        // Fix the conserved fluxes (exclusively B1/2/3) so that they obey divB==0
+        // TODO combine...
         auto t_fix_flux = tl.AddTask(t_calculate_flux, FixFlux, sc0);
         auto t_flux_ct = tl.AddTask(t_fix_flux, GRMHD::FluxCT, sc0);
 
         // Parthenon can calculate a flux divergence, but we save a kernel launch by also adding
         // both the GRMHD source term and any "wind" source coefficients
-        auto t_flux_apply = tl.AddTask(t_flux_ct, GRMHD::ApplyFluxes, tm, sc0.get(), dudt.get());
+        auto t_flux_apply = tl.AddTask(t_none, GRMHD::ApplyFluxes, tm, sc0.get(), dudt.get());
 
-        // Apply dU/dt to the stage's initial state sc0 to obtain the stage final state sc1
-        auto t_update_container = tl.AddTask(t_flux_apply, UpdateMeshBlockData, stage, integrator, sc0, base, dudt, sc1);
+        if (pmesh->multilevel) { // TODO technically this should be "if face-centered fields"
+            auto send_flux =
+                tl.AddTask(t_flux_ct, &MeshBlockData<Real>::SendFluxCorrection, sc0.get());
+            auto recv_flux =
+                tl.AddTask(t_flux_ct, &MeshBlockData<Real>::ReceiveFluxCorrection, sc0.get());
+        }
+    }
 
-        // Update ghost cells.  Only performed on U of sc1
-        auto t_send = tl.AddTask(t_update_container, &MeshBlockData<Real>::SendBoundaryBuffers, sc1.get());
-        auto t_recv = tl.AddTask(t_send, &MeshBlockData<Real>::ReceiveBoundaryBuffers, sc1.get());
-        auto t_fill_from_bufs = tl.AddTask(t_recv, &MeshBlockData<Real>::SetBoundaries, sc1.get());
-        auto t_clear_comm_flags = tl.AddTask(t_fill_from_bufs, &MeshBlockData<Real>::ClearBoundary, sc1.get(),
-                                            BoundaryCommSubset::all);
+    const int num_partitions = pmesh->DefaultNumPartitions();
+    // note that task within this region that contains one tasklist per pack
+    // could still be executed in parallel
+    TaskRegion &single_tasklist_per_pack_region = tc.AddRegion(num_partitions);
+    for (int i = 0; i < num_partitions; i++) {
+        auto &tl = single_tasklist_per_pack_region[i];
+        auto &mbase = pmesh->mesh_data.GetOrAdd("base", i);
+        auto &mc0 = pmesh->mesh_data.GetOrAdd(stage_name[stage - 1], i);
+        auto &mc1 = pmesh->mesh_data.GetOrAdd(stage_name[stage], i);
+        auto &mdudt = pmesh->mesh_data.GetOrAdd("dUdt", i);
+
+        // TODO mesh-wide ApplyFluxes, or switch back to Divergence+AddSource
+        //auto t_flux_apply = tl.AddTask(t_none, GRMHD::ApplyFluxes, tm, mc0.get(), mdudt.get());
+
+        auto t_avg_data = tl.AddTask(t_none, AverageIndependentData<MeshData<Real>>,
+                                mc0.get(), mbase.get(), beta);
+        // apply du/dt to all independent fields in the container
+        auto t_update = tl.AddTask(t_avg_data, UpdateIndependentData<MeshData<Real>>, mc0.get(),
+                                mdudt.get(), beta * dt, mc1.get());
+    }
+
+    const auto &buffer_send_pack =
+        blocks[0]->packages["GRMHD"]->Param<bool>("buffer_send_pack");
+    if (buffer_send_pack) {
+        TaskRegion &tr = tc.AddRegion(num_partitions);
+        for (int i = 0; i < num_partitions; i++) {
+            auto &mc1 = pmesh->mesh_data.GetOrAdd(stage_name[stage], i);
+            tr[i].AddTask(t_none, cell_centered_bvars::SendBoundaryBuffers, mc1);
+        }
+    } else {
+        TaskRegion &tr = tc.AddRegion(num_task_lists_executed_independently);
+        for (int i = 0; i < blocks.size(); i++) {
+            auto &sc1 = blocks[i]->meshblock_data.Get(stage_name[stage]);
+            tr[i].AddTask(t_none, &MeshBlockData<Real>::SendBoundaryBuffers, sc1.get());
+        }
+    }
+
+    const auto &buffer_recv_pack =
+        blocks[0]->packages["GRMHD"]->Param<bool>("buffer_recv_pack");
+    if (buffer_recv_pack) {
+        TaskRegion &tr = tc.AddRegion(num_partitions);
+        for (int i = 0; i < num_partitions; i++) {
+            auto &mc1 = pmesh->mesh_data.GetOrAdd(stage_name[stage], i);
+            tr[i].AddTask(t_none, cell_centered_bvars::ReceiveBoundaryBuffers, mc1);
+        }
+    } else {
+        TaskRegion &tr = tc.AddRegion(num_task_lists_executed_independently);
+        for (int i = 0; i < blocks.size(); i++) {
+            auto &sc1 = blocks[i]->meshblock_data.Get(stage_name[stage]);
+            tr[i].AddTask(t_none, &MeshBlockData<Real>::ReceiveBoundaryBuffers, sc1.get());
+        }
+    }
+
+    const auto &buffer_set_pack =
+        blocks[0]->packages["GRMHD"]->Param<bool>("buffer_set_pack");
+    if (buffer_set_pack) {
+        TaskRegion &tr = tc.AddRegion(num_partitions);
+        for (int i = 0; i < num_partitions; i++) {
+            auto &mc1 = pmesh->mesh_data.GetOrAdd(stage_name[stage], i);
+            tr[i].AddTask(t_none, cell_centered_bvars::SetBoundaries, mc1);
+        }
+    } else {
+        TaskRegion &tr = tc.AddRegion(num_task_lists_executed_independently);
+        for (int i = 0; i < blocks.size(); i++) {
+            auto &sc1 = blocks[i]->meshblock_data.Get(stage_name[stage]);
+            tr[i].AddTask(t_none, &MeshBlockData<Real>::SetBoundaries, sc1.get());
+        }
+    }
+
+    TaskRegion &async_region2 = tc.AddRegion(num_task_lists_executed_independently);
+
+    for (int i = 0; i < blocks.size(); i++) {
+        auto &pmb = blocks[i];
+        auto &tl = async_region2[i];
+        auto &sc1 = pmb->meshblock_data.Get(stage_name[stage]);
+
+        auto t_clear_comm_flags = tl.AddTask(t_none, &MeshBlockData<Real>::ClearBoundary,
+                                        sc1.get(), BoundaryCommSubset::all);
+
+        auto t_prolongBound = t_none;
+        if (pmesh->multilevel) {
+            t_prolongBound = tl.AddTask(t_none, ProlongateBoundaries, sc1);
+        }
 
         // Fill primitives, bringing U and P back into lockstep
-        auto t_fill_derived = tl.AddTask(t_clear_comm_flags, Update::FillDerived<MeshBlockData<Real>>, sc1.get());
+        auto t_fill_derived = tl.AddTask(t_prolongBound, Update::FillDerived<MeshBlockData<Real>>, sc1.get());
 
         // ApplyCustomBoundaries is a catch-all for things HARM needs done:
         // Inflow checks, renormalizations, Bondi outer boundary.  All keep lockstep.
         auto t_set_custom_bc = tl.AddTask(t_fill_derived, ApplyCustomBoundaries, sc1);
 
+        // TODO is this UserWorkAfterLoop material?
+        // TODO Should jcon be calculated here?  We would need to know if we're dumping this step...
         auto t_diagnostics = tl.AddTask(t_set_custom_bc, Diagnostic, sc1, IndexDomain::interior);
         auto t_step_done = t_diagnostics;
 
+        // TODO work custom stuff into original Parthenon call?
+        //auto set_bc = tl.AddTask(prolongBound, ApplyBoundaryConditions, sc1);
+
+        // estimate next time step
         if (stage == integrator->nstages) {
-            // estimate next time step
-            auto new_dt = tl.AddTask(t_step_done, Update::EstimateTimestep<MeshBlockData<Real>>, sc1.get());
+            auto new_dt =
+                tl.AddTask(t_step_done, EstimateTimestep<MeshBlockData<Real>>, sc1.get());
+
+            // Update refinement.  For much, much later
+            // if (pmesh->adaptive) {
+            //     auto tag_refine = tl.AddTask(
+            //         t_step_done, parthenon::Refinement::Tag<MeshBlockData<Real>>, sc1.get());
+            // }
         }
     }
+
     return tc;
 }

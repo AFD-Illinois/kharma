@@ -162,6 +162,15 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     Real wind_ramp_end = pin->GetOrAddReal("wind", "ramp_end", 0.);
     params.Add("wind_ramp_end", wind_ramp_end);
 
+    // Performance options
+    // Boundary buffers.  Packing is experimental in Parthenon
+    bool buffer_send_pack = pin->GetOrAddBoolean("perf", "buffer_send_pack", true);
+    params.Add("buffer_send_pack", buffer_send_pack);
+    bool buffer_recv_pack = pin->GetOrAddBoolean("perf", "buffer_recv_pack", true);
+    params.Add("buffer_recv_pack", buffer_recv_pack);
+    bool buffer_set_pack = pin->GetOrAddBoolean("perf", "buffer_set_pack", true);
+    params.Add("buffer_set_pack", buffer_set_pack);
+
     std::vector<int> s_vector({3});
     std::vector<int> s_fourvector({4});
     std::vector<int> s_prims({NPRIM});
