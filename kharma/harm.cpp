@@ -191,6 +191,7 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
     for (int i = 0; i < blocks.size(); i++) {
         auto &pmb = blocks[i];
         auto &tl = async_region2[i];
+        auto &sc0 = pmb->meshblock_data.Get(stage_name[stage-1]);
         auto &sc1 = pmb->meshblock_data.Get(stage_name[stage]);
 
         auto t_clear_comm_flags = tl.AddTask(t_none, &MeshBlockData<Real>::ClearBoundary,
@@ -216,10 +217,10 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         // TODO work custom stuff into original Parthenon call?
         //auto set_bc = tl.AddTask(prolongBound, ApplyBoundaryConditions, sc1);
 
-        // estimate next time step
+        // Estimate next time step based on ctop from the *ORIGINAL* state, where we calculated the fluxes
         if (stage == integrator->nstages) {
             auto new_dt =
-                tl.AddTask(t_step_done, EstimateTimestep<MeshBlockData<Real>>, sc1.get());
+                tl.AddTask(t_step_done, EstimateTimestep<MeshBlockData<Real>>, sc0.get());
 
             // Update refinement.  For much, much later
             // if (pmesh->adaptive) {
