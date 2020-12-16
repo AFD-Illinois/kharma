@@ -47,6 +47,7 @@
 #include "decs.hpp"
 
 #include "boundaries.hpp"
+#include "current.hpp"
 #include "debug.hpp"
 #include "fixup.hpp"
 #include "fluxes.hpp"
@@ -90,14 +91,22 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     double cfl = pin->GetOrAddReal("GRMHD", "cfl", 0.9);
     params.Add("cfl", cfl);
 
-    // Omit jcon calculation before dumps.  For optimum speed I guess?
-    double no_jcon = pin->GetOrAddBoolean("GRMHD", "no_jcon", false);
-    params.Add("no_jcon", no_jcon);
+    // Option to omit jcon calculation before dumps.  For optimum speed I guess?
+    // TODO make this and next automatic by reading outputs
+    bool add_jcon = pin->GetOrAddBoolean("GRMHD", "add_jcon", true);
+    params.Add("add_jcon", add_jcon);
+    bool flag_save = pin->GetOrAddBoolean("GRMHD", "add_flags", false);
+    params.Add("flag_save", flag_save);
+    bool add_divB = pin->GetOrAddBoolean("GRMHD", "add_divB", false);
+    params.Add("add_divB", add_divB);
 
-    // Starting/minimum timestep, if something about the sound speed goes wonky
-    double dt_min = pin->GetOrAddReal("parthenon/time", "dt_min", 1.e-5);
+    // Minimum timestep, if something about the sound speed goes wonky. Probably won't save you :)
+    double dt_min = pin->GetOrAddReal("parthenon/time", "dt_min", 1.e-6);
     params.Add("dt_min", dt_min);
-    double max_dt_increase = pin->GetOrAddReal("parthenon/time", "max_dt_increase", 1.1);
+    // Starting timestep.  Important for consistent restarts, otherwise just the minimum
+    double dt = pin->GetOrAddReal("parthenon/time", "dt", dt_min);
+    params.Add("dt", dt);
+    double max_dt_increase = pin->GetOrAddReal("parthenon/time", "max_dt_increase", 1.3);
     params.Add("max_dt_increase", max_dt_increase);
 
     // Reconstruction scheme: plm, weno5, ppm...
@@ -119,8 +128,6 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     params.Add("verbose", verbose);
     int flag_verbose = pin->GetOrAddInteger("debug", "flag_verbose", 0);
     params.Add("flag_verbose", flag_verbose);
-    bool flag_save = pin->GetOrAddBoolean("debug", "flag_save", false);
-    params.Add("flag_save", flag_save);
     int extra_checks = pin->GetOrAddInteger("debug", "extra_checks", 0);
     params.Add("extra_checks", extra_checks);
 
@@ -141,7 +148,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     double ktot_max = pin->GetOrAddReal("floors", "ktot_max", 1e20);
     params.Add("ktot_max", ktot_max);
 
-    double gamma_max = pin->GetOrAddReal("floors", "gamma_max", 50);
+    double gamma_max = pin->GetOrAddReal("floors", "gamma_max", 50.);
     params.Add("gamma_max", gamma_max);
 
     bool temp_adjust_u = pin->GetOrAddBoolean("floors", "temp_adjust_u", false);
@@ -180,25 +187,25 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     // They're still necessary for reconstruction, and generally are the quantities in output files
     Metadata m = Metadata({Metadata::Cell, Metadata::Independent, Metadata::FillGhost,
                     Metadata::Restart, Metadata::Conserved}, s_prims);
-    fluid_state->AddField("c.c.bulk.cons", m, DerivedOwnership::shared);
-    m = Metadata({Metadata::Cell, Metadata::Derived, Metadata::OneCopy, Metadata::Intensive, Metadata::Restart}, s_prims);
-    fluid_state->AddField("c.c.bulk.prims", m, DerivedOwnership::shared);
+    fluid_state->AddField("c.c.bulk.cons", m);
+    m = Metadata({Metadata::Cell, Metadata::Derived, Metadata::Restart}, s_prims);
+    fluid_state->AddField("c.c.bulk.prims", m);
 
     // Maximum signal speed (magnitude).  Calculated in flux updates but needed for deciding timestep
     // TODO figure out how to preserve either this or the timestep in restart files
     m = Metadata({Metadata::Face, Metadata::Derived, Metadata::OneCopy});
-    fluid_state->AddField("f.f.bulk.ctop", m, DerivedOwnership::unique);
+    fluid_state->AddField("f.f.bulk.ctop", m);
 
     // Add jcon as an output-only calculation, likely overriding MeshBlock::UserWorkBeforeOutput
-    if (!no_jcon) {
+    if (add_jcon) {
         m = Metadata({Metadata::Cell, Metadata::Derived, Metadata::OneCopy}, s_fourvector);
-        fluid_state->AddField("c.c.bulk.jcon", m, DerivedOwnership::unique);
+        fluid_state->AddField("c.c.bulk.jcon", m);
     }
 
     if (flag_save) {
         m = Metadata({Metadata::Cell, Metadata::Derived, Metadata::OneCopy}, 1);
-        fluid_state->AddField("c.c.bulk.pflag", m, DerivedOwnership::unique);
-        fluid_state->AddField("c.c.bulk.fflag", m, DerivedOwnership::unique);
+        fluid_state->AddField("c.c.bulk.pflag", m);
+        fluid_state->AddField("c.c.bulk.fflag", m);
     }
 
     fluid_state->FillDerivedBlock = GRMHD::UtoP;
@@ -227,9 +234,11 @@ void UtoP(MeshBlockData<Real> *rc)
     GridVars U = rc->Get("c.c.bulk.cons").data;
     GridVars P = rc->Get("c.c.bulk.prims").data;
 
-    // I don't think the flags need a separate sync if I run U_to_P redundantly over ghost zones --
-    // it will just produce the same flags in the same zones for each process
-    // TODO verify
+    // KHARMA uses only one boundary exchange, in the conserved variables
+    // Except where FixUtoP has no neighbors, and must fix with bad zones, this is fully identical
+    // between #s of MPI ranks, because we sync 4 ghost zones and only require 3 for reconstruction.
+    // Thus if the last rank is not flagged, it will be inverted the same way on each process, and
+    // used in the same way for fixups.  If it fails & thus might be different, it is ignored.
     GridInt pflag("pflag", n3, n2, n1);
     GridInt fflag("fflag", n3, n2, n1);
 
@@ -237,8 +246,6 @@ void UtoP(MeshBlockData<Real> *rc)
 
     // Pull out a struct of just the actual floor values for speed
     FloorPrescription floors = FloorPrescription(pmb->packages["GRMHD"]->AllParams());
-
-    //Diagnostic(rc, IndexDomain::entire);
 
     // Get the primitives from our conserved versions
     // Note this covers ghost zones!  This is intentional, as primitives in
@@ -261,25 +268,30 @@ void UtoP(MeshBlockData<Real> *rc)
             pflag(k, j, i) = u_to_p(G, U, eos, k, j, i, Loci::center, P);
 
             // Apply the floors in the same pass
+            // Note we do this even for flagged cells!  In the worst case, we may have to use
+            // flagged cells to fix flagged cells, so they should at least obey floors
             fflag(k, j, i) = 0;
 
             // Fixup_floor involves another U_to_P call.  Hide the pflag in bottom 5 bits and retrieve both
             int comboflag = apply_floors(G, P, U, eos, k, j, i, floors);
             fflag(k, j, i) |= (comboflag / HIT_FLOOR_GEOM_RHO) * HIT_FLOOR_GEOM_RHO;
-            // If the floor was applied (i.e. did an inversion), overwrite the original flag
-            if (fflag(k, j, i)) pflag(k, j, i) = comboflag % HIT_FLOOR_GEOM_RHO;
+
+            // If the floor's U_to_P call failed but the original didn't, mark for a full fixup
+            // TODO options about floors vs fixups, precedence
+            // int pflag_floor = comboflag % HIT_FLOOR_GEOM_RHO;
+            // if (pflag(k, j, i) == InversionStatus::success && pflag_floor != InversionStatus::success) {
+            //     pflag(k, j, i) = comboflag % HIT_FLOOR_GEOM_RHO;
+            // }
 
             // Apply ceilings *after* floors, to make the temperature ceiling better-behaved
-            int fflag_c = apply_ceilings(G, P, U, eos, k, j, i, floors);
-            fflag(k, j, i) |= fflag_c;
-            // Since ceilings are applied without even a U_to_P call, avoid fixups
-            if (fflag_c) pflag(k, j, i) = InversionStatus::success;
+            // Ceilings don't involve a U_to_P call so we don't record failures
+            fflag(k, j, i) |= apply_ceilings(G, P, U, eos, k, j, i, floors);
+
+            // If we applied floors, use the post-floor result
+            //if(fflag(k, j, i)) pflag(k, j, i) = comboflag % HIT_FLOOR_GEOM_RHO;
         }
     );
     FLAG("Filled and Floored");
-
-    // Done inline above
-    //ApplyFloors(rc);
 
     // Note I could separate this into a new step if pflag/fflag could be moved out
     FixUtoP(rc, pflag, fflag);
@@ -289,19 +301,15 @@ void UtoP(MeshBlockData<Real> *rc)
     // Note we only print flags in the interior, borders are covered either by other blocks,
     // or by the outflow/polar conditions later
     int print_flags = pmb->packages["GRMHD"]->Param<int>("flag_verbose");
-    bool save_flags = pmb->packages["GRMHD"]->Param<bool>("flag_save");
     if (print_flags > 0) {
         auto fflag_host = fflag.GetHostMirrorAndCopy();
         auto pflag_host = pflag.GetHostMirrorAndCopy();
         int npflags = CountPFlags(pmb, pflag_host, IndexDomain::interior, print_flags);
         int nfflags = CountFFlags(pmb, fflag_host, IndexDomain::interior, print_flags);
-
-        // Anything you want here
-        //cerr << string_format("UtoP domain: %d-%d,%d-%d,%d-%d",is,ie,js,je,ks,ke) << endl;
     }
-    if (save_flags) {
+    if (pmb->packages["GRMHD"]->Param<bool>("flag_save")) {
         GridScalar pflag_save = rc->Get("c.c.bulk.pflag").data;
-        GridScalar fflag_save = rc->Get("c.c.bulk.pflag").data;
+        GridScalar fflag_save = rc->Get("c.c.bulk.fflag").data;
         pmb->par_for("save_flags", ks, ke, js, je, is, ie,
             KOKKOS_LAMBDA_3D {
                 pflag_save(k,j,i) = pflag(k,j,i);
@@ -318,56 +326,6 @@ void UtoP(MeshBlockData<Real> *rc)
  * @param rc is the current stage's container
  * @param base is the base container containing the global dUdt term
  */
-TaskStatus ApplyFluxes2D(SimTime tm, MeshBlockData<Real> *rc, MeshBlockData<Real> *dudt)
-{
-    FLAG("Applying fluxes");
-    auto pmb = rc->GetBlockPointer();
-    IndexDomain domain = IndexDomain::interior;
-    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
-    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
-    GridVars U = rc->Get("c.c.bulk.cons").data;
-    GridVars F1 = rc->Get("c.c.bulk.cons").flux[X1DIR];
-    GridVars F2 = rc->Get("c.c.bulk.cons").flux[X2DIR];
-    GridVars P = rc->Get("c.c.bulk.prims").data;
-    auto& G = pmb->coords;
-
-    EOS* eos = pmb->packages["GRMHD"]->Param<EOS*>("eos");
-
-    bool wind_term = pmb->packages["GRMHD"]->Param<bool>("wind_term");
-    Real wind_n = pmb->packages["GRMHD"]->Param<Real>("wind_n");
-    Real wind_Tp = pmb->packages["GRMHD"]->Param<Real>("wind_Tp");
-    int wind_pow = pmb->packages["GRMHD"]->Param<int>("wind_pow");
-    Real wind_ramp_start = pmb->packages["GRMHD"]->Param<Real>("wind_ramp_start");
-    Real wind_ramp_end = pmb->packages["GRMHD"]->Param<Real>("wind_ramp_end");
-    Real current_wind_n;
-    if (wind_ramp_end > 0.0) {
-        current_wind_n = min((tm.time - wind_ramp_start) / (wind_ramp_end - wind_ramp_start), 1.0) * wind_n;
-    } else {
-        current_wind_n = wind_n;
-    }
-    //cerr << "Winding at " << current_wind_n << endl;
-
-    // Unpack for kernel
-    auto dUdt = dudt->Get("c.c.bulk.cons").data;
-
-    pmb->par_for("apply_fluxes", js, je, is, ie,
-        KOKKOS_LAMBDA_2D {
-            // Calculate the source term and apply it in 1 go (since it's stencil-1)
-            FourVectors Dtmp;
-            Real dU[NPRIM] = {0};
-            get_state(G, P, 0, j, i, Loci::center, Dtmp);
-            get_fluid_source(G, P, Dtmp, eos, 0, j, i, dU);
-            if (wind_term) add_wind(G, eos, 0, j, i, current_wind_n, wind_pow, wind_Tp, dU);
-
-            PLOOP dUdt(p, 0, j, i) = (F1(p, 0, j, i) - F1(p, 0, j, i+1)) / G.dx1v(i) +
-                                     (F2(p, 0, j, i) - F2(p, 0, j+1, i)) / G.dx2v(j) +
-                                     dU[p];
-        }
-    );
-    FLAG("Applied");
-
-    return TaskStatus::complete;
-}
 TaskStatus ApplyFluxes(SimTime tm, MeshBlockData<Real> *rc, MeshBlockData<Real> *dudt)
 {
     FLAG("Applying fluxes");
@@ -376,11 +334,19 @@ TaskStatus ApplyFluxes(SimTime tm, MeshBlockData<Real> *rc, MeshBlockData<Real> 
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
-    if (ks == ke) return ApplyFluxes2D(tm, rc, dudt);
+    int ndim;
+    if (js == je) {
+        ndim = 1;
+    } else if (ks == ke) {
+        ndim = 2;
+    } else {
+        ndim = 3;
+    }
     GridVars U = rc->Get("c.c.bulk.cons").data;
-    GridVars F1 = rc->Get("c.c.bulk.cons").flux[X1DIR];
-    GridVars F2 = rc->Get("c.c.bulk.cons").flux[X2DIR];
-    GridVars F3 = rc->Get("c.c.bulk.cons").flux[X3DIR];
+    GridVars F1, F2, F3;
+    F1 = rc->Get("c.c.bulk.cons").flux[X1DIR];
+    if (ndim > 1) F2 = rc->Get("c.c.bulk.cons").flux[X2DIR];
+    if (ndim > 2) F3 = rc->Get("c.c.bulk.cons").flux[X3DIR];
     GridVars P = rc->Get("c.c.bulk.prims").data;
     auto& G = pmb->coords;
 
@@ -412,10 +378,11 @@ TaskStatus ApplyFluxes(SimTime tm, MeshBlockData<Real> *rc, MeshBlockData<Real> 
             get_fluid_source(G, P, Dtmp, eos, k, j, i, dU);
             if (wind_term) add_wind(G, eos, 0, j, i, current_wind_n, wind_pow, wind_Tp, dU);
 
-            PLOOP dUdt(p, k, j, i) = (F1(p, k, j, i) - F1(p, k, j, i+1)) / G.dx1v(i) +
-                                     (F2(p, k, j, i) - F2(p, k, j+1, i)) / G.dx2v(j) +
-                                     (F3(p, k, j, i) - F3(p, k+1, j, i)) / G.dx3v(k) +
-                                     dU[p];
+            PLOOP {
+                dUdt(p, k, j, i) = (F1(p, k, j, i) - F1(p, k, j, i+1)) / G.dx1v(i) + dU[p];
+                if (ndim > 1) dUdt(p, k, j, i) += (F2(p, k, j, i) - F2(p, k, j+1, i)) / G.dx2v(j);
+                if (ndim > 2) dUdt(p, k, j, i) += (F3(p, k, j, i) - F3(p, k+1, j, i)) / G.dx3v(k);
+            }
         }
     );
     FLAG("Applied");
@@ -442,7 +409,15 @@ Real EstimateTimestep(MeshBlockData<Real> *rc)
     auto& ctop = rc->GetFace("f.f.bulk.ctop").data;
 
     // TODO parthenon takes a dt, or we could namespace ourselves into the driver to get integrator access...
-    static double last_dt = pmb->packages["GRMHD"]->Param<Real>("dt_min");
+    static double last_dt = pmb->packages["GRMHD"]->Param<Real>("dt");
+
+    // Use parameter "dt" on the first step
+    // TODO make less hacky
+    static bool first_call = true;
+    if (first_call) {
+        first_call = false;
+        return pmb->packages["GRMHD"]->Param<Real>("dt") * pmb->packages["GRMHD"]->Param<Real>("cfl"); 
+    }
 
     // TODO preserve location, needs custom (?) Kokkos Index type for 3D
     double ndt;
@@ -458,21 +433,51 @@ Real EstimateTimestep(MeshBlockData<Real> *rc)
         }
     , min_reducer);
 
+    // Warning that triggering this code slows the code down pretty badly (~1/3)
+    if (pmb->packages["GRMHD"]->Param<int>("verbose") > 1) {
+        if (pmb->packages["GRMHD"]->Param<bool>("flag_save")) {
+            auto fflag = rc->Get("c.c.bulk.fflag").data;
+            auto pflag = rc->Get("c.c.bulk.pflag").data;
+            pmb->par_for("ndt_min", ks, ke, js, je, is, ie,
+                KOKKOS_LAMBDA_3D {
+                    double ndt_zone = 1 / (1 / (coords.dx1v(i) / ctop(1, k, j, i)) +
+                                        1 / (coords.dx2v(j) / ctop(2, k, j, i)) +
+                                        1 / (coords.dx3v(k) / ctop(3, k, j, i)));
+                    if (ndt_zone == ndt) {
+                        printf("Timestep set by %d %d %d: pflag was %f and fflag was %f\n",
+                                i, j, k, pflag(k, j, i), fflag(k, j, i));
+                    }
+                }
+            );
+        } else {
+            pmb->par_for("ndt_min", ks, ke, js, je, is, ie,
+                KOKKOS_LAMBDA_3D {
+                    double ndt_zone = 1 / (1 / (coords.dx1v(i) / ctop(1, k, j, i)) +
+                                        1 / (coords.dx2v(j) / ctop(2, k, j, i)) +
+                                        1 / (coords.dx3v(k) / ctop(3, k, j, i)));
+                    if (ndt_zone == ndt) {
+                        printf("Timestep set by %d %d %d\n", i, j, k);
+                    }
+                }
+            );
+        }
+    }
+    ndt *= pmb->packages["GRMHD"]->Param<Real>("cfl");
+
     // Sometimes we come out with a silly timestep. Try to salvage it
     // TODO don't allow the *overall* timestep to be >1, while still allowing *blocks* to have larger steps
-    if (ndt <= 0.0 || isnan(ndt) || ndt > 10000) {
+    double dt_min = pmb->packages["GRMHD"]->Param<Real>("dt_min");
+    if (ndt < dt_min || isnan(ndt) || ndt > 10000) {
         cerr << "ndt was unsafe: " << ndt << "! Using dt_min" << std::endl;
-        ndt = pmb->packages["GRMHD"]->Param<Real>("dt_min");
-    } else {
-        ndt *= pmb->packages["GRMHD"]->Param<Real>("cfl");
+        ndt = dt_min;
     }
 
     // Only allow the local dt to increase by a certain amount.  This also caps the global
     // one, but preserves local values in case we substep I guess?
     Real dt_limit = pmb->packages["GRMHD"]->Param<Real>("max_dt_increase") * last_dt;
     if (ndt > dt_limit) {
-        if(pmb->packages["GRMHD"]->Param<int>("verbose") > 0){
-            cerr << "Limiting dt: " << dt_limit;
+        if(pmb->packages["GRMHD"]->Param<int>("verbose") > 0) {
+            cout << "Limiting dt: " << dt_limit << endl;
         }
         ndt = dt_limit;
     }
@@ -483,6 +488,18 @@ Real EstimateTimestep(MeshBlockData<Real> *rc)
     return ndt;
 }
 
+void FillOutput(MeshBlock *pmb, double dt)
+{
+    FLAG("Adding output fields");
 
+    auto& rc0 = pmb->meshblock_data.Get("preserve");
+    auto& rc1 = pmb->meshblock_data.Get();
+    CalculateCurrent(rc0.get(), rc1.get(), dt);
+
+    // TODO divB!
+
+
+    FLAG("Added");
+}
 
 } // namespace GRMHD

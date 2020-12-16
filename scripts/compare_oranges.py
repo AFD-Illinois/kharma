@@ -81,7 +81,7 @@ vars = list(dump2['prim_names']) # Parthenon isn't dealing with KEL
 fig = plt.figure(figsize=(FIGX, FIGY))
 for i,name in enumerate(vars):
   ax = plt.subplot(nyplot, nxplot, i+1)
-  plot_diff_xz(ax, name, rel=True, lim=1)
+  plot_diff_xz(ax, name)
   ax.set_xlabel('')
   ax.set_ylabel('')
 

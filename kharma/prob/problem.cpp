@@ -142,7 +142,9 @@ void PostInitialize(ParameterInput *pin, Mesh *pmesh)
         FLAG("Extra boundary sync for B");
         SyncAllBounds(pmesh);
 
-        Real beta_calc_legacy = pin->GetOrAddBoolean("b_field", "legacy", false);
+        // Default to iharm3d's field normalization, pg_max/pb_max = 100
+        // This is *not* the same as local beta_min = 100
+        Real beta_calc_legacy = pin->GetOrAddBoolean("b_field", "legacy", true);
         Real desired_beta_min = pin->GetOrAddReal("b_field", "beta_min", 100.);
 
         FLAG("Seeding magnetic field");

@@ -131,7 +131,7 @@ GRCoordinates::GRCoordinates(const GRCoordinates &src, int coarsen): UniformCart
  * fun issues with C++ Lambda capture, which Kokkos brings to the fore
  */
 void init_GRCoordinates(GRCoordinates& G, int n1, int n2, int n3) {
-    cerr << "Creating GRCoordinate cache size " << n1 << " " << n2 << endl;
+    //cerr << "Creating GRCoordinate cache size " << n1 << " " << n2 << endl;
     // Cache geometry.  May be faster than re-computing. May not be.
     G.gcon_direct = GeomTensor2("gcon", NLOC, n2, n1, GR_DIM, GR_DIM);
     G.gcov_direct = GeomTensor2("gcov", NLOC, n2, n1, GR_DIM, GR_DIM);

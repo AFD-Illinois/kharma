@@ -19,7 +19,7 @@
 
 #include <memory>
 
-#include "parthenon/parthenon.hpp"
+#include <parthenon/parthenon.hpp>
 
 using namespace parthenon;
 
@@ -37,4 +37,6 @@ namespace GRMHD {
     TaskStatus ApplyFluxes(SimTime tm, MeshBlockData<Real> *rc, MeshBlockData<Real> *dudt);
     // Estimate the next timestep. For pure GRMHD, this is the minimum signal crossing time of a zone on the block
     Real EstimateTimestep(MeshBlockData<Real> *rc);
+    // Fill fields calculated only for output to file
+    void FillOutput(MeshBlock *pmb);
 }

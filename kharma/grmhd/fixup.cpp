@@ -62,38 +62,47 @@ void FixUtoP(MeshBlockData<Real> *rc, GridInt pflag, GridInt fflag)
     int ke = is_physical_bound(pmb->boundary_flag[BoundaryFace::outer_x3]) ?
                 pmb->cellbounds.ke(IndexDomain::interior) : pmb->cellbounds.ke(IndexDomain::entire);
 
-    // TODO This is a lot of if statements. Slow?
+    // TODO That's a lot of short fors and conditionals.  Is this slow?
     pmb->par_for("fix_U_to_P", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D {
             // Negative flags mark physical corners, which shouldn't be fixed
             if (pflag(k, j, i) > InversionStatus::success) {
-                double wsum = 0.;
-                double sum[NFLUID] = {0};
+                double wsum = 0., wsum_x = 0.;
+                double sum[NFLUID] = {0.}, sum_x[NFLUID] = {0.};
                 // For all neighboring cells...
                 for (int n = -1; n <= 1; n++) {
                     for (int m = -1; m <= 1; m++) {
                         for (int l = -1; l <= 1; l++) {
                             int ii = i + l, jj = j + m, kk = k + n;
-                            // If in bounds and this cell is not flagged...
+                            // If in bounds...
                             if (ii >= is && ii <= ie && jj >= js && jj <= je && kk >= ks && kk <= ke) {
+                                // Weight by distance
+                                double w = 1./(abs(l) + abs(m) + abs(n) + 1);
+
+                                // Count only the good cells, if we can
                                 if (pflag(kk, jj, ii) == InversionStatus::success) {
                                     // Weight by distance.  Note interpolated "fixed" cells stay flagged
-                                    double w = 1./(abs(l) + abs(m) + abs(n) + 1);
                                     wsum += w;
                                     FLOOP sum[p] += w * P(p, kk, jj, ii);
                                 }
+                                // Just in case, keep a sum of even the bad ones
+                                wsum_x += w;
+                                FLOOP sum_x[p] += w * P(p, kk, jj, ii);
                             }
                         }
                     }
                 }
 
                 if(wsum < 1.e-10) {
-                    // TODO set a flag and handle it outside
-                    //printf("No neighbors were available!\n");
+                    // TODO probably should crash here.
+                    printf("No neighbors were available!\n");
+                    FLOOP P(p, k, j, i) = sum_x[p]/wsum_x;
                 } else {
-                    //printf("Original: %g %g %g %g %g\nReplacement: %g %g %g %g %g\n",
-                    //P(0, k, j, i), P(1, k, j, i), P(2, k, j, i), P(3, k, j, i), P(4, k, j, i),
-                    //sum[0]/wsum, sum[1]/wsum, sum[2]/wsum, sum[3]/wsum, sum[4]/wsum);
+                    // if (pflag(k, j, i) == InversionStatus::max_iter) {
+                    //     printf("zone %d %d %d replaced, weight %f.\nOriginal: %g %g %g %g %g\nReplacement: %g %g %g %g %g\n", i, j, k, wsum,
+                    //     P(0, k, j, i), P(1, k, j, i), P(2, k, j, i), P(3, k, j, i), P(4, k, j, i),
+                    //     sum[0]/wsum, sum[1]/wsum, sum[2]/wsum, sum[3]/wsum, sum[4]/wsum);
+                    // }
                     FLOOP P(p, k, j, i) = sum[p]/wsum;
                 }
                 // Make sure to keep lockstep

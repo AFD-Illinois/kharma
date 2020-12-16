@@ -76,6 +76,8 @@ int main(int argc, char *argv[])
     pman.app_input->ProcessPackages = KHARMA::ProcessPackages;
     pman.app_input->ProcessProperties = KHARMA::ProcessProperties;
     pman.app_input->ProblemGenerator = KHARMA::ProblemGenerator;
+    // This is a *static* member of meshblock, so it inherits no pointer to what we need...
+    //pman.app_input->UserWorkBeforeOutput = KHARMA::FillOutput;
 
     // Parthenon init includes Kokkos, MPI, parses parameters & cmdline,
     // then calls ProcessPackages and ProcessProperties, then constructs the Mesh

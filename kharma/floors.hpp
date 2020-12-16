@@ -218,6 +218,7 @@ KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, GridVars P, Grid
             PLOOP {
                 U(p, k, j, i) += Unew[p];
                 // This is just the guess at primitive values, needed for U_to_P to converge.
+                // it doubles as a fluid-frame floor in case u_to_p fails
                 P(p, k, j, i) += Pnew[p];
             }
 

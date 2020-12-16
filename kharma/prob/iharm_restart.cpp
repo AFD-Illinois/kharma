@@ -70,11 +70,16 @@ void ReadIharmRestartHeader(std::string fname, std::unique_ptr<ParameterInput>& 
     pin->SetInteger("parthenon/mesh", "nx2", n2file);
     pin->SetInteger("parthenon/mesh", "nx3", n3file);
 
-    double gam, cour;
+    double gam, cour, t, dt;
     hdf5_read_single_val(&gam, "gam", H5T_IEEE_F64LE);
     hdf5_read_single_val(&cour, "cour", H5T_IEEE_F64LE);
+    hdf5_read_single_val(&t, "t", H5T_IEEE_F64LE);
+    hdf5_read_single_val(&dt, "dt", H5T_IEEE_F64LE);
+
     pin->SetReal("GRMHD", "gamma", gam);
-    pin->SetReal("GRMHD", "cfl", cour);
+    //pin->SetReal("GRMHD", "cfl", cour);
+    pin->SetReal("parthenon/time", "dt", dt);
+    pin->SetReal("parthenon/time", "start_time", t);
 
     if (hdf5_exists("a")) {
         double a, hslope, Rout;
@@ -214,7 +219,7 @@ double ReadIharmRestart(MeshBlock *pmb, GRCoordinates G, GridVars P, std::string
     Kokkos::fence();
 
     // Every iharm3d sim we'd be restarting had these
-    // TODO Work out why we need to fill ghost zones here instead of doing a Parthenon sync
+    // TODO Switch to a KHARMA bounds sync
     outflow_x1(G, P, n1, n2, n3);
     polar_x2(G, P, n1, n2, n3);
     periodic_x3(G, P, n1, n2, n3);
