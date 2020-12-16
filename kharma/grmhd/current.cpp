@@ -16,8 +16,14 @@ TaskStatus CalculateCurrent(MeshBlockData<Real> *rc0, MeshBlockData<Real> *rc1, 
     int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
     int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
     int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
+    int ndim = 3;
+    if (n2 == 1) {
+        ndim = 1;
+    } else if (n3 == 1) {
+        ndim = 2;
+    }
 
-    GridVars P_c("P_c", n3, n2, n1);
+    GridVars P_c("P_c", NPRIM, n3, n2, n1);
 
     // Calculate time-centered P.  Parthenon can do this with whole containers, but we only need P,(B)
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
@@ -30,33 +36,34 @@ TaskStatus CalculateCurrent(MeshBlockData<Real> *rc0, MeshBlockData<Real> *rc1, 
     );
 
     // Calculate j^{\mu} using centered differences for active zones
-    // TODO 
     domain = IndexDomain::interior;
     is = pmb->cellbounds.is(domain); ie = pmb->cellbounds.ie(domain);
     js = pmb->cellbounds.js(domain); je = pmb->cellbounds.je(domain);
     ks = pmb->cellbounds.ks(domain); ke = pmb->cellbounds.ke(domain);
-    pmb->par_for("jcon_calc", ks, ke, js, je, is, ie,
-        KOKKOS_LAMBDA_3D {
-
-            // For each direction mu...
-            DLOOP1 {
-                // Get sqrt{-g}*F^{mu nu} at neighboring points
-                Real gF0p = G.gdet(Loci::center, j, i) * get_Fcon(G, P_new, 0, mu, k, j, i);
-                Real gF0m = G.gdet(Loci::center, j, i) * get_Fcon(G, P_old, 0, mu, k, j, i);
-                Real gF1p = G.gdet(Loci::center, j, i+1) * get_Fcon(G, P_c, 1, mu, k, j, i+1);
-                Real gF1m = G.gdet(Loci::center, j, i-1) * get_Fcon(G, P_c, 1, mu, k, j, i-1);
-                Real gF2p = G.gdet(Loci::center, j+1, i) * get_Fcon(G, P_c, 2, mu, k, j+1, i);
-                Real gF2m = G.gdet(Loci::center, j-1, i) * get_Fcon(G, P_c, 2, mu, k, j-1, i);
-                Real gF3p = G.gdet(Loci::center, j, i) * get_Fcon(G, P_c, 3, mu, k+1, j, i);
-                Real gF3m = G.gdet(Loci::center, j, i) * get_Fcon(G, P_c, 3, mu, k-1, j, i);
-
-                // Difference: D_mu F^{mu nu} = 4 \pi j^nu
-                jcon(mu, k, j, i) = 1. / (sqrt(4. * M_PI) * G.gdet(Loci::center, j, i)) *
-                                    ((gF0p - gF0m) / dt +
-                                    (gF1p - gF1m) / (2. * G.dx1v(i)) +
-                                    (gF2p - gF2m) / (2. * G.dx2v(j)) +
-                                    (gF3p - gF3m) / (2. * G.dx3v(k)));
+    pmb->par_for("jcon_calc", 0, GR_DIM-1, ks, ke, js, je, is, ie,
+        KOKKOS_LAMBDA_VEC {
+            // Get sqrt{-g}*F^{mu nu} at neighboring points
+            Real gF0p = 0., gF0m = 0., gF1p = 0., gF1m = 0.;
+            Real gF2p = 0., gF2m = 0., gF3p = 0., gF3m = 0.;
+            gF0p = G.gdet(Loci::center, j, i) * get_Fcon(G, P_new, 0, mu, k, j, i);
+            gF0m = G.gdet(Loci::center, j, i) * get_Fcon(G, P_old, 0, mu, k, j, i);
+            gF1p = G.gdet(Loci::center, j, i+1) * get_Fcon(G, P_c, 1, mu, k, j, i+1);
+            gF1m = G.gdet(Loci::center, j, i-1) * get_Fcon(G, P_c, 1, mu, k, j, i-1);
+            if (ndim > 1) {
+                gF2p = G.gdet(Loci::center, j+1, i) * get_Fcon(G, P_c, 2, mu, k, j+1, i);
+                gF2m = G.gdet(Loci::center, j-1, i) * get_Fcon(G, P_c, 2, mu, k, j-1, i);
             }
+            if (ndim > 2) {
+                gF3p = G.gdet(Loci::center, j, i) * get_Fcon(G, P_c, 3, mu, k+1, j, i);
+                gF3m = G.gdet(Loci::center, j, i) * get_Fcon(G, P_c, 3, mu, k-1, j, i);
+            }
+
+            // Difference: D_mu F^{mu nu} = 4 \pi j^nu
+            jcon(mu, k, j, i) = 1. / (sqrt(4. * M_PI) * G.gdet(Loci::center, j, i)) *
+                                ((gF0p - gF0m) / dt +
+                                (gF1p - gF1m) / (2. * G.dx1v(i)) +
+                                (gF2p - gF2m) / (2. * G.dx2v(j)) +
+                                (gF3p - gF3m) / (2. * G.dx3v(k)));
         }
     );
 

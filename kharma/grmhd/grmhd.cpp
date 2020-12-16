@@ -334,14 +334,13 @@ TaskStatus ApplyFluxes(SimTime tm, MeshBlockData<Real> *rc, MeshBlockData<Real> 
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
-    int ndim;
+    int ndim = 3;
     if (js == je) {
         ndim = 1;
     } else if (ks == ke) {
         ndim = 2;
-    } else {
-        ndim = 3;
     }
+
     GridVars U = rc->Get("c.c.bulk.cons").data;
     GridVars F1, F2, F3;
     F1 = rc->Get("c.c.bulk.cons").flux[X1DIR];
@@ -376,7 +375,7 @@ TaskStatus ApplyFluxes(SimTime tm, MeshBlockData<Real> *rc, MeshBlockData<Real> 
             Real dU[NPRIM] = {0};
             get_state(G, P, k, j, i, Loci::center, Dtmp);
             get_fluid_source(G, P, Dtmp, eos, k, j, i, dU);
-            if (wind_term) add_wind(G, eos, 0, j, i, current_wind_n, wind_pow, wind_Tp, dU);
+            if (wind_term) add_wind(G, eos, k, j, i, current_wind_n, wind_pow, wind_Tp, dU);
 
             PLOOP {
                 dUdt(p, k, j, i) = (F1(p, k, j, i) - F1(p, k, j, i+1)) / G.dx1v(i) + dU[p];
