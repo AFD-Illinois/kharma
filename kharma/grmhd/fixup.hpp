@@ -42,7 +42,9 @@
  * Smooth over inversion failures by averaging values from each neighboring zone
  * a.k.a. Diffusion?  What diffusion?  There is no diffusion here.
  *
- * TODO parallelize this
+ * TODO These happen often, and we can do better here.
+ * See e.g. Beckwith & Stone for a truly defense-in-depth approach
+ * 
  * LOCKSTEP: this function expects and should preserve P<->U
  */
 void FixUtoP(MeshBlockData<Real> *rc, GridInt pflag, GridInt fflag);

@@ -40,12 +40,10 @@
 #define ERRTOL 1.e-8
 #define ITERMAX 8
 
-KOKKOS_INLINE_FUNCTION Real err_eqn(const EOS* eos, const Real Bsq, const Real D, const Real Ep, const Real QdB,
-                                    const Real Qtsq, const Real Wp, InversionStatus &eflag);
-KOKKOS_INLINE_FUNCTION Real gamma_func(const Real Bsq, const Real D, const Real QdB,
-                                        const Real Qtsq, const Real Wp, InversionStatus &eflag);
-KOKKOS_INLINE_FUNCTION Real Wp_func(const GRCoordinates &G, const GridVars P, const EOS* eos,
-                                    const int& k, const int& j, const int& i, const Loci loc, InversionStatus &eflag);
+KOKKOS_INLINE_FUNCTION Real err_eqn(const EOS* eos, const Real& Bsq, const Real& D, const Real& Ep, const Real& QdB,
+                                    const Real& Qtsq, const Real& Wp, InversionStatus& eflag);
+KOKKOS_INLINE_FUNCTION Real gamma_func(const Real& Bsq, const Real& D, const Real& QdB,
+                                        const Real& Qtsq, const Real& Wp);
 
 /**
  * Try to recover primitive variables in a zone via 1D Newtonian solve, see Mignone & McKinney '07
@@ -53,8 +51,6 @@ KOKKOS_INLINE_FUNCTION Real Wp_func(const GRCoordinates &G, const GridVars P, co
 KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const GridVars U, const EOS* eos,
                                   const int& k, const int& j, const int& i, const Loci loc, GridVars P)
 {
-    InversionStatus eflag = InversionStatus::success;
-
     Real alpha = 1./sqrt(-G.gcon(loc, j, i, 0, 0));
     Real gdet = G.gdet(loc, j, i);
     Real a_over_g = alpha / gdet;
@@ -104,9 +100,19 @@ KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const Grid
     Real Ep = -Qdotn - D;
 
     // Numerical rootfinding
-    // Take guesses from primitives.
-    Real Wp = Wp_func(G, P, eos, k, j, i, loc, eflag);
-    if (eflag) return eflag;
+
+    // Initial guess from primitives
+    // Calculate gamma, check return
+    Real gamma = mhd_gamma_calc(G, P, k, j, i, loc);
+    if (gamma < 1) return InversionStatus::bad_ut;
+
+    // Fetch rho0, u and calculate Wp
+    Real rho0 = P(prims::rho, k, j, i);
+    Real u = P(prims::u, k, j, i);
+    Real Wp = (rho0 + u + eos->p(rho0, u)) * gamma * gamma - rho0 * gamma;
+
+    // Gather any errors during iteration with a single flag to return afterward
+    InversionStatus eflag = InversionStatus::success;
 
     // Step around the guess & evaluate errors
     Real Wpm = (1. - DELTA) * Wp; //heuristic
@@ -115,7 +121,6 @@ KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const Grid
     Real errp = err_eqn(eos, Bsq, D, Ep, QdB, Qtsq, Wpp, eflag);
     Real err = err_eqn(eos, Bsq, D, Ep, QdB, Qtsq, Wp, eflag);
     Real errm = err_eqn(eos, Bsq, D, Ep, QdB, Qtsq, Wpm, eflag);
-    if (eflag) return eflag;
 
     // Attempt a Halley/Muller/Bailey/Press step
     Real dedW = (errp - errm) / (Wpp - Wpm);
@@ -148,31 +153,26 @@ KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const Grid
 
         if (fabs(err / Wp) < ERRTOL) break;
     }
-    // Failure to converge; do not set primitives other than B
+    // If there was a bad gamma calculation, do not set primitives other than B
+    // Return this first since it happened first
+    if (eflag) return eflag;
+    // Return failure to converge
     if (iter == ITERMAX) return InversionStatus::max_iter;
 
     // Find utsq, gamma, rho0 from Wp
-    Real gamma = gamma_func(Bsq, D, QdB, Qtsq, Wp, eflag);
-    if (eflag) return eflag;
-    Real rho0 = D / gamma;
+    gamma = gamma_func(Bsq, D, QdB, Qtsq, Wp);
+    if (gamma < 1) return InversionStatus::bad_ut;
+
+    rho0 = D / gamma;
     Real W = Wp + D;
     Real w = W / (gamma*gamma);
     Real p = eos->p_w(rho0, w);
-    Real u = w - (rho0 + p);
+    u = w - (rho0 + p);
 
     // Return without updating non-B primitives
-    if (rho0 < 0 && u < 0)
-    {
-        return InversionStatus::neg_rhou;
-    }
-    else if (rho0 < 0)
-    {
-        return InversionStatus::neg_rho;
-    }
-    else if (u < 0)
-    {
-        return InversionStatus::neg_u;
-    }
+    if (rho0 < 0 && u < 0) return InversionStatus::neg_rhou;
+    else if (rho0 < 0) return InversionStatus::neg_rho;
+    else if (u < 0) return InversionStatus::neg_u;
 
     // Set primitives
     P(prims::rho, k, j, i) = rho0;
@@ -187,13 +187,13 @@ KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const Grid
     return InversionStatus::success;
 }
 
-// TODO lighten up on checks in these functions in favor of sanity at the end
-// Document these
-KOKKOS_INLINE_FUNCTION Real err_eqn(const EOS* eos, const Real Bsq, const Real D, const Real Ep, const Real QdB,
-                                    const Real Qtsq, const Real Wp, InversionStatus &eflag)
+// Document this
+KOKKOS_INLINE_FUNCTION Real err_eqn(const EOS* eos, const Real& Bsq, const Real& D, const Real& Ep, const Real& QdB,
+                                    const Real& Qtsq, const Real& Wp, InversionStatus& eflag)
 {
     Real W = Wp + D;
-    Real gamma = gamma_func(Bsq, D, QdB, Qtsq, Wp, eflag);
+    Real gamma = gamma_func(Bsq, D, QdB, Qtsq, Wp);
+    if (gamma < 1) eflag = InversionStatus::bad_ut;
     Real w = W / pow(gamma,2);
     Real rho0 = D / gamma;
     Real p = eos->p_w(rho0, w);
@@ -205,8 +205,8 @@ KOKKOS_INLINE_FUNCTION Real err_eqn(const EOS* eos, const Real Bsq, const Real D
 /**
  * Fluid relativistic factor gamma in terms of inversion state variables
  */
-KOKKOS_INLINE_FUNCTION Real gamma_func(const Real Bsq, const Real D, const Real QdB,
-                                        const Real Qtsq, const Real Wp, InversionStatus &eflag)
+KOKKOS_INLINE_FUNCTION Real gamma_func(const Real& Bsq, const Real& D, const Real& QdB,
+                                        const Real& Qtsq, const Real& Wp)
 {
     Real QdBsq = QdB * QdB;
     Real W = Wp + D;
@@ -215,41 +215,12 @@ KOKKOS_INLINE_FUNCTION Real gamma_func(const Real Bsq, const Real D, const Real 
 
     // This is basically inversion of eq. A7 of Mignone & McKinney
     Real utsq = -((W + WB) * QdBsq + W2 * Qtsq) / (QdBsq * (W + WB) + W2 * (Qtsq - WB * WB));
-    Real gamma = sqrt(1. + fabs(utsq));
 
-#if DEBUG
-    // Catch utsq < 0
-    if (utsq < 0. || utsq > 1.e7)
-    {
-        eflag = InversionStatus::bad_ut;
+    // Catch utsq < 0 and YELL
+    // TODO latter number should be ~1e3*GAMMAMAX^2
+    if (utsq < -1.e-13 || utsq > 1.e7) {
+        return -1.;
+    } else {
+        return sqrt(1. + fabs(utsq));
     }
-    if (gamma < 1.)
-    {
-        eflag = InversionStatus::bad_gamma;
-    }
-#endif
-
-    return gamma;
-}
-
-/**
- * See Mignone & McKinney
- * TODO make local?  Index stuff seems weird
- */
-KOKKOS_INLINE_FUNCTION Real Wp_func(const GRCoordinates &G, const GridVars P, const EOS* eos,
-                                    const int& k, const int& j, const int& i, const Loci loc, InversionStatus &eflag)
-{
-    // Calculate gamma
-    Real gamma = mhd_gamma_calc(G, P, k, j, i, loc);
-#if DEBUG
-    if (gamma < 1.)
-    {
-        eflag = InversionStatus::bad_gamma;
-    }
-#endif
-
-    // Fetch rho0, u and calculate Wp
-    Real rho0 = P(prims::rho, k, j, i);
-    Real u = P(prims::u, k, j, i);
-    return (rho0 + u + eos->p(rho0, u)) * gamma * gamma - rho0 * gamma;
 }

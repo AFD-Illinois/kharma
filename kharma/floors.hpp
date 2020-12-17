@@ -224,6 +224,9 @@ KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, GridVars P, Grid
 
             // Recover primitive variables from conserved versions
             pflag = u_to_p(G, U, eos, k, j, i, Loci::center, P);
+            // If that fails, we've effectively already applied the floors in fluid-frame to the prims,
+            // so we just formalize that
+            if (pflag) p_to_u(G, P, eos, k, j, i, U);
         }
     }
     return fflag + pflag;

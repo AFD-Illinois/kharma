@@ -201,16 +201,38 @@ TaskStatus FixFlux(std::shared_ptr<MeshBlockData<Real>>& rc)
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
+    int ndim = 3;
+    if (js == je) {
+        ndim = 1;
+    } else if (ks == ke) {
+        ndim = 2;
+    }
 
-    GridVars F1 = rc->Get("c.c.bulk.cons").flux[X1DIR];
-    GridVars F2 = rc->Get("c.c.bulk.cons").flux[X2DIR];
-    GridVars F3;
-    int ke_e;
-    if (ks != ke) {
-        ke_e = ke + 1;
-        F3 = rc->Get("c.c.bulk.cons").flux[X3DIR];
-    } else {
-        ke_e = ke;
+    GridVars F1, F2, F3;
+    F1 = rc->Get("c.c.bulk.cons").flux[X1DIR];
+    if (ndim > 1) F2 = rc->Get("c.c.bulk.cons").flux[X2DIR];
+    if (ndim > 2) F3 = rc->Get("c.c.bulk.cons").flux[X3DIR];
+    int je_e = (ndim > 1) ? je + 1 : je;
+    int ke_e = (ndim > 2) ? ke + 1 : ke;
+
+    // TODO runtime option to allow inflow?
+    if (pmb->boundary_flag[BoundaryFace::inner_x1] == BoundaryFlag::outflow)
+    {
+        pmb->par_for("fix_flux_in_l", ks, ke_e, js, je_e, is, is,
+            KOKKOS_LAMBDA_3D {
+                F1(prims::rho, k, j, i) = min(F1(prims::rho, k, j, i), 0.);
+            }
+        );
+    }
+
+    if (pmb->boundary_flag[BoundaryFace::outer_x1] == BoundaryFlag::outflow &&
+        !(pmb->packages["GRMHD"]->Param<std::string>("problem") == "bondi"))
+    {
+        pmb->par_for("fix_flux_in_r", ks, ke_e, js, je_e, ie+1, ie+1,
+            KOKKOS_LAMBDA_3D {
+                F1(prims::rho, k, j, i) = max(F1(prims::rho, k, j, i), 0.);
+            }
+        );
     }
 
     if (pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::reflect)
@@ -227,7 +249,7 @@ TaskStatus FixFlux(std::shared_ptr<MeshBlockData<Real>>& rc)
 
     if (pmb->boundary_flag[BoundaryFace::outer_x2] == BoundaryFlag::reflect)
     {
-        pmb->par_for("fix_flux_b_r", ks, ke_e, je+1, je+1, is, ie+1,
+        pmb->par_for("fix_flux_b_r", ks, ke_e, je_e, je_e, is, ie+1,
             KOKKOS_LAMBDA_3D {
                 PLOOP F2(p, k, j, i) = 0.;
                 // Make sure the emfs are also 0, for flux-ct

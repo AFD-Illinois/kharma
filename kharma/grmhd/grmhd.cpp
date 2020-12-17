@@ -93,7 +93,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
 
     // Option to omit jcon calculation before dumps.  For optimum speed I guess?
     // TODO make this and next automatic by reading outputs
-    bool add_jcon = pin->GetOrAddBoolean("GRMHD", "add_jcon", true);
+    bool add_jcon = pin->GetOrAddBoolean("GRMHD", "add_jcon", false);
     params.Add("add_jcon", add_jcon);
     bool flag_save = pin->GetOrAddBoolean("GRMHD", "add_flags", false);
     params.Add("flag_save", flag_save);
@@ -193,7 +193,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
 
     // Maximum signal speed (magnitude).  Calculated in flux updates but needed for deciding timestep
     // TODO figure out how to preserve either this or the timestep in restart files
-    m = Metadata({Metadata::Face, Metadata::Derived, Metadata::OneCopy});
+    m = Metadata({Metadata::Face, Metadata::Derived, Metadata::OneCopy, Metadata::Restart});
     fluid_state->AddField("f.f.bulk.ctop", m);
 
     // Add jcon as an output-only calculation, likely overriding MeshBlock::UserWorkBeforeOutput
@@ -267,7 +267,7 @@ void UtoP(MeshBlockData<Real> *rc)
         KOKKOS_LAMBDA_3D {
             pflag(k, j, i) = u_to_p(G, U, eos, k, j, i, Loci::center, P);
 
-            // Apply the floors in the same pass
+            // Apply the floors in the same pass (if we can trust P!)
             // Note we do this even for flagged cells!  In the worst case, we may have to use
             // flagged cells to fix flagged cells, so they should at least obey floors
             fflag(k, j, i) = 0;
@@ -276,19 +276,15 @@ void UtoP(MeshBlockData<Real> *rc)
             int comboflag = apply_floors(G, P, U, eos, k, j, i, floors);
             fflag(k, j, i) |= (comboflag / HIT_FLOOR_GEOM_RHO) * HIT_FLOOR_GEOM_RHO;
 
-            // If the floor's U_to_P call failed but the original didn't, mark for a full fixup
-            // TODO options about floors vs fixups, precedence
-            // int pflag_floor = comboflag % HIT_FLOOR_GEOM_RHO;
-            // if (pflag(k, j, i) == InversionStatus::success && pflag_floor != InversionStatus::success) {
-            //     pflag(k, j, i) = comboflag % HIT_FLOOR_GEOM_RHO;
-            // }
-
             // Apply ceilings *after* floors, to make the temperature ceiling better-behaved
-            // Ceilings don't involve a U_to_P call so we don't record failures
+            // Ceilings don't involve a U_to_P call
             fflag(k, j, i) |= apply_ceilings(G, P, U, eos, k, j, i, floors);
 
-            // If we applied floors, use the post-floor result
-            //if(fflag(k, j, i)) pflag(k, j, i) = comboflag % HIT_FLOOR_GEOM_RHO;
+            // Optionally record the floor inversion failures & average over them
+            // Floors are still applied in fluid frame if this isn't done, but it might help?
+            // if (pflag(k, j, i) == InversionStatus::success) {
+            //     pflag(k, j, i) = comboflag % HIT_FLOOR_GEOM_RHO;
+            // }
         }
     );
     FLAG("Filled and Floored");

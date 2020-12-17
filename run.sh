@@ -15,9 +15,6 @@ export KOKKOS_DEVICE_ID=0
 
 # TODO longhorn
 
-# Optionally use the Kokkos tools to profile
-#export KOKKOS_PROFILE_LIBRARY=../kokkos-tools/kp_kernel_timer.so
-
 KHARMA_DIR="$(dirname $0)"
 if [ -f $KHARMA_DIR/kharma.cuda ]; then
   EXE_NAME=kharma.cuda
@@ -27,6 +24,9 @@ else
   echo "KHARMA executable not found!"
   exit
 fi
+
+# Optionally use the Kokkos tools to profile
+#export KOKKOS_PROFILE_LIBRARY=$KHARMA_DIR/../kokkos-tools/kp_kernel_timer.so
 
 # TODO options based on hostname etc here
 $KHARMA_DIR/external/hpcbind/hpcbind --whole-system -- $KHARMA_DIR/$EXE_NAME "$@"

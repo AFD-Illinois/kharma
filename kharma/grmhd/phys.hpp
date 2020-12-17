@@ -131,7 +131,7 @@ KOKKOS_INLINE_FUNCTION void bcon_calc(const Real P[NPRIM], FourVectors& D,
 /**
  * Find gamma-factor of the fluid w.r.t. normal observer
  *
- * TODO Error or print/clip if outside min or max value
+ * TODO Check qsq inline and/or fabs() it for output
  */
 KOKKOS_INLINE_FUNCTION Real mhd_gamma_calc(const GRCoordinates &G, const GridVars P,
                                              const int& k, const int& j, const int& i,
