@@ -215,48 +215,51 @@ TaskStatus FixFlux(std::shared_ptr<MeshBlockData<Real>>& rc)
     int je_e = (ndim > 1) ? je + 1 : je;
     int ke_e = (ndim > 2) ? ke + 1 : ke;
 
-    // TODO runtime option to allow inflow?
-    if (pmb->boundary_flag[BoundaryFace::inner_x1] == BoundaryFlag::outflow)
-    {
-        pmb->par_for("fix_flux_in_l", ks, ke_e, js, je_e, is, is,
-            KOKKOS_LAMBDA_3D {
-                F1(prims::rho, k, j, i) = min(F1(prims::rho, k, j, i), 0.);
-            }
-        );
+    if (pmb->packages["GRMHD"]->Param<bool>("fix_flux_inflow") == true) {
+        if (pmb->boundary_flag[BoundaryFace::inner_x1] == BoundaryFlag::outflow)
+        {
+            pmb->par_for("fix_flux_in_l", ks, ke_e, js, je_e, is, is,
+                KOKKOS_LAMBDA_3D {
+                    F1(prims::rho, k, j, i) = min(F1(prims::rho, k, j, i), 0.);
+                }
+            );
+        }
+
+        if (pmb->boundary_flag[BoundaryFace::outer_x1] == BoundaryFlag::outflow &&
+            !(pmb->packages["GRMHD"]->Param<std::string>("problem") == "bondi"))
+        {
+            pmb->par_for("fix_flux_in_r", ks, ke_e, js, je_e, ie+1, ie+1,
+                KOKKOS_LAMBDA_3D {
+                    F1(prims::rho, k, j, i) = max(F1(prims::rho, k, j, i), 0.);
+                }
+            );
+        }
     }
 
-    if (pmb->boundary_flag[BoundaryFace::outer_x1] == BoundaryFlag::outflow &&
-        !(pmb->packages["GRMHD"]->Param<std::string>("problem") == "bondi"))
-    {
-        pmb->par_for("fix_flux_in_r", ks, ke_e, js, je_e, ie+1, ie+1,
-            KOKKOS_LAMBDA_3D {
-                F1(prims::rho, k, j, i) = max(F1(prims::rho, k, j, i), 0.);
-            }
-        );
-    }
+    if (pmb->packages["GRMHD"]->Param<bool>("fix_flux_B") == true) {
+        if (pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::reflect)
+        {
+            pmb->par_for("fix_flux_b_l", ks, ke_e, js, js, is, ie+1,
+                KOKKOS_LAMBDA_3D {
+                    PLOOP F2(p, k, j, i) = 0.;
+                    // Make sure the emfs are also 0, for flux-ct
+                    F1(prims::B2, k, j-1, i) = -F1(prims::B2, k, js, i);
+                    if (ke_e > 0) F3(prims::B2, k, j-1, i) = -F3(prims::B2, k, js, i);
+                }
+            );
+        }
 
-    if (pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::reflect)
-    {
-        pmb->par_for("fix_flux_b_l", ks, ke_e, js, js, is, ie+1,
-            KOKKOS_LAMBDA_3D {
-                PLOOP F2(p, k, j, i) = 0.;
-                // Make sure the emfs are also 0, for flux-ct
-                F1(prims::B2, k, j-1, i) = -F1(prims::B2, k, js, i);
-                if (ke_e > 0) F3(prims::B2, k, j-1, i) = -F3(prims::B2, k, js, i);
-            }
-        );
-    }
-
-    if (pmb->boundary_flag[BoundaryFace::outer_x2] == BoundaryFlag::reflect)
-    {
-        pmb->par_for("fix_flux_b_r", ks, ke_e, je_e, je_e, is, ie+1,
-            KOKKOS_LAMBDA_3D {
-                PLOOP F2(p, k, j, i) = 0.;
-                // Make sure the emfs are also 0, for flux-ct
-                F1(prims::B2, k, j, i) = -F1(prims::B2, k, je, i);
-                if (ke_e > 0) F3(prims::B2, k, j, i) = -F3(prims::B2, k, je, i);
-            }
-        );
+        if (pmb->boundary_flag[BoundaryFace::outer_x2] == BoundaryFlag::reflect)
+        {
+            pmb->par_for("fix_flux_b_r", ks, ke_e, je_e, je_e, is, ie+1,
+                KOKKOS_LAMBDA_3D {
+                    PLOOP F2(p, k, j, i) = 0.;
+                    // Make sure the emfs are also 0, for flux-ct
+                    F1(prims::B2, k, j, i) = -F1(prims::B2, k, je, i);
+                    if (ke_e > 0) F3(prims::B2, k, j, i) = -F3(prims::B2, k, je, i);
+                }
+            );
+        }
     }
 
     FLAG("Fixed boundary fluxes");

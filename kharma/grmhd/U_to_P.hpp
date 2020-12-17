@@ -38,7 +38,7 @@
 #include "utils.hpp"
 
 #define ERRTOL 1.e-8
-#define ITERMAX 8
+#define ITERMAX 10
 
 KOKKOS_INLINE_FUNCTION Real err_eqn(const EOS* eos, const Real& Bsq, const Real& D, const Real& Ep, const Real& QdB,
                                     const Real& Qtsq, const Real& Wp, InversionStatus& eflag);
@@ -218,7 +218,7 @@ KOKKOS_INLINE_FUNCTION Real gamma_func(const Real& Bsq, const Real& D, const Rea
 
     // Catch utsq < 0 and YELL
     // TODO latter number should be ~1e3*GAMMAMAX^2
-    if (utsq < -1.e-13 || utsq > 1.e7) {
+    if (utsq < -1.e-15 || utsq > 1.e7) {
         return -1.;
     } else {
         return sqrt(1. + fabs(utsq));

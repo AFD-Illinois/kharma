@@ -155,6 +155,10 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     params.Add("temp_adjust_u", temp_adjust_u);
     bool fluid_frame = pin->GetOrAddBoolean("floors", "fluid_frame", false);
     params.Add("fluid_frame", fluid_frame);
+    bool fix_flux_inflow = pin->GetOrAddBoolean("floors", "fix_flux_inflow", true);
+    params.Add("fix_flux_inflow", fix_flux_inflow);
+    bool fix_flux_B = pin->GetOrAddBoolean("floors", "fix_flux_B", true);
+    params.Add("fix_flux_B", fix_flux_B);
 
     bool wind_term = pin->GetOrAddBoolean("wind", "on", false);
     params.Add("wind_term", wind_term);
