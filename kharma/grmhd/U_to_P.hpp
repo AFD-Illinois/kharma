@@ -106,9 +106,16 @@ KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const Grid
     Real gamma = mhd_gamma_calc(G, P, k, j, i, loc);
     if (gamma < 1) return InversionStatus::bad_ut;
 
-    // Fetch rho0, u and calculate Wp
-    Real rho0 = P(prims::rho, k, j, i);
-    Real u = P(prims::u, k, j, i);
+    // Fetch the current primitive rho0, u (or guess defaults if they're uninitialized)
+    Real rho0, u;
+    if (P(prims::rho, k, j, i) != 0. || P(prims::u, k, j, i) != 0.) {
+        rho0 = P(prims::rho, k, j, i);
+        u = P(prims::u, k, j, i);
+    } else {
+        rho0 = 1.;
+        u = 1.;
+    }
+    // Calculate an initial guess for Wp
     Real Wp = (rho0 + u + eos->p(rho0, u)) * gamma * gamma - rho0 * gamma;
 
     // Gather any errors during iteration with a single flag to return afterward
@@ -125,7 +132,8 @@ KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const Grid
     // Attempt a Halley/Muller/Bailey/Press step
     Real dedW = (errp - errm) / (Wpp - Wpm);
     Real dedW2 = (errp - 2. * err + errm) / pow(h,2);
-    Real f = clip(0.5 * err * dedW2 / pow(dedW,2), -0.3, 0.3); // TODO take a hard look at this clip
+    // TODO look at this clip & the next vs iteration convergence %s
+    Real f = clip(0.5 * err * dedW2 / pow(dedW,2), -0.3, 0.3);
 
     Real dW = clip(-err / dedW / (1. - f), -0.5*Wp, 2.0*Wp);
 

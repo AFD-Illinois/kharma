@@ -239,14 +239,22 @@ TaskStatus Diagnostic(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain doma
         // Check for negative values in the conserved vars
         int nless;
         Kokkos::Sum<int> sum_reducer(nless);
-        pmb->par_reduce("count_negative", ks, ke, js, je, is, ie,
+        pmb->par_reduce("count_negative_U", ks, ke, js, je, is, ie,
             KOKKOS_LAMBDA_3D_REDUCE_INT {
-                if (U(prims::rho, k, j, i) <= 0.) ++local_result;
+                if (U(prims::rho, k, j, i) < 0.) ++local_result;
             }
         , sum_reducer);
-
         if (nless > 0) {
-            cout << "Number of negative conserved rho,u: " << nless << endl;
+            cout << "Number of negative conserved rho: " << nless << endl;
+        }
+        pmb->par_reduce("count_negative_U", ks, ke, js, je, is, ie,
+            KOKKOS_LAMBDA_3D_REDUCE_INT {
+                if (P(prims::rho, k, j, i) < 0.) ++local_result;
+                if (P(prims::u, k, j, i) < 0.) ++local_result;
+            }
+        , sum_reducer);
+        if (nless > 0) {
+            cout << "Number of negative primitive rho, u: " << nless << endl;
         }
     }
 

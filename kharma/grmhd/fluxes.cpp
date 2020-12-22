@@ -146,6 +146,10 @@ TaskStatus HLLE::GetFlux(std::shared_ptr<MeshBlockData<Real>>& rc, const int& di
                         pl[p] = qr(p, i);
                     }
                 }
+                // Little-known fact: WENO can reconstruct fairly negative values from positive ones
+                // TODO test these and report them rather than hard cutting
+                pl[prims::rho] = max(pl[prims::rho], 0.);
+                pl[prims::u] = max(pl[prims::u], 0.);
 
                 // LR -> flux
                 FourVectors Dtmp;

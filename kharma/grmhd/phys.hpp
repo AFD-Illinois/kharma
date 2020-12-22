@@ -342,7 +342,7 @@ KOKKOS_INLINE_FUNCTION void mhd_vchar(const GRCoordinates &G, const GridVars P, 
                                       Real& cmax, Real& cmin)
 {
     // TODO code sharing...
-    Real discr, vp, vm, bsq, ee, ef, va2, cs2, cms2, u;
+    Real discr, vp, vm, bsq, ee, ef, va2, cs2, cms2, rho, u;
     Real Asq, Bsq, Au, Bu, AB, Au2, Bu2, AuBu, A, B, C;
     Real Acov[GR_DIM] = {0}, Bcov[GR_DIM] = {0};
     Real Acon[GR_DIM] = {0}, Bcon[GR_DIM] = {0};
@@ -350,19 +350,22 @@ KOKKOS_INLINE_FUNCTION void mhd_vchar(const GRCoordinates &G, const GridVars P, 
     Acov[dir] = 1.;
     Bcov[0] = 1.;
 
-    DLOOP2 // TODO use lower()
+    DLOOP2 // TODO use lower() & compare speed
     {
         Acon[mu] += G.gcon(loc, j, i, mu, nu) * Acov[nu];
         Bcon[mu] += G.gcon(loc, j, i, mu, nu) * Bcov[nu];
     }
 
     // Find fast magnetosonic speed
+    // TODO test that if we pass this function good values,
+    // we can take away all these hard cuts
     bsq = dot(D.bcon, D.bcov);
-    u =  P(prims::u, k, j, i);
-    ef = P(prims::rho, k, j, i) + eos->gam * u;
+    rho = fabs(P(prims::rho, k, j, i));
+    u =  fabs(P(prims::u, k, j, i));
+    ef = rho + eos->gam * u;
     ee = bsq + ef;
     va2 = bsq / ee;
-    cs2 = eos->gam * eos->p(P(prims::rho, k, j, i), u) / ef;
+    cs2 = eos->gam * eos->p(rho, u) / ef;
 
     cms2 = cs2 + va2 - cs2 * va2;
 
@@ -382,21 +385,19 @@ KOKKOS_INLINE_FUNCTION void mhd_vchar(const GRCoordinates &G, const GridVars P, 
     B = 2. * (AuBu - (AB + AuBu) * cms2);
     C = Au2 - (Asq + Au2) * cms2;
 
-    discr = B * B - 4. * A * C;
-    discr = (discr < 0.) ? 0. : discr;
-    discr = sqrt(discr);
+    discr = sqrt(max(B * B - 4. * A * C, 0.));
 
     vp = -(-B + discr) / (2. * A);
     vm = -(-B - discr) / (2. * A);
 
-    cmax = (vp > vm) ? vp : vm;
-    cmin = (vp > vm) ? vm : vp;
+    cmax = max(vp, vm);
+    cmin = min(vp, vm);
 }
 KOKKOS_INLINE_FUNCTION void mhd_vchar(const GRCoordinates &G, const Real P[NPRIM], const FourVectors D, const EOS* eos,
                                       const int& k, const int& j, const int& i, const Loci loc, const int dir,
                                       Real& cmax, Real& cmin)
 {
-    Real discr, vp, vm, bsq, ee, ef, va2, cs2, cms2, u;
+    Real discr, vp, vm, bsq, ee, ef, va2, cs2, cms2, rho, u;
     Real Asq, Bsq, Au, Bu, AB, Au2, Bu2, AuBu, A, B, C;
     Real Acov[GR_DIM] = {0}, Bcov[GR_DIM] = {0};
     Real Acon[GR_DIM] = {0}, Bcon[GR_DIM] = {0};
@@ -412,11 +413,12 @@ KOKKOS_INLINE_FUNCTION void mhd_vchar(const GRCoordinates &G, const Real P[NPRIM
 
     // Find fast magnetosonic speed
     bsq = dot(D.bcon, D.bcov);
-    u =  P[prims::u];
-    ef = P[prims::rho] + eos->gam * u;
+    rho = fabs(P[prims::rho]);
+    u =  fabs(P[prims::u]);
+    ef = rho + eos->gam * u;
     ee = bsq + ef;
     va2 = bsq / ee;
-    cs2 = eos->gam * eos->p(P[prims::rho], u) / ef;
+    cs2 = eos->gam * eos->p(rho, u) / ef;
 
     cms2 = cs2 + va2 - cs2 * va2;
 
@@ -436,13 +438,11 @@ KOKKOS_INLINE_FUNCTION void mhd_vchar(const GRCoordinates &G, const Real P[NPRIM
     B = 2. * (AuBu - (AB + AuBu) * cms2);
     C = Au2 - (Asq + Au2) * cms2;
 
-    discr = B * B - 4. * A * C;
-    discr = (discr < 0.) ? 0. : discr;
-    discr = sqrt(discr);
+    discr = sqrt(max(B * B - 4. * A * C, 0.));
 
     vp = -(-B + discr) / (2. * A);
     vm = -(-B - discr) / (2. * A);
 
-    cmax = (vp > vm) ? vp : vm;
-    cmin = (vp > vm) ? vm : vp;
+    cmax = max(vp, vm);
+    cmin = min(vp, vm);
 }
