@@ -155,7 +155,7 @@ KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const Grid
     }
     // If there was a bad gamma calculation, do not set primitives other than B
     // Return this first since it happened first
-    if (eflag) return eflag;
+    //if (eflag) return eflag;
     // Return failure to converge
     if (iter == ITERMAX) return InversionStatus::max_iter;
 

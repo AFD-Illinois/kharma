@@ -362,11 +362,11 @@ KOKKOS_INLINE_FUNCTION void mhd_vchar(const GRCoordinates &G, const GridVars P, 
     ef = P(prims::rho, k, j, i) + eos->gam * u;
     ee = bsq + ef;
     va2 = bsq / ee;
-    cs2 = eos->gam * eos->p(0, u) / ef;
+    cs2 = eos->gam * eos->p(P(prims::rho, k, j, i), u) / ef;
 
     cms2 = cs2 + va2 - cs2 * va2;
 
-    clip(cms2, 0., 1.);
+    clip(cms2, 1.e-20, 1.);
 
     // Require that speed of wave measured by observer q.ucon is cms2
     Asq = dot(Acon, Acov);
@@ -416,11 +416,11 @@ KOKKOS_INLINE_FUNCTION void mhd_vchar(const GRCoordinates &G, const Real P[NPRIM
     ef = P[prims::rho] + eos->gam * u;
     ee = bsq + ef;
     va2 = bsq / ee;
-    cs2 = eos->gam * eos->p(0, u) / ef;
+    cs2 = eos->gam * eos->p(P[prims::rho], u) / ef;
 
     cms2 = cs2 + va2 - cs2 * va2;
 
-    clip(cms2, 0., 1.);
+    clip(cms2, 1.e-20, 1.);
 
     // Require that speed of wave measured by observer q.ucon is cms2
     Asq = dot(Acon, Acov);

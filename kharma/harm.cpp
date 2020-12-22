@@ -209,7 +209,7 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
 
         // Fill primitives, bringing U and P back into lockstep
         // Note U_to_P needs a guess, so we feed it a copy of sc0's primitives (but only the primitives!)
-        // TODO optionally declare prims as OneCopy?
+        // TODO optionally declare prims as OneCopy?  We only need two (actually 3) for jcon
         auto t_copy_prims = tl.AddTask(t_prolongBound,
             [](MeshBlockData<Real> *rc0, MeshBlockData<Real> *rc1)
             {
