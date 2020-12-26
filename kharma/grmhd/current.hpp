@@ -30,4 +30,3 @@ KOKKOS_INLINE_FUNCTION double get_Fcon(const GRCoordinates& G, GridVars P,
         return Fcon;
     }
 }
-
