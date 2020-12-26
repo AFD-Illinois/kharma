@@ -38,7 +38,6 @@
 #include "utils.hpp"
 
 #define ERRTOL 1.e-8
-#define ITERMAX 10
 
 KOKKOS_INLINE_FUNCTION Real err_eqn(const EOS* eos, const Real& Bsq, const Real& D, const Real& Ep, const Real& QdB,
                                     const Real& Qtsq, const Real& Wp, InversionStatus& eflag);
@@ -101,20 +100,23 @@ KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const Grid
 
     // Numerical rootfinding
 
-    // Initial guess from primitives
-    // Calculate gamma, check return
-    Real gamma = mhd_gamma_calc(G, P, k, j, i, loc);
-    if (gamma < 1) return InversionStatus::bad_ut;
-
-    // Fetch the current primitive rho0, u (or guess defaults if they're uninitialized)
-    Real rho0, u;
+    // Initial guess from primitives:
+    // Fetch the current values, or guess defaults if they're uninitialized
+    Real gamma, rho0, u;
+    int iter_max;
     if (P(prims::rho, k, j, i) != 0. || P(prims::u, k, j, i) != 0.) {
+        gamma = mhd_gamma_calc(G, P, k, j, i, loc);
         rho0 = P(prims::rho, k, j, i);
         u = P(prims::u, k, j, i);
+        iter_max = 8;
     } else {
-        rho0 = 1.;
-        u = 1.;
+        printf("Guessing P\n");
+        rho0 = 0.1;
+        u = 0.01;
+        gamma = 1.1;
+        iter_max = 20;
     }
+    if (gamma < 1) return InversionStatus::bad_ut;
     // Calculate an initial guess for Wp
     Real Wp = (rho0 + u + eos->p(rho0, u)) * gamma * gamma - rho0 * gamma;
 
@@ -146,7 +148,7 @@ KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const Grid
 
     // Not good enough?  apply secant method
     int iter = 0;
-    for (iter = 0; iter < ITERMAX; iter++)
+    for (iter = 0; iter < iter_max; iter++)
     {
         dW = clip((Wp1 - Wp) * err / (err - err1), (Real) -0.5*Wp, (Real) 2.0*Wp);
 
@@ -162,10 +164,10 @@ KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const Grid
         if (fabs(err / Wp) < ERRTOL) break;
     }
     // If there was a bad gamma calculation, do not set primitives other than B
-    // Return this first since it happened first
+    // Optionally error on any bad velocity in any iteration.  Seems not in keeping with iharm3d but not very defensible?
     //if (eflag) return eflag;
     // Return failure to converge
-    if (iter == ITERMAX) return InversionStatus::max_iter;
+    if (iter == iter_max) return InversionStatus::max_iter;
 
     // Find utsq, gamma, rho0 from Wp
     gamma = gamma_func(Bsq, D, QdB, Qtsq, Wp);
