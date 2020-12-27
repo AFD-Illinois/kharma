@@ -35,6 +35,7 @@
 #include "fluxes.hpp"
 
 #include "debug.hpp"
+#include "floors.hpp"
 
 using namespace parthenon;
 
@@ -69,6 +70,9 @@ TaskStatus HLLE::GetFlux(std::shared_ptr<MeshBlockData<Real>>& rc, const int& di
     ReconstructionType recon = pmb->packages["GRMHD"]->Param<ReconstructionType>("recon");
 
     auto& ctop = rc->GetFace("f.f.bulk.ctop").data;
+
+    // Pull out a struct of just the actual floor values for speed
+    FloorPrescription floors = FloorPrescription(pmb->packages["GRMHD"]->AllParams());
 
     // So far we don't need fluxes that don't match faces
     Loci loc;
@@ -146,10 +150,13 @@ TaskStatus HLLE::GetFlux(std::shared_ptr<MeshBlockData<Real>>& rc, const int& di
                         pl[p] = qr(p, i);
                     }
                 }
-                // Little-known fact: WENO can reconstruct fairly negative values from positive ones
-                // TODO test these and report them rather than hard cutting
-                pl[prims::rho] = max(pl[prims::rho], 0.);
-                pl[prims::u] = max(pl[prims::u], 0.);
+                // Apply floors to the *reconstructed* primitives, because we have no
+                // guarantee they remotely resemble the *centered* primitives
+                // TODO there are a lot of options here, this leaves most of them open at the cost of speed
+                apply_floors(G, pl, eos, k, j, i, floors);
+                apply_ceilings(G, pl, eos, k, j, i, floors);
+                apply_floors(G, pr, eos, k, j, i, floors);
+                apply_ceilings(G, pr, eos, k, j, i, floors);
 
                 // LR -> flux
                 FourVectors Dtmp;

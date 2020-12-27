@@ -50,6 +50,7 @@
 #include "current.hpp"
 #include "debug.hpp"
 #include "fixup.hpp"
+#include "floors.hpp"
 #include "fluxes.hpp"
 #include "gr_coordinates.hpp"
 #include "phys.hpp"

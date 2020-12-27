@@ -357,11 +357,9 @@ KOKKOS_INLINE_FUNCTION void mhd_vchar(const GRCoordinates &G, const GridVars P, 
     }
 
     // Find fast magnetosonic speed
-    // TODO test that if we pass this function good values,
-    // we can take away all these hard cuts
     bsq = dot(D.bcon, D.bcov);
-    rho = fabs(P(prims::rho, k, j, i));
-    u =  fabs(P(prims::u, k, j, i));
+    rho = P(prims::rho, k, j, i);
+    u =  P(prims::u, k, j, i);
     ef = rho + eos->gam * u;
     ee = bsq + ef;
     va2 = bsq / ee;
@@ -413,8 +411,8 @@ KOKKOS_INLINE_FUNCTION void mhd_vchar(const GRCoordinates &G, const Real P[NPRIM
 
     // Find fast magnetosonic speed
     bsq = dot(D.bcon, D.bcov);
-    rho = fabs(P[prims::rho]);
-    u =  fabs(P[prims::u]);
+    rho = P[prims::rho];
+    u =  P[prims::u];
     ef = rho + eos->gam * u;
     ee = bsq + ef;
     va2 = bsq / ee;

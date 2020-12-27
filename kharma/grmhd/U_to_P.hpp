@@ -43,6 +43,8 @@ KOKKOS_INLINE_FUNCTION Real err_eqn(const EOS* eos, const Real& Bsq, const Real&
                                     const Real& Qtsq, const Real& Wp, InversionStatus& eflag);
 KOKKOS_INLINE_FUNCTION Real gamma_func(const Real& Bsq, const Real& D, const Real& QdB,
                                         const Real& Qtsq, const Real& Wp);
+KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const Real U[NPRIM], const EOS* eos,
+                                  const int& k, const int& j, const int& i, const Loci loc, Real P[NPRIM]);
 
 /**
  * Try to recover primitive variables in a zone via 1D Newtonian solve, see Mignone & McKinney '07
@@ -50,34 +52,50 @@ KOKKOS_INLINE_FUNCTION Real gamma_func(const Real& Bsq, const Real& D, const Rea
 KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const GridVars U, const EOS* eos,
                                   const int& k, const int& j, const int& i, const Loci loc, GridVars P)
 {
+    Real Pl[NPRIM], Ul[NPRIM];
+    PLOOP {
+        Ul[p] = U(p, k, j, i);
+        Pl[p] = P(p, k, j, i);
+    }
+    InversionStatus ret = u_to_p(G, Ul, eos, k, j, i, loc, Pl);
+    PLOOP P(p, k, j, i) = Pl[p];
+    return ret;
+}
+
+/**
+ * Recover local primitives
+ */
+KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const Real U[NPRIM], const EOS* eos,
+                                  const int& k, const int& j, const int& i, const Loci loc, Real P[NPRIM])
+{
     Real alpha = 1./sqrt(-G.gcon(loc, j, i, 0, 0));
     Real gdet = G.gdet(loc, j, i);
     Real a_over_g = alpha / gdet;
 
     // Update the primitive B-fields
-    P(prims::B1, k, j, i) = U(prims::B1, k, j, i) / gdet;
-    P(prims::B2, k, j, i) = U(prims::B2, k, j, i) / gdet;
-    P(prims::B3, k, j, i) = U(prims::B3, k, j, i) / gdet;
+    P[prims::B1] = U[prims::B1] / gdet;
+    P[prims::B2] = U[prims::B2] / gdet;
+    P[prims::B3] = U[prims::B3] / gdet;
 
     // Catch negative density
-    if (U(prims::rho, k, j, i) <= 0.) {
+    if (U[prims::rho] <= 0.) {
         return InversionStatus::neg_input;
     }
 
     // Convert from conserved variables to four-vectors
-    Real D = U(prims::rho, k, j, i) * a_over_g;
+    Real D = U[prims::rho] * a_over_g;
 
     Real Bcon[GR_DIM];
     Bcon[0] = 0.;
-    Bcon[1] = U(prims::B1, k, j, i) * a_over_g;
-    Bcon[2] = U(prims::B2, k, j, i) * a_over_g;
-    Bcon[3] = U(prims::B3, k, j, i) * a_over_g;
+    Bcon[1] = U[prims::B1] * a_over_g;
+    Bcon[2] = U[prims::B2] * a_over_g;
+    Bcon[3] = U[prims::B3] * a_over_g;
 
     Real Qcov[GR_DIM];
-    Qcov[0] = (U(prims::u, k, j, i) - U(prims::rho, k, j, i)) * a_over_g;
-    Qcov[1] = U(prims::u1, k, j, i) * a_over_g;
-    Qcov[2] = U(prims::u2, k, j, i) * a_over_g;
-    Qcov[3] = U(prims::u3, k, j, i) * a_over_g;
+    Qcov[0] = (U[prims::u] - U[prims::rho]) * a_over_g;
+    Qcov[1] = U[prims::u1] * a_over_g;
+    Qcov[2] = U[prims::u2] * a_over_g;
+    Qcov[3] = U[prims::u3] * a_over_g;
 
     Real ncov[GR_DIM] = {(Real) -alpha, 0., 0., 0.};
 
@@ -104,10 +122,10 @@ KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const Grid
     // Fetch the current values, or guess defaults if they're uninitialized
     Real gamma, rho0, u;
     int iter_max;
-    if (P(prims::rho, k, j, i) != 0. || P(prims::u, k, j, i) != 0.) {
+    if (P[prims::rho] != 0. || P[prims::u] != 0.) {
         gamma = mhd_gamma_calc(G, P, k, j, i, loc);
-        rho0 = P(prims::rho, k, j, i);
-        u = P(prims::u, k, j, i);
+        rho0 = P[prims::rho];
+        u = P[prims::u];
         iter_max = 8;
     } else {
         printf("Guessing P\n");
@@ -164,7 +182,7 @@ KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const Grid
         if (fabs(err / Wp) < ERRTOL) break;
     }
     // If there was a bad gamma calculation, do not set primitives other than B
-    // Optionally error on any bad velocity in any iteration.  Seems not in keeping with iharm3d but not very defensible?
+    // Uncomment to error on any bad velocity.  iharm2d/3d do not do this.
     //if (eflag) return eflag;
     // Return failure to converge
     if (iter == iter_max) return InversionStatus::max_iter;
@@ -185,14 +203,14 @@ KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const Grid
     else if (u < 0) return InversionStatus::neg_u;
 
     // Set primitives
-    P(prims::rho, k, j, i) = rho0;
-    P(prims::u, k, j, i) = u;
+    P[prims::rho] = rho0;
+    P[prims::u] = u;
 
     // Find u(tilde); Eqn. 31 of Noble et al.
     Real pre = (gamma / (W + Bsq));
-    P(prims::u1, k, j, i) = pre * (Qtcon[1] + QdB * Bcon[1] / W);
-    P(prims::u2, k, j, i) = pre * (Qtcon[2] + QdB * Bcon[2] / W);
-    P(prims::u3, k, j, i) = pre * (Qtcon[3] + QdB * Bcon[3] / W);
+    P[prims::u1] = pre * (Qtcon[1] + QdB * Bcon[1] / W);
+    P[prims::u2] = pre * (Qtcon[2] + QdB * Bcon[2] / W);
+    P[prims::u3] = pre * (Qtcon[3] + QdB * Bcon[3] / W);
 
     return InversionStatus::success;
 }
