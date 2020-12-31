@@ -104,7 +104,7 @@ typedef struct {
 enum InversionStatus{success=0, neg_input, max_iter, bad_ut, bad_gamma, neg_rho, neg_u, neg_rhou};
 
 // Denote reconstruction algorithms
-enum ReconstructionType{linear_mc=0, ppm, weno5, mp5};
+enum ReconstructionType{donor_cell=0, linear_mc, linear_vl, ppm, mp5, weno5, weno5_lower_poles};
 
 // Floor codes are non-exclusive, so it makes a lot less sense to use an enum
 // Instead, we start them high enough that we can stick the enum in the bottom 5 bits

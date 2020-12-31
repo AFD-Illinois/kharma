@@ -37,6 +37,10 @@
 #include "debug.hpp"
 #include "floors.hpp"
 
+#include <parthenon/parthenon.hpp>
+#include "reconstruct/dc_inline.hpp"
+#include "reconstruct/plm_inline.hpp"
+
 using namespace parthenon;
 
 TaskStatus HLLE::GetFlux(std::shared_ptr<MeshBlockData<Real>>& rc, const int& dir)
@@ -74,7 +78,11 @@ TaskStatus HLLE::GetFlux(std::shared_ptr<MeshBlockData<Real>>& rc, const int& di
     // Pull out a struct of just the actual floor values for speed
     FloorPrescription floors = FloorPrescription(pmb->packages["GRMHD"]->AllParams());
 
-    // So far we don't need fluxes that don't match faces
+    // And cache whether we should reduce reconstruction order on the X2 bound
+    bool is_inner_x2 = pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::reflect;
+    bool is_outer_x2 = pmb->boundary_flag[BoundaryFace::outer_x2] == BoundaryFlag::reflect;
+
+    // Calculate fluxes at matching face/direction
     Loci loc;
     switch (dir) {
     case X1DIR:
@@ -91,42 +99,112 @@ TaskStatus HLLE::GetFlux(std::shared_ptr<MeshBlockData<Real>>& rc, const int& di
     const int scratch_level = 1; // 0 is actual scratch (tiny); 1 is HBM
     size_t scratch_size_in_bytes = parthenon::ScratchPad2D<Real>::shmem_size(NPRIM, n1);
 
-    pmb->par_for_outer(string_format("flux_x%d", dir), 3 * scratch_size_in_bytes, scratch_level, ks, ke, js, je,
+    pmb->par_for_outer(string_format("flux_x%d", dir), 7 * scratch_size_in_bytes, scratch_level, ks, ke, js, je,
         KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int& k, const int& j) {
             ScratchPad2D<Real> ql(member.team_scratch(scratch_level), NPRIM, n1);
             ScratchPad2D<Real> qr(member.team_scratch(scratch_level), NPRIM, n1);
             ScratchPad2D<Real> q_unused(member.team_scratch(scratch_level), NPRIM, n1);
+            // Extra scratch space for Parthenon's VL limiter stuff
+            ScratchPad2D<Real> qc(member.team_scratch(scratch_level), NPRIM, n1);
+            ScratchPad2D<Real> dql(member.team_scratch(scratch_level), NPRIM, n1);
+            ScratchPad2D<Real> dqr(member.team_scratch(scratch_level), NPRIM, n1);
+            ScratchPad2D<Real> dqm(member.team_scratch(scratch_level), NPRIM, n1);
 
             // Get reconstructed state on faces
             // Note the switch statement here is in the outer loop, or it would be a performance concern
             switch (recon) {
+            case ReconstructionType::donor_cell:
+                switch (dir) {
+                case X1DIR:
+                    DonorCellX1(member, k, j, is, ie, P, ql, qr);
+                    break;
+                case X2DIR:
+                    DonorCellX2(member, k, j - 1, is, ie, P, ql, q_unused);
+                    DonorCellX2(member, k, j, is, ie, P, q_unused, qr);
+                    break;
+                case X3DIR:
+                    DonorCellX3(member, k - 1, j, is, ie, P, ql, q_unused);
+                    DonorCellX3(member, k, j, is, ie, P, q_unused, qr);
+                    break;
+                }
+                break;
+            case ReconstructionType::linear_vl:
+                switch (dir) {
+                case X1DIR:
+                    PiecewiseLinearX1(member, k, j, is, ie, G, P, ql, qr, qc, dql, dqr, dqm);
+                    break;
+                case X2DIR:
+                    PiecewiseLinearX2(member, k, j - 1, is, ie, G, P, ql, q_unused, qc, dql, dqr, dqm);
+                    PiecewiseLinearX2(member, k, j, is, ie, G, P, q_unused, qr, qc, dql, dqr, dqm);
+                    break;
+                case X3DIR:
+                    PiecewiseLinearX3(member, k - 1, j, is, ie, G, P, ql, q_unused, qc, dql, dqr, dqm);
+                    PiecewiseLinearX3(member, k, j, is, ie, G, P, q_unused, qr, qc, dql, dqr, dqm);
+                    break;
+                }
+                break;
             case ReconstructionType::linear_mc:
                 switch (dir) {
                 case X1DIR:
-                    Reconstruction::PiecewiseLinearX1(member, k, j, is, ie, P, ql, qr);
+                    KReconstruction::PiecewiseLinearX1(member, k, j, is, ie, P, ql, qr);
                     break;
                 case X2DIR:
-                    Reconstruction::PiecewiseLinearX2(member, k, j, is, ie, P, ql, q_unused);
-                    Reconstruction::PiecewiseLinearX2(member, k, j - 1, is, ie, P, q_unused, qr);
+                    KReconstruction::PiecewiseLinearX2(member, k, j - 1, is, ie, P, ql, q_unused);
+                    KReconstruction::PiecewiseLinearX2(member, k, j, is, ie, P, q_unused, qr);
                     break;
                 case X3DIR:
-                    Reconstruction::PiecewiseLinearX3(member, k, j, is, ie, P, ql, q_unused);
-                    Reconstruction::PiecewiseLinearX3(member, k - 1, j, is, ie, P, q_unused, qr);
+                    KReconstruction::PiecewiseLinearX3(member, k - 1, j, is, ie, P, ql, q_unused);
+                    KReconstruction::PiecewiseLinearX3(member, k, j, is, ie, P, q_unused, qr);
                     break;
                 }
                 break;
             case ReconstructionType::weno5:
                 switch (dir) {
                 case X1DIR:
-                    Reconstruction::WENO5X1(member, k, j, is, ie, P, ql, qr);
+                    KReconstruction::WENO5X1(member, k, j, is, ie, P, ql, qr);
                     break;
                 case X2DIR:
-                    Reconstruction::WENO5X2l(member, k, j, is, ie, P, ql);
-                    Reconstruction::WENO5X2r(member, k, j - 1, is, ie, P, qr);
+                    KReconstruction::WENO5X2l(member, k, j - 1, is, ie, P, ql);
+                    KReconstruction::WENO5X2r(member, k, j, is, ie, P, qr);
                     break;
                 case X3DIR:
-                    Reconstruction::WENO5X3l(member, k, j, is, ie, P, ql);
-                    Reconstruction::WENO5X3r(member, k - 1, j, is, ie, P, qr);
+                    KReconstruction::WENO5X3l(member, k - 1, j, is, ie, P, ql);
+                    KReconstruction::WENO5X3r(member, k, j, is, ie, P, qr);
+                    break;
+                }
+                break;
+            case ReconstructionType::weno5_lower_poles:
+                switch (dir) {
+                case X1DIR:
+                    KReconstruction::WENO5X1(member, k, j, is, ie, P, ql, qr);
+                    break;
+                case X2DIR:
+                    if (is_inner_x2 && j == js - 1) {
+                        DonorCellX2(member, k, j - 1, is, ie, P, ql, q_unused);
+                        DonorCellX2(member, k, j, is, ie, P, q_unused, qr);
+                    } else if (is_inner_x2 && j == js) {
+                        DonorCellX2(member, k, j - 1, is, ie, P, ql, q_unused);
+                        KReconstruction::PiecewiseLinearX2(member, k, j, is, ie, P, q_unused, qr);
+                    } else if (is_inner_x2 && j == js + 1) {
+                        KReconstruction::PiecewiseLinearX2(member, k, j - 1, is, ie, P, ql, q_unused);
+                        KReconstruction::WENO5X2r(member, k, j, is, ie, P, qr);
+                    } else if (is_outer_x2 && j == je - 1) {
+                        KReconstruction::WENO5X2l(member, k, j - 1, is, ie, P, ql);
+                        KReconstruction::PiecewiseLinearX2(member, k, j, is, ie, P, q_unused, qr);
+                    } else if (is_outer_x2 && j == je) {
+                        KReconstruction::PiecewiseLinearX2(member, k, j - 1, is, ie, P, ql, q_unused);
+                        DonorCellX2(member, k, j, is, ie, P, q_unused, qr);
+                    } else if (is_outer_x2 && j == je + 1) {
+                        DonorCellX2(member, k, j - 1, is, ie, P, ql, q_unused);
+                        DonorCellX2(member, k, j, is, ie, P, q_unused, qr);
+                    } else {
+                        KReconstruction::WENO5X2l(member, k, j - 1, is, ie, P, ql);
+                        KReconstruction::WENO5X2r(member, k, j, is, ie, P, qr);
+                    }
+                    break;
+                case X3DIR:
+                    KReconstruction::WENO5X3l(member, k - 1, j, is, ie, P, ql);
+                    KReconstruction::WENO5X3r(member, k, j, is, ie, P, qr);
                     break;
                 }
                 break;
@@ -136,19 +214,11 @@ TaskStatus HLLE::GetFlux(std::shared_ptr<MeshBlockData<Real>>& rc, const int& di
             member.team_barrier();
 
             parthenon::par_for_inner(member, is, ie, [&](const int i) {
-                // Reverse the fluxes so that "left" and "right" are w.r.t. the *faces*
-                // TODO is this slow?
+                // TODO are immediates slow here?
                 Real pl[NPRIM], pr[NPRIM];
-                if (dir == X1DIR) {
-                    PLOOP {
-                        pr[p] = ql(p, i);
-                        pl[p] = qr(p, i - 1);
-                    }
-                } else {
-                    PLOOP {
-                        pr[p] = ql(p, i);
-                        pl[p] = qr(p, i);
-                    }
+                PLOOP {
+                    pl[p] = ql(p, i);
+                    pr[p] = qr(p, i);
                 }
                 // Apply floors to the *reconstructed* primitives, because we have no
                 // guarantee they remotely resemble the *centered* primitives

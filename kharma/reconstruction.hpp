@@ -41,10 +41,11 @@ using namespace parthenon;
 
 #define EPS 1.e-26
 
-namespace Reconstruction
+namespace KReconstruction
 {
 
 // BUILD UP (a) LINEAR MC RECONSTRUCTION
+// TODO left/right splits?
 
 // Single-item implementation
 KOKKOS_INLINE_FUNCTION Real mc(const Real dm, const Real dp) {
@@ -53,6 +54,9 @@ KOKKOS_INLINE_FUNCTION Real mc(const Real dm, const Real dp) {
 }
 
 // Single-row implementations
+// Note that "L" and "R" refer to the sides of the *face*
+// ql(1) is to the right of the first zone center, but corresponds to the face value reconstructed from the left
+// qr(1) is then the value at that face reconstructed from the right
 template <typename T>
 KOKKOS_INLINE_FUNCTION void PiecewiseLinearX1(parthenon::team_mbr_t const &member, const int k, const int j,
                        const int il, const int iu, const T &q, ScratchPad2D<Real> &ql,
@@ -64,7 +68,7 @@ KOKKOS_INLINE_FUNCTION void PiecewiseLinearX1(parthenon::team_mbr_t const &membe
                 Real dql = q(p, k, j, i) - q(p, k, j, i - 1);
                 Real dqr = q(p, k, j, i + 1) - q(p, k, j, i);
                 Real dq = mc(dql, dqr)*dqr;
-                ql(p, i) = q(p, k, j, i) + 0.5*dq;
+                ql(p, i+1) = q(p, k, j, i) + 0.5*dq;
                 qr(p, i) = q(p, k, j, i) - 0.5*dq;
             }
         );
@@ -78,7 +82,7 @@ KOKKOS_INLINE_FUNCTION void PiecewiseLinearX2(parthenon::team_mbr_t const &membe
     PLOOP {
         parthenon::par_for_inner(member, il, iu,
             KOKKOS_LAMBDA_1D {
-                Real dql = q(p, k, j, i) - q(p, k, j - i, i);
+                Real dql = q(p, k, j, i) - q(p, k, j - 1, i);
                 Real dqr = q(p, k, j + 1, i) - q(p, k, j, i);
                 Real dq = mc(dql, dqr)*dqr;
                 ql(p, i) = q(p, k, j, i) + 0.5*dq;
@@ -107,7 +111,7 @@ KOKKOS_INLINE_FUNCTION void PiecewiseLinearX3(parthenon::team_mbr_t const &membe
 
 // BUILD UP WENO5 RECONSTRUCTION
 
-// Single-element implementation
+// Single-element implementation: "left" and "right" here are relative to zone centers, so the combo calls will switch them later.
 // WENO interpolation. See Tchekhovskoy et al. 2007 (T07), Shu 2011 (S11)
 // Implemented by Monika Moscibrodzka
 KOKKOS_INLINE_FUNCTION void weno5(const Real x1, const Real x2, const Real x3, const Real x4, const Real x5,
@@ -188,7 +192,11 @@ KOKKOS_INLINE_FUNCTION void weno5r(const Real x1, const Real x2, const Real x3, 
             ((3./8.)*x3 + (3./4.)*x4 - (1./8.)*x5)*(wtr[2] / Wr);
 }
 
-// Single-row implementations
+// Row-wise implementations
+// Note that "L" and "R" refer to the sides of the *face*
+// ql(1) is to the right of the first zone center, but corresponds to the face value reconstructed from the left
+// qr(1) is then the value at that face reconstructed from the right
+// This is *opposite* the single-zone convention (or rather, offset from it to the faces), so weirdly WENO5X2l calls weno5r.  Get it?
 template <typename T>
 KOKKOS_INLINE_FUNCTION void WENO5X1(parthenon::team_mbr_t const &member, const int k, const int j,
                        const int il, const int iu, const T &q, ScratchPad2D<Real> &ql,
@@ -203,8 +211,8 @@ KOKKOS_INLINE_FUNCTION void WENO5X1(parthenon::team_mbr_t const &member, const i
                   q(p, k, j, i),
                   q(p, k, j, i + 1),
                   q(p, k, j, i + 2), lout, rout);
-            ql(p, i) = lout;
-            qr(p, i) = rout;
+            ql(p, i+1) = rout;
+            qr(p, i) = lout;
         }
     );
   }
@@ -223,8 +231,8 @@ KOKKOS_INLINE_FUNCTION void WENO5X2(parthenon::team_mbr_t const &member, const i
                   q(p, k, j, i),
                   q(p, k, j + 1, i),
                   q(p, k, j + 2, i), lout, rout);
-            ql(p, i) = lout;
-            qr(p, i) = rout;
+            ql(p, i) = rout;
+            qr(p, i) = lout;
         }
     );
   }
@@ -236,13 +244,13 @@ KOKKOS_INLINE_FUNCTION void WENO5X2l(parthenon::team_mbr_t const &member, const 
   PLOOP {
     parthenon::par_for_inner(member, il, iu,
         KOKKOS_LAMBDA_1D {
-            Real lout;
-            weno5l(q(p, k, j - 2, i),
+            Real rout;
+            weno5r(q(p, k, j - 2, i),
                   q(p, k, j - 1, i),
                   q(p, k, j, i),
                   q(p, k, j + 1, i),
-                  q(p, k, j + 2, i), lout);
-            ql(p, i) = lout;
+                  q(p, k, j + 2, i), rout);
+            ql(p, i) = rout;
         }
     );
   }
@@ -254,13 +262,13 @@ KOKKOS_INLINE_FUNCTION void WENO5X2r(parthenon::team_mbr_t const &member, const 
   PLOOP {
     parthenon::par_for_inner(member, il, iu,
         KOKKOS_LAMBDA_1D {
-            Real rout;
+            Real lout;
             weno5r(q(p, k, j - 2, i),
                   q(p, k, j - 1, i),
                   q(p, k, j, i),
                   q(p, k, j + 1, i),
-                  q(p, k, j + 2, i), rout);
-            qr(p, i) = rout;
+                  q(p, k, j + 2, i), lout);
+            qr(p, i) = lout;
         }
     );
   }
@@ -279,8 +287,8 @@ KOKKOS_INLINE_FUNCTION void WENO5X3(parthenon::team_mbr_t const &member, const i
                   q(p, k, j, i),
                   q(p, k + 1, j, i),
                   q(p, k + 2, j, i), lout, rout);
-            ql(p, i) = lout;
-            qr(p, i) = rout;
+            ql(p, i) = rout;
+            qr(p, i) = lout;
         }
     );
   }
@@ -292,13 +300,13 @@ KOKKOS_INLINE_FUNCTION void WENO5X3l(parthenon::team_mbr_t const &member, const 
   PLOOP {
     parthenon::par_for_inner(member, il, iu,
         KOKKOS_LAMBDA_1D {
-            Real lout;
-            weno5l(q(p, k - 2, j, i),
+            Real rout;
+            weno5r(q(p, k - 2, j, i),
                   q(p, k - 1, j, i),
                   q(p, k, j, i),
                   q(p, k + 1, j, i),
-                  q(p, k + 2, j, i), lout);
-            ql(p, i) = lout;
+                  q(p, k + 2, j, i), rout);
+            ql(p, i) = rout;
         }
     );
   }
@@ -310,26 +318,16 @@ KOKKOS_INLINE_FUNCTION void WENO5X3r(parthenon::team_mbr_t const &member, const 
   PLOOP {
     parthenon::par_for_inner(member, il, iu,
         KOKKOS_LAMBDA_1D {
-            Real rout;
+            Real lout;
             weno5r(q(p, k - 2, j, i),
                   q(p, k - 1, j, i),
                   q(p, k, j, i),
                   q(p, k + 1, j, i),
-                  q(p, k + 2, j, i), rout);
-            qr(p, i) = rout;
+                  q(p, k + 2, j, i), lout);
+            qr(p, i) = lout;
         }
     );
   }
 }
-
-/**
- * Wrapper function to apply reconstruction over the whole grid instead of splitting
- */
-TaskStatus ReconstructLR(std::shared_ptr<MeshBlockData<Real>>& rc, ParArrayND<Real> Pl, ParArrayND<Real> Pr, int dir, ReconstructionType recon);
-
-/**
- * Simpler wrapper: emulate old HARM reconstruction exactly
- */
-TaskStatus ReconstructLRSimple(std::shared_ptr<MeshBlockData<Real>>& rc, ParArrayND<Real> Pl, ParArrayND<Real> Pr, int dir, ReconstructionType recon);
 
 } // namespace Reconstruction

@@ -112,16 +112,18 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
 
     // Reconstruction scheme: plm, weno5, ppm...
     std::string recon = pin->GetOrAddString("GRMHD", "reconstruction", "weno5");
-    if (recon == "linear_mc") {
+    if (recon == "donor_cell") {
+        params.Add("recon", ReconstructionType::donor_cell);
+    } else if (recon == "linear_vl") {
+        params.Add("recon", ReconstructionType::linear_vl);
+    } else if (recon == "linear_mc") {
         params.Add("recon", ReconstructionType::linear_mc);
-    } else if (recon == "ppm") {
-        params.Add("recon", ReconstructionType::ppm);
     } else if (recon == "weno5") {
         params.Add("recon", ReconstructionType::weno5);
-    } else if (recon == "mp5") {
-        params.Add("recon", ReconstructionType::mp5);
+    } else if (recon == "weno5_lower_poles") {
+        params.Add("recon", ReconstructionType::weno5_lower_poles);
     } else {
-        throw std::invalid_argument("Reconstruction must be one of linear_mc, ppm, weno5, mp5!");
+        throw std::invalid_argument(string_format("Unsupported reconstruction algorithm %s!", recon));
     }
 
     // Diagnostic data
@@ -133,6 +135,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     params.Add("extra_checks", extra_checks);
 
     // Floor parameters
+    // TODO construct/add a floors struct here instead?
     double rho_min_geom = pin->GetOrAddReal("floors", "rho_min_geom", 1.e-5);
     params.Add("rho_min_geom", rho_min_geom);
     double u_min_geom = pin->GetOrAddReal("floors", "u_min_geom", 1.e-7);

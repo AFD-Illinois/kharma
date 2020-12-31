@@ -40,6 +40,10 @@
 
 #include <parthenon/parthenon.hpp>
 
+/**
+ * Struct to hold floor values without cumbersome dictionary/string logistics.
+ * Hopefully faster.
+ */
 class FloorPrescription {
     public:
         // Purely geometric limits
