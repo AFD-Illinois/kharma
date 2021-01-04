@@ -107,7 +107,7 @@ int main(int argc, char *argv[])
     // Write the problem to the mesh.
     // Implemented separately outside of MeshBlock since
     // GRMHD initializaitons involve global reductions
-    PostInitialize(pin, pmesh);
+    if (!pman.Restart()) PostInitialize(pin, pmesh);
 
     // Then construct & run the driver
     HARMDriver driver(pin, papp, pmesh);

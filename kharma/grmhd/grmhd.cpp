@@ -200,8 +200,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     fluid_state->AddField("c.c.bulk.prims", m);
 
     // Maximum signal speed (magnitude).  Calculated in flux updates but needed for deciding timestep
-    // TODO figure out how to preserve either this or the timestep in restart files
-    m = Metadata({Metadata::Face, Metadata::Derived, Metadata::OneCopy, Metadata::Restart});
+    m = Metadata({Metadata::Face, Metadata::Derived, Metadata::OneCopy});
     fluid_state->AddField("f.f.bulk.ctop", m);
 
     // Add jcon as an output-only calculation, likely overriding MeshBlock::UserWorkBeforeOutput
@@ -411,15 +410,17 @@ Real EstimateTimestep(MeshBlockData<Real> *rc)
     auto coords = pmb->coords;
     auto& ctop = rc->GetFace("f.f.bulk.ctop").data;
 
-    // TODO parthenon takes a dt, or we could namespace ourselves into the driver to get integrator access...
-    static double last_dt = pmb->packages["GRMHD"]->Param<Real>("dt");
+    static double last_dt;
+
+    // Overall TODO: Override timestep class in the driver, and move
+    // this stuff there.  
 
     // Use parameter "dt" on the first step
-    // TODO make less hacky
     static bool first_call = true;
     if (first_call) {
         first_call = false;
-        return pmb->packages["GRMHD"]->Param<Real>("dt") * pmb->packages["GRMHD"]->Param<Real>("cfl"); 
+        last_dt = pmb->packages["GRMHD"]->Param<Real>("dt") * pmb->packages["GRMHD"]->Param<Real>("cfl");
+        return last_dt;
     }
 
     // TODO preserve location, needs custom (?) Kokkos Index type for 3D
@@ -468,7 +469,6 @@ Real EstimateTimestep(MeshBlockData<Real> *rc)
     ndt *= pmb->packages["GRMHD"]->Param<Real>("cfl");
 
     // Sometimes we come out with a silly timestep. Try to salvage it
-    // TODO don't allow the *overall* timestep to be >1, while still allowing *blocks* to have larger steps
     double dt_min = pmb->packages["GRMHD"]->Param<Real>("dt_min");
     if (ndt < dt_min || isnan(ndt) || ndt > 10000) {
         cerr << "ndt was unsafe: " << ndt << "! Using dt_min" << std::endl;
