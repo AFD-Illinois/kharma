@@ -263,7 +263,7 @@ KOKKOS_INLINE_FUNCTION void WENO5X2r(parthenon::team_mbr_t const &member, const 
     parthenon::par_for_inner(member, il, iu,
         KOKKOS_LAMBDA_1D {
             Real lout;
-            weno5r(q(p, k, j - 2, i),
+            weno5l(q(p, k, j - 2, i),
                   q(p, k, j - 1, i),
                   q(p, k, j, i),
                   q(p, k, j + 1, i),
@@ -319,7 +319,7 @@ KOKKOS_INLINE_FUNCTION void WENO5X3r(parthenon::team_mbr_t const &member, const 
     parthenon::par_for_inner(member, il, iu,
         KOKKOS_LAMBDA_1D {
             Real lout;
-            weno5r(q(p, k - 2, j, i),
+            weno5l(q(p, k - 2, j, i),
                   q(p, k - 1, j, i),
                   q(p, k, j, i),
                   q(p, k + 1, j, i),
