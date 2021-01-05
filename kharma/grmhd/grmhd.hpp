@@ -19,7 +19,7 @@
 
 #include <memory>
 
-#include "parthenon/parthenon.hpp"
+#include <parthenon/parthenon.hpp>
 
 using namespace parthenon;
 
@@ -30,13 +30,13 @@ namespace GRMHD {
     // Tasks to implement the interface:
     // The "FillDerived" equivalent should return with all derived variables in the StateDescriptor in consistent state for e.g. output
     // For HARM this means running U_to_P, and applying any inversion fixes and floor criteria
-    void UtoP(std::shared_ptr<MeshBlockData<Real>>& rc);
+    void UtoP(MeshBlockData<Real> *rc);
     // Constrained-transport step to preserve divB==0
     TaskStatus FluxCT(std::shared_ptr<MeshBlockData<Real>>& rc);
-    // Add the HARM source term to the RHS dudt
-    TaskStatus AddSourceTerm(std::shared_ptr<MeshBlockData<Real>>& rc, std::shared_ptr<MeshBlockData<Real>>& dudt);
     // Or apply the flux divergence and add the source in a quick way
-    TaskStatus ApplyFluxes(std::shared_ptr<MeshBlockData<Real>>& rc, std::shared_ptr<MeshBlockData<Real>>& dudt);
+    TaskStatus ApplyFluxes(SimTime tm, MeshBlockData<Real> *rc, MeshBlockData<Real> *dudt);
     // Estimate the next timestep. For pure GRMHD, this is the minimum signal crossing time of a zone on the block
-    Real EstimateTimestep(std::shared_ptr<MeshBlockData<Real>>& rc);
+    Real EstimateTimestep(MeshBlockData<Real> *rc);
+    // Fill fields calculated only for output to file
+    void FillOutput(MeshBlock *pmb);
 }

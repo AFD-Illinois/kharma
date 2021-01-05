@@ -136,3 +136,10 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
 
     return std::move(packages);
 }
+
+// void KHARMA::FillOutput(ParameterInput *pin)
+// {
+//     // This is a MeshBlock.  'this' is therefore a pointer to the MeshBlock
+//     GRMHD::FillOutput(this);
+//     // In case there are other packages...
+// }

@@ -45,7 +45,7 @@ void print_a_geom_tensor(GeomTensor2 g, const Loci loc, const int& i, const int&
 {
     auto h = g.GetHostMirrorAndCopy();
     int ii = i+NGHOST; int jj = j+NGHOST;
-    std::cerr << h.label() << string_format(" element %d %d diagonal is [%f %f %f %f]", i, j,
+    std::cout << h.label() << string_format(" element %d %d diagonal is [%f %f %f %f]", i, j,
                             h(loc,jj,ii,0,0), h(loc,jj,ii,1,1), h(loc,jj,ii,2,2),
                             h(loc,jj,ii,3,3)) << std::endl;
 }
@@ -53,7 +53,7 @@ void print_a_geom_tensor3(GeomTensor3 g, const int& i, const int& j)
 {
     auto h = g.GetHostMirrorAndCopy();
     int ii = i+NGHOST; int jj = j+NGHOST;
-    std::cerr << h.label() << string_format(" element %d %d lam=1 diagonal is [%f %f %f %f]", i, j,
+    std::cout << h.label() << string_format(" element %d %d lam=1 diagonal is [%f %f %f %f]", i, j,
                             h(jj,ii,0,1,0), h(jj,ii,1,1,1), h(jj,ii,2,1,2),
                             h(jj,ii,3,1,3)) << std::endl;
 }
@@ -217,6 +217,7 @@ double MaxDivB(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain)
 
 TaskStatus Diagnostic(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain)
 {
+    // TODO make the diagnostic full-mesh and insert it into the task list as such
     FLAG("Printing diagnostics");
     auto pmb = rc->GetBlockPointer();
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
@@ -228,21 +229,32 @@ TaskStatus Diagnostic(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain doma
     GridVars U = rc->Get("c.c.bulk.cons").data;
 
     if (pmb->packages["GRMHD"]->Param<int>("verbose") > 0) {
-        cerr << "DivB: " << MaxDivB(rc, domain) << endl;
+        //double max_divb = MaxDivB(rc, domain);
+        //max_divb = MPIMax(max_divb);
+        //if(MPIRank0())
+        cout << "DivB: " << MaxDivB(rc, domain) << endl;
     }
 
     if (pmb->packages["GRMHD"]->Param<int>("extra_checks") > 0) {
         // Check for negative values in the conserved vars
         int nless;
         Kokkos::Sum<int> sum_reducer(nless);
-        pmb->par_reduce("count_negative", ks, ke, js, je, is, ie,
+        pmb->par_reduce("count_negative_U", ks, ke, js, je, is, ie,
             KOKKOS_LAMBDA_3D_REDUCE_INT {
-                if (U(prims::rho, k, j, i) <= 0.) ++local_result;
+                if (U(prims::rho, k, j, i) < 0.) ++local_result;
             }
         , sum_reducer);
-
         if (nless > 0) {
-            cerr << "Number of negative conserved rho,u: " << nless << endl;
+            cout << "Number of negative conserved rho: " << nless << endl;
+        }
+        pmb->par_reduce("count_negative_U", ks, ke, js, je, is, ie,
+            KOKKOS_LAMBDA_3D_REDUCE_INT {
+                if (P(prims::rho, k, j, i) < 0.) ++local_result;
+                if (P(prims::u, k, j, i) < 0.) ++local_result;
+            }
+        , sum_reducer);
+        if (nless > 0) {
+            cout << "Number of negative primitive rho, u: " << nless << endl;
         }
     }
 
@@ -321,7 +333,7 @@ int CountPFlags(std::shared_ptr<MeshBlock> pmb, ParArrayNDIntHost pflag, IndexDo
         if (flag == InversionStatus::neg_rhou) ++n_neg_both;
 
         if (flag > InversionStatus::success && verbose > 2) {
-            cerr << "Bad inversion (" << flag << ") at i,j,k: " << i << " " << j << " " << k << endl;
+            cout << "Bad inversion (" << flag << ") at i,j,k: " << i << " " << j << " " << k << endl;
             compare_P_U(pmb->meshblock_data.Get(), k, j, i);
         }
     }
@@ -336,16 +348,16 @@ int CountPFlags(std::shared_ptr<MeshBlock> pmb, ParArrayNDIntHost pflag, IndexDo
         n_neg_u = MPISumInt(n_neg_u);
         n_neg_both = MPISumInt(n_neg_both);
 
-        cerr << "PFLAGS: " << n_tot << " (" << ((double) n_tot)/((ke-ks+1)*(je-js+1)*(ie-is+1))*100 << "% of all cells)" << endl;
+        cout << "PFLAGS: " << n_tot << " (" << ((double) n_tot)/((ke-ks+1)*(je-js+1)*(ie-is+1))*100 << "% of all cells)" << endl;
         if (verbose > 1) {
-            if (n_neg_in > 0) cerr << "Negative input: " << n_neg_in << endl;
-            if (n_max_iter > 0) cerr << "Hit max iter: " << n_max_iter << endl;
-            if (n_utsq > 0) cerr << "Velocity invalid: " << n_utsq << endl;
-            if (n_gamma > 0) cerr << "Gamma invalid: " << n_gamma << endl;
-            if (n_neg_rho > 0) cerr << "Negative rho: " << n_neg_rho << endl;
-            if (n_neg_u > 0) cerr << "Negative U: " << n_neg_u << endl;
-            if (n_neg_both > 0) cerr << "Negative rho & U: " << n_neg_both << endl;
-            cerr << endl;
+            if (n_neg_in > 0) cout << "Negative input: " << n_neg_in << endl;
+            if (n_max_iter > 0) cout << "Hit max iter: " << n_max_iter << endl;
+            if (n_utsq > 0) cout << "Velocity invalid: " << n_utsq << endl;
+            if (n_gamma > 0) cout << "Gamma invalid: " << n_gamma << endl;
+            if (n_neg_rho > 0) cout << "Negative rho: " << n_neg_rho << endl;
+            if (n_neg_u > 0) cout << "Negative U: " << n_neg_u << endl;
+            if (n_neg_both > 0) cout << "Negative rho & U: " << n_neg_both << endl;
+            cout << endl;
         }
     }
     return n_tot;
@@ -385,16 +397,16 @@ int CountFFlags(std::shared_ptr<MeshBlock> pmb, ParArrayNDIntHost fflag, IndexDo
         n_gamma = MPISumInt(n_gamma);
         n_ktot = MPISumInt(n_ktot);
 
-        cerr << "FLOORS: " << n_tot << " (" << ((double) n_tot)/((ke-ks+1)*(je-js+1)*(ie-is+1))*100 << "% of all cells)" << endl;
+        cout << "FLOORS: " << n_tot << " (" << ((double) n_tot)/((ke-ks+1)*(je-js+1)*(ie-is+1))*100 << "% of all cells)" << endl;
         if (verbose > 1) {
-            if (n_geom_rho > 0) cerr << "GEOM_RHO: " << n_geom_rho << endl;
-            if (n_geom_u > 0) cerr << "GEOM_U: " << n_geom_u << endl;
-            if (n_b_rho > 0) cerr << "B_RHO: " << n_b_rho << endl;
-            if (n_b_u > 0) cerr << "B_U: " << n_b_u << endl;
-            if (n_temp > 0) cerr << "TEMPERATURE: " << n_temp << endl;
-            if (n_gamma > 0) cerr << "GAMMA: " << n_gamma << endl;
-            if (n_ktot > 0) cerr << "KTOT: " << n_ktot << endl;
-            cerr << endl;
+            if (n_geom_rho > 0) cout << "GEOM_RHO: " << n_geom_rho << endl;
+            if (n_geom_u > 0) cout << "GEOM_U: " << n_geom_u << endl;
+            if (n_b_rho > 0) cout << "B_RHO: " << n_b_rho << endl;
+            if (n_b_u > 0) cout << "B_U: " << n_b_u << endl;
+            if (n_temp > 0) cout << "TEMPERATURE: " << n_temp << endl;
+            if (n_gamma > 0) cout << "GAMMA: " << n_gamma << endl;
+            if (n_ktot > 0) cout << "KTOT: " << n_ktot << endl;
+            cout << endl;
         }
     }
     return n_tot;

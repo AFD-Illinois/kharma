@@ -142,10 +142,15 @@ void PostInitialize(ParameterInput *pin, Mesh *pmesh)
         FLAG("Extra boundary sync for B");
         SyncAllBounds(pmesh);
 
+        // Default to iharm3d's field normalization, pg_max/pb_max = 100
+        // This is *not* the same as local beta_min = 100
+        Real beta_calc_legacy = pin->GetOrAddBoolean("b_field", "legacy", true);
+        Real desired_beta_min = pin->GetOrAddReal("b_field", "beta_min", 100.);
+
         FLAG("Seeding magnetic field");
         // Seed the magnetic field and find the minimum beta
         int nmb = pmesh->GetNumMeshBlocksThisRank(Globals::my_rank);
-        Real beta_min = 1e100;
+        Real beta_min = 1.e100, p_max = 0., bsq_max = 0.;
         for (int i = 0; i < nmb; ++i) {
             auto& pmb = pmesh->block_list[i];
             auto& rc = pmb->meshblock_data.Get();
@@ -158,36 +163,66 @@ void PostInitialize(ParameterInput *pin, Mesh *pmesh)
                 //SeedBHFlux(rc, BHflux);
             }
 
-            Real beta_local = GetLocalBetaMin(rc);
-            if(beta_local < beta_min) beta_min = beta_local;
+            if (beta_calc_legacy) {
+                Real bsq_local = GetLocalBsqMax(rc);
+                if(bsq_local > bsq_max) bsq_max = bsq_local;
+                Real p_local = GetLocalPMax(rc);
+                if(p_local > p_max) p_max = p_local;
+            } else {
+                Real beta_local = GetLocalBetaMin(rc);
+                if(beta_local < beta_min) beta_min = beta_local;
+            }
         }
-        beta_min = MPIMin(beta_min);
-#if DEBUG
-        cerr << "Beta min pre-norm: " << beta_min << endl;
-#endif
+        if (beta_calc_legacy) {
+            bsq_max = MPIMax(bsq_max);
+            p_max = MPIMax(p_max);
+            beta_min = p_max / (0.5 * bsq_max);
+        } else {
+            beta_min = MPIMin(beta_min);
+        }
+
+        if (pin->GetInteger("debug", "verbose") > 0) {
+            cerr << "Beta min pre-norm: " << beta_min << endl;
+        }
 
         // Then normalize B by sqrt(beta/beta_min)
         FLAG("Normalizing magnetic field");
-        Real beta = pin->GetOrAddReal("b_field", "beta_min", 100.);
         if (beta_min > 0) {
-            Real norm = sqrt(beta_min/beta);
+            Real norm = sqrt(beta_min/desired_beta_min);
             for (int i = 0; i < nmb; ++i) {
                 auto& pmb = pmesh->block_list[i];
                 auto& rc = pmb->meshblock_data.Get();
                 NormalizeBField(rc, norm);
             }
         }
-#if DEBUG
-        // Do it again to check
-        beta_min = 1e100;
-        for (int i = 0; i < nmb; ++i) {
-            auto& pmb = pmesh->block_list[i];
-            auto& rc = pmb->meshblock_data.Get();
-            Real beta_local = GetLocalBetaMin(rc);
-            if(beta_local < beta_min) beta_min = beta_local;
+
+        if (pin->GetInteger("debug", "verbose") > 0) {
+            // Do it again to check
+            beta_min = 1e100, p_max = 0., bsq_max = 0.;
+            for (int i = 0; i < nmb; ++i) {
+                auto& pmb = pmesh->block_list[i];
+                auto& rc = pmb->meshblock_data.Get();
+
+                if (beta_calc_legacy) {
+                    Real bsq_local = GetLocalBsqMax(rc);
+                    if(bsq_local > bsq_max) bsq_max = bsq_local;
+                    Real p_local = GetLocalPMax(rc);
+                    if(p_local > p_max) p_max = p_local;
+                } else {
+                    Real beta_local = GetLocalBetaMin(rc);
+                    if(beta_local < beta_min) beta_min = beta_local;
+                }
+            }
+            if (beta_calc_legacy) {
+                bsq_max = MPIMax(bsq_max);
+                p_max = MPIMax(p_max);
+                beta_min = p_max / (0.5 * bsq_max);
+            } else {
+                beta_min = MPIMin(beta_min);
+            }
+            cerr << "Beta min post-norm: " << beta_min << endl;
         }
-        cerr << "Beta min post-norm: " << beta_min << endl;
-#endif
+
     }
     FLAG("Added B Field");
 
@@ -222,6 +257,6 @@ void SyncAllBounds(Mesh *pmesh)
         ApplyCustomBoundaries(rc);
 
         // Fill P again, including ghost zones
-        parthenon::Update::FillDerived(rc);
+        parthenon::Update::FillDerived(rc.get());
     }
 }

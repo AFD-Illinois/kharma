@@ -131,7 +131,7 @@ KOKKOS_INLINE_FUNCTION void bcon_calc(const Real P[NPRIM], FourVectors& D,
 /**
  * Find gamma-factor of the fluid w.r.t. normal observer
  *
- * TODO Error or print/clip if outside min or max value
+ * TODO Check qsq inline and/or fabs() it for output
  */
 KOKKOS_INLINE_FUNCTION Real mhd_gamma_calc(const GRCoordinates &G, const GridVars P,
                                              const int& k, const int& j, const int& i,
@@ -342,7 +342,7 @@ KOKKOS_INLINE_FUNCTION void mhd_vchar(const GRCoordinates &G, const GridVars P, 
                                       Real& cmax, Real& cmin)
 {
     // TODO code sharing...
-    Real discr, vp, vm, bsq, ee, ef, va2, cs2, cms2, u;
+    Real discr, vp, vm, bsq, ee, ef, va2, cs2, cms2, rho, u;
     Real Asq, Bsq, Au, Bu, AB, Au2, Bu2, AuBu, A, B, C;
     Real Acov[GR_DIM] = {0}, Bcov[GR_DIM] = {0};
     Real Acon[GR_DIM] = {0}, Bcon[GR_DIM] = {0};
@@ -350,7 +350,7 @@ KOKKOS_INLINE_FUNCTION void mhd_vchar(const GRCoordinates &G, const GridVars P, 
     Acov[dir] = 1.;
     Bcov[0] = 1.;
 
-    DLOOP2 // TODO use lower()
+    DLOOP2 // TODO use lower() & compare speed
     {
         Acon[mu] += G.gcon(loc, j, i, mu, nu) * Acov[nu];
         Bcon[mu] += G.gcon(loc, j, i, mu, nu) * Bcov[nu];
@@ -358,15 +358,16 @@ KOKKOS_INLINE_FUNCTION void mhd_vchar(const GRCoordinates &G, const GridVars P, 
 
     // Find fast magnetosonic speed
     bsq = dot(D.bcon, D.bcov);
+    rho = P(prims::rho, k, j, i);
     u =  P(prims::u, k, j, i);
-    ef = P(prims::rho, k, j, i) + eos->gam * u;
+    ef = rho + eos->gam * u;
     ee = bsq + ef;
     va2 = bsq / ee;
-    cs2 = eos->gam * eos->p(0, u) / ef;
+    cs2 = eos->gam * eos->p(rho, u) / ef;
 
     cms2 = cs2 + va2 - cs2 * va2;
 
-    clip(cms2, 0., 1.);
+    clip(cms2, 1.e-20, 1.);
 
     // Require that speed of wave measured by observer q.ucon is cms2
     Asq = dot(Acon, Acov);
@@ -382,21 +383,19 @@ KOKKOS_INLINE_FUNCTION void mhd_vchar(const GRCoordinates &G, const GridVars P, 
     B = 2. * (AuBu - (AB + AuBu) * cms2);
     C = Au2 - (Asq + Au2) * cms2;
 
-    discr = B * B - 4. * A * C;
-    discr = (discr < 0.) ? 0. : discr;
-    discr = sqrt(discr);
+    discr = sqrt(max(B * B - 4. * A * C, 0.));
 
     vp = -(-B + discr) / (2. * A);
     vm = -(-B - discr) / (2. * A);
 
-    cmax = (vp > vm) ? vp : vm;
-    cmin = (vp > vm) ? vm : vp;
+    cmax = max(vp, vm);
+    cmin = min(vp, vm);
 }
 KOKKOS_INLINE_FUNCTION void mhd_vchar(const GRCoordinates &G, const Real P[NPRIM], const FourVectors D, const EOS* eos,
                                       const int& k, const int& j, const int& i, const Loci loc, const int dir,
                                       Real& cmax, Real& cmin)
 {
-    Real discr, vp, vm, bsq, ee, ef, va2, cs2, cms2, u;
+    Real discr, vp, vm, bsq, ee, ef, va2, cs2, cms2, rho, u;
     Real Asq, Bsq, Au, Bu, AB, Au2, Bu2, AuBu, A, B, C;
     Real Acov[GR_DIM] = {0}, Bcov[GR_DIM] = {0};
     Real Acon[GR_DIM] = {0}, Bcon[GR_DIM] = {0};
@@ -412,15 +411,16 @@ KOKKOS_INLINE_FUNCTION void mhd_vchar(const GRCoordinates &G, const Real P[NPRIM
 
     // Find fast magnetosonic speed
     bsq = dot(D.bcon, D.bcov);
+    rho = P[prims::rho];
     u =  P[prims::u];
-    ef = P[prims::rho] + eos->gam * u;
+    ef = rho + eos->gam * u;
     ee = bsq + ef;
     va2 = bsq / ee;
-    cs2 = eos->gam * eos->p(0, u) / ef;
+    cs2 = eos->gam * eos->p(rho, u) / ef;
 
     cms2 = cs2 + va2 - cs2 * va2;
 
-    clip(cms2, 0., 1.);
+    clip(cms2, 1.e-20, 1.);
 
     // Require that speed of wave measured by observer q.ucon is cms2
     Asq = dot(Acon, Acov);
@@ -436,13 +436,11 @@ KOKKOS_INLINE_FUNCTION void mhd_vchar(const GRCoordinates &G, const Real P[NPRIM
     B = 2. * (AuBu - (AB + AuBu) * cms2);
     C = Au2 - (Asq + Au2) * cms2;
 
-    discr = B * B - 4. * A * C;
-    discr = (discr < 0.) ? 0. : discr;
-    discr = sqrt(discr);
+    discr = sqrt(max(B * B - 4. * A * C, 0.));
 
     vp = -(-B + discr) / (2. * A);
     vm = -(-B - discr) / (2. * A);
 
-    cmax = (vp > vm) ? vp : vm;
-    cmin = (vp > vm) ? vm : vp;
+    cmax = max(vp, vm);
+    cmin = min(vp, vm);
 }

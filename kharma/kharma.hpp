@@ -50,4 +50,14 @@ namespace KHARMA {
      * Currently just loads GRMHD.  Could also load GRHD only, scalars, e-, etc.
      */
     Packages_t ProcessPackages(std::unique_ptr<ParameterInput>& pin);
+
+    /**
+     * Fill any arrays that are calculated only for output, e.g.
+     * divB
+     * jcon
+     * etc
+     * 
+     * This becomes a member function (!) of MeshBlock and is called for each block
+     */
+    void FillOutput(std::unique_ptr<ParameterInput>& pin);
 }

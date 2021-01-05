@@ -1,5 +1,5 @@
 /**
- * Reasonably fast functions for inverting 4x4 matrices
+ * Reasonably fast functions for handling 4x4 matrices and symbols
  */
 #pragma once
 
@@ -62,4 +62,60 @@ KOKKOS_INLINE_FUNCTION Real invert(const Real *m, Real *invOut)
   }
 
   return det;
+}
+
+
+/**
+ * Parity calculation.
+ * Due to Norm Hardy; in principle good for general n,
+ * but in practice specified for speed/compiler
+ */
+KOKKOS_INLINE_FUNCTION int pp(int P[4])
+{
+  int x;
+  int p = 0;
+  int v[4];
+
+  for (int j = 0; j < 4; j++) v[j] = 0;
+
+  for (int j = 0; j < 4; j++) {
+    if (v[j]) {
+      p++;
+    } else {
+      x = j;
+      do {
+        x = P[x];
+        v[x] = 1;
+      } while (x != j);
+    }
+  }
+
+  if (p % 2 == 0) {
+    return 1;
+  } else {
+    return -1;
+  }
+}
+
+// Completely antisymmetric 4D symbol
+KOKKOS_INLINE_FUNCTION int antisym(int a, int b, int c, int d)
+{
+  // Check for valid permutation
+  if (a < 0 || a > 3) return 100;
+  if (b < 0 || b > 3) return 100;
+  if (c < 0 || c > 3) return 100;
+  if (d < 0 || d > 3) return 100;
+
+  // Entries different? 
+  if (a == b) return 0;
+  if (a == c) return 0;
+  if (a == d) return 0;
+  if (b == c) return 0;
+  if (b == d) return 0;
+  if (c == d) return 0;
+
+  // Determine parity of permutation
+  int p[4] = {a, b, c, d};
+
+  return pp(p);
 }

@@ -70,6 +70,7 @@ using GeomTensor3 = parthenon::ParArrayND<Real>;
 #define KOKKOS_LAMBDA_2D KOKKOS_LAMBDA (const int& j, const int& i)
 #define KOKKOS_LAMBDA_3D KOKKOS_LAMBDA (const int &k, const int &j, const int &i)
 #define KOKKOS_LAMBDA_VARS KOKKOS_LAMBDA (const int &p, const int &k, const int &j, const int &i)
+#define KOKKOS_LAMBDA_VEC KOKKOS_LAMBDA (const int &mu, const int &k, const int &j, const int &i)
 // TODO separate macros for return type if this becomes a thing?  Or don't macro at all
 #define KOKKOS_LAMBDA_1D_REDUCE KOKKOS_LAMBDA (const int &i, Real &local_result)
 // This is used for timestep and divB, which are explicitly double.  Lots of work would need to be done to Parthenon if Real != double though
@@ -103,7 +104,7 @@ typedef struct {
 enum InversionStatus{success=0, neg_input, max_iter, bad_ut, bad_gamma, neg_rho, neg_u, neg_rhou};
 
 // Denote reconstruction algorithms
-enum ReconstructionType{linear_mc=0, ppm, weno5, mp5};
+enum ReconstructionType{donor_cell=0, linear_mc, linear_vl, ppm, mp5, weno5, weno5_lower_poles};
 
 // Floor codes are non-exclusive, so it makes a lot less sense to use an enum
 // Instead, we start them high enough that we can stick the enum in the bottom 5 bits

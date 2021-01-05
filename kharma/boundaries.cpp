@@ -68,9 +68,10 @@ TaskStatus ApplyCustomBoundaries(std::shared_ptr<MeshBlockData<Real>>& rc)
     // It would save much headache & wailing
 
 
+    // Put the reflecting condition into the corners tentatively, for non-border processes
     if(pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::reflect) {
         FLAG("Inner X2 reflect");
-        pmb->par_for("inner_x2_reflect", ks_e, ke_e, js_e, js-1, is, ie,
+        pmb->par_for("inner_x2_reflect", ks_e, ke_e, js_e, js-1, is_e, ie_e,
             KOKKOS_LAMBDA_3D {
                 PLOOP {
                     Real reflect = ((p == prims::u2 || p == prims::B2) ? -1.0 : 1.0);
@@ -83,7 +84,7 @@ TaskStatus ApplyCustomBoundaries(std::shared_ptr<MeshBlockData<Real>>& rc)
     }
     if(pmb->boundary_flag[BoundaryFace::outer_x2] == BoundaryFlag::reflect) {
         FLAG("Outer X2 reflect");
-        pmb->par_for("outer_x2_reflect", ks_e, ke_e, je+1, je_e, is, ie,
+        pmb->par_for("outer_x2_reflect", ks_e, ke_e, je+1, je_e, is_e, ie_e,
             KOKKOS_LAMBDA_3D {
                 PLOOP {
                     Real reflect = ((p == prims::u2 || p == prims::B2) ? -1.0 : 1.0);
@@ -201,40 +202,65 @@ TaskStatus FixFlux(std::shared_ptr<MeshBlockData<Real>>& rc)
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
-
-    GridVars F1 = rc->Get("c.c.bulk.cons").flux[X1DIR];
-    GridVars F2 = rc->Get("c.c.bulk.cons").flux[X2DIR];
-    GridVars F3;
-    int ke_e;
-    if (ks != ke) {
-        ke_e = ke + 1;
-        F3 = rc->Get("c.c.bulk.cons").flux[X3DIR];
-    } else {
-        ke_e = ke;
+    int ndim = 3;
+    if (js == je) {
+        ndim = 1;
+    } else if (ks == ke) {
+        ndim = 2;
     }
 
-    if (pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::reflect)
-    {
-        pmb->par_for("fix_flux_b_l", ks, ke_e, js, js, is, ie+1,
-            KOKKOS_LAMBDA_3D {
-                PLOOP F2(p, k, j, i) = 0.;
-                // Make sure the emfs are also 0, for flux-ct
-                F1(prims::B2, k, j-1, i) = -F1(prims::B2, k, js, i);
-                if (ke_e > 0) F3(prims::B2, k, j-1, i) = -F3(prims::B2, k, js, i);
-            }
-        );
+    GridVars F1, F2, F3;
+    F1 = rc->Get("c.c.bulk.cons").flux[X1DIR];
+    if (ndim > 1) F2 = rc->Get("c.c.bulk.cons").flux[X2DIR];
+    if (ndim > 2) F3 = rc->Get("c.c.bulk.cons").flux[X3DIR];
+    int je_e = (ndim > 1) ? je + 1 : je;
+    int ke_e = (ndim > 2) ? ke + 1 : ke;
+
+    if (pmb->packages["GRMHD"]->Param<bool>("fix_flux_inflow") == true) {
+        if (pmb->boundary_flag[BoundaryFace::inner_x1] == BoundaryFlag::outflow)
+        {
+            pmb->par_for("fix_flux_in_l", ks, ke_e, js, je_e, is, is,
+                KOKKOS_LAMBDA_3D {
+                    F1(prims::rho, k, j, i) = min(F1(prims::rho, k, j, i), 0.);
+                }
+            );
+        }
+
+        if (pmb->boundary_flag[BoundaryFace::outer_x1] == BoundaryFlag::outflow &&
+            !(pmb->packages["GRMHD"]->Param<std::string>("problem") == "bondi"))
+        {
+            pmb->par_for("fix_flux_in_r", ks, ke_e, js, je_e, ie+1, ie+1,
+                KOKKOS_LAMBDA_3D {
+                    F1(prims::rho, k, j, i) = max(F1(prims::rho, k, j, i), 0.);
+                }
+            );
+        }
     }
 
-    if (pmb->boundary_flag[BoundaryFace::outer_x2] == BoundaryFlag::reflect)
-    {
-        pmb->par_for("fix_flux_b_r", ks, ke_e, je+1, je+1, is, ie+1,
-            KOKKOS_LAMBDA_3D {
-                PLOOP F2(p, k, j, i) = 0.;
-                // Make sure the emfs are also 0, for flux-ct
-                F1(prims::B2, k, j, i) = -F1(prims::B2, k, je, i);
-                if (ke_e > 0) F3(prims::B2, k, j, i) = -F3(prims::B2, k, je, i);
-            }
-        );
+    if (pmb->packages["GRMHD"]->Param<bool>("fix_flux_B") == true) {
+        if (pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::reflect)
+        {
+            pmb->par_for("fix_flux_b_l", ks, ke_e, js, js, is, ie+1,
+                KOKKOS_LAMBDA_3D {
+                    PLOOP F2(p, k, j, i) = 0.;
+                    // Make sure the emfs are also 0, for flux-ct
+                    F1(prims::B2, k, j-1, i) = -F1(prims::B2, k, js, i);
+                    if (ke_e > 0) F3(prims::B2, k, j-1, i) = -F3(prims::B2, k, js, i);
+                }
+            );
+        }
+
+        if (pmb->boundary_flag[BoundaryFace::outer_x2] == BoundaryFlag::reflect)
+        {
+            pmb->par_for("fix_flux_b_r", ks, ke_e, je_e, je_e, is, ie+1,
+                KOKKOS_LAMBDA_3D {
+                    PLOOP F2(p, k, j, i) = 0.;
+                    // Make sure the emfs are also 0, for flux-ct
+                    F1(prims::B2, k, j, i) = -F1(prims::B2, k, je, i);
+                    if (ke_e > 0) F3(prims::B2, k, j, i) = -F3(prims::B2, k, je, i);
+                }
+            );
+        }
     }
 
     FLAG("Fixed boundary fluxes");

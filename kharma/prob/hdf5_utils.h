@@ -73,4 +73,3 @@ hid_t hdf5_make_str_type(size_t len);
 int hdf5_write_str_list(const void *data, const char *name, size_t strlen, size_t len);
 int hdf5_add_attr(const void *att, const char *att_name, const char *data_name, hsize_t hdf5_type);
 int hdf5_add_units(const char *name, const char *unit);
-

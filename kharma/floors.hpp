@@ -40,6 +40,10 @@
 
 #include <parthenon/parthenon.hpp>
 
+/**
+ * Struct to hold floor values without cumbersome dictionary/string logistics.
+ * Hopefully faster.
+ */
 class FloorPrescription {
     public:
         // Purely geometric limits
@@ -218,10 +222,152 @@ KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, GridVars P, Grid
             PLOOP {
                 U(p, k, j, i) += Unew[p];
                 // This is just the guess at primitive values, needed for U_to_P to converge.
+                // it doubles as a fluid-frame floor in case u_to_p fails
                 P(p, k, j, i) += Pnew[p];
             }
 
             // Recover primitive variables from conserved versions
+            pflag = u_to_p(G, U, eos, k, j, i, Loci::center, P);
+            // If that fails, we've effectively already applied the floors in fluid-frame to the prims,
+            // so we just formalize that
+            if (pflag) p_to_u(G, P, eos, k, j, i, U);
+        }
+    }
+    return fflag + pflag;
+}
+
+/**
+ * Apply ceilings to a local set of primitives only. Used on the reconstructed primitive values before evaluating fluxes.
+ * 
+ * @return fflag, a bitflag indicating whether each particular floor was hit, allowing representation of arbitrary combinations
+ * See decs.h for bit names.
+ */
+KOKKOS_INLINE_FUNCTION int apply_ceilings(const GRCoordinates& G, Real P[NPRIM], EOS *eos, const int& k, const int& j, const int& i, const FloorPrescription& floors)
+{
+    int fflag = 0;
+    // First apply ceilings:
+    // 1. Limit gamma with respect to normal observer
+    Real gamma = mhd_gamma_calc(G, P, k, j, i, Loci::center);
+
+    if (gamma > floors.gamma_max) {
+        fflag |= HIT_FLOOR_GAMMA;
+
+        Real f = sqrt((pow(floors.gamma_max, 2) - 1.)/(pow(gamma, 2) - 1.));
+        P[prims::u1] *= f;
+        P[prims::u2] *= f;
+        P[prims::u3] *= f;
+    }
+
+    // 2. Limit the entropy by controlling u, to avoid anomalous cooling from funnel wall
+    // Pretty much for matching legacy runs
+    Real ktot = (eos->gam - 1.) * P[prims::u] / pow(P[prims::rho], eos->gam);
+    if (ktot > floors.ktot_max) {
+        fflag |= HIT_FLOOR_KTOT;
+
+        P[prims::u] = floors.ktot_max / ktot * P[prims::u];
+    }
+
+    // 3. Limit the temperature by controlling u.  Can optionally add density instead, implemented in apply_floors
+    if (floors.temp_adjust_u && P[prims::u] / P[prims::rho] > floors.u_over_rho_max) {
+        fflag |= HIT_FLOOR_TEMP;
+
+        P[prims::u] = floors.u_over_rho_max * P[prims::rho];
+    }
+
+    return fflag;
+}
+
+/**
+ * Apply floors to a local set of primitives only. Used on reconstructed values before evaluating fluxes.
+ * 
+ * @return fflag + pflag: fflag is a flagset starting at the sixth bit from the right.  pflag is a number <32.
+ * This returns the sum, with the caller responsible for separating what's desired.
+ */
+KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, Real P[NPRIM], EOS *eos, const int& k, const int& j, const int& i, const FloorPrescription& floors)
+{
+    int fflag = 0;
+    // Then apply floors:
+    // 1. Geometric hard floors, not based on fluid relationships
+    Real rhoflr_geom, uflr_geom;
+    if(G.coords.spherical()) {
+        GReal Xembed[GR_DIM];
+        G.coord_embed(k, j, i, Loci::center, Xembed);
+        GReal r = Xembed[1];
+
+        // New, steeper floor in rho
+        // Previously raw r^-2, r^-1.5
+        Real rhoscal = pow(r, -2.) * 1 / (1 + r / floors.r_char);
+        rhoflr_geom = floors.rho_min_geom * rhoscal;
+        uflr_geom = floors.u_min_geom * pow(rhoscal, eos->gam);
+    } else {
+        rhoflr_geom = floors.rho_min_geom * 1.e-2;
+        uflr_geom = floors.u_min_geom * 1.e-2;
+    }
+    Real rho = P[prims::rho];
+    Real u = P[prims::u];
+
+    // 2. Magnetization ceilings: impose maximum magnetization sigma = bsq/rho, and inverse beta prop. to bsq/U
+    FourVectors Dtmp;
+    get_state(G, P, k, j, i, Loci::center, Dtmp); // Recall this gets re-used below
+    double bsq = dot(Dtmp.bcon, Dtmp.bcov);
+    double rhoflr_b = bsq / floors.bsq_over_rho_max;
+    double uflr_b = bsq / floors.bsq_over_u_max;
+
+    // Evaluate max U floor, needed for temp ceiling below
+    double uflr_max = max(uflr_geom, uflr_b);
+
+    double rhoflr_max;
+    if (!floors.temp_adjust_u) {
+        // 3. Temperature ceiling: impose maximum temperature u/rho
+        // Take floors on U into account
+        double rhoflr_temp = max(u, uflr_max) / floors.u_over_rho_max;
+        // Record hitting temperature ceiling
+        fflag |= (rhoflr_temp > rho) * HIT_FLOOR_TEMP; // Misnomer for consistency
+
+        // Evaluate max rho floor
+        rhoflr_max = max(max(rhoflr_geom, rhoflr_b), rhoflr_temp);
+    } else {
+        // Evaluate max rho floor
+        rhoflr_max = max(rhoflr_geom, rhoflr_b);
+    }
+
+    // Record all the floors that were hit, using bitflags
+    // Record Geometric floor hits
+    fflag |= (rhoflr_geom > rho) * HIT_FLOOR_GEOM_RHO;
+    fflag |= (uflr_geom > u) * HIT_FLOOR_GEOM_U;
+    // Record Magnetic floor hits
+    fflag |= (rhoflr_b > rho) * HIT_FLOOR_B_RHO;
+    fflag |= (uflr_b > u) * HIT_FLOOR_B_U;
+
+    InversionStatus pflag = InversionStatus::success;
+    if (floors.fluid_frame) {
+        P[prims::rho] += max(0., rhoflr_max - rho);
+        P[prims::u] += max(0., uflr_max - u);
+    } else {
+        if (rhoflr_max > rho || uflr_max > u) { // Apply floors
+
+            // Add the material in the normal observer frame, by:
+            // Initializing a dummy fluid parcel
+            Real Pnew[NPRIM] = {0}, U[NPRIM] = {0}, Unew[NPRIM] = {0};
+
+            // Add mass and internal energy to the primitives, but not velocity
+            Pnew[prims::rho] = max(0., rhoflr_max - rho);
+            Pnew[prims::u] = max(0., uflr_max - u);
+
+            // Get conserved variables for the original & new parcel
+            p_to_u(G, P, eos, k, j, i, U);
+            p_to_u(G, Pnew, eos, k, j, i, Unew);
+
+            // Add new conserved mass/energy to the current "conserved" state
+            PLOOP {
+                U[p] += Unew[p];
+                // This is just the guess at primitive values, needed for U_to_P to converge
+                P[p] += Pnew[p];
+            }
+
+            // Recover primitive variables from conserved versions
+            // Note that if this fails, it leaves P = P + Pnew,
+            // so we still applied the floors in fluid frame!
             pflag = u_to_p(G, U, eos, k, j, i, Loci::center, P);
         }
     }

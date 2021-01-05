@@ -33,8 +33,9 @@
  */
 
 #include "decs.hpp"
+#include "grmhd.hpp"
 
-#include "parthenon/parthenon.hpp"
+#include <parthenon/parthenon.hpp>
 
 using namespace parthenon;
 
@@ -81,9 +82,7 @@ TaskStatus FluxCT2D(std::shared_ptr<MeshBlockData<Real>>& rc)
     return TaskStatus::complete;
 }
 
-namespace GRMHD {
-
-TaskStatus FluxCT(std::shared_ptr<MeshBlockData<Real>>& rc)
+TaskStatus GRMHD::FluxCT(std::shared_ptr<MeshBlockData<Real>>& rc)
 {
     auto pmb = rc->GetBlockPointer();
     int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
@@ -137,6 +136,4 @@ TaskStatus FluxCT(std::shared_ptr<MeshBlockData<Real>>& rc)
     FLAG("CT Finished");
 
     return TaskStatus::complete;
-}
-
 }
