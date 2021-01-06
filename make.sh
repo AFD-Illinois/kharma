@@ -6,7 +6,7 @@
 # ./make.sh [clean] [cuda] [debug]
 
 # clean: BUILD by re-running cmake, restarting the make process from nothing
-#        That is, "clean" == "make clean" + "make"
+#        That is, "./make.sh clean" == "make clean" + "make"
 #        Always use 'clean' when switching Release->Debug or OpenMP->CUDA
 # cuda:  Build for GPU with CUDA. Must have 'nvcc' in path
 # debug: Configure with debug flags: mostly array bounds checks
@@ -33,21 +33,37 @@ fi
 ### Machines ###
 
 # Kokkos_ARCH options:
-# CPUs: WSM, HSW, BDW, SKX, AMDAVX, ARMV8, ARMV81, ARMV8_THUNDERX2
+# CPUs: WSM, HSW, BDW, SKX, AMDAVX
+# ARM: ARMV8, ARMV81, ARMV8_THUNDERX2
+# POWER: POWER8, POWER9
 # MIC: KNC, KNL
 # GPUs: KEPLER35, VOLTA70, TURING75
+
+# TACC resources
+# Generally you want latest Intel/IMPI/phdf5 modules,
+# On longhorn use gcc/7, cuda, manually-compiled PHDF5
+if [[ $(hostname -f) == *".frontera.tacc.utexas.edu" ]]; then
+  HOST_ARCH="SKX"
+fi
+if [[ $(hostname -f) == *".stampede2.tacc.utexas.edu" ]]; then
+  HOST_ARCH="KNL"
+  #HOST_ARCH="SKX"
+fi
+if [[ $(hostname -f) == *".longhorn.tacc.utexas.edu" ]]; then
+  HOST_ARCH="POWER9"
+  DEVICE_ARCH="VOLTA70"
+fi
 
 # Illinois BH cluster
 if [[ $(hostname -f) == *".astro.illinois.edu" ]]; then
   # When oneAPI works
   #source /opt/intel/oneapi/setvars.sh
-  #CMAKE_PREFIX_PATH="~/libs/hdf5-oneapi"
+  #PREFIX_PATH="~/libs/hdf5-oneapi"
 
   module load gnu mpich phdf5
-  CMAKE_PREFIX_PATH=$MPI_DIR
+  PREFIX_PATH="$MPI_DIR"
 
   HOST_ARCH="SKX"
-  ENABLE_CUDA="OFF"
 fi
 # Except BH27/9
 if [[ $(hostname -f) == "bh29.astro.illinois.edu" ]]; then
@@ -57,11 +73,23 @@ if [[ $(hostname -f) == "bh27.astro.illinois.edu" ]]; then
   HOST_ARCH="WSM"
 fi
 
+# Add some flags only if they're set
+if [[ -v HOST_ARCH ]]; then
+  EXTRA_FLAGS="-DKokkos_ARCH_${HOST_ARCH}=ON $EXTRA_FLAGS"
+fi
+if [[ -v DEVICE_ARCH ]]; then
+  EXTRA_FLAGS="-DKokkos_ARCH_${DEVICE_ARCH}=ON $EXTRA_FLAGS"
+fi
+if [[ -v PREFIX_PATH ]]; then
+  EXTRA_FLAGS="-DCMAKE_PREFIX_PATH=\"$PREFIX_PATH\" $EXTRA_FLAGS"
+fi
+
 ### Build ###
 
 # Strongly prefer icc for OpenMP compiles
-if which icpc 2>/dev/null; then
+if which icpc >/dev/null 2>&1; then
   CXX_NATIVE=icpc
+  export CXXFLAGS=-Wno-unknown-pragmas
 else
   CXX_NATIVE=g++
 fi
@@ -75,11 +103,12 @@ if [[ "$*" == *"cuda"* ]]; then
   CXX="$PWD/../external/parthenon/external/Kokkos/bin/nvcc_wrapper"
   OUTER_LAYOUT="MANUAL1D_LOOP"
   INNER_LAYOUT="TVR_INNER_LOOP"
-  EXTRA_FLAGS="-DKokkos_ARCH_${DEVICE_ARCH}=ON $EXTRA_FLAGS"
+  ENABLE_CUDA="ON"
 else
   CXX="$CXX_NATIVE"
   OUTER_LAYOUT="MANUAL1D_LOOP"
   INNER_LAYOUT="SIMDFOR_INNER_LOOP"
+  ENABLE_CUDA="OFF"
 fi
 
 SCRIPT_DIR=$( dirname "$0" )
@@ -96,7 +125,6 @@ if [[ "$*" == *"clean"* ]]; then
   cmake ..\
     -DCMAKE_CXX_COMPILER="$CXX" \
     -DCMAKE_BUILD_TYPE=$TYPE \
-    -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" \
     -DPAR_LOOP_LAYOUT=$OUTER_LAYOUT \
     -DPAR_LOOP_INNER_LAYOUT=$INNER_LAYOUT \
     -DKokkos_ENABLE_CUDA=$ENABLE_CUDA \
