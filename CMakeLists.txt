@@ -1,16 +1,26 @@
 # KHARMA CMake top file. Basically exists to include Parthenon and KHARMA CMake files in 1 build with the same options
 
-cmake_minimum_required(VERSION 3.11)
+cmake_minimum_required(VERSION 3.10)
 project(kharma LANGUAGES C CXX)
 set (CMAKE_CXX_STANDARD 14)
 
 # Parthenon options
-set(NUMBER_GHOST_CELLS 4) # TODO: Make this a CMake option and check it
-set(COORDINATE_TYPE UniformCartesian) # TODO: Make this an option when more are available
+set(PARTHENON_NGHOST 4 CACHE STRING "KHARMA Override")
+set(PARTHENON_DISABLE_EXAMPLES ON CACHE BOOL "KHARMA Override")
+set(PARTHENON_LINT_DEFAULT OFF CACHE BOOL "KHARMA Override")
+# Parthenon internal build options
+set(BUILD_TESTING OFF CACHE BOOL "KHARMA Override")
+set(ENABLE_COMPILER_WARNINGS OFF CACHE BOOL "KHARMA Override")
 
-# MDRANGE_LOOP, MANUAL1D_LOOP, SIMDFOR_LOOP
-set(PAR_LOOP_LAYOUT "MDRANGE_LOOP")
-set(PAR_LOOP_INNER_LAYOUT "SIMDFOR_INNER_LOOP")
+# Kokkos options
+set(Kokkos_ENABLE_OPENMP ON)
+set(Kokkos_ENABLE_CUDA_LAMBDA ON)
+set(Kokkos_ENABLE_CUDA_CONSTEXPR ON)
+set(Kokkos_ENABLE_HWLOC OFF) # Possible speed improvement?
+set(Kokkos_ENABLE_AGGRESSIVE_VECTORIZATION ON)
+
+# TODO set this here when I upstream or otherwise unfork
+#set(COORDINATE_TYPE GRCoordinates)
 
 # Parthenon says it doesn't need MPI.  It just *strongly prefers* it, and so do we.
 find_package(MPI REQUIRED)
