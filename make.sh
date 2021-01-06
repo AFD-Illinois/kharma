@@ -12,25 +12,12 @@
 # debug: Configure with debug flags: mostly array bounds checks
 #        Note most prints/fluid sanity checks are actually *runtime* parameters
 
-### Environment ###
-if [[ "$(which python)" == *"conda"* ]]; then
-  echo "It looks like you have Anaconda loaded."
-  echo "Anaconda forces a serial version of HDF5 which makes this compile impossible."
-  echo "Deactivate your environment with 'conda deactivate'"
-  exit
-fi
-echo "If this is your Anaconda version of Python, deactivate your environment:"
-echo "$(which python)"
-echo
-
-### Flags ###
-if [[ "$*" == *"debug"* ]]; then
-  TYPE=Debug
+### Machine-specific configurations ###
+if [[ $HOSTNAME == "toolbox" ]]; then
+  HOST=fermium
 else
-  TYPE=Release
+  HOST=$(hostname -f)
 fi
-
-### Machines ###
 
 # Kokkos_ARCH options:
 # CPUs: WSM, HSW, BDW, SKX, AMDAVX
@@ -42,20 +29,20 @@ fi
 # TACC resources
 # Generally you want latest Intel/IMPI/phdf5 modules,
 # On longhorn use gcc/7, cuda, manually-compiled PHDF5
-if [[ $(hostname -f) == *".frontera.tacc.utexas.edu" ]]; then
+if [[ $HOST == *".frontera.tacc.utexas.edu" ]]; then
   HOST_ARCH="SKX"
 fi
-if [[ $(hostname -f) == *".stampede2.tacc.utexas.edu" ]]; then
+if [[ $HOST == *".stampede2.tacc.utexas.edu" ]]; then
   HOST_ARCH="KNL"
   #HOST_ARCH="SKX"
 fi
-if [[ $(hostname -f) == *".longhorn.tacc.utexas.edu" ]]; then
+if [[ $HOST == *".longhorn.tacc.utexas.edu" ]]; then
   HOST_ARCH="POWER9"
   DEVICE_ARCH="VOLTA70"
 fi
 
 # Illinois BH cluster
-if [[ $(hostname -f) == *".astro.illinois.edu" ]]; then
+if [[ $HOST == *".astro.illinois.edu" ]]; then
   # When oneAPI works
   #source /opt/intel/oneapi/setvars.sh
   #PREFIX_PATH="~/libs/hdf5-oneapi"
@@ -66,11 +53,28 @@ if [[ $(hostname -f) == *".astro.illinois.edu" ]]; then
   HOST_ARCH="SKX"
 fi
 # Except BH27/9
-if [[ $(hostname -f) == "bh29.astro.illinois.edu" ]]; then
+if [[ $HOST == "bh29.astro.illinois.edu" ]]; then
   HOST_ARCH="AMDAVX"
 fi
-if [[ $(hostname -f) == "bh27.astro.illinois.edu" ]]; then
+if [[ $HOST == "bh27.astro.illinois.edu" ]]; then
   HOST_ARCH="WSM"
+fi
+
+if [[ $HOST == "fermium" ]]; then
+  HOST_ARCH="AMDAVX"
+  DEVICE_ARCH="TURING75"
+  EXTRA_FLAGS="-DCUDAToolkit_INCLUDE_DIR=/usr/include/cuda $EXTRA_FLAGS"
+fi
+
+# If we haven't special-cased, guess
+if [[ -z "$HOST_ARCH" ]]; then
+  if grep Intel /proc/cpuinfo >/dev/null 2>&1; then
+    # Probably okay to default to HSW here but being cautious
+    HOST_ARCH="WSM"
+  fi
+  if grep AMD /proc/cpuinfo >/dev/null 2>&1; then
+    HOST_ARCH="AMDAVX"
+  fi
 fi
 
 # Add some flags only if they're set
@@ -84,11 +88,32 @@ if [[ -v PREFIX_PATH ]]; then
   EXTRA_FLAGS="-DCMAKE_PREFIX_PATH=\"$PREFIX_PATH\" $EXTRA_FLAGS"
 fi
 
+### Environment ###
+if [[ "$(which python)" == *"conda"* ]]; then
+  echo "It looks like you have Anaconda loaded."
+  echo "Anaconda forces a serial version of HDF5 which makes this compile impossible."
+  echo "Deactivate your environment with 'conda deactivate'"
+  exit
+fi
+echo "If this is your Anaconda version of Python, deactivate your environment:"
+echo "$(which python)"
+echo
+
+if [[ "$*" == *"debug"* ]]; then
+  TYPE=Debug
+else
+  TYPE=Release
+fi
+
 ### Build ###
+SCRIPT_DIR=$( dirname "$0" )
+cd $SCRIPT_DIR
+SCRIPT_DIR=$PWD
 
 # Strongly prefer icc for OpenMP compiles
 if which icpc >/dev/null 2>&1; then
   CXX_NATIVE=icpc
+  # Avoid warning on nvcc pragmas Intel doesn't like
   export CXXFLAGS=-Wno-unknown-pragmas
 else
   CXX_NATIVE=g++
@@ -100,7 +125,7 @@ fi
 # Outer: SIMDFOR_LOOP;MANUAL1D_LOOP;MDRANGE_LOOP;TPTTR_LOOP;TPTVR_LOOP;TPTTRTVR_LOOP
 # Inner: SIMDFOR_INNER_LOOP;TVR_INNER_LOOP
 if [[ "$*" == *"cuda"* ]]; then
-  CXX="$PWD/../external/parthenon/external/Kokkos/bin/nvcc_wrapper"
+  CXX="$SCRIPT_DIR/external/parthenon/external/Kokkos/bin/nvcc_wrapper"
   OUTER_LAYOUT="MANUAL1D_LOOP"
   INNER_LAYOUT="TVR_INNER_LOOP"
   ENABLE_CUDA="ON"
@@ -110,9 +135,6 @@ else
   INNER_LAYOUT="SIMDFOR_INNER_LOOP"
   ENABLE_CUDA="OFF"
 fi
-
-SCRIPT_DIR=$( dirname "$0" )
-cd $SCRIPT_DIR
 
 # Make build dir. Recall "clean" means "clean and build"
 if [[ "$*" == *"clean"* ]]; then
