@@ -50,7 +50,7 @@ fi
 if [[ $HOST == *".astro.illinois.edu" ]]; then
   # When oneAPI works
   #source /opt/intel/oneapi/setvars.sh
-  #PREFIX_PATH="~/libs/hdf5-oneapi"
+  #PREFIX_PATH="$HOME/libs/hdf5-oneapi"
 
   module load gnu mpich phdf5
   PREFIX_PATH="$MPI_DIR"
