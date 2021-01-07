@@ -11,6 +11,7 @@
 # cuda:  Build for GPU with CUDA. Must have 'nvcc' in path
 # debug: Configure with debug flags: mostly array bounds checks
 #        Note most prints/fluid sanity checks are actually *runtime* parameters
+# skx:   Compile specifically for Skylake nodes on Stampede2
 
 ### Machine-specific configurations ###
 if [[ $HOSTNAME == "toolbox" ]]; then
@@ -28,17 +29,21 @@ fi
 
 # TACC resources
 # Generally you want latest Intel/IMPI/phdf5 modules,
-# On longhorn use gcc/7, cuda, manually-compiled PHDF5
+# On longhorn use gcc7, mvapich2-gdr, and manually-compiled PHDF5
 if [[ $HOST == *".frontera.tacc.utexas.edu" ]]; then
   HOST_ARCH="SKX"
 fi
 if [[ $HOST == *".stampede2.tacc.utexas.edu" ]]; then
-  HOST_ARCH="KNL"
-  #HOST_ARCH="SKX"
+  if [[ "$*" == *"skx"* ]]; then
+    HOST_ARCH="SKX"
+  else
+    HOST_ARCH="KNL"
+  fi
 fi
 if [[ $HOST == *".longhorn.tacc.utexas.edu" ]]; then
   HOST_ARCH="POWER9"
   DEVICE_ARCH="VOLTA70"
+  PREFIX_PATH="$HOME/libs/hdf5-gcc7-mvapich2"
 fi
 
 # Illinois BH cluster
@@ -60,19 +65,34 @@ if [[ $HOST == "bh27.astro.illinois.edu" ]]; then
   HOST_ARCH="WSM"
 fi
 
+# BP's machines
 if [[ $HOST == "fermium" ]]; then
   HOST_ARCH="AMDAVX"
   DEVICE_ARCH="TURING75"
+  # My CUDA installs are a bit odd
   EXTRA_FLAGS="-DCUDAToolkit_INCLUDE_DIR=/usr/include/cuda $EXTRA_FLAGS"
 fi
+if [[ $HOST == "cinnabar"* ]]; then
+  HOST_ARCH="HSW"
+  DEVICE_ARCH="KEPLER35"
+  #PREFIX_PATH="$HOME/libs/hdf5-oneapi"
 
-# If we haven't special-cased, guess
+  PREFIX_PATH="$HOME/libs/hdf5-nvhpc"
+  EXTRA_FLAGS="-DCUDAToolkit_INCLUDE_DIR=/usr/include/cuda $EXTRA_FLAGS"
+  export NVCC_WRAPPER_DEFAULT_COMPILER=nvc++
+  # This makes Nvidia chill about old GPUs, but requires a custom nvcc_wrapper
+  export CXXFLAGS="-Wno-deprecated-gpu-targets"
+fi
+
+# If we haven't special-cased already, guess an architecture
+# This ends up pretty much optimal on x86 architectures which don't have
+# 1. AVX512
+# 2. GPUs
 if [[ -z "$HOST_ARCH" ]]; then
-  if grep Intel /proc/cpuinfo >/dev/null 2>&1; then
-    # Probably okay to default to HSW here but being cautious
-    HOST_ARCH="WSM"
+  if grep GenuineIntel /proc/cpuinfo >/dev/null 2>&1; then
+    HOST_ARCH="HSW"
   fi
-  if grep AMD /proc/cpuinfo >/dev/null 2>&1; then
+  if grep AuthenticAMD /proc/cpuinfo >/dev/null 2>&1; then
     HOST_ARCH="AMDAVX"
   fi
 fi
@@ -85,7 +105,7 @@ if [[ -v DEVICE_ARCH ]]; then
   EXTRA_FLAGS="-DKokkos_ARCH_${DEVICE_ARCH}=ON $EXTRA_FLAGS"
 fi
 if [[ -v PREFIX_PATH ]]; then
-  EXTRA_FLAGS="-DCMAKE_PREFIX_PATH=\"$PREFIX_PATH\" $EXTRA_FLAGS"
+  EXTRA_FLAGS="-DCMAKE_PREFIX_PATH=$PREFIX_PATH $EXTRA_FLAGS"
 fi
 
 ### Environment ###
@@ -144,21 +164,16 @@ mkdir -p build
 cd build
 
 if [[ "$*" == *"clean"* ]]; then
+#set -x
   cmake ..\
     -DCMAKE_CXX_COMPILER="$CXX" \
     -DCMAKE_BUILD_TYPE=$TYPE \
     -DPAR_LOOP_LAYOUT=$OUTER_LAYOUT \
     -DPAR_LOOP_INNER_LAYOUT=$INNER_LAYOUT \
     -DKokkos_ENABLE_CUDA=$ENABLE_CUDA \
-    -DKokkos_ARCH_${HOST_ARCH}=ON \
     $EXTRA_FLAGS
+#set +x
 fi
-
-#  if [[ "$*" == *"cuda"* ]]; then # CUDA BUILD
-#    cmake ..\
-#    -DCMAKE_CXX_COMPILER=$PWD/../external/parthenon/external/Kokkos/bin/nvcc_wrapper \
-#    -DCMAKE_PREFIX_PATH=/usr/lib64/openmpi \
-#    -DCUDAToolkit_INCLUDE_DIR=/usr/include/cuda \
 
 make -j12
 cp kharma/kharma.* ..
