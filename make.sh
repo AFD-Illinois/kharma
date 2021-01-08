@@ -67,6 +67,7 @@ fi
 
 # BP's machines
 if [[ $HOST == "fermium" ]]; then
+  module load mpi
   HOST_ARCH="AMDAVX"
   DEVICE_ARCH="TURING75"
   # My CUDA installs are a bit odd
@@ -101,8 +102,10 @@ fi
 if [[ -v HOST_ARCH ]]; then
   EXTRA_FLAGS="-DKokkos_ARCH_${HOST_ARCH}=ON $EXTRA_FLAGS"
 fi
-if [[ -v DEVICE_ARCH ]]; then
-  EXTRA_FLAGS="-DKokkos_ARCH_${DEVICE_ARCH}=ON $EXTRA_FLAGS"
+if [[ "$*" == *"cuda"* ]]; then
+  if [[ -v DEVICE_ARCH ]]; then
+    EXTRA_FLAGS="-DKokkos_ARCH_${DEVICE_ARCH}=ON $EXTRA_FLAGS"
+  fi # Else complain loudly
 fi
 if [[ -v PREFIX_PATH ]]; then
   EXTRA_FLAGS="-DCMAKE_PREFIX_PATH=$PREFIX_PATH $EXTRA_FLAGS"
