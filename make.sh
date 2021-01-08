@@ -2,26 +2,125 @@
 
 # Make script for KHARMA
 # Used to decide flags and call cmake
-# TODO autodetection would be fun here, Parthenon may do some in future too.
+# Usage:
+# ./make.sh [clean] [cuda] [debug]
 
-# Set the correct compiler on Fedora machines
-if [[ $(hostname) == "toolbox" ]]; then
-  module load mpi
-  #export NVCC_WRAPPER_DEFAULT_COMPILER=cuda-g++
-  export PATH="/usr/local/cuda/bin/:$PATH"
-fi
+# clean: BUILD by re-running cmake, restarting the make process from nothing
+#        That is, "./make.sh clean" == "make clean" + "make"
+#        Always use 'clean' when switching Release->Debug or OpenMP->CUDA
+# cuda:  Build for GPU with CUDA. Must have 'nvcc' in path
+# debug: Configure with debug flags: mostly array bounds checks
+#        Note most prints/fluid sanity checks are actually *runtime* parameters
+# skx:   Compile specifically for Skylake nodes on Stampede2
 
-# Make conda go away.  Bad libraries. Bad.
-echo "If this is a Conda path deactivate your environment: $(which python)"
-
-# Only use icc on Stampede
-if [[ $(hostname) == *"stampede2"* ]]; then
-  CC_NATIVE=icc
-  CXX_NATIVE=icpc
+### Machine-specific configurations ###
+if [[ $HOSTNAME == "toolbox" ]]; then
+  HOST=fermium
 else
-  CC_NATIVE=gcc
-  CXX_NATIVE=g++
+  HOST=$(hostname -f)
 fi
+
+# Kokkos_ARCH options:
+# CPUs: WSM, HSW, BDW, SKX, AMDAVX
+# ARM: ARMV8, ARMV81, ARMV8_THUNDERX2
+# POWER: POWER8, POWER9
+# MIC: KNC, KNL
+# GPUs: KEPLER35, VOLTA70, TURING75
+
+# TACC resources
+# Generally you want latest Intel/IMPI/phdf5 modules,
+# On longhorn use gcc7, mvapich2-gdr, and manually-compiled PHDF5
+if [[ $HOST == *".frontera.tacc.utexas.edu" ]]; then
+  HOST_ARCH="SKX"
+fi
+if [[ $HOST == *".stampede2.tacc.utexas.edu" ]]; then
+  if [[ "$*" == *"skx"* ]]; then
+    HOST_ARCH="SKX"
+  else
+    HOST_ARCH="KNL"
+  fi
+fi
+if [[ $HOST == *".longhorn.tacc.utexas.edu" ]]; then
+  HOST_ARCH="POWER9"
+  DEVICE_ARCH="VOLTA70"
+  PREFIX_PATH="$HOME/libs/hdf5-gcc7-mvapich2"
+fi
+
+# Illinois BH cluster
+if [[ $HOST == *".astro.illinois.edu" ]]; then
+  # When oneAPI works
+  #source /opt/intel/oneapi/setvars.sh
+  #PREFIX_PATH="$HOME/libs/hdf5-oneapi"
+
+  module load gnu mpich phdf5
+  PREFIX_PATH="$MPI_DIR"
+
+  HOST_ARCH="SKX"
+fi
+# Except BH27/9
+if [[ $HOST == "bh29.astro.illinois.edu" ]]; then
+  HOST_ARCH="AMDAVX"
+fi
+if [[ $HOST == "bh27.astro.illinois.edu" ]]; then
+  HOST_ARCH="WSM"
+fi
+
+# BP's machines
+if [[ $HOST == "fermium" ]]; then
+  module load mpi
+  HOST_ARCH="AMDAVX"
+  DEVICE_ARCH="TURING75"
+  # My CUDA installs are a bit odd
+  EXTRA_FLAGS="-DCUDAToolkit_INCLUDE_DIR=/usr/include/cuda $EXTRA_FLAGS"
+fi
+if [[ $HOST == "cinnabar"* ]]; then
+  HOST_ARCH="HSW"
+  DEVICE_ARCH="KEPLER35"
+  #PREFIX_PATH="$HOME/libs/hdf5-oneapi"
+
+  PREFIX_PATH="$HOME/libs/hdf5-nvhpc"
+  EXTRA_FLAGS="-DCUDAToolkit_INCLUDE_DIR=/usr/include/cuda $EXTRA_FLAGS"
+  export NVCC_WRAPPER_DEFAULT_COMPILER=nvc++
+  # This makes Nvidia chill about old GPUs, but requires a custom nvcc_wrapper
+  export CXXFLAGS="-Wno-deprecated-gpu-targets"
+fi
+
+# If we haven't special-cased already, guess an architecture
+# This ends up pretty much optimal on x86 architectures which don't have
+# 1. AVX512
+# 2. GPUs
+if [[ -z "$HOST_ARCH" ]]; then
+  if grep GenuineIntel /proc/cpuinfo >/dev/null 2>&1; then
+    HOST_ARCH="HSW"
+  fi
+  if grep AuthenticAMD /proc/cpuinfo >/dev/null 2>&1; then
+    HOST_ARCH="AMDAVX"
+  fi
+fi
+
+# Add some flags only if they're set
+if [[ -v HOST_ARCH ]]; then
+  EXTRA_FLAGS="-DKokkos_ARCH_${HOST_ARCH}=ON $EXTRA_FLAGS"
+fi
+if [[ "$*" == *"cuda"* ]]; then
+  if [[ -v DEVICE_ARCH ]]; then
+    EXTRA_FLAGS="-DKokkos_ARCH_${DEVICE_ARCH}=ON $EXTRA_FLAGS"
+  fi # Else complain loudly
+fi
+if [[ -v PREFIX_PATH ]]; then
+  EXTRA_FLAGS="-DCMAKE_PREFIX_PATH=$PREFIX_PATH $EXTRA_FLAGS"
+fi
+
+### Environment ###
+if [[ "$(which python)" == *"conda"* ]]; then
+  echo "It looks like you have Anaconda loaded."
+  echo "Anaconda forces a serial version of HDF5 which makes this compile impossible."
+  echo "Deactivate your environment with 'conda deactivate'"
+  exit
+fi
+echo "If this is your Anaconda version of Python, deactivate your environment:"
+echo "$(which python)"
+echo
 
 if [[ "$*" == *"debug"* ]]; then
   TYPE=Debug
@@ -29,75 +128,54 @@ else
   TYPE=Release
 fi
 
-# "Clean" here is 
+### Build ###
 SCRIPT_DIR=$( dirname "$0" )
 cd $SCRIPT_DIR
-if [[ "$*" == *"clean"* ]]; then
-  rm -rf build
-fi
+SCRIPT_DIR=$PWD
 
-mkdir -p build
-cd build
+# Strongly prefer icc for OpenMP compiles
+if which icpc >/dev/null 2>&1; then
+  CXX_NATIVE=icpc
+  # Avoid warning on nvcc pragmas Intel doesn't like
+  export CXXFLAGS=-Wno-unknown-pragmas
+else
+  CXX_NATIVE=g++
+fi
 
 # CUDA loop options: MANUAL1D_LOOP > MDRANGE_LOOP, TPTTR_LOOP & TPTTRTVR_LOOP don't compile
 # Inner loop must be TVR_INNER_LOOP
 # OpenMP loop options for KNL:
 # Outer: SIMDFOR_LOOP;MANUAL1D_LOOP;MDRANGE_LOOP;TPTTR_LOOP;TPTVR_LOOP;TPTTRTVR_LOOP
 # Inner: SIMDFOR_INNER_LOOP;TVR_INNER_LOOP
+if [[ "$*" == *"cuda"* ]]; then
+  CXX="$SCRIPT_DIR/external/parthenon/external/Kokkos/bin/nvcc_wrapper"
+  OUTER_LAYOUT="MANUAL1D_LOOP"
+  INNER_LAYOUT="TVR_INNER_LOOP"
+  ENABLE_CUDA="ON"
+else
+  CXX="$CXX_NATIVE"
+  OUTER_LAYOUT="MDRANGE_LOOP"
+  INNER_LAYOUT="SIMDFOR_INNER_LOOP"
+  ENABLE_CUDA="OFF"
+fi
+
+# Make build dir. Recall "clean" means "clean and build"
+if [[ "$*" == *"clean"* ]]; then
+  rm -rf build
+fi
+mkdir -p build
+cd build
 
 if [[ "$*" == *"clean"* ]]; then
-  if [[ "$*" == *"cuda"* ]]; then # CUDA BUILD
-    # TODO unify MPI flags
-    cmake ..\
-    -DCMAKE_CXX_COMPILER=$PWD/../external/parthenon/external/Kokkos/bin/nvcc_wrapper \
+#set -x
+  cmake ..\
+    -DCMAKE_CXX_COMPILER="$CXX" \
     -DCMAKE_BUILD_TYPE=$TYPE \
-    -DCMAKE_PREFIX_PATH=/usr/lib64/openmpi \
-    -DCUDAToolkit_INCLUDE_DIR=/usr/include/cuda \
-    -DPAR_LOOP_LAYOUT="MANUAL1D_LOOP" \
-    -DPAR_LOOP_INNER_LAYOUT="TVR_INNER_LOOP" \
-    -DBUILD_TESTING=OFF \
-    -DPARTHENON_DISABLE_EXAMPLES=ON \
-    -DPARTHENON_DISABLE_MPI=OFF \
-    -DPARTHENON_NGHOST=4 \
-    -DPARTHENON_LINT_DEFAULT=OFF \
-    -DENABLE_COMPILER_WARNINGS=OFF \
-    -DKokkos_ENABLE_OPENMP=ON \
-    -DKokkos_ENABLE_CUDA=ON \
-    -DKokkos_ENABLE_HWLOC=ON \
-    -DKokkos_ARCH_WSM=OFF \
-    -DKokkos_ARCH_HSW=OFF \
-    -DKokkos_ARCH_BDW=OFF \
-    -DKokkos_ARCH_SKX=OFF \
-    -DKokkos_ARCH_AMDAVX=ON \
-    -DKokkos_ARCH_POWER9=OFF \
-    -DKokkos_ARCH_KEPLER35=OFF \
-    -DKokkos_ARCH_VOLTA70=OFF \
-    -DKokkos_ARCH_TURING75=ON \
-    -DKokkos_ENABLE_CUDA_LAMBDA=ON \
-    -DKokkos_ENABLE_CUDA_CONSTEXPR=ON
-  else #OpenMP BUILD
-    cmake ..\
-    -DCMAKE_CXX_COMPILER=$CXX_NATIVE \
-    -DCMAKE_BUILD_TYPE=$TYPE \
-    -DCMAKE_PREFIX_PATH=/usr/lib64/openmpi \
-    -DPAR_LOOP_LAYOUT="MANUAL1D_LOOP" \
-    -DPAR_LOOP_INNER_LAYOUT="SIMDFOR_INNER_LOOP" \
-    -DBUILD_TESTING=OFF \
-    -DPARTHENON_DISABLE_EXAMPLES=ON \
-    -DPARTHENON_DISABLE_MPI=OFF \
-    -DPARTHENON_NGHOST=4 \
-    -DPARTHENON_LINT_DEFAULT=OFF \
-    -DENABLE_COMPILER_WARNINGS=OFF \
-    -DKokkos_ENABLE_OPENMP=ON \
-    -DKokkos_ENABLE_CUDA=OFF \
-    -DKokkos_ENABLE_HWLOC=ON \
-    -DKokkos_ARCH_HSW=OFF \
-    -DKokkos_ARCH_BDW=OFF \
-    -DKokkos_ARCH_SKX=OFF \
-    -DKokkos_ARCH_KNL=OFF \
-    -DKokkos_ARCH_ARMV8_THUNDERX2=OFF \
-    -DKokkos_ARCH_AMDAVX=ON
-  fi
+    -DPAR_LOOP_LAYOUT=$OUTER_LAYOUT \
+    -DPAR_LOOP_INNER_LAYOUT=$INNER_LAYOUT \
+    -DKokkos_ENABLE_CUDA=$ENABLE_CUDA \
+    $EXTRA_FLAGS
+#set +x
 fi
 
 make -j12

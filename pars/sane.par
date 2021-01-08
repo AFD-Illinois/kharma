@@ -8,19 +8,19 @@ problem_id = torus
 <parthenon/mesh>
 refinement = none
 numlevel = 1
-nx1 = 96
-nx2 = 96
-nx3 = 96
+nx1 = 256
+nx2 = 128
+nx3 = 128
 
 <parthenon/meshblock>
-nx1 = 96
-nx2 = 96
-nx3 = 96
+nx1 = 128
+nx2 = 128
+nx3 = 64
 
 <coordinates>
 base = spherical_ks
 transform = fmks
-r_out = 100
+r_out = 1000
 a = 0.9375
 hslope = 0.3
 mks_smooth = 0.5
@@ -28,30 +28,40 @@ poly_xt = 0.82
 poly_alpha = 14.0
 
 <parthenon/time>
-tlim = 500.0
-
-<debug>
-flag_verbose = 0
+tlim = 10000.0
 
 <GRMHD>
 cfl = 0.7
 gamma = 1.666667
 reconstruction = weno5
+add_flags = false
+add_jcon = true
 
 <torus>
-rin = 6.0
-rmax = 12.0
+rin = 10.0
+rmax = 20.0
 u_jitter = 0.1
 
 <b_field>
 type = sane
 beta_min = 100.
 
+<floors>
+rho_min_geom = 1e-5
+u_min_geom = 1e-7
+bsq_over_rho_max = 400
+
+<wind>
+on = false
+ne = 1.e-4
+Tp = 10
+
 <parthenon/output0>
 file_type = hdf5
-dt = 2.0
-variables = c.c.bulk.prims
+dt = 5.0
+variables = c.c.bulk.prims, c.c.bulk.jcon
 
 <parthenon/output1>
 file_type = rst
-dt = 10.0
+dt = 100.0
+ghost_zones = true

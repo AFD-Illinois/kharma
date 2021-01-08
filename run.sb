@@ -1,21 +1,47 @@
 #!/bin/bash
 
-# Submit/run script for KHARMA.  Work in progress
+# Submit/run script for KHARMA
+# *should* work on any SLURM-based system
 #SBATCH -J kharma
 
-# flat-quadrant, normal
-#SBATCH -p flat-quadrant
+# Appropriate queues:
+# frontera: normal
+# stampede2: flat-quadrant, normal
+# longhorn: development, v100
+#SBATCH -p v100
 
 #SBATCH -N 1
-#SBATCH --ntasks-per-node 1
+#SBATCH --ntasks-per-node 4
 
 #SBATCH -t 48:00:00
 #SBATCH -o out-%j.txt
 
+KHARMA_DIR=~/kharma
+
+# Set tasks if SLURM doesn't
+if [[ -z "$SLURM_NTASKS_PER_NODE" ]]; then
+  SLURM_NTASKS_PER_NODE=$(( $SLURM_NTASKS / $SLURM_NNODES ))
+  echo "Assuming $SLURM_NTASKS_PER_NODE tasks per node"
+fi
+
+# Else for running in dev jobs
+#export SLURM_NTASKS_PER_NODE=4
+#export IBRUN_TASKS_PER_NODE=4
+
+# Global options
 export OMP_PROC_BIND=spread
 export OMP_PLACES=threads
+# SLURM schedules us on all CPUs, which is nearly always what we want with KHARMA
+# This may one day not be true for Stampede2
+export OMP_NUM_THREADS=$(( $SLURM_CPUS_ON_NODE / $SLURM_NTASKS_PER_NODE ))
 
-# Schedule 2x hyperthreads on SXK or KNL. More on KNL *might* be useful      
-NUM_CPUS=$(grep ^cpu\\scores /proc/cpuinfo | uniq |  awk '{print $4}')
-export OMP_NUM_THREADS=$(( $NUM_CPUS * 2 ))
-ibrun ./kharma.host "$@"
+# We will always want this to be true
+export KOKKOS_NUM_DEVICES=$SLURM_NTASKS_PER_NODE
+
+# Machine-specific run lines
+if [[ $(hostname -f) == *".stampede2.tacc.utexas.edu" || $(hostname -f) == *".frontera.tacc.utexas.edu" ]]; then
+  ibrun tacc_affinity $KHARMA_DIR/kharma.host "$@"
+elif [[ $(hostname -f) == *".longhorn.tacc.utexas.edu" ]]; then
+  export MY_SPECTRUM_OPTIONS="--gpu"
+  ibrun $KHARMA_DIR/kharma.cuda "$@"
+fi
