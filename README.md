@@ -1,7 +1,7 @@
 # KHARMA
-KHARMA is an implementation of the HARM GRMHD algorithm in C++ based on the Parthenon AMR infrastructure, using Kokkos for parallelism and GPU support.  It is implemented via extensible "packages," which in theory make it easy to add or swap components representing different physical processes ()
+KHARMA is an implementation of the HARM GRMHD algorithm in C++ based on the Parthenon AMR infrastructure, using Kokkos for parallelism and GPU support.  It is implemented via extensible "packages," which in theory make it easy to add or swap components representing different physical processes.
 
-The project is capable of most GRMHD functions found in e.g. [iharm3d](https://github.com/AFD-Illinois/iharm3d)
+The project is capable of most GRMHD functions found in e.g. [iharm3d](https://github.com/AFD-Illinois/iharm3d). Support for adaptive mesh refinement is planned but not yet imlemented.
 
 # Building
 
@@ -11,7 +11,7 @@ First, be sure to check out all of KHARMA's dependencies by running
 $ git submodule update --init --recursive
 ```
 This will grab KHARMA's two direct dependencies (as well as some incidental things):
-1. The [Parthenon](https://github.com/lanl/parthenon) AMR framework from LANL (accompanying [documentation](https://github.com/lanl/parthenon/tree/develop/docs)).  Note KHARMA actually uses a [fork](https://github.com/bprather/parthenon) of Parthenon, which exists mostly to change the default Parthenon coordiante system to KHARMA's `GRCoordinates`, with suitable include paths pointing back into the KHARMA repository, and makes minimal other changes to the Parthenon codebase.  Ideally this fork will either disappear, or move to a more permanent spot.
+1. The [Parthenon](https://github.com/lanl/parthenon) AMR framework from LANL (accompanying [documentation](https://github.com/lanl/parthenon/tree/develop/docs)).  Note KHARMA actually uses a [fork](https://github.com/bprather/parthenon) of Parthenon, which exists mostly to change the default Parthenon coordiante system to KHARMA's `GRCoordinates`, with suitable include paths pointing back into the KHARMA repository, and makes minimal other changes to the Parthenon codebase.  This fork isn't planned to be permanent.
 
 2. The [Kokkos](https://github.com/kokkos/kokkos) performance-portability library, originally from SNL.  Many pieces of how KHARMA and Parthenon work are best explained in the Kokkos [wiki](https://github.com/kokkos/kokkos/wiki) and [tutorials](https://github.com/kokkos/kokkos-tutorials).  Parthenon includes a list of their names for Kokkos functions in their [developer guide](https://github.com/lanl/parthenon/blob/develop/docs/development.md).
 
