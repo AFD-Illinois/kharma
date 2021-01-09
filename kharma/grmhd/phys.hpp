@@ -306,31 +306,31 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates &G, const Real P[NP
 /**
  * Get the conserved variables corresponding to primitives in a zone
  * 
- * This is an alias of prim_to_flux at the center in zero direction, using a local cache of 4-vectors
+ * This is an alias of prim_to_flux in zero direction using a local cache of 4-vectors, defaulting to the zone center
  */
 KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates &G, const GridVars P, const EOS* eos,
                                          const int& k, const int& j, const int& i,
-                                         GridVars U)
+                                         GridVars U, const Loci loc=Loci::center)
 {
     FourVectors Dtmp;
-    get_state(G, P, k, j, i, Loci::center, Dtmp);
-    prim_to_flux(G, P, Dtmp, eos, k, j, i, Loci::center, 0, U);
+    get_state(G, P, k, j, i, loc, Dtmp);
+    prim_to_flux(G, P, Dtmp, eos, k, j, i, loc, 0, U);
 }
 KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates &G, const GridVars P, const EOS* eos,
                                          const int& k, const int& j, const int& i,
-                                         Real U[NPRIM])
+                                         Real U[NPRIM], const Loci loc=Loci::center)
 {
     FourVectors Dtmp;
-    get_state(G, P, k, j, i, Loci::center, Dtmp);
-    prim_to_flux(G, P, Dtmp, eos, k, j, i, Loci::center, 0, U);
+    get_state(G, P, k, j, i, loc, Dtmp);
+    prim_to_flux(G, P, Dtmp, eos, k, j, i, loc, 0, U);
 }
 KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates &G, const Real P[NPRIM], const EOS* eos,
                                          const int& k, const int& j, const int& i,
-                                         Real U[NPRIM])
+                                         Real U[NPRIM], const Loci loc=Loci::center)
 {
     FourVectors Dtmp;
-    get_state(G, P, k, j, i, Loci::center, Dtmp);
-    prim_to_flux(G, P, Dtmp, eos, k, j, i, Loci::center, 0, U);
+    get_state(G, P, k, j, i, loc, Dtmp);
+    prim_to_flux(G, P, Dtmp, eos, k, j, i, loc, 0, U);
 }
 
 

@@ -52,6 +52,9 @@
 
 TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
 {
+    // Reminder that NOTHING YOU CALL HERE WILL GET CALLED EVERY STEP
+    // this function is run *once*, and returns a list of what should be done every step.
+
     // TaskCollections are split into regions, each of which can be tackled by a specified number of independent threads.
     // We inherit our split, like most things in this function, from the advection_example in Parthenon
     using namespace Update;
@@ -64,7 +67,7 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
     auto num_task_lists_executed_independently = blocks.size();
     TaskRegion &async_region1 = tc.AddRegion(num_task_lists_executed_independently);
 
-    // Region I: calculate (and in current version, apply) fluxes
+    // Async Region I: calculate (and in current version, apply) fluxes
     for (int i = 0; i < blocks.size(); i++) {
         auto &pmb = blocks[i];
         auto &tl = async_region1[i];
@@ -120,6 +123,7 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         auto t_flux_apply = tl.AddTask(t_recv_flux, GRMHD::ApplyFluxes, tm, sc0.get(), dudt.get());
     }
 
+    // Sync Region: add effects of current step to accumulator, sync boundaries
     const int num_partitions = pmesh->DefaultNumPartitions();
     // note that task within this region that contains one tasklist per pack
     // could still be executed in parallel
@@ -191,6 +195,7 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         }
     }
 
+    // Async Region II: Fill primitive values, apply physical boundary conditions
     TaskRegion &async_region2 = tc.AddRegion(num_task_lists_executed_independently);
     for (int i = 0; i < blocks.size(); i++) {
         auto &pmb = blocks[i];
@@ -209,17 +214,19 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
 
         // Fill primitives, bringing U and P back into lockstep
         // Note U_to_P needs a guess, so we feed it a copy of sc0's primitives (but only the primitives!)
-        // TODO optionally declare prims as OneCopy?  We only need two (actually 3) for jcon
+        // TODO optionally declare prims as OneCopy when not computing jcon?
         auto t_copy_prims = tl.AddTask(t_prolongBound,
             [](MeshBlockData<Real> *rc0, MeshBlockData<Real> *rc1)
             {
+                FLAG("Copying prims");
                 rc1->Get("c.c.bulk.prims").data.DeepCopy(rc0->Get("c.c.bulk.prims").data);
                 return TaskStatus::complete;
+                FLAG("Copied");
             }, sc0.get(), sc1.get());
         auto t_fill_derived = tl.AddTask(t_copy_prims, Update::FillDerived<MeshBlockData<Real>>, sc1.get());
 
-        // ApplyCustomBoundaries is a catch-all for things HARM needs done:
-        // Inflow checks, renormalizations, Bondi outer boundary.  All keep lockstep.
+        // ApplyCustomBoundaries is a catch-all for things HARM needs done on physical boundaries:
+        // Inflow checks, renormalizations, Bondi outer boundary condition, etc.  All keep lockstep.
         auto t_set_custom_bc = tl.AddTask(t_fill_derived, ApplyCustomBoundaries, sc1);
 
         // TODO split these into the other Parthenon calls, UserWorkAfterLoop and UserWorkBeforeOutput

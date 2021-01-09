@@ -241,10 +241,10 @@ TaskStatus HLLE::GetFlux(std::shared_ptr<MeshBlockData<Real>>& rc, const int& di
                     // guarantee they remotely resemble the *centered* primitives
                     // TODO can we get away with less?  Doesn't seem horrible if we slip the ceilings,
                     // but consistent floors should mean NOF frame at our nominal values...
-                    apply_floors(G, pl, eos, k, j, i, floors);
-                    //apply_ceilings(G, pl, eos, k, j, i, floors);
-                    apply_floors(G, pr, eos, k, j, i, floors);
-                    //apply_ceilings(G, pr, eos, k, j, i, floors);
+                    apply_floors(G, pl, eos, k, j, i, floors, loc);
+                    //apply_ceilings(G, pl, eos, k, j, i, floors, loc);
+                    apply_floors(G, pr, eos, k, j, i, floors, loc);
+                    //apply_ceilings(G, pr, eos, k, j, i, floors, loc);
 
                     // LR -> flux
                     FourVectors Dtmp;
@@ -256,7 +256,8 @@ TaskStatus HLLE::GetFlux(std::shared_ptr<MeshBlockData<Real>>& rc, const int& di
 
                     // TODO Note that the only dependencies here are that get_state be done first.
                     // Otherwise the 6 prim_to_flux/mhd_vchar calls are all independent
-                    // Could also perform these as individual par_for_inner calls over i
+                    // One could also perform these as individual par_for_inner calls over i,
+                    // might preserve vectorization better
 
                     // Left
                     get_state(G, pl, k, j, i, loc, Dtmp);
