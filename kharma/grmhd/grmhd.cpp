@@ -186,6 +186,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     bool buffer_set_pack = pin->GetOrAddBoolean("perf", "buffer_set_pack", true);
     params.Add("buffer_set_pack", buffer_set_pack);
 
+    // TODO add s_scalar as a reminder to stick to *very explicit* calls of metadata constructor
     std::vector<int> s_vector({3});
     std::vector<int> s_fourvector({4});
     std::vector<int> s_prims({NPRIM});
@@ -210,7 +211,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     }
 
     if (flag_save) {
-        m = Metadata({Metadata::Cell, Metadata::Derived, Metadata::OneCopy}, 1);
+        m = Metadata({Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
         fluid_state->AddField("c.c.bulk.pflag", m);
         fluid_state->AddField("c.c.bulk.fflag", m);
     }

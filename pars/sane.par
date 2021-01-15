@@ -34,7 +34,7 @@ tlim = 10000.0
 cfl = 0.7
 gamma = 1.666667
 reconstruction = weno5
-add_flags = false
+add_flags = true
 add_jcon = true
 
 <torus>
@@ -59,7 +59,7 @@ Tp = 10
 <parthenon/output0>
 file_type = hdf5
 dt = 5.0
-variables = c.c.bulk.prims, c.c.bulk.jcon
+variables = c.c.bulk.prims, c.c.bulk.jcon, c.c.bulk.fflag, c.c.bulk.pflag
 
 <parthenon/output1>
 file_type = rst
