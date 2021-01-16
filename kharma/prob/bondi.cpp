@@ -164,13 +164,13 @@ KOKKOS_INLINE_FUNCTION void get_prim_bondi(const GRCoordinates& G, const Coordin
     Real Rhor = ks.rhor();
     // Any zone inside the horizon gets the horizon's values
     // TODO There may be a more stable way to initialize inside the EH...
-    int ii = i;
-    while (Xembed[1] < Rhor)
-    {
-        ++ii;
-        G.coord(k, j, ii, Loci::center, X);
-        coords.coord_to_embed(X, Xembed);
-    }
+    // int ii = i;
+    // while (Xembed[1] < Rhor)
+    // {
+    //     ++ii;
+    //     G.coord(k, j, ii, Loci::center, X);
+    //     coords.coord_to_embed(X, Xembed);
+    // }
     GReal r = Xembed[1];
 
     Real T = get_T(r, C1, C2, n);

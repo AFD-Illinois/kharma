@@ -25,19 +25,24 @@ hslope = 0.3
 r_out = 30
 
 <parthenon/time>
-tlim = 100.0
+tlim = 50.0
 
 <GRMHD>
 cfl = 0.9
 gamma = 1.666667
+reconstruction = weno5
 
 <bondi>
 mdot = 1.0
 rs = 8.0
 
+# Disable floors
+<floors>
+rho_min_geom=1e-20
+u_min_geom=1e-20
+gamma_max=1e20
+
 <parthenon/output0>
 file_type = hdf5
-dt = 1.0
+dt = 5.0
 variables = c.c.bulk.prims
-ghost_zones = true
-

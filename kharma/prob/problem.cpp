@@ -70,7 +70,7 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
         int dir = pin->GetOrAddInteger("mhdmodes", "dir", 0);
 
         double tf = InitializeMHDModes(pmb, G, P, nmode, dir);
-        pin->SetReal("parthenon/time", "tlim", tf);
+        if(tf > 0.) pin->SetReal("parthenon/time", "tlim", tf);
 
     } else if (prob == "orszag_tang") {
         InitializeOrszagTang(pmb, G, P);

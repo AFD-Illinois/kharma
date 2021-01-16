@@ -45,7 +45,6 @@ dt_min = 0.0001
 cfl = 0.9
 gamma = 1.333333
 reconstruction = weno5
-merge_reconstruction = true
 
 <mhdmodes>
 nmode = 1
@@ -53,6 +52,7 @@ dir = 0
 
 <parthenon/output0>
 file_type = hdf5
-dt = 0.5
+# This is so as to output only the final state
+dt = 100.0
 variables = c.c.bulk.prims
 
