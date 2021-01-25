@@ -56,7 +56,7 @@ void InitializeFMTorus(MeshBlock *pmb, const GRCoordinates& G, GridVars P, const
     // Fishbone-Moncrief parameters
     Real l = lfish_calc(ksc.a, rmax);
 
-    if (pmb->packages["GRMHD"]->Param<int>("verbose") > 0) {
+    if (pmb->packages.Get("GRMHD")->Param<int>("verbose") > 0) {
         // Example of pulling stuff host-side. Maybe make all initializations print stuff like this?
         double gam_host;
         Kokkos::Max<Real> gam_reducer(gam_host);
@@ -140,7 +140,7 @@ void InitializeFMTorus(MeshBlock *pmb, const GRCoordinates& G, GridVars P, const
     int nx1 = (x1max - x1min) / dx;
     //int nx2 = (x2max - x2min) / dx;
 
-    if (pmb->packages["GRMHD"]->Param<int>("verbose") > 0) {
+    if (pmb->packages.Get("GRMHD")->Param<int>("verbose") > 0) {
         cout << "Calculating maximum density:" << endl;
         cout << "a = " << ksc.a << endl;
         cout << "dx = " << dx << endl;
@@ -184,7 +184,7 @@ void InitializeFMTorus(MeshBlock *pmb, const GRCoordinates& G, GridVars P, const
         }
     , max_reducer);
 
-    if (pmb->packages["GRMHD"]->Param<int>("verbose") > 0) {
+    if (pmb->packages.Get("GRMHD")->Param<int>("verbose") > 0) {
         cout << "Initial maximum density is " << rho_max << endl;
     }
 

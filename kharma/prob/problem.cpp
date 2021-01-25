@@ -63,7 +63,7 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
     GridVars U = rc->Get("c.c.bulk.cons").data;
 
     GRCoordinates G = pmb->coords;
-    EOS* eos = pmb->packages["GRMHD"]->Param<EOS*>("eos");
+    EOS* eos = pmb->packages.Get("GRMHD")->Param<EOS*>("eos");
 
     auto prob = pin->GetString("parthenon/job", "problem_id"); // Required parameter
     if (prob == "mhdmodes") {
@@ -80,10 +80,10 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
         Real mdot = pin->GetOrAddReal("bondi", "mdot", 1.0);
         Real rs = pin->GetOrAddReal("bondi", "rs", 8.0);
         // Add these to package properties, since they continue to be needed on boundaries
-        if(! (pmb->packages["GRMHD"]->AllParams().hasKey("mdot")))
-            pmb->packages["GRMHD"]->AddParam<Real>("mdot", mdot);
-        if(! (pmb->packages["GRMHD"]->AllParams().hasKey("rs")))
-            pmb->packages["GRMHD"]->AddParam<Real>("rs", rs);
+        if(! (pmb->packages.Get("GRMHD")->AllParams().hasKey("mdot")))
+            pmb->packages.Get("GRMHD")->AddParam<Real>("mdot", mdot);
+        if(! (pmb->packages.Get("GRMHD")->AllParams().hasKey("rs")))
+            pmb->packages.Get("GRMHD")->AddParam<Real>("rs", rs);
 
         InitializeBondi(pmb, G, P, eos, mdot, rs);
 

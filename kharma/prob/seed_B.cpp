@@ -177,7 +177,7 @@ TaskStatus NormalizeBField(std::shared_ptr<MeshBlockData<Real>>& rc, Real norm)
     GridVars U = rc->Get("c.c.bulk.cons").data;
     auto& G = pmb->coords;
 
-    EOS* eos = pmb->packages["GRMHD"]->Param<EOS*>("eos");
+    EOS* eos = pmb->packages.Get("GRMHD")->Param<EOS*>("eos");
 
     pmb->par_for("B_field_normalize", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D {
@@ -202,7 +202,7 @@ Real GetLocalBetaMin(std::shared_ptr<MeshBlockData<Real>>& rc)
     auto& G = pmb->coords;
     GridVars P = rc->Get("c.c.bulk.prims").data;
 
-    EOS* eos = pmb->packages["GRMHD"]->Param<EOS*>("eos");
+    EOS* eos = pmb->packages.Get("GRMHD")->Param<EOS*>("eos");
 
     Real beta_min;
     Kokkos::Min<Real> min_reducer(beta_min);
@@ -253,7 +253,7 @@ Real GetLocalPMax(std::shared_ptr<MeshBlockData<Real>>& rc)
     auto& G = pmb->coords;
     GridVars P = rc->Get("c.c.bulk.prims").data;
 
-    EOS* eos = pmb->packages["GRMHD"]->Param<EOS*>("eos");
+    EOS* eos = pmb->packages.Get("GRMHD")->Param<EOS*>("eos");
 
     Real p_max;
     Kokkos::Max<Real> p_max_reducer(p_max);

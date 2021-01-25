@@ -81,9 +81,9 @@ void ApplyBondiBoundary(std::shared_ptr<MeshBlockData<Real>>& rc)
 
     FLAG("Applying Bondi X1R boundary");
 
-    Real mdot = pmb->packages["GRMHD"]->Param<Real>("mdot");
-    Real rs = pmb->packages["GRMHD"]->Param<Real>("rs");
-    EOS* eos = pmb->packages["GRMHD"]->Param<EOS*>("eos");
+    Real mdot = pmb->packages.Get("GRMHD")->Param<Real>("mdot");
+    Real rs = pmb->packages.Get("GRMHD")->Param<Real>("rs");
+    EOS* eos = pmb->packages.Get("GRMHD")->Param<EOS*>("eos");
 
     // Just the X1 right boundary
     SphKSCoords ks = mpark::get<SphKSCoords>(G.coords.base);

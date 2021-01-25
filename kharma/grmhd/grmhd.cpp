@@ -74,8 +74,8 @@ namespace GRMHD
  */
 std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
 {
-    auto fluid_state = std::make_shared<StateDescriptor>("GRMHD");
-    Params &params = fluid_state->AllParams();
+    auto pkg = std::make_shared<StateDescriptor>("GRMHD");
+    Params &params = pkg->AllParams();
 
     // Add the problem name, so we can be C++ noobs and special-case on string contents
     std::string problem_name = pin->GetString("parthenon/job", "problem_id");
@@ -196,30 +196,30 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     // They're still necessary for reconstruction, and generally are the quantities in output files
     Metadata m = Metadata({Metadata::Cell, Metadata::Independent, Metadata::FillGhost,
                     Metadata::Restart, Metadata::Conserved}, s_prims);
-    fluid_state->AddField("c.c.bulk.cons", m);
+    pkg->AddField("c.c.bulk.cons", m);
     m = Metadata({Metadata::Cell, Metadata::Derived, Metadata::Restart}, s_prims);
-    fluid_state->AddField("c.c.bulk.prims", m);
+    pkg->AddField("c.c.bulk.prims", m);
 
     // Maximum signal speed (magnitude).  Calculated in flux updates but needed for deciding timestep
     m = Metadata({Metadata::Face, Metadata::Derived, Metadata::OneCopy});
-    fluid_state->AddField("f.f.bulk.ctop", m);
+    pkg->AddField("f.f.bulk.ctop", m);
 
     // Add jcon as an output-only calculation, likely overriding MeshBlock::UserWorkBeforeOutput
     if (add_jcon) {
         m = Metadata({Metadata::Cell, Metadata::Derived, Metadata::OneCopy}, s_fourvector);
-        fluid_state->AddField("c.c.bulk.jcon", m);
+        pkg->AddField("c.c.bulk.jcon", m);
     }
 
     if (flag_save) {
         m = Metadata({Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
-        fluid_state->AddField("c.c.bulk.pflag", m);
-        fluid_state->AddField("c.c.bulk.fflag", m);
+        pkg->AddField("c.c.bulk.pflag", m);
+        pkg->AddField("c.c.bulk.fflag", m);
     }
 
-    fluid_state->FillDerivedBlock = GRMHD::UtoP;
-    fluid_state->CheckRefinementBlock = nullptr;
-    fluid_state->EstimateTimestepBlock = GRMHD::EstimateTimestep;
-    return fluid_state;
+    pkg->FillDerivedBlock = GRMHD::UtoP;
+    pkg->CheckRefinementBlock = nullptr;
+    pkg->EstimateTimestepBlock = GRMHD::EstimateTimestep;
+    return pkg;
 }
 
 /**
@@ -250,10 +250,10 @@ void UtoP(MeshBlockData<Real> *rc)
     GridInt pflag("pflag", n3, n2, n1);
     GridInt fflag("fflag", n3, n2, n1);
 
-    EOS* eos = pmb->packages["GRMHD"]->Param<EOS*>("eos");
+    EOS* eos = pmb->packages.Get("GRMHD")->Param<EOS*>("eos");
 
     // Pull out a struct of just the actual floor values for speed
-    FloorPrescription floors = FloorPrescription(pmb->packages["GRMHD"]->AllParams());
+    FloorPrescription floors = FloorPrescription(pmb->packages.Get("GRMHD")->AllParams());
 
     // Get the primitives from our conserved versions
     // Note this covers ghost zones!  This is intentional, as primitives in
@@ -304,14 +304,14 @@ void UtoP(MeshBlockData<Real> *rc)
     // Also should be separate...
     // Note we only print flags in the interior, borders are covered either by other blocks,
     // or by the outflow/polar conditions later
-    int print_flags = pmb->packages["GRMHD"]->Param<int>("flag_verbose");
+    int print_flags = pmb->packages.Get("GRMHD")->Param<int>("flag_verbose");
     if (print_flags > 0) {
         auto fflag_host = fflag.GetHostMirrorAndCopy();
         auto pflag_host = pflag.GetHostMirrorAndCopy();
         int npflags = CountPFlags(pmb, pflag_host, IndexDomain::interior, print_flags);
         int nfflags = CountFFlags(pmb, fflag_host, IndexDomain::interior, print_flags);
     }
-    if (pmb->packages["GRMHD"]->Param<bool>("flag_save")) {
+    if (pmb->packages.Get("GRMHD")->Param<bool>("flag_save")) {
         GridScalar pflag_save = rc->Get("c.c.bulk.pflag").data;
         GridScalar fflag_save = rc->Get("c.c.bulk.fflag").data;
         pmb->par_for("save_flags", ks, ke, js, je, is, ie,
@@ -353,14 +353,14 @@ TaskStatus ApplyFluxes(SimTime tm, MeshBlockData<Real> *rc, MeshBlockData<Real> 
     GridVars P = rc->Get("c.c.bulk.prims").data;
     auto& G = pmb->coords;
 
-    EOS* eos = pmb->packages["GRMHD"]->Param<EOS*>("eos");
+    EOS* eos = pmb->packages.Get("GRMHD")->Param<EOS*>("eos");
 
-    bool wind_term = pmb->packages["GRMHD"]->Param<bool>("wind_term");
-    Real wind_n = pmb->packages["GRMHD"]->Param<Real>("wind_n");
-    Real wind_Tp = pmb->packages["GRMHD"]->Param<Real>("wind_Tp");
-    int wind_pow = pmb->packages["GRMHD"]->Param<int>("wind_pow");
-    Real wind_ramp_start = pmb->packages["GRMHD"]->Param<Real>("wind_ramp_start");
-    Real wind_ramp_end = pmb->packages["GRMHD"]->Param<Real>("wind_ramp_end");
+    bool wind_term = pmb->packages.Get("GRMHD")->Param<bool>("wind_term");
+    Real wind_n = pmb->packages.Get("GRMHD")->Param<Real>("wind_n");
+    Real wind_Tp = pmb->packages.Get("GRMHD")->Param<Real>("wind_Tp");
+    int wind_pow = pmb->packages.Get("GRMHD")->Param<int>("wind_pow");
+    Real wind_ramp_start = pmb->packages.Get("GRMHD")->Param<Real>("wind_ramp_start");
+    Real wind_ramp_end = pmb->packages.Get("GRMHD")->Param<Real>("wind_ramp_end");
     Real current_wind_n;
     if (wind_ramp_end > 0.0) {
         current_wind_n = min((tm.time - wind_ramp_start) / (wind_ramp_end - wind_ramp_start), 1.0) * wind_n;
@@ -420,7 +420,7 @@ Real EstimateTimestep(MeshBlockData<Real> *rc)
     static bool first_call = true;
     if (first_call) {
         first_call = false;
-        last_dt = pmb->packages["GRMHD"]->Param<Real>("dt") * pmb->packages["GRMHD"]->Param<Real>("cfl");
+        last_dt = pmb->packages.Get("GRMHD")->Param<Real>("dt") * pmb->packages.Get("GRMHD")->Param<Real>("cfl");
         return last_dt;
     }
 
@@ -439,8 +439,8 @@ Real EstimateTimestep(MeshBlockData<Real> *rc)
     , min_reducer);
 
     // Warning that triggering this code slows the code down pretty badly (~1/3)
-    if (pmb->packages["GRMHD"]->Param<int>("verbose") > 1) {
-        if (pmb->packages["GRMHD"]->Param<bool>("flag_save")) {
+    if (pmb->packages.Get("GRMHD")->Param<int>("verbose") > 1) {
+        if (pmb->packages.Get("GRMHD")->Param<bool>("flag_save")) {
             auto fflag = rc->Get("c.c.bulk.fflag").data;
             auto pflag = rc->Get("c.c.bulk.pflag").data;
             pmb->par_for("ndt_min", ks, ke, js, je, is, ie,
@@ -467,10 +467,10 @@ Real EstimateTimestep(MeshBlockData<Real> *rc)
             );
         }
     }
-    ndt *= pmb->packages["GRMHD"]->Param<Real>("cfl");
+    ndt *= pmb->packages.Get("GRMHD")->Param<Real>("cfl");
 
     // Sometimes we come out with a silly timestep. Try to salvage it
-    double dt_min = pmb->packages["GRMHD"]->Param<Real>("dt_min");
+    double dt_min = pmb->packages.Get("GRMHD")->Param<Real>("dt_min");
     if (ndt < dt_min || isnan(ndt) || ndt > 10000) {
         cerr << "ndt was unsafe: " << ndt << "! Using dt_min" << std::endl;
         ndt = dt_min;
@@ -478,9 +478,9 @@ Real EstimateTimestep(MeshBlockData<Real> *rc)
 
     // Only allow the local dt to increase by a certain amount.  This also caps the global
     // one, but preserves local values in case we substep I guess?
-    Real dt_limit = pmb->packages["GRMHD"]->Param<Real>("max_dt_increase") * last_dt;
+    Real dt_limit = pmb->packages.Get("GRMHD")->Param<Real>("max_dt_increase") * last_dt;
     if (ndt > dt_limit) {
-        if(pmb->packages["GRMHD"]->Param<int>("verbose") > 0) {
+        if(pmb->packages.Get("GRMHD")->Param<int>("verbose") > 0) {
             cout << "Limiting dt: " << dt_limit << endl;
         }
         ndt = dt_limit;

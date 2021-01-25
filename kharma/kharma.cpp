@@ -122,14 +122,14 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
 
     // Just one base package: integrated B-fields, or not.
     if (do_grmhd) {
-        packages["GRMHD"] = GRMHD::Initialize(pin.get());
+        packages.Add(GRMHD::Initialize(pin.get()));
     } else if (do_grhd) {
 
     }
 
     // Scalars can be added 
     // if (do_scalars) {
-    //     packages["scalars"] = BetterScalars::Initialize(pin.get());
+    //     packages.Get("scalars") = BetterScalars::Initialize(pin.get());
     // }
 
     // TODO electrons, like scalars but w/heating step...
