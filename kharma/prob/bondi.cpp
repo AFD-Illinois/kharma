@@ -91,10 +91,10 @@ void ApplyBondiBoundary(std::shared_ptr<MeshBlockData<Real>>& rc)
     CoordinateEmbedding cs = G.coords;
 
     IndexRange ib = pmb->cellbounds.GetBoundsI(IndexDomain::interior);
-    IndexRange jb = pmb->cellbounds.GetBoundsJ(IndexDomain::interior);
-    IndexRange kb = pmb->cellbounds.GetBoundsK(IndexDomain::interior);
-    int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
-    pmb->par_for("bondi_boundary", kb.s, kb.e, jb.s, jb.e, ib.e+1, n1-1,
+    IndexRange ib_e = pmb->cellbounds.GetBoundsI(IndexDomain::interior);
+    IndexRange jb_e = pmb->cellbounds.GetBoundsJ(IndexDomain::interior);
+    IndexRange kb_e = pmb->cellbounds.GetBoundsK(IndexDomain::interior);
+    pmb->par_for("bondi_boundary", kb_e.s, kb_e.e, jb_e.s, jb_e.e, ib.e+1, ib_e.e,
         KOKKOS_LAMBDA_3D {
             get_prim_bondi(G, cs, P, eos, bl, ks, mdot, rs, k, j, i);
             p_to_u(G, P, eos, k, j, i, U);
@@ -195,8 +195,14 @@ KOKKOS_INLINE_FUNCTION void get_prim_bondi(const GRCoordinates& G, const Coordin
     G.gcon(Loci::center, j, i, gcon);
     fourvel_to_prim(gcon, ucon_mks, u_prim);
 
+    P(prims::rho, k, j, i) = rho;
+    P(prims::u, k, j, i) = u;
+    P(prims::u1, k, j, i) = u_prim[1];
+    P(prims::u2, k, j, i) = u_prim[2];
+    P(prims::u3, k, j, i) = u_prim[3];
+
 #if DEBUG && 0
-    // TODO print in device-compatible way
+    // TODO put this under GRMHD (or init?) "verbose" flag
     static int fails = 0;
     if (T < 0 || rho < 0 || u < 0) {
         Real ucov_mks[GR_DIM];
@@ -221,12 +227,4 @@ KOKKOS_INLINE_FUNCTION void get_prim_bondi(const GRCoordinates& G, const Coordin
     }
 #endif
 
-    P(prims::rho, k, j, i) = rho;
-    P(prims::u, k, j, i) = u;
-    P(prims::u1, k, j, i) = u_prim[1];
-    P(prims::u2, k, j, i) = u_prim[2];
-    P(prims::u3, k, j, i) = u_prim[3];
-    P(prims::B1, k, j, i) = 0.;
-    P(prims::B2, k, j, i) = 0.;
-    P(prims::B3, k, j, i) = 0.;
 }

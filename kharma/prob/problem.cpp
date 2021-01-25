@@ -43,6 +43,7 @@
 
 // Problem initialization headers
 #include "bondi.hpp"
+#include "explosion.hpp"
 #include "fm_torus.hpp"
 #include "iharm_restart.hpp"
 #include "mhdmodes.hpp"
@@ -86,6 +87,10 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
 
         InitializeBondi(pmb, G, P, eos, mdot, rs);
 
+    } else if (prob == "explosion") {
+        Real Bx = pin->GetOrAddReal("explosion", "Bx", 0.01);
+        InitializeExplosion(pmb, G, P, Bx);
+    
     } else if (prob == "torus") {
         Real rin = pin->GetOrAddReal("torus", "rin", 6.0);
         Real rmax = pin->GetOrAddReal("torus", "rmax", 12.0);
@@ -142,10 +147,7 @@ void PostInitialize(ParameterInput *pin, Mesh *pmesh)
         FLAG("Extra boundary sync for B");
         SyncAllBounds(pmesh);
 
-        // Default to iharm3d's field normalization, pg_max/pb_max = 100
-        // This is *not* the same as local beta_min = 100
         Real beta_calc_legacy = pin->GetOrAddBoolean("b_field", "legacy", true);
-        Real desired_beta_min = pin->GetOrAddReal("b_field", "beta_min", 100.);
 
         FLAG("Seeding magnetic field");
         // Seed the magnetic field and find the minimum beta
@@ -173,26 +175,34 @@ void PostInitialize(ParameterInput *pin, Mesh *pmesh)
                 if(beta_local < beta_min) beta_min = beta_local;
             }
         }
-        if (beta_calc_legacy) {
-            bsq_max = MPIMax(bsq_max);
-            p_max = MPIMax(p_max);
-            beta_min = p_max / (0.5 * bsq_max);
-        } else {
-            beta_min = MPIMin(beta_min);
-        }
 
-        if (pin->GetInteger("debug", "verbose") > 0) {
-            cerr << "Beta min pre-norm: " << beta_min << endl;
-        }
+        // Then, unless we've asked not to, normalize to some standard beta
+        if (pin->GetOrAddBoolean("b_field", "norm", true)) {
+            // Default to iharm3d's field normalization, pg_max/pb_max = 100
+            // This is *not* the same as local beta_min = 100
+            Real desired_beta_min = pin->GetOrAddReal("b_field", "beta_min", 100.);
 
-        // Then normalize B by sqrt(beta/beta_min)
-        FLAG("Normalizing magnetic field");
-        if (beta_min > 0) {
-            Real norm = sqrt(beta_min/desired_beta_min);
-            for (int i = 0; i < nmb; ++i) {
-                auto& pmb = pmesh->block_list[i];
-                auto& rc = pmb->meshblock_data.Get();
-                NormalizeBField(rc, norm);
+            if (beta_calc_legacy) {
+                bsq_max = MPIMax(bsq_max);
+                p_max = MPIMax(p_max);
+                beta_min = p_max / (0.5 * bsq_max);
+            } else {
+                beta_min = MPIMin(beta_min);
+            }
+
+            if (pin->GetInteger("debug", "verbose") > 0) {
+                cerr << "Beta min pre-norm: " << beta_min << endl;
+            }
+
+            // Then normalize B by sqrt(beta/beta_min)
+            FLAG("Normalizing magnetic field");
+            if (beta_min > 0) {
+                Real norm = sqrt(beta_min/desired_beta_min);
+                for (int i = 0; i < nmb; ++i) {
+                    auto& pmb = pmesh->block_list[i];
+                    auto& rc = pmb->meshblock_data.Get();
+                    NormalizeBField(rc, norm);
+                }
             }
         }
 

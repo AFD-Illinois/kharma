@@ -63,6 +63,7 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
 
     const Real beta = integrator->beta[stage - 1];
     const Real dt = integrator->dt;
+    auto& stage_name = integrator->stage_name;
 
     auto num_task_lists_executed_independently = blocks.size();
     TaskRegion &async_region1 = tc.AddRegion(num_task_lists_executed_independently);

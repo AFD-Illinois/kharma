@@ -73,7 +73,7 @@ public:
     // but ensures it will get copied device-side by C++14 Lambdas, circumventing *so many* bugs
     CoordinateEmbedding coords;
 
-    // UniformCartesian doesn't need domain size.  We do.
+    // TODO try again to get these from parent always, e.g. with the RegionSize or len()
     int n1, n2, n3;
     // And optionally some caches
 #if !FAST_CARTESIAN && !NO_CACHE

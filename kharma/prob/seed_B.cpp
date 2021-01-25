@@ -40,7 +40,7 @@
 
 // Internal representation of the field initialization preference for quick switch
 // Avoids string comparsion in kernels
-enum BSeedType{sane, ryan, r3s3, gaussian};
+enum BSeedType{monopole, sane, ryan, r3s3, gaussian};
 
 TaskStatus SeedBField(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin)
 {
@@ -55,7 +55,6 @@ TaskStatus SeedBField(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *
     auto& G = pmb->coords;
     GridVars P = rc->Get("c.c.bulk.prims").data;
 
-    Real rin;
     Real min_rho_q = pin->GetOrAddReal("b_field", "min_rho_q", 0.2);
     std::string b_field_type = pin->GetString("b_field", "type");
 
@@ -64,6 +63,8 @@ TaskStatus SeedBField(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *
     BSeedType b_field_flag = BSeedType::sane;
     if (b_field_type == "none") {
         return TaskStatus::complete;
+    } else if (b_field_type == "monopole") {
+        b_field_flag = BSeedType::monopole;
     } else if (b_field_type == "sane") {
         b_field_flag = BSeedType::sane;
     } else if (b_field_type == "mad" || b_field_type == "ryan") {
@@ -76,9 +77,13 @@ TaskStatus SeedBField(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *
         throw std::invalid_argument("Magnetic field seed type not supported: " + b_field_type);
     }
 
-    // Require and load rin if necessary
+    // Require and load what we need if necessary
+    Real rin, b10;
     switch (b_field_flag)
     {
+    case BSeedType::monopole:
+        b10 = pin->GetReal("b_field", "b10");
+        break;
     case BSeedType::sane:
         break;
     case BSeedType::ryan:
@@ -86,6 +91,20 @@ TaskStatus SeedBField(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *
     case BSeedType::gaussian:
         rin = pin->GetReal("torus", "rin");
         break;
+    }
+
+    // Shortcut to field values for monopole/split monopole
+    if (b_field_flag == BSeedType::monopole) {
+        pmb->par_for("B_field_B", ks, ke, js, je, is, ie,
+            KOKKOS_LAMBDA_3D {
+                // Set B1 directly by normalizing
+                printf("%lf", b10 / G.gdet(Loci::center, j, i));
+                P(prims::B1, k, j, i) = b10 / G.gdet(Loci::center, j, i);
+                P(prims::B2, k, j, i) = 0.;
+                P(prims::B3, k, j, i) = 0.;
+            }
+        );
+        return TaskStatus::complete;
     }
 
     // Find the magnetic vector potential.  In X3 symmetry only A_phi is non-zero, so we keep track of that.

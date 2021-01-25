@@ -11,12 +11,12 @@ using namespace parthenon;
  * A Driver object orchestrates everything that has to be done to a mesh to constitute a step.
  * For HARM, this means the predictor-corrector steps of fluid evolution
  */
-class HARMDriver : public MultiStageBlockTaskDriver {
+class HARMDriver : public MultiStageDriver {
     public:
         /**
          * Default constructor
          */
-        HARMDriver(ParameterInput *pin, ApplicationInput *papp, Mesh *pm) : MultiStageBlockTaskDriver(pin, papp, pm) {}
+        HARMDriver(ParameterInput *pin, ApplicationInput *papp, Mesh *pm) : MultiStageDriver(pin, papp, pm) {}
 
         /**
          * All the tasks which constitute advancing the fluid in a mesh block by a stage.
