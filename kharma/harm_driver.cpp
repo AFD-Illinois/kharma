@@ -80,7 +80,7 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
                 pmb->meshblock_data.Add(stage_name[i], base);
             // At the end of the step, updating "sc1" updates the base
             // So we have to keep a copy at the beginning to calculate jcon
-            if (blocks[0]->packages["GRMHD"]->Param<bool>("add_jcon"))
+            if (blocks[0]->packages.Get("GRMHD")->Param<bool>("add_jcon"))
                 pmb->meshblock_data.Add("preserve", base);
         }
 
@@ -151,7 +151,7 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
     // Boundary exchange.  Optionally "packed" to send all data in one call.
     // All 3 calls are for MPI/meshblock boundaries
     const auto &buffer_send_pack =
-        blocks[0]->packages["GRMHD"]->Param<bool>("buffer_send_pack");
+        blocks[0]->packages.Get("GRMHD")->Param<bool>("buffer_send_pack");
     if (buffer_send_pack) {
         TaskRegion &tr = tc.AddRegion(num_partitions);
         for (int i = 0; i < num_partitions; i++) {
@@ -166,7 +166,7 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         }
     }
     const auto &buffer_recv_pack =
-        blocks[0]->packages["GRMHD"]->Param<bool>("buffer_recv_pack");
+        blocks[0]->packages.Get("GRMHD")->Param<bool>("buffer_recv_pack");
     if (buffer_recv_pack) {
         TaskRegion &tr = tc.AddRegion(num_partitions);
         for (int i = 0; i < num_partitions; i++) {
@@ -181,7 +181,7 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         }
     }
     const auto &buffer_set_pack =
-        blocks[0]->packages["GRMHD"]->Param<bool>("buffer_set_pack");
+        blocks[0]->packages.Get("GRMHD")->Param<bool>("buffer_set_pack");
     if (buffer_set_pack) {
         TaskRegion &tr = tc.AddRegion(num_partitions);
         for (int i = 0; i < num_partitions; i++) {
@@ -243,7 +243,7 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
             auto t_new_dt =
                 tl.AddTask(t_step_done, EstimateTimestep<MeshBlockData<Real>>, sc1.get());
             
-            if (blocks[0]->packages["GRMHD"]->Param<bool>("add_jcon")) {
+            if (blocks[0]->packages.Get("GRMHD")->Param<bool>("add_jcon")) {
                 auto &preserve = pmb->meshblock_data.Get("preserve");
                 auto t_current = tl.AddTask(t_step_done, CalculateCurrent, preserve.get(), sc1.get(), tm.dt);
             }

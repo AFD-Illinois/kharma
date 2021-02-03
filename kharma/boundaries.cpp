@@ -62,7 +62,7 @@ TaskStatus ApplyCustomBoundaries(std::shared_ptr<MeshBlockData<Real>>& rc)
     int js_e = pmb->cellbounds.js(domain), je_e = pmb->cellbounds.je(domain);
     int ks_e = pmb->cellbounds.ks(domain), ke_e = pmb->cellbounds.ke(domain);
 
-    EOS* eos = pmb->packages["GRMHD"]->Param<EOS*>("eos");
+    EOS* eos = pmb->packages.Get("GRMHD")->Param<EOS*>("eos");
 
     // Big TODO: can these be implemented in the *conserved* variables?
     // It would save much headache & wailing
@@ -116,7 +116,7 @@ TaskStatus ApplyCustomBoundaries(std::shared_ptr<MeshBlockData<Real>>& rc)
         );
     }
     if(pmb->boundary_flag[BoundaryFace::outer_x1] == BoundaryFlag::outflow) {
-        if (pmb->packages["GRMHD"]->Param<std::string>("problem") == "bondi") {
+        if (pmb->packages.Get("GRMHD")->Param<std::string>("problem") == "bondi") {
             FLAG("Bondi outer boundary");
             ApplyBondiBoundary(rc);
         } else {
@@ -215,7 +215,7 @@ TaskStatus FixFlux(std::shared_ptr<MeshBlockData<Real>>& rc)
     int je_e = (ndim > 1) ? je + 1 : je;
     int ke_e = (ndim > 2) ? ke + 1 : ke;
 
-    if (pmb->packages["GRMHD"]->Param<bool>("fix_flux_inflow") == true) {
+    if (pmb->packages.Get("GRMHD")->Param<bool>("fix_flux_inflow") == true) {
         if (pmb->boundary_flag[BoundaryFace::inner_x1] == BoundaryFlag::outflow)
         {
             pmb->par_for("fix_flux_in_l", ks, ke_e, js, je_e, is, is,
@@ -226,7 +226,7 @@ TaskStatus FixFlux(std::shared_ptr<MeshBlockData<Real>>& rc)
         }
 
         if (pmb->boundary_flag[BoundaryFace::outer_x1] == BoundaryFlag::outflow &&
-            !(pmb->packages["GRMHD"]->Param<std::string>("problem") == "bondi"))
+            !(pmb->packages.Get("GRMHD")->Param<std::string>("problem") == "bondi"))
         {
             pmb->par_for("fix_flux_in_r", ks, ke_e, js, je_e, ie+1, ie+1,
                 KOKKOS_LAMBDA_3D {
@@ -236,7 +236,7 @@ TaskStatus FixFlux(std::shared_ptr<MeshBlockData<Real>>& rc)
         }
     }
 
-    if (pmb->packages["GRMHD"]->Param<bool>("fix_flux_B") == true) {
+    if (pmb->packages.Get("GRMHD")->Param<bool>("fix_flux_B") == true) {
         if (pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::reflect)
         {
             pmb->par_for("fix_flux_b_l", ks, ke_e, js, js, is, ie+1,

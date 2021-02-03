@@ -68,8 +68,8 @@ TaskStatus ApplyFloors(std::shared_ptr<MeshBlockData<Real>>& rc)
 
     GridInt fflag("fflag", n3, n2, n1);
 
-    EOS* eos = pmb->packages["GRMHD"]->Param<EOS*>("eos");
-    FloorPrescription floors = FloorPrescription(pmb->packages["GRMHD"]->AllParams());
+    EOS* eos = pmb->packages.Get("GRMHD")->Param<EOS*>("eos");
+    FloorPrescription floors = FloorPrescription(pmb->packages.Get("GRMHD")->AllParams());
 
     // Note floors are applied only to physical zones
     pmb->par_for("apply_floors", ks, ke, js, je, is, ie,

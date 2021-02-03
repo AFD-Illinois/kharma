@@ -64,7 +64,7 @@ void compare_P_U(std::shared_ptr<MeshBlockData<Real>>& rc, const int& k, const i
     GridVars P = rc->Get("c.c.bulk.prims").data;
     GridVars U = rc->Get("c.c.bulk.cons").data;
     auto& G = pmb->coords;
-    EOS* eos = pmb->packages["GRMHD"]->Param<EOS*>("eos");
+    EOS* eos = pmb->packages.Get("GRMHD")->Param<EOS*>("eos");
 
     pmb->par_for("compare_P_U", k, k, j, j, i, i,
         KOKKOS_LAMBDA_3D {
@@ -228,14 +228,14 @@ TaskStatus Diagnostic(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain doma
     GridVars P = rc->Get("c.c.bulk.prims").data;
     GridVars U = rc->Get("c.c.bulk.cons").data;
 
-    if (pmb->packages["GRMHD"]->Param<int>("verbose") > 0) {
+    if (pmb->packages.Get("GRMHD")->Param<int>("verbose") > 0) {
         //double max_divb = MaxDivB(rc, domain);
         //max_divb = MPIMax(max_divb);
         //if(MPIRank0())
         cout << "DivB: " << MaxDivB(rc, domain) << endl;
     }
 
-    if (pmb->packages["GRMHD"]->Param<int>("extra_checks") > 0) {
+    if (pmb->packages.Get("GRMHD")->Param<int>("extra_checks") > 0) {
         // Check for negative values in the conserved vars
         int nless;
         Kokkos::Sum<int> sum_reducer(nless);

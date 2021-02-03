@@ -72,13 +72,13 @@ TaskStatus HLLE::GetFlux(std::shared_ptr<MeshBlockData<Real>>& rc, const int& di
     auto& flux = rc->Get("c.c.bulk.cons").flux[dir];
 
     auto& G = pmb->coords;
-    EOS* eos = pmb->packages["GRMHD"]->Param<EOS*>("eos");
-    ReconstructionType recon = pmb->packages["GRMHD"]->Param<ReconstructionType>("recon");
+    EOS* eos = pmb->packages.Get("GRMHD")->Param<EOS*>("eos");
+    ReconstructionType recon = pmb->packages.Get("GRMHD")->Param<ReconstructionType>("recon");
 
     auto& ctop = rc->GetFace("f.f.bulk.ctop").data;
 
     // Pull out a struct of just the actual floor values for speed
-    FloorPrescription floors = FloorPrescription(pmb->packages["GRMHD"]->AllParams());
+    FloorPrescription floors = FloorPrescription(pmb->packages.Get("GRMHD")->AllParams());
 
     // And cache whether we should reduce reconstruction order on the X2 bound
     bool is_inner_x2 = pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::reflect;
@@ -282,7 +282,7 @@ TaskStatus HLLE::GetFlux(std::shared_ptr<MeshBlockData<Real>>& rc, const int& di
         }
     );
 
-    if (pmb->packages["GRMHD"]->Param<int>("extra_checks") > 0) {
+    if (pmb->packages.Get("GRMHD")->Param<int>("extra_checks") > 0) {
         CheckNaN(rc, dir);
     }
 

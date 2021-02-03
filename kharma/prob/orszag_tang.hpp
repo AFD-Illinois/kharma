@@ -24,7 +24,7 @@ void InitializeOrszagTang(MeshBlock *pmb, const GRCoordinates& G, const GridVars
     // Puts the current sheet in the middle of the domain
     Real phase = M_PI;
 
-    Real gam = pmb->packages["GRMHD"]->Param<Real>("gamma");
+    Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
 
     IndexDomain domain = IndexDomain::entire;
     IndexRange ib = pmb->cellbounds.GetBoundsI(domain);

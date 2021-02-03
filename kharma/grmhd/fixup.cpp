@@ -45,9 +45,9 @@ void FixUtoP(MeshBlockData<Real> *rc, GridInt pflag, GridInt fflag)
     GridVars U = rc->Get("c.c.bulk.cons").data;
     GridVars P = rc->Get("c.c.bulk.prims").data;
 
-    EOS* eos = pmb->packages["GRMHD"]->Param<EOS*>("eos");
+    EOS* eos = pmb->packages.Get("GRMHD")->Param<EOS*>("eos");
 
-    FloorPrescription floors = FloorPrescription(pmb->packages["GRMHD"]->AllParams());
+    FloorPrescription floors = FloorPrescription(pmb->packages.Get("GRMHD")->AllParams());
 
     int is = is_physical_bound(pmb->boundary_flag[BoundaryFace::inner_x1]) ?
                 pmb->cellbounds.is(IndexDomain::interior) : pmb->cellbounds.is(IndexDomain::entire);
