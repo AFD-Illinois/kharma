@@ -3,7 +3,7 @@
 
 #include <memory>
 
-#include "parthenon/parthenon.hpp"
+#include <parthenon/parthenon.hpp>
 
 using namespace parthenon;
 
@@ -19,12 +19,14 @@ class HARMDriver : public MultiStageDriver {
         HARMDriver(ParameterInput *pin, ApplicationInput *papp, Mesh *pm) : MultiStageDriver(pin, papp, pm) {}
 
         /**
-         * All the tasks which constitute advancing the fluid in a mesh block by a stage.
-         * This includes calculation of necessary derived variables, reconstruction, calculation of fluxes,
-         * Application of fluxes and a source term to update zones, and finally calculation of the next
-         * timestep.
+         * All the tasks which constitute advancing the fluid in a mesh by one stage.
+         * This includes calculation of the primitives and reconstruction of their face values,
+         * calculation of conserved values and fluxes thereof at faces,
+         * application of fluxes and a source term in order to update zone values,
+         * and finally calculation of the next timestep based on the CFL condition.
          * 
-         * The function is heavily documented since order changes can introduce subtle bugs
+         * The function is heavily documented since order changes can introduce subtle bugs,
+         * usually w.r.t. fluid "state" being spread across the primitive and conserved quantities
          */
         TaskCollection MakeTaskCollection(BlockList_t &blocks, int stage);
 };

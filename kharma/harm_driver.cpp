@@ -63,7 +63,7 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
 
     const Real beta = integrator->beta[stage - 1];
     const Real dt = integrator->dt;
-    auto& stage_name = integrator->stage_name;
+    auto stage_name = integrator->stage_name;
 
     auto num_task_lists_executed_independently = blocks.size();
     TaskRegion &async_region1 = tc.AddRegion(num_task_lists_executed_independently);
@@ -148,6 +148,8 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
                                 mdudt.get(), beta * dt, mc1.get());
     }
 
+    // Boundary exchange.  Optionally "packed" to send all data in one call.
+    // All 3 calls are for MPI/meshblock boundaries
     const auto &buffer_send_pack =
         blocks[0]->packages["GRMHD"]->Param<bool>("buffer_send_pack");
     if (buffer_send_pack) {
@@ -163,7 +165,6 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
             tr[i].AddTask(t_none, &MeshBlockData<Real>::SendBoundaryBuffers, sc1.get());
         }
     }
-
     const auto &buffer_recv_pack =
         blocks[0]->packages["GRMHD"]->Param<bool>("buffer_recv_pack");
     if (buffer_recv_pack) {
@@ -179,7 +180,6 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
             tr[i].AddTask(t_none, &MeshBlockData<Real>::ReceiveBoundaryBuffers, sc1.get());
         }
     }
-
     const auto &buffer_set_pack =
         blocks[0]->packages["GRMHD"]->Param<bool>("buffer_set_pack");
     if (buffer_set_pack) {

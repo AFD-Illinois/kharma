@@ -72,11 +72,11 @@ int main(int argc, char *argv[])
 {
     ParthenonManager pman;
 
-    // TODO there's e.g. UserWorkBeforeOutput I might want to look into
     pman.app_input->ProcessPackages = KHARMA::ProcessPackages;
     pman.app_input->ProcessProperties = KHARMA::ProcessProperties;
     pman.app_input->ProblemGenerator = KHARMA::ProblemGenerator;
-    // This is a *static* member of meshblock, so it inherits no pointer to what we need...
+    // This is a *static* member of meshblock, so it doesn't inherit the pointer we need
+    // TODO update around this when it gets fixed
     //pman.app_input->UserWorkBeforeOutput = KHARMA::FillOutput;
 
     // Parthenon init includes Kokkos, MPI, parses parameters & cmdline,

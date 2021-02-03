@@ -68,9 +68,8 @@ namespace GRMHD
  * Declare fields
  *
  * TODO:
- * Check metadata flags, esp ctop
- * Add pflag as an integer "field", or at least something sync-able
- * Split out B fields to option them face-centered
+ * Turn pflag/fflag into integer fields as soon as that's supported
+ * Split out B fields, option for face-centered
  */
 std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
 {

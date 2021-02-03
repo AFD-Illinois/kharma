@@ -27,16 +27,21 @@ conv_2d() {
     done
 }
 
-conv_3d entropy mhdmodes/nmode=0
-python plot_convergence_modes.py 8,16,32,64 "entropy mode in 3D" entropy
-conv_3d slow mhdmodes/nmode=1
-python plot_convergence_modes.py 8,16,32,64 "slow mode in 3D" slow
-conv_3d alfven mhdmodes/nmode=2
-python plot_convergence_modes.py 8,16,32,64 "Alfven mode in 3D" alfven
-conv_3d fast mhdmodes/nmode=3
-python plot_convergence_modes.py 8,16,32,64 "fast mode in 3D" fast
+#conv_3d entropy mhdmodes/nmode=0
+#python plot_convergence_modes.py 8,16,32,64 "entropy mode in 3D" entropy
+#conv_3d slow mhdmodes/nmode=1
+#python plot_convergence_modes.py 8,16,32,64 "slow mode in 3D" slow
+#conv_3d alfven mhdmodes/nmode=2
+#python plot_convergence_modes.py 8,16,32,64 "Alfven mode in 3D" alfven
+#conv_3d fast mhdmodes/nmode=3
+#python plot_convergence_modes.py 8,16,32,64 "fast mode in 3D" fast
 
-conv_3d entropy_mc "mhdmodes/nmode=0 GRMHD/reconstruction=linear_mc"
-python plot_convergence_modes.py 8,16,32,64 "entropy mode in 3D, linear with MC limiter" entropy_mc
-conv_3d entropy_vl "mhdmodes/nmode=0 GRMHD/reconstruction=linear_vl"
-python plot_convergence_modes.py 8,16,32,64 "entropy mode in 3D, linear with VL limiter" entropy_vl
+#conv_3d entropy_mc "mhdmodes/nmode=0 GRMHD/reconstruction=linear_mc"
+#python plot_convergence_modes.py 8,16,32,64 "entropy mode in 3D, linear with MC limiter" entropy_mc
+#conv_3d entropy_vl "mhdmodes/nmode=0 GRMHD/reconstruction=linear_vl"
+#python plot_convergence_modes.py 8,16,32,64 "entropy mode in 3D, linear with VL limiter" entropy_vl
+
+conv_3d fast_mc "mhdmodes/nmode=3 GRMHD/reconstruction=linear_mc"
+python plot_convergence_modes.py 8,16,32,64 "fast mode in 3D, linear with MC limiter" fast_mc
+conv_3d fast_vl "mhdmodes/nmode=3 GRMHD/reconstruction=linear_vl"
+python plot_convergence_modes.py 8,16,32,64 "fast mode in 3D, linear with VL limiter" fast_vl

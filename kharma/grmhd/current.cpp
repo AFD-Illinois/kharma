@@ -70,24 +70,3 @@ TaskStatus CalculateCurrent(MeshBlockData<Real> *rc0, MeshBlockData<Real> *rc1, 
     FLAG("Calculated");
     return TaskStatus::complete;
 }
-
-// Calculate field rotation rate
-// void omega_calc(struct GridGeom *G, struct FluidState *S, GridDouble *omega)
-// {
-//   static GridDouble *gFcov01, *gFcov13;
-
-//   //TODO test inverting these loops, esp if allows writing to omega sooner
-// #pragma omp parallel for simd collapse(3)
-//   DLOOP2 {
-//     ZLOOP {
-//       double gFmunu = gFcon_calc(G, S, mu, nu, k, j, i);
-//       (*gFcov01)[k][j][i] += gFmunu*G->gcov[CENT][mu][0][j][i]*G->gcov[CENT][nu][1][j][i];
-//       (*gFcov13)[k][j][i] += gFmunu*G->gcov[CENT][mu][1][j][i]*G->gcov[CENT][nu][3][j][i];
-//     }
-//   }
-
-// #pragma omp parallel for simd collapse(2)
-//   ZLOOP {
-//     (*omega)[k][j][i] = (*gFcov01)[k][j][i]/(*gFcov13)[k][j][i];
-//   }
-// }

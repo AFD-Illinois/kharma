@@ -162,15 +162,6 @@ KOKKOS_INLINE_FUNCTION void get_prim_bondi(const GRCoordinates& G, const Coordin
     G.coord(k, j, i, Loci::center, X);
     coords.coord_to_embed(X, Xembed);
     Real Rhor = ks.rhor();
-    // Any zone inside the horizon gets the horizon's values
-    // TODO There may be a more stable way to initialize inside the EH...
-    // int ii = i;
-    // while (Xembed[1] < Rhor)
-    // {
-    //     ++ii;
-    //     G.coord(k, j, ii, Loci::center, X);
-    //     coords.coord_to_embed(X, Xembed);
-    // }
     GReal r = Xembed[1];
 
     Real T = get_T(r, C1, C2, n);
@@ -200,31 +191,4 @@ KOKKOS_INLINE_FUNCTION void get_prim_bondi(const GRCoordinates& G, const Coordin
     P(prims::u1, k, j, i) = u_prim[1];
     P(prims::u2, k, j, i) = u_prim[2];
     P(prims::u3, k, j, i) = u_prim[3];
-
-#if DEBUG && 0
-    // TODO put this under GRMHD (or init?) "verbose" flag
-    static int fails = 0;
-    if (T < 0 || rho < 0 || u < 0) {
-        Real ucov_mks[GR_DIM];
-        G.lower(ucon_mks, ucov_mks, k, j, i, Loci::center);
-        Real uu_mks = dot(ucon_mks, ucov_mks);
-
-        cerr << "Bondi Bad in zone " << i << " " << j << " " << k << std::endl;
-        cerr << "Native X:  " << X[1] << " " << X[2] << " " << X[3] << std::endl;
-        cerr << "Embed X:  " << Xembed[1] << " " << Xembed[2] << " " << Xembed[3] << std::endl;
-        cerr << "gam, C1, C2, n, T: " << eos->gam << " " << C1 << " " << C2 << " " << n << " " << T << std::endl;
-        cerr << "Tmin, Tmax: " << 0.6 * (sqrt(C2) - 1.) / (n + 1) << " " << pow(C1 * sqrt(2. / pow(r,3)), 1. / n) << std::endl;
-        cerr << "rho, u:  " << rho << " " << u << std::endl;
-        cerr << "u [BL]:  " << ucon_bl[0] << " " << ucon_bl[1] << " " << ucon_bl[2] << " " << ucon_bl[3] << std::endl;
-        cerr << "u [KS]:  " << ucon_ks[0] << " " << ucon_ks[1] << " " << ucon_ks[2] << " " << ucon_ks[3] << std::endl;
-        cerr << "u [native]:  " << ucon_mks[0] << " " << ucon_mks[1] << " " << ucon_mks[2] << " " << ucon_mks[3] << std::endl;
-        cerr << "u.u [native]:  " << uu_mks << std::endl;
-        cerr << "u [prim]:  " << u_prim[1] << " " << u_prim[2] << " " << u_prim[3] << std::endl;
-        fails++;
-    }
-    if(fails > 100) {
-        exit(-1);
-    }
-#endif
-
 }

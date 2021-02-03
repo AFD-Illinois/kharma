@@ -98,7 +98,7 @@ for k in range(NVAR):
         print("Power fit var {}: {}".format(k, powerfits[k]))
 
 # MAKE PLOTS
-fig = plt.figure(figsize=(10,10))
+fig = plt.figure(figsize=(5,5))
 
 ax = fig.add_subplot(1,1,1)
 for k in range(NVAR):
@@ -115,7 +115,7 @@ ax.plot([xmin, xmax], norm*np.asarray([xmin, xmax])**-2., color='k', linestyle='
 plt.xscale('log', base=2); plt.yscale('log')
 plt.xlim([RES[0]/np.sqrt(2.), RES[-1]*np.sqrt(2.)])
 plt.xlabel('N'); plt.ylabel('L1')
-plt.title("MHD mode test convergence, {}".format(LONG))
+#plt.title("MHD mode test convergence, {}".format(LONG))
 plt.legend(loc=1)
 plt.savefig("convergence_modes_{}.png".format(SHORT))
 

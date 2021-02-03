@@ -116,28 +116,27 @@ TaskStatus ApplyCustomBoundaries(std::shared_ptr<MeshBlockData<Real>>& rc)
         );
     }
     if(pmb->boundary_flag[BoundaryFace::outer_x1] == BoundaryFlag::outflow) {
-        FLAG("Outer X1 outflow");
-        pmb->par_for("outer_x1_outflow", ks_e, ke_e, js_e, je_e, ie+1, ie_e,
-            KOKKOS_LAMBDA_3D {
-                // Apply boundary on primitives
-                PLOOP {
-                    P(p, k, j, i) = P(p, k, j, ie);
-                    if(p == prims::B1 || p == prims::B2 || p == prims::B3) {
-                        P(p, k, j, i) *= G.gdet(Loci::center, j, ie) / G.gdet(Loci::center, j, i);
+        if (pmb->packages["GRMHD"]->Param<std::string>("problem") == "bondi") {
+            FLAG("Bondi outer boundary");
+            ApplyBondiBoundary(rc);
+        } else {
+            FLAG("Outer X1 outflow");
+            pmb->par_for("outer_x1_outflow", ks_e, ke_e, js_e, je_e, ie+1, ie_e,
+                KOKKOS_LAMBDA_3D {
+                    // Apply boundary on primitives
+                    PLOOP {
+                        P(p, k, j, i) = P(p, k, j, ie);
+                        if(p == prims::B1 || p == prims::B2 || p == prims::B3) {
+                            P(p, k, j, i) *= G.gdet(Loci::center, j, ie) / G.gdet(Loci::center, j, i);
+                        }
                     }
+                    // Inflow check
+                    check_inflow(G, P, k, j, i, 1);
+                    // Recover conserved vars
+                    p_to_u(G, P, eos, k, j, i, U);
                 }
-                // Inflow check
-                check_inflow(G, P, k, j, i, 1);
-                // Recover conserved vars
-                p_to_u(G, P, eos, k, j, i, U);
-            }
-        );
-    }
-
-    if (pmb->boundary_flag[BoundaryFace::outer_x1] == BoundaryFlag::outflow &&
-        pmb->packages["GRMHD"]->Param<std::string>("problem") == "bondi") {
-        FLAG("Bondi outer boundary");
-        ApplyBondiBoundary(rc);
+            );
+        }
     }
 
     return TaskStatus::complete;
