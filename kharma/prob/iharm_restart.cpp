@@ -41,9 +41,9 @@
 #include <ctype.h>
 
 // First boundary sync
-void outflow_x1(const GRCoordinates& G, GridVars P, int n1, int n2, int n3);
-void polar_x2(const GRCoordinates& G, GridVars P, int n1, int n2, int n3);
-void periodic_x3(const GRCoordinates& G, GridVars P, int n1, int n2, int n3);
+void outflow_x1(const GRCoordinates& G, GridVars P, int nghost, int n1, int n2, int n3);
+void polar_x2(const GRCoordinates& G, GridVars P, int nghost, int n1, int n2, int n3);
+void periodic_x3(const GRCoordinates& G, GridVars P, int nghost, int n1, int n2, int n3);
 
 using namespace Kokkos;
 
@@ -169,8 +169,7 @@ double ReadIharmRestart(MeshBlock *pmb, GRCoordinates G, GridVars P, std::string
     hid_t string_type = hdf5_make_str_type(20);
     char version[20];
     hdf5_read_single_val(version, "version", string_type);
-    if (MPIRank0())
-    {
+    if (MPIRank0()) {
         cout << "Restarting from " << fname << ", file version " << version << endl << endl;
     }
 
@@ -219,21 +218,20 @@ double ReadIharmRestart(MeshBlock *pmb, GRCoordinates G, GridVars P, std::string
     Kokkos::fence();
 
     // Every iharm3d sim we'd be restarting had these
-    // TODO Switch to a KHARMA bounds sync
-    outflow_x1(G, P, n1, n2, n3);
-    polar_x2(G, P, n1, n2, n3);
-    periodic_x3(G, P, n1, n2, n3);
+    // TODO Do the math the easier way here
+    outflow_x1(G, P, Globals::nghost, n1, n2, n3);
+    polar_x2(G, P, Globals::nghost, n1, n2, n3);
+    periodic_x3(G, P, Globals::nghost, n1, n2, n3);
 
     return tf;
 }
 
-// Boundary functions for the initial sync
-// Many possible speed improvements but these are run once & shouldn't exist at all
-void outflow_x1(const GRCoordinates& G, GridVars P, int n1, int n2, int n3)
+// Boundary functions for primitives.  Needed for initial sync
+void outflow_x1(const GRCoordinates& G, GridVars P, int nghost, int n1, int n2, int n3)
 {
-    Kokkos::parallel_for("outflow_x1_l", MDRangePolicy<Rank<3>>({NGHOST, NGHOST, 0}, {n3+NGHOST, n2+NGHOST, NGHOST}),
+    Kokkos::parallel_for("outflow_x1_l", MDRangePolicy<Rank<3>>({nghost, nghost, 0}, {n3+nghost, n2+nghost, nghost}),
         KOKKOS_LAMBDA_3D {
-            int iz = NGHOST;
+            int iz = nghost;
 
             PLOOP P(p, k, j, i) = P(p, k, j, iz);
 
@@ -243,9 +241,9 @@ void outflow_x1(const GRCoordinates& G, GridVars P, int n1, int n2, int n3)
             P(prims::B3, k, j, i) *= rescale;
         }
     );
-    Kokkos::parallel_for("outflow_x1_r", MDRangePolicy<Rank<3>>({NGHOST, NGHOST, n1+NGHOST}, {n3+NGHOST, n2+NGHOST, n1+2*NGHOST}),
+    Kokkos::parallel_for("outflow_x1_r", MDRangePolicy<Rank<3>>({nghost, nghost, n1+nghost}, {n3+nghost, n2+nghost, n1+2*nghost}),
         KOKKOS_LAMBDA_3D {
-            int iz = n1 + NGHOST - 1;
+            int iz = n1 + nghost - 1;
 
             PLOOP P(p, k, j, i) = P(p, k, j, iz);
 
@@ -257,24 +255,24 @@ void outflow_x1(const GRCoordinates& G, GridVars P, int n1, int n2, int n3)
     );
 }
 
-void polar_x2(const GRCoordinates& G, GridVars P, int n1, int n2, int n3)
+void polar_x2(const GRCoordinates& G, GridVars P, int nghost, int n1, int n2, int n3)
 {
-    Kokkos::parallel_for("reflect_x2_l", MDRangePolicy<Rank<3>>({NGHOST, 0, 0}, {n3+NGHOST, NGHOST, n1+2*NGHOST}),
+    Kokkos::parallel_for("reflect_x2_l", MDRangePolicy<Rank<3>>({nghost, 0, 0}, {n3+nghost, nghost, n1+2*nghost}),
         KOKKOS_LAMBDA_3D {
           // Reflect across NG.  The zone j is (NG-j) prior to reflection,
           // set it equal to the zone that far *beyond* NG
-          int jrefl = NGHOST + (NGHOST - j) - 1;
+          int jrefl = nghost + (nghost - j) - 1;
           PLOOP P(p, k, j, i) = P(p, k, jrefl, i);
 
           P(prims::u2, k, j, i) *= -1.;
           P(prims::B2, k, j, i) *= -1.;
         }
     );
-    Kokkos::parallel_for("reflect_x2_r", MDRangePolicy<Rank<3>>({NGHOST, n2+NGHOST, 0}, {n3+NGHOST, n2+2*NGHOST, n1+2*NGHOST}),
+    Kokkos::parallel_for("reflect_x2_r", MDRangePolicy<Rank<3>>({nghost, n2+nghost, 0}, {n3+nghost, n2+2*nghost, n1+2*nghost}),
         KOKKOS_LAMBDA_3D {
           // Reflect across (NG+N2).  The zone j is (j - (NG+N2)) after reflection,
           // set it equal to the zone that far *before* (NG+N2)
-          int jrefl = (NGHOST + n2) - (j - (NGHOST + n2)) - 1;
+          int jrefl = (nghost + n2) - (j - (nghost + n2)) - 1;
           PLOOP P(p, k, j, i) = P(p, k, jrefl, i);
 
           P(prims::u2, k, j, i) *= -1.;
@@ -283,16 +281,16 @@ void polar_x2(const GRCoordinates& G, GridVars P, int n1, int n2, int n3)
     );
 }
 
-void periodic_x3(const GRCoordinates& G, GridVars P, int n1, int n2, int n3)
+void periodic_x3(const GRCoordinates& G, GridVars P, int nghost, int n1, int n2, int n3)
 {
-    Kokkos::parallel_for("periodic_x3_l", MDRangePolicy<Rank<3>>({0, 0, 0}, {NGHOST, n2+2*NGHOST, n1+2*NGHOST}),
+    Kokkos::parallel_for("periodic_x3_l", MDRangePolicy<Rank<3>>({0, 0, 0}, {nghost, n2+2*nghost, n1+2*nghost}),
         KOKKOS_LAMBDA_3D {
             int kz = k + n3;
 
             PLOOP P(p, k, j, i) = P(p, kz, j, i);
         }
     );
-    Kokkos::parallel_for("periodic_x3_r", MDRangePolicy<Rank<3>>({n3+NGHOST, 0, 0}, {n3+2*NGHOST, n2+2*NGHOST, n1+2*NGHOST}),
+    Kokkos::parallel_for("periodic_x3_r", MDRangePolicy<Rank<3>>({n3+nghost, 0, 0}, {n3+2*nghost, n2+2*nghost, n1+2*nghost}),
         KOKKOS_LAMBDA_3D {
             int kz = k - n3;
 

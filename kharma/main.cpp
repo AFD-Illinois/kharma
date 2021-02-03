@@ -35,7 +35,7 @@
 // KHARMA Headers
 #include "decs.hpp"
 
-#include "harm.hpp"
+#include "harm_driver.hpp"
 #include "kharma.hpp"
 #include "mpi.hpp"
 #include "problem.hpp"
@@ -46,10 +46,6 @@
 // Print warnings about configuration
 #if DEBUG
 #warning "Compiling with debug"
-#endif
-
-#if NGHOST < 3
-#error "HARM needs 3 ghost cells!  Configure this in Parthenon CMakeLists!"
 #endif
 
 using namespace parthenon;

@@ -68,6 +68,9 @@ TaskStatus HLLE::GetFlux(std::shared_ptr<MeshBlockData<Real>>& rc, const int& di
     int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
     int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
 
+    //cout << string_format("Domain: %d-%d %d-%d %d-%d", is_l, ie_l, js_l, je_l, ks_l, ke_l) << endl;
+    //cout << string_format("Total: %dx%dx%d", n1, n2, n3) << endl;
+
     auto& P = rc->Get("c.c.bulk.prims").data;
     auto& flux = rc->Get("c.c.bulk.cons").flux[dir];
 

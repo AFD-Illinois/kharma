@@ -106,9 +106,10 @@ GRCoordinates::GRCoordinates(const RegionSize &rs, ParameterInput *pin): Uniform
 
     coords = CoordinateEmbedding(base, transform);
 
-    n1 = rs.nx1 + 2*NGHOST;
-    n2 = rs.nx2 > 1 ? rs.nx2 + 2*NGHOST : 1;
-    n3 = rs.nx3 > 1 ? rs.nx3 + 2*NGHOST : 1;
+    n1 = rs.nx1 + 2*Globals::nghost;
+    n2 = rs.nx2 > 1 ? rs.nx2 + 2*Globals::nghost : 1;
+    n3 = rs.nx3 > 1 ? rs.nx3 + 2*Globals::nghost : 1;
+    //cout << "Initialized coordinates with nghost " << Globals::nghost << endl;
 
     init_GRCoordinates(*this, n1, n2, n3);
 }

@@ -88,7 +88,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     params.Add("eos", eos);
 
     // Proportion of courant condition for timesteps
-    double cfl = pin->GetOrAddReal("GRMHD", "cfl", 0.9);
+    double cfl = pin->GetOrAddReal("GRMHD", "cfl", 0.7);
     params.Add("cfl", cfl);
 
     // Option to omit jcon calculation before dumps.  For optimum speed I guess?
@@ -366,7 +366,6 @@ TaskStatus ApplyFluxes(SimTime tm, MeshBlockData<Real> *rc, MeshBlockData<Real> 
     } else {
         current_wind_n = wind_n;
     }
-    //cerr << "Winding at " << current_wind_n << endl;
 
     // Unpack for kernel
     auto dUdt = dudt->Get("c.c.bulk.cons").data;

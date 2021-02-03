@@ -31,6 +31,7 @@
  *  OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+#include "harm_driver.hpp"
 
 #include <iostream>
 
@@ -46,8 +47,6 @@
 #include "fixup.hpp"
 #include "fluxes.hpp"
 #include "grmhd.hpp"
-#include "harm.hpp"
-
 #include "iharm_restart.hpp"
 
 TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)

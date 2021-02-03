@@ -41,22 +41,23 @@
 
 using namespace Kokkos;
 
-void print_a_geom_tensor(GeomTensor2 g, const Loci loc, const int& i, const int& j)
-{
-    auto h = g.GetHostMirrorAndCopy();
-    int ii = i+NGHOST; int jj = j+NGHOST;
-    std::cout << h.label() << string_format(" element %d %d diagonal is [%f %f %f %f]", i, j,
-                            h(loc,jj,ii,0,0), h(loc,jj,ii,1,1), h(loc,jj,ii,2,2),
-                            h(loc,jj,ii,3,3)) << std::endl;
-}
-void print_a_geom_tensor3(GeomTensor3 g, const int& i, const int& j)
-{
-    auto h = g.GetHostMirrorAndCopy();
-    int ii = i+NGHOST; int jj = j+NGHOST;
-    std::cout << h.label() << string_format(" element %d %d lam=1 diagonal is [%f %f %f %f]", i, j,
-                            h(jj,ii,0,1,0), h(jj,ii,1,1,1), h(jj,ii,2,1,2),
-                            h(jj,ii,3,1,3)) << std::endl;
-}
+// TODO rewrite for KHARMA...
+// void print_a_geom_tensor(GeomTensor2 g, const Loci loc, const int& i, const int& j)
+// {
+//     auto h = g.GetHostMirrorAndCopy();
+//     int ii = i+NGHOST; int jj = j+NGHOST;
+//     std::cout << h.label() << string_format(" element %d %d diagonal is [%f %f %f %f]", i, j,
+//                             h(loc,jj,ii,0,0), h(loc,jj,ii,1,1), h(loc,jj,ii,2,2),
+//                             h(loc,jj,ii,3,3)) << std::endl;
+// }
+// void print_a_geom_tensor3(GeomTensor3 g, const int& i, const int& j)
+// {
+//     auto h = g.GetHostMirrorAndCopy();
+//     int ii = i+NGHOST; int jj = j+NGHOST;
+//     std::cout << h.label() << string_format(" element %d %d lam=1 diagonal is [%f %f %f %f]", i, j,
+//                             h(jj,ii,0,1,0), h(jj,ii,1,1,1), h(jj,ii,2,1,2),
+//                             h(jj,ii,3,1,3)) << std::endl;
+// }
 
 void compare_P_U(std::shared_ptr<MeshBlockData<Real>>& rc, const int& k, const int& j, const int& i)
 {

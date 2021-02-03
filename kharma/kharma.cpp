@@ -31,18 +31,19 @@
  *  OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+#include "kharma.hpp"
 
 #include <iostream>
 
 #include <parthenon/parthenon.hpp>
 
 #include "decs.hpp"
+
 #include "bondi.hpp"
 #include "boundaries.hpp"
 #include "fixup.hpp"
 #include "grmhd.hpp"
-#include "harm.hpp"
-#include "kharma.hpp"
+#include "harm_driver.hpp"
 #include "iharm_restart.hpp"
 
 Properties_t KHARMA::ProcessProperties(std::unique_ptr<ParameterInput>& pin)
@@ -52,6 +53,13 @@ Properties_t KHARMA::ProcessProperties(std::unique_ptr<ParameterInput>& pin)
 
     // Mostly this function is where I've chosen to mess with all Parthenon's parameters before
     // handing them over.  This includes reading restarts, setting native boundaries from KS, etc.
+
+    // Set ghost zones.  Switch to 4 unless we're explicitly using a stencil-3 scheme
+    std::string recon = pin->GetOrAddString("GRMHD", "reconstruction", "weno5");
+    if (recon != "donor_cell" && recon != "linear_mc" && recon != "linear_vl") {
+        pin->SetInteger("parthenon/mesh", "nghost", 4);
+        Globals::nghost = pin->GetInteger("parthenon/mesh", "nghost");
+    }
 
     // If we're restarting (not via Parthenon), read the restart file to get most parameters
     std::string prob = pin->GetString("parthenon/job", "problem_id");
@@ -64,14 +72,14 @@ Properties_t KHARMA::ProcessProperties(std::unique_ptr<ParameterInput>& pin)
     std::string cb = pin->GetString("coordinates", "base");
     std::string ctf = pin->GetOrAddString("coordinates", "transform", "null");
     if (ctf != "null") {
-        // Set Rin such that we have 5 zones completely inside the event horizon
-        // If xeh = log(Rhor), xin = log(Rin), and xout = log(Rout),
-        // then we want xeh = xin + 5.5 * (xout - xin) / N1TOT, or solving/replacing:
         int n1tot = pin->GetInteger("parthenon/mesh", "nx1");
         GReal Rout = pin->GetReal("coordinates", "r_out");
         Real a = pin->GetReal("coordinates", "a");
         GReal Rhor = 1 + sqrt(1 - a*a);
         GReal x1max = log(Rout);
+        // Set Rin such that we have 5 zones completely inside the event horizon
+        // If xeh = log(Rhor), xin = log(Rin), and xout = log(Rout),
+        // then we want xeh = xin + 5.5 * (xout - xin) / N1TOT:
         GReal x1min = (n1tot * log(Rhor) / 5.5 - x1max) / (-1. + n1tot / 5.5);
         if (x1min < 0.0) {
             throw std::invalid_argument("Not enough radial zones were specified to put 5 zones inside EH!");
