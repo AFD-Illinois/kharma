@@ -59,5 +59,18 @@ namespace KHARMA {
      * 
      * This becomes a member function (!) of MeshBlock and is called for each block
      */
-    void FillOutput(std::unique_ptr<ParameterInput>& pin);
+    void FillOutput(MeshBlock *pmb, ParameterInput *pin);
+
+    /**
+     * Print any diagnostics
+     */
+    void PostStepDiagnostics(Mesh *pmesh, ParameterInput *pin, const SimTime& tm);
 }
+
+class KHARMAProperties : public PropertiesInterface {
+    KHARMAProperties(std::string label): state_(label) {}
+    StateDescriptor& State() {return state_;}
+
+    private:
+        StateDescriptor state_;
+};

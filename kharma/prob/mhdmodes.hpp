@@ -56,7 +56,7 @@ using namespace parthenon;
  *
  * Returns the stopping time corresponding to advection by 1 wavelength
  */
-Real InitializeMHDModes(MeshBlock *pmb, GRCoordinates G, GridVars P, int nmode, int dir)
+Real InitializeMHDModes(MeshBlock *pmb, GRCoordinates G, GridVars P, GridVector B_P, int nmode, int dir)
 {
     // Mean state
     Real rho0 = 1.;
@@ -250,9 +250,9 @@ Real InitializeMHDModes(MeshBlock *pmb, GRCoordinates G, GridVars P, int nmode, 
             P(prims::u1, k, j, i) = u10 + du1 * mode;
             P(prims::u2, k, j, i) = u20 + du2 * mode;
             P(prims::u3, k, j, i) = u30 + du3 * mode;
-            P(prims::B1, k, j, i) = B10 + dB1 * mode;
-            P(prims::B2, k, j, i) = B20 + dB2 * mode;
-            P(prims::B3, k, j, i) = B30 + dB3 * mode;
+            B_P(0, k, j, i) = B10 + dB1 * mode;
+            B_P(1, k, j, i) = B20 + dB2 * mode;
+            B_P(2, k, j, i) = B30 + dB3 * mode;
         }
     );
 

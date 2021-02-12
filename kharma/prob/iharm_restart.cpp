@@ -144,7 +144,7 @@ void ReadIharmRestartHeader(std::string fname, std::unique_ptr<ParameterInput>& 
     hdf5_close();
 }
 
-double ReadIharmRestart(MeshBlock *pmb, GRCoordinates G, GridVars P, std::string fname)
+double ReadIharmRestart(MeshBlock *pmb, GRCoordinates G, GridVars P, GridVector B_P, std::string fname)
 {
     IndexDomain domain = IndexDomain::interior;
     // Full mesh size
@@ -180,9 +180,9 @@ double ReadIharmRestart(MeshBlock *pmb, GRCoordinates G, GridVars P, std::string
 
     hsize_t nfprim;
     if(hdf5_exists("game")) {
-        nfprim = NPRIM + 2;
+        nfprim = 10;
     } else {
-        nfprim = NPRIM;
+        nfprim = 8;
     }
 
     // Declare known sizes for outputting primitives
@@ -204,23 +204,33 @@ double ReadIharmRestart(MeshBlock *pmb, GRCoordinates G, GridVars P, std::string
     hdf5_close();
 
     auto Phost = P.GetHostMirror();
+    auto Bhost = B_P.GetHostMirror();
 
-    // Host-side copy into the mirror
-    Kokkos::parallel_for("copy_restart_state", Kokkos::MDRangePolicy<Kokkos::OpenMP, Kokkos::Rank<4>>({0, ks, js, is}, {NPRIM, ke+1, je+1, ie+1}),
+    // Host-side copy into the mirror.  
+    Kokkos::parallel_for("copy_restart_state",
+        Kokkos::MDRangePolicy<Kokkos::OpenMP, Kokkos::Rank<4>>({0, ks, js, is}, {NPRIM, ke+1, je+1, ie+1}),
         KOKKOS_LAMBDA_VARS {
             Phost(p, k, j, i) = ptmp[p*n3*n2*n1 + (k-ks)*n2*n1 + (j-js)*n1 + (i-is)];
+        }
+    );
+    Kokkos::parallel_for("copy_restart_B",
+        Kokkos::MDRangePolicy<Kokkos::OpenMP, Kokkos::Rank<4>>({0, ks, js, is}, {NVEC, ke+1, je+1, ie+1}),
+        KOKKOS_LAMBDA_VARS {
+            Bhost(p, k, j, i) = ptmp[(p+NPRIM)*n3*n2*n1 + (k-ks)*n2*n1 + (j-js)*n1 + (i-is)];
         }
     );
     delete[] ptmp;
 
     // Deep copy to device
     P.DeepCopy(Phost);
+    B_P.DeepCopy(Bhost);
     Kokkos::fence();
 
-    // Every iharm3d sim we'd be restarting had these
-    // TODO Do the math the easier way here
-    outflow_x1(G, P, Globals::nghost, n1, n2, n3);
-    polar_x2(G, P, Globals::nghost, n1, n2, n3);
+    // Initialize the guesses for fluid prims in boundary zones
+    // TODO Adapt these to cart/spherical sims, use domains instead of nghost
+    // TODO test outflow/polar are unneeded as they are computed again before guessing U->P
+    //outflow_x1(G, P, Globals::nghost, n1, n2, n3);
+    //polar_x2(G, P, Globals::nghost, n1, n2, n3);
     periodic_x3(G, P, Globals::nghost, n1, n2, n3);
 
     return tf;
@@ -234,11 +244,6 @@ void outflow_x1(const GRCoordinates& G, GridVars P, int nghost, int n1, int n2, 
             int iz = nghost;
 
             PLOOP P(p, k, j, i) = P(p, k, j, iz);
-
-            double rescale = G.gdet(Loci::center, j, iz) / G.gdet(Loci::center, j, i);
-            P(prims::B1, k, j, i) *= rescale;
-            P(prims::B2, k, j, i) *= rescale;
-            P(prims::B3, k, j, i) *= rescale;
         }
     );
     Kokkos::parallel_for("outflow_x1_r", MDRangePolicy<Rank<3>>({nghost, nghost, n1+nghost}, {n3+nghost, n2+nghost, n1+2*nghost}),
@@ -246,11 +251,6 @@ void outflow_x1(const GRCoordinates& G, GridVars P, int nghost, int n1, int n2, 
             int iz = n1 + nghost - 1;
 
             PLOOP P(p, k, j, i) = P(p, k, j, iz);
-
-            double rescale = G.gdet(Loci::center, j, iz) / G.gdet(Loci::center, j, i);
-            P(prims::B1, k, j, i) *= rescale;
-            P(prims::B2, k, j, i) *= rescale;
-            P(prims::B3, k, j, i) *= rescale;
         }
     );
 }
@@ -265,7 +265,6 @@ void polar_x2(const GRCoordinates& G, GridVars P, int nghost, int n1, int n2, in
           PLOOP P(p, k, j, i) = P(p, k, jrefl, i);
 
           P(prims::u2, k, j, i) *= -1.;
-          P(prims::B2, k, j, i) *= -1.;
         }
     );
     Kokkos::parallel_for("reflect_x2_r", MDRangePolicy<Rank<3>>({nghost, n2+nghost, 0}, {n3+nghost, n2+2*nghost, n1+2*nghost}),
@@ -276,7 +275,6 @@ void polar_x2(const GRCoordinates& G, GridVars P, int nghost, int n1, int n2, in
           PLOOP P(p, k, j, i) = P(p, k, jrefl, i);
 
           P(prims::u2, k, j, i) *= -1.;
-          P(prims::B2, k, j, i) *= -1.;
         }
     );
 }

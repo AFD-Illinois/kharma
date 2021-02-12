@@ -37,9 +37,12 @@
 
 #include <parthenon/parthenon.hpp>
 #include <interface/update.hpp>
+#include <refinement/refinement.hpp>
 
 #include "decs.hpp"
 
+#include "b_flux_ct.hpp"
+#include "b_cd_glm.hpp"
 #include "bondi.hpp"
 #include "boundaries.hpp"
 #include "current.hpp"
@@ -64,6 +67,11 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
     const Real dt = integrator->dt;
     auto stage_name = integrator->stage_name;
 
+    const bool use_b_cd_glm = blocks[0]->packages.AllPackages().count("B_CD_GLM") > 0;
+    const bool do_parabolic_term = use_b_cd_glm ? blocks[0]->packages.Get("B_CD_GLM")->Param<bool>("parabolic_term") : false;
+    const bool use_b_flux_ct = blocks[0]->packages.AllPackages().count("B_FluxCT") > 0;
+    const bool do_flux_ct = use_b_flux_ct ? !blocks[0]->packages.Get("B_FluxCT")->Param<bool>("disable_flux_ct") : false;
+
     auto num_task_lists_executed_independently = blocks.size();
     TaskRegion &async_region1 = tc.AddRegion(num_task_lists_executed_independently);
 
@@ -79,8 +87,7 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
                 pmb->meshblock_data.Add(stage_name[i], base);
             // At the end of the step, updating "sc1" updates the base
             // So we have to keep a copy at the beginning to calculate jcon
-            if (blocks[0]->packages.Get("GRMHD")->Param<bool>("add_jcon"))
-                pmb->meshblock_data.Add("preserve", base);
+            pmb->meshblock_data.Add("preserve", base);
         }
 
         // pull out the container we'll use to get fluxes and/or compute RHSs
@@ -99,28 +106,36 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         // This reconstructs the primitives (P) at faces and uses them to calculate fluxes
         // of the conserved variables (U)
         // All subsequent operations until FillDerived are applied only to U
-        auto t_calculate_flux1 = tl.AddTask(t_start_recv, HLLE::GetFlux, sc0, X1DIR);
-        auto t_calculate_flux2 = tl.AddTask(t_start_recv, HLLE::GetFlux, sc0, X2DIR);
-        auto t_calculate_flux3 = tl.AddTask(t_start_recv, HLLE::GetFlux, sc0, X3DIR);
+        // TODO these could be made mesh-wide pretty easily...
+        auto t_calculate_flux1 = tl.AddTask(t_start_recv, Flux::GetFlux, sc0.get(), X1DIR, beta * dt);
+        auto t_calculate_flux2 = tl.AddTask(t_start_recv, Flux::GetFlux, sc0.get(), X2DIR, beta * dt);
+        auto t_calculate_flux3 = tl.AddTask(t_start_recv, Flux::GetFlux, sc0.get(), X3DIR, beta * dt);
         auto t_calculate_flux = t_calculate_flux1 | t_calculate_flux2 | t_calculate_flux3;
 
-        // Fix the conserved fluxes (exclusively B1/2/3) so that they obey divB==0
-        // TODO combine.
-        auto t_fix_flux = tl.AddTask(t_calculate_flux, FixFlux, sc0);
-        auto t_flux_ct = tl.AddTask(t_fix_flux, GRMHD::FluxCT, sc0);
-
-        auto t_recv_flux = t_flux_ct;
-        if (pmesh->multilevel) { // TODO technically this should be "if face-centered fields"
+        auto t_recv_flux = t_calculate_flux;
+        if (pmesh->multilevel) {
+            // Get flux corrections from AMR neighbors
             auto t_send_flux =
-                tl.AddTask(t_flux_ct, &MeshBlockData<Real>::SendFluxCorrection, sc0.get());
+                tl.AddTask(t_calculate_flux, &MeshBlockData<Real>::SendFluxCorrection, sc0.get());
             t_recv_flux =
-                tl.AddTask(t_flux_ct, &MeshBlockData<Real>::ReceiveFluxCorrection, sc0.get());
+                tl.AddTask(t_calculate_flux, &MeshBlockData<Real>::ReceiveFluxCorrection, sc0.get());
+        }
+
+        // Zero any fluxes through the pole or inflow from outflow boundaries
+        auto t_fix_flux = tl.AddTask(t_recv_flux, FixFlux, sc0.get());
+
+        auto t_flux_fixed = t_fix_flux;
+        if (do_flux_ct) {
+            // Fix the conserved fluxes (exclusively B1/2/3) so that they obey divB==0,
+            // and there is no B field flux through the pole
+            auto t_flux_ct = tl.AddTask(t_fix_flux, B_FluxCT::TransportB, sc0.get());
+            t_flux_fixed = t_flux_ct;
         }
 
         // Parthenon can calculate a flux divergence, but we save a kernel launch by also adding
         // both the GRMHD source term and any "wind" source coefficients.
-        // TODO move to below
-        auto t_flux_apply = tl.AddTask(t_recv_flux, GRMHD::ApplyFluxes, tm, sc0.get(), dudt.get());
+        // TODO move to below? Probably easy to update for Mesh vs MeshBlock
+        auto t_flux_apply = tl.AddTask(t_flux_fixed, Flux::ApplyFluxes, sc0.get(), dudt.get(), beta * dt);
     }
 
     // Sync Region: add effects of current step to accumulator, sync boundaries
@@ -207,51 +222,55 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         auto t_clear_comm_flags = tl.AddTask(t_none, &MeshBlockData<Real>::ClearBoundary,
                                         sc1.get(), BoundaryCommSubset::all);
 
-        auto t_prolongBound = t_none;
-        if (pmesh->multilevel) {
-            t_prolongBound = tl.AddTask(t_none, ProlongateBoundaries, sc1);
+        // Source term for constraint-damping.  Could be applied mesh-wide in that block,
+        // when we learn to write mesh-wide functions
+        auto t_b_cd_source = t_none;
+        if (do_parabolic_term) {
+            auto t_b_cd_source = tl.AddTask(t_none, B_CD_GLM::AddSource, sc1.get(), beta * dt);
         }
 
-        // Fill primitives, bringing U and P back into lockstep
-        // Note U_to_P needs a guess, so we feed it a copy of sc0's primitives (but only the primitives!)
-        // TODO optionally declare prims as OneCopy when not computing jcon?
-        auto t_copy_prims = tl.AddTask(t_prolongBound,
+        auto t_prolongBound = t_clear_comm_flags;
+        if (pmesh->multilevel) {
+            t_prolongBound = tl.AddTask(t_b_cd_source, ProlongateBoundaries, sc1);
+        }
+        // Parthenon boundary conditions are applied to the conserved variables
+        // Currently we override everything except psi in CD (TODO B)
+        //auto t_set_bc = tl.AddTask(t_prolongBound, ApplyBoundaryConditions, sc1);
+        auto t_set_bc = t_prolongBound;
+
+        // U_to_P needs a guess in order to converge, so we copy in sc0
+        // (but only the primitives!)
+        // TODO option to declare primitives OneCopy if we won't need the backup
+        // TODO do this mesh-at-once
+        auto t_copy_prims = tl.AddTask(t_none,
             [](MeshBlockData<Real> *rc0, MeshBlockData<Real> *rc1)
             {
                 FLAG("Copying prims");
                 rc1->Get("c.c.bulk.prims").data.DeepCopy(rc0->Get("c.c.bulk.prims").data);
-                return TaskStatus::complete;
                 FLAG("Copied");
+                return TaskStatus::complete;
             }, sc0.get(), sc1.get());
-        auto t_fill_derived = tl.AddTask(t_copy_prims, Update::FillDerived<MeshBlockData<Real>>, sc1.get());
+        
+        auto t_cons_ready = t_copy_prims | t_set_bc;
+        auto t_fill_derived = tl.AddTask(t_cons_ready, Update::FillDerived<MeshBlockData<Real>>, sc1.get());
 
         // ApplyCustomBoundaries is a catch-all for things HARM needs done on physical boundaries:
         // Inflow checks, renormalizations, Bondi outer boundary condition, etc.  All keep lockstep.
-        auto t_set_custom_bc = tl.AddTask(t_fill_derived, ApplyCustomBoundaries, sc1);
+        // Our boundaries are applied to primitives (so they must be calculated first)
+        // they recalculate U afterward to preserve lockstep at the end of the step
+        auto t_set_custom_bc = tl.AddTask(t_fill_derived, ApplyCustomBoundaries, sc1.get());
+        auto t_step_done = t_set_custom_bc;
 
-        // TODO split these into the other Parthenon calls, UserWorkAfterLoop and UserWorkBeforeOutput
-        
-        auto t_diagnostics = tl.AddTask(t_set_custom_bc, Diagnostic, sc1, IndexDomain::interior);
-        auto t_step_done = t_diagnostics;
-
-        // TODO work custom stuff into original Parthenon call?
-        //auto set_bc = tl.AddTask(prolongBound, ApplyBoundaryConditions, sc1);
-
-        // Estimate next time step based on ctop from the *ORIGINAL* state, where we calculated the fluxes
+        // Estimate next time step based on ctop
         if (stage == integrator->nstages) {
             auto t_new_dt =
                 tl.AddTask(t_step_done, EstimateTimestep<MeshBlockData<Real>>, sc1.get());
-            
-            if (blocks[0]->packages.Get("GRMHD")->Param<bool>("add_jcon")) {
-                auto &preserve = pmb->meshblock_data.Get("preserve");
-                auto t_current = tl.AddTask(t_step_done, CalculateCurrent, preserve.get(), sc1.get(), tm.dt);
-            }
 
-            // Update refinement.  For much, much later
-            // if (pmesh->adaptive) {
-            //     auto tag_refine = tl.AddTask(
-            //         t_step_done, parthenon::Refinement::Tag<MeshBlockData<Real>>, sc1.get());
-            // }
+            // Update refinement
+            if (pmesh->adaptive) {
+                auto tag_refine = tl.AddTask(
+                    t_step_done, parthenon::Refinement::Tag<MeshBlockData<Real>>, sc1.get());
+            }
         }
     }
 

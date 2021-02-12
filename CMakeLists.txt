@@ -5,7 +5,6 @@ project(kharma LANGUAGES C CXX)
 set (CMAKE_CXX_STANDARD 14)
 
 # Parthenon options
-set(PARTHENON_NGHOST 4 CACHE STRING "KHARMA Override")
 set(PARTHENON_DISABLE_EXAMPLES ON CACHE BOOL "KHARMA Override")
 set(PARTHENON_LINT_DEFAULT OFF CACHE BOOL "KHARMA Override")
 # Parthenon internal build options

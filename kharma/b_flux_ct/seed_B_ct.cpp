@@ -34,15 +34,14 @@
 
 // Seed a torus of some type with a magnetic field according to its density
 
-#include "seed_B.hpp"
+#include "seed_B_ct.hpp"
 
-#include "phys.hpp"
+#include "b_field_tools.hpp"
 
-// Internal representation of the field initialization preference for quick switch
-// Avoids string comparsion in kernels
-enum BSeedType{monopole, sane, ryan, r3s3, gaussian};
+#include "b_flux_ct_functions.hpp"
+#include "mhd_functions.hpp"
 
-TaskStatus SeedBField(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin)
+TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
 {
     auto pmb = rc->GetBlockPointer();
     IndexDomain domain = IndexDomain::entire;
@@ -54,6 +53,15 @@ TaskStatus SeedBField(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *
 
     auto& G = pmb->coords;
     GridVars P = rc->Get("c.c.bulk.prims").data;
+    GridVector B_P = rc->Get("c.c.bulk.B_prim").data;
+    GridVector B_U = rc->Get("c.c.bulk.B_con").data;
+    GridScalar psi_p, psi_u;
+    const bool use_b_flux_ct = pmb->packages.AllPackages().count("B_FluxCT") > 0;
+    const bool use_b_cd_glm = pmb->packages.AllPackages().count("B_CD_GLM") > 0;
+    if (use_b_cd_glm) {
+        psi_p = rc->Get("c.c.bulk.psi_cd_prim").data;
+        psi_u = rc->Get("c.c.bulk.psi_cd_con").data;
+    }
 
     Real min_rho_q = pin->GetOrAddReal("b_field", "min_rho_q", 0.2);
     std::string b_field_type = pin->GetString("b_field", "type");
@@ -63,6 +71,8 @@ TaskStatus SeedBField(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *
     BSeedType b_field_flag = BSeedType::sane;
     if (b_field_type == "none") {
         return TaskStatus::complete;
+    } else if (b_field_type == "constant") {
+        b_field_flag = BSeedType::constant;
     } else if (b_field_type == "monopole") {
         b_field_flag = BSeedType::monopole;
     } else if (b_field_type == "sane") {
@@ -78,9 +88,12 @@ TaskStatus SeedBField(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *
     }
 
     // Require and load what we need if necessary
-    Real rin, b10;
+    Real rin, b10, b20, b30;
     switch (b_field_flag)
     {
+    case BSeedType::constant:
+        b20 = pin->GetOrAddReal("b_field", "b20", 0.);
+        b30 = pin->GetOrAddReal("b_field", "b30", 0.);
     case BSeedType::monopole:
         b10 = pin->GetReal("b_field", "b10");
         break;
@@ -93,15 +106,27 @@ TaskStatus SeedBField(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *
         break;
     }
 
-    // Shortcut to field values for monopole/split monopole
-    if (b_field_flag == BSeedType::monopole) {
+    // Shortcut to field values for easy fields
+    if (b_field_flag == BSeedType::constant) {
+        pmb->par_for("B_field_B", ks, ke, js, je, is, ie,
+            KOKKOS_LAMBDA_3D {
+                // Set B1 directly
+                B_P(0, k, j, i) = b10;
+                B_P(1, k, j, i) = b20;
+                B_P(2, k, j, i) = b30;
+                B_FluxCT::p_to_u(G, B_P, k, j, i, B_U);
+            }
+        );
+        return TaskStatus::complete;
+    } else if (b_field_flag == BSeedType::monopole) {
         pmb->par_for("B_field_B", ks, ke, js, je, is, ie,
             KOKKOS_LAMBDA_3D {
                 // Set B1 directly by normalizing
                 printf("%lf", b10 / G.gdet(Loci::center, j, i));
-                P(prims::B1, k, j, i) = b10 / G.gdet(Loci::center, j, i);
-                P(prims::B2, k, j, i) = 0.;
-                P(prims::B3, k, j, i) = 0.;
+                B_P(0, k, j, i) = b10 / G.gdet(Loci::center, j, i);
+                B_P(1, k, j, i) = 0.;
+                B_P(2, k, j, i) = 0.;
+                B_FluxCT::p_to_u(G, B_P, k, j, i, B_U);
             }
         );
         return TaskStatus::complete;
@@ -153,117 +178,14 @@ TaskStatus SeedBField(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *
     pmb->par_for("B_field_B", ks, ke, js, je-1, is, ie-1,
         KOKKOS_LAMBDA_3D {
             // Take a flux-ct step from the corner potentials
-            P(prims::B1, k, j, i) = -(A(j, i) - A(j + 1, i) + A(j, i + 1) - A(j + 1, i + 1)) /
+            B_P(0, k, j, i) = -(A(j, i) - A(j + 1, i) + A(j, i + 1) - A(j + 1, i + 1)) /
                                 (2. * G.dx2v(j) * G.gdet(Loci::center, j, i));
-            P(prims::B2, k, j, i) =  (A(j, i) + A(j + 1, i) - A(j, i + 1) - A(j + 1, i + 1)) /
+            B_P(1, k, j, i) =  (A(j, i) + A(j + 1, i) - A(j, i + 1) - A(j + 1, i + 1)) /
                                 (2. * G.dx1v(i) * G.gdet(Loci::center, j, i));
-            P(prims::B3, k, j, i) = 0.;
-
-            // We don't need to update U here, since we're always going to normalize straightaway
+            B_P(2, k, j, i) = 0.;
+            B_FluxCT::p_to_u(G, B_P, k, j, i, B_U);
         }
     );
 
     return TaskStatus::complete;
-}
-
-TaskStatus NormalizeBField(std::shared_ptr<MeshBlockData<Real>>& rc, Real norm)
-{
-    auto pmb = rc->GetBlockPointer();
-    IndexDomain domain = IndexDomain::entire;
-    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
-    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
-    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
-    GridVars P = rc->Get("c.c.bulk.prims").data;
-    GridVars U = rc->Get("c.c.bulk.cons").data;
-    auto& G = pmb->coords;
-
-    EOS* eos = pmb->packages.Get("GRMHD")->Param<EOS*>("eos");
-
-    pmb->par_for("B_field_normalize", ks, ke, js, je, is, ie,
-        KOKKOS_LAMBDA_3D {
-            P(prims::B1, k, j, i) *= norm;
-            P(prims::B2, k, j, i) *= norm;
-            P(prims::B3, k, j, i) *= norm;
-
-            p_to_u(G, P, eos, k, j, i, U);
-        }
-    );
-
-    return TaskStatus::complete;
-}
-
-Real GetLocalBetaMin(std::shared_ptr<MeshBlockData<Real>>& rc)
-{
-    auto pmb = rc->GetBlockPointer();
-    IndexDomain domain = IndexDomain::interior;
-    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
-    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
-    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
-    auto& G = pmb->coords;
-    GridVars P = rc->Get("c.c.bulk.prims").data;
-
-    EOS* eos = pmb->packages.Get("GRMHD")->Param<EOS*>("eos");
-
-    Real beta_min;
-    Kokkos::Min<Real> min_reducer(beta_min);
-    pmb->par_reduce("B_field_betamin", ks, ke, js, je, is, ie,
-        KOKKOS_LAMBDA_3D_REDUCE {
-            FourVectors Dtmp;
-            get_state(G, P, k, j, i, Loci::center, Dtmp);
-            double bsq_ij = dot(Dtmp.bcon, Dtmp.bcov);
-
-            Real rho = P(prims::rho, k, j, i);
-            Real u = P(prims::u, k, j, i);
-            Real beta_ij = (eos->p(rho, u))/(0.5*(bsq_ij + TINY_NUMBER));
-
-            if(beta_ij < local_result) local_result = beta_ij;
-        }
-    , min_reducer);
-    return beta_min;
-}
-Real GetLocalBsqMax(std::shared_ptr<MeshBlockData<Real>>& rc)
-{
-    auto pmb = rc->GetBlockPointer();
-    IndexDomain domain = IndexDomain::interior;
-    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
-    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
-    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
-    auto& G = pmb->coords;
-    GridVars P = rc->Get("c.c.bulk.prims").data;
-
-    Real bsq_max;
-    Kokkos::Max<Real> bsq_max_reducer(bsq_max);
-    pmb->par_reduce("B_field_bsqmax", ks, ke, js, je, is, ie,
-        KOKKOS_LAMBDA_3D_REDUCE {
-            FourVectors Dtmp;
-            get_state(G, P, k, j, i, Loci::center, Dtmp);
-            double bsq_ij = dot(Dtmp.bcon, Dtmp.bcov);
-            if(bsq_ij > local_result) local_result = bsq_ij;
-        }
-    , bsq_max_reducer);
-    return bsq_max;
-}
-Real GetLocalPMax(std::shared_ptr<MeshBlockData<Real>>& rc)
-{
-    auto pmb = rc->GetBlockPointer();
-    IndexDomain domain = IndexDomain::interior;
-    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
-    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
-    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
-    auto& G = pmb->coords;
-    GridVars P = rc->Get("c.c.bulk.prims").data;
-
-    EOS* eos = pmb->packages.Get("GRMHD")->Param<EOS*>("eos");
-
-    Real p_max;
-    Kokkos::Max<Real> p_max_reducer(p_max);
-    pmb->par_reduce("B_field_pmax", ks, ke, js, je, is, ie,
-        KOKKOS_LAMBDA_3D_REDUCE {
-            Real rho = P(prims::rho, k, j, i);
-            Real u = P(prims::u, k, j, i);
-            Real p_ij = eos->p(rho, u);
-            if(p_ij > local_result) local_result = p_ij;
-        }
-    , p_max_reducer);
-    return p_max;
 }

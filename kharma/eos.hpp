@@ -44,6 +44,8 @@
  * always call the constructor/destructor on the device side, but manage/pass the
  * pointer on the host.
  * Grid & CoordinateEmbedding are not like this because they should be usable host-side, too.
+ * 
+ * TODO compile-time option to force Gamma-law for better inlining?
  */
 class EOS {
     // TODO when gam does not need to be public, we are ready for new eqns of state

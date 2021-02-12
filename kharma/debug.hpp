@@ -41,40 +41,26 @@
 using namespace std;
 
 /**
- * Calculate maximum divergence of magnetic field, to check it is being preserved ==0
- */
-double MaxDivB(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain=IndexDomain::interior);
-
-/**
- * Version of MaxDivB operating on Primitives
- */
-double MaxDivB_P(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain=IndexDomain::interior);
-
-/**
- * Print any diagnostic values which don't require pflag/fflag to calculate/print
- */
-TaskStatus Diagnostic(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain=IndexDomain::interior);
-
-/**
  * Check the max signal speed (ctop) for 0-values or NaNs.
  * This is a final warning that something is very wrong and we should crash.
  */
-TaskStatus CheckNaN(std::shared_ptr<MeshBlockData<Real>>& rc, int dir, IndexDomain domain=IndexDomain::interior);
+TaskStatus CheckNaN(MeshBlockData<Real> *rc, int dir, IndexDomain domain=IndexDomain::interior);
 
 /**
  * The compiler is not so good with aliases.  Guide it.
  */
+using ParArrayNDHost = ParArrayNDGeneric<Kokkos::View<Real ******, parthenon::LayoutWrapper, Kokkos::HostSpace::memory_space>>;
 using ParArrayNDIntHost = ParArrayNDGeneric<Kokkos::View<int ******, parthenon::LayoutWrapper, Kokkos::HostSpace::memory_space>>;
 
 /**
  * Function for counting & printing pflags.  Note this is defined host-side! Call pflags.getHostMirrorAndCopy() first!
  */
-int CountPFlags(std::shared_ptr<MeshBlock> pmb, ParArrayNDIntHost pflag, IndexDomain domain=IndexDomain::entire, int verbose=0);
+int CountPFlags(std::shared_ptr<MeshBlock> pmb, ParArrayNDHost pflag, IndexDomain domain=IndexDomain::entire, int verbose=0);
 
 /**
  * Function for counting & printing pflags.  Note this is defined host-side! Call fflags.getHostMirrorAndCopy() first!
  */
-int CountFFlags(std::shared_ptr<MeshBlock> pmb, ParArrayNDIntHost fflag, IndexDomain domain=IndexDomain::interior, int verbose=0);
+int CountFFlags(std::shared_ptr<MeshBlock> pmb, ParArrayNDHost fflag, IndexDomain domain=IndexDomain::interior, int verbose=0);
 
 // Misc print functions
 // The world needed these
@@ -83,7 +69,7 @@ int CountFFlags(std::shared_ptr<MeshBlock> pmb, ParArrayNDIntHost fflag, IndexDo
 
 void print_a_geom_tensor(const GeomTensor2 g, const int& i, const int& j);
 void print_a_geom_tensor3(const GeomTensor3 g, const int& i, const int& j);
-void compare_P_U(std::shared_ptr<MeshBlockData<Real>>& rc, const int& k, const int& j, const int& i);
+void compare_P_U(MeshBlockData<Real> *rc, const int& k, const int& j, const int& i);
 
 KOKKOS_INLINE_FUNCTION void print_matrix(std::string name, double g[GR_DIM][GR_DIM], bool kill_on_nan=false)
 {

@@ -42,7 +42,7 @@
 // Until Parthenon gets a reduce()
 #include "Kokkos_Core.hpp"
 
-#include "parthenon/parthenon.hpp"
+#include <parthenon/parthenon.hpp>
 
 #include "decs.hpp"
 
@@ -53,7 +53,8 @@
 #include "floors.hpp"
 #include "fluxes.hpp"
 #include "gr_coordinates.hpp"
-#include "phys.hpp"
+#include "kharma.hpp"
+#include "mhd_functions.hpp"
 #include "source.hpp"
 #include "U_to_P.hpp"
 
@@ -61,16 +62,13 @@ using namespace parthenon;
 // Need to access these directly for reductions
 using namespace Kokkos;
 
+// Some programmers just want to watch the world burn
+// TODO parameters, probably
+double last_dt, ctop_max;
+
 namespace GRMHD
 {
 
-/**
- * Declare fields
- *
- * TODO:
- * Turn pflag/fflag into integer fields as soon as that's supported
- * Split out B fields, option for face-centered
- */
 std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
 {
     auto pkg = std::make_shared<StateDescriptor>("GRMHD");
@@ -91,22 +89,21 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     double cfl = pin->GetOrAddReal("GRMHD", "cfl", 0.7);
     params.Add("cfl", cfl);
 
-    // Option to omit jcon calculation before dumps.  For optimum speed I guess?
-    // TODO make this and next automatic by reading outputs
-    bool add_jcon = pin->GetOrAddBoolean("GRMHD", "add_jcon", false);
-    params.Add("add_jcon", add_jcon);
-    bool flag_save = pin->GetOrAddBoolean("GRMHD", "add_flags", false);
-    params.Add("flag_save", flag_save);
-    bool add_divB = pin->GetOrAddBoolean("GRMHD", "add_divB", false);
-    params.Add("add_divB", add_divB);
+    // Don't even error on this. LLF or bust, baby
+    std::string flux = pin->GetOrAddString("GRMHD", "flux", "llf");
+    if (flux == "hlle") {
+        params.Add("use_hlle", true);
+    } else {
+        params.Add("use_hlle", false);
+    }
 
     // Minimum timestep, if something about the sound speed goes wonky. Probably won't save you :)
-    double dt_min = pin->GetOrAddReal("parthenon/time", "dt_min", 1.e-6);
+    double dt_min = pin->GetOrAddReal("parthenon/time", "dt_min", 1.e-4);
     params.Add("dt_min", dt_min);
     // Starting timestep.  Important for consistent restarts, otherwise just the minimum
     double dt = pin->GetOrAddReal("parthenon/time", "dt", dt_min);
     params.Add("dt", dt);
-    double max_dt_increase = pin->GetOrAddReal("parthenon/time", "max_dt_increase", 1.3);
+    double max_dt_increase = pin->GetOrAddReal("parthenon/time", "max_dt_increase", 2.0);
     params.Add("max_dt_increase", max_dt_increase);
 
     // Reconstruction scheme: plm, weno5, ppm...
@@ -158,10 +155,12 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     params.Add("temp_adjust_u", temp_adjust_u);
     bool fluid_frame = pin->GetOrAddBoolean("floors", "fluid_frame", false);
     params.Add("fluid_frame", fluid_frame);
-    bool fix_flux_inflow = pin->GetOrAddBoolean("floors", "fix_flux_inflow", true);
+
+
+    bool fix_flux_inflow = pin->GetOrAddBoolean("bounds", "fix_flux_inflow", true);
     params.Add("fix_flux_inflow", fix_flux_inflow);
-    bool fix_flux_B = pin->GetOrAddBoolean("floors", "fix_flux_B", true);
-    params.Add("fix_flux_B", fix_flux_B);
+    bool fix_flux_pole = pin->GetOrAddBoolean("bounds", "fix_flux_pole", true);
+    params.Add("fix_flux_pole", fix_flux_pole);
 
     bool wind_term = pin->GetOrAddBoolean("wind", "on", false);
     params.Add("wind_term", wind_term);
@@ -185,52 +184,57 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     bool buffer_set_pack = pin->GetOrAddBoolean("perf", "buffer_set_pack", true);
     params.Add("buffer_set_pack", buffer_set_pack);
 
-    // TODO add s_scalar as a reminder to stick to *very explicit* calls of metadata constructor
+    // Refinement options
+    Real refine_tol = pin->GetOrAddReal("GRMHD", "refine_tol", 0.5);
+    params.Add("refine_tol", refine_tol);
+    Real derefine_tol = pin->GetOrAddReal("GRMHD", "derefine_tol", 0.05);
+    params.Add("derefine_tol", derefine_tol);
+
+    // Custom sizes
     std::vector<int> s_vector({3});
     std::vector<int> s_fourvector({4});
     std::vector<int> s_prims({NPRIM});
+    // And a flag to denote primitives
+    MetadataFlag isPrimitive = Metadata::AllocateNewFlag("Primitive");
+    params.Add("PrimitiveFlag", isPrimitive);
 
     // As mentioned elsewhere, KHARMA treats the conserved variables as the independent ones,
     // and the primitives as "Derived."
     // They're still necessary for reconstruction, and generally are the quantities in output files
+    // TODO AMR probably needs prims to be FillGhost, make that work without setting Independent
     Metadata m = Metadata({Metadata::Cell, Metadata::Independent, Metadata::FillGhost,
                     Metadata::Restart, Metadata::Conserved}, s_prims);
     pkg->AddField("c.c.bulk.cons", m);
-    m = Metadata({Metadata::Cell, Metadata::Derived, Metadata::Restart}, s_prims);
+    m = Metadata({Metadata::Cell, Metadata::Derived, Metadata::Restart, isPrimitive}, s_prims);
     pkg->AddField("c.c.bulk.prims", m);
 
     // Maximum signal speed (magnitude).  Calculated in flux updates but needed for deciding timestep
     m = Metadata({Metadata::Face, Metadata::Derived, Metadata::OneCopy});
     pkg->AddField("f.f.bulk.ctop", m);
 
-    // Add jcon as an output-only calculation, likely overriding MeshBlock::UserWorkBeforeOutput
-    if (add_jcon) {
-        m = Metadata({Metadata::Cell, Metadata::Derived, Metadata::OneCopy}, s_fourvector);
-        pkg->AddField("c.c.bulk.jcon", m);
-    }
+    // TODO check/require a B field of some sort?
 
-    if (flag_save) {
-        m = Metadata({Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
-        pkg->AddField("c.c.bulk.pflag", m);
-        pkg->AddField("c.c.bulk.fflag", m);
-    }
+    // Add jcon as an output-only calculation, likely overriding MeshBlock::UserWorkBeforeOutput
+    m = Metadata({Metadata::Cell, Metadata::Derived, Metadata::OneCopy}, s_fourvector);
+    pkg->AddField("c.c.bulk.jcon", m);
+
+    // Temporary fix just for being able to save field values
+    // I wish they were really integers, but this works in the meantime
+    m = Metadata({Metadata::Cell, Metadata::Derived, Metadata::OneCopy, Metadata::Integer});
+    pkg->AddField("c.c.bulk.pflag", m);
+    pkg->AddField("c.c.bulk.fflag", m);
 
     pkg->FillDerivedBlock = GRMHD::UtoP;
-    pkg->CheckRefinementBlock = nullptr;
+    pkg->PostFillDerivedBlock = GRMHD::PostUtoP;
+    pkg->CheckRefinementBlock = GRMHD::CheckRefinement;
     pkg->EstimateTimestepBlock = GRMHD::EstimateTimestep;
+    //pkg->PostStepUserDiagnosticsInLoop = GRMHD::PostStepDiagnostics;
     return pkg;
 }
 
-/**
- * Get the primitive variables, which in Parthenon's nomenclature are "derived".
- * Also applies floors to the calculated primitives, and fixes up any inversion errors
- *
- * input: U, whatever form
- * output: U and P match with inversion errors corrected, and obey floors
- */
 void UtoP(MeshBlockData<Real> *rc)
 {
-    FLAG("Filling Derived");
+    FLAG("Filling Primitives");
     auto pmb = rc->GetBlockPointer();
     auto& G = pmb->coords;
 
@@ -239,20 +243,18 @@ void UtoP(MeshBlockData<Real> *rc)
     int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
 
     GridVars U = rc->Get("c.c.bulk.cons").data;
+    GridVars B_U = rc->Get("c.c.bulk.B_con").data;
     GridVars P = rc->Get("c.c.bulk.prims").data;
+
+    GridScalar pflag = rc->Get("c.c.bulk.pflag").data;
 
     // KHARMA uses only one boundary exchange, in the conserved variables
     // Except where FixUtoP has no neighbors, and must fix with bad zones, this is fully identical
     // between #s of MPI ranks, because we sync 4 ghost zones and only require 3 for reconstruction.
-    // Thus if the last rank is not flagged, it will be inverted the same way on each process, and
+    // Thus as long as the last rank is not flagged, it will be inverted the same way on each process, and
     // used in the same way for fixups.  If it fails & thus might be different, it is ignored.
-    GridInt pflag("pflag", n3, n2, n1);
-    GridInt fflag("fflag", n3, n2, n1);
 
     EOS* eos = pmb->packages.Get("GRMHD")->Param<EOS*>("eos");
-
-    // Pull out a struct of just the actual floor values for speed
-    FloorPrescription floors = FloorPrescription(pmb->packages.Get("GRMHD")->AllParams());
 
     // Get the primitives from our conserved versions
     // Note this covers ghost zones!  This is intentional, as primitives in
@@ -272,132 +274,25 @@ void UtoP(MeshBlockData<Real> *rc)
 
     pmb->par_for("U_to_P", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D {
-            pflag(k, j, i) = u_to_p(G, U, eos, k, j, i, Loci::center, P);
-
-            // Apply the floors in the same pass (if we can trust P!)
-            // Note we do this even for flagged cells!  In the worst case, we may have to use
-            // flagged cells to fix flagged cells, so they should at least obey floors
-            fflag(k, j, i) = 0;
-
-            // Fixup_floor involves another U_to_P call.  Hide the pflag in bottom 5 bits and retrieve both
-            int comboflag = apply_floors(G, P, U, eos, k, j, i, floors);
-            fflag(k, j, i) |= (comboflag / HIT_FLOOR_GEOM_RHO) * HIT_FLOOR_GEOM_RHO;
-
-            // Apply ceilings *after* floors, to make the temperature ceiling better-behaved
-            // Ceilings don't involve a U_to_P call
-            fflag(k, j, i) |= apply_ceilings(G, P, U, eos, k, j, i, floors);
-
-            // Optionally record the floor inversion failures & average over them
-            // Floors are still applied in fluid frame if this isn't done, but it might help?
-            // if (pflag(k, j, i) == InversionStatus::success) {
-            //     pflag(k, j, i) = comboflag % HIT_FLOOR_GEOM_RHO;
-            // }
+            pflag(k, j, i) = GRMHD::u_to_p(G, U, B_U, eos, k, j, i, Loci::center, P);
         }
     );
-    FLAG("Filled and Floored");
-
-    // Note I could separate this into a new step if pflag/fflag could be moved out
-    FixUtoP(rc, pflag, fflag);
-
-    // Debugging/diagnostic info about floor and inversion flags.
-    // Also should be separate...
-    // Note we only print flags in the interior, borders are covered either by other blocks,
-    // or by the outflow/polar conditions later
-    int print_flags = pmb->packages.Get("GRMHD")->Param<int>("flag_verbose");
-    if (print_flags > 0) {
-        auto fflag_host = fflag.GetHostMirrorAndCopy();
-        auto pflag_host = pflag.GetHostMirrorAndCopy();
-        int npflags = CountPFlags(pmb, pflag_host, IndexDomain::interior, print_flags);
-        int nfflags = CountFFlags(pmb, fflag_host, IndexDomain::interior, print_flags);
-    }
-    if (pmb->packages.Get("GRMHD")->Param<bool>("flag_save")) {
-        GridScalar pflag_save = rc->Get("c.c.bulk.pflag").data;
-        GridScalar fflag_save = rc->Get("c.c.bulk.fflag").data;
-        pmb->par_for("save_flags", ks, ke, js, je, is, ie,
-            KOKKOS_LAMBDA_3D {
-                pflag_save(k,j,i) = pflag(k,j,i);
-                fflag_save(k,j,i) = fflag(k,j,i);
-            }
-        );
-    }
+    FLAG("Filled");
 }
 
-/**
- * Calculate dU/dt from a set of fluxes.
- * Shortcut for Parthenon's FluxDivergence & GRMHD's AddSourceTerm
- *
- * @param rc is the current stage's container
- * @param base is the base container containing the global dUdt term
- */
-TaskStatus ApplyFluxes(SimTime tm, MeshBlockData<Real> *rc, MeshBlockData<Real> *dudt)
+void PostUtoP(MeshBlockData<Real> *rc)
 {
-    FLAG("Applying fluxes");
-    auto pmb = rc->GetBlockPointer();
-    IndexDomain domain = IndexDomain::interior;
-    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
-    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
-    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
-    int ndim = 3;
-    if (js == je) {
-        ndim = 1;
-    } else if (ks == ke) {
-        ndim = 2;
-    }
+    FLAG("Fixing Derived");
 
-    GridVars U = rc->Get("c.c.bulk.cons").data;
-    GridVars F1, F2, F3;
-    F1 = rc->Get("c.c.bulk.cons").flux[X1DIR];
-    if (ndim > 1) F2 = rc->Get("c.c.bulk.cons").flux[X2DIR];
-    if (ndim > 2) F3 = rc->Get("c.c.bulk.cons").flux[X3DIR];
-    GridVars P = rc->Get("c.c.bulk.prims").data;
-    auto& G = pmb->coords;
+    // Apply floors
+    ApplyFloors(rc);
 
-    EOS* eos = pmb->packages.Get("GRMHD")->Param<EOS*>("eos");
+    // TODO separate this and previous as different steps?
+    FixUtoP(rc);
 
-    bool wind_term = pmb->packages.Get("GRMHD")->Param<bool>("wind_term");
-    Real wind_n = pmb->packages.Get("GRMHD")->Param<Real>("wind_n");
-    Real wind_Tp = pmb->packages.Get("GRMHD")->Param<Real>("wind_Tp");
-    int wind_pow = pmb->packages.Get("GRMHD")->Param<int>("wind_pow");
-    Real wind_ramp_start = pmb->packages.Get("GRMHD")->Param<Real>("wind_ramp_start");
-    Real wind_ramp_end = pmb->packages.Get("GRMHD")->Param<Real>("wind_ramp_end");
-    Real current_wind_n;
-    if (wind_ramp_end > 0.0) {
-        current_wind_n = min((tm.time - wind_ramp_start) / (wind_ramp_end - wind_ramp_start), 1.0) * wind_n;
-    } else {
-        current_wind_n = wind_n;
-    }
-
-    // Unpack for kernel
-    auto dUdt = dudt->Get("c.c.bulk.cons").data;
-
-    pmb->par_for("apply_fluxes", ks, ke, js, je, is, ie,
-        KOKKOS_LAMBDA_3D {
-            // Calculate the source term and apply it in 1 go (since it's stencil-1)
-            FourVectors Dtmp;
-            Real dU[NPRIM] = {0};
-            get_state(G, P, k, j, i, Loci::center, Dtmp);
-            get_fluid_source(G, P, Dtmp, eos, k, j, i, dU);
-            if (wind_term) add_wind(G, eos, k, j, i, current_wind_n, wind_pow, wind_Tp, dU);
-
-            PLOOP {
-                dUdt(p, k, j, i) = (F1(p, k, j, i) - F1(p, k, j, i+1)) / G.dx1v(i) + dU[p];
-                if (ndim > 1) dUdt(p, k, j, i) += (F2(p, k, j, i) - F2(p, k, j+1, i)) / G.dx2v(j);
-                if (ndim > 2) dUdt(p, k, j, i) += (F3(p, k, j, i) - F3(p, k+1, j, i)) / G.dx3v(k);
-            }
-        }
-    );
-    FLAG("Applied");
-
-    return TaskStatus::complete;
+    FLAG("Fixed");
 }
 
-/**
- * Returns the minimum CFL timestep among all zones in the block,
- * multiplied by a proportion "cfl" for safety.
- *
- * This is just for a particular MeshBlock/package, so don't rely on it
- * Parthenon will take the minimum and put it in pmy_mesh->dt
- */
 Real EstimateTimestep(MeshBlockData<Real> *rc)
 {
     FLAG("Estimating timestep");
@@ -409,99 +304,198 @@ Real EstimateTimestep(MeshBlockData<Real> *rc)
     auto coords = pmb->coords;
     auto& ctop = rc->GetFace("f.f.bulk.ctop").data;
 
-    static double last_dt;
-
-    // Overall TODO: Override timestep class in the driver, and move
-    // this stuff there.  
+    // TODO: move timestep limiter into an override of the integrator code, keep last_dt somewhere formal/accessible
+    // TODO: move diagnostic printing to PostStepDiagnostics. Preserve location without double equality jank?
+    // TODO: timestep choices seem to be MPI or meshblock-dependent currently. That's bad.
+    const bool use_b_cd_glm = pmb->packages.AllPackages().count("B_CD_GLM") > 0;
 
     // Use parameter "dt" on the first step
-    static bool first_call = true;
-    if (first_call) {
-        first_call = false;
-        last_dt = pmb->packages.Get("GRMHD")->Param<Real>("dt") * pmb->packages.Get("GRMHD")->Param<Real>("cfl");
+    static int ncall = 0;
+    if (ncall < 1) {
+        ncall++;
+        last_dt = pmb->packages.Get("GRMHD")->Param<Real>("dt");
+        ctop_max = 0.0;
         return last_dt;
+        // Update::FillDerived<MeshBlockData<Real>>(rc);
+        // Flux::GetFlux(rc, X1DIR, dt);
+        // Flux::GetFlux(rc, X2DIR, dt);
+        // Flux::GetFlux(rc, X3DIR, dt);
     }
 
-    // TODO preserve location, needs custom (?) Kokkos Index type for 3D
-    double ndt;
-    Kokkos::Min<double> min_reducer(ndt);
+
+    typename Kokkos::MinMax<Real>::value_type minmax;
     pmb->par_reduce("ndt_min", ks, ke, js, je, is, ie,
-        KOKKOS_LAMBDA_3D_REDUCE {
+        KOKKOS_LAMBDA(const int k, const int j, const int i,
+                      typename Kokkos::MinMax<Real>::value_type &lminmax) {
             double ndt_zone = 1 / (1 / (coords.dx1v(i) / ctop(1, k, j, i)) +
                                    1 / (coords.dx2v(j) / ctop(2, k, j, i)) +
                                    1 / (coords.dx3v(k) / ctop(3, k, j, i)));
-            if (ndt_zone < local_result) {
-                local_result = ndt_zone;
-            }
+            // Effective "max speed" used for the timestep
+            double ctop_max_zone = min(coords.dx1v(i), min(coords.dx2v(j),coords.dx3v(k))) / ndt_zone;
+
+            if (ndt_zone < lminmax.min_val) lminmax.min_val = ndt_zone;
+            if (ctop_max_zone > lminmax.max_val) lminmax.max_val = ctop_max_zone;
         }
-    , min_reducer);
+    , Kokkos::MinMax<Real>(minmax));
+    // Keep dt to do some checks below
+    double ndt = minmax.min_val;
+    double nctop = minmax.max_val;
 
     // Warning that triggering this code slows the code down pretty badly (~1/3)
-    if (pmb->packages.Get("GRMHD")->Param<int>("verbose") > 1) {
-        if (pmb->packages.Get("GRMHD")->Param<bool>("flag_save")) {
-            auto fflag = rc->Get("c.c.bulk.fflag").data;
-            auto pflag = rc->Get("c.c.bulk.pflag").data;
-            pmb->par_for("ndt_min", ks, ke, js, je, is, ie,
-                KOKKOS_LAMBDA_3D {
-                    double ndt_zone = 1 / (1 / (coords.dx1v(i) / ctop(1, k, j, i)) +
-                                        1 / (coords.dx2v(j) / ctop(2, k, j, i)) +
-                                        1 / (coords.dx3v(k) / ctop(3, k, j, i)));
-                    if (ndt_zone == ndt) {
-                        printf("Timestep set by %d %d %d: pflag was %f and fflag was %f\n",
-                                i, j, k, pflag(k, j, i), fflag(k, j, i));
-                    }
+    if (pmb->packages.Get("GRMHD")->Param<int>("verbose") > 2) {
+        auto fflag = rc->Get("c.c.bulk.fflag").data;
+        auto pflag = rc->Get("c.c.bulk.pflag").data;
+        pmb->par_for("ndt_min", ks, ke, js, je, is, ie,
+            KOKKOS_LAMBDA_3D {
+                double ndt_zone = 1 / (1 / (coords.dx1v(i) / ctop(1, k, j, i)) +
+                                    1 / (coords.dx2v(j) / ctop(2, k, j, i)) +
+                                    1 / (coords.dx3v(k) / ctop(3, k, j, i)));
+                if (ndt_zone == ndt) {
+                    printf("Timestep set by %d %d %d: pflag was %f and fflag was %f\n",
+                            i, j, k, pflag(k, j, i), fflag(k, j, i));
                 }
-            );
-        } else {
-            pmb->par_for("ndt_min", ks, ke, js, je, is, ie,
-                KOKKOS_LAMBDA_3D {
-                    double ndt_zone = 1 / (1 / (coords.dx1v(i) / ctop(1, k, j, i)) +
-                                        1 / (coords.dx2v(j) / ctop(2, k, j, i)) +
-                                        1 / (coords.dx3v(k) / ctop(3, k, j, i)));
-                    if (ndt_zone == ndt) {
-                        printf("Timestep set by %d %d %d\n", i, j, k);
-                    }
-                }
-            );
-        }
+            }
+        );
     }
+
+    // Nominal timestep
     ndt *= pmb->packages.Get("GRMHD")->Param<Real>("cfl");
 
+    // TODO move timestep curation to an Integrator override
     // Sometimes we come out with a silly timestep. Try to salvage it
     double dt_min = pmb->packages.Get("GRMHD")->Param<Real>("dt_min");
     if (ndt < dt_min || isnan(ndt) || ndt > 10000) {
-        cerr << "ndt was unsafe: " << ndt << "! Using dt_min" << std::endl;
+        // Note this still prints for every mesh on rank 0
+        if (MPIRank0()) cerr << "ndt was unsafe: " << ndt << "! Using dt_min" << std::endl;
         ndt = dt_min;
+        nctop *= 0.01;
     }
 
-    // Only allow the local dt to increase by a certain amount.  This also caps the global
-    // one, but preserves local values in case we substep I guess?
+    // Only allow dt to increase to e.g. last_dt*1.3 at most
     Real dt_limit = pmb->packages.Get("GRMHD")->Param<Real>("max_dt_increase") * last_dt;
     if (ndt > dt_limit) {
-        if(pmb->packages.Get("GRMHD")->Param<int>("verbose") > 0) {
+        if(MPIRank0() && pmb->packages.Get("GRMHD")->Param<int>("verbose") > 1) {
             cout << "Limiting dt: " << dt_limit << endl;
         }
         ndt = dt_limit;
+        nctop *= 0.01;
     }
 
-    last_dt = ndt;
+    // Record to another some good very bad globals
+    ctop_max = MPIMax(nctop);
+    last_dt = MPIMin(ndt);
 
     FLAG("Estimated");
-    return ndt;
+    return last_dt;
 }
 
-void FillOutput(MeshBlock *pmb, double dt)
+AmrTag CheckRefinement(MeshBlockData<Real> *rc) {
+    auto pmb = rc->GetBlockPointer();
+    auto v = rc->Get("c.c.bulk.prims").data;
+
+    IndexRange ib = pmb->cellbounds.GetBoundsI(IndexDomain::entire);
+    IndexRange jb = pmb->cellbounds.GetBoundsJ(IndexDomain::entire);
+    IndexRange kb = pmb->cellbounds.GetBoundsK(IndexDomain::entire);
+
+    typename Kokkos::MinMax<Real>::value_type minmax;
+    pmb->par_reduce("check_refinement", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+        KOKKOS_LAMBDA(const int k, const int j, const int i,
+                      typename Kokkos::MinMax<Real>::value_type &lminmax) {
+        lminmax.min_val =
+            v(prims::rho, k, j, i) < lminmax.min_val ? v(prims::rho, k, j, i) : lminmax.min_val;
+        lminmax.max_val =
+            v(prims::rho, k, j, i) > lminmax.max_val ? v(prims::rho, k, j, i) : lminmax.max_val;
+        }
+    , Kokkos::MinMax<Real>(minmax));
+
+    auto pkg = pmb->packages.Get("GRMHD");
+    const auto &refine_tol = pkg->Param<Real>("refine_tol");
+    const auto &derefine_tol = pkg->Param<Real>("derefine_tol");
+
+    if (minmax.max_val - minmax.min_val > refine_tol) return AmrTag::refine;
+    if (minmax.max_val - minmax.min_val < derefine_tol) return AmrTag::derefine;
+    return AmrTag::same;
+}
+
+TaskStatus PostStepDiagnostics(Mesh *pmesh, ParameterInput *pin, const SimTime& tm)
 {
-    FLAG("Adding output fields");
+    FLAG("Printing diagnostics");
 
-    auto& rc0 = pmb->meshblock_data.Get("preserve");
-    auto& rc1 = pmb->meshblock_data.Get();
-    CalculateCurrent(rc0.get(), rc1.get(), dt);
+    int nmb = pmesh->GetNumMeshBlocksThisRank(Globals::my_rank);
+    for (int i=0; i < nmb; ++i) {
+        auto& pmb = pmesh->block_list[i];
+        auto& rc = pmb->meshblock_data.Get();
 
-    // TODO divB!
+        auto& G = pmb->coords;
+        GridVars P = rc->Get("c.c.bulk.prims").data;
+        GridVars U = rc->Get("c.c.bulk.cons").data;
+        GridScalar pflag = rc->Get("c.c.bulk.pflag").data;
+        GridScalar fflag = rc->Get("c.c.bulk.fflag").data;
 
+        // Debugging/diagnostic info about floor and inversion flags
+        // TODO domain::entire?
+        int print_flags = pmb->packages.Get("GRMHD")->Param<int>("flag_verbose");
+        if (print_flags >= 1) {
+            auto fflag_host = fflag.GetHostMirrorAndCopy();
+            auto pflag_host = pflag.GetHostMirrorAndCopy();
+            int npflags = CountPFlags(pmb, pflag_host, IndexDomain::interior, print_flags);
+            int nfflags = CountFFlags(pmb, fflag_host, IndexDomain::interior, print_flags);
+        }
 
-    FLAG("Added");
+        // TODO move checking ctop here?  Have to preserve it without overwriting
+
+        // Extra checking for negative values
+        if (pmb->packages.Get("GRMHD")->Param<int>("extra_checks") >= 2) {
+            IndexDomain domain = IndexDomain::interior;
+            int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
+            int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
+            int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
+
+            // Check for negative values in the conserved vars
+            int nless;
+            Kokkos::Sum<int> sum_reducer(nless);
+            pmb->par_reduce("count_negative_U", ks, ke, js, je, is, ie,
+                KOKKOS_LAMBDA_3D_REDUCE_INT {
+                    if (U(prims::rho, k, j, i) < 0.) ++local_result;
+                }
+            , sum_reducer);
+            nless = MPISum(nless);
+            if (MPIRank0() && nless > 0) {
+                cout << "Number of negative conserved rho: " << nless << endl;
+            }
+            pmb->par_reduce("count_negative_P", ks, ke, js, je, is, ie,
+                KOKKOS_LAMBDA_3D_REDUCE_INT {
+                    if (P(prims::rho, k, j, i) < 0.) ++local_result;
+                    if (P(prims::u, k, j, i) < 0.) ++local_result;
+                }
+            , sum_reducer);
+            nless = MPISum(nless);
+            if (MPIRank0() && nless > 0) {
+                cout << "Number of negative primitive rho, u: " << nless << endl;
+            }
+        }
+    }
+
+    return TaskStatus::complete;
+}
+
+void FillOutput(MeshBlock *pmb, ParameterInput *pin)
+{
+    // We expect this to fail on the first step
+    try {
+        FLAG("Adding output fields");
+
+        auto& rc1 = pmb->meshblock_data.Get();
+        auto& rc0 = pmb->meshblock_data.Get("preserve");
+
+        Real dt = last_dt;
+        GRMHD::CalculateCurrent(rc0.get(), rc1.get(), dt);
+
+        FLAG("Added");
+
+    } catch(std::runtime_error& e) {
+        return;
+    }
 }
 
 } // namespace GRMHD

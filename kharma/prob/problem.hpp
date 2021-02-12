@@ -18,7 +18,7 @@ namespace KHARMA {
 
 /**
  * Post-initialization functions:
- * 1. Normalize magnetic field to respect beta_min parameter
+ * 1. Initialize magnetic field, normalize magnetic field to respect beta_min parameter
  * 2. Boundary sync
  */
 void PostInitialize(ParameterInput *pin, Mesh *pmesh);

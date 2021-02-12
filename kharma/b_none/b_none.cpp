@@ -1,5 +1,5 @@
 /* 
- *  File: current.hpp
+ *  File: b_none.cpp
  *  
  *  BSD 3-Clause License
  *  
@@ -31,37 +31,46 @@
  *  OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-#pragma once
 
 #include <parthenon/parthenon.hpp>
 
+#include "b_none.hpp"
+
 #include "decs.hpp"
-#include "matrix.hpp"
-#include "mhd_functions.hpp"
+#include "grmhd.hpp"
+#include "kharma.hpp"
 
-namespace GRMHD
+using namespace parthenon;
+
+namespace B_None
 {
 
-TaskStatus CalculateCurrent(MeshBlockData<Real> *rc0, MeshBlockData<Real> *rc1, const double& dt);
-
-// Return mu, nu component of contravarient Maxwell tensor at grid zone i, j, k
-KOKKOS_INLINE_FUNCTION double get_Fcon(const GRCoordinates& G, GridVars P, GridVector B_P,
-                                        const int& mu, const int& nu, const int& k, const int& j, const int& i)
+std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t packages)
 {
-    if (mu == nu) {
-        return 0.;
-    } else {
-        FourVectors Dtmp;
-        GRMHD::calc_4vecs(G, P, B_P, k, j, i, Loci::center, Dtmp);
-        double Fcon = 0.;
-        for (int kap = 0; kap < GR_DIM; kap++) {
-            for (int lam = 0; lam < GR_DIM; lam++) {
-                Fcon += (-1. / G.gdet(Loci::center, j, i)) * antisym(mu, nu, kap, lam) * Dtmp.ucov[kap] * Dtmp.bcov[lam];
-            }
-        }
+    auto pkg = std::make_shared<StateDescriptor>("B_None");
+    Params &params = pkg->AllParams();
 
-        return Fcon;
-    }
+    std::vector<int> s_vector({3});
+
+    MetadataFlag isPrimitive = packages.Get("GRMHD")->Param<MetadataFlag>("PrimitiveFlag");
+
+    // Require B in order to do GRMHD
+    // TODO OneCopy or eliminate these entirely with if statements
+    Metadata m = Metadata({Metadata::Cell, Metadata::Independent, Metadata::FillGhost,
+                  Metadata::Restart, Metadata::Conserved}, s_vector);
+    pkg->AddField("c.c.bulk.B_con", m);
+    m = Metadata({Metadata::Cell, Metadata::Derived, Metadata::Restart, isPrimitive}, s_vector);
+    pkg->AddField("c.c.bulk.B_prim", m);
+
+    return pkg;
 }
 
-} // namespace GRMHD
+void UtoP(MeshBlockData<Real> *rc) {}
+
+
+TaskStatus PostStepDiagnostics(Mesh *pmesh, ParameterInput *pin, const SimTime& tm) 
+{ return TaskStatus::complete; }
+
+void FillOutput(MeshBlock *pmb, ParameterInput *pin) {}
+
+} // namespace B_None

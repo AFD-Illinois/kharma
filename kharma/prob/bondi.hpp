@@ -19,4 +19,4 @@ void InitializeBondi(MeshBlock *pmb, const GRCoordinates& G, GridVars P,
 /**
  * Apply the Bondi flow condition on right X1 boundary
  */
-void ApplyBondiBoundary(std::shared_ptr<MeshBlockData<Real>>& rc);
+void ApplyBondiBoundary(MeshBlockData<Real> *rc);

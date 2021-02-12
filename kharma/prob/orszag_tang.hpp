@@ -19,7 +19,7 @@ using namespace parthenon;
  * 
  * Stolen directly from iharm2d_v3
  */
-void InitializeOrszagTang(MeshBlock *pmb, const GRCoordinates& G, const GridVars& P, Real tscale=0.05)
+void InitializeOrszagTang(MeshBlock *pmb, const GRCoordinates& G, const GridVars& P, const GridVector& B_P, Real tscale=0.05)
 {
     // Puts the current sheet in the middle of the domain
     Real phase = M_PI;
@@ -39,15 +39,21 @@ void InitializeOrszagTang(MeshBlock *pmb, const GRCoordinates& G, const GridVars
             P(prims::u1, k, j, i) = -sin(X[2] + phase);
             P(prims::u2, k, j, i) = sin(X[1] + phase);
             P(prims::u3, k, j, i) = 0.;
-            P(prims::B1, k, j, i) = -sin(X[2] + phase);
-            P(prims::B2, k, j, i) = sin(2.*(X[1] + phase));
-            P(prims::B3, k, j, i) = 0.;
+            B_P(0, k, j, i) = -sin(X[2] + phase);
+            B_P(1, k, j, i) = sin(2.*(X[1] + phase));
+            B_P(2, k, j, i) = 0.;
         }
     );
     // Rescale primitive velocities & B field by tscale, and internal energy by the square.
-    pmb->par_for("ot_renorm", prims::u, NPRIM-1, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+    pmb->par_for("ot_renorm", 0, NVEC-1, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_VARS {
-            P(p, k, j, i) *= tscale * (p == prims::u ? tscale : 1);
+            P(prims::u1 + p, k, j, i) *= tscale;
+            B_P(p, k, j, i) *= tscale;
+        }
+    ); 
+    pmb->par_for("ot_renorm_u", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+        KOKKOS_LAMBDA_3D {
+            P(prims::u, k, j, i) *= tscale * tscale;
         }
     );
 }

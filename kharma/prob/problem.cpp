@@ -39,16 +39,26 @@
 #include "fixup.hpp"
 #include "floors.hpp"
 #include "gr_coordinates.hpp"
-#include "phys.hpp"
+#include "b_field_tools.hpp"
 
 // Problem initialization headers
 #include "bondi.hpp"
 #include "explosion.hpp"
 #include "fm_torus.hpp"
 #include "iharm_restart.hpp"
+#include "kelvin_helmholtz.hpp"
 #include "mhdmodes.hpp"
 #include "orszag_tang.hpp"
-#include "seed_B.hpp"
+#include "b_field_tools.hpp"
+
+// Package headers
+#include "mhd_functions.hpp"
+#include "seed_B_ct.hpp"
+#include "seed_B_cd.hpp"
+#include "b_flux_ct.hpp"
+#include "b_flux_ct_functions.hpp"
+#include "b_cd_glm.hpp"
+#include "b_cd_glm_functions.hpp"
 
 #include "bvals/boundary_conditions.hpp"
 #include "mesh/mesh.hpp"
@@ -60,7 +70,16 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
     FLAG("Initializing Block");
     auto rc = pmb->meshblock_data.Get();
     GridVars P = rc->Get("c.c.bulk.prims").data;
+    GridVector B_P = rc->Get("c.c.bulk.B_prim").data;
     GridVars U = rc->Get("c.c.bulk.cons").data;
+    GridVector B_U = rc->Get("c.c.bulk.B_con").data;
+    GridScalar psi_p, psi_u;
+    const bool use_b_flux_ct = pmb->packages.AllPackages().count("B_FluxCT") > 0;
+    const bool use_b_cd_glm = pmb->packages.AllPackages().count("B_CD_GLM") > 0;
+    if (use_b_cd_glm) {
+        psi_p = rc->Get("c.c.bulk.psi_cd_prim").data;
+        psi_u = rc->Get("c.c.bulk.psi_cd_con").data;
+    }
 
     GRCoordinates G = pmb->coords;
     EOS* eos = pmb->packages.Get("GRMHD")->Param<EOS*>("eos");
@@ -70,11 +89,21 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
         int nmode = pin->GetOrAddInteger("mhdmodes", "nmode", 1);
         int dir = pin->GetOrAddInteger("mhdmodes", "dir", 0);
 
-        double tf = InitializeMHDModes(pmb, G, P, nmode, dir);
+        double tf = InitializeMHDModes(pmb, G, P, B_P, nmode, dir);
         if(tf > 0.) pin->SetReal("parthenon/time", "tlim", tf);
 
     } else if (prob == "orszag_tang") {
-        InitializeOrszagTang(pmb, G, P);
+        Real tscale = pin->GetOrAddReal("orszag_tang", "tscale", 0.05);
+        InitializeOrszagTang(pmb, G, P, B_P, tscale);
+
+    } else if (prob == "explosion") {
+        // Generally includes constant B field Bx = 0.1,1
+        InitializeExplosion(pmb, G, P);
+
+    } else if (prob == "kelvin_helmholtz") {
+        // Generally includes constant B field Bx = 0.1,1
+        Real tscale = pin->GetOrAddReal("kelvin_helmholtz", "tscale", 0.05);
+        InitializeKelvinHelmholtz(pmb, G, P);
 
     } else if (prob == "bondi") {
         Real mdot = pin->GetOrAddReal("bondi", "mdot", 1.0);
@@ -87,10 +116,6 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
 
         InitializeBondi(pmb, G, P, eos, mdot, rs);
 
-    } else if (prob == "explosion") {
-        Real Bx = pin->GetOrAddReal("explosion", "Bx", 0.01);
-        InitializeExplosion(pmb, G, P, Bx);
-    
     } else if (prob == "torus") {
         Real rin = pin->GetOrAddReal("torus", "rin", 6.0);
         Real rmax = pin->GetOrAddReal("torus", "rmax", 12.0);
@@ -100,19 +125,22 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
     } else if (prob == "iharm_restart") {
         auto fname = pin->GetString("iharm_restart", "fname"); // Require this, don't guess
         bool use_tf = pin->GetOrAddBoolean("iharm_restart", "use_tf", false);
-        double tf = ReadIharmRestart(pmb, G, P, fname);
+        double tf = ReadIharmRestart(pmb, G, P, B_P, fname);
         if (use_tf) {
             pin->SetReal("parthenon/time", "tlim", tf);
         }
     }
 
-    // TODO namespace this outside "torus," it could be added to anything
-    Real u_jitter = pin->GetOrAddReal("torus", "u_jitter", 0.0);
-    int rng_seed = pin->GetOrAddInteger("torus", "rng_seed", 31337);
+    Real u_jitter = pin->GetOrAddReal("perturbation", "u_jitter", 0.0);
+    int rng_seed = pin->GetOrAddInteger("perturbation", "rng_seed", 31337);
     if (u_jitter > 0.0) {
         FLAG("Applying U perturbation");
         PerturbU(pmb, P, u_jitter, rng_seed + pmb->gid);
     }
+
+    // Apply any floors
+    FLAG("First Floors");
+    ApplyFloors(rc.get());
 
     // We finish by filling the conserved variables U,
     // which we'll treat as the independent/fundamental state.
@@ -125,13 +153,13 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
     FLAG("First P->U");
     pmb->par_for("first_U", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_3D {
-            p_to_u(G, P, eos, k, j, i, U);
+            GRMHD::p_to_u(G, P, B_P, eos, k, j, i, U);
+            if (use_b_flux_ct)
+                B_FluxCT::p_to_u(G, B_P, k, j, i, B_U);
+            if (use_b_cd_glm)
+                B_CD_GLM::p_to_u(G, B_P, psi_p, k, j, i, B_U, psi_u);
         }
     );
-
-    // Apply any floors. Unnecessary as Parthenon does an initial FillDerived call
-    FLAG("First Floors");
-    ApplyFloors(rc);
 
     FLAG("Initialized Block");
 }
@@ -142,12 +170,19 @@ void PostInitialize(ParameterInput *pin, Mesh *pmesh)
 
     // Add the field for torus problems as a second pass
     // Preserves P==U and ends with all physical zones fully defined
-    if (pin->GetOrAddString("b_field", "type", "none") != "none") {
+    if (pin->GetString("b_field", "type") != "none") {
         // Calculating B has a stencil outside physical zones
         FLAG("Extra boundary sync for B");
         SyncAllBounds(pmesh);
 
+        // "Legacy" is the much more common normalization:
+        // It's the ratio of max values over the domain i.e. max_P / max_PB,
+        // not "beta" per se
         Real beta_calc_legacy = pin->GetOrAddBoolean("b_field", "legacy", true);
+
+        // Use the correct seed function based on field constraint solver
+        const bool use_b_flux_ct = pmesh->packages.AllPackages().count("B_FluxCT") > 0;
+        const bool use_b_cd_glm = pmesh->packages.AllPackages().count("B_CD_GLM") > 0;
 
         FLAG("Seeding magnetic field");
         // Seed the magnetic field and find the minimum beta
@@ -156,27 +191,37 @@ void PostInitialize(ParameterInput *pin, Mesh *pmesh)
         for (int i = 0; i < nmb; ++i) {
             auto& pmb = pmesh->block_list[i];
             auto& rc = pmb->meshblock_data.Get();
-            SeedBField(rc, pin);
+
+            // This initializes B_P & B_U
+            if (use_b_flux_ct) {
+                B_FluxCT::SeedBField(rc.get(), pin);
+            } else if (use_b_cd_glm) {
+                B_CD_GLM::SeedBField(rc.get(), pin);
+            }
         
             // TODO should this be added after normalization?
             // TODO option to add flux slowly during the run?
-            Real BHflux = pin->GetOrAddReal("b_field", "bhflux", 0.0);
-            if (BHflux > 0.) {
-                //SeedBHFlux(rc, BHflux);
-            }
+            // Real BHflux = pin->GetOrAddReal("b_field", "bhflux", 0.0);
+            // if (BHflux > 0.) {
+            //     if (use_b_flux_ct) {
+            //         B_FluxCT::SeedBHFlux(rc.get(), pin);
+            //     } else if (use_b_cd_glm) {
+            //         B_CD_GLM::SeedBHFlux(rc.get(), pin);
+            //     }
+            // }
 
             if (beta_calc_legacy) {
-                Real bsq_local = GetLocalBsqMax(rc);
+                Real bsq_local = GetLocalBsqMax(rc.get());
                 if(bsq_local > bsq_max) bsq_max = bsq_local;
-                Real p_local = GetLocalPMax(rc);
+                Real p_local = GetLocalPMax(rc.get());
                 if(p_local > p_max) p_max = p_local;
             } else {
-                Real beta_local = GetLocalBetaMin(rc);
+                Real beta_local = GetLocalBetaMin(rc.get());
                 if(beta_local < beta_min) beta_min = beta_local;
             }
         }
 
-        // Then, unless we've asked not to, normalize to some standard beta
+        // Then, unless we're asked not to, normalize to some standard beta
         if (pin->GetOrAddBoolean("b_field", "norm", true)) {
             // Default to iharm3d's field normalization, pg_max/pb_max = 100
             // This is *not* the same as local beta_min = 100
@@ -201,26 +246,34 @@ void PostInitialize(ParameterInput *pin, Mesh *pmesh)
                 for (int i = 0; i < nmb; ++i) {
                     auto& pmb = pmesh->block_list[i];
                     auto& rc = pmb->meshblock_data.Get();
-                    NormalizeBField(rc, norm);
+                    NormalizeBField(rc.get(), norm);
                 }
             }
         }
 
         if (pin->GetInteger("debug", "verbose") > 0) {
-            // Do it again to check
-            beta_min = 1e100, p_max = 0., bsq_max = 0.;
+            // Do it again to check, and add divB for good measure
+            beta_min = 1e100; p_max = 0.; bsq_max = 0.;
+            Real divb_max = 0.;
             for (int i = 0; i < nmb; ++i) {
                 auto& pmb = pmesh->block_list[i];
                 auto& rc = pmb->meshblock_data.Get();
 
                 if (beta_calc_legacy) {
-                    Real bsq_local = GetLocalBsqMax(rc);
+                    Real bsq_local = GetLocalBsqMax(rc.get());
                     if(bsq_local > bsq_max) bsq_max = bsq_local;
-                    Real p_local = GetLocalPMax(rc);
+                    Real p_local = GetLocalPMax(rc.get());
                     if(p_local > p_max) p_max = p_local;
                 } else {
-                    Real beta_local = GetLocalBetaMin(rc);
+                    Real beta_local = GetLocalBetaMin(rc.get());
                     if(beta_local < beta_min) beta_min = beta_local;
+                }
+                if (use_b_flux_ct) {
+                    Real divb_local = B_FluxCT::MaxDivB(rc.get());
+                    if(divb_local > divb_max) divb_max = divb_local;
+                } else if (use_b_cd_glm) {
+                    Real divb_local = B_CD_GLM::MaxDivB(rc.get());
+                    if(divb_local > divb_max) divb_max = divb_local;
                 }
             }
             if (beta_calc_legacy) {
@@ -230,7 +283,9 @@ void PostInitialize(ParameterInput *pin, Mesh *pmesh)
             } else {
                 beta_min = MPIMin(beta_min);
             }
+            divb_max = MPIMax(divb_max);
             cerr << "Beta min post-norm: " << beta_min << endl;
+            cerr << "Max divB post-norm: " << divb_max << endl;
         }
 
     }
@@ -245,7 +300,13 @@ void PostInitialize(ParameterInput *pin, Mesh *pmesh)
 
 void SyncAllBounds(Mesh *pmesh)
 {
-    // Update ghost cells. Only performed on U
+    // Mark primitives as Independent/FillGhost temporarily
+    // Normally we use values from last step as guesses for UtoP, but we can't do that on first sync(s)
+    pmesh->packages.Get("GRMHD").get()->FieldMetadata("c.c.bulk.prims").Set(Metadata::Independent);
+    pmesh->packages.Get("GRMHD").get()->FieldMetadata("c.c.bulk.prims").Set(Metadata::FillGhost);
+    pmesh->packages.Get("GRMHD").get()->FieldMetadata("c.c.bulk.B_prim").Set(Metadata::Independent);
+    pmesh->packages.Get("GRMHD").get()->FieldMetadata("c.c.bulk.B_prim").Set(Metadata::FillGhost);
+
     int nmb = pmesh->GetNumMeshBlocksThisRank(Globals::my_rank);
     for (int i = 0; i < nmb; ++i) {
         auto& pmb = pmesh->block_list[i];
@@ -264,9 +325,14 @@ void SyncAllBounds(Mesh *pmesh)
 
         // Physical boundary conditions
         parthenon::ApplyBoundaryConditions(rc);
-        ApplyCustomBoundaries(rc);
+        ApplyCustomBoundaries(rc.get());
 
         // Fill P again, including ghost zones
         parthenon::Update::FillDerived(rc.get());
     }
+
+    pmesh->packages.Get("GRMHD").get()->FieldMetadata("c.c.bulk.prims").Unset(Metadata::Independent);
+    pmesh->packages.Get("GRMHD").get()->FieldMetadata("c.c.bulk.prims").Unset(Metadata::FillGhost);
+    pmesh->packages.Get("GRMHD").get()->FieldMetadata("c.c.bulk.B_prim").Unset(Metadata::Independent);
+    pmesh->packages.Get("GRMHD").get()->FieldMetadata("c.c.bulk.B_prim").Unset(Metadata::FillGhost);
 }

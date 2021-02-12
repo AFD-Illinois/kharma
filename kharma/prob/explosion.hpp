@@ -45,17 +45,17 @@ using namespace parthenon;
 /**
  * Initialization of the strong cylindrical explosion of Komissarov 1999 section 7.3
  * 
- * Hard-coded/default values assume gamma=4/3
+ * Note the problem setup assumes gamma=4/3
  * 
  * Originally run on 2D Cartesian domain -6.0, 6.0 with a 200x200 grid, to tlim=4.0
  */
-void InitializeExplosion(MeshBlock *pmb, GRCoordinates G, GridVars P, Real Bx)
+void InitializeExplosion(MeshBlock *pmb, GRCoordinates G, GridVars P)
 {
-    Real gamma = 4./3;
-    Real u_out = 3.e-5 / (gamma-1);
+    Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
+    Real u_out = 3.e-5 / (gam-1);
     Real rho_out = 1.e-4;
 
-    Real u_in = 1.0 / (gamma-1);
+    Real u_in = 1.0 / (gam-1);
     Real rho_in = 1.e-2;
 
     // One buffer zone of linear decline, r_in -> r_out
@@ -97,13 +97,9 @@ void InitializeExplosion(MeshBlock *pmb, GRCoordinates G, GridVars P, Real Bx)
                 P(prims::u, k, j, i) = u_out;
             }
 
-            P(prims::B1, k, j, i) = Bx;
-
             P(prims::u1, k, j, i) = 0.;
             P(prims::u2, k, j, i) = 0.;
             P(prims::u3, k, j, i) = 0.;
-            P(prims::B2, k, j, i) = 0.;
-            P(prims::B3, k, j, i) = 0.;
         }
     );
 }

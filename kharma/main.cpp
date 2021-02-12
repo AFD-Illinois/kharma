@@ -71,9 +71,8 @@ int main(int argc, char *argv[])
     pman.app_input->ProcessPackages = KHARMA::ProcessPackages;
     pman.app_input->ProcessProperties = KHARMA::ProcessProperties;
     pman.app_input->ProblemGenerator = KHARMA::ProblemGenerator;
-    // This is a *static* member of meshblock, so it doesn't inherit the pointer we need
-    // TODO update around this when it gets fixed
-    //pman.app_input->UserWorkBeforeOutput = KHARMA::FillOutput;
+    pman.app_input->UserWorkBeforeOutput = KHARMA::FillOutput;
+    pman.app_input->PostStepDiagnosticsInLoop = KHARMA::PostStepDiagnostics;
 
     // Parthenon init includes Kokkos, MPI, parses parameters & cmdline,
     // then calls ProcessPackages and ProcessProperties, then constructs the Mesh
@@ -94,11 +93,13 @@ int main(int argc, char *argv[])
     auto pmesh = pman.pmesh.get();
     auto papp = pman.app_input.get();
 
-    if(pin->GetOrAddInteger("debug", "verbose", 0) && MPIRank0()) {
+    if(MPIRank0() && pin->GetInteger("debug", "verbose") > 0) {
         // This dumps the full Kokkos config, useful for double-checking
         // that the compile did what we wanted
         ShowConfig();
+        pin->ParameterDump(cout);
     }
+    // TODO parameter dump to a run-XXXX.par file
 
     // Write the problem to the mesh.
     // Implemented separately outside of MeshBlock since

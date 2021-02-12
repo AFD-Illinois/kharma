@@ -8,13 +8,13 @@ problem_id = orszag_tang
 refinement = none
 numlevel = 1
 
-nx1 = 512
+nx1 = 500
 x1min = -3.141592653589793
 x1max = 3.141592653589793
 ix1_bc = periodic
 ox1_bc = periodic
 
-nx2 = 512
+nx2 = 500
 x2min = -3.141592653589793
 x2max = 3.141592653589793
 ix2_bc = periodic
@@ -27,8 +27,8 @@ ix3_bc = periodic
 ox3_bc = periodic
 
 <parthenon/meshblock>
-nx1 = 512
-nx2 = 512
+nx1 = 500
+nx2 = 500
 nx3 = 1
 
 <coordinates>
@@ -38,18 +38,22 @@ transform = null
 <parthenon/time>
 tlim = 100.0
 integrator = rk2
+#nlim = 10
 
 <GRMHD>
 cfl = 0.9
 gamma = 1.666667
 reconstruction = weno5
 
-<debug>
-verbose = 2
-flag_verbose = 1
+<b_field>
+solver = constraint_damping
+c_h_factor = 0.9
 
+<debug>
+verbose = 1
+flag_verbose = 1
 
 <parthenon/output0>
 file_type = hdf5
 dt = 1.0
-variables = c.c.bulk.prims, c.c.bulk.B_prim
+variables = c.c.bulk.prims, c.c.bulk.B_prim, c.c.bulk.psi_cd_prim, c.c.bulk.jcon, c.c.bulk.divB_cd

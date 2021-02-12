@@ -47,4 +47,4 @@
  * 
  * LOCKSTEP: this function expects and should preserve P<->U
  */
-void FixUtoP(MeshBlockData<Real> *rc, GridInt pflag, GridInt fflag);
+void FixUtoP(MeshBlockData<Real> *rc);

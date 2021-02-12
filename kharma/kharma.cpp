@@ -39,27 +39,37 @@
 
 #include "decs.hpp"
 
+// Packages
+#include "b_flux_ct.hpp"
+#include "b_none.hpp"
+#include "b_cd_glm.hpp"
+#include "grmhd.hpp"
+
 #include "bondi.hpp"
 #include "boundaries.hpp"
 #include "fixup.hpp"
-#include "grmhd.hpp"
 #include "harm_driver.hpp"
 #include "iharm_restart.hpp"
 
 Properties_t KHARMA::ProcessProperties(std::unique_ptr<ParameterInput>& pin)
 {
-    // TODO actually use this?  Just globals, basically, maybe useful for debug flags etc.
+    // TODO this could benefit from some more use
     Properties_t properties;
+    //properties.push_back(std::make_shared<KHARMAProperties>("Globals"));
+    //StateDescriptor globals = (static_cast<KHARMAProperties*>(properties[0].get()))->State();
 
-    // Mostly this function is where I've chosen to mess with all Parthenon's parameters before
+    // Mostly, though, this function is where I've chosen to mess with all Parthenon's parameters before
     // handing them over.  This includes reading restarts, setting native boundaries from KS, etc.
 
-    // Set ghost zones.  Switch to 4 unless we're explicitly using a stencil-3 scheme
-    std::string recon = pin->GetOrAddString("GRMHD", "reconstruction", "weno5");
-    if (recon != "donor_cell" && recon != "linear_mc" && recon != "linear_vl") {
-        pin->SetInteger("parthenon/mesh", "nghost", 4);
-        Globals::nghost = pin->GetInteger("parthenon/mesh", "nghost");
-    }
+    // Set 4 ghost zones
+    // TODO allow fewer for stencil-3 schemes
+    // std::string recon = pin->GetOrAddString("GRMHD", "reconstruction", "weno5");
+    // if (recon != "donor_cell" && recon != "linear_mc" && recon != "linear_vl") {
+    //     pin->SetInteger("parthenon/mesh", "nghost", 4);
+    //     Globals::nghost = pin->GetInteger("parthenon/mesh", "nghost");
+    // }
+    pin->SetInteger("parthenon/mesh", "nghost", 4);
+    Globals::nghost = pin->GetInteger("parthenon/mesh", "nghost");
 
     // If we're restarting (not via Parthenon), read the restart file to get most parameters
     std::string prob = pin->GetString("parthenon/job", "problem_id");
@@ -111,7 +121,13 @@ Properties_t KHARMA::ProcessProperties(std::unique_ptr<ParameterInput>& pin)
             pin->SetReal("parthenon/mesh", "x3min", 0.0);
             pin->SetReal("parthenon/mesh", "x3max", 2*M_PI);
         } // TODO any other transforms/systems
-    }  // TODO assume periodic conditions for all Cartesian simulations?
+    }
+
+    // If we're using constant field of some kind, we likely *don't* want to normalize to beta_min=N
+    std::string field_type = pin->GetOrAddString("b_field", "type", "none");
+    if (field_type == "constant" || field_type == "monopole") {
+        pin->GetOrAddBoolean("b_field", "norm", false);
+    }
 
     return properties;
 }
@@ -120,34 +136,44 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
 {
     Packages_t packages;
 
-    // Turn off GRMHD only if set to false in input file
-    bool do_grmhd = pin->GetOrAddBoolean("Packages", "GRMHD", true);
-    bool do_grhd = pin->GetOrAddBoolean("Packages", "GRHD", false);
-    bool do_electrons = pin->GetOrAddBoolean("Packages", "howes_electrons", false);
+    // Just one base package
+    packages.Add(GRMHD::Initialize(pin.get()));
 
-    // enable other packages as needed
-    bool do_scalars = pin->GetOrAddBoolean("Packages", "scalars", false);
-
-    // Just one base package: integrated B-fields, or not.
-    if (do_grmhd) {
-        packages.Add(GRMHD::Initialize(pin.get()));
-    } else if (do_grhd) {
-
+    // A bunch of B fields. Put them behind a different option than b_field/type,
+    // to avoid mistakes
+    std::string b_field_solver = pin->GetOrAddString("b_field", "solver", "flux_ct");
+    if (b_field_solver == "none") {
+        packages.Add(B_None::Initialize(pin.get(), packages));
+    } else if (b_field_solver == "constraint_damping" || b_field_solver == "b_cd_glm") {
+        packages.Add(B_CD_GLM::Initialize(pin.get(), packages));
+    } else {
+        // Don't even error on bad values.  This is probably what you want,
+        // and we'll check for adaptive and error later
+        packages.Add(B_FluxCT::Initialize(pin.get(), packages));
     }
 
-    // Scalars can be added 
-    // if (do_scalars) {
-    //     packages.Get("scalars") = BetterScalars::Initialize(pin.get());
-    // }
-
-    // TODO electrons, like scalars but w/heating step...
+    // TODO scalars, electrons...
 
     return std::move(packages);
 }
 
-// void KHARMA::FillOutput(ParameterInput *pin)
-// {
-//     // This is a MeshBlock.  'this' is therefore a pointer to the MeshBlock
-//     GRMHD::FillOutput(this);
-//     // In case there are other packages...
-// }
+void KHARMA::FillOutput(MeshBlock *pmb, ParameterInput *pin)
+{
+    // TODO for package in packages...
+    GRMHD::FillOutput(pmb, pin);
+    if (pmb->packages.AllPackages().count("B_FluxCT") > 0)
+        B_FluxCT::FillOutput(pmb, pin);
+    if (pmb->packages.AllPackages().count("B_CD_GLM") > 0)
+        B_CD_GLM::FillOutput(pmb, pin);
+    // In case there are other packages that need this
+}
+
+void KHARMA::PostStepDiagnostics(Mesh *pmesh, ParameterInput *pin, const SimTime& tm)
+{
+    // TODO for package in packages...
+    GRMHD::PostStepDiagnostics(pmesh, pin, tm);
+    if (pmesh->packages.AllPackages().count("B_FluxCT") > 0)
+        B_FluxCT::PostStepDiagnostics(pmesh, pin, tm);
+    if (pmesh->packages.AllPackages().count("B_CD_GLM") > 0)
+        B_CD_GLM::PostStepDiagnostics(pmesh, pin, tm);
+}

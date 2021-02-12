@@ -43,16 +43,16 @@ enum Loci{face1=0, face2, face3, center, corner};
 
 // Accuracy for numerical derivatives of the metric
 #define DELTA 1.e-5
+// Accuracy required for U to P
+#define UTOP_ERRTOL 1.e-8
 
-// TODO move to grmhd.hpp or similar?
-// The standard HARMDriver object will evolve the 8 primitives/conserved for GRMHD.
-// Anything extra should be handled by new physics packages
-#define NPRIM 8
+// Use the 5 minimum primitives for HD/GRHD
+#define NPRIM 5
 #define PLOOP for(int p = 0; p < NPRIM; ++p)
-enum prims{rho=0, u, u1, u2, u3, B1, B2, B3};
-// Just the fluid variables, among the primitives
-#define NFLUID 5
-#define FLOOP for(int p = 0; p < NFLUID; ++p)
+enum prims{rho=0, u, u1, u2, u3};
+// B field etc etc are split into packages
+#define NVEC 3
+#define VLOOP for(int v = 0; v < NVEC; ++v)
 
 // Emulate old names for possible stronger typing...
 using GridScalar = parthenon::ParArrayND<Real>;

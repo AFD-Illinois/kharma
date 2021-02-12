@@ -39,7 +39,7 @@
 
 #include "debug.hpp"
 #include "fixup.hpp"
-#include "phys.hpp"
+#include "mhd_functions.hpp"
 
 /**
  * Apply density and internal energy floors and ceilings
@@ -49,41 +49,59 @@
  * 
  * LOCKSTEP: this function respects P and returns consistent P<->U
  */
-TaskStatus ApplyFloors(std::shared_ptr<MeshBlockData<Real>>& rc)
+TaskStatus ApplyFloors(MeshBlockData<Real> *rc)
 {
     FLAG("Apply floors");
     auto pmb = rc->GetBlockPointer();
-    IndexDomain domain = IndexDomain::entire;
-    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
-    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
-    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
 
     int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
     int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
     int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
 
     GridVars P = rc->Get("c.c.bulk.prims").data;
+    GridVector B_P = rc->Get("c.c.bulk.B_prim").data;
     GridVars U = rc->Get("c.c.bulk.cons").data;
+    GridVector B_U = rc->Get("c.c.bulk.B_con").data;
     auto& G = pmb->coords;
 
-    GridInt fflag("fflag", n3, n2, n1);
+    GridScalar pflag = rc->Get("c.c.bulk.pflag").data;
+    GridScalar fflag = rc->Get("c.c.bulk.fflag").data;
 
     EOS* eos = pmb->packages.Get("GRMHD")->Param<EOS*>("eos");
     FloorPrescription floors = FloorPrescription(pmb->packages.Get("GRMHD")->AllParams());
 
-    // Note floors are applied only to physical zones
+    // Apply floors over the same zones we just updated with UtoP
+    int is = is_physical_bound(pmb->boundary_flag[BoundaryFace::inner_x1]) ?
+                pmb->cellbounds.is(IndexDomain::interior) : pmb->cellbounds.is(IndexDomain::entire);
+    int ie = is_physical_bound(pmb->boundary_flag[BoundaryFace::outer_x1]) ?
+                pmb->cellbounds.ie(IndexDomain::interior) : pmb->cellbounds.ie(IndexDomain::entire);
+    int js = is_physical_bound(pmb->boundary_flag[BoundaryFace::inner_x2]) ?
+                pmb->cellbounds.js(IndexDomain::interior) : pmb->cellbounds.js(IndexDomain::entire);
+    int je = is_physical_bound(pmb->boundary_flag[BoundaryFace::outer_x2]) ?
+                pmb->cellbounds.je(IndexDomain::interior) : pmb->cellbounds.je(IndexDomain::entire);
+    int ks = is_physical_bound(pmb->boundary_flag[BoundaryFace::inner_x3]) ?
+                pmb->cellbounds.ks(IndexDomain::interior) : pmb->cellbounds.ks(IndexDomain::entire);
+    int ke = is_physical_bound(pmb->boundary_flag[BoundaryFace::outer_x3]) ?
+                pmb->cellbounds.ke(IndexDomain::interior) : pmb->cellbounds.ke(IndexDomain::entire);
+
     pmb->par_for("apply_floors", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D {
-            fflag(k, j, i) = 0;
-            fflag(k, j, i) |= (apply_floors(G, P, U, eos, k, j, i, floors) / HIT_FLOOR_GEOM_RHO) * HIT_FLOOR_GEOM_RHO;
-            fflag(k, j, i) |= apply_ceilings(G, P, U, eos, k, j, i, floors);
+            int fflag_local = 0;
+
+            // Fixup_floor involves another U_to_P call.  Hide the pflag in bottom 5 bits and retrieve both
+            int comboflag = apply_floors(G, P, B_P, U, B_U, eos, k, j, i, floors);
+            fflag_local |= (comboflag / HIT_FLOOR_GEOM_RHO) * HIT_FLOOR_GEOM_RHO;
+            // The floors as they're written *guarantee* a consistent state in their cells
+            // TODO still keep track of this without fixing, e.g. with negative flag
+            // if (fflag_local) pflag(k, j, i) = InversionStatus::success; //comboflag % HIT_FLOOR_GEOM_RHO;
+
+            // Apply ceilings *after* floors, to make the temperature ceiling better-behaved
+            // Ceilings don't involve a U_to_P call
+            fflag_local |= apply_ceilings(G, P, B_P, U, eos, k, j, i, floors);
+
+            fflag(k, j, i) = fflag_local;
         }
     );
-
-#if 0
-    // Print some diagnostic info about which floors were hit
-    CountFFlags(pmb, fflag.GetHostMirrorAndCopy());
-#endif
 
     FLAG("Applied");
     return TaskStatus::complete;

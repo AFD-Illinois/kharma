@@ -35,36 +35,24 @@
 #pragma once
 
 #include "decs.hpp"
-#include "phys.hpp"
+#include "mhd_functions.hpp"
 
-/**
- * Inline function to *add* the HARM source term to a set of conserved variables U
- */
-KOKKOS_INLINE_FUNCTION void add_fluid_source(const GRCoordinates &G, const GridVars P, const FourVectors& D,
-                      const EOS* eos, const int& k, const int& j, const int& i, GridVars dUdt)
+namespace GRMHD
 {
-    // Get T^mu_nu
-    Real mhd[GR_DIM][GR_DIM];
-    DLOOP1 mhd_calc(P, D, eos, k, j, i, mu, mhd[mu]);
-
-    // Initialize our addition [+U, +U1, +U2, +U3]
-    Real du_loc[GR_DIM] = {0};
-    // Contract mhd stress tensor with connection, and multiply by metric dterminant
-    DLOOP3 du_loc[lam] += mhd[mu][nu] * G.conn(j, i, nu, lam, mu);
-    // Multiply by the metric determinant and add to the current value
-    DLOOP1 dUdt(prims::u + mu, k, j, i) += du_loc[mu] * G.gdet(Loci::center, j, i);
-}
 
 /**
- * Inline function to get the HARM source term to a set of conserved variables U.
- * Named differently because it clobbers input!
+ * Inline function to get the source term in the GRMHD equations T^\mu_nu \Gamma^\nu_\lam\mu
+ * So named because it clobbers input dUdt!
  */
-KOKKOS_INLINE_FUNCTION void get_fluid_source(const GRCoordinates &G, const GridVars P, const FourVectors& D,
+KOKKOS_INLINE_FUNCTION void get_source(const GRCoordinates &G, const GridVars P, const FourVectors& D,
                       const EOS* eos, const int& k, const int& j, const int& i, Real dUdt[NPRIM])
 {
     // Get T^mu_nu
     Real mhd[GR_DIM][GR_DIM];
-    DLOOP1 mhd_calc(P, D, eos, k, j, i, mu, mhd[mu]);
+    Real rho = P(prims::rho, k, j, i);
+    Real u = P(prims::u, k, j, i);
+    Real pgas = eos->p(rho, u);
+    DLOOP1 GRMHD::calc_tensor(rho, u, pgas, D, mu, mhd[mu]);
 
     // Initialize our addition [+U, +U1, +U2, +U3]
     Real du_loc[GR_DIM] = {0};
@@ -76,8 +64,11 @@ KOKKOS_INLINE_FUNCTION void get_fluid_source(const GRCoordinates &G, const GridV
 }
 
 /**
- * Function to add a "wind" term: a purely geometry-based particle source term near the poles,
+ * Function to add a "wind" source term, in addition to the usual GRMHD coordinate source term
+ * 
+ * This is a purely geometry-based particle source concentrated near the poles,
  * which prevents too many fixups & floor hits on the coordinate pole.
+ * It has proven effective at eliminating the use of floors in 2D, but less so in 3D/MAD simulations
  */
 KOKKOS_INLINE_FUNCTION void add_wind(const GRCoordinates &G,
                       const EOS* eos, const int& k, const int& j, const int& i,
@@ -101,7 +92,10 @@ KOKKOS_INLINE_FUNCTION void add_wind(const GRCoordinates &G,
 
     // Add plasma to the T^t_a component of the stress-energy tensor
     // Notice that U already contains a factor of sqrt{-g}
-    p_to_u(G, dP, eos, k, j, i, dUw);
+    Real dB_P[NVEC] = {0};
+    GRMHD::p_to_u(G, dP, dB_P, eos, k, j, i, dUw);
 
     PLOOP dUdt[p] += dUw[p];
 }
+
+} // namespace GRMHD

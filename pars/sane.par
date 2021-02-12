@@ -40,6 +40,8 @@ add_jcon = true
 <torus>
 rin = 10.0
 rmax = 20.0
+
+<perturbation>
 u_jitter = 0.1
 
 <b_field>
@@ -59,7 +61,7 @@ Tp = 10
 <parthenon/output0>
 file_type = hdf5
 dt = 5.0
-variables = c.c.bulk.prims, c.c.bulk.jcon, c.c.bulk.fflag, c.c.bulk.pflag
+variables = c.c.bulk.prims, c.c.bulk.B_prim, c.c.bulk.jcon, c.c.bulk.fflag, c.c.bulk.pflag
 
 <parthenon/output1>
 file_type = rst

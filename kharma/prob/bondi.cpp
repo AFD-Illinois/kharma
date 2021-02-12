@@ -38,7 +38,7 @@
 
 #include "gr_coordinates.hpp"
 #include "eos.hpp"
-#include "phys.hpp"
+#include "mhd_functions.hpp"
 #include "prob_common.hpp"
 
 #include "mesh/mesh.hpp"
@@ -72,11 +72,12 @@ void InitializeBondi(MeshBlock *pmb, const GRCoordinates& G, GridVars P,
     FLAG("Initialized Bondi");
 }
 
-void ApplyBondiBoundary(std::shared_ptr<MeshBlockData<Real>>& rc)
+void ApplyBondiBoundary(MeshBlockData<Real> *rc)
 {
     auto pmb = rc->GetBlockPointer();
     GridVars U = rc->Get("c.c.bulk.cons").data;
     GridVars P = rc->Get("c.c.bulk.prims").data;
+    GridVector B_P = rc->Get("c.c.bulk.B_prim").data;
     GRCoordinates G = pmb->coords;
 
     FLAG("Applying Bondi X1R boundary");
@@ -97,7 +98,7 @@ void ApplyBondiBoundary(std::shared_ptr<MeshBlockData<Real>>& rc)
     pmb->par_for("bondi_boundary", kb_e.s, kb_e.e, jb_e.s, jb_e.e, ib.e+1, ib_e.e,
         KOKKOS_LAMBDA_3D {
             get_prim_bondi(G, cs, P, eos, bl, ks, mdot, rs, k, j, i);
-            p_to_u(G, P, eos, k, j, i, U);
+            GRMHD::p_to_u(G, P, B_P, eos, k, j, i, U);
         }
     );
 }

@@ -34,19 +34,25 @@
 
 #include "fixup.hpp"
 
-void FixUtoP(MeshBlockData<Real> *rc, GridInt pflag, GridInt fflag)
+void FixUtoP(MeshBlockData<Real> *rc)
 {
-    // We expect primitives all the way out to 3 ghost zones on all sides.  But we can only fix primitives with their neighbors.
-    // This may actually mean we require the 4 ghost zones Parthenon "wants" us to have, if we need to use only fixed zones.
+    // We expect primitives all the way out to 3 ghost zones on all sides.
+    // But we can only fix primitives with their neighbors.
+    // This may actually mean we require the 4 ghost zones Parthenon "wants" us to have,
+    // if we need to use only fixed zones.
     FLAG("Fixing U to P inversions");
     auto pmb = rc->GetBlockPointer();
     auto& G = pmb->coords;
 
-    GridVars U = rc->Get("c.c.bulk.cons").data;
     GridVars P = rc->Get("c.c.bulk.prims").data;
+    GridVector B_P = rc->Get("c.c.bulk.B_prim").data;
+    GridVars U = rc->Get("c.c.bulk.cons").data;
+    GridVector B_U = rc->Get("c.c.bulk.B_con").data;
+
+    GridScalar pflag = rc->Get("c.c.bulk.pflag").data;
+    GridScalar fflag = rc->Get("c.c.bulk.fflag").data;
 
     EOS* eos = pmb->packages.Get("GRMHD")->Param<EOS*>("eos");
-
     FloorPrescription floors = FloorPrescription(pmb->packages.Get("GRMHD")->AllParams());
 
     int is = is_physical_bound(pmb->boundary_flag[BoundaryFace::inner_x1]) ?
@@ -66,9 +72,9 @@ void FixUtoP(MeshBlockData<Real> *rc, GridInt pflag, GridInt fflag)
     pmb->par_for("fix_U_to_P", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D {
             // Negative flags mark physical corners, which shouldn't be fixed
-            if (pflag(k, j, i) > InversionStatus::success) {
+            if (((int) pflag(k, j, i)) > InversionStatus::success) {
                 double wsum = 0., wsum_x = 0.;
-                double sum[NFLUID] = {0.}, sum_x[NFLUID] = {0.};
+                double sum[NPRIM] = {0.}, sum_x[NPRIM] = {0.};
                 // For all neighboring cells...
                 for (int n = -1; n <= 1; n++) {
                     for (int m = -1; m <= 1; m++) {
@@ -80,14 +86,14 @@ void FixUtoP(MeshBlockData<Real> *rc, GridInt pflag, GridInt fflag)
                                 double w = 1./(abs(l) + abs(m) + abs(n) + 1);
 
                                 // Count only the good cells, if we can
-                                if (pflag(kk, jj, ii) == InversionStatus::success) {
+                                if ((int) pflag(kk, jj, ii) == InversionStatus::success) {
                                     // Weight by distance.  Note interpolated "fixed" cells stay flagged
                                     wsum += w;
-                                    FLOOP sum[p] += w * P(p, kk, jj, ii);
+                                    PLOOP sum[p] += w * P(p, kk, jj, ii);
                                 }
                                 // Just in case, keep a sum of even the bad ones
                                 wsum_x += w;
-                                FLOOP sum_x[p] += w * P(p, kk, jj, ii);
+                                PLOOP sum_x[p] += w * P(p, kk, jj, ii);
                             }
                         }
                     }
@@ -96,21 +102,23 @@ void FixUtoP(MeshBlockData<Real> *rc, GridInt pflag, GridInt fflag)
                 if(wsum < 1.e-10) {
                     // TODO probably should crash here.
                     printf("No neighbors were available at %d %d %d!\n", i, j, k);
-                    FLOOP P(p, k, j, i) = sum_x[p]/wsum_x;
+                    PLOOP P(p, k, j, i) = sum_x[p]/wsum_x;
                 } else {
                     // if (pflag(k, j, i) == InversionStatus::max_iter) {
                     //     printf("zone %d %d %d replaced, weight %f.\nOriginal: %g %g %g %g %g\nReplacement: %g %g %g %g %g\n", i, j, k, wsum,
                     //     P(0, k, j, i), P(1, k, j, i), P(2, k, j, i), P(3, k, j, i), P(4, k, j, i),
                     //     sum[0]/wsum, sum[1]/wsum, sum[2]/wsum, sum[3]/wsum, sum[4]/wsum);
                     // }
-                    FLOOP P(p, k, j, i) = sum[p]/wsum;
+                    PLOOP P(p, k, j, i) = sum[p]/wsum;
                 }
                 // Make sure to keep lockstep
-                p_to_u(G, P, eos, k, j, i, U);
+                GRMHD::p_to_u(G, P, B_P, eos, k, j, i, U);
 
                 // Make sure fixed values still abide by floors (floors keep lockstep)
-                fflag(k, j, i) |= apply_floors(G, P, U, eos, k, j, i, floors);
-                fflag(k, j, i) |= apply_ceilings(G, P, U, eos, k, j, i, floors);
+                int fflag_local = 0;
+                fflag_local |= apply_floors(G, P, B_P, U, B_U, eos, k, j, i, floors);
+                fflag_local |= apply_ceilings(G, P, B_P, U, eos, k, j, i, floors);
+                fflag(k, j, i) = fflag_local;
             }
         }
     );

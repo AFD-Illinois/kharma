@@ -45,8 +45,9 @@ cfl = 0.9
 gamma = 1.333333
 reconstruction = weno5
 
-<explosion>
-Bx = 0.01
+<b_field>
+type = constant
+b10 = 0.01
 
 <parthenon/output0>
 file_type = hdf5

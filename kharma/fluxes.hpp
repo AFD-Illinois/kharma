@@ -33,21 +33,30 @@
  */
 #pragma once
 
-#include "mesh/mesh.hpp"
-#include "coordinates/coordinates.hpp"
+#include <parthenon/parthenon.hpp>
 
 #include "decs.hpp"
 
 #include "reconstruction.hpp"
-#include "phys.hpp"
+#include "mhd_functions.hpp"
 
-namespace HLLE {
-/**
- * Reconstruct the values of primitive variables at left and right zone faces,
- * find the corresponding conserved variables, and construct their HLL fluxes
- *
- * Also fills the "ctop" vector with the signal speed mhd_vchar -- used to estimate timestep later.
- */
-TaskStatus GetFlux(std::shared_ptr<MeshBlockData<Real>>& rc, const int& dir);
+namespace Flux {
+    /**
+     * Reconstruct the values of primitive variables at left and right zone faces,
+     * find the corresponding conserved variables, and construct their HLL fluxes
+     *
+     * Also fills the "ctop" vector with the signal speed mhd_vchar -- used to estimate timestep later.
+     */
+    TaskStatus GetFlux(MeshBlockData<Real> *rc, const int& dir, const Real& dt);
+
+    /**
+     * Calculate dU/dt from a set of fluxes.
+     * This isn't just Parthenon's FluxDivergence, it adds the GRMHD source term as well
+     * It also allows adding an arbitrary "wind" source term for stability
+     *
+     * @param rc is the current stage's container
+     * @param base is the base container containing the global dUdt term
+     */
+    TaskStatus ApplyFluxes(MeshBlockData<Real> *rc, MeshBlockData<Real> *dudt, const Real& dt);
 
 }

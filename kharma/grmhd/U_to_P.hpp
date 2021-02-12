@@ -1,5 +1,5 @@
 /* 
- *  File: U_to_P.cpp
+ *  File: U_to_P.hpp
  *  
  *  BSD 3-Clause License
  *  
@@ -39,43 +39,25 @@
 
 #define ERRTOL 1.e-8
 
+namespace GRMHD {
+
 KOKKOS_INLINE_FUNCTION Real err_eqn(const EOS* eos, const Real& Bsq, const Real& D, const Real& Ep, const Real& QdB,
                                     const Real& Qtsq, const Real& Wp, InversionStatus& eflag);
-KOKKOS_INLINE_FUNCTION Real gamma_func(const Real& Bsq, const Real& D, const Real& QdB,
+KOKKOS_INLINE_FUNCTION Real lorentz_calc_w(const Real& Bsq, const Real& D, const Real& QdB,
                                         const Real& Qtsq, const Real& Wp);
-KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const Real U[NPRIM], const EOS* eos,
-                                  const int& k, const int& j, const int& i, const Loci loc, Real P[NPRIM]);
-
-/**
- * Try to recover primitive variables in a zone via 1D Newtonian solve, see Mignone & McKinney '07
- */
-KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const GridVars U, const EOS* eos,
-                                  const int& k, const int& j, const int& i, const Loci loc, GridVars P)
-{
-    Real Pl[NPRIM], Ul[NPRIM];
-    PLOOP {
-        Ul[p] = U(p, k, j, i);
-        Pl[p] = P(p, k, j, i);
-    }
-    InversionStatus ret = u_to_p(G, Ul, eos, k, j, i, loc, Pl);
-    PLOOP P(p, k, j, i) = Pl[p];
-    return ret;
-}
 
 /**
  * Recover local primitives
+ * Like in *_functions.hpp, this function is overloaded between passing references to global arrays, and "immediates"
+ * The difference is this one is probably coded pretty slowly
  */
-KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const Real U[NPRIM], const EOS* eos,
-                                  const int& k, const int& j, const int& i, const Loci loc, Real P[NPRIM])
+KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const Real U[NPRIM],
+                                    const Real B_U[NVEC], const EOS* eos,
+                                    const int& k, const int& j, const int& i, const Loci loc, Real P[NPRIM])
 {
     Real alpha = 1./sqrt(-G.gcon(loc, j, i, 0, 0));
     Real gdet = G.gdet(loc, j, i);
     Real a_over_g = alpha / gdet;
-
-    // Update the primitive B-fields
-    P[prims::B1] = U[prims::B1] / gdet;
-    P[prims::B2] = U[prims::B2] / gdet;
-    P[prims::B3] = U[prims::B3] / gdet;
 
     // Catch negative density
     if (U[prims::rho] <= 0.) {
@@ -87,9 +69,9 @@ KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const Real
 
     Real Bcon[GR_DIM];
     Bcon[0] = 0.;
-    Bcon[1] = U[prims::B1] * a_over_g;
-    Bcon[2] = U[prims::B2] * a_over_g;
-    Bcon[3] = U[prims::B3] * a_over_g;
+    Bcon[1] = B_U[0] * a_over_g;
+    Bcon[2] = B_U[1] * a_over_g;
+    Bcon[3] = B_U[2] * a_over_g;
 
     Real Qcov[GR_DIM];
     Qcov[0] = (U[prims::u] - U[prims::rho]) * a_over_g;
@@ -123,7 +105,7 @@ KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const Real
     Real gamma, rho0, u;
     int iter_max;
     if (P[prims::rho] != 0. || P[prims::u] != 0.) {
-        gamma = mhd_gamma_calc(G, P, k, j, i, loc);
+        gamma = lorentz_calc(G, &(P[prims::u1]), j, i, loc);
         rho0 = P[prims::rho];
         u = P[prims::u];
         iter_max = 8;
@@ -175,11 +157,11 @@ KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const Real
 
         Wp += dW;
 
-        if (fabs(dW / Wp) < ERRTOL) break;
+        if (fabs(dW / Wp) < UTOP_ERRTOL) break;
 
         err = err_eqn(eos, Bsq, D, Ep, QdB, Qtsq, Wp, eflag);
 
-        if (fabs(err / Wp) < ERRTOL) break;
+        if (fabs(err / Wp) < UTOP_ERRTOL) break;
     }
     // If there was a bad gamma calculation, do not set primitives other than B
     // Uncomment to error on any bad velocity.  iharm2d/3d do not do this.
@@ -188,7 +170,7 @@ KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const Real
     if (iter == iter_max) return InversionStatus::max_iter;
 
     // Find utsq, gamma, rho0 from Wp
-    gamma = gamma_func(Bsq, D, QdB, Qtsq, Wp);
+    gamma = lorentz_calc_w(Bsq, D, QdB, Qtsq, Wp);
     if (gamma < 1) return InversionStatus::bad_ut;
 
     rho0 = D / gamma;
@@ -214,13 +196,38 @@ KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const Real
 
     return InversionStatus::success;
 }
+KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const GridVars U, const GridVector B_U, const EOS* eos,
+                                  const int& k, const int& j, const int& i, const Loci loc, GridVars P)
+{
+    Real Pl[NPRIM], Ul[NPRIM], B_Ul[NVEC];
+    PLOOP {
+        Ul[p] = U(p, k, j, i);
+        Pl[p] = P(p, k, j, i);
+    }
+    VLOOP B_Ul[v] = B_U(v, k, j, i);
+    InversionStatus ret = u_to_p(G, Ul, B_Ul, eos, k, j, i, loc, Pl);
+    PLOOP P(p, k, j, i) = Pl[p];
+    return ret;
+}
+KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const GridVars U, const Real B_U[NVEC], const EOS* eos,
+                                  const int& k, const int& j, const int& i, const Loci loc, GridVars P)
+{
+    Real Pl[NPRIM], Ul[NPRIM];
+    PLOOP {
+        Ul[p] = U(p, k, j, i);
+        Pl[p] = P(p, k, j, i);
+    }
+    InversionStatus ret = u_to_p(G, Ul, B_U, eos, k, j, i, loc, Pl);
+    PLOOP P(p, k, j, i) = Pl[p];
+    return ret;
+}
 
 // Document this
 KOKKOS_INLINE_FUNCTION Real err_eqn(const EOS* eos, const Real& Bsq, const Real& D, const Real& Ep, const Real& QdB,
                                     const Real& Qtsq, const Real& Wp, InversionStatus& eflag)
 {
     Real W = Wp + D;
-    Real gamma = gamma_func(Bsq, D, QdB, Qtsq, Wp);
+    Real gamma = lorentz_calc_w(Bsq, D, QdB, Qtsq, Wp);
     if (gamma < 1) eflag = InversionStatus::bad_ut;
     Real w = W / pow(gamma,2);
     Real rho0 = D / gamma;
@@ -233,7 +240,7 @@ KOKKOS_INLINE_FUNCTION Real err_eqn(const EOS* eos, const Real& Bsq, const Real&
 /**
  * Fluid relativistic factor gamma in terms of inversion state variables
  */
-KOKKOS_INLINE_FUNCTION Real gamma_func(const Real& Bsq, const Real& D, const Real& QdB,
+KOKKOS_INLINE_FUNCTION Real lorentz_calc_w(const Real& Bsq, const Real& D, const Real& QdB,
                                         const Real& Qtsq, const Real& Wp)
 {
     Real QdBsq = QdB * QdB;
@@ -252,3 +259,5 @@ KOKKOS_INLINE_FUNCTION Real gamma_func(const Real& Bsq, const Real& D, const Rea
         return sqrt(1. + fabs(utsq));
     }
 }
+
+} // namespace GRMHD
