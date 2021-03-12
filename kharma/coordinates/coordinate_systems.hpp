@@ -25,8 +25,69 @@ using mpark = std;
 using namespace parthenon;
 using GReal = Real;
 
-template<typename Function>
-KOKKOS_FUNCTION void root_find(const GReal Xembed[GR_DIM], GReal Xnative[GR_DIM], Function coord_to_embed);
+/**
+ * Root finder for X[2] since it is sometimes not analytically invertible
+ * Written so it can be extended if people have very crazy coordinate ideas that require 2D solves
+ * @param Xembed the vector of embedding coordinates to convert
+ * @param Xnative output; but should have all native coordinates except X[2] already
+ * @param coord_to_embed function taking the vector X to embedding coordinates
+ */
+template<typename T>
+KOKKOS_INLINE_FUNCTION void root_find(const GReal Xembed[GR_DIM], GReal Xnative[GR_DIM], T transform)
+{
+  double th = Xembed[2];
+  double tha, thb, thc;
+
+  // Currently only solves in X[2] but could be multi-dimensional
+  double Xa[GR_DIM], Xb[GR_DIM], Xc[GR_DIM], Xtmp[GR_DIM];
+  Xa[1] = Xnative[1];
+  Xa[3] = Xnative[3];
+
+  Xb[1] = Xa[1];
+  Xb[3] = Xa[3];
+  Xc[1] = Xa[1];
+  Xc[3] = Xa[3];
+
+  if (Xembed[2] < M_PI / 2.) {
+    Xa[2] = 0.;
+    Xb[2] = 0.5 + SINGSMALL;
+  } else {
+    Xa[2] = 0.5 - SINGSMALL;
+    Xb[2] = 1.;
+  }
+
+  double tol = 1.e-9;
+  transform->coord_to_embed(Xa, Xtmp);
+  tha = Xtmp[2];
+  transform->coord_to_embed(Xb, Xtmp);
+  thb = Xtmp[2];
+
+  // check limits first
+  if (fabs(tha-th) < tol) {
+    Xnative[2] = Xa[2];
+    return;
+  } else if (fabs(thb-th) < tol) {
+    Xnative[2] = Xb[2];
+    return;
+  }
+
+  // bisect for a bit
+  for (int i = 0; i < 1000; i++) {
+    Xc[2] = 0.5 * (Xa[2] + Xb[2]);
+    transform->coord_to_embed(Xc, Xtmp);
+    thc = Xtmp[2];
+
+    if ((thc - th) * (thb - th) < 0.)
+      Xa[2] = Xc[2];
+    else
+      Xb[2] = Xc[2];
+
+    if (fabs(thc - th) < tol)
+      break;
+  }
+
+  Xnative[2] = Xc[2];
+}
 
 /**
  * EMBEDDING SYSTEMS:
@@ -123,10 +184,16 @@ class SphKSCoords {
             DLOOP2 vcon[mu] += trans[mu][nu]*vcon_bl[nu];
         }
 
-        // TODO more: isco etc.
+        // TODO more functions?
         KOKKOS_INLINE_FUNCTION GReal rhor() const
         {
             return (1. + sqrt(1. - a*a));
+        }
+        KOKKOS_INLINE_FUNCTION GReal r_isco() const
+        {
+            double z1 = 1. + pow(1. - a * a, 1. / 3.) * (pow(1. + a, 1. / 3.) + pow(1. - a, 1. / 3.));
+            double z2 = sqrt(3. * a * a + z1 * z1);
+            return 3. + z2 - copysign(sqrt((3. - z1) * (3. + z1 + 2. * z2)), a);
         }
 };
 
@@ -174,6 +241,12 @@ class SphBLCoords {
         KOKKOS_INLINE_FUNCTION GReal rhor() const
         {
             return (1. + sqrt(1. - a*a));
+        }
+        KOKKOS_INLINE_FUNCTION GReal r_isco() const
+        {
+            double z1 = 1. + pow(1. - a * a, 1. / 3.) * (pow(1. + a, 1. / 3.) + pow(1. - a, 1. / 3.));
+            double z2 = sqrt(3. * a * a + z1 * z1);
+            return 3. + z2 - copysign(sqrt((3. - z1) * (3. + z1 + 2. * z2)), a);
         }
 };
 
@@ -286,7 +359,7 @@ class ModifyTransform {
             Xnative[1] = log(Xembed[1]);
             Xnative[3] = Xembed[3];
             // Treat the special case
-            root_find(Xembed, Xnative, &ModifyTransform::coord_to_embed);
+            root_find(Xembed, Xnative, this);
         }
         /**
          * Transformation matrix for contravariant vectors to embedding, or covariant vectors to native
@@ -363,7 +436,7 @@ class FunkyTransform {
             Xnative[1] = log(Xembed[1]);
             Xnative[3] = Xembed[3];
             // Treat the special case
-            root_find(Xembed, Xnative, &FunkyTransform::coord_to_embed);
+            root_find(Xembed, Xnative, this);
         }
         /**
          * Transformation matrix for contravariant vectors to embedding, or covariant vectors to native
@@ -411,67 +484,3 @@ class FunkyTransform {
 // Note nesting isn't allowed -- do it yourself by calling the steps if that's really important...
 using SomeBaseCoords = mpark::variant<SphMinkowskiCoords, CartMinkowskiCoords, SphBLCoords, SphKSCoords>;
 using SomeTransform = mpark::variant<SphNullTransform, CartNullTransform, ModifyTransform, FunkyTransform>;
-
-/**
- * Root finder for X[2] since it is sometimes not analytically invertible
- * Written so it can be extended if people have very crazy coordinate ideas that require 2D solves
- * @param Xembed the vector of embedding coordinates to convert
- * @param Xnative output; but should have all native coordinates except X[2] already
- * @param coord_to_embed function taking the vector X to embedding coordinates
- */
-template<typename Function>
-KOKKOS_FUNCTION void root_find(const GReal Xembed[GR_DIM], GReal Xnative[GR_DIM], Function& coord_to_embed)
-{
-  double th = Xembed[2];
-  double tha, thb, thc;
-
-  // Currently only solves in X[2] but could be multi-dimensional
-  double Xa[GR_DIM], Xb[GR_DIM], Xc[GR_DIM], Xtmp[GR_DIM];
-  Xa[1] = Xnative[1];
-  Xa[3] = Xnative[3];
-
-  Xb[1] = Xa[1];
-  Xb[3] = Xa[3];
-  Xc[1] = Xa[1];
-  Xc[3] = Xa[3];
-
-  if (Xembed[2] < M_PI / 2.) {
-    Xa[2] = 0.;
-    Xb[2] = 0.5 + SINGSMALL;
-  } else {
-    Xa[2] = 0.5 - SINGSMALL;
-    Xb[2] = 1.;
-  }
-
-  double tol = 1.e-9;
-  coord_to_embed(Xa, Xtmp);
-  tha = Xtmp[2];
-  coord_to_embed(Xb, Xtmp);
-  thb = Xtmp[2];
-
-  // check limits first
-  if (fabs(tha-th) < tol) {
-    Xnative[2] = Xa[2];
-    return;
-  } else if (fabs(thb-th) < tol) {
-    Xnative[2] = Xb[2];
-    return;
-  }
-
-  // bisect for a bit
-  for (int i = 0; i < 1000; i++) {
-    Xc[2] = 0.5 * (Xa[2] + Xb[2]);
-    coord_to_embed(Xc, Xtmp);
-    thc = Xtmp[2];
-
-    if ((thc - th) * (thb - th) < 0.)
-      Xa[2] = Xc[2];
-    else
-      Xb[2] = Xc[2];
-
-    if (fabs(thc - th) < tol)
-      break;
-  }
-
-  Xnative[2] = Xc[2];
-}

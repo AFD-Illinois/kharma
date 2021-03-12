@@ -53,7 +53,6 @@
 
 Properties_t KHARMA::ProcessProperties(std::unique_ptr<ParameterInput>& pin)
 {
-    // TODO this could benefit from some more use
     Properties_t properties;
     //properties.push_back(std::make_shared<KHARMAProperties>("Globals"));
     //StateDescriptor globals = (static_cast<KHARMAProperties*>(properties[0].get()))->State();

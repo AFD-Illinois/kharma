@@ -33,4 +33,7 @@ include_directories(external/parthenon/src)
 include_directories(external/variant/include)
 
 # KHARMA folder
-add_subdirectory(kharma)
+#add_subdirectory(kharma)
+
+# KIPOLE folder
+add_subdirectory(kipole)

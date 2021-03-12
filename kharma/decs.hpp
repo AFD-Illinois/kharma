@@ -24,7 +24,7 @@ using Real = parthenon::Real;
 using GReal = double;
 
 // TODO add make.sh/CMake option for tracing vs just debug
-#if 0
+#if 1
 #define FLAG(x) if(MPIRank0()) std::cout << x << std::endl;
 #else
 #define FLAG(x)
@@ -42,9 +42,11 @@ using GReal = double;
 enum Loci{face1=0, face2, face3, center, corner};
 
 // Accuracy for numerical derivatives of the metric
-#define DELTA 1.e-5
+#define DELTA (1.e-5)
 // Accuracy required for U to P
-#define UTOP_ERRTOL 1.e-8
+#define UTOP_ERRTOL (1.e-8)
+// Small number
+#define SMALL (1.e-20)
 
 // Use the 5 minimum primitives for HD/GRHD
 #define NPRIM 5

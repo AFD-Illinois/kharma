@@ -1,0 +1,45 @@
+<parthenon/mesh>
+nx1 = 256
+nx2 = 100
+nx3 = 100
+
+<coordinates>
+# Type of coordinates to use
+base = spherical_ks
+transform = fmks
+# BH Spin
+a = 0.99
+# Outer bound of coordinate system
+r_out = 100.
+
+<geodesics>
+# Max number of steps before complaining
+max_nstep = 50000
+# Step size factor
+eps = 0.01
+# Max radius to trace past BH
+r_max = 100.
+
+<camera>
+# Image size
+nx = 80
+ny = 80
+
+# Camera position
+r = 1000.
+th = 17.
+phi = 0.
+
+# In muas, from Earth
+fovx = 160.
+fovy = 160.
+# Distance in pc
+Dsource = 16.9e6
+# Offset for ML
+xoff = 0.
+yoff = 0.
+# Camera rotation at Earth
+rotcam = 0.
+
+<debug>
+verbose = 1

@@ -179,4 +179,5 @@ if [[ "$*" == *"clean"* ]]; then
 fi
 
 make -j12
-cp kharma/kharma.* ..
+#cp kharma/kharma.* ..
+cp kipole/kipole.* ..
