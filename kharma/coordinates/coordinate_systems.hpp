@@ -8,16 +8,18 @@
  */
 #pragma once
 
+// Switch to the standard?
+//#if __cplusplus >= 201703L
+//#include <variant>
+//namespace mpark = std;
+//#else
+#undef __cpp_exceptions
+#include <mpark/variant.hpp>
+//#endif
+
 #include "decs.hpp"
 
 #include "matrix.hpp"
-
-// Switch to the standard as soon as we can.  May be a while.
-#if __cplusplus >= 201703L
-using mpark = std;
-#else
-#include <mpark/variant.hpp>
-#endif
 
 #define COORDSINGFIX 1
 #define SINGSMALL 1e-20

@@ -116,7 +116,7 @@ TaskStatus B_CD_GLM::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
         pmb->par_for("B_field_B", ks, ke, js, je, is, ie,
             KOKKOS_LAMBDA_3D {
                 // Set B1 directly by normalizing
-                printf("%lf", b10 / G.gdet(Loci::center, j, i));
+                //printf("%lf", b10 / G.gdet(Loci::center, j, i));
                 B_P(0, k, j, i) = b10 / G.gdet(Loci::center, j, i);
                 B_P(1, k, j, i) = 0.;
                 B_P(2, k, j, i) = 0.;

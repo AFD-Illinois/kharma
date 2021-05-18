@@ -45,8 +45,8 @@ gamma = 1.666667
 reconstruction = weno5
 
 <debug>
-verbose = 2
-flag_verbose = 1
+verbose = 0
+flag_verbose = 0
 
 
 <parthenon/output0>

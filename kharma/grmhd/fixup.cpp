@@ -101,7 +101,7 @@ void FixUtoP(MeshBlockData<Real> *rc)
 
                 if(wsum < 1.e-10) {
                     // TODO probably should crash here.
-                    printf("No neighbors were available at %d %d %d!\n", i, j, k);
+                    //printf("No neighbors were available at %d %d %d!\n", i, j, k);
                     PLOOP P(p, k, j, i) = sum_x[p]/wsum_x;
                 } else {
                     // if (pflag(k, j, i) == InversionStatus::max_iter) {

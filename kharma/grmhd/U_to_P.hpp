@@ -110,7 +110,7 @@ KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const Real
         u = P[prims::u];
         iter_max = 8;
     } else {
-        printf("Guessing P\n");
+        //printf("Guessing P\n");
         rho0 = 0.1;
         u = 0.01;
         gamma = 1.1;

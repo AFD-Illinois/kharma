@@ -33,12 +33,19 @@
  */
 #pragma once
 
+// Switch to the standard?
+//#if __cplusplus >= 201703L
+//#include <variant>
+//namespace mpark = std;
+//#else
+#undef __cpp_exceptions
+#include <mpark/variant.hpp>
+//#endif
+
 #include "decs.hpp"
 
 #include "coordinate_systems.hpp"
 #include "matrix.hpp"
-
-using namespace std;
 
 /**
  * Coordinates in HARM are logically Cartesian -- that is, in some coordinate system they are evenly spaced
@@ -77,10 +84,11 @@ class CoordinateEmbedding {
                 base.emplace<SphBLCoords>(mpark::get<SphBLCoords>(base_in));
             } else if (mpark::holds_alternative<SphKSCoords>(base_in)) {
                 base.emplace<SphKSCoords>(mpark::get<SphKSCoords>(base_in));
-            } else {
-                printf("Tried to copy invalid base coordinates!");
-                //throw std::invalid_argument("Tried to copy invalid base coordinates!");
             }
+            //else {
+                //printf("Tried to copy invalid base coordinates!");
+                //throw std::invalid_argument("Tried to copy invalid base coordinates!");
+            //}
 
             if (mpark::holds_alternative<SphNullTransform>(transform_in)) {
                 transform.emplace<SphNullTransform>(mpark::get<SphNullTransform>(transform_in));
@@ -90,10 +98,11 @@ class CoordinateEmbedding {
                 transform.emplace<ModifyTransform>(mpark::get<ModifyTransform>(transform_in));
             } else if (mpark::holds_alternative<FunkyTransform>(transform_in)) {
                 transform.emplace<FunkyTransform>(mpark::get<FunkyTransform>(transform_in));
-            } else {
-                printf("Tried to copy invalid coordinate transform!");
-                //throw std::invalid_argument("Tried to copy invalid coordinate transform!");
             }
+            //else {
+                //printf("Tried to copy invalid coordinate transform!");
+                //throw std::invalid_argument("Tried to copy invalid coordinate transform!");
+            //}
         }
 
         // Constructors

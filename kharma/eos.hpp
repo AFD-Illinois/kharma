@@ -37,6 +37,9 @@
 
 #include <parthenon/parthenon.hpp>
 
+#define USE_VIRTUAL_EOS 0
+
+#if USE_VIRTUAL_EOS
 /**
  * Class representing an equation of state.  Currently still very tied to ideal EOSs
  * 
@@ -65,6 +68,23 @@ class GammaLaw : public EOS {
         KOKKOS_FUNCTION Real p(Real rho, Real u)   const {return (gam - 1) * u;};
         KOKKOS_FUNCTION Real p_w(Real rho, Real w) const {return (w - rho) * (gam - 1) / gam;}
 };
+#else
+/**
+ * Class representing an ideal equation of state. ONLY.
+ * 
+ * This only supports gamma-law.
+ */
+class EOS {
+    // TODO when gam does not need to be public, we are ready for new eqns of state
+    public:
+        Real gam;
+        KOKKOS_FUNCTION EOS(Real gamma): gam(gamma) {};
+
+        KOKKOS_FUNCTION Real p(Real rho, Real u)   const {return (gam - 1) * u;};
+        KOKKOS_FUNCTION Real p_w(Real rho, Real w) const {return (w - rho) * (gam - 1) / gam;}
+};
+using GammaLaw = EOS;
+#endif
 
 // Host functions for creating/deleting a device-side EOS function
 // TODO move to a .cpp & a separate namespace

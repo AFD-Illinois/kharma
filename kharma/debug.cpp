@@ -72,9 +72,9 @@ void compare_P_U(MeshBlockData<Real> *rc, const int& k, const int& j, const int&
         KOKKOS_LAMBDA_3D {
             Real Utmp[NPRIM];
             GRMHD::p_to_u(G, P, B_P, eos, k, j, i, Utmp);
-            printf("U(P) = %g %g %g %g\nU(U) = %g %g %g %g\n",
-                    Utmp[prims::u], Utmp[prims::u1], Utmp[prims::u2], Utmp[prims::u3],
-                    U(prims::u, k, j, i), U(prims::u1, k, j, i), U(prims::u2, k, j, i), U(prims::u3, k, j, i));
+            //printf("U(P) = %g %g %g %g\nU(U) = %g %g %g %g\n",
+            //        Utmp[prims::u], Utmp[prims::u1], Utmp[prims::u2], Utmp[prims::u3],
+            //        U(prims::u, k, j, i), U(prims::u1, k, j, i), U(prims::u2, k, j, i), U(prims::u3, k, j, i));
         }
     );
 
@@ -100,13 +100,13 @@ TaskStatus CheckNaN(MeshBlockData<Real> *rc, int dir, IndexDomain domain)
     pmb->par_reduce("ctop_zeros", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D_REDUCE_INT {
             if (ctop(dir, k, j, i) <= 0.) {
-                printf("Ctop zero at %d %d %d\n", k, j, i);
-                printf("Local P: %g %g %g %g %g\n", 
-                        P(prims::rho, k, j, i), P(prims::u, k, j, i), P(prims::u1, k, j, i), P(prims::u2, k, j, i),
-                        P(prims::u3, k, j, i));
-                printf("Local U: %g %g %g %g %g\n",
-                        U(prims::rho, k, j, i), U(prims::u, k, j, i), U(prims::u1, k, j, i), U(prims::u2, k, j, i),
-                        U(prims::u3, k, j, i));
+                //printf("Ctop zero at %d %d %d\n", k, j, i);
+                //printf("Local P: %g %g %g %g %g\n", 
+                //        P(prims::rho, k, j, i), P(prims::u, k, j, i), P(prims::u1, k, j, i), P(prims::u2, k, j, i),
+                //        P(prims::u3, k, j, i));
+                //printf("Local U: %g %g %g %g %g\n",
+                //        U(prims::rho, k, j, i), U(prims::u, k, j, i), U(prims::u1, k, j, i), U(prims::u2, k, j, i),
+                //        U(prims::u3, k, j, i));
                 ++local_result;
             }
         }
@@ -114,7 +114,7 @@ TaskStatus CheckNaN(MeshBlockData<Real> *rc, int dir, IndexDomain domain)
     pmb->par_reduce("ctop_nans", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D_REDUCE_INT {
             if (isnan(ctop(dir, k, j, i))) {
-                printf("Ctop NaN at %d %d %d\n", k, j, i);
+                //printf("Ctop NaN at %d %d %d\n", k, j, i);
                 ++local_result;
             }
         }

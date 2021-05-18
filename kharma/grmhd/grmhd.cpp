@@ -351,8 +351,8 @@ Real EstimateTimestep(MeshBlockData<Real> *rc)
                                     1 / (coords.dx2v(j) / ctop(2, k, j, i)) +
                                     1 / (coords.dx3v(k) / ctop(3, k, j, i)));
                 if (ndt_zone == ndt) {
-                    printf("Timestep set by %d %d %d: pflag was %f and fflag was %f\n",
-                            i, j, k, pflag(k, j, i), fflag(k, j, i));
+                    //printf("Timestep set by %d %d %d: pflag was %f and fflag was %f\n",
+                    //        i, j, k, pflag(k, j, i), fflag(k, j, i));
                 }
             }
         );

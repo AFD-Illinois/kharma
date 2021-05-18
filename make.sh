@@ -14,8 +14,8 @@
 # skx:   Compile specifically for Skylake nodes on Stampede2
 
 ### Machine-specific configurations ###
-if [[ $HOSTNAME == "toolbox" ]]; then
-  HOST=fermium
+if [[ $(hostname) == "toolbox" ]]; then
+  HOST=ferrum
 else
   HOST=$(hostname -f)
 fi
@@ -73,6 +73,12 @@ if [[ $HOST == "fermium" ]]; then
   # My CUDA installs are a bit odd
   EXTRA_FLAGS="-DCUDAToolkit_INCLUDE_DIR=/usr/include/cuda $EXTRA_FLAGS"
 fi
+if [[ $HOST == "ferrum" ]]; then
+  HOST_ARCH="HSW"
+  DEVICE_ARCH="INTEL_GEN"
+  EXTRA_FLAGS="-DKokkos_ENABLE_SYCL=ON"
+  PREFIX_PATH="$HOME/libs/hdf5-oneapi"
+fi
 if [[ $HOST == "cinnabar"* ]]; then
   HOST_ARCH="HSW"
   DEVICE_ARCH="KEPLER35"
@@ -102,10 +108,8 @@ fi
 if [[ -v HOST_ARCH ]]; then
   EXTRA_FLAGS="-DKokkos_ARCH_${HOST_ARCH}=ON $EXTRA_FLAGS"
 fi
-if [[ "$*" == *"cuda"* ]]; then
-  if [[ -v DEVICE_ARCH ]]; then
-    EXTRA_FLAGS="-DKokkos_ARCH_${DEVICE_ARCH}=ON $EXTRA_FLAGS"
-  fi # Else complain loudly
+if [[ -v DEVICE_ARCH ]]; then
+  EXTRA_FLAGS="-DKokkos_ARCH_${DEVICE_ARCH}=ON $EXTRA_FLAGS"
 fi
 if [[ -v PREFIX_PATH ]]; then
   EXTRA_FLAGS="-DCMAKE_PREFIX_PATH=$PREFIX_PATH $EXTRA_FLAGS"
@@ -134,12 +138,21 @@ cd $SCRIPT_DIR
 SCRIPT_DIR=$PWD
 
 # Strongly prefer icc for OpenMP compiles
-if which icpc >/dev/null 2>&1; then
+# I would try clang but it would break all Macs
+if which icpx >/dev/null 2>&1; then
+  CXX_NATIVE=icpx
+  C_NATIVE=icx
+  export CXXFLAGS="-fopenmp -Wno-unknown-pragmas"
+  export CFLAGS="-fopenmp"
+elif which icpc >/dev/null 2>&1; then
   CXX_NATIVE=icpc
+  C_NATIVE=icc
   # Avoid warning on nvcc pragmas Intel doesn't like
-  export CXXFLAGS=-Wno-unknown-pragmas
+  export CXXFLAGS="-qopenmp -Wno-unknown-pragmas"
+  export CFLAGS="-qopenmp"
 else
   CXX_NATIVE=g++
+  C_NATIVE=gcc
 fi
 
 # CUDA loop options: MANUAL1D_LOOP > MDRANGE_LOOP, TPTTR_LOOP & TPTTRTVR_LOOP don't compile
@@ -169,7 +182,9 @@ cd build
 if [[ "$*" == *"clean"* ]]; then
 #set -x
   cmake ..\
+    -DCMAKE_C_COMPILER="$C_NATIVE" \
     -DCMAKE_CXX_COMPILER="$CXX" \
+    -DCMAKE_INCLUDE_PATH="$PREFIX_PATH" \
     -DCMAKE_BUILD_TYPE=$TYPE \
     -DPAR_LOOP_LAYOUT=$OUTER_LAYOUT \
     -DPAR_LOOP_INNER_LAYOUT=$INNER_LAYOUT \

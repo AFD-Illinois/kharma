@@ -2,7 +2,11 @@
 
 cmake_minimum_required(VERSION 3.10)
 project(kharma LANGUAGES C CXX)
-set (CMAKE_CXX_STANDARD 14)
+set (CMAKE_CXX_STANDARD 17)
+
+foreach(path ${CMAKE_INCLUDE_PATH})
+  include_directories(${path})
+endforeach()
 
 # Parthenon options
 set(PARTHENON_DISABLE_EXAMPLES ON CACHE BOOL "KHARMA Override")
