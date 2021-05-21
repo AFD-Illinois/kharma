@@ -4,7 +4,8 @@
 	branch = kharma-expt
 [submodule "external/variant"]
 	path = external/variant
-	url = https://github.com/mpark/variant.git
+	url = https://github.com/bprather/variant.git
+        branch = kharma-expt
 [submodule "external/hpcbind"]
 	path = external/hpcbind
 	url = https://github.com/kokkos/hpcbind.git
