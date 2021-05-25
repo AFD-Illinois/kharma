@@ -52,4 +52,4 @@ flag_verbose = 0
 <parthenon/output0>
 file_type = hdf5
 dt = 1.0
-variables = c.c.bulk.prims, c.c.bulk.B_prim
+variables = c.c.bulk.prims, c.c.bulk.B_prim, c.c.bulk.jcon

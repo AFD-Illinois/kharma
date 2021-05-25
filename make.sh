@@ -76,19 +76,24 @@ fi
 if [[ $HOST == "ferrum" ]]; then
   HOST_ARCH="HSW"
   DEVICE_ARCH="INTEL_GEN"
-  EXTRA_FLAGS="-DKokkos_ENABLE_SYCL=ON"
   PREFIX_PATH="$HOME/libs/hdf5-oneapi"
 fi
 if [[ $HOST == "cinnabar"* ]]; then
   HOST_ARCH="HSW"
   DEVICE_ARCH="KEPLER35"
-  #PREFIX_PATH="$HOME/libs/hdf5-oneapi"
+  PREFIX_PATH="$HOME/libs/hdf5-oneapi"
 
-  PREFIX_PATH="$HOME/libs/hdf5-nvhpc"
-  EXTRA_FLAGS="-DCUDAToolkit_INCLUDE_DIR=/usr/include/cuda $EXTRA_FLAGS"
-  export NVCC_WRAPPER_DEFAULT_COMPILER=nvc++
-  # This makes Nvidia chill about old GPUs, but requires a custom nvcc_wrapper
-  export CXXFLAGS="-Wno-deprecated-gpu-targets"
+  if [[ "$*" == *"cuda"* ]]; then
+    #export NVCC_WRAPPER_DEFAULT_COMPILER=nvc++
+    HOST_ARCH="SNB"
+
+    #PREFIX_PATH=""
+    PREFIX_PATH="$HOME/libs/hdf5-nvhpc"
+
+    EXTRA_FLAGS="-DCUDAToolkit_INCLUDE_DIR=/usr/include/cuda $EXTRA_FLAGS"
+    # This makes Nvidia chill about old GPUs, but requires a custom nvcc_wrapper
+    #export CXXFLAGS="-Wno-deprecated-gpu-targets"
+  fi
 fi
 
 # If we haven't special-cased already, guess an architecture
@@ -120,7 +125,6 @@ if [[ "$(which python)" == *"conda"* ]]; then
   echo "It looks like you have Anaconda loaded."
   echo "Anaconda forces a serial version of HDF5 which makes this compile impossible."
   echo "Deactivate your environment with 'conda deactivate'"
-  exit
 fi
 echo "If this is your Anaconda version of Python, deactivate your environment:"
 echo "$(which python)"
@@ -139,12 +143,7 @@ SCRIPT_DIR=$PWD
 
 # Strongly prefer icc for OpenMP compiles
 # I would try clang but it would break all Macs
-if which icpx >/dev/null 2>&1; then
-  CXX_NATIVE=icpx
-  C_NATIVE=icx
-  export CXXFLAGS="-fopenmp -Wno-unknown-pragmas"
-  export CFLAGS="-fopenmp"
-elif which icpc >/dev/null 2>&1; then
+if which icpc >/dev/null 2>&1; then
   CXX_NATIVE=icpc
   C_NATIVE=icc
   # Avoid warning on nvcc pragmas Intel doesn't like
@@ -160,16 +159,28 @@ fi
 # OpenMP loop options for KNL:
 # Outer: SIMDFOR_LOOP;MANUAL1D_LOOP;MDRANGE_LOOP;TPTTR_LOOP;TPTVR_LOOP;TPTTRTVR_LOOP
 # Inner: SIMDFOR_INNER_LOOP;TVR_INNER_LOOP
-if [[ "$*" == *"cuda"* ]]; then
+if [[ "$*" == *"sycl"* ]]; then
+  CXX=icpx
+  C_NATIVE=icx
+  OUTER_LAYOUT="MANUAL1D_LOOP"
+  INNER_LAYOUT="TVR_INNER_LOOP"
+  ENABLE_OPENMP="OFF"
+  ENABLE_CUDA="OFF"
+  ENABLE_SYCL="ON"
+elif [[ "$*" == *"cuda"* ]]; then
   CXX="$SCRIPT_DIR/external/parthenon/external/Kokkos/bin/nvcc_wrapper"
   OUTER_LAYOUT="MANUAL1D_LOOP"
   INNER_LAYOUT="TVR_INNER_LOOP"
+  ENABLE_OPENMP="ON"
   ENABLE_CUDA="ON"
+  ENABLE_SYCL="OFF"
 else
   CXX="$CXX_NATIVE"
   OUTER_LAYOUT="MDRANGE_LOOP"
   INNER_LAYOUT="SIMDFOR_INNER_LOOP"
+  ENABLE_OPENMP="ON"
   ENABLE_CUDA="OFF"
+  ENABLE_SYCL="OFF"
 fi
 
 # Make build dir. Recall "clean" means "clean and build"
@@ -188,10 +199,12 @@ if [[ "$*" == *"clean"* ]]; then
     -DCMAKE_BUILD_TYPE=$TYPE \
     -DPAR_LOOP_LAYOUT=$OUTER_LAYOUT \
     -DPAR_LOOP_INNER_LAYOUT=$INNER_LAYOUT \
+    -DKokkos_ENABLE_OPENMP=$ENABLE_OPENMP \
     -DKokkos_ENABLE_CUDA=$ENABLE_CUDA \
+    -DKokkos_ENABLE_SYCL=$ENABLE_SYCL \
     $EXTRA_FLAGS
 #set +x
 fi
 
-make -j12
+make -j
 cp kharma/kharma.* ..
