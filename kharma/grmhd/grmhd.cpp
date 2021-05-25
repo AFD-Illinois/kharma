@@ -202,25 +202,25 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     // and the primitives as "Derived."
     // They're still necessary for reconstruction, and generally are the quantities in output files
     // TODO AMR probably needs prims to be FillGhost, make that work without setting Independent
-    Metadata m = Metadata({Metadata::Cell, Metadata::Independent, Metadata::FillGhost,
+    Metadata m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Independent, Metadata::FillGhost,
                     Metadata::Restart, Metadata::Conserved}, s_prims);
     pkg->AddField("c.c.bulk.cons", m);
-    m = Metadata({Metadata::Cell, Metadata::Derived, Metadata::Restart, isPrimitive}, s_prims);
+    m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::Restart, isPrimitive}, s_prims);
     pkg->AddField("c.c.bulk.prims", m);
 
     // Maximum signal speed (magnitude).  Calculated in flux updates but needed for deciding timestep
-    m = Metadata({Metadata::Face, Metadata::Derived, Metadata::OneCopy});
+    m = Metadata({Metadata::Real, Metadata::Face, Metadata::Derived, Metadata::OneCopy});
     pkg->AddField("f.f.bulk.ctop", m);
 
     // TODO check/require a B field of some sort?
 
     // Add jcon as an output-only calculation, likely overriding MeshBlock::UserWorkBeforeOutput
-    m = Metadata({Metadata::Cell, Metadata::Derived, Metadata::OneCopy}, s_fourvector);
+    m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy}, s_fourvector);
     pkg->AddField("c.c.bulk.jcon", m);
 
     // Temporary fix just for being able to save field values
     // I wish they were really integers, but this works in the meantime
-    m = Metadata({Metadata::Cell, Metadata::Derived, Metadata::OneCopy, Metadata::Integer});
+    m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
     pkg->AddField("c.c.bulk.pflag", m);
     pkg->AddField("c.c.bulk.fflag", m);
 
