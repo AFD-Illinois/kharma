@@ -81,10 +81,11 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
 
     // B fields.  Primitive and conserved fields are related analytically
     // TODO could we get away with storing one?
-    Metadata m = Metadata({Metadata::Cell, Metadata::Independent, Metadata::FillGhost,
-                  Metadata::Restart, Metadata::Conserved, Metadata::Vector}, s_vector);
+    Metadata m = Metadata({Metadata::Cell, Metadata::Independent, Metadata::FillGhost, Metadata::WithFluxes,
+                           Metadata::Restart, Metadata::Conserved, Metadata::Vector}, s_vector);
     pkg->AddField("c.c.bulk.B_con", m);
-    m = Metadata({Metadata::Cell, Metadata::Derived, Metadata::Restart, isPrimitive, Metadata::Vector}, s_vector);
+    m = Metadata({Metadata::Cell, Metadata::Derived, Metadata::FillGhost, Metadata::WithFluxes,
+                  Metadata::Restart, isPrimitive, Metadata::Vector}, s_vector);
     pkg->AddField("c.c.bulk.B_prim", m);
 
     m = Metadata({Metadata::Cell, Metadata::Derived});

@@ -1,5 +1,5 @@
 /* 
- *  File: seed_B.cpp
+ *  File: seed_B_cd.cpp
  *  
  *  BSD 3-Clause License
  *  

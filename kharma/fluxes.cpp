@@ -109,7 +109,7 @@ TaskStatus Flux::GetFlux(MeshBlockData<Real> *rc, const int& dir, const Real& dt
     // B field evolution
     const bool use_b_flux_ct = pmb->packages.AllPackages().count("B_FluxCT") > 0;
     const bool use_b_cd_glm = pmb->packages.AllPackages().count("B_CD_GLM") > 0;
-    // TODO should be obvious
+
     auto& G = pmb->coords;
 
     // Figure out the correct divB propagation speed c_h

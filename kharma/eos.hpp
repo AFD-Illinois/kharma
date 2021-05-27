@@ -37,7 +37,7 @@
 
 #include <parthenon/parthenon.hpp>
 
-#define USE_VIRTUAL_EOS 0
+#define USE_VIRTUAL_EOS 1
 
 #if USE_VIRTUAL_EOS
 /**

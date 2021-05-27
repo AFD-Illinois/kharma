@@ -8,14 +8,8 @@
  */
 #pragma once
 
-// Switch to the standard?
-//#if __cplusplus >= 201703L
-//#include <variant>
-//namespace mpark = std;
-//#else
-#undef __cpp_exceptions
+// See note in coordintate_embedding
 #include <mpark/variant.hpp>
-//#endif
 
 #include "decs.hpp"
 

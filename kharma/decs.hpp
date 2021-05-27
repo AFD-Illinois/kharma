@@ -42,7 +42,7 @@ using GReal = double;
 enum Loci{face1=0, face2, face3, center, corner};
 
 // Accuracy for numerical derivatives of the metric
-#define DELTA 1.e-5
+#define DELTA 1.e-8
 // Accuracy required for U to P
 #define UTOP_ERRTOL 1.e-8
 
