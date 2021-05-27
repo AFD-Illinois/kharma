@@ -15,7 +15,7 @@
 
 ### Machine-specific configurations ###
 if [[ $(hostname) == "toolbox" ]]; then
-  HOST=ferrum
+  HOST=fermium
 else
   HOST=$(hostname -f)
 fi
@@ -67,9 +67,12 @@ fi
 
 # BP's machines
 if [[ $HOST == "fermium" ]]; then
-  module load mpi
+  module load nvhpc
   HOST_ARCH="AMDAVX"
   DEVICE_ARCH="TURING75"
+
+  PREFIX_PATH="$HOME/libs/hdf5-nvhpc"
+  export NVCC_WRAPPER_DEFAULT_COMPILER=nvc++
   # My CUDA installs are a bit odd
   EXTRA_FLAGS="-DCUDAToolkit_INCLUDE_DIR=/usr/include/cuda $EXTRA_FLAGS"
 fi
