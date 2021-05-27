@@ -51,23 +51,16 @@
 #include "harm_driver.hpp"
 #include "iharm_restart.hpp"
 
-Properties_t KHARMA::ProcessProperties(std::unique_ptr<ParameterInput>& pin)
+
+void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
 {
-    // TODO this could benefit from some more use
-    Properties_t properties;
-    //properties.push_back(std::make_shared<KHARMAProperties>("Globals"));
-    //StateDescriptor globals = (static_cast<KHARMAProperties*>(properties[0].get()))->State();
-
-    // Mostly, though, this function is where I've chosen to mess with all Parthenon's parameters before
-    // handing them over.  This includes reading restarts, setting native boundaries from KS, etc.
-
-    // Set 4 ghost zones
-    // TODO allow fewer for stencil-3 schemes
+    // TODO dynamic ghost zones.  Dangerous?
     // std::string recon = pin->GetOrAddString("GRMHD", "reconstruction", "weno5");
     // if (recon != "donor_cell" && recon != "linear_mc" && recon != "linear_vl") {
     //     pin->SetInteger("parthenon/mesh", "nghost", 4);
     //     Globals::nghost = pin->GetInteger("parthenon/mesh", "nghost");
     // }
+    // Set 4 ghost zones
     pin->SetInteger("parthenon/mesh", "nghost", 4);
     Globals::nghost = pin->GetInteger("parthenon/mesh", "nghost");
 
@@ -77,7 +70,7 @@ Properties_t KHARMA::ProcessProperties(std::unique_ptr<ParameterInput>& pin)
         ReadIharmRestartHeader(pin->GetString("iharm_restart", "fname"), pin);
     }
 
-    // TODO somehow only parse the coordinate system once, so we can know exactly whether we're spherical/modified
+    // TODO construct a coordinate system object here to check all the properties/coordinates
     // So far every non-null transform is exp(x1) but who knows
     std::string cb = pin->GetString("coordinates", "base");
     std::string ctf = pin->GetOrAddString("coordinates", "transform", "null");
@@ -128,12 +121,14 @@ Properties_t KHARMA::ProcessProperties(std::unique_ptr<ParameterInput>& pin)
     if (field_type == "constant" || field_type == "monopole") {
         pin->GetOrAddBoolean("b_field", "norm", false);
     }
-
-    return properties;
 }
 
 Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
 {
+    // See above
+    FixParameters(pin);
+
+    // Then put together what we're supposed to
     Packages_t packages;
 
     // Just one base package

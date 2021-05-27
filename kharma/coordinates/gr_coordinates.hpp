@@ -40,16 +40,14 @@
 
 // Everywhere else we can just import <parthenon/parthenon.hpp>
 // Here we have to be careful of circular dependencies
+// General warning to be very careful with imports/namespaces in
+// this file and the others in coordinates/: it's imported many
+// places in parthenon and expected to be benign
 #include <coordinates/uniform_cartesian.hpp>
 #include <parameter_input.hpp>
 
+// This import should always be okay, too
 #include "Kokkos_Core.hpp"
-
-// TODO standardize namespaces, maybe fewer?
-// Also parthenon may not always like this namespace import...
-using namespace parthenon;
-using namespace std;
-using namespace Kokkos;
 
 // Option to ignore coordinates entirely,
 // and only use flat-space SR in Cartesian coordinates
@@ -135,7 +133,7 @@ public:
 
     // Coordinates of the GRCoordinates, i.e. "native"
     KOKKOS_INLINE_FUNCTION void coord(const int& k, const int& j, const int& i, const Loci& loc, GReal X[GR_DIM]) const;
-    // Coordinates of the embedding system, usually r,th,phi[KS] or x1,x2,x3
+    // Coordinates of the embedding system, usually r,th,phi[KS] or x1,x2,x3[Cartesian]
     KOKKOS_INLINE_FUNCTION void coord_embed(const int& k, const int& j, const int& i, const Loci& loc, GReal Xembed[GR_DIM]) const;
     // Coordinates in a specific 
 

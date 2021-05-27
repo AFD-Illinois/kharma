@@ -84,12 +84,15 @@ if [[ $HOST == "cinnabar"* ]]; then
   PREFIX_PATH="$HOME/libs/hdf5-oneapi"
 
   if [[ "$*" == *"cuda"* ]]; then
-    #export NVCC_WRAPPER_DEFAULT_COMPILER=nvc++
-    HOST_ARCH="SNB"
+    export NVCC_WRAPPER_DEFAULT_COMPILER=nvc++
+    HOST_ARCH="SNB" # Kokkos doesn't detect/set -tp=haswell for nvc++
 
     #PREFIX_PATH=""
     PREFIX_PATH="$HOME/libs/hdf5-nvhpc"
 
+    # NVHPC CUDA
+    #EXTRA_FLAGS="-DCUDAToolkit_INCLUDE_DIR=/opt/nvidia/hpc_sdk/Linux_x86_64/21.3/cuda/include/ $EXTRA_FLAGS"
+    # System CUDA
     EXTRA_FLAGS="-DCUDAToolkit_INCLUDE_DIR=/usr/include/cuda $EXTRA_FLAGS"
     # This makes Nvidia chill about old GPUs, but requires a custom nvcc_wrapper
     #export CXXFLAGS="-Wno-deprecated-gpu-targets"
@@ -147,8 +150,8 @@ if which icpc >/dev/null 2>&1; then
   CXX_NATIVE=icpc
   C_NATIVE=icc
   # Avoid warning on nvcc pragmas Intel doesn't like
-  export CXXFLAGS="-qopenmp -Wno-unknown-pragmas"
-  export CFLAGS="-qopenmp"
+  export CXXFLAGS="-Wno-unknown-pragmas"
+  #export CFLAGS="-qopenmp"
 else
   CXX_NATIVE=g++
   C_NATIVE=gcc
@@ -161,10 +164,10 @@ fi
 # Inner: SIMDFOR_INNER_LOOP;TVR_INNER_LOOP
 if [[ "$*" == *"sycl"* ]]; then
   CXX=icpx
-  C_NATIVE=icx
+  EXTRA_FLAGS="-DCMAKE_C_COMPILER=icx $EXTRA_FLAGS"
   OUTER_LAYOUT="MANUAL1D_LOOP"
   INNER_LAYOUT="TVR_INNER_LOOP"
-  ENABLE_OPENMP="OFF"
+  ENABLE_OPENMP="ON"
   ENABLE_CUDA="OFF"
   ENABLE_SYCL="ON"
 elif [[ "$*" == *"cuda"* ]]; then
@@ -193,7 +196,6 @@ cd build
 if [[ "$*" == *"clean"* ]]; then
 #set -x
   cmake ..\
-    -DCMAKE_C_COMPILER="$C_NATIVE" \
     -DCMAKE_CXX_COMPILER="$CXX" \
     -DCMAKE_INCLUDE_PATH="$PREFIX_PATH" \
     -DCMAKE_BUILD_TYPE=$TYPE \

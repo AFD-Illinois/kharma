@@ -39,6 +39,8 @@
 #include "gr_coordinates.hpp"
 
 // This file doesn't have MeshBlock access, so it uses raw Kokkos calls
+using namespace parthenon;
+using namespace std;
 using namespace Kokkos;
 
 #if FAST_CARTESIAN

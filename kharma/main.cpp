@@ -69,7 +69,6 @@ int main(int argc, char *argv[])
     ParthenonManager pman;
 
     pman.app_input->ProcessPackages = KHARMA::ProcessPackages;
-    pman.app_input->ProcessProperties = KHARMA::ProcessProperties;
     pman.app_input->ProblemGenerator = KHARMA::ProblemGenerator;
     pman.app_input->UserWorkBeforeOutput = KHARMA::FillOutput;
     pman.app_input->PostStepDiagnosticsInLoop = KHARMA::PostStepDiagnostics;

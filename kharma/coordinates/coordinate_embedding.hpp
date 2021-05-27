@@ -33,14 +33,12 @@
  */
 #pragma once
 
-// Switch to the standard?
-//#if __cplusplus >= 201703L
-//#include <variant>
-//namespace mpark = std;
-//#else
-#undef __cpp_exceptions
+// std::variant requires C++ exceptions,
+// so it will never be SYCL-ready.
+// Instead we use mpark's reimplementation,
+// patched never to throw exceptions.
+// Because who needs those?
 #include <mpark/variant.hpp>
-//#endif
 
 #include "decs.hpp"
 

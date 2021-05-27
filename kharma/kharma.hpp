@@ -39,12 +39,12 @@
  */
 namespace KHARMA {
     /**
-     * This is supposed to return a "Properties" object with any globals.
-     * 
-     * Instead I just use it to set pieces of ParameterInput that Parthenon needs but which
-     * are redundant after my parameters (e.g. x1in/x1out from rin, rout)
+     * This function messes with all Parthenon's parameters in-place before we hand them to the Mesh,
+     * so that KHARMA decks can omit/infer some things parthenon needs.
+     * This includes boundaries in spherical coordinates, coordinate system translations, etc.
+     * This function also handles setting parameters from restart files
      */
-    Properties_t ProcessProperties(std::unique_ptr<ParameterInput>& pin);
+    void FixParameters(std::unique_ptr<ParameterInput>& pin);
 
     /**
      * Currently just loads GRMHD.  Could also load GRHD only, scalars, e-, etc.
@@ -66,11 +66,3 @@ namespace KHARMA {
      */
     void PostStepDiagnostics(Mesh *pmesh, ParameterInput *pin, const SimTime& tm);
 }
-
-class KHARMAProperties : public PropertiesInterface {
-    KHARMAProperties(std::string label): state_(label) {}
-    StateDescriptor& State() {return state_;}
-
-    private:
-        StateDescriptor state_;
-};
