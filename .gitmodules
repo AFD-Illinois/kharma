@@ -1,11 +1,10 @@
 [submodule "external/parthenon"]
 	path = external/parthenon
 	url = https://github.com/bprather/parthenon.git
-	branch = kharma-expt
+	branch = kharma-stable
 [submodule "external/variant"]
 	path = external/variant
-	url = https://github.com/bprather/variant.git
-        branch = kharma-expt
+	url = https://github.com/mpark/variant.git
 [submodule "external/hpcbind"]
 	path = external/hpcbind
 	url = https://github.com/kokkos/hpcbind.git

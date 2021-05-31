@@ -201,10 +201,10 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     // As mentioned elsewhere, KHARMA treats the conserved variables as the independent ones,
     // and the primitives as "Derived."
     // They're still necessary for reconstruction, and generally are the quantities in output files
-    Metadata m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Independent, Metadata::WithFluxes,
+    Metadata m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Independent,
                     Metadata::FillGhost, Metadata::Restart, Metadata::Conserved}, s_prims);
     pkg->AddField("c.c.bulk.cons", m);
-    m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::WithFluxes,
+    m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived,
                   Metadata::FillGhost, Metadata::Restart, isPrimitive}, s_prims);
     pkg->AddField("c.c.bulk.prims", m);
 
