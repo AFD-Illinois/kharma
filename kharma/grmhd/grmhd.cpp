@@ -205,7 +205,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
                     Metadata::FillGhost, Metadata::Restart, Metadata::Conserved}, s_prims);
     pkg->AddField("c.c.bulk.cons", m);
     m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived,
-                  Metadata::FillGhost, Metadata::Restart, isPrimitive}, s_prims);
+                  Metadata::Restart, isPrimitive}, s_prims);
     pkg->AddField("c.c.bulk.prims", m);
 
     // Maximum signal speed (magnitude).  Calculated in flux updates but needed for deciding timestep

@@ -1,0 +1,29 @@
+#!/bin/bash
+#BSUB -P AST171
+#BSUB -J KHARMA
+#BSUB -q debug
+#BSUB -alloc_flags smt4
+#BSUB -nnodes 12
+#BSUB -W 02:00
+#BSUB -r 6
+#BSUB -g 1
+#BSUB -oe out-%J.txt
+
+KHARMA_DIR=~/kharma
+
+date
+
+# Make bsub behave like sbatch, moving to CWD
+cd $LS_SUBCWD
+
+# Just think of all the math we're going to have to do to automate scaling!
+# -n # resource sets (== MPI tasks for us)
+# -r # rs per node
+# -a # MPI task per rs
+# -g # GPU per rs
+# -c # CPU cores (physical) per rs (total 42, but 7 is such an awkward number)
+# -b binding strat, usually want packed every NCPU cores
+export OMP_PROC_BIND=spread
+export OMP_PLACES=threads
+export OMP_NUM_THREADS=24
+jsrun --smpiargs="-gpu" -n 6 -r 6 -a 1 -g 1 -c 6 -b packed:7 $KHARMA_DIR/kharma.cuda -i *.par

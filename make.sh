@@ -27,6 +27,31 @@ fi
 # MIC: KNC, KNL
 # GPUs: KEPLER35, VOLTA70, TURING75
 
+# INCITE resources
+if [[ $HOST == *".summit.olcf.ornl.gov" ]]; then
+  HOST_ARCH="POWER9"
+  DEVICE_ARCH="VOLTA70"
+
+  # nvc++: nvcc *refuses* to use it and falls back to system GCC 4.8.5...
+  #export NVCC_WRAPPER_DEFAULT_COMPILER='nvc++'
+  #PREFIX_PATH="$HOME/libs/hdf5-nvhpc-21.2"
+
+  # GCC 10.2, needs CUDA 11?
+  #export NVCC_WRAPPER_DEFAULT_COMPILER="g++-nofloat128"
+  #CXXFLAGS="-mno-float128 $CXXFLAGS"
+  #PREFIX_PATH="$HOME/libs/hdf5-gcc10-spectrum"
+
+  # TODO make GCC 8 not crash
+
+  # GCC 6.4
+  PREFIX_PATH="$HOME/libs/hdf5-gcc10-spectrum"
+  #PREFIX_PATH="/sw/summit/hdf5/1.10.6_align/gcc/6.4.0/"
+
+  # xlC: OpenMP CXX problems
+  #export NVCC_WRAPPER_DEFAULT_COMPILER='xlC'
+  #PREFIX_PATH="/sw/summit/hdf5/1.10.6_align/xl/16.1.1-5/"
+fi
+
 # TACC resources
 # Generally you want latest Intel/IMPI/phdf5 modules,
 # On longhorn use gcc7, mvapich2-gdr, and manually-compiled PHDF5
@@ -146,7 +171,10 @@ SCRIPT_DIR=$PWD
 
 # Strongly prefer icc for OpenMP compiles
 # I would try clang but it would break all Macs
-if which icpc >/dev/null 2>&1; then
+if which xlC >/dev/null 2>&1; then
+  CXX_NATIVE=xlC
+  C_NATIVE=xlc
+elif which icpc >/dev/null 2>&1; then
   CXX_NATIVE=icpc
   C_NATIVE=icc
   # Avoid warning on nvcc pragmas Intel doesn't like
@@ -163,27 +191,42 @@ fi
 # Outer: SIMDFOR_LOOP;MANUAL1D_LOOP;MDRANGE_LOOP;TPTTR_LOOP;TPTVR_LOOP;TPTTRTVR_LOOP
 # Inner: SIMDFOR_INNER_LOOP;TVR_INNER_LOOP
 if [[ "$*" == *"sycl"* ]]; then
-  CXX=icpx
+  export CXX=icpx
   EXTRA_FLAGS="-DCMAKE_C_COMPILER=icx $EXTRA_FLAGS"
   OUTER_LAYOUT="MANUAL1D_LOOP"
   INNER_LAYOUT="TVR_INNER_LOOP"
   ENABLE_OPENMP="ON"
   ENABLE_CUDA="OFF"
   ENABLE_SYCL="ON"
+  ENABLE_HIP="OFF"
+elif [[ "$*" == *"hip"* ]]; then
+  export CXX=hipcc
+  OUTER_LAYOUT="MANUAL1D_LOOP"
+  INNER_LAYOUT="TVR_INNER_LOOP"
+  ENABLE_OPENMP="ON"
+  ENABLE_CUDA="OFF"
+  ENABLE_SYCL="OFF"
+  ENABLE_HIP="ON"
 elif [[ "$*" == *"cuda"* ]]; then
-  CXX="$SCRIPT_DIR/external/parthenon/external/Kokkos/bin/nvcc_wrapper"
+  export CXX="$SCRIPT_DIR/external/parthenon/external/Kokkos/bin/nvcc_wrapper"
+  if [[ "$*" == *"dryrun"* ]]; then
+    export CXXFLAGS="-dryrun $CXXFLAGS"
+    echo "Dry-running with $CXXFLAGS"
+  fi
   OUTER_LAYOUT="MANUAL1D_LOOP"
   INNER_LAYOUT="TVR_INNER_LOOP"
   ENABLE_OPENMP="ON"
   ENABLE_CUDA="ON"
   ENABLE_SYCL="OFF"
+  ENABLE_HIP="OFF"
 else
-  CXX="$CXX_NATIVE"
+  export CXX="$CXX_NATIVE"
   OUTER_LAYOUT="MDRANGE_LOOP"
   INNER_LAYOUT="SIMDFOR_INNER_LOOP"
   ENABLE_OPENMP="ON"
   ENABLE_CUDA="OFF"
   ENABLE_SYCL="OFF"
+  ENABLE_HIP="OFF"
 fi
 
 # Make build dir. Recall "clean" means "clean and build"
@@ -197,16 +240,21 @@ if [[ "$*" == *"clean"* ]]; then
 #set -x
   cmake ..\
     -DCMAKE_CXX_COMPILER="$CXX" \
-    -DCMAKE_INCLUDE_PATH="$PREFIX_PATH" \
+    -DCMAKE_PREFIX_PATH="$PREFIX_PATH:$CMAKE_PREFIX_PATH" \
     -DCMAKE_BUILD_TYPE=$TYPE \
     -DPAR_LOOP_LAYOUT=$OUTER_LAYOUT \
     -DPAR_LOOP_INNER_LAYOUT=$INNER_LAYOUT \
     -DKokkos_ENABLE_OPENMP=$ENABLE_OPENMP \
     -DKokkos_ENABLE_CUDA=$ENABLE_CUDA \
     -DKokkos_ENABLE_SYCL=$ENABLE_SYCL \
+    -DKokkos_ENABLE_HIP=$ENABLE_HIP \
     $EXTRA_FLAGS
 #set +x
 fi
 
-make -j
+if [[ "$*" == *"all"* ]]; then
+  make -j
+else
+  make -j10
+fi
 cp kharma/kharma.* ..

@@ -9,13 +9,16 @@ set(CMAKE_CXX_STANDARD 14)
 # ensure correct flag is used as deprecated c++1z is not supported by nvcc
 #set(CMAKE_CXX17_STANDARD_COMPILE_OPTION "-std=c++17")
 
-#foreach(path ${CMAKE_INCLUDE_PATH})
+#foreach(path ${CMAKE_PREFIX_PATH})
 #  include_directories(${path})
 #endforeach()
 
 # Parthenon options
 set(PARTHENON_DISABLE_EXAMPLES ON CACHE BOOL "KHARMA Override")
 set(PARTHENON_LINT_DEFAULT OFF CACHE BOOL "KHARMA Override")
+# To use old Summit built-in HDF5
+#set(PARTHENON_DISABLE_HDF5_COMPRESSION ON CACHE BOOL "KHARMA Override")
+
 # Parthenon internal build options
 set(BUILD_TESTING OFF CACHE BOOL "KHARMA Override")
 set(ENABLE_COMPILER_WARNINGS OFF CACHE BOOL "KHARMA Override")
