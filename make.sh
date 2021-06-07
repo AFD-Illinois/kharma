@@ -28,6 +28,20 @@ fi
 # GPUs: KEPLER35, VOLTA70, TURING75
 
 # INCITE resources
+if [[ $HOST == *".alcf.anl.gov" ]]; then
+  if [[ "$*" == *"cuda"* ]]; then
+    HOST_ARCH="AMDAVX"
+    DEVICE_ARCH="AMPERE80"
+    CXXFLAGS="-mp"
+    export NVCC_WRAPPER_DEFAULT_COMPILER='nvc++'
+    PREFIX_PATH="$HOME/libs/hdf5-nvhpc"
+    #PREFIX_PATH="/soft/thetagpu/hpc-sdk/Linux_x86_64/21.3/comm_libs/mpi"
+  else
+    echo "Compiling for KNL"
+    HOST_ARCH="KNL"
+    PREFIX_PATH="$MPICH_DIR"
+  fi
+fi
 if [[ $HOST == *".summit.olcf.ornl.gov" ]]; then
   HOST_ARCH="POWER9"
   DEVICE_ARCH="VOLTA70"
@@ -171,7 +185,11 @@ SCRIPT_DIR=$PWD
 
 # Strongly prefer icc for OpenMP compiles
 # I would try clang but it would break all Macs
-if which xlC >/dev/null 2>&1; then
+if which cc >/dev/null 2>&1; then
+  CXX_NATIVE=CC
+  CC_NATIVE=cc
+  #export CXXFLAGS="-Wno-unknown-pragmas" # TODO if Cray->Intel in --version
+elif which xlC >/dev/null 2>&1; then
   CXX_NATIVE=xlC
   C_NATIVE=xlc
 elif which icpc >/dev/null 2>&1; then
