@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Submit/run script for KHARMA
-# *should* work on any SLURM-based system
+# *should* work on any TACC system
 #SBATCH -J kharma
 
 # Appropriate queues:
@@ -24,18 +24,15 @@ if [[ -z "$SLURM_NTASKS_PER_NODE" ]]; then
   echo "Assuming $SLURM_NTASKS_PER_NODE tasks per node"
 fi
 
-# Else for running in dev jobs
-#export SLURM_NTASKS_PER_NODE=4
-#export IBRUN_TASKS_PER_NODE=4
 
-# Global options
+# OpenMP Options
 export OMP_PROC_BIND=spread
 export OMP_PLACES=threads
 # SLURM schedules us on all CPUs, which is nearly always what we want with KHARMA
 # This may one day not be true for Stampede2
 export OMP_NUM_THREADS=$(( $SLURM_CPUS_ON_NODE / $SLURM_NTASKS_PER_NODE ))
 
-# We will always want this to be true
+# Limit Kokkos's view of the node if running on e.g. 2/4 GPUs for scaling
 export KOKKOS_NUM_DEVICES=$SLURM_NTASKS_PER_NODE
 
 # Machine-specific run lines
