@@ -50,16 +50,14 @@ if [[ $HOST == *".summit.olcf.ornl.gov" ]]; then
   #export NVCC_WRAPPER_DEFAULT_COMPILER='nvc++'
   #PREFIX_PATH="$HOME/libs/hdf5-nvhpc-21.2"
 
-  # GCC 10.2, needs CUDA 11?
-  #export NVCC_WRAPPER_DEFAULT_COMPILER="g++-nofloat128"
-  #CXXFLAGS="-mno-float128 $CXXFLAGS"
+  # GCC 10.2, needs CUDA 11 probably
   #PREFIX_PATH="$HOME/libs/hdf5-gcc10-spectrum"
 
   # TODO make GCC 8 not crash
+  #CXXFLAGS="-mno-float128 $CXXFLAGS"
 
   # GCC 6.4
-  PREFIX_PATH="$HOME/libs/hdf5-gcc10-spectrum"
-  #PREFIX_PATH="/sw/summit/hdf5/1.10.6_align/gcc/6.4.0/"
+  PREFIX_PATH="/sw/summit/hdf5/1.10.6_align/gcc/6.4.0/"
 
   # xlC: OpenMP CXX problems
   #export NVCC_WRAPPER_DEFAULT_COMPILER='xlC'
