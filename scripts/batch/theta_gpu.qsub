@@ -8,9 +8,9 @@
 N_NODES=2
 
 # Use NVHPC bundled MPI on ThetaGPU since I guess nobody else compiles with net support?
-export CPATH="/soft/thetagpu/hpc-sdk/Linux_x86_64/21.3/comm_libs/mpi/include:$CPATH"
-export LD_LIBRARY_PATH="/soft/thetagpu/hpc-sdk/Linux_x86_64/21.3/comm_libs/mpi/lib:$LD_LIBRARY_PATH"
-export PATH="/soft/thetagpu/hpc-sdk/Linux_x86_64/21.3/comm_libs/mpi/bin:$PATH"
+#export CPATH="/soft/thetagpu/hpc-sdk/Linux_x86_64/21.3/comm_libs/mpi/include:$CPATH"
+#export LD_LIBRARY_PATH="/soft/thetagpu/hpc-sdk/Linux_x86_64/21.3/comm_libs/mpi/lib:$LD_LIBRARY_PATH"
+#export PATH="/soft/thetagpu/hpc-sdk/Linux_x86_64/21.3/comm_libs/mpi/bin:$PATH"
 
 # We specifically pass this on submit 
 cd $QSUB_DIR
