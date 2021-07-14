@@ -51,19 +51,23 @@ using namespace parthenon;
 // Look, it seemed like a good idea at the time
 extern double ctop_max;
 
-// Identical calls in case relinking proves faster
+// Fluxes a.k.a. "Approximate Riemann Solvers"
+// These have identical signatures, so that we could runtime relink w/variant like coordinate_embedding
+// Local Lax-Friedrichs flux (usual, more stable)
 KOKKOS_INLINE_FUNCTION Real llf(const Real& fluxL, const Real& fluxR, const Real& cmax, 
                                 const Real& cmin, const Real& Ul, const Real& Ur)
 {
     Real ctop = max(cmax, cmin);
     return 0.5 * (fluxL + fluxR - ctop * (Ur - Ul));
 }
-
+// Harten, Lax, van Leer, & Einfeldt flux (early problems but not extensively studied since)
 KOKKOS_INLINE_FUNCTION Real hlle(const Real& fluxL, const Real& fluxR, const Real& cmax,
                                 const Real& cmin, const Real& Ul, const Real& Ur)
 {
     return (cmax*fluxL + cmin*fluxR - cmax*cmin*(Ur - Ul)) / (cmax + cmin);
 }
+// More complex solvers require speed estimates not calculable completely from
+// invariants, necessitating frame transformations and related madness.
 
 TaskStatus Flux::GetFlux(MeshBlockData<Real> *rc, const int& dir, const Real& dt)
 {
@@ -73,9 +77,9 @@ TaskStatus Flux::GetFlux(MeshBlockData<Real> *rc, const int& dir, const Real& dt
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
-    // 1-zone halo in nontrivial dimensions. Don't calculate/allow fluxes in trivial dimensions
-    // Leave is/ie, js/je, ks/ke with their usual definitions for consistency, and define the loop
-    // bounds separately to include the appropriate halo
+    // 1-zone halo in nontrivial dimensions. Don't bother with fluxes in trivial dimensions
+    // We leave is/ie, js/je, ks/ke with their usual definitions for consistency, and define
+    // the loop bounds separately to include the appropriate halo
     int halo = 1;
     int ks_l = (ks == 0) ? 0 : ks - halo;
     int ke_l = (ke == 0) ? 0 : ke + halo;
@@ -89,7 +93,7 @@ TaskStatus Flux::GetFlux(MeshBlockData<Real> *rc, const int& dir, const Real& dt
 
     int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
     if (0) { // No amount of verbosity warrants this abuse,
-             // but if the code crashes these numbers are a likely culprit
+             // but if the code segfaults these numbers are a likely culprit
         int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
         int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
         cout << string_format("Domain: %d-%d %d-%d %d-%d", is_l, ie_l, js_l, je_l, ks_l, ke_l) << endl;
@@ -97,54 +101,30 @@ TaskStatus Flux::GetFlux(MeshBlockData<Real> *rc, const int& dir, const Real& dt
     }
 
     // OPTIONS
+    bool use_hlle = pmb->packages.Get("GRMHD")->Param<bool>("use_hlle");
     // Pull out a struct of just the actual floor values for speed
     FloorPrescription floors = FloorPrescription(pmb->packages.Get("GRMHD")->AllParams());
-
-    // And cache whether we should reduce reconstruction order on the X2 bound
+    const ReconstructionType& recon = pmb->packages.Get("GRMHD")->Param<ReconstructionType>("recon");
+    // B field package options
+    const bool use_b_flux_ct = pmb->packages.AllPackages().count("B_FluxCT") > 0;
+    const bool use_b_cd_glm = pmb->packages.AllPackages().count("B_CD_GLM") > 0;
+    // If we're reducing the order of reconstruction at the poles, determine whether this
+    // block is on a pole.
     bool is_inner_x2 = pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::reflect;
     bool is_outer_x2 = pmb->boundary_flag[BoundaryFace::outer_x2] == BoundaryFlag::reflect;
 
-    bool use_hlle = pmb->packages.Get("GRMHD")->Param<bool>("use_hlle");
-
-    // B field evolution
-    const bool use_b_flux_ct = pmb->packages.AllPackages().count("B_FluxCT") > 0;
-    const bool use_b_cd_glm = pmb->packages.AllPackages().count("B_CD_GLM") > 0;
-
-    auto& G = pmb->coords;
-
-    // Figure out the correct divB propagation speed c_h
-    const Real c_h = !use_b_cd_glm ? 0 :
-                            clip(pmb->packages.Get("B_CD_GLM")->Param<Real>("c_h_factor") * ctop_max, 
-                                pmb->packages.Get("B_CD_GLM")->Param<Real>("c_h_low"),
-                                pmb->packages.Get("B_CD_GLM")->Param<Real>("c_h_high"));
-    // if (use_b_cd_glm) {
-    //     cout << "c_h is " << c_h << " and ctop is " << ctop_max << endl;
-    // }
-
-    EOS* eos = pmb->packages.Get("GRMHD")->Param<EOS*>("eos");
-    const ReconstructionType& recon = pmb->packages.Get("GRMHD")->Param<ReconstructionType>("recon");
-
-    // VARIABLES
-    MetadataFlag isPrimitive = pmb->packages.Get("GRMHD")->Param<MetadataFlag>("PrimitiveFlag");
-    PackIndexMap prims_map, cons_map;
-    const auto& P = rc->PackVariables({isPrimitive}, prims_map);
-    const auto& U = rc->PackVariablesAndFluxes({Metadata::Conserved}, cons_map);
-    // Indices into these packs, for addressing specific variables in the loop
-    const int cons_start = cons_map["c.c.bulk.cons"].first;
-    const int prims_start = prims_map["c.c.bulk.prims"].first;
-    const int B_con_start = cons_map["c.c.bulk.B_con"].first;
-    const int B_prim_start = prims_map["c.c.bulk.B_prim"].first;
-    const int psi_con_start = use_b_cd_glm ? cons_map["c.c.bulk.psi_cd_con"].first : 0;
-    const int psi_prim_start = use_b_cd_glm ? prims_map["c.c.bulk.psi_cd_prim"].first : 0;
-    const int nvar = P.GetDim(4);
-    if (0) {
-        cout << "Fluxes: Prims " << prims_start << " B_P " << B_prim_start << " psi_p " << psi_prim_start << endl;
-        cout << "Cons " << cons_start << " B_con " << B_con_start << " psi_u " << psi_con_start << " nvar " << nvar << endl;
+    // If we're using constraint damping, figure out the correct divB propagation speed c_h
+    Real c_h_temp;
+    if (use_b_cd_glm) {
+        c_h_temp = clip(pmb->packages.Get("B_CD_GLM")->Param<Real>("c_h_factor") * ctop_max, 
+                        pmb->packages.Get("B_CD_GLM")->Param<Real>("c_h_low"),
+                        pmb->packages.Get("B_CD_GLM")->Param<Real>("c_h_high"));
+    } else {
+        c_h_temp = 0;
     }
+    const Real c_h = c_h_temp;
 
-    auto& ctop = rc->GetFace("f.f.bulk.ctop").data;
-
-    // Calculate fluxes at matching face/direction
+    // Fluxes in direction X1 should be calculated at face 1, likewise others
     Loci loc;
     switch (dir) {
     case X1DIR:
@@ -158,9 +138,33 @@ TaskStatus Flux::GetFlux(MeshBlockData<Real> *rc, const int& dir, const Real& dt
         break;
     }
 
+    // VARIABLES
+    auto& ctop = rc->GetFace("f.f.bulk.ctop").data;
+    auto& G = pmb->coords;
+    EOS* eos = pmb->packages.Get("GRMHD")->Param<EOS*>("eos");
+
+    // Pack all primitive and conserved variables, 
+    MetadataFlag isPrimitive = pmb->packages.Get("GRMHD")->Param<MetadataFlag>("PrimitiveFlag");
+    PackIndexMap prims_map, cons_map;
+    FLAG("Packing P");
+    const auto& P = rc->PackVariables({isPrimitive}, prims_map);
+    FLAG("Packing U");
+    const auto& U = rc->PackVariablesAndFluxes({Metadata::Conserved}, cons_map);
+    FLAG("Packed variables");
+    // Indices into these packs, for addressing specific variables in the loop
+    const int cons_start = cons_map["c.c.bulk.cons"].first;
+    const int prims_start = prims_map["c.c.bulk.prims"].first;
+    const int B_con_start = cons_map["c.c.bulk.B_con"].first;
+    const int B_prim_start = prims_map["c.c.bulk.B_prim"].first;
+    const int psi_con_start = use_b_cd_glm ? cons_map["c.c.bulk.psi_cd_con"].first : 0;
+    const int psi_prim_start = use_b_cd_glm ? prims_map["c.c.bulk.psi_cd_prim"].first : 0;
+    const int nvar = P.GetDim(4);
+
+    // SCRATCH SPACE
     const int scratch_level = 1; // 0 is actual scratch (tiny); 1 is HBM
     size_t scratch_size_in_bytes = parthenon::ScratchPad2D<Real>::shmem_size(nvar, n1);
 
+    FLAG("Flux kernel");
     pmb->par_for_outer(string_format("flux_x%d", dir), 7 * scratch_size_in_bytes, scratch_level,
         ks_l, ke_l, js_l, je_l,
         KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int& k, const int& j) {

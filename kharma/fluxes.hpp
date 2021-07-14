@@ -45,17 +45,24 @@ namespace Flux {
      * Reconstruct the values of primitive variables at left and right zone faces,
      * find the corresponding conserved variables, and construct their HLL fluxes
      *
+     * @param rc the current stage container, holding pointers to all variable data
+     * @param dir the flux direction 1,2,3 to calculate
+     * @param dt the timestep *by which to advance*, i.e. sometimes dt/2 or less for RK2+ time integration
+     * 
+     * Fills the "flux" portion of the "conserved" vectors.  All fluxes are applied
+     * together in "ApplyFluxes"
      * Also fills the "ctop" vector with the signal speed mhd_vchar -- used to estimate timestep later.
      */
     TaskStatus GetFlux(MeshBlockData<Real> *rc, const int& dir, const Real& dt);
 
     /**
      * Calculate dU/dt from a set of fluxes.
-     * This isn't just Parthenon's FluxDivergence, it adds the GRMHD source term as well
+     * This combines Parthenon's "FluxDivergence" operation with the GRMHD source term
      * It also allows adding an arbitrary "wind" source term for stability
      *
      * @param rc is the current stage's container
-     * @param base is the base container containing the global dUdt term
+     * @param dudt is the base container containing the global dUdt term
+     * @param dt the timestep *by which to advance*, i.e. sometimes dt/2 or less for RK2+ time integration
      */
     TaskStatus ApplyFluxes(MeshBlockData<Real> *rc, MeshBlockData<Real> *dudt, const Real& dt);
 

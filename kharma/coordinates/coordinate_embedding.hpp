@@ -39,6 +39,8 @@
 // patched never to throw exceptions.
 // Because who needs those?
 #include <mpark/variant.hpp>
+//#include <variant>
+//namespace mpark = std;
 
 #include "decs.hpp"
 

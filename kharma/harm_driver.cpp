@@ -239,7 +239,7 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         auto t_set_bc = t_prolongBound;
 
         // U_to_P needs a guess in order to converge, so we copy in sc0
-        // (but only the primitives!)
+        // (but only the fluid primitives!)
         // TODO option to declare primitives OneCopy if we won't need the backup
         // TODO do this mesh-at-once
         auto t_copy_prims = tl.AddTask(t_none,

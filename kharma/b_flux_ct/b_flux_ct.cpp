@@ -83,7 +83,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     // TODO could we get away with storing one?
     // TODO Metadata::WithFluxes when Parthenon 0.6
     Metadata m = Metadata({Metadata::Cell, Metadata::Independent, Metadata::FillGhost,
-                           Metadata::Restart, Metadata::Conserved, Metadata::Vector}, s_vector);
+                           Metadata::Restart, Metadata::Conserved, Metadata::Vector, Metadata::WithFluxes}, s_vector);
     pkg->AddField("c.c.bulk.B_con", m);
     m = Metadata({Metadata::Cell, Metadata::Derived, Metadata::FillGhost,
                   Metadata::Restart, isPrimitive, Metadata::Vector}, s_vector);
@@ -329,21 +329,18 @@ TaskStatus PostStepDiagnostics(Mesh *pmesh, ParameterInput *pin, const SimTime& 
         // so we stick to verifying it over that
         IndexDomain domain = IndexDomain::interior;
 
-        Real max_divb = 0, max_divb_cell = 0;
+        Real max_divb = 0;
         int nmb = pmesh->GetNumMeshBlocksThisRank(Globals::my_rank);
         for (int i=0; i < nmb; ++i) {
             auto& pmb = pmesh->block_list[i];
             auto& rc = pmb->meshblock_data.Get();
             Real max_divb_l = B_FluxCT::MaxDivB(rc.get(), domain);
-            Real max_divb_cell_l = B_CD_GLM::MaxDivB(rc.get(), domain);
 
             if (max_divb_l > max_divb) max_divb = max_divb_l;
-            if (max_divb_cell_l > max_divb_cell) max_divb_cell = max_divb_cell_l;
         }
         max_divb = MPIMax(max_divb);
-        max_divb_cell = MPIMax(max_divb_cell);
 
-        if(MPIRank0()) cout << "Max DivB: " << max_divb << " cell-based estimate " << max_divb_cell << endl;
+        if(MPIRank0()) cout << "Max DivB: " << max_divb << endl;
     }
 
     FLAG("Printed")

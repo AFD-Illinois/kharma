@@ -45,11 +45,12 @@ gamma = 1.666667
 reconstruction = weno5
 
 <debug>
-verbose = 0
-flag_verbose = 0
+verbose = 1
+flag_verbose = 1
 
 
 <parthenon/output0>
 file_type = hdf5
 dt = 1.0
+single_precision_output = true
 variables = c.c.bulk.prims, c.c.bulk.B_prim, c.c.bulk.jcon

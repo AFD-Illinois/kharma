@@ -90,8 +90,8 @@ TaskStatus CheckNaN(MeshBlockData<Real> *rc, int dir, IndexDomain domain)
 
     auto& G = pmb->coords;
     auto& ctop = rc->GetFace("f.f.bulk.ctop").data;
-    GridVars P = rc->Get("c.c.bulk.prims").data;
-    GridVars U = rc->Get("c.c.bulk.cons").data;
+    // GridVars P = rc->Get("c.c.bulk.prims").data;
+    // GridVars U = rc->Get("c.c.bulk.cons").data;
 
     int nzero, nnan;
     Kokkos::Sum<int> zero_reducer(nzero);

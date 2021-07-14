@@ -3,145 +3,57 @@
 # Make script for KHARMA
 # Used to decide flags and call cmake
 # Usage:
-# ./make.sh [clean] [cuda] [debug]
+# ./make.sh [option1] [option2]
 
-# clean: BUILD by re-running cmake, restarting the make process from nothing
+# clean: BUILD by re-running cmake, restarting the make process from nothing.
 #        That is, "./make.sh clean" == "make clean" + "make"
-#        Always use 'clean' when switching Release->Debug or OpenMP->CUDA
+#        Always use 'clean' when switching Release<->Debug or OpenMP<->CUDA
 # cuda:  Build for GPU with CUDA. Must have 'nvcc' in path
+# sycl:  Build for GPU with SYCL. Must have 'icpx' in path
 # debug: Configure with debug flags: mostly array bounds checks
-#        Note most prints/fluid sanity checks are actually *runtime* parameters
+#        Note, though, many sanity checks during the run are
+#        actually *runtime* parameters e.g. verbose, flag_verbose, etc
 # skx:   Compile specifically for Skylake nodes on Stampede2
 
+# Processors to use.  Leave blank for all.  Be a good citizen.
+NPROC=
+
 ### Machine-specific configurations ###
-if [[ $(hostname) == "toolbox" ]]; then
-  HOST=fermium
-else
-  HOST=$(hostname -f)
-fi
+# This segment sources a series of machine-specific
+# definitions from the machines/ directory.
+# If the current machine isn't listed, this script
+# and/or Kokkos will attempt to guess the host architecture,
+# which should suffice to compile but may not provide optimal
+# performance.
+
+# See e.g. tacc.sh for an example to get started writing one,
+# or specify any options you need manually below
 
 # Kokkos_ARCH options:
 # CPUs: WSM, HSW, BDW, SKX, AMDAVX
-# ARM: ARMV8, ARMV81, ARMV8_THUNDERX2
+# ARM: ARMV8, ARMV81, ARMV8_THUNDERX2, A64FX
 # POWER: POWER8, POWER9
 # MIC: KNC, KNL
-# GPUs: KEPLER35, VOLTA70, TURING75
+# GPUs: KEPLER35, VOLTA70, TURING75, AMPERE80
 
-# INCITE resources
-if [[ $HOST == *".alcf.anl.gov" ]]; then
-  if [[ "$*" == *"cuda"* ]]; then
-    HOST_ARCH="AMDAVX"
-    DEVICE_ARCH="AMPERE80"
-    CXXFLAGS="-mp"
-    export NVCC_WRAPPER_DEFAULT_COMPILER='nvc++'
-    PREFIX_PATH="$HOME/libs/hdf5-nvhpc"
-    #PREFIX_PATH="/soft/thetagpu/hpc-sdk/Linux_x86_64/21.3/comm_libs/mpi"
-  else
-    echo "Compiling for KNL"
-    HOST_ARCH="KNL"
-    PREFIX_PATH="$MPICH_DIR"
-  fi
-fi
-if [[ $HOST == *".summit.olcf.ornl.gov" ]]; then
-  HOST_ARCH="POWER9"
-  DEVICE_ARCH="VOLTA70"
+# HOST_ARCH=
+# DEVICE_ARCH=
 
-  # nvc++: nvcc *refuses* to use it and falls back to system GCC 4.8.5...
-  #export NVCC_WRAPPER_DEFAULT_COMPILER='nvc++'
-  #PREFIX_PATH="$HOME/libs/hdf5-nvhpc-21.2"
+# Less common options:
+# PREFIX_PATH=
+# EXTRA_FLAGS=
+# export NVCC_WRAPPER_DEFAULT_COMPILER=
 
-  # GCC 10.2, needs CUDA 11 probably
-  #PREFIX_PATH="$HOME/libs/hdf5-gcc10-spectrum"
+HOST=$(hostname -f)
+for machine in machines/*.sh
+do
+  source $machine
+done
 
-  # TODO make GCC 8 not crash
-  #CXXFLAGS="-mno-float128 $CXXFLAGS"
-
-  # GCC 6.4
-  PREFIX_PATH="/sw/summit/hdf5/1.10.6_align/gcc/6.4.0/"
-
-  # xlC: OpenMP CXX problems
-  #export NVCC_WRAPPER_DEFAULT_COMPILER='xlC'
-  #PREFIX_PATH="/sw/summit/hdf5/1.10.6_align/xl/16.1.1-5/"
-fi
-
-# TACC resources
-# Generally you want latest Intel/IMPI/phdf5 modules,
-# On longhorn use gcc7, mvapich2-gdr, and manually-compiled PHDF5
-if [[ $HOST == *".frontera.tacc.utexas.edu" ]]; then
-  HOST_ARCH="SKX"
-fi
-if [[ $HOST == *".stampede2.tacc.utexas.edu" ]]; then
-  if [[ "$*" == *"skx"* ]]; then
-    HOST_ARCH="SKX"
-  else
-    HOST_ARCH="KNL"
-  fi
-fi
-if [[ $HOST == *".longhorn.tacc.utexas.edu" ]]; then
-  HOST_ARCH="POWER9"
-  DEVICE_ARCH="VOLTA70"
-  PREFIX_PATH="$HOME/libs/hdf5-gcc7-mvapich2"
-fi
-
-# Illinois BH cluster
-if [[ $HOST == *".astro.illinois.edu" ]]; then
-  # When oneAPI works
-  #source /opt/intel/oneapi/setvars.sh
-  #PREFIX_PATH="$HOME/libs/hdf5-oneapi"
-
-  module load gnu mpich phdf5
-  PREFIX_PATH="$MPI_DIR"
-
-  HOST_ARCH="SKX"
-fi
-# Except BH27/9
-if [[ $HOST == "bh29.astro.illinois.edu" ]]; then
-  HOST_ARCH="AMDAVX"
-fi
-if [[ $HOST == "bh27.astro.illinois.edu" ]]; then
-  HOST_ARCH="WSM"
-fi
-
-# BP's machines
-if [[ $HOST == "fermium" ]]; then
-  module load nvhpc
-  HOST_ARCH="AMDAVX"
-  DEVICE_ARCH="TURING75"
-
-  PREFIX_PATH="$HOME/libs/hdf5-nvhpc"
-  export NVCC_WRAPPER_DEFAULT_COMPILER=nvc++
-  # My CUDA installs are a bit odd
-  EXTRA_FLAGS="-DCUDAToolkit_INCLUDE_DIR=/usr/include/cuda $EXTRA_FLAGS"
-fi
-if [[ $HOST == "ferrum" ]]; then
-  HOST_ARCH="HSW"
-  DEVICE_ARCH="INTEL_GEN"
-  PREFIX_PATH="$HOME/libs/hdf5-oneapi"
-fi
-if [[ $HOST == "cinnabar"* ]]; then
-  HOST_ARCH="HSW"
-  DEVICE_ARCH="KEPLER35"
-  PREFIX_PATH="$HOME/libs/hdf5-oneapi"
-
-  if [[ "$*" == *"cuda"* ]]; then
-    export NVCC_WRAPPER_DEFAULT_COMPILER=nvc++
-    HOST_ARCH="SNB" # Kokkos doesn't detect/set -tp=haswell for nvc++
-
-    #PREFIX_PATH=""
-    PREFIX_PATH="$HOME/libs/hdf5-nvhpc"
-
-    # NVHPC CUDA
-    #EXTRA_FLAGS="-DCUDAToolkit_INCLUDE_DIR=/opt/nvidia/hpc_sdk/Linux_x86_64/21.3/cuda/include/ $EXTRA_FLAGS"
-    # System CUDA
-    EXTRA_FLAGS="-DCUDAToolkit_INCLUDE_DIR=/usr/include/cuda $EXTRA_FLAGS"
-    # This makes Nvidia chill about old GPUs, but requires a custom nvcc_wrapper
-    #export CXXFLAGS="-Wno-deprecated-gpu-targets"
-  fi
-fi
 
 # If we haven't special-cased already, guess an architecture
 # This ends up pretty much optimal on x86 architectures which don't have
-# 1. AVX512
+# 1. AVX512 (Intel on HPC or Gen10+ consumer)
 # 2. GPUs
 if [[ -z "$HOST_ARCH" ]]; then
   if grep GenuineIntel /proc/cpuinfo >/dev/null 2>&1; then
@@ -164,14 +76,11 @@ if [[ -v PREFIX_PATH ]]; then
 fi
 
 ### Environment ###
-if [[ "$(which python)" == *"conda"* ]]; then
+if [[ "$(which python3 2>/dev/null)" == *"conda"* ]]; then
   echo "It looks like you have Anaconda loaded."
   echo "Anaconda forces a serial version of HDF5 which makes this compile impossible."
   echo "Deactivate your environment with 'conda deactivate'"
 fi
-echo "If this is your Anaconda version of Python, deactivate your environment:"
-echo "$(which python)"
-echo
 
 if [[ "$*" == *"debug"* ]]; then
   TYPE=Debug
@@ -186,19 +95,19 @@ SCRIPT_DIR=$PWD
 
 # Strongly prefer icc for OpenMP compiles
 # I would try clang but it would break all Macs
-if which cc >/dev/null 2>&1; then
-  CXX_NATIVE=CC
-  CC_NATIVE=cc
-  #export CXXFLAGS="-Wno-unknown-pragmas" # TODO if Cray->Intel in --version
-elif which xlC >/dev/null 2>&1; then
-  CXX_NATIVE=xlC
-  C_NATIVE=xlc
-elif which icpc >/dev/null 2>&1; then
+if which icpc >/dev/null 2>&1; then
   CXX_NATIVE=icpc
   C_NATIVE=icc
   # Avoid warning on nvcc pragmas Intel doesn't like
   export CXXFLAGS="-Wno-unknown-pragmas"
   #export CFLAGS="-qopenmp"
+elif which cc >/dev/null 2>&1; then
+  CXX_NATIVE=CC
+  C_NATIVE=cc
+  #export CXXFLAGS="-Wno-unknown-pragmas" # TODO if Cray->Intel in --version
+elif which xlC >/dev/null 2>&1; then
+  CXX_NATIVE=xlC
+  C_NATIVE=xlc
 else
   CXX_NATIVE=g++
   C_NATIVE=gcc
@@ -271,9 +180,6 @@ if [[ "$*" == *"clean"* ]]; then
 #set +x
 fi
 
-if [[ "$*" == *"all"* ]]; then
-  make -j
-else
-  make -j10
-fi
+make -j
+
 cp kharma/kharma.* ..

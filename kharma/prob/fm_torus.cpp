@@ -152,8 +152,8 @@ void InitializeFMTorus(MeshBlock *pmb, const GRCoordinates& G, GridVars P, const
 
     Real rho_max = 0;
     Kokkos::Max<Real> max_reducer(rho_max);
-    pmb->par_reduce("fm_torus_maxrho", 0, 0, 0, nx1,
-        KOKKOS_LAMBDA_2D_REDUCE {
+    pmb->par_reduce("fm_torus_maxrho", 0, nx1,
+        KOKKOS_LAMBDA_1D_REDUCE {
             //GReal x2 = x2min + j*dx;
             GReal x1 = x1min + i*dx;
             GReal x2 = 0.5;

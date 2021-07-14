@@ -202,7 +202,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     // and the primitives as "Derived."
     // They're still necessary for reconstruction, and generally are the quantities in output files
     Metadata m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Independent,
-                    Metadata::FillGhost, Metadata::Restart, Metadata::Conserved}, s_prims);
+                    Metadata::FillGhost, Metadata::Restart, Metadata::Conserved, Metadata::WithFluxes}, s_prims);
     pkg->AddField("c.c.bulk.cons", m);
     m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived,
                   Metadata::Restart, isPrimitive}, s_prims);
@@ -214,7 +214,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
 
     // TODO check/require a B field of some sort?
 
-    // Add jcon as an output-only calculation, likely overriding MeshBlock::UserWorkBeforeOutput
+    // Add jcon. Calculated only on output
     m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy}, s_fourvector);
     pkg->AddField("c.c.bulk.jcon", m);
 

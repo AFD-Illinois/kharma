@@ -88,14 +88,14 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
 
     // B field as usual
     Metadata m = Metadata({Metadata::Cell, Metadata::Independent, Metadata::FillGhost,
-                  Metadata::Restart, Metadata::Conserved, Metadata::Vector}, s_vector);
+                  Metadata::Restart, Metadata::Conserved, Metadata::Vector, Metadata::WithFluxes}, s_vector);
     pkg->AddField("c.c.bulk.B_con", m);
     m = Metadata({Metadata::Cell, Metadata::Derived, Metadata::Restart, isPrimitive, Metadata::Vector}, s_vector);
     pkg->AddField("c.c.bulk.B_prim", m);
 
     // Constraint damping scalar field psi.  "Primitive" and "conserved" forms only differ by sqrt(-g) like B
     m = Metadata({Metadata::Cell, Metadata::Independent, Metadata::FillGhost,
-                  Metadata::Restart, Metadata::Conserved});
+                  Metadata::Restart, Metadata::Conserved, Metadata::WithFluxes});
     pkg->AddField("c.c.bulk.psi_cd_con", m);
     m = Metadata({Metadata::Cell, Metadata::Derived, Metadata::Restart, isPrimitive});
     pkg->AddField("c.c.bulk.psi_cd_prim", m);

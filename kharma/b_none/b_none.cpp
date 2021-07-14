@@ -57,7 +57,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     // Require B in order to do GRMHD
     // TODO OneCopy or eliminate these entirely with if statements
     Metadata m = Metadata({Metadata::Cell, Metadata::Independent, Metadata::FillGhost,
-                  Metadata::Restart, Metadata::Conserved}, s_vector);
+                  Metadata::Restart, Metadata::Conserved, Metadata::WithFluxes}, s_vector);
     pkg->AddField("c.c.bulk.B_con", m);
     m = Metadata({Metadata::Cell, Metadata::Derived, Metadata::Restart, isPrimitive}, s_vector);
     pkg->AddField("c.c.bulk.B_prim", m);

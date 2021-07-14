@@ -61,6 +61,7 @@ Tp = 10
 <parthenon/output0>
 file_type = hdf5
 dt = 5.0
+single_precision_output = true
 variables = c.c.bulk.prims, c.c.bulk.B_prim, c.c.bulk.jcon, c.c.bulk.fflag, c.c.bulk.pflag
 
 <parthenon/output1>
