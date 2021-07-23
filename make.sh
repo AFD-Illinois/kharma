@@ -147,6 +147,15 @@ elif [[ "$*" == *"cuda"* ]]; then
   ENABLE_CUDA="ON"
   ENABLE_SYCL="OFF"
   ENABLE_HIP="OFF"
+elif [[ "$*" == *"clanggpu"* ]]; then
+  export CXX="clang++"
+  export CC="clang"
+  OUTER_LAYOUT="MANUAL1D_LOOP"
+  INNER_LAYOUT="TVR_INNER_LOOP"
+  ENABLE_OPENMP="ON"
+  ENABLE_CUDA="ON"
+  ENABLE_SYCL="OFF"
+  ENABLE_HIP="OFF"
 else
   export CXX="$CXX_NATIVE"
   OUTER_LAYOUT="MDRANGE_LOOP"

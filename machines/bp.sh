@@ -1,8 +1,9 @@
 
 # BP's machines
 
+# TODO toolbox break to discover enclosing hostname
 if [[ "$HOST" == "toolbox" ]]; then
-  HOST=fermium
+  HOST=ferrum
 fi
 
 if [[ $HOST == "fermium" ]]; then
@@ -17,24 +18,42 @@ if [[ $HOST == "fermium" ]]; then
 fi
 
 if [[ $HOST == "ferrum" ]]; then
+  # Intel SYCL implementation "DPC++"
+  module purge
+  module load compiler mpi
+
   HOST_ARCH="HSW"
   DEVICE_ARCH="INTEL_GEN"
   PREFIX_PATH="$HOME/libs/hdf5-oneapi"
 fi
 
 if [[ $HOST == "cinnabar"* ]]; then
-  if [[ "$*" == *"cuda"* ]]; then
+  module purge # Handle modules inside this script
+
+  if [[ "$*" == *"clanggpu"* ]]; then
+    # Ill-fated clang GPU experiment.  Requires CUDA 10.1 or older,
+    # which do not play nice with my std::variant tricks
+    module load mpi/mpich-x86_64
+    HOST_ARCH="HSW"
+    DEVICE_ARCH="KEPLER35"
+    export CXXFLAGS="--cuda-path=/usr/local/cuda-10.1"
+    export CUDA_HOME="/usr/local/cuda-10.1"
+    EXTRA_FLAGS="-DCUDAToolkit_INCLUDE_DIR=/usr/local/cuda-10.1/include $EXTRA_FLAGS"
+
+  elif [[ "$*" == *"cuda"* ]]; then
+    # Use NVHPC libraries (GPU-aware OpenMPI!) but not nvc++ because Parthenon broke it
     HOST_ARCH="HSW"
     DEVICE_ARCH="KEPLER35"
 
-    # To use NVHPC:
-    #export NVCC_WRAPPER_DEFAULT_COMPILER=nvc++
-    #PREFIX_PATH="$HOME/libs/hdf5-nvhpc"
-    #export CXXFLAGS="-mp"
-    #HOST_ARCH="SNB" # Kokkos doesn't detect/set -tp=haswell for nvc++
+    module load nvhpc
+    PREFIX_PATH="$HOME/libs/hdf5-nvhpc"
 
-    #export NVCC_WRAPPER_DEFAULT_COMPILER=clang++
-    #export CXXFLAGS="-allow-unsupported-compiler"
+    # To use NVCC:
+    if [[ "$*" == *"nvcc"* ]]; then
+      export NVCC_WRAPPER_DEFAULT_COMPILER=nvc++
+      export CXXFLAGS="-mp"
+      HOST_ARCH="SNB" # Kokkos doesn't detect/set -tp=haswell for nvc++
+    fi
 
     # NVHPC CUDA
     #export CUDA_DIR=/opt/nvidia/hpc_sdk/Linux_x86_64/21.5/cuda
@@ -44,8 +63,9 @@ if [[ $HOST == "cinnabar"* ]]; then
     # This makes Nvidia chill about old GPUs, but requires a custom nvcc_wrapper
     #export CXXFLAGS="-Wno-deprecated-gpu-targets"
   else
+    # Intel
+    module load compiler mpi
     HOST_ARCH="HSW"
-    DEVICE_ARCH="KEPLER35"
     PREFIX_PATH="$HOME/libs/hdf5-oneapi"
   fi
 fi

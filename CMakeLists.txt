@@ -1,13 +1,16 @@
-# KHARMA CMake top file. Basically exists to include Parthenon and KHARMA CMake files in 1 build with the same options
+# KHARMA CMake top file.
+# Only for general options, not KHARMA build specifics.
+# That is, what would still be relevant if we were building
+# multiple codes in this directory?
 
 cmake_minimum_required(VERSION 3.10)
 project(kharma LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 
 # Force C++17
-#set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # ensure correct flag is used as deprecated c++1z is not supported by nvcc
-#set(CMAKE_CXX17_STANDARD_COMPILE_OPTION "-std=c++17")
+set(CMAKE_CXX17_STANDARD_COMPILE_OPTION "-std=c++17")
 
 #foreach(path ${CMAKE_PREFIX_PATH})
 #  include_directories(${path})
