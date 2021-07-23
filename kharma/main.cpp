@@ -98,12 +98,16 @@ int main(int argc, char *argv[])
         ShowConfig();
         pin->ParameterDump(cout);
     }
-    // TODO parameter dump to a run-XXXX.par file
 
     // Write the problem to the mesh.
     // Implemented separately outside of MeshBlock since
     // GRMHD initializaitons involve global reductions
-    if (!pman.IsRestart()) PostInitialize(pin, pmesh);
+    if (!pman.IsRestart()) {
+        PostInitialize(pin, pmesh);
+        if (MPIRank0()) cout << "Initialization Complete." << endl;
+    } else {
+        if (MPIRank0()) cout << "Restarting..." << endl;
+    }
 
     // Then construct & run the driver
     HARMDriver driver(pin, papp, pmesh);

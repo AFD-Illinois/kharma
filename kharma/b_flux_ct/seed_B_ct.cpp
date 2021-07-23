@@ -37,8 +37,8 @@
 #include "seed_B_ct.hpp"
 
 #include "b_field_tools.hpp"
+#include "b_functions.hpp"
 
-#include "b_flux_ct_functions.hpp"
 #include "mhd_functions.hpp"
 
 TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
@@ -55,13 +55,6 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
     GridVars P = rc->Get("c.c.bulk.prims").data;
     GridVector B_P = rc->Get("c.c.bulk.B_prim").data;
     GridVector B_U = rc->Get("c.c.bulk.B_con").data;
-    GridScalar psi_p, psi_u;
-    const bool use_b_flux_ct = pmb->packages.AllPackages().count("B_FluxCT") > 0;
-    const bool use_b_cd_glm = pmb->packages.AllPackages().count("B_CD_GLM") > 0;
-    if (use_b_cd_glm) {
-        psi_p = rc->Get("c.c.bulk.psi_cd_prim").data;
-        psi_u = rc->Get("c.c.bulk.psi_cd_con").data;
-    }
 
     Real min_rho_q = pin->GetOrAddReal("b_field", "min_rho_q", 0.2);
     std::string b_field_type = pin->GetString("b_field", "type");
@@ -114,7 +107,7 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
                 B_P(0, k, j, i) = b10;
                 B_P(1, k, j, i) = b20;
                 B_P(2, k, j, i) = b30;
-                B_FluxCT::p_to_u(G, B_P, k, j, i, B_U);
+                BField::p_to_u(G, B_P, k, j, i, B_U);
             }
         );
         return TaskStatus::complete;
@@ -126,7 +119,7 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
                 B_P(0, k, j, i) = b10 / G.gdet(Loci::center, j, i);
                 B_P(1, k, j, i) = 0.;
                 B_P(2, k, j, i) = 0.;
-                B_FluxCT::p_to_u(G, B_P, k, j, i, B_U);
+                BField::p_to_u(G, B_P, k, j, i, B_U);
             }
         );
         return TaskStatus::complete;
@@ -183,7 +176,7 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
             B_P(1, k, j, i) =  (A(j, i) + A(j + 1, i) - A(j, i + 1) - A(j + 1, i + 1)) /
                                 (2. * G.dx1v(i) * G.gdet(Loci::center, j, i));
             B_P(2, k, j, i) = 0.;
-            B_FluxCT::p_to_u(G, B_P, k, j, i, B_U);
+            BField::p_to_u(G, B_P, k, j, i, B_U);
         }
     );
 

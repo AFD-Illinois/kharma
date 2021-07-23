@@ -1,5 +1,5 @@
 /* 
- *  File: seed_B_cd.hpp
+ *  File: b_functions.hpp
  *  
  *  BSD 3-Clause License
  *  
@@ -31,32 +31,34 @@
  *  OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-
-// Seed a torus of some type with a magnetic field according to its density
 #pragma once
 
 #include "decs.hpp"
-#include <parthenon/parthenon.hpp>
 
-namespace B_CD_GLM
+namespace BField {
+/**
+ * Convenience functions usable for both B field backends
+ */
+KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates& G, const GridVector B_P,
+                                    const int& k, const int& j, const int& i,
+                                    GridVector B_flux, const Loci loc = Loci::center)
 {
+    Real gdet = G.gdet(loc, j, i);
+    VLOOP B_flux(v, k, j, i) = B_P(v, k, j, i) * gdet;
+}
+KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates& G, const Real B_P[NVEC],
+                                    const int& k, const int& j, const int& i,
+                                    GridVector B_flux, const Loci loc = Loci::center)
+{
+    Real gdet = G.gdet(loc, j, i);
+    VLOOP B_flux(v, k, j, i) = B_P[v] * gdet;
+}
+KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates& G, const Real B_P[NVEC],
+                                    const int& k, const int& j, const int& i,
+                                    Real B_flux[NVEC], const Loci loc = Loci::center)
+{
+    Real gdet = G.gdet(loc, j, i);
+    VLOOP B_flux[v] = B_P[v] * gdet;
+}
 
-/**
- * Seed an axisymmetric initialization with magnetic field proportional to fluid density,
- * or density and radius, to create a SANE or MAD flow
- * Note this function expects a normalized P for which rho_max==1
- *
- * @param rin is the interior radius of the torus
- * @param min_rho_q is the minimum density at which there will be magnetic vector potential
- * @param b_field_type is one of "sane" "ryan" "r3s3" or "gaussian", described below (TODO test or remove opts)
- */
-TaskStatus SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin);
-
-/**
- * Add flux to BH horizon
- * Applicable to any Kerr-space GRMHD sim, run after import/initialization
- * Preserves divB==0 with a Flux-CT step at end
- */
-//void SeedBHFlux(MeshBlockData<Real> *rc, Real BHflux);
-
-} // namespace B_CD_GLM
+}

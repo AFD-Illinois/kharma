@@ -36,7 +36,6 @@
 
 #include "b_field_tools.hpp"
 
-#include "b_flux_ct_functions.hpp"
 #include "mhd_functions.hpp"
 
 TaskStatus NormalizeBField(MeshBlockData<Real> *rc, Real norm)

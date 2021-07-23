@@ -38,10 +38,10 @@
 
 #include "b_field_tools.hpp"
 
-#include "b_cd_glm_functions.hpp"
+#include "b_functions.hpp"
 #include "mhd_functions.hpp"
 
-TaskStatus B_CD_GLM::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
+TaskStatus B_CD::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
 {
     auto pmb = rc->GetBlockPointer();
     IndexDomain domain = IndexDomain::entire;
@@ -55,8 +55,7 @@ TaskStatus B_CD_GLM::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
     GridVars P = rc->Get("c.c.bulk.prims").data;
     GridVector B_P = rc->Get("c.c.bulk.B_prim").data;
     GridVector B_U = rc->Get("c.c.bulk.B_con").data;
-    GridScalar psi_p = rc->Get("c.c.bulk.psi_cd_prim").data;
-    GridScalar psi_u = rc->Get("c.c.bulk.psi_cd_con").data;
+    GridScalar psi = rc->Get("c.c.bulk.psi_cd").data;
 
     Real min_rho_q = pin->GetOrAddReal("b_field", "min_rho_q", 0.2);
     std::string b_field_type = pin->GetString("b_field", "type");
@@ -177,7 +176,7 @@ TaskStatus B_CD_GLM::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
     );
     pmb->par_for("first_U_B", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D {
-            B_CD_GLM::p_to_u(G, B_P, psi_p, k, j, i, B_U, psi_u);
+            BField::p_to_u(G, B_P, k, j, i, B_U);
         }
     );
 

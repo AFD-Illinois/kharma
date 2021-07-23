@@ -42,7 +42,7 @@
 #include "decs.hpp"
 
 #include "b_flux_ct.hpp"
-#include "b_cd_glm.hpp"
+#include "b_cd.hpp"
 #include "bondi.hpp"
 #include "boundaries.hpp"
 #include "current.hpp"
@@ -67,8 +67,8 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
     const Real dt = integrator->dt;
     auto stage_name = integrator->stage_name;
 
-    const bool use_b_cd_glm = blocks[0]->packages.AllPackages().count("B_CD_GLM") > 0;
-    const bool do_parabolic_term = use_b_cd_glm ? blocks[0]->packages.Get("B_CD_GLM")->Param<bool>("parabolic_term") : false;
+    const bool use_b_cd = blocks[0]->packages.AllPackages().count("B_CD") > 0;
+    const bool do_parabolic_term = use_b_cd ? blocks[0]->packages.Get("B_CD")->Param<bool>("parabolic_term") : false;
     const bool use_b_flux_ct = blocks[0]->packages.AllPackages().count("B_FluxCT") > 0;
     const bool do_flux_ct = use_b_flux_ct ? !blocks[0]->packages.Get("B_FluxCT")->Param<bool>("disable_flux_ct") : false;
 
@@ -226,7 +226,7 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         // when we learn to write mesh-wide functions
         auto t_b_cd_source = t_none;
         if (do_parabolic_term) {
-            auto t_b_cd_source = tl.AddTask(t_none, B_CD_GLM::AddSource, sc1.get(), beta * dt);
+            auto t_b_cd_source = tl.AddTask(t_none, B_CD::AddSource, sc1.get(), beta * dt);
         }
 
         auto t_prolongBound = t_clear_comm_flags;
@@ -235,8 +235,8 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         }
         // Parthenon boundary conditions are applied to the conserved variables
         // Currently we override everything except psi in CD (TODO B)
-        //auto t_set_bc = tl.AddTask(t_prolongBound, ApplyBoundaryConditions, sc1);
-        auto t_set_bc = t_prolongBound;
+        auto t_set_bc = tl.AddTask(t_prolongBound, ApplyBoundaryConditions, sc1);
+        //auto t_set_bc = t_prolongBound;
 
         // U_to_P needs a guess in order to converge, so we copy in sc0
         // (but only the fluid primitives!)

@@ -37,7 +37,7 @@
 #include "b_flux_ct.hpp"
 
 // For their DivB estimate
-#include "b_cd_glm.hpp"
+#include "b_cd.hpp"
 
 #include "decs.hpp"
 #include "grmhd.hpp"
@@ -79,18 +79,17 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
 
     MetadataFlag isPrimitive = packages.Get("GRMHD")->Param<MetadataFlag>("PrimitiveFlag");
 
-    // B fields.  Primitive and conserved fields are related analytically
-    // TODO could we get away with storing one?
-    // TODO Metadata::WithFluxes when Parthenon 0.6
-    Metadata m = Metadata({Metadata::Cell, Metadata::Independent, Metadata::FillGhost,
-                           Metadata::Restart, Metadata::Conserved, Metadata::Vector, Metadata::WithFluxes}, s_vector);
+    // B fields.  "Primitive" form is field strength, "conserved" is flux
+    // Note: when changing metadata, keep these in lockstep with grmhd.cpp
+    Metadata m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Independent, Metadata::FillGhost,
+                 Metadata::Restart, Metadata::Conserved, Metadata::WithFluxes, Metadata::Vector}, s_vector);
     pkg->AddField("c.c.bulk.B_con", m);
-    m = Metadata({Metadata::Cell, Metadata::Derived, Metadata::FillGhost,
+    m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived,
                   Metadata::Restart, isPrimitive, Metadata::Vector}, s_vector);
     pkg->AddField("c.c.bulk.B_prim", m);
 
-    m = Metadata({Metadata::Cell, Metadata::Derived});
-    pkg->AddField("c.c.bulk.divB_ct", m);
+    m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
+    pkg->AddField("c.c.bulk.divB", m);
 
     pkg->FillDerivedBlock = B_FluxCT::UtoP;
     return pkg;
@@ -123,8 +122,10 @@ TaskStatus FluxCT(MeshBlockData<Real> *rc)
     int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
     int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
     int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
+    const int ndim = pmb->pmy_mesh->ndim;
     // Just use a completely separate implemenatation for 2D, it's faster & cleaner
-    if (n3 == 1) return FluxCT2D(rc);
+    if (ndim == 2) return FluxCT2D(rc);
+    if (ndim == 1) return TaskStatus::complete;
 
     FLAG("Flux CT");
     GridVars F1 = rc->Get("c.c.bulk.B_con").flux[X1DIR];
@@ -330,9 +331,7 @@ TaskStatus PostStepDiagnostics(Mesh *pmesh, ParameterInput *pin, const SimTime& 
         IndexDomain domain = IndexDomain::interior;
 
         Real max_divb = 0;
-        int nmb = pmesh->GetNumMeshBlocksThisRank(Globals::my_rank);
-        for (int i=0; i < nmb; ++i) {
-            auto& pmb = pmesh->block_list[i];
+        for (auto &pmb : pmesh->block_list) {
             auto& rc = pmb->meshblock_data.Get();
             Real max_divb_l = B_FluxCT::MaxDivB(rc.get(), domain);
 
@@ -366,7 +365,7 @@ void FillOutput(MeshBlock *pmb, ParameterInput *pin)
     auto& G = pmb->coords;
     auto rc = pmb->meshblock_data.Get().get();
     GridVars B_U = rc->Get("c.c.bulk.B_con").data;
-    GridVars divB = rc->Get("c.c.bulk.divB_ct").data;
+    GridVars divB = rc->Get("c.c.bulk.divB").data;
 
     pmb->par_for("divB_output", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D {

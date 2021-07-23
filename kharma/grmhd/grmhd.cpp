@@ -63,8 +63,9 @@ using namespace parthenon;
 using namespace Kokkos;
 
 // Some programmers just want to watch the world burn
-// TODO parameters, probably
+// TODO not this, ever again
 double last_dt, ctop_max;
+int first_step;
 
 namespace GRMHD
 {
@@ -199,27 +200,42 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     params.Add("PrimitiveFlag", isPrimitive);
 
     // As mentioned elsewhere, KHARMA treats the conserved variables as the independent ones,
-    // and the primitives as "Derived."
-    // They're still necessary for reconstruction, and generally are the quantities in output files
-    Metadata m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Independent,
-                    Metadata::FillGhost, Metadata::Restart, Metadata::Conserved, Metadata::WithFluxes}, s_prims);
+    // and the primitives as "Derived"
+    // Primitives are still used for reconstruction, physical boundaries, and output, and are
+    // generally the easier to understand quantities
+    Metadata m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Independent, Metadata::FillGhost,
+                           Metadata::Restart, Metadata::Conserved, Metadata::WithFluxes}, s_prims);
     pkg->AddField("c.c.bulk.cons", m);
     m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived,
                   Metadata::Restart, isPrimitive}, s_prims);
     pkg->AddField("c.c.bulk.prims", m);
 
+    bool use_b = (pin->GetOrAddString("b_field", "solver", "flux_ct") != "none");
+    params.Add("use_b", use_b);
+    if (!use_b) {
+        // Declare placeholder fields only if not using another package providing B field.
+        // This should be redundant w/ "Overridable" flag
+        // Magnetic field placeholder. "Primitive" and "conserved" forms are the strength and flux respectively
+        m = Metadata({Metadata::Overridable,
+                    Metadata::Real, Metadata::Cell, Metadata::Independent, Metadata::FillGhost,
+                    Metadata::Restart, Metadata::Conserved, Metadata::WithFluxes, Metadata::Vector}, s_vector);
+        pkg->AddField("c.c.bulk.B_con", m);
+        m = Metadata({Metadata::Overridable,
+                    Metadata::Real, Metadata::Cell, Metadata::Derived,
+                    Metadata::Restart, isPrimitive, Metadata::Vector}, s_vector);
+        pkg->AddField("c.c.bulk.B_prim", m);
+    }
+
     // Maximum signal speed (magnitude).  Calculated in flux updates but needed for deciding timestep
     m = Metadata({Metadata::Real, Metadata::Face, Metadata::Derived, Metadata::OneCopy});
     pkg->AddField("f.f.bulk.ctop", m);
 
-    // TODO check/require a B field of some sort?
-
-    // Add jcon. Calculated only on output
+    // 4-current jcon. Calculated only for output
     m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy}, s_fourvector);
     pkg->AddField("c.c.bulk.jcon", m);
 
     // Temporary fix just for being able to save field values
-    // I wish they were really integers, but this works in the meantime
+    // I wish they were really integers, but that's still unsupported despite the flag I think
     m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
     pkg->AddField("c.c.bulk.pflag", m);
     pkg->AddField("c.c.bulk.fflag", m);
@@ -243,7 +259,7 @@ void UtoP(MeshBlockData<Real> *rc)
     int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
 
     GridVars U = rc->Get("c.c.bulk.cons").data;
-    GridVars B_U = rc->Get("c.c.bulk.B_con").data;
+    GridVector B_U = rc->Get("c.c.bulk.B_con").data;
     GridVars P = rc->Get("c.c.bulk.prims").data;
 
     GridScalar pflag = rc->Get("c.c.bulk.pflag").data;
@@ -307,19 +323,22 @@ Real EstimateTimestep(MeshBlockData<Real> *rc)
     // TODO: move timestep limiter into an override of the integrator code, keep last_dt somewhere formal/accessible
     // TODO: move diagnostic printing to PostStepDiagnostics. Preserve location without double equality jank?
     // TODO: timestep choices seem to be MPI or meshblock-dependent currently. That's bad.
-    const bool use_b_cd_glm = pmb->packages.AllPackages().count("B_CD_GLM") > 0;
+    //static double last_dt; // For when we no longer need this in post-step output
 
-    // Use parameter "dt" on the first step
+    // If we're taking the first step, return the default dt and zero speed
+    // TODO this needs a more reliable selector
+    // This assumes we are called once per block given to this process,
+    // which is fragile if PostInit or Parthenon's structure changes.
+    // TODO just call fluxes -> get ctop anyway?  Could reduce initial jump in divB under CD
     static int ncall = 0;
-    if (ncall < 1) {
+    int nmb = pmb->pmy_mesh->GetNumMeshBlocksThisRank();
+    if (ncall < nmb) {
         ncall++;
         last_dt = pmb->packages.Get("GRMHD")->Param<Real>("dt");
         ctop_max = 0.0;
-        return last_dt;
-        // Update::FillDerived<MeshBlockData<Real>>(rc);
-        // Flux::GetFlux(rc, X1DIR, dt);
-        // Flux::GetFlux(rc, X2DIR, dt);
-        // Flux::GetFlux(rc, X3DIR, dt);
+        first_step = 1;
+    } else if (ncall == nmb) {
+        first_step = 0;
     }
 
 
@@ -341,7 +360,9 @@ Real EstimateTimestep(MeshBlockData<Real> *rc)
     double ndt = minmax.min_val;
     double nctop = minmax.max_val;
 
+    // Print stuff about the zone that set the timestep
     // Warning that triggering this code slows the code down pretty badly (~1/3)
+    // TODO: Fix for SYCL, which disallows device printf. Generally solve host/diagnostic versions... HostExec?
     if (pmb->packages.Get("GRMHD")->Param<int>("verbose") > 2) {
         auto fflag = rc->Get("c.c.bulk.fflag").data;
         auto pflag = rc->Get("c.c.bulk.pflag").data;
@@ -361,7 +382,7 @@ Real EstimateTimestep(MeshBlockData<Real> *rc)
     // Nominal timestep
     ndt *= pmb->packages.Get("GRMHD")->Param<Real>("cfl");
 
-    // TODO move timestep curation to an Integrator override
+    // TODO Subclass integrator to do these checks globally, could fix block-dependence above
     // Sometimes we come out with a silly timestep. Try to salvage it
     double dt_min = pmb->packages.Get("GRMHD")->Param<Real>("dt_min");
     if (ndt < dt_min || isnan(ndt) || ndt > 10000) {
@@ -378,10 +399,10 @@ Real EstimateTimestep(MeshBlockData<Real> *rc)
             cout << "Limiting dt: " << dt_limit << endl;
         }
         ndt = dt_limit;
-        nctop *= 0.01;
+        //nctop *= 0.01;
     }
 
-    // Record to another some good very bad globals
+    // Record to some no good very bad file-scope globals
     ctop_max = MPIMax(nctop);
     last_dt = MPIMin(ndt);
 
@@ -421,9 +442,8 @@ TaskStatus PostStepDiagnostics(Mesh *pmesh, ParameterInput *pin, const SimTime& 
 {
     FLAG("Printing diagnostics");
 
-    int nmb = pmesh->GetNumMeshBlocksThisRank(Globals::my_rank);
-    for (int i=0; i < nmb; ++i) {
-        auto& pmb = pmesh->block_list[i];
+    // TODO move most of this into debug.cpp for calling on demand/more flexibly
+    for (auto &pmb : pmesh->block_list) {
         auto& rc = pmb->meshblock_data.Get();
 
         auto& G = pmb->coords;
@@ -433,7 +453,6 @@ TaskStatus PostStepDiagnostics(Mesh *pmesh, ParameterInput *pin, const SimTime& 
         GridScalar fflag = rc->Get("c.c.bulk.fflag").data;
 
         // Debugging/diagnostic info about floor and inversion flags
-        // TODO domain::entire?
         int print_flags = pmb->packages.Get("GRMHD")->Param<int>("flag_verbose");
         if (print_flags >= 1) {
             auto fflag_host = fflag.GetHostMirrorAndCopy();
@@ -445,7 +464,7 @@ TaskStatus PostStepDiagnostics(Mesh *pmesh, ParameterInput *pin, const SimTime& 
         // TODO move checking ctop here?  Have to preserve it without overwriting
 
         // Extra checking for negative values
-        if (pmb->packages.Get("GRMHD")->Param<int>("extra_checks") >= 2) {
+        if (pmb->packages.Get("GRMHD")->Param<int>("extra_checks") > 1) {
             IndexDomain domain = IndexDomain::interior;
             int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
             int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
@@ -481,8 +500,8 @@ TaskStatus PostStepDiagnostics(Mesh *pmesh, ParameterInput *pin, const SimTime& 
 
 void FillOutput(MeshBlock *pmb, ParameterInput *pin)
 {
-    // We expect this to fail on the first step
-    try {
+    // See issues with determining the first step, above.
+    if (!first_step) {
         FLAG("Adding output fields");
 
         auto& rc1 = pmb->meshblock_data.Get();
@@ -492,10 +511,8 @@ void FillOutput(MeshBlock *pmb, ParameterInput *pin)
         GRMHD::CalculateCurrent(rc0.get(), rc1.get(), dt);
 
         FLAG("Added");
-
-    } catch(std::runtime_error& e) {
-        return;
     }
+    //cout << "Filled" << endl;
 }
 
 } // namespace GRMHD

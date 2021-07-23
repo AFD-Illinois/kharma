@@ -38,8 +38,7 @@
 
 #include "bondi.hpp"
 #include "mhd_functions.hpp"
-#include "b_flux_ct_functions.hpp"
-#include "b_cd_glm_functions.hpp"
+#include "b_functions.hpp"
 
 #include "basic_types.hpp"
 #include "mesh/domain.hpp"
@@ -55,8 +54,9 @@ TaskStatus ApplyCustomBoundaries(MeshBlockData<Real> *rc)
     GridVars P = rc->Get("c.c.bulk.prims").data;
     GridVector B_P = rc->Get("c.c.bulk.B_prim").data;
     GridVector B_U = rc->Get("c.c.bulk.B_con").data;
-    const bool use_b_cd_glm = pmb->packages.AllPackages().count("B_CD_GLM") > 0;
-    const bool use_b_flux_ct = pmb->packages.AllPackages().count("B_FluxCT") > 0;
+    const bool use_b_cd = pmb->packages.AllPackages().count("B_CD");
+    const bool use_b_flux_ct = pmb->packages.AllPackages().count("B_FluxCT");
+    const bool use_b = use_b_cd || use_b_flux_ct;
     auto& G = pmb->coords;
 
     IndexDomain domain = IndexDomain::interior;
@@ -85,7 +85,7 @@ TaskStatus ApplyCustomBoundaries(MeshBlockData<Real> *rc)
                 VLOOP B_P(v, k, j, i) = ((v == 1) ? -1.0 : 1.0) * B_P(v, k, (js - 1) + (js - j), i);
                 // Recover conserved vars
                 GRMHD::p_to_u(G, P, B_P, eos, k, j, i, U);
-                if (use_b_flux_ct) B_FluxCT::p_to_u(G, B_P, k, j, i, B_U);
+                if (use_b) BField::p_to_u(G, B_P, k, j, i, B_U);
             }
         );
     }
@@ -100,7 +100,7 @@ TaskStatus ApplyCustomBoundaries(MeshBlockData<Real> *rc)
                 VLOOP B_P(v, k, j, i) = ((v == 1) ? -1.0 : 1.0) * B_P(v, k, (je + 1) + (je - j), i);
                 // Recover conserved vars
                 GRMHD::p_to_u(G, P, B_P, eos, k, j, i, U);
-                if (use_b_flux_ct) B_FluxCT::p_to_u(G, B_P, k, j, i, B_U);
+                if (use_b) BField::p_to_u(G, B_P, k, j, i, B_U);
             }
         );
     }
@@ -117,7 +117,7 @@ TaskStatus ApplyCustomBoundaries(MeshBlockData<Real> *rc)
                 check_inflow(G, P, k, j, i, 0);
                 // Recover conserved vars
                 GRMHD::p_to_u(G, P, B_P, eos, k, j, i, U);
-                if (use_b_flux_ct) B_FluxCT::p_to_u(G, B_P, k, j, i, B_U);
+                if (use_b) BField::p_to_u(G, B_P, k, j, i, B_U);
             }
         );
     }
@@ -136,50 +136,50 @@ TaskStatus ApplyCustomBoundaries(MeshBlockData<Real> *rc)
                     check_inflow(G, P, k, j, i, 1);
                     // Recover conserved vars
                     GRMHD::p_to_u(G, P, B_P, eos, k, j, i, U);
-                    if (use_b_flux_ct) B_FluxCT::p_to_u(G, B_P, k, j, i, B_U);
+                    if (use_b) BField::p_to_u(G, B_P, k, j, i, B_U);
                 }
             );
         }
     }
 
-    // This is a bit dumb for scoping
-    if (use_b_cd_glm) {
-        GridScalar psi_p = rc->Get("c.c.bulk.psi_cd_prim").data;
-        GridScalar psi_u = rc->Get("c.c.bulk.psi_cd_con").data;
+    // Theoretically lots of options here:
+    // 1. follow rho always
+    // 2. Set to 0 since that's the ideal case
+    // 3. Nonreflecting condition on last fluxes: psi_r = psi_l + c_h (Bx,r - Bx,l) & vice versa
+    // (4). allow outflow through pole
+    if (use_b_cd) {
+        GridScalar psi = rc->Get("c.c.bulk.psi_cd").data;
 
-        if(pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::reflect) {
-            pmb->par_for("inner_x2_psi", ks_e, ke_e, js_e, js-1, is, ie,
-                KOKKOS_LAMBDA_3D {
-                    //psi_p(k, j, i) = -psi_p(k, (js - 1) + (js - j), i);
-                    psi_p(k, j, i) = psi_p(k, js, i);
-                    B_CD_GLM::p_to_u(G, B_P, psi_p, k, j, i, B_U, psi_u);
-                }
-            );
-        }
-        if(pmb->boundary_flag[BoundaryFace::outer_x2] == BoundaryFlag::reflect) {
-            pmb->par_for("outer_x2_psi", ks_e, ke_e, je+1, je_e, is, ie,
-                KOKKOS_LAMBDA_3D {
-                    //psi_p(k, j, i) = -psi_p(k, (je + 1) + (je - j), i);
-                    psi_p(k, j, i) = psi_p(k, je, i);
-                    B_CD_GLM::p_to_u(G, B_P, psi_p, k, j, i, B_U, psi_u);
-                }
-            );
-        }if(pmb->boundary_flag[BoundaryFace::inner_x1] == BoundaryFlag::outflow) {
-            pmb->par_for("inner_x1_psi", ks_e, ke_e, js_e, je_e, is_e, is-1,
-                KOKKOS_LAMBDA_3D {
-                    psi_p(k, j, i) = psi_p(k, j, is);
-                    B_CD_GLM::p_to_u(G, B_P, psi_p, k, j, i, B_U, psi_u);
-                }
-            );
-        }
-        if(pmb->boundary_flag[BoundaryFace::outer_x1] == BoundaryFlag::outflow) {
-            pmb->par_for("outer_x1_psi", ks_e, ke_e, js_e, je_e, ie+1, ie_e,
-                KOKKOS_LAMBDA_3D {
-                    psi_p(k, j, i) = psi_p(k, j, ie);
-                    B_CD_GLM::p_to_u(G, B_P, psi_p, k, j, i, B_U, psi_u);
-                }
-            );
-        }
+        pmb->par_for("inner_x3_psi", ks_e, ks-1, js, je, is, ie,
+            KOKKOS_LAMBDA_3D {
+                psi(k, j, i) = psi(ks, j, i);
+            }
+        );
+        pmb->par_for("outer_x3_psi", ke+1, ke_e, js, je, is, ie,
+            KOKKOS_LAMBDA_3D {
+                psi(k, j, i) = psi(ke, j, i);
+            }
+        );
+        pmb->par_for("inner_x2_psi", ks_e, ke_e, js_e, js-1, is, ie,
+            KOKKOS_LAMBDA_3D {
+                psi(k, j, i) = psi(k, js, i);
+            }
+        );
+        pmb->par_for("outer_x2_psi", ks_e, ke_e, je+1, je_e, is, ie,
+            KOKKOS_LAMBDA_3D {
+                psi(k, j, i) = psi(k, je, i);
+            }
+        );
+        pmb->par_for("inner_x1_psi", ks_e, ke_e, js_e, je_e, is_e, is-1,
+            KOKKOS_LAMBDA_3D {
+                psi(k, j, i) = psi(k, j, is);
+            }
+        );
+        pmb->par_for("outer_x1_psi", ks_e, ke_e, js_e, je_e, ie+1, ie_e,
+            KOKKOS_LAMBDA_3D {
+                psi(k, j, i) = psi(k, j, ie);
+            }
+        );
     }
 
     return TaskStatus::complete;
@@ -212,7 +212,6 @@ KOKKOS_INLINE_FUNCTION void check_inflow(const GRCoordinates &G, GridVars P, con
         P(prims::u1, k, j, i) = beta1 / alpha;
 
         // Now find new gamma and put it back in
-        // TODO abridge? Delete or record special cases? Are loops faster?
         Real vsq = G.gcov(Loci::center, j, i, 1, 1) * P(prims::u1, k, j, i) * P(prims::u1, k, j, i) +
                    G.gcov(Loci::center, j, i, 2, 2) * P(prims::u2, k, j, i) * P(prims::u2, k, j, i) +
                    G.gcov(Loci::center, j, i, 3, 3) * P(prims::u3, k, j, i) * P(prims::u3, k, j, i) +
@@ -222,7 +221,7 @@ KOKKOS_INLINE_FUNCTION void check_inflow(const GRCoordinates &G, GridVars P, con
         
         if (fabs(vsq) < 1.e-13) vsq = 1.e-13;
         if (vsq >= 1.) {
-            vsq = 1. - 1./(50.*50.);
+            vsq = 1. - 1./(50.*50.);  // TODO DEFINE as max gamma
         }
 
         gamma = 1./sqrt(1. - vsq);
@@ -255,12 +254,19 @@ TaskStatus FixFlux(MeshBlockData<Real> *rc)
     int ke_e = (ndim > 2) ? ke + 1 : ke;
     const int nprim = F1.GetDim(4);
 
+    bool use_b_cd = pmb->packages.AllPackages().count("B_CD");
+    GridScalar psi1;
+    if (use_b_cd) {
+        psi1 = rc->Get("c.c.bulk.psi_cd").flux[X1DIR];
+    }
+
     if (pmb->packages.Get("GRMHD")->Param<bool>("fix_flux_inflow")) {
         if (pmb->boundary_flag[BoundaryFace::inner_x1] == BoundaryFlag::outflow)
         {
             pmb->par_for("fix_flux_in_l", ks, ke_e, js, je_e, is, is,
                 KOKKOS_LAMBDA_3D {
                     F1(prims::rho, k, j, i) = min(F1(prims::rho, k, j, i), 0.);
+                    //if (use_b_cd) psi1(k, j, i) = min(psi1(k, j, i), 0.);
                 }
             );
         }
@@ -271,6 +277,7 @@ TaskStatus FixFlux(MeshBlockData<Real> *rc)
             pmb->par_for("fix_flux_in_r", ks, ke_e, js, je_e, ie+1, ie+1,
                 KOKKOS_LAMBDA_3D {
                     F1(prims::rho, k, j, i) = max(F1(prims::rho, k, j, i), 0.);
+                    //if (use_b_cd) psi1(k, j, i) = max(psi1(k, j, i), 0.);
                 }
             );
         }

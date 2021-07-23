@@ -38,6 +38,7 @@
 #include "debug.hpp"
 #include "fixup.hpp"
 #include "floors.hpp"
+#include "fluxes.hpp"
 #include "gr_coordinates.hpp"
 #include "b_field_tools.hpp"
 
@@ -55,10 +56,10 @@
 #include "mhd_functions.hpp"
 #include "seed_B_ct.hpp"
 #include "seed_B_cd.hpp"
+
 #include "b_flux_ct.hpp"
-#include "b_flux_ct_functions.hpp"
-#include "b_cd_glm.hpp"
-#include "b_cd_glm_functions.hpp"
+#include "b_cd.hpp"
+#include "b_functions.hpp"
 
 #include "bvals/boundary_conditions.hpp"
 #include "mesh/mesh.hpp"
@@ -73,13 +74,8 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
     GridVector B_P = rc->Get("c.c.bulk.B_prim").data;
     GridVars U = rc->Get("c.c.bulk.cons").data;
     GridVector B_U = rc->Get("c.c.bulk.B_con").data;
-    GridScalar psi_p, psi_u;
-    const bool use_b_flux_ct = pmb->packages.AllPackages().count("B_FluxCT") > 0;
-    const bool use_b_cd_glm = pmb->packages.AllPackages().count("B_CD_GLM") > 0;
-    if (use_b_cd_glm) {
-        psi_p = rc->Get("c.c.bulk.psi_cd_prim").data;
-        psi_u = rc->Get("c.c.bulk.psi_cd_con").data;
-    }
+    const bool use_b = pmb->packages.AllPackages().count("B_FluxCT") ||
+                        pmb->packages.AllPackages().count("B_CD");
 
     GRCoordinates G = pmb->coords;
     EOS* eos = pmb->packages.Get("GRMHD")->Param<EOS*>("eos");
@@ -154,10 +150,7 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
     pmb->par_for("first_U", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_3D {
             GRMHD::p_to_u(G, P, B_P, eos, k, j, i, U);
-            if (use_b_flux_ct)
-                B_FluxCT::p_to_u(G, B_P, k, j, i, B_U);
-            if (use_b_cd_glm)
-                B_CD_GLM::p_to_u(G, B_P, psi_p, k, j, i, B_U, psi_u);
+            if (use_b) BField::p_to_u(G, B_P, k, j, i, B_U);
         }
     );
 
@@ -181,22 +174,21 @@ void PostInitialize(ParameterInput *pin, Mesh *pmesh)
         Real beta_calc_legacy = pin->GetOrAddBoolean("b_field", "legacy", true);
 
         // Use the correct seed function based on field constraint solver
-        const bool use_b_flux_ct = pmesh->packages.AllPackages().count("B_FluxCT") > 0;
-        const bool use_b_cd_glm = pmesh->packages.AllPackages().count("B_CD_GLM") > 0;
+        const bool use_b_flux_ct = pmesh->packages.AllPackages().count("B_FluxCT");
+        const bool use_b_cd = pmesh->packages.AllPackages().count("B_CD");
 
         FLAG("Seeding magnetic field");
         // Seed the magnetic field and find the minimum beta
-        int nmb = pmesh->GetNumMeshBlocksThisRank(Globals::my_rank);
         Real beta_min = 1.e100, p_max = 0., bsq_max = 0.;
-        for (int i = 0; i < nmb; ++i) {
-            auto& pmb = pmesh->block_list[i];
+        for (auto &pmb : pmesh->block_list) {
             auto& rc = pmb->meshblock_data.Get();
 
             // This initializes B_P & B_U
             if (use_b_flux_ct) {
                 B_FluxCT::SeedBField(rc.get(), pin);
-            } else if (use_b_cd_glm) {
-                B_CD_GLM::SeedBField(rc.get(), pin);
+            } else if (use_b_cd) {
+                B_CD::SeedBField(rc.get(), pin);
+                //B_FluxCT::SeedBField(rc.get(), pin);
             }
         
             // TODO should this be added after normalization?
@@ -205,8 +197,8 @@ void PostInitialize(ParameterInput *pin, Mesh *pmesh)
             // if (BHflux > 0.) {
             //     if (use_b_flux_ct) {
             //         B_FluxCT::SeedBHFlux(rc.get(), pin);
-            //     } else if (use_b_cd_glm) {
-            //         B_CD_GLM::SeedBHFlux(rc.get(), pin);
+            //     } else if (use_b_cd) {
+            //         B_CD::SeedBHFlux(rc.get(), pin);
             //     }
             // }
 
@@ -243,8 +235,7 @@ void PostInitialize(ParameterInput *pin, Mesh *pmesh)
             FLAG("Normalizing magnetic field");
             if (beta_min > 0) {
                 Real norm = sqrt(beta_min/desired_beta_min);
-                for (int i = 0; i < nmb; ++i) {
-                    auto& pmb = pmesh->block_list[i];
+                for (auto &pmb : pmesh->block_list) {
                     auto& rc = pmb->meshblock_data.Get();
                     NormalizeBField(rc.get(), norm);
                 }
@@ -255,8 +246,7 @@ void PostInitialize(ParameterInput *pin, Mesh *pmesh)
             // Do it again to check, and add divB for good measure
             beta_min = 1e100; p_max = 0.; bsq_max = 0.;
             Real divb_max = 0.;
-            for (int i = 0; i < nmb; ++i) {
-                auto& pmb = pmesh->block_list[i];
+            for (auto &pmb : pmesh->block_list) {
                 auto& rc = pmb->meshblock_data.Get();
 
                 if (beta_calc_legacy) {
@@ -271,8 +261,8 @@ void PostInitialize(ParameterInput *pin, Mesh *pmesh)
                 if (use_b_flux_ct) {
                     Real divb_local = B_FluxCT::MaxDivB(rc.get());
                     if(divb_local > divb_max) divb_max = divb_local;
-                } else if (use_b_cd_glm) {
-                    Real divb_local = B_CD_GLM::MaxDivB(rc.get());
+                } else if (use_b_cd) {
+                    Real divb_local = B_CD::MaxDivB(rc.get());
                     if(divb_local > divb_max) divb_max = divb_local;
                 }
             }
@@ -295,6 +285,15 @@ void PostInitialize(ParameterInput *pin, Mesh *pmesh)
     FLAG("Boundary sync");
     SyncAllBounds(pmesh);
 
+    for (auto &pmb : pmesh->block_list) {
+        auto& rc = pmb->meshblock_data.Get();
+        Update::FillDerived<MeshBlockData<Real>>(rc.get());
+        double dt = pmb->packages.Get("GRMHD")->Param<Real>("dt");
+        Flux::GetFlux(rc.get(), X1DIR, dt);
+        Flux::GetFlux(rc.get(), X2DIR, dt);
+        Flux::GetFlux(rc.get(), X3DIR, dt);
+    }
+
     FLAG("Post-initialization finished");
 }
 
@@ -302,22 +301,19 @@ void SyncAllBounds(Mesh *pmesh)
 {
     // Mark primitives as Independent/FillGhost temporarily
     // Normally we use values from last step as guesses for UtoP, but we can't do that on first sync(s)
-    pmesh->packages.Get("GRMHD").get()->FieldMetadata("c.c.bulk.prims").Set(Metadata::Independent);
-    pmesh->packages.Get("GRMHD").get()->FieldMetadata("c.c.bulk.prims").Set(Metadata::FillGhost);
-    pmesh->packages.Get("GRMHD").get()->FieldMetadata("c.c.bulk.B_prim").Set(Metadata::Independent);
-    pmesh->packages.Get("GRMHD").get()->FieldMetadata("c.c.bulk.B_prim").Set(Metadata::FillGhost);
+    // pmesh->packages.Get("GRMHD").get()->FieldMetadata("c.c.bulk.prims").Set(Metadata::Independent);
+    // pmesh->packages.Get("GRMHD").get()->FieldMetadata("c.c.bulk.prims").Set(Metadata::FillGhost);
+    // pmesh->packages.Get("GRMHD").get()->FieldMetadata("c.c.bulk.B_prim").Set(Metadata::Independent);
+    // pmesh->packages.Get("GRMHD").get()->FieldMetadata("c.c.bulk.B_prim").Set(Metadata::FillGhost);
 
-    int nmb = pmesh->GetNumMeshBlocksThisRank(Globals::my_rank);
-    for (int i = 0; i < nmb; ++i) {
-        auto& pmb = pmesh->block_list[i];
+    for (auto &pmb : pmesh->block_list) {
         auto& rc = pmb->meshblock_data.Get();
         rc->ClearBoundary(BoundaryCommSubset::mesh_init);
         rc->StartReceiving(BoundaryCommSubset::mesh_init);
         rc->SendBoundaryBuffers();
     }
 
-    for (int i = 0; i < nmb; ++i) {
-        auto& pmb = pmesh->block_list[i];
+    for (auto &pmb : pmesh->block_list) {
         auto& rc = pmb->meshblock_data.Get();
         rc->ReceiveAndSetBoundariesWithWait();
         rc->ClearBoundary(BoundaryCommSubset::mesh_init);
@@ -331,8 +327,8 @@ void SyncAllBounds(Mesh *pmesh)
         parthenon::Update::FillDerived(rc.get());
     }
 
-    pmesh->packages.Get("GRMHD").get()->FieldMetadata("c.c.bulk.prims").Unset(Metadata::Independent);
-    pmesh->packages.Get("GRMHD").get()->FieldMetadata("c.c.bulk.prims").Unset(Metadata::FillGhost);
-    pmesh->packages.Get("GRMHD").get()->FieldMetadata("c.c.bulk.B_prim").Unset(Metadata::Independent);
-    pmesh->packages.Get("GRMHD").get()->FieldMetadata("c.c.bulk.B_prim").Unset(Metadata::FillGhost);
+    // pmesh->packages.Get("GRMHD").get()->FieldMetadata("c.c.bulk.prims").Unset(Metadata::Independent);
+    // pmesh->packages.Get("GRMHD").get()->FieldMetadata("c.c.bulk.prims").Unset(Metadata::FillGhost);
+    // pmesh->packages.Get("GRMHD").get()->FieldMetadata("c.c.bulk.B_prim").Unset(Metadata::Independent);
+    // pmesh->packages.Get("GRMHD").get()->FieldMetadata("c.c.bulk.B_prim").Unset(Metadata::FillGhost);
 }

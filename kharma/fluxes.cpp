@@ -38,8 +38,9 @@
 
 // Package functions
 #include "mhd_functions.hpp"
-#include "b_flux_ct_functions.hpp"
-#include "b_cd_glm_functions.hpp"
+#include "b_flux_ct.hpp"
+#include "b_cd.hpp"
+#include "b_functions.hpp"
 
 #include "debug.hpp"
 #include "floors.hpp"
@@ -50,24 +51,6 @@ using namespace parthenon;
 
 // Look, it seemed like a good idea at the time
 extern double ctop_max;
-
-// Fluxes a.k.a. "Approximate Riemann Solvers"
-// These have identical signatures, so that we could runtime relink w/variant like coordinate_embedding
-// Local Lax-Friedrichs flux (usual, more stable)
-KOKKOS_INLINE_FUNCTION Real llf(const Real& fluxL, const Real& fluxR, const Real& cmax, 
-                                const Real& cmin, const Real& Ul, const Real& Ur)
-{
-    Real ctop = max(cmax, cmin);
-    return 0.5 * (fluxL + fluxR - ctop * (Ur - Ul));
-}
-// Harten, Lax, van Leer, & Einfeldt flux (early problems but not extensively studied since)
-KOKKOS_INLINE_FUNCTION Real hlle(const Real& fluxL, const Real& fluxR, const Real& cmax,
-                                const Real& cmin, const Real& Ul, const Real& Ur)
-{
-    return (cmax*fluxL + cmin*fluxR - cmax*cmin*(Ur - Ul)) / (cmax + cmin);
-}
-// More complex solvers require speed estimates not calculable completely from
-// invariants, necessitating frame transformations and related madness.
 
 TaskStatus Flux::GetFlux(MeshBlockData<Real> *rc, const int& dir, const Real& dt)
 {
@@ -80,16 +63,17 @@ TaskStatus Flux::GetFlux(MeshBlockData<Real> *rc, const int& dir, const Real& dt
     // 1-zone halo in nontrivial dimensions. Don't bother with fluxes in trivial dimensions
     // We leave is/ie, js/je, ks/ke with their usual definitions for consistency, and define
     // the loop bounds separately to include the appropriate halo
-    int halo = 1;
-    int ks_l = (ks == 0) ? 0 : ks - halo;
-    int ke_l = (ke == 0) ? 0 : ke + halo;
-    if (ke == 0 && dir == X3DIR) return TaskStatus::complete;
-    int js_l = (js == 0) ? 0 : js - halo;
-    int je_l = (je == 0) ? 0 : je + halo;
-    if (je == 0 && dir == X2DIR) return TaskStatus::complete;
-    int is_l = is - halo;
-    int ie_l = ie + halo;
     const int ndim = pmb->pmy_mesh->ndim;
+    int halo = 1;
+    const int ks_l = (ndim > 2) ? ks - halo : ks;
+    const int ke_l = (ndim > 2) ? ke + halo : ke;
+    const int js_l = (ndim > 1) ? js - halo : js;
+    const int je_l = (ndim > 1) ? je + halo : je;
+    const int is_l = is - halo;
+    const int ie_l = ie + halo;
+    // Don't calculate fluxes we won't use
+    if (ndim < 3 && dir == X3DIR) return TaskStatus::complete;
+    if (ndim < 2 && dir == X2DIR) return TaskStatus::complete;
 
     int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
     if (0) { // No amount of verbosity warrants this abuse,
@@ -106,25 +90,29 @@ TaskStatus Flux::GetFlux(MeshBlockData<Real> *rc, const int& dir, const Real& dt
     FloorPrescription floors = FloorPrescription(pmb->packages.Get("GRMHD")->AllParams());
     const ReconstructionType& recon = pmb->packages.Get("GRMHD")->Param<ReconstructionType>("recon");
     // B field package options
-    const bool use_b_flux_ct = pmb->packages.AllPackages().count("B_FluxCT") > 0;
-    const bool use_b_cd_glm = pmb->packages.AllPackages().count("B_CD_GLM") > 0;
+    const bool use_b_flux_ct = pmb->packages.AllPackages().count("B_FluxCT");
+    const bool use_b_cd = pmb->packages.AllPackages().count("B_CD");
     // If we're reducing the order of reconstruction at the poles, determine whether this
-    // block is on a pole.
+    // block is on a pole (otherwise BoundaryFlag will be "block")
     bool is_inner_x2 = pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::reflect;
     bool is_outer_x2 = pmb->boundary_flag[BoundaryFace::outer_x2] == BoundaryFlag::reflect;
 
     // If we're using constraint damping, figure out the correct divB propagation speed c_h
     Real c_h_temp;
-    if (use_b_cd_glm) {
-        c_h_temp = clip(pmb->packages.Get("B_CD_GLM")->Param<Real>("c_h_factor") * ctop_max, 
-                        pmb->packages.Get("B_CD_GLM")->Param<Real>("c_h_low"),
-                        pmb->packages.Get("B_CD_GLM")->Param<Real>("c_h_high"));
+    if (use_b_cd) {
+        c_h_temp = clip(pmb->packages.Get("B_CD")->Param<Real>("c_h_factor") * ctop_max, 
+                        pmb->packages.Get("B_CD")->Param<Real>("c_h_low"),
+                        pmb->packages.Get("B_CD")->Param<Real>("c_h_high"));
     } else {
         c_h_temp = 0;
     }
     const Real c_h = c_h_temp;
 
+    auto& G = pmb->coords;
+    EOS* eos = pmb->packages.Get("GRMHD")->Param<EOS*>("eos");
+
     // Fluxes in direction X1 should be calculated at face 1, likewise others
+    // TODO adapt if we ever go non-Cartesian
     Loci loc;
     switch (dir) {
     case X1DIR:
@@ -140,8 +128,12 @@ TaskStatus Flux::GetFlux(MeshBlockData<Real> *rc, const int& dir, const Real& dt
 
     // VARIABLES
     auto& ctop = rc->GetFace("f.f.bulk.ctop").data;
-    auto& G = pmb->coords;
-    EOS* eos = pmb->packages.Get("GRMHD")->Param<EOS*>("eos");
+    // Constraint damping preserves a version of divB dependent on reconstructed values
+    // We keep track of it here.
+    // This looks a bit silly but keeps the types consistent.  B_face is only used below
+    // if use_b_cd is true, but must always be defined since it is selected at runtime
+    auto& B_lface = (use_b_cd) ? rc->GetFace("f.f.bulk.Bl").data : rc->GetFace("f.f.bulk.ctop").data;
+    auto& B_rface = (use_b_cd) ? rc->GetFace("f.f.bulk.Br").data : rc->GetFace("f.f.bulk.ctop").data;
 
     // Pack all primitive and conserved variables, 
     MetadataFlag isPrimitive = pmb->packages.Get("GRMHD")->Param<MetadataFlag>("PrimitiveFlag");
@@ -152,12 +144,13 @@ TaskStatus Flux::GetFlux(MeshBlockData<Real> *rc, const int& dir, const Real& dt
     const auto& U = rc->PackVariablesAndFluxes({Metadata::Conserved}, cons_map);
     FLAG("Packed variables");
     // Indices into these packs, for addressing specific variables in the loop
+    // Parthenon returns -1 index for keys not found in a pack
     const int cons_start = cons_map["c.c.bulk.cons"].first;
     const int prims_start = prims_map["c.c.bulk.prims"].first;
     const int B_con_start = cons_map["c.c.bulk.B_con"].first;
     const int B_prim_start = prims_map["c.c.bulk.B_prim"].first;
-    const int psi_con_start = use_b_cd_glm ? cons_map["c.c.bulk.psi_cd_con"].first : 0;
-    const int psi_prim_start = use_b_cd_glm ? prims_map["c.c.bulk.psi_cd_prim"].first : 0;
+    const int psi_con_start = cons_map["c.c.bulk.psi_cd"].first;
+    const int psi_prim_start = prims_map["c.c.bulk.psi_cd"].first;
     const int nvar = P.GetDim(4);
 
     // SCRATCH SPACE
@@ -182,16 +175,14 @@ TaskStatus Flux::GetFlux(MeshBlockData<Real> *rc, const int& dir, const Real& dt
                 [&](const int& i) {
                     // Unpack primitives into immediate values for this zone,
                     // TODO these and below should be scratch-allocated
-                    Real p_l[NPRIM], p_r[NPRIM], bp_l[NVEC], bp_r[NVEC], psi_l, psi_r;
-                    PLOOP {
-                        p_l[p] = ql(prims_start + p, i);
-                        p_r[p] = qr(prims_start + p, i);
+                    Real p_l[NPRIM], p_r[NPRIM], bp_l[NVEC] = {0}, bp_r[NVEC] = {0}, psi_l = 0, psi_r = 0;
+                    PLOOP p_l[p] = ql(prims_start + p, i);
+                    PLOOP p_r[p] = qr(prims_start + p, i);
+                    if (B_prim_start >= 0) {
+                        VLOOP bp_l[v] = ql(B_prim_start + v, i);
+                        VLOOP bp_r[v] = qr(B_prim_start + v, i);
                     }
-                    VLOOP {
-                        bp_l[v] = ql(B_prim_start + v, i);
-                        bp_r[v] = qr(B_prim_start + v, i);
-                    }
-                    if (use_b_cd_glm) {
+                    if (psi_prim_start >= 0) {
                         psi_l = ql(psi_prim_start, i);
                         psi_r = qr(psi_prim_start, i);
                     }
@@ -230,11 +221,11 @@ TaskStatus Flux::GetFlux(MeshBlockData<Real> *rc, const int& dir, const Real& dt
                     if (use_b_flux_ct) {
                         B_FluxCT::prim_to_flux(G, Dtmp, bp_l, k, j, i, loc, 0, &(Ul[B_con_start]));
                         B_FluxCT::prim_to_flux(G, Dtmp, bp_l, k, j, i, loc, dir, &(fluxL[B_con_start]));
-                    } else if (use_b_cd_glm) {
-                        B_CD_GLM::prim_to_flux(G, Dtmp, bp_l, psi_l, k, j, i, loc, 0, c_h,
-                                                &(Ul[B_con_start]), &(Ul[psi_con_start]));
-                        B_CD_GLM::prim_to_flux(G, Dtmp, bp_l, psi_l, k, j, i, loc, dir, c_h,
-                                                &(fluxL[B_con_start]), &(fluxL[psi_con_start]));
+                    } else if (use_b_cd) {
+                        B_CD::prim_to_flux(G, Dtmp, bp_l, psi_l, k, j, i, loc, 0, c_h,
+                                           &(Ul[B_con_start]), &(Ul[psi_con_start]));
+                        B_CD::prim_to_flux(G, Dtmp, bp_l, psi_l, k, j, i, loc, dir, c_h,
+                                           &(fluxL[B_con_start]), &(fluxL[psi_con_start]));
                     }
 
                     // Right
@@ -249,11 +240,11 @@ TaskStatus Flux::GetFlux(MeshBlockData<Real> *rc, const int& dir, const Real& dt
                     if (use_b_flux_ct) {
                         B_FluxCT::prim_to_flux(G, Dtmp, bp_r, k, j, i, loc, 0, &(Ur[B_con_start]));
                         B_FluxCT::prim_to_flux(G, Dtmp, bp_r, k, j, i, loc, dir, &(fluxR[B_con_start]));
-                    } else if (use_b_cd_glm) {
-                        B_CD_GLM::prim_to_flux(G, Dtmp, bp_r, psi_r, k, j, i, loc, 0, c_h,
-                                                &(Ur[B_con_start]), &(Ur[psi_con_start]));
-                        B_CD_GLM::prim_to_flux(G, Dtmp, bp_r, psi_r, k, j, i, loc, dir, c_h,
-                                                &(fluxR[B_con_start]), &(fluxR[psi_con_start]));
+                    } else if (use_b_cd) {
+                        B_CD::prim_to_flux(G, Dtmp, bp_r, psi_r, k, j, i, loc, 0, c_h,
+                                           &(Ur[B_con_start]), &(Ur[psi_con_start]));
+                        B_CD::prim_to_flux(G, Dtmp, bp_r, psi_r, k, j, i, loc, dir, c_h,
+                                           &(fluxR[B_con_start]), &(fluxR[psi_con_start]));
                     }
 
                     cmax = fabs(max(max(0.,  cmaxL),  cmaxR));
@@ -264,7 +255,7 @@ TaskStatus Flux::GetFlux(MeshBlockData<Real> *rc, const int& dir, const Real& dt
                     // The unphysical variable psi and its corrections can propagate at the chosen max speed c_h rather than the sound speed
                     if (use_hlle) {
                         for (int p=0; p < nvar; ++p) {
-                            if (use_b_cd_glm && (p == psi_con_start || p == B_con_start+dir-1)) {
+                            if (use_b_cd && (p == psi_con_start || p == B_con_start+dir-1)) {
                                 // The unphysical variable psi and its corrections can propagate at the chosen max speed c_h rather than the sound speed
                                 U.flux(dir, p, k, j, i) = llf(fluxL[p], fluxR[p], c_h, c_h, Ul[p], Ur[p]);
                             } else {
@@ -273,17 +264,22 @@ TaskStatus Flux::GetFlux(MeshBlockData<Real> *rc, const int& dir, const Real& dt
                         }
                     } else {
                         for (int p=0; p < nvar; ++p) {
-                            if (use_b_cd_glm && (p == psi_con_start || p == B_con_start+dir-1)) {
+                            if (use_b_cd && (p == psi_con_start || p == B_con_start+dir-1)) {
                                 U.flux(dir, p, k, j, i) = llf(fluxL[p], fluxR[p], c_h, c_h, Ul[p], Ur[p]);
                             } else {
                                 U.flux(dir, p, k, j, i) = llf(fluxL[p], fluxR[p], cmax, cmin, Ul[p], Ur[p]);
                             }
                         }
                     }
-                    // Above should correspond to Dedner eq.42 i.e.
+                    // When using constraint damping, the above should correspond to Dedner eq.42 i.e.
                     // Real gdet = G.gdet(loc, j, i);
                     // U.flux(dir, psi_con_start, k, j, i) = 0.5*(c_h*c_h*(Ur[B_con_start+dir-1] + Ul[B_con_start+dir-1]) - c_h*(psi_r*gdet - psi_l*gdet));
                     // U.flux(dir, B_con_start+dir-1, k, j, i = 0.5*(psi_r*gdet + psi_l*gdet - c_h*(Ur[B_con_start+dir-1] - Ul[B_con_start+dir-1]));
+
+                    if (use_b_cd) {
+                        B_lface(dir, k, j, i) = (U(B_con_start+dir-1, k, j, i) + Ul[B_con_start+dir-1]) / 2;
+                        B_rface(dir, k, j, i) = (U(B_con_start+dir-1, k, j, i) + Ur[B_con_start+dir-1]) / 2;
+                    }
                 }
             );
         }

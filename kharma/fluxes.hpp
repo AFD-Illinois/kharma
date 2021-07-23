@@ -66,4 +66,27 @@ namespace Flux {
      */
     TaskStatus ApplyFluxes(MeshBlockData<Real> *rc, MeshBlockData<Real> *dudt, const Real& dt);
 
+    // Fluxes a.k.a. "Approximate Riemann Solvers"
+    // More complex solvers require speed estimates not calculable completely from
+    // invariants, necessitating frame transformations and related madness.
+    // These have identical signatures, so that we could runtime relink w/variant like coordinate_embedding
+
+    // Local Lax-Friedrichs flux (usual, more stable)
+    KOKKOS_INLINE_FUNCTION Real llf(const Real& fluxL, const Real& fluxR, const Real& cmax, 
+                                    const Real& cmin, const Real& Ul, const Real& Ur)
+    {
+        Real ctop = max(cmax, cmin);
+        return 0.5 * (fluxL + fluxR - ctop * (Ur - Ul));
+    }
+    // Harten, Lax, van Leer, & Einfeldt flux (early problems but not extensively studied since)
+    KOKKOS_INLINE_FUNCTION Real hlle(const Real& fluxL, const Real& fluxR, const Real& cmax,
+                                    const Real& cmin, const Real& Ul, const Real& Ur)
+    {
+        return (cmax*fluxL + cmin*fluxR - cmax*cmin*(Ur - Ul)) / (cmax + cmin);
+    }
+
+    // KOKKOS_INLINE_FUNCTION Real p_to_u(G, P, B_P, eos, k, j, i, U)
+    // {
+
+    // }
 }

@@ -1,5 +1,5 @@
 /* 
- *  File: b_none.hpp
+ *  File: seed_B_cd.hpp
  *  
  *  BSD 3-Clause License
  *  
@@ -31,45 +31,32 @@
  *  OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+
+// Seed a torus of some type with a magnetic field according to its density
 #pragma once
 
-#include <memory>
-
+#include "decs.hpp"
 #include <parthenon/parthenon.hpp>
 
-using namespace parthenon;
+namespace B_CD
+{
 
 /**
- * This physics package implements B field transport with Flux-CT (Toth 2000)
+ * Seed an axisymmetric initialization with magnetic field proportional to fluid density,
+ * or density and radius, to create a SANE or MAD flow
+ * Note this function expects a normalized P for which rho_max==1
  *
- * This requires only the values at cell centers
- * 
- * This implementation includes conversion from "primitive" to "conserved" B and back
+ * @param rin is the interior radius of the torus
+ * @param min_rho_q is the minimum density at which there will be magnetic vector potential
+ * @param b_field_type is one of "sane" "ryan" "r3s3" or "gaussian", described below (TODO test or remove opts)
  */
-namespace B_None {
-    /**
-     * Declare fields, initialize (few) parameters
-     */
-    std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t packages);
+TaskStatus SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin);
 
-    /**
-     * Get the primitive variables, which in Parthenon's nomenclature are "derived".
-     * Also applies floors to the calculated primitives, and fixes up any inversion errors
-     *
-     * input: Conserved B = sqrt(-gdet) * B^i
-     * output: Primitive B = B^i
-     */
-    void UtoP(MeshBlockData<Real> *rc);
+/**
+ * Add flux to BH horizon
+ * Applicable to any Kerr-space GRMHD sim, run after import/initialization
+ * Preserves divB==0 with a Flux-CT step at end
+ */
+//void SeedBHFlux(MeshBlockData<Real> *rc, Real BHflux);
 
-    /**
-     * Diagnostics printed/computed after each step
-     * Currently just max divB
-     */
-    TaskStatus PostStepDiagnostics(Mesh *pmesh, ParameterInput *pin, const SimTime& tm);
-
-    /**
-     * Fill fields which are calculated only for output to file
-     * Currently nothing, soon the corner-centered divB values
-     */
-    void FillOutput(MeshBlock *pmb, ParameterInput *pin);
-}
+} // namespace B_CD

@@ -54,6 +54,11 @@ enum prims{rho=0, u, u1, u2, u3};
 #define NVEC 3
 #define VLOOP for(int v = 0; v < NVEC; ++v)
 
+// The fluxes kernel wants compile-time lengths in order to compile
+// This is the maximum number of variables (5 fluid + 3 B + e- + passive etc)
+// which the user can specify.  TODO error on too many
+#define MAX_PACKED_VARS 16
+
 // Emulate old names for possible stronger typing...
 using GridScalar = parthenon::ParArrayND<Real>;
 using GridVector = parthenon::ParArrayND<Real>;
@@ -69,6 +74,8 @@ using GeomTensor3 = parthenon::ParArrayND<Real>;
 #define KOKKOS_LAMBDA_1D KOKKOS_LAMBDA (const int& i)
 #define KOKKOS_LAMBDA_2D KOKKOS_LAMBDA (const int& j, const int& i)
 #define KOKKOS_LAMBDA_3D KOKKOS_LAMBDA (const int &k, const int &j, const int &i)
+#define KOKKOS_LAMBDA_4D KOKKOS_LAMBDA (const int& l, const int &k, const int &j, const int &i)
+#define KOKKOS_LAMBDA_5D KOKKOS_LAMBDA (const int& m, const int& l, const int &k, const int &j, const int &i)
 #define KOKKOS_LAMBDA_VARS KOKKOS_LAMBDA (const int &p, const int &k, const int &j, const int &i)
 #define KOKKOS_LAMBDA_VEC KOKKOS_LAMBDA (const int &mu, const int &k, const int &j, const int &i)
 // TODO separate macros for return type if this becomes a thing?  Or don't macro at all

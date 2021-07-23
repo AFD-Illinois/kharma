@@ -41,8 +41,7 @@
 
 // Packages
 #include "b_flux_ct.hpp"
-#include "b_none.hpp"
-#include "b_cd_glm.hpp"
+#include "b_cd.hpp"
 #include "grmhd.hpp"
 
 #include "bondi.hpp"
@@ -138,9 +137,9 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
     // to avoid mistakes
     std::string b_field_solver = pin->GetOrAddString("b_field", "solver", "flux_ct");
     if (b_field_solver == "none") {
-        packages.Add(B_None::Initialize(pin.get(), packages));
-    } else if (b_field_solver == "constraint_damping" || b_field_solver == "b_cd_glm") {
-        packages.Add(B_CD_GLM::Initialize(pin.get(), packages));
+        // Don't add a B field.  GRMHD package still allocates one, but that's it's problem
+    } else if (b_field_solver == "constraint_damping" || b_field_solver == "b_cd") {
+        packages.Add(B_CD::Initialize(pin.get(), packages));
     } else {
         // Don't even error on bad values.  This is probably what you want,
         // and we'll check for adaptive and error later
@@ -158,8 +157,8 @@ void KHARMA::FillOutput(MeshBlock *pmb, ParameterInput *pin)
     GRMHD::FillOutput(pmb, pin);
     if (pmb->packages.AllPackages().count("B_FluxCT") > 0)
         B_FluxCT::FillOutput(pmb, pin);
-    if (pmb->packages.AllPackages().count("B_CD_GLM") > 0)
-        B_CD_GLM::FillOutput(pmb, pin);
+    if (pmb->packages.AllPackages().count("B_CD") > 0)
+        B_CD::FillOutput(pmb, pin);
     // In case there are other packages that need this
 }
 
@@ -169,6 +168,6 @@ void KHARMA::PostStepDiagnostics(Mesh *pmesh, ParameterInput *pin, const SimTime
     GRMHD::PostStepDiagnostics(pmesh, pin, tm);
     if (pmesh->packages.AllPackages().count("B_FluxCT") > 0)
         B_FluxCT::PostStepDiagnostics(pmesh, pin, tm);
-    if (pmesh->packages.AllPackages().count("B_CD_GLM") > 0)
-        B_CD_GLM::PostStepDiagnostics(pmesh, pin, tm);
+    if (pmesh->packages.AllPackages().count("B_CD") > 0)
+        B_CD::PostStepDiagnostics(pmesh, pin, tm);
 }

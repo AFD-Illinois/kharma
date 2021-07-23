@@ -35,8 +35,8 @@
 
 #include "decs.hpp"
 
-#include "b_flux_ct_functions.hpp"
 #include "eos.hpp"
+#include "b_functions.hpp"
 #include "mhd_functions.hpp"
 #include "phys_functions.hpp"
 #include "U_to_P.hpp"
@@ -375,7 +375,7 @@ KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, Real P[NPRIM], R
             // Note that if this fails, it leaves P = P + Pnew,
             // so we still applied the floors in fluid frame!
             Real B_Ul[NVEC] = {0};
-            B_FluxCT::p_to_u(G, B_P, k, j, i, B_Ul, loc);
+            BField::p_to_u(G, B_P, k, j, i, B_Ul, loc);
             pflag = GRMHD::u_to_p(G, Ul, B_Ul, eos, k, j, i, loc, P);
         }
     }

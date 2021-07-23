@@ -37,7 +37,7 @@
 
 #include <parthenon/parthenon.hpp>
 
-#include "b_flux_ct_functions.hpp"
+#include "b_functions.hpp"
 
 using namespace parthenon;
 
@@ -49,51 +49,73 @@ using namespace parthenon;
  * This implementation includes conversion from "primitive" to "conserved" B and back
  */
 namespace B_FluxCT {
-    /**
-     * Declare fields, initialize (few) parameters
-     */
-    std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t packages);
+/**
+ * Declare fields, initialize (few) parameters
+ */
+std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t packages);
 
-    /**
-     * Get the primitive variables, which in Parthenon's nomenclature are "derived".
-     * Also applies floors to the calculated primitives, and fixes up any inversion errors
-     *
-     * input: Conserved B = sqrt(-gdet) * B^i
-     * output: Primitive B = B^i
-     */
-    void UtoP(MeshBlockData<Real> *rc);
+/**
+ * Get the primitive variables, which in Parthenon's nomenclature are "derived".
+ * Also applies floors to the calculated primitives, and fixes up any inversion errors
+ *
+ * input: Conserved B = sqrt(-gdet) * B^i
+ * output: Primitive B = B^i
+ */
+void UtoP(MeshBlockData<Real> *rc);
 
-    /**
-     * Modify the B field fluxes to take a constrained-transport step as in Toth (2000)
-     */
-    TaskStatus FluxCT(MeshBlockData<Real> *rc);
+/**
+ * Modify the B field fluxes to take a constrained-transport step as in Toth (2000)
+ */
+TaskStatus FluxCT(MeshBlockData<Real> *rc);
 
-    /**
-     * Modify the B field fluxes just beyond the polar boundary so as to ensure no flux through it,
-     * after applying FluxCT
-     */
-    TaskStatus FixPolarFlux(MeshBlockData<Real> *rc);
+/**
+ * Modify the B field fluxes just beyond the polar boundary so as to ensure no flux through it,
+ * after applying FluxCT
+ */
+TaskStatus FixPolarFlux(MeshBlockData<Real> *rc);
 
-    /**
-     * Task combining the above two (polar fix and FluxCT) for simplicity
-     */
-    TaskStatus TransportB(MeshBlockData<Real> *rc);
+/**
+ * Task combining the above two (polar fix and FluxCT) for simplicity
+ */
+TaskStatus TransportB(MeshBlockData<Real> *rc);
 
-    /**
-     * Calculate maximum corner-centered divergence of magnetic field,
-     * to check it is being preserved ~=0
-     */
-    double MaxDivB(MeshBlockData<Real> *rc, IndexDomain domain=IndexDomain::interior);
+/**
+ * Calculate maximum corner-centered divergence of magnetic field,
+ * to check it is being preserved ~=0
+ */
+double MaxDivB(MeshBlockData<Real> *rc, IndexDomain domain=IndexDomain::interior);
 
-    /**
-     * Diagnostics printed/computed after each step
-     * Currently just max divB
-     */
-    TaskStatus PostStepDiagnostics(Mesh *pmesh, ParameterInput *pin, const SimTime& tm);
+/**
+ * Diagnostics printed/computed after each step
+ * Currently just max divB
+ */
+TaskStatus PostStepDiagnostics(Mesh *pmesh, ParameterInput *pin, const SimTime& tm);
 
-    /**
-     * Fill fields which are calculated only for output to file
-     * Currently nothing, soon the corner-centered divB values
-     */
-    void FillOutput(MeshBlock *pmb, ParameterInput *pin);
+/**
+ * Fill fields which are calculated only for output to file
+ * Currently nothing, soon the corner-centered divB values
+ */
+void FillOutput(MeshBlock *pmb, ParameterInput *pin);
+
+/**
+ * Turn the primitive B field into the local conserved flux
+ */
+KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const FourVectors D, const Real B_P[NVEC],
+                                           const int& k, const int& j, const int& i, const Loci loc, const int dir,
+                                           Real B_flux[NVEC])
+{
+    Real gdet = G.gdet(loc, j, i);
+    if (dir == 0) {
+        VLOOP B_flux[v] = B_P[v] * gdet;
+    } else {
+        // Dual of Maxwell tensor
+        B_flux[0] = (D.bcon[1] * D.ucon[dir] -
+                    D.bcon[dir] * D.ucon[1]) * gdet;
+        B_flux[1] = (D.bcon[2] * D.ucon[dir] -
+                    D.bcon[dir] * D.ucon[2]) * gdet;
+        B_flux[2] = (D.bcon[3] * D.ucon[dir] -
+                    D.bcon[dir] * D.ucon[3]) * gdet;
+    }
+}
+
 }

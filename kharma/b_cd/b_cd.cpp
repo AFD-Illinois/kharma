@@ -1,5 +1,5 @@
 /* 
- *  File: b_cd_glm.cpp
+ *  File: b_cd.cpp
  *  
  *  BSD 3-Clause License
  *  
@@ -34,8 +34,9 @@
 
 #include <parthenon/parthenon.hpp>
 
-#include "b_cd_glm.hpp"
+#include "b_cd.hpp"
 
+#include "b_flux_ct.hpp"
 #include "decs.hpp"
 #include "grmhd.hpp"
 #include "kharma.hpp"
@@ -49,12 +50,12 @@ using namespace parthenon;
 
 extern double ctop_max;
 
-namespace B_CD_GLM
+namespace B_CD
 {
 
 std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t packages)
 {
-    auto pkg = std::make_shared<StateDescriptor>("B_CD_GLM");
+    auto pkg = std::make_shared<StateDescriptor>("B_CD");
     Params &params = pkg->AllParams();
 
     // Diagnostic data
@@ -87,23 +88,28 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     MetadataFlag isPrimitive = packages.Get("GRMHD")->Param<MetadataFlag>("PrimitiveFlag");
 
     // B field as usual
-    Metadata m = Metadata({Metadata::Cell, Metadata::Independent, Metadata::FillGhost,
-                  Metadata::Restart, Metadata::Conserved, Metadata::Vector, Metadata::WithFluxes}, s_vector);
+    Metadata m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Independent, Metadata::FillGhost,
+                 Metadata::Restart, Metadata::Conserved, Metadata::WithFluxes, Metadata::Vector}, s_vector);
     pkg->AddField("c.c.bulk.B_con", m);
-    m = Metadata({Metadata::Cell, Metadata::Derived, Metadata::Restart, isPrimitive, Metadata::Vector}, s_vector);
+    m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived,
+                  Metadata::Restart, isPrimitive, Metadata::Vector}, s_vector);
     pkg->AddField("c.c.bulk.B_prim", m);
 
-    // Constraint damping scalar field psi.  "Primitive" and "conserved" forms only differ by sqrt(-g) like B
-    m = Metadata({Metadata::Cell, Metadata::Independent, Metadata::FillGhost,
-                  Metadata::Restart, Metadata::Conserved, Metadata::WithFluxes});
-    pkg->AddField("c.c.bulk.psi_cd_con", m);
-    m = Metadata({Metadata::Cell, Metadata::Derived, Metadata::Restart, isPrimitive});
-    pkg->AddField("c.c.bulk.psi_cd_prim", m);
+    // Constraint damping scalar field psi.  Prim and cons forms for the moment, may work with just one
+    m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Independent, Metadata::FillGhost,
+                  Metadata::Restart, Metadata::Conserved, isPrimitive, Metadata::WithFluxes});
+    pkg->AddField("c.c.bulk.psi_cd", m);
 
-    m = Metadata({Metadata::Cell, Metadata::Derived});
-    pkg->AddField("c.c.bulk.divB_cd", m);
+    // We need the value of B reconstructed/averaged at faces to calculate max divB at each step
+    m = Metadata({Metadata::Real, Metadata::Face, Metadata::Derived, Metadata::OneCopy});
+    pkg->AddField("f.f.bulk.Bl", m);
+    pkg->AddField("f.f.bulk.Br", m);
 
-    pkg->FillDerivedBlock = B_CD_GLM::UtoP;
+    // However, we only update the divB field for output
+    m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
+    pkg->AddField("c.c.bulk.divB", m);
+
+    pkg->FillDerivedBlock = B_CD::UtoP;
     return pkg;
 }
 
@@ -113,8 +119,6 @@ void UtoP(MeshBlockData<Real> *rc)
 
     auto& B_U = rc->Get("c.c.bulk.B_con").data;
     auto& B_P = rc->Get("c.c.bulk.B_prim").data;
-    auto& psi_u = rc->Get("c.c.bulk.psi_cd_con").data;
-    auto& psi_p = rc->Get("c.c.bulk.psi_cd_prim").data;
 
     auto& G = pmb->coords;
 
@@ -127,7 +131,6 @@ void UtoP(MeshBlockData<Real> *rc)
             // Update the primitive B-fields
             Real gdet = G.gdet(Loci::center, j, i);
             VLOOP B_P(v, k, j, i) = B_U(v, k, j, i) / gdet;
-            psi_p(k, j, i) = psi_u(k, j, i);
         }
     );
 }
@@ -137,18 +140,20 @@ TaskStatus AddSource(MeshBlockData<Real> *rc, const Real& dt)
     // TODO mesh-wide
     auto pmb = rc->GetBlockPointer();
 
-    auto& psi_u = rc->Get("c.c.bulk.psi_cd_con").data;
+    auto& psi = rc->Get("c.c.bulk.psi_cd").data;
 
     auto& G = pmb->coords;
 
-    const bool use_b_cd_glm = pmb->packages.AllPackages().count("B_CD_GLM") > 0;
-    const Real c_h = clip(pmb->packages.Get("B_CD_GLM")->Param<Real>("c_h_factor") * ctop_max, 
-                            pmb->packages.Get("B_CD_GLM")->Param<Real>("c_h_low"),
-                            pmb->packages.Get("B_CD_GLM")->Param<Real>("c_h_high"));
-    const Real c_p = pmb->packages.Get("B_CD_GLM")->Param<bool>("use_cr") ?
-                        sqrt(pmb->packages.Get("B_CD_GLM")->Param<Real>("c_r") * c_h) :
-                        sqrt(- dt * c_h*c_h / log(pmb->packages.Get("B_CD_GLM")->Param<Real>("c_d")));
+    const Real c_h = clip(pmb->packages.Get("B_CD")->Param<Real>("c_h_factor") * ctop_max, 
+                            pmb->packages.Get("B_CD")->Param<Real>("c_h_low"),
+                            pmb->packages.Get("B_CD")->Param<Real>("c_h_high"));
+    const Real c_p = pmb->packages.Get("B_CD")->Param<bool>("use_cr") ?
+                        sqrt(pmb->packages.Get("B_CD")->Param<Real>("c_r") * c_h) :
+                        sqrt(- dt * c_h*c_h / log(pmb->packages.Get("B_CD")->Param<Real>("c_d")));
 
+    // TODO add source terms to everything else here:
+    // U1, U2, U3 get -(del*B) B
+    // U gets -B*(grad psi)
     IndexDomain domain = IndexDomain::interior;
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
@@ -156,7 +161,7 @@ TaskStatus AddSource(MeshBlockData<Real> *rc, const Real& dt)
     pmb->par_for("UtoP_B", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D {
             // Update psi using the analytic solution for the source term
-            psi_u(k, j, i) = exp(-dt * (c_h*c_h) / (c_p*c_p)) * psi_u(k, j, i);
+            psi(k, j, i) = exp(-dt * (c_h*c_h) / (c_p*c_p)) * psi(k, j, i);
         }
     );
 
@@ -171,22 +176,55 @@ Real MaxDivB_psi(MeshBlockData<Real> *rc0, MeshBlockData<Real> *rc1, const Real&
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
     auto& G = pmb->coords;
 
-    GridVars psi0 = rc0->Get("c.c.bulk.psi_cd_con").data;
-    GridVars psi1 = rc1->Get("c.c.bulk.psi_cd_con").data;
+    GridScalar psi0 = rc0->Get("c.c.bulk.psi_cd").data;
+    GridScalar psi1 = rc1->Get("c.c.bulk.psi_cd").data;
 
     Real dxmin = min(G.dx1v(0), min(G.dx2v(0), G.dx3v(0)));
-    const Real c_h = clip(pmb->packages.Get("B_CD_GLM")->Param<Real>("c_h_factor") * ctop_max, 
-                            pmb->packages.Get("B_CD_GLM")->Param<Real>("c_h_low"),
-                            pmb->packages.Get("B_CD_GLM")->Param<Real>("c_h_high"));
-    const Real c_p = pmb->packages.Get("B_CD_GLM")->Param<bool>("use_cr") ?
-                        sqrt(pmb->packages.Get("B_CD_GLM")->Param<Real>("c_r") * c_h) :
-                        sqrt(- dt * c_h*c_h / log(pmb->packages.Get("B_CD_GLM")->Param<Real>("c_d")));
+    const Real c_h = clip(pmb->packages.Get("B_CD")->Param<Real>("c_h_factor") * ctop_max, 
+                            pmb->packages.Get("B_CD")->Param<Real>("c_h_low"),
+                            pmb->packages.Get("B_CD")->Param<Real>("c_h_high"));
+    const Real c_p = pmb->packages.Get("B_CD")->Param<bool>("use_cr") ?
+                        sqrt(pmb->packages.Get("B_CD")->Param<Real>("c_r") * c_h) :
+                        sqrt(- dt * c_h*c_h / log(pmb->packages.Get("B_CD")->Param<Real>("c_d")));
 
     Real bsq_max;
     Kokkos::Max<Real> bsq_max_reducer(bsq_max);
     pmb->par_reduce("B_field_bsqmax", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D_REDUCE {
-            double divb_local = abs((psi1(k, j, i) - psi0(k, j, i)) / c_h / c_h / dt + (psi1(k, j, i) + psi0(k, j, i)) / 2 / c_p / c_p);
+            double psi_mid = (psi1(k, j, i) + psi0(k, j, i)) / 2;
+            double divb_local = abs((psi1(k, j, i) - psi0(k, j, i)) / c_h / c_h / dt + psi_mid / c_p / c_p);
+            if(divb_local > local_result) local_result = divb_local;
+        }
+    , bsq_max_reducer);
+    return bsq_max;
+}
+
+Real MaxDivB_recon(MeshBlockData<Real> *rc, IndexDomain domain)
+{
+    auto pmb = rc->GetBlockPointer();
+    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
+    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
+    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
+    auto& G = pmb->coords;
+    const int ndim = pmb->pmy_mesh->ndim;
+    if (ndim < 2) return 0.;
+    // We only care about interior cells
+    is += 1; ie -= 1;
+    js += 1; je -= 1;
+    if (ndim > 2) { ks += 1; ke -= 1; }
+
+    auto& U1 = rc->Get("c.c.bulk.B_con").flux[X1DIR];
+    auto& U2 = rc->Get("c.c.bulk.B_con").flux[X2DIR];
+    auto& U3 = rc->Get("c.c.bulk.B_con").flux[X3DIR];
+
+    Real bsq_max;
+    Kokkos::Max<Real> bsq_max_reducer(bsq_max);
+    pmb->par_reduce("B_field_bsqmax", ks, ke, js, je, is, ie,
+        KOKKOS_LAMBDA_3D_REDUCE {
+            double divb_local = (U1(B1, k, j, i+1) - U1(B1, k, j, i) +
+                                 U2(B2, k, j+1, i) - U2(B2, k, j, i));
+            if (ndim > 2) divb_local += U3(B3, k, j+1, i) - U3(B3, k, j, i);
+
             if(divb_local > local_result) local_result = divb_local;
         }
     , bsq_max_reducer);
@@ -206,17 +244,17 @@ Real MaxDivB(MeshBlockData<Real> *rc, IndexDomain domain)
     is += 1; ie -= 1;
     js += 1; je -= 1;
     if (ndim > 2) { ks += 1; ke -= 1; }
-
-    GridVars B_U = rc->Get("c.c.bulk.B_con").data;
+    
+    auto& B_lface = rc->GetFace("f.f.bulk.Bl").data;
+    auto& B_rface = rc->GetFace("f.f.bulk.Br").data;
 
     Real bsq_max;
     Kokkos::Max<Real> bsq_max_reducer(bsq_max);
     pmb->par_reduce("B_field_bsqmax", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D_REDUCE {
-            double divb_local = (B_U(0, k, j, i+1) - B_U(0, k, j, i-1))/(2 * G.dx1v(i))
-                                +(B_U(1, k, j+1, i) - B_U(1, k, j-1, i))/(2 * G.dx2v(j));
-            if (ndim > 2) divb_local += (B_U(2, k+1, j, i) - B_U(2, k-1, j, i))/(2 * G.dx3v(k));
-            divb_local = fabs(divb_local);
+            double divb_local = (B_rface(X1DIR, k, j, i+1) - B_lface(X1DIR, k, j, i) +
+                                 B_rface(X2DIR, k, j+1, i) - B_lface(X2DIR, k, j, i));
+            if (ndim > 2) divb_local += B_rface(X3DIR, k+1, j, i) - B_lface(X3DIR, k, j, i);
 
             if(divb_local > local_result) local_result = divb_local;
         }
@@ -229,37 +267,44 @@ TaskStatus PostStepDiagnostics(Mesh *pmesh, ParameterInput *pin, const SimTime& 
     FLAG("Printing B field diagnostics");
 
     // Print this unless we quash everything
-    //int verbose = pmesh->packages.Get("B_CD_GLM")->Param<int>("verbose");
+    //int verbose = pmesh->packages.Get("B_CD")->Param<int>("verbose");
     int verbose = pmesh->packages.Get("GRMHD")->Param<int>("verbose");
     if (verbose > -1) {
         // We probably only care on the physical grid
         IndexDomain domain = IndexDomain::interior;
 
-        Real max_divb = 0, max_divb_psi = 0;
-        int nmb = pmesh->GetNumMeshBlocksThisRank(Globals::my_rank);
-        for (int i=0; i < nmb; ++i) {
-            auto& pmb = pmesh->block_list[i];
+        Real max_divb = 0, max_divb_approx = 0;
+        Real max_divb_psi = 0, max_divb_ct = 0;
+        for (auto &pmb : pmesh->block_list) {
             auto& rc0 = pmb->meshblock_data.Get("preserve");
             auto& rc1 = pmb->meshblock_data.Get();
 
-            Real max_divb_l = B_CD_GLM::MaxDivB(rc1.get(), domain);
-            Real max_divb_psi_l;
+            Real max_divb_l = B_CD::MaxDivB_recon(rc1.get(), domain);
+            Real max_divb_psi_l = 0, max_divb_ct_l = 0, max_divb_approx_l = 0;
             if (verbose >= 1)
-                max_divb_psi_l = B_CD_GLM::MaxDivB_psi(rc0.get(), rc1.get(), tm.dt, domain);
+                max_divb_approx_l = B_CD::MaxDivB(rc1.get(), domain);
+                max_divb_psi_l = B_CD::MaxDivB_psi(rc0.get(), rc1.get(), tm.dt, domain);
+                max_divb_ct_l = B_FluxCT::MaxDivB(rc1.get(), domain);
 
-            if (max_divb_psi_l > max_divb_psi) max_divb_psi = max_divb_psi_l;
             if (max_divb_l > max_divb) max_divb = max_divb_l;
+            if (max_divb_approx_l > max_divb_approx) max_divb_approx = max_divb_approx_l;
+            if (max_divb_psi_l > max_divb_psi) max_divb_psi = max_divb_psi_l;
+            if (max_divb_ct_l > max_divb_ct) max_divb_ct = max_divb_ct_l;
         }
         max_divb = MPIMax(max_divb);
-        if (verbose >= 1) max_divb_psi = MPIMax(max_divb_psi);
+        if (verbose >= 1) {
+            max_divb_approx = MPIMax(max_divb_approx);
+            max_divb_psi = MPIMax(max_divb_psi);
+            max_divb_ct = MPIMax(max_divb_ct);
+        }
 
-        auto& G = pmesh->block_list[0]->coords;
-        Real dxmin = min(G.dx1v(0), min(G.dx2v(0), G.dx3v(0)));
-        const Real c_h = pmesh->block_list[0]->packages.Get("GRMHD")->Param<Real>("cfl") / tm.dt * dxmin;
+        // auto& G = pmesh->block_list[0]->coords;
+        // Real dxmin = min(G.dx1v(0), min(G.dx2v(0), G.dx3v(0)));
+        // const Real c_h = pmesh->block_list[0]->packages.Get("GRMHD")->Param<Real>("cfl") / tm.dt * dxmin;
 
         if(MPIRank0()) {
             cout << "Max DivB: " << max_divb;
-            if (verbose >= 1) cout << " psi d_t " << max_divb_psi << " c_h would be " << c_h << " or " << ctop_max;
+            if (verbose >= 1) cout << " from recon fluxes: " << max_divb_approx << " psi d_t: " << max_divb_psi << " FluxCT says: " << max_divb_ct;
             cout << endl;
         }
     }
@@ -274,23 +319,34 @@ void FillOutput(MeshBlock *pmb, ParameterInput *pin)
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
-    auto& G = pmb->coords;
     const int ndim = pmb->pmy_mesh->ndim;
     if (ndim < 2) return;
     // We only care about interior cells
-    is += 1; ie -= 1;
-    js += 1; je -= 1;
-    if (ndim > 2) { ks += 1; ke -= 1; }
+    is += 1; //ie -= 1;
+    js += 1; //je -= 1;
+    if (ndim > 2) {
+        ks += 1; //ke -= 1;
+    }
 
     auto rc = pmb->meshblock_data.Get().get();
-    GridVars B_U = rc->Get("c.c.bulk.B_con").data;
-    GridVars divB = rc->Get("c.c.bulk.divB_cd").data;
+    auto& divB = rc->Get("c.c.bulk.divB").data;
+
+    auto& U1 = rc->Get("c.c.bulk.B_con").flux[X1DIR];
+    auto& U2 = rc->Get("c.c.bulk.B_con").flux[X2DIR];
+    auto& U3 = rc->Get("c.c.bulk.B_con").flux[X3DIR];
+    
+    auto& B_lface = rc->GetFace("f.f.bulk.Bl").data;
+    auto& B_rface = rc->GetFace("f.f.bulk.Br").data;
 
     pmb->par_for("B_field_bsqmax", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D {
-            double divb_local = (B_U(0, k, j, i+1) - B_U(0, k, j, i-1))/(2 * G.dx1v(i))
-                                + (B_U(1, k, j+1, i) - B_U(1, k, j-1, i))/(2 * G.dx2v(j));
-            if (ndim > 2) divb_local += (B_U(2, k+1, j, i) - B_U(2, k-1, j, i))/(2 * G.dx3v(k));
+            double divb_local = (U1(B1, k, j, i+1) - U1(B1, k, j, i) +
+                                 U2(B2, k, j+1, i) - U2(B2, k, j, i));
+            if (ndim > 2) divb_local += U3(B3, k, j+1, i) - U3(B3, k, j, i);
+            // double divb_local = (B_rface(X1DIR, k, j, i+1) - B_lface(X1DIR, k, j, i) +
+            //                      B_rface(X2DIR, k, j+1, i) - B_lface(X2DIR, k, j, i));
+            // if (ndim > 2) divb_local += B_rface(X3DIR, k+1, j, i) - B_lface(X3DIR, k, j, i);
+
             divB(k, j, i) = divb_local;
         }
     );
