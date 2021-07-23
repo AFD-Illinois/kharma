@@ -5,6 +5,3 @@
 [submodule "external/variant"]
 	path = external/variant
 	url = https://github.com/mpark/variant.git
-[submodule "external/hpcbind"]
-	path = external/hpcbind
-	url = https://github.com/kokkos/hpcbind.git
