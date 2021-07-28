@@ -48,8 +48,8 @@
 #include "reconstruction.hpp"
 #include "source.hpp"
 
-#define INLINE_FLUXCALC 0
-#define INLINE_RL_CALC 0
+#define INLINE_FLUXCALC 1
+#define INLINE_RL_CALC 1
 
 extern double ctop_max;
 

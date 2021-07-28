@@ -75,7 +75,7 @@ if [[ -v PREFIX_PATH ]]; then
   EXTRA_FLAGS="-DCMAKE_PREFIX_PATH=$PREFIX_PATH $EXTRA_FLAGS"
 fi
 
-### Environment ###
+### Check environment ###
 if [[ "$(which python3 2>/dev/null)" == *"conda"* ]]; then
   echo "It looks like you have Anaconda loaded."
   echo "Anaconda forces a serial version of HDF5 which makes this compile impossible."
@@ -88,29 +88,47 @@ else
   TYPE=Release
 fi
 
-### Build ###
+### Build HDF5 ###
+if [[ "$*" == *"hdf5"* ]]; then
+  cd external
+  if [ ! -f hdf5-* ]; then
+    wget https://hdf-wordpress-1.s3.amazonaws.com/wp-content/uploads/manual/HDF5/HDF5_1_12_0/source/hdf5-1.12.0.tar.gz
+    tar xf hdf5-1.12.0.tar.gz
+  fi
+  cd hdf5-1.12.0/
+  make clean
+  CC=mpicc ./configure --enable-parallel --prefix=$PWD/../hdf5
+  make -j$NPROC
+  make install
+  make clean
+  exit
+fi
+
+### Build KHARMA ###
 SCRIPT_DIR=$( dirname "$0" )
 cd $SCRIPT_DIR
 SCRIPT_DIR=$PWD
 
 # Strongly prefer icc for OpenMP compiles
 # I would try clang but it would break all Macs
-if which icpc >/dev/null 2>&1; then
-  CXX_NATIVE=icpc
-  C_NATIVE=icc
-  # Avoid warning on nvcc pragmas Intel doesn't like
-  export CXXFLAGS="-Wno-unknown-pragmas"
-  #export CFLAGS="-qopenmp"
-elif which cc >/dev/null 2>&1; then
-  CXX_NATIVE=CC
-  C_NATIVE=cc
-  #export CXXFLAGS="-Wno-unknown-pragmas" # TODO if Cray->Intel in --version
-elif which xlC >/dev/null 2>&1; then
-  CXX_NATIVE=xlC
-  C_NATIVE=xlc
-else
-  CXX_NATIVE=g++
-  C_NATIVE=gcc
+if [[ -z "$CXX_NATIVE" ]]; then
+  if which icpc >/dev/null 2>&1; then
+    CXX_NATIVE=icpc
+    C_NATIVE=icc
+    # Avoid warning on nvcc pragmas Intel doesn't like
+    export CXXFLAGS="-Wno-unknown-pragmas"
+    #export CFLAGS="-qopenmp"
+  elif which cc >/dev/null 2>&1; then
+    CXX_NATIVE=CC
+    C_NATIVE=cc
+    #export CXXFLAGS="-Wno-unknown-pragmas" # TODO if Cray->Intel in --version
+  elif which xlC >/dev/null 2>&1; then
+    CXX_NATIVE=xlC
+    C_NATIVE=xlc
+  else
+    CXX_NATIVE=g++
+    C_NATIVE=gcc
+  fi
 fi
 
 # CUDA loop options: MANUAL1D_LOOP > MDRANGE_LOOP, TPTTR_LOOP & TPTTRTVR_LOOP don't compile
@@ -158,6 +176,7 @@ elif [[ "$*" == *"clanggpu"* ]]; then
   ENABLE_HIP="OFF"
 else
   export CXX="$CXX_NATIVE"
+  export CC="$C_NATIVE"
   OUTER_LAYOUT="MDRANGE_LOOP"
   INNER_LAYOUT="SIMDFOR_INNER_LOOP"
   ENABLE_OPENMP="ON"
@@ -189,6 +208,6 @@ if [[ "$*" == *"clean"* ]]; then
 #set +x
 fi
 
-make -j
+make -j$NPROC
 
 cp kharma/kharma.* ..
