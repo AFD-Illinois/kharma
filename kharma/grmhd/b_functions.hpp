@@ -35,6 +35,8 @@
 
 #include "decs.hpp"
 
+#include "gr_coordinates.hpp"
+
 namespace BField {
 /**
  * Convenience functions usable for both B field backends

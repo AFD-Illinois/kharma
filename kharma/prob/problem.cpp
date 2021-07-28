@@ -78,7 +78,7 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
                         pmb->packages.AllPackages().count("B_CD");
 
     GRCoordinates G = pmb->coords;
-    EOS* eos = pmb->packages.Get("GRMHD")->Param<EOS*>("eos");
+    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
 
     auto prob = pin->GetString("parthenon/job", "problem_id"); // Required parameter
     if (prob == "mhdmodes") {
@@ -110,13 +110,13 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
         if(! (pmb->packages.Get("GRMHD")->AllParams().hasKey("rs")))
             pmb->packages.Get("GRMHD")->AddParam<Real>("rs", rs);
 
-        InitializeBondi(pmb, G, P, eos, mdot, rs);
+        InitializeBondi(pmb, G, P, gam, mdot, rs);
 
     } else if (prob == "torus") {
         Real rin = pin->GetOrAddReal("torus", "rin", 6.0);
         Real rmax = pin->GetOrAddReal("torus", "rmax", 12.0);
         FLAG("Initializing torus");
-        InitializeFMTorus(pmb, G, P, eos, rin, rmax);
+        InitializeFMTorus(pmb, G, P, gam, rin, rmax);
 
     } else if (prob == "iharm_restart") {
         auto fname = pin->GetString("iharm_restart", "fname"); // Require this, don't guess
@@ -149,7 +149,7 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
     FLAG("First P->U");
     pmb->par_for("first_U", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_3D {
-            GRMHD::p_to_u(G, P, B_P, eos, k, j, i, U);
+            GRMHD::p_to_u(G, P, B_P, gam, k, j, i, U);
             if (use_b) BField::p_to_u(G, B_P, k, j, i, B_U);
         }
     );

@@ -142,8 +142,7 @@ namespace Flux {
         bool is_outer_x2 = pmb->boundary_flag[BoundaryFace::outer_x2] == BoundaryFlag::reflect;
 
         auto& G = pmb->coords;
-        EOS* eos = pmb->packages.Get("GRMHD")->Param<EOS*>("eos");
-        const double gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
+        const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
 
         // Fluxes in direction X1 should be calculated at face 1, likewise others
         // TODO adapt if we ever go non-Cartesian

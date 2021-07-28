@@ -37,7 +37,7 @@
 #include "decs.hpp"
 
 #include "gr_coordinates.hpp"
-#include "eos.hpp"
+
 #include "mhd_functions.hpp"
 #include "prob_common.hpp"
 
@@ -45,7 +45,7 @@
 
 using namespace std;
 
-KOKKOS_INLINE_FUNCTION void get_prim_bondi(const GRCoordinates& G, const CoordinateEmbedding& coords, GridVars P, const EOS* eos, const SphBLCoords& bl,  const SphKSCoords& ks, 
+KOKKOS_INLINE_FUNCTION void get_prim_bondi(const GRCoordinates& G, const CoordinateEmbedding& coords, GridVars P, const Real& gam, const SphBLCoords& bl,  const SphKSCoords& ks, 
                                             const Real mdot, const Real rs, const int& k, const int& j, const int& i);
 
 /**
@@ -53,7 +53,7 @@ KOKKOS_INLINE_FUNCTION void get_prim_bondi(const GRCoordinates& G, const Coordin
  * TODO this can/should be just mdot (and the grid ofc), if this problem is to be used as anything more than a test
  */
 void InitializeBondi(MeshBlock *pmb, const GRCoordinates& G, GridVars P,
-                     const EOS* eos, const Real mdot, const Real rs)
+                     const Real& gam, const Real mdot, const Real rs)
 {
     FLAG("Initializing Bondi problem");
 
@@ -66,7 +66,7 @@ void InitializeBondi(MeshBlock *pmb, const GRCoordinates& G, GridVars P,
     IndexRange kb = pmb->cellbounds.GetBoundsK(IndexDomain::entire);
     pmb->par_for("init_bondi", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_3D {
-            get_prim_bondi(G, cs, P, eos, bl, ks, mdot, rs, k, j, i);
+            get_prim_bondi(G, cs, P, gam, bl, ks, mdot, rs, k, j, i);
         }
     );
     FLAG("Initialized Bondi");
@@ -84,7 +84,7 @@ void ApplyBondiBoundary(MeshBlockData<Real> *rc)
 
     Real mdot = pmb->packages.Get("GRMHD")->Param<Real>("mdot");
     Real rs = pmb->packages.Get("GRMHD")->Param<Real>("rs");
-    EOS* eos = pmb->packages.Get("GRMHD")->Param<EOS*>("eos");
+    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
 
     // Just the X1 right boundary
     SphKSCoords ks = mpark::get<SphKSCoords>(G.coords.base);
@@ -97,8 +97,8 @@ void ApplyBondiBoundary(MeshBlockData<Real> *rc)
     IndexRange kb_e = pmb->cellbounds.GetBoundsK(IndexDomain::interior);
     pmb->par_for("bondi_boundary", kb_e.s, kb_e.e, jb_e.s, jb_e.e, ib.e+1, ib_e.e,
         KOKKOS_LAMBDA_3D {
-            get_prim_bondi(G, cs, P, eos, bl, ks, mdot, rs, k, j, i);
-            GRMHD::p_to_u(G, P, B_P, eos, k, j, i, U);
+            get_prim_bondi(G, cs, P, gam, bl, ks, mdot, rs, k, j, i);
+            GRMHD::p_to_u(G, P, B_P, gam, k, j, i, U);
         }
     );
 }
@@ -147,12 +147,12 @@ KOKKOS_INLINE_FUNCTION Real get_T(const GReal r, const Real C1, const Real C2, c
  * Get the Bondi solution at a particular zone.  Can ideally be host- or device-side, but careful of EOS.
  * Note this assumes that there are ghost zones!
  */
-KOKKOS_INLINE_FUNCTION void get_prim_bondi(const GRCoordinates& G, const CoordinateEmbedding& coords, GridVars P, const EOS* eos, const SphBLCoords& bl,  const SphKSCoords& ks, 
+KOKKOS_INLINE_FUNCTION void get_prim_bondi(const GRCoordinates& G, const CoordinateEmbedding& coords, GridVars P, const Real& gam, const SphBLCoords& bl,  const SphKSCoords& ks, 
                                             const Real mdot, const Real rs, const int& k, const int& j, const int& i)
 {
     // Solution constants
     // Ideally these could be cached but preformance isn't an issue here
-    Real n = 1. / (eos->gam - 1.);
+    Real n = 1. / (gam - 1.);
     Real uc = sqrt(mdot / (2. * rs));
     Real Vc = -sqrt(pow(uc, 2) / (1. - 3. * pow(uc, 2)));
     Real Tc = -n * pow(Vc, 2) / ((n + 1.) * (n * pow(Vc, 2) - 1.));

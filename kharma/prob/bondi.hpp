@@ -5,7 +5,7 @@
 #include "decs.hpp"
 
 #include "gr_coordinates.hpp"
-#include "eos.hpp"
+
 
 #include <parthenon/parthenon.hpp>
 
@@ -14,7 +14,7 @@
  * TODO this can/should be just mdot (and the grid ofc), if this problem is to be used as anything more than a test
  */
 void InitializeBondi(MeshBlock *pmb, const GRCoordinates& G, GridVars P,
-                     const EOS* eos, const Real mdot, const Real rs);
+                     const Real& gam, const Real mdot, const Real rs);
 
 /**
  * Apply the Bondi flow condition on right X1 boundary

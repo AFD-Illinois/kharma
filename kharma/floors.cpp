@@ -67,7 +67,7 @@ TaskStatus ApplyFloors(MeshBlockData<Real> *rc)
     GridScalar pflag = rc->Get("c.c.bulk.pflag").data;
     GridScalar fflag = rc->Get("c.c.bulk.fflag").data;
 
-    EOS* eos = pmb->packages.Get("GRMHD")->Param<EOS*>("eos");
+    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
     FloorPrescription floors = FloorPrescription(pmb->packages.Get("GRMHD")->AllParams());
 
     // Apply floors over the same zones we just updated with UtoP
@@ -89,7 +89,7 @@ TaskStatus ApplyFloors(MeshBlockData<Real> *rc)
             int fflag_local = 0;
 
             // Fixup_floor involves another U_to_P call.  Hide the pflag in bottom 5 bits and retrieve both
-            int comboflag = apply_floors(G, P, B_P, U, B_U, eos, k, j, i, floors);
+            int comboflag = apply_floors(G, P, B_P, U, B_U, gam, k, j, i, floors);
             fflag_local |= (comboflag / HIT_FLOOR_GEOM_RHO) * HIT_FLOOR_GEOM_RHO;
             // The floors as they're written *guarantee* a consistent state in their cells
             // TODO still keep track of this without fixing, e.g. with negative flag
@@ -97,7 +97,7 @@ TaskStatus ApplyFloors(MeshBlockData<Real> *rc)
 
             // Apply ceilings *after* floors, to make the temperature ceiling better-behaved
             // Ceilings don't involve a U_to_P call
-            fflag_local |= apply_ceilings(G, P, B_P, U, eos, k, j, i, floors);
+            fflag_local |= apply_ceilings(G, P, B_P, U, gam, k, j, i, floors);
 
             fflag(k, j, i) = fflag_local;
         }

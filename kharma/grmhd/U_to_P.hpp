@@ -41,7 +41,7 @@
 
 namespace GRMHD {
 
-KOKKOS_INLINE_FUNCTION Real err_eqn(const EOS* eos, const Real& Bsq, const Real& D, const Real& Ep, const Real& QdB,
+KOKKOS_INLINE_FUNCTION Real err_eqn(const Real& gam, const Real& Bsq, const Real& D, const Real& Ep, const Real& QdB,
                                     const Real& Qtsq, const Real& Wp, InversionStatus& eflag);
 KOKKOS_INLINE_FUNCTION Real lorentz_calc_w(const Real& Bsq, const Real& D, const Real& QdB,
                                         const Real& Qtsq, const Real& Wp);
@@ -52,7 +52,7 @@ KOKKOS_INLINE_FUNCTION Real lorentz_calc_w(const Real& Bsq, const Real& D, const
  * The difference is this one is probably coded pretty slowly
  */
 KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const Real U[NPRIM],
-                                    const Real B_U[NVEC], const EOS* eos,
+                                    const Real B_U[NVEC], const Real& gam,
                                     const int& k, const int& j, const int& i, const Loci loc, Real P[NPRIM])
 {
     Real alpha = 1./sqrt(-G.gcon(loc, j, i, 0, 0));
@@ -118,7 +118,7 @@ KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const Real
     }
     if (gamma < 1) return InversionStatus::bad_ut;
     // Calculate an initial guess for Wp
-    Real Wp = (rho0 + u + eos->p(rho0, u)) * gamma * gamma - rho0 * gamma;
+    Real Wp = (rho0 + u + (gam - 1) * u) * gamma * gamma - rho0 * gamma;
 
     // Gather any errors during iteration with a single flag to return afterward
     InversionStatus eflag = InversionStatus::success;
@@ -127,9 +127,9 @@ KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const Real
     Real Wpm = (1. - DELTA) * Wp; //heuristic
     Real h = Wp - Wpm;
     Real Wpp = Wp + h;
-    Real errp = err_eqn(eos, Bsq, D, Ep, QdB, Qtsq, Wpp, eflag);
-    Real err = err_eqn(eos, Bsq, D, Ep, QdB, Qtsq, Wp, eflag);
-    Real errm = err_eqn(eos, Bsq, D, Ep, QdB, Qtsq, Wpm, eflag);
+    Real errp = err_eqn(gam, Bsq, D, Ep, QdB, Qtsq, Wpp, eflag);
+    Real err = err_eqn(gam, Bsq, D, Ep, QdB, Qtsq, Wp, eflag);
+    Real errm = err_eqn(gam, Bsq, D, Ep, QdB, Qtsq, Wpm, eflag);
 
     // Attempt a Halley/Muller/Bailey/Press step
     Real dedW = (errp - errm) / (Wpp - Wpm);
@@ -144,7 +144,7 @@ KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const Real
     Real err1 = err;
 
     Wp += dW;
-    err = err_eqn(eos, Bsq, D, Ep, QdB, Qtsq, Wp, eflag);
+    err = err_eqn(gam, Bsq, D, Ep, QdB, Qtsq, Wp, eflag);
 
     // Not good enough?  apply secant method
     int iter = 0;
@@ -159,7 +159,7 @@ KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const Real
 
         if (fabs(dW / Wp) < UTOP_ERRTOL) break;
 
-        err = err_eqn(eos, Bsq, D, Ep, QdB, Qtsq, Wp, eflag);
+        err = err_eqn(gam, Bsq, D, Ep, QdB, Qtsq, Wp, eflag);
 
         if (fabs(err / Wp) < UTOP_ERRTOL) break;
     }
@@ -176,7 +176,7 @@ KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const Real
     rho0 = D / gamma;
     Real W = Wp + D;
     Real w = W / (gamma*gamma);
-    Real p = eos->p_w(rho0, w);
+    Real p = (w - rho0) * (gam - 1) / gam;
     u = w - (rho0 + p);
 
     // Return without updating non-B primitives
@@ -196,7 +196,7 @@ KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const Real
 
     return InversionStatus::success;
 }
-KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const GridVars U, const GridVector B_U, const EOS* eos,
+KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const GridVars U, const GridVector B_U, const Real& gam,
                                   const int& k, const int& j, const int& i, const Loci loc, GridVars P)
 {
     Real Pl[NPRIM], Ul[NPRIM], B_Ul[NVEC];
@@ -205,11 +205,11 @@ KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const Grid
         Pl[p] = P(p, k, j, i);
     }
     VLOOP B_Ul[v] = B_U(v, k, j, i);
-    InversionStatus ret = u_to_p(G, Ul, B_Ul, eos, k, j, i, loc, Pl);
+    InversionStatus ret = u_to_p(G, Ul, B_Ul, gam, k, j, i, loc, Pl);
     PLOOP P(p, k, j, i) = Pl[p];
     return ret;
 }
-KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const GridVars U, const Real B_U[NVEC], const EOS* eos,
+KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const GridVars U, const Real B_U[NVEC], const Real& gam,
                                   const int& k, const int& j, const int& i, const Loci loc, GridVars P)
 {
     Real Pl[NPRIM], Ul[NPRIM];
@@ -217,13 +217,13 @@ KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const Grid
         Ul[p] = U(p, k, j, i);
         Pl[p] = P(p, k, j, i);
     }
-    InversionStatus ret = u_to_p(G, Ul, B_U, eos, k, j, i, loc, Pl);
+    InversionStatus ret = u_to_p(G, Ul, B_U, gam, k, j, i, loc, Pl);
     PLOOP P(p, k, j, i) = Pl[p];
     return ret;
 }
 
 // Document this
-KOKKOS_INLINE_FUNCTION Real err_eqn(const EOS* eos, const Real& Bsq, const Real& D, const Real& Ep, const Real& QdB,
+KOKKOS_INLINE_FUNCTION Real err_eqn(const Real& gam, const Real& Bsq, const Real& D, const Real& Ep, const Real& QdB,
                                     const Real& Qtsq, const Real& Wp, InversionStatus& eflag)
 {
     Real W = Wp + D;
@@ -231,7 +231,7 @@ KOKKOS_INLINE_FUNCTION Real err_eqn(const EOS* eos, const Real& Bsq, const Real&
     if (gamma < 1) eflag = InversionStatus::bad_ut;
     Real w = W / pow(gamma,2);
     Real rho0 = D / gamma;
-    Real p = eos->p_w(rho0, w);
+    Real p = (w - rho0) * (gam - 1) / gam;
 
     return -Ep + Wp - p + 0.5 * Bsq + 0.5 * (Bsq * Qtsq - QdB * QdB) / pow((Bsq + W), 2);
 

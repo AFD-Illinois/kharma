@@ -71,7 +71,7 @@ TaskStatus Flux::ApplyFluxes(MeshBlockData<Real> *rc, MeshBlockData<Real> *dudt,
     const int cons_start = cons_map["c.c.bulk.cons"].first;
 
     auto& G = pmb->coords;
-    EOS* eos = pmb->packages.Get("GRMHD")->Param<EOS*>("eos");
+    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
 
     // TODO move wind to separate package/function?
     bool wind_term = pmb->packages.Get("GRMHD")->Param<bool>("wind_term");
@@ -93,10 +93,10 @@ TaskStatus Flux::ApplyFluxes(MeshBlockData<Real> *rc, MeshBlockData<Real> *dudt,
             FourVectors Dtmp;
             Real dU[NPRIM] = {0};
             GRMHD::calc_4vecs(G, P, B_P, k, j, i, Loci::center, Dtmp);
-            GRMHD::get_source(G, P, Dtmp, eos, k, j, i, dU);
+            GRMHD::get_source(G, P, Dtmp, gam, k, j, i, dU);
 
             if (wind_term) {
-                GRMHD::add_wind(G, eos, k, j, i, current_wind_n, wind_pow, wind_Tp, dU);
+                GRMHD::add_wind(G, gam, k, j, i, current_wind_n, wind_pow, wind_Tp, dU);
             }
 
             for (int p=0; p < nvar; ++p) {

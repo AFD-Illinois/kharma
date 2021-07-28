@@ -1,7 +1,7 @@
 #pragma once
 
 #include "decs.hpp"
-#include "eos.hpp"
+
 
 using namespace std;
 using namespace parthenon;

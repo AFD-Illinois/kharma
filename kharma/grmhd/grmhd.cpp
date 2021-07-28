@@ -79,11 +79,10 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     params.Add("problem", problem_name);
 
     // Fluid gamma for ideal EOS.  Don't guess this.
+    // Only ideal EOS are supported, though modifying gamma based on
+    // local temperatures would be straightforward.
     double gamma = pin->GetReal("GRMHD", "gamma");
     params.Add("gamma", gamma);
-    // Sometimes, you have to leak a few bytes in the name of science
-    EOS* eos = CreateEOS(gamma);
-    params.Add("eos", eos);
 
     // Proportion of courant condition for timesteps
     double cfl = pin->GetOrAddReal("GRMHD", "cfl", 0.7);
@@ -131,6 +130,9 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     params.Add("extra_checks", extra_checks);
 
     // Floor parameters
+    bool disable_floors = pin->GetOrAddBoolean("floors", "disable_floors", false);
+    params.Add("disable_floors", disable_floors);
+
     // TODO construct/add a floors struct here instead?
     double rho_min_geom, u_min_geom;
     if (!pin->GetBoolean("coordinates", "spherical")) {
@@ -163,12 +165,13 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     bool fluid_frame = pin->GetOrAddBoolean("floors", "fluid_frame", false);
     params.Add("fluid_frame", fluid_frame);
 
-
+    // Boundary options
     bool fix_flux_inflow = pin->GetOrAddBoolean("bounds", "fix_flux_inflow", true);
     params.Add("fix_flux_inflow", fix_flux_inflow);
     bool fix_flux_pole = pin->GetOrAddBoolean("bounds", "fix_flux_pole", true);
     params.Add("fix_flux_pole", fix_flux_pole);
 
+    // Wind term in funnel
     bool wind_term = pin->GetOrAddBoolean("wind", "on", false);
     params.Add("wind_term", wind_term);
     Real wind_n = pin->GetOrAddReal("wind", "ne", 2.e-4);
@@ -221,7 +224,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     if (!use_b) {
         // Declare placeholder fields only if not using another package providing B field.
         // This should be redundant w/ "Overridable" flag
-        // Magnetic field placeholder. "Primitive" and "conserved" forms are the strength and flux respectively
+        // See B field packages for details
         m = Metadata({Metadata::Overridable,
                     Metadata::Real, Metadata::Cell, Metadata::Independent, Metadata::FillGhost,
                     Metadata::Restart, Metadata::Conserved, Metadata::WithFluxes, Metadata::Vector}, s_vector);
@@ -276,7 +279,7 @@ void UtoP(MeshBlockData<Real> *rc)
     // Thus as long as the last rank is not flagged, it will be inverted the same way on each process, and
     // used in the same way for fixups.  If it fails & thus might be different, it is ignored.
 
-    EOS* eos = pmb->packages.Get("GRMHD")->Param<EOS*>("eos");
+    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
 
     // Get the primitives from our conserved versions
     // Note this covers ghost zones!  This is intentional, as primitives in
@@ -296,7 +299,7 @@ void UtoP(MeshBlockData<Real> *rc)
 
     pmb->par_for("U_to_P", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D {
-            pflag(k, j, i) = GRMHD::u_to_p(G, U, B_U, eos, k, j, i, Loci::center, P);
+            pflag(k, j, i) = GRMHD::u_to_p(G, U, B_U, gam, k, j, i, Loci::center, P);
         }
     );
     FLAG("Filled");

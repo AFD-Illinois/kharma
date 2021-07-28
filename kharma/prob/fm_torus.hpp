@@ -4,7 +4,7 @@
 #include "decs.hpp"
 #include <parthenon/parthenon.hpp>
 
-#include "eos.hpp"
+
 
 /**
  * Initialize a wide variety of different fishbone-moncrief torii.
@@ -12,7 +12,7 @@
  * @param rin is the torus innermost radius, in r_g
  * @param rmax is the radius of maximum density of the F-M torus in r_g
  */
-void InitializeFMTorus(MeshBlock *pmb, const GRCoordinates& G, GridVars P, const EOS* eos,
+void InitializeFMTorus(MeshBlock *pmb, const GRCoordinates& G, GridVars P, const Real& gam,
                        GReal rin, GReal rmax, Real kappa=1.e-3);
 /**
  * Perturb the internal energy by a uniform random proportion per cell.

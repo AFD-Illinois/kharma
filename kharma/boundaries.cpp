@@ -65,7 +65,7 @@ TaskStatus ApplyCustomBoundaries(MeshBlockData<Real> *rc)
     int js_e = pmb->cellbounds.js(domain), je_e = pmb->cellbounds.je(domain);
     int ks_e = pmb->cellbounds.ks(domain), ke_e = pmb->cellbounds.ke(domain);
 
-    EOS* eos = pmb->packages.Get("GRMHD")->Param<EOS*>("eos");
+    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
 
     // Apply physical reflective/outflow conditions in the primitive GRMHD variables
     // Other variables are handled by Parthenon
@@ -80,7 +80,7 @@ TaskStatus ApplyCustomBoundaries(MeshBlockData<Real> *rc)
                     P(p, k, j, i) = reflect * P(p, k, (js - 1) + (js - j), i);
                 }
                 // Recover conserved vars
-                GRMHD::p_to_u(G, P, B_P, eos, k, j, i, U);
+                GRMHD::p_to_u(G, P, B_P, gam, k, j, i, U);
             }
         );
     }
@@ -93,7 +93,7 @@ TaskStatus ApplyCustomBoundaries(MeshBlockData<Real> *rc)
                     P(p, k, j, i) = reflect * P(p, k, (je + 1) + (je - j), i);
                 }
                 // Recover conserved vars
-                GRMHD::p_to_u(G, P, B_P, eos, k, j, i, U);
+                GRMHD::p_to_u(G, P, B_P, gam, k, j, i, U);
             }
         );
     }
@@ -108,7 +108,7 @@ TaskStatus ApplyCustomBoundaries(MeshBlockData<Real> *rc)
                 // Inflow check
                 check_inflow(G, P, k, j, i, 0);
                 // Recover conserved vars
-                GRMHD::p_to_u(G, P, B_P, eos, k, j, i, U);
+                GRMHD::p_to_u(G, P, B_P, gam, k, j, i, U);
             }
         );
     }
@@ -125,7 +125,7 @@ TaskStatus ApplyCustomBoundaries(MeshBlockData<Real> *rc)
                     // Inflow check
                     check_inflow(G, P, k, j, i, 1);
                     // Recover conserved vars
-                    GRMHD::p_to_u(G, P, B_P, eos, k, j, i, U);
+                    GRMHD::p_to_u(G, P, B_P, gam, k, j, i, U);
                 }
             );
         }

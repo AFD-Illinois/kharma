@@ -36,7 +36,6 @@
 
 #include "decs.hpp"
 
-#include "eos.hpp"
 #include "mhd_functions.hpp"
 
 using namespace Kokkos;
@@ -66,12 +65,12 @@ void compare_P_U(MeshBlockData<Real> *rc, const int& k, const int& j, const int&
     GridVector B_P = rc->Get("c.c.bulk.B_prim").data;
     GridVars U = rc->Get("c.c.bulk.cons").data;
     auto& G = pmb->coords;
-    EOS* eos = pmb->packages.Get("GRMHD")->Param<EOS*>("eos");
+    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
 
     pmb->par_for("compare_P_U", k, k, j, j, i, i,
         KOKKOS_LAMBDA_3D {
             Real Utmp[NPRIM];
-            GRMHD::p_to_u(G, P, B_P, eos, k, j, i, Utmp);
+            GRMHD::p_to_u(G, P, B_P, gam, k, j, i, Utmp);
             //printf("U(P) = %g %g %g %g\nU(U) = %g %g %g %g\n",
             //        Utmp[prims::u], Utmp[prims::u1], Utmp[prims::u2], Utmp[prims::u3],
             //        U(prims::u, k, j, i), U(prims::u1, k, j, i), U(prims::u2, k, j, i), U(prims::u3, k, j, i));

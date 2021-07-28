@@ -35,7 +35,7 @@
 
 #include "decs.hpp"
 
-#include "eos.hpp"
+
 #include "gr_coordinates.hpp"
 #include "phys_functions.hpp"
 #include "utils.hpp"
@@ -211,7 +211,7 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const ScratchPa
  * 
  * The convenient version here is actually probably pretty slow. TODO re-implement everything above?
  */
-KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates &G, const GridVars P, const GridVector B_P, const EOS* eos,
+KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates &G, const GridVars P, const GridVector B_P, const Real& gam,
                                          const int& k, const int& j, const int& i,
                                          GridVars U, const Loci loc=Loci::center)
 {
@@ -222,13 +222,13 @@ KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates &G, const GridVars P, con
     calc_4vecs(G, Pl, B_Pl, k, j, i, loc, Dtmp);
     Real rho = P(prims::rho, k, j, i);
     Real u = P(prims::u, k, j, i);
-    Real pgas = eos->p(rho, u);
+    Real pgas = (gam - 1) * u;
     Real Ul[NPRIM] = {0};
     prim_to_flux(G, rho, u, pgas, Dtmp, k, j, i, loc, 0, Ul);
 
     PLOOP U(p, k, j, i) = Ul[p];
 }
-KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates &G, const GridVars P, const GridVector B_P, const EOS* eos,
+KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates &G, const GridVars P, const GridVector B_P, const Real& gam,
                                          const int& k, const int& j, const int& i,
                                          Real U[NPRIM], const Loci loc=Loci::center)
 {
@@ -239,10 +239,10 @@ KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates &G, const GridVars P, con
     calc_4vecs(G, Pl, B_Pl, k, j, i, loc, Dtmp);
     Real rho = P(prims::rho, k, j, i);
     Real u = P(prims::u, k, j, i);
-    Real pgas = eos->p(rho, u);
+    Real pgas = (gam - 1) * u;
     prim_to_flux(G, rho, u, pgas, Dtmp, k, j, i, loc, 0, U);
 }
-KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates &G, const Real P[NPRIM], const Real B_P[NVEC], const EOS* eos,
+KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates &G, const Real P[NPRIM], const Real B_P[NVEC], const Real& gam,
                                          const int& k, const int& j, const int& i,
                                          Real U[NPRIM], const Loci loc=Loci::center)
 {
@@ -250,7 +250,7 @@ KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates &G, const Real P[NPRIM], 
     calc_4vecs(G, P, B_P, k, j, i, loc, Dtmp);
     Real rho = P[prims::rho];
     Real u = P[prims::u];
-    Real pgas = eos->p(rho, u);
+    Real pgas = (gam - 1) * u;
     prim_to_flux(G, rho, u, pgas, Dtmp, k, j, i, loc, 0, U);
 }
 

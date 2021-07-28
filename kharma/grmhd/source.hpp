@@ -45,13 +45,13 @@ namespace GRMHD
  * So named because it clobbers input dUdt!
  */
 KOKKOS_INLINE_FUNCTION void get_source(const GRCoordinates &G, const GridVars P, const FourVectors& D,
-                      const EOS* eos, const int& k, const int& j, const int& i, Real dUdt[NPRIM])
+                      const Real& gam, const int& k, const int& j, const int& i, Real dUdt[NPRIM])
 {
     // Get T^mu_nu
     Real mhd[GR_DIM][GR_DIM];
     Real rho = P(prims::rho, k, j, i);
     Real u = P(prims::u, k, j, i);
-    Real pgas = eos->p(rho, u);
+    Real pgas = (gam - 1) * u;
     DLOOP1 GRMHD::calc_tensor(rho, u, pgas, D, mu, mhd[mu]);
 
     // Initialize our addition [+U, +U1, +U2, +U3]
@@ -71,7 +71,7 @@ KOKKOS_INLINE_FUNCTION void get_source(const GRCoordinates &G, const GridVars P,
  * It has proven effective at eliminating the use of floors in 2D, but less so in 3D/MAD simulations
  */
 KOKKOS_INLINE_FUNCTION void add_wind(const GRCoordinates &G,
-                      const EOS* eos, const int& k, const int& j, const int& i,
+                      const Real& gam, const int& k, const int& j, const int& i,
                       const Real& n, const int& power, const Real& Tp, Real dUdt[NPRIM]) {
     Real dP[NPRIM] = {0}, dUw[NPRIM] = {0};
 
@@ -93,7 +93,7 @@ KOKKOS_INLINE_FUNCTION void add_wind(const GRCoordinates &G,
     // Add plasma to the T^t_a component of the stress-energy tensor
     // Notice that U already contains a factor of sqrt{-g}
     Real dB_P[NVEC] = {0};
-    GRMHD::p_to_u(G, dP, dB_P, eos, k, j, i, dUw);
+    GRMHD::p_to_u(G, dP, dB_P, gam, k, j, i, dUw);
 
     PLOOP dUdt[p] += dUw[p];
 }

@@ -35,7 +35,7 @@
 #pragma once
 
 #include "decs.hpp"
-#include "eos.hpp"
+
 
 /*
  * Kelvin-Helmholtz instability problem

@@ -50,13 +50,13 @@ TaskStatus NormalizeBField(MeshBlockData<Real> *rc, Real norm)
     GridVars U = rc->Get("c.c.bulk.cons").data;
     auto& G = pmb->coords;
 
-    EOS* eos = pmb->packages.Get("GRMHD")->Param<EOS*>("eos");
+    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
 
     pmb->par_for("B_field_normalize", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D {
             VLOOP B_P(v, k, j, i) *= norm;
             // We do need this for lockstep. If this were per-step I'd be mad.
-            GRMHD::p_to_u(G, P, B_P, eos, k, j, i, U);
+            GRMHD::p_to_u(G, P, B_P, gam, k, j, i, U);
         }
     );
 
@@ -74,7 +74,7 @@ Real GetLocalBetaMin(MeshBlockData<Real> *rc)
     GridVars P = rc->Get("c.c.bulk.prims").data;
     GridVector B_P = rc->Get("c.c.bulk.B_prim").data;
 
-    EOS* eos = pmb->packages.Get("GRMHD")->Param<EOS*>("eos");
+    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
 
     Real beta_min;
     Kokkos::Min<Real> min_reducer(beta_min);
@@ -86,7 +86,7 @@ Real GetLocalBetaMin(MeshBlockData<Real> *rc)
 
             Real rho = P(prims::rho, k, j, i);
             Real u = P(prims::u, k, j, i);
-            Real beta_ij = (eos->p(rho, u))/(0.5*(bsq_ij + TINY_NUMBER));
+            Real beta_ij = ((gam - 1) * u)/(0.5*(bsq_ij + TINY_NUMBER));
 
             if(beta_ij < local_result) local_result = beta_ij;
         }
@@ -129,7 +129,7 @@ Real GetLocalPMax(MeshBlockData<Real> *rc)
     auto& G = pmb->coords;
     GridVars P = rc->Get("c.c.bulk.prims").data;
 
-    EOS* eos = pmb->packages.Get("GRMHD")->Param<EOS*>("eos");
+    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
 
     Real p_max;
     Kokkos::Max<Real> p_max_reducer(p_max);
@@ -137,7 +137,7 @@ Real GetLocalPMax(MeshBlockData<Real> *rc)
         KOKKOS_LAMBDA_3D_REDUCE {
             Real rho = P(prims::rho, k, j, i);
             Real u = P(prims::u, k, j, i);
-            Real p_ij = eos->p(rho, u);
+            Real p_ij = (gam - 1) * u;
             if(p_ij > local_result) local_result = p_ij;
         }
     , p_max_reducer);

@@ -36,7 +36,7 @@
 #include <complex>
 
 #include "decs.hpp"
-#include "eos.hpp"
+
 
 using namespace std::literals::complex_literals;
 using namespace std;

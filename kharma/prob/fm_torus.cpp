@@ -40,7 +40,7 @@
 #include <random>
 #include "Kokkos_Random.hpp"
 
-void InitializeFMTorus(MeshBlock *pmb, const GRCoordinates& G, GridVars P, const EOS* eos,
+void InitializeFMTorus(MeshBlock *pmb, const GRCoordinates& G, GridVars P, const Real& gam,
                        GReal rin, GReal rmax, Real kappa)
 {
     IndexDomain domain = IndexDomain::entire;
@@ -60,7 +60,7 @@ void InitializeFMTorus(MeshBlock *pmb, const GRCoordinates& G, GridVars P, const
         // Example of pulling stuff host-side. Maybe make all initializations print stuff like this?
         double gam_host;
         Kokkos::Max<Real> gam_reducer(gam_host);
-        pmb->par_reduce("fm_torus_init", 0, 0, KOKKOS_LAMBDA_1D_REDUCE { local_result = eos->gam; }, gam_reducer);
+        pmb->par_reduce("fm_torus_init", 0, 0, KOKKOS_LAMBDA_1D_REDUCE { local_result = gam; }, gam_reducer);
         cout << "Initializing Fishbone-Moncrief torus:" << gam_host << endl;
         cout << "rin = " << rin << endl;
         cout << "rmax = " << rmax << endl;
@@ -93,9 +93,9 @@ void InitializeFMTorus(MeshBlock *pmb, const GRCoordinates& G, GridVars P, const
 
                 // Calculate rho and u
                 Real hm1 = exp(lnh) - 1.;
-                Real rho = pow(hm1 * (eos->gam - 1.) / (kappa * eos->gam),
-                                    1. / (eos->gam - 1.));
-                Real u = kappa * pow(rho, eos->gam) / (eos->gam - 1.);
+                Real rho = pow(hm1 * (gam - 1.) / (kappa * gam),
+                                    1. / (gam - 1.));
+                Real u = kappa * pow(rho, gam) / (gam - 1.);
 
                 // Calculate u^phi
                 Real expm2chi = SS * SS * DD / (AA * AA * sth * sth);
@@ -129,7 +129,7 @@ void InitializeFMTorus(MeshBlock *pmb, const GRCoordinates& G, GridVars P, const
     );
 
     // Find rho_max "analytically" by looking over the whole mesh domain for the maximum in the midplane
-    // Done device-side both for speed (for large 2D meshes this may get bad), and so that *eos dereferences
+    // Done device-side for speed (for large 2D meshes this may get bad) but may work fine in HostSpace
     // Note this covers the full domain from each rank: it doesn't need a grid so it's not a memory problem,
     // and an MPI synch as is done for beta_min would be a headache
     GReal x1min = pmb->pmy_mesh->mesh_size.x1min;
@@ -172,9 +172,9 @@ void InitializeFMTorus(MeshBlock *pmb, const GRCoordinates& G, GridVars P, const
             if (lnh >= 0. && r >= rin) {
                 // Calculate rho
                 Real hm1 = exp(lnh) - 1.;
-                Real rho = pow(hm1 * (eos->gam - 1.) / (kappa * eos->gam),
-                                    1. / (eos->gam - 1.));
-                //Real u = kappa * pow(rho, eos->gam) / (eos->gam - 1.);
+                Real rho = pow(hm1 * (gam - 1.) / (kappa * gam),
+                                    1. / (gam - 1.));
+                //Real u = kappa * pow(rho, gam) / (gam - 1.);
 
                 // Record max.  Maybe more efficient to bail earlier?  Meh.
                 //printf("lnh: %g rho: %g\n", lnh, rho);

@@ -35,7 +35,7 @@
 
 #include "decs.hpp"
 
-#include "eos.hpp"
+
 #include "b_functions.hpp"
 #include "mhd_functions.hpp"
 #include "phys_functions.hpp"
@@ -94,7 +94,7 @@ TaskStatus ApplyFloors(MeshBlockData<Real> *rc);
  * 
  * LOCKSTEP: this function respects P and returns consistent P<->U
  */
-KOKKOS_INLINE_FUNCTION int apply_ceilings(const GRCoordinates& G, GridVars P, GridVector B_P, GridVars U, EOS *eos, const int& k, const int& j, const int& i,
+KOKKOS_INLINE_FUNCTION int apply_ceilings(const GRCoordinates& G, GridVars P, GridVector B_P, GridVars U, const Real& gam, const int& k, const int& j, const int& i,
                                           const FloorPrescription& floors, const Loci loc=Loci::center)
 {
     int fflag = 0;
@@ -116,7 +116,7 @@ KOKKOS_INLINE_FUNCTION int apply_ceilings(const GRCoordinates& G, GridVars P, Gr
     // Note this technically applies the condition *one step sooner* than legacy, since it operates on
     // the entropy as calculated from current conditions, rather than the value kept from the previous
     // step for calculating dissipation.
-    Real ktot = (eos->gam - 1.) * P(prims::u, k, j, i) / pow(P(prims::rho, k, j, i), eos->gam);
+    Real ktot = (gam - 1.) * P(prims::u, k, j, i) / pow(P(prims::rho, k, j, i), gam);
     if (ktot > floors.ktot_max) {
         fflag |= HIT_FLOOR_KTOT;
 
@@ -132,7 +132,7 @@ KOKKOS_INLINE_FUNCTION int apply_ceilings(const GRCoordinates& G, GridVars P, Gr
 
     if (fflag) {
         // Keep lockstep!
-        GRMHD::p_to_u(G, P, B_P, eos, k, j, i, U, loc);
+        GRMHD::p_to_u(G, P, B_P, gam, k, j, i, U, loc);
     }
 
     return fflag;
@@ -148,7 +148,7 @@ KOKKOS_INLINE_FUNCTION int apply_ceilings(const GRCoordinates& G, GridVars P, Gr
  * LOCKSTEP: this function respects P and ignores U in order to return consistent P<->U
  */
 KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, GridVars P, GridVector B_P, GridVars U, GridVector B_U,
-                                        EOS *eos, const int& k, const int& j, const int& i,
+                                        const Real& gam, const int& k, const int& j, const int& i,
                                         const FloorPrescription& floors, const Loci loc=Loci::center)
 {
     int fflag = 0;
@@ -164,7 +164,7 @@ KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, GridVars P, Grid
         // Previously raw r^-2, r^-1.5
         Real rhoscal = pow(r, -2.) * 1 / (1 + r / floors.r_char);
         rhoflr_geom = floors.rho_min_geom * rhoscal;
-        uflr_geom = floors.u_min_geom * pow(rhoscal, eos->gam);
+        uflr_geom = floors.u_min_geom * pow(rhoscal, gam);
     } else {
         rhoflr_geom = floors.rho_min_geom;
         uflr_geom = floors.u_min_geom;
@@ -209,7 +209,7 @@ KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, GridVars P, Grid
     if (floors.fluid_frame) {
         P(prims::rho, k, j, i) += max(0., rhoflr_max - rho);
         P(prims::u, k, j, i) += max(0., uflr_max - u);
-        GRMHD::p_to_u(G, P, B_P, eos, k, j, i, U, loc);
+        GRMHD::p_to_u(G, P, B_P, gam, k, j, i, U, loc);
     } else {
         if (rhoflr_max > rho || uflr_max > u) { // Apply floors
 
@@ -222,8 +222,8 @@ KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, GridVars P, Grid
             Pnew[prims::u] = max(0., uflr_max - u);
 
             // Get conserved variables for the new and old parcels
-            //GRMHD::p_to_u(G, P, B_P, eos, k, j, i, U, loc);
-            GRMHD::p_to_u(G, Pnew, B_Pnew, eos, k, j, i, Unew, loc);
+            //GRMHD::p_to_u(G, P, B_P, gam, k, j, i, U, loc);
+            GRMHD::p_to_u(G, Pnew, B_Pnew, gam, k, j, i, Unew, loc);
 
             // Add new conserved mass/energy to the current "conserved" state
             // Prims are needed as a guess
@@ -233,10 +233,10 @@ KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, GridVars P, Grid
             }
 
             // Recover primitive variables from conserved versions
-            pflag = GRMHD::u_to_p(G, U, B_U, eos, k, j, i, loc, P);
+            pflag = GRMHD::u_to_p(G, U, B_U, gam, k, j, i, loc, P);
             // If that fails, we've effectively already applied the floors in fluid-frame to the prims,
             // so we just formalize that
-            if (pflag) GRMHD::p_to_u(G, P, B_P, eos, k, j, i, U, loc);
+            if (pflag) GRMHD::p_to_u(G, P, B_P, gam, k, j, i, U, loc);
         }
     }
     return fflag + pflag;

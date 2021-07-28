@@ -52,7 +52,7 @@ void FixUtoP(MeshBlockData<Real> *rc)
     GridScalar pflag = rc->Get("c.c.bulk.pflag").data;
     GridScalar fflag = rc->Get("c.c.bulk.fflag").data;
 
-    EOS* eos = pmb->packages.Get("GRMHD")->Param<EOS*>("eos");
+    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
     FloorPrescription floors = FloorPrescription(pmb->packages.Get("GRMHD")->AllParams());
 
     int is = is_physical_bound(pmb->boundary_flag[BoundaryFace::inner_x1]) ?
@@ -112,12 +112,12 @@ void FixUtoP(MeshBlockData<Real> *rc)
                     PLOOP P(p, k, j, i) = sum[p]/wsum;
                 }
                 // Make sure to keep lockstep
-                GRMHD::p_to_u(G, P, B_P, eos, k, j, i, U);
+                GRMHD::p_to_u(G, P, B_P, gam, k, j, i, U);
 
                 // Make sure fixed values still abide by floors (floors keep lockstep)
                 int fflag_local = 0;
-                fflag_local |= apply_floors(G, P, B_P, U, B_U, eos, k, j, i, floors);
-                fflag_local |= apply_ceilings(G, P, B_P, U, eos, k, j, i, floors);
+                fflag_local |= apply_floors(G, P, B_P, U, B_U, gam, k, j, i, floors);
+                fflag_local |= apply_ceilings(G, P, B_P, U, gam, k, j, i, floors);
                 fflag(k, j, i) = fflag_local;
             }
         }
