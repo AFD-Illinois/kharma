@@ -65,7 +65,6 @@ using namespace Kokkos;
 // Some programmers just want to watch the world burn
 // TODO not this, ever again
 double last_dt, ctop_max;
-int first_step;
 
 namespace GRMHD
 {
@@ -133,9 +132,16 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
 
     // Floor parameters
     // TODO construct/add a floors struct here instead?
-    double rho_min_geom = pin->GetOrAddReal("floors", "rho_min_geom", 1.e-5);
+    double rho_min_geom, u_min_geom;
+    if (!pin->GetBoolean("coordinates", "spherical")) {
+        // In spherical systems, floors drop as r^2, so set them higher by default
+        rho_min_geom = pin->GetOrAddReal("floors", "rho_min_geom", 1.e-5);
+        u_min_geom = pin->GetOrAddReal("floors", "u_min_geom", 1.e-7);
+    } else {
+        rho_min_geom = pin->GetOrAddReal("floors", "rho_min_geom", 1.e-7);
+        u_min_geom = pin->GetOrAddReal("floors", "u_min_geom", 1.e-9);
+    }
     params.Add("rho_min_geom", rho_min_geom);
-    double u_min_geom = pin->GetOrAddReal("floors", "u_min_geom", 1.e-7);
     params.Add("u_min_geom", u_min_geom);
     double floor_r_char = pin->GetOrAddReal("floors", "r_char", 10);
     params.Add("floor_r_char", floor_r_char);
@@ -303,7 +309,8 @@ void PostUtoP(MeshBlockData<Real> *rc)
     // Apply floors
     ApplyFloors(rc);
 
-    // TODO separate this and previous as different steps?
+    // Fix inversion errors computing P from U, by averaging adjacent zones
+    // TODO entropy advection version
     FixUtoP(rc);
 
     FLAG("Fixed");
@@ -329,17 +336,14 @@ Real EstimateTimestep(MeshBlockData<Real> *rc)
     // TODO this needs a more reliable selector
     // This assumes we are called once per block given to this process,
     // which is fragile if PostInit or Parthenon's structure changes.
-    // TODO just call fluxes -> get ctop anyway?  Could reduce initial jump in divB under CD
+    // TODO just call fluxes to get ctop and continue?  Could reduce initial jump in divB under CD
     static int ncall = 0;
     int nmb = pmb->pmy_mesh->GetNumMeshBlocksThisRank();
     if (ncall < nmb) {
-        ncall++;
         last_dt = pmb->packages.Get("GRMHD")->Param<Real>("dt");
         ctop_max = 0.0;
-        first_step = 1;
-    } else if (ncall == nmb) {
-        first_step = 0;
     }
+    ncall++;
 
 
     typename Kokkos::MinMax<Real>::value_type minmax;
@@ -410,7 +414,8 @@ Real EstimateTimestep(MeshBlockData<Real> *rc)
     return last_dt;
 }
 
-AmrTag CheckRefinement(MeshBlockData<Real> *rc) {
+AmrTag CheckRefinement(MeshBlockData<Real> *rc)
+{
     auto pmb = rc->GetBlockPointer();
     auto v = rc->Get("c.c.bulk.prims").data;
 
@@ -501,17 +506,15 @@ TaskStatus PostStepDiagnostics(Mesh *pmesh, ParameterInput *pin, const SimTime& 
 void FillOutput(MeshBlock *pmb, ParameterInput *pin)
 {
     // See issues with determining the first step, above.
-    if (!first_step) {
-        FLAG("Adding output fields");
+    FLAG("Adding output fields");
 
-        auto& rc1 = pmb->meshblock_data.Get();
-        auto& rc0 = pmb->meshblock_data.Get("preserve");
+    auto& rc1 = pmb->meshblock_data.Get();
+    auto& rc0 = pmb->meshblock_data.Get("preserve");
 
-        Real dt = last_dt;
-        GRMHD::CalculateCurrent(rc0.get(), rc1.get(), dt);
+    Real dt = last_dt;
+    GRMHD::CalculateCurrent(rc0.get(), rc1.get(), dt);
 
-        FLAG("Added");
-    }
+    FLAG("Added");
     //cout << "Filled" << endl;
 }
 

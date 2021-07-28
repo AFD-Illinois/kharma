@@ -55,7 +55,6 @@ TaskStatus B_CD::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
     GridVars P = rc->Get("c.c.bulk.prims").data;
     GridVector B_P = rc->Get("c.c.bulk.B_prim").data;
     GridVector B_U = rc->Get("c.c.bulk.B_con").data;
-    GridScalar psi = rc->Get("c.c.bulk.psi_cd").data;
 
     Real min_rho_q = pin->GetOrAddReal("b_field", "min_rho_q", 0.2);
     std::string b_field_type = pin->GetString("b_field", "type");

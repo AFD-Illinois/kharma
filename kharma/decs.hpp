@@ -54,10 +54,14 @@ enum prims{rho=0, u, u1, u2, u3};
 #define NVEC 3
 #define VLOOP for(int v = 0; v < NVEC; ++v)
 
-// The fluxes kernel wants compile-time lengths in order to compile
-// This is the maximum number of variables (5 fluid + 3 B + e- + passive etc)
-// which the user can specify.  TODO error on too many
-#define MAX_PACKED_VARS 16
+// Map of the locations of particular variables in a packed kernel
+struct varmap {
+    int p, u; // GRMHD variables
+    int Bp, Bu; // Magnetic fields
+    int psip, psiu; // Psi field for CD
+    int ep, eu; // electrons
+    int psp, psu; // passives
+};
 
 // Emulate old names for possible stronger typing...
 using GridScalar = parthenon::ParArrayND<Real>;
@@ -86,10 +90,10 @@ using GeomTensor3 = parthenon::ParArrayND<Real>;
 #define KOKKOS_LAMBDA_3D_REDUCE_INT KOKKOS_LAMBDA (const int &k, const int &j, const int &i, int &local_result)
 
 /**
- * Return whether a boundary is physical (i.e. border of the simulation) or not (internal/periodic)
+ * Return whether a boundary is physical (i.e. border of the simulation) -- that is, not internal or periodic
  * Ironically, the zones in non-physical boundaries are "physical" i.e. bulk, non-ghost zones
  * 
- * Defined because UtoP needs to calculate primitives for physical zones (non-physical boundaries)
+ * Defined because UtoP needs to calculate primitives for real, domain zones -- that is, where this function returns false
  */
 KOKKOS_INLINE_FUNCTION bool is_physical_bound(parthenon::BoundaryFlag bflag) {
     // TODO error on undef?

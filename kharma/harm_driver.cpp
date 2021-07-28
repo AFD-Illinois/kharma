@@ -67,10 +67,8 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
     const Real dt = integrator->dt;
     auto stage_name = integrator->stage_name;
 
-    const bool use_b_cd = blocks[0]->packages.AllPackages().count("B_CD") > 0;
-    const bool do_parabolic_term = use_b_cd ? blocks[0]->packages.Get("B_CD")->Param<bool>("parabolic_term") : false;
-    const bool use_b_flux_ct = blocks[0]->packages.AllPackages().count("B_FluxCT") > 0;
-    const bool do_flux_ct = use_b_flux_ct ? !blocks[0]->packages.Get("B_FluxCT")->Param<bool>("disable_flux_ct") : false;
+    const bool use_b_cd = blocks[0]->packages.AllPackages().count("B_CD");
+    const bool use_b_flux_ct = blocks[0]->packages.AllPackages().count("B_FluxCT");
 
     auto num_task_lists_executed_independently = blocks.size();
     TaskRegion &async_region1 = tc.AddRegion(num_task_lists_executed_independently);
@@ -107,9 +105,35 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         // of the conserved variables (U)
         // All subsequent operations until FillDerived are applied only to U
         // TODO these could be made mesh-wide pretty easily...
-        auto t_calculate_flux1 = tl.AddTask(t_start_recv, Flux::GetFlux, sc0.get(), X1DIR, beta * dt);
-        auto t_calculate_flux2 = tl.AddTask(t_start_recv, Flux::GetFlux, sc0.get(), X2DIR, beta * dt);
-        auto t_calculate_flux3 = tl.AddTask(t_start_recv, Flux::GetFlux, sc0.get(), X3DIR, beta * dt);
+        const ReconstructionType& recon = pmb->packages.Get("GRMHD")->Param<ReconstructionType>("recon");
+        TaskID t_calculate_flux1, t_calculate_flux2, t_calculate_flux3;
+        switch (recon) {
+        case ReconstructionType::donor_cell:
+            t_calculate_flux1 = tl.AddTask(t_start_recv, Flux::GetFlux<ReconstructionType::donor_cell, X1DIR>, sc0.get(), beta * dt);
+            t_calculate_flux2 = tl.AddTask(t_start_recv, Flux::GetFlux<ReconstructionType::donor_cell, X2DIR>, sc0.get(), beta * dt);
+            t_calculate_flux3 = tl.AddTask(t_start_recv, Flux::GetFlux<ReconstructionType::donor_cell, X3DIR>, sc0.get(), beta * dt);
+            break;
+        case ReconstructionType::linear_mc:
+            t_calculate_flux1 = tl.AddTask(t_start_recv, Flux::GetFlux<ReconstructionType::linear_mc, X1DIR>, sc0.get(), beta * dt);
+            t_calculate_flux2 = tl.AddTask(t_start_recv, Flux::GetFlux<ReconstructionType::linear_mc, X2DIR>, sc0.get(), beta * dt);
+            t_calculate_flux3 = tl.AddTask(t_start_recv, Flux::GetFlux<ReconstructionType::linear_mc, X3DIR>, sc0.get(), beta * dt);
+            break;
+        case ReconstructionType::linear_vl:
+            t_calculate_flux1 = tl.AddTask(t_start_recv, Flux::GetFlux<ReconstructionType::linear_vl, X1DIR>, sc0.get(), beta * dt);
+            t_calculate_flux2 = tl.AddTask(t_start_recv, Flux::GetFlux<ReconstructionType::linear_vl, X2DIR>, sc0.get(), beta * dt);
+            t_calculate_flux3 = tl.AddTask(t_start_recv, Flux::GetFlux<ReconstructionType::linear_vl, X3DIR>, sc0.get(), beta * dt);
+            break;
+        case ReconstructionType::weno5:
+            t_calculate_flux1 = tl.AddTask(t_start_recv, Flux::GetFlux<ReconstructionType::weno5, X1DIR>, sc0.get(), beta * dt);
+            t_calculate_flux2 = tl.AddTask(t_start_recv, Flux::GetFlux<ReconstructionType::weno5, X2DIR>, sc0.get(), beta * dt);
+            t_calculate_flux3 = tl.AddTask(t_start_recv, Flux::GetFlux<ReconstructionType::weno5, X3DIR>, sc0.get(), beta * dt);
+            break;
+        case ReconstructionType::ppm:
+        case ReconstructionType::mp5:
+            cerr << "Reconstruction type not supported!  Supported reconstructions:" << endl;
+            cerr << "donor_cell, linear_mc, linear_vl, weno5" << endl;
+            exit(-5);
+        }
         auto t_calculate_flux = t_calculate_flux1 | t_calculate_flux2 | t_calculate_flux3;
 
         auto t_recv_flux = t_calculate_flux;
@@ -125,7 +149,7 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         auto t_fix_flux = tl.AddTask(t_recv_flux, FixFlux, sc0.get());
 
         auto t_flux_fixed = t_fix_flux;
-        if (do_flux_ct) {
+        if (use_b_flux_ct) {
             // Fix the conserved fluxes (exclusively B1/2/3) so that they obey divB==0,
             // and there is no B field flux through the pole
             auto t_flux_ct = tl.AddTask(t_fix_flux, B_FluxCT::TransportB, sc0.get());
@@ -136,6 +160,13 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         // both the GRMHD source term and any "wind" source coefficients.
         // TODO move to below? Probably easy to update for Mesh vs MeshBlock
         auto t_flux_apply = tl.AddTask(t_flux_fixed, Flux::ApplyFluxes, sc0.get(), dudt.get(), beta * dt);
+
+        // Source term for constraint-damping.  Could be applied mesh-wide in that block,
+        // when we learn to write mesh-wide functions
+        auto t_b_cd_source = t_none;
+        if (use_b_cd) {
+            t_b_cd_source = tl.AddTask(t_flux_apply, B_CD::AddSource, sc0.get(), dudt.get(), beta * dt);
+        }
     }
 
     // Sync Region: add effects of current step to accumulator, sync boundaries
@@ -222,16 +253,9 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         auto t_clear_comm_flags = tl.AddTask(t_none, &MeshBlockData<Real>::ClearBoundary,
                                         sc1.get(), BoundaryCommSubset::all);
 
-        // Source term for constraint-damping.  Could be applied mesh-wide in that block,
-        // when we learn to write mesh-wide functions
-        auto t_b_cd_source = t_none;
-        if (do_parabolic_term) {
-            auto t_b_cd_source = tl.AddTask(t_none, B_CD::AddSource, sc1.get(), beta * dt);
-        }
-
         auto t_prolongBound = t_clear_comm_flags;
         if (pmesh->multilevel) {
-            t_prolongBound = tl.AddTask(t_b_cd_source, ProlongateBoundaries, sc1);
+            t_prolongBound = tl.AddTask(t_none, ProlongateBoundaries, sc1);
         }
         // Parthenon boundary conditions are applied to the conserved variables
         // Currently we override everything except psi in CD (TODO B)

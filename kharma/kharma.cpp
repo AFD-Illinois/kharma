@@ -50,6 +50,8 @@
 #include "harm_driver.hpp"
 #include "iharm_restart.hpp"
 
+// This needs to be shared between the mesh-wide and single-mesh functions below
+int done_step;
 
 void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
 {
@@ -92,6 +94,7 @@ void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
     }
     // Assumption: if we're in a spherical system...
     if (cb == "spherical_ks" || cb == "ks" || cb == "spherical_bl" || cb == "bl" || cb == "spherical_minkowski") {
+        pin->SetBoolean("coordinates", "spherical", true);
         // ...then we definitely want spherical boundary conditions
         // TODO only set all this if it isn't already
         pin->SetString("parthenon/mesh", "ix1_bc", "outflow");
@@ -113,6 +116,8 @@ void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
             pin->SetReal("parthenon/mesh", "x3min", 0.0);
             pin->SetReal("parthenon/mesh", "x3max", 2*M_PI);
         } // TODO any other transforms/systems
+    } else {
+        pin->SetBoolean("coordinates", "spherical", false);
     }
 
     // If we're using constant field of some kind, we likely *don't* want to normalize to beta_min=N
@@ -153,13 +158,15 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
 
 void KHARMA::FillOutput(MeshBlock *pmb, ParameterInput *pin)
 {
-    // TODO for package in packages...
-    GRMHD::FillOutput(pmb, pin);
-    if (pmb->packages.AllPackages().count("B_FluxCT") > 0)
-        B_FluxCT::FillOutput(pmb, pin);
-    if (pmb->packages.AllPackages().count("B_CD") > 0)
-        B_CD::FillOutput(pmb, pin);
-    // In case there are other packages that need this
+    if (done_step) {
+        // TODO for package in packages...
+        GRMHD::FillOutput(pmb, pin);
+        if (pmb->packages.AllPackages().count("B_FluxCT") > 0)
+            B_FluxCT::FillOutput(pmb, pin);
+        if (pmb->packages.AllPackages().count("B_CD") > 0)
+            B_CD::FillOutput(pmb, pin);
+        // In case there are other packages that need this
+    }
 }
 
 void KHARMA::PostStepDiagnostics(Mesh *pmesh, ParameterInput *pin, const SimTime& tm)
@@ -170,4 +177,5 @@ void KHARMA::PostStepDiagnostics(Mesh *pmesh, ParameterInput *pin, const SimTime
         B_FluxCT::PostStepDiagnostics(pmesh, pin, tm);
     if (pmesh->packages.AllPackages().count("B_CD") > 0)
         B_CD::PostStepDiagnostics(pmesh, pin, tm);
+    done_step = 1;
 }

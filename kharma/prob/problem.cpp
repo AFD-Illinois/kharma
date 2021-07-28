@@ -285,15 +285,6 @@ void PostInitialize(ParameterInput *pin, Mesh *pmesh)
     FLAG("Boundary sync");
     SyncAllBounds(pmesh);
 
-    for (auto &pmb : pmesh->block_list) {
-        auto& rc = pmb->meshblock_data.Get();
-        Update::FillDerived<MeshBlockData<Real>>(rc.get());
-        double dt = pmb->packages.Get("GRMHD")->Param<Real>("dt");
-        Flux::GetFlux(rc.get(), X1DIR, dt);
-        Flux::GetFlux(rc.get(), X2DIR, dt);
-        Flux::GetFlux(rc.get(), X3DIR, dt);
-    }
-
     FLAG("Post-initialization finished");
 }
 

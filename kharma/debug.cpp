@@ -87,11 +87,12 @@ TaskStatus CheckNaN(MeshBlockData<Real> *rc, int dir, IndexDomain domain)
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
+    int verbose = pmb->packages.Get("GRMHD")->Param<int>("verbose");
 
     auto& G = pmb->coords;
     auto& ctop = rc->GetFace("f.f.bulk.ctop").data;
-    // GridVars P = rc->Get("c.c.bulk.prims").data;
-    // GridVars U = rc->Get("c.c.bulk.cons").data;
+    GridVars P = rc->Get("c.c.bulk.prims").data;
+    GridVars U = rc->Get("c.c.bulk.cons").data;
 
     int nzero, nnan;
     Kokkos::Sum<int> zero_reducer(nzero);
@@ -100,13 +101,15 @@ TaskStatus CheckNaN(MeshBlockData<Real> *rc, int dir, IndexDomain domain)
     pmb->par_reduce("ctop_zeros", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D_REDUCE_INT {
             if (ctop(dir, k, j, i) <= 0.) {
-                //printf("Ctop zero at %d %d %d\n", k, j, i);
-                //printf("Local P: %g %g %g %g %g\n", 
-                //        P(prims::rho, k, j, i), P(prims::u, k, j, i), P(prims::u1, k, j, i), P(prims::u2, k, j, i),
-                //        P(prims::u3, k, j, i));
-                //printf("Local U: %g %g %g %g %g\n",
-                //        U(prims::rho, k, j, i), U(prims::u, k, j, i), U(prims::u1, k, j, i), U(prims::u2, k, j, i),
-                //        U(prims::u3, k, j, i));
+                if (verbose >= 2) {
+                    printf("Ctop zero at %d %d %d\n", k, j, i);
+                    printf("Local P: %g %g %g %g %g\n", 
+                        P(prims::rho, k, j, i), P(prims::u, k, j, i), P(prims::u1, k, j, i), P(prims::u2, k, j, i),
+                        P(prims::u3, k, j, i));
+                    printf("Local U: %g %g %g %g %g\n",
+                        U(prims::rho, k, j, i), U(prims::u, k, j, i), U(prims::u1, k, j, i), U(prims::u2, k, j, i),
+                        U(prims::u3, k, j, i));
+                }
                 ++local_result;
             }
         }
@@ -121,7 +124,7 @@ TaskStatus CheckNaN(MeshBlockData<Real> *rc, int dir, IndexDomain domain)
     , nan_reducer);
 
     if (nzero > 0 || nnan > 0) {
-        throw std::runtime_error(string_format("Max signal speed ctop was 0 or NaN (%d zero, %d NaN)", nzero, nnan));
+        throw std::runtime_error(string_format("Max signal speed ctop was 0 or NaN, direction  (%d zero, %d NaN)", nzero, nnan));
     }
 
     return TaskStatus::complete;

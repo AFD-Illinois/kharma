@@ -346,122 +346,144 @@ KOKKOS_INLINE_FUNCTION void WENO5X3r(parthenon::team_mbr_t const &member, const 
 }
 
 /**
- * Call the correct reconstruction 
+ * Reconstructions as templates
+ * We could temlate these directly on the function if Parthenon could agree on what argument list to use
+ * Better than a runtime decision per outer loop I think
  */
-template <typename T>
-KOKKOS_INLINE_FUNCTION void reconstruct(const ReconstructionType& recon, parthenon::team_mbr_t& member, const Coordinates_t& G, const T &P,
-                                        const int& n1, const int& k, const int& j, const int& is_l, const int& ie_l, const int& dir,
+template <ReconstructionType Recon, int dir>
+KOKKOS_INLINE_FUNCTION void reconstruct(parthenon::team_mbr_t& member, const GRCoordinates& G, const VariablePack<Real> &P,
+                                        const int& k, const int& j, const int& is_l, const int& ie_l, 
+                                        ScratchPad2D<Real> ql, ScratchPad2D<Real> qr) {}
+// DONOR CELL
+template <>
+KOKKOS_INLINE_FUNCTION void reconstruct<ReconstructionType::donor_cell, X1DIR>(parthenon::team_mbr_t& member,
+                                        const GRCoordinates& G, const VariablePack<Real> &P,
+                                        const int& k, const int& j, const int& is_l, const int& ie_l, 
                                         ScratchPad2D<Real> ql, ScratchPad2D<Real> qr)
 {
-    int nvar = P.GetDim(4);
-    int scratch_level = 1;
-    ScratchPad2D<Real> q_unused(member.team_scratch(scratch_level), nvar, n1);
+    DonorCellX1(member, k, j, is_l, ie_l, P, ql, qr);
+}
+template <>
+KOKKOS_INLINE_FUNCTION void reconstruct<ReconstructionType::donor_cell, X2DIR>(parthenon::team_mbr_t& member,
+                                        const GRCoordinates& G, const VariablePack<Real> &P,
+                                        const int& k, const int& j, const int& is_l, const int& ie_l, 
+                                        ScratchPad2D<Real> ql, ScratchPad2D<Real> qr)
+{
+    ScratchPad2D<Real> q_u(member.team_scratch(1), P.GetDim(4), P.GetDim(1));
+    DonorCellX2(member, k, j - 1, is_l, ie_l, P, ql, q_u);
+    DonorCellX2(member, k, j, is_l, ie_l, P, q_u, qr);  
+}
+template <>
+KOKKOS_INLINE_FUNCTION void reconstruct<ReconstructionType::donor_cell, X3DIR>(parthenon::team_mbr_t& member,
+                                        const GRCoordinates& G, const VariablePack<Real> &P,
+                                        const int& k, const int& j, const int& is_l, const int& ie_l, 
+                                        ScratchPad2D<Real> ql, ScratchPad2D<Real> qr)
+{
+    ScratchPad2D<Real> q_u(member.team_scratch(1), P.GetDim(4), P.GetDim(1));
+    DonorCellX3(member, k, j - 1, is_l, ie_l, P, ql, q_u);
+    DonorCellX3(member, k, j, is_l, ie_l, P, q_u, qr);  
+}
+// LINEAR W/VAN LEER
+template <>
+KOKKOS_INLINE_FUNCTION void reconstruct<ReconstructionType::linear_vl, X1DIR>(parthenon::team_mbr_t& member,
+                                        const GRCoordinates& G, const VariablePack<Real> &P,
+                                        const int& k, const int& j, const int& is_l, const int& ie_l, 
+                                        ScratchPad2D<Real> ql, ScratchPad2D<Real> qr)
+{
     // Extra scratch space for Parthenon's VL limiter stuff
-    ScratchPad2D<Real> qc(member.team_scratch(scratch_level), nvar, n1);
-    ScratchPad2D<Real> dql(member.team_scratch(scratch_level), nvar, n1);
-    ScratchPad2D<Real> dqr(member.team_scratch(scratch_level), nvar, n1);
-    ScratchPad2D<Real> dqm(member.team_scratch(scratch_level), nvar, n1);
-
-    // Get reconstructed state on faces
-    // Note the switch statement here is in the outer loop, or it would be a performance concern
-    switch (recon) {
-    case ReconstructionType::donor_cell:
-        switch (dir) {
-        case X1DIR:
-            DonorCellX1(member, k, j, is_l, ie_l, P, ql, qr);
-            break;
-        case X2DIR:
-            DonorCellX2(member, k, j - 1, is_l, ie_l, P, ql, q_unused);
-            DonorCellX2(member, k, j, is_l, ie_l, P, q_unused, qr);
-            break;
-        case X3DIR:
-            DonorCellX3(member, k - 1, j, is_l, ie_l, P, ql, q_unused);
-            DonorCellX3(member, k, j, is_l, ie_l, P, q_unused, qr);
-            break;
-        }
-        break;
-    case ReconstructionType::linear_vl:
-        switch (dir) {
-        case X1DIR:
-            PiecewiseLinearX1(member, k, j, is_l, ie_l, G, P, ql, qr, qc, dql, dqr, dqm);
-            break;
-        case X2DIR:
-            PiecewiseLinearX2(member, k, j - 1, is_l, ie_l, G, P, ql, q_unused, qc, dql, dqr, dqm);
-            PiecewiseLinearX2(member, k, j, is_l, ie_l, G, P, q_unused, qr, qc, dql, dqr, dqm);
-            break;
-        case X3DIR:
-            PiecewiseLinearX3(member, k - 1, j, is_l, ie_l, G, P, ql, q_unused, qc, dql, dqr, dqm);
-            PiecewiseLinearX3(member, k, j, is_l, ie_l, G, P, q_unused, qr, qc, dql, dqr, dqm);
-            break;
-        }
-        break;
-    case ReconstructionType::linear_mc:
-        switch (dir) {
-        case X1DIR:
-            KReconstruction::PiecewiseLinearX1(member, k, j, is_l, ie_l, P, ql, qr);
-            break;
-        case X2DIR:
-            KReconstruction::PiecewiseLinearX2(member, k, j - 1, is_l, ie_l, P, ql, q_unused);
-            KReconstruction::PiecewiseLinearX2(member, k, j, is_l, ie_l, P, q_unused, qr);
-            break;
-        case X3DIR:
-            KReconstruction::PiecewiseLinearX3(member, k - 1, j, is_l, ie_l, P, ql, q_unused);
-            KReconstruction::PiecewiseLinearX3(member, k, j, is_l, ie_l, P, q_unused, qr);
-            break;
-        }
-        break;
-    case ReconstructionType::weno5:
-        switch (dir) {
-        case X1DIR:
-            KReconstruction::WENO5X1(member, k, j, is_l, ie_l, P, ql, qr);
-            break;
-        case X2DIR:
-            KReconstruction::WENO5X2l(member, k, j - 1, is_l, ie_l, P, ql);
-            KReconstruction::WENO5X2r(member, k, j, is_l, ie_l, P, qr);
-            break;
-        case X3DIR:
-            KReconstruction::WENO5X3l(member, k - 1, j, is_l, ie_l, P, ql);
-            KReconstruction::WENO5X3r(member, k, j, is_l, ie_l, P, qr);
-            break;
-        }
-        break;
-        // TODO if this is even useful, pass in the copious extra things it needs
-    // case ReconstructionType::weno5_lower_poles:
-    //     switch (dir) {
-    //     case X1DIR:
-    //         KReconstruction::WENO5X1(member, k, j, is_l, ie_l, P, ql, qr);
-    //         break;
-    //     case X2DIR:
-    //         // This prioritizes calculating fluxes for the same *zone* with the same *algorithm*,
-    //         // mostly to mirror iharm3d.  One could imagine prioritizing matching faces, instead
-    //         if (is_inner_x2 && j == js + 1) {
-    //             DonorCellX2(member, k, j - 1, is_l, ie_l, P, ql, q_unused);
-    //             //DonorCellX2(member, k, j, is_l, ie_l, P, q_unused, qr);
-    //             KReconstruction::PiecewiseLinearX2(member, k, j, is_l, ie_l, P, q_unused, qr);
-    //         } else if (is_inner_x2 && j == js + 2) {
-    //             KReconstruction::PiecewiseLinearX2(member, k, j - 1, is_l, ie_l, P, ql, q_unused);
-    //             //KReconstruction::PiecewiseLinearX2(member, k, j, is_l, ie_l, P, q_unused, qr);
-    //             KReconstruction::WENO5X2r(member, k, j, is_l, ie_l, P, qr);
-    //         } else if (is_outer_x2 && j == je - 1) {
-    //             KReconstruction::WENO5X2l(member, k, j - 1, is_l, ie_l, P, ql);
-    //             //KReconstruction::PiecewiseLinearX2(member, k, j - 1, is_l, ie_l, P, ql, q_unused);
-    //             KReconstruction::PiecewiseLinearX2(member, k, j, is_l, ie_l, P, q_unused, qr);
-    //         } else if (is_outer_x2 && j == je) {
-    //             KReconstruction::PiecewiseLinearX2(member, k, j - 1, is_l, ie_l, P, ql, q_unused);
-    //             //DonorCellX2(member, k, j - 1, is_l, ie_l, P, ql, q_unused);
-    //             DonorCellX2(member, k, j, is_l, ie_l, P, q_unused, qr);
-    //         } else {
-    //             KReconstruction::WENO5X2l(member, k, j - 1, is_l, ie_l, P, ql);
-    //             KReconstruction::WENO5X2r(member, k, j, is_l, ie_l, P, qr);
-    //         }
-    //         break;
-    //     case X3DIR:
-    //         KReconstruction::WENO5X3l(member, k - 1, j, is_l, ie_l, P, ql);
-    //         KReconstruction::WENO5X3r(member, k, j, is_l, ie_l, P, qr);
-    //         break;
-    //     }
-    //     break;
-    }
+    ScratchPad2D<Real>  qc(member.team_scratch(1), P.GetDim(4), P.GetDim(1));
+    ScratchPad2D<Real> dql(member.team_scratch(1), P.GetDim(4), P.GetDim(1));
+    ScratchPad2D<Real> dqr(member.team_scratch(1), P.GetDim(4), P.GetDim(1));
+    ScratchPad2D<Real> dqm(member.team_scratch(1), P.GetDim(4), P.GetDim(1));
+    PiecewiseLinearX1(member, k, j, is_l, ie_l, G, P, ql, qr, qc, dql, dqr, dqm);
+}
+template <>
+KOKKOS_INLINE_FUNCTION void reconstruct<ReconstructionType::linear_vl, X2DIR>(parthenon::team_mbr_t& member,
+                                        const GRCoordinates& G, const VariablePack<Real> &P,
+                                        const int& k, const int& j, const int& is_l, const int& ie_l, 
+                                        ScratchPad2D<Real> ql, ScratchPad2D<Real> qr)
+{
+    // Extra scratch space for Parthenon's VL limiter stuff
+    ScratchPad2D<Real>  qc(member.team_scratch(1), P.GetDim(4), P.GetDim(1));
+    ScratchPad2D<Real> dql(member.team_scratch(1), P.GetDim(4), P.GetDim(1));
+    ScratchPad2D<Real> dqr(member.team_scratch(1), P.GetDim(4), P.GetDim(1));
+    ScratchPad2D<Real> dqm(member.team_scratch(1), P.GetDim(4), P.GetDim(1));
+    ScratchPad2D<Real> q_u(member.team_scratch(1), P.GetDim(4), P.GetDim(1));
+    PiecewiseLinearX2(member, k, j - 1, is_l, ie_l, G, P, ql, q_u, qc, dql, dqr, dqm);
+    PiecewiseLinearX2(member, k, j, is_l, ie_l, G, P, q_u, qr, qc, dql, dqr, dqm);
+}
+template <>
+KOKKOS_INLINE_FUNCTION void reconstruct<ReconstructionType::linear_vl, X3DIR>(parthenon::team_mbr_t& member,
+                                        const GRCoordinates& G, const VariablePack<Real> &P,
+                                        const int& k, const int& j, const int& is_l, const int& ie_l, 
+                                        ScratchPad2D<Real> ql, ScratchPad2D<Real> qr)
+{
+    // Extra scratch space for Parthenon's VL limiter stuff
+    ScratchPad2D<Real>  qc(member.team_scratch(1), P.GetDim(4), P.GetDim(1));
+    ScratchPad2D<Real> dql(member.team_scratch(1), P.GetDim(4), P.GetDim(1));
+    ScratchPad2D<Real> dqr(member.team_scratch(1), P.GetDim(4), P.GetDim(1));
+    ScratchPad2D<Real> dqm(member.team_scratch(1), P.GetDim(4), P.GetDim(1));
+    ScratchPad2D<Real> q_u(member.team_scratch(1), P.GetDim(4), P.GetDim(1));
+    PiecewiseLinearX3(member, k, j - 1, is_l, ie_l, G, P, ql, q_u, qc, dql, dqr, dqm);
+    PiecewiseLinearX3(member, k, j, is_l, ie_l, G, P, q_u, qr, qc, dql, dqr, dqm);
+}
+// LINEAR WITH MC
+template <>
+KOKKOS_INLINE_FUNCTION void reconstruct<ReconstructionType::linear_mc, X1DIR>(parthenon::team_mbr_t& member,
+                                        const GRCoordinates& G, const VariablePack<Real> &P,
+                                        const int& k, const int& j, const int& is_l, const int& ie_l, 
+                                        ScratchPad2D<Real> ql, ScratchPad2D<Real> qr)
+{
+    KReconstruction::PiecewiseLinearX1(member, k, j, is_l, ie_l, P, ql, qr);
+}
+template <>
+KOKKOS_INLINE_FUNCTION void reconstruct<ReconstructionType::linear_mc, X2DIR>(parthenon::team_mbr_t& member,
+                                        const GRCoordinates& G, const VariablePack<Real> &P,
+                                        const int& k, const int& j, const int& is_l, const int& ie_l, 
+                                        ScratchPad2D<Real> ql, ScratchPad2D<Real> qr)
+{
+    ScratchPad2D<Real> q_u(member.team_scratch(1), P.GetDim(4), P.GetDim(1));
+    KReconstruction::PiecewiseLinearX2(member, k, j - 1, is_l, ie_l, P, ql, q_u);
+    KReconstruction::PiecewiseLinearX2(member, k, j, is_l, ie_l, P, q_u, qr);
+}
+template <>
+KOKKOS_INLINE_FUNCTION void reconstruct<ReconstructionType::linear_mc, X3DIR>(parthenon::team_mbr_t& member,
+                                        const GRCoordinates& G, const VariablePack<Real> &P,
+                                        const int& k, const int& j, const int& is_l, const int& ie_l, 
+                                        ScratchPad2D<Real> ql, ScratchPad2D<Real> qr)
+{
+    ScratchPad2D<Real> q_u(member.team_scratch(1), P.GetDim(4), P.GetDim(1));
+    KReconstruction::PiecewiseLinearX3(member, k, j - 1, is_l, ie_l, P, ql, q_u);
+    KReconstruction::PiecewiseLinearX3(member, k, j, is_l, ie_l, P, q_u, qr);
+}
+// WENO5
+template <>
+KOKKOS_INLINE_FUNCTION void reconstruct<ReconstructionType::weno5, X1DIR>(parthenon::team_mbr_t& member,
+                                        const GRCoordinates& G, const VariablePack<Real> &P,
+                                        const int& k, const int& j, const int& is_l, const int& ie_l, 
+                                        ScratchPad2D<Real> ql, ScratchPad2D<Real> qr)
+{
+    KReconstruction::WENO5X1(member, k, j, is_l, ie_l, P, ql, qr);
+}
+template <>
+KOKKOS_INLINE_FUNCTION void reconstruct<ReconstructionType::weno5, X2DIR>(parthenon::team_mbr_t& member,
+                                        const GRCoordinates& G, const VariablePack<Real> &P,
+                                        const int& k, const int& j, const int& is_l, const int& ie_l, 
+                                        ScratchPad2D<Real> ql, ScratchPad2D<Real> qr)
+{
+    ScratchPad2D<Real> q_u(member.team_scratch(1), P.GetDim(4), P.GetDim(1));
+    KReconstruction::WENO5X2l(member, k, j - 1, is_l, ie_l, P, ql);
+    KReconstruction::WENO5X2r(member, k, j, is_l, ie_l, P, qr);
+}
+template <>
+KOKKOS_INLINE_FUNCTION void reconstruct<ReconstructionType::weno5, X3DIR>(parthenon::team_mbr_t& member,
+                                        const GRCoordinates& G, const VariablePack<Real> &P,
+                                        const int& k, const int& j, const int& is_l, const int& ie_l, 
+                                        ScratchPad2D<Real> ql, ScratchPad2D<Real> qr)
+{
+    ScratchPad2D<Real> q_u(member.team_scratch(1), P.GetDim(4), P.GetDim(1));
+    KReconstruction::WENO5X3l(member, k, j - 1, is_l, ie_l, P, ql);
+    KReconstruction::WENO5X3r(member, k, j, is_l, ie_l, P, qr);
 }
 
 } // namespace KReconstruction

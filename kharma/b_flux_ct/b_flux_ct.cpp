@@ -228,7 +228,7 @@ TaskStatus FixPolarFlux(MeshBlockData<Real> *rc)
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
     const int ndim = pmb->pmy_mesh->ndim;
 
-    GridVars F1, F2, F3;
+    GridVector F1, F2, F3;
     F1 = rc->Get("c.c.bulk.B_con").flux[X1DIR];
     if (ndim > 1) F2 = rc->Get("c.c.bulk.B_con").flux[X2DIR];
     if (ndim > 2) F3 = rc->Get("c.c.bulk.B_con").flux[X3DIR];

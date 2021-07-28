@@ -135,6 +135,31 @@ KOKKOS_INLINE_FUNCTION void calc_4vecs(const GRCoordinates& G, const GridVars P,
     Real B_Pl[NVEC] = {B_P(0, k, j, i), B_P(1, k, j, i), B_P(2, k, j, i)};
     calc_4vecs(G, Pl, B_Pl, k, j, i, loc, D);
 }
+// TODO
+KOKKOS_INLINE_FUNCTION void calc_4vecs(const GRCoordinates& G, const ScratchPad2D<Real>& P, const struct varmap& m,
+                                      const int& k, const int& j, const int& i, const Loci loc, FourVectors& D)
+{
+    Real qsq = G.gcov(loc, j, i, 1, 1) * P(m.p + prims::u1, i) * P(m.p + prims::u1, i) +
+               G.gcov(loc, j, i, 2, 2) * P(m.p + prims::u2, i) * P(m.p + prims::u2, i) +
+               G.gcov(loc, j, i, 3, 3) * P(m.p + prims::u3, i) * P(m.p + prims::u3, i) +
+            2. * (G.gcov(loc, j, i, 1, 2) * P(m.p + prims::u1, i) * P(m.p + prims::u2, i) +
+                  G.gcov(loc, j, i, 1, 3) * P(m.p + prims::u1, i) * P(m.p + prims::u3, i) +
+                  G.gcov(loc, j, i, 2, 3) * P(m.p + prims::u2, i) * P(m.p + prims::u3, i));
+
+    Real gamma = sqrt(1. + qsq);
+    Real alpha = 1. / sqrt(-G.gcon(loc, j, i, 0, 0));
+
+    D.ucon[0] = gamma / alpha;
+    VLOOP D.ucon[v+1] = P(m.p + prims::u1 + v, i) - gamma * alpha * G.gcon(loc, j, i, 0, v+1);
+
+    G.lower(D.ucon, D.ucov, k, j, i, loc);
+
+    D.bcon[0] = 0;
+    VLOOP D.bcon[0] += P(m.Bp + v, i) * D.ucov[v+1];
+    VLOOP D.bcon[v+1] = (P(m.Bp + v, i) + D.bcon[0] * D.ucon[v+1]) / D.ucon[0];
+
+    G.lower(D.bcon, D.bcov, k, j, i, loc);
+}
 
 /**
  * Turn the primitive variables at a location into the local conserved variables, or fluxes at a face
@@ -157,6 +182,28 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const Real& rho
     flux[prims::u1] = mhd[1] * gdet;
     flux[prims::u2] = mhd[2] * gdet;
     flux[prims::u3] = mhd[3] * gdet;
+}
+/**
+ * Turn the primitive variables at a location into the local conserved variables, or fluxes at a face
+ * 
+ * Note this is fluid only -- each package defines a prim_to_flux, which are called in GetFlux
+ */
+KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const ScratchPad2D<Real>& P, const struct varmap& m, const FourVectors D,
+                                         const Real& gam, const int& k, const int& j, const int& i, const Loci loc, const int dir,
+                                         ScratchPad2D<Real>& flux)
+{
+    Real gdet = G.gdet(loc, j, i);
+
+    // Particle number flux
+    flux(m.u + prims::rho, i) = P(m.p + prims::rho, i) * D.ucon[dir] * gdet;
+
+    // MHD stress-energy tensor w/ first index up, second index down
+    Real mhd[GR_DIM];
+    calc_tensor(P(m.p + prims::rho, i), P(m.p + prims::u, i), (gam - 1) * P(m.p + prims::u, i), D, dir, mhd);
+    flux(m.u + prims::u, i)  = mhd[0] * gdet + flux(m.u + prims::rho, i);
+    flux(m.u + prims::u1, i) = mhd[1] * gdet;
+    flux(m.u + prims::u2, i) = mhd[2] * gdet;
+    flux(m.u + prims::u3, i) = mhd[3] * gdet;
 }
 
 /**
@@ -206,24 +253,12 @@ KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates &G, const Real P[NPRIM], 
     Real pgas = eos->p(rho, u);
     prim_to_flux(G, rho, u, pgas, Dtmp, k, j, i, loc, 0, U);
 }
-// KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates &G, const Real P[NPRIM], const EOS* eos,
-//                                          const int& k, const int& j, const int& i,
-//                                          Real U[NPRIM], const Loci loc=Loci::center)
-// {
-//     FourVectors Dtmp;
-//     Real B_P[NVEC] = {0};
-//     calc_4vecs(G, P, B_P, k, j, i, loc, Dtmp);
-//     Real rho = P[prims::rho];
-//     Real u = P[prims::u];
-//     Real pgas = eos->p(rho, u);
-//     prim_to_flux(G, rho, u, pgas, Dtmp, k, j, i, loc, 0, U);
-// }
 
 /**
  *  Calculate components of magnetosonic velocity from primitive variables
  */
 KOKKOS_INLINE_FUNCTION void vchar(const GRCoordinates &G, const Real& rho, const Real& u, const Real& pgas,
-                                  const FourVectors& D, const EOS* eos,
+                                  const FourVectors& D, const Real& gam,
                                   const int& k, const int& j, const int& i, const Loci loc, const int dir,
                                   Real& cmax, Real& cmin)
 {
@@ -243,10 +278,10 @@ KOKKOS_INLINE_FUNCTION void vchar(const GRCoordinates &G, const Real& rho, const
 
     // Find fast magnetosonic speed
     bsq = dot(D.bcon, D.bcov);
-    ef = rho + eos->gam * u;
+    ef = rho + gam * u;
     ee = bsq + ef;
     va2 = bsq / ee;
-    cs2 = eos->gam * pgas / ef;
+    cs2 = gam * pgas / ef;
 
     cms2 = cs2 + va2 - cs2 * va2;
 
@@ -270,6 +305,57 @@ KOKKOS_INLINE_FUNCTION void vchar(const GRCoordinates &G, const Real& rho, const
 
     vp = -(-B + discr) / (2. * A);
     vm = -(-B - discr) / (2. * A);
+
+    cmax = max(vp, vm);
+    cmin = min(vp, vm);
+}
+
+KOKKOS_INLINE_FUNCTION void vchar(const GRCoordinates &G, const ScratchPad2D<Real>& P, const struct varmap& m, const FourVectors& D,
+                                  const Real& gam, const int& k, const int& j, const int& i, const Loci loc, const int& dir,
+                                  Real& cmax, Real& cmin)
+{
+    // Find fast magnetosonic speed
+    Real cms2;
+    {
+        Real bsq = dot(D.bcon, D.bcov);
+        Real ef = P(m.p + prims::rho, i) + gam * P(m.p + prims::u, i);
+        Real ee = bsq + ef;
+        Real va2 = bsq / ee;
+        Real cs2 = gam * (gam - 1) * P(m.p + prims::u, i) / ef;
+        cms2 = cs2 + va2 - cs2 * va2;
+        clip(cms2, 1.e-20, 1.);
+    }
+
+    // Require that speed of wave measured by observer q.ucon is cms2
+    Real A, B, C;
+    {
+        Real Acov[GR_DIM] = {0}, Bcov[GR_DIM] = {0};
+        Real Acon[GR_DIM] = {0}, Bcon[GR_DIM] = {0};
+
+        Acov[dir] = 1.;
+        Bcov[0] = 1.;
+
+        G.raise(Acov, Acon, k, j, i, loc);
+        G.raise(Bcov, Bcon, k, j, i, loc);
+
+        Real Asq = dot(Acon, Acov);
+        Real Bsq = dot(Bcon, Bcov);
+        Real Au = dot(Acov, D.ucon);
+        Real Bu = dot(Bcov, D.ucon);
+        Real AB = dot(Acon, Bcov);
+        Real Au2 = Au * Au;
+        Real Bu2 = Bu * Bu;
+        Real AuBu = Au * Bu;
+
+        A = Bu2 - (Bsq + Bu2) * cms2;
+        B = 2. * (AuBu - (AB + AuBu) * cms2);
+        C = Au2 - (Asq + Au2) * cms2;
+    }
+
+    Real discr = sqrt(max(B * B - 4. * A * C, 0.));
+
+    Real vp = -(-B + discr) / (2. * A);
+    Real vm = -(-B - discr) / (2. * A);
 
     cmax = max(vp, vm);
     cmin = min(vp, vm);

@@ -105,17 +105,27 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const FourVecto
                                            Real B_flux[NVEC])
 {
     Real gdet = G.gdet(loc, j, i);
-    if (dir == 0) {
+    if (dir == 0) { // In-zone prims to cons
         VLOOP B_flux[v] = B_P[v] * gdet;
-    } else {
+    } else { // Flux through a face
         // Dual of Maxwell tensor
-        B_flux[0] = (D.bcon[1] * D.ucon[dir] -
-                    D.bcon[dir] * D.ucon[1]) * gdet;
-        B_flux[1] = (D.bcon[2] * D.ucon[dir] -
-                    D.bcon[dir] * D.ucon[2]) * gdet;
-        B_flux[2] = (D.bcon[3] * D.ucon[dir] -
-                    D.bcon[dir] * D.ucon[3]) * gdet;
+        VLOOP B_flux[v] = (D.bcon[v+1] * D.ucon[dir] - D.bcon[dir] * D.ucon[v+1]) * gdet;
     }
+}
+
+KOKKOS_INLINE_FUNCTION void prim_to_u(const GRCoordinates& G, ScratchPad2D<Real>& P, const struct varmap &m, const FourVectors D,
+                                      const int& j, const int& i, const Loci loc,
+                                      ScratchPad2D<Real>& flux)
+{
+    Real gdet = G.gdet(loc, j, i);
+    VLOOP flux(m.Bu + v, i) = P(m.Bp + v, i) * gdet;
+}
+KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, ScratchPad2D<Real>& P, const struct varmap &m, const FourVectors D,
+                                         const int& j, const int& i, const Loci loc, const int dir,
+                                         ScratchPad2D<Real>& flux)
+{
+    Real gdet = G.gdet(loc, j, i);
+    VLOOP flux(m.Bu + v, i) = (D.bcon[v+1] * D.ucon[dir] - D.bcon[dir] * D.ucon[v+1]) * gdet;
 }
 
 }

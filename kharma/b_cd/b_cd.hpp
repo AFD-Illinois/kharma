@@ -64,20 +64,14 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
 void UtoP(MeshBlockData<Real> *rc);
 
 /**
- * Add the source term.  This has to be performed *after* the fluxes dUdt are applied to U
+ * Add the source term to dUdt, before it is applied to U
  */
-TaskStatus AddSource(MeshBlockData<Real> *rc, const Real& dt);
+TaskStatus AddSource(MeshBlockData<Real> *rc, MeshBlockData<Real> *dudt, const Real& dt);
 
 /**
  * Take a maximum over the divB array, which is updated every step 
  */
 Real MaxDivB(MeshBlockData<Real> *rc, IndexDomain domain=IndexDomain::interior);
-
-/**
- * Calculate max "divB" as reconstructed from psi.
- * Includes first-order time derivative, best as a diagnostic...
- */
-Real MaxDivB_psi(MeshBlockData<Real> *rc0, MeshBlockData<Real> *rc1, const Real& dt, IndexDomain domain=IndexDomain::interior);
 
 /**
  * Diagnostics printed/computed after each step
@@ -92,21 +86,43 @@ TaskStatus PostStepDiagnostics(Mesh *pmesh, ParameterInput *pin, const SimTime& 
 void FillOutput(MeshBlock *pmb, ParameterInput *pin);
 
 /**
- * Turn the primitive B field into the local conserved flux
+ * Turn the primitive B, psi field into the local conserved flux
  */
 KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const FourVectors D, const Real B_P[NVEC], Real& psi_p,
-                                           const int& k, const int& j, const int& i, const Loci loc, const int dir, const Real& c_h,
+                                           const int& k, const int& j, const int& i, const Loci loc, const int dir,
                                            Real B_flux[NVEC], Real *psi_flux)
 {
     Real gdet = G.gdet(loc, j, i);
-    if (dir == 0) {
+    if (dir == 0) {  // In-place prims to cons
         VLOOP B_flux[v] = B_P[v] * gdet;
-        *psi_flux = psi_p;
-    } else {
+        *psi_flux = psi_p * gdet;
+    } else { // Flux through a face
         // Dual of Maxwell tensor
-        VLOOP B_flux[v] = (v+1 == dir) ? psi_p : (D.bcon[v+1] * D.ucon[dir] - D.bcon[dir] * D.ucon[v+1]) * gdet;
-        *psi_flux = c_h*c_h * B_P[dir - 1];
+        VLOOP B_flux[v] = (D.bcon[v+1] * D.ucon[dir] - D.bcon[dir] * D.ucon[v+1]) * gdet;
+        // Psi field update as in Mosta et al (IllinoisGRMHD)
+        Real alpha = 1. / sqrt(-G.gcon(Loci::center, j, i, 0, 0));
+        *psi_flux = (alpha * B_P[dir - 1] - G.gcon(Loci::center, j, i, 0, dir) * alpha * alpha * psi_p) * gdet;
     }
+}
+
+KOKKOS_INLINE_FUNCTION void prim_to_u(const GRCoordinates& G, const ScratchPad2D<Real> &P, const struct varmap& m, const FourVectors D,
+                                      const int& j, const int& i, const Loci loc,
+                                      ScratchPad2D<Real>& flux)
+{
+    Real gdet = G.gdet(loc, j, i);
+    VLOOP flux(m.Bu + v, i) = P(m.Bp + v, i) * gdet;
+    flux(m.psiu, i) = P(m.psip, i) * gdet;
+}
+KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const ScratchPad2D<Real> &P, const struct varmap& m, const FourVectors D,
+                                           const int& j, const int& i, const Loci loc, const int dir,
+                                           ScratchPad2D<Real>& flux)
+{
+    Real gdet = G.gdet(loc, j, i);
+    // Dual of Maxwell tensor
+    VLOOP flux(m.Bu + v, i) = (v+1 == dir) ? P(m.psip, i) * gdet : (D.bcon[v+1] * D.ucon[dir] - D.bcon[dir] * D.ucon[v+1]) * gdet;
+    // Psi field update as in Mosta et al (IllinoisGRMHD)
+    Real alpha = 1. / sqrt(-G.gcon(Loci::center, j, i, 0, 0));
+    flux(m.psiu, i) = (alpha * P(m.Bp + dir - 1, i) - G.gcon(Loci::center, j, i, 0, dir) * alpha * alpha * P(m.psip, i)) * gdet;
 }
 
 }

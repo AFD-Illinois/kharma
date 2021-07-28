@@ -7,6 +7,7 @@ if [[ "$HOST" == "toolbox" ]]; then
 fi
 
 if [[ $HOST == "fermium" ]]; then
+  module purge
   module load nvhpc
   HOST_ARCH="AMDAVX"
   DEVICE_ARCH="TURING75"
