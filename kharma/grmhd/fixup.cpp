@@ -53,6 +53,7 @@ void FixUtoP(MeshBlockData<Real> *rc)
     GridScalar fflag = rc->Get("c.c.bulk.fflag").data;
 
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
+    const int verbose = pmb->packages.Get("GRMHD")->Param<int>("verbose");
     FloorPrescription floors = FloorPrescription(pmb->packages.Get("GRMHD")->AllParams());
 
     int is = is_physical_bound(pmb->boundary_flag[BoundaryFace::inner_x1]) ?
@@ -101,9 +102,12 @@ void FixUtoP(MeshBlockData<Real> *rc)
 
                 if(wsum < 1.e-10) {
                     // TODO probably should crash here.
-                    //printf("No neighbors were available at %d %d %d!\n", i, j, k);
+#ifndef KOKKOS_ENABLE_SYCL
+                    if (verbose >= 1) printf("No neighbors were available at %d %d %d!\n", i, j, k);
+#endif
                     PLOOP P(p, k, j, i) = sum_x[p]/wsum_x;
                 } else {
+                    // Re-enable to trace specific flags if they're cropping up too much
                     // if (pflag(k, j, i) == InversionStatus::max_iter) {
                     //     printf("zone %d %d %d replaced, weight %f.\nOriginal: %g %g %g %g %g\nReplacement: %g %g %g %g %g\n", i, j, k, wsum,
                     //     P(0, k, j, i), P(1, k, j, i), P(2, k, j, i), P(3, k, j, i), P(4, k, j, i),

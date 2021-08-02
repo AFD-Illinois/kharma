@@ -161,8 +161,9 @@ TaskStatus B_CD::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
                     q = (1 / (sqrt(2 * M_PI) * fabs(sigma))) * exp(-u * u / 2);
                 }
                 break;
-            default:
-                q = 0; // This shouldn't be reached, keep track of above
+            case BSeedType::constant:
+            case BSeedType::monopole:
+                q = 0; // This shouldn't be reached, cases are handled above
             }
 
             A3(j, i) = max(q, 0.);

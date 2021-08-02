@@ -23,6 +23,8 @@ if [[ $HOST == "ferrum" ]]; then
   module purge
   module load compiler mpi
 
+  NPROC=6 # My kingdom for a RAM!
+
   HOST_ARCH="HSW"
   DEVICE_ARCH="INTEL_GEN"
   PREFIX_PATH="$HOME/libs/hdf5-oneapi"

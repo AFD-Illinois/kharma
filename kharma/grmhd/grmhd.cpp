@@ -378,10 +378,13 @@ Real EstimateTimestep(MeshBlockData<Real> *rc)
                 double ndt_zone = 1 / (1 / (coords.dx1v(i) / ctop(1, k, j, i)) +
                                     1 / (coords.dx2v(j) / ctop(2, k, j, i)) +
                                     1 / (coords.dx3v(k) / ctop(3, k, j, i)));
+        // SYCL can't print, see debug.cpp
+#ifndef KOKKOS_ENABLE_SYCL
                 if (ndt_zone == ndt) {
-                    //printf("Timestep set by %d %d %d: pflag was %f and fflag was %f\n",
-                    //        i, j, k, pflag(k, j, i), fflag(k, j, i));
+                    printf("Timestep set by %d %d %d: pflag was %f and fflag was %f\n",
+                           i, j, k, pflag(k, j, i), fflag(k, j, i));
                 }
+#endif
             }
         );
     }

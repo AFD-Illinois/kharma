@@ -85,10 +85,13 @@ class CoordinateEmbedding {
             } else if (mpark::holds_alternative<SphKSCoords>(base_in)) {
                 base.emplace<SphKSCoords>(mpark::get<SphKSCoords>(base_in));
             }
-            //else {
-                //printf("Tried to copy invalid base coordinates!");
-                //throw std::invalid_argument("Tried to copy invalid base coordinates!");
-            //}
+            // SYCL cannot throw errors.  That's fine because we don't make errors.
+#ifndef KOKKOS_ENABLE_SYCL
+            else {
+                printf("Tried to copy invalid base coordinates!");
+                throw std::invalid_argument("Tried to copy invalid base coordinates!");
+            }
+#endif
 
             if (mpark::holds_alternative<SphNullTransform>(transform_in)) {
                 transform.emplace<SphNullTransform>(mpark::get<SphNullTransform>(transform_in));
@@ -99,10 +102,12 @@ class CoordinateEmbedding {
             } else if (mpark::holds_alternative<FunkyTransform>(transform_in)) {
                 transform.emplace<FunkyTransform>(mpark::get<FunkyTransform>(transform_in));
             }
-            //else {
-                //printf("Tried to copy invalid coordinate transform!");
-                //throw std::invalid_argument("Tried to copy invalid coordinate transform!");
-            //}
+#ifndef KOKKOS_ENABLE_SYCL
+            else {
+                printf("Tried to copy invalid coordinate transform!");
+                throw std::invalid_argument("Tried to copy invalid coordinate transform!");
+            }
+#endif
         }
 
         // Constructors

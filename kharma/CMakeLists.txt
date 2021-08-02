@@ -3,6 +3,8 @@
 #
 if (Kokkos_ENABLE_CUDA)
     set(EXE_NAME "kharma.cuda")
+elseif(Kokkos_ENABLE_SYCL)
+    set(EXE_NAME "kharma.sycl")
 else()
     set(EXE_NAME "kharma.host")
 endif()
