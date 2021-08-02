@@ -49,7 +49,6 @@ using namespace parthenon;
 namespace KReconstruction
 {
 // BUILD UP (a) LINEAR MC RECONSTRUCTION
-// TODO left/right splits?
 
 // Single-item implementation
 KOKKOS_INLINE_FUNCTION Real mc(const Real dm, const Real dp)
@@ -346,7 +345,10 @@ KOKKOS_INLINE_FUNCTION void WENO5X3r(parthenon::team_mbr_t const &member, const 
 }
 
 /**
- * Reconstructions as templates
+ * Templated calls to different reconstruction algorithms
+ * This is basically a compile-time 'if' or 'switch' statement, where all the options get generated
+ * at compile-time (see harm_driver.cpp where they're spelled out explicitly)
+ * 
  * We could temlate these directly on the function if Parthenon could agree on what argument list to use
  * Better than a runtime decision per outer loop I think
  */
@@ -371,7 +373,7 @@ KOKKOS_INLINE_FUNCTION void reconstruct<ReconstructionType::donor_cell, X2DIR>(p
 {
     ScratchPad2D<Real> q_u(member.team_scratch(1), P.GetDim(4), P.GetDim(1));
     DonorCellX2(member, k, j - 1, is_l, ie_l, P, ql, q_u);
-    DonorCellX2(member, k, j, is_l, ie_l, P, q_u, qr);  
+    DonorCellX2(member, k, j, is_l, ie_l, P, q_u, qr);
 }
 template <>
 KOKKOS_INLINE_FUNCTION void reconstruct<ReconstructionType::donor_cell, X3DIR>(parthenon::team_mbr_t& member,
@@ -380,8 +382,8 @@ KOKKOS_INLINE_FUNCTION void reconstruct<ReconstructionType::donor_cell, X3DIR>(p
                                         ScratchPad2D<Real> ql, ScratchPad2D<Real> qr)
 {
     ScratchPad2D<Real> q_u(member.team_scratch(1), P.GetDim(4), P.GetDim(1));
-    DonorCellX3(member, k, j - 1, is_l, ie_l, P, ql, q_u);
-    DonorCellX3(member, k, j, is_l, ie_l, P, q_u, qr);  
+    DonorCellX3(member, k - 1, j, is_l, ie_l, P, ql, q_u);
+    DonorCellX3(member, k, j, is_l, ie_l, P, q_u, qr);
 }
 // LINEAR W/VAN LEER
 template <>
@@ -424,7 +426,7 @@ KOKKOS_INLINE_FUNCTION void reconstruct<ReconstructionType::linear_vl, X3DIR>(pa
     ScratchPad2D<Real> dqr(member.team_scratch(1), P.GetDim(4), P.GetDim(1));
     ScratchPad2D<Real> dqm(member.team_scratch(1), P.GetDim(4), P.GetDim(1));
     ScratchPad2D<Real> q_u(member.team_scratch(1), P.GetDim(4), P.GetDim(1));
-    PiecewiseLinearX3(member, k, j - 1, is_l, ie_l, G, P, ql, q_u, qc, dql, dqr, dqm);
+    PiecewiseLinearX3(member, k - 1, j, is_l, ie_l, G, P, ql, q_u, qc, dql, dqr, dqm);
     PiecewiseLinearX3(member, k, j, is_l, ie_l, G, P, q_u, qr, qc, dql, dqr, dqm);
 }
 // LINEAR WITH MC
@@ -453,7 +455,7 @@ KOKKOS_INLINE_FUNCTION void reconstruct<ReconstructionType::linear_mc, X3DIR>(pa
                                         ScratchPad2D<Real> ql, ScratchPad2D<Real> qr)
 {
     ScratchPad2D<Real> q_u(member.team_scratch(1), P.GetDim(4), P.GetDim(1));
-    KReconstruction::PiecewiseLinearX3(member, k, j - 1, is_l, ie_l, P, ql, q_u);
+    KReconstruction::PiecewiseLinearX3(member, k - 1, j, is_l, ie_l, P, ql, q_u);
     KReconstruction::PiecewiseLinearX3(member, k, j, is_l, ie_l, P, q_u, qr);
 }
 // WENO5
@@ -482,7 +484,7 @@ KOKKOS_INLINE_FUNCTION void reconstruct<ReconstructionType::weno5, X3DIR>(parthe
                                         ScratchPad2D<Real> ql, ScratchPad2D<Real> qr)
 {
     ScratchPad2D<Real> q_u(member.team_scratch(1), P.GetDim(4), P.GetDim(1));
-    KReconstruction::WENO5X3l(member, k, j - 1, is_l, ie_l, P, ql);
+    KReconstruction::WENO5X3l(member, k - 1, j, is_l, ie_l, P, ql);
     KReconstruction::WENO5X3r(member, k, j, is_l, ie_l, P, qr);
 }
 
