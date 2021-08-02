@@ -59,7 +59,6 @@
 
 #include "b_flux_ct.hpp"
 #include "b_cd.hpp"
-#include "b_functions.hpp"
 
 #include "bvals/boundary_conditions.hpp"
 #include "mesh/mesh.hpp"
@@ -150,7 +149,7 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
     pmb->par_for("first_U", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_3D {
             GRMHD::p_to_u(G, P, B_P, gam, k, j, i, U);
-            if (use_b) BField::p_to_u(G, B_P, k, j, i, B_U);
+            if (use_b) B_FluxCT::p_to_u(G, B_P, k, j, i, B_U);
         }
     );
 
@@ -312,7 +311,6 @@ void SyncAllBounds(Mesh *pmesh)
 
         // Physical boundary conditions
         parthenon::ApplyBoundaryConditions(rc);
-        ApplyCustomBoundaries(rc.get());
 
         // Fill P again, including ghost zones
         parthenon::Update::FillDerived(rc.get());

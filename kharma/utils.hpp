@@ -9,9 +9,9 @@
 #include <string>
 #include <stdexcept>
 
-#define NO_DEVICE_STRING_FORMAT 0
-
-#if NO_DEVICE_STRING_FORMAT
+// Again, variadic functions and SYCL don't mix.
+// Also generates a warning on icc but seems to work
+#ifdef KOKKOS_ENABLE_SYCL
 template<typename ... Args>
 std::string string_format( const std::string& format, Args ... args )
 { return std::string(""); }

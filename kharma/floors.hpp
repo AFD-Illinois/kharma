@@ -36,7 +36,7 @@
 #include "decs.hpp"
 
 
-#include "b_functions.hpp"
+#include "b_flux_ct.hpp"
 #include "mhd_functions.hpp"
 #include "phys_functions.hpp"
 #include "U_to_P.hpp"
@@ -248,6 +248,8 @@ KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, GridVars P, Grid
  * Reimplemented to be fast and fit the general prim_to_flux calling convention.
  * 
  * @return fflag: since no inversion is performed, this just returns a flag representing which geometric floors were hit
+ * 
+ * LOCKSTEP: Operates on and respects primitives *only*
  */
 KOKKOS_INLINE_FUNCTION int apply_geo_floors(const GRCoordinates& G, ScratchPad2D<Real>& P, const struct varmap& m,
                                             const Real& gam, const int& k, const int& j, const int& i,

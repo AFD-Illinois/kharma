@@ -130,6 +130,7 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
             break;
         case ReconstructionType::ppm:
         case ReconstructionType::mp5:
+        case ReconstructionType::weno5_lower_poles:
             cerr << "Reconstruction type not supported!  Supported reconstructions:" << endl;
             cerr << "donor_cell, linear_mc, linear_vl, weno5" << endl;
             exit(-5);
@@ -181,9 +182,7 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         auto &mc1 = pmesh->mesh_data.GetOrAdd(stage_name[stage], i);
         auto &mdudt = pmesh->mesh_data.GetOrAdd("dUdt", i);
 
-        // Parthenon can calculate a flux divergence, but we save a kernel launch by also adding
-        // both the GRMHD source term and any "wind" source coefficients.
-        // TODO move from above
+        // When we implement ApplyFluxes over full mesh
         //auto t_flux_apply = tl.AddTask(t_none, GRMHD::ApplyFluxes, tm, mc0.get(), mdudt.get());
 
         auto t_avg_data = tl.AddTask(t_none, AverageIndependentData<MeshData<Real>>,
@@ -257,10 +256,10 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         if (pmesh->multilevel) {
             t_prolongBound = tl.AddTask(t_none, ProlongateBoundaries, sc1);
         }
-        // Parthenon boundary conditions are applied to the conserved variables
-        // Currently we override everything except psi in CD (TODO B)
-        auto t_set_bc = tl.AddTask(t_prolongBound, ApplyBoundaryConditions, sc1);
-        //auto t_set_bc = t_prolongBound;
+        // At this point, we've sync'd all internal boundaries using the conserved
+        // variables. The physical boundaries (pole, inner/outer) are trickier,
+        // since they must be applied to the primitive variables rho,u,u1,u2,u3
+        // but should apply to conserved forms of everything else.
 
         // U_to_P needs a guess in order to converge, so we copy in sc0
         // (but only the fluid primitives!)
@@ -274,16 +273,14 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
                 FLAG("Copied");
                 return TaskStatus::complete;
             }, sc0.get(), sc1.get());
-        
-        auto t_cons_ready = t_copy_prims | t_set_bc;
-        auto t_fill_derived = tl.AddTask(t_cons_ready, Update::FillDerived<MeshBlockData<Real>>, sc1.get());
 
-        // ApplyCustomBoundaries is a catch-all for things HARM needs done on physical boundaries:
-        // Inflow checks, renormalizations, Bondi outer boundary condition, etc.  All keep lockstep.
-        // Our boundaries are applied to primitives (so they must be calculated first)
-        // they recalculate U afterward to preserve lockstep at the end of the step
-        auto t_set_custom_bc = tl.AddTask(t_fill_derived, ApplyCustomBoundaries, sc1.get());
-        auto t_step_done = t_set_custom_bc;
+        auto t_fill_derived = tl.AddTask(t_copy_prims, Update::FillDerived<MeshBlockData<Real>>, sc1.get());
+
+        // This is a parthenon call, but in spherical coordinates this will call the functions in
+        // boundaries.cpp, which apply to the primitive variables for GRMHD, and conserved forms for everything
+        // else.  That means calling FillDerived again on any sections it's replaced!
+        auto t_set_bc = tl.AddTask(t_fill_derived, ApplyBoundaryConditions, sc1);
+        auto t_step_done = t_set_bc;
 
         // Estimate next time step based on ctop
         if (stage == integrator->nstages) {

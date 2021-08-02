@@ -91,11 +91,11 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
     pkg->AddField("c.c.bulk.divB", m);
 
-    pkg->FillDerivedBlock = B_FluxCT::UtoP;
+    pkg->FillDerivedBlock = B_FluxCT::FillDerived;
     return pkg;
 }
 
-void UtoP(MeshBlockData<Real> *rc)
+void UtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
     auto pmb = rc->GetBlockPointer();
 
@@ -104,11 +104,12 @@ void UtoP(MeshBlockData<Real> *rc)
 
     auto& G = pmb->coords;
 
-    IndexDomain domain = IndexDomain::entire;
-    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
-    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
-    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
-    pmb->par_for("UtoP_B", 0, NVEC-1, ks, ke, js, je, is, ie,
+    auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
+    IndexRange ib = bounds.GetBoundsI(domain);
+    IndexRange jb = bounds.GetBoundsJ(domain);
+    IndexRange kb = bounds.GetBoundsK(domain);
+    IndexRange vec = IndexRange({0, NVEC-1});
+    pmb->par_for("UtoP_B", vec.s, vec.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_VARS {
             // Update the primitive B-fields
             B_P(p, k, j, i) = B_U(p, k, j, i) / G.gdet(Loci::center, j, i);

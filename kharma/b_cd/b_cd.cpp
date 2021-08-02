@@ -97,11 +97,11 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
     pkg->AddField("c.c.bulk.divB", m);
 
-    pkg->FillDerivedBlock = B_CD::UtoP;
+    pkg->FillDerivedBlock = B_CD::FillDerived;
     return pkg;
 }
 
-void UtoP(MeshBlockData<Real> *rc)
+void UtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
     auto pmb = rc->GetBlockPointer();
 
@@ -112,11 +112,11 @@ void UtoP(MeshBlockData<Real> *rc)
 
     auto& G = pmb->coords;
 
-    IndexDomain domain = IndexDomain::entire;
-    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
-    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
-    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
-    pmb->par_for("UtoP_B", ks, ke, js, je, is, ie,
+    auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
+    IndexRange ib = bounds.GetBoundsI(domain);
+    IndexRange jb = bounds.GetBoundsJ(domain);
+    IndexRange kb = bounds.GetBoundsK(domain);
+    pmb->par_for("UtoP_B", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_3D {
             // Update the primitive B-fields
             Real gdet = G.gdet(Loci::center, j, i);
@@ -160,29 +160,33 @@ TaskStatus AddSource(MeshBlockData<Real> *rc, MeshBlockData<Real> *dudt, const R
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
-    pmb->par_for("UtoP_B", ks, ke, js, je, is, ie,
+    pmb->par_for("AddSource_B_CD", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D {
             // Add a source term to B based on psi
-            GReal alpha = 1. / sqrt(-G.gcon(Loci::center, j, i, 0, 0));
+            GReal alpha_c = 1. / sqrt(-G.gcon(Loci::center, j, i, 0, 0));
+            GReal gdet_c = G.gdet(Loci::center, j, i);
 
             double divB = ((BF1(B1, k, j, i+1) - BF1(B1, k, j, i)) / G.dx1v(i) +
                            (BF2(B2, k, j+1, i) - BF2(B2, k, j, i)) / G.dx2v(j));
-            if (ndim > 2) divB += (BF3(B3, k, j+1, i) - BF3(B3, k, j, i)) / G.dx3v(k);
+            if (ndim > 2) divB += (BF3(B3, k+1, j, i) - BF3(B3, k, j, i)) / G.dx3v(k);
 
             VLOOP {
                 // First term: gradient of psi
-                B_DU(v, k, j, i) += alpha * G.gcon(Loci::center, j, i, v+1, 1) * (psiF1(k, j, i+1) - psiF1(k, j, i)) / G.dx1v(i) +
-                                    alpha * G.gcon(Loci::center, j, i, v+1, 2) * (psiF2(k, j+1, i) - psiF2(k, j, i)) / G.dx2v(j);
+                B_DU(v, k, j, i) += alpha_c * G.gcon(Loci::center, j, i, v+1, 1) * (psiF1(k, j, i+1) - psiF1(k, j, i)) / G.dx1v(i) +
+                                    alpha_c * G.gcon(Loci::center, j, i, v+1, 2) * (psiF2(k, j+1, i) - psiF2(k, j, i)) / G.dx2v(j);
                 if (ndim > 2)
-                    B_DU(v, k, j, i) += alpha * G.gcon(Loci::center, j, i, v+1, 3) * (psiF3(k, j+1, i) - psiF3(k, j, i)) / G.dx3v(k);
+                    B_DU(v, k, j, i) += alpha_c * G.gcon(Loci::center, j, i, v+1, 3) * (psiF3(k+1, j, i) - psiF3(k, j, i)) / G.dx3v(k);
 
                 // Second term: beta^i divB
-                B_DU(v, k, j, i) += G.gcon(Loci::center, j, i, 0, v+1) * alpha * alpha * divB;
+                B_DU(v, k, j, i) += G.gcon(Loci::center, j, i, 0, v+1) * alpha_c * alpha_c * divB;
             }
             // Update psi using the analytic solution for the source term
-            GReal dalpha1 = (1. / sqrt(-G.gcon(Loci::face1, j, i+1, 0, 0)) - 1. / sqrt(-G.gcon(Loci::face1, j, i, 0, 0))) / G.dx1v(i);
-            GReal dalpha2 = (1. / sqrt(-G.gcon(Loci::face2, j+1, i, 0, 0)) - 1. / sqrt(-G.gcon(Loci::face2, j, i, 0, 0))) / G.dx2v(i);
-            psi_DU(k, j, i) += B_U(X1DIR, k, j, i) * dalpha1 + B_U(X2DIR, k, j, i) * dalpha2 - alpha * lambda * psi_U(k, j, i);
+            GReal dalpha1 = ( (1. / sqrt(-G.gcon(Loci::face1, j, i+1, 0, 0))) / G.gdet(Loci::face1, j, i+1)
+                            - (1. / sqrt(-G.gcon(Loci::face1, j, i, 0, 0))) / G.gdet(Loci::face1, j, i)) / G.dx1v(i);
+            GReal dalpha2 = ( (1. / sqrt(-G.gcon(Loci::face2, j+1, i, 0, 0))) / G.gdet(Loci::face2, j+1, i)
+                            - (1. / sqrt(-G.gcon(Loci::face2, j, i, 0, 0))) / G.gdet(Loci::face2, j, i)) / G.dx2v(i);
+            // There is not dalpha3, the coordinate system is symmetric along x3
+            psi_DU(k, j, i) += B_U(B1, k, j, i) * dalpha1 + B_U(B2, k, j, i) * dalpha2 - alpha_c * lambda * psi_U(k, j, i);
         }
     );
 
@@ -218,7 +222,7 @@ Real MaxDivB(MeshBlockData<Real> *rc, IndexDomain domain)
         KOKKOS_LAMBDA_3D_REDUCE {
             double divb_local = ((F1(B1, k, j, i+1) - F1(B1, k, j, i)) / G.dx1v(i)+
                                  (F2(B2, k, j+1, i) - F2(B2, k, j, i)) / G.dx2v(j));
-            if (ndim > 2) divb_local += (F3(B3, k, j+1, i) - F3(B3, k, j, i)) / G.dx3v(k);
+            if (ndim > 2) divb_local += (F3(B3, k+1, j, i) - F3(B3, k, j, i)) / G.dx3v(k);
 
             if(divb_local > local_result) local_result = divb_local;
         }

@@ -38,7 +38,10 @@
 
 #include "bondi.hpp"
 #include "mhd_functions.hpp"
-#include "b_functions.hpp"
+
+// Going to need all modules' headers here
+#include "b_flux_ct.hpp"
+#include "b_cd.hpp"
 
 #include "basic_types.hpp"
 #include "mesh/domain.hpp"
@@ -46,132 +49,176 @@
 
 KOKKOS_INLINE_FUNCTION void check_inflow(const GRCoordinates &G, GridVars P, const int& k, const int& j, const int& i, int type);
 
-
-TaskStatus ApplyCustomBoundaries(MeshBlockData<Real> *rc)
+void FillDerivedDomain(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, int coarse)
 {
-    auto pmb = rc->GetBlockPointer();
+    // We need to re-fill the "derived" (primitive) variables from everything
+    // except GRMHD
+    auto pm = rc->GetParentPointer();
+    for (const auto &pkg : pm->packages.AllPackages()) {
+        if (pkg.first == "B_FluxCT")
+            B_FluxCT::UtoP(rc.get(), domain, coarse);
+        if (pkg.first == "B_CD")
+            B_CD::UtoP(rc.get(), domain, coarse);
+        // TODO ADD ELECTRONS, PASSIVES, WHATEVER
+    }
+}
+
+void OutflowInnerX1_KHARMA(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse) {
+    std::shared_ptr<MeshBlock> pmb = rc->GetBlockPointer();
+    auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
     GridVars U = rc->Get("c.c.bulk.cons").data;
     GridVars P = rc->Get("c.c.bulk.prims").data;
-    GridVector B_P = rc->Get("c.c.bulk.B_prim").data;
-    GridVector B_U = rc->Get("c.c.bulk.B_con").data;
     auto& G = pmb->coords;
-
-    IndexDomain domain = IndexDomain::interior;
-    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
-    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
-    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
-    domain = IndexDomain::entire;
-    int is_e = pmb->cellbounds.is(domain), ie_e = pmb->cellbounds.ie(domain);
-    int js_e = pmb->cellbounds.js(domain), je_e = pmb->cellbounds.je(domain);
-    int ks_e = pmb->cellbounds.ks(domain), ke_e = pmb->cellbounds.ke(domain);
-
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
 
-    // Apply physical reflective/outflow conditions in the primitive GRMHD variables
-    // Other variables are handled by Parthenon
+    PackIndexMap cons_map;
+    auto q = rc->PackVariables(std::vector<MetadataFlag>{Metadata::FillGhost}, cons_map, coarse);
+    const int B_start = cons_map["c.c.bulk.B_con"].first;
 
-    // Put the reflecting condition into the corners tentatively, for non-border processes
-    if(pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::reflect) {
-        FLAG("Inner X2 reflect");
-        pmb->par_for("inner_x2_reflect", ks_e, ke_e, js_e, js-1, is, ie,
-            KOKKOS_LAMBDA_3D {
-                PLOOP {
-                    Real reflect = ((p == prims::u2) ? -1.0 : 1.0);
-                    P(p, k, j, i) = reflect * P(p, k, (js - 1) + (js - j), i);
-                }
-                // Recover conserved vars
-                GRMHD::p_to_u(G, P, B_P, gam, k, j, i, U);
-            }
-        );
-    }
-    if(pmb->boundary_flag[BoundaryFace::outer_x2] == BoundaryFlag::reflect) {
-        FLAG("Outer X2 reflect");
-        pmb->par_for("outer_x2_reflect", ks_e, ke_e, je+1, je_e, is, ie,
-            KOKKOS_LAMBDA_3D {
-                PLOOP {
-                    Real reflect = ((p == prims::u2) ? -1.0 : 1.0);
-                    P(p, k, j, i) = reflect * P(p, k, (je + 1) + (je - j), i);
-                }
-                // Recover conserved vars
-                GRMHD::p_to_u(G, P, B_P, gam, k, j, i, U);
-            }
-        );
-    }
+    int ref = bounds.GetBoundsI(IndexDomain::interior).s;
 
-    // Implement the outflow boundaries on the primitives, since the inflow check needs that
-    if(pmb->boundary_flag[BoundaryFace::inner_x1] == BoundaryFlag::outflow) {
-        FLAG("Inner X1 outflow");
-        pmb->par_for("inner_x1_outflow", ks_e, ke_e, js_e, je_e, is_e, is-1,
-            KOKKOS_LAMBDA_3D {
-                // Apply boundary on primitives
-                PLOOP P(p, k, j, i) = P(p, k, j, is);
-                // Inflow check
-                check_inflow(G, P, k, j, i, 0);
-                // Recover conserved vars
-                GRMHD::p_to_u(G, P, B_P, gam, k, j, i, U);
-            }
-        );
-    }
-    if(pmb->boundary_flag[BoundaryFace::outer_x1] == BoundaryFlag::outflow) {
-        if (pmb->packages.Get("GRMHD")->Param<std::string>("problem") == "bondi") {
-            FLAG("Bondi outer boundary");
-            ApplyBondiBoundary(rc);
-        } else {
-            FLAG("Outer X1 outflow");
-            pmb->par_for("outer_x1_outflow", ks_e, ke_e, js_e, je_e, ie+1, ie_e,
-                KOKKOS_LAMBDA_3D {
-                    // Apply boundary on primitives
-                    PLOOP P(p, k, j, i) = P(p, k, j, ie);
-                    // Inflow check
-                    check_inflow(G, P, k, j, i, 1);
-                    // Recover conserved vars
-                    GRMHD::p_to_u(G, P, B_P, gam, k, j, i, U);
-                }
-            );
+    // This first loop copies all conserved variables into the outer zones
+    // This includes some we will replace below, but it would be harder
+    // to figure out where they were in the pack than just replace them
+    auto nb = IndexRange{0, q.GetDim(4) - 1};
+    pmb->par_for_bndry("OutflowInnerX1", nb, IndexDomain::inner_x1, coarse,
+        KOKKOS_LAMBDA_VARS {
+            q(p, k, j, i) = q(p, k, j, ref);
         }
+    );
+    // Parthenon uses the last index, but we're going to be treating the primitives all
+    // at once since we'll be calling p_to_u
+    nb = IndexRange{0, 0};
+    pmb->par_for_bndry("OutflowInnerX1_KHARMA", nb, IndexDomain::inner_x1, coarse,
+        KOKKOS_LAMBDA (const int &z, const int &k, const int &j, const int &i) {
+            // Apply boundary on primitives
+            PLOOP P(p, k, j, i) = P(p, k, j, ref);
+            // Inflow check
+            check_inflow(G, P, k, j, i, 0);
+            // Recover conserved vars
+            Real B_P[NVEC];
+            VLOOP B_P[v] = q(B_start + v, k, j, i) / G.gdet(Loci::center, j, i);
+            GRMHD::p_to_u(G, P, B_P, gam, k, j, i, U);
+        }
+    );
+
+    FillDerivedDomain(rc, IndexDomain::inner_x1, coarse);
+}
+void OutflowOuterX1_KHARMA(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse) {
+    std::shared_ptr<MeshBlock> pmb = rc->GetBlockPointer();
+    auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
+    GridVars U = rc->Get("c.c.bulk.cons").data;
+    GridVars P = rc->Get("c.c.bulk.prims").data;
+    auto& G = pmb->coords;
+    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
+
+    PackIndexMap cons_map;
+    auto q = rc->PackVariables(std::vector<MetadataFlag>{Metadata::FillGhost}, cons_map, coarse);
+    const int B_start = cons_map["c.c.bulk.B_con"].first;
+
+    int ref = bounds.GetBoundsI(IndexDomain::interior).e;
+
+    auto nb = IndexRange{0, q.GetDim(4) - 1};
+    pmb->par_for_bndry("OutflowOuterX1", nb, IndexDomain::outer_x1, coarse,
+        KOKKOS_LAMBDA_VARS {
+            q(p, k, j, i) = q(p, k, j, ref);
+        }
+    );
+    if (pmb->packages.Get("GRMHD")->Param<std::string>("problem") == "bondi") {
+        FLAG("Bondi outer boundary");
+        ApplyBondiBoundary(rc.get());
+    } else {
+        nb = IndexRange{0, 0};
+        pmb->par_for_bndry("OutflowOuterX1_KHARMA", nb, IndexDomain::outer_x1, coarse,
+            KOKKOS_LAMBDA (const int &z, const int &k, const int &j, const int &i) {
+                // Apply boundary on primitives
+                PLOOP P(p, k, j, i) = P(p, k, j, ref);
+                // Inflow check
+                check_inflow(G, P, k, j, i, 1);
+                // Recover conserved vars
+                Real B_P[NVEC];
+                VLOOP B_P[v] = q(B_start + v, k, j, i) / G.gdet(Loci::center, j, i);
+                GRMHD::p_to_u(G, P, B_P, gam, k, j, i, U);
+            }
+        );
     }
 
-    // Theoretically lots of options here:
-    // 1. follow rho always
-    // 2. Set to 0 since that's the ideal case
-    // 3. Nonreflecting condition on last fluxes: psi_r = psi_l + c_h (Bx,r - Bx,l) & vice versa
-    // (4). allow outflow through pole
-    // if (use_b_cd) {
-    //     GridScalar psi = rc->Get("c.c.bulk.psi_cd_prim").data;
+    FillDerivedDomain(rc, IndexDomain::outer_x1, coarse);
+}
+void ReflectInnerX2_KHARMA(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse) {
+    std::shared_ptr<MeshBlock> pmb = rc->GetBlockPointer();
+    auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
+    GridVars U = rc->Get("c.c.bulk.cons").data;
+    GridVars P = rc->Get("c.c.bulk.prims").data;
+    auto& G = pmb->coords;
+    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
 
-    //     pmb->par_for("inner_x3_psi", ks_e, ks-1, js, je, is, ie,
-    //         KOKKOS_LAMBDA_3D {
-    //             psi(k, j, i) = psi(ks, j, i);
-    //         }
-    //     );
-    //     pmb->par_for("outer_x3_psi", ke+1, ke_e, js, je, is, ie,
-    //         KOKKOS_LAMBDA_3D {
-    //             psi(k, j, i) = psi(ke, j, i);
-    //         }
-    //     );
-    //     pmb->par_for("inner_x2_psi", ks_e, ke_e, js_e, js-1, is, ie,
-    //         KOKKOS_LAMBDA_3D {
-    //             psi(k, j, i) = psi(k, js, i);
-    //         }
-    //     );
-    //     pmb->par_for("outer_x2_psi", ks_e, ke_e, je+1, je_e, is, ie,
-    //         KOKKOS_LAMBDA_3D {
-    //             psi(k, j, i) = psi(k, je, i);
-    //         }
-    //     );
-    //     pmb->par_for("inner_x1_psi", ks_e, ke_e, js_e, je_e, is_e, is-1,
-    //         KOKKOS_LAMBDA_3D {
-    //             psi(k, j, i) = psi(k, j, is);
-    //         }
-    //     );
-    //     pmb->par_for("outer_x1_psi", ks_e, ke_e, js_e, je_e, ie+1, ie_e,
-    //         KOKKOS_LAMBDA_3D {
-    //             psi(k, j, i) = psi(k, j, ie);
-    //         }
-    //     );
-    // }
+    PackIndexMap cons_map;
+    auto q = rc->PackVariables(std::vector<MetadataFlag>{Metadata::FillGhost}, cons_map, coarse);
+    const int B_start = cons_map["c.c.bulk.B_con"].first;
 
-    return TaskStatus::complete;
+    int ref = bounds.GetBoundsJ(IndexDomain::interior).s;
+
+    auto nb = IndexRange{0, q.GetDim(4) - 1};
+    pmb->par_for_bndry("ReflectInnerX2", nb, IndexDomain::inner_x2, coarse,
+        KOKKOS_LAMBDA_VARS {
+            Real reflect = q.VectorComponent(p) == X2DIR ? -1.0 : 1.0;
+            q(p, k, j, i) = reflect * q(p, k, (ref - 1) + (ref - j), i);
+        }
+    );
+    nb = IndexRange{0, 0};
+    pmb->par_for_bndry("ReflectInnerX2_KHARMA", nb, IndexDomain::inner_x2, coarse,
+        KOKKOS_LAMBDA (const int &z, const int &k, const int &j, const int &i) {
+            PLOOP {
+                Real reflect = ((p == prims::u2) ? -1.0 : 1.0);
+                P(p, k, j, i) = reflect * P(p, k, (ref - 1) + (ref - j), i);
+            }
+            // Recover conserved vars
+            Real B_P[NVEC];
+            VLOOP B_P[v] = q(B_start + v, k, j, i) / G.gdet(Loci::center, j, i);
+            GRMHD::p_to_u(G, P, B_P, gam, k, j, i, U);
+        }
+    );
+
+    FillDerivedDomain(rc, IndexDomain::inner_x2, coarse);
+}
+void ReflectOuterX2_KHARMA(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse) {
+    std::shared_ptr<MeshBlock> pmb = rc->GetBlockPointer();
+    auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
+    GridVars U = rc->Get("c.c.bulk.cons").data;
+    GridVars P = rc->Get("c.c.bulk.prims").data;
+    auto& G = pmb->coords;
+    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
+
+    PackIndexMap cons_map;
+    auto q = rc->PackVariables(std::vector<MetadataFlag>{Metadata::FillGhost}, cons_map, coarse);
+    const int B_start = cons_map["c.c.bulk.B_con"].first;
+
+    int ref = bounds.GetBoundsJ(IndexDomain::interior).e;
+
+    auto nb = IndexRange{0, q.GetDim(4) - 1};
+    pmb->par_for_bndry("ReflectOuterX2", nb, IndexDomain::outer_x2, coarse,
+        KOKKOS_LAMBDA_VARS {
+            Real reflect = q.VectorComponent(p) == X2DIR ? -1.0 : 1.0;
+            q(p, k, j, i) = reflect * q(p, k, (ref - 1) + (ref - j), i);
+        }
+    );
+    nb = IndexRange{0, 0};
+    pmb->par_for_bndry("ReflectOuterX2_KHARMA", nb, IndexDomain::outer_x2, coarse,
+        KOKKOS_LAMBDA (const int &z, const int &k, const int &j, const int &i) {
+
+            PLOOP {
+                Real reflect = ((p == prims::u2) ? -1.0 : 1.0);
+                P(p, k, j, i) = reflect * P(p, k, (ref - 1) + (ref - j), i);
+            }
+            // Recover conserved vars
+            Real B_P[NVEC];
+            VLOOP B_P[v] = q(B_start + v, k, j, i) / G.gdet(Loci::center, j, i);
+            GRMHD::p_to_u(G, P, B_P, gam, k, j, i, U);
+        }
+    );
+
+    FillDerivedDomain(rc, IndexDomain::outer_x2, coarse);
 }
 
 /**

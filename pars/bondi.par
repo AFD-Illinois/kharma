@@ -6,6 +6,7 @@
 problem_id = bondi
 
 <parthenon/mesh>
+# Full mesh size, no refinement
 refinement = none
 numlevel = 1
 nx1 = 64
@@ -13,8 +14,11 @@ nx2 = 64
 nx3 = 1
 
 <parthenon/meshblock>
-nx1 = 64
-nx2 = 64
+# Split into blocks mesh
+# Don't bother with xN boundaries for spherical coordinate systems
+# KHARMA will automatically place ~5 zones inside the EH
+nx1 = 32
+nx2 = 32
 nx3 = 1
 
 <coordinates>

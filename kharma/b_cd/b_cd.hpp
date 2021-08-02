@@ -37,8 +37,6 @@
 
 #include <parthenon/parthenon.hpp>
 
-#include "b_functions.hpp"
-
 using namespace parthenon;
 
 /**
@@ -46,7 +44,8 @@ using namespace parthenon;
  *
  * This requires only the values at cell centers
  * 
- * This implementation includes conversion from "primitive" to "conserved" B and back
+ * This implementation includes conversion from "primitive" to "conserved" B and back,
+ * i.e. between field strength and flux via multiplying by gdet.
  */
 namespace B_CD {
 /**
@@ -61,7 +60,8 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
  * input: Conserved B = sqrt(-gdet) * B^i
  * output: Primitive B = B^i
  */
-void UtoP(MeshBlockData<Real> *rc);
+void UtoP(MeshBlockData<Real> *rc, IndexDomain domain=IndexDomain::entire, bool coarse=false);
+inline void FillDerived(MeshBlockData<Real> *rc) { UtoP(rc); }
 
 /**
  * Add the source term to dUdt, before it is applied to U
@@ -86,25 +86,8 @@ TaskStatus PostStepDiagnostics(Mesh *pmesh, ParameterInput *pin, const SimTime& 
 void FillOutput(MeshBlock *pmb, ParameterInput *pin);
 
 /**
- * Turn the primitive B, psi field into the local conserved flux
+ * Turn the primitive B field & psi "field" scalar into the local conserved values (fluxes rather than fields)
  */
-KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const FourVectors D, const Real B_P[NVEC], Real& psi_p,
-                                           const int& k, const int& j, const int& i, const Loci loc, const int dir,
-                                           Real B_flux[NVEC], Real *psi_flux)
-{
-    Real gdet = G.gdet(loc, j, i);
-    if (dir == 0) {  // In-place prims to cons
-        VLOOP B_flux[v] = B_P[v] * gdet;
-        *psi_flux = psi_p * gdet;
-    } else { // Flux through a face
-        // Dual of Maxwell tensor
-        VLOOP B_flux[v] = (D.bcon[v+1] * D.ucon[dir] - D.bcon[dir] * D.ucon[v+1]) * gdet;
-        // Psi field update as in Mosta et al (IllinoisGRMHD)
-        Real alpha = 1. / sqrt(-G.gcon(Loci::center, j, i, 0, 0));
-        *psi_flux = (alpha * B_P[dir - 1] - G.gcon(Loci::center, j, i, 0, dir) * alpha * alpha * psi_p) * gdet;
-    }
-}
-
 KOKKOS_INLINE_FUNCTION void prim_to_u(const GRCoordinates& G, const ScratchPad2D<Real> &P, const struct varmap& m, const FourVectors D,
                                       const int& j, const int& i, const Loci loc,
                                       ScratchPad2D<Real>& flux)
@@ -113,16 +96,23 @@ KOKKOS_INLINE_FUNCTION void prim_to_u(const GRCoordinates& G, const ScratchPad2D
     VLOOP flux(m.Bu + v, i) = P(m.Bp + v, i) * gdet;
     flux(m.psiu, i) = P(m.psip, i) * gdet;
 }
+
+/**
+ * Calculate the flux of the conserved B, psi through a face
+ */
 KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const ScratchPad2D<Real> &P, const struct varmap& m, const FourVectors D,
                                            const int& j, const int& i, const Loci loc, const int dir,
-                                           ScratchPad2D<Real>& flux)
+                                           ScratchPad2D<Real>& flux_dir)
 {
     Real gdet = G.gdet(loc, j, i);
     // Dual of Maxwell tensor
-    VLOOP flux(m.Bu + v, i) = (v+1 == dir) ? P(m.psip, i) * gdet : (D.bcon[v+1] * D.ucon[dir] - D.bcon[dir] * D.ucon[v+1]) * gdet;
-    // Psi field update as in Mosta et al (IllinoisGRMHD)
-    Real alpha = 1. / sqrt(-G.gcon(Loci::center, j, i, 0, 0));
-    flux(m.psiu, i) = (alpha * P(m.Bp + dir - 1, i) - G.gcon(Loci::center, j, i, 0, dir) * alpha * alpha * P(m.psip, i)) * gdet;
+    // Dedner would have e.g. P(m.psip, i) * gdet,
+    // but for us this is in the source term
+    VLOOP flux_dir(m.Bu + v, i) = (D.bcon[v+1] * D.ucon[dir] - D.bcon[dir] * D.ucon[v+1]) * gdet;
+    // Psi field update as in Mosta et al (IllinoisGRMHD), alternate explanation Jesse et al (2020)
+    //Real alpha = 1. / sqrt(-G.gcon(Loci::center, j, i, 0, 0));
+    //Real beta_dir = G.gcon(Loci::center, j, i, 0, dir) * alpha * alpha;
+    flux_dir(m.psiu, i) = (D.bcon[dir] - G.gcon(Loci::center, j, i, 0, dir) * P(m.psip, i)) * gdet;
 }
 
 }

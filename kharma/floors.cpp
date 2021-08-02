@@ -92,11 +92,11 @@ TaskStatus ApplyFloors(MeshBlockData<Real> *rc)
             int comboflag = apply_floors(G, P, B_P, U, B_U, gam, k, j, i, floors);
             fflag_local |= (comboflag / HIT_FLOOR_GEOM_RHO) * HIT_FLOOR_GEOM_RHO;
             // The floors as they're written *guarantee* a consistent state in their cells
-            // TODO still keep track of this without fixing, e.g. with negative flag
+            // TODO still keep track of whether their inversions failed, without triggering a re-fix
             // if (fflag_local) pflag(k, j, i) = InversionStatus::success; //comboflag % HIT_FLOOR_GEOM_RHO;
 
             // Apply ceilings *after* floors, to make the temperature ceiling better-behaved
-            // Ceilings don't involve a U_to_P call
+            // Ceilings never involve a U_to_P call
             fflag_local |= apply_ceilings(G, P, B_P, U, gam, k, j, i, floors);
 
             fflag(k, j, i) = fflag_local;

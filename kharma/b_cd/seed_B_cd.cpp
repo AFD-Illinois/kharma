@@ -38,7 +38,7 @@
 
 #include "b_field_tools.hpp"
 
-#include "b_functions.hpp"
+#include "b_flux_ct.hpp"
 #include "mhd_functions.hpp"
 
 TaskStatus B_CD::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
@@ -64,10 +64,10 @@ TaskStatus B_CD::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
     BSeedType b_field_flag = BSeedType::sane;
     if (b_field_type == "none") {
         return TaskStatus::complete;
-    } else if (b_field_type == "constant") {
-        b_field_flag = BSeedType::constant;
-    } else if (b_field_type == "monopole") {
-        b_field_flag = BSeedType::monopole;
+    // } else if (b_field_type == "constant") {
+    //     b_field_flag = BSeedType::constant;
+    // } else if (b_field_type == "monopole") {
+    //     b_field_flag = BSeedType::monopole;
     } else if (b_field_type == "sane") {
         b_field_flag = BSeedType::sane;
     } else if (b_field_type == "mad" || b_field_type == "ryan") {
@@ -153,11 +153,16 @@ TaskStatus B_CD::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
             case BSeedType::gaussian:
                 // Pure vertical threaded field of gaussian strength with FWHM 2*rin (i.e. HM@rin)
                 // centered at BH center
-                Real x = (r / rin) * sin(th);
-                Real sigma = 2 / sqrt(2 * log(2));
-                Real u = x / fabs(sigma);
-                q = (1 / (sqrt(2 * M_PI) * fabs(sigma))) * exp(-u * u / 2);
+                // Block is to avoid compiler whinging about initialization
+                {
+                    Real x = (r / rin) * sin(th);
+                    Real sigma = 2 / sqrt(2 * log(2));
+                    Real u = x / fabs(sigma);
+                    q = (1 / (sqrt(2 * M_PI) * fabs(sigma))) * exp(-u * u / 2);
+                }
                 break;
+            default:
+                q = 0; // This shouldn't be reached, keep track of above
             }
 
             A3(j, i) = max(q, 0.);
@@ -175,7 +180,8 @@ TaskStatus B_CD::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
     );
     pmb->par_for("first_U_B", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D {
-            BField::p_to_u(G, B_P, k, j, i, B_U);
+            // Use the "other" P to U, because we're content that psi = 0 to begin
+            B_FluxCT::p_to_u(G, B_P, k, j, i, B_U);
         }
     );
 

@@ -40,7 +40,7 @@
 #include "mhd_functions.hpp"
 #include "b_flux_ct.hpp"
 #include "b_cd.hpp"
-#include "b_functions.hpp"
+#include "b_flux_ct.hpp"
 
 #include "debug.hpp"
 #include "floors.hpp"

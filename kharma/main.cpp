@@ -35,6 +35,7 @@
 // KHARMA Headers
 #include "decs.hpp"
 
+#include "boundaries.hpp"
 #include "harm_driver.hpp"
 #include "kharma.hpp"
 #include "mpi.hpp"
@@ -72,6 +73,13 @@ int main(int argc, char *argv[])
     pman.app_input->ProblemGenerator = KHARMA::ProblemGenerator;
     pman.app_input->UserWorkBeforeOutput = KHARMA::FillOutput;
     pman.app_input->PostStepDiagnosticsInLoop = KHARMA::PostStepDiagnostics;
+    // These don't mean that the conditions are *enforced*. At user's option Parthenon's
+    // e.g. periodic conditions are called instead.  KHARMA forces them to be used in
+    // spherical coordinate systems, though.
+    pman.app_input->boundary_conditions[parthenon::BoundaryFace::inner_x1] = OutflowInnerX1_KHARMA;
+    pman.app_input->boundary_conditions[parthenon::BoundaryFace::outer_x1] = OutflowOuterX1_KHARMA;
+    pman.app_input->boundary_conditions[parthenon::BoundaryFace::inner_x2] = ReflectInnerX2_KHARMA;
+    pman.app_input->boundary_conditions[parthenon::BoundaryFace::outer_x2] = ReflectOuterX2_KHARMA;
 
     // Parthenon init includes Kokkos, MPI, parses parameters & cmdline,
     // then calls ProcessPackages and ProcessProperties, then constructs the Mesh

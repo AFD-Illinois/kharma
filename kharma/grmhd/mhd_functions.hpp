@@ -107,9 +107,7 @@ KOKKOS_INLINE_FUNCTION void add_bcon(const Real B_P[NVEC], FourVectors& D)
 {
     D.bcon[0] = 0;
     VLOOP D.bcon[0] += B_P[v] * D.ucov[v+1];
-    VLOOP {
-        D.bcon[v+1] = (B_P[v] + D.bcon[0] * D.ucon[v+1]) / D.ucon[0];
-    }
+    VLOOP D.bcon[v+1] = (B_P[v] + D.bcon[0] * D.ucon[v+1]) / D.ucon[0];
 }
 
 /**
@@ -220,6 +218,22 @@ KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates &G, const GridVars P, con
     Real B_Pl[NVEC] = {B_P(0, k, j, i), B_P(1, k, j, i), B_P(2, k, j, i)};
     FourVectors Dtmp;
     calc_4vecs(G, Pl, B_Pl, k, j, i, loc, Dtmp);
+    Real rho = P(prims::rho, k, j, i);
+    Real u = P(prims::u, k, j, i);
+    Real pgas = (gam - 1) * u;
+    Real Ul[NPRIM] = {0};
+    prim_to_flux(G, rho, u, pgas, Dtmp, k, j, i, loc, 0, Ul);
+
+    PLOOP U(p, k, j, i) = Ul[p];
+}
+KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates &G, const GridVars P, const Real B_P[NVEC], const Real& gam,
+                                         const int& k, const int& j, const int& i,
+                                         GridVars U, const Loci loc=Loci::center)
+{
+    Real Pl[NPRIM] = {P(prims::rho, k, j, i), P(prims::u, k, j, i), P(prims::u1, k, j, i),
+                      P(prims::u2, k, j, i), P(prims::u3, k, j, i)};
+    FourVectors Dtmp;
+    calc_4vecs(G, Pl, B_P, k, j, i, loc, Dtmp);
     Real rho = P(prims::rho, k, j, i);
     Real u = P(prims::u, k, j, i);
     Real pgas = (gam - 1) * u;

@@ -37,7 +37,7 @@
 #include "seed_B_ct.hpp"
 
 #include "b_field_tools.hpp"
-#include "b_functions.hpp"
+#include "b_flux_ct.hpp"
 
 #include "mhd_functions.hpp"
 
@@ -107,7 +107,7 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
                 B_P(0, k, j, i) = b10;
                 B_P(1, k, j, i) = b20;
                 B_P(2, k, j, i) = b30;
-                BField::p_to_u(G, B_P, k, j, i, B_U);
+                B_FluxCT::p_to_u(G, B_P, k, j, i, B_U);
             }
         );
         return TaskStatus::complete;
@@ -119,7 +119,7 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
                 B_P(0, k, j, i) = b10 / G.gdet(Loci::center, j, i);
                 B_P(1, k, j, i) = 0.;
                 B_P(2, k, j, i) = 0.;
-                BField::p_to_u(G, B_P, k, j, i, B_U);
+                B_FluxCT::p_to_u(G, B_P, k, j, i, B_U);
             }
         );
         return TaskStatus::complete;
@@ -156,11 +156,16 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
             case BSeedType::gaussian:
                 // Pure vertical threaded field of gaussian strength with FWHM 2*rin (i.e. HM@rin)
                 // centered at BH center
-                Real x = (r / rin) * sin(th);
-                Real sigma = 2 / sqrt(2 * log(2));
-                Real u = x / fabs(sigma);
-                q = (1 / (sqrt(2 * M_PI) * fabs(sigma))) * exp(-u * u / 2);
+                // Block is to avoid compiler whinging about initialization
+                {
+                    Real x = (r / rin) * sin(th);
+                    Real sigma = 2 / sqrt(2 * log(2));
+                    Real u = x / fabs(sigma);
+                    q = (1 / (sqrt(2 * M_PI) * fabs(sigma))) * exp(-u * u / 2);
+                }
                 break;
+            default:
+                q = 0;
             }
 
             A(j, i) = max(q, 0.);
@@ -176,7 +181,7 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
             B_P(1, k, j, i) =  (A(j, i) + A(j + 1, i) - A(j, i + 1) - A(j + 1, i + 1)) /
                                 (2. * G.dx1v(i) * G.gdet(Loci::center, j, i));
             B_P(2, k, j, i) = 0.;
-            BField::p_to_u(G, B_P, k, j, i, B_U);
+            B_FluxCT::p_to_u(G, B_P, k, j, i, B_U);
         }
     );
 

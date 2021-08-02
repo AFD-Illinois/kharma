@@ -95,12 +95,13 @@ void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
     // Assumption: if we're in a spherical system...
     if (cb == "spherical_ks" || cb == "ks" || cb == "spherical_bl" || cb == "bl" || cb == "spherical_minkowski") {
         pin->SetBoolean("coordinates", "spherical", true);
-        // ...then we definitely want spherical boundary conditions
-        // TODO only set all this if it isn't already
-        pin->SetString("parthenon/mesh", "ix1_bc", "outflow");
-        pin->SetString("parthenon/mesh", "ox1_bc", "outflow");
-        pin->SetString("parthenon/mesh", "ix2_bc", "reflecting");
-        pin->SetString("parthenon/mesh", "ox2_bc", "reflecting");
+        // ...then we definitely want our special sauce boundary conditions
+        // These are inflow in x1 and reflecting in x2, but applied to *primitives* in a custom operation
+        // see boundaries.cpp
+        pin->SetString("parthenon/mesh", "ix1_bc", "user");
+        pin->SetString("parthenon/mesh", "ox1_bc", "user");
+        pin->SetString("parthenon/mesh", "ix2_bc", "user");
+        pin->SetString("parthenon/mesh", "ox2_bc", "user");
         pin->SetString("parthenon/mesh", "ix3_bc", "periodic");
         pin->SetString("parthenon/mesh", "ox3_bc", "periodic");
 

@@ -7,12 +7,17 @@
 #include "mhd_functions.hpp"
 
 /**
- * Any user-defined boundaries, i.e. not traditional periodic/outflow/reflecting but some function
- * Note it needs *P* unlike Parthenon boundaries that need *U*
+ * Any KHARMA-defined boundaries.
+ * These are equivalent to Parthenon's implementations of the same, except that they
+ * operate on the fluid primitive variables p,u,u1,u2,u3.  All other variables
+ * are unchanged.
  * 
- * LOCKSTEP: this function respects P and returns consistent P<->U
+ * LOCKSTEP: these functions respect P and returns consistent P<->U
  */
-TaskStatus ApplyCustomBoundaries(MeshBlockData<Real> *rc);
+void OutflowInnerX1_KHARMA(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse);
+void OutflowOuterX1_KHARMA(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse);
+void ReflectInnerX2_KHARMA(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse);
+void ReflectOuterX2_KHARMA(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse);
 
 /**
  * Fix fluxes on physical boundaries. Ensure no inflow flux, correct B fields on reflecting conditions.

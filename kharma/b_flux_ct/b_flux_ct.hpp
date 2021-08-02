@@ -37,11 +37,10 @@
 
 #include <parthenon/parthenon.hpp>
 
-#include "b_functions.hpp"
-
 using namespace parthenon;
 
 /**
+ * 
  * This physics package implements B field transport with Flux-CT (Toth 2000)
  *
  * This requires only the values at cell centers
@@ -61,7 +60,8 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
  * input: Conserved B = sqrt(-gdet) * B^i
  * output: Primitive B = B^i
  */
-void UtoP(MeshBlockData<Real> *rc);
+void UtoP(MeshBlockData<Real> *rc, IndexDomain domain=IndexDomain::entire, bool coarse=false);
+inline void FillDerived(MeshBlockData<Real> *rc) { UtoP(rc); }
 
 /**
  * Modify the B field fluxes to take a constrained-transport step as in Toth (2000)
@@ -100,19 +100,6 @@ void FillOutput(MeshBlock *pmb, ParameterInput *pin);
 /**
  * Turn the primitive B field into the local conserved flux
  */
-KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const FourVectors D, const Real B_P[NVEC],
-                                           const int& k, const int& j, const int& i, const Loci loc, const int dir,
-                                           Real B_flux[NVEC])
-{
-    Real gdet = G.gdet(loc, j, i);
-    if (dir == 0) { // In-zone prims to cons
-        VLOOP B_flux[v] = B_P[v] * gdet;
-    } else { // Flux through a face
-        // Dual of Maxwell tensor
-        VLOOP B_flux[v] = (D.bcon[v+1] * D.ucon[dir] - D.bcon[dir] * D.ucon[v+1]) * gdet;
-    }
-}
-
 KOKKOS_INLINE_FUNCTION void prim_to_u(const GRCoordinates& G, ScratchPad2D<Real>& P, const struct varmap &m, const FourVectors D,
                                       const int& j, const int& i, const Loci loc,
                                       ScratchPad2D<Real>& flux)
@@ -126,6 +113,17 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, ScratchPad2D<Re
 {
     Real gdet = G.gdet(loc, j, i);
     VLOOP flux(m.Bu + v, i) = (D.bcon[v+1] * D.ucon[dir] - D.bcon[dir] * D.ucon[v+1]) * gdet;
+}
+
+/**
+ * Convenience function, mostly for initialization
+ */
+KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates& G, const GridVector B_P,
+                                    const int& k, const int& j, const int& i,
+                                    GridVector B_flux, const Loci loc = Loci::center)
+{
+    Real gdet = G.gdet(loc, j, i);
+    VLOOP B_flux(v, k, j, i) = B_P(v, k, j, i) * gdet;
 }
 
 }
