@@ -200,7 +200,7 @@ void ReflectOuterX2_KHARMA(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse
     pmb->par_for_bndry("ReflectOuterX2", nb, IndexDomain::outer_x2, coarse,
         KOKKOS_LAMBDA_VARS {
             Real reflect = q.VectorComponent(p) == X2DIR ? -1.0 : 1.0;
-            q(p, k, j, i) = reflect * q(p, k, (ref - 1) + (ref - j), i);
+            q(p, k, j, i) = reflect * q(p, k, (ref + 1) + (ref - j), i);
         }
     );
     nb = IndexRange{0, 0};
@@ -209,7 +209,7 @@ void ReflectOuterX2_KHARMA(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse
 
             PLOOP {
                 Real reflect = ((p == prims::u2) ? -1.0 : 1.0);
-                P(p, k, j, i) = reflect * P(p, k, (ref - 1) + (ref - j), i);
+                P(p, k, j, i) = reflect * P(p, k, (ref + 1) + (ref - j), i);
             }
             // Recover conserved vars
             Real B_P[NVEC];
