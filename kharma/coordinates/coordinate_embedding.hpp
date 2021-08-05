@@ -89,7 +89,7 @@ class CoordinateEmbedding {
 #ifndef KOKKOS_ENABLE_SYCL
             else {
                 printf("Tried to copy invalid base coordinates!");
-                throw std::invalid_argument("Tried to copy invalid base coordinates!");
+                //throw std::invalid_argument("Tried to copy invalid base coordinates!");
             }
 #endif
 
@@ -105,7 +105,7 @@ class CoordinateEmbedding {
 #ifndef KOKKOS_ENABLE_SYCL
             else {
                 printf("Tried to copy invalid coordinate transform!");
-                throw std::invalid_argument("Tried to copy invalid coordinate transform!");
+                //throw std::invalid_argument("Tried to copy invalid coordinate transform!");
             }
 #endif
         }

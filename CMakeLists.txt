@@ -5,12 +5,13 @@
 
 cmake_minimum_required(VERSION 3.10)
 project(kharma LANGUAGES C CXX)
-set(CMAKE_CXX_STANDARD 17)
 
-# Force C++17
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-# ensure correct flag is used as deprecated c++1z is not supported by nvcc
-set(CMAKE_CXX17_STANDARD_COMPILE_OPTION "-std=c++17")
+set(CMAKE_CXX_STANDARD 14)
+# To force C++17
+#set(CMAKE_CXX_STANDARD 17)
+#set(CMAKE_CXX_STANDARD_REQUIRED ON)
+#set(CMAKE_CXX17_STANDARD_COMPILE_OPTION "-std=c++17")
+#set(PARTHENON_ENABLE_CPP17 ON CACHE BOOL "KHARMA Override")
 
 #foreach(path ${CMAKE_PREFIX_PATH})
 #  include_directories(${path})
@@ -21,7 +22,6 @@ set(PARTHENON_DISABLE_EXAMPLES ON CACHE BOOL "KHARMA Override")
 set(PARTHENON_LINT_DEFAULT OFF CACHE BOOL "KHARMA Override")
 # To use old Summit built-in HDF5
 set(PARTHENON_DISABLE_HDF5_COMPRESSION ON CACHE BOOL "KHARMA Override")
-set(PARTHENON_ENABLE_CPP17 ON CACHE BOOL "KHARMA Override")
 
 # Parthenon internal build options
 set(BUILD_TESTING OFF CACHE BOOL "KHARMA Override")

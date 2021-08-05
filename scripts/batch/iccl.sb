@@ -1,0 +1,39 @@
+#!/bin/bash
+
+# Submit/run script for KHARMA
+# *should* work on any TACC system
+#SBATCH -J kharma
+
+#SBATCH -p astro-physics
+
+# More than one node is slow,
+# less than one node can't be allocated
+#SBATCH -N 1
+#SBATCH --gres=gpu:2
+#SBATCH --ntasks-per-node 2
+#SBATCH --cpus-per-task 20
+
+#SBATCH -t 48:00:00
+#SBATCH -o out-%j.txt
+
+KHARMA_DIR=~/kharma
+
+# Set tasks if SLURM doesn't
+if [[ -z "$SLURM_NTASKS_PER_NODE" ]]; then
+  SLURM_NTASKS_PER_NODE=$(( $SLURM_NTASKS / $SLURM_NNODES ))
+  echo "Assuming $SLURM_NTASKS_PER_NODE tasks per node"
+fi
+
+
+# OpenMP Options
+export OMP_PROC_BIND=spread
+export OMP_PLACES=threads
+# SLURM schedules us on all CPUs, which is nearly always what we want with KHARMA
+# This may one day not be true for Stampede2
+export OMP_NUM_THREADS=$(( $SLURM_CPUS_ON_NODE / $SLURM_NTASKS_PER_NODE ))
+
+# Limit Kokkos's view of the node if running on e.g. 2/4 GPUs for scaling
+export KOKKOS_NUM_DEVICES=$SLURM_NTASKS_PER_NODE
+
+# Machine-specific run lines
+mpirun -n 2 $KHARMA_DIR/kharma.cuda "$@"
