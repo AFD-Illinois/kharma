@@ -155,10 +155,11 @@ KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, GridVars P, Grid
     // Then apply floors:
     // 1. Geometric hard floors, not based on fluid relationships
     Real rhoflr_geom, uflr_geom;
-    if(G.coords.spherical()) {
-        GReal Xembed[GR_DIM];
-        G.coord_embed(k, j, i, loc, Xembed);
-        GReal r = Xembed[1];
+    if(1) {
+        //GReal Xembed[GR_DIM];
+        //G.coord_embed(k, j, i, loc, Xembed);
+        //GReal r = Xembed[1];
+        GReal r = exp(G.x1v(i));
 
         // New, steeper floor in rho
         // Previously raw r^-2, r^-1.5
@@ -183,7 +184,7 @@ KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, GridVars P, Grid
     double uflr_max = max(uflr_geom, uflr_b);
 
     double rhoflr_max;
-    if (!floors.temp_adjust_u) {
+    if (0) {
         // 3. Temperature ceiling: impose maximum temperature u/rho
         // Take floors on U into account
         double rhoflr_temp = max(u, uflr_max) / floors.u_over_rho_max;
@@ -206,7 +207,7 @@ KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, GridVars P, Grid
     fflag |= (uflr_b > u) * HIT_FLOOR_B_U;
 
     InversionStatus pflag = InversionStatus::success;
-    if (floors.fluid_frame) {
+    if (1) {
         P(prims::rho, k, j, i) += max(0., rhoflr_max - rho);
         P(prims::u, k, j, i) += max(0., uflr_max - u);
         GRMHD::p_to_u(G, P, B_P, gam, k, j, i, U, loc);

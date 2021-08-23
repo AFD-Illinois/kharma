@@ -47,9 +47,6 @@
 #include "reconstruction.hpp"
 #include "source.hpp"
 
-#define INLINE_FLUXCALC 1
-#define INLINE_RL_CALC 1
-
 extern double ctop_max;
 
 namespace Flux {
@@ -136,28 +133,23 @@ inline TaskStatus GetFlux(MeshBlockData<Real> *rc, const Real& dt)
     const bool use_b_flux_ct = pmb->packages.AllPackages().count("B_FluxCT");
     const bool use_b_cd = pmb->packages.AllPackages().count("B_CD");
 
-    // If we're reducing the order of reconstruction at the poles, determine whether this
-    // block is on a pole (otherwise BoundaryFlag will be "block")
-    bool is_inner_x2 = pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::reflect;
-    bool is_outer_x2 = pmb->boundary_flag[BoundaryFace::outer_x2] == BoundaryFlag::reflect;
-
     auto& G = pmb->coords;
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
 
     // Fluxes in direction X1 should be calculated at face 1, likewise others
-    // TODO adapt if we ever go non-Cartesian
-    Loci loc;
+    Loci loc_tmp;
     switch (dir) {
     case X1DIR:
-        loc = Loci::face1;
+        loc_tmp = Loci::face1;
         break;
     case X2DIR:
-        loc = Loci::face2;
+        loc_tmp = Loci::face2;
         break;
     case X3DIR:
-        loc = Loci::face3;
+        loc_tmp = Loci::face3;
         break;
     }
+    const Loci loc = loc_tmp;
 
     // VARIABLES
     auto& ctop = rc->GetFace("f.f.bulk.ctop").data;
@@ -221,7 +213,15 @@ inline TaskStatus GetFlux(MeshBlockData<Real> *rc, const Real& dt)
                         apply_geo_floors(G, Pl, m, gam, k, j, i, floors, loc);
                         apply_geo_floors(G, Pr, m, gam, k, j, i, floors, loc);
                     }
+#if !FUSE_FLUX_KERNELS
+                }
+            );
+            member.team_barrier();
 
+            // LEFT FACES, final ctop
+            parthenon::par_for_inner(member, is_l, ie_l,
+                [&](const int& i) {
+#endif
                     // LR -> flux
                     // Declare temporary vectors
                     FourVectors Dtmp;
@@ -244,7 +244,7 @@ inline TaskStatus GetFlux(MeshBlockData<Real> *rc, const Real& dt)
                         B_CD::prim_to_u(G, Pl, m, Dtmp, j, i, loc, Ul);
                         B_CD::prim_to_flux(G, Pl, m, Dtmp, j, i, loc, dir, Fl);
                     }
-#if !INLINE_RL_CALC
+#if !FUSE_FLUX_KERNELS
                 }
             );
             member.team_barrier();
@@ -275,7 +275,7 @@ inline TaskStatus GetFlux(MeshBlockData<Real> *rc, const Real& dt)
                         B_CD::prim_to_u(G, Pr, m, Dtmp, j, i, loc, Ur);
                         B_CD::prim_to_flux(G, Pr, m, Dtmp, j, i, loc, dir, Fr);
                     }
-#if INLINE_FLUXCALC
+#if FUSE_FLUX_KERNELS
                     if (use_hlle) {
                         for (int p=0; p < nvar; ++p)
                             U.flux(dir, p, k, j, i) = hlle(Fl(p,i), Fr(p,i), cmax(i), cmin(i), Ul(p,i), Ur(p,i));
@@ -296,7 +296,7 @@ inline TaskStatus GetFlux(MeshBlockData<Real> *rc, const Real& dt)
             // OTHERS HERE
             member.team_barrier();
 
-#if !INLINE_FLUXCALC
+#if !FUSE_FLUX_KERNELS
             // Apply what we've calculated
             for (int p=0; p < nvar; ++p) {
                 if (use_b_cd && (p == m.psiu || p == m.Bu+dir-1)) {

@@ -74,37 +74,48 @@ TaskStatus Flux::ApplyFluxes(MeshBlockData<Real> *rc, MeshBlockData<Real> *dudt,
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
 
     // TODO move wind to separate package/function?
-    bool wind_term = pmb->packages.Get("GRMHD")->Param<bool>("wind_term");
-    Real wind_n = pmb->packages.Get("GRMHD")->Param<Real>("wind_n");
-    Real wind_Tp = pmb->packages.Get("GRMHD")->Param<Real>("wind_Tp");
-    int wind_pow = pmb->packages.Get("GRMHD")->Param<int>("wind_pow");
-    Real wind_ramp_start = pmb->packages.Get("GRMHD")->Param<Real>("wind_ramp_start");
-    Real wind_ramp_end = pmb->packages.Get("GRMHD")->Param<Real>("wind_ramp_end");
-    Real current_wind_n = wind_n;
+    // bool wind_term = pmb->packages.Get("GRMHD")->Param<bool>("wind_term");
+    // Real wind_n = pmb->packages.Get("GRMHD")->Param<Real>("wind_n");
+    // Real wind_Tp = pmb->packages.Get("GRMHD")->Param<Real>("wind_Tp");
+    // int wind_pow = pmb->packages.Get("GRMHD")->Param<int>("wind_pow");
+    // Real wind_ramp_start = pmb->packages.Get("GRMHD")->Param<Real>("wind_ramp_start");
+    // Real wind_ramp_end = pmb->packages.Get("GRMHD")->Param<Real>("wind_ramp_end");
+    // Real current_wind_n = wind_n;
     // if (wind_ramp_end > 0.0) {
     //     current_wind_n = min((tm.time - wind_ramp_start) / (wind_ramp_end - wind_ramp_start), 1.0) * wind_n;
     // } else {
     //     current_wind_n = wind_n;
     // }
 
+    // size_t total_scratch_bytes = 0;
+    // int scratch_level = 0;
+
+    // pmb->par_for_outer("apply_fluxes", total_scratch_bytes, scratch_level,
+    //     ks, ke, js, je,
+    //     KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int& k, const int& j) {
+    //         parthenon::par_for_inner(member, is, ie,
+    //             [&](const int& i) {
+
     pmb->par_for("apply_fluxes", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D {
-            // Calculate the source term and apply it in 1 go (since it's stencil-1)
-            FourVectors Dtmp;
-            Real dU[NPRIM] = {0};
-            GRMHD::calc_4vecs(G, P, B_P, k, j, i, Loci::center, Dtmp);
-            GRMHD::get_source(G, P, Dtmp, gam, k, j, i, dU);
+                    // Apply all existing fluxes
+                    for (int p=0; p < nvar; ++p) {
+                        dUdt(p, k, j, i) = (U.flux(X1DIR, p, k, j, i) - U.flux(X1DIR, p, k, j, i+1)) / G.dx1v(i);
+                        if (ndim > 1) dUdt(p, k, j, i) += (U.flux(X2DIR, p, k, j, i) - U.flux(X2DIR, p, k, j+1, i)) / G.dx2v(j);
+                        if (ndim > 2) dUdt(p, k, j, i) += (U.flux(X3DIR, p, k, j, i) - U.flux(X3DIR, p, k+1, j, i)) / G.dx3v(k);
+                    }
 
-            if (wind_term) {
-                GRMHD::add_wind(G, gam, k, j, i, current_wind_n, wind_pow, wind_Tp, dU);
-            }
+                    // Then calculate and add the source term(s)
+                    FourVectors Dtmp;
+                    //Real dU[NPRIM] = {0};
+                    GRMHD::calc_4vecs(G, P, B_P, k, j, i, Loci::center, Dtmp);
+                    GRMHD::get_source(G, P, Dtmp, gam, k, j, i, cons_start, dUdt);
 
-            for (int p=0; p < nvar; ++p) {
-                dUdt(p, k, j, i) = (U.flux(X1DIR, p, k, j, i) - U.flux(X1DIR, p, k, j, i+1)) / G.dx1v(i);
-                if (ndim > 1) dUdt(p, k, j, i) += (U.flux(X2DIR, p, k, j, i) - U.flux(X2DIR, p, k, j+1, i)) / G.dx2v(j);
-                if (ndim > 2) dUdt(p, k, j, i) += (U.flux(X3DIR, p, k, j, i) - U.flux(X3DIR, p, k+1, j, i)) / G.dx3v(k);
-            }
-            PLOOP dUdt(cons_start+p, k, j, i) += dU[p];
+                    // if (wind_term) {
+                    //     GRMHD::add_wind(G, gam, k, j, i, current_wind_n, wind_pow, wind_Tp, dU);
+                    // }
+            //     }
+            // );
         }
     );
     FLAG("Applied");

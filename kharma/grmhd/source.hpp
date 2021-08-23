@@ -45,22 +45,27 @@ namespace GRMHD
  * So named because it clobbers input dUdt!
  */
 KOKKOS_INLINE_FUNCTION void get_source(const GRCoordinates &G, const GridVars P, const FourVectors& D,
-                      const Real& gam, const int& k, const int& j, const int& i, Real dUdt[NPRIM])
+                      const Real& gam, const int& k, const int& j, const int& i, const int& cons_start,
+                      const VariablePack<Real>& dUdt)
 {
-    // Get T^mu_nu
-    Real mhd[GR_DIM][GR_DIM];
-    Real rho = P(prims::rho, k, j, i);
-    Real u = P(prims::u, k, j, i);
-    Real pgas = (gam - 1) * u;
-    DLOOP1 GRMHD::calc_tensor(rho, u, pgas, D, mu, mhd[mu]);
+    // Get stuff we don't want to recalculate every loop iteration
+    Real pgas = (gam - 1) * P(prims::u, k, j, i);
+    Real bsq = dot(D.bcon, D.bcov);
+    Real eta = pgas + P(prims::rho, k, j, i) + P(prims::u, k, j, i) + bsq;
+    Real ptot = pgas + 0.5 * bsq;
 
-    // Initialize our addition [+U, +U1, +U2, +U3]
-    Real du_loc[GR_DIM] = {0};
     // Contract mhd stress tensor with connection, and multiply by metric dterminant
-    DLOOP3 du_loc[lam] += mhd[mu][nu] * G.conn(j, i, nu, lam, mu);
-    // Multiply by the metric determinant and add to the current value
-    PLOOP dUdt[p] = 0.;
-    DLOOP1 dUdt[prims::u + mu] += du_loc[mu] * G.gdet(Loci::center, j, i);
+    Real new_du[GR_DIM];
+    DLOOP2 {
+        Real Tmunu = (eta * D.ucon[mu] * D.ucov[nu] +
+                      ptot * (mu == nu) -
+                      D.bcon[mu] * D.bcov[nu]);
+
+        for (int lam = 0; lam < GR_DIM; ++lam)
+            new_du[mu] += Tmunu * G.conn(j, i, nu, lam, mu);
+    }
+
+    DLOOP1 dUdt(cons_start + prims::u + mu, k, j, i) += new_du[mu] * G.gdet(Loci::center, j, i);
 }
 
 /**

@@ -9,7 +9,7 @@ export CUDA_LAUNCH_BLOCKING=0
 #export KOKKOS_DEVICE_ID=0
 
 # Attempt at a personal 2-gpu config
-export KOKKOS_NUM_DEVICES=2
+export KOKKOS_NUM_DEVICES=8
 
 KHARMA_DIR="$(dirname $0)"
 if [ -f $KHARMA_DIR/kharma.cuda ]; then
@@ -26,6 +26,7 @@ fi
 
 # TODO options based on hostname etc here
 #$KHARMA_DIR/external/parthenon/external/Kokkos/bin/hpcbind --whole-system -- $KHARMA_DIR/$EXE_NAME "$@"
+mpirun -n 8 $KHARMA_DIR/$EXE_NAME "$@"
+#mpirun -n 4 $KHARMA_DIR/$EXE_NAME "$@"
 #mpirun -n 2 $KHARMA_DIR/$EXE_NAME "$@"
 #mpirun -n 1 $KHARMA_DIR/$EXE_NAME "$@"
-$KHARMA_DIR/$EXE_NAME "$@"

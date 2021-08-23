@@ -154,15 +154,15 @@ int CountPFlags(std::shared_ptr<MeshBlock> pmb, ParArrayNDHost pflag, IndexDomai
         }
     }
 
-    n_tot = MPISumInt(n_tot);
+    n_tot = MPISum(n_tot);
     if (verbose > 0 && n_tot > 0) {
-        n_neg_in = MPISumInt(n_neg_in);
-        n_max_iter = MPISumInt(n_max_iter);
-        n_utsq = MPISumInt(n_utsq);
-        n_gamma = MPISumInt(n_gamma);
-        n_neg_rho = MPISumInt(n_neg_rho);
-        n_neg_u = MPISumInt(n_neg_u);
-        n_neg_both = MPISumInt(n_neg_both);
+        n_neg_in = MPISum(n_neg_in);
+        n_max_iter = MPISum(n_max_iter);
+        n_utsq = MPISum(n_utsq);
+        n_gamma = MPISum(n_gamma);
+        n_neg_rho = MPISum(n_neg_rho);
+        n_neg_u = MPISum(n_neg_u);
+        n_neg_both = MPISum(n_neg_both);
 
         cout << "PFLAGS: " << n_tot << " (" << ((double) n_tot)/((ke-ks+1)*(je-js+1)*(ie-is+1))*100 << "% of all cells)" << endl;
         if (verbose > 1) {
@@ -203,15 +203,15 @@ int CountFFlags(std::shared_ptr<MeshBlock> pmb, ParArrayNDHost fflag, IndexDomai
         if (flag & HIT_FLOOR_KTOT) n_ktot++;
     }
 
-    n_tot = MPISumInt(n_tot);
+    n_tot = MPISum(n_tot);
     if (verbose > 0 && n_tot > 0) {
-        n_geom_rho = MPISumInt(n_geom_rho);
-        n_geom_u = MPISumInt(n_geom_u);
-        n_b_rho = MPISumInt(n_b_rho);
-        n_b_u = MPISumInt(n_b_u);
-        n_temp = MPISumInt(n_temp);
-        n_gamma = MPISumInt(n_gamma);
-        n_ktot = MPISumInt(n_ktot);
+        n_geom_rho = MPISum(n_geom_rho);
+        n_geom_u = MPISum(n_geom_u);
+        n_b_rho = MPISum(n_b_rho);
+        n_b_u = MPISum(n_b_u);
+        n_temp = MPISum(n_temp);
+        n_gamma = MPISum(n_gamma);
+        n_ktot = MPISum(n_ktot);
 
         cout << "FLOORS: " << n_tot << " (" << ((double) n_tot)/((ke-ks+1)*(je-js+1)*(ie-is+1))*100 << "% of all cells)" << endl;
         if (verbose > 1) {

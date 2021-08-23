@@ -310,7 +310,9 @@ void PostUtoP(MeshBlockData<Real> *rc)
     FLAG("Fixing Derived");
 
     // Apply floors
-    ApplyFloors(rc);
+    if (!rc->GetBlockPointer()->packages.Get("GRMHD")->Param<bool>("disable_floors")) {
+        ApplyFloors(rc);
+    }
 
     // Fix inversion errors computing P from U, by averaging adjacent zones
     // TODO entropy advection version

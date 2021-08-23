@@ -149,22 +149,16 @@ TaskStatus FluxCT(MeshBlockData<Real> *rc)
     );
 
     // Rewrite EMFs as fluxes, after Toth
-    pmb->par_for("flux_ct_1", ks, ke, js, je, is, ie+1,
+    pmb->par_for("flux_ct_all", ks, ke+1, js, je+1, is, ie+1,
         KOKKOS_LAMBDA_3D {
             F1(B1, k, j, i) =  0.0;
             F1(B2, k, j, i) =  0.5 * (emf3(k, j, i) + emf3(k, j+1, i));
             F1(B3, k, j, i) = -0.5 * (emf2(k, j, i) + emf2(k+1, j, i));
-        }
-    );
-    pmb->par_for("flux_ct_2", ks, ke, js, je+1, is, ie,
-        KOKKOS_LAMBDA_3D {
+
             F2(B1, k, j, i) = -0.5 * (emf3(k, j, i) + emf3(k, j, i+1));
             F2(B2, k, j, i) =  0.0;
             F2(B3, k, j, i) =  0.5 * (emf1(k, j, i) + emf1(k+1, j, i));
-        }
-    );
-    pmb->par_for("flux_ct_3", ks, ke+1, js, je, is, ie,
-        KOKKOS_LAMBDA_3D {
+
             F3(B1, k, j, i) =  0.5 * (emf2(k, j, i) + emf2(k, j, i+1));
             F3(B2, k, j, i) = -0.5 * (emf1(k, j, i) + emf1(k, j+1, i));
             F3(B3, k, j, i) =  0.0;

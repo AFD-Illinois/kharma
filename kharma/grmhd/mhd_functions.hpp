@@ -127,11 +127,26 @@ KOKKOS_INLINE_FUNCTION void calc_4vecs(const GRCoordinates& G, const GridVars P,
                                       const int& k, const int& j, const int& i, const Loci loc,
                                       FourVectors& D)
 {
-    // Build the local vectors on the fly
-    Real Pl[NPRIM] = {P(prims::rho, k, j, i), P(prims::u, k, j, i), P(prims::u1, k, j, i),
-                      P(prims::u2, k, j, i), P(prims::u3, k, j, i)};
-    Real B_Pl[NVEC] = {B_P(0, k, j, i), B_P(1, k, j, i), B_P(2, k, j, i)};
-    calc_4vecs(G, Pl, B_Pl, k, j, i, loc, D);
+    Real qsq = G.gcov(loc, j, i, 1, 1) * P(prims::u1, k, j, i) * P(prims::u1, k, j, i) +
+               G.gcov(loc, j, i, 2, 2) * P(prims::u2, k, j, i) * P(prims::u2, k, j, i) +
+               G.gcov(loc, j, i, 3, 3) * P(prims::u3, k, j, i) * P(prims::u3, k, j, i) +
+            2. * (G.gcov(loc, j, i, 1, 2) * P(prims::u1, k, j, i) * P(prims::u2, k, j, i) +
+                  G.gcov(loc, j, i, 1, 3) * P(prims::u1, k, j, i) * P(prims::u3, k, j, i) +
+                  G.gcov(loc, j, i, 2, 3) * P(prims::u2, k, j, i) * P(prims::u3, k, j, i));
+
+    Real gamma = sqrt(1. + qsq);
+    Real alpha = 1. / sqrt(-G.gcon(loc, j, i, 0, 0));
+
+    D.ucon[0] = gamma / alpha;
+    VLOOP D.ucon[v+1] = P(prims::u1 + v, k, j, i) - gamma * alpha * G.gcon(loc, j, i, 0, v+1);
+
+    G.lower(D.ucon, D.ucov, k, j, i, loc);
+
+    D.bcon[0] = 0;
+    VLOOP D.bcon[0] += B_P(v, k, j, i) * D.ucov[v+1];
+    VLOOP D.bcon[v+1] = (B_P(v, k, j, i) + D.bcon[0] * D.ucon[v+1]) / D.ucon[0];
+
+    G.lower(D.bcon, D.bcov, k, j, i, loc);
 }
 // TODO
 KOKKOS_INLINE_FUNCTION void calc_4vecs(const GRCoordinates& G, const ScratchPad2D<Real>& P, const struct varmap& m,
