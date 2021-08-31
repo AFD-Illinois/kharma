@@ -51,10 +51,10 @@ TaskStatus B_CD::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
     int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
     int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
 
-    auto& G = pmb->coords;
-    GridVars P = rc->Get("c.c.bulk.prims").data;
-    GridVector B_P = rc->Get("c.c.bulk.B_prim").data;
-    GridVector B_U = rc->Get("c.c.bulk.B_con").data;
+    const auto& G = pmb->coords;
+    GridScalar rho = rc->Get("prims.rho").data;
+    GridVector B_P = rc->Get("prims.B").data;
+    GridVector B_U = rc->Get("cons.B").data;
 
     Real min_rho_q = pin->GetOrAddReal("b_field", "min_rho_q", 0.2);
     std::string b_field_type = pin->GetString("b_field", "type");
@@ -133,7 +133,7 @@ TaskStatus B_CD::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
             GReal r = Xembed[1], th = Xembed[2];
 
             // Use rho at cell centers
-            Real rho_av = P(prims::rho, ks, j, i);
+            Real rho_av = rho(ks, j, i);
 
             Real q;
             switch (b_field_flag)

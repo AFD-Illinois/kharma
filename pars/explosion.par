@@ -1,4 +1,4 @@
-# Komissarov strong cylindrical explosion problem
+# Komissarov cylindrical explosion with magnetic field
 # see Komissarov (1999), section 7.3
 
 <parthenon/job>
@@ -45,6 +45,9 @@ cfl = 0.9
 gamma = 1.333333
 reconstruction = weno5
 
+<floors>
+gamma_max = 10
+
 <b_field>
 type = constant
 b10 = 0.01
@@ -52,5 +55,6 @@ b10 = 0.01
 <parthenon/output0>
 file_type = hdf5
 dt = 0.2
-variables = c.c.bulk.prims
+single_precision_output = true
+variables = prims.rho, prims.u, prims.uvec, prims.B
 

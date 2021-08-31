@@ -43,6 +43,8 @@
 #include "b_flux_ct.hpp"
 #include "b_cd.hpp"
 #include "grmhd.hpp"
+#include "wind.hpp"
+#include "current.hpp"
 
 #include "bondi.hpp"
 #include "boundaries.hpp"
@@ -50,8 +52,22 @@
 #include "harm_driver.hpp"
 #include "iharm_restart.hpp"
 
-// This needs to be shared between the mesh-wide and single-mesh functions below
-int done_step;
+std::shared_ptr<StateDescriptor> KHARMA::InitializeGlobals(ParameterInput *pin)
+{
+    auto pkg = std::make_shared<StateDescriptor>("Globals");
+    Params &params = pkg->AllParams();
+    // Last step's dt (Parthenon SimTime tm.dt), which must be preserved to output jcon
+    // Also used to prevent any 
+    params.Add("dt_last", 0.0);
+    // Accumulator for maximum ctop within an MPI process
+    params.Add("ctop_max", 0.0);
+    // Maximum between MPI processes, updated after each step
+    params.Add("ctop_max_last", 0.0);
+    // Whether we are computing initial outputs/timestep, or versions in the execution loop
+    params.Add("in_loop", false);
+
+    return pkg;
+}
 
 void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
 {
@@ -136,15 +152,27 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
     // Then put together what we're supposed to
     Packages_t packages;
 
-    // Just one base package
+    // Read all options first so we can set their defaults here,
+    // before any packages are initialized.
+    std::string b_field_solver = pin->GetOrAddString("b_field", "solver", "flux_ct");
+    bool do_wind = pin->GetOrAddBoolean("wind", "on", false);
+    // TODO if jcon in outputs then...
+    bool add_jcon = pin->GetOrAddBoolean("GRMHD", "add_jcon", true);
+
+    // Global variables "package."  Anything that just, really oughta be a global
+    packages.Add(KHARMA::InitializeGlobals(pin.get()));
+
+    // Most functions and variables are in the GRMHD package,
+    // initialize it first among physics stuff
     packages.Add(GRMHD::Initialize(pin.get()));
 
-    // A bunch of B fields. Put them behind a different option than b_field/type,
-    // to avoid mistakes
-    std::string b_field_solver = pin->GetOrAddString("b_field", "solver", "flux_ct");
+    // B field solvers, to ensure divB == 0. 
     if (b_field_solver == "none") {
-        // Don't add a B field.  GRMHD package still allocates one, but that's it's problem
+        // Don't add a B field
+        // Currently this means fields are still allocated, and processing is done in GRMHD,
+        // but no other operations are performed.
     } else if (b_field_solver == "constraint_damping" || b_field_solver == "b_cd") {
+        // Constraint damping, probably only useful for non-GR MHD systems
         packages.Add(B_CD::Initialize(pin.get(), packages));
     } else {
         // Don't even error on bad values.  This is probably what you want,
@@ -152,31 +180,79 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
         packages.Add(B_FluxCT::Initialize(pin.get(), packages));
     }
 
+    if (do_wind) {
+        packages.Add(Wind::Initialize(pin.get()));
+    }
+
+    if (add_jcon) {
+        packages.Add(Current::Initialize(pin.get()));
+    }
+
     // TODO scalars, electrons...
 
     return std::move(packages);
 }
 
-void KHARMA::FillOutput(MeshBlock *pmb, ParameterInput *pin)
+
+// TODO decide on a consistent implementation of foreach packages -> do X
+void KHARMA::FillDerivedDomain(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, int coarse)
 {
-    if (done_step) {
-        // TODO for package in packages...
-        GRMHD::FillOutput(pmb, pin);
-        if (pmb->packages.AllPackages().count("B_FluxCT") > 0)
-            B_FluxCT::FillOutput(pmb, pin);
-        if (pmb->packages.AllPackages().count("B_CD") > 0)
-            B_CD::FillOutput(pmb, pin);
-        // In case there are other packages that need this
+    // We need to re-fill the "derived" (primitive) variables from everything
+    // except GRMHD
+    auto pmb = rc->GetBlockPointer();
+    if (pmb->packages.AllPackages().count("B_CD"))
+        B_CD::UtoP(rc.get(), domain, coarse);
+    if (pmb->packages.AllPackages().count("B_FluxCT"))
+        B_FluxCT::UtoP(rc.get(), domain, coarse);
+}
+
+void KHARMA::PreStepMeshUserWorkInLoop(Mesh *pmesh, ParameterInput *pin, const SimTime &tm)
+{
+    if (!pmesh->packages.Get("Globals")->Param<bool>("in_loop")) {
+        pmesh->packages.Get("Globals")->UpdateParam<bool>("in_loop", true);
     }
 }
 
-void KHARMA::PostStepDiagnostics(Mesh *pmesh, ParameterInput *pin, const SimTime& tm)
+void KHARMA::PostStepMeshUserWorkInLoop(Mesh *pmesh, ParameterInput *pin, const SimTime &tm)
 {
-    // TODO for package in packages...
-    GRMHD::PostStepDiagnostics(pmesh, pin, tm);
-    if (pmesh->packages.AllPackages().count("B_FluxCT") > 0)
-        B_FluxCT::PostStepDiagnostics(pmesh, pin, tm);
-    if (pmesh->packages.AllPackages().count("B_CD") > 0)
-        B_CD::PostStepDiagnostics(pmesh, pin, tm);
-    done_step = 1;
+    // Knowing this works took a little digging into Parthenon's EvolutionDriver.
+    // The order of operations is:
+    // 1. Call PostStepUserWorkInLoop and PostStepDiagnostics (this function and following)
+    // 2. Set the timestep tm.dt to the minimum from the EstimateTimestep calls
+    // 3. Generate any outputs, e.g. jcon
+    // Thus we preserve tm.dt (which has not yet been reset) as dt_last for Current::FillOutput
+    pmesh->packages.Get("Globals")->UpdateParam<Real>("dt_last", tm.dt);
+
+    // ctop_max has fewer rules. It's just convenient to set here since we're assured of no MPI hangs
+    if (pmesh->packages.AllPackages().count("B_CD")) {
+        Real ctop_max_last = MPIMax(pmesh->packages.Get("Globals")->Param<Real>("ctop_max"));
+        pmesh->packages.Get("Globals")->UpdateParam<Real>("ctop_max_last", ctop_max_last);
+        pmesh->packages.Get("Globals")->UpdateParam<Real>("ctop_max", 0.0);
+    }
 }
+
+void KHARMA::PostStepDiagnostics(Mesh *pmesh, ParameterInput *pin, const SimTime &tm)
+{
+    // Parthenon's version of this has a bug, but I would probably subclass it anyway.
+    // very useful to have a single per-step spot for global prints
+    for (auto &package : pmesh->packages.AllPackages()) {
+        package.second->PostStepDiagnostics(tm, pmesh->mesh_data.GetOrAdd("base", 0).get());
+    }
+}
+
+void KHARMA::FillOutput(MeshBlock *pmb, ParameterInput *pin)
+{
+    // Don't fill the output arrays for the first dump, as trying to actually
+    // calculate them can produce errors when we're not in the loop yet.
+    // Instead, they just get added to the file as their starting values, i.e. 0
+    if (pmb->packages.Get("Globals")->Param<bool>("in_loop")) {
+        // TODO for package in packages with registered function...
+        if (pmb->packages.AllPackages().count("Current"))
+            Current::FillOutput(pmb, pin);
+        if (pmb->packages.AllPackages().count("B_FluxCT"))
+            B_FluxCT::FillOutput(pmb, pin);
+        if (pmb->packages.AllPackages().count("B_CD"))
+            B_CD::FillOutput(pmb, pin);
+    }
+}
+

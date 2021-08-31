@@ -19,12 +19,21 @@ using namespace parthenon;
  * 
  * Stolen directly from iharm2d_v3
  */
-void InitializeOrszagTang(MeshBlock *pmb, const GRCoordinates& G, const GridVars& P, const GridVector& B_P, Real tscale=0.05)
+void InitializeOrszagTang(MeshBlockData<Real> *rc, ParameterInput *pin)
 {
-    // Puts the current sheet in the middle of the domain
-    Real phase = M_PI;
+    FLAG("Initializing Orszag-Tang problem");
+    auto pmb = rc->GetBlockPointer();
+    GridScalar rho = rc->Get("prims.rho").data;
+    GridScalar u = rc->Get("prims.u").data;
+    GridVector uvec = rc->Get("prims.uvec").data;
+    GridVector B_P = rc->Get("prims.B").data;
 
-    Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
+    const auto& G = pmb->coords;
+
+    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
+    const Real tscale = pin->GetOrAddReal("orszag_tang", "tscale", 0.05);
+    // Default phase puts the current sheet in the middle of the domain
+    const Real phase = pin->GetOrAddReal("orszag_tang", "phase", M_PI);
 
     IndexDomain domain = IndexDomain::entire;
     IndexRange ib = pmb->cellbounds.GetBoundsI(domain);
@@ -34,26 +43,22 @@ void InitializeOrszagTang(MeshBlock *pmb, const GRCoordinates& G, const GridVars
         KOKKOS_LAMBDA_3D {
             Real X[GR_DIM];
             G.coord(k, j, i, Loci::center, X);
-            P(prims::rho, k, j, i) = 25./9.;
-            P(prims::u, k, j, i) = 5./(3.*(gam - 1.));
-            P(prims::u1, k, j, i) = -sin(X[2] + phase);
-            P(prims::u2, k, j, i) = sin(X[1] + phase);
-            P(prims::u3, k, j, i) = 0.;
+            rho(k, j, i) = 25./9.;
+            u(k, j, i) = 5./(3.*(gam - 1.));
+            uvec(0, k, j, i) = -sin(X[2] + phase);
+            uvec(1, k, j, i) = sin(X[1] + phase);
+            uvec(2, k, j, i) = 0.;
             B_P(0, k, j, i) = -sin(X[2] + phase);
             B_P(1, k, j, i) = sin(2.*(X[1] + phase));
             B_P(2, k, j, i) = 0.;
         }
     );
     // Rescale primitive velocities & B field by tscale, and internal energy by the square.
-    pmb->par_for("ot_renorm", 0, NVEC-1, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-        KOKKOS_LAMBDA_VARS {
-            P(prims::u1 + p, k, j, i) *= tscale;
-            B_P(p, k, j, i) *= tscale;
-        }
-    ); 
-    pmb->par_for("ot_renorm_u", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+    pmb->par_for("ot_renorm", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_3D {
-            P(prims::u, k, j, i) *= tscale * tscale;
+            u(k, j, i) *= tscale * tscale;
+            VLOOP uvec(v, k, j, i) *= tscale;
+            VLOOP B_P(v, k, j, i) *= tscale;
         }
     );
 }

@@ -40,122 +40,171 @@
 
 using namespace Kokkos;
 
-// TODO geometry and other niceties abstracted for debugging new modules
+// TODO have nice ways to print vectors, areas, geometry, etc for debugging new modules
+// TODO move flag counts device-side? Allow passing combo flags to both counters?
 
-void compare_P_U(MeshBlockData<Real> *rc, const int& k, const int& j, const int& i)
-{
-    auto pmb = rc->GetBlockPointer();
-    GridVars P = rc->Get("c.c.bulk.prims").data;
-    GridVector B_P = rc->Get("c.c.bulk.B_prim").data;
-    GridVars U = rc->Get("c.c.bulk.cons").data;
-    auto& G = pmb->coords;
-    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
-
-    pmb->par_for("compare_P_U", k, k, j, j, i, i,
-        KOKKOS_LAMBDA_3D {
-            Real Utmp[NPRIM];
-            GRMHD::p_to_u(G, P, B_P, gam, k, j, i, Utmp);
-#ifndef KOKKOS_ENABLE_SYCL
-            printf("U(P) = %g %g %g %g\nU(U) = %g %g %g %g\n",
-                   Utmp[prims::u], Utmp[prims::u1], Utmp[prims::u2], Utmp[prims::u3],
-                   U(prims::u, k, j, i), U(prims::u1, k, j, i), U(prims::u2, k, j, i), U(prims::u3, k, j, i));
-#endif
-        }
-    );
-
-}
-
-TaskStatus CheckNaN(MeshBlockData<Real> *rc, int dir, IndexDomain domain)
+TaskStatus CheckNaN(MeshData<Real> *md, int dir, IndexDomain domain)
 {
     FLAG("Checking ctop for NaNs");
-    auto pmb = rc->GetBlockPointer();
-    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
-    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
-    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
-    int verbose = pmb->packages.Get("GRMHD")->Param<int>("verbose");
+    auto pmesh = md->GetMeshPointer();
 
-    auto& G = pmb->coords;
-    auto& ctop = rc->GetFace("f.f.bulk.ctop").data;
-    GridVars P = rc->Get("c.c.bulk.prims").data;
-    GridVars U = rc->Get("c.c.bulk.cons").data;
+    // TODO not sure how Face variables get packed
 
-    int nzero, nnan;
-    Kokkos::Sum<int> zero_reducer(nzero);
-    Kokkos::Sum<int> nan_reducer(nnan);
+    int nzero = 0, nnan = 0;
+    for (auto &pmb : pmesh->block_list) {
+        IndexRange ib = pmb->cellbounds.GetBoundsI(domain);
+        IndexRange jb = pmb->cellbounds.GetBoundsJ(domain);
+        IndexRange kb = pmb->cellbounds.GetBoundsK(domain);
 
-    // SYCL cannot call variadic functions device-side, including, annoyingly, printf
-    // TODO experiment with puts or something?
-    // So we limit printf statements to backends that support them
-    pmb->par_reduce("ctop_zeros", ks, ke, js, je, is, ie,
-        KOKKOS_LAMBDA_3D_REDUCE_INT {
-            if (ctop(dir, k, j, i) <= 0.) {
-#ifndef KOKKOS_ENABLE_SYCL
-                if (verbose >= 2) {
-                    printf("Ctop zero at %d %d %d\n", k, j, i);
-                    printf("Local P: %g %g %g %g %g\n", 
-                        P(prims::rho, k, j, i), P(prims::u, k, j, i), P(prims::u1, k, j, i), P(prims::u2, k, j, i),
-                        P(prims::u3, k, j, i));
-                    printf("Local U: %g %g %g %g %g\n",
-                        U(prims::rho, k, j, i), U(prims::u, k, j, i), U(prims::u1, k, j, i), U(prims::u2, k, j, i),
-                        U(prims::u3, k, j, i));
+        auto ctop = pmb->meshblock_data.Get()->GetFace("ctop").data;
+
+        int nzero_l = 0, nnan_l = 0;
+        Kokkos::Sum<int> zero_reducer(nzero_l);
+        Kokkos::Sum<int> nan_reducer(nnan_l);
+        pmb->par_reduce("ctop_zeros", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+            KOKKOS_LAMBDA_3D_REDUCE_INT {
+                if (ctop(dir, k, j, i) <= 0.) {
+                    ++local_result;
                 }
-#endif
-                ++local_result;
             }
-        }
-    , zero_reducer);
+        , zero_reducer);
+        pmb->par_reduce("ctop_nans", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+            KOKKOS_LAMBDA_3D_REDUCE_INT {
+                if (isnan(ctop(dir, k, j, i))) {
+                    ++local_result;
+                }
+            }
+        , nan_reducer);
 
-    // NaN in ctop is much less common to find nowadays
-    pmb->par_reduce("ctop_nans", ks, ke, js, je, is, ie,
-        KOKKOS_LAMBDA_3D_REDUCE_INT {
-            if (isnan(ctop(dir, k, j, i))) {
-#ifndef KOKKOS_ENABLE_SYCL
-                if (verbose >= 2) printf("Ctop NaN at %d %d %d\n", k, j, i);
-#endif
-                ++local_result;
-            }
-        }
-    , nan_reducer);
+        nzero += nzero_l;
+        nnan += nnan_l;
+    }
 
     if (nzero > 0 || nnan > 0) {
-        throw std::runtime_error(string_format("Max signal speed ctop was 0 or NaN, direction  (%d zero, %d NaN)", nzero, nnan));
+        throw std::runtime_error(string_format("Max signal speed ctop was 0 or NaN, direction (%d zero, %d NaN)", nzero, nnan));
+    }
+
+    // TODO reimplement printing *where* values were hit
+#if 0
+    int verbose = pmb->packages.Get("GRMHD")->Param<int>("verbose");
+    const auto& G = pmb->coords;
+    if (verbose >= 2) {
+        pmb->par_reduce("ctop_zeros_verbose", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+            KOKKOS_LAMBDA_3D_REDUCE_INT {
+                if (ctop(dir, k, j, i) <= 0.) {
+                    printf("Ctop zero at %d %d %d\n", k, j, i);
+                    printf("Local P: TODO\n");
+                    printf("Local U: TODO\n");
+                    ++local_result;
+                }
+            }
+        , zero_reducer);
+
+        // NaN in ctop is much less common to find nowadays
+        pmb->par_reduce("ctop_nans_verbose", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+            KOKKOS_LAMBDA_3D_REDUCE_INT {
+                if (isnan(ctop(dir, k, j, i))) {
+                    printf("Ctop NaN at %d %d %d\n", k, j, i);
+                    ++local_result;
+                }
+            }
+        , nan_reducer);
+    }
+#endif
+
+    FLAG("Checked");
+    return TaskStatus::complete;
+}
+
+TaskStatus CheckNegative(MeshData<Real> *md, IndexDomain domain)
+{
+    auto pmb = md->GetBlockData(0)->GetBlockPointer();
+    auto rho_p = md->PackVariables(std::vector<std::string>{"prims.rho"});
+    auto u_p = md->PackVariables(std::vector<std::string>{"prims.u"});
+    auto rho_c = md->PackVariables(std::vector<std::string>{"cons.rho"});
+
+    IndexRange ib = pmb->cellbounds.GetBoundsI(domain);
+    IndexRange jb = pmb->cellbounds.GetBoundsJ(domain);
+    IndexRange kb = pmb->cellbounds.GetBoundsK(domain);
+    IndexRange bb = IndexRange{0,rho_p.GetDim(5)-1};
+
+    // Check for negative values in the conserved vars
+    int nless = 0;
+    Kokkos::Sum<int> sum_reducer(nless);
+    pmb->par_reduce("count_negative_U", bb.s, bb.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+        KOKKOS_LAMBDA_MESH_3D_REDUCE_INT {
+            if (rho_c(b, 0, k, j, i) < 0.) ++local_result;
+        }
+    , sum_reducer);
+    nless = MPISum(nless);
+    if (MPIRank0() && nless > 0) {
+        cout << "Number of negative conserved rho: " << nless << endl;
+    }
+
+    int nless_rho = 0, nless_u = 0;
+    Kokkos::Sum<int> sum_reducer_rho(nless_rho);
+    Kokkos::Sum<int> sum_reducer_u(nless_u);
+    pmb->par_reduce("count_negative_RHO", bb.s, bb.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+        KOKKOS_LAMBDA_MESH_3D_REDUCE_INT {
+            if (rho_p(b, 0, k, j, i) < 0.) ++local_result;
+        }
+    , sum_reducer_rho);
+    pmb->par_reduce("count_negative_UU", bb.s, bb.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+        KOKKOS_LAMBDA_MESH_3D_REDUCE_INT {
+            if (u_p(b, 0, k, j, i) < 0.) ++local_result;
+        }
+    , sum_reducer_u);
+    nless_rho = MPISum(nless_rho);
+    nless_u = MPISum(nless_u);
+
+    if (MPIRank0() && (nless_rho > 0 || nless_u > 0)) {
+        cout << "Number of negative primitive rho, u: " << nless_rho << "," << nless_u << endl;
     }
 
     return TaskStatus::complete;
 }
 
-int CountPFlags(std::shared_ptr<MeshBlock> pmb, ParArrayNDHost pflag, IndexDomain domain, int verbose)
+int CountPFlags(MeshData<Real> *md, IndexDomain domain, int verbose)
 {
-    int n_tot = 0, n_neg_in = 0, n_max_iter = 0;
+    int n_cells = 0, n_tot = 0, n_neg_in = 0, n_max_iter = 0;
     int n_utsq = 0, n_gamma = 0, n_neg_u = 0, n_neg_rho = 0, n_neg_both = 0;
+    auto pmesh = md->GetMeshPointer();
 
-    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
-    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
-    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
+    for (auto &pmb : pmesh->block_list) {
+        int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
+        int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
+        int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
+        auto& rc = pmb->meshblock_data.Get();
+        auto pflag = rc->Get("pflag").data.GetHostMirrorAndCopy();
 
-    // TODO parallel reduce on device-side.  Need a vector reducer for flags so it'll be a pain
-    for(int k=ks; k <= ke; ++k)
-        for(int j=js; j <= je; ++j)
-            for(int i=is; i <= ie; ++i)
-    {
-        int flag = (int) pflag(k, j, i);
-        if (flag > InversionStatus::success) ++n_tot; // Corner regions use negative flags.  They aren't "failures"
-        if (flag == InversionStatus::neg_input) ++n_neg_in;
-        if (flag == InversionStatus::max_iter) ++n_max_iter;
-        if (flag == InversionStatus::bad_ut) ++n_utsq;
-        if (flag == InversionStatus::bad_gamma) ++n_gamma;
-        if (flag == InversionStatus::neg_rho) ++n_neg_rho;
-        if (flag == InversionStatus::neg_u) ++n_neg_u;
-        if (flag == InversionStatus::neg_rhou) ++n_neg_both;
+#pragma omp parallel for simd collapse(3) reduction(+:n_cells,n_tot,n_neg_in,n_max_iter,n_utsq,n_gamma,n_neg_u,n_neg_rho,n_neg_both)
+        for(int k=ks; k <= ke; ++k)
+            for(int j=js; j <= je; ++j)
+                for(int i=is; i <= ie; ++i)
+        {
+            ++n_cells;
+            int flag = (int) pflag(k, j, i);
+            if (flag > InversionStatus::success) ++n_tot; // Corner regions use negative flags.  They aren't "failures"
+            if (flag == InversionStatus::neg_input) ++n_neg_in;
+            if (flag == InversionStatus::max_iter) ++n_max_iter;
+            if (flag == InversionStatus::bad_ut) ++n_utsq;
+            if (flag == InversionStatus::bad_gamma) ++n_gamma;
+            if (flag == InversionStatus::neg_rho) ++n_neg_rho;
+            if (flag == InversionStatus::neg_u) ++n_neg_u;
+            if (flag == InversionStatus::neg_rhou) ++n_neg_both;
 
-        if (flag > InversionStatus::success && verbose > 2) {
-            cout << "Bad inversion (" << flag << ") at i,j,k: " << i << " " << j << " " << k << endl;
-            compare_P_U(pmb->meshblock_data.Get().get(), k, j, i);
+#if 0 // TODO be able to print pflag contexts
+            if (flag > InversionStatus::success && verbose >= 3) {
+                cout << "Bad inversion (" << flag << ") at i,j,k: " << i << " " << j << " " << k << endl;
+                compare_P_U(pmb->meshblock_data.Get().get(), k, j, i);
+            }
+#endif
         }
     }
 
     n_tot = MPISum(n_tot);
     if (verbose > 0 && n_tot > 0) {
+        n_cells = MPISum(n_cells);
         n_neg_in = MPISum(n_neg_in);
         n_max_iter = MPISum(n_max_iter);
         n_utsq = MPISum(n_utsq);
@@ -164,47 +213,56 @@ int CountPFlags(std::shared_ptr<MeshBlock> pmb, ParArrayNDHost pflag, IndexDomai
         n_neg_u = MPISum(n_neg_u);
         n_neg_both = MPISum(n_neg_both);
 
-        cout << "PFLAGS: " << n_tot << " (" << ((double) n_tot)/((ke-ks+1)*(je-js+1)*(ie-is+1))*100 << "% of all cells)" << endl;
-        if (verbose > 1) {
-            if (n_neg_in > 0) cout << "Negative input: " << n_neg_in << endl;
-            if (n_max_iter > 0) cout << "Hit max iter: " << n_max_iter << endl;
-            if (n_utsq > 0) cout << "Velocity invalid: " << n_utsq << endl;
-            if (n_gamma > 0) cout << "Gamma invalid: " << n_gamma << endl;
-            if (n_neg_rho > 0) cout << "Negative rho: " << n_neg_rho << endl;
-            if (n_neg_u > 0) cout << "Negative U: " << n_neg_u << endl;
-            if (n_neg_both > 0) cout << "Negative rho & U: " << n_neg_both << endl;
-            cout << endl;
+        if (MPIRank0()) {
+            cout << "PFLAGS: " << n_tot << " (" << ((double) n_tot )/n_cells * 100 << "% of all cells)" << endl;
+            if (verbose > 1) {
+                if (n_neg_in > 0) cout << "Negative input: " << n_neg_in << endl;
+                if (n_max_iter > 0) cout << "Hit max iter: " << n_max_iter << endl;
+                if (n_utsq > 0) cout << "Velocity invalid: " << n_utsq << endl;
+                if (n_gamma > 0) cout << "Gamma invalid: " << n_gamma << endl;
+                if (n_neg_rho > 0) cout << "Negative rho: " << n_neg_rho << endl;
+                if (n_neg_u > 0) cout << "Negative U: " << n_neg_u << endl;
+                if (n_neg_both > 0) cout << "Negative rho & U: " << n_neg_both << endl;
+                cout << endl;
+            }
         }
     }
     return n_tot;
 }
 
-int CountFFlags(std::shared_ptr<MeshBlock> pmb, ParArrayNDHost fflag, IndexDomain domain, int verbose)
+int CountFFlags(MeshData<Real> *md, IndexDomain domain, int verbose)
 {
-    int n_tot = 0, n_geom_rho = 0, n_geom_u = 0, n_b_rho = 0, n_b_u = 0, n_temp = 0, n_gamma = 0, n_ktot = 0;
+    int n_cells = 0, n_tot = 0, n_geom_rho = 0, n_geom_u = 0, n_b_rho = 0, n_b_u = 0, n_temp = 0, n_gamma = 0, n_ktot = 0;
+    auto pmesh = md->GetMeshPointer();
 
-    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
-    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
-    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
+    for (auto &pmb : pmesh->block_list) {
+        int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
+        int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
+        int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
+        auto& rc = pmb->meshblock_data.Get();
+        auto fflag = rc->Get("fflag").data.GetHostMirrorAndCopy();
 
-    // TODO par_for
-    for(int k=ks; k <= ke; ++k)
-        for(int j=js; j <= je; ++j)
-            for(int i=is; i <= ie; ++i)
-    {
-        int flag = (int) fflag(k, j, i);
-        if (flag != 0) n_tot++; // TODO allow a pflag to be set in low bits wihtout triggering this
-        if (flag & HIT_FLOOR_GEOM_RHO) n_geom_rho++;
-        if (flag & HIT_FLOOR_GEOM_U) n_geom_u++;
-        if (flag & HIT_FLOOR_B_RHO) n_b_rho++;
-        if (flag & HIT_FLOOR_B_U) n_b_u++;
-        if (flag & HIT_FLOOR_TEMP) n_temp++;
-        if (flag & HIT_FLOOR_GAMMA) n_gamma++;
-        if (flag & HIT_FLOOR_KTOT) n_ktot++;
+#pragma omp parallel for simd collapse(3) reduction(+:n_cells,n_tot,n_geom_rho,n_geom_u,n_b_rho,n_b_u,n_temp,n_gamma,n_ktot)
+        for(int k=ks; k <= ke; ++k)
+            for(int j=js; j <= je; ++j)
+                for(int i=is; i <= ie; ++i)
+        {
+            ++n_cells;
+            int flag = (int) fflag(k, j, i);
+            if (flag != 0) ++n_tot;
+            if (flag & HIT_FLOOR_GEOM_RHO) ++n_geom_rho;
+            if (flag & HIT_FLOOR_GEOM_U) ++n_geom_u;
+            if (flag & HIT_FLOOR_B_RHO) ++n_b_rho;
+            if (flag & HIT_FLOOR_B_U) ++n_b_u;
+            if (flag & HIT_FLOOR_TEMP) ++n_temp;
+            if (flag & HIT_FLOOR_GAMMA) ++n_gamma;
+            if (flag & HIT_FLOOR_KTOT) ++n_ktot;
+        }
     }
 
     n_tot = MPISum(n_tot);
     if (verbose > 0 && n_tot > 0) {
+        n_cells = MPISum(n_cells);
         n_geom_rho = MPISum(n_geom_rho);
         n_geom_u = MPISum(n_geom_u);
         n_b_rho = MPISum(n_b_rho);
@@ -213,16 +271,18 @@ int CountFFlags(std::shared_ptr<MeshBlock> pmb, ParArrayNDHost fflag, IndexDomai
         n_gamma = MPISum(n_gamma);
         n_ktot = MPISum(n_ktot);
 
-        cout << "FLOORS: " << n_tot << " (" << ((double) n_tot)/((ke-ks+1)*(je-js+1)*(ie-is+1))*100 << "% of all cells)" << endl;
-        if (verbose > 1) {
-            if (n_geom_rho > 0) cout << "GEOM_RHO: " << n_geom_rho << endl;
-            if (n_geom_u > 0) cout << "GEOM_U: " << n_geom_u << endl;
-            if (n_b_rho > 0) cout << "B_RHO: " << n_b_rho << endl;
-            if (n_b_u > 0) cout << "B_U: " << n_b_u << endl;
-            if (n_temp > 0) cout << "TEMPERATURE: " << n_temp << endl;
-            if (n_gamma > 0) cout << "GAMMA: " << n_gamma << endl;
-            if (n_ktot > 0) cout << "KTOT: " << n_ktot << endl;
-            cout << endl;
+        if (MPIRank0()) {
+            cout << "FLOORS: " << n_tot << " (" << (int)(((double) n_tot)/ n_cells * 100) << "% of all cells)" << endl;
+            if (verbose > 1) {
+                if (n_geom_rho > 0) cout << "GEOM_RHO: " << n_geom_rho << endl;
+                if (n_geom_u > 0) cout << "GEOM_U: " << n_geom_u << endl;
+                if (n_b_rho > 0) cout << "B_RHO: " << n_b_rho << endl;
+                if (n_b_u > 0) cout << "B_U: " << n_b_u << endl;
+                if (n_temp > 0) cout << "TEMPERATURE: " << n_temp << endl;
+                if (n_gamma > 0) cout << "GAMMA: " << n_gamma << endl;
+                if (n_ktot > 0) cout << "KTOT: " << n_ktot << endl;
+                cout << endl;
+            }
         }
     }
     return n_tot;

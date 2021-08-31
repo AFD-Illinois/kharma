@@ -45,18 +45,14 @@ TaskStatus NormalizeBField(MeshBlockData<Real> *rc, Real norm)
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
-    GridVars P = rc->Get("c.c.bulk.prims").data;
-    GridVector B_P = rc->Get("c.c.bulk.B_prim").data;
-    GridVars U = rc->Get("c.c.bulk.cons").data;
-    auto& G = pmb->coords;
+    GridVector B_P = rc->Get("prims.B").data;
+    const auto& G = pmb->coords;
 
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
 
     pmb->par_for("B_field_normalize", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D {
             VLOOP B_P(v, k, j, i) *= norm;
-            // We do need this for lockstep. If this were per-step I'd be mad.
-            GRMHD::p_to_u(G, P, B_P, gam, k, j, i, U);
         }
     );
 
@@ -70,9 +66,10 @@ Real GetLocalBetaMin(MeshBlockData<Real> *rc)
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
-    auto& G = pmb->coords;
-    GridVars P = rc->Get("c.c.bulk.prims").data;
-    GridVector B_P = rc->Get("c.c.bulk.B_prim").data;
+    const auto& G = pmb->coords;
+    GridScalar u = rc->Get("prims.u").data;
+    GridVector uvec = rc->Get("prims.uvec").data;
+    GridVector B_P = rc->Get("prims.B").data;
 
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
 
@@ -81,12 +78,10 @@ Real GetLocalBetaMin(MeshBlockData<Real> *rc)
     pmb->par_reduce("B_field_betamin", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D_REDUCE {
             FourVectors Dtmp;
-            GRMHD::calc_4vecs(G, P, B_P, k, j, i, Loci::center, Dtmp);
+            GRMHD::calc_4vecs(G, uvec, B_P, k, j, i, Loci::center, Dtmp);
             double bsq_ij = dot(Dtmp.bcon, Dtmp.bcov);
 
-            Real rho = P(prims::rho, k, j, i);
-            Real u = P(prims::u, k, j, i);
-            Real beta_ij = ((gam - 1) * u)/(0.5*(bsq_ij + TINY_NUMBER));
+            Real beta_ij = ((gam - 1) * u(k, j, i))/(0.5*(bsq_ij + TINY_NUMBER));
 
             if(beta_ij < local_result) local_result = beta_ij;
         }
@@ -101,17 +96,17 @@ Real GetLocalBsqMax(MeshBlockData<Real> *rc)
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
-    auto& G = pmb->coords;
+    const auto& G = pmb->coords;
 
-    GridVars P = rc->Get("c.c.bulk.prims").data;
-    GridVars B_P = rc->Get("c.c.bulk.B_prim").data;
+    GridVector uvec = rc->Get("prims.uvec").data;
+    GridVector B_P = rc->Get("prims.B").data;
 
     Real bsq_max;
     Kokkos::Max<Real> bsq_max_reducer(bsq_max);
     pmb->par_reduce("B_field_bsqmax", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D_REDUCE {
             FourVectors Dtmp;
-            GRMHD::calc_4vecs(G, P, B_P, k, j, i, Loci::center, Dtmp);
+            GRMHD::calc_4vecs(G, uvec, B_P, k, j, i, Loci::center, Dtmp);
             double bsq_ij = dot(Dtmp.bcon, Dtmp.bcov);
             if(bsq_ij > local_result) local_result = bsq_ij;
         }
@@ -126,8 +121,8 @@ Real GetLocalPMax(MeshBlockData<Real> *rc)
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
-    auto& G = pmb->coords;
-    GridVars P = rc->Get("c.c.bulk.prims").data;
+    const auto& G = pmb->coords;
+    GridScalar u = rc->Get("prims.u").data;
 
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
 
@@ -135,9 +130,7 @@ Real GetLocalPMax(MeshBlockData<Real> *rc)
     Kokkos::Max<Real> p_max_reducer(p_max);
     pmb->par_reduce("B_field_pmax", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D_REDUCE {
-            Real rho = P(prims::rho, k, j, i);
-            Real u = P(prims::u, k, j, i);
-            Real p_ij = (gam - 1) * u;
+            Real p_ij = (gam - 1) * u(k, j, i);
             if(p_ij > local_result) local_result = p_ij;
         }
     , p_max_reducer);

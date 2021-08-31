@@ -7,7 +7,6 @@ problem_id = mhdmodes
 <parthenon/mesh>
 refinement = none
 numlevel = 1
-nghost = 4
 
 nx1 = 128
 x1min = 0.0
@@ -51,9 +50,13 @@ reconstruction = weno5
 nmode = 1
 dir = 0
 
+<floors>
+disable_floors = true
+
 <parthenon/output0>
 file_type = hdf5
 # This is so as to output only the final state
 dt = 100.0
-variables = c.c.bulk.prims
+single_precision_output = true
+variables = prims.rho, prims.u, prims.uvec, prims.B
 

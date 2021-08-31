@@ -12,8 +12,7 @@
  * @param rin is the torus innermost radius, in r_g
  * @param rmax is the radius of maximum density of the F-M torus in r_g
  */
-void InitializeFMTorus(MeshBlock *pmb, const GRCoordinates& G, GridVars P, const Real& gam,
-                       GReal rin, GReal rmax, Real kappa=1.e-3);
+void InitializeFMTorus(MeshBlockData<Real> *rc, ParameterInput *pin);
 /**
  * Perturb the internal energy by a uniform random proportion per cell.
  * Resulting internal energies will be between u \pm u*u_jitter/2
@@ -22,9 +21,11 @@ void InitializeFMTorus(MeshBlock *pmb, const GRCoordinates& G, GridVars P, const
  * @param u_jitter see description
  * @param rng_seed is added to the MPI rank to seed the GSL RNG
  */
-void PerturbU(MeshBlock *pmb, GridVars P, Real u_jitter, int rng_seed);
+TaskStatus PerturbU(MeshBlockData<Real> *rc, ParameterInput *pin);
 
-// Device-side expressions for FM variables
+/**
+ * Torus solution for ln h, See Fishbone and Moncrief eqn. 3.6. 
+ */
 KOKKOS_INLINE_FUNCTION Real lnh_calc(const GReal a, const Real l, const GReal rin, const GReal r, const GReal th)
 {
     Real sth = sin(th);
@@ -70,6 +71,13 @@ KOKKOS_INLINE_FUNCTION Real lnh_calc(const GReal a, const Real l, const GReal ri
     }
 }
 
+/**
+ * This function calculates specific the angular momentum of the
+ * Fishbone-Moncrief solution in the midplane, as a function of radius.
+ * (see Fishbone & Moncrief eqn. 3.8)
+ * It improves on (3.8) by requiring no sign changes for
+ * co-rotating (a > 0) vs counter-rotating (a < 0) disks.
+ */
 KOKKOS_INLINE_FUNCTION Real lfish_calc(const GReal a, const GReal r)
 {
     return (((pow(a, 2) - 2. * a * sqrt(r) + pow(r, 2)) *

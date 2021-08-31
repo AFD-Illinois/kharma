@@ -1,4 +1,5 @@
 # Restart from an iharm3d snapshot file
+# Very limited for the moment
 
 <parthenon/job>
 problem_id = iharm_restart
@@ -43,4 +44,5 @@ ktot_max = 3
 <parthenon/output0>
 file_type = hdf5
 dt = 1.0
-variables = c.c.bulk.prims
+single_precision_output = true
+variables = prims.rho, prims.u, prims.uvec, prims.B

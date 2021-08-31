@@ -1,6 +1,6 @@
 # SANE model mirroring the simulation library
-# Quite small by modern standards, 6M/12M F-M torus,
-# Overall simulation size 50M
+# Quite small to run for more than 10kM, 6M/12M F-M torus,
+# Overall simulation size 1000M
 
 <parthenon/job>
 problem_id = torus
@@ -8,14 +8,14 @@ problem_id = torus
 <parthenon/mesh>
 refinement = none
 numlevel = 1
-nx1 = 128
-nx2 = 64
-nx3 = 64
+nx1 = 256
+nx2 = 128
+nx3 = 128
 
 <parthenon/meshblock>
 nx1 = 128
-nx2 = 64
-nx3 = 32
+nx2 = 128
+nx3 = 64
 
 <coordinates>
 base = spherical_ks
@@ -36,20 +36,26 @@ gamma = 1.666667
 reconstruction = weno5
 
 <torus>
-rin = 10.0
-rmax = 20.0
+rin = 6.0
+rmax = 12.0
 
 <perturbation>
-u_jitter = 0.1
+u_jitter = 0.04
 
 <b_field>
 type = sane
 beta_min = 100.
 
 <floors>
-rho_min_geom = 1e-5
-u_min_geom = 1e-7
+rho_min_geom = 1e-6
+u_min_geom = 1e-8
 bsq_over_rho_max = 100
+u_over_rho_max = 2
+
+<debug>
+verbose = 0
+flag_verbose = 0
+extra_checks = 0
 
 <wind>
 on = false
@@ -60,7 +66,7 @@ Tp = 10
 file_type = hdf5
 dt = 5.0
 single_precision_output = true
-variables = c.c.bulk.prims, c.c.bulk.B_prim, c.c.bulk.jcon, c.c.bulk.fflag, c.c.bulk.pflag
+variables = prims.rho, prims.u, prims.uvec, prims.B, jcon, fflag, pflag
 
 <parthenon/output1>
 file_type = rst

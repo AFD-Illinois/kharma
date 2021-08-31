@@ -28,6 +28,8 @@ if [[ $HOST == "ferrum" ]]; then
   HOST_ARCH="HSW"
   DEVICE_ARCH="INTEL_GEN"
   PREFIX_PATH="$HOME/libs/hdf5-oneapi"
+
+  EXTRA_FLAGS="-DFUSE_FLUX_KERNELS=OFF $EXTRA_FLAGS"
 fi
 
 if [[ $HOST == "cinnabar"* ]]; then
@@ -44,7 +46,8 @@ if [[ $HOST == "cinnabar"* ]]; then
     EXTRA_FLAGS="-DCUDAToolkit_INCLUDE_DIR=/usr/local/cuda-10.1/include $EXTRA_FLAGS"
 
   elif [[ "$*" == *"cuda"* ]]; then
-    # Use NVHPC libraries (GPU-aware OpenMPI!) but not nvc++ because Parthenon broke it
+    # Use NVHPC libraries (GPU-aware OpenMPI!)
+    # but not nvc++ because Parthenon broke it
     HOST_ARCH="HSW"
     DEVICE_ARCH="KEPLER35"
 
@@ -58,13 +61,8 @@ if [[ $HOST == "cinnabar"* ]]; then
       HOST_ARCH="SNB" # Kokkos doesn't detect/set -tp=haswell for nvc++
     fi
 
-    # NVHPC CUDA
-    #export CUDA_DIR=/opt/nvidia/hpc_sdk/Linux_x86_64/21.5/cuda
-    #EXTRA_FLAGS="-DCUDAToolkit_INCLUDE_DIR=/opt/nvidia/hpc_sdk/Linux_x86_64/21.5/cuda/include/ $EXTRA_FLAGS"
     # System CUDA
     EXTRA_FLAGS="-DCUDAToolkit_INCLUDE_DIR=/usr/include/cuda $EXTRA_FLAGS"
-    # This makes Nvidia chill about old GPUs, but requires a custom nvcc_wrapper
-    #export CXXFLAGS="-Wno-deprecated-gpu-targets"
   else
     # Intel
     module load compiler mpi

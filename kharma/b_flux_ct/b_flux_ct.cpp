@@ -78,20 +78,22 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     std::vector<int> s_vector({3});
 
     MetadataFlag isPrimitive = packages.Get("GRMHD")->Param<MetadataFlag>("PrimitiveFlag");
+    MetadataFlag isMHD = packages.Get("GRMHD")->Param<MetadataFlag>("MHDFlag");
 
-    // B fields.  "Primitive" form is field strength, "conserved" is flux
+    // B fields.  "Primitive" form is field, "conserved" is flux
     // Note: when changing metadata, keep these in lockstep with grmhd.cpp
     Metadata m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Independent, Metadata::FillGhost,
-                 Metadata::Restart, Metadata::Conserved, Metadata::WithFluxes, Metadata::Vector}, s_vector);
-    pkg->AddField("c.c.bulk.B_con", m);
+                 Metadata::Restart, Metadata::Conserved, isMHD, Metadata::WithFluxes, Metadata::Vector}, s_vector);
+    pkg->AddField("cons.B", m);
     m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived,
-                  Metadata::Restart, isPrimitive, Metadata::Vector}, s_vector);
-    pkg->AddField("c.c.bulk.B_prim", m);
+                  Metadata::Restart, isPrimitive, isMHD, Metadata::Vector}, s_vector);
+    pkg->AddField("prims.B", m);
 
     m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
-    pkg->AddField("c.c.bulk.divB", m);
+    pkg->AddField("divB", m);
 
     pkg->FillDerivedBlock = B_FluxCT::FillDerived;
+    pkg->PostStepDiagnosticsMesh = B_FluxCT::PostStepDiagnostics;
     return pkg;
 }
 
@@ -99,10 +101,10 @@ void UtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
     auto pmb = rc->GetBlockPointer();
 
-    auto& B_U = rc->Get("c.c.bulk.B_con").data;
-    auto& B_P = rc->Get("c.c.bulk.B_prim").data;
+    auto& B_U = rc->Get("cons.B").data;
+    auto& B_P = rc->Get("prims.B").data;
 
-    auto& G = pmb->coords;
+    const auto& G = pmb->coords;
 
     auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
     IndexRange ib = bounds.GetBoundsI(domain);
@@ -129,9 +131,9 @@ TaskStatus FluxCT(MeshBlockData<Real> *rc)
     if (ndim == 1) return TaskStatus::complete;
 
     FLAG("Flux CT");
-    GridVars F1 = rc->Get("c.c.bulk.B_con").flux[X1DIR];
-    GridVars F2 = rc->Get("c.c.bulk.B_con").flux[X2DIR];
-    GridVars F3 = rc->Get("c.c.bulk.B_con").flux[X3DIR];
+    GridVars F1 = rc->Get("cons.B").flux[X1DIR];
+    GridVars F2 = rc->Get("cons.B").flux[X2DIR];
+    GridVars F3 = rc->Get("cons.B").flux[X3DIR];
     GridScalar emf1("emf1", n3, n2, n1);
     GridScalar emf2("emf2", n3, n2, n1);
     GridScalar emf3("emf3", n3, n2, n1);
@@ -140,6 +142,8 @@ TaskStatus FluxCT(MeshBlockData<Real> *rc)
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
+
+    // Calculate emf around each face
     pmb->par_for("flux_ct_emf", ks, ke+1, js, je+1, is, ie+1,
         KOKKOS_LAMBDA_3D {
             emf3(k, j, i) =  0.25 * (F1(B2, k, j, i) + F1(B2, k, j-1, i) - F2(B1, k, j, i) - F2(B1, k, j, i-1));
@@ -148,7 +152,10 @@ TaskStatus FluxCT(MeshBlockData<Real> *rc)
         }
     );
 
-    // Rewrite EMFs as fluxes, after Toth
+    // Rewrite EMFs as fluxes, after Toth (2000)
+    // Note that zeroing FX(BX) is *necessary* -- this flux gets filled by GetFlux,
+    // And it's necessary to keep track of it for B_CD
+#if FUSE_EMF_KERNELS
     pmb->par_for("flux_ct_all", ks, ke+1, js, je+1, is, ie+1,
         KOKKOS_LAMBDA_3D {
             F1(B1, k, j, i) =  0.0;
@@ -164,6 +171,29 @@ TaskStatus FluxCT(MeshBlockData<Real> *rc)
             F3(B3, k, j, i) =  0.0;
         }
     );
+#else
+    pmb->par_for("flux_ct_1", ks, ke, js, je, is, ie+1,
+        KOKKOS_LAMBDA_3D {
+            F1(B1, k, j, i) =  0.0;
+            F1(B2, k, j, i) =  0.5 * (emf3(k, j, i) + emf3(k, j+1, i));
+            F1(B3, k, j, i) = -0.5 * (emf2(k, j, i) + emf2(k+1, j, i));
+        }
+    );
+    pmb->par_for("flux_ct_2", ks, ke, js, je+1, is, ie,
+        KOKKOS_LAMBDA_3D {
+            F2(B1, k, j, i) = -0.5 * (emf3(k, j, i) + emf3(k, j, i+1));
+            F2(B2, k, j, i) =  0.0;
+            F2(B3, k, j, i) =  0.5 * (emf1(k, j, i) + emf1(k+1, j, i));
+        }
+    );
+    pmb->par_for("flux_ct_3", ks, ke+1, js, je, is, ie,
+        KOKKOS_LAMBDA_3D {
+            F3(B1, k, j, i) =  0.5 * (emf2(k, j, i) + emf2(k, j, i+1));
+            F3(B2, k, j, i) = -0.5 * (emf1(k, j, i) + emf1(k, j+1, i));
+            F3(B3, k, j, i) =  0.0;
+        }
+    );
+#endif
     FLAG("CT Finished");
 
     return TaskStatus::complete;
@@ -177,8 +207,8 @@ TaskStatus FluxCT2D(MeshBlockData<Real> *rc)
     int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
     int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
 
-    GridVars F1 = rc->Get("c.c.bulk.B_con").flux[X1DIR];
-    GridVars F2 = rc->Get("c.c.bulk.B_con").flux[X2DIR];
+    GridVars F1 = rc->Get("cons.B").flux[X1DIR];
+    GridVars F2 = rc->Get("cons.B").flux[X2DIR];
     GridScalar emf("emf", n2, n1);
 
     FLAG("allocated");
@@ -196,20 +226,32 @@ TaskStatus FluxCT2D(MeshBlockData<Real> *rc)
     FLAG("EMFd");
 
     // Rewrite EMFs as fluxes, after Toth
-    pmb->par_for("flux_ct", js, je, is, ie+1,
+#if FUSE_EMF_KERNELS
+    pmb->par_for("flux_ct_all", js, je+1, is, ie+1,
+        KOKKOS_LAMBDA_2D {
+            F1(B1, 0, j, i) = 0.0;
+            F1(B2, 0, j, i) = 0.5 * (emf(j, i) + emf(j+1, i));
+
+            F2(B1, 0, j, i) = -0.5 * (emf(j, i) + emf(j, i+1));
+            F2(B2, 0, j, i) = 0.0;
+        }
+    );
+#else
+    pmb->par_for("flux_ct_1", js, je, is, ie+1,
         KOKKOS_LAMBDA_2D {
             F1(B1, 0, j, i) = 0.0;
             F1(B2, 0, j, i) = 0.5 * (emf(j, i) + emf(j+1, i));
         }
     );
-    pmb->par_for("flux_ct", js, je+1, is, ie,
+    pmb->par_for("flux_ct_2", js, je+1, is, ie,
         KOKKOS_LAMBDA_2D {
             F2(B1, 0, j, i) = -0.5 * (emf(j, i) + emf(j, i+1));
             F2(B2, 0, j, i) = 0.0;
         }
     );
-    FLAG("CT 2D Finished");
+#endif
 
+    FLAG("CT 2D Finished");
     return TaskStatus::complete;
 }
 
@@ -224,29 +266,31 @@ TaskStatus FixPolarFlux(MeshBlockData<Real> *rc)
     const int ndim = pmb->pmy_mesh->ndim;
 
     GridVector F1, F2, F3;
-    F1 = rc->Get("c.c.bulk.B_con").flux[X1DIR];
-    if (ndim > 1) F2 = rc->Get("c.c.bulk.B_con").flux[X2DIR];
-    if (ndim > 2) F3 = rc->Get("c.c.bulk.B_con").flux[X3DIR];
+    F1 = rc->Get("cons.B").flux[X1DIR];
+    if (ndim > 1) F2 = rc->Get("cons.B").flux[X2DIR];
+    if (ndim > 2) F3 = rc->Get("cons.B").flux[X3DIR];
     int je_e = (ndim > 1) ? je + 1 : je;
     int ke_e = (ndim > 2) ? ke + 1 : ke;
 
     // Assuming the fluxes through the pole are 0,
     // make sure the polar EMFs are 0 when performing fluxCT
-    if (pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::reflect)
+    if (pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::user)
     {
         pmb->par_for("fix_flux_b_l", ks, ke_e, js, js, is, ie+1,
             KOKKOS_LAMBDA_3D {
                 F1(B2, k, j-1, i) = -F1(B2, k, js, i);
+                if (ndim > 1) F2(B2, k, j, i) = 0;
                 if (ndim > 2) F3(B2, k, j-1, i) = -F3(B2, k, js, i);
             }
         );
     }
 
-    if (pmb->boundary_flag[BoundaryFace::outer_x2] == BoundaryFlag::reflect)
+    if (pmb->boundary_flag[BoundaryFace::outer_x2] == BoundaryFlag::user)
     {
         pmb->par_for("fix_flux_b_r", ks, ke_e, je_e, je_e, is, ie+1,
             KOKKOS_LAMBDA_3D {
                 F1(B2, k, j, i) = -F1(B2, k, je, i);
+                if (ndim > 1) F2(B2, k, j, i) = 0;
                 if (ndim > 2) F3(B2, k, j, i) = -F3(B2, k, je, i);
             }
         );
@@ -266,46 +310,49 @@ TaskStatus TransportB(MeshBlockData<Real> *rc)
     return TaskStatus::complete;
 }
 
-double MaxDivB(MeshBlockData<Real> *rc, IndexDomain domain)
+double MaxDivB(MeshData<Real> *md, IndexDomain domain)
 {
     FLAG("Calculating divB");
-    auto pmb = rc->GetBlockPointer();
+    auto pmb = md->GetBlockData(0)->GetBlockPointer();
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
     const int ndim = pmb->pmy_mesh->ndim;
     if (ndim < 2) return 0.;
-    // Note the stencil of this function extends 1 left of the domain
-    // We stay off the inner edge, using only zones on the grid where we apply fluxes/fluxCT
+    // Note this is a stencil-4 (or -8) function, which would involve zones outside the
+    // domain unless we stay off the left edges
     is += 1;
     js += 1;
     if (ndim > 2) ks += 1;
 
     const double norm = (ndim > 2) ? 0.25 : 0.5;
 
-    auto& G = pmb->coords;
-    GridVars B_U = rc->Get("c.c.bulk.B_con").data;
+    const auto& G = pmb->coords;
+
+    // Note when packing that declaring std::vector<std::string> is *crucial*
+    // Otherwise Parthenon will use the wrong constructor and pack everything badly
+    auto B_U = md->PackVariables(std::vector<std::string>{"cons.B"});
 
     double max_divb;
     Kokkos::Max<double> max_reducer(max_divb);
-    pmb->par_reduce("divB_max", ks, ke, js, je, is, ie,
-        KOKKOS_LAMBDA_3D_REDUCE {
+    pmb->par_reduce("divB_max", 0, B_U.GetDim(5)-1, ks, ke, js, je, is, ie,
+        KOKKOS_LAMBDA_MESH_3D_REDUCE {
             // 2D divergence, averaging to corners
-            double term1 = B_U(B1, k, j, i)   + B_U(B1, k, j-1, i)
-                         - B_U(B1, k, j, i-1) - B_U(B1, k, j-1, i-1);
-            double term2 = B_U(B2, k, j, i)   + B_U(B2, k, j, i-1)
-                         - B_U(B2, k, j-1, i) - B_U(B2, k, j-1, i-1);
+            double term1 = B_U(b, B1, k, j, i)   + B_U(b, B1, k, j-1, i)
+                         - B_U(b, B1, k, j, i-1) - B_U(b, B1, k, j-1, i-1);
+            double term2 = B_U(b, B2, k, j, i)   + B_U(b, B2, k, j, i-1)
+                         - B_U(b, B2, k, j-1, i) - B_U(b, B2, k, j-1, i-1);
             double term3 = 0.;
             if (ndim > 2) {
                 // Average to corners in 3D, add 3rd flux
-                term1 +=  B_U(B1, k-1, j, i)   + B_U(B1, k-1, j-1, i)
-                        - B_U(B1, k-1, j, i-1) - B_U(B1, k-1, j-1, i-1);
-                term2 +=  B_U(B2, k-1, j, i)   + B_U(B2, k-1, j, i-1)
-                        - B_U(B2, k-1, j-1, i) - B_U(B2, k-1, j-1, i-1);
-                term3 =   B_U(B3, k, j, i)     + B_U(B3, k, j-1, i)
-                        + B_U(B3, k, j, i-1)   + B_U(B3, k, j-1, i-1)
-                        - B_U(B3, k-1, j, i)   - B_U(B3, k-1, j-1, i)
-                        - B_U(B3, k-1, j, i-1) - B_U(B3, k-1, j-1, i-1);
+                term1 +=  B_U(b, B1, k-1, j, i)   + B_U(b, B1, k-1, j-1, i)
+                        - B_U(b, B1, k-1, j, i-1) - B_U(b, B1, k-1, j-1, i-1);
+                term2 +=  B_U(b, B2, k-1, j, i)   + B_U(b, B2, k-1, j, i-1)
+                        - B_U(b, B2, k-1, j-1, i) - B_U(b, B2, k-1, j-1, i-1);
+                term3 =   B_U(b, B3, k, j, i)     + B_U(b, B3, k, j-1, i)
+                        + B_U(b, B3, k, j, i-1)   + B_U(b, B3, k, j-1, i-1)
+                        - B_U(b, B3, k-1, j, i)   - B_U(b, B3, k-1, j-1, i)
+                        - B_U(b, B3, k-1, j, i-1) - B_U(b, B3, k-1, j-1, i-1);
             }
             double local_divb = fabs(norm*term1/G.dx1v(i) + norm*term2/G.dx2v(j) + norm*term3/G.dx3v(k));
             if (local_divb > local_result) local_result = local_divb;
@@ -315,26 +362,24 @@ double MaxDivB(MeshBlockData<Real> *rc, IndexDomain domain)
     return max_divb;
 }
 
-TaskStatus PostStepDiagnostics(Mesh *pmesh, ParameterInput *pin, const SimTime& tm)
+TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
 {
     FLAG("Printing B field diagnostics");
+    if (md->NumBlocks() > 0) {
+        auto pmb = md->GetBlockData(0)->GetBlockPointer();
 
-    // Print this unless we quash everything
-    if (pmesh->packages.Get("B_FluxCT")->Param<int>("verbose") > -1) {
-        // This scheme really only guarantees divB on the physical grid
-        // so we stick to verifying it over that
-        IndexDomain domain = IndexDomain::interior;
+        // Print this unless we quash everything
+        if (pmb->packages.Get("B_FluxCT")->Param<int>("verbose") >= 0) {
+            FLAG("Printing divB");
+            // This scheme really only guarantees divB on the physical grid
+            // so we stick to verifying it over that
+            IndexDomain domain = IndexDomain::interior;
 
-        Real max_divb = 0;
-        for (auto &pmb : pmesh->block_list) {
-            auto& rc = pmb->meshblock_data.Get();
-            Real max_divb_l = B_FluxCT::MaxDivB(rc.get(), domain);
+            Real max_divb = B_FluxCT::MaxDivB(md, domain);
+            max_divb = MPIMax(max_divb);
 
-            if (max_divb_l > max_divb) max_divb = max_divb_l;
+            if(MPIRank0()) cout << "Max DivB: " << max_divb << endl;
         }
-        max_divb = MPIMax(max_divb);
-
-        if(MPIRank0()) cout << "Max DivB: " << max_divb << endl;
     }
 
     FLAG("Printed")
@@ -357,10 +402,10 @@ void FillOutput(MeshBlock *pmb, ParameterInput *pin)
     if (ndim > 2) ks += 1;
     const double norm = (ndim > 2) ? 0.25 : 0.5;
 
-    auto& G = pmb->coords;
+    const auto& G = pmb->coords;
     auto rc = pmb->meshblock_data.Get().get();
-    GridVars B_U = rc->Get("c.c.bulk.B_con").data;
-    GridVars divB = rc->Get("c.c.bulk.divB").data;
+    GridVars B_U = rc->Get("cons.B").data;
+    GridVars divB = rc->Get("divB").data;
 
     pmb->par_for("divB_output", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D {

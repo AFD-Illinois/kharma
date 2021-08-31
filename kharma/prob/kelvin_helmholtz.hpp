@@ -36,27 +36,35 @@
 
 #include "decs.hpp"
 
+#include <parthenon/parthenon.hpp>
 
 /*
  * Kelvin-Helmholtz instability problem
  * Follows initial conditions from Lecoanet et al. 2015,
  * MNRAS 455, 4274.
  */
-void InitializeKelvinHelmholtz(MeshBlock *pmb, const GRCoordinates &G,
-                               const GridVars &P, Real tscale=0.01) {
+void InitializeKelvinHelmholtz(MeshBlockData<Real> *rc, ParameterInput *pin)
+{
+    auto pmb = rc->GetBlockPointer();
+    GridScalar rho = rc->Get("prims.rho").data;
+    GridScalar u = rc->Get("prims.u").data;
+    GridVector uvec = rc->Get("prims.uvec").data;
+    GridVector B_P = rc->Get("prims.B").data;
 
-    /* follows notation of Lecoanet et al. eq. 8 et seq. */
-    double rho0 = 1.;
-    double Drho = 0.1;
-    double P0 = 10.;
-    double uflow = 1.;
-    double a = 0.05;
-    double sigma = 0.2;
-    double A = 0.01;
-    double z1 = 0.5;
-    double z2 = 1.5;
+    // follows notation of Lecoanet et al. eq. 8 et seq.
+    const Real tscale = pin->GetOrAddReal("kelvin_helmholtz", "tscale", 0.05);
+    const Real rho0 = pin->GetOrAddReal("kelvin_helmholtz", "rho0", 1.);
+    const Real Drho = pin->GetOrAddReal("kelvin_helmholtz", "Drho", 0.1);
+    const Real P0 = pin->GetOrAddReal("kelvin_helmholtz", "P0", 10.);
+    const Real uflow = pin->GetOrAddReal("kelvin_helmholtz", "uflow", 1.);
+    const Real a = pin->GetOrAddReal("kelvin_helmholtz", "a", 0.05);
+    const Real sigma = pin->GetOrAddReal("kelvin_helmholtz", "sigma", 0.2);
+    const Real A = pin->GetOrAddReal("kelvin_helmholtz", "A", 0.01);
+    const Real z1 = pin->GetOrAddReal("kelvin_helmholtz", "z1", 0.5);
+    const Real z2 = pin->GetOrAddReal("kelvin_helmholtz", "z2", 1.5);
 
-    Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
+    const auto& G = pmb->coords;
+    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
 
     IndexDomain domain = IndexDomain::entire;
     IndexRange ib = pmb->cellbounds.GetBoundsI(domain);
@@ -71,20 +79,21 @@ void InitializeKelvinHelmholtz(MeshBlock *pmb, const GRCoordinates &G,
             GReal x = X[1];
             GReal z = X[2];
 
-            P(prims::rho, k, j, i) =
+            rho(k, j, i) =
                 rho0 + Drho * 0.5 * (tanh((z - z1) / a) - tanh((z - z2) / a));
-            P(prims::u, k, j, i) = P0 / (gam - 1.);
-            P(prims::u1, k, j, i) = uflow * (tanh((z - z1) / a) - tanh((z - z2) / a) - 1.);
-            P(prims::u2, k, j, i) = A * sin(2. * M_PI * x) *
+            u(k, j, i) = P0 / (gam - 1.);
+            uvec(0, k, j, i) = uflow * (tanh((z - z1) / a) - tanh((z - z2) / a) - 1.);
+            uvec(1, k, j, i) = A * sin(2. * M_PI * x) *
                         (exp(-(z - z1) * (z - z1) / (sigma * sigma)) +
                         exp(-(z - z2) * (z - z2) / (sigma * sigma)));
-            P(prims::u3, k, j, i) = 0;
+            uvec(2, k, j, i) = 0;
         }
     );
     // Rescale primitive velocities by tscale, and internal energy by the square.
-    pmb->par_for("kh_renorm", prims::u, NPRIM-1, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-        KOKKOS_LAMBDA_VARS {
-            P(p, k, j, i) *= tscale * (p == prims::u ? tscale : 1);
+    pmb->par_for("kh_renorm", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+        KOKKOS_LAMBDA_3D {
+            u(k, j, i) *= tscale * tscale;
+            VLOOP uvec(v, k, j, i) *= tscale;
         }
     );
 }

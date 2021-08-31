@@ -35,9 +35,8 @@
 
 #include "decs.hpp"
 
-
 #include "gr_coordinates.hpp"
-#include "phys_functions.hpp"
+#include "types.hpp"
 #include "utils.hpp"
 
 /**
@@ -45,14 +44,70 @@
  * They are specifically the subset which require the fluid primitives P & B field both
  *
  * These functions mostly have several overloads, related to local vs global variables
- * One version usually takes a local cache e.g. P[NPRIM] of state indexed P[p]
- * The other version(s) take e.g. P, the pointer to the full array indexed by P(p,i,j,k)
+ * Arguments can come in the form of global array or VariablePack references 
  *
  * This allows easy fusing/splitting of loops & use in different contexts
  */
 
 namespace GRMHD
 {
+
+/**
+ * Find gamma-factor of the fluid w.r.t. normal observer
+ */
+KOKKOS_INLINE_FUNCTION Real lorentz_calc(const GRCoordinates& G, const GridVector uvec,
+                                         const int& k, const int& j, const int& i,
+                                         const Loci loc)
+{
+
+    Real qsq = G.gcov(loc, j, i, 1, 1) * uvec(0, k, j, i) * uvec(0, k, j, i) +
+               G.gcov(loc, j, i, 2, 2) * uvec(1, k, j, i) * uvec(1, k, j, i) +
+               G.gcov(loc, j, i, 3, 3) * uvec(2, k, j, i) * uvec(2, k, j, i) +
+            2. * (G.gcov(loc, j, i, 1, 2) * uvec(0, k, j, i) * uvec(1, k, j, i) +
+                  G.gcov(loc, j, i, 1, 3) * uvec(0, k, j, i) * uvec(2, k, j, i) +
+                  G.gcov(loc, j, i, 2, 3) * uvec(1, k, j, i) * uvec(2, k, j, i));
+
+    return sqrt(1. + qsq);
+}
+KOKKOS_INLINE_FUNCTION Real lorentz_calc(const GRCoordinates& G, const Real uv[NVEC],
+                                         const int& k, const int& j, const int& i,
+                                         const Loci loc)
+{
+    Real qsq = G.gcov(loc, j, i, 1, 1) * uv[0] * uv[0] +
+               G.gcov(loc, j, i, 2, 2) * uv[1] * uv[1] +
+               G.gcov(loc, j, i, 3, 3) * uv[2] * uv[2] +
+            2. * (G.gcov(loc, j, i, 1, 2) * uv[0] * uv[1] +
+                  G.gcov(loc, j, i, 1, 3) * uv[0] * uv[2] +
+                  G.gcov(loc, j, i, 2, 3) * uv[1] * uv[2]);
+
+    return sqrt(1. + qsq);
+}
+// Version for full primitives array
+KOKKOS_INLINE_FUNCTION Real lorentz_calc(const GRCoordinates& G, const VariablePack<Real>& P, const VarMap& m,
+                                         const int& k, const int& j, const int& i, const Loci& loc)
+{
+
+    Real qsq = G.gcov(loc, j, i, 1, 1) * P(m.U1, k, j, i) * P(m.U1, k, j, i) +
+               G.gcov(loc, j, i, 2, 2) * P(m.U2, k, j, i) * P(m.U2, k, j, i) +
+               G.gcov(loc, j, i, 3, 3) * P(m.U3, k, j, i) * P(m.U3, k, j, i) +
+            2. * (G.gcov(loc, j, i, 1, 2) * P(m.U1, k, j, i) * P(m.U2, k, j, i) +
+                  G.gcov(loc, j, i, 1, 3) * P(m.U1, k, j, i) * P(m.U3, k, j, i) +
+                  G.gcov(loc, j, i, 2, 3) * P(m.U2, k, j, i) * P(m.U3, k, j, i));
+
+    return sqrt(1. + qsq);
+}
+KOKKOS_INLINE_FUNCTION Real lorentz_calc(const GRCoordinates& G, const ScratchPad2D<Real>& P, const VarMap& m,
+                                         const int& k, const int& j, const int& i, const Loci& loc)
+{
+    Real qsq = G.gcov(loc, j, i, 1, 1) * P(m.U1, i) * P(m.U1, i) +
+               G.gcov(loc, j, i, 2, 2) * P(m.U2, i) * P(m.U2, i) +
+               G.gcov(loc, j, i, 3, 3) * P(m.U3, i) * P(m.U3, i) +
+            2. * (G.gcov(loc, j, i, 1, 2) * P(m.U1, i) * P(m.U2, i) +
+                  G.gcov(loc, j, i, 1, 3) * P(m.U1, i) * P(m.U3, i) +
+                  G.gcov(loc, j, i, 2, 3) * P(m.U2, i) * P(m.U3, i));
+
+    return sqrt(1. + qsq);
+}
 
 /**
  * Get a row of the MHD stress-energy tensor with first index up, second index down.
@@ -75,70 +130,59 @@ KOKKOS_INLINE_FUNCTION void calc_tensor(const Real& rho, const Real& u, const Re
 }
 
 /**
- * Velocity 4-vector
+ * Just the velocity 4-vector
  */
-KOKKOS_INLINE_FUNCTION void calc_ucon(const GRCoordinates &G, const GridVars P,
+KOKKOS_INLINE_FUNCTION void calc_ucon(const GRCoordinates &G, const GridVector uvec,
                                       const int& k, const int& j, const int& i, const Loci loc,
                                       Real ucon[GR_DIM])
 {
-    Real gamma = lorentz_calc(G, P, k, j, i, loc);
-    // TODO try caching alpha?
+    Real gamma = lorentz_calc(G, uvec, k, j, i, loc);
     Real alpha = 1. / sqrt(-G.gcon(loc, j, i, 0, 0));
-    ucon[0] = gamma / alpha;
 
-    VLOOP ucon[v+1] = P(prims::u1 + v, k, j, i) - gamma * alpha * G.gcon(loc, j, i, 0, v+1);
+    ucon[0] = gamma / alpha;
+    VLOOP ucon[v+1] = uvec(v, k, j, i) - gamma * alpha * G.gcon(loc, j, i, 0, v+1);
+}
+KOKKOS_INLINE_FUNCTION void calc_ucon(const GRCoordinates &G, const Real uvec[NVEC],
+                                      const int& k, const int& j, const int& i, const Loci loc,
+                                      Real ucon[GR_DIM])
+{
+    Real gamma = lorentz_calc(G, uvec, k, j, i, loc);
+    Real alpha = 1. / sqrt(-G.gcon(loc, j, i, 0, 0));
+
+    ucon[0] = gamma / alpha;
+    VLOOP ucon[v+1] = uvec[v] - gamma * alpha * G.gcon(loc, j, i, 0, v+1);
 }
 
 /**
- *  Versions of ucon_calc/bcon_calc specifically for filling D (TODO merge?)
+ * Calculate the 4-velocities ucon, ucov, and 4-fields bcon, bcov from primitive versions
  */
-KOKKOS_INLINE_FUNCTION void add_ucon(const GRCoordinates &G, const Real uv[NVEC],
-                                      const int& j, const int& i, const Loci loc,
+KOKKOS_INLINE_FUNCTION void calc_4vecs(const GRCoordinates& G, const Real uvec[NVEC], const Real B_P[NVEC],
+                                      const int& k, const int& j, const int& i, const Loci loc,
                                       FourVectors& D)
 {
-    Real gamma = lorentz_calc(G, uv, j, i, loc);
-    // TODO try caching alpha?
+    Real gamma = lorentz_calc(G, uvec, k, j, i, loc);
     Real alpha = 1. / sqrt(-G.gcon(loc, j, i, 0, 0));
-    D.ucon[0] = gamma / alpha;
 
-    VLOOP D.ucon[v+1] = uv[v] - gamma * alpha * G.gcon(loc, j, i, 0, v+1);
-}
-KOKKOS_INLINE_FUNCTION void add_bcon(const Real B_P[NVEC], FourVectors& D)
-{
+    D.ucon[0] = gamma / alpha;
+    VLOOP D.ucon[v+1] = uvec[v] - gamma * alpha * G.gcon(loc, j, i, 0, v+1);
+
+    G.lower(D.ucon, D.ucov, k, j, i, loc);
+
     D.bcon[0] = 0;
     VLOOP D.bcon[0] += B_P[v] * D.ucov[v+1];
     VLOOP D.bcon[v+1] = (B_P[v] + D.bcon[0] * D.ucon[v+1]) / D.ucon[0];
-}
 
-/**
- * Calculate ucon, ucov, bcon, bcov from primitive variables
- */
-KOKKOS_INLINE_FUNCTION void calc_4vecs(const GRCoordinates& G, const Real P[NVEC], const Real B_P[NVEC],
-                                      const int& k, const int& j, const int& i, const Loci loc,
-                                      FourVectors& D)
-{
-    // All-local version: straight from the velocities
-    add_ucon(G, &(P[prims::u1]), j, i, loc, D);
-    G.lower(D.ucon, D.ucov, k, j, i, loc);
-    add_bcon(B_P, D);
     G.lower(D.bcon, D.bcov, k, j, i, loc);
 }
-KOKKOS_INLINE_FUNCTION void calc_4vecs(const GRCoordinates& G, const GridVars P, const GridVector B_P,
+KOKKOS_INLINE_FUNCTION void calc_4vecs(const GRCoordinates& G, const GridVector uvec, const GridVector B_P,
                                       const int& k, const int& j, const int& i, const Loci loc,
                                       FourVectors& D)
 {
-    Real qsq = G.gcov(loc, j, i, 1, 1) * P(prims::u1, k, j, i) * P(prims::u1, k, j, i) +
-               G.gcov(loc, j, i, 2, 2) * P(prims::u2, k, j, i) * P(prims::u2, k, j, i) +
-               G.gcov(loc, j, i, 3, 3) * P(prims::u3, k, j, i) * P(prims::u3, k, j, i) +
-            2. * (G.gcov(loc, j, i, 1, 2) * P(prims::u1, k, j, i) * P(prims::u2, k, j, i) +
-                  G.gcov(loc, j, i, 1, 3) * P(prims::u1, k, j, i) * P(prims::u3, k, j, i) +
-                  G.gcov(loc, j, i, 2, 3) * P(prims::u2, k, j, i) * P(prims::u3, k, j, i));
-
-    Real gamma = sqrt(1. + qsq);
+    Real gamma = lorentz_calc(G, uvec, k, j, i, loc);
     Real alpha = 1. / sqrt(-G.gcon(loc, j, i, 0, 0));
 
     D.ucon[0] = gamma / alpha;
-    VLOOP D.ucon[v+1] = P(prims::u1 + v, k, j, i) - gamma * alpha * G.gcon(loc, j, i, 0, v+1);
+    VLOOP D.ucon[v+1] = uvec(v, k, j, i) - gamma * alpha * G.gcon(loc, j, i, 0, v+1);
 
     G.lower(D.ucon, D.ucov, k, j, i, loc);
 
@@ -148,28 +192,39 @@ KOKKOS_INLINE_FUNCTION void calc_4vecs(const GRCoordinates& G, const GridVars P,
 
     G.lower(D.bcon, D.bcov, k, j, i, loc);
 }
-// TODO
-KOKKOS_INLINE_FUNCTION void calc_4vecs(const GRCoordinates& G, const ScratchPad2D<Real>& P, const struct varmap& m,
+
+// Primitive/VarMap version of calc_4vecs for kernels that use "packed" primitives
+KOKKOS_INLINE_FUNCTION void calc_4vecs(const GRCoordinates& G, const VariablePack<Real>& P, const VarMap& m,
                                       const int& k, const int& j, const int& i, const Loci loc, FourVectors& D)
 {
-    Real qsq = G.gcov(loc, j, i, 1, 1) * P(m.p + prims::u1, i) * P(m.p + prims::u1, i) +
-               G.gcov(loc, j, i, 2, 2) * P(m.p + prims::u2, i) * P(m.p + prims::u2, i) +
-               G.gcov(loc, j, i, 3, 3) * P(m.p + prims::u3, i) * P(m.p + prims::u3, i) +
-            2. * (G.gcov(loc, j, i, 1, 2) * P(m.p + prims::u1, i) * P(m.p + prims::u2, i) +
-                  G.gcov(loc, j, i, 1, 3) * P(m.p + prims::u1, i) * P(m.p + prims::u3, i) +
-                  G.gcov(loc, j, i, 2, 3) * P(m.p + prims::u2, i) * P(m.p + prims::u3, i));
-
-    Real gamma = sqrt(1. + qsq);
+    Real gamma = lorentz_calc(G, P, m, k, j, i, loc);
     Real alpha = 1. / sqrt(-G.gcon(loc, j, i, 0, 0));
 
     D.ucon[0] = gamma / alpha;
-    VLOOP D.ucon[v+1] = P(m.p + prims::u1 + v, i) - gamma * alpha * G.gcon(loc, j, i, 0, v+1);
+    VLOOP D.ucon[v+1] = P(m.U1 + v, k, j, i) - gamma * alpha * G.gcon(loc, j, i, 0, v+1);
 
     G.lower(D.ucon, D.ucov, k, j, i, loc);
 
     D.bcon[0] = 0;
-    VLOOP D.bcon[0] += P(m.Bp + v, i) * D.ucov[v+1];
-    VLOOP D.bcon[v+1] = (P(m.Bp + v, i) + D.bcon[0] * D.ucon[v+1]) / D.ucon[0];
+    VLOOP D.bcon[0] += P(m.B1 + v, k, j, i) * D.ucov[v+1];
+    VLOOP D.bcon[v+1] = (P(m.B1 + v, k, j, i) + D.bcon[0] * D.ucon[v+1]) / D.ucon[0];
+
+    G.lower(D.bcon, D.bcov, k, j, i, loc);
+}
+KOKKOS_INLINE_FUNCTION void calc_4vecs(const GRCoordinates& G, const ScratchPad2D<Real>& P, const VarMap& m,
+                                      const int& k, const int& j, const int& i, const Loci loc, FourVectors& D)
+{
+    Real gamma = lorentz_calc(G, P, m, k, j, i, loc);
+    Real alpha = 1. / sqrt(-G.gcon(loc, j, i, 0, 0));
+
+    D.ucon[0] = gamma / alpha;
+    VLOOP D.ucon[v+1] = P(m.U1 + v, i) - gamma * alpha * G.gcon(loc, j, i, 0, v+1);
+
+    G.lower(D.ucon, D.ucov, k, j, i, loc);
+
+    D.bcon[0] = 0;
+    VLOOP D.bcon[0] += P(m.B1 + v, i) * D.ucov[v+1];
+    VLOOP D.bcon[v+1] = (P(m.B1 + v, i) + D.bcon[0] * D.ucon[v+1]) / D.ucon[0];
 
     G.lower(D.bcon, D.bcov, k, j, i, loc);
 }
@@ -177,169 +232,80 @@ KOKKOS_INLINE_FUNCTION void calc_4vecs(const GRCoordinates& G, const ScratchPad2
 /**
  * Turn the primitive variables at a location into the local conserved variables, or fluxes at a face
  * 
- * Note this is fluid only -- each package defines a prim_to_flux, which are called in GetFlux
+ * Note this is for the five fluid variables only -- each package defines a prim_to_flux, which are called in GetFlux
  */
-KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const Real& rho, const Real& u, const Real& pgas,
-                                         const FourVectors D, const int& k, const int& j, const int& i, const Loci loc,
-                                         const int dir, Real flux[NPRIM])
-{
-    Real mhd[GR_DIM];
-    Real gdet = G.gdet(loc, j, i);
-
-    // Particle number flux
-    flux[prims::rho] = rho * D.ucon[dir] * gdet;
-
-    // MHD stress-energy tensor w/ first index up, second index down
-    calc_tensor(rho, u, pgas, D, dir, mhd);
-    flux[prims::u] = mhd[0] * gdet + flux[prims::rho];
-    flux[prims::u1] = mhd[1] * gdet;
-    flux[prims::u2] = mhd[2] * gdet;
-    flux[prims::u3] = mhd[3] * gdet;
-}
-/**
- * Turn the primitive variables at a location into the local conserved variables, or fluxes at a face
- * 
- * Note this is fluid only -- each package defines a prim_to_flux, which are called in GetFlux
- */
-KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const ScratchPad2D<Real>& P, const struct varmap& m, const FourVectors D,
-                                         const Real& gam, const int& k, const int& j, const int& i, const Loci loc, const int dir,
-                                         ScratchPad2D<Real>& flux)
+KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const ScratchPad2D<Real>& P, const VarMap& m_p, const FourVectors D,
+                                         const Real& gam, const int& k, const int& j, const int& i, const int dir,
+                                         ScratchPad2D<Real>& flux, const VarMap m_u, const Loci loc=Loci::center)
 {
     Real gdet = G.gdet(loc, j, i);
 
     // Particle number flux
-    flux(m.u + prims::rho, i) = P(m.p + prims::rho, i) * D.ucon[dir] * gdet;
+    flux(m_u.RHO, i) = P(m_p.RHO, i) * D.ucon[dir] * gdet;
 
     // MHD stress-energy tensor w/ first index up, second index down
     Real mhd[GR_DIM];
-    calc_tensor(P(m.p + prims::rho, i), P(m.p + prims::u, i), (gam - 1) * P(m.p + prims::u, i), D, dir, mhd);
-    flux(m.u + prims::u, i)  = mhd[0] * gdet + flux(m.u + prims::rho, i);
-    flux(m.u + prims::u1, i) = mhd[1] * gdet;
-    flux(m.u + prims::u2, i) = mhd[2] * gdet;
-    flux(m.u + prims::u3, i) = mhd[3] * gdet;
+    calc_tensor(P(m_p.RHO, i), P(m_p.UU, i), (gam - 1) * P(m_p.UU, i), D, dir, mhd);
+    flux(m_u.UU, i)  = mhd[0] * gdet + flux(m_p.RHO, i);
+    flux(m_u.U1, i) = mhd[1] * gdet;
+    flux(m_u.U2, i) = mhd[2] * gdet;
+    flux(m_u.U3, i) = mhd[3] * gdet;
 }
 
 /**
- * Get the conserved (fluid only!) variables corresponding to primitives in a zone
- * 
- * The convenient version here is actually probably pretty slow. TODO re-implement everything above?
+ * Get the conserved (fluid only!) variables corresponding to primitives in a zone. Equivalent to prim_to_flux with dir==0
  */
-KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates &G, const GridVars P, const GridVector B_P, const Real& gam,
-                                         const int& k, const int& j, const int& i,
-                                         GridVars U, const Loci loc=Loci::center)
+KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates& G, const VariablePack<Real>& P, const VarMap& m_p,
+                                   const Real& gam, const int& k, const int& j, const int& i,
+                                   const VariablePack<Real>& U, const VarMap m_u, const Loci loc=Loci::center)
 {
-    Real Pl[NPRIM] = {P(prims::rho, k, j, i), P(prims::u, k, j, i), P(prims::u1, k, j, i),
-                      P(prims::u2, k, j, i), P(prims::u3, k, j, i)};
-    Real B_Pl[NVEC] = {B_P(0, k, j, i), B_P(1, k, j, i), B_P(2, k, j, i)};
-    FourVectors Dtmp;
-    calc_4vecs(G, Pl, B_Pl, k, j, i, loc, Dtmp);
-    Real rho = P(prims::rho, k, j, i);
-    Real u = P(prims::u, k, j, i);
-    Real pgas = (gam - 1) * u;
-    Real Ul[NPRIM] = {0};
-    prim_to_flux(G, rho, u, pgas, Dtmp, k, j, i, loc, 0, Ul);
+    Real gdet = G.gdet(loc, j, i);
 
-    PLOOP U(p, k, j, i) = Ul[p];
-}
-KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates &G, const GridVars P, const Real B_P[NVEC], const Real& gam,
-                                         const int& k, const int& j, const int& i,
-                                         GridVars U, const Loci loc=Loci::center)
-{
-    Real Pl[NPRIM] = {P(prims::rho, k, j, i), P(prims::u, k, j, i), P(prims::u1, k, j, i),
-                      P(prims::u2, k, j, i), P(prims::u3, k, j, i)};
     FourVectors Dtmp;
-    calc_4vecs(G, Pl, B_P, k, j, i, loc, Dtmp);
-    Real rho = P(prims::rho, k, j, i);
-    Real u = P(prims::u, k, j, i);
-    Real pgas = (gam - 1) * u;
-    Real Ul[NPRIM] = {0};
-    prim_to_flux(G, rho, u, pgas, Dtmp, k, j, i, loc, 0, Ul);
+    calc_4vecs(G, P, m_p, k, j, i, loc, Dtmp);
 
-    PLOOP U(p, k, j, i) = Ul[p];
-}
-KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates &G, const GridVars P, const GridVector B_P, const Real& gam,
-                                         const int& k, const int& j, const int& i,
-                                         Real U[NPRIM], const Loci loc=Loci::center)
-{
-    Real Pl[NPRIM] = {P(prims::rho, k, j, i), P(prims::u, k, j, i), P(prims::u1, k, j, i),
-                      P(prims::u2, k, j, i), P(prims::u3, k, j, i)};
-    Real B_Pl[NVEC] = {B_P(0, k, j, i), B_P(1, k, j, i), B_P(2, k, j, i)};
-    FourVectors Dtmp;
-    calc_4vecs(G, Pl, B_Pl, k, j, i, loc, Dtmp);
-    Real rho = P(prims::rho, k, j, i);
-    Real u = P(prims::u, k, j, i);
-    Real pgas = (gam - 1) * u;
-    prim_to_flux(G, rho, u, pgas, Dtmp, k, j, i, loc, 0, U);
-}
-KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates &G, const Real P[NPRIM], const Real B_P[NVEC], const Real& gam,
-                                         const int& k, const int& j, const int& i,
-                                         Real U[NPRIM], const Loci loc=Loci::center)
-{
-    FourVectors Dtmp;
-    calc_4vecs(G, P, B_P, k, j, i, loc, Dtmp);
-    Real rho = P[prims::rho];
-    Real u = P[prims::u];
-    Real pgas = (gam - 1) * u;
-    prim_to_flux(G, rho, u, pgas, Dtmp, k, j, i, loc, 0, U);
+    // Particle number flux
+    U(m_u.RHO, k, j, i) = P(m_p.RHO, k, j, i) * Dtmp.ucon[0] * gdet;
+
+    // MHD stress-energy tensor w/ first index up, second index down
+    Real mhd[GR_DIM];
+    calc_tensor(P(m_p.RHO, k, j, i), P(m_p.UU, k, j, i), (gam - 1) * P(m_p.UU, k, j, i), Dtmp, 0, mhd);
+
+    U(m_u.UU, k, j, i)  = mhd[0] * gdet + U(m_p.RHO, k, j, i);
+    VLOOP U(m_u.U1 + v, k, j, i) = mhd[1 + v] * gdet;
 }
 
 /**
- *  Calculate components of magnetosonic velocity from primitive variables
+ * Special p_to_u call for fluid frame floors, which require a speculative transformation to add to existing U
+ * Also used in the wind source term calculation, of all places
  */
-KOKKOS_INLINE_FUNCTION void vchar(const GRCoordinates &G, const Real& rho, const Real& u, const Real& pgas,
-                                  const FourVectors& D, const Real& gam,
-                                  const int& k, const int& j, const int& i, const Loci loc, const int dir,
-                                  Real& cmax, Real& cmin)
+KOKKOS_INLINE_FUNCTION void p_to_u_floor(const GRCoordinates& G, const Real& rho, const Real& u, const Real uvec[NVEC],
+                                   const Real& gam, const int& k, const int& j, const int& i,
+                                   Real& rho_ut, Real T[GR_DIM], const Loci loc=Loci::center)
 {
-    Real discr, vp, vm, bsq, ee, ef, va2, cs2, cms2;
-    Real Asq, Bsq, Au, Bu, AB, Au2, Bu2, AuBu, A, B, C;
-    Real Acov[GR_DIM] = {0}, Bcov[GR_DIM] = {0};
-    Real Acon[GR_DIM] = {0}, Bcon[GR_DIM] = {0};
+    Real gdet = G.gdet(loc, j, i);
 
-    Acov[dir] = 1.;
-    Bcov[0] = 1.;
+    FourVectors Dtmp;
+    Real B[NVEC] = {0}; // We will never be adding field
+    calc_4vecs(G, uvec, B, k, j, i, loc, Dtmp);
 
-    DLOOP2 // TODO use lower() & compare speed
-    {
-        Acon[mu] += G.gcon(loc, j, i, mu, nu) * Acov[nu];
-        Bcon[mu] += G.gcon(loc, j, i, mu, nu) * Bcov[nu];
-    }
+    // Particle number flux
+    rho_ut = rho * Dtmp.ucon[0] * gdet;
 
-    // Find fast magnetosonic speed
-    bsq = dot(D.bcon, D.bcov);
-    ef = rho + gam * u;
-    ee = bsq + ef;
-    va2 = bsq / ee;
-    cs2 = gam * pgas / ef;
+    // MHD stress-energy tensor w/ first index up, second index down
+    Real mhd[GR_DIM];
+    calc_tensor(rho, u, (gam - 1) * u, Dtmp, 0, mhd);
 
-    cms2 = cs2 + va2 - cs2 * va2;
-
-    clip(cms2, 1.e-20, 1.);
-
-    // Require that speed of wave measured by observer q.ucon is cms2
-    Asq = dot(Acon, Acov);
-    Bsq = dot(Bcon, Bcov);
-    Au = dot(Acov, D.ucon);
-    Bu = dot(Bcov, D.ucon);
-    AB = dot(Acon, Bcov);
-    Au2 = Au * Au;
-    Bu2 = Bu * Bu;
-    AuBu = Au * Bu;
-
-    A = Bu2 - (Bsq + Bu2) * cms2;
-    B = 2. * (AuBu - (AB + AuBu) * cms2);
-    C = Au2 - (Asq + Au2) * cms2;
-
-    discr = sqrt(max(B * B - 4. * A * C, 0.));
-
-    vp = -(-B + discr) / (2. * A);
-    vm = -(-B - discr) / (2. * A);
-
-    cmax = max(vp, vm);
-    cmin = min(vp, vm);
+    T[0]  = mhd[0] * gdet + rho_ut;
+    VLOOP T[1 + v] = mhd[1 + v] * gdet;
 }
 
-KOKKOS_INLINE_FUNCTION void vchar(const GRCoordinates &G, const ScratchPad2D<Real>& P, const struct varmap& m, const FourVectors& D,
+
+/**
+ * Calculate components of magnetosonic velocity from primitive variables
+ * This is only called in GetFlux, so we only provide a ScratchPad form
+ */
+KOKKOS_INLINE_FUNCTION void vchar(const GRCoordinates &G, const ScratchPad2D<Real>& P, const VarMap& m, const FourVectors& D,
                                   const Real& gam, const int& k, const int& j, const int& i, const Loci loc, const int& dir,
                                   Real& cmax, Real& cmin)
 {
@@ -347,10 +313,10 @@ KOKKOS_INLINE_FUNCTION void vchar(const GRCoordinates &G, const ScratchPad2D<Rea
     Real cms2;
     {
         Real bsq = dot(D.bcon, D.bcov);
-        Real ef = P(m.p + prims::rho, i) + gam * P(m.p + prims::u, i);
+        Real ef = P(m.RHO, i) + gam * P(m.UU, i);
         Real ee = bsq + ef;
         Real va2 = bsq / ee;
-        Real cs2 = gam * (gam - 1) * P(m.p + prims::u, i) / ef;
+        Real cs2 = gam * (gam - 1) * P(m.UU, i) / ef;
         cms2 = cs2 + va2 - cs2 * va2;
         clip(cms2, 1.e-20, 1.);
     }
@@ -358,12 +324,10 @@ KOKKOS_INLINE_FUNCTION void vchar(const GRCoordinates &G, const ScratchPad2D<Rea
     // Require that speed of wave measured by observer q.ucon is cms2
     Real A, B, C;
     {
-        Real Acov[GR_DIM] = {0}, Bcov[GR_DIM] = {0};
-        Real Acon[GR_DIM] = {0}, Bcon[GR_DIM] = {0};
+        Real Bcov[GR_DIM] = {1., 0., 0., 0.};
+        Real Acov[GR_DIM] = {0}; Acov[dir] = 1.;
 
-        Acov[dir] = 1.;
-        Bcov[0] = 1.;
-
+        Real Acon[GR_DIM], Bcon[GR_DIM];
         G.raise(Acov, Acon, k, j, i, loc);
         G.raise(Bcov, Bcon, k, j, i, loc);
 

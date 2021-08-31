@@ -44,33 +44,31 @@ using namespace std;
  * Check the max signal speed (ctop) for 0-values or NaNs.
  * This is a final warning that something is very wrong and we should crash.
  */
-TaskStatus CheckNaN(MeshBlockData<Real> *rc, int dir, IndexDomain domain=IndexDomain::interior);
+TaskStatus CheckNaN(MeshData<Real> *md, int dir, IndexDomain domain=IndexDomain::interior);
 
 /**
- * The compiler is not so good with aliases.  Guide it.
+ * Check the primitive and conserved variables for negative values that definitely shouldn't be negative
+ * That is: primitive rho, u, conserved rho*u^t
  */
-using ParArrayNDHost = ParArrayNDGeneric<Kokkos::View<Real ******, parthenon::LayoutWrapper, Kokkos::HostSpace::memory_space>>;
-using ParArrayNDIntHost = ParArrayNDGeneric<Kokkos::View<int ******, parthenon::LayoutWrapper, Kokkos::HostSpace::memory_space>>;
+TaskStatus CheckNegative(MeshData<Real> *md, IndexDomain domain);
+
+// The compiler is not so good with aliases.  We guide it.
+// using ParArrayNDHost = ParArrayNDGeneric<Kokkos::View<Real ******, parthenon::LayoutWrapper, Kokkos::HostSpace::memory_space>>;
+// using ParArrayNDIntHost = ParArrayNDGeneric<Kokkos::View<int ******, parthenon::LayoutWrapper, Kokkos::HostSpace::memory_space>>;
 
 /**
- * Function for counting & printing pflags.  Note this is defined host-side! Call pflags.getHostMirrorAndCopy() first!
+ * Function for counting & printing pflags.  Note this needs a host-side array! Call pflags.getHostMirrorAndCopy() first!
  */
-int CountPFlags(std::shared_ptr<MeshBlock> pmb, ParArrayNDHost pflag, IndexDomain domain=IndexDomain::entire, int verbose=0);
+int CountPFlags(MeshData<Real> *md, IndexDomain domain=IndexDomain::entire, int verbose=0);
 
 /**
- * Function for counting & printing pflags.  Note this is defined host-side! Call fflags.getHostMirrorAndCopy() first!
+ * Function for counting & printing pflags.  Note this needs a host-side array! Call fflags.getHostMirrorAndCopy() first!
  */
-int CountFFlags(std::shared_ptr<MeshBlock> pmb, ParArrayNDHost fflag, IndexDomain domain=IndexDomain::interior, int verbose=0);
+int CountFFlags(MeshData<Real> *md, IndexDomain domain=IndexDomain::interior, int verbose=0);
 
-// Misc print functions
-// The world needed these
-// Maybe not in this form
-// TODO cleanup...
-
-void print_a_geom_tensor(const GeomTensor2 g, const int& i, const int& j);
-void print_a_geom_tensor3(const GeomTensor3 g, const int& i, const int& j);
-void compare_P_U(MeshBlockData<Real> *rc, const int& k, const int& j, const int& i);
-
+// Miscellaneous print functions.
+// Should not be called in production builds/committed code, so we hide them behind DEBUG flag
+#if DEBUG
 KOKKOS_INLINE_FUNCTION void print_matrix(std::string name, double g[GR_DIM][GR_DIM], bool kill_on_nan=false)
 {
     // Print a name and a matrix
@@ -92,3 +90,4 @@ KOKKOS_INLINE_FUNCTION void print_vector(std::string name, double v[GR_DIM], boo
         DLOOP2 if (isnan(v[nu])) exit(-1);
     }
 }
+#endif

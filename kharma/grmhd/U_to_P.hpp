@@ -51,33 +51,33 @@ KOKKOS_INLINE_FUNCTION Real lorentz_calc_w(const Real& Bsq, const Real& D, const
  * Like in *_functions.hpp, this function is overloaded between passing references to global arrays, and "immediates"
  * The difference is this one is probably coded pretty slowly
  */
-KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const Real U[NPRIM],
-                                    const Real B_U[NVEC], const Real& gam,
-                                    const int& k, const int& j, const int& i, const Loci loc, Real P[NPRIM])
+KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const VariablePack<Real>& U, const VarMap& m_u,
+                                    const Real& gam, const int& k, const int& j, const int& i, const Loci loc,
+                                    const VariablePack<Real>& P, const VarMap& m_p)
 {
     Real alpha = 1./sqrt(-G.gcon(loc, j, i, 0, 0));
     Real gdet = G.gdet(loc, j, i);
     Real a_over_g = alpha / gdet;
 
     // Catch negative density
-    if (U[prims::rho] <= 0.) {
+    if (U(m_u.RHO, k, j, i) <= 0.) {
         return InversionStatus::neg_input;
     }
 
     // Convert from conserved variables to four-vectors
-    Real D = U[prims::rho] * a_over_g;
+    Real D = U(m_u.RHO, k, j, i) * a_over_g;
 
     Real Bcon[GR_DIM];
     Bcon[0] = 0.;
-    Bcon[1] = B_U[0] * a_over_g;
-    Bcon[2] = B_U[1] * a_over_g;
-    Bcon[3] = B_U[2] * a_over_g;
+    Bcon[1] = U(m_u.B1, k, j, i) * a_over_g;
+    Bcon[2] = U(m_u.B2, k, j, i) * a_over_g;
+    Bcon[3] = U(m_u.B3, k, j, i) * a_over_g;
 
     Real Qcov[GR_DIM];
-    Qcov[0] = (U[prims::u] - U[prims::rho]) * a_over_g;
-    Qcov[1] = U[prims::u1] * a_over_g;
-    Qcov[2] = U[prims::u2] * a_over_g;
-    Qcov[3] = U[prims::u3] * a_over_g;
+    Qcov[0] = (U(m_u.UU, k, j, i) - U(m_u.RHO, k, j, i)) * a_over_g;
+    Qcov[1] = U(m_u.U1, k, j, i) * a_over_g;
+    Qcov[2] = U(m_u.U2, k, j, i) * a_over_g;
+    Qcov[3] = U(m_u.U3, k, j, i) * a_over_g;
 
     Real ncov[GR_DIM] = {(Real) -alpha, 0., 0., 0.};
 
@@ -104,17 +104,19 @@ KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const Real
     // Fetch the current values, or guess defaults if they're uninitialized
     Real gamma, rho0, u;
     int iter_max;
-    if (P[prims::rho] != 0. || P[prims::u] != 0.) {
-        gamma = lorentz_calc(G, &(P[prims::u1]), j, i, loc);
-        rho0 = P[prims::rho];
-        u = P[prims::u];
+    if (P(m_p.RHO, k, j, i) != 0. || P(m_p.UU, k, j, i) != 0.) {
+        gamma = GRMHD::lorentz_calc(G, P, m_p, k, j, i, loc);
+        rho0 = P(m_p.RHO, k, j, i);
+        u = P(m_p.UU, k, j, i);
         iter_max = 8;
     } else {
         //printf("Guessing P\n");
-        rho0 = 0.1;
-        u = 0.01;
-        gamma = 1.1;
-        iter_max = 20;
+        // rho0 = 0.1;
+        // u = 0.01;
+        // gamma = 1.1;
+        // iter_max = 20;
+        // Leave uninitialized zones entirely alone
+        return InversionStatus::success;
     }
     if (gamma < 1) return InversionStatus::bad_ut;
     // Calculate an initial guess for Wp
@@ -185,41 +187,16 @@ KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const Real
     else if (u < 0) return InversionStatus::neg_u;
 
     // Set primitives
-    P[prims::rho] = rho0;
-    P[prims::u] = u;
+    P(m_p.RHO, k, j, i) = rho0;
+    P(m_p.UU, k, j, i) = u;
 
     // Find u(tilde); Eqn. 31 of Noble et al.
     Real pre = (gamma / (W + Bsq));
-    P[prims::u1] = pre * (Qtcon[1] + QdB * Bcon[1] / W);
-    P[prims::u2] = pre * (Qtcon[2] + QdB * Bcon[2] / W);
-    P[prims::u3] = pre * (Qtcon[3] + QdB * Bcon[3] / W);
+    P(m_p.U1, k, j, i) = pre * (Qtcon[1] + QdB * Bcon[1] / W);
+    P(m_p.U2, k, j, i) = pre * (Qtcon[2] + QdB * Bcon[2] / W);
+    P(m_p.U3, k, j, i) = pre * (Qtcon[3] + QdB * Bcon[3] / W);
 
     return InversionStatus::success;
-}
-KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const GridVars U, const GridVector B_U, const Real& gam,
-                                  const int& k, const int& j, const int& i, const Loci loc, GridVars P)
-{
-    Real Pl[NPRIM], Ul[NPRIM], B_Ul[NVEC];
-    PLOOP {
-        Ul[p] = U(p, k, j, i);
-        Pl[p] = P(p, k, j, i);
-    }
-    VLOOP B_Ul[v] = B_U(v, k, j, i);
-    InversionStatus ret = u_to_p(G, Ul, B_Ul, gam, k, j, i, loc, Pl);
-    PLOOP P(p, k, j, i) = Pl[p];
-    return ret;
-}
-KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const GridVars U, const Real B_U[NVEC], const Real& gam,
-                                  const int& k, const int& j, const int& i, const Loci loc, GridVars P)
-{
-    Real Pl[NPRIM], Ul[NPRIM];
-    PLOOP {
-        Ul[p] = U(p, k, j, i);
-        Pl[p] = P(p, k, j, i);
-    }
-    InversionStatus ret = u_to_p(G, Ul, B_U, gam, k, j, i, loc, Pl);
-    PLOOP P(p, k, j, i) = Pl[p];
-    return ret;
 }
 
 // Document this

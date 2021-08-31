@@ -54,23 +54,33 @@ using namespace parthenon;
  * 
  * @param dir: direction of wave. 0 = components of each
  *
- * Returns the stopping time corresponding to advection by 1 wavelength
+ * Note this SETS the stopping time corresponding to advection by 1 wavelength.
+ * Generally this is what we want for tests (run by 1 cycle and compare).
+ * Modify function or reset tlim after to override.
  */
-Real InitializeMHDModes(MeshBlock *pmb, GRCoordinates G, GridVars P, GridVector B_P, int nmode, int dir)
+TaskStatus InitializeMHDModes(MeshBlockData<Real> *rc, ParameterInput *pin)
 {
+    FLAG("Initializing MHD Modes problem");
+    auto pmb = rc->GetBlockPointer();
+    GridScalar rho = rc->Get("prims.rho").data;
+    GridScalar u = rc->Get("prims.u").data;
+    GridVector uvec = rc->Get("prims.uvec").data;
+    GridVector B_P = rc->Get("prims.B").data;
+
+    const auto& G = pmb->coords;
+
+    int nmode = pin->GetOrAddInteger("mhdmodes", "nmode", 1);
+    int dir = pin->GetOrAddInteger("mhdmodes", "dir", 0);
+
+    // START POSSIBLE ARGS: take all these as parameters in pin?
     // Mean state
     Real rho0 = 1.;
     Real u0 = 1.;
-    // TODO try a boosted entropy test with uN0 > 0. Take as arguments?
     Real u10 = 0.;
     Real u20 = 0.;
     Real u30 = 0.;
-    // B is set later, see below
-    Real B10 = 0.;
-    Real B20 = 0.;
-    Real B30 = 0.;
 
-    // Wavevector (TODO set on the fly)
+    // Wavevector
     Real k1 = 2. * M_PI;
     Real k2 = 2. * M_PI;
     Real k3 = 2. * M_PI;
@@ -84,6 +94,12 @@ Real InitializeMHDModes(MeshBlock *pmb, GRCoordinates G, GridVars P, GridVector 
         k3 = 0;
 
     Real amp = 1.e-4;
+    // END POSSIBLE ARGS
+
+    // B is set later, see below
+    Real B10 = 0.;
+    Real B20 = 0.;
+    Real B30 = 0.;
 
     std::complex<Real> omega;
     Real drho, du, du1, du2, du3, dB1, dB2, dB3;
@@ -95,7 +111,6 @@ Real InitializeMHDModes(MeshBlock *pmb, GRCoordinates G, GridVars P, GridVector 
         B10 = 1.;
         if (nmode == 0)
         { // Entropy
-            omega = 2. * M_PI / 5. * 1.i;
             drho = 1.;
         }
         else if (nmode == 1)
@@ -150,7 +165,6 @@ Real InitializeMHDModes(MeshBlock *pmb, GRCoordinates G, GridVars P, GridVector 
 
         if (nmode == 0)
         { // Entropy
-            omega = 2. * M_PI / 5. * 1.i;
             drho = 1.;
         }
         else if (nmode == 1)
@@ -228,14 +242,6 @@ Real InitializeMHDModes(MeshBlock *pmb, GRCoordinates G, GridVars P, GridVector 
         }
     }
 
-    // Override end time to be exactly 1 period
-    Real tf;
-    if (nmode != 0) {
-        tf = 2. * M_PI / fabs(omega.imag());
-    } else {
-        tf = -1;
-    }
-
     IndexRange ib = pmb->cellbounds.GetBoundsI(IndexDomain::entire);
     IndexRange jb = pmb->cellbounds.GetBoundsJ(IndexDomain::entire);
     IndexRange kb = pmb->cellbounds.GetBoundsK(IndexDomain::entire);
@@ -245,16 +251,21 @@ Real InitializeMHDModes(MeshBlock *pmb, GRCoordinates G, GridVars P, GridVector 
             G.coord_embed(k, j, i, Loci::center, X);
 
             Real mode = amp * cos(k1 * X[1] + k2 * X[2] + k3 * X[3]);
-            P(prims::rho, k, j, i) = rho0 + drho * mode;
-            P(prims::u, k, j, i) = u0 + du * mode;
-            P(prims::u1, k, j, i) = u10 + du1 * mode;
-            P(prims::u2, k, j, i) = u20 + du2 * mode;
-            P(prims::u3, k, j, i) = u30 + du3 * mode;
+            rho(k, j, i) = rho0 + drho * mode;
+            u(k, j, i) = u0 + du * mode;
+            uvec(0, k, j, i) = u10 + du1 * mode;
+            uvec(1, k, j, i) = u20 + du2 * mode;
+            uvec(2, k, j, i) = u30 + du3 * mode;
             B_P(0, k, j, i) = B10 + dB1 * mode;
             B_P(1, k, j, i) = B20 + dB2 * mode;
             B_P(2, k, j, i) = B30 + dB3 * mode;
         }
     );
 
-    return tf;
+    // Override end time to be exactly 1 period for moving modes
+    if (nmode != 0) {
+        pin->SetReal("parthenon/time", "tlim", 2. * M_PI / fabs(omega.imag()));
+    }
+
+    return TaskStatus::complete;
 }

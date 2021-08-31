@@ -47,22 +47,44 @@ namespace KHARMA {
     void FixParameters(std::unique_ptr<ParameterInput>& pin);
 
     /**
-     * Currently just loads GRMHD.  Could also load GRHD only, scalars, e-, etc.
+     * Load any packages specified in the input parameters
      */
     Packages_t ProcessPackages(std::unique_ptr<ParameterInput>& pin);
 
     /**
-     * Fill any arrays that are calculated only for output, e.g.
-     * divB
-     * jcon
-     * etc
-     * 
-     * This becomes a member function (!) of MeshBlock and is called for each block
+     * Initialize a "package" (StateDescriptor) of global variables, quantities needed randomly in several places, like:
+     * dt_last, last step time
+     * ctop_max, maximum speed on the grid
+     * in_loop, whether one step has been completed (for e.g. EstimateTimestep)
      */
-    void FillOutput(MeshBlock *pmb, ParameterInput *pin);
+    std::shared_ptr<StateDescriptor> InitializeGlobals(ParameterInput *pin);
 
     /**
-     * Print any diagnostics
+     * Imitate Parthenon's FillDerived call, but on only a subset of zones defined by 'domain'
+     * Used for boundary calls, see boundaries.cpp
      */
-    void PostStepDiagnostics(Mesh *pmesh, ParameterInput *pin, const SimTime& tm);
+    void FillDerivedDomain(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, int coarse);
+
+    /**
+     * Code-wide work before each step in the fluid evolution.  Currently just updates globals.
+     */
+    void PreStepMeshUserWorkInLoop(Mesh *pmesh, ParameterInput *pin, const SimTime &tm);
+
+    /**
+     * Code-wide work after each step in the fluid evolution.  Currently just updates globals.
+     */
+    void PostStepMeshUserWorkInLoop(Mesh *pmesh, ParameterInput *pin, const SimTime &tm);
+
+    /**
+     * Calculate and print diagnostics after each step. Currently:
+     * GRMHD: pflags & fflags, negative values in rho,u, ctop of 0 or NaN
+     * B fields: MaxDivB
+     */
+    void PostStepDiagnostics(Mesh *pmesh, ParameterInput *pin, const SimTime &tm);
+
+    /**
+     * Fill any arrays that are calculated only for output, e.g. divB, jcon, etc.
+     * This calls the FillOutput function of each package
+     */
+    void FillOutput(MeshBlock *pmb, ParameterInput *pin);
 }

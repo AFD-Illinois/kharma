@@ -51,10 +51,10 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
     int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
     int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
 
-    auto& G = pmb->coords;
-    GridVars P = rc->Get("c.c.bulk.prims").data;
-    GridVector B_P = rc->Get("c.c.bulk.B_prim").data;
-    GridVector B_U = rc->Get("c.c.bulk.B_con").data;
+    const auto& G = pmb->coords;
+    GridScalar rho = rc->Get("prims.rho").data;
+    GridVector B_P = rc->Get("prims.B").data;
+    GridVector B_U = rc->Get("cons.B").data;
 
     Real min_rho_q = pin->GetOrAddReal("b_field", "min_rho_q", 0.2);
     std::string b_field_type = pin->GetString("b_field", "type");
@@ -135,8 +135,8 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
             GReal r = Xembed[1], th = Xembed[2];
 
             // Find rho (later u?) at corners by averaging from adjacent centers
-            Real rho_av = 0.25 * (P(prims::rho, ks, j, i)     + P(prims::rho, ks, j, i - 1) +
-                                  P(prims::rho, ks, j - 1, i) + P(prims::rho, ks, j - 1, i - 1));
+            Real rho_av = 0.25 * (rho(ks, j, i)     + rho(ks, j, i - 1) +
+                                  rho(ks, j - 1, i) + rho(ks, j - 1, i - 1));
 
             Real q;
             switch (b_field_flag)

@@ -1,5 +1,5 @@
 /* 
- *  File: fixup.hpp
+ *  File: pack.hpp
  *  
  *  BSD 3-Clause License
  *  
@@ -31,22 +31,43 @@
  *  OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+#pragma once
 
-#include "decs.hpp"
+#include "grmhd.hpp"
 
-#include <parthenon/parthenon.hpp>
+using namespace parthenon;
 
 namespace GRMHD {
 
-/**
- * Smooth over inversion failures by averaging values from each neighboring zone
- * a.k.a. Diffusion?  What diffusion?  There is no diffusion here.
- *
- * TODO These happen often, and we can do better here.
- * See e.g. Beckwith & Stone for a truly defense-in-depth approach
- * 
- * LOCKSTEP: this function expects and should preserve P<->U
- */
-TaskStatus FixUtoP(MeshBlockData<Real> *rc);
-
+inline VariablePack<Real> PackMHDPrims(MeshBlockData<Real> *rc, PackIndexMap& prims_map, bool coarse=false)
+{
+    auto pmb = rc->GetBlockPointer();
+    MetadataFlag isPrimitive = pmb->packages.Get("GRMHD")->Param<MetadataFlag>("PrimitiveFlag");
+    MetadataFlag isMHD = pmb->packages.Get("GRMHD")->Param<MetadataFlag>("MHDFlag");
+    return rc->PackVariables({isPrimitive, isMHD}, prims_map, coarse);
 }
+
+inline VariablePack<Real> PackMHDCons(MeshBlockData<Real> *rc, PackIndexMap& cons_map, bool coarse=false)
+{
+    auto pmb = rc->GetBlockPointer();
+    MetadataFlag isMHD = pmb->packages.Get("GRMHD")->Param<MetadataFlag>("MHDFlag");
+    return rc->PackVariables({Metadata::Conserved, isMHD}, cons_map, coarse);
+}
+
+inline VariablePack<Real> PackHDPrims(MeshBlockData<Real> *rc, PackIndexMap& prims_map, bool coarse=false)
+{
+    auto pmb = rc->GetBlockPointer();
+    MetadataFlag isPrimitive = pmb->packages.Get("GRMHD")->Param<MetadataFlag>("PrimitiveFlag");
+    MetadataFlag isHD = pmb->packages.Get("GRMHD")->Param<MetadataFlag>("HDFlag");
+    return rc->PackVariables({isPrimitive, isHD}, prims_map, coarse);
+}
+
+inline VariablePack<Real> PackHDCons(MeshBlockData<Real> *rc, PackIndexMap& cons_map, bool coarse=false)
+{
+    auto pmb = rc->GetBlockPointer();
+    MetadataFlag isHD = pmb->packages.Get("GRMHD")->Param<MetadataFlag>("HDFlag");
+    return rc->PackVariables({Metadata::Conserved, isHD}, cons_map, coarse);
+}
+
+
+} // namespace GRMHD

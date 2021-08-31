@@ -44,13 +44,8 @@ cfl = 0.9
 gamma = 1.666667
 reconstruction = weno5
 
-<debug>
-verbose = 1
-flag_verbose = 1
-
-
 <parthenon/output0>
 file_type = hdf5
 dt = 1.0
 single_precision_output = true
-variables = c.c.bulk.prims, c.c.bulk.B_prim, c.c.bulk.jcon
+variables = prims.rho, prims.u, prims.uvec, prims.B, jcon

@@ -32,13 +32,8 @@
  *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <parthenon/parthenon.hpp>
-
 #include "b_cd.hpp"
 
-#include "b_flux_ct.hpp"
-#include "decs.hpp"
-#include "grmhd.hpp"
 #include "kharma.hpp"
 
 using namespace parthenon;
@@ -47,8 +42,6 @@ using namespace parthenon;
 #define B1 0
 #define B2 1
 #define B3 2
-
-extern double ctop_max;
 
 namespace B_CD
 {
@@ -78,26 +71,27 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     // B field as usual
     Metadata m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Independent, Metadata::FillGhost,
                  Metadata::Restart, Metadata::Conserved, Metadata::WithFluxes, Metadata::Vector}, s_vector);
-    pkg->AddField("c.c.bulk.B_con", m);
+    pkg->AddField("cons.B", m);
     m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived,
                   Metadata::Restart, isPrimitive, Metadata::Vector}, s_vector);
-    pkg->AddField("c.c.bulk.B_prim", m);
+    pkg->AddField("prims.B", m);
 
     // Constraint damping scalar field psi.  Prim and cons forms correspond to B field forms,
     // i.e. differ by a factor of gdet.  This is apparently marginally more stable in some
     // circumstances.
     m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Independent, Metadata::FillGhost,
                   Metadata::Restart, Metadata::Conserved, Metadata::WithFluxes});
-    pkg->AddField("c.c.bulk.psi_cd_con", m);
+    pkg->AddField("cons.psi_cd", m);
     m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived,
                   Metadata::Restart, isPrimitive});
-    pkg->AddField("c.c.bulk.psi_cd_prim", m);
+    pkg->AddField("prims.psi_cd", m);
 
     // We only update the divB field for output
     m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
-    pkg->AddField("c.c.bulk.divB", m);
+    pkg->AddField("divB", m);
 
     pkg->FillDerivedBlock = B_CD::FillDerived;
+    pkg->PostStepDiagnosticsMesh = B_CD::PostStepDiagnostics;
     return pkg;
 }
 
@@ -105,12 +99,12 @@ void UtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
     auto pmb = rc->GetBlockPointer();
 
-    auto& B_U = rc->Get("c.c.bulk.B_con").data;
-    auto& B_P = rc->Get("c.c.bulk.B_prim").data;
-    auto& psi_U = rc->Get("c.c.bulk.psi_cd_con").data;
-    auto& psi_P = rc->Get("c.c.bulk.psi_cd_prim").data;
+    auto& B_U = rc->Get("cons.B").data;
+    auto& B_P = rc->Get("prims.B").data;
+    auto& psi_U = rc->Get("cons.psi_cd").data;
+    auto& psi_P = rc->Get("prims.psi_cd").data;
 
-    auto& G = pmb->coords;
+    const auto& G = pmb->coords;
 
     auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
     IndexRange ib = bounds.GetBoundsI(domain);
@@ -127,7 +121,7 @@ void UtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     );
 }
 
-TaskStatus AddSource(MeshBlockData<Real> *rc, MeshBlockData<Real> *dudt, const Real& dt)
+TaskStatus AddSource(MeshBlockData<Real> *rc, MeshBlockData<Real> *dudt)
 {
     FLAG("Adding constraint damping source")
     // TODO mesh-wide
@@ -135,19 +129,19 @@ TaskStatus AddSource(MeshBlockData<Real> *rc, MeshBlockData<Real> *dudt, const R
     const int ndim = pmb->pmy_mesh->ndim;
     if (ndim < 2) return TaskStatus::complete;
 
-    auto& psi_U = rc->Get("c.c.bulk.psi_cd_con").data;
-    auto& psiF1 = rc->Get("c.c.bulk.psi_cd_con").flux[X1DIR];
-    auto& psiF2 = rc->Get("c.c.bulk.psi_cd_con").flux[X2DIR];
-    auto& psiF3 = rc->Get("c.c.bulk.psi_cd_con").flux[X3DIR];
-    auto& psi_DU = dudt->Get("c.c.bulk.psi_cd_con").data;
+    auto& psi_U = rc->Get("cons.psi_cd").data;
+    auto& psiF1 = rc->Get("cons.psi_cd").flux[X1DIR];
+    auto& psiF2 = rc->Get("cons.psi_cd").flux[X2DIR];
+    auto& psiF3 = rc->Get("cons.psi_cd").flux[X3DIR];
+    auto& psi_DU = dudt->Get("cons.psi_cd").data;
 
-    auto& B_U = rc->Get("c.c.bulk.B_con").data;
-    auto& BF1 = rc->Get("c.c.bulk.B_con").flux[X1DIR];
-    auto& BF2 = rc->Get("c.c.bulk.B_con").flux[X2DIR];
-    auto& BF3 = rc->Get("c.c.bulk.B_con").flux[X3DIR];
-    auto& B_DU = dudt->Get("c.c.bulk.B_con").data;
+    auto& B_U = rc->Get("cons.B").data;
+    auto& BF1 = rc->Get("cons.B").flux[X1DIR];
+    auto& BF2 = rc->Get("cons.B").flux[X2DIR];
+    auto& BF3 = rc->Get("cons.B").flux[X3DIR];
+    auto& B_DU = dudt->Get("cons.B").data;
 
-    auto& G = pmb->coords;
+    const auto& G = pmb->coords;
 
     const Real lambda = pmb->packages.Get("B_CD")->Param<Real>("damping");
 
@@ -196,13 +190,13 @@ TaskStatus AddSource(MeshBlockData<Real> *rc, MeshBlockData<Real> *dudt, const R
 
 // TODO figure out what divB from psi looks like?
 
-Real MaxDivB(MeshBlockData<Real> *rc, IndexDomain domain)
+Real MaxDivB(MeshData<Real> *md, IndexDomain domain)
 {
-    auto pmb = rc->GetBlockPointer();
+    auto pmb = md->GetBlockData(0)->GetBlockPointer();
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
-    auto& G = pmb->coords;
+    const auto& G = pmb->coords;
     const int ndim = pmb->pmy_mesh->ndim;
     if (ndim < 2) return 0.;
     // We only care about interior cells
@@ -210,19 +204,17 @@ Real MaxDivB(MeshBlockData<Real> *rc, IndexDomain domain)
     js += 1; je -= 1;
     if (ndim > 2) { ks += 1; ke -= 1; }
 
+    auto B = md->PackVariablesAndFluxes(std::vector<std::string>{"cons.B"});
 
-    GridVector F1, F2, F3;
-    F1 = rc->Get("c.c.bulk.B_con").flux[X1DIR];
-    F2 = rc->Get("c.c.bulk.B_con").flux[X2DIR];
-    if (ndim > 2) F3 = rc->Get("c.c.bulk.B_con").flux[X3DIR];
+    cerr << "Fluxes 6, 5, " << B.GetDim(6) << " " << B.GetDim(5);
 
     Real bsq_max;
     Kokkos::Max<Real> bsq_max_reducer(bsq_max);
-    pmb->par_reduce("B_field_bsqmax", ks, ke, js, je, is, ie,
-        KOKKOS_LAMBDA_3D_REDUCE {
-            double divb_local = ((F1(B1, k, j, i+1) - F1(B1, k, j, i)) / G.dx1v(i)+
-                                 (F2(B2, k, j+1, i) - F2(B2, k, j, i)) / G.dx2v(j));
-            if (ndim > 2) divb_local += (F3(B3, k+1, j, i) - F3(B3, k, j, i)) / G.dx3v(k);
+    pmb->par_reduce("B_field_bsqmax", 0, B.GetDim(5), ks, ke, js, je, is, ie,
+        KOKKOS_LAMBDA_MESH_3D_REDUCE {
+            double divb_local = ((B(b).flux(1, B1, k, j, i+1) - B(b).flux(1, B1, k, j, i)) / G.dx1v(i)+
+                                 (B(b).flux(2, B2, k, j+1, i) - B(b).flux(2, B2, k, j, i)) / G.dx2v(j));
+            if (ndim > 2) divb_local += (B(b).flux(3, B3, k+1, j, i) - B(b).flux(3, B3, k, j, i)) / G.dx3v(k);
 
             if(divb_local > local_result) local_result = divb_local;
         }
@@ -230,28 +222,18 @@ Real MaxDivB(MeshBlockData<Real> *rc, IndexDomain domain)
     return bsq_max;
 }
 
-TaskStatus PostStepDiagnostics(Mesh *pmesh, ParameterInput *pin, const SimTime& tm)
+TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
 {
     FLAG("Printing B field diagnostics");
+    auto pmesh = md->GetMeshPointer();
 
     // Print this unless we quash everything
-    //int verbose = pmesh->packages.Get("B_CD")->Param<int>("verbose");
-    int verbose = pmesh->packages.Get("GRMHD")->Param<int>("verbose");
-    if (verbose > -1) {
+    int verbose = pmesh->packages.Get("B_CD")->Param<int>("verbose");
+    if (verbose >= 0) {
         // We probably only care on the physical grid
         IndexDomain domain = IndexDomain::interior;
 
-        Real max_divb = 0;
-        for (auto &pmb : pmesh->block_list) {
-            auto& rc0 = pmb->meshblock_data.Get("preserve");
-            auto& rc1 = pmb->meshblock_data.Get();
-
-            Real max_divb_l = 0;
-            if (verbose >= 1)
-                max_divb_l = B_CD::MaxDivB(rc1.get(), domain);
-
-            if (max_divb_l > max_divb) max_divb = max_divb_l;
-        }
+        Real max_divb = B_CD::MaxDivB(md, domain);
         max_divb = MPIMax(max_divb);
 
         if(MPIRank0()) {
@@ -279,13 +261,13 @@ void FillOutput(MeshBlock *pmb, ParameterInput *pin)
     }
 
     auto rc = pmb->meshblock_data.Get().get();
-    auto& divB = rc->Get("c.c.bulk.divB").data;
-    auto& G = pmb->coords;
+    auto& divB = rc->Get("divB").data;
+    const auto& G = pmb->coords;
 
     GridVector F1, F2, F3;
-    F1 = rc->Get("c.c.bulk.B_con").flux[X1DIR];
-    F2 = rc->Get("c.c.bulk.B_con").flux[X2DIR];
-    if (ndim > 2) F3 = rc->Get("c.c.bulk.B_con").flux[X3DIR];
+    F1 = rc->Get("cons.B").flux[X1DIR];
+    F2 = rc->Get("cons.B").flux[X2DIR];
+    if (ndim > 2) F3 = rc->Get("cons.B").flux[X3DIR];
 
     pmb->par_for("B_field_bsqmax", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D {
@@ -298,4 +280,4 @@ void FillOutput(MeshBlock *pmb, ParameterInput *pin)
     );
 }
 
-} // namespace B_FluxCT
+} // namespace B_CD

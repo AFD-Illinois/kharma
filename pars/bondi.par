@@ -9,8 +9,8 @@ problem_id = bondi
 # Full mesh size, no refinement
 refinement = none
 numlevel = 1
-nx1 = 64
-nx2 = 64
+nx1 = 128
+nx2 = 128
 nx3 = 1
 
 <parthenon/meshblock>
@@ -42,11 +42,14 @@ rs = 8.0
 
 # Disable floors
 <floors>
-rho_min_geom=1e-20
-u_min_geom=1e-20
-gamma_max=1e20
+disable_floors = true
+
+<b_field>
+type = none
+solver = none
 
 <parthenon/output0>
 file_type = hdf5
 dt = 5.0
-variables = c.c.bulk.prims
+single_precision_output = true
+variables = prims.rho, prims.u, prims.uvec

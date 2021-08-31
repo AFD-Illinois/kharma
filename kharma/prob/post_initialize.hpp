@@ -1,5 +1,5 @@
 /* 
- *  File: source.hpp
+ *  File: post_initialize.hpp
  *  
  *  BSD 3-Clause License
  *  
@@ -31,50 +31,29 @@
  *  OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-
 #pragma once
 
 #include "decs.hpp"
-#include "mhd_functions.hpp"
 
-namespace GRMHD
-{
+#include "b_flux_ct.hpp"
+#include "b_cd.hpp"
+
+namespace KHARMA {
 
 /**
- * Function to apply the GRMHD source term over the entire grid.
+ * Initialize the magnetic field (if still required), and renormalize it as
+ * is common practice for torus problems.
  * 
- * Note Flux::ApplyFluxes = parthenon::FluxDivergence + GRMHD::AddSource
+ * Since the latter operation is global, we perform this on the whole mesh
+ * once initialization of all other problem data is completed.
  */
-TaskStatus AddSource(MeshBlockData<Real> *rc, MeshBlockData<Real> *dudt);
+void SeedAndNormalizeB(ParameterInput *pin, Mesh *pmesh);
 
 /**
- * Function to add the source term in the GRMHD equations T^\mu_nu \Gamma^\nu_\lam\mu
- * Does not zero input, thus can be added after the flux divergence is calculated
+ * Functions run over the entire mesh after per-block initialization:
+ * 1. Initialize magnetic field, which must be normalized globally to respect beta_min parameter
+ * 2. Initial boundary sync, including primitive values
  */
-KOKKOS_INLINE_FUNCTION void add_source(const GRCoordinates &G, const VariablePack<Real>& P, const VarMap& m_p, const FourVectors& D,
-                      const Real& gam, const int& k, const int& j, const int& i,
-                      const VariablePack<Real>& dUdt, const VarMap& m_u)
-{
-    // Get stuff we don't want to recalculate every loop iteration
-    // This is basically a manual version of GRMHD::calc_tensor but saves recalculating e.g. dot(bcon, bcov) 4 times
-    Real pgas = (gam - 1) * P(m_p.UU, k, j, i);
-    Real bsq = dot(D.bcon, D.bcov);
-    Real eta = pgas + P(m_p.RHO, k, j, i) + P(m_p.UU, k, j, i) + bsq;
-    Real ptot = pgas + 0.5 * bsq;
+void PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart);
 
-    // Contract mhd stress tensor with connection, and multiply by metric dterminant
-    Real new_du[GR_DIM] = {0};
-    DLOOP2 {
-        Real Tmunu = (eta * D.ucon[mu] * D.ucov[nu] +
-                      ptot * (mu == nu) -
-                      D.bcon[mu] * D.bcov[nu]);
-
-        for (int lam = 0; lam < GR_DIM; ++lam)
-            new_du[lam] += Tmunu * G.conn(j, i, nu, lam, mu);
-    }
-
-    dUdt(m_u.UU, k, j, i) += new_du[0] * G.gdet(Loci::center, j, i);
-    VLOOP dUdt(m_u.U1 + v, k, j, i) += new_du[1 + v] * G.gdet(Loci::center, j, i);
 }
-
-} // namespace GRMHD

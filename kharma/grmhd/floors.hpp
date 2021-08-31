@@ -38,7 +38,6 @@
 
 #include "b_flux_ct.hpp"
 #include "mhd_functions.hpp"
-#include "phys_functions.hpp"
 #include "U_to_P.hpp"
 
 #include <parthenon/parthenon.hpp>
@@ -47,39 +46,7 @@
 // Currently not used by caller, so disabled
 #define RECORD_POST_RECON 0
 
-/**
- * Struct to hold floor values without cumbersome dictionary/string logistics.
- * Hopefully faster.
- */
-class FloorPrescription {
-    public:
-        // Purely geometric limits
-        double rho_min_geom, u_min_geom, r_char;
-        // Dynamic limits on magnetization/temperature
-        double bsq_over_rho_max, bsq_over_u_max, u_over_rho_max;
-        // Limit entropy -- currently only for legacy but potentially useful
-        double ktot_max;
-        // Limit fluid Lorentz factor
-        double gamma_max;
-        // Floor options
-        bool temp_adjust_u, fluid_frame;
-
-        FloorPrescription(parthenon::Params& params)
-        {
-            rho_min_geom = params.Get<Real>("rho_min_geom");
-            u_min_geom = params.Get<Real>("u_min_geom");
-            r_char = params.Get<Real>("floor_r_char");
-
-            bsq_over_rho_max = params.Get<Real>("bsq_over_rho_max");
-            bsq_over_u_max = params.Get<Real>("bsq_over_u_max");
-            u_over_rho_max = params.Get<Real>("u_over_rho_max");
-            ktot_max = params.Get<Real>("ktot_max");
-            gamma_max = params.Get<Real>("gamma_max");
-
-            temp_adjust_u = params.Get<bool>("temp_adjust_u");
-            fluid_frame = params.Get<bool>("fluid_frame");
-        }
-};
+namespace GRMHD {
 
 /**
  * Apply density and internal energy floors and ceilings
@@ -87,28 +54,27 @@ class FloorPrescription {
 TaskStatus ApplyFloors(MeshBlockData<Real> *rc);
 
 /**
- * Apply all ceilings, together, currently at most one on velocity and two on internal energy
+ * Apply all ceilings together, currently at most one on velocity and two on internal energy
  * 
  * @return fflag, a bitflag indicating whether each particular floor was hit, allowing representation of arbitrary combinations
  * See decs.h for bit names.
  * 
  * LOCKSTEP: this function respects P and returns consistent P<->U
  */
-KOKKOS_INLINE_FUNCTION int apply_ceilings(const GRCoordinates& G, GridVars P, GridVector B_P, GridVars U, const Real& gam, const int& k, const int& j, const int& i,
-                                          const FloorPrescription& floors, const Loci loc=Loci::center)
+KOKKOS_INLINE_FUNCTION int apply_ceilings(const GRCoordinates& G, const VariablePack<Real>& P, const VarMap& m_p,
+                                          const Real& gam, const int& k, const int& j, const int& i, const FloorPrescription& floors,
+                                          const VariablePack<Real>& U, const VarMap& m_u, const Loci loc=Loci::center)
 {
     int fflag = 0;
     // First apply ceilings:
     // 1. Limit gamma with respect to normal observer
-    Real gamma = lorentz_calc(G, P, k, j, i, loc);
+    Real gamma = lorentz_calc(G, P, m_p, k, j, i, loc);
 
     if (gamma > floors.gamma_max) {
         fflag |= HIT_FLOOR_GAMMA;
 
         Real f = sqrt((pow(floors.gamma_max, 2) - 1.)/(pow(gamma, 2) - 1.));
-        P(prims::u1, k, j, i) *= f;
-        P(prims::u2, k, j, i) *= f;
-        P(prims::u3, k, j, i) *= f;
+        VLOOP P(m_p.U1+v, k, j, i) *= f;
     }
 
     // 2. Limit the entropy by controlling u, to avoid anomalous cooling from funnel wall
@@ -116,23 +82,23 @@ KOKKOS_INLINE_FUNCTION int apply_ceilings(const GRCoordinates& G, GridVars P, Gr
     // Note this technically applies the condition *one step sooner* than legacy, since it operates on
     // the entropy as calculated from current conditions, rather than the value kept from the previous
     // step for calculating dissipation.
-    Real ktot = (gam - 1.) * P(prims::u, k, j, i) / pow(P(prims::rho, k, j, i), gam);
+    Real ktot = (gam - 1.) * P(m_p.UU, k, j, i) / pow(P(m_p.RHO, k, j, i), gam);
     if (ktot > floors.ktot_max) {
         fflag |= HIT_FLOOR_KTOT;
 
-        P(prims::u, k, j, i) = floors.ktot_max / ktot * P(prims::u, k, j, i);
+        P(m_p.UU, k, j, i) = floors.ktot_max / ktot * P(m_p.UU, k, j, i);
     }
 
     // 3. Limit the temperature by controlling u.  Can optionally add density instead, implemented in apply_floors
-    if (floors.temp_adjust_u && P(prims::u, k, j, i) / P(prims::rho, k, j, i) > floors.u_over_rho_max) {
+    if (floors.temp_adjust_u && P(m_p.UU, k, j, i) / P(m_p.RHO, k, j, i) > floors.u_over_rho_max) {
         fflag |= HIT_FLOOR_TEMP;
 
-        P(prims::u, k, j, i) = floors.u_over_rho_max * P(prims::rho, k, j, i);
+        P(m_p.UU, k, j, i) = floors.u_over_rho_max * P(m_p.RHO, k, j, i);
     }
 
     if (fflag) {
         // Keep lockstep!
-        GRMHD::p_to_u(G, P, B_P, gam, k, j, i, U, loc);
+        GRMHD::p_to_u(G, P, m_p, gam, k, j, i, U, m_u, loc);
     }
 
     return fflag;
@@ -147,19 +113,21 @@ KOKKOS_INLINE_FUNCTION int apply_ceilings(const GRCoordinates& G, GridVars P, Gr
  * 
  * LOCKSTEP: this function respects P and ignores U in order to return consistent P<->U
  */
-KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, GridVars P, GridVector B_P, GridVars U, GridVector B_U,
-                                        const Real& gam, const int& k, const int& j, const int& i,
-                                        const FloorPrescription& floors, const Loci loc=Loci::center)
+KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, const VariablePack<Real>& P, const VarMap& m_p,
+                                        const Real& gam, const int& k, const int& j, const int& i, const FloorPrescription& floors,
+                                        const VariablePack<Real>& U, const VarMap& m_u, const Loci loc=Loci::center)
 {
     int fflag = 0;
+    InversionStatus pflag = InversionStatus::success;
     // Then apply floors:
     // 1. Geometric hard floors, not based on fluid relationships
     Real rhoflr_geom, uflr_geom;
-    if(1) {
-        //GReal Xembed[GR_DIM];
-        //G.coord_embed(k, j, i, loc, Xembed);
-        //GReal r = Xembed[1];
-        GReal r = exp(G.x1v(i));
+    if(G.coords.spherical()) {
+        GReal Xembed[GR_DIM];
+        G.coord_embed(k, j, i, loc, Xembed);
+        GReal r = Xembed[1];
+        // TODO measure whether this/if 1 is really faster
+        // GReal r = exp(G.x1v(i));
 
         // New, steeper floor in rho
         // Previously raw r^-2, r^-1.5
@@ -170,12 +138,12 @@ KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, GridVars P, Grid
         rhoflr_geom = floors.rho_min_geom;
         uflr_geom = floors.u_min_geom;
     }
-    Real rho = P(prims::rho, k, j, i);
-    Real u = P(prims::u, k, j, i);
+    Real rho = P(m_p.RHO, k, j, i);
+    Real u = P(m_p.UU, k, j, i);
 
     // 2. Magnetization ceilings: impose maximum magnetization sigma = bsq/rho, and inverse beta prop. to bsq/U
     FourVectors Dtmp;
-    GRMHD::calc_4vecs(G, P, B_P, k, j, i, loc, Dtmp);
+    GRMHD::calc_4vecs(G, P, m_p, k, j, i, loc, Dtmp);
     double bsq = dot(Dtmp.bcon, Dtmp.bcov);
     double rhoflr_b = bsq / floors.bsq_over_rho_max;
     double uflr_b = bsq / floors.bsq_over_u_max;
@@ -184,7 +152,7 @@ KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, GridVars P, Grid
     double uflr_max = max(uflr_geom, uflr_b);
 
     double rhoflr_max;
-    if (0) {
+    if (!floors.temp_adjust_u) {
         // 3. Temperature ceiling: impose maximum temperature u/rho
         // Take floors on U into account
         double rhoflr_temp = max(u, uflr_max) / floors.u_over_rho_max;
@@ -198,48 +166,52 @@ KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, GridVars P, Grid
         rhoflr_max = max(rhoflr_geom, rhoflr_b);
     }
 
-    // Record all the floors that were hit, using bitflags
-    // Record Geometric floor hits
-    fflag |= (rhoflr_geom > rho) * HIT_FLOOR_GEOM_RHO;
-    fflag |= (uflr_geom > u) * HIT_FLOOR_GEOM_U;
-    // Record Magnetic floor hits
-    fflag |= (rhoflr_b > rho) * HIT_FLOOR_B_RHO;
-    fflag |= (uflr_b > u) * HIT_FLOOR_B_U;
+    // If we need to do anything...
+    if (rhoflr_max > rho || uflr_max > u) {
 
-    InversionStatus pflag = InversionStatus::success;
-    if (1) {
-        P(prims::rho, k, j, i) += max(0., rhoflr_max - rho);
-        P(prims::u, k, j, i) += max(0., uflr_max - u);
-        GRMHD::p_to_u(G, P, B_P, gam, k, j, i, U, loc);
-    } else {
-        if (rhoflr_max > rho || uflr_max > u) { // Apply floors
+        // Record all the floors that were hit, using bitflags
+        // Record Geometric floor hits
+        fflag |= (rhoflr_geom > rho) * HIT_FLOOR_GEOM_RHO;
+        fflag |= (uflr_geom > u) * HIT_FLOOR_GEOM_U;
+        // Record Magnetic floor hits
+        fflag |= (rhoflr_b > rho) * HIT_FLOOR_B_RHO;
+        fflag |= (uflr_b > u) * HIT_FLOOR_B_U;
 
+        if (floors.fluid_frame) {
+            P(m_p.RHO, k, j, i) += max(0., rhoflr_max - rho);
+            P(m_p.UU, k, j, i) += max(0., uflr_max - u);
+            GRMHD::p_to_u(G, P, m_p, gam, k, j, i, U, m_u, loc);
+        } else {
             // Add the material in the normal observer frame, by:
-            // Initializing a dummy fluid parcel
-            Real Pnew[NPRIM] = {0}, Unew[NPRIM] = {0}, B_Pnew[NVEC] = {0};
+            // Adding the floors to the primitive variables
+            rho = max(0., rhoflr_max - rho);
+            u = max(0., uflr_max - u);
+            const Real uvec[NVEC] = {0};
 
-            // Add mass and internal energy to the primitives, but not velocity
-            Pnew[prims::rho] = max(0., rhoflr_max - rho);
-            Pnew[prims::u] = max(0., uflr_max - u);
+            // Calculating the corresponding conserved variables
+            Real rho_ut, T[GR_DIM];
+            GRMHD::p_to_u_floor(G, rho, u, uvec, gam, k, j, i, rho_ut, T, loc);
 
-            // Get conserved variables for the new and old parcels
-            //GRMHD::p_to_u(G, P, B_P, gam, k, j, i, U, loc);
-            GRMHD::p_to_u(G, Pnew, B_Pnew, gam, k, j, i, Unew, loc);
-
-            // Add new conserved mass/energy to the current "conserved" state
-            // Prims are needed as a guess
-            PLOOP {
-                U(p, k, j, i) += Unew[p];
-                P(p, k, j, i) += Pnew[p];
-            }
-
+            // Add new conserved mass/energy to the current "conserved" state,
+            // and to the local primitives as a guess
+            P(m_p.RHO, k, j, i) += rho;
+            P(m_p.UU, k, j, i) += u;
+            // Add any velocity here
+            U(m_u.RHO, k, j, i) += rho_ut;
+            U(m_u.UU, k, j, i) += T[0]; // Note this shouldn't be a single loop: m_u.U1 != m_u.UU + 1 necessarily
+            U(m_u.U1, k, j, i) += T[1];
+            U(m_u.U2, k, j, i) += T[2];
+            U(m_u.U3, k, j, i) += T[3];
+            
             // Recover primitive variables from conserved versions
-            pflag = GRMHD::u_to_p(G, U, B_U, gam, k, j, i, loc, P);
+            pflag = GRMHD::u_to_p(G, U, m_u, gam, k, j, i, loc, P, m_p);
             // If that fails, we've effectively already applied the floors in fluid-frame to the prims,
             // so we just formalize that
-            if (pflag) GRMHD::p_to_u(G, P, B_P, gam, k, j, i, U, loc);
+            if (pflag) GRMHD::p_to_u(G, P, m_p, gam, k, j, i, U, m_u, loc);
         }
     }
+
+    // Return both flags
     return fflag + pflag;
 }
 
@@ -252,7 +224,7 @@ KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, GridVars P, Grid
  * 
  * LOCKSTEP: Operates on and respects primitives *only*
  */
-KOKKOS_INLINE_FUNCTION int apply_geo_floors(const GRCoordinates& G, ScratchPad2D<Real>& P, const struct varmap& m,
+KOKKOS_INLINE_FUNCTION int apply_geo_floors(const GRCoordinates& G, ScratchPad2D<Real>& P, const VarMap& m,
                                             const Real& gam, const int& k, const int& j, const int& i,
                                             const FloorPrescription& floors, const Loci loc=Loci::center)
 {
@@ -273,17 +245,19 @@ KOKKOS_INLINE_FUNCTION int apply_geo_floors(const GRCoordinates& G, ScratchPad2D
         uflr_geom = floors.u_min_geom;
     }
 
-    P(m.p + prims::rho, i) += max(0., rhoflr_geom - P(m.p + prims::rho, i));
-    P(m.p + prims::u, i) += max(0., uflr_geom - P(m.p + prims::u, i));
+    P(m.RHO, i) += max(0., rhoflr_geom - P(m.RHO, i));
+    P(m.UU, i) += max(0., uflr_geom - P(m.UU, i));
 
 #if RECORD_POST_RECON
     // Record all the floors that were hit, using bitflags
     // Record Geometric floor hits
     int fflag = 0;
-    fflag |= (rhoflr_geom > P(m.p + prims::rho, i)) * HIT_FLOOR_GEOM_RHO;
-    fflag |= (uflr_geom > P(m.p + prims::u, i)) * HIT_FLOOR_GEOM_U;
+    fflag |= (rhoflr_geom > P(m.RHO, i)) * HIT_FLOOR_GEOM_RHO_FLUX;
+    fflag |= (uflr_geom > P(m.UU, i)) * HIT_FLOOR_GEOM_U_FLUX;
     return fflag;
 #else
     return 0;
 #endif
 }
+
+} // namespace GRMHD

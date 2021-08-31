@@ -1,5 +1,5 @@
 /* 
- *  File: explosion.hpp
+ *  File: blob.hpp
  *  
  *  BSD 3-Clause License
  *  
@@ -31,81 +31,72 @@
  *  OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-#pragma once
 
-#include <complex>
+// Insert blobs (hotspots) of various types
+// Spherical coordinates only
 
 #include "decs.hpp"
 
+#include "mhd_functions.hpp"
+#include "pack.hpp"
 
-using namespace std::literals::complex_literals;
-using namespace std;
-using namespace parthenon;
+#include <parthenon/parthenon.hpp>
 
 /**
- * Initialization of the strong cylindrical explosion of Komissarov 1999 section 7.3
- * 
- * Note the problem setup assumes gamma=4/3
- * 
- * Originally run on 2D Cartesian domain -6.0, 6.0 with a 200x200 grid, to tlim=4.0
+ * Insert a blob of material at a given temperature,
+ * by scaling the density by a factor, then setting the temperature
+ * constant.
  */
-void InitializeExplosion(MeshBlockData<Real> *rc, ParameterInput *pin)
+void InsertBlob(MeshBlockData<Real> *rc, ParameterInput *pin)
 {
     auto pmb = rc->GetBlockPointer();
+    PackIndexMap prims_map;
+    auto P = GRMHD::PackMHDPrims(rc, prims_map);
+    const VarMap m_p(prims_map, false);
 
-    GridScalar rho = rc->Get("prims.rho").data;
-    GridScalar u = rc->Get("prims.u").data;
-    GridVector uvec = rc->Get("prims.uvec").data;
-    GridVector B_P = rc->Get("prims.B").data;
-
-    const auto& G = pmb->coords;
-
+    GRCoordinates G = pmb->coords;
     Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
 
-    // TODO take these at runtime
-    Real u_out = 3.e-5 / (gam-1);
-    Real rho_out = 1.e-4;
+    Real desired_sigma = pin->GetOrAddReal("blob", "desired_sigma", 1.1);
+    Real u_over_rho = pin->GetOrAddReal("blob", "u_over_rho", 50.0);
 
-    Real u_in = 1.0 / (gam-1);
-    Real rho_in = 1.e-2;
-
-    // One buffer zone of linear decline, r_in -> r_out
+    // One buffer zonkharma-re of linear decline, r_in -> r_out
     // Exponential decline inside here i.e. linear in logspace
-    GReal r_in = 0.8;
-    GReal r_out = 1.0;
-    // Circle center
-    GReal xoff = 0.0;
-    GReal yoff = 0.0;
+    GReal sz_in = pin->GetOrAddReal("blob", "sz_in", 4.5);
+    GReal sz_out = pin->GetOrAddReal("blob", "sz_out", 5.0);
+    // Blob center
+    GReal blob_r = pin->GetOrAddReal("blob", "r", 15.0);
+    GReal blob_th = pin->GetOrAddReal("blob", "th", M_PI/8);
+    GReal blob_phi = pin->GetOrAddReal("blob", "phi", 0.0);
 
     IndexRange ib = pmb->cellbounds.GetBoundsI(IndexDomain::entire);
     IndexRange jb = pmb->cellbounds.GetBoundsJ(IndexDomain::entire);
     IndexRange kb = pmb->cellbounds.GetBoundsK(IndexDomain::entire);
-    pmb->par_for("explosion_init", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+    pmb->par_for("insert_blob", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_3D {
             Real X[GR_DIM];
             G.coord_embed(k, j, i, Loci::center, X);
-            GReal rx = X[1] - xoff;
-            GReal ry = X[2] - yoff;
-            Real r = sqrt(rx*rx + ry*ry);
+            Real d = sqrt(blob_r*blob_r + X[1]*X[1] - 2*blob_r*X[1]*
+                            (sin(blob_th) * sin(X[2]) * cos(blob_phi - X[3]) + cos(blob_th) * cos(X[2])));
+            
+            if (d <= sz_out) {
+                FourVectors Dtmp;
+                GRMHD::calc_4vecs(G, P, m_p, k, j, i, Loci::center, Dtmp);
+                Real bsq = dot(Dtmp.bcon, Dtmp.bcov);
+                Real rho_factor = bsq / desired_sigma;
 
-            if (r < r_in) {
-                rho(k, j, i) = rho_in;
-                u(k, j, i) = u_in;
-            } else if (r >= r_in && r <= r_out) {
-                Real ramp = (r_out - r) / (r_out - r_in);
+                if (d < sz_in) {
+                    P(m_p.RHO, k, j, i) *= rho_factor;
+                    P(m_p.UU, k, j, i) = u_over_rho * P(m_p.RHO, k, j, i);
+                } else if (d >= sz_in) {
+                    Real ramp = (sz_out - d) / (sz_out - sz_in);
 
-                // rho(k, j, i) = rho_out + ramp * (rho_in - rho_out);
-                // u(k, j, i) = u_in + ramp * (u_in - u_out);
+                    // P(m_p.RHO, k, j, i) = rho_out + ramp * (rho_in - rho_out);
+                    Real lrho_factor_in = log(rho_factor);
+                    P(m_p.RHO, k, j, i) *= exp(ramp * lrho_factor_in);
 
-                Real lrho_out = log(rho_out);
-                Real lrho_in = log(rho_in);
-                Real lu_out = log(u_out);
-                Real lu_in = log(u_in);
-                rho(k, j, i) = exp(lrho_out + ramp * (lrho_in - lrho_out));
-                u(k, j, i) = exp(lu_out + ramp * (lu_in - lu_out));
-            } else {
-                rho(k, j, i) = rho_out;
-                u(k, j, i) = u_out;
+                    P(m_p.UU, k, j, i) = u_over_rho * P(m_p.RHO, k, j, i);
+                }
             }
         }
     );

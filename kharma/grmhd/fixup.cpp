@@ -34,7 +34,14 @@
 
 #include "fixup.hpp"
 
-void FixUtoP(MeshBlockData<Real> *rc)
+#include "floors.hpp"
+#include "pack.hpp"
+
+// I'm undecided on reintroducing these more widely but they clearly make sense here
+#define NPRIM 5
+#define PLOOP for(int p=0; p < NPRIM; ++p)
+
+TaskStatus GRMHD::FixUtoP(MeshBlockData<Real> *rc)
 {
     // We expect primitives all the way out to 3 ghost zones on all sides.
     // But we can only fix primitives with their neighbors.
@@ -42,38 +49,31 @@ void FixUtoP(MeshBlockData<Real> *rc)
     // if we need to use only fixed zones.
     FLAG("Fixing U to P inversions");
     auto pmb = rc->GetBlockPointer();
-    auto& G = pmb->coords;
+    const auto& G = pmb->coords;
 
-    GridVars P = rc->Get("c.c.bulk.prims").data;
-    GridVector B_P = rc->Get("c.c.bulk.B_prim").data;
-    GridVars U = rc->Get("c.c.bulk.cons").data;
-    GridVector B_U = rc->Get("c.c.bulk.B_con").data;
+    // TODO what should be averaged on a fixup?  Entropies?  Should there be a flag for those fields?
+    // This just does the core 5 primitives
+    PackIndexMap prims_map;
+    auto P = GRMHD::PackHDPrims(rc, prims_map);
 
-    GridScalar pflag = rc->Get("c.c.bulk.pflag").data;
-    GridScalar fflag = rc->Get("c.c.bulk.fflag").data;
+    GridScalar pflag = rc->Get("pflag").data;
+    GridScalar fflag = rc->Get("fflag").data;
 
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
     const int verbose = pmb->packages.Get("GRMHD")->Param<int>("verbose");
-    FloorPrescription floors = FloorPrescription(pmb->packages.Get("GRMHD")->AllParams());
+    const FloorPrescription floors = FloorPrescription(pmb->packages.Get("GRMHD")->AllParams());
 
-    int is = is_physical_bound(pmb->boundary_flag[BoundaryFace::inner_x1]) ?
-                pmb->cellbounds.is(IndexDomain::interior) : pmb->cellbounds.is(IndexDomain::entire);
-    int ie = is_physical_bound(pmb->boundary_flag[BoundaryFace::outer_x1]) ?
-                pmb->cellbounds.ie(IndexDomain::interior) : pmb->cellbounds.ie(IndexDomain::entire);
-    int js = is_physical_bound(pmb->boundary_flag[BoundaryFace::inner_x2]) ?
-                pmb->cellbounds.js(IndexDomain::interior) : pmb->cellbounds.js(IndexDomain::entire);
-    int je = is_physical_bound(pmb->boundary_flag[BoundaryFace::outer_x2]) ?
-                pmb->cellbounds.je(IndexDomain::interior) : pmb->cellbounds.je(IndexDomain::entire);
-    int ks = is_physical_bound(pmb->boundary_flag[BoundaryFace::inner_x3]) ?
-                pmb->cellbounds.ks(IndexDomain::interior) : pmb->cellbounds.ks(IndexDomain::entire);
-    int ke = is_physical_bound(pmb->boundary_flag[BoundaryFace::outer_x3]) ?
-                pmb->cellbounds.ke(IndexDomain::interior) : pmb->cellbounds.ke(IndexDomain::entire);
+    IndexRange ib = GetPhysicalZonesI(pmb->boundary_flag, pmb->cellbounds);
+    IndexRange jb = GetPhysicalZonesJ(pmb->boundary_flag, pmb->cellbounds);
+    IndexRange kb = GetPhysicalZonesK(pmb->boundary_flag, pmb->cellbounds);
 
-    // TODO That's a lot of short fors and conditionals.  Is this slow?
-    pmb->par_for("fix_U_to_P", ks, ke, js, je, is, ie,
+    // TODO attempt to recover from entropy here
+
+    pmb->par_for("fix_U_to_P", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_3D {
             // Negative flags mark physical corners, which shouldn't be fixed
             if (((int) pflag(k, j, i)) > InversionStatus::success) {
+                // Luckily fixups are rare, so we don't have to worry about optimizing this too much
                 double wsum = 0., wsum_x = 0.;
                 double sum[NPRIM] = {0.}, sum_x[NPRIM] = {0.};
                 // For all neighboring cells...
@@ -82,12 +82,12 @@ void FixUtoP(MeshBlockData<Real> *rc)
                         for (int l = -1; l <= 1; l++) {
                             int ii = i + l, jj = j + m, kk = k + n;
                             // If in bounds...
-                            if (ii >= is && ii <= ie && jj >= js && jj <= je && kk >= ks && kk <= ke) {
+                            if (ii >= ib.s && ii <= ib.e && jj >= jb.s && jj <= jb.e && kk >= kb.s && kk <= kb.e) {
                                 // Weight by distance
                                 double w = 1./(abs(l) + abs(m) + abs(n) + 1);
 
                                 // Count only the good cells, if we can
-                                if ((int) pflag(kk, jj, ii) == InversionStatus::success) {
+                                if (((int) pflag(kk, jj, ii)) == InversionStatus::success) {
                                     // Weight by distance.  Note interpolated "fixed" cells stay flagged
                                     wsum += w;
                                     PLOOP sum[p] += w * P(p, kk, jj, ii);
@@ -107,25 +107,33 @@ void FixUtoP(MeshBlockData<Real> *rc)
 #endif
                     PLOOP P(p, k, j, i) = sum_x[p]/wsum_x;
                 } else {
-                    // Re-enable to trace specific flags if they're cropping up too much
-                    // if (pflag(k, j, i) == InversionStatus::max_iter) {
-                    //     printf("zone %d %d %d replaced, weight %f.\nOriginal: %g %g %g %g %g\nReplacement: %g %g %g %g %g\n", i, j, k, wsum,
-                    //     P(0, k, j, i), P(1, k, j, i), P(2, k, j, i), P(3, k, j, i), P(4, k, j, i),
-                    //     sum[0]/wsum, sum[1]/wsum, sum[2]/wsum, sum[3]/wsum, sum[4]/wsum);
-                    // }
                     PLOOP P(p, k, j, i) = sum[p]/wsum;
                 }
-                // Make sure to keep lockstep
-                GRMHD::p_to_u(G, P, B_P, gam, k, j, i, U);
+            }
+        }
+    );
 
-                // Make sure fixed values still abide by floors (floors keep lockstep)
+    // We need the full packs of prims/cons for p_to_u
+    PackIndexMap cons_map;
+    auto U = GRMHD::PackMHDCons(rc, cons_map);
+    P = GRMHD::PackMHDPrims(rc, prims_map);
+    const VarMap m_u(cons_map, true), m_p(prims_map, false);
+    const int nvar = P.GetDim(4);
+    pmb->par_for("fix_U_to_P_floors", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+        KOKKOS_LAMBDA_3D {
+            if (((int) pflag(k, j, i)) > InversionStatus::success) {
+                // Make sure to keep lockstep
+                GRMHD::p_to_u(G, P, m_p, gam, k, j, i, U, m_u);
+
+                // And make sure the fixed values still abide by floors (floors keep lockstep)
                 int fflag_local = 0;
-                fflag_local |= apply_floors(G, P, B_P, U, B_U, gam, k, j, i, floors);
-                fflag_local |= apply_ceilings(G, P, B_P, U, gam, k, j, i, floors);
+                fflag_local |= apply_floors(G, P, m_p, gam, k, j, i, floors, U, m_u);
+                fflag_local |= apply_ceilings(G, P, m_p, gam, k, j, i, floors, U, m_u);
                 fflag(k, j, i) = fflag_local;
             }
         }
     );
 
     FLAG("Fixed U to P inversions");
+    return TaskStatus::complete;
 }

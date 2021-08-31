@@ -39,6 +39,7 @@
 #include "harm_driver.hpp"
 #include "kharma.hpp"
 #include "mpi.hpp"
+#include "post_initialize.hpp"
 #include "problem.hpp"
 
 // Parthenon headers
@@ -72,21 +73,23 @@ int main(int argc, char *argv[])
     pman.app_input->ProcessPackages = KHARMA::ProcessPackages;
     pman.app_input->ProblemGenerator = KHARMA::ProblemGenerator;
     pman.app_input->UserWorkBeforeOutput = KHARMA::FillOutput;
+    pman.app_input->PreStepMeshUserWorkInLoop = KHARMA::PreStepMeshUserWorkInLoop;
+    pman.app_input->PostStepMeshUserWorkInLoop = KHARMA::PostStepMeshUserWorkInLoop;
     pman.app_input->PostStepDiagnosticsInLoop = KHARMA::PostStepDiagnostics;
-    // These don't mean that the conditions are *enforced*. At user's option Parthenon's
-    // e.g. periodic conditions are called instead.  KHARMA forces them to be used in
-    // spherical coordinate systems, though.
-    pman.app_input->boundary_conditions[parthenon::BoundaryFace::inner_x1] = OutflowInnerX1_KHARMA;
-    pman.app_input->boundary_conditions[parthenon::BoundaryFace::outer_x1] = OutflowOuterX1_KHARMA;
-    pman.app_input->boundary_conditions[parthenon::BoundaryFace::inner_x2] = ReflectInnerX2_KHARMA;
-    pman.app_input->boundary_conditions[parthenon::BoundaryFace::outer_x2] = ReflectOuterX2_KHARMA;
+
+    // Registering KHARMA's boundary functions here doesn't mean they will *always* run:
+    // in e.g. MHD Modes problem, all boundaries are handled by Parthenon and these don't run
+    // KHARMA sets them automatically in spherical coordinate systems.
+    pman.app_input->boundary_conditions[parthenon::BoundaryFace::inner_x1] = KBoundaries::OutflowInnerX1;
+    pman.app_input->boundary_conditions[parthenon::BoundaryFace::outer_x1] = KBoundaries::OutflowOuterX1;
+    pman.app_input->boundary_conditions[parthenon::BoundaryFace::inner_x2] = KBoundaries::ReflectInnerX2;
+    pman.app_input->boundary_conditions[parthenon::BoundaryFace::outer_x2] = KBoundaries::ReflectOuterX2;
 
     // Parthenon init includes Kokkos, MPI, parses parameters & cmdline,
     // then calls ProcessPackages and ProcessProperties, then constructs the Mesh
     FLAG("Parthenon Initializing");
     auto manager_status = pman.ParthenonInit(argc, argv);
     if (manager_status == ParthenonStatus::complete) {
-        // TODO use this as an option to just write out the gridfile, initial mesh, etc.
         pman.ParthenonFinalize();
         return 0;
     }
@@ -110,12 +113,9 @@ int main(int argc, char *argv[])
     // Write the problem to the mesh.
     // Implemented separately outside of MeshBlock since
     // GRMHD initializaitons involve global reductions
-    if (!pman.IsRestart()) {
-        PostInitialize(pin, pmesh);
-        if (MPIRank0()) cout << "Initialization Complete." << endl;
-    } else {
-        if (MPIRank0()) cout << "Restarting..." << endl;
-    }
+    if(MPIRank0())
+        cout << "Running post-initialization tasks..." << endl;
+    KHARMA::PostInitialize(pin, pmesh, pman.IsRestart());
 
     // Then construct & run the driver
     HARMDriver driver(pin, papp, pmesh);

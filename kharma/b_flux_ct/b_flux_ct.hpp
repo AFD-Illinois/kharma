@@ -37,6 +37,9 @@
 
 #include <parthenon/parthenon.hpp>
 
+#include "mhd_functions.hpp"
+#include "types.hpp"
+
 using namespace parthenon;
 
 /**
@@ -83,47 +86,52 @@ TaskStatus TransportB(MeshBlockData<Real> *rc);
  * Calculate maximum corner-centered divergence of magnetic field,
  * to check it is being preserved ~=0
  */
-double MaxDivB(MeshBlockData<Real> *rc, IndexDomain domain=IndexDomain::interior);
+double MaxDivB(MeshData<Real> *md, IndexDomain domain=IndexDomain::interior);
 
 /**
  * Diagnostics printed/computed after each step
  * Currently just max divB
  */
-TaskStatus PostStepDiagnostics(Mesh *pmesh, ParameterInput *pin, const SimTime& tm);
+TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *rc);
 
 /**
  * Fill fields which are calculated only for output to file
- * Currently nothing, soon the corner-centered divB values
  */
 void FillOutput(MeshBlock *pmb, ParameterInput *pin);
+
+// TODO device-side divB at a single zone corner, to avoid code duplication?
 
 /**
  * Turn the primitive B field into the local conserved flux
  */
-KOKKOS_INLINE_FUNCTION void prim_to_u(const GRCoordinates& G, ScratchPad2D<Real>& P, const struct varmap &m, const FourVectors D,
-                                      const int& j, const int& i, const Loci loc,
-                                      ScratchPad2D<Real>& flux)
+KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, ScratchPad2D<Real>& P, const VarMap& m_p, const FourVectors D,
+                                         const int& k, const int& j, const int& i, const int dir,
+                                         ScratchPad2D<Real>& flux, const VarMap& m_u, const Loci loc = Loci::center)
 {
     Real gdet = G.gdet(loc, j, i);
-    VLOOP flux(m.Bu + v, i) = P(m.Bp + v, i) * gdet;
-}
-KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, ScratchPad2D<Real>& P, const struct varmap &m, const FourVectors D,
-                                         const int& j, const int& i, const Loci loc, const int dir,
-                                         ScratchPad2D<Real>& flux)
-{
-    Real gdet = G.gdet(loc, j, i);
-    VLOOP flux(m.Bu + v, i) = (D.bcon[v+1] * D.ucon[dir] - D.bcon[dir] * D.ucon[v+1]) * gdet;
+    if (dir == 0) {
+        VLOOP flux(m_u.B1 + v, i) = P(m_p.B1 + v, i) * gdet;
+    } else {
+        VLOOP flux(m_u.B1 + v, i) = (D.bcon[v+1] * D.ucon[dir] - D.bcon[dir] * D.ucon[v+1]) * gdet;
+    }
 }
 
 /**
- * Convenience function, mostly for initialization
+ * Convenience functions for zone 
  */
 KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates& G, const GridVector B_P,
                                     const int& k, const int& j, const int& i,
-                                    GridVector B_flux, const Loci loc = Loci::center)
+                                    GridVector B_U, const Loci loc = Loci::center)
 {
     Real gdet = G.gdet(loc, j, i);
-    VLOOP B_flux(v, k, j, i) = B_P(v, k, j, i) * gdet;
+    VLOOP B_U(v, k, j, i) = B_P(v, k, j, i) * gdet;
+}
+KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates& G, const VariablePack<Real>& P, const VarMap& m_p,
+                                    const int& k, const int& j, const int& i,
+                                    const VariablePack<Real>& U, const VarMap& m_u, const Loci loc = Loci::center)
+{
+    Real gdet = G.gdet(loc, j, i);
+    VLOOP U(m_u.B1 + v, k, j, i) = P(m_p.B1 + v, k, j, i) * gdet;
 }
 
 }

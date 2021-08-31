@@ -37,17 +37,15 @@
 
 #include <parthenon/parthenon.hpp>
 
+#include "debug.hpp"
+#include "floors.hpp"
+#include "pack.hpp"
+#include "reconstruction.hpp"
+
 // Package functions
 #include "mhd_functions.hpp"
 #include "b_flux_ct.hpp"
 #include "b_cd.hpp"
-
-#include "debug.hpp"
-#include "floors.hpp"
-#include "reconstruction.hpp"
-#include "source.hpp"
-
-extern double ctop_max;
 
 namespace Flux {
 /**
@@ -57,9 +55,13 @@ namespace Flux {
  *
  * @param rc is the current stage's container
  * @param dudt is the base container containing the global dUdt term
- * @param dt the timestep *by which to advance*, i.e. sometimes dt/2 or less for RK2+ time integration
  */
-TaskStatus ApplyFluxes(MeshBlockData<Real> *rc, MeshBlockData<Real> *dudt, const Real& dt);
+TaskStatus ApplyFluxes(MeshBlockData<Real> *rc, MeshBlockData<Real> *dudt);
+
+/**
+ * Fill all conserved variables (U) from primitive variables (P), over the whole grid.
+ */
+TaskStatus PrimToFlux(MeshBlockData<Real> *rc, IndexDomain domain=IndexDomain::entire);
 
 // Fluxes a.k.a. "Approximate Riemann Solvers"
 // More complex solvers require speed estimates not calculable completely from
@@ -85,14 +87,13 @@ KOKKOS_INLINE_FUNCTION Real hlle(const Real& fluxL, const Real& fluxR, const Rea
  * find the corresponding conserved variables and their fluxes through the zone faces
  *
  * @param rc the current stage container, holding pointers to all variable data
- * @param dt the timestep *by which to advance*, i.e. sometimes dt/2 or less for RK2+ time integration
  * 
  * Memory-wise, this fills the "flux" portions of the "conserved" fields.  All fluxes are applied
  * together "ApplyFluxes," and the final fields are calculated by Parthenon in 
  * Also fills the "ctop" vector with the signal speed mhd_vchar -- used to estimate timestep later.
  */
 template <ReconstructionType Recon, int dir>
-inline TaskStatus GetFlux(MeshBlockData<Real> *rc, const Real& dt)
+inline TaskStatus GetFlux(MeshBlockData<Real> *rc)
 {
     FLAG(string_format("Recon and flux X%d", dir));
     auto pmb = rc->GetBlockPointer();
@@ -127,14 +128,14 @@ inline TaskStatus GetFlux(MeshBlockData<Real> *rc, const Real& dt)
     // OPTIONS
     bool use_hlle = pmb->packages.Get("GRMHD")->Param<bool>("use_hlle");
     // Pull out a struct of just the actual floor values for speed
-    FloorPrescription floors = FloorPrescription(pmb->packages.Get("GRMHD")->AllParams());
-    const ReconstructionType& recon = pmb->packages.Get("GRMHD")->Param<ReconstructionType>("recon");
+    const FloorPrescription floors = FloorPrescription(pmb->packages.Get("GRMHD")->AllParams());
     // B field package options
     const bool use_b_flux_ct = pmb->packages.AllPackages().count("B_FluxCT");
     const bool use_b_cd = pmb->packages.AllPackages().count("B_CD");
 
-    auto& G = pmb->coords;
+    const auto& G = pmb->coords;
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
+    const double ctop_max = pmb->packages.Get("Globals")->Param<Real>("ctop_max_last");
 
     // Fluxes in direction X1 should be calculated at face 1, likewise others
     Loci loc_tmp;
@@ -152,27 +153,15 @@ inline TaskStatus GetFlux(MeshBlockData<Real> *rc, const Real& dt)
     const Loci loc = loc_tmp;
 
     // VARIABLES
-    auto& ctop = rc->GetFace("f.f.bulk.ctop").data;
-    // Pack all primitive and conserved variables, 
+    auto& ctop = rc->GetFace("ctop").data;
+    // Pack all primitive and conserved variables,
     MetadataFlag isPrimitive = pmb->packages.Get("GRMHD")->Param<MetadataFlag>("PrimitiveFlag");
     PackIndexMap prims_map, cons_map;
     const auto& P = rc->PackVariables({isPrimitive}, prims_map);
     const auto& U = rc->PackVariablesAndFluxes({Metadata::Conserved}, cons_map);
+    const VarMap m_u(cons_map, true), m_p(prims_map, false);
+    const int nvar = U.GetDim(4);
     FLAG("Packed variables");
-    // Indices into these packs, for addressing specific variables in the loop
-    // Parthenon returns -1 index for keys not found in a pack
-    struct varmap mf;
-    mf.u = cons_map["c.c.bulk.cons"].first;
-    mf.p = prims_map["c.c.bulk.prims"].first;
-    mf.Bu = cons_map["c.c.bulk.B_con"].first;
-    mf.Bp = prims_map["c.c.bulk.B_prim"].first;
-    mf.psiu = cons_map["c.c.bulk.psi_cd_con"].first;
-    mf.psip = prims_map["c.c.bulk.psi_cd_prim"].first;
-    const struct varmap m = mf;
-    const int nvar = P.GetDim(4);
-
-    // TODO something other than this
-    const double ctop_max_l = ctop_max;
 
     // SCRATCH SPACE
     const int scratch_level = 1; // 0 is actual scratch (tiny); 1 is HBM
@@ -210,8 +199,8 @@ inline TaskStatus GetFlux(MeshBlockData<Real> *rc, const Real& dt)
                     // Apply floors to the *reconstructed* primitives, because without TVD
                     // we have no guarantee they remotely resemble the *centered* primitives
                     if (Recon == ReconstructionType::weno5) {
-                        apply_geo_floors(G, Pl, m, gam, k, j, i, floors, loc);
-                        apply_geo_floors(G, Pr, m, gam, k, j, i, floors, loc);
+                        GRMHD::apply_geo_floors(G, Pl, m_p, gam, k, j, i, floors, loc);
+                        GRMHD::apply_geo_floors(G, Pr, m_p, gam, k, j, i, floors, loc);
                     }
 #if !FUSE_FLUX_KERNELS
                 }
@@ -227,24 +216,25 @@ inline TaskStatus GetFlux(MeshBlockData<Real> *rc, const Real& dt)
                     FourVectors Dtmp;
 
                     // Left
-                    GRMHD::calc_4vecs(G, Pl, m, k, j, i, loc, Dtmp);
-                    GRMHD::prim_to_flux(G, Pl, m, Dtmp, gam, k, j, i, loc, 0, Ul);
-                    GRMHD::prim_to_flux(G, Pl, m, Dtmp, gam, k, j, i, loc, dir, Fl);
+                    GRMHD::calc_4vecs(G, Pl, m_p, k, j, i, loc, Dtmp);
+                    GRMHD::prim_to_flux(G, Pl, m_p, Dtmp, gam, k, j, i, 0, Ul, m_u, loc);
+                    GRMHD::prim_to_flux(G, Pl, m_p, Dtmp, gam, k, j, i, dir, Fl, m_u, loc);
+                    if (use_b_flux_ct) {
+                        B_FluxCT::prim_to_flux(G, Pl, m_p, Dtmp, k, j, i, 0, Ul, m_u, loc);
+                        B_FluxCT::prim_to_flux(G, Pl, m_p, Dtmp, k, j, i, dir, Fl, m_u, loc);
+                    } else if (use_b_cd) {
+                        B_CD::prim_to_flux(G, Pl, m_p, Dtmp, k, j, i, 0, Ul, m_u, loc);
+                        B_CD::prim_to_flux(G, Pl, m_p, Dtmp, k, j, i, dir, Fl, m_u, loc);
+                    }
 
+                    // Magnetosonic speeds
                     Real cmaxL, cminL;
-                    GRMHD::vchar(G, Pl, m, Dtmp, gam, k, j, i, loc, dir, cmaxL, cminL);
+                    GRMHD::vchar(G, Pl, m_p, Dtmp, gam, k, j, i, loc, dir, cmaxL, cminL);
+
+#if !FUSE_FLUX_KERNELS
                     // Record speeds
                     cmax(i) = max(0., cmaxL);
                     cmin(i) = max(0., -cminL);
-
-                    if (use_b_flux_ct) {
-                        B_FluxCT::prim_to_u(G, Pl, m, Dtmp, j, i, loc, Ul);
-                        B_FluxCT::prim_to_flux(G, Pl, m, Dtmp, j, i, loc, dir, Fl);
-                    } else if (use_b_cd) {
-                        B_CD::prim_to_u(G, Pl, m, Dtmp, j, i, loc, Ul);
-                        B_CD::prim_to_flux(G, Pl, m, Dtmp, j, i, loc, dir, Fl);
-                    }
-#if !FUSE_FLUX_KERNELS
                 }
             );
             member.team_barrier();
@@ -257,25 +247,26 @@ inline TaskStatus GetFlux(MeshBlockData<Real> *rc, const Real& dt)
                     FourVectors Dtmp;
 #endif
                     // Right
-                    GRMHD::calc_4vecs(G, Pr, m, k, j, i, loc, Dtmp);
-                    GRMHD::prim_to_flux(G, Pr, m, Dtmp, gam, k, j, i, loc, 0, Ur);
-                    GRMHD::prim_to_flux(G, Pr, m, Dtmp, gam, k, j, i, loc, dir, Fr);
-
-                    // Calculate the max and replace as we go
-                    Real cmaxR, cminR;
-                    GRMHD::vchar(G, Pr, m, Dtmp, gam, k, j, i, loc, dir, cmaxR, cminR);
-                    cmax(i) = fabs(max(cmax(i),  cmaxR));
-                    cmin(i) = fabs(max(cmin(i), -cminR));
-                    ctop(dir, k, j, i) = max(cmax(i), cmin(i));
-
-                    if (use_b_flux_ct) { // TODO Moooore templating?
-                        B_FluxCT::prim_to_u(G, Pr, m, Dtmp, j, i, loc, Ur);
-                        B_FluxCT::prim_to_flux(G, Pr, m, Dtmp, j, i, loc, dir, Fr);
+                    GRMHD::calc_4vecs(G, Pr, m_p, k, j, i, loc, Dtmp);
+                    GRMHD::prim_to_flux(G, Pr, m_p, Dtmp, gam, k, j, i, 0, Ur, m_u, loc);
+                    GRMHD::prim_to_flux(G, Pr, m_p, Dtmp, gam, k, j, i, dir, Fr, m_u, loc);
+                    if (use_b_flux_ct) {
+                        B_FluxCT::prim_to_flux(G, Pr, m_p, Dtmp, k, j, i, 0, Ur, m_u, loc);
+                        B_FluxCT::prim_to_flux(G, Pr, m_p, Dtmp, k, j, i, dir, Fr, m_u, loc);
                     } else if (use_b_cd) {
-                        B_CD::prim_to_u(G, Pr, m, Dtmp, j, i, loc, Ur);
-                        B_CD::prim_to_flux(G, Pr, m, Dtmp, j, i, loc, dir, Fr);
+                        B_CD::prim_to_flux(G, Pr, m_p, Dtmp, k, j, i, 0, Ur, m_u, loc);
+                        B_CD::prim_to_flux(G, Pr, m_p, Dtmp, k, j, i, dir, Fr, m_u, loc);
                     }
+
+                    // Magnetosonic speeds
+                    Real cmaxR, cminR;
+                    GRMHD::vchar(G, Pr, m_p, Dtmp, gam, k, j, i, loc, dir, cmaxR, cminR);
+
 #if FUSE_FLUX_KERNELS
+                    // Calculate cmax/min from local variables
+                    cmax(i) = fabs(max(cmaxL,  cmaxR));
+                    cmin(i) = fabs(max(-cminL, -cminR));
+
                     if (use_hlle) {
                         for (int p=0; p < nvar; ++p)
                             U.flux(dir, p, k, j, i) = hlle(Fl(p,i), Fr(p,i), cmax(i), cmin(i), Ul(p,i), Ur(p,i));
@@ -287,10 +278,16 @@ inline TaskStatus GetFlux(MeshBlockData<Real> *rc, const Real& dt)
                         // The unphysical variable psi and its corrections can propagate at the max speed
                         // for the stepsize, rather than the sound speed
                         // Since the speeds are the same it will always correspond to the LLF flux
-                        U.flux(dir, m.psiu, k, j, i) = llf(Fl(m.psiu,i), Fr(m.psiu,i), ctop_max_l, ctop_max_l, Ul(m.psiu,i), Ur(m.psiu,i));
-                        U.flux(dir, m.Bu+dir-1, k, j, i) = llf(Fl(m.Bu+dir-1,i), Fr(m.Bu+dir-1,i), ctop_max_l, ctop_max_l, Ul(m.Bu+dir-1,i), Ur(m.Bu+dir-1,i));
+                        U.flux(dir, m_u.PSI, k, j, i) = llf(Fl(m_u.PSI,i), Fr(m_u.PSI,i), ctop_max, ctop_max, Ul(m_u.PSI,i), Ur(m_u.PSI,i));
+                        U.flux(dir, m_u.B1+dir-1, k, j, i) = llf(Fl(m_u.B1+dir-1,i), Fr(m_u.B1+dir-1,i), ctop_max, ctop_max, Ul(m_u.B1+dir-1,i), Ur(m_u.B1+dir-1,i));
                     }
+#else
+                    // Calculate cmax/min based on comparison with cached values
+                    cmax(i) = fabs(max(cmax(i),  cmaxR));
+                    cmin(i) = fabs(max(cmin(i), -cminR));
 #endif
+                    // TODO is it faster to write ctop elsewhere?
+                    ctop(dir, k, j, i) = max(cmax(i), cmin(i));
                 }
             );
             // OTHERS HERE
@@ -299,12 +296,12 @@ inline TaskStatus GetFlux(MeshBlockData<Real> *rc, const Real& dt)
 #if !FUSE_FLUX_KERNELS
             // Apply what we've calculated
             for (int p=0; p < nvar; ++p) {
-                if (use_b_cd && (p == m.psiu || p == m.Bu+dir-1)) {
+                if (use_b_cd && (p == m_u.PSI || p == m_u.B1+dir-1)) {
                     // The unphysical variable psi and its corrections can propagate at the max speed for the stepsize, rather than the sound speed
                     // Since the speeds are the same it will always correspond to the LLF flux
                     parthenon::par_for_inner(member, is_l, ie_l,
                         [&](const int& i) {
-                            U.flux(dir, p, k, j, i) = llf(Fl(p,i), Fr(p,i), ctop_max_l, ctop_max_l, Ul(p,i), Ur(p,i));
+                            U.flux(dir, p, k, j, i) = llf(Fl(p,i), Fr(p,i), ctop_max, ctop_max, Ul(p,i), Ur(p,i));
                         }
                     );
                 } else if (use_hlle) {
@@ -326,10 +323,6 @@ inline TaskStatus GetFlux(MeshBlockData<Real> *rc, const Real& dt)
 #endif
         }
     );
-
-    if (pmb->packages.Get("GRMHD")->Param<int>("extra_checks") > 0) {
-        CheckNaN(rc, dir);
-    }
 
     FLAG(string_format("Finished recon and flux X%d", dir));
     return TaskStatus::complete;

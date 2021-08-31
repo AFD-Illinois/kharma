@@ -105,5 +105,5 @@ namespace GRMHD {
      * Diagnostics performed after each step.
      * Currently finds any negative flags or 0/NaN values in ctop
      */
-    TaskStatus PostStepDiagnostics(Mesh *pmesh, ParameterInput *pin, const SimTime& tm);
+    TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *rc);
 }

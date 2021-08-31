@@ -13,6 +13,8 @@
 # debug: Configure with debug flags: mostly array bounds checks
 #        Note, though, many sanity checks during the run are
 #        actually *runtime* parameters e.g. verbose, flag_verbose, etc
+# trace: Configure with execution tracing: print at the beginning and end
+#        of most host-side function calls during a step
 # skx:   Compile specifically for Skylake nodes on Stampede2
 
 # Processors to use.  Leave blank for all.  Be a good citizen.
@@ -73,6 +75,9 @@ if [[ -v DEVICE_ARCH ]]; then
 fi
 if [[ -v PREFIX_PATH ]]; then
   EXTRA_FLAGS="-DCMAKE_PREFIX_PATH=$PREFIX_PATH $EXTRA_FLAGS"
+fi
+if [[ "$*" == *"trace"* ]]; then
+  EXTRA_FLAGS="-DTRACE=1 $EXTRA_FLAGS"
 fi
 
 ### Check environment ###
@@ -154,7 +159,7 @@ elif [[ "$*" == *"hip"* ]]; then
   ENABLE_SYCL="OFF"
   ENABLE_HIP="ON"
 elif [[ "$*" == *"cuda"* ]]; then
-  export CXX="$SCRIPT_DIR/external/parthenon/external/Kokkos/bin/nvcc_wrapper"
+  export CXX="$SCRIPT_DIR/bin/nvcc_wrapper"
   if [[ "$*" == *"dryrun"* ]]; then
     export CXXFLAGS="-dryrun $CXXFLAGS"
     echo "Dry-running with $CXXFLAGS"

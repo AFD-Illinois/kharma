@@ -1,6 +1,5 @@
-# SANE model mirroring the simulation library
-# Quite small by modern standards, 6M/12M F-M torus,
-# Overall simulation size 50M
+# Torus problem parameters for use in scaling benchmark scripts
+# Hence default size/mesh guaranteed to error unless overridden
 
 <parthenon/job>
 problem_id = torus
@@ -43,14 +42,14 @@ rin = 10.0
 rmax = 20.0
 
 <perturbation>
-u_jitter = 0.1
+u_jitter = 0.04
 
 <b_field>
 type = sane
 beta_min = 100.
 
 <floors>
-rho_min_geom = 1e-5
-u_min_geom = 1e-7
+rho_min_geom = 1e-6
+u_min_geom = 1e-8
 bsq_over_rho_max = 100
 u_over_rho_max = 1

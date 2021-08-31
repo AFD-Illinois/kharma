@@ -144,8 +144,21 @@ void ReadIharmRestartHeader(std::string fname, std::unique_ptr<ParameterInput>& 
     hdf5_close();
 }
 
-double ReadIharmRestart(MeshBlock *pmb, GRCoordinates G, GridVars P, GridVector B_P, std::string fname)
+TaskStatus ReadIharmRestart(MeshBlockData<Real> *rc, ParameterInput *pin)
 {
+    FLAG("Restarting from iharm3d checkpoint file");
+
+    auto pmb = rc->GetBlockPointer();
+    GridScalar rho = rc->Get("prims.rho").data;
+    GridScalar u = rc->Get("prims.u").data;
+    GridVector uvec = rc->Get("prims.uvec").data;
+    GridVector B_P = rc->Get("prims.B").data;
+
+    auto& G = pmb->coords;
+
+    auto fname = pin->GetString("iharm_restart", "fname"); // Require this, don't guess
+    bool use_tf = pin->GetOrAddBoolean("iharm_restart", "use_tf", false);
+
     IndexDomain domain = IndexDomain::interior;
     // Full mesh size
     hsize_t n1tot = pmb->pmy_mesh->mesh_size.nx1;
@@ -155,7 +168,6 @@ double ReadIharmRestart(MeshBlock *pmb, GRCoordinates G, GridVars P, GridVector 
     hsize_t n1 = pmb->cellbounds.ncellsi(domain);
     hsize_t n2 = pmb->cellbounds.ncellsj(domain);
     hsize_t n3 = pmb->cellbounds.ncellsk(domain);
-    // TODO starting location in the global?  Only accessible/calculable without refinement
 
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
@@ -203,96 +215,57 @@ double ReadIharmRestart(MeshBlock *pmb, GRCoordinates G, GridVars P, GridVector 
     // End HDF5 reads
     hdf5_close();
 
-    auto Phost = P.GetHostMirror();
-    auto Bhost = B_P.GetHostMirror();
+    auto rho_host = rho.GetHostMirror();
+    auto u_host = u.GetHostMirror();
+    auto uvec_host = uvec.GetHostMirror();
+    auto B_host = B_P.GetHostMirror();
 
-    // Host-side copy into the mirror.  
+    // Host-side copy into the mirror.
+    // TODO traditional OpenMP still works...
     Kokkos::parallel_for("copy_restart_state",
-        Kokkos::MDRangePolicy<Kokkos::OpenMP, Kokkos::Rank<4>>({0, ks, js, is}, {NPRIM, ke+1, je+1, ie+1}),
-        KOKKOS_LAMBDA_VARS {
-            Phost(p, k, j, i) = ptmp[p*n3*n2*n1 + (k-ks)*n2*n1 + (j-js)*n1 + (i-is)];
-        }
-    );
-    Kokkos::parallel_for("copy_restart_B",
-        Kokkos::MDRangePolicy<Kokkos::OpenMP, Kokkos::Rank<4>>({0, ks, js, is}, {NVEC, ke+1, je+1, ie+1}),
-        KOKKOS_LAMBDA_VARS {
-            Bhost(p, k, j, i) = ptmp[(p+NPRIM)*n3*n2*n1 + (k-ks)*n2*n1 + (j-js)*n1 + (i-is)];
+        Kokkos::MDRangePolicy<Kokkos::OpenMP, Kokkos::Rank<3>>({ks, js, is}, {ke+1, je+1, ie+1}),
+        KOKKOS_LAMBDA_3D {
+            rho_host(k, j, i) = ptmp[0*n3*n2*n1 + (k-ks)*n2*n1 + (j-js)*n1 + (i-is)];
+            u_host(k, j, i) = ptmp[1*n3*n2*n1 + (k-ks)*n2*n1 + (j-js)*n1 + (i-is)];
+            VLOOP uvec_host(v, k, j, i) = ptmp[(2+v)*n3*n2*n1 + (k-ks)*n2*n1 + (j-js)*n1 + (i-is)];
+            VLOOP B_host(v, k, j, i) = ptmp[(5+v)*n3*n2*n1 + (k-ks)*n2*n1 + (j-js)*n1 + (i-is)];
         }
     );
     delete[] ptmp;
 
     // Deep copy to device
-    P.DeepCopy(Phost);
-    B_P.DeepCopy(Bhost);
+    rho.DeepCopy(rho_host);
+    u.DeepCopy(u_host);
+    uvec.DeepCopy(uvec_host);
+    B_P.DeepCopy(B_host);
     Kokkos::fence();
 
     // Initialize the guesses for fluid prims in boundary zones
-    // TODO Adapt these to cart/spherical sims, use domains instead of nghost
-    // TODO test outflow/polar are unneeded as they are computed again before guessing U->P
-    //outflow_x1(G, P, Globals::nghost, n1, n2, n3);
-    //polar_x2(G, P, Globals::nghost, n1, n2, n3);
-    periodic_x3(G, P, Globals::nghost, n1, n2, n3);
+    // TODO Is this still necessary?
+    // periodic_x3(G, P, Globals::nghost, n1, n2, n3);
 
-    return tf;
+    // Set the original simulation's end time, if we wanted that
+    if (use_tf) {
+        pin->SetReal("parthenon/time", "tlim", tf);
+    }
+
+    return TaskStatus::complete;
 }
 
-// Boundary functions for primitives.  Needed for initial sync
-void outflow_x1(const GRCoordinates& G, GridVars P, int nghost, int n1, int n2, int n3)
-{
-    Kokkos::parallel_for("outflow_x1_l", MDRangePolicy<Rank<3>>({nghost, nghost, 0}, {n3+nghost, n2+nghost, nghost}),
-        KOKKOS_LAMBDA_3D {
-            int iz = nghost;
+// void periodic_x3(const GRCoordinates& G, GridVars P, int nghost, int n1, int n2, int n3)
+// {
+//     Kokkos::parallel_for("periodic_x3_l", MDRangePolicy<Rank<3>>({0, 0, 0}, {nghost, n2+2*nghost, n1+2*nghost}),
+//         KOKKOS_LAMBDA_3D {
+//             int kz = k + n3;
 
-            PLOOP P(p, k, j, i) = P(p, k, j, iz);
-        }
-    );
-    Kokkos::parallel_for("outflow_x1_r", MDRangePolicy<Rank<3>>({nghost, nghost, n1+nghost}, {n3+nghost, n2+nghost, n1+2*nghost}),
-        KOKKOS_LAMBDA_3D {
-            int iz = n1 + nghost - 1;
+//             PLOOP P(p, k, j, i) = P(p, kz, j, i);
+//         }
+//     );
+//     Kokkos::parallel_for("periodic_x3_r", MDRangePolicy<Rank<3>>({n3+nghost, 0, 0}, {n3+2*nghost, n2+2*nghost, n1+2*nghost}),
+//         KOKKOS_LAMBDA_3D {
+//             int kz = k - n3;
 
-            PLOOP P(p, k, j, i) = P(p, k, j, iz);
-        }
-    );
-}
-
-void polar_x2(const GRCoordinates& G, GridVars P, int nghost, int n1, int n2, int n3)
-{
-    Kokkos::parallel_for("reflect_x2_l", MDRangePolicy<Rank<3>>({nghost, 0, 0}, {n3+nghost, nghost, n1+2*nghost}),
-        KOKKOS_LAMBDA_3D {
-          // Reflect across NG.  The zone j is (NG-j) prior to reflection,
-          // set it equal to the zone that far *beyond* NG
-          int jrefl = nghost + (nghost - j) - 1;
-          PLOOP P(p, k, j, i) = P(p, k, jrefl, i);
-
-          P(prims::u2, k, j, i) *= -1.;
-        }
-    );
-    Kokkos::parallel_for("reflect_x2_r", MDRangePolicy<Rank<3>>({nghost, n2+nghost, 0}, {n3+nghost, n2+2*nghost, n1+2*nghost}),
-        KOKKOS_LAMBDA_3D {
-          // Reflect across (NG+N2).  The zone j is (j - (NG+N2)) after reflection,
-          // set it equal to the zone that far *before* (NG+N2)
-          int jrefl = (nghost + n2) - (j - (nghost + n2)) - 1;
-          PLOOP P(p, k, j, i) = P(p, k, jrefl, i);
-
-          P(prims::u2, k, j, i) *= -1.;
-        }
-    );
-}
-
-void periodic_x3(const GRCoordinates& G, GridVars P, int nghost, int n1, int n2, int n3)
-{
-    Kokkos::parallel_for("periodic_x3_l", MDRangePolicy<Rank<3>>({0, 0, 0}, {nghost, n2+2*nghost, n1+2*nghost}),
-        KOKKOS_LAMBDA_3D {
-            int kz = k + n3;
-
-            PLOOP P(p, k, j, i) = P(p, kz, j, i);
-        }
-    );
-    Kokkos::parallel_for("periodic_x3_r", MDRangePolicy<Rank<3>>({n3+nghost, 0, 0}, {n3+2*nghost, n2+2*nghost, n1+2*nghost}),
-        KOKKOS_LAMBDA_3D {
-            int kz = k - n3;
-
-            PLOOP P(p, k, j, i) = P(p, kz, j, i);
-        }
-    );
-}
+//             PLOOP P(p, k, j, i) = P(p, kz, j, i);
+//         }
+//     );
+// }

@@ -34,24 +34,47 @@
 
 #include "fluxes.hpp"
 
-#include <parthenon/parthenon.hpp>
-
-// Package functions
-#include "mhd_functions.hpp"
-#include "b_flux_ct.hpp"
-#include "b_cd.hpp"
-#include "b_flux_ct.hpp"
-
-#include "debug.hpp"
-#include "floors.hpp"
-#include "reconstruction.hpp"
 #include "source.hpp"
 
 using namespace parthenon;
 
-// GetFlux is in the header: it is a template on reconstruction scheme and flux direction
+// GetFlux is in the header, as it is templated on reconstruction scheme and flux direction
+// That's also why we don't have any extra includes in here
 
-TaskStatus Flux::ApplyFluxes(MeshBlockData<Real> *rc, MeshBlockData<Real> *dudt, const Real& dt)
+TaskStatus Flux::PrimToFlux(MeshBlockData<Real> *rc, IndexDomain domain)
+{
+    FLAG("Getting conserved fluxes");
+    auto pmb = rc->GetBlockPointer();
+
+    // This gets all primitive and all conserved variables
+    MetadataFlag isPrimitive = pmb->packages.Get("GRMHD")->Param<MetadataFlag>("PrimitiveFlag");
+    PackIndexMap prims_map, cons_map;
+    const auto& P = rc->PackVariables({isPrimitive}, prims_map);
+    const auto& U = rc->PackVariables({Metadata::Conserved}, cons_map);
+    const VarMap m_u(cons_map, true), m_p(prims_map, false);
+
+    const auto& G = pmb->coords;
+    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
+
+    const bool flux_ct = pmb->packages.AllPackages().count("B_FluxCT");
+    const bool b_cd = pmb->packages.AllPackages().count("B_CD");
+
+    IndexRange ib = pmb->cellbounds.GetBoundsI(domain);
+    IndexRange jb = pmb->cellbounds.GetBoundsJ(domain);
+    IndexRange kb = pmb->cellbounds.GetBoundsK(domain);
+    pmb->par_for("P_to_U", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+        KOKKOS_LAMBDA_3D {
+            GRMHD::p_to_u(G, P, m_p, gam, k, j, i, U, m_u);
+            if (flux_ct) B_FluxCT::p_to_u(G, P, m_p, k, j, i, U, m_u);
+            else if (b_cd) B_CD::p_to_u(G, P, m_p, k, j, i, U, m_u);
+        }
+    );
+
+    FLAG("Got conserved fluxes");
+    return TaskStatus::complete;
+}
+
+TaskStatus Flux::ApplyFluxes(MeshBlockData<Real> *rc, MeshBlockData<Real> *dudt)
 {
     FLAG("Applying fluxes");
     auto pmb = rc->GetBlockPointer();
@@ -61,64 +84,46 @@ TaskStatus Flux::ApplyFluxes(MeshBlockData<Real> *rc, MeshBlockData<Real> *dudt,
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
     const int ndim = pmb->pmy_mesh->ndim;
 
-    GridVars P = rc->Get("c.c.bulk.prims").data;
-    GridVars B_P = rc->Get("c.c.bulk.B_prim").data;
-
-    PackIndexMap cons_map;
+    PackIndexMap prims_map, cons_map;
+    auto P = GRMHD::PackMHDPrims(rc, prims_map); // We only need these
     auto U = rc->PackVariablesAndFluxes({Metadata::Conserved}, cons_map);
     auto dUdt = dudt->PackVariables({Metadata::Conserved});
-    int nvar = U.GetDim(4);
-    const int cons_start = cons_map["c.c.bulk.cons"].first;
+    const VarMap m_u(cons_map, true), m_p(prims_map, false);
+    const int nvar = U.GetDim(4);
 
-    auto& G = pmb->coords;
+    const auto& G = pmb->coords;
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
 
-    // TODO move wind to separate package/function?
-    // bool wind_term = pmb->packages.Get("GRMHD")->Param<bool>("wind_term");
-    // Real wind_n = pmb->packages.Get("GRMHD")->Param<Real>("wind_n");
-    // Real wind_Tp = pmb->packages.Get("GRMHD")->Param<Real>("wind_Tp");
-    // int wind_pow = pmb->packages.Get("GRMHD")->Param<int>("wind_pow");
-    // Real wind_ramp_start = pmb->packages.Get("GRMHD")->Param<Real>("wind_ramp_start");
-    // Real wind_ramp_end = pmb->packages.Get("GRMHD")->Param<Real>("wind_ramp_end");
-    // Real current_wind_n = wind_n;
-    // if (wind_ramp_end > 0.0) {
-    //     current_wind_n = min((tm.time - wind_ramp_start) / (wind_ramp_end - wind_ramp_start), 1.0) * wind_n;
-    // } else {
-    //     current_wind_n = wind_n;
-    // }
+    const size_t total_scratch_bytes = 0;
+    const int scratch_level = 0;
 
-    // size_t total_scratch_bytes = 0;
-    // int scratch_level = 0;
-
-    // pmb->par_for_outer("apply_fluxes", total_scratch_bytes, scratch_level,
-    //     ks, ke, js, je,
-    //     KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int& k, const int& j) {
-    //         parthenon::par_for_inner(member, is, ie,
-    //             [&](const int& i) {
-
-    pmb->par_for("apply_fluxes", ks, ke, js, je, is, ie,
-        KOKKOS_LAMBDA_3D {
-                    // Apply all existing fluxes
-                    for (int p=0; p < nvar; ++p) {
-                        dUdt(p, k, j, i) = (U.flux(X1DIR, p, k, j, i) - U.flux(X1DIR, p, k, j, i+1)) / G.dx1v(i);
-                        if (ndim > 1) dUdt(p, k, j, i) += (U.flux(X2DIR, p, k, j, i) - U.flux(X2DIR, p, k, j+1, i)) / G.dx2v(j);
-                        if (ndim > 2) dUdt(p, k, j, i) += (U.flux(X3DIR, p, k, j, i) - U.flux(X3DIR, p, k+1, j, i)) / G.dx3v(k);
+    pmb->par_for_outer("apply_fluxes", total_scratch_bytes, scratch_level,
+        ks, ke, js, je,
+        KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int& k, const int& j) {
+            // This at least has a *chance* of being SIMD-fied, without invoking double kernel launch overhead.
+            // Parthenon has a version of this kernel but either (1) no launch overhead or (2) loss of generality
+            // mean this one is faster in my experience. YMMV.
+            for (int p=0; p < nvar; ++p) {
+                parthenon::par_for_inner(member, is, ie,
+                    [&](const int& i) {
+                        // Apply all existing fluxes
+                            dUdt(p, k, j, i) = (U.flux(X1DIR, p, k, j, i) - U.flux(X1DIR, p, k, j, i+1)) / G.dx1v(i);
+                            if (ndim > 1) dUdt(p, k, j, i) += (U.flux(X2DIR, p, k, j, i) - U.flux(X2DIR, p, k, j+1, i)) / G.dx2v(j);
+                            if (ndim > 2) dUdt(p, k, j, i) += (U.flux(X3DIR, p, k, j, i) - U.flux(X3DIR, p, k+1, j, i)) / G.dx3v(k);
                     }
-
-                    // Then calculate and add the source term(s)
+                );
+            }
+            parthenon::par_for_inner(member, is, ie,
+                [&](const int& i) {
+                    // Then calculate and add the GRMHD source term
                     FourVectors Dtmp;
-                    //Real dU[NPRIM] = {0};
-                    GRMHD::calc_4vecs(G, P, B_P, k, j, i, Loci::center, Dtmp);
-                    GRMHD::get_source(G, P, Dtmp, gam, k, j, i, cons_start, dUdt);
-
-                    // if (wind_term) {
-                    //     GRMHD::add_wind(G, gam, k, j, i, current_wind_n, wind_pow, wind_Tp, dU);
-                    // }
-            //     }
-            // );
+                    GRMHD::calc_4vecs(G, P, m_p, k, j, i, Loci::center, Dtmp);
+                    GRMHD::add_source(G, P, m_p, Dtmp, gam, k, j, i, dUdt, m_u);
+                }
+            );
         }
     );
-    FLAG("Applied");
 
+    FLAG("Applied");
     return TaskStatus::complete;
 }

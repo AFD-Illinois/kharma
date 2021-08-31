@@ -40,16 +40,30 @@
 #include <random>
 #include "Kokkos_Random.hpp"
 
-void InitializeFMTorus(MeshBlock *pmb, const GRCoordinates& G, GridVars P, const Real& gam,
-                       GReal rin, GReal rmax, Real kappa)
+void InitializeFMTorus(MeshBlockData<Real> *rc, ParameterInput *pin)
 {
+    FLAG("Initializing torus problem");
+
+    auto pmb = rc->GetBlockPointer();
+    GridScalar rho = rc->Get("prims.rho").data;
+    GridScalar u = rc->Get("prims.u").data;
+    GridVector uvec = rc->Get("prims.uvec").data;
+    GridVector B_P = rc->Get("prims.B").data;
+
+    const Real rin = pin->GetOrAddReal("torus", "rin", 6.0);
+    const Real rmax = pin->GetOrAddReal("torus", "rmax", 12.0);
+    const Real kappa = pin->GetOrAddReal("torus", "kappa", 1.e-3);
+    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
+
     IndexDomain domain = IndexDomain::entire;
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
 
     // Get coordinate system pointers for later
-    // Only compatible with KS coords as base (TODO BL for fun?)
+    // Only compatible with KS coords as base
+    // TODO going to need some work for alternative metrics
+    const auto& G = pmb->coords;
     SphKSCoords ksc = mpark::get<SphKSCoords>(G.coords.base);
     SphBLCoords bl = SphBLCoords(ksc.a);
 
@@ -57,16 +71,11 @@ void InitializeFMTorus(MeshBlock *pmb, const GRCoordinates& G, GridVars P, const
     Real l = lfish_calc(ksc.a, rmax);
 
     if (pmb->packages.Get("GRMHD")->Param<int>("verbose") > 0) {
-        // Example of pulling stuff host-side. Maybe make all initializations print stuff like this?
-        double gam_host;
-        Kokkos::Max<Real> gam_reducer(gam_host);
-        pmb->par_reduce("fm_torus_init", 0, 0, KOKKOS_LAMBDA_1D_REDUCE { local_result = gam; }, gam_reducer);
-        cout << "Initializing Fishbone-Moncrief torus:" << gam_host << endl;
+        cout << "Initializing Fishbone-Moncrief torus:" << endl;
         cout << "rin = " << rin << endl;
         cout << "rmax = " << rmax << endl;
         cout << "kappa = " << kappa << endl;
-        cout << "fluid gamma = " << gam_host << endl;
-
+        cout << "fluid gamma = " << gam << endl;
     }
 
     pmb->par_for("fm_torus_init", ks, ke, js, je, is, ie,
@@ -93,9 +102,9 @@ void InitializeFMTorus(MeshBlock *pmb, const GRCoordinates& G, GridVars P, const
 
                 // Calculate rho and u
                 Real hm1 = exp(lnh) - 1.;
-                Real rho = pow(hm1 * (gam - 1.) / (kappa * gam),
+                Real rho_l = pow(hm1 * (gam - 1.) / (kappa * gam),
                                     1. / (gam - 1.));
-                Real u = kappa * pow(rho, gam) / (gam - 1.);
+                Real u_l = kappa * pow(rho_l, gam) / (gam - 1.);
 
                 // Calculate u^phi
                 Real expm2chi = SS * SS * DD / (AA * AA * sth * sth);
@@ -119,11 +128,11 @@ void InitializeFMTorus(MeshBlock *pmb, const GRCoordinates& G, GridVars P, const
                 G.gcon(Loci::center, j, i, gcon);
                 fourvel_to_prim(gcon, ucon_mks, u_prim);
 
-                P(prims::rho, k, j, i) = rho;
-                P(prims::u, k, j, i) = u;
-                P(prims::u1, k, j, i) = u_prim[1];
-                P(prims::u2, k, j, i) = u_prim[2];
-                P(prims::u3, k, j, i) = u_prim[3];
+                rho(k, j, i) = rho_l;
+                u(k, j, i) = u_l;
+                uvec(0, k, j, i) = u_prim[1];
+                uvec(1, k, j, i) = u_prim[2];
+                uvec(2, k, j, i) = u_prim[3];
             }
         }
     );
@@ -190,43 +199,57 @@ void InitializeFMTorus(MeshBlock *pmb, const GRCoordinates& G, GridVars P, const
 
     pmb->par_for("fm_torus_normalize", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D {
-            P(prims::rho, k, j, i) /= rho_max;
-            P(prims::u, k, j, i) /= rho_max;
+            rho(k, j, i) /= rho_max;
+            u(k, j, i) /= rho_max;
         }
     );
 }
 
-void PerturbU(MeshBlock *pmb, GridVars P, Real u_jitter, int rng_seed=31337)
+// TODO move this to a different file
+TaskStatus PerturbU(MeshBlockData<Real> *rc, ParameterInput *pin)
 {
-    IndexDomain domain = IndexDomain::entire;
+    FLAG("Applying U perturbation");
+    auto pmb = rc->GetBlockPointer();
+    auto rho = rc->Get("prims.rho").data;
+    auto u = rc->Get("prims.u").data;
+
+    const Real u_jitter = pin->GetOrAddReal("perturbation", "u_jitter", 0.0);
+    if (u_jitter == 0.0) return TaskStatus::complete;
+    const int rng_seed = pin->GetOrAddInteger("perturbation", "rng_seed", 31337);
+
+    IndexDomain domain = IndexDomain::interior;
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
     // Should only jitter physical zones...
 
+#if DETERMINISTIC_INIT
     // SERIAL VERSION -- better determinism guarantee but CPU only
     // Initialize RNG
-    // std::mt19937 gen(rng_seed);
-    // std::uniform_real_distribution<Real> dis(-u_jitter/2, u_jitter/2);
+    std::mt19937 gen(rng_seed);
+    std::uniform_real_distribution<Real> dis(-u_jitter/2, u_jitter/2);
 
-    // for(int k=0; k < n3; k++)
-    //     for(int j=0; j < n2; j++)
-    //         for(int i=0; i < n3; i++)
-    //             P(prims::u, k, j, i) *= 1. + dis(gen);
-
-
-    // Kokkos version.  This would probably be much faster (and more deterministic?) as 2D internal, 1D outside
-    // TODO check determinism...
+    u_host = u.GetHostMirrorAndCopy()
+    for(int k=ks; k <= ke; k++)
+        for(int j=js; j <= je; j++)
+            for(int i=is; i <= ie; i++)
+                u_host(k, j, i) *= 1. + dis(gen);
+    u.DeepCopy(u_host);
+#else
+    // Kokkos version
     typedef typename Kokkos::Random_XorShift64_Pool<> RandPoolType;
     RandPoolType rand_pool(rng_seed);
     typedef typename RandPoolType::generator_type gen_type;
     pmb->par_for("perturb_u", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D {
             gen_type rgen = rand_pool.get_state();
-            if (P(prims::rho, k, j, i) > 1.e-5) {
-                P(prims::u, k, j, i) *= 1. + Kokkos::rand<gen_type, Real>::draw(rgen, -u_jitter/2, u_jitter/2);
+            if (rho(k, j, i) > 1.e-7) {
+                u(k, j, i) *= 1. + Kokkos::rand<gen_type, Real>::draw(rgen, -u_jitter/2, u_jitter/2);
             }
             rand_pool.free_state(rgen);
         }
     );
+#endif
+    FLAG("Applied");
+    return TaskStatus::complete;
 }
