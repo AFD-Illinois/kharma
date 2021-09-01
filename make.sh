@@ -123,7 +123,7 @@ if [[ -z "$CXX_NATIVE" ]]; then
     # Avoid warning on nvcc pragmas Intel doesn't like
     export CXXFLAGS="-Wno-unknown-pragmas"
     #export CFLAGS="-qopenmp"
-  elif which cc >/dev/null 2>&1; then
+  elif which CC >/dev/null 2>&1; then
     CXX_NATIVE=CC
     C_NATIVE=cc
     #export CXXFLAGS="-Wno-unknown-pragmas" # TODO if Cray->Intel in --version
