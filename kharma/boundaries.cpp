@@ -143,6 +143,7 @@ void ReflectX2(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, boo
     int is = bounds.is(ldomain), ie = bounds.ie(ldomain);
     int js = bounds.js(ldomain), je = bounds.je(ldomain);
     ldomain = IndexDomain::entire;
+    int is_e = bounds.is(ldomain), ie_e = bounds.ie(ldomain);
     int js_e = bounds.js(ldomain), je_e = bounds.je(ldomain);
     int ks_e = bounds.ks(ldomain), ke_e = bounds.ke(ldomain);
 
@@ -163,19 +164,19 @@ void ReflectX2(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, boo
     const int ref = ref_tmp;
     const int add = add_tmp;
 
-    pmb->par_for("ReflectX2", 0, q.GetDim(4) - 1, ks_e, ke_e, jbs, jbe, is, ie,
+    pmb->par_for("ReflectX2", 0, q.GetDim(4) - 1, ks_e, ke_e, jbs, jbe, is_e, ie_e,
         KOKKOS_LAMBDA_VARS {
             Real reflect = q.VectorComponent(p) == X2DIR ? -1.0 : 1.0;
             q(p, k, j, i) = reflect * q(p, k, (ref + add) + (ref - j), i);
         }
     );
-    pmb->par_for("ReflectX2_prims", 0, P.GetDim(4) - 1, ks_e, ke_e, jbs, jbe, is, ie,
+    pmb->par_for("ReflectX2_prims", 0, P.GetDim(4) - 1, ks_e, ke_e, jbs, jbe, is_e, ie_e,
         KOKKOS_LAMBDA_VARS {
             Real reflect = P.VectorComponent(p) == X2DIR ? -1.0 : 1.0;
             P(p, k, j, i) = reflect * P(p, k, (ref + add) + (ref - j), i);
         }
     );
-    pmb->par_for("ReflectX2_PtoU", ks_e, ke_e, jbs, jbe, is, ie,
+    pmb->par_for("ReflectX2_PtoU", ks_e, ke_e, jbs, jbe, is_e, ie_e,
         KOKKOS_LAMBDA_3D {
             VLOOP P(m_p.B1 + v, k, j, i) = q(m_u.B1 + v, k, j, i) / G.gdet(Loci::center, j, i);
             GRMHD::p_to_u(G, P, m_p, gam, k, j, i, q, m_u);
@@ -212,26 +213,26 @@ TaskStatus KBoundaries::FixFlux(MeshBlockData<Real> *rc)
     FLAG("Fixing fluxes");
     auto pmb = rc->GetBlockPointer();
     IndexDomain domain = IndexDomain::interior;
-    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
-    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
-    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
+    const int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
+    const int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
+    const int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
     const int ndim = pmb->pmy_mesh->ndim;
+    // Fluxes are defined at faces, so there is one more valid flux than
+    // valid cell in the face direction.  That is, e.g. F1 is valid on
+    // an (N1+1)xN2xN3 grid
+    const int ie_l = ie + 1;
+    const int je_l = (ndim > 1) ? je + 1 : je;
+    //const int ke_l = (ndim > 2) ? ke + 1 : ke;
 
     PackIndexMap cons_map;
-    const auto& F = rc->PackVariablesAndFluxes({Metadata::WithFluxes}, cons_map);
+    auto& F = rc->PackVariablesAndFluxes({Metadata::WithFluxes}, cons_map);
     const int m_rho = cons_map["cons.rho"].first;
-
-
-    // For Parthenon's boundary stuff
-    const auto nb_0 = IndexRange{0, 0};
-    const auto nb_1 = IndexRange{0, F.GetDim(4) - 1};
-    const int coarse = 0;
 
     if (pmb->packages.Get("GRMHD")->Param<bool>("fix_flux_inflow")) {
         if (pmb->boundary_flag[BoundaryFace::inner_x1] == BoundaryFlag::user)
         {
-            pmb->par_for_bndry("fix_flux_in_l", nb_0, IndexDomain::inner_x1, coarse,
-                KOKKOS_LAMBDA_VARS {
+            pmb->par_for("fix_flux_in_l", ks, ke, js, je, is, is,
+                KOKKOS_LAMBDA_3D {
                     F.flux(X1DIR, m_rho, k, j, i) = min(F.flux(X1DIR, m_rho, k, j, i), 0.);
                 }
             );
@@ -240,8 +241,8 @@ TaskStatus KBoundaries::FixFlux(MeshBlockData<Real> *rc)
         if (pmb->boundary_flag[BoundaryFace::outer_x1] == BoundaryFlag::user &&
             !(pmb->packages.Get("GRMHD")->Param<std::string>("problem") == "bondi"))
         {
-            pmb->par_for_bndry("fix_flux_in_r", nb_0, IndexDomain::outer_x1, coarse,
-                KOKKOS_LAMBDA_VARS {
+            pmb->par_for("fix_flux_in_r", ks, ke, js, je, ie_l, ie_l,
+                KOKKOS_LAMBDA_3D {
                     F.flux(X1DIR, m_rho, k, j, i) = max(F.flux(X1DIR, m_rho, k, j, i), 0.);
                 }
             );
@@ -252,7 +253,7 @@ TaskStatus KBoundaries::FixFlux(MeshBlockData<Real> *rc)
     if (pmb->packages.Get("GRMHD")->Param<bool>("fix_flux_pole")) {
         if (pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::user)
         {
-            pmb->par_for_bndry("fix_flux_pole_l", nb_1, IndexDomain::inner_x2, coarse,
+            pmb->par_for("fix_flux_pole_l", 0, F.GetDim(4) - 1, ks, ke, js, js, is, ie,
                 KOKKOS_LAMBDA_VARS {
                     F.flux(X2DIR, p, k, j, i) = 0.;
                 }
@@ -261,7 +262,7 @@ TaskStatus KBoundaries::FixFlux(MeshBlockData<Real> *rc)
 
         if (pmb->boundary_flag[BoundaryFace::outer_x2] == BoundaryFlag::user)
         {
-            pmb->par_for_bndry("fix_flux_pole_r", nb_1, IndexDomain::outer_x2, coarse,
+            pmb->par_for("fix_flux_pole_r", 0, F.GetDim(4) - 1, ks, ke, je_l, je_l, is, ie,
                 KOKKOS_LAMBDA_VARS {
                     F.flux(X2DIR, p, k, j, i) = 0.;
                 }
