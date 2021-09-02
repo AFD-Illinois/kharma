@@ -121,7 +121,7 @@ if [[ -z "$CXX_NATIVE" ]]; then
     CXX_NATIVE=icpc
     C_NATIVE=icc
     # Avoid warning on nvcc pragmas Intel doesn't like
-    export CXXFLAGS="-Wno-unknown-pragmas"
+    export CXXFLAGS="-Wno-unknown-pragmas $CXXFLAGS"
     #export CFLAGS="-qopenmp"
   elif which CC >/dev/null 2>&1; then
     CXX_NATIVE=CC
@@ -164,6 +164,8 @@ elif [[ "$*" == *"cuda"* ]]; then
     export CXXFLAGS="-dryrun $CXXFLAGS"
     echo "Dry-running with $CXXFLAGS"
   fi
+  # I've occasionally needed this. CUDA version thing?
+  #export CXXFLAGS="--expt-relaxed-constexpr $CXXFLAGS"
   OUTER_LAYOUT="MANUAL1D_LOOP"
   INNER_LAYOUT="TVR_INNER_LOOP"
   ENABLE_OPENMP="ON"

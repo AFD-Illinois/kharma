@@ -235,6 +235,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
         // Declare placeholder fields only if not using another package providing B field.
         // This should be redundant w/ "Overridable" flag...
         // See B field packages for details
+        // TODO unmark B and all other primitives from being "Restart" since we don't need to seed UtoP with them
         flags_prim_vec.push_back(Metadata::Overridable);
         m = Metadata(flags_prim_vec, s_vector);
         pkg->AddField("prims.B", m);

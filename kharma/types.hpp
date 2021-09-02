@@ -71,7 +71,8 @@ typedef struct {
 // distinguish them, e.g. fluxes.hpp
 class VarMap {
     public:
-        uint8_t RHO, UU, U1, U2, U3, B1, B2, B3, PSI, KTOT, K_HOWES, K_KAWAZURA, PASSIVE;
+        int8_t RHO, UU, U1, U2, U3, B1, B2, B3, PSI, PASSIVE;
+        int8_t KTOT, K_HOWES, K_KAWAZURA, K_WERNER, K_ROWAN, K_SHARMA;
 
         VarMap(parthenon::PackIndexMap& name_map, bool is_cons)
         {
@@ -81,12 +82,24 @@ class VarMap {
                 U1 = name_map["cons.uvec"].first;
                 B1 = name_map["cons.B"].first;
                 PSI = name_map["cons.psi_cd"].first;
+                KTOT = name_map["cons.Ktot"].first;
+                K_HOWES = name_map["cons.Kel_Howes"].first;
+                K_KAWAZURA = name_map["cons.Kel_Kawazura"].first;
+                K_WERNER = name_map["cons.Kel_Werner"].first;
+                K_ROWAN = name_map["cons.Kel_Rowan"].first;
+                K_SHARMA = name_map["cons.Kel_Sharma"].first;
             } else {
                 RHO = name_map["prims.rho"].first;
                 UU = name_map["prims.u"].first;
                 U1 = name_map["prims.uvec"].first;
                 B1 = name_map["prims.B"].first;
                 PSI = name_map["prims.psi_cd"].first;
+                KTOT = name_map["prims.Ktot"].first;
+                K_HOWES = name_map["prims.Kel_Howes"].first;
+                K_KAWAZURA = name_map["prims.Kel_Kawazura"].first;
+                K_WERNER = name_map["prims.Kel_Werner"].first;
+                K_ROWAN = name_map["prims.Kel_Rowan"].first;
+                K_SHARMA = name_map["prims.Kel_Sharma"].first;
             }
             U2 = U1 + 1;
             U3 = U1 + 2;

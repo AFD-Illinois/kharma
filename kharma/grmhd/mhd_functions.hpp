@@ -246,7 +246,7 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const ScratchPa
     // MHD stress-energy tensor w/ first index up, second index down
     Real mhd[GR_DIM];
     calc_tensor(P(m_p.RHO, i), P(m_p.UU, i), (gam - 1) * P(m_p.UU, i), D, dir, mhd);
-    flux(m_u.UU, i)  = mhd[0] * gdet + flux(m_p.RHO, i);
+    flux(m_u.UU, i)  = mhd[0] * gdet + flux(m_u.RHO, i);
     flux(m_u.U1, i) = mhd[1] * gdet;
     flux(m_u.U2, i) = mhd[2] * gdet;
     flux(m_u.U3, i) = mhd[3] * gdet;
@@ -271,7 +271,7 @@ KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates& G, const VariablePack<Re
     Real mhd[GR_DIM];
     calc_tensor(P(m_p.RHO, k, j, i), P(m_p.UU, k, j, i), (gam - 1) * P(m_p.UU, k, j, i), Dtmp, 0, mhd);
 
-    U(m_u.UU, k, j, i)  = mhd[0] * gdet + U(m_p.RHO, k, j, i);
+    U(m_u.UU, k, j, i)  = mhd[0] * gdet + U(m_u.RHO, k, j, i);
     VLOOP U(m_u.U1 + v, k, j, i) = mhd[1 + v] * gdet;
 }
 

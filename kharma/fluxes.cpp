@@ -50,7 +50,7 @@ TaskStatus Flux::PrimToFlux(MeshBlockData<Real> *rc, IndexDomain domain)
     MetadataFlag isPrimitive = pmb->packages.Get("GRMHD")->Param<MetadataFlag>("PrimitiveFlag");
     PackIndexMap prims_map, cons_map;
     const auto& P = rc->PackVariables({isPrimitive}, prims_map);
-    const auto& U = rc->PackVariables({Metadata::Conserved}, cons_map);
+    auto& U = rc->PackVariables({Metadata::Conserved}, cons_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
 
     const auto& G = pmb->coords;
@@ -58,6 +58,7 @@ TaskStatus Flux::PrimToFlux(MeshBlockData<Real> *rc, IndexDomain domain)
 
     const bool flux_ct = pmb->packages.AllPackages().count("B_FluxCT");
     const bool b_cd = pmb->packages.AllPackages().count("B_CD");
+    const bool use_electrons = pmb->packages.AllPackages().count("Electrons");
 
     IndexRange ib = pmb->cellbounds.GetBoundsI(domain);
     IndexRange jb = pmb->cellbounds.GetBoundsJ(domain);
@@ -67,6 +68,7 @@ TaskStatus Flux::PrimToFlux(MeshBlockData<Real> *rc, IndexDomain domain)
             GRMHD::p_to_u(G, P, m_p, gam, k, j, i, U, m_u);
             if (flux_ct) B_FluxCT::p_to_u(G, P, m_p, k, j, i, U, m_u);
             else if (b_cd) B_CD::p_to_u(G, P, m_p, k, j, i, U, m_u);
+            if (use_electrons) Electrons::p_to_u(G, P, m_p, k, j, i, U, m_u);
         }
     );
 

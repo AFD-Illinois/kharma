@@ -42,9 +42,10 @@
 // Packages
 #include "b_flux_ct.hpp"
 #include "b_cd.hpp"
+#include "current.hpp"
+#include "electrons.hpp"
 #include "grmhd.hpp"
 #include "wind.hpp"
-#include "current.hpp"
 
 #include "bondi.hpp"
 #include "boundaries.hpp"
@@ -158,6 +159,7 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
     bool do_wind = pin->GetOrAddBoolean("wind", "on", false);
     // TODO if jcon in outputs then...
     bool add_jcon = pin->GetOrAddBoolean("GRMHD", "add_jcon", true);
+    bool do_electrons = pin->GetOrAddBoolean("electrons", "on", false);
 
     // Global variables "package."  Anything that just, really oughta be a global
     packages.Add(KHARMA::InitializeGlobals(pin.get()));
@@ -188,7 +190,9 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
         packages.Add(Current::Initialize(pin.get()));
     }
 
-    // TODO scalars, electrons...
+    if (do_electrons) {
+        packages.Add(Electrons::Initialize(pin.get(), packages));
+    }
 
     return std::move(packages);
 }
@@ -197,6 +201,7 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
 // TODO decide on a consistent implementation of foreach packages -> do X
 void KHARMA::FillDerivedDomain(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, int coarse)
 {
+    FLAG("Filling derived vars after applying physical boundaries");
     // We need to re-fill the "derived" (primitive) variables from everything
     // except GRMHD
     auto pmb = rc->GetBlockPointer();
@@ -204,6 +209,10 @@ void KHARMA::FillDerivedDomain(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDo
         B_CD::UtoP(rc.get(), domain, coarse);
     if (pmb->packages.AllPackages().count("B_FluxCT"))
         B_FluxCT::UtoP(rc.get(), domain, coarse);
+    if (pmb->packages.AllPackages().count("Electrons"))
+        Electrons::UtoP(rc.get(), domain, coarse);
+
+    FLAG("Filled");
 }
 
 void KHARMA::PreStepMeshUserWorkInLoop(Mesh *pmesh, ParameterInput *pin, const SimTime &tm)
@@ -253,6 +262,8 @@ void KHARMA::FillOutput(MeshBlock *pmb, ParameterInput *pin)
             B_FluxCT::FillOutput(pmb, pin);
         if (pmb->packages.AllPackages().count("B_CD"))
             B_CD::FillOutput(pmb, pin);
+        if (pmb->packages.AllPackages().count("Electrons"))
+            Electrons::FillOutput(pmb, pin);
     }
 }
 

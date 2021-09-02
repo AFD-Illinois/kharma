@@ -46,6 +46,7 @@
 #include "mhd_functions.hpp"
 #include "b_flux_ct.hpp"
 #include "b_cd.hpp"
+#include "electrons.hpp"
 
 namespace Flux {
 /**
@@ -132,6 +133,7 @@ inline TaskStatus GetFlux(MeshBlockData<Real> *rc)
     // B field package options
     const bool use_b_flux_ct = pmb->packages.AllPackages().count("B_FluxCT");
     const bool use_b_cd = pmb->packages.AllPackages().count("B_CD");
+    const bool use_electrons = pmb->packages.AllPackages().count("Electrons");
 
     const auto& G = pmb->coords;
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
@@ -226,6 +228,10 @@ inline TaskStatus GetFlux(MeshBlockData<Real> *rc)
                         B_CD::prim_to_flux(G, Pl, m_p, Dtmp, k, j, i, 0, Ul, m_u, loc);
                         B_CD::prim_to_flux(G, Pl, m_p, Dtmp, k, j, i, dir, Fl, m_u, loc);
                     }
+                    if (use_electrons) {
+                        Electrons::prim_to_flux(G, Pl, m_p, Dtmp, k, j, i, 0, Ul, m_u, loc);
+                        Electrons::prim_to_flux(G, Pl, m_p, Dtmp, k, j, i, dir, Fl, m_u, loc);
+                    }
 
                     // Magnetosonic speeds
                     Real cmaxL, cminL;
@@ -256,6 +262,10 @@ inline TaskStatus GetFlux(MeshBlockData<Real> *rc)
                     } else if (use_b_cd) {
                         B_CD::prim_to_flux(G, Pr, m_p, Dtmp, k, j, i, 0, Ur, m_u, loc);
                         B_CD::prim_to_flux(G, Pr, m_p, Dtmp, k, j, i, dir, Fr, m_u, loc);
+                    }
+                    if (use_electrons) {
+                        Electrons::prim_to_flux(G, Pr, m_p, Dtmp, k, j, i, 0, Ur, m_u, loc);
+                        Electrons::prim_to_flux(G, Pr, m_p, Dtmp, k, j, i, dir, Fr, m_u, loc);
                     }
 
                     // Magnetosonic speeds
@@ -290,7 +300,6 @@ inline TaskStatus GetFlux(MeshBlockData<Real> *rc)
                     ctop(dir, k, j, i) = max(cmax(i), cmin(i));
                 }
             );
-            // OTHERS HERE
             member.team_barrier();
 
 #if !FUSE_FLUX_KERNELS

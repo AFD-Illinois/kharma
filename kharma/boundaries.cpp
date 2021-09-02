@@ -53,6 +53,7 @@
 // Lots of shared code and only a few indices different
 void OutflowX1(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, bool coarse)
 {
+    FLAG("Applying KHARMA outflow X1 bound");
     std::shared_ptr<MeshBlock> pmb = rc->GetBlockPointer();
     auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
     const auto& G = pmb->coords;
@@ -97,11 +98,13 @@ void OutflowX1(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, boo
     // This first loop copies all conserved variables into the outer zones
     // This includes some we will replace below, but it would be harder
     // to figure out where they were in the pack than just replace them
+    FLAG("Loop1");
     pmb->par_for("OutflowX1", 0, q.GetDim(4) - 1, ks_e, ke_e, js_e, je_e, ibs, ibe,
         KOKKOS_LAMBDA_VARS {
             q(p, k, j, i) = q(p, k, j, ref);
         }
     );
+    FLAG("Loop2");
     // Apply KHARMA boundary to the primitive values
     // TODO currently this includes B, which we then replace.
     pmb->par_for("OutflowX1_prims", 0, P.GetDim(4) - 1, ks_e, ke_e, js_e, je_e, ibs, ibe,
@@ -109,6 +112,7 @@ void OutflowX1(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, boo
             P(p, k, j, i) = P(p, k, j, ref);
         }
     );
+    FLAG("Loop3");
     // Zone-by-zone recovery of U from P
     pmb->par_for("OutflowX1_PtoU", ks_e, ke_e, js_e, je_e, ibs, ibe,
         KOKKOS_LAMBDA_3D {
@@ -122,12 +126,14 @@ void OutflowX1(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, boo
         }
     );
 
+    FLAG("Applied");
     KHARMA::FillDerivedDomain(rc, domain, coarse);
 }
 
 // Single reflecting boundary function for inner and outer bounds
 // See above for comments
 void ReflectX2(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, bool coarse) {
+    FLAG("Applying KHARMA reflecting X2 bound");
     std::shared_ptr<MeshBlock> pmb = rc->GetBlockPointer();
     auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
     const auto& G = pmb->coords;

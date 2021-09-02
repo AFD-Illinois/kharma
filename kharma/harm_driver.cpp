@@ -43,12 +43,14 @@
 
 #include "b_flux_ct.hpp"
 #include "b_cd.hpp"
+#include "electrons.hpp"
+#include "grmhd.hpp"
+
 #include "bondi.hpp"
 #include "boundaries.hpp"
 #include "debug.hpp"
 #include "fixup.hpp"
 #include "fluxes.hpp"
-#include "grmhd.hpp"
 #include "iharm_restart.hpp"
 #include "source.hpp"
 
@@ -69,6 +71,7 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
 
     const bool use_b_cd = blocks[0]->packages.AllPackages().count("B_CD");
     const bool use_b_flux_ct = blocks[0]->packages.AllPackages().count("B_FluxCT");
+    const bool use_electrons = blocks[0]->packages.AllPackages().count("Electrons");
 
     auto num_task_lists_executed_independently = blocks.size();
     TaskRegion &async_region1 = tc.AddRegion(num_task_lists_executed_independently);
@@ -289,10 +292,19 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         // we then fill those boundaries based on the primitives, and calculate conserved variables
         auto t_fill_derived = tl.AddTask(t_copy_prims, Update::FillDerived<MeshBlockData<Real>>, sc1.get());
 
+        // Electron heating must be done with the beginning and end states of this *substep*, specifically the primitives,
+        // which we now have from FillDerived (and PostFillDerived, which fixes them)
+        // This function takes the two primitive states sc0, sc1, updates the electron entropies in sc1, and calls
+        // Electrons::p_to_u to ensure consistent conserved-variable state.
+        auto t_heat_electrons = t_fill_derived;
+        if (use_electrons) {
+            auto t_heat_electrons = tl.AddTask(t_fill_derived, Electrons::ApplyHeatingModels, sc0.get(), sc1.get());
+        }
+
         // This is a parthenon call, but in spherical coordinates this will call the functions in
         // boundaries.cpp, which apply to the primitive variables for GRMHD, and conserved forms for everything
         // else.  That means calling FillDerived again on any sections it's replaced!
-        auto t_set_bc = tl.AddTask(t_fill_derived, ApplyBoundaryConditions, sc1);
+        auto t_set_bc = tl.AddTask(t_heat_electrons, ApplyBoundaryConditions, sc1);
         auto t_step_done = t_set_bc;
 
         // Estimate next time step based on ctop
