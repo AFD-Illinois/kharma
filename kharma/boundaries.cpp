@@ -153,6 +153,13 @@ void ReflectX2(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, boo
     int js_e = bounds.js(ldomain), je_e = bounds.je(ldomain);
     int ks_e = bounds.ks(ldomain), ke_e = bounds.ke(ldomain);
 
+    // So. Parthenon wants us to do our thing over is_e to ie_e
+    // BUT if we're at the interior bound on X1, that's gonna blow things up
+    // (for reasons unknown, inflow bounds must take precedence)
+    // so we have to be smart
+    int ics = (pmb->boundary_flag[BoundaryFace::inner_x1] == BoundaryFlag::user) ? is : is_e;
+    int ice = (pmb->boundary_flag[BoundaryFace::outer_x1] == BoundaryFlag::user) ? ie : ie_e;
+
     int ref_tmp, add_tmp, jbs, jbe;
     if (domain == IndexDomain::inner_x2) {
         add_tmp = -1;
@@ -170,19 +177,19 @@ void ReflectX2(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, boo
     const int ref = ref_tmp;
     const int add = add_tmp;
 
-    pmb->par_for("ReflectX2", 0, q.GetDim(4) - 1, ks_e, ke_e, jbs, jbe, is_e, ie_e,
+    pmb->par_for("ReflectX2", 0, q.GetDim(4) - 1, ks_e, ke_e, jbs, jbe, ics, ice,
         KOKKOS_LAMBDA_VARS {
             Real reflect = q.VectorComponent(p) == X2DIR ? -1.0 : 1.0;
             q(p, k, j, i) = reflect * q(p, k, (ref + add) + (ref - j), i);
         }
     );
-    pmb->par_for("ReflectX2_prims", 0, P.GetDim(4) - 1, ks_e, ke_e, jbs, jbe, is_e, ie_e,
+    pmb->par_for("ReflectX2_prims", 0, P.GetDim(4) - 1, ks_e, ke_e, jbs, jbe, ics, ice,
         KOKKOS_LAMBDA_VARS {
             Real reflect = P.VectorComponent(p) == X2DIR ? -1.0 : 1.0;
             P(p, k, j, i) = reflect * P(p, k, (ref + add) + (ref - j), i);
         }
     );
-    pmb->par_for("ReflectX2_PtoU", ks_e, ke_e, jbs, jbe, is_e, ie_e,
+    pmb->par_for("ReflectX2_PtoU", ks_e, ke_e, jbs, jbe, ics, ice,
         KOKKOS_LAMBDA_3D {
             VLOOP P(m_p.B1 + v, k, j, i) = q(m_u.B1 + v, k, j, i) / G.gdet(Loci::center, j, i);
             GRMHD::p_to_u(G, P, m_p, gam, k, j, i, q, m_u);

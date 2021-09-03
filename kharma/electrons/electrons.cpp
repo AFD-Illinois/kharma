@@ -61,16 +61,16 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     params.Add("extra_checks", extra_checks);
 
     // Floors & fluid gamma
-    Real gamma_e = pin->GetOrAddReal("electrons", "gamma_e", 0);
+    Real gamma_e = pin->GetOrAddReal("electrons", "gamma_e", 4./3);
     params.Add("gamma_e", gamma_e);
-    Real gamma_p = pin->GetOrAddReal("electrons", "gamma_p", 0);
+    Real gamma_p = pin->GetOrAddReal("electrons", "gamma_p", 5./3);
     params.Add("gamma_p", gamma_p);
-    Real fel_0 = pin->GetOrAddReal("electrons", "fel_0", 0);
+    Real fel_0 = pin->GetOrAddReal("electrons", "fel_0", 0.01);
     params.Add("fel_0", fel_0);
 
-    Real tp_over_te_min = pin->GetOrAddReal("electrons", "tp_over_te_min", 0);
+    Real tp_over_te_min = pin->GetOrAddReal("electrons", "tp_over_te_min", 0.001);
     params.Add("tp_over_te_min", tp_over_te_min);
-    Real tp_over_te_max = pin->GetOrAddReal("electrons", "tp_over_te_max", 0);
+    Real tp_over_te_max = pin->GetOrAddReal("electrons", "tp_over_te_max", 1000.0);
     params.Add("tp_over_te_max", tp_over_te_max);
 
     bool suppress_highb_heat = pin->GetOrAddReal("electrons", "suppress_highb_heat", true);
