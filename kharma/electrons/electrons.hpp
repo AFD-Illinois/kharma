@@ -47,6 +47,8 @@ using namespace parthenon;
  * Tracks fluid total entropy in order to calculate stepwise changes, and electron
  * entropy fed by some fraction of dissipation.
  * Supports several heating models (dissipation fractions) via runtime parameters.
+ * 
+ * Adapted very closely from work done for iharm3d by Cesar Diaz
  */
 namespace Electrons {
 /**

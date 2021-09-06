@@ -96,7 +96,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     // Minimum timestep, if something about the sound speed goes wonky. Probably won't save you :)
     double dt_min = pin->GetOrAddReal("parthenon/time", "dt_min", 1.e-4);
     params.Add("dt_min", dt_min);
-    // Starting timestep.  Important for consistent restarts, otherwise just the minimum
+    // Starting timestep.  TODO make this consistent on restarts
     double dt = pin->GetOrAddReal("parthenon/time", "dt", dt_min);
     params.Add("dt", dt);
     double max_dt_increase = pin->GetOrAddReal("parthenon/time", "max_dt_increase", 2.0);
@@ -289,15 +289,21 @@ void UtoP(MeshBlockData<Real> *rc)
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
 
     // Get the primitives from our conserved versions
-    // Note this covers ghost zones!  This is intentional, as primitives in
-    // ghost zones are needed for reconstruction
+    // Currently this returns *all* zones, including all ghosts, even
+    // uninitialized zones which are still zero.  We select for initialized
+    // zones only in the loop below, to avoid failures to converge while
+    // calculating primtive vars over as much of the domain as possible
+    // We could (did formerly) save some time here by running over
+    // only zones with initialized conserved variables, but the domain
+    // of such values is not rectangular in the current handling
     IndexRange ib = GetPhysicalZonesI(pmb->boundary_flag, pmb->cellbounds);
     IndexRange jb = GetPhysicalZonesJ(pmb->boundary_flag, pmb->cellbounds);
     IndexRange kb = GetPhysicalZonesK(pmb->boundary_flag, pmb->cellbounds);
-
     pmb->par_for("U_to_P", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_3D {
-            pflag(k, j, i) = GRMHD::u_to_p(G, U, m_u, gam, k, j, i, Loci::center, P, m_p);
+            if (P(m_p.RHO, k, j, i) != 0. || P(m_p.UU, k, j, i) != 0.) {
+                pflag(k, j, i) = GRMHD::u_to_p(G, U, m_u, gam, k, j, i, Loci::center, P, m_p);
+            }
         }
     );
     FLAG("Filled");

@@ -92,6 +92,12 @@ KOKKOS_INLINE_FUNCTION Real hlle(const Real& fluxL, const Real& fluxR, const Rea
  * Memory-wise, this fills the "flux" portions of the "conserved" fields.  All fluxes are applied
  * together "ApplyFluxes," and the final fields are calculated by Parthenon in 
  * Also fills the "ctop" vector with the signal speed mhd_vchar -- used to estimate timestep later.
+ * 
+ * This function is defined in the header because it is templated on the reconstruction scheme and
+ * direction.  Since there are only a few reconstruction schemes supported, and we will only ever
+ * need fluxes in three directions, we can recompile the function for every combination.
+ * This allows some extra optimization from knowing that dir != 0 in parcticular, and inlining
+ * the particular reconstruction call we need.
  */
 template <ReconstructionType Recon, int dir>
 inline TaskStatus GetFlux(MeshBlockData<Real> *rc)

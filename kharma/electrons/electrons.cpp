@@ -41,6 +41,10 @@
 
 using namespace parthenon;
 
+// Used only in Howes model
+#define ME (9.1093826e-28  ) // Electron mass
+#define MP (1.67262171e-24 ) // Proton mass
+
 // Do I really want to reintroduce this?
 #define SMALL 1.e-20
 
@@ -261,7 +265,8 @@ TaskStatus ApplyHeatingModels(MeshBlockData<Real> *rc_old, MeshBlockData<Real> *
     MetadataFlag isElectrons = pmb->packages.Get("Electrons")->Param<MetadataFlag>("ElectronsFlag");
     MetadataFlag isPrimitive = pmb->packages.Get("GRMHD")->Param<MetadataFlag>("PrimitiveFlag");
     // Need to distinguish different electron models
-    // So far maps are consistent, so we re-use
+    // So far, Parthenon's maps of the same sets of variables are consistent,
+    // so we only bother with one map of the primitives
     // If Parthenon starts making packing *random*, I'm in trouble
     PackIndexMap prims_map, cons_map;
     auto& P = rc_old->PackVariables({isPrimitive}, prims_map);
@@ -282,12 +287,11 @@ TaskStatus ApplyHeatingModels(MeshBlockData<Real> *rc_old, MeshBlockData<Real> *
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
     pmb->par_for("heat_electrons", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D {
-            // GET HEATING FRACTION
             FourVectors Dtmp;
             GRMHD::calc_4vecs(G, P, m_p, k, j, i, Loci::center, Dtmp);
             Real bsq = dot(Dtmp.bcon, Dtmp.bcov);
-            // Suppress all heating at high Bsq. TODO can we skip the rest?
-            //if(suppress_highb_heat && (bsq / P(m_p.RHO, k, j, i) > 1.)) return;
+            // Suppress all heating at high sigma
+            if(suppress_highb_heat && (bsq / P(m_p.RHO, k, j, i) > 1.)) return;
 
             // Calculate total dissipation, update KTOT to reflect real entropy
             const Real kNew = (gam-1.) * P_new(m_p.UU, k, j, i) / pow(P_new(m_p.RHO, k, j, i) ,gam);
@@ -296,17 +300,40 @@ TaskStatus ApplyHeatingModels(MeshBlockData<Real> *rc_old, MeshBlockData<Real> *
             // Reset the entropy to measure next step's dissipation
             P_new(m_p.KTOT, k, j, i) = kNew;
 
-            // Common values we'll need for several models
-            // TODO curious to know whether we hit these low temperatures
-            // Note that the Tp & Te guards are just to keep the ratio
-            // Tp/Te from going -> NaN (TODO can we get away with only Te?)
+            // Heat different electron passives based on different dissipation fraction models
+            // Expressions here closely adapted (read: stolen) from implementation in iharm3d
+            // courtesy of Cesar Diaz, see https://github.com/AFD-Illinois/iharm3d
             Real Tpr;
             if (m_p.K_KAWAZURA >= 0 || m_p.K_SHARMA >= 0) {
                 Tpr = (gamp - 1.) * P(m_p.UU, k, j, i) / P(m_p.RHO, k, j, i);
+                // TODO curious to know whether we hit these low temperatures
+                // Note that the Tp & Te guards are just to keep the ratio
+                // Tp/Te from going -> NaN (TODO can we get away with only Te?)
                 if(Tpr <= SMALL) Tpr = SMALL;
             }
 
-            // TODO Howes
+            if (m_p.K_HOWES >= 0) {
+                Real uel = 1./(game - 1.) * P(m_p.K_HOWES, k, j, i) * pow(P(m_p.RHO, k, j, i), game);
+                Real Tel = (game - 1.) * uel / P(m_p.RHO, k, j, i);
+                if(Tel <= SMALL) Tel = SMALL;
+
+                Real Trat = fabs(Tpr/Tel);
+                Real pres = P(m_p.RHO, k, j, i) * Tpr; // Proton pressure
+                Real beta = pres / bsq * 2;
+                if(beta > 1.e20) beta = 1.e20; // If somebody enables electrons in a GRHD sim
+
+                Real logTrat = log10(Trat);
+                Real mbeta = 2. - 0.2*logTrat;
+
+                Real c1 = 0.92;
+                Real c2 = (Trat <= 1.) ? 1.6/Trat : 1.2/Trat;
+                Real c3 = (Trat <= 1.) ? 18. + 5.*logTrat : 18.;
+
+                Real beta_pow = pow(beta,mbeta);
+                Real qrat = c1*(c2*c2+beta_pow)/(c3*c3 + beta_pow)*exp(-1./beta)*pow(MP/ME*Trat,.5);
+                Real fel = 1./(1. + qrat);
+                P_new(m_p.K_HOWES, k, j, i) += fel * diss;
+            }
             if (m_p.K_KAWAZURA >= 0) {
                 // Equation (2) in http://www.pnas.org/lookup/doi/10.1073/pnas.1812491116
                 Real uel = 1./(game - 1.) * P(m_p.K_KAWAZURA, k, j, i) * pow(P(m_p.RHO, k, j, i), game);

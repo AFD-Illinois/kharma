@@ -40,9 +40,11 @@
 // KHARMA TYPES
 
 // Denote reconstruction algorithms
+// See reconstruction.hpp for implementations
 enum ReconstructionType{donor_cell=0, linear_mc, linear_vl, ppm, mp5, weno5, weno5_lower_poles};
 
 // Denote inversion failures (pflags). See U_to_P for status explanations
+// Only thrown from function in U_to_P.hpp, see that file for meanings
 enum InversionStatus{success=0, neg_input, max_iter, bad_ut, bad_gamma, neg_rho, neg_u, neg_rhou};
 
 // Floor codes are non-exclusive, so it makes little sense to use an enum
@@ -55,6 +57,9 @@ enum InversionStatus{success=0, neg_input, max_iter, bad_ut, bad_gamma, neg_rho,
 #define HIT_FLOOR_TEMP 512
 #define HIT_FLOOR_GAMMA 1024
 #define HIT_FLOOR_KTOT 2048
+// Separate flags for when the floors are applied after reconstruction.
+// Not yet used, as this will likely have some speed penalty paid even if
+// the flags aren't written
 #define HIT_FLOOR_GEOM_RHO_FLUX 4096
 #define HIT_FLOOR_GEOM_U_FLUX 8192
 
@@ -66,9 +71,20 @@ typedef struct {
     parthenon::Real bcov[GR_DIM];
 } FourVectors;
 
-// Map of the locations of particular variables in a VariablePack
-// Used for operations conducted over all vars which must still
-// distinguish them, e.g. fluxes.hpp
+/**
+ * Map of the locations of particular variables in a VariablePack
+ * Used for operations conducted over all vars which must still
+ * distinguish between them, e.g. fluxes.hpp
+ *
+ * We use this instead of the PackIndexMap, because comparing strings
+ * on the device every time we need the index of a variable is slow.
+ *
+ * Think of this a bit like the macros in iharm2d or 3d, except
+ * that since we're packing on the fly, they can't be globally
+ * constant anymore.
+ *
+ * Note the values of any variables not present in the pack will be -1
+ */
 class VarMap {
     public:
         int8_t RHO, UU, U1, U2, U3, B1, B2, B3, PSI, PASSIVE;
@@ -110,7 +126,8 @@ class VarMap {
 
 /**
  * Struct to hold floor values without cumbersome dictionary/string logistics.
- * Hopefully faster.
+ * Hopefully faster than dragging the full Params object device side,
+ * similar reasoning to VarMap above.
  */
 class FloorPrescription {
     public:

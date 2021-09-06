@@ -37,7 +37,9 @@
 
 #include "utils.hpp"
 
+// These could/should be runtime & const rather than macros
 #define ERRTOL 1.e-8
+#define ITER_MAX 8
 
 namespace GRMHD {
 
@@ -47,9 +49,14 @@ KOKKOS_INLINE_FUNCTION Real lorentz_calc_w(const Real& Bsq, const Real& D, const
                                         const Real& Qtsq, const Real& Wp);
 
 /**
- * Recover local primitives
- * Like in *_functions.hpp, this function is overloaded between passing references to global arrays, and "immediates"
- * The difference is this one is probably coded pretty slowly
+ * Recover local primitive variables, with a one-dimensional Newton-Raphson iterative solver
+ * Iteration starts from the current primitive values
+ * 
+ * Returns a code indicating whether the solver converged (success), failed (max_iter), or
+ * indicating that the converged solution was unphysical (bad_ut, neg_rhou, neg_rho, neg_u)
+ * 
+ * On error, will not write replacement values, leaving the previous step's values in place
+ * These are fixed later, in FixUtoP
  */
 KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const VariablePack<Real>& U, const VarMap& m_u,
                                     const Real& gam, const int& k, const int& j, const int& i, const Loci loc,
@@ -101,37 +108,24 @@ KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const Vari
     // Numerical rootfinding
 
     // Initial guess from primitives:
-    // Fetch the current values, or guess defaults if they're uninitialized
-    Real gamma, rho0, u;
-    int iter_max;
-    if (P(m_p.RHO, k, j, i) != 0. || P(m_p.UU, k, j, i) != 0.) {
-        gamma = GRMHD::lorentz_calc(G, P, m_p, k, j, i, loc);
-        rho0 = P(m_p.RHO, k, j, i);
-        u = P(m_p.UU, k, j, i);
-        iter_max = 8;
-    } else {
-        //printf("Guessing P\n");
-        // rho0 = 0.1;
-        // u = 0.01;
-        // gamma = 1.1;
-        // iter_max = 20;
-        // Leave uninitialized zones entirely alone
-        return InversionStatus::success;
-    }
+    Real gamma = GRMHD::lorentz_calc(G, P, m_p, k, j, i, loc);
+    Real rho = P(m_p.RHO, k, j, i);
+    Real u = P(m_p.UU, k, j, i);
+
     if (gamma < 1) return InversionStatus::bad_ut;
     // Calculate an initial guess for Wp
-    Real Wp = (rho0 + u + (gam - 1) * u) * gamma * gamma - rho0 * gamma;
+    Real Wp = (rho + u + (gam - 1) * u) * gamma * gamma - rho * gamma;
 
     // Gather any errors during iteration with a single flag to return afterward
     InversionStatus eflag = InversionStatus::success;
 
     // Step around the guess & evaluate errors
-    Real Wpm = (1. - DELTA) * Wp; //heuristic
-    Real h = Wp - Wpm;
-    Real Wpp = Wp + h;
-    Real errp = err_eqn(gam, Bsq, D, Ep, QdB, Qtsq, Wpp, eflag);
+    const Real Wpm = (1. - DELTA) * Wp; //heuristic
+    const Real h = Wp - Wpm;
+    const Real Wpp = Wp + h;
+    const Real errp = err_eqn(gam, Bsq, D, Ep, QdB, Qtsq, Wpp, eflag);
     Real err = err_eqn(gam, Bsq, D, Ep, QdB, Qtsq, Wp, eflag);
-    Real errm = err_eqn(gam, Bsq, D, Ep, QdB, Qtsq, Wpm, eflag);
+    const Real errm = err_eqn(gam, Bsq, D, Ep, QdB, Qtsq, Wpm, eflag);
 
     // Attempt a Halley/Muller/Bailey/Press step
     Real dedW = (errp - errm) / (Wpp - Wpm);
@@ -150,7 +144,7 @@ KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const Vari
 
     // Not good enough?  apply secant method
     int iter = 0;
-    for (iter = 0; iter < iter_max; iter++)
+    for (iter = 0; iter < ITER_MAX; iter++)
     {
         dW = clip((Wp1 - Wp) * err / (err - err1), (Real) -0.5*Wp, (Real) 2.0*Wp);
 
@@ -169,25 +163,25 @@ KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const Vari
     // Uncomment to error on any bad velocity.  iharm2d/3d do not do this.
     //if (eflag) return eflag;
     // Return failure to converge
-    if (iter == iter_max) return InversionStatus::max_iter;
+    if (iter == ITER_MAX) return InversionStatus::max_iter;
 
-    // Find utsq, gamma, rho0 from Wp
+    // Find utsq, gamma, rho from Wp
     gamma = lorentz_calc_w(Bsq, D, QdB, Qtsq, Wp);
     if (gamma < 1) return InversionStatus::bad_ut;
 
-    rho0 = D / gamma;
+    rho = D / gamma;
     Real W = Wp + D;
     Real w = W / (gamma*gamma);
-    Real p = (w - rho0) * (gam - 1) / gam;
-    u = w - (rho0 + p);
+    Real p = (w - rho) * (gam - 1) / gam;
+    u = w - (rho + p);
 
     // Return without updating non-B primitives
-    if (rho0 < 0 && u < 0) return InversionStatus::neg_rhou;
-    else if (rho0 < 0) return InversionStatus::neg_rho;
+    if (rho < 0 && u < 0) return InversionStatus::neg_rhou;
+    else if (rho < 0) return InversionStatus::neg_rho;
     else if (u < 0) return InversionStatus::neg_u;
 
     // Set primitives
-    P(m_p.RHO, k, j, i) = rho0;
+    P(m_p.RHO, k, j, i) = rho;
     P(m_p.UU, k, j, i) = u;
 
     // Find u(tilde); Eqn. 31 of Noble et al.
@@ -207,8 +201,8 @@ KOKKOS_INLINE_FUNCTION Real err_eqn(const Real& gam, const Real& Bsq, const Real
     Real gamma = lorentz_calc_w(Bsq, D, QdB, Qtsq, Wp);
     if (gamma < 1) eflag = InversionStatus::bad_ut;
     Real w = W / pow(gamma,2);
-    Real rho0 = D / gamma;
-    Real p = (w - rho0) * (gam - 1) / gam;
+    Real rho = D / gamma;
+    Real p = (w - rho) * (gam - 1) / gam;
 
     return -Ep + Wp - p + 0.5 * Bsq + 0.5 * (Bsq * Qtsq - QdB * QdB) / pow((Bsq + W), 2);
 
