@@ -7,7 +7,7 @@ import sys
 import numpy as np
 import h5py
 
-outf = h5py.File(sys.argv[2], "r+")
+outf = h5py.File(sys.argv[1], "r+")
 
 # Parthenon records the full size here,
 # but pretty clearly expects the size without ghost zones.
