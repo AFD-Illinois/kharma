@@ -76,20 +76,21 @@ TaskStatus Flux::PrimToFlux(MeshBlockData<Real> *rc, IndexDomain domain)
     return TaskStatus::complete;
 }
 
-TaskStatus Flux::ApplyFluxes(MeshBlockData<Real> *rc, MeshBlockData<Real> *dudt)
+TaskStatus Flux::ApplyFluxes(MeshData<Real> *md, MeshData<Real> *mdudt)
 {
     FLAG("Applying fluxes");
-    auto pmb = rc->GetBlockPointer();
+    auto pmesh = md->GetMeshPointer();
+    auto pmb = md->GetBlockData(0)->GetBlockPointer();
     IndexDomain domain = IndexDomain::interior;
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
-    const int ndim = pmb->pmy_mesh->ndim;
+    const int ndim = pmesh->ndim;
 
     PackIndexMap prims_map, cons_map;
-    auto P = GRMHD::PackMHDPrims(rc, prims_map); // We only need these
-    auto U = rc->PackVariablesAndFluxes({Metadata::Conserved}, cons_map);
-    auto dUdt = dudt->PackVariables({Metadata::Conserved});
+    auto P = GRMHD::PackMHDPrims(md, prims_map); // We only need MHD prims
+    auto U = md->PackVariablesAndFluxes(std::vector<MetadataFlag>{Metadata::Conserved}, cons_map); // But we need all conserved vars
+    auto dUdt = mdudt->PackVariables(std::vector<MetadataFlag>{Metadata::Conserved}); // TODO can we use cons_map to ensure same?
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
     const int nvar = U.GetDim(4);
 
@@ -99,9 +100,9 @@ TaskStatus Flux::ApplyFluxes(MeshBlockData<Real> *rc, MeshBlockData<Real> *dudt)
     const size_t total_scratch_bytes = 0;
     const int scratch_level = 0;
 
-    pmb->par_for_outer("apply_fluxes", total_scratch_bytes, scratch_level,
-        ks, ke, js, je,
-        KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int& k, const int& j) {
+    parthenon::par_for_outer(DEFAULT_OUTER_LOOP_PATTERN, "apply_fluxes", pmb->exec_space,
+        total_scratch_bytes, scratch_level, 0, U.GetDim(5) - 1, ks, ke, js, je,
+        KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int& b, const int& k, const int& j) {
             // This at least has a *chance* of being SIMD-fied, without invoking double kernel launch overhead.
             // Parthenon has a version of this kernel but either (1) no launch overhead or (2) loss of generality
             // mean this one is faster in my experience. YMMV.
@@ -109,9 +110,9 @@ TaskStatus Flux::ApplyFluxes(MeshBlockData<Real> *rc, MeshBlockData<Real> *dudt)
                 parthenon::par_for_inner(member, is, ie,
                     [&](const int& i) {
                         // Apply all existing fluxes
-                            dUdt(p, k, j, i) = (U.flux(X1DIR, p, k, j, i) - U.flux(X1DIR, p, k, j, i+1)) / G.dx1v(i);
-                            if (ndim > 1) dUdt(p, k, j, i) += (U.flux(X2DIR, p, k, j, i) - U.flux(X2DIR, p, k, j+1, i)) / G.dx2v(j);
-                            if (ndim > 2) dUdt(p, k, j, i) += (U.flux(X3DIR, p, k, j, i) - U.flux(X3DIR, p, k+1, j, i)) / G.dx3v(k);
+                            dUdt(b, p, k, j, i) = (U(b).flux(X1DIR, p, k, j, i) - U(b).flux(X1DIR, p, k, j, i+1)) / G.dx1v(i);
+                            if (ndim > 1) dUdt(b, p, k, j, i) += (U(b).flux(X2DIR, p, k, j, i) - U(b).flux(X2DIR, p, k, j+1, i)) / G.dx2v(j);
+                            if (ndim > 2) dUdt(b, p, k, j, i) += (U(b).flux(X3DIR, p, k, j, i) - U(b).flux(X3DIR, p, k+1, j, i)) / G.dx3v(k);
                     }
                 );
             }
@@ -119,8 +120,8 @@ TaskStatus Flux::ApplyFluxes(MeshBlockData<Real> *rc, MeshBlockData<Real> *dudt)
                 [&](const int& i) {
                     // Then calculate and add the GRMHD source term
                     FourVectors Dtmp;
-                    GRMHD::calc_4vecs(G, P, m_p, k, j, i, Loci::center, Dtmp);
-                    GRMHD::add_source(G, P, m_p, Dtmp, gam, k, j, i, dUdt, m_u);
+                    GRMHD::calc_4vecs(G, P(b), m_p, k, j, i, Loci::center, Dtmp);
+                    GRMHD::add_source(G, P(b), m_p, Dtmp, gam, k, j, i, dUdt(b), m_u);
                 }
             );
         }

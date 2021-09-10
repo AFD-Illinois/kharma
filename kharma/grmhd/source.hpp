@@ -45,7 +45,7 @@ namespace GRMHD
  * 
  * Note Flux::ApplyFluxes = parthenon::FluxDivergence + GRMHD::AddSource
  */
-TaskStatus AddSource(MeshBlockData<Real> *rc, MeshBlockData<Real> *dudt);
+TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt);
 
 /**
  * Function to add the source term in the GRMHD equations T^\mu_nu \Gamma^\nu_\lam\mu

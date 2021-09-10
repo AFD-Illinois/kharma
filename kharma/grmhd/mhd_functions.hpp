@@ -279,15 +279,14 @@ KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates& G, const VariablePack<Re
  * Special p_to_u call for fluid frame floors, which require a speculative transformation to add to existing U
  * Also used in the wind source term calculation, of all places
  */
-KOKKOS_INLINE_FUNCTION void p_to_u_floor(const GRCoordinates& G, const Real& rho, const Real& u, const Real uvec[NVEC],
-                                   const Real& gam, const int& k, const int& j, const int& i,
+KOKKOS_INLINE_FUNCTION void p_to_u_loc(const GRCoordinates& G, const Real& rho, const Real& u, const Real uvec[NVEC],
+                                   const Real B_P[NVEC], const Real& gam, const int& k, const int& j, const int& i,
                                    Real& rho_ut, Real T[GR_DIM], const Loci loc=Loci::center)
 {
     Real gdet = G.gdet(loc, j, i);
 
     FourVectors Dtmp;
-    Real B[NVEC] = {0}; // We will never be adding field
-    calc_4vecs(G, uvec, B, k, j, i, loc, Dtmp);
+    calc_4vecs(G, uvec, B_P, k, j, i, loc, Dtmp);
 
     // Particle number flux
     rho_ut = rho * Dtmp.ucon[0] * gdet;

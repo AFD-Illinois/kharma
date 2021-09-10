@@ -36,38 +36,36 @@
 
 #include "pack.hpp"
 
-TaskStatus GRMHD::AddSource(MeshBlockData<Real> *rc, MeshBlockData<Real> *dudt)
+TaskStatus GRMHD::AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
 {
     FLAG("Adding GRMHD source");
-    auto pmb = rc->GetBlockPointer();
+    auto pmesh = md->GetMeshPointer();
+    auto pmb = md->GetBlockData(0)->GetBlockPointer();
     IndexDomain domain = IndexDomain::interior;
     auto ib = pmb->cellbounds.GetBoundsI(domain);
     auto jb = pmb->cellbounds.GetBoundsJ(domain);
     auto kb = pmb->cellbounds.GetBoundsK(domain);
-    const int ndim = pmb->pmy_mesh->ndim;
+    const int ndim = pmesh->ndim;
 
     PackIndexMap prims_map, cons_map;
-    auto P = GRMHD::PackMHDPrims(rc, prims_map);
-    auto dUdt = GRMHD::PackMHDCons(dudt, cons_map);
+    auto P = GRMHD::PackMHDPrims(md, prims_map);
+    auto dUdt = GRMHD::PackMHDCons(mdudt, cons_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
 
     const auto& G = pmb->coords;
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
 
+    auto block = IndexRange{0, P.GetDim(5)-1};
+
     size_t total_scratch_bytes = 0;
     int scratch_level = 0;
 
-    pmb->par_for_outer("grmhd_source", total_scratch_bytes, scratch_level,
-        kb.s, kb.e, jb.s, jb.e,
-        KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int& k, const int& j) {
-            parthenon::par_for_inner(member, ib.s, ib.e,
-                [&](const int& i) {
-                    // Then calculate and add the GRMHD source term
-                    FourVectors Dtmp;
-                    GRMHD::calc_4vecs(G, P, m_p, k, j, i, Loci::center, Dtmp);
-                    GRMHD::add_source(G, P, m_p, Dtmp, gam, k, j, i, dUdt, m_u);
-                }
-            );
+    pmb->par_for("grmhd_source", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+        KOKKOS_LAMBDA_MESH_3D {
+            // Then calculate and add the GRMHD source term
+            FourVectors Dtmp;
+            GRMHD::calc_4vecs(G, P(b), m_p, k, j, i, Loci::center, Dtmp);
+            GRMHD::add_source(G, P(b), m_p, Dtmp, gam, k, j, i, dUdt(b), m_u);
         }
     );
 

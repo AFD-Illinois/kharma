@@ -47,7 +47,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin);
 /**
  * Add the wind source term.  Applied just after the FluxDivergence/ApplyFluxes calculation
  */
-TaskStatus AddWind(MeshBlockData<Real> *rc, MeshBlockData<Real> *dudt);
+TaskStatus AddWind(MeshData<Real> *mdudt, double time);
 
 /**
  * Function to add a "wind" source term, in addition to the usual GRMHD coordinate source term
@@ -72,13 +72,13 @@ KOKKOS_INLINE_FUNCTION void add_wind(const GRCoordinates &G,
     // TODO poles only w/e.g. cos2?
     Real drhopdt = n * pow(cos(th), power) / pow(1. + r * r, 2);
 
-    // Insert fluid in normal observer frame
-    const Real uvec[NVEC] = {0};
+    // Insert fluid in normal observer frame, without B field
+    const Real uvec[NVEC] = {0}, B_P[NVEC] = {0};
 
     // Add plasma to the T^t_a component of the stress-energy tensor
     // Notice that U already contains a factor of sqrt{-g}
     Real rho_ut, T[GR_DIM];
-    GRMHD::p_to_u_floor(G, drhopdt, drhopdt * Tp * 3., uvec, gam, k, j, i, rho_ut, T);
+    GRMHD::p_to_u_loc(G, drhopdt, drhopdt * Tp * 3., uvec, B_P, gam, k, j, i, rho_ut, T);
 
     dUdt(m.RHO, k, j, i) += rho_ut;
     dUdt(m.UU, k, j, i) += T[0];

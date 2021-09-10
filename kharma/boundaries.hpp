@@ -24,7 +24,7 @@ void ReflectOuterX2(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse);
 /**
  * Fix fluxes on physical boundaries. Ensure no inflow flux, correct B fields on reflecting conditions.
  */
-TaskStatus FixFlux(MeshBlockData<Real> *rc);
+TaskStatus FixFlux(MeshData<Real> *rc);
 
 /**
  * Check for flow into simulation and reset velocity to eliminate it

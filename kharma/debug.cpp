@@ -48,7 +48,8 @@ TaskStatus CheckNaN(MeshData<Real> *md, int dir, IndexDomain domain)
     FLAG("Checking ctop for NaNs");
     auto pmesh = md->GetMeshPointer();
 
-    // TODO not sure how Face variables get packed
+    // TODO
+    //auto& ctop = md->PackVariables(std::vector<std::string>{"ctop"});
 
     int nzero = 0, nnan = 0;
     for (auto &pmb : pmesh->block_list) {
@@ -56,21 +57,21 @@ TaskStatus CheckNaN(MeshData<Real> *md, int dir, IndexDomain domain)
         IndexRange jb = pmb->cellbounds.GetBoundsJ(domain);
         IndexRange kb = pmb->cellbounds.GetBoundsK(domain);
 
-        auto ctop = pmb->meshblock_data.Get()->GetFace("ctop").data;
+        auto ctop = pmb->meshblock_data.Get()->Get("ctop").data;
 
         int nzero_l = 0, nnan_l = 0;
         Kokkos::Sum<int> zero_reducer(nzero_l);
         Kokkos::Sum<int> nan_reducer(nnan_l);
         pmb->par_reduce("ctop_zeros", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
             KOKKOS_LAMBDA_3D_REDUCE_INT {
-                if (ctop(dir, k, j, i) <= 0.) {
+                if (ctop(dir-1, k, j, i) <= 0.) {
                     ++local_result;
                 }
             }
         , zero_reducer);
         pmb->par_reduce("ctop_nans", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
             KOKKOS_LAMBDA_3D_REDUCE_INT {
-                if (isnan(ctop(dir, k, j, i))) {
+                if (isnan(ctop(dir-1, k, j, i))) {
                     ++local_result;
                 }
             }
@@ -81,7 +82,9 @@ TaskStatus CheckNaN(MeshData<Real> *md, int dir, IndexDomain domain)
     }
 
     if (nzero > 0 || nnan > 0) {
-        throw std::runtime_error(string_format("Max signal speed ctop was 0 or NaN, direction (%d zero, %d NaN)", nzero, nnan));
+        // TODO string formatting in C++ that doesn't suck
+        fprintf(stderr, "Max signal speed ctop was 0 or NaN, direction %d (%d zero, %d NaN)", dir, nzero, nnan);
+        throw std::runtime_error("Bad ctop!");
     }
 
     // TODO reimplement printing *where* values were hit

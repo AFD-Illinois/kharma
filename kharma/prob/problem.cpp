@@ -90,7 +90,14 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
     // TODO evaluate determinism here. How are MeshBlock gids assigned?
     PerturbU(rc.get(), pin);
 
+    // Initialize electron entropies if enabled
+    if (pmb->packages.AllPackages().count("Electrons")) {
+        Electrons::InitElectrons(rc.get(), pin);
+    }
+
     // Apply any floors
+    // This is purposefully done even if floors are disabled,
+    // as it is required for consistent initialization
     GRMHD::ApplyFloors(rc.get());
 
     // Fill the conserved variables U,

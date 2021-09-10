@@ -72,9 +72,12 @@ inline void FillDerived(MeshBlockData<Real> *rc) { UtoP(rc); }
 TaskStatus AddSource(MeshBlockData<Real> *rc, MeshBlockData<Real> *dudt);
 
 /**
- * Take a maximum over the divB array, which is updated every step 
+ * Take a maximum over the divB array, which is updated every step
+ * 
+ * Used as a Parthenon History function, so must take exactly the
+ * listed arguments
  */
-Real MaxDivB(MeshData<Real> *md, IndexDomain domain=IndexDomain::interior);
+Real MaxDivB(MeshData<Real> *md);
 
 /**
  * Diagnostics printed/computed after each step

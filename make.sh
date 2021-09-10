@@ -117,7 +117,10 @@ SCRIPT_DIR=$PWD
 # Strongly prefer icc for OpenMP compiles
 # I would try clang but it would break all Macs
 if [[ -z "$CXX_NATIVE" ]]; then
-  if which icpc >/dev/null 2>&1; then
+  if which icpx >/dev/null 2>&1; then
+    CXX_NATIVE=icpx
+    C_NATIVE=icx
+  elif which icpc >/dev/null 2>&1; then
     CXX_NATIVE=icpc
     C_NATIVE=icc
     # Avoid warning on nvcc pragmas Intel doesn't like

@@ -18,6 +18,8 @@ export CUDA_LAUNCH_BLOCKING=0
 KHARMA_DIR="$(dirname $0)"
 if [ -f $KHARMA_DIR/kharma.cuda ]; then
   EXE_NAME=kharma.cuda
+elif [ -f $KHARMA_DIR/kharma.sycl ]; then
+  EXE_NAME=kharma.sycl
 elif [ -f $KHARMA_DIR/kharma.host ]; then
   EXE_NAME=kharma.host
 else
@@ -34,6 +36,6 @@ fi
 #mpirun -n 8 $KHARMA_DIR/$EXE_NAME "$@"
 #mpirun -n 4 $KHARMA_DIR/$EXE_NAME "$@"
 #mpirun -n 2 $KHARMA_DIR/$EXE_NAME "$@"
-mpirun -n 1 $KHARMA_DIR/$EXE_NAME "$@"
+#mpirun -n 1 $KHARMA_DIR/$EXE_NAME "$@"
 #mpirun -n 2 --map-by ppr:1:numa:pe=14 $KHARMA_DIR/$EXE_NAME "$@"
-#$KHARMA_DIR/$EXE_NAME "$@"
+$KHARMA_DIR/$EXE_NAME "$@"

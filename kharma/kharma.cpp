@@ -45,6 +45,7 @@
 #include "current.hpp"
 #include "electrons.hpp"
 #include "grmhd.hpp"
+#include "reductions.hpp"
 #include "wind.hpp"
 
 #include "bondi.hpp"
@@ -57,8 +58,10 @@ std::shared_ptr<StateDescriptor> KHARMA::InitializeGlobals(ParameterInput *pin)
 {
     auto pkg = std::make_shared<StateDescriptor>("Globals");
     Params &params = pkg->AllParams();
+    // Current time in the simulation.  For ramping things up, ramping things down,
+    // or preventing bad outcomes at known times
+    params.Add("time", 0.0);
     // Last step's dt (Parthenon SimTime tm.dt), which must be preserved to output jcon
-    // Also used to prevent any 
     params.Add("dt_last", 0.0);
     // Accumulator for maximum ctop within an MPI process
     params.Add("ctop_max", 0.0);
@@ -156,10 +159,11 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
     // Read all options first so we can set their defaults here,
     // before any packages are initialized.
     std::string b_field_solver = pin->GetOrAddString("b_field", "solver", "flux_ct");
-    bool do_wind = pin->GetOrAddBoolean("wind", "on", false);
     // TODO if jcon in outputs then...
     bool add_jcon = pin->GetOrAddBoolean("GRMHD", "add_jcon", true);
     bool do_electrons = pin->GetOrAddBoolean("electrons", "on", false);
+    bool do_reductions = pin->GetOrAddBoolean("reductions", "on", true);
+    bool do_wind = pin->GetOrAddBoolean("wind", "on", false);
 
     // Global variables "package."  Anything that just, really oughta be a global
     packages.Add(KHARMA::InitializeGlobals(pin.get()));
@@ -168,7 +172,7 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
     // initialize it first among physics stuff
     packages.Add(GRMHD::Initialize(pin.get()));
 
-    // B field solvers, to ensure divB == 0. 
+    // B field solvers, to ensure divB == 0.
     if (b_field_solver == "none") {
         // Don't add a B field
         // Currently this means fields are still allocated, and processing is done in GRMHD,
@@ -194,6 +198,10 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
         packages.Add(Electrons::Initialize(pin.get(), packages));
     }
 
+    if (do_reductions) {
+        packages.Add(Reductions::Initialize(pin.get()));
+    }
+
     return std::move(packages);
 }
 
@@ -201,14 +209,11 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
 // TODO decide on a consistent implementation of foreach packages -> do X
 void KHARMA::FillDerivedDomain(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, int coarse)
 {
-    FLAG("Filling derived vars after applying physical boundaries");
-    // We need to re-fill the "derived" (primitive) variables from everything
-    // except GRMHD
+    FLAG("Filling derived variables on boundaries");
+    // We need to re-fill the "derived" (primitive) variables on the physical boundaries,
+    // since we already called "FillDerived" before the ghost zones were initialized
+    // This does *not* apply to the GRMHD variables, just any passives or extras
     auto pmb = rc->GetBlockPointer();
-    if (pmb->packages.AllPackages().count("B_CD"))
-        B_CD::UtoP(rc.get(), domain, coarse);
-    if (pmb->packages.AllPackages().count("B_FluxCT"))
-        B_FluxCT::UtoP(rc.get(), domain, coarse);
     if (pmb->packages.AllPackages().count("Electrons"))
         Electrons::UtoP(rc.get(), domain, coarse);
 
@@ -225,14 +230,16 @@ void KHARMA::PreStepMeshUserWorkInLoop(Mesh *pmesh, ParameterInput *pin, const S
 void KHARMA::PostStepMeshUserWorkInLoop(Mesh *pmesh, ParameterInput *pin, const SimTime &tm)
 {
     // Knowing this works took a little digging into Parthenon's EvolutionDriver.
-    // The order of operations is:
+    // The order of operations after calling Step() is:
     // 1. Call PostStepUserWorkInLoop and PostStepDiagnostics (this function and following)
     // 2. Set the timestep tm.dt to the minimum from the EstimateTimestep calls
     // 3. Generate any outputs, e.g. jcon
     // Thus we preserve tm.dt (which has not yet been reset) as dt_last for Current::FillOutput
-    pmesh->packages.Get("Globals")->UpdateParam<Real>("dt_last", tm.dt);
+    pmesh->packages.Get("Globals")->UpdateParam<double>("dt_last", tm.dt);
+    pmesh->packages.Get("Globals")->UpdateParam<double>("time", tm.time);
 
     // ctop_max has fewer rules. It's just convenient to set here since we're assured of no MPI hangs
+    // Since it involves an MPI sync, we only keep track of this when we need it
     if (pmesh->packages.AllPackages().count("B_CD")) {
         Real ctop_max_last = MPIMax(pmesh->packages.Get("Globals")->Param<Real>("ctop_max"));
         pmesh->packages.Get("Globals")->UpdateParam<Real>("ctop_max_last", ctop_max_last);

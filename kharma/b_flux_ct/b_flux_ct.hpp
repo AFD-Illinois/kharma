@@ -63,36 +63,40 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
  * input: Conserved B = sqrt(-gdet) * B^i
  * output: Primitive B = B^i
  */
-void UtoP(MeshBlockData<Real> *rc, IndexDomain domain=IndexDomain::entire, bool coarse=false);
-inline void FillDerived(MeshBlockData<Real> *rc) { UtoP(rc); }
+void UtoP(MeshData<Real> *md, IndexDomain domain=IndexDomain::entire, bool coarse=false);
+inline void FillDerivedMesh(MeshData<Real> *md) { UtoP(md); }
+void UtoP(MeshBlockData<Real> *md, IndexDomain domain=IndexDomain::entire, bool coarse=false);
+inline void FillDerivedBlock(MeshBlockData<Real> *rc) { UtoP(rc); }
 
 /**
  * Modify the B field fluxes to take a constrained-transport step as in Toth (2000)
  */
-TaskStatus FluxCT(MeshBlockData<Real> *rc);
+TaskStatus FluxCT(MeshData<Real> *md);
 
 /**
  * Modify the B field fluxes just beyond the polar boundary so as to ensure no flux through it,
  * after applying FluxCT
  */
-TaskStatus FixPolarFlux(MeshBlockData<Real> *rc);
+TaskStatus FixPolarFlux(MeshData<Real> *md);
 
 /**
  * Task combining the above two (polar fix and FluxCT) for simplicity
  */
-TaskStatus TransportB(MeshBlockData<Real> *rc);
+TaskStatus TransportB(MeshData<Real> *md);
 
 /**
  * Calculate maximum corner-centered divergence of magnetic field,
  * to check it is being preserved ~=0
+ * Used as a Parthenon History function, so must take exactly the
+ * listed arguments
  */
-double MaxDivB(MeshData<Real> *md, IndexDomain domain=IndexDomain::interior);
+double MaxDivB(MeshData<Real> *md);
 
 /**
  * Diagnostics printed/computed after each step
  * Currently just max divB
  */
-TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *rc);
+TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md);
 
 /**
  * Fill fields which are calculated only for output to file

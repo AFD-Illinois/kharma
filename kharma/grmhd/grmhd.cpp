@@ -115,7 +115,9 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     // } else if (recon == "weno5_lower_poles") {
     //     params.Add("recon", ReconstructionType::weno5_lower_poles);
     } else {
-        throw std::invalid_argument(string_format("Unsupported reconstruction algorithm %s!", recon));
+        cerr << "Reconstruction type not supported!  Supported reconstructions:" << endl;
+        cerr << "donor_cell, linear_mc, linear_vl, weno5" << endl;
+        throw std::invalid_argument("Unsupported reconstruction algorithm!");
     }
 
     // Diagnostic data
@@ -131,9 +133,6 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     // have a tendency to interact with fixing (& causing!) UtoP failures,
     // so we want to have control of the order in which floors/fixUtoP are
     // applied.
-    bool disable_floors = pin->GetOrAddBoolean("floors", "disable_floors", false);
-    params.Add("disable_floors", disable_floors);
-
     double rho_min_geom, u_min_geom;
     if (pin->GetBoolean("coordinates", "spherical")) {
         // In spherical systems, floors drop as r^2, so set them higher by default
@@ -165,22 +164,27 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     bool fluid_frame = pin->GetOrAddBoolean("floors", "fluid_frame", false);
     params.Add("fluid_frame", fluid_frame);
 
-    // Boundary options
-    // Note these only trigger on "user" boundary conditions i.e. polar x2, outflow x1
-    // Thus you pretty much always want both true.
-    bool fix_flux_inflow = pin->GetOrAddBoolean("bounds", "fix_flux_inflow", true);
-    params.Add("fix_flux_inflow", fix_flux_inflow);
+    // Disable all floors.  It is obviously tremendously inadvisable to
+    // set this option to true
+    bool disable_floors = pin->GetOrAddBoolean("floors", "disable_floors", false);
+    params.Add("disable_floors", disable_floors);
+
+    // Option to disable checking the fluxes 
+    bool check_inflow_inner = pin->GetOrAddBoolean("bounds", "check_inflow_inner", true);
+    params.Add("check_inflow_inner", check_inflow_inner);
+    bool check_inflow_outer = pin->GetOrAddBoolean("bounds", "check_inflow_outer", true);
+    params.Add("check_inflow_outer", check_inflow_outer);
     bool fix_flux_pole = pin->GetOrAddBoolean("bounds", "fix_flux_pole", true);
     params.Add("fix_flux_pole", fix_flux_pole);
 
 
     // Performance options
     // Boundary buffers.  Packing is experimental in Parthenon
-    bool buffer_send_pack = pin->GetOrAddBoolean("perf", "buffer_send_pack", false);
+    bool buffer_send_pack = pin->GetOrAddBoolean("perf", "buffer_send_pack", true);
     params.Add("buffer_send_pack", buffer_send_pack);
-    bool buffer_recv_pack = pin->GetOrAddBoolean("perf", "buffer_recv_pack", false);
+    bool buffer_recv_pack = pin->GetOrAddBoolean("perf", "buffer_recv_pack", true);
     params.Add("buffer_recv_pack", buffer_recv_pack);
-    bool buffer_set_pack = pin->GetOrAddBoolean("perf", "buffer_set_pack", false);
+    bool buffer_set_pack = pin->GetOrAddBoolean("perf", "buffer_set_pack", true);
     params.Add("buffer_set_pack", buffer_set_pack);
     bool combine_flux_source = pin->GetOrAddBoolean("perf", "combine_flux_source", true);
     params.Add("combine_flux_source", combine_flux_source);
@@ -245,7 +249,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     }
 
     // Maximum signal speed (magnitude).  Calculated in flux updates but needed for deciding timestep
-    m = Metadata({Metadata::Real, Metadata::Face, Metadata::Derived, Metadata::OneCopy});
+    m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy}, s_vector);
     pkg->AddField("ctop", m);
 
     // Temporary fix just for being able to save field values
@@ -259,7 +263,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     pkg->CheckRefinementBlock = GRMHD::CheckRefinement;
     pkg->EstimateTimestepBlock = GRMHD::EstimateTimestep;
     pkg->PostStepDiagnosticsMesh = GRMHD::PostStepDiagnostics;
-    // TODO historyfile output w/new reduction operations
+
     return pkg;
 }
 
@@ -303,6 +307,9 @@ void UtoP(MeshBlockData<Real> *rc)
         KOKKOS_LAMBDA_3D {
             if (P(m_p.RHO, k, j, i) != 0. || P(m_p.UU, k, j, i) != 0.) {
                 pflag(k, j, i) = GRMHD::u_to_p(G, U, m_u, gam, k, j, i, Loci::center, P, m_p);
+            } else {
+                // Don't *use* un-initialized zones for fixes, but also don't *fix* them
+                pflag(k, j, i) = -1;
             }
         }
     );
@@ -332,7 +339,7 @@ Real EstimateTimestep(MeshBlockData<Real> *rc)
     IndexRange jb = pmb->cellbounds.GetBoundsJ(IndexDomain::interior);
     IndexRange kb = pmb->cellbounds.GetBoundsK(IndexDomain::interior);
     const auto& G = pmb->coords;
-    auto& ctop = rc->GetFace("ctop").data;
+    auto& ctop = rc->Get("ctop").data;
 
     // TODO: move timestep limiter into an override of SetGlobalTimestep?
     // TODO: move diagnostic printing to PostStepDiagnostics?
@@ -346,9 +353,9 @@ Real EstimateTimestep(MeshBlockData<Real> *rc)
     pmb->par_reduce("ndt_min", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA(const int k, const int j, const int i,
                       typename Kokkos::MinMax<Real>::value_type &lminmax) {
-            double ndt_zone = 1 / (1 / (G.dx1v(i) / ctop(1, k, j, i)) +
-                                   1 / (G.dx2v(j) / ctop(2, k, j, i)) +
-                                   1 / (G.dx3v(k) / ctop(3, k, j, i)));
+            double ndt_zone = 1 / (1 / (G.dx1v(i) / ctop(0, k, j, i)) +
+                                   1 / (G.dx2v(j) / ctop(1, k, j, i)) +
+                                   1 / (G.dx3v(k) / ctop(2, k, j, i)));
             // Effective "max speed" used for the timestep
             double ctop_max_zone = min(G.dx1v(i), min(G.dx2v(j), G.dx3v(k))) / ndt_zone;
 
@@ -381,9 +388,9 @@ Real EstimateTimestep(MeshBlockData<Real> *rc)
         auto pflag = rc->Get("pflag").data;
         pmb->par_for("ndt_min", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
             KOKKOS_LAMBDA_3D {
-                double ndt_zone = 1 / (1 / (G.dx1v(i) / ctop(1, k, j, i)) +
-                                       1 / (G.dx2v(j) / ctop(2, k, j, i)) +
-                                       1 / (G.dx3v(k) / ctop(3, k, j, i)));
+                double ndt_zone = 1 / (1 / (G.dx1v(i) / ctop(0, k, j, i)) +
+                                       1 / (G.dx2v(j) / ctop(1, k, j, i)) +
+                                       1 / (G.dx3v(k) / ctop(2, k, j, i)));
                 if (ndt_zone == min_ndt) {
                     printf("Timestep set by %d %d %d: pflag was %f and fflag was %f\n",
                            i, j, k, pflag(k, j, i), fflag(k, j, i));
@@ -444,9 +451,9 @@ TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
         // TODO move CheckNaN here?  Do we preserve ctop to end of step correctly?
 
         if (pmb->packages.Get("GRMHD")->Param<int>("extra_checks") >= 1) {
-            CheckNaN(md, 1);
-            if (pmesh->ndim > 1) CheckNaN(md, 2);
-            if (pmesh->ndim > 2) CheckNaN(md, 3);
+            CheckNaN(md, X1DIR);
+            if (pmesh->ndim > 1) CheckNaN(md, X2DIR);
+            if (pmesh->ndim > 2) CheckNaN(md, X3DIR);
         }
 
         // Extra checking for negative values.  Floors should definitely prevent this,

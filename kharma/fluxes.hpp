@@ -57,7 +57,7 @@ namespace Flux {
  * @param rc is the current stage's container
  * @param dudt is the base container containing the global dUdt term
  */
-TaskStatus ApplyFluxes(MeshBlockData<Real> *rc, MeshBlockData<Real> *dudt);
+TaskStatus ApplyFluxes(MeshData<Real> *md, MeshData<Real> *mdudt);
 
 /**
  * Fill all conserved variables (U) from primitive variables (P), over the whole grid.
@@ -100,10 +100,10 @@ KOKKOS_INLINE_FUNCTION Real hlle(const Real& fluxL, const Real& fluxR, const Rea
  * the particular reconstruction call we need.
  */
 template <ReconstructionType Recon, int dir>
-inline TaskStatus GetFlux(MeshBlockData<Real> *rc)
+inline TaskStatus GetFlux(MeshData<Real> *md)
 {
-    FLAG(string_format("Recon and flux X%d", dir));
-    auto pmb = rc->GetBlockPointer();
+    FLAG("Recon and flux");
+    auto pmb = md->GetBlockData(0)->GetBlockPointer();
     IndexDomain domain = IndexDomain::interior;
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
@@ -124,13 +124,6 @@ inline TaskStatus GetFlux(MeshBlockData<Real> *rc)
     if (ndim < 2 && dir == X2DIR) return TaskStatus::complete;
 
     int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
-    if (0) { // No amount of verbosity warrants this abuse,
-            // but if the code segfaults these numbers are a likely culprit
-        int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
-        int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
-        cout << string_format("Domain: %d-%d %d-%d %d-%d", is_l, ie_l, js_l, je_l, ks_l, ke_l) << endl;
-        cout << string_format("Total: %dx%dx%d", n1, n2, n3) << endl;
-    }
 
     // OPTIONS
     bool use_hlle = pmb->packages.Get("GRMHD")->Param<bool>("use_hlle");
@@ -161,12 +154,14 @@ inline TaskStatus GetFlux(MeshBlockData<Real> *rc)
     const Loci loc = loc_tmp;
 
     // VARIABLES
-    auto& ctop = rc->GetFace("ctop").data;
+    // Note that this is accessed *differently* from just pulling a face-centered field
+    // ctop is now indexed 0-2
+    auto& ctop = md->PackVariables(std::vector<std::string>{"ctop"});
     // Pack all primitive and conserved variables,
     MetadataFlag isPrimitive = pmb->packages.Get("GRMHD")->Param<MetadataFlag>("PrimitiveFlag");
     PackIndexMap prims_map, cons_map;
-    const auto& P = rc->PackVariables({isPrimitive}, prims_map);
-    const auto& U = rc->PackVariablesAndFluxes({Metadata::Conserved}, cons_map);
+    const auto& P = md->PackVariables(std::vector<MetadataFlag>{isPrimitive}, prims_map);
+    const auto& U = md->PackVariablesAndFluxes(std::vector<MetadataFlag>{Metadata::Conserved}, cons_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
     const int nvar = U.GetDim(4);
     FLAG("Packed variables");
@@ -178,13 +173,28 @@ inline TaskStatus GetFlux(MeshBlockData<Real> *rc)
     // Allocate enough to cache prims, conserved, and fluxes, for left and right faces,
     // plus temporaries inside reconstruction (linear_vl uses a bunch)
     // Then add cmax and cmin!
-    const size_t total_scratch_bytes = (6 + 1 + 4*(Recon == ReconstructionType::linear_vl)) * var_size_in_bytes
+    const size_t total_scratch_bytes = (6 + 1*(Recon != ReconstructionType::weno5) + // Parthenon recons 
+                                            4*(Recon == ReconstructionType::linear_vl)) * var_size_in_bytes
                                         + 2 * speed_size_in_bytes;
 
+    // Prints for if you get segfaults
+    // No amount of verbosity warrants this abuse in normal runs,
+    // but if the code segfaults these numbers are a likely culprit
+    if (0) {
+        int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
+        int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
+        printf("Flux kernel dimensions:\n");
+        printf("Domain: %d-%d %d-%d %d-%d\n", is_l, ie_l, js_l, je_l, ks_l, ke_l);
+        printf("Total: %dx%dx%d\n", n1, n2, n3);
+        printf("Prims size: %dx%dx%dx%dx%d\n", P.GetDim(5), P.GetDim(4), P.GetDim(3), P.GetDim(2), P.GetDim(1));
+        printf("Cons size: %dx%dx%dx%dx%d\n", U.GetDim(5), U.GetDim(4), U.GetDim(3), U.GetDim(2), U.GetDim(1));
+        printf("ctop size: %dx%dx%dx%dx%d\n", ctop.GetDim(5), ctop.GetDim(4), ctop.GetDim(3), ctop.GetDim(2), ctop.GetDim(1));
+    }
+
     FLAG("Flux kernel");
-    pmb->par_for_outer(string_format("flux_x%d", dir), total_scratch_bytes, scratch_level,
-        ks_l, ke_l, js_l, je_l,
-        KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int& k, const int& j) {
+    parthenon::par_for_outer(DEFAULT_OUTER_LOOP_PATTERN, "calc_flux", pmb->exec_space,
+        total_scratch_bytes, scratch_level, 0, U.GetDim(5) - 1, ks_l, ke_l, js_l, je_l,
+        KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int& b, const int& k, const int& j) {
             ScratchPad2D<Real> Pl(member.team_scratch(scratch_level), nvar, n1);
             ScratchPad2D<Real> Pr(member.team_scratch(scratch_level), nvar, n1);
             ScratchPad2D<Real> Ul(member.team_scratch(scratch_level), nvar, n1);
@@ -196,7 +206,7 @@ inline TaskStatus GetFlux(MeshBlockData<Real> *rc)
 
             // Wrapper for a big switch statement between reconstruction schemes. Possibly slow.
             // This function is generally a lot of if statements
-            KReconstruction::reconstruct<Recon, dir>(member, G, P, k, j, is_l, ie_l, Pl, Pr);
+            KReconstruction::reconstruct<Recon, dir>(member, G, P(b), k, j, is_l, ie_l, Pl, Pr);
 
             // Sync all threads in the team so that scratch memory is consistent
             member.team_barrier();
@@ -285,17 +295,17 @@ inline TaskStatus GetFlux(MeshBlockData<Real> *rc)
 
                     if (use_hlle) {
                         for (int p=0; p < nvar; ++p)
-                            U.flux(dir, p, k, j, i) = hlle(Fl(p,i), Fr(p,i), cmax(i), cmin(i), Ul(p,i), Ur(p,i));
+                            U(b).flux(dir, p, k, j, i) = hlle(Fl(p,i), Fr(p,i), cmax(i), cmin(i), Ul(p,i), Ur(p,i));
                     } else {
                         for (int p=0; p < nvar; ++p)
-                            U.flux(dir, p, k, j, i) = llf(Fl(p,i), Fr(p,i), cmax(i), cmin(i), Ul(p,i), Ur(p,i));
+                            U(b).flux(dir, p, k, j, i) = llf(Fl(p,i), Fr(p,i), cmax(i), cmin(i), Ul(p,i), Ur(p,i));
                     }
                     if (use_b_cd) {
                         // The unphysical variable psi and its corrections can propagate at the max speed
                         // for the stepsize, rather than the sound speed
                         // Since the speeds are the same it will always correspond to the LLF flux
-                        U.flux(dir, m_u.PSI, k, j, i) = llf(Fl(m_u.PSI,i), Fr(m_u.PSI,i), ctop_max, ctop_max, Ul(m_u.PSI,i), Ur(m_u.PSI,i));
-                        U.flux(dir, m_u.B1+dir-1, k, j, i) = llf(Fl(m_u.B1+dir-1,i), Fr(m_u.B1+dir-1,i), ctop_max, ctop_max, Ul(m_u.B1+dir-1,i), Ur(m_u.B1+dir-1,i));
+                        U(b).flux(dir, m_u.PSI, k, j, i) = llf(Fl(m_u.PSI,i), Fr(m_u.PSI,i), ctop_max, ctop_max, Ul(m_u.PSI,i), Ur(m_u.PSI,i));
+                        U(b).flux(dir, m_u.B1+dir-1, k, j, i) = llf(Fl(m_u.B1+dir-1,i), Fr(m_u.B1+dir-1,i), ctop_max, ctop_max, Ul(m_u.B1+dir-1,i), Ur(m_u.B1+dir-1,i));
                     }
 #else
                     // Calculate cmax/min based on comparison with cached values
@@ -303,7 +313,7 @@ inline TaskStatus GetFlux(MeshBlockData<Real> *rc)
                     cmin(i) = fabs(max(cmin(i), -cminR));
 #endif
                     // TODO is it faster to write ctop elsewhere?
-                    ctop(dir, k, j, i) = max(cmax(i), cmin(i));
+                    ctop(b, dir-1, k, j, i) = max(cmax(i), cmin(i));
                 }
             );
             member.team_barrier();
@@ -316,21 +326,21 @@ inline TaskStatus GetFlux(MeshBlockData<Real> *rc)
                     // Since the speeds are the same it will always correspond to the LLF flux
                     parthenon::par_for_inner(member, is_l, ie_l,
                         [&](const int& i) {
-                            U.flux(dir, p, k, j, i) = llf(Fl(p,i), Fr(p,i), ctop_max, ctop_max, Ul(p,i), Ur(p,i));
+                            U(b).flux(dir, p, k, j, i) = llf(Fl(p,i), Fr(p,i), ctop_max, ctop_max, Ul(p,i), Ur(p,i));
                         }
                     );
                 } else if (use_hlle) {
                     // Option to try HLLE fluxes for everything else
                     parthenon::par_for_inner(member, is_l, ie_l,
                         [&](const int& i) {
-                            U.flux(dir, p, k, j, i) = hlle(Fl(p,i), Fr(p,i), cmax(i), cmin(i), Ul(p,i), Ur(p,i));
+                            U(b).flux(dir, p, k, j, i) = hlle(Fl(p,i), Fr(p,i), cmax(i), cmin(i), Ul(p,i), Ur(p,i));
                         }
                     );
                 } else {
                     // Or LLF, probably safest option
                     parthenon::par_for_inner(member, is_l, ie_l,
                         [&](const int& i) {
-                                U.flux(dir, p, k, j, i) = llf(Fl(p,i), Fr(p,i), cmax(i), cmin(i), Ul(p,i), Ur(p,i));
+                                U(b).flux(dir, p, k, j, i) = llf(Fl(p,i), Fr(p,i), cmax(i), cmin(i), Ul(p,i), Ur(p,i));
                         }
                     );
                 }
@@ -339,7 +349,7 @@ inline TaskStatus GetFlux(MeshBlockData<Real> *rc)
         }
     );
 
-    FLAG(string_format("Finished recon and flux X%d", dir));
+    FLAG("Finished recon and flux");
     return TaskStatus::complete;
 }
 }

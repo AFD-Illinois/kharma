@@ -92,6 +92,15 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
 
     pkg->FillDerivedBlock = B_CD::FillDerived;
     pkg->PostStepDiagnosticsMesh = B_CD::PostStepDiagnostics;
+
+    // List (vector) of HistoryOutputVar that will all be enrolled as output variables
+    parthenon::HstVar_list hst_vars = {};
+    // In this package, we only care about MaxDivB
+    // unless you want like, the median or something
+    hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::max, MaxDivB, "MaxDivB"));
+    // add callbacks for HST output identified by the `hist_param_key`
+    pkg->AddParam<>(parthenon::hist_param_key, hst_vars);
+
     return pkg;
 }
 
@@ -190,9 +199,10 @@ TaskStatus AddSource(MeshBlockData<Real> *rc, MeshBlockData<Real> *dudt)
 
 // TODO figure out what divB from psi looks like?
 
-Real MaxDivB(MeshData<Real> *md, IndexDomain domain)
+Real MaxDivB(MeshData<Real> *md)
 {
     auto pmb = md->GetBlockData(0)->GetBlockPointer();
+    IndexDomain domain = IndexDomain::interior;
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
@@ -230,10 +240,7 @@ TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
     // Print this unless we quash everything
     int verbose = pmesh->packages.Get("B_CD")->Param<int>("verbose");
     if (verbose >= 0) {
-        // We probably only care on the physical grid
-        IndexDomain domain = IndexDomain::interior;
-
-        Real max_divb = B_CD::MaxDivB(md, domain);
+        Real max_divb = B_CD::MaxDivB(md);
         max_divb = MPIMax(max_divb);
 
         if(MPIRank0()) {

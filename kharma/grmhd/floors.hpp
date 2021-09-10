@@ -143,6 +143,7 @@ KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, const VariablePa
 
     // 2. Magnetization ceilings: impose maximum magnetization sigma = bsq/rho, and inverse beta prop. to bsq/U
     FourVectors Dtmp;
+    // TODO is there a more efficient way to calculate just bsq?
     GRMHD::calc_4vecs(G, P, m_p, k, j, i, loc, Dtmp);
     double bsq = dot(Dtmp.bcon, Dtmp.bcov);
     double rhoflr_b = bsq / floors.bsq_over_rho_max;
@@ -186,11 +187,11 @@ KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, const VariablePa
             // Adding the floors to the primitive variables
             rho = max(0., rhoflr_max - rho);
             u = max(0., uflr_max - u);
-            const Real uvec[NVEC] = {0};
+            const Real uvec[NVEC] = {0}, B[NVEC] = {0};
 
             // Calculating the corresponding conserved variables
             Real rho_ut, T[GR_DIM];
-            GRMHD::p_to_u_floor(G, rho, u, uvec, gam, k, j, i, rho_ut, T, loc);
+            GRMHD::p_to_u_loc(G, rho, u, uvec, B, gam, k, j, i, rho_ut, T, loc);
 
             // Add new conserved mass/energy to the current "conserved" state,
             // and to the local primitives as a guess

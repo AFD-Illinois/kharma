@@ -12,6 +12,7 @@ frames_*/
 *.phdf
 *.rhdf
 *.xdmf
+*.hst
 
 # Editor documents
 .project

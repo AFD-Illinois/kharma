@@ -77,7 +77,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     Real tp_over_te_max = pin->GetOrAddReal("electrons", "tp_over_te_max", 1000.0);
     params.Add("tp_over_te_max", tp_over_te_max);
 
-    bool suppress_highb_heat = pin->GetOrAddReal("electrons", "suppress_highb_heat", true);
+    bool suppress_highb_heat = pin->GetOrAddBoolean("electrons", "suppress_highb_heat", true);
     params.Add("suppress_highb_heat", suppress_highb_heat);
 
     // Model options
@@ -290,8 +290,6 @@ TaskStatus ApplyHeatingModels(MeshBlockData<Real> *rc_old, MeshBlockData<Real> *
             FourVectors Dtmp;
             GRMHD::calc_4vecs(G, P, m_p, k, j, i, Loci::center, Dtmp);
             Real bsq = dot(Dtmp.bcon, Dtmp.bcov);
-            // Suppress all heating at high sigma
-            if(suppress_highb_heat && (bsq / P(m_p.RHO, k, j, i) > 1.)) return;
 
             // Calculate total dissipation, update KTOT to reflect real entropy
             const Real kNew = (gam-1.) * P_new(m_p.UU, k, j, i) / pow(P_new(m_p.RHO, k, j, i) ,gam);
@@ -299,6 +297,9 @@ TaskStatus ApplyHeatingModels(MeshBlockData<Real> *rc_old, MeshBlockData<Real> *
             const Real diss = (game-1.) / (gam-1.) * pow(P(m_p.RHO, k, j, i), gam - game) * (kNew - P_new(m_p.KTOT, k, j, i));
             // Reset the entropy to measure next step's dissipation
             P_new(m_p.KTOT, k, j, i) = kNew;
+
+            // Suppress all heating at high sigma
+            if(suppress_highb_heat && (bsq / P(m_p.RHO, k, j, i) > 1.)) return;
 
             // Heat different electron passives based on different dissipation fraction models
             // Expressions here closely adapted (read: stolen) from implementation in iharm3d

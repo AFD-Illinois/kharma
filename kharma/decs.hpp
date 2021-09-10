@@ -106,6 +106,15 @@ using GeomTensor3 = parthenon::ParArrayND<Real>;
 #define KOKKOS_LAMBDA_5D KOKKOS_LAMBDA (const int& m, const int& l, const int &k, const int &j, const int &i)
 #define KOKKOS_LAMBDA_VARS KOKKOS_LAMBDA (const int &p, const int &k, const int &j, const int &i)
 #define KOKKOS_LAMBDA_VEC KOKKOS_LAMBDA (const int &mu, const int &k, const int &j, const int &i)
+// Same things for mesh-wide ops
+#define KOKKOS_LAMBDA_MESH_1D KOKKOS_LAMBDA (const int& b, const int& i)
+#define KOKKOS_LAMBDA_MESH_2D KOKKOS_LAMBDA (const int& b, const int& j, const int& i)
+#define KOKKOS_LAMBDA_MESH_3D KOKKOS_LAMBDA (const int& b, const int &k, const int &j, const int &i)
+#define KOKKOS_LAMBDA_MESH_4D KOKKOS_LAMBDA (const int& b, const int& l, const int &k, const int &j, const int &i)
+#define KOKKOS_LAMBDA_MESH_5D KOKKOS_LAMBDA (const int& b, const int& m, const int& l, const int &k, const int &j, const int &i)
+#define KOKKOS_LAMBDA_MESH_VARS KOKKOS_LAMBDA (const int& b, const int &p, const int &k, const int &j, const int &i)
+#define KOKKOS_LAMBDA_MESH_VEC KOKKOS_LAMBDA (const int& b, const int &mu, const int &k, const int &j, const int &i)
+
 // TODO separate macros for return type if this becomes a thing?  Or don't macro at all
 #define KOKKOS_LAMBDA_1D_REDUCE KOKKOS_LAMBDA (const int &i, Real &local_result)
 // This is used for timestep and divB, which are explicitly double
