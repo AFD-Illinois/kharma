@@ -206,8 +206,8 @@ inline Real TotalM(MeshData<Real> *md) {return DomainSum<Mtot>(md);}
 inline Real TotalL(MeshData<Real> *md) {return DomainSum<Ltot>(md);}
 inline Real TotalE(MeshData<Real> *md) {return DomainSum<Etot>(md);}
 
-inline Real TotalEHTLum(MeshData<Real> *md) {return DomainSum<Etot>(md);}
-inline Real TotalJetLum(MeshData<Real> *md) {return DomainSum<Etot>(md);}
+inline Real TotalEHTLum(MeshData<Real> *md) {return DomainSum<EHTLum>(md);}
+inline Real TotalJetLum(MeshData<Real> *md) {return DomainSum<JetLum>(md);}
 
 inline int NPFlags(MeshData<Real> *md) {return CountPFlags(md, IndexDomain::entire, 0);}
 inline int NFFlags(MeshData<Real> *md) {return CountFFlags(md, IndexDomain::interior, 0);}
