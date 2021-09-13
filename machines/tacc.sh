@@ -8,10 +8,12 @@ if [[ $HOST == *".frontera.tacc.utexas.edu" ]]; then
 fi
 
 if [[ $HOST == *".stampede2.tacc.utexas.edu" ]]; then
+  NPROC=16
   if [[ "$*" == *"skx"* ]]; then
     HOST_ARCH="SKX"
   else
     HOST_ARCH="KNL"
+    EXTRA_FLAGS="-DFUSE_FLUX_KERNELS=OFF -DFUSE_EMF_KERNELS=OFF -DFUSE_FLOOR_KERNELS=OFF $EXTRA_FLAGS"
   fi
 fi
 
