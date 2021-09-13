@@ -254,9 +254,12 @@ void KHARMA::PostStepMeshUserWorkInLoop(Mesh *pmesh, ParameterInput *pin, const 
 void KHARMA::PostStepDiagnostics(Mesh *pmesh, ParameterInput *pin, const SimTime &tm)
 {
     // Parthenon's version of this has a bug, but I would probably subclass it anyway.
-    // very useful to have a single per-step spot for global prints
-    for (auto &package : pmesh->packages.AllPackages()) {
-        package.second->PostStepDiagnostics(tm, pmesh->mesh_data.GetOrAdd("base", 0).get());
+    // very useful to have a single per-step spot to control any routine print statements
+    const auto& md = pmesh->mesh_data.GetOrAdd("base", 0).get();
+    if (md->NumBlocks() > 0) {
+        for (auto &package : pmesh->packages.AllPackages()) {
+            package.second->PostStepDiagnostics(tm, md);
+        }
     }
 }
 

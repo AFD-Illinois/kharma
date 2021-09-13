@@ -41,35 +41,52 @@ std::shared_ptr<StateDescriptor> Reductions::Initialize(ParameterInput *pin)
     auto pkg = std::make_shared<StateDescriptor>("Reductions");
     Params &params = pkg->AllParams();
 
-
-    bool add_fluxes = pin->GetOrAddBoolean("reductions", "add_fluxes", false);
+    bool add_zones = pin->GetOrAddBoolean("reductions", "add_zones_accretion", true);
+    params.Add("add_zones", add_zones);
+    bool add_fluxes = pin->GetOrAddBoolean("reductions", "add_fluxes_accretion", true);
     params.Add("add_fluxes", add_fluxes);
+    bool add_totals = pin->GetOrAddBoolean("reductions", "add_totals", true);
+    params.Add("add_totals", add_totals);
+    bool add_flags = pin->GetOrAddBoolean("reductions", "add_flags", true);
+    params.Add("add_flags", add_flags);
 
     // List (vector) of HistoryOutputVar that will all be enrolled as output variables
     parthenon::HstVar_list hst_vars = {};
-    hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::max, MdotBound, "Mdot"));
-    hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::max, MdotEH, "Mdot_EH"));
-    hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::max, EdotBound, "Edot"));
-    hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::max, EdotEH, "Edot_EH"));
-    hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::max, LdotBound, "Ldot"));
-    hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::max, LdotEH, "Ldot_EH"));
+    if (add_zones) {
+        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, MdotBound, "Mdot"));
+        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, MdotEH, "Mdot_EH"));
+        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, EdotBound, "Edot"));
+        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, EdotEH, "Edot_EH"));
+        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, LdotBound, "Ldot"));
+        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, LdotEH, "Ldot_EH"));
+    }
 
-    hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::max, MdotBoundFlux, "Mdot_Flux"));
-    hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::max, MdotEHFlux, "Mdot_EH_Flux"));
-    hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::max, EdotBoundFlux, "Edot_Flux"));
-    hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::max, EdotEHFlux, "Edot_EH_Flux"));
-    hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::max, LdotBoundFlux, "Ldot_Flux"));
-    hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::max, LdotEHFlux, "Ldot_EH_Flux"));
+    // TODO option?  Or just record this always?
+    hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, PhiBound, "Phi"));
+    hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, PhiEH, "Phi_EH"));
 
-    hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::max, TotalM, "Mass"));
-    hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::max, TotalE, "Egas"));
-    hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::max, TotalL, "Ang_Mom"));
+    if (add_fluxes) {
+        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, MdotBoundFlux, "Mdot_Flux"));
+        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, MdotEHFlux, "Mdot_EH_Flux"));
+        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, EdotBoundFlux, "Edot_Flux"));
+        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, EdotEHFlux, "Edot_EH_Flux"));
+        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, LdotBoundFlux, "Ldot_Flux"));
+        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, LdotEHFlux, "Ldot_EH_Flux"));
+    }
 
-    hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::max, TotalEHTLum, "EHT_Lum_Proxy"));
-    hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::max, TotalJetLum, "Jet_Lum"));
+    if (add_totals) {
+        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, TotalM, "Mass"));
+        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, TotalE, "Egas"));
+        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, TotalL, "Ang_Mom"));
 
-    hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::max, NPFlags, "Num_PFlags"));
-    hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::max, NFFlags, "Num_FFlags"));
+        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, TotalEHTLum, "EHT_Lum_Proxy"));
+        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, TotalJetLum, "Jet_Lum"));
+    }
+
+    if (add_flags) {
+        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, NPFlags, "Num_PFlags"));
+        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, NFFlags, "Num_FFlags"));
+    }
     // add callbacks for HST output identified by the `hist_param_key`
     pkg->AddParam<>(parthenon::hist_param_key, hst_vars);
 

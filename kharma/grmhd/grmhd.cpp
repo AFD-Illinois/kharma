@@ -443,29 +443,27 @@ TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
     const int flag_verbose = pars.Get<int>("flag_verbose");
     const int extra_checks = pars.Get<int>("extra_checks");
 
-    if (md->NumBlocks() > 0) {
-        // Debugging/diagnostic info about floor and inversion flags
-        if (flag_verbose >= 1) {
-            FLAG("Printing flags");
-            CountPFlags(md, IndexDomain::interior, flag_verbose);
-            CountFFlags(md, IndexDomain::interior, flag_verbose);
-        }
+    // Debugging/diagnostic info about floor and inversion flags
+    if (flag_verbose >= 1) {
+        FLAG("Printing flags");
+        CountPFlags(md, IndexDomain::interior, flag_verbose);
+        CountFFlags(md, IndexDomain::interior, flag_verbose);
+    }
 
-        // Check for a soundspeed (ctop) of 0 or NaN
-        // This functions as a "last resort" check to stop a
-        // simulation on obviously bad data
-        if (extra_checks >= 1) {
-            CheckNaN(md, X1DIR);
-            if (pmesh->ndim > 1) CheckNaN(md, X2DIR);
-            if (pmesh->ndim > 2) CheckNaN(md, X3DIR);
-        }
+    // Check for a soundspeed (ctop) of 0 or NaN
+    // This functions as a "last resort" check to stop a
+    // simulation on obviously bad data
+    if (extra_checks >= 1) {
+        CheckNaN(md, X1DIR);
+        if (pmesh->ndim > 1) CheckNaN(md, X2DIR);
+        if (pmesh->ndim > 2) CheckNaN(md, X3DIR);
+    }
 
-        // Further checking for any negative values.  Floors should
-        // prevent this, so we save it for dire debugging
-        if (extra_checks >= 2) {
-            FLAG("Printing negative zones");
-            CheckNegative(md, IndexDomain::interior);
-        }
+    // Further checking for any negative values.  Floors should
+    // prevent this, so we save it for dire debugging
+    if (extra_checks >= 2) {
+        FLAG("Printing negative zones");
+        CheckNegative(md, IndexDomain::interior);
     }
 
     FLAG("Printed");

@@ -209,11 +209,10 @@ Real MaxDivB(MeshData<Real> *md)
     const IndexRange jb = md->GetBoundsJ(IndexDomain::interior);
     const IndexRange kb = md->GetBoundsK(IndexDomain::interior);
     const IndexRange block = IndexRange{0, B.GetDim(5)-1};
-    // We only care about interior cells
-    // TODO left face cells?
-    const IndexRange il = IndexRange{ib.s + 1, ib.e - 1};
-    const IndexRange jl = IndexRange{jb.s + 1, jb.e - 1};
-    const IndexRange kl = (ndim > 2) ? IndexRange{kb.s + 1, kb.e - 1} : kb;
+    // We only care about interior cells, and our stencil extends 1 zone *right*
+    const IndexRange il = IndexRange{ib.s, ib.e - 1};
+    const IndexRange jl = IndexRange{jb.s, jb.e - 1};
+    const IndexRange kl = (ndim > 2) ? IndexRange{kb.s, kb.e - 1} : kb;
 
     const auto& G = B.coords;
 
@@ -253,33 +252,35 @@ TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
 
 void FillOutput(MeshBlock *pmb, ParameterInput *pin)
 {
+    auto rc = pmb->meshblock_data.Get().get();
     IndexDomain domain = IndexDomain::interior;
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
     const int ndim = pmb->pmy_mesh->ndim;
     if (ndim < 2) return;
-    // We only care about interior cells
-    is += 1; //ie -= 1;
-    js += 1; //je -= 1;
-    if (ndim > 2) {
-        ks += 1; //ke -= 1;
-    }
-
-    auto rc = pmb->meshblock_data.Get().get();
-    auto& divB = rc->Get("divB").data;
-    const auto& G = pmb->coords;
 
     GridVector F1, F2, F3;
     F1 = rc->Get("cons.B").flux[X1DIR];
     F2 = rc->Get("cons.B").flux[X2DIR];
     if (ndim > 2) F3 = rc->Get("cons.B").flux[X3DIR];
+    auto& divB = rc->Get("divB").data;
 
-    pmb->par_for("B_field_bsqmax", ks, ke, js, je, is, ie,
+    const IndexRange ib = rc->GetBoundsI(IndexDomain::interior);
+    const IndexRange jb = rc->GetBoundsJ(IndexDomain::interior);
+    const IndexRange kb = rc->GetBoundsK(IndexDomain::interior);
+    // We only care about interior cells, and our stencil extends 1 zone *right*
+    const IndexRange il = IndexRange{ib.s, ib.e - 1};
+    const IndexRange jl = IndexRange{jb.s, jb.e - 1};
+    const IndexRange kl = (ndim > 2) ? IndexRange{kb.s, kb.e - 1} : kb;
+
+    const auto& G = pmb->coords;
+
+    pmb->par_for("B_field_bsqmax", kl.s, kl.e, jl.s, jl.e, il.s, il.e,
         KOKKOS_LAMBDA_3D {
             double divb_local = ((F1(B1, k, j, i+1) - F1(B1, k, j, i)) / G.dx1v(i) +
                                  (F2(B2, k, j+1, i) - F2(B2, k, j, i)) / G.dx2v(j));
-            if (ndim > 2) divb_local += (F3(B3, k, j+1, i) - F3(B3, k, j, i)) / G.dx3v(k);
+            if (ndim > 2) divb_local += (F3(B3, k+1, j, i) - F3(B3, k, j, i)) / G.dx3v(k);
 
             divB(k, j, i) = divb_local;
         }

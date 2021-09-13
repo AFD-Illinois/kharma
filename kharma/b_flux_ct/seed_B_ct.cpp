@@ -74,6 +74,8 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
         b_field_flag = BSeedType::ryan;
     } else if (b_field_type == "r3s3") {
         b_field_flag = BSeedType::r3s3;
+    } else if (b_field_type == "mad_steep" || b_field_type == "steep") {
+        b_field_flag = BSeedType::steep;
     } else if (b_field_type == "gaussian") {
         b_field_flag = BSeedType::gaussian;
     } else {
@@ -94,6 +96,7 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
         break;
     case BSeedType::ryan:
     case BSeedType::r3s3:
+    case BSeedType::steep:
     case BSeedType::gaussian:
         rin = pin->GetReal("torus", "rin");
         break;
@@ -145,13 +148,17 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
                 q = rho_av - min_rho_q;
                 break;
             case BSeedType::ryan:
-                // BR's smoothed poloidal in-torus
-                q = pow(sin(th), 3) * pow(r / rin, 3) * exp(-r / 400) * rho_av - min_rho_q;
+                // BR's smoothed poloidal in-torus, EHT standard MAD
+                q = pow(r / rin, 3) * pow(sin(th), 3) * exp(-r / 400) * rho_av - min_rho_q;
                 break;
             case BSeedType::r3s3:
-                // Just the r^3 sin^3 th term, proposed EHT standard MAD
+                // Just the r^3 sin^3 th term, former proposed EHT standard MAD
                 // TODO split r3 here and r3s3
-                q = pow(r / rin, 3) * rho_av - min_rho_q;
+                q = pow(r / rin, 3) * pow(sin(th), 3) * rho_av - min_rho_q;
+                break;
+            case BSeedType::steep:
+                // Bump power to r^5 sin^5 th term, quieter MAD
+                q = pow(r / rin, 5) * pow(sin(th), 5) * rho_av - min_rho_q;
                 break;
             case BSeedType::gaussian:
                 // Pure vertical threaded field of gaussian strength with FWHM 2*rin (i.e. HM@rin)

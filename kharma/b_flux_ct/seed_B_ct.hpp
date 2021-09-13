@@ -7,6 +7,10 @@
 namespace B_FluxCT
 {
 
+// Internal representation of the field initialization preference for quick switch
+// Avoids string comparsion in kernels
+enum BSeedType{constant, monopole, sane, ryan, r3s3, steep, gaussian};
+
 /**
  * Seed an axisymmetric initialization with magnetic field proportional to fluid density,
  * or density and radius, to create a SANE or MAD flow

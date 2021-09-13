@@ -400,8 +400,8 @@ TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *rc)
 
 void FillOutput(MeshBlock *pmb, ParameterInput *pin)
 {
-    // Anything specially written to files goes here.
-    // Normal primitives are written automatically as long as they are specified at runtime
+    // Any variables or diagnostics that should be computed especially for output to a file,
+    // but which are not otherwise updated.
 }
 
 } // namespace B_FluxCT

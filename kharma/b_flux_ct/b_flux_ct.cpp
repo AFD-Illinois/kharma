@@ -374,18 +374,16 @@ double MaxDivB(MeshData<Real> *md)
 TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
 {
     FLAG("Printing B field diagnostics");
-    if (md->NumBlocks() > 0) {
-        auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
+    auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
 
-        // Since this is in the history file now, I don't bother printing it
-        // unless we're being verbose. It's not costly to calculate though
-        if (pmb0->packages.Get("B_FluxCT")->Param<int>("verbose") >= 1) {
-            FLAG("Printing divB");
-            Real max_divb = B_FluxCT::MaxDivB(md);
-            max_divb = MPIMax(max_divb);
+    // Since this is in the history file now, I don't bother printing it
+    // unless we're being verbose. It's not costly to calculate though
+    if (pmb0->packages.Get("B_FluxCT")->Param<int>("verbose") >= 1) {
+        FLAG("Printing divB");
+        Real max_divb = B_FluxCT::MaxDivB(md);
+        max_divb = MPIMax(max_divb);
 
-            if(MPIRank0()) cout << "Max DivB: " << max_divb << endl;
-        }
+        if(MPIRank0()) cout << "Max DivB: " << max_divb << endl;
     }
 
     FLAG("Printed")
@@ -395,25 +393,28 @@ TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
 void FillOutput(MeshBlock *pmb, ParameterInput *pin)
 {
     FLAG("Calculating divB for output");
-    IndexDomain domain = IndexDomain::entire;
-    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
-    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
-    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
+    auto rc = pmb->meshblock_data.Get().get();
     const int ndim = pmb->pmy_mesh->ndim;
     if (ndim < 2) return;
-    // Note the stencil of this function extends 1 left of the domain
-    // We stay off the inner edge, using only zones on the grid where we apply fluxes/fluxCT
-    is += 1;
-    js += 1;
-    if (ndim > 2) ks += 1;
-    const double norm = (ndim > 2) ? 0.25 : 0.5;
 
-    const auto& G = pmb->coords;
-    auto rc = pmb->meshblock_data.Get().get();
     GridVars B_U = rc->Get("cons.B").data;
     GridVars divB = rc->Get("divB").data;
 
-    pmb->par_for("divB_output", ks, ke, js, je, is, ie,
+    const IndexRange ib = rc->GetBoundsI(IndexDomain::interior);
+    const IndexRange jb = rc->GetBoundsJ(IndexDomain::interior);
+    const IndexRange kb = rc->GetBoundsK(IndexDomain::interior);
+    // Note this is a stencil-4 (or -8) function, which would involve zones outside the
+    // domain unless we stay off the left edges
+    // So we do the *reverse* of a halo:
+    const IndexRange il = IndexRange{ib.s + 1, ib.e};
+    const IndexRange jl = IndexRange{jb.s + 1, jb.e};
+    const IndexRange kl = (ndim > 2) ? IndexRange{kb.s + 1, kb.e} : kb;
+
+    const double norm = (ndim > 2) ? 0.25 : 0.5;
+
+    const auto& G = pmb->coords;
+
+    pmb->par_for("divB_output", kl.s, kl.e, jl.s, jl.e, il.s, il.e,
         KOKKOS_LAMBDA_3D {
             // 2D divergence, averaging to corners
             double term1 = B_U(B1, k, j, i)   + B_U(B1, k, j-1, i)

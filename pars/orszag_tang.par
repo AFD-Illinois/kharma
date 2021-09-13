@@ -37,7 +37,6 @@ transform = null
 
 <parthenon/time>
 tlim = 100.0
-nlim = 200
 integrator = rk2
 
 <GRMHD>

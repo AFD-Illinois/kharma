@@ -121,17 +121,19 @@ MAKE_SUM2D_FN(Ldot_Flux, KOKKOS_LAMBDA_3D_REDUCE { local_result += uvec_F(2, k, 
 // Finally, we can specialize to particular zones and name our functions
 inline Real MdotBound(MeshData<Real> *md) {return AccretionRate<Mdot>(md, 0);}
 inline Real MdotEH(MeshData<Real> *md) {return AccretionRate<Mdot>(md, 5);}
-inline Real EdotBound(MeshData<Real> *md) {return AccretionRate<Mdot>(md, 0);}
-inline Real EdotEH(MeshData<Real> *md) {return AccretionRate<Mdot>(md, 5);}
-inline Real LdotBound(MeshData<Real> *md) {return AccretionRate<Mdot>(md, 0);}
-inline Real LdotEH(MeshData<Real> *md) {return AccretionRate<Mdot>(md, 5);}
+inline Real EdotBound(MeshData<Real> *md) {return AccretionRate<Edot>(md, 0);}
+inline Real EdotEH(MeshData<Real> *md) {return AccretionRate<Edot>(md, 5);}
+inline Real LdotBound(MeshData<Real> *md) {return AccretionRate<Ldot>(md, 0);}
+inline Real LdotEH(MeshData<Real> *md) {return AccretionRate<Ldot>(md, 5);}
+inline Real PhiBound(MeshData<Real> *md) {return AccretionRate<Phi>(md, 0);}
+inline Real PhiEH(MeshData<Real> *md) {return AccretionRate<Phi>(md, 5);}
 
 inline Real MdotBoundFlux(MeshData<Real> *md) {return AccretionRate<Mdot_Flux>(md, 0);}
 inline Real MdotEHFlux(MeshData<Real> *md) {return AccretionRate<Mdot_Flux>(md, 5);}
-inline Real EdotBoundFlux(MeshData<Real> *md) {return AccretionRate<Ldot_Flux>(md, 0);}
-inline Real EdotEHFlux(MeshData<Real> *md) {return AccretionRate<Ldot_Flux>(md, 5);}
-inline Real LdotBoundFlux(MeshData<Real> *md) {return AccretionRate<Edot_Flux>(md, 0);}
-inline Real LdotEHFlux(MeshData<Real> *md) {return AccretionRate<Edot_Flux>(md, 5);}
+inline Real EdotBoundFlux(MeshData<Real> *md) {return AccretionRate<Edot_Flux>(md, 0);}
+inline Real EdotEHFlux(MeshData<Real> *md) {return AccretionRate<Edot_Flux>(md, 5);}
+inline Real LdotBoundFlux(MeshData<Real> *md) {return AccretionRate<Ldot_Flux>(md, 0);}
+inline Real LdotEHFlux(MeshData<Real> *md) {return AccretionRate<Ldot_Flux>(md, 5);}
 
 // Same as above, but for the whole domain
 #define MAKE_SUM3D_FN(name, fn) template<> inline Real DomainSum<name>(MeshData<Real> *md) { \
@@ -203,8 +205,8 @@ MAKE_SUM3D_FN(JetLum, (KOKKOS_LAMBDA_3D_REDUCE {
 
 
 inline Real TotalM(MeshData<Real> *md) {return DomainSum<Mtot>(md);}
-inline Real TotalL(MeshData<Real> *md) {return DomainSum<Ltot>(md);}
 inline Real TotalE(MeshData<Real> *md) {return DomainSum<Etot>(md);}
+inline Real TotalL(MeshData<Real> *md) {return DomainSum<Ltot>(md);}
 
 inline Real TotalEHTLum(MeshData<Real> *md) {return DomainSum<EHTLum>(md);}
 inline Real TotalJetLum(MeshData<Real> *md) {return DomainSum<JetLum>(md);}

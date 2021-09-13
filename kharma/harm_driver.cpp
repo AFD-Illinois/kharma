@@ -286,14 +286,17 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
 
         // This will fill the fluid primitive values in all zones except physical (outflow, reflecting) boundaries --
         // that is, everywhere the conserved variables have been updated so far.
+        // This call is required to be after the boundary sync, as the fixing routines use neibhoring zones
+        // (they are called in GRMHD::PostFillDerived, run automatically as a part of this call)
+        // Running it over all zones avoids a second boundary sync
         auto t_fill_derived = tl.AddTask(t_copy_prims, Update::FillDerived<MeshBlockData<Real>>, sc1.get());
 
-        // This is a parthenon call, but in spherical coordinates this will call the functions in
-        // boundaries.cpp, which apply physical boundary conditions based on the primitive variables for GRMHD,
-        // and the conserved forms for everything else.  Note that because this is called *after*
+        // This is a parthenon call, but in spherical coordinates it will call the functions in
+        // boundaries.cpp, which apply physical boundary conditions based on the primitive variables of GRMHD,
+        // and based on the conserved forms for everything else.  Note that because this is called *after*
         // FillDerived (since it needs bulk fluid primitives to apply GRMHD boundaries), this function
         // must call FillDerived *again*, but over just the ghost zones.
-        // This is why KHARMA packages need to implement their "fillderived" functions in the form
+        // This is why KHARMA packages need to implement their "FillDerived" a.k.a. UtoP functions in the form
         // UtoP(rc, domain, coarse), so that they can be called for just the boundary domains here
         auto t_set_bc = tl.AddTask(t_fill_derived, ApplyBoundaryConditions, sc1);
 
@@ -302,10 +305,9 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         // which must be calculated from the fluid primitive variables rho,u.
         // We only have these just now from FillDerived (and PostFillDerived, and the boundary consistency stuff)
         // Luckily, this function does *not* need another synchronization of the ghost zones, as it is applied to
-        // all zones and has a stencil of only one zone -- that is, it is applied identically for the same zone,
-        // once by the MPI rank for which it is a physical zone, and once by the rank for which it is a ghost.
-        // See the description in GRMHD::UtoP, which has the same idea but "burns" the last rank of zones as it requires
-        // zone neighbors.
+        // all zones and has a stencil of only one zone -- that is, it is applied twice identically for some zones,
+        // once by the MPI rank for which it is a physical zone, and once by the rank for which it is a ghost,
+        // trusting that matching calls will produce matching outputs.
         auto t_heat_electrons = t_set_bc;
         if (use_electrons) {
             auto t_heat_electrons = tl.AddTask(t_set_bc, Electrons::ApplyHeatingModels, sc0.get(), sc1.get());
