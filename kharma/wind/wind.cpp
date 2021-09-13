@@ -54,41 +54,42 @@ std::shared_ptr<StateDescriptor> Wind::Initialize(ParameterInput *pin)
     return pkg;
 }
 
-TaskStatus Wind::AddWind(MeshData<Real> *mdudt, double time)
+TaskStatus Wind::AddSource(MeshData<Real> *mdudt)
 {
     FLAG("Adding wind");
-    auto pmb = mdudt->GetBlockData(0)->GetBlockPointer();
-    IndexDomain domain = IndexDomain::interior;
-    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
-    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
-    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
-    const int ndim = pmb->pmy_mesh->ndim;
+    // Pointers
+    auto pmesh = mdudt->GetMeshPointer();
+    auto pmb0 = mdudt->GetBlockData(0)->GetBlockPointer();
+    // Options
+    const auto& gpars = pmb0->packages.Get("GRMHD")->AllParams();
+    const auto& pars = pmb0->packages.Get("Wind")->AllParams();
+    const auto& globals = pmb0->packages.Get("Globals")->AllParams();
+    const Real gam = gpars.Get<Real>("gamma");
+    const Real wind_n = pars.Get<Real>("wind_n");
+    const Real wind_Tp = pars.Get<Real>("wind_Tp");
+    const int wind_pow = pars.Get<int>("wind_pow");
+    const Real wind_ramp_start = pars.Get<Real>("wind_ramp_start");
+    const Real wind_ramp_end = pars.Get<Real>("wind_ramp_end");
+    const Real time = globals.Get<Real>("time");
 
+    // Pack variables
     PackIndexMap cons_map;
     auto dUdt = mdudt->PackVariables(std::vector<MetadataFlag>{Metadata::Conserved}, cons_map);
     const VarMap m_u(cons_map, true);
+    // Get sizes
+    const IndexRange ib = mdudt->GetBoundsI(IndexDomain::interior);
+    const IndexRange jb = mdudt->GetBoundsJ(IndexDomain::interior);
+    const IndexRange kb = mdudt->GetBoundsK(IndexDomain::interior);
+    const IndexRange block = IndexRange{0, dUdt.GetDim(5) - 1};
 
-    const auto& G = pmb->coords;
-    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
+    const auto& G = dUdt.coords;
 
-    Real wind_n = pmb->packages.Get("Wind")->Param<Real>("wind_n");
-    Real wind_Tp = pmb->packages.Get("Wind")->Param<Real>("wind_Tp");
-    int wind_pow = pmb->packages.Get("Wind")->Param<int>("wind_pow");
-    Real wind_ramp_start = pmb->packages.Get("Wind")->Param<Real>("wind_ramp_start");
-    Real wind_ramp_end = pmb->packages.Get("Wind")->Param<Real>("wind_ramp_end");
-    Real current_wind_n = wind_n;
-    if (wind_ramp_end > 0.0) {
-        current_wind_n = min((time - wind_ramp_start) / (wind_ramp_end - wind_ramp_start), 1.0) * wind_n;
-    } else {
-        current_wind_n = wind_n;
-    }
+    // Set the wind via linear ramp-up with time, if enabled
+    const Real current_wind_n = (wind_ramp_end > 0.0) ? min((time - wind_ramp_start) / (wind_ramp_end - wind_ramp_start), 1.0) * wind_n : wind_n;
 
-    size_t total_scratch_bytes = 0;
-    int scratch_level = 0;
-
-    pmb->par_for("add_wind", 0, dUdt.GetDim(5)-1, ks, ke, js, je, is, ie,
+    pmb0->par_for("add_wind", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_MESH_3D {
-            Wind::add_wind(G, gam, k, j, i, current_wind_n, wind_pow, wind_Tp, dUdt(b), m_u);
+            Wind::add_wind(G(b), gam, k, j, i, current_wind_n, wind_pow, wind_Tp, dUdt(b), m_u);
         }
     );
 

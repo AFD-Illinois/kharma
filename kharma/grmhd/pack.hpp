@@ -39,6 +39,15 @@ using namespace parthenon;
 
 namespace GRMHD {
 
+/**
+ * These functions exist to "pack up" just the variables involved in hydrodynamics (rho, u, uvec),
+ * or magnetohydrodynamics (those plus B).
+ * 
+ * They are just thin convenience wrappers aroung Parthenon's functions to do the same, and you'll
+ * see me using rc->PackVariables and md->PackVariables often enough by themselves.
+ * Usually, bare calls are for *all* variables (potentially including e-, passives, entropy, etc),
+ * whereas these calls are for functions which deal with GRMHD variables only.
+ */
 inline VariablePack<Real> PackMHDPrims(MeshBlockData<Real> *rc, PackIndexMap& prims_map, bool coarse=false)
 {
     auto pmb = rc->GetBlockPointer();
@@ -81,6 +90,9 @@ inline MeshBlockPack<VariablePack<Real>> PackHDPrims(MeshData<Real> *md, PackInd
     MetadataFlag isHD = pmb->packages.Get("GRMHD")->Param<MetadataFlag>("HDFlag");
     return md->PackVariables(std::vector<MetadataFlag>{isPrimitive, isHD}, prims_map, coarse);
 }
+// Version without 
+template<typename T>
+inline VariablePack<Real> PackHDPrims(T data) { PackIndexMap nop; return PackHDPrims(data, nop); }
 
 inline VariablePack<Real> PackHDCons(MeshBlockData<Real> *rc, PackIndexMap& cons_map, bool coarse=false)
 {

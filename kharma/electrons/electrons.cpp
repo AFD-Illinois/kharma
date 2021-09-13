@@ -267,7 +267,7 @@ TaskStatus ApplyHeatingModels(MeshBlockData<Real> *rc_old, MeshBlockData<Real> *
     // Need to distinguish different electron models
     // So far, Parthenon's maps of the same sets of variables are consistent,
     // so we only bother with one map of the primitives
-    // If Parthenon starts making packing *random*, I'm in trouble
+    // TODO Parthenon can definitely build a pack from a map, though
     PackIndexMap prims_map, cons_map;
     auto& P = rc_old->PackVariables({isPrimitive}, prims_map);
     auto& P_new = rc->PackVariables({isPrimitive}, prims_map);
@@ -281,11 +281,12 @@ TaskStatus ApplyHeatingModels(MeshBlockData<Real> *rc_old, MeshBlockData<Real> *
     const Real game = pmb->packages.Get("Electrons")->Param<Real>("gamma_e");
     const bool suppress_highb_heat = pmb->packages.Get("Electrons")->Param<bool>("suppress_highb_heat");
 
-    IndexDomain domain = IndexDomain::entire;
-    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
-    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
-    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
-    pmb->par_for("heat_electrons", ks, ke, js, je, is, ie,
+    // This function (and any primitive-variable sources) needs to be run over the entire domain
+    // See harm_driver.cpp for the wider picture as to why.
+    const IndexRange ib = rc->GetBoundsI(IndexDomain::entire);
+    const IndexRange jb = rc->GetBoundsJ(IndexDomain::entire);
+    const IndexRange kb = rc->GetBoundsK(IndexDomain::entire);
+    pmb->par_for("heat_electrons", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_3D {
             FourVectors Dtmp;
             GRMHD::calc_4vecs(G, P, m_p, k, j, i, Loci::center, Dtmp);

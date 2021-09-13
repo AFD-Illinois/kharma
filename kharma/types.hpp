@@ -142,7 +142,7 @@ class FloorPrescription {
         // Floor options
         bool temp_adjust_u, fluid_frame;
 
-        FloorPrescription(parthenon::Params& params)
+        FloorPrescription(const parthenon::Params& params)
         {
             rho_min_geom = params.Get<Real>("rho_min_geom");
             u_min_geom = params.Get<Real>("u_min_geom");

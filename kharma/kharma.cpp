@@ -214,6 +214,10 @@ void KHARMA::FillDerivedDomain(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDo
     // since we already called "FillDerived" before the ghost zones were initialized
     // This does *not* apply to the GRMHD variables, just any passives or extras
     auto pmb = rc->GetBlockPointer();
+    if (pmb->packages.AllPackages().count("B_FluxCT"))
+        B_FluxCT::UtoP(rc.get(), domain, coarse);
+    if (pmb->packages.AllPackages().count("B_CD"))
+        B_CD::UtoP(rc.get(), domain, coarse);
     if (pmb->packages.AllPackages().count("Electrons"))
         Electrons::UtoP(rc.get(), domain, coarse);
 

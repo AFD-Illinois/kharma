@@ -169,7 +169,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     bool disable_floors = pin->GetOrAddBoolean("floors", "disable_floors", false);
     params.Add("disable_floors", disable_floors);
 
-    // Option to disable checking the fluxes 
+    // Option to disable checking the fluxes at boundaries
     bool check_inflow_inner = pin->GetOrAddBoolean("bounds", "check_inflow_inner", true);
     params.Add("check_inflow_inner", check_inflow_inner);
     bool check_inflow_outer = pin->GetOrAddBoolean("bounds", "check_inflow_outer", true);
@@ -437,28 +437,32 @@ TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
 {
     FLAG("Printing GRMHD diagnostics");
     auto pmesh = md->GetMeshPointer();
-    auto pmb = md->GetBlockData(0)->GetBlockPointer();
+    auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
+    // Options
+    const auto& pars = pmesh->packages.Get("GRMHD")->AllParams();
+    const int flag_verbose = pars.Get<int>("flag_verbose");
+    const int extra_checks = pars.Get<int>("extra_checks");
 
     if (md->NumBlocks() > 0) {
         // Debugging/diagnostic info about floor and inversion flags
-        int flag_verbose = pmesh->packages.Get("GRMHD")->Param<int>("flag_verbose");
         if (flag_verbose >= 1) {
             FLAG("Printing flags");
             CountPFlags(md, IndexDomain::interior, flag_verbose);
             CountFFlags(md, IndexDomain::interior, flag_verbose);
         }
 
-        // TODO move CheckNaN here?  Do we preserve ctop to end of step correctly?
-
-        if (pmb->packages.Get("GRMHD")->Param<int>("extra_checks") >= 1) {
+        // Check for a soundspeed (ctop) of 0 or NaN
+        // This functions as a "last resort" check to stop a
+        // simulation on obviously bad data
+        if (extra_checks >= 1) {
             CheckNaN(md, X1DIR);
             if (pmesh->ndim > 1) CheckNaN(md, X2DIR);
             if (pmesh->ndim > 2) CheckNaN(md, X3DIR);
         }
 
-        // Extra checking for negative values.  Floors should definitely prevent this,
-        // so we save it for dire debugging
-        if (pmb->packages.Get("GRMHD")->Param<int>("extra_checks") >= 2) {
+        // Further checking for any negative values.  Floors should
+        // prevent this, so we save it for dire debugging
+        if (extra_checks >= 2) {
             FLAG("Printing negative zones");
             CheckNegative(md, IndexDomain::interior);
         }

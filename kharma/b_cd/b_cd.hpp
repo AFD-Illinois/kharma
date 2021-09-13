@@ -69,7 +69,7 @@ inline void FillDerived(MeshBlockData<Real> *rc) { UtoP(rc); }
 /**
  * Add the source term to dUdt, before it is applied to U
  */
-TaskStatus AddSource(MeshBlockData<Real> *rc, MeshBlockData<Real> *dudt);
+TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt);
 
 /**
  * Take a maximum over the divB array, which is updated every step

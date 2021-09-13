@@ -109,28 +109,31 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
 
 void UtoP(MeshData<Real> *md, IndexDomain domain, bool coarse)
 {
-    auto pmb = md->GetBlockData(0)->GetBlockPointer();
+    FLAG("B UtoP Mesh");
+    auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
 
-    auto B_U = md->PackVariables(std::vector<std::string>{"cons.B"});
-    auto B_P = md->PackVariables(std::vector<std::string>{"prims.B"});
+    const auto& B_U = md->PackVariables(std::vector<std::string>{"cons.B"});
+    const auto& B_P = md->PackVariables(std::vector<std::string>{"prims.B"});
 
-    const auto& G = pmb->coords;
-
-    auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
+    auto bounds = coarse ? pmb0->c_cellbounds : pmb0->cellbounds;
     IndexRange ib = bounds.GetBoundsI(domain);
     IndexRange jb = bounds.GetBoundsJ(domain);
     IndexRange kb = bounds.GetBoundsK(domain);
-    IndexRange vec = IndexRange({0, B_U.GetDim(4)-1});
-    IndexRange block = IndexRange({0, B_U.GetDim(5)-1});
-    pmb->par_for("UtoP_B", block.s, block.e, vec.s, vec.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+    IndexRange vec = IndexRange{0, B_U.GetDim(4)-1};
+    IndexRange block = IndexRange{0, B_U.GetDim(5)-1};
+
+    const auto& G = B_U.coords;
+
+    pmb0->par_for("UtoP_B", block.s, block.e, vec.s, vec.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_MESH_VEC {
             // Update the primitive B-fields
-            B_P(b, mu, k, j, i) = B_U(b, mu, k, j, i) / G.gdet(Loci::center, j, i);
+            B_P(b, mu, k, j, i) = B_U(b, mu, k, j, i) / G(b).gdet(Loci::center, j, i);
         }
     );
 }
 void UtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
+    FLAG("B UtoP Block");
     auto pmb = rc->GetBlockPointer();
 
     auto B_U = rc->PackVariables(std::vector<std::string>{"cons.B"});
@@ -153,34 +156,40 @@ void UtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 
 TaskStatus FluxCT(MeshData<Real> *md)
 {
+    FLAG("Flux CT");
+    // Pointers
     auto pmesh = md->GetMeshPointer();
-    auto pmb = md->GetBlockData(0)->GetBlockPointer();
-    int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
-    int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
-    int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
-    int nb = md->NumBlocks();
+    auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
+    // Exit on trivial operations
     const int ndim = pmesh->ndim;
-    // No need for CT in 1D
     if (ndim < 2) return TaskStatus::complete;
 
-    FLAG("Flux CT");
+    // Pack variables
+    const auto& B_F = md->PackVariablesAndFluxes(std::vector<std::string>{"cons.B"});
 
-    auto B_F = md->PackVariablesAndFluxes(std::vector<std::string>{"cons.B"});
+    // Get sizes
+    const IndexRange ib = md->GetBoundsI(IndexDomain::interior);
+    const IndexRange jb = md->GetBoundsJ(IndexDomain::interior);
+    const IndexRange kb = md->GetBoundsK(IndexDomain::interior);
+    const IndexRange block = IndexRange{0, B_F.GetDim(5)-1};
+    // One zone halo on the *right only*, except for k in 2D
+    const IndexRange il = IndexRange{ib.s, ib.e + 1};
+    const IndexRange jl = IndexRange{jb.s, jb.e + 1};
+    const IndexRange kl = (ndim > 2) ? IndexRange{kb.s, kb.e + 1} : kb;
+
+    // Declare temporaries
     // TODO make these a true Edge field of B_FluxCT? Could then output, use elsewhere, skip re-declaring
+    const int n1 = pmb0->cellbounds.ncellsi(IndexDomain::entire);
+    const int n2 = pmb0->cellbounds.ncellsj(IndexDomain::entire);
+    const int n3 = pmb0->cellbounds.ncellsk(IndexDomain::entire);
+    const int nb = md->NumBlocks();
     GridScalar emf1("emf1", nb, n3, n2, n1);
     GridScalar emf2("emf2", nb, n3, n2, n1);
     GridScalar emf3("emf3", nb, n3, n2, n1);
 
-    IndexDomain domain = IndexDomain::interior;
-    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
-    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
-    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
-    // Don't go beyond the grid in 2D
-    int ke_l = (ndim > 2) ? ke + 1 : ke;
-
     // Calculate emf around each face
     FLAG("Calc EMFs");
-    pmb->par_for("flux_ct_emf", 0, B_F.GetDim(5)-1, ks, ke_l, js, je+1, is, ie+1,
+    pmb0->par_for("flux_ct_emf", block.s, block.e, kl.s, kl.e, jl.s, jl.e, il.s, il.e,
         KOKKOS_LAMBDA_MESH_3D {
             emf3(b, k, j, i) =  0.25 * (B_F(b).flux(X1DIR, B2, k, j, i) + B_F(b).flux(X1DIR, B2, k, j-1, i) -
                                         B_F(b).flux(X2DIR, B1, k, j, i) - B_F(b).flux(X2DIR, B1, k, j, i-1));
@@ -198,7 +207,7 @@ TaskStatus FluxCT(MeshData<Real> *md)
     // And it's necessary to keep track of it for B_CD
     FLAG("Calc Fluxes");
 #if FUSE_EMF_KERNELS
-    pmb->par_for("flux_ct_all", 0, B_F.GetDim(5)-1, ks, ke_l, js, je+1, is, ie+1,
+    pmb0->par_for("flux_ct_all", block.s, block.e, kl.s, kl.e, jl.s, jl.e, il.s, il.e,
         KOKKOS_LAMBDA_MESH_3D {
             B_F(b).flux(X1DIR, B1, k, j, i) =  0.0;
             B_F(b).flux(X1DIR, B2, k, j, i) =  0.5 * (emf3(b, k, j, i) + emf3(b, k, j+1, i));
@@ -217,14 +226,15 @@ TaskStatus FluxCT(MeshData<Real> *md)
         }
     );
 #else
-    pmb->par_for("flux_ct_1", 0, B_F.GetDim(5)-1, ks, ke, js, je, is, ie+1,
+    // Note these each have different domains, eg il vs ib.  The former extends one index farther if appropriate
+    pmb0->par_for("flux_ct_1", block.s, block.e, kb.s, kb.e, jb.s, jb.e, il.s, il.e,
         KOKKOS_LAMBDA_MESH_3D {
             B_F(b).flux(X1DIR, B1, k, j, i) =  0.0;
             B_F(b).flux(X1DIR, B2, k, j, i) =  0.5 * (emf3(b, k, j, i) + emf3(b, k, j+1, i));
             if (ndim > 2) B_F(b).flux(X1DIR, B3, k, j, i) = -0.5 * (emf2(b, k, j, i) + emf2(b, k+1, j, i));
         }
     );
-    pmb->par_for("flux_ct_2", 0, B_F.GetDim(5)-1, ks, ke, js, je+1, is, ie,
+    pmb0->par_for("flux_ct_2", block.s, block.e, kb.s, kb.e, jl.s, jl.e, ib.s, ib.e,
         KOKKOS_LAMBDA_MESH_3D {
             B_F(b).flux(X2DIR, B1, k, j, i) = -0.5 * (emf3(b, k, j, i) + emf3(b, k, j, i+1));
             B_F(b).flux(X2DIR, B2, k, j, i) =  0.0;
@@ -232,7 +242,7 @@ TaskStatus FluxCT(MeshData<Real> *md)
         }
     );
     if (ndim > 2) {
-        pmb->par_for("flux_ct_3", 0, B_F.GetDim(5)-1, ks, ke_l, js, je, is, ie,
+        pmb0->par_for("flux_ct_3", block.s, block.e, kl.s, kl.e, jb.s, jb.e, ib.s, ib.e,
             KOKKOS_LAMBDA_MESH_3D {
                 B_F(b).flux(X3DIR, B1, k, j, i) =  0.5 * (emf2(b, k, j, i) + emf2(b, k, j, i+1));
                 B_F(b).flux(X3DIR, B2, k, j, i) = -0.5 * (emf1(b, k, j, i) + emf1(b, k, j+1, i));
@@ -251,6 +261,7 @@ TaskStatus FixPolarFlux(MeshData<Real> *md)
     FLAG("Fixing polar B fluxes");
     auto pmesh = md->GetMeshPointer();
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
+    
     IndexDomain domain = IndexDomain::interior;
     int is = pmb0->cellbounds.is(domain), ie = pmb0->cellbounds.ie(domain);
     int js = pmb0->cellbounds.js(domain), je = pmb0->cellbounds.je(domain);
@@ -295,8 +306,8 @@ TaskStatus FixPolarFlux(MeshData<Real> *md)
 
 TaskStatus TransportB(MeshData<Real> *md)
 {
-    auto pmb = md->GetBlockData(0)->GetBlockPointer();
-    if (pmb->packages.Get("B_FluxCT")->Param<bool>("fix_polar_flux")) {
+    auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
+    if (pmb0->packages.Get("B_FluxCT")->Param<bool>("fix_polar_flux")) {
         FixPolarFlux(md);
     }
     FluxCT(md);
@@ -306,31 +317,34 @@ TaskStatus TransportB(MeshData<Real> *md)
 double MaxDivB(MeshData<Real> *md)
 {
     FLAG("Calculating divB");
+    // Pointers
     auto pmesh = md->GetMeshPointer();
-    auto pmb = md->GetBlockData(0)->GetBlockPointer();
-    IndexDomain domain = IndexDomain::interior;
-    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
-    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
-    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
+    auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
+    // Exit on trivial operations
     const int ndim = pmesh->ndim;
     if (ndim < 2) return 0.;
+
+    // Pack variables
+    auto B_U = md->PackVariables(std::vector<std::string>{"cons.B"});
+    // Get sizes
+    const IndexRange ib = md->GetBoundsI(IndexDomain::interior);
+    const IndexRange jb = md->GetBoundsJ(IndexDomain::interior);
+    const IndexRange kb = md->GetBoundsK(IndexDomain::interior);
+    const IndexRange block = IndexRange{0, B_U.GetDim(5)-1};
     // Note this is a stencil-4 (or -8) function, which would involve zones outside the
     // domain unless we stay off the left edges
-    is += 1;
-    js += 1;
-    if (ndim > 2) ks += 1;
+    // So we do the *reverse* of a halo:
+    const IndexRange il = IndexRange{ib.s + 1, ib.e};
+    const IndexRange jl = IndexRange{jb.s + 1, jb.e};
+    const IndexRange kl = (ndim > 2) ? IndexRange{kb.s + 1, kb.e} : kb;
 
     const double norm = (ndim > 2) ? 0.25 : 0.5;
 
-    const auto& G = pmb->coords;
-
-    // Note when packing that declaring std::vector<std::string> is *crucial*
-    // Otherwise Parthenon will use the wrong constructor and pack everything badly
-    auto B_U = md->PackVariables(std::vector<std::string>{"cons.B"});
+    const auto& G = B_U.coords;
 
     double max_divb;
     Kokkos::Max<double> max_reducer(max_divb);
-    pmb->par_reduce("divB_max", 0, B_U.GetDim(5)-1, ks, ke, js, je, is, ie,
+    pmb0->par_reduce("divB_max", block.s, block.e, kl.s, kl.e, jl.s, jl.e, il.s, il.e,
         KOKKOS_LAMBDA_MESH_3D_REDUCE {
             // 2D divergence, averaging to corners
             double term1 = B_U(b, B1, k, j, i)   + B_U(b, B1, k, j-1, i)
@@ -349,7 +363,7 @@ double MaxDivB(MeshData<Real> *md)
                         - B_U(b, B3, k-1, j, i)   - B_U(b, B3, k-1, j-1, i)
                         - B_U(b, B3, k-1, j, i-1) - B_U(b, B3, k-1, j-1, i-1);
             }
-            double local_divb = fabs(norm*term1/G.dx1v(i) + norm*term2/G.dx2v(j) + norm*term3/G.dx3v(k));
+            double local_divb = fabs(norm*term1/G(b).dx1v(i) + norm*term2/G(b).dx2v(j) + norm*term3/G(b).dx3v(k));
             if (local_divb > local_result) local_result = local_divb;
         }
     , max_reducer);
@@ -361,10 +375,11 @@ TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
 {
     FLAG("Printing B field diagnostics");
     if (md->NumBlocks() > 0) {
-        auto pmb = md->GetBlockData(0)->GetBlockPointer();
+        auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
 
-        // Print this unless we quash everything
-        if (pmb->packages.Get("B_FluxCT")->Param<int>("verbose") >= 0) {
+        // Since this is in the history file now, I don't bother printing it
+        // unless we're being verbose. It's not costly to calculate though
+        if (pmb0->packages.Get("B_FluxCT")->Param<int>("verbose") >= 1) {
             FLAG("Printing divB");
             Real max_divb = B_FluxCT::MaxDivB(md);
             max_divb = MPIMax(max_divb);

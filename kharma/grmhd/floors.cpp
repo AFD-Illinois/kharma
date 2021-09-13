@@ -62,7 +62,7 @@ TaskStatus GRMHD::ApplyFloors(MeshBlockData<Real> *rc)
 
     const auto& G = pmb->coords;
 
-    //GridScalar pflag = rc->Get("pflag").data;
+    GridScalar pflag = rc->Get("pflag").data;
     GridScalar fflag = rc->Get("fflag").data;
 
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
@@ -75,28 +75,32 @@ TaskStatus GRMHD::ApplyFloors(MeshBlockData<Real> *rc)
 
     pmb->par_for("apply_floors", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_3D {
-            // apply_floors can involve another U_to_P call.  Hide the pflag in bottom 5 bits and retrieve both
-            int comboflag = apply_floors(G, P, m_p, gam, k, j, i, floors, U, m_u);
-            fflag(k, j, i) = (comboflag / HIT_FLOOR_GEOM_RHO) * HIT_FLOOR_GEOM_RHO;
+            if (pflag(k, j, i) > InversionStatus::success) {
+                // apply_floors can involve another U_to_P call.  Hide the pflag in bottom 5 bits and retrieve both
+                int comboflag = apply_floors(G, P, m_p, gam, k, j, i, floors, U, m_u);
+                fflag(k, j, i) = (comboflag / HIT_FLOOR_GEOM_RHO) * HIT_FLOOR_GEOM_RHO;
 
-            // The floors as they're written guarantee a consistent state in their cells,
-            // so we do not flag any additional cells, nor do we remove existing flags
-            // (which might have only "needed floors" due to being left untouched by UtoP)
-            // TODO record these flags separately, they are likely common depending on floor prescriptions
-            // if (fflag_local) pflag(k, j, i) = InversionStatus::success; //comboflag % HIT_FLOOR_GEOM_RHO;
+                // The floors as they're written guarantee a consistent state in their cells,
+                // so we do not flag any additional cells, nor do we remove existing flags
+                // (which might have only "needed floors" due to being left untouched by UtoP)
+                // TODO record these flags separately, they are likely common depending on floor prescriptions
+                // if (fflag_local) pflag(k, j, i) = InversionStatus::success; //comboflag % HIT_FLOOR_GEOM_RHO;
 
 #if !FUSE_FLOOR_KERNELS
+            }
         }
     );
     pmb->par_for("apply_ceilings", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_3D {
+            if (pflag(k, j, i) > InversionStatus::success) {
 #endif
 
-            // Apply ceilings *after* floors, to make the temperature ceiling better-behaved
-            // Ceilings never involve a U_to_P call
-            int addflag = fflag(k, j, i);
-            addflag |= apply_ceilings(G, P, m_p, gam, k, j, i, floors, U, m_u);
-            fflag(k, j, i) = addflag;
+                // Apply ceilings *after* floors, to make the temperature ceiling better-behaved
+                // Ceilings never involve a U_to_P call
+                int addflag = fflag(k, j, i);
+                addflag |= apply_ceilings(G, P, m_p, gam, k, j, i, floors, U, m_u);
+                fflag(k, j, i) = addflag;
+            }
         }
     );
 

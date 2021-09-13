@@ -78,6 +78,8 @@ void OutflowX1(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, boo
     // syncs
     IndexDomain ldomain = IndexDomain::interior;
     int is = bounds.is(ldomain), ie = bounds.ie(ldomain);
+    int js = bounds.js(ldomain), je = bounds.je(ldomain);
+    int ks = bounds.ks(ldomain), ke = bounds.ke(ldomain);
     ldomain = IndexDomain::entire;
     int is_e = bounds.is(ldomain), ie_e = bounds.ie(ldomain);
     int js_e = bounds.js(ldomain), je_e = bounds.je(ldomain);
@@ -153,6 +155,7 @@ void ReflectX2(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, boo
     IndexDomain ldomain = IndexDomain::interior;
     int is = bounds.is(ldomain), ie = bounds.ie(ldomain);
     int js = bounds.js(ldomain), je = bounds.je(ldomain);
+    int ks = bounds.ks(ldomain), ke = bounds.ke(ldomain);
     ldomain = IndexDomain::entire;
     int is_e = bounds.is(ldomain), ie_e = bounds.ie(ldomain);
     int js_e = bounds.js(ldomain), je_e = bounds.je(ldomain);
@@ -164,6 +167,8 @@ void ReflectX2(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, boo
     // so we have to be smart
     int ics = (pmb->boundary_flag[BoundaryFace::inner_x1] == BoundaryFlag::user) ? is : is_e;
     int ice = (pmb->boundary_flag[BoundaryFace::outer_x1] == BoundaryFlag::user) ? ie : ie_e;
+    //int ics = is_e;
+    //int ice = ie_e;
 
     int ref_tmp, add_tmp, jbs, jbe;
     if (domain == IndexDomain::inner_x2) {
@@ -231,27 +236,32 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
     FLAG("Fixing fluxes");
     auto pmesh = md->GetMeshPointer();
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
+
+    bool check_inflow_inner = pmb0->packages.Get("GRMHD")->Param<bool>("check_inflow_inner");
+    bool check_inflow_outer = pmb0->packages.Get("GRMHD")->Param<bool>("check_inflow_outer");
+    bool fix_flux_pole = pmb0->packages.Get("GRMHD")->Param<bool>("fix_flux_pole");
+
     IndexDomain domain = IndexDomain::interior;
     const int is = pmb0->cellbounds.is(domain), ie = pmb0->cellbounds.ie(domain);
     const int js = pmb0->cellbounds.js(domain), je = pmb0->cellbounds.je(domain);
     const int ks = pmb0->cellbounds.ks(domain), ke = pmb0->cellbounds.ke(domain);
     const int ndim = pmesh->ndim;
 
+    // Fluxes are defined at faces, so there is one more valid flux than
+    // valid cell in the face direction.  That is, e.g. F1 is valid on
+    // an (N1+1)xN2xN3 grid, F2 on N1x(N2+1)xN3, etc
+    const int ie_l = ie + 1;
+    const int je_l = (ndim > 1) ? je + 1 : je;
+    //const int ke_l = (ndim > 2) ? ke + 1 : ke;
 
     for (auto &pmb : pmesh->block_list) {
         auto& rc = pmb->meshblock_data.Get();
-        // Fluxes are defined at faces, so there is one more valid flux than
-        // valid cell in the face direction.  That is, e.g. F1 is valid on
-        // an (N1+1)xN2xN3 grid, F2 on 
-        const int ie_l = ie + 1;
-        const int je_l = (ndim > 1) ? je + 1 : je;
-        //const int ke_l = (ndim > 2) ? ke + 1 : ke;
 
         PackIndexMap cons_map;
         auto& F = rc->PackVariablesAndFluxes({Metadata::WithFluxes}, cons_map);
         const int m_rho = cons_map["cons.rho"].first;
 
-        if (pmb->packages.Get("GRMHD")->Param<bool>("check_inflow_inner")) {
+        if (check_inflow_inner) {
             if (pmb->boundary_flag[BoundaryFace::inner_x1] == BoundaryFlag::user) {
                 pmb->par_for("fix_flux_in_l", ks, ke, js, je, is, is,
                     KOKKOS_LAMBDA_3D {
@@ -260,7 +270,7 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
                 );
             }
         }
-        if (pmb->packages.Get("GRMHD")->Param<bool>("check_inflow_outer")) {
+        if (check_inflow_outer) {
             if (pmb->boundary_flag[BoundaryFace::outer_x1] == BoundaryFlag::user) {
                 pmb->par_for("fix_flux_in_r", ks, ke, js, je, ie_l, ie_l,
                     KOKKOS_LAMBDA_3D {
@@ -271,7 +281,7 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
         }
 
         // This is a lot of zero fluxes!
-        if (pmb->packages.Get("GRMHD")->Param<bool>("fix_flux_pole")) {
+        if (fix_flux_pole) {
             if (pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::user) {
                 // This loop covers every flux we need
                 pmb->par_for("fix_flux_pole_l", 0, F.GetDim(4) - 1, ks, ke, js, js, is, ie,

@@ -41,79 +41,53 @@
 using namespace Kokkos;
 
 // TODO have nice ways to print vectors, areas, geometry, etc for debugging new modules
-// TODO move flag counts device-side? Allow passing combo flags to both counters?
+// TODO device-side total flag counts, for logging numbers even when not printing
 
 TaskStatus CheckNaN(MeshData<Real> *md, int dir, IndexDomain domain)
 {
     FLAG("Checking ctop for NaNs");
-    auto pmesh = md->GetMeshPointer();
+    auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
+    // TODO verbose option?
 
-    // TODO
-    //auto& ctop = md->PackVariables(std::vector<std::string>{"ctop"});
+    // Pack variables
+    auto& ctop = md->PackVariables(std::vector<std::string>{"ctop"});
 
+    // Get sizes
+    IndexRange ib = md->GetBoundsI(IndexDomain::interior);
+    IndexRange jb = md->GetBoundsJ(IndexDomain::interior);
+    IndexRange kb = md->GetBoundsK(IndexDomain::interior);
+    IndexRange block = IndexRange{0, ctop.GetDim(5) - 1};
+
+    // TODO these two kernels can be one with some Kokkos magic
     int nzero = 0, nnan = 0;
-    for (auto &pmb : pmesh->block_list) {
-        IndexRange ib = pmb->cellbounds.GetBoundsI(domain);
-        IndexRange jb = pmb->cellbounds.GetBoundsJ(domain);
-        IndexRange kb = pmb->cellbounds.GetBoundsK(domain);
-
-        auto ctop = pmb->meshblock_data.Get()->Get("ctop").data;
-
-        int nzero_l = 0, nnan_l = 0;
-        Kokkos::Sum<int> zero_reducer(nzero_l);
-        Kokkos::Sum<int> nan_reducer(nnan_l);
-        pmb->par_reduce("ctop_zeros", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-            KOKKOS_LAMBDA_3D_REDUCE_INT {
-                if (ctop(dir-1, k, j, i) <= 0.) {
-                    ++local_result;
-                }
+    Kokkos::Sum<int> zero_reducer(nzero);
+    Kokkos::Sum<int> nan_reducer(nnan);
+    pmb0->par_reduce("ctop_zeros", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+        KOKKOS_LAMBDA_MESH_3D_REDUCE_INT {
+            if (ctop(b, dir-1, k, j, i) <= 0.) {
+                ++local_result;
             }
-        , zero_reducer);
-        pmb->par_reduce("ctop_nans", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-            KOKKOS_LAMBDA_3D_REDUCE_INT {
-                if (isnan(ctop(dir-1, k, j, i))) {
-                    ++local_result;
-                }
+        }
+    , zero_reducer);
+    pmb0->par_reduce("ctop_nans", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+        KOKKOS_LAMBDA_MESH_3D_REDUCE_INT {
+            if (isnan(ctop(b, dir-1, k, j, i))) {
+                ++local_result;
             }
-        , nan_reducer);
+        }
+    , nan_reducer);
 
-        nzero += nzero_l;
-        nnan += nnan_l;
-    }
+    nzero = MPISum(nzero);
+    nnan = MPISum(nnan);
 
-    if (nzero > 0 || nnan > 0) {
+    if (MPIRank0() && (nzero > 0 || nnan > 0)) {
         // TODO string formatting in C++ that doesn't suck
         fprintf(stderr, "Max signal speed ctop was 0 or NaN, direction %d (%d zero, %d NaN)", dir, nzero, nnan);
         throw std::runtime_error("Bad ctop!");
     }
 
-    // TODO reimplement printing *where* values were hit
-#if 0
-    int verbose = pmb->packages.Get("GRMHD")->Param<int>("verbose");
-    const auto& G = pmb->coords;
-    if (verbose >= 2) {
-        pmb->par_reduce("ctop_zeros_verbose", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-            KOKKOS_LAMBDA_3D_REDUCE_INT {
-                if (ctop(dir, k, j, i) <= 0.) {
-                    printf("Ctop zero at %d %d %d\n", k, j, i);
-                    printf("Local P: TODO\n");
-                    printf("Local U: TODO\n");
-                    ++local_result;
-                }
-            }
-        , zero_reducer);
-
-        // NaN in ctop is much less common to find nowadays
-        pmb->par_reduce("ctop_nans_verbose", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-            KOKKOS_LAMBDA_3D_REDUCE_INT {
-                if (isnan(ctop(dir, k, j, i))) {
-                    printf("Ctop NaN at %d %d %d\n", k, j, i);
-                    ++local_result;
-                }
-            }
-        , nan_reducer);
-    }
-#endif
+    // TODO reimplement printing *where* these values were hit?
+    // May not even be that useful, as the cause is usually much earlier
 
     FLAG("Checked");
     return TaskStatus::complete;
@@ -121,20 +95,22 @@ TaskStatus CheckNaN(MeshData<Real> *md, int dir, IndexDomain domain)
 
 TaskStatus CheckNegative(MeshData<Real> *md, IndexDomain domain)
 {
-    auto pmb = md->GetBlockData(0)->GetBlockPointer();
+    FLAG("Counting negative values");
+    auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
+    // Pack variables
     auto rho_p = md->PackVariables(std::vector<std::string>{"prims.rho"});
     auto u_p = md->PackVariables(std::vector<std::string>{"prims.u"});
     auto rho_c = md->PackVariables(std::vector<std::string>{"cons.rho"});
-
-    IndexRange ib = pmb->cellbounds.GetBoundsI(domain);
-    IndexRange jb = pmb->cellbounds.GetBoundsJ(domain);
-    IndexRange kb = pmb->cellbounds.GetBoundsK(domain);
-    IndexRange bb = IndexRange{0,rho_p.GetDim(5)-1};
+    // Get sizes
+    IndexRange ib = md->GetBoundsI(domain);
+    IndexRange jb = md->GetBoundsJ(domain);
+    IndexRange kb = md->GetBoundsK(domain);
+    IndexRange block = IndexRange{0, rho_p.GetDim(5)-1};
 
     // Check for negative values in the conserved vars
     int nless = 0;
     Kokkos::Sum<int> sum_reducer(nless);
-    pmb->par_reduce("count_negative_U", bb.s, bb.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+    pmb0->par_reduce("count_negative_U", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_MESH_3D_REDUCE_INT {
             if (rho_c(b, 0, k, j, i) < 0.) ++local_result;
         }
@@ -147,12 +123,12 @@ TaskStatus CheckNegative(MeshData<Real> *md, IndexDomain domain)
     int nless_rho = 0, nless_u = 0;
     Kokkos::Sum<int> sum_reducer_rho(nless_rho);
     Kokkos::Sum<int> sum_reducer_u(nless_u);
-    pmb->par_reduce("count_negative_RHO", bb.s, bb.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+    pmb0->par_reduce("count_negative_RHO", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_MESH_3D_REDUCE_INT {
             if (rho_p(b, 0, k, j, i) < 0.) ++local_result;
         }
     , sum_reducer_rho);
-    pmb->par_reduce("count_negative_UU", bb.s, bb.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+    pmb0->par_reduce("count_negative_UU", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_MESH_3D_REDUCE_INT {
             if (u_p(b, 0, k, j, i) < 0.) ++local_result;
         }

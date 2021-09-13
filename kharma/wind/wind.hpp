@@ -47,7 +47,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin);
 /**
  * Add the wind source term.  Applied just after the FluxDivergence/ApplyFluxes calculation
  */
-TaskStatus AddWind(MeshData<Real> *mdudt, double time);
+TaskStatus AddSource(MeshData<Real> *mdudt);
 
 /**
  * Function to add a "wind" source term, in addition to the usual GRMHD coordinate source term

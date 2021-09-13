@@ -58,20 +58,24 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
 {
     // Reminder that NOTHING YOU CALL HERE WILL GET CALLED EVERY STEP
     // this function is run *once*, and returns a list of what should be done every step.
+    // No prints or direct function calls here will do what you want, only calls to tl.AddTask()
 
     // TaskCollections are split into regions, each of which can be tackled by a specified number of independent threads.
-    // We inherit our split, like most things in this function, from the advection_example in Parthenon
+    // We take most of the splitting logic here from the advection example in Parthenon,
+    // except that we calculate the fluxes in a Mesh-wide section rather than for MeshBlocks independently
     TaskCollection tc;
     TaskID t_none(0);
 
-    const Real beta = integrator->beta[stage - 1];
+    Real beta = integrator->beta[stage - 1];
     const Real dt = integrator->dt;
     auto stage_name = integrator->stage_name;
 
-    const bool use_b_cd = blocks[0]->packages.AllPackages().count("B_CD");
-    const bool use_b_flux_ct = blocks[0]->packages.AllPackages().count("B_FluxCT");
-    const bool use_electrons = blocks[0]->packages.AllPackages().count("Electrons");
-    const bool use_wind = blocks[0]->packages.AllPackages().count("Wind");
+    // Which packages we load affects which tasks we'll add to the list
+    auto& pkgs = blocks[0]->packages.AllPackages();
+    bool use_b_cd = pkgs.count("B_CD");
+    bool use_b_flux_ct = pkgs.count("B_FluxCT");
+    bool use_electrons = pkgs.count("Electrons");
+    bool use_wind = pkgs.count("Wind");
 
     // Allocate the fields ("containers") we need block by block
     for (int i = 0; i < blocks.size(); i++) {
@@ -88,10 +92,9 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         }
     }
 
-    // Big synchronous region: fluxes, 
+    // Big synchronous region: get & apply fluxes to advance the fluid state
+    // num_partitions is usually 1
     const int num_partitions = pmesh->DefaultNumPartitions();
-    // note that task within this region that contains one tasklist per pack
-    // could still be executed in parallel
     TaskRegion &single_tasklist_per_pack_region = tc.AddRegion(num_partitions);
     for (int i = 0; i < num_partitions; i++) {
         auto &tl = single_tasklist_per_pack_region[i];
@@ -140,7 +143,7 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         auto t_calculate_flux = t_calculate_flux1 | t_calculate_flux2 | t_calculate_flux3;
 
         auto t_recv_flux = t_calculate_flux;
-        // TODO this appears to be implemented *only* block-wise, split it out if that is the case
+        // TODO this appears to be implemented *only* block-wise, split it into its own region if so
         // if (pmesh->multilevel) {
         //     // Get flux corrections from AMR neighbors
         //     for (auto &pmb : pmesh->block_list) {
@@ -152,6 +155,7 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         //     }
         // }
 
+        // FIX FLUXES
         // Zero any fluxes through the pole or inflow from outflow boundaries
         auto t_fix_flux = tl.AddTask(t_recv_flux, KBoundaries::FixFlux, mc0.get());
 
@@ -163,7 +167,8 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
             t_flux_fixed = t_flux_ct;
         }
 
-        auto t_flux_apply = t_flux_fixed;
+        // APPLY FLUXES
+        TaskID t_flux_apply;
         const auto &combine_flux_source =
             blocks[0]->packages.Get("GRMHD")->Param<bool>("combine_flux_source");
         if (combine_flux_source) {
@@ -173,18 +178,21 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
             t_flux_apply = tl.AddTask(t_flux_div, GRMHD::AddSource, mc0.get(), mdudt.get());
         }
 
-        // Source term for constraint-damping.  Could be applied mesh-wide in that block,
-        // when we learn to write mesh-wide functions
-        // TODO make this mesh-wide to get it back in the fun
+        // ADD SOURCES TO CONSERVED VARIABLES
+        // Source term for constraint-damping.  Applied only to B
         auto t_b_cd_source = t_flux_apply;
-        // if (use_b_cd) {
-        //     t_b_cd_source = tl.AddTask(t_flux_apply, B_CD::AddSource, mc0.get(), mdudt.get());
-        // }
-        if (use_wind) {
-            double time = blocks[0]->packages.Get("Globals")->Param<double>("time");
-            Wind::AddWind(mdudt.get(), time);
+        if (use_b_cd) {
+            t_b_cd_source = tl.AddTask(t_flux_apply, B_CD::AddSource, mc0.get(), mdudt.get());
         }
+        // Wind source.  Applied to conserved variables similar to GR source term
+        auto t_wind_source = t_b_cd_source;
+        if (use_wind) {
+            t_wind_source = tl.AddTask(t_b_cd_source, Wind::AddSource, mdudt.get());
+        }
+        // Done with source terms
+        auto t_sources = t_wind_source;
 
+        // UPDATE BASE CONTAINER
         auto t_avg_data = tl.AddTask(t_b_cd_source, Update::AverageIndependentData<MeshData<Real>>,
                                 mc0.get(), mbase.get(), beta);
         // apply du/dt to all independent fields in the container
@@ -240,12 +248,14 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         }
     }
 
-    // Async Region II: Fill primitive values, apply physical boundary conditions
-    TaskRegion &async_region2 = tc.AddRegion(blocks.size());
+    // Async Region: Fill primitive values, apply physical boundary conditions,
+    // add any source terms which require the full primitives->primitives step
+    // TODO this can be Meshified
+    TaskRegion &async_region = tc.AddRegion(blocks.size());
     for (int i = 0; i < blocks.size(); i++) {
         auto &pmb = blocks[i];
-        auto &tl = async_region2[i];
-        auto &base = pmb->meshblock_data.Get();
+        auto &tl = async_region[i];
+        //auto &base = pmb->meshblock_data.Get();
         auto &sc0 = pmb->meshblock_data.Get(stage_name[stage-1]);
         auto &sc1 = pmb->meshblock_data.Get(stage_name[stage]);
 
@@ -263,8 +273,6 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
 
         // U_to_P needs a guess in order to converge, so we copy in sc0
         // (but only the fluid primitives!)
-        // TODO option to declare primitives OneCopy if we won't need the backup
-        // TODO do this mesh-at-once
         auto t_copy_prims = tl.AddTask(t_prolongBound,
             [](MeshBlockData<Real> *rc0, MeshBlockData<Real> *rc1)
             {
@@ -276,25 +284,34 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
                 return TaskStatus::complete;
             }, sc0.get(), sc1.get());
 
-        // This will fill the fluid primitive values in all zones except physical (outflow, reflecting) boundaries,
-        // i.e. where the conserved variables are consistent.
-        // we then fill those boundaries based on the primitives, and calculate conserved variables
+        // This will fill the fluid primitive values in all zones except physical (outflow, reflecting) boundaries --
+        // that is, everywhere the conserved variables have been updated so far.
         auto t_fill_derived = tl.AddTask(t_copy_prims, Update::FillDerived<MeshBlockData<Real>>, sc1.get());
 
-        // Electron heating must be done with the beginning and end states of this *substep*, specifically the primitives,
-        // which we now have from FillDerived (and PostFillDerived, which fixes them)
-        // This function takes the two primitive states sc0, sc1, updates the electron entropies in sc1, and calls
-        // Electrons::p_to_u to ensure consistent conserved-variable state.
-        auto t_heat_electrons = t_fill_derived;
+        // This is a parthenon call, but in spherical coordinates this will call the functions in
+        // boundaries.cpp, which apply physical boundary conditions based on the primitive variables for GRMHD,
+        // and the conserved forms for everything else.  Note that because this is called *after*
+        // FillDerived (since it needs bulk fluid primitives to apply GRMHD boundaries), this function
+        // must call FillDerived *again*, but over just the ghost zones.
+        // This is why KHARMA packages need to implement their "fillderived" functions in the form
+        // UtoP(rc, domain, coarse), so that they can be called for just the boundary domains here
+        auto t_set_bc = tl.AddTask(t_fill_derived, ApplyBoundaryConditions, sc1);
+
+        // ADD SOURCES TO PRIMITIVE VARIABLES
+        // In order to calculate dissipation, we must know the entropy at the beginning and end of the substep,
+        // which must be calculated from the fluid primitive variables rho,u.
+        // We only have these just now from FillDerived (and PostFillDerived, and the boundary consistency stuff)
+        // Luckily, this function does *not* need another synchronization of the ghost zones, as it is applied to
+        // all zones and has a stencil of only one zone -- that is, it is applied identically for the same zone,
+        // once by the MPI rank for which it is a physical zone, and once by the rank for which it is a ghost.
+        // See the description in GRMHD::UtoP, which has the same idea but "burns" the last rank of zones as it requires
+        // zone neighbors.
+        auto t_heat_electrons = t_set_bc;
         if (use_electrons) {
-            auto t_heat_electrons = tl.AddTask(t_fill_derived, Electrons::ApplyHeatingModels, sc0.get(), sc1.get());
+            auto t_heat_electrons = tl.AddTask(t_set_bc, Electrons::ApplyHeatingModels, sc0.get(), sc1.get());
         }
 
-        // This is a parthenon call, but in spherical coordinates this will call the functions in
-        // boundaries.cpp, which apply to the primitive variables for GRMHD, and conserved forms for everything
-        // else.  That means calling FillDerived again on any sections it's replaced!
-        auto t_set_bc = tl.AddTask(t_heat_electrons, ApplyBoundaryConditions, sc1);
-        auto t_step_done = t_set_bc;
+        auto t_step_done = t_heat_electrons;
 
         // Estimate next time step based on ctop
         if (stage == integrator->nstages) {
