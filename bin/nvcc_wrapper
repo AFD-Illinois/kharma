@@ -38,10 +38,10 @@ fi
 cpp_files=""
 
 # Host compiler arguments
-xcompiler_args=""
+xcompiler_args="-mno-float128"
 
 # Cuda (NVCC) only arguments
-cuda_args="-allow-unsupported-compiler -Wno-deprecated-gpu-targets --expt-relaxed-constexpr"
+cuda_args="-allow-unsupported-compiler -Wno-deprecated-gpu-targets --expt-relaxed-constexpr -Xcompiler -mno-float128"
 
 # Arguments for both NVCC and Host compiler
 shared_args=""

@@ -20,5 +20,6 @@ fi
 if [[ $HOST == *".longhorn.tacc.utexas.edu" ]]; then
   HOST_ARCH="POWER9"
   DEVICE_ARCH="VOLTA70"
-  PREFIX_PATH="$HOME/libs/hdf5-gcc7-mvapich2"
+  PREFIX_PATH="$HOME/libs/hdf5-gcc9-spectrum"
 fi
+
