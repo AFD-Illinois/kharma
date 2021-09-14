@@ -52,28 +52,35 @@ std::shared_ptr<StateDescriptor> Reductions::Initialize(ParameterInput *pin)
 
     // List (vector) of HistoryOutputVar that will all be enrolled as output variables
     parthenon::HstVar_list hst_vars = {};
-    if (add_zones) {
-        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, MdotBound, "Mdot"));
-        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, MdotEH, "Mdot_EH"));
-        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, EdotBound, "Edot"));
-        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, EdotEH, "Edot_EH"));
-        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, LdotBound, "Ldot"));
-        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, LdotEH, "Ldot_EH"));
+    // Accretion reductions only apply in spherical coordinates
+    if (pin->GetBoolean("coordinates", "spherical")) {
+        // Zone-based sums
+        if (add_zones) {
+            hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, MdotBound, "Mdot"));
+            hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, MdotEH, "Mdot_EH"));
+            hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, EdotBound, "Edot"));
+            hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, EdotEH, "Edot_EH"));
+            hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, LdotBound, "Ldot"));
+            hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, LdotEH, "Ldot_EH"));
+        }
+
+        // EH magnetization parameter
+        // TODO option?  Or just record this always?
+        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, PhiBound, "Phi"));
+        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, PhiEH, "Phi_EH"));
+
+        // Count accretion more accurately, as total flux through a spherical shell
+        if (add_fluxes) {
+            hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, MdotBoundFlux, "Mdot_Flux"));
+            hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, MdotEHFlux, "Mdot_EH_Flux"));
+            hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, EdotBoundFlux, "Edot_Flux"));
+            hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, EdotEHFlux, "Edot_EH_Flux"));
+            hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, LdotBoundFlux, "Ldot_Flux"));
+            hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, LdotEHFlux, "Ldot_EH_Flux"));
+        }
     }
 
-    // TODO option?  Or just record this always?
-    hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, PhiBound, "Phi"));
-    hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, PhiEH, "Phi_EH"));
-
-    if (add_fluxes) {
-        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, MdotBoundFlux, "Mdot_Flux"));
-        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, MdotEHFlux, "Mdot_EH_Flux"));
-        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, EdotBoundFlux, "Edot_Flux"));
-        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, EdotEHFlux, "Edot_EH_Flux"));
-        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, LdotBoundFlux, "Ldot_Flux"));
-        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, LdotEHFlux, "Ldot_EH_Flux"));
-    }
-
+    // Grid totals of various quantities potentially of interest
     if (add_totals) {
         hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, TotalM, "Mass"));
         hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, TotalE, "Egas"));
@@ -82,7 +89,7 @@ std::shared_ptr<StateDescriptor> Reductions::Initialize(ParameterInput *pin)
         hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, TotalEHTLum, "EHT_Lum_Proxy"));
         hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, TotalJetLum, "Jet_Lum"));
     }
-
+    // Keep a slightly more granular log of flags than the usual dump cadence
     if (add_flags) {
         hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, NPFlags, "Num_PFlags"));
         hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, NFFlags, "Num_FFlags"));
