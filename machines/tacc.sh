@@ -21,5 +21,7 @@ if [[ $HOST == *".longhorn.tacc.utexas.edu" ]]; then
   HOST_ARCH="POWER9"
   DEVICE_ARCH="VOLTA70"
   PREFIX_PATH="$HOME/libs/hdf5-gcc9-spectrum"
+  export NVCC_WRAPPER_HOST_EXTRA_FLAGS="-mno-float128"
+  export NVCC_WRAPPER_CUDA_EXTRA_FLAGS="-Xcompiler -mno-float128"
 fi
 

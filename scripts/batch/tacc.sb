@@ -8,7 +8,7 @@
 # frontera: normal
 # stampede2: flat-quadrant, normal
 # longhorn: development, v100
-#SBATCH -p normal
+#SBATCH -p v100
 
 #SBATCH -N 1
 #SBATCH --ntasks-per-node 4

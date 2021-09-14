@@ -53,6 +53,8 @@ if [[ $HOST == "cinnabar"* ]]; then
 
     module load nvhpc
     PREFIX_PATH="$HOME/libs/hdf5-nvhpc"
+    # Quash warning about my old gpus
+    NVCC_WRAPPER_CUDA_EXTRA_FLAGS="-Wno-deprecated-gpu-targets"
 
     # To use NVCC:
     if [[ "$*" == *"nvcc"* ]]; then
