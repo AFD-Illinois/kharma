@@ -300,9 +300,9 @@ void UtoP(MeshBlockData<Real> *rc)
     // We could (did formerly) save some time here by running over
     // only zones with initialized conserved variables, but the domain
     // of such values is not rectangular in the current handling
-    IndexRange ib = GetPhysicalZonesI(pmb->boundary_flag, pmb->cellbounds);
-    IndexRange jb = GetPhysicalZonesJ(pmb->boundary_flag, pmb->cellbounds);
-    IndexRange kb = GetPhysicalZonesK(pmb->boundary_flag, pmb->cellbounds);
+    const IndexRange ib = rc->GetBoundsI(IndexDomain::entire);
+    const IndexRange jb = rc->GetBoundsJ(IndexDomain::entire);
+    const IndexRange kb = rc->GetBoundsK(IndexDomain::entire);
     pmb->par_for("U_to_P", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_3D {
             if (P(m_p.RHO, k, j, i) != 0. || P(m_p.UU, k, j, i) != 0.) {

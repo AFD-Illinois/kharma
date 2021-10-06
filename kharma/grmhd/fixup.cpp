@@ -63,9 +63,9 @@ TaskStatus GRMHD::FixUtoP(MeshBlockData<Real> *rc)
     const int verbose = pars.Get<int>("verbose");
     const FloorPrescription floors = FloorPrescription(pars);
 
-    IndexRange ib = GetPhysicalZonesI(pmb->boundary_flag, pmb->cellbounds);
-    IndexRange jb = GetPhysicalZonesJ(pmb->boundary_flag, pmb->cellbounds);
-    IndexRange kb = GetPhysicalZonesK(pmb->boundary_flag, pmb->cellbounds);
+    const IndexRange ib = rc->GetBoundsI(IndexDomain::entire);
+    const IndexRange jb = rc->GetBoundsJ(IndexDomain::entire);
+    const IndexRange kb = rc->GetBoundsK(IndexDomain::entire);
 
     // TODO attempt to recover from entropy here if it's present
 

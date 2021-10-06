@@ -62,38 +62,44 @@ TaskStatus GRMHD::ApplyFloors(MeshBlockData<Real> *rc)
 
     const auto& G = pmb->coords;
 
+    GridScalar pflag = rc->Get("pflag").data;
     GridScalar fflag = rc->Get("fflag").data;
 
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
     const FloorPrescription floors = FloorPrescription(pmb->packages.Get("GRMHD")->AllParams());
 
     // Apply floors over the same zones we just updated with UtoP
-    IndexRange ib = GetPhysicalZonesI(pmb->boundary_flag, pmb->cellbounds);
-    IndexRange jb = GetPhysicalZonesJ(pmb->boundary_flag, pmb->cellbounds);
-    IndexRange kb = GetPhysicalZonesK(pmb->boundary_flag, pmb->cellbounds);
+    // This selects the entire zone, but we then require pflag >= 0,
+    // which eliminates marked corner zones
+    const IndexRange ib = rc->GetBoundsI(IndexDomain::entire);
+    const IndexRange jb = rc->GetBoundsJ(IndexDomain::entire);
+    const IndexRange kb = rc->GetBoundsK(IndexDomain::entire);
 
     pmb->par_for("apply_floors", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_3D {
-            // apply_floors can involve another U_to_P call.  Hide the pflag in bottom 5 bits and retrieve both
-            int comboflag = apply_floors(G, P, m_p, gam, k, j, i, floors, U, m_u);
-            fflag(k, j, i) = (comboflag / HIT_FLOOR_GEOM_RHO) * HIT_FLOOR_GEOM_RHO;
+            if (((int) pflag(k, j, i)) >= InversionStatus::success) {
+                // apply_floors can involve another U_to_P call.  Hide the pflag in bottom 5 bits and retrieve both
+                int comboflag = apply_floors(G, P, m_p, gam, k, j, i, floors, U, m_u);
+                fflag(k, j, i) = (comboflag / HIT_FLOOR_GEOM_RHO) * HIT_FLOOR_GEOM_RHO;
 
-            // The floors as they're written guarantee a consistent state in their cells,
-            // so we do not flag any additional cells, nor do we remove existing flags
-            // (which might have only "needed floors" due to being left untouched by UtoP)
-            // TODO record these flags separately, they are likely common depending on floor prescriptions
-
+                // The floors as they're written guarantee a consistent state in their cells,
+                // so we do not flag any additional cells, nor do we remove existing flags
+                // (which might have only "needed floors" due to being left untouched by UtoP)
+                // TODO record these flags separately, they are likely common depending on floor prescriptions
 #if !FUSE_FLOOR_KERNELS
+            }
         }
     );
     pmb->par_for("apply_ceilings", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_3D {
+            if (((int) pflag(k, j, i)) >= InversionStatus::success) {
 #endif
-            // Apply ceilings *after* floors, to make the temperature ceiling better-behaved
-            // Ceilings never involve a U_to_P call
-            int addflag = fflag(k, j, i);
-            addflag |= apply_ceilings(G, P, m_p, gam, k, j, i, floors, U, m_u);
-            fflag(k, j, i) = addflag;
+                // Apply ceilings *after* floors, to make the temperature ceiling better-behaved
+                // Ceilings never involve a U_to_P call
+                int addflag = fflag(k, j, i);
+                addflag |= apply_ceilings(G, P, m_p, gam, k, j, i, floors, U, m_u);
+                fflag(k, j, i) = addflag;
+            }
         }
     );
 
