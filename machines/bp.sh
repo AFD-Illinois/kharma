@@ -43,7 +43,7 @@ if [[ $HOST == "cinnabar"* ]]; then
     DEVICE_ARCH="KEPLER35"
     export CXXFLAGS="--cuda-path=/usr/local/cuda-10.1"
     export CUDA_HOME="/usr/local/cuda-10.1"
-    EXTRA_FLAGS="-DCUDAToolkit_INCLUDE_DIR=/usr/local/cuda-10.1/include $EXTRA_FLAGS"
+    EXTRA_FLAGS="-DCUDAToolkit_INCLUDE_DIR=/usr/local/cuda-10.1/include -DFUSE_EMF_KERNELS=ON $EXTRA_FLAGS"
 
   elif [[ "$*" == *"cuda"* ]]; then
     # Use NVHPC libraries (GPU-aware OpenMPI!)
@@ -54,7 +54,7 @@ if [[ $HOST == "cinnabar"* ]]; then
     module load nvhpc
     PREFIX_PATH="$HOME/libs/hdf5-nvhpc"
     # Quash warning about my old gpus
-    NVCC_WRAPPER_CUDA_EXTRA_FLAGS="-Wno-deprecated-gpu-targets"
+    export NVCC_WRAPPER_CUDA_EXTRA_FLAGS="-Wno-deprecated-gpu-targets"
 
     # To use NVCC:
     if [[ "$*" == *"nvcc"* ]]; then

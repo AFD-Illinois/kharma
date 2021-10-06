@@ -101,7 +101,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
                  Metadata::Restart, Metadata::Conserved, Metadata::WithFluxes, isElectrons});
     Metadata m_prim = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived,
                   Metadata::Restart, isPrimitive, isElectrons});
-    
+
     // Total entropy, used to track changes
     int nKs = 1;
     pkg->AddField("cons.Ktot", m_con);
@@ -281,8 +281,10 @@ TaskStatus ApplyHeatingModels(MeshBlockData<Real> *rc_old, MeshBlockData<Real> *
     const Real game = pmb->packages.Get("Electrons")->Param<Real>("gamma_e");
     const bool suppress_highb_heat = pmb->packages.Get("Electrons")->Param<bool>("suppress_highb_heat");
 
-    // This function (and any primitive-variable sources) needs to be run over the entire domain
-    // See harm_driver.cpp for the wider picture as to why.
+    // This function (and any primitive-variable sources) needs to be run over the entire domain,
+    // because the boundary zones have already been updated and so the same calculations must be applied
+    // in order to keep them consistent.
+    // See harm_driver.cpp for the full picture of what gets updated when.
     const IndexRange ib = rc->GetBoundsI(IndexDomain::entire);
     const IndexRange jb = rc->GetBoundsJ(IndexDomain::entire);
     const IndexRange kb = rc->GetBoundsK(IndexDomain::entire);
@@ -346,7 +348,7 @@ TaskStatus ApplyHeatingModels(MeshBlockData<Real> *rc_old, MeshBlockData<Real> *
                 Real pres = P(m_p.RHO, k, j, i) * Tpr; // Proton pressure
                 Real beta = pres / bsq * 2;
                 if(beta > 1.e20) beta = 1.e20; // If somebody enables electrons in a GRHD sim
-                
+
                 Real QiQe = 35. / (1. + pow(beta/15., -1.4) * exp(-0.1 / Trat));
                 Real fel = 1./(1. + QiQe);
                 // Measure dissipation as (total Entropy) - (expected advected entropy) at the same time ("new")
