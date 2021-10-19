@@ -313,18 +313,20 @@ TaskStatus ApplyHeatingModels(MeshBlockData<Real> *rc_old, MeshBlockData<Real> *
                 // TODO curious to know whether we hit these low temperatures
                 // Note that the Tp & Te guards are just to keep the ratio
                 // Tp/Te from going -> NaN (TODO can we get away with only Te?)
-                if(Tpr <= SMALL) Tpr = SMALL;
+                // Since this is a NaN guard for first step/ghost zones/etc we
+                // force any NaN->values
+                Tpr = max(SMALL, Tpr);
             }
 
             if (m_p.K_HOWES >= 0) {
                 Real uel = 1./(game - 1.) * P(m_p.K_HOWES, k, j, i) * pow(P(m_p.RHO, k, j, i), game);
                 Real Tel = (game - 1.) * uel / P(m_p.RHO, k, j, i);
-                if(Tel <= SMALL) Tel = SMALL;
+                Tel = max(SMALL, Tel);
 
                 Real Trat = fabs(Tpr/Tel);
                 Real pres = P(m_p.RHO, k, j, i) * Tpr; // Proton pressure
                 Real beta = pres / bsq * 2;
-                if(beta > 1.e20) beta = 1.e20; // If somebody enables electrons in a GRHD sim
+                beta = min(beta, 1.e20); // If somebody enables electrons in a GRHD sim
 
                 Real logTrat = log10(Trat);
                 Real mbeta = 2. - 0.2*logTrat;
@@ -342,12 +344,12 @@ TaskStatus ApplyHeatingModels(MeshBlockData<Real> *rc_old, MeshBlockData<Real> *
                 // Equation (2) in http://www.pnas.org/lookup/doi/10.1073/pnas.1812491116
                 Real uel = 1./(game - 1.) * P(m_p.K_KAWAZURA, k, j, i) * pow(P(m_p.RHO, k, j, i), game);
                 Real Tel = (game - 1.) * uel / P(m_p.RHO, k, j, i);
-                if(Tel <= SMALL) Tel = SMALL;
+                Tel = max(SMALL, Tel);
 
                 Real Trat = fabs(Tpr/Tel);
                 Real pres = P(m_p.RHO, k, j, i) * Tpr; // Proton pressure
                 Real beta = pres / bsq * 2;
-                if(beta > 1.e20) beta = 1.e20; // If somebody enables electrons in a GRHD sim
+                beta = min(beta, 1.e20); // If somebody enables electrons in a GRHD sim
 
                 Real QiQe = 35. / (1. + pow(beta/15., -1.4) * exp(-0.1 / Trat));
                 Real fel = 1./(1. + QiQe);
@@ -374,7 +376,7 @@ TaskStatus ApplyHeatingModels(MeshBlockData<Real> *rc_old, MeshBlockData<Real> *
                 // Equation for \delta on  pg. 719 (Section 4) in https://iopscience.iop.org/article/10.1086/520800
                 Real uel = 1./(game - 1.) * P(m_p.K_SHARMA, k, j, i) * pow(P(m_p.RHO, k, j, i), game);
                 Real Tel = (game - 1.) * uel / P(m_p.RHO, k, j, i);
-                if(Tel <= SMALL) Tel = SMALL;
+                Tel = max(SMALL, Tel);
 
                 Real Trat_inv = fabs(Tel/Tpr); //Inverse of the temperature ratio in KAWAZURA
                 Real QeQi = 0.33 * pow(Trat_inv, 0.5);

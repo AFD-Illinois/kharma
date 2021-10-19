@@ -76,8 +76,9 @@ dt = 10.0
 single_precision_output = true
 # Any fields listed here which are not present (e.g. electrons if disabled)
 # will be silently skipped. '&' character is a line continuation, like '\'
+# Remember that the commas are still necessary, and unknown fields will silently fail!
 variables = prims.rho, prims.u, prims.uvec, prims.B, prims.Ktot, &
-            prims.Kel_Howes, prims.Kel_Kawazura, prims.Kel_Werner, prims.Kel_Rowan, prims.Kel_Sharma &
+            prims.Kel_Howes, prims.Kel_Kawazura, prims.Kel_Werner, prims.Kel_Rowan, prims.Kel_Sharma, &
             pflag, fflag
 
 <parthenon/output1>
