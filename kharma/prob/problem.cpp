@@ -50,6 +50,8 @@
 #include "kelvin_helmholtz.hpp"
 #include "mhdmodes.hpp"
 #include "orszag_tang.hpp"
+#include "shock_tube.hpp"
+
 #include "b_field_tools.hpp"
 
 // Package headers
@@ -77,6 +79,8 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
         InitializeExplosion(rc.get(), pin);
     } else if (prob == "kelvin_helmholtz") {
         InitializeKelvinHelmholtz(rc.get(), pin);
+    } else if (prob == "shock") {
+        InitializeShockTube(rc.get(), pin);
     } else if (prob == "bondi") {
         InitializeBondi(rc.get(), pin);
     } else if (prob == "torus") {
