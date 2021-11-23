@@ -46,6 +46,7 @@
 #include "electrons.hpp"
 #include "grmhd.hpp"
 #include "reductions.hpp"
+#include "viscosity.hpp"
 #include "wind.hpp"
 
 #include "bondi.hpp"
@@ -159,10 +160,11 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
     // Read all options first so we can set their defaults here,
     // before any packages are initialized.
     std::string b_field_solver = pin->GetOrAddString("b_field", "solver", "flux_ct");
-    // TODO if jcon in outputs then...
+    // TODO enable this iff jcon is in the list of outputs
     bool add_jcon = pin->GetOrAddBoolean("GRMHD", "add_jcon", true);
     bool do_electrons = pin->GetOrAddBoolean("electrons", "on", false);
     bool do_reductions = pin->GetOrAddBoolean("reductions", "on", true);
+    bool do_viscosity = pin->GetOrAddBoolean("viscosity", "on", false);
     bool do_wind = pin->GetOrAddBoolean("wind", "on", false);
 
     // Global variables "package."  Anything that just, really oughta be a global
@@ -186,10 +188,6 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
         packages.Add(B_FluxCT::Initialize(pin.get(), packages));
     }
 
-    if (do_wind) {
-        packages.Add(Wind::Initialize(pin.get()));
-    }
-
     if (add_jcon) {
         packages.Add(Current::Initialize(pin.get()));
     }
@@ -200,6 +198,14 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
 
     if (do_reductions) {
         packages.Add(Reductions::Initialize(pin.get()));
+    }
+
+    if (do_viscosity) {
+        packages.Add(Viscosity::Initialize(pin.get(), packages));
+    }
+
+    if (do_wind) {
+        packages.Add(Wind::Initialize(pin.get()));
     }
 
     return std::move(packages);

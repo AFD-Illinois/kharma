@@ -47,6 +47,10 @@ add_subdirectory(external/parthenon)
 include_directories(external/parthenon/src)
 # mpark::variant is header only, don't build anything
 include_directories(external/variant/include)
+# Kokkos kernels
+add_subdirectory(external/kokkos-kernels)
+include_directories(external/kokkos-kernels/src)
+include_directories(external/kokkos-kernels/src/batched)
 
 # KHARMA folder
 add_subdirectory(kharma)

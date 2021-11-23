@@ -19,6 +19,7 @@ AUX_SOURCE_DIRECTORY(${CMAKE_CURRENT_SOURCE_DIR}/current EXE_NAME_SRC)
 AUX_SOURCE_DIRECTORY(${CMAKE_CURRENT_SOURCE_DIR}/electrons EXE_NAME_SRC)
 AUX_SOURCE_DIRECTORY(${CMAKE_CURRENT_SOURCE_DIR}/grmhd EXE_NAME_SRC)
 AUX_SOURCE_DIRECTORY(${CMAKE_CURRENT_SOURCE_DIR}/reductions EXE_NAME_SRC)
+AUX_SOURCE_DIRECTORY(${CMAKE_CURRENT_SOURCE_DIR}/viscosity EXE_NAME_SRC)
 AUX_SOURCE_DIRECTORY(${CMAKE_CURRENT_SOURCE_DIR}/wind EXE_NAME_SRC)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
@@ -31,10 +32,13 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/current)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/electrons)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/grmhd)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/reductions)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/viscosity)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/wind)
 
 add_executable(${EXE_NAME} ${EXE_NAME_SRC})
 
+target_link_libraries(${EXE_NAME} PUBLIC kokkos)
+target_link_libraries(${EXE_NAME} PUBLIC kokkoskernels)
 target_link_libraries(${EXE_NAME} PUBLIC parthenon)
 
 # OPTIONS
