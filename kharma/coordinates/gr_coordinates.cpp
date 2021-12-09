@@ -45,7 +45,7 @@ using namespace Kokkos;
 
 #if FAST_CARTESIAN
 /**
- * Fast Cartesian GRCoordinates just use the underlying UniformCartesian object for everything
+ * Fast Cartesian GRCoordinates objects just use the underlying UniformCartesian object for everything
  */
 GRCoordinates::GRCoordinates(const RegionSize &rs, ParameterInput *pin): UniformCartesian(rs, pin) {}
 GRCoordinates::GRCoordinates(const GRCoordinates &src, int coarsen): UniformCartesian(src, coarsen) {}
@@ -62,7 +62,7 @@ GRCoordinates::GRCoordinates(const RegionSize &rs, ParameterInput *pin): Uniform
     // but in KHARMA, that object is only used through this one.
     // And I want the option to use that code elsewhere as it's quite general & nice
     std::string base_str = pin->GetString("coordinates", "base"); // Require every problem to specify very basic geometry
-    std::string transform_str = pin->GetString("coordinates", "transform");
+    std::string transform_str = pin->GetString("coordinates", "transform"); // We set this in kharma.cpp
 
     SomeBaseCoords base;
     if (base_str == "spherical_minkowski") {
@@ -128,7 +128,9 @@ GRCoordinates::GRCoordinates(const GRCoordinates &src, int coarsen): UniformCart
 }
 
 /**
- * Initialize any cached geometry that GRCoordinates will need to return.
+ * Initialize any cached geometry that GRCoordinates will need to return. While
+ * GRCoordinates objects will be moved device-side, this can be run only on the
+ * host.
  *
  * This needs to be defined *outside* of the GRCoordinates object, because of some
  * fun issues with C++ Lambda capture, which Kokkos brings to the fore

@@ -20,7 +20,7 @@
 # Processors to use.  Leave blank for all.  Be a good citizen.
 NPROC=
 
-### Machine-specific configurations ###
+### Load machine-specific configurations ###
 # This segment sources a series of machine-specific
 # definitions from the machines/ directory.
 # If the current machine isn't listed, this script
@@ -40,11 +40,12 @@ NPROC=
 
 # HOST_ARCH=
 # DEVICE_ARCH=
+# C_NATIVE=
+# CXX_NATIVE=
 
 # Less common options:
 # PREFIX_PATH=
 # EXTRA_FLAGS=
-# export NVCC_WRAPPER_DEFAULT_COMPILER=
 
 HOST=$(hostname -f)
 for machine in machines/*.sh
@@ -57,6 +58,7 @@ done
 # This ends up pretty much optimal on x86 architectures which don't have
 # 1. AVX512 (Intel on HPC or Gen10+ consumer)
 # 2. GPUs
+# However, you may have better luck commenting these tests and letting Kokkos decide
 if [[ -z "$HOST_ARCH" ]]; then
   if grep GenuineIntel /proc/cpuinfo >/dev/null 2>&1; then
     HOST_ARCH="HSW"
@@ -146,7 +148,7 @@ fi
 # Inner: SIMDFOR_INNER_LOOP;TVR_INNER_LOOP
 if [[ "$*" == *"sycl"* ]]; then
   export CXX=icpx
-  EXTRA_FLAGS="-DCMAKE_C_COMPILER=icx $EXTRA_FLAGS"
+  export CC=icx
   OUTER_LAYOUT="MANUAL1D_LOOP"
   INNER_LAYOUT="TVR_INNER_LOOP"
   ENABLE_OPENMP="ON"
@@ -155,6 +157,7 @@ if [[ "$*" == *"sycl"* ]]; then
   ENABLE_HIP="OFF"
 elif [[ "$*" == *"hip"* ]]; then
   export CXX=hipcc
+  # Is there a hipc?
   OUTER_LAYOUT="MANUAL1D_LOOP"
   INNER_LAYOUT="TVR_INNER_LOOP"
   ENABLE_OPENMP="ON"
