@@ -162,7 +162,9 @@ elif [[ "$*" == *"hip"* ]]; then
   ENABLE_SYCL="OFF"
   ENABLE_HIP="ON"
 elif [[ "$*" == *"cuda"* ]]; then
+  export CC="$C_NATIVE"
   export CXX="$SCRIPT_DIR/bin/nvcc_wrapper"
+  export NVCC_WRAPPER_DEFAULT_COMPILER="$CXX_NATIVE"
   if [[ "$*" == *"dryrun"* ]]; then
     export CXXFLAGS="-dryrun $CXXFLAGS"
     echo "Dry-running with $CXXFLAGS"
@@ -205,6 +207,7 @@ cd build
 if [[ "$*" == *"clean"* ]]; then
 #set -x
   cmake ..\
+    -DCMAKE_C_COMPILER="$CC" \
     -DCMAKE_CXX_COMPILER="$CXX" \
     -DCMAKE_PREFIX_PATH="$PREFIX_PATH:$CMAKE_PREFIX_PATH" \
     -DCMAKE_BUILD_TYPE=$TYPE \
