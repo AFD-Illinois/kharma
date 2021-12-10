@@ -77,8 +77,7 @@ void OutflowX1(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, boo
     // Then the polar bound only where outflow is not applied,
     // and periodic bounds only where neither other bound applies.
     // The latter is accomplished regardless of Parthenon's definitions,
-    // since these functions are run after Parthenon's MPI boundary
-    // syncs
+    // since these functions are run after Parthenon's MPI boundary syncs
     IndexDomain ldomain = IndexDomain::interior;
     int is = bounds.is(ldomain), ie = bounds.ie(ldomain);
     int js = bounds.js(ldomain), je = bounds.je(ldomain);

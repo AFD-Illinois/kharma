@@ -101,11 +101,12 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     }
 
     // Minimum timestep, if something about the sound speed goes wonky. Probably won't save you :)
+    // know what we're doing modifying "parthenon/time" -- subclass 
     double dt_min = pin->GetOrAddReal("parthenon/time", "dt_min", 1.e-4);
     params.Add("dt_min", dt_min);
-    // Starting timestep.  TODO make this consistent on restarts
-    double dt = pin->GetOrAddReal("parthenon/time", "dt", dt_min);
-    params.Add("dt", dt);
+    // Starting timestep, in case we're restarting
+    double dt_start = pin->GetOrAddReal("parthenon/time", "dt", dt_min);
+    params.Add("dt_start", dt_start);
     double max_dt_increase = pin->GetOrAddReal("parthenon/time", "max_dt_increase", 2.0);
     params.Add("max_dt_increase", max_dt_increase);
 
@@ -368,11 +369,14 @@ Real EstimateTimestep(MeshBlockData<Real> *rc)
     const auto& G = pmb->coords;
     auto& ctop = rc->Get("ctop").data;
 
-    // TODO: move timestep limiter into an override of SetGlobalTimestep?
-    // TODO: move diagnostic printing to PostStepDiagnostics?
+    // TODO: move timestep limiter into an override of SetGlobalTimestep
+    // TODO: move diagnostic printing to PostStepDiagnostics, now it's broken here
 
     if (!pmb->packages.Get("Globals")->Param<bool>("in_loop")) {
-        return pmb->packages.Get("GRMHD")->Param<double>("dt");
+        double dt = pmb->packages.Get("GRMHD")->Param<double>("dt_start");
+        // Record this, since we'll use it to determine the max step next
+        pmb->packages.Get("Globals")->UpdateParam<double>("dt_last", dt);
+        return dt;
     }
 
 
@@ -386,20 +390,22 @@ Real EstimateTimestep(MeshBlockData<Real> *rc)
             // Effective "max speed" used for the timestep
             double ctop_max_zone = min(G.dx1v(i), min(G.dx2v(j), G.dx3v(k))) / ndt_zone;
 
-            if (ndt_zone < lminmax.min_val) lminmax.min_val = ndt_zone;
-            if (ctop_max_zone > lminmax.max_val) lminmax.max_val = ctop_max_zone;
+            if (!isnan(ndt_zone) && (ndt_zone < lminmax.min_val))
+                lminmax.min_val = ndt_zone;
+            if (!isnan(ctop_max_zone) && (ctop_max_zone > lminmax.max_val))
+                lminmax.max_val = ctop_max_zone;
         }
     , Kokkos::MinMax<Real>(minmax));
     // Keep dt to do some checks below
-    double min_ndt = minmax.min_val;
-    double nctop = minmax.max_val;
+    const double min_ndt = minmax.min_val;
+    const double nctop = minmax.max_val;
 
     // Apply limits
-    double cfl = pmb->packages.Get("GRMHD")->Param<double>("cfl");
-    double dt_min = pmb->packages.Get("GRMHD")->Param<double>("dt_min");
-    double dt_last = pmb->packages.Get("Globals")->Param<double>("dt_last");
-    double dt_max = pmb->packages.Get("GRMHD")->Param<double>("max_dt_increase") * dt_last;
-    double ndt = clip(min_ndt * cfl, dt_min, dt_max);
+    const double cfl = pmb->packages.Get("GRMHD")->Param<double>("cfl");
+    const double dt_min = pmb->packages.Get("GRMHD")->Param<double>("dt_min");
+    const double dt_last = pmb->packages.Get("Globals")->Param<double>("dt_last");
+    const double dt_max = pmb->packages.Get("GRMHD")->Param<double>("max_dt_increase") * dt_last;
+    const double ndt = clip(min_ndt * cfl, dt_min, dt_max);
 
     // Record max ctop, for constraint damping
     if (nctop > pmb->packages.Get("Globals")->Param<Real>("ctop_max")) {
