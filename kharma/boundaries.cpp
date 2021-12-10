@@ -36,10 +36,13 @@
 
 #include "boundaries.hpp"
 
-#include "bondi.hpp"
 #include "kharma.hpp"
 #include "mhd_functions.hpp"
 #include "pack.hpp"
+
+// Problem-specific boundaries
+#include "bondi.hpp"
+//#include "hubble.hpp"
 
 // Going to need all modules' headers here
 #include "b_flux_ct.hpp"
@@ -134,7 +137,6 @@ void OutflowX1(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, boo
     );
 
     FLAG("Applied");
-    KHARMA::FillDerivedDomain(rc, domain, coarse);
 }
 
 // Single reflecting boundary function for inner and outer bounds
@@ -205,26 +207,44 @@ void ReflectX2(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, boo
             GRMHD::p_to_u(G, P, m_p, gam, k, j, i, q, m_u);
         }
     );
-
-    KHARMA::FillDerivedDomain(rc, domain, coarse);
 }
 
 // Interface calls into the preceding functions
-void KBoundaries::OutflowInnerX1(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse)
+void KBoundaries::InnerX1(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse)
 {
-    OutflowX1(rc, IndexDomain::inner_x1, coarse);
+    // TODO implement as named callback, give combo start/bound problems their own "packages"
+    auto pmb = rc->GetBlockPointer();
+    std::string prob = pmb->packages.Get("GRMHD")->Param<std::string>("problem");
+    //if (prob == "hubble") {
+    //    SetHubble(rc.get(), IndexDomain::inner_x1, coarse);
+    //} else {
+        OutflowX1(rc, IndexDomain::inner_x1, coarse);
+    //}
+    KHARMA::FillDerivedDomain(rc, IndexDomain::inner_x1, coarse);
 }
-void KBoundaries::OutflowOuterX1(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse)
+void KBoundaries::OuterX1(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse)
 {
-    OutflowX1(rc, IndexDomain::outer_x1, coarse);
+    auto pmb = rc->GetBlockPointer();
+    std::string prob = pmb->packages.Get("GRMHD")->Param<std::string>("problem");
+    //if (prob == "hubble") {
+    //    SetHubble(rc.get(), IndexDomain::outer_x1, coarse);
+    //} else
+    if (prob == "bondi") {
+        SetBondi(rc.get(), IndexDomain::outer_x1, coarse);
+    } else {
+        OutflowX1(rc, IndexDomain::outer_x1, coarse);
+    }
+    KHARMA::FillDerivedDomain(rc, IndexDomain::outer_x1, coarse);
 }
-void KBoundaries::ReflectInnerX2(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse)
+void KBoundaries::InnerX2(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse)
 {
     ReflectX2(rc, IndexDomain::inner_x2, coarse);
+    KHARMA::FillDerivedDomain(rc, IndexDomain::inner_x2, coarse);
 }
-void KBoundaries::ReflectOuterX2(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse)
+void KBoundaries::OuterX2(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse)
 {
     ReflectX2(rc, IndexDomain::outer_x2, coarse);
+    KHARMA::FillDerivedDomain(rc, IndexDomain::outer_x2, coarse);
 }
 
 /**

@@ -31,12 +31,10 @@ NPROC=
 # See e.g. tacc.sh for an example to get started writing one,
 # or specify any options you need manually below
 
-# Kokkos_ARCH options:
-# CPUs: WSM, HSW, BDW, SKX, AMDAVX
-# ARM: ARMV8, ARMV81, ARMV8_THUNDERX2, A64FX
-# POWER: POWER8, POWER9
-# MIC: KNC, KNL
-# GPUs: KEPLER35, VOLTA70, TURING75, AMPERE80
+# Example Kokkos_ARCH options:
+# CPUs: WSM, HSW, BDW, SKX, KNL, AMDAVX, ZEN2, ZEN3, POWER9
+# ARM: ARMV80, ARMV81, ARMV8_THUNDERX2, A64FX
+# GPUs: KEPLER35, VOLTA70, TURING75, AMPERE80, INTEL_GEN
 
 # HOST_ARCH=
 # DEVICE_ARCH=
@@ -55,9 +53,11 @@ done
 
 
 # If we haven't special-cased already, guess an architecture
-# This ends up pretty much optimal on x86 architectures which don't have
-# 1. AVX512 (Intel on HPC or Gen10+ consumer)
-# 2. GPUs
+# This ends up fine on most x86 architectures
+# Exceptions:
+# 1. GPUs, obviously
+# 2. AVX512 (Intel on HPC or Gen10+ consumer)
+# 3. AMD EPYC Zen2, Zen3
 # However, you may have better luck commenting these tests and letting Kokkos decide
 if [[ -z "$HOST_ARCH" ]]; then
   if grep GenuineIntel /proc/cpuinfo >/dev/null 2>&1; then
@@ -85,8 +85,8 @@ fi
 ### Check environment ###
 if [[ "$(which python3 2>/dev/null)" == *"conda"* ]]; then
   echo "It looks like you have Anaconda loaded."
-  echo "Anaconda forces a serial version of HDF5 which makes this compile impossible."
-  echo "Deactivate your environment with 'conda deactivate'"
+  echo "Anaconda forces a serial version of HDF5 which may make this compile impossible."
+  echo "If you run into trouble, deactivate your environment with 'conda deactivate'"
 fi
 
 if [[ "$*" == *"debug"* ]]; then

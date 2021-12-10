@@ -32,40 +32,21 @@
  *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-// BONDI PROBLEM
-
-#include "decs.hpp"
-
-#include "gr_coordinates.hpp"
-
-#include "mhd_functions.hpp"
-#include "pack.hpp"
-#include "prob_common.hpp"
-
-#include <parthenon/parthenon.hpp>
+#include "bondi.hpp"
 
 using namespace std;
 
-KOKKOS_INLINE_FUNCTION void get_prim_bondi(const GRCoordinates& G, const CoordinateEmbedding& coords, const VariablePack<Real>& P, const VarMap& m_p,
-                                           const Real& gam, const SphBLCoords& bl,  const SphKSCoords& ks, 
-                                           const Real mdot, const Real rs, const int& k, const int& j, const int& i);
-
 /**
  * Initialization of a Bondi problem with specified sonic point, BH mdot, and horizon radius
- * TODO this can/should be just mdot (and the grid ofc), if this problem is to be used as anything more than a test
+ * TODO mdot and rs are redundant and should be merged into one parameter
  */
-void InitializeBondi(MeshBlockData<Real> *rc, ParameterInput *pin)
+TaskStatus InitializeBondi(MeshBlockData<Real> *rc, ParameterInput *pin)
 {
     FLAG("Initializing Bondi problem");
     auto pmb = rc->GetBlockPointer();
 
-    PackIndexMap prims_map;
-    auto P = GRMHD::PackMHDPrims(rc, prims_map);
-    const VarMap m_p(prims_map, false);
-
     const Real mdot = pin->GetOrAddReal("bondi", "mdot", 1.0);
     const Real rs = pin->GetOrAddReal("bondi", "rs", 8.0);
-    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
 
     // Add these to package properties, since they continue to be needed on boundaries
     if(! (pmb->packages.Get("GRMHD")->AllParams().hasKey("mdot")))
@@ -73,25 +54,16 @@ void InitializeBondi(MeshBlockData<Real> *rc, ParameterInput *pin)
     if(! (pmb->packages.Get("GRMHD")->AllParams().hasKey("rs")))
         pmb->packages.Get("GRMHD")->AddParam<Real>("rs", rs);
 
-    const auto& G = pmb->coords;
-    SphKSCoords ks = mpark::get<SphKSCoords>(G.coords.base);
-    SphBLCoords bl = SphBLCoords(ks.a); // TODO this and F-M torus are Kerr metric only
-    CoordinateEmbedding cs = G.coords;
+    // Set the whole domain to the analytic solution to begin
+    SetBondi(rc);
 
-    IndexRange ib = pmb->cellbounds.GetBoundsI(IndexDomain::entire);
-    IndexRange jb = pmb->cellbounds.GetBoundsJ(IndexDomain::entire);
-    IndexRange kb = pmb->cellbounds.GetBoundsK(IndexDomain::entire);
-    pmb->par_for("init_bondi", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-        KOKKOS_LAMBDA_3D {
-            get_prim_bondi(G, cs, P, m_p, gam, bl, ks, mdot, rs, k, j, i);
-        }
-    );
-    FLAG("Initialized Bondi");
+    FLAG("Initialized");
+    return TaskStatus::complete;
 }
 
-void ApplyBondiBoundary(MeshBlockData<Real> *rc)
+TaskStatus SetBondi(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
-    FLAG("Applying Bondi X1R boundary");
+    FLAG("Setting Bondi zones");
     auto pmb = rc->GetBlockPointer();
 
     PackIndexMap prims_map, cons_map;
@@ -109,107 +81,27 @@ void ApplyBondiBoundary(MeshBlockData<Real> *rc)
     SphBLCoords bl = SphBLCoords(ks.a);
     CoordinateEmbedding cs = G.coords;
 
-    // TODO Integrate this function into new KHARMA bounds
-    IndexRange ib = pmb->cellbounds.GetBoundsI(IndexDomain::interior);
-    IndexRange ib_e = pmb->cellbounds.GetBoundsI(IndexDomain::entire);
-    IndexRange jb_e = pmb->cellbounds.GetBoundsJ(IndexDomain::entire);
-    IndexRange kb_e = pmb->cellbounds.GetBoundsK(IndexDomain::entire);
-    pmb->par_for("bondi_boundary", kb_e.s, kb_e.e, jb_e.s, jb_e.e, ib.e+1, ib_e.e,
+    // This function currently only handles "outer X1" and "entire" grid domains,
+    // but is the special-casing here necessary?
+    // Can we define outer_x1 w/priority more flexibly?
+    auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
+    int ibs, ibe;
+    if (domain == IndexDomain::outer_x1) {
+        ibs = bounds.GetBoundsI(IndexDomain::interior).e+1;
+        ibe = bounds.GetBoundsI(IndexDomain::entire).e;
+    } else {
+        ibs = bounds.GetBoundsI(domain).s;
+        ibe = bounds.GetBoundsI(domain).e;
+    }
+    IndexRange jb_e = bounds.GetBoundsJ(IndexDomain::entire);
+    IndexRange kb_e = bounds.GetBoundsK(IndexDomain::entire);
+    pmb->par_for("bondi_boundary", kb_e.s, kb_e.e, jb_e.s, jb_e.e, ibs, ibe,
         KOKKOS_LAMBDA_3D {
             get_prim_bondi(G, cs, P, m_p, gam, bl, ks, mdot, rs, k, j, i);
             GRMHD::p_to_u(G, P, m_p, gam, k, j, i, U, m_u);
         }
     );
-}
-// Adapted from M. Chandra
-KOKKOS_INLINE_FUNCTION Real get_Tfunc(const Real T, const GReal r, const Real C1, const Real C2, const Real n)
-{
-    return pow(1. + (1. + n) * T, 2.) * (1. - 2. / r + pow(C1 / pow(r,2) / pow(T, n), 2.)) - C2;
-}
 
-KOKKOS_INLINE_FUNCTION Real get_T(const GReal r, const Real C1, const Real C2, const Real n)
-{
-    Real rtol = 1.e-12;
-    Real ftol = 1.e-14;
-    Real Tmin = 0.6 * (sqrt(C2) - 1.) / (n + 1);
-    Real Tmax = pow(C1 * sqrt(2. / pow(r,3)), 1. / n);
-
-    Real f0, f1, fh;
-    Real T0, T1, Th;
-    T0 = Tmin;
-    f0 = get_Tfunc(T0, r, C1, C2, n);
-    T1 = Tmax;
-    f1 = get_Tfunc(T1, r, C1, C2, n);
-    if (f0 * f1 > 0) return -1;
-
-    Th = (f1 * T0 - f0 * T1) / (f1 - f0);
-    fh = get_Tfunc(Th, r, C1, C2, n);
-    Real epsT = rtol * (Tmin + Tmax);
-    while (fabs(Th - T0) > epsT && fabs(Th - T1) > epsT && fabs(fh) > ftol)
-    {
-        if (fh * f0 < 0.) {
-            T0 = Th;
-            f0 = fh;
-        } else {
-            T1 = Th;
-            f1 = fh;
-        }
-
-        Th = (f1 * T0 - f0 * T1) / (f1 - f0);
-        fh = get_Tfunc(Th, r, C1, C2, n);
-    }
-
-    return Th;
-}
-
-/**
- * Get the Bondi solution at a particular zone.  Can ideally be host- or device-side, but careful of EOS.
- * Note this assumes that there are ghost zones!
- */
-KOKKOS_INLINE_FUNCTION void get_prim_bondi(const GRCoordinates& G, const CoordinateEmbedding& coords, const VariablePack<Real>& P, const VarMap& m_p,
-                                           const Real& gam, const SphBLCoords& bl,  const SphKSCoords& ks, 
-                                           const Real mdot, const Real rs, const int& k, const int& j, const int& i)
-{
-    // Solution constants
-    // Ideally these could be cached but preformance isn't an issue here
-    Real n = 1. / (gam - 1.);
-    Real uc = sqrt(mdot / (2. * rs));
-    Real Vc = -sqrt(pow(uc, 2) / (1. - 3. * pow(uc, 2)));
-    Real Tc = -n * pow(Vc, 2) / ((n + 1.) * (n * pow(Vc, 2) - 1.));
-    Real C1 = uc * pow(rs, 2) * pow(Tc, n);
-    Real C2 = pow(1. + (1. + n) * Tc, 2) * (1. - 2. * mdot / rs + pow(C1, 2) / (pow(rs, 4) * pow(Tc, 2 * n)));
-
-    GReal X[GR_DIM], Xembed[GR_DIM];
-    G.coord(k, j, i, Loci::center, X);
-    coords.coord_to_embed(X, Xembed);
-    Real Rhor = ks.rhor();
-    GReal r = Xembed[1];
-
-    Real T = get_T(r, C1, C2, n);
-    //if (T < 0) T = 0; // If you can't error, NaN
-    Real ur = -C1 / (pow(T, n) * pow(r, 2));
-    Real rho = pow(T, n);
-    Real u = rho * T * n;
-
-    // Set u^t to make u^r a 4-vector
-    Real ucon_bl[GR_DIM] = {0, ur, 0, 0};
-    Real gcov_bl[GR_DIM][GR_DIM];
-    bl.gcov_embed(Xembed, gcov_bl);
-    set_ut(gcov_bl, ucon_bl);
-
-    // Then transform that 4-vector to KS, then to native
-    Real ucon_ks[GR_DIM], ucon_mks[GR_DIM];
-    ks.vec_from_bl(Xembed, ucon_bl, ucon_ks);
-    coords.con_vec_to_native(X, ucon_ks, ucon_mks);
-
-    // Convert native 4-vector to primitive u-twiddle, see Gammie '04
-    Real gcon[GR_DIM][GR_DIM], u_prim[NVEC];
-    G.gcon(Loci::center, j, i, gcon);
-    fourvel_to_prim(gcon, ucon_mks, u_prim);
-
-    P(m_p.RHO, k, j, i) = rho;
-    P(m_p.UU, k, j, i) = u;
-    P(m_p.U1, k, j, i) = u_prim[0];
-    P(m_p.U2, k, j, i) = u_prim[1];
-    P(m_p.U3, k, j, i) = u_prim[2];
+    FLAG("Set");
+    return TaskStatus::complete;
 }
