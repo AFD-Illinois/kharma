@@ -183,7 +183,7 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
     // Read all options first so we can set their defaults here,
     // before any packages are initialized.
     std::string b_field_solver = pin->GetOrAddString("b_field", "solver", "flux_ct");
-    // TODO if jcon in outputs then...
+    // TODO if jcon is in our list of outputs then...
     bool add_jcon = pin->GetOrAddBoolean("GRMHD", "add_jcon", true);
     bool do_electrons = pin->GetOrAddBoolean("electrons", "on", false);
     bool do_reductions = pin->GetOrAddBoolean("reductions", "on", true);
