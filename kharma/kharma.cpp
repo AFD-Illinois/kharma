@@ -65,8 +65,9 @@ std::shared_ptr<StateDescriptor> KHARMA::InitializeGlobals(ParameterInput *pin)
     // Last step's dt (Parthenon SimTime tm.dt), which must be preserved to output jcon
     params.Add("dt_last", 0.0);
     // Accumulator for maximum ctop within an MPI process
+    // That is, this value does NOT generally reflect the actual maximum
     params.Add("ctop_max", 0.0);
-    // Maximum between MPI processes, updated after each step
+    // Maximum between MPI processes, updated after each step; that is, always a maximum.
     params.Add("ctop_max_last", 0.0);
     // Whether we are computing initial outputs/timestep, or versions in the execution loop
     params.Add("in_loop", false);
@@ -76,13 +77,13 @@ std::shared_ptr<StateDescriptor> KHARMA::InitializeGlobals(ParameterInput *pin)
 
 void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
 {
-    // TODO dynamic ghost zones.  Dangerous?
+    // This would set ghost zones dynamically, or leave it up to Parthenon.  Dangerous?
     // std::string recon = pin->GetOrAddString("GRMHD", "reconstruction", "weno5");
     // if (recon != "donor_cell" && recon != "linear_mc" && recon != "linear_vl") {
     //     pin->SetInteger("parthenon/mesh", "nghost", 4);
     //     Globals::nghost = pin->GetInteger("parthenon/mesh", "nghost");
     // }
-    // Set 4 ghost zones
+    // For now we always set 4 ghost zones
     pin->SetInteger("parthenon/mesh", "nghost", 4);
     Globals::nghost = pin->GetInteger("parthenon/mesh", "nghost");
 
@@ -92,10 +93,19 @@ void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
         ReadIharmRestartHeader(pin->GetString("iharm_restart", "fname"), pin);
     }
 
-    // TODO construct a coordinate system object here to check all the properties/coordinates
-    // So far every non-null transform is exp(x1) but who knows
+    // Then handle coordinate systems and boundaries!
     std::string cb = pin->GetString("coordinates", "base");
+    if (cb == "ks") cb = "spherical_ks";
+    if (cb == "bl") cb = "spherical_bl";
+    if (cb == "minkowski") cb = "cartesian_minkowski";
     std::string ctf = pin->GetOrAddString("coordinates", "transform", "null");
+    if (ctf == "none") ctf = "null";
+    if (ctf == "fmks") ctf = "funky";
+    if (ctf == "mks") ctf = "modified";
+    if (ctf == "eks") ctf = "exp";
+    // TODO any other synonyms
+
+    // TODO ask our coordinates what's going on & where to put things
     if (ctf != "null") {
         int n1tot = pin->GetInteger("parthenon/mesh", "nx1");
         GReal Rout = pin->GetReal("coordinates", "r_out");
@@ -112,9 +122,23 @@ void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
         //cerr << "Setting x1min: " << x1min << " x1max " << x1max << " based on BH with a=" << a << endl;
         pin->SetReal("parthenon/mesh", "x1min", x1min);
         pin->SetReal("parthenon/mesh", "x1max", x1max);
+    } else if (cb == "spherical_ks" || cb == "spherical_bl") {
+        // If we're in GR with a null transform, apply the criterion to our coordinates directly
+        int n1tot = pin->GetInteger("parthenon/mesh", "nx1");
+        GReal Rout = pin->GetReal("coordinates", "r_out");
+        Real a = pin->GetReal("coordinates", "a");
+        GReal Rhor = 1 + sqrt(1 - a*a);
+        // Set Rin such that we have 5 zones completely inside the event horizon
+        // i.e. we want Rhor = Rin + 5.5 * (Rout - Rin) / N1TOT:
+        GReal Rin = (n1tot * Rhor / 5.5 - Rout) / (-1. + n1tot / 5.5);
+        pin->SetReal("parthenon/mesh", "x1min", Rin);
+        pin->SetReal("parthenon/mesh", "x1max", Rout);
     }
+
     // Assumption: if we're in a spherical system...
-    if (cb == "spherical_ks" || cb == "ks" || cb == "spherical_bl" || cb == "bl" || cb == "spherical_minkowski") {
+    if (cb == "spherical_ks" || cb == "spherical_bl" || cb == "spherical_minkowski") {
+        // Record whether we're in spherical coordinates. This should be used only for setting other options,
+        // see CoordinateEmbedding::spherical() for the real authority usable inside kernels
         pin->SetBoolean("coordinates", "spherical", true);
         // ...then we definitely want our special sauce boundary conditions
         // These are inflow in x1 and reflecting in x2, but applied to *primitives* in a custom operation
@@ -126,13 +150,13 @@ void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
         pin->SetString("parthenon/mesh", "ix3_bc", "periodic");
         pin->SetString("parthenon/mesh", "ox3_bc", "periodic");
 
-        // We also know the bounds for most transforms in spherical.  Set them.
-        if (ctf == "none") {
+        // We also know the bounds for most transforms in spherical coords.  Set them.
+        if (ctf == "null" || ctf == "exp") {
             pin->SetReal("parthenon/mesh", "x2min", 0.0);
             pin->SetReal("parthenon/mesh", "x2max", M_PI);
             pin->SetReal("parthenon/mesh", "x3min", 0.0);
             pin->SetReal("parthenon/mesh", "x3max", 2*M_PI);
-        } else if (ctf == "modified" || ctf == "mks" || ctf == "funky" || ctf == "fmks") {
+        } else if (ctf == "modified" || ctf == "funky") {
             pin->SetReal("parthenon/mesh", "x2min", 0.0);
             pin->SetReal("parthenon/mesh", "x2max", 1.0);
             pin->SetReal("parthenon/mesh", "x3min", 0.0);

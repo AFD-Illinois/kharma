@@ -144,16 +144,16 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
 
         auto t_recv_flux = t_calculate_flux;
         // TODO this appears to be implemented *only* block-wise, split it into its own region if so
-        // if (pmesh->multilevel) {
-        //     // Get flux corrections from AMR neighbors
-        //     for (auto &pmb : pmesh->block_list) {
-        //         auto& rc = pmb->meshblock_data.Get();
-        //         auto t_send_flux =
-        //             tl.AddTask(t_calculate_flux, &MeshData<Real>::SendFluxCorrection, mc0.get());
-        //         t_recv_flux =
-        //             tl.AddTask(t_calculate_flux, &MeshData<Real>::ReceiveFluxCorrection, mc0.get());
-        //     }
-        // }
+        if (pmesh->multilevel) {
+            // Get flux corrections from AMR neighbors
+            for (auto &pmb : pmesh->block_list) {
+                auto& rc = pmb->meshblock_data.Get();
+                auto t_send_flux =
+                    tl.AddTask(t_calculate_flux, &MeshBlockData<Real>::SendFluxCorrection, rc.get());
+                t_recv_flux =
+                    tl.AddTask(t_calculate_flux, &MeshBlockData<Real>::ReceiveFluxCorrection, rc.get());
+            }
+        }
 
         // FIX FLUXES
         // Zero any fluxes through the pole or inflow from outflow boundaries
@@ -168,15 +168,9 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         }
 
         // APPLY FLUXES
-        TaskID t_flux_apply;
-        const auto &combine_flux_source =
-            blocks[0]->packages.Get("GRMHD")->Param<bool>("combine_flux_source");
-        if (combine_flux_source) {
-           t_flux_apply = tl.AddTask(t_flux_fixed, Flux::ApplyFluxes, mc0.get(), mdudt.get());
-        } else {
-            auto t_flux_div = tl.AddTask(t_flux_fixed, Update::FluxDivergence<MeshData<Real>>, mc0.get(), mdudt.get());
-            t_flux_apply = tl.AddTask(t_flux_div, GRMHD::AddSource, mc0.get(), mdudt.get());
-        }
+        // This does the usual Parthenon flux divergence, then adds the GRMHD source term \Gamma * T
+        auto t_flux_div = tl.AddTask(t_flux_fixed, Update::FluxDivergence<MeshData<Real>>, mc0.get(), mdudt.get());
+        auto t_flux_apply = tl.AddTask(t_flux_div, GRMHD::AddSource, mc0.get(), mdudt.get());
 
         // ADD SOURCES TO CONSERVED VARIABLES
         // Source term for constraint-damping.  Applied only to B
@@ -200,51 +194,42 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
                                 mdudt.get(), beta * dt, mc1.get());
     }
 
-    // Boundary exchange.  Optionally "packed" to send all data in one call.
-    // All 3 calls are for MPI/meshblock boundaries
-    const auto &buffer_send_pack =
-        blocks[0]->packages.Get("GRMHD")->Param<bool>("buffer_send_pack");
-    if (buffer_send_pack) {
-        TaskRegion &tr = tc.AddRegion(num_partitions);
+    // MPI/MeshBlock boundary exchange.
+    // Optionally "packed" to send all data in one call (num_partitions defaults to 1)
+    // TODO do these all need to be sequential?  What are the specifics here?
+    const auto &pack_comms =
+        blocks[0]->packages.Get("GRMHD")->Param<bool>("pack_comms");
+    if (pack_comms) {
+        TaskRegion &tr1 = tc.AddRegion(num_partitions);
         for (int i = 0; i < num_partitions; i++) {
             auto &mc1 = pmesh->mesh_data.GetOrAdd(stage_name[stage], i);
-            tr[i].AddTask(t_none, cell_centered_bvars::SendBoundaryBuffers, mc1);
+            tr1[i].AddTask(t_none, cell_centered_bvars::SendBoundaryBuffers, mc1);
         }
-    } else {
-        TaskRegion &tr = tc.AddRegion(blocks.size());
-        for (int i = 0; i < blocks.size(); i++) {
-            auto &sc1 = blocks[i]->meshblock_data.Get(stage_name[stage]);
-            tr[i].AddTask(t_none, &MeshBlockData<Real>::SendBoundaryBuffers, sc1.get());
-        }
-    }
-    const auto &buffer_recv_pack =
-        blocks[0]->packages.Get("GRMHD")->Param<bool>("buffer_recv_pack");
-    if (buffer_recv_pack) {
-        TaskRegion &tr = tc.AddRegion(num_partitions);
+        TaskRegion &tr2 = tc.AddRegion(num_partitions);
         for (int i = 0; i < num_partitions; i++) {
             auto &mc1 = pmesh->mesh_data.GetOrAdd(stage_name[stage], i);
-            tr[i].AddTask(t_none, cell_centered_bvars::ReceiveBoundaryBuffers, mc1);
+            tr2[i].AddTask(t_none, cell_centered_bvars::ReceiveBoundaryBuffers, mc1);
         }
-    } else {
-        TaskRegion &tr = tc.AddRegion(blocks.size());
-        for (int i = 0; i < blocks.size(); i++) {
-            auto &sc1 = blocks[i]->meshblock_data.Get(stage_name[stage]);
-            tr[i].AddTask(t_none, &MeshBlockData<Real>::ReceiveBoundaryBuffers, sc1.get());
-        }
-    }
-    const auto &buffer_set_pack =
-        blocks[0]->packages.Get("GRMHD")->Param<bool>("buffer_set_pack");
-    if (buffer_set_pack) {
-        TaskRegion &tr = tc.AddRegion(num_partitions);
+        TaskRegion &tr3 = tc.AddRegion(num_partitions);
         for (int i = 0; i < num_partitions; i++) {
             auto &mc1 = pmesh->mesh_data.GetOrAdd(stage_name[stage], i);
-            tr[i].AddTask(t_none, cell_centered_bvars::SetBoundaries, mc1);
+            tr3[i].AddTask(t_none, cell_centered_bvars::SetBoundaries, mc1);
         }
     } else {
-        TaskRegion &tr = tc.AddRegion(blocks.size());
+        TaskRegion &tr1 = tc.AddRegion(blocks.size());
         for (int i = 0; i < blocks.size(); i++) {
             auto &sc1 = blocks[i]->meshblock_data.Get(stage_name[stage]);
-            tr[i].AddTask(t_none, &MeshBlockData<Real>::SetBoundaries, sc1.get());
+            tr1[i].AddTask(t_none, &MeshBlockData<Real>::SendBoundaryBuffers, sc1.get());
+        }
+        TaskRegion &tr2 = tc.AddRegion(blocks.size());
+        for (int i = 0; i < blocks.size(); i++) {
+            auto &sc1 = blocks[i]->meshblock_data.Get(stage_name[stage]);
+            tr2[i].AddTask(t_none, &MeshBlockData<Real>::ReceiveBoundaryBuffers, sc1.get());
+        }
+        TaskRegion &tr3 = tc.AddRegion(blocks.size());
+        for (int i = 0; i < blocks.size(); i++) {
+            auto &sc1 = blocks[i]->meshblock_data.Get(stage_name[stage]);
+            tr3[i].AddTask(t_none, &MeshBlockData<Real>::SetBoundaries, sc1.get());
         }
     }
 
@@ -284,33 +269,33 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
                 return TaskStatus::complete;
             }, sc0.get(), sc1.get());
 
-        // This will fill the fluid primitive values in all zones except physical (outflow, reflecting) boundaries --
+        // This call fills the fluid primitive values in all zones except physical (outflow, reflecting) boundaries --
         // that is, everywhere the conserved variables have been updated so far.
-        // This call is required to be after the boundary sync, as the fixing routines use neibhoring zones
-        // (they are called in GRMHD::PostFillDerived, run automatically as a part of this call)
-        // Running it over all zones avoids a second boundary sync
+        // This call is required to be after the boundary sync, as the fixing routines use neighboring zones
+        // (fixes are called in GRMHD::PostFillDerived, which is run automatically as a part of this call)
+        // This setup avoids extra boundary synchronization, by updating the primitives identially on different blocks instead of
+        // explicitly exchanging them.
         auto t_fill_derived = tl.AddTask(t_copy_prims, Update::FillDerived<MeshBlockData<Real>>, sc1.get());
 
         // This is a parthenon call, but in spherical coordinates it will call the functions in
         // boundaries.cpp, which apply physical boundary conditions based on the primitive variables of GRMHD,
         // and based on the conserved forms for everything else.  Note that because this is called *after*
         // FillDerived (since it needs bulk fluid primitives to apply GRMHD boundaries), this function
-        // must call FillDerived *again*, but over just the ghost zones.
+        // must call FillDerived *again*, to update just the ghost zones.
         // This is why KHARMA packages need to implement their "FillDerived" a.k.a. UtoP functions in the form
-        // UtoP(rc, domain, coarse), so that they can be called for just the boundary domains here
-        auto t_set_bc = tl.AddTask(t_fill_derived, ApplyBoundaryConditions, sc1);
+        // UtoP(rc, domain, coarse), so that they can be run over just the boundary domains here
+        auto t_set_bc = tl.AddTask(t_fill_derived, parthenon::ApplyBoundaryConditions, sc1);
 
         // ADD SOURCES TO PRIMITIVE VARIABLES
         // In order to calculate dissipation, we must know the entropy at the beginning and end of the substep,
-        // which must be calculated from the fluid primitive variables rho,u.
+        // and this must be calculated from the fluid primitive variables rho,u (and for stability, obey floors!).
         // We only have these just now from FillDerived (and PostFillDerived, and the boundary consistency stuff)
-        // Luckily, this function does *not* need another synchronization of the ghost zones, as it is applied to
-        // all zones and has a stencil of only one zone -- that is, it is applied twice identically for some zones,
-        // once by the MPI rank for which it is a physical zone, and once by the rank for which it is a ghost,
-        // trusting that matching calls will produce matching outputs.
+        // Luckily, ApplyElectronHeating does *not* need another synchronization of the ghost zones, as it is applied to
+        // all zones and has a stencil of only one zone.  As with FillDerived, this trusts that evaluations 
+        // on the same zone match between MeshBlocks.
         auto t_heat_electrons = t_set_bc;
         if (use_electrons) {
-            auto t_heat_electrons = tl.AddTask(t_set_bc, Electrons::ApplyHeatingModels, sc0.get(), sc1.get());
+            auto t_heat_electrons = tl.AddTask(t_set_bc, Electrons::ApplyElectronHeating, sc0.get(), sc1.get());
         }
 
         auto t_step_done = t_heat_electrons;

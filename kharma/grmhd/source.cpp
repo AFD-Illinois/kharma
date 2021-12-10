@@ -57,14 +57,13 @@ TaskStatus GRMHD::AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
     auto kb = md->GetBoundsK(domain);
     auto block = IndexRange{0, P.GetDim(5)-1};
 
-    const auto& G = dUdt.coords;
-
     pmb0->par_for("grmhd_source", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_MESH_3D {
+            const auto& G = dUdt.GetCoords(b);
             // Then calculate and add the GRMHD source term
             FourVectors Dtmp;
-            GRMHD::calc_4vecs(G(b), P(b), m_p, k, j, i, Loci::center, Dtmp);
-            GRMHD::add_source(G(b), P(b), m_p, Dtmp, gam, k, j, i, dUdt(b), m_u);
+            GRMHD::calc_4vecs(G, P(b), m_p, k, j, i, Loci::center, Dtmp);
+            GRMHD::add_source(G, P(b), m_p, Dtmp, gam, k, j, i, dUdt(b), m_u);
         }
     );
 

@@ -20,9 +20,9 @@ if [[ $HOST == *".astro.illinois.edu" ]]; then
 fi
 # Except BH27/9
 if [[ $HOST == "bh29.astro.illinois.edu" ]]; then
-  HOST_ARCH="AMDAVX"
+  HOST_ARCH="ZEN2"
 
-  # Requires system libc++, like icpx
+  # AOCC Requires system libc++, like icpx
   #source /opt/AMD/aocc-compiler-3.0.0/setenv_AOCC.sh
   #CXX_NATIVE="clang++"
 fi

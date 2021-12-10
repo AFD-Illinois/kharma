@@ -1,5 +1,5 @@
 /* 
- *  File: reductions.hpp
+ *  File: reductions.cpp
  *  
  *  BSD 3-Clause License
  *  
@@ -94,7 +94,14 @@ std::shared_ptr<StateDescriptor> Reductions::Initialize(ParameterInput *pin)
         hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, NPFlags, "Num_PFlags"));
         hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, NFFlags, "Num_FFlags"));
     }
-    // add callbacks for HST output identified by the `hist_param_key`
+
+    // Possible additions:
+    // 1. total 3- and 4-current numbers (best to add in "current" package)
+    // 2. Luminosity proxy sums over smaller areas, e.g. just disk, just disk 3-10M, etc
+    // 3. Total output power, using betagamma and/or just T^0_1 > 0
+    // 4+ basically anything with MI correlated to final image MI...
+
+    // Finally, add the whole list of callbacks to the package Params struct, using a special key
     pkg->AddParam<>(parthenon::hist_param_key, hst_vars);
 
     return pkg;

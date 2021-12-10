@@ -95,10 +95,9 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
 
     // List (vector) of HistoryOutputVar that will all be enrolled as output variables
     parthenon::HstVar_list hst_vars = {};
-    // In this package, we only care about MaxDivB
-    // unless you want like, the median or something
-    hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::max, MaxDivB, "MaxDivB"));
-    // add callbacks for HST output identified by the `hist_param_key`
+    // The definition of MaxDivB we care about actually changes per-transport. Use our function.
+    hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::max, B_CD::MaxDivB, "MaxDivB"));
+    // add callbacks for HST output to the Params struct, identified by the `hist_param_key`
     pkg->AddParam<>(parthenon::hist_param_key, hst_vars);
 
     return pkg;
@@ -154,37 +153,36 @@ TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
     const IndexRange kb = md->GetBoundsK(IndexDomain::interior);
     const IndexRange block = IndexRange{0, B_U.GetDim(5)-1};
 
-    const auto& G = B_U.coords;
-
     pmb0->par_for("AddSource_B_CD", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_MESH_3D {
+            const auto& G = B_U.GetCoords(b);
             // Add a source term to B based on psi
-            GReal alpha_c = 1. / sqrt(-G(b).gcon(Loci::center, j, i, 0, 0));
-            GReal gdet_c = G(b).gdet(Loci::center, j, i);
+            GReal alpha_c = 1. / sqrt(-G.gcon(Loci::center, j, i, 0, 0));
+            GReal gdet_c = G.gdet(Loci::center, j, i);
 
-            double divB = ((B_U(b).flux(X1DIR, B1, k, j, i+1) - B_U(b).flux(X1DIR, B1, k, j, i)) / G(b).dx1v(i) +
-                           (B_U(b).flux(X2DIR, B2, k, j+1, i) - B_U(b).flux(X2DIR, B2, k, j, i)) / G(b).dx2v(j));
-            if (ndim > 2) divB += (B_U(b).flux(X3DIR, B3, k+1, j, i) - B_U(b).flux(X3DIR, B3, k, j, i)) / G(b).dx3v(k);
+            double divB = ((B_U(b).flux(X1DIR, B1, k, j, i+1) - B_U(b).flux(X1DIR, B1, k, j, i)) / G.dx1v(i) +
+                           (B_U(b).flux(X2DIR, B2, k, j+1, i) - B_U(b).flux(X2DIR, B2, k, j, i)) / G.dx2v(j));
+            if (ndim > 2) divB += (B_U(b).flux(X3DIR, B3, k+1, j, i) - B_U(b).flux(X3DIR, B3, k, j, i)) / G.dx3v(k);
             // TODO this needs to include the time derivative right?
 
             VLOOP {
                 // First term: gradient of psi
-                B_DU(b, v, k, j, i) += alpha_c * G(b).gcon(Loci::center, j, i, v+1, 1) *
-                                       (psi_U(b).flux(X1DIR, 0, k, j, i+1) - psi_U(b).flux(X1DIR, 0, k, j, i)) / G(b).dx1v(i) +
-                                       alpha_c * G(b).gcon(Loci::center, j, i, v+1, 2) *
-                                       (psi_U(b).flux(X2DIR, 0, k, j+1, i) - psi_U(b).flux(X2DIR, 0, k, j, i)) / G(b).dx2v(j);
+                B_DU(b, v, k, j, i) += alpha_c * G.gcon(Loci::center, j, i, v+1, 1) *
+                                       (psi_U(b).flux(X1DIR, 0, k, j, i+1) - psi_U(b).flux(X1DIR, 0, k, j, i)) / G.dx1v(i) +
+                                       alpha_c * G.gcon(Loci::center, j, i, v+1, 2) *
+                                       (psi_U(b).flux(X2DIR, 0, k, j+1, i) - psi_U(b).flux(X2DIR, 0, k, j, i)) / G.dx2v(j);
                 if (ndim > 2)
-                    B_DU(b, v, k, j, i) += alpha_c * G(b).gcon(Loci::center, j, i, v+1, 3) *
-                                        (psi_U(b).flux(X3DIR, 0, k+1, j, i) - psi_U(b).flux(X3DIR, 0, k, j, i)) / G(b).dx3v(k);
+                    B_DU(b, v, k, j, i) += alpha_c * G.gcon(Loci::center, j, i, v+1, 3) *
+                                        (psi_U(b).flux(X3DIR, 0, k+1, j, i) - psi_U(b).flux(X3DIR, 0, k, j, i)) / G.dx3v(k);
 
                 // Second term: beta^i divB
-                B_DU(b, v, k, j, i) += G(b).gcon(Loci::center, j, i, 0, v+1) * alpha_c * alpha_c * divB;
+                B_DU(b, v, k, j, i) += G.gcon(Loci::center, j, i, 0, v+1) * alpha_c * alpha_c * divB;
             }
             // Update psi using the analytic solution for the source term
-            GReal dalpha1 = ( (1. / sqrt(-G(b).gcon(Loci::face1, j, i+1, 0, 0))) / G(b).gdet(Loci::face1, j, i+1)
-                            - (1. / sqrt(-G(b).gcon(Loci::face1, j, i, 0, 0))) / G(b).gdet(Loci::face1, j, i)) / G(b).dx1v(i);
-            GReal dalpha2 = ( (1. / sqrt(-G(b).gcon(Loci::face2, j+1, i, 0, 0))) / G(b).gdet(Loci::face2, j+1, i)
-                            - (1. / sqrt(-G(b).gcon(Loci::face2, j, i, 0, 0))) / G(b).gdet(Loci::face2, j, i)) / G(b).dx2v(i);
+            GReal dalpha1 = ( (1. / sqrt(-G.gcon(Loci::face1, j, i+1, 0, 0))) / G.gdet(Loci::face1, j, i+1)
+                            - (1. / sqrt(-G.gcon(Loci::face1, j, i, 0, 0))) / G.gdet(Loci::face1, j, i)) / G.dx1v(i);
+            GReal dalpha2 = ( (1. / sqrt(-G.gcon(Loci::face2, j+1, i, 0, 0))) / G.gdet(Loci::face2, j+1, i)
+                            - (1. / sqrt(-G.gcon(Loci::face2, j, i, 0, 0))) / G.gdet(Loci::face2, j, i)) / G.dx2v(i);
             // There is not dalpha3, the coordinate system is symmetric along x3
             psi_DU(b, 0, k, j, i) += B_U(b, B1, k, j, i) * dalpha1 + B_U(b, B2, k, j, i) * dalpha2 - alpha_c * lambda * psi_U(b, 0, k, j, i);
         }
@@ -214,15 +212,14 @@ Real MaxDivB(MeshData<Real> *md)
     const IndexRange jl = IndexRange{jb.s, jb.e - 1};
     const IndexRange kl = (ndim > 2) ? IndexRange{kb.s, kb.e - 1} : kb;
 
-    const auto& G = B.coords;
-
     Real bsq_max;
     Kokkos::Max<Real> bsq_max_reducer(bsq_max);
     pmb0->par_reduce("B_field_bsqmax", block.s, block.e, kl.s, kl.e, jl.s, jl.e, il.s, il.e,
         KOKKOS_LAMBDA_MESH_3D_REDUCE {
-            double divb_local = ((B(b).flux(1, B1, k, j, i+1) - B(b).flux(1, B1, k, j, i)) / G(b).dx1v(i)+
-                                 (B(b).flux(2, B2, k, j+1, i) - B(b).flux(2, B2, k, j, i)) / G(b).dx2v(j));
-            if (ndim > 2) divb_local += (B(b).flux(3, B3, k+1, j, i) - B(b).flux(3, B3, k, j, i)) / G(b).dx3v(k);
+            const auto& G = B.GetCoords(b);
+            double divb_local = ((B(b).flux(1, B1, k, j, i+1) - B(b).flux(1, B1, k, j, i)) / G.dx1v(i)+
+                                 (B(b).flux(2, B2, k, j+1, i) - B(b).flux(2, B2, k, j, i)) / G.dx2v(j));
+            if (ndim > 2) divb_local += (B(b).flux(3, B3, k+1, j, i) - B(b).flux(3, B3, k, j, i)) / G.dx3v(k);
 
             if(divb_local > local_result) local_result = divb_local;
         }

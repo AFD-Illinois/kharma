@@ -80,10 +80,10 @@ int main(int argc, char *argv[])
     // Registering KHARMA's boundary functions here doesn't mean they will *always* run:
     // in e.g. MHD Modes problem, all boundaries are handled by Parthenon and these don't run
     // KHARMA sets them automatically in spherical coordinate systems.
-    pman.app_input->boundary_conditions[parthenon::BoundaryFace::inner_x1] = KBoundaries::OutflowInnerX1;
-    pman.app_input->boundary_conditions[parthenon::BoundaryFace::outer_x1] = KBoundaries::OutflowOuterX1;
-    pman.app_input->boundary_conditions[parthenon::BoundaryFace::inner_x2] = KBoundaries::ReflectInnerX2;
-    pman.app_input->boundary_conditions[parthenon::BoundaryFace::outer_x2] = KBoundaries::ReflectOuterX2;
+    pman.app_input->boundary_conditions[parthenon::BoundaryFace::inner_x1] = KBoundaries::InnerX1;
+    pman.app_input->boundary_conditions[parthenon::BoundaryFace::outer_x1] = KBoundaries::OuterX1;
+    pman.app_input->boundary_conditions[parthenon::BoundaryFace::inner_x2] = KBoundaries::InnerX2;
+    pman.app_input->boundary_conditions[parthenon::BoundaryFace::outer_x2] = KBoundaries::OuterX2;
 
     // Parthenon init includes Kokkos, MPI, parses parameters & cmdline,
     // then calls ProcessPackages and ProcessProperties, then constructs the Mesh

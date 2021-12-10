@@ -168,8 +168,6 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
     const IndexRange jl = (ndim > 1) ? IndexRange{jb.s - halo, jb.e + halo} : jb;
     const IndexRange kl = (ndim > 2) ? IndexRange{kb.s - halo, kb.e + halo} : kb;
 
-    const auto& G = U.coords;
-
     // Allocate scratch space
     const int scratch_level = 1; // 0 is actual scratch (tiny); 1 is HBM
     const size_t var_size_in_bytes = parthenon::ScratchPad2D<Real>::shmem_size(nvar, n1);
@@ -187,6 +185,7 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
     parthenon::par_for_outer(DEFAULT_OUTER_LOOP_PATTERN, "calc_flux", pmb0->exec_space,
         total_scratch_bytes, scratch_level, block.s, block.e, kl.s, kl.e, jl.s, jl.e,
         KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int& b, const int& k, const int& j) {
+            const auto& G = U.GetCoords(b);
             ScratchPad2D<Real> Pl(member.team_scratch(scratch_level), nvar, n1);
             ScratchPad2D<Real> Pr(member.team_scratch(scratch_level), nvar, n1);
             ScratchPad2D<Real> Ul(member.team_scratch(scratch_level), nvar, n1);
@@ -198,7 +197,7 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
 
             // Wrapper for a big switch statement between reconstruction schemes. Possibly slow.
             // This function is generally a lot of if statements
-            KReconstruction::reconstruct<Recon, dir>(member, G(b), P(b), k, j, il.s, il.e, Pl, Pr);
+            KReconstruction::reconstruct<Recon, dir>(member, G, P(b), k, j, il.s, il.e, Pl, Pr);
 
             // Sync all threads in the team so that scratch memory is consistent
             member.team_barrier();
@@ -209,8 +208,8 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
                     // Apply floors to the *reconstructed* primitives, because without TVD
                     // we have no guarantee they remotely resemble the *centered* primitives
                     if (Recon == ReconstructionType::weno5) {
-                        GRMHD::apply_geo_floors(G(b), Pl, m_p, gam, k, j, i, floors, loc);
-                        GRMHD::apply_geo_floors(G(b), Pr, m_p, gam, k, j, i, floors, loc);
+                        GRMHD::apply_geo_floors(G, Pl, m_p, gam, k, j, i, floors, loc);
+                        GRMHD::apply_geo_floors(G, Pr, m_p, gam, k, j, i, floors, loc);
                     }
 #if !FUSE_FLUX_KERNELS
                 }
@@ -226,24 +225,24 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
                     FourVectors Dtmp;
 
                     // Left
-                    GRMHD::calc_4vecs(G(b), Pl, m_p, k, j, i, loc, Dtmp);
-                    GRMHD::prim_to_flux(G(b), Pl, m_p, Dtmp, gam, k, j, i, 0, Ul, m_u, loc);
-                    GRMHD::prim_to_flux(G(b), Pl, m_p, Dtmp, gam, k, j, i, dir, Fl, m_u, loc);
+                    GRMHD::calc_4vecs(G, Pl, m_p, k, j, i, loc, Dtmp);
+                    GRMHD::prim_to_flux(G, Pl, m_p, Dtmp, gam, k, j, i, 0, Ul, m_u, loc);
+                    GRMHD::prim_to_flux(G, Pl, m_p, Dtmp, gam, k, j, i, dir, Fl, m_u, loc);
                     if (use_b_flux_ct) {
-                        B_FluxCT::prim_to_flux(G(b), Pl, m_p, Dtmp, k, j, i, 0, Ul, m_u, loc);
-                        B_FluxCT::prim_to_flux(G(b), Pl, m_p, Dtmp, k, j, i, dir, Fl, m_u, loc);
+                        B_FluxCT::prim_to_flux(G, Pl, m_p, Dtmp, k, j, i, 0, Ul, m_u, loc);
+                        B_FluxCT::prim_to_flux(G, Pl, m_p, Dtmp, k, j, i, dir, Fl, m_u, loc);
                     } else if (use_b_cd) {
-                        B_CD::prim_to_flux(G(b), Pl, m_p, Dtmp, k, j, i, 0, Ul, m_u, loc);
-                        B_CD::prim_to_flux(G(b), Pl, m_p, Dtmp, k, j, i, dir, Fl, m_u, loc);
+                        B_CD::prim_to_flux(G, Pl, m_p, Dtmp, k, j, i, 0, Ul, m_u, loc);
+                        B_CD::prim_to_flux(G, Pl, m_p, Dtmp, k, j, i, dir, Fl, m_u, loc);
                     }
                     if (use_electrons) {
-                        Electrons::prim_to_flux(G(b), Pl, m_p, Dtmp, k, j, i, 0, Ul, m_u, loc);
-                        Electrons::prim_to_flux(G(b), Pl, m_p, Dtmp, k, j, i, dir, Fl, m_u, loc);
+                        Electrons::prim_to_flux(G, Pl, m_p, Dtmp, k, j, i, 0, Ul, m_u, loc);
+                        Electrons::prim_to_flux(G, Pl, m_p, Dtmp, k, j, i, dir, Fl, m_u, loc);
                     }
 
                     // Magnetosonic speeds
                     Real cmaxL, cminL;
-                    GRMHD::vchar(G(b), Pl, m_p, Dtmp, gam, k, j, i, loc, dir, cmaxL, cminL);
+                    GRMHD::vchar(G, Pl, m_p, Dtmp, gam, k, j, i, loc, dir, cmaxL, cminL);
 
 #if !FUSE_FLUX_KERNELS
                     // Record speeds
@@ -261,24 +260,24 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
                     FourVectors Dtmp;
 #endif
                     // Right
-                    GRMHD::calc_4vecs(G(b), Pr, m_p, k, j, i, loc, Dtmp);
-                    GRMHD::prim_to_flux(G(b), Pr, m_p, Dtmp, gam, k, j, i, 0, Ur, m_u, loc);
-                    GRMHD::prim_to_flux(G(b), Pr, m_p, Dtmp, gam, k, j, i, dir, Fr, m_u, loc);
+                    GRMHD::calc_4vecs(G, Pr, m_p, k, j, i, loc, Dtmp);
+                    GRMHD::prim_to_flux(G, Pr, m_p, Dtmp, gam, k, j, i, 0, Ur, m_u, loc);
+                    GRMHD::prim_to_flux(G, Pr, m_p, Dtmp, gam, k, j, i, dir, Fr, m_u, loc);
                     if (use_b_flux_ct) {
-                        B_FluxCT::prim_to_flux(G(b), Pr, m_p, Dtmp, k, j, i, 0, Ur, m_u, loc);
-                        B_FluxCT::prim_to_flux(G(b), Pr, m_p, Dtmp, k, j, i, dir, Fr, m_u, loc);
+                        B_FluxCT::prim_to_flux(G, Pr, m_p, Dtmp, k, j, i, 0, Ur, m_u, loc);
+                        B_FluxCT::prim_to_flux(G, Pr, m_p, Dtmp, k, j, i, dir, Fr, m_u, loc);
                     } else if (use_b_cd) {
-                        B_CD::prim_to_flux(G(b), Pr, m_p, Dtmp, k, j, i, 0, Ur, m_u, loc);
-                        B_CD::prim_to_flux(G(b), Pr, m_p, Dtmp, k, j, i, dir, Fr, m_u, loc);
+                        B_CD::prim_to_flux(G, Pr, m_p, Dtmp, k, j, i, 0, Ur, m_u, loc);
+                        B_CD::prim_to_flux(G, Pr, m_p, Dtmp, k, j, i, dir, Fr, m_u, loc);
                     }
                     if (use_electrons) {
-                        Electrons::prim_to_flux(G(b), Pr, m_p, Dtmp, k, j, i, 0, Ur, m_u, loc);
-                        Electrons::prim_to_flux(G(b), Pr, m_p, Dtmp, k, j, i, dir, Fr, m_u, loc);
+                        Electrons::prim_to_flux(G, Pr, m_p, Dtmp, k, j, i, 0, Ur, m_u, loc);
+                        Electrons::prim_to_flux(G, Pr, m_p, Dtmp, k, j, i, dir, Fr, m_u, loc);
                     }
 
                     // Magnetosonic speeds
                     Real cmaxR, cminR;
-                    GRMHD::vchar(G(b), Pr, m_p, Dtmp, gam, k, j, i, loc, dir, cmaxR, cminR);
+                    GRMHD::vchar(G, Pr, m_p, Dtmp, gam, k, j, i, loc, dir, cmaxR, cminR);
 
 #if FUSE_FLUX_KERNELS
                     // Calculate cmax/min from local variables

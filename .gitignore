@@ -49,10 +49,10 @@ frames_*/
 *.lib
 
 # Executables
-*.host
-*.cuda
-*.rocm
-*.sycl
+*.host*
+*.cuda*
+*.rocm*
+*.sycl*
 *.exe
 *.out
 *.app

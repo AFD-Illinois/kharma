@@ -1,10 +1,35 @@
-/*
- * coordinate_systems.hpp: Implementations of base and transformation functions of various coordinate systems
- *
- * Currently implements:
- * Minkowski space: Cartesian and Spherical coordinates
- * Kerr Space: Spherical KS and BL coordinates as bases, with the "Funky" MKS transform implemented on top.
- * TODO: MKS, CMKS, MKS3, Cartesian KS, Cartesian<->Spherical
+/* 
+ *  File: coordinate_systems.hpp
+ *  
+ *  BSD 3-Clause License
+ *  
+ *  Copyright (c) 2020, AFD Group at UIUC
+ *  All rights reserved.
+ *  
+ *  Redistribution and use in source and binary forms, with or without
+ *  modification, are permitted provided that the following conditions are met:
+ *  
+ *  1. Redistributions of source code must retain the above copyright notice, this
+ *     list of conditions and the following disclaimer.
+ *  
+ *  2. Redistributions in binary form must reproduce the above copyright notice,
+ *     this list of conditions and the following disclaimer in the documentation
+ *     and/or other materials provided with the distribution.
+ *  
+ *  3. Neither the name of the copyright holder nor the names of its
+ *     contributors may be used to endorse or promote products derived from
+ *     this software without specific prior written permission.
+ *  
+ *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ *  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ *  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ *  DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ *  FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ *  DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ *  SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ *  CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ *  OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 #pragma once
 
@@ -19,18 +44,36 @@
 
 #define COORDSINGFIX 1
 #define SINGSMALL 1e-20
+#define ROOTFIND_TOL 1.e-9
 
 using namespace parthenon;
-using GReal = Real;
 
+/**
+ * Base systems implemented:
+ * Minkowski space: Cartesian and Spherical coordinates
+ * Kerr Space: Spherical KS and BL coordinates
+ * 
+ * Transformations:
+ * Nulls in Cartesian and Spherical coordinates
+ * "Modified": r=exp(x1), th=pi*x2 + (1-hslope)*etc
+ * "Funky" modified: additional non-invertible cylindrization of th
+ * 
+ * TODO Cartesian KS base
+ * TODO snake coordinate transform for Cartesian Minkowski
+ * TODO CMKS, MKS3 transforms, proper Cartesian<->Spherical conversions (see prob_common.hpp for a start)
+ * TODO overhaul the COORDSINGFIX implementations
+ * TODO overhaul the rootfind implementation
+ */
+
+// Internal function for rootfinding X2 in non-invertible transformations
 template<typename Function>
 KOKKOS_FUNCTION void root_find(const GReal Xembed[GR_DIM], GReal Xnative[GR_DIM], Function coord_to_embed);
 
 /**
  * EMBEDDING SYSTEMS:
  * These are the usual systems of coordinates for different spacetimes.
- * Each class must define at least gcov_embed, the metric in terms of their own coordinates Xembed
- * Some extra convenience classes have been defined for some
+ * Each system/class must define at least gcov_embed, returning the metric in terms of their own coordinates Xembed
+ * Some extra convenience classes have been defined for some systems.
  */
 
 /**
@@ -47,7 +90,6 @@ class CartMinkowskiCoords {
 
 /**
  * Spherical coordinates for flat space
- * See docs common to all embeddings
  */
 class SphMinkowskiCoords {
     public:
@@ -65,7 +107,6 @@ class SphMinkowskiCoords {
 
 /**
  * Spherical Kerr-Schild coordinates
- * See docs common to all embeddings
  */
 class SphKSCoords {
     public:
@@ -121,7 +162,7 @@ class SphKSCoords {
             DLOOP2 vcon[mu] += trans[mu][nu]*vcon_bl[nu];
         }
 
-        // TODO more: isco etc.
+        // TODO more: isco etc?
         KOKKOS_INLINE_FUNCTION GReal rhor() const
         {
             return (1. + sqrt(1. - a*a));
@@ -176,6 +217,14 @@ class SphBLCoords {
 };
 
 /**
+ * COORDINATE TRANSFORMS:
+ * These are transformations which can be applied to base coordinates
+ * Each class must define enough functions to apply the transform to coordinates and vectors,
+ * both forward and in reverse.
+ * That comes out to 4 functions: coord_to_embed, coord_to_native, dXdx, dxdX
+ */
+
+/**
  * This class represents a null transformation from the embedding cooridnates, i.e. just using them directly
  */
 class SphNullTransform {
@@ -210,7 +259,6 @@ class SphNullTransform {
         }
 
         // Tangent space transformation matrices
-        // TODO actual vec_to_embed, tensor_to_embed?
         KOKKOS_INLINE_FUNCTION void dxdX(const GReal X[GR_DIM], Real dxdX[GR_DIM][GR_DIM]) const
         {
             DLOOP2 dxdX[mu][nu] = (mu == nu);
@@ -412,10 +460,12 @@ using SomeTransform = mpark::variant<SphNullTransform, CartNullTransform, Modify
 
 /**
  * Root finder for X[2] since it is sometimes not analytically invertible
- * Written so it can be extended if people have very crazy coordinate ideas that require 2D solves
+ * Written with a common interface for doing 2D solves, if those are ever required
+ * Note ASSUMES Xnative bounds are [0,1] and Xembed bounds are [0,M_PI]
+ * 
  * @param Xembed the vector of embedding coordinates to convert
- * @param Xnative output; but should have all native coordinates except X[2] already
- * @param coord_to_embed function taking the vector X to embedding coordinates
+ * @param Xnative vector of existing native coordinates; this function will set X[2]
+ * @param coord_to_embed function taking the vector Xnative to embedding coordinates
  */
 template<typename Function>
 KOKKOS_FUNCTION void root_find(const GReal Xembed[GR_DIM], GReal Xnative[GR_DIM], Function& coord_to_embed)
@@ -423,7 +473,6 @@ KOKKOS_FUNCTION void root_find(const GReal Xembed[GR_DIM], GReal Xnative[GR_DIM]
   double th = Xembed[2];
   double tha, thb, thc;
 
-  // Currently only solves in X[2] but could be multi-dimensional
   double Xa[GR_DIM], Xb[GR_DIM], Xc[GR_DIM], Xtmp[GR_DIM];
   Xa[1] = Xnative[1];
   Xa[3] = Xnative[3];
@@ -441,17 +490,16 @@ KOKKOS_FUNCTION void root_find(const GReal Xembed[GR_DIM], GReal Xnative[GR_DIM]
     Xb[2] = 1.;
   }
 
-  double tol = 1.e-9;
   coord_to_embed(Xa, Xtmp);
   tha = Xtmp[2];
   coord_to_embed(Xb, Xtmp);
   thb = Xtmp[2];
 
   // check limits first
-  if (fabs(tha-th) < tol) {
+  if (fabs(tha-th) < ROOTFIND_TOL) {
     Xnative[2] = Xa[2];
     return;
-  } else if (fabs(thb-th) < tol) {
+  } else if (fabs(thb-th) < ROOTFIND_TOL) {
     Xnative[2] = Xb[2];
     return;
   }
@@ -467,7 +515,7 @@ KOKKOS_FUNCTION void root_find(const GReal Xembed[GR_DIM], GReal Xnative[GR_DIM]
     else
       Xb[2] = Xc[2];
 
-    if (fabs(thc - th) < tol)
+    if (fabs(thc - th) < ROOTFIND_TOL)
       break;
   }
 

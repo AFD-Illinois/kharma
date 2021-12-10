@@ -52,11 +52,16 @@ Real AccretionRate(MeshData<Real> *md, const int& i);
 template<typename T>
 Real DomainSum(MeshData<Real> *md);
 
-// Define the macro which will generate all of our accretion rate calculations.
-// This is a general (dangerous) macro for an implementation of
-// AccretionRate<Something>, which allows us to specify an ordered pair
-// "Something", "Function" specifying a variable name, and what to use
-// as the Kokkos lambda function in the template
+// Then we define the macro which will generate all of our accretion rate calculations.
+// This is a general (dangerous) macro which will generate an implementation of
+// AccretionRate<Something>, given the arguments
+// "Something" and "Function", which together specify a variable name, and the function
+// to run inside the reduction
+
+// And no, this can't just be a template: "Function" must be first defined within "AccretionRate",
+// so that it can inherit the variable names (rho_U, u_U, etc.) from the function context.
+// That is, if we try to define "Function" outside and pass it as a template argument,
+// the compiler has no idea what "rho_U" means
 #define MAKE_SUM2D_FN(name, fn) template<> inline Real AccretionRate<name>(MeshData<Real> *md, const int& i) { \
     FLAG("Performing accretion reduction"); \
     auto pmesh = md->GetMeshPointer(); \
@@ -96,10 +101,14 @@ Real DomainSum(MeshData<Real> *md);
     return result; \
 }
 
-// Now we need some type names. These just serve to tell our implementations apart with
-// keywords that the compiler can understand.
-// We also provide some implementations.  Each of these expands to a definition of
-// AccretionRate<Type> using the loop body listed in the macro
+// Now we need some valid type names to use in distinguishing functions.
+// The 'enum class' lines just serve to define an arbitrary name as some valid type,
+// so that it can be used to distinguish between implementations of AccretionRate<X>.
+// We could also have used different int values here, but type names seemed more elegant.
+
+// We also provide some implementations.
+// Each of the MAKE_ETC "calls" expands into an implementation of
+// AccretionRate<Type> using the macro we just defined above.
 enum class Mdot : int;
 MAKE_SUM2D_FN(Mdot, KOKKOS_LAMBDA_3D_REDUCE { local_result += -rho_P(k, j, i) * uvec_P(0, k, j, i) * G.dx3v(k) * G.dx2v(j) * G.dx1v(i) * G.gdet(Loci::center, j, i); })
 enum class Edot : int;
@@ -109,8 +118,8 @@ MAKE_SUM2D_FN(Ldot, KOKKOS_LAMBDA_3D_REDUCE { local_result += uvec_U(2, k, j, i)
 enum class Phi : int;
 MAKE_SUM2D_FN(Phi, KOKKOS_LAMBDA_3D_REDUCE { local_result += 0.5 * fabs(B_U(0, k, j, i)) * G.dx3v(k) * G.dx2v(j); })
 
-// Versions with fluxes.  Note we pulled out pointers to both the conserved varibles and the fluxes,
-// so that we can define these using the same macro
+// Then we can define the same with fluxes.
+// The MAKE_SUM2D_FN macro pulls out pretty much any variable we could need here
 enum class Mdot_Flux : int;
 MAKE_SUM2D_FN(Mdot_Flux, KOKKOS_LAMBDA_3D_REDUCE { local_result += -rho_F(k, j, i) * G.dx3v(k) * G.dx2v(j); })
 enum class Edot_Flux : int;
@@ -118,7 +127,8 @@ MAKE_SUM2D_FN(Edot_Flux, KOKKOS_LAMBDA_3D_REDUCE { local_result += (u_F(k, j, i)
 enum class Ldot_Flux : int;
 MAKE_SUM2D_FN(Ldot_Flux, KOKKOS_LAMBDA_3D_REDUCE { local_result += uvec_F(2, k, j, i) * G.dx3v(k) * G.dx2v(j); })
 
-// Finally, we can specialize to particular zones and name our functions
+// Finally, we define the reductions in the form Parthenon needs, picking particular
+// variables and zones so that the resulting functions take only MeshData as an argument
 inline Real MdotBound(MeshData<Real> *md) {return AccretionRate<Mdot>(md, 0);}
 inline Real MdotEH(MeshData<Real> *md) {return AccretionRate<Mdot>(md, 5);}
 inline Real EdotBound(MeshData<Real> *md) {return AccretionRate<Edot>(md, 0);}
@@ -135,7 +145,8 @@ inline Real EdotEHFlux(MeshData<Real> *md) {return AccretionRate<Edot_Flux>(md, 
 inline Real LdotBoundFlux(MeshData<Real> *md) {return AccretionRate<Ldot_Flux>(md, 0);}
 inline Real LdotEHFlux(MeshData<Real> *md) {return AccretionRate<Ldot_Flux>(md, 5);}
 
-// Same as above, but for the whole domain
+// Now we repeat the whole process for reductions across the entire domain
+
 #define MAKE_SUM3D_FN(name, fn) template<> inline Real DomainSum<name>(MeshData<Real> *md) { \
     FLAG("Performing domain reduction"); \
     auto pmesh = md->GetMeshPointer(); \
@@ -176,6 +187,9 @@ MAKE_SUM3D_FN(Ltot, KOKKOS_LAMBDA_3D_REDUCE { local_result += uvec_U(2, k, j, i)
 enum class Etot : int;
 MAKE_SUM3D_FN(Etot, KOKKOS_LAMBDA_3D_REDUCE { local_result += u_U(k, j, i) * G.dx3v(k) * G.dx2v(j) * G.dx1v(i); })
 
+// Luminosity proxy from (for example) Porth et al 2019.
+// Notice that this will be totaled for *all zones*,
+// but one could define a variable which checks sigma, G.coord_embed(), etc
 enum class EHTLum : int;
 MAKE_SUM3D_FN(EHTLum, (KOKKOS_LAMBDA_3D_REDUCE {
     Real rho = rho_P(k, j, i);
@@ -186,6 +200,8 @@ MAKE_SUM3D_FN(EHTLum, (KOKKOS_LAMBDA_3D_REDUCE {
     Real j_eht = pow(rho, 3.) * pow(Pg, -2.) * exp(-0.2 * pow(rho * rho / (Bmag * Pg * Pg), 1./3.));
     local_result += j_eht * G.dx3v(k) * G.dx2v(j) * G.dx1v(i) * G.gdet(Loci::center, j, i);
 }))
+// Example of checking conditions before adding local results, summing "Jet luminosity"
+// only for areas with sig > 1.
 enum class JetLum : int;
 MAKE_SUM3D_FN(JetLum, (KOKKOS_LAMBDA_3D_REDUCE {
     Real rho = rho_P(k, j, i);
