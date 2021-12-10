@@ -82,14 +82,13 @@ TaskStatus Wind::AddSource(MeshData<Real> *mdudt)
     const IndexRange kb = mdudt->GetBoundsK(IndexDomain::interior);
     const IndexRange block = IndexRange{0, dUdt.GetDim(5) - 1};
 
-    const auto& G = dUdt.coords;
-
     // Set the wind via linear ramp-up with time, if enabled
     const Real current_wind_n = (wind_ramp_end > 0.0) ? min((time - wind_ramp_start) / (wind_ramp_end - wind_ramp_start), 1.0) * wind_n : wind_n;
 
     pmb0->par_for("add_wind", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_MESH_3D {
-            Wind::add_wind(G(b), gam, k, j, i, current_wind_n, wind_pow, wind_Tp, dUdt(b), m_u);
+            const auto& G = dUdt.GetCoords(b);
+            Wind::add_wind(G, gam, k, j, i, current_wind_n, wind_pow, wind_Tp, dUdt(b), m_u);
         }
     );
 

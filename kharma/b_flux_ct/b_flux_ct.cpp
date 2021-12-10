@@ -86,7 +86,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
                  Metadata::Restart, Metadata::Conserved, isMHD, Metadata::WithFluxes, Metadata::Vector}, s_vector);
     pkg->AddField("cons.B", m);
     m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived,
-                  Metadata::Restart, isPrimitive, isMHD, Metadata::Vector}, s_vector);
+                  isPrimitive, isMHD, Metadata::Vector}, s_vector);
     pkg->AddField("prims.B", m);
 
     m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
@@ -98,10 +98,9 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
 
     // List (vector) of HistoryOutputVar that will all be enrolled as output variables
     parthenon::HstVar_list hst_vars = {};
-    // In this package, we only care about MaxDivB
-    // unless you want like, the median or something
-    hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::max, MaxDivB, "MaxDivB"));
-    // add callbacks for HST output identified by the `hist_param_key`
+    // The definition of MaxDivB we care about actually changes per-transport. Use our function.
+    hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::max, B_FluxCT::MaxDivB, "MaxDivB"));
+    // add callbacks for HST output to the Params struct, identified by the `hist_param_key`
     pkg->AddParam<>(parthenon::hist_param_key, hst_vars);
 
     return pkg;
@@ -122,12 +121,11 @@ void UtoP(MeshData<Real> *md, IndexDomain domain, bool coarse)
     IndexRange vec = IndexRange{0, B_U.GetDim(4)-1};
     IndexRange block = IndexRange{0, B_U.GetDim(5)-1};
 
-    const auto& G = B_U.coords;
-
     pmb0->par_for("UtoP_B", block.s, block.e, vec.s, vec.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_MESH_VEC {
+            const auto& G = B_U.GetCoords(b);
             // Update the primitive B-fields
-            B_P(b, mu, k, j, i) = B_U(b, mu, k, j, i) / G(b).gdet(Loci::center, j, i);
+            B_P(b, mu, k, j, i) = B_U(b, mu, k, j, i) / G.gdet(Loci::center, j, i);
         }
     );
 }
@@ -340,12 +338,11 @@ double MaxDivB(MeshData<Real> *md)
 
     const double norm = (ndim > 2) ? 0.25 : 0.5;
 
-    const auto& G = B_U.coords;
-
     double max_divb;
     Kokkos::Max<double> max_reducer(max_divb);
     pmb0->par_reduce("divB_max", block.s, block.e, kl.s, kl.e, jl.s, jl.e, il.s, il.e,
         KOKKOS_LAMBDA_MESH_3D_REDUCE {
+            const auto& G = B_U.GetCoords(b);
             // 2D divergence, averaging to corners
             double term1 = B_U(b, B1, k, j, i)   + B_U(b, B1, k, j-1, i)
                          - B_U(b, B1, k, j, i-1) - B_U(b, B1, k, j-1, i-1);
@@ -363,7 +360,7 @@ double MaxDivB(MeshData<Real> *md)
                         - B_U(b, B3, k-1, j, i)   - B_U(b, B3, k-1, j-1, i)
                         - B_U(b, B3, k-1, j, i-1) - B_U(b, B3, k-1, j-1, i-1);
             }
-            double local_divb = fabs(norm*term1/G(b).dx1v(i) + norm*term2/G(b).dx2v(j) + norm*term3/G(b).dx3v(k));
+            double local_divb = fabs(norm*term1/G.dx1v(i) + norm*term2/G.dx2v(j) + norm*term3/G.dx3v(k));
             if (local_divb > local_result) local_result = local_divb;
         }
     , max_reducer);
