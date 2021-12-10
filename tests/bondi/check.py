@@ -7,10 +7,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 import pyHARM
-from pyHARM.parameters import parse_parthenon_dat
 
 RES = [int(x) for x in sys.argv[1].split(",")]
-BASE = "../../"
 LONG = sys.argv[2]
 SHORT = sys.argv[3]
 
@@ -21,11 +19,9 @@ L1 = []
 
 # 2d
 for res in RES:
-    params = parse_parthenon_dat(BASE+"pars/bondi.par")
-    params['n1'] = params['n1tot'] = params['nx1'] = res
-    params['n2'] = params['n2tot'] = params['nx2'] = res
-    start = pyHARM.load_dump("bondi_2d_{}_start_{}.phdf".format(res, SHORT), params=params)
-    end = pyHARM.load_dump("bondi_2d_{}_end_{}.phdf".format(res, SHORT), params=params)
+    start = pyHARM.load_dump("bondi_2d_{}_start_{}.phdf".format(res, SHORT))
+    end = pyHARM.load_dump("bondi_2d_{}_end_{}.phdf".format(res, SHORT))
+    params = start.params
 
     r = start['r'][:,start['n2']//2]
 

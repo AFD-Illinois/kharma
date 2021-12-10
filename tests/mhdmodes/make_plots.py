@@ -2,16 +2,19 @@
 
 # MHD linear modes convergence plots
 import os,sys
+from matplotlib.colors import LightSource
 import numpy as np
 import matplotlib.pyplot as plt
 
 import pyHARM
-from pyHARM.parameters import parse_parthenon_dat
 
 RES = [int(x) for x in sys.argv[1].split(",")]
-BASE = "../../"
 LONG = sys.argv[2]
 SHORT = sys.argv[3]
+if len(sys.argv) > 4:
+    DIM = sys.argv[4]
+else:
+    DIM = "3d"
 
 NVAR = 8
 VARS = ['rho', 'u', 'u1', 'u2', 'u3', 'B1', 'B2', 'B3']
@@ -19,7 +22,10 @@ VARS = ['rho', 'u', 'u1', 'u2', 'u3', 'B1', 'B2', 'B3']
 amp = 1.e-4
 k1 = 2.*np.pi
 k2 = 2.*np.pi
-k3 = 2.*np.pi
+if DIM == "3d":
+    k3 = 2.*np.pi
+else:
+    k3 = 0
 var0 = np.zeros(NVAR)
 
 # Background
@@ -32,42 +38,65 @@ var0[7] = 0.
 
 L1 = []
 
-# EIGENMODES
+# EIGENMODES: 3D
 dvar = np.zeros(NVAR)
-if "entropy" in SHORT:
-    dvar[0] = 1.
-if "slow" in SHORT:
-    dvar[0] = 0.556500332363
-    dvar[1] = 0.742000443151
-    dvar[2] = -0.282334999306
-    dvar[3] = 0.0367010491491
-    dvar[4] = 0.0367010491491
-    dvar[5] = -0.195509141461
-    dvar[6] = 0.0977545707307
-    dvar[7] = 0.0977545707307
-if "alfven" in SHORT:
-    dvar[3] =  -0.339683110243
-    dvar[4] =  0.339683110243
-    dvar[6] =  0.620173672946
-    dvar[7] =  -0.620173672946
-if "fast" in SHORT:
-    dvar[0]  =  0.481846076323
-    dvar[1]    =  0.642461435098
-    dvar[2]   =  -0.0832240462505
-    dvar[3]   =  -0.224080007379
-    dvar[4]   =  -0.224080007379
-    dvar[5]   =  0.406380545676
-    dvar[6]   =  -0.203190272838
-    dvar[7]   =  -0.203190272838
+if DIM == "3d":
+    if "entropy" in SHORT:
+        dvar[0] = 1.
+    if "slow" in SHORT:
+        dvar[0] = 0.556500332363
+        dvar[1] = 0.742000443151
+        dvar[2] = -0.282334999306
+        dvar[3] = 0.0367010491491
+        dvar[4] = 0.0367010491491
+        dvar[5] = -0.195509141461
+        dvar[6] = 0.0977545707307
+        dvar[7] = 0.0977545707307
+    if "alfven" in SHORT:
+        dvar[3] =  -0.339683110243
+        dvar[4] =  0.339683110243
+        dvar[6] =  0.620173672946
+        dvar[7] =  -0.620173672946
+    if "fast" in SHORT:
+        dvar[0]  =  0.481846076323
+        dvar[1]    =  0.642461435098
+        dvar[2]   =  -0.0832240462505
+        dvar[3]   =  -0.224080007379
+        dvar[4]   =  -0.224080007379
+        dvar[5]   =  0.406380545676
+        dvar[6]   =  -0.203190272838
+        dvar[7]   =  -0.203190272838
+else:
+    # EIGENMODES: 2D
+    # We only *convergence check* dir = 3 i.e. X1/X2 plane runs
+    # Other directions are useful for diagnosis but won't fail if 3D runs don't
+    if "entropy" in SHORT:
+        dvar[0] = 1.
+    if "slow" in SHORT:
+        dvar[0] = 0.558104461559
+        dvar[1] = 0.744139282078
+        dvar[2] = -0.277124827421
+        dvar[3] = 0.0630348927707
+        dvar[5] = -0.164323721928
+        dvar[6] = 0.164323721928
+    if "alfven" in SHORT:
+        dvar[4] = 0.480384461415
+        dvar[7] = 0.877058019307
+    if "fast" in SHORT:
+        dvar[0] = 0.476395427447
+        dvar[1] = 0.635193903263
+        dvar[2] = -0.102965815319
+        dvar[3] = -0.316873207561
+        dvar[5] = 0.359559114174
+        dvar[6] = -0.359559114174
+
 dvar *= amp
 
 # USE DUMPS IN FOLDERS OF GIVEN FORMAT
 for m, res in enumerate(RES):
-    params = parse_parthenon_dat(BASE+"pars/mhdmodes.par")
-    params['n1'] = params['n1tot'] = params['nx1'] = res
-    params['n2'] = params['n2tot'] = params['nx2'] = res
-    params['n3'] = params['n3tot'] = params['nx3'] = res
-    dump = pyHARM.load_dump("mhd_3d_{}_end_{}.phdf".format(res, SHORT), params=params)
+    print(DIM, res, SHORT)
+    dump = pyHARM.load_dump("mhd_{}_{}_end_{}.phdf".format(DIM, res, SHORT))
+    params = dump.params
 
     X1 = dump['x']
     X2 = dump['y']

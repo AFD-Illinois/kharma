@@ -51,6 +51,7 @@
 #include "mhdmodes.hpp"
 #include "orszag_tang.hpp"
 #include "shock_tube.hpp"
+#include "hubble.hpp"
 
 #include "b_field_tools.hpp"
 
@@ -83,6 +84,8 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
         InitializeShockTube(rc.get(), pin);
     } else if (prob == "bondi") {
         InitializeBondi(rc.get(), pin);
+    } else if (prob == "hubble") {
+        InitializeHubble(rc.get(), pin);
     } else if (prob == "torus") {
         InitializeFMTorus(rc.get(), pin);
     } else if (prob == "iharm_restart") {
@@ -91,7 +94,6 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
 
     // Pertub the internal energy a bit to encourage accretion
     // option in perturbation->u_jitter
-    // TODO evaluate determinism here. How are MeshBlock gids assigned?
     PerturbU(rc.get(), pin);
 
     // Initialize electron entropies if enabled
