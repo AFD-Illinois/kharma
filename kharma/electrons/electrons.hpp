@@ -76,33 +76,46 @@ TaskStatus InitElectrons(MeshBlockData<Real> *rc, ParameterInput *pin);
 /**
  * KHARMA requires two forms of the functions for obtaining and fixing the primitive values from
  * conserved fluxes.
- * One takes a domain (and if a boundary domain, whether it's the coarse version), and is called
- * by KHARMA itself when updating boundary values (UtoP).  The other takes just the fluid state, to match
- * Parthenon's calling convention (FillDerived).  You can define them like this, register the FillDerived
- * version as Parthenon's callback, and not worry about it further.
+ * KHARMA's version needs to take an IndexDomain enum and boundary "coarse" boolean, as it is called
+ * by KHARMA itself when updating boundary values (function UtoP below).  The other version should take
+ * just the fluid state, to match Parthenon's calling convention for FillDerived functions.
+ * It's easiest to define them with these defaults in the header, register the FillDerived version as
+ * Parthenon's callback, and then add the UtoP version in kharma.cpp.
  * 
- * Function in this package: Get the primitive specific entropy by dividing K/rho
+ * Function in this package: Get the specific entropy primitive value, by dividing the total entropy K/(rho*u^0)
  */
 void UtoP(MeshBlockData<Real> *rc, IndexDomain domain=IndexDomain::entire, bool coarse=false);
 inline void FillDerived(MeshBlockData<Real> *rc) { UtoP(rc); }
 
 /**
- * Floors for electron transport, mimics iharm3d:
- * fix NaN values (!) to Tp/Te maximum (KEL minimum)
- * Enforce Tp/Te minimum & maximum from parameters
+ * Anything which should be applied after every package has performed "UtoP"
+ * Generally floors, fixes, or very basic source terms for primitive variables.
  * 
- * TODO this should record floor hits to fflag!
+ * Currently a no-op in this package, as floors *before* ApplyElectronHeating are applied in GRMHD::PostUtoP,
+ * and floors *after* electron heating are applied immediately in ApplyElectronHeating
  */
 void PostUtoP(MeshBlockData<Real> *rc, IndexDomain domain=IndexDomain::entire, bool coarse=false);
 inline void PostFillDerived(MeshBlockData<Real> *rc) { PostUtoP(rc); }
 
 /**
- * This heating step is added to the task list in harm_driver.cpp
+ * This heating step is custom for this package:
+ * it is added manually to the task list in harm_driver.cpp, just after the call to "FillDerived"
+ * a.k.a. "UtoP".  For reasons mentioned there, it must update physical *and* boundary zones.
  * 
- * Function in this package: Add the source term, heating the electrons based on entropy
- * change/advection and updating the local entropy
+ * It calculates how electrons should be heated and updates their entropy values,
+ * using each step's total dissipation (advected vs actual fluid entropy)
+ * It applies any or all of several different esimates for this split, to each of the several different
+ * primitive variables "prims.Kel_X"
+ * Finally, it checks the results against a minimum and maximum temperature ratio T_protons/T_electrons
+ * 
+ *  To recap re: floors:
+ * This function expects two sets of values {rho0, u0, Ktot0} from rc_old and {rho1, u1} from rc,
+ * all of which obey all given floors
+ * It produces end-of-substep values {Ktot1, Kel_X1, Kel_Y1, etc}, which are also guaranteed to obey floors
+ * 
+ * TODO this function should update fflag to reflect temperature ratio floor hits
  */
-TaskStatus ApplyHeatingModels(MeshBlockData<Real> *rc_old, MeshBlockData<Real> *rc);
+TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real> *rc);
 
 /**
  * Diagnostics printed/computed after each step, called from kharma.cpp
@@ -112,7 +125,7 @@ TaskStatus ApplyHeatingModels(MeshBlockData<Real> *rc_old, MeshBlockData<Real> *
 TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *rc);
 
 /**
- * Fill fields which are calculated only for output to dump files
+ * Fill fields which are calculated only for output to dump files, called from kharma.cpp
  * 
  * Function in this package: Currently nothing
  */
@@ -139,8 +152,10 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const ScratchPa
                                          ScratchPad2D<Real>& flux, const VarMap m_u, const Loci loc=Loci::center)
 {
     // Take the factor from the primitives, in case we need to reorder this to happen before GRMHD::prim_to_flux later
-    Real rho_ut = P(m_p.RHO, i) * D.ucon[dir] * G.gdet(loc, j, i);
+    const Real rho_ut = P(m_p.RHO, i) * D.ucon[dir] * G.gdet(loc, j, i);
     flux(m_u.KTOT, i) = rho_ut * P(m_p.KTOT, i);
+    if (m_p.K_CONSTANT >= 0)
+        flux(m_u.K_CONSTANT, i) = rho_ut * P(m_p.K_CONSTANT, i);
     if (m_p.K_HOWES >= 0)
         flux(m_u.K_HOWES, i) = rho_ut * P(m_p.K_HOWES, i);
     if (m_p.K_KAWAZURA >= 0)
@@ -157,10 +172,12 @@ KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates& G, const VariablePack<Re
                                          const VariablePack<Real>& flux, const VarMap m_u, const Loci loc=Loci::center)
 {
     // Take the factor from the primitives, in case we need to reorder this to happen before GRMHD::prim_to_flux later
-    Real ut = GRMHD::lorentz_calc(G, P, m_p, k, j, i, loc) * sqrt(-G.gcon(loc, j, i, 0, 0));
-    Real rho_ut = P(m_p.RHO, k, j, i) * ut * G.gdet(loc, j, i);
+    const Real ut = GRMHD::lorentz_calc(G, P, m_p, k, j, i, loc) * sqrt(-G.gcon(loc, j, i, 0, 0));
+    const Real rho_ut = P(m_p.RHO, k, j, i) * ut * G.gdet(loc, j, i);
 
     flux(m_u.KTOT, k, j, i) = rho_ut * P(m_p.KTOT, k, j, i);
+    if (m_p.K_CONSTANT >= 0)
+        flux(m_u.K_CONSTANT, k, j, i) = rho_ut * P(m_p.K_CONSTANT, k, j, i);
     if (m_p.K_HOWES >= 0)
         flux(m_u.K_HOWES, k, j, i) = rho_ut * P(m_p.K_HOWES, k, j, i);
     if (m_p.K_KAWAZURA >= 0)

@@ -87,30 +87,47 @@ typedef struct {
  */
 class VarMap {
     public:
-        int8_t RHO, UU, U1, U2, U3, B1, B2, B3, PSI, PASSIVE;
-        int8_t KTOT, K_HOWES, K_KAWAZURA, K_WERNER, K_ROWAN, K_SHARMA;
+        // 127 values ought to be enough for anybody
+        int8_t RHO, UU, U1, U2, U3, B1, B2, B3, PSI;
+        int8_t RHO_ADDED, UU_ADDED, PASSIVE;
+        int8_t KTOT, K_CONSTANT, K_HOWES, K_KAWAZURA, K_WERNER, K_ROWAN, K_SHARMA;
+        // Total struct size 20 bytes, < 1 vector of 4 doubles
 
         VarMap(parthenon::PackIndexMap& name_map, bool is_cons)
         {
             if (is_cons) {
+                // HD
                 RHO = name_map["cons.rho"].first;
                 UU = name_map["cons.u"].first;
                 U1 = name_map["cons.uvec"].first;
+                // B
                 B1 = name_map["cons.B"].first;
                 PSI = name_map["cons.psi_cd"].first;
+                // Floors
+                RHO_ADDED = name_map["cons.rho_added"].first;
+                UU_ADDED = name_map["cons.u_added"].first;
+                // Electrons
                 KTOT = name_map["cons.Ktot"].first;
+                K_CONSTANT = name_map["cons.Kel_Constant"].first;
                 K_HOWES = name_map["cons.Kel_Howes"].first;
                 K_KAWAZURA = name_map["cons.Kel_Kawazura"].first;
                 K_WERNER = name_map["cons.Kel_Werner"].first;
                 K_ROWAN = name_map["cons.Kel_Rowan"].first;
                 K_SHARMA = name_map["cons.Kel_Sharma"].first;
             } else {
+                // HD
                 RHO = name_map["prims.rho"].first;
                 UU = name_map["prims.u"].first;
                 U1 = name_map["prims.uvec"].first;
+                // B
                 B1 = name_map["prims.B"].first;
                 PSI = name_map["prims.psi_cd"].first;
+                // Floors (TODO cons only?)
+                RHO_ADDED = name_map["prims.rho_added"].first;
+                UU_ADDED = name_map["prims.u_added"].first;
+                // Electrons
                 KTOT = name_map["prims.Ktot"].first;
+                K_CONSTANT = name_map["prims.Kel_Constant"].first;
                 K_HOWES = name_map["prims.Kel_Howes"].first;
                 K_KAWAZURA = name_map["prims.Kel_Kawazura"].first;
                 K_WERNER = name_map["prims.Kel_Werner"].first;
@@ -140,7 +157,7 @@ class FloorPrescription {
         // Limit fluid Lorentz factor
         double gamma_max;
         // Floor options
-        bool temp_adjust_u, fluid_frame;
+        bool temp_adjust_u, fluid_frame, adjust_k;
 
         FloorPrescription(const parthenon::Params& params)
         {
@@ -156,5 +173,6 @@ class FloorPrescription {
 
             temp_adjust_u = params.Get<bool>("temp_adjust_u");
             fluid_frame = params.Get<bool>("fluid_frame");
+            adjust_k = params.Get<bool>("adjust_k");
         }
 };

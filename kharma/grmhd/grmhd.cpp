@@ -67,6 +67,13 @@ namespace GRMHD
 
 std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
 {
+    // This function builds and returns a "StateDescriptor" or "Package" object.
+    // The most important part of this object is a member of type "Params",
+    // which acts more or less like a Python dictionary:
+    // it puts values into a map of names->objects, where "objects" are usually
+    // floats, strings, and ints, but can be arbitrary classes.
+    // This "dictionary" is *not* immutable, but should be treated as such
+    // in every package except "Globals".
     auto pkg = std::make_shared<StateDescriptor>("GRMHD");
     Params &params = pkg->AllParams();
 
@@ -163,6 +170,8 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     params.Add("temp_adjust_u", temp_adjust_u);
     bool fluid_frame = pin->GetOrAddBoolean("floors", "fluid_frame", false);
     params.Add("fluid_frame", fluid_frame);
+    bool adjust_k = pin->GetOrAddBoolean("floors", "adjust_k", true);
+    params.Add("adjust_k", adjust_k);
 
     // Disable all floors.  It is obviously tremendously inadvisable to
     // set this option to true
@@ -179,32 +188,38 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
 
 
     // Performance options
-    // Boundary buffers.  Packing is experimental in Parthenon
-    bool buffer_send_pack = pin->GetOrAddBoolean("perf", "buffer_send_pack", true);
-    params.Add("buffer_send_pack", buffer_send_pack);
-    bool buffer_recv_pack = pin->GetOrAddBoolean("perf", "buffer_recv_pack", true);
-    params.Add("buffer_recv_pack", buffer_recv_pack);
-    bool buffer_set_pack = pin->GetOrAddBoolean("perf", "buffer_set_pack", true);
-    params.Add("buffer_set_pack", buffer_set_pack);
-    bool combine_flux_source = pin->GetOrAddBoolean("perf", "combine_flux_source", true);
-    params.Add("combine_flux_source", combine_flux_source);
+    // Packed communications kernels, exchanging all boundary buffers of an MPI process
+    // together.  Useful if # MeshBlocks is > # MPI ranks
+    bool pack_comms = pin->GetOrAddBoolean("perf", "pack_comms", true);
+    params.Add("pack_comms", pack_comms);
 
-    // Refinement options
+    // Adaptive mesh refinement options
+    // Only active if "refinement" and "numlevel" parameters allow
     Real refine_tol = pin->GetOrAddReal("GRMHD", "refine_tol", 0.5);
     params.Add("refine_tol", refine_tol);
     Real derefine_tol = pin->GetOrAddReal("GRMHD", "derefine_tol", 0.05);
     params.Add("derefine_tol", derefine_tol);
 
-    // And a flags to keep these fields apart
-    // One for primitives specifically
+    // Add flags to distinguish groups of fields.
+    // This is stretching what the "Params" object should really be carrying,
+    // but the flag values are necessary in many places, and this was the
+    // easiest way to ensure availability.
+    // 1. One flag to mark the primitive variables specifically
+    // (Parthenon has Metadata::Conserved already)
     MetadataFlag isPrimitive = Metadata::AllocateNewFlag("Primitive");
     params.Add("PrimitiveFlag", isPrimitive);
-    // And one for HydroDynamics (all of these fields)
+    // 2. And one for hydrodynamics (everything we directly handle in this package)
     MetadataFlag isHD = Metadata::AllocateNewFlag("HD");
     params.Add("HDFlag", isHD);
-    // And one for MagnetoHydroDynamics (all of these plus B)
+    // 3. And one for magnetohydrodynamics
+    // (all HD fields plus B field, which we'll need to make use of)
     MetadataFlag isMHD = Metadata::AllocateNewFlag("MHD");
     params.Add("MHDFlag", isMHD);
+
+    // In addition to "params", the StateDescriptor/Package object carries "Fields"
+    // These represent any variables we want to keep track of across the grid, and
+    // generally inherit the size of the MeshBlock (for "Cell" fields) or some
+    // closely-related size (for "Face" and "Edge" fields)
 
     // As mentioned elsewhere, KHARMA treats the conserved variables as the independent ones,
     // and the primitives as "Derived"
@@ -222,6 +237,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     pkg->AddField("prims.uvec", m);
 
     // Conserved variables are actualy rho*u^0 & T^0_mu, but are named after the prims for consistency
+    // We will rarely need the conserved variables by name, we will mostly be treating them as a group
     auto flags_cons = std::vector<MetadataFlag>({Metadata::Real, Metadata::Cell, Metadata::Independent,
                                                       Metadata::WithFluxes, Metadata::FillGhost, Metadata::Restart,
                                                       Metadata::Conserved, isHD, isMHD});
@@ -237,27 +253,38 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     params.Add("use_b", use_b);
     if (!use_b) {
         // Declare placeholder fields only if not using another package providing B field.
-        // This should be redundant w/ "Overridable" flag...
-        // See B field packages for details
-        // TODO unmark B and all other primitives from being "Restart" since we don't need to seed UtoP with them
+        // This should be redundant w/using the "Overridable" flag but has caused problems in the past.
+        // The ultimate goal is to support never defining these fields in the first place, i.e. true GRHD
+        // without memory or computation penalties.
+
+        // Remove the "HD" flag from B, since it is not that
+        flags_prim_vec.erase(std::remove(flags_prim_vec.begin(), flags_prim_vec.end(), isHD), flags_prim_vec.end());
+        // Remove the "Restart" flag, since unlike the fluid prims, prims.B is fully redundant
+        flags_prim_vec.erase(std::remove(flags_prim_vec.begin(), flags_prim_vec.end(), Metadata::Restart), flags_prim_vec.end());
         flags_prim_vec.push_back(Metadata::Overridable);
         m = Metadata(flags_prim_vec, s_vector);
         pkg->AddField("prims.B", m);
+        flags_cons_vec.erase(std::remove(flags_cons_vec.begin(), flags_cons_vec.end(), isHD), flags_cons_vec.end());
         flags_cons_vec.push_back(Metadata::Overridable);
         m = Metadata(flags_cons_vec, s_vector);
         pkg->AddField("cons.B", m);
     }
 
-    // Maximum signal speed (magnitude).  Calculated in flux updates but needed for deciding timestep
+    // Maximum signal speed (magnitude).
+    // Needs to be cached from flux updates for calculating the timestep later
     m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy}, s_vector);
     pkg->AddField("ctop", m);
 
     // Temporary fix just for being able to save field values
-    // I wish they were really integers, but that's still unsupported
+    // Should switch these to "Integer" fields when Parthenon supports it
     m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
     pkg->AddField("pflag", m);
     pkg->AddField("fflag", m);
 
+    // Finally, the StateDescriptor/Package object determines the Callbacks Parthenon makes to
+    // a particular package -- that is, some portion of the things that the package needs done
+    // at each step, which must be done at specific times.
+    // See the documentation on each of these functions for their purpose and call context.
     pkg->FillDerivedBlock = GRMHD::UtoP;
     pkg->PostFillDerivedBlock = GRMHD::PostUtoP;
     pkg->CheckRefinementBlock = GRMHD::CheckRefinement;
