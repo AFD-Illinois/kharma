@@ -45,6 +45,14 @@
 // Parthenon headers
 #include <parthenon/parthenon.hpp>
 
+// Local headers
+#include <fstream>
+#include <iostream>
+#include <chrono>
+#include <ctime>
+#include <iomanip>
+#include <sstream>
+
 // Print warnings about configuration
 #if DEBUG
 #warning "Compiling with debug"
@@ -103,11 +111,23 @@ int main(int argc, char *argv[])
     auto pmesh = pman.pmesh.get();
     auto papp = pman.app_input.get();
 
-    if(MPIRank0() && pin->GetInteger("debug", "verbose") > 0) {
-        // This dumps the full Kokkos config, useful for double-checking
-        // that the compile did what we wanted
-        ShowConfig();
-        pin->ParameterDump(cout);
+    if(MPIRank0()) {
+        // Write *all* parameters to a parfile for posterity
+        // TODO option to disable?
+        std::ostringstream ss;
+        auto itt_now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+        ss << "kharma_parsed_parameters_" << std::put_time(std::gmtime(&itt_now), "%FT%TZ") << ".par";
+        fstream pars;
+        pars.open(ss.str(), std::fstream::out | std::fstream::trunc);
+        pin->ParameterDump(pars);
+        pars.close();
+        // Also write them to console if we should be wordy
+        if (pin->GetInteger("debug", "verbose") > 0) {
+            // This dumps the full Kokkos config, useful for double-checking
+            // that the compile did what we wanted
+            ShowConfig();
+            pin->ParameterDump(cout);
+        }
     }
 
     // Write the problem to the mesh.
