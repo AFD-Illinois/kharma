@@ -124,10 +124,10 @@ void InitializeFMTorus(MeshBlockData<Real> *rc, ParameterInput *pin)
                 const Real ucon_tilt[GR_DIM] = {0., 0., 0., up};
                 Real ucon_bl[GR_DIM];
                 rotate_polar_vec(Xmidplane, ucon_tilt, -tilt, Xembed, ucon_bl);
-                printf("Final mags: %g %g aabrev: %g %g ucon_og: %g ucon_bl: %g %g %g %g\n",
-                sqrt(dot(ucon_tilt, ucon_tilt)), sqrt(dot(ucon_bl, ucon_bl)),
-                ucon_tilt[3], sqrt(ucon_bl[2]*ucon_bl[2] + ucon_bl[3]*ucon_bl[3]),
-                up, ucon_bl[0], ucon_bl[1], ucon_bl[2], ucon_bl[3]);
+                //printf("Final mags: %g %g aabrev: %g %g ucon_og: %g ucon_bl: %g %g %g %g\n",
+                //sqrt(dot(ucon_tilt, ucon_tilt)), sqrt(dot(ucon_bl, ucon_bl)),
+                //ucon_tilt[3], sqrt(ucon_bl[2]*ucon_bl[2] + ucon_bl[3]*ucon_bl[3]),
+                //up, ucon_bl[0], ucon_bl[1], ucon_bl[2], ucon_bl[3]);
 
                 Real gcov_bl[GR_DIM][GR_DIM];
                 blcoords.gcov_embed(Xembed, gcov_bl);
