@@ -76,6 +76,8 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
         b_field_flag = BSeedType::r3s3;
     } else if (b_field_type == "gaussian") {
         b_field_flag = BSeedType::gaussian;
+    } else if (b_field_type == "bz_monopole") {
+        b_field_flag = BSeedType::bz_monopole;
     } else {
         throw std::invalid_argument("Magnetic field seed type not supported: " + b_field_type);
     }
@@ -89,6 +91,8 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
         b30 = pin->GetOrAddReal("b_field", "b30", 0.);
     case BSeedType::monopole:
         b10 = pin->GetReal("b_field", "b10");
+        break;
+    case BSeedType::bz_monopole:
         break;
     case BSeedType::sane:
         break;
@@ -143,6 +147,10 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
             {
             case BSeedType::sane:
                 q = rho_av - min_rho_q;
+                break;
+            case BSeedType::bz_monopole:
+                // used in testing to exactly agree with harmpi
+                q = 1. - cos(th);
                 break;
             case BSeedType::ryan:
                 // BR's smoothed poloidal in-torus
