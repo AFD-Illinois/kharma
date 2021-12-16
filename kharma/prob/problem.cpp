@@ -48,6 +48,7 @@
 #include "fm_torus.hpp"
 #include "iharm_restart.hpp"
 #include "kelvin_helmholtz.hpp"
+#include "bz_monopole.hpp"
 #include "mhdmodes.hpp"
 #include "orszag_tang.hpp"
 #include "b_field_tools.hpp"
@@ -81,6 +82,8 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
         InitializeBondi(rc.get(), pin);
     } else if (prob == "torus") {
         InitializeFMTorus(rc.get(), pin);
+    } else if (prob == "bz_monopole") {
+        InitializeBZMonopole(rc.get(), pin);
     } else if (prob == "iharm_restart") {
         ReadIharmRestart(rc.get(), pin);
     }
@@ -88,7 +91,10 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
     // Pertub the internal energy a bit to encourage accretion
     // option in perturbation->u_jitter
     // TODO evaluate determinism here. How are MeshBlock gids assigned?
-    PerturbU(rc.get(), pin);
+    if (prob != "bz_monopole") {
+        // TODO how should this work, especially with iharm_restarts ?
+        PerturbU(rc.get(), pin);
+    }
 
     // Apply any floors
     GRMHD::ApplyFloors(rc.get());
