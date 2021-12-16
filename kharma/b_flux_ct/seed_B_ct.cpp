@@ -135,7 +135,7 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
     pmb->par_for("B_field_A", js+1, je, is+1, ie,
         KOKKOS_LAMBDA_2D {
             GReal Xembed[GR_DIM];
-            G.coord_embed(0, j, i, Loci::center, Xembed);
+            G.coord_embed(0, j, i, Loci::corner, Xembed);
             GReal r = Xembed[1], th = Xembed[2];
 
             // Find rho (later u?) at corners by averaging from adjacent centers
