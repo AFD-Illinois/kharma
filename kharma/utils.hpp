@@ -28,3 +28,15 @@ KOKKOS_INLINE_FUNCTION T clip(const T& n, const T& lower, const T& upper)
 #endif
   return min(max(lower, n), upper);
 }
+// Version which "bounces" any excess over the bounds, useful for the polar coordinate
+template <typename T>
+KOKKOS_INLINE_FUNCTION T bounce(const T& n, const T& lower, const T& upper)
+{
+    return (n < lower) ? 2*lower - n : ( (n > upper) ? 2*upper - n : n );
+}
+// Version which "excises" anything within a range
+template <typename T>
+KOKKOS_INLINE_FUNCTION T excise(const T& n, const T& center, const T& range)
+{
+    return (abs(n - center) > range) ? n : ( (n > center) ? center + range : center - range );
+}

@@ -41,9 +41,8 @@
 #include "decs.hpp"
 
 #include "matrix.hpp"
+#include "utils.hpp"
 
-#define COORDSINGFIX 1
-#define SINGSMALL 1e-20
 #define ROOTFIND_TOL 1.e-9
 
 using namespace parthenon;
@@ -96,7 +95,9 @@ class SphMinkowskiCoords {
         const bool spherical = true;
         KOKKOS_INLINE_FUNCTION void gcov_embed(const GReal Xembed[GR_DIM], Real gcov[GR_DIM][GR_DIM]) const
         {
-            GReal r = Xembed[1], sth = sin(Xembed[2]);
+            const GReal r = max(Xembed[1], SMALL);
+            const GReal th = excise(excise(Xembed[2], 0.0, SMALL), M_PI, SMALL);
+            const GReal sth = sin(th);
 
             gcov[0][0] = 1.;
             gcov[1][1] = 1.;
@@ -118,34 +119,32 @@ class SphKSCoords {
 
         KOKKOS_INLINE_FUNCTION void gcov_embed(const GReal Xembed[GR_DIM], Real gcov[GR_DIM][GR_DIM]) const
         {
-            GReal r = Xembed[1], th = Xembed[2];
-            GReal sth, cth, s2, rho2;
+            const GReal r = Xembed[1];
+            const GReal th = excise(excise(Xembed[2], 0.0, SMALL), M_PI, SMALL);
 
-            cth = cos(th);
-            sth = sin(th);
-
-            s2 = sth*sth;
-            rho2 = r*r + a*a*cth*cth;
+            const GReal cos2 = pow(cos(th), 2);
+            const GReal sin2 = pow(sin(th), 2);
+            const GReal rho2 = r*r + a*a*cos2;
 
             gcov[0][0] = -1. + 2.*r/rho2;
             gcov[0][1] = 2.*r/rho2;
             gcov[0][2] = 0.;
-            gcov[0][3] = -2.*a*r*s2/rho2;
+            gcov[0][3] = -2.*a*r*sin2/rho2;
 
-            gcov[1][0] = gcov[0][1];
+            gcov[1][0] = 2.*r/rho2;
             gcov[1][1] = 1. + 2.*r/rho2;
             gcov[1][2] = 0.;
-            gcov[1][3] = -a*s2*(1. + 2.*r/rho2);
+            gcov[1][3] = -a*sin2*(1. + 2.*r/rho2);
 
             gcov[2][0] = 0.;
             gcov[2][1] = 0.;
             gcov[2][2] = rho2;
             gcov[2][3] = 0.;
 
-            gcov[3][0] = gcov[0][3];
-            gcov[3][1] = gcov[1][3];
+            gcov[3][0] = -2.*a*r*sin2/rho2;
+            gcov[3][1] = -a*sin2*(1. + 2.*r/rho2);
             gcov[3][2] = 0.;
-            gcov[3][3] = s2*(rho2 + a*a*s2*(1. + 2.*r/rho2));
+            gcov[3][3] = sin2*(rho2 + a*a*sin2*(1. + 2.*r/rho2));
         }
 
         // For converting from BL
@@ -182,27 +181,22 @@ class SphBLCoords {
 
         KOKKOS_INLINE_FUNCTION void gcov_embed(const GReal Xembed[GR_DIM], Real gcov[GR_DIM][GR_DIM]) const
         {
-            GReal r = Xembed[1], th = Xembed[2];
-            Real sth, cth, s2, a2, r2, DD, mu;
+            const GReal r = Xembed[1];
+            const GReal th = excise(excise(Xembed[2], 0.0, SMALL), M_PI, SMALL);
+            const GReal cth = cos(th), sth = sin(th);
 
-            cth = cos(th);
-            sth = sin(th);
+            const GReal s2 = sth*sth;
+            const GReal a2 = a*a;
+            const GReal r2 = r*r;
+            const GReal mmu = 1. + a2*cth*cth/r2; // mu is taken as an index
 
-            sth = fabs(sin(th));
-            s2 = sth*sth;
-            cth = cos(th);
-            a2 = a*a;
-            r2 = r*r;
-            DD = 1. - 2./r + a2/r2;
-            mu = 1. + a2*cth*cth/r2;
-
-            DLOOP2 gcov[mu][nu] = 0.; // TODO spread for fewer ops?
-            gcov[0][0]  = -(1. - 2./(r*mu));
-            gcov[0][3]  = -2.*a*s2/(r*mu);
-            gcov[3][0]  = gcov[0][3];
-            gcov[1][1]   = mu/DD;
-            gcov[2][2]   = r2*mu;
-            gcov[3][3]   = r2*sth*sth*(1. + a2/r2 + 2.*a2*s2/(r2*r*mu));
+            DLOOP2 gcov[mu][nu] = 0.;
+            gcov[0][0]  = -(1. - 2./(r*mmu));
+            gcov[0][3]  = -2.*a*s2/(r*mmu);
+            gcov[1][1]   = mmu/(1. - 2./r + a2/r2);
+            gcov[2][2]   = r2*mmu;
+            gcov[3][0]  = -2.*a*s2/(r*mmu);
+            gcov[3][3]   = s2*(r2 + a2 + 2.*a2*s2/(r*mmu));
         }
 
         KOKKOS_INLINE_FUNCTION void vec_from_bl(const GReal Xembed[GR_DIM], const Real vcon_bl[GR_DIM], Real vcon[GR_DIM]) const
@@ -227,37 +221,18 @@ class SphBLCoords {
 /**
  * This class represents a null transformation from the embedding cooridnates, i.e. just using them directly
  */
-class SphNullTransform {
+class NullTransform {
     public:
         // Coordinate transformations
-        // Protect embedding theta from ever hitting 0 or Pi
+        // Any coordinate value protections (th < 0, th > pi, phi > 2pi) should be in the base system
         KOKKOS_INLINE_FUNCTION void coord_to_embed(const GReal Xnative[GR_DIM], GReal Xembed[GR_DIM]) const
         {
-            Xembed[0] = Xnative[0];
-            Xembed[1] = Xnative[1];
-            GReal th = Xnative[2];
-#if COORDSINGFIX
-            if (fabs(th) < SINGSMALL) {
-                if (th >= 0)
-                    th = SINGSMALL;
-                if (th < 0)
-                    th = -SINGSMALL;
-            }
-            if (fabs(M_PI - th) < SINGSMALL) {
-                if (th >= M_PI)
-                    th = M_PI + SINGSMALL;
-                if (th < M_PI)
-                    th = M_PI - SINGSMALL;
-            }
-#endif
-            Xembed[2] = th;
-            Xembed[3] = Xnative[3];
+            DLOOP1 Xembed[mu] = Xnative[mu];
         }
         KOKKOS_INLINE_FUNCTION void coord_to_native(const GReal Xembed[GR_DIM], GReal Xnative[GR_DIM]) const
         {
             DLOOP1 Xnative[mu] = Xembed[mu];
         }
-
         // Tangent space transformation matrices
         KOKKOS_INLINE_FUNCTION void dxdX(const GReal X[GR_DIM], Real dxdX[GR_DIM][GR_DIM]) const
         {
@@ -269,30 +244,53 @@ class SphNullTransform {
         }
 };
 
-class CartNullTransform {
+/**
+ * Just exponentiate the radial coordinate
+ * Makes sense only for spherical base systems!
+ */
+class ExponentialTransform {
     public:
-        // This is an even simpler form of the above
+        // Coordinate transformations
         KOKKOS_INLINE_FUNCTION void coord_to_embed(const GReal Xnative[GR_DIM], GReal Xembed[GR_DIM]) const
         {
-            DLOOP1 Xembed[mu] = Xnative[mu];
+            Xembed[0] = Xnative[0];
+            Xembed[1] = exp(Xnative[1]);
+            Xembed[2] = Xnative[2];
+            Xembed[3] = Xnative[3];
         }
         KOKKOS_INLINE_FUNCTION void coord_to_native(const GReal Xembed[GR_DIM], GReal Xnative[GR_DIM]) const
         {
-            DLOOP1 Xnative[mu] = Xembed[mu];
+            Xnative[0] = Xembed[0];
+            Xnative[1] = log(Xembed[1]);
+            Xnative[2] = Xembed[2];
+            Xnative[3] = Xembed[3];
         }
-        KOKKOS_INLINE_FUNCTION void dxdX(const GReal X[GR_DIM], Real dxdX[GR_DIM][GR_DIM]) const
+        /**
+         * Transformation matrix for contravariant vectors to embedding, or covariant vectors to native
+         */
+        KOKKOS_INLINE_FUNCTION void dxdX(const GReal Xnative[GR_DIM], Real dxdX[GR_DIM][GR_DIM]) const
         {
-            DLOOP2 dxdX[mu][nu] = (mu == nu);
+            DLOOP2 dxdX[mu][nu] = 0;
+            dxdX[0][0] = 1.;
+            dxdX[1][1] = exp(Xnative[1]);
+            dxdX[2][2] = 1.;
+            dxdX[3][3] = 1.;
         }
-        KOKKOS_INLINE_FUNCTION void dXdx(const GReal X[GR_DIM], Real dXdx[GR_DIM][GR_DIM]) const
+        /**
+         * Transformation matrix for contravariant vectors to native, or covariant vectors to embedding
+         */
+        KOKKOS_INLINE_FUNCTION void dXdx(const GReal Xnative[GR_DIM], Real dXdx[GR_DIM][GR_DIM]) const
         {
-            DLOOP2 dXdx[mu][nu] = (mu == nu);
+            // Lazy way.  Surely there's an analytic inverse to be had somewhere...
+            Real dxdX_tmp[GR_DIM][GR_DIM];
+            dxdX(Xnative, dxdX_tmp);
+            invert(&dxdX_tmp[0][0],&dXdx[0][0]);
         }
 };
 
 /**
  * Modified Kerr-Schild coordinates "MKS"
- * Make sense only for spherical base systems!
+ * Makes sense only for spherical base systems!
  */
 class ModifyTransform {
     public:
@@ -302,28 +300,11 @@ class ModifyTransform {
         KOKKOS_FUNCTION ModifyTransform(GReal hslope_in): hslope(hslope_in) {}
 
         // Coordinate transformations
-        // Protect embedding theta from ever hitting 0 or Pi
         KOKKOS_INLINE_FUNCTION void coord_to_embed(const GReal Xnative[GR_DIM], GReal Xembed[GR_DIM]) const
         {
             Xembed[0] = Xnative[0];
             Xembed[1] = exp(Xnative[1]);
-
-            GReal th = M_PI*Xnative[2] + ((1. - hslope)/2.)*sin(2.*M_PI*Xnative[2]);
-#if COORDSINGFIX
-            if (fabs(th) < SINGSMALL) {
-                if (th >= 0)
-                    th = SINGSMALL;
-                if (th < 0)
-                    th = -SINGSMALL;
-            }
-            if (fabs(M_PI - th) < SINGSMALL) {
-                if (th >= M_PI)
-                    th = M_PI + SINGSMALL;
-                if (th < M_PI)
-                    th = M_PI - SINGSMALL;
-            }
-#endif
-            Xembed[2] = th;
+            Xembed[2] = M_PI*Xnative[2] + ((1. - hslope)/2.)*sin(2.*M_PI*Xnative[2]);
             Xembed[3] = Xnative[3];
         }
         KOKKOS_INLINE_FUNCTION void coord_to_native(const GReal Xembed[GR_DIM], GReal Xnative[GR_DIM]) const
@@ -375,32 +356,16 @@ class FunkyTransform {
             }
 
         // Coordinate transformations
-        // Protect embedding theta from ever hitting 0 or Pi
         KOKKOS_INLINE_FUNCTION void coord_to_embed(const GReal Xnative[GR_DIM], GReal Xembed[GR_DIM]) const
         {
             Xembed[0] = Xnative[0];
             Xembed[1] = exp(Xnative[1]);
 
-            GReal thG = M_PI*Xnative[2] + ((1. - hslope)/2.)*sin(2.*M_PI*Xnative[2]);
-            GReal y = 2*Xnative[2] - 1.;
-            GReal thJ = poly_norm * y * (1. + pow(y/poly_xt,poly_alpha) / (poly_alpha + 1.)) + 0.5 * M_PI;
+            const GReal thG = M_PI*Xnative[2] + ((1. - hslope)/2.)*sin(2.*M_PI*Xnative[2]);
+            const GReal y = 2*Xnative[2] - 1.;
+            const GReal thJ = poly_norm * y * (1. + pow(y/poly_xt,poly_alpha) / (poly_alpha + 1.)) + 0.5 * M_PI;
+            Xembed[2] = thG + exp(mks_smooth * (startx1 - Xnative[1])) * (thJ - thG);
 
-            GReal th = thG + exp(mks_smooth * (startx1 - Xnative[1])) * (thJ - thG);
-#if COORDSINGFIX
-            if (fabs(th) < SINGSMALL) {
-                if (th >= 0)
-                    th = SINGSMALL;
-                if (th < 0)
-                    th = -SINGSMALL;
-            }
-            if (fabs(M_PI - th) < SINGSMALL) {
-                if (th >= M_PI)
-                    th = M_PI + SINGSMALL;
-                if (th < M_PI)
-                    th = M_PI - SINGSMALL;
-            }
-#endif
-            Xembed[2] = th;
             Xembed[3] = Xnative[3];
         }
         KOKKOS_INLINE_FUNCTION void coord_to_native(const GReal Xembed[GR_DIM], GReal Xnative[GR_DIM]) const
@@ -446,7 +411,7 @@ class FunkyTransform {
          */
         KOKKOS_INLINE_FUNCTION void dXdx(const GReal Xnative[GR_DIM], Real dXdx[GR_DIM][GR_DIM]) const
         {
-            // Lazy way.  Surely there's an analytic inverse to be had somewhere...
+            // Okay this one should probably stay numerical
             Real dxdX_tmp[GR_DIM][GR_DIM];
             dxdX(Xnative, dxdX_tmp);
             invert(&dxdX_tmp[0][0],&dXdx[0][0]);
@@ -456,7 +421,7 @@ class FunkyTransform {
 // Bundle coordinates and transforms into umbrella variant types
 // Note nesting isn't allowed -- do it yourself by calling the steps if that's really important...
 using SomeBaseCoords = mpark::variant<SphMinkowskiCoords, CartMinkowskiCoords, SphBLCoords, SphKSCoords>;
-using SomeTransform = mpark::variant<SphNullTransform, CartNullTransform, ModifyTransform, FunkyTransform>;
+using SomeTransform = mpark::variant<NullTransform, ExponentialTransform, ModifyTransform, FunkyTransform>;
 
 /**
  * Root finder for X[2] since it is sometimes not analytically invertible
@@ -484,9 +449,9 @@ KOKKOS_FUNCTION void root_find(const GReal Xembed[GR_DIM], GReal Xnative[GR_DIM]
 
   if (Xembed[2] < M_PI / 2.) {
     Xa[2] = 0.;
-    Xb[2] = 0.5 + SINGSMALL;
+    Xb[2] = 0.5 + SMALL;
   } else {
-    Xa[2] = 0.5 - SINGSMALL;
+    Xa[2] = 0.5 - SMALL;
     Xb[2] = 1.;
   }
 
