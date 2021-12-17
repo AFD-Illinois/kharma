@@ -51,6 +51,8 @@
 #include "bz_monopole.hpp"
 #include "mhdmodes.hpp"
 #include "orszag_tang.hpp"
+#include "shock_tube.hpp"
+
 #include "b_field_tools.hpp"
 
 // Package headers
@@ -78,6 +80,8 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
         InitializeExplosion(rc.get(), pin);
     } else if (prob == "kelvin_helmholtz") {
         InitializeKelvinHelmholtz(rc.get(), pin);
+    } else if (prob == "shock") {
+        InitializeShockTube(rc.get(), pin);
     } else if (prob == "bondi") {
         InitializeBondi(rc.get(), pin);
     } else if (prob == "torus") {
@@ -96,7 +100,14 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
         PerturbU(rc.get(), pin);
     }
 
+    // Initialize electron entropies if enabled
+    if (pmb->packages.AllPackages().count("Electrons")) {
+        Electrons::InitElectrons(rc.get(), pin);
+    }
+
     // Apply any floors
+    // This is purposefully done even if floors are disabled,
+    // as it is required for consistent initialization
     GRMHD::ApplyFloors(rc.get());
 
     // Fill the conserved variables U,

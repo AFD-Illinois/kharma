@@ -84,7 +84,7 @@ TaskStatus InitializeMHDModes(MeshBlockData<Real> *rc, ParameterInput *pin)
     Real k1 = 2. * M_PI;
     Real k2 = 2. * M_PI;
     Real k3 = 2. * M_PI;
-    // "Faux-2D" planar waves direction
+    // "Faux-2D" plane orientation
     // Set to 0 for "full" 3D wave
     if (dir == 1)
         k1 = 0;

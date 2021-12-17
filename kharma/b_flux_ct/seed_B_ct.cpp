@@ -74,10 +74,10 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
         b_field_flag = BSeedType::ryan;
     } else if (b_field_type == "r3s3") {
         b_field_flag = BSeedType::r3s3;
+    } else if (b_field_type == "mad_steep" || b_field_type == "steep") {
+        b_field_flag = BSeedType::steep;
     } else if (b_field_type == "gaussian") {
         b_field_flag = BSeedType::gaussian;
-    } else if (b_field_type == "bz_monopole") {
-        b_field_flag = BSeedType::bz_monopole;
     } else {
         throw std::invalid_argument("Magnetic field seed type not supported: " + b_field_type);
     }
@@ -92,12 +92,11 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
     case BSeedType::monopole:
         b10 = pin->GetReal("b_field", "b10");
         break;
-    case BSeedType::bz_monopole:
-        break;
     case BSeedType::sane:
         break;
     case BSeedType::ryan:
     case BSeedType::r3s3:
+    case BSeedType::steep:
     case BSeedType::gaussian:
         rin = pin->GetReal("torus", "rin");
         break;
@@ -129,13 +128,13 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
         return TaskStatus::complete;
     }
 
-    // Find the magnetic vector potential.  In X3 symmetry only A_phi is non-zero, so we keep track of that.
+    // Find the magnetic vector potential at cell *corners*
+    // In X3 symmetry only the A_phi component is non-zero, so we keep track of that.
     ParArrayND<Real> A("A", n2, n1);
-    // TODO figure out double vs Real here
     pmb->par_for("B_field_A", js+1, je, is+1, ie,
         KOKKOS_LAMBDA_2D {
             GReal Xembed[GR_DIM];
-            G.coord_embed(0, j, i, Loci::corner, Xembed);
+            G.coord_embed(0, j, i, Loci::center, Xembed);
             GReal r = Xembed[1], th = Xembed[2];
 
             // Find rho (later u?) at corners by averaging from adjacent centers
@@ -148,18 +147,18 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
             case BSeedType::sane:
                 q = rho_av - min_rho_q;
                 break;
-            case BSeedType::bz_monopole:
-                // used in testing to exactly agree with harmpi
-                q = 1. - cos(th);
-                break;
             case BSeedType::ryan:
-                // BR's smoothed poloidal in-torus
-                q = pow(sin(th), 3) * pow(r / rin, 3) * exp(-r / 400) * rho_av - min_rho_q;
+                // BR's smoothed poloidal in-torus, EHT standard MAD
+                q = pow(r / rin, 3) * pow(sin(th), 3) * exp(-r / 400) * rho_av - min_rho_q;
                 break;
             case BSeedType::r3s3:
-                // Just the r^3 sin^3 th term, proposed EHT standard MAD
+                // Just the r^3 sin^3 th term, former proposed EHT standard MAD
                 // TODO split r3 here and r3s3
-                q = pow(r / rin, 3) * rho_av - min_rho_q;
+                q = pow(r / rin, 3) * pow(sin(th), 3) * rho_av - min_rho_q;
+                break;
+            case BSeedType::steep:
+                // Bump power to r^5 sin^5 th term, quieter MAD
+                q = pow(r / rin, 5) * pow(sin(th), 5) * rho_av - min_rho_q;
                 break;
             case BSeedType::gaussian:
                 // Pure vertical threaded field of gaussian strength with FWHM 2*rin (i.e. HM@rin)
@@ -184,9 +183,12 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
     pmb->par_for("B_field_B", ks, ke, js, je-1, is, ie-1,
         KOKKOS_LAMBDA_3D {
             // Take a flux-ct step from the corner potentials
+            // TODO this should likely weight by gdet at corners, but that
+            // causes a bunch of problems at the pole, would have to excise somehow
             B_P(0, k, j, i) = -(A(j, i) - A(j + 1, i) + A(j, i + 1) - A(j + 1, i + 1)) /
                                 (2. * G.dx2v(j) * G.gdet(Loci::center, j, i));
-            B_P(1, k, j, i) =  (A(j, i) + A(j + 1, i) - A(j, i + 1) - A(j + 1, i + 1)) /
+            B_P(1, k, j, i) =  (A(j, i) + A(j + 1, i) -
+                                A(j, i + 1) - A(j + 1, i + 1)) /
                                 (2. * G.dx1v(i) * G.gdet(Loci::center, j, i));
             B_P(2, k, j, i) = 0.;
             B_FluxCT::p_to_u(G, B_P, k, j, i, B_U);

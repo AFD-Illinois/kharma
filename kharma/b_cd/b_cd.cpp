@@ -92,6 +92,14 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
 
     pkg->FillDerivedBlock = B_CD::FillDerived;
     pkg->PostStepDiagnosticsMesh = B_CD::PostStepDiagnostics;
+
+    // List (vector) of HistoryOutputVar that will all be enrolled as output variables
+    parthenon::HstVar_list hst_vars = {};
+    // The definition of MaxDivB we care about actually changes per-transport. Use our function.
+    hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::max, B_CD::MaxDivB, "MaxDivB"));
+    // add callbacks for HST output to the Params struct, identified by the `hist_param_key`
+    pkg->AddParam<>(parthenon::hist_param_key, hst_vars);
+
     return pkg;
 }
 
@@ -121,58 +129,54 @@ void UtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     );
 }
 
-TaskStatus AddSource(MeshBlockData<Real> *rc, MeshBlockData<Real> *dudt)
+TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
 {
-    FLAG("Adding constraint damping source")
-    // TODO mesh-wide
-    auto pmb = rc->GetBlockPointer();
-    const int ndim = pmb->pmy_mesh->ndim;
+    FLAG("Adding constraint damping source");
+    auto pmesh = md->GetMeshPointer();
+    auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
+    const int ndim = pmesh->ndim;
     if (ndim < 2) return TaskStatus::complete;
 
-    auto& psi_U = rc->Get("cons.psi_cd").data;
-    auto& psiF1 = rc->Get("cons.psi_cd").flux[X1DIR];
-    auto& psiF2 = rc->Get("cons.psi_cd").flux[X2DIR];
-    auto& psiF3 = rc->Get("cons.psi_cd").flux[X3DIR];
-    auto& psi_DU = dudt->Get("cons.psi_cd").data;
+    const Real lambda = pmb0->packages.Get("B_CD")->Param<Real>("damping");
 
-    auto& B_U = rc->Get("cons.B").data;
-    auto& BF1 = rc->Get("cons.B").flux[X1DIR];
-    auto& BF2 = rc->Get("cons.B").flux[X2DIR];
-    auto& BF3 = rc->Get("cons.B").flux[X3DIR];
-    auto& B_DU = dudt->Get("cons.B").data;
+    auto& psi_U = md->PackVariablesAndFluxes(std::vector<std::string>{"cons.psi_cd"});
+    auto& psi_DU = mdudt->PackVariables(std::vector<std::string>{"cons.psi_cd"});
 
-    const auto& G = pmb->coords;
-
-    const Real lambda = pmb->packages.Get("B_CD")->Param<Real>("damping");
-
-    FLAG("Allocated to add")
+    auto& B_U = md->PackVariablesAndFluxes(std::vector<std::string>{"cons.B"});
+    auto& B_DU = md->PackVariables(std::vector<std::string>{"cons.B"});
 
     // TODO add source terms to everything else here:
     // U1, U2, U3 get -(del*B) B
     // U gets -B*(grad psi)
-    IndexDomain domain = IndexDomain::interior;
-    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
-    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
-    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
-    pmb->par_for("AddSource_B_CD", ks, ke, js, je, is, ie,
-        KOKKOS_LAMBDA_3D {
+    const IndexRange ib = md->GetBoundsI(IndexDomain::interior);
+    const IndexRange jb = md->GetBoundsJ(IndexDomain::interior);
+    const IndexRange kb = md->GetBoundsK(IndexDomain::interior);
+    const IndexRange block = IndexRange{0, B_U.GetDim(5)-1};
+
+    pmb0->par_for("AddSource_B_CD", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+        KOKKOS_LAMBDA_MESH_3D {
+            const auto& G = B_U.GetCoords(b);
             // Add a source term to B based on psi
             GReal alpha_c = 1. / sqrt(-G.gcon(Loci::center, j, i, 0, 0));
             GReal gdet_c = G.gdet(Loci::center, j, i);
 
-            double divB = ((BF1(B1, k, j, i+1) - BF1(B1, k, j, i)) / G.dx1v(i) +
-                           (BF2(B2, k, j+1, i) - BF2(B2, k, j, i)) / G.dx2v(j));
-            if (ndim > 2) divB += (BF3(B3, k+1, j, i) - BF3(B3, k, j, i)) / G.dx3v(k);
+            double divB = ((B_U(b).flux(X1DIR, B1, k, j, i+1) - B_U(b).flux(X1DIR, B1, k, j, i)) / G.dx1v(i) +
+                           (B_U(b).flux(X2DIR, B2, k, j+1, i) - B_U(b).flux(X2DIR, B2, k, j, i)) / G.dx2v(j));
+            if (ndim > 2) divB += (B_U(b).flux(X3DIR, B3, k+1, j, i) - B_U(b).flux(X3DIR, B3, k, j, i)) / G.dx3v(k);
+            // TODO this needs to include the time derivative right?
 
             VLOOP {
                 // First term: gradient of psi
-                B_DU(v, k, j, i) += alpha_c * G.gcon(Loci::center, j, i, v+1, 1) * (psiF1(k, j, i+1) - psiF1(k, j, i)) / G.dx1v(i) +
-                                    alpha_c * G.gcon(Loci::center, j, i, v+1, 2) * (psiF2(k, j+1, i) - psiF2(k, j, i)) / G.dx2v(j);
+                B_DU(b, v, k, j, i) += alpha_c * G.gcon(Loci::center, j, i, v+1, 1) *
+                                       (psi_U(b).flux(X1DIR, 0, k, j, i+1) - psi_U(b).flux(X1DIR, 0, k, j, i)) / G.dx1v(i) +
+                                       alpha_c * G.gcon(Loci::center, j, i, v+1, 2) *
+                                       (psi_U(b).flux(X2DIR, 0, k, j+1, i) - psi_U(b).flux(X2DIR, 0, k, j, i)) / G.dx2v(j);
                 if (ndim > 2)
-                    B_DU(v, k, j, i) += alpha_c * G.gcon(Loci::center, j, i, v+1, 3) * (psiF3(k+1, j, i) - psiF3(k, j, i)) / G.dx3v(k);
+                    B_DU(b, v, k, j, i) += alpha_c * G.gcon(Loci::center, j, i, v+1, 3) *
+                                        (psi_U(b).flux(X3DIR, 0, k+1, j, i) - psi_U(b).flux(X3DIR, 0, k, j, i)) / G.dx3v(k);
 
                 // Second term: beta^i divB
-                B_DU(v, k, j, i) += G.gcon(Loci::center, j, i, 0, v+1) * alpha_c * alpha_c * divB;
+                B_DU(b, v, k, j, i) += G.gcon(Loci::center, j, i, 0, v+1) * alpha_c * alpha_c * divB;
             }
             // Update psi using the analytic solution for the source term
             GReal dalpha1 = ( (1. / sqrt(-G.gcon(Loci::face1, j, i+1, 0, 0))) / G.gdet(Loci::face1, j, i+1)
@@ -180,7 +184,7 @@ TaskStatus AddSource(MeshBlockData<Real> *rc, MeshBlockData<Real> *dudt)
             GReal dalpha2 = ( (1. / sqrt(-G.gcon(Loci::face2, j+1, i, 0, 0))) / G.gdet(Loci::face2, j+1, i)
                             - (1. / sqrt(-G.gcon(Loci::face2, j, i, 0, 0))) / G.gdet(Loci::face2, j, i)) / G.dx2v(i);
             // There is not dalpha3, the coordinate system is symmetric along x3
-            psi_DU(k, j, i) += B_U(B1, k, j, i) * dalpha1 + B_U(B2, k, j, i) * dalpha2 - alpha_c * lambda * psi_U(k, j, i);
+            psi_DU(b, 0, k, j, i) += B_U(b, B1, k, j, i) * dalpha1 + B_U(b, B2, k, j, i) * dalpha2 - alpha_c * lambda * psi_U(b, 0, k, j, i);
         }
     );
 
@@ -190,28 +194,29 @@ TaskStatus AddSource(MeshBlockData<Real> *rc, MeshBlockData<Real> *dudt)
 
 // TODO figure out what divB from psi looks like?
 
-Real MaxDivB(MeshData<Real> *md, IndexDomain domain)
+Real MaxDivB(MeshData<Real> *md)
 {
-    auto pmb = md->GetBlockData(0)->GetBlockPointer();
-    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
-    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
-    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
-    const auto& G = pmb->coords;
-    const int ndim = pmb->pmy_mesh->ndim;
+    auto pmesh = md->GetMeshPointer();
+    auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
+    const int ndim = pmesh->ndim;
     if (ndim < 2) return 0.;
-    // We only care about interior cells
-    is += 1; ie -= 1;
-    js += 1; je -= 1;
-    if (ndim > 2) { ks += 1; ke -= 1; }
 
     auto B = md->PackVariablesAndFluxes(std::vector<std::string>{"cons.B"});
 
-    cerr << "Fluxes 6, 5, " << B.GetDim(6) << " " << B.GetDim(5);
+    const IndexRange ib = md->GetBoundsI(IndexDomain::interior);
+    const IndexRange jb = md->GetBoundsJ(IndexDomain::interior);
+    const IndexRange kb = md->GetBoundsK(IndexDomain::interior);
+    const IndexRange block = IndexRange{0, B.GetDim(5)-1};
+    // We only care about interior cells, and our stencil extends 1 zone *right*
+    const IndexRange il = IndexRange{ib.s, ib.e - 1};
+    const IndexRange jl = IndexRange{jb.s, jb.e - 1};
+    const IndexRange kl = (ndim > 2) ? IndexRange{kb.s, kb.e - 1} : kb;
 
     Real bsq_max;
     Kokkos::Max<Real> bsq_max_reducer(bsq_max);
-    pmb->par_reduce("B_field_bsqmax", 0, B.GetDim(5), ks, ke, js, je, is, ie,
+    pmb0->par_reduce("B_field_bsqmax", block.s, block.e, kl.s, kl.e, jl.s, jl.e, il.s, il.e,
         KOKKOS_LAMBDA_MESH_3D_REDUCE {
+            const auto& G = B.GetCoords(b);
             double divb_local = ((B(b).flux(1, B1, k, j, i+1) - B(b).flux(1, B1, k, j, i)) / G.dx1v(i)+
                                  (B(b).flux(2, B2, k, j+1, i) - B(b).flux(2, B2, k, j, i)) / G.dx2v(j));
             if (ndim > 2) divb_local += (B(b).flux(3, B3, k+1, j, i) - B(b).flux(3, B3, k, j, i)) / G.dx3v(k);
@@ -230,10 +235,7 @@ TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
     // Print this unless we quash everything
     int verbose = pmesh->packages.Get("B_CD")->Param<int>("verbose");
     if (verbose >= 0) {
-        // We probably only care on the physical grid
-        IndexDomain domain = IndexDomain::interior;
-
-        Real max_divb = B_CD::MaxDivB(md, domain);
+        Real max_divb = B_CD::MaxDivB(md);
         max_divb = MPIMax(max_divb);
 
         if(MPIRank0()) {
@@ -247,33 +249,35 @@ TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
 
 void FillOutput(MeshBlock *pmb, ParameterInput *pin)
 {
+    auto rc = pmb->meshblock_data.Get().get();
     IndexDomain domain = IndexDomain::interior;
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
     const int ndim = pmb->pmy_mesh->ndim;
     if (ndim < 2) return;
-    // We only care about interior cells
-    is += 1; //ie -= 1;
-    js += 1; //je -= 1;
-    if (ndim > 2) {
-        ks += 1; //ke -= 1;
-    }
-
-    auto rc = pmb->meshblock_data.Get().get();
-    auto& divB = rc->Get("divB").data;
-    const auto& G = pmb->coords;
 
     GridVector F1, F2, F3;
     F1 = rc->Get("cons.B").flux[X1DIR];
     F2 = rc->Get("cons.B").flux[X2DIR];
     if (ndim > 2) F3 = rc->Get("cons.B").flux[X3DIR];
+    auto& divB = rc->Get("divB").data;
 
-    pmb->par_for("B_field_bsqmax", ks, ke, js, je, is, ie,
+    const IndexRange ib = rc->GetBoundsI(IndexDomain::interior);
+    const IndexRange jb = rc->GetBoundsJ(IndexDomain::interior);
+    const IndexRange kb = rc->GetBoundsK(IndexDomain::interior);
+    // We only care about interior cells, and our stencil extends 1 zone *right*
+    const IndexRange il = IndexRange{ib.s, ib.e - 1};
+    const IndexRange jl = IndexRange{jb.s, jb.e - 1};
+    const IndexRange kl = (ndim > 2) ? IndexRange{kb.s, kb.e - 1} : kb;
+
+    const auto& G = pmb->coords;
+
+    pmb->par_for("B_field_bsqmax", kl.s, kl.e, jl.s, jl.e, il.s, il.e,
         KOKKOS_LAMBDA_3D {
             double divb_local = ((F1(B1, k, j, i+1) - F1(B1, k, j, i)) / G.dx1v(i) +
                                  (F2(B2, k, j+1, i) - F2(B2, k, j, i)) / G.dx2v(j));
-            if (ndim > 2) divb_local += (F3(B3, k, j+1, i) - F3(B3, k, j, i)) / G.dx3v(k);
+            if (ndim > 2) divb_local += (F3(B3, k+1, j, i) - F3(B3, k, j, i)) / G.dx3v(k);
 
             divB(k, j, i) = divb_local;
         }

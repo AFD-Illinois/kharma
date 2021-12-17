@@ -76,12 +76,12 @@ void InitializeBZMonopole(MeshBlockData<Real> *rc, ParameterInput *pin)
 
             GReal r_horizon = 1. + sqrt(1. - ksc.a*ksc.a);
             GReal r_char = 10. * r_horizon;
-   
+
             GReal trho = rho_min_limit + (r / r_char) / pow(r, 4.) / bsq_o_rho_max;
             GReal tu = u_min_limit + (r / r_char) / pow(r, 4.) / bsq_o_rho_max;
 
             // TODO remove me, just used for testing/debugging purposes now
-            fprintf(stderr, "%d -> %g %g %g %g %g\n", i, trho, tu, rho_min_limit, u_min_limit, bsq_o_rho_max); 
+            //fprintf(stderr, "%d -> %g %g %g %g %g\n", i, trho, tu, rho_min_limit, u_min_limit, bsq_o_rho_max); 
 
             rho(k, j, i) = trho;
             u(k, j, i) = tu;

@@ -36,38 +36,34 @@
 
 #include "pack.hpp"
 
-TaskStatus GRMHD::AddSource(MeshBlockData<Real> *rc, MeshBlockData<Real> *dudt)
+TaskStatus GRMHD::AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
 {
     FLAG("Adding GRMHD source");
-    auto pmb = rc->GetBlockPointer();
-    IndexDomain domain = IndexDomain::interior;
-    auto ib = pmb->cellbounds.GetBoundsI(domain);
-    auto jb = pmb->cellbounds.GetBoundsJ(domain);
-    auto kb = pmb->cellbounds.GetBoundsK(domain);
-    const int ndim = pmb->pmy_mesh->ndim;
+    // Pointers
+    auto pmesh = md->GetMeshPointer();
+    auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
+    // Options
+    const Real gam = pmb0->packages.Get("GRMHD")->Param<Real>("gamma");
 
+    // Pack variables
     PackIndexMap prims_map, cons_map;
-    auto P = GRMHD::PackMHDPrims(rc, prims_map);
-    auto dUdt = GRMHD::PackMHDCons(dudt, cons_map);
+    auto P = GRMHD::PackMHDPrims(md, prims_map);
+    auto dUdt = GRMHD::PackMHDCons(mdudt, cons_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
+    // Get sizes
+    IndexDomain domain = IndexDomain::interior;
+    auto ib = md->GetBoundsI(domain);
+    auto jb = md->GetBoundsJ(domain);
+    auto kb = md->GetBoundsK(domain);
+    auto block = IndexRange{0, P.GetDim(5)-1};
 
-    const auto& G = pmb->coords;
-    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
-
-    size_t total_scratch_bytes = 0;
-    int scratch_level = 0;
-
-    pmb->par_for_outer("grmhd_source", total_scratch_bytes, scratch_level,
-        kb.s, kb.e, jb.s, jb.e,
-        KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int& k, const int& j) {
-            parthenon::par_for_inner(member, ib.s, ib.e,
-                [&](const int& i) {
-                    // Then calculate and add the GRMHD source term
-                    FourVectors Dtmp;
-                    GRMHD::calc_4vecs(G, P, m_p, k, j, i, Loci::center, Dtmp);
-                    GRMHD::add_source(G, P, m_p, Dtmp, gam, k, j, i, dUdt, m_u);
-                }
-            );
+    pmb0->par_for("grmhd_source", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+        KOKKOS_LAMBDA_MESH_3D {
+            const auto& G = dUdt.GetCoords(b);
+            // Then calculate and add the GRMHD source term
+            FourVectors Dtmp;
+            GRMHD::calc_4vecs(G, P(b), m_p, k, j, i, Loci::center, Dtmp);
+            GRMHD::add_source(G, P(b), m_p, Dtmp, gam, k, j, i, dUdt(b), m_u);
         }
     );
 

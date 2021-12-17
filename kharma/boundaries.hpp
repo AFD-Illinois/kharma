@@ -10,21 +10,23 @@ namespace KBoundaries {
 
 /**
  * Any KHARMA-defined boundaries.
- * These are equivalent to Parthenon's implementations of the same, except that they
- * operate on the fluid primitive variables p,u,u1,u2,u3.  All other variables
- * are unchanged.
+ * These usually behave like Parthenon's Outflow in X1 and Reflect in X2, except
+ * that they operate on the fluid primitive variables p,u,u1,u2,u3.
+ * All other variables are unchanged.
  * 
- * LOCKSTEP: these functions respect P and returns consistent P<->U
+ * These functions also handle calling through to problem-defined boundaries e.g. Bondi outer X1
+ * 
+ * LOCKSTEP: these functions respect P and return consistent P<->U
  */
-void OutflowInnerX1(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse);
-void OutflowOuterX1(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse);
-void ReflectInnerX2(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse);
-void ReflectOuterX2(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse);
+void InnerX1(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse);
+void OuterX1(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse);
+void InnerX2(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse);
+void OuterX2(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse);
 
 /**
  * Fix fluxes on physical boundaries. Ensure no inflow flux, correct B fields on reflecting conditions.
  */
-TaskStatus FixFlux(MeshBlockData<Real> *rc);
+TaskStatus FixFlux(MeshData<Real> *rc);
 
 /**
  * Check for flow into simulation and reset velocity to eliminate it

@@ -45,8 +45,8 @@
 #include "b_cd.hpp"
 #include "electrons.hpp"
 #include "grmhd.hpp"
+#include "wind.hpp"
 
-#include "bondi.hpp"
 #include "boundaries.hpp"
 #include "debug.hpp"
 #include "fixup.hpp"
@@ -58,28 +58,28 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
 {
     // Reminder that NOTHING YOU CALL HERE WILL GET CALLED EVERY STEP
     // this function is run *once*, and returns a list of what should be done every step.
+    // No prints or direct function calls here will do what you want, only calls to tl.AddTask()
 
     // TaskCollections are split into regions, each of which can be tackled by a specified number of independent threads.
-    // We inherit our split, like most things in this function, from the advection_example in Parthenon
-    using namespace Update;
+    // We take most of the splitting logic here from the advection example in Parthenon,
+    // except that we calculate the fluxes in a Mesh-wide section rather than for MeshBlocks independently
     TaskCollection tc;
     TaskID t_none(0);
 
-    const Real beta = integrator->beta[stage - 1];
+    Real beta = integrator->beta[stage - 1];
     const Real dt = integrator->dt;
     auto stage_name = integrator->stage_name;
 
-    const bool use_b_cd = blocks[0]->packages.AllPackages().count("B_CD");
-    const bool use_b_flux_ct = blocks[0]->packages.AllPackages().count("B_FluxCT");
-    const bool use_electrons = blocks[0]->packages.AllPackages().count("Electrons");
+    // Which packages we load affects which tasks we'll add to the list
+    auto& pkgs = blocks[0]->packages.AllPackages();
+    bool use_b_cd = pkgs.count("B_CD");
+    bool use_b_flux_ct = pkgs.count("B_FluxCT");
+    bool use_electrons = pkgs.count("Electrons");
+    bool use_wind = pkgs.count("Wind");
 
-    auto num_task_lists_executed_independently = blocks.size();
-    TaskRegion &async_region1 = tc.AddRegion(num_task_lists_executed_independently);
-
-    // Async Region I: calculate (and in current version, apply) fluxes
+    // Allocate the fields ("containers") we need block by block
     for (int i = 0; i < blocks.size(); i++) {
         auto &pmb = blocks[i];
-        auto &tl = async_region1[i];
         // first make other useful containers
         auto &base = pmb->meshblock_data.Get();
         if (stage == 1) {
@@ -90,101 +90,11 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
             // So we have to keep a copy at the beginning to calculate jcon
             pmb->meshblock_data.Add("preserve", base);
         }
-
-        // pull out the container we'll use to get fluxes and/or compute RHSs
-        auto &sc0 = pmb->meshblock_data.Get(stage_name[stage - 1]);
-        // pull out a container we'll use to store dU/dt.
-        // This is just -flux_divergence in this example
-        auto &dudt = pmb->meshblock_data.Get("dUdt");
-        // pull out the container that will hold the updated state
-        // effectively, sc1 = sc0 + dudt*dt
-        auto &sc1 = pmb->meshblock_data.Get(stage_name[stage]);
-
-        auto t_start_recv = tl.AddTask(t_none, &MeshBlockData<Real>::StartReceiving, sc1.get(),
-                                    BoundaryCommSubset::all);
-
-        // Calculate the HLL fluxes in each direction
-        // This reconstructs the primitives (P) at faces and uses them to calculate fluxes
-        // of the conserved variables (U)
-        // All subsequent operations until FillDerived are applied only to U
-        // TODO these could be made mesh-wide pretty easily...
-        const ReconstructionType& recon = pmb->packages.Get("GRMHD")->Param<ReconstructionType>("recon");
-        TaskID t_calculate_flux1, t_calculate_flux2, t_calculate_flux3;
-        switch (recon) {
-        case ReconstructionType::donor_cell:
-            t_calculate_flux1 = tl.AddTask(t_start_recv, Flux::GetFlux<ReconstructionType::donor_cell, X1DIR>, sc0.get());
-            t_calculate_flux2 = tl.AddTask(t_start_recv, Flux::GetFlux<ReconstructionType::donor_cell, X2DIR>, sc0.get());
-            t_calculate_flux3 = tl.AddTask(t_start_recv, Flux::GetFlux<ReconstructionType::donor_cell, X3DIR>, sc0.get());
-            break;
-        case ReconstructionType::linear_mc:
-            t_calculate_flux1 = tl.AddTask(t_start_recv, Flux::GetFlux<ReconstructionType::linear_mc, X1DIR>, sc0.get());
-            t_calculate_flux2 = tl.AddTask(t_start_recv, Flux::GetFlux<ReconstructionType::linear_mc, X2DIR>, sc0.get());
-            t_calculate_flux3 = tl.AddTask(t_start_recv, Flux::GetFlux<ReconstructionType::linear_mc, X3DIR>, sc0.get());
-            break;
-        case ReconstructionType::linear_vl:
-            t_calculate_flux1 = tl.AddTask(t_start_recv, Flux::GetFlux<ReconstructionType::linear_vl, X1DIR>, sc0.get());
-            t_calculate_flux2 = tl.AddTask(t_start_recv, Flux::GetFlux<ReconstructionType::linear_vl, X2DIR>, sc0.get());
-            t_calculate_flux3 = tl.AddTask(t_start_recv, Flux::GetFlux<ReconstructionType::linear_vl, X3DIR>, sc0.get());
-            break;
-        case ReconstructionType::weno5:
-            t_calculate_flux1 = tl.AddTask(t_start_recv, Flux::GetFlux<ReconstructionType::weno5, X1DIR>, sc0.get());
-            t_calculate_flux2 = tl.AddTask(t_start_recv, Flux::GetFlux<ReconstructionType::weno5, X2DIR>, sc0.get());
-            t_calculate_flux3 = tl.AddTask(t_start_recv, Flux::GetFlux<ReconstructionType::weno5, X3DIR>, sc0.get());
-            break;
-        case ReconstructionType::ppm:
-        case ReconstructionType::mp5:
-        case ReconstructionType::weno5_lower_poles:
-            cerr << "Reconstruction type not supported!  Supported reconstructions:" << endl;
-            cerr << "donor_cell, linear_mc, linear_vl, weno5" << endl;
-            exit(-5);
-        }
-        auto t_calculate_flux = t_calculate_flux1 | t_calculate_flux2 | t_calculate_flux3;
-
-        auto t_recv_flux = t_calculate_flux;
-        if (pmesh->multilevel) {
-            // Get flux corrections from AMR neighbors
-            auto t_send_flux =
-                tl.AddTask(t_calculate_flux, &MeshBlockData<Real>::SendFluxCorrection, sc0.get());
-            t_recv_flux =
-                tl.AddTask(t_calculate_flux, &MeshBlockData<Real>::ReceiveFluxCorrection, sc0.get());
-        }
-
-        // Zero any fluxes through the pole or inflow from outflow boundaries
-        //auto t_fix_flux = tl.AddTask(t_recv_flux, KBoundaries::FixFlux, sc0.get());
-        auto t_fix_flux = t_recv_flux;
-
-        auto t_flux_fixed = t_fix_flux;
-        if (use_b_flux_ct) {
-            // Fix the conserved fluxes (exclusively B1/2/3) so that they obey divB==0,
-            // and there is no B field flux through the pole
-            auto t_flux_ct = tl.AddTask(t_fix_flux, B_FluxCT::TransportB, sc0.get());
-            t_flux_fixed = t_flux_ct;
-        }
-
-        // TODO move all these below
-        auto t_flux_apply = t_flux_fixed;
-        const auto &combine_flux_source =
-            blocks[0]->packages.Get("GRMHD")->Param<bool>("combine_flux_source");
-        if (combine_flux_source) {
-            t_flux_apply = tl.AddTask(t_flux_fixed, Flux::ApplyFluxes, sc0.get(), dudt.get());
-        } else {
-            auto t_flux_div = tl.AddTask(t_flux_fixed, FluxDivergence<MeshBlockData<Real>>, sc0.get(), dudt.get());
-            t_flux_apply = tl.AddTask(t_flux_div, GRMHD::AddSource, sc0.get(), dudt.get());
-        }
-        //auto t_flux_apply = tl.AddTask(t_flux_fixed, Flux::ApplyFluxes, sc0.get(), dudt.get());
-
-        // Source term for constraint-damping.  Could be applied mesh-wide in that block,
-        // when we learn to write mesh-wide functions
-        auto t_b_cd_source = t_flux_apply;
-        if (use_b_cd) {
-            t_b_cd_source = tl.AddTask(t_flux_apply, B_CD::AddSource, sc0.get(), dudt.get());
-        }
     }
 
-    // Sync Region: add effects of current step to accumulator, sync boundaries
+    // Big synchronous region: get & apply fluxes to advance the fluid state
+    // num_partitions is usually 1
     const int num_partitions = pmesh->DefaultNumPartitions();
-    // note that task within this region that contains one tasklist per pack
-    // could still be executed in parallel
     TaskRegion &single_tasklist_per_pack_region = tc.AddRegion(num_partitions);
     for (int i = 0; i < num_partitions; i++) {
         auto &tl = single_tasklist_per_pack_region[i];
@@ -193,70 +103,144 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         auto &mc1 = pmesh->mesh_data.GetOrAdd(stage_name[stage], i);
         auto &mdudt = pmesh->mesh_data.GetOrAdd("dUdt", i);
 
-        // When we implement ApplyFluxes over full mesh
-        //auto t_flux_apply = tl.AddTask(t_none, GRMHD::ApplyFluxes, tm, mc0.get(), mdudt.get());
+        auto t_start_recv = tl.AddTask(t_none, &MeshData<Real>::StartReceiving, mc1.get(),
+                                    BoundaryCommSubset::all);
 
-        auto t_avg_data = tl.AddTask(t_none, AverageIndependentData<MeshData<Real>>,
+        // Calculate the HLL fluxes in each direction
+        // This reconstructs the primitives (P) at faces and uses them to calculate fluxes
+        // of the conserved variables (U)
+        // All subsequent operations until FillDerived are applied only to U
+        const ReconstructionType& recon = blocks[0]->packages.Get("GRMHD")->Param<ReconstructionType>("recon");
+        TaskID t_calculate_flux1, t_calculate_flux2, t_calculate_flux3;
+        switch (recon) {
+        case ReconstructionType::donor_cell:
+            t_calculate_flux1 = tl.AddTask(t_start_recv, Flux::GetFlux<ReconstructionType::donor_cell, X1DIR>, mc0.get());
+            t_calculate_flux2 = tl.AddTask(t_start_recv, Flux::GetFlux<ReconstructionType::donor_cell, X2DIR>, mc0.get());
+            t_calculate_flux3 = tl.AddTask(t_start_recv, Flux::GetFlux<ReconstructionType::donor_cell, X3DIR>, mc0.get());
+            break;
+        case ReconstructionType::linear_mc:
+            t_calculate_flux1 = tl.AddTask(t_start_recv, Flux::GetFlux<ReconstructionType::linear_mc, X1DIR>, mc0.get());
+            t_calculate_flux2 = tl.AddTask(t_start_recv, Flux::GetFlux<ReconstructionType::linear_mc, X2DIR>, mc0.get());
+            t_calculate_flux3 = tl.AddTask(t_start_recv, Flux::GetFlux<ReconstructionType::linear_mc, X3DIR>, mc0.get());
+            break;
+        case ReconstructionType::linear_vl:
+            t_calculate_flux1 = tl.AddTask(t_start_recv, Flux::GetFlux<ReconstructionType::linear_vl, X1DIR>, mc0.get());
+            t_calculate_flux2 = tl.AddTask(t_start_recv, Flux::GetFlux<ReconstructionType::linear_vl, X2DIR>, mc0.get());
+            t_calculate_flux3 = tl.AddTask(t_start_recv, Flux::GetFlux<ReconstructionType::linear_vl, X3DIR>, mc0.get());
+            break;
+        case ReconstructionType::weno5:
+            t_calculate_flux1 = tl.AddTask(t_start_recv, Flux::GetFlux<ReconstructionType::weno5, X1DIR>, mc0.get());
+            t_calculate_flux2 = tl.AddTask(t_start_recv, Flux::GetFlux<ReconstructionType::weno5, X2DIR>, mc0.get());
+            t_calculate_flux3 = tl.AddTask(t_start_recv, Flux::GetFlux<ReconstructionType::weno5, X3DIR>, mc0.get());
+            break;
+        case ReconstructionType::ppm:
+        case ReconstructionType::mp5:
+        case ReconstructionType::weno5_lower_poles:
+            cerr << "Reconstruction type not supported!  Supported reconstructions:" << endl;
+            cerr << "donor_cell, linear_mc, linear_vl, weno5" << endl;
+            throw std::invalid_argument("Unsupported reconstruction algorithm!");
+        }
+        auto t_calculate_flux = t_calculate_flux1 | t_calculate_flux2 | t_calculate_flux3;
+
+        auto t_recv_flux = t_calculate_flux;
+        // TODO this appears to be implemented *only* block-wise, split it into its own region if so
+        if (pmesh->multilevel) {
+            // Get flux corrections from AMR neighbors
+            for (auto &pmb : pmesh->block_list) {
+                auto& rc = pmb->meshblock_data.Get();
+                auto t_send_flux =
+                    tl.AddTask(t_calculate_flux, &MeshBlockData<Real>::SendFluxCorrection, rc.get());
+                t_recv_flux =
+                    tl.AddTask(t_calculate_flux, &MeshBlockData<Real>::ReceiveFluxCorrection, rc.get());
+            }
+        }
+
+        // FIX FLUXES
+        // Zero any fluxes through the pole or inflow from outflow boundaries
+        auto t_fix_flux = tl.AddTask(t_recv_flux, KBoundaries::FixFlux, mc0.get());
+
+        auto t_flux_fixed = t_fix_flux;
+        if (use_b_flux_ct) {
+            // Fix the conserved fluxes (exclusively B1/2/3) so that they obey divB==0,
+            // and there is no B field flux through the pole
+            auto t_flux_ct = tl.AddTask(t_fix_flux, B_FluxCT::TransportB, mc0.get());
+            t_flux_fixed = t_flux_ct;
+        }
+
+        // APPLY FLUXES
+        // This does the usual Parthenon flux divergence, then adds the GRMHD source term \Gamma * T
+        auto t_flux_div = tl.AddTask(t_flux_fixed, Update::FluxDivergence<MeshData<Real>>, mc0.get(), mdudt.get());
+        auto t_flux_apply = tl.AddTask(t_flux_div, GRMHD::AddSource, mc0.get(), mdudt.get());
+
+        // ADD SOURCES TO CONSERVED VARIABLES
+        // Source term for constraint-damping.  Applied only to B
+        auto t_b_cd_source = t_flux_apply;
+        if (use_b_cd) {
+            t_b_cd_source = tl.AddTask(t_flux_apply, B_CD::AddSource, mc0.get(), mdudt.get());
+        }
+        // Wind source.  Applied to conserved variables similar to GR source term
+        auto t_wind_source = t_b_cd_source;
+        if (use_wind) {
+            t_wind_source = tl.AddTask(t_b_cd_source, Wind::AddSource, mdudt.get());
+        }
+        // Done with source terms
+        auto t_sources = t_wind_source;
+
+        // UPDATE BASE CONTAINER
+        auto t_avg_data = tl.AddTask(t_b_cd_source, Update::AverageIndependentData<MeshData<Real>>,
                                 mc0.get(), mbase.get(), beta);
         // apply du/dt to all independent fields in the container
-        auto t_update = tl.AddTask(t_avg_data, UpdateIndependentData<MeshData<Real>>, mc0.get(),
+        auto t_update = tl.AddTask(t_avg_data, Update::UpdateIndependentData<MeshData<Real>>, mc0.get(),
                                 mdudt.get(), beta * dt, mc1.get());
     }
 
-    // Boundary exchange.  Optionally "packed" to send all data in one call.
-    // All 3 calls are for MPI/meshblock boundaries
-    const auto &buffer_send_pack =
-        blocks[0]->packages.Get("GRMHD")->Param<bool>("buffer_send_pack");
-    if (buffer_send_pack) {
-        TaskRegion &tr = tc.AddRegion(num_partitions);
+    // MPI/MeshBlock boundary exchange.
+    // Optionally "packed" to send all data in one call (num_partitions defaults to 1)
+    // TODO do these all need to be sequential?  What are the specifics here?
+    const auto &pack_comms =
+        blocks[0]->packages.Get("GRMHD")->Param<bool>("pack_comms");
+    if (pack_comms) {
+        TaskRegion &tr1 = tc.AddRegion(num_partitions);
         for (int i = 0; i < num_partitions; i++) {
             auto &mc1 = pmesh->mesh_data.GetOrAdd(stage_name[stage], i);
-            tr[i].AddTask(t_none, cell_centered_bvars::SendBoundaryBuffers, mc1);
+            tr1[i].AddTask(t_none, cell_centered_bvars::SendBoundaryBuffers, mc1);
         }
-    } else {
-        TaskRegion &tr = tc.AddRegion(num_task_lists_executed_independently);
-        for (int i = 0; i < blocks.size(); i++) {
-            auto &sc1 = blocks[i]->meshblock_data.Get(stage_name[stage]);
-            tr[i].AddTask(t_none, &MeshBlockData<Real>::SendBoundaryBuffers, sc1.get());
-        }
-    }
-    const auto &buffer_recv_pack =
-        blocks[0]->packages.Get("GRMHD")->Param<bool>("buffer_recv_pack");
-    if (buffer_recv_pack) {
-        TaskRegion &tr = tc.AddRegion(num_partitions);
+        TaskRegion &tr2 = tc.AddRegion(num_partitions);
         for (int i = 0; i < num_partitions; i++) {
             auto &mc1 = pmesh->mesh_data.GetOrAdd(stage_name[stage], i);
-            tr[i].AddTask(t_none, cell_centered_bvars::ReceiveBoundaryBuffers, mc1);
+            tr2[i].AddTask(t_none, cell_centered_bvars::ReceiveBoundaryBuffers, mc1);
         }
-    } else {
-        TaskRegion &tr = tc.AddRegion(num_task_lists_executed_independently);
-        for (int i = 0; i < blocks.size(); i++) {
-            auto &sc1 = blocks[i]->meshblock_data.Get(stage_name[stage]);
-            tr[i].AddTask(t_none, &MeshBlockData<Real>::ReceiveBoundaryBuffers, sc1.get());
-        }
-    }
-    const auto &buffer_set_pack =
-        blocks[0]->packages.Get("GRMHD")->Param<bool>("buffer_set_pack");
-    if (buffer_set_pack) {
-        TaskRegion &tr = tc.AddRegion(num_partitions);
+        TaskRegion &tr3 = tc.AddRegion(num_partitions);
         for (int i = 0; i < num_partitions; i++) {
             auto &mc1 = pmesh->mesh_data.GetOrAdd(stage_name[stage], i);
-            tr[i].AddTask(t_none, cell_centered_bvars::SetBoundaries, mc1);
+            tr3[i].AddTask(t_none, cell_centered_bvars::SetBoundaries, mc1);
         }
     } else {
-        TaskRegion &tr = tc.AddRegion(num_task_lists_executed_independently);
+        TaskRegion &tr1 = tc.AddRegion(blocks.size());
         for (int i = 0; i < blocks.size(); i++) {
             auto &sc1 = blocks[i]->meshblock_data.Get(stage_name[stage]);
-            tr[i].AddTask(t_none, &MeshBlockData<Real>::SetBoundaries, sc1.get());
+            tr1[i].AddTask(t_none, &MeshBlockData<Real>::SendBoundaryBuffers, sc1.get());
+        }
+        TaskRegion &tr2 = tc.AddRegion(blocks.size());
+        for (int i = 0; i < blocks.size(); i++) {
+            auto &sc1 = blocks[i]->meshblock_data.Get(stage_name[stage]);
+            tr2[i].AddTask(t_none, &MeshBlockData<Real>::ReceiveBoundaryBuffers, sc1.get());
+        }
+        TaskRegion &tr3 = tc.AddRegion(blocks.size());
+        for (int i = 0; i < blocks.size(); i++) {
+            auto &sc1 = blocks[i]->meshblock_data.Get(stage_name[stage]);
+            tr3[i].AddTask(t_none, &MeshBlockData<Real>::SetBoundaries, sc1.get());
         }
     }
 
-    // Async Region II: Fill primitive values, apply physical boundary conditions
-    TaskRegion &async_region2 = tc.AddRegion(num_task_lists_executed_independently);
+    // Async Region: Fill primitive values, apply physical boundary conditions,
+    // add any source terms which require the full primitives->primitives step
+    // TODO this can be Meshified
+    TaskRegion &async_region = tc.AddRegion(blocks.size());
     for (int i = 0; i < blocks.size(); i++) {
         auto &pmb = blocks[i];
-        auto &tl = async_region2[i];
-        auto &base = pmb->meshblock_data.Get();
+        auto &tl = async_region[i];
+        //auto &base = pmb->meshblock_data.Get();
         auto &sc0 = pmb->meshblock_data.Get(stage_name[stage-1]);
         auto &sc1 = pmb->meshblock_data.Get(stage_name[stage]);
 
@@ -274,8 +258,6 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
 
         // U_to_P needs a guess in order to converge, so we copy in sc0
         // (but only the fluid primitives!)
-        // TODO option to declare primitives OneCopy if we won't need the backup
-        // TODO do this mesh-at-once
         auto t_copy_prims = tl.AddTask(t_prolongBound,
             [](MeshBlockData<Real> *rc0, MeshBlockData<Real> *rc1)
             {
@@ -287,30 +269,41 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
                 return TaskStatus::complete;
             }, sc0.get(), sc1.get());
 
-        // This will fill the fluid primitive values in all zones except physical (outflow, reflecting) boundaries,
-        // i.e. where the conserved variables are consistent.
-        // we then fill those boundaries based on the primitives, and calculate conserved variables
+        // This call fills the fluid primitive values in all zones except physical (outflow, reflecting) boundaries --
+        // that is, everywhere the conserved variables have been updated so far.
+        // This call is required to be after the boundary sync, as the fixing routines use neighboring zones
+        // (fixes are called in GRMHD::PostFillDerived, which is run automatically as a part of this call)
+        // This setup avoids extra boundary synchronization, by updating the primitives identially on different blocks instead of
+        // explicitly exchanging them.
         auto t_fill_derived = tl.AddTask(t_copy_prims, Update::FillDerived<MeshBlockData<Real>>, sc1.get());
 
-        // Electron heating must be done with the beginning and end states of this *substep*, specifically the primitives,
-        // which we now have from FillDerived (and PostFillDerived, which fixes them)
-        // This function takes the two primitive states sc0, sc1, updates the electron entropies in sc1, and calls
-        // Electrons::p_to_u to ensure consistent conserved-variable state.
-        auto t_heat_electrons = t_fill_derived;
+        // This is a parthenon call, but in spherical coordinates it will call the functions in
+        // boundaries.cpp, which apply physical boundary conditions based on the primitive variables of GRMHD,
+        // and based on the conserved forms for everything else.  Note that because this is called *after*
+        // FillDerived (since it needs bulk fluid primitives to apply GRMHD boundaries), this function
+        // must call FillDerived *again*, to update just the ghost zones.
+        // This is why KHARMA packages need to implement their "FillDerived" a.k.a. UtoP functions in the form
+        // UtoP(rc, domain, coarse), so that they can be run over just the boundary domains here
+        auto t_set_bc = tl.AddTask(t_fill_derived, parthenon::ApplyBoundaryConditions, sc1);
+
+        // ADD SOURCES TO PRIMITIVE VARIABLES
+        // In order to calculate dissipation, we must know the entropy at the beginning and end of the substep,
+        // and this must be calculated from the fluid primitive variables rho,u (and for stability, obey floors!).
+        // We only have these just now from FillDerived (and PostFillDerived, and the boundary consistency stuff)
+        // Luckily, ApplyElectronHeating does *not* need another synchronization of the ghost zones, as it is applied to
+        // all zones and has a stencil of only one zone.  As with FillDerived, this trusts that evaluations 
+        // on the same zone match between MeshBlocks.
+        auto t_heat_electrons = t_set_bc;
         if (use_electrons) {
-            auto t_heat_electrons = tl.AddTask(t_fill_derived, Electrons::ApplyHeatingModels, sc0.get(), sc1.get());
+            auto t_heat_electrons = tl.AddTask(t_set_bc, Electrons::ApplyElectronHeating, sc0.get(), sc1.get());
         }
 
-        // This is a parthenon call, but in spherical coordinates this will call the functions in
-        // boundaries.cpp, which apply to the primitive variables for GRMHD, and conserved forms for everything
-        // else.  That means calling FillDerived again on any sections it's replaced!
-        auto t_set_bc = tl.AddTask(t_heat_electrons, ApplyBoundaryConditions, sc1);
-        auto t_step_done = t_set_bc;
+        auto t_step_done = t_heat_electrons;
 
         // Estimate next time step based on ctop
         if (stage == integrator->nstages) {
             auto t_new_dt =
-                tl.AddTask(t_step_done, EstimateTimestep<MeshBlockData<Real>>, sc1.get());
+                tl.AddTask(t_step_done, Update::EstimateTimestep<MeshBlockData<Real>>, sc1.get());
 
             // Update refinement
             if (pmesh->adaptive) {

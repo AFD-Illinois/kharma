@@ -69,6 +69,8 @@ using GReal = double;
 #define DELTA 1.e-8
 // Accuracy required for U to P
 #define UTOP_ERRTOL 1.e-8
+// A small number, compared to the grid or problem scale
+#define SMALL 1e-20
 
 // GEOMETRY
 #define GR_DIM 4
@@ -106,6 +108,15 @@ using GeomTensor3 = parthenon::ParArrayND<Real>;
 #define KOKKOS_LAMBDA_5D KOKKOS_LAMBDA (const int& m, const int& l, const int &k, const int &j, const int &i)
 #define KOKKOS_LAMBDA_VARS KOKKOS_LAMBDA (const int &p, const int &k, const int &j, const int &i)
 #define KOKKOS_LAMBDA_VEC KOKKOS_LAMBDA (const int &mu, const int &k, const int &j, const int &i)
+// Same things for mesh-wide ops
+#define KOKKOS_LAMBDA_MESH_1D KOKKOS_LAMBDA (const int& b, const int& i)
+#define KOKKOS_LAMBDA_MESH_2D KOKKOS_LAMBDA (const int& b, const int& j, const int& i)
+#define KOKKOS_LAMBDA_MESH_3D KOKKOS_LAMBDA (const int& b, const int &k, const int &j, const int &i)
+#define KOKKOS_LAMBDA_MESH_4D KOKKOS_LAMBDA (const int& b, const int& l, const int &k, const int &j, const int &i)
+#define KOKKOS_LAMBDA_MESH_5D KOKKOS_LAMBDA (const int& b, const int& m, const int& l, const int &k, const int &j, const int &i)
+#define KOKKOS_LAMBDA_MESH_VARS KOKKOS_LAMBDA (const int& b, const int &p, const int &k, const int &j, const int &i)
+#define KOKKOS_LAMBDA_MESH_VEC KOKKOS_LAMBDA (const int& b, const int &mu, const int &k, const int &j, const int &i)
+
 // TODO separate macros for return type if this becomes a thing?  Or don't macro at all
 #define KOKKOS_LAMBDA_1D_REDUCE KOKKOS_LAMBDA (const int &i, Real &local_result)
 // This is used for timestep and divB, which are explicitly double
@@ -116,49 +127,6 @@ using GeomTensor3 = parthenon::ParArrayND<Real>;
 #define KOKKOS_LAMBDA_MESH_3D_REDUCE KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i, double &local_result)
 #define KOKKOS_LAMBDA_MESH_3D_REDUCE_INT KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i, int &local_result)
 // KHARMA FUNCTIONS
-
-/**
- * Return whether a boundary is physical (i.e. border of the simulation) -- that is, not internal or periodic
- * Ironically, the zones in non-physical boundaries are "physical" i.e. bulk, non-ghost zones
- * 
- * Defined because UtoP needs to calculate primitives for real, domain zones -- that is, where this function returns false
- */
-inline bool IsPhysicalBound(parthenon::BoundaryFlag bflag) {
-    //if (bflag == parthenon::BoundaryFlag::undef) throw std::invalid_argument("Undefined boundary flag!");
-    //return bflag != parthenon::BoundaryFlag::block && bflag != parthenon::BoundaryFlag::periodic;
-    return false;
-}
-
-inline parthenon::IndexRange GetPhysicalZonesI(parthenon::BoundaryFlag boundary_flags[6], parthenon::IndexShape cellbounds)
-{
-    parthenon::IndexDomain interior = parthenon::IndexDomain::interior;
-    parthenon::IndexDomain entire = parthenon::IndexDomain::entire;
-    int is = IsPhysicalBound(boundary_flags[parthenon::BoundaryFace::inner_x1]) ?
-                cellbounds.is(interior) : cellbounds.is(entire);
-    int ie = IsPhysicalBound(boundary_flags[parthenon::BoundaryFace::outer_x1]) ?
-                cellbounds.ie(interior) : cellbounds.ie(entire);
-    return parthenon::IndexRange{is, ie};
-}
-inline parthenon::IndexRange GetPhysicalZonesJ(parthenon::BoundaryFlag boundary_flags[6], parthenon::IndexShape cellbounds)
-{
-    parthenon::IndexDomain interior = parthenon::IndexDomain::interior;
-    parthenon::IndexDomain entire = parthenon::IndexDomain::entire;
-    int js = IsPhysicalBound(boundary_flags[parthenon::BoundaryFace::inner_x2]) ?
-                cellbounds.js(interior) : cellbounds.js(entire);
-    int je = IsPhysicalBound(boundary_flags[parthenon::BoundaryFace::outer_x2]) ?
-                cellbounds.je(interior) : cellbounds.je(entire);
-    return parthenon::IndexRange{js, je};
-}
-inline parthenon::IndexRange GetPhysicalZonesK(parthenon::BoundaryFlag boundary_flags[6], parthenon::IndexShape cellbounds)
-{
-    parthenon::IndexDomain interior = parthenon::IndexDomain::interior;
-    parthenon::IndexDomain entire = parthenon::IndexDomain::entire;
-    int ks = IsPhysicalBound(boundary_flags[parthenon::BoundaryFace::inner_x3]) ?
-                cellbounds.ks(interior) : cellbounds.ks(entire);
-    int ke = IsPhysicalBound(boundary_flags[parthenon::BoundaryFace::outer_x3]) ?
-                cellbounds.ke(interior) : cellbounds.ke(entire);
-    return parthenon::IndexRange{ks, ke};
-}
 
 // This is a macro and not a function for the sole reason that it still compiles if I forget the semicolon
 #if TRACE

@@ -55,10 +55,10 @@ void SyncAllBounds(Mesh *pmesh)
     // Luckily we're amortized over the whole sim, so we can
     // take our time.
 
-    // for (auto &pmb : pmesh->block_list) {
-    //     auto& rc = pmb->meshblock_data.Get();
-    //     Flux::PrimToFlux(rc.get(), IndexDomain::entire);
-    // }
+    for (auto &pmb : pmesh->block_list) {
+        auto& rc = pmb->meshblock_data.Get();
+        Flux::PrimToFlux(rc.get(), IndexDomain::entire);
+    }
 
     for (auto &pmb : pmesh->block_list) {
         auto& rc = pmb->meshblock_data.Get();
@@ -224,38 +224,38 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart)
     FLAG("Boundary sync");
     SyncAllBounds(pmesh);
 
+    // TODO be able to describe to a teenager why this block is necessary
     if (is_restart) {
-        for (auto &pmb : pmesh->block_list) {
-            const ReconstructionType& recon = pmb->packages.Get("GRMHD")->Param<ReconstructionType>("recon");
-            auto rc = pmb->meshblock_data.Get();
-            switch (recon) {
-            case ReconstructionType::donor_cell:
-                Flux::GetFlux<ReconstructionType::donor_cell, X1DIR>(rc.get());
-                Flux::GetFlux<ReconstructionType::donor_cell, X2DIR>(rc.get());
-                Flux::GetFlux<ReconstructionType::donor_cell, X3DIR>(rc.get());
-                break;
-            case ReconstructionType::linear_mc:
-                Flux::GetFlux<ReconstructionType::linear_mc, X1DIR>(rc.get());
-                Flux::GetFlux<ReconstructionType::linear_mc, X2DIR>(rc.get());
-                Flux::GetFlux<ReconstructionType::linear_mc, X3DIR>(rc.get());
-                break;
-            case ReconstructionType::linear_vl:
-                Flux::GetFlux<ReconstructionType::linear_vl, X1DIR>(rc.get());
-                Flux::GetFlux<ReconstructionType::linear_vl, X2DIR>(rc.get());
-                Flux::GetFlux<ReconstructionType::linear_vl, X3DIR>(rc.get());
-                break;
-            case ReconstructionType::weno5:
-                Flux::GetFlux<ReconstructionType::weno5, X1DIR>(rc.get());
-                Flux::GetFlux<ReconstructionType::weno5, X2DIR>(rc.get());
-                Flux::GetFlux<ReconstructionType::weno5, X3DIR>(rc.get());
-                break;
-            case ReconstructionType::ppm:
-            case ReconstructionType::mp5:
-            case ReconstructionType::weno5_lower_poles:
-                cerr << "Reconstruction type not supported!  Supported reconstructions:" << endl;
-                cerr << "donor_cell, linear_mc, linear_vl, weno5" << endl;
-                exit(-5);
-            }
+        auto& md = pmesh->mesh_data.GetOrAdd("base", 0);
+        auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
+        const ReconstructionType& recon = pmb0->packages.Get("GRMHD")->Param<ReconstructionType>("recon");
+        switch (recon) {
+        case ReconstructionType::donor_cell:
+            Flux::GetFlux<ReconstructionType::donor_cell, X1DIR>(md.get());
+            Flux::GetFlux<ReconstructionType::donor_cell, X2DIR>(md.get());
+            Flux::GetFlux<ReconstructionType::donor_cell, X3DIR>(md.get());
+            break;
+        case ReconstructionType::linear_mc:
+            Flux::GetFlux<ReconstructionType::linear_mc, X1DIR>(md.get());
+            Flux::GetFlux<ReconstructionType::linear_mc, X2DIR>(md.get());
+            Flux::GetFlux<ReconstructionType::linear_mc, X3DIR>(md.get());
+            break;
+        case ReconstructionType::linear_vl:
+            Flux::GetFlux<ReconstructionType::linear_vl, X1DIR>(md.get());
+            Flux::GetFlux<ReconstructionType::linear_vl, X2DIR>(md.get());
+            Flux::GetFlux<ReconstructionType::linear_vl, X3DIR>(md.get());
+            break;
+        case ReconstructionType::weno5:
+            Flux::GetFlux<ReconstructionType::weno5, X1DIR>(md.get());
+            Flux::GetFlux<ReconstructionType::weno5, X2DIR>(md.get());
+            Flux::GetFlux<ReconstructionType::weno5, X3DIR>(md.get());
+            break;
+        case ReconstructionType::ppm:
+        case ReconstructionType::mp5:
+        case ReconstructionType::weno5_lower_poles:
+            cerr << "Reconstruction type not supported!  Supported reconstructions:" << endl;
+            cerr << "donor_cell, linear_mc, linear_vl, weno5" << endl;
+            exit(-5);
         }
     }
 

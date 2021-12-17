@@ -44,25 +44,29 @@ using namespace parthenon;
 TaskStatus Flux::PrimToFlux(MeshBlockData<Real> *rc, IndexDomain domain)
 {
     FLAG("Getting conserved fluxes");
+    // Pointers
     auto pmb = rc->GetBlockPointer();
+    // Options
+    const auto& pars = pmb->packages.Get("GRMHD")->AllParams();
+    const Real gam = pars.Get<Real>("gamma");
+    auto pkgs = pmb->packages.AllPackages();
+    const bool flux_ct = pkgs.count("B_FluxCT");
+    const bool b_cd = pkgs.count("B_CD");
+    const bool use_electrons = pkgs.count("Electrons");
+    MetadataFlag isPrimitive = pars.Get<MetadataFlag>("PrimitiveFlag");
 
-    // This gets all primitive and all conserved variables
-    MetadataFlag isPrimitive = pmb->packages.Get("GRMHD")->Param<MetadataFlag>("PrimitiveFlag");
+    // Pack variables
     PackIndexMap prims_map, cons_map;
     const auto& P = rc->PackVariables({isPrimitive}, prims_map);
-    auto& U = rc->PackVariables({Metadata::Conserved}, cons_map);
+    const auto& U = rc->PackVariables({Metadata::Conserved}, cons_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
 
+    IndexRange ib = rc->GetBoundsI(domain);
+    IndexRange jb = rc->GetBoundsJ(domain);
+    IndexRange kb = rc->GetBoundsK(domain);
+
     const auto& G = pmb->coords;
-    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
 
-    const bool flux_ct = pmb->packages.AllPackages().count("B_FluxCT");
-    const bool b_cd = pmb->packages.AllPackages().count("B_CD");
-    const bool use_electrons = pmb->packages.AllPackages().count("Electrons");
-
-    IndexRange ib = pmb->cellbounds.GetBoundsI(domain);
-    IndexRange jb = pmb->cellbounds.GetBoundsJ(domain);
-    IndexRange kb = pmb->cellbounds.GetBoundsK(domain);
     pmb->par_for("P_to_U", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_3D {
             GRMHD::p_to_u(G, P, m_p, gam, k, j, i, U, m_u);
@@ -73,59 +77,5 @@ TaskStatus Flux::PrimToFlux(MeshBlockData<Real> *rc, IndexDomain domain)
     );
 
     FLAG("Got conserved fluxes");
-    return TaskStatus::complete;
-}
-
-TaskStatus Flux::ApplyFluxes(MeshBlockData<Real> *rc, MeshBlockData<Real> *dudt)
-{
-    FLAG("Applying fluxes");
-    auto pmb = rc->GetBlockPointer();
-    IndexDomain domain = IndexDomain::interior;
-    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
-    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
-    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
-    const int ndim = pmb->pmy_mesh->ndim;
-
-    PackIndexMap prims_map, cons_map;
-    auto P = GRMHD::PackMHDPrims(rc, prims_map); // We only need these
-    auto U = rc->PackVariablesAndFluxes({Metadata::Conserved}, cons_map);
-    auto dUdt = dudt->PackVariables({Metadata::Conserved});
-    const VarMap m_u(cons_map, true), m_p(prims_map, false);
-    const int nvar = U.GetDim(4);
-
-    const auto& G = pmb->coords;
-    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
-
-    const size_t total_scratch_bytes = 0;
-    const int scratch_level = 0;
-
-    pmb->par_for_outer("apply_fluxes", total_scratch_bytes, scratch_level,
-        ks, ke, js, je,
-        KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int& k, const int& j) {
-            // This at least has a *chance* of being SIMD-fied, without invoking double kernel launch overhead.
-            // Parthenon has a version of this kernel but either (1) no launch overhead or (2) loss of generality
-            // mean this one is faster in my experience. YMMV.
-            for (int p=0; p < nvar; ++p) {
-                parthenon::par_for_inner(member, is, ie,
-                    [&](const int& i) {
-                        // Apply all existing fluxes
-                            dUdt(p, k, j, i) = (U.flux(X1DIR, p, k, j, i) - U.flux(X1DIR, p, k, j, i+1)) / G.dx1v(i);
-                            if (ndim > 1) dUdt(p, k, j, i) += (U.flux(X2DIR, p, k, j, i) - U.flux(X2DIR, p, k, j+1, i)) / G.dx2v(j);
-                            if (ndim > 2) dUdt(p, k, j, i) += (U.flux(X3DIR, p, k, j, i) - U.flux(X3DIR, p, k+1, j, i)) / G.dx3v(k);
-                    }
-                );
-            }
-            parthenon::par_for_inner(member, is, ie,
-                [&](const int& i) {
-                    // Then calculate and add the GRMHD source term
-                    FourVectors Dtmp;
-                    GRMHD::calc_4vecs(G, P, m_p, k, j, i, Loci::center, Dtmp);
-                    GRMHD::add_source(G, P, m_p, Dtmp, gam, k, j, i, dUdt, m_u);
-                }
-            );
-        }
-    );
-
-    FLAG("Applied");
     return TaskStatus::complete;
 }
