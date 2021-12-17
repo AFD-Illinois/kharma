@@ -101,6 +101,7 @@ void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
     if (ctf == "none") ctf = "null";
     if (ctf == "fmks") ctf = "funky";
     if (ctf == "mks") ctf = "modified";
+    if (ctf == "exponential") ctf = "exp";
     if (ctf == "eks") ctf = "exp";
     // TODO any other synonyms
 
@@ -131,6 +132,11 @@ void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
         // i.e. we want Rhor = Rin + 5.5 * (Rout - Rin) / N1TOT:
         GReal Rin = (n1tot * Rhor / 5.5 - Rout) / (-1. + n1tot / 5.5);
         pin->SetReal("parthenon/mesh", "x1min", Rin);
+        pin->SetReal("parthenon/mesh", "x1max", Rout);
+    } else if (cb == "spherical_minkowski") {
+        // In Minkowski space, go to SMALL (TODO all the way to 0?)
+        GReal Rout = pin->GetReal("coordinates", "r_out");
+        pin->SetReal("parthenon/mesh", "x1min", SMALL);
         pin->SetReal("parthenon/mesh", "x1max", Rout);
     }
 
