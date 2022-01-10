@@ -1,11 +1,26 @@
-build:
-  before_script:
-    - git submodule update --init --recursive
+# Continuous Integration testing for KHARMA
+# a.k.a did we break the basics?
 
+# Build against a container image
+#image:
+
+variables:
+  GIT_SUBMODULE_STRATEGY: recursive
+
+stages:
+  - build
+  - convergence
+
+build:
+  stage: build
   script:
     - bash make.sh clean
+  artifacts:
+    paths:
+      - kharma.*
 
 bondi:
+  stage: convergence
   before_script:
     - cd tests/bondi/
   script:
@@ -18,8 +33,9 @@ bondi:
       - tests/bondi/*.png
 
 mhdmodes:
+  stage: convergence
   before_script:
-    - cd tests/bondi/
+    - cd tests/mhdmodes/
   script:
     - bash run.sh
     - bash check.sh
@@ -27,4 +43,4 @@ mhdmodes:
     - cd ../..
   artifacts:
     paths:
-      - tests/bondi/*.png
+      - tests/mhdmodes/*.png
