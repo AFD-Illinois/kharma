@@ -15,8 +15,8 @@ nx2 = 128
 nx3 = 1
 
 <parthenon/meshblock>
-nx1 = 128
-nx2 = 128
+nx1 = 64
+nx2 = 64
 nx3 = 1
 
 <coordinates>
@@ -34,9 +34,8 @@ tlim = 100.0
 
 <debug>
 verbose = 0
-extra_checks = 0
+extra_checks = 1
 flag_verbose = 0
-flag_save = 0
 
 <GRMHD>
 cfl = 0.5
@@ -51,18 +50,8 @@ bsq_over_rho_max = 500
 rho_min_geom = 1e-20
 u_min_geom = 1e-20
 
-<wind>
-enabled = false
-ne = 1.e-4
-Tp = 10
-
 <parthenon/output0>
 file_type = hdf5
 dt = 1.0
 single_precision_output = true
 variables = prims.rho, prims.u, prims.uvec, prims.B
-
-<parthenon/output1>
-file_type = rst
-dt = 10.0
-ghost_zones = true
