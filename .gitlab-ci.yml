@@ -1,0 +1,30 @@
+build:
+  before_script:
+    - git submodule update --init --recursive
+
+  script:
+    - bash make.sh clean
+
+bondi:
+  before_script:
+    - cd tests/bondi/
+  script:
+    - bash run.sh
+    - bash check.sh
+  after_script:
+    - cd ../..
+  artifacts:
+    paths:
+      - tests/bondi/*.png
+
+mhdmodes:
+  before_script:
+    - cd tests/bondi/
+  script:
+    - bash run.sh
+    - bash check.sh
+  after_script:
+    - cd ../..
+  artifacts:
+    paths:
+      - tests/bondi/*.png
