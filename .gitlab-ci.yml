@@ -16,6 +16,9 @@ build:
   stage: build
   script:
     - bash make.sh clean
+  artifacts:
+    paths:
+      - kharma.*
 
 bondi:
   stage: convergence
