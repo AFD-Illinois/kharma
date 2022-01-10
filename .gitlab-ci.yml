@@ -6,6 +6,7 @@
 
 variables:
   GIT_SUBMODULE_STRATEGY: recursive
+  EXTRA_FLAGS: -DPARTHENON_DISABLE_MPI=ON
 
 stages:
   - build
@@ -32,7 +33,7 @@ bondi:
 mhdmodes:
   stage: convergence
   before_script:
-    - cd tests/bondi/
+    - cd tests/mhdmodes/
   script:
     - bash run.sh
     - bash check.sh
@@ -40,4 +41,4 @@ mhdmodes:
     - cd ../..
   artifacts:
     paths:
-      - tests/bondi/*.png
+      - tests/mhdmodes/*.png
