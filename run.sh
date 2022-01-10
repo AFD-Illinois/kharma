@@ -34,6 +34,6 @@ fi
 #mpirun -n 8 $KHARMA_DIR/$EXE_NAME "$@"
 #mpirun -n 4 $KHARMA_DIR/$EXE_NAME "$@"
 #mpirun -n 2 $KHARMA_DIR/$EXE_NAME "$@"
-mpirun -n 1 $KHARMA_DIR/$EXE_NAME "$@"
+#mpirun -n 1 $KHARMA_DIR/$EXE_NAME "$@"
 #mpirun -n 2 --map-by ppr:1:numa:pe=14 $KHARMA_DIR/$EXE_NAME "$@"
-#$KHARMA_DIR/$EXE_NAME "$@"
+$KHARMA_DIR/$EXE_NAME "$@"
