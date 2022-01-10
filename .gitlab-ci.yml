@@ -29,6 +29,7 @@ bondi:
   after_script:
     - cd ../..
   artifacts:
+    when: always
     paths:
       - tests/bondi/*.png
 
@@ -42,5 +43,6 @@ mhdmodes:
   after_script:
     - cd ../..
   artifacts:
+    when: always
     paths:
       - tests/mhdmodes/*.png
