@@ -51,7 +51,7 @@ powerfit = np.polyfit(np.log(RES), np.log(L1), 1)[0]
 print("Powerfit: {} L1: {}".format(powerfit, L1))
 
 fail = 0
-if powerfit < -2.1 or powerfit > -1.9:
+if powerfit < -2.2 or powerfit > -1.9:
     fail = 1
 
 # MAKE PLOTS

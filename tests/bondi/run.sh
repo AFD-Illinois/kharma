@@ -13,7 +13,7 @@ conv_2d() {
                                            parthenon/meshblock/nx1=$half parthenon/meshblock/nx2=$half parthenon/meshblock/nx3=1 \
                                            $2
         mv bondi.out0.00000.phdf bondi_2d_${res}_start_${1}.phdf
-        mv bondi.out0.00001.phdf bondi_2d_${res}_end_${1}.phdf
+        mv bondi.out0.final.phdf bondi_2d_${res}_end_${1}.phdf
     done
 }
 

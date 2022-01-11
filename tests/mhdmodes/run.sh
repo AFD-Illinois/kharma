@@ -15,7 +15,7 @@ conv_3d() {
                                            parthenon/meshblock/nx1=$half parthenon/meshblock/nx2=$half parthenon/meshblock/nx3=$half \
                                            $2
         mv mhdmodes.out0.00000.phdf mhd_3d_${res}_start_${1}.phdf
-        mv mhdmodes.out0.00001.phdf mhd_3d_${res}_end_${1}.phdf
+        mv mhdmodes.out0.final.phdf mhd_3d_${res}_end_${1}.phdf
     done
 }
 conv_2d() {
@@ -27,7 +27,7 @@ conv_2d() {
                                            parthenon/meshblock/nx1=16 parthenon/meshblock/nx2=16 parthenon/meshblock/nx3=1 \
                                            mhdmodes/dir=3 $2
         mv mhdmodes.out0.00000.phdf mhd_2d_${res}_start_${1}.phdf
-        mv mhdmodes.out0.00001.phdf mhd_2d_${res}_end_${1}.phdf
+        mv mhdmodes.out0.final.phdf mhd_2d_${res}_end_${1}.phdf
     done
 }
 conv_1d() {
@@ -39,7 +39,7 @@ conv_1d() {
                                            parthenon/meshblock/nx1=16 parthenon/meshblock/nx2=16 parthenon/meshblock/nx3=1 \
                                            mhdmodes/dir=3 $2
         mv mhdmodes.out0.00000.phdf mhd_2d_${res}_start_${1}.phdf
-        mv mhdmodes.out0.00001.phdf mhd_2d_${res}_end_${1}.phdf
+        mv mhdmodes.out0.final.phdf mhd_2d_${res}_end_${1}.phdf
     done
 }
 
