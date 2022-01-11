@@ -1,0 +1,65 @@
+# Continuous Integration testing for KHARMA
+# a.k.a did we break the basics?
+
+# Build against a container image
+#image:
+
+variables:
+  GIT_SUBMODULE_STRATEGY: recursive
+
+# Someday all the tests can be executed by
+# different runners sharing a configuration
+stages:
+  - build
+  - tests
+
+build:
+  stage: build
+  script:
+    - bash make.sh clean
+  artifacts:
+    paths:
+      - kharma.*
+
+bondi:
+  stage: tests
+  before_script:
+    - cd tests/bondi/
+  script:
+    - bash run.sh
+    - bash check.sh
+  after_script:
+    - cd ../..
+  artifacts:
+    when: always
+    paths:
+      - tests/bondi/*.png
+
+mhdmodes:
+  stage: tests
+  before_script:
+    - cd tests/mhdmodes/
+  script:
+    - bash run.sh
+    - bash check.sh
+  after_script:
+    - cd ../..
+  artifacts:
+    when: always
+    paths:
+      - tests/mhdmodes/*.png
+
+bz_monopole:
+  stage: tests
+  before_script:
+    - cd tests/bz_monopole
+  script:
+    # Make sure to image whatever actually ran
+    - exit_code=0
+    - bash run.sh || exit_code=$?
+    - bash check.sh
+    - exit $exit_code
+  artifacts:
+    when: always
+    paths:
+      - tests/bz_monopole/*.png

@@ -78,6 +78,8 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
         b_field_flag = BSeedType::steep;
     } else if (b_field_type == "gaussian") {
         b_field_flag = BSeedType::gaussian;
+    } else if (b_field_type == "bz_monopole") {
+        b_field_flag = BSeedType::bz_monopole;
     } else {
         throw std::invalid_argument("Magnetic field seed type not supported: " + b_field_type);
     }
@@ -91,6 +93,8 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
         b30 = pin->GetOrAddReal("b_field", "b30", 0.);
     case BSeedType::monopole:
         b10 = pin->GetReal("b_field", "b10");
+        break;
+    case BSeedType::bz_monopole:
         break;
     case BSeedType::sane:
         break;
@@ -134,7 +138,7 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
     pmb->par_for("B_field_A", js+1, je, is+1, ie,
         KOKKOS_LAMBDA_2D {
             GReal Xembed[GR_DIM];
-            G.coord_embed(0, j, i, Loci::center, Xembed);
+            G.coord_embed(0, j, i, Loci::corner, Xembed);
             GReal r = Xembed[1], th = Xembed[2];
 
             // Find rho (later u?) at corners by averaging from adjacent centers
@@ -146,6 +150,10 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
             {
             case BSeedType::sane:
                 q = rho_av - min_rho_q;
+                break;
+            case BSeedType::bz_monopole:
+                // used in testing to exactly agree with harmpi
+                q = 1. - cos(th);
                 break;
             case BSeedType::ryan:
                 // BR's smoothed poloidal in-torus, EHT standard MAD
