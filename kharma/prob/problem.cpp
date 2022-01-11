@@ -51,6 +51,7 @@
 #include "mhdmodes.hpp"
 #include "orszag_tang.hpp"
 #include "shock_tube.hpp"
+#include "noh.hpp"
 
 #include "b_field_tools.hpp"
 
@@ -87,6 +88,8 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
         InitializeFMTorus(rc.get(), pin);
     } else if (prob == "iharm_restart") {
         ReadIharmRestart(rc.get(), pin);
+    } else if (prob == "noh"){
+        InitializeNoh(rc.get(), pin);
     }
 
     // Pertub the internal energy a bit to encourage accretion
