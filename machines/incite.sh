@@ -9,11 +9,11 @@ if [[ $HOST == *".summit.olcf.ornl.gov" ]]; then
   fi
 
   # All of these tested with Spectrum MPI 10.4.0.3
-  if [[ "$*" == *"gcc"* ]]; then
+  if [[ "$ARGS" == *"gcc"* ]]; then
     module load gcc
     module load cuda
     PREFIX_PATH="$HOME/libs/hdf5-gcc10-spectrum"
-  elif [[ "$*" == *"xl"* ]]; then
+  elif [[ "$ARGS" == *"xl"* ]]; then
     # xlC: OpenMP CXX problems
     module load xl
     module load cuda
@@ -34,7 +34,7 @@ if [[ $HOST == *".summit.olcf.ornl.gov" ]]; then
 fi
 
 if [[ $HOST == *".alcf.anl.gov" ]]; then
-  if [[ "$*" == *"cuda"* ]]; then
+  if [[ "$ARGS" == *"cuda"* ]]; then
     module purge
     module load Core/StdEnv cmake
     module load nvhpc/21.7

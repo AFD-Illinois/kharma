@@ -6,7 +6,7 @@
 # Force a number of OpenMP threads if it doesn't autodetect
 #export OMP_NUM_THREADS=28
 # Number of GPUs on the node (doesn't matter for CPU runs)
-export KOKKOS_NUM_DEVICES=2
+#export KOKKOS_NUM_DEVICES=2
 
 # Optionally use the Kokkos tools to profile kernels
 #export KOKKOS_PROFILE_LIBRARY=$KHARMA_DIR/../kokkos-tools/kp_kernel_timer.so
@@ -14,7 +14,7 @@ export KOKKOS_NUM_DEVICES=2
 
 # Default MPI parameters: no invocation or same processes as Kokkos devices
 MPI_EXE=""
-MPI_NUM_PROCS=$KOKKOS_NUM_DEVICES
+MPI_NUM_PROCS=1
 MPI_EXTRA_ARGS=""
 
 ### General run script
@@ -44,15 +44,19 @@ fi
 
 # Load environment from the same files as the compile process
 HOST=$(hostname -f)
+ARGS=$(cat $KHARMA_DIR/make_args)
 for machine in $KHARMA_DIR/machines/*.sh
 do
   source $machine
 done
+export KOKKOS_NUM_DEVICES
 
 # Run based on preferences
 if [ -z "$MPI_EXE" ]; then
+  echo "Running $KHARMA_DIR/$EXE_NAME $@"
   $KHARMA_DIR/$EXE_NAME "$@"
 else
+  echo "Running $MPI_EXE -n $MPI_NUM_PROCS $MPI_EXTRA_ARGS $KHARMA_DIR/$EXE_NAME $@"
   $MPI_EXE -n $MPI_NUM_PROCS $MPI_EXTRA_ARGS $KHARMA_DIR/$EXE_NAME "$@"
 fi
 
