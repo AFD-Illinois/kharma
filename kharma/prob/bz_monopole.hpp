@@ -12,5 +12,5 @@
  * @param rin is the torus innermost radius, in r_g
  * @param rmax is the radius of maximum density of the F-M torus in r_g
  */
-void InitializeBZMonopole(MeshBlockData<Real> *rc, ParameterInput *pin);
+TaskStatus InitializeBZMonopole(MeshBlockData<Real> *rc, ParameterInput *pin);
 

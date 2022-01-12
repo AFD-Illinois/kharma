@@ -40,7 +40,7 @@
 #include <random>
 #include "Kokkos_Random.hpp"
 
-void InitializeBZMonopole(MeshBlockData<Real> *rc, ParameterInput *pin)
+TaskStatus InitializeBZMonopole(MeshBlockData<Real> *rc, ParameterInput *pin)
 {
     FLAG("Initializing BZ monopole problem");
 
@@ -90,5 +90,7 @@ void InitializeBZMonopole(MeshBlockData<Real> *rc, ParameterInput *pin)
             uvec(2, k, j, i) = 0.;
         }
     );
+
+    return TaskStatus::complete;
 }
 

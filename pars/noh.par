@@ -1,4 +1,7 @@
 # 1D (Noh) shock test (see Ressler+ 2015)
+# Defaults to non-relativistic electrons for
+# convergence tests.
+# Set gamma_e = 1.333333 for relativistic
 
 <parthenon/job>
 problem_id = noh
@@ -50,7 +53,7 @@ kawazura = false
 sharma = false
 werner = false
 rowan = false
-gamma_e = 1.333333
+gamma_e = 1.666667
 fel_0 = 0.0
 fel_constant = 0.5
 
@@ -58,8 +61,8 @@ fel_constant = 0.5
 mach = 49.
 rhoL = 1.0
 rhoR = 1.0
-PL = 1.e-8
-PR = 1.e-8
+PL = 1.e-6
+PR = 1.e-6
 set_tlim = true
 
 <floors>

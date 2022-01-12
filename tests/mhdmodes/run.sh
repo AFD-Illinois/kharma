@@ -31,15 +31,15 @@ conv_2d() {
     done
 }
 conv_1d() {
-    for res in 32 64 128 256 512
+    for res in 64 128 256 512
     do
-      # Two blocks
-      half=$(( $res / 2 ))
-      $BASE/run.sh -i $BASE/pars/mhdmodes.par parthenon/mesh/nx1=$res parthenon/mesh/nx2=$res parthenon/mesh/nx3=1 \
-                                           parthenon/meshblock/nx1=16 parthenon/meshblock/nx2=16 parthenon/meshblock/nx3=1 \
+      # Eight blocks
+      eighth=$(( $res / 8 ))
+      $BASE/run.sh -i $BASE/pars/mhdmodes.par parthenon/mesh/nx1=$res parthenon/mesh/nx2=1 parthenon/mesh/nx3=1 \
+                                           parthenon/meshblock/nx1=$eighth parthenon/meshblock/nx2=1 parthenon/meshblock/nx3=1 \
                                            mhdmodes/dir=3 $2
-        mv mhdmodes.out0.00000.phdf mhd_2d_${res}_start_${1}.phdf
-        mv mhdmodes.out0.final.phdf mhd_2d_${res}_end_${1}.phdf
+        mv mhdmodes.out0.00000.phdf mhd_1d_${res}_start_${1}.phdf
+        mv mhdmodes.out0.final.phdf mhd_1d_${res}_end_${1}.phdf
     done
 }
 

@@ -40,7 +40,7 @@
 #include <random>
 #include "Kokkos_Random.hpp"
 
-void InitializeFMTorus(MeshBlockData<Real> *rc, ParameterInput *pin)
+TaskStatus InitializeFMTorus(MeshBlockData<Real> *rc, ParameterInput *pin)
 {
     FLAG("Initializing torus problem");
 
@@ -224,6 +224,8 @@ void InitializeFMTorus(MeshBlockData<Real> *rc, ParameterInput *pin)
             u(k, j, i) /= rho_max;
         }
     );
+
+    return TaskStatus::complete;
 }
 
 // TODO move this to a different file
@@ -234,8 +236,7 @@ TaskStatus PerturbU(MeshBlockData<Real> *rc, ParameterInput *pin)
     auto rho = rc->Get("prims.rho").data;
     auto u = rc->Get("prims.u").data;
 
-    const Real u_jitter = pin->GetOrAddReal("perturbation", "u_jitter", 0.0);
-    if (u_jitter == 0.0) return TaskStatus::complete;
+    const Real u_jitter = pin->GetReal("perturbation", "u_jitter");
     // Don't jitter values set by floors
     const Real jitter_above_rho = pin->GetReal("floors", "rho_min_geom");
     // Note we add the MeshBlock gid to this value when seeding RNG,

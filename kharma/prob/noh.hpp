@@ -97,4 +97,5 @@ TaskStatus InitializeNoh(MeshBlockData<Real> *rc, ParameterInput *pin)
     );
 
     FLAG("Initialized 1D (Noh) Shock test");
+    return TaskStatus::complete;
 }

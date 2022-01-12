@@ -49,6 +49,20 @@ mhdmodes:
     paths:
       - tests/mhdmodes/*.png
 
+noh:
+  stage: tests
+  before_script:
+    - cd tests/noh/
+  script:
+    - bash run.sh
+    - bash check.sh
+  after_script:
+    - cd ../..
+  artifacts:
+    when: always
+    paths:
+      - tests/noh/*.png
+
 bz_monopole:
   stage: tests
   before_script:
