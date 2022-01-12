@@ -65,3 +65,7 @@ variables = prims.rho, prims.u, prims.uvec, prims.B, fflag, pflag
 file_type = rst
 dt = 100.0
 ghost_zones = true
+
+<parthenon/output2>
+file_type = hst
+dt = 0.1

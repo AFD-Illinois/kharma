@@ -45,7 +45,7 @@ using namespace Kokkos;
 
 #if FAST_CARTESIAN
 /**
- * Fast Cartesian GRCoordinates just use the underlying UniformCartesian object for everything
+ * Fast Cartesian GRCoordinates objects just use the underlying UniformCartesian object for everything
  */
 GRCoordinates::GRCoordinates(const RegionSize &rs, ParameterInput *pin): UniformCartesian(rs, pin) {}
 GRCoordinates::GRCoordinates(const GRCoordinates &src, int coarsen): UniformCartesian(src, coarsen) {}
@@ -58,11 +58,10 @@ void init_GRCoordinates(GRCoordinates& G, int n1, int n2, int n3);
  */
 GRCoordinates::GRCoordinates(const RegionSize &rs, ParameterInput *pin): UniformCartesian(rs, pin)
 {
-    // This is effectively a constructor for the CoordinateEmbedding object,
-    // but in KHARMA, that object is only used through this one.
-    // And I want the option to use that code elsewhere as it's quite general & nice
+    // TODO This is effectively a constructor for the CoordinateEmbedding object
+    // We should move it there so we can handle system names, synonyms & categories in one place
     std::string base_str = pin->GetString("coordinates", "base"); // Require every problem to specify very basic geometry
-    std::string transform_str = pin->GetString("coordinates", "transform");
+    std::string transform_str = pin->GetString("coordinates", "transform"); // This is guessed in kharma.cpp
 
     SomeBaseCoords base;
     if (base_str == "spherical_minkowski") {
@@ -85,11 +84,10 @@ GRCoordinates::GRCoordinates(const RegionSize &rs, ParameterInput *pin): Uniform
 
     SomeTransform transform;
     if (transform_str == "null") {
-        if (spherical) {
-            transform.emplace<SphNullTransform>(SphNullTransform());
-        } else {
-            transform.emplace<CartNullTransform>(CartNullTransform());
-        }
+        transform.emplace<NullTransform>(NullTransform());
+    } else if (transform_str == "exponential" || transform_str == "exp" || transform_str == "eks") {
+        if (!spherical) throw std::invalid_argument("Transform is for spherical coordinates!");
+        transform.emplace<ExponentialTransform>(ExponentialTransform());
     } else if (transform_str == "modified" || transform_str == "mks") {
         if (!spherical) throw std::invalid_argument("Transform is for spherical coordinates!");
         GReal hslope = pin->GetOrAddReal("coordinates", "hslope", 0.3);
@@ -128,7 +126,9 @@ GRCoordinates::GRCoordinates(const GRCoordinates &src, int coarsen): UniformCart
 }
 
 /**
- * Initialize any cached geometry that GRCoordinates will need to return.
+ * Initialize any cached geometry that GRCoordinates will need to return. While
+ * GRCoordinates objects will be moved device-side, this can be run only on the
+ * host.
  *
  * This needs to be defined *outside* of the GRCoordinates object, because of some
  * fun issues with C++ Lambda capture, which Kokkos brings to the fore

@@ -45,6 +45,7 @@
 #include "current.hpp"
 #include "electrons.hpp"
 #include "grmhd.hpp"
+#include "reductions.hpp"
 #include "wind.hpp"
 
 #include "bondi.hpp"
@@ -55,30 +56,34 @@
 
 std::shared_ptr<StateDescriptor> KHARMA::InitializeGlobals(ParameterInput *pin)
 {
+    // All global mutable state.  All of these and only these parameters are "mutable"
     auto pkg = std::make_shared<StateDescriptor>("Globals");
     Params &params = pkg->AllParams();
+    // Current time in the simulation.  For ramping things up, ramping things down,
+    // or preventing bad outcomes at known times
+    params.Add("time", 0.0, true);
     // Last step's dt (Parthenon SimTime tm.dt), which must be preserved to output jcon
-    // Also used to prevent any 
-    params.Add("dt_last", 0.0);
+    params.Add("dt_last", 0.0, true);
     // Accumulator for maximum ctop within an MPI process
-    params.Add("ctop_max", 0.0);
-    // Maximum between MPI processes, updated after each step
-    params.Add("ctop_max_last", 0.0);
+    // That is, this value does NOT generally reflect the actual maximum
+    params.Add("ctop_max", 0.0, true);
+    // Maximum between MPI processes, updated after each step; that is, always a maximum.
+    params.Add("ctop_max_last", 0.0, true);
     // Whether we are computing initial outputs/timestep, or versions in the execution loop
-    params.Add("in_loop", false);
+    params.Add("in_loop", false, true);
 
     return pkg;
 }
 
 void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
 {
-    // TODO dynamic ghost zones.  Dangerous?
+    // This would set ghost zones dynamically, or leave it up to Parthenon.  Dangerous?
     // std::string recon = pin->GetOrAddString("GRMHD", "reconstruction", "weno5");
     // if (recon != "donor_cell" && recon != "linear_mc" && recon != "linear_vl") {
     //     pin->SetInteger("parthenon/mesh", "nghost", 4);
     //     Globals::nghost = pin->GetInteger("parthenon/mesh", "nghost");
     // }
-    // Set 4 ghost zones
+    // For now we always set 4 ghost zones
     pin->SetInteger("parthenon/mesh", "nghost", 4);
     Globals::nghost = pin->GetInteger("parthenon/mesh", "nghost");
 
@@ -88,10 +93,20 @@ void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
         ReadIharmRestartHeader(pin->GetString("iharm_restart", "fname"), pin);
     }
 
-    // TODO construct a coordinate system object here to check all the properties/coordinates
-    // So far every non-null transform is exp(x1) but who knows
+    // Then handle coordinate systems and boundaries!
     std::string cb = pin->GetString("coordinates", "base");
+    if (cb == "ks") cb = "spherical_ks";
+    if (cb == "bl") cb = "spherical_bl";
+    if (cb == "minkowski") cb = "cartesian_minkowski";
     std::string ctf = pin->GetOrAddString("coordinates", "transform", "null");
+    if (ctf == "none") ctf = "null";
+    if (ctf == "fmks") ctf = "funky";
+    if (ctf == "mks") ctf = "modified";
+    if (ctf == "exponential") ctf = "exp";
+    if (ctf == "eks") ctf = "exp";
+    // TODO any other synonyms
+
+    // TODO ask our coordinates what's going on & where to put things
     if (ctf != "null") {
         int n1tot = pin->GetInteger("parthenon/mesh", "nx1");
         GReal Rout = pin->GetReal("coordinates", "r_out");
@@ -108,9 +123,28 @@ void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
         //cerr << "Setting x1min: " << x1min << " x1max " << x1max << " based on BH with a=" << a << endl;
         pin->SetReal("parthenon/mesh", "x1min", x1min);
         pin->SetReal("parthenon/mesh", "x1max", x1max);
+    } else if (cb == "spherical_ks" || cb == "spherical_bl") {
+        // If we're in GR with a null transform, apply the criterion to our coordinates directly
+        int n1tot = pin->GetInteger("parthenon/mesh", "nx1");
+        GReal Rout = pin->GetReal("coordinates", "r_out");
+        Real a = pin->GetReal("coordinates", "a");
+        GReal Rhor = 1 + sqrt(1 - a*a);
+        // Set Rin such that we have 5 zones completely inside the event horizon
+        // i.e. we want Rhor = Rin + 5.5 * (Rout - Rin) / N1TOT:
+        GReal Rin = (n1tot * Rhor / 5.5 - Rout) / (-1. + n1tot / 5.5);
+        pin->SetReal("parthenon/mesh", "x1min", Rin);
+        pin->SetReal("parthenon/mesh", "x1max", Rout);
+    } else if (cb == "spherical_minkowski") {
+        // In Minkowski space, go to SMALL (TODO all the way to 0?)
+        GReal Rout = pin->GetReal("coordinates", "r_out");
+        pin->SetReal("parthenon/mesh", "x1min", SMALL);
+        pin->SetReal("parthenon/mesh", "x1max", Rout);
     }
+
     // Assumption: if we're in a spherical system...
-    if (cb == "spherical_ks" || cb == "ks" || cb == "spherical_bl" || cb == "bl" || cb == "spherical_minkowski") {
+    if (cb == "spherical_ks" || cb == "spherical_bl" || cb == "spherical_minkowski") {
+        // Record whether we're in spherical coordinates. This should be used only for setting other options,
+        // see CoordinateEmbedding::spherical() for the real authority usable inside kernels
         pin->SetBoolean("coordinates", "spherical", true);
         // ...then we definitely want our special sauce boundary conditions
         // These are inflow in x1 and reflecting in x2, but applied to *primitives* in a custom operation
@@ -122,13 +156,13 @@ void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
         pin->SetString("parthenon/mesh", "ix3_bc", "periodic");
         pin->SetString("parthenon/mesh", "ox3_bc", "periodic");
 
-        // We also know the bounds for most transforms in spherical.  Set them.
-        if (ctf == "none") {
+        // We also know the bounds for most transforms in spherical coords.  Set them.
+        if (ctf == "null" || ctf == "exp") {
             pin->SetReal("parthenon/mesh", "x2min", 0.0);
             pin->SetReal("parthenon/mesh", "x2max", M_PI);
             pin->SetReal("parthenon/mesh", "x3min", 0.0);
             pin->SetReal("parthenon/mesh", "x3max", 2*M_PI);
-        } else if (ctf == "modified" || ctf == "mks" || ctf == "funky" || ctf == "fmks") {
+        } else if (ctf == "modified" || ctf == "funky") {
             pin->SetReal("parthenon/mesh", "x2min", 0.0);
             pin->SetReal("parthenon/mesh", "x2max", 1.0);
             pin->SetReal("parthenon/mesh", "x3min", 0.0);
@@ -156,10 +190,11 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
     // Read all options first so we can set their defaults here,
     // before any packages are initialized.
     std::string b_field_solver = pin->GetOrAddString("b_field", "solver", "flux_ct");
-    bool do_wind = pin->GetOrAddBoolean("wind", "on", false);
-    // TODO if jcon in outputs then...
+    // TODO if jcon is in our list of outputs then...
     bool add_jcon = pin->GetOrAddBoolean("GRMHD", "add_jcon", true);
     bool do_electrons = pin->GetOrAddBoolean("electrons", "on", false);
+    bool do_reductions = pin->GetOrAddBoolean("reductions", "on", true);
+    bool do_wind = pin->GetOrAddBoolean("wind", "on", false);
 
     // Global variables "package."  Anything that just, really oughta be a global
     packages.Add(KHARMA::InitializeGlobals(pin.get()));
@@ -168,7 +203,7 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
     // initialize it first among physics stuff
     packages.Add(GRMHD::Initialize(pin.get()));
 
-    // B field solvers, to ensure divB == 0. 
+    // B field solvers, to ensure divB == 0.
     if (b_field_solver == "none") {
         // Don't add a B field
         // Currently this means fields are still allocated, and processing is done in GRMHD,
@@ -194,6 +229,10 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
         packages.Add(Electrons::Initialize(pin.get(), packages));
     }
 
+    if (do_reductions) {
+        packages.Add(Reductions::Initialize(pin.get()));
+    }
+
     return std::move(packages);
 }
 
@@ -201,14 +240,15 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
 // TODO decide on a consistent implementation of foreach packages -> do X
 void KHARMA::FillDerivedDomain(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, int coarse)
 {
-    FLAG("Filling derived vars after applying physical boundaries");
-    // We need to re-fill the "derived" (primitive) variables from everything
-    // except GRMHD
+    FLAG("Filling derived variables on boundaries");
+    // We need to re-fill the "derived" (primitive) variables on the physical boundaries,
+    // since we already called "FillDerived" before the ghost zones were initialized
+    // This does *not* apply to the GRMHD variables, just any passives or extras
     auto pmb = rc->GetBlockPointer();
-    if (pmb->packages.AllPackages().count("B_CD"))
-        B_CD::UtoP(rc.get(), domain, coarse);
     if (pmb->packages.AllPackages().count("B_FluxCT"))
         B_FluxCT::UtoP(rc.get(), domain, coarse);
+    if (pmb->packages.AllPackages().count("B_CD"))
+        B_CD::UtoP(rc.get(), domain, coarse);
     if (pmb->packages.AllPackages().count("Electrons"))
         Electrons::UtoP(rc.get(), domain, coarse);
 
@@ -225,14 +265,16 @@ void KHARMA::PreStepMeshUserWorkInLoop(Mesh *pmesh, ParameterInput *pin, const S
 void KHARMA::PostStepMeshUserWorkInLoop(Mesh *pmesh, ParameterInput *pin, const SimTime &tm)
 {
     // Knowing this works took a little digging into Parthenon's EvolutionDriver.
-    // The order of operations is:
+    // The order of operations after calling Step() is:
     // 1. Call PostStepUserWorkInLoop and PostStepDiagnostics (this function and following)
     // 2. Set the timestep tm.dt to the minimum from the EstimateTimestep calls
     // 3. Generate any outputs, e.g. jcon
     // Thus we preserve tm.dt (which has not yet been reset) as dt_last for Current::FillOutput
-    pmesh->packages.Get("Globals")->UpdateParam<Real>("dt_last", tm.dt);
+    pmesh->packages.Get("Globals")->UpdateParam<double>("dt_last", tm.dt);
+    pmesh->packages.Get("Globals")->UpdateParam<double>("time", tm.time);
 
     // ctop_max has fewer rules. It's just convenient to set here since we're assured of no MPI hangs
+    // Since it involves an MPI sync, we only keep track of this when we need it
     if (pmesh->packages.AllPackages().count("B_CD")) {
         Real ctop_max_last = MPIMax(pmesh->packages.Get("Globals")->Param<Real>("ctop_max"));
         pmesh->packages.Get("Globals")->UpdateParam<Real>("ctop_max_last", ctop_max_last);
@@ -243,9 +285,12 @@ void KHARMA::PostStepMeshUserWorkInLoop(Mesh *pmesh, ParameterInput *pin, const 
 void KHARMA::PostStepDiagnostics(Mesh *pmesh, ParameterInput *pin, const SimTime &tm)
 {
     // Parthenon's version of this has a bug, but I would probably subclass it anyway.
-    // very useful to have a single per-step spot for global prints
-    for (auto &package : pmesh->packages.AllPackages()) {
-        package.second->PostStepDiagnostics(tm, pmesh->mesh_data.GetOrAdd("base", 0).get());
+    // very useful to have a single per-step spot to control any routine print statements
+    const auto& md = pmesh->mesh_data.GetOrAdd("base", 0).get();
+    if (md->NumBlocks() > 0) {
+        for (auto &package : pmesh->packages.AllPackages()) {
+            package.second->PostStepDiagnostics(tm, md);
+        }
     }
 }
 

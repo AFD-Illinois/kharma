@@ -50,44 +50,53 @@ void InitializeFMTorus(MeshBlockData<Real> *rc, ParameterInput *pin)
     GridVector uvec = rc->Get("prims.uvec").data;
     GridVector B_P = rc->Get("prims.B").data;
 
-    const Real rin = pin->GetOrAddReal("torus", "rin", 6.0);
-    const Real rmax = pin->GetOrAddReal("torus", "rmax", 12.0);
+    const GReal rin = pin->GetOrAddReal("torus", "rin", 6.0);
+    const GReal rmax = pin->GetOrAddReal("torus", "rmax", 12.0);
     const Real kappa = pin->GetOrAddReal("torus", "kappa", 1.e-3);
+    const GReal tilt_deg = pin->GetOrAddReal("torus", "tilt", 0.0);
+    const GReal tilt = tilt_deg / 180. * M_PI;
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
 
     IndexDomain domain = IndexDomain::entire;
-    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
-    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
-    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
+    const int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
+    const int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
+    const int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
 
-    // Get coordinate system pointers for later
-    // Only compatible with KS coords as base
-    // TODO going to need some work for alternative metrics
+    // Get coordinate systems
+    // G clearly holds a reference to an existing system G.coords.base,
+    // but we don't know if it's KS or BL coordinates
+    // Since we can't create a system and assign later, we just
+    // rebuild copies of both based on the BH spin "a"
     const auto& G = pmb->coords;
-    SphKSCoords ksc = mpark::get<SphKSCoords>(G.coords.base);
-    SphBLCoords bl = SphBLCoords(ksc.a);
+    bool use_ks; GReal a;
+    if (mpark::holds_alternative<SphKSCoords>(G.coords.base)) {
+        a = mpark::get<SphKSCoords>(G.coords.base).a;
+        use_ks = true;
+    } else if (mpark::holds_alternative<SphBLCoords>(G.coords.base)) {
+        a = mpark::get<SphBLCoords>(G.coords.base).a;
+        use_ks = false;
+    } else {
+        throw std::invalid_argument("Torus problem defined only for KS and BL coordinates!");
+    }
+    const SphBLCoords blcoords = SphBLCoords(a);
+    const SphKSCoords kscoords = SphKSCoords(a);
 
     // Fishbone-Moncrief parameters
-    Real l = lfish_calc(ksc.a, rmax);
-
-    if (pmb->packages.Get("GRMHD")->Param<int>("verbose") > 0) {
-        cout << "Initializing Fishbone-Moncrief torus:" << endl;
-        cout << "rin = " << rin << endl;
-        cout << "rmax = " << rmax << endl;
-        cout << "kappa = " << kappa << endl;
-        cout << "fluid gamma = " << gam << endl;
-    }
+    Real l = lfish_calc(a, rmax);
 
     pmb->par_for("fm_torus_init", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D {
-            GReal Xnative[GR_DIM], Xembed[GR_DIM];
+            GReal Xnative[GR_DIM], Xembed[GR_DIM], Xmidplane[GR_DIM];
             G.coord(k, j, i, Loci::center, Xnative);
             G.coord_embed(k, j, i, Loci::center, Xembed);
-            GReal r = Xembed[1], th = Xembed[2];
+            // What are our corresponding "midplane" values for evaluating the function?
+            rotate_polar(Xembed, tilt, Xmidplane);
+
+            GReal r = Xmidplane[1], th = Xmidplane[2];
             GReal sth = sin(th);
             GReal cth = cos(th);
 
-            Real lnh = lnh_calc(ksc.a, l, rin, r, th);
+            Real lnh = lnh_calc(a, l, rin, r, th);
 
             // Region inside magnetized torus; u^i is calculated in
             // Boyer-Lindquist coordinates, as per Fishbone & Moncrief,
@@ -95,7 +104,7 @@ void InitializeFMTorus(MeshBlockData<Real> *rc, ParameterInput *pin)
             // everything outside is left 0 to be added by the floors
             if (lnh >= 0. && r >= rin) {
                 Real r2 = r*r;
-                Real a2 = ksc.a * ksc.a;
+                Real a2 = a*a;
                 Real DD = r2 - 2. * r + a2;
                 Real AA = pow(r2 + a2, 2) - DD * a2 * sth * sth;
                 Real SS = r2 + a2 * cth * cth;
@@ -109,30 +118,42 @@ void InitializeFMTorus(MeshBlockData<Real> *rc, ParameterInput *pin)
                 // Calculate u^phi
                 Real expm2chi = SS * SS * DD / (AA * AA * sth * sth);
                 Real up1 = sqrt((-1. + sqrt(1. + 4. * l * l * expm2chi)) / 2.);
-                Real up = 2. * ksc.a * r * sqrt(1. + up1 * up1) / sqrt(AA * SS * DD) +
+                Real up = 2. * a * r * sqrt(1. + up1 * up1) / sqrt(AA * SS * DD) +
                             sqrt(SS / AA) * up1 / sth;
 
-                // Convert u^phi from 3-velocity to 4-velocity
-                Real ucon_bl[GR_DIM] = {0., 0., 0., up};
+                const Real ucon_tilt[GR_DIM] = {0., 0., 0., up};
+                Real ucon_bl[GR_DIM];
+                rotate_polar_vec(Xmidplane, ucon_tilt, -tilt, Xembed, ucon_bl);
+                //printf("Final mags: %g %g aabrev: %g %g ucon_og: %g ucon_bl: %g %g %g %g\n",
+                //sqrt(dot(ucon_tilt, ucon_tilt)), sqrt(dot(ucon_bl, ucon_bl)),
+                //ucon_tilt[3], sqrt(ucon_bl[2]*ucon_bl[2] + ucon_bl[3]*ucon_bl[3]),
+                //up, ucon_bl[0], ucon_bl[1], ucon_bl[2], ucon_bl[3]);
+
                 Real gcov_bl[GR_DIM][GR_DIM];
-                bl.gcov_embed(Xembed, gcov_bl);
+                blcoords.gcov_embed(Xembed, gcov_bl);
                 set_ut(gcov_bl, ucon_bl);
 
-                // Then transform that 4-vector to KS, then to native
-                Real ucon_ks[GR_DIM], ucon_mks[GR_DIM];
-                ksc.vec_from_bl(Xembed, ucon_bl, ucon_ks);
-                G.coords.con_vec_to_native(Xnative, ucon_ks, ucon_mks);
+                // Then transform that 4-vector to KS if necessary,
+                // and then to native coordinates
+                Real ucon_native[GR_DIM];
+                if (use_ks) {
+                    Real ucon_ks[GR_DIM];
+                    kscoords.vec_from_bl(Xembed, ucon_bl, ucon_ks);
+                    G.coords.con_vec_to_native(Xnative, ucon_ks, ucon_native);
+                } else {
+                    G.coords.con_vec_to_native(Xnative, ucon_bl, ucon_native);
+                }
 
                 // Convert native 4-vector to primitive u-twiddle, see Gammie '04
-                Real gcon[GR_DIM][GR_DIM], u_prim[GR_DIM];
+                Real gcon[GR_DIM][GR_DIM], u_prim[NVEC];
                 G.gcon(Loci::center, j, i, gcon);
-                fourvel_to_prim(gcon, ucon_mks, u_prim);
+                fourvel_to_prim(gcon, ucon_native, u_prim);
 
                 rho(k, j, i) = rho_l;
                 u(k, j, i) = u_l;
-                uvec(0, k, j, i) = u_prim[1];
-                uvec(1, k, j, i) = u_prim[2];
-                uvec(2, k, j, i) = u_prim[3];
+                uvec(0, k, j, i) = u_prim[0];
+                uvec(1, k, j, i) = u_prim[1];
+                uvec(2, k, j, i) = u_prim[2];
             }
         }
     );
@@ -149,9 +170,9 @@ void InitializeFMTorus(MeshBlockData<Real> *rc, ParameterInput *pin)
     int nx1 = (x1max - x1min) / dx;
     //int nx2 = (x2max - x2min) / dx;
 
-    if (pmb->packages.Get("GRMHD")->Param<int>("verbose") > 0) {
+    if (MPIRank0() && pmb->packages.Get("GRMHD")->Param<int>("verbose") > 0) {
         cout << "Calculating maximum density:" << endl;
-        cout << "a = " << ksc.a << endl;
+        cout << "a = " << a << endl;
         cout << "dx = " << dx << endl;
         cout << "x1min->x1max: " << x1min << " " << x1max << endl;
         cout << "nx1 = " << nx1 << endl;
@@ -173,10 +194,10 @@ void InitializeFMTorus(MeshBlockData<Real> *rc, ParameterInput *pin)
             GReal r = Xembed[1], th = Xembed[2];
 
             // Abbreviated version of the full primitives calculation
-            //printf("lnh calc with %g %g %g %g %g\n", ksc.a, l, rin, r, th);
-            Real lnh = lnh_calc(ksc.a, l, rin, r, th);
+            //printf("lnh calc with %g %g %g %g %g\n", a, l, rin, r, th);
+            Real lnh = lnh_calc(a, l, rin, r, th);
             // if (lnh >= 0. || r >= rin) {
-            //     printf("a: %g l: %g lnh: %g r: %g th: %g\n", ksc.a, l, lnh, r, th);
+            //     printf("a: %g l: %g lnh: %g r: %g th: %g\n", a, l, lnh, r, th);
             // }
             if (lnh >= 0. && r >= rin) {
                 // Calculate rho
@@ -193,7 +214,7 @@ void InitializeFMTorus(MeshBlockData<Real> *rc, ParameterInput *pin)
         }
     , max_reducer);
 
-    if (pmb->packages.Get("GRMHD")->Param<int>("verbose") > 0) {
+    if (MPIRank0() && pmb->packages.Get("GRMHD")->Param<int>("verbose") > 0) {
         cout << "Initial maximum density is " << rho_max << endl;
     }
 
@@ -215,41 +236,49 @@ TaskStatus PerturbU(MeshBlockData<Real> *rc, ParameterInput *pin)
 
     const Real u_jitter = pin->GetOrAddReal("perturbation", "u_jitter", 0.0);
     if (u_jitter == 0.0) return TaskStatus::complete;
+    // Don't jitter values set by floors
+    const Real jitter_above_rho = pin->GetReal("floors", "rho_min_geom");
+    // Note we add the MeshBlock gid to this value when seeding RNG,
+    // to get a new sequence for every block
     const int rng_seed = pin->GetOrAddInteger("perturbation", "rng_seed", 31337);
+    const bool serial = pin->GetOrAddInteger("perturbation", "serial", false);
 
     IndexDomain domain = IndexDomain::interior;
-    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
-    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
-    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
+    const int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
+    const int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
+    const int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
     // Should only jitter physical zones...
 
-#if DETERMINISTIC_INIT
-    // SERIAL VERSION -- better determinism guarantee but CPU only
-    // Initialize RNG
-    std::mt19937 gen(rng_seed);
-    std::uniform_real_distribution<Real> dis(-u_jitter/2, u_jitter/2);
+    if (serial) {
+        // Serial version
+        // Probably guarantees better determinism, but CPU single-thread only
+        std::mt19937 gen(rng_seed + pmb->gid);
+        std::uniform_real_distribution<Real> dis(-u_jitter/2, u_jitter/2);
 
-    u_host = u.GetHostMirrorAndCopy()
-    for(int k=ks; k <= ke; k++)
-        for(int j=js; j <= je; j++)
-            for(int i=is; i <= ie; i++)
-                u_host(k, j, i) *= 1. + dis(gen);
-    u.DeepCopy(u_host);
-#else
-    // Kokkos version
-    typedef typename Kokkos::Random_XorShift64_Pool<> RandPoolType;
-    RandPoolType rand_pool(rng_seed);
-    typedef typename RandPoolType::generator_type gen_type;
-    pmb->par_for("perturb_u", ks, ke, js, je, is, ie,
-        KOKKOS_LAMBDA_3D {
-            gen_type rgen = rand_pool.get_state();
-            if (rho(k, j, i) > 1.e-7) {
-                u(k, j, i) *= 1. + Kokkos::rand<gen_type, Real>::draw(rgen, -u_jitter/2, u_jitter/2);
+        auto u_host = u.GetHostMirrorAndCopy();
+        for(int k=ks; k <= ke; k++)
+            for(int j=js; j <= je; j++)
+                for(int i=is; i <= ie; i++)
+                    u_host(k, j, i) *= 1. + dis(gen);
+        u.DeepCopy(u_host);
+    } else {
+        // Kokkos version
+        typedef typename Kokkos::Random_XorShift64_Pool<> RandPoolType;
+        RandPoolType rand_pool(rng_seed + pmb->gid);
+        typedef typename RandPoolType::generator_type gen_type;
+        pmb->par_for("perturb_u", ks, ke, js, je, is, ie,
+            KOKKOS_LAMBDA_3D {
+                //gen_type rgen = rand_pool.get_state();
+                if (rho(k, j, i) > jitter_above_rho) {
+                    gen_type rgen = rand_pool.get_state();
+                    u(k, j, i) *= 1. + Kokkos::rand<gen_type, Real>::draw(rgen, -u_jitter/2, u_jitter/2);
+                    rand_pool.free_state(rgen);
+                }
+                //rand_pool.free_state(rgen);
             }
-            rand_pool.free_state(rgen);
-        }
-    );
-#endif
+        );
+    }
+
     FLAG("Applied");
     return TaskStatus::complete;
 }

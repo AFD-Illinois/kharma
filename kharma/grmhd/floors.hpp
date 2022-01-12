@@ -78,7 +78,6 @@ KOKKOS_INLINE_FUNCTION int apply_ceilings(const GRCoordinates& G, const Variable
     }
 
     // 2. Limit the entropy by controlling u, to avoid anomalous cooling from funnel wall
-    // Pretty much only for matching legacy runs
     // Note this technically applies the condition *one step sooner* than legacy, since it operates on
     // the entropy as calculated from current conditions, rather than the value kept from the previous
     // step for calculating dissipation.
@@ -87,6 +86,13 @@ KOKKOS_INLINE_FUNCTION int apply_ceilings(const GRCoordinates& G, const Variable
         fflag |= HIT_FLOOR_KTOT;
 
         P(m_p.UU, k, j, i) = floors.ktot_max / ktot * P(m_p.UU, k, j, i);
+    }
+    // Also apply the ceiling to the advected entropy KTOT, if we're keeping track of that
+    // (either for electrons, or robust primitive inversions in future)
+    // TODO make a separate flag for hitting this vs the "fake" version above
+    if (m_p.KTOT >= 0 && (P(m_p.KTOT, k, j, i) > floors.ktot_max)) {
+        fflag |= HIT_FLOOR_KTOT;
+        P(m_p.KTOT, k, j, i) = floors.ktot_max;
     }
 
     // 3. Limit the temperature by controlling u.  Can optionally add density instead, implemented in apply_floors
@@ -143,6 +149,7 @@ KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, const VariablePa
 
     // 2. Magnetization ceilings: impose maximum magnetization sigma = bsq/rho, and inverse beta prop. to bsq/U
     FourVectors Dtmp;
+    // TODO is there a more efficient way to calculate just bsq?
     GRMHD::calc_4vecs(G, P, m_p, k, j, i, loc, Dtmp);
     double bsq = dot(Dtmp.bcon, Dtmp.bcov);
     double rhoflr_b = bsq / floors.bsq_over_rho_max;
@@ -184,18 +191,18 @@ KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, const VariablePa
         } else {
             // Add the material in the normal observer frame, by:
             // Adding the floors to the primitive variables
-            rho = max(0., rhoflr_max - rho);
-            u = max(0., uflr_max - u);
-            const Real uvec[NVEC] = {0};
+            const Real rho_add = max(0., rhoflr_max - rho);
+            const Real u_add = max(0., uflr_max - u);
+            const Real uvec[NVEC] = {0}, B[NVEC] = {0};
 
             // Calculating the corresponding conserved variables
             Real rho_ut, T[GR_DIM];
-            GRMHD::p_to_u_floor(G, rho, u, uvec, gam, k, j, i, rho_ut, T, loc);
+            GRMHD::p_to_u_loc(G, rho_add, u_add, uvec, B, gam, k, j, i, rho_ut, T, loc);
 
             // Add new conserved mass/energy to the current "conserved" state,
             // and to the local primitives as a guess
-            P(m_p.RHO, k, j, i) += rho;
-            P(m_p.UU, k, j, i) += u;
+            P(m_p.RHO, k, j, i) += rho_add;
+            P(m_p.UU, k, j, i) += u_add;
             // Add any velocity here
             U(m_u.RHO, k, j, i) += rho_ut;
             U(m_u.UU, k, j, i) += T[0]; // Note this shouldn't be a single loop: m_u.U1 != m_u.UU + 1 necessarily
@@ -207,8 +214,27 @@ KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, const VariablePa
             pflag = GRMHD::u_to_p(G, U, m_u, gam, k, j, i, loc, P, m_p);
             // If that fails, we've effectively already applied the floors in fluid-frame to the prims,
             // so we just formalize that
-            if (pflag) GRMHD::p_to_u(G, P, m_p, gam, k, j, i, U, m_u, loc);
+            if (pflag) {
+                GRMHD::p_to_u(G, P, m_p, gam, k, j, i, U, m_u, loc);
+            }
         }
+    }
+
+    // Ressler adjusts KTOT & KEL to conserve u whenever adjusting rho
+    // but does *not* recommend adjusting them when u hits floors/ceilings
+    // This is in contrast to ebhlight, which heats electrons before applying *any* floors,
+    // and resets KTOT during floor application without touching KEL
+    // TODO move to another loop/function, over electrons.  Have to preserve rho/rho_old ratio tho
+    if (floors.adjust_k && (fflag & HIT_FLOOR_GEOM_RHO || fflag & HIT_FLOOR_B_RHO)) {
+        const Real reduce   = pow(rho / P(m_p.RHO, k, j, i), gam);
+        const Real reduce_e = pow(rho / P(m_p.RHO, k, j, i), 4./3); // TODO pipe in real gam_e
+        if (m_p.KTOT >= 0) P(m_p.KTOT, k, j, i) *= reduce;
+        if (m_p.K_CONSTANT >= 0) P(m_p.K_CONSTANT, k, j, i) *= reduce_e;
+        if (m_p.K_HOWES >= 0)    P(m_p.K_HOWES, k, j, i)    *= reduce_e;
+        if (m_p.K_KAWAZURA >= 0) P(m_p.K_KAWAZURA, k, j, i) *= reduce_e;
+        if (m_p.K_WERNER >= 0)   P(m_p.K_WERNER, k, j, i)   *= reduce_e;
+        if (m_p.K_ROWAN >= 0)    P(m_p.K_ROWAN, k, j, i)    *= reduce_e;
+        if (m_p.K_SHARMA >= 0)   P(m_p.K_SHARMA, k, j, i)   *= reduce_e;
     }
 
     // Return both flags

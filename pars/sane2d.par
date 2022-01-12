@@ -32,10 +32,9 @@ poly_alpha = 14.0
 tlim = 3000.0
 
 <debug>
-verbose = 0
-extra_checks = 0
+verbose = 1
+extra_checks = 1
 flag_verbose = 0
-flag_save = 0
 
 <GRMHD>
 cfl = 0.9
@@ -54,21 +53,39 @@ type = sane
 beta_min = 100.
 
 <floors>
-rho_min_geom = 1e-6
-u_min_geom = 1e-8
+rho_min_geom = 1e-5
+u_min_geom = 1e-7
+ktot_max = 1500
+u_over_rho_max = 100
+bsq_over_rho_max = 100
+
+<electrons>
+on = false
+howes = true
+kawazura = true
+werner = true
+rowan = true
+sharma = true
 
 <wind>
-enabled = true
-ne = 1.e-4
-Tp = 10
+on = false
 
 <parthenon/output0>
 file_type = hdf5
 dt = 10.0
 single_precision_output = true
-variables = prims.rho, prims.u, prims.uvec, prims.B
+# Any fields listed here which are not present (e.g. electrons if disabled)
+# will be silently skipped. '&' character is a line continuation, like '\'
+# Remember that the commas are still necessary, and unknown fields will silently fail!
+variables = prims.rho, prims.u, prims.uvec, prims.B, prims.Ktot, &
+            prims.Kel_Howes, prims.Kel_Kawazura, prims.Kel_Werner, prims.Kel_Rowan, prims.Kel_Sharma, &
+            pflag, fflag
 
 <parthenon/output1>
 file_type = rst
-dt = 10.0
+dt = 100.0
 ghost_zones = true
+
+<parthenon/output2>
+file_type = hst
+dt = 0.1

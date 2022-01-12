@@ -36,10 +36,13 @@
 
 #include "boundaries.hpp"
 
-#include "bondi.hpp"
 #include "kharma.hpp"
 #include "mhd_functions.hpp"
 #include "pack.hpp"
+
+// Problem-specific boundaries
+#include "bondi.hpp"
+//#include "hubble.hpp"
 
 // Going to need all modules' headers here
 #include "b_flux_ct.hpp"
@@ -59,6 +62,11 @@ void OutflowX1(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, boo
     const auto& G = pmb->coords;
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
 
+    bool check_inner = pmb->packages.Get("GRMHD")->Param<bool>("check_inflow_inner");
+    bool check_outer = pmb->packages.Get("GRMHD")->Param<bool>("check_inflow_outer");
+    const bool check_inflow = ((check_inner && domain == IndexDomain::inner_x1)
+                            || (check_outer && domain == IndexDomain::outer_x1));
+
     PackIndexMap prims_map, cons_map;
     auto P = GRMHD::PackMHDPrims(rc.get(), prims_map, coarse);
     auto q = rc->PackVariables({Metadata::FillGhost}, cons_map, coarse);
@@ -69,10 +77,11 @@ void OutflowX1(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, boo
     // Then the polar bound only where outflow is not applied,
     // and periodic bounds only where neither other bound applies.
     // The latter is accomplished regardless of Parthenon's definitions,
-    // since these functions are run after Parthenon's MPI boundary
-    // syncs
+    // since these functions are run after Parthenon's MPI boundary syncs
     IndexDomain ldomain = IndexDomain::interior;
     int is = bounds.is(ldomain), ie = bounds.ie(ldomain);
+    int js = bounds.js(ldomain), je = bounds.je(ldomain);
+    int ks = bounds.ks(ldomain), ke = bounds.ke(ldomain);
     ldomain = IndexDomain::entire;
     int is_e = bounds.is(ldomain), ie_e = bounds.ie(ldomain);
     int js_e = bounds.js(ldomain), je_e = bounds.je(ldomain);
@@ -117,7 +126,7 @@ void OutflowX1(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, boo
     pmb->par_for("OutflowX1_PtoU", ks_e, ke_e, js_e, je_e, ibs, ibe,
         KOKKOS_LAMBDA_3D {
             // Inflow check
-            KBoundaries::check_inflow(G, P, m_p.U1, k, j, i, dir);
+            if (check_inflow) KBoundaries::check_inflow(G, P, m_p.U1, k, j, i, dir);
             // TODO move these steps into FillDerivedDomain, make a GRMHD::PrimToFlux call the last in that series
             // Correct primitive B
             VLOOP P(m_p.B1 + v, k, j, i) = q(m_u.B1 + v, k, j, i) / G.gdet(Loci::center, j, i);
@@ -127,7 +136,6 @@ void OutflowX1(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, boo
     );
 
     FLAG("Applied");
-    KHARMA::FillDerivedDomain(rc, domain, coarse);
 }
 
 // Single reflecting boundary function for inner and outer bounds
@@ -148,6 +156,7 @@ void ReflectX2(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, boo
     IndexDomain ldomain = IndexDomain::interior;
     int is = bounds.is(ldomain), ie = bounds.ie(ldomain);
     int js = bounds.js(ldomain), je = bounds.je(ldomain);
+    int ks = bounds.ks(ldomain), ke = bounds.ke(ldomain);
     ldomain = IndexDomain::entire;
     int is_e = bounds.is(ldomain), ie_e = bounds.ie(ldomain);
     int js_e = bounds.js(ldomain), je_e = bounds.je(ldomain);
@@ -159,6 +168,8 @@ void ReflectX2(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, boo
     // so we have to be smart
     int ics = (pmb->boundary_flag[BoundaryFace::inner_x1] == BoundaryFlag::user) ? is : is_e;
     int ice = (pmb->boundary_flag[BoundaryFace::outer_x1] == BoundaryFlag::user) ? ie : ie_e;
+    //int ics = is_e;
+    //int ice = ie_e;
 
     int ref_tmp, add_tmp, jbs, jbe;
     if (domain == IndexDomain::inner_x2) {
@@ -195,91 +206,117 @@ void ReflectX2(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, boo
             GRMHD::p_to_u(G, P, m_p, gam, k, j, i, q, m_u);
         }
     );
-
-    KHARMA::FillDerivedDomain(rc, domain, coarse);
 }
 
 // Interface calls into the preceding functions
-void KBoundaries::OutflowInnerX1(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse)
+void KBoundaries::InnerX1(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse)
 {
-    OutflowX1(rc, IndexDomain::inner_x1, coarse);
+    // TODO implement as named callback, give combo start/bound problems their own "packages"
+    auto pmb = rc->GetBlockPointer();
+    std::string prob = pmb->packages.Get("GRMHD")->Param<std::string>("problem");
+    //if (prob == "hubble") {
+    //    SetHubble(rc.get(), IndexDomain::inner_x1, coarse);
+    //} else {
+        OutflowX1(rc, IndexDomain::inner_x1, coarse);
+    //}
+    KHARMA::FillDerivedDomain(rc, IndexDomain::inner_x1, coarse);
 }
-void KBoundaries::OutflowOuterX1(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse)
+void KBoundaries::OuterX1(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse)
 {
-    OutflowX1(rc, IndexDomain::outer_x1, coarse);
+    auto pmb = rc->GetBlockPointer();
+    std::string prob = pmb->packages.Get("GRMHD")->Param<std::string>("problem");
+    //if (prob == "hubble") {
+    //    SetHubble(rc.get(), IndexDomain::outer_x1, coarse);
+    //} else
+    if (prob == "bondi") {
+        SetBondi(rc.get(), IndexDomain::outer_x1, coarse);
+    } else {
+        OutflowX1(rc, IndexDomain::outer_x1, coarse);
+    }
+    KHARMA::FillDerivedDomain(rc, IndexDomain::outer_x1, coarse);
 }
-void KBoundaries::ReflectInnerX2(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse)
+void KBoundaries::InnerX2(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse)
 {
     ReflectX2(rc, IndexDomain::inner_x2, coarse);
+    KHARMA::FillDerivedDomain(rc, IndexDomain::inner_x2, coarse);
 }
-void KBoundaries::ReflectOuterX2(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse)
+void KBoundaries::OuterX2(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse)
 {
     ReflectX2(rc, IndexDomain::outer_x2, coarse);
+    KHARMA::FillDerivedDomain(rc, IndexDomain::outer_x2, coarse);
 }
 
 /**
  * Zero flux of mass through inner and outer boundaries, and everything through the pole
  * TODO Both may be unnecessary...
  */
-TaskStatus KBoundaries::FixFlux(MeshBlockData<Real> *rc)
+TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
 {
     FLAG("Fixing fluxes");
-    auto pmb = rc->GetBlockPointer();
+    auto pmesh = md->GetMeshPointer();
+    auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
+
+    bool check_inflow_inner = pmb0->packages.Get("GRMHD")->Param<bool>("check_inflow_inner");
+    bool check_inflow_outer = pmb0->packages.Get("GRMHD")->Param<bool>("check_inflow_outer");
+    bool fix_flux_pole = pmb0->packages.Get("GRMHD")->Param<bool>("fix_flux_pole");
+
     IndexDomain domain = IndexDomain::interior;
-    const int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
-    const int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
-    const int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
-    const int ndim = pmb->pmy_mesh->ndim;
+    const int is = pmb0->cellbounds.is(domain), ie = pmb0->cellbounds.ie(domain);
+    const int js = pmb0->cellbounds.js(domain), je = pmb0->cellbounds.je(domain);
+    const int ks = pmb0->cellbounds.ks(domain), ke = pmb0->cellbounds.ke(domain);
+    const int ndim = pmesh->ndim;
+
     // Fluxes are defined at faces, so there is one more valid flux than
     // valid cell in the face direction.  That is, e.g. F1 is valid on
-    // an (N1+1)xN2xN3 grid
+    // an (N1+1)xN2xN3 grid, F2 on N1x(N2+1)xN3, etc
     const int ie_l = ie + 1;
     const int je_l = (ndim > 1) ? je + 1 : je;
     //const int ke_l = (ndim > 2) ? ke + 1 : ke;
 
-    PackIndexMap cons_map;
-    auto& F = rc->PackVariablesAndFluxes({Metadata::WithFluxes}, cons_map);
-    const int m_rho = cons_map["cons.rho"].first;
+    for (auto &pmb : pmesh->block_list) {
+        auto& rc = pmb->meshblock_data.Get();
 
-    if (pmb->packages.Get("GRMHD")->Param<bool>("fix_flux_inflow")) {
-        if (pmb->boundary_flag[BoundaryFace::inner_x1] == BoundaryFlag::user)
-        {
-            pmb->par_for("fix_flux_in_l", ks, ke, js, je, is, is,
-                KOKKOS_LAMBDA_3D {
-                    F.flux(X1DIR, m_rho, k, j, i) = min(F.flux(X1DIR, m_rho, k, j, i), 0.);
-                }
-            );
+        PackIndexMap cons_map;
+        auto& F = rc->PackVariablesAndFluxes({Metadata::WithFluxes}, cons_map);
+        const int m_rho = cons_map["cons.rho"].first;
+
+        if (check_inflow_inner) {
+            if (pmb->boundary_flag[BoundaryFace::inner_x1] == BoundaryFlag::user) {
+                pmb->par_for("fix_flux_in_l", ks, ke, js, je, is, is,
+                    KOKKOS_LAMBDA_3D {
+                        F.flux(X1DIR, m_rho, k, j, i) = min(F.flux(X1DIR, m_rho, k, j, i), 0.);
+                    }
+                );
+            }
+        }
+        if (check_inflow_outer) {
+            if (pmb->boundary_flag[BoundaryFace::outer_x1] == BoundaryFlag::user) {
+                pmb->par_for("fix_flux_in_r", ks, ke, js, je, ie_l, ie_l,
+                    KOKKOS_LAMBDA_3D {
+                        F.flux(X1DIR, m_rho, k, j, i) = max(F.flux(X1DIR, m_rho, k, j, i), 0.);
+                    }
+                );
+            }
         }
 
-        if (pmb->boundary_flag[BoundaryFace::outer_x1] == BoundaryFlag::user &&
-            !(pmb->packages.Get("GRMHD")->Param<std::string>("problem") == "bondi"))
-        {
-            pmb->par_for("fix_flux_in_r", ks, ke, js, je, ie_l, ie_l,
-                KOKKOS_LAMBDA_3D {
-                    F.flux(X1DIR, m_rho, k, j, i) = max(F.flux(X1DIR, m_rho, k, j, i), 0.);
-                }
-            );
-        }
-    }
+        // This is a lot of zero fluxes!
+        if (fix_flux_pole) {
+            if (pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::user) {
+                // This loop covers every flux we need
+                pmb->par_for("fix_flux_pole_l", 0, F.GetDim(4) - 1, ks, ke, js, js, is, ie,
+                    KOKKOS_LAMBDA_VARS {
+                        F.flux(X2DIR, p, k, j, i) = 0.;
+                    }
+                );
+            }
 
-    // This is a lot of zero fluxes!
-    if (pmb->packages.Get("GRMHD")->Param<bool>("fix_flux_pole")) {
-        if (pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::user)
-        {
-            pmb->par_for("fix_flux_pole_l", 0, F.GetDim(4) - 1, ks, ke, js, js, is, ie,
-                KOKKOS_LAMBDA_VARS {
-                    F.flux(X2DIR, p, k, j, i) = 0.;
-                }
-            );
-        }
-
-        if (pmb->boundary_flag[BoundaryFace::outer_x2] == BoundaryFlag::user)
-        {
-            pmb->par_for("fix_flux_pole_r", 0, F.GetDim(4) - 1, ks, ke, je_l, je_l, is, ie,
-                KOKKOS_LAMBDA_VARS {
-                    F.flux(X2DIR, p, k, j, i) = 0.;
-                }
-            );
+            if (pmb->boundary_flag[BoundaryFace::outer_x2] == BoundaryFlag::user) {
+                pmb->par_for("fix_flux_pole_r", 0, F.GetDim(4) - 1, ks, ke, je_l, je_l, is, ie,
+                    KOKKOS_LAMBDA_VARS {
+                        F.flux(X2DIR, p, k, j, i) = 0.;
+                    }
+                );
+            }
         }
     }
 

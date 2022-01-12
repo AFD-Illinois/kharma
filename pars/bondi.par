@@ -44,6 +44,10 @@ rs = 8.0
 <floors>
 disable_floors = true
 
+# We'll be adding material, and that's okay
+<bounds>
+check_inflow_outer = false
+
 <b_field>
 type = none
 solver = none
@@ -53,3 +57,7 @@ file_type = hdf5
 dt = 5.0
 single_precision_output = true
 variables = prims.rho, prims.u, prims.uvec
+
+<parthenon/output1>
+file_type = hst
+dt = 0.1

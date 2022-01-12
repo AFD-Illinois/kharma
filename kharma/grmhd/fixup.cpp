@@ -51,23 +51,23 @@ TaskStatus GRMHD::FixUtoP(MeshBlockData<Real> *rc)
     auto pmb = rc->GetBlockPointer();
     const auto& G = pmb->coords;
 
-    // TODO what should be averaged on a fixup?  Entropies?  Should there be a flag for those fields?
-    // This just does the core 5 primitives
-    PackIndexMap prims_map;
-    auto P = GRMHD::PackHDPrims(rc, prims_map);
+    // TODO what should be averaged on a fixup? Just these core 5 prims?
+    // Should there be a flag to do more?
+    auto P = GRMHD::PackHDPrims(rc);
 
     GridScalar pflag = rc->Get("pflag").data;
     GridScalar fflag = rc->Get("fflag").data;
 
-    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
-    const int verbose = pmb->packages.Get("GRMHD")->Param<int>("verbose");
-    const FloorPrescription floors = FloorPrescription(pmb->packages.Get("GRMHD")->AllParams());
+    const auto& pars = pmb->packages.Get("GRMHD")->AllParams();
+    const Real gam = pars.Get<Real>("gamma");
+    const int verbose = pars.Get<int>("verbose");
+    const FloorPrescription floors = FloorPrescription(pars);
 
-    IndexRange ib = GetPhysicalZonesI(pmb->boundary_flag, pmb->cellbounds);
-    IndexRange jb = GetPhysicalZonesJ(pmb->boundary_flag, pmb->cellbounds);
-    IndexRange kb = GetPhysicalZonesK(pmb->boundary_flag, pmb->cellbounds);
+    const IndexRange ib = rc->GetBoundsI(IndexDomain::entire);
+    const IndexRange jb = rc->GetBoundsJ(IndexDomain::entire);
+    const IndexRange kb = rc->GetBoundsK(IndexDomain::entire);
 
-    // TODO attempt to recover from entropy here
+    // TODO attempt to recover from entropy here if it's present
 
     pmb->par_for("fix_U_to_P", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_3D {
@@ -114,11 +114,14 @@ TaskStatus GRMHD::FixUtoP(MeshBlockData<Real> *rc)
     );
 
     // We need the full packs of prims/cons for p_to_u
-    PackIndexMap cons_map;
+    // Pack new variables
+    PackIndexMap prims_map, cons_map;
     auto U = GRMHD::PackMHDCons(rc, cons_map);
     P = GRMHD::PackMHDPrims(rc, prims_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
+    // Get new sizes
     const int nvar = P.GetDim(4);
+
     pmb->par_for("fix_U_to_P_floors", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_3D {
             if (((int) pflag(k, j, i)) > InversionStatus::success) {

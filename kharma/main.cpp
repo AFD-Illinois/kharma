@@ -45,6 +45,14 @@
 // Parthenon headers
 #include <parthenon/parthenon.hpp>
 
+// Local headers
+#include <fstream>
+#include <iostream>
+#include <chrono>
+#include <ctime>
+#include <iomanip>
+#include <sstream>
+
 // Print warnings about configuration
 #if DEBUG
 #warning "Compiling with debug"
@@ -80,10 +88,10 @@ int main(int argc, char *argv[])
     // Registering KHARMA's boundary functions here doesn't mean they will *always* run:
     // in e.g. MHD Modes problem, all boundaries are handled by Parthenon and these don't run
     // KHARMA sets them automatically in spherical coordinate systems.
-    pman.app_input->boundary_conditions[parthenon::BoundaryFace::inner_x1] = KBoundaries::OutflowInnerX1;
-    pman.app_input->boundary_conditions[parthenon::BoundaryFace::outer_x1] = KBoundaries::OutflowOuterX1;
-    pman.app_input->boundary_conditions[parthenon::BoundaryFace::inner_x2] = KBoundaries::ReflectInnerX2;
-    pman.app_input->boundary_conditions[parthenon::BoundaryFace::outer_x2] = KBoundaries::ReflectOuterX2;
+    pman.app_input->boundary_conditions[parthenon::BoundaryFace::inner_x1] = KBoundaries::InnerX1;
+    pman.app_input->boundary_conditions[parthenon::BoundaryFace::outer_x1] = KBoundaries::OuterX1;
+    pman.app_input->boundary_conditions[parthenon::BoundaryFace::inner_x2] = KBoundaries::InnerX2;
+    pman.app_input->boundary_conditions[parthenon::BoundaryFace::outer_x2] = KBoundaries::OuterX2;
 
     // Parthenon init includes Kokkos, MPI, parses parameters & cmdline,
     // then calls ProcessPackages and ProcessProperties, then constructs the Mesh
@@ -103,11 +111,23 @@ int main(int argc, char *argv[])
     auto pmesh = pman.pmesh.get();
     auto papp = pman.app_input.get();
 
-    if(MPIRank0() && pin->GetInteger("debug", "verbose") > 0) {
-        // This dumps the full Kokkos config, useful for double-checking
-        // that the compile did what we wanted
-        ShowConfig();
-        pin->ParameterDump(cout);
+    if(MPIRank0()) {
+        // Write *all* parameters to a parfile for posterity
+        // TODO option to disable?
+        std::ostringstream ss;
+        auto itt_now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+        ss << "kharma_parsed_parameters_" << std::put_time(std::gmtime(&itt_now), "%FT%TZ") << ".par";
+        fstream pars;
+        pars.open(ss.str(), std::fstream::out | std::fstream::trunc);
+        pin->ParameterDump(pars);
+        pars.close();
+        // Also write them to console if we should be wordy
+        if (pin->GetInteger("debug", "verbose") > 0) {
+            // This dumps the full Kokkos config, useful for double-checking
+            // that the compile did what we wanted
+            ShowConfig();
+            pin->ParameterDump(cout);
+        }
     }
 
     // Write the problem to the mesh.

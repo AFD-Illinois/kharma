@@ -48,8 +48,11 @@
 #include "fm_torus.hpp"
 #include "iharm_restart.hpp"
 #include "kelvin_helmholtz.hpp"
+#include "bz_monopole.hpp"
 #include "mhdmodes.hpp"
 #include "orszag_tang.hpp"
+#include "shock_tube.hpp"
+
 #include "b_field_tools.hpp"
 
 // Package headers
@@ -77,10 +80,14 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
         InitializeExplosion(rc.get(), pin);
     } else if (prob == "kelvin_helmholtz") {
         InitializeKelvinHelmholtz(rc.get(), pin);
+    } else if (prob == "shock") {
+        InitializeShockTube(rc.get(), pin);
     } else if (prob == "bondi") {
         InitializeBondi(rc.get(), pin);
     } else if (prob == "torus") {
         InitializeFMTorus(rc.get(), pin);
+    } else if (prob == "bz_monopole") {
+        InitializeBZMonopole(rc.get(), pin);
     } else if (prob == "iharm_restart") {
         ReadIharmRestart(rc.get(), pin);
     }
@@ -88,9 +95,19 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
     // Pertub the internal energy a bit to encourage accretion
     // option in perturbation->u_jitter
     // TODO evaluate determinism here. How are MeshBlock gids assigned?
-    PerturbU(rc.get(), pin);
+    if (prob != "bz_monopole") {
+        // TODO how should this work, especially with iharm_restarts ?
+        PerturbU(rc.get(), pin);
+    }
+
+    // Initialize electron entropies if enabled
+    if (pmb->packages.AllPackages().count("Electrons")) {
+        Electrons::InitElectrons(rc.get(), pin);
+    }
 
     // Apply any floors
+    // This is purposefully done even if floors are disabled,
+    // as it is required for consistent initialization
     GRMHD::ApplyFloors(rc.get());
 
     // Fill the conserved variables U,

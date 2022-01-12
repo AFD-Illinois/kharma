@@ -40,63 +40,55 @@ std::shared_ptr<StateDescriptor> Wind::Initialize(ParameterInput *pin)
     Params &params = pkg->AllParams();
 
     // Wind term in funnel
-    bool wind_term = pin->GetOrAddBoolean("wind", "on", false);
-    params.Add("wind_term", wind_term);
     Real wind_n = pin->GetOrAddReal("wind", "ne", 2.e-4);
     params.Add("wind_n", wind_n);
-    Real wind_Tp = pin->GetOrAddReal("wind", "Tp", 10.);
+    Real wind_Tp = pin->GetOrAddReal("wind", "Tp", 10.0);
     params.Add("wind_Tp", wind_Tp);
     int wind_pow = pin->GetOrAddInteger("wind", "pow", 4);
     params.Add("wind_pow", wind_pow);
-    Real wind_ramp_start = pin->GetOrAddReal("wind", "ramp_start", 0.);
+    Real wind_ramp_start = pin->GetOrAddReal("wind", "ramp_start", 0.0);
     params.Add("wind_ramp_start", wind_ramp_start);
-    Real wind_ramp_end = pin->GetOrAddReal("wind", "ramp_end", 0.);
+    Real wind_ramp_end = pin->GetOrAddReal("wind", "ramp_end", 0.0);
     params.Add("wind_ramp_end", wind_ramp_end);
 
     return pkg;
 }
 
-TaskStatus Wind::AddWind(MeshBlockData<Real> *rc, MeshBlockData<Real> *dudt)
+TaskStatus Wind::AddSource(MeshData<Real> *mdudt)
 {
     FLAG("Adding wind");
-    auto pmb = rc->GetBlockPointer();
-    IndexDomain domain = IndexDomain::interior;
-    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
-    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
-    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
-    const int ndim = pmb->pmy_mesh->ndim;
+    // Pointers
+    auto pmesh = mdudt->GetMeshPointer();
+    auto pmb0 = mdudt->GetBlockData(0)->GetBlockPointer();
+    // Options
+    const auto& gpars = pmb0->packages.Get("GRMHD")->AllParams();
+    const auto& pars = pmb0->packages.Get("Wind")->AllParams();
+    const auto& globals = pmb0->packages.Get("Globals")->AllParams();
+    const Real gam = gpars.Get<Real>("gamma");
+    const Real wind_n = pars.Get<Real>("wind_n");
+    const Real wind_Tp = pars.Get<Real>("wind_Tp");
+    const int wind_pow = pars.Get<int>("wind_pow");
+    const Real wind_ramp_start = pars.Get<Real>("wind_ramp_start");
+    const Real wind_ramp_end = pars.Get<Real>("wind_ramp_end");
+    const Real time = globals.Get<Real>("time");
 
+    // Pack variables
     PackIndexMap cons_map;
-    auto dUdt = dudt->PackVariables({Metadata::Conserved}, cons_map);
+    auto dUdt = mdudt->PackVariables(std::vector<MetadataFlag>{Metadata::Conserved}, cons_map);
     const VarMap m_u(cons_map, true);
+    // Get sizes
+    const IndexRange ib = mdudt->GetBoundsI(IndexDomain::interior);
+    const IndexRange jb = mdudt->GetBoundsJ(IndexDomain::interior);
+    const IndexRange kb = mdudt->GetBoundsK(IndexDomain::interior);
+    const IndexRange block = IndexRange{0, dUdt.GetDim(5) - 1};
 
-    const auto& G = pmb->coords;
-    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
+    // Set the wind via linear ramp-up with time, if enabled
+    const Real current_wind_n = (wind_ramp_end > 0.0) ? min((time - wind_ramp_start) / (wind_ramp_end - wind_ramp_start), 1.0) * wind_n : wind_n;
 
-    Real wind_n = pmb->packages.Get("Wind")->Param<Real>("wind_n");
-    Real wind_Tp = pmb->packages.Get("Wind")->Param<Real>("wind_Tp");
-    int wind_pow = pmb->packages.Get("Wind")->Param<int>("wind_pow");
-    Real wind_ramp_start = pmb->packages.Get("Wind")->Param<Real>("wind_ramp_start");
-    Real wind_ramp_end = pmb->packages.Get("Wind")->Param<Real>("wind_ramp_end");
-    Real current_wind_n = wind_n;
-    // TODO pass simtime to this fn specifically!
-    // if (wind_ramp_end > 0.0) {
-    //     current_wind_n = min((tm.time - wind_ramp_start) / (wind_ramp_end - wind_ramp_start), 1.0) * wind_n;
-    // } else {
-    //     current_wind_n = wind_n;
-    // }
-
-    size_t total_scratch_bytes = 0;
-    int scratch_level = 0;
-
-    pmb->par_for_outer("apply_fluxes", total_scratch_bytes, scratch_level,
-        ks, ke, js, je,
-        KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int& k, const int& j) {
-            parthenon::par_for_inner(member, is, ie,
-                [&](const int& i) {
-                    Wind::add_wind(G, gam, k, j, i, current_wind_n, wind_pow, wind_Tp, dUdt, m_u);
-                }
-            );
+    pmb0->par_for("add_wind", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+        KOKKOS_LAMBDA_MESH_3D {
+            const auto& G = dUdt.GetCoords(b);
+            Wind::add_wind(G, gam, k, j, i, current_wind_n, wind_pow, wind_Tp, dUdt(b), m_u);
         }
     );
 

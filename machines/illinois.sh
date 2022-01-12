@@ -2,27 +2,31 @@
 # Illinois BH cluster
 if [[ $HOST == *".astro.illinois.edu" ]]; then
   HOST_ARCH="SKX"
+  module purge
 
-  # When all of oneAPI works
+  # Uncomment to use full intel stack: MPI crashes
   #source /opt/intel/oneapi/setvars.sh
-  #PREFIX_PATH="$HOME/libs/hdf5-oneapi"
+  #PREFIX_PATH="$HOME/libs/hdf5-oneapi/"
 
-  # Load system MPI
+  # To load GNU stuff
   module load gnu mpich phdf5
   PREFIX_PATH="$MPI_DIR"
-  # To try to use Intel icpc
-  # Currently can't access Intel OpenMP library with system MPI easily
-  #CXX_NATIVE=/opt/intel/oneapi/compiler/2021.1.2/linux/bin/intel64/icpc
-  #export CXXFLAGS="-Wno-unknown-pragmas"
 
-  # New compiler. Should be faster, but requires LLVM libc++ on system
+  # Add back just the intel compilers, not MPI
+  #C_NATIVE="/opt/intel/oneapi/compiler/2021.4.0/linux/bin/intel64/icc"
+  #CXX_NATIVE="/opt/intel/oneapi/compiler/2021.4.0/linux/bin/intel64/icpc"
+  #export CXXFLAGS="-Wno-unknown-pragmas $CXXFLAGS"
+  # New compiler. Should be faster, but default linker can't find LLVM libc++?
+  #C_NATIVE="icx"
   #CXX_NATIVE="icpx"
-fi
-# Override for BH27/9
-if [[ $HOST == "bh29.astro.illinois.edu" ]]; then
-  HOST_ARCH="AMDAVX"
 
-  # Requires system libc++, like icpx
+  #MPI_EXE=mpirun
+fi
+# Except BH27/9
+if [[ $HOST == "bh29.astro.illinois.edu" ]]; then
+  HOST_ARCH="ZEN2"
+
+  # AOCC Requires system libc++, like icpx
   #source /opt/AMD/aocc-compiler-3.0.0/setenv_AOCC.sh
   #CXX_NATIVE="clang++"
 fi

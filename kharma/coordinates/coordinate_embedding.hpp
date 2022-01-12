@@ -36,7 +36,7 @@
 // std::variant requires C++ exceptions,
 // so it will never be SYCL-ready.
 // Instead we use mpark's reimplementation,
-// patched never to throw exceptions.
+// patched to never throw exceptions.
 // Because who needs those?
 #include <mpark/variant.hpp>
 //#include <variant>
@@ -55,16 +55,19 @@
  * That is, as long as we have a bijective map of base<->transformed coordinates, we can define the latter arbitrarily, which is
  * great for putting resolution where we need and not where we don't.
  *
- * This class keeps track of the base coordinates and the map, which must be classes which are members of the SomeXX std::variant containers.
- * The BaseCoords class must implement:
+ * This class keeps track of the base coordinates and the map, which must be classes defining a basic interface -- 
+ * see coordinate_systems.hpp for currently defined examples.
+ * Specifically, the BaseCoords class must implement:
  * * gcov_embed
- * The Transform class must implement:
+ * And the Transform class must implement:
  * * coord_to_embed
  * * coord_to_native
  * * dxdX_to_embed
  * * dxdX_to_native
+ * 
+ * Each possible class is added to a couple of mpark::variant containers, and then to the chains of if statements below.
  *
- * TODO keep notion of whether base coords are spherical, use to return guaranteed r,th,phi or x,y,z
+ * TODO use base.spherical() to return guaranteed r,th,phi or x,y,z coordinates rather than "native"
  * TODO implement an rhor() that calls through or returns 0? Or make required callthrough
  */
 class CoordinateEmbedding {
@@ -93,10 +96,10 @@ class CoordinateEmbedding {
             }
 #endif
 
-            if (mpark::holds_alternative<SphNullTransform>(transform_in)) {
-                transform.emplace<SphNullTransform>(mpark::get<SphNullTransform>(transform_in));
-            } else if (mpark::holds_alternative<CartNullTransform>(transform_in)) {
-                transform.emplace<CartNullTransform>(mpark::get<CartNullTransform>(transform_in));
+            if (mpark::holds_alternative<NullTransform>(transform_in)) {
+                transform.emplace<NullTransform>(mpark::get<NullTransform>(transform_in));
+            } else if (mpark::holds_alternative<ExponentialTransform>(transform_in)) {
+                transform.emplace<ExponentialTransform>(mpark::get<ExponentialTransform>(transform_in));
             } else if (mpark::holds_alternative<ModifyTransform>(transform_in)) {
                 transform.emplace<ModifyTransform>(mpark::get<ModifyTransform>(transform_in));
             } else if (mpark::holds_alternative<FunkyTransform>(transform_in)) {
@@ -128,12 +131,19 @@ class CoordinateEmbedding {
         }
 
         // Spell out the interface we take from BaseCoords
+        // TODO add a gcon_embed, gdet_embed
         KOKKOS_INLINE_FUNCTION bool spherical() const
         {
             return mpark::visit( [&](const auto& self) {
                 return self.spherical;
             }, base);
         }
+        // KOKKOS_INLINE_FUNCTION GReal rhor() const
+        // {
+        //     return mpark::visit( [&](const auto& self) {
+        //         self.rhor();
+        //     }, base);
+        // }
         KOKKOS_INLINE_FUNCTION void gcov_embed(const GReal Xembed[GR_DIM], Real gcov[GR_DIM][GR_DIM]) const
         {
             mpark::visit( [&Xembed, &gcov](const auto& self) {
@@ -230,8 +240,7 @@ class CoordinateEmbedding {
         KOKKOS_INLINE_FUNCTION void con_tensor_to_native(const GReal Xnative[GR_DIM], const GReal tcon_embed[GR_DIM][GR_DIM], GReal tcon_native[GR_DIM][GR_DIM]) const
             {cov_tensor_to_embed(Xnative, tcon_embed, tcon_native);}
 
-        // And then some metric properties
-        // TODO gcon_embed, gdet_embed
+        // And then derived metric properties
         KOKKOS_INLINE_FUNCTION void gcov_native(const GReal Xnative[GR_DIM], Real gcov[GR_DIM][GR_DIM]) const
         {
             Real gcov_em[GR_DIM][GR_DIM];

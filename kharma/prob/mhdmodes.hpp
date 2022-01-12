@@ -84,7 +84,7 @@ TaskStatus InitializeMHDModes(MeshBlockData<Real> *rc, ParameterInput *pin)
     Real k1 = 2. * M_PI;
     Real k2 = 2. * M_PI;
     Real k3 = 2. * M_PI;
-    // "Faux-2D" planar waves direction
+    // "Faux-2D" plane orientation
     // Set to 0 for "full" 3D wave
     if (dir == 1)
         k1 = 0;
@@ -102,7 +102,9 @@ TaskStatus InitializeMHDModes(MeshBlockData<Real> *rc, ParameterInput *pin)
     Real B30 = 0.;
 
     std::complex<Real> omega;
-    Real drho, du, du1, du2, du3, dB1, dB2, dB3;
+    Real drho = 0, du = 0;
+    Real du1 = 0, du2 = 0, du3 = 0;
+    Real dB1 = 0, dB2 = 0, dB3 = 0;
 
     // Eigenmode definitions
     if (dir == 0)

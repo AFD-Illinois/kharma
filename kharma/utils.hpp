@@ -9,28 +9,34 @@
 #include <string>
 #include <stdexcept>
 
-// Again, variadic functions and SYCL don't mix.
-// Also generates a warning on icc but seems to work
-#ifdef KOKKOS_ENABLE_SYCL
-template<typename ... Args>
-std::string string_format( const std::string& format, Args ... args )
-{ return std::string(""); }
-#else
-// Thanks https://stackoverflow.com/questions/2342162/stdstring-formatting-like-sprintf
-template<typename ... Args>
-std::string string_format( const std::string& format, Args ... args )
-{
-    size_t size = snprintf( nullptr, 0, format.c_str(), args ... ) + 1; // Extra space for '\0'
-    if( size <= 0 ){ throw std::runtime_error( "Error during formatting." ); }
-    std::unique_ptr<char[]> buf( new char[ size ] ); 
-    snprintf( buf.get(), size, format.c_str(), args ... );
-    return std::string( buf.get(), buf.get() + size - 1 ); // We don't want the '\0' inside
-}
-#endif
-
 using namespace std; // This allows CUDA to override max & min
-// Thanks https://stackoverflow.com/questions/9323903/most-efficient-elegant-way-to-clip-a-number
+
+/**
+ * This takes a number n and clips it to lie on the real line between 'lower' and 'upper'
+ * If n is NaN, it returns the *lower* bound, unless this is also NaN, in which case it returns the upper.
+ * Note that you can disable a bound by passing NaN.
+ *
+ * Lightly edited from https://stackoverflow.com/questions/9323903/most-efficient-elegant-way-to-clip-a-number
+ */
 template <typename T>
-KOKKOS_INLINE_FUNCTION T clip(const T& n, const T& lower, const T& upper) {
-  return max(lower, min(n, upper));
+KOKKOS_INLINE_FUNCTION T clip(const T& n, const T& lower, const T& upper)
+{
+#if DEBUG
+  //if (isnan(n)) printf("Clipping a NaN value!\n");
+  //if (n > upper) printf("Clip %g to %g\n", n, upper);
+  //if (n < lower) printf("Clip %g to %g\n", n, lower);
+#endif
+  return min(max(lower, n), upper);
+}
+// Version which "bounces" any excess over the bounds, useful for the polar coordinate
+template <typename T>
+KOKKOS_INLINE_FUNCTION T bounce(const T& n, const T& lower, const T& upper)
+{
+    return (n < lower) ? 2*lower - n : ( (n > upper) ? 2*upper - n : n );
+}
+// Version which "excises" anything within a range
+template <typename T>
+KOKKOS_INLINE_FUNCTION T excise(const T& n, const T& center, const T& range)
+{
+    return (abs(n - center) > range) ? n : ( (n > center) ? center + range : center - range );
 }

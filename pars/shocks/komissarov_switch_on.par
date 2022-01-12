@@ -1,0 +1,79 @@
+# GRMHD Modes problem
+# Try to propagate several analytically-amenable linear modes of the MHD equations
+
+<parthenon/job>
+problem_id = shock
+
+<parthenon/mesh>
+refinement = none
+numlevel = 1
+
+nx1 = 400
+x1min = -2.0
+x1max = 2.0
+ix1_bc = periodic
+ox1_bc = periodic
+
+nx2 = 1
+x2min = 0.0
+x2max = 1.0
+ix2_bc = periodic
+ox2_bc = periodic
+
+nx3 = 1
+x3min = 0.0
+x3max = 1.0
+ix3_bc = periodic
+ox3_bc = periodic
+
+<parthenon/meshblock>
+nx1 = 400
+nx2 = 1
+nx3 = 1
+
+<coordinates>
+base = cartesian_minkowski
+transform = null
+
+<parthenon/time>
+tlim = 2.0
+integrator = rk2
+dt_min = 0.0001
+
+<GRMHD>
+cfl = 0.5
+gamma = 1.333333
+reconstruction = linear_vl
+
+<shock>
+rhoL = 1.78e-3
+PL = 0.1
+u1L = -0.765
+u2L = -1.386
+u3L = 0.
+B1L = 1.
+B2L = 1.022
+B3L = 0.
+rhoR = 0.01
+PR = 1.
+u1R = 0.
+u2R = 0.
+u3R = 0.
+B1R = 1.
+B2R = 0.
+B3R = 0.
+
+<floors>
+disable_floors = true
+
+<parthenon/output0>
+file_type = hdf5
+# This is to output only the final state
+dt = 100.
+single_precision_output = true
+variables = prims.rho, prims.u, prims.uvec, prims.B
+
+<parthenon/output1>
+file_type = hst
+dt = 0.1
+

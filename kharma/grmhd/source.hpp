@@ -45,7 +45,7 @@ namespace GRMHD
  * 
  * Note Flux::ApplyFluxes = parthenon::FluxDivergence + GRMHD::AddSource
  */
-TaskStatus AddSource(MeshBlockData<Real> *rc, MeshBlockData<Real> *dudt);
+TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt);
 
 /**
  * Function to add the source term in the GRMHD equations T^\mu_nu \Gamma^\nu_\lam\mu
@@ -62,7 +62,7 @@ KOKKOS_INLINE_FUNCTION void add_source(const GRCoordinates &G, const VariablePac
     Real eta = pgas + P(m_p.RHO, k, j, i) + P(m_p.UU, k, j, i) + bsq;
     Real ptot = pgas + 0.5 * bsq;
 
-    // Contract mhd stress tensor with connection, and multiply by metric dterminant
+    // Contract mhd stress tensor with connection, and multiply by metric determinant
     Real new_du[GR_DIM] = {0};
     DLOOP2 {
         Real Tmunu = (eta * D.ucon[mu] * D.ucov[nu] +

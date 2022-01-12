@@ -6,7 +6,7 @@
 
 // Internal representation of the field initialization preference for quick switch
 // Avoids string comparsion in kernels
-enum BSeedType{constant, monopole, sane, ryan, r3s3, gaussian};
+enum BSeedType{constant, monopole, sane, ryan, r3s3, steep, gaussian, bz_monopole};
 
 /**
  * Get the minimum value of plasma beta on the (physical, non-ghost) domain

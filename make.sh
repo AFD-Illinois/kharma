@@ -20,7 +20,7 @@
 # Processors to use.  Leave blank for all.  Be a good citizen.
 NPROC=
 
-### Machine-specific configurations ###
+### Load machine-specific configurations ###
 # This segment sources a series of machine-specific
 # definitions from the machines/ directory.
 # If the current machine isn't listed, this script
@@ -31,32 +31,34 @@ NPROC=
 # See e.g. tacc.sh for an example to get started writing one,
 # or specify any options you need manually below
 
-# Kokkos_ARCH options:
-# CPUs: WSM, HSW, BDW, SKX, AMDAVX
-# ARM: ARMV8, ARMV81, ARMV8_THUNDERX2, A64FX
-# POWER: POWER8, POWER9
-# MIC: KNC, KNL
-# GPUs: KEPLER35, VOLTA70, TURING75, AMPERE80
+# Example Kokkos_ARCH options:
+# CPUs: WSM, HSW, BDW, SKX, KNL, AMDAVX, ZEN2, ZEN3, POWER9
+# ARM: ARMV80, ARMV81, ARMV8_THUNDERX2, A64FX
+# GPUs: KEPLER35, VOLTA70, TURING75, AMPERE80, INTEL_GEN
 
 # HOST_ARCH=
 # DEVICE_ARCH=
+# C_NATIVE=
+# CXX_NATIVE=
 
 # Less common options:
 # PREFIX_PATH=
 # EXTRA_FLAGS=
-# export NVCC_WRAPPER_DEFAULT_COMPILER=
 
 HOST=$(hostname -f)
+ARGS="$*"
 for machine in machines/*.sh
 do
   source $machine
 done
 
-
 # If we haven't special-cased already, guess an architecture
-# This ends up pretty much optimal on x86 architectures which don't have
-# 1. AVX512 (Intel on HPC or Gen10+ consumer)
-# 2. GPUs
+# This ends up fine on most x86 architectures
+# Exceptions:
+# 1. GPUs, obviously
+# 2. AVX512 (Intel on HPC or Gen10+ consumer)
+# 3. AMD EPYC Zen2, Zen3
+# However, you may have better luck commenting these tests and letting Kokkos decide
 if [[ -z "$HOST_ARCH" ]]; then
   if grep GenuineIntel /proc/cpuinfo >/dev/null 2>&1; then
     HOST_ARCH="HSW"
@@ -76,25 +78,27 @@ fi
 if [[ -v PREFIX_PATH ]]; then
   EXTRA_FLAGS="-DCMAKE_PREFIX_PATH=$PREFIX_PATH $EXTRA_FLAGS"
 fi
-if [[ "$*" == *"trace"* ]]; then
+if [[ "$ARGS" == *"trace"* ]]; then
   EXTRA_FLAGS="-DTRACE=1 $EXTRA_FLAGS"
 fi
 
-### Check environment ###
+### Enivoronment Prep ###
 if [[ "$(which python3 2>/dev/null)" == *"conda"* ]]; then
   echo "It looks like you have Anaconda loaded."
-  echo "Anaconda forces a serial version of HDF5 which makes this compile impossible."
-  echo "Deactivate your environment with 'conda deactivate'"
+  echo "Anaconda forces a serial version of HDF5 which may make this compile impossible."
+  echo "If you run into trouble, deactivate your environment with 'conda deactivate'"
 fi
-
-if [[ "$*" == *"debug"* ]]; then
+# Save arguments
+echo "$ARGS" > make_args
+# Choose configuration
+if [[ "$ARGS" == *"debug"* ]]; then
   TYPE=Debug
 else
   TYPE=Release
 fi
 
 ### Build HDF5 ###
-if [[ "$*" == *"hdf5"* ]]; then
+if [[ "$ARGS" == *"hdf5"* ]]; then
   cd external
   if [ ! -f hdf5-* ]; then
     wget https://hdf-wordpress-1.s3.amazonaws.com/wp-content/uploads/manual/HDF5/HDF5_1_12_0/source/hdf5-1.12.0.tar.gz
@@ -117,7 +121,10 @@ SCRIPT_DIR=$PWD
 # Strongly prefer icc for OpenMP compiles
 # I would try clang but it would break all Macs
 if [[ -z "$CXX_NATIVE" ]]; then
-  if which icpc >/dev/null 2>&1; then
+  if which icpx >/dev/null 2>&1; then
+    CXX_NATIVE=icpx
+    C_NATIVE=icx
+  elif which icpc >/dev/null 2>&1; then
     CXX_NATIVE=icpc
     C_NATIVE=icc
     # Avoid warning on nvcc pragmas Intel doesn't like
@@ -141,26 +148,29 @@ fi
 # OpenMP loop options for KNL:
 # Outer: SIMDFOR_LOOP;MANUAL1D_LOOP;MDRANGE_LOOP;TPTTR_LOOP;TPTVR_LOOP;TPTTRTVR_LOOP
 # Inner: SIMDFOR_INNER_LOOP;TVR_INNER_LOOP
-if [[ "$*" == *"sycl"* ]]; then
+if [[ "$ARGS" == *"sycl"* ]]; then
   export CXX=icpx
-  EXTRA_FLAGS="-DCMAKE_C_COMPILER=icx $EXTRA_FLAGS"
+  export CC=icx
   OUTER_LAYOUT="MANUAL1D_LOOP"
   INNER_LAYOUT="TVR_INNER_LOOP"
   ENABLE_OPENMP="ON"
   ENABLE_CUDA="OFF"
   ENABLE_SYCL="ON"
   ENABLE_HIP="OFF"
-elif [[ "$*" == *"hip"* ]]; then
+elif [[ "$ARGS" == *"hip"* ]]; then
   export CXX=hipcc
+  # Is there a hipc?
   OUTER_LAYOUT="MANUAL1D_LOOP"
   INNER_LAYOUT="TVR_INNER_LOOP"
   ENABLE_OPENMP="ON"
   ENABLE_CUDA="OFF"
   ENABLE_SYCL="OFF"
   ENABLE_HIP="ON"
-elif [[ "$*" == *"cuda"* ]]; then
+elif [[ "$ARGS" == *"cuda"* ]]; then
+  export CC="$C_NATIVE"
   export CXX="$SCRIPT_DIR/bin/nvcc_wrapper"
-  if [[ "$*" == *"dryrun"* ]]; then
+  export NVCC_WRAPPER_DEFAULT_COMPILER="$CXX_NATIVE"
+  if [[ "$ARGS" == *"dryrun"* ]]; then
     export CXXFLAGS="-dryrun $CXXFLAGS"
     echo "Dry-running with $CXXFLAGS"
   fi
@@ -172,7 +182,7 @@ elif [[ "$*" == *"cuda"* ]]; then
   ENABLE_CUDA="ON"
   ENABLE_SYCL="OFF"
   ENABLE_HIP="OFF"
-elif [[ "$*" == *"clanggpu"* ]]; then
+elif [[ "$ARGS" == *"clanggpu"* ]]; then
   export CXX="clang++"
   export CC="clang"
   OUTER_LAYOUT="MANUAL1D_LOOP"
@@ -193,15 +203,16 @@ else
 fi
 
 # Make build dir. Recall "clean" means "clean and build"
-if [[ "$*" == *"clean"* ]]; then
+if [[ "$ARGS" == *"clean"* ]]; then
   rm -rf build
 fi
 mkdir -p build
 cd build
 
-if [[ "$*" == *"clean"* ]]; then
+if [[ "$ARGS" == *"clean"* ]]; then
 #set -x
   cmake ..\
+    -DCMAKE_C_COMPILER="$CC" \
     -DCMAKE_CXX_COMPILER="$CXX" \
     -DCMAKE_PREFIX_PATH="$PREFIX_PATH:$CMAKE_PREFIX_PATH" \
     -DCMAKE_BUILD_TYPE=$TYPE \
