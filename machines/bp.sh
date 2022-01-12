@@ -34,20 +34,23 @@ fi
 
 if [[ $HOST == "cinnabar"* ]]; then
   module purge # Handle modules inside this script
+  # All my MPI stacks can use this as the call
+  MPI_EXE=mpirun
 
-  if [[ "$*" == *"cuda"* ]]; then
+  if [[ "$ARGS" == *"cuda"* ]]; then
     # Use NVHPC libraries (GPU-aware OpenMPI!)
-    # but not nvc++ because Parthenon broke it
     HOST_ARCH="HSW"
     DEVICE_ARCH="KEPLER35"
+    MPI_NUM_PROCS=2
+    KOKKOS_NUM_DEVICES=2
 
     module load nvhpc
     PREFIX_PATH="$HOME/libs/hdf5-nvhpc"
     # Quash warning about my old gpus
     export NVCC_WRAPPER_CUDA_EXTRA_FLAGS="-Wno-deprecated-gpu-targets"
 
-    # To use NVCC:
-    if [[ "$*" == *"gcc"* ]]; then
+    # Switch between g++/NVC++:
+    if [[ "$ARGS" == *"gcc"* ]]; then
       C_NATIVE="gcc"
       CXX_NATIVE="g++"
     else
@@ -57,12 +60,20 @@ if [[ $HOST == "cinnabar"* ]]; then
       #HOST_ARCH="SNB" # Kokkos doesn't detect/set -tp=haswell for nvc++
     fi
 
-    # System CUDA
+    # System CUDA path
     EXTRA_FLAGS="-DCUDAToolkit_INCLUDE_DIR=/usr/include/cuda $EXTRA_FLAGS"
   else
-    # Intel
-    module load compiler mpi
     HOST_ARCH="HSW"
-    PREFIX_PATH="$HOME/libs/hdf5-oneapi"
+    MPI_NUM_PROCS=1
+    if [[ "$ARGS" == *"gcc"* ]]; then
+      # GCC
+      module load mpi/mpich-x86_64
+      C_NATIVE="gcc"
+      CXX_NATIVE="g++"
+    else
+      # Intel by default
+      module load compiler mpi
+      PREFIX_PATH="$HOME/libs/hdf5-oneapi"
+    fi
   fi
 fi

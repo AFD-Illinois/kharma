@@ -11,9 +11,13 @@
 NNODES=1
 COMMAND="-i sane.par"
 
+KHARMA_DIR=~/kharma
+
 #==============
 
-KHARMA_DIR=~/kharma
+# This ensures we load the modules we did for making kharma
+ARGS=$(cat $KHARMA_DIR/make_args)
+source $KHARMA_DIR/machines/incite.sh
 
 # Make bsub behave like sbatch, moving to CWD
 # But don't cd anywhere under $HOME, that would be bad
@@ -25,6 +29,7 @@ fi
 date
 echo "Job run on nodes:"
 jsrun -n $NNODES -r 1 hostname
+module list
 
 # Tell OpenMP explicitly what it's dealing with
 # This also ensures that if we set e.g. NUM_THREADS=6,

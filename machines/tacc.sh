@@ -9,7 +9,7 @@ fi
 
 if [[ $HOST == *".stampede2.tacc.utexas.edu" ]]; then
   NPROC=16
-  if [[ "$*" == *"skx"* ]]; then
+  if [[ "$ARGS" == *"skx"* ]]; then
     HOST_ARCH="SKX"
   else
     HOST_ARCH="KNL"

@@ -46,11 +46,11 @@ NPROC=
 # EXTRA_FLAGS=
 
 HOST=$(hostname -f)
+ARGS="$*"
 for machine in machines/*.sh
 do
   source $machine
 done
-
 
 # If we haven't special-cased already, guess an architecture
 # This ends up fine on most x86 architectures
@@ -78,25 +78,27 @@ fi
 if [[ -v PREFIX_PATH ]]; then
   EXTRA_FLAGS="-DCMAKE_PREFIX_PATH=$PREFIX_PATH $EXTRA_FLAGS"
 fi
-if [[ "$*" == *"trace"* ]]; then
+if [[ "$ARGS" == *"trace"* ]]; then
   EXTRA_FLAGS="-DTRACE=1 $EXTRA_FLAGS"
 fi
 
-### Check environment ###
+### Enivoronment Prep ###
 if [[ "$(which python3 2>/dev/null)" == *"conda"* ]]; then
   echo "It looks like you have Anaconda loaded."
   echo "Anaconda forces a serial version of HDF5 which may make this compile impossible."
   echo "If you run into trouble, deactivate your environment with 'conda deactivate'"
 fi
-
-if [[ "$*" == *"debug"* ]]; then
+# Save arguments
+echo "$ARGS" > make_args
+# Choose configuration
+if [[ "$ARGS" == *"debug"* ]]; then
   TYPE=Debug
 else
   TYPE=Release
 fi
 
 ### Build HDF5 ###
-if [[ "$*" == *"hdf5"* ]]; then
+if [[ "$ARGS" == *"hdf5"* ]]; then
   cd external
   if [ ! -f hdf5-* ]; then
     wget https://hdf-wordpress-1.s3.amazonaws.com/wp-content/uploads/manual/HDF5/HDF5_1_12_0/source/hdf5-1.12.0.tar.gz
@@ -146,7 +148,7 @@ fi
 # OpenMP loop options for KNL:
 # Outer: SIMDFOR_LOOP;MANUAL1D_LOOP;MDRANGE_LOOP;TPTTR_LOOP;TPTVR_LOOP;TPTTRTVR_LOOP
 # Inner: SIMDFOR_INNER_LOOP;TVR_INNER_LOOP
-if [[ "$*" == *"sycl"* ]]; then
+if [[ "$ARGS" == *"sycl"* ]]; then
   export CXX=icpx
   export CC=icx
   OUTER_LAYOUT="MANUAL1D_LOOP"
@@ -155,7 +157,7 @@ if [[ "$*" == *"sycl"* ]]; then
   ENABLE_CUDA="OFF"
   ENABLE_SYCL="ON"
   ENABLE_HIP="OFF"
-elif [[ "$*" == *"hip"* ]]; then
+elif [[ "$ARGS" == *"hip"* ]]; then
   export CXX=hipcc
   # Is there a hipc?
   OUTER_LAYOUT="MANUAL1D_LOOP"
@@ -164,11 +166,11 @@ elif [[ "$*" == *"hip"* ]]; then
   ENABLE_CUDA="OFF"
   ENABLE_SYCL="OFF"
   ENABLE_HIP="ON"
-elif [[ "$*" == *"cuda"* ]]; then
+elif [[ "$ARGS" == *"cuda"* ]]; then
   export CC="$C_NATIVE"
   export CXX="$SCRIPT_DIR/bin/nvcc_wrapper"
   export NVCC_WRAPPER_DEFAULT_COMPILER="$CXX_NATIVE"
-  if [[ "$*" == *"dryrun"* ]]; then
+  if [[ "$ARGS" == *"dryrun"* ]]; then
     export CXXFLAGS="-dryrun $CXXFLAGS"
     echo "Dry-running with $CXXFLAGS"
   fi
@@ -180,7 +182,7 @@ elif [[ "$*" == *"cuda"* ]]; then
   ENABLE_CUDA="ON"
   ENABLE_SYCL="OFF"
   ENABLE_HIP="OFF"
-elif [[ "$*" == *"clanggpu"* ]]; then
+elif [[ "$ARGS" == *"clanggpu"* ]]; then
   export CXX="clang++"
   export CC="clang"
   OUTER_LAYOUT="MANUAL1D_LOOP"
@@ -201,13 +203,13 @@ else
 fi
 
 # Make build dir. Recall "clean" means "clean and build"
-if [[ "$*" == *"clean"* ]]; then
+if [[ "$ARGS" == *"clean"* ]]; then
   rm -rf build
 fi
 mkdir -p build
 cd build
 
-if [[ "$*" == *"clean"* ]]; then
+if [[ "$ARGS" == *"clean"* ]]; then
 #set -x
   cmake ..\
     -DCMAKE_C_COMPILER="$CC" \
