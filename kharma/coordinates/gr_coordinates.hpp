@@ -36,7 +36,7 @@
 #include "decs.hpp"
 
 #include "coordinate_embedding.hpp"
-#include "utils.hpp"
+#include "kharma_utils.hpp"
 
 // Everywhere else we can just import <parthenon/parthenon.hpp>
 // Here we have to be careful of circular dependencies

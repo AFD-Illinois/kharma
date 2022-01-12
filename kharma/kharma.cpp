@@ -174,7 +174,7 @@ void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
 
     // If we're using constant field of some kind, we likely *don't* want to normalize to beta_min=N
     std::string field_type = pin->GetOrAddString("b_field", "type", "none");
-    if (field_type == "constant" || field_type == "monopole") {
+    if (field_type == "constant" || field_type == "monopole" || field_type == "bz_monopole") {
         pin->GetOrAddBoolean("b_field", "norm", false);
     }
 }

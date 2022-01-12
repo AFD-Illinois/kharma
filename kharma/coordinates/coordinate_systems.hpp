@@ -41,11 +41,17 @@
 #include "decs.hpp"
 
 #include "matrix.hpp"
-#include "utils.hpp"
+#include "kharma_utils.hpp"
 
 #define ROOTFIND_TOL 1.e-9
+// Emulate old versions of HARM in treating the coordinate singularity at poles,
+// by returning {0,M_PI}+/-SMALL instead of {0, M_PI} for theta
+// gcov_embed now avoids singular matrices even when passed th==0, so this is
+// needed only for back-compatibility
+#define LEGACY_TH false
 
 using namespace parthenon;
+using namespace std;
 
 /**
  * Base systems implemented:
@@ -99,6 +105,7 @@ class SphMinkowskiCoords {
             const GReal th = excise(excise(Xembed[2], 0.0, SMALL), M_PI, SMALL);
             const GReal sth = sin(th);
 
+            gzero2(gcov);
             gcov[0][0] = 1.;
             gcov[1][1] = 1.;
             gcov[2][2] = r*r;
@@ -157,7 +164,7 @@ class SphKSCoords {
             trans[0][1] = 2.*r/(r*r - 2.*r + a*a);
             trans[3][1] = a/(r*r - 2.*r + a*a);
 
-            DLOOP1 vcon[mu] = 0.;
+            gzero(vcon);
             DLOOP2 vcon[mu] += trans[mu][nu]*vcon_bl[nu];
         }
 
@@ -188,9 +195,10 @@ class SphBLCoords {
             const GReal s2 = sth*sth;
             const GReal a2 = a*a;
             const GReal r2 = r*r;
+            // TODO this and gcov_embed for KS should look more similar...
             const GReal mmu = 1. + a2*cth*cth/r2; // mu is taken as an index
 
-            DLOOP2 gcov[mu][nu] = 0.;
+            gzero2(gcov);
             gcov[0][0]  = -(1. - 2./(r*mmu));
             gcov[0][3]  = -2.*a*s2/(r*mmu);
             gcov[1][1]   = mmu/(1. - 2./r + a2/r2);
@@ -270,7 +278,7 @@ class ExponentialTransform {
          */
         KOKKOS_INLINE_FUNCTION void dxdX(const GReal Xnative[GR_DIM], Real dxdX[GR_DIM][GR_DIM]) const
         {
-            DLOOP2 dxdX[mu][nu] = 0;
+            gzero2(dxdX);
             dxdX[0][0] = 1.;
             dxdX[1][1] = exp(Xnative[1]);
             dxdX[2][2] = 1.;
@@ -281,10 +289,11 @@ class ExponentialTransform {
          */
         KOKKOS_INLINE_FUNCTION void dXdx(const GReal Xnative[GR_DIM], Real dXdx[GR_DIM][GR_DIM]) const
         {
-            // Lazy way.  Surely there's an analytic inverse to be had somewhere...
-            Real dxdX_tmp[GR_DIM][GR_DIM];
-            dxdX(Xnative, dxdX_tmp);
-            invert(&dxdX_tmp[0][0],&dXdx[0][0]);
+            gzero2(dXdx);
+            dXdx[0][0] = 1.;
+            dXdx[1][1] = 1 / exp(Xnative[1]);
+            dXdx[2][2] = 1.;
+            dXdx[3][3] = 1.;
         }
 };
 
@@ -304,7 +313,12 @@ class ModifyTransform {
         {
             Xembed[0] = Xnative[0];
             Xembed[1] = exp(Xnative[1]);
+#if LEGACY_TH
+            const GReal th = M_PI*Xnative[2] + ((1. - hslope)/2.)*sin(2.*M_PI*Xnative[2]);
+            Xembed[2] = excise(excise(th, 0.0, SMALL), M_PI, SMALL);
+#else
             Xembed[2] = M_PI*Xnative[2] + ((1. - hslope)/2.)*sin(2.*M_PI*Xnative[2]);
+#endif
             Xembed[3] = Xnative[3];
         }
         KOKKOS_INLINE_FUNCTION void coord_to_native(const GReal Xembed[GR_DIM], GReal Xnative[GR_DIM]) const
@@ -320,7 +334,7 @@ class ModifyTransform {
          */
         KOKKOS_INLINE_FUNCTION void dxdX(const GReal Xnative[GR_DIM], Real dxdX[GR_DIM][GR_DIM]) const
         {
-            DLOOP2 dxdX[mu][nu] = 0;
+            gzero2(dxdX);
             dxdX[0][0] = 1.;
             dxdX[1][1] = exp(Xnative[1]);
             dxdX[2][2] = M_PI - (hslope - 1.)*M_PI*cos(2.*M_PI*Xnative[2]);
@@ -331,10 +345,11 @@ class ModifyTransform {
          */
         KOKKOS_INLINE_FUNCTION void dXdx(const GReal Xnative[GR_DIM], Real dXdx[GR_DIM][GR_DIM]) const
         {
-            // Lazy way.  Surely there's an analytic inverse to be had somewhere...
-            Real dxdX_tmp[GR_DIM][GR_DIM];
-            dxdX(Xnative, dxdX_tmp);
-            invert(&dxdX_tmp[0][0],&dXdx[0][0]);
+            gzero2(dXdx);
+            dXdx[0][0] = 1.;
+            dXdx[1][1] = 1 / exp(Xnative[1]);
+            dXdx[2][2] = 1 / (M_PI - (hslope - 1.)*M_PI*cos(2.*M_PI*Xnative[2]));
+            dXdx[3][3] = 1.;
         }
 };
 
@@ -364,8 +379,12 @@ class FunkyTransform {
             const GReal thG = M_PI*Xnative[2] + ((1. - hslope)/2.)*sin(2.*M_PI*Xnative[2]);
             const GReal y = 2*Xnative[2] - 1.;
             const GReal thJ = poly_norm * y * (1. + pow(y/poly_xt,poly_alpha) / (poly_alpha + 1.)) + 0.5 * M_PI;
+#if LEGACY_TH
+            const GReal th = thG + exp(mks_smooth * (startx1 - Xnative[1])) * (thJ - thG);
+            Xembed[2] = excise(excise(th, 0.0, SMALL), M_PI, SMALL);
+#else
             Xembed[2] = thG + exp(mks_smooth * (startx1 - Xnative[1])) * (thJ - thG);
-
+#endif
             Xembed[3] = Xnative[3];
         }
         KOKKOS_INLINE_FUNCTION void coord_to_native(const GReal Xembed[GR_DIM], GReal Xnative[GR_DIM]) const
@@ -381,7 +400,7 @@ class FunkyTransform {
          */
         KOKKOS_INLINE_FUNCTION void dxdX(const GReal Xnative[GR_DIM], Real dxdX[GR_DIM][GR_DIM]) const
         {
-            DLOOP2 dxdX[mu][nu] = 0;
+            gzero2(dxdX);
             dxdX[0][0] = 1.;
             dxdX[1][1] = exp(Xnative[1]);
             dxdX[2][1] = -exp(mks_smooth * (startx1 - Xnative[1])) * mks_smooth

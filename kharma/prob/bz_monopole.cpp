@@ -1,5 +1,5 @@
 /* 
- *  File: fm_torus.cpp
+ *  File: bz_monopole.cpp
  *  
  *  BSD 3-Clause License
  *  
