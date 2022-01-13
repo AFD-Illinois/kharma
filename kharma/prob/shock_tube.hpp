@@ -12,7 +12,7 @@ using namespace parthenon;
  * 
  * Stolen directly from iharm3D
  */
-void InitializeShockTube(MeshBlockData<Real> *rc, ParameterInput *pin)
+TaskStatus InitializeShockTube(MeshBlockData<Real> *rc, ParameterInput *pin)
 {
     FLAG("Initializing Shock Tube problem");
     auto pmb = rc->GetBlockPointer();
@@ -73,4 +73,6 @@ void InitializeShockTube(MeshBlockData<Real> *rc, ParameterInput *pin)
 
         // Set e- starting state
     }
+
+    return TaskStatus::complete;
 }

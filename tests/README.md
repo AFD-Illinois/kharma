@@ -3,12 +3,18 @@
 Since all KHARMA parameters are determined at runtime, testing KHARMA is relatively easy,
 and many different tests are defined changing different options
 
-Tests are housed in folders, each containing a bash script `run.sh` to be run by CI, and a
-python script `check.py` to produce any relevant plots and check that the 
+Tests are housed in folders, each containing a bash script `run.sh` to perform any runs for
+the test, and another, `check.sh` to veryify the results.  `check.sh` usually calls a
+python script `check.py` to produce any relevant plots and check that the output matches
+expectations.  Note that while `run.sh` will exit on the first failed run, `check.sh` runs
+all checks, accumulating a single return value `0` for success or `1` if any check fails.
 
 While tests sometimes use many meshblocks, they do not by default use more than 1 MPI
 process.  This may change if MPI-related issues crop up requiring KHARMA-specific tests
-(e.g. of problem initialization requiring all-to-all operations)
+(e.g. of problem initialization requiring all-to-all operations).  All are designed to be
+run on a single node in a reasonable amount of time (<1h).
+
+Current and near-future planned tests are outlined below.
 
 ## (GR)MHD convergence tests
 
@@ -16,27 +22,28 @@ process.  This may change if MPI-related issues crop up requiring KHARMA-specifi
 * MHD linear modes `mhdmodes`
 * Komissarov shock tube tests `komissarov_shocks`
 
-See pretty much any GRMHD code paper, but notably Gammie+ [2003](), 
+Tests outlined in many code papers, notably Gammie+ [2003](https://doi.org/10.1086/374594).
 
 ## Electron transport convergence tests
 
 * Hubble flow with energy source term `hubble`
 * Noh shock heating `noh_shocks`
 
-See Ressler+ [2015]()
+Tests outlined in Ressler+ [2015](https://doi.org/10.1093/mnras/stv2084).
 
 ## Regression tests
 
-* MHD linear modes convergence using tiny (8x8x8) meshblocks
-* State at 1M of a problem, vs state at 1M of a problem initialized from its first restart file
+* State at 1M after initialization vs restarting a problem `init_vs_restart`
+* Stability stress test `bz_monopole` for polar boundary conditions, high-B operation
+* Restart from mid-run of a MAD simulation `get_mad`
 
 ## Performance tests
 
-* Coming once CI w/GPUs is set up
-* torus_scaling.par input out to 100 steps, recording cycle=100 performance
-  * Also record avg performance?
+* torus_scaling.par input with single block and 8 blocks, cycle=100
+* Same with orszag_tang, mhdmodes
 
 ## Testing wishlist
 
 * Linear modes in cylindrical or spherical coordinates, to test polar boundary effects efficiently
 * Driven turbulence in 2D, for testing electrons in more realistic scenarios e.g. with floors
+* Test for unique random perturbations in all blocks

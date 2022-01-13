@@ -26,6 +26,7 @@ kharma_parsed_*.par
 build/
 # Prerequisites
 *.d
+make_args
 
 # Compiled Object files
 *.slo

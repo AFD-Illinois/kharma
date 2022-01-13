@@ -40,7 +40,7 @@
 #include <random>
 #include "Kokkos_Random.hpp"
 
-void InitializeFMTorus(MeshBlockData<Real> *rc, ParameterInput *pin)
+TaskStatus InitializeFMTorus(MeshBlockData<Real> *rc, ParameterInput *pin)
 {
     FLAG("Initializing torus problem");
 
@@ -170,7 +170,9 @@ void InitializeFMTorus(MeshBlockData<Real> *rc, ParameterInput *pin)
     int nx1 = (x1max - x1min) / dx;
     //int nx2 = (x2max - x2min) / dx;
 
-    if (MPIRank0() && pmb->packages.Get("GRMHD")->Param<int>("verbose") > 0) {
+    // If we print diagnostics, do so only from block 0 as the others do exactly the same thing
+    // Since this is initialization, we are guaranteed to have a block 0
+    if (pmb->gid == 0 && pmb->packages.Get("GRMHD")->Param<int>("verbose") > 0) {
         cout << "Calculating maximum density:" << endl;
         cout << "a = " << a << endl;
         cout << "dx = " << dx << endl;
@@ -214,7 +216,7 @@ void InitializeFMTorus(MeshBlockData<Real> *rc, ParameterInput *pin)
         }
     , max_reducer);
 
-    if (MPIRank0() && pmb->packages.Get("GRMHD")->Param<int>("verbose") > 0) {
+    if (pmb->gid == 0 && pmb->packages.Get("GRMHD")->Param<int>("verbose") > 0) {
         cout << "Initial maximum density is " << rho_max << endl;
     }
 
@@ -224,6 +226,8 @@ void InitializeFMTorus(MeshBlockData<Real> *rc, ParameterInput *pin)
             u(k, j, i) /= rho_max;
         }
     );
+
+    return TaskStatus::complete;
 }
 
 // TODO move this to a different file
@@ -234,20 +238,23 @@ TaskStatus PerturbU(MeshBlockData<Real> *rc, ParameterInput *pin)
     auto rho = rc->Get("prims.rho").data;
     auto u = rc->Get("prims.u").data;
 
-    const Real u_jitter = pin->GetOrAddReal("perturbation", "u_jitter", 0.0);
-    if (u_jitter == 0.0) return TaskStatus::complete;
+    const Real u_jitter = pin->GetReal("perturbation", "u_jitter");
     // Don't jitter values set by floors
     const Real jitter_above_rho = pin->GetReal("floors", "rho_min_geom");
     // Note we add the MeshBlock gid to this value when seeding RNG,
     // to get a new sequence for every block
     const int rng_seed = pin->GetOrAddInteger("perturbation", "rng_seed", 31337);
+    // Print real seed used for all blocks, to ensure they're different
+    if (pmb->packages.Get("GRMHD")->Param<int>("verbose") > 0) {
+        cout << "Seeding RNG in block " << pmb->gid << " with value " << rng_seed + pmb->gid << endl;
+    }
     const bool serial = pin->GetOrAddInteger("perturbation", "serial", false);
 
+    // Should we jitter ghosts? If first boundary sync doesn't work it's marginally less disruptive
     IndexDomain domain = IndexDomain::interior;
     const int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     const int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
     const int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
-    // Should only jitter physical zones...
 
     if (serial) {
         // Serial version

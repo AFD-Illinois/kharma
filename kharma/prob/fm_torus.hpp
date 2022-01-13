@@ -12,7 +12,7 @@
  * @param rin is the torus innermost radius, in r_g
  * @param rmax is the radius of maximum density of the F-M torus in r_g
  */
-void InitializeFMTorus(MeshBlockData<Real> *rc, ParameterInput *pin);
+TaskStatus InitializeFMTorus(MeshBlockData<Real> *rc, ParameterInput *pin);
 /**
  * Perturb the internal energy by a uniform random proportion per cell.
  * Resulting internal energies will be between u \pm u*u_jitter/2
