@@ -38,6 +38,9 @@
 #include "kharma.hpp"
 
 #include <parthenon/parthenon.hpp>
+#include <utils/string_utils.hpp>
+
+#include <string>
 
 using namespace parthenon;
 
@@ -47,6 +50,26 @@ using namespace parthenon;
 
 namespace Electrons
 {
+
+/**
+ * Take a parthenon parameter, split on commas,
+ * and parse as doubles
+ */
+std::vector<Real> parse_list(std::string s)
+{
+    // Tokenizer stolen from Parthenon's output machinery
+    std::string delimiter = ",";
+    size_t pos = 0;
+    std::string token;
+    std::vector<Real> reals;
+    while ((pos = s.find(delimiter)) != std::string::npos) {
+        token = s.substr(0, pos);
+        reals.push_back(std::stod(string_utils::trim(token)));
+        s.erase(0, pos + delimiter.length());
+    }
+    reals.push_back(std::stod(string_utils::trim(s)));
+    return reals;
+}
 
 std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t packages)
 {
@@ -96,6 +119,29 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     params.Add("do_rowan", do_rowan);
     bool do_sharma = pin->GetOrAddBoolean("electrons", "sharma", false);
     params.Add("do_sharma", do_sharma);
+
+    // Parse various mass and density units to set the different cooling rates
+    // These could maybe tie in with Parthenon::Units when we add radiation
+    std::vector<Real> masses = parse_list(pin->GetString("units", "MBH"));
+    std::vector<std::vector<Real>> munits;
+    for (int i=1; i <= masses.size(); ++i) {
+        munits.push_back(parse_list(pin->GetString("units", "M_unit_"+to_string(i))));
+    }
+
+    if (MPIRank0() && verbose > 0) {
+        cout << "Using unit sets:" << endl;
+        for (int i=0; i < masses.size(); ++i) {
+            cout << endl << masses[i] << ":";
+            for (auto munit : munits[i]) {
+                cout << " " << munit;
+            }
+        }
+        cout << endl;
+    }
+    // This is a vector of Reals
+    params.Add("masses", masses);
+    // This is a vector of vectors of Reals
+    params.Add("munits", munits);
 
     MetadataFlag isPrimitive = packages.Get("GRMHD")->Param<MetadataFlag>("PrimitiveFlag");
     MetadataFlag isElectrons = Metadata::AllocateNewFlag("Electrons");

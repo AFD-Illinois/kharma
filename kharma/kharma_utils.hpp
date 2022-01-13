@@ -25,11 +25,11 @@ template <typename T>
 KOKKOS_INLINE_FUNCTION T clip(const T& n, const T& lower, const T& upper)
 {
 #if DEBUG
-  //if (isnan(n)) printf("Clipping a NaN value!\n");
-  //if (n > upper) printf("Clip %g to %g\n", n, upper);
-  //if (n < lower) printf("Clip %g to %g\n", n, lower);
+    //if (isnan(n)) printf("Clipping a NaN value!\n");
+    //if (n > upper) printf("Clip %g to %g\n", n, upper);
+    //if (n < lower) printf("Clip %g to %g\n", n, lower);
 #endif
-  return min(max(lower, n), upper);
+    return min(max(lower, n), upper);
 }
 // Version which "bounces" any excess over the bounds, useful for the polar coordinate
 template <typename T>
