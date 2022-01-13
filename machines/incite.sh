@@ -7,13 +7,19 @@ if [[ $HOST == *".summit.olcf.ornl.gov" ]]; then
   if [[ $(hostname) == "login"* ]]; then
     NPROC=16
   fi
+  # Runtime options for one-node test runs
+  MPI_EXE="jsrun --smpiargs="-gpu" -r 6 -a 1 -g 1 -c 6 -d packed -b packed:6"
+  OMP_NUM_THREADS=24
+  KOKKOS_NUM_DEVICES=1
+  MPI_NUM_PROCS=6
 
   # All of these tested with Spectrum MPI 10.4.0.3
-  if [[ "$*" == *"gcc"* ]]; then
+  if [[ "$ARGS" == *"gcc"* ]]; then
+    # Use default GCC
     module load gcc
     module load cuda
     PREFIX_PATH="$HOME/libs/hdf5-gcc10-spectrum"
-  elif [[ "$*" == *"xl"* ]]; then
+  elif [[ "$ARGS" == *"xl"* ]]; then
     # xlC: OpenMP CXX problems
     module load xl
     module load cuda
@@ -25,7 +31,7 @@ if [[ $HOST == *".summit.olcf.ornl.gov" ]]; then
   else
     # Use nvc++ compiler in NVHPC
     module unload cuda
-    module load nvhpc/21.9
+    module load nvhpc/21.11
     C_NATIVE="nvc"
     CXX_NATIVE="nvc++"
     export CXXFLAGS="-mp"
@@ -34,7 +40,7 @@ if [[ $HOST == *".summit.olcf.ornl.gov" ]]; then
 fi
 
 if [[ $HOST == *".alcf.anl.gov" ]]; then
-  if [[ "$*" == *"cuda"* ]]; then
+  if [[ "$ARGS" == *"cuda"* ]]; then
     module purge
     module load Core/StdEnv cmake
     module load nvhpc/21.7

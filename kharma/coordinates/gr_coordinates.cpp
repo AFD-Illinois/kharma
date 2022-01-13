@@ -84,11 +84,10 @@ GRCoordinates::GRCoordinates(const RegionSize &rs, ParameterInput *pin): Uniform
 
     SomeTransform transform;
     if (transform_str == "null") {
-        if (spherical) {
-            transform.emplace<SphNullTransform>(SphNullTransform());
-        } else {
-            transform.emplace<CartNullTransform>(CartNullTransform());
-        }
+        transform.emplace<NullTransform>(NullTransform());
+    } else if (transform_str == "exponential" || transform_str == "exp" || transform_str == "eks") {
+        if (!spherical) throw std::invalid_argument("Transform is for spherical coordinates!");
+        transform.emplace<ExponentialTransform>(ExponentialTransform());
     } else if (transform_str == "modified" || transform_str == "mks") {
         if (!spherical) throw std::invalid_argument("Transform is for spherical coordinates!");
         GReal hslope = pin->GetOrAddReal("coordinates", "hslope", 0.3);

@@ -69,6 +69,8 @@ using GReal = double;
 #define DELTA 1.e-8
 // Accuracy required for U to P
 #define UTOP_ERRTOL 1.e-8
+// A small number, compared to the grid or problem scale
+#define SMALL 1e-20
 
 // GEOMETRY
 #define GR_DIM 4

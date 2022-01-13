@@ -57,20 +57,21 @@
 
 std::shared_ptr<StateDescriptor> KHARMA::InitializeGlobals(ParameterInput *pin)
 {
+    // All global mutable state.  All of these and only these parameters are "mutable"
     auto pkg = std::make_shared<StateDescriptor>("Globals");
     Params &params = pkg->AllParams();
     // Current time in the simulation.  For ramping things up, ramping things down,
     // or preventing bad outcomes at known times
-    params.Add("time", 0.0);
+    params.Add("time", 0.0, true);
     // Last step's dt (Parthenon SimTime tm.dt), which must be preserved to output jcon
-    params.Add("dt_last", 0.0);
+    params.Add("dt_last", 0.0, true);
     // Accumulator for maximum ctop within an MPI process
     // That is, this value does NOT generally reflect the actual maximum
-    params.Add("ctop_max", 0.0);
+    params.Add("ctop_max", 0.0, true);
     // Maximum between MPI processes, updated after each step; that is, always a maximum.
-    params.Add("ctop_max_last", 0.0);
+    params.Add("ctop_max_last", 0.0, true);
     // Whether we are computing initial outputs/timestep, or versions in the execution loop
-    params.Add("in_loop", false);
+    params.Add("in_loop", false, true);
 
     return pkg;
 }
@@ -102,6 +103,7 @@ void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
     if (ctf == "none") ctf = "null";
     if (ctf == "fmks") ctf = "funky";
     if (ctf == "mks") ctf = "modified";
+    if (ctf == "exponential") ctf = "exp";
     if (ctf == "eks") ctf = "exp";
     // TODO any other synonyms
 
@@ -132,6 +134,11 @@ void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
         // i.e. we want Rhor = Rin + 5.5 * (Rout - Rin) / N1TOT:
         GReal Rin = (n1tot * Rhor / 5.5 - Rout) / (-1. + n1tot / 5.5);
         pin->SetReal("parthenon/mesh", "x1min", Rin);
+        pin->SetReal("parthenon/mesh", "x1max", Rout);
+    } else if (cb == "spherical_minkowski") {
+        // In Minkowski space, go to SMALL (TODO all the way to 0?)
+        GReal Rout = pin->GetReal("coordinates", "r_out");
+        pin->SetReal("parthenon/mesh", "x1min", SMALL);
         pin->SetReal("parthenon/mesh", "x1max", Rout);
     }
 
@@ -168,7 +175,7 @@ void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
 
     // If we're using constant field of some kind, we likely *don't* want to normalize to beta_min=N
     std::string field_type = pin->GetOrAddString("b_field", "type", "none");
-    if (field_type == "constant" || field_type == "monopole") {
+    if (field_type == "constant" || field_type == "monopole" || field_type == "bz_monopole") {
         pin->GetOrAddBoolean("b_field", "norm", false);
     }
 }

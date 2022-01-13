@@ -64,10 +64,10 @@ TaskStatus B_CD::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
     BSeedType b_field_flag = BSeedType::sane;
     if (b_field_type == "none") {
         return TaskStatus::complete;
-    // } else if (b_field_type == "constant") {
-    //     b_field_flag = BSeedType::constant;
-    // } else if (b_field_type == "monopole") {
-    //     b_field_flag = BSeedType::monopole;
+    } else if (b_field_type == "constant") {
+        b_field_flag = BSeedType::constant;
+    } else if (b_field_type == "monopole") {
+        b_field_flag = BSeedType::monopole;
     } else if (b_field_type == "sane") {
         b_field_flag = BSeedType::sane;
     } else if (b_field_type == "mad" || b_field_type == "ryan") {
@@ -85,8 +85,10 @@ TaskStatus B_CD::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
     switch (b_field_flag)
     {
     case BSeedType::constant:
+        b10 = pin->GetOrAddReal("b_field", "b10", 0.);
         b20 = pin->GetOrAddReal("b_field", "b20", 0.);
         b30 = pin->GetOrAddReal("b_field", "b30", 0.);
+        break;
     case BSeedType::monopole:
         b10 = pin->GetReal("b_field", "b10");
         break;
@@ -96,6 +98,8 @@ TaskStatus B_CD::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
     case BSeedType::r3s3:
     case BSeedType::gaussian:
         rin = pin->GetReal("torus", "rin");
+        break;
+    default:
         break;
     }
 
@@ -161,9 +165,9 @@ TaskStatus B_CD::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
                     q = (1 / (sqrt(2 * M_PI) * fabs(sigma))) * exp(-u * u / 2);
                 }
                 break;
-            case BSeedType::constant:
-            case BSeedType::monopole:
-                q = 0; // This shouldn't be reached, cases are handled above
+            default:
+                // This shouldn't be reached.  Could squawk here?
+                break;
             }
 
             A3(j, i) = max(q, 0.);

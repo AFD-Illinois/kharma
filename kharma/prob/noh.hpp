@@ -1,5 +1,5 @@
 /* 
- *  File: explosion.hpp
+ *  File: mhdmodes.hpp
  *  
  *  BSD 3-Clause License
  *  
@@ -33,82 +33,69 @@
  */
 #pragma once
 
-#include <complex>
-
 #include "decs.hpp"
 
-
-using namespace std::literals::complex_literals;
 using namespace std;
 using namespace parthenon;
 
-/**
- * Initialization of the strong cylindrical explosion of Komissarov 1999 section 7.3
- * 
- * Note the problem setup assumes gamma=4/3
- * 
- * Originally run on 2D Cartesian domain -6.0, 6.0 with a 200x200 grid, to tlim=4.0
- */
-TaskStatus InitializeExplosion(MeshBlockData<Real> *rc, ParameterInput *pin)
+TaskStatus InitializeNoh(MeshBlockData<Real> *rc, ParameterInput *pin)
 {
+    FLAG("Initializing 1D (Noh) Shock test");
     auto pmb = rc->GetBlockPointer();
-
     GridScalar rho = rc->Get("prims.rho").data;
     GridScalar u = rc->Get("prims.u").data;
     GridVector uvec = rc->Get("prims.uvec").data;
-    GridVector B_P = rc->Get("prims.B").data;
+    GridScalar ktot = rc->Get("prims.Ktot").data;
+    GridScalar kel_constant = rc->Get("prims.Kel_Constant").data;
+
+    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
+    const Real game = pmb->packages.Get("Electrons")->Param<Real>("gamma_e");
+    const Real fel0 = pmb->packages.Get("Electrons")->Param<Real>("fel_0");
+    const Real fel_constant = pmb->packages.Get("Electrons")->Param<Real>("fel_constant");
+    
+    const Real mach = pin->GetOrAddReal("noh", "mach", 49);
+    const Real rhoL = pin->GetOrAddReal("noh", "rhoL", 1.0);
+    const Real rhoR = pin->GetOrAddReal("noh", "rhoR", 1.0);
+    const Real PL = pin->GetOrAddReal("noh", "PL", 0.1);
+    const Real PR = pin->GetOrAddReal("noh", "PR", 0.1);
+    bool set_tlim = pin->GetOrAddBoolean("noh", "set_tlim", false);
 
     const auto& G = pmb->coords;
 
-    Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
+    IndexDomain domain = IndexDomain::entire;
+    IndexRange ib = pmb->cellbounds.GetBoundsI(domain);
+    IndexRange jb = pmb->cellbounds.GetBoundsJ(domain);
+    IndexRange kb = pmb->cellbounds.GetBoundsK(domain);
 
-    // TODO take these at runtime
-    Real u_out = 3.e-5 / (gam-1);
-    Real rho_out = 1.e-4;
+    const Real x1min = pin->GetReal("parthenon/mesh", "x1min");
+    const Real x1max = pin->GetReal("parthenon/mesh", "x1max");
+    const Real center = (x1min + x1max) / 2.;
 
-    Real u_in = 1.0 / (gam-1);
-    Real rho_in = 1.e-2;
+    Real cs2 = (gam * (gam - 1) * PL) / rhoL;
+    Real v1 = mach * sqrt(cs2);
 
-    // One buffer zone of linear decline, r_in -> r_out
-    // Exponential decline inside here i.e. linear in logspace
-    GReal r_in = 0.8;
-    GReal r_out = 1.0;
-    // Circle center
-    GReal xoff = 0.0;
-    GReal yoff = 0.0;
+    if (set_tlim)
+    {
+        pin->SetReal("parthenon/time", "tlim", 0.6*(x1max - x1min)/v1);
+    }
 
-    IndexRange ib = pmb->cellbounds.GetBoundsI(IndexDomain::entire);
-    IndexRange jb = pmb->cellbounds.GetBoundsJ(IndexDomain::entire);
-    IndexRange kb = pmb->cellbounds.GetBoundsK(IndexDomain::entire);
-    pmb->par_for("explosion_init", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+    double gamma = 1. / sqrt(1. - v1 * v1); // Since we are in flat space
+
+
+    pmb->par_for("noh_init", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_3D {
             Real X[GR_DIM];
             G.coord_embed(k, j, i, Loci::center, X);
-            GReal rx = X[1] - xoff;
-            GReal ry = X[2] - yoff;
-            Real r = sqrt(rx*rx + ry*ry);
 
-            if (r < r_in) {
-                rho(k, j, i) = rho_in;
-                u(k, j, i) = u_in;
-            } else if (r >= r_in && r <= r_out) {
-                Real ramp = (r_out - r) / (r_out - r_in);
-
-                // rho(k, j, i) = rho_out + ramp * (rho_in - rho_out);
-                // u(k, j, i) = u_in + ramp * (u_in - u_out);
-
-                Real lrho_out = log(rho_out);
-                Real lrho_in = log(rho_in);
-                Real lu_out = log(u_out);
-                Real lu_in = log(u_in);
-                rho(k, j, i) = exp(lrho_out + ramp * (lrho_in - lrho_out));
-                u(k, j, i) = exp(lu_out + ramp * (lu_in - lu_out));
-            } else {
-                rho(k, j, i) = rho_out;
-                u(k, j, i) = u_out;
-            }
+            const bool lhs = X[1] < center;
+            rho(k, j, i) = (lhs) ? rhoL : rhoR;
+            u(k, j, i) = ((lhs) ? PL : PR)/(gam - 1.);
+            uvec(0, k, j, i) = ((lhs) ? v1 : -v1) * gamma;
+            uvec(1, k, j, i) = 0.0;
+            uvec(2, k, j, i) = 0.0;
         }
     );
 
+    FLAG("Initialized 1D (Noh) Shock test");
     return TaskStatus::complete;
 }

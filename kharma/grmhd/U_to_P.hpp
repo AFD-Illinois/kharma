@@ -35,7 +35,7 @@
 
 #include "decs.hpp"
 
-#include "utils.hpp"
+#include "kharma_utils.hpp"
 
 // These could/should be runtime & const rather than macros
 #define ERRTOL 1.e-8

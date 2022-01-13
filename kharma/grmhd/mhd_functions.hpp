@@ -37,7 +37,7 @@
 
 #include "gr_coordinates.hpp"
 #include "types.hpp"
-#include "utils.hpp"
+#include "kharma_utils.hpp"
 
 /**
  * Device-side MHD functions

@@ -19,7 +19,7 @@ using namespace parthenon;
  * 
  * Stolen directly from iharm2d_v3
  */
-void InitializeOrszagTang(MeshBlockData<Real> *rc, ParameterInput *pin)
+TaskStatus InitializeOrszagTang(MeshBlockData<Real> *rc, ParameterInput *pin)
 {
     FLAG("Initializing Orszag-Tang problem");
     auto pmb = rc->GetBlockPointer();
@@ -61,4 +61,6 @@ void InitializeOrszagTang(MeshBlockData<Real> *rc, ParameterInput *pin)
             VLOOP B_P(v, k, j, i) *= tscale;
         }
     );
+
+    return TaskStatus::complete;
 }

@@ -45,9 +45,6 @@ using namespace parthenon;
 #define ME (9.1093826e-28  ) // Electron mass
 #define MP (1.67262171e-24 ) // Proton mass
 
-// Do I really want to reintroduce this?
-#define SMALL 1.e-20
-
 namespace Electrons
 {
 

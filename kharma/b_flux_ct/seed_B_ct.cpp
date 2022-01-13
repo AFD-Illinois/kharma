@@ -78,6 +78,8 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
         b_field_flag = BSeedType::steep;
     } else if (b_field_type == "gaussian") {
         b_field_flag = BSeedType::gaussian;
+    } else if (b_field_type == "bz_monopole") {
+        b_field_flag = BSeedType::bz_monopole;
     } else {
         throw std::invalid_argument("Magnetic field seed type not supported: " + b_field_type);
     }
@@ -87,18 +89,20 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
     switch (b_field_flag)
     {
     case BSeedType::constant:
+        b10 = pin->GetOrAddReal("b_field", "b10", 0.);
         b20 = pin->GetOrAddReal("b_field", "b20", 0.);
         b30 = pin->GetOrAddReal("b_field", "b30", 0.);
+        break;
     case BSeedType::monopole:
         b10 = pin->GetReal("b_field", "b10");
-        break;
-    case BSeedType::sane:
         break;
     case BSeedType::ryan:
     case BSeedType::r3s3:
     case BSeedType::steep:
     case BSeedType::gaussian:
         rin = pin->GetReal("torus", "rin");
+        break;
+    default:
         break;
     }
 
@@ -134,7 +138,7 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
     pmb->par_for("B_field_A", js+1, je, is+1, ie,
         KOKKOS_LAMBDA_2D {
             GReal Xembed[GR_DIM];
-            G.coord_embed(0, j, i, Loci::center, Xembed);
+            G.coord_embed(0, j, i, Loci::corner, Xembed);
             GReal r = Xembed[1], th = Xembed[2];
 
             // Find rho (later u?) at corners by averaging from adjacent centers
@@ -146,6 +150,10 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
             {
             case BSeedType::sane:
                 q = rho_av - min_rho_q;
+                break;
+            case BSeedType::bz_monopole:
+                // used in testing to exactly agree with harmpi
+                q = 1. - cos(th);
                 break;
             case BSeedType::ryan:
                 // BR's smoothed poloidal in-torus, EHT standard MAD
@@ -172,7 +180,8 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
                 }
                 break;
             default:
-                q = 0;
+                // This shouldn't be reached. Squawk here?
+                break;
             }
 
             A(j, i) = max(q, 0.);
@@ -183,6 +192,7 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
     pmb->par_for("B_field_B", ks, ke, js, je-1, is, ie-1,
         KOKKOS_LAMBDA_3D {
             // Take a flux-ct step from the corner potentials
+            // TODO should this average A*gdet rather than A?
             B_P(0, k, j, i) = -(A(j, i) - A(j + 1, i) + A(j, i + 1) - A(j + 1, i + 1)) /
                                 (2. * G.dx2v(j) * G.gdet(Loci::center, j, i));
             B_P(1, k, j, i) =  (A(j, i) + A(j + 1, i) - A(j, i + 1) - A(j + 1, i + 1)) /

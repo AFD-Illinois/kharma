@@ -1,7 +1,4 @@
-# Build directory
-build/
-
-# Program and debug output
+# Various script results/logs
 out-*.txt
 *.json
 convergence.txt
@@ -9,10 +6,14 @@ convergence.txt
 *.png
 core.*
 frames_*/
+
+# KHARMA/Parthenon outputs
 *.phdf
 *.rhdf
 *.xdmf
 *.hst
+# Archival parsed parameters file
+kharma_parsed_*.par
 
 # Editor documents
 .project
@@ -20,8 +21,12 @@ frames_*/
 .ptp-sync
 .vscode/
 
+# C++ excludes
+# Build directory
+build/
 # Prerequisites
 *.d
+make_args
 
 # Compiled Object files
 *.slo
