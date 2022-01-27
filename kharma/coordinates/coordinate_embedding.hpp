@@ -130,7 +130,7 @@ class CoordinateEmbedding {
             return *this;
         }
 
-        // Spell out the interface we take from BaseCoords
+        // Convenience functions to get common things
         // TODO add a gcon_embed, gdet_embed
         KOKKOS_INLINE_FUNCTION bool spherical() const
         {
@@ -144,6 +144,27 @@ class CoordinateEmbedding {
         //         self.rhor();
         //     }, base);
         // }
+        KOKKOS_INLINE_FUNCTION GReal get_a() const
+        {
+            if (mpark::holds_alternative<SphKSCoords>(base)) {
+                return mpark::get<SphKSCoords>(base).a;
+            } else if (mpark::holds_alternative<SphBLCoords>(base)) {
+                return mpark::get<SphBLCoords>(base).a;
+            } else {
+                return 0.0; //throw std::invalid_argument("BH Spin is not defined for selected coordinate system!");
+            }
+        }
+        KOKKOS_INLINE_FUNCTION bool is_ks() const
+        {
+            if (mpark::holds_alternative<SphKSCoords>(base)) {
+                return true;
+            } else {
+                return false;
+            }
+        }
+
+        // Spell out the interface we take from BaseCoords
+        // TODO add a gcon_embed, gdet_embed
         KOKKOS_INLINE_FUNCTION void gcov_embed(const GReal Xembed[GR_DIM], Real gcov[GR_DIM][GR_DIM]) const
         {
             mpark::visit( [&Xembed, &gcov](const auto& self) {

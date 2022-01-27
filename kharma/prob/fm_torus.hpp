@@ -92,3 +92,31 @@ KOKKOS_INLINE_FUNCTION Real lfish_calc(const GReal a, const GReal r)
             (pow(r, 3) * sqrt(2. * a * sqrt(r) + (-3. + r) * r) *
              (pow(a, 2) + (-2. + r) * r)));
 }
+
+/**
+ * Torus solution for density at a given location.
+ * 
+ * This function is *not* used for the actual initialization (where rho is calculated
+ * alongside the other primitive variables).  Rather, it is for:
+ * 1. Normalization, in which the max of this function over the domain is calculated.
+ * 2. B field initialization, which requires density the untilted disk for simplicity
+ */
+KOKKOS_INLINE_FUNCTION Real fm_torus_rho(const GReal a, const GReal rin, const GReal rmax, const Real gam,
+                                         const Real kappa, const GReal r, const GReal th)
+{
+    Real l = lfish_calc(a, rmax);
+    // Abbreviated version of the full primitives calculation
+    //printf("lnh calc with %g %g %g %g %g\n", a, l, rin, r, th);
+    Real lnh = lnh_calc(a, l, rin, r, th);
+    // if (lnh >= 0. || r >= rin) {
+    //     printf("a: %g l: %g lnh: %g r: %g th: %g\n", a, l, lnh, r, th);
+    // }
+    if (lnh >= 0. && r >= rin) {
+        // Calculate rho
+        Real hm1 = exp(lnh) - 1.;
+        return pow(hm1 * (gam - 1.) / (kappa * gam),
+                            1. / (gam - 1.));
+    } else {
+        return 0;
+    }
+}

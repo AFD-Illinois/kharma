@@ -68,16 +68,8 @@ TaskStatus InitializeFMTorus(MeshBlockData<Real> *rc, ParameterInput *pin)
     // Since we can't create a system and assign later, we just
     // rebuild copies of both based on the BH spin "a"
     const auto& G = pmb->coords;
-    bool use_ks; GReal a;
-    if (mpark::holds_alternative<SphKSCoords>(G.coords.base)) {
-        a = mpark::get<SphKSCoords>(G.coords.base).a;
-        use_ks = true;
-    } else if (mpark::holds_alternative<SphBLCoords>(G.coords.base)) {
-        a = mpark::get<SphBLCoords>(G.coords.base).a;
-        use_ks = false;
-    } else {
-        throw std::invalid_argument("Torus problem defined only for KS and BL coordinates!");
-    }
+    const bool use_ks = G.coords.is_ks();
+    const GReal a = G.coords.get_a();
     const SphBLCoords blcoords = SphBLCoords(a);
     const SphKSCoords kscoords = SphKSCoords(a);
 
@@ -160,10 +152,11 @@ TaskStatus InitializeFMTorus(MeshBlockData<Real> *rc, ParameterInput *pin)
 
     // Find rho_max "analytically" by looking over the whole mesh domain for the maximum in the midplane
     // Done device-side for speed (for large 2D meshes this may get bad) but may work fine in HostSpace
-    // Note this covers the full domain from each rank: it doesn't need a grid so it's not a memory problem,
+    // Note this covers the full domain on each rank: it doesn't need a grid so it's not a memory problem,
     // and an MPI synch as is done for beta_min would be a headache
     GReal x1min = pmb->pmy_mesh->mesh_size.x1min;
     GReal x1max = pmb->pmy_mesh->mesh_size.x1max;
+    // Add back 2D if torus solution may not be largest in midplane (before tilt ofc)
     //GReal x2min = pmb->pmy_mesh->mesh_size.x2min;
     //GReal x2max = pmb->pmy_mesh->mesh_size.x2max;
     GReal dx = 0.001;
@@ -186,36 +179,26 @@ TaskStatus InitializeFMTorus(MeshBlockData<Real> *rc, ParameterInput *pin)
     Kokkos::Max<Real> max_reducer(rho_max);
     pmb->par_reduce("fm_torus_maxrho", 0, nx1,
         KOKKOS_LAMBDA_1D_REDUCE {
-            //GReal x2 = x2min + j*dx;
             GReal x1 = x1min + i*dx;
-            GReal x2 = 0.5;
-
-            GReal Xnative[GR_DIM] = {0,x1,x2,0};
+            //GReal x2 = x2min + j*dx;
+            GReal Xnative[GR_DIM] = {0,x1,0,0};
             GReal Xembed[GR_DIM];
             G.coords.coord_to_embed(Xnative, Xembed);
-            GReal r = Xembed[1], th = Xembed[2];
+            const GReal r = Xembed[1];
+            // Regardless of native coordinate shenanigans,
+            // set th=pi/2 since the midplane is densest in the solution
+            const GReal rho = fm_torus_rho(a, rin, rmax, gam, kappa, r, M_PI/2.);
+            // TODO umax for printing/recording?
 
-            // Abbreviated version of the full primitives calculation
-            //printf("lnh calc with %g %g %g %g %g\n", a, l, rin, r, th);
-            Real lnh = lnh_calc(a, l, rin, r, th);
-            // if (lnh >= 0. || r >= rin) {
-            //     printf("a: %g l: %g lnh: %g r: %g th: %g\n", a, l, lnh, r, th);
-            // }
-            if (lnh >= 0. && r >= rin) {
-                // Calculate rho
-                Real hm1 = exp(lnh) - 1.;
-                Real rho = pow(hm1 * (gam - 1.) / (kappa * gam),
-                                    1. / (gam - 1.));
-                //Real u = kappa * pow(rho, gam) / (gam - 1.);
-
-                // Record max.  Maybe more efficient to bail earlier?  Meh.
-                //printf("lnh: %g rho: %g\n", lnh, rho);
-                if (rho > local_result) local_result = rho;
-                //if (u > u_max) u_max = u;
-            }
+            // Record max
+            //printf("lnh: %g rho: %g\n", lnh, rho);
+            if (rho > local_result) local_result = rho;
         }
     , max_reducer);
 
+    // Record and print normalization factor
+    if(! (pmb->packages.Get("GRMHD")->AllParams().hasKey("rho_norm")))
+        pmb->packages.Get("GRMHD")->AllParams().Add("rho_norm", rho_max);
     if (pmb->gid == 0 && pmb->packages.Get("GRMHD")->Param<int>("verbose") > 0) {
         cout << "Initial maximum density is " << rho_max << endl;
     }

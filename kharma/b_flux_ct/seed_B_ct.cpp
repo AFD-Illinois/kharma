@@ -38,8 +38,9 @@
 
 #include "b_field_tools.hpp"
 #include "b_flux_ct.hpp"
-
+#include "fm_torus.hpp"
 #include "mhd_functions.hpp"
+#include "prob_common.hpp"
 
 TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
 {
@@ -50,6 +51,8 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
     int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
     int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
+    int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
+    int ndim = pmb->pmy_mesh->ndim;
 
     const auto& G = pmb->coords;
     GridScalar rho = rc->Get("prims.rho").data;
@@ -61,6 +64,7 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
 
     // Translate to an enum so we can avoid string comp inside,
     // as well as for good errors, many->one maps, etc.
+    // TODO indicate ryan/mad, r3s3, steep, gaussian *only* support torus problems
     BSeedType b_field_flag = BSeedType::sane;
     if (b_field_type == "none") {
         return TaskStatus::complete;
@@ -85,7 +89,11 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
     }
 
     // Require and load what we need if necessary
-    Real rin, b10, b20, b30;
+    Real a, rin, rmax, gam, kappa, rho_norm;
+    Real tilt = 0; // Initialized
+    Real b10 = 0, b20 = 0, b30 = 0;
+    auto prob = pin->GetString("parthenon/job", "problem_id");
+    bool is_torus = (prob == "torus");
     switch (b_field_flag)
     {
     case BSeedType::constant:
@@ -96,13 +104,24 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
     case BSeedType::monopole:
         b10 = pin->GetReal("b_field", "b10");
         break;
+    case BSeedType::sane:
     case BSeedType::ryan:
     case BSeedType::r3s3:
     case BSeedType::steep:
     case BSeedType::gaussian:
+        if (!is_torus)
+            throw std::invalid_argument("Magnetic field seed "+b_field_type+" supports only torus problems!");
+        // Torus parameters
         rin = pin->GetReal("torus", "rin");
+        rmax = pin->GetReal("torus", "rmax");
+        kappa = pin->GetReal("torus", "kappa");
+        tilt = pin->GetReal("torus", "tilt") / 180. * M_PI;
+        // Other things we need only for torus evaluation
+        gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
+        rho_norm = pmb->packages.Get("GRMHD")->Param<Real>("rho_norm");
+        a = G.coords.get_a();
         break;
-    default:
+    case BSeedType::bz_monopole:
         break;
     }
 
@@ -132,18 +151,41 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
         return TaskStatus::complete;
     }
 
-    // Find the magnetic vector potential.  In X3 symmetry only A_phi is non-zero, so we keep track of that.
-    ParArrayND<Real> A("A", n2, n1);
+    // Find the magnetic vector potential.  In X3 symmetry only A_phi is non-zero,
+    // But for tilted conditions we *must* keep track of all components
+    ParArrayND<double> A("A", NVEC, n3, n2, n1);
     // TODO figure out double vs Real here
-    pmb->par_for("B_field_A", js+1, je, is+1, ie,
-        KOKKOS_LAMBDA_2D {
-            GReal Xembed[GR_DIM];
-            G.coord_embed(0, j, i, Loci::corner, Xembed);
-            GReal r = Xembed[1], th = Xembed[2];
+    pmb->par_for("B_field_A", ks, ke, js, je, is, ie,
+        KOKKOS_LAMBDA_3D {
+            GReal Xembed[GR_DIM], Xmidplane[GR_DIM];
+            G.coord_embed(k, j, i, Loci::corner, Xembed);
+            // What are our corresponding "midplane" values for evaluating the function?
+            rotate_polar(Xembed, tilt, Xmidplane);
+            GReal r = Xmidplane[1], th = Xmidplane[2];
 
-            // Find rho (later u?) at corners by averaging from adjacent centers
-            Real rho_av = 0.25 * (rho(ks, j, i)     + rho(ks, j, i - 1) +
-                                  rho(ks, j - 1, i) + rho(ks, j - 1, i - 1));
+            // Find rho (later u?) at corners
+            Real rho_av;
+            if (is_torus) {
+                // Directly (untilted!)
+                // Re-evaluate what the FM torus density *should* be,
+                // to avoid dealing with the already-tilted form of
+                // what it *is now*
+                // printf("a: %.2g rin: %.2g rmax: %.2g gam: %.2g kappa: %.2g r: %.2g th: %.2g\n",
+                //         a, rin, rmax, gam, kappa, r, th);
+                rho_av = fm_torus_rho(a, rin, rmax, gam, kappa, r, th) / rho_norm;
+            } else {
+                // Or average from zone centers
+                // Note this is done assuming axisymmetry!
+                if (i < 1 || j < 1) {
+                    rho_av = 0;
+                } else {
+                    rho_av = (rho(ks, j, i)     + rho(ks, j, i - 1) +
+                              rho(ks, j - 1, i) + rho(ks, j - 1, i - 1)) / 4;
+                }
+            }
+            // printf("rho_av computed: %.2g actual: %.2g\n", rho_av,
+            //         (rho(ks, j, i)     + rho(ks, j, i - 1) +
+            //          rho(ks, j - 1, i) + rho(ks, j - 1, i - 1)) / 4);
 
             Real q;
             switch (b_field_flag)
@@ -184,23 +226,78 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
                 break;
             }
 
-            A(j, i) = max(q, 0.);
+            double A_tilt[GR_DIM] = {0., 0., 0., max(q, 0.)}, Atmp[GR_DIM] = {0};
+            rotate_polar_vec(Xmidplane, A_tilt, -tilt, Xembed, Atmp);
+            VLOOP A(v, k, j, i) = Atmp[1+v];
         }
     );
 
     // Calculate B-field
-    pmb->par_for("B_field_B", ks, ke, js, je-1, is, ie-1,
-        KOKKOS_LAMBDA_3D {
-            // Take a flux-ct step from the corner potentials
-            // TODO should this average A*gdet rather than A?
-            B_P(0, k, j, i) = -(A(j, i) - A(j + 1, i) + A(j, i + 1) - A(j + 1, i + 1)) /
-                                (2. * G.dx2v(j) * G.gdet(Loci::center, j, i));
-            B_P(1, k, j, i) =  (A(j, i) + A(j + 1, i) - A(j, i + 1) - A(j + 1, i + 1)) /
-                                (2. * G.dx1v(i) * G.gdet(Loci::center, j, i));
-            B_P(2, k, j, i) = 0.;
-            B_FluxCT::p_to_u(G, B_P, k, j, i, B_U);
-        }
-    );
+    if (ndim > 2) {
+        pmb->par_for("B_field_B_3D", ks, ke-1, js, je-1, is, ie-1,
+            KOKKOS_LAMBDA_3D {
+                // Take a flux-ct step from the corner potentials.
+                // This needs to be 3D because post-tilt A may not point in the phi direction only
+
+                // A3,2 derivative
+                const Real A3c2f = (A(2, k, j + 1, i)     + A(2, k, j + 1, i + 1) + 
+                                    A(2, k + 1, j + 1, i) + A(2, k + 1, j + 1, i + 1)) / 4;
+                const Real A3c2b = (A(2, k, j, i)     + A(2, k, j, i + 1) +
+                                    A(2, k + 1, j, i) + A(2, k + 1, j, i + 1)) / 4;
+                // A2,3 derivative
+                const Real A2c3f = (A(1, k + 1, j, i)     + A(1, k + 1, j, i + 1) +
+                                    A(1, k + 1, j + 1, i) + A(1, k + 1, j + 1, i + 1)) / 4;
+                const Real A2c3b = (A(1, k, j, i)     + A(1, k, j, i + 1) +
+                                    A(1, k, j + 1, i) + A(1, k, j + 1, i + 1)) / 4;
+                B_P(0, k, j, i) = ((A3c2f - A3c2b) / G.dx2v(j) - (A2c3f - A2c3b) / G.dx3v(j))
+                                / G.gdet(Loci::center, j, i);
+
+                // A1,3 derivative
+                const Real A1c3f = (A(0, k + 1, j, i)     + A(0, k + 1, j, i + 1) + 
+                                    A(0, k + 1, j + 1, i) + A(0, k + 1, j + 1, i + 1)) / 4;
+                const Real A1c3b = (A(0, k, j, i)     + A(0, k, j, i + 1) +
+                                    A(0, k, j + 1, i) + A(0, k, j + 1, i + 1)) / 4;
+                // A3,1 derivative
+                const Real A3c1f = (A(2, k, j, i + 1)     + A(2, k + 1, j, i + 1) +
+                                    A(2, k, j + 1, i + 1) + A(2, k + 1, j + 1, i + 1)) / 4;
+                const Real A3c1b = (A(2, k, j, i)     + A(2, k + 1, j, i) +
+                                    A(2, k, j + 1, i) + A(2, k + 1, j + 1, i)) / 4;
+                B_P(1, k, j, i) = ((A1c3f - A1c3b) / G.dx3v(i) - (A3c1f - A3c1b) / G.dx1v(i))
+                                / G.gdet(Loci::center, j, i);
+
+                // A2,1 derivative
+                const Real A2c1f = (A(1, k, j, i + 1)     + A(1, k, j + 1, i + 1) + 
+                                    A(1, k + 1, j, i + 1) + A(1, k + 1, j + 1, i + 1)) / 4;
+                const Real A2c1b = (A(1, k, j, i)     + A(1, k, j + 1, i) +
+                                    A(1, k + 1, j, i) + A(1, k + 1, j + 1, i)) / 4;
+                // A1,2 derivative
+                const Real A1c2f = (A(0, k, j + 1, i)     + A(0, k, j + 1, i + 1) +
+                                    A(0, k + 1, j + 1, i) + A(0, k + 1, j + 1, i + 1)) / 4;
+                const Real A1c2b = (A(0, k, j, i)     + A(0, k, j, i + 1) +
+                                    A(0, k + 1, j, i) + A(0, k + 1, j, i + 1)) / 4;
+                B_P(2, k, j, i) = ((A2c1f - A2c1b) / G.dx1v(i) - (A1c2f - A1c2b) / G.dx2v(i))
+                                / G.gdet(Loci::center, j, i);
+
+                // Finally, set conserved version
+                // TODO could just set B_U above
+                B_FluxCT::p_to_u(G, B_P, k, j, i, B_U);
+            }
+        );
+    } else {
+        pmb->par_for("B_field_B_2D", ks, ke, js, je-1, is, ie-1,
+            KOKKOS_LAMBDA_3D {
+                // Take a flux-ct step from the corner potentials
+                B_P(0, k, j, i) = -(A(2, k, j, i) - A(2, k, j + 1, i)
+                                    + A(2, k, j, i + 1) - A(2, k, j + 1, i + 1)) /
+                                    (2. * G.dx2v(j) * G.gdet(Loci::center, j, i));
+                B_P(1, k, j, i) =  (A(2, k, j, i) + A(2, k, j + 1, i)
+                                    - A(2, k, j, i + 1) - A(2, k, j + 1, i + 1)) /
+                                    (2. * G.dx1v(i) * G.gdet(Loci::center, j, i));
+                B_P(2, k, j, i) = 0.;
+                B_FluxCT::p_to_u(G, B_P, k, j, i, B_U);
+            }
+        );
+    }
 
     return TaskStatus::complete;
 }
