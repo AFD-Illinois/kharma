@@ -1,5 +1,5 @@
 /* 
- *  File: seed_B.cpp
+ *  File: seed_B_ct.cpp
  *  
  *  BSD 3-Clause License
  *  
@@ -45,14 +45,6 @@
 TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
 {
     auto pmb = rc->GetBlockPointer();
-    IndexDomain domain = IndexDomain::entire;
-    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
-    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
-    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
-    int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
-    int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
-    int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
-    int ndim = pmb->pmy_mesh->ndim;
 
     const auto& G = pmb->coords;
     GridScalar rho = rc->Get("prims.rho").data;
@@ -64,29 +56,7 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
 
     // Translate to an enum so we can avoid string comp inside,
     // as well as for good errors, many->one maps, etc.
-    // TODO indicate ryan/mad, r3s3, steep, gaussian *only* support torus problems
-    BSeedType b_field_flag = BSeedType::sane;
-    if (b_field_type == "none") {
-        return TaskStatus::complete;
-    } else if (b_field_type == "constant") {
-        b_field_flag = BSeedType::constant;
-    } else if (b_field_type == "monopole") {
-        b_field_flag = BSeedType::monopole;
-    } else if (b_field_type == "sane") {
-        b_field_flag = BSeedType::sane;
-    } else if (b_field_type == "mad" || b_field_type == "ryan") {
-        b_field_flag = BSeedType::ryan;
-    } else if (b_field_type == "r3s3") {
-        b_field_flag = BSeedType::r3s3;
-    } else if (b_field_type == "mad_steep" || b_field_type == "steep") {
-        b_field_flag = BSeedType::steep;
-    } else if (b_field_type == "gaussian") {
-        b_field_flag = BSeedType::gaussian;
-    } else if (b_field_type == "bz_monopole") {
-        b_field_flag = BSeedType::bz_monopole;
-    } else {
-        throw std::invalid_argument("Magnetic field seed type not supported: " + b_field_type);
-    }
+    BSeedType b_field_flag = ParseBSeedType(b_field_type);
 
     // Require and load what we need if necessary
     Real a, rin, rmax, gam, kappa, rho_norm;
@@ -125,6 +95,15 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
         break;
     }
 
+    IndexDomain domain = IndexDomain::entire;
+    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
+    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
+    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
+    int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
+    int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
+    int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
+    int ndim = pmb->pmy_mesh->ndim;
+
     // Shortcut to field values for easy fields
     if (b_field_flag == BSeedType::constant) {
         pmb->par_for("B_field_B", ks, ke, js, je, is, ie,
@@ -152,10 +131,10 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
     }
 
     // Find the magnetic vector potential.  In X3 symmetry only A_phi is non-zero,
-    // But for tilted conditions we *must* keep track of all components
-    ParArrayND<double> A("A", NVEC, n3, n2, n1);
-    // TODO figure out double vs Real here
-    pmb->par_for("B_field_A", ks, ke, js, je, is, ie,
+    // But for tilted conditions we must keep track of all components
+    // TODO there's probably an ncorners
+    ParArrayND<double> A("A", NVEC, n3+1, n2+1, n1+1);
+    pmb->par_for("B_field_A", ks, ke+1, js, je+1, is, ie+1,
         KOKKOS_LAMBDA_3D {
             GReal Xembed[GR_DIM], Xmidplane[GR_DIM];
             G.coord_embed(k, j, i, Loci::corner, Xembed);
@@ -166,22 +145,15 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
             // Find rho (later u?) at corners
             Real rho_av;
             if (is_torus) {
-                // Directly (untilted!)
-                // Re-evaluate what the FM torus density *should* be,
-                // to avoid dealing with the already-tilted form of
-                // what it *is now*
-                // printf("a: %.2g rin: %.2g rmax: %.2g gam: %.2g kappa: %.2g r: %.2g th: %.2g\n",
-                //         a, rin, rmax, gam, kappa, r, th);
+                // Re-calculate what the torus would be before tilting,
+                // since only the untilted A is X3-only
                 rho_av = fm_torus_rho(a, rin, rmax, gam, kappa, r, th) / rho_norm;
             } else {
-                // Or average from zone centers
-                // Note this is done assuming axisymmetry!
-                if (i < 1 || j < 1) {
-                    rho_av = 0;
-                } else {
-                    rho_av = (rho(ks, j, i)     + rho(ks, j, i - 1) +
-                              rho(ks, j - 1, i) + rho(ks, j - 1, i - 1)) / 4;
-                }
+                // Just take values from the last physical zone beyond it
+                const int ii = clip(i, is+1, ie);
+                const int jj = clip(j, js+1, je);
+                rho_av = (rho(ks, jj, ii)     + rho(ks, jj, ii - 1) +
+                          rho(ks, jj - 1, ii) + rho(ks, jj - 1, ii - 1)) / 4;
             }
             // printf("rho_av computed: %.2g actual: %.2g\n", rho_av,
             //         (rho(ks, j, i)     + rho(ks, j, i - 1) +
@@ -202,8 +174,7 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
                 q = pow(r / rin, 3) * pow(sin(th), 3) * exp(-r / 400) * rho_av - min_rho_q;
                 break;
             case BSeedType::r3s3:
-                // Just the r^3 sin^3 th term, former proposed EHT standard MAD
-                // TODO split r3 here and r3s3
+                // Just the r^3 sin^3 th term
                 q = pow(r / rin, 3) * pow(sin(th), 3) * rho_av - min_rho_q;
                 break;
             case BSeedType::steep:
@@ -234,7 +205,7 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
 
     // Calculate B-field
     if (ndim > 2) {
-        pmb->par_for("B_field_B_3D", ks, ke-1, js, je-1, is, ie-1,
+        pmb->par_for("B_field_B_3D", ks, ke, js, je, is, ie,
             KOKKOS_LAMBDA_3D {
                 // Take a flux-ct step from the corner potentials.
                 // This needs to be 3D because post-tilt A may not point in the phi direction only
@@ -284,7 +255,7 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
             }
         );
     } else {
-        pmb->par_for("B_field_B_2D", ks, ke, js, je-1, is, ie-1,
+        pmb->par_for("B_field_B_2D", ks, ke, js, je, is, ie,
             KOKKOS_LAMBDA_3D {
                 // Take a flux-ct step from the corner potentials
                 B_P(0, k, j, i) = -(A(2, k, j, i) - A(2, k, j + 1, i)

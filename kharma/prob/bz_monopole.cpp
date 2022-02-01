@@ -61,9 +61,8 @@ TaskStatus InitializeBZMonopole(MeshBlockData<Real> *rc, ParameterInput *pin)
 
     const auto& G = pmb->coords;
     SphKSCoords ksc = mpark::get<SphKSCoords>(G.coords.base);
-    SphBLCoords bl = SphBLCoords(ksc.a);
 
-    if (pmb->packages.Get("GRMHD")->Param<int>("verbose") > 0) {
+    if (pmb->gid == 0 && pmb->packages.Get("GRMHD")->Param<int>("verbose") > 0) {
         cout << "Initializing BZ monopole." << endl;
     }
 

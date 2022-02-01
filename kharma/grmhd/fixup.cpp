@@ -67,6 +67,10 @@ TaskStatus GRMHD::FixUtoP(MeshBlockData<Real> *rc)
     const IndexRange jb = rc->GetBoundsJ(IndexDomain::entire);
     const IndexRange kb = rc->GetBoundsK(IndexDomain::entire);
 
+    const IndexRange ib_b = rc->GetBoundsI(IndexDomain::interior);
+    const IndexRange jb_b = rc->GetBoundsJ(IndexDomain::interior);
+    const IndexRange kb_b = rc->GetBoundsK(IndexDomain::interior);
+
     // TODO attempt to recover from entropy here if it's present
 
     pmb->par_for("fix_U_to_P", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
@@ -103,7 +107,10 @@ TaskStatus GRMHD::FixUtoP(MeshBlockData<Real> *rc)
                 if(wsum < 1.e-10) {
                     // TODO probably should crash here.
 #ifndef KOKKOS_ENABLE_SYCL
-                    if (verbose >= 1) printf("No neighbors were available at %d %d %d!\n", i, j, k);
+                    if (verbose >= 1 && i >= ib_b.s && i <= ib_b.e &&
+                                        j >= jb_b.s && j <= jb_b.e &&
+                                        k >= kb_b.s && k <= kb_b.e)
+                        printf("No neighbors were available at %d %d %d!\n", i, j, k);
 #endif
                     PLOOP P(p, k, j, i) = sum_x[p]/wsum_x;
                 } else {

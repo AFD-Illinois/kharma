@@ -52,9 +52,6 @@ using namespace parthenon;
 
 namespace B_FluxCT
 {
-// Local separate flux-CT calculation for 2D problems
-// Called automatically from FluxCT
-TaskStatus FluxCT2D(MeshBlockData<Real> *rc);
 
 std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t packages)
 {
@@ -171,9 +168,9 @@ TaskStatus FluxCT(MeshData<Real> *md)
     const IndexRange kb = md->GetBoundsK(IndexDomain::interior);
     const IndexRange block = IndexRange{0, B_F.GetDim(5)-1};
     // One zone halo on the *right only*, except for k in 2D
-    const IndexRange il = IndexRange{ib.s, ib.e + 1};
-    const IndexRange jl = IndexRange{jb.s, jb.e + 1};
-    const IndexRange kl = (ndim > 2) ? IndexRange{kb.s, kb.e + 1} : kb;
+    const IndexRange il = IndexRange{ib.s - 3, ib.e + 3};
+    const IndexRange jl = IndexRange{jb.s - 3, jb.e + 3};
+    const IndexRange kl = (ndim > 2) ? IndexRange{kb.s - 3, kb.e + 3} : kb;
 
     // Declare temporaries
     // TODO make these a true Edge field of B_FluxCT? Could then output, use elsewhere, skip re-declaring
