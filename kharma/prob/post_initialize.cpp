@@ -85,7 +85,7 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, Mesh *pmesh)
 {
     // Add the field for torus problems as a second pass
     // Preserves P==U and ends with all physical zones fully defined
-    if (pin->GetString("b_field", "type") != "none") {
+    if (pin->GetOrAddString("b_field", "type", "none") != "none") {
         // Calculating B has a stencil outside physical zones
         FLAG("Extra boundary sync for B");
         SyncAllBounds(pmesh);
