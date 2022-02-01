@@ -85,6 +85,7 @@ if [[ $HOST == "cinnabar"* ]]; then
     DEVICE_ARCH="KEPLER35"
     MPI_NUM_PROCS=2
     KOKKOS_NUM_DEVICES=2
+    MPI_EXTRA_ARGS="--map-by ppr:1:numa:pe=14"
 
     module load nvhpc
     PREFIX_PATH="$HOME/libs/hdf5-nvhpc"
