@@ -19,8 +19,12 @@ import matplotlib.pyplot as plt
 
 
 USEARRSPACE=True
+GHOSTS = False
 if USEARRSPACE:
-    window = (0, 1, 0, 1)
+    if GHOSTS:
+        window = (-0.1, 1.1, -0.1, 1.1)
+    else:
+        window = (0, 1, 0, 1)
 else:
     SIZE = 40
     window = (-SIZE, SIZE, -SIZE, SIZE)
@@ -32,13 +36,13 @@ dump1file = sys.argv[1]
 dump2file = sys.argv[2]
 imname = sys.argv[3]
 
-dump1 = pyHARM.load_dump(dump1file)
+dump1 = pyHARM.load_dump(dump1file, add_ghosts=GHOSTS)
 #Hopefully this fails for dumps that shouldn't be compared
-dump2 = pyHARM.load_dump(dump2file)
+dump2 = pyHARM.load_dump(dump2file, add_ghosts=GHOSTS)
 
 N1 = dump1['n1']; N2 = dump1['n2']; N3 = dump1['n3']
 
-log_floor = -8
+log_floor = -12
 
 # TODO properly option log, rel, lim
 def plot_diff_xy(ax, var, rel=False, lim=None):
@@ -81,7 +85,7 @@ vars = list(dump2['prim_names']) # Parthenon isn't dealing with KEL
 fig = plt.figure(figsize=(FIGX, FIGY))
 for i,name in enumerate(vars):
   ax = plt.subplot(nyplot, nxplot, i+1)
-  plot_diff_xz(ax, name, rel=True)
+  plot_diff_xz(ax, name, rel=True) #, lim=1)
   ax.set_xlabel('')
   ax.set_ylabel('')
 

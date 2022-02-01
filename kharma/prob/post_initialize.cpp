@@ -91,8 +91,8 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, Mesh *pmesh)
         SyncAllBounds(pmesh);
 
         // "Legacy" is the much more common normalization:
-        // It's the ratio of max values over the domain i.e. max_P / max_PB,
-        // not "beta" per se
+        // It's the ratio of max values over the domain i.e. max(P) / max(P_B),
+        // not necessarily a local min(beta)
         Real beta_calc_legacy = pin->GetOrAddBoolean("b_field", "legacy", true);
 
         // Use the correct seed function based on field constraint solver
@@ -134,12 +134,15 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, Mesh *pmesh)
             }
         }
 
-        // Then, unless we're asked not to, normalize to some standard beta
-        if (pin->GetOrAddBoolean("b_field", "norm", true)) {
-            // Default to iharm3d's field normalization, pg_max/pb_max = 100
-            // This is *not* the same as local beta_min = 100
+        // Then, if we're in a torus problem or explicitly ask for it,
+        // normalize the magnetic field according to the density
+        auto prob = pin->GetString("parthenon/job", "problem_id");
+        if (pin->GetOrAddBoolean("b_field", "norm", (prob == "torus"))) {
+            // Default to the general literature beta_min of 100.
+            // As noted above, by default this uses the definition max(P)/max(P_B)!
             Real desired_beta_min = pin->GetOrAddReal("b_field", "beta_min", 100.);
 
+            // Calculate current beta_min value
             if (beta_calc_legacy) {
                 bsq_max = MPIMax(bsq_max);
                 p_max = MPIMax(p_max);
@@ -165,7 +168,7 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, Mesh *pmesh)
         }
 
         if (pin->GetInteger("debug", "verbose") > 0) {
-            // Do it again to check, and add divB for good measure
+            // Measure again to check, and add divB for good measure
             beta_min = 1e100; p_max = 0.; bsq_max = 0.;
             for (auto &pmb : pmesh->block_list) {
                 auto& rc = pmb->meshblock_data.Get();
