@@ -40,16 +40,18 @@ std::shared_ptr<StateDescriptor> Wind::Initialize(ParameterInput *pin)
     Params &params = pkg->AllParams();
 
     // Wind term in funnel
-    Real wind_n = pin->GetOrAddReal("wind", "ne", 2.e-4);
-    params.Add("wind_n", wind_n);
-    Real wind_Tp = pin->GetOrAddReal("wind", "Tp", 10.0);
-    params.Add("wind_Tp", wind_Tp);
-    int wind_pow = pin->GetOrAddInteger("wind", "pow", 4);
-    params.Add("wind_pow", wind_pow);
-    Real wind_ramp_start = pin->GetOrAddReal("wind", "ramp_start", 0.0);
-    params.Add("wind_ramp_start", wind_ramp_start);
-    Real wind_ramp_end = pin->GetOrAddReal("wind", "ramp_end", 0.0);
-    params.Add("wind_ramp_end", wind_ramp_end);
+    Real n = pin->GetOrAddReal("wind", "ne", 2.e-4);
+    params.Add("ne", n);
+    Real Tp = pin->GetOrAddReal("wind", "Tp", 10.0);
+    params.Add("Tp", Tp);
+    Real u1 = pin->GetOrAddReal("wind", "u1", 0.0);
+    params.Add("u1", u1);
+    int power = pin->GetOrAddInteger("wind", "power", 4);
+    params.Add("power", power);
+    Real ramp_start = pin->GetOrAddReal("wind", "ramp_start", 0.0);
+    params.Add("ramp_start", ramp_start);
+    Real ramp_end = pin->GetOrAddReal("wind", "ramp_end", 0.0);
+    params.Add("ramp_end", ramp_end);
 
     return pkg;
 }
@@ -65,11 +67,12 @@ TaskStatus Wind::AddSource(MeshData<Real> *mdudt)
     const auto& pars = pmb0->packages.Get("Wind")->AllParams();
     const auto& globals = pmb0->packages.Get("Globals")->AllParams();
     const Real gam = gpars.Get<Real>("gamma");
-    const Real wind_n = pars.Get<Real>("wind_n");
-    const Real wind_Tp = pars.Get<Real>("wind_Tp");
-    const int wind_pow = pars.Get<int>("wind_pow");
-    const Real wind_ramp_start = pars.Get<Real>("wind_ramp_start");
-    const Real wind_ramp_end = pars.Get<Real>("wind_ramp_end");
+    const Real n = pars.Get<Real>("ne");
+    const Real Tp = pars.Get<Real>("Tp");
+    const Real u1 = pars.Get<Real>("u1");
+    const int power = pars.Get<int>("power");
+    const Real ramp_start = pars.Get<Real>("ramp_start");
+    const Real ramp_end = pars.Get<Real>("ramp_end");
     const Real time = globals.Get<Real>("time");
 
     // Pack variables
@@ -83,12 +86,36 @@ TaskStatus Wind::AddSource(MeshData<Real> *mdudt)
     const IndexRange block = IndexRange{0, dUdt.GetDim(5) - 1};
 
     // Set the wind via linear ramp-up with time, if enabled
-    const Real current_wind_n = (wind_ramp_end > 0.0) ? min((time - wind_ramp_start) / (wind_ramp_end - wind_ramp_start), 1.0) * wind_n : wind_n;
+    const Real current_n = (ramp_end > 0.0) ? min(max(time - ramp_start, 0.0) / (ramp_end - ramp_start), 1.0) * n : n;
 
     pmb0->par_for("add_wind", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_MESH_3D {
             const auto& G = dUdt.GetCoords(b);
-            Wind::add_wind(G, gam, k, j, i, current_wind_n, wind_pow, wind_Tp, dUdt(b), m_u);
+            // Need coordinates to evaluate particle addtn rate
+            // Note that makes the wind spherical-only, TODO ensure this
+            GReal Xembed[GR_DIM];
+            G.coord_embed(k, j, i, Loci::center, Xembed);
+            GReal r = Xembed[1], th = Xembed[2];
+
+            // Particle addition rate: concentrate at poles & center
+            // TODO poles only w/e.g. cos2?
+            Real drhopdt = current_n * pow(cos(th), power) / pow(1. + r * r, 2);
+
+            // Insert fluid moving in positive U1, without B field
+            // Ramp up like density, since we're not at a set proportion
+            const Real uvec[NVEC] = {current_n / n * u1, 0, 0};
+            const Real B_P[NVEC] = {0};
+
+            // Add plasma to the T^t_a component of the stress-energy tensor
+            // Notice that U already contains a factor of sqrt{-g}
+            Real rho_ut, T[GR_DIM];
+            GRMHD::p_to_u_loc(G, drhopdt, drhopdt * Tp * 3., uvec, B_P, gam, k, j, i, rho_ut, T);
+
+            dUdt(b, m_u.RHO, k, j, i) += rho_ut;
+            dUdt(b, m_u.UU, k, j, i) += T[0];
+            dUdt(b, m_u.U1, k, j, i) += T[1];
+            dUdt(b, m_u.U2, k, j, i) += T[2];
+            dUdt(b, m_u.U3, k, j, i) += T[3];
         }
     );
 

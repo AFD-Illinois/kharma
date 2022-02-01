@@ -44,11 +44,7 @@
 #include "kharma_utils.hpp"
 
 #define ROOTFIND_TOL 1.e-9
-// Emulate old versions of HARM in treating the coordinate singularity at poles,
-// by returning {0,M_PI}+/-SMALL instead of {0, M_PI} for theta
-// gcov_embed now avoids singular matrices even when passed th==0, so this is
-// needed only for back-compatibility
-#define LEGACY_TH false
+#define LEGACY_TH 1
 
 using namespace parthenon;
 using namespace std;
