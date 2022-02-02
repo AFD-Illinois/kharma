@@ -38,6 +38,10 @@
 
 #include "gr_coordinates.hpp"
 
+// This needs to be included only here -- it requires full-formed Parthenon
+// types, which are not available when importing this file's header
+#include "types.hpp"
+
 // This file doesn't have MeshBlock access, so it uses raw Kokkos calls
 using namespace parthenon;
 using namespace std;
@@ -174,6 +178,6 @@ void init_GRCoordinates(GRCoordinates& G, int n1, int n2, int n3) {
         }
     );
 
-    FLAG("GRCoordinates metric init");
+    Flag("GRCoordinates metric init");
 }
 #endif // FAST_CARTESIAN

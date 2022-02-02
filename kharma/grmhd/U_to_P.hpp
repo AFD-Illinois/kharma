@@ -37,10 +37,6 @@
 
 #include "kharma_utils.hpp"
 
-// These could/should be runtime & const rather than macros
-#define ERRTOL 1.e-8
-#define ITER_MAX 8
-
 namespace GRMHD {
 
 KOKKOS_INLINE_FUNCTION Real err_eqn(const Real& gam, const Real& Bsq, const Real& D, const Real& Ep, const Real& QdB,
@@ -144,7 +140,7 @@ KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const Vari
 
     // Not good enough?  apply secant method
     int iter = 0;
-    for (iter = 0; iter < ITER_MAX; iter++)
+    for (iter = 0; iter < UTOP_ITER_MAX; iter++)
     {
         dW = clip((Wp1 - Wp) * err / (err - err1), (Real) -0.5*Wp, (Real) 2.0*Wp);
 
@@ -163,7 +159,7 @@ KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const Vari
     // Uncomment to error on any bad velocity.  iharm2d/3d do not do this.
     //if (eflag) return eflag;
     // Return failure to converge
-    if (iter == ITER_MAX) return InversionStatus::max_iter;
+    if (iter == UTOP_ITER_MAX) return InversionStatus::max_iter;
 
     // Find utsq, gamma, rho from Wp
     gamma = lorentz_calc_w(Bsq, D, QdB, Qtsq, Wp);

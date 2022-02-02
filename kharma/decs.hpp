@@ -69,6 +69,8 @@ using GReal = double;
 #define DELTA 1.e-8
 // Accuracy required for U to P
 #define UTOP_ERRTOL 1.e-8
+// Maximum iterations when doing U to P inversion
+#define UTOP_ITER_MAX 8
 // A small number, compared to the grid or problem scale
 #define SMALL 1e-20
 
@@ -86,6 +88,38 @@ using GReal = double;
 // Useful Enums to avoid lots of #defines
 #define NLOC 5
 enum Loci{face1=0, face2, face3, center, corner};
+
+// Return the face location corresponding to the direction 'dir'
+KOKKOS_INLINE_FUNCTION Loci loc_of(const int& dir)
+{
+    switch (dir) {
+    case 0:
+        return Loci::center;
+    case parthenon::X1DIR:
+        return Loci::face1;
+    case parthenon::X2DIR:
+        return Loci::face2;
+    case parthenon::X3DIR:
+        return Loci::face3;
+    default:
+        return Loci::corner;
+    }
+}
+KOKKOS_INLINE_FUNCTION int dir_of(const Loci loc)
+{
+    switch (loc) {
+    case Loci::center:
+        return 0;
+    case Loci::face1:
+        return parthenon::X1DIR;
+    case Loci::face2:
+        return parthenon::X2DIR;
+    case Loci::face3:
+        return parthenon::X3DIR;
+    default:
+        return -1;
+    }
+}
 
 // Emulate old names for possible stronger typing later,
 // and for readability
@@ -126,11 +160,3 @@ using GeomTensor3 = parthenon::ParArrayND<Real>;
 // Versions for full mesh (TODO use only these in KHARMA)
 #define KOKKOS_LAMBDA_MESH_3D_REDUCE KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i, double &local_result)
 #define KOKKOS_LAMBDA_MESH_3D_REDUCE_INT KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i, int &local_result)
-// KHARMA FUNCTIONS
-
-// This is a macro and not a function for the sole reason that it still compiles if I forget the semicolon
-#if TRACE
-#define FLAG(x) if(MPIRank0()) std::cout << x << std::endl;
-#else
-#define FLAG(x)
-#endif

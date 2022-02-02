@@ -36,13 +36,14 @@
 
 #include "mpi.hpp"
 #include "prob_common.hpp"
+#include "types.hpp"
 
 #include <random>
 #include "Kokkos_Random.hpp"
 
 TaskStatus InitializeBZMonopole(MeshBlockData<Real> *rc, ParameterInput *pin)
 {
-    FLAG("Initializing BZ monopole problem");
+    Flag(rc, "Initializing BZ monopole problem");
 
     auto pmb = rc->GetBlockPointer();
     GridScalar rho = rc->Get("prims.rho").data;

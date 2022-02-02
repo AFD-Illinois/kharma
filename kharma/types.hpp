@@ -176,3 +176,76 @@ class FloorPrescription {
             adjust_k = params.Get<bool>("adjust_k");
         }
 };
+
+#if TRACE
+inline void Flag(std::string label)
+{
+    if(MPIRank0()) std::cerr << label << std::endl;
+}
+inline void Flag(MeshBlockData<Real> *rc, std::string label)
+{
+#pragma omp critical
+    if(MPIRank0()) {
+        cerr << label << ":" << std::endl;
+        auto rhop = rc->Get("prims.rho").data.GetHostMirrorAndCopy();
+        auto up = rc->Get("prims.u").data.GetHostMirrorAndCopy();
+        auto uvecp = rc->Get("prims.uvec").data.GetHostMirrorAndCopy();
+        auto Bp = rc->Get("prims.B").data.GetHostMirrorAndCopy();
+        auto rhoc = rc->Get("cons.rho").data.GetHostMirrorAndCopy();
+        auto uc = rc->Get("cons.u").data.GetHostMirrorAndCopy();
+        auto uvecc = rc->Get("cons.uvec").data.GetHostMirrorAndCopy();
+        auto Bu = rc->Get("cons.B").data.GetHostMirrorAndCopy();
+        cerr << "P:";
+        for (int j=0; j<8; j++) {
+            cout << endl;
+            for (int i=0; i<8; i++) {
+                fprintf(stderr, "%.5g\t", uvecp(2, 0, j, i));
+            }
+        }
+        cerr << endl << "U:";
+        for (int j=0; j<8; j++) {
+            cerr << endl;
+            for (int i=0; i<8; i++) {
+                fprintf(stderr, "%.5g\t", uvecc(2, 0, j, i));
+            }
+        }
+        cerr << endl << endl;
+    }
+}
+inline void Flag(MeshData<Real> *md, std::string label)
+{
+#pragma omp critical
+    if(MPIRank0()) {
+        cerr << label << ":" << std::endl;
+        auto rc = md->GetBlockData(0);
+        auto rhop = rc->Get("prims.rho").data.GetHostMirrorAndCopy();
+        auto up = rc->Get("prims.u").data.GetHostMirrorAndCopy();
+        auto uvecp = rc->Get("prims.uvec").data.GetHostMirrorAndCopy();
+        auto Bp = rc->Get("prims.B").data.GetHostMirrorAndCopy();
+        auto rhoc = rc->Get("cons.rho").data.GetHostMirrorAndCopy();
+        auto uc = rc->Get("cons.u").data.GetHostMirrorAndCopy();
+        auto uvecc = rc->Get("cons.uvec").data.GetHostMirrorAndCopy();
+        auto Bu = rc->Get("cons.B").data.GetHostMirrorAndCopy();
+        cerr << "P:";
+        for (int j=0; j<8; j++) {
+            cout << endl;
+            for (int i=0; i<8; i++) {
+                fprintf(stderr, "%.5g\t", uvecp(2, 0, j, i));
+            }
+        }
+        cerr << endl;
+        cerr << "U:";
+        for (int j=0; j<8; j++) {
+            cerr << endl;
+            for (int i=0; i<8; i++) {
+                fprintf(stderr, "%.5g\t", uvecc(2, 0, j, i));
+            }
+        }
+        cerr << endl << endl;
+    }
+}
+#else
+inline void Flag(std::string label) {}
+inline void Flag(MeshBlockData<Real> *rc, std::string label) {}
+inline void Flag(MeshData<Real> *md, std::string label) {}
+#endif

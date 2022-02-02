@@ -263,11 +263,11 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         auto t_copy_prims = tl.AddTask(t_prolongBound,
             [](MeshBlockData<Real> *rc0, MeshBlockData<Real> *rc1)
             {
-                FLAG("Copying prims");
+                Flag(rc1, "Copying prims");
                 rc1->Get("prims.rho").data.DeepCopy(rc0->Get("prims.rho").data);
                 rc1->Get("prims.u").data.DeepCopy(rc0->Get("prims.u").data);
                 rc1->Get("prims.uvec").data.DeepCopy(rc0->Get("prims.uvec").data);
-                FLAG("Copied");
+                Flag(rc1, "Copied");
                 return TaskStatus::complete;
             }, sc0.get(), sc1.get());
 

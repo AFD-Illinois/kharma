@@ -17,6 +17,10 @@
 static auto comm = MPI_COMM_WORLD;
 
 // UNIVERSAL
+inline bool MPIRank()
+{
+    return parthenon::Globals::my_rank;
+}
 inline bool MPIRank0()
 {
     return (parthenon::Globals::my_rank == 0 ? true : false);
@@ -107,6 +111,7 @@ inline void MPIReduceVector(double *vec_send, double *vec_recv, int len)
 // Dummy versions of calls
 
 inline void MPIBarrier() {}
+inline bool MPIRank() { return 0; }
 inline bool MPIRank0() { return true; }
 
 inline double MPIMax(double f) { return f; }

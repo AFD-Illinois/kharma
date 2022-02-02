@@ -42,7 +42,7 @@ using namespace std;
  */
 TaskStatus InitializeBondi(MeshBlockData<Real> *rc, ParameterInput *pin)
 {
-    FLAG("Initializing Bondi problem");
+    Flag(rc, "Initializing Bondi problem");
     auto pmb = rc->GetBlockPointer();
 
     const Real mdot = pin->GetOrAddReal("bondi", "mdot", 1.0);
@@ -57,13 +57,13 @@ TaskStatus InitializeBondi(MeshBlockData<Real> *rc, ParameterInput *pin)
     // Set the whole domain to the analytic solution to begin
     SetBondi(rc);
 
-    FLAG("Initialized");
+    Flag(rc, "Initialized");
     return TaskStatus::complete;
 }
 
 TaskStatus SetBondi(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
-    FLAG("Setting Bondi zones");
+    Flag(rc, "Setting Bondi zones");
     auto pmb = rc->GetBlockPointer();
 
     PackIndexMap prims_map, cons_map;
@@ -102,6 +102,6 @@ TaskStatus SetBondi(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
         }
     );
 
-    FLAG("Set");
+    Flag(rc, "Set");
     return TaskStatus::complete;
 }

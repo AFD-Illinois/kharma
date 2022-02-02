@@ -36,6 +36,7 @@
 
 #include "hdf5_utils.h"
 #include "mpi.hpp"
+#include "types.hpp"
 
 #include <sys/stat.h>
 #include <ctype.h>
@@ -146,7 +147,7 @@ void ReadIharmRestartHeader(std::string fname, std::unique_ptr<ParameterInput>& 
 
 TaskStatus ReadIharmRestart(MeshBlockData<Real> *rc, ParameterInput *pin)
 {
-    FLAG("Restarting from iharm3d checkpoint file");
+    Flag(rc, "Restarting from iharm3d checkpoint file");
 
     auto pmb = rc->GetBlockPointer();
     GridScalar rho = rc->Get("prims.rho").data;

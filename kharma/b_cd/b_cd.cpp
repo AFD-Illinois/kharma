@@ -105,6 +105,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
 
 void UtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
+    Flag(rc, "B field UtoP");
     auto pmb = rc->GetBlockPointer();
 
     auto& B_U = rc->Get("cons.B").data;
@@ -127,11 +128,12 @@ void UtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
             psi_P(k, j, i) = psi_U(k, j, i) / gdet;
         }
     );
+    Flag(rc, "End B field UtoP");
 }
 
 TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
 {
-    FLAG("Adding constraint damping source");
+    Flag(md, "Adding constraint damping source");
     auto pmesh = md->GetMeshPointer();
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
     const int ndim = pmesh->ndim;
@@ -188,7 +190,7 @@ TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
         }
     );
 
-    FLAG("Added")
+    Flag("Added");
     return TaskStatus::complete;
 }
 
@@ -229,7 +231,7 @@ Real MaxDivB(MeshData<Real> *md)
 
 TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
 {
-    FLAG("Printing B field diagnostics");
+    Flag(md, "Printing B field diagnostics");
     auto pmesh = md->GetMeshPointer();
 
     // Print this unless we quash everything
@@ -243,7 +245,7 @@ TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
         }
     }
 
-    FLAG("Printed")
+    Flag(md, "Printed");
     return TaskStatus::complete;
 }
 

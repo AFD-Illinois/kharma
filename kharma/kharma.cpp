@@ -234,7 +234,7 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
 // TODO decide on a consistent implementation of foreach packages -> do X
 void KHARMA::FillDerivedDomain(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, int coarse)
 {
-    FLAG("Filling derived variables on boundaries");
+    Flag(rc.get(), "Filling derived variables on boundaries");
     // We need to re-fill the "derived" (primitive) variables on the physical boundaries,
     // since we already called "FillDerived" before the ghost zones were initialized
     // This does *not* apply to the GRMHD variables, just any passives or extras
@@ -246,7 +246,7 @@ void KHARMA::FillDerivedDomain(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDo
     if (pmb->packages.AllPackages().count("Electrons"))
         Electrons::UtoP(rc.get(), domain, coarse);
 
-    FLAG("Filled");
+    Flag(rc.get(), "Filled");
 }
 
 void KHARMA::PreStepMeshUserWorkInLoop(Mesh *pmesh, ParameterInput *pin, const SimTime &tm)
@@ -290,6 +290,7 @@ void KHARMA::PostStepDiagnostics(Mesh *pmesh, ParameterInput *pin, const SimTime
 
 void KHARMA::FillOutput(MeshBlock *pmb, ParameterInput *pin)
 {
+    Flag("Filling output");
     // Don't fill the output arrays for the first dump, as trying to actually
     // calculate them can produce errors when we're not in the loop yet.
     // Instead, they just get added to the file as their starting values, i.e. 0
@@ -304,5 +305,6 @@ void KHARMA::FillOutput(MeshBlock *pmb, ParameterInput *pin)
         if (pmb->packages.AllPackages().count("Electrons"))
             Electrons::FillOutput(pmb, pin);
     }
+    Flag("Filled");
 }
 

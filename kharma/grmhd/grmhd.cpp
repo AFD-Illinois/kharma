@@ -297,7 +297,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
 
 void UtoP(MeshBlockData<Real> *rc)
 {
-    FLAG("Filling Primitives");
+    Flag(rc, "Filling Primitives");
     auto pmb = rc->GetBlockPointer();
     const auto& G = pmb->coords;
 
@@ -341,12 +341,12 @@ void UtoP(MeshBlockData<Real> *rc)
             }
         }
     );
-    FLAG("Filled");
+    Flag(rc, "Filled");
 }
 
 void PostUtoP(MeshBlockData<Real> *rc)
 {
-    FLAG("Fixing Derived");
+    Flag(rc, "Fixing Derived");
 
     // Apply floors
     if (!rc->GetBlockPointer()->packages.Get("GRMHD")->Param<bool>("disable_floors")) {
@@ -356,12 +356,12 @@ void PostUtoP(MeshBlockData<Real> *rc)
     // Fix inversion errors computing P from U, by averaging adjacent zones
     GRMHD::FixUtoP(rc);
 
-    FLAG("Fixed");
+    Flag(rc, "Fixed");
 }
 
 Real EstimateTimestep(MeshBlockData<Real> *rc)
 {
-    FLAG("Estimating timestep");
+    Flag(rc, "Estimating timestep");
     auto pmb = rc->GetBlockPointer();
     IndexRange ib = pmb->cellbounds.GetBoundsI(IndexDomain::interior);
     IndexRange jb = pmb->cellbounds.GetBoundsJ(IndexDomain::interior);
@@ -378,7 +378,6 @@ Real EstimateTimestep(MeshBlockData<Real> *rc)
         pmb->packages.Get("Globals")->UpdateParam<double>("dt_last", dt);
         return dt;
     }
-
 
     typename Kokkos::MinMax<Real>::value_type minmax;
     pmb->par_reduce("ndt_min", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
@@ -412,28 +411,7 @@ Real EstimateTimestep(MeshBlockData<Real> *rc)
         pmb->packages.Get("Globals")->UpdateParam<Real>("ctop_max", nctop);
     }
 
-#if 0
-    // Print stuff about the zone that set the timestep
-    // Warning that triggering this code slows the code down pretty badly (~1/3)
-    // TODO Fix this to work with multi-mesh, SYCL
-    if (pmb->packages.Get("GRMHD")->Param<int>("verbose") >= 3) {
-        auto fflag = rc->Get("fflag").data;
-        auto pflag = rc->Get("pflag").data;
-        pmb->par_for("ndt_min", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-            KOKKOS_LAMBDA_3D {
-                double ndt_zone = 1 / (1 / (G.dx1v(i) / ctop(0, k, j, i)) +
-                                       1 / (G.dx2v(j) / ctop(1, k, j, i)) +
-                                       1 / (G.dx3v(k) / ctop(2, k, j, i)));
-                if (ndt_zone == min_ndt) {
-                    printf("Timestep set by %d %d %d: pflag was %f and fflag was %f\n",
-                           i, j, k, pflag(k, j, i), fflag(k, j, i));
-                }
-            }
-        );
-    }
-#endif
-
-    FLAG("Estimated");
+    Flag(rc, "Estimated");
     return ndt;
 }
 
@@ -468,7 +446,7 @@ AmrTag CheckRefinement(MeshBlockData<Real> *rc)
 
 TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
 {
-    FLAG("Printing GRMHD diagnostics");
+    Flag("Printing GRMHD diagnostics");
     auto pmesh = md->GetMeshPointer();
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
     // Options
@@ -478,7 +456,7 @@ TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
 
     // Debugging/diagnostic info about floor and inversion flags
     if (flag_verbose >= 1) {
-        FLAG("Printing flags");
+        Flag("Printing flags");
         CountPFlags(md, IndexDomain::interior, flag_verbose);
         CountFFlags(md, IndexDomain::interior, flag_verbose);
     }
@@ -495,11 +473,11 @@ TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
     // Further checking for any negative values.  Floors should
     // prevent this, so we save it for dire debugging
     if (extra_checks >= 2) {
-        FLAG("Printing negative zones");
+        Flag("Printing negative zones");
         CheckNegative(md, IndexDomain::interior);
     }
 
-    FLAG("Printed");
+    Flag("Printed");
     return TaskStatus::complete;
 }
 

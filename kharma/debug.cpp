@@ -37,15 +37,29 @@
 #include "decs.hpp"
 
 #include "mhd_functions.hpp"
+#include "types.hpp"
 
 using namespace Kokkos;
 
 // TODO have nice ways to print vectors, areas, geometry, etc for debugging new modules
 // TODO device-side total flag counts, for logging numbers even when not printing
 
+void PrintCorner(MeshBlockData<Real> *rc, std::string name)
+{
+    auto var = rc->Get("prims.uvec").data.GetHostMirrorAndCopy();
+    cerr << name;
+    for (int j=0; j<8; j++) {
+        cout << endl;
+        for (int i=0; i<8; i++) {
+            fprintf(stderr, "%.2g ", var(1, 0, j, i));
+        }
+    }
+    cerr << endl;
+}
+
 TaskStatus CheckNaN(MeshData<Real> *md, int dir, IndexDomain domain)
 {
-    FLAG("Checking ctop for NaNs");
+    Flag("Checking ctop for NaNs");
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
     // TODO verbose option?
 
@@ -89,13 +103,13 @@ TaskStatus CheckNaN(MeshData<Real> *md, int dir, IndexDomain domain)
     // TODO reimplement printing *where* these values were hit?
     // May not even be that useful, as the cause is usually much earlier
 
-    FLAG("Checked");
+    Flag("Checked");
     return TaskStatus::complete;
 }
 
 TaskStatus CheckNegative(MeshData<Real> *md, IndexDomain domain)
 {
-    FLAG("Counting negative values");
+    Flag("Counting negative values");
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
     // Pack variables
     auto rho_p = md->PackVariables(std::vector<std::string>{"prims.rho"});

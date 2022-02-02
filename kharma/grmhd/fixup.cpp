@@ -47,7 +47,7 @@ TaskStatus GRMHD::FixUtoP(MeshBlockData<Real> *rc)
     // But we can only fix primitives with their neighbors.
     // This may actually mean we require the 4 ghost zones Parthenon "wants" us to have,
     // if we need to use only fixed zones.
-    FLAG("Fixing U to P inversions");
+    Flag(rc, "Fixing U to P inversions");
     auto pmb = rc->GetBlockPointer();
     const auto& G = pmb->coords;
 
@@ -144,6 +144,6 @@ TaskStatus GRMHD::FixUtoP(MeshBlockData<Real> *rc)
         }
     );
 
-    FLAG("Fixed U to P inversions");
+    Flag(rc, "Fixed U to P inversions");
     return TaskStatus::complete;
 }

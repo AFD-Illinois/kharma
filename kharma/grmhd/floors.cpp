@@ -52,7 +52,7 @@
  */
 TaskStatus GRMHD::ApplyFloors(MeshBlockData<Real> *rc)
 {
-    FLAG("Apply floors");
+    Flag(rc, "Apply floors");
     auto pmb = rc->GetBlockPointer();
 
     PackIndexMap prims_map, cons_map;
@@ -103,6 +103,6 @@ TaskStatus GRMHD::ApplyFloors(MeshBlockData<Real> *rc)
         }
     );
 
-    FLAG("Applied");
+    Flag(rc, "Applied");
     return TaskStatus::complete;
 }

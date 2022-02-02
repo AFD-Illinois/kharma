@@ -34,6 +34,7 @@
 
 #include "post_initialize.hpp"
 
+#include "b_field_tools.hpp"
 #include "blob.hpp"
 #include "boundaries.hpp"
 #include "debug.hpp"
@@ -41,7 +42,7 @@
 #include "floors.hpp"
 #include "fluxes.hpp"
 #include "gr_coordinates.hpp"
-#include "b_field_tools.hpp"
+#include "types.hpp"
 
 #include "seed_B_ct.hpp"
 #include "seed_B_cd.hpp"
@@ -87,7 +88,7 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, Mesh *pmesh)
     // Preserves P==U and ends with all physical zones fully defined
     if (pin->GetOrAddString("b_field", "type", "none") != "none") {
         // Calculating B has a stencil outside physical zones
-        FLAG("Extra boundary sync for B");
+        Flag("Extra boundary sync for B");
         SyncAllBounds(pmesh);
 
         // "Legacy" is the much more common normalization:
@@ -99,7 +100,7 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, Mesh *pmesh)
         const bool use_b_flux_ct = pmesh->packages.AllPackages().count("B_FluxCT");
         const bool use_b_cd = pmesh->packages.AllPackages().count("B_CD");
 
-        FLAG("Seeding magnetic field");
+        Flag("Seeding magnetic field");
         // Seed the magnetic field and find the minimum beta
         Real beta_min = 1.e100, p_max = 0., bsq_max = 0.;
         for (auto &pmb : pmesh->block_list) {
@@ -157,7 +158,7 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, Mesh *pmesh)
             }
 
             // Then normalize B by sqrt(beta/beta_min)
-            FLAG("Normalizing magnetic field");
+            Flag("Normalizing magnetic field");
             if (beta_min > 0) {
                 Real norm = sqrt(beta_min/desired_beta_min);
                 for (auto &pmb : pmesh->block_list) {
@@ -206,12 +207,12 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, Mesh *pmesh)
         }
 
     }
-    FLAG("Added B Field");
+    Flag("Added B Field");
 }
 
 void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart)
 {
-    FLAG("Post-initialization started");
+    Flag("Post-initialization started");
     if (!is_restart)
         KHARMA::SeedAndNormalizeB(pin, pmesh);
 
@@ -224,7 +225,7 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart)
     }
 
     // Sync to fill the ghost zones
-    FLAG("Boundary sync");
+    Flag("Boundary sync");
     SyncAllBounds(pmesh);
 
     // TODO be able to describe to a teenager why this block is necessary
@@ -262,5 +263,5 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart)
         }
     }
 
-    FLAG("Post-initialization finished");
+    Flag("Post-initialization finished");
 }

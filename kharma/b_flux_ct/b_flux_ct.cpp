@@ -105,7 +105,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
 
 void UtoP(MeshData<Real> *md, IndexDomain domain, bool coarse)
 {
-    FLAG("B UtoP Mesh");
+    Flag(md, "B UtoP Mesh"); // 
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
 
     const auto& B_U = md->PackVariables(std::vector<std::string>{"cons.B"});
@@ -128,7 +128,7 @@ void UtoP(MeshData<Real> *md, IndexDomain domain, bool coarse)
 }
 void UtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
-    FLAG("B UtoP Block");
+    Flag(rc, "B UtoP Block");
     auto pmb = rc->GetBlockPointer();
 
     auto B_U = rc->PackVariables(std::vector<std::string>{"cons.B"});
@@ -151,7 +151,7 @@ void UtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 
 TaskStatus FluxCT(MeshData<Real> *md)
 {
-    FLAG("Flux CT");
+    Flag(md, "Flux CT");
     // Pointers
     auto pmesh = md->GetMeshPointer();
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
@@ -183,7 +183,7 @@ TaskStatus FluxCT(MeshData<Real> *md)
     GridScalar emf3("emf3", nb, n3, n2, n1);
 
     // Calculate emf around each face
-    FLAG("Calc EMFs");
+    Flag(md, "Calc EMFs");
     pmb0->par_for("flux_ct_emf", block.s, block.e, kl.s, kl.e, jl.s, jl.e, il.s, il.e,
         KOKKOS_LAMBDA_MESH_3D {
             emf3(b, k, j, i) =  0.25 * (B_F(b).flux(X1DIR, B2, k, j, i) + B_F(b).flux(X1DIR, B2, k, j-1, i) -
@@ -200,7 +200,7 @@ TaskStatus FluxCT(MeshData<Real> *md)
     // Rewrite EMFs as fluxes, after Toth (2000)
     // Note that zeroing FX(BX) is *necessary* -- this flux gets filled by GetFlux,
     // And it's necessary to keep track of it for B_CD
-    FLAG("Calc Fluxes");
+    Flag(md, "Calc Fluxes");
 #if FUSE_EMF_KERNELS
     pmb0->par_for("flux_ct_all", block.s, block.e, kl.s, kl.e, jl.s, jl.e, il.s, il.e,
         KOKKOS_LAMBDA_MESH_3D {
@@ -246,14 +246,14 @@ TaskStatus FluxCT(MeshData<Real> *md)
         );
     }
 #endif
-    FLAG("CT Finished");
+    Flag(md, "CT Finished");
 
     return TaskStatus::complete;
 }
 
 TaskStatus FixPolarFlux(MeshData<Real> *md)
 {
-    FLAG("Fixing polar B fluxes");
+    Flag(md, "Fixing polar B fluxes");
     auto pmesh = md->GetMeshPointer();
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
     
@@ -295,7 +295,7 @@ TaskStatus FixPolarFlux(MeshData<Real> *md)
         }
     }
 
-    FLAG("Fixed polar B");
+    Flag(md, "Fixed polar B");
     return TaskStatus::complete;
 }
 
@@ -311,7 +311,7 @@ TaskStatus TransportB(MeshData<Real> *md)
 
 double MaxDivB(MeshData<Real> *md)
 {
-    FLAG("Calculating divB");
+    Flag(md, "Calculating divB");
     // Pointers
     auto pmesh = md->GetMeshPointer();
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
@@ -367,27 +367,27 @@ double MaxDivB(MeshData<Real> *md)
 
 TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
 {
-    FLAG("Printing B field diagnostics");
+    Flag(md, "Printing B field diagnostics");
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
 
     // Since this is in the history file now, I don't bother printing it
     // unless we're being verbose. It's not costly to calculate though
     if (pmb0->packages.Get("B_FluxCT")->Param<int>("verbose") >= 1) {
-        FLAG("Printing divB");
+        Flag(md, "Printing divB");
         Real max_divb = B_FluxCT::MaxDivB(md);
         max_divb = MPIMax(max_divb);
 
         if(MPIRank0()) cout << "Max DivB: " << max_divb << endl;
     }
 
-    FLAG("Printed")
+    Flag(md, "Printed");
     return TaskStatus::complete;
 }
 
 void FillOutput(MeshBlock *pmb, ParameterInput *pin)
 {
-    FLAG("Calculating divB for output");
     auto rc = pmb->meshblock_data.Get().get();
+    Flag(rc, "Calculating divB for output");
     const int ndim = pmb->pmy_mesh->ndim;
     if (ndim < 2) return;
 
@@ -431,7 +431,7 @@ void FillOutput(MeshBlock *pmb, ParameterInput *pin)
         }
     );
 
-    FLAG("Output");
+    Flag(rc, "Output");
 }
 
 } // namespace B_FluxCT

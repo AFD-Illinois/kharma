@@ -41,6 +41,7 @@
 #include "floors.hpp"
 #include "pack.hpp"
 #include "reconstruction.hpp"
+#include "types.hpp"
 
 // Package functions
 #include "mhd_functions.hpp"
@@ -83,21 +84,6 @@ KOKKOS_INLINE_FUNCTION Real hlle(const Real& fluxL, const Real& fluxR, const Rea
     return (cmax*fluxL + cmin*fluxR - cmax*cmin*(Ur - Ul)) / (cmax + cmin);
 }
 
-// Return the face location corresponding to the direction 'dir'
-inline Loci loc_of(const int& dir)
-{
-    switch (dir) {
-    case X1DIR:
-        return Loci::face1;
-    case X2DIR:
-        return Loci::face2;
-    case X3DIR:
-        return Loci::face3;
-    default:
-        throw std::invalid_argument("Invalid direction!");
-    }
-}
-
 /**
  * Reconstruct the values of primitive variables at left and right zone faces,
  * find the corresponding conserved variables and their fluxes through the zone faces
@@ -117,7 +103,7 @@ inline Loci loc_of(const int& dir)
 template <ReconstructionType Recon, int dir>
 inline TaskStatus GetFlux(MeshData<Real> *md)
 {
-    FLAG("Recon and flux");
+    Flag(md, "Recon and flux");
     // Pointers
     auto pmesh = md->GetMeshPointer();
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
@@ -151,7 +137,7 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
     const auto& P = md->PackVariables(std::vector<MetadataFlag>{isPrimitive}, prims_map);
     const auto& U = md->PackVariablesAndFluxes(std::vector<MetadataFlag>{Metadata::Conserved}, cons_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
-    FLAG("Packed variables");
+    Flag(md, "Packed variables");
 
     // Get sizes
     const int n1 = pmb0->cellbounds.ncellsi(IndexDomain::entire);
@@ -179,7 +165,7 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
                                             4*(Recon == ReconstructionType::linear_vl)) * var_size_in_bytes
                                         + 2 * speed_size_in_bytes;
 
-    FLAG("Flux kernel");
+    Flag(md, "Flux kernel");
     // This isn't a pmb0->par_for_outer because Parthenon's current overloaded definitions
     // do not accept three pairs of bounds, which we need in order to iterate over blocks
     parthenon::par_for_outer(DEFAULT_OUTER_LOOP_PATTERN, "calc_flux", pmb0->exec_space,
@@ -340,7 +326,7 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
         }
     );
 
-    FLAG("Finished recon and flux");
+    Flag(md, "Finished recon and flux");
     return TaskStatus::complete;
 }
 }
