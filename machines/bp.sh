@@ -87,24 +87,23 @@ if [[ $HOST == "cinnabar"* ]]; then
     KOKKOS_NUM_DEVICES=2
     MPI_EXTRA_ARGS="--map-by ppr:1:numa:pe=14"
 
-    module load nvhpc
-    PREFIX_PATH="$HOME/libs/hdf5-nvhpc"
     # Quash warning about my old gpus
     export NVCC_WRAPPER_CUDA_EXTRA_FLAGS="-Wno-deprecated-gpu-targets"
+    # System CUDA path
+    EXTRA_FLAGS="-DCUDAToolkit_INCLUDE_DIR=/usr/include/cuda $EXTRA_FLAGS"
 
     # Switch between g++/NVC++:
     if [[ "$ARGS" == *"gcc"* ]]; then
+      module load mpi/mpich-x86_64 nvhpc-nompi
       C_NATIVE="gcc"
       CXX_NATIVE="g++"
     else
+      module load nvhpc
+      PREFIX_PATH="$HOME/libs/hdf5-nvhpc"
       C_NATIVE="nvc"
       CXX_NATIVE="nvc++"
       export CXXFLAGS="-mp"
-      #HOST_ARCH="SNB" # Kokkos doesn't detect/set -tp=haswell for nvc++
     fi
-
-    # System CUDA path
-    EXTRA_FLAGS="-DCUDAToolkit_INCLUDE_DIR=/usr/include/cuda $EXTRA_FLAGS"
   else
     HOST_ARCH="HSW"
     MPI_NUM_PROCS=1

@@ -56,6 +56,25 @@
 // Print warnings about configuration
 #if DEBUG
 #warning "Compiling with debug"
+
+// Stacktrace on sigint. Amazingly useful
+#include <stdio.h>
+#include <execinfo.h>
+#include <signal.h>
+#include <stdlib.h>
+#include <unistd.h>
+void print_backtrace(int sig) {
+  void *array[100];
+  size_t size;
+
+  // get void*'s for all entries on the stack
+  size = backtrace(array, 100);
+
+  // print out all the frames to stderr
+  fprintf(stderr, "Error: signal %d:\n", sig);
+  backtrace_symbols_fd(array, size, STDERR_FILENO);
+  exit(1);
+}
 #endif
 
 using namespace parthenon;
@@ -86,8 +105,8 @@ int main(int argc, char *argv[])
     pman.app_input->PostStepDiagnosticsInLoop = KHARMA::PostStepDiagnostics;
 
     // Registering KHARMA's boundary functions here doesn't mean they will *always* run:
-    // in e.g. MHD Modes problem, all boundaries are handled by Parthenon and these don't run
-    // KHARMA sets them automatically in spherical coordinate systems.
+    // all periodic boundary conditions are handled by Parthenon.
+    // KHARMA sets the correct options automatically for spherical coordinate systems.
     pman.app_input->boundary_conditions[parthenon::BoundaryFace::inner_x1] = KBoundaries::InnerX1;
     pman.app_input->boundary_conditions[parthenon::BoundaryFace::outer_x1] = KBoundaries::OuterX1;
     pman.app_input->boundary_conditions[parthenon::BoundaryFace::inner_x2] = KBoundaries::InnerX2;
@@ -107,28 +126,16 @@ int main(int argc, char *argv[])
     }
     FLAG("Parthenon Initialized");
 
-    auto pin = pman.pinput.get();
-    auto pmesh = pman.pmesh.get();
-    auto papp = pman.app_input.get();
+#if DEBUG
+    // Replace Parthenon signals with something that just prints a backtrace
+    signal(SIGINT, print_backtrace);
+    signal(SIGTERM, print_backtrace);
+    signal(SIGSEGV, print_backtrace);
+#endif
 
-    if(MPIRank0()) {
-        // Write *all* parameters to a parfile for posterity
-        // TODO option to disable?
-        std::ostringstream ss;
-        auto itt_now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-        ss << "kharma_parsed_parameters_" << std::put_time(std::gmtime(&itt_now), "%FT%TZ") << ".par";
-        fstream pars;
-        pars.open(ss.str(), std::fstream::out | std::fstream::trunc);
-        pin->ParameterDump(pars);
-        pars.close();
-        // Also write them to console if we should be wordy
-        if (pin->GetInteger("debug", "verbose") > 0) {
-            // This dumps the full Kokkos config, useful for double-checking
-            // that the compile did what we wanted
-            ShowConfig();
-            pin->ParameterDump(cout);
-        }
-    }
+    auto pin = pman.pinput.get(); // All parameters in the input file or command line
+    auto pmesh = pman.pmesh.get(); // The mesh, with list of blocks & locations, size, etc
+    auto papp = pman.app_input.get(); // The list of callback functions specified above
 
     // Write the problem to the mesh.
     // Implemented separately outside of MeshBlock since
@@ -140,6 +147,30 @@ int main(int argc, char *argv[])
     // Then construct & run the driver
     HARMDriver driver(pin, papp, pmesh);
 
+    // We could still have set parameters during driver initialization
+    // Note the order here is *extremely important* as the first statement has a
+    // side effect which must occur on all MPI ranks
+    if(pin->GetOrAddBoolean("debug", "archive_parameters", false) && MPIRank0()) {
+        // Write *all* parameters to a parfile for posterity
+        std::ostringstream ss;
+        auto itt_now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+        ss << "kharma_parsed_parameters_" << std::put_time(std::gmtime(&itt_now), "%FT%TZ") << ".par";
+        fstream pars;
+        pars.open(ss.str(), std::fstream::out | std::fstream::trunc);
+        pin->ParameterDump(pars);
+        pars.close();
+    }
+    // Also write parameters to console if we should be wordy
+    if ((pin->GetInteger("debug", "verbose") > 0) && MPIRank0()) {
+        // This dumps the full Kokkos config, useful for double-checking
+        // that the compile did what we wanted
+        ShowConfig();
+        pin->ParameterDump(cout);
+    }
+
+    // Then execute the driver. This is a Parthenon function inherited by our HARMDriver object,
+    // which will call MakeTaskCollection, then execute the tasks on the mesh for each portion
+    // of each step until a stop criterion is reached.
     FLAG("Executing Driver");
     auto driver_status = driver.Execute();
 

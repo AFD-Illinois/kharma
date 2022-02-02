@@ -64,5 +64,5 @@ power = 40
 file_type = hdf5
 dt = 5.0
 single_precision_output = true
-variables = prims.rho, prims.u, prims.uvec, prims.B
+variables = prims.rho, prims.u, prims.uvec, prims.B, fflag, pflag
 ghost_zones = true
