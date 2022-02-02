@@ -28,8 +28,6 @@ bondi:
   script:
     - bash run.sh
     - bash check.sh
-  after_script:
-    - cd ../..
   artifacts:
     when: always
     paths:
@@ -42,8 +40,6 @@ mhdmodes:
   script:
     - bash run.sh
     - bash check.sh
-  after_script:
-    - cd ../..
   artifacts:
     when: always
     paths:
@@ -56,8 +52,6 @@ noh:
   script:
     - bash run.sh
     - bash check.sh
-  after_script:
-    - cd ../..
   artifacts:
     when: always
     paths:
@@ -68,7 +62,8 @@ bz_monopole:
   before_script:
     - cd tests/bz_monopole
   script:
-    # Make sure to image whatever actually ran
+    # Make sure to image whatever actually ran,
+    # but fail if it crashed
     - exit_code=0
     - bash run.sh || exit_code=$?
     - bash check.sh
@@ -77,3 +72,17 @@ bz_monopole:
     when: always
     paths:
       - tests/bz_monopole/*.png
+
+tilt_init:
+  stage: tests
+  before_script:
+    - cd tests/tilt_init
+  script:
+    - exit_code=0
+    - bash run.sh || exit_code=$?
+    - bash check.sh
+    - exit $exit_code
+  artifacts:
+    when: always
+    paths:
+      - tests/tilt_init/*.png

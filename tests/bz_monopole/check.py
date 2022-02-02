@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-# MHD linear modes convergence plots
+# Image whatever output exists from the BZ monopole run
 import os,sys
 import glob
 import numpy as np
