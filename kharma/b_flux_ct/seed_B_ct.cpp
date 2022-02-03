@@ -136,15 +136,13 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
     ParArrayND<double> A("A", NVEC, n3+1, n2+1, n1+1);
     pmb->par_for("B_field_A", ks, ke+1, js, je+1, is, ie+1,
         KOKKOS_LAMBDA_3D {
-            GReal Xnative[GR_DIM], Xnative_midplane[GR_DIM];
+            GReal Xnative[GR_DIM];
             GReal Xembed[GR_DIM], Xmidplane[GR_DIM];
             G.coord(k, j, i, Loci::corner, Xnative);
             G.coord_embed(k, j, i, Loci::corner, Xembed);
             // What are our corresponding "midplane" values for evaluating the function?
             rotate_polar(Xembed, tilt, Xmidplane);
             const GReal r = Xmidplane[1], th = Xmidplane[2];
-            // We also need native midplane coordinates, for translating the result
-            G.coords.coord_to_native(Xmidplane, Xnative_midplane);
 
             // This is written under the assumption re-computed rho is more accurate than a bunch
             // of averaging in a meaningful way.  Just use the average if not.
@@ -208,26 +206,33 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
                 break;
             }
 
-            // This is *covariant* A_mu
-            double A_untilt_lower[GR_DIM] = {0., 0., 0., max(q, 0.)};
-            // Raise to contravariant vector, since rotate_polar_vec will need that.
-            // Note we have to do this in the midplane!
-            GReal gcon_midplane[GR_DIM][GR_DIM] = {0};
-            G.coords.gcon_native(Xnative_midplane, gcon_midplane);
-            double A_untilt[GR_DIM] = {0};
-            DLOOP2 A_untilt[mu] += gcon_midplane[mu][nu] * A_untilt_lower[nu];
+            if (tilt > 0.0) {
+                // This is *covariant* A_mu
+                const double A_untilt_lower[GR_DIM] = {0., 0., 0., max(q, 0.)};
+                // Raise to contravariant vector, since rotate_polar_vec will need that.
+                // Note we have to do this in the midplane!
+                // The coord_to_native calculation involves an iterative solve for MKS/FMKS
+                GReal Xnative_midplane[GR_DIM] = {0}, gcon_midplane[GR_DIM][GR_DIM] = {0};
+                G.coords.coord_to_native(Xmidplane, Xnative_midplane);
+                G.coords.gcon_native(Xnative_midplane, gcon_midplane);
+                double A_untilt[GR_DIM] = {0};
+                DLOOP2 A_untilt[mu] += gcon_midplane[mu][nu] * A_untilt_lower[nu];
 
-            // Then rotate
-            double A_tilt[GR_DIM] = {0};
-            double A_untilt_embed[GR_DIM] = {0}, A_tilt_embed[GR_DIM] = {0};
-            G.coords.con_vec_to_embed(Xnative_midplane, A_untilt, A_untilt_embed);
-            rotate_polar_vec(Xmidplane, A_untilt_embed, -tilt, Xembed, A_tilt_embed);
-            G.coords.con_vec_to_native(Xnative, A_tilt_embed, A_tilt);
+                // Then rotate
+                double A_tilt[GR_DIM] = {0};
+                double A_untilt_embed[GR_DIM] = {0}, A_tilt_embed[GR_DIM] = {0};
+                G.coords.con_vec_to_embed(Xnative_midplane, A_untilt, A_untilt_embed);
+                rotate_polar_vec(Xmidplane, A_untilt_embed, -tilt, Xembed, A_tilt_embed);
+                G.coords.con_vec_to_native(Xnative, A_tilt_embed, A_tilt);
 
-            // Lower the result as we need curl(A_mu).  Done at local zone.
-            double A_tilt_lower[GR_DIM] = {0};
-            G.lower(A_tilt, A_tilt_lower, k, j, i, Loci::corner);
-            VLOOP A(v, k, j, i) = A_tilt_lower[1+v];
+                // Lower the result as we need curl(A_mu).  Done at local zone.
+                double A_tilt_lower[GR_DIM] = {0};
+                G.lower(A_tilt, A_tilt_lower, k, j, i, Loci::corner);
+                VLOOP A(v, k, j, i) = A_tilt_lower[1+v];
+            } else {
+                // Some problems rely on a very accurate A->B, which the 
+                A(V3, k, j, i) = max(q, 0.);
+            }
         }
     );
 
