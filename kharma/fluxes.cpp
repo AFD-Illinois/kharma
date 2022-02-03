@@ -43,7 +43,7 @@ using namespace parthenon;
 
 TaskStatus Flux::PrimToFlux(MeshBlockData<Real> *rc, IndexDomain domain)
 {
-    FLAG("Getting conserved fluxes");
+    Flag(rc, "Getting conserved fluxes");
     // Pointers
     auto pmb = rc->GetBlockPointer();
     // Options
@@ -76,6 +76,6 @@ TaskStatus Flux::PrimToFlux(MeshBlockData<Real> *rc, IndexDomain domain)
         }
     );
 
-    FLAG("Got conserved fluxes");
+    Flag(rc, "Got conserved fluxes");
     return TaskStatus::complete;
 }

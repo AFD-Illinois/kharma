@@ -49,42 +49,4 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin);
  */
 TaskStatus AddSource(MeshData<Real> *mdudt);
 
-/**
- * Function to add a "wind" source term, in addition to the usual GRMHD coordinate source term
- * 
- * This is a purely geometry-based particle source concentrated near the poles,
- * which prevents too many fixups & floor hits on the coordinate pole.
- * It has proven effective at eliminating the use of floors in 2D, but less so in 3D/MAD simulations
- */
-KOKKOS_INLINE_FUNCTION void add_wind(const GRCoordinates &G,
-                      const Real& gam, const int& k, const int& j, const int& i,
-                      const Real& n, const int& power, const Real& Tp,
-                      const VariablePack<Real>& dUdt, const VarMap& m)
-{
-
-    // Need coordinates to evaluate particle addtn rate
-    // Note that makes the wind spherical-only, TODO ensure this
-    GReal Xembed[GR_DIM];
-    G.coord_embed(k, j, i, Loci::center, Xembed);
-    GReal r = Xembed[1], th = Xembed[2];
-
-    // Particle addition rate: concentrate at poles & center
-    // TODO poles only w/e.g. cos2?
-    Real drhopdt = n * pow(cos(th), power) / pow(1. + r * r, 2);
-
-    // Insert fluid in normal observer frame, without B field
-    const Real uvec[NVEC] = {0}, B_P[NVEC] = {0};
-
-    // Add plasma to the T^t_a component of the stress-energy tensor
-    // Notice that U already contains a factor of sqrt{-g}
-    Real rho_ut, T[GR_DIM];
-    GRMHD::p_to_u_loc(G, drhopdt, drhopdt * Tp * 3., uvec, B_P, gam, k, j, i, rho_ut, T);
-
-    dUdt(m.RHO, k, j, i) += rho_ut;
-    dUdt(m.UU, k, j, i) += T[0];
-    dUdt(m.U1, k, j, i) += T[1];
-    dUdt(m.U2, k, j, i) += T[2];
-    dUdt(m.U3, k, j, i) += T[3];
-}
-
 }

@@ -60,7 +60,7 @@ using namespace parthenon;
  */
 TaskStatus InitializeMHDModes(MeshBlockData<Real> *rc, ParameterInput *pin)
 {
-    FLAG("Initializing MHD Modes problem");
+    Flag(rc, "Initializing MHD Modes problem");
     auto pmb = rc->GetBlockPointer();
     GridScalar rho = rc->Get("prims.rho").data;
     GridScalar u = rc->Get("prims.u").data;

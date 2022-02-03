@@ -1,6 +1,5 @@
-# Bondi flow problem
-# Model a spherically symmetric, unmagnetized inflow
-# Uses more MeshBlocks than necessary, for debugging
+# Bondi flow problem w/B field
+# Model a spherically symmetric flow
 
 <parthenon/job>
 problem_id = bondi
@@ -14,11 +13,8 @@ nx2 = 128
 nx3 = 1
 
 <parthenon/meshblock>
-# Split into blocks mesh
-# Don't bother with xN boundaries for spherical coordinate systems
-# KHARMA will automatically place ~5 zones inside the EH
-nx1 = 32
-nx2 = 32
+nx1 = 128
+nx2 = 128
 nx3 = 1
 
 <coordinates>
@@ -36,6 +32,10 @@ cfl = 0.9
 gamma = 1.666667
 reconstruction = weno5
 
+<b_field>
+type = monopole
+b10 = 1
+
 <bondi>
 mdot = 1.0
 rs = 8.0
@@ -48,18 +48,16 @@ disable_floors = true
 <bounds>
 check_inflow_outer = false
 
-<b_field>
-type = none
-solver = none
-
 <debug>
-verbose = 0
+verbose = 1
+extra_checks = 1
 
 <parthenon/output0>
 file_type = hdf5
 dt = 5.0
 single_precision_output = true
-variables = prims.rho, prims.u, prims.uvec
+variables = prims.rho, prims.u, prims.uvec, prims.B
+ghost_zones = true
 
 <parthenon/output1>
 file_type = hst

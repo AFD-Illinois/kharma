@@ -74,9 +74,16 @@ KOKKOS_INLINE_FUNCTION void rotate_polar(const GReal Xin[GR_DIM], const GReal an
 
     // Convert back
     if (spherical) {
+        Xout[0] = Xin[0];
         // This transformation preserves r, we keep the accurate version
         Xout[1] = Xin[1]; //sqrt(Xout_cart[1]*Xout_cart[1] + Xout_cart[2]*Xout_cart[2] + Xout_cart[3]*Xout_cart[3]);
         Xout[2] = acos(Xout_cart[3]/Xout[1]);
+        if (isnan(Xout[2])) { // GCC has some trouble with ~acos(-1)
+            if (Xout_cart[3]/Xout[1] < 0)
+                Xout[2] = M_PI;
+            else
+                Xout[2] = 0.0;
+        }
         Xout[3] = atan2(Xout_cart[2], Xout_cart[1]);
     } else {
         DLOOP1 Xout[mu] = Xout_cart[mu];
@@ -86,7 +93,7 @@ KOKKOS_INLINE_FUNCTION void rotate_polar(const GReal Xin[GR_DIM], const GReal an
 /**
  * Set the transformation matrix dXdx for converting vectors from spherical to Cartesian coordinates,
  * including rotation *and* normalization!
- * There is a real inverse to this matrix, but we just take numerical inverses because they are easy
+ * There exists an analytic inverse, of course, but we just take numerical inverses because they are easy
  */
 KOKKOS_INLINE_FUNCTION void set_dXdx_sph2cart(const GReal X[GR_DIM], GReal dXdx[GR_DIM][GR_DIM])
 {
@@ -106,7 +113,9 @@ KOKKOS_INLINE_FUNCTION void set_dXdx_sph2cart(const GReal X[GR_DIM], GReal dXdx[
 /**
  * Same as rotate_polar but for vectors: rotate about the y-axis
  */
-KOKKOS_INLINE_FUNCTION void rotate_polar_vec(const GReal Xin[GR_DIM], const GReal vin[GR_DIM], const GReal angle, const GReal Xout[GR_DIM], GReal vout[GR_DIM], const bool spherical=true)
+KOKKOS_INLINE_FUNCTION void rotate_polar_vec(const GReal Xin[GR_DIM], const GReal vin[GR_DIM], const GReal angle,
+                                             const GReal Xout[GR_DIM], GReal vout[GR_DIM],
+                                             const bool spherical=true)
 {
     // Make sure we don't break the trivial case
     if (abs(angle) < 1e-20) {

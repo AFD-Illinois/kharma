@@ -37,7 +37,12 @@
 
 #include <parthenon/parthenon.hpp>
 
-// KHARMA TYPES
+/**
+ * Types and convenience functions
+ * 
+ * Anything potentially useful throughout KHARMA, but specific to it
+ * (general copy/pastes from StackOverflow go in kharma_utils.hpp)
+ */
 
 // Denote reconstruction algorithms
 // See reconstruction.hpp for implementations
@@ -46,22 +51,6 @@ enum ReconstructionType{donor_cell=0, linear_mc, linear_vl, ppm, mp5, weno5, wen
 // Denote inversion failures (pflags). See U_to_P for status explanations
 // Only thrown from function in U_to_P.hpp, see that file for meanings
 enum InversionStatus{success=0, neg_input, max_iter, bad_ut, bad_gamma, neg_rho, neg_u, neg_rhou};
-
-// Floor codes are non-exclusive, so it makes little sense to use an enum
-// Instead, we use bitflags, starting high enough that we can stick the enum in the bottom 5 bits
-// See floors.hpp for explanations of the flags
-#define HIT_FLOOR_GEOM_RHO 32
-#define HIT_FLOOR_GEOM_U 64
-#define HIT_FLOOR_B_RHO 128
-#define HIT_FLOOR_B_U 256
-#define HIT_FLOOR_TEMP 512
-#define HIT_FLOOR_GAMMA 1024
-#define HIT_FLOOR_KTOT 2048
-// Separate flags for when the floors are applied after reconstruction.
-// Not yet used, as this will likely have some speed penalty paid even if
-// the flags aren't written
-#define HIT_FLOOR_GEOM_RHO_FLUX 4096
-#define HIT_FLOOR_GEOM_U_FLUX 8192
 
 // Struct for derived 4-vectors at a point, usually calculated and needed together
 typedef struct {
@@ -142,37 +131,94 @@ class VarMap {
 };
 
 /**
- * Struct to hold floor values without cumbersome dictionary/string logistics.
- * Hopefully faster than dragging the full Params object device side,
- * similar reasoning to VarMap above.
+ * Functions for checking boundaries in 3D
  */
-class FloorPrescription {
-    public:
-        // Purely geometric limits
-        double rho_min_geom, u_min_geom, r_char;
-        // Dynamic limits on magnetization/temperature
-        double bsq_over_rho_max, bsq_over_u_max, u_over_rho_max;
-        // Limit entropy
-        double ktot_max;
-        // Limit fluid Lorentz factor
-        double gamma_max;
-        // Floor options
-        bool temp_adjust_u, fluid_frame, adjust_k;
+KOKKOS_INLINE_FUNCTION bool inside(const int& k, const int& j, const int& i,
+                                   const IndexRange& kb, const IndexRange& jb, const IndexRange& ib)
+{
+    return (i >= ib.s) && (i <= ib.e) && (j >= jb.s) && (j <= jb.e) && (k >= kb.s) && (k <= kb.e);
+}
+KOKKOS_INLINE_FUNCTION bool outside(const int& k, const int& j, const int& i,
+                                    const IndexRange& kb, const IndexRange& jb, const IndexRange& ib)
+{
+    return (i < ib.s) || (i > ib.e) || (j < jb.s) || (j > jb.e) || (k < kb.s) || (k > kb.e);
+}
 
-        FloorPrescription(const parthenon::Params& params)
-        {
-            rho_min_geom = params.Get<Real>("rho_min_geom");
-            u_min_geom = params.Get<Real>("u_min_geom");
-            r_char = params.Get<Real>("floor_r_char");
-
-            bsq_over_rho_max = params.Get<Real>("bsq_over_rho_max");
-            bsq_over_u_max = params.Get<Real>("bsq_over_u_max");
-            u_over_rho_max = params.Get<Real>("u_over_rho_max");
-            ktot_max = params.Get<Real>("ktot_max");
-            gamma_max = params.Get<Real>("gamma_max");
-
-            temp_adjust_u = params.Get<bool>("temp_adjust_u");
-            fluid_frame = params.Get<bool>("fluid_frame");
-            adjust_k = params.Get<bool>("adjust_k");
+#if TRACE
+inline void Flag(std::string label)
+{
+#pragma omp critical
+    if(MPIRank0()) std::cerr << label << std::endl;
+}
+inline void Flag(MeshBlockData<Real> *rc, std::string label)
+{
+#pragma omp critical
+{
+    if(MPIRank0()) std::cerr << label << std::endl;
+    if(0) {
+        auto rhop = rc->Get("prims.rho").data.GetHostMirrorAndCopy();
+        auto up = rc->Get("prims.u").data.GetHostMirrorAndCopy();
+        auto uvecp = rc->Get("prims.uvec").data.GetHostMirrorAndCopy();
+        auto Bp = rc->Get("prims.B").data.GetHostMirrorAndCopy();
+        auto rhoc = rc->Get("cons.rho").data.GetHostMirrorAndCopy();
+        auto uc = rc->Get("cons.u").data.GetHostMirrorAndCopy();
+        auto uvecc = rc->Get("cons.uvec").data.GetHostMirrorAndCopy();
+        auto Bu = rc->Get("cons.B").data.GetHostMirrorAndCopy();
+        cerr << "P:";
+        for (int j=0; j<8; j++) {
+            cout << endl;
+            for (int i=0; i<8; i++) {
+                fprintf(stderr, "%.5g\t", uvecp(2, 0, j, i));
+            }
         }
-};
+        cerr << endl << "U:";
+        for (int j=0; j<8; j++) {
+            cerr << endl;
+            for (int i=0; i<8; i++) {
+                fprintf(stderr, "%.5g\t", uvecc(2, 0, j, i));
+            }
+        }
+        cerr << endl << endl;
+    }
+}
+}
+inline void Flag(MeshData<Real> *md, std::string label)
+{
+#pragma omp critical
+{
+    if(MPIRank0()) std::cerr << label << std::endl;
+    if(0) {
+        cerr << label << ":" << std::endl;
+        auto rc = md->GetBlockData(0);
+        auto rhop = rc->Get("prims.rho").data.GetHostMirrorAndCopy();
+        auto up = rc->Get("prims.u").data.GetHostMirrorAndCopy();
+        auto uvecp = rc->Get("prims.uvec").data.GetHostMirrorAndCopy();
+        auto Bp = rc->Get("prims.B").data.GetHostMirrorAndCopy();
+        auto rhoc = rc->Get("cons.rho").data.GetHostMirrorAndCopy();
+        auto uc = rc->Get("cons.u").data.GetHostMirrorAndCopy();
+        auto uvecc = rc->Get("cons.uvec").data.GetHostMirrorAndCopy();
+        auto Bu = rc->Get("cons.B").data.GetHostMirrorAndCopy();
+        cerr << "P:";
+        for (int j=0; j<8; j++) {
+            cout << endl;
+            for (int i=0; i<8; i++) {
+                fprintf(stderr, "%.5g\t", uvecp(2, 0, j, i));
+            }
+        }
+        cerr << endl;
+        cerr << "U:";
+        for (int j=0; j<8; j++) {
+            cerr << endl;
+            for (int i=0; i<8; i++) {
+                fprintf(stderr, "%.5g\t", uvecc(2, 0, j, i));
+            }
+        }
+        cerr << endl << endl;
+    }
+}
+}
+#else
+inline void Flag(std::string label) {}
+inline void Flag(MeshBlockData<Real> *rc, std::string label) {}
+inline void Flag(MeshData<Real> *md, std::string label) {}
+#endif

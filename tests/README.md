@@ -37,6 +37,12 @@ Tests outlined in Ressler+ [2015](https://doi.org/10.1093/mnras/stv2084).
 * Stability stress test `bz_monopole` for polar boundary conditions, high-B operation
 * Restart from mid-run of a MAD simulation `get_mad`
 
+Note that the BZ monopole test has 2 parts: a stability test running through to 100M, a test
+outputting state after a single step.  Currently both are imaged in the same way, with the
+first two images showing initial condition and single-step state, and the rest showing the
+full 100M run at normal dump cadence.  Plots for this test show the primitive radial velocity
+U1 since this in particular shows erratic behavior near the polar bound.
+
 ## Performance tests
 
 * torus_scaling.par input with single block and 8 blocks, cycle=100

@@ -31,12 +31,18 @@
  *  OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-
-// General definitions for KHARMA the code, applying 
-// Most compile-time options are in kharma/CMakeLists.txt
-// Some can be set through make.sh, some require editing that file
-
 #pragma once
+
+/**
+ * General definitions and imports we'll need in all parts of KHARMA.
+ * 
+ * Note that this file *cannot* import all of Parthenon: it is itself
+ * imported (indirectly) in several Parthenon headers, through
+ * gr_coordinates.hpp, which provides Parthenon's coordinates object
+ * 
+ * Thus it is mostly geometry-related and Kokkos-related definitions.
+ * Convenience functions and most KHARMA-specific datatypes are in types.h
+ */
 
 // KHARMA INCLUDES
 // Standard libs we absolutely need everywhere
@@ -65,10 +71,6 @@
 using Real = parthenon::Real;
 using GReal = double;
 
-// Accuracy for numerical derivatives of the metric
-#define DELTA 1.e-8
-// Accuracy required for U to P
-#define UTOP_ERRTOL 1.e-8
 // A small number, compared to the grid or problem scale
 #define SMALL 1e-20
 
@@ -82,10 +84,47 @@ using GReal = double;
 #define NVEC 3
 #define VLOOP for(int v = 0; v < NVEC; ++v)
 #define VLOOP2 VLOOP for(int w = 0; w < NVEC; ++w)
+// This provides a way of addressing vectors that matches
+// directions, to make derivatives etc more readable
+#define V1 0
+#define V2 1
+#define V3 2
 
 // Useful Enums to avoid lots of #defines
 #define NLOC 5
 enum Loci{face1=0, face2, face3, center, corner};
+
+// Return the face location corresponding to the direction 'dir'
+KOKKOS_INLINE_FUNCTION Loci loc_of(const int& dir)
+{
+    switch (dir) {
+    case 0:
+        return Loci::center;
+    case parthenon::X1DIR:
+        return Loci::face1;
+    case parthenon::X2DIR:
+        return Loci::face2;
+    case parthenon::X3DIR:
+        return Loci::face3;
+    default:
+        return Loci::corner;
+    }
+}
+KOKKOS_INLINE_FUNCTION int dir_of(const Loci loc)
+{
+    switch (loc) {
+    case Loci::center:
+        return 0;
+    case Loci::face1:
+        return parthenon::X1DIR;
+    case Loci::face2:
+        return parthenon::X2DIR;
+    case Loci::face3:
+        return parthenon::X3DIR;
+    default:
+        return -1;
+    }
+}
 
 // Emulate old names for possible stronger typing later,
 // and for readability
@@ -123,14 +162,6 @@ using GeomTensor3 = parthenon::ParArrayND<Real>;
 #define KOKKOS_LAMBDA_2D_REDUCE KOKKOS_LAMBDA (const int &j, const int &i, double &local_result)
 #define KOKKOS_LAMBDA_3D_REDUCE KOKKOS_LAMBDA (const int &k, const int &j, const int &i, double &local_result)
 #define KOKKOS_LAMBDA_3D_REDUCE_INT KOKKOS_LAMBDA (const int &k, const int &j, const int &i, int &local_result)
-// Versions for full mesh (TODO use only these in KHARMA)
+// Versions for full mesh
 #define KOKKOS_LAMBDA_MESH_3D_REDUCE KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i, double &local_result)
 #define KOKKOS_LAMBDA_MESH_3D_REDUCE_INT KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i, int &local_result)
-// KHARMA FUNCTIONS
-
-// This is a macro and not a function for the sole reason that it still compiles if I forget the semicolon
-#if TRACE
-#define FLAG(x) if(MPIRank0()) std::cout << x << std::endl;
-#else
-#define FLAG(x)
-#endif

@@ -49,7 +49,7 @@ if __name__=='__main__':
     ax.plot(resolutions, l1_norm, color='darkblue', marker='^', markersize=8, label='$\\gamma_{{e}}$={:.2f}'.format(gamma_e))
     start_val = float(resolutions[0])*l1_norm[0]
     ax.plot([resolutions[0], resolutions[-1]], start_val*np.asarray([float(resolutions[0]), float(resolutions[-1])])**(-1), color='black', linestyle='dashed', label='$N^{-1}$')
-    plt.xscale('log', basex=2)
+    plt.xscale('log', base=2)
     plt.yscale('log')
     plt.xlabel('Resolution')
     plt.ylabel('L1 Norm')

@@ -34,13 +34,14 @@
 
 #include "problem.hpp"
 
+#include "b_field_tools.hpp"
 #include "boundaries.hpp"
 #include "debug.hpp"
 #include "fixup.hpp"
 #include "floors.hpp"
 #include "fluxes.hpp"
 #include "gr_coordinates.hpp"
-#include "b_field_tools.hpp"
+#include "types.hpp"
 
 // Problem initialization headers
 #include "bondi.hpp"
@@ -67,8 +68,8 @@ using namespace parthenon;
 
 void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
 {
-    FLAG("Initializing Block");
     auto rc = pmb->meshblock_data.Get();
+    Flag(rc.get(), "Initializing Block");
 
     // Breakout to call the appropriate initialization function,
     // defined in accompanying headers.
@@ -119,12 +120,12 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
     // Apply any floors
     // This is purposefully done even if floors are disabled,
     // as it is required for consistent initialization
-    GRMHD::ApplyFloors(rc.get());
+    Floors::ApplyFloors(rc.get());
 
     // Fill the conserved variables U,
     // which we'll treat as the independent/fundamental state.
     // P is filled again from this later on
     Flux::PrimToFlux(rc.get(), IndexDomain::entire);
 
-    FLAG("Initialized Block");
+    Flag(rc.get(), "Initialized Block");
 }

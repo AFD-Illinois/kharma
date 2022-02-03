@@ -34,6 +34,7 @@
 
 #include "post_initialize.hpp"
 
+#include "b_field_tools.hpp"
 #include "blob.hpp"
 #include "boundaries.hpp"
 #include "debug.hpp"
@@ -41,7 +42,7 @@
 #include "floors.hpp"
 #include "fluxes.hpp"
 #include "gr_coordinates.hpp"
-#include "b_field_tools.hpp"
+#include "types.hpp"
 
 #include "seed_B_ct.hpp"
 #include "seed_B_cd.hpp"
@@ -85,21 +86,21 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, Mesh *pmesh)
 {
     // Add the field for torus problems as a second pass
     // Preserves P==U and ends with all physical zones fully defined
-    if (pin->GetString("b_field", "type") != "none") {
+    if (pin->GetOrAddString("b_field", "type", "none") != "none") {
         // Calculating B has a stencil outside physical zones
-        FLAG("Extra boundary sync for B");
+        Flag("Extra boundary sync for B");
         SyncAllBounds(pmesh);
 
         // "Legacy" is the much more common normalization:
-        // It's the ratio of max values over the domain i.e. max_P / max_PB,
-        // not "beta" per se
+        // It's the ratio of max values over the domain i.e. max(P) / max(P_B),
+        // not necessarily a local min(beta)
         Real beta_calc_legacy = pin->GetOrAddBoolean("b_field", "legacy", true);
 
         // Use the correct seed function based on field constraint solver
         const bool use_b_flux_ct = pmesh->packages.AllPackages().count("B_FluxCT");
         const bool use_b_cd = pmesh->packages.AllPackages().count("B_CD");
 
-        FLAG("Seeding magnetic field");
+        Flag("Seeding magnetic field");
         // Seed the magnetic field and find the minimum beta
         Real beta_min = 1.e100, p_max = 0., bsq_max = 0.;
         for (auto &pmb : pmesh->block_list) {
@@ -111,7 +112,7 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, Mesh *pmesh)
             } else if (use_b_cd) {
                 B_CD::SeedBField(rc.get(), pin);
             }
-        
+
             // TODO should this be added after normalization?
             // TODO option to add flux slowly during the run?
             // Real BHflux = pin->GetOrAddReal("b_field", "bhflux", 0.0);
@@ -134,12 +135,15 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, Mesh *pmesh)
             }
         }
 
-        // Then, unless we're asked not to, normalize to some standard beta
-        if (pin->GetOrAddBoolean("b_field", "norm", true)) {
-            // Default to iharm3d's field normalization, pg_max/pb_max = 100
-            // This is *not* the same as local beta_min = 100
+        // Then, if we're in a torus problem or explicitly ask for it,
+        // normalize the magnetic field according to the density
+        auto prob = pin->GetString("parthenon/job", "problem_id");
+        if (pin->GetOrAddBoolean("b_field", "norm", (prob == "torus"))) {
+            // Default to the general literature beta_min of 100.
+            // As noted above, by default this uses the definition max(P)/max(P_B)!
             Real desired_beta_min = pin->GetOrAddReal("b_field", "beta_min", 100.);
 
+            // Calculate current beta_min value
             if (beta_calc_legacy) {
                 bsq_max = MPIMax(bsq_max);
                 p_max = MPIMax(p_max);
@@ -154,7 +158,7 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, Mesh *pmesh)
             }
 
             // Then normalize B by sqrt(beta/beta_min)
-            FLAG("Normalizing magnetic field");
+            Flag("Normalizing magnetic field");
             if (beta_min > 0) {
                 Real norm = sqrt(beta_min/desired_beta_min);
                 for (auto &pmb : pmesh->block_list) {
@@ -165,7 +169,7 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, Mesh *pmesh)
         }
 
         if (pin->GetInteger("debug", "verbose") > 0) {
-            // Do it again to check, and add divB for good measure
+            // Measure again to check, and add divB for good measure
             beta_min = 1e100; p_max = 0.; bsq_max = 0.;
             for (auto &pmb : pmesh->block_list) {
                 auto& rc = pmb->meshblock_data.Get();
@@ -203,12 +207,12 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, Mesh *pmesh)
         }
 
     }
-    FLAG("Added B Field");
+    Flag("Added B Field");
 }
 
 void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart)
 {
-    FLAG("Post-initialization started");
+    Flag("Post-initialization started");
     if (!is_restart)
         KHARMA::SeedAndNormalizeB(pin, pmesh);
 
@@ -221,7 +225,7 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart)
     }
 
     // Sync to fill the ghost zones
-    FLAG("Boundary sync");
+    Flag("Boundary sync");
     SyncAllBounds(pmesh);
 
     // TODO be able to describe to a teenager why this block is necessary
@@ -259,5 +263,5 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart)
         }
     }
 
-    FLAG("Post-initialization finished");
+    Flag("Post-initialization finished");
 }
