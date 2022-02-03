@@ -102,7 +102,9 @@ TaskStatus InitializeMHDModes(MeshBlockData<Real> *rc, ParameterInput *pin)
     Real B30 = 0.;
 
     std::complex<Real> omega;
-    Real drho, du, du1, du2, du3, dB1, dB2, dB3;
+    Real drho = 0, du = 0;
+    Real du1 = 0, du2 = 0, du3 = 0;
+    Real dB1 = 0, dB2 = 0, dB3 = 0;
 
     // Eigenmode definitions
     if (dir == 0)

@@ -41,7 +41,7 @@
 namespace KHARMA {
 
 /**
- * Initialize the magnetic field (if still required), and renormalize it as
+ * Initialize the magnetic field (if it wasn't done in ProblemGenerator), and renormalize it as
  * is common practice for torus problems.
  * 
  * Since the latter operation is global, we perform this on the whole mesh

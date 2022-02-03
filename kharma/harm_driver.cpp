@@ -168,11 +168,12 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         }
 
         // APPLY FLUXES
-        // This does the usual Parthenon flux divergence, then adds the GRMHD source term \Gamma * T
         auto t_flux_div = tl.AddTask(t_flux_fixed, Update::FluxDivergence<MeshData<Real>>, mc0.get(), mdudt.get());
-        auto t_flux_apply = tl.AddTask(t_flux_div, GRMHD::AddSource, mc0.get(), mdudt.get());
 
         // ADD SOURCES TO CONSERVED VARIABLES
+        // Source term for GRMHD, \Gamma * T
+        // TODO take this out in Minkowski space
+        auto t_flux_apply = tl.AddTask(t_flux_div, GRMHD::AddSource, mc0.get(), mdudt.get());
         // Source term for constraint-damping.  Applied only to B
         auto t_b_cd_source = t_flux_apply;
         if (use_b_cd) {
@@ -258,6 +259,7 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
 
         // U_to_P needs a guess in order to converge, so we copy in sc0
         // (but only the fluid primitives!)
+        // TODO move this before the bounds sync, in case we need to exchange U *AND* P for some reason
         auto t_copy_prims = tl.AddTask(t_prolongBound,
             [](MeshBlockData<Real> *rc0, MeshBlockData<Real> *rc1)
             {

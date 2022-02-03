@@ -96,10 +96,10 @@ class CoordinateEmbedding {
             }
 #endif
 
-            if (mpark::holds_alternative<SphNullTransform>(transform_in)) {
-                transform.emplace<SphNullTransform>(mpark::get<SphNullTransform>(transform_in));
-            } else if (mpark::holds_alternative<CartNullTransform>(transform_in)) {
-                transform.emplace<CartNullTransform>(mpark::get<CartNullTransform>(transform_in));
+            if (mpark::holds_alternative<NullTransform>(transform_in)) {
+                transform.emplace<NullTransform>(mpark::get<NullTransform>(transform_in));
+            } else if (mpark::holds_alternative<ExponentialTransform>(transform_in)) {
+                transform.emplace<ExponentialTransform>(mpark::get<ExponentialTransform>(transform_in));
             } else if (mpark::holds_alternative<ModifyTransform>(transform_in)) {
                 transform.emplace<ModifyTransform>(mpark::get<ModifyTransform>(transform_in));
             } else if (mpark::holds_alternative<FunkyTransform>(transform_in)) {
