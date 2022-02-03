@@ -132,10 +132,10 @@ void UtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     const auto& G = pmb->coords;
 
     auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
-    IndexRange ib = bounds.GetBoundsI(domain);
-    IndexRange jb = bounds.GetBoundsJ(domain);
-    IndexRange kb = bounds.GetBoundsK(domain);
-    IndexRange vec = IndexRange({0, B_U.GetDim(4)-1});
+    const IndexRange ib = bounds.GetBoundsI(domain);
+    const IndexRange jb = bounds.GetBoundsJ(domain);
+    const IndexRange kb = bounds.GetBoundsK(domain);
+    const IndexRange vec = IndexRange({0, B_U.GetDim(4)-1});
     pmb->par_for("UtoP_B", vec.s, vec.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_VEC {
             // Update the primitive B-fields

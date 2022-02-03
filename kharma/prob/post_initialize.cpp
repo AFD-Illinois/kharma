@@ -112,7 +112,7 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, Mesh *pmesh)
             } else if (use_b_cd) {
                 B_CD::SeedBField(rc.get(), pin);
             }
-        
+
             // TODO should this be added after normalization?
             // TODO option to add flux slowly during the run?
             // Real BHflux = pin->GetOrAddReal("b_field", "bhflux", 0.0);

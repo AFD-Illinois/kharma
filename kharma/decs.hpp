@@ -31,12 +31,18 @@
  *  OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-
-// General definitions for KHARMA the code, applying 
-// Most compile-time options are in kharma/CMakeLists.txt
-// Some can be set through make.sh, some require editing that file
-
 #pragma once
+
+/**
+ * General definitions and imports we'll need in all parts of KHARMA.
+ * 
+ * Note that this file *cannot* import all of Parthenon: it is itself
+ * imported (indirectly) in several Parthenon headers, through
+ * gr_coordinates.hpp, which provides Parthenon's coordinates object
+ * 
+ * Thus it is mostly geometry-related and Kokkos-related definitions.
+ * Convenience functions and most KHARMA-specific datatypes are in types.h
+ */
 
 // KHARMA INCLUDES
 // Standard libs we absolutely need everywhere

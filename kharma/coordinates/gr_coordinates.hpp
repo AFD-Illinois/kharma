@@ -207,13 +207,13 @@ KOKKOS_INLINE_FUNCTION void GRCoordinates::coord_embed(const int& k, const int& 
 KOKKOS_INLINE_FUNCTION void GRCoordinates::lower(const Real vcon[GR_DIM], Real vcov[GR_DIM],
                                         const int& k, const int& j, const int& i, const Loci loc) const
 {
-    DLOOP1 vcov[mu] = 0;
+    gzero(vcov);
     DLOOP2 vcov[mu] += gcov(loc, j, i, mu, nu) * vcon[nu];
 }
 KOKKOS_INLINE_FUNCTION void GRCoordinates::raise(const Real vcov[GR_DIM], Real vcon[GR_DIM],
                                         const int& k, const int& j, const int& i, const Loci loc) const
 {
-    DLOOP1 vcon[mu] = 0;
+    gzero(vcon);
     DLOOP2 vcon[mu] += gcon(loc, j, i, mu, nu) * vcov[nu];
 }
 
