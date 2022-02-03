@@ -77,7 +77,6 @@ TaskStatus GRMHD::AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
                             D.bcon[mu] * D.bcov[nu]);
 
                 for (int lam = 0; lam < GR_DIM; ++lam) {
-
                     new_du[lam] += Tmunu * G.gdet(Loci::center, j, i) * G.conn(j, i, nu, lam, mu);
                 }
             }

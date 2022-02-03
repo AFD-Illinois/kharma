@@ -317,7 +317,7 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
                     // Or LLF, probably safest option
                     parthenon::par_for_inner(member, il.s, il.e,
                         [&](const int& i) {
-                                U(b).flux(dir, p, k, j, i) = llf(Fl(p,i), Fr(p,i), cmax(i), cmin(i), Ul(p,i), Ur(p,i));
+                            U(b).flux(dir, p, k, j, i) = llf(Fl(p,i), Fr(p,i), cmax(i), cmin(i), Ul(p,i), Ur(p,i));
                         }
                     );
                 }

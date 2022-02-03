@@ -105,12 +105,7 @@ KOKKOS_INLINE_FUNCTION Real fm_torus_rho(const GReal a, const GReal rin, const G
                                          const Real kappa, const GReal r, const GReal th)
 {
     Real l = lfish_calc(a, rmax);
-    // Abbreviated version of the full primitives calculation
-    //printf("lnh calc with %g %g %g %g %g\n", a, l, rin, r, th);
     Real lnh = lnh_calc(a, l, rin, r, th);
-    // if (lnh >= 0. || r >= rin) {
-    //     printf("a: %g l: %g lnh: %g r: %g th: %g\n", a, l, lnh, r, th);
-    // }
     if (lnh >= 0. && r >= rin) {
         // Calculate rho
         Real hm1 = exp(lnh) - 1.;

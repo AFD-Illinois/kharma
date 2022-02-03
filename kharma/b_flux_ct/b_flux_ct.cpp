@@ -45,11 +45,6 @@
 
 using namespace parthenon;
 
-// These are going to make this thing much more readable
-#define B1 0
-#define B2 1
-#define B3 2
-
 namespace B_FluxCT
 {
 
@@ -186,13 +181,13 @@ TaskStatus FluxCT(MeshData<Real> *md)
     Flag(md, "Calc EMFs");
     pmb0->par_for("flux_ct_emf", block.s, block.e, kl.s, kl.e, jl.s, jl.e, il.s, il.e,
         KOKKOS_LAMBDA_MESH_3D {
-            emf3(b, k, j, i) =  0.25 * (B_F(b).flux(X1DIR, B2, k, j, i) + B_F(b).flux(X1DIR, B2, k, j-1, i) -
-                                        B_F(b).flux(X2DIR, B1, k, j, i) - B_F(b).flux(X2DIR, B1, k, j, i-1));
+            emf3(b, k, j, i) =  0.25 * (B_F(b).flux(X1DIR, V2, k, j, i) + B_F(b).flux(X1DIR, V2, k, j-1, i) -
+                                        B_F(b).flux(X2DIR, V1, k, j, i) - B_F(b).flux(X2DIR, V1, k, j, i-1));
             if (ndim > 2) {
-                emf2(b, k, j, i) = -0.25 * (B_F(b).flux(X1DIR, B3, k, j, i) + B_F(b).flux(X1DIR, B3, k-1, j, i) -
-                                            B_F(b).flux(X3DIR, B1, k, j, i) - B_F(b).flux(X3DIR, B1, k, j, i-1));
-                emf1(b, k, j, i) =  0.25 * (B_F(b).flux(X2DIR, B3, k, j, i) + B_F(b).flux(X2DIR, B3, k-1, j, i) -
-                                            B_F(b).flux(X3DIR, B2, k, j, i) - B_F(b).flux(X3DIR, B2, k, j-1, i));
+                emf2(b, k, j, i) = -0.25 * (B_F(b).flux(X1DIR, V3, k, j, i) + B_F(b).flux(X1DIR, V3, k-1, j, i) -
+                                            B_F(b).flux(X3DIR, V1, k, j, i) - B_F(b).flux(X3DIR, V1, k, j, i-1));
+                emf1(b, k, j, i) =  0.25 * (B_F(b).flux(X2DIR, V3, k, j, i) + B_F(b).flux(X2DIR, V3, k-1, j, i) -
+                                            B_F(b).flux(X3DIR, V2, k, j, i) - B_F(b).flux(X3DIR, V2, k, j-1, i));
             }
         }
     );
@@ -204,19 +199,19 @@ TaskStatus FluxCT(MeshData<Real> *md)
 #if FUSE_EMF_KERNELS
     pmb0->par_for("flux_ct_all", block.s, block.e, kl.s, kl.e, jl.s, jl.e, il.s, il.e,
         KOKKOS_LAMBDA_MESH_3D {
-            B_F(b).flux(X1DIR, B1, k, j, i) =  0.0;
-            B_F(b).flux(X1DIR, B2, k, j, i) =  0.5 * (emf3(b, k, j, i) + emf3(b, k, j+1, i));
+            B_F(b).flux(X1DIR, V1, k, j, i) =  0.0;
+            B_F(b).flux(X1DIR, V2, k, j, i) =  0.5 * (emf3(b, k, j, i) + emf3(b, k, j+1, i));
 
-            B_F(b).flux(X2DIR, B1, k, j, i) = -0.5 * (emf3(b, k, j, i) + emf3(b, k, j, i+1));
-            B_F(b).flux(X2DIR, B2, k, j, i) =  0.0;
+            B_F(b).flux(X2DIR, V1, k, j, i) = -0.5 * (emf3(b, k, j, i) + emf3(b, k, j, i+1));
+            B_F(b).flux(X2DIR, V2, k, j, i) =  0.0;
 
             if (ndim > 2) {
-                B_F(b).flux(X1DIR, B3, k, j, i) = -0.5 * (emf2(b, k, j, i) + emf2(b, k+1, j, i));
-                B_F(b).flux(X2DIR, B3, k, j, i) =  0.5 * (emf1(b, k, j, i) + emf1(b, k+1, j, i));
+                B_F(b).flux(X1DIR, V3, k, j, i) = -0.5 * (emf2(b, k, j, i) + emf2(b, k+1, j, i));
+                B_F(b).flux(X2DIR, V3, k, j, i) =  0.5 * (emf1(b, k, j, i) + emf1(b, k+1, j, i));
 
-                B_F(b).flux(X3DIR, B1, k, j, i) =  0.5 * (emf2(b, k, j, i) + emf2(b, k, j, i+1));
-                B_F(b).flux(X3DIR, B2, k, j, i) = -0.5 * (emf1(b, k, j, i) + emf1(b, k, j+1, i));
-                B_F(b).flux(X3DIR, B3, k, j, i) =  0.0;
+                B_F(b).flux(X3DIR, V1, k, j, i) =  0.5 * (emf2(b, k, j, i) + emf2(b, k, j, i+1));
+                B_F(b).flux(X3DIR, V2, k, j, i) = -0.5 * (emf1(b, k, j, i) + emf1(b, k, j+1, i));
+                B_F(b).flux(X3DIR, V3, k, j, i) =  0.0;
             }
         }
     );
@@ -224,24 +219,24 @@ TaskStatus FluxCT(MeshData<Real> *md)
     // Note these each have different domains, eg il vs ib.  The former extends one index farther if appropriate
     pmb0->par_for("flux_ct_1", block.s, block.e, kb.s, kb.e, jb.s, jb.e, il.s, il.e,
         KOKKOS_LAMBDA_MESH_3D {
-            B_F(b).flux(X1DIR, B1, k, j, i) =  0.0;
-            B_F(b).flux(X1DIR, B2, k, j, i) =  0.5 * (emf3(b, k, j, i) + emf3(b, k, j+1, i));
-            if (ndim > 2) B_F(b).flux(X1DIR, B3, k, j, i) = -0.5 * (emf2(b, k, j, i) + emf2(b, k+1, j, i));
+            B_F(b).flux(X1DIR, V1, k, j, i) =  0.0;
+            B_F(b).flux(X1DIR, V2, k, j, i) =  0.5 * (emf3(b, k, j, i) + emf3(b, k, j+1, i));
+            if (ndim > 2) B_F(b).flux(X1DIR, V3, k, j, i) = -0.5 * (emf2(b, k, j, i) + emf2(b, k+1, j, i));
         }
     );
     pmb0->par_for("flux_ct_2", block.s, block.e, kb.s, kb.e, jl.s, jl.e, ib.s, ib.e,
         KOKKOS_LAMBDA_MESH_3D {
-            B_F(b).flux(X2DIR, B1, k, j, i) = -0.5 * (emf3(b, k, j, i) + emf3(b, k, j, i+1));
-            B_F(b).flux(X2DIR, B2, k, j, i) =  0.0;
-            if (ndim > 2) B_F(b).flux(X2DIR, B3, k, j, i) =  0.5 * (emf1(b, k, j, i) + emf1(b, k+1, j, i));
+            B_F(b).flux(X2DIR, V1, k, j, i) = -0.5 * (emf3(b, k, j, i) + emf3(b, k, j, i+1));
+            B_F(b).flux(X2DIR, V2, k, j, i) =  0.0;
+            if (ndim > 2) B_F(b).flux(X2DIR, V3, k, j, i) =  0.5 * (emf1(b, k, j, i) + emf1(b, k+1, j, i));
         }
     );
     if (ndim > 2) {
         pmb0->par_for("flux_ct_3", block.s, block.e, kl.s, kl.e, jb.s, jb.e, ib.s, ib.e,
             KOKKOS_LAMBDA_MESH_3D {
-                B_F(b).flux(X3DIR, B1, k, j, i) =  0.5 * (emf2(b, k, j, i) + emf2(b, k, j, i+1));
-                B_F(b).flux(X3DIR, B2, k, j, i) = -0.5 * (emf1(b, k, j, i) + emf1(b, k, j+1, i));
-                B_F(b).flux(X3DIR, B3, k, j, i) =  0.0;
+                B_F(b).flux(X3DIR, V1, k, j, i) =  0.5 * (emf2(b, k, j, i) + emf2(b, k, j, i+1));
+                B_F(b).flux(X3DIR, V2, k, j, i) = -0.5 * (emf1(b, k, j, i) + emf1(b, k, j+1, i));
+                B_F(b).flux(X3DIR, V3, k, j, i) =  0.0;
             }
         );
     }
@@ -277,9 +272,9 @@ TaskStatus FixPolarFlux(MeshData<Real> *md)
         {
             pmb->par_for("fix_flux_b_l", ks, ke_e, js, js, is, ie+1,
                 KOKKOS_LAMBDA_3D {
-                    B_F.flux(X1DIR, B2, k, j-1, i) = -B_F.flux(X1DIR, B2, k, js, i);
-                    if (ndim > 1) B_F.flux(X2DIR, B2, k, j, i) = 0;
-                    if (ndim > 2) B_F.flux(X3DIR, B2, k, j-1, i) = -B_F.flux(X3DIR, B2, k, js, i);
+                    B_F.flux(X1DIR, V2, k, j-1, i) = -B_F.flux(X1DIR, V2, k, js, i);
+                    if (ndim > 1) B_F.flux(X2DIR, V2, k, j, i) = 0;
+                    if (ndim > 2) B_F.flux(X3DIR, V2, k, j-1, i) = -B_F.flux(X3DIR, V2, k, js, i);
                 }
             );
         }
@@ -287,9 +282,9 @@ TaskStatus FixPolarFlux(MeshData<Real> *md)
         {
             pmb->par_for("fix_flux_b_r", ks, ke_e, je_e, je_e, is, ie+1,
                 KOKKOS_LAMBDA_3D {
-                    B_F.flux(X1DIR, B2, k, j, i) = -B_F.flux(X1DIR, B2, k, je, i);
-                    if (ndim > 1) B_F.flux(X2DIR, B2, k, j, i) = 0;
-                    if (ndim > 2) B_F.flux(X3DIR, B2, k, j, i) = -B_F.flux(X3DIR, B2, k, je, i);
+                    B_F.flux(X1DIR, V2, k, j, i) = -B_F.flux(X1DIR, V2, k, je, i);
+                    if (ndim > 1) B_F.flux(X2DIR, V2, k, j, i) = 0;
+                    if (ndim > 2) B_F.flux(X3DIR, V2, k, j, i) = -B_F.flux(X3DIR, V2, k, je, i);
                 }
             );
         }
@@ -341,21 +336,21 @@ double MaxDivB(MeshData<Real> *md)
         KOKKOS_LAMBDA_MESH_3D_REDUCE {
             const auto& G = B_U.GetCoords(b);
             // 2D divergence, averaging to corners
-            double term1 = B_U(b, B1, k, j, i)   + B_U(b, B1, k, j-1, i)
-                         - B_U(b, B1, k, j, i-1) - B_U(b, B1, k, j-1, i-1);
-            double term2 = B_U(b, B2, k, j, i)   + B_U(b, B2, k, j, i-1)
-                         - B_U(b, B2, k, j-1, i) - B_U(b, B2, k, j-1, i-1);
+            double term1 = B_U(b, V1, k, j, i)   + B_U(b, V1, k, j-1, i)
+                         - B_U(b, V1, k, j, i-1) - B_U(b, V1, k, j-1, i-1);
+            double term2 = B_U(b, V2, k, j, i)   + B_U(b, V2, k, j, i-1)
+                         - B_U(b, V2, k, j-1, i) - B_U(b, V2, k, j-1, i-1);
             double term3 = 0.;
             if (ndim > 2) {
                 // Average to corners in 3D, add 3rd flux
-                term1 +=  B_U(b, B1, k-1, j, i)   + B_U(b, B1, k-1, j-1, i)
-                        - B_U(b, B1, k-1, j, i-1) - B_U(b, B1, k-1, j-1, i-1);
-                term2 +=  B_U(b, B2, k-1, j, i)   + B_U(b, B2, k-1, j, i-1)
-                        - B_U(b, B2, k-1, j-1, i) - B_U(b, B2, k-1, j-1, i-1);
-                term3 =   B_U(b, B3, k, j, i)     + B_U(b, B3, k, j-1, i)
-                        + B_U(b, B3, k, j, i-1)   + B_U(b, B3, k, j-1, i-1)
-                        - B_U(b, B3, k-1, j, i)   - B_U(b, B3, k-1, j-1, i)
-                        - B_U(b, B3, k-1, j, i-1) - B_U(b, B3, k-1, j-1, i-1);
+                term1 +=  B_U(b, V1, k-1, j, i)   + B_U(b, V1, k-1, j-1, i)
+                        - B_U(b, V1, k-1, j, i-1) - B_U(b, V1, k-1, j-1, i-1);
+                term2 +=  B_U(b, V2, k-1, j, i)   + B_U(b, V2, k-1, j, i-1)
+                        - B_U(b, V2, k-1, j-1, i) - B_U(b, V2, k-1, j-1, i-1);
+                term3 =   B_U(b, V3, k, j, i)     + B_U(b, V3, k, j-1, i)
+                        + B_U(b, V3, k, j, i-1)   + B_U(b, V3, k, j-1, i-1)
+                        - B_U(b, V3, k-1, j, i)   - B_U(b, V3, k-1, j-1, i)
+                        - B_U(b, V3, k-1, j, i-1) - B_U(b, V3, k-1, j-1, i-1);
             }
             double local_divb = fabs(norm*term1/G.dx1v(i) + norm*term2/G.dx2v(j) + norm*term3/G.dx3v(k));
             if (local_divb > local_result) local_result = local_divb;
@@ -411,21 +406,21 @@ void FillOutput(MeshBlock *pmb, ParameterInput *pin)
     pmb->par_for("divB_output", kl.s, kl.e, jl.s, jl.e, il.s, il.e,
         KOKKOS_LAMBDA_3D {
             // 2D divergence, averaging to corners
-            double term1 = B_U(B1, k, j, i)   + B_U(B1, k, j-1, i)
-                         - B_U(B1, k, j, i-1) - B_U(B1, k, j-1, i-1);
-            double term2 = B_U(B2, k, j, i)   + B_U(B2, k, j, i-1)
-                         - B_U(B2, k, j-1, i) - B_U(B2, k, j-1, i-1);
+            double term1 = B_U(V1, k, j, i)   + B_U(V1, k, j-1, i)
+                         - B_U(V1, k, j, i-1) - B_U(V1, k, j-1, i-1);
+            double term2 = B_U(V2, k, j, i)   + B_U(V2, k, j, i-1)
+                         - B_U(V2, k, j-1, i) - B_U(V2, k, j-1, i-1);
             double term3 = 0.;
             if (ndim > 2) {
                 // Average to corners in 3D, add 3rd flux
-                term1 +=  B_U(B1, k-1, j, i)   + B_U(B1, k-1, j-1, i)
-                        - B_U(B1, k-1, j, i-1) - B_U(B1, k-1, j-1, i-1);
-                term2 +=  B_U(B2, k-1, j, i)   + B_U(B2, k-1, j, i-1)
-                        - B_U(B2, k-1, j-1, i) - B_U(B2, k-1, j-1, i-1);
-                term3 =   B_U(B3, k, j, i)     + B_U(B3, k, j-1, i)
-                        + B_U(B3, k, j, i-1)   + B_U(B3, k, j-1, i-1)
-                        - B_U(B3, k-1, j, i)   - B_U(B3, k-1, j-1, i)
-                        - B_U(B3, k-1, j, i-1) - B_U(B3, k-1, j-1, i-1);
+                term1 +=  B_U(V1, k-1, j, i)   + B_U(V1, k-1, j-1, i)
+                        - B_U(V1, k-1, j, i-1) - B_U(V1, k-1, j-1, i-1);
+                term2 +=  B_U(V2, k-1, j, i)   + B_U(V2, k-1, j, i-1)
+                        - B_U(V2, k-1, j-1, i) - B_U(V2, k-1, j-1, i-1);
+                term3 =   B_U(V3, k, j, i)     + B_U(V3, k, j-1, i)
+                        + B_U(V3, k, j, i-1)   + B_U(V3, k, j-1, i-1)
+                        - B_U(V3, k-1, j, i)   - B_U(V3, k-1, j-1, i)
+                        - B_U(V3, k-1, j, i-1) - B_U(V3, k-1, j-1, i-1);
             }
             divB(k, j, i) = fabs(norm*term1/G.dx1v(i) + norm*term2/G.dx2v(j) + norm*term3/G.dx3v(k));
         }

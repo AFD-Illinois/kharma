@@ -53,17 +53,18 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
 
     Real min_rho_q = pin->GetOrAddReal("b_field", "min_rho_q", 0.2);
     std::string b_field_type = pin->GetString("b_field", "type");
-
-    // Translate to an enum so we can avoid string comp inside,
+    // Translate the type to an enum so we can avoid string comp inside,
     // as well as for good errors, many->one maps, etc.
     BSeedType b_field_flag = ParseBSeedType(b_field_type);
 
-    // Require and load what we need if necessary
-    Real a, rin, rmax, gam, kappa, rho_norm;
-    Real tilt = 0; // Initialized
-    Real b10 = 0, b20 = 0, b30 = 0;
+    // Other parameters we need
     auto prob = pin->GetString("parthenon/job", "problem_id");
     bool is_torus = (prob == "torus");
+
+    // Require and load what we need if necessary
+    Real a, rin, rmax, gam, kappa, rho_norm;
+    Real tilt = 0; // Needs to be initialized
+    Real b10 = 0, b20 = 0, b30 = 0;
     switch (b_field_flag)
     {
     case BSeedType::constant:
@@ -109,9 +110,9 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
         pmb->par_for("B_field_B", ks, ke, js, je, is, ie,
             KOKKOS_LAMBDA_3D {
                 // Set B1 directly
-                B_P(0, k, j, i) = b10;
-                B_P(1, k, j, i) = b20;
-                B_P(2, k, j, i) = b30;
+                B_P(V1, k, j, i) = b10;
+                B_P(V2, k, j, i) = b20;
+                B_P(V3, k, j, i) = b30;
                 B_FluxCT::p_to_u(G, B_P, k, j, i, B_U);
             }
         );
@@ -120,10 +121,9 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
         pmb->par_for("B_field_B", ks, ke, js, je, is, ie,
             KOKKOS_LAMBDA_3D {
                 // Set B1 directly by normalizing
-                //printf("%lf", b10 / G.gdet(Loci::center, j, i));
-                B_P(0, k, j, i) = b10 / G.gdet(Loci::center, j, i);
-                B_P(1, k, j, i) = 0.;
-                B_P(2, k, j, i) = 0.;
+                B_P(V1, k, j, i) = b10 / G.gdet(Loci::center, j, i);
+                B_P(V2, k, j, i) = 0.;
+                B_P(V3, k, j, i) = 0.;
                 B_FluxCT::p_to_u(G, B_P, k, j, i, B_U);
             }
         );
@@ -136,28 +136,39 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
     ParArrayND<double> A("A", NVEC, n3+1, n2+1, n1+1);
     pmb->par_for("B_field_A", ks, ke+1, js, je+1, is, ie+1,
         KOKKOS_LAMBDA_3D {
+            GReal Xnative[GR_DIM], Xnative_midplane[GR_DIM];
             GReal Xembed[GR_DIM], Xmidplane[GR_DIM];
+            G.coord(k, j, i, Loci::corner, Xnative);
             G.coord_embed(k, j, i, Loci::corner, Xembed);
             // What are our corresponding "midplane" values for evaluating the function?
             rotate_polar(Xembed, tilt, Xmidplane);
-            GReal r = Xmidplane[1], th = Xmidplane[2];
+            const GReal r = Xmidplane[1], th = Xmidplane[2];
+            // We also need native midplane coordinates, for translating the result
+            G.coords.coord_to_native(Xmidplane, Xnative_midplane);
 
-            // Find rho (later u?) at corners
+            // This is written under the assumption re-computed rho is more accurate than a bunch
+            // of averaging in a meaningful way.  Just use the average if not.
             Real rho_av;
             if (is_torus) {
-                // Re-calculate what the torus would be before tilting,
-                // since only the untilted A is X3-only
+                // Find rho (later u?) at corner directly for torii
                 rho_av = fm_torus_rho(a, rin, rmax, gam, kappa, r, th) / rho_norm;
             } else {
-                // Just take values from the last physical zone beyond it
+                // Use averages for anything else
+                // This loop runs over every corner. Centers do not exist before the first
+                // or after the last, so use the last (ghost) zones available.
                 const int ii = clip(i, is+1, ie);
                 const int jj = clip(j, js+1, je);
-                rho_av = (rho(ks, jj, ii)     + rho(ks, jj, ii - 1) +
-                          rho(ks, jj - 1, ii) + rho(ks, jj - 1, ii - 1)) / 4;
+                const int kk = clip(k, ks+1, ke);
+                if (ndim > 2) {
+                    rho_av = (rho(kk, jj, ii)     + rho(kk, jj, ii - 1) +
+                              rho(kk, jj - 1, ii) + rho(kk, jj - 1, ii - 1) +
+                              rho(kk - 1, jj, ii)     + rho(kk - 1, jj, ii - 1) +
+                              rho(kk - 1, jj - 1, ii) + rho(kk - 1, jj - 1, ii - 1)) / 8;
+                } else {
+                    rho_av = (rho(ks, jj, ii)     + rho(ks, jj, ii - 1) +
+                              rho(ks, jj - 1, ii) + rho(ks, jj - 1, ii - 1)) / 4;
+                }
             }
-            // printf("rho_av computed: %.2g actual: %.2g\n", rho_av,
-            //         (rho(ks, j, i)     + rho(ks, j, i - 1) +
-            //          rho(ks, j - 1, i) + rho(ks, j - 1, i - 1)) / 4);
 
             Real q;
             switch (b_field_flag)
@@ -197,9 +208,26 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
                 break;
             }
 
-            double A_tilt[GR_DIM] = {0., 0., 0., max(q, 0.)}, Atmp[GR_DIM] = {0};
-            rotate_polar_vec(Xmidplane, A_tilt, -tilt, Xembed, Atmp);
-            VLOOP A(v, k, j, i) = Atmp[1+v];
+            // This is *covariant* A_mu
+            double A_untilt_lower[GR_DIM] = {0., 0., 0., max(q, 0.)};
+            // Raise to contravariant vector, since rotate_polar_vec will need that.
+            // Note we have to do this in the midplane!
+            GReal gcon_midplane[GR_DIM][GR_DIM] = {0};
+            G.coords.gcon_native(Xnative_midplane, gcon_midplane);
+            double A_untilt[GR_DIM] = {0};
+            DLOOP2 A_untilt[mu] += gcon_midplane[mu][nu] * A_untilt_lower[nu];
+
+            // Then rotate
+            double A_tilt[GR_DIM] = {0};
+            double A_untilt_embed[GR_DIM] = {0}, A_tilt_embed[GR_DIM] = {0};
+            G.coords.con_vec_to_embed(Xnative_midplane, A_untilt, A_untilt_embed);
+            rotate_polar_vec(Xmidplane, A_untilt_embed, -tilt, Xembed, A_tilt_embed);
+            G.coords.con_vec_to_native(Xnative, A_tilt_embed, A_tilt);
+
+            // Lower the result as we need curl(A_mu).  Done at local zone.
+            double A_tilt_lower[GR_DIM] = {0};
+            G.lower(A_tilt, A_tilt_lower, k, j, i, Loci::corner);
+            VLOOP A(v, k, j, i) = A_tilt_lower[1+v];
         }
     );
 
@@ -211,64 +239,62 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
                 // This needs to be 3D because post-tilt A may not point in the phi direction only
 
                 // A3,2 derivative
-                const Real A3c2f = (A(2, k, j + 1, i)     + A(2, k, j + 1, i + 1) + 
-                                    A(2, k + 1, j + 1, i) + A(2, k + 1, j + 1, i + 1)) / 4;
-                const Real A3c2b = (A(2, k, j, i)     + A(2, k, j, i + 1) +
-                                    A(2, k + 1, j, i) + A(2, k + 1, j, i + 1)) / 4;
+                const Real A3c2f = (A(V3, k, j + 1, i)     + A(V3, k, j + 1, i + 1) + 
+                                    A(V3, k + 1, j + 1, i) + A(V3, k + 1, j + 1, i + 1)) / 4;
+                const Real A3c2b = (A(V3, k, j, i)     + A(V3, k, j, i + 1) +
+                                    A(V3, k + 1, j, i) + A(V3, k + 1, j, i + 1)) / 4;
                 // A2,3 derivative
-                const Real A2c3f = (A(1, k + 1, j, i)     + A(1, k + 1, j, i + 1) +
-                                    A(1, k + 1, j + 1, i) + A(1, k + 1, j + 1, i + 1)) / 4;
-                const Real A2c3b = (A(1, k, j, i)     + A(1, k, j, i + 1) +
-                                    A(1, k, j + 1, i) + A(1, k, j + 1, i + 1)) / 4;
-                B_P(0, k, j, i) = ((A3c2f - A3c2b) / G.dx2v(j) - (A2c3f - A2c3b) / G.dx3v(j))
-                                / G.gdet(Loci::center, j, i);
+                const Real A2c3f = (A(V2, k + 1, j, i)     + A(V2, k + 1, j, i + 1) +
+                                    A(V2, k + 1, j + 1, i) + A(V2, k + 1, j + 1, i + 1)) / 4;
+                const Real A2c3b = (A(V2, k, j, i)     + A(V2, k, j, i + 1) +
+                                    A(V2, k, j + 1, i) + A(V2, k, j + 1, i + 1)) / 4;
+                B_U(V1, k, j, i) = (A3c2f - A3c2b) / G.dx2v(j) - (A2c3f - A2c3b) / G.dx3v(k);
 
                 // A1,3 derivative
-                const Real A1c3f = (A(0, k + 1, j, i)     + A(0, k + 1, j, i + 1) + 
-                                    A(0, k + 1, j + 1, i) + A(0, k + 1, j + 1, i + 1)) / 4;
-                const Real A1c3b = (A(0, k, j, i)     + A(0, k, j, i + 1) +
-                                    A(0, k, j + 1, i) + A(0, k, j + 1, i + 1)) / 4;
+                const Real A1c3f = (A(V1, k + 1, j, i)     + A(V1, k + 1, j, i + 1) + 
+                                    A(V1, k + 1, j + 1, i) + A(V1, k + 1, j + 1, i + 1)) / 4;
+                const Real A1c3b = (A(V1, k, j, i)     + A(V1, k, j, i + 1) +
+                                    A(V1, k, j + 1, i) + A(V1, k, j + 1, i + 1)) / 4;
                 // A3,1 derivative
-                const Real A3c1f = (A(2, k, j, i + 1)     + A(2, k + 1, j, i + 1) +
-                                    A(2, k, j + 1, i + 1) + A(2, k + 1, j + 1, i + 1)) / 4;
-                const Real A3c1b = (A(2, k, j, i)     + A(2, k + 1, j, i) +
-                                    A(2, k, j + 1, i) + A(2, k + 1, j + 1, i)) / 4;
-                B_P(1, k, j, i) = ((A1c3f - A1c3b) / G.dx3v(i) - (A3c1f - A3c1b) / G.dx1v(i))
-                                / G.gdet(Loci::center, j, i);
+                const Real A3c1f = (A(V3, k, j, i + 1)     + A(V3, k + 1, j, i + 1) +
+                                    A(V3, k, j + 1, i + 1) + A(V3, k + 1, j + 1, i + 1)) / 4;
+                const Real A3c1b = (A(V3, k, j, i)     + A(V3, k + 1, j, i) +
+                                    A(V3, k, j + 1, i) + A(V3, k + 1, j + 1, i)) / 4;
+                B_U(V2, k, j, i) = (A1c3f - A1c3b) / G.dx3v(k) - (A3c1f - A3c1b) / G.dx1v(i);
 
                 // A2,1 derivative
-                const Real A2c1f = (A(1, k, j, i + 1)     + A(1, k, j + 1, i + 1) + 
-                                    A(1, k + 1, j, i + 1) + A(1, k + 1, j + 1, i + 1)) / 4;
-                const Real A2c1b = (A(1, k, j, i)     + A(1, k, j + 1, i) +
-                                    A(1, k + 1, j, i) + A(1, k + 1, j + 1, i)) / 4;
+                const Real A2c1f = (A(V2, k, j, i + 1)     + A(V2, k, j + 1, i + 1) + 
+                                    A(V2, k + 1, j, i + 1) + A(V2, k + 1, j + 1, i + 1)) / 4;
+                const Real A2c1b = (A(V2, k, j, i)     + A(V2, k, j + 1, i) +
+                                    A(V2, k + 1, j, i) + A(V2, k + 1, j + 1, i)) / 4;
                 // A1,2 derivative
-                const Real A1c2f = (A(0, k, j + 1, i)     + A(0, k, j + 1, i + 1) +
-                                    A(0, k + 1, j + 1, i) + A(0, k + 1, j + 1, i + 1)) / 4;
-                const Real A1c2b = (A(0, k, j, i)     + A(0, k, j, i + 1) +
-                                    A(0, k + 1, j, i) + A(0, k + 1, j, i + 1)) / 4;
-                B_P(2, k, j, i) = ((A2c1f - A2c1b) / G.dx1v(i) - (A1c2f - A1c2b) / G.dx2v(i))
-                                / G.gdet(Loci::center, j, i);
-
-                // Finally, set conserved version
-                // TODO could just set B_U above
-                B_FluxCT::p_to_u(G, B_P, k, j, i, B_U);
+                const Real A1c2f = (A(V1, k, j + 1, i)     + A(V1, k, j + 1, i + 1) +
+                                    A(V1, k + 1, j + 1, i) + A(V1, k + 1, j + 1, i + 1)) / 4;
+                const Real A1c2b = (A(V1, k, j, i)     + A(V1, k, j, i + 1) +
+                                    A(V1, k + 1, j, i) + A(V1, k + 1, j, i + 1)) / 4;
+                B_U(V3, k, j, i) = (A2c1f - A2c1b) / G.dx1v(i) - (A1c2f - A1c2b) / G.dx2v(j);
             }
         );
     } else {
         pmb->par_for("B_field_B_2D", ks, ke, js, je, is, ie,
             KOKKOS_LAMBDA_3D {
-                // Take a flux-ct step from the corner potentials
-                B_P(0, k, j, i) = -(A(2, k, j, i) - A(2, k, j + 1, i)
-                                    + A(2, k, j, i + 1) - A(2, k, j + 1, i + 1)) /
-                                    (2. * G.dx2v(j) * G.gdet(Loci::center, j, i));
-                B_P(1, k, j, i) =  (A(2, k, j, i) + A(2, k, j + 1, i)
-                                    - A(2, k, j, i + 1) - A(2, k, j + 1, i + 1)) /
-                                    (2. * G.dx1v(i) * G.gdet(Loci::center, j, i));
-                B_P(2, k, j, i) = 0.;
-                B_FluxCT::p_to_u(G, B_P, k, j, i, B_U);
+                // A3,2 derivative
+                const Real A3c2f = (A(V3, k, j + 1, i) + A(V3, k, j + 1, i + 1)) / 2;
+                const Real A3c2b = (A(V3, k, j, i)     + A(V3, k, j, i + 1)) / 2;
+                B_U(V1, k, j, i) = (A3c2f - A3c2b) / G.dx2v(j);
+
+                // A3,1 derivative
+                const Real A3c1f = (A(V3, k, j, i + 1) + A(V3, k, j + 1, i + 1)) / 2;
+                const Real A3c1b = (A(V3, k, j, i)     + A(V3, k, j + 1, i)) / 2;
+                B_U(V2, k, j, i) = - (A3c1f - A3c1b) / G.dx1v(i);
+
+                B_U(V3, k, j, i) = 0;
             }
         );
     }
+
+    // Then make sure the primitive versions are updated, too
+    UtoP(rc);
 
     return TaskStatus::complete;
 }

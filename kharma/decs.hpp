@@ -65,12 +65,6 @@
 using Real = parthenon::Real;
 using GReal = double;
 
-// Accuracy for numerical derivatives of the metric
-#define DELTA 1.e-8
-// Accuracy required for U to P
-#define UTOP_ERRTOL 1.e-8
-// Maximum iterations when doing U to P inversion
-#define UTOP_ITER_MAX 8
 // A small number, compared to the grid or problem scale
 #define SMALL 1e-20
 
@@ -84,6 +78,11 @@ using GReal = double;
 #define NVEC 3
 #define VLOOP for(int v = 0; v < NVEC; ++v)
 #define VLOOP2 VLOOP for(int w = 0; w < NVEC; ++w)
+// This provides a way of addressing vectors that matches
+// directions, to make derivatives etc more readable
+#define V1 0
+#define V2 1
+#define V3 2
 
 // Useful Enums to avoid lots of #defines
 #define NLOC 5
@@ -157,6 +156,6 @@ using GeomTensor3 = parthenon::ParArrayND<Real>;
 #define KOKKOS_LAMBDA_2D_REDUCE KOKKOS_LAMBDA (const int &j, const int &i, double &local_result)
 #define KOKKOS_LAMBDA_3D_REDUCE KOKKOS_LAMBDA (const int &k, const int &j, const int &i, double &local_result)
 #define KOKKOS_LAMBDA_3D_REDUCE_INT KOKKOS_LAMBDA (const int &k, const int &j, const int &i, int &local_result)
-// Versions for full mesh (TODO use only these in KHARMA)
+// Versions for full mesh
 #define KOKKOS_LAMBDA_MESH_3D_REDUCE KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i, double &local_result)
 #define KOKKOS_LAMBDA_MESH_3D_REDUCE_INT KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i, int &local_result)

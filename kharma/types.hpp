@@ -180,13 +180,15 @@ class FloorPrescription {
 #if TRACE
 inline void Flag(std::string label)
 {
+#pragma omp critical
     if(MPIRank0()) std::cerr << label << std::endl;
 }
 inline void Flag(MeshBlockData<Real> *rc, std::string label)
 {
 #pragma omp critical
-    if(MPIRank0()) {
-        cerr << label << ":" << std::endl;
+{
+    if(MPIRank0()) std::cerr << label << std::endl;
+    if(0) {
         auto rhop = rc->Get("prims.rho").data.GetHostMirrorAndCopy();
         auto up = rc->Get("prims.u").data.GetHostMirrorAndCopy();
         auto uvecp = rc->Get("prims.uvec").data.GetHostMirrorAndCopy();
@@ -212,10 +214,13 @@ inline void Flag(MeshBlockData<Real> *rc, std::string label)
         cerr << endl << endl;
     }
 }
+}
 inline void Flag(MeshData<Real> *md, std::string label)
 {
 #pragma omp critical
-    if(MPIRank0()) {
+{
+    if(MPIRank0()) std::cerr << label << std::endl;
+    if(0) {
         cerr << label << ":" << std::endl;
         auto rc = md->GetBlockData(0);
         auto rhop = rc->Get("prims.rho").data.GetHostMirrorAndCopy();
@@ -243,6 +248,7 @@ inline void Flag(MeshData<Real> *md, std::string label)
         }
         cerr << endl << endl;
     }
+}
 }
 #else
 inline void Flag(std::string label) {}

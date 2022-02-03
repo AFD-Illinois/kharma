@@ -37,6 +37,13 @@
 
 #include "kharma_utils.hpp"
 
+// Accuracy required for U to P
+#define UTOP_ERRTOL 1.e-8
+// Maximum iterations when doing U to P inversion
+#define UTOP_ITER_MAX 8
+// Heuristic step size
+#define DELTA 1e-5
+
 namespace GRMHD {
 
 KOKKOS_INLINE_FUNCTION Real err_eqn(const Real& gam, const Real& Bsq, const Real& D, const Real& Ep, const Real& QdB,

@@ -38,11 +38,6 @@
 
 using namespace parthenon;
 
-// These are going to make this thing much more readable
-#define B1 0
-#define B2 1
-#define B3 2
-
 namespace B_CD
 {
 
@@ -162,9 +157,9 @@ TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
             GReal alpha_c = 1. / sqrt(-G.gcon(Loci::center, j, i, 0, 0));
             GReal gdet_c = G.gdet(Loci::center, j, i);
 
-            double divB = ((B_U(b).flux(X1DIR, B1, k, j, i+1) - B_U(b).flux(X1DIR, B1, k, j, i)) / G.dx1v(i) +
-                           (B_U(b).flux(X2DIR, B2, k, j+1, i) - B_U(b).flux(X2DIR, B2, k, j, i)) / G.dx2v(j));
-            if (ndim > 2) divB += (B_U(b).flux(X3DIR, B3, k+1, j, i) - B_U(b).flux(X3DIR, B3, k, j, i)) / G.dx3v(k);
+            double divB = ((B_U(b).flux(X1DIR, V1, k, j, i+1) - B_U(b).flux(X1DIR, V1, k, j, i)) / G.dx1v(i) +
+                           (B_U(b).flux(X2DIR, V2, k, j+1, i) - B_U(b).flux(X2DIR, V2, k, j, i)) / G.dx2v(j));
+            if (ndim > 2) divB += (B_U(b).flux(X3DIR, V3, k+1, j, i) - B_U(b).flux(X3DIR, V3, k, j, i)) / G.dx3v(k);
             // TODO this needs to include the time derivative right?
 
             VLOOP {
@@ -186,7 +181,7 @@ TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
             GReal dalpha2 = ( (1. / sqrt(-G.gcon(Loci::face2, j+1, i, 0, 0))) / G.gdet(Loci::face2, j+1, i)
                             - (1. / sqrt(-G.gcon(Loci::face2, j, i, 0, 0))) / G.gdet(Loci::face2, j, i)) / G.dx2v(i);
             // There is not dalpha3, the coordinate system is symmetric along x3
-            psi_DU(b, 0, k, j, i) += B_U(b, B1, k, j, i) * dalpha1 + B_U(b, B2, k, j, i) * dalpha2 - alpha_c * lambda * psi_U(b, 0, k, j, i);
+            psi_DU(b, 0, k, j, i) += B_U(b, V1, k, j, i) * dalpha1 + B_U(b, V2, k, j, i) * dalpha2 - alpha_c * lambda * psi_U(b, 0, k, j, i);
         }
     );
 
@@ -219,9 +214,9 @@ Real MaxDivB(MeshData<Real> *md)
     pmb0->par_reduce("B_field_bsqmax", block.s, block.e, kl.s, kl.e, jl.s, jl.e, il.s, il.e,
         KOKKOS_LAMBDA_MESH_3D_REDUCE {
             const auto& G = B.GetCoords(b);
-            double divb_local = ((B(b).flux(1, B1, k, j, i+1) - B(b).flux(1, B1, k, j, i)) / G.dx1v(i)+
-                                 (B(b).flux(2, B2, k, j+1, i) - B(b).flux(2, B2, k, j, i)) / G.dx2v(j));
-            if (ndim > 2) divb_local += (B(b).flux(3, B3, k+1, j, i) - B(b).flux(3, B3, k, j, i)) / G.dx3v(k);
+            double divb_local = ((B(b).flux(1, V1, k, j, i+1) - B(b).flux(1, V1, k, j, i)) / G.dx1v(i)+
+                                 (B(b).flux(2, V2, k, j+1, i) - B(b).flux(2, V2, k, j, i)) / G.dx2v(j));
+            if (ndim > 2) divb_local += (B(b).flux(3, V3, k+1, j, i) - B(b).flux(3, V3, k, j, i)) / G.dx3v(k);
 
             if(divb_local > local_result) local_result = divb_local;
         }
@@ -277,9 +272,9 @@ void FillOutput(MeshBlock *pmb, ParameterInput *pin)
 
     pmb->par_for("B_field_bsqmax", kl.s, kl.e, jl.s, jl.e, il.s, il.e,
         KOKKOS_LAMBDA_3D {
-            double divb_local = ((F1(B1, k, j, i+1) - F1(B1, k, j, i)) / G.dx1v(i) +
-                                 (F2(B2, k, j+1, i) - F2(B2, k, j, i)) / G.dx2v(j));
-            if (ndim > 2) divb_local += (F3(B3, k+1, j, i) - F3(B3, k, j, i)) / G.dx3v(k);
+            double divb_local = ((F1(V1, k, j, i+1) - F1(V1, k, j, i)) / G.dx1v(i) +
+                                 (F2(V2, k, j+1, i) - F2(V2, k, j, i)) / G.dx2v(j));
+            if (ndim > 2) divb_local += (F3(V3, k+1, j, i) - F3(V3, k, j, i)) / G.dx3v(k);
 
             divB(k, j, i) = divb_local;
         }

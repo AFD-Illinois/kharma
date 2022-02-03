@@ -80,9 +80,6 @@ TaskStatus InitializeBZMonopole(MeshBlockData<Real> *rc, ParameterInput *pin)
             GReal trho = rho_min_limit + (r / r_char) / pow(r, 4.) / bsq_o_rho_max;
             GReal tu = u_min_limit + (r / r_char) / pow(r, 4.) / bsq_o_rho_max;
 
-            // TODO remove me, just used for testing/debugging purposes now
-            //printf("%d -> %g %g %g %g %g\n", i, trho, tu, rho_min_limit, u_min_limit, bsq_o_rho_max);
-
             rho(k, j, i) = trho;
             u(k, j, i) = tu;
             uvec(0, k, j, i) = 0.;
