@@ -61,7 +61,7 @@ TaskStatus GRMHD::FixUtoP(MeshBlockData<Real> *rc)
     const auto& pars = pmb->packages.Get("GRMHD")->AllParams();
     const Real gam = pars.Get<Real>("gamma");
     const int verbose = pars.Get<int>("verbose");
-    const FloorPrescription floors = FloorPrescription(pars);
+    const Floors::Prescription floors(pmb->packages.Get("Floors")->AllParams());
 
     const IndexRange ib = rc->GetBoundsI(IndexDomain::entire);
     const IndexRange jb = rc->GetBoundsJ(IndexDomain::entire);
@@ -85,8 +85,8 @@ TaskStatus GRMHD::FixUtoP(MeshBlockData<Real> *rc)
                     for (int m = -1; m <= 1; m++) {
                         for (int l = -1; l <= 1; l++) {
                             int ii = i + l, jj = j + m, kk = k + n;
-                            // If in bounds...
-                            if (ii >= ib.s && ii <= ib.e && jj >= jb.s && jj <= jb.e && kk >= kb.s && kk <= kb.e) {
+                            // If we haven't overstepped array bounds...
+                            if (inside(kk, jj, ii, kb, jb, ib)) {
                                 // Weight by distance
                                 double w = 1./(abs(l) + abs(m) + abs(n) + 1);
 
@@ -107,9 +107,7 @@ TaskStatus GRMHD::FixUtoP(MeshBlockData<Real> *rc)
                 if(wsum < 1.e-10) {
                     // TODO probably should crash here.
 #ifndef KOKKOS_ENABLE_SYCL
-                    if (verbose >= 1 && i >= ib_b.s && i <= ib_b.e &&
-                                        j >= jb_b.s && j <= jb_b.e &&
-                                        k >= kb_b.s && k <= kb_b.e)
+                    if (verbose >= 1 && inside(k, j, i, kb_b, jb_b, ib_b)) // If an interior zone...
                         printf("No neighbors were available at %d %d %d!\n", i, j, k);
 #endif
                     PLOOP P(p, k, j, i) = sum_x[p]/wsum_x;

@@ -136,49 +136,6 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     int extra_checks = pin->GetOrAddInteger("debug", "extra_checks", 0);
     params.Add("extra_checks", extra_checks);
 
-    // Floor parameters
-    // Floors for GRMHD quantities are handled in this package, since they
-    // have a tendency to interact with fixing (& causing!) UtoP failures,
-    // so we want to have control of the order in which floors/fixUtoP are
-    // applied.
-    double rho_min_geom, u_min_geom;
-    if (pin->GetBoolean("coordinates", "spherical")) {
-        // In spherical systems, floors drop as r^2, so set them higher by default
-        rho_min_geom = pin->GetOrAddReal("floors", "rho_min_geom", 1.e-6);
-        u_min_geom = pin->GetOrAddReal("floors", "u_min_geom", 1.e-8);
-    } else {
-        rho_min_geom = pin->GetOrAddReal("floors", "rho_min_geom", 1.e-8);
-        u_min_geom = pin->GetOrAddReal("floors", "u_min_geom", 1.e-10);
-    }
-    params.Add("rho_min_geom", rho_min_geom);
-    params.Add("u_min_geom", u_min_geom);
-    double floor_r_char = pin->GetOrAddReal("floors", "r_char", 10);
-    params.Add("floor_r_char", floor_r_char);
-
-    double bsq_over_rho_max = pin->GetOrAddReal("floors", "bsq_over_rho_max", 1e20);
-    params.Add("bsq_over_rho_max", bsq_over_rho_max);
-    double bsq_over_u_max = pin->GetOrAddReal("floors", "bsq_over_u_max", 1e20);
-    params.Add("bsq_over_u_max", bsq_over_u_max);
-    double u_over_rho_max = pin->GetOrAddReal("floors", "u_over_rho_max", 1e20);
-    params.Add("u_over_rho_max", u_over_rho_max);
-    double ktot_max = pin->GetOrAddReal("floors", "ktot_max", 1e20);
-    params.Add("ktot_max", ktot_max);
-
-    double gamma_max = pin->GetOrAddReal("floors", "gamma_max", 50.);
-    params.Add("gamma_max", gamma_max);
-
-    bool temp_adjust_u = pin->GetOrAddBoolean("floors", "temp_adjust_u", false);
-    params.Add("temp_adjust_u", temp_adjust_u);
-    bool fluid_frame = pin->GetOrAddBoolean("floors", "fluid_frame", false);
-    params.Add("fluid_frame", fluid_frame);
-    bool adjust_k = pin->GetOrAddBoolean("floors", "adjust_k", true);
-    params.Add("adjust_k", adjust_k);
-
-    // Disable all floors.  It is obviously tremendously inadvisable to
-    // set this option to true
-    bool disable_floors = pin->GetOrAddBoolean("floors", "disable_floors", false);
-    params.Add("disable_floors", disable_floors);
-
     // Option to disable checking the fluxes at boundaries
     bool check_inflow_inner = pin->GetOrAddBoolean("bounds", "check_inflow_inner", true);
     params.Add("check_inflow_inner", check_inflow_inner);
@@ -280,14 +237,12 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     // Should switch these to "Integer" fields when Parthenon supports it
     m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
     pkg->AddField("pflag", m);
-    pkg->AddField("fflag", m);
 
     // Finally, the StateDescriptor/Package object determines the Callbacks Parthenon makes to
     // a particular package -- that is, some portion of the things that the package needs done
     // at each step, which must be done at specific times.
     // See the documentation on each of these functions for their purpose and call context.
-    pkg->FillDerivedBlock = GRMHD::UtoP;
-    pkg->PostFillDerivedBlock = GRMHD::PostUtoP;
+    pkg->FillDerivedBlock = GRMHD::FillDerivedBlock;
     pkg->CheckRefinementBlock = GRMHD::CheckRefinement;
     pkg->EstimateTimestepBlock = GRMHD::EstimateTimestep;
     pkg->PostStepDiagnosticsMesh = GRMHD::PostStepDiagnostics;
@@ -295,15 +250,11 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     return pkg;
 }
 
-void UtoP(MeshBlockData<Real> *rc)
+void UtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
     Flag(rc, "Filling Primitives");
     auto pmb = rc->GetBlockPointer();
     const auto& G = pmb->coords;
-
-    int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
-    int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
-    int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
 
     PackIndexMap prims_map, cons_map;
     auto U = GRMHD::PackMHDCons(rc, cons_map);
@@ -328,12 +279,19 @@ void UtoP(MeshBlockData<Real> *rc)
     // We could (did formerly) save some time here by running over
     // only zones with initialized conserved variables, but the domain
     // of such values is not rectangular in the current handling
-    const IndexRange ib = rc->GetBoundsI(IndexDomain::entire);
-    const IndexRange jb = rc->GetBoundsJ(IndexDomain::entire);
-    const IndexRange kb = rc->GetBoundsK(IndexDomain::entire);
+    auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
+    const IndexRange ib = bounds.GetBoundsI(domain);
+    const IndexRange jb = bounds.GetBoundsJ(domain);
+    const IndexRange kb = bounds.GetBoundsK(domain);
+    const IndexRange ib_b = bounds.GetBoundsI(IndexDomain::interior);
+    const IndexRange jb_b = bounds.GetBoundsJ(IndexDomain::interior);
+    const IndexRange kb_b = bounds.GetBoundsK(IndexDomain::interior);
+
     pmb->par_for("U_to_P", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_3D {
-            if (P(m_p.RHO, k, j, i) != 0. || P(m_p.UU, k, j, i) != 0.) {
+            if (inside(k, j, i, kb_b, jb_b, ib_b) ||
+                abs(P(m_p.RHO, k, j, i)) > SMALL || abs(P(m_p.UU, k, j, i)) > SMALL) {
+                // Run over all interior zones and any initialized ghosts
                 pflag(k, j, i) = GRMHD::u_to_p(G, U, m_u, gam, k, j, i, Loci::center, P, m_p);
             } else {
                 // Don't *use* un-initialized zones for fixes, but also don't *fix* them
@@ -342,21 +300,6 @@ void UtoP(MeshBlockData<Real> *rc)
         }
     );
     Flag(rc, "Filled");
-}
-
-void PostUtoP(MeshBlockData<Real> *rc)
-{
-    Flag(rc, "Fixing Derived");
-
-    // Apply floors
-    if (!rc->GetBlockPointer()->packages.Get("GRMHD")->Param<bool>("disable_floors")) {
-        GRMHD::ApplyFloors(rc);
-    }
-
-    // Fix inversion errors computing P from U, by averaging adjacent zones
-    GRMHD::FixUtoP(rc);
-
-    Flag(rc, "Fixed");
 }
 
 Real EstimateTimestep(MeshBlockData<Real> *rc)

@@ -117,7 +117,7 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
     // Apply any floors
     // This is purposefully done even if floors are disabled,
     // as it is required for consistent initialization
-    GRMHD::ApplyFloors(rc.get());
+    Floors::ApplyFloors(rc.get());
 
     // Fill the conserved variables U,
     // which we'll treat as the independent/fundamental state.

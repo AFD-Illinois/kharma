@@ -115,9 +115,11 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
     // Options
     const auto& pars = pmb0->packages.Get("GRMHD")->AllParams();
     const auto& globals = pmb0->packages.Get("Globals")->AllParams();
+    const auto& floor_pars = pmb0->packages.Get("Floors")->AllParams();
     const bool use_hlle = pars.Get<bool>("use_hlle");
+    const bool disable_floors = floor_pars.Get<bool>("disable_floors");
     // Pull out a struct of just the actual floor values for speed
-    const FloorPrescription floors = FloorPrescription(pars);
+    const Floors::Prescription floors(floor_pars);
     // Check presence of different packages
     const auto& pkgs = pmb0->packages.AllPackages();
     const bool use_b_flux_ct = pkgs.count("B_FluxCT");
@@ -193,9 +195,9 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
                 [&](const int& i) {
                     // Apply floors to the *reconstructed* primitives, because without TVD
                     // we have no guarantee they remotely resemble the *centered* primitives
-                    if (Recon == ReconstructionType::weno5) {
-                        GRMHD::apply_geo_floors(G, Pl, m_p, gam, k, j, i, floors, loc);
-                        GRMHD::apply_geo_floors(G, Pr, m_p, gam, k, j, i, floors, loc);
+                    if (Recon == ReconstructionType::weno5 && !disable_floors) {
+                        Floors::apply_geo_floors(G, Pl, m_p, gam, k, j, i, floors, loc);
+                        Floors::apply_geo_floors(G, Pr, m_p, gam, k, j, i, floors, loc);
                     }
 #if !FUSE_FLUX_KERNELS
                 }

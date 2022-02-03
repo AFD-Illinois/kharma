@@ -271,22 +271,25 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
                 return TaskStatus::complete;
             }, sc0.get(), sc1.get());
 
-        // This call fills the fluid primitive values in all zones except physical (outflow, reflecting) boundaries --
-        // that is, everywhere the conserved variables have been updated so far.
-        // This call is required to be after the boundary sync, as the fixing routines use neighboring zones
-        // (fixes are called in GRMHD::PostFillDerived, which is run automatically as a part of this call)
-        // This setup avoids extra boundary synchronization, by updating the primitives identially on different blocks instead of
-        // explicitly exchanging them.
+        // This call fills the fluid primitive values in all physical zones, that is, including MPI boundaries:
+        // everywhere the conserved variables have been updated so far.
+        // This setup avoids extra boundary synchronization, by updating the primitives identically on different blocks,
+        // instead of explicitly exchanging them.
         auto t_fill_derived = tl.AddTask(t_copy_prims, Update::FillDerived<MeshBlockData<Real>>, sc1.get());
 
-        // This is a parthenon call, but in spherical coordinates it will call the functions in
-        // boundaries.cpp, which apply physical boundary conditions based on the primitive variables of GRMHD,
+        // Then fix any inversions which failed.  Floors have been applied already as a part of (Post)FillDerived,
+        // so fixups performed by averaging zones will return logical results.  Floors are re-applied after fixups
+        // Someday this will not be necessary as guaranteed-convergent UtoP schemes exist
+        auto t_fix_derived = tl.AddTask(t_fill_derived, GRMHD::FixUtoP, sc1.get());
+
+        // This is a parthenon call, but in spherical coordinates it will call the KHARMA functions in
+        // boundaries.cpp, which apply physical boundary conditions based on the primitive variables of GRHD,
         // and based on the conserved forms for everything else.  Note that because this is called *after*
         // FillDerived (since it needs bulk fluid primitives to apply GRMHD boundaries), this function
         // must call FillDerived *again*, to update just the ghost zones.
         // This is why KHARMA packages need to implement their "FillDerived" a.k.a. UtoP functions in the form
-        // UtoP(rc, domain, coarse), so that they can be run over just the boundary domains here
-        auto t_set_bc = tl.AddTask(t_fill_derived, parthenon::ApplyBoundaryConditions, sc1);
+        // UtoP(rc, domain, coarse), so that they can be run over just the boundary domains here.
+        auto t_set_bc = tl.AddTask(t_fix_derived, parthenon::ApplyBoundaryConditions, sc1);
 
         // ADD SOURCES TO PRIMITIVE VARIABLES
         // In order to calculate dissipation, we must know the entropy at the beginning and end of the substep,
