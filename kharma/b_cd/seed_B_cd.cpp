@@ -61,24 +61,7 @@ TaskStatus B_CD::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
 
     // Translate to an enum so we can avoid string comp inside,
     // as well as for good errors, many->one maps, etc.
-    BSeedType b_field_flag = BSeedType::sane;
-    if (b_field_type == "none") {
-        return TaskStatus::complete;
-    } else if (b_field_type == "constant") {
-        b_field_flag = BSeedType::constant;
-    } else if (b_field_type == "monopole") {
-        b_field_flag = BSeedType::monopole;
-    } else if (b_field_type == "sane") {
-        b_field_flag = BSeedType::sane;
-    } else if (b_field_type == "mad" || b_field_type == "ryan") {
-        b_field_flag = BSeedType::ryan;
-    } else if (b_field_type == "r3s3") {
-        b_field_flag = BSeedType::r3s3;
-    } else if (b_field_type == "gaussian") {
-        b_field_flag = BSeedType::gaussian;
-    } else {
-        throw std::invalid_argument("Magnetic field seed type not supported: " + b_field_type);
-    }
+    BSeedType b_field_flag = ParseBSeedType(b_field_type);
 
     // Require and load what we need if necessary
     Real rin, b10, b20, b30;
@@ -118,7 +101,6 @@ TaskStatus B_CD::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
         pmb->par_for("B_field_B", ks, ke, js, je, is, ie,
             KOKKOS_LAMBDA_3D {
                 // Set B1 directly by normalizing
-                //printf("%lf", b10 / G.gdet(Loci::center, j, i));
                 B_P(0, k, j, i) = b10 / G.gdet(Loci::center, j, i);
                 B_P(1, k, j, i) = 0.;
                 B_P(2, k, j, i) = 0.;

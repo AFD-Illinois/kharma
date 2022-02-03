@@ -17,6 +17,7 @@ using namespace std;
  * This takes a number n and clips it to lie on the real line between 'lower' and 'upper'
  * If n is NaN, it returns the *lower* bound, unless this is also NaN, in which case it returns the upper.
  * Note that you can disable a bound by passing NaN.
+ * If lower > upper, clip() will return the bound marked 'upper', that is, the lower number.
  *
  * Lightly edited from https://stackoverflow.com/questions/9323903/most-efficient-elegant-way-to-clip-a-number
  * Note that in C++17+ this can likely be a straight std::clamp call
@@ -24,7 +25,8 @@ using namespace std;
 template <typename T>
 KOKKOS_INLINE_FUNCTION T clip(const T& n, const T& lower, const T& upper)
 {
-#if DEBUG
+#if TRACE
+  // This isn't so useful without context
   //if (isnan(n)) printf("Clipping a NaN value!\n");
   //if (n > upper) printf("Clip %g to %g\n", n, upper);
   //if (n < lower) printf("Clip %g to %g\n", n, lower);

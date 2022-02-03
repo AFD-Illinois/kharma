@@ -4,6 +4,7 @@
 # *should* work on any TACC system
 #SBATCH -J kharma
 
+# Queues: astro-physics, eng-research-gpu
 #SBATCH -p astro-physics
 
 # More than one node is slow,
@@ -23,7 +24,6 @@ if [[ -z "$SLURM_NTASKS_PER_NODE" ]]; then
   SLURM_NTASKS_PER_NODE=$(( $SLURM_NTASKS / $SLURM_NNODES ))
   echo "Assuming $SLURM_NTASKS_PER_NODE tasks per node"
 fi
-
 
 # OpenMP Options
 export OMP_PROC_BIND=spread

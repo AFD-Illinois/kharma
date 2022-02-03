@@ -36,6 +36,7 @@
 #include "debug.hpp"
 
 #include "mhd_functions.hpp"
+#include "types.hpp"
 
 namespace Reductions {
 
@@ -63,7 +64,7 @@ Real DomainSum(MeshData<Real> *md);
 // That is, if we try to define "Function" outside and pass it as a template argument,
 // the compiler has no idea what "rho_U" means
 #define MAKE_SUM2D_FN(name, fn) template<> inline Real AccretionRate<name>(MeshData<Real> *md, const int& i) { \
-    FLAG("Performing accretion reduction"); \
+    Flag("Performing accretion reduction"); \
     auto pmesh = md->GetMeshPointer(); \
 \
     Real result = 0.; \
@@ -96,7 +97,7 @@ Real DomainSum(MeshData<Real> *md);
         } \
     } \
 \
-    FLAG("Reduced"); \
+    Flag("Reduced"); \
 \
     return result; \
 }
@@ -148,7 +149,7 @@ inline Real LdotEHFlux(MeshData<Real> *md) {return AccretionRate<Ldot_Flux>(md, 
 // Now we repeat the whole process for reductions across the entire domain
 
 #define MAKE_SUM3D_FN(name, fn) template<> inline Real DomainSum<name>(MeshData<Real> *md) { \
-    FLAG("Performing domain reduction"); \
+    Flag("Performing domain reduction"); \
     auto pmesh = md->GetMeshPointer(); \
 \
     Real result = 0.; \
@@ -176,7 +177,7 @@ inline Real LdotEHFlux(MeshData<Real> *md) {return AccretionRate<Ldot_Flux>(md, 
         result += result_local; \
     } \
 \
-    FLAG("Reduced"); \
+    Flag("Reduced"); \
 \
     return result; \
 }

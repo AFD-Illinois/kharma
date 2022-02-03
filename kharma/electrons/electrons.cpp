@@ -196,7 +196,7 @@ TaskStatus InitElectrons(MeshBlockData<Real> *rc, ParameterInput *pin)
 
 void UtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
-    FLAG("UtoP electrons");
+    Flag(rc, "UtoP electrons");
     auto pmb = rc->GetBlockPointer();
 
     MetadataFlag isElectrons = pmb->packages.Get("Electrons")->Param<MetadataFlag>("ElectronsFlag");
@@ -225,7 +225,7 @@ void PostUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse) {}
 
 TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real> *rc)
 {
-    FLAG("Applying electron heating");
+    Flag(rc, "Applying electron heating");
     auto pmb = rc->GetBlockPointer();
 
     MetadataFlag isElectrons = pmb->packages.Get("Electrons")->Param<MetadataFlag>("ElectronsFlag");
@@ -382,17 +382,17 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
         // 
     }
 
-    FLAG("Applied");
+    Flag(rc, "Applied");
     return TaskStatus::complete;
 }
 
 TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *rc)
 {
-    FLAG("Printing electron diagnostics");
+    Flag(rc, "Printing electron diagnostics");
 
     // Output any diagnostics after a step completes
 
-    FLAG("Printed")
+    Flag(rc, "Printed");
     return TaskStatus::complete;
 }
 

@@ -20,6 +20,7 @@ build:
   artifacts:
     paths:
       - kharma.*
+      - make_args
 
 bondi:
   stage: tests
@@ -28,12 +29,11 @@ bondi:
   script:
     - bash run.sh
     - bash check.sh
-  after_script:
-    - cd ../..
   artifacts:
     when: always
     paths:
       - tests/bondi/*.png
+      - tests/bondi/*.hst
 
 mhdmodes:
   stage: tests
@@ -42,12 +42,11 @@ mhdmodes:
   script:
     - bash run.sh
     - bash check.sh
-  after_script:
-    - cd ../..
   artifacts:
     when: always
     paths:
       - tests/mhdmodes/*.png
+      - tests/mhdmodes/*.hst
 
 noh:
   stage: tests
@@ -56,19 +55,19 @@ noh:
   script:
     - bash run.sh
     - bash check.sh
-  after_script:
-    - cd ../..
   artifacts:
     when: always
     paths:
       - tests/noh/*.png
+      - tests/noh/*.hst
 
 bz_monopole:
   stage: tests
   before_script:
     - cd tests/bz_monopole
   script:
-    # Make sure to image whatever actually ran
+    # Make sure to image whatever actually ran,
+    # but fail if it crashed
     - exit_code=0
     - bash run.sh || exit_code=$?
     - bash check.sh
@@ -77,3 +76,19 @@ bz_monopole:
     when: always
     paths:
       - tests/bz_monopole/*.png
+      - tests/bz_monopole/*.hst
+
+tilt_init:
+  stage: tests
+  before_script:
+    - cd tests/tilt_init
+  script:
+    - exit_code=0
+    - bash run.sh || exit_code=$?
+    - bash check.sh
+    - exit $exit_code
+  artifacts:
+    when: always
+    paths:
+      - tests/tilt_init/*.png
+      - tests/tilt_init/*.hst

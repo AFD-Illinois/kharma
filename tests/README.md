@@ -25,6 +25,12 @@ See pretty much any GRMHD code paper, but notably Gammie+ [2003](https://doi.org
 Several variants of each test are run, using different coordinate systems, reconstruction, etc
 to catch regressions in particular features.
 
+Note that the BZ monopole test has 2 parts: a stability test running through to 100M, a test
+outputting state after a single step.  Currently both are imaged in the same way, with the
+first two images showing initial condition and single-step state, and the rest showing the
+full 100M run at normal dump cadence.  Plots for this test show the primitive radial velocity
+U1 since this in particular shows erratic behavior near the polar bound.
+
 ## Identity regression tests
 
 * Near-identical output of the same problem evolved with different block geometry

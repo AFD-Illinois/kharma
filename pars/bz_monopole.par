@@ -31,27 +31,42 @@ poly_alpha = 14.0
 
 <parthenon/time>
 tlim = 100.0
+nlim = -1
 
 <debug>
-verbose = 0
+verbose = 1
 extra_checks = 1
 flag_verbose = 0
 
 <GRMHD>
-cfl = 0.5
+cfl = 0.9
 gamma = 1.444444
 reconstruction = weno5
 
 <b_field>
 type = bz_monopole
+norm = false
 
 <floors>
-bsq_over_rho_max = 500
+bsq_over_rho_max = 5000
+bsq_over_u_max = 50
 rho_min_geom = 1e-20
 u_min_geom = 1e-20
 
+<wind>
+on = true
+ne = 1.e-4
+Tp = 100
+u1 = 0.4
+power = 40
+
 <parthenon/output0>
 file_type = hdf5
-dt = 1.0
+dt = 5.0
 single_precision_output = true
-variables = prims.rho, prims.u, prims.uvec, prims.B
+variables = prims.rho, prims.u, prims.uvec, prims.B, fflag, pflag
+ghost_zones = true
+
+<parthenon/output1>
+file_type = hst
+dt = 0.1

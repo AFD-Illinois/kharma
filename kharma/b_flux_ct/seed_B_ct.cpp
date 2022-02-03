@@ -1,5 +1,5 @@
 /* 
- *  File: seed_B.cpp
+ *  File: seed_B_ct.cpp
  *  
  *  BSD 3-Clause License
  *  
@@ -38,18 +38,13 @@
 
 #include "b_field_tools.hpp"
 #include "b_flux_ct.hpp"
-
+#include "fm_torus.hpp"
 #include "mhd_functions.hpp"
+#include "prob_common.hpp"
 
 TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
 {
     auto pmb = rc->GetBlockPointer();
-    IndexDomain domain = IndexDomain::entire;
-    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
-    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
-    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
-    int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
-    int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
 
     const auto& G = pmb->coords;
     GridScalar rho = rc->Get("prims.rho").data;
@@ -58,34 +53,18 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
 
     Real min_rho_q = pin->GetOrAddReal("b_field", "min_rho_q", 0.2);
     std::string b_field_type = pin->GetString("b_field", "type");
-
-    // Translate to an enum so we can avoid string comp inside,
+    // Translate the type to an enum so we can avoid string comp inside,
     // as well as for good errors, many->one maps, etc.
-    BSeedType b_field_flag = BSeedType::sane;
-    if (b_field_type == "none") {
-        return TaskStatus::complete;
-    } else if (b_field_type == "constant") {
-        b_field_flag = BSeedType::constant;
-    } else if (b_field_type == "monopole") {
-        b_field_flag = BSeedType::monopole;
-    } else if (b_field_type == "sane") {
-        b_field_flag = BSeedType::sane;
-    } else if (b_field_type == "mad" || b_field_type == "ryan") {
-        b_field_flag = BSeedType::ryan;
-    } else if (b_field_type == "r3s3") {
-        b_field_flag = BSeedType::r3s3;
-    } else if (b_field_type == "mad_steep" || b_field_type == "steep") {
-        b_field_flag = BSeedType::steep;
-    } else if (b_field_type == "gaussian") {
-        b_field_flag = BSeedType::gaussian;
-    } else if (b_field_type == "bz_monopole") {
-        b_field_flag = BSeedType::bz_monopole;
-    } else {
-        throw std::invalid_argument("Magnetic field seed type not supported: " + b_field_type);
-    }
+    BSeedType b_field_flag = ParseBSeedType(b_field_type);
+
+    // Other parameters we need
+    auto prob = pin->GetString("parthenon/job", "problem_id");
+    bool is_torus = (prob == "torus");
 
     // Require and load what we need if necessary
-    Real rin, b10, b20, b30;
+    Real a, rin, rmax, gam, kappa, rho_norm;
+    Real tilt = 0; // Needs to be initialized
+    Real b10 = 0, b20 = 0, b30 = 0;
     switch (b_field_flag)
     {
     case BSeedType::constant:
@@ -96,24 +75,44 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
     case BSeedType::monopole:
         b10 = pin->GetReal("b_field", "b10");
         break;
+    case BSeedType::sane:
     case BSeedType::ryan:
     case BSeedType::r3s3:
     case BSeedType::steep:
     case BSeedType::gaussian:
+        if (!is_torus)
+            throw std::invalid_argument("Magnetic field seed "+b_field_type+" supports only torus problems!");
+        // Torus parameters
         rin = pin->GetReal("torus", "rin");
+        rmax = pin->GetReal("torus", "rmax");
+        kappa = pin->GetReal("torus", "kappa");
+        tilt = pin->GetReal("torus", "tilt") / 180. * M_PI;
+        // Other things we need only for torus evaluation
+        gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
+        rho_norm = pmb->packages.Get("GRMHD")->Param<Real>("rho_norm");
+        a = G.coords.get_a();
         break;
-    default:
+    case BSeedType::bz_monopole:
         break;
     }
+
+    IndexDomain domain = IndexDomain::entire;
+    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
+    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
+    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
+    int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
+    int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
+    int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
+    int ndim = pmb->pmy_mesh->ndim;
 
     // Shortcut to field values for easy fields
     if (b_field_flag == BSeedType::constant) {
         pmb->par_for("B_field_B", ks, ke, js, je, is, ie,
             KOKKOS_LAMBDA_3D {
                 // Set B1 directly
-                B_P(0, k, j, i) = b10;
-                B_P(1, k, j, i) = b20;
-                B_P(2, k, j, i) = b30;
+                B_P(V1, k, j, i) = b10;
+                B_P(V2, k, j, i) = b20;
+                B_P(V3, k, j, i) = b30;
                 B_FluxCT::p_to_u(G, B_P, k, j, i, B_U);
             }
         );
@@ -122,28 +121,52 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
         pmb->par_for("B_field_B", ks, ke, js, je, is, ie,
             KOKKOS_LAMBDA_3D {
                 // Set B1 directly by normalizing
-                //printf("%lf", b10 / G.gdet(Loci::center, j, i));
-                B_P(0, k, j, i) = b10 / G.gdet(Loci::center, j, i);
-                B_P(1, k, j, i) = 0.;
-                B_P(2, k, j, i) = 0.;
+                B_P(V1, k, j, i) = b10 / G.gdet(Loci::center, j, i);
+                B_P(V2, k, j, i) = 0.;
+                B_P(V3, k, j, i) = 0.;
                 B_FluxCT::p_to_u(G, B_P, k, j, i, B_U);
             }
         );
         return TaskStatus::complete;
     }
 
-    // Find the magnetic vector potential.  In X3 symmetry only A_phi is non-zero, so we keep track of that.
-    ParArrayND<Real> A("A", n2, n1);
-    // TODO figure out double vs Real here
-    pmb->par_for("B_field_A", js+1, je, is+1, ie,
-        KOKKOS_LAMBDA_2D {
-            GReal Xembed[GR_DIM];
-            G.coord_embed(0, j, i, Loci::corner, Xembed);
-            GReal r = Xembed[1], th = Xembed[2];
+    // Find the magnetic vector potential.  In X3 symmetry only A_phi is non-zero,
+    // But for tilted conditions we must keep track of all components
+    // TODO there's probably an ncorners
+    ParArrayND<double> A("A", NVEC, n3+1, n2+1, n1+1);
+    pmb->par_for("B_field_A", ks, ke+1, js, je+1, is, ie+1,
+        KOKKOS_LAMBDA_3D {
+            GReal Xnative[GR_DIM];
+            GReal Xembed[GR_DIM], Xmidplane[GR_DIM];
+            G.coord(k, j, i, Loci::corner, Xnative);
+            G.coord_embed(k, j, i, Loci::corner, Xembed);
+            // What are our corresponding "midplane" values for evaluating the function?
+            rotate_polar(Xembed, tilt, Xmidplane);
+            const GReal r = Xmidplane[1], th = Xmidplane[2];
 
-            // Find rho (later u?) at corners by averaging from adjacent centers
-            Real rho_av = 0.25 * (rho(ks, j, i)     + rho(ks, j, i - 1) +
-                                  rho(ks, j - 1, i) + rho(ks, j - 1, i - 1));
+            // This is written under the assumption re-computed rho is more accurate than a bunch
+            // of averaging in a meaningful way.  Just use the average if not.
+            Real rho_av;
+            if (is_torus) {
+                // Find rho (later u?) at corner directly for torii
+                rho_av = fm_torus_rho(a, rin, rmax, gam, kappa, r, th) / rho_norm;
+            } else {
+                // Use averages for anything else
+                // This loop runs over every corner. Centers do not exist before the first
+                // or after the last, so use the last (ghost) zones available.
+                const int ii = clip(i, is+1, ie);
+                const int jj = clip(j, js+1, je);
+                const int kk = clip(k, ks+1, ke);
+                if (ndim > 2) {
+                    rho_av = (rho(kk, jj, ii)     + rho(kk, jj, ii - 1) +
+                              rho(kk, jj - 1, ii) + rho(kk, jj - 1, ii - 1) +
+                              rho(kk - 1, jj, ii)     + rho(kk - 1, jj, ii - 1) +
+                              rho(kk - 1, jj - 1, ii) + rho(kk - 1, jj - 1, ii - 1)) / 8;
+                } else {
+                    rho_av = (rho(ks, jj, ii)     + rho(ks, jj, ii - 1) +
+                              rho(ks, jj - 1, ii) + rho(ks, jj - 1, ii - 1)) / 4;
+                }
+            }
 
             Real q;
             switch (b_field_flag)
@@ -160,8 +183,7 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
                 q = pow(r / rin, 3) * pow(sin(th), 3) * exp(-r / 400) * rho_av - min_rho_q;
                 break;
             case BSeedType::r3s3:
-                // Just the r^3 sin^3 th term, former proposed EHT standard MAD
-                // TODO split r3 here and r3s3
+                // Just the r^3 sin^3 th term
                 q = pow(r / rin, 3) * pow(sin(th), 3) * rho_av - min_rho_q;
                 break;
             case BSeedType::steep:
@@ -184,23 +206,100 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
                 break;
             }
 
-            A(j, i) = max(q, 0.);
+            if (tilt > 0.0) {
+                // This is *covariant* A_mu
+                const double A_untilt_lower[GR_DIM] = {0., 0., 0., max(q, 0.)};
+                // Raise to contravariant vector, since rotate_polar_vec will need that.
+                // Note we have to do this in the midplane!
+                // The coord_to_native calculation involves an iterative solve for MKS/FMKS
+                GReal Xnative_midplane[GR_DIM] = {0}, gcon_midplane[GR_DIM][GR_DIM] = {0};
+                G.coords.coord_to_native(Xmidplane, Xnative_midplane);
+                G.coords.gcon_native(Xnative_midplane, gcon_midplane);
+                double A_untilt[GR_DIM] = {0};
+                DLOOP2 A_untilt[mu] += gcon_midplane[mu][nu] * A_untilt_lower[nu];
+
+                // Then rotate
+                double A_tilt[GR_DIM] = {0};
+                double A_untilt_embed[GR_DIM] = {0}, A_tilt_embed[GR_DIM] = {0};
+                G.coords.con_vec_to_embed(Xnative_midplane, A_untilt, A_untilt_embed);
+                rotate_polar_vec(Xmidplane, A_untilt_embed, -tilt, Xembed, A_tilt_embed);
+                G.coords.con_vec_to_native(Xnative, A_tilt_embed, A_tilt);
+
+                // Lower the result as we need curl(A_mu).  Done at local zone.
+                double A_tilt_lower[GR_DIM] = {0};
+                G.lower(A_tilt, A_tilt_lower, k, j, i, Loci::corner);
+                VLOOP A(v, k, j, i) = A_tilt_lower[1+v];
+            } else {
+                // Some problems rely on a very accurate A->B, which the 
+                A(V3, k, j, i) = max(q, 0.);
+            }
         }
     );
 
     // Calculate B-field
-    pmb->par_for("B_field_B", ks, ke, js, je-1, is, ie-1,
-        KOKKOS_LAMBDA_3D {
-            // Take a flux-ct step from the corner potentials
-            // TODO should this average A*gdet rather than A?
-            B_P(0, k, j, i) = -(A(j, i) - A(j + 1, i) + A(j, i + 1) - A(j + 1, i + 1)) /
-                                (2. * G.dx2v(j) * G.gdet(Loci::center, j, i));
-            B_P(1, k, j, i) =  (A(j, i) + A(j + 1, i) - A(j, i + 1) - A(j + 1, i + 1)) /
-                                (2. * G.dx1v(i) * G.gdet(Loci::center, j, i));
-            B_P(2, k, j, i) = 0.;
-            B_FluxCT::p_to_u(G, B_P, k, j, i, B_U);
-        }
-    );
+    if (ndim > 2) {
+        pmb->par_for("B_field_B_3D", ks, ke, js, je, is, ie,
+            KOKKOS_LAMBDA_3D {
+                // Take a flux-ct step from the corner potentials.
+                // This needs to be 3D because post-tilt A may not point in the phi direction only
+
+                // A3,2 derivative
+                const Real A3c2f = (A(V3, k, j + 1, i)     + A(V3, k, j + 1, i + 1) + 
+                                    A(V3, k + 1, j + 1, i) + A(V3, k + 1, j + 1, i + 1)) / 4;
+                const Real A3c2b = (A(V3, k, j, i)     + A(V3, k, j, i + 1) +
+                                    A(V3, k + 1, j, i) + A(V3, k + 1, j, i + 1)) / 4;
+                // A2,3 derivative
+                const Real A2c3f = (A(V2, k + 1, j, i)     + A(V2, k + 1, j, i + 1) +
+                                    A(V2, k + 1, j + 1, i) + A(V2, k + 1, j + 1, i + 1)) / 4;
+                const Real A2c3b = (A(V2, k, j, i)     + A(V2, k, j, i + 1) +
+                                    A(V2, k, j + 1, i) + A(V2, k, j + 1, i + 1)) / 4;
+                B_U(V1, k, j, i) = (A3c2f - A3c2b) / G.dx2v(j) - (A2c3f - A2c3b) / G.dx3v(k);
+
+                // A1,3 derivative
+                const Real A1c3f = (A(V1, k + 1, j, i)     + A(V1, k + 1, j, i + 1) + 
+                                    A(V1, k + 1, j + 1, i) + A(V1, k + 1, j + 1, i + 1)) / 4;
+                const Real A1c3b = (A(V1, k, j, i)     + A(V1, k, j, i + 1) +
+                                    A(V1, k, j + 1, i) + A(V1, k, j + 1, i + 1)) / 4;
+                // A3,1 derivative
+                const Real A3c1f = (A(V3, k, j, i + 1)     + A(V3, k + 1, j, i + 1) +
+                                    A(V3, k, j + 1, i + 1) + A(V3, k + 1, j + 1, i + 1)) / 4;
+                const Real A3c1b = (A(V3, k, j, i)     + A(V3, k + 1, j, i) +
+                                    A(V3, k, j + 1, i) + A(V3, k + 1, j + 1, i)) / 4;
+                B_U(V2, k, j, i) = (A1c3f - A1c3b) / G.dx3v(k) - (A3c1f - A3c1b) / G.dx1v(i);
+
+                // A2,1 derivative
+                const Real A2c1f = (A(V2, k, j, i + 1)     + A(V2, k, j + 1, i + 1) + 
+                                    A(V2, k + 1, j, i + 1) + A(V2, k + 1, j + 1, i + 1)) / 4;
+                const Real A2c1b = (A(V2, k, j, i)     + A(V2, k, j + 1, i) +
+                                    A(V2, k + 1, j, i) + A(V2, k + 1, j + 1, i)) / 4;
+                // A1,2 derivative
+                const Real A1c2f = (A(V1, k, j + 1, i)     + A(V1, k, j + 1, i + 1) +
+                                    A(V1, k + 1, j + 1, i) + A(V1, k + 1, j + 1, i + 1)) / 4;
+                const Real A1c2b = (A(V1, k, j, i)     + A(V1, k, j, i + 1) +
+                                    A(V1, k + 1, j, i) + A(V1, k + 1, j, i + 1)) / 4;
+                B_U(V3, k, j, i) = (A2c1f - A2c1b) / G.dx1v(i) - (A1c2f - A1c2b) / G.dx2v(j);
+            }
+        );
+    } else {
+        pmb->par_for("B_field_B_2D", ks, ke, js, je, is, ie,
+            KOKKOS_LAMBDA_3D {
+                // A3,2 derivative
+                const Real A3c2f = (A(V3, k, j + 1, i) + A(V3, k, j + 1, i + 1)) / 2;
+                const Real A3c2b = (A(V3, k, j, i)     + A(V3, k, j, i + 1)) / 2;
+                B_U(V1, k, j, i) = (A3c2f - A3c2b) / G.dx2v(j);
+
+                // A3,1 derivative
+                const Real A3c1f = (A(V3, k, j, i + 1) + A(V3, k, j + 1, i + 1)) / 2;
+                const Real A3c1b = (A(V3, k, j, i)     + A(V3, k, j + 1, i)) / 2;
+                B_U(V2, k, j, i) = - (A3c1f - A3c1b) / G.dx1v(i);
+
+                B_U(V3, k, j, i) = 0;
+            }
+        );
+    }
+
+    // Then make sure the primitive versions are updated, too
+    UtoP(rc);
 
     return TaskStatus::complete;
 }
