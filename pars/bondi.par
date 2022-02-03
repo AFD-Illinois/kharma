@@ -52,6 +52,9 @@ check_inflow_outer = false
 type = none
 solver = none
 
+<debug>
+verbose = 0
+
 <parthenon/output0>
 file_type = hdf5
 dt = 5.0

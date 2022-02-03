@@ -66,3 +66,7 @@ dt = 5.0
 single_precision_output = true
 variables = prims.rho, prims.u, prims.uvec, prims.B, fflag, pflag
 ghost_zones = true
+
+<parthenon/output1>
+file_type = hst
+dt = 0.1

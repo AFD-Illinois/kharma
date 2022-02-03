@@ -1,4 +1,15 @@
 
+# LMC is special
+if [[ $HOST == "lmc.astro.illinois.edu" ]]; then
+  #conda deactivate
+  HOST_ARCH="HSW"
+  # When we can compile HDF5 successfully
+  #PREFIX_PATH="$HOME/libs/hdf5"
+  # Until then, disable MPI & static HDF5 as bad versions are installed
+  PREFIX_PATH=
+  EXTRA_FLAGS="-DPARTHENON_DISABLE_MPI=ON"
+else
+
 # Illinois BH cluster
 if [[ $HOST == *".astro.illinois.edu" ]]; then
   HOST_ARCH="SKX"
@@ -22,7 +33,7 @@ if [[ $HOST == *".astro.illinois.edu" ]]; then
 
   #MPI_EXE=mpirun
 fi
-# Except BH27/9
+# BH29 additions
 if [[ $HOST == "bh29.astro.illinois.edu" ]]; then
   HOST_ARCH="ZEN2"
 
@@ -30,13 +41,5 @@ if [[ $HOST == "bh29.astro.illinois.edu" ]]; then
   #source /opt/AMD/aocc-compiler-3.0.0/setenv_AOCC.sh
   #CXX_NATIVE="clang++"
 fi
-# And LMC
-if [[ $HOST == "lmc.astro.illinois.edu" ]]; then
-  conda deactivate
-  HOST_ARCH="HSW"
-  # When we can compile HDF5 successfully
-  #PREFIX_PATH="$HOME/libs/hdf5"
-  # Until then, disable MPI & static HDF5 as bad versions are installed
-  PREFIX_PATH=
-  EXTRA_FLAGS="-DPARTHENON_DISABLE_MPI=ON"
-fi
+
+fi #LMC
