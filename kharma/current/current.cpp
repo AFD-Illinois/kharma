@@ -49,7 +49,7 @@ std::shared_ptr<StateDescriptor> Current::Initialize(ParameterInput *pin)
 
 TaskStatus Current::CalculateCurrent(MeshBlockData<Real> *rc0, MeshBlockData<Real> *rc1, const double& dt)
 {
-    FLAG("Calculating current");
+    Flag("Calculating current");
 
     auto pmb = rc0->GetBlockPointer();
     auto& u_old = rc0->Get("prims.uvec").data;
@@ -111,13 +111,13 @@ TaskStatus Current::CalculateCurrent(MeshBlockData<Real> *rc0, MeshBlockData<Rea
         }
     );
 
-    FLAG("Calculated");
+    Flag("Calculated");
     return TaskStatus::complete;
 }
 
 void Current::FillOutput(MeshBlock *pmb, ParameterInput *pin)
 {
-    FLAG("Adding current");
+    Flag("Adding current");
 
     auto& rc1 = pmb->meshblock_data.Get();
     auto& rc0 = pmb->meshblock_data.Get("preserve");
@@ -127,5 +127,5 @@ void Current::FillOutput(MeshBlock *pmb, ParameterInput *pin)
 
     Current::CalculateCurrent(rc0.get(), rc1.get(), dt_last);
 
-    FLAG("Added");
+    Flag("Added");
 }

@@ -14,7 +14,7 @@ using namespace parthenon;
  */
 TaskStatus InitializeShockTube(MeshBlockData<Real> *rc, ParameterInput *pin)
 {
-    FLAG("Initializing Shock Tube problem");
+    Flag(rc, "Initializing Shock Tube problem");
     auto pmb = rc->GetBlockPointer();
     GridScalar rho = rc->Get("prims.rho").data;
     GridScalar u = rc->Get("prims.u").data;

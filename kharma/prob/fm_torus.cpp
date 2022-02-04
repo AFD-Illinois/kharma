@@ -36,13 +36,14 @@
 
 #include "mpi.hpp"
 #include "prob_common.hpp"
+#include "types.hpp"
 
 #include <random>
 #include "Kokkos_Random.hpp"
 
 TaskStatus InitializeFMTorus(MeshBlockData<Real> *rc, ParameterInput *pin)
 {
-    FLAG("Initializing torus problem");
+    Flag(rc, "Initializing torus problem");
 
     auto pmb = rc->GetBlockPointer();
     GridScalar rho = rc->Get("prims.rho").data;
@@ -116,10 +117,6 @@ TaskStatus InitializeFMTorus(MeshBlockData<Real> *rc, ParameterInput *pin)
                 const Real ucon_tilt[GR_DIM] = {0., 0., 0., up};
                 Real ucon_bl[GR_DIM];
                 rotate_polar_vec(Xmidplane, ucon_tilt, -tilt, Xembed, ucon_bl);
-                //printf("Final mags: %g %g aabrev: %g %g ucon_og: %g ucon_bl: %g %g %g %g\n",
-                //sqrt(dot(ucon_tilt, ucon_tilt)), sqrt(dot(ucon_bl, ucon_bl)),
-                //ucon_tilt[3], sqrt(ucon_bl[2]*ucon_bl[2] + ucon_bl[3]*ucon_bl[3]),
-                //up, ucon_bl[0], ucon_bl[1], ucon_bl[2], ucon_bl[3]);
 
                 Real gcov_bl[GR_DIM][GR_DIM];
                 blcoords.gcov_embed(Xembed, gcov_bl);
@@ -191,7 +188,6 @@ TaskStatus InitializeFMTorus(MeshBlockData<Real> *rc, ParameterInput *pin)
             // TODO umax for printing/recording?
 
             // Record max
-            //printf("lnh: %g rho: %g\n", lnh, rho);
             if (rho > local_result) local_result = rho;
         }
     , max_reducer);
@@ -216,7 +212,7 @@ TaskStatus InitializeFMTorus(MeshBlockData<Real> *rc, ParameterInput *pin)
 // TODO move this to a different file
 TaskStatus PerturbU(MeshBlockData<Real> *rc, ParameterInput *pin)
 {
-    FLAG("Applying U perturbation");
+    Flag(rc, "Applying U perturbation");
     auto pmb = rc->GetBlockPointer();
     auto rho = rc->Get("prims.rho").data;
     auto u = rc->Get("prims.u").data;
@@ -258,17 +254,15 @@ TaskStatus PerturbU(MeshBlockData<Real> *rc, ParameterInput *pin)
         typedef typename RandPoolType::generator_type gen_type;
         pmb->par_for("perturb_u", ks, ke, js, je, is, ie,
             KOKKOS_LAMBDA_3D {
-                //gen_type rgen = rand_pool.get_state();
                 if (rho(k, j, i) > jitter_above_rho) {
                     gen_type rgen = rand_pool.get_state();
                     u(k, j, i) *= 1. + Kokkos::rand<gen_type, Real>::draw(rgen, -u_jitter/2, u_jitter/2);
                     rand_pool.free_state(rgen);
                 }
-                //rand_pool.free_state(rgen);
             }
         );
     }
 
-    FLAG("Applied");
+    Flag(rc, "Applied");
     return TaskStatus::complete;
 }

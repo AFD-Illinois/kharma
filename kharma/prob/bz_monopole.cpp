@@ -36,13 +36,14 @@
 
 #include "mpi.hpp"
 #include "prob_common.hpp"
+#include "types.hpp"
 
 #include <random>
 #include "Kokkos_Random.hpp"
 
 TaskStatus InitializeBZMonopole(MeshBlockData<Real> *rc, ParameterInput *pin)
 {
-    FLAG("Initializing BZ monopole problem");
+    Flag(rc, "Initializing BZ monopole problem");
 
     auto pmb = rc->GetBlockPointer();
     GridScalar rho = rc->Get("prims.rho").data;
@@ -50,9 +51,9 @@ TaskStatus InitializeBZMonopole(MeshBlockData<Real> *rc, ParameterInput *pin)
     GridVector uvec = rc->Get("prims.uvec").data;
     GridVector B_P = rc->Get("prims.B").data;
 
-    GReal bsq_o_rho_max = pin->GetOrAddReal("floors", "bsq_over_rho_max", 1.e2);
-    GReal rho_min_limit = pin->GetOrAddReal("floors", "rho_min_geom", 1.e-6);
-    GReal u_min_limit = pin->GetOrAddReal("floors", "u_min_geom", 1.e-8);
+    Real bsq_o_rho_max = pin->GetOrAddReal("floors", "bsq_over_rho_max", 1.e2);
+    Real rho_min_limit = pin->GetOrAddReal("floors", "rho_min_geom", 1.e-6);
+    Real u_min_limit = pin->GetOrAddReal("floors", "u_min_geom", 1.e-8);
 
     IndexDomain domain = IndexDomain::entire;
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
@@ -60,7 +61,7 @@ TaskStatus InitializeBZMonopole(MeshBlockData<Real> *rc, ParameterInput *pin)
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
 
     const auto& G = pmb->coords;
-    SphKSCoords ksc = mpark::get<SphKSCoords>(G.coords.base);
+    const GReal a = G.coords.get_a();
 
     if (pmb->gid == 0 && pmb->packages.Get("GRMHD")->Param<int>("verbose") > 0) {
         cout << "Initializing BZ monopole." << endl;
@@ -68,19 +69,15 @@ TaskStatus InitializeBZMonopole(MeshBlockData<Real> *rc, ParameterInput *pin)
 
     pmb->par_for("fm_torus_init", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D {
-            GReal Xnative[GR_DIM], Xembed[GR_DIM];
-            G.coord(k, j, i, Loci::center, Xnative);
+            GReal Xembed[GR_DIM];
             G.coord_embed(k, j, i, Loci::center, Xembed);
             GReal r = Xembed[1];
 
-            GReal r_horizon = 1. + sqrt(1. - ksc.a*ksc.a);
+            GReal r_horizon = 1. + sqrt(1. - a*a);
             GReal r_char = 10. * r_horizon;
 
-            GReal trho = rho_min_limit + (r / r_char) / pow(r, 4.) / bsq_o_rho_max;
-            GReal tu = u_min_limit + (r / r_char) / pow(r, 4.) / bsq_o_rho_max;
-
-            // TODO remove me, just used for testing/debugging purposes now
-            //printf("%d -> %g %g %g %g %g\n", i, trho, tu, rho_min_limit, u_min_limit, bsq_o_rho_max);
+            Real trho = rho_min_limit + (r / r_char) / pow(r, 4.) / bsq_o_rho_max;
+            Real tu = u_min_limit + (r / r_char) / pow(r, 4.) / bsq_o_rho_max;
 
             rho(k, j, i) = trho;
             u(k, j, i) = tu;

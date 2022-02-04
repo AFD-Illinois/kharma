@@ -38,10 +38,24 @@
 
 #include "gr_coordinates.hpp"
 
+// This needs to be included only here -- it requires full-formed Parthenon
+// types, which are not available when importing this file's header
+#include "types.hpp"
+
 // This file doesn't have MeshBlock access, so it uses raw Kokkos calls
 using namespace parthenon;
 using namespace std;
 using namespace Kokkos;
+
+// Accuracy for numerical derivatives of the metric
+#define DELTA 1.e-8
+
+// Points to average (one side of a square, odd) when calculating the connections,
+// and metric determinants on faces
+#define CONN_AVG_POINTS 1
+// Whether to make corrections to some metric quantities to match
+// metric determinant derivatives
+#define CONN_CORRECTIONS 0
 
 #if FAST_CARTESIAN
 /**
@@ -136,10 +150,11 @@ GRCoordinates::GRCoordinates(const GRCoordinates &src, int coarsen): UniformCart
 void init_GRCoordinates(GRCoordinates& G, int n1, int n2, int n3) {
     //cerr << "Creating GRCoordinate cache size " << n1 << " " << n2 << endl;
     // Cache geometry.  May be faster than re-computing. May not be.
-    G.gcon_direct = GeomTensor2("gcon", NLOC, n2, n1, GR_DIM, GR_DIM);
-    G.gcov_direct = GeomTensor2("gcov", NLOC, n2, n1, GR_DIM, GR_DIM);
-    G.gdet_direct = GeomScalar("gdet", NLOC, n2, n1);
+    G.gcon_direct = GeomTensor2("gcon", NLOC, n2+1, n1+1, GR_DIM, GR_DIM);
+    G.gcov_direct = GeomTensor2("gcov", NLOC, n2+1, n1+1, GR_DIM, GR_DIM);
+    G.gdet_direct = GeomScalar("gdet", NLOC, n2+1, n1+1);
     G.conn_direct = GeomTensor3("conn", n2, n1, GR_DIM, GR_DIM, GR_DIM);
+    G.gdet_conn_direct = GeomTensor3("conn", n2, n1, GR_DIM, GR_DIM, GR_DIM);
 
     // Member variables have an implicit this->
     // C++ Lambdas (and therefore Kokkos Lambdas) capture pointers to objects, not full objects
@@ -148,32 +163,137 @@ void init_GRCoordinates(GRCoordinates& G, int n1, int n2, int n3) {
     auto gcov_local = G.gcov_direct;
     auto gdet_local = G.gdet_direct;
     auto conn_local = G.conn_direct;
+    auto gdet_conn_local = G.gdet_conn_direct;
 
-    Kokkos::parallel_for("init_geom", MDRangePolicy<Rank<2>>({0,0}, {n2, n1}),
+    Kokkos::parallel_for("init_geom", MDRangePolicy<Rank<2>>({0,0}, {n2+1, n1+1}),
         KOKKOS_LAMBDA_2D {
-            GReal X[GR_DIM];
-            Real gcov_loc[GR_DIM][GR_DIM], gcon_loc[GR_DIM][GR_DIM];
-            for (int loc=0; loc < NLOC; ++loc) {
-                G.coord(0, j, i, (Loci)loc, X);
-                G.coords.gcov_native(X, gcov_loc);
-                gdet_local(loc, j, i) = G.coords.gcon_native(gcov_loc, gcon_loc);
-                DLOOP2 {
-                    gcov_local(loc, j, i, mu, nu) = gcov_loc[mu][nu];
-                    gcon_local(loc, j, i, mu, nu) = gcon_loc[mu][nu];
+            // Iterate through locations. This could be done in fancy ways, but
+            // this highlights what's actually going on.
+            for (int iloc =0; iloc < NLOC; iloc++) {
+                Loci loc = (Loci) iloc;
+                // radius of points to sample, floor(npoints/2)
+                const int radius = CONN_AVG_POINTS / 2;
+                const int diameter = CONN_AVG_POINTS;
+                const int square = CONN_AVG_POINTS*CONN_AVG_POINTS;
+                if (loc == Loci::center || loc == Loci::face3) {
+                    // This prevents overstepping conn's bounds by halting in the last zone
+                    if (i >= n1 || j >= n2) continue;
+                    // Get a square of points evenly across each cell,
+                    // over both nontrivial geometry directions 1,2
+                    // Note this never hits/passes the pole
+                    for (int k=-radius; k <= radius; k++) {
+                        for (int l=-radius; l <= radius; l++) {
+                            GReal X[GR_DIM];
+                            G.coord(0, j, i, loc, X);
+                            GReal Xn1[GR_DIM], Xn2[GR_DIM];
+                            G.coord(0, j, i+1, loc, Xn1);
+                            G.coord(0, j+1, i, loc, Xn2);
+                            X[1] += (Xn1[1] - X[1])/CONN_AVG_POINTS * k;
+                            X[2] += (Xn2[2] - X[2])/CONN_AVG_POINTS * l;
+                            // Get geometry at points
+                            GReal gcov_loc[GR_DIM][GR_DIM], gcon_loc[GR_DIM][GR_DIM];
+                            G.coords.gcov_native(X, gcov_loc);
+                            const GReal gdet = G.coords.gcon_native(gcov_loc, gcon_loc);
+                            // Add to running averages
+                            gdet_local(loc, j, i) += gdet / square;
+                            DLOOP2 {
+                                gcov_local(loc, j, i, mu, nu) += gcov_loc[mu][nu] / square;
+                                gcon_local(loc, j, i, mu, nu) += gcon_loc[mu][nu] / square;
+                            }
+                            if (loc == Loci::center) {
+                                // In the center, get the connection and gdet*connection
+                                Real conn_loc[GR_DIM][GR_DIM][GR_DIM];
+                                G.coords.conn_native(X, DELTA, conn_loc);
+                                DLOOP3 {
+                                    conn_local(j, i, mu, nu, lam) += conn_loc[mu][nu][lam] / square;
+                                    gdet_conn_local(j, i, mu, nu, lam) += gdet*conn_loc[mu][nu][lam] / square;
+                                }
+                            }
+                        }
+                    }
+                } else if (loc == Loci::face1 || loc == Loci::face2) {
+                    for (int k=-radius; k <= radius; k++) {
+                        // Like the above, but only average over a particular face (line for 2D geometry)
+                        GReal X[GR_DIM];
+                        G.coord(0, j, i, loc, X);
+                        GReal Xn1[GR_DIM];
+                        // Step in the nontrivial direction perpendicular to the normal
+                        const int avg_dir = (loc == Loci::face1) ? X2DIR : X1DIR;
+                        // Get the direction/distance
+                        G.coord(0, j + (avg_dir == X2DIR), i + (avg_dir == X1DIR), loc, Xn1);
+                        X[avg_dir] += (Xn1[avg_dir] - X[avg_dir])/diameter * k;
+                        // Get geometry at the point
+                        GReal gcov_loc[GR_DIM][GR_DIM], gcon_loc[GR_DIM][GR_DIM];
+                        G.coords.gcov_native(X, gcov_loc);
+                        const GReal gdet = G.coords.gcon_native(gcov_loc, gcon_loc);
+                        // Add to running averages
+                        gdet_local(loc, j, i) += gdet / diameter;
+                        DLOOP2 {
+                            gcov_local(loc, j, i, mu, nu) += gcov_loc[mu][nu] / diameter;
+                            gcon_local(loc, j, i, mu, nu) += gcon_loc[mu][nu] / diameter;
+                        }
+                    }
+                } else {
+                    // Just one point
+                    GReal X[GR_DIM];
+                    G.coord(0, j, i, loc, X);
+                    // Get geometry
+                    GReal gcov_loc[GR_DIM][GR_DIM], gcon_loc[GR_DIM][GR_DIM];
+                    G.coords.gcov_native(X, gcov_loc);
+                    const GReal gdet = G.coords.gcon_native(gcov_loc, gcon_loc);
+                    // Set geometry
+                    gdet_local(loc, j, i) = gdet;
+                    DLOOP2 {
+                        gcov_local(loc, j, i, mu, nu) = gcov_loc[mu][nu];
+                        gcon_local(loc, j, i, mu, nu) = gcon_loc[mu][nu];
+                    }
                 }
             }
         }
     );
-    Kokkos::parallel_for("init_geom", MDRangePolicy<Rank<2>>({0,0}, {n2, n1}),
-        KOKKOS_LAMBDA_2D {
-            GReal X[GR_DIM];
-            G.coord(0, j, i, Loci::center, X);
-            Real conn_loc[GR_DIM][GR_DIM][GR_DIM];
-            G.coords.conn_native(X, conn_loc);
-            DLOOP3 conn_local(j, i, mu, nu, lam) = conn_loc[mu][nu][lam];
-        }
-    );
+    if (CONN_CORRECTIONS) {
+        Kokkos::parallel_for("geom_corrections", MDRangePolicy<Rank<2>>({0,0}, {n2, n1}),
+            KOKKOS_LAMBDA_2D {
+                // In the two directions the grid changes, make sure that we *exactly*
+                // satisfy the req't gdet*conn^mu_mu_nu = d_nu gdet, when evaluated on faces
+                // This will make the source term exactly balance the flux differences,
+                // crucial near the poles
+                GReal X[GR_DIM];
+                G.coord(0, j, i, Loci::center, X);
+                if (1) { //(fabs(X[2] - 0) < 0.08 || fabs(X[2] - 1.0) < 0.08)) {
+                    for (int lam=1; lam < GR_DIM; lam++) {
+                        const Loci loc = loc_of(lam);
+                        // Get gdet values at faces we calculated above
+                        GReal Xfm[GR_DIM], Xfp[GR_DIM];
+                        G.coord(0, j, i, loc, Xfm);
+                        G.coord(0, j + (lam == X2DIR), i + (lam == X1DIR), loc, Xfp);
+                        double gdetfm = gdet_local(loc, j, i);
+                        double gdetfp = gdet_local(loc, j + (lam == X2DIR), i + (lam == X1DIR));
+                        GReal target = (gdetfp - gdetfm) / (Xfp[lam] - Xfm[lam] + SMALL);
 
-    FLAG("GRCoordinates metric init");
+                        // Then sum the coefficients and record nonzero ones for modification
+                        GReal test_sum = 0;
+                        GReal sum_portions, portions[GR_DIM] = {0};
+                        DLOOP1 {
+                            test_sum += gdet_conn_local(j, i, mu, mu, lam);
+                            portions[mu] = fabs(gdet_conn_local(j, i, mu, mu, lam));
+                            sum_portions += portions[mu];
+                        }
+                        DLOOP1 portions[mu] /= sum_portions;
+                        //printf("Zone %d %d target: %.3g test_sum: %.3g correction: %.3g\n", i, j, target, test_sum, diff);
+
+                        // Add the difference among components equally
+                        const GReal diff = test_sum - target;
+                        DLOOP1 gdet_conn_local(j, i, mu, mu, lam) = gdet_conn_local(j, i, mu, mu, lam) - diff*portions[mu];
+
+                        // This is separated and set equal, as there will be one self-assignment
+                        DLOOP1 gdet_conn_local(j, i, mu, lam, mu) = gdet_conn_local(j, i, mu, mu, lam);
+                    }
+                }
+            }
+        );
+    }
+
+    Flag("GRCoordinates metric init");
 }
 #endif // FAST_CARTESIAN

@@ -21,7 +21,7 @@ using namespace parthenon;
  */
 TaskStatus InitializeOrszagTang(MeshBlockData<Real> *rc, ParameterInput *pin)
 {
-    FLAG("Initializing Orszag-Tang problem");
+    Flag(rc, "Initializing Orszag-Tang problem");
     auto pmb = rc->GetBlockPointer();
     GridScalar rho = rc->Get("prims.rho").data;
     GridScalar u = rc->Get("prims.u").data;

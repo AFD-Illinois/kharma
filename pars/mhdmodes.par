@@ -53,6 +53,9 @@ dir = 0
 <floors>
 disable_floors = true
 
+<debug>
+verbose = 0
+
 <parthenon/output0>
 file_type = hdf5
 # This is so as to output only the final state

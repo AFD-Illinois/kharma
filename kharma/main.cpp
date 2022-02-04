@@ -114,7 +114,7 @@ int main(int argc, char *argv[])
 
     // Parthenon init includes Kokkos, MPI, parses parameters & cmdline,
     // then calls ProcessPackages and ProcessProperties, then constructs the Mesh
-    FLAG("Parthenon Initializing");
+    Flag("Parthenon Initializing");
     auto manager_status = pman.ParthenonInit(argc, argv);
     if (manager_status == ParthenonStatus::complete) {
         pman.ParthenonFinalize();
@@ -124,7 +124,7 @@ int main(int argc, char *argv[])
         pman.ParthenonFinalize();
         return 1;
     }
-    FLAG("Parthenon Initialized");
+    Flag("Parthenon Initialized");
 
 #if DEBUG
     // Replace Parthenon signals with something that just prints a backtrace
@@ -137,12 +137,13 @@ int main(int argc, char *argv[])
     auto pmesh = pman.pmesh.get(); // The mesh, with list of blocks & locations, size, etc
     auto papp = pman.app_input.get(); // The list of callback functions specified above
 
-    // Write the problem to the mesh.
+    // Add magnetic field to the problem, initialize ghost zones.
     // Implemented separately outside of MeshBlock since
-    // GRMHD initializaitons involve global reductions
+    // this usually involves global reductions for normalization
     if(MPIRank0())
         cout << "Running post-initialization tasks..." << endl;
     KHARMA::PostInitialize(pin, pmesh, pman.IsRestart());
+    Flag("Post-initialization completed");
 
     // Then construct & run the driver
     HARMDriver driver(pin, papp, pmesh);
@@ -171,11 +172,12 @@ int main(int argc, char *argv[])
     // Then execute the driver. This is a Parthenon function inherited by our HARMDriver object,
     // which will call MakeTaskCollection, then execute the tasks on the mesh for each portion
     // of each step until a stop criterion is reached.
-    FLAG("Executing Driver");
+    Flag("Executing Driver");
+
     auto driver_status = driver.Execute();
 
     // Parthenon cleanup includes Kokkos, MPI
-    FLAG("Finalizing");
+    Flag("Finalizing");
     pman.ParthenonFinalize();
 
     return 0;

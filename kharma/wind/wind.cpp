@@ -58,7 +58,7 @@ std::shared_ptr<StateDescriptor> Wind::Initialize(ParameterInput *pin)
 
 TaskStatus Wind::AddSource(MeshData<Real> *mdudt)
 {
-    FLAG("Adding wind");
+    Flag(mdudt, "Adding wind");
     // Pointers
     auto pmesh = mdudt->GetMeshPointer();
     auto pmb0 = mdudt->GetBlockData(0)->GetBlockPointer();
@@ -119,6 +119,6 @@ TaskStatus Wind::AddSource(MeshData<Real> *mdudt)
         }
     );
 
-    FLAG("Added");
+    Flag(mdudt, "Added");
     return TaskStatus::complete;
 }

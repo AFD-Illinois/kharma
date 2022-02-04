@@ -38,7 +38,7 @@
 
 TaskStatus GRMHD::AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
 {
-    FLAG("Adding GRMHD source");
+    Flag(mdudt, "Adding GRMHD source");
     // Pointers
     auto pmesh = md->GetMeshPointer();
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
@@ -60,13 +60,32 @@ TaskStatus GRMHD::AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
     pmb0->par_for("grmhd_source", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_MESH_3D {
             const auto& G = dUdt.GetCoords(b);
-            // Then calculate and add the GRMHD source term
-            FourVectors Dtmp;
-            GRMHD::calc_4vecs(G, P(b), m_p, k, j, i, Loci::center, Dtmp);
-            GRMHD::add_source(G, P(b), m_p, Dtmp, gam, k, j, i, dUdt(b), m_u);
+            FourVectors D;
+            GRMHD::calc_4vecs(G, P(b), m_p, k, j, i, Loci::center, D);
+            // Get stuff we don't want to recalculate every loop iteration
+            // This is basically a manual version of GRMHD::calc_tensor but saves recalculating e.g. dot(bcon, bcov) 4 times
+            Real pgas = (gam - 1) * P(b, m_p.UU, k, j, i);
+            Real bsq = dot(D.bcon, D.bcov);
+            Real eta = pgas + P(b, m_p.RHO, k, j, i) + P(b, m_p.UU, k, j, i) + bsq;
+            Real ptot = pgas + 0.5 * bsq;
+
+            // Contract mhd stress tensor with connection, and multiply by metric determinant
+            Real new_du[GR_DIM] = {0};
+            DLOOP2 {
+                Real Tmunu = (eta * D.ucon[mu] * D.ucov[nu] +
+                            ptot * (mu == nu) -
+                            D.bcon[mu] * D.bcov[nu]);
+
+                for (int lam = 0; lam < GR_DIM; ++lam) {
+                    new_du[lam] += Tmunu * G.gdet_conn(j, i, nu, lam, mu);
+                }
+            }
+
+            dUdt(b, m_u.UU, k, j, i) += new_du[0];
+            VLOOP dUdt(b, m_u.U1 + v, k, j, i) += new_du[1 + v];
         }
     );
 
-    FLAG("Added");
+    Flag(mdudt, "Added");
     return TaskStatus::complete;
 }

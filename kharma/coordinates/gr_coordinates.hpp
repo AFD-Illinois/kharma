@@ -77,7 +77,7 @@ public:
 #if !FAST_CARTESIAN && !NO_CACHE
     GeomTensor2 gcon_direct, gcov_direct;
     GeomScalar gdet_direct;
-    GeomTensor3 conn_direct;
+    GeomTensor3 conn_direct, gdet_conn_direct;
 #endif
 
     // "Full" constructors which generate new geometry caches
@@ -102,6 +102,7 @@ public:
         gcov_direct = src.gcov_direct;
         gdet_direct = src.gdet_direct;
         conn_direct = src.conn_direct;
+        gdet_conn_direct = src.gdet_conn_direct;
     #endif
     };
     KOKKOS_FUNCTION GRCoordinates operator=(const GRCoordinates& src)
@@ -117,6 +118,7 @@ public:
         gcov_direct = src.gcov_direct;
         gdet_direct = src.gdet_direct;
         conn_direct = src.conn_direct;
+        gdet_conn_direct = src.gdet_conn_direct;
     #endif
         return *this;
     };
@@ -126,10 +128,12 @@ public:
     KOKKOS_INLINE_FUNCTION Real gcov(const Loci loc, const int& j, const int& i, const int mu, const int nu) const;
     KOKKOS_INLINE_FUNCTION Real gdet(const Loci loc, const int& j, const int& i) const;
     KOKKOS_INLINE_FUNCTION Real conn(const int& j, const int& i, const int mu, const int nu, const int lam) const;
+    KOKKOS_INLINE_FUNCTION Real gdet_conn(const int& j, const int& i, const int mu, const int nu, const int lam) const;
 
     KOKKOS_INLINE_FUNCTION void gcon(const Loci loc, const int& j, const int& i, Real gcon[GR_DIM][GR_DIM]) const;
     KOKKOS_INLINE_FUNCTION void gcov(const Loci loc, const int& j, const int& i, Real gcov[GR_DIM][GR_DIM]) const;
     KOKKOS_INLINE_FUNCTION void conn(const int& j, const int& i, Real conn[GR_DIM][GR_DIM][GR_DIM]) const;
+    KOKKOS_INLINE_FUNCTION void gdet_conn(const int& j, const int& i, Real conn[GR_DIM][GR_DIM][GR_DIM]) const;
 
     // Coordinates of the GRCoordinates, i.e. "native"
     KOKKOS_INLINE_FUNCTION void coord(const int& k, const int& j, const int& i, const Loci& loc, GReal X[GR_DIM]) const;
@@ -203,13 +207,13 @@ KOKKOS_INLINE_FUNCTION void GRCoordinates::coord_embed(const int& k, const int& 
 KOKKOS_INLINE_FUNCTION void GRCoordinates::lower(const Real vcon[GR_DIM], Real vcov[GR_DIM],
                                         const int& k, const int& j, const int& i, const Loci loc) const
 {
-    DLOOP1 vcov[mu] = 0;
+    gzero(vcov);
     DLOOP2 vcov[mu] += gcov(loc, j, i, mu, nu) * vcon[nu];
 }
 KOKKOS_INLINE_FUNCTION void GRCoordinates::raise(const Real vcov[GR_DIM], Real vcon[GR_DIM],
                                         const int& k, const int& j, const int& i, const Loci loc) const
 {
-    DLOOP1 vcon[mu] = 0;
+    gzero(vcon);
     DLOOP2 vcon[mu] += gcon(loc, j, i, mu, nu) * vcov[nu];
 }
 
@@ -226,6 +230,8 @@ KOKKOS_INLINE_FUNCTION Real GRCoordinates::gdet(const Loci loc, const int& j, co
     {return 1;}
 KOKKOS_INLINE_FUNCTION Real GRCoordinates::conn(const int& j, const int& i, const int mu, const int nu, const int lam) const
     {return 0;}
+KOKKOS_INLINE_FUNCTION Real GRCoordinates::gdet_conn(const int& j, const int& i, const int mu, const int nu, const int lam) const
+    {return 0;}
 
 KOKKOS_INLINE_FUNCTION void GRCoordinates::gcon(const Loci loc, const int& j, const int& i, Real gcon[GR_DIM][GR_DIM]) const
     {DLOOP2 gcon[mu][nu] = -2*(mu == 0 && nu == 0) + (mu == nu);}
@@ -233,6 +239,8 @@ KOKKOS_INLINE_FUNCTION void GRCoordinates::gcov(const Loci loc, const int& j, co
     {DLOOP2 gcov[mu][nu] = -2*(mu == 0 && nu == 0) + (mu == nu);}
 KOKKOS_INLINE_FUNCTION void GRCoordinates::conn(const int& j, const int& i, Real conn[GR_DIM][GR_DIM][GR_DIM]) const
     {DLOOP3 conn[mu][nu][lam] = 0;}
+KOKKOS_INLINE_FUNCTION void GRCoordinates::gdet_conn(const int& j, const int& i, Real gdet_conn[GR_DIM][GR_DIM][GR_DIM]) const
+    {DLOOP3 gdet_conn[mu][nu][lam] = 0;}
 #elif NO_CACHE
 // TODO these are currently VERY SLOW.  Rework them to generate just the desired component. (TODO gdet?...)
 // Except conn.  We never need conn fast.
@@ -291,6 +299,8 @@ KOKKOS_INLINE_FUNCTION Real GRCoordinates::gdet(const Loci loc, const int& j, co
     {return gdet_direct(loc, j, i);}
 KOKKOS_INLINE_FUNCTION Real GRCoordinates::conn(const int& j, const int& i, const int mu, const int nu, const int lam) const
     {return conn_direct(j, i, mu, nu, lam);}
+KOKKOS_INLINE_FUNCTION Real GRCoordinates::gdet_conn(const int& j, const int& i, const int mu, const int nu, const int lam) const
+    {return gdet_conn_direct(j, i, mu, nu, lam);}
 
 KOKKOS_INLINE_FUNCTION void GRCoordinates::gcon(const Loci loc, const int& j, const int& i, Real gcon[GR_DIM][GR_DIM]) const
     {DLOOP2 gcon[mu][nu] = gcon_direct(loc, j, i, mu, nu);}
@@ -298,4 +308,6 @@ KOKKOS_INLINE_FUNCTION void GRCoordinates::gcov(const Loci loc, const int& j, co
     {DLOOP2 gcov[mu][nu] = gcov_direct(loc, j, i, mu, nu);}
 KOKKOS_INLINE_FUNCTION void GRCoordinates::conn(const int& j, const int& i, Real conn[GR_DIM][GR_DIM][GR_DIM]) const
     {DLOOP3 conn[mu][nu][lam] = conn_direct(j, i, mu, nu, lam);}
+KOKKOS_INLINE_FUNCTION void GRCoordinates::gdet_conn(const int& j, const int& i, Real gdet_conn[GR_DIM][GR_DIM][GR_DIM]) const
+    {DLOOP3 gdet_conn[mu][nu][lam] = gdet_conn_direct(j, i, mu, nu, lam);}
 #endif
