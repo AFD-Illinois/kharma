@@ -82,12 +82,19 @@ nxplot = 3
 nyplot = 3
 vars = list(dump2['prim_names']) # Parthenon isn't dealing with KEL
 
+return_code = 0
+
 fig = plt.figure(figsize=(FIGX, FIGY))
 for i,name in enumerate(vars):
-  ax = plt.subplot(nyplot, nxplot, i+1)
-  plot_diff_xz(ax, name, rel=True) #, lim=1)
-  ax.set_xlabel('')
-  ax.set_ylabel('')
+    ax = plt.subplot(nyplot, nxplot, i+1)
+    plot_diff_xz(ax, name, rel=True) #, lim=1)
+    ax.set_xlabel('')
+    ax.set_ylabel('')
+
+    l1_norm = np.sum(np.abs(dump1[name] - dump2[name])) / np.sum(np.abs(dump1[name]))
+    if l1_norm > 1e-10:
+        print("Outputs disagree in {}: normalized L1: {}".format(name, l1_norm))
+        return_code = 1
 
 plt.tight_layout()
 
@@ -106,3 +113,5 @@ if dump1['n3'] > 1:
 
     plt.savefig(imname+"_xy.png", dpi=100)
     plt.close(fig)
+
+exit(return_code)
