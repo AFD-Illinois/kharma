@@ -1,4 +1,4 @@
-// Fishbone-Moncrief torus initialization functions
+// Monopole problem initialization with floors
 #pragma once
 
 #include "decs.hpp"
@@ -7,10 +7,7 @@
 
 
 /**
- * Initialize a wide variety of different fishbone-moncrief torii.
- *
- * @param rin is the torus innermost radius, in r_g
- * @param rmax is the radius of maximum density of the F-M torus in r_g
+ * Initialize a Blandford-Znajek monopole setup
  */
-void InitializeBZMonopole(MeshBlockData<Real> *rc, ParameterInput *pin);
+TaskStatus InitializeBZMonopole(MeshBlockData<Real> *rc, ParameterInput *pin);
 

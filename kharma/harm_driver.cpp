@@ -168,11 +168,12 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         }
 
         // APPLY FLUXES
-        // This does the usual Parthenon flux divergence, then adds the GRMHD source term \Gamma * T
         auto t_flux_div = tl.AddTask(t_flux_fixed, Update::FluxDivergence<MeshData<Real>>, mc0.get(), mdudt.get());
-        auto t_flux_apply = tl.AddTask(t_flux_div, GRMHD::AddSource, mc0.get(), mdudt.get());
 
         // ADD SOURCES TO CONSERVED VARIABLES
+        // Source term for GRMHD, \Gamma * T
+        // TODO take this out in Minkowski space
+        auto t_flux_apply = tl.AddTask(t_flux_div, GRMHD::AddSource, mc0.get(), mdudt.get());
         // Source term for constraint-damping.  Applied only to B
         auto t_b_cd_source = t_flux_apply;
         if (use_b_cd) {
@@ -187,7 +188,7 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         auto t_sources = t_wind_source;
 
         // UPDATE BASE CONTAINER
-        auto t_avg_data = tl.AddTask(t_b_cd_source, Update::AverageIndependentData<MeshData<Real>>,
+        auto t_avg_data = tl.AddTask(t_sources, Update::AverageIndependentData<MeshData<Real>>,
                                 mc0.get(), mbase.get(), beta);
         // apply du/dt to all independent fields in the container
         auto t_update = tl.AddTask(t_avg_data, Update::UpdateIndependentData<MeshData<Real>>, mc0.get(),
@@ -258,33 +259,37 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
 
         // U_to_P needs a guess in order to converge, so we copy in sc0
         // (but only the fluid primitives!)
+        // TODO move this before the bounds sync, in case we need to exchange U *AND* P for some reason
         auto t_copy_prims = tl.AddTask(t_prolongBound,
             [](MeshBlockData<Real> *rc0, MeshBlockData<Real> *rc1)
             {
-                FLAG("Copying prims");
+                Flag(rc1, "Copying prims");
                 rc1->Get("prims.rho").data.DeepCopy(rc0->Get("prims.rho").data);
                 rc1->Get("prims.u").data.DeepCopy(rc0->Get("prims.u").data);
                 rc1->Get("prims.uvec").data.DeepCopy(rc0->Get("prims.uvec").data);
-                FLAG("Copied");
+                Flag(rc1, "Copied");
                 return TaskStatus::complete;
             }, sc0.get(), sc1.get());
 
-        // This call fills the fluid primitive values in all zones except physical (outflow, reflecting) boundaries --
-        // that is, everywhere the conserved variables have been updated so far.
-        // This call is required to be after the boundary sync, as the fixing routines use neighboring zones
-        // (fixes are called in GRMHD::PostFillDerived, which is run automatically as a part of this call)
-        // This setup avoids extra boundary synchronization, by updating the primitives identially on different blocks instead of
-        // explicitly exchanging them.
+        // This call fills the fluid primitive values in all physical zones, that is, including MPI boundaries:
+        // everywhere the conserved variables have been updated so far.
+        // This setup avoids extra boundary synchronization, by updating the primitives identically on different blocks,
+        // instead of explicitly exchanging them.
         auto t_fill_derived = tl.AddTask(t_copy_prims, Update::FillDerived<MeshBlockData<Real>>, sc1.get());
 
-        // This is a parthenon call, but in spherical coordinates it will call the functions in
-        // boundaries.cpp, which apply physical boundary conditions based on the primitive variables of GRMHD,
+        // Then fix any inversions which failed.  Floors have been applied already as a part of (Post)FillDerived,
+        // so fixups performed by averaging zones will return logical results.  Floors are re-applied after fixups
+        // Someday this will not be necessary as guaranteed-convergent UtoP schemes exist
+        auto t_fix_derived = tl.AddTask(t_fill_derived, GRMHD::FixUtoP, sc1.get());
+
+        // This is a parthenon call, but in spherical coordinates it will call the KHARMA functions in
+        // boundaries.cpp, which apply physical boundary conditions based on the primitive variables of GRHD,
         // and based on the conserved forms for everything else.  Note that because this is called *after*
         // FillDerived (since it needs bulk fluid primitives to apply GRMHD boundaries), this function
         // must call FillDerived *again*, to update just the ghost zones.
         // This is why KHARMA packages need to implement their "FillDerived" a.k.a. UtoP functions in the form
-        // UtoP(rc, domain, coarse), so that they can be run over just the boundary domains here
-        auto t_set_bc = tl.AddTask(t_fill_derived, parthenon::ApplyBoundaryConditions, sc1);
+        // UtoP(rc, domain, coarse), so that they can be run over just the boundary domains here.
+        auto t_set_bc = tl.AddTask(t_fix_derived, parthenon::ApplyBoundaryConditions, sc1);
 
         // ADD SOURCES TO PRIMITIVE VARIABLES
         // In order to calculate dissipation, we must know the entropy at the beginning and end of the substep,

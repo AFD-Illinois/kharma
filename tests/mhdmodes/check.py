@@ -145,7 +145,7 @@ xmin = RES[0]/2.
 xmax = RES[-1]*2.
 ax.plot([xmin, xmax], norm*np.asarray([xmin, xmax])**-2., color='k', linestyle='--', label='N^-2')
 
-plt.xscale('log', basex=2); plt.yscale('log')
+plt.xscale('log', base=2); plt.yscale('log')
 plt.xlim([RES[0]/np.sqrt(2.), RES[-1]*np.sqrt(2.)])
 plt.xlabel('N'); plt.ylabel('L1')
 plt.title("MHD mode test convergence, {}".format(LONG))

@@ -49,7 +49,7 @@ using namespace parthenon;
  * 
  * Originally run on 2D Cartesian domain -6.0, 6.0 with a 200x200 grid, to tlim=4.0
  */
-void InitializeExplosion(MeshBlockData<Real> *rc, ParameterInput *pin)
+TaskStatus InitializeExplosion(MeshBlockData<Real> *rc, ParameterInput *pin)
 {
     auto pmb = rc->GetBlockPointer();
 
@@ -109,4 +109,6 @@ void InitializeExplosion(MeshBlockData<Real> *rc, ParameterInput *pin)
             }
         }
     );
+
+    return TaskStatus::complete;
 }

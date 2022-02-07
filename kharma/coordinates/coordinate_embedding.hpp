@@ -49,14 +49,19 @@
 
 /**
  * Coordinates in HARM are logically Cartesian -- that is, in some coordinate system they are evenly spaced
- * However, working in GR allows us to define that "native" or "transformed" coordinate system arbitrarily in relation to the
- * "base" or "embedding" coordinates, usually Spherical Kerr-Schild coordinates
+ * However, working in GR allows us to define that "native" or "transformed" coordinate system arbitrarily
+ * in relation to the "base" or "embedding" coordinates, which are usually Spherical Kerr-Schild coordinates.
  *
- * That is, as long as we have a bijective map of base<->transformed coordinates, we can define the latter arbitrarily, which is
- * great for putting resolution where we need and not where we don't.
+ * That is, as long as we have a bijective map of base<->transformed coordinates, we can define the latter
+ * arbitrarily, which is great for putting resolution where we need and not where we don't.
  *
- * This class keeps track of the base coordinates and the map, which must be classes defining a basic interface -- 
- * see coordinate_systems.hpp for currently defined examples.
+ * This class keeps track of the base coordinates and the map, defining generic functions guaranteed to return
+ * something in the native or embedding coordinate system, given something else -- e.g. covariant metric "gcov"
+ * at a native coordinate location Xnative.
+ * 
+ * Each system or transform must be a class defining a basic interface:
+ * see coordinate_systems.hpp for the current examples.
+ * 
  * Specifically, the BaseCoords class must implement:
  * * gcov_embed
  * And the Transform class must implement:
@@ -67,8 +72,7 @@
  * 
  * Each possible class is added to a couple of mpark::variant containers, and then to the chains of if statements below.
  *
- * TODO use base.spherical() to return guaranteed r,th,phi or x,y,z coordinates rather than "native"
- * TODO implement an rhor() that calls through or returns 0? Or make required callthrough
+ * TODO convenience functions.  Intelligent r/th/phi, x/y/z, KS and BL, a, rhor, etc by auto-translating contents
  */
 class CoordinateEmbedding {
     public:
@@ -88,13 +92,6 @@ class CoordinateEmbedding {
             } else if (mpark::holds_alternative<SphKSCoords>(base_in)) {
                 base.emplace<SphKSCoords>(mpark::get<SphKSCoords>(base_in));
             }
-            // SYCL cannot throw errors.  That's fine because we don't make errors.
-#ifndef KOKKOS_ENABLE_SYCL
-            else {
-                printf("Tried to copy invalid base coordinates!");
-                //throw std::invalid_argument("Tried to copy invalid base coordinates!");
-            }
-#endif
 
             if (mpark::holds_alternative<NullTransform>(transform_in)) {
                 transform.emplace<NullTransform>(mpark::get<NullTransform>(transform_in));
@@ -105,12 +102,6 @@ class CoordinateEmbedding {
             } else if (mpark::holds_alternative<FunkyTransform>(transform_in)) {
                 transform.emplace<FunkyTransform>(mpark::get<FunkyTransform>(transform_in));
             }
-#ifndef KOKKOS_ENABLE_SYCL
-            else {
-                printf("Tried to copy invalid coordinate transform!");
-                //throw std::invalid_argument("Tried to copy invalid coordinate transform!");
-            }
-#endif
         }
 
         // Constructors
@@ -130,7 +121,7 @@ class CoordinateEmbedding {
             return *this;
         }
 
-        // Spell out the interface we take from BaseCoords
+        // Convenience functions to get common things
         // TODO add a gcon_embed, gdet_embed
         KOKKOS_INLINE_FUNCTION bool spherical() const
         {
@@ -144,6 +135,27 @@ class CoordinateEmbedding {
         //         self.rhor();
         //     }, base);
         // }
+        KOKKOS_INLINE_FUNCTION GReal get_a() const
+        {
+            if (mpark::holds_alternative<SphKSCoords>(base)) {
+                return mpark::get<SphKSCoords>(base).a;
+            } else if (mpark::holds_alternative<SphBLCoords>(base)) {
+                return mpark::get<SphBLCoords>(base).a;
+            } else {
+                return 0.0; //throw std::invalid_argument("BH Spin is not defined for selected coordinate system!");
+            }
+        }
+        KOKKOS_INLINE_FUNCTION bool is_ks() const
+        {
+            if (mpark::holds_alternative<SphKSCoords>(base)) {
+                return true;
+            } else {
+                return false;
+            }
+        }
+
+        // Spell out the interface we take from BaseCoords
+        // TODO add a gcon_embed, gdet_embed
         KOKKOS_INLINE_FUNCTION void gcov_embed(const GReal Xembed[GR_DIM], Real gcov[GR_DIM][GR_DIM]) const
         {
             mpark::visit( [&Xembed, &gcov](const auto& self) {
@@ -266,18 +278,17 @@ class CoordinateEmbedding {
             return sqrt(fabs(gdet));
         }
 
-        KOKKOS_INLINE_FUNCTION void conn_native(const GReal X[GR_DIM], Real conn[GR_DIM][GR_DIM][GR_DIM]) const
+        KOKKOS_INLINE_FUNCTION void conn_native(const GReal X[GR_DIM], const GReal delta, Real conn[GR_DIM][GR_DIM][GR_DIM]) const
         {
-            Real tmp[GR_DIM][GR_DIM][GR_DIM];
-            Real gcon[GR_DIM][GR_DIM];
+            GReal tmp[GR_DIM][GR_DIM][GR_DIM];
+            GReal gcon[GR_DIM][GR_DIM];
             GReal Xh[GR_DIM], Xl[GR_DIM];
-            Real gh[GR_DIM][GR_DIM];
-            Real gl[GR_DIM][GR_DIM];
+            GReal gh[GR_DIM][GR_DIM];
+            GReal gl[GR_DIM][GR_DIM];
 
             for (int nu = 0; nu < GR_DIM; nu++) {
-                DLOOP1 Xh[mu] = Xl[mu] = X[mu];
-                Xh[nu] += DELTA;
-                Xl[nu] -= DELTA;
+                DLOOP1 Xl[mu] = X[mu] - delta*(mu == nu);
+                DLOOP1 Xh[mu] = X[mu] + delta*(mu == nu);
                 gcov_native(Xh, gh);
                 gcov_native(Xl, gl);
 

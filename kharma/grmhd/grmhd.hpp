@@ -57,53 +57,56 @@ using namespace parthenon;
  * syncing the conserved variables 
  */
 namespace GRMHD {
-    // For declaring meshes, as well as the full intermediates we need (right & left fluxes etc)
-    std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin);
+// For declaring meshes, as well as the full intermediates we need (right & left fluxes etc)
+std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin);
 
-    /**
-     * Get the primitive variables
-     * This just computes P, and only for the fluid varaibles.
-     * Other packages must convert P->U by registering their version as "FillDerived"
-     *
-     * input: U, whatever form
-     * output: U and P match down to inversion errors
-     */
-    void UtoP(MeshBlockData<Real> *rc);
+/**
+ * Get the primitive variables
+ * This just computes P, and only for the fluid varaibles.
+ * Other packages must convert P->U by registering their version as "FillDerived"
+ *
+ * input: U, whatever form
+ * output: U and P match down to inversion errors
+ */
+// void UtoP(MeshData<Real> *md, IndexDomain domain=IndexDomain::entire, bool coarse=false);
+// inline void FillDerivedMesh(MeshData<Real> *md) { UtoP(md); }
+void UtoP(MeshBlockData<Real> *rc, IndexDomain domain=IndexDomain::entire, bool coarse=false);
+inline void FillDerivedBlock(MeshBlockData<Real> *rc) { UtoP(rc); }
 
-    /**
-     * Fix the primitive variables
-     * Applies floors to the calculated primitives, and fixes up any failed inversions
-     *
-     * input: U & P, "matching"
-     * output: U and P match with inversion errors corrected, and obey floors
-     */
-    void PostUtoP(MeshBlockData<Real> *rc);
+/**
+ * Fix the primitive variables
+ * Applies floors to the calculated primitives, and fixes up any failed inversions
+ *
+ * input: U & P, "matching"
+ * output: U and P match with inversion errors corrected, and obey floors
+ */
+void PostUtoP(MeshBlockData<Real> *rc);
 
-    /**
-     * Returns the minimum CFL timestep among all zones in the block,
-     * multiplied by a proportion "cfl" for safety.
-     *
-     * This is just for a particular MeshBlock/package, so don't rely on it
-     * Parthenon will take the minimum and put it in pmy_mesh->dt
-     */
-    Real EstimateTimestep(MeshBlockData<Real> *rc);
+/**
+ * Returns the minimum CFL timestep among all zones in the block,
+ * multiplied by a proportion "cfl" for safety.
+ *
+ * This is just for a particular MeshBlock/package, so don't rely on it
+ * Parthenon will take the minimum and put it in pmy_mesh->dt
+ */
+Real EstimateTimestep(MeshBlockData<Real> *rc);
 
-    /**
-     * Return a tag per-block indicating whether to refine it
-     * 
-     * Criteria are very WIP
-     */
-    AmrTag CheckRefinement(MeshBlockData<Real> *rc);
+/**
+ * Return a tag per-block indicating whether to refine it
+ * 
+ * Criteria are very WIP
+ */
+AmrTag CheckRefinement(MeshBlockData<Real> *rc);
 
-    /**
-     * Fill fields which are calculated only for output to file
-     * Currently just the current jcon
-     */
-    void FillOutput(MeshBlock *pmb, ParameterInput *pin);
+/**
+ * Fill fields which are calculated only for output to file
+ * Currently just the current jcon
+ */
+void FillOutput(MeshBlock *pmb, ParameterInput *pin);
 
-    /**
-     * Diagnostics performed after each step.
-     * Currently finds any negative flags or 0/NaN values in ctop
-     */
-    TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *rc);
+/**
+ * Diagnostics performed after each step.
+ * Currently finds any negative flags or 0/NaN values in ctop
+ */
+TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *rc);
 }

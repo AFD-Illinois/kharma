@@ -44,6 +44,7 @@
 #include "b_cd.hpp"
 #include "current.hpp"
 #include "electrons.hpp"
+#include "floors.hpp"
 #include "grmhd.hpp"
 #include "reductions.hpp"
 #include "wind.hpp"
@@ -171,12 +172,6 @@ void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
     } else {
         pin->SetBoolean("coordinates", "spherical", false);
     }
-
-    // If we're using constant field of some kind, we likely *don't* want to normalize to beta_min=N
-    std::string field_type = pin->GetOrAddString("b_field", "type", "none");
-    if (field_type == "constant" || field_type == "monopole") {
-        pin->GetOrAddBoolean("b_field", "norm", false);
-    }
 }
 
 Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
@@ -203,17 +198,19 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
     // initialize it first among physics stuff
     packages.Add(GRMHD::Initialize(pin.get()));
 
+    // We'll also always want the floors package, even if floors are disabled
+    packages.Add(Floors::Initialize(pin.get()));
+
     // B field solvers, to ensure divB == 0.
     if (b_field_solver == "none") {
         // Don't add a B field
-        // Currently this means fields are still allocated, and processing is done in GRMHD,
+        // Currently this means fields are still allocated, and occasionally read by GRMHD,
         // but no other operations are performed.
     } else if (b_field_solver == "constraint_damping" || b_field_solver == "b_cd") {
         // Constraint damping, probably only useful for non-GR MHD systems
         packages.Add(B_CD::Initialize(pin.get(), packages));
     } else {
-        // Don't even error on bad values.  This is probably what you want,
-        // and we'll check for adaptive and error later
+        // Don't even error on bad values.  This is probably what you want
         packages.Add(B_FluxCT::Initialize(pin.get(), packages));
     }
 
@@ -240,11 +237,14 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
 // TODO decide on a consistent implementation of foreach packages -> do X
 void KHARMA::FillDerivedDomain(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, int coarse)
 {
-    FLAG("Filling derived variables on boundaries");
+    Flag(rc.get(), "Filling derived variables on boundaries");
     // We need to re-fill the "derived" (primitive) variables on the physical boundaries,
     // since we already called "FillDerived" before the ghost zones were initialized
-    // This does *not* apply to the GRMHD variables, just any passives or extras
+    // This does *not* apply to the GRMHD variables, as their primitive values are filled
+    // during the boundary call
     auto pmb = rc->GetBlockPointer();
+    // if (pmb->packages.AllPackages().count("GRMHD"))
+    //     GRMHD::UtoP(rc.get(), domain, coarse);
     if (pmb->packages.AllPackages().count("B_FluxCT"))
         B_FluxCT::UtoP(rc.get(), domain, coarse);
     if (pmb->packages.AllPackages().count("B_CD"))
@@ -252,7 +252,7 @@ void KHARMA::FillDerivedDomain(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDo
     if (pmb->packages.AllPackages().count("Electrons"))
         Electrons::UtoP(rc.get(), domain, coarse);
 
-    FLAG("Filled");
+    Flag(rc.get(), "Filled");
 }
 
 void KHARMA::PreStepMeshUserWorkInLoop(Mesh *pmesh, ParameterInput *pin, const SimTime &tm)
@@ -296,6 +296,7 @@ void KHARMA::PostStepDiagnostics(Mesh *pmesh, ParameterInput *pin, const SimTime
 
 void KHARMA::FillOutput(MeshBlock *pmb, ParameterInput *pin)
 {
+    Flag("Filling output");
     // Don't fill the output arrays for the first dump, as trying to actually
     // calculate them can produce errors when we're not in the loop yet.
     // Instead, they just get added to the file as their starting values, i.e. 0
@@ -310,5 +311,6 @@ void KHARMA::FillOutput(MeshBlock *pmb, ParameterInput *pin)
         if (pmb->packages.AllPackages().count("Electrons"))
             Electrons::FillOutput(pmb, pin);
     }
+    Flag("Filled");
 }
 

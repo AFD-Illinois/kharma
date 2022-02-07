@@ -67,9 +67,7 @@ int CountPFlags(MeshData<Real> *md, IndexDomain domain=IndexDomain::entire, int 
 int CountFFlags(MeshData<Real> *md, IndexDomain domain=IndexDomain::interior, int verbose=0);
 
 // Miscellaneous print functions.
-// Should not be called in production builds/committed code, so we hide them behind DEBUG flag
-#if DEBUG
-KOKKOS_INLINE_FUNCTION void print_matrix(std::string name, double g[GR_DIM][GR_DIM], bool kill_on_nan=false)
+KOKKOS_INLINE_FUNCTION void print_matrix(const std::string name, const double g[GR_DIM][GR_DIM], bool kill_on_nan=false)
 {
     // Print a name and a matrix
     printf("%s:\n%g\t%g\t%g\t%g\n%g\t%g\t%g\t%g\n%g\t%g\t%g\t%g\n%g\t%g\t%g\t%g\n", name.c_str(),
@@ -82,7 +80,7 @@ KOKKOS_INLINE_FUNCTION void print_matrix(std::string name, double g[GR_DIM][GR_D
         DLOOP2 if (isnan(g[mu][nu])) exit(-1);
     }
 }
-KOKKOS_INLINE_FUNCTION void print_vector(std::string name, double v[GR_DIM], bool kill_on_nan=false)
+KOKKOS_INLINE_FUNCTION void print_vector(const std::string name, const double v[GR_DIM], bool kill_on_nan=false)
 {
     printf("%s: %g\t%g\t%g\t%g\n", name.c_str(), v[0], v[1], v[2], v[3]);
 
@@ -90,4 +88,3 @@ KOKKOS_INLINE_FUNCTION void print_vector(std::string name, double v[GR_DIM], boo
         DLOOP2 if (isnan(v[nu])) exit(-1);
     }
 }
-#endif

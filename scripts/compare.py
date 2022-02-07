@@ -17,10 +17,14 @@ import os,sys
 import numpy as np
 import matplotlib.pyplot as plt
 
-
+AGREEMENT_TEST = 5e-10
 USEARRSPACE=True
+GHOSTS = False
 if USEARRSPACE:
-    window = (0, 1, 0, 1)
+    if GHOSTS:
+        window = (-0.1, 1.1, -0.1, 1.1)
+    else:
+        window = (0, 1, 0, 1)
 else:
     SIZE = 40
     window = (-SIZE, SIZE, -SIZE, SIZE)
@@ -32,13 +36,13 @@ dump1file = sys.argv[1]
 dump2file = sys.argv[2]
 imname = sys.argv[3]
 
-dump1 = pyHARM.load_dump(dump1file)
+dump1 = pyHARM.load_dump(dump1file, add_ghosts=GHOSTS)
 #Hopefully this fails for dumps that shouldn't be compared
-dump2 = pyHARM.load_dump(dump2file)
+dump2 = pyHARM.load_dump(dump2file, add_ghosts=GHOSTS)
 
 N1 = dump1['n1']; N2 = dump1['n2']; N3 = dump1['n3']
 
-log_floor = -8
+log_floor = -12
 
 # TODO properly option log, rel, lim
 def plot_diff_xy(ax, var, rel=False, lim=None):
@@ -78,12 +82,19 @@ nxplot = 3
 nyplot = 3
 vars = list(dump2['prim_names']) # Parthenon isn't dealing with KEL
 
+return_code = 0
+
 fig = plt.figure(figsize=(FIGX, FIGY))
 for i,name in enumerate(vars):
-  ax = plt.subplot(nyplot, nxplot, i+1)
-  plot_diff_xz(ax, name, rel=True, lim=1)
-  ax.set_xlabel('')
-  ax.set_ylabel('')
+    ax = plt.subplot(nyplot, nxplot, i+1)
+    plot_diff_xz(ax, name, rel=True) #, lim=1)
+    ax.set_xlabel('')
+    ax.set_ylabel('')
+
+    l1_norm = np.sum(np.abs(dump1[name] - dump2[name])) / np.sum(np.abs(dump1[name]))
+    if l1_norm > AGREEMENT_TEST:
+        print("Outputs disagree in {}: normalized L1: {}".format(name, l1_norm))
+        return_code = 1
 
 plt.tight_layout()
 
@@ -102,3 +113,5 @@ if dump1['n3'] > 1:
 
     plt.savefig(imname+"_xy.png", dpi=100)
     plt.close(fig)
+
+exit(return_code)

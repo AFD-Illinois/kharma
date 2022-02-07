@@ -34,13 +34,14 @@
 
 #include "problem.hpp"
 
+#include "b_field_tools.hpp"
 #include "boundaries.hpp"
 #include "debug.hpp"
 #include "fixup.hpp"
 #include "floors.hpp"
 #include "fluxes.hpp"
 #include "gr_coordinates.hpp"
-#include "b_field_tools.hpp"
+#include "types.hpp"
 
 // Problem initialization headers
 #include "bondi.hpp"
@@ -52,6 +53,7 @@
 #include "mhdmodes.hpp"
 #include "orszag_tang.hpp"
 #include "shock_tube.hpp"
+#include "noh.hpp"
 
 #include "b_field_tools.hpp"
 
@@ -65,38 +67,45 @@ using namespace parthenon;
 
 void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
 {
-    FLAG("Initializing Block");
     auto rc = pmb->meshblock_data.Get();
+    Flag(rc.get(), "Initializing Block");
 
     // Breakout to call the appropriate initialization function,
     // defined in accompanying headers.
 
     auto prob = pin->GetString("parthenon/job", "problem_id"); // Required parameter
+    if (MPIRank0()) cout << "Initializing problem: " << prob << endl;
+    TaskStatus status = TaskStatus::fail;
     if (prob == "mhdmodes") {
-        InitializeMHDModes(rc.get(), pin);
+        status = InitializeMHDModes(rc.get(), pin);
     } else if (prob == "orszag_tang") {
-        InitializeOrszagTang(rc.get(), pin);
+        status = InitializeOrszagTang(rc.get(), pin);
     } else if (prob == "explosion") {
-        InitializeExplosion(rc.get(), pin);
+        status = InitializeExplosion(rc.get(), pin);
     } else if (prob == "kelvin_helmholtz") {
-        InitializeKelvinHelmholtz(rc.get(), pin);
+        status = InitializeKelvinHelmholtz(rc.get(), pin);
     } else if (prob == "shock") {
-        InitializeShockTube(rc.get(), pin);
+        status = InitializeShockTube(rc.get(), pin);
     } else if (prob == "bondi") {
-        InitializeBondi(rc.get(), pin);
+        status = InitializeBondi(rc.get(), pin);
     } else if (prob == "torus") {
-        InitializeFMTorus(rc.get(), pin);
+        status = InitializeFMTorus(rc.get(), pin);
     } else if (prob == "bz_monopole") {
-        InitializeBZMonopole(rc.get(), pin);
+        status = InitializeBZMonopole(rc.get(), pin);
     } else if (prob == "iharm_restart") {
-        ReadIharmRestart(rc.get(), pin);
+        status = ReadIharmRestart(rc.get(), pin);
+    } else if (prob == "noh"){
+        status = InitializeNoh(rc.get(), pin);
+    }
+    if (status != TaskStatus::complete) {
+        throw std::invalid_argument("Invalid or incomplete problem: "+prob);
     }
 
     // Pertub the internal energy a bit to encourage accretion
     // option in perturbation->u_jitter
-    // TODO evaluate determinism here. How are MeshBlock gids assigned?
-    if (prob != "bz_monopole") {
-        // TODO how should this work, especially with iharm_restarts ?
+    // Note this defaults to zero, generally it's controlled via runtime options
+    // But we *definitely* don't want it when restarting
+    if (prob != "iharm_restart" && pin->GetOrAddReal("perturbation", "u_jitter", 0.0) > 0.0) {
         PerturbU(rc.get(), pin);
     }
 
@@ -108,12 +117,12 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
     // Apply any floors
     // This is purposefully done even if floors are disabled,
     // as it is required for consistent initialization
-    GRMHD::ApplyFloors(rc.get());
+    Floors::ApplyFloors(rc.get());
 
     // Fill the conserved variables U,
     // which we'll treat as the independent/fundamental state.
     // P is filled again from this later on
     Flux::PrimToFlux(rc.get(), IndexDomain::entire);
 
-    FLAG("Initialized Block");
+    Flag(rc.get(), "Initialized Block");
 }

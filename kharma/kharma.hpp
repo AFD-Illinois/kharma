@@ -38,53 +38,53 @@
  * General preferences for KHARMA.  Anything semi-driver-independent, like loading packages, etc.
  */
 namespace KHARMA {
-    /**
-     * This function messes with all Parthenon's parameters in-place before we hand them to the Mesh,
-     * so that KHARMA decks can omit/infer some things parthenon needs.
-     * This includes boundaries in spherical coordinates, coordinate system translations, etc.
-     * This function also handles setting parameters from restart files
-     */
-    void FixParameters(std::unique_ptr<ParameterInput>& pin);
+/**
+ * This function messes with all Parthenon's parameters in-place before we hand them to the Mesh,
+ * so that KHARMA decks can omit/infer some things parthenon needs.
+ * This includes boundaries in spherical coordinates, coordinate system translations, etc.
+ * This function also handles setting parameters from restart files
+ */
+void FixParameters(std::unique_ptr<ParameterInput>& pin);
 
-    /**
-     * Load any packages specified in the input parameters
-     */
-    Packages_t ProcessPackages(std::unique_ptr<ParameterInput>& pin);
+/**
+ * Load any packages specified in the input parameters
+ */
+Packages_t ProcessPackages(std::unique_ptr<ParameterInput>& pin);
 
-    /**
-     * Initialize a "package" (StateDescriptor) of global variables, quantities needed randomly in several places, like:
-     * dt_last, last step time
-     * ctop_max, maximum speed on the grid
-     * in_loop, whether one step has been completed (for e.g. EstimateTimestep)
-     */
-    std::shared_ptr<StateDescriptor> InitializeGlobals(ParameterInput *pin);
+/**
+ * Initialize a "package" (StateDescriptor) of global variables, quantities needed randomly in several places, like:
+ * dt_last, last step time
+ * ctop_max, maximum speed on the grid
+ * in_loop, whether one step has been completed (for e.g. EstimateTimestep)
+ */
+std::shared_ptr<StateDescriptor> InitializeGlobals(ParameterInput *pin);
 
-    /**
-     * Imitate Parthenon's FillDerived call, but on only a subset of zones defined by 'domain'
-     * Used for boundary calls, see boundaries.cpp
-     */
-    void FillDerivedDomain(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, int coarse);
+/**
+ * Imitate Parthenon's FillDerived call, but on only a subset of zones defined by 'domain'
+ * Used for boundary calls, see boundaries.cpp
+ */
+void FillDerivedDomain(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, int coarse);
 
-    /**
-     * Code-wide work before each step in the fluid evolution.  Currently just updates globals.
-     */
-    void PreStepMeshUserWorkInLoop(Mesh *pmesh, ParameterInput *pin, const SimTime &tm);
+/**
+ * Code-wide work before each step in the fluid evolution.  Currently just updates globals.
+ */
+void PreStepMeshUserWorkInLoop(Mesh *pmesh, ParameterInput *pin, const SimTime &tm);
 
-    /**
-     * Code-wide work after each step in the fluid evolution.  Currently just updates globals.
-     */
-    void PostStepMeshUserWorkInLoop(Mesh *pmesh, ParameterInput *pin, const SimTime &tm);
+/**
+ * Code-wide work after each step in the fluid evolution.  Currently just updates globals.
+ */
+void PostStepMeshUserWorkInLoop(Mesh *pmesh, ParameterInput *pin, const SimTime &tm);
 
-    /**
-     * Calculate and print diagnostics after each step. Currently:
-     * GRMHD: pflags & fflags, negative values in rho,u, ctop of 0 or NaN
-     * B fields: MaxDivB
-     */
-    void PostStepDiagnostics(Mesh *pmesh, ParameterInput *pin, const SimTime &tm);
+/**
+ * Calculate and print diagnostics after each step. Currently:
+ * GRMHD: pflags & fflags, negative values in rho,u, ctop of 0 or NaN
+ * B fields: MaxDivB
+ */
+void PostStepDiagnostics(Mesh *pmesh, ParameterInput *pin, const SimTime &tm);
 
-    /**
-     * Fill any arrays that are calculated only for output, e.g. divB, jcon, etc.
-     * This calls the FillOutput function of each package
-     */
-    void FillOutput(MeshBlock *pmb, ParameterInput *pin);
+/**
+ * Fill any arrays that are calculated only for output, e.g. divB, jcon, etc.
+ * This calls the FillOutput function of each package
+ */
+void FillOutput(MeshBlock *pmb, ParameterInput *pin);
 }

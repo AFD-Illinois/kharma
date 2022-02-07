@@ -12,7 +12,7 @@
  * @param rin is the torus innermost radius, in r_g
  * @param rmax is the radius of maximum density of the F-M torus in r_g
  */
-void InitializeFMTorus(MeshBlockData<Real> *rc, ParameterInput *pin);
+TaskStatus InitializeFMTorus(MeshBlockData<Real> *rc, ParameterInput *pin);
 /**
  * Perturb the internal energy by a uniform random proportion per cell.
  * Resulting internal energies will be between u \pm u*u_jitter/2
@@ -91,4 +91,27 @@ KOKKOS_INLINE_FUNCTION Real lfish_calc(const GReal a, const GReal r)
                   sqrt(1 + (2. * a) / pow(r, 1.5) - 3. / r))) /
             (pow(r, 3) * sqrt(2. * a * sqrt(r) + (-3. + r) * r) *
              (pow(a, 2) + (-2. + r) * r)));
+}
+
+/**
+ * Torus solution for density at a given location.
+ * 
+ * This function is *not* used for the actual initialization (where rho is calculated
+ * alongside the other primitive variables).  Rather, it is for:
+ * 1. Normalization, in which the max of this function over the domain is calculated.
+ * 2. B field initialization, which requires density the untilted disk for simplicity
+ */
+KOKKOS_INLINE_FUNCTION Real fm_torus_rho(const GReal a, const GReal rin, const GReal rmax, const Real gam,
+                                         const Real kappa, const GReal r, const GReal th)
+{
+    Real l = lfish_calc(a, rmax);
+    Real lnh = lnh_calc(a, l, rin, r, th);
+    if (lnh >= 0. && r >= rin) {
+        // Calculate rho
+        Real hm1 = exp(lnh) - 1.;
+        return pow(hm1 * (gam - 1.) / (kappa * gam),
+                            1. / (gam - 1.));
+    } else {
+        return 0;
+    }
 }

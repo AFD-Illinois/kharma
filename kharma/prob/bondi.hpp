@@ -122,8 +122,10 @@ KOKKOS_INLINE_FUNCTION void get_prim_bondi(const GRCoordinates& G, const Coordin
     GReal Xnative[GR_DIM], Xembed[GR_DIM];
     G.coord(k, j, i, Loci::center, Xnative);
     G.coord_embed(k, j, i, Loci::center, Xembed);
-    Real Rhor = ks.rhor();
     GReal r = Xembed[1];
+    // Unless we're doing a Schwarzchild problem & comparing solutions,
+    // be a little cautious about initializing the Ergosphere zones
+    if (ks.a > 0.1 && r < 2) return;
 
     Real T = get_T(r, C1, C2, n);
     Real ur = -C1 / (pow(T, n) * pow(r, 2));

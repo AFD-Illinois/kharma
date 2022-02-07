@@ -47,7 +47,7 @@ TaskStatus GRMHD::FixUtoP(MeshBlockData<Real> *rc)
     // But we can only fix primitives with their neighbors.
     // This may actually mean we require the 4 ghost zones Parthenon "wants" us to have,
     // if we need to use only fixed zones.
-    FLAG("Fixing U to P inversions");
+    Flag(rc, "Fixing U to P inversions");
     auto pmb = rc->GetBlockPointer();
     const auto& G = pmb->coords;
 
@@ -61,11 +61,15 @@ TaskStatus GRMHD::FixUtoP(MeshBlockData<Real> *rc)
     const auto& pars = pmb->packages.Get("GRMHD")->AllParams();
     const Real gam = pars.Get<Real>("gamma");
     const int verbose = pars.Get<int>("verbose");
-    const FloorPrescription floors = FloorPrescription(pars);
+    const Floors::Prescription floors(pmb->packages.Get("Floors")->AllParams());
 
     const IndexRange ib = rc->GetBoundsI(IndexDomain::entire);
     const IndexRange jb = rc->GetBoundsJ(IndexDomain::entire);
     const IndexRange kb = rc->GetBoundsK(IndexDomain::entire);
+
+    const IndexRange ib_b = rc->GetBoundsI(IndexDomain::interior);
+    const IndexRange jb_b = rc->GetBoundsJ(IndexDomain::interior);
+    const IndexRange kb_b = rc->GetBoundsK(IndexDomain::interior);
 
     // TODO attempt to recover from entropy here if it's present
 
@@ -81,8 +85,8 @@ TaskStatus GRMHD::FixUtoP(MeshBlockData<Real> *rc)
                     for (int m = -1; m <= 1; m++) {
                         for (int l = -1; l <= 1; l++) {
                             int ii = i + l, jj = j + m, kk = k + n;
-                            // If in bounds...
-                            if (ii >= ib.s && ii <= ib.e && jj >= jb.s && jj <= jb.e && kk >= kb.s && kk <= kb.e) {
+                            // If we haven't overstepped array bounds...
+                            if (inside(kk, jj, ii, kb, jb, ib)) {
                                 // Weight by distance
                                 double w = 1./(abs(l) + abs(m) + abs(n) + 1);
 
@@ -103,7 +107,8 @@ TaskStatus GRMHD::FixUtoP(MeshBlockData<Real> *rc)
                 if(wsum < 1.e-10) {
                     // TODO probably should crash here.
 #ifndef KOKKOS_ENABLE_SYCL
-                    if (verbose >= 1) printf("No neighbors were available at %d %d %d!\n", i, j, k);
+                    if (verbose >= 1 && inside(k, j, i, kb_b, jb_b, ib_b)) // If an interior zone...
+                        printf("No neighbors were available at %d %d %d!\n", i, j, k);
 #endif
                     PLOOP P(p, k, j, i) = sum_x[p]/wsum_x;
                 } else {
@@ -137,6 +142,6 @@ TaskStatus GRMHD::FixUtoP(MeshBlockData<Real> *rc)
         }
     );
 
-    FLAG("Fixed U to P inversions");
+    Flag(rc, "Fixed U to P inversions");
     return TaskStatus::complete;
 }

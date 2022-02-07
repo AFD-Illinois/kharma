@@ -43,7 +43,7 @@
  * Follows initial conditions from Lecoanet et al. 2015,
  * MNRAS 455, 4274.
  */
-void InitializeKelvinHelmholtz(MeshBlockData<Real> *rc, ParameterInput *pin)
+TaskStatus InitializeKelvinHelmholtz(MeshBlockData<Real> *rc, ParameterInput *pin)
 {
     auto pmb = rc->GetBlockPointer();
     GridScalar rho = rc->Get("prims.rho").data;
@@ -96,4 +96,6 @@ void InitializeKelvinHelmholtz(MeshBlockData<Real> *rc, ParameterInput *pin)
             VLOOP uvec(v, k, j, i) *= tscale;
         }
     );
+
+    return TaskStatus::complete;
 }

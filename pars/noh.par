@@ -1,0 +1,82 @@
+# 1D (Noh) shock test (see Ressler+ 2015)
+# Defaults to non-relativistic electrons for
+# convergence tests.
+# Set gamma_e = 1.333333 for relativistic
+
+<parthenon/job>
+problem_id = noh
+
+<parthenon/mesh>
+refinement = none
+numlevel = 1
+
+nx1 = 2000
+x1min = 0.0
+x1max = 1.0
+ix1_bc = outflow
+ox1_bc = outflow
+
+nx2 = 1
+x2min = 0.0
+x2max = 1.0
+
+nx3 = 1
+x3min = 0.0
+x3max = 1.0
+
+<parthenon/meshblock>
+nx1 = 2000
+nx2 = 1
+nx3 = 1
+
+<coordinates>
+base = cartesian_minkowski
+transform = null
+
+<parthenon/time>
+tlim = 20.0
+integrator = rk2
+dt_min = 0.0001
+
+<GRMHD>
+cfl = 0.9
+gamma = 1.666667
+reconstruction = weno5
+
+<b_field>
+solver = none
+
+<electrons>
+on = true
+constant = true
+kawazura = false
+sharma = false
+werner = false
+rowan = false
+gamma_e = 1.666667
+fel_0 = 0.0
+fel_constant = 0.5
+
+<noh>
+mach = 49.
+rhoL = 1.0
+rhoR = 1.0
+PL = 1.e-6
+PR = 1.e-6
+set_tlim = true
+
+<floors>
+disable_floors = true
+
+<debug>
+verbose = 0
+
+<parthenon/output0>
+file_type = hdf5
+dt = 0.1
+single_precision_output = true
+variables = prims.rho, prims.u, prims.uvec, prims.Ktot, prims.Kel_Constant
+
+<parthenon/output1>
+file_type = hst
+dt = 0.1

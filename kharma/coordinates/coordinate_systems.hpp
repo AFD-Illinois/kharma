@@ -41,14 +41,16 @@
 #include "decs.hpp"
 
 #include "matrix.hpp"
-#include "utils.hpp"
+#include "kharma_utils.hpp"
+#include "root_find.hpp"
 
-#define ROOTFIND_TOL 1.e-9
+#define LEGACY_TH 1
 
 using namespace parthenon;
+using namespace std;
 
 /**
- * Base systems implemented:
+ * Embedding/Base systems implemented:
  * Minkowski space: Cartesian and Spherical coordinates
  * Kerr Space: Spherical KS and BL coordinates
  * 
@@ -59,14 +61,11 @@ using namespace parthenon;
  * 
  * TODO Cartesian KS base
  * TODO snake coordinate transform for Cartesian Minkowski
- * TODO CMKS, MKS3 transforms, proper Cartesian<->Spherical conversions (see prob_common.hpp for a start)
- * TODO overhaul the COORDSINGFIX implementations
- * TODO overhaul the rootfind implementation
+ * TODO CMKS, MKS3 transforms, proper Cartesian<->Spherical functions stolen from e.g. prob_common.hpp
+ * TODO overhaul the LEGACY_TH stuff
+ * TODO currently avoids returning gcov which might be singular,
+ *      is this the correct play vs handling in inversions?
  */
-
-// Internal function for rootfinding X2 in non-invertible transformations
-template<typename Function>
-KOKKOS_FUNCTION void root_find(const GReal Xembed[GR_DIM], GReal Xnative[GR_DIM], Function coord_to_embed);
 
 /**
  * EMBEDDING SYSTEMS:
@@ -99,6 +98,7 @@ class SphMinkowskiCoords {
             const GReal th = excise(excise(Xembed[2], 0.0, SMALL), M_PI, SMALL);
             const GReal sth = sin(th);
 
+            gzero2(gcov);
             gcov[0][0] = 1.;
             gcov[1][1] = 1.;
             gcov[2][2] = r*r;
@@ -157,7 +157,20 @@ class SphKSCoords {
             trans[0][1] = 2.*r/(r*r - 2.*r + a*a);
             trans[3][1] = a/(r*r - 2.*r + a*a);
 
-            DLOOP1 vcon[mu] = 0.;
+            gzero(vcon);
+            DLOOP2 vcon[mu] += trans[mu][nu]*vcon_bl[nu];
+        }
+
+        KOKKOS_INLINE_FUNCTION void vec_to_bl(const GReal Xembed[GR_DIM], const Real vcon_bl[GR_DIM], Real vcon[GR_DIM]) const
+        {
+            GReal r = Xembed[1];
+            GReal rtrans[GR_DIM][GR_DIM], trans[GR_DIM][GR_DIM];
+            DLOOP2 rtrans[mu][nu] = (mu == nu);
+            rtrans[0][1] = 2.*r/(r*r - 2.*r + a*a);
+            rtrans[3][1] = a/(r*r - 2.*r + a*a);
+            invert(&rtrans[0][0], &trans[0][0]);
+
+            gzero(vcon);
             DLOOP2 vcon[mu] += trans[mu][nu]*vcon_bl[nu];
         }
 
@@ -188,9 +201,10 @@ class SphBLCoords {
             const GReal s2 = sth*sth;
             const GReal a2 = a*a;
             const GReal r2 = r*r;
+            // TODO this and gcov_embed for KS should look more similar...
             const GReal mmu = 1. + a2*cth*cth/r2; // mu is taken as an index
 
-            DLOOP2 gcov[mu][nu] = 0.;
+            gzero2(gcov);
             gcov[0][0]  = -(1. - 2./(r*mmu));
             gcov[0][3]  = -2.*a*s2/(r*mmu);
             gcov[1][1]   = mmu/(1. - 2./r + a2/r2);
@@ -199,10 +213,7 @@ class SphBLCoords {
             gcov[3][3]   = s2*(r2 + a2 + 2.*a2*s2/(r*mmu));
         }
 
-        KOKKOS_INLINE_FUNCTION void vec_from_bl(const GReal Xembed[GR_DIM], const Real vcon_bl[GR_DIM], Real vcon[GR_DIM]) const
-        {
-            DLOOP1 vcon[mu] = vcon_bl[mu];
-        }
+        // TODO vec to/from ks, put guaranteed ks/bl fns into embedding
 
         KOKKOS_INLINE_FUNCTION GReal rhor() const
         {
@@ -255,7 +266,11 @@ class ExponentialTransform {
         {
             Xembed[0] = Xnative[0];
             Xembed[1] = exp(Xnative[1]);
+#if LEGACY_TH
+            Xembed[2] = excise(excise(Xnative[2], 0.0, SMALL), M_PI, SMALL);
+#else
             Xembed[2] = Xnative[2];
+#endif
             Xembed[3] = Xnative[3];
         }
         KOKKOS_INLINE_FUNCTION void coord_to_native(const GReal Xembed[GR_DIM], GReal Xnative[GR_DIM]) const
@@ -270,7 +285,7 @@ class ExponentialTransform {
          */
         KOKKOS_INLINE_FUNCTION void dxdX(const GReal Xnative[GR_DIM], Real dxdX[GR_DIM][GR_DIM]) const
         {
-            DLOOP2 dxdX[mu][nu] = 0;
+            gzero2(dxdX);
             dxdX[0][0] = 1.;
             dxdX[1][1] = exp(Xnative[1]);
             dxdX[2][2] = 1.;
@@ -281,10 +296,11 @@ class ExponentialTransform {
          */
         KOKKOS_INLINE_FUNCTION void dXdx(const GReal Xnative[GR_DIM], Real dXdx[GR_DIM][GR_DIM]) const
         {
-            // Lazy way.  Surely there's an analytic inverse to be had somewhere...
-            Real dxdX_tmp[GR_DIM][GR_DIM];
-            dxdX(Xnative, dxdX_tmp);
-            invert(&dxdX_tmp[0][0],&dXdx[0][0]);
+            gzero2(dXdx);
+            dXdx[0][0] = 1.;
+            dXdx[1][1] = 1 / exp(Xnative[1]);
+            dXdx[2][2] = 1.;
+            dXdx[3][3] = 1.;
         }
 };
 
@@ -304,7 +320,12 @@ class ModifyTransform {
         {
             Xembed[0] = Xnative[0];
             Xembed[1] = exp(Xnative[1]);
+#if LEGACY_TH
+            const GReal th = M_PI*Xnative[2] + ((1. - hslope)/2.)*sin(2.*M_PI*Xnative[2]);
+            Xembed[2] = excise(excise(th, 0.0, SMALL), M_PI, SMALL);
+#else
             Xembed[2] = M_PI*Xnative[2] + ((1. - hslope)/2.)*sin(2.*M_PI*Xnative[2]);
+#endif
             Xembed[3] = Xnative[3];
         }
         KOKKOS_INLINE_FUNCTION void coord_to_native(const GReal Xembed[GR_DIM], GReal Xnative[GR_DIM]) const
@@ -312,15 +333,15 @@ class ModifyTransform {
             Xnative[0] = Xembed[0];
             Xnative[1] = log(Xembed[1]);
             Xnative[3] = Xembed[3];
-            // Treat the special case
-            root_find(Xembed, Xnative, &ModifyTransform::coord_to_embed);
+            // Treat the special case with a large macro
+            ROOT_FIND
         }
         /**
          * Transformation matrix for contravariant vectors to embedding, or covariant vectors to native
          */
         KOKKOS_INLINE_FUNCTION void dxdX(const GReal Xnative[GR_DIM], Real dxdX[GR_DIM][GR_DIM]) const
         {
-            DLOOP2 dxdX[mu][nu] = 0;
+            gzero2(dxdX);
             dxdX[0][0] = 1.;
             dxdX[1][1] = exp(Xnative[1]);
             dxdX[2][2] = M_PI - (hslope - 1.)*M_PI*cos(2.*M_PI*Xnative[2]);
@@ -331,10 +352,11 @@ class ModifyTransform {
          */
         KOKKOS_INLINE_FUNCTION void dXdx(const GReal Xnative[GR_DIM], Real dXdx[GR_DIM][GR_DIM]) const
         {
-            // Lazy way.  Surely there's an analytic inverse to be had somewhere...
-            Real dxdX_tmp[GR_DIM][GR_DIM];
-            dxdX(Xnative, dxdX_tmp);
-            invert(&dxdX_tmp[0][0],&dXdx[0][0]);
+            gzero2(dXdx);
+            dXdx[0][0] = 1.;
+            dXdx[1][1] = 1 / exp(Xnative[1]);
+            dXdx[2][2] = 1 / (M_PI - (hslope - 1.)*M_PI*cos(2.*M_PI*Xnative[2]));
+            dXdx[3][3] = 1.;
         }
 };
 
@@ -364,8 +386,12 @@ class FunkyTransform {
             const GReal thG = M_PI*Xnative[2] + ((1. - hslope)/2.)*sin(2.*M_PI*Xnative[2]);
             const GReal y = 2*Xnative[2] - 1.;
             const GReal thJ = poly_norm * y * (1. + pow(y/poly_xt,poly_alpha) / (poly_alpha + 1.)) + 0.5 * M_PI;
+#if LEGACY_TH
+            const GReal th = thG + exp(mks_smooth * (startx1 - Xnative[1])) * (thJ - thG);
+            Xembed[2] = excise(excise(th, 0.0, SMALL), M_PI, SMALL);
+#else
             Xembed[2] = thG + exp(mks_smooth * (startx1 - Xnative[1])) * (thJ - thG);
-
+#endif
             Xembed[3] = Xnative[3];
         }
         KOKKOS_INLINE_FUNCTION void coord_to_native(const GReal Xembed[GR_DIM], GReal Xnative[GR_DIM]) const
@@ -373,15 +399,15 @@ class FunkyTransform {
             Xnative[0] = Xembed[0];
             Xnative[1] = log(Xembed[1]);
             Xnative[3] = Xembed[3];
-            // Treat the special case
-            root_find(Xembed, Xnative, &FunkyTransform::coord_to_embed);
+            // Treat the special case with a macro
+            ROOT_FIND
         }
         /**
          * Transformation matrix for contravariant vectors to embedding, or covariant vectors to native
          */
         KOKKOS_INLINE_FUNCTION void dxdX(const GReal Xnative[GR_DIM], Real dxdX[GR_DIM][GR_DIM]) const
         {
-            DLOOP2 dxdX[mu][nu] = 0;
+            gzero2(dxdX);
             dxdX[0][0] = 1.;
             dxdX[1][1] = exp(Xnative[1]);
             dxdX[2][1] = -exp(mks_smooth * (startx1 - Xnative[1])) * mks_smooth
@@ -422,67 +448,3 @@ class FunkyTransform {
 // Note nesting isn't allowed -- do it yourself by calling the steps if that's really important...
 using SomeBaseCoords = mpark::variant<SphMinkowskiCoords, CartMinkowskiCoords, SphBLCoords, SphKSCoords>;
 using SomeTransform = mpark::variant<NullTransform, ExponentialTransform, ModifyTransform, FunkyTransform>;
-
-/**
- * Root finder for X[2] since it is sometimes not analytically invertible
- * Written with a common interface for doing 2D solves, if those are ever required
- * Note ASSUMES Xnative bounds are [0,1] and Xembed bounds are [0,M_PI]
- * 
- * @param Xembed the vector of embedding coordinates to convert
- * @param Xnative vector of existing native coordinates; this function will set X[2]
- * @param coord_to_embed function taking the vector Xnative to embedding coordinates
- */
-template<typename Function>
-KOKKOS_FUNCTION void root_find(const GReal Xembed[GR_DIM], GReal Xnative[GR_DIM], Function& coord_to_embed)
-{
-  double th = Xembed[2];
-  double tha, thb, thc;
-
-  double Xa[GR_DIM], Xb[GR_DIM], Xc[GR_DIM], Xtmp[GR_DIM];
-  Xa[1] = Xnative[1];
-  Xa[3] = Xnative[3];
-
-  Xb[1] = Xa[1];
-  Xb[3] = Xa[3];
-  Xc[1] = Xa[1];
-  Xc[3] = Xa[3];
-
-  if (Xembed[2] < M_PI / 2.) {
-    Xa[2] = 0.;
-    Xb[2] = 0.5 + SMALL;
-  } else {
-    Xa[2] = 0.5 - SMALL;
-    Xb[2] = 1.;
-  }
-
-  coord_to_embed(Xa, Xtmp);
-  tha = Xtmp[2];
-  coord_to_embed(Xb, Xtmp);
-  thb = Xtmp[2];
-
-  // check limits first
-  if (fabs(tha-th) < ROOTFIND_TOL) {
-    Xnative[2] = Xa[2];
-    return;
-  } else if (fabs(thb-th) < ROOTFIND_TOL) {
-    Xnative[2] = Xb[2];
-    return;
-  }
-
-  // bisect for a bit
-  for (int i = 0; i < 1000; i++) {
-    Xc[2] = 0.5 * (Xa[2] + Xb[2]);
-    coord_to_embed(Xc, Xtmp);
-    thc = Xtmp[2];
-
-    if ((thc - th) * (thb - th) < 0.)
-      Xa[2] = Xc[2];
-    else
-      Xb[2] = Xc[2];
-
-    if (fabs(thc - th) < ROOTFIND_TOL)
-      break;
-  }
-
-  Xnative[2] = Xc[2];
-}
