@@ -17,7 +17,7 @@ import os,sys
 import numpy as np
 import matplotlib.pyplot as plt
 
-
+AGREEMENT_TEST = 5e-10
 USEARRSPACE=True
 GHOSTS = False
 if USEARRSPACE:
@@ -92,7 +92,7 @@ for i,name in enumerate(vars):
     ax.set_ylabel('')
 
     l1_norm = np.sum(np.abs(dump1[name] - dump2[name])) / np.sum(np.abs(dump1[name]))
-    if l1_norm > 1e-10:
+    if l1_norm > AGREEMENT_TEST:
         print("Outputs disagree in {}: normalized L1: {}".format(name, l1_norm))
         return_code = 1
 
