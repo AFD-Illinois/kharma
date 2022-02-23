@@ -29,6 +29,7 @@ poly_alpha = 14.0
 
 <parthenon/time>
 tlim = 10000.0
+nlim = -1
 
 <GRMHD>
 cfl = 0.9

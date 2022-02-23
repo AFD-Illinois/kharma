@@ -92,3 +92,15 @@ tilt_init:
     paths:
       - tests/tilt_init/*.png
       - tests/tilt_init/*.hst
+
+restart:
+  stage: tests
+  before_script:
+    - cd tests/restart
+  script:
+    - bash run.sh
+    - bash check.sh
+  artifacts:
+    when: always
+    paths:
+      - tests/restart/*.png
