@@ -45,6 +45,7 @@
 
 // Problem initialization headers
 #include "bondi.hpp"
+#include "driven_turbulence.hpp"
 #include "explosion.hpp"
 #include "fm_torus.hpp"
 #include "resize_restart.hpp"
