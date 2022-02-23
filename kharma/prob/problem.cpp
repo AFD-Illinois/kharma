@@ -45,6 +45,7 @@
 
 // Problem initialization headers
 #include "bondi.hpp"
+#include "driven_turbulence.hpp"
 #include "explosion.hpp"
 #include "fm_torus.hpp"
 #include "iharm_restart.hpp"
@@ -95,10 +96,12 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
         status = InitializeFMTorus(rc.get(), pin);
     } else if (prob == "bz_monopole") {
         status = InitializeBZMonopole(rc.get(), pin);
-    } else if (prob == "iharm_restart") {
-        status = ReadIharmRestart(rc.get(), pin);
+    } else if (prob == "driven_turbulence") {
+        status = InitializeDrivenTurbulence(rc.get(), pin);
     } else if (prob == "noh"){
         status = InitializeNoh(rc.get(), pin);
+    } else if (prob == "iharm_restart") { // Restart file is *last* option
+        status = ReadIharmRestart(rc.get(), pin);
     }
     if (status != TaskStatus::complete) {
         throw std::invalid_argument("Invalid or incomplete problem: "+prob);

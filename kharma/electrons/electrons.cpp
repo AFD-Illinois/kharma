@@ -421,11 +421,12 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
                 GRMHD::p_to_u(G, P_new, m_p, gam, k, j, i, U_new, m_u);
             }
         );
-    } else if (prob == "forced_MHD") {
+    } else if (prob == "driven_turbulence") {
         // Gaussian random field:
+        const Real edot_in = pmb->packages.Get("GRMHD")->Param<Real>("drive_edot");
+        const Real cs0 = pmb->packages.Get("GRMHD")->Param<Real>("drive_cs0");
         // incompressible, sigma2 ~ k6 exp (-8k/kpeak), where kpeak = 4pi/L
-
-        // 
+        // GAUSSIAN FIELD HERE
     }
 
     Flag(rc, "Applied");
