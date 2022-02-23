@@ -31,7 +31,8 @@ if [[ $HOST == *".summit.olcf.ornl.gov" ]]; then
   else
     # Use nvc++ compiler in NVHPC
     module unload cuda
-    module load nvhpc/21.11
+    module load cmake cuda/nvhpc nvhpc/21.11 spectrum-mpi hdf5/1.10.7
+
     C_NATIVE="nvc"
     CXX_NATIVE="nvc++"
     export CXXFLAGS="-mp"
