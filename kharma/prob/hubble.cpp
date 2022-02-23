@@ -34,9 +34,11 @@
 
 #include "hubble.hpp"
 
+#include "types.hpp"
+
 TaskStatus InitializeHubble(MeshBlockData<Real> *rc, ParameterInput *pin)
 {
-    FLAG("Initializing Hubble Flow Electron Heating problem");
+    Flag("Initializing Hubble Flow Electron Heating problem");
     auto pmb = rc->GetBlockPointer();
     const Real fel0 = pmb->packages.Get("Electrons")->Param<Real>("fel_0");
 
@@ -67,13 +69,13 @@ TaskStatus InitializeHubble(MeshBlockData<Real> *rc, ParameterInput *pin)
     // Then call the general function to fill the grid
     SetHubble(rc);
 
-    FLAG("Initialized");
+    Flag("Initialized");
     return TaskStatus::complete;
 }
 
 TaskStatus SetHubble(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
-    FLAG("Setting zones to Hubble Flow");
+    Flag("Setting zones to Hubble Flow");
     auto pmb = rc->GetBlockPointer();
     GridScalar rho = rc->Get("prims.rho").data;
     GridScalar u = rc->Get("prims.u").data;
@@ -113,6 +115,6 @@ TaskStatus SetHubble(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
         }
     );
 
-    FLAG("Set");
+    Flag("Set");
     return TaskStatus::complete;
 }
