@@ -17,6 +17,10 @@ python3 check.py $RES3D "fast mode in 3D" fast || fail=1
 python3 check.py $RES3D "entropy mode in 3D, linear/MC reconstruction" entropy_mc || fail=1
 python3 check.py $RES3D "entropy mode in 3D, linear/VL reconstruction" entropy_vl || fail=1
 
+python3 check.py $RES3D "slow mode in 3D, classic algo" slow_grim || fail=1
+python3 check.py $RES3D "Alfven mode in 3D, classic algo" alfven_grim || fail=1
+python3 check.py $RES3D "fast mode in 3D, classic algo" fast_grim || fail=1
+
 #python3 check.py $RES2D "fast mode in 2D, WENO5" fast2d 2d || fail=1
 #python3 check.py $RES2D "fast mode in 2D, linear/MC reconstruction" fast_mc 2d || fail=1
 #python3 check.py $RES2D "fast mode in 2D, linear/VL reconstruction" fast_vl 2d || fail=1

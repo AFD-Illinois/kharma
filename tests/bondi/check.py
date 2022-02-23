@@ -31,8 +31,8 @@ for res in RES:
 
     r = r[imin:]
 
-    rho0 = np.mean(start['RHO'][imin:,:,0], axis=1)
-    rho1 = np.mean(end['RHO'][imin:,:,0], axis=1)
+    rho0 = np.mean(start['RHO'][imin:,:], axis=1)
+    rho1 = np.mean(end['RHO'][imin:,:], axis=1)
 
     fig = plt.figure(figsize=(5,5))
     ax = fig.add_subplot(1,1,1)

@@ -46,13 +46,6 @@ using namespace KokkosBatched;
 
 using namespace parthenon;
 
-// Used only in Howes model
-#define ME (9.1093826e-28  ) // Electron mass
-#define MP (1.67262171e-24 ) // Proton mass
-
-// Do I really want to reintroduce this?
-#define SMALL 1.e-20
-
 namespace Viscosity
 {
 
@@ -97,7 +90,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
 
 void UtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
-    FLAG("UtoP electrons");
+    Flag(rc, "UtoP electrons");
     auto pmb = rc->GetBlockPointer();
 
     MetadataFlag isNonideal = pmb->packages.Get("Viscosity")->Param<MetadataFlag>("NonidealFlag");
@@ -163,11 +156,11 @@ void PostUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 
 TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *rc)
 {
-    FLAG("Printing electron diagnostics");
+    Flag("Printing electron diagnostics");
 
     // Output any diagnostics after a step completes
 
-    FLAG("Printed")
+    Flag("Printed");
     return TaskStatus::complete;
 }
 

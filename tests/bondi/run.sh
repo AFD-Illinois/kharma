@@ -17,7 +17,13 @@ conv_2d() {
     done
 }
 
+# Test coordinates (raw ks?)
 conv_2d fmks coordinates/transform=fmks
 conv_2d mks coordinates/transform=mks
+conv_2d eks coordinates/transform=eks
+# Recon
 conv_2d linear_mc GRMHD/reconstruction=linear_mc
 conv_2d linear_vl GRMHD/reconstruction=linear_vl
+# And the GRIM/classic driver
+conv_2d classic driver/type=grim
+#conv_2d grim driver/type=grim driver/step=implicit 

@@ -1,5 +1,5 @@
-# GRMHD Modes problem
-# Try to propagate several analytically-amenable linear modes of the MHD equations
+# Orszag-Tang Vortex problem:
+# Generate current sheets on short timescales
 
 <parthenon/job>
 problem_id = orszag_tang

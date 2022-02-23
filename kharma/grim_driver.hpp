@@ -1,5 +1,5 @@
 /* 
- *  File: harm_driver.hpp
+ *  File: grim_driver.cpp
  *  
  *  BSD 3-Clause License
  *  
@@ -41,14 +41,15 @@ using namespace parthenon;
 
 /**
  * A Driver object orchestrates everything that has to be done to a mesh to constitute a step.
- * For HARM, this means the predictor-corrector steps of fluid evolution
+ * Nominally GRIM is very much like HARM, but in KHARMA the two drivers have one key difference:
+ * GRIMDriver syncs primitive variables, whereas HARM/KHARMA syncs conserved variables
  */
-class HARMDriver : public MultiStageDriver {
+class GRIMDriver : public MultiStageDriver {
     public:
         /**
          * Default constructor
          */
-        HARMDriver(ParameterInput *pin, ApplicationInput *papp, Mesh *pm) : MultiStageDriver(pin, papp, pm) {}
+        GRIMDriver(ParameterInput *pin, ApplicationInput *papp, Mesh *pm) : MultiStageDriver(pin, papp, pm) {}
 
         /**
          * All the tasks which constitute advancing the fluid in a mesh by one stage.

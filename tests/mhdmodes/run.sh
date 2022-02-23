@@ -54,6 +54,10 @@ conv_3d entropy_vl "mhdmodes/nmode=0 GRMHD/reconstruction=linear_vl"
 conv_3d slow mhdmodes/nmode=1
 conv_3d alfven mhdmodes/nmode=2
 conv_3d fast mhdmodes/nmode=3
+# And we've got to test classic/GRIM stepping
+conv_3d slow_grim   "mhdmodes/nmode=1 driver/type=grim"
+conv_3d alfven_grim "mhdmodes/nmode=2 driver/type=grim"
+conv_3d fast_grim   "mhdmodes/nmode=3 driver/type=grim"
 
 # 2D modes use small blocks, could pick up some problems at MPI ranks >> 1
 # Currently very slow, plus modes are incorrect

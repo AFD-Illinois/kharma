@@ -62,8 +62,10 @@ TaskStatus ApplyFluxes(MeshData<Real> *md, MeshData<Real> *mdudt);
 
 /**
  * Fill all conserved variables (U) from primitive variables (P), over the whole grid.
+ * Second declaration is for Parthenon's benefit, similar to UtoP vs FillDerived in GRMHD::
  */
 TaskStatus PrimToFlux(MeshBlockData<Real> *rc, IndexDomain domain=IndexDomain::entire);
+inline TaskStatus PrimToFluxTask(MeshBlockData<Real> *rc) { return PrimToFlux(rc); }
 
 // Fluxes a.k.a. "Approximate Riemann Solvers"
 // More complex solvers require speed estimates not calculable completely from

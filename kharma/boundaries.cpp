@@ -72,6 +72,8 @@ void OutflowX1(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, boo
     auto P = GRMHD::PackMHDPrims(rc.get(), prims_map, coarse);
     auto q = rc->PackVariables({Metadata::FillGhost}, cons_map, coarse);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
+    // If we're running classic/GRIM, q is the primitive variables
+    bool prim_ghosts = pmb->packages.Get("GRMHD")->Param<std::string>("driver_type") == "grim";
 
     // KHARMA is very particular about corner boundaries.
     // In particular, we apply the outflow boundary over ALL X2, X3,
@@ -113,25 +115,34 @@ void OutflowX1(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, boo
             q(p, k, j, i) = q(p, k, j, ref);
         }
     );
-    // Apply KHARMA boundary to the primitive values
-    // TODO currently this includes B, which we then replace.
-    pmb->par_for("OutflowX1_prims", 0, P.GetDim(4) - 1, ks_e, ke_e, js_e, je_e, ibs, ibe,
-        KOKKOS_LAMBDA_VARS {
-            P(p, k, j, i) = P(p, k, j, ref);
-        }
-    );
-    // Zone-by-zone recovery of U from P
-    pmb->par_for("OutflowX1_PtoU", ks_e, ke_e, js_e, je_e, ibs, ibe,
+    if (!prim_ghosts) {
+        // Apply KHARMA boundary to the primitive values
+        // TODO currently this includes B, which we then replace.
+        pmb->par_for("OutflowX1_prims", 0, P.GetDim(4) - 1, ks_e, ke_e, js_e, je_e, ibs, ibe,
+            KOKKOS_LAMBDA_VARS {
+                P(p, k, j, i) = P(p, k, j, ref);
+            }
+        );
+    }
+    // Inflow check, recover U
+    pmb->par_for("OutflowX1_check", ks_e, ke_e, js_e, je_e, ibs, ibe,
         KOKKOS_LAMBDA_3D {
             // Inflow check
-            if (check_inflow) KBoundaries::check_inflow(G, P, m_p.U1, k, j, i, dir);
-            // TODO move these steps into FillDerivedDomain, make a GRMHD::PrimToFlux call the last in that series
-            // Correct primitive B
-            VLOOP P(m_p.B1 + v, k, j, i) = q(m_u.B1 + v, k, j, i) / G.gdet(Loci::center, j, i);
-            // Recover conserved vars
-            GRMHD::p_to_u(G, P, m_p, gam, k, j, i, q, m_u);
+            if (check_inflow) KBoundaries::check_inflow(G, P , m_p.U1, k, j, i, dir);
         }
     );
+    if (!prim_ghosts) {
+        // Recover U
+        pmb->par_for("OutflowX1_PtoU", ks_e, ke_e, js_e, je_e, ibs, ibe,
+            KOKKOS_LAMBDA_3D {
+                // TODO move these steps into FillDerivedDomain, make a GRMHD::PrimToFlux call the last in that series
+                // Correct primitive B
+                VLOOP P(m_p.B1 + v, k, j, i) = q(m_u.B1 + v, k, j, i) / G.gdet(Loci::center, j, i);
+                // Recover conserved vars
+                GRMHD::p_to_u(G, P, m_p, gam, k, j, i, q, m_u);
+            }
+        );
+    }
 
     Flag(rc.get(), "Applied");
 }
@@ -149,6 +160,8 @@ void ReflectX2(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, boo
     auto P = GRMHD::PackMHDPrims(rc.get(), prims_map, coarse);
     auto q = rc->PackVariables({Metadata::FillGhost}, cons_map, coarse);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
+    // If we're running classic/GRIM, q is the primitive variables
+    bool prim_ghosts = pmb->packages.Get("GRMHD")->Param<std::string>("driver_type") == "grim";
 
     // KHARMA is very particular about corner boundaries, see above
     IndexDomain ldomain = IndexDomain::interior;
@@ -192,18 +205,24 @@ void ReflectX2(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, boo
             q(p, k, j, i) = reflect * q(p, k, (ref + add) + (ref - j), i);
         }
     );
-    pmb->par_for("ReflectX2_prims", 0, P.GetDim(4) - 1, ks_e, ke_e, jbs, jbe, ics, ice,
-        KOKKOS_LAMBDA_VARS {
-            Real reflect = P.VectorComponent(p) == X2DIR ? -1.0 : 1.0;
-            P(p, k, j, i) = reflect * P(p, k, (ref + add) + (ref - j), i);
-        }
-    );
-    pmb->par_for("ReflectX2_PtoU", ks_e, ke_e, jbs, jbe, ics, ice,
-        KOKKOS_LAMBDA_3D {
-            VLOOP P(m_p.B1 + v, k, j, i) = q(m_u.B1 + v, k, j, i) / G.gdet(Loci::center, j, i);
-            GRMHD::p_to_u(G, P, m_p, gam, k, j, i, q, m_u);
-        }
-    );
+    // If we're using the classic/GRIM algo, the above is all we need.
+    if (!prim_ghosts) {
+        // If we're using the HARM/KHARMA driver, we need to do the primitives
+        // separately after the conserved vars
+        pmb->par_for("ReflectX2_prims", 0, P.GetDim(4) - 1, ks_e, ke_e, jbs, jbe, ics, ice,
+            KOKKOS_LAMBDA_VARS {
+                Real reflect = P.VectorComponent(p) == X2DIR ? -1.0 : 1.0;
+                P(p, k, j, i) = reflect * P(p, k, (ref + add) + (ref - j), i);
+            }
+        );
+        // And we need to fill the corresponding conserved vars
+        pmb->par_for("ReflectX2_PtoU", ks_e, ke_e, jbs, jbe, ics, ice,
+            KOKKOS_LAMBDA_3D {
+                VLOOP P(m_p.B1 + v, k, j, i) = q(m_u.B1 + v, k, j, i) / G.gdet(Loci::center, j, i);
+                GRMHD::p_to_u(G, P, m_p, gam, k, j, i, q, m_u);
+            }
+        );
+    }
 }
 
 // Interface calls into the preceding functions
@@ -212,36 +231,45 @@ void KBoundaries::InnerX1(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse)
     // TODO implement as named callback, give combo start/bound problems their own "packages"
     auto pmb = rc->GetBlockPointer();
     std::string prob = pmb->packages.Get("GRMHD")->Param<std::string>("problem");
-    //if (prob == "hubble") {
-    //    SetHubble(rc.get(), IndexDomain::inner_x1, coarse);
-    //} else {
+    if (prob == "hubble") {
+       //SetHubble(rc.get(), IndexDomain::inner_x1, coarse);
+    } else {
         OutflowX1(rc, IndexDomain::inner_x1, coarse);
-    //}
-    KHARMA::FillDerivedDomain(rc, IndexDomain::inner_x1, coarse);
+    }
+    // If we're in KHARMA/HARM driver, we need primitive versions of all the
+    // non-GRMHD vars
+    bool prim_ghosts = pmb->packages.Get("GRMHD")->Param<std::string>("driver_type") == "grim";
+    if (!prim_ghosts) KHARMA::FillDerivedDomain(rc, IndexDomain::inner_x1, coarse);
 }
 void KBoundaries::OuterX1(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse)
 {
     auto pmb = rc->GetBlockPointer();
     std::string prob = pmb->packages.Get("GRMHD")->Param<std::string>("problem");
-    //if (prob == "hubble") {
-    //    SetHubble(rc.get(), IndexDomain::outer_x1, coarse);
-    //} else
-    if (prob == "bondi") {
+    if (prob == "hubble") {
+       //SetHubble(rc.get(), IndexDomain::outer_x1, coarse);
+    } else if (prob == "bondi") {
         SetBondi(rc.get(), IndexDomain::outer_x1, coarse);
     } else {
         OutflowX1(rc, IndexDomain::outer_x1, coarse);
     }
-    KHARMA::FillDerivedDomain(rc, IndexDomain::outer_x1, coarse);
+    // If we're in KHARMA/HARM driver, we need primitive versions of all the
+    // non-GRMHD vars
+    bool prim_ghosts = pmb->packages.Get("GRMHD")->Param<std::string>("driver_type") == "grim";
+    if (!prim_ghosts) KHARMA::FillDerivedDomain(rc, IndexDomain::outer_x1, coarse);
 }
 void KBoundaries::InnerX2(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse)
 {
+    auto pmb = rc->GetBlockPointer();
     ReflectX2(rc, IndexDomain::inner_x2, coarse);
-    KHARMA::FillDerivedDomain(rc, IndexDomain::inner_x2, coarse);
+    bool prim_ghosts = pmb->packages.Get("GRMHD")->Param<std::string>("driver_type") == "grim";
+    if (!prim_ghosts) KHARMA::FillDerivedDomain(rc, IndexDomain::inner_x2, coarse);
 }
 void KBoundaries::OuterX2(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse)
 {
+    auto pmb = rc->GetBlockPointer();
     ReflectX2(rc, IndexDomain::outer_x2, coarse);
-    KHARMA::FillDerivedDomain(rc, IndexDomain::outer_x2, coarse);
+    bool prim_ghosts = pmb->packages.Get("GRMHD")->Param<std::string>("driver_type") == "grim";
+    if (!prim_ghosts) KHARMA::FillDerivedDomain(rc, IndexDomain::outer_x2, coarse);
 }
 
 /**

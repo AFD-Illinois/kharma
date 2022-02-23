@@ -36,6 +36,7 @@
 #include "decs.hpp"
 
 #include "boundaries.hpp"
+#include "grim_driver.hpp"
 #include "harm_driver.hpp"
 #include "kharma.hpp"
 #include "mpi.hpp"
@@ -145,8 +146,15 @@ int main(int argc, char *argv[])
     KHARMA::PostInitialize(pin, pmesh, pman.IsRestart());
     Flag("Post-initialization completed");
 
-    // Then construct & run the driver
-    HARMDriver driver(pin, papp, pmesh);
+    // Construct a temporary driver purely for parameter parsing
+    auto driver_type = pin->GetString("driver", "type");
+    if (driver_type == "harm") {
+        HARMDriver driver(pin, papp, pmesh);
+    } else if (driver_type == "grim") {
+        GRIMDriver driver(pin, papp, pmesh);
+    } else {
+        throw std::invalid_argument("Expected driver type to be harm or grim!");
+    }
 
     // We could still have set parameters during driver initialization
     // Note the order here is *extremely important* as the first statement has a
@@ -174,7 +182,15 @@ int main(int argc, char *argv[])
     // of each step until a stop criterion is reached.
     Flag("Executing Driver");
 
-    auto driver_status = driver.Execute();
+    if (driver_type == "harm") {
+        cout << "Initializing and running KHARMA driver." << endl;
+        HARMDriver driver(pin, papp, pmesh);
+        auto driver_status = driver.Execute();
+    } else if (driver_type == "grim") {
+        cout << "Initializing and running GRIM driver." << endl;
+        GRIMDriver driver(pin, papp, pmesh);
+        auto driver_status = driver.Execute();
+    }
 
     // Parthenon cleanup includes Kokkos, MPI
     Flag("Finalizing");

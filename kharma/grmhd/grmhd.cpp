@@ -144,6 +144,11 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     bool fix_flux_pole = pin->GetOrAddBoolean("bounds", "fix_flux_pole", true);
     params.Add("fix_flux_pole", fix_flux_pole);
 
+    // Driver options
+    auto driver_type = pin->GetString("driver", "type"); // This is set in kharma.cpp
+    params.Add("driver_type", driver_type);
+    auto driver_step = pin->GetOrAddString("driver", "step", "explicit");
+    params.Add("driver_step", driver_step);
 
     // Performance options
     // Packed communications kernels, exchanging all boundary buffers of an MPI process
@@ -179,13 +184,33 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     // generally inherit the size of the MeshBlock (for "Cell" fields) or some
     // closely-related size (for "Face" and "Edge" fields)
 
-    // As mentioned elsewhere, KHARMA treats the conserved variables as the independent ones,
-    // and the primitives as "Derived"
-    // Primitives are still used for reconstruction, physical boundaries, and output, and are
-    // generally the easier to understand quantities
     std::vector<int> s_vector({3});
-    auto flags_prim = std::vector<MetadataFlag>({Metadata::Real, Metadata::Cell, Metadata::Derived,
-                                                      Metadata::Restart, isPrimitive, isHD, isMHD});
+    std::vector<MetadataFlag> flags_prim, flags_cons;
+    auto grim_driver = pin->GetString("driver", "type") == "grim";
+    if (!grim_driver) {
+        // As mentioned elsewhere, KHARMA treats the conserved variables as the independent ones,
+        // and the primitives as "Derived"
+        // Primitives are still used for reconstruction, physical boundaries, and output, and are
+        // generally the easier to understand quantities
+        flags_prim = std::vector<MetadataFlag>({Metadata::Real, Metadata::Cell, Metadata::Derived,
+                                                Metadata::Restart, isPrimitive, isHD, isMHD});
+        // Conserved variables are actualy rho*u^0 & T^0_mu, but are named after the prims for consistency
+        // We will rarely need the conserved variables by name, we will mostly be treating them as a group
+        flags_cons = std::vector<MetadataFlag>({Metadata::Real, Metadata::Cell, Metadata::Independent,
+                                                Metadata::WithFluxes, Metadata::FillGhost, Metadata::Restart,
+                                                Metadata::Conserved, isHD, isMHD});
+    } else {
+        // For GRIM/classic HARM, however, the primitive variables are independent, and boundary syncs are performed
+        // with them.
+        flags_prim = std::vector<MetadataFlag>({Metadata::Real, Metadata::Cell, Metadata::Derived,
+                                                Metadata::FillGhost, Metadata::Restart, isPrimitive, isHD, isMHD});
+        // Conserved variables are actualy rho*u^0 & T^0_mu, but are named after the prims for consistency
+        // We will rarely need the conserved variables by name, we will mostly be treating them as a group
+        flags_cons = std::vector<MetadataFlag>({Metadata::Real, Metadata::Cell, Metadata::Independent,
+                                                Metadata::WithFluxes, Metadata::Conserved, isHD, isMHD});
+    }
+
+    // With the flags sorted & explained, actually declaring fields is easy.
     auto m = Metadata(flags_prim);
     pkg->AddField("prims.rho", m);
     pkg->AddField("prims.u", m);
@@ -194,11 +219,6 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     m = Metadata(flags_prim_vec, s_vector);
     pkg->AddField("prims.uvec", m);
 
-    // Conserved variables are actualy rho*u^0 & T^0_mu, but are named after the prims for consistency
-    // We will rarely need the conserved variables by name, we will mostly be treating them as a group
-    auto flags_cons = std::vector<MetadataFlag>({Metadata::Real, Metadata::Cell, Metadata::Independent,
-                                                      Metadata::WithFluxes, Metadata::FillGhost, Metadata::Restart,
-                                                      Metadata::Conserved, isHD, isMHD});
     m = Metadata(flags_cons);
     pkg->AddField("cons.rho", m);
     pkg->AddField("cons.u", m);
@@ -217,8 +237,9 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
 
         // Remove the "HD" flag from B, since it is not that
         flags_prim_vec.erase(std::remove(flags_prim_vec.begin(), flags_prim_vec.end(), isHD), flags_prim_vec.end());
-        // Remove the "Restart" flag, since unlike the fluid prims, prims.B is fully redundant
-        flags_prim_vec.erase(std::remove(flags_prim_vec.begin(), flags_prim_vec.end(), Metadata::Restart), flags_prim_vec.end());
+        // If prims are derived, remove the "Restart" flag, since unlike the fluid prims, prims.B is fully redundant
+        if (!grim_driver)
+            flags_prim_vec.erase(std::remove(flags_prim_vec.begin(), flags_prim_vec.end(), Metadata::Restart), flags_prim_vec.end());
         flags_prim_vec.push_back(Metadata::Overridable);
         m = Metadata(flags_prim_vec, s_vector);
         pkg->AddField("prims.B", m);

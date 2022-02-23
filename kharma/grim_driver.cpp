@@ -1,5 +1,5 @@
 /* 
- *  File: harm_driver.cpp
+ *  File: grim_driver.cpp
  *  
  *  BSD 3-Clause License
  *  
@@ -31,7 +31,7 @@
  *  OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-#include "harm_driver.hpp"
+#include "grim_driver.hpp"
 
 #include <iostream>
 
@@ -54,15 +54,14 @@
 #include "iharm_restart.hpp"
 #include "source.hpp"
 
-TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
+TaskCollection GRIMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
 {
     // Reminder that NOTHING YOU CALL HERE WILL GET CALLED EVERY STEP
     // this function is run *once*, and returns a list of what should be done every step.
     // No prints or direct function calls here will do what you want, only calls to tl.AddTask()
 
-    // TaskCollections are split into regions, each of which can be tackled by a specified number of independent threads.
-    // We take most of the splitting logic here from the advection example in Parthenon,
-    // except that we calculate the fluxes in a Mesh-wide section rather than for MeshBlocks independently
+    // This is *not* likely the task list you are looking for, and is not well commented yet.
+    // See harm_driver.cpp for KHARMA's main driver.
     TaskCollection tc;
     TaskID t_none(0);
 
@@ -109,7 +108,6 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         // Calculate the HLL fluxes in each direction
         // This reconstructs the primitives (P) at faces and uses them to calculate fluxes
         // of the conserved variables (U)
-        // All subsequent operations until FillDerived are applied only to U
         const ReconstructionType& recon = blocks[0]->packages.Get("GRMHD")->Param<ReconstructionType>("recon");
         TaskID t_calculate_flux1, t_calculate_flux2, t_calculate_flux3;
         switch (recon) {
@@ -166,38 +164,90 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
             auto t_flux_ct = tl.AddTask(t_fix_flux, B_FluxCT::TransportB, mc0.get());
             t_flux_fixed = t_flux_ct;
         }
+    }
 
-        // APPLY FLUXES
-        auto t_flux_div = tl.AddTask(t_flux_fixed, Update::FluxDivergence<MeshData<Real>>, mc0.get(), mdudt.get());
+    // This region is where GRIM and classic HARM split.
+    // Classic HARM applies the fluxes to calculate a new state of conserved variables,
+    // then solves for the primitive variables with UtoP (here "FillDerived")
+    const auto &driver_step =
+        blocks[0]->packages.Get("GRMHD")->Param<std::string>("driver_step");
+    if (driver_step == "explicit") { // This is the general HARM step, with flux divergence & UtoP
+        // Apply fluxes and update conserved state
+        const int num_partitions = pmesh->DefaultNumPartitions();
+        TaskRegion &single_tasklist_per_pack_region = tc.AddRegion(num_partitions);
+        for (int i = 0; i < num_partitions; i++) {
+            auto &tl = single_tasklist_per_pack_region[i];
+            auto &mbase = pmesh->mesh_data.GetOrAdd("base", i);
+            auto &mc0 = pmesh->mesh_data.GetOrAdd(stage_name[stage - 1], i);
+            auto &mc1 = pmesh->mesh_data.GetOrAdd(stage_name[stage], i);
+            auto &mdudt = pmesh->mesh_data.GetOrAdd("dUdt", i);
+            // APPLY FLUXES
+            auto t_flux_div = tl.AddTask(t_none, Update::FluxDivergence<MeshData<Real>>, mc0.get(), mdudt.get());
 
-        // ADD SOURCES TO CONSERVED VARIABLES
-        // Source term for GRMHD, \Gamma * T
-        // TODO take this out in Minkowski space
-        auto t_flux_apply = tl.AddTask(t_flux_div, GRMHD::AddSource, mc0.get(), mdudt.get());
-        // Source term for constraint-damping.  Applied only to B
-        auto t_b_cd_source = t_flux_apply;
-        if (use_b_cd) {
-            t_b_cd_source = tl.AddTask(t_flux_apply, B_CD::AddSource, mc0.get(), mdudt.get());
+            // ADD SOURCES TO CONSERVED VARIABLES
+            // Source term for GRMHD, \Gamma * T
+            // TODO take this out in Minkowski space
+            auto t_flux_apply = tl.AddTask(t_flux_div, GRMHD::AddSource, mc0.get(), mdudt.get());
+            // Source term for constraint-damping.  Applied only to B
+            auto t_b_cd_source = t_flux_apply;
+            if (use_b_cd) {
+                t_b_cd_source = tl.AddTask(t_flux_apply, B_CD::AddSource, mc0.get(), mdudt.get());
+            }
+            // Wind source.  Applied to conserved variables similar to GR source term
+            auto t_wind_source = t_b_cd_source;
+            if (use_wind) {
+                t_wind_source = tl.AddTask(t_b_cd_source, Wind::AddSource, mdudt.get());
+            }
+            // Done with source terms
+            auto t_sources = t_wind_source;
+
+            // UPDATE BASE CONTAINER
+            auto t_avg_data = tl.AddTask(t_sources, Update::AverageIndependentData<MeshData<Real>>,
+                                    mc0.get(), mbase.get(), beta);
+            // apply du/dt to all independent fields in the container
+            auto t_update = tl.AddTask(t_avg_data, Update::UpdateIndependentData<MeshData<Real>>, mc0.get(),
+                                    mdudt.get(), beta * dt, mc1.get());
         }
-        // Wind source.  Applied to conserved variables similar to GR source term
-        auto t_wind_source = t_b_cd_source;
-        if (use_wind) {
-            t_wind_source = tl.AddTask(t_b_cd_source, Wind::AddSource, mdudt.get());
-        }
-        // Done with source terms
-        auto t_sources = t_wind_source;
 
-        // UPDATE BASE CONTAINER
-        auto t_avg_data = tl.AddTask(t_sources, Update::AverageIndependentData<MeshData<Real>>,
-                                mc0.get(), mbase.get(), beta);
-        // apply du/dt to all independent fields in the container
-        auto t_update = tl.AddTask(t_avg_data, Update::UpdateIndependentData<MeshData<Real>>, mc0.get(),
-                                mdudt.get(), beta * dt, mc1.get());
+        // Then solve for new primitives in the fluid interior, with the primitives at step start as a guess,
+        // using UtoP.  Note that since no ghost zones are updated here, and thus FixUtoP cannot use
+        // ghost zones, KHARMA behavior in this mode will dependent on the breakdown of meshblocks & possibly
+        // erratic for many fixups.  Full algo should boundary sync -> FixUtoP -> boundary sync
+        TaskRegion &async_region = tc.AddRegion(blocks.size());
+        for (int i = 0; i < blocks.size(); i++) {
+            auto &pmb = blocks[i];
+            auto &tl = async_region[i];
+            auto &sc0 = pmb->meshblock_data.Get(stage_name[stage-1]);
+            auto &sc1 = pmb->meshblock_data.Get(stage_name[stage]);
+
+            auto t_copy_prims = tl.AddTask(t_none,
+                [](MeshBlockData<Real> *rc0, MeshBlockData<Real> *rc1)
+                {
+                    Flag(rc1, "Copying prims");
+                    rc1->Get("prims.rho").data.DeepCopy(rc0->Get("prims.rho").data);
+                    rc1->Get("prims.u").data.DeepCopy(rc0->Get("prims.u").data);
+                    rc1->Get("prims.uvec").data.DeepCopy(rc0->Get("prims.uvec").data);
+                    Flag(rc1, "Copied");
+                    return TaskStatus::complete;
+                }, sc0.get(), sc1.get()
+            );
+
+
+            auto t_fill_derived = tl.AddTask(t_copy_prims, Update::FillDerived<MeshBlockData<Real>>, sc1.get());
+            // See note about syncing boundary here
+            auto t_fix_derived = tl.AddTask(t_fill_derived, GRMHD::FixUtoP, sc1.get());
+            auto t_heat_electrons = t_fix_derived;
+            if (use_electrons) {
+                auto t_heat_electrons = tl.AddTask(t_fix_derived, Electrons::ApplyElectronHeating, sc0.get(), sc1.get());
+            }
+        }
+    } else { // This is the GRIM step
+        // GRIM ALGO HERE
     }
 
     // MPI/MeshBlock boundary exchange.
     // Optionally "packed" to send all data in one call (num_partitions defaults to 1)
-    // TODO do these all need to be sequential?  What are the specifics here?
+    // Note that in GRIM driver this block syncs *primitive* variables, not conserved
     const auto &pack_comms =
         blocks[0]->packages.Get("GRMHD")->Param<bool>("pack_comms");
     if (pack_comms) {
@@ -234,14 +284,11 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         }
     }
 
-    // Async Region: Fill primitive values, apply physical boundary conditions,
-    // add any source terms which require the full primitives->primitives step
-    // TODO this can be Meshified
+    // Async Region: Any post-sync tasks.  Timestep & AMR things.
     TaskRegion &async_region = tc.AddRegion(blocks.size());
     for (int i = 0; i < blocks.size(); i++) {
         auto &pmb = blocks[i];
         auto &tl = async_region[i];
-        //auto &base = pmb->meshblock_data.Get();
         auto &sc0 = pmb->meshblock_data.Get(stage_name[stage-1]);
         auto &sc1 = pmb->meshblock_data.Get(stage_name[stage]);
 
@@ -252,58 +299,13 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         if (pmesh->multilevel) {
             t_prolongBound = tl.AddTask(t_clear_comm_flags, ProlongateBoundaries, sc1);
         }
-        // At this point, we've sync'd all internal boundaries using the conserved
-        // variables. The physical boundaries (pole, inner/outer) are trickier,
-        // since they must be applied to the primitive variables rho,u,u1,u2,u3
-        // but should apply to conserved forms of everything else.
 
-        // U_to_P needs a guess in order to converge, so we copy in sc0
-        // (but only the fluid primitives!)
-        // TODO move this before the bounds sync, in case we need to exchange U *AND* P for some reason
-        auto t_copy_prims = tl.AddTask(t_prolongBound,
-            [](MeshBlockData<Real> *rc0, MeshBlockData<Real> *rc1)
-            {
-                Flag(rc1, "Copying prims");
-                rc1->Get("prims.rho").data.DeepCopy(rc0->Get("prims.rho").data);
-                rc1->Get("prims.u").data.DeepCopy(rc0->Get("prims.u").data);
-                rc1->Get("prims.uvec").data.DeepCopy(rc0->Get("prims.uvec").data);
-                Flag(rc1, "Copied");
-                return TaskStatus::complete;
-            }, sc0.get(), sc1.get());
 
-        // This call fills the fluid primitive values in all physical zones, that is, including MPI boundaries:
-        // everywhere the conserved variables have been updated so far.
-        // This setup avoids extra boundary synchronization, by updating the primitives identically on different blocks,
-        // instead of explicitly exchanging them.
-        auto t_fill_derived = tl.AddTask(t_copy_prims, Update::FillDerived<MeshBlockData<Real>>, sc1.get());
+        auto t_set_bc = tl.AddTask(t_prolongBound, parthenon::ApplyBoundaryConditions, sc1);
 
-        // Then fix any inversions which failed.  Floors have been applied already as a part of (Post)FillDerived,
-        // so fixups performed by averaging zones will return logical results.  Floors are re-applied after fixups
-        // Someday this will not be necessary as guaranteed-convergent UtoP schemes exist
-        auto t_fix_derived = tl.AddTask(t_fill_derived, GRMHD::FixUtoP, sc1.get());
+        auto t_ptou = tl.AddTask(t_set_bc, Flux::PrimToFluxTask, sc1.get());
 
-        // This is a parthenon call, but in spherical coordinates it will call the KHARMA functions in
-        // boundaries.cpp, which apply physical boundary conditions based on the primitive variables of GRHD,
-        // and based on the conserved forms for everything else.  Note that because this is called *after*
-        // FillDerived (since it needs bulk fluid primitives to apply GRMHD boundaries), this function
-        // must call FillDerived *again*, to update just the ghost zones.
-        // This is why KHARMA packages need to implement their "FillDerived" a.k.a. UtoP functions in the form
-        // UtoP(rc, domain, coarse), so that they can be run over just the boundary domains here.
-        auto t_set_bc = tl.AddTask(t_fix_derived, parthenon::ApplyBoundaryConditions, sc1);
-
-        // ADD SOURCES TO PRIMITIVE VARIABLES
-        // In order to calculate dissipation, we must know the entropy at the beginning and end of the substep,
-        // and this must be calculated from the fluid primitive variables rho,u (and for stability, obey floors!).
-        // We only have these just now from FillDerived (and PostFillDerived, and the boundary consistency stuff)
-        // Luckily, ApplyElectronHeating does *not* need another synchronization of the ghost zones, as it is applied to
-        // all zones and has a stencil of only one zone.  As with FillDerived, this trusts that evaluations 
-        // on the same zone match between MeshBlocks.
-        auto t_heat_electrons = t_set_bc;
-        if (use_electrons) {
-            auto t_heat_electrons = tl.AddTask(t_set_bc, Electrons::ApplyElectronHeating, sc0.get(), sc1.get());
-        }
-
-        auto t_step_done = t_heat_electrons;
+        auto t_step_done = t_ptou;
 
         // Estimate next time step based on ctop
         if (stage == integrator->nstages) {

@@ -193,6 +193,9 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
     bool do_viscosity = pin->GetOrAddBoolean("viscosity", "on", false);
     bool do_wind = pin->GetOrAddBoolean("wind", "on", false);
 
+    // Set the default driver way up here.  TODO check for incompatibilities, etc
+    auto driver_type = pin->GetOrAddString("driver", "type", "harm");
+
     // Global variables "package."  Anything that just, really oughta be a global
     packages.Add(KHARMA::InitializeGlobals(pin.get()));
 

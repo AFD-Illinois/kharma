@@ -55,6 +55,10 @@ solver = none
 <debug>
 verbose = 0
 
+<driver>
+type = harm
+step = explicit
+
 <parthenon/output0>
 file_type = hdf5
 dt = 5.0
