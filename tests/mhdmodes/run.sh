@@ -14,7 +14,7 @@ conv_3d() {
       $BASE/run.sh -i $BASE/pars/mhdmodes.par debug/verbose=1 \
                       parthenon/mesh/nx1=$res parthenon/mesh/nx2=$res parthenon/mesh/nx3=$res \
                       parthenon/meshblock/nx1=$half parthenon/meshblock/nx2=$half parthenon/meshblock/nx3=$half \
-                      $2
+                      $2 >log_${1}_${res}.txt
         mv mhdmodes.out0.00000.phdf mhd_3d_${res}_start_${1}.phdf
         mv mhdmodes.out0.final.phdf mhd_3d_${res}_end_${1}.phdf
     done
