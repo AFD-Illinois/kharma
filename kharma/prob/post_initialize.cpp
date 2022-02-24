@@ -228,8 +228,17 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart)
     Flag("Boundary sync");
     SyncAllBounds(pmesh);
 
-    // TODO be able to describe to a teenager why this block is necessary
+    // TODO when (restart/non) do we need this for setting ctop?
     if (is_restart) {
+        // Recover conserved variables 
+        if (pin->GetOrAddBoolean("driver", "type", false)) {
+            for (auto &pmb : pmesh->block_list) {
+                auto rc = pmb->meshblock_data.Get();
+                // This inserts only in vicinity of some global r,th,phi
+                InsertBlob(rc.get(), pin);
+            }
+        }
+
         auto& md = pmesh->mesh_data.GetOrAdd("base", 0);
         auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
         const ReconstructionType& recon = pmb0->packages.Get("GRMHD")->Param<ReconstructionType>("recon");

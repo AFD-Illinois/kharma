@@ -39,11 +39,6 @@
 
 #include <parthenon/parthenon.hpp>
 
-#include <batched/dense/KokkosBatched_LU_Decl.hpp>
-#include <batched/dense/impl/KokkosBatched_LU_Serial_Impl.hpp>
-#include <batched/dense/KokkosBatched_Trsv_Decl.hpp>
-using namespace KokkosBatched;
-
 using namespace parthenon;
 
 namespace Viscosity
@@ -81,93 +76,13 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     // Pressure anisotropy
     pkg->AddField("cons.dP", m_con);
     pkg->AddField("prims.dP", m_prim);
+    // Eventually also need (most or all of) Theta, bsq, nu_emhd, chi_emhd, tau
 
-    // This ensures that UtoP is called (by way of viscosity.hpp definitions)
-    pkg->FillDerivedBlock = Viscosity::FillDerived;
-    pkg->PostFillDerivedBlock = Viscosity::PostFillDerived;
+    // If we want to register viscosity-specific UtoP for some reason?
+    // Likely we'll only use the post-step summary hook
+    //pkg->FillDerivedBlock = Viscosity::FillDerived;
+    //pkg->PostFillDerivedBlock = Viscosity::PostFillDerived;
     return pkg;
 }
 
-void UtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
-{
-    Flag(rc, "UtoP electrons");
-    auto pmb = rc->GetBlockPointer();
-
-    MetadataFlag isNonideal = pmb->packages.Get("Viscosity")->Param<MetadataFlag>("NonidealFlag");
-    MetadataFlag isPrimitive = pmb->packages.Get("GRMHD")->Param<MetadataFlag>("PrimitiveFlag");
-    // No need for a "map" here, we just want everything that fits these
-    auto& e_P = rc->PackVariables({isNonideal, isPrimitive});
-    auto& e_U = rc->PackVariables({isNonideal, Metadata::Conserved});
-    // And then the local density
-    GridScalar rho_U = rc->Get("cons.rho").data;
-
-    const auto& G = pmb->coords;
-
-    // Get array bounds from Parthenon
-    auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
-    IndexRange ib = bounds.GetBoundsI(domain);
-    IndexRange jb = bounds.GetBoundsJ(domain);
-    IndexRange kb = bounds.GetBoundsK(domain);
-
-    // We will need need need to copy & reorder indices before running this
-
-    // Begin the funky kokkos bit
-    // Let's do a batched LU and Trsv!
-    const Real alpha = 1, tiny = 0;
-    const int ni = bounds.ncellsi(domain), nj = bounds.ncellsj(domain), nk = bounds.ncellsk(domain);
-    ParArray5D<Real> AA("AA", nk, nj, ni, 7, 7);
-    ParArray4D<Real> B("B", nk, nj, ni, 7);
-
-    // Simulating some iterations
-    for (int iter=0; iter < 5; iter++) {
-        // Normally, when doing multiple batched operations,
-        // we would need either a general solve function,
-        // or two reads through the full array. Not so in Kokkos!
-        // This could be faster I think -- there are versions of the inner portion
-        // that cover rows at a time, by taking member objects on a Team
-        // see e.g. fluxes.hpp for usage of teams
-        pmb->par_for("implicit_solve", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-            KOKKOS_LAMBDA_3D {
-                // This code lightly adapted from 
-                auto A = Kokkos::subview(AA, k, j, i, Kokkos::ALL(), Kokkos::ALL());
-                auto b = Kokkos::subview(B, k, j, i, Kokkos::ALL());
-                /// [template]AlgoType: Unblocked, Blocked, CompatMKL
-                /// [in/out]A: 2d view
-                /// [in]tiny: a magnitude scalar value to avoid div/0
-                KokkosBatched::SerialLU<Algo::LU::Blocked>::invoke(A, tiny);
-                /// [template]UploType: indicates either upper triangular or lower triangular; Uplo::Upper, Uplo::Lower
-                /// [template]TransType: transpose of A; Trans::NoTranspose, Trans::Transpose
-                /// [template]DiagType: diagonals; Diag::Unit or Diag::NonUnit
-                /// [template]AlgoType: Unblocked, Blocked, CompatMKL
-                /// [in]alpha: scalar value
-                /// [in]A: 2d view
-                /// [in]b: 1d view
-                KokkosBatched::SerialTrsv<Uplo::Upper,Trans::NoTranspose,Diag::NonUnit,Algo::Trsv::Unblocked>::invoke(alpha, A, b);
-            }
-        );
-    }
-
-}
-
-void PostUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
-{
-    // Any fixing after that... whole thing
-}
-
-TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *rc)
-{
-    Flag("Printing electron diagnostics");
-
-    // Output any diagnostics after a step completes
-
-    Flag("Printed");
-    return TaskStatus::complete;
-}
-
-void FillOutput(MeshBlock *pmb, ParameterInput *pin)
-{
-    // Any variables or diagnostics that should be computed especially for output to a file,
-    // but which are not otherwise updated.
-}
-
-} // namespace B_FluxCT
+} // namespace Viscosity

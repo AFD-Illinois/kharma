@@ -88,10 +88,11 @@ using namespace parthenon;
  * sets of physical processes, while re-using particular physics packages to mix and match
  *
  * Currently available drivers:
- * HARM: GRMHD using LLF with zone-centered fields
+ * HARM: GRMHD using LLF with zone-centered fields, conserved variables are synchronized
+ * GRIM: same as HARM but primitive variables are synchronized,
+ *       optional implicit solve for doing e.g. Extended GRMHD
  *
  * Future drivers?
- * KHARMA: GRMHD using LLF with face-centered fields
  * bhlight: GRMHD with Monte Carlo particle transport
  */
 int main(int argc, char *argv[])

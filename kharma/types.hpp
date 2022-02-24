@@ -76,10 +76,15 @@ typedef struct {
  */
 class VarMap {
     public:
-        // 127 values ought to be enough for anybody
-        int8_t RHO, UU, U1, U2, U3, B1, B2, B3, PSI;
+        // Use int8. 127 values ought to be enough for anybody, right?
+        // Basic primitive variables
+        int8_t RHO, UU, U1, U2, U3, B1, B2, B3;
+        // Tracker variables
         int8_t RHO_ADDED, UU_ADDED, PASSIVE;
+        // Electron entropy/energy tracking
         int8_t KTOT, K_CONSTANT, K_HOWES, K_KAWAZURA, K_WERNER, K_ROWAN, K_SHARMA;
+        // Implicit-solver variables: constraint damping, EGRMHD
+        int8_t PSI, Q, DP;
         // Total struct size 20 bytes, < 1 vector of 4 doubles
 
         VarMap(parthenon::PackIndexMap& name_map, bool is_cons)
@@ -103,6 +108,9 @@ class VarMap {
                 K_WERNER = name_map["cons.Kel_Werner"].first;
                 K_ROWAN = name_map["cons.Kel_Rowan"].first;
                 K_SHARMA = name_map["cons.Kel_Sharma"].first;
+                // Viscosity
+                Q = name_map["cons.q"].first;
+                DP = name_map["cons.dP"].first;
             } else {
                 // HD
                 RHO = name_map["prims.rho"].first;
@@ -122,6 +130,9 @@ class VarMap {
                 K_WERNER = name_map["prims.Kel_Werner"].first;
                 K_ROWAN = name_map["prims.Kel_Rowan"].first;
                 K_SHARMA = name_map["prims.Kel_Sharma"].first;
+                // Viscosity
+                Q = name_map["prims.q"].first;
+                DP = name_map["prims.dP"].first;
             }
             U2 = U1 + 1;
             U3 = U1 + 2;

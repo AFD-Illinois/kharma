@@ -74,12 +74,24 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
 
     // B fields.  "Primitive" form is field, "conserved" is flux
     // Note: when changing metadata, keep these in lockstep with grmhd.cpp
-    Metadata m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Independent, Metadata::FillGhost,
-                 Metadata::Restart, Metadata::Conserved, isMHD, Metadata::WithFluxes, Metadata::Vector}, s_vector);
-    pkg->AddField("cons.B", m);
-    m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived,
-                  isPrimitive, isMHD, Metadata::Vector}, s_vector);
+    std::vector<MetadataFlag> flags_prim, flags_cons;
+    auto grim_driver = pin->GetString("driver", "type") == "grim";
+    if (!grim_driver) {
+        flags_prim = std::vector<MetadataFlag>({Metadata::Real, Metadata::Cell, Metadata::Derived,
+                                                isPrimitive, isMHD, Metadata::Vector});
+        flags_cons = std::vector<MetadataFlag>({Metadata::Real, Metadata::Cell, Metadata::Independent, Metadata::FillGhost,
+                 Metadata::Restart, Metadata::Conserved, isMHD, Metadata::WithFluxes, Metadata::Vector});
+    } else {
+        flags_prim = std::vector<MetadataFlag>({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::FillGhost, Metadata::Restart,
+                                                isPrimitive, isMHD, Metadata::Vector});
+        flags_cons = std::vector<MetadataFlag>({Metadata::Real, Metadata::Cell, Metadata::Independent,
+                                                Metadata::Conserved, isMHD, Metadata::WithFluxes, Metadata::Vector});
+    }
+
+    auto m = Metadata(flags_prim, s_vector);
     pkg->AddField("prims.B", m);
+    m = Metadata(flags_cons, s_vector);
+    pkg->AddField("cons.B", m);
 
     m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
     pkg->AddField("divB", m);

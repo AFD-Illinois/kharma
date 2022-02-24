@@ -49,10 +49,11 @@ void periodic_x3(const GRCoordinates& G, GridVars P, int nghost, int n1, int n2,
 using namespace Kokkos;
 
 // TODO
-// At least check that Rin,Rout match
-// Actually look at Rin,Rout,gamma and (re)build the Coordinates and mesh on them
-// Re-gridding algorithm
-// Start with multiple meshes i.e. find full file dimensions, where to start reading
+// Definitely check coordinate system params such that x1 in old mesh == x1 in new mesh
+// Implement Xtoijk and tri-linear (/etc) interp
+// Optimize by stashing file contents in a static pointer somewhere?
+// -> use above to re-map any restart to the given Parthenon mesh on import
+// Default to re-mapping but reintroduce option to set Parthenon mesh size to restart size
 
 void ReadIharmRestartHeader(std::string fname, std::unique_ptr<ParameterInput>& pin)
 {

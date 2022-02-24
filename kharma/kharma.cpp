@@ -79,7 +79,8 @@ std::shared_ptr<StateDescriptor> KHARMA::InitializeGlobals(ParameterInput *pin)
 
 void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
 {
-    // This would set ghost zones dynamically, or leave it up to Parthenon.  Dangerous?
+    // This would set ghost zones dynamically, or leave it up to Parthenon.
+    // TODO get this working so I don't have to when we really want to test it & get scaling happening
     // std::string recon = pin->GetOrAddString("GRMHD", "reconstruction", "weno5");
     // if (recon != "donor_cell" && recon != "linear_mc" && recon != "linear_vl") {
     //     pin->SetInteger("parthenon/mesh", "nghost", 4);

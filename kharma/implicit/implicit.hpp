@@ -1,5 +1,5 @@
 /* 
- *  File: viscosity.hpp
+ *  File: implicit.hpp
  *  
  *  BSD 3-Clause License
  *  
@@ -33,43 +33,17 @@
  */
 #pragma once
 
+#include "decs.hpp"
+
 #include <parthenon/parthenon.hpp>
 
-#include "mhd_functions.hpp"
-
-using namespace parthenon;
-
-/**
- * This physics package may someday implement viscosity.  It doesn't yet!
- */
-namespace Viscosity {
-/**
- * Initialization: declare any fields this package will evolve, initialize any parameters
- */
-std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t packages);
-
-/**
- * TODO standard interface for implicit solver & what that needs, similar to UtoP/prim_to_flux definitions
- */
-
-/**
- * Whatever form these take for viscous variables
- */
-KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const ScratchPad2D<Real>& P, const VarMap& m_p, const FourVectors D,
-                                         const int& k, const int& j, const int& i, const int dir,
-                                         ScratchPad2D<Real>& flux, const VarMap m_u, const Loci loc=Loci::center)
+namespace Implicit
 {
-    // Calculate flux through a face from primitives
-}
-KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates& G, const VariablePack<Real>& P, const VarMap& m_p,
-                                         const int& k, const int& j, const int& i,
-                                         const VariablePack<Real>& flux, const VarMap m_u, const Loci loc=Loci::center)
-{
-    // Calculate conserved variables from primitives
-}
 
-KOKKOS_INLINE_FUNCTION void gradient_calc(const GRCoordinates& G, const GridVector var, int loc, int i, int j, int k, double grad[NDIM]);
+/**
+ * Initialization.  Set parameters.
+ */
+std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin);
 
-KOKKOS_INLINE_FUNCTION void gradient_calc_vec(const GRCoordinates& G, const GridVector var, int loc, int i, int j, int k, double grad_vec[NDIM][NDIM]);
 
-}
+} // namespace Implicit

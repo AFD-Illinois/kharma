@@ -20,7 +20,7 @@ conv_2d() {
 # Test coordinates (raw ks?)
 conv_2d fmks coordinates/transform=fmks
 conv_2d mks coordinates/transform=mks
-conv_2d eks coordinates/transform=eks
+#conv_2d eks coordinates/transform=eks # TODO fix eks in pyHARM
 # Recon
 conv_2d linear_mc GRMHD/reconstruction=linear_mc
 conv_2d linear_vl GRMHD/reconstruction=linear_vl
