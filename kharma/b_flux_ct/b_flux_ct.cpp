@@ -73,10 +73,11 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     MetadataFlag isMHD = packages.Get("GRMHD")->Param<MetadataFlag>("MHDFlag");
 
     // B fields.  "Primitive" form is field, "conserved" is flux
-    // Note: when changing metadata, keep these in lockstep with grmhd.cpp
+    // Note: when changing metadata, keep these in lockstep with grmhd.cpp!!
+    // See notes there about changes for the Imex driver
     std::vector<MetadataFlag> flags_prim, flags_cons;
-    auto grim_driver = pin->GetString("driver", "type") == "grim";
-    if (!grim_driver) {
+    auto imex_driver = pin->GetString("driver", "type") == "grim";
+    if (!imex_driver) {
         flags_prim = std::vector<MetadataFlag>({Metadata::Real, Metadata::Cell, Metadata::Derived,
                                                 isPrimitive, isMHD, Metadata::Vector});
         flags_cons = std::vector<MetadataFlag>({Metadata::Real, Metadata::Cell, Metadata::Independent, Metadata::FillGhost,
@@ -152,6 +153,29 @@ void UtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
         KOKKOS_LAMBDA_VEC {
             // Update the primitive B-fields
             B_P(mu, k, j, i) = B_U(mu, k, j, i) / G.gdet(Loci::center, j, i);
+        }
+    );
+}
+
+void PtoU(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
+{
+    Flag(rc, "B UtoP Block");
+    auto pmb = rc->GetBlockPointer();
+
+    auto B_U = rc->PackVariables(std::vector<std::string>{"cons.B"});
+    auto B_P = rc->PackVariables(std::vector<std::string>{"prims.B"});
+
+    const auto& G = pmb->coords;
+
+    auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
+    const IndexRange ib = bounds.GetBoundsI(domain);
+    const IndexRange jb = bounds.GetBoundsJ(domain);
+    const IndexRange kb = bounds.GetBoundsK(domain);
+    const IndexRange vec = IndexRange({0, B_U.GetDim(4)-1});
+    pmb->par_for("UtoP_B", vec.s, vec.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+        KOKKOS_LAMBDA_VEC {
+            // Update the primitive B-fields
+            B_U(mu, k, j, i) = B_P(mu, k, j, i) * G.gdet(Loci::center, j, i);
         }
     );
 }

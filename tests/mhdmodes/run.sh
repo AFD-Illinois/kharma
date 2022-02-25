@@ -55,9 +55,13 @@ conv_3d slow mhdmodes/nmode=1
 conv_3d alfven mhdmodes/nmode=2
 conv_3d fast mhdmodes/nmode=3
 # And we've got to test classic/GRIM stepping
-conv_3d slow_grim   "mhdmodes/nmode=1 driver/type=grim"
-conv_3d alfven_grim "mhdmodes/nmode=2 driver/type=grim"
-conv_3d fast_grim   "mhdmodes/nmode=3 driver/type=grim"
+conv_3d slow_imex   "mhdmodes/nmode=1 driver/type=imex"
+conv_3d alfven_imex "mhdmodes/nmode=2 driver/type=imex"
+conv_3d fast_imex   "mhdmodes/nmode=3 driver/type=imex"
+# And the implicit solver
+conv_3d slow_imex_im   "mhdmodes/nmode=1 driver/type=imex driver/step=implicit driver/max_nonlinear_iter=1"
+conv_3d alfven_imex_im "mhdmodes/nmode=2 driver/type=imex driver/step=implicit driver/max_nonlinear_iter=1"
+conv_3d fast_imex_im   "mhdmodes/nmode=3 driver/type=imex driver/step=implicit driver/max_nonlinear_iter=1"
 
 # 2D modes use small blocks, could pick up some problems at MPI ranks >> 1
 # Currently very slow, plus modes are incorrect

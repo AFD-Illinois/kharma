@@ -1,5 +1,5 @@
 /* 
- *  File: grim_driver.cpp
+ *  File: imex_driver.cpp
  *  
  *  BSD 3-Clause License
  *  
@@ -31,7 +31,7 @@
  *  OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-#include "grim_driver.hpp"
+#include "imex_driver.hpp"
 
 #include <iostream>
 
@@ -41,20 +41,22 @@
 
 #include "decs.hpp"
 
+//Packages
 #include "b_flux_ct.hpp"
 #include "b_cd.hpp"
 #include "electrons.hpp"
 #include "grmhd.hpp"
 #include "wind.hpp"
-
+// Other headers
 #include "boundaries.hpp"
 #include "debug.hpp"
 #include "fixup.hpp"
-#include "fluxes.hpp"
+#include "flux.hpp"
 #include "iharm_restart.hpp"
+#include "implicit.hpp"
 #include "source.hpp"
 
-TaskCollection GRIMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
+TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
 {
     // Reminder that NOTHING YOU CALL HERE WILL GET CALLED EVERY STEP
     // this function is run *once*, and returns a list of what should be done every step.
@@ -164,6 +166,26 @@ TaskCollection GRIMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
             auto t_flux_ct = tl.AddTask(t_fix_flux, B_FluxCT::TransportB, mc0.get());
             t_flux_fixed = t_flux_ct;
         }
+
+        // APPLY FLUXES
+        auto t_flux_div = tl.AddTask(t_none, Update::FluxDivergence<MeshData<Real>>, mc0.get(), mdudt.get());
+
+        // ADD EXPLICIT SOURCES TO CONSERVED VARIABLES
+        // Source term for GRMHD, \Gamma * T
+        // TODO take this out in Minkowski space
+        auto t_flux_apply = tl.AddTask(t_flux_div, GRMHD::AddSource, mc0.get(), mdudt.get());
+        // Source term for constraint-damping.  Applied only to B
+        auto t_b_cd_source = t_flux_apply;
+        if (use_b_cd) {
+            t_b_cd_source = tl.AddTask(t_flux_apply, B_CD::AddSource, mc0.get(), mdudt.get());
+        }
+        // Wind source.  Applied to conserved variables similar to GR source term
+        auto t_wind_source = t_b_cd_source;
+        if (use_wind) {
+            t_wind_source = tl.AddTask(t_b_cd_source, Wind::AddSource, mdudt.get());
+        }
+        // Done with source terms
+        auto t_sources = t_wind_source;
     }
 
     // This region is where GRIM and classic HARM split.
@@ -171,8 +193,8 @@ TaskCollection GRIMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
     // then solves for the primitive variables with UtoP (here "FillDerived")
     const auto &driver_step =
         blocks[0]->packages.Get("GRMHD")->Param<std::string>("driver_step");
-    if (driver_step == "explicit") { // This is the general HARM step, with flux divergence & UtoP
-        // Apply fluxes and update conserved state
+    if (driver_step == "explicit") { // Explicit step
+        // Update conserved state with dUdt
         const int num_partitions = pmesh->DefaultNumPartitions();
         TaskRegion &single_tasklist_per_pack_region = tc.AddRegion(num_partitions);
         for (int i = 0; i < num_partitions; i++) {
@@ -181,28 +203,9 @@ TaskCollection GRIMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
             auto &mc0 = pmesh->mesh_data.GetOrAdd(stage_name[stage - 1], i);
             auto &mc1 = pmesh->mesh_data.GetOrAdd(stage_name[stage], i);
             auto &mdudt = pmesh->mesh_data.GetOrAdd("dUdt", i);
-            // APPLY FLUXES
-            auto t_flux_div = tl.AddTask(t_none, Update::FluxDivergence<MeshData<Real>>, mc0.get(), mdudt.get());
-
-            // ADD SOURCES TO CONSERVED VARIABLES
-            // Source term for GRMHD, \Gamma * T
-            // TODO take this out in Minkowski space
-            auto t_flux_apply = tl.AddTask(t_flux_div, GRMHD::AddSource, mc0.get(), mdudt.get());
-            // Source term for constraint-damping.  Applied only to B
-            auto t_b_cd_source = t_flux_apply;
-            if (use_b_cd) {
-                t_b_cd_source = tl.AddTask(t_flux_apply, B_CD::AddSource, mc0.get(), mdudt.get());
-            }
-            // Wind source.  Applied to conserved variables similar to GR source term
-            auto t_wind_source = t_b_cd_source;
-            if (use_wind) {
-                t_wind_source = tl.AddTask(t_b_cd_source, Wind::AddSource, mdudt.get());
-            }
-            // Done with source terms
-            auto t_sources = t_wind_source;
 
             // UPDATE BASE CONTAINER
-            auto t_avg_data = tl.AddTask(t_sources, Update::AverageIndependentData<MeshData<Real>>,
+            auto t_avg_data = tl.AddTask(t_none, Update::AverageIndependentData<MeshData<Real>>,
                                     mc0.get(), mbase.get(), beta);
             // apply du/dt to all independent fields in the container
             auto t_update = tl.AddTask(t_avg_data, Update::UpdateIndependentData<MeshData<Real>>, mc0.get(),
@@ -220,6 +223,8 @@ TaskCollection GRIMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
             auto &sc0 = pmb->meshblock_data.Get(stage_name[stage-1]);
             auto &sc1 = pmb->meshblock_data.Get(stage_name[stage]);
 
+            // COPY PRIMITIVES
+            // These form the guess for UtoP
             auto t_copy_prims = tl.AddTask(t_none,
                 [](MeshBlockData<Real> *rc0, MeshBlockData<Real> *rc1)
                 {
@@ -232,22 +237,29 @@ TaskCollection GRIMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
                 }, sc0.get(), sc1.get()
             );
 
-
             auto t_fill_derived = tl.AddTask(t_copy_prims, Update::FillDerived<MeshBlockData<Real>>, sc1.get());
-            // See note about syncing boundary here
-            auto t_fix_derived = tl.AddTask(t_fill_derived, GRMHD::FixUtoP, sc1.get());
-            auto t_heat_electrons = t_fix_derived;
-            if (use_electrons) {
-                auto t_heat_electrons = tl.AddTask(t_fix_derived, Electrons::ApplyElectronHeating, sc0.get(), sc1.get());
-            }
+            // This is *not* immediately corrected with FixUtoP, but synchronized (including pflags!) first.
+            // With an extra ghost zone, this *should* still allow binary-similar evolution between numbers of mesh blocks
         }
-    } else { // This is the GRIM step
-        // GRIM ALGO HERE
+    } else { // Implicit step
+        const int num_partitions = pmesh->DefaultNumPartitions();
+        TaskRegion &single_tasklist_per_pack_region = tc.AddRegion(num_partitions);
+        for (int i = 0; i < num_partitions; i++) {
+            auto &tl = single_tasklist_per_pack_region[i];
+            auto &mbase = pmesh->mesh_data.GetOrAdd("base", i);
+            auto &mc0 = pmesh->mesh_data.GetOrAdd(stage_name[stage - 1], i);
+            auto &mc1 = pmesh->mesh_data.GetOrAdd(stage_name[stage], i);
+            auto &mdudt = pmesh->mesh_data.GetOrAdd("dUdt", i);
+
+            // time-step by root-finding the residual
+            // This applies the functions of both t_update and t_fill_derived
+            auto t_implicit_solve = tl.AddTask(t_none, Implicit::Step, mbase.get(), mc0.get(), mdudt.get(), mc1.get(), dt);
+        }
     }
 
     // MPI/MeshBlock boundary exchange.
     // Optionally "packed" to send all data in one call (num_partitions defaults to 1)
-    // Note that in GRIM driver this block syncs *primitive* variables, not conserved
+    // Note that in this driver, this block syncs *primitive* variables, not conserved
     const auto &pack_comms =
         blocks[0]->packages.Get("GRMHD")->Param<bool>("pack_comms");
     if (pack_comms) {
@@ -300,10 +312,25 @@ TaskCollection GRIMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
             t_prolongBound = tl.AddTask(t_clear_comm_flags, ProlongateBoundaries, sc1);
         }
 
-
         auto t_set_bc = tl.AddTask(t_prolongBound, parthenon::ApplyBoundaryConditions, sc1);
 
-        auto t_ptou = tl.AddTask(t_set_bc, Flux::PrimToFluxTask, sc1.get());
+        // Syncing bounds before fixUtoP, and thus running it over the whole domain, will make
+        // behavior for different mesh breakdowns much more similar (identical?), as bad zones on boundaries
+        // will get to use all the same neighbors.
+        // As long as we sync pflags by setting FillGhosts when using this driver!
+        auto t_fix_derived = t_set_bc;
+        if (driver_step == "explicit") {
+            t_fix_derived = tl.AddTask(t_set_bc, GRMHD::FixUtoP, sc1.get());
+        }
+
+        // Electron heating goes where it does in HARMDriver, for the same reasons
+        auto t_heat_electrons = t_fix_derived;
+        if (use_electrons) {
+            t_heat_electrons = tl.AddTask(t_fix_derived, Electrons::ApplyElectronHeating, sc0.get(), sc1.get());
+        }
+
+        // 
+        auto t_ptou = tl.AddTask(t_heat_electrons, Flux::PtoUTask, sc1.get());
 
         auto t_step_done = t_ptou;
 

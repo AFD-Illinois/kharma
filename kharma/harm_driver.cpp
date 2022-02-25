@@ -50,7 +50,7 @@
 #include "boundaries.hpp"
 #include "debug.hpp"
 #include "fixup.hpp"
-#include "fluxes.hpp"
+#include "flux.hpp"
 #include "iharm_restart.hpp"
 #include "source.hpp"
 

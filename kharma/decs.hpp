@@ -90,6 +90,11 @@ using GReal = double;
 #define V2 1
 #define V3 2
 
+// And an odd but useful loop for ex-iharm3d code
+// This requires nvar to be defined in caller!
+// It is not a const/global anymore.  So, use this loop carefully
+#define PLOOP for(int ip=0; ip < nvar; ++ip)
+
 // Useful Enums to avoid lots of #defines
 #define NLOC 5
 enum Loci{face1=0, face2, face3, center, corner};

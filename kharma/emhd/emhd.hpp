@@ -1,5 +1,5 @@
 /* 
- *  File: viscosity.hpp
+ *  File: emhd.hpp
  *  
  *  BSD 3-Clause License
  *  
@@ -35,14 +35,19 @@
 
 #include <parthenon/parthenon.hpp>
 
-#include "mhd_functions.hpp"
+#include "grmhd_functions.hpp"
 
 using namespace parthenon;
 
 /**
- * This physics package may someday implement viscosity.  It doesn't yet!
+ * This physics package implements the Extended GRMHD "EGRMHD" scheme of Chandra et al. 2015,
+ * First implemented in GRIM, of Chandra et al. 2017.
+ * 
+ * It adds variables representing viscosity and heat conduction, with a combination of explicit
+ * and implicit source terms; thus it requires a semi-implicit scheme for evolution,
+ * implemented in KHARMA as ImexDriver.
  */
-namespace Viscosity {
+namespace EMHD {
 /**
  * Initialization: declare any fields this package will evolve, initialize any parameters
  */

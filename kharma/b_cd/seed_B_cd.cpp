@@ -39,7 +39,7 @@
 #include "b_field_tools.hpp"
 
 #include "b_flux_ct.hpp"
-#include "mhd_functions.hpp"
+#include "grmhd_functions.hpp"
 
 TaskStatus B_CD::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
 {
@@ -165,12 +165,7 @@ TaskStatus B_CD::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
             B_P(2, k, j, i) = 0.;
         }
     );
-    pmb->par_for("first_U_B", ks, ke, js, je, is, ie,
-        KOKKOS_LAMBDA_3D {
-            // Use the "other" P to U, because we're content that psi = 0 to begin
-            B_FluxCT::p_to_u(G, B_P, k, j, i, B_U);
-        }
-    );
+    B_FluxCT::PtoU(rc);
 
     return TaskStatus::complete;
 }

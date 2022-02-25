@@ -4,7 +4,7 @@
 #include "decs.hpp"
 
 #include "bondi.hpp"
-#include "mhd_functions.hpp"
+#include "grmhd_functions.hpp"
 
 namespace KBoundaries {
 

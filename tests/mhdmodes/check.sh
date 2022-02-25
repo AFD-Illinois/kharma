@@ -21,6 +21,10 @@ python3 check.py $RES3D "slow mode in 3D, classic algo" slow_grim || fail=1
 python3 check.py $RES3D "Alfven mode in 3D, classic algo" alfven_grim || fail=1
 python3 check.py $RES3D "fast mode in 3D, classic algo" fast_grim || fail=1
 
+python3 check.py $RES3D "slow mode in 3D, classic algo" slow_grim_im || fail=1
+python3 check.py $RES3D "Alfven mode in 3D, classic algo" alfven_grim_im || fail=1
+python3 check.py $RES3D "fast mode in 3D, classic algo" fast_grim_im || fail=1
+
 #python3 check.py $RES2D "fast mode in 2D, WENO5" fast2d 2d || fail=1
 #python3 check.py $RES2D "fast mode in 2D, linear/MC reconstruction" fast_mc 2d || fail=1
 #python3 check.py $RES2D "fast mode in 2D, linear/VL reconstruction" fast_vl 2d || fail=1

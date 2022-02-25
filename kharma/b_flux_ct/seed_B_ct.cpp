@@ -39,7 +39,7 @@
 #include "b_field_tools.hpp"
 #include "b_flux_ct.hpp"
 #include "fm_torus.hpp"
-#include "mhd_functions.hpp"
+#include "grmhd_functions.hpp"
 #include "prob_common.hpp"
 
 TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
@@ -113,9 +113,9 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
                 B_P(V1, k, j, i) = b10;
                 B_P(V2, k, j, i) = b20;
                 B_P(V3, k, j, i) = b30;
-                B_FluxCT::p_to_u(G, B_P, k, j, i, B_U);
             }
         );
+        B_FluxCT::PtoU(rc);
         return TaskStatus::complete;
     } else if (b_field_flag == BSeedType::monopole) {
         pmb->par_for("B_field_B", ks, ke, js, je, is, ie,
@@ -124,9 +124,9 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
                 B_P(V1, k, j, i) = b10 / G.gdet(Loci::center, j, i);
                 B_P(V2, k, j, i) = 0.;
                 B_P(V3, k, j, i) = 0.;
-                B_FluxCT::p_to_u(G, B_P, k, j, i, B_U);
             }
         );
+        B_FluxCT::PtoU(rc);
         return TaskStatus::complete;
     }
 
@@ -299,7 +299,7 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
     }
 
     // Then make sure the primitive versions are updated, too
-    UtoP(rc);
+    B_FluxCT::UtoP(rc);
 
     return TaskStatus::complete;
 }

@@ -1,5 +1,5 @@
 /* 
- *  File: grim_driver.cpp
+ *  File: imex_driver.hpp
  *  
  *  BSD 3-Clause License
  *  
@@ -41,15 +41,17 @@ using namespace parthenon;
 
 /**
  * A Driver object orchestrates everything that has to be done to a mesh to constitute a step.
- * Nominally GRIM is very much like HARM, but in KHARMA the two drivers have one key difference:
- * GRIMDriver syncs primitive variables, whereas HARM/KHARMA syncs conserved variables
+ * This driver does pretty much the same thing as the HARMDriver, with one important difference:
+ * ImexDriver syncs primitive variables and treats them as fundamental, whereas HARMDriver syncs conserved variables.
+ * This allows ImexDriver to optionally use a semi-implicit step, adding a per-zone implicit solve via the 'Implicit'
+ * package, instead of just explicit RK2 time-stepping.  This driver also allows explicit-only RK2 operation
  */
-class GRIMDriver : public MultiStageDriver {
+class ImexDriver : public MultiStageDriver {
     public:
         /**
          * Default constructor
          */
-        GRIMDriver(ParameterInput *pin, ApplicationInput *papp, Mesh *pm) : MultiStageDriver(pin, papp, pm) {}
+        ImexDriver(ParameterInput *pin, ApplicationInput *papp, Mesh *pm) : MultiStageDriver(pin, papp, pm) {}
 
         /**
          * All the tasks which constitute advancing the fluid in a mesh by one stage.

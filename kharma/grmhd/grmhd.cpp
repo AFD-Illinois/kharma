@@ -51,10 +51,10 @@
 #include "debug.hpp"
 #include "fixup.hpp"
 #include "floors.hpp"
-#include "fluxes.hpp"
+#include "flux.hpp"
 #include "gr_coordinates.hpp"
 #include "kharma.hpp"
-#include "mhd_functions.hpp"
+#include "grmhd_functions.hpp"
 #include "source.hpp"
 #include "U_to_P.hpp"
 
@@ -186,8 +186,9 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
 
     std::vector<int> s_vector({3});
     std::vector<MetadataFlag> flags_prim, flags_cons;
-    auto grim_driver = pin->GetString("driver", "type") == "grim";
-    if (!grim_driver) {
+    auto imex_driver = pin->GetString("driver", "type") == "grim";
+    auto explicit_step = (pin->GetOrAddString("driver", "step", "explicit") == "explicit");
+    if (!imex_driver) { // Normal operation
         // As mentioned elsewhere, KHARMA treats the conserved variables as the independent ones,
         // and the primitives as "Derived"
         // Primitives are still used for reconstruction, physical boundaries, and output, and are
@@ -200,8 +201,9 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
                                                 Metadata::WithFluxes, Metadata::FillGhost, Metadata::Restart,
                                                 Metadata::Conserved, isHD, isMHD});
     } else {
-        // For GRIM/classic HARM, however, the primitive variables are independent, and boundary syncs are performed
-        // with them.
+        // For ImexDriver, however, the primitive variables are independent, and boundary syncs are performed
+        // with them.  This is to accommodate the implicit step, which takes and returns primitive values and
+        // thus is much easier to handle by just using primitives everywhere.
         flags_prim = std::vector<MetadataFlag>({Metadata::Real, Metadata::Cell, Metadata::Derived,
                                                 Metadata::FillGhost, Metadata::Restart, isPrimitive, isHD, isMHD});
         // Conserved variables are actualy rho*u^0 & T^0_mu, but are named after the prims for consistency
@@ -227,37 +229,24 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     m = Metadata(flags_cons_vec, s_vector);
     pkg->AddField("cons.uvec", m);
 
-    bool use_b = (pin->GetString("b_field", "solver") != "none");
-    params.Add("use_b", use_b);
-    if (!use_b) {
-        // Declare placeholder fields only if not using another package providing B field.
-        // This should be redundant w/using the "Overridable" flag but has caused problems in the past.
-        // The ultimate goal is to support never defining these fields in the first place, i.e. true GRHD
-        // without memory or computation penalties.
-
-        // Remove the "HD" flag from B, since it is not that
-        flags_prim_vec.erase(std::remove(flags_prim_vec.begin(), flags_prim_vec.end(), isHD), flags_prim_vec.end());
-        // If prims are derived, remove the "Restart" flag, since unlike the fluid prims, prims.B is fully redundant
-        if (!grim_driver)
-            flags_prim_vec.erase(std::remove(flags_prim_vec.begin(), flags_prim_vec.end(), Metadata::Restart), flags_prim_vec.end());
-        flags_prim_vec.push_back(Metadata::Overridable);
-        m = Metadata(flags_prim_vec, s_vector);
-        pkg->AddField("prims.B", m);
-        flags_cons_vec.erase(std::remove(flags_cons_vec.begin(), flags_cons_vec.end(), isHD), flags_cons_vec.end());
-        flags_cons_vec.push_back(Metadata::Overridable);
-        m = Metadata(flags_cons_vec, s_vector);
-        pkg->AddField("cons.B", m);
-    }
+    // No magnetic fields here. KHARMA should operate fine in GRHD without them,
+    // so they are allocated only by B field packages.
 
     // Maximum signal speed (magnitude).
     // Needs to be cached from flux updates for calculating the timestep later
     m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy}, s_vector);
     pkg->AddField("ctop", m);
 
-    // Temporary fix just for being able to save field values
-    // Should switch these to "Integer" fields when Parthenon supports it
-    m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
-    pkg->AddField("pflag", m);
+    if (explicit_step) {
+        // Flag denoting UtoP inversion failures.
+        // Not used for implicit stepper, that has its own flag
+        if (imex_driver) {
+            m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy, Metadata::FillGhost});
+        } else {
+            m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
+        }
+        pkg->AddField("pflag", m);
+    }
 
     // Finally, the StateDescriptor/Package object determines the Callbacks Parthenon makes to
     // a particular package -- that is, some portion of the things that the package needs done

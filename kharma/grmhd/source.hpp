@@ -35,7 +35,7 @@
 #pragma once
 
 #include "decs.hpp"
-#include "mhd_functions.hpp"
+#include "grmhd_functions.hpp"
 
 namespace GRMHD
 {

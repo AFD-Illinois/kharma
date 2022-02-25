@@ -38,7 +38,7 @@
 
 #include "debug.hpp"
 #include "fixup.hpp"
-#include "mhd_functions.hpp"
+#include "grmhd_functions.hpp"
 #include "pack.hpp"
 
 namespace Floors

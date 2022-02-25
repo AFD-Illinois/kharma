@@ -36,7 +36,7 @@
 #include "decs.hpp"
 
 #include "boundaries.hpp"
-#include "grim_driver.hpp"
+#include "imex_driver.hpp"
 #include "harm_driver.hpp"
 #include "kharma.hpp"
 #include "mpi.hpp"
@@ -89,8 +89,8 @@ using namespace parthenon;
  *
  * Currently available drivers:
  * HARM: GRMHD using LLF with zone-centered fields, conserved variables are synchronized
- * GRIM: same as HARM but primitive variables are synchronized,
- *       optional implicit solve for doing e.g. Extended GRMHD
+ * Imex: same functionality HARM but primitive variables are synchronized,
+ *       optionally uses per-zone implicit solve for some variables, for e.g. Extended GRMHD
  *
  * Future drivers?
  * bhlight: GRMHD with Monte Carlo particle transport
@@ -152,7 +152,7 @@ int main(int argc, char *argv[])
     if (driver_type == "harm") {
         HARMDriver driver(pin, papp, pmesh);
     } else if (driver_type == "grim") {
-        GRIMDriver driver(pin, papp, pmesh);
+        ImexDriver driver(pin, papp, pmesh);
     } else {
         throw std::invalid_argument("Expected driver type to be harm or grim!");
     }
@@ -189,7 +189,7 @@ int main(int argc, char *argv[])
         auto driver_status = driver.Execute();
     } else if (driver_type == "grim") {
         cout << "Initializing and running GRIM driver." << endl;
-        GRIMDriver driver(pin, papp, pmesh);
+        ImexDriver driver(pin, papp, pmesh);
         auto driver_status = driver.Execute();
     }
 

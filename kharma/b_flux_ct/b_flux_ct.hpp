@@ -37,7 +37,7 @@
 
 #include <parthenon/parthenon.hpp>
 
-#include "mhd_functions.hpp"
+#include "grmhd_functions.hpp"
 #include "types.hpp"
 
 using namespace parthenon;
@@ -67,6 +67,11 @@ void UtoP(MeshData<Real> *md, IndexDomain domain=IndexDomain::entire, bool coars
 inline void FillDerivedMesh(MeshData<Real> *md) { UtoP(md); }
 void UtoP(MeshBlockData<Real> *md, IndexDomain domain=IndexDomain::entire, bool coarse=false);
 inline void FillDerivedBlock(MeshBlockData<Real> *rc) { UtoP(rc); }
+
+/**
+ * Inverse of above. Generally only for initialization.
+ */
+void PtoU(MeshBlockData<Real> *md, IndexDomain domain=IndexDomain::entire, bool coarse=false);
 
 /**
  * Modify the B field fluxes to take a constrained-transport step as in Toth (2000)
@@ -104,38 +109,5 @@ TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md);
 void FillOutput(MeshBlock *pmb, ParameterInput *pin);
 
 // TODO device-side divB at a single zone corner, to avoid code duplication?
-
-/**
- * Turn the primitive B field into the local conserved flux
- */
-KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, ScratchPad2D<Real>& P, const VarMap& m_p, const FourVectors D,
-                                         const int& k, const int& j, const int& i, const int dir,
-                                         ScratchPad2D<Real>& flux, const VarMap& m_u, const Loci loc = Loci::center)
-{
-    Real gdet = G.gdet(loc, j, i);
-    if (dir == 0) {
-        VLOOP flux(m_u.B1 + v, i) = P(m_p.B1 + v, i) * gdet;
-    } else {
-        VLOOP flux(m_u.B1 + v, i) = (D.bcon[v+1] * D.ucon[dir] - D.bcon[dir] * D.ucon[v+1]) * gdet;
-    }
-}
-
-/**
- * Convenience functions for zone 
- */
-KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates& G, const GridVector B_P,
-                                    const int& k, const int& j, const int& i,
-                                    GridVector B_U, const Loci loc = Loci::center)
-{
-    Real gdet = G.gdet(loc, j, i);
-    VLOOP B_U(v, k, j, i) = B_P(v, k, j, i) * gdet;
-}
-KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates& G, const VariablePack<Real>& P, const VarMap& m_p,
-                                    const int& k, const int& j, const int& i,
-                                    const VariablePack<Real>& U, const VarMap& m_u, const Loci loc = Loci::center)
-{
-    Real gdet = G.gdet(loc, j, i);
-    VLOOP U(m_u.B1 + v, k, j, i) = P(m_p.B1 + v, k, j, i) * gdet;
-}
 
 }

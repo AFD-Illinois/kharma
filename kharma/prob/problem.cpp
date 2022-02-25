@@ -39,7 +39,7 @@
 #include "debug.hpp"
 #include "fixup.hpp"
 #include "floors.hpp"
-#include "fluxes.hpp"
+#include "flux.hpp"
 #include "gr_coordinates.hpp"
 #include "types.hpp"
 
@@ -58,7 +58,7 @@
 #include "b_field_tools.hpp"
 
 // Package headers
-#include "mhd_functions.hpp"
+#include "grmhd_functions.hpp"
 
 #include "bvals/boundary_conditions.hpp"
 #include "mesh/mesh.hpp"
@@ -122,7 +122,7 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
     // Fill the conserved variables U,
     // which we'll treat as the independent/fundamental state.
     // P is filled again from this later on
-    Flux::PrimToFlux(rc.get(), IndexDomain::entire);
+    Flux::PtoU(rc.get(), IndexDomain::entire);
 
     Flag(rc.get(), "Initialized Block");
 }

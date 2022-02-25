@@ -1,5 +1,5 @@
 /* 
- *  File: fluxes.hpp
+ *  File: flux.hpp
  *  
  *  BSD 3-Clause License
  *  
@@ -39,12 +39,13 @@
 
 #include "debug.hpp"
 #include "floors.hpp"
+#include "flux_functions.hpp"
 #include "pack.hpp"
 #include "reconstruction.hpp"
 #include "types.hpp"
 
 // Package functions
-#include "mhd_functions.hpp"
+#include "grmhd_functions.hpp"
 #include "b_flux_ct.hpp"
 #include "b_cd.hpp"
 #include "electrons.hpp"
@@ -62,10 +63,11 @@ TaskStatus ApplyFluxes(MeshData<Real> *md, MeshData<Real> *mdudt);
 
 /**
  * Fill all conserved variables (U) from primitive variables (P), over the whole grid.
- * Second declaration is for Parthenon's benefit, similar to UtoP vs FillDerived in GRMHD::
+ * Second declaration is for Parthenon's benefit, similar to e.g.
+ * declaring UtoP vs FillDerived in GRMHD package.
  */
-TaskStatus PrimToFlux(MeshBlockData<Real> *rc, IndexDomain domain=IndexDomain::entire);
-inline TaskStatus PrimToFluxTask(MeshBlockData<Real> *rc) { return PrimToFlux(rc); }
+TaskStatus PtoU(MeshBlockData<Real> *rc, IndexDomain domain=IndexDomain::entire);
+inline TaskStatus PtoUTask(MeshBlockData<Real> *rc) { return PtoU(rc); }
 
 // Fluxes a.k.a. "Approximate Riemann Solvers"
 // More complex solvers require speed estimates not calculable completely from
@@ -138,8 +140,8 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
     // Pack variables.  Keep ctop separate
     PackIndexMap prims_map, cons_map;
     const auto& ctop = md->PackVariables(std::vector<std::string>{"ctop"});
-    const auto& P = md->PackVariables(std::vector<MetadataFlag>{isPrimitive}, prims_map);
-    const auto& U = md->PackVariablesAndFluxes(std::vector<MetadataFlag>{Metadata::Conserved}, cons_map);
+    const auto& P_all = md->PackVariables(std::vector<MetadataFlag>{isPrimitive}, prims_map);
+    const auto& U_all = md->PackVariablesAndFluxes(std::vector<MetadataFlag>{Metadata::Conserved}, cons_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
     Flag(md, "Packed variables");
 
@@ -149,7 +151,7 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
     const IndexRange jb = md->GetBoundsJ(IndexDomain::interior);
     const IndexRange kb = md->GetBoundsK(IndexDomain::interior);
     const IndexRange block = IndexRange{0, ctop.GetDim(5) - 1};
-    const int nvar = U.GetDim(4);
+    const int nvar = U_all.GetDim(4);
     // 1-zone halo in nontrivial dimensions
     // We leave is/ie, js/je, ks/ke with their usual definitions for consistency, and define
     // the loop bounds separately to include the appropriate halo
@@ -175,19 +177,19 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
     parthenon::par_for_outer(DEFAULT_OUTER_LOOP_PATTERN, "calc_flux", pmb0->exec_space,
         total_scratch_bytes, scratch_level, block.s, block.e, kl.s, kl.e, jl.s, jl.e,
         KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int& b, const int& k, const int& j) {
-            const auto& G = U.GetCoords(b);
-            ScratchPad2D<Real> Pl(member.team_scratch(scratch_level), nvar, n1);
-            ScratchPad2D<Real> Pr(member.team_scratch(scratch_level), nvar, n1);
-            ScratchPad2D<Real> Ul(member.team_scratch(scratch_level), nvar, n1);
-            ScratchPad2D<Real> Ur(member.team_scratch(scratch_level), nvar, n1);
-            ScratchPad2D<Real> Fl(member.team_scratch(scratch_level), nvar, n1);
-            ScratchPad2D<Real> Fr(member.team_scratch(scratch_level), nvar, n1);
+            const auto& G = U_all.GetCoords(b);
+            ScratchPad2D<Real> Pl_s(member.team_scratch(scratch_level), nvar, n1);
+            ScratchPad2D<Real> Pr_s(member.team_scratch(scratch_level), nvar, n1);
+            ScratchPad2D<Real> Ul_s(member.team_scratch(scratch_level), nvar, n1);
+            ScratchPad2D<Real> Ur_s(member.team_scratch(scratch_level), nvar, n1);
+            ScratchPad2D<Real> Fl_s(member.team_scratch(scratch_level), nvar, n1);
+            ScratchPad2D<Real> Fr_s(member.team_scratch(scratch_level), nvar, n1);
             ScratchPad1D<Real> cmax(member.team_scratch(scratch_level), n1);
             ScratchPad1D<Real> cmin(member.team_scratch(scratch_level), n1);
 
             // Wrapper for a big switch statement between reconstruction schemes. Possibly slow.
             // This function is generally a lot of if statements
-            KReconstruction::reconstruct<Recon, dir>(member, G, P(b), k, j, il.s, il.e, Pl, Pr);
+            KReconstruction::reconstruct<Recon, dir>(member, G, P_all(b), k, j, il.s, il.e, Pl_s, Pr_s);
 
             // Sync all threads in the team so that scratch memory is consistent
             member.team_barrier();
@@ -195,6 +197,8 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
             // Calculate conserved fluxes at centers & faces
             parthenon::par_for_inner(member, il.s, il.e,
                 [&](const int& i) {
+                    auto Pl = Kokkos::subview(Pl_s, Kokkos::ALL(), i);
+                    auto Pr = Kokkos::subview(Pr_s, Kokkos::ALL(), i);
                     // Apply floors to the *reconstructed* primitives, because without TVD
                     // we have no guarantee they remotely resemble the *centered* primitives
                     if (Recon == ReconstructionType::weno5 && !disable_floors) {
@@ -209,30 +213,22 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
             // LEFT FACES, final ctop
             parthenon::par_for_inner(member, il.s, il.e,
                 [&](const int& i) {
+                    auto Pl = Kokkos::subview(Pl_s, Kokkos::ALL(), i);
 #endif
+                    auto Ul = Kokkos::subview(Ul_s, Kokkos::ALL(), i);
+                    auto Fl = Kokkos::subview(Fl_s, Kokkos::ALL(), i);
                     // LR -> flux
                     // Declare temporary vectors
                     FourVectors Dtmp;
 
                     // Left
-                    GRMHD::calc_4vecs(G, Pl, m_p, k, j, i, loc, Dtmp);
-                    GRMHD::prim_to_flux(G, Pl, m_p, Dtmp, gam, k, j, i, 0, Ul, m_u, loc);
-                    GRMHD::prim_to_flux(G, Pl, m_p, Dtmp, gam, k, j, i, dir, Fl, m_u, loc);
-                    if (use_b_flux_ct) {
-                        B_FluxCT::prim_to_flux(G, Pl, m_p, Dtmp, k, j, i, 0, Ul, m_u, loc);
-                        B_FluxCT::prim_to_flux(G, Pl, m_p, Dtmp, k, j, i, dir, Fl, m_u, loc);
-                    } else if (use_b_cd) {
-                        B_CD::prim_to_flux(G, Pl, m_p, Dtmp, k, j, i, 0, Ul, m_u, loc);
-                        B_CD::prim_to_flux(G, Pl, m_p, Dtmp, k, j, i, dir, Fl, m_u, loc);
-                    }
-                    if (use_electrons) {
-                        Electrons::prim_to_flux(G, Pl, m_p, Dtmp, k, j, i, 0, Ul, m_u, loc);
-                        Electrons::prim_to_flux(G, Pl, m_p, Dtmp, k, j, i, dir, Fl, m_u, loc);
-                    }
+                    GRMHD::calc_4vecs(G, Pl, m_p, j, i, loc, Dtmp);
+                    Flux::prim_to_flux(G, Pl, m_p, Dtmp, gam, j, i, 0, Ul, m_u, loc);
+                    Flux::prim_to_flux(G, Pl, m_p, Dtmp, gam, j, i, dir, Fl, m_u, loc);
 
                     // Magnetosonic speeds
                     Real cmaxL, cminL;
-                    GRMHD::vchar(G, Pl, m_p, Dtmp, gam, k, j, i, loc, dir, cmaxL, cminL);
+                    Flux::vchar(G, Pl, m_p, Dtmp, gam, k, j, i, loc, dir, cmaxL, cminL);
 
 #if !FUSE_FLUX_KERNELS
                     // Record speeds
@@ -248,26 +244,19 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
                     // LR -> flux
                     // Declare temporary vectors
                     FourVectors Dtmp;
+                    auto Pr = Kokkos::subview(Pr_s, Kokkos::ALL(), i);
 #endif
+                    auto Ur = Kokkos::subview(Ur_s, Kokkos::ALL(), i);
+                    auto Fr = Kokkos::subview(Fr_s, Kokkos::ALL(), i);
                     // Right
-                    GRMHD::calc_4vecs(G, Pr, m_p, k, j, i, loc, Dtmp);
-                    GRMHD::prim_to_flux(G, Pr, m_p, Dtmp, gam, k, j, i, 0, Ur, m_u, loc);
-                    GRMHD::prim_to_flux(G, Pr, m_p, Dtmp, gam, k, j, i, dir, Fr, m_u, loc);
-                    if (use_b_flux_ct) {
-                        B_FluxCT::prim_to_flux(G, Pr, m_p, Dtmp, k, j, i, 0, Ur, m_u, loc);
-                        B_FluxCT::prim_to_flux(G, Pr, m_p, Dtmp, k, j, i, dir, Fr, m_u, loc);
-                    } else if (use_b_cd) {
-                        B_CD::prim_to_flux(G, Pr, m_p, Dtmp, k, j, i, 0, Ur, m_u, loc);
-                        B_CD::prim_to_flux(G, Pr, m_p, Dtmp, k, j, i, dir, Fr, m_u, loc);
-                    }
-                    if (use_electrons) {
-                        Electrons::prim_to_flux(G, Pr, m_p, Dtmp, k, j, i, 0, Ur, m_u, loc);
-                        Electrons::prim_to_flux(G, Pr, m_p, Dtmp, k, j, i, dir, Fr, m_u, loc);
-                    }
+                    // TODO GRMHD/GRHD versions of this
+                    GRMHD::calc_4vecs(G, Pr, m_p, j, i, loc, Dtmp);
+                    Flux::prim_to_flux(G, Pr, m_p, Dtmp, gam, j, i, 0, Ur, m_u, loc);
+                    Flux::prim_to_flux(G, Pr, m_p, Dtmp, gam, j, i, dir, Fr, m_u, loc);
 
                     // Magnetosonic speeds
                     Real cmaxR, cminR;
-                    GRMHD::vchar(G, Pr, m_p, Dtmp, gam, k, j, i, loc, dir, cmaxR, cminR);
+                    Flux::vchar(G, Pr, m_p, Dtmp, gam, k, j, i, loc, dir, cmaxR, cminR);
 
 #if FUSE_FLUX_KERNELS
                     // Calculate cmax/min from local variables
@@ -276,17 +265,17 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
 
                     if (use_hlle) {
                         for (int p=0; p < nvar; ++p)
-                            U(b).flux(dir, p, k, j, i) = hlle(Fl(p,i), Fr(p,i), cmax(i), cmin(i), Ul(p,i), Ur(p,i));
+                            U_all(b).flux(dir, p, k, j, i) = hlle(Fl(p), Fr(p), cmax(i), cmin(i), Ul(p), Ur(p));
                     } else {
                         for (int p=0; p < nvar; ++p)
-                            U(b).flux(dir, p, k, j, i) = llf(Fl(p,i), Fr(p,i), cmax(i), cmin(i), Ul(p,i), Ur(p,i));
+                            U_all(b).flux(dir, p, k, j, i) = llf(Fl(p), Fr(p), cmax(i), cmin(i), Ul(p), Ur(p));
                     }
                     if (use_b_cd) {
                         // The unphysical variable psi and its corrections can propagate at the max speed
                         // for the stepsize, rather than the sound speed
                         // Since the speeds are the same it will always correspond to the LLF flux
-                        U(b).flux(dir, m_u.PSI, k, j, i) = llf(Fl(m_u.PSI,i), Fr(m_u.PSI,i), ctop_max, ctop_max, Ul(m_u.PSI,i), Ur(m_u.PSI,i));
-                        U(b).flux(dir, m_u.B1+dir-1, k, j, i) = llf(Fl(m_u.B1+dir-1,i), Fr(m_u.B1+dir-1,i), ctop_max, ctop_max, Ul(m_u.B1+dir-1,i), Ur(m_u.B1+dir-1,i));
+                        U_all(b).flux(dir, m_u.PSI, k, j, i) = llf(Fl(m_u.PSI), Fr(m_u.PSI), ctop_max, ctop_max, Ul(m_u.PSI), Ur(m_u.PSI));
+                        U_all(b).flux(dir, m_u.B1+dir-1, k, j, i) = llf(Fl(m_u.B1+dir-1), Fr(m_u.B1+dir-1), ctop_max, ctop_max, Ul(m_u.B1+dir-1), Ur(m_u.B1+dir-1));
                     }
 #else
                     // Calculate cmax/min based on comparison with cached values
@@ -307,21 +296,21 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
                     // Since the speeds are the same it will always correspond to the LLF flux
                     parthenon::par_for_inner(member, il.s, il.e,
                         [&](const int& i) {
-                            U(b).flux(dir, p, k, j, i) = llf(Fl(p,i), Fr(p,i), ctop_max, ctop_max, Ul(p,i), Ur(p,i));
+                            U_all(b).flux(dir, p, k, j, i) = llf(Fl_s(p,i), Fr_s(p,i), ctop_max, ctop_max, Ul_s(p,i), Ur_s(p,i));
                         }
                     );
                 } else if (use_hlle) {
                     // Option to try HLLE fluxes for everything else
                     parthenon::par_for_inner(member, il.s, il.e,
                         [&](const int& i) {
-                            U(b).flux(dir, p, k, j, i) = hlle(Fl(p,i), Fr(p,i), cmax(i), cmin(i), Ul(p,i), Ur(p,i));
+                            U_all(b).flux(dir, p, k, j, i) = hlle(Fl_s(p,i), Fr_s(p,i), cmax(i), cmin(i), Ul_s(p,i), Ur_s(p,i));
                         }
                     );
                 } else {
                     // Or LLF, probably safest option
                     parthenon::par_for_inner(member, il.s, il.e,
                         [&](const int& i) {
-                            U(b).flux(dir, p, k, j, i) = llf(Fl(p,i), Fr(p,i), cmax(i), cmin(i), Ul(p,i), Ur(p,i));
+                            U_all(b).flux(dir, p, k, j, i) = llf(Fl_s(p,i), Fr_s(p,i), cmax(i), cmin(i), Ul_s(p,i), Ur_s(p,i));
                         }
                     );
                 }

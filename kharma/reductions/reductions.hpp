@@ -35,7 +35,7 @@
 
 #include "debug.hpp"
 
-#include "mhd_functions.hpp"
+#include "grmhd_functions.hpp"
 #include "types.hpp"
 
 namespace Reductions {
@@ -73,15 +73,21 @@ Real DomainSum(MeshData<Real> *md);
         if (pmb->boundary_flag[parthenon::BoundaryFace::inner_x1] == BoundaryFlag::user) { \
             GridScalar rho_U = rc->Get("cons.rho").data; \
             GridScalar u_U = rc->Get("cons.u").data; \
-            GridScalar uvec_U = rc->Get("cons.uvec").data; \
-            GridScalar B_U = rc->Get("cons.B").data; \
+            GridVector uvec_U = rc->Get("cons.uvec").data; \
             GridScalar rho_P = rc->Get("prims.rho").data; \
             GridScalar u_P = rc->Get("prims.u").data; \
-            GridScalar uvec_P = rc->Get("prims.uvec").data; \
-            GridScalar B_P = rc->Get("prims.B").data; \
+            GridVector uvec_P = rc->Get("prims.uvec").data; \
             GridScalar rho_F = rc->Get("cons.rho").flux[1]; \
             GridScalar u_F = rc->Get("cons.u").flux[1]; \
-            GridScalar uvec_F = rc->Get("cons.uvec").flux[1]; \
+            GridVector uvec_F = rc->Get("cons.uvec").flux[1]; \
+            GridVector B_P, B_U; \
+            if (rc->HasCellVariable("prims.B")) { \
+                B_P = rc->Get("prims.B").data; \
+                B_U = rc->Get("cons.B").data; \
+            } else { \
+                B_P = rc->Get("prims.uvec").data; \
+                B_U = rc->Get("cons.uvec").data; \
+            } \
             const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma"); \
 \
             IndexRange ib = pmb->cellbounds.GetBoundsI(IndexDomain::interior); \
@@ -101,6 +107,9 @@ Real DomainSum(MeshData<Real> *md);
 \
     return result; \
 }
+// Re: B_P and B_U above, they need to not crash but can return nonsense:
+// hence, just use an equivalent-size replacement.
+// There may be more elegant solutions...
 
 // Now we need some valid type names to use in distinguishing functions.
 // The 'enum class' lines just serve to define an arbitrary name as some valid type,
@@ -157,13 +166,19 @@ inline Real LdotEHFlux(MeshData<Real> *md) {return AccretionRate<Ldot_Flux>(md, 
         auto& rc = pmb->meshblock_data.Get(); \
         GridScalar rho_U = rc->Get("cons.rho").data; \
         GridScalar u_U = rc->Get("cons.u").data; \
-        GridScalar uvec_U = rc->Get("cons.uvec").data; \
-        GridScalar B_U = rc->Get("cons.B").data; \
+        GridVector uvec_U = rc->Get("cons.uvec").data; \
         GridScalar rho_P = rc->Get("prims.rho").data; \
         GridScalar u_P = rc->Get("prims.u").data; \
-        GridScalar uvec_P = rc->Get("prims.uvec").data; \
-        GridScalar B_P = rc->Get("prims.B").data; \
+        GridVector uvec_P = rc->Get("prims.uvec").data; \
         const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma"); \
+        GridVector B_P, B_U; \
+        if (rc->HasCellVariable("prims.B")) { \
+            B_P = rc->Get("prims.B").data; \
+            B_U = rc->Get("cons.B").data; \
+        } else { \
+            B_P = rc->Get("prims.uvec").data; \
+            B_U = rc->Get("cons.uvec").data; \
+        } \
 \
         IndexRange ib = pmb->cellbounds.GetBoundsI(IndexDomain::interior); \
         IndexRange jb = pmb->cellbounds.GetBoundsJ(IndexDomain::interior); \
@@ -215,7 +230,7 @@ MAKE_SUM3D_FN(JetLum, (KOKKOS_LAMBDA_3D_REDUCE {
         Real uvec_loc[NVEC] = {uvec_P(0, k, j, i), uvec_P(1, k, j, i), uvec_P(2, k, j, i)};
         Real B_loc[NVEC] = {B_P(0, k, j, i), B_P(1, k, j, i), B_P(2, k, j, i)};
         Real rho_ut, T[GR_DIM];
-        GRMHD::p_to_u_loc(G, 0., 0., uvec_loc, B_loc, gam, k, j, i, rho_ut, T);
+        GRMHD::p_to_u_mhd(G, 0., 0., uvec_loc, B_loc, gam, k, j, i, rho_ut, T); // TODO should this be just GRMHD::calc_tensor?
         local_result += -T[1] * G.dx3v(k) * G.dx2v(j);
     }
 }))

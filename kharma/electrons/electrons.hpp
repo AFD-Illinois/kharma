@@ -37,7 +37,7 @@
 
 #include <parthenon/parthenon.hpp>
 
-#include "mhd_functions.hpp"
+#include "grmhd_functions.hpp"
 
 using namespace parthenon;
 
@@ -142,7 +142,7 @@ void FillOutput(MeshBlock *pmb, ParameterInput *pin);
  * As used extensively here, any variables not present in a pack will have index -1 in the map.
  *  
  * The two functions differ in two ways:
- * 1. The caller precalculate the four-vectors (u^mu, b^mu) and pass them in the struct D to prim_to_flux (see fluxes.hpp for call)
+ * 1. The caller precalculate the four-vectors (u^mu, b^mu) and pass them in the struct D to prim_to_flux (see flux.hpp for call)
  * 2. p_to_u will only ever be called to obtain the conserved variables U, not fluxes (i.e. dir == 0 in calls)
  * 
  * Function in this package: Divide or multiply by local density to get entropy/particle -- opposite of UtoP above

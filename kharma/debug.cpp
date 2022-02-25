@@ -37,7 +37,7 @@
 #include "decs.hpp"
 
 #include "floors.hpp"
-#include "mhd_functions.hpp"
+#include "grmhd_functions.hpp"
 #include "types.hpp"
 
 using namespace Kokkos;

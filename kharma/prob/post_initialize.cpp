@@ -40,7 +40,7 @@
 #include "debug.hpp"
 #include "fixup.hpp"
 #include "floors.hpp"
-#include "fluxes.hpp"
+#include "flux.hpp"
 #include "gr_coordinates.hpp"
 #include "types.hpp"
 
@@ -58,7 +58,7 @@ void SyncAllBounds(Mesh *pmesh)
 
     for (auto &pmb : pmesh->block_list) {
         auto& rc = pmb->meshblock_data.Get();
-        Flux::PrimToFlux(rc.get(), IndexDomain::entire);
+        Flux::PtoU(rc.get(), IndexDomain::entire);
     }
 
     for (auto &pmb : pmesh->block_list) {

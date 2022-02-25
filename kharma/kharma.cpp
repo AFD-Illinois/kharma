@@ -44,10 +44,11 @@
 #include "b_cd.hpp"
 #include "current.hpp"
 #include "electrons.hpp"
+#include "implicit.hpp"
 #include "floors.hpp"
 #include "grmhd.hpp"
 #include "reductions.hpp"
-#include "viscosity.hpp"
+#include "emhd.hpp"
 #include "wind.hpp"
 
 #include "bondi.hpp"
@@ -191,10 +192,11 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
     bool add_jcon = pin->GetOrAddBoolean("GRMHD", "add_jcon", true);
     bool do_electrons = pin->GetOrAddBoolean("electrons", "on", false);
     bool do_reductions = pin->GetOrAddBoolean("reductions", "on", true);
-    bool do_viscosity = pin->GetOrAddBoolean("viscosity", "on", false);
+    bool do_emhd = pin->GetOrAddBoolean("emhd", "on", false);
     bool do_wind = pin->GetOrAddBoolean("wind", "on", false);
 
-    // Set the default driver way up here.  TODO check for incompatibilities, etc
+    // Set the default driver way up here so packages know how to flag
+    // prims vs cons (grim stepper syncs prims)
     auto driver_type = pin->GetOrAddString("driver", "type", "harm");
 
     // Global variables "package."  Anything that just, really oughta be a global
@@ -220,7 +222,15 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
         packages.Add(B_FluxCT::Initialize(pin.get(), packages));
     }
 
-    if (add_jcon) {
+    // Implicit timestepping has a few of its own functions
+    bool implicit_step = pin->GetOrAddString("driver", "step", "explicit") == "implicit";
+    if (driver_type != "harm" && implicit_step) {
+        packages.Add(Implicit::Initialize(pin.get()));
+    }
+
+    // Even if we want to, there's no adding current if we don't know B.
+    // Avoid it.
+    if (add_jcon && b_field_solver != "none") {
         packages.Add(Current::Initialize(pin.get()));
     }
 
@@ -232,8 +242,8 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
         packages.Add(Reductions::Initialize(pin.get()));
     }
 
-    if (do_viscosity) {
-        packages.Add(Viscosity::Initialize(pin.get(), packages));
+    if (do_emhd) {
+        packages.Add(EMHD::Initialize(pin.get(), packages));
     }
 
     if (do_wind) {

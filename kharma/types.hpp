@@ -63,7 +63,7 @@ typedef struct {
 /**
  * Map of the locations of particular variables in a VariablePack
  * Used for operations conducted over all vars which must still
- * distinguish between them, e.g. fluxes.hpp
+ * distinguish between them, e.g. flux.hpp
  *
  * We use this instead of the PackIndexMap, because comparing strings
  * on the device every time we need the index of a variable is slow.
@@ -108,7 +108,7 @@ class VarMap {
                 K_WERNER = name_map["cons.Kel_Werner"].first;
                 K_ROWAN = name_map["cons.Kel_Rowan"].first;
                 K_SHARMA = name_map["cons.Kel_Sharma"].first;
-                // Viscosity
+                // Extended MHD
                 Q = name_map["cons.q"].first;
                 DP = name_map["cons.dP"].first;
             } else {
@@ -130,7 +130,7 @@ class VarMap {
                 K_WERNER = name_map["prims.Kel_Werner"].first;
                 K_ROWAN = name_map["prims.Kel_Rowan"].first;
                 K_SHARMA = name_map["prims.Kel_Sharma"].first;
-                // Viscosity
+                // Extended MHD
                 Q = name_map["prims.q"].first;
                 DP = name_map["prims.dP"].first;
             }

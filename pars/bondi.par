@@ -58,6 +58,7 @@ verbose = 0
 <driver>
 type = harm
 step = explicit
+max_nonlinear_iter = 3
 
 <parthenon/output0>
 file_type = hdf5

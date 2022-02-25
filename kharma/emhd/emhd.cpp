@@ -1,5 +1,5 @@
 /* 
- *  File: viscosity.cpp
+ *  File: emhd.cpp
  *  
  *  BSD 3-Clause License
  *  
@@ -31,7 +31,7 @@
  *  OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-#include "viscosity.hpp"
+#include "emhd.hpp"
 
 #include "decs.hpp"
 #include "grmhd.hpp"
@@ -41,12 +41,12 @@
 
 using namespace parthenon;
 
-namespace Viscosity
+namespace EMHD
 {
 
 std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t packages)
 {
-    auto pkg = std::make_shared<StateDescriptor>("Viscosity");
+    auto pkg = std::make_shared<StateDescriptor>("EMHD");
     Params &params = pkg->AllParams();
 
     // Diagnostic data
@@ -78,11 +78,11 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     pkg->AddField("prims.dP", m_prim);
     // Eventually also need (most or all of) Theta, bsq, nu_emhd, chi_emhd, tau
 
-    // If we want to register viscosity-specific UtoP for some reason?
+    // If we want to register an EMHD-specific UtoP for some reason?
     // Likely we'll only use the post-step summary hook
-    //pkg->FillDerivedBlock = Viscosity::FillDerived;
-    //pkg->PostFillDerivedBlock = Viscosity::PostFillDerived;
+    //pkg->FillDerivedBlock = EMHD::FillDerived;
+    //pkg->PostFillDerivedBlock = EMHD::PostFillDerived;
     return pkg;
 }
 
-} // namespace Viscosity
+} // namespace EMHD
