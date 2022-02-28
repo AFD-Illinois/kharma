@@ -151,10 +151,10 @@ int main(int argc, char *argv[])
     auto driver_type = pin->GetString("driver", "type");
     if (driver_type == "harm") {
         HARMDriver driver(pin, papp, pmesh);
-    } else if (driver_type == "grim") {
+    } else if (driver_type == "imex") {
         ImexDriver driver(pin, papp, pmesh);
     } else {
-        throw std::invalid_argument("Expected driver type to be harm or grim!");
+        throw std::invalid_argument("Expected driver type to be harm or imex!");
     }
 
     // We could still have set parameters during driver initialization
@@ -187,7 +187,7 @@ int main(int argc, char *argv[])
         cout << "Initializing and running KHARMA driver." << endl;
         HARMDriver driver(pin, papp, pmesh);
         auto driver_status = driver.Execute();
-    } else if (driver_type == "grim") {
+    } else if (driver_type == "imex") {
         cout << "Initializing and running GRIM driver." << endl;
         ImexDriver driver(pin, papp, pmesh);
         auto driver_status = driver.Execute();

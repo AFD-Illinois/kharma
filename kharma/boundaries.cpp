@@ -73,7 +73,7 @@ void OutflowX1(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, boo
     auto q = rc->PackVariables({Metadata::FillGhost}, cons_map, coarse);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
     // If we're running imex, q is the *primitive* variables
-    bool prim_ghosts = pmb->packages.Get("GRMHD")->Param<std::string>("driver_type") == "grim";
+    bool prim_ghosts = pmb->packages.Get("GRMHD")->Param<std::string>("driver_type") == "imex";
 
     // KHARMA is very particular about corner boundaries.
     // In particular, we apply the outflow boundary over ALL X2, X3,
@@ -162,7 +162,7 @@ void ReflectX2(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, boo
     auto q = rc->PackVariables({Metadata::FillGhost}, cons_map, coarse);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
     // If we're running imex, q is the *primitive* variables
-    bool prim_ghosts = pmb->packages.Get("GRMHD")->Param<std::string>("driver_type") == "grim";
+    bool prim_ghosts = pmb->packages.Get("GRMHD")->Param<std::string>("driver_type") == "imex";
 
     // KHARMA is very particular about corner boundaries, see above
     IndexDomain ldomain = IndexDomain::interior;
@@ -240,7 +240,7 @@ void KBoundaries::InnerX1(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse)
     }
     // If we're in KHARMA/HARM driver, we need primitive versions of all the
     // non-GRMHD vars
-    bool prim_ghosts = pmb->packages.Get("GRMHD")->Param<std::string>("driver_type") == "grim";
+    bool prim_ghosts = pmb->packages.Get("GRMHD")->Param<std::string>("driver_type") == "imex";
     if (!prim_ghosts) KHARMA::FillDerivedDomain(rc, IndexDomain::inner_x1, coarse);
 }
 void KBoundaries::OuterX1(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse)
@@ -256,21 +256,21 @@ void KBoundaries::OuterX1(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse)
     }
     // If we're in KHARMA/HARM driver, we need primitive versions of all the
     // non-GRMHD vars
-    bool prim_ghosts = pmb->packages.Get("GRMHD")->Param<std::string>("driver_type") == "grim";
+    bool prim_ghosts = pmb->packages.Get("GRMHD")->Param<std::string>("driver_type") == "imex";
     if (!prim_ghosts) KHARMA::FillDerivedDomain(rc, IndexDomain::outer_x1, coarse);
 }
 void KBoundaries::InnerX2(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse)
 {
     auto pmb = rc->GetBlockPointer();
     ReflectX2(rc, IndexDomain::inner_x2, coarse);
-    bool prim_ghosts = pmb->packages.Get("GRMHD")->Param<std::string>("driver_type") == "grim";
+    bool prim_ghosts = pmb->packages.Get("GRMHD")->Param<std::string>("driver_type") == "imex";
     if (!prim_ghosts) KHARMA::FillDerivedDomain(rc, IndexDomain::inner_x2, coarse);
 }
 void KBoundaries::OuterX2(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse)
 {
     auto pmb = rc->GetBlockPointer();
     ReflectX2(rc, IndexDomain::outer_x2, coarse);
-    bool prim_ghosts = pmb->packages.Get("GRMHD")->Param<std::string>("driver_type") == "grim";
+    bool prim_ghosts = pmb->packages.Get("GRMHD")->Param<std::string>("driver_type") == "imex";
     if (!prim_ghosts) KHARMA::FillDerivedDomain(rc, IndexDomain::outer_x2, coarse);
 }
 

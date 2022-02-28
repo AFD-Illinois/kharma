@@ -76,7 +76,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     // Note: when changing metadata, keep these in lockstep with grmhd.cpp!!
     // See notes there about changes for the Imex driver
     std::vector<MetadataFlag> flags_prim, flags_cons;
-    auto imex_driver = pin->GetString("driver", "type") == "grim";
+    auto imex_driver = pin->GetString("driver", "type") == "imex";
     if (!imex_driver) {
         flags_prim = std::vector<MetadataFlag>({Metadata::Real, Metadata::Cell, Metadata::Derived,
                                                 isPrimitive, isMHD, Metadata::Vector});

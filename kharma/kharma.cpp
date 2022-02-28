@@ -196,8 +196,8 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
     bool do_wind = pin->GetOrAddBoolean("wind", "on", false);
 
     // Set the default driver way up here so packages know how to flag
-    // prims vs cons (grim stepper syncs prims)
-    auto driver_type = pin->GetOrAddString("driver", "type", "harm");
+    // prims vs cons (imex stepper syncs prims, but packages have to mark them that way)
+    auto driver_type = pin->GetOrAddString("driver", "type", "imex");
 
     // Global variables "package."  Anything that just, really oughta be a global
     packages.Add(KHARMA::InitializeGlobals(pin.get()));

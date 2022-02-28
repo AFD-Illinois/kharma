@@ -188,14 +188,14 @@ KOKKOS_INLINE_FUNCTION void calc_4vecs(const GRCoordinates& G, const Local& P, c
     D.ucon[0] = gamma / alpha;
     VLOOP D.ucon[v+1] = P(m.U1 + v) - gamma * alpha * G.gcon(loc, j, i, 0, v+1);
 
-    G.lower(D.ucon, D.ucov, k, j, i, loc);
+    G.lower(D.ucon, D.ucov, 0, j, i, loc);
 
     if (m.B1 >= 0) {
         D.bcon[0] = 0;
         VLOOP D.bcon[0] += P(m.B1 + v) * D.ucov[v+1];
         VLOOP D.bcon[v+1] = (P(m.B1 + v) + D.bcon[0] * D.ucon[v+1]) / D.ucon[0];
 
-        G.lower(D.bcon, D.bcov, k, j, i, loc);
+        G.lower(D.bcon, D.bcov, 0, j, i, loc);
     }
 }
 KOKKOS_INLINE_FUNCTION void calc_4vecs(const GRCoordinates& G, const VariablePack<Real>& P, const VarMap& m,

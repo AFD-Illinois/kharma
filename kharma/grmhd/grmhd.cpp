@@ -186,7 +186,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
 
     std::vector<int> s_vector({3});
     std::vector<MetadataFlag> flags_prim, flags_cons;
-    auto imex_driver = pin->GetString("driver", "type") == "grim";
+    auto imex_driver = pin->GetString("driver", "type") == "imex";
     auto explicit_step = (pin->GetOrAddString("driver", "step", "explicit") == "explicit");
     if (!imex_driver) { // Normal operation
         // As mentioned elsewhere, KHARMA treats the conserved variables as the independent ones,
