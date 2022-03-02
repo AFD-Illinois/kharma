@@ -104,9 +104,8 @@ TaskStatus Step(MeshData<Real> *mdi, MeshData<Real> *md0, MeshData<Real> *dudt,
     auto& Us_all = md0->PackVariables(std::vector<MetadataFlag>{Metadata::Conserved});
     // Flux divergence plus explicit source terms. This is what we'd be adding 
     auto& dUdt_all = dudt->PackVariables(std::vector<MetadataFlag>{Metadata::Conserved});
-    // Desired final state.  Note this is prims only: we sync these, then run P->U on each node.
-    // TODO REMEMBER TO COPY IN MD0 CONTENTS AS GUESS
-    auto& P_solver_all = md1->PackVariables(std::vector<MetadataFlag>{isPrimitive});
+    // Desired final state.
+    auto& Pf_all = md1->PackVariables(std::vector<MetadataFlag>{isPrimitive});
 
     // Note this iterator, like all of KHARMA, requires nprim == ncons
     // TODO Maybe should enforce that at start?
@@ -114,11 +113,13 @@ TaskStatus Step(MeshData<Real> *mdi, MeshData<Real> *md0, MeshData<Real> *dudt,
     const int nvar = Ui_all.GetDim(4);
 
     // Workspaces for iteration, include ghosts to match indices.
-    // Probably should never need coarse/entire...
-    auto bounds = pmb0->cellbounds; //coarse ? pmb0->c_cellbounds : pmb0->cellbounds;
+    auto bounds = pmb0->cellbounds;
     const int n1 = bounds.ncellsi(IndexDomain::entire);
     const int n2 = bounds.ncellsj(IndexDomain::entire);
     const int n3 = bounds.ncellsk(IndexDomain::entire);
+    // A full space for solver iterations, as Pi/Pf may be aliased:
+    // thus we don't want to write anything until we're done.
+    ParArray5D<Real> P_solver_all("P_solver", nblock, nvar, n3, n2, n1);
 
     // The norm of the residual.  We store this to avoid the main kernel
     // also being a 2-stage reduction, which is complex and sucks.
@@ -135,15 +136,15 @@ TaskStatus Step(MeshData<Real> *mdi, MeshData<Real> *md0, MeshData<Real> *dudt,
     const IndexRange jb = bounds.GetBoundsJ(domain);
     const IndexRange kb = bounds.GetBoundsK(domain);
     const IndexRange block = IndexRange{0, nblock - 1};
-    //const IndexRange vb = IndexRange{0, nvar - 1};
+    const IndexRange vb = IndexRange{0, nvar - 1};
 
     // Allocate scratch space
     // It is impossible to declare runtime-sized arrays in CUDA
     // of e.g. length var[nvar] (recall nvar can change at runtime in KHARMA)
     // Instead we copy to scratch!
-    // This allows flexibility in structuring the kernel, as
-    // well as slicing, which in turn allows writing just *one* version of each operation!
-    // Older versions of KHARMA solved this with overloads, it was a mess.  This is less mess.
+    // This allows flexibility in structuring the kernel, and the results can be sliced
+    // to avoid a bunch of indices in all the device-side operations
+    // See grmhd_functions.hpp for the other approach with overloads
     const int scratch_level = 1; // 0 is actual scratch (tiny); 1 is HBM
     const size_t var_size_in_bytes = parthenon::ScratchPad2D<Real>::shmem_size(nvar, n1);
     const size_t tensor_size_in_bytes = parthenon::ScratchPad3D<Real>::shmem_size(nvar, nvar, n1);
@@ -192,7 +193,7 @@ TaskStatus Step(MeshData<Real> *mdi, MeshData<Real> *md0, MeshData<Real> *dudt,
                         if (iter == 0) {
                             P_solver_s(ip, i) = Ps_all(b)(ip, k, j, i);
                         } else {
-                            P_solver_s(ip, i) = P_solver_all(b)(ip, k, j, i);
+                            P_solver_s(ip, i) = P_solver_all(b, ip, k, j, i);
                         }
                     }
                 );
@@ -224,10 +225,9 @@ TaskStatus Step(MeshData<Real> *mdi, MeshData<Real> *md0, MeshData<Real> *dudt,
 
                         // Jacobian calculation
                         // Requires calculating the residual anyway, so we grab it here
-                        // (the array will eventually hold delta_prim, after the matrix solve)
                         calc_jacobian(G, P_solver, Ui, Us, dUdt, dUi, tmp1, tmp2, tmp3,
                                       m_p, m_u, nvar, j, i, delta, gam, dt, jacobian, residual);
-                        // Initial delta prim is negative residual
+                        // Solve against the negative residual
                         PLOOP delta_prim(ip) = -residual(ip);
 
                         // if (am_rank0 && b == 0 && i == 8 && j == 8 && k == 8) {
@@ -243,6 +243,7 @@ TaskStatus Step(MeshData<Real> *mdi, MeshData<Real> *md0, MeshData<Real> *dudt,
 
                         // Linear solve
                         // This code lightly adapted from Kokkos batched examples
+                        // Replaces our inverse residual with the actual desired delta_prim
                         KokkosBatched::SerialLU<Algo::LU::Unblocked>::invoke(jacobian, tiny);
                         KokkosBatched::SerialTrsv<Uplo::Lower,Trans::NoTranspose,Diag::NonUnit,Algo::Trsv::Unblocked>
                         ::invoke(alpha, jacobian, delta_prim);
@@ -277,13 +278,13 @@ TaskStatus Step(MeshData<Real> *mdi, MeshData<Real> *md0, MeshData<Real> *dudt,
                 // This combo still works if P_solver is aliased to one of the other arrays!
                 PLOOP parthenon::par_for_inner(member, ib.s, ib.e,
                     [&](const int& i) {
-                        P_solver_all(b)(ip, k, j, i) = P_solver_s(ip, i);
+                        P_solver_all(b, ip, k, j, i) = P_solver_s(ip, i);
                     }
                 );
             }
         );
-
-        // L2 norm maximum.
+        
+        // Take the maximum L2 norm
         Real max_norm;
         Kokkos::Max<Real> norm_max(max_norm);
         pmb0->par_reduce("max_norm", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
@@ -294,6 +295,13 @@ TaskStatus Step(MeshData<Real> *mdi, MeshData<Real> *md0, MeshData<Real> *dudt,
         max_norm = MPIMax(max_norm);
         if (MPIRank0()) fprintf(stdout, "Nonlinear iter %d. Max L2 norm: %g\n", iter, max_norm);
     }
+
+    // Write to Pf
+    pmb0->par_for("write_Pf", block.s, block.e, vb.s, vb.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+        KOKKOS_LAMBDA_MESH_VARS {
+            Pf_all(b)(p, k, j, i) = P_solver_all(b, p, k, j, i);
+        }
+    );
 
     return TaskStatus::complete;
 

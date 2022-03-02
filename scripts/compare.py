@@ -8,10 +8,10 @@
 
 from __future__ import print_function, division
 
-import pyHARM
-from pyHARM import parameters
-import pyHARM.ana.plot as pplt
-import pyHARM.util as util
+import pyharm
+from pyharm import parameters
+import pyharm.plots.plot_dumps as pplt
+import pyharm.util as util
 
 import os,sys
 import numpy as np

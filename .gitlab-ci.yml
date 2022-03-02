@@ -34,6 +34,7 @@ bondi:
     paths:
       - tests/bondi/*.png
       - tests/bondi/*.hst
+      - tests/bondi/*.txt
 
 mhdmodes:
   stage: tests
@@ -47,6 +48,7 @@ mhdmodes:
     paths:
       - tests/mhdmodes/*.png
       - tests/mhdmodes/*.hst
+      - tests/mhdmodes/*.txt
 
 noh:
   stage: tests

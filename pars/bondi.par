@@ -58,6 +58,8 @@ verbose = 0
 <driver>
 type = harm
 step = explicit
+
+<implicit>
 max_nonlinear_iter = 3
 
 <parthenon/output0>

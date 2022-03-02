@@ -3,7 +3,7 @@
 # Run checks against analytic result for specified tests
 
 . ~/libs/anaconda3/etc/profile.d/conda.sh
-conda activate pyHARM
+conda activate pyharm
 
 res="32,48,64,96,128"
 python check.py $res "in 2D, FMKS coordinates" fmks || fail=1

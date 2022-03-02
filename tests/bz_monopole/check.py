@@ -6,8 +6,8 @@ import glob
 import numpy as np
 import matplotlib.pyplot as plt
 
-import pyHARM
-import pyHARM.ana.plot as hplt
+import pyharm
+import pyharm.plots.plot_dumps as hplt
 
 for dumpname in np.sort(glob.glob("bz_monopole.out0.*.phdf")):
     dump = pyHARM.load_dump(dumpname)

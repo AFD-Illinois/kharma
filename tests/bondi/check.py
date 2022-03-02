@@ -6,7 +6,7 @@ import os,sys
 import numpy as np
 import matplotlib.pyplot as plt
 
-import pyHARM
+import pyharm
 
 RES = [int(x) for x in sys.argv[1].split(",")]
 LONG = sys.argv[2]
@@ -19,8 +19,8 @@ L1 = []
 
 # 2d
 for res in RES:
-    start = pyHARM.load_dump("bondi_2d_{}_start_{}.phdf".format(res, SHORT))
-    end = pyHARM.load_dump("bondi_2d_{}_end_{}.phdf".format(res, SHORT))
+    start = pyharm.load_dump("bondi_2d_{}_start_{}.phdf".format(res, SHORT))
+    end = pyharm.load_dump("bondi_2d_{}_end_{}.phdf".format(res, SHORT))
     params = start.params
 
     r = start['r'][:,start['n2']//2]
