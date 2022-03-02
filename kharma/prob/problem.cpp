@@ -47,7 +47,7 @@
 #include "bondi.hpp"
 #include "explosion.hpp"
 #include "fm_torus.hpp"
-#include "iharm_restart.hpp"
+#include "resize_restart.hpp"
 #include "kelvin_helmholtz.hpp"
 #include "bz_monopole.hpp"
 #include "mhdmodes.hpp"
@@ -92,7 +92,7 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
         status = InitializeFMTorus(rc.get(), pin);
     } else if (prob == "bz_monopole") {
         status = InitializeBZMonopole(rc.get(), pin);
-    } else if (prob == "iharm_restart") {
+    } else if (prob == "resize_restart") {
         status = ReadIharmRestart(rc.get(), pin);
     } else if (prob == "noh"){
         status = InitializeNoh(rc.get(), pin);
@@ -105,7 +105,7 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
     // option in perturbation->u_jitter
     // Note this defaults to zero, generally it's controlled via runtime options
     // But we *definitely* don't want it when restarting
-    if (prob != "iharm_restart" && pin->GetOrAddReal("perturbation", "u_jitter", 0.0) > 0.0) {
+    if (prob != "resize_restart" && pin->GetOrAddReal("perturbation", "u_jitter", 0.0) > 0.0) {
         PerturbU(rc.get(), pin);
     }
 

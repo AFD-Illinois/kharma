@@ -61,4 +61,8 @@ class HARMDriver : public MultiStageDriver {
          * usually w.r.t. fluid "state" being spread across the primitive and conserved quantities
          */
         TaskCollection MakeTaskCollection(BlockList_t &blocks, int stage);
+
+    private:
+        // Global solves need a reduction point
+        AllReduce<Real> update_norm;
 };

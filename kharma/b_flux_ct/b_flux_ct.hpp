@@ -96,6 +96,16 @@ TaskStatus TransportB(MeshData<Real> *md);
  * listed arguments
  */
 double MaxDivB(MeshData<Real> *md);
+// Version for Parthenon tasking as a reduction
+inline TaskStatus MaxDivBTask(MeshData<Real> *md, double& divb_max)
+    { divb_max = MaxDivB(md); return TaskStatus::complete; }
+
+/**
+ * Clean the magnetic field divergence via successive over-relaxation
+ * Currently only used when resizing inputs.
+ * TODO option to sprinkle into updates every N steps
+ */
+void CleanupDivergence(MeshBlockData<Real> *rc, IndexDomain domain=IndexDomain::entire, bool coarse=false);
 
 /**
  * Diagnostics printed/computed after each step
@@ -108,6 +118,64 @@ TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md);
  */
 void FillOutput(MeshBlock *pmb, ParameterInput *pin);
 
-// TODO device-side divB at a single zone corner, to avoid code duplication?
+/**
+ * 2D or 3D divergence, averaging to cell corners
+ */
+template<typename Global>
+KOKKOS_INLINE_FUNCTION double corner_div(const GRCoordinates& G, const Global& B_U, const int& b,
+                                         const int& k, const int& j, const int& i, const bool& do_3D)
+{
+    const double norm = (do_3D) ? 0.25 : 0.5;
+    // 2D divergence, averaging to corners
+    double term1 = B_U(b, V1, k, j, i)   + B_U(b, V1, k, j-1, i)
+                    - B_U(b, V1, k, j, i-1) - B_U(b, V1, k, j-1, i-1);
+    double term2 = B_U(b, V2, k, j, i)   + B_U(b, V2, k, j, i-1)
+                    - B_U(b, V2, k, j-1, i) - B_U(b, V2, k, j-1, i-1);
+    double term3 = 0.;
+    if (do_3D) {
+        // Average to corners in 3D, add 3rd flux
+        term1 +=  B_U(b, V1, k-1, j, i)   + B_U(b, V1, k-1, j-1, i)
+                - B_U(b, V1, k-1, j, i-1) - B_U(b, V1, k-1, j-1, i-1);
+        term2 +=  B_U(b, V2, k-1, j, i)   + B_U(b, V2, k-1, j, i-1)
+                - B_U(b, V2, k-1, j-1, i) - B_U(b, V2, k-1, j-1, i-1);
+        term3 =   B_U(b, V3, k, j, i)     + B_U(b, V3, k, j-1, i)
+                + B_U(b, V3, k, j, i-1)   + B_U(b, V3, k, j-1, i-1)
+                - B_U(b, V3, k-1, j, i)   - B_U(b, V3, k-1, j-1, i)
+                - B_U(b, V3, k-1, j, i-1) - B_U(b, V3, k-1, j-1, i-1);
+    }
+    return norm*term1/G.dx1v(i) + norm*term2/G.dx2v(j) + norm*term3/G.dx3v(k);
+}
+
+/**
+ * 2D or 3D gradient, averaging to cell centers from corners.
+ * Note this is forward-difference, while previous def is backward
+ */
+template<typename Global>
+KOKKOS_INLINE_FUNCTION void center_grad(const GRCoordinates& G, const Global& P, const int& b,
+                                          const int& k, const int& j, const int& i, const bool& do_3D,
+                                          double& B1, double& B2, double& B3)
+{
+    const double norm = (do_3D) ? 0.25 : 0.5;
+    // 2D divergence, averaging to corners
+    double term1 =  P(b, 0, k, j+1, i+1) + P(b, 0, k, j, i+1)
+                  - P(b, 0, k, j+1, i)   - P(b, 0, k, j, i);
+    double term2 =  P(b, 0, k, j+1, i+1) + P(b, 0, k, j+1, i)
+                  - P(b, 0, k, j, i+1)   - P(b, 0, k, j, i);
+    double term3 = 0.;
+    if (do_3D) {
+        // Average to corners in 3D, add 3rd flux
+        term1 += P(b, 0, k+1, j+1, i+1) + P(b, 0, k+1, j, i+1)
+               - P(b, 0, k+1, j+1, i)   - P(b, 0, k+1, j, i);
+        term2 += P(b, 0, k+1, j+1, i+1) + P(b, 0, k+1, j+1, i)
+               - P(b, 0, k+1, j, i+1)   - P(b, 0, k+1, j, i);
+        term3 =  P(b, 0, k+1, j+1, i+1) + P(b, 0, k+1, j, i+1)
+               + P(b, 0, k+1, j+1, i)   + P(b, 0, k+1, j, i)
+               - P(b, 0, k, j+1, i+1)   - P(b, 0, k, j, i+1)
+               - P(b, 0, k, j+1, i)     - P(b, 0, k, j, i);
+    }
+    B1 = norm*term1/G.dx1v(i);
+    B2 = norm*term2/G.dx2v(j);
+    B3 = norm*term3/G.dx3v(k);
+}
 
 }

@@ -129,7 +129,7 @@ int main(int argc, char *argv[])
     Flag("Parthenon Initialized");
 
 #if DEBUG
-    // Replace Parthenon signals with something that just prints a backtrace
+    // Replace Parthenon signal handlers with something that just prints a backtrace
     signal(SIGINT, print_backtrace);
     signal(SIGTERM, print_backtrace);
     signal(SIGSEGV, print_backtrace);
@@ -144,7 +144,11 @@ int main(int argc, char *argv[])
     // this usually involves global reductions for normalization
     if(MPIRank0())
         cout << "Running post-initialization tasks..." << endl;
-    KHARMA::PostInitialize(pin, pmesh, pman.IsRestart());
+
+    auto prob = pin->GetString("parthenon/job", "problem_id");
+    bool is_restart = (prob == "resize_restart") || pman.IsRestart();
+    bool is_resize = (prob == "resize_restart") && !pman.IsRestart();
+    KHARMA::PostInitialize(pin, pmesh, is_restart, is_resize);
     Flag("Post-initialization completed");
 
     // Construct a temporary driver purely for parameter parsing
@@ -188,7 +192,7 @@ int main(int argc, char *argv[])
         HARMDriver driver(pin, papp, pmesh);
         auto driver_status = driver.Execute();
     } else if (driver_type == "imex") {
-        cout << "Initializing and running GRIM driver." << endl;
+        cout << "Initializing and running IMEX driver." << endl;
         ImexDriver driver(pin, papp, pmesh);
         auto driver_status = driver.Execute();
     }

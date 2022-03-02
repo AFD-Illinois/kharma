@@ -52,7 +52,7 @@
 #include "debug.hpp"
 #include "fixup.hpp"
 #include "flux.hpp"
-#include "iharm_restart.hpp"
+#include "resize_restart.hpp"
 #include "implicit.hpp"
 #include "source.hpp"
 
@@ -71,14 +71,14 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
     const Real dt = integrator->dt;
     auto stage_name = integrator->stage_name;
 
-    // Which packages we load affects which tasks we'll add to the list
+    // Which packages we've loaded affects which tasks we'll add to the list
     auto& pkgs = blocks[0]->packages.AllPackages();
     bool use_b_cd = pkgs.count("B_CD");
     bool use_b_flux_ct = pkgs.count("B_FluxCT");
     bool use_electrons = pkgs.count("Electrons");
     bool use_wind = pkgs.count("Wind");
 
-    // Allocate the fields ("containers") we need block by block
+    // Allocate the fluid states ("containers") we need for each block
     for (int i = 0; i < blocks.size(); i++) {
         auto &pmb = blocks[i];
         // first make other useful containers
@@ -214,8 +214,9 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
 
         // Then solve for new primitives in the fluid interior, with the primitives at step start as a guess,
         // using UtoP.  Note that since no ghost zones are updated here, and thus FixUtoP cannot use
-        // ghost zones, KHARMA behavior in this mode will dependent on the breakdown of meshblocks & possibly
-        // erratic for many fixups.  Full algo should boundary sync -> FixUtoP -> boundary sync
+        // ghost zones. Thus KHARMA behavior in this mode will dependent on the breakdown of meshblocks,
+        // & possibly erratic when there are many fixups.
+        // Full algo should boundary sync -> FixUtoP -> boundary sync
         TaskRegion &async_region = tc.AddRegion(blocks.size());
         for (int i = 0; i < blocks.size(); i++) {
             auto &pmb = blocks[i];

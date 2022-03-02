@@ -170,3 +170,4 @@ using GeomTensor3 = parthenon::ParArrayND<Real>;
 // Versions for full mesh
 #define KOKKOS_LAMBDA_MESH_3D_REDUCE KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i, double &local_result)
 #define KOKKOS_LAMBDA_MESH_3D_REDUCE_INT KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i, int &local_result)
+#define KOKKOS_LAMBDA_MESH_4D_REDUCE KOKKOS_LAMBDA (const int &b, const int &v, const int &k, const int &j, const int &i, double &local_result)

@@ -32,9 +32,6 @@
  *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-/**
- * GRMHD package.  Manipulations on GRMHD 
- */
 #include "grmhd.hpp"
 
 #include <memory>
@@ -62,6 +59,10 @@ using namespace parthenon;
 // Need to access these directly for reductions
 using namespace Kokkos;
 
+
+/**
+ * GRMHD package.  Global operations on General Relativistic Magnetohydrodynamic systems.
+ */
 namespace GRMHD
 {
 
@@ -100,11 +101,13 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
         params.Add("use_hlle", false);
     }
 
+    // These parameters are put in "parthenon/time" to match others, but ultimately we should
+    // override the parthenon timestep chooser
     // Minimum timestep, if something about the sound speed goes wonky. Probably won't save you :)
-    // know what we're doing modifying "parthenon/time" -- subclass 
-    double dt_min = pin->GetOrAddReal("parthenon/time", "dt_min", 1.e-4);
+    double dt_min = pin->GetOrAddReal("parthenon/time", "dt_min", 1.e-5);
     params.Add("dt_min", dt_min);
-    // Starting timestep, in case we're restarting
+    // Starting timestep: guaranteed step 1 timestep returned by EstimateTimestep,
+    // usually matters most for restarts
     double dt_start = pin->GetOrAddReal("parthenon/time", "dt", dt_min);
     params.Add("dt_start", dt_start);
     double max_dt_increase = pin->GetOrAddReal("parthenon/time", "max_dt_increase", 2.0);
@@ -184,7 +187,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     // generally inherit the size of the MeshBlock (for "Cell" fields) or some
     // closely-related size (for "Face" and "Edge" fields)
 
-    std::vector<int> s_vector({3});
+    std::vector<int> s_vector({NVEC});
     std::vector<MetadataFlag> flags_prim, flags_cons;
     auto imex_driver = pin->GetString("driver", "type") == "imex";
     auto explicit_step = (pin->GetOrAddString("driver", "step", "explicit") == "explicit");

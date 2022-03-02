@@ -51,7 +51,7 @@
 #include "debug.hpp"
 #include "fixup.hpp"
 #include "flux.hpp"
-#include "iharm_restart.hpp"
+#include "resize_restart.hpp"
 #include "source.hpp"
 
 TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)

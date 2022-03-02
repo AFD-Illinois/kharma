@@ -49,10 +49,10 @@ namespace Implicit
 std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin);
 
 /**
- * @brief take an implicit step.
+ * @brief take the per-zone implicit portion of a semi-implicit scheme
  * 
  * @param mdi the fluid state at the beginning of the step
- * @param md0 the initial fluid state
+ * @param md0 the initial fluid state for this substep
  * @param dudt the negative flux divergence plus explicit source terms
  * @param md1 the final fluid state
  * @param dt the timestep (current substep)

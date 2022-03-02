@@ -53,6 +53,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     auto pkg = std::make_shared<StateDescriptor>("B_FluxCT");
     Params &params = pkg->AllParams();
 
+    // OPTIONS
     // Diagnostic data
     int verbose = pin->GetOrAddInteger("debug", "verbose", 0);
     params.Add("verbose", verbose);
@@ -63,11 +64,14 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
 
     bool fix_flux = pin->GetOrAddBoolean("b_field", "fix_polar_flux", true);
     params.Add("fix_polar_flux", fix_flux);
-    // WARNING this disables constrained transport, so the field will quickly pick up a divergence
+    // WARNING this disables constrained transport, so the field will quickly pick up a divergence.
+    // To use another transport, just specify it instead of this one.
     bool disable_flux_ct = pin->GetOrAddBoolean("b_field", "disable_flux_ct", false);
     params.Add("disable_flux_ct", disable_flux_ct);
 
-    std::vector<int> s_vector({3});
+    // FIELDS
+
+    std::vector<int> s_vector({NVEC});
 
     MetadataFlag isPrimitive = packages.Get("GRMHD")->Param<MetadataFlag>("PrimitiveFlag");
     MetadataFlag isMHD = packages.Get("GRMHD")->Param<MetadataFlag>("MHDFlag");
@@ -364,31 +368,12 @@ double MaxDivB(MeshData<Real> *md)
     const IndexRange jl = IndexRange{jb.s + 1, jb.e};
     const IndexRange kl = (ndim > 2) ? IndexRange{kb.s + 1, kb.e} : kb;
 
-    const double norm = (ndim > 2) ? 0.25 : 0.5;
-
     double max_divb;
     Kokkos::Max<double> max_reducer(max_divb);
     pmb0->par_reduce("divB_max", block.s, block.e, kl.s, kl.e, jl.s, jl.e, il.s, il.e,
         KOKKOS_LAMBDA_MESH_3D_REDUCE {
             const auto& G = B_U.GetCoords(b);
-            // 2D divergence, averaging to corners
-            double term1 = B_U(b, V1, k, j, i)   + B_U(b, V1, k, j-1, i)
-                         - B_U(b, V1, k, j, i-1) - B_U(b, V1, k, j-1, i-1);
-            double term2 = B_U(b, V2, k, j, i)   + B_U(b, V2, k, j, i-1)
-                         - B_U(b, V2, k, j-1, i) - B_U(b, V2, k, j-1, i-1);
-            double term3 = 0.;
-            if (ndim > 2) {
-                // Average to corners in 3D, add 3rd flux
-                term1 +=  B_U(b, V1, k-1, j, i)   + B_U(b, V1, k-1, j-1, i)
-                        - B_U(b, V1, k-1, j, i-1) - B_U(b, V1, k-1, j-1, i-1);
-                term2 +=  B_U(b, V2, k-1, j, i)   + B_U(b, V2, k-1, j, i-1)
-                        - B_U(b, V2, k-1, j-1, i) - B_U(b, V2, k-1, j-1, i-1);
-                term3 =   B_U(b, V3, k, j, i)     + B_U(b, V3, k, j-1, i)
-                        + B_U(b, V3, k, j, i-1)   + B_U(b, V3, k, j-1, i-1)
-                        - B_U(b, V3, k-1, j, i)   - B_U(b, V3, k-1, j-1, i)
-                        - B_U(b, V3, k-1, j, i-1) - B_U(b, V3, k-1, j-1, i-1);
-            }
-            double local_divb = fabs(norm*term1/G.dx1v(i) + norm*term2/G.dx2v(j) + norm*term3/G.dx3v(k));
+            double local_divb = fabs(corner_div(G, B_U, b, k, j, i, ndim > 2));
             if (local_divb > local_result) local_result = local_divb;
         }
     , max_reducer);
@@ -417,11 +402,13 @@ TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
 
 void FillOutput(MeshBlock *pmb, ParameterInput *pin)
 {
+    // TODO define this on meshblock or pack vars
     auto rc = pmb->meshblock_data.Get().get();
     Flag(rc, "Calculating divB for output");
     const int ndim = pmb->pmy_mesh->ndim;
     if (ndim < 2) return;
 
+    // TODO can we call corner_div here?  Extra b=0 out front in addressing zones...
     GridVars B_U = rc->Get("cons.B").data;
     GridVars divB = rc->Get("divB").data;
 
@@ -458,7 +445,7 @@ void FillOutput(MeshBlock *pmb, ParameterInput *pin)
                         - B_U(V3, k-1, j, i)   - B_U(V3, k-1, j-1, i)
                         - B_U(V3, k-1, j, i-1) - B_U(V3, k-1, j-1, i-1);
             }
-            divB(k, j, i) = fabs(norm*term1/G.dx1v(i) + norm*term2/G.dx2v(j) + norm*term3/G.dx3v(k));
+            divB(k, j, i) = norm*term1/G.dx1v(i) + norm*term2/G.dx2v(j) + norm*term3/G.dx3v(k);
         }
     );
 

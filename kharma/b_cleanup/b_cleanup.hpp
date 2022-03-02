@@ -1,5 +1,5 @@
-/* 
- *  File: post_initialize.hpp
+/*
+ *  File: b_cleanup.hpp
  *  
  *  BSD 3-Clause License
  *  
@@ -33,29 +33,64 @@
  */
 #pragma once
 
-#include "decs.hpp"
+#include <memory>
 
-#include "b_flux_ct.hpp"
-#include "b_cd.hpp"
+#include <parthenon/parthenon.hpp>
 
-namespace KHARMA {
+#include "grmhd_functions.hpp"
+#include "types.hpp"
+
+using namespace parthenon;
 
 /**
- * Initialize the magnetic field (if it wasn't done in ProblemGenerator), and renormalize it as
- * is common practice for torus problems.
+ * This physics package implements an elliptic solver which minimizes the divergence of
+ * the magnetic field B, most useful for mesh resizing.
+ * Written to leave open the possibility of using this at every 
  * 
- * Since the latter operation is global, we perform this on the whole mesh
- * once initialization of all other problem data is completed.
+ * Mostly now, it is used when resizing input arrays
  */
-void SeedAndNormalizeB(ParameterInput *pin, Mesh *pmesh);
+namespace B_Cleanup {
+/**
+ * Declare fields, initialize (few) parameters
+ */
+std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t packages);
 
 /**
- * Functions run over the entire mesh after per-block initialization:
- * 1. Initialize magnetic field, which must be normalized globally to respect beta_min parameter
- * 2. Any ad-hoc additions to fluid state, e.g. add hotspots etc.
- * 3. Initial boundary sync to populate ghost zones
- * 4. On restarts, reset any per-run parameters & clean up B field divergence if resizing the grid
+ * Calculate the field divergence, and sum the absolute value as a reduction
+ * (for convergence comparisons).
  */
-void PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart, bool is_resize);
+TaskStatus CalcSumDivB(MeshData<Real> *du, Real& reduce_sum);
 
-}
+/**
+ * Set P = divB as initial guess
+ */
+TaskStatus InitP(MeshData<Real> *md);
+
+/**
+ * Take a Gauss-Seidel/SOR step.
+ */
+TaskStatus UpdateP(MeshData<Real> *md);
+
+/**
+ * Sum the remaining error, that is, the difference del^2 p - divB
+ */
+TaskStatus SumError(MeshData<Real> *du, Real& reduce_sum);
+TaskStatus SumP(MeshData<Real> *md, Real& reduce_sum);
+
+/**
+ * Apply B -= grad(P) to subtract divergence from the magnetic field
+ */
+TaskStatus ApplyP(MeshData<Real> *md);
+
+/**
+ * Single-call divergence cleanup.  Lots of MPI syncs, probably slow to use in task lists.
+ */
+void CleanupDivergence(std::shared_ptr<MeshData<Real>>& md);
+
+/**
+ * Add the iterative tasks required for B field cleanup to the tasklist
+ * Likely faster than above if we want to clean periodically
+ */
+//void AddBCleanupTasks(TaskList tl, TaskID t_dep);
+
+} // namespace B_Cleanup

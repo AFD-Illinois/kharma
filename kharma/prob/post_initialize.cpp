@@ -35,6 +35,7 @@
 #include "post_initialize.hpp"
 
 #include "b_field_tools.hpp"
+#include "b_cleanup.hpp"
 #include "blob.hpp"
 #include "boundaries.hpp"
 #include "debug.hpp"
@@ -42,6 +43,7 @@
 #include "floors.hpp"
 #include "flux.hpp"
 #include "gr_coordinates.hpp"
+#include "kharma.hpp"
 #include "types.hpp"
 
 #include "seed_B_ct.hpp"
@@ -210,7 +212,7 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, Mesh *pmesh)
     Flag("Added B Field");
 }
 
-void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart)
+void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart, bool is_resize)
 {
     Flag("Post-initialization started");
     if (!is_restart)
@@ -230,46 +232,24 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart)
 
     // TODO when (restart/non) do we need this for setting ctop?
     if (is_restart) {
-        // Recover conserved variables 
-        if (pin->GetOrAddBoolean("driver", "type", false)) {
-            for (auto &pmb : pmesh->block_list) {
-                auto rc = pmb->meshblock_data.Get();
-                // This inserts only in vicinity of some global r,th,phi
-                InsertBlob(rc.get(), pin);
-            }
+
+        // Parthenon restored our global data for us, but we don't always want that
+        KHARMA::ResetGlobals(pin, pmesh);
+
+        // If we resized the array, cleanup any field divergence we created
+        if (is_resize) {
+            // Cleanup operates on full single MeshData as there are MPI syncs
+            auto &mbase = pmesh->mesh_data.GetOrAdd("base", 0);
+            // Clean field divergence across the whole grid
+            B_Cleanup::CleanupDivergence(mbase);
+            // Sync to make sure periodic boundaries are set
+            Flag("Boundary sync");
+            SyncAllBounds(pmesh);
         }
 
-        auto& md = pmesh->mesh_data.GetOrAdd("base", 0);
-        auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
-        const ReconstructionType& recon = pmb0->packages.Get("GRMHD")->Param<ReconstructionType>("recon");
-        switch (recon) {
-        case ReconstructionType::donor_cell:
-            Flux::GetFlux<ReconstructionType::donor_cell, X1DIR>(md.get());
-            Flux::GetFlux<ReconstructionType::donor_cell, X2DIR>(md.get());
-            Flux::GetFlux<ReconstructionType::donor_cell, X3DIR>(md.get());
-            break;
-        case ReconstructionType::linear_mc:
-            Flux::GetFlux<ReconstructionType::linear_mc, X1DIR>(md.get());
-            Flux::GetFlux<ReconstructionType::linear_mc, X2DIR>(md.get());
-            Flux::GetFlux<ReconstructionType::linear_mc, X3DIR>(md.get());
-            break;
-        case ReconstructionType::linear_vl:
-            Flux::GetFlux<ReconstructionType::linear_vl, X1DIR>(md.get());
-            Flux::GetFlux<ReconstructionType::linear_vl, X2DIR>(md.get());
-            Flux::GetFlux<ReconstructionType::linear_vl, X3DIR>(md.get());
-            break;
-        case ReconstructionType::weno5:
-            Flux::GetFlux<ReconstructionType::weno5, X1DIR>(md.get());
-            Flux::GetFlux<ReconstructionType::weno5, X2DIR>(md.get());
-            Flux::GetFlux<ReconstructionType::weno5, X3DIR>(md.get());
-            break;
-        case ReconstructionType::ppm:
-        case ReconstructionType::mp5:
-        case ReconstructionType::weno5_lower_poles:
-            cerr << "Reconstruction type not supported!  Supported reconstructions:" << endl;
-            cerr << "donor_cell, linear_mc, linear_vl, weno5" << endl;
-            exit(-5);
-        }
+        // TODO anything special for imex driver here?
+        // TODO there was a reconstruction here for filling ctop, but
+        // it should definitely not be necessary as first dt is set with dt_first
     }
 
     Flag("Post-initialization finished");
