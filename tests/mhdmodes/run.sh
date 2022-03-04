@@ -47,17 +47,17 @@ conv_1d() {
 }
 
 # These 3 double as a demo of why WENO is great
-#conv_3d entropy mhdmodes/nmode=0
-#conv_3d entropy_mc "mhdmodes/nmode=0 GRMHD/reconstruction=linear_mc"
-#conv_3d entropy_vl "mhdmodes/nmode=0 GRMHD/reconstruction=linear_vl"
+conv_3d entropy mhdmodes/nmode=0
+conv_3d entropy_mc "mhdmodes/nmode=0 GRMHD/reconstruction=linear_mc"
+conv_3d entropy_vl "mhdmodes/nmode=0 GRMHD/reconstruction=linear_vl"
 # Other modes don't benefit, exercise WENO most since we use it
-#conv_3d slow mhdmodes/nmode=1
-#conv_3d alfven mhdmodes/nmode=2
-#conv_3d fast mhdmodes/nmode=3
+conv_3d slow mhdmodes/nmode=1
+conv_3d alfven mhdmodes/nmode=2
+conv_3d fast mhdmodes/nmode=3
 # And we've got to test classic/GRIM stepping
-#conv_3d slow_imex   "mhdmodes/nmode=1 driver/type=imex"
-#conv_3d alfven_imex "mhdmodes/nmode=2 driver/type=imex"
-#conv_3d fast_imex   "mhdmodes/nmode=3 driver/type=imex"
+conv_3d slow_imex   "mhdmodes/nmode=1 driver/type=imex"
+conv_3d alfven_imex "mhdmodes/nmode=2 driver/type=imex"
+conv_3d fast_imex   "mhdmodes/nmode=3 driver/type=imex"
 # And the implicit solver
 conv_3d slow_imex_im   "mhdmodes/nmode=1 driver/type=imex driver/step=implicit implicit/max_nonlinear_iter=3"
 conv_3d alfven_imex_im "mhdmodes/nmode=2 driver/type=imex driver/step=implicit implicit/max_nonlinear_iter=3"

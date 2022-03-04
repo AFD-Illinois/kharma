@@ -97,6 +97,8 @@ TaskStatus Step(MeshData<Real> *mdi, MeshData<Real> *md0, MeshData<Real> *dudt,
         closure = pars.Get<Closure>("closure");
     }
 
+    printf("Implicit advance dt: %g\n", dt);
+
     //MetadataFlag isNonideal = pmb0->packages.Get("EMHD")->Param<MetadataFlag>("NonidealFlag");
     MetadataFlag isPrimitive = pmb0->packages.Get("GRMHD")->Param<MetadataFlag>("PrimitiveFlag");
     // Initial state.  Also mapping template
@@ -239,16 +241,14 @@ TaskStatus Step(MeshData<Real> *mdi, MeshData<Real> *md0, MeshData<Real> *dudt,
                         PLOOP delta_prim(ip) = -residual(ip);
 
                         // if (am_rank0 && b == 0 && i == 8 && j == 8 && k == 8) {
-                        //     printf("Variable ordering: rho %d uu %d u1 %d B1 %d q %d dP %d",
+                        //     printf("Variable ordering: rho %d uu %d u1 %d B1 %d q %d dP %d\n",
                         //             m_p.RHO, m_p.UU, m_p.U1, m_p.B1, m_p.Q, m_p.DP);
-                        //     printf("\nSample Jacobian and residual:");
-                        //     for (int u=0; u < nvar; u++) {
-                        //         printf("\n");
-                        //         for (int v=0; v < nvar; v++) printf("%f ", jacobian(u, v));
-                        //     }
-                        //     printf("\nres:\n");
-                        //     for (int u=0; u < nvar; u++) printf("%f ", delta_prim(u));
-                        //     printf("\n");
+                        //     printf("P_solver: "); PLOOP printf("%g ", P_solver(ip)); printf("\n");
+                        //     printf("Pi: "); PLOOP printf("%g ", Pi(ip)); printf("\n");
+                        //     printf("Ui: "); PLOOP printf("%g ", Ui(ip)); printf("\n");
+                        //     printf("Ps: "); PLOOP printf("%g ", Ps(ip)); printf("\n");
+                        //     printf("Us: "); PLOOP printf("%g ", Us(ip)); printf("\n");
+                        //     printf("dUdt: "); PLOOP printf("%g ", dUdt(ip)); printf("\n");
                         // }
 
                         // Linear solve
@@ -280,7 +280,6 @@ TaskStatus Step(MeshData<Real> *mdi, MeshData<Real> *md0, MeshData<Real> *dudt,
                         norm_all(b, k , j, i) = 0;
                         PLOOP norm_all(b, k, j, i) += pow(residual(ip), 2);
                         norm_all(b, k, j, i) = sqrt(norm_all(b, k, j, i)); // TODO faster to scratch cache & copy?
-
                     }
                 );
                 member.team_barrier();

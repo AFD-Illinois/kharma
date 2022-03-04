@@ -259,7 +259,8 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
 
             // time-step by root-finding the residual
             // This applies the functions of both t_update and t_fill_derived
-            auto t_implicit_solve = tl.AddTask(t_none, Implicit::Step, mbase.get(), mc0.get(), mdudt.get(), mc1.get(), dt);
+            // This takes dt for the *substep*, not the whole thing -- should be 0.5*dt
+            auto t_implicit_solve = tl.AddTask(t_none, Implicit::Step, mbase.get(), mc0.get(), mdudt.get(), mc1.get(), dt / beta);
         }
     }
 
