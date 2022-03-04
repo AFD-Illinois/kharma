@@ -48,33 +48,105 @@ using namespace parthenon;
  * implemented in KHARMA as ImexDriver.
  */
 namespace EMHD {
+
+enum ClosureType{constant=0, soundspeed, torus};
+
+class Closure {
+    public:
+        ClosureType type;
+        Real tau;
+        Real conduction_alpha;
+        Real viscosity_alpha;
+
+};
+
 /**
- * Initialization: declare any fields this package will evolve, initialize any parameters
+ * Initialization: handle parameters, 
  */
 std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t packages);
 
 /**
- * TODO standard interface for implicit solver & what that needs, similar to UtoP/prim_to_flux definitions
+ * Add EGRMHD explicit source terms: anything which can be calculated once
+ * and added to the general dU/dt term along with e.g. GRMHD source, wind, etc
  */
+TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt);
 
 /**
- * Whatever form these take for viscous variables
+ * Set chi, nu, tau. Problem dependent
+ * 
+ * TODO Local & Global, when we're sure
  */
-KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const ScratchPad2D<Real>& P, const VarMap& m_p, const FourVectors D,
-                                         const int& k, const int& j, const int& i, const int dir,
-                                         ScratchPad2D<Real>& flux, const VarMap m_u, const Loci loc=Loci::center)
+template<typename Local>
+KOKKOS_INLINE_FUNCTION void set_parameters(const GRCoordinates& G, const Local& P, const VarMap& m_p,
+                                           const Closure& closure, const Real& gam,
+                                           Real& tau, Real& chi, Real& nu)
 {
-    // Calculate flux through a face from primitives
+    if (closure.type == ClosureType::constant) {
+        // Set tau, nu, chi to constants
+        tau = closure.tau;
+        chi = closure.conduction_alpha;
+        nu  = closure.viscosity_alpha;
+    } else if (closure.type == ClosureType::soundspeed) {
+        // Set tau=const, chi/nu prop. to sound speed squared
+        Real cs2 = (gam * (gam - 1.) * P(m_p.UU)) / (P(m_p.RHO) + (gam * P(m_p.UU)));
+
+        tau = closure.tau;
+        chi = closure.conduction_alpha * cs2 * tau;
+        nu  = closure.viscosity_alpha * cs2 * tau;
+    } else if (closure.type == ClosureType::torus) {
+        // Something complicated
+    } // else yell
 }
-KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates& G, const VariablePack<Real>& P, const VarMap& m_p,
-                                         const int& k, const int& j, const int& i,
-                                         const VariablePack<Real>& flux, const VarMap m_u, const Loci loc=Loci::center)
+template<typename Global>
+KOKKOS_INLINE_FUNCTION void set_parameters(const GRCoordinates& G, const Global& P, const VarMap& m_p,
+                                           const Closure& closure, const Real& gam,
+                                           const int& k, const int& j, const int& i,
+                                           Real& tau, Real& chi, Real& nu)
 {
-    // Calculate conserved variables from primitives
+    if (closure.type == ClosureType::constant) {
+        // Set tau, nu, chi to constants
+        tau = closure.tau;
+        chi = closure.conduction_alpha;
+        nu  = closure.viscosity_alpha;
+    } else if (closure.type == ClosureType::soundspeed) {
+        // Set tau=const, chi/nu prop. to sound speed squared
+        const Real cs2 = (gam * (gam - 1.) * P(m_p.UU, k, j, i)) /
+                            (P(m_p.RHO, k, j, i) + (gam * P(m_p.UU, k, j, i)));
+
+        tau = closure.tau;
+        chi = closure.conduction_alpha * cs2 * tau;
+        nu  = closure.viscosity_alpha * cs2 * tau;
+    } else if (closure.type == ClosureType::torus) {
+        // Something complicated
+    } // else yell
 }
 
-KOKKOS_INLINE_FUNCTION void gradient_calc(const GRCoordinates& G, const GridVector var, int loc, int i, int j, int k, double grad[NDIM]);
+/**
+ * Get a row of the EMHD stress-energy tensor with first index up, second index down.
+ * A factor of sqrt(4 pi) is absorbed into the definition of b.
+ * Note this must be passed the full q, dP, not the primitive prims.q, usually denote qtilde
+ *
+ * Entirely local!
+ */
+KOKKOS_INLINE_FUNCTION void calc_tensor(const Real& rho, const Real& u, const Real& pgas,
+                                        const Real& q, const Real& dP,
+                                        const FourVectors& D, const int& dir,
+                                        Real emhd[GR_DIM])
+{
+    const Real bsq = max(dot(D.bcon, D.bcov), SMALL);
+    const Real eta = pgas + rho + u + bsq;
+    const Real ptot = pgas + 0.5 * bsq;
 
-KOKKOS_INLINE_FUNCTION void gradient_calc_vec(const GRCoordinates& G, const GridVector var, int loc, int i, int j, int k, double grad_vec[NDIM][NDIM]);
-
+    DLOOP1 {
+        emhd[mu] = eta * D.ucon[dir] * D.ucov[mu]
+                  + ptot * (dir == mu)
+                  - D.bcon[dir] * D.bcov[mu]
+                  + (q / sqrt(bsq)) * ((D.ucon[dir] * D.bcov[mu]) +
+                                       (D.bcon[dir] * D.ucov[mu]))
+                  + (-dP) * ((D.bcon[dir] * D.bcov[mu] / bsq)
+                                  - (1./3) * ((dir == mu) + D.ucon[dir] * D.ucov[mu]));
+    }
 }
+
+
+} // namespace EMHD

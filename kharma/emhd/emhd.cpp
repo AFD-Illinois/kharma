@@ -34,6 +34,8 @@
 #include "emhd.hpp"
 
 #include "decs.hpp"
+#include "emhd_sources.hpp"
+#include "emhd_utils.hpp"
 #include "grmhd.hpp"
 #include "kharma.hpp"
 
@@ -57,18 +59,48 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     int extra_checks = pin->GetOrAddInteger("debug", "extra_checks", 0);
     params.Add("extra_checks", extra_checks);
 
-    // Floors & fluid gamma
-    // Any parameters, like above
+    // EMHD Problem/Closure parameters
+    // GRIM uses a callback to a problem-specific implementation which sets these
+    // We share implementations in one function, controlled by these parameters
+    // These are always necessary for performing EGRMHD.
+    std::string closure_type = pin->GetString("emhd", "closure_type");
+    Real tau = pin->GetOrAddReal("emhd", "tau", 1.0);
+    Real conduction_alpha = pin->GetOrAddReal("emhd", "conduction_alpha", 1.0);
+    Real viscosity_alpha = pin->GetOrAddReal("emhd", "viscosity_alpha", 1.0);
+
+    Closure closure;
+    if (closure_type == "constant") { 
+        closure.type = ClosureType::constant;
+    } else if (closure_type == "sound_speed") {
+        closure.type = ClosureType::soundspeed;
+    } else {
+        closure.type = ClosureType::torus;
+    }
+    closure.tau = tau;
+    closure.conduction_alpha = conduction_alpha;
+    closure.viscosity_alpha = viscosity_alpha;
+    params.Add("closure", closure);
+
+
+    // Slope reconstruction on faces. Always linear: default to MC unless we're using VL everywhere
+    if (packages.Get("GRMHD")->Param<ReconstructionType>("recon") == ReconstructionType::linear_vl) {
+        params.Add("slope_recon", ReconstructionType::linear_mc);
+    } else {
+        params.Add("slope_recon", ReconstructionType::linear_mc);
+    }
+
+    // Floors specific to EMHD calculations? Currently only need to enforce bsq>0 in one denominator
 
     MetadataFlag isPrimitive = packages.Get("GRMHD")->Param<MetadataFlag>("PrimitiveFlag");
     MetadataFlag isNonideal = Metadata::AllocateNewFlag("Nonideal");
     params.Add("NonidealFlag", isNonideal);
 
-    // General options for primitive and conserved scalar variables in KHARMA
-    Metadata m_con  = Metadata({Metadata::Real, Metadata::Cell, Metadata::Independent, Metadata::FillGhost,
-                 Metadata::Restart, Metadata::Conserved, Metadata::WithFluxes, isNonideal});
-    Metadata m_prim = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived,
-                  isPrimitive, isNonideal});
+    // General options for primitive and conserved scalar variables in ImEx driver
+    // EMHD is supported only with imex driver and 
+    Metadata m_con  = Metadata({Metadata::Real, Metadata::Cell, Metadata::Independent,
+                                Metadata::Conserved, Metadata::WithFluxes, isNonideal});
+    Metadata m_prim = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::FillGhost,
+                                Metadata::Restart, isPrimitive, isNonideal});
 
     // Heat conduction
     pkg->AddField("cons.q", m_con);
@@ -76,13 +108,109 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     // Pressure anisotropy
     pkg->AddField("cons.dP", m_con);
     pkg->AddField("prims.dP", m_prim);
-    // Eventually also need (most or all of) Theta, bsq, nu_emhd, chi_emhd, tau
 
     // If we want to register an EMHD-specific UtoP for some reason?
     // Likely we'll only use the post-step summary hook
     //pkg->FillDerivedBlock = EMHD::FillDerived;
     //pkg->PostFillDerivedBlock = EMHD::PostFillDerived;
     return pkg;
+}
+
+TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
+{
+
+    Flag(mdudt, "Adding EMHD Explicit Sources");
+    // Pointers
+    auto pmesh = mdudt->GetMeshPointer();
+    auto pmb0 = mdudt->GetBlockData(0)->GetBlockPointer();
+    // Options
+    const auto& gpars = pmb0->packages.Get("GRMHD")->AllParams();
+    const Real gam = gpars.Get<Real>("gamma");
+    const MetadataFlag isPrimitive = gpars.Get<MetadataFlag>("PrimitiveFlag");
+    const int ndim = pmesh->ndim;
+
+    const auto& pars = pmb0->packages.Get("EMHD")->AllParams();
+    const Closure& closure = pars.Get<Closure>("closure");
+
+    // Pack variables
+    PackIndexMap prims_map, cons_map;
+    auto P = md->PackVariables(std::vector<MetadataFlag>{isPrimitive}, prims_map);
+    auto U = md->PackVariables(std::vector<MetadataFlag>{Metadata::Conserved}, cons_map);
+    auto dUdt = mdudt->PackVariables(std::vector<MetadataFlag>{Metadata::Conserved});
+    const VarMap m_p(prims_map, false), m_u(cons_map, true);
+
+    // Get sizes, declare temporary ucov, Theta for gradients
+    const int n1 = pmb0->cellbounds.ncellsi(IndexDomain::entire);
+    const int n2 = pmb0->cellbounds.ncellsj(IndexDomain::entire);
+    const int n3 = pmb0->cellbounds.ncellsk(IndexDomain::entire);
+    const int nb = dUdt.GetDim(5);
+    GridVector ucov_s("ucov", nb, GR_DIM, n3, n2, n1);
+    GridScalar theta_s("Theta", nb, n3, n2, n1);
+
+    // Get ranges
+    const IndexRange ib = mdudt->GetBoundsI(IndexDomain::interior);
+    const IndexRange jb = mdudt->GetBoundsJ(IndexDomain::interior);
+    const IndexRange kb = mdudt->GetBoundsK(IndexDomain::interior);
+    const IndexRange block = IndexRange{0, nb - 1};
+    // 1-zone halo in nontrivial dimensions
+    const IndexRange il = IndexRange{ib.s-1, ib.e+1};
+    const IndexRange jl = (ndim > 1) ? IndexRange{jb.s-1, jb.e+1} : jb;
+    const IndexRange kl = (ndim > 2) ? IndexRange{kb.s-1, kb.e+1} : kb;
+
+    // Calculate & apply source terms
+    pmb0->par_for("emhd_sources_pre", block.s, block.e, kl.s, kl.e, jl.s, jl.e, il.s, il.e,
+        KOKKOS_LAMBDA_MESH_3D {
+            const auto& G = dUdt.GetCoords(b);
+            const GReal gdet = G.gdet(Loci::center, j, i);
+            // ucon
+            Real ucon[GR_DIM], ucov[GR_DIM];
+            GRMHD::calc_ucon(G, P(b), m_p, k, j, i, Loci::center, ucon);
+            G.lower(ucon, ucov, k, j, i, Loci::center);
+            DLOOP1 ucov_s(b, mu, k, j, i) = ucov[mu];
+            // theta
+            theta_s(b, k, j, i) = max((gam - 1) * P(b)(m_p.UU, k, j, i) / P(b)(m_p.RHO, k, j, i), SMALL);
+        }
+    );
+
+    // Calculate & apply source terms
+    pmb0->par_for("emhd_sources", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+        KOKKOS_LAMBDA_MESH_3D {
+            const auto& G = dUdt.GetCoords(b);
+
+            // Get the EGRMHD parameters
+            Real tau, chi, nu_e;
+            EMHD::set_parameters(G, P(b), m_p, closure, gam, k, j, i, tau, chi, nu_e);
+
+            // and the 4-vectors
+            FourVectors D;
+            GRMHD::calc_4vecs(G, P(b), m_p, k, j, i, Loci::center, D);
+            double bsq = max(dot(D.bcon, D.bcov), SMALL);
+
+            // Compute gradient of ucov and Theta
+            Real grad_ucov[GR_DIM][GR_DIM], grad_Theta[GR_DIM];
+            EMHD::gradient_calc(G, P(b), ucov_s, theta_s, b, k, j, i, (ndim > 2), grad_ucov, grad_Theta);
+
+            // Compute div of ucon (all terms but the time-derivative ones are nonzero)
+            Real div_ucon = 0;
+            DLOOP2 div_ucon += G.gcon(Loci::center, mu, nu, j, i) * grad_ucov[mu][nu];
+
+            // Compute+add explicit source terms (conduction and viscosity)
+            const Real& rho = P(b)(m_p.RHO, k, j, i);
+            Real q0 = 0;
+            DLOOP1 q0 -= rho * chi * (D.bcon[mu] / sqrt(bsq)) * grad_Theta[mu];
+            DLOOP2 q0 -= rho * chi * (D.bcon[mu] / sqrt(bsq)) * theta_s(b, k, j, i) * D.ucon[nu] * grad_ucov[nu][mu];
+
+            Real deltaP0 = -rho * nu_e * div_ucon;
+            DLOOP2  deltaP0 += 3. * rho * nu_e * (D.bcon[mu] * D.bcon[nu] / bsq) * grad_ucov[mu][nu];
+
+            // TODO edit this when higher order terms are considered
+            dUdt(b, m_u.Q, k, j, i)  += G.gdet(Loci::center, j, i) * q0 / tau;
+            dUdt(b, m_u.DP, k, j, i) += G.gdet(Loci::center, j, i) * deltaP0 / tau;
+        }
+    );
+
+    Flag(mdudt, "Added");
+    return TaskStatus::complete;
 }
 
 } // namespace EMHD

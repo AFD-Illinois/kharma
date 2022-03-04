@@ -1,5 +1,5 @@
 /* 
- *  File: noh.hpp
+ *  File: anisotropic_conduction.hpp
  *  
  *  BSD 3-Clause License
  *  
@@ -33,72 +33,59 @@
  */
 #pragma once
 
+#include <complex>
+
 #include "decs.hpp"
 
 using namespace std;
 using namespace parthenon;
 
 /**
- * Noh shock tube test.
+ * Anisotropic heat conduction problem, see Chandra+ 2017
  */
-TaskStatus InitializeNoh(MeshBlockData<Real> *rc, ParameterInput *pin)
+TaskStatus InitializeAnisotropicConduction(MeshBlockData<Real> *rc, ParameterInput *pin)
 {
-    Flag(rc, "Initializing 1D (Noh) Shock test");
+    Flag(rc, "Initializing EMHD Modes problem");
     auto pmb = rc->GetBlockPointer();
     GridScalar rho = rc->Get("prims.rho").data;
     GridScalar u = rc->Get("prims.u").data;
     GridVector uvec = rc->Get("prims.uvec").data;
-    GridScalar ktot = rc->Get("prims.Ktot").data;
-    GridScalar kel_constant = rc->Get("prims.Kel_Constant").data;
-
-    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
-    const Real game = pmb->packages.Get("Electrons")->Param<Real>("gamma_e");
-    const Real fel0 = pmb->packages.Get("Electrons")->Param<Real>("fel_0");
-    const Real fel_constant = pmb->packages.Get("Electrons")->Param<Real>("fel_constant");
-    
-    const Real mach = pin->GetOrAddReal("noh", "mach", 49);
-    const Real rhoL = pin->GetOrAddReal("noh", "rhoL", 1.0);
-    const Real rhoR = pin->GetOrAddReal("noh", "rhoR", 1.0);
-    const Real PL = pin->GetOrAddReal("noh", "PL", 0.1);
-    const Real PR = pin->GetOrAddReal("noh", "PR", 0.1);
-    bool set_tlim = pin->GetOrAddBoolean("noh", "set_tlim", false);
+    // It is well and good this problem should cry if B/EMHD are disabled.
+    GridVector B_P = rc->Get("prims.B").data;
+    GridVector q = rc->Get("prims.q").data;
+    GridVector dP = rc->Get("prims.dP").data;
 
     const auto& G = pmb->coords;
 
-    IndexDomain domain = IndexDomain::entire;
-    IndexRange ib = pmb->cellbounds.GetBoundsI(domain);
-    IndexRange jb = pmb->cellbounds.GetBoundsJ(domain);
-    IndexRange kb = pmb->cellbounds.GetBoundsK(domain);
+    const Real A = pin->GetOrAddReal("anisotropic_conduction", "A", 0.2);
+    const Real Rsq = pin->GetOrAddReal("anisotropic_conduction", "Rsq", 0.005);
+    const Real B0 = pin->GetOrAddReal("anisotropic_conduction", "B0", 1e-4);
+    const Real k0 = pin->GetOrAddReal("anisotropic_conduction", "k", 4.);
 
-    const Real x1min = pin->GetReal("parthenon/mesh", "x1min");
-    const Real x1max = pin->GetReal("parthenon/mesh", "x1max");
-    const Real center = (x1min + x1max) / 2.;
+    const Real R = sqrt(Rsq);
 
-    // TODO relativistic sound speed
-    Real cs2 = (gam * (gam - 1) * PL) / rhoL;
-    Real v1 = mach * sqrt(cs2);
-
-    if (set_tlim) {
-        pin->SetReal("parthenon/time", "tlim", 0.6*(x1max - x1min)/v1);
-    }
-
-    double gamma = 1. / sqrt(1. - v1 * v1); // Since we are in flat space
-
-
-    pmb->par_for("noh_init", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+    IndexRange ib = pmb->cellbounds.GetBoundsI(IndexDomain::entire);
+    IndexRange jb = pmb->cellbounds.GetBoundsJ(IndexDomain::entire);
+    IndexRange kb = pmb->cellbounds.GetBoundsK(IndexDomain::entire);
+    pmb->par_for("emhdmodes_init", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_3D {
             Real X[GR_DIM];
             G.coord_embed(k, j, i, Loci::center, X);
+            GReal r = sqrt(pow((X[1] - 0.5), 2) + pow((X[2] - 0.5), 2));
 
-            const bool lhs = X[1] < center;
-            rho(k, j, i) = (lhs) ? rhoL : rhoR;
-            u(k, j, i) = ((lhs) ? PL : PR)/(gam - 1.);
-            uvec(0, k, j, i) = ((lhs) ? v1 : -v1) * gamma;
-            uvec(1, k, j, i) = 0.0;
-            uvec(2, k, j, i) = 0.0;
+            // Initialize primitives
+            rho(k, j, i) = 1 - (A * exp(-pow(r, 2) / pow(R, 2)));
+            u(k, j, i) = 1.;
+            uvec(0, k, j, i) = 0.;
+            uvec(1, k, j, i) = 0.;
+            uvec(2, k, j, i) = 0.;
+            B_P(0, k, j, i) = B0;
+            B_P(1, k, j, i) = B0 * sin(2*M_PI*k0*X[1]);
+            B_P(2, k, j, i) = 0;
+            q(k, j, i) = 0.;
+            dP(k, j, i) = 0.;
         }
     );
 
-    Flag(rc, "Initialized 1D (Noh) Shock test");
     return TaskStatus::complete;
 }

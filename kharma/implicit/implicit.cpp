@@ -91,6 +91,11 @@ TaskStatus Step(MeshData<Real> *mdi, MeshData<Real> *md0, MeshData<Real> *dudt,
     const Real delta = implicit_par.Get<Real>("jacobian_delta");
     const Real gam = pmb0->packages.Get("GRMHD")->Param<Real>("gamma");
 
+    Closure closure;
+    if (pmb0->packages.AllPackages().count("EMHD")) {
+        const auto& pars = pmb0->packages.Get("EMHD")->AllParams();
+        closure = pars.Get<Closure>("closure");
+    }
 
     //MetadataFlag isNonideal = pmb0->packages.Get("EMHD")->Param<MetadataFlag>("NonidealFlag");
     MetadataFlag isPrimitive = pmb0->packages.Get("GRMHD")->Param<MetadataFlag>("PrimitiveFlag");
@@ -189,6 +194,7 @@ TaskStatus Step(MeshData<Real> *mdi, MeshData<Real> *md0, MeshData<Real> *dudt,
                         Ps_s(ip, i) = Ps_all(b)(ip, k, j, i);
                         Us_s(ip, i) = Us_all(b)(ip, k, j, i);
                         dUdt_s(ip, i) = dUdt_all(b)(ip, k, j, i);
+                        dUi_s(ip, i) = 0.; // Only a few vars are populated
                         // Finally, P_solver should actually be initialized to Ps
                         if (iter == 0) {
                             P_solver_s(ip, i) = Ps_all(b)(ip, k, j, i);
@@ -197,6 +203,7 @@ TaskStatus Step(MeshData<Real> *mdi, MeshData<Real> *md0, MeshData<Real> *dudt,
                         }
                     }
                 );
+                member.team_barrier();
 
                 parthenon::par_for_inner(member, ib.s, ib.e,
                     [&](const int& i) {
@@ -218,19 +225,22 @@ TaskStatus Step(MeshData<Real> *mdi, MeshData<Real> *md0, MeshData<Real> *dudt,
                         // Implicit sources at starting state
                         auto dUi = Kokkos::subview(dUi_s, Kokkos::ALL(), i);
                         if (m_p.Q >= 0) {
-                            //emhd_implicit_sources(G, Si, dUi);
-                        } else {
-                            PLOOP dUi(ip) = 0;
+                            Real dUq, dUdP;
+                            EMHD::implicit_sources(G, Pi, m_p, gam, j, i, closure, dUq, dUdP);
+                            dUi(m_u.Q) = dUq;
+                            dUi(m_u.DP) = dUdP;
                         }
 
                         // Jacobian calculation
                         // Requires calculating the residual anyway, so we grab it here
-                        calc_jacobian(G, P_solver, Ui, Us, dUdt, dUi, tmp1, tmp2, tmp3,
-                                      m_p, m_u, nvar, j, i, delta, gam, dt, jacobian, residual);
+                        calc_jacobian(G, P_solver, Pi, Ui, Ps, dUdt, dUi, tmp1, tmp2, tmp3,
+                                      m_p, m_u, closure, nvar, j, i, delta, gam, dt, jacobian, residual);
                         // Solve against the negative residual
                         PLOOP delta_prim(ip) = -residual(ip);
 
                         // if (am_rank0 && b == 0 && i == 8 && j == 8 && k == 8) {
+                        //     printf("Variable ordering: rho %d uu %d u1 %d B1 %d q %d dP %d",
+                        //             m_p.RHO, m_p.UU, m_p.U1, m_p.B1, m_p.Q, m_p.DP);
                         //     printf("\nSample Jacobian and residual:");
                         //     for (int u=0; u < nvar; u++) {
                         //         printf("\n");
@@ -244,8 +254,8 @@ TaskStatus Step(MeshData<Real> *mdi, MeshData<Real> *md0, MeshData<Real> *dudt,
                         // Linear solve
                         // This code lightly adapted from Kokkos batched examples
                         // Replaces our inverse residual with the actual desired delta_prim
-                        KokkosBatched::SerialLU<Algo::LU::Unblocked>::invoke(jacobian, tiny);
-                        KokkosBatched::SerialTrsv<Uplo::Lower,Trans::NoTranspose,Diag::NonUnit,Algo::Trsv::Unblocked>
+                        KokkosBatched::SerialLU<Algo::LU::Blocked>::invoke(jacobian, tiny);
+                        KokkosBatched::SerialTrsv<Uplo::Lower,Trans::NoTranspose,Diag::NonUnit,Algo::Trsv::Blocked>
                         ::invoke(alpha, jacobian, delta_prim);
 
                         // if (am_rank0 && b == 0 && i == 8 && j == 8 && k == 8) {
@@ -262,8 +272,8 @@ TaskStatus Step(MeshData<Real> *mdi, MeshData<Real> *md0, MeshData<Real> *dudt,
                         // Update the guess.  For now lambda == 1, choose on the fly?
                         PLOOP P_solver(ip) += lambda * delta_prim(ip);
 
-                        calc_residual(G, P_solver, Ui, Us, dUdt, dUi, tmp3,
-                                      m_p, m_u, nvar, j, i, gam, dt, residual);
+                        calc_residual(G, P_solver, Pi, Ui, Ps, dUdt, dUi, tmp3,
+                                      m_p, m_u, closure, nvar, j, i, gam, dt, residual);
 
                         // Store for maximum/output
                         // I would be tempted to store the whole residual, but it's of variable size
@@ -273,6 +283,7 @@ TaskStatus Step(MeshData<Real> *mdi, MeshData<Real> *md0, MeshData<Real> *dudt,
 
                     }
                 );
+                member.team_barrier();
 
                 // Copy out P_solver to the existing array
                 // This combo still works if P_solver is aliased to one of the other arrays!

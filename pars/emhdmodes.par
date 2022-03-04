@@ -1,43 +1,44 @@
-# GRMHD Modes problem
-# Try to propagate several analytically-amenable linear modes of the MHD equations
+# EGRMHD Modes problem
+# Try to propagate an analytically-amenable
+# linear mode of the equations of Extended MHD (Chandra+2015)
 
 <parthenon/job>
-problem_id = mhdmodes
+problem_id = emhdmodes
 
 <parthenon/mesh>
 refinement = none
 numlevel = 1
 
-nx1 = 64
+nx1 = 128
 x1min = 0.0
 x1max = 1.0
 ix1_bc = periodic
 ox1_bc = periodic
 
-nx2 = 64
+nx2 = 128
 x2min = 0.0
 x2max = 1.0
 ix2_bc = periodic
 ox2_bc = periodic
 
-nx3 = 64
+nx3 = 1
 x3min = 0.0
 x3max = 1.0
 ix3_bc = periodic
 ox3_bc = periodic
 
 <parthenon/meshblock>
-nx1 = 32
-nx2 = 32
-nx3 = 32
+nx1 = 64
+nx2 = 64
+nx3 = 1
 
 <coordinates>
 base = cartesian_minkowski
 transform = null
 
 <parthenon/time>
-# tlim will be overridden depending on the problem
-tlim = 5.0
+tlim = 2.0
+# "RK2" is the only option for implicit solver
 integrator = rk2
 dt_min = 0.0001
 
@@ -46,32 +47,37 @@ cfl = 0.9
 gamma = 1.333333
 reconstruction = weno5
 
-<mhdmodes>
-nmode = 1
-dir = 0
+<emhdmodes>
+amp = 1e-4
 
 <floors>
 disable_floors = true
 
 <debug>
-verbose = 1
-flag_verbose = 1
-extra_checks = 1
+verbose = 0
+
+# This block must be present and values filled
+# in all EGRMHD simulations
+<emhd>
+on = true
+closure_type = soundspeed
+tau = 1.0
+conduction_alpha = 1.0
+viscosity_alpha = 1.0
 
 <driver>
 type = imex
 step = implicit
 
-<perf>
-pack_comms = false
+<implicit>
+max_nonlinear_iter = 3
 
 <parthenon/output0>
 file_type = hdf5
 # This is so as to output only the final state
-dt = 1.0
+dt = 100.0
 single_precision_output = true
-variables = prims.rho, prims.u, prims.uvec, prims.B
-ghost_zones = true
+variables = prims.rho, prims.u, prims.uvec, prims.B, prims.q, prims.dP
 
 <parthenon/output1>
 file_type = hst

@@ -214,7 +214,14 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
 
     // Set the default driver way up here so packages know how to flag
     // prims vs cons (imex stepper syncs prims, but packages have to mark them that way)
-    auto driver_type = pin->GetOrAddString("driver", "type", "harm");
+    std::string driver_type;
+    if (do_emhd) {
+        // Default to implicit step for EMHD
+        driver_type = pin->GetOrAddString("driver", "type", "imex");
+        pin->GetOrAddString("driver", "step", "implicit");
+    } else {
+        driver_type = pin->GetOrAddString("driver", "type", "harm");
+    }
 
     // Global variables "package."  Mutable global state Parthenon doesn't keep for us.
     // Always enable.

@@ -44,7 +44,9 @@
 #include "types.hpp"
 
 // Problem initialization headers
+#include "anisotropic_conduction.hpp"
 #include "bondi.hpp"
+#include "emhdmodes.hpp"
 #include "explosion.hpp"
 #include "fm_torus.hpp"
 #include "resize_restart.hpp"
@@ -76,6 +78,7 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
     auto prob = pin->GetString("parthenon/job", "problem_id"); // Required parameter
     if (MPIRank0()) cout << "Initializing problem: " << prob << endl;
     TaskStatus status = TaskStatus::fail;
+    // GRMHD
     if (prob == "mhdmodes") {
         status = InitializeMHDModes(rc.get(), pin);
     } else if (prob == "orszag_tang") {
@@ -88,15 +91,24 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
         status = InitializeShockTube(rc.get(), pin);
     } else if (prob == "bondi") {
         status = InitializeBondi(rc.get(), pin);
-    } else if (prob == "torus") {
-        status = InitializeFMTorus(rc.get(), pin);
     } else if (prob == "bz_monopole") {
         status = InitializeBZMonopole(rc.get(), pin);
+    // Electrons
+    } else if (prob == "noh") {
+        status = InitializeNoh(rc.get(), pin);
+    // Extended GRMHD
+    } else if (prob == "emhdmodes") {
+        status = InitializeEMHDModes(rc.get(), pin);
+    } else if (prob == "anisotropic_conduction") {
+        status = InitializeAnisotropicConduction(rc.get(), pin);
+    // Everything
+    } else if (prob == "torus") {
+        status = InitializeFMTorus(rc.get(), pin);
     } else if (prob == "resize_restart") {
         status = ReadIharmRestart(rc.get(), pin);
-    } else if (prob == "noh"){
-        status = InitializeNoh(rc.get(), pin);
     }
+
+    // If we didn't initialize a problem, yell
     if (status != TaskStatus::complete) {
         throw std::invalid_argument("Invalid or incomplete problem: "+prob);
     }
@@ -109,7 +121,7 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
         PerturbU(rc.get(), pin);
     }
 
-    // Initialize electron entropies if enabled
+    // Initialize electron entropies to defaults if enabled
     if (pmb->packages.AllPackages().count("Electrons")) {
         Electrons::InitElectrons(rc.get(), pin);
     }

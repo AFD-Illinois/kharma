@@ -62,6 +62,15 @@ extra_checks = 1
 type = imex
 step = implicit
 
+# This block must be present and values filled
+# in all EGRMHD simulations
+<emhd>
+on = true
+closure_type = soundspeed
+tau = 1.0
+conduction_alpha = 1.0
+viscosity_alpha = 1.0
+
 <perf>
 pack_comms = false
 

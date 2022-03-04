@@ -77,6 +77,7 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
     bool use_b_flux_ct = pkgs.count("B_FluxCT");
     bool use_electrons = pkgs.count("Electrons");
     bool use_wind = pkgs.count("Wind");
+    bool use_emhd = pkgs.count("EMHD");
 
     // Allocate the fluid states ("containers") we need for each block
     for (int i = 0; i < blocks.size(); i++) {
@@ -183,6 +184,10 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         auto t_wind_source = t_b_cd_source;
         if (use_wind) {
             t_wind_source = tl.AddTask(t_b_cd_source, Wind::AddSource, mdudt.get());
+        }
+        auto t_emhd_source = t_wind_source;
+        if (use_emhd) {
+            t_emhd_source = tl.AddTask(t_wind_source, EMHD::AddSource, mc0.get(), mdudt.get());
         }
         // Done with source terms
         auto t_sources = t_wind_source;

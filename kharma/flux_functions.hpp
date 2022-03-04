@@ -35,6 +35,7 @@
 
 #include "decs.hpp"
 
+#include "emhd.hpp"
 #include "gr_coordinates.hpp"
 #include "grmhd_functions.hpp"
 #include "kharma_utils.hpp"
@@ -55,22 +56,40 @@ namespace Flux
  */
 template<typename Local>
 KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const Local& P, const VarMap& m_p, const FourVectors D,
-                                         const Real& gam, const int& j, const int& i, const int dir,
+                                         const EMHD::Closure& closure, const Real& gam, const int& j, const int& i, const int dir,
                                          const Local& flux, const VarMap& m_u, const Loci loc=Loci::center)
 {
     Real gdet = G.gdet(loc, j, i);
     // Particle number flux
     flux(m_u.RHO) = P(m_p.RHO) * D.ucon[dir] * gdet;
 
-    if (m_p.B1 >= 0) {
-        // MHD stress-energy tensor w/ first index up, second index down
-        Real mhd[GR_DIM];
-        GRMHD::calc_tensor(P(m_p.RHO), P(m_p.UU), (gam - 1) * P(m_p.UU), D, dir, mhd);
-        flux(m_u.UU) = mhd[0] * gdet + flux(m_u.RHO);
-        flux(m_u.U1) = mhd[1] * gdet;
-        flux(m_u.U2) = mhd[2] * gdet;
-        flux(m_u.U3) = mhd[3] * gdet;
+    Real T[GR_DIM];
+    if (m_p.Q >= 0) {
+        // EGRMHD stress-energy tensor w/ first index up, second index down
+        // Convert prim Qtilde/dPtilde to real q/dP
+        // Real tau, chi, nu;
+        // EMHD::set_parameters(G, P, m_p, closure, gam, tau, chi, nu);
+        //const Real Theta = (gam - 1) * P(m_p.UU) / P(m_p.RHO);
+        //const Real q = (closure.higher_order) ? P(m_p.RHO) * sqrt(chi * P(m_p.RHO) * pow(Theta, 2) / tau);
+        //const Real dP = sqrt(nu * P(m_p.RHO) * Theta / tau);
+        const Real q = P(m_p.Q);
+        const Real dP = P(m_p.DP);
+        // Then calculate the tensor
+        EMHD::calc_tensor(P(m_p.RHO), P(m_p.UU), (gam - 1) * P(m_p.UU), q, dP, D, dir, T);
+    } else if (m_p.B1 >= 0) {
+        // GRMHD stress-energy tensor w/ first index up, second index down
+        GRMHD::calc_tensor(P(m_p.RHO), P(m_p.UU), (gam - 1) * P(m_p.UU), D, dir, T);
+    } else {
+        // GRHD stress-energy tensor w/ first index up, second index down
+        GRHD::calc_tensor(P(m_p.RHO), P(m_p.UU), (gam - 1) * P(m_p.UU), D, dir, T);
+    }
+    flux(m_u.UU) = T[0] * gdet + flux(m_u.RHO);
+    flux(m_u.U1) = T[1] * gdet;
+    flux(m_u.U2) = T[2] * gdet;
+    flux(m_u.U3) = T[3] * gdet;
 
+    // Magnetic field
+    if (m_p.B1 >= 0) {
         // Magnetic field
         if (dir == 0) {
             VLOOP flux(m_u.B1 + v) = P(m_p.B1 + v) * gdet;
@@ -79,29 +98,27 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const Local& P,
             // but for us this is in the source term
             VLOOP flux(m_u.B1 + v) = (D.bcon[v+1] * D.ucon[dir] - D.bcon[dir] * D.ucon[v+1]) * gdet;
         }
-    } else {
-        // HD stress-energy tensor w/ first index up, second index down
-        Real hd[GR_DIM];
-        GRHD::calc_tensor(P(m_p.RHO), P(m_p.UU), (gam - 1) * P(m_p.UU), D, dir, hd);
-        flux(m_u.UU) = hd[0] * gdet + flux(m_u.RHO);
-        flux(m_u.U1) = hd[1] * gdet;
-        flux(m_u.U2) = hd[2] * gdet;
-        flux(m_u.U3) = hd[3] * gdet;
-    }
-    if (m_p.PSI >= 0) {
         // Extra scalar psi for constraint damping, see B_CD
-        if (dir == 0) {
-            flux(m_u.PSI) = P(m_p.PSI) * gdet;
-        } else {
-            // Psi field update as in Mosta et al (IllinoisGRMHD), alternate explanation Jesse et al (2020)
-            //Real alpha = 1. / sqrt(-G.gcon(Loci::center, j, i, 0, 0));
-            //Real beta_dir = G.gcon(Loci::center, j, i, 0, dir) * alpha * alpha;
-            flux(m_u.PSI) = (D.bcon[dir] - G.gcon(Loci::center, j, i, 0, dir) * P(m_p.PSI)) * gdet;
+        if (m_p.PSI >= 0) {
+            if (dir == 0) {
+                flux(m_u.PSI) = P(m_p.PSI) * gdet;
+            } else {
+                // Psi field update as in Mosta et al (IllinoisGRMHD), alternate explanation Jesse et al (2020)
+                //Real alpha = 1. / sqrt(-G.gcon(Loci::center, j, i, 0, 0));
+                //Real beta_dir = G.gcon(Loci::center, j, i, 0, dir) * alpha * alpha;
+                flux(m_u.PSI) = (D.bcon[dir] - G.gcon(Loci::center, j, i, 0, dir) * P(m_p.PSI)) * gdet;
+            }
         }
     }
 
+    // EMHD Variables: advect like rho
+    if (m_p.Q >= 0) {
+        flux(m_u.Q) = P(m_p.Q) * D.ucon[dir] * gdet;
+        flux(m_u.DP) = P(m_p.DP) * D.ucon[dir] * gdet;
+    }
+
+    // Electrons: normalized by density
     if (m_p.KTOT >= 0) {
-        // Take the factor from the primitives, in case we need to reorder this to happen before GRMHD::prim_to_flux later
         flux(m_u.KTOT) = flux(m_u.RHO) * P(m_p.KTOT);
         if (m_p.K_CONSTANT >= 0)
             flux(m_u.K_CONSTANT) = flux(m_u.RHO) * P(m_p.K_CONSTANT);
@@ -124,19 +141,13 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const Local& P,
  */
 template<typename Local>
 KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates& G, const Local& P, const VarMap& m_p,
-                                   const Real& gam, const int& j, const int& i,
+                                   const EMHD::Closure& closure, const Real& gam, const int& j, const int& i,
                                    const Local& U, const VarMap& m_u, const Loci& loc=Loci::center)
 {
     FourVectors Dtmp;
-    GRMHD::calc_4vecs(G, P, m_p, j, i, loc, Dtmp); // TODO switch GRHD/GRMHD
-    prim_to_flux(G, P, m_p, Dtmp, gam, j, i, 0, U, m_u, loc);
+    GRMHD::calc_4vecs(G, P, m_p, j, i, loc, Dtmp); // TODO switch GRHD/GRMHD?
+    prim_to_flux(G, P, m_p, Dtmp, closure, gam, j, i, 0, U, m_u, loc);
 }
-// KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates& G, const VariablePack<Real>& P, const VarMap& m_p,
-//                                    const Real& gam, const int& k, const int& j, const int& i,
-//                                    const VariablePack<Real>& U, const VarMap& m_u, const Loci& loc=Loci::center)
-// {
-
-// }
 
 /**
  * Calculate components of magnetosonic velocity from primitive variables
@@ -153,14 +164,14 @@ KOKKOS_INLINE_FUNCTION void vchar(const GRCoordinates& G, const Local& P, const 
     Real cms2;
     if (m.B1 >= 0) {
         // Find fast magnetosonic speed
-        const Real bsq = dot(D.bcon, D.bcov);
+        const Real bsq = max(dot(D.bcon, D.bcov), SMALL);
         const Real ee = bsq + ef;
         const Real va2 = bsq / ee;
         cms2 = cs2 + va2 - cs2 * va2;
     } else {
         cms2 = cs2;
     }
-    clip(cms2, 1.e-20, 1.);
+    clip(cms2, SMALL, 1.);
 
     // Require that speed of wave measured by observer q.ucon is cms2
     Real A, B, C;

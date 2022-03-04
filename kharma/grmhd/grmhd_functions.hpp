@@ -223,7 +223,8 @@ KOKKOS_INLINE_FUNCTION void calc_4vecs(const GRCoordinates& G, const Local& P, c
         DLOOP1 D.bcon[mu] = D.bcov[mu] = 0.;
     }
 }
-KOKKOS_INLINE_FUNCTION void calc_4vecs(const GRCoordinates& G, const VariablePack<Real>& P, const VarMap& m,
+template<typename Global>
+KOKKOS_INLINE_FUNCTION void calc_4vecs(const GRCoordinates& G, const Global& P, const VarMap& m,
                                       const int& k, const int& j, const int& i, const Loci loc, FourVectors& D)
 {
     const Real gamma = lorentz_calc(G, P, m, k, j, i, loc);
@@ -267,6 +268,28 @@ KOKKOS_INLINE_FUNCTION void calc_ucon(const GRCoordinates &G, const Real uvec[NV
     ucon[0] = gamma / alpha;
     VLOOP ucon[v+1] = uvec[v] - gamma * alpha * G.gcon(loc, j, i, 0, v+1);
 }
+template<typename Local>
+KOKKOS_INLINE_FUNCTION void calc_ucon(const GRCoordinates& G, const Local& P, const VarMap& m,
+                                      const int& j, const int& i, const Loci loc,
+                                      Real ucon[GR_DIM])
+{
+    const Real gamma = lorentz_calc(G, P, m, j, i, loc);
+    const Real alpha = 1. / sqrt(-G.gcon(loc, j, i, 0, 0));
+
+    ucon[0] = gamma / alpha;
+    VLOOP ucon[v+1] = P(m.U1 + v) - gamma * alpha * G.gcon(loc, j, i, 0, v+1);
+}
+template<typename Global>
+KOKKOS_INLINE_FUNCTION void calc_ucon(const GRCoordinates& G, const Global& P, const VarMap& m,
+                                      const int& k, const int& j, const int& i, const Loci loc,
+                                      Real ucon[GR_DIM])
+{
+    const Real gamma = lorentz_calc(G, P, m, k, j, i, loc);
+    const Real alpha = 1. / sqrt(-G.gcon(loc, j, i, 0, 0));
+
+    ucon[0] = gamma / alpha;
+    VLOOP ucon[v+1] = P(m.U1 + v, k, j, i) - gamma * alpha * G.gcon(loc, j, i, 0, v+1);
+}
 
 /**
  * Global GRMHD-only "p_to_u" call: just MHD variables (uses B optionally, but no output). TODO elminate?
@@ -278,7 +301,7 @@ KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates& G, const Local& P, const
 {
     Real gdet = G.gdet(loc, j, i);
     FourVectors Dtmp;
-    GRMHD::calc_4vecs(G, P, m_p, j, i, loc, Dtmp); // TODO switch GRHD/GRMHD
+    GRMHD::calc_4vecs(G, P, m_p, j, i, loc, Dtmp); // TODO switch GRHD/GRMHD?
     // Particle number flux
     U(m_u.RHO) = P(m_p.RHO) * Dtmp.ucon[0] * gdet;
 
@@ -300,9 +323,10 @@ KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates& G, const Local& P, const
         U(m_u.U3) = hd[3] * gdet;
     }
 }
-KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates& G, const VariablePack<Real>& P, const VarMap& m_p,
+template<typename Global>
+KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates& G, const Global& P, const VarMap& m_p,
                                    const Real& gam, const int& k, const int& j, const int& i,
-                                   const VariablePack<Real>& U, const VarMap& m_u, const Loci& loc=Loci::center)
+                                   const Global& U, const VarMap& m_u, const Loci& loc=Loci::center)
 {
     Real gdet = G.gdet(loc, j, i);
     FourVectors Dtmp;
@@ -330,8 +354,7 @@ KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates& G, const VariablePack<Re
 }
 
 /**
- * Special local "p_to_u" call for just MHD variables, used in fluid frame floors & wind source.
- * See Flux::p_to_u in flux_functions.hpp for documentation.
+ * Special all-local "p_to_u" call for just MHD variables, used in fluid frame floors & wind source.
  */
 KOKKOS_INLINE_FUNCTION void p_to_u_mhd(const GRCoordinates& G, const Real& rho, const Real& u, const Real uvec[NVEC],
                                    const Real B_P[NVEC], const Real& gam, const int& k, const int& j, const int& i,

@@ -1,0 +1,81 @@
+# Anisotropic Conduction problem
+# Heat conduction along field lines in the EMHD theory
+# of Chandra+2015
+
+<parthenon/job>
+problem_id = anisotropic_conduction
+
+<parthenon/mesh>
+refinement = none
+numlevel = 1
+
+nx1 = 256
+x1min = 0.0
+x1max = 1.0
+ix1_bc = periodic
+ox1_bc = periodic
+
+nx2 = 256
+x2min = 0.0
+x2max = 1.0
+ix2_bc = periodic
+ox2_bc = periodic
+
+nx3 = 1
+x3min = 0.0
+x3max = 1.0
+ix3_bc = periodic
+ox3_bc = periodic
+
+<parthenon/meshblock>
+nx1 = 128
+nx2 = 128
+nx3 = 1
+
+<coordinates>
+base = cartesian_minkowski
+transform = null
+
+<parthenon/time>
+tlim = 10.0
+# "RK2" is the only option for implicit solver
+integrator = rk2
+dt_min = 1e-6
+
+<GRMHD>
+cfl = 0.7
+gamma = 1.333333
+reconstruction = weno5
+
+<floors>
+bsq_over_rho_max = 100
+u_over_rho_max = 100
+
+<debug>
+verbose = 1
+flag_verbose = 0
+extra_checks = 1
+
+# This block must be present and values filled
+# in all EGRMHD simulations
+<emhd>
+on = true
+closure_type = constant
+tau = 0.1
+conduction_alpha = 0.01
+viscosity_alpha = 0.0
+
+# Implicit driver is auto-selected for emhd
+<implicit>
+max_nonlinear_iter = 3
+
+<parthenon/output0>
+file_type = hdf5
+dt = 0.1
+single_precision_output = true
+variables = prims.rho, prims.u, prims.uvec, prims.B, prims.q, prims.dP
+
+<parthenon/output1>
+file_type = hst
+dt = 0.1
+
