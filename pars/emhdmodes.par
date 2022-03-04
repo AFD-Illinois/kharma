@@ -43,18 +43,21 @@ integrator = rk2
 dt_min = 0.0001
 
 <GRMHD>
-cfl = 0.9
+cfl = 0.5
 gamma = 1.333333
-reconstruction = weno5
+reconstruction = linear_mc
 
 <emhdmodes>
 amp = 1e-4
 
 <floors>
-disable_floors = true
+#disable_floors = true
+rho_min_geom=1e-6
 
 <debug>
-verbose = 0
+verbose = 1
+flag_verbose = 2
+extra_checks = 1
 
 # This block must be present and values filled
 # in all EGRMHD simulations

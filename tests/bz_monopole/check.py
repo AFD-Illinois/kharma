@@ -10,7 +10,7 @@ import pyharm
 import pyharm.plots.plot_dumps as hplt
 
 for dumpname in np.sort(glob.glob("bz_monopole.out0.*.phdf")):
-    dump = pyHARM.load_dump(dumpname)
+    dump = pyharm.load_dump(dumpname)
     fig, ax = plt.subplots(1,1,figsize=(7,7))
     hplt.plot_xz(ax, dump, 'log_U1', arrayspace=True, window=[0,1,0,1])
     plt.savefig(dumpname+"_U1.png")
