@@ -91,7 +91,7 @@ TaskStatus Step(MeshData<Real> *mdi, MeshData<Real> *md0, MeshData<Real> *dudt,
     const Real delta = implicit_par.Get<Real>("jacobian_delta");
     const Real gam = pmb0->packages.Get("GRMHD")->Param<Real>("gamma");
 
-    EMHD_parameters emhd_params;
+    EMHD_parameters emhd_params = {0};
     if (pmb0->packages.AllPackages().count("EMHD")) {
         const auto& pars = pmb0->packages.Get("EMHD")->AllParams();
         emhd_params = pars.Get<EMHD_parameters>("emhd_params");
@@ -167,7 +167,6 @@ TaskStatus Step(MeshData<Real> *mdi, MeshData<Real> *md0, MeshData<Real> *dudt,
     for (int iter=0; iter < iter_max; iter++) {
         // Flags per iter, since debugging here will be rampant
         Flag(md0, "Implicit Iteration: md0");
-        Flag(md1, "Implicit Iteration: md1");
 
         parthenon::par_for_outer(DEFAULT_OUTER_LOOP_PATTERN, "implicit_solve", pmb0->exec_space,
             total_scratch_bytes, scratch_level, block.s, block.e, kb.s, kb.e, jb.s, jb.e,
@@ -240,7 +239,7 @@ TaskStatus Step(MeshData<Real> *mdi, MeshData<Real> *md0, MeshData<Real> *dudt,
                         // Solve against the negative residual
                         PLOOP delta_prim(ip) = -residual(ip);
 
-                        // if (am_rank0 && b == 0 && i == 8 && j == 8 && k == 8) {
+                        // if (am_rank0 && b == 0 && i == 8 && j == 8 && k == 0) {
                         //     printf("Variable ordering: rho %d uu %d u1 %d B1 %d q %d dP %d\n",
                         //             m_p.RHO, m_p.UU, m_p.U1, m_p.B1, m_p.Q, m_p.DP);
                         //     printf("P_solver: "); PLOOP printf("%g ", P_solver(ip)); printf("\n");
@@ -249,6 +248,8 @@ TaskStatus Step(MeshData<Real> *mdi, MeshData<Real> *md0, MeshData<Real> *dudt,
                         //     printf("Ps: "); PLOOP printf("%g ", Ps(ip)); printf("\n");
                         //     printf("Us: "); PLOOP printf("%g ", Us(ip)); printf("\n");
                         //     printf("dUdt: "); PLOOP printf("%g ", dUdt(ip)); printf("\n");
+                        //     printf("Initial residual: "); PLOOP printf("%g ", residual(ip)); printf("\n");
+                        //     printf("Initial delta_prim: "); PLOOP printf("%g ", delta_prim(ip)); printf("\n");
                         // }
 
                         // Linear solve
@@ -258,22 +259,20 @@ TaskStatus Step(MeshData<Real> *mdi, MeshData<Real> *md0, MeshData<Real> *dudt,
                         KokkosBatched::SerialTrsv<Uplo::Lower,Trans::NoTranspose,Diag::NonUnit,Algo::Trsv::Blocked>
                         ::invoke(alpha, jacobian, delta_prim);
 
-                        // if (am_rank0 && b == 0 && i == 8 && j == 8 && k == 8) {
-                        //     printf("\nTri Jacobian and dP:");
-                        //     for (int u=0; u < nvar; u++) {
-                        //         printf("\n");
-                        //         for (int v=0; v < nvar; v++) printf("%f ", jacobian(u, v));
-                        //     }
-                        //     printf("\ndP:\n");
-                        //     for (int u=0; u < nvar; u++) printf("%f ", delta_prim(u));
-                        //     printf("\n");
-                        // }
-
                         // Update the guess.  For now lambda == 1, choose on the fly?
                         PLOOP P_solver(ip) += lambda * delta_prim(ip);
 
                         calc_residual(G, P_solver, Pi, Ui, Ps, dUdt, dUi, tmp3,
                                       m_p, m_u, emhd_params, nvar, j, i, gam, dt, residual);
+
+                        // if (am_rank0 && b == 0 && i == 8 && j == 8 && k == 0) {
+                        //     printf("Variable ordering: rho %d uu %d u1 %d B1 %d q %d dP %d\n",
+                        //             m_p.RHO, m_p.UU, m_p.U1, m_p.B1, m_p.Q, m_p.DP);
+                        //     // JACOBIAN
+                        //     printf("Final residual: "); PLOOP printf("%g ", residual(ip)); printf("\n");
+                        //     printf("Final delta_prim: "); PLOOP printf("%g ", delta_prim(ip)); printf("\n");
+                        //     printf("Final P_solver: "); PLOOP printf("%g ", P_solver(ip)); printf("\n");
+                        // }
 
                         // Store for maximum/output
                         // I would be tempted to store the whole residual, but it's of variable size
@@ -312,6 +311,7 @@ TaskStatus Step(MeshData<Real> *mdi, MeshData<Real> *md0, MeshData<Real> *dudt,
             Pf_all(b)(p, k, j, i) = P_solver_all(b, p, k, j, i);
         }
     );
+    Flag(md1, "Implicit Iteration: final");
 
     return TaskStatus::complete;
 
