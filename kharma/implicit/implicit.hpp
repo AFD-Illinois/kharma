@@ -89,6 +89,9 @@ KOKKOS_INLINE_FUNCTION void calc_residual(const GRCoordinates& G, const Local& P
     Flux::p_to_u(G, P_test, m_p, emhd_params, gam, j, i, tmp, m_u); // U_test
     // (U_test - Ui)/dt - dudt_explicit ...
     PLOOP residual(ip) = (tmp(ip) - Ui(ip)) / dt - dudt_explicit(ip);
+    // if (i == 8 && j == 8) {
+    //     printf("Explicit residual: "); PLOOP printf("%g ", residual(ip)); printf("\n");
+    // }
 
     if (m_p.Q >= 0) {
         // Compute new implicit source terms and time derivative source terms
@@ -97,10 +100,20 @@ KOKKOS_INLINE_FUNCTION void calc_residual(const GRCoordinates& G, const Local& P
         // ... - 0.5*(dU_new(ip) + dUi(ip)) ...
         residual(m_u.Q) -= 0.5*(dUq + dUi(m_u.Q));
         residual(m_u.DP) -= 0.5*(dUdP + dUi(m_u.DP));
+        // if (i == 8 && j == 8) {
+        //     Real tau = 0, chi_e = 0, nu_e = 0;
+        //     EMHD::set_parameters(G, P_test, m_p, emhd_params, gam, tau, chi_e, nu_e);
+        //     printf("EMHD Params: "); printf("%g %g %g", tau, chi_e, nu_e); printf("\n");
+        //     printf("Implicit sources new: "); printf("%g %g %g %g", P_test(m_p.Q), P_test(m_p.DP), dUq, dUdP); printf("\n");
+        //     printf("Implicit sources residual: "); PLOOP printf("%g ", residual(ip)); printf("\n");
+        // }
         EMHD::time_derivative_sources(G, P_test, Pi, Ps, m_p, emhd_params, gam, dt, j, i, dUq, dUdP); // dU_time
         // ... - dU_time(ip)
         residual(m_u.Q) -= dUq;
         residual(m_u.DP) -= dUdP;
+        // if (i == 8 && j == 8) {
+        //     printf("Sources residual: "); PLOOP printf("%g ", residual(ip)); printf("\n");
+        // }
     }
 }
 

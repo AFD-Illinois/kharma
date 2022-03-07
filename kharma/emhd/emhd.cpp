@@ -65,7 +65,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     // These are always necessary for performing EGRMHD.
 
     bool higher_order_terms = pin->GetOrAddBoolean("emhd", "higher_order_terms", false);
-    std::string closure_type = pin->GetString("emhd", "closure_type");
+    std::string closure_type = pin->GetOrAddString("emhd", "closure_type", "torus");
 
     Real tau = pin->GetOrAddReal("emhd", "tau", 1.0);
     Real conduction_alpha = pin->GetOrAddReal("emhd", "conduction_alpha", 1.0);
@@ -75,10 +75,12 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     emhd_params.higher_order_terms = higher_order_terms;
     if (closure_type == "constant") { 
         emhd_params.type = ClosureType::constant;
-    } else if (closure_type == "sound_speed") {
+    } else if (closure_type == "sound_speed" || closure_type == "soundspeed") {
         emhd_params.type = ClosureType::soundspeed;
-    } else {
+    } else if (closure_type == "torus") {
         emhd_params.type = ClosureType::torus;
+    } else {
+        throw std::invalid_argument("Invalid Closure type: "+closure_type+". Use constant, sound_speed, or torus");
     }
     emhd_params.tau = tau;
     emhd_params.conduction_alpha = conduction_alpha;
