@@ -171,7 +171,7 @@ int CountPFlags(MeshData<Real> *md, IndexDomain domain, int verbose)
         auto& rc = pmb->meshblock_data.Get();
         auto pflag = rc->Get("pflag").data.GetHostMirrorAndCopy();
 
-#pragma omp parallel for simd collapse(3) reduction(+:n_cells,n_tot,n_neg_in,n_max_iter,n_utsq,n_gamma,n_neg_u,n_neg_rho,n_neg_both)
+//#pragma omp parallel for simd collapse(3) reduction(+:n_cells,n_tot,n_neg_in,n_max_iter,n_utsq,n_gamma,n_neg_u,n_neg_rho,n_neg_both)
         for(int k=ks; k <= ke; ++k)
             for(int j=js; j <= je; ++j)
                 for(int i=is; i <= ie; ++i)
@@ -236,7 +236,7 @@ int CountFFlags(MeshData<Real> *md, IndexDomain domain, int verbose)
         auto& rc = pmb->meshblock_data.Get();
         auto fflag = rc->Get("fflag").data.GetHostMirrorAndCopy();
 
-#pragma omp parallel for simd collapse(3) reduction(+:n_cells,n_tot,n_geom_rho,n_geom_u,n_b_rho,n_b_u,n_temp,n_gamma,n_ktot)
+//#pragma omp parallel for simd collapse(3) reduction(+:n_cells,n_tot,n_geom_rho,n_geom_u,n_b_rho,n_b_u,n_temp,n_gamma,n_ktot)
         for(int k=ks; k <= ke; ++k)
             for(int j=js; j <= je; ++j)
                 for(int i=is; i <= ie; ++i)

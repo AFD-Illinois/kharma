@@ -2,7 +2,10 @@
 # Try to maintain the BVP solution to a discontuinity
 # Checks the higher order terms implementation in flat space
 # IMPORTANT: This test is different from the other tests in its initialization
-             It reads in ".txt" files that correspond to the BVP solution
+             It reads in ".txt" files that correspond to the BVP solution (set input to "BVP" in <emhdshock>)
+             One, in principle, can run this problem with the usual ideal MHD jump conditions but this
+             may not allow a quantitative check
+             Run it with a single MPI task
 
 <parthenon/job>
 problem_id = emhdmodes
@@ -48,6 +51,10 @@ dt_min = 0.0001
 cfl = 0.25
 gamma = 1.333333
 reconstruction = weno5
+
+<emhdshock>
+# The input can be the BVP solution or the ideal MHD Rankine-Hugoniot jump conditions
+input = BVP
 
 <floors>
 disable_floors = true

@@ -63,6 +63,7 @@ extra_checks = 1
 # in all EGRMHD simulations
 <emhd>
 on = true
+higher_order_terms = false
 closure_type = soundspeed
 tau = 1.0
 conduction_alpha = 1.0
@@ -85,4 +86,3 @@ variables = prims.rho, prims.u, prims.uvec, prims.B, prims.q, prims.dP
 <parthenon/output1>
 file_type = hst
 dt = 0.1
-

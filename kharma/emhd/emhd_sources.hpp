@@ -111,7 +111,6 @@ KOKKOS_INLINE_FUNCTION void time_derivative_sources(const GRCoordinates& G, cons
     EMHD::convert_q_dP_to_prims(q0, dP0, rho, Theta, tau, chi_e, nu_e, 
                                 emhd_params, q0_tilde, dP0_tilde);
 
-    // NOTE: Will have to edit this when higher order terms are considered
     dUq  = G.gdet(Loci::center, j, i) * (q0_tilde / tau);
     dUdP = G.gdet(Loci::center, j, i) * (dP0_tilde / tau);
 

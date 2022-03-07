@@ -81,20 +81,20 @@ TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt);
 template<typename Local>
 KOKKOS_INLINE_FUNCTION void set_parameters(const GRCoordinates& G, const Local& P, const VarMap& m_p,
                                            const EMHD_parameters& emhd_params, const Real& gam,
-                                           Real& tau, Real& chi, Real& nu)
+                                           Real& tau, Real& chi_e, Real& nu_e)
 {
     if (emhd_params.type == ClosureType::constant) {
         // Set tau, nu, chi to constants
-        tau = emhd_params.tau;
-        chi = emhd_params.conduction_alpha;
-        nu  = emhd_params.viscosity_alpha;
+        tau   = emhd_params.tau;
+        chi_e = emhd_params.conduction_alpha;
+        nu_e  = emhd_params.viscosity_alpha;
     } else if (emhd_params.type == ClosureType::soundspeed) {
         // Set tau=const, chi/nu prop. to sound speed squared
         Real cs2 = (gam * (gam - 1.) * P(m_p.UU)) / (P(m_p.RHO) + (gam * P(m_p.UU)));
 
-        tau = emhd_params.tau;
-        chi = emhd_params.conduction_alpha * cs2 * tau;
-        nu  = emhd_params.viscosity_alpha * cs2 * tau;
+        tau   = emhd_params.tau;
+        chi_e = emhd_params.conduction_alpha * cs2 * tau;
+        nu_e  = emhd_params.viscosity_alpha * cs2 * tau;
     } else if (emhd_params.type == ClosureType::torus) {
         // Something complicated
     } // else yell
@@ -103,21 +103,21 @@ template<typename Global>
 KOKKOS_INLINE_FUNCTION void set_parameters(const GRCoordinates& G, const Global& P, const VarMap& m_p,
                                            const EMHD_parameters& emhd_params, const Real& gam,
                                            const int& k, const int& j, const int& i,
-                                           Real& tau, Real& chi, Real& nu)
+                                           Real& tau, Real& chi_e, Real& nu_e)
 {
     if (emhd_params.type == ClosureType::constant) {
         // Set tau, nu, chi to constants
-        tau = emhd_params.tau;
-        chi = emhd_params.conduction_alpha;
-        nu  = emhd_params.viscosity_alpha;
+        tau   = emhd_params.tau;
+        chi_e = emhd_params.conduction_alpha;
+        nu_e  = emhd_params.viscosity_alpha;
     } else if (emhd_params.type == ClosureType::soundspeed) {
         // Set tau=const, chi/nu prop. to sound speed squared
         const Real cs2 = (gam * (gam - 1.) * P(m_p.UU, k, j, i)) /
                             (P(m_p.RHO, k, j, i) + (gam * P(m_p.UU, k, j, i)));
 
-        tau = emhd_params.tau;
-        chi = emhd_params.conduction_alpha * cs2 * tau;
-        nu  = emhd_params.viscosity_alpha * cs2 * tau;
+        tau   = emhd_params.tau;
+        chi_e = emhd_params.conduction_alpha * cs2 * tau;
+        nu_e  = emhd_params.viscosity_alpha * cs2 * tau;
     } else if (emhd_params.type == ClosureType::torus) {
         // Something complicated
     } // else yell
