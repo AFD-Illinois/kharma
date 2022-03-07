@@ -91,10 +91,10 @@ TaskStatus Step(MeshData<Real> *mdi, MeshData<Real> *md0, MeshData<Real> *dudt,
     const Real delta = implicit_par.Get<Real>("jacobian_delta");
     const Real gam = pmb0->packages.Get("GRMHD")->Param<Real>("gamma");
 
-    Closure closure;
+    EMHD_parameters emhd_params;
     if (pmb0->packages.AllPackages().count("EMHD")) {
         const auto& pars = pmb0->packages.Get("EMHD")->AllParams();
-        closure = pars.Get<Closure>("closure");
+        emhd_params = pars.Get<EMHD_parameters>("emhd_params");
     }
 
     printf("Implicit advance dt: %g\n", dt);
@@ -228,7 +228,7 @@ TaskStatus Step(MeshData<Real> *mdi, MeshData<Real> *md0, MeshData<Real> *dudt,
                         auto dUi = Kokkos::subview(dUi_s, Kokkos::ALL(), i);
                         if (m_p.Q >= 0) {
                             Real dUq, dUdP;
-                            EMHD::implicit_sources(G, Pi, m_p, gam, j, i, closure, dUq, dUdP);
+                            EMHD::implicit_sources(G, Pi, m_p, gam, j, i, emhd_params, dUq, dUdP);
                             dUi(m_u.Q) = dUq;
                             dUi(m_u.DP) = dUdP;
                         }
@@ -236,7 +236,7 @@ TaskStatus Step(MeshData<Real> *mdi, MeshData<Real> *md0, MeshData<Real> *dudt,
                         // Jacobian calculation
                         // Requires calculating the residual anyway, so we grab it here
                         calc_jacobian(G, P_solver, Pi, Ui, Ps, dUdt, dUi, tmp1, tmp2, tmp3,
-                                      m_p, m_u, closure, nvar, j, i, delta, gam, dt, jacobian, residual);
+                                      m_p, m_u, emhd_params, nvar, j, i, delta, gam, dt, jacobian, residual);
                         // Solve against the negative residual
                         PLOOP delta_prim(ip) = -residual(ip);
 
@@ -273,7 +273,7 @@ TaskStatus Step(MeshData<Real> *mdi, MeshData<Real> *md0, MeshData<Real> *dudt,
                         PLOOP P_solver(ip) += lambda * delta_prim(ip);
 
                         calc_residual(G, P_solver, Pi, Ui, Ps, dUdt, dUi, tmp3,
-                                      m_p, m_u, closure, nvar, j, i, gam, dt, residual);
+                                      m_p, m_u, emhd_params, nvar, j, i, gam, dt, residual);
 
                         // Store for maximum/output
                         // I would be tempted to store the whole residual, but it's of variable size

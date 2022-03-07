@@ -78,7 +78,7 @@ template<typename Local>
 KOKKOS_INLINE_FUNCTION void calc_residual(const GRCoordinates& G, const Local& P_test,
                                           const Local& Pi, const Local& Ui, const Local& Ps,
                                           const Local& dudt_explicit, const Local& dUi, const Local& tmp, 
-                                          const VarMap& m_p, const VarMap& m_u, const Closure& closure,
+                                          const VarMap& m_p, const VarMap& m_u, const EMHD_parameters& emhd_params,
                                           const int& nvar, const int& j, const int& i,
                                           const Real& gam, const double& dt,
                                           Local& residual)
@@ -86,18 +86,18 @@ KOKKOS_INLINE_FUNCTION void calc_residual(const GRCoordinates& G, const Local& P
     // These lines calculate res = (U_test - Ui)/dt - dudt_explicit - 0.5*(dU_new(ip) + dUi(ip)) - dU_time(ip) )
     // Start with conserved vars corresponding to test P, U_test
     // Note this uses the Flux:: call, it needs *all* conserved vars!
-    Flux::p_to_u(G, P_test, m_p, closure, gam, j, i, tmp, m_u); // U_test
+    Flux::p_to_u(G, P_test, m_p, emhd_params, gam, j, i, tmp, m_u); // U_test
     // (U_test - Ui)/dt - dudt_explicit ...
     PLOOP residual(ip) = (tmp(ip) - Ui(ip)) / dt - dudt_explicit(ip);
 
     if (m_p.Q >= 0) {
         // Compute new implicit source terms and time derivative source terms
         Real dUq, dUdP; // Don't need full array for these
-        EMHD::implicit_sources(G, P_test, m_p, gam, j, i, closure, dUq, dUdP); // dU_new
+        EMHD::implicit_sources(G, P_test, m_p, gam, j, i, emhd_params, dUq, dUdP); // dU_new
         // ... - 0.5*(dU_new(ip) + dUi(ip)) ...
         residual(m_u.Q) -= 0.5*(dUq + dUi(m_u.Q));
         residual(m_u.DP) -= 0.5*(dUdP + dUi(m_u.DP));
-        EMHD::time_derivative_sources(G, P_test, Pi, Ps, m_p, closure, gam, dt, j, i, dUq, dUdP); // dU_time
+        EMHD::time_derivative_sources(G, P_test, Pi, Ps, m_p, emhd_params, gam, dt, j, i, dUq, dUdP); // dU_time
         // ... - dU_time(ip)
         residual(m_u.Q) -= dUq;
         residual(m_u.DP) -= dUdP;
@@ -115,13 +115,13 @@ KOKKOS_INLINE_FUNCTION void calc_jacobian(const GRCoordinates& G, const Local& P
                                           const Local& Pi, const Local& Ui, const Local& Ps,
                                           const Local& dudt_explicit, const Local& dUi,
                                           Local& tmp1, Local& tmp2, Local& tmp3,
-                                          const VarMap& m_p, const VarMap& m_u, const Closure& closure,
+                                          const VarMap& m_p, const VarMap& m_u, const EMHD_parameters& emhd_params,
                                           const int& nvar, const int& j, const int& i,
                                           const Real& jac_delta, const Real& gam, const double& dt,
                                           Local2& jacobian, Local& residual)
 {
     // Calculate residual for Sf->P
-    calc_residual(G, P, Pi, Ui, Ps, dudt_explicit, dUi, tmp3, m_p, m_u, closure, nvar, j, i, gam, dt, residual);
+    calc_residual(G, P, Pi, Ui, Ps, dudt_explicit, dUi, tmp3, m_p, m_u, emhd_params, nvar, j, i, gam, dt, residual);
 
     // Use one scratchpad as the incremented prims P_delta,
     // one as the new residual residual_delta
@@ -140,7 +140,7 @@ KOKKOS_INLINE_FUNCTION void calc_jacobian(const GRCoordinates& G, const Local& P
         }
 
         // Compute the residual for P_delta, residual_delta
-        calc_residual(G, P_delta, Pi, Ui, Ps, dudt_explicit, dUi, tmp3, m_p, m_u, closure, nvar, j, i, gam, dt, residual_delta);
+        calc_residual(G, P_delta, Pi, Ui, Ps, dudt_explicit, dUi, tmp3, m_p, m_u, emhd_params, nvar, j, i, gam, dt, residual_delta);
 
         // Compute forward derivatives of each residual vs the primitive col
         for (int row = 0; row < nvar; row++) {

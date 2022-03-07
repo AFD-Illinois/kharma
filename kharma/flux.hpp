@@ -137,12 +137,12 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
     const Real gam = pars.Get<Real>("gamma");
     const double ctop_max = (use_b_cd) ? globals.Get<Real>("ctop_max_last") : 0.0;
 
-    EMHD::Closure closure_tmp;
+    EMHD::EMHD_parameters emhd_params_tmp;
     if (use_emhd) {
         const auto& emhd_pars = pmb0->packages.Get("EMHD")->AllParams();
-        closure_tmp = emhd_pars.Get<EMHD::Closure>("closure");
+        emhd_params_tmp = emhd_pars.Get<EMHD::EMHD_parameters>("emhd_params");
     }
-    const EMHD::Closure& closure = closure_tmp;
+    const EMHD::EMHD_parameters& emhd_params = emhd_params_tmp;
 
     const Loci loc = loc_of(dir);
 
@@ -232,8 +232,8 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
 
                     // Left
                     GRMHD::calc_4vecs(G, Pl, m_p, j, i, loc, Dtmp);
-                    Flux::prim_to_flux(G, Pl, m_p, Dtmp, closure, gam, j, i, 0, Ul, m_u, loc);
-                    Flux::prim_to_flux(G, Pl, m_p, Dtmp, closure, gam, j, i, dir, Fl, m_u, loc);
+                    Flux::prim_to_flux(G, Pl, m_p, Dtmp, emhd_params, gam, j, i, 0, Ul, m_u, loc);
+                    Flux::prim_to_flux(G, Pl, m_p, Dtmp, emhd_params, gam, j, i, dir, Fl, m_u, loc);
 
                     // Magnetosonic speeds
                     Real cmaxL, cminL;
@@ -260,8 +260,8 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
                     // Right
                     // TODO GRMHD/GRHD versions of this
                     GRMHD::calc_4vecs(G, Pr, m_p, j, i, loc, Dtmp);
-                    Flux::prim_to_flux(G, Pr, m_p, Dtmp, closure, gam, j, i, 0, Ur, m_u, loc);
-                    Flux::prim_to_flux(G, Pr, m_p, Dtmp, closure, gam, j, i, dir, Fr, m_u, loc);
+                    Flux::prim_to_flux(G, Pr, m_p, Dtmp, emhd_params, gam, j, i, 0, Ur, m_u, loc);
+                    Flux::prim_to_flux(G, Pr, m_p, Dtmp, emhd_params, gam, j, i, dir, Fr, m_u, loc);
 
                     // Magnetosonic speeds
                     Real cmaxR, cminR;

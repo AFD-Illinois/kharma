@@ -63,24 +63,27 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     // GRIM uses a callback to a problem-specific implementation which sets these
     // We share implementations in one function, controlled by these parameters
     // These are always necessary for performing EGRMHD.
+
+    bool higher_order_terms = pin->GetOrAddBoolean("emhd", "higher_order_terms", false);
     std::string closure_type = pin->GetString("emhd", "closure_type");
+
     Real tau = pin->GetOrAddReal("emhd", "tau", 1.0);
     Real conduction_alpha = pin->GetOrAddReal("emhd", "conduction_alpha", 1.0);
     Real viscosity_alpha = pin->GetOrAddReal("emhd", "viscosity_alpha", 1.0);
 
-    Closure closure;
+    EMHD_parameters emhd_params;
+    emhd_params.higher_order_terms = higher_order_terms;
     if (closure_type == "constant") { 
-        closure.type = ClosureType::constant;
+        emhd_params.type = ClosureType::constant;
     } else if (closure_type == "sound_speed") {
-        closure.type = ClosureType::soundspeed;
+        emhd_params.type = ClosureType::soundspeed;
     } else {
-        closure.type = ClosureType::torus;
+        emhd_params.type = ClosureType::torus;
     }
-    closure.tau = tau;
-    closure.conduction_alpha = conduction_alpha;
-    closure.viscosity_alpha = viscosity_alpha;
-    params.Add("closure", closure);
-
+    emhd_params.tau = tau;
+    emhd_params.conduction_alpha = conduction_alpha;
+    emhd_params.viscosity_alpha = viscosity_alpha;
+    params.Add("emhd_params", emhd_params);
 
     // Slope reconstruction on faces. Always linear: default to MC unless we're using VL everywhere
     if (packages.Get("GRMHD")->Param<ReconstructionType>("recon") == ReconstructionType::linear_vl) {
@@ -130,7 +133,7 @@ TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
     const int ndim = pmesh->ndim;
 
     const auto& pars = pmb0->packages.Get("EMHD")->AllParams();
-    const Closure& closure = pars.Get<Closure>("closure");
+    const EMHD_parameters& emhd_params = pars.Get<EMHD_parameters>("emhd_params");
 
     // Pack variables
     PackIndexMap prims_map, cons_map;
@@ -178,8 +181,8 @@ TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
             const auto& G = dUdt.GetCoords(b);
 
             // Get the EGRMHD parameters
-            Real tau, chi, nu_e;
-            EMHD::set_parameters(G, P(b), m_p, closure, gam, k, j, i, tau, chi, nu_e);
+            Real tau, chi_e, nu_e;
+            EMHD::set_parameters(G, P(b), m_p, emhd_params, gam, k, j, i, tau, chi_e, nu_e);
 
             // and the 4-vectors
             FourVectors D;
@@ -197,15 +200,23 @@ TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
             // Compute+add explicit source terms (conduction and viscosity)
             const Real& rho = P(b)(m_p.RHO, k, j, i);
             Real q0 = 0;
-            DLOOP1 q0 -= rho * chi * (D.bcon[mu] / sqrt(bsq)) * grad_Theta[mu];
-            DLOOP2 q0 -= rho * chi * (D.bcon[mu] / sqrt(bsq)) * theta_s(b, k, j, i) * D.ucon[nu] * grad_ucov[nu][mu];
+            DLOOP1 q0 -= rho * chi_e * (D.bcon[mu] / sqrt(bsq)) * grad_Theta[mu];
+            DLOOP2 q0 -= rho * chi_e * (D.bcon[mu] / sqrt(bsq)) * theta_s(b, k, j, i) * D.ucon[nu] * grad_ucov[nu][mu];
 
-            Real deltaP0 = -rho * nu_e * div_ucon;
-            DLOOP2  deltaP0 += 3. * rho * nu_e * (D.bcon[mu] * D.bcon[nu] / bsq) * grad_ucov[mu][nu];
+            Real dP0 = -rho * nu_e * div_ucon;
+            DLOOP2  dP0 += 3. * rho * nu_e * (D.bcon[mu] * D.bcon[nu] / bsq) * grad_ucov[mu][nu];
 
-            // TODO edit this when higher order terms are considered
-            dUdt(b, m_u.Q, k, j, i)  += G.gdet(Loci::center, j, i) * q0 / tau;
-            dUdt(b, m_u.DP, k, j, i) += G.gdet(Loci::center, j, i) * deltaP0 / tau;
+            Real q0_tilde = 0., dP0_tilde = 0;
+            EMHD::convert_q_dP_to_prims(q0, dP0, rho, theta_s(b, k, j, i), tau, chi_e, nu_e, 
+                                        emhd_params, q0_tilde, dP0_tilde);
+
+            dUdt(b, m_u.Q, k, j, i)  += G.gdet(Loci::center, j, i) * q0_tilde / tau;
+            dUdt(b, m_u.DP, k, j, i) += G.gdet(Loci::center, j, i) * dP0_tilde / tau;
+
+            if (emhd_params.higher_order_terms) {
+                dUdt(b, m_u.Q, k, j, i) += G.gdet(Loci::center, j, i) * (q0_tilde / 2.) * div_ucon;
+                dUdt(b, m_u.DP, k, j, i) += G.gdet(Loci::center, j, i) * (q0_tilde / 2.) * div_ucon;
+            }
         }
     );
 

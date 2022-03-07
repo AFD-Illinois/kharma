@@ -56,7 +56,7 @@ namespace Flux
  */
 template<typename Local>
 KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const Local& P, const VarMap& m_p, const FourVectors D,
-                                         const EMHD::Closure& closure, const Real& gam, const int& j, const int& i, const int dir,
+                                         const EMHD::EMHD_parameters& emhd_params, const Real& gam, const int& j, const int& i, const int dir,
                                          const Local& flux, const VarMap& m_u, const Loci loc=Loci::center)
 {
     Real gdet = G.gdet(loc, j, i);
@@ -66,14 +66,18 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const Local& P,
     Real T[GR_DIM];
     if (m_p.Q >= 0) {
         // EGRMHD stress-energy tensor w/ first index up, second index down
-        // Convert prim Qtilde/dPtilde to real q/dP
-        // Real tau, chi, nu;
-        // EMHD::set_parameters(G, P, m_p, closure, gam, tau, chi, nu);
-        //const Real Theta = (gam - 1) * P(m_p.UU) / P(m_p.RHO);
-        //const Real q = (closure.higher_order) ? P(m_p.RHO) * sqrt(chi * P(m_p.RHO) * pow(Theta, 2) / tau);
-        //const Real dP = sqrt(nu * P(m_p.RHO) * Theta / tau);
-        const Real q = P(m_p.Q);
-        const Real dP = P(m_p.DP);
+        
+        const Real& rho     = P(m_p.RHO);
+        const Real q_tilde  = P(m_p.Q);
+        const Real dP_tilde = P(m_p.DP);
+        const Real& Theta   = (gam - 1) * P(m_p.UU) / P(m_p.RHO);
+
+        Real tau, chi_e, nu_e;
+        EMHD::set_parameters(G, P, m_p, emhd_params, gam, tau, chi_e, nu_e);
+
+        Real q = 0., dP = 0.;
+        EMHD::convert_prims_to_q_dP(q_tilde, dP_tilde, rho, Theta, tau, chi_e, nu_e, emhd_params, q, dP);
+
         // Then calculate the tensor
         EMHD::calc_tensor(P(m_p.RHO), P(m_p.UU), (gam - 1) * P(m_p.UU), q, dP, D, dir, T);
     } else if (m_p.B1 >= 0) {
@@ -141,12 +145,12 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const Local& P,
  */
 template<typename Local>
 KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates& G, const Local& P, const VarMap& m_p,
-                                   const EMHD::Closure& closure, const Real& gam, const int& j, const int& i,
+                                   const EMHD::EMHD_parameters& emhd_params, const Real& gam, const int& j, const int& i,
                                    const Local& U, const VarMap& m_u, const Loci& loc=Loci::center)
 {
     FourVectors Dtmp;
     GRMHD::calc_4vecs(G, P, m_p, j, i, loc, Dtmp); // TODO switch GRHD/GRMHD?
-    prim_to_flux(G, P, m_p, Dtmp, closure, gam, j, i, 0, U, m_u, loc);
+    prim_to_flux(G, P, m_p, Dtmp, emhd_params, gam, j, i, 0, U, m_u, loc);
 }
 
 /**

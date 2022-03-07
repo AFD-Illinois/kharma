@@ -56,12 +56,12 @@ TaskStatus Flux::PtoU(MeshBlockData<Real> *rc, IndexDomain domain)
     const bool use_emhd = pkgs.count("EMHD");
     MetadataFlag isPrimitive = pars.Get<MetadataFlag>("PrimitiveFlag");
 
-    EMHD::Closure closure_tmp;
+    EMHD::EMHD_parameters emhd_params_tmp;
     if (use_emhd) {
         const auto& emhd_pars = pmb->packages.Get("EMHD")->AllParams();
-        closure_tmp = emhd_pars.Get<EMHD::Closure>("closure");
+        emhd_params_tmp = emhd_pars.Get<EMHD::EMHD_parameters>("emhd_params");
     }
-    const EMHD::Closure& closure = closure_tmp;
+    const EMHD::EMHD_parameters& emhd_params = emhd_params_tmp;
 
     // Pack variables
     PackIndexMap prims_map, cons_map;
@@ -101,7 +101,7 @@ TaskStatus Flux::PtoU(MeshBlockData<Real> *rc, IndexDomain domain)
                 [&](const int& i) {
                     auto P = Kokkos::subview(P_s, Kokkos::ALL(), i);
                     auto U = Kokkos::subview(U_s, Kokkos::ALL(), i);
-                    Flux::p_to_u(G, P, m_p, closure, gam, j, i, U, m_u);
+                    Flux::p_to_u(G, P, m_p, emhd_params, gam, j, i, U, m_u);
                 }
             );
 

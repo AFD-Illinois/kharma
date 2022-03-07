@@ -52,12 +52,12 @@ namespace EMHD {
 template<typename Local>
 KOKKOS_INLINE_FUNCTION void implicit_sources(const GRCoordinates& G, const Local& P, const VarMap& m_p,
                                              const Real& gam, const int& j, const int& i,
-                                             const Closure& closure,
+                                             const EMHD_parameters& emhd_params,
                                              Real& dUq, Real& dUdP)
 {
     // These are intentionally the tilde versions!
-    Real tau, chi, nu;
-    EMHD::set_parameters(G, P, m_p, closure, gam, tau, chi, nu);
+    Real tau, chi_e, nu_e;
+    EMHD::set_parameters(G, P, m_p, emhd_params, gam, tau, chi_e, nu_e);
     dUq  = -G.gdet(Loci::center, j, i) * (P(m_p.Q) / tau);
     dUdP = -G.gdet(Loci::center, j, i) * (P(m_p.DP) / tau);
 }
@@ -69,13 +69,13 @@ KOKKOS_INLINE_FUNCTION void implicit_sources(const GRCoordinates& G, const Local
 template<typename Local>
 KOKKOS_INLINE_FUNCTION void time_derivative_sources(const GRCoordinates& G, const Local& P_new,
                                                     const Local& P_old, const Local& P,
-                                                    const VarMap& m_p, const Closure& closure,
+                                                    const VarMap& m_p, const EMHD_parameters& emhd_params,
                                                     const Real& gam, const Real& dt, const int& j, const int& i,
                                                     Real& dUq, Real& dUdP)
 {
     // Parameters
-    Real tau, chi, nu;
-    EMHD::set_parameters(G, P, m_p, closure, gam, tau, chi, nu);
+    Real tau, chi_e, nu_e;
+    EMHD::set_parameters(G, P, m_p, emhd_params, gam, tau, chi_e, nu_e);
 
     FourVectors Dtmp;
     GRMHD::calc_4vecs(G, P, m_p, j, i, Loci::center, Dtmp);
@@ -101,16 +101,24 @@ KOKKOS_INLINE_FUNCTION void time_derivative_sources(const GRCoordinates& G, cons
     // TEMPORAL SOURCE TERMS
     const Real& rho = P(m_p.RHO);
     const Real& Theta = (gam-1) * P(m_p.UU) / P(m_p.RHO);
-    Real q0 = -rho * chi * (Dtmp.bcon[0] / sqrt(bsq)) * dt_Theta;
-    DLOOP1 q0 -= rho * chi * (Dtmp.bcon[mu] / sqrt(bsq)) * Theta * Dtmp.ucon[0] * dt_ucov[mu];
+    Real q0 = -rho * chi_e * (Dtmp.bcon[0] / sqrt(bsq)) * dt_Theta;
+    DLOOP1 q0 -= rho * chi_e * (Dtmp.bcon[mu] / sqrt(bsq)) * Theta * Dtmp.ucon[0] * dt_ucov[mu];
 
+    Real dP0 = -rho * nu_e * div_ucon;
+    DLOOP1 dP0 += 3. * rho * nu_e * (Dtmp.bcon[0] * Dtmp.bcon[mu] / bsq) * dt_ucov[mu];
 
-    Real deltaP0 = -rho * nu * div_ucon;
-    DLOOP1 deltaP0 += 3. * rho * nu * (Dtmp.bcon[0] * Dtmp.bcon[mu] / bsq) * dt_ucov[mu];
+    Real q0_tilde = 0., dP0_tilde = 0;
+    EMHD::convert_q_dP_to_prims(q0, dP0, rho, Theta, tau, chi_e, nu_e, 
+                                emhd_params, q0_tilde, dP0_tilde);
 
     // NOTE: Will have to edit this when higher order terms are considered
-    dUq  = G.gdet(Loci::center, j, i) * (q0 / tau);
-    dUdP = G.gdet(Loci::center, j, i) * (deltaP0 / tau);
+    dUq  = G.gdet(Loci::center, j, i) * (q0_tilde / tau);
+    dUdP = G.gdet(Loci::center, j, i) * (dP0_tilde / tau);
+
+    if (emhd_params.higher_order_terms) {
+        dUq  += G.gdet(Loci::center, j, i) * (q0_tilde / 2.) * div_ucon;
+        dUdP += G.gdet(Loci::center, j, i) * (dP0_tilde / 2.) * div_ucon;
+    }
 }
 
 } // namespace EMHD
