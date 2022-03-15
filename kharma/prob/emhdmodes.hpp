@@ -62,7 +62,12 @@ TaskStatus InitializeEMHDModes(MeshBlockData<Real> *rc, ParameterInput *pin)
 
     const auto& G = pmb->coords;
 
-    const Real amp = pin->GetOrAddReal("emhdmodes", "amp", 1e-4);
+    const Real amp = pin->GetOrAddReal("emhdmodes", "amp", 1e-8);
+
+    const auto& emhd_pars = pmb->packages.Get("EMHD")->AllParams();
+    const EMHD::EMHD_parameters& emhd_params = emhd_pars.Get<EMHD::EMHD_parameters>("emhd_params");
+    const auto& grmhd_pars = pmb->packages.Get("GRMHD")->AllParams();
+    const Real& gam = grmhd_pars.Get<Real>("gamma");
 
     // TODO actually calculate the mode?  Figure something out
     const Real omega_real = pin->GetOrAddReal("emhdmodes", "omega_real", -0.5533585207638141);
@@ -71,20 +76,20 @@ TaskStatus InitializeEMHDModes(MeshBlockData<Real> *rc, ParameterInput *pin)
     // START POSSIBLE ARGS: take all these as parameters in pin?
     // Also note this is 2D only for now
     // Mean state
-    Real rho0 = 1.;
-    Real u0 = 2.;
-    Real u10 = 0.;
-    Real u20 = 0.;
-    Real u30 = 0.;
-    Real B10 = 0.1;
-    Real B20 = 0.3;
-    Real B30 = 0.;
-    Real q0   = 0.;
-    Real delta_p0 = 0.;
+    const Real rho0 = 1.;
+    const Real u0 = 2.;
+    const Real u10 = 0.;
+    const Real u20 = 0.;
+    const Real u30 = 0.;
+    const Real B10 = 0.1;
+    const Real B20 = 0.3;
+    const Real B30 = 0.;
+    const Real q0   = 0.;
+    const Real delta_p0 = 0.;
 
     // Wavevector
-    Real k1 = 2. * M_PI;
-    Real k2 = 4. * M_PI;
+    const Real k1 = 2. * M_PI;
+    const Real k2 = 4. * M_PI;
     // END POSSIBLE ARGS
 
     IndexRange ib = pmb->cellbounds.GetBoundsI(IndexDomain::entire);
@@ -98,28 +103,38 @@ TaskStatus InitializeEMHDModes(MeshBlockData<Real> *rc, ParameterInput *pin)
             const Real sin_phi = sin(k1*X[1] + k2*X[2]);
 
             // Perturbations: no higher-order terms
-            Real drho     = amp * (((-0.518522524082246)*cos_phi) + ((0.1792647678001878)*sin_phi));
-            Real du       = amp * ((0.5516170736393813)*cos_phi);
-            Real du1      = amp * (((0.008463122479547856)*cos_phi) + ((-0.011862022608466367)*sin_phi));
-            Real du2      = amp * (((-0.16175466371870734)*cos_phi) + ((0.034828080823603294)*sin_phi));
-            Real du3      = 0.;
-            Real dB1      = amp * (((-0.05973794979640743)*cos_phi) + ((0.03351707506150924)*sin_phi));
-            Real dB2      = amp * (((0.02986897489820372)*cos_phi) - ((0.016758537530754618)*sin_phi));
-            Real dB3      = 0.;
-            Real dq       = amp * (((0.5233486841539436)*cos_phi) - ((0.04767672501939603)*sin_phi));
-            Real ddelta_p = amp * (((0.2909106062057657)*cos_phi) - ((0.02159452055336572)*sin_phi));
+            const Real drho     = amp * (((-0.518522524082246)*cos_phi) + ((0.1792647678001878)*sin_phi));
+            const Real du       = amp * ((0.5516170736393813)*cos_phi);
+            const Real du1      = amp * (((0.008463122479547856)*cos_phi) + ((-0.011862022608466367)*sin_phi));
+            const Real du2      = amp * (((-0.16175466371870734)*cos_phi) + ((0.034828080823603294)*sin_phi));
+            const Real du3      = 0.;
+            const Real dB1      = amp * (((-0.05973794979640743)*cos_phi) + ((0.03351707506150924)*sin_phi));
+            const Real dB2      = amp * (((0.02986897489820372)*cos_phi) - ((0.016758537530754618)*sin_phi));
+            const Real dB3      = 0.;
+            const Real dq       = amp * (((0.5233486841539436)*cos_phi) - ((0.04767672501939603)*sin_phi));
+            const Real ddelta_p = amp * (((0.2909106062057657)*cos_phi) - ((0.02159452055336572)*sin_phi));
 
             // Initialize primitives
             rho(k, j, i) = rho0 + drho;
             u(k, j, i) = u0 + du;
-            uvec(0, k, j, i) = u10 + du1;
-            uvec(1, k, j, i) = u20 + du2;
-            uvec(2, k, j, i) = u30 + du3;
-            B_P(0, k, j, i) = B10 + dB1;
-            B_P(1, k, j, i) = B20 + dB2;
-            B_P(2, k, j, i) = B30 + dB3;
+            uvec(V1, k, j, i) = u10 + du1;
+            uvec(V2, k, j, i) = u20 + du2;
+            uvec(V3, k, j, i) = u30 + du3;
+            B_P(V1, k, j, i) = B10 + dB1;
+            B_P(V2, k, j, i) = B20 + dB2;
+            B_P(V3, k, j, i) = B30 + dB3;
             q(k, j, i) = q0 + dq;
             dP(k, j, i) = delta_p0 + ddelta_p;
+
+            if (emhd_params.higher_order_terms) {
+                Real tau, chi_e, nu_e;
+                EMHD::set_parameters(G, rho(k, j, i), u(k, j, i), emhd_params, gam, k, j, i, tau, chi_e, nu_e);
+                Real Theta = (gam - 1) * u(k, j, i) / rho(k, j, i);
+                Real q_tilde, dP_tilde;
+                EMHD::convert_q_dP_to_prims(q(k, j, i), dP(k, j, i), rho(k, j, i), Theta, tau, chi_e, nu_e, emhd_params, q_tilde, dP_tilde);
+                q(k, j, i) = q_tilde;
+                dP(k, j, i) = dP_tilde;
+            }
         }
     );
 

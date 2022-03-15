@@ -144,7 +144,7 @@ KOKKOS_INLINE_FUNCTION void gradient_calc(const GRCoordinates& G, const Global& 
             grad_ucov[3][mu] = 0.;
         }
     }
-    DLOOP3 grad_ucov[mu][nu] -= G.conn(lam, mu, nu, j, i) * ucov_s(lam, k, j, i);
+    DLOOP3 grad_ucov[mu][nu] -= G.conn(j, i, lam, mu, nu) * ucov_s(lam, k, j, i);
 
     // Compute temperature gradient
     // Time derivative component is computed in time_derivative_sources

@@ -97,7 +97,7 @@ KOKKOS_INLINE_FUNCTION void set_parameters(const GRCoordinates& G, const Local& 
         nu_e  = emhd_params.viscosity_alpha * cs2 * tau;
     } else if (emhd_params.type == ClosureType::torus) {
         // Something complicated
-    } // else yell
+    } // else yell?
 }
 template<typename Global>
 KOKKOS_INLINE_FUNCTION void set_parameters(const GRCoordinates& G, const Global& P, const VarMap& m_p,
@@ -120,7 +120,26 @@ KOKKOS_INLINE_FUNCTION void set_parameters(const GRCoordinates& G, const Global&
         nu_e  = emhd_params.viscosity_alpha * cs2 * tau;
     } else if (emhd_params.type == ClosureType::torus) {
         // Something complicated
-    } // else yell
+    } // else yell?
+}
+// Local version for use in initialization, as q/dP need to be converted to prim tilde forms
+KOKKOS_INLINE_FUNCTION void set_parameters(const GRCoordinates& G, const Real& rho, const Real& u,
+                                           const EMHD_parameters& emhd_params, const Real& gam,
+                                           const int& k, const int& j, const int& i,
+                                           Real& tau, Real& chi_e, Real& nu_e)
+{
+    if (emhd_params.type == ClosureType::constant) {
+        // Set tau, nu, chi to constants
+        tau   = emhd_params.tau;
+        chi_e = emhd_params.conduction_alpha;
+        nu_e  = emhd_params.viscosity_alpha;
+    } else if (emhd_params.type == ClosureType::soundspeed) {
+        // Set tau=const, chi/nu prop. to sound speed squared
+        const Real cs2 = (gam * (gam - 1.) * u) / (rho + (gam * u));
+        tau   = emhd_params.tau;
+        chi_e = emhd_params.conduction_alpha * cs2 * tau;
+        nu_e  = emhd_params.viscosity_alpha * cs2 * tau;
+    } // else yell?
 }
 
 /**
@@ -145,8 +164,8 @@ KOKKOS_INLINE_FUNCTION void calc_tensor(const Real& rho, const Real& u, const Re
                   - D.bcon[dir] * D.bcov[mu]
                   + (q / sqrt(bsq)) * ((D.ucon[dir] * D.bcov[mu]) +
                                        (D.bcon[dir] * D.ucov[mu]))
-                  + (-dP) * ((D.bcon[dir] * D.bcov[mu] / bsq)
-                                  - (1./3) * ((dir == mu) + D.ucon[dir] * D.ucov[mu]));
+                  - dP * ((D.bcon[dir] * D.bcov[mu] / bsq)
+                          - (1./3) * ((dir == mu) + D.ucon[dir] * D.ucov[mu]));
     }
 }
 

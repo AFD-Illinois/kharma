@@ -67,7 +67,7 @@ TaskStatus InitializeAnisotropicConduction(MeshBlockData<Real> *rc, ParameterInp
     IndexRange ib = pmb->cellbounds.GetBoundsI(IndexDomain::entire);
     IndexRange jb = pmb->cellbounds.GetBoundsJ(IndexDomain::entire);
     IndexRange kb = pmb->cellbounds.GetBoundsK(IndexDomain::entire);
-    pmb->par_for("emhdmodes_init", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+    pmb->par_for("anisotropic_init", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_3D {
             Real X[GR_DIM];
             G.coord_embed(k, j, i, Loci::center, X);

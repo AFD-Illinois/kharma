@@ -58,7 +58,7 @@ using namespace parthenon;
  */
 namespace GRMHD {
 // For declaring meshes, as well as the full intermediates we need (right & left fluxes etc)
-std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin);
+std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t packages);
 
 /**
  * Get the primitive variables
@@ -72,6 +72,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin);
 // inline void FillDerivedMesh(MeshData<Real> *md) { UtoP(md); }
 void UtoP(MeshBlockData<Real> *rc, IndexDomain domain=IndexDomain::entire, bool coarse=false);
 inline void FillDerivedBlock(MeshBlockData<Real> *rc) { UtoP(rc); }
+inline TaskStatus FillDerivedBlockTask(MeshBlockData<Real> *rc) { UtoP(rc); return TaskStatus::complete; }
 
 /**
  * Fix the primitive variables
@@ -90,6 +91,9 @@ void PostUtoP(MeshBlockData<Real> *rc);
  * Parthenon will take the minimum and put it in pmy_mesh->dt
  */
 Real EstimateTimestep(MeshBlockData<Real> *rc);
+
+// Internal version for the light phase speed crossing time of smallest zone
+Real EstimateRadiativeTimestep(MeshBlockData<Real> *rc);
 
 /**
  * Return a tag per-block indicating whether to refine it

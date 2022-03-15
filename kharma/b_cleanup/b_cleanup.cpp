@@ -63,7 +63,8 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     params.Add("extra_checks", extra_checks);
 
     // Solver options
-    Real error_tolerance = pin->GetOrAddReal("b_cleanup", "error_tolerance", 1e-8);
+    // This tolerance corresponds to divB_max ~ 1e-12. TODO use that as the indicator?
+    Real error_tolerance = pin->GetOrAddReal("b_cleanup", "error_tolerance", 1e-10);
     params.Add("error_tolerance", error_tolerance);
     Real sor_factor = pin->GetOrAddReal("b_cleanup", "sor_factor", 2./3);
     params.Add("sor_factor", sor_factor);

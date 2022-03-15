@@ -204,7 +204,8 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
     std::string b_field_solver = pin->GetOrAddString("b_field", "solver", "flux_ct");
     // Enable b_cleanup package if we want periodic cleanups OR are resizing a restart file
     bool b_cleanup = pin->GetOrAddBoolean("b_cleanup", "on", false) ||
-                     pin->GetString("parthenon/job", "problem_id") == "resize_restart";
+                     pin->GetString("parthenon/job", "problem_id") == "resize_restart" ||
+                     pin->GetOrAddBoolean("b_field", "initial_clean", false);
     // TODO enable this iff jcon is in the list of outputs
     bool add_jcon = pin->GetOrAddBoolean("GRMHD", "add_jcon", true);
     bool do_electrons = pin->GetOrAddBoolean("electrons", "on", false);
@@ -218,9 +219,13 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
     if (do_emhd) {
         // Default to implicit step for EMHD
         driver_type = pin->GetOrAddString("driver", "type", "imex");
-        pin->GetOrAddString("driver", "step", "implicit");
     } else {
         driver_type = pin->GetOrAddString("driver", "type", "harm");
+    }
+    // Initialize the implicit timestepping package early so we can mark fields to be
+    // updated implicitly vs explicitly
+    if (driver_type == "imex") {
+        packages.Add(Implicit::Initialize(pin.get()));
     }
 
     // Global variables "package."  Mutable global state Parthenon doesn't keep for us.
@@ -229,7 +234,7 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
 
     // Lots of common functions and variables are still in the GRMHD package,
     // always initialize it first among physics stuff
-    packages.Add(GRMHD::Initialize(pin.get()));
+    packages.Add(GRMHD::Initialize(pin.get(), packages));
 
     // We'll also always want the floors package, even if floors are disabled
     packages.Add(Floors::Initialize(pin.get()));
@@ -237,8 +242,6 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
     // B field solvers, to ensure divB == 0.
     if (b_field_solver == "none") {
         // Don't add a B field
-        // Currently this means fields are still allocated, and occasionally read by GRMHD,
-        // but no other operations are performed.
     } else if (b_field_solver == "constraint_damping" || b_field_solver == "b_cd") {
         // Constraint damping, probably only useful for non-GR MHD systems
         packages.Add(B_CD::Initialize(pin.get(), packages));
@@ -255,17 +258,12 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
     // there is some form of B field present/declared.
     bool b_field_exists = !(b_field_solver == "none" && !b_cleanup);
 
-    // Implicit timestepping has a few of its own functions
-    bool implicit_step = pin->GetOrAddString("driver", "step", "explicit") == "implicit";
-    if (driver_type != "harm" && implicit_step) {
-        packages.Add(Implicit::Initialize(pin.get()));
-    }
-
     // Add jcon, so long as there's a field to calculate it from
     if (add_jcon && b_field_exists) {
         packages.Add(Current::Initialize(pin.get()));
     }
 
+    // Electrons are boring but not impossible without a B field
     if (do_electrons) {
         packages.Add(Electrons::Initialize(pin.get(), packages));
     }

@@ -25,5 +25,6 @@ conv_2d eks coordinates/transform=eks
 conv_2d linear_mc GRMHD/reconstruction=linear_mc
 conv_2d linear_vl GRMHD/reconstruction=linear_vl
 # And the GRIM/classic driver
-conv_2d imex driver/type=imex
-conv_2d imex_im "driver/type=imex driver/step=implicit"
+# TODO support implicit w/o B field
+#conv_2d imex "driver/type=imex"
+#conv_2d imex_im "driver/type=imex GRMHD/implicit=true"

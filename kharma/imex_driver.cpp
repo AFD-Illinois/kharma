@@ -64,6 +64,9 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
 
     // This is *not* likely the task list you are looking for, and is not well commented yet.
     // See harm_driver.cpp for KHARMA's main driver.
+    // This driver *requires* the "Implicit" package to be loaded, in order to read some flags
+    // it defines for 
+
     TaskCollection tc;
     TaskID t_none(0);
 
@@ -91,6 +94,9 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
             // At the end of the step, updating "sc1" updates the base
             // So we have to keep a copy at the beginning to calculate jcon
             pmb->meshblock_data.Add("preserve", base);
+            // When solving, we need a temporary copy with any explicit updates,
+            // but not overwriting the beginning- or mid-step values
+            pmb->meshblock_data.Add("solver", base);
         }
     }
 
@@ -104,6 +110,7 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         auto &mc0 = pmesh->mesh_data.GetOrAdd(stage_name[stage - 1], i);
         auto &mc1 = pmesh->mesh_data.GetOrAdd(stage_name[stage], i);
         auto &mdudt = pmesh->mesh_data.GetOrAdd("dUdt", i);
+        auto &mc_solver = pmesh->mesh_data.GetOrAdd("solver", i);
 
         auto t_start_recv = tl.AddTask(t_none, &MeshData<Real>::StartReceiving, mc1.get(),
                                     BoundaryCommSubset::all);
@@ -111,7 +118,7 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         // Calculate the HLL fluxes in each direction
         // This reconstructs the primitives (P) at faces and uses them to calculate fluxes
         // of the conserved variables (U)
-        const ReconstructionType& recon = blocks[0]->packages.Get("GRMHD")->Param<ReconstructionType>("recon");
+        const ReconstructionType& recon = pkgs.at("GRMHD")->Param<ReconstructionType>("recon");
         TaskID t_calculate_flux1, t_calculate_flux2, t_calculate_flux3;
         switch (recon) {
         case ReconstructionType::donor_cell:
@@ -145,6 +152,7 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
 
         auto t_recv_flux = t_calculate_flux;
         // TODO this appears to be implemented *only* block-wise, split it into its own region if so
+        // TODO should probably keep track of/wait on all tasks!! Might be a race condition!!
         if (pmesh->multilevel) {
             // Get flux corrections from AMR neighbors
             for (auto &pmb : pmesh->block_list) {
@@ -190,126 +198,160 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
             t_emhd_source = tl.AddTask(t_wind_source, EMHD::AddSource, mc0.get(), mdudt.get());
         }
         // Done with source terms
-        auto t_sources = t_wind_source;
+        auto t_sources = t_emhd_source;
+
+        // UPDATE VARIABLES
+        // This block is designed to intelligently update a set of variables partially marked "Implicit"
+        // and partially "Explicit," by first doing any explicit updates, then using them as elements
+        // of the "guess" for the implicit solve
+
+        // Indicators for Explicit/Implicit variables to evolve
+        MetadataFlag isExplicit = pkgs.at("Implicit")->Param<MetadataFlag>("ExplicitFlag");
+        MetadataFlag isImplicit = pkgs.at("Implicit")->Param<MetadataFlag>("ImplicitFlag");
+        MetadataFlag isPrimitive = pkgs.at("GRMHD")->Param<MetadataFlag>("PrimitiveFlag");
+        // Substep timestep
+        const double beta_this = integrator->beta[stage % integrator->nstages];
+        const double dt_this = dt * beta_this;
+
+        // Update any variables for which we should take an explicit step.
+        // These calls are the equivalent of what's in HARMDriver
+        // auto t_average = tl.AddTask(t_sources, Update::WeightedSumData<MetadataFlag, MeshData<Real>>,
+        //                             std::vector<MetadataFlag>({isExplicit, Metadata::Independent}),
+        //                             mc0.get(), mbase.get(), beta, (1.0 - beta), mc_solver.get());
+        // auto t_explicit_U = tl.AddTask(t_average, Update::WeightedSumData<MetadataFlag, MeshData<Real>>,
+        //                             std::vector<MetadataFlag>({isExplicit, Metadata::Independent}),
+        //                             mc_solver.get(), mdudt.get(), 1.0, beta * dt, mc_solver.get());
+        // Version with half/whole step to match implicit solver
+        auto t_explicit_U = tl.AddTask(t_sources, Update::WeightedSumData<MetadataFlag, MeshData<Real>>,
+                                    std::vector<MetadataFlag>({isExplicit, Metadata::Independent}),
+                                    mbase.get(), mdudt.get(), 1.0, dt_this, mc_solver.get());
+
+        // Make sure the primitive values of any explicit fields are filled
+        auto t_explicit_UtoP_B = t_explicit_U;
+        if (!pkgs.at("B_FluxCT")->Param<bool>("implicit"))
+            t_explicit_UtoP_B = tl.AddTask(t_explicit_U, B_FluxCT::FillDerivedMeshTask, mc_solver.get());
+        // If GRMHD is not implicit, but we're still going to be taking an implicit step, call its FillDerived function
+        // TODO Would be faster/more flexible if this supported MeshData. Also maybe race condition
+        auto t_explicit_UtoP_G = t_explicit_UtoP_B;
+        if (!pkgs.at("GRMHD")->Param<bool>("implicit") && use_b_cd) {
+            // Get flux corrections from AMR neighbors
+            for (auto &pmb : pmesh->block_list) {
+                auto& rc = pmb->meshblock_data.Get();
+                auto t_explicit_UtoP_G = tl.AddTask(t_explicit_UtoP_B, GRMHD::FillDerivedBlockTask, rc.get());
+            }
+        }
+        auto t_explicit = t_explicit_UtoP_G;
+
+        // Copy the current implicit vars in as a guess.  This needs at least the primitive vars
+        auto t_copy_guess = tl.AddTask(t_sources, Update::WeightedSumData<MetadataFlag, MeshData<Real>>,
+                                    std::vector<MetadataFlag>({isImplicit}),
+                                    mc0.get(), mc0.get(), 1.0, 0.0, mc_solver.get());
+
+        // Time-step implicit variables by root-finding the residual
+        // This applies the functions of both the update above and FillDerived call below for "isImplicit" variables
+        // This takes dt for the *substep*, not the whole thing, so we multiply total dt by *this step's* beta
+        auto t_guess_ready = t_explicit | t_copy_guess;
+        auto t_implicit = tl.AddTask(t_guess_ready, Implicit::Step, mbase.get(), mc0.get(), mdudt.get(), mc_solver.get(), dt_this);
+
+        // Copy the solver state into the final state mc1
+        auto t_copy_result = tl.AddTask(t_implicit, Update::WeightedSumData<MetadataFlag, MeshData<Real>>, std::vector<MetadataFlag>({}),
+                                        mc_solver.get(), mc_solver.get(), 1.0, 0.0, mc1.get());
+
     }
 
-    // This region is where GRIM and classic HARM split.
-    // Classic HARM applies the fluxes to calculate a new state of conserved variables,
-    // then solves for the primitive variables with UtoP (here "FillDerived")
-    const auto &driver_step =
-        blocks[0]->packages.Get("GRMHD")->Param<std::string>("driver_step");
-    if (driver_step == "explicit") { // Explicit step
-        // Update conserved state with dUdt
-        const int num_partitions = pmesh->DefaultNumPartitions();
-        TaskRegion &single_tasklist_per_pack_region = tc.AddRegion(num_partitions);
-        for (int i = 0; i < num_partitions; i++) {
-            auto &tl = single_tasklist_per_pack_region[i];
-            auto &mbase = pmesh->mesh_data.GetOrAdd("base", i);
-            auto &mc0 = pmesh->mesh_data.GetOrAdd(stage_name[stage - 1], i);
-            auto &mc1 = pmesh->mesh_data.GetOrAdd(stage_name[stage], i);
-            auto &mdudt = pmesh->mesh_data.GetOrAdd("dUdt", i);
+    // Even though we filled some primitive vars 
+    TaskRegion &async_region1 = tc.AddRegion(blocks.size());
+    for (int i = 0; i < blocks.size(); i++) {
+        auto &pmb = blocks[i];
+        auto &tl = async_region1[i];
+        auto &sc0 = pmb->meshblock_data.Get(stage_name[stage-1]);
+        auto &sc1 = pmb->meshblock_data.Get(stage_name[stage]);
 
-            // UPDATE BASE CONTAINER
-            auto t_avg_data = tl.AddTask(t_none, Update::AverageIndependentData<MeshData<Real>>,
-                                    mc0.get(), mbase.get(), beta);
-            // apply du/dt to all independent fields in the container
-            auto t_update = tl.AddTask(t_avg_data, Update::UpdateIndependentData<MeshData<Real>>, mc0.get(),
-                                    mdudt.get(), beta * dt, mc1.get());
+        // Copy primitives to form the guess for GRMHD::UtoP
+        // Only needed if GRMHD vars are being updated explicitly
+        auto t_copy_prims = t_none;
+        if (!pkgs.at("GRMHD")->Param<bool>("implicit")) {
+            MetadataFlag isPrimitive = pkgs.at("GRMHD")->Param<MetadataFlag>("PrimitiveFlag");
+            MetadataFlag isHD = pkgs.at("GRMHD")->Param<MetadataFlag>("HDFlag");
+            auto t_copy_prims = tl.AddTask(t_none, Update::WeightedSumData<MetadataFlag, MeshBlockData<Real>>,
+                                        std::vector<MetadataFlag>({isHD, isPrimitive}),
+                                        sc0.get(), sc0.get(), 1.0, 0.0, sc1.get());
         }
 
-        // Then solve for new primitives in the fluid interior, with the primitives at step start as a guess,
-        // using UtoP.  Note that since no ghost zones are updated here, and thus FixUtoP cannot use
-        // ghost zones. Thus KHARMA behavior in this mode will dependent on the breakdown of meshblocks,
-        // & possibly erratic when there are many fixups.
-        // Full algo should boundary sync -> FixUtoP -> boundary sync
-        TaskRegion &async_region = tc.AddRegion(blocks.size());
-        for (int i = 0; i < blocks.size(); i++) {
-            auto &pmb = blocks[i];
-            auto &tl = async_region[i];
-            auto &sc0 = pmb->meshblock_data.Get(stage_name[stage-1]);
-            auto &sc1 = pmb->meshblock_data.Get(stage_name[stage]);
-
-            // COPY PRIMITIVES
-            // These form the guess for UtoP
-            auto t_copy_prims = tl.AddTask(t_none,
-                [](MeshBlockData<Real> *rc0, MeshBlockData<Real> *rc1)
-                {
-                    Flag(rc1, "Copying prims");
-                    rc1->Get("prims.rho").data.DeepCopy(rc0->Get("prims.rho").data);
-                    rc1->Get("prims.u").data.DeepCopy(rc0->Get("prims.u").data);
-                    rc1->Get("prims.uvec").data.DeepCopy(rc0->Get("prims.uvec").data);
-                    Flag(rc1, "Copied");
-                    return TaskStatus::complete;
-                }, sc0.get(), sc1.get()
-            );
-
-            auto t_fill_derived = tl.AddTask(t_copy_prims, Update::FillDerived<MeshBlockData<Real>>, sc1.get());
-            // This is *not* immediately corrected with FixUtoP, but synchronized (including pflags!) first.
-            // With an extra ghost zone, this *should* still allow binary-similar evolution between numbers of mesh blocks
-        }
-    } else { // Implicit step
-        const int num_partitions = pmesh->DefaultNumPartitions();
-        TaskRegion &single_tasklist_per_pack_region = tc.AddRegion(num_partitions);
-        for (int i = 0; i < num_partitions; i++) {
-            auto &tl = single_tasklist_per_pack_region[i];
-            auto &mbase = pmesh->mesh_data.GetOrAdd("base", i);
-            auto &mc0 = pmesh->mesh_data.GetOrAdd(stage_name[stage - 1], i);
-            auto &mc1 = pmesh->mesh_data.GetOrAdd(stage_name[stage], i);
-            auto &mdudt = pmesh->mesh_data.GetOrAdd("dUdt", i);
-
-            // time-step by root-finding the residual
-            // This applies the functions of both t_update and t_fill_derived
-            // This takes dt for the *substep*, not the whole thing -- should be 0.5*dt
-            auto t_implicit_solve = tl.AddTask(t_none, Implicit::Step, mbase.get(), mc0.get(), mdudt.get(), mc1.get(), dt / beta);
-        }
+        // Note that floors are applied (to all variables!) immediately after this FillDerived call.
+        // However, it is *not* immediately corrected with FixUtoP, but synchronized (including pflags!) first.
+        // With an extra ghost zone, this *should* still allow binary-similar evolution between numbers of mesh blocks,
+        // but hasn't been tested.
+        auto t_fill_derived = tl.AddTask(t_copy_prims, Update::FillDerived<MeshBlockData<Real>>, sc1.get());
     }
 
     // MPI/MeshBlock boundary exchange.
     // Optionally "packed" to send all data in one call (num_partitions defaults to 1)
     // Note that in this driver, this block syncs *primitive* variables, not conserved
-    const auto &pack_comms =
-        blocks[0]->packages.Get("GRMHD")->Param<bool>("pack_comms");
+    const auto &pack_comms = pkgs.at("GRMHD")->Param<bool>("pack_comms");
     if (pack_comms) {
         TaskRegion &tr1 = tc.AddRegion(num_partitions);
         for (int i = 0; i < num_partitions; i++) {
             auto &mc1 = pmesh->mesh_data.GetOrAdd(stage_name[stage], i);
+            tr1[i].AddTask(t_none,
+                [](MeshData<Real> *mc1){ Flag(mc1, "Boundary 1"); return TaskStatus::complete; }
+            , mc1.get());
             tr1[i].AddTask(t_none, cell_centered_bvars::SendBoundaryBuffers, mc1);
         }
         TaskRegion &tr2 = tc.AddRegion(num_partitions);
         for (int i = 0; i < num_partitions; i++) {
             auto &mc1 = pmesh->mesh_data.GetOrAdd(stage_name[stage], i);
+            tr2[i].AddTask(t_none,
+                [](MeshData<Real> *mc1){ Flag(mc1, "Boundary 2"); return TaskStatus::complete; }
+            , mc1.get());
             tr2[i].AddTask(t_none, cell_centered_bvars::ReceiveBoundaryBuffers, mc1);
         }
         TaskRegion &tr3 = tc.AddRegion(num_partitions);
         for (int i = 0; i < num_partitions; i++) {
             auto &mc1 = pmesh->mesh_data.GetOrAdd(stage_name[stage], i);
+            tr3[i].AddTask(t_none,
+                [](MeshData<Real> *mc1){ Flag(mc1, "Boundary 3"); return TaskStatus::complete; }
+            , mc1.get());
             tr3[i].AddTask(t_none, cell_centered_bvars::SetBoundaries, mc1);
         }
     } else {
         TaskRegion &tr1 = tc.AddRegion(blocks.size());
         for (int i = 0; i < blocks.size(); i++) {
             auto &sc1 = blocks[i]->meshblock_data.Get(stage_name[stage]);
+            tr1[i].AddTask(t_none,
+                [](MeshBlockData<Real> *rc1){ Flag(rc1, "Boundary 1"); return TaskStatus::complete; }
+            , sc1.get());
             tr1[i].AddTask(t_none, &MeshBlockData<Real>::SendBoundaryBuffers, sc1.get());
         }
         TaskRegion &tr2 = tc.AddRegion(blocks.size());
         for (int i = 0; i < blocks.size(); i++) {
             auto &sc1 = blocks[i]->meshblock_data.Get(stage_name[stage]);
+            tr2[i].AddTask(t_none,
+                [](MeshBlockData<Real> *rc1){ Flag(rc1, "Boundary 2"); return TaskStatus::complete; }
+            , sc1.get());
             tr2[i].AddTask(t_none, &MeshBlockData<Real>::ReceiveBoundaryBuffers, sc1.get());
         }
         TaskRegion &tr3 = tc.AddRegion(blocks.size());
         for (int i = 0; i < blocks.size(); i++) {
             auto &sc1 = blocks[i]->meshblock_data.Get(stage_name[stage]);
+            tr3[i].AddTask(t_none,
+                [](MeshBlockData<Real> *rc1){ Flag(rc1, "Boundary 3"); return TaskStatus::complete; }
+            , sc1.get());
             tr3[i].AddTask(t_none, &MeshBlockData<Real>::SetBoundaries, sc1.get());
         }
     }
 
-    // Async Region: Any post-sync tasks.  Timestep & AMR things.
-    TaskRegion &async_region = tc.AddRegion(blocks.size());
+    // Async Region: Any post-sync tasks.  Fixups, timestep & AMR things.
+    TaskRegion &async_region2 = tc.AddRegion(blocks.size());
     for (int i = 0; i < blocks.size(); i++) {
         auto &pmb = blocks[i];
-        auto &tl = async_region[i];
+        auto &tl = async_region2[i];
         auto &sc0 = pmb->meshblock_data.Get(stage_name[stage-1]);
         auto &sc1 = pmb->meshblock_data.Get(stage_name[stage]);
+
+        auto t_flag = tl.AddTask(t_none,
+                [](MeshBlockData<Real> *rc1){ Flag(rc1, "Copying prims"); return TaskStatus::complete; }
+            , sc1.get());
 
         auto t_clear_comm_flags = tl.AddTask(t_none, &MeshBlockData<Real>::ClearBoundary,
                                         sc1.get(), BoundaryCommSubset::all);
@@ -321,12 +363,12 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
 
         auto t_set_bc = tl.AddTask(t_prolongBound, parthenon::ApplyBoundaryConditions, sc1);
 
-        // Syncing bounds before fixUtoP, and thus running it over the whole domain, will make
-        // behavior for different mesh breakdowns much more similar (identical?), as bad zones on boundaries
-        // will get to use all the same neighbors.
-        // As long as we sync pflags by setting FillGhosts when using this driver!
+        // If we're evolving even the GRMHD variables explicitly, we need to fix UtoP variable inversion failures
+        // Syncing bounds before calling this, and then running it over the whole domain, will make
+        // behavior for different mesh breakdowns much more similar (identical?), since bad zones in
+        // relevant ghost zone ranks will get to use all the same neighbors as if they were in the bulk
         auto t_fix_derived = t_set_bc;
-        if (driver_step == "explicit") {
+        if (!pkgs.at("GRMHD")->Param<bool>("implicit")) {
             t_fix_derived = tl.AddTask(t_set_bc, GRMHD::FixUtoP, sc1.get());
         }
 

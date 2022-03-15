@@ -62,12 +62,20 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     int extra_checks = pin->GetOrAddInteger("debug", "extra_checks", 0);
     params.Add("extra_checks", extra_checks);
 
+    // Diagnostic & inadvisable flags
     bool fix_flux = pin->GetOrAddBoolean("b_field", "fix_polar_flux", true);
     params.Add("fix_polar_flux", fix_flux);
     // WARNING this disables constrained transport, so the field will quickly pick up a divergence.
     // To use another transport, just specify it instead of this one.
     bool disable_flux_ct = pin->GetOrAddBoolean("b_field", "disable_flux_ct", false);
     params.Add("disable_flux_ct", disable_flux_ct);
+
+    // Driver type & implicit marker
+    // By default, solve B implicitly if GRMHD is
+    auto driver_type = pin->GetString("driver", "type");
+    bool grmhd_implicit = packages.Get("GRMHD")->Param<bool>("implicit");
+    bool implicit_b = (driver_type == "imex" && pin->GetOrAddBoolean("b_field", "implicit", grmhd_implicit));
+    params.Add("implicit", implicit_b);
 
     // FIELDS
 
@@ -77,20 +85,22 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     MetadataFlag isMHD = packages.Get("GRMHD")->Param<MetadataFlag>("MHDFlag");
 
     // B fields.  "Primitive" form is field, "conserved" is flux
-    // Note: when changing metadata, keep these in lockstep with grmhd.cpp!!
     // See notes there about changes for the Imex driver
     std::vector<MetadataFlag> flags_prim, flags_cons;
-    auto imex_driver = pin->GetString("driver", "type") == "imex";
-    if (!imex_driver) {
+    if (driver_type == "harm") {
         flags_prim = std::vector<MetadataFlag>({Metadata::Real, Metadata::Cell, Metadata::Derived,
                                                 isPrimitive, isMHD, Metadata::Vector});
         flags_cons = std::vector<MetadataFlag>({Metadata::Real, Metadata::Cell, Metadata::Independent, Metadata::FillGhost,
-                 Metadata::Restart, Metadata::Conserved, isMHD, Metadata::WithFluxes, Metadata::Vector});
-    } else {
-        flags_prim = std::vector<MetadataFlag>({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::FillGhost, Metadata::Restart,
-                                                isPrimitive, isMHD, Metadata::Vector});
-        flags_cons = std::vector<MetadataFlag>({Metadata::Real, Metadata::Cell, Metadata::Independent,
-                                                Metadata::Conserved, isMHD, Metadata::WithFluxes, Metadata::Vector});
+                                    Metadata::Restart, Metadata::Conserved, isMHD, Metadata::WithFluxes, Metadata::Vector});
+    } else if (driver_type == "imex") {
+        // See grmhd.cpp for full notes on flag changes for ImEx driver
+        // Note that default for B is *explicit* evolution
+        MetadataFlag areWeImplicit = (implicit_b) ? packages.Get("Implicit")->Param<MetadataFlag>("ImplicitFlag")
+                                                  : packages.Get("Implicit")->Param<MetadataFlag>("ExplicitFlag");
+        flags_prim = std::vector<MetadataFlag>({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::FillGhost,
+                                                Metadata::Restart, isPrimitive, isMHD, areWeImplicit, Metadata::Vector});
+        flags_cons = std::vector<MetadataFlag>({Metadata::Real, Metadata::Cell, Metadata::Independent, Metadata::Conserved,
+                                                Metadata::WithFluxes, isMHD, areWeImplicit, Metadata::Vector});
     }
 
     auto m = Metadata(flags_prim, s_vector);
@@ -101,13 +111,19 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
     pkg->AddField("divB", m);
 
-    pkg->FillDerivedMesh = B_FluxCT::FillDerivedMesh;
-    pkg->FillDerivedBlock = B_FluxCT::FillDerivedBlock;
+    // Ensure that prims get filled
+    if (!implicit_b) {
+        //pkg->FillDerivedMesh = B_FluxCT::FillDerivedMesh;
+        pkg->FillDerivedBlock = B_FluxCT::FillDerivedBlock;
+    }
+
+    // Register the other callbacks
     pkg->PostStepDiagnosticsMesh = B_FluxCT::PostStepDiagnostics;
 
-    // List (vector) of HistoryOutputVar that will all be enrolled as output variables
+    // List (vector) of HistoryOutputVars that will all be enrolled as output variables
     parthenon::HstVar_list hst_vars = {};
-    // The definition of MaxDivB we care about actually changes per-transport. Use our function.
+    // The definition of MaxDivB we care about actually changes per-transport. Use our function,
+    // which calculates divB at cell corners
     hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::max, B_FluxCT::MaxDivB, "MaxDivB"));
     // add callbacks for HST output to the Params struct, identified by the `hist_param_key`
     pkg->AddParam<>(parthenon::hist_param_key, hst_vars);
@@ -117,7 +133,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
 
 void UtoP(MeshData<Real> *md, IndexDomain domain, bool coarse)
 {
-    Flag(md, "B UtoP Mesh"); // 
+    Flag(md, "B UtoP Mesh");
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
 
     const auto& B_U = md->PackVariables(std::vector<std::string>{"cons.B"});
@@ -163,7 +179,7 @@ void UtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 
 void PtoU(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
-    Flag(rc, "B UtoP Block");
+    Flag(rc, "B PtoU Block");
     auto pmb = rc->GetBlockPointer();
 
     auto B_U = rc->PackVariables(std::vector<std::string>{"cons.B"});

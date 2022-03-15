@@ -28,7 +28,7 @@ ix3_bc = periodic
 ox3_bc = periodic
 
 <parthenon/meshblock>
-nx1 = 64
+nx1 = 128
 nx2 = 64
 nx3 = 1
 
@@ -38,21 +38,27 @@ transform = null
 
 <parthenon/time>
 tlim = 2.0
+nlim = -1
 # "RK2" is the only option for implicit solver
 integrator = rk2
-dt_min = 0.0001
+use_dt_light = true
 
 <GRMHD>
-cfl = 0.5
+cfl = 0.9
 gamma = 1.333333
 reconstruction = linear_mc
+
+# Default is implicit B,
+# use this to specify explicit if desired
+<b_field>
+implicit = true
+initial_clean = false
 
 <emhdmodes>
 amp = 1e-4
 
 <floors>
-#disable_floors = true
-rho_min_geom=1e-6
+disable_floors = true
 
 <debug>
 verbose = 1
@@ -69,18 +75,15 @@ tau = 1.0
 conduction_alpha = 1.0
 viscosity_alpha = 1.0
 
-<driver>
-type = imex
-step = implicit
-
 <implicit>
 max_nonlinear_iter = 3
 
 <parthenon/output0>
 file_type = hdf5
-# This is so as to output only the final state
+# Output only final state
 dt = 100.0
-single_precision_output = true
+# Output in double due to low amplitude
+single_precision_output = false
 variables = prims.rho, prims.u, prims.uvec, prims.B, prims.q, prims.dP
 
 <parthenon/output1>

@@ -5,12 +5,14 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 
+from pyharm.grid import make_some_grid
+
 if __name__=='__main__':
     outputdir = './'
 
     NVAR = 10
     VARS = ['rho', 'u', 'u1', 'u2', 'u3', 'B1', 'B2', 'B3', 'q', 'deltaP']
-    RES = [16,24,32,48]
+    RES = [int(r) for r in sys.argv[1].split(",")]
 
     # problem params
     var0 = np.zeros(NVAR)
@@ -45,16 +47,15 @@ if __name__=='__main__':
     # loop over RES
     for r in range(len(RES)):
         # load data
-        dfile = h5py.File(sorted(glob.glob(os.path.join(str(RES[r]), 'dumps', 'dump_000000*.h5')))[-1], 'r')
-        gfile = h5py.File(os.path.join(str(RES[r]), 'dumps', 'grid.h5'), 'r')
+        dfile = h5py.File("emhd_2d_"+str(RES[r])+"_end_"+sys.argv[3]+".h5", 'r')
 
         dump = {}
 
-        amp = dfile['header/problem/amp'][()]
+        amp = float(dfile['header/amp'][()])
         k1  = 2*np.pi
         k2  = 4*np.pi
-        real_omega  = dfile['header/problem/real_omega'][()]
-        imag_omega  = dfile['header/problem/imag_omega'][()]
+        real_omega  = dfile['header/omega_real'][()]
+        imag_omega  = dfile['header/omega_imag'][()]
         t = dfile['t'][()]
 
         dump['RHO'] = dfile['prims'][Ellipsis,0][()]
@@ -68,27 +69,26 @@ if __name__=='__main__':
         dump['q'] = dfile['prims'][Ellipsis,8][()]
         dump['deltaP'] = dfile['prims'][Ellipsis,9][()]
 
-        grid = {}
-        grid['x'] = gfile['X'][()]
-        grid['y'] = gfile['Y'][()]
+        gridp = {}
+        gridp['n1'] = dfile['header/n1'][()]
+        gridp['n2'] = dfile['header/n2'][()]
+        gridp['n3'] = dfile['header/n3'][()]
+
+        grid = make_some_grid('cartesian', gridp['n1'], gridp['n2'], gridp['n3'])
         cos_phi = np.cos(k1*grid['x'] + k2*grid['y'] + imag_omega*t)
         sin_phi = np.sin(k1*grid['x'] + k2*grid['y'] + imag_omega*t)
 
-        grid['n1'] = dfile['header/n1'][()]
-        grid['n2'] = dfile['header/n2'][()]
-        grid['n3'] = dfile['header/n3'][()]
-
-        gfile.close()
         dfile.close()
 
         # compute analytic result
         var_analytic  = []
-        for i in range(NVAR):    
+        for i in range(NVAR):
             var_analytic.append(var0[i] + ((amp*cos_phi*dvar_cos[i]) + (amp*sin_phi*dvar_sin[i])) * np.exp(real_omega*t))
         var_analytic = np.asarray(var_analytic)
 
         # numerical result
-        var_numerical = np.zeros((NVAR, grid['n1'], grid['n2'], grid['n3']), dtype=float)
+        # TODO 3D, but will need different coeffs too
+        var_numerical = np.zeros((NVAR, grid['n1'], grid['n2']), dtype=float)
         var_numerical[0,Ellipsis] = dump['RHO'] 
         var_numerical[1,Ellipsis] = dump['U'] 
         var_numerical[2,Ellipsis] = dump['U1'] 
@@ -123,6 +123,8 @@ if __name__=='__main__':
     fig = plt.figure(figsize=(6,6))
     ax = fig.add_subplot(1,1,1)
 
+    fig.suptitle(sys.argv[2])
+
     # loop over prims
     tracker = 0
     for n in range(NVAR):
@@ -134,4 +136,4 @@ if __name__=='__main__':
     ax.loglog([RES[0], RES[-1]], 100*amp*np.asarray([float(RES[0]), float(RES[-1])])**(-2), color='k', linestyle='dashed', label='$N^{-2}$')
     plt.xscale('log', base=2)
     ax.legend()
-    plt.savefig(os.path.join(outputdir, 'emhd_linear_mode_convergence.png'))
+    plt.savefig(os.path.join(outputdir, "emhd_linear_mode_convergence_"+sys.argv[3]+".png"))

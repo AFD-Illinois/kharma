@@ -101,11 +101,12 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     params.Add("NonidealFlag", isNonideal);
 
     // General options for primitive and conserved scalar variables in ImEx driver
-    // EMHD is supported only with imex driver and 
-    Metadata m_con  = Metadata({Metadata::Real, Metadata::Cell, Metadata::Independent,
+    // EMHD is supported only with imex driver and implicit evolution
+    MetadataFlag isImplicit = packages.Get("Implicit")->Param<MetadataFlag>("ImplicitFlag");
+    Metadata m_con  = Metadata({Metadata::Real, Metadata::Cell, Metadata::Independent, isImplicit,
                                 Metadata::Conserved, Metadata::WithFluxes, isNonideal});
-    Metadata m_prim = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::FillGhost,
-                                Metadata::Restart, isPrimitive, isNonideal});
+    Metadata m_prim = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, isImplicit,
+                                Metadata::FillGhost, Metadata::Restart, isPrimitive, isNonideal});
 
     // Heat conduction
     pkg->AddField("cons.q", m_con);
@@ -197,7 +198,7 @@ TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
 
             // Compute div of ucon (all terms but the time-derivative ones are nonzero)
             Real div_ucon = 0;
-            DLOOP2 div_ucon += G.gcon(Loci::center, mu, nu, j, i) * grad_ucov[mu][nu];
+            DLOOP2 div_ucon += G.gcon(Loci::center, j, i, mu, nu) * grad_ucov[mu][nu];
 
             // Compute+add explicit source terms (conduction and viscosity)
             const Real& rho = P(b)(m_p.RHO, k, j, i);

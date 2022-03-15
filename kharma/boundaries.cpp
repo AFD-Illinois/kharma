@@ -37,6 +37,7 @@
 #include "boundaries.hpp"
 
 #include "kharma.hpp"
+#include "flux_functions.hpp"
 #include "grmhd_functions.hpp"
 #include "pack.hpp"
 #include "types.hpp"
@@ -140,6 +141,7 @@ void OutflowX1(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, boo
                 if (m_p.B1 >= 0)
                     VLOOP P(m_p.B1 + v, k, j, i) = q(m_u.B1 + v, k, j, i) / G.gdet(Loci::center, j, i);
                 // Recover conserved vars
+                // TODO all flux
                 GRMHD::p_to_u(G, P, m_p, gam, k, j, i, q, m_u);
             }
         );
@@ -221,6 +223,7 @@ void ReflectX2(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, boo
             KOKKOS_LAMBDA_3D {
                 if (m_p.B1 >= 0)
                     VLOOP P(m_p.B1 + v, k, j, i) = q(m_u.B1 + v, k, j, i) / G.gdet(Loci::center, j, i);
+                // TODO all flux
                 GRMHD::p_to_u(G, P, m_p, gam, k, j, i, q, m_u);
             }
         );

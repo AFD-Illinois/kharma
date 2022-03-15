@@ -65,8 +65,10 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
  */
 void UtoP(MeshData<Real> *md, IndexDomain domain=IndexDomain::entire, bool coarse=false);
 inline void FillDerivedMesh(MeshData<Real> *md) { UtoP(md); }
+inline TaskStatus FillDerivedMeshTask(MeshData<Real> *md) { UtoP(md); return TaskStatus::complete; }
 void UtoP(MeshBlockData<Real> *md, IndexDomain domain=IndexDomain::entire, bool coarse=false);
 inline void FillDerivedBlock(MeshBlockData<Real> *rc) { UtoP(rc); }
+inline TaskStatus FillDerivedBlockTask(MeshBlockData<Real> *rc) { UtoP(rc); return TaskStatus::complete; }
 
 /**
  * Inverse of above. Generally only for initialization.

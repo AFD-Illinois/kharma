@@ -35,6 +35,7 @@
 #include "fixup.hpp"
 
 #include "floors.hpp"
+#include "flux_functions.hpp"
 #include "pack.hpp"
 
 // Version of PLOOP guaranteeing specifically the 5 GRMHD fixup-amenable primitive vars
@@ -131,6 +132,7 @@ TaskStatus GRMHD::FixUtoP(MeshBlockData<Real> *rc)
         KOKKOS_LAMBDA_3D {
             if (((int) pflag(k, j, i)) > InversionStatus::success) {
                 // Make sure to keep lockstep
+                // This will only be run for GRMHD, so we can call its p_to_u
                 GRMHD::p_to_u(G, P, m_p, gam, k, j, i, U, m_u);
 
                 // And make sure the fixed values still abide by floors (floors keep lockstep)

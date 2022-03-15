@@ -37,6 +37,7 @@
 
 
 #include "b_flux_ct.hpp"
+#include "flux_functions.hpp"
 #include "grmhd_functions.hpp"
 #include "U_to_P.hpp"
 
@@ -177,6 +178,7 @@ KOKKOS_INLINE_FUNCTION int apply_ceilings(const GRCoordinates& G, const Variable
 
     if (fflag) {
         // Keep lockstep!
+        // TODO all flux
         GRMHD::p_to_u(G, P, m_p, gam, k, j, i, U, m_u, loc);
     }
 
@@ -270,6 +272,7 @@ KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, const VariablePa
         if (use_ff) {
             P(m_p.RHO, k, j, i) += max(0., rhoflr_max - rho);
             P(m_p.UU, k, j, i) += max(0., uflr_max - u);
+            // TODO should be all Flux
             GRMHD::p_to_u(G, P, m_p, gam, k, j, i, U, m_u, loc);
         } else {
             // Add the material in the normal observer frame, by:
@@ -298,6 +301,7 @@ KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, const VariablePa
             // If that fails, we've effectively already applied the floors in fluid-frame to the prims,
             // so we just formalize that
             if (pflag) {
+                // TODO should be all Flux
                 GRMHD::p_to_u(G, P, m_p, gam, k, j, i, U, m_u, loc);
             }
         }

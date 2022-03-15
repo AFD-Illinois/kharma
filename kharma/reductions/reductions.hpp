@@ -120,13 +120,13 @@ Real DomainSum(MeshData<Real> *md);
 // Each of the MAKE_ETC "calls" expands into an implementation of
 // AccretionRate<Type> using the macro we just defined above.
 enum class Mdot : int;
-MAKE_SUM2D_FN(Mdot, KOKKOS_LAMBDA_3D_REDUCE { local_result += -rho_P(k, j, i) * uvec_P(0, k, j, i) * G.dx3v(k) * G.dx2v(j) * G.dx1v(i) * G.gdet(Loci::center, j, i); })
+MAKE_SUM2D_FN(Mdot, KOKKOS_LAMBDA_3D_REDUCE { local_result += -rho_P(k, j, i) * uvec_P(V1, k, j, i) * G.dx3v(k) * G.dx2v(j) * G.gdet(Loci::center, j, i); })
 enum class Edot : int;
-MAKE_SUM2D_FN(Edot, KOKKOS_LAMBDA_3D_REDUCE { local_result += -uvec_U(0, k, j, i) * G.dx3v(k) * G.dx2v(j) * G.dx1v(i); })
+MAKE_SUM2D_FN(Edot, KOKKOS_LAMBDA_3D_REDUCE { local_result += -uvec_U(V1, k, j, i) * G.dx3v(k) * G.dx2v(j); })
 enum class Ldot : int;
-MAKE_SUM2D_FN(Ldot, KOKKOS_LAMBDA_3D_REDUCE { local_result += uvec_U(2, k, j, i) * G.dx3v(k) * G.dx2v(j) * G.dx1v(i); })
+MAKE_SUM2D_FN(Ldot, KOKKOS_LAMBDA_3D_REDUCE { local_result += uvec_U(V3, k, j, i) * G.dx3v(k) * G.dx2v(j); })
 enum class Phi : int;
-MAKE_SUM2D_FN(Phi, KOKKOS_LAMBDA_3D_REDUCE { local_result += 0.5 * fabs(B_U(0, k, j, i)) * G.dx3v(k) * G.dx2v(j); })
+MAKE_SUM2D_FN(Phi, KOKKOS_LAMBDA_3D_REDUCE { local_result += 0.5 * fabs(B_U(V1, k, j, i)) * G.dx3v(k) * G.dx2v(j); })
 
 // Then we can define the same with fluxes.
 // The MAKE_SUM2D_FN macro pulls out pretty much any variable we could need here
@@ -135,7 +135,7 @@ MAKE_SUM2D_FN(Mdot_Flux, KOKKOS_LAMBDA_3D_REDUCE { local_result += -rho_F(k, j, 
 enum class Edot_Flux : int;
 MAKE_SUM2D_FN(Edot_Flux, KOKKOS_LAMBDA_3D_REDUCE { local_result += (u_F(k, j, i) - rho_F(k, j, i)) * G.dx3v(k) * G.dx2v(j); })
 enum class Ldot_Flux : int;
-MAKE_SUM2D_FN(Ldot_Flux, KOKKOS_LAMBDA_3D_REDUCE { local_result += uvec_F(2, k, j, i) * G.dx3v(k) * G.dx2v(j); })
+MAKE_SUM2D_FN(Ldot_Flux, KOKKOS_LAMBDA_3D_REDUCE { local_result += uvec_F(V3, k, j, i) * G.dx3v(k) * G.dx2v(j); })
 
 // Finally, we define the reductions in the form Parthenon needs, picking particular
 // variables and zones so that the resulting functions take only MeshData as an argument
@@ -220,17 +220,12 @@ MAKE_SUM3D_FN(EHTLum, (KOKKOS_LAMBDA_3D_REDUCE {
 // only for areas with sig > 1.
 enum class JetLum : int;
 MAKE_SUM3D_FN(JetLum, (KOKKOS_LAMBDA_3D_REDUCE {
-    Real rho = rho_P(k, j, i);
-    Real Pg = (gam - 1.) * u_P(k, j, i);
     FourVectors Dtmp;
     GRMHD::calc_4vecs(G, uvec_P, B_P, k, j, i, Loci::center, Dtmp);
-    Real bsq = dot(Dtmp.bcon, Dtmp.bcov);
-    double sig = bsq / rho_P(k, j, i);
-    if (sig > 1.) {
-        Real uvec_loc[NVEC] = {uvec_P(0, k, j, i), uvec_P(1, k, j, i), uvec_P(2, k, j, i)};
-        Real B_loc[NVEC] = {B_P(0, k, j, i), B_P(1, k, j, i), B_P(2, k, j, i)};
-        Real rho_ut, T[GR_DIM];
-        GRMHD::p_to_u_mhd(G, 0., 0., uvec_loc, B_loc, gam, k, j, i, rho_ut, T); // TODO should this be just GRMHD::calc_tensor?
+    // If sigma > 1...
+    if ((dot(Dtmp.bcon, Dtmp.bcov) / rho_P(k, j, i)) > 1.) {
+        Real T[GR_DIM];
+        GRMHD::calc_tensor(rho_P(k, j, i), u_P(k, j, i), (gam - 1.) * u_P(k, j, i), Dtmp, 0, T);
         local_result += -T[1] * G.dx3v(k) * G.dx2v(j);
     }
 }))

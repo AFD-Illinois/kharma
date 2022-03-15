@@ -36,9 +36,9 @@ dump1file = sys.argv[1]
 dump2file = sys.argv[2]
 imname = sys.argv[3]
 
-dump1 = pyharm.load_dump(dump1file, add_ghosts=GHOSTS)
+dump1 = pyharm.load_dump(dump1file, ghost_zones=GHOSTS)
 #Hopefully this fails for dumps that shouldn't be compared
-dump2 = pyharm.load_dump(dump2file, add_ghosts=GHOSTS)
+dump2 = pyharm.load_dump(dump2file, ghost_zones=GHOSTS)
 
 N1 = dump1['n1']; N2 = dump1['n2']; N3 = dump1['n3']
 

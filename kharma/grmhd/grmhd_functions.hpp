@@ -292,7 +292,7 @@ KOKKOS_INLINE_FUNCTION void calc_ucon(const GRCoordinates& G, const Global& P, c
 }
 
 /**
- * Global GRMHD-only "p_to_u" call: just MHD variables (uses B optionally, but no output). TODO elminate?
+ * Global GRMHD-only "p_to_u" call: for areas where nonideal terms are *always* 0!
  */
 template<typename Local>
 KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates& G, const Local& P, const VarMap& m_p,

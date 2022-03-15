@@ -13,7 +13,7 @@ python check.py $res "in 2D, MKS coordinates" mks || fail=1
 python check.py $res "in 2D, linear recon with MC limiter" linear_mc || fail=1
 python check.py $res "in 2D, linear recon with VL limiter" linear_vl || fail=1
 
-python check.py $res "in 2D, with Imex driver" imex || fail=1
-python check.py $res "in 2D, with implicit stepping" imex_im || fail=1
+#python check.py $res "in 2D, with Imex driver" imex || fail=1
+#python check.py $res "in 2D, with implicit stepping" imex_im || fail=1
 
 exit $fail

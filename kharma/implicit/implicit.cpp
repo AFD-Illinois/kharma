@@ -49,8 +49,31 @@ using namespace KokkosBatched;
 namespace Implicit
 {
 
+std::vector<std::string> get_ordered_names(MeshBlockData<Real> *rc, const MetadataFlag& flag, bool only_implicit=false) {
+    auto pmb0 = rc->GetBlockPointer();
+    MetadataFlag isImplicit = pmb0->packages.Get("Implicit")->Param<MetadataFlag>("ImplicitFlag");
+    MetadataFlag isExplicit = pmb0->packages.Get("Implicit")->Param<MetadataFlag>("ExplicitFlag");
+    std::vector<std::string> out;
+    auto vars = rc->GetVariablesByFlag(std::vector<MetadataFlag>({isImplicit, flag}), true).labels();
+    for (int i=0; i < vars.size(); ++i) {
+        if (rc->Contains(vars[i])) {
+            out.push_back(vars[i]);
+        }
+    }
+    if (!only_implicit) {
+        vars = rc->GetVariablesByFlag(std::vector<MetadataFlag>({isExplicit, flag}), true).labels();
+        for (int i=0; i < vars.size(); ++i) {
+            if (rc->Contains(vars[i])) {
+                out.push_back(vars[i]);
+            }
+        }
+    }
+    return out;
+}
+
 std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
 {
+    Flag("Initializing Implicit Package");
     auto pkg = std::make_shared<StateDescriptor>("Implicit");
     Params &params = pkg->AllParams();
 
@@ -64,26 +87,34 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     int max_nonlinear_iter = pin->GetOrAddInteger("implicit", "max_nonlinear_iter", 3);
     params.Add("max_nonlinear_iter", max_nonlinear_iter);
 
-    // No field specific to implicit solving, but we keep around the residual since
-    // we need to write the whole thing out anyway
-    Metadata m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
-    pkg->AddField("pflag", m);
+    // Denote failures/non-converged zones with the same flag as UtoP
+    // This does NOT share the same mapping of values
+    // TODO currently unused
+    // Metadata m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
+    // pkg->AddField("pflag", m);
+
+    // When using this package we'll need to distinguish Implicitly and Explicitly-updated variables
+    MetadataFlag isImplicit = Metadata::AllocateNewFlag("Implicit");
+    params.Add("ImplicitFlag", isImplicit);
+    MetadataFlag isExplicit = Metadata::AllocateNewFlag("Explicit");
+    params.Add("ExplicitFlag", isExplicit);
 
     // Anything we need to run from this package on callbacks
     // None of this will be crucial for the step
     // pkg->PostFillDerivedBlock = Implicit::PostFillDerivedBlock;
     // pkg->PostStepDiagnosticsMesh = Implicit::PostStepDiagnostics;
 
+    Flag("Initialized");
     return pkg;
 }
 
-TaskStatus Step(MeshData<Real> *mdi, MeshData<Real> *md0, MeshData<Real> *dudt,
-                MeshData<Real> *md1, const Real& dt)
+TaskStatus Step(MeshData<Real> *mci, MeshData<Real> *mc0, MeshData<Real> *dudt,
+                MeshData<Real> *mc_solver, const Real& dt)
 {
-    Flag(mdi, "Implicit Iteration start, i");
-    Flag(md0, "Implicit Iteration start, 0");
+    Flag(mci, "Implicit Iteration start, i");
+    Flag(mc0, "Implicit Iteration start, 0");
     Flag(dudt, "Implicit Iteration start, dudt");
-    auto pmb0 = mdi->GetBlockData(0)->GetBlockPointer();
+    auto pmb0 = mci->GetBlockData(0)->GetBlockPointer();
 
     const auto& implicit_par = pmb0->packages.Get("Implicit")->AllParams();
     const int iter_max = implicit_par.Get<int>("max_nonlinear_iter");
@@ -91,42 +122,49 @@ TaskStatus Step(MeshData<Real> *mdi, MeshData<Real> *md0, MeshData<Real> *dudt,
     const Real delta = implicit_par.Get<Real>("jacobian_delta");
     const Real gam = pmb0->packages.Get("GRMHD")->Param<Real>("gamma");
 
-    EMHD_parameters emhd_params = {0};
+    EMHD_parameters emhd_params;
     if (pmb0->packages.AllPackages().count("EMHD")) {
         const auto& pars = pmb0->packages.Get("EMHD")->AllParams();
         emhd_params = pars.Get<EMHD_parameters>("emhd_params");
     }
 
-    printf("Implicit advance dt: %g\n", dt);
-
-    //MetadataFlag isNonideal = pmb0->packages.Get("EMHD")->Param<MetadataFlag>("NonidealFlag");
+    // I don't normally do this, but we *really* care about variable ordering here.
+    // The implicit variables need to be first, so we know how to iterate over just them to fill
+    // just the residual & Jacobian we care about, which makes the solve much faster.
+    // This strategy is ugly but potentially gives us complete control,
+    // in case Kokkos's un-pivoted LU proves problematic
     MetadataFlag isPrimitive = pmb0->packages.Get("GRMHD")->Param<MetadataFlag>("PrimitiveFlag");
+     auto& rci = mci->GetBlockData(0); // MeshBlockData object, more member functions
+    auto ordered_prims = get_ordered_names(rci.get(), isPrimitive);
+    auto ordered_cons = get_ordered_names(rci.get(), Metadata::Conserved);
+    //cerr << "Ordered prims:"; for(auto prim: ordered_prims) cerr << " " << prim; cerr << endl;
+    //cerr << "Ordered cons:"; for(auto con: ordered_cons) cerr << " " << con; cerr << endl;
+
     // Initial state.  Also mapping template
     PackIndexMap prims_map, cons_map;
-    auto& Pi_all = mdi->PackVariables(std::vector<MetadataFlag>{isPrimitive}, prims_map);
-    auto& Ui_all = mdi->PackVariables(std::vector<MetadataFlag>{Metadata::Conserved}, cons_map);
+    auto& Pi_all = mci->PackVariables(ordered_prims, prims_map);
+    auto& Ui_all = mci->PackVariables(ordered_cons, cons_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
     // Current sub-step starting state.
-    auto& Ps_all = md0->PackVariables(std::vector<MetadataFlag>{isPrimitive});
-    auto& Us_all = md0->PackVariables(std::vector<MetadataFlag>{Metadata::Conserved});
-    // Flux divergence plus explicit source terms. This is what we'd be adding 
-    auto& dUdt_all = dudt->PackVariables(std::vector<MetadataFlag>{Metadata::Conserved});
-    // Desired final state.
-    auto& Pf_all = md1->PackVariables(std::vector<MetadataFlag>{isPrimitive});
+    auto& Ps_all = mc0->PackVariables(ordered_prims);
+    auto& Us_all = mc0->PackVariables(ordered_cons);
+    // Flux divergence plus explicit source terms. This is what we'd be adding.
+    auto& dUdt_all = dudt->PackVariables(ordered_cons);
+    // Guess at initial state. We update only the implicit primitive vars
+    auto& P_solver_all = mc_solver->PackVariables(get_ordered_names(rci.get(), isPrimitive, true));
 
-    // Note this iterator, like all of KHARMA, requires nprim == ncons
-    // TODO Maybe should enforce that at start?
+    // Sizes and scratchpads
     const int nblock = Ui_all.GetDim(5);
     const int nvar = Ui_all.GetDim(4);
-
-    // Workspaces for iteration, include ghosts to match indices.
+    const int nfvar = P_solver_all.GetDim(4);
     auto bounds = pmb0->cellbounds;
     const int n1 = bounds.ncellsi(IndexDomain::entire);
     const int n2 = bounds.ncellsj(IndexDomain::entire);
     const int n3 = bounds.ncellsk(IndexDomain::entire);
-    // A full space for solver iterations, as Pi/Pf may be aliased:
-    // thus we don't want to write anything until we're done.
-    ParArray5D<Real> P_solver_all("P_solver", nblock, nvar, n3, n2, n1);
+
+    // RETURN if there aren't any implicit variables to evolve
+    //cerr << "Solve size " << nfvar << " on prim size " << nvar << endl;
+    if (nfvar == 0) return TaskStatus::complete;
 
     // The norm of the residual.  We store this to avoid the main kernel
     // also being a 2-stage reduction, which is complex and sucks.
@@ -143,7 +181,6 @@ TaskStatus Step(MeshData<Real> *mdi, MeshData<Real> *md0, MeshData<Real> *dudt,
     const IndexRange jb = bounds.GetBoundsJ(domain);
     const IndexRange kb = bounds.GetBoundsK(domain);
     const IndexRange block = IndexRange{0, nblock - 1};
-    const IndexRange vb = IndexRange{0, nvar - 1};
 
     // Allocate scratch space
     // It is impossible to declare runtime-sized arrays in CUDA
@@ -154,32 +191,34 @@ TaskStatus Step(MeshData<Real> *mdi, MeshData<Real> *md0, MeshData<Real> *dudt,
     // See grmhd_functions.hpp for the other approach with overloads
     const int scratch_level = 1; // 0 is actual scratch (tiny); 1 is HBM
     const size_t var_size_in_bytes = parthenon::ScratchPad2D<Real>::shmem_size(nvar, n1);
-    const size_t tensor_size_in_bytes = parthenon::ScratchPad3D<Real>::shmem_size(nvar, nvar, n1);
+    const size_t fvar_size_in_bytes = parthenon::ScratchPad2D<Real>::shmem_size(nfvar, n1);
+    const size_t tensor_size_in_bytes = parthenon::ScratchPad3D<Real>::shmem_size(nfvar, nvar, n1);
     // Allocate enough to cache:
     // jacobian (2D)
-    // residual, deltaP, dUi, two temps
-    // Pi/Ui, Ps/Us, dUdt, P_solver
-    const size_t total_scratch_bytes = tensor_size_in_bytes + (12) * var_size_in_bytes;
+    // residual, deltaP (implicit only)
+    // Pi/Ui, Ps/Us, dUdt, P_solver, dUi, two temps (all vars)
+    const size_t total_scratch_bytes = tensor_size_in_bytes + (2) * fvar_size_in_bytes + (10) * var_size_in_bytes;
 
     // Iterate.  This loop is outside the kokkos kernel in order to print max_norm
     // There are generally a low and similar number of iterations between
     // different zones, so probably acceptable speed loss.
     for (int iter=0; iter < iter_max; iter++) {
         // Flags per iter, since debugging here will be rampant
-        Flag(md0, "Implicit Iteration: md0");
+        Flag(mc_solver, "Implicit Iteration:");
 
         parthenon::par_for_outer(DEFAULT_OUTER_LOOP_PATTERN, "implicit_solve", pmb0->exec_space,
             total_scratch_bytes, scratch_level, block.s, block.e, kb.s, kb.e, jb.s, jb.e,
             KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int& b, const int& k, const int& j) {
                 const auto& G = Ui_all.GetCoords(b);
-                ScratchPad3D<Real> jacobian_s(member.team_scratch(scratch_level), nvar, nvar, n1);
-                ScratchPad2D<Real> residual_s(member.team_scratch(scratch_level), nvar, n1);
-                ScratchPad2D<Real> delta_prim_s(member.team_scratch(scratch_level), nvar, n1);
+                // Scratchpads for implicit vars
+                ScratchPad3D<Real> jacobian_s(member.team_scratch(scratch_level), nfvar, nfvar, n1);
+                ScratchPad2D<Real> residual_s(member.team_scratch(scratch_level), nfvar, n1);
+                ScratchPad2D<Real> delta_prim_s(member.team_scratch(scratch_level), nfvar, n1);
+                // Scratchpads for all vars
                 ScratchPad2D<Real> dUi_s(member.team_scratch(scratch_level), nvar, n1);
                 ScratchPad2D<Real> tmp1_s(member.team_scratch(scratch_level), nvar, n1);
                 ScratchPad2D<Real> tmp2_s(member.team_scratch(scratch_level), nvar, n1);
                 ScratchPad2D<Real> tmp3_s(member.team_scratch(scratch_level), nvar, n1);
-                // Local versions of the variables
                 ScratchPad2D<Real> Pi_s(member.team_scratch(scratch_level), nvar, n1);
                 ScratchPad2D<Real> Ui_s(member.team_scratch(scratch_level), nvar, n1);
                 ScratchPad2D<Real> Ps_s(member.team_scratch(scratch_level), nvar, n1);
@@ -188,27 +227,36 @@ TaskStatus Step(MeshData<Real> *mdi, MeshData<Real> *md0, MeshData<Real> *dudt,
                 ScratchPad2D<Real> P_solver_s(member.team_scratch(scratch_level), nvar, n1);
 
                 // Copy some file contents to scratchpads, so we can slice them
-                PLOOP parthenon::par_for_inner(member, ib.s, ib.e,
-                    [&](const int& i) {
-                        Pi_s(ip, i) = Pi_all(b)(ip, k, j, i);
-                        Ui_s(ip, i) = Ui_all(b)(ip, k, j, i);
-                        Ps_s(ip, i) = Ps_all(b)(ip, k, j, i);
-                        Us_s(ip, i) = Us_all(b)(ip, k, j, i);
-                        dUdt_s(ip, i) = dUdt_all(b)(ip, k, j, i);
-                        dUi_s(ip, i) = 0.; // Only a few vars are populated
-                        // Finally, P_solver should actually be initialized to Ps
-                        if (iter == 0) {
+                PLOOP {
+                    parthenon::par_for_inner(member, ib.s, ib.e,
+                        [&](const int& i) {
+                            Pi_s(ip, i) = Pi_all(b)(ip, k, j, i);
+                            Ui_s(ip, i) = Ui_all(b)(ip, k, j, i);
+                            Ps_s(ip, i) = Ps_all(b)(ip, k, j, i);
+                            Us_s(ip, i) = Us_all(b)(ip, k, j, i);
+                            dUdt_s(ip, i) = dUdt_all(b)(ip, k, j, i);
                             P_solver_s(ip, i) = Ps_all(b)(ip, k, j, i);
-                        } else {
-                            P_solver_s(ip, i) = P_solver_all(b, ip, k, j, i);
+                            dUi_s(ip, i) = 0.;
                         }
-                    }
-                );
+                    );
+                }
+                member.team_barrier();
+
+                // Copy in the guess or current solution
+                // Note this replaces the implicit portion of P_solver_s --
+                // any explicit portion was initialized above
+                FLOOP { // Loop over just the implicit "fluid" portion of primitive vars
+                    parthenon::par_for_inner(member, ib.s, ib.e,
+                        [&](const int& i) {
+                            P_solver_s(ip, i) = P_solver_all(b)(ip, k, j, i);
+                        }
+                    );
+                }
                 member.team_barrier();
 
                 parthenon::par_for_inner(member, ib.s, ib.e,
                     [&](const int& i) {
-                        // Lots of slicing.  This is still way faster & cleaner than alternatives, trust me
+                        // Lots of slicing.  This still ends up faster & cleaner than alternatives I tried
                         auto Pi = Kokkos::subview(Pi_s, Kokkos::ALL(), i);
                         auto Ui = Kokkos::subview(Ui_s, Kokkos::ALL(), i);
                         auto Ps = Kokkos::subview(Ps_s, Kokkos::ALL(), i);
@@ -226,70 +274,70 @@ TaskStatus Step(MeshData<Real> *mdi, MeshData<Real> *md0, MeshData<Real> *dudt,
                         // Implicit sources at starting state
                         auto dUi = Kokkos::subview(dUi_s, Kokkos::ALL(), i);
                         if (m_p.Q >= 0) {
-                            Real dUq, dUdP;
-                            EMHD::implicit_sources(G, Pi, m_p, gam, j, i, emhd_params, dUq, dUdP);
-                            dUi(m_u.Q) = dUq;
-                            dUi(m_u.DP) = dUdP;
+                            EMHD::implicit_sources(G, Pi, m_p, gam, j, i, emhd_params, dUi(m_u.Q), dUi(m_u.DP));
                         }
 
                         // Jacobian calculation
                         // Requires calculating the residual anyway, so we grab it here
                         calc_jacobian(G, P_solver, Pi, Ui, Ps, dUdt, dUi, tmp1, tmp2, tmp3,
-                                      m_p, m_u, emhd_params, nvar, j, i, delta, gam, dt, jacobian, residual);
+                                      m_p, m_u, emhd_params, nvar, nfvar, j, i, delta, gam, dt, jacobian, residual);
                         // Solve against the negative residual
-                        PLOOP delta_prim(ip) = -residual(ip);
+                        FLOOP delta_prim(ip) = -residual(ip);
 
-                        // if (am_rank0 && b == 0 && i == 8 && j == 8 && k == 0) {
+                        // if (am_rank0 && b == 0 && i == 4 && j == 4 && k == 4) {
                         //     printf("Variable ordering: rho %d uu %d u1 %d B1 %d q %d dP %d\n",
                         //             m_p.RHO, m_p.UU, m_p.U1, m_p.B1, m_p.Q, m_p.DP);
-                        //     printf("P_solver: "); PLOOP printf("%g ", P_solver(ip)); printf("\n");
-                        //     printf("Pi: "); PLOOP printf("%g ", Pi(ip)); printf("\n");
-                        //     printf("Ui: "); PLOOP printf("%g ", Ui(ip)); printf("\n");
-                        //     printf("Ps: "); PLOOP printf("%g ", Ps(ip)); printf("\n");
-                        //     printf("Us: "); PLOOP printf("%g ", Us(ip)); printf("\n");
-                        //     printf("dUdt: "); PLOOP printf("%g ", dUdt(ip)); printf("\n");
-                        //     printf("Initial residual: "); PLOOP printf("%g ", residual(ip)); printf("\n");
-                        //     printf("Initial delta_prim: "); PLOOP printf("%g ", delta_prim(ip)); printf("\n");
+                        //     printf("Variable ordering: rho %d uu %d u1 %d B1 %d q %d dP %d\n",
+                        //             m_u.RHO, m_u.UU, m_u.U1, m_u.B1, m_u.Q, m_u.DP);
+                        //     // printf("P_solver: "); PLOOP printf("%g ", P_solver(ip)); printf("\n");
+                        //     // printf("Pi: "); PLOOP printf("%g ", Pi(ip)); printf("\n");
+                        //     // printf("Ui: "); PLOOP printf("%g ", Ui(ip)); printf("\n");
+                        //     // printf("Ps: "); PLOOP printf("%g ", Ps(ip)); printf("\n");
+                        //     // printf("Us: "); PLOOP printf("%g ", Us(ip)); printf("\n");
+                        //     // printf("dUdt: "); PLOOP printf("%g ", dUdt(ip)); printf("\n");
+                        //     printf("Initial Jacobian:\n"); for (int jp=0; jp<nvar; ++jp) {PLOOP printf("%g\t", jacobian(jp,ip)); printf("\n");}
+                        //     // printf("Initial residual: "); PLOOP printf("%g ", residual(ip)); printf("\n");
+                        //     // printf("Initial delta_prim: "); PLOOP printf("%g ", delta_prim(ip)); printf("\n");
                         // }
 
                         // Linear solve
                         // This code lightly adapted from Kokkos batched examples
                         // Replaces our inverse residual with the actual desired delta_prim
                         KokkosBatched::SerialLU<Algo::LU::Blocked>::invoke(jacobian, tiny);
-                        KokkosBatched::SerialTrsv<Uplo::Lower,Trans::NoTranspose,Diag::NonUnit,Algo::Trsv::Blocked>
+                        KokkosBatched::SerialTrsv<Uplo::Upper,Trans::NoTranspose,Diag::NonUnit,Algo::Trsv::Blocked>
                         ::invoke(alpha, jacobian, delta_prim);
 
                         // Update the guess.  For now lambda == 1, choose on the fly?
-                        PLOOP P_solver(ip) += lambda * delta_prim(ip);
+                        FLOOP P_solver(ip) += lambda * delta_prim(ip);
 
                         calc_residual(G, P_solver, Pi, Ui, Ps, dUdt, dUi, tmp3,
-                                      m_p, m_u, emhd_params, nvar, j, i, gam, dt, residual);
+                                      m_p, m_u, emhd_params, nfvar, j, i, gam, dt, residual);
 
-                        // if (am_rank0 && b == 0 && i == 8 && j == 8 && k == 0) {
-                        //     printf("Variable ordering: rho %d uu %d u1 %d B1 %d q %d dP %d\n",
-                        //             m_p.RHO, m_p.UU, m_p.U1, m_p.B1, m_p.Q, m_p.DP);
-                        //     // JACOBIAN
+                        // if (am_rank0 && b == 0 && i == 11 && j == 11 && k == 0) {
+                        //     // printf("Variable ordering: rho %d uu %d u1 %d B1 %d q %d dP %d\n",
+                        //     //         m_p.RHO, m_p.UU, m_p.U1, m_p.B1, m_p.Q, m_p.DP);
                         //     printf("Final residual: "); PLOOP printf("%g ", residual(ip)); printf("\n");
-                        //     printf("Final delta_prim: "); PLOOP printf("%g ", delta_prim(ip)); printf("\n");
-                        //     printf("Final P_solver: "); PLOOP printf("%g ", P_solver(ip)); printf("\n");
+                        //     // printf("Final delta_prim: "); PLOOP printf("%g ", delta_prim(ip)); printf("\n");
+                        //     // printf("Final P_solver: "); PLOOP printf("%g ", P_solver(ip)); printf("\n");
                         // }
 
                         // Store for maximum/output
                         // I would be tempted to store the whole residual, but it's of variable size
                         norm_all(b, k , j, i) = 0;
-                        PLOOP norm_all(b, k, j, i) += pow(residual(ip), 2);
+                        FLOOP norm_all(b, k, j, i) += pow(residual(ip), 2);
                         norm_all(b, k, j, i) = sqrt(norm_all(b, k, j, i)); // TODO faster to scratch cache & copy?
                     }
                 );
                 member.team_barrier();
 
-                // Copy out P_solver to the existing array
-                // This combo still works if P_solver is aliased to one of the other arrays!
-                PLOOP parthenon::par_for_inner(member, ib.s, ib.e,
-                    [&](const int& i) {
-                        P_solver_all(b, ip, k, j, i) = P_solver_s(ip, i);
-                    }
-                );
+                // Copy out (the good bits of) P_solver to the existing array
+                FLOOP {
+                    parthenon::par_for_inner(member, ib.s, ib.e,
+                        [&](const int& i) {
+                            P_solver_all(b)(ip, k, j, i) = P_solver_s(ip, i);
+                        }
+                    );
+                }
             }
         );
         
@@ -305,13 +353,7 @@ TaskStatus Step(MeshData<Real> *mdi, MeshData<Real> *md0, MeshData<Real> *dudt,
         if (MPIRank0()) fprintf(stdout, "Nonlinear iter %d. Max L2 norm: %g\n", iter, max_norm);
     }
 
-    // Write to Pf
-    pmb0->par_for("write_Pf", block.s, block.e, vb.s, vb.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-        KOKKOS_LAMBDA_MESH_VARS {
-            Pf_all(b)(p, k, j, i) = P_solver_all(b, p, k, j, i);
-        }
-    );
-    Flag(md1, "Implicit Iteration: final");
+    Flag(mc_solver, "Implicit Iteration: final");
 
     return TaskStatus::complete;
 

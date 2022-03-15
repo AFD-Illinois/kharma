@@ -157,6 +157,7 @@ KOKKOS_INLINE_FUNCTION bool outside(const int& k, const int& j, const int& i,
 
 #if TRACE
 #define PRINTCORNERS 0
+#define PRINTZONE 0
 inline void PrintCorner(MeshBlockData<Real> *rc)
 {
     auto rhop = rc->Get("prims.rho").data.GetHostMirrorAndCopy();
@@ -186,6 +187,20 @@ inline void PrintCorner(MeshBlockData<Real> *rc)
     cerr << endl << endl;
 }
 
+inline void PrintZone(MeshBlockData<Real> *rc)
+{
+    auto rhop = rc->Get("prims.rho").data.GetHostMirrorAndCopy();
+    auto up = rc->Get("prims.u").data.GetHostMirrorAndCopy();
+    auto uvecp = rc->Get("prims.uvec").data.GetHostMirrorAndCopy();
+    auto Bp = rc->Get("prims.B").data.GetHostMirrorAndCopy();
+    auto q = rc->Get("prims.q").data.GetHostMirrorAndCopy();
+    auto dP = rc->Get("prims.dP").data.GetHostMirrorAndCopy();
+    cerr << rhop(0,11,11) << up(0,11,11)
+         << uvecp(0, 0,11,11) << uvecp(1, 0,11,11) << uvecp(2, 0,11,11)
+         << Bp(0, 0,11,11) << Bp(1, 0,11,11) << Bp(2, 0,11,11)
+         << q(0,11,11) << dP(0,11,11) << endl;
+}
+
 inline void Flag(std::string label)
 {
 #pragma omp critical
@@ -198,6 +213,7 @@ inline void Flag(MeshBlockData<Real> *rc, std::string label)
 {
     if(MPIRank0()) std::cerr << label << std::endl;
     if(PRINTCORNERS) PrintCorner(rc);
+    if(PRINTZONE) PrintZone(rc);
 }
 }
 
@@ -206,9 +222,10 @@ inline void Flag(MeshData<Real> *md, std::string label)
 #pragma omp critical
 {
     if(MPIRank0()) std::cerr << label << std::endl;
-    if(PRINTCORNERS) {
+    if(PRINTCORNERS || PRINTZONE) {
         auto rc = md->GetBlockData(0).get();
-        PrintCorner(rc);
+        if(PRINTCORNERS) PrintCorner(rc);
+        if(PRINTZONE) PrintZone(rc);
     }
 }
 }

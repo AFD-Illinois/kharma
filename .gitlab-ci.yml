@@ -50,6 +50,18 @@ mhdmodes:
       - tests/mhdmodes/*.hst
       - tests/mhdmodes/*.txt
 
+emhdmodes:
+  stage: tests
+  before_script:
+    - cd tests/emhdmodes/
+  script:
+    - bash run.sh
+    - bash check.sh
+  artifacts:
+    when: always
+    paths:
+      - tests/emhdmodes/*.png
+
 noh:
   stage: tests
   before_script:

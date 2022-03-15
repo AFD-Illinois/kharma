@@ -45,6 +45,10 @@ dt_min = 0.0001
 cfl = 0.9
 gamma = 1.333333
 reconstruction = weno5
+implicit = false
+
+<b_field>
+implicit = false
 
 <mhdmodes>
 nmode = 1
@@ -58,10 +62,6 @@ verbose = 0
 
 <driver>
 type = harm
-step = explicit
-
-<implicit>
-max_nonlinear_iter = 3
 
 <parthenon/output0>
 file_type = hdf5

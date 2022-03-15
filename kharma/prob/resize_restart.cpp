@@ -44,11 +44,6 @@
 #include <sys/stat.h>
 #include <ctype.h>
 
-// First boundary sync
-void outflow_x1(const GRCoordinates& G, GridVars P, int nghost, int n1, int n2, int n3);
-void polar_x2(const GRCoordinates& G, GridVars P, int nghost, int n1, int n2, int n3);
-void periodic_x3(const GRCoordinates& G, GridVars P, int nghost, int n1, int n2, int n3);
-
 using namespace Kokkos;
 
 // TODO

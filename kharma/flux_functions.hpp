@@ -66,17 +66,14 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const Local& P,
     Real T[GR_DIM];
     if (m_p.Q >= 0) {
         // EGRMHD stress-energy tensor w/ first index up, second index down
-        
-        const Real& rho     = P(m_p.RHO);
-        const Real q_tilde  = P(m_p.Q);
-        const Real dP_tilde = P(m_p.DP);
-        const Real& Theta   = (gam - 1) * P(m_p.UU) / P(m_p.RHO);
-
+        // Get problem closure parameters
         Real tau, chi_e, nu_e;
         EMHD::set_parameters(G, P, m_p, emhd_params, gam, tau, chi_e, nu_e);
 
-        Real q = 0., dP = 0.;
-        EMHD::convert_prims_to_q_dP(q_tilde, dP_tilde, rho, Theta, tau, chi_e, nu_e, emhd_params, q, dP);
+        // Apply higher-order terms conversion if necessary
+        Real q, dP;
+        const Real Theta   = (gam - 1) * P(m_p.UU) / P(m_p.RHO);
+        EMHD::convert_prims_to_q_dP(P(m_p.Q), P(m_p.DP), P(m_p.RHO), Theta, tau, chi_e, nu_e, emhd_params, q, dP);
 
         // Then calculate the tensor
         EMHD::calc_tensor(P(m_p.RHO), P(m_p.UU), (gam - 1) * P(m_p.UU), q, dP, D, dir, T);
@@ -87,6 +84,7 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const Local& P,
         // GRHD stress-energy tensor w/ first index up, second index down
         GRHD::calc_tensor(P(m_p.RHO), P(m_p.UU), (gam - 1) * P(m_p.UU), D, dir, T);
     }
+    //if (i == 11 && j == 11) printf("mhd: %g %g %g %g\n", T[0], T[1], T[2], T[3]);
     flux(m_u.UU) = T[0] * gdet + flux(m_u.RHO);
     flux(m_u.U1) = T[1] * gdet;
     flux(m_u.U2) = T[2] * gdet;
@@ -141,7 +139,7 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const Local& P,
 }
 
 /**
- * Get the conserved GRHD variables corresponding to primitives in a zone. Equivalent to prim_to_flux with dir==0
+ * Get the conserved (E)GRMHD variables corresponding to primitives in a zone. Equivalent to prim_to_flux with dir==0
  */
 template<typename Local>
 KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates& G, const Local& P, const VarMap& m_p,
