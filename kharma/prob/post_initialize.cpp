@@ -52,18 +52,22 @@
 void SyncAllBounds(ParameterInput *pin, Mesh *pmesh)
 {
 
+    // TODO this does syncs per-block.  Correctly afaict,
+    // but they could be done more simply & efficiently per-mesh
+    Flag("Syncing all bounds");
+
     if (pin->GetString("driver", "type") == "imex") {
         // If we're syncing the primitive vars, we just sync
         for (auto &pmb : pmesh->block_list) {
             auto& rc = pmb->meshblock_data.Get();
-            rc->ClearBoundary(BoundaryCommSubset::mesh_init);
-            rc->StartReceiving(BoundaryCommSubset::mesh_init);
+            //rc->ClearBoundary(BoundaryCommSubset::all);
+            rc->StartReceiving(BoundaryCommSubset::all);
             rc->SendBoundaryBuffers();
         }
         for (auto &pmb : pmesh->block_list) {
             auto& rc = pmb->meshblock_data.Get();
             rc->ReceiveAndSetBoundariesWithWait();
-            rc->ClearBoundary(BoundaryCommSubset::mesh_init);
+            rc->ClearBoundary(BoundaryCommSubset::all);
             // TODO if amr...
             //pmb->pbval->ProlongateBoundaries();
 
@@ -85,31 +89,34 @@ void SyncAllBounds(ParameterInput *pin, Mesh *pmesh)
 
         for (auto &pmb : pmesh->block_list) {
             auto& rc = pmb->meshblock_data.Get();
-            rc->ClearBoundary(BoundaryCommSubset::mesh_init);
-            rc->StartReceiving(BoundaryCommSubset::mesh_init);
+            Flag("Block sync send");
+            //rc->ClearBoundary(BoundaryCommSubset::all);
+            rc->StartReceiving(BoundaryCommSubset::all);
             rc->SendBoundaryBuffers();
         }
 
         for (auto &pmb : pmesh->block_list) {
             auto& rc = pmb->meshblock_data.Get();
+            Flag("Block sync receive");
             rc->ReceiveAndSetBoundariesWithWait();
-            rc->ClearBoundary(BoundaryCommSubset::mesh_init);
+            rc->ClearBoundary(BoundaryCommSubset::all);
             // TODO if amr...
             //pmb->pbval->ProlongateBoundaries();
 
+            Flag("Fill Derived");
             // Fill P again, including ghost zones
             parthenon::Update::FillDerived(rc.get());
 
+            Flag("Physical bounds");
             // Physical boundary conditions
             parthenon::ApplyBoundaryConditions(rc);
         }
     }
+    Flag("Sync'd");
 }
 
 void KHARMA::SeedAndNormalizeB(ParameterInput *pin, Mesh *pmesh)
 {
-
-
     // Check which solver we'll be using
     const bool use_b_flux_ct = pmesh->packages.AllPackages().count("B_FluxCT");
     const bool use_b_cd = pmesh->packages.AllPackages().count("B_CD");

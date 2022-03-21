@@ -72,10 +72,11 @@ TaskStatus InitP(MeshData<Real> *md);
 TaskStatus UpdateP(MeshData<Real> *md);
 
 /**
- * Sum the remaining error, that is, the difference del^2 p - divB
+ * Functions to calculate the remaining error, that is, the difference del^2 p - divB
  */
 TaskStatus SumError(MeshData<Real> *du, Real& reduce_sum);
 TaskStatus SumP(MeshData<Real> *md, Real& reduce_sum);
+TaskStatus MaxError(MeshData<Real> *md, Real& reduce_max);
 
 /**
  * Apply B -= grad(P) to subtract divergence from the magnetic field

@@ -63,14 +63,19 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     params.Add("extra_checks", extra_checks);
 
     // Solver options
-    // This tolerance corresponds to divB_max ~ 1e-12. TODO use that as the indicator?
-    Real error_tolerance = pin->GetOrAddReal("b_cleanup", "error_tolerance", 1e-10);
-    params.Add("error_tolerance", error_tolerance);
-    Real sor_factor = pin->GetOrAddReal("b_cleanup", "sor_factor", 2./3);
+    // Allow setting tolerance relative to starting value.  Off by default
+    Real rel_tolerance = pin->GetOrAddReal("b_cleanup", "rel_tolerance", 1.);
+    params.Add("rel_tolerance", rel_tolerance);
+    // Instead set absolute tolerance corresponding roughly to max divB on grid
+    // Note this returns divB max about 1 decade greater, i.e. ~1e-14
+    Real abs_tolerance = pin->GetOrAddReal("b_cleanup", "abs_tolerance", 1e-15);
+    params.Add("abs_tolerance", abs_tolerance);
+    // TODO why does this need to be so large?
+    Real sor_factor = pin->GetOrAddReal("b_cleanup", "sor_factor", 200);
     params.Add("sor_factor", sor_factor);
     int max_iterations = pin->GetOrAddInteger("b_cleanup", "max_iterations", 1e8);
     params.Add("max_iterations", max_iterations);
-    int check_interval = pin->GetOrAddInteger("b_cleanup", "check_interval", 1e4);
+    int check_interval = pin->GetOrAddInteger("b_cleanup", "check_interval", 1e3);
     params.Add("check_interval", check_interval);
     bool fail_without_convergence = pin->GetOrAddBoolean("b_cleanup", "fail_without_convergence", true);
     params.Add("fail_without_convergence", fail_without_convergence);
@@ -159,7 +164,8 @@ void CleanupDivergence(std::shared_ptr<MeshData<Real>>& md)
     auto pkg = md->GetMeshPointer()->packages.Get("B_Cleanup");
     auto max_iters = pkg->Param<int>("max_iterations");
     auto check_interval = pkg->Param<int>("check_interval");
-    auto error_tolerance = pkg->Param<Real>("error_tolerance");
+    auto rel_tolerance = pkg->Param<Real>("rel_tolerance");
+    auto abs_tolerance = pkg->Param<Real>("abs_tolerance");
     auto fail_flag = pkg->Param<bool>("fail_without_convergence");
     auto warn_flag = pkg->Param<bool>("warn_without_convergence");
     auto verbose = pkg->Param<int>("verbose");
@@ -199,10 +205,16 @@ void CleanupDivergence(std::shared_ptr<MeshData<Real>>& md)
         cell_centered_bvars::SendBoundaryBuffers(md);
         cell_centered_bvars::ReceiveBoundaryBuffers(md);
         cell_centered_bvars::SetBoundaries(md);
-
         md.get()->ClearBoundary(BoundaryCommSubset::all);
 
+        // And set physical boundaries
+        for (auto &pmb : md->GetMeshPointer()->block_list) {
+            auto& rc = pmb->meshblock_data.Get();
+            parthenon::ApplyBoundaryConditions(rc);
+        }
+
         if (iter % check_interval == 0) {
+            Flag("Iteration:");
             // Calculate the new norm & relative error in eliminating divB
             update_norm.val = 0.;
             B_Cleanup::SumError(md.get(), update_norm.val);
@@ -212,14 +224,18 @@ void CleanupDivergence(std::shared_ptr<MeshData<Real>>& md)
             // B_Cleanup::SumP(md.get(), P_norm.val);
             // P_norm.StartReduce(MPI_SUM);
             // P_norm.CheckReduce();
+            divB_max.val = 0.;
+            MaxError(md.get(), divB_max.val);
+            divB_max.StartReduce(MPI_MAX);
+            divB_max.CheckReduce();
             if (MPIRank0() && verbose > 0) {
-                std::cout << "divB step " << iter << " error is "
-                        << update_norm.val / divB_norm.val << std::endl;
+                std::cout << "divB step " << iter << " total relative error is " << update_norm.val / divB_norm.val
+                        << " Max absolute error is " << divB_max.val << std::endl;
                 // std::cout << "P norm is " << P_norm.val << std::endl;
             }
 
             // Both these values are already MPI reduced, but we want to make sure
-            converged = (update_norm.val / divB_norm.val) < error_tolerance;
+            converged = ((update_norm.val / divB_norm.val) < rel_tolerance) && (divB_max.val < abs_tolerance);
             converged = MPIMin(converged);
         }
 
@@ -308,7 +324,7 @@ TaskStatus InitP(MeshData<Real> *md)
 
 TaskStatus UpdateP(MeshData<Real> *md)
 {
-    Flag(md, "Updating P");
+    //Flag(md, "Updating P");
     auto pmesh = md->GetParentPointer();
     const int ndim = pmesh->ndim;
     const IndexRange ib = md->GetBoundsI(IndexDomain::interior);
@@ -331,8 +347,8 @@ TaskStatus UpdateP(MeshData<Real> *md)
     auto dB = md->PackVariables(std::vector<std::string>{"dB"});
     auto divB = md->PackVariables(std::vector<std::string>{"divB"});
 
-    // TODO Damped Jacobi takes a *lot* of iterations for anything bigger than a toy problem.
-    // We probably need CG
+    // TODO Multigrid for faster than ~N^2 convergence
+    // TODO don't sync all boundaries here, we only need p
 
     // dB = grad(p), defined at cell centers
     // Need a halo one zone *left*, as corner_div will read that.
@@ -398,6 +414,37 @@ TaskStatus SumError(MeshData<Real> *md, Real& reduce_sum)
 
     // Parthenon/caller will take care of MPI reduction
     reduce_sum += err_total;
+    return TaskStatus::complete;
+}
+
+TaskStatus MaxError(MeshData<Real> *md, Real& reduce_max)
+{
+    Flag(md, "Max new divB");
+    auto pm = md->GetParentPointer();
+    IndexRange ib = md->GetBoundsI(IndexDomain::interior);
+    IndexRange jb = md->GetBoundsJ(IndexDomain::interior);
+    IndexRange kb = md->GetBoundsK(IndexDomain::interior);
+    auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
+
+    // Get variables
+    auto lap = md->PackVariables(std::vector<std::string>{"lap"});
+    auto divB = md->PackVariables(std::vector<std::string>{"divB"});
+
+    // TODO this can be done as
+    // 1. (K*lap - divB) as here
+    // 2. (div of (B - dB)), simulating the actual result
+    // The latter would require a full/scratch vector temporary, and
+    // setting FillGhost on dB, but the sync is in the right spot
+    Real err_max;
+    pmb0->par_reduce("SumError", 0, lap.GetDim(5) - 1, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+        KOKKOS_LAMBDA_MESH_3D_REDUCE {
+            const double new_err = abs(lap(b, 0, k, j, i) - divB(b, 0, k, j, i));
+            if (new_err > local_result) local_result = new_err;
+        }
+    , Kokkos::Max<Real>(err_max));
+
+    // Parthenon/caller will take care of MPI reduction
+    reduce_max += err_max;
     return TaskStatus::complete;
 }
 

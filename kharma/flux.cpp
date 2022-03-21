@@ -43,7 +43,7 @@ using namespace parthenon;
 
 TaskStatus Flux::PtoU(MeshBlockData<Real> *rc, IndexDomain domain)
 {
-    Flag(rc, "Getting conserved fluxes");
+    Flag(rc, "Getting conserved variables");
     // Pointers
     auto pmb = rc->GetBlockPointer();
     // Options
@@ -114,6 +114,6 @@ TaskStatus Flux::PtoU(MeshBlockData<Real> *rc, IndexDomain domain)
         }
     );
 
-    Flag(rc, "Got conserved fluxes");
+    Flag(rc, "Got conserved variables");
     return TaskStatus::complete;
 }

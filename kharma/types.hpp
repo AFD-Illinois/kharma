@@ -168,22 +168,23 @@ inline void PrintCorner(MeshBlockData<Real> *rc)
     auto uc = rc->Get("cons.u").data.GetHostMirrorAndCopy();
     auto uvecc = rc->Get("cons.uvec").data.GetHostMirrorAndCopy();
     auto Bu = rc->Get("cons.B").data.GetHostMirrorAndCopy();
-    auto q = rc->Get("prims.q").data.GetHostMirrorAndCopy();
-    auto dP = rc->Get("prims.dP").data.GetHostMirrorAndCopy();
-    cerr << "q:";
+    auto p = rc->Get("p").data.GetHostMirrorAndCopy();
+    //auto q = rc->Get("prims.q").data.GetHostMirrorAndCopy();
+    //auto dP = rc->Get("prims.dP").data.GetHostMirrorAndCopy();
+    cerr << "p:" << endl;
     for (int j=0; j<8; j++) {
         cout << endl;
         for (int i=0; i<8; i++) {
-            fprintf(stderr, "%.5g\t", q(0, j, i));
+            fprintf(stderr, "%.5g\t", p(0, j, i));
         }
     }
-    cerr << endl << "dP:";
-    for (int j=0; j<8; j++) {
-        cerr << endl;
-        for (int i=0; i<8; i++) {
-            fprintf(stderr, "%.5g\t", dP(0, j, i));
-        }
-    }
+    // cerr << endl << "dP:";
+    // for (int j=0; j<8; j++) {
+    //     cerr << endl;
+    //     for (int i=0; i<8; i++) {
+    //         fprintf(stderr, "%.5g\t", dP(0, j, i));
+    //     }
+    // }
     cerr << endl << endl;
 }
 

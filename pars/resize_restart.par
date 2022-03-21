@@ -27,6 +27,7 @@ r_out = 1000
 tlim = 1.0
 integrator = rk2
 dt_min = 0.00001
+nlim = 1
 
 <GRMHD>
 cfl = 0.9
@@ -39,9 +40,11 @@ use_tf = false
 use_restart_size = false
 
 <b_cleanup>
-error_tolerance = 1e-7
-check_interval = 100
-sor_factor = 15
+rel_tolerance = 1.
+abs_tolerance = 1e-14
+check_interval = 1000
+# See b_cleanup.cpp
+sor_factor = 200
 
 <floors>
 rho_min_geom = 1e-6

@@ -47,7 +47,7 @@
  * divergence, see b_flux_ct for that (as it is divergence-rep dependent)
  */
 
-/*
+/**
  *  translates geodesic coordinates to a grid zone and returns offset
  *  for interpolation purposes. integer index corresponds to the zone
  *  center "below" the desired point and del[i] \in [0,1) returns the
