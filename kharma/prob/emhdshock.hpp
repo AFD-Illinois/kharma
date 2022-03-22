@@ -54,7 +54,7 @@ using namespace parthenon;
  * steady state solution. However, they may differ by a translation to the BVP solution.
  * 
  * Therefore, to quantitatively check the EMHD implementation, we prefer the BVP solution as the input
- **/
+ */
 
 TaskStatus InitializeEMHDShock(MeshBlockData<Real> *rc, ParameterInput *pin)
 {

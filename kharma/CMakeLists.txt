@@ -46,7 +46,8 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/wind)
 add_executable(${EXE_NAME} ${EXE_NAME_SRC})
 
 target_link_libraries(${EXE_NAME} PUBLIC kokkos)
-target_link_libraries(${EXE_NAME} PUBLIC kokkoskernels)
+# We actually only need the header
+#target_link_libraries(${EXE_NAME} PUBLIC kokkoskernels)
 target_link_libraries(${EXE_NAME} PUBLIC parthenon)
 
 # OPTIONS
