@@ -90,13 +90,25 @@ KOKKOS_INLINE_FUNCTION void Xtoijk(const GReal XG[GR_DIM],
     del[3] = (phi   - ((k + 0.5) * dx[3] + startx[3])) / dx[3];
 }
 
+KOKKOS_INLINE_FUNCTION void ijktoX(const GReal startx[GR_DIM], const GReal dx[GR_DIM],
+                                   const int& i, const int& j, const int& k,
+                                   GReal XG[GR_DIM])
+{
+    // get provisional zone index. see note above function for details. note we
+    // shift to zone centers because that's where variables are most exact.
+    XG[0] = 0.;
+    XG[1] = startx[1] + (i + 0.5) * dx[1];
+    XG[2] = startx[2] + (j + 0.5) * dx[2];
+    XG[3] = startx[3] + (k + 0.5) * dx[3];
+}
+
 /**
  * This interpolates a single-array variable 'var' representing a grid of size 'startx' to 'stopx' in
  * native coordinates, returning its value at location X
  */
-KOKKOS_INLINE_FUNCTION Real interp_scalar(const GReal X[GR_DIM],
+KOKKOS_INLINE_FUNCTION Real interp_scalar(const GRCoordinates& G, const GReal X[GR_DIM],
                                           const GReal startx[GR_DIM], const GReal stopx[GR_DIM],
-                                          const GReal dx[GR_DIM], const bool& is_spherical,
+                                          const GReal dx[GR_DIM], const bool& is_spherical, const bool& weight_by_gdet,
                                           const int& n3, const int& n2, const int& n1,
                                           const Real *var)
 {
@@ -108,32 +120,64 @@ KOKKOS_INLINE_FUNCTION Real interp_scalar(const GReal X[GR_DIM],
     Real interp;
     if (is_spherical) {
         // For ghost zones, we treat each boundary differently:
-        // In X1, repeat first & last zones. TODO should be scaled by sqrt(-g). 
-        if (i < 0) i = 0; if (i >= n1-1) i = n1 - 2;
-        // In X2, bounce over the pole. Not probably perfect for rightward interp
-        if (j < 0) j = -j; if (j > n2-2) j = (n2-2) - (j - (n2-2));
+        // In X1, repeat first & last zones.
+        if (i < 0) { i = 0; del[1] = 0; }
+        if (i > n1-2) { i = n1 - 2; del[1] = 1; }
+        // In X2, stop completely at the last zone
+        // Left side of leftmost segment
+        if (j < 0) { j = 0; del[2] = 0; }
+        // Right side of rightmost segment.  Phrased this way to not segfault
+        if (j > n2-2) { j = n2 - 2; del[2] = 1; }
         // k auto-wraps. So do all indices for periodic boxes.
 
-        // interpolate in x1 and x2
-            interp = var[ind_sph(i    , j    , k)]*(1. - del[1])*(1. - del[2]) +
-                    var[ind_sph(i    , j + 1, k)]*(1. - del[1])*del[2] +
-                    var[ind_sph(i + 1, j    , k)]*del[1]*(1. - del[2]) +
-                    var[ind_sph(i + 1, j + 1, k)]*del[1]*del[2];
+        if (weight_by_gdet) {
+            GReal Xtmp[GR_DIM];
+            ijktoX(startx, dx, i, j, k, Xtmp);
+            GReal g_ij = G.coords.gdet_native(Xtmp);
+            ijktoX(startx, dx, i + 1, j, k, Xtmp);
+            GReal g_i1j = G.coords.gdet_native(Xtmp);
+            ijktoX(startx, dx, i, j + 1, k, Xtmp);
+            GReal g_ij1 = G.coords.gdet_native(Xtmp);
+            ijktoX(startx, dx, i + 1, j + 1, k, Xtmp);
+            GReal g_i1j1 = G.coords.gdet_native(Xtmp);
 
-        // then interpolate in x3 if we need
-        if (n3 > 1) {
-            interp = (1. - del[3])*interp +
-                    del[3]*(var[ind_sph(i    , j    , k + 1)]*(1. - del[1])*(1. - del[2]) +
-                            var[ind_sph(i    , j + 1, k + 1)]*(1. - del[1])*del[2] +
-                            var[ind_sph(i + 1, j    , k + 1)]*del[1]*(1. - del[2]) +
-                            var[ind_sph(i + 1, j + 1, k + 1)]*del[1]*del[2]);
+            // interpolate in x1 and x2
+                interp = var[ind_sph(i    , j    , k)]*g_ij*(1. - del[1])*(1. - del[2]) +
+                         var[ind_sph(i    , j + 1, k)]*g_ij1*(1. - del[1])*del[2] +
+                         var[ind_sph(i + 1, j    , k)]*g_i1j*del[1]*(1. - del[2]) +
+                         var[ind_sph(i + 1, j + 1, k)]*g_i1j1*del[1]*del[2];
+
+            // then interpolate in x3 if we need
+            if (n3 > 1) {
+                interp = (1. - del[3])*interp +
+                        del[3]*(var[ind_sph(i    , j    , k + 1)]*g_ij*(1. - del[1])*(1. - del[2]) +
+                                var[ind_sph(i    , j + 1, k + 1)]*g_ij1*(1. - del[1])*del[2] +
+                                var[ind_sph(i + 1, j    , k + 1)]*g_i1j*del[1]*(1. - del[2]) +
+                                var[ind_sph(i + 1, j + 1, k + 1)]*g_i1j1*del[1]*del[2]);
+            }
+            interp /= G.coords.gdet_native(X);
+        } else {
+            // interpolate in x1 and x2
+                interp = var[ind_sph(i    , j    , k)]*(1. - del[1])*(1. - del[2]) +
+                         var[ind_sph(i    , j + 1, k)]*(1. - del[1])*del[2] +
+                         var[ind_sph(i + 1, j    , k)]*del[1]*(1. - del[2]) +
+                         var[ind_sph(i + 1, j + 1, k)]*del[1]*del[2];
+
+            // then interpolate in x3 if we need
+            if (n3 > 1) {
+                interp = (1. - del[3])*interp +
+                        del[3]*(var[ind_sph(i    , j    , k + 1)]*(1. - del[1])*(1. - del[2]) +
+                                var[ind_sph(i    , j + 1, k + 1)]*(1. - del[1])*del[2] +
+                                var[ind_sph(i + 1, j    , k + 1)]*del[1]*(1. - del[2]) +
+                                var[ind_sph(i + 1, j + 1, k + 1)]*del[1]*del[2]);
+            }
         }
     } else {
         // interpolate in x1 and x2
             interp = var[ind_periodic(i    , j    , k)]*(1. - del[1])*(1. - del[2]) +
-                    var[ind_periodic(i    , j + 1, k)]*(1. - del[1])*del[2] +
-                    var[ind_periodic(i + 1, j    , k)]*del[1]*(1. - del[2]) +
-                    var[ind_periodic(i + 1, j + 1, k)]*del[1]*del[2];
+                     var[ind_periodic(i    , j + 1, k)]*(1. - del[1])*del[2] +
+                     var[ind_periodic(i + 1, j    , k)]*del[1]*(1. - del[2]) +
+                     var[ind_periodic(i + 1, j + 1, k)]*del[1]*del[2];
 
         // then interpolate in x3 if we need
         if (n3 > 1) {

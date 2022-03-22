@@ -156,7 +156,7 @@ KOKKOS_INLINE_FUNCTION bool outside(const int& k, const int& j, const int& i,
 }
 
 #if TRACE
-#define PRINTCORNERS 0
+#define PRINTCORNERS 1
 #define PRINTZONE 0
 inline void PrintCorner(MeshBlockData<Real> *rc)
 {
@@ -171,20 +171,23 @@ inline void PrintCorner(MeshBlockData<Real> *rc)
     auto p = rc->Get("p").data.GetHostMirrorAndCopy();
     //auto q = rc->Get("prims.q").data.GetHostMirrorAndCopy();
     //auto dP = rc->Get("prims.dP").data.GetHostMirrorAndCopy();
-    cerr << "p:" << endl;
+    const IndexRange ib = rc->GetBoundsI(IndexDomain::interior);
+    const IndexRange jb = rc->GetBoundsJ(IndexDomain::interior);
+    const IndexRange kb = rc->GetBoundsK(IndexDomain::interior);
+    cerr << "p:";
     for (int j=0; j<8; j++) {
-        cout << endl;
+        cerr << endl;
         for (int i=0; i<8; i++) {
-            fprintf(stderr, "%.5g\t", p(0, j, i));
+            fprintf(stderr, "%.5g\t", p(kb.s, j, i));
         }
     }
-    // cerr << endl << "dP:";
-    // for (int j=0; j<8; j++) {
-    //     cerr << endl;
-    //     for (int i=0; i<8; i++) {
-    //         fprintf(stderr, "%.5g\t", dP(0, j, i));
-    //     }
-    // }
+    cerr << endl << "B1:";
+    for (int j=0; j<8; j++) {
+        cerr << endl;
+        for (int i=0; i<8; i++) {
+            fprintf(stderr, "%.5g\t", Bu(V1, kb.s, j, i));
+        }
+    }
     cerr << endl << endl;
 }
 
@@ -212,9 +215,11 @@ inline void Flag(MeshBlockData<Real> *rc, std::string label)
 {
 #pragma omp critical
 {
-    if(MPIRank0()) std::cerr << label << std::endl;
-    if(PRINTCORNERS) PrintCorner(rc);
-    if(PRINTZONE) PrintZone(rc);
+    if(MPIRank0()) {
+        std::cerr << label << std::endl;
+        if(PRINTCORNERS) PrintCorner(rc);
+        if(PRINTZONE) PrintZone(rc);
+    }
 }
 }
 
@@ -222,11 +227,13 @@ inline void Flag(MeshData<Real> *md, std::string label)
 {
 #pragma omp critical
 {
-    if(MPIRank0()) std::cerr << label << std::endl;
-    if(PRINTCORNERS || PRINTZONE) {
-        auto rc = md->GetBlockData(0).get();
-        if(PRINTCORNERS) PrintCorner(rc);
-        if(PRINTZONE) PrintZone(rc);
+    if(MPIRank0()) {
+        std::cerr << label << std::endl;
+        if(PRINTCORNERS || PRINTZONE) {
+            auto rc = md->GetBlockData(0).get();
+            if(PRINTCORNERS) PrintCorner(rc);
+            if(PRINTZONE) PrintZone(rc);
+        }
     }
 }
 }

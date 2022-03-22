@@ -85,19 +85,14 @@ void ReadIharmRestartHeader(std::string fname, std::unique_ptr<ParameterInput>& 
     pin->SetInteger("parthenon/mesh", "restart_nx2", n2file);
     pin->SetInteger("parthenon/mesh", "restart_nx3", n3file);
 
-    double gam, cour, t, dt;
+    double gam, cour, t;
     hdf5_read_single_val(&gam, "gam", H5T_IEEE_F64LE);
     hdf5_read_single_val(&cour, "cour", H5T_IEEE_F64LE);
     hdf5_read_single_val(&t, "t", H5T_IEEE_F64LE);
-    hdf5_read_single_val(&dt, "dt", H5T_IEEE_F64LE);
 
     pin->SetReal("GRMHD", "gamma", gam);
-    //pin->SetReal("GRMHD", "cfl", cour);  // TODO use_cour option?
-    // Setting dt here is actually for KHARMA,
-    // which returns this from EstimateTimestep in step 0
-    pin->SetReal("parthenon/time", "dt", dt);
     pin->SetReal("parthenon/time", "start_time", t);
-    // TODO NSTEP, next tdump/tlog, etc? Do KHARMA globals need anything?
+    // TODO NSTEP, next tdump/tlog, etc?
 
     if (hdf5_exists("a")) {
         double a, hslope, Rout;
@@ -176,6 +171,7 @@ TaskStatus ReadIharmRestart(MeshBlockData<Real> *rc, ParameterInput *pin)
 
     auto fname = pin->GetString("resize_restart", "fname"); // Require this, don't guess
     bool use_tf = pin->GetOrAddBoolean("resize_restart", "use_tf", false);
+    bool use_dt = pin->GetOrAddBoolean("resize_restart", "use_dt", true);
     const bool is_spherical = pin->GetBoolean("coordinates", "spherical");
 
     // Size of the file mesh
@@ -201,10 +197,11 @@ TaskStatus ReadIharmRestart(MeshBlockData<Real> *rc, ParameterInput *pin)
         cout << "Restarting from " << fname << ", file version " << version << endl << endl;
     }
 
-    // Get tf here and not when reading the header, since whether we use this
-    // value depends on another parameter, "use_tf," which needs to be initialized
-    double tf;
+    // Get tf/dt here and not when reading the header, since whether we use them
+    // depends on another parameter, "use_tf" & "use_dt" which need to be initialized
+    double tf, dt;
     hdf5_read_single_val(&tf, "tf", H5T_IEEE_F64LE);
+    hdf5_read_single_val(&dt, "dt", H5T_IEEE_F64LE);
 
     // TODO do this better by recording/counting flags in MODEL
     hsize_t nfprim;
@@ -245,13 +242,13 @@ TaskStatus ReadIharmRestart(MeshBlockData<Real> *rc, ParameterInput *pin)
         pin->GetReal("parthenon/mesh", "x3max")};
     // Same here
     const GReal dx[GR_DIM] = {0., (stopx[1] - startx[1])/n1tot,
-                                (stopx[2] - startx[2])/n2tot,
-                                (stopx[3] - startx[3])/n3tot};
+                                  (stopx[2] - startx[2])/n2tot,
+                                  (stopx[3] - startx[3])/n3tot};
 
     const int block_sz = n3tot*n2tot*n1tot;
 
     // Host-side interpolate & copy into the mirror array
-    // TODO Interpolate in native coordinates of restart
+    // TODO Support restart native coordinates != new native coordinates
     // NOTE: KOKKOS USES < not <=!! Therefore the RangePolicy below will seem like it is too big
     Kokkos::parallel_for("copy_restart_state",
         Kokkos::MDRangePolicy<Kokkos::OpenMP, Kokkos::Rank<3>>({ks, js, is}, {ke+1, je+1, ie+1}),
@@ -260,10 +257,10 @@ TaskStatus ReadIharmRestart(MeshBlockData<Real> *rc, ParameterInput *pin)
             GReal X[GR_DIM];
             G.coord(k, j, i, Loci::center, X);
             // Interpolate the value at this location from the global grid
-            rho_host(k, j, i) = interp_scalar(X, startx, stopx, dx, is_spherical, n3tot, n2tot, n1tot, &(ptmp[0*block_sz]));
-            u_host(k, j, i) = interp_scalar(X, startx, stopx, dx, is_spherical, n3tot, n2tot, n1tot, &(ptmp[1*block_sz]));
-            VLOOP uvec_host(v, k, j, i) = interp_scalar(X, startx, stopx, dx, is_spherical, n3tot, n2tot, n1tot, &(ptmp[(2+v)*block_sz]));
-            VLOOP B_host(v, k, j, i) = interp_scalar(X, startx, stopx, dx, is_spherical, n3tot, n2tot, n1tot, &(ptmp[(5+v)*block_sz]));
+            rho_host(k, j, i) = interp_scalar(G, X, startx, stopx, dx, is_spherical, false, n3tot, n2tot, n1tot, &(ptmp[0*block_sz]));
+            u_host(k, j, i) = interp_scalar(G, X, startx, stopx, dx, is_spherical, false, n3tot, n2tot, n1tot, &(ptmp[1*block_sz]));
+            VLOOP uvec_host(v, k, j, i) = interp_scalar(G, X, startx, stopx, dx, is_spherical, false, n3tot, n2tot, n1tot, &(ptmp[(2+v)*block_sz]));
+            VLOOP B_host(v, k, j, i) = interp_scalar(G, X, startx, stopx, dx, is_spherical, false, n3tot, n2tot, n1tot, &(ptmp[(5+v)*block_sz]));
         }
     );
     delete[] ptmp;
@@ -279,6 +276,11 @@ TaskStatus ReadIharmRestart(MeshBlockData<Real> *rc, ParameterInput *pin)
     // Used pretty much only for MHDModes restart test
     if (use_tf) {
         pin->SetReal("parthenon/time", "tlim", tf);
+    }
+    if (use_dt) {
+        // Setting dt here is actually for KHARMA,
+        // which returns this from EstimateTimestep in step 0
+        pin->SetReal("parthenon/time", "dt", dt);
     }
 
     return TaskStatus::complete;

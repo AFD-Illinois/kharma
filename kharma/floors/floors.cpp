@@ -142,7 +142,8 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
 
 TaskStatus PostFillDerivedBlock(MeshBlockData<Real> *rc)
 {
-    if (rc->GetBlockPointer()->packages.Get("Floors")->Param<bool>("disable_floors")) {
+    if (rc->GetBlockPointer()->packages.Get("Floors")->Param<bool>("disable_floors")
+        || !rc->GetBlockPointer()->packages.Get("Globals")->Param<bool>("in_loop")) {
         return TaskStatus::complete;
     } else {
         return ApplyFloors(rc);

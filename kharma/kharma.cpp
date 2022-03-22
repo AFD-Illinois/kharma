@@ -202,10 +202,17 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
     // Read all package enablements first so we can set their defaults here,
     // before any packages are initialized: thus they can know the full list
     std::string b_field_solver = pin->GetOrAddString("b_field", "solver", "flux_ct");
-    // Enable b_cleanup package if we want periodic cleanups OR are resizing a restart file
-    bool b_cleanup = pin->GetOrAddBoolean("b_cleanup", "on", false) ||
-                     pin->GetString("parthenon/job", "problem_id") == "resize_restart" ||
-                     pin->GetOrAddBoolean("b_field", "initial_clean", false);
+
+    // Enable b_cleanup package if we want it explicitly
+    bool b_cleanup_package = pin->GetOrAddBoolean("b_cleanup", "on", false);
+    // OR if we need it for resizing a dump
+    bool is_resize = pin->GetString("parthenon/job", "problem_id") == "resize_restart";
+    // OR if we want an initial cleanup pass for some other reason
+    bool initial_cleanup = pin->GetOrAddBoolean("b_field", "initial_cleanup", false);
+    // These were separated to make sure that the preference keys are initialized,
+    // since short-circuiting prevented that when they were listed below
+    bool b_cleanup = b_cleanup_package || is_resize || initial_cleanup;
+
     // TODO enable this iff jcon is in the list of outputs
     bool add_jcon = pin->GetOrAddBoolean("GRMHD", "add_jcon", true);
     bool do_electrons = pin->GetOrAddBoolean("electrons", "on", false);

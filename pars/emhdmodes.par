@@ -52,7 +52,7 @@ reconstruction = linear_mc
 # use this to specify explicit if desired
 <b_field>
 implicit = true
-initial_clean = false
+initial_cleanup = false
 
 <emhdmodes>
 amp = 1e-4

@@ -113,23 +113,24 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
         throw std::invalid_argument("Invalid or incomplete problem: "+prob);
     }
 
-    // Pertub the internal energy a bit to encourage accretion
-    // option in perturbation->u_jitter
-    // Note this defaults to zero, generally it's controlled via runtime options
-    // But we *definitely* don't want it when restarting
-    if (prob != "resize_restart" && pin->GetOrAddReal("perturbation", "u_jitter", 0.0) > 0.0) {
-        PerturbU(rc.get(), pin);
-    }
+    // If we're not restarting, do any grooming of the initial conditions
+    if (prob != "resize_restart") {
+        // Pertub the internal energy a bit to encourage accretion
+        // Note this defaults to zero & is basically turned on only for torii
+        if (pin->GetOrAddReal("perturbation", "u_jitter", 0.0) > 0.0) {
+            PerturbU(rc.get(), pin);
+        }
 
-    // Initialize electron entropies to defaults if enabled
-    if (pmb->packages.AllPackages().count("Electrons")) {
-        Electrons::InitElectrons(rc.get(), pin);
-    }
+        // Initialize electron entropies to defaults if enabled
+        if (pmb->packages.AllPackages().count("Electrons")) {
+            Electrons::InitElectrons(rc.get(), pin);
+        }
 
-    // Apply any floors
-    // This is purposefully done even if floors are disabled,
-    // as it is required for consistent initialization
-    Floors::ApplyFloors(rc.get());
+        // Apply any floors
+        // This is purposefully done even if floors are disabled,
+        // as it is required for consistent initialization
+        Floors::ApplyFloors(rc.get());
+    }
 
     // Fill the conserved variables U,
     // which we'll treat as the independent/fundamental state.

@@ -60,7 +60,7 @@ void SyncAllBounds(ParameterInput *pin, Mesh *pmesh)
         // If we're syncing the primitive vars, we just sync
         for (auto &pmb : pmesh->block_list) {
             auto& rc = pmb->meshblock_data.Get();
-            //rc->ClearBoundary(BoundaryCommSubset::all);
+            rc->ClearBoundary(BoundaryCommSubset::all);
             rc->StartReceiving(BoundaryCommSubset::all);
             rc->SendBoundaryBuffers();
         }
@@ -90,7 +90,7 @@ void SyncAllBounds(ParameterInput *pin, Mesh *pmesh)
         for (auto &pmb : pmesh->block_list) {
             auto& rc = pmb->meshblock_data.Get();
             Flag("Block sync send");
-            //rc->ClearBoundary(BoundaryCommSubset::all);
+            rc->ClearBoundary(BoundaryCommSubset::all);
             rc->StartReceiving(BoundaryCommSubset::all);
             rc->SendBoundaryBuffers();
         }
@@ -275,7 +275,8 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart, b
 
     // If we resized the array, cleanup any field divergence we created
     // Let the user specify to do this, too
-    if ((is_restart && is_resize) || pin->GetBoolean("b_field", "initial_clean")) {
+    if ((is_restart && is_resize && !pin->GetOrAddBoolean("resize_restart", "skip_b_cleanup", false))
+        || pin->GetBoolean("b_field", "initial_cleanup")) {
         // Cleanup operates on full single MeshData as there are MPI syncs
         auto &mbase = pmesh->mesh_data.GetOrAdd("base", 0);
         // Clean field divergence across the whole grid

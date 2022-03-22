@@ -208,10 +208,10 @@ void CleanupDivergence(std::shared_ptr<MeshData<Real>>& md)
         md.get()->ClearBoundary(BoundaryCommSubset::all);
 
         // And set physical boundaries
-        for (auto &pmb : md->GetMeshPointer()->block_list) {
-            auto& rc = pmb->meshblock_data.Get();
-            parthenon::ApplyBoundaryConditions(rc);
-        }
+        // for (auto &pmb : md->GetMeshPointer()->block_list) {
+        //     auto& rc = pmb->meshblock_data.Get();
+        //     parthenon::ApplyBoundaryConditions(rc);
+        // }
 
         if (iter % check_interval == 0) {
             Flag("Iteration:");
@@ -228,14 +228,14 @@ void CleanupDivergence(std::shared_ptr<MeshData<Real>>& md)
             MaxError(md.get(), divB_max.val);
             divB_max.StartReduce(MPI_MAX);
             divB_max.CheckReduce();
-            if (MPIRank0() && verbose > 0) {
+            if (MPIRank0()) {
                 std::cout << "divB step " << iter << " total relative error is " << update_norm.val / divB_norm.val
                         << " Max absolute error is " << divB_max.val << std::endl;
                 // std::cout << "P norm is " << P_norm.val << std::endl;
             }
 
             // Both these values are already MPI reduced, but we want to make sure
-            converged = ((update_norm.val / divB_norm.val) < rel_tolerance) && (divB_max.val < abs_tolerance);
+            converged = (update_norm.val / divB_norm.val < rel_tolerance) && (divB_max.val < abs_tolerance);
             converged = MPIMin(converged);
         }
 
@@ -245,12 +245,12 @@ void CleanupDivergence(std::shared_ptr<MeshData<Real>>& md)
         if (fail_flag) {
             throw std::runtime_error("Failed to converge when cleaning magnetic field divergence!");
         } else if (warn_flag) {
-            cerr << "Failed to converge when cleaning magnetic field divergence!" << endl;
+            cerr << "KHARMA WARNING: Failed to converge when cleaning magnetic field divergence!!!!" << endl;
         }
     }
 
     if (MPIRank0() && verbose > 0) {
-        std::cout << "Applying magnetic field correction!" << std::endl;
+        std::cout << "Applying magnetic field correction" << std::endl;
     }
 
     // Update the magnetic field with one damped Jacobi step
@@ -262,7 +262,7 @@ void CleanupDivergence(std::shared_ptr<MeshData<Real>>& md)
     divB_max.StartReduce(MPI_MAX);
     divB_max.CheckReduce();
 
-    if (MPIRank0() && verbose > 0) {
+    if (MPIRank0()) {
         std::cout << "Final divB max is " << divB_max.val << std::endl;
     }
 
@@ -327,12 +327,15 @@ TaskStatus UpdateP(MeshData<Real> *md)
     //Flag(md, "Updating P");
     auto pmesh = md->GetParentPointer();
     const int ndim = pmesh->ndim;
-    const IndexRange ib = md->GetBoundsI(IndexDomain::interior);
-    const IndexRange jb = md->GetBoundsJ(IndexDomain::interior);
-    const IndexRange kb = md->GetBoundsK(IndexDomain::interior);
-    const IndexRange ib_l = IndexRange{ib.s-1, ib.e};
-    const IndexRange jb_l = (ndim > 1) ? IndexRange{jb.s-1, jb.e} : jb;
-    const IndexRange kb_l = (ndim > 2) ? IndexRange{kb.s-1, kb.e} : kb;
+    const IndexRange ib = md->GetBoundsI(IndexDomain::entire);
+    const IndexRange jb = md->GetBoundsJ(IndexDomain::entire);
+    const IndexRange kb = md->GetBoundsK(IndexDomain::entire);
+    const IndexRange ib_l = IndexRange{ib.s, ib.e-1};
+    const IndexRange jb_l = (ndim > 1) ? IndexRange{jb.s, jb.e-1} : jb;
+    const IndexRange kb_l = (ndim > 2) ? IndexRange{kb.s, kb.e-1} : kb;
+    const IndexRange ib_r = IndexRange{ib.s+1, ib.e-1};
+    const IndexRange jb_r = (ndim > 1) ? IndexRange{jb.s+1, jb.e-1} : jb;
+    const IndexRange kb_r = (ndim > 2) ? IndexRange{kb.s+1, kb.e-1} : kb;
 
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
     const int n1 = pmb0->cellbounds.ncellsi(IndexDomain::interior);
@@ -366,12 +369,12 @@ TaskStatus UpdateP(MeshData<Real> *md)
 
     // lap = div(dB), defined at cell corners
     // Then apply a damped Jacobi iteration
-    pmb0->par_for("laplacian_dB", 0, lap.GetDim(5) - 1, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+    pmb0->par_for("laplacian_dB", 0, lap.GetDim(5) - 1, kb_r.s, kb_r.e, jb_r.s, jb_r.e, ib_r.s, ib_r.e,
         KOKKOS_LAMBDA_MESH_3D {
             const auto& G = lap.GetCoords(b);
             // This is the inverse diagonal element of a fictional a_ij Laplacian operator
             // denoted D^-1 below. Note it's not quite what a_ij might work out to for our "laplacian"
-            const double dt = (-1./6) * G.dx1v(i) * G.dx2v(j) * G.dx3v(k);
+            const double dt = (ndim > 2) ? (-1./6) * G.dx1v(i) * G.dx2v(j) * G.dx3v(k) : (-1./4) * G.dx1v(i) * G.dx2v(j);
             lap(b, 0, k, j, i) = B_FluxCT::corner_div(G, dB, b, k, j, i, ndim > 2);
             // In matrix notation the following would be:
             // x^k+1 = omega*D^-1*(b - (L + U) x^k) + (1-omega)*x^k
