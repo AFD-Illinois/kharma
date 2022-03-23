@@ -155,8 +155,21 @@ KOKKOS_INLINE_FUNCTION bool outside(const int& k, const int& j, const int& i,
     return (i < ib.s) || (i > ib.e) || (j < jb.s) || (j > jb.e) || (k < kb.s) || (k > kb.e);
 }
 
+/**
+ * Function for checking boundary flags: is this a domain or internal bound?
+ */
+inline bool IsDomainBound(MeshBlock *pmb, BoundaryFace face)
+{
+    return (pmb->boundary_flag[face] != BoundaryFlag::block &&
+            pmb->boundary_flag[face] != BoundaryFlag::periodic);
+}
+
+/**
+ * Functions for "tracing" execution by printing strings (and optionally state of zones)
+ * at each important function entry/exit
+ */
 #if TRACE
-#define PRINTCORNERS 1
+#define PRINTCORNERS 0
 #define PRINTZONE 0
 inline void PrintCorner(MeshBlockData<Real> *rc)
 {

@@ -101,6 +101,8 @@ double MaxDivB(MeshData<Real> *md);
 // Version for Parthenon tasking as a reduction
 inline TaskStatus MaxDivBTask(MeshData<Real> *md, double& divb_max)
     { divb_max = MaxDivB(md); return TaskStatus::complete; }
+double MaxDivBBlock(MeshBlockData<Real> *rc);
+// TODO task for MeshBlocks?
 
 /**
  * Clean the magnetic field divergence via successive over-relaxation

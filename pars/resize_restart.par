@@ -55,7 +55,7 @@ bsq_over_u_max = 50
 u_over_rho_max = 100
 
 <debug>
-verbose = 0
+verbose = 1
 flag_verbose = 2
 extra_checks = 1
 
