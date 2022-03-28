@@ -3,7 +3,7 @@
 
 # TODO toolbox break to discover enclosing hostname
 if [[ "$HOST" == "toolbox"* ]]; then
-  HOST=fermium
+  HOST=ferrum
 fi
 if [[ "$HOST" == "e4s"* ]]; then
   HOST=fermium
