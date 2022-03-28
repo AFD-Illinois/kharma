@@ -122,26 +122,29 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
 
     // Parse various mass and density units to set the different cooling rates
     // These could maybe tie in with Parthenon::Units when we add radiation
-    std::vector<Real> masses = parse_list(pin->GetString("units", "MBH"));
-    std::vector<std::vector<Real>> munits;
-    for (int i=1; i <= masses.size(); ++i) {
-        munits.push_back(parse_list(pin->GetString("units", "M_unit_"+to_string(i))));
-    }
-
-    if (MPIRank0() && verbose > 0) {
-        cout << "Using unit sets:" << endl;
-        for (int i=0; i < masses.size(); ++i) {
-            cout << endl << masses[i] << ":";
-            for (auto munit : munits[i]) {
-                cout << " " << munit;
-            }
+    std::vector<Real> masses = parse_list(pin->GetOrAddString("units", "MBH", "1.0"));
+    if (masses != std::vector<Real>{1.0})
+    {
+        std::vector<std::vector<Real>> munits;
+        for (int i=1; i <= masses.size(); ++i) {
+            munits.push_back(parse_list(pin->GetString("units", "M_unit_"+to_string(i))));
         }
-        cout << endl;
+
+        if (MPIRank0() && verbose > 0) {
+            cout << "Using unit sets:" << endl;
+            for (int i=0; i < masses.size(); ++i) {
+                cout << endl << masses[i] << ":";
+                for (auto munit : munits[i]) {
+                    cout << " " << munit;
+                }
+            }
+            cout << endl;
+        }
+        // This is a vector of Reals
+        params.Add("masses", masses);
+        // This is a vector of vectors of Reals
+        params.Add("munits", munits);
     }
-    // This is a vector of Reals
-    params.Add("masses", masses);
-    // This is a vector of vectors of Reals
-    params.Add("munits", munits);
 
     MetadataFlag isPrimitive = packages.Get("GRMHD")->Param<MetadataFlag>("PrimitiveFlag");
     MetadataFlag isElectrons = Metadata::AllocateNewFlag("Electrons");

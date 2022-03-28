@@ -107,7 +107,7 @@ inline void FillDerivedBlock(MeshBlockData<Real> *rc) { UtoP(rc); }
  * 
  * TODO this function should update fflag to reflect temperature ratio floor hits
  */
-TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real> *rc);
+TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real> *rc, bool generate_grf=false);
 
 /**
  * Diagnostics printed/computed after each step, called from kharma.cpp
