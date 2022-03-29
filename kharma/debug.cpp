@@ -164,6 +164,7 @@ int CountPFlags(MeshData<Real> *md, IndexDomain domain, int verbose)
     int n_utsq = 0, n_gamma = 0, n_neg_u = 0, n_neg_rho = 0, n_neg_both = 0;
     auto pmesh = md->GetMeshPointer();
 
+    int block = 0;
     for (auto &pmb : pmesh->block_list) {
         int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
         int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
@@ -171,6 +172,8 @@ int CountPFlags(MeshData<Real> *md, IndexDomain domain, int verbose)
         auto& rc = pmb->meshblock_data.Get();
         auto pflag = rc->Get("pflag").data.GetHostMirrorAndCopy();
 
+    // OpenMP causes problems when used separately from Kokkos
+    // TODO make this a kokkos reduction to a View
 //#pragma omp parallel for simd collapse(3) reduction(+:n_cells,n_tot,n_neg_in,n_max_iter,n_utsq,n_gamma,n_neg_u,n_neg_rho,n_neg_both)
         for(int k=ks; k <= ke; ++k)
             for(int j=js; j <= je; ++j)
@@ -187,13 +190,14 @@ int CountPFlags(MeshData<Real> *md, IndexDomain domain, int verbose)
             if (flag == InversionStatus::neg_u) ++n_neg_u;
             if (flag == InversionStatus::neg_rhou) ++n_neg_both;
 
-#if 0 // TODO be able to print pflag contexts
+            // TODO MPI Rank
             if (flag > InversionStatus::success && verbose >= 3) {
-                cout << "Bad inversion (" << flag << ") at i,j,k: " << i << " " << j << " " << k << endl;
-                compare_P_U(pmb->meshblock_data.Get().get(), k, j, i);
+                printf("Bad inversion (%d) at block %d zone %d %d %d\n", flag, block, i, j, k);
+                //compare_P_U(pmb->meshblock_data.Get().get(), k, j, i);
             }
-#endif
         }
+
+        ++block;
     }
 
     n_tot = MPISum(n_tot);
@@ -236,6 +240,7 @@ int CountFFlags(MeshData<Real> *md, IndexDomain domain, int verbose)
         auto& rc = pmb->meshblock_data.Get();
         auto fflag = rc->Get("fflag").data.GetHostMirrorAndCopy();
 
+    // See above re: Openmp. TODO Kokkosify
 //#pragma omp parallel for simd collapse(3) reduction(+:n_cells,n_tot,n_geom_rho,n_geom_u,n_b_rho,n_b_u,n_temp,n_gamma,n_ktot)
         for(int k=ks; k <= ke; ++k)
             for(int j=js; j <= je; ++j)

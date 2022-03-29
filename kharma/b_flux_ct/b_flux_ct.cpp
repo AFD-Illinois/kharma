@@ -357,7 +357,7 @@ double MaxDivB(MeshData<Real> *md)
     // This is one kernel call per block, because each block will have different bounds.
     // Could consolidate at the cost of lots of bounds checking.
     double max_divb = 0.0;
-    for (int b = block.s; b < block.e; ++b) {
+    for (int b = block.s; b <= block.e; ++b) {
         auto pmb = md->GetBlockData(b)->GetBlockPointer().get();
 
         // Note this is a stencil-4 (or -8) function, which would involve zones outside the
@@ -388,7 +388,7 @@ double MaxDivB(MeshData<Real> *md)
     return max_divb;
 }
 
-TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
+TaskStatus PrintGlobalMaxDivB(MeshData<Real> *md)
 {
     Flag(md, "Printing B field diagnostics");
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
@@ -406,13 +406,12 @@ TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
 
     }
 
-    Flag(md, "Printed");
+    Flag(md, "Printed B field diagnostics");
     return TaskStatus::complete;
 }
 
 void FillOutput(MeshBlock *pmb, ParameterInput *pin)
 {
-    // TODO define this on meshblock or pack vars
     auto rc = pmb->meshblock_data.Get().get();
     Flag(rc, "Calculating divB for output");
     const int ndim = pmb->pmy_mesh->ndim;
@@ -442,7 +441,7 @@ void FillOutput(MeshBlock *pmb, ParameterInput *pin)
         }
     );
 
-    Flag(rc, "Output");
+    Flag(rc, "Output divB");
 }
 
 } // namespace B_FluxCT

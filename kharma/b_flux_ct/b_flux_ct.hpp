@@ -101,8 +101,6 @@ double MaxDivB(MeshData<Real> *md);
 // Version for Parthenon tasking as a reduction
 inline TaskStatus MaxDivBTask(MeshData<Real> *md, double& divb_max)
     { divb_max = MaxDivB(md); return TaskStatus::complete; }
-double MaxDivBBlock(MeshBlockData<Real> *rc);
-// TODO task for MeshBlocks?
 
 /**
  * Clean the magnetic field divergence via successive over-relaxation
@@ -115,7 +113,11 @@ void CleanupDivergence(MeshBlockData<Real> *rc, IndexDomain domain=IndexDomain::
  * Diagnostics printed/computed after each step
  * Currently just max divB
  */
-TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md);
+TaskStatus PrintGlobalMaxDivB(MeshData<Real> *md);
+inline TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
+    { return PrintGlobalMaxDivB(md); }
+// Block version; unused now, kept for future fiascos
+TaskStatus PrintMaxBlockDivB(MeshBlockData<Real> *rc, bool prims, std::string tag);
 
 /**
  * Fill fields which are calculated only for output to file

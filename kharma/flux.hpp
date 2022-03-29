@@ -211,8 +211,8 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
                     // Apply floors to the *reconstructed* primitives, because without TVD
                     // we have no guarantee they remotely resemble the *centered* primitives
                     if (Recon == ReconstructionType::weno5 && !disable_floors) {
-                        Floors::apply_geo_floors(G, Pl, m_p, gam, k, j, i, floors, loc);
-                        Floors::apply_geo_floors(G, Pr, m_p, gam, k, j, i, floors, loc);
+                        Floors::apply_geo_floors(G, Pl, m_p, gam, j, i, floors, loc);
+                        Floors::apply_geo_floors(G, Pr, m_p, gam, j, i, floors, loc);
                     }
 #if !FUSE_FLUX_KERNELS
                 }

@@ -214,8 +214,11 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
         // and the primitives as "Derived"
         // Primitives are still used for reconstruction, physical boundaries, and output, and are
         // generally the easier to understand quantities
+        // Note especially their ghost zones are also filled! This is less efficient than syncing just
+        // one or the other, but allows the most flexibility for reasons that should be clearer in harm_driver.cpp
         flags_prim = std::vector<MetadataFlag>({Metadata::Real, Metadata::Cell, Metadata::Derived,
-                                                Metadata::Restart, isPrimitive, isHD, isMHD});
+                                                Metadata::FillGhost, Metadata::Restart,
+                                                isPrimitive, isHD, isMHD});
         // Conserved variables are actualy rho*u^0 & T^0_mu, but are named after the prims for consistency
         // We will rarely need the conserved variables by name, we will mostly be treating them as a group
         flags_cons = std::vector<MetadataFlag>({Metadata::Real, Metadata::Cell, Metadata::Independent,

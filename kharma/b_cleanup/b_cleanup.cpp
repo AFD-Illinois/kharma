@@ -68,14 +68,14 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     params.Add("rel_tolerance", rel_tolerance);
     // Instead set absolute tolerance corresponding roughly to max divB on grid
     // Note this returns divB max about 1 decade greater, i.e. ~1e-14
-    Real abs_tolerance = pin->GetOrAddReal("b_cleanup", "abs_tolerance", 1e-15);
+    Real abs_tolerance = pin->GetOrAddReal("b_cleanup", "abs_tolerance", 1e-11);
     params.Add("abs_tolerance", abs_tolerance);
     // TODO why does this need to be so large?
-    Real sor_factor = pin->GetOrAddReal("b_cleanup", "sor_factor", 200);
+    Real sor_factor = pin->GetOrAddReal("b_cleanup", "sor_factor", 10);
     params.Add("sor_factor", sor_factor);
     int max_iterations = pin->GetOrAddInteger("b_cleanup", "max_iterations", 1e8);
     params.Add("max_iterations", max_iterations);
-    int check_interval = pin->GetOrAddInteger("b_cleanup", "check_interval", 1e3);
+    int check_interval = pin->GetOrAddInteger("b_cleanup", "check_interval", 2e2);
     params.Add("check_interval", check_interval);
     bool fail_without_convergence = pin->GetOrAddBoolean("b_cleanup", "fail_without_convergence", true);
     params.Add("fail_without_convergence", fail_without_convergence);

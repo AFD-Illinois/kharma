@@ -54,7 +54,6 @@ target_link_libraries(${EXE_NAME} PUBLIC parthenon)
 # These are almost universally performance trade-offs
 # TODO is there any way to make compile options less painful in CMake?
 option(FUSE_FLUX_KERNELS "Bundle the usual four flux calculation kernels (floors,R,L,apply) into one" ON)
-option(FUSE_EMF_KERNELS "Bundle the three emf direction kernels into one. Likely won't affect much" ON)
 option(FUSE_FLOOR_KERNELS "Bundle applying the floors and ceilings into one kernel" ON)
 option(FAST_CARTESIAN "Break operation in curved spacetimes to make Cartesian Minkowski space computations faster" OFF)
 if(FUSE_FLUX_KERNELS)

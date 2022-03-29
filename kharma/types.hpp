@@ -169,7 +169,7 @@ inline bool IsDomainBound(MeshBlock *pmb, BoundaryFace face)
  * at each important function entry/exit
  */
 #if TRACE
-#define PRINTCORNERS 0
+#define PRINTCORNERS 1
 #define PRINTZONE 0
 inline void PrintCorner(MeshBlockData<Real> *rc)
 {
@@ -181,7 +181,8 @@ inline void PrintCorner(MeshBlockData<Real> *rc)
     auto uc = rc->Get("cons.u").data.GetHostMirrorAndCopy();
     auto uvecc = rc->Get("cons.uvec").data.GetHostMirrorAndCopy();
     auto Bu = rc->Get("cons.B").data.GetHostMirrorAndCopy();
-    auto p = rc->Get("p").data.GetHostMirrorAndCopy();
+    //auto p = rc->Get("p").data.GetHostMirrorAndCopy();
+    auto pflag = rc->Get("pflag").data.GetHostMirrorAndCopy();
     //auto q = rc->Get("prims.q").data.GetHostMirrorAndCopy();
     //auto dP = rc->Get("prims.dP").data.GetHostMirrorAndCopy();
     const IndexRange ib = rc->GetBoundsI(IndexDomain::interior);
@@ -191,16 +192,16 @@ inline void PrintCorner(MeshBlockData<Real> *rc)
     for (int j=0; j<8; j++) {
         cerr << endl;
         for (int i=0; i<8; i++) {
-            fprintf(stderr, "%.5g\t", p(kb.s, j, i));
+            fprintf(stderr, "%.5g\t", pflag(kb.s, j, i));
         }
     }
-    cerr << endl << "B1:";
-    for (int j=0; j<8; j++) {
-        cerr << endl;
-        for (int i=0; i<8; i++) {
-            fprintf(stderr, "%.5g\t", Bu(V1, kb.s, j, i));
-        }
-    }
+    // cerr << endl << "B1:";
+    // for (int j=0; j<8; j++) {
+    //     cerr << endl;
+    //     for (int i=0; i<8; i++) {
+    //         fprintf(stderr, "%.5g\t", Bu(V1, kb.s, j, i));
+    //     }
+    // }
     cerr << endl << endl;
 }
 

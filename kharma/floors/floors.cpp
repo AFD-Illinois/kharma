@@ -170,11 +170,11 @@ TaskStatus ApplyFloors(MeshBlockData<Real> *rc)
 
     // Apply floors over the same zones we just updated with UtoP
     // This selects the entire zone, but we then require pflag >= 0,
-    // which eliminates marked corner zones
+    // which keeps us from covering completely uninitialized zones
+    // (but still applies to failed UtoP!)
     const IndexRange ib = rc->GetBoundsI(IndexDomain::entire);
     const IndexRange jb = rc->GetBoundsJ(IndexDomain::entire);
     const IndexRange kb = rc->GetBoundsK(IndexDomain::entire);
-
     pmb->par_for("apply_floors", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_3D {
             if (((int) pflag(k, j, i)) >= InversionStatus::success) {

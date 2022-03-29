@@ -335,10 +335,51 @@ KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, const VariablePa
  * 
  * @return fflag: since no inversion is performed, this just returns a flag representing which geometric floors were hit
  * 
- * LOCKSTEP: Operates on and respects primitives *only*
+ * NOT LOCKSTEP: Operates on and respects primitives *only*
  */
 template<typename Local>
 KOKKOS_INLINE_FUNCTION int apply_geo_floors(const GRCoordinates& G, Local& P, const VarMap& m,
+                                            const Real& gam, const int& j, const int& i,
+                                            const Floors::Prescription& floors, const Loci loc=Loci::center)
+{
+    // Apply only the geometric floors
+    Real rhoflr_geom, uflr_geom;
+    if(G.coords.spherical()) {
+        GReal Xembed[GR_DIM];
+        G.coord_embed(0, j, i, loc, Xembed);
+        GReal r = Xembed[1];
+
+        if (floors.use_r_char) {
+            // Steeper floor from iharm3d
+            Real rhoscal = pow(r, -2.) * 1 / (1 + r / floors.r_char);
+            rhoflr_geom = floors.rho_min_geom * rhoscal;
+            uflr_geom = floors.u_min_geom * pow(rhoscal, gam);
+        } else {
+            // Original floors from iharm2d
+            rhoflr_geom = floors.rho_min_geom * pow(r, -1.5);
+            uflr_geom = floors.u_min_geom * pow(r, -2.5); //rhoscal/r as in iharm2d
+        }
+    } else {
+        rhoflr_geom = floors.rho_min_geom;
+        uflr_geom = floors.u_min_geom;
+    }
+
+    int fflag = 0;
+#if RECORD_POST_RECON
+    // Record all the floors that were hit, using bitflags
+    // Record Geometric floor hits
+    fflag |= (rhoflr_geom > P(m.RHO)) * HIT_FLOOR_GEOM_RHO_FLUX;
+    fflag |= (uflr_geom > P(m.UU)) * HIT_FLOOR_GEOM_U_FLUX;
+#endif
+
+    P(m.RHO) += max(0., rhoflr_geom - P(m.RHO));
+    P(m.UU) += max(0., uflr_geom - P(m.UU));
+
+    return fflag;
+}
+
+template<typename Global>
+KOKKOS_INLINE_FUNCTION int apply_geo_floors(const GRCoordinates& G, Global& P, const VarMap& m,
                                             const Real& gam, const int& k, const int& j, const int& i,
                                             const Floors::Prescription& floors, const Loci loc=Loci::center)
 {
@@ -368,12 +409,12 @@ KOKKOS_INLINE_FUNCTION int apply_geo_floors(const GRCoordinates& G, Local& P, co
 #if RECORD_POST_RECON
     // Record all the floors that were hit, using bitflags
     // Record Geometric floor hits
-    fflag |= (rhoflr_geom > P(m.RHO, i)) * HIT_FLOOR_GEOM_RHO_FLUX;
-    fflag |= (uflr_geom > P(m.UU, i)) * HIT_FLOOR_GEOM_U_FLUX;
+    fflag |= (rhoflr_geom > P(m.RHO, k, j, i)) * HIT_FLOOR_GEOM_RHO_FLUX;
+    fflag |= (uflr_geom > P(m.UU, k, j, i)) * HIT_FLOOR_GEOM_U_FLUX;
 #endif
 
-    P(m.RHO) += max(0., rhoflr_geom - P(m.RHO));
-    P(m.UU) += max(0., uflr_geom - P(m.UU));
+    P(m.RHO, k, j, i) += max(0., rhoflr_geom - P(m.RHO, k, j, i));
+    P(m.UU, k, j, i) += max(0., uflr_geom - P(m.UU, k, j, i));
 
     return fflag;
 }

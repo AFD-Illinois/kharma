@@ -111,7 +111,7 @@ TaskStatus GRMHD::FixUtoP(MeshBlockData<Real> *rc)
                     if (verbose >= 1 && inside(k, j, i, kb_b, jb_b, ib_b)) // If an interior zone...
                         printf("No neighbors were available at %d %d %d!\n", i, j, k);
 #endif
-                    PRIMLOOP P(p, k, j, i) = sum_x[p]/wsum_x;
+                    //PRIMLOOP P(p, k, j, i) = sum_x[p]/wsum_x;
                 } else {
                     PRIMLOOP P(p, k, j, i) = sum[p]/wsum;
                 }
@@ -131,15 +131,18 @@ TaskStatus GRMHD::FixUtoP(MeshBlockData<Real> *rc)
     pmb->par_for("fix_U_to_P_floors", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_3D {
             if (((int) pflag(k, j, i)) > InversionStatus::success) {
+                apply_geo_floors(G, P, m_p, gam, k, j, i, floors);
+
                 // Make sure to keep lockstep
                 // This will only be run for GRMHD, so we can call its p_to_u
                 GRMHD::p_to_u(G, P, m_p, gam, k, j, i, U, m_u);
 
                 // And make sure the fixed values still abide by floors (floors keep lockstep)
-                int fflag_local = 0;
-                fflag_local |= Floors::apply_floors(G, P, m_p, gam, k, j, i, floors, U, m_u);
-                fflag_local |= Floors::apply_ceilings(G, P, m_p, gam, k, j, i, floors, U, m_u);
-                fflag(k, j, i) = fflag_local;
+                // TODO Fluid Frame instead of just geo?
+                // int fflag_local = 0;
+                // fflag_local |= Floors::apply_floors(G, P, m_p, gam, k, j, i, floors, U, m_u);
+                // fflag_local |= Floors::apply_ceilings(G, P, m_p, gam, k, j, i, floors, U, m_u);
+                // fflag(k, j, i) = fflag_local;
             }
         }
     );

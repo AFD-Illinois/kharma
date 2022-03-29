@@ -168,13 +168,13 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         // Zero any fluxes through the pole or inflow from outflow boundaries
         auto t_fix_flux = tl.AddTask(t_recv_flux, KBoundaries::FixFlux, mc0.get());
 
-        auto t_flux_fixed = t_fix_flux;
+        auto t_flux_ct = t_fix_flux;
         if (use_b_flux_ct) {
             // Fix the conserved fluxes (exclusively B1/2/3) so that they obey divB==0,
             // and there is no B field flux through the pole
             auto t_flux_ct = tl.AddTask(t_fix_flux, B_FluxCT::TransportB, mc0.get());
-            t_flux_fixed = t_flux_ct;
         }
+        auto t_flux_fixed = t_flux_ct;
 
         // APPLY FLUXES
         auto t_flux_div = tl.AddTask(t_none, Update::FluxDivergence<MeshData<Real>>, mc0.get(), mdudt.get());
@@ -257,6 +257,16 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         auto t_copy_result = tl.AddTask(t_implicit, Update::WeightedSumData<MetadataFlag, MeshData<Real>>, std::vector<MetadataFlag>({}),
                                         mc_solver.get(), mc_solver.get(), 1.0, 0.0, mc1.get());
 
+        // If evolving GRMHD explicitly, U_to_P needs a guess in order to converge, so we copy in mc0
+        auto t_copy_prims = t_none;
+        if (!pkgs.at("GRMHD")->Param<bool>("implicit")) {
+            MetadataFlag isPrimitive = pkgs.at("GRMHD")->Param<MetadataFlag>("PrimitiveFlag");
+            MetadataFlag isHD = pkgs.at("GRMHD")->Param<MetadataFlag>("HDFlag");
+            auto t_copy_prims = tl.AddTask(t_none, Update::WeightedSumData<MetadataFlag, MeshData<Real>>,
+                                        std::vector<MetadataFlag>({isHD, isPrimitive}),
+                                        mc0.get(), mc0.get(), 1.0, 0.0, mc1.get());
+        }
+
     }
 
     // Even though we filled some primitive vars 
@@ -267,22 +277,11 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         auto &sc0 = pmb->meshblock_data.Get(stage_name[stage-1]);
         auto &sc1 = pmb->meshblock_data.Get(stage_name[stage]);
 
-        // Copy primitives to form the guess for GRMHD::UtoP
-        // Only needed if GRMHD vars are being updated explicitly
-        auto t_copy_prims = t_none;
-        if (!pkgs.at("GRMHD")->Param<bool>("implicit")) {
-            MetadataFlag isPrimitive = pkgs.at("GRMHD")->Param<MetadataFlag>("PrimitiveFlag");
-            MetadataFlag isHD = pkgs.at("GRMHD")->Param<MetadataFlag>("HDFlag");
-            auto t_copy_prims = tl.AddTask(t_none, Update::WeightedSumData<MetadataFlag, MeshBlockData<Real>>,
-                                        std::vector<MetadataFlag>({isHD, isPrimitive}),
-                                        sc0.get(), sc0.get(), 1.0, 0.0, sc1.get());
-        }
-
         // Note that floors are applied (to all variables!) immediately after this FillDerived call.
         // However, it is *not* immediately corrected with FixUtoP, but synchronized (including pflags!) first.
         // With an extra ghost zone, this *should* still allow binary-similar evolution between numbers of mesh blocks,
         // but hasn't been tested.
-        auto t_fill_derived = tl.AddTask(t_copy_prims, Update::FillDerived<MeshBlockData<Real>>, sc1.get());
+        auto t_fill_derived = tl.AddTask(t_none, Update::FillDerived<MeshBlockData<Real>>, sc1.get());
     }
 
     // MPI/MeshBlock boundary exchange.
@@ -294,7 +293,7 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         for (int i = 0; i < num_partitions; i++) {
             auto &mc1 = pmesh->mesh_data.GetOrAdd(stage_name[stage], i);
             tr1[i].AddTask(t_none,
-                [](MeshData<Real> *mc1){ Flag(mc1, "Boundary 1"); return TaskStatus::complete; }
+                [](MeshData<Real> *mc1){ Flag(mc1, "Parthenon Send Buffers"); return TaskStatus::complete; }
             , mc1.get());
             tr1[i].AddTask(t_none, cell_centered_bvars::SendBoundaryBuffers, mc1);
         }
@@ -302,7 +301,7 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         for (int i = 0; i < num_partitions; i++) {
             auto &mc1 = pmesh->mesh_data.GetOrAdd(stage_name[stage], i);
             tr2[i].AddTask(t_none,
-                [](MeshData<Real> *mc1){ Flag(mc1, "Boundary 2"); return TaskStatus::complete; }
+                [](MeshData<Real> *mc1){ Flag(mc1, "Parthenon Recv Buffers"); return TaskStatus::complete; }
             , mc1.get());
             tr2[i].AddTask(t_none, cell_centered_bvars::ReceiveBoundaryBuffers, mc1);
         }
@@ -310,7 +309,7 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         for (int i = 0; i < num_partitions; i++) {
             auto &mc1 = pmesh->mesh_data.GetOrAdd(stage_name[stage], i);
             tr3[i].AddTask(t_none,
-                [](MeshData<Real> *mc1){ Flag(mc1, "Boundary 3"); return TaskStatus::complete; }
+                [](MeshData<Real> *mc1){ Flag(mc1, "Parthenon Set Boundaries"); return TaskStatus::complete; }
             , mc1.get());
             tr3[i].AddTask(t_none, cell_centered_bvars::SetBoundaries, mc1);
         }
@@ -319,7 +318,7 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         for (int i = 0; i < blocks.size(); i++) {
             auto &sc1 = blocks[i]->meshblock_data.Get(stage_name[stage]);
             tr1[i].AddTask(t_none,
-                [](MeshBlockData<Real> *rc1){ Flag(rc1, "Boundary 1"); return TaskStatus::complete; }
+                [](MeshBlockData<Real> *rc1){ Flag(rc1, "Parthenon Send Buffers"); return TaskStatus::complete; }
             , sc1.get());
             tr1[i].AddTask(t_none, &MeshBlockData<Real>::SendBoundaryBuffers, sc1.get());
         }
@@ -327,7 +326,7 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         for (int i = 0; i < blocks.size(); i++) {
             auto &sc1 = blocks[i]->meshblock_data.Get(stage_name[stage]);
             tr2[i].AddTask(t_none,
-                [](MeshBlockData<Real> *rc1){ Flag(rc1, "Boundary 2"); return TaskStatus::complete; }
+                [](MeshBlockData<Real> *rc1){ Flag(rc1, "Parthenon Recv Buffers"); return TaskStatus::complete; }
             , sc1.get());
             tr2[i].AddTask(t_none, &MeshBlockData<Real>::ReceiveBoundaryBuffers, sc1.get());
         }
@@ -335,7 +334,7 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         for (int i = 0; i < blocks.size(); i++) {
             auto &sc1 = blocks[i]->meshblock_data.Get(stage_name[stage]);
             tr3[i].AddTask(t_none,
-                [](MeshBlockData<Real> *rc1){ Flag(rc1, "Boundary 3"); return TaskStatus::complete; }
+                [](MeshBlockData<Real> *rc1){ Flag(rc1, "Parthenon Set Boundaries"); return TaskStatus::complete; }
             , sc1.get());
             tr3[i].AddTask(t_none, &MeshBlockData<Real>::SetBoundaries, sc1.get());
         }
@@ -348,10 +347,6 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         auto &tl = async_region2[i];
         auto &sc0 = pmb->meshblock_data.Get(stage_name[stage-1]);
         auto &sc1 = pmb->meshblock_data.Get(stage_name[stage]);
-
-        auto t_flag = tl.AddTask(t_none,
-                [](MeshBlockData<Real> *rc1){ Flag(rc1, "Copying prims"); return TaskStatus::complete; }
-            , sc1.get());
 
         auto t_clear_comm_flags = tl.AddTask(t_none, &MeshBlockData<Real>::ClearBoundary,
                                         sc1.get(), BoundaryCommSubset::all);

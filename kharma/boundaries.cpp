@@ -69,11 +69,13 @@ void OutflowX1(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, boo
     const bool check_inflow = ((check_inner && domain == IndexDomain::inner_x1)
                             || (check_outer && domain == IndexDomain::outer_x1));
 
+    // q will actually have *both* cons & prims (unless using imex driver)
+    // We'll only need cons.B specifically tho
     PackIndexMap prims_map, cons_map;
     auto P = GRMHD::PackMHDPrims(rc.get(), prims_map, coarse);
     auto q = rc->PackVariables({Metadata::FillGhost}, cons_map, coarse);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
-    // If we're running imex, q is the *primitive* variables
+    // If we're running imex, q is just the *primitive* variables
     bool prim_ghosts = pmb->packages.Get("GRMHD")->Param<std::string>("driver_type") == "imex";
 
     // KHARMA is very particular about corner boundaries.
@@ -81,7 +83,8 @@ void OutflowX1(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, boo
     // Then the polar bound only where outflow is not applied,
     // and periodic bounds only where neither other bound applies.
     // The latter is accomplished regardless of Parthenon's definitions,
-    // since these functions are run after Parthenon's MPI boundary syncs
+    // since these functions are run after Parthenon's MPI boundary syncs &
+    // replace whatever they've done.
     IndexDomain ldomain = IndexDomain::interior;
     int is = bounds.is(ldomain), ie = bounds.ie(ldomain);
     int js = bounds.js(ldomain), je = bounds.je(ldomain);
@@ -108,24 +111,14 @@ void OutflowX1(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, boo
     const int ref = ref_tmp;
     const int dir = dir_tmp;
 
-    // This first loop copies all conserved variables into the outer zones
-    // This includes some we will replace below, but it would be harder
-    // to figure out where they were in the pack than just replace them
+    // This first loop copies all variables with the "FillGhost" tag into the outer zones
+    // This includes some we may replace below
     pmb->par_for("OutflowX1", 0, q.GetDim(4) - 1, ks_e, ke_e, js_e, je_e, ibs, ibe,
         KOKKOS_LAMBDA_VARS {
             q(p, k, j, i) = q(p, k, j, ref);
         }
     );
-    if (!prim_ghosts) {
-        // Apply KHARMA boundary to the primitive values
-        // TODO currently this includes B, which we then replace.
-        pmb->par_for("OutflowX1_prims", 0, P.GetDim(4) - 1, ks_e, ke_e, js_e, je_e, ibs, ibe,
-            KOKKOS_LAMBDA_VARS {
-                P(p, k, j, i) = P(p, k, j, ref);
-            }
-        );
-    }
-    // Inflow check, recover U
+    // Inflow check, always applied
     pmb->par_for("OutflowX1_check", ks_e, ke_e, js_e, je_e, ibs, ibe,
         KOKKOS_LAMBDA_3D {
             // Inflow check
@@ -133,15 +126,15 @@ void OutflowX1(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, boo
         }
     );
     if (!prim_ghosts) {
-        // Recover U
+        // Normal operation: We copied both both prim & con GRMHD variables, but we want to apply
+        // the boundaries based on just the former, so we run P->U
         pmb->par_for("OutflowX1_PtoU", ks_e, ke_e, js_e, je_e, ibs, ibe,
             KOKKOS_LAMBDA_3D {
                 // TODO move these steps into FillDerivedDomain, make a GRMHD::PtoU call the last in that series
                 // Correct primitive B
                 if (m_p.B1 >= 0)
                     VLOOP P(m_p.B1 + v, k, j, i) = q(m_u.B1 + v, k, j, i) / G.gdet(Loci::center, j, i);
-                // Recover conserved vars
-                // TODO all flux
+                // Recover conserved vars.  Must be only GRMHD.
                 GRMHD::p_to_u(G, P, m_p, gam, k, j, i, q, m_u);
             }
         );
@@ -159,6 +152,8 @@ void ReflectX2(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, boo
     const auto& G = pmb->coords;
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
 
+    // q will actually have *both* cons & prims (unless using imex driver)
+    // We'll only need cons.B specifically tho
     PackIndexMap prims_map, cons_map;
     auto P = GRMHD::PackMHDPrims(rc.get(), prims_map, coarse);
     auto q = rc->PackVariables({Metadata::FillGhost}, cons_map, coarse);
@@ -179,7 +174,9 @@ void ReflectX2(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, boo
     // So. Parthenon wants us to do our thing over is_e to ie_e
     // BUT if we're at the interior bound on X1, that's gonna blow things up
     // (for reasons unknown, inflow bounds must take precedence)
-    // so we have to be smart
+    // so we have to be smart.
+    // Side note: this *lags* the X1/X2 corner zones by one step, since X1 is applied first.
+    // this is potentially bad
     int ics = (pmb->boundary_flag[BoundaryFace::inner_x1] == BoundaryFlag::user) ? is : is_e;
     int ice = (pmb->boundary_flag[BoundaryFace::outer_x1] == BoundaryFlag::user) ? ie : ie_e;
     //int ics = is_e;
@@ -202,28 +199,20 @@ void ReflectX2(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, boo
     const int ref = ref_tmp;
     const int add = add_tmp;
 
+    // This first loop copies all variables with the "FillGhost" tag into the outer zones
+    // This includes some we may replace below
     pmb->par_for("ReflectX2", 0, q.GetDim(4) - 1, ks_e, ke_e, jbs, jbe, ics, ice,
         KOKKOS_LAMBDA_VARS {
             Real reflect = q.VectorComponent(p) == X2DIR ? -1.0 : 1.0;
             q(p, k, j, i) = reflect * q(p, k, (ref + add) + (ref - j), i);
         }
     );
-    // If we're using imex driver, the above is all we need.
     if (!prim_ghosts) {
-        // If we're using the HARM/KHARMA driver, we need to do the primitives
-        // separately after the conserved vars
-        pmb->par_for("ReflectX2_prims", 0, P.GetDim(4) - 1, ks_e, ke_e, jbs, jbe, ics, ice,
-            KOKKOS_LAMBDA_VARS {
-                Real reflect = P.VectorComponent(p) == X2DIR ? -1.0 : 1.0;
-                P(p, k, j, i) = reflect * P(p, k, (ref + add) + (ref - j), i);
-            }
-        );
-        // And we need to fill the corresponding conserved vars
+        // Normal operation: see above
         pmb->par_for("ReflectX2_PtoU", ks_e, ke_e, jbs, jbe, ics, ice,
             KOKKOS_LAMBDA_3D {
                 if (m_p.B1 >= 0)
                     VLOOP P(m_p.B1 + v, k, j, i) = q(m_u.B1 + v, k, j, i) / G.gdet(Loci::center, j, i);
-                // TODO all flux
                 GRMHD::p_to_u(G, P, m_p, gam, k, j, i, q, m_u);
             }
         );
