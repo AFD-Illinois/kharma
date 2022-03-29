@@ -37,7 +37,7 @@
 
 #include "decs.hpp"
 
-#include "mhd_functions.hpp"
+#include "grmhd_functions.hpp"
 #include "pack.hpp"
 
 #include <parthenon/parthenon.hpp>

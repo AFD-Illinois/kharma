@@ -42,18 +42,21 @@
 // Packages
 #include "b_flux_ct.hpp"
 #include "b_cd.hpp"
+#include "b_cleanup.hpp"
 #include "current.hpp"
 #include "electrons.hpp"
+#include "implicit.hpp"
 #include "floors.hpp"
 #include "grmhd.hpp"
 #include "reductions.hpp"
+#include "emhd.hpp"
 #include "wind.hpp"
 
 #include "bondi.hpp"
 #include "boundaries.hpp"
 #include "fixup.hpp"
 #include "harm_driver.hpp"
-#include "iharm_restart.hpp"
+#include "resize_restart.hpp"
 
 std::shared_ptr<StateDescriptor> KHARMA::InitializeGlobals(ParameterInput *pin)
 {
@@ -75,10 +78,24 @@ std::shared_ptr<StateDescriptor> KHARMA::InitializeGlobals(ParameterInput *pin)
 
     return pkg;
 }
+void KHARMA::ResetGlobals(ParameterInput *pin, Mesh *pmesh)
+{
+    // The globals package was loaded & exists, retrieve it
+    auto pkg = pmesh->packages.Get("Globals");
+    Params &params = pkg->AllParams();
+    // This needs to be reset to guarantee that EstimateTimestep doesn't try to
+    // calculate a new dt from a blank 'ctop' variable,
+    // just uses whatever the next step was going to be at reset
+    params.Update("in_loop", false);
+
+    // Everything else is a per-step variable, not per-run, so they're fine
+    // to be restored by Parthenon
+}
 
 void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
 {
-    // This would set ghost zones dynamically, or leave it up to Parthenon.  Dangerous?
+    // This would set ghost zones dynamically, or leave it up to Parthenon.
+    // TODO get this working so I don't have to when we really want to test it & get scaling happening
     // std::string recon = pin->GetOrAddString("GRMHD", "reconstruction", "weno5");
     // if (recon != "donor_cell" && recon != "linear_mc" && recon != "linear_vl") {
     //     pin->SetInteger("parthenon/mesh", "nghost", 4);
@@ -90,8 +107,8 @@ void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
 
     // If we're restarting (not via Parthenon), read the restart file to get most parameters
     std::string prob = pin->GetString("parthenon/job", "problem_id");
-    if (prob == "iharm_restart") {
-        ReadIharmRestartHeader(pin->GetString("iharm_restart", "fname"), pin);
+    if (prob == "resize_restart") {
+        ReadIharmRestartHeader(pin->GetString("resize_restart", "fname"), pin);
     }
 
     // Then handle coordinate systems and boundaries!
@@ -182,21 +199,49 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
     // Then put together what we're supposed to
     Packages_t packages;
 
-    // Read all options first so we can set their defaults here,
-    // before any packages are initialized.
+    // Read all package enablements first so we can set their defaults here,
+    // before any packages are initialized: thus they can know the full list
     std::string b_field_solver = pin->GetOrAddString("b_field", "solver", "flux_ct");
-    // TODO if jcon is in our list of outputs then...
+
+    // Enable b_cleanup package if we want it explicitly
+    bool b_cleanup_package = pin->GetOrAddBoolean("b_cleanup", "on", false);
+    // OR if we need it for resizing a dump
+    bool is_resize = pin->GetString("parthenon/job", "problem_id") == "resize_restart";
+    // OR if we want an initial cleanup pass for some other reason
+    bool initial_cleanup = pin->GetOrAddBoolean("b_field", "initial_cleanup", false);
+    // These were separated to make sure that the preference keys are initialized,
+    // since short-circuiting prevented that when they were listed below
+    bool b_cleanup = b_cleanup_package || is_resize || initial_cleanup;
+
+    // TODO enable this iff jcon is in the list of outputs
     bool add_jcon = pin->GetOrAddBoolean("GRMHD", "add_jcon", true);
     bool do_electrons = pin->GetOrAddBoolean("electrons", "on", false);
     bool do_reductions = pin->GetOrAddBoolean("reductions", "on", true);
+    bool do_emhd = pin->GetOrAddBoolean("emhd", "on", false);
     bool do_wind = pin->GetOrAddBoolean("wind", "on", false);
 
-    // Global variables "package."  Anything that just, really oughta be a global
+    // Set the default driver way up here so packages know how to flag
+    // prims vs cons (imex stepper syncs prims, but packages have to mark them that way)
+    std::string driver_type;
+    if (do_emhd) {
+        // Default to implicit step for EMHD
+        driver_type = pin->GetOrAddString("driver", "type", "imex");
+    } else {
+        driver_type = pin->GetOrAddString("driver", "type", "harm");
+    }
+    // Initialize the implicit timestepping package early so we can mark fields to be
+    // updated implicitly vs explicitly
+    if (driver_type == "imex") {
+        packages.Add(Implicit::Initialize(pin.get()));
+    }
+
+    // Global variables "package."  Mutable global state Parthenon doesn't keep for us.
+    // Always enable.
     packages.Add(KHARMA::InitializeGlobals(pin.get()));
 
-    // Most functions and variables are in the GRMHD package,
-    // initialize it first among physics stuff
-    packages.Add(GRMHD::Initialize(pin.get()));
+    // Lots of common functions and variables are still in the GRMHD package,
+    // always initialize it first among physics stuff
+    packages.Add(GRMHD::Initialize(pin.get(), packages));
 
     // We'll also always want the floors package, even if floors are disabled
     packages.Add(Floors::Initialize(pin.get()));
@@ -204,8 +249,6 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
     // B field solvers, to ensure divB == 0.
     if (b_field_solver == "none") {
         // Don't add a B field
-        // Currently this means fields are still allocated, and occasionally read by GRMHD,
-        // but no other operations are performed.
     } else if (b_field_solver == "constraint_damping" || b_field_solver == "b_cd") {
         // Constraint damping, probably only useful for non-GR MHD systems
         packages.Add(B_CD::Initialize(pin.get(), packages));
@@ -213,21 +256,35 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
         // Don't even error on bad values.  This is probably what you want
         packages.Add(B_FluxCT::Initialize(pin.get(), packages));
     }
-
-    if (do_wind) {
-        packages.Add(Wind::Initialize(pin.get()));
+    // Additional cleanup on B field.
+    // Can be enabled with or without a per-step solver, currently used for restart resizing
+    if (b_cleanup) {
+        packages.Add(B_Cleanup::Initialize(pin.get(), packages));
     }
+    // Unless both a field solver and cleanup routine are disabled,
+    // there is some form of B field present/declared.
+    bool b_field_exists = !(b_field_solver == "none" && !b_cleanup);
 
-    if (add_jcon) {
+    // Add jcon, so long as there's a field to calculate it from
+    if (add_jcon && b_field_exists) {
         packages.Add(Current::Initialize(pin.get()));
     }
 
+    // Electrons are boring but not impossible without a B field
     if (do_electrons) {
         packages.Add(Electrons::Initialize(pin.get(), packages));
     }
 
     if (do_reductions) {
         packages.Add(Reductions::Initialize(pin.get()));
+    }
+
+    if (do_emhd) {
+        packages.Add(EMHD::Initialize(pin.get(), packages));
+    }
+
+    if (do_wind) {
+        packages.Add(Wind::Initialize(pin.get()));
     }
 
     return std::move(packages);

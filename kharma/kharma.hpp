@@ -58,6 +58,8 @@ Packages_t ProcessPackages(std::unique_ptr<ParameterInput>& pin);
  * in_loop, whether one step has been completed (for e.g. EstimateTimestep)
  */
 std::shared_ptr<StateDescriptor> InitializeGlobals(ParameterInput *pin);
+// Version for restarts, called in PostInitialize if we're restarting from a Parthenon restart file
+void ResetGlobals(ParameterInput *pin, Mesh *pmesh);
 
 /**
  * Imitate Parthenon's FillDerived call, but on only a subset of zones defined by 'domain'

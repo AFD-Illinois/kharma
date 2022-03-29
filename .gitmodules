@@ -5,3 +5,6 @@
 [submodule "external/variant"]
 	path = external/variant
 	url = https://github.com/mpark/variant.git
+[submodule "external/kokkos-kernels"]
+	path = external/kokkos-kernels
+	url = https://github.com/kokkos/kokkos-kernels

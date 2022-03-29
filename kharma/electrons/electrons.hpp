@@ -37,7 +37,7 @@
 
 #include <parthenon/parthenon.hpp>
 
-#include "mhd_functions.hpp"
+#include "grmhd_functions.hpp"
 
 using namespace parthenon;
 
@@ -85,17 +85,7 @@ TaskStatus InitElectrons(MeshBlockData<Real> *rc, ParameterInput *pin);
  * Function in this package: Get the specific entropy primitive value, by dividing the total entropy K/(rho*u^0)
  */
 void UtoP(MeshBlockData<Real> *rc, IndexDomain domain=IndexDomain::entire, bool coarse=false);
-inline void FillDerived(MeshBlockData<Real> *rc) { UtoP(rc); }
-
-/**
- * Anything which should be applied after every package has performed "UtoP"
- * Generally floors, fixes, or very basic source terms for primitive variables.
- * 
- * Currently a no-op in this package, as floors *before* ApplyElectronHeating are applied in GRMHD::PostUtoP,
- * and floors *after* electron heating are applied immediately in ApplyElectronHeating
- */
-void PostUtoP(MeshBlockData<Real> *rc, IndexDomain domain=IndexDomain::entire, bool coarse=false);
-inline void PostFillDerived(MeshBlockData<Real> *rc) { PostUtoP(rc); }
+inline void FillDerivedBlock(MeshBlockData<Real> *rc) { UtoP(rc); }
 
 /**
  * This heating step is custom for this package:
@@ -132,41 +122,16 @@ TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *rc);
 void FillOutput(MeshBlock *pmb, ParameterInput *pin);
 
 /**
- * KHARMA requires two forms of the function for obtaining conserved variables from primitives.
- * However, these are very different from UtoP/FillDerived in that they are called exclusively on the
- * device side, operating on a single zone rather than the whole fluid state.
+ * KHARMA requires some method for getting conserved variables from primitives, as well.
  * 
- * Each should have roughly the signature used here, accepting scratchpads of size NVARxN1, and index
- * maps (see types.hpp) indicating which index corresponds to which variable in the packed array, as well
- * as indications of the desired zone location and flux direction (dir==0 for just the conserved variable forms).
- * As used extensively here, any variables not present in a pack will have index -1 in the map.
- *  
- * The two functions differ in two ways:
- * 1. The caller precalculate the four-vectors (u^mu, b^mu) and pass them in the struct D to prim_to_flux (see fluxes.hpp for call)
- * 2. p_to_u will only ever be called to obtain the conserved variables U, not fluxes (i.e. dir == 0 in calls)
+ * However, unlike UtoP, p_to_u is implemented device-side. That means that any
+ * package defining new primitive/conserved vars must add them to Flux::prim_to_flux
+ * in addition to providing a UtoP function.
  * 
- * Function in this package: Divide or multiply by local density to get entropy/particle -- opposite of UtoP above
+ * Some packages may wish to have their own local p_to_u functions as well, to avoid
+ * calling Flux::PtoU where not all conserved variables need to be calculated. This is
+ * an example.
  */
-KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const ScratchPad2D<Real>& P, const VarMap& m_p, const FourVectors D,
-                                         const int& k, const int& j, const int& i, const int dir,
-                                         ScratchPad2D<Real>& flux, const VarMap m_u, const Loci loc=Loci::center)
-{
-    // Take the factor from the primitives, in case we need to reorder this to happen before GRMHD::prim_to_flux later
-    const Real rho_ut = P(m_p.RHO, i) * D.ucon[dir] * G.gdet(loc, j, i);
-    flux(m_u.KTOT, i) = rho_ut * P(m_p.KTOT, i);
-    if (m_p.K_CONSTANT >= 0)
-        flux(m_u.K_CONSTANT, i) = rho_ut * P(m_p.K_CONSTANT, i);
-    if (m_p.K_HOWES >= 0)
-        flux(m_u.K_HOWES, i) = rho_ut * P(m_p.K_HOWES, i);
-    if (m_p.K_KAWAZURA >= 0)
-        flux(m_u.K_KAWAZURA, i) = rho_ut * P(m_p.K_KAWAZURA, i);
-    if (m_p.K_WERNER >= 0)
-        flux(m_u.K_WERNER, i) = rho_ut * P(m_p.K_WERNER, i);
-    if (m_p.K_ROWAN >= 0)
-        flux(m_u.K_ROWAN, i) = rho_ut * P(m_p.K_ROWAN, i);
-    if (m_p.K_SHARMA >= 0)
-        flux(m_u.K_SHARMA, i) = rho_ut * P(m_p.K_SHARMA, i);
-}
 KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates& G, const VariablePack<Real>& P, const VarMap& m_p,
                                          const int& k, const int& j, const int& i,
                                          const VariablePack<Real>& flux, const VarMap m_u, const Loci loc=Loci::center)

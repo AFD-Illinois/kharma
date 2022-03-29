@@ -35,11 +35,12 @@
 #include "fixup.hpp"
 
 #include "floors.hpp"
+#include "flux_functions.hpp"
 #include "pack.hpp"
 
-// I'm undecided on reintroducing these more widely but they clearly make sense here
+// Version of PLOOP guaranteeing specifically the 5 GRMHD fixup-amenable primitive vars
 #define NPRIM 5
-#define PLOOP for(int p=0; p < NPRIM; ++p)
+#define PRIMLOOP for(int p=0; p < NPRIM; ++p)
 
 TaskStatus GRMHD::FixUtoP(MeshBlockData<Real> *rc)
 {
@@ -94,11 +95,11 @@ TaskStatus GRMHD::FixUtoP(MeshBlockData<Real> *rc)
                                 if (((int) pflag(kk, jj, ii)) == InversionStatus::success) {
                                     // Weight by distance.  Note interpolated "fixed" cells stay flagged
                                     wsum += w;
-                                    PLOOP sum[p] += w * P(p, kk, jj, ii);
+                                    PRIMLOOP sum[p] += w * P(p, kk, jj, ii);
                                 }
                                 // Just in case, keep a sum of even the bad ones
                                 wsum_x += w;
-                                PLOOP sum_x[p] += w * P(p, kk, jj, ii);
+                                PRIMLOOP sum_x[p] += w * P(p, kk, jj, ii);
                             }
                         }
                     }
@@ -110,9 +111,9 @@ TaskStatus GRMHD::FixUtoP(MeshBlockData<Real> *rc)
                     if (verbose >= 1 && inside(k, j, i, kb_b, jb_b, ib_b)) // If an interior zone...
                         printf("No neighbors were available at %d %d %d!\n", i, j, k);
 #endif
-                    PLOOP P(p, k, j, i) = sum_x[p]/wsum_x;
+                    //PRIMLOOP P(p, k, j, i) = sum_x[p]/wsum_x;
                 } else {
-                    PLOOP P(p, k, j, i) = sum[p]/wsum;
+                    PRIMLOOP P(p, k, j, i) = sum[p]/wsum;
                 }
             }
         }
@@ -130,14 +131,18 @@ TaskStatus GRMHD::FixUtoP(MeshBlockData<Real> *rc)
     pmb->par_for("fix_U_to_P_floors", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_3D {
             if (((int) pflag(k, j, i)) > InversionStatus::success) {
+                apply_geo_floors(G, P, m_p, gam, k, j, i, floors);
+
                 // Make sure to keep lockstep
+                // This will only be run for GRMHD, so we can call its p_to_u
                 GRMHD::p_to_u(G, P, m_p, gam, k, j, i, U, m_u);
 
                 // And make sure the fixed values still abide by floors (floors keep lockstep)
-                int fflag_local = 0;
-                fflag_local |= apply_floors(G, P, m_p, gam, k, j, i, floors, U, m_u);
-                fflag_local |= apply_ceilings(G, P, m_p, gam, k, j, i, floors, U, m_u);
-                fflag(k, j, i) = fflag_local;
+                // TODO Fluid Frame instead of just geo?
+                // int fflag_local = 0;
+                // fflag_local |= Floors::apply_floors(G, P, m_p, gam, k, j, i, floors, U, m_u);
+                // fflag_local |= Floors::apply_ceilings(G, P, m_p, gam, k, j, i, floors, U, m_u);
+                // fflag(k, j, i) = fflag_local;
             }
         }
     );

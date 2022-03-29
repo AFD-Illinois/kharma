@@ -33,7 +33,7 @@
  */
 #pragma once
 
-#include "mhd_functions.hpp"
+#include "grmhd_functions.hpp"
 
 #include <parthenon/parthenon.hpp>
 

@@ -12,8 +12,9 @@ frames_*/
 *.rhdf
 *.xdmf
 *.hst
-# Archival parsed parameters file
+# Archival files
 kharma_parsed_*.par
+log_*.txt
 
 # Editor documents
 .project

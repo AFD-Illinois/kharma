@@ -59,7 +59,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     Real damping = pin->GetOrAddReal("b_field", "damping", 0.1);
     params.Add("damping", damping);
 
-    std::vector<int> s_vector({3});
+    std::vector<int> s_vector({NVEC});
 
     MetadataFlag isPrimitive = packages.Get("GRMHD")->Param<MetadataFlag>("PrimitiveFlag");
 

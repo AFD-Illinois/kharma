@@ -35,6 +35,7 @@ tlim = 50.0
 cfl = 0.9
 gamma = 1.666667
 reconstruction = weno5
+implicit = false
 
 <bondi>
 mdot = 1.0
@@ -54,6 +55,12 @@ solver = none
 
 <debug>
 verbose = 0
+
+<driver>
+type = harm
+
+<implicit>
+max_nonlinear_iter = 3
 
 <parthenon/output0>
 file_type = hdf5
