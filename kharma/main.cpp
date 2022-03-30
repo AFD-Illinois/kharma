@@ -36,6 +36,7 @@
 #include "decs.hpp"
 
 #include "boundaries.hpp"
+#include "imex_driver.hpp"
 #include "harm_driver.hpp"
 #include "kharma.hpp"
 #include "mpi.hpp"
@@ -87,10 +88,11 @@ using namespace parthenon;
  * sets of physical processes, while re-using particular physics packages to mix and match
  *
  * Currently available drivers:
- * HARM: GRMHD using LLF with zone-centered fields
+ * HARM: GRMHD using LLF with zone-centered fields, conserved variables are synchronized
+ * Imex: same functionality HARM but primitive variables are synchronized,
+ *       optionally uses per-zone implicit solve for some variables, for e.g. Extended GRMHD
  *
  * Future drivers?
- * KHARMA: GRMHD using LLF with face-centered fields
  * bhlight: GRMHD with Monte Carlo particle transport
  */
 int main(int argc, char *argv[])
@@ -127,7 +129,7 @@ int main(int argc, char *argv[])
     Flag("Parthenon Initialized");
 
 #if DEBUG
-    // Replace Parthenon signals with something that just prints a backtrace
+    // Replace Parthenon signal handlers with something that just prints a backtrace
     signal(SIGINT, print_backtrace);
     signal(SIGTERM, print_backtrace);
     signal(SIGSEGV, print_backtrace);
@@ -142,11 +144,22 @@ int main(int argc, char *argv[])
     // this usually involves global reductions for normalization
     if(MPIRank0())
         cout << "Running post-initialization tasks..." << endl;
-    KHARMA::PostInitialize(pin, pmesh, pman.IsRestart());
+
+    auto prob = pin->GetString("parthenon/job", "problem_id");
+    bool is_restart = (prob == "resize_restart") || pman.IsRestart();
+    bool is_resize = (prob == "resize_restart") && !pman.IsRestart();
+    KHARMA::PostInitialize(pin, pmesh, is_restart, is_resize);
     Flag("Post-initialization completed");
 
-    // Then construct & run the driver
-    HARMDriver driver(pin, papp, pmesh);
+    // Construct a temporary driver purely for parameter parsing
+    auto driver_type = pin->GetString("driver", "type");
+    if (driver_type == "harm") {
+        HARMDriver driver(pin, papp, pmesh);
+    } else if (driver_type == "imex") {
+        ImexDriver driver(pin, papp, pmesh);
+    } else {
+        throw std::invalid_argument("Expected driver type to be harm or imex!");
+    }
 
     // We could still have set parameters during driver initialization
     // Note the order here is *extremely important* as the first statement has a
@@ -174,7 +187,15 @@ int main(int argc, char *argv[])
     // of each step until a stop criterion is reached.
     Flag("Executing Driver");
 
-    auto driver_status = driver.Execute();
+    if (driver_type == "harm") {
+        cout << "Initializing and running KHARMA driver." << endl;
+        HARMDriver driver(pin, papp, pmesh);
+        auto driver_status = driver.Execute();
+    } else if (driver_type == "imex") {
+        cout << "Initializing and running IMEX driver." << endl;
+        ImexDriver driver(pin, papp, pmesh);
+        auto driver_status = driver.Execute();
+    }
 
     // Parthenon cleanup includes Kokkos, MPI
     Flag("Finalizing");

@@ -200,8 +200,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     // TODO if nKs == 1 then rename Kel_Whatever -> Kel?
     // TODO record nKs and find a nice way to loop/vector the device-side layout?
 
-    pkg->FillDerivedBlock = Electrons::FillDerived;
-    pkg->PostFillDerivedBlock = Electrons::PostFillDerived;
+    pkg->FillDerivedBlock = Electrons::FillDerivedBlock;
     return pkg;
 }
 
@@ -269,8 +268,6 @@ void UtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     );
 
 }
-
-void PostUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse) {}
 
 TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real> *rc, bool generate_grf)
 {
@@ -421,6 +418,7 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
             KOKKOS_LAMBDA_3D {
                 const Real Q = -(ug0 * v0 * (gam - 2) / pow(1 + v0 * t, 3));
                 P_new(m_p.UU, k, j, i) += Q * dt;
+                // TODO all flux
                 GRMHD::p_to_u(G, P_new, m_p, gam, k, j, i, U_new, m_u);
             }
         );

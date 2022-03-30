@@ -6,7 +6,7 @@ from matplotlib.colors import LightSource
 import numpy as np
 import matplotlib.pyplot as plt
 
-import pyHARM
+import pyharm
 
 RES = [int(x) for x in sys.argv[1].split(",")]
 LONG = sys.argv[2]
@@ -95,7 +95,7 @@ dvar *= amp
 # USE DUMPS IN FOLDERS OF GIVEN FORMAT
 for m, res in enumerate(RES):
     print(DIM, res, SHORT)
-    dump = pyHARM.load_dump("mhd_{}_{}_end_{}.phdf".format(DIM, res, SHORT))
+    dump = pyharm.load_dump("mhd_{}_{}_end_{}.phdf".format(DIM, res, SHORT))
     params = dump.params
 
     X1 = dump['x']

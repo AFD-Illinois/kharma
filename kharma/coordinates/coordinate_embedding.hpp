@@ -277,6 +277,12 @@ class CoordinateEmbedding {
             Real gdet = invert(&gcov[0][0], &gcon[0][0]);
             return sqrt(fabs(gdet));
         }
+        KOKKOS_INLINE_FUNCTION Real gdet_native(const GReal X[GR_DIM]) const
+        {
+            Real gcov[GR_DIM][GR_DIM], gcon[GR_DIM][GR_DIM];
+            gcov_native(X, gcov);
+            return gcon_native(gcov, gcon);
+        }
 
         KOKKOS_INLINE_FUNCTION void conn_native(const GReal X[GR_DIM], const GReal delta, Real conn[GR_DIM][GR_DIM][GR_DIM]) const
         {

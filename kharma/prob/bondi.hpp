@@ -36,7 +36,8 @@
 #include "decs.hpp"
 
 #include "gr_coordinates.hpp"
-#include "mhd_functions.hpp"
+#include "flux_functions.hpp"
+#include "grmhd_functions.hpp"
 #include "pack.hpp"
 #include "prob_common.hpp"
 #include "types.hpp"

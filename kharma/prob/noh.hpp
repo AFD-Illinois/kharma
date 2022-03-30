@@ -1,5 +1,5 @@
 /* 
- *  File: mhdmodes.hpp
+ *  File: noh.hpp
  *  
  *  BSD 3-Clause License
  *  
@@ -38,6 +38,9 @@
 using namespace std;
 using namespace parthenon;
 
+/**
+ * Noh shock tube test.
+ */
 TaskStatus InitializeNoh(MeshBlockData<Real> *rc, ParameterInput *pin)
 {
     Flag(rc, "Initializing 1D (Noh) Shock test");
@@ -71,11 +74,11 @@ TaskStatus InitializeNoh(MeshBlockData<Real> *rc, ParameterInput *pin)
     const Real x1max = pin->GetReal("parthenon/mesh", "x1max");
     const Real center = (x1min + x1max) / 2.;
 
+    // TODO relativistic sound speed
     Real cs2 = (gam * (gam - 1) * PL) / rhoL;
     Real v1 = mach * sqrt(cs2);
 
-    if (set_tlim)
-    {
+    if (set_tlim) {
         pin->SetReal("parthenon/time", "tlim", 0.6*(x1max - x1min)/v1);
     }
 

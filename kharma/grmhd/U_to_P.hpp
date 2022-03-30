@@ -62,8 +62,8 @@ KOKKOS_INLINE_FUNCTION Real lorentz_calc_w(const Real& Bsq, const Real& D, const
  * These are fixed later, in FixUtoP
  */
 KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const VariablePack<Real>& U, const VarMap& m_u,
-                                    const Real& gam, const int& k, const int& j, const int& i, const Loci loc,
-                                    const VariablePack<Real>& P, const VarMap& m_p)
+                                              const Real& gam, const int& k, const int& j, const int& i, const Loci loc,
+                                              const VariablePack<Real>& P, const VarMap& m_p)
 {
     // Catch negative density
     if (U(m_u.RHO, k, j, i) <= 0.) {
@@ -76,10 +76,12 @@ KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const Vari
     const Real a_over_g = alpha / gdet;
     const Real D = U(m_u.RHO, k, j, i) * a_over_g;
 
-    const Real Bcon[GR_DIM] = {0,
-        U(m_u.B1, k, j, i) * a_over_g,
-        U(m_u.B2, k, j, i) * a_over_g,
-        U(m_u.B3, k, j, i) * a_over_g};
+    Real Bcon[GR_DIM] = {0};
+    if (m_u.B1 >= 0) {
+        Bcon[1] = U(m_u.B1, k, j, i) * a_over_g;
+        Bcon[2] = U(m_u.B2, k, j, i) * a_over_g;
+        Bcon[3] = U(m_u.B3, k, j, i) * a_over_g;
+    }
 
     const Real Qcov[GR_DIM] =
         {(U(m_u.UU, k, j, i) - U(m_u.RHO, k, j, i)) * a_over_g,
@@ -216,7 +218,7 @@ KOKKOS_INLINE_FUNCTION Real err_eqn(const Real& gam, const Real& Bsq, const Real
  * Fluid relativistic factor gamma in terms of inversion state variables
  */
 KOKKOS_INLINE_FUNCTION Real lorentz_calc_w(const Real& Bsq, const Real& D, const Real& QdB,
-                                        const Real& Qtsq, const Real& Wp)
+                                           const Real& Qtsq, const Real& Wp)
 {
     const Real QdBsq = QdB * QdB;
     const Real W = Wp + D;
