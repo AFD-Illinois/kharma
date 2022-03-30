@@ -290,7 +290,31 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
     // modified on each rank.
     const auto &two_sync = pkgs.at("GRMHD")->Param<bool>("two_sync");
     if (two_sync) {
+        TaskRegion &single_tasklist_per_pack_region = tc.AddRegion(num_partitions);
+        for (int i = 0; i < num_partitions; i++) {
+            auto &tl = single_tasklist_per_pack_region[i];
+            auto &mc1 = pmesh->mesh_data.GetOrAdd(stage_name[stage], i);
+
+            auto t_start_recv = tl.AddTask(t_none, &MeshData<Real>::StartReceiving, mc1.get(),
+                                        BoundaryCommSubset::all);
+        }
+
         AddBoundarySync(tc, pmesh, blocks, integrator.get(), stage, pack_comms);
+
+        TaskRegion &async_region = tc.AddRegion(blocks.size());
+        for (int i = 0; i < blocks.size(); i++) {
+            auto &pmb = blocks[i];
+            auto &tl = async_region[i];
+            auto &sc1 = pmb->meshblock_data.Get(stage_name[stage]);
+
+            auto t_clear_comm_flags = tl.AddTask(t_none, &MeshBlockData<Real>::ClearBoundary,
+                                            sc1.get(), BoundaryCommSubset::all);
+
+            auto t_prolongBound = t_clear_comm_flags;
+            if (pmesh->multilevel) {
+                t_prolongBound = tl.AddTask(t_clear_comm_flags, ProlongateBoundaries, sc1);
+            }
+        }
     }
 
     return tc;

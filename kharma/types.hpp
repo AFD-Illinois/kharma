@@ -169,7 +169,7 @@ inline bool IsDomainBound(MeshBlock *pmb, BoundaryFace face)
  * at each important function entry/exit
  */
 #if TRACE
-#define PRINTCORNERS 1
+#define PRINTCORNERS 0
 #define PRINTZONE 0
 inline void PrintCorner(MeshBlockData<Real> *rc)
 {
