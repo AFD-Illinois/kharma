@@ -158,6 +158,7 @@ void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
         pin->SetReal("parthenon/mesh", "x1min", SMALL);
         pin->SetReal("parthenon/mesh", "x1max", Rout);
     }
+    
 
     // Assumption: if we're in a spherical system...
     if (cb == "spherical_ks" || cb == "spherical_bl" || cb == "spherical_minkowski") {
