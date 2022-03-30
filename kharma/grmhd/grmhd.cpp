@@ -177,6 +177,10 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     // together.  Useful if # MeshBlocks is > # MPI ranks
     bool pack_comms = pin->GetOrAddBoolean("perf", "pack_comms", true);
     params.Add("pack_comms", pack_comms);
+    // Synchronize boundary variables twice.  Ensures KHARMA is agnostic to the breakdown
+    // of meshblocks, at the cost of twice the MPI overhead, for potentially much worse strong scaling.
+    bool two_sync = pin->GetOrAddBoolean("perf", "two_sync", false);
+    params.Add("two_sync", two_sync);
 
     // Adaptive mesh refinement options
     // Only active if "refinement" and "numlevel" parameters allow

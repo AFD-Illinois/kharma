@@ -52,6 +52,7 @@
 #include "debug.hpp"
 #include "fixup.hpp"
 #include "flux.hpp"
+#include "harm_driver.hpp"
 #include "resize_restart.hpp"
 #include "implicit.hpp"
 #include "source.hpp"
@@ -288,57 +289,7 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
     // Optionally "packed" to send all data in one call (num_partitions defaults to 1)
     // Note that in this driver, this block syncs *primitive* variables, not conserved
     const auto &pack_comms = pkgs.at("GRMHD")->Param<bool>("pack_comms");
-    if (pack_comms) {
-        TaskRegion &tr1 = tc.AddRegion(num_partitions);
-        for (int i = 0; i < num_partitions; i++) {
-            auto &mc1 = pmesh->mesh_data.GetOrAdd(stage_name[stage], i);
-            tr1[i].AddTask(t_none,
-                [](MeshData<Real> *mc1){ Flag(mc1, "Parthenon Send Buffers"); return TaskStatus::complete; }
-            , mc1.get());
-            tr1[i].AddTask(t_none, cell_centered_bvars::SendBoundaryBuffers, mc1);
-        }
-        TaskRegion &tr2 = tc.AddRegion(num_partitions);
-        for (int i = 0; i < num_partitions; i++) {
-            auto &mc1 = pmesh->mesh_data.GetOrAdd(stage_name[stage], i);
-            tr2[i].AddTask(t_none,
-                [](MeshData<Real> *mc1){ Flag(mc1, "Parthenon Recv Buffers"); return TaskStatus::complete; }
-            , mc1.get());
-            tr2[i].AddTask(t_none, cell_centered_bvars::ReceiveBoundaryBuffers, mc1);
-        }
-        TaskRegion &tr3 = tc.AddRegion(num_partitions);
-        for (int i = 0; i < num_partitions; i++) {
-            auto &mc1 = pmesh->mesh_data.GetOrAdd(stage_name[stage], i);
-            tr3[i].AddTask(t_none,
-                [](MeshData<Real> *mc1){ Flag(mc1, "Parthenon Set Boundaries"); return TaskStatus::complete; }
-            , mc1.get());
-            tr3[i].AddTask(t_none, cell_centered_bvars::SetBoundaries, mc1);
-        }
-    } else {
-        TaskRegion &tr1 = tc.AddRegion(blocks.size());
-        for (int i = 0; i < blocks.size(); i++) {
-            auto &sc1 = blocks[i]->meshblock_data.Get(stage_name[stage]);
-            tr1[i].AddTask(t_none,
-                [](MeshBlockData<Real> *rc1){ Flag(rc1, "Parthenon Send Buffers"); return TaskStatus::complete; }
-            , sc1.get());
-            tr1[i].AddTask(t_none, &MeshBlockData<Real>::SendBoundaryBuffers, sc1.get());
-        }
-        TaskRegion &tr2 = tc.AddRegion(blocks.size());
-        for (int i = 0; i < blocks.size(); i++) {
-            auto &sc1 = blocks[i]->meshblock_data.Get(stage_name[stage]);
-            tr2[i].AddTask(t_none,
-                [](MeshBlockData<Real> *rc1){ Flag(rc1, "Parthenon Recv Buffers"); return TaskStatus::complete; }
-            , sc1.get());
-            tr2[i].AddTask(t_none, &MeshBlockData<Real>::ReceiveBoundaryBuffers, sc1.get());
-        }
-        TaskRegion &tr3 = tc.AddRegion(blocks.size());
-        for (int i = 0; i < blocks.size(); i++) {
-            auto &sc1 = blocks[i]->meshblock_data.Get(stage_name[stage]);
-            tr3[i].AddTask(t_none,
-                [](MeshBlockData<Real> *rc1){ Flag(rc1, "Parthenon Set Boundaries"); return TaskStatus::complete; }
-            , sc1.get());
-            tr3[i].AddTask(t_none, &MeshBlockData<Real>::SetBoundaries, sc1.get());
-        }
-    }
+    AddBoundarySync(tc, pmesh, blocks, integrator.get(), stage, pack_comms);
 
     // Async Region: Any post-sync tasks.  Fixups, timestep & AMR things.
     TaskRegion &async_region2 = tc.AddRegion(blocks.size());
@@ -387,6 +338,39 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
             if (pmesh->adaptive) {
                 auto tag_refine = tl.AddTask(
                     t_step_done, parthenon::Refinement::Tag<MeshBlockData<Real>>, sc1.get());
+            }
+        }
+    }
+
+    // Second boundary sync:
+    // ensure that primitive variables in ghost zones are *exactly*
+    // identical to their physical counterparts, now that they have been
+    // modified on each rank.
+    const auto &two_sync = pkgs.at("GRMHD")->Param<bool>("two_sync");
+    if (two_sync) {
+        TaskRegion &single_tasklist_per_pack_region = tc.AddRegion(num_partitions);
+        for (int i = 0; i < num_partitions; i++) {
+            auto &tl = single_tasklist_per_pack_region[i];
+            auto &mc1 = pmesh->mesh_data.GetOrAdd(stage_name[stage], i);
+
+            auto t_start_recv = tl.AddTask(t_none, &MeshData<Real>::StartReceiving, mc1.get(),
+                                        BoundaryCommSubset::all);
+        }
+
+        AddBoundarySync(tc, pmesh, blocks, integrator.get(), stage, pack_comms);
+
+        TaskRegion &async_region = tc.AddRegion(blocks.size());
+        for (int i = 0; i < blocks.size(); i++) {
+            auto &pmb = blocks[i];
+            auto &tl = async_region[i];
+            auto &sc1 = pmb->meshblock_data.Get(stage_name[stage]);
+
+            auto t_clear_comm_flags = tl.AddTask(t_none, &MeshBlockData<Real>::ClearBoundary,
+                                            sc1.get(), BoundaryCommSubset::all);
+
+            auto t_prolongBound = t_clear_comm_flags;
+            if (pmesh->multilevel) {
+                t_prolongBound = tl.AddTask(t_clear_comm_flags, ProlongateBoundaries, sc1);
             }
         }
     }
