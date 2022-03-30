@@ -49,72 +49,6 @@
 #include "seed_B_ct.hpp"
 #include "seed_B_cd.hpp"
 
-void SyncAllBounds(ParameterInput *pin, Mesh *pmesh)
-{
-
-    // TODO this does syncs per-block.  Correctly afaict,
-    // but they could be done more simply & efficiently per-mesh
-    Flag("Syncing all bounds");
-
-    if (pin->GetString("driver", "type") == "imex") {
-        // If we're syncing the primitive vars, we just sync
-        for (auto &pmb : pmesh->block_list) {
-            auto& rc = pmb->meshblock_data.Get();
-            rc->ClearBoundary(BoundaryCommSubset::all);
-            rc->StartReceiving(BoundaryCommSubset::all);
-            rc->SendBoundaryBuffers();
-        }
-        for (auto &pmb : pmesh->block_list) {
-            auto& rc = pmb->meshblock_data.Get();
-            rc->ReceiveAndSetBoundariesWithWait();
-            rc->ClearBoundary(BoundaryCommSubset::all);
-            // TODO if amr...
-            //pmb->pbval->ProlongateBoundaries();
-
-            // Physical boundary conditions
-            parthenon::ApplyBoundaryConditions(rc);
-        }
-    } else {
-        // If we're syncing the conserved vars...
-        // Honestly, the easiest way through this sync is:
-        // 1. PtoU everywhere
-        // 2. Sync like a normal step, incl. physical bounds
-        // 3. UtoP everywhere
-        // Luckily we're amortized over the whole sim, so we can
-        // take our time.
-        for (auto &pmb : pmesh->block_list) {
-            auto& rc = pmb->meshblock_data.Get();
-            Flux::PtoU(rc.get(), IndexDomain::entire);
-        }
-
-        for (auto &pmb : pmesh->block_list) {
-            auto& rc = pmb->meshblock_data.Get();
-            Flag("Block sync send");
-            rc->ClearBoundary(BoundaryCommSubset::all);
-            rc->StartReceiving(BoundaryCommSubset::all);
-            rc->SendBoundaryBuffers();
-        }
-
-        for (auto &pmb : pmesh->block_list) {
-            auto& rc = pmb->meshblock_data.Get();
-            Flag("Block sync receive");
-            rc->ReceiveAndSetBoundariesWithWait();
-            rc->ClearBoundary(BoundaryCommSubset::all);
-            // TODO if amr...
-            //pmb->pbval->ProlongateBoundaries();
-
-            Flag("Fill Derived");
-            // Fill P again, including ghost zones
-            parthenon::Update::FillDerived(rc.get());
-
-            Flag("Physical bounds");
-            // Physical boundary conditions
-            parthenon::ApplyBoundaryConditions(rc);
-        }
-    }
-    Flag("Sync'd");
-}
-
 void KHARMA::SeedAndNormalizeB(ParameterInput *pin, Mesh *pmesh)
 {
     // Check which solver we'll be using
@@ -126,7 +60,7 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, Mesh *pmesh)
     if (pin->GetOrAddString("b_field", "type", "none") != "none") {
         // Calculating B has a stencil outside physical zones
         Flag("Extra boundary sync for B");
-        SyncAllBounds(pin, pmesh);
+        KBoundaries::SyncAllBounds(pin, pmesh);
 
         // "Legacy" is the much more common normalization:
         // It's the ratio of max values over the domain i.e. max(P) / max(P_B),
@@ -265,7 +199,7 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart, b
 
     // Sync to fill the ghost zones
     Flag("Boundary sync");
-    SyncAllBounds(pin, pmesh);
+    KBoundaries::SyncAllBounds(pin, pmesh);
 
     // Extra cleanup & init to do if restarting
     if (is_restart) {
@@ -283,7 +217,7 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart, b
         B_Cleanup::CleanupDivergence(mbase);
         // Sync to make sure periodic boundaries are set
         Flag("Boundary sync");
-        SyncAllBounds(pin, pmesh);
+        KBoundaries::SyncAllBounds(pin, pmesh);
     }
 
     Flag("Post-initialization finished");

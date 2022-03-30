@@ -37,6 +37,7 @@
 #include "boundaries.hpp"
 
 #include "kharma.hpp"
+#include "flux.hpp"
 #include "flux_functions.hpp"
 #include "grmhd_functions.hpp"
 #include "pack.hpp"
@@ -342,4 +343,74 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
 
     Flag("Fixed fluxes");
     return TaskStatus::complete;
+}
+
+void KBoundaries::SyncAllBounds(ParameterInput *pin, Mesh *pmesh)
+{
+
+    // TODO this does syncs per-block.  Correctly afaict,
+    // but they could be done more simply & efficiently per-mesh
+    Flag("Syncing all bounds");
+
+    if (pin->GetString("driver", "type") == "imex") {
+        // If we're syncing the primitive vars, we just sync
+        for (auto &pmb : pmesh->block_list) {
+            auto& rc = pmb->meshblock_data.Get();
+            rc->ClearBoundary(BoundaryCommSubset::all);
+            rc->StartReceiving(BoundaryCommSubset::all);
+            rc->SendBoundaryBuffers();
+        }
+        for (auto &pmb : pmesh->block_list) {
+            auto& rc = pmb->meshblock_data.Get();
+            rc->ReceiveAndSetBoundariesWithWait();
+            rc->ClearBoundary(BoundaryCommSubset::all);
+            // TODO if amr...
+            //pmb->pbval->ProlongateBoundaries();
+
+            Flag("Physical bounds");
+            // Physical boundary conditions
+            parthenon::ApplyBoundaryConditions(rc);
+        }
+    } else {
+        // If we're syncing the conserved vars...
+        // Honestly, the easiest way through this sync is:
+        // 1. PtoU everywhere
+        // 2. Sync like a normal step, incl. physical bounds
+        // 3. UtoP everywhere
+        // Luckily we're amortized over the whole sim, so we can
+        // take our time.
+        for (auto &pmb : pmesh->block_list) {
+            auto& rc = pmb->meshblock_data.Get();
+            Flux::PtoU(rc.get(), IndexDomain::entire);
+        }
+
+        for (auto &pmb : pmesh->block_list) {
+            auto& rc = pmb->meshblock_data.Get();
+            Flag("Block sync send");
+            rc->ClearBoundary(BoundaryCommSubset::all);
+            rc->StartReceiving(BoundaryCommSubset::all);
+            rc->SendBoundaryBuffers();
+        }
+
+        for (auto &pmb : pmesh->block_list) {
+            auto& rc = pmb->meshblock_data.Get();
+            Flag("Block sync receive");
+            rc->ReceiveAndSetBoundariesWithWait();
+            rc->ClearBoundary(BoundaryCommSubset::all);
+            // TODO if amr...
+            //pmb->pbval->ProlongateBoundaries();
+
+            Flag("Fill Derived");
+            // Fill P again, including ghost zones
+            // But, sice we sync'd GRHD primitives already,
+            // leave those off by calling *Domain like in a normal
+            // boundary sync
+            KHARMA::FillDerivedDomain(rc, IndexDomain::entire, false);
+
+            Flag("Physical bounds");
+            // Physical boundary conditions
+            parthenon::ApplyBoundaryConditions(rc);
+        }
+    }
+    Flag("Sync'd");
 }

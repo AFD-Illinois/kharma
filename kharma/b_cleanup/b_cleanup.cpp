@@ -171,7 +171,10 @@ void CleanupDivergence(std::shared_ptr<MeshData<Real>>& md)
     auto verbose = pkg->Param<int>("verbose");
 
     if (MPIRank0() && verbose > 0) {
-        std::cout << "Cleaning divB" << std::endl;
+        std::cout << "Cleaning divB to relative tolerance " << rel_tolerance;
+        std::cout << " and absolute tolerance " << abs_tolerance << std::endl;
+        if (warn_flag) std::cout << "Warning on failure to converge." << std::endl;
+        if (fail_flag) std::cout << "Erroring on failure to converge." << std::endl;
     }
 
     // Calculate existing divB max & sum for checking relative error later

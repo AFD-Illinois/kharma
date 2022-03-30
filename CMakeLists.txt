@@ -13,15 +13,11 @@ set(CMAKE_CXX_STANDARD 14)
 #set(CMAKE_CXX17_STANDARD_COMPILE_OPTION "-std=c++17")
 #set(PARTHENON_ENABLE_CPP17 ON CACHE BOOL "KHARMA Override")
 
-#foreach(path ${CMAKE_PREFIX_PATH})
-#  include_directories(${path})
-#endforeach()
-
 # Parthenon options
 set(PARTHENON_DISABLE_EXAMPLES ON CACHE BOOL "KHARMA Override")
 set(PARTHENON_LINT_DEFAULT OFF CACHE BOOL "KHARMA Override")
-# To use old Summit built-in HDF5
-set(PARTHENON_DISABLE_HDF5_COMPRESSION ON CACHE BOOL "KHARMA Override")
+# Attempt HDF5 compression, requires recent/standard HDF5. YMMV
+set(PARTHENON_DISABLE_HDF5_COMPRESSION OFF CACHE BOOL "KHARMA Override")
 
 # Parthenon internal build options
 set(BUILD_TESTING OFF CACHE BOOL "KHARMA Override")
@@ -44,23 +40,29 @@ set(KokkosKernels_ENABLE_TPL_CUBLAS OFF CACHE BOOL "KHARMA Override")
 # Parthenon says it doesn't need MPI.  It just *strongly prefers* it, and so do we.
 # Builds without MPI have pretty limited support, you can usually find distribution 
 # packages or other ways to install it on personal machines without too much work.
-# Check out oneAPI or NVHPC for software distributions that include easily-usable MPI modules
+# Check out oneAPI or NVHPC for software distributions that include easily-usable,
+# fast MPI modules
+# If you really want to disable MPI, set this to ON and comment the next two lines
+set(PARTHENON_DISABLE_MPI OFF CACHE BOOL "KHARMA Override")
 find_package(MPI REQUIRED)
 include_directories(SYSTEM ${MPI_INCLUDE_PATH})
+
+# OpenMP is strictly required
 find_package(OpenMP REQUIRED)
 
-# TODO don't build parthenon unit tests etc just the library
+# Build Parthenon
 add_subdirectory(external/parthenon)
 include_directories(external/parthenon/src)
 # mpark::variant is header only, don't build anything
 include_directories(external/variant/include)
-# Kokkos kernels: don't compile them but import all headers
+# Kokkos kernels: don't build them (very slow), just import all headers
 # Requires KokkosKernels_config.h shipped with KHARMA, YMMV
+# In case of issues, uncomment the following line to build them
 #add_subdirectory(external/kokkos-kernels)
 include_directories(external/kokkos-kernels/src)
 include_directories(external/kokkos-kernels/src/batched)
 include_directories(external/kokkos-kernels/src/batched/dense)
 include_directories(external/kokkos-kernels/src/batched/dense/impl)
 
-# KHARMA folder
+# Finally, build KHARMA
 add_subdirectory(kharma)
