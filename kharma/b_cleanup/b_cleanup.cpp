@@ -159,8 +159,7 @@ void CleanupDivergence(std::shared_ptr<MeshData<Real>>& md)
 {
     Flag(md.get(), "Cleaning up divB");
     // Local Allreduce values since we're just calling things
-    AllReduce<Real> update_norm, divB_norm, divB_max;
-    AllReduce<Real> P_norm;
+    AllReduce<Real> update_norm, divB_norm, divB_max, P_norm;
 
     auto pmesh = md->GetMeshPointer();
     auto pkg = pmesh->packages.Get("B_Cleanup");
@@ -184,12 +183,14 @@ void CleanupDivergence(std::shared_ptr<MeshData<Real>>& md)
     divB_max.val = 0.;
     B_FluxCT::MaxDivBTask(md.get(), divB_max.val);
     divB_max.StartReduce(MPI_MAX);
-    divB_max.CheckReduce();
 
     divB_norm.val = 0.;
     B_Cleanup::CalcSumDivB(md.get(), divB_norm.val);
     divB_norm.StartReduce(MPI_SUM);
-    divB_norm.CheckReduce();
+
+    // Wait on results
+    while (divB_max.CheckReduce() == TaskStatus::incomplete);
+    while (divB_norm.CheckReduce() == TaskStatus::incomplete);
 
     if (MPIRank0() && verbose > 0) {
         std::cout << "Starting divB max is " << divB_max.val << " and sum is " << divB_norm.val << std::endl;
@@ -200,12 +201,18 @@ void CleanupDivergence(std::shared_ptr<MeshData<Real>>& md)
         return;
     }
 
+    // TODO Unmark everything but P as FillGhost, for efficiency. Re-mark before last sync
+    // auto vars = rc->GetVariablesByFlag(std::vector<MetadataFlag>({isImplicit, flag}), true).labels();
+    // for (auto& var : vars) {
+    //     // etc
+    // }
+
     // set P = divB as guess
     B_Cleanup::InitP(md.get());
 
-    bool converged = false;
+    bool is_converged = false;
     int iter = 0;
-    while ( (!converged) && (iter < max_iters) ) {
+    while ( (!is_converged) && (iter < max_iters) ) {
         // Update our guess at the potential 
         B_Cleanup::UpdateP(md.get());
 
@@ -219,24 +226,24 @@ void CleanupDivergence(std::shared_ptr<MeshData<Real>>& md)
             update_norm.val = 0.;
             B_Cleanup::SumError(md.get(), update_norm.val);
             update_norm.StartReduce(MPI_SUM);
-            update_norm.CheckReduce();
             // P_norm.val = 0.;
             // B_Cleanup::SumP(md.get(), P_norm.val);
             // P_norm.StartReduce(MPI_SUM);
-            // P_norm.CheckReduce();
             divB_max.val = 0.;
             MaxError(md.get(), divB_max.val);
             divB_max.StartReduce(MPI_MAX);
-            divB_max.CheckReduce();
+            // Wait on both reductions to move on
+            while (update_norm.CheckReduce() == TaskStatus::incomplete);
+            //while (P_norm.CheckReduce() == TaskStatus::incomplete);
+            while (divB_max.CheckReduce() == TaskStatus::incomplete);
             if (MPIRank0()) {
                 std::cout << "divB step " << iter << " total relative error is " << update_norm.val / divB_norm.val
                         << " Max absolute error is " << divB_max.val << std::endl;
                 // std::cout << "P norm is " << P_norm.val << std::endl;
             }
 
-            // Both these values are already MPI reduced, but we want to make sure
-            converged = (update_norm.val / divB_norm.val < rel_tolerance) && (divB_max.val < abs_tolerance);
-            converged = MPIMin(converged);
+            // This behaves identically on ranks, unless we've broken a fundamental assumption
+            is_converged = (update_norm.val / divB_norm.val < rel_tolerance) && (divB_max.val < abs_tolerance);
         }
 
         iter++;
@@ -253,14 +260,16 @@ void CleanupDivergence(std::shared_ptr<MeshData<Real>>& md)
         std::cout << "Applying magnetic field correction" << std::endl;
     }
 
-    // Update the magnetic field with one damped Jacobi step
+    // Update the magnetic field on physical zones using our solution
     B_Cleanup::ApplyP(md.get());
+    // Synchronize to update ghost zones
+    KBoundaries::SyncAllBounds(pmesh, sync_prims);
 
-    // Recalculate divB max to reassure
+    // Recalculate divB max for one last check
     divB_max.val = 0.;
     B_FluxCT::MaxDivBTask(md.get(), divB_max.val);
     divB_max.StartReduce(MPI_MAX);
-    divB_max.CheckReduce();
+    while (divB_max.CheckReduce() == TaskStatus::incomplete);
 
     if (MPIRank0()) {
         std::cout << "Final divB max is " << divB_max.val << std::endl;

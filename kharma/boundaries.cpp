@@ -347,8 +347,7 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
 
 void KBoundaries::SyncAllBounds(Mesh *pmesh, bool sync_prims, bool sync_phys)
 {
-
-    // TODO this does syncs per-block.  Correctly afaict,
+    // TODO this does syncs per-block.  Correctly and without race conditions afaict,
     // but they could be done more simply & efficiently per-mesh
     Flag("Syncing all bounds");
 
@@ -356,16 +355,20 @@ void KBoundaries::SyncAllBounds(Mesh *pmesh, bool sync_prims, bool sync_phys)
         // If we're syncing the primitive vars, we just sync
         for (auto &pmb : pmesh->block_list) {
             auto& rc = pmb->meshblock_data.Get();
+            Flag("Block sync send");
             rc->ClearBoundary(BoundaryCommSubset::all);
             rc->StartReceiving(BoundaryCommSubset::all);
             rc->SendBoundaryBuffers();
         }
         for (auto &pmb : pmesh->block_list) {
             auto& rc = pmb->meshblock_data.Get();
+            Flag("Block sync receive");
             rc->ReceiveAndSetBoundariesWithWait();
             rc->ClearBoundary(BoundaryCommSubset::all);
             // TODO if amr...
             //pmb->pbval->ProlongateBoundaries();
+
+            Flux::PtoU(rc.get());
 
             if (sync_phys) {
                 Flag("Physical bounds");
@@ -383,6 +386,7 @@ void KBoundaries::SyncAllBounds(Mesh *pmesh, bool sync_prims, bool sync_phys)
         // take our time.
         for (auto &pmb : pmesh->block_list) {
             auto& rc = pmb->meshblock_data.Get();
+            Flag("Block PtoU");
             Flux::PtoU(rc.get(), IndexDomain::entire);
         }
 

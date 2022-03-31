@@ -165,9 +165,12 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, Mesh *pmesh)
         }
     }
 
-    if (pin->GetString("b_field", "solver") != "none" && pin->GetInteger("debug", "verbose") > 0) {
-        // Still print divB, even if we're not initializing/normalizing field here
+    if (pin->GetString("b_field", "solver") != "none") {
         auto md = pmesh->mesh_data.GetOrAdd("base", 0).get();
+        // Synchronize our seeded field (incl. primitives) before we print out what divB it has
+        KBoundaries::SyncAllBounds(pmesh, sync_prims);
+
+        // Still print divB, even if we're not initializing/normalizing field here
         Real divb_max = 0.;
         if (use_b_flux_ct) {
             divb_max = B_FluxCT::MaxDivB(md);
