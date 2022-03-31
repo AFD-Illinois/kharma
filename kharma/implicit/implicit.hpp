@@ -137,7 +137,7 @@ KOKKOS_INLINE_FUNCTION void calc_jacobian(const GRCoordinates& G, const Local& P
                                           const Real& jac_delta, const Real& gam, const double& dt,
                                           Local2& jacobian, Local& residual)
 {
-    // Calculate residual for Sf->P
+    // Calculate residual of P
     calc_residual(G, P, Pi, Ui, Ps, dudt_explicit, dUi, tmp3, m_p, m_u, emhd_params, nfvar, j, i, gam, dt, residual);
 
     // Use one scratchpad as the incremented prims P_delta,

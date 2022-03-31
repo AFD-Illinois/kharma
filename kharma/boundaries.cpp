@@ -345,14 +345,14 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
     return TaskStatus::complete;
 }
 
-void KBoundaries::SyncAllBounds(ParameterInput *pin, Mesh *pmesh)
+void KBoundaries::SyncAllBounds(Mesh *pmesh, bool sync_prims, bool sync_phys)
 {
 
     // TODO this does syncs per-block.  Correctly afaict,
     // but they could be done more simply & efficiently per-mesh
     Flag("Syncing all bounds");
 
-    if (pin->GetString("driver", "type") == "imex") {
+    if (sync_prims) {
         // If we're syncing the primitive vars, we just sync
         for (auto &pmb : pmesh->block_list) {
             auto& rc = pmb->meshblock_data.Get();
@@ -367,9 +367,11 @@ void KBoundaries::SyncAllBounds(ParameterInput *pin, Mesh *pmesh)
             // TODO if amr...
             //pmb->pbval->ProlongateBoundaries();
 
-            Flag("Physical bounds");
-            // Physical boundary conditions
-            parthenon::ApplyBoundaryConditions(rc);
+            if (sync_phys) {
+                Flag("Physical bounds");
+                // Physical boundary conditions
+                parthenon::ApplyBoundaryConditions(rc);
+            }
         }
     } else {
         // If we're syncing the conserved vars...
@@ -407,9 +409,11 @@ void KBoundaries::SyncAllBounds(ParameterInput *pin, Mesh *pmesh)
             // boundary sync
             KHARMA::FillDerivedDomain(rc, IndexDomain::entire, false);
 
-            Flag("Physical bounds");
-            // Physical boundary conditions
-            parthenon::ApplyBoundaryConditions(rc);
+            if (sync_phys) {
+                Flag("Physical bounds");
+                // Physical boundary conditions
+                parthenon::ApplyBoundaryConditions(rc);
+            }
         }
     }
     Flag("Sync'd");

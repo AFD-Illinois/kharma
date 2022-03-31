@@ -72,7 +72,7 @@ TaskStatus FixFlux(MeshData<Real> *rc);
  * Single call to sync all boundary conditions.
  * Used anytime boundary sync is needed outside the usual loop of steps.
  */
-void SyncAllBounds(ParameterInput *pin, Mesh *pmesh);
+void SyncAllBounds(Mesh *pmesh, bool sync_prims, bool sync_phys=true);
 
 /**
  * Check for flow into simulation and reset velocity to eliminate it

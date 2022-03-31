@@ -54,13 +54,14 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, Mesh *pmesh)
     // Check which solver we'll be using
     const bool use_b_flux_ct = pmesh->packages.AllPackages().count("B_FluxCT");
     const bool use_b_cd = pmesh->packages.AllPackages().count("B_CD");
+    bool sync_prims = pin->GetString("driver", "type") == "imex";
 
     // Add the field for torus problems as a second pass
     // Preserves P==U and ends with all physical zones fully defined
     if (pin->GetOrAddString("b_field", "type", "none") != "none") {
         // Calculating B has a stencil outside physical zones
         Flag("Extra boundary sync for B");
-        KBoundaries::SyncAllBounds(pin, pmesh);
+        KBoundaries::SyncAllBounds(pmesh, sync_prims);
 
         // "Legacy" is the much more common normalization:
         // It's the ratio of max values over the domain i.e. max(P) / max(P_B),
@@ -197,9 +198,10 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart, b
         }
     }
 
-    // Sync to fill the ghost zones
+    // Sync to fill the ghost zones: prims for ImExDriver, everything for HARMDriver
     Flag("Boundary sync");
-    KBoundaries::SyncAllBounds(pin, pmesh);
+    bool sync_prims = pin->GetString("driver", "type") == "imex";
+    KBoundaries::SyncAllBounds(pmesh, sync_prims);
 
     // Extra cleanup & init to do if restarting
     if (is_restart) {
@@ -217,7 +219,7 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart, b
         B_Cleanup::CleanupDivergence(mbase);
         // Sync to make sure periodic boundaries are set
         Flag("Boundary sync");
-        KBoundaries::SyncAllBounds(pin, pmesh);
+        KBoundaries::SyncAllBounds(pmesh, sync_prims);
     }
 
     Flag("Post-initialization finished");

@@ -46,6 +46,7 @@ u_jitter = 0.04
 <b_field>
 type = sane
 beta_min = 100.
+initial_cleanup = true
 
 <floors>
 rho_min_geom = 1e-6

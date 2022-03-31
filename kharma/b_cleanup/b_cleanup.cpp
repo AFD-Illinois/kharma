@@ -39,6 +39,7 @@
 // For a bunch of utility functions
 #include "b_flux_ct.hpp"
 
+#include "boundaries.hpp"
 #include "decs.hpp"
 #include "grmhd.hpp"
 #include "kharma.hpp"
@@ -161,7 +162,8 @@ void CleanupDivergence(std::shared_ptr<MeshData<Real>>& md)
     AllReduce<Real> update_norm, divB_norm, divB_max;
     AllReduce<Real> P_norm;
 
-    auto pkg = md->GetMeshPointer()->packages.Get("B_Cleanup");
+    auto pmesh = md->GetMeshPointer();
+    auto pkg = pmesh->packages.Get("B_Cleanup");
     auto max_iters = pkg->Param<int>("max_iterations");
     auto check_interval = pkg->Param<int>("check_interval");
     auto rel_tolerance = pkg->Param<Real>("rel_tolerance");
@@ -169,12 +171,13 @@ void CleanupDivergence(std::shared_ptr<MeshData<Real>>& md)
     auto fail_flag = pkg->Param<bool>("fail_without_convergence");
     auto warn_flag = pkg->Param<bool>("warn_without_convergence");
     auto verbose = pkg->Param<int>("verbose");
+    bool sync_prims = pmesh->packages.Get("GRMHD")->Param<std::string>("driver_type") == "imex";
 
     if (MPIRank0() && verbose > 0) {
         std::cout << "Cleaning divB to relative tolerance " << rel_tolerance;
         std::cout << " and absolute tolerance " << abs_tolerance << std::endl;
-        if (warn_flag) std::cout << "Warning on failure to converge." << std::endl;
-        if (fail_flag) std::cout << "Erroring on failure to converge." << std::endl;
+        if (warn_flag) std::cout << "Convergence failure will produce a warning." << std::endl;
+        if (fail_flag) std::cout << "Convergence failure will produce an error." << std::endl;
     }
 
     // Calculate existing divB max & sum for checking relative error later
@@ -191,6 +194,11 @@ void CleanupDivergence(std::shared_ptr<MeshData<Real>>& md)
     if (MPIRank0() && verbose > 0) {
         std::cout << "Starting divB max is " << divB_max.val << " and sum is " << divB_norm.val << std::endl;
     }
+    // These two aren't *strictly* comparable, but we're unlikely to do any good if this is true
+    if (divB_max.val < abs_tolerance) {
+        std::cout << "Starting divB is within tolerance, exiting." << std::endl;
+        return;
+    }
 
     // set P = divB as guess
     B_Cleanup::InitP(md.get());
@@ -198,23 +206,12 @@ void CleanupDivergence(std::shared_ptr<MeshData<Real>>& md)
     bool converged = false;
     int iter = 0;
     while ( (!converged) && (iter < max_iters) ) {
-        // Start syncing bounds
-        md.get()->StartReceiving(BoundaryCommSubset::all);
-
         // Update our guess at the potential 
         B_Cleanup::UpdateP(md.get());
 
         // Boundary sync. We really only need p syncd here...
-        cell_centered_bvars::SendBoundaryBuffers(md);
-        cell_centered_bvars::ReceiveBoundaryBuffers(md);
-        cell_centered_bvars::SetBoundaries(md);
-        md.get()->ClearBoundary(BoundaryCommSubset::all);
-
-        // And set physical boundaries
-        // for (auto &pmb : md->GetMeshPointer()->block_list) {
-        //     auto& rc = pmb->meshblock_data.Get();
-        //     parthenon::ApplyBoundaryConditions(rc);
-        // }
+        // Last option prevents updating physical boundaries, which we want to *solve* instead
+        KBoundaries::SyncAllBounds(pmesh, sync_prims, false);
 
         if (iter % check_interval == 0) {
             Flag("Iteration:");
@@ -327,7 +324,7 @@ TaskStatus InitP(MeshData<Real> *md)
 
 TaskStatus UpdateP(MeshData<Real> *md)
 {
-    //Flag(md, "Updating P");
+    Flag(md, "Updating P");
     auto pmesh = md->GetParentPointer();
     const int ndim = pmesh->ndim;
     const IndexRange ib = md->GetBoundsI(IndexDomain::entire);
@@ -390,6 +387,7 @@ TaskStatus UpdateP(MeshData<Real> *md)
         }
     );
 
+    Flag("Updated");
     return TaskStatus::complete;
 }
 

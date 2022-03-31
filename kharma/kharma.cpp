@@ -221,8 +221,8 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
     bool do_emhd = pin->GetOrAddBoolean("emhd", "on", false);
     bool do_wind = pin->GetOrAddBoolean("wind", "on", false);
 
-    // Set the default driver way up here so packages know how to flag
-    // prims vs cons (imex stepper syncs prims, but packages have to mark them that way)
+    // Set the default driver all the way up here, so packages know how to flag
+    // prims vs cons (imex stepper syncs prims, but it's the packages' job to mark them)
     std::string driver_type;
     if (do_emhd) {
         // Default to implicit step for EMHD
