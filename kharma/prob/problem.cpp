@@ -39,15 +39,17 @@
 #include "debug.hpp"
 #include "fixup.hpp"
 #include "floors.hpp"
-#include "fluxes.hpp"
+#include "flux.hpp"
 #include "gr_coordinates.hpp"
 #include "types.hpp"
 
 // Problem initialization headers
+#include "anisotropic_conduction.hpp"
 #include "bondi.hpp"
+#include "emhdmodes.hpp"
 #include "explosion.hpp"
 #include "fm_torus.hpp"
-#include "iharm_restart.hpp"
+#include "resize_restart.hpp"
 #include "kelvin_helmholtz.hpp"
 #include "bz_monopole.hpp"
 #include "mhdmodes.hpp"
@@ -58,7 +60,7 @@
 #include "b_field_tools.hpp"
 
 // Package headers
-#include "mhd_functions.hpp"
+#include "grmhd_functions.hpp"
 
 #include "bvals/boundary_conditions.hpp"
 #include "mesh/mesh.hpp"
@@ -76,6 +78,7 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
     auto prob = pin->GetString("parthenon/job", "problem_id"); // Required parameter
     if (MPIRank0()) cout << "Initializing problem: " << prob << endl;
     TaskStatus status = TaskStatus::fail;
+    // GRMHD
     if (prob == "mhdmodes") {
         status = InitializeMHDModes(rc.get(), pin);
     } else if (prob == "orszag_tang") {
@@ -88,41 +91,51 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
         status = InitializeShockTube(rc.get(), pin);
     } else if (prob == "bondi") {
         status = InitializeBondi(rc.get(), pin);
-    } else if (prob == "torus") {
-        status = InitializeFMTorus(rc.get(), pin);
     } else if (prob == "bz_monopole") {
         status = InitializeBZMonopole(rc.get(), pin);
-    } else if (prob == "iharm_restart") {
-        status = ReadIharmRestart(rc.get(), pin);
-    } else if (prob == "noh"){
+    // Electrons
+    } else if (prob == "noh") {
         status = InitializeNoh(rc.get(), pin);
+    // Extended GRMHD
+    } else if (prob == "emhdmodes") {
+        status = InitializeEMHDModes(rc.get(), pin);
+    } else if (prob == "anisotropic_conduction") {
+        status = InitializeAnisotropicConduction(rc.get(), pin);
+    // Everything
+    } else if (prob == "torus") {
+        status = InitializeFMTorus(rc.get(), pin);
+    } else if (prob == "resize_restart") {
+        status = ReadIharmRestart(rc.get(), pin);
     }
+
+    // If we didn't initialize a problem, yell
     if (status != TaskStatus::complete) {
         throw std::invalid_argument("Invalid or incomplete problem: "+prob);
     }
 
-    // Pertub the internal energy a bit to encourage accretion
-    // option in perturbation->u_jitter
-    // Note this defaults to zero, generally it's controlled via runtime options
-    // But we *definitely* don't want it when restarting
-    if (prob != "iharm_restart" && pin->GetOrAddReal("perturbation", "u_jitter", 0.0) > 0.0) {
-        PerturbU(rc.get(), pin);
-    }
+    // If we're not restarting, do any grooming of the initial conditions
+    if (prob != "resize_restart") {
+        // Pertub the internal energy a bit to encourage accretion
+        // Note this defaults to zero & is basically turned on only for torii
+        if (pin->GetOrAddReal("perturbation", "u_jitter", 0.0) > 0.0) {
+            PerturbU(rc.get(), pin);
+        }
 
-    // Initialize electron entropies if enabled
-    if (pmb->packages.AllPackages().count("Electrons")) {
-        Electrons::InitElectrons(rc.get(), pin);
-    }
+        // Initialize electron entropies to defaults if enabled
+        if (pmb->packages.AllPackages().count("Electrons")) {
+            Electrons::InitElectrons(rc.get(), pin);
+        }
 
-    // Apply any floors
-    // This is purposefully done even if floors are disabled,
-    // as it is required for consistent initialization
-    Floors::ApplyFloors(rc.get());
+        // Apply any floors
+        // This is purposefully done even if floors are disabled,
+        // as it is required for consistent initialization
+        Floors::ApplyFloors(rc.get());
+    }
 
     // Fill the conserved variables U,
     // which we'll treat as the independent/fundamental state.
     // P is filled again from this later on
-    Flux::PrimToFlux(rc.get(), IndexDomain::entire);
+    Flux::PtoU(rc.get(), IndexDomain::entire);
 
     Flag(rc.get(), "Initialized Block");
 }

@@ -73,7 +73,7 @@ TaskStatus InitializeKelvinHelmholtz(MeshBlockData<Real> *rc, ParameterInput *pi
     pmb->par_for("kh_init", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_3D {
             GReal X[GR_DIM];
-            G.coord_embed(i, j, k, Loci::center, X);
+            G.coord_embed(k, j, i, Loci::center, X);
 
             // Lecoanet's x <-> x1; z <-> x2
             GReal x = X[1];

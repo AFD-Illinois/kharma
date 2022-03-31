@@ -174,6 +174,7 @@ elif [[ "$ARGS" == *"cuda"* ]]; then
     export CXXFLAGS="-dryrun $CXXFLAGS"
     echo "Dry-running with $CXXFLAGS"
   fi
+  export NVCC_WRAPPER_DEFAULT_COMPILER="$CXX_NATIVE"
   # I've occasionally needed this. CUDA version thing?
   #export CXXFLAGS="--expt-relaxed-constexpr $CXXFLAGS"
   OUTER_LAYOUT="MANUAL1D_LOOP"
@@ -202,6 +203,13 @@ else
   ENABLE_HIP="OFF"
 fi
 
+# 
+if [[ -v LINKER ]]; then
+  LINKER="$LINKER"
+else
+  LINKER="$CXX"
+fi
+
 # Make build dir. Recall "clean" means "clean and build"
 if [[ "$ARGS" == *"clean"* ]]; then
   rm -rf build
@@ -214,6 +222,8 @@ if [[ "$ARGS" == *"clean"* ]]; then
   cmake ..\
     -DCMAKE_C_COMPILER="$CC" \
     -DCMAKE_CXX_COMPILER="$CXX" \
+    -DCMAKE_LINKER="$LINKER" \
+    -DCMAKE_CXX_LINK_EXECUTABLE='<CMAKE_LINKER> <FLAGS> <CMAKE_CXX_LINK_FLAGS> <LINK_FLAGS> <OBJECTS> -o <TARGET> <LINK_LIBRARIES>' \
     -DCMAKE_PREFIX_PATH="$PREFIX_PATH:$CMAKE_PREFIX_PATH" \
     -DCMAKE_BUILD_TYPE=$TYPE \
     -DPAR_LOOP_LAYOUT=$OUTER_LAYOUT \

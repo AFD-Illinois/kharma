@@ -36,7 +36,7 @@ base = cartesian_minkowski
 transform = null
 
 <parthenon/time>
-# This will be overridden depending on the problem
+# tlim will be overridden depending on the problem
 tlim = 5.0
 integrator = rk2
 dt_min = 0.0001
@@ -45,6 +45,10 @@ dt_min = 0.0001
 cfl = 0.9
 gamma = 1.333333
 reconstruction = weno5
+implicit = false
+
+<b_field>
+implicit = false
 
 <mhdmodes>
 nmode = 1
@@ -55,6 +59,9 @@ disable_floors = true
 
 <debug>
 verbose = 0
+
+<driver>
+type = harm
 
 <parthenon/output0>
 file_type = hdf5

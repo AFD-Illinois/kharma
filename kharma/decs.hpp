@@ -90,6 +90,11 @@ using GReal = double;
 #define V2 1
 #define V3 2
 
+// And an odd but useful loop for ex-iharm3d code
+// This requires nvar to be defined in caller!
+// It is not a const/global anymore.  So, use this loop carefully
+#define PLOOP for(int ip=0; ip < nvar; ++ip)
+
 // Useful Enums to avoid lots of #defines
 #define NLOC 5
 enum Loci{face1=0, face2, face3, center, corner};
@@ -165,3 +170,4 @@ using GeomTensor3 = parthenon::ParArrayND<Real>;
 // Versions for full mesh
 #define KOKKOS_LAMBDA_MESH_3D_REDUCE KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i, double &local_result)
 #define KOKKOS_LAMBDA_MESH_3D_REDUCE_INT KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i, int &local_result)
+#define KOKKOS_LAMBDA_MESH_4D_REDUCE KOKKOS_LAMBDA (const int &b, const int &v, const int &k, const int &j, const int &i, double &local_result)

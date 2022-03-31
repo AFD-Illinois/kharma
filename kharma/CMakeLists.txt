@@ -13,37 +13,47 @@ AUX_SOURCE_DIRECTORY(${CMAKE_CURRENT_SOURCE_DIR} EXE_NAME_SRC)
 AUX_SOURCE_DIRECTORY(${CMAKE_CURRENT_SOURCE_DIR}/prob EXE_NAME_SRC)
 AUX_SOURCE_DIRECTORY(${CMAKE_CURRENT_SOURCE_DIR}/coordinates EXE_NAME_SRC)
 
-AUX_SOURCE_DIRECTORY(${CMAKE_CURRENT_SOURCE_DIR}/b_flux_ct EXE_NAME_SRC)
 AUX_SOURCE_DIRECTORY(${CMAKE_CURRENT_SOURCE_DIR}/b_cd EXE_NAME_SRC)
+AUX_SOURCE_DIRECTORY(${CMAKE_CURRENT_SOURCE_DIR}/b_cleanup EXE_NAME_SRC)
+AUX_SOURCE_DIRECTORY(${CMAKE_CURRENT_SOURCE_DIR}/b_flux_ct EXE_NAME_SRC)
 AUX_SOURCE_DIRECTORY(${CMAKE_CURRENT_SOURCE_DIR}/current EXE_NAME_SRC)
 AUX_SOURCE_DIRECTORY(${CMAKE_CURRENT_SOURCE_DIR}/electrons EXE_NAME_SRC)
+AUX_SOURCE_DIRECTORY(${CMAKE_CURRENT_SOURCE_DIR}/emhd EXE_NAME_SRC)
 AUX_SOURCE_DIRECTORY(${CMAKE_CURRENT_SOURCE_DIR}/floors EXE_NAME_SRC)
 AUX_SOURCE_DIRECTORY(${CMAKE_CURRENT_SOURCE_DIR}/grmhd EXE_NAME_SRC)
+AUX_SOURCE_DIRECTORY(${CMAKE_CURRENT_SOURCE_DIR}/implicit EXE_NAME_SRC)
 AUX_SOURCE_DIRECTORY(${CMAKE_CURRENT_SOURCE_DIR}/reductions EXE_NAME_SRC)
+AUX_SOURCE_DIRECTORY(${CMAKE_CURRENT_SOURCE_DIR}/emhd EXE_NAME_SRC)
 AUX_SOURCE_DIRECTORY(${CMAKE_CURRENT_SOURCE_DIR}/wind EXE_NAME_SRC)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/prob)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/coordinates)
 
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/b_flux_ct)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/b_cd)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/b_cleanup)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/b_flux_ct)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/current)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/electrons)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/emhd)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/floors)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/grmhd)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/implicit)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/reductions)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/emhd)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/wind)
 
 add_executable(${EXE_NAME} ${EXE_NAME_SRC})
 
+target_link_libraries(${EXE_NAME} PUBLIC kokkos)
+# We actually only need the header
+#target_link_libraries(${EXE_NAME} PUBLIC kokkoskernels)
 target_link_libraries(${EXE_NAME} PUBLIC parthenon)
 
 # OPTIONS
 # These are almost universally performance trade-offs
 # TODO is there any way to make compile options less painful in CMake?
 option(FUSE_FLUX_KERNELS "Bundle the usual four flux calculation kernels (floors,R,L,apply) into one" ON)
-option(FUSE_EMF_KERNELS "Bundle the three emf direction kernels into one. Likely won't affect much" ON)
 option(FUSE_FLOOR_KERNELS "Bundle applying the floors and ceilings into one kernel" ON)
 option(FAST_CARTESIAN "Break operation in curved spacetimes to make Cartesian Minkowski space computations faster" OFF)
 if(FUSE_FLUX_KERNELS)

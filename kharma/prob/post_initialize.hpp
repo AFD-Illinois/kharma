@@ -52,8 +52,10 @@ void SeedAndNormalizeB(ParameterInput *pin, Mesh *pmesh);
 /**
  * Functions run over the entire mesh after per-block initialization:
  * 1. Initialize magnetic field, which must be normalized globally to respect beta_min parameter
- * 2. Initial boundary sync, including primitive values
+ * 2. Any ad-hoc additions to fluid state, e.g. add hotspots etc.
+ * 3. Initial boundary sync to populate ghost zones
+ * 4. On restarts, reset any per-run parameters & clean up B field divergence if resizing the grid
  */
-void PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart);
+void PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart, bool is_resize);
 
 }

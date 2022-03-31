@@ -30,7 +30,7 @@ export CUDA_LAUNCH_BLOCKING=0
 #export KOKKOS_DEVICE_ID=0
 
 # Choose the kharma from compiled options in order of preference
-KHARMA_DIR="$(dirname $0)"
+KHARMA_DIR="$(dirname "${BASH_SOURCE[0]}")"
 if [ -f $KHARMA_DIR/kharma.cuda ]; then
   EXE_NAME=kharma.cuda
 elif [ -f $KHARMA_DIR/kharma.sycl ]; then
@@ -41,6 +41,10 @@ else
   echo "KHARMA executable not found!"
   exit
 fi
+
+# Optionally use the Kokkos tools to profile kernels
+#export KOKKOS_PROFILE_LIBRARY=$KHARMA_DIR/../kokkos-tools/kp_kernel_timer.so
+#export KOKKOS_PROFILE_LIBRARY=$KHARMA_DIR/../kokkos-tools/kp_nvprof_cnnector.so
 
 # Load environment from the same files as the compile process
 HOST=$(hostname -f)

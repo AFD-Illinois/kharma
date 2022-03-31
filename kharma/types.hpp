@@ -63,7 +63,7 @@ typedef struct {
 /**
  * Map of the locations of particular variables in a VariablePack
  * Used for operations conducted over all vars which must still
- * distinguish between them, e.g. fluxes.hpp
+ * distinguish between them, e.g. flux.hpp
  *
  * We use this instead of the PackIndexMap, because comparing strings
  * on the device every time we need the index of a variable is slow.
@@ -76,10 +76,15 @@ typedef struct {
  */
 class VarMap {
     public:
-        // 127 values ought to be enough for anybody
-        int8_t RHO, UU, U1, U2, U3, B1, B2, B3, PSI;
+        // Use int8. 127 values ought to be enough for anybody, right?
+        // Basic primitive variables
+        int8_t RHO, UU, U1, U2, U3, B1, B2, B3;
+        // Tracker variables
         int8_t RHO_ADDED, UU_ADDED, PASSIVE;
+        // Electron entropy/energy tracking
         int8_t KTOT, K_CONSTANT, K_HOWES, K_KAWAZURA, K_WERNER, K_ROWAN, K_SHARMA;
+        // Implicit-solver variables: constraint damping, EGRMHD
+        int8_t PSI, Q, DP;
         // Total struct size 20 bytes, < 1 vector of 4 doubles
 
         VarMap(parthenon::PackIndexMap& name_map, bool is_cons)
@@ -103,6 +108,9 @@ class VarMap {
                 K_WERNER = name_map["cons.Kel_Werner"].first;
                 K_ROWAN = name_map["cons.Kel_Rowan"].first;
                 K_SHARMA = name_map["cons.Kel_Sharma"].first;
+                // Extended MHD
+                Q = name_map["cons.q"].first;
+                DP = name_map["cons.dP"].first;
             } else {
                 // HD
                 RHO = name_map["prims.rho"].first;
@@ -122,6 +130,9 @@ class VarMap {
                 K_WERNER = name_map["prims.Kel_Werner"].first;
                 K_ROWAN = name_map["prims.Kel_Rowan"].first;
                 K_SHARMA = name_map["prims.Kel_Sharma"].first;
+                // Extended MHD
+                Q = name_map["prims.q"].first;
+                DP = name_map["prims.dP"].first;
             }
             U2 = U1 + 1;
             U3 = U1 + 2;
@@ -144,79 +155,103 @@ KOKKOS_INLINE_FUNCTION bool outside(const int& k, const int& j, const int& i,
     return (i < ib.s) || (i > ib.e) || (j < jb.s) || (j > jb.e) || (k < kb.s) || (k > kb.e);
 }
 
+/**
+ * Function for checking boundary flags: is this a domain or internal bound?
+ */
+inline bool IsDomainBound(MeshBlock *pmb, BoundaryFace face)
+{
+    return (pmb->boundary_flag[face] != BoundaryFlag::block &&
+            pmb->boundary_flag[face] != BoundaryFlag::periodic);
+}
+
+/**
+ * Functions for "tracing" execution by printing strings (and optionally state of zones)
+ * at each important function entry/exit
+ */
 #if TRACE
+#define PRINTCORNERS 0
+#define PRINTZONE 0
+inline void PrintCorner(MeshBlockData<Real> *rc)
+{
+    auto rhop = rc->Get("prims.rho").data.GetHostMirrorAndCopy();
+    auto up = rc->Get("prims.u").data.GetHostMirrorAndCopy();
+    auto uvecp = rc->Get("prims.uvec").data.GetHostMirrorAndCopy();
+    auto Bp = rc->Get("prims.B").data.GetHostMirrorAndCopy();
+    auto rhoc = rc->Get("cons.rho").data.GetHostMirrorAndCopy();
+    auto uc = rc->Get("cons.u").data.GetHostMirrorAndCopy();
+    auto uvecc = rc->Get("cons.uvec").data.GetHostMirrorAndCopy();
+    auto Bu = rc->Get("cons.B").data.GetHostMirrorAndCopy();
+    //auto p = rc->Get("p").data.GetHostMirrorAndCopy();
+    auto pflag = rc->Get("pflag").data.GetHostMirrorAndCopy();
+    //auto q = rc->Get("prims.q").data.GetHostMirrorAndCopy();
+    //auto dP = rc->Get("prims.dP").data.GetHostMirrorAndCopy();
+    const IndexRange ib = rc->GetBoundsI(IndexDomain::interior);
+    const IndexRange jb = rc->GetBoundsJ(IndexDomain::interior);
+    const IndexRange kb = rc->GetBoundsK(IndexDomain::interior);
+    cerr << "p:";
+    for (int j=0; j<8; j++) {
+        cerr << endl;
+        for (int i=0; i<8; i++) {
+            fprintf(stderr, "%.5g\t", pflag(kb.s, j, i));
+        }
+    }
+    // cerr << endl << "B1:";
+    // for (int j=0; j<8; j++) {
+    //     cerr << endl;
+    //     for (int i=0; i<8; i++) {
+    //         fprintf(stderr, "%.5g\t", Bu(V1, kb.s, j, i));
+    //     }
+    // }
+    cerr << endl << endl;
+}
+
+inline void PrintZone(MeshBlockData<Real> *rc)
+{
+    auto rhop = rc->Get("prims.rho").data.GetHostMirrorAndCopy();
+    auto up = rc->Get("prims.u").data.GetHostMirrorAndCopy();
+    auto uvecp = rc->Get("prims.uvec").data.GetHostMirrorAndCopy();
+    auto Bp = rc->Get("prims.B").data.GetHostMirrorAndCopy();
+    auto q = rc->Get("prims.q").data.GetHostMirrorAndCopy();
+    auto dP = rc->Get("prims.dP").data.GetHostMirrorAndCopy();
+    cerr << rhop(0,11,11) << up(0,11,11)
+         << uvecp(0, 0,11,11) << uvecp(1, 0,11,11) << uvecp(2, 0,11,11)
+         << Bp(0, 0,11,11) << Bp(1, 0,11,11) << Bp(2, 0,11,11)
+         << q(0,11,11) << dP(0,11,11) << endl;
+}
+
 inline void Flag(std::string label)
 {
 #pragma omp critical
     if(MPIRank0()) std::cerr << label << std::endl;
 }
+
 inline void Flag(MeshBlockData<Real> *rc, std::string label)
 {
 #pragma omp critical
 {
-    if(MPIRank0()) std::cerr << label << std::endl;
-    if(0) {
-        auto rhop = rc->Get("prims.rho").data.GetHostMirrorAndCopy();
-        auto up = rc->Get("prims.u").data.GetHostMirrorAndCopy();
-        auto uvecp = rc->Get("prims.uvec").data.GetHostMirrorAndCopy();
-        auto Bp = rc->Get("prims.B").data.GetHostMirrorAndCopy();
-        auto rhoc = rc->Get("cons.rho").data.GetHostMirrorAndCopy();
-        auto uc = rc->Get("cons.u").data.GetHostMirrorAndCopy();
-        auto uvecc = rc->Get("cons.uvec").data.GetHostMirrorAndCopy();
-        auto Bu = rc->Get("cons.B").data.GetHostMirrorAndCopy();
-        cerr << "P:";
-        for (int j=0; j<8; j++) {
-            cout << endl;
-            for (int i=0; i<8; i++) {
-                fprintf(stderr, "%.5g\t", uvecp(2, 0, j, i));
-            }
-        }
-        cerr << endl << "U:";
-        for (int j=0; j<8; j++) {
-            cerr << endl;
-            for (int i=0; i<8; i++) {
-                fprintf(stderr, "%.5g\t", uvecc(2, 0, j, i));
-            }
-        }
-        cerr << endl << endl;
+    if(MPIRank0()) {
+        std::cerr << label << std::endl;
+        if(PRINTCORNERS) PrintCorner(rc);
+        if(PRINTZONE) PrintZone(rc);
     }
 }
 }
+
 inline void Flag(MeshData<Real> *md, std::string label)
 {
 #pragma omp critical
 {
-    if(MPIRank0()) std::cerr << label << std::endl;
-    if(0) {
-        cerr << label << ":" << std::endl;
-        auto rc = md->GetBlockData(0);
-        auto rhop = rc->Get("prims.rho").data.GetHostMirrorAndCopy();
-        auto up = rc->Get("prims.u").data.GetHostMirrorAndCopy();
-        auto uvecp = rc->Get("prims.uvec").data.GetHostMirrorAndCopy();
-        auto Bp = rc->Get("prims.B").data.GetHostMirrorAndCopy();
-        auto rhoc = rc->Get("cons.rho").data.GetHostMirrorAndCopy();
-        auto uc = rc->Get("cons.u").data.GetHostMirrorAndCopy();
-        auto uvecc = rc->Get("cons.uvec").data.GetHostMirrorAndCopy();
-        auto Bu = rc->Get("cons.B").data.GetHostMirrorAndCopy();
-        cerr << "P:";
-        for (int j=0; j<8; j++) {
-            cout << endl;
-            for (int i=0; i<8; i++) {
-                fprintf(stderr, "%.5g\t", uvecp(2, 0, j, i));
-            }
+    if(MPIRank0()) {
+        std::cerr << label << std::endl;
+        if(PRINTCORNERS || PRINTZONE) {
+            auto rc = md->GetBlockData(0).get();
+            if(PRINTCORNERS) PrintCorner(rc);
+            if(PRINTZONE) PrintZone(rc);
         }
-        cerr << endl;
-        cerr << "U:";
-        for (int j=0; j<8; j++) {
-            cerr << endl;
-            for (int i=0; i<8; i++) {
-                fprintf(stderr, "%.5g\t", uvecc(2, 0, j, i));
-            }
-        }
-        cerr << endl << endl;
     }
 }
 }
+
 #else
 inline void Flag(std::string label) {}
 inline void Flag(MeshBlockData<Real> *rc, std::string label) {}

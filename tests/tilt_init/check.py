@@ -6,11 +6,11 @@ import glob
 import numpy as np
 import matplotlib.pyplot as plt
 
-import pyHARM
-import pyHARM.ana.plot as hplt
+import pyharm
+import pyharm.plots.plot_dumps as hplt
 
 dumpname = "torus.out0.00000.phdf"
-dump = pyHARM.load_dump(dumpname, calc_derived=True)
+dump = pyharm.load_dump(dumpname)
 fig, ax = plt.subplots(1,1,figsize=(7,7))
 hplt.plot_xz(ax, dump, 'log_beta', window=[-200,200,-200,200])
 plt.savefig(dumpname+"_beta.png")

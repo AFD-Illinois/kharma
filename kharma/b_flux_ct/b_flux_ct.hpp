@@ -37,7 +37,7 @@
 
 #include <parthenon/parthenon.hpp>
 
-#include "mhd_functions.hpp"
+#include "grmhd_functions.hpp"
 #include "types.hpp"
 
 using namespace parthenon;
@@ -65,8 +65,15 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
  */
 void UtoP(MeshData<Real> *md, IndexDomain domain=IndexDomain::entire, bool coarse=false);
 inline void FillDerivedMesh(MeshData<Real> *md) { UtoP(md); }
+inline TaskStatus FillDerivedMeshTask(MeshData<Real> *md) { UtoP(md); return TaskStatus::complete; }
 void UtoP(MeshBlockData<Real> *md, IndexDomain domain=IndexDomain::entire, bool coarse=false);
 inline void FillDerivedBlock(MeshBlockData<Real> *rc) { UtoP(rc); }
+inline TaskStatus FillDerivedBlockTask(MeshBlockData<Real> *rc) { UtoP(rc); return TaskStatus::complete; }
+
+/**
+ * Inverse of above. Generally only for initialization.
+ */
+void PtoU(MeshBlockData<Real> *md, IndexDomain domain=IndexDomain::entire, bool coarse=false);
 
 /**
  * Modify the B field fluxes to take a constrained-transport step as in Toth (2000)
@@ -91,51 +98,90 @@ TaskStatus TransportB(MeshData<Real> *md);
  * listed arguments
  */
 double MaxDivB(MeshData<Real> *md);
+// Version for Parthenon tasking as a reduction
+inline TaskStatus MaxDivBTask(MeshData<Real> *md, double& divb_max)
+    { divb_max = MaxDivB(md); return TaskStatus::complete; }
+
+/**
+ * Clean the magnetic field divergence via successive over-relaxation
+ * Currently only used when resizing inputs.
+ * TODO option to sprinkle into updates every N steps
+ */
+void CleanupDivergence(MeshBlockData<Real> *rc, IndexDomain domain=IndexDomain::entire, bool coarse=false);
 
 /**
  * Diagnostics printed/computed after each step
  * Currently just max divB
  */
-TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md);
+TaskStatus PrintGlobalMaxDivB(MeshData<Real> *md);
+inline TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
+    { return PrintGlobalMaxDivB(md); }
+// Block version; unused now, kept for future fiascos
+TaskStatus PrintMaxBlockDivB(MeshBlockData<Real> *rc, bool prims, std::string tag);
 
 /**
  * Fill fields which are calculated only for output to file
  */
 void FillOutput(MeshBlock *pmb, ParameterInput *pin);
 
-// TODO device-side divB at a single zone corner, to avoid code duplication?
-
 /**
- * Turn the primitive B field into the local conserved flux
+ * 2D or 3D divergence, averaging to cell corners
  */
-KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, ScratchPad2D<Real>& P, const VarMap& m_p, const FourVectors D,
-                                         const int& k, const int& j, const int& i, const int dir,
-                                         ScratchPad2D<Real>& flux, const VarMap& m_u, const Loci loc = Loci::center)
+template<typename Global>
+KOKKOS_INLINE_FUNCTION double corner_div(const GRCoordinates& G, const Global& B_U, const int& b,
+                                         const int& k, const int& j, const int& i, const bool& do_3D)
 {
-    Real gdet = G.gdet(loc, j, i);
-    if (dir == 0) {
-        VLOOP flux(m_u.B1 + v, i) = P(m_p.B1 + v, i) * gdet;
-    } else {
-        VLOOP flux(m_u.B1 + v, i) = (D.bcon[v+1] * D.ucon[dir] - D.bcon[dir] * D.ucon[v+1]) * gdet;
+    const double norm = (do_3D) ? 0.25 : 0.5;
+    // 2D divergence, averaging to corners
+    double term1 = B_U(b, V1, k, j, i)   + B_U(b, V1, k, j-1, i)
+                    - B_U(b, V1, k, j, i-1) - B_U(b, V1, k, j-1, i-1);
+    double term2 = B_U(b, V2, k, j, i)   + B_U(b, V2, k, j, i-1)
+                    - B_U(b, V2, k, j-1, i) - B_U(b, V2, k, j-1, i-1);
+    double term3 = 0.;
+    if (do_3D) {
+        // Average to corners in 3D, add 3rd flux
+        term1 +=  B_U(b, V1, k-1, j, i)   + B_U(b, V1, k-1, j-1, i)
+                - B_U(b, V1, k-1, j, i-1) - B_U(b, V1, k-1, j-1, i-1);
+        term2 +=  B_U(b, V2, k-1, j, i)   + B_U(b, V2, k-1, j, i-1)
+                - B_U(b, V2, k-1, j-1, i) - B_U(b, V2, k-1, j-1, i-1);
+        term3 =   B_U(b, V3, k, j, i)     + B_U(b, V3, k, j-1, i)
+                + B_U(b, V3, k, j, i-1)   + B_U(b, V3, k, j-1, i-1)
+                - B_U(b, V3, k-1, j, i)   - B_U(b, V3, k-1, j-1, i)
+                - B_U(b, V3, k-1, j, i-1) - B_U(b, V3, k-1, j-1, i-1);
     }
+    return norm*term1/G.dx1v(i) + norm*term2/G.dx2v(j) + norm*term3/G.dx3v(k);
 }
 
 /**
- * Convenience functions for zone 
+ * 2D or 3D gradient, averaging to cell centers from corners.
+ * Note this is forward-difference, while previous def is backward
  */
-KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates& G, const GridVector B_P,
-                                    const int& k, const int& j, const int& i,
-                                    GridVector B_U, const Loci loc = Loci::center)
+template<typename Global>
+KOKKOS_INLINE_FUNCTION void center_grad(const GRCoordinates& G, const Global& P, const int& b,
+                                          const int& k, const int& j, const int& i, const bool& do_3D,
+                                          double& B1, double& B2, double& B3)
 {
-    Real gdet = G.gdet(loc, j, i);
-    VLOOP B_U(v, k, j, i) = B_P(v, k, j, i) * gdet;
-}
-KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates& G, const VariablePack<Real>& P, const VarMap& m_p,
-                                    const int& k, const int& j, const int& i,
-                                    const VariablePack<Real>& U, const VarMap& m_u, const Loci loc = Loci::center)
-{
-    Real gdet = G.gdet(loc, j, i);
-    VLOOP U(m_u.B1 + v, k, j, i) = P(m_p.B1 + v, k, j, i) * gdet;
+    const double norm = (do_3D) ? 0.25 : 0.5;
+    // 2D divergence, averaging to corners
+    double term1 =  P(b, 0, k, j+1, i+1) + P(b, 0, k, j, i+1)
+                  - P(b, 0, k, j+1, i)   - P(b, 0, k, j, i);
+    double term2 =  P(b, 0, k, j+1, i+1) + P(b, 0, k, j+1, i)
+                  - P(b, 0, k, j, i+1)   - P(b, 0, k, j, i);
+    double term3 = 0.;
+    if (do_3D) {
+        // Average to corners in 3D, add 3rd flux
+        term1 += P(b, 0, k+1, j+1, i+1) + P(b, 0, k+1, j, i+1)
+               - P(b, 0, k+1, j+1, i)   - P(b, 0, k+1, j, i);
+        term2 += P(b, 0, k+1, j+1, i+1) + P(b, 0, k+1, j+1, i)
+               - P(b, 0, k+1, j, i+1)   - P(b, 0, k+1, j, i);
+        term3 =  P(b, 0, k+1, j+1, i+1) + P(b, 0, k+1, j, i+1)
+               + P(b, 0, k+1, j+1, i)   + P(b, 0, k+1, j, i)
+               - P(b, 0, k, j+1, i+1)   - P(b, 0, k, j, i+1)
+               - P(b, 0, k, j+1, i)     - P(b, 0, k, j, i);
+    }
+    B1 = norm*term1/G.dx1v(i);
+    B2 = norm*term2/G.dx2v(j);
+    B3 = norm*term3/G.dx3v(k);
 }
 
 }

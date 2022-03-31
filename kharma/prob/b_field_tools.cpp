@@ -36,7 +36,7 @@
 
 #include "b_field_tools.hpp"
 
-#include "mhd_functions.hpp"
+#include "grmhd_functions.hpp"
 
 TaskStatus NormalizeBField(MeshBlockData<Real> *rc, Real norm)
 {

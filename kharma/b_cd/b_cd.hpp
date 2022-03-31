@@ -91,37 +91,4 @@ TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *rc);
  */
 void FillOutput(MeshBlock *pmb, ParameterInput *pin);
 
-/**
- * Turn the primitive B field into the local conserved flux
- */
-KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const ScratchPad2D<Real> &P, const VarMap& m_p, const FourVectors D,
-                                           const int& k, const int& j, const int& i, const int& dir,
-                                           ScratchPad2D<Real>& flux, const VarMap& m_u, const Loci& loc=Loci::center)
-{
-    Real gdet = G.gdet(loc, j, i);
-    if (dir == 0) { // Parent is templated on dir, so we should get the speed here still
-        VLOOP flux(m_u.B1 + v, i) = P(m_p.B1 + v, i) * gdet;
-        flux(m_u.PSI, i) = P(m_p.PSI, i) * gdet;
-    } else {
-        // Dual of Maxwell tensor
-        // Dedner would have e.g. P(m.psip, i) * gdet,
-        // but for us this is in the source term
-        VLOOP flux(m_u.B1 + v, i) = (D.bcon[v+1] * D.ucon[dir] - D.bcon[dir] * D.ucon[v+1]) * gdet;
-        // Psi field update as in Mosta et al (IllinoisGRMHD), alternate explanation Jesse et al (2020)
-        //Real alpha = 1. / sqrt(-G.gcon(Loci::center, j, i, 0, 0));
-        //Real beta_dir = G.gcon(Loci::center, j, i, 0, dir) * alpha * alpha;
-        flux(m_u.PSI, i) = (D.bcon[dir] - G.gcon(Loci::center, j, i, 0, dir) * P(m_p.PSI, i)) * gdet;
-    }
-}
-
-KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates& G, const VariablePack<Real>& P, const VarMap& m_p,
-                                           const int& k, const int& j, const int& i,
-                                           const VariablePack<Real>& U, const VarMap& m_u, const Loci& loc=Loci::center)
-{
-    Real gdet = G.gdet(loc, j, i);
-    VLOOP U(m_u.B1 + v, k, j, i) = P(m_p.B1 + v, k, j, i) * gdet;
-    U(m_u.PSI, k, j, i) = P(m_p.PSI, k, j, i) * gdet;
-
-}
-
 }

@@ -35,70 +35,38 @@
 #include "post_initialize.hpp"
 
 #include "b_field_tools.hpp"
+#include "b_cleanup.hpp"
 #include "blob.hpp"
 #include "boundaries.hpp"
 #include "debug.hpp"
 #include "fixup.hpp"
 #include "floors.hpp"
-#include "fluxes.hpp"
+#include "flux.hpp"
 #include "gr_coordinates.hpp"
+#include "kharma.hpp"
 #include "types.hpp"
 
 #include "seed_B_ct.hpp"
 #include "seed_B_cd.hpp"
 
-void SyncAllBounds(Mesh *pmesh)
-{
-    // Honestly, the easiest way through this sync is:
-    // 1. PtoU everywhere
-    // 2. Sync like a normal step, incl. physical bounds
-    // 3. UtoP everywhere
-    // Luckily we're amortized over the whole sim, so we can
-    // take our time.
-
-    for (auto &pmb : pmesh->block_list) {
-        auto& rc = pmb->meshblock_data.Get();
-        Flux::PrimToFlux(rc.get(), IndexDomain::entire);
-    }
-
-    for (auto &pmb : pmesh->block_list) {
-        auto& rc = pmb->meshblock_data.Get();
-        rc->ClearBoundary(BoundaryCommSubset::mesh_init);
-        rc->StartReceiving(BoundaryCommSubset::mesh_init);
-        rc->SendBoundaryBuffers();
-    }
-
-    for (auto &pmb : pmesh->block_list) {
-        auto& rc = pmb->meshblock_data.Get();
-        rc->ReceiveAndSetBoundariesWithWait();
-        rc->ClearBoundary(BoundaryCommSubset::mesh_init);
-        //pmb->pbval->ProlongateBoundaries();
-
-        // Fill P again, including ghost zones
-        parthenon::Update::FillDerived(rc.get());
-
-        // Physical boundary conditions
-        parthenon::ApplyBoundaryConditions(rc);
-    }
-}
-
 void KHARMA::SeedAndNormalizeB(ParameterInput *pin, Mesh *pmesh)
 {
+    // Check which solver we'll be using
+    const bool use_b_flux_ct = pmesh->packages.AllPackages().count("B_FluxCT");
+    const bool use_b_cd = pmesh->packages.AllPackages().count("B_CD");
+    bool sync_prims = pin->GetString("driver", "type") == "imex";
+
     // Add the field for torus problems as a second pass
     // Preserves P==U and ends with all physical zones fully defined
     if (pin->GetOrAddString("b_field", "type", "none") != "none") {
         // Calculating B has a stencil outside physical zones
         Flag("Extra boundary sync for B");
-        SyncAllBounds(pmesh);
+        KBoundaries::SyncAllBounds(pmesh, sync_prims);
 
         // "Legacy" is the much more common normalization:
         // It's the ratio of max values over the domain i.e. max(P) / max(P_B),
         // not necessarily a local min(beta)
         Real beta_calc_legacy = pin->GetOrAddBoolean("b_field", "legacy", true);
-
-        // Use the correct seed function based on field constraint solver
-        const bool use_b_flux_ct = pmesh->packages.AllPackages().count("B_FluxCT");
-        const bool use_b_cd = pmesh->packages.AllPackages().count("B_CD");
 
         Flag("Seeding magnetic field");
         // Seed the magnetic field and find the minimum beta
@@ -191,26 +159,35 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, Mesh *pmesh)
             } else {
                 beta_min = MPIMin(beta_min);
             }
-            // divB is implemented over a MeshBlockPack because it is fancy
-            auto md = pmesh->mesh_data.GetOrAdd("base", 0).get();
-            Real divb_max = 0.;
-            if (use_b_flux_ct) {
-                divb_max = B_FluxCT::MaxDivB(md);
-            } else if (use_b_cd) {
-                divb_max = B_CD::MaxDivB(md);
-            }
-            divb_max = MPIMax(divb_max);
             if (MPIRank0()) {
                 cerr << "Beta min post-norm: " << beta_min << endl;
-                cerr << "Max divB post-norm: " << divb_max << endl;
             }
         }
-
     }
+
+    if (pin->GetString("b_field", "solver") != "none") {
+        auto md = pmesh->mesh_data.GetOrAdd("base", 0).get();
+        // Synchronize our seeded field (incl. primitives) before we print out what divB it has
+        KBoundaries::SyncAllBounds(pmesh, sync_prims);
+
+        // Still print divB, even if we're not initializing/normalizing field here
+        Real divb_max = 0.;
+        if (use_b_flux_ct) {
+            divb_max = B_FluxCT::MaxDivB(md);
+        } else if (use_b_cd) {
+            divb_max = B_CD::MaxDivB(md);
+        }
+        divb_max = MPIMax(divb_max);
+        if (MPIRank0()) {
+            cerr << "Starting max divB: " << divb_max << endl;
+        }
+    }
+
+
     Flag("Added B Field");
 }
 
-void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart)
+void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart, bool is_resize)
 {
     Flag("Post-initialization started");
     if (!is_restart)
@@ -224,43 +201,28 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart)
         }
     }
 
-    // Sync to fill the ghost zones
+    // Sync to fill the ghost zones: prims for ImExDriver, everything for HARMDriver
     Flag("Boundary sync");
-    SyncAllBounds(pmesh);
+    bool sync_prims = pin->GetString("driver", "type") == "imex";
+    KBoundaries::SyncAllBounds(pmesh, sync_prims);
 
-    // TODO be able to describe to a teenager why this block is necessary
+    // Extra cleanup & init to do if restarting
     if (is_restart) {
-        auto& md = pmesh->mesh_data.GetOrAdd("base", 0);
-        auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
-        const ReconstructionType& recon = pmb0->packages.Get("GRMHD")->Param<ReconstructionType>("recon");
-        switch (recon) {
-        case ReconstructionType::donor_cell:
-            Flux::GetFlux<ReconstructionType::donor_cell, X1DIR>(md.get());
-            Flux::GetFlux<ReconstructionType::donor_cell, X2DIR>(md.get());
-            Flux::GetFlux<ReconstructionType::donor_cell, X3DIR>(md.get());
-            break;
-        case ReconstructionType::linear_mc:
-            Flux::GetFlux<ReconstructionType::linear_mc, X1DIR>(md.get());
-            Flux::GetFlux<ReconstructionType::linear_mc, X2DIR>(md.get());
-            Flux::GetFlux<ReconstructionType::linear_mc, X3DIR>(md.get());
-            break;
-        case ReconstructionType::linear_vl:
-            Flux::GetFlux<ReconstructionType::linear_vl, X1DIR>(md.get());
-            Flux::GetFlux<ReconstructionType::linear_vl, X2DIR>(md.get());
-            Flux::GetFlux<ReconstructionType::linear_vl, X3DIR>(md.get());
-            break;
-        case ReconstructionType::weno5:
-            Flux::GetFlux<ReconstructionType::weno5, X1DIR>(md.get());
-            Flux::GetFlux<ReconstructionType::weno5, X2DIR>(md.get());
-            Flux::GetFlux<ReconstructionType::weno5, X3DIR>(md.get());
-            break;
-        case ReconstructionType::ppm:
-        case ReconstructionType::mp5:
-        case ReconstructionType::weno5_lower_poles:
-            cerr << "Reconstruction type not supported!  Supported reconstructions:" << endl;
-            cerr << "donor_cell, linear_mc, linear_vl, weno5" << endl;
-            exit(-5);
-        }
+        // Parthenon restored our global data for us, but we don't always want that
+        KHARMA::ResetGlobals(pin, pmesh);
+    }
+
+    // If we resized the array, cleanup any field divergence we created
+    // Let the user specify to do this, too
+    if ((is_restart && is_resize && !pin->GetOrAddBoolean("resize_restart", "skip_b_cleanup", false))
+        || pin->GetBoolean("b_field", "initial_cleanup")) {
+        // Cleanup operates on full single MeshData as there are MPI syncs
+        auto &mbase = pmesh->mesh_data.GetOrAdd("base", 0);
+        // Clean field divergence across the whole grid
+        B_Cleanup::CleanupDivergence(mbase);
+        // Sync to make sure periodic boundaries are set
+        Flag("Boundary sync");
+        KBoundaries::SyncAllBounds(pmesh, sync_prims);
     }
 
     Flag("Post-initialization finished");

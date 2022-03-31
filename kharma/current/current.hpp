@@ -37,7 +37,7 @@
 
 #include "decs.hpp"
 #include "matrix.hpp"
-#include "mhd_functions.hpp"
+#include "grmhd_functions.hpp"
 
 namespace Current
 {

@@ -1,5 +1,5 @@
 /* 
- *  File: iharm_restart.cpp
+ *  File: resize_restart.cpp
  *  
  *  BSD 3-Clause License
  *  
@@ -32,27 +32,31 @@
  *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "iharm_restart.hpp"
+#include "resize_restart.hpp"
 
+#include "b_flux_ct.hpp"
+#include "debug.hpp"
 #include "hdf5_utils.h"
 #include "mpi.hpp"
+#include "resize.hpp"
 #include "types.hpp"
 
 #include <sys/stat.h>
 #include <ctype.h>
 
-// First boundary sync
-void outflow_x1(const GRCoordinates& G, GridVars P, int nghost, int n1, int n2, int n3);
-void polar_x2(const GRCoordinates& G, GridVars P, int nghost, int n1, int n2, int n3);
-void periodic_x3(const GRCoordinates& G, GridVars P, int nghost, int n1, int n2, int n3);
-
 using namespace Kokkos;
 
 // TODO
-// At least check that Rin,Rout match
-// Actually look at Rin,Rout,gamma and (re)build the Coordinates and mesh on them
-// Re-gridding algorithm
-// Start with multiple meshes i.e. find full file dimensions, where to start reading
+// Record & read:
+// 1. startx/stopx/dx
+// 2. coordinate name FMKS/MKS/etc
+// 3. all coordinate params in play
+// 4. Electron MODEL bitflag param
+// 5. nprim for sanity check?
+// 6. Indication of EMHD vs MHD
+
+// TODO this code is very specific to spherical systems/boundares or entirely periodic boxes.
+// No other boundaries/geometries are really supported.
 
 void ReadIharmRestartHeader(std::string fname, std::unique_ptr<ParameterInput>& pin)
 {
@@ -62,25 +66,33 @@ void ReadIharmRestartHeader(std::string fname, std::unique_ptr<ParameterInput>& 
     // Read everything from root
     hdf5_set_directory("/");
 
-    // Get size
+    // Get the grid size
     int n1file, n2file, n3file;
     hdf5_read_single_val(&n1file, "n1", H5T_STD_I32LE);
     hdf5_read_single_val(&n2file, "n2", H5T_STD_I32LE);
     hdf5_read_single_val(&n3file, "n3", H5T_STD_I32LE);
-    pin->SetInteger("parthenon/mesh", "nx1", n1file);
-    pin->SetInteger("parthenon/mesh", "nx2", n2file);
-    pin->SetInteger("parthenon/mesh", "nx3", n3file);
+    if (pin->GetOrAddBoolean("resize_restart", "use_restart_size", false)) {
+        // This locks the mesh size to be zone-for-zone the same as the iharm3d dump file
+        pin->SetInteger("parthenon/mesh", "nx1", n1file);
+        pin->SetInteger("parthenon/mesh", "nx2", n2file);
+        pin->SetInteger("parthenon/mesh", "nx3", n3file);
+        pin->SetInteger("parthenon/meshblock", "nx1", n1file);
+        pin->SetInteger("parthenon/meshblock", "nx2", n2file);
+        pin->SetInteger("parthenon/meshblock", "nx3", n3file);
+    }
+    // Record the old values in any case
+    pin->SetInteger("parthenon/mesh", "restart_nx1", n1file);
+    pin->SetInteger("parthenon/mesh", "restart_nx2", n2file);
+    pin->SetInteger("parthenon/mesh", "restart_nx3", n3file);
 
-    double gam, cour, t, dt;
+    double gam, cour, t;
     hdf5_read_single_val(&gam, "gam", H5T_IEEE_F64LE);
     hdf5_read_single_val(&cour, "cour", H5T_IEEE_F64LE);
     hdf5_read_single_val(&t, "t", H5T_IEEE_F64LE);
-    hdf5_read_single_val(&dt, "dt", H5T_IEEE_F64LE);
 
     pin->SetReal("GRMHD", "gamma", gam);
-    //pin->SetReal("GRMHD", "cfl", cour);
-    pin->SetReal("parthenon/time", "dt", dt);
     pin->SetReal("parthenon/time", "start_time", t);
+    // TODO NSTEP, next tdump/tlog, etc?
 
     if (hdf5_exists("a")) {
         double a, hslope, Rout;
@@ -157,19 +169,18 @@ TaskStatus ReadIharmRestart(MeshBlockData<Real> *rc, ParameterInput *pin)
 
     auto& G = pmb->coords;
 
-    auto fname = pin->GetString("iharm_restart", "fname"); // Require this, don't guess
-    bool use_tf = pin->GetOrAddBoolean("iharm_restart", "use_tf", false);
+    auto fname = pin->GetString("resize_restart", "fname"); // Require this, don't guess
+    bool use_tf = pin->GetOrAddBoolean("resize_restart", "use_tf", false);
+    bool use_dt = pin->GetOrAddBoolean("resize_restart", "use_dt", true);
+    const bool is_spherical = pin->GetBoolean("coordinates", "spherical");
 
-    IndexDomain domain = IndexDomain::interior;
-    // Full mesh size
-    hsize_t n1tot = pmb->pmy_mesh->mesh_size.nx1;
-    hsize_t n2tot = pmb->pmy_mesh->mesh_size.nx2;
-    hsize_t n3tot = pmb->pmy_mesh->mesh_size.nx3;
-    // Our block size, start, and bounds for the GridVars
-    hsize_t n1 = pmb->cellbounds.ncellsi(domain);
-    hsize_t n2 = pmb->cellbounds.ncellsj(domain);
-    hsize_t n3 = pmb->cellbounds.ncellsk(domain);
+    // Size of the file mesh
+    hsize_t n1tot = pin->GetInteger("parthenon/mesh", "restart_nx1");
+    hsize_t n2tot = pin->GetInteger("parthenon/mesh", "restart_nx2");
+    hsize_t n3tot = pin->GetInteger("parthenon/mesh", "restart_nx3");
 
+    // Size/domain of the MeshBlock we're reading to
+    IndexDomain domain = IndexDomain::entire;
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
@@ -178,7 +189,7 @@ TaskStatus ReadIharmRestart(MeshBlockData<Real> *rc, ParameterInput *pin)
 
     // Read everything from root
     hdf5_set_directory("/");
-
+    // Print version
     hid_t string_type = hdf5_make_str_type(20);
     char version[20];
     hdf5_read_single_val(version, "version", string_type);
@@ -186,11 +197,13 @@ TaskStatus ReadIharmRestart(MeshBlockData<Real> *rc, ParameterInput *pin)
         cout << "Restarting from " << fname << ", file version " << version << endl << endl;
     }
 
-    // Get tf here and not when reading the header, since using this
-    // value *itself* depends on a parameter, "use_tf"
-    Real tf;
+    // Get tf/dt here and not when reading the header, since whether we use them
+    // depends on another parameter, "use_tf" & "use_dt" which need to be initialized
+    double tf, dt;
     hdf5_read_single_val(&tf, "tf", H5T_IEEE_F64LE);
+    hdf5_read_single_val(&dt, "dt", H5T_IEEE_F64LE);
 
+    // TODO do this better by recording/counting flags in MODEL
     hsize_t nfprim;
     if(hdf5_exists("game")) {
         nfprim = 10;
@@ -198,20 +211,16 @@ TaskStatus ReadIharmRestart(MeshBlockData<Real> *rc, ParameterInput *pin)
         nfprim = 8;
     }
 
-    // Declare known sizes for outputting primitives
+    // Declare known sizes for inputting/outputting primitives
+    // We'll only ever read the full block, so this is the size we want
     static hsize_t fdims[] = {nfprim, n3tot, n2tot, n1tot};
-    static hsize_t fcount[] = {nfprim, n3, n2, n1};
-
-    // TODO figure out single restart -> multi mesh
-    //hsize_t fstart[] = {0, global_start[2], global_start[1], global_start[0]};
     hsize_t fstart[] = {0, 0, 0, 0};
 
-    // These are dimensions for memory,
-    static hsize_t mdims[] = {nfprim, n3, n2, n1};
-    static hsize_t mstart[] = {0, 0, 0, 0};
-
-    Real *ptmp = new Real[nfprim*n3*n2*n1];
-    hdf5_read_array(ptmp, "p", 4, fdims, fstart, fcount, mdims, mstart, H5T_IEEE_F64LE);
+    // TODO don't repeat this read for every block!
+    // Likely requires read once in e.g. InitUserMeshData
+    // -> pass in (pointer) -> delete[] in PostInit or something
+    Real *ptmp = new double[nfprim*n3tot*n2tot*n1tot]; // These will include B & thus be double or upconverted to it
+    hdf5_read_array(ptmp, "p", 4, fdims, fstart, fdims, fdims, fstart, H5T_IEEE_F64LE);
 
     // End HDF5 reads
     hdf5_close();
@@ -221,15 +230,37 @@ TaskStatus ReadIharmRestart(MeshBlockData<Real> *rc, ParameterInput *pin)
     auto uvec_host = uvec.GetHostMirror();
     auto B_host = B_P.GetHostMirror();
 
-    // Host-side copy into the mirror.
-    // TODO traditional OpenMP still works...
+    // These are set to probably mirror the restart file,
+    // but ideally should be read straight from it.
+    const GReal startx[GR_DIM] = {0,
+        pin->GetReal("parthenon/mesh", "x1min"),
+        pin->GetReal("parthenon/mesh", "x2min"),
+        pin->GetReal("parthenon/mesh", "x3min")};
+    const GReal stopx[GR_DIM] = {0,
+        pin->GetReal("parthenon/mesh", "x1max"),
+        pin->GetReal("parthenon/mesh", "x2max"),
+        pin->GetReal("parthenon/mesh", "x3max")};
+    // Same here
+    const GReal dx[GR_DIM] = {0., (stopx[1] - startx[1])/n1tot,
+                                  (stopx[2] - startx[2])/n2tot,
+                                  (stopx[3] - startx[3])/n3tot};
+
+    const int block_sz = n3tot*n2tot*n1tot;
+
+    // Host-side interpolate & copy into the mirror array
+    // TODO Support restart native coordinates != new native coordinates
+    // NOTE: KOKKOS USES < not <=!! Therefore the RangePolicy below will seem like it is too big
     Kokkos::parallel_for("copy_restart_state",
         Kokkos::MDRangePolicy<Kokkos::OpenMP, Kokkos::Rank<3>>({ks, js, is}, {ke+1, je+1, ie+1}),
         KOKKOS_LAMBDA_3D {
-            rho_host(k, j, i) = ptmp[0*n3*n2*n1 + (k-ks)*n2*n1 + (j-js)*n1 + (i-is)];
-            u_host(k, j, i) = ptmp[1*n3*n2*n1 + (k-ks)*n2*n1 + (j-js)*n1 + (i-is)];
-            VLOOP uvec_host(v, k, j, i) = ptmp[(2+v)*n3*n2*n1 + (k-ks)*n2*n1 + (j-js)*n1 + (i-is)];
-            VLOOP B_host(v, k, j, i) = ptmp[(5+v)*n3*n2*n1 + (k-ks)*n2*n1 + (j-js)*n1 + (i-is)];
+            // Get the zone center location
+            GReal X[GR_DIM];
+            G.coord(k, j, i, Loci::center, X);
+            // Interpolate the value at this location from the global grid
+            rho_host(k, j, i) = interp_scalar(G, X, startx, stopx, dx, is_spherical, false, n3tot, n2tot, n1tot, &(ptmp[0*block_sz]));
+            u_host(k, j, i) = interp_scalar(G, X, startx, stopx, dx, is_spherical, false, n3tot, n2tot, n1tot, &(ptmp[1*block_sz]));
+            VLOOP uvec_host(v, k, j, i) = interp_scalar(G, X, startx, stopx, dx, is_spherical, false, n3tot, n2tot, n1tot, &(ptmp[(2+v)*block_sz]));
+            VLOOP B_host(v, k, j, i) = interp_scalar(G, X, startx, stopx, dx, is_spherical, false, n3tot, n2tot, n1tot, &(ptmp[(5+v)*block_sz]));
         }
     );
     delete[] ptmp;
@@ -241,32 +272,16 @@ TaskStatus ReadIharmRestart(MeshBlockData<Real> *rc, ParameterInput *pin)
     B_P.DeepCopy(B_host);
     Kokkos::fence();
 
-    // Initialize the guesses for fluid prims in boundary zones
-    // TODO Is this still necessary?
-    // periodic_x3(G, P, Globals::nghost, n1, n2, n3);
-
     // Set the original simulation's end time, if we wanted that
+    // Used pretty much only for MHDModes restart test
     if (use_tf) {
         pin->SetReal("parthenon/time", "tlim", tf);
+    }
+    if (use_dt) {
+        // Setting dt here is actually for KHARMA,
+        // which returns this from EstimateTimestep in step 0
+        pin->SetReal("parthenon/time", "dt", dt);
     }
 
     return TaskStatus::complete;
 }
-
-// void periodic_x3(const GRCoordinates& G, GridVars P, int nghost, int n1, int n2, int n3)
-// {
-//     Kokkos::parallel_for("periodic_x3_l", MDRangePolicy<Rank<3>>({0, 0, 0}, {nghost, n2+2*nghost, n1+2*nghost}),
-//         KOKKOS_LAMBDA_3D {
-//             int kz = k + n3;
-
-//             PLOOP P(p, k, j, i) = P(p, kz, j, i);
-//         }
-//     );
-//     Kokkos::parallel_for("periodic_x3_r", MDRangePolicy<Rank<3>>({n3+nghost, 0, 0}, {n3+2*nghost, n2+2*nghost, n1+2*nghost}),
-//         KOKKOS_LAMBDA_3D {
-//             int kz = k - n3;
-
-//             PLOOP P(p, k, j, i) = P(p, kz, j, i);
-//         }
-//     );
-// }

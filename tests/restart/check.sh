@@ -1,7 +1,7 @@
 #!/bin/bash
 
 . ~/libs/anaconda3/etc/profile.d/conda.sh
-conda activate pyHARM
+conda activate pyharm
 
 # Set paths
 KHARMADIR=../..

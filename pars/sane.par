@@ -8,14 +8,14 @@ problem_id = torus
 <parthenon/mesh>
 refinement = none
 numlevel = 1
-nx1 = 256
-nx2 = 128
-nx3 = 128
+nx1 = 128
+nx2 = 64
+nx3 = 64
 
 <parthenon/meshblock>
-nx1 = 128
-nx2 = 128
-nx3 = 64
+nx1 = 32
+nx2 = 32
+nx3 = 32
 
 <coordinates>
 base = spherical_ks
@@ -46,6 +46,7 @@ u_jitter = 0.04
 <b_field>
 type = sane
 beta_min = 100.
+initial_cleanup = true
 
 <floors>
 rho_min_geom = 1e-6

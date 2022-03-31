@@ -3,7 +3,7 @@
 
 # TODO toolbox break to discover enclosing hostname
 if [[ "$HOST" == "toolbox"* ]]; then
-  HOST=fermium
+  HOST=ferrum
 fi
 if [[ "$HOST" == "e4s"* ]]; then
   HOST=fermium
@@ -61,15 +61,21 @@ if [[ $HOST == "fermium" ]]; then
 fi
 
 if [[ $HOST == "ferrum" ]]; then
-  # Intel SYCL implementation "DPC++"
-  module purge
-  module load compiler mpi
+  if [[ "$ARGS" == *"gcc"* ]]; then
+    module load mpi/mpich-x86_64
+    C_NATIVE="gcc"
+    CXX_NATIVE="g++"
+  else
+    # Intel SYCL implementation "DPC++"
+    module purge
+    module load compiler mpi
+    PREFIX_PATH="$HOME/libs/hdf5-oneapi"
+  fi
 
   NPROC=6 # My kingdom for a RAM!
 
   HOST_ARCH="HSW"
   DEVICE_ARCH="INTEL_GEN"
-  PREFIX_PATH="$HOME/libs/hdf5-oneapi"
 
   EXTRA_FLAGS="-DFUSE_FLUX_KERNELS=OFF -DFUSE_EMF_KERNELS=OFF -DFUSE_FLOOR_KERNELS=OFF $EXTRA_FLAGS"
 fi

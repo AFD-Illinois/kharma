@@ -32,10 +32,13 @@ cfl = 0.9
 gamma = 1.666667
 reconstruction = weno5
 
+<driver>
+type = harm
+
 <torus>
 rin = 8.0
 rmax = 16.0
-tilt = 20
+tilt = 30
 
 <perturbation>
 u_jitter = 0.0
@@ -43,6 +46,10 @@ u_jitter = 0.0
 <b_field>
 type = sane
 beta_min = 100
+initial_cleanup = true
+
+<b_cleanup>
+abs_tolerance = 1e-10
 
 <floors>
 rho_min_geom = 1e-5
