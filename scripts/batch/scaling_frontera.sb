@@ -10,10 +10,10 @@
 # longhorn: development, v100
 #SBATCH -p normal
 
-#SBATCH -N 64
+#SBATCH -N 512
 #SBATCH --ntasks-per-node 2
 
-#SBATCH -t 4:00:00
+#SBATCH -t 1:00:00
 #SBATCH -o out-%j.txt
 
 DO_STRONG=true
@@ -27,7 +27,7 @@ export OMP_PLACES=threads
 
 # Strong scaling.  Possibly not optimal due to requiring cubic meshblocks
 if [[ $DO_STRONG == "true" ]]; then
-  for size in 128 256
+  for size in 256
   do
     for tpn in 1 2
     do
@@ -38,7 +38,7 @@ if [[ $DO_STRONG == "true" ]]; then
       # This may one day not be true for Stampede2
       export OMP_NUM_THREADS=$(( $SLURM_CPUS_ON_NODE / $SLURM_NTASKS_PER_NODE ))
 
-      nodes=1
+      nodes=64
       while (( $nodes <= $SLURM_NNODES ))
       do
         np=$(( $nodes * $tpn ))
@@ -54,7 +54,7 @@ if [[ $DO_STRONG == "true" ]]; then
 
         echo "cycle=100 Running $size cubed problem with KHARMA on $nodes nodes with $tpn tasks each (blocksize $msize)"
 
-        ibrun -np $np tacc_affinity $KHARMA_DIR/kharma.host "$@" parthenon/time/nlim=102 \
+        ibrun -np $np tacc_affinity $KHARMA_DIR/kharma.host -i $KHARMA_DIR/pars/scaling_torus.par parthenon/time/nlim=102 \
                                     parthenon/mesh/nx1=$size parthenon/mesh/nx2=$size parthenon/mesh/nx3=$size \
                                     parthenon/meshblock/nx1=$msize parthenon/meshblock/nx2=$msize parthenon/meshblock/nx3=$msize
 
@@ -78,7 +78,7 @@ if [[ $DO_WEAK == "true" ]]; then
       # This may one day not be true for Stampede2
       export OMP_NUM_THREADS=$(( $SLURM_CPUS_ON_NODE / $SLURM_NTASKS_PER_NODE ))
 
-      nodes=1
+      nodes=64
       while (( $nodes <= $SLURM_NNODES ))
       do
         np=$(( $nodes * $tpn ))
@@ -119,7 +119,7 @@ if [[ $DO_WEAK == "true" ]]; then
         nblock=$(( $mul1 * $mul2 * $mul3 ))
         echo "cycle=100 Running $size per node problem with KHARMA on $nodes nodes with $tpn tasks each (total size ${tsize1}x${tsize2}x${tsize3}, $nblock blocks)"
 
-        ibrun -np $np tacc_affinity $KHARMA_DIR/kharma.host "$@" parthenon/time/nlim=102 \
+        ibrun -np $np tacc_affinity $KHARMA_DIR/kharma.host -i $KHARMA_DIR/pars/scaling_torus.par parthenon/time/nlim=102 \
                                     parthenon/mesh/nx1=$tsize1 parthenon/mesh/nx2=$tsize2 parthenon/mesh/nx3=$tsize3 \
                                     parthenon/meshblock/nx1=$size parthenon/meshblock/nx2=$size parthenon/meshblock/nx3=$size
 
