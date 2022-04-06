@@ -8,10 +8,10 @@
 # frontera: normal
 # stampede2: flat-quadrant, normal
 # longhorn: development, v100
-#SBATCH -p v100
+#SBATCH -p normal
 
-#SBATCH -N 1
-#SBATCH --ntasks-per-node 4
+#SBATCH -N 32
+#SBATCH --ntasks-per-node 1
 
 #SBATCH -t 48:00:00
 #SBATCH -o out-%j.txt
@@ -23,7 +23,6 @@ if [[ -z "$SLURM_NTASKS_PER_NODE" ]]; then
   SLURM_NTASKS_PER_NODE=$(( $SLURM_NTASKS / $SLURM_NNODES ))
   echo "Assuming $SLURM_NTASKS_PER_NODE tasks per node"
 fi
-
 
 # OpenMP Options
 export OMP_PROC_BIND=spread
@@ -37,7 +36,7 @@ export OMP_NUM_THREADS=$(( $SLURM_CPUS_ON_NODE / $SLURM_NTASKS_PER_NODE ))
 export KOKKOS_NUM_DEVICES=$SLURM_NTASKS_PER_NODE
 
 # Profiling
-export KOKKOS_PROFILE_LIBRARY=$KHARMA_DIR/../kokkos-tools/kp_kernel_timer.so
+#export KOKKOS_PROFILE_LIBRARY=$KHARMA_DIR/../kokkos-tools/kp_kernel_timer.so
 
 # Machine-specific run lines
 if [[ $(hostname -f) == *".stampede2.tacc.utexas.edu" || $(hostname -f) == *".frontera.tacc.utexas.edu" ]]; then
