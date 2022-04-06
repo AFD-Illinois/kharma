@@ -34,6 +34,7 @@
 #include "electrons.hpp"
 
 #include "decs.hpp"
+#include "flux.hpp"
 #include "grmhd.hpp"
 #include "kharma.hpp"
 
@@ -150,16 +151,35 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     MetadataFlag isElectrons = Metadata::AllocateNewFlag("Electrons");
     params.Add("ElectronsFlag", isElectrons);
 
-    // General options for primitive and conserved variables in KHARMA
-    Metadata m_con  = Metadata({Metadata::Real, Metadata::Cell, Metadata::Independent, Metadata::FillGhost,
-                 Metadata::Restart, Metadata::Conserved, Metadata::WithFluxes, isElectrons});
-    Metadata m_prim = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived,
-                  isPrimitive, isElectrons});
+    // Default implicit iff GRMHD is done implicitly. TODO can we do explicit?
+    auto driver_type = pin->GetString("driver", "type");
+    bool grmhd_implicit = packages.Get("GRMHD")->Param<bool>("implicit");
+    bool implicit_e = (driver_type == "imex" && pin->GetOrAddBoolean("electrons", "implicit", grmhd_implicit));
+    params.Add("implicit", implicit_e);
+
+    // B fields.  "Primitive" form is field, "conserved" is flux
+    // See notes there about changes for the Imex driver
+    std::vector<MetadataFlag> flags_prim, flags_cons;
+    if (driver_type == "harm") {
+        flags_prim = std::vector<MetadataFlag>({Metadata::Real, Metadata::Cell, Metadata::Derived,
+                                                isPrimitive});
+        flags_cons = std::vector<MetadataFlag>({Metadata::Real, Metadata::Cell, Metadata::Independent, Metadata::FillGhost,
+                                    Metadata::Restart, Metadata::Conserved, Metadata::WithFluxes});
+    } else if (driver_type == "imex") {
+        // See grmhd.cpp for full notes on flag changes for ImEx driver
+        // Note that default for B is *explicit* evolution
+        MetadataFlag areWeImplicit = (implicit_e) ? packages.Get("Implicit")->Param<MetadataFlag>("ImplicitFlag")
+                                                  : packages.Get("Implicit")->Param<MetadataFlag>("ExplicitFlag");
+        flags_prim = std::vector<MetadataFlag>({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::FillGhost,
+                                                Metadata::Restart, isPrimitive, areWeImplicit});
+        flags_cons = std::vector<MetadataFlag>({Metadata::Real, Metadata::Cell, Metadata::Independent, Metadata::Conserved,
+                                                Metadata::WithFluxes, areWeImplicit});
+    }
 
     // Total entropy, used to track changes
     int nKs = 1;
-    pkg->AddField("cons.Ktot", m_con);
-    pkg->AddField("prims.Ktot", m_prim);
+    pkg->AddField("cons.Ktot", flags_cons);
+    pkg->AddField("prims.Ktot", flags_prim);
 
     // Individual models
     // TO ADD A MODEL:
@@ -169,33 +189,33 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     // 4. Add heating model in ApplyElectronHeating, below
     if (do_constant) {
         nKs += 1;
-        pkg->AddField("cons.Kel_Constant", m_con);
-        pkg->AddField("prims.Kel_Constant", m_prim);
+        pkg->AddField("cons.Kel_Constant", flags_cons);
+        pkg->AddField("prims.Kel_Constant", flags_prim);
     }
     if (do_howes) {
         nKs += 1;
-        pkg->AddField("cons.Kel_Howes", m_con);
-        pkg->AddField("prims.Kel_Howes", m_prim);
+        pkg->AddField("cons.Kel_Howes", flags_cons);
+        pkg->AddField("prims.Kel_Howes", flags_prim);
     }
     if (do_kawazura) {
         nKs += 1;
-        pkg->AddField("cons.Kel_Kawazura", m_con);
-        pkg->AddField("prims.Kel_Kawazura", m_prim);
+        pkg->AddField("cons.Kel_Kawazura", flags_cons);
+        pkg->AddField("prims.Kel_Kawazura", flags_prim);
     }
     if (do_werner) {
         nKs += 1;
-        pkg->AddField("cons.Kel_Werner", m_con);
-        pkg->AddField("prims.Kel_Werner", m_prim);
+        pkg->AddField("cons.Kel_Werner", flags_cons);
+        pkg->AddField("prims.Kel_Werner", flags_prim);
     }
     if (do_rowan) {
         nKs += 1;
-        pkg->AddField("cons.Kel_Rowan", m_con);
-        pkg->AddField("prims.Kel_Rowan", m_prim);
+        pkg->AddField("cons.Kel_Rowan", flags_cons);
+        pkg->AddField("prims.Kel_Rowan", flags_prim);
     }
     if (do_sharma) {
         nKs += 1;
-        pkg->AddField("cons.Kel_Sharma", m_con);
-        pkg->AddField("prims.Kel_Sharma", m_prim);
+        pkg->AddField("cons.Kel_Sharma", flags_cons);
+        pkg->AddField("prims.Kel_Sharma", flags_prim);
     }
     // TODO if nKs == 1 then rename Kel_Whatever -> Kel?
     // TODO record nKs and find a nice way to loop/vector the device-side layout?
@@ -428,6 +448,9 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
         const Real cs0 = pmb->packages.Get("GRMHD")->Param<Real>("drive_cs0");
         // incompressible, sigma2 ~ k6 exp (-8k/kpeak), where kpeak = 4pi/L
         // GAUSSIAN FIELD HERE
+
+        // This could be only the GRMHD vars, for this problem, but speed isn't really an issue
+        Flux::PtoU(rc);
     }
 
     Flag(rc, "Applied");
