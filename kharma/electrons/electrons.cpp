@@ -37,6 +37,7 @@
 #include "flux.hpp"
 #include "grmhd.hpp"
 #include "kharma.hpp"
+#include "gaussian.hpp"
 
 #include <parthenon/parthenon.hpp>
 #include <utils/string_utils.hpp>
@@ -180,6 +181,14 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     int nKs = 1;
     pkg->AddField("cons.Ktot", flags_cons);
     pkg->AddField("prims.Ktot", flags_prim);
+
+    if ("driven_turbulence" == packages.Get("GRMHD")->Param<std::string>("problem")) {
+        std::vector<int> s_vector({2});
+        Metadata m_vector = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy}, s_vector);
+        Metadata m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
+        pkg->AddField("grf_normalized", m_vector);
+        pkg->AddField("alfven_speed", m);
+    }
 
     // Individual models
     // TO ADD A MODEL:
@@ -442,13 +451,70 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
                 GRMHD::p_to_u(G, P_new, m_p, gam, k, j, i, U_new, m_u);
             }
         );
-    } else if (prob == "driven_turbulence") {
-        // Gaussian random field:
-        const Real edot_in = pmb->packages.Get("GRMHD")->Param<Real>("drive_edot");
-        const Real cs0 = pmb->packages.Get("GRMHD")->Param<Real>("drive_cs0");
-        // incompressible, sigma2 ~ k6 exp (-8k/kpeak), where kpeak = 4pi/L
-        // GAUSSIAN FIELD HERE
+    } else if (prob == "driven_turbulence") { // Gaussian random field:
+        const auto& G = pmb->coords;
+        const IndexRange myib = pmb->cellbounds.GetBoundsI(IndexDomain::interior);
+        const IndexRange myjb = pmb->cellbounds.GetBoundsJ(IndexDomain::interior);
+        const IndexRange mykb = pmb->cellbounds.GetBoundsK(IndexDomain::interior);
+        if (generate_grf) {
+            const Real lx1=  pmb->packages.Get("GRMHD")->Param<Real>("lx1");
+            const Real lx2=  pmb->packages.Get("GRMHD")->Param<Real>("lx2");
+            const Real edot= pmb->packages.Get("GRMHD")->Param<Real>("drive_edot");
+            const Real dt =  pmb->packages.Get("Globals")->Param<Real>("dt_last");  // Close enough?
+            GridVector uvec = rc->Get("prims.uvec").data;
+            GridVector grf_normalized = rc->Get("grf_normalized").data;
+            GridScalar rho = rc->Get("prims.rho").data;
+            GridScalar alfven_speed = rc->Get("alfven_speed").data;
 
+            int Nx1 = pmb->cellbounds.ncellsi(IndexDomain::interior);
+            int Nx2 = pmb->cellbounds.ncellsj(IndexDomain::interior);
+            Real *dv1 =  (Real*) malloc(sizeof(Real)*Nx1*Nx2);
+            Real *dv2 =  (Real*) malloc(sizeof(Real)*Nx1*Nx2);
+            create_grf(Nx1, Nx2, lx1, lx2, dv1, dv2);
+
+            Real * den = (Real*)malloc(sizeof(Real));
+            // going from k:(0, 0), j:(4, 515), i:(4, 515) inclusive
+            pmb->par_for("forced_mhd_normal_kick_normalization", mykb.s, mykb.e, myjb.s, myjb.e, myib.s, myib.e,
+                KOKKOS_LAMBDA_3D {
+                    Real X[GR_DIM];
+                    G.coord(k, j, i, Loci::center, X);
+                    *den += (pow(dv1[(i-4)*Nx1+(j-4)], 2) + pow(dv2[(i-4)*Nx1+(j-4)], 2)) * (rho(k, j, i) * G.dx3v(k) * G.dx2v(j) * G.dx1v(i));
+                }
+            ); 
+            Real norm_const = pow(edot*dt/((*den)*0.5), 0.5);
+
+            Real * actual_edot = (Real*)malloc(sizeof(Real));
+            pmb->par_for("forced_mhd_normal_kick_setting", mykb.s, mykb.e, myjb.s, myjb.e, myib.s, myib.e,
+                KOKKOS_LAMBDA_3D {
+                    grf_normalized(0, k, j, i) = dv1[(i-4)*Nx1+(j-4)]*norm_const;
+                    grf_normalized(1, k, j, i) = dv2[(i-4)*Nx1+(j-4)]*norm_const;
+
+                    *actual_edot += 0.5 * (rho(k, j, i) * G.dx3v(k) * G.dx2v(j) * G.dx1v(i)) * 
+                                    (((pow(uvec(0, k, j, i) + dv1[(i-4)*Nx1+(j-4)]*norm_const, 2) + pow(uvec(1, k, j, i) + dv2[(i-4)*Nx1+(j-4)]*norm_const, 2)))-
+                                    ((pow(uvec(0, k, j, i), 2) + pow(uvec(1, k, j, i), 2))));
+
+                    uvec(0, k, j, i) += dv1[(i-4)*Nx1+(j-4)]*norm_const;
+                    uvec(1, k, j, i) += dv2[(i-4)*Nx1+(j-4)]*norm_const;
+
+                    FourVectors Dtmp;
+                    GRMHD::calc_4vecs(G, P, m_p, k, j, i, Loci::center, Dtmp);
+                    Real bsq = dot(Dtmp.bcon, Dtmp.bcov);
+                    alfven_speed(k,j,i) = bsq/rho(k, j, i); //saving alfven speed for analysis purposes
+                }
+            );
+            printf("%.32f\n", (*actual_edot)/dt);
+            free(actual_edot); free(dv1); free(dv2); free(den);
+        } else {
+            GridVector uvec = rc->Get("prims.uvec").data;
+            GridScalar grf_normalized = rc->Get("grf_normalized").data;
+            pmb->par_for("forced_mhd_normal_kick", mykb.s, mykb.e, myjb.s, myjb.e, myib.s, myib.e,
+                KOKKOS_LAMBDA_3D {
+                    Real X[GR_DIM];
+                    uvec(0, k, j, i) += grf_normalized(0, k, j, i);
+                    uvec(1, k, j, i) += grf_normalized(1, k, j, i);
+                }
+            );
+        }
         // This could be only the GRMHD vars, for this problem, but speed isn't really an issue
         Flux::PtoU(rc);
     }

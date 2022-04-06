@@ -8,27 +8,27 @@ problem_id = driven_turbulence
 refinement = none
 numlevel = 1
 
-nx1 = 128
+nx1 = 512
 x1min = 0
 x1max = 1
 ix1_bc = periodic
 ox1_bc = periodic
 
-nx2 = 128
+nx2 = 512
 x2min = 0
 x2max = 1
 ix2_bc = periodic
 ox2_bc = periodic
 
 nx3 = 1
-x3min = -0.01
-x3max = 0.01
+x3min = -1
+x3max = 1
 ix3_bc = periodic
 ox3_bc = periodic
 
 <parthenon/meshblock>
-nx1 = 128
-nx2 = 128
+nx1 = 512
+nx2 = 512
 nx3 = 1
 
 <coordinates>
@@ -36,7 +36,7 @@ base = cartesian_minkowski
 transform = null
 
 <parthenon/time>
-tlim = 100.0
+tlim = 31395.3488372093
 integrator = rk2
 
 <GRMHD>
@@ -50,14 +50,17 @@ cs0 = 8.6e-4
 <b_field>
 type = constant
 b10 = 1
-normalize = true
-beta_min = 6
+norm = true
+beta_min = 10
 
 <electrons>
 on = true
 constant = true
 fel_constant = 0.5
 gamma_e = 1.333333
+
+<perf>
+two_sync = true
 
 <debug>
 verbose = 1
@@ -66,10 +69,10 @@ extra_checks = 1
 
 <parthenon/output0>
 file_type = hdf5
-dt = 1.0
+dt = 5.
 single_precision_output = true
-variables = prims.rho, prims.u, prims.uvec, prims.B, jcon
+variables = prims.B, prims.rho, prims.u, cons.u, prims.uvec, prims.Ktot, cons.Ktot, prims.Kel_Constant, prims.Kel_Kawazura, grf_normalized, alfven_speed, ctop
 
 <parthenon/output1>
 file_type = hst
-dt = 0.1
+dt = 5.
