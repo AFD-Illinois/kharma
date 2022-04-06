@@ -370,7 +370,7 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         // Electron heating goes where it does in HARMDriver, for the same reasons
         auto t_heat_electrons = t_fix_derived;
         if (use_electrons) {
-            t_heat_electrons = tl.AddTask(t_fix_derived, Electrons::ApplyElectronHeating, sc0.get(), sc1.get());
+            t_heat_electrons = tl.AddTask(t_fix_derived, Electrons::ApplyElectronHeating, sc0.get(), sc1.get(), stage == 0);
         }
 
         // Make sure conserved vars are synchronized at step end
