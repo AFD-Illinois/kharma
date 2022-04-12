@@ -42,19 +42,10 @@ using namespace parthenon;
 /**
  * This physics package implements General-Relativistic Magnetohydrodynamics
  *
- * Unlike MHD, GRMHD has two independent sets of variables: the conserved variables, and a set of
- * "primitive" variables more amenable to reconstruction.  To evolve the fluid, the conserved
- * variables must be:
- * 1. Transformed to the primitives
- * 2. Reconstruct the right- and left-going components at zone faces
- * 3. Transform back to conserved quantities and calculate the fluxes at faces
- * 4. Update conserved variables using the divergence of conserved fluxes
+ * Anything specific to GRMHD (but not relating to the particular *order* of operations)
+ * is implemented in this namespace, in the files grmhd.cpp, source.cpp, and fixup.cpp.
  * 
- * (for higher-order schemes, this is more or less just repeated and added)
- *
- * iharm3d puts step 1 at the bottom, and syncs/fixes primitive variables between each step.
- * KHARMA runs through the steps as listed, applying floors after step 1 as iharm3d does, but
- * syncing the conserved variables 
+ * 
  */
 namespace GRMHD {
 // For declaring meshes, as well as the full intermediates we need (right & left fluxes etc)
@@ -75,6 +66,16 @@ inline void FillDerivedBlock(MeshBlockData<Real> *rc) { UtoP(rc); }
 inline TaskStatus FillDerivedBlockTask(MeshBlockData<Real> *rc) { UtoP(rc); return TaskStatus::complete; }
 
 /**
+ * Smooth over inversion failures by averaging values from each neighboring zone
+ * a.k.a. Diffusion?  What diffusion?  There is no diffusion here.
+ *
+ * TODO These happen often, and we can do better here.
+ * See e.g. Beckwith & Stone for a truly defense-in-depth approach
+ * 
+ * LOCKSTEP: this function expects and should preserve P<->U
+ */
+TaskStatus FixUtoP(MeshBlockData<Real> *rc);
+/**
  * Fix the primitive variables
  * Applies floors to the calculated primitives, and fixes up any failed inversions
  *
@@ -82,6 +83,13 @@ inline TaskStatus FillDerivedBlockTask(MeshBlockData<Real> *rc) { UtoP(rc); retu
  * output: U and P match with inversion errors corrected, and obey floors
  */
 void PostUtoP(MeshBlockData<Real> *rc);
+
+/**
+ * Function to apply the GRMHD source term over the entire grid.
+ * 
+ * Note Flux::ApplyFluxes = parthenon::FluxDivergence + GRMHD::AddSource
+ */
+TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt);
 
 /**
  * Returns the minimum CFL timestep among all zones in the block,

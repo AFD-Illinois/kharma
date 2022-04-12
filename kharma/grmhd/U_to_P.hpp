@@ -52,8 +52,8 @@ KOKKOS_INLINE_FUNCTION Real lorentz_calc_w(const Real& Bsq, const Real& D, const
                                         const Real& Qtsq, const Real& Wp);
 
 /**
- * Recover local primitive variables, with a one-dimensional Newton-Raphson iterative solver
- * Iteration starts from the current primitive values
+ * Recover local primitive variables, with a one-dimensional Newton-Raphson iterative solver.
+ * Iteration starts from the current primitive values, and otherwse may *fail to converge*
  * 
  * Returns a code indicating whether the solver converged (success), failed (max_iter), or
  * indicating that the converged solution was unphysical (bad_ut, neg_rhou, neg_rho, neg_u)

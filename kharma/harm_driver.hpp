@@ -43,7 +43,21 @@ using namespace parthenon;
 
 /**
  * A Driver object orchestrates everything that has to be done to a mesh to constitute a step.
- * For HARM, this means the predictor-corrector steps of fluid evolution
+ * For HARM, this means the predictor-corrector steps of fluid evolution.
+ * 
+ * Unlike MHD, GRMHD has two independent sets of variables: the conserved variables, and a set of
+ * "primitive" variables more amenable to reconstruction.  To evolve the fluid, the conserved
+ * variables must be:
+ * 1. Transformed to the primitives
+ * 2. Reconstruct the right- and left-going components at zone faces
+ * 3. Transform back to conserved quantities and calculate the fluxes at faces
+ * 4. Update conserved variables using the divergence of conserved fluxes
+ * 
+ * (for higher-order schemes, this is more or less just repeated and added)
+ *
+ * iharm3d (and the ImEx driver) put step 1 at the bottom, and syncs/fixes primitive variables
+ * between each step.  This driver runs through the steps as listed, applying floors after step
+ * 1 as iharm3d does, but syncing the conserved variables.
  */
 class HARMDriver : public MultiStageDriver {
     public:

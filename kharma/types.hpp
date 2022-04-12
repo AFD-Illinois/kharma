@@ -85,7 +85,7 @@ class VarMap {
         int8_t KTOT, K_CONSTANT, K_HOWES, K_KAWAZURA, K_WERNER, K_ROWAN, K_SHARMA;
         // Implicit-solver variables: constraint damping, EGRMHD
         int8_t PSI, Q, DP;
-        // Total struct size 20 bytes, < 1 vector of 4 doubles
+        // Total struct size ~20 bytes, < 1 vector of 4 doubles
 
         VarMap(parthenon::PackIndexMap& name_map, bool is_cons)
         {

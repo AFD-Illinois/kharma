@@ -41,7 +41,7 @@
 
 /**
  * This namespace is solely for calc_tensor.
- * calc_4vecs above intelligently skips the bcon calculation if B field is not present
+ * GRMHD::calc_4vecs intelligently skips the bcon calculation if B field is not present
  */
 namespace GRHD
 {
@@ -64,7 +64,7 @@ KOKKOS_INLINE_FUNCTION void calc_tensor(const Real& rho, const Real& u, const Re
 /**
  * Device-side GR(M)HD functions
  * Anything reasonably specific to doing GRHD/GRMHD, which will not change:
- * lorentz factor, 4-vectors ucon/bcon
+ * lorentz factor, stress-energy tensor, 4-vectors ucon/bcon
  *
  * These functions mostly have several overloads, related to local vs global variables.
  * Many also have a form for split variables rho, uvec, etc, and one for a full array of primitive variables P.
