@@ -347,8 +347,6 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
 
 void KBoundaries::SyncAllBounds(Mesh *pmesh, bool sync_prims, bool sync_phys)
 {
-    // TODO this does syncs per-block.  Correctly and without race conditions afaict,
-    // but they could be done more simply & efficiently per-mesh
     Flag("Syncing all bounds");
 
     if (sync_prims) {
@@ -358,12 +356,19 @@ void KBoundaries::SyncAllBounds(Mesh *pmesh, bool sync_prims, bool sync_phys)
             Flag("Block sync send");
             rc->ClearBoundary(BoundaryCommSubset::all);
             rc->StartReceiving(BoundaryCommSubset::all);
-            rc->SendBoundaryBuffers();
         }
+
+        auto& md = pmesh->mesh_data.Get();
+        // Send everything
+        cell_centered_bvars::SendBoundaryBuffers(md);
+        // Wait on receive
+        cell_centered_bvars::ReceiveBoundaryBuffers(md);
+        // Set boundaries from buffers
+        cell_centered_bvars::SetBoundaries(md);
+
         for (auto &pmb : pmesh->block_list) {
             auto& rc = pmb->meshblock_data.Get();
             Flag("Block sync receive");
-            rc->ReceiveAndSetBoundariesWithWait();
             rc->ClearBoundary(BoundaryCommSubset::all);
             // TODO if amr...
             //pmb->pbval->ProlongateBoundaries();
@@ -395,13 +400,19 @@ void KBoundaries::SyncAllBounds(Mesh *pmesh, bool sync_prims, bool sync_phys)
             Flag("Block sync send");
             rc->ClearBoundary(BoundaryCommSubset::all);
             rc->StartReceiving(BoundaryCommSubset::all);
-            rc->SendBoundaryBuffers();
         }
+
+        auto& md = pmesh->mesh_data.Get();
+        // Send everything
+        cell_centered_bvars::SendBoundaryBuffers(md);
+        // Wait on receive
+        cell_centered_bvars::ReceiveBoundaryBuffers(md);
+        // Set boundaries from buffers
+        cell_centered_bvars::SetBoundaries(md);
 
         for (auto &pmb : pmesh->block_list) {
             auto& rc = pmb->meshblock_data.Get();
             Flag("Block sync receive");
-            rc->ReceiveAndSetBoundariesWithWait();
             rc->ClearBoundary(BoundaryCommSubset::all);
             // TODO if amr...
             //pmb->pbval->ProlongateBoundaries();

@@ -286,8 +286,7 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
     // MPI/MeshBlock boundary exchange.
     // Optionally "packed" to send all data in one call (num_partitions defaults to 1)
     // Note that in this driver, this block syncs *primitive* variables, not conserved
-    const auto &pack_comms = pkgs.at("GRMHD")->Param<bool>("pack_comms");
-    AddBoundarySync(tc, pmesh, blocks, integrator.get(), stage, pack_comms);
+    AddBoundarySync(tc, pmesh, blocks, integrator.get(), stage);
 
     // Async Region: Any post-sync tasks.  Fixups, timestep & AMR things.
     TaskRegion &async_region2 = tc.AddRegion(blocks.size());
@@ -355,7 +354,7 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
                                         BoundaryCommSubset::all);
         }
 
-        AddBoundarySync(tc, pmesh, blocks, integrator.get(), stage, pack_comms);
+        AddBoundarySync(tc, pmesh, blocks, integrator.get(), stage);
 
         TaskRegion &async_region = tc.AddRegion(blocks.size());
         for (int i = 0; i < blocks.size(); i++) {

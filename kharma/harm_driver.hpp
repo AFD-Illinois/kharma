@@ -90,61 +90,33 @@ class HARMDriver : public MultiStageDriver {
  * to define once and use elsewhere.
  * TODO could make member of a HARMDriver/ImExDriver superclass?
  */
-inline void AddBoundarySync(TaskCollection &tc, Mesh *pmesh, BlockList_t &blocks, StagedIntegrator *integrator, int stage, bool pack_comms=false)
+inline void AddBoundarySync(TaskCollection &tc, Mesh *pmesh, BlockList_t &blocks, StagedIntegrator *integrator, int stage)
 {
     TaskID t_none(0);
     const int num_partitions = pmesh->DefaultNumPartitions();
     auto stage_name = integrator->stage_name;
-    // TODO do these all need to be sequential?  What are the specifics here?
-    if (pack_comms) {
-        TaskRegion &tr1 = tc.AddRegion(num_partitions);
-        for (int i = 0; i < num_partitions; i++) {
-            auto &mc1 = pmesh->mesh_data.GetOrAdd(stage_name[stage], i);
-            tr1[i].AddTask(t_none,
-                [](MeshData<Real> *mc1){ Flag(mc1, "Parthenon Send Buffers"); return TaskStatus::complete; }
-            , mc1.get());
-            tr1[i].AddTask(t_none, cell_centered_bvars::SendBoundaryBuffers, mc1);
-        }
-        TaskRegion &tr2 = tc.AddRegion(num_partitions);
-        for (int i = 0; i < num_partitions; i++) {
-            auto &mc1 = pmesh->mesh_data.GetOrAdd(stage_name[stage], i);
-            tr2[i].AddTask(t_none,
-                [](MeshData<Real> *mc1){ Flag(mc1, "Parthenon Recv Buffers"); return TaskStatus::complete; }
-            , mc1.get());
-            tr2[i].AddTask(t_none, cell_centered_bvars::ReceiveBoundaryBuffers, mc1);
-        }
-        TaskRegion &tr3 = tc.AddRegion(num_partitions);
-        for (int i = 0; i < num_partitions; i++) {
-            auto &mc1 = pmesh->mesh_data.GetOrAdd(stage_name[stage], i);
-            tr3[i].AddTask(t_none,
-                [](MeshData<Real> *mc1){ Flag(mc1, "Parthenon Set Boundaries"); return TaskStatus::complete; }
-            , mc1.get());
-            tr3[i].AddTask(t_none, cell_centered_bvars::SetBoundaries, mc1);
-        }
-    } else {
-        TaskRegion &tr1 = tc.AddRegion(blocks.size());
-        for (int i = 0; i < blocks.size(); i++) {
-            auto &sc1 = blocks[i]->meshblock_data.Get(stage_name[stage]);
-            tr1[i].AddTask(t_none,
-                [](MeshBlockData<Real> *rc1){ Flag(rc1, "Parthenon Send Buffers"); return TaskStatus::complete; }
-            , sc1.get());
-            tr1[i].AddTask(t_none, &MeshBlockData<Real>::SendBoundaryBuffers, sc1.get());
-        }
-        TaskRegion &tr2 = tc.AddRegion(blocks.size());
-        for (int i = 0; i < blocks.size(); i++) {
-            auto &sc1 = blocks[i]->meshblock_data.Get(stage_name[stage]);
-            tr2[i].AddTask(t_none,
-                [](MeshBlockData<Real> *rc1){ Flag(rc1, "Parthenon Recv Buffers"); return TaskStatus::complete; }
-            , sc1.get());
-            tr2[i].AddTask(t_none, &MeshBlockData<Real>::ReceiveBoundaryBuffers, sc1.get());
-        }
-        TaskRegion &tr3 = tc.AddRegion(blocks.size());
-        for (int i = 0; i < blocks.size(); i++) {
-            auto &sc1 = blocks[i]->meshblock_data.Get(stage_name[stage]);
-            tr3[i].AddTask(t_none,
-                [](MeshBlockData<Real> *rc1){ Flag(rc1, "Parthenon Set Boundaries"); return TaskStatus::complete; }
-            , sc1.get());
-            tr3[i].AddTask(t_none, &MeshBlockData<Real>::SetBoundaries, sc1.get());
-        }
+    TaskRegion &tr1 = tc.AddRegion(num_partitions);
+    for (int i = 0; i < num_partitions; i++) {
+        auto &mc1 = pmesh->mesh_data.GetOrAdd(stage_name[stage], i);
+        tr1[i].AddTask(t_none,
+            [](MeshData<Real> *mc1){ Flag(mc1, "Parthenon Send Buffers"); return TaskStatus::complete; }
+        , mc1.get());
+        tr1[i].AddTask(t_none, cell_centered_bvars::SendBoundaryBuffers, mc1);
+    }
+    TaskRegion &tr2 = tc.AddRegion(num_partitions);
+    for (int i = 0; i < num_partitions; i++) {
+        auto &mc1 = pmesh->mesh_data.GetOrAdd(stage_name[stage], i);
+        tr2[i].AddTask(t_none,
+            [](MeshData<Real> *mc1){ Flag(mc1, "Parthenon Recv Buffers"); return TaskStatus::complete; }
+        , mc1.get());
+        tr2[i].AddTask(t_none, cell_centered_bvars::ReceiveBoundaryBuffers, mc1);
+    }
+    TaskRegion &tr3 = tc.AddRegion(num_partitions);
+    for (int i = 0; i < num_partitions; i++) {
+        auto &mc1 = pmesh->mesh_data.GetOrAdd(stage_name[stage], i);
+        tr3[i].AddTask(t_none,
+            [](MeshData<Real> *mc1){ Flag(mc1, "Parthenon Set Boundaries"); return TaskStatus::complete; }
+        , mc1.get());
+        tr3[i].AddTask(t_none, cell_centered_bvars::SetBoundaries, mc1);
     }
 }

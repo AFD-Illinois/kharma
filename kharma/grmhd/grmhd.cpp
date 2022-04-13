@@ -170,12 +170,6 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     auto implicit_grmhd = (driver_type == "imex") &&
                           (pin->GetBoolean("emhd", "on") || pin->GetOrAddBoolean("GRMHD", "implicit", false));
     params.Add("implicit", implicit_grmhd);
-
-    // Performance options
-    // Packed communications kernels, exchanging all boundary buffers of an MPI process
-    // together.  Useful if # MeshBlocks is > # MPI ranks
-    bool pack_comms = pin->GetOrAddBoolean("perf", "pack_comms", true);
-    params.Add("pack_comms", pack_comms);
     // Synchronize boundary variables twice.  Ensures KHARMA is agnostic to the breakdown
     // of meshblocks, at the cost of twice the MPI overhead, for potentially much worse strong scaling.
     bool two_sync = pin->GetOrAddBoolean("perf", "two_sync", false);

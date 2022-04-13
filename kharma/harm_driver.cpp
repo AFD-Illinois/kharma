@@ -204,11 +204,8 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
     }
 
     // MPI/MeshBlock boundary exchange.
-    // Optionally "packed" to send all data in one call (num_partitions defaults to 1)
     // Recall this syncs conserved vars *and* primitive vars to seed UtoP correctly
-    const auto &pack_comms =
-        blocks[0]->packages.Get("GRMHD")->Param<bool>("pack_comms");
-    AddBoundarySync(tc, pmesh, blocks, integrator.get(), stage, pack_comms);
+    AddBoundarySync(tc, pmesh, blocks, integrator.get(), stage);
 
     // Async Region: Fill primitive values, apply physical boundary conditions,
     // add any source terms which require the full primitives->primitives step
@@ -297,7 +294,7 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
                                         BoundaryCommSubset::all);
         }
 
-        AddBoundarySync(tc, pmesh, blocks, integrator.get(), stage, pack_comms);
+        AddBoundarySync(tc, pmesh, blocks, integrator.get(), stage);
 
         TaskRegion &async_region = tc.AddRegion(blocks.size());
         for (int i = 0; i < blocks.size(); i++) {
