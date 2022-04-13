@@ -25,9 +25,14 @@ log_*.txt
 # C++ excludes
 # Build directory
 build/
+
+# External directories
+external/hdf5*
+
 # Prerequisites
 *.d
 make_args
+
 
 # Compiled Object files
 *.slo

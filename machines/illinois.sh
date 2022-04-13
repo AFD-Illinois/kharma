@@ -8,12 +8,32 @@ if [[ $HOST == "lmc.astro.illinois.edu" ]]; then
   # Until then, disable MPI & static HDF5 as bad versions are installed
   PREFIX_PATH=
   EXTRA_FLAGS="-DPARTHENON_DISABLE_MPI=ON"
-else
+# So is BH29
+elif [[ $HOST == "bh29.astro.illinois.edu" ]]; then
+  HOST_ARCH="ZEN2"
 
-# Illinois BH cluster
-if [[ $HOST == *".astro.illinois.edu" ]]; then
+  # Compile our own HDF5
+  PREFIX_PATH="$SOURCE_DIR/external/hdf5"
+
+  if  [[ $ARGS == *"icc"* ]]; then
+    source /opt/intel/oneapi/setvars.sh
+    C_NATIVE="icc"
+    CXX_NATIVE="icpc"
+  elif [[ $ARGS == *"gcc"* ]]; then
+    # Older GCC has no flag for ZEN2
+    HOST_ARCH="ZEN1"
+    # Modules?
+  else
+    # AOCC Requires system libstdc++
+    PREFIX_PATH="/usr/lib64"
+    source /opt/AMD/aocc-compiler-3.1.0.sles15/setenv_AOCC.sh
+    C_NATIVE="clang"
+    CXX_NATIVE="clang++"
+  fi
+
+elif [[ $HOST == *".astro.illinois.edu" ]]; then
   HOST_ARCH="SKX"
-  module purge
+  #module purge
 
   # Uncomment to use full intel stack: MPI crashes
   #source /opt/intel/oneapi/setvars.sh
@@ -33,13 +53,3 @@ if [[ $HOST == *".astro.illinois.edu" ]]; then
 
   #MPI_EXE=mpirun
 fi
-# BH29 additions
-if [[ $HOST == "bh29.astro.illinois.edu" ]]; then
-  HOST_ARCH="ZEN2"
-
-  # AOCC Requires system libc++, like icpx
-  #source /opt/AMD/aocc-compiler-3.0.0/setenv_AOCC.sh
-  #CXX_NATIVE="clang++"
-fi
-
-fi #LMC

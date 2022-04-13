@@ -47,6 +47,7 @@ NPROC=
 
 HOST=$(hostname -f)
 ARGS="$*"
+SOURCE_DIR=$(dirname "$(readlink -f "$0")")
 for machine in machines/*.sh
 do
   source $machine
@@ -111,7 +112,6 @@ if [[ "$ARGS" == *"hdf5"* ]]; then
   make install
   make clean
   cd ../..
-  exit
 fi
 
 ### Build KHARMA ###
