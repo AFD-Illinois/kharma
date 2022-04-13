@@ -32,7 +32,7 @@
  *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "fixup.hpp"
+#include "grmhd.hpp"
 
 #include "floors.hpp"
 #include "flux_functions.hpp"

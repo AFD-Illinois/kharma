@@ -34,7 +34,7 @@
 
 #include "flux.hpp"
 
-#include "source.hpp"
+#include "grmhd.hpp"
 
 using namespace parthenon;
 

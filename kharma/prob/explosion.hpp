@@ -62,20 +62,20 @@ TaskStatus InitializeExplosion(MeshBlockData<Real> *rc, ParameterInput *pin)
 
     Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
 
-    // TODO take these at runtime
-    Real u_out = 3.e-5 / (gam-1);
-    Real rho_out = 1.e-4;
-
-    Real u_in = 1.0 / (gam-1);
-    Real rho_in = 1.e-2;
+    // All options are runtime options!
+    const bool linear_ramp = pin->GetOrAddBoolean("explosion", "linear_ramp", false);
+    const Real u_out = pin->GetOrAddReal("explosion", "u_out", 3.e-5 / (gam-1));
+    const Real rho_out = pin->GetOrAddReal("explosion", "rho_out", 1.e-4);
+    const Real u_in = pin->GetOrAddReal("explosion", "u_in", 1.0 / (gam-1));
+    const Real rho_in = pin->GetOrAddReal("explosion", "rho_in", 1.e-2);
 
     // One buffer zone of linear decline, r_in -> r_out
     // Exponential decline inside here i.e. linear in logspace
-    GReal r_in = 0.8;
-    GReal r_out = 1.0;
+    const Real r_in = pin->GetOrAddReal("explosion", "r_in", 0.8);
+    const Real r_out = pin->GetOrAddReal("explosion", "r_out", 1.0);
     // Circle center
-    GReal xoff = 0.0;
-    GReal yoff = 0.0;
+    const Real xoff = pin->GetOrAddReal("explosion", "xoff", 0.0);
+    const Real yoff = pin->GetOrAddReal("explosion", "yoff", 0.0);
 
     IndexRange ib = pmb->cellbounds.GetBoundsI(IndexDomain::entire);
     IndexRange jb = pmb->cellbounds.GetBoundsJ(IndexDomain::entire);
@@ -84,25 +84,27 @@ TaskStatus InitializeExplosion(MeshBlockData<Real> *rc, ParameterInput *pin)
         KOKKOS_LAMBDA_3D {
             Real X[GR_DIM];
             G.coord_embed(k, j, i, Loci::center, X);
-            GReal rx = X[1] - xoff;
-            GReal ry = X[2] - yoff;
-            Real r = sqrt(rx*rx + ry*ry);
+            const GReal rx = X[1] - xoff;
+            const GReal ry = X[2] - yoff;
+            const Real r = sqrt(rx*rx + ry*ry);
 
             if (r < r_in) {
                 rho(k, j, i) = rho_in;
                 u(k, j, i) = u_in;
             } else if (r >= r_in && r <= r_out) {
-                Real ramp = (r_out - r) / (r_out - r_in);
+                const Real ramp = (r_out - r) / (r_out - r_in);
 
-                // rho(k, j, i) = rho_out + ramp * (rho_in - rho_out);
-                // u(k, j, i) = u_in + ramp * (u_in - u_out);
-
-                Real lrho_out = log(rho_out);
-                Real lrho_in = log(rho_in);
-                Real lu_out = log(u_out);
-                Real lu_in = log(u_in);
-                rho(k, j, i) = exp(lrho_out + ramp * (lrho_in - lrho_out));
-                u(k, j, i) = exp(lu_out + ramp * (lu_in - lu_out));
+                if (linear_ramp) {
+                    rho(k, j, i) = rho_out + ramp * (rho_in - rho_out);
+                    u(k, j, i) = u_in + ramp * (u_in - u_out);
+                } else {
+                    const Real lrho_out = log(rho_out);
+                    const Real lrho_in = log(rho_in);
+                    const Real lu_out = log(u_out);
+                    const Real lu_in = log(u_in);
+                    rho(k, j, i) = exp(lrho_out + ramp * (lrho_in - lrho_out));
+                    u(k, j, i) = exp(lu_out + ramp * (lu_in - lu_out));
+                }
             } else {
                 rho(k, j, i) = rho_out;
                 u(k, j, i) = u_out;

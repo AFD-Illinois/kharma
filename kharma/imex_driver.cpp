@@ -50,12 +50,10 @@
 // Other headers
 #include "boundaries.hpp"
 #include "debug.hpp"
-#include "fixup.hpp"
 #include "flux.hpp"
 #include "harm_driver.hpp"
 #include "resize_restart.hpp"
 #include "implicit.hpp"
-#include "source.hpp"
 
 TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
 {

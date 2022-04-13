@@ -32,9 +32,11 @@
  *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "source.hpp"
+#include "grmhd.hpp"
 
+#include "grmhd_functions.hpp"
 #include "pack.hpp"
+#include "types.hpp"
 
 TaskStatus GRMHD::AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
 {

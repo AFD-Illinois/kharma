@@ -37,10 +37,10 @@
 #include "b_field_tools.hpp"
 #include "boundaries.hpp"
 #include "debug.hpp"
-#include "fixup.hpp"
 #include "floors.hpp"
 #include "flux.hpp"
 #include "gr_coordinates.hpp"
+#include "grmhd.hpp"
 #include "types.hpp"
 
 // Problem initialization headers

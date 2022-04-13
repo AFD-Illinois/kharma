@@ -37,7 +37,7 @@
 #include "floors.hpp"
 
 #include "debug.hpp"
-#include "fixup.hpp"
+#include "grmhd.hpp"
 #include "grmhd_functions.hpp"
 #include "pack.hpp"
 

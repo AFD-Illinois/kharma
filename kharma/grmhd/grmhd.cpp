@@ -46,13 +46,12 @@
 #include "boundaries.hpp"
 #include "current.hpp"
 #include "debug.hpp"
-#include "fixup.hpp"
 #include "floors.hpp"
 #include "flux.hpp"
 #include "gr_coordinates.hpp"
+#include "grmhd.hpp"
 #include "kharma.hpp"
 #include "grmhd_functions.hpp"
-#include "source.hpp"
 #include "U_to_P.hpp"
 
 using namespace parthenon;
