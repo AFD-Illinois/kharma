@@ -50,7 +50,7 @@ dt_min     = 1.e-6
 <GRMHD>
 cfl            = 0.25
 gamma          = 1.333333
-reconstruction = weno5
+reconstruction = linear_mc
 
 <b_field>
 implicit        = true

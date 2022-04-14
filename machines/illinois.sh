@@ -43,8 +43,6 @@ elif [[ $HOST == *".astro.illinois.edu" ]]; then
     PREFIX_PATH="$MPI_DIR"
   fi
 fi
-<<<<<<< HEAD
-=======
 # BH29 additions
 if [[ $HOST == "bh29.astro.illinois.edu" ]]; then
   HOST_ARCH="ZEN1"
@@ -53,6 +51,3 @@ if [[ $HOST == "bh29.astro.illinois.edu" ]]; then
   #source /opt/AMD/aocc-compiler-3.0.0/setenv_AOCC.sh
   #CXX_NATIVE="clang++"
 fi
-
-fi #LMC
->>>>>>> 30f0e50 (EMHD shock test)
