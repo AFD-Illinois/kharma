@@ -18,6 +18,8 @@ set(PARTHENON_DISABLE_EXAMPLES ON CACHE BOOL "KHARMA Override")
 set(PARTHENON_LINT_DEFAULT OFF CACHE BOOL "KHARMA Override")
 # Attempt HDF5 compression, requires recent/standard HDF5. YMMV
 set(PARTHENON_DISABLE_HDF5_COMPRESSION OFF CACHE BOOL "KHARMA Override")
+# Don't build sparse (selectively-allocated) variable support
+set(PARTHENON_DISABLE_SPARSE ON CACHE BOOL "KHARMA Override")
 
 # Parthenon internal build options
 set(BUILD_TESTING OFF CACHE BOOL "KHARMA Override")
