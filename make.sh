@@ -154,6 +154,7 @@ if [[ "$ARGS" == *"sycl"* ]]; then
 elif [[ "$ARGS" == *"hip"* ]]; then
   export CXX=hipcc
   # Is there a hipc?
+  export CC="$C_NATIVE"
   OUTER_LAYOUT="MANUAL1D_LOOP"
   INNER_LAYOUT="TVR_INNER_LOOP"
   ENABLE_OPENMP="ON"
@@ -163,7 +164,6 @@ elif [[ "$ARGS" == *"hip"* ]]; then
 elif [[ "$ARGS" == *"cuda"* ]]; then
   export CC="$C_NATIVE"
   export CXX="$SCRIPT_DIR/bin/nvcc_wrapper"
-  export NVCC_WRAPPER_DEFAULT_COMPILER="$CXX_NATIVE"
   if [[ "$ARGS" == *"dryrun"* ]]; then
     export CXXFLAGS="-dryrun $CXXFLAGS"
     echo "Dry-running with $CXXFLAGS"
