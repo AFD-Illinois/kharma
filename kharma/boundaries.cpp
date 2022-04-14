@@ -351,33 +351,29 @@ void KBoundaries::SyncAllBounds(Mesh *pmesh, bool sync_prims, bool sync_phys)
 
     if (sync_prims) {
         // If we're syncing the primitive vars, we just sync
-        for (auto &pmb : pmesh->block_list) {
-            auto& rc = pmb->meshblock_data.Get();
-            Flag("Block sync send");
-            rc->ClearBoundary(BoundaryCommSubset::all);
-            rc->StartReceiving(BoundaryCommSubset::all);
-        }
-
-        // TODO assumes one partition
+        // TODO assumes one "partition" i.e. MeshBlock/rank
         auto& md = pmesh->mesh_data.GetOrAdd("base", 0);
+        md->ClearBoundary(BoundaryCommSubset::all);
+        md->StartReceiving(BoundaryCommSubset::all);
         // Send everything
         cell_centered_bvars::SendBoundaryBuffers(md);
         // Wait on receive
         cell_centered_bvars::ReceiveBoundaryBuffers(md);
         // Set boundaries from buffers
         cell_centered_bvars::SetBoundaries(md);
+        md->ClearBoundary(BoundaryCommSubset::all);
 
+        // Then PtoU
         for (auto &pmb : pmesh->block_list) {
             auto& rc = pmb->meshblock_data.Get();
-            Flag("Block sync receive");
-            rc->ClearBoundary(BoundaryCommSubset::all);
             // TODO if amr...
             //pmb->pbval->ProlongateBoundaries();
 
+            Flag("Block fill Conserved");
             Flux::PtoU(rc.get());
 
             if (sync_phys) {
-                Flag("Physical bounds");
+                Flag("Block physical bounds");
                 // Physical boundary conditions
                 parthenon::ApplyBoundaryConditions(rc);
             }
@@ -386,39 +382,31 @@ void KBoundaries::SyncAllBounds(Mesh *pmesh, bool sync_prims, bool sync_phys)
         // If we're syncing the conserved vars...
         // Honestly, the easiest way through this sync is:
         // 1. PtoU everywhere
-        // 2. Sync like a normal step, incl. physical bounds
-        // 3. UtoP everywhere
-        // Luckily we're amortized over the whole sim, so we can
-        // take our time.
         for (auto &pmb : pmesh->block_list) {
             auto& rc = pmb->meshblock_data.Get();
-            Flag("Block PtoU");
+            Flag("Block fill conserved");
             Flux::PtoU(rc.get(), IndexDomain::entire);
         }
 
-        for (auto &pmb : pmesh->block_list) {
-            auto& rc = pmb->meshblock_data.Get();
-            Flag("Block sync send");
-            rc->ClearBoundary(BoundaryCommSubset::all);
-            rc->StartReceiving(BoundaryCommSubset::all);
-        }
-
+        // 2. Sync like a normal step, incl. physical bounds
         auto& md = pmesh->mesh_data.GetOrAdd("base", 0);
+        md->ClearBoundary(BoundaryCommSubset::all);
+        md->StartReceiving(BoundaryCommSubset::all);
         // Send everything
         cell_centered_bvars::SendBoundaryBuffers(md);
         // Wait on receive
         cell_centered_bvars::ReceiveBoundaryBuffers(md);
         // Set boundaries from buffers
         cell_centered_bvars::SetBoundaries(md);
+        md->ClearBoundary(BoundaryCommSubset::all);
 
+        // 3. UtoP everywhere
         for (auto &pmb : pmesh->block_list) {
             auto& rc = pmb->meshblock_data.Get();
-            Flag("Block sync receive");
-            rc->ClearBoundary(BoundaryCommSubset::all);
             // TODO if amr...
             //pmb->pbval->ProlongateBoundaries();
 
-            Flag("Fill Derived");
+            Flag("Block fill Derived");
             // Fill P again, including ghost zones
             // But, sice we sync'd GRHD primitives already,
             // leave those off by calling *Domain like in a normal
@@ -426,7 +414,7 @@ void KBoundaries::SyncAllBounds(Mesh *pmesh, bool sync_prims, bool sync_phys)
             KHARMA::FillDerivedDomain(rc, IndexDomain::entire, false);
 
             if (sync_phys) {
-                Flag("Physical bounds");
+                Flag("Block physical bounds");
                 // Physical boundary conditions
                 parthenon::ApplyBoundaryConditions(rc);
             }

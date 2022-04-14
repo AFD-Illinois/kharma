@@ -354,20 +354,15 @@ void KHARMA::PostStepDiagnostics(Mesh *pmesh, ParameterInput *pin, const SimTime
 void KHARMA::FillOutput(MeshBlock *pmb, ParameterInput *pin)
 {
     Flag("Filling output");
-    // Don't fill the output arrays for the first dump, as trying to actually
-    // calculate them can produce errors when we're not in the loop yet.
-    // Instead, they just get added to the file as their starting values, i.e. 0
-    if (pmb->packages.Get("Globals")->Param<bool>("in_loop")) {
-        // TODO for package in packages with registered function...
-        if (pmb->packages.AllPackages().count("Current"))
-            Current::FillOutput(pmb, pin);
-        if (pmb->packages.AllPackages().count("B_FluxCT"))
-            B_FluxCT::FillOutput(pmb, pin);
-        if (pmb->packages.AllPackages().count("B_CD"))
-            B_CD::FillOutput(pmb, pin);
-        if (pmb->packages.AllPackages().count("Electrons"))
-            Electrons::FillOutput(pmb, pin);
-    }
+    // Rewrite this and the above as a callback registration
+    if (pmb->packages.AllPackages().count("Current"))
+        Current::FillOutput(pmb, pin);
+    if (pmb->packages.AllPackages().count("B_FluxCT"))
+        B_FluxCT::FillOutput(pmb, pin);
+    if (pmb->packages.AllPackages().count("B_CD"))
+        B_CD::FillOutput(pmb, pin);
+    if (pmb->packages.AllPackages().count("Electrons"))
+        Electrons::FillOutput(pmb, pin);
     Flag("Filled");
 }
 

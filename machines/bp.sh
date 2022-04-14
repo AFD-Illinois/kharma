@@ -1,15 +1,7 @@
 
 # BP's machines
 
-# TODO toolbox break to discover enclosing hostname
-if [[ "$HOST" == "toolbox"* ]]; then
-  HOST=ferrum
-fi
-if [[ "$HOST" == "e4s"* ]]; then
-  HOST=fermium
-fi
-
-if [[ $HOST == "fermium" ]]; then
+if [[ $METAL_HOSTNAME == "fermium" ]]; then
   HOST_ARCH="AMDAVX"
   DEVICE_ARCH="TURING75"
   KOKKOS_NUM_DEVICES=1
@@ -21,14 +13,10 @@ if [[ $HOST == "fermium" ]]; then
     PREFIX_PATH="$HOME/libs/hdf5-nvhpc"
     MPI_EXE=mpirun
 
-    if [[ "$ARGS" == *"cgcc"* ]]; then
-      C_NATIVE=cuda-gcc
-      CXX_NATIVE=cuda-g++
-    elif [[ "$ARGS" == *"gcc"* ]]; then
+    if [[ "$ARGS" == *"gcc"* ]]; then
       C_NATIVE=gcc
       CXX_NATIVE=g++
     else
-      # For NVC++ once that works again
       C_NATIVE=nvc
       CXX_NATIVE=nvc++
       export CFLAGS="-mp"
@@ -55,12 +43,9 @@ if [[ $HOST == "fermium" ]]; then
       CXX_NATIVE=clang++
     fi
   fi
-
-  # My CUDA installs are a bit odd
-  #EXTRA_FLAGS="-DKokkos_ENABLE_LIBDL=OFF $EXTRA_FLAGS"
 fi
 
-if [[ $HOST == "ferrum" ]]; then
+if [[ $METAL_HOSTNAME == "ferrum" ]]; then
   if [[ "$ARGS" == *"gcc"* ]]; then
     module load mpi/mpich-x86_64
     C_NATIVE="gcc"
@@ -81,13 +66,14 @@ if [[ $HOST == "ferrum" ]]; then
 fi
 
 if [[ $HOST == "cinnabar"* ]]; then
-  module purge # Handle modules inside this script
   # All my MPI stacks can use this as the call
   MPI_EXE=mpirun
 
+  module purge # Handle modules inside this script
+  HOST_ARCH="HSW" # This won't change
+
   if [[ "$ARGS" == *"cuda"* ]]; then
     # Use NVHPC libraries (GPU-aware OpenMPI!)
-    HOST_ARCH="HSW"
     DEVICE_ARCH="KEPLER35"
     MPI_NUM_PROCS=2
     KOKKOS_NUM_DEVICES=2
@@ -103,6 +89,8 @@ if [[ $HOST == "cinnabar"* ]]; then
       module load mpi/mpich-x86_64 nvhpc-nompi
       C_NATIVE="gcc"
       CXX_NATIVE="g++"
+      # Uses system GCC, which is old
+      EXTRA_FLAGS="-DPARTHENON_DISABLE_HDF5_COMPRESSION=ON $EXTRA_FLAGS"
     else
       module load nvhpc
       PREFIX_PATH="$HOME/libs/hdf5-nvhpc"
@@ -111,13 +99,14 @@ if [[ $HOST == "cinnabar"* ]]; then
       export CXXFLAGS="-mp"
     fi
   else
-    HOST_ARCH="HSW"
     MPI_NUM_PROCS=1
     if [[ "$ARGS" == *"gcc"* ]]; then
       # GCC
       module load mpi/mpich-x86_64
       C_NATIVE="gcc"
       CXX_NATIVE="g++"
+      # Uses system GCC, which is old
+      EXTRA_FLAGS="-DPARTHENON_DISABLE_HDF5_COMPRESSION=ON $EXTRA_FLAGS"
     else
       # Intel by default
       module load compiler mpi

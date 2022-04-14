@@ -119,13 +119,22 @@ void Current::FillOutput(MeshBlock *pmb, ParameterInput *pin)
 {
     Flag("Adding current");
 
+    // The "preserve" container will only exist after we've taken a step,
+    // catch that situation
     auto& rc1 = pmb->meshblock_data.Get();
-    auto& rc0 = pmb->meshblock_data.Get("preserve");
-    // Get the duration of the last timestep from the "Globals" package
-    // (see kharma.cpp)
-    Real dt_last = pmb->packages.Get("Globals")->Param<Real>("dt_last");
+    try {
+        // Get the state at beginning of the step
+        auto& rc0 = pmb->meshblock_data.Get("preserve");
 
-    Current::CalculateCurrent(rc0.get(), rc1.get(), dt_last);
+        // Get the duration of the last timestep from the "Globals" package
+        // (see kharma.cpp)
+        Real dt_last = pmb->packages.Get("Globals")->Param<Real>("dt_last");
+
+        Current::CalculateCurrent(rc0.get(), rc1.get(), dt_last);
+    } catch (const std::runtime_error& e) {
+        // We expect this to happen the first step
+        // We just don't need to fill jcon the first time around
+    }
 
     Flag("Added");
 }
