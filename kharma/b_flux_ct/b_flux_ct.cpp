@@ -366,8 +366,8 @@ double MaxDivB(MeshData<Real> *md)
         // bordering other meshblocks.
         const int is = IsDomainBound(pmb, BoundaryFace::inner_x1) ? ib.s + 1 : ib.s;
         const int ie = IsDomainBound(pmb, BoundaryFace::outer_x1) ? ib.e : ib.e + 1;
-        const int js = IsDomainBound(pmb, BoundaryFace::inner_x2) ? jb.s + 1 : jb.s;
-        const int je = IsDomainBound(pmb, BoundaryFace::outer_x2) ? jb.e : jb.e + 1;
+        const int js = (IsDomainBound(pmb, BoundaryFace::inner_x2) && ndim > 1) ? jb.s + 1 : jb.s;
+        const int je = (IsDomainBound(pmb, BoundaryFace::outer_x2) || ndim <=1) ? jb.e : jb.e + 1;
         const int ks = (IsDomainBound(pmb, BoundaryFace::inner_x3) && ndim > 2) ? kb.s + 1 : kb.s;
         const int ke = (IsDomainBound(pmb, BoundaryFace::outer_x3) || ndim <= 2) ? kb.e : kb.e + 1;
 
@@ -376,7 +376,7 @@ double MaxDivB(MeshData<Real> *md)
         pmb->par_reduce("divB_max", ks, ke, js, je, is, ie,
             KOKKOS_LAMBDA_3D_REDUCE {
                 const auto& G = B_U.GetCoords(b);
-                const double local_divb = fabs(corner_div(G, B_U, b, k, j, i, ndim > 2));
+                const double local_divb = fabs(corner_div(G, B_U, b, k, j, i, ndim > 2, ndim > 1));
                 if (local_divb > local_result) local_result = local_divb;
             }
         , max_reducer);
@@ -429,15 +429,15 @@ void FillOutput(MeshBlock *pmb, ParameterInput *pin)
     const IndexRange kb = rc->GetBoundsK(IndexDomain::interior);
     const int is = IsDomainBound(pmb, BoundaryFace::inner_x1) ? ib.s + 1 : ib.s;
     const int ie = IsDomainBound(pmb, BoundaryFace::outer_x1) ? ib.e : ib.e + 1;
-    const int js = IsDomainBound(pmb, BoundaryFace::inner_x2) ? jb.s + 1 : jb.s;
-    const int je = IsDomainBound(pmb, BoundaryFace::outer_x2) ? jb.e : jb.e + 1;
+    const int js = (IsDomainBound(pmb, BoundaryFace::inner_x2) && ndim > 1) ? jb.s + 1 : jb.s;
+    const int je = (IsDomainBound(pmb, BoundaryFace::outer_x2) || ndim <=1) ? jb.e : jb.e + 1;
     const int ks = (IsDomainBound(pmb, BoundaryFace::inner_x3) && ndim > 2) ? kb.s + 1 : kb.s;
     const int ke = (IsDomainBound(pmb, BoundaryFace::outer_x3) || ndim <= 2) ? kb.e : kb.e + 1;
 
     pmb->par_for("divB_output", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D {
             const auto& G = B_U.GetCoords();
-            divB(0, k, j, i) = corner_div(G, B_U, 0, k, j, i, ndim > 2);
+            divB(0, k, j, i) = corner_div(G, B_U, 0, k, j, i, ndim > 2, ndim > 1);
         }
     );
 

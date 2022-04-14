@@ -194,14 +194,17 @@ TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
 
             // Compute gradient of ucov and Theta
             Real grad_ucov[GR_DIM][GR_DIM], grad_Theta[GR_DIM];
-            EMHD::gradient_calc(G, P(b), ucov_s, theta_s, b, k, j, i, (ndim > 2), grad_ucov, grad_Theta);
+            EMHD::gradient_calc(G, P(b), ucov_s, theta_s, b, k, j, i, (ndim > 2), (ndim > 1), grad_ucov, grad_Theta);
 
             // Compute div of ucon (all terms but the time-derivative ones are nonzero)
             Real div_ucon = 0;
             DLOOP2 div_ucon += G.gcon(Loci::center, j, i, mu, nu) * grad_ucov[mu][nu];
 
             // Compute+add explicit source terms (conduction and viscosity)
-            const Real& rho = P(b)(m_p.RHO, k, j, i);
+            const Real& rho     = P(b)(m_p.RHO, k, j, i);
+            const Real& qtilde  = P(b)(m_p.Q, k, j, i);
+            const Real& dPtilde = P(b)(m_p.DP, k, j, i);
+
             Real q0 = 0;
             DLOOP1 q0 -= rho * chi_e * (D.bcon[mu] / sqrt(bsq)) * grad_Theta[mu];
             DLOOP2 q0 -= rho * chi_e * (D.bcon[mu] / sqrt(bsq)) * theta_s(b, k, j, i) * D.ucon[nu] * grad_ucov[nu][mu];
@@ -217,8 +220,8 @@ TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
             dUdt(b, m_u.DP, k, j, i) += G.gdet(Loci::center, j, i) * dP0_tilde / tau;
 
             if (emhd_params.higher_order_terms) {
-                dUdt(b, m_u.Q, k, j, i) += G.gdet(Loci::center, j, i) * (q0_tilde / 2.) * div_ucon;
-                dUdt(b, m_u.DP, k, j, i) += G.gdet(Loci::center, j, i) * (q0_tilde / 2.) * div_ucon;
+                dUdt(b, m_u.Q, k, j, i)  += G.gdet(Loci::center, j, i) * (qtilde / 2.) * div_ucon;
+                dUdt(b, m_u.DP, k, j, i) += G.gdet(Loci::center, j, i) * (dPtilde / 2.) * div_ucon;
             }
         }
     );

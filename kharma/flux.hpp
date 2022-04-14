@@ -80,6 +80,7 @@ KOKKOS_INLINE_FUNCTION Real llf(const Real& fluxL, const Real& fluxR, const Real
                                 const Real& cmin, const Real& Ul, const Real& Ur)
 {
     Real ctop = max(cmax, cmin);
+    ctop = 1.;
     return 0.5 * (fluxL + fluxR - ctop * (Ur - Ul));
 }
 // Harten, Lax, van Leer, & Einfeldt flux (early problems but not extensively studied since)

@@ -55,7 +55,7 @@ implicit = true
 initial_cleanup = false
 
 <emhdmodes>
-amp = 1e-4
+amp = 1e-8
 
 <floors>
 disable_floors = true

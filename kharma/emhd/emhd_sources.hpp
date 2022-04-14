@@ -99,8 +99,11 @@ KOKKOS_INLINE_FUNCTION void time_derivative_sources(const GRCoordinates& G, cons
     const Real dt_Theta = (Theta_new - Theta_old) / dt;
 
     // TEMPORAL SOURCE TERMS
-    const Real& rho = P(m_p.RHO);
-    const Real& Theta = (gam-1) * P(m_p.UU) / P(m_p.RHO);
+    const Real& rho     = P(m_p.RHO);
+    const Real& qtilde  = P(m_p.Q);
+    const Real& dPtilde = P(m_p.DP);
+    const Real& Theta   = (gam-1) * P(m_p.UU) / P(m_p.RHO);
+
     Real q0 = -rho * chi_e * (Dtmp.bcon[0] / sqrt(bsq)) * dt_Theta;
     DLOOP1 q0 -= rho * chi_e * (Dtmp.bcon[mu] / sqrt(bsq)) * Theta * Dtmp.ucon[0] * dt_ucov[mu];
 
@@ -115,8 +118,8 @@ KOKKOS_INLINE_FUNCTION void time_derivative_sources(const GRCoordinates& G, cons
     dUdP = G.gdet(Loci::center, j, i) * (dP0_tilde / tau);
 
     if (emhd_params.higher_order_terms) {
-        dUq  += G.gdet(Loci::center, j, i) * (q0_tilde / 2.) * div_ucon;
-        dUdP += G.gdet(Loci::center, j, i) * (dP0_tilde / 2.) * div_ucon;
+        dUq  += G.gdet(Loci::center, j, i) * (qtilde / 2.) * div_ucon;
+        dUdP += G.gdet(Loci::center, j, i) * (dPtilde / 2.) * div_ucon;
     }
 }
 

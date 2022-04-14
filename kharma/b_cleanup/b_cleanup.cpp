@@ -298,7 +298,7 @@ TaskStatus CalcSumDivB(MeshData<Real> *md, Real& reduce_sum)
     pmb0->par_reduce("SumDivB", 0, B.GetDim(5) - 1, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_MESH_3D_REDUCE {
             const auto& G = B.GetCoords(b);
-            divB(b, 0, k, j, i) = B_FluxCT::corner_div(G, B, b, k, j, i, ndim > 2);
+            divB(b, 0, k, j, i) = B_FluxCT::corner_div(G, B, b, k, j, i, ndim > 2, ndim > 1);
             local_result += abs(divB(b, 0, k, j, i));
         }
     , Kokkos::Sum<Real>(divB_total));
@@ -384,7 +384,7 @@ TaskStatus UpdateP(MeshData<Real> *md)
             // This is the inverse diagonal element of a fictional a_ij Laplacian operator
             // denoted D^-1 below. Note it's not quite what a_ij might work out to for our "laplacian"
             const double dt = (ndim > 2) ? (-1./6) * G.dx1v(i) * G.dx2v(j) * G.dx3v(k) : (-1./4) * G.dx1v(i) * G.dx2v(j);
-            lap(b, 0, k, j, i) = B_FluxCT::corner_div(G, dB, b, k, j, i, ndim > 2);
+            lap(b, 0, k, j, i) = B_FluxCT::corner_div(G, dB, b, k, j, i, ndim > 2, ndim > 1);
             // In matrix notation the following would be:
             // x^k+1 = omega*D^-1*(b - (L + U) x^k) + (1-omega)*x^k
             // But since we can't actually calculate L+U, we use A*x-D*x

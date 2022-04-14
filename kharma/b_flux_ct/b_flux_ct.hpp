@@ -129,15 +129,20 @@ void FillOutput(MeshBlock *pmb, ParameterInput *pin);
  */
 template<typename Global>
 KOKKOS_INLINE_FUNCTION double corner_div(const GRCoordinates& G, const Global& B_U, const int& b,
-                                         const int& k, const int& j, const int& i, const bool& do_3D)
+                                         const int& k, const int& j, const int& i, const bool& do_3D, const bool& do_2D)
 {
-    const double norm = (do_3D) ? 0.25 : 0.5;
-    // 2D divergence, averaging to corners
-    double term1 = B_U(b, V1, k, j, i)   + B_U(b, V1, k, j-1, i)
-                    - B_U(b, V1, k, j, i-1) - B_U(b, V1, k, j-1, i-1);
-    double term2 = B_U(b, V2, k, j, i)   + B_U(b, V2, k, j, i-1)
-                    - B_U(b, V2, k, j-1, i) - B_U(b, V2, k, j-1, i-1);
+    const double norm = (do_2D) ? ((do_3D) ? 0.25 : 0.5) : 1.;
+    // 1D divergence
+    double term1 = B_U(b, V1, k, j, i) - B_U(b, V1, k, j, i-1);
+    double term2 = 0.;
     double term3 = 0.;
+    if (do_2D) {
+        // 2D divergence, averaging to corners
+        term1 +=   B_U(b, V1, k, j-1, i) - B_U(b, V1, k, j-1, i-1);
+        term2 +=   B_U(b, V2, k, j, i)   + B_U(b, V2, k, j, i-1)
+                        - B_U(b, V2, k, j-1, i) - B_U(b, V2, k, j-1, i-1);
+        term3 += 0.;
+    }
     if (do_3D) {
         // Average to corners in 3D, add 3rd flux
         term1 +=  B_U(b, V1, k-1, j, i)   + B_U(b, V1, k-1, j-1, i)

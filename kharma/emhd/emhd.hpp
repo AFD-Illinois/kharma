@@ -181,7 +181,7 @@ KOKKOS_INLINE_FUNCTION void convert_prims_to_q_dP(const Real& q_tilde, const Rea
 
     if (emhd_params.higher_order_terms) {
         q  *= sqrt(chi_e * rho * pow(Theta, 2) /tau);
-        dP *= sqrt(chi_e * rho * Theta /tau);
+        dP *= sqrt(nu_e * rho * Theta /tau);
     }
 }
 
@@ -199,7 +199,7 @@ KOKKOS_INLINE_FUNCTION void convert_q_dP_to_prims(const Real& q, const Real& dP,
 
     if (emhd_params.higher_order_terms) {
         q_tilde  *= sqrt(tau / (chi_e * rho * pow(Theta, 2)) );
-        dP_tilde *= sqrt(tau / (nu_e * rho * Theta /tau) );
+        dP_tilde *= sqrt(tau / (nu_e * rho * Theta) );
     }
 }
 

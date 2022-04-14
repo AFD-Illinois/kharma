@@ -44,9 +44,7 @@
 #include "types.hpp"
 
 // Problem initialization headers
-#include "anisotropic_conduction.hpp"
 #include "bondi.hpp"
-#include "emhdmodes.hpp"
 #include "explosion.hpp"
 #include "fm_torus.hpp"
 #include "resize_restart.hpp"
@@ -56,6 +54,10 @@
 #include "orszag_tang.hpp"
 #include "shock_tube.hpp"
 #include "noh.hpp"
+
+#include "emhd/anisotropic_conduction.hpp"
+#include "emhd/emhdmodes.hpp"
+#include "emhd/emhdshock.hpp"
 
 #include "b_field_tools.hpp"
 
@@ -101,6 +103,8 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
         status = InitializeEMHDModes(rc.get(), pin);
     } else if (prob == "anisotropic_conduction") {
         status = InitializeAnisotropicConduction(rc.get(), pin);
+    } else if (prob == "emhdshock") {
+        status = InitializeEMHDShock(rc.get(), pin);
     // Everything
     } else if (prob == "torus") {
         status = InitializeFMTorus(rc.get(), pin);
