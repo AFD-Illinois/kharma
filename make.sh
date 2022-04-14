@@ -119,19 +119,15 @@ SCRIPT_DIR=$( dirname "$0" )
 cd $SCRIPT_DIR
 SCRIPT_DIR=$PWD
 
-# Strongly prefer icc for OpenMP compiles
-# I would try clang but it would break all Macs
+# Try to load icc > default/Cray CC > IBM XLC > GCC
+# Generally best to set CXX_NATIVE if you want a particular one
 if [[ -z "$CXX_NATIVE" ]]; then
   if which icpc >/dev/null 2>&1; then
     CXX_NATIVE=icpc
     C_NATIVE=icc
-    # Avoid warning on nvcc pragmas Intel doesn't like
-    export CXXFLAGS="-Wno-unknown-pragmas $CXXFLAGS"
-    #export CFLAGS="-qopenmp"
   elif which CC >/dev/null 2>&1; then
     CXX_NATIVE=CC
     C_NATIVE=cc
-    #export CXXFLAGS="-Wno-unknown-pragmas" # TODO if Cray->Intel in --version
   elif which xlC >/dev/null 2>&1; then
     CXX_NATIVE=xlC
     C_NATIVE=xlc
@@ -173,7 +169,7 @@ elif [[ "$ARGS" == *"cuda"* ]]; then
     echo "Dry-running with $CXXFLAGS"
   fi
   export NVCC_WRAPPER_DEFAULT_COMPILER="$CXX_NATIVE"
-  # I've occasionally needed this. CUDA version thing?
+  # Generally Kokkos sets this, so we don't need to
   #export CXXFLAGS="--expt-relaxed-constexpr $CXXFLAGS"
   OUTER_LAYOUT="MANUAL1D_LOOP"
   INNER_LAYOUT="TVR_INNER_LOOP"
@@ -206,6 +202,13 @@ if [[ -v LINKER ]]; then
   LINKER="$LINKER"
 else
   LINKER="$CXX"
+fi
+
+# Avoid warning on nvcc pragmas Intel doesn't like
+# TODO also add this if we're using Cray cc -> icc
+# TODO is this necessary for icpx?
+if [[ $CXX == "icpc" ]]; then
+  export CXXFLAGS="-Wno-unknown-pragmas $CXXFLAGS"
 fi
 
 # Make build dir. Recall "clean" means "clean and build"
