@@ -1,12 +1,8 @@
 #!/usr/bin/env python3
 
-################################################################################
-#                                                                              #
-#  PLOT DIFFERENCES IN TWO FILES                                               #
-#                                                                              #
-################################################################################
-
-from __future__ import print_function, division
+"""
+Plot the differences between two GRMHD output files.
+"""
 
 import pyharm
 from pyharm import parameters
