@@ -358,7 +358,8 @@ void KBoundaries::SyncAllBounds(Mesh *pmesh, bool sync_prims, bool sync_phys)
             rc->StartReceiving(BoundaryCommSubset::all);
         }
 
-        auto& md = pmesh->mesh_data.Get();
+        // TODO assumes one partition
+        auto& md = pmesh->mesh_data.GetOrAdd("base", 0);
         // Send everything
         cell_centered_bvars::SendBoundaryBuffers(md);
         // Wait on receive
@@ -402,7 +403,7 @@ void KBoundaries::SyncAllBounds(Mesh *pmesh, bool sync_prims, bool sync_phys)
             rc->StartReceiving(BoundaryCommSubset::all);
         }
 
-        auto& md = pmesh->mesh_data.Get();
+        auto& md = pmesh->mesh_data.GetOrAdd("base", 0);
         // Send everything
         cell_centered_bvars::SendBoundaryBuffers(md);
         // Wait on receive
