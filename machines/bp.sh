@@ -1,6 +1,10 @@
 
 # BP's machines
 
+if [[ $HOST == "toolbox"* ]]; then
+  METAL_HOSTNAME=$(cat ~/.config/hostname)
+fi
+
 if [[ $METAL_HOSTNAME == "fermium" ]]; then
   HOST_ARCH="AMDAVX"
   DEVICE_ARCH="TURING75"
