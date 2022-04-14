@@ -4,6 +4,7 @@ out-*.txt
 convergence.txt
 *.h5
 *.png
+*.mp4
 core.*
 frames_*/
 
