@@ -96,15 +96,15 @@ KOKKOS_INLINE_FUNCTION void check_inflow(const GRCoordinates &G, const VariableP
         // Reset radial velocity so radial 4-velocity is zero
         Real alpha = 1. / sqrt(-G.gcon(Loci::center, j, i, 0, 0));
         Real beta1 = G.gcon(Loci::center, j, i, 0, 1) * alpha * alpha;
-        uvec[0] = beta1 / alpha;
+        uvec[V1] = beta1 / alpha;
 
         // Now find new gamma and put it back in
-        Real vsq = G.gcov(Loci::center, j, i, 1, 1) * uvec[0] * uvec[0] +
-                   G.gcov(Loci::center, j, i, 2, 2) * uvec[1] * uvec[1] +
-                   G.gcov(Loci::center, j, i, 3, 3) * uvec[2] * uvec[2] +
-        2. * (G.gcov(Loci::center, j, i, 1, 2) * uvec[0] * uvec[1] +
-              G.gcov(Loci::center, j, i, 1, 3) * uvec[0] * uvec[2] +
-              G.gcov(Loci::center, j, i, 2, 3) * uvec[1] * uvec[2]);
+        Real vsq = G.gcov(Loci::center, j, i, 1, 1) * uvec[V1] * uvec[V1] +
+                   G.gcov(Loci::center, j, i, 2, 2) * uvec[V2] * uvec[V2] +
+                   G.gcov(Loci::center, j, i, 3, 3) * uvec[V3] * uvec[V3] +
+        2. * (G.gcov(Loci::center, j, i, 1, 2) * uvec[V1] * uvec[V2] +
+              G.gcov(Loci::center, j, i, 1, 3) * uvec[V1] * uvec[V3] +
+              G.gcov(Loci::center, j, i, 2, 3) * uvec[V2] * uvec[V3]);
 
         clip(vsq, 1.e-13, 1. - 1./(50.*50.));
 

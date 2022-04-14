@@ -47,7 +47,7 @@ using namespace parthenon;
 using namespace std;
 using namespace Kokkos;
 
-// Accuracy for numerical derivatives of the metric
+// Stepsize for numerical derivatives of the metric
 #define DELTA 1.e-8
 
 // Points to average (one side of a square, odd) when calculating the connections,

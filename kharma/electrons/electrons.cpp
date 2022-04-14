@@ -116,7 +116,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     // TO ADD A MODEL:
     // 1. Define fields here
     // 2. Define names in types.hpp
-    // 3. Add clauses in p_to_u and prim_to_flux in electrons.hpp
+    // 3. Add clauses in p_to_u in electrons.hpp and prim_to_flux in flux_functions.hpp
     // 4. Add heating model in ApplyElectronHeating, below
     if (do_constant) {
         nKs += 1;
