@@ -43,19 +43,55 @@
 using namespace Kokkos;
 
 // TODO have nice ways to print vectors, areas, geometry, etc for debugging new modules
-// TODO device-side total flag counts, for logging numbers even when not printing
 
-void PrintCorner(MeshBlockData<Real> *rc, std::string name)
+/**
+ * Counts occurrences of a particular floor bitflag
+ */
+int CountFFlag(MeshData<Real> *md, const int& flag_val)
 {
-    auto var = rc->Get("prims.uvec").data.GetHostMirrorAndCopy();
-    cerr << name;
-    for (int j=0; j<8; j++) {
-        cout << endl;
-        for (int i=0; i<8; i++) {
-            fprintf(stderr, "%.2g ", var(1, 0, j, i));
+    auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
+    // Pack variables
+    auto& fflag = md->PackVariables(std::vector<std::string>{"fflag"});
+
+    // Get sizes
+    IndexRange ib = md->GetBoundsI(IndexDomain::interior);
+    IndexRange jb = md->GetBoundsJ(IndexDomain::interior);
+    IndexRange kb = md->GetBoundsK(IndexDomain::interior);
+    IndexRange block = IndexRange{0, fflag.GetDim(5) - 1};
+
+    int n_flag;
+    Kokkos::Sum<int> flag_ct(n_flag);
+    pmb0->par_reduce("count_fflag", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+        KOKKOS_LAMBDA_MESH_3D_REDUCE_INT {
+            if (((int) fflag(b, 0, k, j, i)) & flag_val) ++local_result;
         }
-    }
-    cerr << endl;
+    , flag_ct);
+    return n_flag;
+}
+
+/**
+ * Counts occurrences of a particular inversion failure mode
+ */
+int CountPFlag(MeshData<Real> *md, const int& flag_val)
+{
+    auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
+    // Pack variables
+    auto& pflag = md->PackVariables(std::vector<std::string>{"pflag"});
+
+    // Get sizes
+    IndexRange ib = md->GetBoundsI(IndexDomain::interior);
+    IndexRange jb = md->GetBoundsJ(IndexDomain::interior);
+    IndexRange kb = md->GetBoundsK(IndexDomain::interior);
+    IndexRange block = IndexRange{0, pflag.GetDim(5) - 1};
+
+    int n_flag;
+    Kokkos::Sum<int> flag_ct(n_flag);
+    pmb0->par_reduce("count_pflag", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+        KOKKOS_LAMBDA_MESH_3D_REDUCE_INT {
+            if (((int) pflag(b, 0, k, j, i)) == flag_val) ++local_result;
+        }
+    , flag_ct);
+    return n_flag;
 }
 
 TaskStatus CheckNaN(MeshData<Real> *md, int dir, IndexDomain domain)
@@ -160,56 +196,40 @@ TaskStatus CheckNegative(MeshData<Real> *md, IndexDomain domain)
 
 int CountPFlags(MeshData<Real> *md, IndexDomain domain, int verbose)
 {
-    int n_cells = 0, n_tot = 0, n_neg_in = 0, n_max_iter = 0;
-    int n_utsq = 0, n_gamma = 0, n_neg_u = 0, n_neg_rho = 0, n_neg_both = 0;
-    auto pmesh = md->GetMeshPointer();
+    Flag("Counting inversion failures");
+    int n_tot = 0;
+    auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
 
-    int block = 0;
-    for (auto &pmb : pmesh->block_list) {
-        int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
-        int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
-        int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
-        auto& rc = pmb->meshblock_data.Get();
-        auto pflag = rc->Get("pflag").data.GetHostMirrorAndCopy();
+    // Pack variables
+    auto& pflag = md->PackVariables(std::vector<std::string>{"pflag"});
 
-    // OpenMP causes problems when used separately from Kokkos
-    // TODO make this a kokkos reduction to a View
-//#pragma omp parallel for simd collapse(3) reduction(+:n_cells,n_tot,n_neg_in,n_max_iter,n_utsq,n_gamma,n_neg_u,n_neg_rho,n_neg_both)
-        for(int k=ks; k <= ke; ++k)
-            for(int j=js; j <= je; ++j)
-                for(int i=is; i <= ie; ++i)
-        {
-            ++n_cells;
-            int flag = (int) pflag(k, j, i);
-            if (flag > InversionStatus::success) ++n_tot; // Corner regions use negative flags.  They aren't "failures"
-            if (flag == InversionStatus::neg_input) ++n_neg_in;
-            if (flag == InversionStatus::max_iter) ++n_max_iter;
-            if (flag == InversionStatus::bad_ut) ++n_utsq;
-            if (flag == InversionStatus::bad_gamma) ++n_gamma;
-            if (flag == InversionStatus::neg_rho) ++n_neg_rho;
-            if (flag == InversionStatus::neg_u) ++n_neg_u;
-            if (flag == InversionStatus::neg_rhou) ++n_neg_both;
+    // Get sizes
+    IndexRange ib = md->GetBoundsI(IndexDomain::interior);
+    IndexRange jb = md->GetBoundsJ(IndexDomain::interior);
+    IndexRange kb = md->GetBoundsK(IndexDomain::interior);
+    IndexRange block = IndexRange{0, pflag.GetDim(5) - 1};
 
-            // TODO MPI Rank
-            if (flag > InversionStatus::success && verbose >= 3) {
-                printf("Bad inversion (%d) at block %d zone %d %d %d\n", flag, block, i, j, k);
-                //compare_P_U(pmb->meshblock_data.Get().get(), k, j, i);
-            }
+    // Count all nonzero values
+    Kokkos::Sum<int> tot(n_tot);
+    pmb0->par_reduce("count_all_pflags", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+        KOKKOS_LAMBDA_MESH_3D_REDUCE_INT {
+            if ((int) pflag(b, 0, k, j, i) > InversionStatus::success) ++local_result;
         }
-
-        ++block;
-    }
-
+    , tot);
     n_tot = MPISum(n_tot);
+
+    // If necessary, count each flag
+    // This is slow, but it can be slow: it's not called for normal operation
     if (verbose > 0 && n_tot > 0) {
-        n_cells = MPISum(n_cells);
-        n_neg_in = MPISum(n_neg_in);
-        n_max_iter = MPISum(n_max_iter);
-        n_utsq = MPISum(n_utsq);
-        n_gamma = MPISum(n_gamma);
-        n_neg_rho = MPISum(n_neg_rho);
-        n_neg_u = MPISum(n_neg_u);
-        n_neg_both = MPISum(n_neg_both);
+        // These could be reductions just to rank 0 for speed
+        const int n_cells = MPISum((block.e - block.s + 1) * (kb.e - kb.s + 1) * (jb.e - jb.s + 1) * (ib.e - ib.s + 1));
+        const int n_neg_in = MPISum(CountPFlag(md, InversionStatus::neg_input));
+        const int n_max_iter = MPISum(CountPFlag(md, InversionStatus::max_iter));
+        const int n_utsq = MPISum(CountPFlag(md, InversionStatus::bad_ut));
+        const int n_gamma = MPISum(CountPFlag(md, InversionStatus::bad_gamma));
+        const int n_neg_rho = MPISum(CountPFlag(md, InversionStatus::neg_rho));
+        const int n_neg_u = MPISum(CountPFlag(md, InversionStatus::neg_u));
+        const int n_neg_both = MPISum(CountPFlag(md, InversionStatus::neg_rhou));
 
         if (MPIRank0()) {
             cout << "PFLAGS: " << n_tot << " (" << ((double) n_tot )/n_cells * 100 << "% of all cells)" << endl;
@@ -224,51 +244,53 @@ int CountPFlags(MeshData<Real> *md, IndexDomain domain, int verbose)
                 cout << endl;
             }
         }
+
+        // TODO Reintroduce particular zone printing, e.g. 
+        // if (flag > InversionStatus::success && verbose >= 3) {
+        //     printf("Bad inversion (%d) at block %d zone %d %d %d\n", flag, block, i, j, k);
+        //     //compare_P_U(pmb->meshblock_data.Get().get(), k, j, i);
+        // }
+
     }
+
+    Flag("Counted");
     return n_tot;
 }
 
 int CountFFlags(MeshData<Real> *md, IndexDomain domain, int verbose)
 {
-    int n_cells = 0, n_tot = 0, n_geom_rho = 0, n_geom_u = 0, n_b_rho = 0, n_b_u = 0, n_temp = 0, n_gamma = 0, n_ktot = 0;
-    auto pmesh = md->GetMeshPointer();
+    Flag("Couting floor hits");
+    int n_tot = 0;
+    auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
 
-    for (auto &pmb : pmesh->block_list) {
-        int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
-        int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
-        int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
-        auto& rc = pmb->meshblock_data.Get();
-        auto fflag = rc->Get("fflag").data.GetHostMirrorAndCopy();
+    // Pack variables
+    auto& fflag = md->PackVariables(std::vector<std::string>{"fflag"});
 
-    // See above re: Openmp. TODO Kokkosify
-//#pragma omp parallel for simd collapse(3) reduction(+:n_cells,n_tot,n_geom_rho,n_geom_u,n_b_rho,n_b_u,n_temp,n_gamma,n_ktot)
-        for(int k=ks; k <= ke; ++k)
-            for(int j=js; j <= je; ++j)
-                for(int i=is; i <= ie; ++i)
-        {
-            ++n_cells;
-            int flag = (int) fflag(k, j, i);
-            if (flag != 0) ++n_tot;
-            if (flag & HIT_FLOOR_GEOM_RHO) ++n_geom_rho;
-            if (flag & HIT_FLOOR_GEOM_U) ++n_geom_u;
-            if (flag & HIT_FLOOR_B_RHO) ++n_b_rho;
-            if (flag & HIT_FLOOR_B_U) ++n_b_u;
-            if (flag & HIT_FLOOR_TEMP) ++n_temp;
-            if (flag & HIT_FLOOR_GAMMA) ++n_gamma;
-            if (flag & HIT_FLOOR_KTOT) ++n_ktot;
+    // Get sizes
+    IndexRange ib = md->GetBoundsI(IndexDomain::interior);
+    IndexRange jb = md->GetBoundsJ(IndexDomain::interior);
+    IndexRange kb = md->GetBoundsK(IndexDomain::interior);
+    IndexRange block = IndexRange{0, fflag.GetDim(5) - 1};
+
+    // Count all nonzero values
+    Kokkos::Sum<int> tot(n_tot);
+    pmb0->par_reduce("count_all_fflags", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+        KOKKOS_LAMBDA_MESH_3D_REDUCE_INT {
+            if ((int) fflag(b, 0, k, j, i) != 0) ++local_result;
         }
-    }
-
+    , tot);
     n_tot = MPISum(n_tot);
+
     if (verbose > 0 && n_tot > 0) {
-        n_cells = MPISum(n_cells);
-        n_geom_rho = MPISum(n_geom_rho);
-        n_geom_u = MPISum(n_geom_u);
-        n_b_rho = MPISum(n_b_rho);
-        n_b_u = MPISum(n_b_u);
-        n_temp = MPISum(n_temp);
-        n_gamma = MPISum(n_gamma);
-        n_ktot = MPISum(n_ktot);
+        const int n_cells = MPISum((block.e - block.s + 1) * (kb.e - kb.s + 1) * (jb.e - jb.s + 1) * (ib.e - ib.s + 1));
+
+        const int n_geom_rho = MPISum(CountFFlag(md, HIT_FLOOR_GEOM_RHO));
+        const int n_geom_u = MPISum(CountFFlag(md, HIT_FLOOR_GEOM_U));
+        const int n_b_rho = MPISum(CountFFlag(md, HIT_FLOOR_B_RHO));
+        const int n_b_u = MPISum(CountFFlag(md, HIT_FLOOR_B_U));
+        const int n_temp = MPISum(CountFFlag(md, HIT_FLOOR_TEMP));
+        const int n_gamma = MPISum(CountFFlag(md, HIT_FLOOR_GAMMA));
+        const int n_ktot = MPISum(CountFFlag(md, HIT_FLOOR_KTOT));
 
         if (MPIRank0()) {
             cout << "FLOORS: " << n_tot << " (" << (int)(((double) n_tot)/ n_cells * 100) << "% of all cells)" << endl;
@@ -284,5 +306,7 @@ int CountFFlags(MeshData<Real> *md, IndexDomain domain, int verbose)
             }
         }
     }
+
+    Flag("Counted");
     return n_tot;
 }

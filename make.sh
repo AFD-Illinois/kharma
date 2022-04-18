@@ -86,8 +86,10 @@ if [[ "$(which python3 2>/dev/null)" == *"conda"* ]]; then
   echo "Anaconda forces a serial version of HDF5 which may make this compile impossible."
   echo "If you run into trouble, deactivate your environment with 'conda deactivate'"
 fi
-# Save arguments
-echo "$ARGS" > make_args
+# Save arguments if we've changed them
+if [[ "$ARGS" == *"clean"* ]]; then
+  echo "$ARGS" > $SOURCE_DIR/make_args
+fi
 # Choose configuration
 if [[ "$ARGS" == *"debug"* ]]; then
   TYPE=Debug
