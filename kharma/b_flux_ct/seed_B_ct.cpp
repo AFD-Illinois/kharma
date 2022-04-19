@@ -68,9 +68,9 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
     switch (b_field_flag)
     {
     case BSeedType::constant:
-        b10 = pin->GetOrAddReal("b_field", "b10", 0.);
-        b20 = pin->GetOrAddReal("b_field", "b20", 0.);
-        b30 = pin->GetOrAddReal("b_field", "b30", 0.);
+        b10 = pin->GetOrAddPrecise("b_field", "b10", 0.);
+        b20 = pin->GetOrAddPrecise("b_field", "b20", 0.);
+        b30 = pin->GetOrAddPrecise("b_field", "b30", 0.);
         break;
     case BSeedType::monopole:
         b10 = pin->GetReal("b_field", "b10");

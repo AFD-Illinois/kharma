@@ -90,8 +90,8 @@ void ReadIharmRestartHeader(std::string fname, std::unique_ptr<ParameterInput>& 
     hdf5_read_single_val(&cour, "cour", H5T_IEEE_F64LE);
     hdf5_read_single_val(&t, "t", H5T_IEEE_F64LE);
 
-    pin->SetReal("GRMHD", "gamma", gam);
-    pin->SetReal("parthenon/time", "start_time", t);
+    pin->SetPrecise("GRMHD", "gamma", gam);
+    pin->SetPrecise("parthenon/time", "start_time", t);
     // TODO NSTEP, next tdump/tlog, etc?
 
     if (hdf5_exists("a")) {
@@ -99,9 +99,9 @@ void ReadIharmRestartHeader(std::string fname, std::unique_ptr<ParameterInput>& 
         hdf5_read_single_val(&a, "a", H5T_IEEE_F64LE);
         hdf5_read_single_val(&hslope, "hslope", H5T_IEEE_F64LE);
         hdf5_read_single_val(&Rout, "Rout", H5T_IEEE_F64LE);
-        pin->SetReal("coordinates", "a", a);
-        pin->SetReal("coordinates", "hslope", hslope);
-        pin->SetReal("coordinates", "r_out", Rout);
+        pin->SetPrecise("coordinates", "a", a);
+        pin->SetPrecise("coordinates", "hslope", hslope);
+        pin->SetPrecise("coordinates", "r_out", Rout);
 
         // Sadly restarts did not record MKS vs FMKS
         // Guess if not specified in parameter file
@@ -110,10 +110,10 @@ void ReadIharmRestartHeader(std::string fname, std::unique_ptr<ParameterInput>& 
             pin->SetString("coordinates", "transform", "funky");
         }
 
-        pin->SetReal("parthenon/mesh", "x2min", 0.0);
-        pin->SetReal("parthenon/mesh", "x2max", 1.0);
-        pin->SetReal("parthenon/mesh", "x3min", 0.0);
-        pin->SetReal("parthenon/mesh", "x3max", 2*M_PI);
+        pin->SetPrecise("parthenon/mesh", "x2min", 0.0);
+        pin->SetPrecise("parthenon/mesh", "x2max", 1.0);
+        pin->SetPrecise("parthenon/mesh", "x3min", 0.0);
+        pin->SetPrecise("parthenon/mesh", "x3max", 2*M_PI);
 
         // All MKS sims had the usual bcs
         pin->SetString("parthenon/mesh", "ix1_bc", "outflow");
@@ -131,12 +131,12 @@ void ReadIharmRestartHeader(std::string fname, std::unique_ptr<ParameterInput>& 
         hdf5_read_single_val(&x2max, "x2Max", H5T_IEEE_F64LE);
         hdf5_read_single_val(&x3min, "x3Min", H5T_IEEE_F64LE);
         hdf5_read_single_val(&x3max, "x3Max", H5T_IEEE_F64LE);
-        pin->SetReal("parthenon/mesh", "x1min", x1min);
-        pin->SetReal("parthenon/mesh", "x1max", x1max);
-        pin->SetReal("parthenon/mesh", "x2min", x2min);
-        pin->SetReal("parthenon/mesh", "x2max", x2max);
-        pin->SetReal("parthenon/mesh", "x3min", x3min);
-        pin->SetReal("parthenon/mesh", "x3max", x3max);
+        pin->SetPrecise("parthenon/mesh", "x1min", x1min);
+        pin->SetPrecise("parthenon/mesh", "x1max", x1max);
+        pin->SetPrecise("parthenon/mesh", "x2min", x2min);
+        pin->SetPrecise("parthenon/mesh", "x2max", x2max);
+        pin->SetPrecise("parthenon/mesh", "x3min", x3min);
+        pin->SetPrecise("parthenon/mesh", "x3max", x3max);
 
         // Sims like this were of course cartesian
         pin->SetString("coordinates", "base", "cartesian_minkowski");
@@ -275,12 +275,12 @@ TaskStatus ReadIharmRestart(MeshBlockData<Real> *rc, ParameterInput *pin)
     // Set the original simulation's end time, if we wanted that
     // Used pretty much only for MHDModes restart test
     if (use_tf) {
-        pin->SetReal("parthenon/time", "tlim", tf);
+        pin->SetPrecise("parthenon/time", "tlim", tf);
     }
     if (use_dt) {
         // Setting dt here is actually for KHARMA,
         // which returns this from EstimateTimestep in step 0
-        pin->SetReal("parthenon/time", "dt", dt);
+        pin->SetPrecise("parthenon/time", "dt", dt);
     }
 
     return TaskStatus::complete;

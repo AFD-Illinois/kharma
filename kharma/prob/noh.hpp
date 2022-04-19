@@ -79,7 +79,7 @@ TaskStatus InitializeNoh(MeshBlockData<Real> *rc, ParameterInput *pin)
     Real v1 = mach * sqrt(cs2);
 
     if (set_tlim) {
-        pin->SetReal("parthenon/time", "tlim", 0.6*(x1max - x1min)/v1);
+        pin->SetPrecise("parthenon/time", "tlim", 0.6*(x1max - x1min)/v1);
     }
 
     double gamma = 1. / sqrt(1. - v1 * v1); // Since we are in flat space

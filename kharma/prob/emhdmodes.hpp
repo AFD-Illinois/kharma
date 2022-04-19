@@ -70,8 +70,8 @@ TaskStatus InitializeEMHDModes(MeshBlockData<Real> *rc, ParameterInput *pin)
     const Real& gam = grmhd_pars.Get<Real>("gamma");
 
     // TODO actually calculate the mode?  Figure something out
-    const Real omega_real = pin->GetOrAddReal("emhdmodes", "omega_real", -0.5533585207638141);
-    const Real omega_imag = pin->GetOrAddReal("emhdmodes", "omega_imag", -3.6262571286888425);
+    const Real omega_real = pin->GetOrAddPrecise("emhdmodes", "omega_real", -0.5533585207638141);
+    const Real omega_imag = pin->GetOrAddPrecise("emhdmodes", "omega_imag", -3.6262571286888425);
 
     // START POSSIBLE ARGS: take all these as parameters in pin?
     // Also note this is 2D only for now

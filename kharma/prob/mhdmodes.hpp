@@ -267,7 +267,7 @@ TaskStatus InitializeMHDModes(MeshBlockData<Real> *rc, ParameterInput *pin)
 
     // Override end time to be exactly 1 period for moving modes, unless we set otherwise
     if (nmode != 0 && one_period) {
-        pin->SetReal("parthenon/time", "tlim", 2. * M_PI / fabs(omega.imag()));
+        pin->SetPrecise("parthenon/time", "tlim", 2. * M_PI / fabs(omega.imag()));
     }
 
     return TaskStatus::complete;
