@@ -6,11 +6,9 @@
 // Trust me it makes everything 1000x more readable
 #pragma once
 
-// TODO overloads for single
+#include <parthenon/parthenon.hpp>
 
 #ifdef MPI_PARALLEL
-
-#include <parthenon/parthenon.hpp>
 
 #include <mpi.h>
 
@@ -57,8 +55,10 @@ inline T MPIGetReduce(AllReduce<T> reduction)
     return reduction.val;
 }
 #else
-// Dummy versions of calls
+// Use Parthenon's MPI_Op workaround
+//typedef MPI_Op parthenon::MPI_Op;
 
+// Dummy versions of calls
 inline void MPIBarrier() {}
 inline bool MPIRank() { return 0; }
 inline bool MPIRank0() { return true; }
@@ -68,4 +68,19 @@ inline T MPIReduce(T f, MPI_Op O)
 {
     return f;
 }
+
+template<typename T>
+inline AllReduce<T> MPIStartReduce(T f, MPI_Op O)
+{
+    AllReduce<T> reduction;
+    reduction.val = f;
+    return reduction;
+}
+
+template<typename T>
+inline T MPIGetReduce(AllReduce<T> reduction)
+{
+    return reduction.val;
+}
+
 #endif // MPI_PARALLEL
