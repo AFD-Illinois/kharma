@@ -32,7 +32,7 @@ set(Kokkos_ENABLE_OPENMP ON CACHE BOOL "KHARMA Override")
 set(Kokkos_ENABLE_CUDA_LAMBDA ON CACHE BOOL "KHARMA Override")
 set(Kokkos_ENABLE_CUDA_CONSTEXPR ON CACHE BOOL "KHARMA Override")
 set(Kokkos_ENABLE_HWLOC OFF CACHE BOOL "KHARMA Override") # Possible speed improvement?
-set(Kokkos_ENABLE_AGGRESSIVE_VECTORIZATION ON CACHE BOOL "KHARMA Override")
+set(Kokkos_ENABLE_AGGRESSIVE_VECTORIZATION OFF CACHE BOOL "KHARMA Override")
 
 # Build only what we need of KokkosKernels
 set(KokkosKernels_ENABLE_TPL_CUSPARSE OFF CACHE BOOL "KHARMA Override")
@@ -62,6 +62,7 @@ include_directories(external/variant/include)
 # In case of issues, uncomment the following line to build them
 #add_subdirectory(external/kokkos-kernels)
 include_directories(external/kokkos-kernels/src)
+include_directories(external/kokkos-kernels/src/common)
 include_directories(external/kokkos-kernels/src/batched)
 include_directories(external/kokkos-kernels/src/batched/dense)
 include_directories(external/kokkos-kernels/src/batched/dense/impl)

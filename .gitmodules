@@ -8,3 +8,4 @@
 [submodule "external/kokkos-kernels"]
 	path = external/kokkos-kernels
 	url = https://github.com/kokkos/kokkos-kernels
+        branch = develop

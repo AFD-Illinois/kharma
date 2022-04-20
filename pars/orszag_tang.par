@@ -27,8 +27,8 @@ ix3_bc = periodic
 ox3_bc = periodic
 
 <parthenon/meshblock>
-nx1 = 128
-nx2 = 128
+nx1 = 512
+nx2 = 512
 nx3 = 1
 
 <coordinates>
@@ -49,12 +49,12 @@ verbose = 0
 flag_verbose = 0
 extra_checks = 0
 
-<parthenon/output0>
-file_type = hdf5
-dt = 1.0
-single_precision_output = true
-variables = prims.rho, prims.u, prims.uvec, prims.B, jcon
+#<parthenon/output0>
+#file_type = hdf5
+#dt = 1.0
+#single_precision_output = true
+#variables = prims.rho, prims.u, prims.uvec, prims.B, jcon
 
-<parthenon/output1>
-file_type = hst
-dt = 0.1
+#<parthenon/output1>
+#file_type = hst
+#dt = 0.1
