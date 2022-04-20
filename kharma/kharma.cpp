@@ -333,7 +333,7 @@ void KHARMA::PostStepMeshUserWorkInLoop(Mesh *pmesh, ParameterInput *pin, const 
     // ctop_max has fewer rules. It's just convenient to set here since we're assured of no MPI hangs
     // Since it involves an MPI sync, we only keep track of this when we need it
     if (pmesh->packages.AllPackages().count("B_CD")) {
-        Real ctop_max_last = MPIMax(pmesh->packages.Get("Globals")->Param<Real>("ctop_max"));
+        Real ctop_max_last = MPIReduce(pmesh->packages.Get("Globals")->Param<Real>("ctop_max"), MPI_MAX);
         pmesh->packages.Get("Globals")->UpdateParam<Real>("ctop_max_last", ctop_max_last);
         pmesh->packages.Get("Globals")->UpdateParam<Real>("ctop_max", 0.0);
     }

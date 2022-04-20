@@ -43,6 +43,7 @@
 #include "decs.hpp"
 #include "grmhd.hpp"
 #include "kharma.hpp"
+#include "mpi.hpp"
 
 using namespace parthenon;
 

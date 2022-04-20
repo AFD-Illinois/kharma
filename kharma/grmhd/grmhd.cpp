@@ -364,7 +364,7 @@ Real EstimateTimestep(MeshBlockData<Real> *rc)
             // Estimate based on light crossing time
             double dt = EstimateRadiativeTimestep(rc);
             // This records a per-rank minimum,
-            // but Parthenon calls MPIMin per-step anyway
+            // but Parthenon finds the global minimum anyway
             if (globals.hasKey("dt_light")) {
                 if (dt < globals.Get<double>("dt_light"))
                     globals.Update<double>("dt_light", dt);

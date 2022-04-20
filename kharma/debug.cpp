@@ -38,6 +38,7 @@
 
 #include "floors.hpp"
 #include "grmhd_functions.hpp"
+#include "mpi.hpp"
 #include "types.hpp"
 
 using namespace Kokkos;
@@ -128,8 +129,8 @@ TaskStatus CheckNaN(MeshData<Real> *md, int dir, IndexDomain domain)
         }
     , nan_reducer);
 
-    nzero = MPISum(nzero);
-    nnan = MPISum(nnan);
+    nzero = MPIReduce(nzero, MPI_SUM);
+    nnan = MPIReduce(nnan, MPI_SUM);
 
     if (MPIRank0() && (nzero > 0 || nnan > 0)) {
         // TODO string formatting in C++ that doesn't suck
@@ -166,7 +167,7 @@ TaskStatus CheckNegative(MeshData<Real> *md, IndexDomain domain)
             if (rho_c(b, 0, k, j, i) < 0.) ++local_result;
         }
     , sum_reducer);
-    nless = MPISum(nless);
+    nless = MPIReduce(nless, MPI_MAX);
     if (MPIRank0() && nless > 0) {
         cout << "Number of negative conserved rho: " << nless << endl;
     }
@@ -184,8 +185,8 @@ TaskStatus CheckNegative(MeshData<Real> *md, IndexDomain domain)
             if (u_p(b, 0, k, j, i) < 0.) ++local_result;
         }
     , sum_reducer_u);
-    nless_rho = MPISum(nless_rho);
-    nless_u = MPISum(nless_u);
+    nless_rho = MPIReduce(nless_rho, MPI_MAX);
+    nless_u = MPIReduce(nless_u, MPI_MAX);
 
     if (MPIRank0() && (nless_rho > 0 || nless_u > 0)) {
         cout << "Number of negative primitive rho, u: " << nless_rho << "," << nless_u << endl;
@@ -216,41 +217,50 @@ int CountPFlags(MeshData<Real> *md, IndexDomain domain, int verbose)
             if ((int) pflag(b, 0, k, j, i) > InversionStatus::success) ++local_result;
         }
     , tot);
-    n_tot = MPISum(n_tot);
+    n_tot = MPIReduce(n_tot, MPI_SUM);
 
     // If necessary, count each flag
     // This is slow, but it can be slow: it's not called for normal operation
     if (verbose > 0 && n_tot > 0) {
-        // These could be reductions just to rank 0 for speed
-        const int n_cells = MPISum((block.e - block.s + 1) * (kb.e - kb.s + 1) * (jb.e - jb.s + 1) * (ib.e - ib.s + 1));
-        const int n_neg_in = MPISum(CountPFlag(md, InversionStatus::neg_input));
-        const int n_max_iter = MPISum(CountPFlag(md, InversionStatus::max_iter));
-        const int n_utsq = MPISum(CountPFlag(md, InversionStatus::bad_ut));
-        const int n_gamma = MPISum(CountPFlag(md, InversionStatus::bad_gamma));
-        const int n_neg_rho = MPISum(CountPFlag(md, InversionStatus::neg_rho));
-        const int n_neg_u = MPISum(CountPFlag(md, InversionStatus::neg_u));
-        const int n_neg_both = MPISum(CountPFlag(md, InversionStatus::neg_rhou));
+        std::vector<InversionStatus> all_status_vals = {InversionStatus::neg_input,
+                                                        InversionStatus::max_iter,
+                                                        InversionStatus::bad_ut,
+                                                        InversionStatus::bad_gamma,
+                                                        InversionStatus::neg_rho,
+                                                        InversionStatus::neg_u,
+                                                        InversionStatus::neg_rhou};
+        std::vector<std::string> all_status_names = {"Negative input",
+                                                     "Hit max iter",
+                                                     "Velocity invalid",
+                                                     "Gamma invalid",
+                                                     "Negative rho",
+                                                     "Negative U",
+                                                     "Negative rho & U"};
+
+        // Overlap reductions to save time
+        AllReduce<int> n_cells_r = MPIStartReduce((block.e - block.s + 1) * (kb.e - kb.s + 1) *
+                                                  (jb.e - jb.s + 1) * (ib.e - ib.s + 1), MPI_SUM);
+        std::vector<AllReduce<int>> reducers;
+        for (InversionStatus status : all_status_vals) {
+            reducers.push_back(MPIStartReduce(CountPFlag(md, status), MPI_SUM));
+        }
+        int n_cells = MPIGetReduce(n_cells_r);
+        std::vector<int> n_status_present;
+        for (AllReduce<int> reducer : reducers) {
+            n_status_present.push_back(MPIGetReduce(reducer));
+        }
 
         if (MPIRank0()) {
-            cout << "PFLAGS: " << n_tot << " (" << ((double) n_tot )/n_cells * 100 << "% of all cells)" << endl;
+            std::cout << "PFLAGS: " << n_tot << " (" << (int)(((double) n_tot )/n_cells * 100) << "% of all cells)" << std::endl;
             if (verbose > 1) {
-                if (n_neg_in > 0) cout << "Negative input: " << n_neg_in << endl;
-                if (n_max_iter > 0) cout << "Hit max iter: " << n_max_iter << endl;
-                if (n_utsq > 0) cout << "Velocity invalid: " << n_utsq << endl;
-                if (n_gamma > 0) cout << "Gamma invalid: " << n_gamma << endl;
-                if (n_neg_rho > 0) cout << "Negative rho: " << n_neg_rho << endl;
-                if (n_neg_u > 0) cout << "Negative U: " << n_neg_u << endl;
-                if (n_neg_both > 0) cout << "Negative rho & U: " << n_neg_both << endl;
-                cout << endl;
+                for (int i=0; i < all_status_vals.size(); ++i) {
+                    if (n_status_present[i] > 0) std::cout << all_status_names[i] << ": " << n_status_present[i] << std::endl;
+                }
+                std::cout << std::endl;
             }
         }
 
-        // TODO Reintroduce particular zone printing, e.g. 
-        // if (flag > InversionStatus::success && verbose >= 3) {
-        //     printf("Bad inversion (%d) at block %d zone %d %d %d\n", flag, block, i, j, k);
-        //     //compare_P_U(pmb->meshblock_data.Get().get(), k, j, i);
-        // }
-
+        // TODO Print zone locations of bad inversions
     }
 
     Flag("Counted");
@@ -279,30 +289,44 @@ int CountFFlags(MeshData<Real> *md, IndexDomain domain, int verbose)
             if ((int) fflag(b, 0, k, j, i) != 0) ++local_result;
         }
     , tot);
-    n_tot = MPISum(n_tot);
+    n_tot = MPIReduce(n_tot, MPI_SUM);
 
     if (verbose > 0 && n_tot > 0) {
-        const int n_cells = MPISum((block.e - block.s + 1) * (kb.e - kb.s + 1) * (jb.e - jb.s + 1) * (ib.e - ib.s + 1));
+        std::vector<int> all_flag_vals = {HIT_FLOOR_GEOM_RHO,
+                                        HIT_FLOOR_GEOM_U,
+                                        HIT_FLOOR_B_RHO,
+                                        HIT_FLOOR_B_U,
+                                        HIT_FLOOR_TEMP,
+                                        HIT_FLOOR_GAMMA,
+                                        HIT_FLOOR_KTOT};
+        std::vector<std::string> all_flag_names = {"GEOM_RHO",
+                                                   "GEOM_U",
+                                                   "B_RHO",
+                                                   "B_U",
+                                                   "TEMPERATURE",
+                                                   "GAMMA",
+                                                   "KTOT"};
 
-        const int n_geom_rho = MPISum(CountFFlag(md, HIT_FLOOR_GEOM_RHO));
-        const int n_geom_u = MPISum(CountFFlag(md, HIT_FLOOR_GEOM_U));
-        const int n_b_rho = MPISum(CountFFlag(md, HIT_FLOOR_B_RHO));
-        const int n_b_u = MPISum(CountFFlag(md, HIT_FLOOR_B_U));
-        const int n_temp = MPISum(CountFFlag(md, HIT_FLOOR_TEMP));
-        const int n_gamma = MPISum(CountFFlag(md, HIT_FLOOR_GAMMA));
-        const int n_ktot = MPISum(CountFFlag(md, HIT_FLOOR_KTOT));
+        // Overlap reductions to save time
+        AllReduce<int> n_cells_r = MPIStartReduce((block.e - block.s + 1) * (kb.e - kb.s + 1) *
+                                                  (jb.e - jb.s + 1) * (ib.e - ib.s + 1), MPI_SUM);
+        std::vector<AllReduce<int>> reducers;
+        for (int flag : all_flag_vals) {
+            reducers.push_back(MPIStartReduce(CountFFlag(md, flag), MPI_SUM));
+        }
+        int n_cells = MPIGetReduce(n_cells_r);
+        std::vector<int> n_flag_present;
+        for (AllReduce<int> reducer : reducers) {
+            n_flag_present.push_back(MPIGetReduce(reducer));
+        }
 
         if (MPIRank0()) {
-            cout << "FLOORS: " << n_tot << " (" << (int)(((double) n_tot)/ n_cells * 100) << "% of all cells)" << endl;
+            std::cout << "FLOORS: " << n_tot << " (" << (int)(((double) n_tot) / n_cells * 100) << "% of all cells)" << std::endl;
             if (verbose > 1) {
-                if (n_geom_rho > 0) cout << "GEOM_RHO: " << n_geom_rho << endl;
-                if (n_geom_u > 0) cout << "GEOM_U: " << n_geom_u << endl;
-                if (n_b_rho > 0) cout << "B_RHO: " << n_b_rho << endl;
-                if (n_b_u > 0) cout << "B_U: " << n_b_u << endl;
-                if (n_temp > 0) cout << "TEMPERATURE: " << n_temp << endl;
-                if (n_gamma > 0) cout << "GAMMA: " << n_gamma << endl;
-                if (n_ktot > 0) cout << "KTOT: " << n_ktot << endl;
-                cout << endl;
+                for (int i=0; i < all_flag_vals.size(); ++i) {
+                    if (n_flag_present[i] > 0) std::cout << all_flag_names[i] << ": " << n_flag_present[i] << std::endl;
+                }
+                cout << std::endl;
             }
         }
     }

@@ -324,7 +324,7 @@ TaskStatus Step(MeshData<Real> *mci, MeshData<Real> *mc0, MeshData<Real> *dudt,
                         // Store for maximum/output
                         // I would be tempted to store the whole residual, but it's of variable size
                         norm_all(b, k , j, i) = 0;
-                        FLOOP norm_all(b, k, j, i) += pow(residual(ip), 2);
+                        FLOOP norm_all(b, k, j, i) += residual(ip)*residual(ip);
                         norm_all(b, k, j, i) = sqrt(norm_all(b, k, j, i)); // TODO faster to scratch cache & copy?
                     }
                 );
@@ -349,7 +349,7 @@ TaskStatus Step(MeshData<Real> *mci, MeshData<Real> *mc0, MeshData<Real> *dudt,
                 if (norm_all(b, k, j, i) > local_result) local_result = norm_all(b, k, j, i);
             }
         , norm_max);
-        max_norm = MPIMax(max_norm);
+        max_norm = MPIReduce(max_norm, MPI_MAX);
         if (MPIRank0()) fprintf(stdout, "Nonlinear iter %d. Max L2 norm: %g\n", iter, max_norm);
     }
 

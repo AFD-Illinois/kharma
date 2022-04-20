@@ -35,6 +35,7 @@
 #include "b_cd.hpp"
 
 #include "kharma.hpp"
+#include "mpi.hpp"
 
 using namespace parthenon;
 
@@ -233,7 +234,7 @@ TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
     int verbose = pmesh->packages.Get("B_CD")->Param<int>("verbose");
     if (verbose >= 0) {
         Real max_divb = B_CD::MaxDivB(md);
-        max_divb = MPIMax(max_divb);
+        max_divb = MPIReduce(max_divb, MPI_MAX);
 
         if(MPIRank0()) {
             cout << "Max DivB: " << max_divb << endl;
