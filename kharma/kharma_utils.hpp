@@ -23,7 +23,7 @@ using namespace std;
  * Note that in C++17+ this can likely be a straight std::clamp call
  */
 template <typename T>
-KOKKOS_INLINE_FUNCTION T clip(const T& n, const T& lower, const T& upper)
+KOKKOS_FORCEINLINE_FUNCTION T clip(const T& n, const T& lower, const T& upper)
 {
 #if TRACE
   // This isn't so useful without context
@@ -35,13 +35,13 @@ KOKKOS_INLINE_FUNCTION T clip(const T& n, const T& lower, const T& upper)
 }
 // Version which "bounces" any excess over the bounds, useful for the polar coordinate
 template <typename T>
-KOKKOS_INLINE_FUNCTION T bounce(const T& n, const T& lower, const T& upper)
+KOKKOS_FORCEINLINE_FUNCTION T bounce(const T& n, const T& lower, const T& upper)
 {
     return (n < lower) ? 2*lower - n : ( (n > upper) ? 2*upper - n : n );
 }
 // Version which "excises" anything within a range
 template <typename T>
-KOKKOS_INLINE_FUNCTION T excise(const T& n, const T& center, const T& range)
+KOKKOS_FORCEINLINE_FUNCTION T excise(const T& n, const T& center, const T& range)
 {
     return (abs(n - center) > range) ? n : ( (n > center) ? center + range : center - range );
 }
@@ -50,22 +50,22 @@ KOKKOS_INLINE_FUNCTION T excise(const T& n, const T& center, const T& range)
 // Types can fail to resolve if gzeroN() calls zeroN(),
 // so we duplicate code a bit
 template <typename T>
-KOKKOS_INLINE_FUNCTION void zero(T* a, const int& n)
+KOKKOS_FORCEINLINE_FUNCTION void zero(T* a, const int& n)
 {
     memset(a, 0, n*sizeof(T));
 }
 template <typename T>
-KOKKOS_INLINE_FUNCTION void gzero(T a[GR_DIM])
+KOKKOS_FORCEINLINE_FUNCTION void gzero(T a[GR_DIM])
 {
     memset(a, 0, GR_DIM*sizeof(T));
 }
 template <typename T>
-KOKKOS_INLINE_FUNCTION void zero2(T* a[], const int& n)
+KOKKOS_FORCEINLINE_FUNCTION void zero2(T* a[], const int& n)
 {
     memset(&(a[0][0]), 0, n*sizeof(T));
 }
 template <typename T>
-KOKKOS_INLINE_FUNCTION void gzero2(T a[GR_DIM][GR_DIM])
+KOKKOS_FORCEINLINE_FUNCTION void gzero2(T a[GR_DIM][GR_DIM])
 {
     memset(&(a[0][0]), 0, GR_DIM*GR_DIM*sizeof(T));
 }

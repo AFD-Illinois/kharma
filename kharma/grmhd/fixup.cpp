@@ -62,7 +62,7 @@ TaskStatus GRMHD::FixUtoP(MeshBlockData<Real> *rc)
     const auto& pars = pmb->packages.Get("GRMHD")->AllParams();
     const Real gam = pars.Get<Real>("gamma");
     const int verbose = pars.Get<int>("verbose");
-    const Floors::Prescription floors(pmb->packages.Get("Floors")->AllParams());
+    const Floors::Prescription& floors = pmb->packages.Get("Floors")->Param<Floors::Prescription>("prescription");
 
     const IndexRange ib = rc->GetBoundsI(IndexDomain::entire);
     const IndexRange jb = rc->GetBoundsJ(IndexDomain::entire);

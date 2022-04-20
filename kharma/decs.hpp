@@ -97,7 +97,7 @@ using GReal = double;
 enum Loci{face1=0, face2, face3, center, corner};
 
 // Return the face location corresponding to the direction 'dir'
-KOKKOS_INLINE_FUNCTION Loci loc_of(const int& dir)
+KOKKOS_FORCEINLINE_FUNCTION Loci loc_of(const int& dir)
 {
     switch (dir) {
     case 0:
@@ -112,7 +112,7 @@ KOKKOS_INLINE_FUNCTION Loci loc_of(const int& dir)
         return Loci::corner;
     }
 }
-KOKKOS_INLINE_FUNCTION int dir_of(const Loci loc)
+KOKKOS_FORCEINLINE_FUNCTION int dir_of(const Loci loc)
 {
     switch (loc) {
     case Loci::center:

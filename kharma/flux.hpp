@@ -76,14 +76,14 @@ inline TaskStatus PtoUTask(MeshBlockData<Real> *rc) { return PtoU(rc); }
 // These have identical signatures, so that we could runtime relink w/variant like coordinate_embedding
 
 // Local Lax-Friedrichs flux (usual, more stable)
-KOKKOS_INLINE_FUNCTION Real llf(const Real& fluxL, const Real& fluxR, const Real& cmax, 
+KOKKOS_FORCEINLINE_FUNCTION Real llf(const Real& fluxL, const Real& fluxR, const Real& cmax, 
                                 const Real& cmin, const Real& Ul, const Real& Ur)
 {
     Real ctop = max(cmax, cmin);
     return 0.5 * (fluxL + fluxR - ctop * (Ur - Ul));
 }
 // Harten, Lax, van Leer, & Einfeldt flux (early problems but not extensively studied since)
-KOKKOS_INLINE_FUNCTION Real hlle(const Real& fluxL, const Real& fluxR, const Real& cmax,
+KOKKOS_FORCEINLINE_FUNCTION Real hlle(const Real& fluxL, const Real& fluxR, const Real& cmax,
                                 const Real& cmin, const Real& Ul, const Real& Ur)
 {
     return (cmax*fluxL + cmin*fluxR - cmax*cmin*(Ur - Ul)) / (cmax + cmin);
@@ -122,13 +122,13 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
     const auto& globals = pmb0->packages.Get("Globals")->AllParams();
     const auto& floor_pars = pmb0->packages.Get("Floors")->AllParams();
     const bool use_hlle = pars.Get<bool>("use_hlle");
-    // Apply post-reconstruction floors.
+    // Whether to apply post-reconstruction floors.
     // Only enabled for WENO since it is not TVD, and only when other
     // floors are enabled.
     const bool reconstruction_floors = (Recon == ReconstructionType::weno5)
                                        && !floor_pars.Get<bool>("disable_floors");
     // Pull out a struct of just the actual floor values for speed
-    const Floors::Prescription floors(floor_pars);
+    const Floors::Prescription& floors = floor_pars.Get<Floors::Prescription>("prescription");
     // Check presence of different packages
     const auto& pkgs = pmb0->packages.AllPackages();
     const bool use_b_flux_ct = pkgs.count("B_FluxCT");
@@ -176,7 +176,7 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
     // Allocate scratch space
     const int scratch_level = 1; // 0 is actual scratch (tiny); 1 is HBM
     const size_t var_size_in_bytes = parthenon::ScratchPad2D<Real>::shmem_size(nvar, n1);
-    const size_t speed_size_in_bytes = parthenon::ScratchPad2D<Real>::shmem_size(1, n1);
+    const size_t speed_size_in_bytes = parthenon::ScratchPad1D<Real>::shmem_size(n1);
     // Allocate enough to cache prims, conserved, and fluxes, for left and right faces,
     // plus temporaries inside reconstruction (most use 1, WENO5 uses none, linear_vl uses a bunch)
     // Then add cmax and cmin!
@@ -200,36 +200,49 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
             ScratchPad1D<Real> cmax(member.team_scratch(scratch_level), n1);
             ScratchPad1D<Real> cmin(member.team_scratch(scratch_level), n1);
 
+            // int start;
+            // if (member.team_rank() == 0 && k == kl.s && j == jl.s) {
+            //     start = clock();
+            // }
+
             // Wrapper for a big switch statement between reconstruction schemes. Possibly slow.
             // This function is generally a lot of if statements
             KReconstruction::reconstruct<Recon, dir>(member, G, P_all(b), k, j, il.s, il.e, Pl_s, Pr_s);
 
             // Sync all threads in the team so that scratch memory is consistent
-            member.team_barrier();
+            // member.team_barrier();
+            // if (member.team_rank() == 0 && k == kl.s && j == jl.s) {
+            //     printf("Recon took %ld ticks\n", clock() - start);
+            //     start = clock();
+            // }
 
-            // Calculate conserved fluxes at centers & faces
-            parthenon::par_for_inner(member, il.s, il.e,
-                [&](const int& i) {
-                    auto Pl = Kokkos::subview(Pl_s, Kokkos::ALL(), i);
-                    auto Pr = Kokkos::subview(Pr_s, Kokkos::ALL(), i);
-                    // Apply floors to the *reconstructed* primitives, because without TVD
-                    // we have no guarantee they remotely resemble the *centered* primitives
-                    if (reconstruction_floors) {
+
+            // Apply floors to the *reconstructed* primitives, because without TVD
+            // we have no guarantee they remotely resemble the *centered* primitives
+            if (reconstruction_floors) {
+                // TODO this is very slow
+                parthenon::par_for_inner(member, il.s, il.e,
+                    [&](const int& i) {
+                        const auto& Pl = Kokkos::subview(Pl_s, Kokkos::ALL(), i);
+                        const auto& Pr = Kokkos::subview(Pr_s, Kokkos::ALL(), i);
                         Floors::apply_geo_floors(G, Pl, m_p, gam, j, i, floors, loc);
                         Floors::apply_geo_floors(G, Pr, m_p, gam, j, i, floors, loc);
                     }
-#if !FUSE_FLUX_KERNELS
-                }
-            );
-            member.team_barrier();
+                );
+                // member.team_barrier();
+                // if (member.team_rank() == 0 && k == kl.s && j == jl.s) {
+                //     printf("Recon floors took %ld ticks\n", clock() - start);
+                //     start = clock();
+                // }
+            }
 
-            // LEFT FACES, final ctop
+            // Calculate and apply conserved fluxes at faces
+            // LEFT FACES
             parthenon::par_for_inner(member, il.s, il.e,
                 [&](const int& i) {
-                    auto Pl = Kokkos::subview(Pl_s, Kokkos::ALL(), i);
-#endif
-                    auto Ul = Kokkos::subview(Ul_s, Kokkos::ALL(), i);
-                    auto Fl = Kokkos::subview(Fl_s, Kokkos::ALL(), i);
+                    const auto& Pl = Kokkos::subview(Pl_s, Kokkos::ALL(), i);
+                    const auto& Ul = Kokkos::subview(Ul_s, Kokkos::ALL(), i);
+                    const auto& Fl = Kokkos::subview(Fl_s, Kokkos::ALL(), i);
                     // LR -> flux
                     // Declare temporary vectors
                     FourVectors Dtmp;
@@ -239,30 +252,26 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
                     Flux::prim_to_flux(G, Pl, m_p, Dtmp, emhd_params, gam, j, i, 0, Ul, m_u, loc);
                     Flux::prim_to_flux(G, Pl, m_p, Dtmp, emhd_params, gam, j, i, dir, Fl, m_u, loc);
 
-                    // Magnetosonic speeds
-                    Real cmaxL, cminL;
-                    Flux::vchar(G, Pl, m_p, Dtmp, gam, k, j, i, loc, dir, cmaxL, cminL);
+                    // Calculate magnetosonic speeds
+                    Flux::vchar(G, Pl, m_p, Dtmp, gam, k, j, i, loc, dir, cmax(i), cmin(i));
+            //     }
+            // );
+            // member.team_barrier();
+            // if (member.team_rank() == 0 && k == kl.s && j == jl.s) {
+            //     printf("Left took %ld ticks\n", clock() - start);
+            //     start = clock();
+            // }
 
-#if !FUSE_FLUX_KERNELS
-                    // Record speeds
-                    cmax(i) = max(0., cmaxL);
-                    cmin(i) = max(0., -cminL);
-                }
-            );
-            member.team_barrier();
-
-            // RIGHT FACES, final ctop
-            parthenon::par_for_inner(member, il.s, il.e,
-                [&](const int& i) {
-                    // LR -> flux
-                    // Declare temporary vectors
-                    FourVectors Dtmp;
-                    auto Pr = Kokkos::subview(Pr_s, Kokkos::ALL(), i);
-#endif
-                    auto Ur = Kokkos::subview(Ur_s, Kokkos::ALL(), i);
-                    auto Fr = Kokkos::subview(Fr_s, Kokkos::ALL(), i);
+            // // RIGHT FACES, final ctop
+            // parthenon::par_for_inner(member, il.s, il.e,
+            //     [&](const int& i) {
+            //         // LR -> flux
+            //         // Declare temporary vectors
+            //         FourVectors Dtmp;
+                    const auto& Pr = Kokkos::subview(Pr_s, Kokkos::ALL(), i);
+                    const auto& Ur = Kokkos::subview(Ur_s, Kokkos::ALL(), i);
+                    const auto& Fr = Kokkos::subview(Fr_s, Kokkos::ALL(), i);
                     // Right
-                    // TODO GRMHD/GRHD versions of this
                     GRMHD::calc_4vecs(G, Pr, m_p, j, i, loc, Dtmp);
                     Flux::prim_to_flux(G, Pr, m_p, Dtmp, emhd_params, gam, j, i, 0, Ur, m_u, loc);
                     Flux::prim_to_flux(G, Pr, m_p, Dtmp, emhd_params, gam, j, i, dir, Fr, m_u, loc);
@@ -270,38 +279,18 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
                     // Magnetosonic speeds
                     Real cmaxR, cminR;
                     Flux::vchar(G, Pr, m_p, Dtmp, gam, k, j, i, loc, dir, cmaxR, cminR);
-
-#if FUSE_FLUX_KERNELS
-                    // Calculate cmax/min from local variables
-                    cmax(i) = fabs(max(cmaxL,  cmaxR));
-                    cmin(i) = fabs(max(-cminL, -cminR));
-
-                    if (use_hlle) {
-                        for (int p=0; p < nvar; ++p)
-                            U_all(b).flux(dir, p, k, j, i) = hlle(Fl(p), Fr(p), cmax(i), cmin(i), Ul(p), Ur(p));
-                    } else {
-                        for (int p=0; p < nvar; ++p)
-                            U_all(b).flux(dir, p, k, j, i) = llf(Fl(p), Fr(p), cmax(i), cmin(i), Ul(p), Ur(p));
-                    }
-                    if (use_b_cd) {
-                        // The unphysical variable psi and its corrections can propagate at the max speed
-                        // for the stepsize, rather than the sound speed
-                        // Since the speeds are the same it will always correspond to the LLF flux
-                        U_all(b).flux(dir, m_u.PSI, k, j, i) = llf(Fl(m_u.PSI), Fr(m_u.PSI), ctop_max, ctop_max, Ul(m_u.PSI), Ur(m_u.PSI));
-                        U_all(b).flux(dir, m_u.B1+dir-1, k, j, i) = llf(Fl(m_u.B1+dir-1), Fr(m_u.B1+dir-1), ctop_max, ctop_max, Ul(m_u.B1+dir-1), Ur(m_u.B1+dir-1));
-                    }
-#else
                     // Calculate cmax/min based on comparison with cached values
-                    cmax(i) = fabs(max(cmax(i),  cmaxR));
-                    cmin(i) = fabs(max(cmin(i), -cminR));
-#endif
-                    // TODO is it faster to write ctop elsewhere?
-                    ctop(b, dir-1, k, j, i) = max(cmax(i), cmin(i));
+                    cmax(i) = max(cmax(i),  cmaxR);
+                    cmin(i) = min(cmin(i), cminR);
+                    ctop(b, dir-1, k, j, i) = max(cmax(i), -cmin(i));
                 }
             );
-            member.team_barrier();
+            // member.team_barrier();
+            // if (member.team_rank() == 0 && k == kl.s && j == jl.s) {
+            //     printf("Right took %ld ticks\n", clock() - start);
+            //     start = clock();
+            // }
 
-#if !FUSE_FLUX_KERNELS
             // Apply what we've calculated
             for (int p=0; p < nvar; ++p) {
                 if (use_b_cd && (p == m_u.PSI || p == m_u.B1+dir-1)) {
@@ -328,7 +317,10 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
                     );
                 }
             }
-#endif
+            // if (member.team_rank() == 0 && k == kl.s && j == jl.s) {
+            //     printf("Riemann took %ld ticks\n", clock() - start);
+            //     start = clock();
+            // }
         }
     );
 

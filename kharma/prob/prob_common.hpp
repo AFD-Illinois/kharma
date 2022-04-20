@@ -39,7 +39,7 @@
  * Rotate a set of coordinates 'Xin' by 'angle' about the *y-axis*
  * (chosen so the slice at phi=0 in output will show the desired tilt)
  */
-KOKKOS_INLINE_FUNCTION void rotate_polar(const GReal Xin[GR_DIM], const GReal angle, GReal Xout[GR_DIM], const bool spherical=true)
+KOKKOS_FORCEINLINE_FUNCTION void rotate_polar(const GReal Xin[GR_DIM], const GReal angle, GReal Xout[GR_DIM], const bool spherical=true)
 {
     // Make sure we don't break the trivial case
     if (abs(angle) < 1e-20) {
@@ -95,7 +95,7 @@ KOKKOS_INLINE_FUNCTION void rotate_polar(const GReal Xin[GR_DIM], const GReal an
  * including rotation *and* normalization!
  * There exists an analytic inverse, of course, but we just take numerical inverses because they are easy
  */
-KOKKOS_INLINE_FUNCTION void set_dXdx_sph2cart(const GReal X[GR_DIM], GReal dXdx[GR_DIM][GR_DIM])
+KOKKOS_FORCEINLINE_FUNCTION void set_dXdx_sph2cart(const GReal X[GR_DIM], GReal dXdx[GR_DIM][GR_DIM])
 {
     const GReal r = X[1], th = X[2], phi = X[3];
     dXdx[0][0] = 1;
@@ -113,7 +113,7 @@ KOKKOS_INLINE_FUNCTION void set_dXdx_sph2cart(const GReal X[GR_DIM], GReal dXdx[
 /**
  * Same as rotate_polar but for vectors: rotate about the y-axis
  */
-KOKKOS_INLINE_FUNCTION void rotate_polar_vec(const GReal Xin[GR_DIM], const GReal vin[GR_DIM], const GReal angle,
+KOKKOS_FORCEINLINE_FUNCTION void rotate_polar_vec(const GReal Xin[GR_DIM], const GReal vin[GR_DIM], const GReal angle,
                                              const GReal Xout[GR_DIM], GReal vout[GR_DIM],
                                              const bool spherical=true)
 {
@@ -166,7 +166,7 @@ KOKKOS_INLINE_FUNCTION void rotate_polar_vec(const GReal Xin[GR_DIM], const GRea
 /**
  * Set time component for a consistent 4-velocity given a 3-velocity
  */
-KOKKOS_INLINE_FUNCTION void set_ut(const Real gcov[GR_DIM][GR_DIM], Real ucon[GR_DIM])
+KOKKOS_FORCEINLINE_FUNCTION void set_ut(const Real gcov[GR_DIM][GR_DIM], Real ucon[GR_DIM])
 {
     Real AA, BB, CC;
 
@@ -191,7 +191,7 @@ KOKKOS_INLINE_FUNCTION void set_ut(const Real gcov[GR_DIM][GR_DIM], Real ucon[GR
  * This function and set_ut together can turn any desired 3-velocity into a
  * form usable to initialize uvec in KHARMA; see bondi.hpp for usage.
  */
-KOKKOS_INLINE_FUNCTION void fourvel_to_prim(const Real gcon[GR_DIM][GR_DIM], const Real ucon[GR_DIM], Real u_prim[NVEC])
+KOKKOS_FORCEINLINE_FUNCTION void fourvel_to_prim(const Real gcon[GR_DIM][GR_DIM], const Real ucon[GR_DIM], Real u_prim[NVEC])
 {
     Real alpha2 = -1.0 / gcon[0][0];
     // Note gamma/alpha is ucon[0]

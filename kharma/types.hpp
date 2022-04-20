@@ -144,12 +144,12 @@ class VarMap {
 /**
  * Functions for checking boundaries in 3D
  */
-KOKKOS_INLINE_FUNCTION bool inside(const int& k, const int& j, const int& i,
+KOKKOS_FORCEINLINE_FUNCTION bool inside(const int& k, const int& j, const int& i,
                                    const IndexRange& kb, const IndexRange& jb, const IndexRange& ib)
 {
     return (i >= ib.s) && (i <= ib.e) && (j >= jb.s) && (j <= jb.e) && (k >= kb.s) && (k <= kb.e);
 }
-KOKKOS_INLINE_FUNCTION bool outside(const int& k, const int& j, const int& i,
+KOKKOS_FORCEINLINE_FUNCTION bool outside(const int& k, const int& j, const int& i,
                                     const IndexRange& kb, const IndexRange& jb, const IndexRange& ib)
 {
     return (i < ib.s) || (i > ib.e) || (j < jb.s) || (j > jb.e) || (k < kb.s) || (k > kb.e);
@@ -163,6 +163,18 @@ inline bool IsDomainBound(MeshBlock *pmb, BoundaryFace face)
     return (pmb->boundary_flag[face] != BoundaryFlag::block &&
             pmb->boundary_flag[face] != BoundaryFlag::periodic);
 }
+
+// #if TIMERS
+// #if KOKKOS_USE_CUDA
+// #define TIMER_START clock_t tic; if ( threadIdx.x == 0 ) tic = clock();
+// #define TIMER_TOC(tid) clock_t toc = clock(); if ( threadIdx.x == 0 ) atomicAdd( &cuda_timers[tid] , ( toc > tic ) ? (toc - tic) : ( toc + (0xffffffff - tic) ) );
+// #else
+
+// #endif
+// #else
+// #define TIMER_TIC
+// #define TIMER_TOC(tid)
+// #endif
 
 /**
  * Functions for "tracing" execution by printing strings (and optionally state of zones)

@@ -47,7 +47,7 @@
 namespace EMHD {
 
 // Linear MC slope limiter
-KOKKOS_INLINE_FUNCTION Real linear_monotonized_cd(Real x1, Real x2, Real x3, Real dx)
+KOKKOS_FORCEINLINE_FUNCTION Real linear_monotonized_cd(Real x1, Real x2, Real x3, Real dx)
 {
     const Real Dqm = 2 * (x2 - x1) / dx;
     const Real Dqp = 2 * (x3 - x2) / dx;
@@ -67,7 +67,7 @@ KOKKOS_INLINE_FUNCTION Real linear_monotonized_cd(Real x1, Real x2, Real x3, Rea
 }
 
 // Linear Van Leer slope limiter
-KOKKOS_INLINE_FUNCTION Real linear_van_leer(Real x1, Real x2, Real x3, Real dx)
+KOKKOS_FORCEINLINE_FUNCTION Real linear_van_leer(Real x1, Real x2, Real x3, Real dx)
 {
     const Real Dqm = (x2 - x1) / dx;
     const Real Dqp = (x3 - x2) / dx;
@@ -85,7 +85,7 @@ KOKKOS_INLINE_FUNCTION Real linear_van_leer(Real x1, Real x2, Real x3, Real dx)
  * Compute slope of scalars at faces
  */
 template<typename Global>
-KOKKOS_INLINE_FUNCTION Real slope_calc_scalar(const GRCoordinates& G, const Global& A, const int& dir,
+KOKKOS_FORCEINLINE_FUNCTION Real slope_calc_scalar(const GRCoordinates& G, const Global& A, const int& dir,
                                               const int& b, const int& k, const int& j, const int& i, 
                                               ReconstructionType recon=ReconstructionType::linear_mc)
 {
@@ -106,7 +106,7 @@ KOKKOS_INLINE_FUNCTION Real slope_calc_scalar(const GRCoordinates& G, const Glob
  * Compute slope of all  vectors at faces
  */
 template<typename Global>
-KOKKOS_INLINE_FUNCTION Real slope_calc_vector(const GRCoordinates& G, const Global& A, const int& mu,
+KOKKOS_FORCEINLINE_FUNCTION Real slope_calc_vector(const GRCoordinates& G, const Global& A, const int& mu,
                                               const int& dir, const int& b, const int& k, const int& j, const int& i, 
                                               ReconstructionType recon=ReconstructionType::linear_mc)
 {
@@ -126,7 +126,7 @@ KOKKOS_INLINE_FUNCTION Real slope_calc_vector(const GRCoordinates& G, const Glob
 // Compute gradient of four velocities and temperature
 // Called by emhd_explicit_sources
 template<typename Global>
-KOKKOS_INLINE_FUNCTION void gradient_calc(const GRCoordinates& G, const Global& P,
+KOKKOS_FORCEINLINE_FUNCTION void gradient_calc(const GRCoordinates& G, const Global& P,
                                           const GridVector& ucov_s, const GridScalar& theta_s,
                                           const int& b, const int& k, const int& j, const int& i, const bool& do_3d,
                                           Real grad_ucov[GR_DIM][GR_DIM], Real grad_Theta[GR_DIM])

@@ -87,44 +87,35 @@ TaskStatus ApplyFloors(MeshBlockData<Real> *rc);
  */
 TaskStatus PostFillDerivedBlock(MeshBlockData<Real> *rc);
 
+enum FloorFrame{normal_observer, fluid, mixed_nof_ff};
+
 /**
  * Struct to hold floor values without cumbersome dictionary/string logistics.
- * Hopefully faster than dragging the full Params object device side,
- * similar reasoning to VarMap above.
+ * Faster than consulting the full Params object on the device side,
+ * cleaner than adding a million new floats
+ * This idea is also used in VarMaps and EMHD_parameters structs.
+ * Constructed once in Floors::Initialize
  */
-class Prescription {
-    public:
-        // Purely geometric limits
-        double rho_min_geom, u_min_geom, r_char, frame_switch;
-        // Dynamic limits on magnetization/temperature
-        double bsq_over_rho_max, bsq_over_u_max, u_over_rho_max;
-        // Limit entropy
-        double ktot_max;
-        // Limit fluid Lorentz factor
-        double gamma_max;
-        // Floor options
-        bool fluid_frame, mixed_frame;
-        bool use_r_char, temp_adjust_u, adjust_k;
+struct Prescription {
+    // Purely geometric limits
+    Real rho_min_geom, u_min_geom;
+    // Dynamic limits on magnetization/temperature
+    Real bsq_over_rho_max, bsq_over_u_max, u_over_rho_max;
+    // Limit entropy
+    Real ktot_max;
+    // Limit fluid Lorentz factor
+    Real gamma_max;
+    // Floor options
+    // Frame to apply floors. Radius at which to switch if using mixed frame
+    FloorFrame frame; GReal mixed_frame_switch;
 
-        Prescription(const parthenon::Params& params)
-        {
-            rho_min_geom = params.Get<Real>("rho_min_geom");
-            u_min_geom = params.Get<Real>("u_min_geom");
-            r_char = params.Get<GReal>("r_char");
-            frame_switch = params.Get<GReal>("frame_switch");
-
-            bsq_over_rho_max = params.Get<Real>("bsq_over_rho_max");
-            bsq_over_u_max = params.Get<Real>("bsq_over_u_max");
-            u_over_rho_max = params.Get<Real>("u_over_rho_max");
-            ktot_max = params.Get<Real>("ktot_max");
-            gamma_max = params.Get<Real>("gamma_max");
-
-            fluid_frame = params.Get<bool>("fluid_frame");
-            mixed_frame = params.Get<bool>("mixed_frame");
-            use_r_char = params.Get<bool>("use_r_char");
-            temp_adjust_u = params.Get<bool>("temp_adjust_u");
-            adjust_k = params.Get<bool>("adjust_k");
-        }
+    bool use_r_char; GReal r_char;
+    // Whether to adjust internal energy when limiting temperature (vs density)
+    bool temp_adjust_u;
+    // Whether to adjust entropy when applying density floor
+    bool adjust_k;
+    // Whether to apply spherical (radially decreasing) geometric floors
+    bool spherical;
 };
 
 /**
@@ -132,30 +123,28 @@ class Prescription {
  * 
  * @return fflag, a bitflag indicating whether each particular floor was hit, allowing representation of arbitrary combinations
  * See decs.h for bit names.
- * 
- * LOCKSTEP: this function respects P and returns consistent P<->U
  */
-KOKKOS_INLINE_FUNCTION int apply_ceilings(const GRCoordinates& G, const VariablePack<Real>& P, const VarMap& m_p,
+KOKKOS_FORCEINLINE_FUNCTION int apply_ceilings(const GRCoordinates& G, const VariablePack<Real>& P, const VarMap& m_p,
                                           const Real& gam, const int& k, const int& j, const int& i, const Floors::Prescription& floors,
                                           const VariablePack<Real>& U, const VarMap& m_u, const Loci loc=Loci::center)
 {
     int fflag = 0;
     // First apply ceilings:
     // 1. Limit gamma with respect to normal observer
-    Real gamma = GRMHD::lorentz_calc(G, P, m_p, k, j, i, loc);
+    const Real gamma = GRMHD::lorentz_calc(G, P, m_p, k, j, i, loc);
 
     if (gamma > floors.gamma_max) {
         fflag |= HIT_FLOOR_GAMMA;
 
-        Real f = sqrt((pow(floors.gamma_max, 2) - 1.)/(pow(gamma, 2) - 1.));
-        VLOOP P(m_p.U1+v, k, j, i) *= f;
+        VLOOP P(m_p.U1+v, k, j, i) *= sqrt((pow(floors.gamma_max, 2) - 1.)/(pow(gamma, 2) - 1.));
     }
 
     // 2. Limit the entropy by controlling u, to avoid anomalous cooling from funnel wall
     // Note this technically applies the condition *one step sooner* than legacy, since it operates on
     // the entropy as calculated from current conditions, rather than the value kept from the previous
     // step for calculating dissipation.
-    Real ktot = (gam - 1.) * P(m_p.UU, k, j, i) / pow(P(m_p.RHO, k, j, i), gam);
+    // TODO can we avoid this when the floor is disabled?
+    const Real ktot = (gam - 1.) * P(m_p.UU, k, j, i) / pow(P(m_p.RHO, k, j, i), gam);
     if (ktot > floors.ktot_max) {
         fflag |= HIT_FLOOR_KTOT;
 
@@ -176,12 +165,6 @@ KOKKOS_INLINE_FUNCTION int apply_ceilings(const GRCoordinates& G, const Variable
         P(m_p.UU, k, j, i) = floors.u_over_rho_max * P(m_p.RHO, k, j, i);
     }
 
-    if (fflag) {
-        // Keep lockstep!
-        // TODO all flux
-        GRMHD::p_to_u(G, P, m_p, gam, k, j, i, U, m_u, loc);
-    }
-
     return fflag;
 }
 
@@ -189,34 +172,32 @@ KOKKOS_INLINE_FUNCTION int apply_ceilings(const GRCoordinates& G, const Variable
  * Apply floors of several types in determining how to add mass and internal energy to preserve stability.
  * All floors which might apply are recorded separately, then mass/energy are added *in normal observer frame*
  * 
- * @return fflag + pflag: fflag is a flagset starting at the sixth bit from the right.  pflag is a number <32.
+ * @return fflag + pflag: fflag is a bitflag starting at the sixth bit from the right.  pflag is a number <32.
  * This returns the sum, with the caller responsible for separating what's desired.
- * 
- * LOCKSTEP: this function respects P and ignores U in order to return consistent P<->U
  */
-KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, const VariablePack<Real>& P, const VarMap& m_p,
+KOKKOS_FORCEINLINE_FUNCTION int apply_floors(const GRCoordinates& G, const VariablePack<Real>& P, const VarMap& m_p,
                                         const Real& gam, const int& k, const int& j, const int& i, const Floors::Prescription& floors,
                                         const VariablePack<Real>& U, const VarMap& m_u, const Loci loc=Loci::center)
 {
     int fflag = 0;
-    InversionStatus pflag = InversionStatus::success;
     // Then apply floors:
     // 1. Geometric hard floors, not based on fluid relationships
     Real rhoflr_geom, uflr_geom;
     bool use_ff;
-    if(G.coords.spherical()) {
-        GReal Xembed[GR_DIM];
-        G.coord_embed(k, j, i, loc, Xembed);
-        GReal r = Xembed[1];
-        // TODO measure whether this/if 1 is really faster
-        // GReal r = exp(G.x1v(i));
+    if(floors.spherical) {
+        // GReal Xembed[GR_DIM];
+        // G.coord_embed(k, j, i, loc, Xembed);
+        // GReal r = Xembed[1];
+        // This is faster for now, working on it
+        const GReal r = exp(G.x1v(i));
 
-        // Use the fluid frame if specified, or in outer domain
-        use_ff = floors.fluid_frame || (floors.mixed_frame && r > floors.frame_switch);
+        // Whether to use fluid frame for *this zone*
+        use_ff = floors.frame == FloorFrame::fluid ||
+                 (floors.frame == FloorFrame::mixed_nof_ff && r > floors.mixed_frame_switch);
 
         if (floors.use_r_char) {
             // Steeper floor from iharm3d
-            Real rhoscal = pow(r, -2.) * 1 / (1 + r / floors.r_char);
+            GReal rhoscal = pow(r, -2.) * 1 / (1 + r / floors.r_char);
             rhoflr_geom = floors.rho_min_geom * rhoscal;
             uflr_geom = floors.u_min_geom * pow(rhoscal, gam);
         } else {
@@ -227,40 +208,37 @@ KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, const VariablePa
     } else {
         rhoflr_geom = floors.rho_min_geom;
         uflr_geom = floors.u_min_geom;
-        use_ff = floors.fluid_frame;
+        use_ff = (floors.frame == FloorFrame::fluid);
     }
-    Real rho = P(m_p.RHO, k, j, i);
-    Real u = P(m_p.UU, k, j, i);
+    // These must not be copies, as we'll use them to adjust ktot later
+    const Real rho = P(m_p.RHO, k, j, i);
+    const Real u = P(m_p.UU, k, j, i);
 
     // 2. Magnetization ceilings: impose maximum magnetization sigma = bsq/rho, and inverse beta prop. to bsq/U
     FourVectors Dtmp;
     // TODO is there a more efficient way to calculate just bsq?
     GRMHD::calc_4vecs(G, P, m_p, k, j, i, loc, Dtmp);
-    double bsq = dot(Dtmp.bcon, Dtmp.bcov);
-    double rhoflr_b = bsq / floors.bsq_over_rho_max;
-    double uflr_b = bsq / floors.bsq_over_u_max;
+    const double bsq = dot(Dtmp.bcon, Dtmp.bcov);
+    const Real rhoflr_b = bsq / floors.bsq_over_rho_max;
+    const Real uflr_b = bsq / floors.bsq_over_u_max;
 
     // Evaluate max U floor, needed for temp ceiling below
-    double uflr_max = max(uflr_geom, uflr_b);
+    const Real uflr_max = max(uflr_geom, uflr_b);
 
-    double rhoflr_max;
+    Real rhoflr_max = max(rhoflr_geom, rhoflr_b);
     if (!floors.temp_adjust_u) {
         // 3. Temperature ceiling: impose maximum temperature u/rho
         // Take floors on U into account
-        double rhoflr_temp = max(u, uflr_max) / floors.u_over_rho_max;
+        const Real rhoflr_temp = max(u, uflr_max) / floors.u_over_rho_max;
         // Record hitting temperature ceiling
         fflag |= (rhoflr_temp > rho) * HIT_FLOOR_TEMP; // Misnomer for consistency
 
         // Evaluate max rho floor
-        rhoflr_max = max(max(rhoflr_geom, rhoflr_b), rhoflr_temp);
-    } else {
-        // Evaluate max rho floor
-        rhoflr_max = max(rhoflr_geom, rhoflr_b);
+        rhoflr_max = max(rhoflr_max, rhoflr_temp);
     }
 
     // If we need to do anything...
     if (rhoflr_max > rho || uflr_max > u) {
-
         // Record all the floors that were hit, using bitflags
         // Record Geometric floor hits
         fflag |= (rhoflr_geom > rho) * HIT_FLOOR_GEOM_RHO;
@@ -269,27 +247,21 @@ KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, const VariablePa
         fflag |= (rhoflr_b > rho) * HIT_FLOOR_B_RHO;
         fflag |= (uflr_b > u) * HIT_FLOOR_B_U;
 
-        if (use_ff) {
-            P(m_p.RHO, k, j, i) += max(0., rhoflr_max - rho);
-            P(m_p.UU, k, j, i) += max(0., uflr_max - u);
-            // TODO should be all Flux
-            GRMHD::p_to_u(G, P, m_p, gam, k, j, i, U, m_u, loc);
-        } else {
-            // Add the material in the normal observer frame, by:
-            // Adding the floors to the primitive variables
-            const Real rho_add = max(0., rhoflr_max - rho);
-            const Real u_add = max(0., uflr_max - u);
+        // Apply floors to primitive values
+        const Real rho_add = max(0., rhoflr_max - rho);
+        const Real u_add = max(0., uflr_max - u);
+        P(m_p.RHO, k, j, i) += rho_add;
+        P(m_p.UU, k, j, i) += u_add;
+        // In fluid frame, that's all we needed. In other frames...
+        if (!use_ff) {
+            // Add the material in the normal observer frame, by
+            // calculating the conserved variables corresponding to the new material
+            // in NOF...
             const Real uvec[NVEC] = {0}, B[NVEC] = {0};
-
-            // Calculating the corresponding conserved variables
             Real rho_ut, T[GR_DIM];
             GRMHD::p_to_u_mhd(G, rho_add, u_add, uvec, B, gam, k, j, i, rho_ut, T, loc);
 
-            // Add new conserved mass/energy to the current "conserved" state,
-            // and to the local primitives as a guess
-            P(m_p.RHO, k, j, i) += rho_add;
-            P(m_p.UU, k, j, i) += u_add;
-            // Add any velocity here
+            // ...and adding these to the conserved state
             U(m_u.RHO, k, j, i) += rho_ut;
             U(m_u.UU, k, j, i) += T[0]; // Note this shouldn't be a single loop: m_u.U1 != m_u.UU + 1 necessarily
             U(m_u.U1, k, j, i) += T[1];
@@ -297,13 +269,8 @@ KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, const VariablePa
             U(m_u.U3, k, j, i) += T[3];
             
             // Recover primitive variables from conserved versions
-            pflag = GRMHD::u_to_p(G, U, m_u, gam, k, j, i, loc, P, m_p);
-            // If that fails, we've effectively already applied the floors in fluid-frame to the prims,
-            // so we just formalize that
-            if (pflag) {
-                // TODO should be all Flux
-                GRMHD::p_to_u(G, P, m_p, gam, k, j, i, U, m_u, loc);
-            }
+            fflag += GRMHD::u_to_p(G, U, m_u, gam, k, j, i, loc, P, m_p);
+            // If this fails, we've already effectively applied the floors in fluid frame
         }
     }
 
@@ -324,30 +291,32 @@ KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, const VariablePa
         if (m_p.K_SHARMA >= 0)   P(m_p.K_SHARMA, k, j, i)   *= reduce_e;
     }
 
-    // Return both flags
-    return fflag + pflag;
+    // Return floor bitflag (inversion status has been added if nonzero)
+    return fflag;
 }
 
 /**
- * Apply just the geometric floors to a set of local primitives.
+ * Apply just the geometric floors to a set of local primitives.  Must be applied in fluid frame!
  * Specifically called after reconstruction when using non-TVD schemes, e.g. WENO5.
- * Reimplemented to be fast and fit the general prim_to_flux calling convention.
+ * Reimplemented so as to be 
  * 
  * @return fflag: since no inversion is performed, this just returns a flag representing which geometric floors were hit
  * 
  * NOT LOCKSTEP: Operates on and respects primitives *only*
  */
 template<typename Local>
-KOKKOS_INLINE_FUNCTION int apply_geo_floors(const GRCoordinates& G, Local& P, const VarMap& m,
+KOKKOS_FORCEINLINE_FUNCTION int apply_geo_floors(const GRCoordinates& G, Local& P, const VarMap& m,
                                             const Real& gam, const int& j, const int& i,
                                             const Floors::Prescription& floors, const Loci loc=Loci::center)
 {
-    // Apply only the geometric floors
+    // Apply only the geometric floors, in fluid frame
     Real rhoflr_geom, uflr_geom;
-    if(G.coords.spherical()) {
-        GReal Xembed[GR_DIM];
-        G.coord_embed(0, j, i, loc, Xembed);
-        GReal r = Xembed[1];
+    if(floors.spherical) {
+        // GReal Xembed[GR_DIM];
+        // G.coord_embed(0, j, i, loc, Xembed);
+        // GReal r = Xembed[1];
+        // This is faster for now, working on it
+        GReal r = exp(G.x1v(i));
 
         if (floors.use_r_char) {
             // Steeper floor from iharm3d
@@ -379,16 +348,18 @@ KOKKOS_INLINE_FUNCTION int apply_geo_floors(const GRCoordinates& G, Local& P, co
 }
 
 template<typename Global>
-KOKKOS_INLINE_FUNCTION int apply_geo_floors(const GRCoordinates& G, Global& P, const VarMap& m,
+KOKKOS_FORCEINLINE_FUNCTION int apply_geo_floors(const GRCoordinates& G, Global& P, const VarMap& m,
                                             const Real& gam, const int& k, const int& j, const int& i,
                                             const Floors::Prescription& floors, const Loci loc=Loci::center)
 {
-    // Apply only the geometric floors
+    // Apply only the geometric floors, in fluid frame
     Real rhoflr_geom, uflr_geom;
-    if(G.coords.spherical()) {
-        GReal Xembed[GR_DIM];
-        G.coord_embed(k, j, i, loc, Xembed);
-        GReal r = Xembed[1];
+    if(floors.spherical) {
+        // GReal Xembed[GR_DIM];
+        // G.coord_embed(k, j, i, loc, Xembed);
+        // GReal r = Xembed[1];
+        // This is faster for now, working on it
+        GReal r = exp(G.x1v(i));
 
         if (floors.use_r_char) {
             // Steeper floor from iharm3d

@@ -55,9 +55,9 @@ namespace Flux
  * Keep in mind loc should usually correspond to dir for perpendicuar fluxes
  */
 template<typename Local>
-KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const Local& P, const VarMap& m_p, const FourVectors D,
-                                         const EMHD::EMHD_parameters& emhd_params, const Real& gam, const int& j, const int& i, const int dir,
-                                         const Local& flux, const VarMap& m_u, const Loci loc=Loci::center)
+KOKKOS_FORCEINLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const Local& P, const VarMap& m_p, const FourVectors& D,
+                                         const EMHD::EMHD_parameters& emhd_params, const Real& gam, const int& j, const int& i, const int& dir,
+                                         const Local& flux, const VarMap& m_u, const Loci& loc=Loci::center)
 {
     const Real gdet = G.gdet(loc, j, i);
     // Particle number flux
@@ -142,7 +142,7 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const Local& P,
  * Get the conserved (E)GRMHD variables corresponding to primitives in a zone. Equivalent to prim_to_flux with dir==0
  */
 template<typename Local>
-KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates& G, const Local& P, const VarMap& m_p,
+KOKKOS_FORCEINLINE_FUNCTION void p_to_u(const GRCoordinates& G, const Local& P, const VarMap& m_p,
                                    const EMHD::EMHD_parameters& emhd_params, const Real& gam, const int& j, const int& i,
                                    const Local& U, const VarMap& m_u, const Loci& loc=Loci::center)
 {
@@ -156,7 +156,7 @@ KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates& G, const Local& P, const
  * This is only called in GetFlux, so we only provide a ScratchPad form
  */
 template<typename Local>
-KOKKOS_INLINE_FUNCTION void vchar(const GRCoordinates& G, const Local& P, const VarMap& m, const FourVectors& D,
+KOKKOS_FORCEINLINE_FUNCTION void vchar(const GRCoordinates& G, const Local& P, const VarMap& m, const FourVectors& D,
                                   const Real& gam, const int& k, const int& j, const int& i, const Loci& loc, const int& dir,
                                   Real& cmax, Real& cmin)
 {
@@ -204,8 +204,9 @@ KOKKOS_INLINE_FUNCTION void vchar(const GRCoordinates& G, const Local& P, const 
     Real vp = -(-B + discr) / (2. * A);
     Real vm = -(-B - discr) / (2. * A);
 
-    cmax = max(vp, vm);
-    cmin = min(vp, vm);
+    // Ensure cmax/min are >= 0 (we will error on zero values later)
+    cmax = max(0., max(vp, vm));
+    cmin = min(0., min(vp, vm));
 }
 
 } // namespace Flux

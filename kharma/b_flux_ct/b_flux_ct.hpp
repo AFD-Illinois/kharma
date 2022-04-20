@@ -128,7 +128,7 @@ void FillOutput(MeshBlock *pmb, ParameterInput *pin);
  * 2D or 3D divergence, averaging to cell corners
  */
 template<typename Global>
-KOKKOS_INLINE_FUNCTION double corner_div(const GRCoordinates& G, const Global& B_U, const int& b,
+KOKKOS_FORCEINLINE_FUNCTION double corner_div(const GRCoordinates& G, const Global& B_U, const int& b,
                                          const int& k, const int& j, const int& i, const bool& do_3D)
 {
     const double norm = (do_3D) ? 0.25 : 0.5;
@@ -157,7 +157,7 @@ KOKKOS_INLINE_FUNCTION double corner_div(const GRCoordinates& G, const Global& B
  * Note this is forward-difference, while previous def is backward
  */
 template<typename Global>
-KOKKOS_INLINE_FUNCTION void center_grad(const GRCoordinates& G, const Global& P, const int& b,
+KOKKOS_FORCEINLINE_FUNCTION void center_grad(const GRCoordinates& G, const Global& P, const int& b,
                                           const int& k, const int& j, const int& i, const bool& do_3D,
                                           double& B1, double& B2, double& B3)
 {

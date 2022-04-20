@@ -26,7 +26,7 @@ TaskStatus PerturbU(MeshBlockData<Real> *rc, ParameterInput *pin);
 /**
  * Torus solution for ln h, See Fishbone and Moncrief eqn. 3.6. 
  */
-KOKKOS_INLINE_FUNCTION Real lnh_calc(const GReal a, const Real l, const GReal rin, const GReal r, const GReal th)
+KOKKOS_FORCEINLINE_FUNCTION Real lnh_calc(const GReal a, const Real l, const GReal rin, const GReal r, const GReal th)
 {
     Real sth = sin(th);
     Real cth = cos(th);
@@ -78,7 +78,7 @@ KOKKOS_INLINE_FUNCTION Real lnh_calc(const GReal a, const Real l, const GReal ri
  * It improves on (3.8) by requiring no sign changes for
  * co-rotating (a > 0) vs counter-rotating (a < 0) disks.
  */
-KOKKOS_INLINE_FUNCTION Real lfish_calc(const GReal a, const GReal r)
+KOKKOS_FORCEINLINE_FUNCTION Real lfish_calc(const GReal a, const GReal r)
 {
     return (((pow(a, 2) - 2. * a * sqrt(r) + pow(r, 2)) *
              ((-2. * a * r *
@@ -101,7 +101,7 @@ KOKKOS_INLINE_FUNCTION Real lfish_calc(const GReal a, const GReal r)
  * 1. Normalization, in which the max of this function over the domain is calculated.
  * 2. B field initialization, which requires density the untilted disk for simplicity
  */
-KOKKOS_INLINE_FUNCTION Real fm_torus_rho(const GReal a, const GReal rin, const GReal rmax, const Real gam,
+KOKKOS_FORCEINLINE_FUNCTION Real fm_torus_rho(const GReal a, const GReal rin, const GReal rmax, const Real gam,
                                          const Real kappa, const GReal r, const GReal th)
 {
     Real l = lfish_calc(a, rmax);

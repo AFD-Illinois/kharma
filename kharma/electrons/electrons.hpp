@@ -132,7 +132,7 @@ void FillOutput(MeshBlock *pmb, ParameterInput *pin);
  * calling Flux::PtoU where not all conserved variables need to be calculated. This is
  * an example.
  */
-KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates& G, const VariablePack<Real>& P, const VarMap& m_p,
+KOKKOS_FORCEINLINE_FUNCTION void p_to_u(const GRCoordinates& G, const VariablePack<Real>& P, const VarMap& m_p,
                                          const int& k, const int& j, const int& i,
                                          const VariablePack<Real>& flux, const VarMap m_u, const Loci loc=Loci::center)
 {

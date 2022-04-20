@@ -71,7 +71,7 @@ fi
 
 if [[ $HOST == "cinnabar"* ]]; then
   # All my MPI stacks can use this as the call
-  MPI_EXE=mpirun
+  MPI_EXE=
 
   module purge # Handle modules inside this script
   HOST_ARCH="HSW" # This won't change
@@ -79,6 +79,7 @@ if [[ $HOST == "cinnabar"* ]]; then
   if [[ "$ARGS" == *"cuda"* ]]; then
     # Use NVHPC libraries (GPU-aware OpenMPI!)
     DEVICE_ARCH="KEPLER35"
+    MPI_EXE=mpirun
     MPI_NUM_PROCS=2
     KOKKOS_NUM_DEVICES=2
     MPI_EXTRA_ARGS="--map-by ppr:1:numa:pe=14"

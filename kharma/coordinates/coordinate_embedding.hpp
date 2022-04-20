@@ -123,19 +123,19 @@ class CoordinateEmbedding {
 
         // Convenience functions to get common things
         // TODO add a gcon_embed, gdet_embed
-        KOKKOS_INLINE_FUNCTION bool spherical() const
+        KOKKOS_FORCEINLINE_FUNCTION bool spherical() const
         {
             return mpark::visit( [&](const auto& self) {
                 return self.spherical;
             }, base);
         }
-        // KOKKOS_INLINE_FUNCTION GReal rhor() const
+        // KOKKOS_FORCEINLINE_FUNCTION GReal rhor() const
         // {
         //     return mpark::visit( [&](const auto& self) {
         //         self.rhor();
         //     }, base);
         // }
-        KOKKOS_INLINE_FUNCTION GReal get_a() const
+        KOKKOS_FORCEINLINE_FUNCTION GReal get_a() const
         {
             if (mpark::holds_alternative<SphKSCoords>(base)) {
                 return mpark::get<SphKSCoords>(base).a;
@@ -145,7 +145,7 @@ class CoordinateEmbedding {
                 return 0.0; //throw std::invalid_argument("BH Spin is not defined for selected coordinate system!");
             }
         }
-        KOKKOS_INLINE_FUNCTION bool is_ks() const
+        KOKKOS_FORCEINLINE_FUNCTION bool is_ks() const
         {
             if (mpark::holds_alternative<SphKSCoords>(base)) {
                 return true;
@@ -156,32 +156,32 @@ class CoordinateEmbedding {
 
         // Spell out the interface we take from BaseCoords
         // TODO add a gcon_embed, gdet_embed
-        KOKKOS_INLINE_FUNCTION void gcov_embed(const GReal Xembed[GR_DIM], Real gcov[GR_DIM][GR_DIM]) const
+        KOKKOS_FORCEINLINE_FUNCTION void gcov_embed(const GReal Xembed[GR_DIM], Real gcov[GR_DIM][GR_DIM]) const
         {
             mpark::visit( [&Xembed, &gcov](const auto& self) {
                 self.gcov_embed(Xembed, gcov);
             }, base);
         }
         // and from the Transform
-        KOKKOS_INLINE_FUNCTION void coord_to_embed(const GReal Xnative[GR_DIM], GReal Xembed[GR_DIM]) const
+        KOKKOS_FORCEINLINE_FUNCTION void coord_to_embed(const GReal Xnative[GR_DIM], GReal Xembed[GR_DIM]) const
         {
             mpark::visit( [&Xnative, &Xembed](const auto& self) {
                 self.coord_to_embed(Xnative, Xembed);
             }, transform);
         }
-        KOKKOS_INLINE_FUNCTION void coord_to_native(const GReal Xembed[GR_DIM], GReal Xnative[GR_DIM]) const
+        KOKKOS_FORCEINLINE_FUNCTION void coord_to_native(const GReal Xembed[GR_DIM], GReal Xnative[GR_DIM]) const
         {
             mpark::visit( [&Xnative, &Xembed](const auto& self) {
                 self.coord_to_native(Xembed, Xnative);
             }, transform);
         }
-        KOKKOS_INLINE_FUNCTION void dxdX(const GReal Xnative[GR_DIM], Real dxdX[GR_DIM][GR_DIM]) const
+        KOKKOS_FORCEINLINE_FUNCTION void dxdX(const GReal Xnative[GR_DIM], Real dxdX[GR_DIM][GR_DIM]) const
         {
             mpark::visit( [&Xnative, &dxdX](const auto& self) {
                 self.dxdX(Xnative, dxdX);
             }, transform);
         }
-        KOKKOS_INLINE_FUNCTION void dXdx(const GReal Xnative[GR_DIM], Real dXdx[GR_DIM][GR_DIM]) const
+        KOKKOS_FORCEINLINE_FUNCTION void dXdx(const GReal Xnative[GR_DIM], Real dXdx[GR_DIM][GR_DIM]) const
         {
             mpark::visit( [&Xnative, &dXdx](const auto& self) {
                 self.dXdx(Xnative, dXdx);
@@ -190,7 +190,7 @@ class CoordinateEmbedding {
 
         // VECTOR TRANSFORMS
         // Contravariant vectors:
-        KOKKOS_INLINE_FUNCTION void con_vec_to_embed(const GReal Xnative[GR_DIM], const GReal vcon_native[GR_DIM], GReal vcon_embed[GR_DIM]) const
+        KOKKOS_FORCEINLINE_FUNCTION void con_vec_to_embed(const GReal Xnative[GR_DIM], const GReal vcon_native[GR_DIM], GReal vcon_embed[GR_DIM]) const
         {
             Real dxdX_temp[GR_DIM][GR_DIM];
             dxdX(Xnative, dxdX_temp);
@@ -200,7 +200,7 @@ class CoordinateEmbedding {
                     vcon_embed[mu] += dxdX_temp[mu][nu] * vcon_native[nu];
             }
         }
-        KOKKOS_INLINE_FUNCTION void con_vec_to_native(const GReal Xnative[GR_DIM], const GReal vcon_embed[GR_DIM], GReal vcon_native[GR_DIM]) const
+        KOKKOS_FORCEINLINE_FUNCTION void con_vec_to_native(const GReal Xnative[GR_DIM], const GReal vcon_embed[GR_DIM], GReal vcon_native[GR_DIM]) const
         {
             Real dXdx_temp[GR_DIM][GR_DIM];
             dXdx(Xnative, dXdx_temp);
@@ -211,14 +211,14 @@ class CoordinateEmbedding {
             }
         }
         // Covariant are opposite
-        KOKKOS_INLINE_FUNCTION void cov_vec_to_native(const GReal Xnative[GR_DIM], const GReal vcov_embed[GR_DIM], GReal vcov_native[GR_DIM]) const
+        KOKKOS_FORCEINLINE_FUNCTION void cov_vec_to_native(const GReal Xnative[GR_DIM], const GReal vcov_embed[GR_DIM], GReal vcov_native[GR_DIM]) const
             {con_vec_to_embed(Xnative, vcov_embed, vcov_native);}
-        KOKKOS_INLINE_FUNCTION void cov_vec_to_embed(const GReal Xnative[GR_DIM], const GReal vcov_native[GR_DIM], GReal vcov_embed[GR_DIM]) const
+        KOKKOS_FORCEINLINE_FUNCTION void cov_vec_to_embed(const GReal Xnative[GR_DIM], const GReal vcov_native[GR_DIM], GReal vcov_embed[GR_DIM]) const
             {con_vec_to_native(Xnative, vcov_native, vcov_embed);}
 
         // TENSOR TRANSFORMS
         // Covariant first
-        KOKKOS_INLINE_FUNCTION void cov_tensor_to_embed(const GReal Xnative[GR_DIM], const GReal tcov_native[GR_DIM][GR_DIM], GReal tcov_embed[GR_DIM][GR_DIM]) const
+        KOKKOS_FORCEINLINE_FUNCTION void cov_tensor_to_embed(const GReal Xnative[GR_DIM], const GReal tcov_native[GR_DIM][GR_DIM], GReal tcov_embed[GR_DIM][GR_DIM]) const
         {
             Real dXdx_temp[GR_DIM][GR_DIM];
             dXdx(Xnative, dXdx_temp);
@@ -232,7 +232,7 @@ class CoordinateEmbedding {
                 }
             }
         }
-        KOKKOS_INLINE_FUNCTION void cov_tensor_to_native(const GReal Xnative[GR_DIM], const GReal tcov_embed[GR_DIM][GR_DIM], GReal tcov_native[GR_DIM][GR_DIM]) const
+        KOKKOS_FORCEINLINE_FUNCTION void cov_tensor_to_native(const GReal Xnative[GR_DIM], const GReal tcov_embed[GR_DIM][GR_DIM], GReal tcov_native[GR_DIM][GR_DIM]) const
         {
             Real dxdX_temp[GR_DIM][GR_DIM];
             dxdX(Xnative, dxdX_temp);
@@ -247,13 +247,13 @@ class CoordinateEmbedding {
             }
         }
         // Con are opposite
-        KOKKOS_INLINE_FUNCTION void con_tensor_to_embed(const GReal Xnative[GR_DIM], const GReal tcon_native[GR_DIM][GR_DIM], GReal tcon_embed[GR_DIM][GR_DIM]) const
+        KOKKOS_FORCEINLINE_FUNCTION void con_tensor_to_embed(const GReal Xnative[GR_DIM], const GReal tcon_native[GR_DIM][GR_DIM], GReal tcon_embed[GR_DIM][GR_DIM]) const
             {cov_tensor_to_native(Xnative, tcon_native, tcon_embed);}
-        KOKKOS_INLINE_FUNCTION void con_tensor_to_native(const GReal Xnative[GR_DIM], const GReal tcon_embed[GR_DIM][GR_DIM], GReal tcon_native[GR_DIM][GR_DIM]) const
+        KOKKOS_FORCEINLINE_FUNCTION void con_tensor_to_native(const GReal Xnative[GR_DIM], const GReal tcon_embed[GR_DIM][GR_DIM], GReal tcon_native[GR_DIM][GR_DIM]) const
             {cov_tensor_to_embed(Xnative, tcon_embed, tcon_native);}
 
         // And then derived metric properties
-        KOKKOS_INLINE_FUNCTION void gcov_native(const GReal Xnative[GR_DIM], Real gcov[GR_DIM][GR_DIM]) const
+        KOKKOS_FORCEINLINE_FUNCTION void gcov_native(const GReal Xnative[GR_DIM], Real gcov[GR_DIM][GR_DIM]) const
         {
             Real gcov_em[GR_DIM][GR_DIM];
             GReal Xembed[GR_DIM];
@@ -266,25 +266,25 @@ class CoordinateEmbedding {
             // Transform to native coordinates
             cov_tensor_to_native(Xnative, gcov_em, gcov);
         }
-        KOKKOS_INLINE_FUNCTION Real gcon_native(const GReal X[GR_DIM], Real gcon[GR_DIM][GR_DIM]) const
+        KOKKOS_FORCEINLINE_FUNCTION Real gcon_native(const GReal X[GR_DIM], Real gcon[GR_DIM][GR_DIM]) const
         {
             Real gcov[GR_DIM][GR_DIM];
             gcov_native(X, gcov);
             return gcon_native(gcov, gcon);
         }
-        KOKKOS_INLINE_FUNCTION Real gcon_native(const Real gcov[GR_DIM][GR_DIM], Real gcon[GR_DIM][GR_DIM]) const
+        KOKKOS_FORCEINLINE_FUNCTION Real gcon_native(const Real gcov[GR_DIM][GR_DIM], Real gcon[GR_DIM][GR_DIM]) const
         {
             Real gdet = invert(&gcov[0][0], &gcon[0][0]);
             return sqrt(fabs(gdet));
         }
-        KOKKOS_INLINE_FUNCTION Real gdet_native(const GReal X[GR_DIM]) const
+        KOKKOS_FORCEINLINE_FUNCTION Real gdet_native(const GReal X[GR_DIM]) const
         {
             Real gcov[GR_DIM][GR_DIM], gcon[GR_DIM][GR_DIM];
             gcov_native(X, gcov);
             return gcon_native(gcov, gcon);
         }
 
-        KOKKOS_INLINE_FUNCTION void conn_native(const GReal X[GR_DIM], const GReal delta, Real conn[GR_DIM][GR_DIM][GR_DIM]) const
+        KOKKOS_FORCEINLINE_FUNCTION void conn_native(const GReal X[GR_DIM], const GReal delta, Real conn[GR_DIM][GR_DIM][GR_DIM]) const
         {
             GReal tmp[GR_DIM][GR_DIM][GR_DIM];
             GReal gcon[GR_DIM][GR_DIM];

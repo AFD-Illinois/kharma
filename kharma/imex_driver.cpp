@@ -242,7 +242,7 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         auto t_explicit = t_explicit_UtoP_G;
 
         // Copy the current implicit vars in as a guess.  This needs at least the primitive vars
-        auto t_copy_guess = tl.AddTask(t_sources, Update::WeightedSumData<MetadataFlag, MeshData<Real>>,
+        auto t_copy_guess = tl.AddTask(t_sources, WeightedSumData<MetadataFlag, MeshData<Real>>,
                                     std::vector<MetadataFlag>({isImplicit}),
                                     mc0.get(), mc0.get(), 1.0, 0.0, mc_solver.get());
 
@@ -253,7 +253,7 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         auto t_implicit = tl.AddTask(t_guess_ready, Implicit::Step, mbase.get(), mc0.get(), mdudt.get(), mc_solver.get(), dt_this);
 
         // Copy the solver state into the final state mc1
-        auto t_copy_result = tl.AddTask(t_implicit, Update::WeightedSumData<MetadataFlag, MeshData<Real>>, std::vector<MetadataFlag>({}),
+        auto t_copy_result = tl.AddTask(t_implicit, WeightedSumData<MetadataFlag, MeshData<Real>>, std::vector<MetadataFlag>({}),
                                         mc_solver.get(), mc_solver.get(), 1.0, 0.0, mc1.get());
 
         // If evolving GRMHD explicitly, U_to_P needs a guess in order to converge, so we copy in mc0
@@ -261,7 +261,7 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         if (!pkgs.at("GRMHD")->Param<bool>("implicit")) {
             MetadataFlag isPrimitive = pkgs.at("GRMHD")->Param<MetadataFlag>("PrimitiveFlag");
             MetadataFlag isHD = pkgs.at("GRMHD")->Param<MetadataFlag>("HDFlag");
-            auto t_copy_prims = tl.AddTask(t_none, Update::WeightedSumData<MetadataFlag, MeshData<Real>>,
+            auto t_copy_prims = tl.AddTask(t_none, WeightedSumData<MetadataFlag, MeshData<Real>>,
                                         std::vector<MetadataFlag>({isHD, isPrimitive}),
                                         mc0.get(), mc0.get(), 1.0, 0.0, mc1.get());
         }

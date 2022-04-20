@@ -62,11 +62,11 @@ TaskStatus SetBondi(MeshBlockData<Real> *rc, IndexDomain domain=IndexDomain::ent
  * 
  * Adapted from M. Chandra
  */
-KOKKOS_INLINE_FUNCTION Real get_Tfunc(const Real T, const GReal r, const Real C1, const Real C2, const Real n)
+KOKKOS_FORCEINLINE_FUNCTION Real get_Tfunc(const Real T, const GReal r, const Real C1, const Real C2, const Real n)
 {
     return pow(1. + (1. + n) * T, 2.) * (1. - 2. / r + pow(C1 / pow(r,2) / pow(T, n), 2.)) - C2;
 }
-KOKKOS_INLINE_FUNCTION Real get_T(const GReal r, const Real C1, const Real C2, const Real n)
+KOKKOS_FORCEINLINE_FUNCTION Real get_T(const GReal r, const Real C1, const Real C2, const Real n)
 {
     Real rtol = 1.e-12;
     Real ftol = 1.e-14;
@@ -107,7 +107,7 @@ KOKKOS_INLINE_FUNCTION Real get_T(const GReal r, const Real C1, const Real C2, c
  * 
  * TODO could put this back into SetBondi
  */
-KOKKOS_INLINE_FUNCTION void get_prim_bondi(const GRCoordinates& G, const CoordinateEmbedding& coords, const VariablePack<Real>& P, const VarMap& m_p,
+KOKKOS_FORCEINLINE_FUNCTION void get_prim_bondi(const GRCoordinates& G, const CoordinateEmbedding& coords, const VariablePack<Real>& P, const VarMap& m_p,
                                            const Real& gam, const SphBLCoords& bl,  const SphKSCoords& ks, 
                                            const Real mdot, const Real rs, const int& k, const int& j, const int& i)
 {

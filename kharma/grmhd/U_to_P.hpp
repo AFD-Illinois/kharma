@@ -46,9 +46,9 @@
 
 namespace GRMHD {
 
-KOKKOS_INLINE_FUNCTION Real err_eqn(const Real& gam, const Real& Bsq, const Real& D, const Real& Ep, const Real& QdB,
+KOKKOS_FORCEINLINE_FUNCTION Real err_eqn(const Real& gam, const Real& Bsq, const Real& D, const Real& Ep, const Real& QdB,
                                     const Real& Qtsq, const Real& Wp, InversionStatus& eflag);
-KOKKOS_INLINE_FUNCTION Real lorentz_calc_w(const Real& Bsq, const Real& D, const Real& QdB,
+KOKKOS_FORCEINLINE_FUNCTION Real lorentz_calc_w(const Real& Bsq, const Real& D, const Real& QdB,
                                         const Real& Qtsq, const Real& Wp);
 
 /**
@@ -61,7 +61,7 @@ KOKKOS_INLINE_FUNCTION Real lorentz_calc_w(const Real& Bsq, const Real& D, const
  * On error, will not write replacement values, leaving the previous step's values in place
  * These are fixed later, in FixUtoP
  */
-KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const VariablePack<Real>& U, const VarMap& m_u,
+KOKKOS_FORCEINLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const VariablePack<Real>& U, const VarMap& m_u,
                                               const Real& gam, const int& k, const int& j, const int& i, const Loci loc,
                                               const VariablePack<Real>& P, const VarMap& m_p)
 {
@@ -200,7 +200,7 @@ KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const Vari
 }
 
 // Document this
-KOKKOS_INLINE_FUNCTION Real err_eqn(const Real& gam, const Real& Bsq, const Real& D, const Real& Ep, const Real& QdB,
+KOKKOS_FORCEINLINE_FUNCTION Real err_eqn(const Real& gam, const Real& Bsq, const Real& D, const Real& Ep, const Real& QdB,
                                     const Real& Qtsq, const Real& Wp, InversionStatus& eflag)
 {
     const Real W = Wp + D;
@@ -217,7 +217,7 @@ KOKKOS_INLINE_FUNCTION Real err_eqn(const Real& gam, const Real& Bsq, const Real
 /**
  * Fluid relativistic factor gamma in terms of inversion state variables
  */
-KOKKOS_INLINE_FUNCTION Real lorentz_calc_w(const Real& Bsq, const Real& D, const Real& QdB,
+KOKKOS_FORCEINLINE_FUNCTION Real lorentz_calc_w(const Real& Bsq, const Real& D, const Real& QdB,
                                            const Real& Qtsq, const Real& Wp)
 {
     const Real QdBsq = QdB * QdB;

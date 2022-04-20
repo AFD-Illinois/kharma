@@ -23,6 +23,11 @@ log_*.txt
 .ptp-sync
 .vscode/
 
+# Profiling output
+advi*
+config/
+*.dat
+
 # C++ excludes
 # Build directory
 build/

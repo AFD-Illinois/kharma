@@ -58,7 +58,7 @@ void FillOutput(MeshBlock *pmb, ParameterInput *pin);
 TaskStatus CalculateCurrent(MeshBlockData<Real> *rc0, MeshBlockData<Real> *rc1, const double& dt);
 
 // Return mu, nu component of contravarient Maxwell tensor at grid zone i, j, k
-KOKKOS_INLINE_FUNCTION double get_Fcon(const GRCoordinates& G, GridVector uvec, GridVector B_P,
+KOKKOS_FORCEINLINE_FUNCTION double get_Fcon(const GRCoordinates& G, GridVector uvec, GridVector B_P,
                                         const int& mu, const int& nu, const int& k, const int& j, const int& i)
 {
     if (mu == nu) {

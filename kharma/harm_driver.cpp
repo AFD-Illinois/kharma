@@ -186,10 +186,10 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         auto t_sources = t_wind_source;
 
         // UPDATE BASE CONTAINER
-        auto t_avg_data = tl.AddTask(t_sources, Update::AverageIndependentData<MeshData<Real>>,
+        auto t_avg_data = tl.AddTask(t_sources, AverageIndependentData<MeshData<Real>>,
                                 mc0.get(), mbase.get(), beta);
         // apply du/dt to all independent fields in the container
-        auto t_update = tl.AddTask(t_avg_data, Update::UpdateIndependentData<MeshData<Real>>, mc0.get(),
+        auto t_update = tl.AddTask(t_avg_data, UpdateIndependentData<MeshData<Real>>, mc0.get(),
                                 mdudt.get(), beta * dt, mc1.get());
 
         // U_to_P needs a guess in order to converge, so we copy in sc0
@@ -197,7 +197,7 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         // on adjacent ranks are seeded with the same value, which keeps them (more) similar
         MetadataFlag isPrimitive = pkgs.at("GRMHD")->Param<MetadataFlag>("PrimitiveFlag");
         MetadataFlag isHD = pkgs.at("GRMHD")->Param<MetadataFlag>("HDFlag");
-        auto t_copy_prims = tl.AddTask(t_none, Update::WeightedSumData<MetadataFlag, MeshData<Real>>,
+        auto t_copy_prims = tl.AddTask(t_none, WeightedSumData<MetadataFlag, MeshData<Real>>,
                                     std::vector<MetadataFlag>({isHD, isPrimitive}),
                                     mc0.get(), mc0.get(), 1.0, 0.0, mc1.get());
 

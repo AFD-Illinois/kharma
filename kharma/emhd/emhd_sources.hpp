@@ -50,7 +50,7 @@ namespace EMHD {
  * Implicit source terms for EMHD, evaluated during implicit step calculation
  */
 template<typename Local>
-KOKKOS_INLINE_FUNCTION void implicit_sources(const GRCoordinates& G, const Local& P, const VarMap& m_p,
+KOKKOS_FORCEINLINE_FUNCTION void implicit_sources(const GRCoordinates& G, const Local& P, const VarMap& m_p,
                                              const Real& gam, const int& j, const int& i,
                                              const EMHD_parameters& emhd_params,
                                              Real& dUq, Real& dUdP)
@@ -67,7 +67,7 @@ KOKKOS_INLINE_FUNCTION void implicit_sources(const GRCoordinates& G, const Local
  * gamma, j, i,
  */
 template<typename Local>
-KOKKOS_INLINE_FUNCTION void time_derivative_sources(const GRCoordinates& G, const Local& P_new,
+KOKKOS_FORCEINLINE_FUNCTION void time_derivative_sources(const GRCoordinates& G, const Local& P_new,
                                                     const Local& P_old, const Local& P,
                                                     const VarMap& m_p, const EMHD_parameters& emhd_params,
                                                     const Real& gam, const Real& dt, const int& j, const int& i,

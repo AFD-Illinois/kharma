@@ -83,6 +83,34 @@ class HARMDriver : public MultiStageDriver {
         AllReduce<Real> update_norm;
 };
 
+// Copies of Parthenon functions. Ours are faster.
+template <typename F, typename T>
+TaskStatus WeightedSumData(const std::vector<F> &flags, T *in1, T *in2, const Real w1,
+                           const Real w2, T *out) {
+    Kokkos::Profiling::pushRegion("Task_WeightedSumData");
+    const auto &x = in1->PackVariables(flags);
+    const auto &y = in2->PackVariables(flags);
+    const auto &z = out->PackVariables(flags);
+    parthenon::par_for(DEFAULT_LOOP_PATTERN, "WeightedSumData", DevExecSpace(),
+        0, x.GetDim(5) - 1, 0, x.GetDim(4) - 1, 0, x.GetDim(3) - 1, 0, x.GetDim(2) - 1, 0, x.GetDim(1) - 1,
+        KOKKOS_LAMBDA_MESH_VARS {
+            z(b, p, k, j, i) = w1 * x(b, p, k, j, i) + w2 * y(b, p, k, j, i);
+        }
+    );
+    Kokkos::Profiling::popRegion(); // Task_WeightedSumData
+    return TaskStatus::complete;
+}
+template <typename T>
+TaskStatus UpdateIndependentData(T *in, T *dudt, const Real dt, T *out) {
+  return WeightedSumData(std::vector<MetadataFlag>({Metadata::Independent}), in, dudt,
+                         1.0, dt, out);
+}
+template <typename T>
+TaskStatus AverageIndependentData(T *c1, T *c2, const Real wgt1) {
+  return WeightedSumData(std::vector<MetadataFlag>({Metadata::Independent}), c1, c2, wgt1,
+                         (1.0 - wgt1), c1);
+}
+
 /**
  * Add a boundary synchronization sequence to the TaskCollection tc.
  * 

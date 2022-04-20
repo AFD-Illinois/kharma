@@ -80,7 +80,7 @@ void SyncAllBounds(Mesh *pmesh, bool sync_prims, bool sync_phys=true);
  *
  * @param type: 0 to check outflow from EH, 1 to check inflow from outer edge
  */
-KOKKOS_INLINE_FUNCTION void check_inflow(const GRCoordinates &G, const VariablePack<Real>& P, const int& u_start, const int& k, const int& j, const int& i, int type)
+KOKKOS_FORCEINLINE_FUNCTION void check_inflow(const GRCoordinates &G, const VariablePack<Real>& P, const int& u_start, const int& k, const int& j, const int& i, int type)
 {
     Real uvec[NVEC], ucon[GR_DIM];
     VLOOP uvec[v] = P(u_start + v, k, j, i);

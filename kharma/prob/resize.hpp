@@ -67,7 +67,7 @@
  *  E -> ( 1, 0.0)
  *  F -> ( 1, 0.5)
  */
-KOKKOS_INLINE_FUNCTION void Xtoijk(const GReal XG[GR_DIM],
+KOKKOS_FORCEINLINE_FUNCTION void Xtoijk(const GReal XG[GR_DIM],
                                    const GReal startx[GR_DIM], const GReal stopx[GR_DIM],
                                    const GReal dx[GR_DIM],
                                    int& i, int& j, int& k, GReal del[GR_DIM])
@@ -90,7 +90,7 @@ KOKKOS_INLINE_FUNCTION void Xtoijk(const GReal XG[GR_DIM],
     del[3] = (phi   - ((k + 0.5) * dx[3] + startx[3])) / dx[3];
 }
 
-KOKKOS_INLINE_FUNCTION void ijktoX(const GReal startx[GR_DIM], const GReal dx[GR_DIM],
+KOKKOS_FORCEINLINE_FUNCTION void ijktoX(const GReal startx[GR_DIM], const GReal dx[GR_DIM],
                                    const int& i, const int& j, const int& k,
                                    GReal XG[GR_DIM])
 {
@@ -106,7 +106,7 @@ KOKKOS_INLINE_FUNCTION void ijktoX(const GReal startx[GR_DIM], const GReal dx[GR
  * This interpolates a single-array variable 'var' representing a grid of size 'startx' to 'stopx' in
  * native coordinates, returning its value at location X
  */
-KOKKOS_INLINE_FUNCTION Real interp_scalar(const GRCoordinates& G, const GReal X[GR_DIM],
+KOKKOS_FORCEINLINE_FUNCTION Real interp_scalar(const GRCoordinates& G, const GReal X[GR_DIM],
                                           const GReal startx[GR_DIM], const GReal stopx[GR_DIM],
                                           const GReal dx[GR_DIM], const bool& is_spherical, const bool& weight_by_gdet,
                                           const int& n3, const int& n2, const int& n1,

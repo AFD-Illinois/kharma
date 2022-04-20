@@ -46,23 +46,24 @@ namespace Floors
 
 std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
 {
-    // TODO can I just build/add/use a Prescription here, rather than building one
-    // before each call?
     auto pkg = std::make_shared<StateDescriptor>("Floors");
     Params &params = pkg->AllParams();
 
-    // Floor parameters
-    double rho_min_geom, u_min_geom;
-    if (pin->GetBoolean("coordinates", "spherical")) {
+    // Floor parameters: fill a "Prescription" struct we can pass to the
+    // floor/ceiling functions
+    Floors::Prescription p;
+    p.spherical = pin->GetBoolean("coordinates", "spherical");
+    if (p.spherical) {
         // In spherical systems, floors drop as r^2, so set them higher by default
-        rho_min_geom = pin->GetOrAddReal("floors", "rho_min_geom", 1.e-6);
-        u_min_geom = pin->GetOrAddReal("floors", "u_min_geom", 1.e-8);
+        p.rho_min_geom = pin->GetOrAddReal("floors", "rho_min_geom", 1.e-6);
+        p.u_min_geom = pin->GetOrAddReal("floors", "u_min_geom", 1.e-8);
     } else {
-        rho_min_geom = pin->GetOrAddReal("floors", "rho_min_geom", 1.e-8);
-        u_min_geom = pin->GetOrAddReal("floors", "u_min_geom", 1.e-10);
+        p.rho_min_geom = pin->GetOrAddReal("floors", "rho_min_geom", 1.e-8);
+        p.u_min_geom = pin->GetOrAddReal("floors", "u_min_geom", 1.e-10);
     }
-    params.Add("rho_min_geom", rho_min_geom);
-    params.Add("u_min_geom", u_min_geom);
+    // Record things in the package parameters too
+    params.Add("rho_min_geom", p.rho_min_geom);
+    params.Add("u_min_geom", p.u_min_geom);
 
     // In iharm3d, overdensities would run away; one proposed solution was
     // to decrease the density floor more with radius.  However, in practice
@@ -70,33 +71,33 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     // 2. interior density floors are dominated by the floor vs bsq
     // Also, this changes the internal energy floor pretty drastically --
     // newly interesting in light of increases to the UU floors
-    bool use_r_char = pin->GetOrAddBoolean("floors", "use_r_char", false);
-    params.Add("use_r_char", use_r_char);
-    double r_char = pin->GetOrAddReal("floors", "r_char", 10);
-    params.Add("r_char", r_char);
+    p.use_r_char = pin->GetOrAddBoolean("floors", "use_r_char", false);
+    params.Add("use_r_char", p.use_r_char);
+    p.r_char = pin->GetOrAddReal("floors", "r_char", 10);
+    params.Add("r_char", p.r_char);
 
     // Floors vs magnetic field.  Most commonly hit & most temperamental
-    double bsq_over_rho_max = pin->GetOrAddReal("floors", "bsq_over_rho_max", 1e20);
-    params.Add("bsq_over_rho_max", bsq_over_rho_max);
-    double bsq_over_u_max = pin->GetOrAddReal("floors", "bsq_over_u_max", 1e20);
-    params.Add("bsq_over_u_max", bsq_over_u_max);
+    p.bsq_over_rho_max = pin->GetOrAddReal("floors", "bsq_over_rho_max", 1e20);
+    params.Add("bsq_over_rho_max", p.bsq_over_rho_max);
+    p.bsq_over_u_max = pin->GetOrAddReal("floors", "bsq_over_u_max", 1e20);
+    params.Add("bsq_over_u_max", p.bsq_over_u_max);
 
     // Limit temperature or entropy, optionally by siphoning off extra rather
     // than by adding material.
-    double u_over_rho_max = pin->GetOrAddReal("floors", "u_over_rho_max", 1e20);
-    params.Add("u_over_rho_max", u_over_rho_max);
-    double ktot_max = pin->GetOrAddReal("floors", "ktot_max", 1e20);
-    params.Add("ktot_max", ktot_max);
-    bool temp_adjust_u = pin->GetOrAddBoolean("floors", "temp_adjust_u", false);
-    params.Add("temp_adjust_u", temp_adjust_u);
+    p.u_over_rho_max = pin->GetOrAddReal("floors", "u_over_rho_max", 1e20);
+    params.Add("u_over_rho_max", p.u_over_rho_max);
+    p.ktot_max = pin->GetOrAddReal("floors", "ktot_max", 1e20);
+    params.Add("ktot_max", p.ktot_max);
+    p.temp_adjust_u = pin->GetOrAddBoolean("floors", "temp_adjust_u", false);
+    params.Add("temp_adjust_u", p.temp_adjust_u);
     // Adjust electron entropy values when applying density floors to conserve
     // internal energy, as in Ressler+ but not more recent implementations
-    bool adjust_k = pin->GetOrAddBoolean("floors", "adjust_k", true);
-    params.Add("adjust_k", adjust_k);
+    p.adjust_k = pin->GetOrAddBoolean("floors", "adjust_k", true);
+    params.Add("adjust_k", p.adjust_k);
 
-    // Limit 
-    double gamma_max = pin->GetOrAddReal("floors", "gamma_max", 50.);
-    params.Add("gamma_max", gamma_max);
+    // Limit fluid Lorentz factor gamma
+    p.gamma_max = pin->GetOrAddReal("floors", "gamma_max", 50.);
+    params.Add("gamma_max", p.gamma_max);
 
     // Frame to apply floors: usually we use normal observer frame, but
     // the option exists to use the fluid frame exclusively or outside a
@@ -105,24 +106,26 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     std::string frame = pin->GetOrAddString("floors", "frame", "normal");
     params.Add("frame", frame);
     if (frame == "normal" || frame == "nof") {
-        params.Add("fluid_frame", false);
-        params.Add("mixed_frame", false);
+        p.frame = FloorFrame::normal_observer;
     } else if (frame == "fluid" || frame == "ff") {
-        params.Add("fluid_frame", true);
-        params.Add("mixed_frame", false);
+        p.frame = FloorFrame::fluid;
     } else if (frame == "mixed") {
-        params.Add("fluid_frame", false);
-        params.Add("mixed_frame", true);
+        p.frame = FloorFrame::mixed_nof_ff;
     } else {
         throw std::invalid_argument("Floor frame "+frame+" not supported");
     }
+    params.Add("fluid_frame", p.frame);
     // We initialize this even if not using mixed frame, for constructing Prescription objs
-    Real frame_switch = pin->GetOrAddReal("floors", "frame_switch", 50.);
-    params.Add("frame_switch", frame_switch);
+    p.mixed_frame_switch = pin->GetOrAddReal("floors", "frame_switch", 50.);
+    params.Add("frame_switch", p.mixed_frame_switch);
+
+    // Add the whole prescription to the Params struct
+    params.Add("prescription", p);
     
 
-    // Disable all floors.  It is obviously tremendously inadvisable to
-    // set this option to true
+    // Option to disable all floors.  It is obviously tremendously inadvisable to
+    // enable this option in production simulations.
+    // However, it is useful in smaller tests where floors are not expected to be hit
     bool disable_floors = pin->GetOrAddBoolean("floors", "disable_floors", false);
     params.Add("disable_floors", disable_floors);
 
@@ -134,7 +137,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     // Floors should be applied to primitive ("Derived") variables just after they are calculated.
     pkg->PostFillDerivedBlock = Floors::PostFillDerivedBlock;
     // Could print floor flags using this package, but they're very similar to pflag
-    // so I'm leaving them together
+    // so I'm leaving them together & printing in debug.cpp
     //pkg->PostStepDiagnosticsMesh = GRMHD::PostStepDiagnostics;
 
     return pkg;
@@ -165,13 +168,15 @@ TaskStatus ApplyFloors(MeshBlockData<Real> *rc)
     GridScalar pflag = rc->Get("pflag").data;
     GridScalar fflag = rc->Get("fflag").data;
 
-    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
-    const Floors::Prescription floors(pmb->packages.Get("Floors")->AllParams());
+    const Real& gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
+    const Floors::Prescription& floors = pmb->packages.Get("Floors")->Param<Floors::Prescription>("prescription");
+    
 
     // Apply floors over the same zones we just updated with UtoP
-    // This selects the entire zone, but we then require pflag >= 0,
-    // which keeps us from covering completely uninitialized zones
-    // (but still applies to failed UtoP!)
+    // This selects the entire domain+ghosts, but we then require pflag >= 0,
+    // which keeps us from covering completely uninitialized zones,
+    // but still applies floors to zones with failed UtoP
+    // (which we want in case there are no successfully integrated neighbors)
     const IndexRange ib = rc->GetBoundsI(IndexDomain::entire);
     const IndexRange jb = rc->GetBoundsJ(IndexDomain::entire);
     const IndexRange kb = rc->GetBoundsK(IndexDomain::entire);
@@ -180,25 +185,22 @@ TaskStatus ApplyFloors(MeshBlockData<Real> *rc)
             if (((int) pflag(k, j, i)) >= InversionStatus::success) {
                 // apply_floors can involve another U_to_P call.  Hide the pflag in bottom 5 bits and retrieve both
                 int comboflag = apply_floors(G, P, m_p, gam, k, j, i, floors, U, m_u);
-                fflag(k, j, i) = (comboflag / HIT_FLOOR_GEOM_RHO) * HIT_FLOOR_GEOM_RHO;
+                int ifflag = (comboflag / HIT_FLOOR_GEOM_RHO) * HIT_FLOOR_GEOM_RHO;
+                int ipflag = comboflag % HIT_FLOOR_GEOM_RHO;
 
-                // The floors as they're written guarantee a consistent state in their cells,
-                // so we do not flag any additional cells, nor do we remove existing flags
-                // (which might have only "needed floors" due to being left untouched by UtoP)
-                // TODO record these flags separately, they are likely common depending on floor prescriptions
-#if !FUSE_FLOOR_KERNELS
-            }
-        }
-    );
-    pmb->par_for("apply_ceilings", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-        KOKKOS_LAMBDA_3D {
-            if (((int) pflag(k, j, i)) >= InversionStatus::success) {
-#endif
                 // Apply ceilings *after* floors, to make the temperature ceiling better-behaved
                 // Ceilings never involve a U_to_P call
-                int addflag = fflag(k, j, i);
-                addflag |= apply_ceilings(G, P, m_p, gam, k, j, i, floors, U, m_u);
-                fflag(k, j, i) = addflag;
+                ifflag |= apply_ceilings(G, P, m_p, gam, k, j, i, floors, U, m_u);
+
+                // Write flags to arrays
+                fflag(k, j, i) = ifflag;
+                if (((int) pflag(k, j, i)) == 0)
+                    pflag(k, j, i) = ipflag;
+
+                // Keep conserved variables updated
+                if (ifflag != 0 || ipflag != 0) {
+                    GRMHD::p_to_u(G, P, m_p, gam, k, j, i, U, m_u);
+                }
             }
         }
     );

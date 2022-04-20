@@ -80,7 +80,7 @@ using namespace std;
 class CartMinkowskiCoords {
     public:
         const bool spherical = false;
-        KOKKOS_INLINE_FUNCTION void gcov_embed(const GReal Xembed[GR_DIM], Real gcov[GR_DIM][GR_DIM]) const
+        KOKKOS_FORCEINLINE_FUNCTION void gcov_embed(const GReal Xembed[GR_DIM], Real gcov[GR_DIM][GR_DIM]) const
         {
             DLOOP2 gcov[mu][nu] = (mu == nu) - 2*(mu == 0 && nu == 0);
         }
@@ -92,7 +92,7 @@ class CartMinkowskiCoords {
 class SphMinkowskiCoords {
     public:
         const bool spherical = true;
-        KOKKOS_INLINE_FUNCTION void gcov_embed(const GReal Xembed[GR_DIM], Real gcov[GR_DIM][GR_DIM]) const
+        KOKKOS_FORCEINLINE_FUNCTION void gcov_embed(const GReal Xembed[GR_DIM], Real gcov[GR_DIM][GR_DIM]) const
         {
             const GReal r = max(Xembed[1], SMALL);
             const GReal th = excise(excise(Xembed[2], 0.0, SMALL), M_PI, SMALL);
@@ -117,7 +117,7 @@ class SphKSCoords {
 
         KOKKOS_FUNCTION SphKSCoords(GReal spin): a(spin) {};
 
-        KOKKOS_INLINE_FUNCTION void gcov_embed(const GReal Xembed[GR_DIM], Real gcov[GR_DIM][GR_DIM]) const
+        KOKKOS_FORCEINLINE_FUNCTION void gcov_embed(const GReal Xembed[GR_DIM], Real gcov[GR_DIM][GR_DIM]) const
         {
             const GReal r = Xembed[1];
             const GReal th = excise(excise(Xembed[2], 0.0, SMALL), M_PI, SMALL);
@@ -149,7 +149,7 @@ class SphKSCoords {
 
         // For converting from BL
         // TODO will we ever need a from_ks?
-        KOKKOS_INLINE_FUNCTION void vec_from_bl(const GReal Xembed[GR_DIM], const Real vcon_bl[GR_DIM], Real vcon[GR_DIM]) const
+        KOKKOS_FORCEINLINE_FUNCTION void vec_from_bl(const GReal Xembed[GR_DIM], const Real vcon_bl[GR_DIM], Real vcon[GR_DIM]) const
         {
             GReal r = Xembed[1];
             Real trans[GR_DIM][GR_DIM];
@@ -161,7 +161,7 @@ class SphKSCoords {
             DLOOP2 vcon[mu] += trans[mu][nu]*vcon_bl[nu];
         }
 
-        KOKKOS_INLINE_FUNCTION void vec_to_bl(const GReal Xembed[GR_DIM], const Real vcon_bl[GR_DIM], Real vcon[GR_DIM]) const
+        KOKKOS_FORCEINLINE_FUNCTION void vec_to_bl(const GReal Xembed[GR_DIM], const Real vcon_bl[GR_DIM], Real vcon[GR_DIM]) const
         {
             GReal r = Xembed[1];
             GReal rtrans[GR_DIM][GR_DIM], trans[GR_DIM][GR_DIM];
@@ -175,7 +175,7 @@ class SphKSCoords {
         }
 
         // TODO more: isco etc?
-        KOKKOS_INLINE_FUNCTION GReal rhor() const
+        KOKKOS_FORCEINLINE_FUNCTION GReal rhor() const
         {
             return (1. + sqrt(1. - a*a));
         }
@@ -192,7 +192,7 @@ class SphBLCoords {
 
         KOKKOS_FUNCTION SphBLCoords(GReal spin): a(spin) {}
 
-        KOKKOS_INLINE_FUNCTION void gcov_embed(const GReal Xembed[GR_DIM], Real gcov[GR_DIM][GR_DIM]) const
+        KOKKOS_FORCEINLINE_FUNCTION void gcov_embed(const GReal Xembed[GR_DIM], Real gcov[GR_DIM][GR_DIM]) const
         {
             const GReal r = Xembed[1];
             const GReal th = excise(excise(Xembed[2], 0.0, SMALL), M_PI, SMALL);
@@ -215,7 +215,7 @@ class SphBLCoords {
 
         // TODO vec to/from ks, put guaranteed ks/bl fns into embedding
 
-        KOKKOS_INLINE_FUNCTION GReal rhor() const
+        KOKKOS_FORCEINLINE_FUNCTION GReal rhor() const
         {
             return (1. + sqrt(1. - a*a));
         }
@@ -236,20 +236,20 @@ class NullTransform {
     public:
         // Coordinate transformations
         // Any coordinate value protections (th < 0, th > pi, phi > 2pi) should be in the base system
-        KOKKOS_INLINE_FUNCTION void coord_to_embed(const GReal Xnative[GR_DIM], GReal Xembed[GR_DIM]) const
+        KOKKOS_FORCEINLINE_FUNCTION void coord_to_embed(const GReal Xnative[GR_DIM], GReal Xembed[GR_DIM]) const
         {
             DLOOP1 Xembed[mu] = Xnative[mu];
         }
-        KOKKOS_INLINE_FUNCTION void coord_to_native(const GReal Xembed[GR_DIM], GReal Xnative[GR_DIM]) const
+        KOKKOS_FORCEINLINE_FUNCTION void coord_to_native(const GReal Xembed[GR_DIM], GReal Xnative[GR_DIM]) const
         {
             DLOOP1 Xnative[mu] = Xembed[mu];
         }
         // Tangent space transformation matrices
-        KOKKOS_INLINE_FUNCTION void dxdX(const GReal X[GR_DIM], Real dxdX[GR_DIM][GR_DIM]) const
+        KOKKOS_FORCEINLINE_FUNCTION void dxdX(const GReal X[GR_DIM], Real dxdX[GR_DIM][GR_DIM]) const
         {
             DLOOP2 dxdX[mu][nu] = (mu == nu);
         }
-        KOKKOS_INLINE_FUNCTION void dXdx(const GReal X[GR_DIM], Real dXdx[GR_DIM][GR_DIM]) const
+        KOKKOS_FORCEINLINE_FUNCTION void dXdx(const GReal X[GR_DIM], Real dXdx[GR_DIM][GR_DIM]) const
         {
             DLOOP2 dXdx[mu][nu] = (mu == nu);
         }
@@ -262,7 +262,7 @@ class NullTransform {
 class ExponentialTransform {
     public:
         // Coordinate transformations
-        KOKKOS_INLINE_FUNCTION void coord_to_embed(const GReal Xnative[GR_DIM], GReal Xembed[GR_DIM]) const
+        KOKKOS_FORCEINLINE_FUNCTION void coord_to_embed(const GReal Xnative[GR_DIM], GReal Xembed[GR_DIM]) const
         {
             Xembed[0] = Xnative[0];
             Xembed[1] = exp(Xnative[1]);
@@ -273,7 +273,7 @@ class ExponentialTransform {
 #endif
             Xembed[3] = Xnative[3];
         }
-        KOKKOS_INLINE_FUNCTION void coord_to_native(const GReal Xembed[GR_DIM], GReal Xnative[GR_DIM]) const
+        KOKKOS_FORCEINLINE_FUNCTION void coord_to_native(const GReal Xembed[GR_DIM], GReal Xnative[GR_DIM]) const
         {
             Xnative[0] = Xembed[0];
             Xnative[1] = log(Xembed[1]);
@@ -283,7 +283,7 @@ class ExponentialTransform {
         /**
          * Transformation matrix for contravariant vectors to embedding, or covariant vectors to native
          */
-        KOKKOS_INLINE_FUNCTION void dxdX(const GReal Xnative[GR_DIM], Real dxdX[GR_DIM][GR_DIM]) const
+        KOKKOS_FORCEINLINE_FUNCTION void dxdX(const GReal Xnative[GR_DIM], Real dxdX[GR_DIM][GR_DIM]) const
         {
             gzero2(dxdX);
             dxdX[0][0] = 1.;
@@ -294,7 +294,7 @@ class ExponentialTransform {
         /**
          * Transformation matrix for contravariant vectors to native, or covariant vectors to embedding
          */
-        KOKKOS_INLINE_FUNCTION void dXdx(const GReal Xnative[GR_DIM], Real dXdx[GR_DIM][GR_DIM]) const
+        KOKKOS_FORCEINLINE_FUNCTION void dXdx(const GReal Xnative[GR_DIM], Real dXdx[GR_DIM][GR_DIM]) const
         {
             gzero2(dXdx);
             dXdx[0][0] = 1.;
@@ -316,7 +316,7 @@ class ModifyTransform {
         KOKKOS_FUNCTION ModifyTransform(GReal hslope_in): hslope(hslope_in) {}
 
         // Coordinate transformations
-        KOKKOS_INLINE_FUNCTION void coord_to_embed(const GReal Xnative[GR_DIM], GReal Xembed[GR_DIM]) const
+        KOKKOS_FORCEINLINE_FUNCTION void coord_to_embed(const GReal Xnative[GR_DIM], GReal Xembed[GR_DIM]) const
         {
             Xembed[0] = Xnative[0];
             Xembed[1] = exp(Xnative[1]);
@@ -328,7 +328,7 @@ class ModifyTransform {
 #endif
             Xembed[3] = Xnative[3];
         }
-        KOKKOS_INLINE_FUNCTION void coord_to_native(const GReal Xembed[GR_DIM], GReal Xnative[GR_DIM]) const
+        KOKKOS_FORCEINLINE_FUNCTION void coord_to_native(const GReal Xembed[GR_DIM], GReal Xnative[GR_DIM]) const
         {
             Xnative[0] = Xembed[0];
             Xnative[1] = log(Xembed[1]);
@@ -339,7 +339,7 @@ class ModifyTransform {
         /**
          * Transformation matrix for contravariant vectors to embedding, or covariant vectors to native
          */
-        KOKKOS_INLINE_FUNCTION void dxdX(const GReal Xnative[GR_DIM], Real dxdX[GR_DIM][GR_DIM]) const
+        KOKKOS_FORCEINLINE_FUNCTION void dxdX(const GReal Xnative[GR_DIM], Real dxdX[GR_DIM][GR_DIM]) const
         {
             gzero2(dxdX);
             dxdX[0][0] = 1.;
@@ -350,7 +350,7 @@ class ModifyTransform {
         /**
          * Transformation matrix for contravariant vectors to native, or covariant vectors to embedding
          */
-        KOKKOS_INLINE_FUNCTION void dXdx(const GReal Xnative[GR_DIM], Real dXdx[GR_DIM][GR_DIM]) const
+        KOKKOS_FORCEINLINE_FUNCTION void dXdx(const GReal Xnative[GR_DIM], Real dXdx[GR_DIM][GR_DIM]) const
         {
             gzero2(dXdx);
             dXdx[0][0] = 1.;
@@ -378,7 +378,7 @@ class FunkyTransform {
             }
 
         // Coordinate transformations
-        KOKKOS_INLINE_FUNCTION void coord_to_embed(const GReal Xnative[GR_DIM], GReal Xembed[GR_DIM]) const
+        KOKKOS_FORCEINLINE_FUNCTION void coord_to_embed(const GReal Xnative[GR_DIM], GReal Xembed[GR_DIM]) const
         {
             Xembed[0] = Xnative[0];
             Xembed[1] = exp(Xnative[1]);
@@ -394,7 +394,7 @@ class FunkyTransform {
 #endif
             Xembed[3] = Xnative[3];
         }
-        KOKKOS_INLINE_FUNCTION void coord_to_native(const GReal Xembed[GR_DIM], GReal Xnative[GR_DIM]) const
+        KOKKOS_FORCEINLINE_FUNCTION void coord_to_native(const GReal Xembed[GR_DIM], GReal Xnative[GR_DIM]) const
         {
             Xnative[0] = Xembed[0];
             Xnative[1] = log(Xembed[1]);
@@ -405,7 +405,7 @@ class FunkyTransform {
         /**
          * Transformation matrix for contravariant vectors to embedding, or covariant vectors to native
          */
-        KOKKOS_INLINE_FUNCTION void dxdX(const GReal Xnative[GR_DIM], Real dxdX[GR_DIM][GR_DIM]) const
+        KOKKOS_FORCEINLINE_FUNCTION void dxdX(const GReal Xnative[GR_DIM], Real dxdX[GR_DIM][GR_DIM]) const
         {
             gzero2(dxdX);
             dxdX[0][0] = 1.;
@@ -435,7 +435,7 @@ class FunkyTransform {
         /**
          * Transformation matrix for contravariant vectors to native, or covariant vectors to embedding
          */
-        KOKKOS_INLINE_FUNCTION void dXdx(const GReal Xnative[GR_DIM], Real dXdx[GR_DIM][GR_DIM]) const
+        KOKKOS_FORCEINLINE_FUNCTION void dXdx(const GReal Xnative[GR_DIM], Real dXdx[GR_DIM][GR_DIM]) const
         {
             // Okay this one should probably stay numerical
             Real dxdX_tmp[GR_DIM][GR_DIM];

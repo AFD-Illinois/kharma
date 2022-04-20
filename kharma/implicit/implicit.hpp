@@ -78,7 +78,7 @@ TaskStatus Step(MeshData<Real> *mdi, MeshData<Real> *md0, MeshData<Real> *dudt,
  * "Local" here is anything sliced (usually Scratch) addressable var(ip)
  */
 template<typename Local>
-KOKKOS_INLINE_FUNCTION void calc_residual(const GRCoordinates& G, const Local& P_test,
+KOKKOS_FORCEINLINE_FUNCTION void calc_residual(const GRCoordinates& G, const Local& P_test,
                                           const Local& Pi, const Local& Ui, const Local& Ps,
                                           const Local& dudt_explicit, const Local& dUi, const Local& tmp, 
                                           const VarMap& m_p, const VarMap& m_u, const EMHD_parameters& emhd_params,
@@ -128,7 +128,7 @@ KOKKOS_INLINE_FUNCTION void calc_residual(const GRCoordinates& G, const Local& P
  * Usually these are Kokkos subviews
  */
 template<typename Local, typename Local2>
-KOKKOS_INLINE_FUNCTION void calc_jacobian(const GRCoordinates& G, const Local& P,
+KOKKOS_FORCEINLINE_FUNCTION void calc_jacobian(const GRCoordinates& G, const Local& P,
                                           const Local& Pi, const Local& Ui, const Local& Ps,
                                           const Local& dudt_explicit, const Local& dUi,
                                           Local& tmp1, Local& tmp2, Local& tmp3,

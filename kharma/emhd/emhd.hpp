@@ -51,15 +51,12 @@ namespace EMHD {
 
 enum ClosureType{constant=0, soundspeed, torus};
 
-class EMHD_parameters {
-    public:
-
-        bool higher_order_terms;
-        ClosureType type;
-        Real tau;
-        Real conduction_alpha;
-        Real viscosity_alpha;
-
+struct EMHD_parameters {
+    bool higher_order_terms;
+    ClosureType type;
+    Real tau;
+    Real conduction_alpha;
+    Real viscosity_alpha;
 };
 
 /**
@@ -79,7 +76,7 @@ TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt);
  * TODO Local & Global, when we're sure
  */
 template<typename Local>
-KOKKOS_INLINE_FUNCTION void set_parameters(const GRCoordinates& G, const Local& P, const VarMap& m_p,
+KOKKOS_FORCEINLINE_FUNCTION void set_parameters(const GRCoordinates& G, const Local& P, const VarMap& m_p,
                                            const EMHD_parameters& emhd_params, const Real& gam,
                                            Real& tau, Real& chi_e, Real& nu_e)
 {
@@ -100,7 +97,7 @@ KOKKOS_INLINE_FUNCTION void set_parameters(const GRCoordinates& G, const Local& 
     } // else yell?
 }
 template<typename Global>
-KOKKOS_INLINE_FUNCTION void set_parameters(const GRCoordinates& G, const Global& P, const VarMap& m_p,
+KOKKOS_FORCEINLINE_FUNCTION void set_parameters(const GRCoordinates& G, const Global& P, const VarMap& m_p,
                                            const EMHD_parameters& emhd_params, const Real& gam,
                                            const int& k, const int& j, const int& i,
                                            Real& tau, Real& chi_e, Real& nu_e)
@@ -123,7 +120,7 @@ KOKKOS_INLINE_FUNCTION void set_parameters(const GRCoordinates& G, const Global&
     } // else yell?
 }
 // Local version for use in initialization, as q/dP need to be converted to prim tilde forms
-KOKKOS_INLINE_FUNCTION void set_parameters(const GRCoordinates& G, const Real& rho, const Real& u,
+KOKKOS_FORCEINLINE_FUNCTION void set_parameters(const GRCoordinates& G, const Real& rho, const Real& u,
                                            const EMHD_parameters& emhd_params, const Real& gam,
                                            const int& k, const int& j, const int& i,
                                            Real& tau, Real& chi_e, Real& nu_e)
@@ -149,7 +146,7 @@ KOKKOS_INLINE_FUNCTION void set_parameters(const GRCoordinates& G, const Real& r
  *
  * Entirely local!
  */
-KOKKOS_INLINE_FUNCTION void calc_tensor(const Real& rho, const Real& u, const Real& pgas,
+KOKKOS_FORCEINLINE_FUNCTION void calc_tensor(const Real& rho, const Real& u, const Real& pgas,
                                         const Real& q, const Real& dP,
                                         const FourVectors& D, const int& dir,
                                         Real emhd[GR_DIM])
@@ -171,7 +168,7 @@ KOKKOS_INLINE_FUNCTION void calc_tensor(const Real& rho, const Real& u, const Re
 
 // Convert q_tilde and dP_tilde (which are primitives) to q and dP
 // This is required because the stress-energy tensor depends on q and dP
-KOKKOS_INLINE_FUNCTION void convert_prims_to_q_dP(const Real& q_tilde, const Real& dP_tilde,
+KOKKOS_FORCEINLINE_FUNCTION void convert_prims_to_q_dP(const Real& q_tilde, const Real& dP_tilde,
                                         const Real& rho, const Real& Theta, 
                                         const Real& tau, const Real& chi_e, const Real& nu_e,
                                         const EMHD_parameters& emhd_params, Real& q, Real& dP)
@@ -189,7 +186,7 @@ KOKKOS_INLINE_FUNCTION void convert_prims_to_q_dP(const Real& q_tilde, const Rea
 // This is required because,
 //          1. The source terms contain q0_tilde and dP0_tilde
 //          2. Initializations MAY require converting q and dP to q_tilde and dP_tilde
-KOKKOS_INLINE_FUNCTION void convert_q_dP_to_prims(const Real& q, const Real& dP,
+KOKKOS_FORCEINLINE_FUNCTION void convert_q_dP_to_prims(const Real& q, const Real& dP,
                                         const Real& rho, const Real& Theta, 
                                         const Real& tau, const Real& chi_e, const Real& nu_e,
                                         const EMHD_parameters& emhd_params, Real& q_tilde, Real& dP_tilde)
