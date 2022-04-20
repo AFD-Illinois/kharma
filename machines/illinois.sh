@@ -11,6 +11,10 @@ elif [[ $HOST == *".astro.illinois.edu" ]]; then
   if [[ $HOST == "bh29"* ]]; then
     # BH29: Zen2 AMD EPYC 7742
     HOST_ARCH="ZEN2"
+    MPI_EXE=mpirun
+    MPI_NUM_PROCS=4
+    MPI_EXTRA_ARGS="--map-by ppr:1:numa:pe=16"
+    export OMP_NUM_THREADS=16
   else
     # Other machines are Skylake
     HOST_ARCH="SKX"
@@ -22,10 +26,10 @@ elif [[ $HOST == *".astro.illinois.edu" ]]; then
   if [[ $ARGS == *"icc"* ]]; then
     # Intel ICC
     module purge
+    module load gnu
     source /opt/intel/oneapi/setvars.sh
     C_NATIVE="icc"
     CXX_NATIVE="icpc"
-
   elif [[ $ARGS == *"aocc"* ]]; then
     # AMD AOCC (BH29 only)
     source /opt/AMD/aocc-compiler-3.1.0.sles15/setenv_AOCC.sh
