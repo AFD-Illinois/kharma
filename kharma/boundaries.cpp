@@ -355,18 +355,17 @@ void KBoundaries::SyncAllBounds(Mesh *pmesh, bool sync_prims, bool sync_phys)
     Flag("Syncing all bounds");
 
     if (sync_prims) {
-        // If we're syncing the primitive vars, we just sync
+        // If we're syncing the primitive vars, we just sync once
         // TODO assumes one "partition" i.e. MeshBlock/rank
         auto& md = pmesh->mesh_data.GetOrAdd("base", 0);
-        md->ClearBoundary(BoundaryCommSubset::all);
-        md->StartReceiving(BoundaryCommSubset::all);
+        while(md->StartReceiving(BoundaryCommSubset::all) != TaskStatus::complete);
         // Send everything
-        cell_centered_bvars::SendBoundaryBuffers(md);
+        while(cell_centered_bvars::SendBoundaryBuffers(md) != TaskStatus::complete);
         // Wait on receive
-        cell_centered_bvars::ReceiveBoundaryBuffers(md);
+        while(cell_centered_bvars::ReceiveBoundaryBuffers(md) != TaskStatus::complete);
         // Set boundaries from buffers
-        cell_centered_bvars::SetBoundaries(md);
-        md->ClearBoundary(BoundaryCommSubset::all);
+        while(cell_centered_bvars::SetBoundaries(md) != TaskStatus::complete);
+        while(md->ClearBoundary(BoundaryCommSubset::all) != TaskStatus::complete);
 
         // Then PtoU
         for (auto &pmb : pmesh->block_list) {
@@ -375,7 +374,7 @@ void KBoundaries::SyncAllBounds(Mesh *pmesh, bool sync_prims, bool sync_phys)
             //pmb->pbval->ProlongateBoundaries();
 
             Flag("Block fill Conserved");
-            Flux::PtoU(rc.get());
+            Flux::PtoU(rc.get(), IndexDomain::entire);
 
             if (sync_phys) {
                 Flag("Block physical bounds");
@@ -393,17 +392,17 @@ void KBoundaries::SyncAllBounds(Mesh *pmesh, bool sync_prims, bool sync_phys)
             Flux::PtoU(rc.get(), IndexDomain::entire);
         }
 
-        // 2. Sync like a normal step, incl. physical bounds
+        // 2. Sync MPI bounds like a normal step
+        // The loops are to wait on actual data, rather than continuing async
         auto& md = pmesh->mesh_data.GetOrAdd("base", 0);
-        md->ClearBoundary(BoundaryCommSubset::all);
-        md->StartReceiving(BoundaryCommSubset::all);
+        while(md->StartReceiving(BoundaryCommSubset::all) != TaskStatus::complete);
         // Send everything
-        cell_centered_bvars::SendBoundaryBuffers(md);
+        while(cell_centered_bvars::SendBoundaryBuffers(md) != TaskStatus::complete);
         // Wait on receive
-        cell_centered_bvars::ReceiveBoundaryBuffers(md);
+        while(cell_centered_bvars::ReceiveBoundaryBuffers(md) != TaskStatus::complete);
         // Set boundaries from buffers
-        cell_centered_bvars::SetBoundaries(md);
-        md->ClearBoundary(BoundaryCommSubset::all);
+        while(cell_centered_bvars::SetBoundaries(md) != TaskStatus::complete);
+        while(md->ClearBoundary(BoundaryCommSubset::all) != TaskStatus::complete);
 
         // 3. UtoP everywhere
         for (auto &pmb : pmesh->block_list) {
@@ -425,5 +424,7 @@ void KBoundaries::SyncAllBounds(Mesh *pmesh, bool sync_prims, bool sync_phys)
             }
         }
     }
+
+    Kokkos::fence();
     Flag("Sync'd");
 }

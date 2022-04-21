@@ -24,23 +24,23 @@ TaskStatus InitializeShockTube(MeshBlockData<Real> *rc, ParameterInput *pin)
     const auto& G = pmb->coords;
 
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
-    // TODO something sensible here 
-    const Real rhoL = pin->GetOrAddReal("shock", "rhoL", 0.0);
-    const Real rhoR = pin->GetOrAddReal("shock", "rhoR", 0.0);
-    const Real PL = pin->GetOrAddReal("shock", "PL", 0.0);
-    const Real PR = pin->GetOrAddReal("shock", "PR", 0.0);
-    const Real u1L = pin->GetOrAddReal("shock", "u1L", 0.0);
-    const Real u1R = pin->GetOrAddReal("shock", "u1R", 0.0);
-    const Real u2L = pin->GetOrAddReal("shock", "u2L", 0.0);
-    const Real u2R = pin->GetOrAddReal("shock", "u2R", 0.0);
-    const Real u3L = pin->GetOrAddReal("shock", "u3L", 0.0);
-    const Real u3R = pin->GetOrAddReal("shock", "u3R", 0.0);
-    const Real B1L = pin->GetOrAddReal("shock", "B1L", 0.0);
-    const Real B1R = pin->GetOrAddReal("shock", "B1R", 0.0);
-    const Real B2L = pin->GetOrAddReal("shock", "B2L", 0.0);
-    const Real B2R = pin->GetOrAddReal("shock", "B2R", 0.0);
-    const Real B3L = pin->GetOrAddReal("shock", "B3L", 0.0);
-    const Real B3R = pin->GetOrAddReal("shock", "B3R", 0.0);
+    // TODO some particular default shock
+    const Real rhoL = pin->GetOrAddPrecise("shock", "rhoL", 0.0);
+    const Real rhoR = pin->GetOrAddPrecise("shock", "rhoR", 0.0);
+    const Real PL = pin->GetOrAddPrecise("shock", "PL", 0.0);
+    const Real PR = pin->GetOrAddPrecise("shock", "PR", 0.0);
+    const Real u1L = pin->GetOrAddPrecise("shock", "u1L", 0.0);
+    const Real u1R = pin->GetOrAddPrecise("shock", "u1R", 0.0);
+    const Real u2L = pin->GetOrAddPrecise("shock", "u2L", 0.0);
+    const Real u2R = pin->GetOrAddPrecise("shock", "u2R", 0.0);
+    const Real u3L = pin->GetOrAddPrecise("shock", "u3L", 0.0);
+    const Real u3R = pin->GetOrAddPrecise("shock", "u3R", 0.0);
+    const Real B1L = pin->GetOrAddPrecise("shock", "B1L", 0.0);
+    const Real B1R = pin->GetOrAddPrecise("shock", "B1R", 0.0);
+    const Real B2L = pin->GetOrAddPrecise("shock", "B2L", 0.0);
+    const Real B2R = pin->GetOrAddPrecise("shock", "B2R", 0.0);
+    const Real B3L = pin->GetOrAddPrecise("shock", "B3L", 0.0);
+    const Real B3R = pin->GetOrAddPrecise("shock", "B3R", 0.0);
 
     IndexDomain domain = IndexDomain::entire;
     IndexRange ib = pmb->cellbounds.GetBoundsI(domain);

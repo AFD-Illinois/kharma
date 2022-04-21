@@ -96,6 +96,7 @@ std::shared_ptr<StateDescriptor> Reductions::Initialize(ParameterInput *pin)
     }
 
     // Possible additions:
+    // 0. option for "verbose" logs of particular flags hit, using new functions
     // 1. total 3- and 4-current numbers (best to add in "current" package)
     // 2. Luminosity proxy sums over smaller areas, e.g. just disk, just disk 3-10M, etc
     // 3. Total output power, using betagamma and/or just T^0_1 > 0

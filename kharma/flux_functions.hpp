@@ -59,7 +59,7 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const Local& P,
                                          const EMHD::EMHD_parameters& emhd_params, const Real& gam, const int& j, const int& i, const int dir,
                                          const Local& flux, const VarMap& m_u, const Loci loc=Loci::center)
 {
-    Real gdet = G.gdet(loc, j, i);
+    const Real gdet = G.gdet(loc, j, i);
     // Particle number flux
     flux(m_u.RHO) = P(m_p.RHO) * D.ucon[dir] * gdet;
 

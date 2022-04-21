@@ -105,11 +105,11 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     // These parameters are put in "parthenon/time" to match others, but ultimately we should
     // override the parthenon timestep chooser
     // Minimum timestep, if something about the sound speed goes wonky. Probably won't save you :)
-    double dt_min = pin->GetOrAddReal("parthenon/time", "dt_min", 1.e-5);
+    double dt_min = pin->GetOrAddPrecise("parthenon/time", "dt_min", 1.e-5);
     params.Add("dt_min", dt_min);
     // Starting timestep: guaranteed step 1 timestep returned by EstimateTimestep,
     // usually matters most for restarts
-    double dt_start = pin->GetOrAddReal("parthenon/time", "dt", dt_min);
+    double dt_start = pin->GetOrAddPrecise("parthenon/time", "dt", dt_min);
     params.Add("dt_start", dt_start);
     double max_dt_increase = pin->GetOrAddReal("parthenon/time", "max_dt_increase", 2.0);
     params.Add("max_dt_increase", max_dt_increase);
@@ -364,7 +364,7 @@ Real EstimateTimestep(MeshBlockData<Real> *rc)
             // Estimate based on light crossing time
             double dt = EstimateRadiativeTimestep(rc);
             // This records a per-rank minimum,
-            // but Parthenon calls MPIMin per-step anyway
+            // but Parthenon finds the global minimum anyway
             if (globals.hasKey("dt_light")) {
                 if (dt < globals.Get<double>("dt_light"))
                     globals.Update<double>("dt_light", dt);

@@ -36,12 +36,10 @@
 
 #include "b_flux_ct.hpp"
 
-// For their DivB estimate
-#include "b_cd.hpp"
-
 #include "decs.hpp"
 #include "grmhd.hpp"
 #include "kharma.hpp"
+#include "mpi.hpp"
 
 using namespace parthenon;
 
@@ -249,8 +247,7 @@ TaskStatus FluxCT(MeshData<Real> *md)
     );
 
     // Rewrite EMFs as fluxes, after Toth (2000)
-    // Note that zeroing FX(BX) is *necessary* -- this flux gets filled by GetFlux,
-    // And it's necessary to keep track of it for B_CD
+    // Note that zeroing FX(BX) is *necessary* -- this flux gets filled by GetFlux
     Flag(md, "Calc Fluxes");
 
     // Note these each have different domains, eg il vs ib.  The former extends one index farther if appropriate
@@ -398,7 +395,7 @@ TaskStatus PrintGlobalMaxDivB(MeshData<Real> *md)
     if (pmb0->packages.Get("B_FluxCT")->Param<int>("verbose") >= 1) {
         Flag(md, "Printing divB");
         Real max_divb = B_FluxCT::MaxDivB(md);
-        max_divb = MPIMax(max_divb);
+        max_divb = MPIReduce(max_divb, MPI_MAX);
 
         if(MPIRank0()) {
             cout << "Max DivB: " << max_divb << endl;

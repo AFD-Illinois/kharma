@@ -113,11 +113,11 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, Mesh *pmesh)
 
             // Calculate current beta_min value
             if (beta_calc_legacy) {
-                bsq_max = MPIMax(bsq_max);
-                p_max = MPIMax(p_max);
+                bsq_max = MPIReduce(bsq_max, MPI_MAX);
+                p_max = MPIReduce(p_max, MPI_MAX);
                 beta_min = p_max / (0.5 * bsq_max);
             } else {
-                beta_min = MPIMin(beta_min);
+                beta_min = MPIReduce(beta_min, MPI_MIN);
             }
 
             if (pin->GetInteger("debug", "verbose") > 0) {
@@ -153,11 +153,11 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, Mesh *pmesh)
                 }
             }
             if (beta_calc_legacy) {
-                bsq_max = MPIMax(bsq_max);
-                p_max = MPIMax(p_max);
+                bsq_max = MPIReduce(bsq_max, MPI_MAX);
+                p_max = MPIReduce(p_max, MPI_MAX);
                 beta_min = p_max / (0.5 * bsq_max);
             } else {
-                beta_min = MPIMin(beta_min);
+                beta_min = MPIReduce(beta_min, MPI_MIN);
             }
             if (MPIRank0()) {
                 cerr << "Beta min post-norm: " << beta_min << endl;
@@ -179,7 +179,7 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, Mesh *pmesh)
         } else if (use_b_cd) {
             divb_max = B_CD::MaxDivB(md);
         }
-        divb_max = MPIMax(divb_max);
+        divb_max = MPIReduce(divb_max, MPI_MAX);
         if (MPIRank0()) {
             cerr << "Starting max divB: " << divb_max << endl;
         }

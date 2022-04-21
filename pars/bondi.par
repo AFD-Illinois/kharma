@@ -50,8 +50,12 @@ disable_floors = true
 check_inflow_outer = false
 
 <b_field>
+# No field
 type = none
 solver = none
+# To add magnetic field
+#type = monopole
+#b10 = 1
 
 <debug>
 verbose = 0
@@ -59,14 +63,12 @@ verbose = 0
 <driver>
 type = harm
 
-<implicit>
-max_nonlinear_iter = 3
-
 <parthenon/output0>
 file_type = hdf5
 dt = 5.0
 single_precision_output = true
-variables = prims.rho, prims.u, prims.uvec
+# Fields not present are silently ignored
+variables = prims.rho, prims.u, prims.uvec, prims.B
 
 <parthenon/output1>
 file_type = hst

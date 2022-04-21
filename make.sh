@@ -86,8 +86,10 @@ if [[ "$(which python3 2>/dev/null)" == *"conda"* ]]; then
   echo "Anaconda forces a serial version of HDF5 which may make this compile impossible."
   echo "If you run into trouble, deactivate your environment with 'conda deactivate'"
 fi
-# Save arguments
-echo "$ARGS" > make_args
+# Save arguments if we've changed them
+if [[ "$ARGS" == *"clean"* ]]; then
+  echo "$ARGS" > $SOURCE_DIR/make_args
+fi
 # Choose configuration
 if [[ "$ARGS" == *"debug"* ]]; then
   TYPE=Debug
@@ -154,6 +156,7 @@ if [[ "$ARGS" == *"sycl"* ]]; then
 elif [[ "$ARGS" == *"hip"* ]]; then
   export CXX=hipcc
   # Is there a hipc?
+  export CC="$C_NATIVE"
   OUTER_LAYOUT="MANUAL1D_LOOP"
   INNER_LAYOUT="TVR_INNER_LOOP"
   ENABLE_OPENMP="ON"
@@ -163,7 +166,6 @@ elif [[ "$ARGS" == *"hip"* ]]; then
 elif [[ "$ARGS" == *"cuda"* ]]; then
   export CC="$C_NATIVE"
   export CXX="$SCRIPT_DIR/bin/nvcc_wrapper"
-  export NVCC_WRAPPER_DEFAULT_COMPILER="$CXX_NATIVE"
   if [[ "$ARGS" == *"dryrun"* ]]; then
     export CXXFLAGS="-dryrun $CXXFLAGS"
     echo "Dry-running with $CXXFLAGS"

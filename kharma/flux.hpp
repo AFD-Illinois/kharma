@@ -122,7 +122,11 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
     const auto& globals = pmb0->packages.Get("Globals")->AllParams();
     const auto& floor_pars = pmb0->packages.Get("Floors")->AllParams();
     const bool use_hlle = pars.Get<bool>("use_hlle");
-    const bool disable_floors = floor_pars.Get<bool>("disable_floors");
+    // Apply post-reconstruction floors.
+    // Only enabled for WENO since it is not TVD, and only when other
+    // floors are enabled.
+    const bool reconstruction_floors = (Recon == ReconstructionType::weno5)
+                                       && !floor_pars.Get<bool>("disable_floors");
     // Pull out a struct of just the actual floor values for speed
     const Floors::Prescription floors(floor_pars);
     // Check presence of different packages
@@ -210,7 +214,7 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
                     auto Pr = Kokkos::subview(Pr_s, Kokkos::ALL(), i);
                     // Apply floors to the *reconstructed* primitives, because without TVD
                     // we have no guarantee they remotely resemble the *centered* primitives
-                    if (Recon == ReconstructionType::weno5 && !disable_floors) {
+                    if (reconstruction_floors) {
                         Floors::apply_geo_floors(G, Pl, m_p, gam, j, i, floors, loc);
                         Floors::apply_geo_floors(G, Pr, m_p, gam, j, i, floors, loc);
                     }

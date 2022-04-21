@@ -20,7 +20,8 @@ KHARMA_DIR=~/kharma
 
 # Set tasks if SLURM doesn't
 if [[ -z "$SLURM_NTASKS_PER_NODE" ]]; then
-  SLURM_NTASKS_PER_NODE=$(( $SLURM_NTASKS / $SLURM_NNODES ))
+  export SLURM_NTASKS_PER_NODE=$(( $SLURM_NTASKS / $SLURM_NNODES ))
+  export IBRUN_TASKS_PER_NODE=$(( $SLURM_NTASKS / $SLURM_NNODES ))
   echo "Assuming $SLURM_NTASKS_PER_NODE tasks per node"
 fi
 
@@ -42,6 +43,7 @@ export KOKKOS_NUM_DEVICES=$SLURM_NTASKS_PER_NODE
 if [[ $(hostname -f) == *".stampede2.tacc.utexas.edu" || $(hostname -f) == *".frontera.tacc.utexas.edu" ]]; then
   ibrun tacc_affinity $KHARMA_DIR/kharma.host "$@"
 elif [[ $(hostname -f) == *".longhorn.tacc.utexas.edu" ]]; then
+  module unload python3 # Longhorn conda overrides MPI for some reason, kill it with fire
   export MY_SPECTRUM_OPTIONS="--gpu"
   ibrun $KHARMA_DIR/kharma.cuda "$@"
 fi

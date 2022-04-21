@@ -33,7 +33,7 @@ TaskStatus InitializeOrszagTang(MeshBlockData<Real> *rc, ParameterInput *pin)
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
     const Real tscale = pin->GetOrAddReal("orszag_tang", "tscale", 0.05);
     // Default phase puts the current sheet in the middle of the domain
-    const Real phase = pin->GetOrAddReal("orszag_tang", "phase", M_PI);
+    const Real phase = pin->GetOrAddPrecise("orszag_tang", "phase", M_PI);
 
     IndexDomain domain = IndexDomain::entire;
     IndexRange ib = pmb->cellbounds.GetBoundsI(domain);

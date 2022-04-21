@@ -61,9 +61,6 @@
 #include "bvals/bvals_interfaces.hpp"
 #include "mesh/domain.hpp"
 
-// My set of MPI wrappers, stubbed out when MPI is not present
-#include "mpi.hpp"
-
 // KHARMA DEFINITIONS
 
 // Parthenon stole our type names
