@@ -42,6 +42,7 @@
 #include "mpi.hpp"
 #include "post_initialize.hpp"
 #include "problem.hpp"
+#include "emhd/conducting_atmosphere.hpp"
 
 // Parthenon headers
 #include <parthenon/parthenon.hpp>
@@ -198,6 +199,8 @@ int main(int argc, char *argv[])
     }
 
     // Parthenon cleanup includes Kokkos, MPI
+    extern ParArrayND<double> p_bound;
+    p_bound.~ParArrayND<double>();
     Flag("Finalizing");
     pman.ParthenonFinalize();
 

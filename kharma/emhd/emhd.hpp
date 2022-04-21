@@ -49,7 +49,7 @@ using namespace parthenon;
  */
 namespace EMHD {
 
-enum ClosureType{constant=0, soundspeed, torus};
+enum ClosureType{constant=0, soundspeed, kappa_eta, torus};
 
 class EMHD_parameters {
     public:
@@ -59,6 +59,9 @@ class EMHD_parameters {
         Real tau;
         Real conduction_alpha;
         Real viscosity_alpha;
+
+        Real kappa;
+        Real eta;
 
 };
 
@@ -85,9 +88,11 @@ KOKKOS_INLINE_FUNCTION void set_parameters(const GRCoordinates& G, const Local& 
 {
     if (emhd_params.type == ClosureType::constant) {
         // Set tau, nu, chi to constants
+
         tau   = emhd_params.tau;
         chi_e = emhd_params.conduction_alpha;
         nu_e  = emhd_params.viscosity_alpha;
+
     } else if (emhd_params.type == ClosureType::soundspeed) {
         // Set tau=const, chi/nu prop. to sound speed squared
         Real cs2 = (gam * (gam - 1.) * P(m_p.UU)) / (P(m_p.RHO) + (gam * P(m_p.UU)));
@@ -95,6 +100,14 @@ KOKKOS_INLINE_FUNCTION void set_parameters(const GRCoordinates& G, const Local& 
         tau   = emhd_params.tau;
         chi_e = emhd_params.conduction_alpha * cs2 * tau;
         nu_e  = emhd_params.viscosity_alpha * cs2 * tau;
+
+    } else if (emhd_params.type == ClosureType::kappa_eta){
+        // Set tau = const, chi = kappa / rho, nu = eta / rho
+
+        tau   = emhd_params.tau;
+        chi_e = emhd_params.kappa / max(P(m_p.RHO), SMALL);
+        nu_e  = emhd_params.eta / max(P(m_p.RHO), SMALL);
+
     } else if (emhd_params.type == ClosureType::torus) {
         // Something complicated
     } // else yell?
@@ -118,6 +131,13 @@ KOKKOS_INLINE_FUNCTION void set_parameters(const GRCoordinates& G, const Global&
         tau   = emhd_params.tau;
         chi_e = emhd_params.conduction_alpha * cs2 * tau;
         nu_e  = emhd_params.viscosity_alpha * cs2 * tau;
+    } else if (emhd_params.type == ClosureType::kappa_eta){
+        // Set tau = const, chi = kappa / rho, nu = eta / rho
+
+        tau   = emhd_params.tau;
+        chi_e = emhd_params.kappa / max(P(m_p.RHO, k, j, i), SMALL);
+        nu_e  = emhd_params.eta / max(P(m_p.RHO, k, j, i), SMALL);
+
     } else if (emhd_params.type == ClosureType::torus) {
         // Something complicated
     } // else yell?
@@ -133,12 +153,20 @@ KOKKOS_INLINE_FUNCTION void set_parameters(const GRCoordinates& G, const Real& r
         tau   = emhd_params.tau;
         chi_e = emhd_params.conduction_alpha;
         nu_e  = emhd_params.viscosity_alpha;
+
     } else if (emhd_params.type == ClosureType::soundspeed) {
         // Set tau=const, chi/nu prop. to sound speed squared
         const Real cs2 = (gam * (gam - 1.) * u) / (rho + (gam * u));
         tau   = emhd_params.tau;
         chi_e = emhd_params.conduction_alpha * cs2 * tau;
         nu_e  = emhd_params.viscosity_alpha * cs2 * tau;
+
+    } else if (emhd_params.type == ClosureType::kappa_eta){
+        // Set tau = const, chi = kappa / rho, nu = eta / rho
+        tau   = emhd_params.tau;
+        chi_e = emhd_params.kappa / max(rho, SMALL);
+        nu_e  = emhd_params.eta / max(rho, SMALL);
+
     } // else yell?
 }
 
@@ -198,8 +226,8 @@ KOKKOS_INLINE_FUNCTION void convert_q_dP_to_prims(const Real& q, const Real& dP,
     dP_tilde = dP;
 
     if (emhd_params.higher_order_terms) {
-        q_tilde  *= sqrt(tau / (chi_e * rho * pow(Theta, 2)) );
-        dP_tilde *= sqrt(tau / (nu_e * rho * Theta) );
+        q_tilde  *= (chi_e != 0) ? sqrt(tau / (chi_e * rho * pow(Theta, 2)) ) : 0.;
+        dP_tilde *= (nu_e  != 0) ? sqrt(tau / (nu_e * rho * Theta) ) : 0.;
     }
 }
 

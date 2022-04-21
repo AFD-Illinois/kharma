@@ -80,7 +80,6 @@ KOKKOS_INLINE_FUNCTION Real llf(const Real& fluxL, const Real& fluxR, const Real
                                 const Real& cmin, const Real& Ul, const Real& Ur)
 {
     Real ctop = max(cmax, cmin);
-    ctop = 1.;
     return 0.5 * (fluxL + fluxR - ctop * (Ur - Ul));
 }
 // Harten, Lax, van Leer, & Einfeldt flux (early problems but not extensively studied since)
@@ -238,7 +237,7 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
 
                     // Magnetosonic speeds
                     Real cmaxL, cminL;
-                    Flux::vchar(G, Pl, m_p, Dtmp, gam, k, j, i, loc, dir, cmaxL, cminL);
+                    Flux::vchar(G, Pl, m_p, Dtmp, gam, emhd_params, k, j, i, loc, dir, cmaxL, cminL);
 
 #if !FUSE_FLUX_KERNELS
                     // Record speeds
@@ -266,7 +265,7 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
 
                     // Magnetosonic speeds
                     Real cmaxR, cminR;
-                    Flux::vchar(G, Pr, m_p, Dtmp, gam, k, j, i, loc, dir, cmaxR, cminR);
+                    Flux::vchar(G, Pr, m_p, Dtmp, gam, emhd_params, k, j, i, loc, dir, cmaxR, cminR);
 
 #if FUSE_FLUX_KERNELS
                     // Calculate cmax/min from local variables

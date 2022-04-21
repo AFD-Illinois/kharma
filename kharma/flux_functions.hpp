@@ -157,18 +157,37 @@ KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates& G, const Local& P, const
  */
 template<typename Local>
 KOKKOS_INLINE_FUNCTION void vchar(const GRCoordinates& G, const Local& P, const VarMap& m, const FourVectors& D,
-                                  const Real& gam, const int& k, const int& j, const int& i, const Loci& loc, const int& dir,
+                                  const Real& gam, const EMHD::EMHD_parameters& emhd_params, 
+                                  const int& k, const int& j, const int& i, const Loci& loc, const int& dir,
                                   Real& cmax, Real& cmin)
 {
     // Find sound speed
-    const Real ef = P(m.RHO) + gam * P(m.UU);
+    const Real ef  = P(m.RHO) + gam * P(m.UU);
     const Real cs2 = gam * (gam - 1) * P(m.UU) / ef;
     Real cms2;
-    if (m.B1 >= 0) {
+    if (m.Q > 0) {
         // Find fast magnetosonic speed
         const Real bsq = max(dot(D.bcon, D.bcov), SMALL);
-        const Real ee = bsq + ef;
+        const Real ee  = bsq + ef;
         const Real va2 = bsq / ee;
+
+        // EMHD corrections to sound speed
+        Real tau, chi_e, nu_e;
+        EMHD::set_parameters(G, P, m, emhd_params, gam, tau, chi_e, nu_e);
+
+        const Real cvis2  = (4./3.) / (P(m.RHO) + (gam * P(m.UU)) ) * P(m.RHO) * nu_e / tau;
+        const Real ccond2 = (gam - 1.) * chi_e / tau;
+
+        const Real cscond   = 0.5*(cs2 + ccond2 + sqrt(cs2*cs2 + ccond2*ccond2) ) ;
+        const Real cs2_emhd = cscond + cvis2;
+
+        cms2 = cs2_emhd + va2 - cs2_emhd*va2;
+    } else if (m.B1 >= 0) {
+        // Find fast magnetosonic speed
+        const Real bsq = max(dot(D.bcon, D.bcov), SMALL);
+        const Real ee  = bsq + ef;
+        const Real va2 = bsq / ee;
+
         cms2 = cs2 + va2 - cs2 * va2;
     } else {
         cms2 = cs2;
@@ -185,13 +204,13 @@ KOKKOS_INLINE_FUNCTION void vchar(const GRCoordinates& G, const Local& P, const 
         G.raise(Acov, Acon, k, j, i, loc);
         G.raise(Bcov, Bcon, k, j, i, loc);
 
-        const Real Asq = dot(Acon, Acov);
-        const Real Bsq = dot(Bcon, Bcov);
-        const Real Au = dot(Acov, D.ucon);
-        const Real Bu = dot(Bcov, D.ucon);
-        const Real AB = dot(Acon, Bcov);
-        const Real Au2 = Au * Au;
-        const Real Bu2 = Bu * Bu;
+        const Real Asq  = dot(Acon, Acov);
+        const Real Bsq  = dot(Bcon, Bcov);
+        const Real Au   = dot(Acov, D.ucon);
+        const Real Bu   = dot(Bcov, D.ucon);
+        const Real AB   = dot(Acon, Bcov);
+        const Real Au2  = Au * Au;
+        const Real Bu2  = Bu * Bu;
         const Real AuBu = Au * Bu;
 
         A = Bu2 - (Bsq + Bu2) * cms2;

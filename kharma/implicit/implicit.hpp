@@ -118,7 +118,22 @@ KOKKOS_INLINE_FUNCTION void calc_residual(const GRCoordinates& G, const Local& P
         // if (i == 11 && j == 11) {
         //     printf("Time derivative sources: "); printf("%g %g", dUq, dUdP); printf("\n");
         // }
+
+        // Normalize
+        Real tau, chi_e, nu_e;
+        EMHD::set_parameters(G, P_test, m_p, emhd_params, gam, tau, chi_e, nu_e);
+        residual(m_u.Q)  *= tau;
+        residual(m_u.DP) *= tau;
+        if (emhd_params.higher_order_terms){
+            Real rho   = P_test(m_p.RHO);
+            Real u     = P_test(m_p.UU);
+            Real Theta = (gam - 1.) * u / rho;
+
+            residual(m_u.Q)  *= sqrt(rho * chi_e * pow(Theta, 2));
+            residual(m_u.DP) *= sqrt(rho * nu_e * Theta);
+        }
     }
+
 }
 
 /**

@@ -70,6 +70,9 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     Real tau = pin->GetOrAddReal("emhd", "tau", 1.0);
     Real conduction_alpha = pin->GetOrAddReal("emhd", "conduction_alpha", 1.0);
     Real viscosity_alpha = pin->GetOrAddReal("emhd", "viscosity_alpha", 1.0);
+    
+    Real kappa = pin->GetOrAddReal("emhd", "kappa", 1.0);
+    Real eta   = pin->GetOrAddReal("emhd", "eta", 1.0);
 
     EMHD_parameters emhd_params;
     emhd_params.higher_order_terms = higher_order_terms;
@@ -77,14 +80,18 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
         emhd_params.type = ClosureType::constant;
     } else if (closure_type == "sound_speed" || closure_type == "soundspeed") {
         emhd_params.type = ClosureType::soundspeed;
+    } else if (closure_type == "kappa_eta") {
+        emhd_params.type = ClosureType::kappa_eta;
     } else if (closure_type == "torus") {
         emhd_params.type = ClosureType::torus;
     } else {
         throw std::invalid_argument("Invalid Closure type: "+closure_type+". Use constant, sound_speed, or torus");
     }
-    emhd_params.tau = tau;
+    emhd_params.tau              = tau;
     emhd_params.conduction_alpha = conduction_alpha;
-    emhd_params.viscosity_alpha = viscosity_alpha;
+    emhd_params.viscosity_alpha  = viscosity_alpha;
+    emhd_params.kappa            = kappa;
+    emhd_params.eta              = eta;
     params.Add("emhd_params", emhd_params);
 
     // Slope reconstruction on faces. Always linear: default to MC unless we're using VL everywhere

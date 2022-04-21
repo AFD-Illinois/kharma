@@ -45,7 +45,7 @@ using namespace parthenon;
 /**
  * Initialization of the EMHD shock test in magnetized plasma w/viscosity and heat conduction
  * 
- * The BVP solution (EMHD_shock_test.ipynb) is the input to the code.
+ * The BVP solution (kharma/prob/emhd/shock_soln_${RES}_default) is the input to the code.
  * Since the BVP solution is a steady-state, time-independent solution of the EMHD equations,
  * the code should maintain the solution.
  * 

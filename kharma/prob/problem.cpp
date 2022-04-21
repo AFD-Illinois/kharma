@@ -58,6 +58,7 @@
 #include "emhd/anisotropic_conduction.hpp"
 #include "emhd/emhdmodes.hpp"
 #include "emhd/emhdshock.hpp"
+#include "emhd/conducting_atmosphere.hpp"
 
 #include "b_field_tools.hpp"
 
@@ -105,6 +106,8 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
         status = InitializeAnisotropicConduction(rc.get(), pin);
     } else if (prob == "emhdshock") {
         status = InitializeEMHDShock(rc.get(), pin);
+    } else if (prob == "conducting_atmosphere") {
+        status = InitializeAtmosphere(rc.get(), pin);
     // Everything
     } else if (prob == "torus") {
         status = InitializeFMTorus(rc.get(), pin);

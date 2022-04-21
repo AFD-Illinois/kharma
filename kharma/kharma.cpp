@@ -125,19 +125,27 @@ void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
 
     // TODO ask our coordinates what's going on & where to put things
     if (ctf != "null") {
-        int n1tot = pin->GetInteger("parthenon/mesh", "nx1");
-        GReal Rout = pin->GetReal("coordinates", "r_out");
-        Real a = pin->GetReal("coordinates", "a");
-        GReal Rhor = 1 + sqrt(1 - a*a);
+        int n1tot   = pin->GetInteger("parthenon/mesh", "nx1");
+        GReal Rout  = pin->GetReal("coordinates", "r_out");
+        Real a      = pin->GetReal("coordinates", "a");
+        GReal Rhor  = 1 + sqrt(1 - a*a);
         GReal x1max = log(Rout);
         // Set Rin such that we have 5 zones completely inside the event horizon
         // If xeh = log(Rhor), xin = log(Rin), and xout = log(Rout),
         // then we want xeh = xin + 5.5 * (xout - xin) / N1TOT:
+        // (VKD) Unless we are running a problem in KS where we don't want to simulate the flow
+        //       all the way in till the EH, say the conducting atmosphere test. 
         GReal x1min = (n1tot * log(Rhor) / 5.5 - x1max) / (-1. + n1tot / 5.5);
+        if (prob == "conducting_atmosphere") {
+            GReal R_inner = pin->GetOrAddReal("coordinates", "R_inner", 100.);
+            x1min = log(R_inner * Rhor);
+        } 
+
         if (x1min < 0.0) {
             throw std::invalid_argument("Not enough radial zones were specified to put 5 zones inside EH!");
         }
-        //cerr << "Setting x1min: " << x1min << " x1max " << x1max << " based on BH with a=" << a << endl;
+        // fprintf(stdout, "x1min: %14.13e x1max: %14.13e a: %1.1f\n", x1min, x1max, a);
+        // cerr << "Setting x1min: " << x1min << " x1max " << x1max << " based on BH with a=" << a << endl;
         pin->SetReal("parthenon/mesh", "x1min", x1min);
         pin->SetReal("parthenon/mesh", "x1max", x1max);
     } else if (cb == "spherical_ks" || cb == "spherical_bl") {
@@ -148,7 +156,14 @@ void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
         GReal Rhor = 1 + sqrt(1 - a*a);
         // Set Rin such that we have 5 zones completely inside the event horizon
         // i.e. we want Rhor = Rin + 5.5 * (Rout - Rin) / N1TOT:
+        // (VKD) Unless we are running a problem in KS where we don't want to simulate the flow
+        //       all the way in till the EH, say the conducting atmosphere test.
         GReal Rin = (n1tot * Rhor / 5.5 - Rout) / (-1. + n1tot / 5.5);
+        if (prob == "conducting_atmosphere") {
+            GReal R_inner = pin->GetOrAddReal("coordinates", "R_inner", 100.);
+            Rin = R_inner * Rhor;
+        }
+
         pin->SetReal("parthenon/mesh", "x1min", Rin);
         pin->SetReal("parthenon/mesh", "x1max", Rout);
     } else if (cb == "spherical_minkowski") {
