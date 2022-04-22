@@ -1,5 +1,6 @@
 #include "problem.hpp"
-#include "../../../../../../usr/lib/hpc/gnu7/mpich/fftw3/3.3.9/include/fftw3-mpi.h"
+// #include "/usr/lib/hpc/gnu7/mpich/fftw3/3.3.9/include/fftw3-mpi.h"
+#include "fftw3-mpi.h"
 #include <cmath>
 #include <random>
 using namespace std;
@@ -10,6 +11,7 @@ float normalRand() {
     std::normal_distribution<> d{0,1};
     return d(gen);
 }
+
 
 void create_grf(int Nx1, int Nx2, double lx1, double lx2, 
                     double * dv1, double * dv2) {

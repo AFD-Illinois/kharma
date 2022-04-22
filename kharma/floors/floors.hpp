@@ -55,8 +55,8 @@
 #define HIT_FLOOR_GEOM_U 64
 #define HIT_FLOOR_B_RHO 128
 #define HIT_FLOOR_B_U 256
-#define HIT_FLOOR_TEMP 512
-#define HIT_FLOOR_GAMMA 1024
+#define HIT_FLOOR_TEMP 512    //floor of temp, this about SATURATION POINT
+#define HIT_FLOOR_GAMMA 1024  //floor of fluid velocity, lorentz factor
 #define HIT_FLOOR_KTOT 2048
 // Separate flags for when the floors are applied after reconstruction.
 // Not yet used, as this will likely have some speed penalty paid even if
