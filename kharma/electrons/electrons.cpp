@@ -456,11 +456,10 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
         const IndexRange myib = pmb->cellbounds.GetBoundsI(IndexDomain::interior);
         const IndexRange myjb = pmb->cellbounds.GetBoundsJ(IndexDomain::interior);
         const IndexRange mykb = pmb->cellbounds.GetBoundsK(IndexDomain::interior);
-        const bool centering= pmb->packages.Get("GRMHD")->Param<bool>("centering");
         GridScalar rho = rc->Get("prims.rho").data;
         GridVector uvec = rc->Get("prims.uvec").data;
         GridVector grf_normalized = rc->Get("grf_normalized").data;
-        if (generate_grf) {
+        if (generate_grf) { //TODO how to know how many steps it is? for now True when not first step
             const Real lx1=  pmb->packages.Get("GRMHD")->Param<Real>("lx1");
             const Real lx2=  pmb->packages.Get("GRMHD")->Param<Real>("lx2");
             const Real edot= pmb->packages.Get("GRMHD")->Param<Real>("drive_edot");
@@ -469,22 +468,52 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
             
             int Nx1 = pmb->cellbounds.ncellsi(IndexDomain::interior);
             int Nx2 = pmb->cellbounds.ncellsj(IndexDomain::interior);
+            Real *dv0 =  (Real*) malloc(sizeof(Real)*Nx1*Nx2);
             Real *dv1 =  (Real*) malloc(sizeof(Real)*Nx1*Nx2);
-            Real *dv2 =  (Real*) malloc(sizeof(Real)*Nx1*Nx2);
-            create_grf(Nx1, Nx2, lx1, lx2, dv1, dv2);
+            create_grf(Nx1, Nx2, lx1, lx2, dv0, dv1);
+
+            Real mean_velocity_num0 = 0;    Kokkos::Sum<Real> mean_velocity_num0_reducer(mean_velocity_num0);
+            Real mean_velocity_num1 = 0;    Kokkos::Sum<Real> mean_velocity_num1_reducer(mean_velocity_num1);
+            Real tot_mass = 0;              Kokkos::Sum<Real> tot_mass_reducer(tot_mass);
+            pmb->par_reduce("forced_mhd_normal_kick_centering_mean_vel0", mykb.s, mykb.e, myjb.s, myjb.e, myib.s, myib.e,
+                KOKKOS_LAMBDA_3D_REDUCE {
+                    Real cell_mass = (rho(k, j, i) * G.dx3v(k) * G.dx2v(j) * G.dx1v(i));
+                    local_result += cell_mass * dv0[(i-4)*Nx1+(j-4)];
+                }
+            , mean_velocity_num0_reducer);
+            pmb->par_reduce("forced_mhd_normal_kick_centering_mean_vel1", mykb.s, mykb.e, myjb.s, myjb.e, myib.s, myib.e,
+                KOKKOS_LAMBDA_3D_REDUCE {
+                    Real cell_mass = (rho(k, j, i) * G.dx3v(k) * G.dx2v(j) * G.dx1v(i));
+                    local_result += cell_mass * dv1[(i-4)*Nx1+(j-4)];
+                }
+            , mean_velocity_num1_reducer);
+            pmb->par_reduce("forced_mhd_normal_kick_centering_tot_mass", mykb.s, mykb.e, myjb.s, myjb.e, myib.s, myib.e,
+                KOKKOS_LAMBDA_3D_REDUCE {
+                    local_result += (rho(k, j, i) * G.dx3v(k) * G.dx2v(j) * G.dx1v(i));
+                }
+            , tot_mass_reducer);
+            Real mean_velocity0 = mean_velocity_num0/tot_mass;
+            Real mean_velocity1 = mean_velocity_num1/tot_mass;
+            #pragma omp parallel for simd collapse(2)
+            for (size_t i = 0; i < Nx1 ; i ++) {
+                for (size_t j = 0; j < Nx2 ; j ++) {
+                    dv0[i*Nx1+j] -= mean_velocity0;
+                    dv1[i*Nx1+j] -= mean_velocity1;
+                }
+            } 
 
             Real Bhalf = 0; Real A = 0; Real init_e = 0; 
             Kokkos::Sum<Real> Bhalf_reducer(Bhalf); Kokkos::Sum<Real> A_reducer(A); Kokkos::Sum<Real> init_e_reducer(init_e);
             pmb->par_reduce("forced_mhd_normal_kick_normalization_Bhalf", mykb.s, mykb.e, myjb.s, myjb.e, myib.s, myib.e,
                 KOKKOS_LAMBDA_3D_REDUCE {
                     Real cell_mass = (rho(k, j, i) * G.dx3v(k) * G.dx2v(j) * G.dx1v(i));
-                    local_result += cell_mass * (dv1[(i-4)*Nx1+(j-4)]*uvec(0, k, j, i) + dv2[(i-4)*Nx1+(j-4)]*uvec(1, k, j, i));
+                    local_result += cell_mass * (dv0[(i-4)*Nx1+(j-4)]*uvec(0, k, j, i) + dv1[(i-4)*Nx1+(j-4)]*uvec(1, k, j, i));
                 }
             , Bhalf_reducer);
             pmb->par_reduce("forced_mhd_normal_kick_normalization_A", mykb.s, mykb.e, myjb.s, myjb.e, myib.s, myib.e,
                 KOKKOS_LAMBDA_3D_REDUCE {
                     Real cell_mass = (rho(k, j, i) * G.dx3v(k) * G.dx2v(j) * G.dx1v(i));
-                    local_result += cell_mass * (pow(dv1[(i-4)*Nx1+(j-4)], 2) + pow(dv2[(i-4)*Nx1+(j-4)], 2));
+                    local_result += cell_mass * (pow(dv0[(i-4)*Nx1+(j-4)], 2) + pow(dv1[(i-4)*Nx1+(j-4)], 2));
                 }
             , A_reducer);
             pmb->par_reduce("forced_mhd_normal_kick_normalization_init_e", mykb.s, mykb.e, myjb.s, myjb.e, myib.s, myib.e,
@@ -497,10 +526,14 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
             Real norm_const = (-Bhalf + pow(pow(Bhalf,2) + A*2*dt*edot, 0.5))/A;  // going from k:(0, 0), j:(4, 515), i:(4, 515) inclusive
             pmb->par_for("forced_mhd_normal_kick_setting", mykb.s, mykb.e, myjb.s, myjb.e, myib.s, myib.e,
                 KOKKOS_LAMBDA_3D {
-                    grf_normalized(0, k, j, i) = (dv1[(i-4)*Nx1+(j-4)]*norm_const);
-                    grf_normalized(1, k, j, i) = (dv2[(i-4)*Nx1+(j-4)]*norm_const);
+                    grf_normalized(0, k, j, i) = (dv0[(i-4)*Nx1+(j-4)]*norm_const);
+                    grf_normalized(1, k, j, i) = (dv1[(i-4)*Nx1+(j-4)]*norm_const);
                     uvec(0, k, j, i) += grf_normalized(0, k, j, i);
                     uvec(1, k, j, i) += grf_normalized(1, k, j, i);
+                    FourVectors Dtmp;
+                    GRMHD::calc_4vecs(G, P, m_p, k, j, i, Loci::center, Dtmp);
+                    Real bsq = dot(Dtmp.bcon, Dtmp.bcov);
+                    alfven_speed(k,j,i) = bsq/rho(k, j, i); //saving alfven speed for analysis purposes
                 }
             );
 
@@ -513,87 +546,8 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
             , finl_e_nocent_reducer);
             printf("%.32f\n", A); printf("%.32f\n", Bhalf); printf("%.32f\n", norm_const);
             printf("%.32f\n", (finl_e_nocent-init_e)/dt);
-
-            if (centering) {
-                Real mean_velocity_num0 = 0;    Kokkos::Sum<Real> mean_velocity_num0_reducer(mean_velocity_num0);
-                Real mean_velocity_num1 = 0;    Kokkos::Sum<Real> mean_velocity_num1_reducer(mean_velocity_num1);
-                Real tot_mass = 0;              Kokkos::Sum<Real> tot_mass_reducer(tot_mass);
-                pmb->par_reduce("forced_mhd_normal_kick_centering_mean_vel0", mykb.s, mykb.e, myjb.s, myjb.e, myib.s, myib.e,
-                    KOKKOS_LAMBDA_3D_REDUCE {
-                        Real cell_mass = (rho(k, j, i) * G.dx3v(k) * G.dx2v(j) * G.dx1v(i));
-                        local_result += cell_mass * uvec(0, k, j, i);
-                    }
-                , mean_velocity_num0_reducer);
-                pmb->par_reduce("forced_mhd_normal_kick_centering_mean_vel1", mykb.s, mykb.e, myjb.s, myjb.e, myib.s, myib.e,
-                    KOKKOS_LAMBDA_3D_REDUCE {
-                        Real cell_mass = (rho(k, j, i) * G.dx3v(k) * G.dx2v(j) * G.dx1v(i));
-                        local_result += cell_mass * uvec(1, k, j, i);
-                    }
-                , mean_velocity_num1_reducer);
-                pmb->par_reduce("forced_mhd_normal_kick_centering_tot_mass", mykb.s, mykb.e, myjb.s, myjb.e, myib.s, myib.e,
-                    KOKKOS_LAMBDA_3D_REDUCE {
-                        local_result += (rho(k, j, i) * G.dx3v(k) * G.dx2v(j) * G.dx1v(i));
-                    }
-                , tot_mass_reducer);
-                Real mean_velocity0 = mean_velocity_num0/tot_mass;
-                Real mean_velocity1 = mean_velocity_num1/tot_mass;
-                pmb->par_for("forced_mhd_normal_kick_centering", mykb.s, mykb.e, myjb.s, myjb.e, myib.s, myib.e,
-                    KOKKOS_LAMBDA_3D {
-                        uvec(0, k, j, i) -= mean_velocity0;     uvec(1, k, j, i) -= mean_velocity1;
-                        FourVectors Dtmp;
-                        GRMHD::calc_4vecs(G, P, m_p, k, j, i, Loci::center, Dtmp);
-                        Real bsq = dot(Dtmp.bcon, Dtmp.bcov);
-                        alfven_speed(k,j,i) = bsq/rho(k, j, i); //saving alfven speed for analysis purposes
-                    }
-                );
-
-                Real finl_e_cent = 0;    Kokkos::Sum<Real> finl_e_cent_reducer(finl_e_cent);
-                pmb->par_reduce("forced_mhd_normal_finl_e_cent", mykb.s, mykb.e, myjb.s, myjb.e, myib.s, myib.e,
-                KOKKOS_LAMBDA_3D_REDUCE {
-                        Real cell_mass = (rho(k, j, i) * G.dx3v(k) * G.dx2v(j) * G.dx1v(i));
-                        local_result += 0.5 * cell_mass * (pow(uvec(0, k, j, i), 2) + pow(uvec(1, k, j, i), 2));
-                    }
-                , finl_e_cent_reducer);
-                printf("%.32f\n", (finl_e_cent-init_e)/dt);
-            }
-            free(dv1); free(dv2);
-        } else {
-            pmb->par_for("forced_mhd_normal_kick_setting", mykb.s, mykb.e, myjb.s, myjb.e, myib.s, myib.e,
-                KOKKOS_LAMBDA_3D {
-                    uvec(0, k, j, i) += grf_normalized(0, k, j, i);
-                    uvec(1, k, j, i) += grf_normalized(1, k, j, i);
-                }
-            );
-            if (centering) {
-                Real mean_velocity_num0 = 0;    Kokkos::Sum<Real> mean_velocity_num0_reducer(mean_velocity_num0);
-                Real mean_velocity_num1 = 0;    Kokkos::Sum<Real> mean_velocity_num1_reducer(mean_velocity_num1);
-                Real tot_mass = 0;              Kokkos::Sum<Real> tot_mass_reducer(tot_mass);
-                pmb->par_reduce("forced_mhd_normal_kick_centering_mean_vel0", mykb.s, mykb.e, myjb.s, myjb.e, myib.s, myib.e,
-                    KOKKOS_LAMBDA_3D_REDUCE {
-                        Real cell_mass = (rho(k, j, i) * G.dx3v(k) * G.dx2v(j) * G.dx1v(i));
-                        local_result += cell_mass * uvec(0, k, j, i);
-                    }
-                , mean_velocity_num0_reducer);
-                pmb->par_reduce("forced_mhd_normal_kick_centering_mean_vel1", mykb.s, mykb.e, myjb.s, myjb.e, myib.s, myib.e,
-                    KOKKOS_LAMBDA_3D_REDUCE {
-                        Real cell_mass = (rho(k, j, i) * G.dx3v(k) * G.dx2v(j) * G.dx1v(i));
-                        local_result += cell_mass * uvec(1, k, j, i);
-                    }
-                , mean_velocity_num1_reducer);
-                pmb->par_reduce("forced_mhd_normal_kick_centering_tot_mass", mykb.s, mykb.e, myjb.s, myjb.e, myib.s, myib.e,
-                    KOKKOS_LAMBDA_3D_REDUCE {
-                        local_result += (rho(k, j, i) * G.dx3v(k) * G.dx2v(j) * G.dx1v(i));
-                    }
-                , tot_mass_reducer);
-                Real mean_velocity0 = mean_velocity_num0/tot_mass;
-                Real mean_velocity1 = mean_velocity_num1/tot_mass;
-                pmb->par_for("forced_mhd_normal_kick_centering", mykb.s, mykb.e, myjb.s, myjb.e, myib.s, myib.e,
-                    KOKKOS_LAMBDA_3D {
-                        uvec(0, k, j, i) -= mean_velocity0;     uvec(1, k, j, i) -= mean_velocity1;
-                    }
-                );
-            }
-        }
+            free(dv0); free(dv1);
+        } 
         // This could be only the GRMHD vars, for this problem, but speed isn't really an issue
         Flux::PtoU(rc);
     }

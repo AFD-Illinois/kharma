@@ -63,20 +63,11 @@ void create_grf(int Nx1, int Nx2, double lx1, double lx2,
     fftw_execute(p_x2);
 
     fftw_destroy_plan(p_x1);  fftw_destroy_plan(p_x2);
-    double total_dv1 = 0.0; double total_dv2 = 0.0; //work for doubles?
-#pragma omp parallel for simd collapse(2) reduction(+:total_dv1, total_dv2)
-    for (size_t i = 0; i < Nx1 ; i ++) {
-        for (size_t j = 0; j < Nx2 ; j ++) {
-            total_dv1 += dvkx1[i*Nx1+j][0];
-            total_dv2 += dvkx2[i*Nx1+j][0];
-        }
-    }
-    total_dv1 /= Nx1; total_dv2 /= Nx2;
 #pragma omp parallel for simd collapse(2)
     for (size_t i = 0; i < Nx1 ; i ++) {
         for (size_t j = 0; j < Nx2 ; j ++) {
-            dv1[i*Nx1+j] = dvkx1[i*Nx1+j][0] - total_dv1;
-            dv2[i*Nx1+j] = dvkx2[i*Nx1+j][0] - total_dv2;
+            dv1[i*Nx1+j] = dvkx1[i*Nx1+j][0];
+            dv2[i*Nx1+j] = dvkx2[i*Nx1+j][0];
         }
     } //centered!
     fftw_free(dvkx1);   fftw_free(dvkx2);

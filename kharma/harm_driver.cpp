@@ -250,7 +250,7 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         // on the same zone match between MeshBlocks.
         auto t_heat_electrons = t_set_bc;
         if (use_electrons) {
-            auto t_heat_electrons = tl.AddTask(t_set_bc, Electrons::ApplyElectronHeating, sc0.get(), sc1.get(), stage == 1);
+            auto t_heat_electrons = tl.AddTask(t_set_bc, Electrons::ApplyElectronHeating, sc0.get(), sc1.get(), stage != 1);
         }
 
         auto t_step_done = t_heat_electrons;

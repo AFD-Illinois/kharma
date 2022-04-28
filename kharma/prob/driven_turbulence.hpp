@@ -37,8 +37,6 @@ TaskStatus InitializeDrivenTurbulence(MeshBlockData<Real> *rc, ParameterInput *p
     if(! (pmb->packages.Get("GRMHD")->AllParams().hasKey("lx2")))
         pmb->packages.Get("GRMHD")->AddParam<Real>("lx2", lx2);
     //adding for later use in create_grf
-    if(! (pmb->packages.Get("GRMHD")->AllParams().hasKey("centering"))) 
-        pmb->packages.Get("GRMHD")->AddParam<bool>("centering", centering);
 
     const Real u0 = cs0 * cs0 * rho0 / (gam - 1) / gam; //from flux_functions.hpp
     IndexRange myib = pmb->cellbounds.GetBoundsI(IndexDomain::interior);
