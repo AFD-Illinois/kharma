@@ -20,7 +20,6 @@ TaskStatus InitializeDrivenTurbulence(MeshBlockData<Real> *rc, ParameterInput *p
     const Real rho0 = pin->GetOrAddReal("driven_turbulence", "rho", 1.0);
     const Real cs0 = pin->GetOrAddReal("driven_turbulence", "cs0", 8.6e-4);
     const Real edot_frac = pin->GetOrAddReal("driven_turbulence", "edot_frac", 0.5);
-    const bool centering = pin->GetOrAddReal("driven_turbulence", "centering",  true);
     const Real x1min = pin->GetOrAddReal("parthenon/mesh", "x1min", 0);
     const Real x1max = pin->GetOrAddReal("parthenon/mesh", "x1max",  1);
     const Real x2min = pin->GetOrAddReal("parthenon/mesh", "x2min", 0);

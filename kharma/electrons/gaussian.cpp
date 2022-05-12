@@ -1,6 +1,5 @@
 #include "problem.hpp"
-// #include "/usr/lib/hpc/gnu7/mpich/fftw3/3.3.9/include/fftw3-mpi.h"
-#include "fftw3-mpi.h"
+#include "fftw3.h"
 #include <cmath>
 #include <random>
 using namespace std;
@@ -69,7 +68,6 @@ void create_grf(int Nx1, int Nx2, double lx1, double lx2,
             dv1[i*Nx1+j] = dvkx1[i*Nx1+j][0];
             dv2[i*Nx1+j] = dvkx2[i*Nx1+j][0];
         }
-    } //centered!
+    }
     fftw_free(dvkx1);   fftw_free(dvkx2);
-    // print(dv1, Nx1, Nx2); print(dv2, Nx1, Nx2); //bad option to compare grf among iterations
 }
