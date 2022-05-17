@@ -459,11 +459,15 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
         GridScalar rho = rc->Get("prims.rho").data;
         GridVector uvec = rc->Get("prims.uvec").data;
         GridVector grf_normalized = rc->Get("grf_normalized").data;
-        if (generate_grf) { //TODO how to know how many steps it is? for now True when not first step
+        const Real t = pmb->packages.Get("Globals")->Param<Real>("time");
+        Real counter = pmb->packages.Get("GRMHD")->Param<Real>("counter");
+        const Real dt_kick=  pmb->packages.Get("GRMHD")->Param<Real>("dt_kick");
+        if (generate_grf && counter < t) {  counter+=dt_kick;
+            pmb->packages.Get("GRMHD")->UpdateParam<Real>("counter", counter);
+            printf("Kick applied at time %.32f\n", t);
             const Real lx1=  pmb->packages.Get("GRMHD")->Param<Real>("lx1");
             const Real lx2=  pmb->packages.Get("GRMHD")->Param<Real>("lx2");
             const Real edot= pmb->packages.Get("GRMHD")->Param<Real>("drive_edot");
-            const Real dt =  pmb->packages.Get("Globals")->Param<Real>("dt_last");  // Close enough?
             GridScalar alfven_speed = rc->Get("alfven_speed").data;
             
             int Nx1 = pmb->cellbounds.ncellsi(IndexDomain::interior);
@@ -516,14 +520,14 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
                     local_result += cell_mass * (pow(dv0[(i-4)*Nx1+(j-4)], 2) + pow(dv1[(i-4)*Nx1+(j-4)], 2));
                 }
             , A_reducer);
-            pmb->par_reduce("forced_mhd_normal_kick_normalization_init_e", mykb.s, mykb.e, myjb.s, myjb.e, myib.s, myib.e,
+            pmb->par_reduce("forced_mhd_normal_kick_init_e", mykb.s, mykb.e, myjb.s, myjb.e, myib.s, myib.e,
                 KOKKOS_LAMBDA_3D_REDUCE {
                     Real cell_mass = (rho(k, j, i) * G.dx3v(k) * G.dx2v(j) * G.dx1v(i));
                     local_result += 0.5 * cell_mass * (pow(uvec(0, k, j, i), 2) + pow(uvec(1, k, j, i), 2));
                 }
             , init_e_reducer);
 
-            Real norm_const = (-Bhalf + pow(pow(Bhalf,2) + A*2*dt*edot, 0.5))/A;  // going from k:(0, 0), j:(4, 515), i:(4, 515) inclusive
+            Real norm_const = (-Bhalf + pow(pow(Bhalf,2) + A*2*dt_kick*edot, 0.5))/A;  // going from k:(0, 0), j:(4, 515), i:(4, 515) inclusive
             pmb->par_for("forced_mhd_normal_kick_setting", mykb.s, mykb.e, myjb.s, myjb.e, myib.s, myib.e,
                 KOKKOS_LAMBDA_3D {
                     grf_normalized(0, k, j, i) = (dv0[(i-4)*Nx1+(j-4)]*norm_const);
@@ -537,15 +541,15 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
                 }
             );
 
-            Real finl_e_nocent = 0;    Kokkos::Sum<Real> finl_e_nocent_reducer(finl_e_nocent);
-            pmb->par_reduce("forced_mhd_normal_finl_e_nocent", mykb.s, mykb.e, myjb.s, myjb.e, myib.s, myib.e,
+            Real finl_e = 0;    Kokkos::Sum<Real> finl_e_reducer(finl_e);
+            pmb->par_reduce("forced_mhd_normal_kick_finl_e", mykb.s, mykb.e, myjb.s, myjb.e, myib.s, myib.e,
                 KOKKOS_LAMBDA_3D_REDUCE {
                     Real cell_mass = (rho(k, j, i) * G.dx3v(k) * G.dx2v(j) * G.dx1v(i));
                     local_result += 0.5 * cell_mass * (pow(uvec(0, k, j, i), 2) + pow(uvec(1, k, j, i), 2));
                 }
-            , finl_e_nocent_reducer);
+            , finl_e_reducer);
             printf("%.32f\n", A); printf("%.32f\n", Bhalf); printf("%.32f\n", norm_const);
-            printf("%.32f\n", (finl_e_nocent-init_e)/dt);
+            printf("%.32f\n", (finl_e-init_e)/dt_kick);
             free(dv0); free(dv1);
         } 
         // This could be only the GRMHD vars, for this problem, but speed isn't really an issue

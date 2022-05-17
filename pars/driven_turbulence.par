@@ -49,10 +49,12 @@ beta_min = 10
 <driven_turbulence>
 cs0 = 8.6e-4
 edot_frac = 0.5
+dt_kick = 2.
 
 <parthenon/time>
 tlim = 31396
 integrator = rk2
+use_dt_light = true
 
 <driver>
 type = imex
