@@ -138,8 +138,8 @@ void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
             throw std::invalid_argument("Not enough radial zones were specified to put 5 zones inside EH!");
         }
         //cerr << "Setting x1min: " << x1min << " x1max " << x1max << " based on BH with a=" << a << endl;
-        pin->SetPrecise("parthenon/mesh", "x1min", x1min);
-        pin->SetPrecise("parthenon/mesh", "x1max", x1max);
+        pin->SetReal("parthenon/mesh", "x1min", x1min);
+        pin->SetReal("parthenon/mesh", "x1max", x1max);
     } else if (cb == "spherical_ks" || cb == "spherical_bl") {
         // If we're in GR with a null transform, apply the criterion to our coordinates directly
         int n1tot = pin->GetInteger("parthenon/mesh", "nx1");
@@ -149,13 +149,13 @@ void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
         // Set Rin such that we have 5 zones completely inside the event horizon
         // i.e. we want Rhor = Rin + 5.5 * (Rout - Rin) / N1TOT:
         GReal Rin = (n1tot * Rhor / 5.5 - Rout) / (-1. + n1tot / 5.5);
-        pin->SetPrecise("parthenon/mesh", "x1min", Rin);
-        pin->SetPrecise("parthenon/mesh", "x1max", Rout);
+        pin->SetReal("parthenon/mesh", "x1min", Rin);
+        pin->SetReal("parthenon/mesh", "x1max", Rout);
     } else if (cb == "spherical_minkowski") {
         // In Minkowski space, go to SMALL (TODO all the way to 0?)
         GReal Rout = pin->GetReal("coordinates", "r_out");
-        pin->SetPrecise("parthenon/mesh", "x1min", SMALL);
-        pin->SetPrecise("parthenon/mesh", "x1max", Rout);
+        pin->SetReal("parthenon/mesh", "x1min", SMALL);
+        pin->SetReal("parthenon/mesh", "x1max", Rout);
     }
     
 
@@ -176,15 +176,15 @@ void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
 
         // We also know the bounds for most transforms in spherical coords.  Set them.
         if (ctf == "null" || ctf == "exp") {
-            pin->SetPrecise("parthenon/mesh", "x2min", 0.0);
-            pin->SetPrecise("parthenon/mesh", "x2max", M_PI);
-            pin->SetPrecise("parthenon/mesh", "x3min", 0.0);
-            pin->SetPrecise("parthenon/mesh", "x3max", 2*M_PI);
+            pin->SetReal("parthenon/mesh", "x2min", 0.0);
+            pin->SetReal("parthenon/mesh", "x2max", M_PI);
+            pin->SetReal("parthenon/mesh", "x3min", 0.0);
+            pin->SetReal("parthenon/mesh", "x3max", 2*M_PI);
         } else if (ctf == "modified" || ctf == "funky") {
-            pin->SetPrecise("parthenon/mesh", "x2min", 0.0);
-            pin->SetPrecise("parthenon/mesh", "x2max", 1.0);
-            pin->SetPrecise("parthenon/mesh", "x3min", 0.0);
-            pin->SetPrecise("parthenon/mesh", "x3max", 2*M_PI);
+            pin->SetReal("parthenon/mesh", "x2min", 0.0);
+            pin->SetReal("parthenon/mesh", "x2max", 1.0);
+            pin->SetReal("parthenon/mesh", "x3min", 0.0);
+            pin->SetReal("parthenon/mesh", "x3max", 2*M_PI);
         } // TODO any other transforms/systems
     } else {
         pin->SetBoolean("coordinates", "spherical", false);
