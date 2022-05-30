@@ -84,7 +84,7 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const Local& P,
         // GRHD stress-energy tensor w/ first index up, second index down
         GRHD::calc_tensor(P(m_p.RHO), P(m_p.UU), (gam - 1) * P(m_p.UU), D, dir, T);
     }
-    //if (i == 11 && j == 11) printf("mhd: %g %g %g %g\n", T[0], T[1], T[2], T[3]);
+    // if (i == 11 && j == 11) printf("mhd: %6.5e %6.5e %6.5e %6.5e %6.5e\n", flux(m_u.RHO), T[0], T[1], T[2], T[3]);
     flux(m_u.UU) = T[0] * gdet + flux(m_u.RHO);
     flux(m_u.U1) = T[1] * gdet;
     flux(m_u.U2) = T[2] * gdet;
@@ -149,6 +149,7 @@ KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates& G, const Local& P, const
     FourVectors Dtmp;
     GRMHD::calc_4vecs(G, P, m_p, j, i, loc, Dtmp); // TODO switch GRHD/GRMHD?
     prim_to_flux(G, P, m_p, Dtmp, emhd_params, gam, j, i, 0, U, m_u, loc);
+    // printf("%d %d %6.5e %6.5e\n", i, j, P(m_p.Q), P(m_p.DP));
 }
 
 /**

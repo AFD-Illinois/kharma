@@ -104,16 +104,16 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     // Floors specific to EMHD calculations? Currently only need to enforce bsq>0 in one denominator
 
     MetadataFlag isPrimitive = packages.Get("GRMHD")->Param<MetadataFlag>("PrimitiveFlag");
-    MetadataFlag isNonideal = Metadata::AllocateNewFlag("Nonideal");
-    params.Add("NonidealFlag", isNonideal);
+    MetadataFlag isEMHD = Metadata::AllocateNewFlag("EMHDFlag");
+    params.Add("EMHDFlag", isEMHD);
 
     // General options for primitive and conserved scalar variables in ImEx driver
     // EMHD is supported only with imex driver and implicit evolution
     MetadataFlag isImplicit = packages.Get("Implicit")->Param<MetadataFlag>("ImplicitFlag");
     Metadata m_con  = Metadata({Metadata::Real, Metadata::Cell, Metadata::Independent, isImplicit,
-                                Metadata::Conserved, Metadata::WithFluxes, isNonideal});
+                                Metadata::Conserved, Metadata::WithFluxes, isEMHD});
     Metadata m_prim = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, isImplicit,
-                                Metadata::FillGhost, Metadata::Restart, isPrimitive, isNonideal});
+                                Metadata::FillGhost, Metadata::Restart, isPrimitive, isEMHD});
 
     // Heat conduction
     pkg->AddField("cons.q", m_con);

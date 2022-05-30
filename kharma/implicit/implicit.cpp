@@ -284,20 +284,20 @@ TaskStatus Step(MeshData<Real> *mci, MeshData<Real> *mc0, MeshData<Real> *dudt,
                         // Solve against the negative residual
                         FLOOP delta_prim(ip) = -residual(ip);
 
-                        // if (am_rank0 && b == 0 && i == 4 && j == 4 && k == 4) {
+                        // if (am_rank0 && b == 0 && i == 11 && j == 11 && k == 0) {
                         //     printf("Variable ordering: rho %d uu %d u1 %d B1 %d q %d dP %d\n",
                         //             m_p.RHO, m_p.UU, m_p.U1, m_p.B1, m_p.Q, m_p.DP);
                         //     printf("Variable ordering: rho %d uu %d u1 %d B1 %d q %d dP %d\n",
                         //             m_u.RHO, m_u.UU, m_u.U1, m_u.B1, m_u.Q, m_u.DP);
-                        //     // printf("P_solver: "); PLOOP printf("%g ", P_solver(ip)); printf("\n");
-                        //     // printf("Pi: "); PLOOP printf("%g ", Pi(ip)); printf("\n");
-                        //     // printf("Ui: "); PLOOP printf("%g ", Ui(ip)); printf("\n");
-                        //     // printf("Ps: "); PLOOP printf("%g ", Ps(ip)); printf("\n");
-                        //     // printf("Us: "); PLOOP printf("%g ", Us(ip)); printf("\n");
-                        //     // printf("dUdt: "); PLOOP printf("%g ", dUdt(ip)); printf("\n");
-                        //     printf("Initial Jacobian:\n"); for (int jp=0; jp<nvar; ++jp) {PLOOP printf("%g\t", jacobian(jp,ip)); printf("\n");}
-                        //     // printf("Initial residual: "); PLOOP printf("%g ", residual(ip)); printf("\n");
-                        //     // printf("Initial delta_prim: "); PLOOP printf("%g ", delta_prim(ip)); printf("\n");
+                        //     printf("P_solver: "); PLOOP printf("%6.5e ", P_solver(ip)); printf("\n");
+                        //     printf("Pi: "); PLOOP printf("%6.5e ", Pi(ip)); printf("\n");
+                        //     printf("Ui: "); PLOOP printf("%6.5e ", Ui(ip)); printf("\n");
+                        //     printf("Ps: "); PLOOP printf("%6.5e ", Ps(ip)); printf("\n");
+                        //     printf("Us: "); PLOOP printf("%6.5e ", Us(ip)); printf("\n");
+                        //     printf("dUdt: "); PLOOP printf("%6.5e ", dUdt(ip)); printf("\n");
+                        //     printf("Initial Jacobian:\n"); for (int jp=0; jp<nvar; ++jp) {PLOOP printf("%6.5e\t", jacobian(jp,ip)); printf("\n");}
+                        //     printf("Initial residual: "); PLOOP printf("%6.5e ", residual(ip)); printf("\n");
+                        //     printf("Initial delta_prim: "); PLOOP printf("%6.5e ", delta_prim(ip)); printf("\n");
                         // }
 
                         // Linear solve
@@ -314,11 +314,11 @@ TaskStatus Step(MeshData<Real> *mci, MeshData<Real> *mc0, MeshData<Real> *dudt,
                                       m_p, m_u, emhd_params, nfvar, j, i, gam, dt, residual);
 
                         // if (am_rank0 && b == 0 && i == 11 && j == 11 && k == 0) {
-                        //     // printf("Variable ordering: rho %d uu %d u1 %d B1 %d q %d dP %d\n",
-                        //     //         m_p.RHO, m_p.UU, m_p.U1, m_p.B1, m_p.Q, m_p.DP);
-                        //     printf("Final residual: "); PLOOP printf("%g ", residual(ip)); printf("\n");
-                        //     // printf("Final delta_prim: "); PLOOP printf("%g ", delta_prim(ip)); printf("\n");
-                        //     // printf("Final P_solver: "); PLOOP printf("%g ", P_solver(ip)); printf("\n");
+                        //     printf("Variable ordering: rho %d uu %d u1 %d B1 %d q %d dP %d\n",
+                        //             m_p.RHO, m_p.UU, m_p.U1, m_p.B1, m_p.Q, m_p.DP);
+                        //     printf("Final residual: "); PLOOP printf("%6.5e ", residual(ip)); printf("\n");
+                        //     printf("Final delta_prim: "); PLOOP printf("%6.5e ", delta_prim(ip)); printf("\n");
+                        //     printf("Final P_solver: "); PLOOP printf("%6.5e ", P_solver(ip)); printf("\n");
                         // }
 
                         // Store for maximum/output
@@ -326,6 +326,7 @@ TaskStatus Step(MeshData<Real> *mci, MeshData<Real> *mc0, MeshData<Real> *dudt,
                         norm_all(b, k , j, i) = 0;
                         FLOOP norm_all(b, k, j, i) += residual(ip)*residual(ip);
                         norm_all(b, k, j, i) = sqrt(norm_all(b, k, j, i)); // TODO faster to scratch cache & copy?
+
                     }
                 );
                 member.team_barrier();
@@ -350,7 +351,7 @@ TaskStatus Step(MeshData<Real> *mci, MeshData<Real> *mc0, MeshData<Real> *dudt,
             }
         , norm_max);
         max_norm = MPIReduce(max_norm, MPI_MAX);
-        if (MPIRank0()) fprintf(stdout, "Nonlinear iter %d. Max L2 norm: %g\n", iter, max_norm);
+        if (MPIRank0()) fprintf(stdout, "Nonlinear iter %d. Max L2 norm: %6.5e\n", iter, max_norm);
     }
 
     Flag(mc_solver, "Implicit Iteration: final");

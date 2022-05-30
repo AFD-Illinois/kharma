@@ -29,43 +29,48 @@ hslope    = 1.0
 R_inner   = 100.
 r_out     = 300.
 
+<bounds>
+check_inflow_inner = false
+check_inflow_outer = false
+
 
 <parthenon/time>
-tlim       = 100.
+tlim       = 150.
 
 <GRMHD>
 cfl            = 0.5
 gamma          = 1.333333
 reconstruction = weno5
-implicit       = false
+implicit       = true
 
 <b_field>
-implicit        = false
+implicit        = true
 initial_cleanup = false
 
-<driver>
-type = harm
 
 # IMPORTANT: This block must be present and values filled in all EGRMHD simulations
-#<emhd>
-#on                 = true
-#higher_order_terms = true
+<emhd>
+on                 = true
+higher_order_terms = true
 
-#closure_type       = kappa_eta
-#tau                = 10.
-#kappa              = 0.1
-#eta                = 0.
+closure_type       = kappa_eta
+tau                = 10.
+kappa              = 0.1
+eta                = 0.0
 
-#<implicit>
-#max_nonlinear_iter = 3
-#rootfind_tol       = 1.e-20
-#jacobian_delta     = 4.e-8
+<driver>
+type = imex
+
+<implicit>
+max_nonlinear_iter = 3
+rootfind_tol       = 1.e-20
+jacobian_delta     = 4.e-8
 
 <conducting_atmosphere>
 input = ODE
 
 <floors>
-disable_floors = true
+disable_floors = false
 
 <debug>
 verbose      = 1
@@ -74,10 +79,10 @@ extra_checks = 1
 
 <parthenon/output0>
 file_type               = hdf5
-dt                      = 100
+dt                      = 20
 single_precision_output = false
-variables               = prims.rho, prims.u, prims.uvec, prims.B
+variables               = prims.rho, prims.u, prims.uvec, prims.B, prims.q, prims.dP
 
 <parthenon/output1>
 file_type = hst
-dt        = 20
+dt        = 100

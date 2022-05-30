@@ -92,14 +92,6 @@ KOKKOS_INLINE_FUNCTION void calc_residual(const GRCoordinates& G, const Local& P
     Flux::p_to_u(G, P_test, m_p, emhd_params, gam, j, i, tmp, m_u); // U_test
     // (U_test - Ui)/dt - dudt_explicit ...
     FLOOP residual(ip) = (tmp(ip) - Ui(ip)) / dt - dudt_explicit(ip);
-    // if (i == 11 && j == 11) {
-    //     GReal X[GR_DIM];
-    //     G.coord(0, j, i, Loci::center, X);
-    //     printf("X: "); DLOOP1 printf("%g ", X[mu]); printf("\n");
-    //     printf("U_test: "); PLOOP printf("%g ", tmp(ip)); printf("\n");
-    //     printf("Ui:\t"); PLOOP printf("%g ", Ui(ip)); printf("\n");
-    //     printf("Explicit sources: "); PLOOP printf("%g ", dudt_explicit(ip)); printf("\n");
-    // }
 
     if (m_p.Q >= 0) {
         // Compute new implicit source terms and time derivative source terms
@@ -109,14 +101,14 @@ KOKKOS_INLINE_FUNCTION void calc_residual(const GRCoordinates& G, const Local& P
         residual(m_u.Q) -= 0.5*(dUq + dUi(m_u.Q));
         residual(m_u.DP) -= 0.5*(dUdP + dUi(m_u.DP));
         // if (i == 11 && j == 11) {
-        //     printf("Implicit sources: "); printf("%g %g", dUq - dUi(m_u.Q), dUdP - dUi(m_u.DP)); printf("\n");
+        //     printf("Implicit sources: "); printf("%6.5e %6.5e", dUq - dUi(m_u.Q), dUdP - dUi(m_u.DP)); printf("\n");
         // }
         EMHD::time_derivative_sources(G, P_test, Pi, Ps, m_p, emhd_params, gam, dt, j, i, dUq, dUdP); // dU_time
         // ... - dU_time(ip)
         residual(m_u.Q) -= dUq;
         residual(m_u.DP) -= dUdP;
         // if (i == 11 && j == 11) {
-        //     printf("Time derivative sources: "); printf("%g %g", dUq, dUdP); printf("\n");
+        //     printf("Time derivative sources: "); printf("%6.5e %6.5e", dUq, dUdP); printf("\n");
         // }
 
         // Normalize
@@ -129,8 +121,8 @@ KOKKOS_INLINE_FUNCTION void calc_residual(const GRCoordinates& G, const Local& P
             Real u     = P_test(m_p.UU);
             Real Theta = (gam - 1.) * u / rho;
 
-            residual(m_u.Q)  *= sqrt(rho * chi_e * pow(Theta, 2));
-            residual(m_u.DP) *= sqrt(rho * nu_e * Theta);
+            residual(m_u.Q)  *= (chi_e != 0) ? sqrt(rho * chi_e * tau * pow(Theta, 2)) / tau : 1.;
+            residual(m_u.DP) *= (nu_e != 0) ? sqrt(rho * nu_e * tau * Theta) / tau : 1.;
         }
     }
 
@@ -165,7 +157,7 @@ KOKKOS_INLINE_FUNCTION void calc_jacobian(const GRCoordinates& G, const Local& P
     // Numerically evaluate the Jacobian
     for (int col = 0; col < nfvar; col++) {
         // Compute P_delta, differently depending on whether the prims are small compared to eps
-        if (abs(P(col)) < (0.5 * jac_delta)) {
+        if (fabs(P(col)) < (0.5 * jac_delta)) {
             P_delta(col) = P(col) + jac_delta;
         } else {
             P_delta(col) = (1 + jac_delta) * P(col);
