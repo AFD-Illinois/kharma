@@ -37,6 +37,8 @@
 
 #include <parthenon/parthenon.hpp>
 
+using namespace parthenon;
+
 /**
  * Types and convenience functions
  * 
