@@ -7,7 +7,7 @@ BASE=~/kharma
 # We'll use just 1 MPI rank to circumvent the somewhat annoying ODE initialization
 
 conv_2d() {
-	for res in 32 64 128 512
+	for res in 64 128 256 512
 	do
 		cp -r ${BASE}/kharma/prob/emhd/conducting_atmosphere_${res}_default/*txt ./
 		$BASE/run.sh -i $BASE/pars/conducting_atmosphere.par debug/verbose=1 \

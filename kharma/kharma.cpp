@@ -130,6 +130,9 @@ void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
         Real a      = pin->GetReal("coordinates", "a");
         GReal Rhor  = 1 + sqrt(1 - a*a);
         GReal x1max = log(Rout);
+        if (prob == "bondi_viscous") {
+            Rhor = pin->GetOrAddReal("coordinates", "Rhor", 3.0);
+        }
         // Set Rin such that we have 5 zones completely inside the event horizon
         // If xeh = log(Rhor), xin = log(Rin), and xout = log(Rout),
         // then we want xeh = xin + 5.5 * (xout - xin) / N1TOT:
