@@ -48,22 +48,11 @@
 namespace Flux
 {
 
-/**
- * Turn the primitive variables at a location into:
- * a. conserved variables (dir==0), or
- * b. fluxes in a direction (dir!=0)
- * Keep in mind loc should usually correspond to dir for perpendicuar fluxes
- */
 template<typename Local>
-KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const Local& P, const VarMap& m_p, const FourVectors D,
-                                         const EMHD::EMHD_parameters& emhd_params, const Real& gam, const int& j, const int& i, const int dir,
-                                         const Local& flux, const VarMap& m_u, const Loci loc=Loci::center)
+KOKKOS_INLINE_FUNCTION void calc_tensor(const GRCoordinates& G, const Local& P, const VarMap& m_p, const FourVectors D,
+                                        const EMHD::EMHD_parameters& emhd_params, const Real& gam, const int& dir,
+                                        Real T[GR_DIM])
 {
-    Real gdet = G.gdet(loc, j, i);
-    // Particle number flux
-    flux(m_u.RHO) = P(m_p.RHO) * D.ucon[dir] * gdet;
-
-    Real T[GR_DIM];
     if (m_p.Q >= 0) {
         // EGRMHD stress-energy tensor w/ first index up, second index down
         // Get problem closure parameters
@@ -84,7 +73,54 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const Local& P,
         // GRHD stress-energy tensor w/ first index up, second index down
         GRHD::calc_tensor(P(m_p.RHO), P(m_p.UU), (gam - 1) * P(m_p.UU), D, dir, T);
     }
-    //if (i == 11 && j == 11) printf("mhd: %g %g %g %g\n", T[0], T[1], T[2], T[3]);
+}
+
+template<typename Local>
+KOKKOS_INLINE_FUNCTION void calc_tensor(const GRCoordinates& G, const Local& P, const VarMap& m_p, const FourVectors D,
+                                         const Real& gam, const int& dir,
+                                         Real T[GR_DIM])
+{
+    if (m_p.B1 >= 0) {
+        // GRMHD stress-energy tensor w/ first index up, second index down
+        GRMHD::calc_tensor(P(m_p.RHO), P(m_p.UU), (gam - 1) * P(m_p.UU), D, dir, T);
+    } else {
+        // GRHD stress-energy tensor w/ first index up, second index down
+        GRHD::calc_tensor(P(m_p.RHO), P(m_p.UU), (gam - 1) * P(m_p.UU), D, dir, T);
+    }
+}
+
+template<typename Global>
+KOKKOS_INLINE_FUNCTION void calc_tensor(const GRCoordinates& G, const Global& P, const VarMap& m_p, const FourVectors D,
+                                         const Real& gam, const int& k, const int& j, const int& i, const int& dir,
+                                         Real T[GR_DIM])
+{
+    if (m_p.B1 >= 0) {
+        // GRMHD stress-energy tensor w/ first index up, second index down
+        GRMHD::calc_tensor(P(m_p.RHO, k, j, i), P(m_p.UU, k, j, i), (gam - 1) * P(m_p.UU, k, j, i), D, dir, T);
+    } else {
+        // GRHD stress-energy tensor w/ first index up, second index down
+        GRHD::calc_tensor(P(m_p.RHO, k, j, i), P(m_p.UU, k, j, i), (gam - 1) * P(m_p.UU, k, j, i), D, dir, T);
+    }
+}
+
+/**
+ * Turn the primitive variables at a location into:
+ * a. conserved variables (dir==0), or
+ * b. fluxes in a direction (dir!=0)
+ * Keep in mind loc should usually correspond to dir for perpendicuar fluxes
+ */
+template<typename Local>
+KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const Local& P, const VarMap& m_p, const FourVectors D,
+                                         const EMHD::EMHD_parameters& emhd_params, const Real& gam, const int& j, const int& i, const int& dir,
+                                         const Local& flux, const VarMap& m_u, const Loci loc=Loci::center)
+{
+    Real gdet = G.gdet(loc, j, i);
+    // Particle number flux
+    flux(m_u.RHO) = P(m_p.RHO) * D.ucon[dir] * gdet;
+
+    // Stress-energy tensor
+    Real T[GR_DIM];
+    calc_tensor(G, P, m_p, D, emhd_params, gam, dir, T);
     flux(m_u.UU) = T[0] * gdet + flux(m_u.RHO);
     flux(m_u.U1) = T[1] * gdet;
     flux(m_u.U2) = T[2] * gdet;

@@ -36,6 +36,10 @@ cfl = 0.9
 gamma = 1.666667
 reconstruction = weno5
 
+<driver>
+type = imex
+two_sync = true
+
 <torus>
 rin = 6.0
 rmax = 12.0

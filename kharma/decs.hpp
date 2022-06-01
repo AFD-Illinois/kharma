@@ -96,6 +96,8 @@ using GReal = double;
 #define PLOOP for(int ip=0; ip < nvar; ++ip)
 
 // Useful Enums to avoid lots of #defines
+// See following functions and coord() in gr_coordinates.hpp to
+// get an idea of these locations.  All faces/corner are *left* of center
 #define NLOC 5
 enum Loci{face1=0, face2, face3, center, corner};
 
