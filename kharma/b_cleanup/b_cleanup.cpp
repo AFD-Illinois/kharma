@@ -79,6 +79,8 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     params.Add("max_iterations", max_iterations);
     int check_interval = pin->GetOrAddInteger("b_cleanup", "check_interval", 2e2);
     params.Add("check_interval", check_interval);
+    int restart_interval = pin->GetOrAddInteger("b_cleanup", "restart_interval", 2e3);
+    params.Add("restart_interval", restart_interval);
     bool fail_without_convergence = pin->GetOrAddBoolean("b_cleanup", "fail_without_convergence", true);
     params.Add("fail_without_convergence", fail_without_convergence);
     bool warn_without_convergence = pin->GetOrAddBoolean("b_cleanup", "warn_without_convergence", false);
@@ -95,7 +97,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
 
     // FIELDS
     std::vector<int> s_vector({NVEC});
-    Metadata m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy, Metadata::FillGhost});
+    Metadata m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy, Metadata::Restart, Metadata::FillGhost});
     // Scalar potential, solution to div^2 p = div B
     // Thus when we subtract the gradient, div (B - div p) == 0!
     pkg->AddField("p", m);
@@ -166,6 +168,7 @@ void CleanupDivergence(std::shared_ptr<MeshData<Real>>& md)
     auto pkg = pmesh->packages.Get("B_Cleanup");
     auto max_iters = pkg->Param<int>("max_iterations");
     auto check_interval = pkg->Param<int>("check_interval");
+    auto restart_interval = pkg->Param<int>("restart_interval");
     auto rel_tolerance = pkg->Param<Real>("rel_tolerance");
     auto abs_tolerance = pkg->Param<Real>("abs_tolerance");
     auto fail_flag = pkg->Param<bool>("fail_without_convergence");
@@ -202,14 +205,18 @@ void CleanupDivergence(std::shared_ptr<MeshData<Real>>& md)
         return;
     }
 
-    // TODO Unmark everything but P as FillGhost, for efficiency. Re-mark before last sync
-    // auto vars = rc->GetVariablesByFlag(std::vector<MetadataFlag>({isImplicit, flag}), true).labels();
-    // for (auto& var : vars) {
-    //     // etc
-    // }
-
-    // set P = divB as guess
-    B_Cleanup::InitP(md.get());
+    std::vector<std::string> normally_syncd = {};
+    for (auto &pmb : pmesh->block_list) {
+        auto& rc = pmb->meshblock_data.Get();
+        for (auto &v : rc->GetCellVariableVector()) {
+            if (v->IsSet(Metadata::FillGhost)) {
+                if (v->base_name() != "p") {
+                    normally_syncd.emplace_back(v->label());
+                    v->Unset(Metadata::FillGhost);
+                }
+            }
+        }
+    }
 
     bool is_converged = false;
     int iter = 0;
@@ -247,6 +254,29 @@ void CleanupDivergence(std::shared_ptr<MeshData<Real>>& md)
             is_converged = (update_norm.val / divB_norm.val < rel_tolerance) && (divB_max.val < abs_tolerance);
         }
 
+        if (iter % restart_interval == 0) {
+            Flag("Writing Checkpoint");
+
+                // Update the magnetic field on physical zones using our solution
+                B_Cleanup::ApplyP(md.get());
+                // Synchronize to update ghost zones
+                KBoundaries::SyncAllBounds(pmesh, sync_prims);
+
+                // Recalculate divB max for one last check
+                divB_max.val = 0.;
+                B_FluxCT::MaxDivBTask(md.get(), divB_max.val);
+                divB_max.StartReduce(MPI_MAX);
+                while (divB_max.CheckReduce() == TaskStatus::incomplete);
+
+                if (MPIRank0()) {
+                    std::cout << "Final divB max is " << divB_max.val << std::endl;
+                }
+
+            if (MPIRank0()) {
+                std::cout << "Wrote Checkpoint" << std::endl;
+            }
+        }
+
         iter++;
     }
     if (iter >= max_iters) {
@@ -259,6 +289,20 @@ void CleanupDivergence(std::shared_ptr<MeshData<Real>>& md)
 
     if (MPIRank0() && verbose > 0) {
         std::cout << "Applying magnetic field correction" << std::endl;
+    }
+
+    // Re-mark all fields
+    for (auto &pmb : pmesh->block_list) {
+        auto& rc = pmb->meshblock_data.Get();
+        for (auto &v : rc->GetCellVariableVector()) {
+            for (auto s : normally_syncd) {
+                if (v->label() == s) {
+                    v->Set(Metadata::FillGhost);
+                }
+            }
+        }
+        // And unmark p
+        rc->Get("p").Unset(Metadata::FillGhost);
     }
 
     // Update the magnetic field on physical zones using our solution

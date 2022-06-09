@@ -35,6 +35,7 @@
 // KHARMA Headers
 #include "decs.hpp"
 
+#include "b_cleanup.hpp"
 #include "boundaries.hpp"
 #include "imex_driver.hpp"
 #include "harm_driver.hpp"
@@ -182,11 +183,26 @@ int main(int argc, char *argv[])
         pin->ParameterDump(cout);
     }
 
+    // If we resized the array, cleanup any field divergence we created
+    // Let the user specify to do this, too
+    Flag("Cleaning divB");
+    // If resizing a restart file, and not explicitly told not to, clean B. Also clean if told to.
+    if ((is_restart && is_resize && !pin->GetOrAddBoolean("resize_restart", "skip_b_cleanup", false))
+        || pin->GetBoolean("b_field", "initial_cleanup")) {
+        // Cleanup operates on full single MeshData as there are MPI syncs
+        auto &mbase = pmesh->mesh_data.GetOrAdd("base", 0);
+        // Clean field divergence across the whole grid
+        B_Cleanup::CleanupDivergence(mbase);
+        // Sync to make sure periodic boundaries are set
+        Flag("Final Boundary sync");
+        bool sync_prims = pin->GetString("driver", "type") == "imex";
+        KBoundaries::SyncAllBounds(pmesh, sync_prims);
+    }
+
     // Then execute the driver. This is a Parthenon function inherited by our HARMDriver object,
     // which will call MakeTaskCollection, then execute the tasks on the mesh for each portion
     // of each step until a stop criterion is reached.
     Flag("Executing Driver");
-
     if (driver_type == "harm") {
         cout << "Initializing and running KHARMA driver." << endl;
         HARMDriver driver(pin, papp, pmesh);

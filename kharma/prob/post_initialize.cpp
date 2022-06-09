@@ -212,18 +212,5 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart, b
         KHARMA::ResetGlobals(pin, pmesh);
     }
 
-    // If we resized the array, cleanup any field divergence we created
-    // Let the user specify to do this, too
-    if ((is_restart && is_resize && !pin->GetOrAddBoolean("resize_restart", "skip_b_cleanup", false))
-        || pin->GetBoolean("b_field", "initial_cleanup")) {
-        // Cleanup operates on full single MeshData as there are MPI syncs
-        auto &mbase = pmesh->mesh_data.GetOrAdd("base", 0);
-        // Clean field divergence across the whole grid
-        B_Cleanup::CleanupDivergence(mbase);
-        // Sync to make sure periodic boundaries are set
-        Flag("Boundary sync");
-        KBoundaries::SyncAllBounds(pmesh, sync_prims);
-    }
-
     Flag("Post-initialization finished");
 }

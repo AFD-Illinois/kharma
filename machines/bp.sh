@@ -50,6 +50,11 @@ if [[ $METAL_HOSTNAME == "fermium" ]]; then
 fi
 
 if [[ $METAL_HOSTNAME == "ferrum" ]]; then
+  HOST_ARCH="HSW"
+  DEVICE_ARCH="INTEL_GEN"
+
+  NPROC=6 # My kingdom for a RAM!
+
   if [[ "$ARGS" == *"gcc"* ]]; then
     module load mpi/mpich-x86_64
     C_NATIVE="gcc"
@@ -59,12 +64,9 @@ if [[ $METAL_HOSTNAME == "ferrum" ]]; then
     module purge
     module load compiler mpi
     PREFIX_PATH="$HOME/libs/hdf5-oneapi"
+    C_NATIVE=icx
+    CXX_NATIVE=icpx
   fi
-
-  NPROC=6 # My kingdom for a RAM!
-
-  HOST_ARCH="HSW"
-  DEVICE_ARCH="INTEL_GEN"
 
   EXTRA_FLAGS="-DFUSE_FLUX_KERNELS=OFF -DFUSE_EMF_KERNELS=OFF -DFUSE_FLOOR_KERNELS=OFF $EXTRA_FLAGS"
 fi
