@@ -154,10 +154,13 @@ int main(int argc, char *argv[])
 
     // Construct a temporary driver purely for parameter parsing
     auto driver_type = pin->GetString("driver", "type");
+    Driver *driver;
     if (driver_type == "harm") {
-        HARMDriver driver(pin, papp, pmesh);
+        if (MPIRank0()) cout << "Initializing KHARMA driver." << endl;
+        driver = new HARMDriver(pin, papp, pmesh);
     } else if (driver_type == "imex") {
-        ImexDriver driver(pin, papp, pmesh);
+        if (MPIRank0()) cout << "Initializing IMEX driver." << endl;
+        driver = new ImexDriver(pin, papp, pmesh);
     } else {
         throw std::invalid_argument("Expected driver type to be harm or imex!");
     }
@@ -192,26 +195,18 @@ int main(int argc, char *argv[])
         // Cleanup operates on full single MeshData as there are MPI syncs
         auto &mbase = pmesh->mesh_data.GetOrAdd("base", 0);
         // Clean field divergence across the whole grid
-        B_Cleanup::CleanupDivergence(mbase);
+        B_Cleanup::CleanupDivergence(mbase, driver, pin, pman.IsRestart());
         // Sync to make sure periodic boundaries are set
         Flag("Final Boundary sync");
         bool sync_prims = pin->GetString("driver", "type") == "imex";
         KBoundaries::SyncAllBounds(pmesh, sync_prims);
     }
 
-    // Then execute the driver. This is a Parthenon function inherited by our HARMDriver object,
-    // which will call MakeTaskCollection, then execute the tasks on the mesh for each portion
+    // Then execute the driver. This is a Parthenon function inherited by any object descended from Driver.
+    // This will call MakeTaskCollection, then execute the tasks on the mesh for each portion
     // of each step until a stop criterion is reached.
-    Flag("Executing Driver");
-    if (driver_type == "harm") {
-        cout << "Initializing and running KHARMA driver." << endl;
-        HARMDriver driver(pin, papp, pmesh);
-        auto driver_status = driver.Execute();
-    } else if (driver_type == "imex") {
-        cout << "Initializing and running IMEX driver." << endl;
-        ImexDriver driver(pin, papp, pmesh);
-        auto driver_status = driver.Execute();
-    }
+    if (MPIRank0()) cout << "Executing Driver" << endl;
+    auto driver_status = driver->Execute();
 
     // Parthenon cleanup includes Kokkos, MPI
     Flag("Finalizing");

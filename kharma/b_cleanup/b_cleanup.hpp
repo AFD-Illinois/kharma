@@ -86,7 +86,7 @@ TaskStatus ApplyP(MeshData<Real> *md);
 /**
  * Single-call divergence cleanup.  Lots of MPI syncs, probably slow to use in task lists.
  */
-void CleanupDivergence(std::shared_ptr<MeshData<Real>>& md);
+void CleanupDivergence(std::shared_ptr<MeshData<Real>>& md, Driver* driver, ParameterInput *pin, bool read_p=false);
 
 /**
  * Add the iterative tasks required for B field cleanup to the tasklist

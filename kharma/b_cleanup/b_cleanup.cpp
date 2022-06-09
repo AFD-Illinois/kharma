@@ -75,11 +75,11 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     // TODO why does this need to be so large?
     Real sor_factor = pin->GetOrAddReal("b_cleanup", "sor_factor", 10.);
     params.Add("sor_factor", sor_factor);
-    int max_iterations = pin->GetOrAddInteger("b_cleanup", "max_iterations", 1e8);
+    int max_iterations = pin->GetOrAddInteger("b_cleanup", "max_iterations", 1e6);
     params.Add("max_iterations", max_iterations);
     int check_interval = pin->GetOrAddInteger("b_cleanup", "check_interval", 2e2);
     params.Add("check_interval", check_interval);
-    int restart_interval = pin->GetOrAddInteger("b_cleanup", "restart_interval", 2e3);
+    int restart_interval = pin->GetOrAddInteger("b_cleanup", "restart_interval", 1e4);
     params.Add("restart_interval", restart_interval);
     bool fail_without_convergence = pin->GetOrAddBoolean("b_cleanup", "fail_without_convergence", true);
     params.Add("fail_without_convergence", fail_without_convergence);
@@ -158,7 +158,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     return pkg;
 }
 
-void CleanupDivergence(std::shared_ptr<MeshData<Real>>& md)
+void CleanupDivergence(std::shared_ptr<MeshData<Real>>& md, Driver* driver, ParameterInput *pin, bool read_p)
 {
     Flag(md.get(), "Cleaning up divB");
     // Local Allreduce values since we're just calling things
@@ -218,13 +218,18 @@ void CleanupDivergence(std::shared_ptr<MeshData<Real>>& md)
         }
     }
 
+    // Initialize p with a guess unless we're restarting from a solver checkpoint file
+    if (!read_p) {
+        InitP(md.get());
+    }
+
     bool is_converged = false;
     int iter = 0;
     while ( (!is_converged) && (iter < max_iters) ) {
         // Update our guess at the potential 
         B_Cleanup::UpdateP(md.get());
 
-        // Boundary sync. We really only need p syncd here...
+        // Boundary sync. Note that due to the preamble, this *only* syncs p.
         // Last option prevents updating physical boundaries, which we want to *solve* instead
         KBoundaries::SyncAllBounds(pmesh, sync_prims, false);
 
@@ -257,24 +262,11 @@ void CleanupDivergence(std::shared_ptr<MeshData<Real>>& md)
         if (iter % restart_interval == 0) {
             Flag("Writing Checkpoint");
 
-                // Update the magnetic field on physical zones using our solution
-                B_Cleanup::ApplyP(md.get());
-                // Synchronize to update ghost zones
-                KBoundaries::SyncAllBounds(pmesh, sync_prims);
-
-                // Recalculate divB max for one last check
-                divB_max.val = 0.;
-                B_FluxCT::MaxDivBTask(md.get(), divB_max.val);
-                divB_max.StartReduce(MPI_MAX);
-                while (divB_max.CheckReduce() == TaskStatus::incomplete);
-
-                if (MPIRank0()) {
-                    std::cout << "Final divB max is " << divB_max.val << std::endl;
-                }
-
-            if (MPIRank0()) {
-                std::cout << "Wrote Checkpoint" << std::endl;
-            }
+            // Write checkpoint file: this will include the *state* of p,
+            // but will not *apply* it.  That is, all primitive variables
+            // should match their starting values exactly
+            driver->pouts.get()->MakeOutputs(pmesh, pin);
+            if (MPIRank0()) std::cout << "Wrote Checkpoint" << std::endl;
         }
 
         iter++;
