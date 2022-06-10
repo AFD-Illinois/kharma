@@ -536,6 +536,7 @@ TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
     // Check for a soundspeed (ctop) of 0 or NaN
     // This functions as a "last resort" check to stop a
     // simulation on obviously bad data
+    // TODO also be able to print what zone dictated timestep
     if (extra_checks >= 1) {
         CheckNaN(md, X1DIR);
         if (pmesh->ndim > 1) CheckNaN(md, X2DIR);

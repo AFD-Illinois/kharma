@@ -118,6 +118,7 @@ TaskStatus Step(MeshData<Real> *mci, MeshData<Real> *mc0, MeshData<Real> *dudt,
 
     const auto& implicit_par = pmb0->packages.Get("Implicit")->AllParams();
     const int iter_max = implicit_par.Get<int>("max_nonlinear_iter");
+    const Real rootfind_tol = implicit_par.Get<Real>("rootfind_tol");
     const Real lambda = implicit_par.Get<Real>("linesearch_lambda");
     const Real delta = implicit_par.Get<Real>("jacobian_delta");
     const Real gam = pmb0->packages.Get("GRMHD")->Param<Real>("gamma");
@@ -351,6 +352,7 @@ TaskStatus Step(MeshData<Real> *mci, MeshData<Real> *mc0, MeshData<Real> *dudt,
         , norm_max);
         max_norm = MPIReduce(max_norm, MPI_MAX);
         if (MPIRank0()) fprintf(stdout, "Nonlinear iter %d. Max L2 norm: %g\n", iter, max_norm);
+        if (max_norm < rootfind_tol) break;
     }
 
     Flag(mc_solver, "Implicit Iteration: final");
