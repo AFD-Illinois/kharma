@@ -394,11 +394,13 @@ TaskStatus PrintGlobalMaxDivB(MeshData<Real> *md)
     // unless we're being verbose. It's not costly to calculate though
     if (pmb0->packages.Get("B_FluxCT")->Param<int>("verbose") >= 1) {
         Flag(md, "Printing divB");
-        Real max_divb = B_FluxCT::MaxDivB(md);
-        max_divb = MPIReduce(max_divb, MPI_MAX);
+        static Reduce<Real> max_divb;
+        max_divb.val = B_FluxCT::MaxDivB(md);
+        max_divb.StartReduce(0, MPI_MAX);
+        while (max_divb.CheckReduce() == TaskStatus::incomplete);
 
         if(MPIRank0()) {
-            cout << "Max DivB: " << max_divb << endl;
+            cout << "Max DivB: " << max_divb.val << endl;
         }
 
     }
