@@ -75,7 +75,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     // TODO why does this need to be so large?
     Real sor_factor = pin->GetOrAddReal("b_cleanup", "sor_factor", 10.);
     params.Add("sor_factor", sor_factor);
-    int max_iterations = pin->GetOrAddInteger("b_cleanup", "max_iterations", 1e6);
+    int max_iterations = pin->GetOrAddInteger("b_cleanup", "max_iterations", 1e8);
     params.Add("max_iterations", max_iterations);
     int check_interval = pin->GetOrAddInteger("b_cleanup", "check_interval", 2e2);
     params.Add("check_interval", check_interval);
@@ -201,8 +201,18 @@ void CleanupDivergence(std::shared_ptr<MeshData<Real>>& md, Driver* driver, Para
     }
     // These two aren't *strictly* comparable, but we're unlikely to do any good if this is true
     if (divB_max.val < abs_tolerance) {
+        // Make sure the p field is unmarked
+        for (auto &pmb : pmesh->block_list) {
+            auto& rc = pmb->meshblock_data.Get();
+            rc->Get("p").Unset(Metadata::FillGhost);
+        }
         std::cout << "Starting divB is within tolerance, exiting." << std::endl;
         return;
+    }
+
+    // Initialize p with a guess unless we're restarting from a solver checkpoint file
+    if (!read_p) {
+        InitP(md.get());
     }
 
     std::vector<std::string> normally_syncd = {};
@@ -216,11 +226,6 @@ void CleanupDivergence(std::shared_ptr<MeshData<Real>>& md, Driver* driver, Para
                 }
             }
         }
-    }
-
-    // Initialize p with a guess unless we're restarting from a solver checkpoint file
-    if (!read_p) {
-        InitP(md.get());
     }
 
     bool is_converged = false;
@@ -262,11 +267,36 @@ void CleanupDivergence(std::shared_ptr<MeshData<Real>>& md, Driver* driver, Para
         if (iter % restart_interval == 0) {
             Flag("Writing Checkpoint");
 
+            // Re-mark all fields
+            for (auto &pmb : pmesh->block_list) {
+                auto& rc = pmb->meshblock_data.Get();
+                for (auto &v : rc->GetCellVariableVector()) {
+                    for (auto s : normally_syncd) {
+                        if (v->label() == s) {
+                            v->Set(Metadata::FillGhost);
+                        }
+                    }
+                }
+            }
+
             // Write checkpoint file: this will include the *state* of p,
             // but will not *apply* it.  That is, all primitive variables
             // should match their starting values exactly
             driver->pouts.get()->MakeOutputs(pmesh, pin);
             if (MPIRank0()) std::cout << "Wrote Checkpoint" << std::endl;
+
+            // Un-mark all fields, again
+            for (auto &pmb : pmesh->block_list) {
+                auto& rc = pmb->meshblock_data.Get();
+                for (auto &v : rc->GetCellVariableVector()) {
+                    if (v->IsSet(Metadata::FillGhost)) {
+                        if (v->base_name() != "p") {
+                            normally_syncd.emplace_back(v->label());
+                            v->Unset(Metadata::FillGhost);
+                        }
+                    }
+                }
+            }
         }
 
         iter++;
