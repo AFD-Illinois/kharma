@@ -182,10 +182,12 @@ TaskStatus ApplyFloors(MeshBlockData<Real> *rc)
                 int comboflag = apply_floors(G, P, m_p, gam, k, j, i, floors, U, m_u);
                 fflag(k, j, i) = (comboflag / HIT_FLOOR_GEOM_RHO) * HIT_FLOOR_GEOM_RHO;
 
-                // The floors as they're written guarantee a consistent state in their cells,
-                // so we do not flag any additional cells, nor do we remove existing flags
-                // (which might have only "needed floors" due to being left untouched by UtoP)
-                // TODO record these flags separately, they are likely common depending on floor prescriptions
+                // Record the pflag as well.  KHARMA did not traditionally do this,
+                // as it ran floors over uninitialized zones.  We do better now.
+                // This both saves time and is more correct, as it reflects the *current*
+                // invertibility/physicality of U, not the version before floor applications
+                pflag(k, j, i) = comboflag % HIT_FLOOR_GEOM_RHO;
+
 #if !FUSE_FLOOR_KERNELS
             }
         }
