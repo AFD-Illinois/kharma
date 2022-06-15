@@ -492,9 +492,10 @@ AmrTag CheckRefinement(MeshBlockData<Real> *rc)
     auto pmb = rc->GetBlockPointer();
     auto v = rc->Get("prims.rho").data;
 
-    IndexRange ib = pmb->cellbounds.GetBoundsI(IndexDomain::entire);
-    IndexRange jb = pmb->cellbounds.GetBoundsJ(IndexDomain::entire);
-    IndexRange kb = pmb->cellbounds.GetBoundsK(IndexDomain::entire);
+    IndexDomain domain = IndexDomain::interior;
+    IndexRange ib = pmb->cellbounds.GetBoundsI(domain);
+    IndexRange jb = pmb->cellbounds.GetBoundsJ(domain);
+    IndexRange kb = pmb->cellbounds.GetBoundsK(domain);
 
     typename Kokkos::MinMax<Real>::value_type minmax;
     pmb->par_reduce("check_refinement", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,

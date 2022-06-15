@@ -96,7 +96,7 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
         break;
     }
 
-    IndexDomain domain = IndexDomain::entire;
+    IndexDomain domain = IndexDomain::interior;
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
@@ -132,7 +132,7 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
 
     // Find the magnetic vector potential.  In X3 symmetry only A_phi is non-zero,
     // But for tilted conditions we must keep track of all components
-    // TODO there's probably an ncorners
+    // TODO there should be an ncornersi,j,k
     ParArrayND<double> A("A", NVEC, n3+1, n2+1, n1+1);
     pmb->par_for("B_field_A", ks, ke+1, js, je+1, is, ie+1,
         KOKKOS_LAMBDA_3D {

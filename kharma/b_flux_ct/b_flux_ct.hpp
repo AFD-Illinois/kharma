@@ -59,7 +59,9 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
 /**
  * Get the primitive variables, which in Parthenon's nomenclature are "derived".
  * Also applies floors to the calculated primitives, and fixes up any inversion errors
- *
+ * 
+ * Defaults to entire domain, as the KHARMA algorithm relies on applying UtoP over ghost zones.
+ * 
  * input: Conserved B = sqrt(-gdet) * B^i
  * output: Primitive B = B^i
  */
@@ -73,7 +75,7 @@ inline TaskStatus FillDerivedBlockTask(MeshBlockData<Real> *rc) { UtoP(rc); retu
 /**
  * Inverse of above. Generally only for initialization.
  */
-void PtoU(MeshBlockData<Real> *md, IndexDomain domain=IndexDomain::entire, bool coarse=false);
+void PtoU(MeshBlockData<Real> *md, IndexDomain domain=IndexDomain::interior, bool coarse=false);
 
 /**
  * Modify the B field fluxes to take a constrained-transport step as in Toth (2000)
@@ -107,7 +109,7 @@ inline TaskStatus MaxDivBTask(MeshData<Real> *md, double& divb_max)
  * Currently only used when resizing inputs.
  * TODO option to sprinkle into updates every N steps
  */
-void CleanupDivergence(MeshBlockData<Real> *rc, IndexDomain domain=IndexDomain::entire, bool coarse=false);
+void CleanupDivergence(MeshBlockData<Real> *rc, IndexDomain domain=IndexDomain::interior, bool coarse=false);
 
 /**
  * Diagnostics printed/computed after each step

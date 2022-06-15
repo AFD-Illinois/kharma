@@ -67,7 +67,7 @@ TaskStatus ApplyFluxes(MeshData<Real> *md, MeshData<Real> *mdudt);
  * Second declaration is for Parthenon's benefit, similar to e.g.
  * declaring UtoP vs FillDerived in GRMHD package.
  */
-TaskStatus PtoU(MeshBlockData<Real> *rc, IndexDomain domain=IndexDomain::entire);
+TaskStatus PtoU(MeshBlockData<Real> *rc, IndexDomain domain=IndexDomain::interior);
 inline TaskStatus PtoUTask(MeshBlockData<Real> *rc) { return PtoU(rc); }
 
 // Fluxes a.k.a. "Approximate Riemann Solvers"

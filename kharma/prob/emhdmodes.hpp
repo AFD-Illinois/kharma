@@ -92,9 +92,10 @@ TaskStatus InitializeEMHDModes(MeshBlockData<Real> *rc, ParameterInput *pin)
     const Real k2 = 4. * M_PI;
     // END POSSIBLE ARGS
 
-    IndexRange ib = pmb->cellbounds.GetBoundsI(IndexDomain::entire);
-    IndexRange jb = pmb->cellbounds.GetBoundsJ(IndexDomain::entire);
-    IndexRange kb = pmb->cellbounds.GetBoundsK(IndexDomain::entire);
+    IndexDomain domain = IndexDomain::interior;
+    IndexRange ib = pmb->cellbounds.GetBoundsI(domain);
+    IndexRange jb = pmb->cellbounds.GetBoundsJ(domain);
+    IndexRange kb = pmb->cellbounds.GetBoundsK(domain);
     pmb->par_for("emhdmodes_init", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_3D {
             Real X[GR_DIM];

@@ -69,9 +69,10 @@ void InsertBlob(MeshBlockData<Real> *rc, ParameterInput *pin)
     GReal blob_th = pin->GetOrAddReal("blob", "th", M_PI/8);
     GReal blob_phi = pin->GetOrAddReal("blob", "phi", 0.0);
 
-    IndexRange ib = pmb->cellbounds.GetBoundsI(IndexDomain::entire);
-    IndexRange jb = pmb->cellbounds.GetBoundsJ(IndexDomain::entire);
-    IndexRange kb = pmb->cellbounds.GetBoundsK(IndexDomain::entire);
+    IndexDomain domain = IndexDomain::interior;
+    IndexRange ib = pmb->cellbounds.GetBoundsI(domain);
+    IndexRange jb = pmb->cellbounds.GetBoundsJ(domain);
+    IndexRange kb = pmb->cellbounds.GetBoundsK(domain);
     pmb->par_for("insert_blob", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_3D {
             Real X[GR_DIM];

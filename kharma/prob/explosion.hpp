@@ -77,9 +77,10 @@ TaskStatus InitializeExplosion(MeshBlockData<Real> *rc, ParameterInput *pin)
     const Real xoff = pin->GetOrAddReal("explosion", "xoff", 0.0);
     const Real yoff = pin->GetOrAddReal("explosion", "yoff", 0.0);
 
-    IndexRange ib = pmb->cellbounds.GetBoundsI(IndexDomain::entire);
-    IndexRange jb = pmb->cellbounds.GetBoundsJ(IndexDomain::entire);
-    IndexRange kb = pmb->cellbounds.GetBoundsK(IndexDomain::entire);
+    IndexDomain domain = IndexDomain::interior;
+    IndexRange ib = pmb->cellbounds.GetBoundsI(domain);
+    IndexRange jb = pmb->cellbounds.GetBoundsJ(domain);
+    IndexRange kb = pmb->cellbounds.GetBoundsK(domain);
     pmb->par_for("explosion_init", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_3D {
             Real X[GR_DIM];
