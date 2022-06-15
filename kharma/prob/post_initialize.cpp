@@ -44,6 +44,7 @@
 #include "gr_coordinates.hpp"
 #include "grmhd.hpp"
 #include "kharma.hpp"
+#include "mpi.hpp"
 #include "types.hpp"
 
 #include "seed_B_ct.hpp"
