@@ -58,7 +58,9 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
 
 /**
  * Get the primitive variables, which in Parthenon's nomenclature are "derived".
- * Also applies floors to the calculated primitives, and fixes up any inversion errors
+ * Also applies floors to the calculated primitives, and fixes up any inversion errors.
+ * 
+ * Defaults to entire domain, as the KHARMA algorithm relies on applying UtoP over ghost zones.
  *
  * input: Conserved B = sqrt(-gdet) * B^i
  * output: Primitive B = B^i

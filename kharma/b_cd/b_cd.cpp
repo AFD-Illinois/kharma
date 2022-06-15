@@ -233,11 +233,13 @@ TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
     // Print this unless we quash everything
     int verbose = pmesh->packages.Get("B_CD")->Param<int>("verbose");
     if (verbose >= 0) {
-        Real max_divb = B_CD::MaxDivB(md);
-        max_divb = MPIReduce(max_divb, MPI_MAX);
+        static Reduce<Real> max_divb;
+        max_divb.val = B_CD::MaxDivB(md);
+        max_divb.StartReduce(0, MPI_MAX);
+        while (max_divb.CheckReduce() == TaskStatus::incomplete);
 
         if(MPIRank0()) {
-            cout << "Max DivB: " << max_divb << endl;
+            cout << "Max DivB: " << max_divb.val << endl;
         }
     }
 

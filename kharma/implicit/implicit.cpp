@@ -343,16 +343,18 @@ TaskStatus Step(MeshData<Real> *mci, MeshData<Real> *mc0, MeshData<Real> *dudt,
         );
         
         // Take the maximum L2 norm
-        Real max_norm;
-        Kokkos::Max<Real> norm_max(max_norm);
+        Reduce<Real> max_norm;
+        Kokkos::Max<Real> norm_max(max_norm.val);
         pmb0->par_reduce("max_norm", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
             KOKKOS_LAMBDA_MESH_3D_REDUCE {
                 if (norm_all(b, k, j, i) > local_result) local_result = norm_all(b, k, j, i);
             }
         , norm_max);
-        max_norm = MPIReduce(max_norm, MPI_MAX);
-        if (MPIRank0()) fprintf(stdout, "Nonlinear iter %d. Max L2 norm: %g\n", iter, max_norm);
-        if (max_norm < rootfind_tol) break;
+        max_norm.StartReduce(0, MPI_MAX);
+        while (max_norm.CheckReduce() == TaskStatus::incomplete);
+        if (MPIRank0()) fprintf(stdout, "Nonlinear iter %d. Max L2 norm: %g\n", iter, max_norm.val);
+        // Break if it's less than the total tolerance we set.  TODO per-zone version of this?
+        if (max_norm.val < rootfind_tol) break;
     }
 
     Flag(mc_solver, "Implicit Iteration: final");
