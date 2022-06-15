@@ -58,4 +58,10 @@ inline void MPIBarrier() {}
 inline bool MPIRank() { return 0; }
 inline bool MPIRank0() { return true; }
 
+template<typename T>
+inline T MPIReduce_once(T f, MPI_Op O)
+{
+    return f;
+}
+
 #endif // MPI_PARALLEL
