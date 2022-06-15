@@ -79,7 +79,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin);
  * 
  * LOCKSTEP: this function respects P and returns consistent P<->U
  */
-TaskStatus ApplyFloors(MeshBlockData<Real> *rc);
+TaskStatus ApplyFloors(MeshBlockData<Real> *rc, IndexDomain domain=IndexDomain::entire);
 
 /**
  * Parthenon call wrapper for ApplyFloors, called just after FillDerived == UtoP

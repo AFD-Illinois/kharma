@@ -50,19 +50,17 @@ TaskStatus CheckNaN(MeshData<Real> *md, int dir, IndexDomain domain=IndexDomain:
  * Check the primitive and conserved variables for negative values that definitely shouldn't be negative
  * That is: primitive rho, u, conserved rho*u^t
  */
-TaskStatus CheckNegative(MeshData<Real> *md, IndexDomain domain);
-
-// The compiler is not so good with aliases.  We guide it.
-// using ParArrayNDHost = ParArrayNDGeneric<Kokkos::View<Real ******, parthenon::LayoutWrapper, Kokkos::HostSpace::memory_space>>;
-// using ParArrayNDIntHost = ParArrayNDGeneric<Kokkos::View<int ******, parthenon::LayoutWrapper, Kokkos::HostSpace::memory_space>>;
+TaskStatus CheckNegative(MeshData<Real> *md, IndexDomain domain=IndexDomain::interior);
 
 /**
- * Function for counting & printing pflags.  Note this needs a host-side array! Call pflags.getHostMirrorAndCopy() first!
+ * Function for counting & printing pflags.
+ * Note that domain::entire will double-count overlapping zones
  */
-int CountPFlags(MeshData<Real> *md, IndexDomain domain=IndexDomain::entire, int verbose=0);
+int CountPFlags(MeshData<Real> *md, IndexDomain domain=IndexDomain::interior, int verbose=0);
 
 /**
- * Function for counting & printing pflags.  Note this needs a host-side array! Call fflags.getHostMirrorAndCopy() first!
+ * Function for counting & printing pflags.
+ * Note that domain::entire will double-count overlapping zones
  */
 int CountFFlags(MeshData<Real> *md, IndexDomain domain=IndexDomain::interior, int verbose=0);
 

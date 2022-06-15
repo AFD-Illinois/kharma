@@ -492,9 +492,10 @@ AmrTag CheckRefinement(MeshBlockData<Real> *rc)
     auto pmb = rc->GetBlockPointer();
     auto v = rc->Get("prims.rho").data;
 
-    IndexRange ib = pmb->cellbounds.GetBoundsI(IndexDomain::entire);
-    IndexRange jb = pmb->cellbounds.GetBoundsJ(IndexDomain::entire);
-    IndexRange kb = pmb->cellbounds.GetBoundsK(IndexDomain::entire);
+    IndexDomain domain = IndexDomain::interior;
+    IndexRange ib = pmb->cellbounds.GetBoundsI(domain);
+    IndexRange jb = pmb->cellbounds.GetBoundsJ(domain);
+    IndexRange kb = pmb->cellbounds.GetBoundsK(domain);
 
     typename Kokkos::MinMax<Real>::value_type minmax;
     pmb->par_reduce("check_refinement", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
@@ -536,6 +537,7 @@ TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
     // Check for a soundspeed (ctop) of 0 or NaN
     // This functions as a "last resort" check to stop a
     // simulation on obviously bad data
+    // TODO also be able to print what zone dictated timestep
     if (extra_checks >= 1) {
         CheckNaN(md, X1DIR);
         if (pmesh->ndim > 1) CheckNaN(md, X2DIR);

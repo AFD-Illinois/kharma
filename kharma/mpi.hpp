@@ -14,7 +14,8 @@
 
 static auto comm = MPI_COMM_WORLD;
 
-// UNIVERSAL
+// Wrappers to make Parthenon-scope MPI interface global,
+// plus an easy barrier in case you need it for debugging
 inline bool MPIRank()
 {
     return parthenon::Globals::my_rank;
@@ -28,29 +29,23 @@ inline void MPIBarrier()
     MPI_Barrier(comm);
 }
 
+/**
+ * Perform a Parthenon MPI reduction. ONCE.
+ * Parthenon does not clean up communicators, and
+ * it is further bad practice to allocate a new one per-step.
+ * So, avoid this function except in initialization.
+ * 
+ * Instead, copy/paste the contents & use a static declaration for
+ * the AllReduce object.  Replace with a Reduce object if you don't
+ * need the result on all ranks.
+ */
 template<typename T>
-inline T MPIReduce(T f, MPI_Op O)
+inline T MPIReduce_once(T f, MPI_Op O)
 {
     AllReduce<T> reduction;
     reduction.val = f;
     reduction.StartReduce(O);
     // Wait on results
-    while (reduction.CheckReduce() == TaskStatus::incomplete);
-    return reduction.val;
-}
-
-template<typename T>
-inline AllReduce<T> MPIStartReduce(T f, MPI_Op O)
-{
-    AllReduce<T> reduction;
-    reduction.val = f;
-    reduction.StartReduce(O);
-    return reduction;
-}
-
-template<typename T>
-inline T MPIGetReduce(AllReduce<T> reduction)
-{
     while (reduction.CheckReduce() == TaskStatus::incomplete);
     return reduction.val;
 }
@@ -64,23 +59,9 @@ inline bool MPIRank() { return 0; }
 inline bool MPIRank0() { return true; }
 
 template<typename T>
-inline T MPIReduce(T f, MPI_Op O)
+inline T MPIReduce_once(T f, MPI_Op O)
 {
     return f;
-}
-
-template<typename T>
-inline AllReduce<T> MPIStartReduce(T f, MPI_Op O)
-{
-    AllReduce<T> reduction;
-    reduction.val = f;
-    return reduction;
-}
-
-template<typename T>
-inline T MPIGetReduce(AllReduce<T> reduction)
-{
-    return reduction.val;
 }
 
 #endif // MPI_PARALLEL

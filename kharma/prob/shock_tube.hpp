@@ -42,7 +42,7 @@ TaskStatus InitializeShockTube(MeshBlockData<Real> *rc, ParameterInput *pin)
     const Real B3L = pin->GetOrAddReal("shock", "B3L", 0.0);
     const Real B3R = pin->GetOrAddReal("shock", "B3R", 0.0);
 
-    IndexDomain domain = IndexDomain::entire;
+    IndexDomain domain = IndexDomain::interior;
     IndexRange ib = pmb->cellbounds.GetBoundsI(domain);
     IndexRange jb = pmb->cellbounds.GetBoundsJ(domain);
     IndexRange kb = pmb->cellbounds.GetBoundsK(domain);

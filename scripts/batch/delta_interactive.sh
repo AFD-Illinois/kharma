@@ -1,28 +1,5 @@
 #!/bin/bash
-# Admin stuff
-#SBATCH -J KHARMA
-#SBATCH -t 24:00:00
-#SBATCH -N 1
-#SBATCH -o "out-%j.txt"
-#SBATCH --account=bbhr-delta-gpu
-
-# Nodes we want
-#SBATCH --partition=gpuA100x4
-#SBATCH --gpus-per-node=4
-#SBATCH --tasks-per-node=4
-# OR
-##SBATCH --partition=gpuA100x8
-##SBATCH --gpus-per-node=8
-##SBATCH --tasks-per-node=8
-
-# Node options
-# 8-way nodes are 2 sockets, so this is constant
-#SBATCH --cpus-per-task=16
-# ALWAYS reserve full nodes to mitigate memory leaks
-#SBATCH --exclusive
-#SBATCH --mem=0
-
-# NCSA Delta run script
+# NCSA Delta run script: interactive w/mpirun
 
 # OpenMP directives: use all available threads
 export OMP_PROC_BIND=spread
@@ -34,8 +11,9 @@ export CUDA_LAUNCH_BLOCKING=0
 # Kokkos can be forced to a particular device:
 #export KOKKOS_DEVICE_ID=0
 
-# Choose the kharma from compiled options in order of preference
-KHARMA_DIR="$HOME/kharma"
+# KHARMA directory 
+KHARMA_DIR="$(realpath $(dirname $(realpath "${BASH_SOURCE[0]}"))/../..)"
+echo $KHARMA_DIR
 
 # Optionally use the Kokkos tools to profile kernels
 #export KOKKOS_PROFILE_LIBRARY=$KHARMA_DIR/../kokkos-tools/kp_kernel_timer.so
@@ -51,6 +29,5 @@ done
 
 export KOKKOS_NUM_DEVICES=$SLURM_NTASKS_PER_NODE
 
-# Run with srun
-# TODO auto-switch to mpirun in interactive?
-srun $KHARMA_DIR/kharma.cuda -t 23:50:00 -d dumps_kharma "$@"
+# Run with mpirun
+mpirun $KHARMA_DIR/kharma.cuda -d dumps_kharma "$@"

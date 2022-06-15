@@ -180,7 +180,7 @@ TaskStatus ReadIharmRestart(MeshBlockData<Real> *rc, ParameterInput *pin)
     hsize_t n3tot = pin->GetInteger("parthenon/mesh", "restart_nx3");
 
     // Size/domain of the MeshBlock we're reading to
-    IndexDomain domain = IndexDomain::entire;
+    IndexDomain domain = IndexDomain::interior;
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);

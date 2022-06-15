@@ -56,6 +56,8 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
  * This just computes P, and only for the fluid varaibles.
  * Other packages must convert P->U by registering their version as "FillDerived"
  *
+ * Defaults to entire domain, as the KHARMA algorithm relies on applying UtoP over ghost zones.
+ * 
  * input: U, whatever form
  * output: U and P match down to inversion errors
  */
@@ -68,9 +70,6 @@ inline TaskStatus FillDerivedBlockTask(MeshBlockData<Real> *rc) { UtoP(rc); retu
 /**
  * Smooth over inversion failures by averaging values from each neighboring zone
  * a.k.a. Diffusion?  What diffusion?  There is no diffusion here.
- *
- * TODO These happen often, and we can do better here.
- * See e.g. Beckwith & Stone for a truly defense-in-depth approach
  * 
  * LOCKSTEP: this function expects and should preserve P<->U
  */

@@ -150,7 +150,7 @@ TaskStatus PostFillDerivedBlock(MeshBlockData<Real> *rc)
     }
 }
 
-TaskStatus ApplyFloors(MeshBlockData<Real> *rc)
+TaskStatus ApplyFloors(MeshBlockData<Real> *rc, IndexDomain domain)
 {
     Flag(rc, "Apply floors");
     auto pmb = rc->GetBlockPointer();
@@ -169,12 +169,12 @@ TaskStatus ApplyFloors(MeshBlockData<Real> *rc)
     const Floors::Prescription floors(pmb->packages.Get("Floors")->AllParams());
 
     // Apply floors over the same zones we just updated with UtoP
-    // This selects the entire zone, but we then require pflag >= 0,
+    // This selects the entire domain, but we then require pflag >= 0,
     // which keeps us from covering completely uninitialized zones
     // (but still applies to failed UtoP!)
-    const IndexRange ib = rc->GetBoundsI(IndexDomain::entire);
-    const IndexRange jb = rc->GetBoundsJ(IndexDomain::entire);
-    const IndexRange kb = rc->GetBoundsK(IndexDomain::entire);
+    const IndexRange ib = rc->GetBoundsI(domain);
+    const IndexRange jb = rc->GetBoundsJ(domain);
+    const IndexRange kb = rc->GetBoundsK(domain);
     pmb->par_for("apply_floors", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_3D {
             if (((int) pflag(k, j, i)) >= InversionStatus::success) {
@@ -182,10 +182,19 @@ TaskStatus ApplyFloors(MeshBlockData<Real> *rc)
                 int comboflag = apply_floors(G, P, m_p, gam, k, j, i, floors, U, m_u);
                 fflag(k, j, i) = (comboflag / HIT_FLOOR_GEOM_RHO) * HIT_FLOOR_GEOM_RHO;
 
-                // The floors as they're written guarantee a consistent state in their cells,
-                // so we do not flag any additional cells, nor do we remove existing flags
-                // (which might have only "needed floors" due to being left untouched by UtoP)
-                // TODO record these flags separately, they are likely common depending on floor prescriptions
+                // Record the pflag as well.  KHARMA did not traditionally do this,
+                // because floors were run over uninitialized zones, and thus wrote
+                // garbage pflags.  We now prevent this.
+                // Note that the pflag is recorded only if inversion failed --
+                // floors can paper over zones that really *should* be discarded,
+                // even if they now technically correspond to a physical state.
+                // Zones next to the sharp edge of the initial torus, for example,
+                // can produce negative u when inverted, then magically stay invertible
+                // after floors when they should be diffused.
+                if (comboflag % HIT_FLOOR_GEOM_RHO) {
+                    pflag(k, j, i) = comboflag % HIT_FLOOR_GEOM_RHO;
+                }
+
 #if !FUSE_FLOOR_KERNELS
             }
         }
