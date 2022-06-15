@@ -80,7 +80,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     // Implicit solver parameters
     Real jacobian_delta = pin->GetOrAddReal("implicit", "jacobian_delta", 4.e-8);
     params.Add("jacobian_delta", jacobian_delta);
-    Real rootfind_tol = pin->GetOrAddReal("implicit", "rootfind_tol", 1.e-3);
+    Real rootfind_tol = pin->GetOrAddReal("implicit", "rootfind_tol", 1.e-9);
     params.Add("rootfind_tol", rootfind_tol);
     Real linesearch_lambda = pin->GetOrAddReal("implicit", "linesearch_lambda", 1.0);
     params.Add("linesearch_lambda", linesearch_lambda);
