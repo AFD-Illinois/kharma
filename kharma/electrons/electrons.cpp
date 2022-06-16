@@ -162,19 +162,19 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     // See notes there about changes for the Imex driver
     std::vector<MetadataFlag> flags_prim, flags_cons;
     if (driver_type == "harm") {
-        flags_prim = std::vector<MetadataFlag>({Metadata::Real, Metadata::Cell, Metadata::Derived,
-                                                isPrimitive});
         flags_cons = std::vector<MetadataFlag>({Metadata::Real, Metadata::Cell, Metadata::Independent, Metadata::FillGhost,
-                                    Metadata::Restart, Metadata::Conserved, Metadata::WithFluxes});
+                                    Metadata::Restart, Metadata::Conserved, Metadata::WithFluxes, isElectrons});
+        flags_prim = std::vector<MetadataFlag>({Metadata::Real, Metadata::Cell, Metadata::Derived,
+                                                isPrimitive, isElectrons});
     } else if (driver_type == "imex") {
         // See grmhd.cpp for full notes on flag changes for ImEx driver
         // Note that default for B is *explicit* evolution
         MetadataFlag areWeImplicit = (implicit_e) ? packages.Get("Implicit")->Param<MetadataFlag>("ImplicitFlag")
                                                   : packages.Get("Implicit")->Param<MetadataFlag>("ExplicitFlag");
-        flags_prim = std::vector<MetadataFlag>({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::FillGhost,
-                                                Metadata::Restart, isPrimitive, areWeImplicit});
         flags_cons = std::vector<MetadataFlag>({Metadata::Real, Metadata::Cell, Metadata::Independent, Metadata::Conserved,
-                                                Metadata::WithFluxes, areWeImplicit});
+                                                Metadata::WithFluxes, areWeImplicit, isElectrons});
+        flags_prim = std::vector<MetadataFlag>({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::FillGhost,
+                                                Metadata::Restart, isPrimitive, areWeImplicit, isElectrons});
     }
 
     // Total entropy, used to track changes
