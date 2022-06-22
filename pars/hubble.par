@@ -58,7 +58,7 @@ rho0 = 1
 # But max(v0*x) ~ 1e-3
 v0 = 1e-3
 ug0 = 1e-3
-set_tlim = false
+set_tlim = true
 
 <electrons>
 on = true
@@ -71,6 +71,6 @@ fel_0 = 1.0
 <parthenon/output0>
 file_type = hdf5
 # Once at the end
-dt = 1e20
+dt = 1
 single_precision_output = true
 variables = prims.rho, prims.u, prims.uvec, prims.Ktot, prims.Kel_Constant

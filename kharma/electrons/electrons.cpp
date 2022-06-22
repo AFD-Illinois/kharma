@@ -93,6 +93,10 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     params.Add("gamma_p", gamma_p);
     Real fel_0 = pin->GetOrAddReal("electrons", "fel_0", 0.01);
     params.Add("fel_0", fel_0);
+    bool diss_sign = pin->GetOrAddBoolean("electrons", "diss_sign", true);
+    params.Add("diss_sign", diss_sign);
+    bool kel_min = pin->GetOrAddBoolean("electrons", "kel_min", true);
+    params.Add("kel_min", kel_min);
     // This is used only in constant model
     Real fel_const = pin->GetOrAddReal("electrons", "fel_constant", 0.1);
     params.Add("fel_constant", fel_const);
@@ -370,7 +374,12 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
             // courtesy of Cesar Diaz, see https://github.com/AFD-Illinois/iharm3d
             if (m_p.K_CONSTANT >= 0) {
                 const Real fel = fel_const;
-                P_new(m_p.K_CONSTANT, k, j, i) = clip(P_new(m_p.K_CONSTANT, k, j, i) + fel * diss, kel_min, kel_max);
+                // Default is true then enforce kel_min with clamp/clip, else only enforce kel_max
+                if (pmb->packages.Get("Electrons")->Param<bool>("kel_min")) {
+                    P_new(m_p.K_CONSTANT, k, j, i) = clip(P_new(m_p.K_CONSTANT, k, j, i) + fel * diss, kel_min, kel_max);
+                } else {
+                    P_new(m_p.K_CONSTANT, k, j, i) = min(P_new(m_p.K_CONSTANT, k, j, i) + fel * diss, kel_max);
+                }
             }
             if (m_p.K_HOWES >= 0) {
                 const Real Tel = m::max(P(m_p.K_HOWES, k, j, i) * m::pow(P(m_p.RHO, k, j, i), game-1), SMALL);
@@ -442,6 +451,10 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
         const Real ug0 = pmb->packages.Get("GRMHD")->Param<Real>("ug0");
         const Real t = pmb->packages.Get("Globals")->Param<Real>("time");
         const Real dt = pmb->packages.Get("Globals")->Param<Real>("dt_last");  // Close enough?
+        Real Q = -(ug0 * v0 * (gam - 2) / pow(1 + v0 * t, 3)); //Positive
+        if (!(pmb->packages.Get("GRMHD")->Param<bool>("q_sign"))) {
+            Q *= -1.; //q_sign is false == negative
+        }
 
         pmb->par_for("hubble_Q_source_term", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
             KOKKOS_LAMBDA_3D {

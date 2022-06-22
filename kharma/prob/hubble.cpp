@@ -47,11 +47,15 @@ TaskStatus InitializeHubble(MeshBlockData<Real> *rc, ParameterInput *pin)
     // max(rho*v0*x/ug) = 1
     // gam = 4/3, game = 5/3
     // TODO adapt these to fit other domain size or whatever
-    Real rho0 = pin->GetOrAddReal("hubble", "rho0", 1.0);
     Real v0 = pin->GetOrAddReal("hubble", "v0", 1.e-3);
     Real ug0 = pin->GetOrAddReal("hubble", "ug0", 1.e-3);
+    Real rho0 = pin->GetOrAddReal("hubble", "rho0", 1.0);
     // Whether to stop after 1 dynamical time L/max(v0*x)
     bool set_tlim = pin->GetOrAddBoolean("hubble", "set_tlim", false);
+    bool q_sign = pin->GetOrAddBoolean("hubble", "q_sign", true);
+
+    if(! (pmb->packages.Get("GRMHD")->AllParams().hasKey("q_sign")))
+        pmb->packages.Get("GRMHD")->AddParam<bool>("q_sign", q_sign);
 
     // Add everything to package parameters, since they continue to be needed on boundaries
     Params& g_params = pmb->packages.Get("GRMHD")->AllParams();
@@ -80,8 +84,8 @@ TaskStatus SetHubble(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     GridScalar rho = rc->Get("prims.rho").data;
     GridScalar u = rc->Get("prims.u").data;
     GridVector uvec = rc->Get("prims.uvec").data;
-    GridVector ktot = rc->Get("prims.Ktot").data;
-    GridVector kel_const = rc->Get("prims.Kel_Constant").data;
+    GridScalar ktot = rc->Get("prims.Ktot").data;
+    GridScalar kel_const = rc->Get("prims.Kel_Constant").data;
 
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
     const Real game = pmb->packages.Get("Electrons")->Param<Real>("gamma_e");
@@ -103,6 +107,7 @@ TaskStatus SetHubble(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
             Real X[GR_DIM];
             G.coord_embed(k, j, i, Loci::center, X);
 
+            // Setting as in equation 37
             rho(k, j, i) = rho0 / (1. + v0*t);
             u(k, j, i) = ug0 / pow(1 + v0*t, 2); // pow(_,gam) if not cooling
             uvec(0, k, j, i) = v0 * X[1] / (1 + v0*t);
@@ -110,8 +115,9 @@ TaskStatus SetHubble(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
             uvec(2, k, j, i) = 0.0;
 
             const Real k_e = (gam - 2) * (game - 1)/(game - 2) * ue0/pow(rho0, game) * pow(1 + v0*t, game-2);
+            // printf("%.16f | %.16f", ue0, k_e);
             ktot(k, j, i) = k_e;
-            kel_const(k, j, i) = k_e;
+            kel_const(k, j, i) = k_e; //Since we are using fel = 1
         }
     );
 
