@@ -451,10 +451,7 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
         const Real ug0 = pmb->packages.Get("GRMHD")->Param<Real>("ug0");
         const Real t = pmb->packages.Get("Globals")->Param<Real>("time");
         const Real dt = pmb->packages.Get("Globals")->Param<Real>("dt_last");  // Close enough?
-        Real Q = -(ug0 * v0 * (gam - 2) / pow(1 + v0 * t, 3)); //Positive
-        if (!(pmb->packages.Get("GRMHD")->Param<bool>("q_sign"))) {
-            Q *= -1.; //q_sign is false == negative
-        }
+        Real Q = (ug0 * v0 * (gam - 2) / pow(1 + v0 * t, 3)); //Positive
 
         pmb->par_for("hubble_Q_source_term", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
             KOKKOS_LAMBDA_3D {

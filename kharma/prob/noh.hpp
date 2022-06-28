@@ -55,11 +55,8 @@ TaskStatus InitializeNoh(MeshBlockData<Real> *rc, ParameterInput *pin)
     const Real fel0 = pmb->packages.Get("Electrons")->Param<Real>("fel_0");
     const Real fel_constant = pmb->packages.Get("Electrons")->Param<Real>("fel_constant");
     
-    const Real mach = pin->GetOrAddReal("noh", "mach", 49);
-    const Real rhoL = pin->GetOrAddReal("noh", "rhoL", 1.0);
-    const Real rhoR = pin->GetOrAddReal("noh", "rhoR", 1.0);
-    const Real PL = pin->GetOrAddReal("noh", "PL", 0.1);
-    const Real PR = pin->GetOrAddReal("noh", "PR", 0.1);
+    const Real mach = pin->GetOrAddReal("noh", "mach", 49.);
+    const Real rho_usr = pin->GetOrAddReal("noh", "rho", 1.0);
     bool set_tlim = pin->GetOrAddBoolean("noh", "set_tlim", false);
 
     const auto& G = pmb->coords;
@@ -90,9 +87,9 @@ TaskStatus InitializeNoh(MeshBlockData<Real> *rc, ParameterInput *pin)
             G.coord_embed(k, j, i, Loci::center, X);
 
             const bool lhs = X[1] < center;
-            rho(k, j, i) = (lhs) ? rhoL : rhoR;
-            u(k, j, i) = ((lhs) ? PL : PR)/(gam - 1.);
-            uvec(0, k, j, i) = ((lhs) ? v1 : -v1) * gamma;
+            rho(k, j, i) = rho_usr;
+            u(k, j, i) = P/(gam - 1.);
+            uvec(0, k, j, i) = ((lhs) ? 1.e-3 : -1.e-3) * gamma;
             uvec(1, k, j, i) = 0.0;
             uvec(2, k, j, i) = 0.0;
         }
