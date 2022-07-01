@@ -36,7 +36,7 @@ base = cartesian_minkowski
 transform = null
 
 <parthenon/time>
-tlim = 1000.0
+tlim = 2.0
 integrator = rk2
 
 <GRMHD>
@@ -58,19 +58,24 @@ rho0 = 1
 # But max(v0*x) ~ 1e-3
 v0 = 1e-3
 ug0 = 1e-3
-set_tlim = true
+fcool = 0.
+set_tlim = false
 
 <electrons>
 on = true
 constant = true
 gamma_e = 1.333333
-fel_constant = 1.0
 # This can be anything; we care about evolution of ue
-fel_0 = 1.0
+fel_constant = 1.0
+# To match the ratio eq40
+fel_0 = 0.5
+diss_sign = false
+kel_lim = false
 
 <parthenon/output0>
 file_type = hdf5
 # Once at the end
+ghost_zones = true
 dt = 1
 single_precision_output = true
-variables = prims.rho, prims.u, prims.uvec, prims.Ktot, prims.Kel_Constant
+variables = prims.rho, prims.u, prims.uvec, prims.Ktot, prims.Kel_Constant, fflag
