@@ -95,8 +95,8 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     params.Add("fel_0", fel_0);
     bool diss_sign = pin->GetOrAddBoolean("electrons", "diss_sign", true);
     params.Add("diss_sign", diss_sign);
-    bool kel_min = pin->GetOrAddBoolean("electrons", "kel_min", true);
-    params.Add("kel_min", kel_min);
+    bool kel_lim = pin->GetOrAddBoolean("electrons", "kel_lim", true);
+    params.Add("kel_lim", kel_lim);
     // This is used only in constant model
     Real fel_const = pin->GetOrAddReal("electrons", "fel_constant", 0.1);
     params.Add("fel_constant", fel_const);
@@ -374,11 +374,11 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
             // courtesy of Cesar Diaz, see https://github.com/AFD-Illinois/iharm3d
             if (m_p.K_CONSTANT >= 0) {
                 const Real fel = fel_const;
-                // Default is true then enforce kel_min with clamp/clip, else only enforce kel_max
-                if (pmb->packages.Get("Electrons")->Param<bool>("kel_min")) {
+                // Default is true then enforce kel limits with clamp/clip, else no restrictions on kel
+                if (pmb->packages.Get("Electrons")->Param<bool>("kel_lim")) {
                     P_new(m_p.K_CONSTANT, k, j, i) = clip(P_new(m_p.K_CONSTANT, k, j, i) + fel * diss, kel_min, kel_max);
                 } else {
-                    P_new(m_p.K_CONSTANT, k, j, i) = min(P_new(m_p.K_CONSTANT, k, j, i) + fel * diss, kel_max);
+                    P_new(m_p.K_CONSTANT, k, j, i) = P_new(m_p.K_CONSTANT, k, j, i) + fel * diss;
                 }
             }
             if (m_p.K_HOWES >= 0) {
@@ -449,9 +449,10 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
     if (prob == "hubble") {
         const Real v0 = pmb->packages.Get("GRMHD")->Param<Real>("v0");
         const Real ug0 = pmb->packages.Get("GRMHD")->Param<Real>("ug0");
+        const Real fcool = pmb->packages.Get("GRMHD")->Param<Real>("fcool");
         const Real t = pmb->packages.Get("Globals")->Param<Real>("time");
         const Real dt = pmb->packages.Get("Globals")->Param<Real>("dt_last");  // Close enough?
-        Real Q = (ug0 * v0 * (gam - 2) / pow(1 + v0 * t, 3)); //Positive
+        Real Q = (ug0 * v0 * (gam - 2) / pow(1 + v0 * t, 3)) * fcool;
 
         pmb->par_for("hubble_Q_source_term", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
             KOKKOS_LAMBDA_3D {

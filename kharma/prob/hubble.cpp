@@ -51,6 +51,7 @@ TaskStatus InitializeHubble(MeshBlockData<Real> *rc, ParameterInput *pin)
     Real v0 = pin->GetOrAddReal("hubble", "v0", 1.e-3);
     Real ug0 = pin->GetOrAddReal("hubble", "ug0", 1.e-3);
     Real rho0 = pin->GetOrAddReal("hubble", "rho0", 1.0);
+    Real fcool = pin->GetOrAddReal("hubble", "fcool", 1.0);
     // Whether to stop after 1 dynamical time L/max(v0*x)
     bool set_tlim = pin->GetOrAddBoolean("hubble", "set_tlim", false);
 
@@ -59,6 +60,7 @@ TaskStatus InitializeHubble(MeshBlockData<Real> *rc, ParameterInput *pin)
     if(!g_params.hasKey("rho0")) g_params.Add("rho0", rho0);
     if(!g_params.hasKey("v0"))  g_params.Add("v0", v0);
     if(!g_params.hasKey("ug0")) g_params.Add("ug0", ug0);
+    if(!g_params.hasKey("fcool")) g_params.Add("fcool", fcool);
     // This is how we will initialize kel values later
     if(!g_params.hasKey("ue0")) g_params.Add("ue0", fel0 * ug0);
 
@@ -90,24 +92,32 @@ TaskStatus SetHubble(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     const Real v0 = pmb->packages.Get("GRMHD")->Param<Real>("v0");
     const Real ug0 = pmb->packages.Get("GRMHD")->Param<Real>("ug0");
     const Real ue0 = pmb->packages.Get("GRMHD")->Param<Real>("ue0");
+    const Real fcool = pmb->packages.Get("GRMHD")->Param<Real>("fcool");
     const Real t = pmb->packages.Get("Globals")->Param<Real>("time");
+
+    printf("%.36f\n", t);
 
     const auto& G = pmb->coords;
 
     IndexRange ib = pmb->cellbounds.GetBoundsI(domain);
     IndexRange jb = pmb->cellbounds.GetBoundsJ(domain);
     IndexRange kb = pmb->cellbounds.GetBoundsK(domain);
+    
+    // Setting as in equation 37
+    Real toberho = rho0 / (1. + v0*t);
+    Real tobeu = fcool * ug0 / pow(1 + v0*t, 2);
+    // Not cooling and not interested in trivial solution
+    if (fcool == 0) {
+        tobeu = ug0 / pow(1 + v0*t, gam);
+    }
     pmb->par_for("hubble_init", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_3D {
             Real X[GR_DIM];
             G.coord_embed(k, j, i, Loci::center, X);
 
-            double vt = v0 * X[1] / (1 + v0*t);
-            double gamma = 1. / sqrt(1. - pow(vt, 2));
-            // Setting as in equation 37
-            rho(k, j, i) = rho0 / (1. + v0*t);
-            u(k, j, i) = ug0 / pow(1 + v0*t, 2); // pow(_,gam) if not cooling
-            uvec(0, k, j, i) = vt * gamma;
+            rho(k, j, i) = toberho;
+            u(k, j, i) = tobeu;
+            uvec(0, k, j, i) = v0 * X[1] / (1 + v0*t);
             uvec(1, k, j, i) = 0.0;
             uvec(2, k, j, i) = 0.0;
 
