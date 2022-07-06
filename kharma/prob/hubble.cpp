@@ -93,9 +93,7 @@ TaskStatus SetHubble(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     const Real ug0 = pmb->packages.Get("GRMHD")->Param<Real>("ug0");
     const Real ue0 = pmb->packages.Get("GRMHD")->Param<Real>("ue0");
     const Real fcool = pmb->packages.Get("GRMHD")->Param<Real>("fcool");
-    const Real t = pmb->packages.Get("Globals")->Param<Real>("time");
-
-    printf("%.36f\n", t);
+    const Real t = pmb->packages.Get("Globals")->Param<Real>("time") + pmb->packages.Get("Globals")->Param<Real>("dt_last");
 
     const auto& G = pmb->coords;
 
