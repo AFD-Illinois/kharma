@@ -40,7 +40,6 @@ TaskStatus InitializeHubble(MeshBlockData<Real> *rc, ParameterInput *pin)
 {
     Flag("Initializing Hubble Flow Electron Heating problem");
     auto pmb = rc->GetBlockPointer();
-    const Real fel0 = pmb->packages.Get("Electrons")->Param<Real>("fel_0");
 
     // Original problem definition:
     // max(v0*x) = 1e-3 (on domain 0->1)
@@ -52,17 +51,25 @@ TaskStatus InitializeHubble(MeshBlockData<Real> *rc, ParameterInput *pin)
     Real ug0 = pin->GetOrAddReal("hubble", "ug0", 1.e-3);
     Real rho0 = pin->GetOrAddReal("hubble", "rho0", 1.0);
     Real fcool = pin->GetOrAddReal("hubble", "fcool", 1.0);
+    bool helecs = pin->GetOrAddBoolean("hubble", "electrons", true);
     // Whether to stop after 1 dynamical time L/max(v0*x)
     bool set_tlim = pin->GetOrAddBoolean("hubble", "set_tlim", false);
 
     // Add everything to package parameters, since they continue to be needed on boundaries
     Params& g_params = pmb->packages.Get("GRMHD")->AllParams();
+    int counter = -5.0;
+    if(!g_params.hasKey("counter")) g_params.Add("counter", counter, true);
     if(!g_params.hasKey("rho0")) g_params.Add("rho0", rho0);
     if(!g_params.hasKey("v0"))  g_params.Add("v0", v0);
     if(!g_params.hasKey("ug0")) g_params.Add("ug0", ug0);
     if(!g_params.hasKey("fcool")) g_params.Add("fcool", fcool);
+    if(!g_params.hasKey("helecs")) g_params.Add("helecs", helecs);
+
     // This is how we will initialize kel values later
-    if(!g_params.hasKey("ue0")) g_params.Add("ue0", fel0 * ug0);
+    if (helecs) {
+        const Real fel0 = pmb->packages.Get("Electrons")->Param<Real>("fel_0");
+        if(!g_params.hasKey("ue0")) g_params.Add("ue0", fel0 * ug0);
+    }
 
     // Override end time to be 1 dynamical time L/max(v@t=0)
     if (set_tlim) {
@@ -83,17 +90,19 @@ TaskStatus SetHubble(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     GridScalar rho = rc->Get("prims.rho").data;
     GridScalar u = rc->Get("prims.u").data;
     GridVector uvec = rc->Get("prims.uvec").data;
-    GridScalar ktot = rc->Get("prims.Ktot").data;
-    GridScalar kel_const = rc->Get("prims.Kel_Constant").data;
 
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
-    const Real game = pmb->packages.Get("Electrons")->Param<Real>("gamma_e");
     const Real rho0 = pmb->packages.Get("GRMHD")->Param<Real>("rho0");
     const Real v0 = pmb->packages.Get("GRMHD")->Param<Real>("v0");
     const Real ug0 = pmb->packages.Get("GRMHD")->Param<Real>("ug0");
-    const Real ue0 = pmb->packages.Get("GRMHD")->Param<Real>("ue0");
     const Real fcool = pmb->packages.Get("GRMHD")->Param<Real>("fcool");
-    const Real t = pmb->packages.Get("Globals")->Param<Real>("time") + pmb->packages.Get("Globals")->Param<Real>("dt_last");
+    int counter = pmb->packages.Get("GRMHD")->Param<int>("counter");
+    const Real tt = pmb->packages.Get("Globals")->Param<Real>("time");
+    const Real dt = pmb->packages.Get("Globals")->Param<Real>("dt_last");
+    const bool helecs = pmb->packages.Get("GRMHD")->Param<bool>("helecs");
+
+    Real t = tt + 0.5*dt;
+    if ((counter%4) > 1)   t += 0.5*dt;
 
     const auto& G = pmb->coords;
 
@@ -103,7 +112,7 @@ TaskStatus SetHubble(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     
     // Setting as in equation 37
     Real toberho = rho0 / (1. + v0*t);
-    Real tobeu = fcool * ug0 / pow(1 + v0*t, 2);
+    Real tobeu  = fcool * ug0 / pow(1 + v0*t, 2);
     // Not cooling and not interested in trivial solution
     if (fcool == 0) {
         tobeu = ug0 / pow(1 + v0*t, gam);
@@ -118,13 +127,26 @@ TaskStatus SetHubble(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
             uvec(0, k, j, i) = v0 * X[1] / (1 + v0*t);
             uvec(1, k, j, i) = 0.0;
             uvec(2, k, j, i) = 0.0;
-
-            const Real k_e = (gam - 2) * (game - 1)/(game - 2) * ue0/pow(rho0, game) * pow(1 + v0*t, game-2);
-            ktot(k, j, i) = k_e;
-            kel_const(k, j, i) = k_e; //Since we are using fel = 1
         }
     );
 
+    if (helecs) {
+        GridScalar ktot = rc->Get("prims.Ktot").data;
+        GridScalar kel_const = rc->Get("prims.Kel_Constant").data;
+        const Real game = pmb->packages.Get("Electrons")->Param<Real>("gamma_e");
+        const Real ue0 = pmb->packages.Get("GRMHD")->Param<Real>("ue0");
+        Real tobeke = (gam - 2) * (game - 1)/(game - 2) * ue0/pow(rho0, game) * pow(1 + v0*t, game-2);
+        pmb->par_for("hubble_init", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+            KOKKOS_LAMBDA_3D {
+                ktot(k, j, i) = tobeke;
+                kel_const(k, j, i) = tobeke; //Since we are using fel = 1
+            }
+        );
+        printf("At time: %.36f, ug is: %.36f, ke is: %.36f\n", t, tobeu, tobeke);
+    } else {
+        printf("At time: %.36f, ug is: %.36f\n", t, tobeu);
+    }
+    pmb->packages.Get("GRMHD")->UpdateParam<int>("counter", ++counter);
     Flag("Set");
     return TaskStatus::complete;
 }
