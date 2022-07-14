@@ -1,21 +1,22 @@
 
 # BP's machines
 
-if [[ $HOST == "toolbox"* ]]; then
+if [[ $HOST == "toolbox"* || $HOST == "nvhpc"* ]]; then
   METAL_HOSTNAME=$(cat ~/.config/hostname)
 fi
 
 if [[ $METAL_HOSTNAME == "fermium" ]]; then
   HOST_ARCH="AMDAVX"
   DEVICE_ARCH="TURING75"
-  KOKKOS_NUM_DEVICES=1
-  MPI_NUM_PROCS=1
+  export KOKKOS_NUM_DEVICES=1
+  # Nvidia MPI hangs unless I do this
+  MPI_EXE=mpirun
 
   if [[ "$ARGS" == *"cuda"* ]]; then
     module purge
     module load nvhpc
     PREFIX_PATH="$HOME/libs/hdf5-nvhpc"
-    MPI_EXE=mpirun
+    MPI_NUM_PROCS=1
 
     if [[ "$ARGS" == *"gcc"* ]]; then
       C_NATIVE=gcc
@@ -27,9 +28,12 @@ if [[ $METAL_HOSTNAME == "fermium" ]]; then
       export CXXFLAGS="-mp"
     fi
   else
+    # To experiment with AMD NUMA
+    #MPI_EXTRA_ARGS="--map-by ppr:2:socket:pe=12"
+    #MPI_NUM_PROCS=2
     if [[ "$ARGS" == *"gcc"* ]]; then
       module purge
-      module load mpi/mpich-x86_64
+      #module load mpi/mpich-x86_64
       C_NATIVE=gcc
       CXX_NATIVE=g++
     elif [[ "$ARGS" == *"clang"* ]]; then

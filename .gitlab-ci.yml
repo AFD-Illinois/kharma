@@ -122,7 +122,7 @@ restart:
 reinit:
   stage: tests
   before_script:
-    - cd tests/restart
+    - cd tests/reinit
   script:
     - bash run.sh
     - bash check.sh
