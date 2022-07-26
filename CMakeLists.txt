@@ -63,6 +63,7 @@ include_directories(external/variant/include)
 #add_subdirectory(external/kokkos-kernels)
 include_directories(external/kokkos-kernels/src)
 include_directories(external/kokkos-kernels/src/batched)
+include_directories(external/kokkos-kernels/src/common)
 include_directories(external/kokkos-kernels/src/batched/dense)
 include_directories(external/kokkos-kernels/src/batched/dense/impl)
 

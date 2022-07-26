@@ -81,9 +81,10 @@ TaskStatus InitializeEMHDShock(MeshBlockData<Real> *rc, ParameterInput *pin)
 
     const std::string input = pin->GetOrAddString("emhd", "input" "BVP");
 
-    IndexRange ib = pmb->cellbounds.GetBoundsI(IndexDomain::entire);
-    IndexRange jb = pmb->cellbounds.GetBoundsJ(IndexDomain::entire);
-    IndexRange kb = pmb->cellbounds.GetBoundsK(IndexDomain::entire);
+    IndexDomain domain = IndexDomain::interior;
+    IndexRange ib = pmb->cellbounds.GetBoundsI(domain);
+    IndexRange jb = pmb->cellbounds.GetBoundsJ(domain);
+    IndexRange kb = pmb->cellbounds.GetBoundsK(domain);
 
     // Need the EMHD package if higher order terms are considered
     const bool use_emhd = pkgs.count("EMHD");

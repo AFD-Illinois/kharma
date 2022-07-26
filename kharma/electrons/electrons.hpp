@@ -82,6 +82,8 @@ TaskStatus InitElectrons(MeshBlockData<Real> *rc, ParameterInput *pin);
  * It's easiest to define them with these defaults in the header, register the FillDerived version as
  * Parthenon's callback, and then add the UtoP version in kharma.cpp.
  * 
+ * Defaults to entire domain, as the KHARMA algorithm relies on applying UtoP over ghost zones.
+ * 
  * Function in this package: Get the specific entropy primitive value, by dividing the total entropy K/(rho*u^0)
  */
 void UtoP(MeshBlockData<Real> *rc, IndexDomain domain=IndexDomain::entire, bool coarse=false);

@@ -80,7 +80,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     // Implicit solver parameters
     Real jacobian_delta = pin->GetOrAddReal("implicit", "jacobian_delta", 4.e-8);
     params.Add("jacobian_delta", jacobian_delta);
-    Real rootfind_tol = pin->GetOrAddReal("implicit", "rootfind_tol", 1.e-3);
+    Real rootfind_tol = pin->GetOrAddReal("implicit", "rootfind_tol", 1.e-9);
     params.Add("rootfind_tol", rootfind_tol);
     Real linesearch_lambda = pin->GetOrAddReal("implicit", "linesearch_lambda", 1.0);
     params.Add("linesearch_lambda", linesearch_lambda);
@@ -118,6 +118,7 @@ TaskStatus Step(MeshData<Real> *mci, MeshData<Real> *mc0, MeshData<Real> *dudt,
 
     const auto& implicit_par = pmb0->packages.Get("Implicit")->AllParams();
     const int iter_max = implicit_par.Get<int>("max_nonlinear_iter");
+    const Real rootfind_tol = implicit_par.Get<Real>("rootfind_tol");
     const Real lambda = implicit_par.Get<Real>("linesearch_lambda");
     const Real delta = implicit_par.Get<Real>("jacobian_delta");
     const Real gam = pmb0->packages.Get("GRMHD")->Param<Real>("gamma");
@@ -342,15 +343,18 @@ TaskStatus Step(MeshData<Real> *mci, MeshData<Real> *mc0, MeshData<Real> *dudt,
         );
         
         // Take the maximum L2 norm
-        Real max_norm;
-        Kokkos::Max<Real> norm_max(max_norm);
+        Reduce<Real> max_norm;
+        Kokkos::Max<Real> norm_max(max_norm.val);
         pmb0->par_reduce("max_norm", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
             KOKKOS_LAMBDA_MESH_3D_REDUCE {
                 if (norm_all(b, k, j, i) > local_result) local_result = norm_all(b, k, j, i);
             }
         , norm_max);
-        max_norm = MPIReduce(max_norm, MPI_MAX);
-        if (MPIRank0()) fprintf(stdout, "Nonlinear iter %d. Max L2 norm: %g\n", iter, max_norm);
+        max_norm.StartReduce(0, MPI_MAX);
+        while (max_norm.CheckReduce() == TaskStatus::incomplete);
+        if (MPIRank0()) fprintf(stdout, "Nonlinear iter %d. Max L2 norm: %g\n", iter, max_norm.val);
+        // Break if it's less than the total tolerance we set.  TODO per-zone version of this?
+        if (max_norm.val < rootfind_tol) break;
     }
 
     Flag(mc_solver, "Implicit Iteration: final");

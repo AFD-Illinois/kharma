@@ -55,7 +55,7 @@ TaskStatus InitializeBondi(MeshBlockData<Real> *rc, ParameterInput *pin);
  * 
  * Used for initialization and boundary conditions
  */
-TaskStatus SetBondi(MeshBlockData<Real> *rc, IndexDomain domain=IndexDomain::entire, bool coarse=false);
+TaskStatus SetBondi(MeshBlockData<Real> *rc, IndexDomain domain=IndexDomain::interior, bool coarse=false);
 
 /**
  * Supporting functions for Bondi flow calculations

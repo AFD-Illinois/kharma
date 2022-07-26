@@ -65,7 +65,7 @@ TaskStatus InitializeNoh(MeshBlockData<Real> *rc, ParameterInput *pin)
 
     const auto& G = pmb->coords;
 
-    IndexDomain domain = IndexDomain::entire;
+    IndexDomain domain = IndexDomain::interior;
     IndexRange ib = pmb->cellbounds.GetBoundsI(domain);
     IndexRange jb = pmb->cellbounds.GetBoundsJ(domain);
     IndexRange kb = pmb->cellbounds.GetBoundsK(domain);
