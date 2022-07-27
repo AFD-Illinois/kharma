@@ -51,6 +51,7 @@ TaskStatus InitializeHubble(MeshBlockData<Real> *rc, ParameterInput *pin)
     Real ug0 = pin->GetOrAddReal("hubble", "ug0", 1.e-3);
     Real rho0 = pin->GetOrAddReal("hubble", "rho0", 1.0);
     Real fcool = pin->GetOrAddReal("hubble", "fcool", 1.0);
+    Real dyntimes = pin->GetOrAddReal("hubble", "dyntimes", 1.0);
     bool helecs = pin->GetOrAddBoolean("hubble", "electrons", true);
     // Whether to stop after 1 dynamical time L/max(v0*x)
     bool set_tlim = pin->GetOrAddBoolean("hubble", "set_tlim", false);
@@ -73,7 +74,7 @@ TaskStatus InitializeHubble(MeshBlockData<Real> *rc, ParameterInput *pin)
 
     // Override end time to be 1 dynamical time L/max(v@t=0)
     if (set_tlim) {
-        pin->SetReal("parthenon/time", "tlim", 1.0 / v0);
+        pin->SetReal("parthenon/time", "tlim", dyntimes / v0);
     }
 
     // Then call the general function to fill the grid
@@ -102,7 +103,7 @@ TaskStatus SetHubble(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     const bool helecs = pmb->packages.Get("GRMHD")->Param<bool>("helecs");
 
     Real t = tt + 0.5*dt;
-    if ((counter%4) > 1)   t += 0.5*dt;
+    if ((counter%4) > 1)   t = tt + dt;
 
     const auto& G = pmb->coords;
 
@@ -116,6 +117,9 @@ TaskStatus SetHubble(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     // Not cooling and not interested in trivial solution
     if (fcool == 0) {
         tobeu = ug0 / pow(1 + v0*t, gam);
+    } else if (fcool == -1) {
+        tobeu = ug0;
+        toberho = rho0;
     }
     pmb->par_for("hubble_init", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_3D {
@@ -124,7 +128,10 @@ TaskStatus SetHubble(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 
             rho(k, j, i) = toberho;
             u(k, j, i) = tobeu;
-            uvec(0, k, j, i) = v0 * X[1] / (1 + v0*t);
+            if (fcool != -1)
+                uvec(0, k, j, i) = v0 * X[1] / (1 + v0*t);
+            else 
+                uvec(0, k, j, i) = v0;
             uvec(1, k, j, i) = 0.0;
             uvec(2, k, j, i) = 0.0;
         }
@@ -142,9 +149,6 @@ TaskStatus SetHubble(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
                 kel_const(k, j, i) = tobeke; //Since we are using fel = 1
             }
         );
-        printf("At time: %.36f, ug is: %.36f, ke is: %.36f\n", t, tobeu, tobeke);
-    } else {
-        printf("At time: %.36f, ug is: %.36f\n", t, tobeu);
     }
     pmb->packages.Get("GRMHD")->UpdateParam<int>("counter", ++counter);
     Flag("Set");
