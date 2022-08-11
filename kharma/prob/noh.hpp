@@ -47,24 +47,11 @@ TaskStatus InitializeNoh(MeshBlockData<Real> *rc, ParameterInput *pin)
     GridScalar rho = rc->Get("prims.rho").data;
     GridScalar u = rc->Get("prims.u").data;
     GridVector uvec = rc->Get("prims.uvec").data;
-    GridScalar ktot = rc->Get("prims.Ktot").data;
-    GridScalar kel_constant = rc->Get("prims.Kel_Constant").data;
-
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
-    const Real game = pmb->packages.Get("Electrons")->Param<Real>("gamma_e");
-    const Real fel0 = pmb->packages.Get("Electrons")->Param<Real>("fel_0");
-    const Real fel_constant = pmb->packages.Get("Electrons")->Param<Real>("fel_constant");
     
     const Real mach = pin->GetOrAddReal("noh", "mach", 49.);
     const Real rho_usr = pin->GetOrAddReal("noh", "rho", 1.0);
     bool set_tlim = pin->GetOrAddBoolean("noh", "set_tlim", false);
-
-    const auto& G = pmb->coords;
-
-    IndexDomain domain = IndexDomain::interior;
-    IndexRange ib = pmb->cellbounds.GetBoundsI(domain);
-    IndexRange jb = pmb->cellbounds.GetBoundsJ(domain);
-    IndexRange kb = pmb->cellbounds.GetBoundsK(domain);
 
     const Real x1min = pin->GetReal("parthenon/mesh", "x1min");
     const Real x1max = pin->GetReal("parthenon/mesh", "x1max");
