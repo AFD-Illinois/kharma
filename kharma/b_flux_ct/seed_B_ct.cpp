@@ -79,6 +79,7 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
         break;
     case BSeedType::sane:
     case BSeedType::ryan:
+    case BSeedType::ryan_quadrupole:
     case BSeedType::r3s3:
     case BSeedType::steep:
     case BSeedType::gaussian:
@@ -186,6 +187,10 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
             case BSeedType::ryan:
                 // BR's smoothed poloidal in-torus, EHT standard MAD
                 q = m::pow(r / rin, 3) * m::pow(sin(th), 3) * exp(-r / 400) * rho_av - min_rho_q;
+                break;
+            case BSeedType::ryan_quadrupole:
+                // BR's smoothed poloidal in-torus, but turned into a quadrupole
+                q = pow(r / rin, 4) * cos(th) * pow(sin(th), 3) * exp(-r / 400) * rho_av - min_rho_q;
                 break;
             case BSeedType::r3s3:
                 // Just the r^3 sin^3 th term
