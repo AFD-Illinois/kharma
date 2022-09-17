@@ -60,7 +60,7 @@ set_tlim = true
 dyntimes = 1.
 
 <electrons>
-on = false
+on = true
 constant = true
 gamma_e = 1.333333
 # This can be anything; we care about evolution of ue
