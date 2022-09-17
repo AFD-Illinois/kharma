@@ -279,9 +279,12 @@ void KBoundaries::OuterX2(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse)
  */
 TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
 {
+    auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
+    if (pmb0->packages.Get("GRMHD")->Param<string>("problem") == "hubble") {
+        return TaskStatus::complete; 
+    }
     Flag("Fixing fluxes");
     auto pmesh = md->GetMeshPointer();
-    auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
 
     bool check_inflow_inner = pmb0->packages.Get("GRMHD")->Param<bool>("check_inflow_inner");
     bool check_inflow_outer = pmb0->packages.Get("GRMHD")->Param<bool>("check_inflow_outer");

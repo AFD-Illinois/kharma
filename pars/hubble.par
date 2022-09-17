@@ -53,14 +53,11 @@ extra_checks = 1
 solver = none
 
 <hubble>
-rho0 = 1
-# These are set to keep rho*v0/ug ~ 1,
-# But max(v0*x) ~ 1e-3
+mach = 1.
+# Optimal number to avoid relativistic effects and keep the ratio between density/internal energy
 v0 = 1e-3
-ug0 = 1e-3
-fcool = 0.
 set_tlim = true
-electrons = false
+dyntimes = 1.
 
 <electrons>
 on = false
