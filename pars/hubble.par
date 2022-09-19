@@ -9,8 +9,8 @@ refinement = none
 numlevel = 1
 
 nx1 = 128
-x1min = 0.0
-x1max = 1.0
+x1min = -0.5
+x1max = 1.5
 ix1_bc = user
 ox1_bc = user
 
