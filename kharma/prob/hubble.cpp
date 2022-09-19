@@ -110,7 +110,7 @@ TaskStatus SetHubble(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
             G.coord_embed(k, j, i, Loci::center, X);
             rho(k, j, i) = toberho;
             u(k, j, i) = tobeu;
-            uvec(0, k, j, i) = v0 / sqrt(1. - pow(v0, 2));
+            uvec(0, k, j, i) = v0 * X[1] / (1 + v0*t);
             uvec(1, k, j, i) = 0.0;
             uvec(2, k, j, i) = 0.0;
         }
