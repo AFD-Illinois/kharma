@@ -46,6 +46,8 @@ TaskStatus InitializeHubble(MeshBlockData<Real> *rc, ParameterInput *pin)
     const Real gam = pin->GetOrAddReal("GRMHD", "gamma", 1.666667);
     // Whether to stop after "dyn_times" dynamical time L/max(v0*x)
     bool set_tlim = pin->GetOrAddBoolean("hubble", "set_tlim", false);
+    bool cooling = pin->GetOrAddBoolean("hubble", "cooling", true);
+    bool context_boundaries = pin->GetOrAddBoolean("hubble", "context_boundaries", false);
     Real dyntimes = pin->GetOrAddReal("hubble", "dyntimes", 1.0);
 
     // Add everything to package parameters, since they continue to be needed on boundaries
@@ -57,6 +59,8 @@ TaskStatus InitializeHubble(MeshBlockData<Real> *rc, ParameterInput *pin)
     if(!g_params.hasKey("rho0")) g_params.Add("rho0", rho0);
     if(!g_params.hasKey("v0"))  g_params.Add("v0", v0);
     if(!g_params.hasKey("ug0")) g_params.Add("ug0", ug0);
+    if(!g_params.hasKey("cooling")) g_params.Add("cooling", cooling);
+    if(!g_params.hasKey("context_boundaries")) g_params.Add("context_boundaries", context_boundaries);
 
     // This is how we will initialize kel values later
     if (pmb->packages.AllPackages().count("Electrons")) {
@@ -87,7 +91,10 @@ TaskStatus SetHubble(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
     const Real rho0 = pmb->packages.Get("GRMHD")->Param<Real>("rho0");
     const Real v0 = pmb->packages.Get("GRMHD")->Param<Real>("v0");
+    const bool cooling = pmb->packages.Get("GRMHD")->Param<bool>("cooling");
+    const bool context_boundaries = pmb->packages.Get("GRMHD")->Param<bool>("context_boundaries");
     const Real ug0 = pmb->packages.Get("GRMHD")->Param<Real>("ug0");
+    // first time this is called in boundary conditions inside the time stepping cycle is when counter == 0
     int counter = pmb->packages.Get("GRMHD")->Param<int>("counter");
     const Real tt = pmb->packages.Get("Globals")->Param<Real>("time");
     const Real dt = pmb->packages.Get("Globals")->Param<Real>("dt_last");
@@ -101,33 +108,69 @@ TaskStatus SetHubble(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     IndexRange jb = pmb->cellbounds.GetBoundsJ(domain);
     IndexRange kb = pmb->cellbounds.GetBoundsK(domain);
     
-    // Setting as in equation 37
-    Real toberho = rho0 / (1. + v0*t);
-    Real tobeu  = ug0 / pow(1 + v0*t, 2);
-    pmb->par_for("hubble_init", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-        KOKKOS_LAMBDA_3D {
-            Real X[GR_DIM];
-            G.coord_embed(k, j, i, Loci::center, X);
-            rho(k, j, i) = toberho;
-            u(k, j, i) = tobeu;
-            uvec(0, k, j, i) = v0 * X[1] / (1 + v0*t);
-            uvec(1, k, j, i) = 0.0;
-            uvec(2, k, j, i) = 0.0;
-        }
-    );
-
-    if (pmb->packages.AllPackages().count("Electrons")) {
-        GridScalar ktot = rc->Get("prims.Ktot").data;
-        GridScalar kel_const = rc->Get("prims.Kel_Constant").data;
-        const Real game = pmb->packages.Get("Electrons")->Param<Real>("gamma_e");
-        const Real ue0 = pmb->packages.Get("GRMHD")->Param<Real>("ue0");
-        Real tobeke = (gam - 2) * (game - 1)/(game - 2) * ue0/pow(rho0, game) * pow(1 + v0*t, game-2);
+    if (!context_boundaries || counter < 0) {
+        // Setting as in equation 37
+        Real toberho = rho0 / (1. + v0*t);
+        Real tobeu  = ug0 / pow(1 + v0*t, 2);
+        if (!cooling) tobeu  = ug0 / pow(1 + v0*t, gam);
         pmb->par_for("hubble_init", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
             KOKKOS_LAMBDA_3D {
-                ktot(k, j, i) = tobeke;
-                kel_const(k, j, i) = tobeke; //Since we are using fel = 1
+                Real X[GR_DIM];
+                G.coord_embed(k, j, i, Loci::center, X);
+                rho(k, j, i) = toberho;
+                u(k, j, i) = tobeu;
+                uvec(0, k, j, i) = v0 * X[1] / (1 + v0*t);
+                uvec(1, k, j, i) = 0.0;
+                uvec(2, k, j, i) = 0.0;
             }
         );
+
+        if (pmb->packages.AllPackages().count("Electrons")) {
+            GridScalar ktot = rc->Get("prims.Ktot").data;
+            GridScalar kel_const = rc->Get("prims.Kel_Constant").data;
+            const Real game = pmb->packages.Get("Electrons")->Param<Real>("gamma_e");
+            const Real ue0 = pmb->packages.Get("GRMHD")->Param<Real>("ue0");
+            Real tobeke = (gam - 2) * (game - 1)/(game - 2) * ue0/pow(rho0, game) * pow(1 + v0*t, game-2);
+            // Without cooling, the entropy of electrons should stay the same, analytic solution.
+            if (!cooling) tobeke = (gam - 2) * (game - 1)/(game - 2) * ue0/pow(rho0, game);
+            pmb->par_for("hubble_init", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+                KOKKOS_LAMBDA_3D {
+                    ktot(k, j, i) = tobeke;
+                    kel_const(k, j, i) = tobeke; //Since we are using fel = 1
+                }
+            );
+        }
+    } else { // We assume the fluid is following the solution so we set the boundaries from the real zones
+        // Left zone is first one to be called and counter starts at zero
+        bool left_zone = !(counter%2);
+        // struct IndexRange {
+        //     int s = 0; /// Starting Index (inclusive)
+        //     int e = 0; /// Ending Index (inclusive)
+        // };
+        int context_index = 0;
+        if (left_zone) context_index = ib.e + 1;
+        else context_index = ib.s - 1;
+
+        Real context_X[GR_DIM];     G.coord_embed(0, 0, context_index, Loci::center, context_X);
+        Real context_t = (v0*context_X[1] - uvec(0, 0, context_index))/(uvec(0, 0, context_index)*v0);
+        
+        pmb->par_for("hubble_init", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+            KOKKOS_LAMBDA_3D {
+                Real X[GR_DIM];
+                G.coord_embed(k, j, i, Loci::center, X);
+                rho(k, j, i) = rho(k, j, context_index);
+                u(k, j, i) = u(k, j, context_index);
+                uvec(0, k, j, i) = v0 * X[1] / (1 + v0*context_t);
+            }
+        );
+        if (pmb->packages.AllPackages().count("Electrons")) {
+            GridScalar kel_const = rc->Get("prims.Kel_Constant").data;
+            pmb->par_for("hubble_init", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+                KOKKOS_LAMBDA_3D {
+                    kel_const(k, j, i) = kel_const(k, j, context_index);
+                }
+            );
+        }
     }
     pmb->packages.Get("GRMHD")->UpdateParam<int>("counter", ++counter);
     Flag("Set");

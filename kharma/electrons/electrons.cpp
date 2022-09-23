@@ -261,7 +261,7 @@ TaskStatus InitElectrons(MeshBlockData<Real> *rc, ParameterInput *pin)
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
     pmb->par_for("UtoP_electrons", 0, e_P.GetDim(4)-1, ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_VARS {
-            if (p == ktot_index) {
+            if (p == ktot_index) { // Initialize it even when using Hubble, it will be "erased" immediately after anyway in ApplyElectronHeating
                 // Initialize total entropy by definition,
                 e_P(p, k, j, i) = (gam - 1.) * u(k, j, i) * m::pow(rho(k, j, i), -gam);
             } else {
