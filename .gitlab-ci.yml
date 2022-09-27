@@ -118,3 +118,11 @@ restart:
     when: always
     paths:
       - tests/restart/*.png
+
+reinit:
+  stage: tests
+  before_script:
+    - cd tests/reinit
+  script:
+    - bash run.sh
+    - bash check.sh

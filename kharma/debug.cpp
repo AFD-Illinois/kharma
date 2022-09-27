@@ -48,16 +48,16 @@ using namespace Kokkos;
 /**
  * Counts occurrences of a particular floor bitflag
  */
-int CountFFlag(MeshData<Real> *md, const int& flag_val)
+int CountFFlag(MeshData<Real> *md, const int& flag_val, IndexDomain domain)
 {
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
     // Pack variables
     auto& fflag = md->PackVariables(std::vector<std::string>{"fflag"});
 
     // Get sizes
-    IndexRange ib = md->GetBoundsI(IndexDomain::interior);
-    IndexRange jb = md->GetBoundsJ(IndexDomain::interior);
-    IndexRange kb = md->GetBoundsK(IndexDomain::interior);
+    IndexRange ib = md->GetBoundsI(domain);
+    IndexRange jb = md->GetBoundsJ(domain);
+    IndexRange kb = md->GetBoundsK(domain);
     IndexRange block = IndexRange{0, fflag.GetDim(5) - 1};
 
     int n_flag;
@@ -73,16 +73,16 @@ int CountFFlag(MeshData<Real> *md, const int& flag_val)
 /**
  * Counts occurrences of a particular inversion failure mode
  */
-int CountPFlag(MeshData<Real> *md, const int& flag_val)
+int CountPFlag(MeshData<Real> *md, const int& flag_val, IndexDomain domain)
 {
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
     // Pack variables
     auto& pflag = md->PackVariables(std::vector<std::string>{"pflag"});
 
     // Get sizes
-    IndexRange ib = md->GetBoundsI(IndexDomain::interior);
-    IndexRange jb = md->GetBoundsJ(IndexDomain::interior);
-    IndexRange kb = md->GetBoundsK(IndexDomain::interior);
+    IndexRange ib = md->GetBoundsI(domain);
+    IndexRange jb = md->GetBoundsJ(domain);
+    IndexRange kb = md->GetBoundsK(domain);
     IndexRange block = IndexRange{0, pflag.GetDim(5) - 1};
 
     int n_flag;
@@ -130,11 +130,12 @@ TaskStatus CheckNaN(MeshData<Real> *md, int dir, IndexDomain domain)
     , nan_reducer);
 
     // Reductions in parallel
-    static AllReduce<int> nzero_tot, nnan_tot;
+    // Only need to reduce to head node, saves time
+    static Reduce<int> nzero_tot, nnan_tot;
     nzero_tot.val = nzero;
     nnan_tot.val = nnan;
-    nzero_tot.StartReduce(MPI_SUM);
-    nnan_tot.StartReduce(MPI_SUM);
+    nzero_tot.StartReduce(0, MPI_SUM);
+    nnan_tot.StartReduce(0, MPI_SUM);
     while (nzero_tot.CheckReduce() == TaskStatus::incomplete);
     while (nnan_tot.CheckReduce() == TaskStatus::incomplete);
     nzero = nzero_tot.val;
@@ -191,13 +192,13 @@ TaskStatus CheckNegative(MeshData<Real> *md, IndexDomain domain)
     , sum_reducer_u);
 
     // Reductions in parallel
-    static AllReduce<int> nless_tot, nless_rho_tot, nless_u_tot;
+    static Reduce<int> nless_tot, nless_rho_tot, nless_u_tot;
     nless_tot.val = nless;
     nless_rho_tot.val = nless_rho;
     nless_u_tot.val = nless_u;
-    nless_tot.StartReduce(MPI_SUM);
-    nless_rho_tot.StartReduce(MPI_SUM);
-    nless_u_tot.StartReduce(MPI_SUM);
+    nless_tot.StartReduce(0, MPI_SUM);
+    nless_rho_tot.StartReduce(0, MPI_SUM);
+    nless_u_tot.StartReduce(0, MPI_SUM);
     while (nless_tot.CheckReduce() == TaskStatus::incomplete);
     while (nless_rho_tot.CheckReduce() == TaskStatus::incomplete);
     while (nless_u_tot.CheckReduce() == TaskStatus::incomplete);
@@ -225,9 +226,9 @@ int CountPFlags(MeshData<Real> *md, IndexDomain domain, int verbose)
     auto& pflag = md->PackVariables(std::vector<std::string>{"pflag"});
 
     // Get sizes
-    IndexRange ib = md->GetBoundsI(IndexDomain::interior);
-    IndexRange jb = md->GetBoundsJ(IndexDomain::interior);
-    IndexRange kb = md->GetBoundsK(IndexDomain::interior);
+    IndexRange ib = md->GetBoundsI(domain);
+    IndexRange jb = md->GetBoundsJ(domain);
+    IndexRange kb = md->GetBoundsK(domain);
     IndexRange block = IndexRange{0, pflag.GetDim(5) - 1};
 
     // Count all nonzero values
@@ -238,6 +239,7 @@ int CountPFlags(MeshData<Real> *md, IndexDomain domain, int verbose)
         }
     , sum_reducer);
 
+    // Need the total on all ranks to evaluate the if statement below
     static AllReduce<int> n_tot;
     n_tot.val = nflags;
     n_tot.StartReduce(MPI_SUM);
@@ -263,16 +265,27 @@ int CountPFlags(MeshData<Real> *md, IndexDomain domain, int verbose)
                                                      "Negative rho & U"};
 
         // Overlap reductions to save time
-        // TODO THIS LEAKS MEMORY
-        AllReduce<int> n_cells_r = MPIStartReduce((block.e - block.s + 1) * (kb.e - kb.s + 1) *
-                                                  (jb.e - jb.s + 1) * (ib.e - ib.s + 1), MPI_SUM);
-        std::vector<AllReduce<int>> reducers;
-        for (InversionStatus status : all_status_vals) {
-            reducers.push_back(MPIStartReduce(CountPFlag(md, status), MPI_SUM));
+        static Reduce<int> n_cells_r;
+        n_cells_r.val = (block.e - block.s + 1) * (kb.e - kb.s + 1) * (jb.e - jb.s + 1) * (ib.e - ib.s + 1);
+        n_cells_r.StartReduce(0, MPI_SUM);
+        static std::vector<Reduce<int>> reducers;
+        static bool firstc = true;
+        if (firstc) {
+            for (InversionStatus status : all_status_vals) {
+                reducers.push_back(Reduce<int>());
+            }
+            firstc = false;
         }
-        int n_cells = MPIGetReduce(n_cells_r);
+        int i = 0;
+        for (InversionStatus status : all_status_vals) {
+            reducers[i].val = CountPFlag(md, status, domain);
+            reducers[i].StartReduce(0, MPI_SUM);
+            i++;
+        }
+        while (n_cells_r.CheckReduce() == TaskStatus::incomplete);
+        const int n_cells = n_cells_r.val;
         std::vector<int> n_status_present;
-        for (AllReduce<int> reducer : reducers) {
+        for (Reduce<int> reducer : reducers) {
             while (reducer.CheckReduce() == TaskStatus::incomplete);
             n_status_present.push_back(reducer.val);
         }
@@ -304,9 +317,9 @@ int CountFFlags(MeshData<Real> *md, IndexDomain domain, int verbose)
     auto& fflag = md->PackVariables(std::vector<std::string>{"fflag"});
 
     // Get sizes
-    IndexRange ib = md->GetBoundsI(IndexDomain::interior);
-    IndexRange jb = md->GetBoundsJ(IndexDomain::interior);
-    IndexRange kb = md->GetBoundsK(IndexDomain::interior);
+    IndexRange ib = md->GetBoundsI(domain);
+    IndexRange jb = md->GetBoundsJ(domain);
+    IndexRange kb = md->GetBoundsK(domain);
     IndexRange block = IndexRange{0, fflag.GetDim(5) - 1};
 
     // Count all nonzero values
@@ -317,6 +330,7 @@ int CountFFlags(MeshData<Real> *md, IndexDomain domain, int verbose)
         }
     , sum_reducer);
 
+    // Need this on all nodes to evaluate the following if statement
     static AllReduce<int> n_tot;
     n_tot.val = nflags;
     n_tot.StartReduce(MPI_SUM);
@@ -340,16 +354,27 @@ int CountFFlags(MeshData<Real> *md, IndexDomain domain, int verbose)
                                                    "KTOT"};
 
         // Overlap reductions to save time
-        // TODO THIS LEAKS MEMORY
-        AllReduce<int> n_cells_r = MPIStartReduce((block.e - block.s + 1) * (kb.e - kb.s + 1) *
-                                                  (jb.e - jb.s + 1) * (ib.e - ib.s + 1), MPI_SUM);
-        std::vector<AllReduce<int>> reducers;
-        for (int flag : all_flag_vals) {
-            reducers.push_back(MPIStartReduce(CountFFlag(md, flag), MPI_SUM));
+        static Reduce<int> n_cells_r;
+        n_cells_r.val = (block.e - block.s + 1) * (kb.e - kb.s + 1) * (jb.e - jb.s + 1) * (ib.e - ib.s + 1);
+        n_cells_r.StartReduce(0, MPI_SUM);
+        static std::vector<Reduce<int>> reducers;
+        static bool firstc = true;
+        if (firstc) {
+            for (int flag : all_flag_vals) {
+                reducers.push_back(Reduce<int>());
+            }
+            firstc = false;
         }
-        int n_cells = MPIGetReduce(n_cells_r);
+        int i = 0;
+        for (int flag : all_flag_vals) {
+            reducers[i].val = CountFFlag(md, flag, domain);
+            reducers[i].StartReduce(0, MPI_SUM);
+            i++;
+        }
+        while (n_cells_r.CheckReduce() == TaskStatus::incomplete);
+        const int n_cells = n_cells_r.val;
         std::vector<int> n_flag_present;
-        for (AllReduce<int> reducer : reducers) {
+        for (Reduce<int> reducer : reducers) {
             while (reducer.CheckReduce() == TaskStatus::incomplete);
             n_flag_present.push_back(reducer.val);
         }

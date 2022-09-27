@@ -58,7 +58,7 @@ TaskStatus InitializeFMTorus(MeshBlockData<Real> *rc, ParameterInput *pin)
     const GReal tilt = tilt_deg / 180. * M_PI;
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
 
-    IndexDomain domain = IndexDomain::entire;
+    IndexDomain domain = IndexDomain::interior;
     const int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     const int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
     const int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);

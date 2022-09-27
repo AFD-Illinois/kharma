@@ -44,6 +44,7 @@
 #include "gr_coordinates.hpp"
 #include "grmhd.hpp"
 #include "kharma.hpp"
+#include "mpi.hpp"
 #include "types.hpp"
 
 #include "seed_B_ct.hpp"
@@ -113,11 +114,11 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, Mesh *pmesh)
 
             // Calculate current beta_min value
             if (beta_calc_legacy) {
-                bsq_max = MPIReduce(bsq_max, MPI_MAX);
-                p_max = MPIReduce(p_max, MPI_MAX);
+                bsq_max = MPIReduce_once(bsq_max, MPI_MAX);
+                p_max = MPIReduce_once(p_max, MPI_MAX);
                 beta_min = p_max / (0.5 * bsq_max);
             } else {
-                beta_min = MPIReduce(beta_min, MPI_MIN);
+                beta_min = MPIReduce_once(beta_min, MPI_MIN);
             }
 
             if (pin->GetInteger("debug", "verbose") > 0) {
@@ -153,11 +154,11 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, Mesh *pmesh)
                 }
             }
             if (beta_calc_legacy) {
-                bsq_max = MPIReduce(bsq_max, MPI_MAX);
-                p_max = MPIReduce(p_max, MPI_MAX);
+                bsq_max = MPIReduce_once(bsq_max, MPI_MAX);
+                p_max = MPIReduce_once(p_max, MPI_MAX);
                 beta_min = p_max / (0.5 * bsq_max);
             } else {
-                beta_min = MPIReduce(beta_min, MPI_MIN);
+                beta_min = MPIReduce_once(beta_min, MPI_MIN);
             }
             if (MPIRank0()) {
                 cerr << "Beta min post-norm: " << beta_min << endl;
@@ -177,7 +178,7 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, Mesh *pmesh)
         } else if (use_b_cd) {
             divb_max = B_CD::MaxDivB(md);
         }
-        divb_max = MPIReduce(divb_max, MPI_MAX);
+        divb_max = MPIReduce_once(divb_max, MPI_MAX);
         if (MPIRank0()) {
             cerr << "Starting max divB: " << divb_max << endl;
         }

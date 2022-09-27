@@ -20,8 +20,8 @@ MPI_EXTRA_ARGS=""
 ### General run script
 
 # OpenMP directives: use all available threads
-export OMP_PROC_BIND=spread
-export OMP_PLACES=threads
+#export OMP_PROC_BIND=spread
+#export OMP_PLACES=threads
 
 # If you see weird GPU race conditions, setting this
 # to 1 *might* fix them. Maybe.

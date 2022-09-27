@@ -124,25 +124,26 @@ Real DomainSum(MeshData<Real> *md, const Real& radius);
 // plus packing & passing
 enum class Mdot : int;
 MAKE_SUM2D_FN(Mdot,
-    // TODO document values here. e.g.:
     // \dot{M} == \int rho * u^1 * gdet * dx2 * dx3
     local_result += -P(m_p.RHO, k, j, i) * Dtmp.ucon[1] * gdA;
 )
 enum class Edot : int;
 MAKE_SUM2D_FN(Edot,
-    // Edot == \int - T^1_0 * gdet * dx2 * dx3
+    // \dot{E} == \int - T^1_0 * gdet * dx2 * dx3
     local_result += -T[X1DIR][X0DIR] * gdA;
 )
 enum class Ldot : int;
 MAKE_SUM2D_FN(Ldot,
-    // Ldot == \int T^1_3 * gdet * dx2 * dx3
+    // \dot{L} == \int T^1_3 * gdet * dx2 * dx3
     local_result += T[X1DIR][X3DIR] * gdA;
 )
 enum class Phi : int;
 MAKE_SUM2D_FN(Phi,
-    // phi == \int |*F^1^0| * gdet * dx2 * dx3 == \int |B1| * gdet * dx2 * dx3
+    // \Phi == \int |*F^1^0| * gdet * dx2 * dx3 == \int |B1| * gdet * dx2 * dx3
     // Can also sum the hemispheres independently to be fancy (TODO?)
-    local_result += 0.5 * fabs(U(m_u.B1, k, j, i)) * dA; // gdet is included in cons.B
+    if (m_u.B1 >= 0) {
+        local_result += 0.5 * fabs(U(m_u.B1, k, j, i)) * dA; // gdet is included in cons.B
+    }
 )
 
 // Then we can define the same with fluxes.
@@ -287,7 +288,7 @@ inline Real TotalL(MeshData<Real> *md) {return DomainSum<Ltot>(md, 50.);}
 inline Real TotalEHTLum(MeshData<Real> *md) {return DomainSum<EHTLum>(md, 50.);}
 inline Real JetLum_50(MeshData<Real> *md) {return DomainSum<JetLum>(md, 50.);} // Recall this is *at* not *within*
 
-inline int NPFlags(MeshData<Real> *md) {return CountPFlags(md, IndexDomain::entire, 0);}
+inline int NPFlags(MeshData<Real> *md) {return CountPFlags(md, IndexDomain::interior, 0);}
 inline int NFFlags(MeshData<Real> *md) {return CountFFlags(md, IndexDomain::interior, 0);}
 
 } // namespace Reductions

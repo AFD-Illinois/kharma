@@ -125,17 +125,21 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
         if (pmb->packages.AllPackages().count("Electrons")) {
             Electrons::InitElectrons(rc.get(), pin);
         }
-
-        // Apply any floors
-        // This is purposefully done even if floors are disabled,
-        // as it is required for consistent initialization
-        Floors::ApplyFloors(rc.get());
     }
 
     // Fill the conserved variables U,
     // which we'll treat as the independent/fundamental state.
     // P is filled again from this later on
-    Flux::PtoU(rc.get(), IndexDomain::entire);
+    // Note this is needed *after* P is finalized, but
+    // *before* the floor call: normal-observer floors need U populated
+    Flux::PtoU(rc.get(), IndexDomain::interior);
+
+    // If we're not restarting, apply the floors
+    if (prob != "resize_restart") {
+        // This is purposefully done even if floors are disabled,
+        // as it is required for consistent initialization
+        Floors::ApplyFloors(rc.get(), IndexDomain::interior);
+    }
 
     Flag(rc.get(), "Initialized Block");
 }

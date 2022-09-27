@@ -15,7 +15,7 @@
 #        actually *runtime* parameters e.g. verbose, flag_verbose, etc
 # trace: Configure with execution tracing: print at the beginning and end
 #        of most host-side function calls during a step
-# skx:   Compile specifically for Skylake nodes on Stampede2
+# See files in machines/ for machine-specific options
 
 # Processors to use.  Leave blank for all.  Be a good citizen.
 NPROC=
@@ -46,6 +46,9 @@ NPROC=
 # EXTRA_FLAGS=
 
 HOST=$(hostname -f)
+if [ -z $HOST ]; then
+  HOST=$(hostname)
+fi
 ARGS="$*"
 SOURCE_DIR=$(dirname "$(readlink -f "$0")")
 for machine in machines/*.sh
