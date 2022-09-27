@@ -102,11 +102,13 @@ fi
 
 ### Build HDF5 ###
 if [[ "$ARGS" == *"hdf5"* ]]; then
+  H5VER=1.12.0
+  H5VERU=1_12_0
   cd external
   rm -rf hdf5*
-  curl https://hdf-wordpress-1.s3.amazonaws.com/wp-content/uploads/manual/HDF5/HDF5_1_12_0/source/hdf5-1.12.0.tar.gz -o hdf5.tar.gz
-  tar xf hdf5.tar.gz
-  cd hdf5-1.12.0/
+  curl https://hdf-wordpress-1.s3.amazonaws.com/wp-content/uploads/manual/HDF5/HDF5_${H5VERU}/source/hdf5-${H5VER}.tar.gz -o hdf5-${H5VER}.tar.gz
+  tar xf hdf5-${H5VER}.tar.gz
+  cd hdf5-${H5VER}/
   if [[ "$ARGS" == *"icc"* ]]; then
     CC=mpiicc sh configure --enable-parallel --prefix=$PWD/../hdf5
   else
