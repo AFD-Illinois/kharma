@@ -324,6 +324,8 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
                                         mbd_sub_step_init.get(), mbd_sub_step_final.get());
         }
 
+        auto t_set_bc_post_electron = tl.AddTask(t_heat_electrons, parthenon::ApplyBoundaryConditions, sc1);
+
         // Make sure conserved vars are synchronized at step end
         auto t_ptou = tl.AddTask(t_heat_electrons, Flux::PtoUTask, mbd_sub_step_final.get(), IndexDomain::entire);
 

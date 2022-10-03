@@ -100,7 +100,7 @@ TaskStatus SetHubble(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     const Real dt = pmb->packages.Get("Globals")->Param<Real>("dt_last");
 
     Real t = tt + 0.5*dt;
-    if ((counter%4) > 1)   t = tt + dt;
+    if ((counter%8) > 3)   t = tt + dt;
 
     const auto& G = pmb->coords;
 
