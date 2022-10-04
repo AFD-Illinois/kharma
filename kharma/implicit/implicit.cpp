@@ -41,8 +41,10 @@
 #include "grmhd_functions.hpp"
 #include "pack.hpp"
 
-#include <batched/dense/KokkosBatched_LU_Decl.hpp>
-#include <batched/dense/impl/KokkosBatched_LU_Serial_Impl.hpp>
+// Implicit nonlinear solve requires several linear solves per-zone
+// Use Kokkos-kernels QR decomposition & triangular solve, they're fast.
+#include <batched/dense/KokkosBatched_ApplyQ_Decl.hpp>
+#include <batched/dense/KokkosBatched_QR_Decl.hpp>
 #include <batched/dense/KokkosBatched_Trsv_Decl.hpp>
 using namespace KokkosBatched;
 
@@ -214,6 +216,8 @@ TaskStatus Step(MeshData<Real> *mci, MeshData<Real> *mc0, MeshData<Real> *dudt,
                 ScratchPad3D<Real> jacobian_s(member.team_scratch(scratch_level), nfvar, nfvar, n1);
                 ScratchPad2D<Real> residual_s(member.team_scratch(scratch_level), nfvar, n1);
                 ScratchPad2D<Real> delta_prim_s(member.team_scratch(scratch_level), nfvar, n1);
+                ScratchPad2D<Real> trans_s(member.team_scratch(scratch_level), nfvar, n1);
+                ScratchPad2D<Real> work_s(member.team_scratch(scratch_level), nfvar, n1);
                 // Scratchpads for all vars
                 ScratchPad2D<Real> dUi_s(member.team_scratch(scratch_level), nvar, n1);
                 ScratchPad2D<Real> tmp1_s(member.team_scratch(scratch_level), nvar, n1);
@@ -267,6 +271,8 @@ TaskStatus Step(MeshData<Real> *mci, MeshData<Real> *mc0, MeshData<Real> *dudt,
                         auto residual = Kokkos::subview(residual_s, Kokkos::ALL(), i);
                         auto jacobian = Kokkos::subview(jacobian_s, Kokkos::ALL(), Kokkos::ALL(), i);
                         auto delta_prim = Kokkos::subview(delta_prim_s, Kokkos::ALL(), i);
+                        auto trans = Kokkos::subview(trans_s, Kokkos::ALL(), i);
+                        auto work = Kokkos::subview(work_s, Kokkos::ALL(), i);
                         // Temporaries
                         auto tmp1 = Kokkos::subview(tmp1_s, Kokkos::ALL(), i);
                         auto tmp2 = Kokkos::subview(tmp2_s, Kokkos::ALL(), i);
@@ -300,12 +306,14 @@ TaskStatus Step(MeshData<Real> *mci, MeshData<Real> *mc0, MeshData<Real> *dudt,
                         //     printf("Initial delta_prim: "); PLOOP printf("%6.5e ", delta_prim(ip)); printf("\n");
                         // }
 
-                        // Linear solve
-                        // This code lightly adapted from Kokkos batched examples
-                        // Replaces our inverse residual with the actual desired delta_prim
-                        KokkosBatched::SerialLU<Algo::LU::Blocked>::invoke(jacobian, tiny);
-                        KokkosBatched::SerialTrsv<Uplo::Upper,Trans::NoTranspose,Diag::NonUnit,Algo::Trsv::Blocked>
-                        ::invoke(alpha, jacobian, delta_prim);
+                        // Linear solve by QR decomposition
+                        KokkosBatched::SerialQR<KokkosBatched::Algo::QR::Unblocked>::invoke(jacobian, trans, work);
+                        KokkosBatched::SerialApplyQ<KokkosBatched::Side::Left, KokkosBatched::Trans::Transpose, KokkosBatched::Algo::ApplyQ::Unblocked>
+                        ::invoke(jacobian, trans, delta_prim, work);
+                        KokkosBatched::SerialTrsv<KokkosBatched::Uplo::Upper, KokkosBatched::Trans::NoTranspose, KokkosBatched::Diag::NonUnit,
+                        KokkosBatched::Algo::Trsv::Unblocked>
+                        ::invoke(1.0, jacobian, delta_prim);
+
 
                         // Update the guess.  For now lambda == 1, choose on the fly?
                         FLOOP P_solver(ip) += lambda * delta_prim(ip);
