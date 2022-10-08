@@ -449,8 +449,8 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
     if (prob == "hubble") {
         const Real v0 = pmb->packages.Get("GRMHD")->Param<Real>("v0");
         const Real ug0 = pmb->packages.Get("GRMHD")->Param<Real>("ug0");
-        const Real t = pmb->packages.Get("Globals")->Param<Real>("time");
         const Real dt = pmb->packages.Get("Globals")->Param<Real>("dt_last");  // Close enough?
+        const Real t = pmb->packages.Get("Globals")->Param<Real>("time") + dt/2; // Since Q is only time-dependent we use t + dt/2 on second halfstep
         Real Q = (ug0 * v0 * (gam - 2) / pow(1 + v0 * t, 3));
 
         pmb->par_for("hubble_Q_source_term", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
