@@ -93,12 +93,14 @@ void ReadIharmRestartHeader(std::string fname, std::unique_ptr<ParameterInput>& 
     // TODO NSTEP, next tdump/tlog, etc?
 
     if (hdf5_exists("a")) {
-        double a, hslope, Rout;
+        double a, hslope, Rin, Rout;
         hdf5_read_single_val(&a, "a", H5T_IEEE_F64LE);
         hdf5_read_single_val(&hslope, "hslope", H5T_IEEE_F64LE);
+        hdf5_read_single_val(&Rin, "Rin", H5T_IEEE_F64LE);
         hdf5_read_single_val(&Rout, "Rout", H5T_IEEE_F64LE);
         pin->SetReal("coordinates", "a", a);
         pin->SetReal("coordinates", "hslope", hslope);
+        pin->SetReal("coordinates", "r_in", Rin);
         pin->SetReal("coordinates", "r_out", Rout);
 
         // Sadly restarts did not record MKS vs FMKS
@@ -255,10 +257,10 @@ TaskStatus ReadIharmRestart(MeshBlockData<Real> *rc, ParameterInput *pin)
             GReal X[GR_DIM];
             G.coord(k, j, i, Loci::center, X);
             // Interpolate the value at this location from the global grid
-            rho_host(k, j, i) = interp_scalar(G, X, startx, stopx, dx, is_spherical, false, n3tot, n2tot, n1tot, &(ptmp[0*block_sz]));
-            u_host(k, j, i) = interp_scalar(G, X, startx, stopx, dx, is_spherical, false, n3tot, n2tot, n1tot, &(ptmp[1*block_sz]));
-            VLOOP uvec_host(v, k, j, i) = interp_scalar(G, X, startx, stopx, dx, is_spherical, false, n3tot, n2tot, n1tot, &(ptmp[(2+v)*block_sz]));
-            VLOOP B_host(v, k, j, i) = interp_scalar(G, X, startx, stopx, dx, is_spherical, false, n3tot, n2tot, n1tot, &(ptmp[(5+v)*block_sz]));
+            rho_host(k, j, i) = interp_scalar(G, X, startx, dx, is_spherical, false, n3tot, n2tot, n1tot, &(ptmp[0*block_sz]));
+            u_host(k, j, i) = interp_scalar(G, X, startx, dx, is_spherical, false, n3tot, n2tot, n1tot, &(ptmp[1*block_sz]));
+            VLOOP uvec_host(v, k, j, i) = interp_scalar(G, X, startx, dx, is_spherical, false, n3tot, n2tot, n1tot, &(ptmp[(2+v)*block_sz]));
+            VLOOP B_host(v, k, j, i) = interp_scalar(G, X, startx, dx, is_spherical, false, n3tot, n2tot, n1tot, &(ptmp[(5+v)*block_sz]));
         }
     );
     delete[] ptmp;

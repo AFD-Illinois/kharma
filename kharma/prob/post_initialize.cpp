@@ -66,8 +66,8 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, std::shared_ptr<MeshData<Rea
         KBoundaries::SyncAllBounds(md, sync_prims);
 
         // "Legacy" is the much more common normalization:
-        // It's the ratio of max values over the domain i.e. Kokkos::max(P) / Kokkos::max(P_B),
-        // not necessarily a local Kokkos::min(beta)
+        // It's the ratio of max values over the domain i.e. max(P) / max(P_B),
+        // not necessarily a local min(beta)
         Real beta_calc_legacy = pin->GetOrAddBoolean("b_field", "legacy", true);
 
         Flag("Seeding magnetic field");
@@ -110,7 +110,7 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, std::shared_ptr<MeshData<Rea
         auto prob = pin->GetString("parthenon/job", "problem_id");
         if (pin->GetOrAddBoolean("b_field", "norm", (prob == "torus"))) {
             // Default to the general literature beta_min of 100.
-            // As noted above, by default this uses the definition Kokkos::max(P)/max(P_B)!
+            // As noted above, by default this uses the definition max(P)/max(P_B)!
             Real desired_beta_min = pin->GetOrAddReal("b_field", "beta_min", 100.);
 
             // Calculate current beta_min value
@@ -127,7 +127,7 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, std::shared_ptr<MeshData<Rea
                     std::cerr << "Beta min pre-norm: " << beta_min << std::endl;
             }
 
-            // Then normalize B by Kokkos::sqrt(beta/beta_min)
+            // Then normalize B by sqrt(beta/beta_min)
             Flag("Normalizing magnetic field");
             if (beta_min > 0) {
                 Real norm = Kokkos::sqrt(beta_min/desired_beta_min);

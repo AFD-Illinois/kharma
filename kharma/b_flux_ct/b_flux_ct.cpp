@@ -410,6 +410,42 @@ TaskStatus PrintGlobalMaxDivB(MeshData<Real> *md)
     return TaskStatus::complete;
 }
 
+void CalcDivB(MeshData<Real> *md, std::string divb_field_name)
+{
+    Flag(md, "Calculating divB for output");
+    auto pmesh = md->GetMeshPointer();
+    const int ndim = pmesh->ndim;
+
+    // Packing out here avoids frequent per-mesh packs.  Do we need to?
+    auto B_U = md->PackVariables(std::vector<std::string>{"cons.B"});
+    auto divB = md->PackVariables(std::vector<std::string>{divb_field_name});
+
+    const IndexRange ib = md->GetBoundsI(IndexDomain::interior);
+    const IndexRange jb = md->GetBoundsJ(IndexDomain::interior);
+    const IndexRange kb = md->GetBoundsK(IndexDomain::interior);
+    const IndexRange block = IndexRange{0, B_U.GetDim(5)-1};
+
+    // See MaxDivB for details
+    for (int b = block.s; b <= block.e; ++b) {
+        auto pmb = md->GetBlockData(b)->GetBlockPointer().get();
+
+        const int is = IsDomainBound(pmb, BoundaryFace::inner_x1) ? ib.s + 1 : ib.s;
+        const int ie = IsDomainBound(pmb, BoundaryFace::outer_x1) ? ib.e : ib.e + 1;
+        const int js = IsDomainBound(pmb, BoundaryFace::inner_x2) ? jb.s + 1 : jb.s;
+        const int je = IsDomainBound(pmb, BoundaryFace::outer_x2) ? jb.e : jb.e + 1;
+        const int ks = (IsDomainBound(pmb, BoundaryFace::inner_x3) && ndim > 2) ? kb.s + 1 : kb.s;
+        const int ke = (IsDomainBound(pmb, BoundaryFace::outer_x3) || ndim <= 2) ? kb.e : kb.e + 1;
+
+        pmb->par_for("calc_divB", ks, ke, js, je, is, ie,
+            KOKKOS_LAMBDA_3D {
+                const auto& G = B_U.GetCoords(b);
+                divB(b, 0, k, j, i) = corner_div(G, B_U, b, k, j, i, ndim > 2);
+            }
+        );
+    }
+
+    Flag("Calculated");
+}
 void FillOutput(MeshBlock *pmb, ParameterInput *pin)
 {
     auto rc = pmb->meshblock_data.Get().get();

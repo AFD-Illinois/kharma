@@ -56,34 +56,6 @@ namespace B_Cleanup {
 std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t packages);
 
 /**
- * Calculate the field divergence, and sum the absolute value as a reduction
- * (for convergence comparisons).
- */
-TaskStatus CalcSumDivB(MeshData<Real> *du, Real& reduce_sum);
-
-/**
- * Set P = divB as initial guess
- */
-TaskStatus InitP(MeshData<Real> *md);
-
-/**
- * Take a Gauss-Seidel/SOR step.
- */
-TaskStatus UpdateP(MeshData<Real> *md);
-
-/**
- * Functions to calculate the remaining error, that is, the difference del^2 p - divB
- */
-TaskStatus SumError(MeshData<Real> *du, Real& reduce_sum);
-TaskStatus SumP(MeshData<Real> *md, Real& reduce_sum);
-TaskStatus MaxError(MeshData<Real> *md, Real& reduce_max);
-
-/**
- * Apply B -= grad(P) to subtract divergence from the magnetic field
- */
-TaskStatus ApplyP(MeshData<Real> *md);
-
-/**
  * Single-call divergence cleanup.  Lots of MPI syncs, probably slow to use in task lists.
  */
 void CleanupDivergence(std::shared_ptr<MeshData<Real>>& md);
@@ -93,5 +65,15 @@ void CleanupDivergence(std::shared_ptr<MeshData<Real>>& md);
  * Likely faster than above if we want to clean periodically
  */
 //void AddBCleanupTasks(TaskList tl, TaskID t_dep);
+
+/**
+ * Calculate the laplacian using divergence at corners
+ */
+TaskStatus CornerLaplacian(MeshData<Real>* md, const std::string& p_var, const std::string& lap_var);
+
+/**
+ * Apply B -= grad(P) to subtract divergence from the magnetic field
+ */
+TaskStatus ApplyP(MeshData<Real> *msolve, MeshData<Real> *md);
 
 } // namespace B_Cleanup

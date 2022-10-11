@@ -68,7 +68,7 @@
  *  F -> ( 1, 0.5)
  */
 KOKKOS_INLINE_FUNCTION void Xtoijk(const GReal XG[GR_DIM],
-                                   const GReal startx[GR_DIM], const GReal stopx[GR_DIM],
+                                   const GReal startx[GR_DIM],
                                    const GReal dx[GR_DIM],
                                    int& i, int& j, int& k, GReal del[GR_DIM])
 {
@@ -105,17 +105,19 @@ KOKKOS_INLINE_FUNCTION void ijktoX(const GReal startx[GR_DIM], const GReal dx[GR
 /**
  * This interpolates a single-array variable 'var' representing a grid of size 'startx' to 'stopx' in
  * native coordinates, returning its value at location X
+ * NOTE: 'startx' must correspond to the grid you are interpolating *from*
  */
 KOKKOS_INLINE_FUNCTION Real interp_scalar(const GRCoordinates& G, const GReal X[GR_DIM],
-                                          const GReal startx[GR_DIM], const GReal stopx[GR_DIM],
+                                          const GReal startx[GR_DIM],
                                           const GReal dx[GR_DIM], const bool& is_spherical, const bool& weight_by_gdet,
                                           const int& n3, const int& n2, const int& n1,
                                           const Real *var)
 {
     // zone and offset from X
+    // Obtain this in
     GReal del[GR_DIM];
     int i, j, k;
-    Xtoijk(X, startx, stopx, dx, i, j, k, del);
+    Xtoijk(X, startx, dx, i, j, k, del);
 
     Real interp;
     if (is_spherical) {
