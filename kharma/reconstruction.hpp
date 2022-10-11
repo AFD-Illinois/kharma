@@ -53,8 +53,8 @@ namespace KReconstruction
 // Single-item implementation
 KOKKOS_INLINE_FUNCTION Real mc(const Real dm, const Real dp)
 {
-    const Real r = (abs(dp) > 0. ? dm/dp : 2.0);
-    return max(0.0, min(2.0, min(2*r,0.5*(1+r))));
+    const Real r = (Kokkos::abs(dp) > 0. ? dm/dp : 2.0);
+    return Kokkos::max(0.0, Kokkos::min(2.0, Kokkos::min(2*r,0.5*(1+r))));
 }
 
 // Single-row implementations

@@ -33,14 +33,11 @@
  */
 #pragma once
 
-#include <memory>
-
-#include <parthenon/parthenon.hpp>
-
+#include "decs.hpp"
 #include "grmhd_functions.hpp"
 #include "types.hpp"
 
-using namespace parthenon;
+#include <memory>
 
 /**
  * 

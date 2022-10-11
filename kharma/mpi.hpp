@@ -42,11 +42,11 @@ inline void MPIBarrier()
 template<typename T>
 inline T MPIReduce_once(T f, MPI_Op O)
 {
-    AllReduce<T> reduction;
+    parthenon::AllReduce<T> reduction;
     reduction.val = f;
     reduction.StartReduce(O);
     // Wait on results
-    while (reduction.CheckReduce() == TaskStatus::incomplete);
+    while (reduction.CheckReduce() == parthenon::TaskStatus::incomplete);
     return reduction.val;
 }
 #else

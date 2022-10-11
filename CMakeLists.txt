@@ -6,12 +6,11 @@
 cmake_minimum_required(VERSION 3.10)
 project(kharma LANGUAGES C CXX)
 
-set(CMAKE_CXX_STANDARD 14)
-# To force C++17
-#set(CMAKE_CXX_STANDARD 17)
-#set(CMAKE_CXX_STANDARD_REQUIRED ON)
-#set(CMAKE_CXX17_STANDARD_COMPILE_OPTION "-std=c++17")
-#set(PARTHENON_ENABLE_CPP17 ON CACHE BOOL "KHARMA Override")
+# We follow Parthenon in requiring C++17 going forward
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX17_STANDARD_COMPILE_OPTION "-std=c++17")
+set(PARTHENON_ENABLE_CPP17 ON CACHE BOOL "KHARMA Override")
 
 # Parthenon options
 set(PARTHENON_DISABLE_EXAMPLES ON CACHE BOOL "KHARMA Override")
@@ -24,7 +23,7 @@ set(PARTHENON_DISABLE_SPARSE ON CACHE BOOL "KHARMA Override")
 # Parthenon internal build options
 set(BUILD_TESTING OFF CACHE BOOL "KHARMA Override")
 set(ENABLE_COMPILER_WARNINGS OFF CACHE BOOL "KHARMA Override")
-# TODO set this here when I upstream or otherwise unfork
+# TODO upstream Parthenon needs support before we do this
 #set(COORDINATE_TYPE GRCoordinates)
 
 # Kokkos options
@@ -34,7 +33,7 @@ set(Kokkos_ENABLE_CUDA_CONSTEXPR ON CACHE BOOL "KHARMA Override")
 set(Kokkos_ENABLE_HWLOC OFF CACHE BOOL "KHARMA Override") # Possible speed improvement?
 set(Kokkos_ENABLE_AGGRESSIVE_VECTORIZATION ON CACHE BOOL "KHARMA Override")
 
-# Build only what we need of KokkosKernels
+# If we build KokkosKernels at all, disable the extras
 set(KokkosKernels_ENABLE_TPL_CUSPARSE OFF CACHE BOOL "KHARMA Override")
 set(KokkosKernels_ENABLE_TPL_CUBLAS OFF CACHE BOOL "KHARMA Override")
 
@@ -66,6 +65,8 @@ include_directories(external/kokkos-kernels/src/batched)
 include_directories(external/kokkos-kernels/src/common)
 include_directories(external/kokkos-kernels/src/batched/dense)
 include_directories(external/kokkos-kernels/src/batched/dense/impl)
+include_directories(external/kokkos-kernels/src/blas)
+include_directories(external/kokkos-kernels/src/blas/impl)
 
 # Finally, build KHARMA
 add_subdirectory(kharma)

@@ -76,7 +76,7 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
     // defined in accompanying headers.
 
     auto prob = pin->GetString("parthenon/job", "problem_id"); // Required parameter
-    if (MPIRank0()) cout << "Initializing problem: " << prob << endl;
+    if (MPIRank0()) std::cout << "Initializing problem: " << prob << std::endl;
     TaskStatus status = TaskStatus::fail;
     // GRMHD
     if (prob == "mhdmodes") {

@@ -50,9 +50,10 @@
 #include "seed_B_ct.hpp"
 #include "seed_B_cd.hpp"
 
-void KHARMA::SeedAndNormalizeB(ParameterInput *pin, Mesh *pmesh)
+void KHARMA::SeedAndNormalizeB(ParameterInput *pin, std::shared_ptr<MeshData<Real>> md)
 {
     // Check which solver we'll be using
+    auto pmesh = md->GetMeshPointer();
     const bool use_b_flux_ct = pmesh->packages.AllPackages().count("B_FluxCT");
     const bool use_b_cd = pmesh->packages.AllPackages().count("B_CD");
     bool sync_prims = pin->GetString("driver", "type") == "imex";
@@ -62,11 +63,11 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, Mesh *pmesh)
     if (pin->GetOrAddString("b_field", "type", "none") != "none") {
         // Calculating B has a stencil outside physical zones
         Flag("Extra boundary sync for B");
-        KBoundaries::SyncAllBounds(pmesh, sync_prims);
+        KBoundaries::SyncAllBounds(md, sync_prims);
 
         // "Legacy" is the much more common normalization:
-        // It's the ratio of max values over the domain i.e. max(P) / max(P_B),
-        // not necessarily a local min(beta)
+        // It's the ratio of max values over the domain i.e. Kokkos::max(P) / Kokkos::max(P_B),
+        // not necessarily a local Kokkos::min(beta)
         Real beta_calc_legacy = pin->GetOrAddBoolean("b_field", "legacy", true);
 
         Flag("Seeding magnetic field");
@@ -109,7 +110,7 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, Mesh *pmesh)
         auto prob = pin->GetString("parthenon/job", "problem_id");
         if (pin->GetOrAddBoolean("b_field", "norm", (prob == "torus"))) {
             // Default to the general literature beta_min of 100.
-            // As noted above, by default this uses the definition max(P)/max(P_B)!
+            // As noted above, by default this uses the definition Kokkos::max(P)/max(P_B)!
             Real desired_beta_min = pin->GetOrAddReal("b_field", "beta_min", 100.);
 
             // Calculate current beta_min value
@@ -123,13 +124,13 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, Mesh *pmesh)
 
             if (pin->GetInteger("debug", "verbose") > 0) {
                 if (MPIRank0())
-                    cerr << "Beta min pre-norm: " << beta_min << endl;
+                    std::cerr << "Beta min pre-norm: " << beta_min << std::endl;
             }
 
-            // Then normalize B by sqrt(beta/beta_min)
+            // Then normalize B by Kokkos::sqrt(beta/beta_min)
             Flag("Normalizing magnetic field");
             if (beta_min > 0) {
-                Real norm = sqrt(beta_min/desired_beta_min);
+                Real norm = Kokkos::sqrt(beta_min/desired_beta_min);
                 for (auto &pmb : pmesh->block_list) {
                     auto& rc = pmb->meshblock_data.Get();
                     NormalizeBField(rc.get(), norm);
@@ -161,26 +162,25 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, Mesh *pmesh)
                 beta_min = MPIReduce_once(beta_min, MPI_MIN);
             }
             if (MPIRank0()) {
-                cerr << "Beta min post-norm: " << beta_min << endl;
+                std::cerr << "Beta min post-norm: " << beta_min << std::endl;
             }
         }
     }
 
     if (pin->GetString("b_field", "solver") != "none") {
-        auto md = pmesh->mesh_data.GetOrAdd("base", 0).get();
         // Synchronize our seeded field (incl. primitives) before we print out what divB it has
-        KBoundaries::SyncAllBounds(pmesh, sync_prims);
+        KBoundaries::SyncAllBounds(md, sync_prims);
 
         // Still print divB, even if we're not initializing/normalizing field here
         Real divb_max = 0.;
         if (use_b_flux_ct) {
-            divb_max = B_FluxCT::MaxDivB(md);
+            divb_max = B_FluxCT::MaxDivB(md.get());
         } else if (use_b_cd) {
-            divb_max = B_CD::MaxDivB(md);
+            divb_max = B_CD::MaxDivB(md.get());
         }
         divb_max = MPIReduce_once(divb_max, MPI_MAX);
         if (MPIRank0()) {
-            cerr << "Starting max divB: " << divb_max << endl;
+            std::cerr << "Starting max divB: " << divb_max << std::endl;
         }
     }
 
@@ -191,8 +191,12 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, Mesh *pmesh)
 void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart, bool is_resize)
 {
     Flag("Post-initialization started");
+
+    // Make sure we've built the MeshData object we'll be synchronizing/updating
+    auto &md = pmesh->mesh_data.GetOrAdd("base", 0);
+
     if (!is_restart)
-        KHARMA::SeedAndNormalizeB(pin, pmesh);
+        KHARMA::SeedAndNormalizeB(pin, md);
 
     if (pin->GetOrAddBoolean("blob", "add_blob", false)) {
         for (auto &pmb : pmesh->block_list) {
@@ -205,7 +209,7 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart, b
     // Sync to fill the ghost zones: prims for ImExDriver, everything for HARMDriver
     Flag("Boundary sync");
     bool sync_prims = pin->GetString("driver", "type") == "imex";
-    KBoundaries::SyncAllBounds(pmesh, sync_prims);
+    KBoundaries::SyncAllBounds(md, sync_prims);
 
     // Extra cleanup & init to do if restarting
     if (is_restart) {
@@ -217,13 +221,9 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart, b
     // Let the user specify to do this, too
     if ((is_restart && is_resize && !pin->GetOrAddBoolean("resize_restart", "skip_b_cleanup", false))
         || pin->GetBoolean("b_field", "initial_cleanup")) {
-        // Cleanup operates on full single MeshData as there are MPI syncs
-        auto &mbase = pmesh->mesh_data.GetOrAdd("base", 0);
         // Clean field divergence across the whole grid
-        B_Cleanup::CleanupDivergence(mbase);
-        // Sync to make sure periodic boundaries are set
-        Flag("Boundary sync");
-        KBoundaries::SyncAllBounds(pmesh, sync_prims);
+        // Includes boundary syncs
+        B_Cleanup::CleanupDivergence(md);
     }
 
     Flag("Post-initialization finished");

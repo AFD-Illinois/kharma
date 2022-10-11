@@ -44,8 +44,6 @@
 #include <sys/stat.h>
 #include <ctype.h>
 
-using namespace Kokkos;
-
 // TODO
 // Record & read:
 // 1. startx/stopx/dx
@@ -194,7 +192,7 @@ TaskStatus ReadIharmRestart(MeshBlockData<Real> *rc, ParameterInput *pin)
     char version[20];
     hdf5_read_single_val(version, "version", string_type);
     if (MPIRank0()) {
-        cout << "Restarting from " << fname << ", file version " << version << endl << endl;
+        std::cout << "Restarting from " << fname << ", file version " << version << std::endl << std::endl;
     }
 
     // Get tf/dt here and not when reading the header, since whether we use them
@@ -233,11 +231,11 @@ TaskStatus ReadIharmRestart(MeshBlockData<Real> *rc, ParameterInput *pin)
     // These are set to probably mirror the restart file,
     // but ideally should be read straight from it.
     const GReal startx[GR_DIM] = {0,
-        pin->GetReal("parthenon/mesh", "x1min"),
+        Kokkos::log(pin->GetReal("coordinates", "r_in")),
         pin->GetReal("parthenon/mesh", "x2min"),
         pin->GetReal("parthenon/mesh", "x3min")};
     const GReal stopx[GR_DIM] = {0,
-        pin->GetReal("parthenon/mesh", "x1max"),
+        Kokkos::log(pin->GetReal("coordinates", "r_out")),
         pin->GetReal("parthenon/mesh", "x2max"),
         pin->GetReal("parthenon/mesh", "x3max")};
     // Same here

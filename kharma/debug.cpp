@@ -41,8 +41,6 @@
 #include "mpi.hpp"
 #include "types.hpp"
 
-using namespace Kokkos;
-
 // TODO have nice ways to print vectors, areas, geometry, etc for debugging new modules
 
 /**
@@ -123,7 +121,7 @@ TaskStatus CheckNaN(MeshData<Real> *md, int dir, IndexDomain domain)
     , zero_reducer);
     pmb0->par_reduce("ctop_nans", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_MESH_3D_REDUCE_INT {
-            if (isnan(ctop(b, dir-1, k, j, i))) {
+            if (Kokkos::isnan(ctop(b, dir-1, k, j, i))) {
                 ++local_result;
             }
         }
@@ -207,10 +205,10 @@ TaskStatus CheckNegative(MeshData<Real> *md, IndexDomain domain)
     nless_u = nless_u_tot.val;
 
     if (MPIRank0() && nless > 0) {
-        cout << "Number of negative conserved rho: " << nless << endl;
+        std::cout << "Number of negative conserved rho: " << nless << std::endl;
     }
     if (MPIRank0() && (nless_rho > 0 || nless_u > 0)) {
-        cout << "Number of negative primitive rho, u: " << nless_rho << "," << nless_u << endl;
+        std::cout << "Number of negative primitive rho, u: " << nless_rho << "," << nless_u << std::endl;
     }
 
     return TaskStatus::complete;
@@ -385,7 +383,7 @@ int CountFFlags(MeshData<Real> *md, IndexDomain domain, int verbose)
                 for (int i=0; i < all_flag_vals.size(); ++i) {
                     if (n_flag_present[i] > 0) std::cout << all_flag_names[i] << ": " << n_flag_present[i] << std::endl;
                 }
-                cout << std::endl;
+                std::cout << std::endl;
             }
         }
     }

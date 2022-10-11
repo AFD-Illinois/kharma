@@ -50,6 +50,8 @@ target_link_libraries(${EXE_NAME} PUBLIC kokkos)
 #target_link_libraries(${EXE_NAME} PUBLIC kokkoskernels)
 target_link_libraries(${EXE_NAME} PUBLIC parthenon)
 
+target_link_libraries(${EXE_NAME} PUBLIC gomp)
+
 # OPTIONS
 # These are almost universally performance trade-offs
 # TODO is there any way to make compile options less painful in CMake?

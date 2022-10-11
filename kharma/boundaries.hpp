@@ -69,10 +69,19 @@ void OuterX2(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse);
 TaskStatus FixFlux(MeshData<Real> *rc);
 
 /**
+ * Add a synchronization step to a task list tl, dependent upon taskID t_start, syncing mesh mc1
+ * 
+ * This sequence is used identically in several places, so it makes sense
+ * to define once and use elsewhere.
+ * TODO could make member of a HARMDriver/ImExDriver superclass?
+ */
+TaskID AddBoundarySync(TaskID t_start, TaskList &tl, std::shared_ptr<MeshData<Real>> mc1);
+
+/**
  * Single call to sync all boundary conditions.
  * Used anytime boundary sync is needed outside the usual loop of steps.
  */
-void SyncAllBounds(Mesh *pmesh, bool sync_prims, bool sync_phys=true);
+void SyncAllBounds(std::shared_ptr<MeshData<Real>> md, bool sync_prims, bool sync_phys=true);
 
 /**
  * Check for flow into simulation and reset velocity to eliminate it
@@ -94,7 +103,7 @@ KOKKOS_INLINE_FUNCTION void check_inflow(const GRCoordinates &G, const VariableP
         VLOOP uvec[v] /= gamma;
 
         // Reset radial velocity so radial 4-velocity is zero
-        Real alpha = 1. / sqrt(-G.gcon(Loci::center, j, i, 0, 0));
+        Real alpha = 1. / Kokkos::sqrt(-G.gcon(Loci::center, j, i, 0, 0));
         Real beta1 = G.gcon(Loci::center, j, i, 0, 1) * alpha * alpha;
         uvec[V1] = beta1 / alpha;
 
@@ -108,7 +117,7 @@ KOKKOS_INLINE_FUNCTION void check_inflow(const GRCoordinates &G, const VariableP
 
         clip(vsq, 1.e-13, 1. - 1./(50.*50.));
 
-        gamma = 1./sqrt(1. - vsq);
+        gamma = 1./Kokkos::sqrt(1. - vsq);
 
         VLOOP uvec[v] *= gamma;
         VLOOP P(u_start + v, k, j, i) = uvec[v];

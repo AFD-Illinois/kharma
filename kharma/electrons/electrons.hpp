@@ -139,7 +139,7 @@ KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates& G, const VariablePack<Re
                                          const VariablePack<Real>& flux, const VarMap m_u, const Loci loc=Loci::center)
 {
     // Take the factor from the primitives, in case we need to reorder this to happen before GRMHD::prim_to_flux later
-    const Real ut = GRMHD::lorentz_calc(G, P, m_p, k, j, i, loc) * sqrt(-G.gcon(loc, j, i, 0, 0));
+    const Real ut = GRMHD::lorentz_calc(G, P, m_p, k, j, i, loc) * Kokkos::sqrt(-G.gcon(loc, j, i, 0, 0));
     const Real rho_ut = P(m_p.RHO, k, j, i) * ut * G.gdet(loc, j, i);
 
     flux(m_u.KTOT, k, j, i) = rho_ut * P(m_p.KTOT, k, j, i);

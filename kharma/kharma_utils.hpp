@@ -9,10 +9,6 @@
 #include <string>
 #include <stdexcept>
 
-// Allow max/min below to be defined directly by CUDA,
-// but otherwise resolve to std::max and std::min
-using namespace std;
-
 /**
  * This takes a number n and clips it to lie on the real line between 'lower' and 'upper'
  * If n is NaN, it returns the *lower* bound, unless this is also NaN, in which case it returns the upper.
@@ -27,11 +23,11 @@ KOKKOS_INLINE_FUNCTION T clip(const T& n, const T& lower, const T& upper)
 {
 #if TRACE
   // This isn't so useful without context
-  //if (isnan(n)) printf("Clipping a NaN value!\n");
+  //if (Kokkos::isnan(n)) printf("Clipping a NaN value!\n");
   //if (n > upper) printf("Clip %g to %g\n", n, upper);
   //if (n < lower) printf("Clip %g to %g\n", n, lower);
 #endif
-  return min(max(lower, n), upper);
+  return Kokkos::min(Kokkos::max(lower, n), upper);
 }
 // Version which "bounces" any excess over the bounds, useful for the polar coordinate
 template <typename T>
@@ -43,7 +39,7 @@ KOKKOS_INLINE_FUNCTION T bounce(const T& n, const T& lower, const T& upper)
 template <typename T>
 KOKKOS_INLINE_FUNCTION T excise(const T& n, const T& center, const T& range)
 {
-    return (abs(n - center) > range) ? n : ( (n > center) ? center + range : center - range );
+    return (Kokkos::abs(n - center) > range) ? n : ( (n > center) ? center + range : center - range );
 }
 
 // Quickly zero n elements of an array

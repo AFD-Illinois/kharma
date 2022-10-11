@@ -353,6 +353,7 @@ double MaxDivB(MeshData<Real> *md)
 
     // This is one kernel call per block, because each block will have different bounds.
     // Could consolidate at the cost of lots of bounds checking.
+    // TODO redo as nested parallel like Parthenon sparse vars?
     double max_divb = 0.0;
     for (int b = block.s; b <= block.e; ++b) {
         auto pmb = md->GetBlockData(b)->GetBlockPointer().get();
@@ -373,7 +374,7 @@ double MaxDivB(MeshData<Real> *md)
         pmb->par_reduce("divB_max", ks, ke, js, je, is, ie,
             KOKKOS_LAMBDA_3D_REDUCE {
                 const auto& G = B_U.GetCoords(b);
-                const double local_divb = fabs(corner_div(G, B_U, b, k, j, i, ndim > 2));
+                const double local_divb = Kokkos::fabs(corner_div(G, B_U, b, k, j, i, ndim > 2));
                 if (local_divb > local_result) local_result = local_divb;
             }
         , max_reducer);
@@ -400,7 +401,7 @@ TaskStatus PrintGlobalMaxDivB(MeshData<Real> *md)
         while (max_divb.CheckReduce() == TaskStatus::incomplete);
 
         if(MPIRank0()) {
-            cout << "Max DivB: " << max_divb.val << endl;
+            std::cout << "Max DivB: " << max_divb.val << std::endl;
         }
 
     }

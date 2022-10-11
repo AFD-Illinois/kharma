@@ -142,7 +142,7 @@ MAKE_SUM2D_FN(Phi,
     // \Phi == \int |*F^1^0| * gdet * dx2 * dx3 == \int |B1| * gdet * dx2 * dx3
     // Can also sum the hemispheres independently to be fancy (TODO?)
     if (m_u.B1 >= 0) {
-        local_result += 0.5 * fabs(U(m_u.B1, k, j, i)) * dA; // gdet is included in cons.B
+        local_result += 0.5 * Kokkos::fabs(U(m_u.B1, k, j, i)) * dA; // gdet is included in cons.B
     }
 )
 
@@ -257,8 +257,8 @@ MAKE_SUM3D_FN(EHTLum,
     if (X[1] > radius) {
         Real rho = P(m_p.RHO, k, j, i);
         Real Pg = (gam - 1.) * P(m_p.UU, k, j, i);
-        Real Bmag = sqrt(dot(Dtmp.bcon, Dtmp.bcov));
-        Real j_eht = pow(rho, 3.) * pow(Pg, -2.) * exp(-0.2 * pow(rho * rho / (Bmag * Pg * Pg), 1./3.));
+        Real Bmag = Kokkos::sqrt(dot(Dtmp.bcon, Dtmp.bcov));
+        Real j_eht = Kokkos::pow(rho, 3.) * Kokkos::pow(Pg, -2.) * exp(-0.2 * Kokkos::pow(rho * rho / (Bmag * Pg * Pg), 1./3.));
         local_result += j_eht * gdV;
     }
 )

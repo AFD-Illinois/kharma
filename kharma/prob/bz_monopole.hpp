@@ -2,9 +2,7 @@
 #pragma once
 
 #include "decs.hpp"
-#include <parthenon/parthenon.hpp>
-
-
+#include "types.hpp"
 
 /**
  * Initialize a Blandford-Znajek monopole setup

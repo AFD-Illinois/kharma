@@ -34,17 +34,26 @@
 #pragma once
 
 #include "decs.hpp"
+#include "mpi.hpp"
 
 #include <parthenon/parthenon.hpp>
 
 using namespace parthenon;
 
+using parthenon::MeshBlockData;
+
 /**
- * Types and convenience functions
+ * Types, macros, and convenience functions
  * 
  * Anything potentially useful throughout KHARMA, but specific to it
  * (general copy/pastes from StackOverflow go in kharma_utils.hpp)
  */
+
+// This provides a way of addressing vectors that matches
+// directions, to make derivatives etc more readable
+#define V1 0
+#define V2 1
+#define V3 2
 
 // Denote reconstruction algorithms
 // See reconstruction.hpp for implementations
@@ -56,10 +65,10 @@ enum InversionStatus{success=0, neg_input, max_iter, bad_ut, bad_gamma, neg_rho,
 
 // Struct for derived 4-vectors at a point, usually calculated and needed together
 typedef struct {
-    parthenon::Real ucon[GR_DIM];
-    parthenon::Real ucov[GR_DIM];
-    parthenon::Real bcon[GR_DIM];
-    parthenon::Real bcov[GR_DIM];
+    Real ucon[GR_DIM];
+    Real ucov[GR_DIM];
+    Real bcon[GR_DIM];
+    Real bcov[GR_DIM];
 } FourVectors;
 
 /**
@@ -190,21 +199,21 @@ inline void PrintCorner(MeshBlockData<Real> *rc)
     const IndexRange ib = rc->GetBoundsI(IndexDomain::interior);
     const IndexRange jb = rc->GetBoundsJ(IndexDomain::interior);
     const IndexRange kb = rc->GetBoundsK(IndexDomain::interior);
-    cerr << "p:";
+    std::cerr << "p:";
     for (int j=0; j<8; j++) {
-        cerr << endl;
+        std::cerr << std::endl;
         for (int i=0; i<8; i++) {
             fprintf(stderr, "%.5g\t", pflag(kb.s, j, i));
         }
     }
-    // cerr << endl << "B1:";
+    // std::cerr << std::endl << "B1:";
     // for (int j=0; j<8; j++) {
-    //     cerr << endl;
+    //     std::cerr << std::endl;
     //     for (int i=0; i<8; i++) {
     //         fprintf(stderr, "%.5g\t", Bu(V1, kb.s, j, i));
     //     }
     // }
-    cerr << endl << endl;
+    std::cerr << std::endl << std::endl;
 }
 
 inline void PrintZone(MeshBlockData<Real> *rc)
@@ -215,10 +224,10 @@ inline void PrintZone(MeshBlockData<Real> *rc)
     auto Bp = rc->Get("prims.B").data.GetHostMirrorAndCopy();
     auto q = rc->Get("prims.q").data.GetHostMirrorAndCopy();
     auto dP = rc->Get("prims.dP").data.GetHostMirrorAndCopy();
-    cerr << rhop(0,11,11) << up(0,11,11)
+    std::cerr << rhop(0,11,11) << up(0,11,11)
          << uvecp(0, 0,11,11) << uvecp(1, 0,11,11) << uvecp(2, 0,11,11)
          << Bp(0, 0,11,11) << Bp(1, 0,11,11) << Bp(2, 0,11,11)
-         << q(0,11,11) << dP(0,11,11) << endl;
+         << q(0,11,11) << dP(0,11,11) << std::endl;
 }
 
 inline void Flag(std::string label)

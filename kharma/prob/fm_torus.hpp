@@ -2,9 +2,7 @@
 #pragma once
 
 #include "decs.hpp"
-#include <parthenon/parthenon.hpp>
-
-
+#include "types.hpp"
 
 /**
  * Initialize a wide variety of different fishbone-moncrief torii.
@@ -31,39 +29,39 @@ KOKKOS_INLINE_FUNCTION Real lnh_calc(const GReal a, const Real l, const GReal ri
     Real sth = sin(th);
     Real cth = cos(th);
 
-    Real r2 = pow(r, 2);
-    Real a2 = pow(a, 2);
+    Real r2 = Kokkos::pow(r, 2);
+    Real a2 = Kokkos::pow(a, 2);
     Real DD = r2 - 2. * r + a2;
-    Real AA = pow(r2 + a2, 2) - DD * a2 * sth * sth;
+    Real AA = Kokkos::pow(r2 + a2, 2) - DD * a2 * sth * sth;
     Real SS = r2 + a2 * cth * cth;
 
     Real thin = M_PI / 2.;
     Real sthin = sin(thin);
     Real cthin = cos(thin);
 
-    Real rin2 = pow(rin, 2);
+    Real rin2 = Kokkos::pow(rin, 2);
     Real DDin = rin2 - 2. * rin + a2;
-    Real AAin = pow(rin2 + a2, 2) - DDin * a2 * sthin * sthin;
+    Real AAin = Kokkos::pow(rin2 + a2, 2) - DDin * a2 * sthin * sthin;
     Real SSin = rin2 + a2 * cthin * cthin;
 
     if (r >= rin) {
         return
             0.5 *
                 log((1. +
-                        sqrt(1. +
+                        Kokkos::sqrt(1. +
                             4. * (l * l * SS * SS) * DD / (AA * AA * sth * sth))) /
                     (SS * DD / AA)) -
-            0.5 * sqrt(1. +
+            0.5 * Kokkos::sqrt(1. +
                         4. * (l * l * SS * SS) * DD /
                             (AA * AA * sth * sth)) -
             2. * a * r * l / AA -
             (0.5 *
                     log((1. +
-                        sqrt(1. +
+                        Kokkos::sqrt(1. +
                             4. * (l * l * SSin * SSin) * DDin /
                                 (AAin * AAin * sthin * sthin))) /
                         (SSin * DDin / AAin)) -
-                0.5 * sqrt(1. +
+                0.5 * Kokkos::sqrt(1. +
                         4. * (l * l * SSin * SSin) * DDin / (AAin * AAin * sthin * sthin)) -
                 2. * a * rin * l / AAin);
     } else {
@@ -80,17 +78,17 @@ KOKKOS_INLINE_FUNCTION Real lnh_calc(const GReal a, const Real l, const GReal ri
  */
 KOKKOS_INLINE_FUNCTION Real lfish_calc(const GReal a, const GReal r)
 {
-    return (((pow(a, 2) - 2. * a * sqrt(r) + pow(r, 2)) *
+    return (((Kokkos::pow(a, 2) - 2. * a * Kokkos::sqrt(r) + Kokkos::pow(r, 2)) *
              ((-2. * a * r *
-               (pow(a, 2) - 2. * a * sqrt(r) +
-                pow(r,
+               (Kokkos::pow(a, 2) - 2. * a * Kokkos::sqrt(r) +
+                Kokkos::pow(r,
                     2))) /
-                  sqrt(2. * a * sqrt(r) + (-3. + r) * r) +
-              ((a + (-2. + r) * sqrt(r)) * (pow(r, 3) + pow(a, 2) *
+                  Kokkos::sqrt(2. * a * Kokkos::sqrt(r) + (-3. + r) * r) +
+              ((a + (-2. + r) * Kokkos::sqrt(r)) * (Kokkos::pow(r, 3) + Kokkos::pow(a, 2) *
                                                             (2. + r))) /
-                  sqrt(1 + (2. * a) / pow(r, 1.5) - 3. / r))) /
-            (pow(r, 3) * sqrt(2. * a * sqrt(r) + (-3. + r) * r) *
-             (pow(a, 2) + (-2. + r) * r)));
+                  Kokkos::sqrt(1 + (2. * a) / Kokkos::pow(r, 1.5) - 3. / r))) /
+            (Kokkos::pow(r, 3) * Kokkos::sqrt(2. * a * Kokkos::sqrt(r) + (-3. + r) * r) *
+             (Kokkos::pow(a, 2) + (-2. + r) * r)));
 }
 
 /**
@@ -109,7 +107,7 @@ KOKKOS_INLINE_FUNCTION Real fm_torus_rho(const GReal a, const GReal rin, const G
     if (lnh >= 0. && r >= rin) {
         // Calculate rho
         Real hm1 = exp(lnh) - 1.;
-        return pow(hm1 * (gam - 1.) / (kappa * gam),
+        return Kokkos::pow(hm1 * (gam - 1.) / (kappa * gam),
                             1. / (gam - 1.));
     } else {
         return 0;

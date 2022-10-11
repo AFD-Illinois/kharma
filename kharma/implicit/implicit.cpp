@@ -138,8 +138,8 @@ TaskStatus Step(MeshData<Real> *mci, MeshData<Real> *mc0, MeshData<Real> *dudt,
      auto& rci = mci->GetBlockData(0); // MeshBlockData object, more member functions
     auto ordered_prims = get_ordered_names(rci.get(), isPrimitive);
     auto ordered_cons = get_ordered_names(rci.get(), Metadata::Conserved);
-    //cerr << "Ordered prims:"; for(auto prim: ordered_prims) cerr << " " << prim; cerr << endl;
-    //cerr << "Ordered cons:"; for(auto con: ordered_cons) cerr << " " << con; cerr << endl;
+    //cerr << "Ordered prims:"; for(auto prim: ordered_prims) std::cerr << " " << prim; std::cerr << std::endl;
+    //cerr << "Ordered cons:"; for(auto con: ordered_cons) std::cerr << " " << con; std::cerr << std::endl;
 
     // Initial state.  Also mapping template
     PackIndexMap prims_map, cons_map;
@@ -164,7 +164,7 @@ TaskStatus Step(MeshData<Real> *mci, MeshData<Real> *mc0, MeshData<Real> *dudt,
     const int n3 = bounds.ncellsk(IndexDomain::entire);
 
     // RETURN if there aren't any implicit variables to evolve
-    //cerr << "Solve size " << nfvar << " on prim size " << nvar << endl;
+    //cerr << "Solve size " << nfvar << " on prim size " << nvar << std::endl;
     if (nfvar == 0) return TaskStatus::complete;
 
     // The norm of the residual.  We store this to avoid the main kernel
@@ -326,7 +326,7 @@ TaskStatus Step(MeshData<Real> *mci, MeshData<Real> *mc0, MeshData<Real> *dudt,
                         // I would be tempted to store the whole residual, but it's of variable size
                         norm_all(b, k , j, i) = 0;
                         FLOOP norm_all(b, k, j, i) += residual(ip)*residual(ip);
-                        norm_all(b, k, j, i) = sqrt(norm_all(b, k, j, i)); // TODO faster to scratch cache & copy?
+                        norm_all(b, k, j, i) = Kokkos::sqrt(norm_all(b, k, j, i)); // TODO faster to scratch cache & copy?
                     }
                 );
                 member.team_barrier();

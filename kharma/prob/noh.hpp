@@ -35,7 +35,6 @@
 
 #include "decs.hpp"
 
-using namespace std;
 using namespace parthenon;
 
 /**
@@ -76,13 +75,13 @@ TaskStatus InitializeNoh(MeshBlockData<Real> *rc, ParameterInput *pin)
 
     // TODO relativistic sound speed
     Real cs2 = (gam * (gam - 1) * PL) / rhoL;
-    Real v1 = mach * sqrt(cs2);
+    Real v1 = mach * Kokkos::sqrt(cs2);
 
     if (set_tlim) {
         pin->SetReal("parthenon/time", "tlim", 0.6*(x1max - x1min)/v1);
     }
 
-    double gamma = 1. / sqrt(1. - v1 * v1); // Since we are in flat space
+    double gamma = 1. / Kokkos::sqrt(1. - v1 * v1); // Since we are in flat space
 
 
     pmb->par_for("noh_init", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,

@@ -64,14 +64,14 @@ TaskStatus SetBondi(MeshBlockData<Real> *rc, IndexDomain domain=IndexDomain::int
  */
 KOKKOS_INLINE_FUNCTION Real get_Tfunc(const Real T, const GReal r, const Real C1, const Real C2, const Real n)
 {
-    return pow(1. + (1. + n) * T, 2.) * (1. - 2. / r + pow(C1 / pow(r,2) / pow(T, n), 2.)) - C2;
+    return Kokkos::pow(1. + (1. + n) * T, 2.) * (1. - 2. / r + Kokkos::pow(C1 / Kokkos::pow(r,2) / Kokkos::pow(T, n), 2.)) - C2;
 }
 KOKKOS_INLINE_FUNCTION Real get_T(const GReal r, const Real C1, const Real C2, const Real n)
 {
     Real rtol = 1.e-12;
     Real ftol = 1.e-14;
-    Real Tmin = 0.6 * (sqrt(C2) - 1.) / (n + 1);
-    Real Tmax = pow(C1 * sqrt(2. / pow(r,3)), 1. / n);
+    Real Tmin = 0.6 * (Kokkos::sqrt(C2) - 1.) / (n + 1);
+    Real Tmax = Kokkos::pow(C1 * Kokkos::sqrt(2. / Kokkos::pow(r,3)), 1. / n);
 
     Real f0, f1, fh;
     Real T0, T1, Th;
@@ -84,7 +84,7 @@ KOKKOS_INLINE_FUNCTION Real get_T(const GReal r, const Real C1, const Real C2, c
     Th = (f1 * T0 - f0 * T1) / (f1 - f0);
     fh = get_Tfunc(Th, r, C1, C2, n);
     Real epsT = rtol * (Tmin + Tmax);
-    while (fabs(Th - T0) > epsT && fabs(Th - T1) > epsT && fabs(fh) > ftol)
+    while (Kokkos::fabs(Th - T0) > epsT && Kokkos::fabs(Th - T1) > epsT && Kokkos::fabs(fh) > ftol)
     {
         if (fh * f0 < 0.) {
             T0 = Th;
@@ -114,11 +114,11 @@ KOKKOS_INLINE_FUNCTION void get_prim_bondi(const GRCoordinates& G, const Coordin
     // Solution constants
     // Ideally these could be cached but preformance isn't an issue here
     Real n = 1. / (gam - 1.);
-    Real uc = sqrt(mdot / (2. * rs));
-    Real Vc = -sqrt(pow(uc, 2) / (1. - 3. * pow(uc, 2)));
-    Real Tc = -n * pow(Vc, 2) / ((n + 1.) * (n * pow(Vc, 2) - 1.));
-    Real C1 = uc * pow(rs, 2) * pow(Tc, n);
-    Real C2 = pow(1. + (1. + n) * Tc, 2) * (1. - 2. * mdot / rs + pow(C1, 2) / (pow(rs, 4) * pow(Tc, 2 * n)));
+    Real uc = Kokkos::sqrt(mdot / (2. * rs));
+    Real Vc = -Kokkos::sqrt(Kokkos::pow(uc, 2) / (1. - 3. * Kokkos::pow(uc, 2)));
+    Real Tc = -n * Kokkos::pow(Vc, 2) / ((n + 1.) * (n * Kokkos::pow(Vc, 2) - 1.));
+    Real C1 = uc * Kokkos::pow(rs, 2) * Kokkos::pow(Tc, n);
+    Real C2 = Kokkos::pow(1. + (1. + n) * Tc, 2) * (1. - 2. * mdot / rs + Kokkos::pow(C1, 2) / (Kokkos::pow(rs, 4) * Kokkos::pow(Tc, 2 * n)));
 
     GReal Xnative[GR_DIM], Xembed[GR_DIM];
     G.coord(k, j, i, Loci::center, Xnative);
@@ -129,8 +129,8 @@ KOKKOS_INLINE_FUNCTION void get_prim_bondi(const GRCoordinates& G, const Coordin
     if (ks.a > 0.1 && r < 2) return;
 
     Real T = get_T(r, C1, C2, n);
-    Real ur = -C1 / (pow(T, n) * pow(r, 2));
-    Real rho = pow(T, n);
+    Real ur = -C1 / (Kokkos::pow(T, n) * Kokkos::pow(r, 2));
+    Real rho = Kokkos::pow(T, n);
     Real u = rho * T * n;
 
     // Set u^t to make u^r a 4-vector

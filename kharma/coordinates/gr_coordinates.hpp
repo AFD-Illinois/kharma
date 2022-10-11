@@ -63,7 +63,7 @@
  * We wish to map these "logically-Cartesian" coordinates to volumes of interest,
  * with differential geometry and lots of caching
  */
-class GRCoordinates : public UniformCartesian
+class GRCoordinates : public parthenon::UniformCartesian
 {
 public:
     // Host-side coordinates object pointer
@@ -83,14 +83,14 @@ public:
     // "Full" constructors which generate new geometry caches
     // these call Kokkos internally so we must ensure they're only called host-side
 #pragma hd_warning_disable
-    GRCoordinates(const RegionSize &rs, ParameterInput *pin);
+    GRCoordinates(const parthenon::RegionSize &rs, parthenon::ParameterInput *pin);
 #pragma hd_warning_disable
     GRCoordinates(const GRCoordinates &src, int coarsen);
 
     // Interim & copy constructors so that Parthenon can use us like a UniformCartesian object,
     // that is, host- & device-side indiscriminately
     KOKKOS_FUNCTION GRCoordinates(): UniformCartesian() {};
-    KOKKOS_FUNCTION GRCoordinates(const GRCoordinates &src): UniformCartesian(src)
+    KOKKOS_FUNCTION GRCoordinates(const GRCoordinates &src): parthenon::UniformCartesian(src)
     {
         //std::cerr << "Calling copy constructor size " << src.n1 << " " << src.n2 << std::endl;
         coords = src.coords;

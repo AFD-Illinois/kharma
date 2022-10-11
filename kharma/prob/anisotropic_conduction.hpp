@@ -37,7 +37,6 @@
 
 #include "decs.hpp"
 
-using namespace std;
 using namespace parthenon;
 
 /**
@@ -62,7 +61,7 @@ TaskStatus InitializeAnisotropicConduction(MeshBlockData<Real> *rc, ParameterInp
     const Real B0 = pin->GetOrAddReal("anisotropic_conduction", "B0", 1e-4);
     const Real k0 = pin->GetOrAddReal("anisotropic_conduction", "k", 4.);
 
-    const Real R = sqrt(Rsq);
+    const Real R = Kokkos::sqrt(Rsq);
 
     IndexRange ib = pmb->cellbounds.GetBoundsI(IndexDomain::entire);
     IndexRange jb = pmb->cellbounds.GetBoundsJ(IndexDomain::entire);
@@ -71,10 +70,10 @@ TaskStatus InitializeAnisotropicConduction(MeshBlockData<Real> *rc, ParameterInp
         KOKKOS_LAMBDA_3D {
             Real X[GR_DIM];
             G.coord_embed(k, j, i, Loci::center, X);
-            GReal r = sqrt(pow((X[1] - 0.5), 2) + pow((X[2] - 0.5), 2));
+            GReal r = Kokkos::sqrt(Kokkos::pow((X[1] - 0.5), 2) + Kokkos::pow((X[2] - 0.5), 2));
 
             // Initialize primitives
-            rho(k, j, i) = 1 - (A * exp(-pow(r, 2) / pow(R, 2)));
+            rho(k, j, i) = 1 - (A * exp(-Kokkos::pow(r, 2) / Kokkos::pow(R, 2)));
             u(k, j, i) = 1.;
             uvec(0, k, j, i) = 0.;
             uvec(1, k, j, i) = 0.;

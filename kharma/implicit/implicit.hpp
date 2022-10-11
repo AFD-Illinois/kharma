@@ -150,7 +150,7 @@ KOKKOS_INLINE_FUNCTION void calc_jacobian(const GRCoordinates& G, const Local& P
     // Numerically evaluate the Jacobian
     for (int col = 0; col < nfvar; col++) {
         // Compute P_delta, differently depending on whether the prims are small compared to eps
-        if (abs(P(col)) < (0.5 * jac_delta)) {
+        if (Kokkos::abs(P(col)) < (0.5 * jac_delta)) {
             P_delta(col) = P(col) + jac_delta;
         } else {
             P_delta(col) = (1 + jac_delta) * P(col);
