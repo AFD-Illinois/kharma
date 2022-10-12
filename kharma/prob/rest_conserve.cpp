@@ -13,6 +13,8 @@ TaskStatus InitializeRest(MeshBlockData<Real> *rc, ParameterInput *pin)
     const Real rho0 = pin->GetOrAddReal("rest", "rho0", 1.);
     const Real q = (pin->DoesParameterExist("rest", "q")) ? pin->GetReal("rest", "q") : 0. ;
     bool context_boundaries = pin->GetOrAddBoolean("rest", "context_boundaries", false);
+    // Time it would take for u to change by half its original value
+    Real dyntimes = pin->GetOrAddReal("hubble", "dyntimes", 0.5);
 
     int counter = -5.0;
     Params& g_params = pmb->packages.Get("GRMHD")->AllParams();
@@ -27,13 +29,11 @@ TaskStatus InitializeRest(MeshBlockData<Real> *rc, ParameterInput *pin)
         const Real fel0 = pmb->packages.Get("Electrons")->Param<Real>("fel_0");
         const Real game = pmb->packages.Get("Electrons")->Param<Real>("gamma_e");
         if(!g_params.hasKey("ke0")) g_params.Add("ke0", (game - 1.) * fel0 * u0 * pow(rho0, -game));
-        printf("ke0 is %.16f\n", (game - 1.) * fel0 * u0 * pow(rho0, -game));
     }
 
-    // Time it would take for u to change by half its original value
-    if (set_tlim && q != 0) { 
-        pin->SetReal("parthenon/time", "tlim", u0/(2*abs(q)));
-        printf("tlim is now %.16f\n", u0/(2*abs(q)));
+    // Avoiding diving by zero and going into negative internal energy
+    if (set_tlim && q != 0 && !(q < 0 && dyntimes > 1)) { 
+        pin->SetReal("parthenon/time", "tlim", dyntimes*u0/abs(q));
     }
 
     SetRest(rc);
