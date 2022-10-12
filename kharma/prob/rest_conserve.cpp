@@ -14,7 +14,7 @@ TaskStatus InitializeRest(MeshBlockData<Real> *rc, ParameterInput *pin)
     const Real q = (pin->DoesParameterExist("rest", "q")) ? pin->GetReal("rest", "q") : 0. ;
     bool context_boundaries = pin->GetOrAddBoolean("rest", "context_boundaries", false);
     // Time it would take for u to change by half its original value
-    Real dyntimes = pin->GetOrAddReal("hubble", "dyntimes", 0.5);
+    Real dyntimes = pin->GetOrAddReal("rest", "dyntimes", 0.5);
 
     int counter = -5.0;
     Params& g_params = pmb->packages.Get("GRMHD")->AllParams();
@@ -65,7 +65,7 @@ TaskStatus SetRest(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     IndexRange ib = pmb->cellbounds.GetBoundsI(domain);
     IndexRange jb = pmb->cellbounds.GetBoundsJ(domain);
     IndexRange kb = pmb->cellbounds.GetBoundsK(domain);
-    pmb->par_for("hubble_init", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+    pmb->par_for("rest_init", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_3D {
             Real X[GR_DIM];
             G.coord_embed(k, j, i, Loci::center, X);
@@ -82,7 +82,7 @@ TaskStatus SetRest(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
         GridScalar kel_const = rc->Get("prims.Kel_Constant").data;
         const Real game = pmb->packages.Get("Electrons")->Param<Real>("gamma_e");
         const Real ke0 = pmb->packages.Get("GRMHD")->Param<Real>("ke0");
-        pmb->par_for("hubble_init", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+        pmb->par_for("rest_init", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
             KOKKOS_LAMBDA_3D {
                 ktot(k, j, i) = ke0 + (game-1)*pow(rho0, -game)*q*t;
                 kel_const(k, j, i) = ke0 + (game-1)*pow(rho0, -game)*q*t; 
