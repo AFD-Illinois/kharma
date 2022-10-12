@@ -40,7 +40,7 @@ reconstruction = weno5
 
 <driver>
 type = harm
-two_sync = false
+two_sync = true
 
 <torus>
 rin = 6.0
