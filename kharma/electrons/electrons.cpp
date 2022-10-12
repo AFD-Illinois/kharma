@@ -450,14 +450,22 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
         const Real v0 = pmb->packages.Get("GRMHD")->Param<Real>("v0");
         const Real ug0 = pmb->packages.Get("GRMHD")->Param<Real>("ug0");
         const Real dt = pmb->packages.Get("Globals")->Param<Real>("dt_last");  // Close enough?
-        const Real t = pmb->packages.Get("Globals")->Param<Real>("time") + dt/2; // Since Q is only time-dependent we use t + dt/2 on second halfstep
+        const Real t = pmb->packages.Get("Globals")->Param<Real>("time") + dt;
         Real Q = (ug0 * v0 * (gam - 2) / pow(1 + v0 * t, 3));
-
         pmb->par_for("hubble_Q_source_term", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
             KOKKOS_LAMBDA_3D {
                 const Real Q = -(ug0 * v0 * (gam - 2) / m::pow(1 + v0 * t, 3));
                 P_new(m_p.UU, k, j, i) += Q * dt;
                 // TODO all flux
+                GRMHD::p_to_u(G, P_new, m_p, gam, k, j, i, U_new, m_u);
+            }
+        );
+    } else if (prob == "rest_conserve" && pmb->packages.Get("GRMHD")->Param<Real>("q") != 0. && generate_grf) {
+        const Real dt = pmb->packages.Get("Globals")->Param<Real>("dt_last");  // Close enough?
+        const Real Q = pmb->packages.Get("GRMHD")->Param<Real>("q");
+         pmb->par_for("rest_conserve_Q_source_term", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+            KOKKOS_LAMBDA_3D {
+                P_new(m_p.UU, k, j, i) += Q * dt;
                 GRMHD::p_to_u(G, P_new, m_p, gam, k, j, i, U_new, m_u);
             }
         );

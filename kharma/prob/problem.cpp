@@ -55,6 +55,7 @@
 #include "orszag_tang.hpp"
 #include "shock_tube.hpp"
 #include "noh.hpp"
+#include "rest_conserve.hpp"
 
 #include "emhd/anisotropic_conduction.hpp"
 #include "emhd/emhdmodes.hpp"
