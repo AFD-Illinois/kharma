@@ -233,11 +233,11 @@ TaskStatus ReadIharmRestart(MeshBlockData<Real> *rc, ParameterInput *pin)
     // These are set to probably mirror the restart file,
     // but ideally should be read straight from it.
     const GReal startx[GR_DIM] = {0,
-        Kokkos::log(pin->GetReal("coordinates", "r_in")),
+        m::log(pin->GetReal("coordinates", "r_in")),
         pin->GetReal("parthenon/mesh", "x2min"),
         pin->GetReal("parthenon/mesh", "x3min")};
     const GReal stopx[GR_DIM] = {0,
-        Kokkos::log(pin->GetReal("coordinates", "r_out")),
+        m::log(pin->GetReal("coordinates", "r_out")),
         pin->GetReal("parthenon/mesh", "x2max"),
         pin->GetReal("parthenon/mesh", "x3max")};
     // Same here

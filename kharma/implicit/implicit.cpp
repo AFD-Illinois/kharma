@@ -32,8 +32,6 @@
  *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-// Floors.  Apply limits to fluid values to maintain integrable state
-
 #include "implicit.hpp"
 
 #include "debug.hpp"
@@ -46,7 +44,6 @@
 #include <batched/dense/KokkosBatched_ApplyQ_Decl.hpp>
 #include <batched/dense/KokkosBatched_QR_Decl.hpp>
 #include <batched/dense/KokkosBatched_Trsv_Decl.hpp>
-using namespace KokkosBatched;
 
 namespace Implicit
 {
@@ -334,7 +331,7 @@ TaskStatus Step(MeshData<Real> *mci, MeshData<Real> *mc0, MeshData<Real> *dudt,
                         // I would be tempted to store the whole residual, but it's of variable size
                         norm_all(b, k , j, i) = 0;
                         FLOOP norm_all(b, k, j, i) += residual(ip)*residual(ip);
-                        norm_all(b, k, j, i) = Kokkos::sqrt(norm_all(b, k, j, i)); // TODO faster to scratch cache & copy?
+                        norm_all(b, k, j, i) = m::sqrt(norm_all(b, k, j, i)); // TODO faster to scratch cache & copy?
                     }
                 );
                 member.team_barrier();

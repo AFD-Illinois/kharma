@@ -34,14 +34,13 @@
 #pragma once
 
 #include "decs.hpp"
+#include "types.hpp"
 
 #include "emhd_sources.hpp"
 #include "emhd.hpp"
 #include "flux_functions.hpp"
-#include "types.hpp"
 #include "grmhd_functions.hpp"
 
-#include <parthenon/parthenon.hpp>
 
 // This class calls EMHD stuff a bunch,
 // since that's the only package with specific
@@ -150,7 +149,7 @@ KOKKOS_INLINE_FUNCTION void calc_jacobian(const GRCoordinates& G, const Local& P
     // Numerically evaluate the Jacobian
     for (int col = 0; col < nfvar; col++) {
         // Compute P_delta, differently depending on whether the prims are small compared to eps
-        if (Kokkos::abs(P(col)) < (0.5 * jac_delta)) {
+        if (m::abs(P(col)) < (0.5 * jac_delta)) {
             P_delta(col) = P(col) + jac_delta;
         } else {
             P_delta(col) = (1 + jac_delta) * P(col);

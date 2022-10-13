@@ -142,7 +142,7 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const Local& P,
                 flux(m_u.PSI) = P(m_p.PSI) * gdet;
             } else {
                 // Psi field update as in Mosta et al (IllinoisGRMHD), alternate explanation Jesse et al (2020)
-                //Real alpha = 1. / Kokkos::sqrt(-G.gcon(Loci::center, j, i, 0, 0));
+                //Real alpha = 1. / m::sqrt(-G.gcon(Loci::center, j, i, 0, 0));
                 //Real beta_dir = G.gcon(Loci::center, j, i, 0, dir) * alpha * alpha;
                 flux(m_u.PSI) = (D.bcon[dir] - G.gcon(Loci::center, j, i, 0, dir) * P(m_p.PSI)) * gdet;
             }
@@ -202,7 +202,7 @@ KOKKOS_INLINE_FUNCTION void vchar(const GRCoordinates& G, const Local& P, const 
     Real cms2;
     if (m.B1 >= 0) {
         // Find fast magnetosonic speed
-        const Real bsq = Kokkos::max(dot(D.bcon, D.bcov), SMALL);
+        const Real bsq = m::max(dot(D.bcon, D.bcov), SMALL);
         const Real ee = bsq + ef;
         const Real va2 = bsq / ee;
         cms2 = cs2 + va2 - cs2 * va2;
@@ -235,13 +235,13 @@ KOKKOS_INLINE_FUNCTION void vchar(const GRCoordinates& G, const Local& P, const 
         C = Au2 - (Asq + Au2) * cms2;
     }
 
-    Real discr = Kokkos::sqrt(Kokkos::max(B * B - 4. * A * C, 0.));
+    Real discr = m::sqrt(m::max(B * B - 4. * A * C, 0.));
 
     Real vp = -(-B + discr) / (2. * A);
     Real vm = -(-B - discr) / (2. * A);
 
-    cmax = Kokkos::max(vp, vm);
-    cmin = Kokkos::min(vp, vm);
+    cmax = m::max(vp, vm);
+    cmin = m::min(vp, vm);
 }
 
 } // namespace Flux

@@ -305,7 +305,7 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
             if (pmb->boundary_flag[BoundaryFace::inner_x1] == BoundaryFlag::user) {
                 pmb->par_for("fix_flux_in_l", ks, ke, js, je, is, is,
                     KOKKOS_LAMBDA_3D {
-                        F.flux(X1DIR, m_rho, k, j, i) = Kokkos::min(F.flux(X1DIR, m_rho, k, j, i), 0.);
+                        F.flux(X1DIR, m_rho, k, j, i) = m::min(F.flux(X1DIR, m_rho, k, j, i), 0.);
                     }
                 );
             }
@@ -314,7 +314,7 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
             if (pmb->boundary_flag[BoundaryFace::outer_x1] == BoundaryFlag::user) {
                 pmb->par_for("fix_flux_in_r", ks, ke, js, je, ie_l, ie_l,
                     KOKKOS_LAMBDA_3D {
-                        F.flux(X1DIR, m_rho, k, j, i) = Kokkos::max(F.flux(X1DIR, m_rho, k, j, i), 0.);
+                        F.flux(X1DIR, m_rho, k, j, i) = m::max(F.flux(X1DIR, m_rho, k, j, i), 0.);
                     }
                 );
             }

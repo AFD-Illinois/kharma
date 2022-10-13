@@ -73,11 +73,11 @@ TaskStatus InitializeBZMonopole(MeshBlockData<Real> *rc, ParameterInput *pin)
             G.coord_embed(k, j, i, Loci::center, Xembed);
             GReal r = Xembed[1];
 
-            GReal r_horizon = 1. + Kokkos::sqrt(1. - a*a);
+            GReal r_horizon = 1. + m::sqrt(1. - a*a);
             GReal r_char = 10. * r_horizon;
 
-            Real trho = rho_min_limit + (r / r_char) / Kokkos::pow(r, 4.) / bsq_o_rho_max;
-            Real tu = u_min_limit + (r / r_char) / Kokkos::pow(r, 4.) / bsq_o_rho_max;
+            Real trho = rho_min_limit + (r / r_char) / m::pow(r, 4.) / bsq_o_rho_max;
+            Real tu = u_min_limit + (r / r_char) / m::pow(r, 4.) / bsq_o_rho_max;
 
             rho(k, j, i) = trho;
             u(k, j, i) = tu;

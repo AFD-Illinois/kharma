@@ -79,7 +79,7 @@ void InsertBlob(MeshBlockData<Real> *rc, ParameterInput *pin)
         KOKKOS_LAMBDA_3D {
             Real X[GR_DIM];
             G.coord_embed(k, j, i, Loci::center, X);
-            Real d = Kokkos::sqrt(blob_r*blob_r + X[1]*X[1] - 2*blob_r*X[1]*
+            Real d = m::sqrt(blob_r*blob_r + X[1]*X[1] - 2*blob_r*X[1]*
                             (sin(blob_th) * sin(X[2]) * cos(blob_phi - X[3]) + cos(blob_th) * cos(X[2])));
             
             if (d <= sz_out) {

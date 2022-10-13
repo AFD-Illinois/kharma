@@ -79,7 +79,7 @@ KOKKOS_INLINE_FUNCTION void time_derivative_sources(const GRCoordinates& G, cons
 
     FourVectors Dtmp;
     GRMHD::calc_4vecs(G, P, m_p, j, i, Loci::center, Dtmp);
-    double bsq = Kokkos::max(dot(Dtmp.bcon, Dtmp.bcov), SMALL);
+    double bsq = m::max(dot(Dtmp.bcon, Dtmp.bcov), SMALL);
 
     // TIME DERIVATIVES
     Real ucon[GR_DIM], ucov_new[GR_DIM], ucov_old[GR_DIM];
@@ -94,15 +94,15 @@ KOKKOS_INLINE_FUNCTION void time_derivative_sources(const GRCoordinates& G, cons
     Real div_ucon = 0;
     DLOOP1 div_ucon += G.gcon(Loci::center, j, i, 0, mu) * dt_ucov[mu];
     // dTheta/dt
-    const Real Theta_new = Kokkos::max((gam-1) * P_new(m_p.UU) / P_new(m_p.RHO), SMALL);
-    const Real Theta_old = Kokkos::max((gam-1) * P_old(m_p.UU) / P_old(m_p.RHO), SMALL);
+    const Real Theta_new = m::max((gam-1) * P_new(m_p.UU) / P_new(m_p.RHO), SMALL);
+    const Real Theta_old = m::max((gam-1) * P_old(m_p.UU) / P_old(m_p.RHO), SMALL);
     const Real dt_Theta = (Theta_new - Theta_old) / dt;
 
     // TEMPORAL SOURCE TERMS
     const Real& rho = P(m_p.RHO);
     const Real& Theta = (gam-1) * P(m_p.UU) / P(m_p.RHO);
-    Real q0 = -rho * chi_e * (Dtmp.bcon[0] / Kokkos::sqrt(bsq)) * dt_Theta;
-    DLOOP1 q0 -= rho * chi_e * (Dtmp.bcon[mu] / Kokkos::sqrt(bsq)) * Theta * Dtmp.ucon[0] * dt_ucov[mu];
+    Real q0 = -rho * chi_e * (Dtmp.bcon[0] / m::sqrt(bsq)) * dt_Theta;
+    DLOOP1 q0 -= rho * chi_e * (Dtmp.bcon[mu] / m::sqrt(bsq)) * Theta * Dtmp.ucon[0] * dt_ucov[mu];
 
     Real dP0 = -rho * nu_e * div_ucon;
     DLOOP1 dP0 += 3. * rho * nu_e * (Dtmp.bcon[0] * Dtmp.bcon[mu] / bsq) * dt_ucov[mu];

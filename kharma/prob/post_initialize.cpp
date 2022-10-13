@@ -130,7 +130,7 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, std::shared_ptr<MeshData<Rea
             // Then normalize B by sqrt(beta/beta_min)
             Flag("Normalizing magnetic field");
             if (beta_min > 0) {
-                Real norm = Kokkos::sqrt(beta_min/desired_beta_min);
+                Real norm = m::sqrt(beta_min/desired_beta_min);
                 for (auto &pmb : pmesh->block_list) {
                     auto& rc = pmb->meshblock_data.Get();
                     NormalizeBField(rc.get(), norm);

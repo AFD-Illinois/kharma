@@ -328,7 +328,7 @@ void UtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     pmb->par_for("U_to_P", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_3D {
             if (inside(k, j, i, kb_b, jb_b, ib_b) ||
-                Kokkos::abs(P(m_p.RHO, k, j, i)) > SMALL || Kokkos::abs(P(m_p.UU, k, j, i)) > SMALL) {
+                m::abs(P(m_p.RHO, k, j, i)) > SMALL || m::abs(P(m_p.UU, k, j, i)) > SMALL) {
                 // Run over all interior zones and any initialized ghosts
                 pflag(k, j, i) = GRMHD::u_to_p(G, U, m_u, gam, k, j, i, Loci::center, P, m_p);
             } else {
@@ -391,11 +391,11 @@ Real EstimateTimestep(MeshBlockData<Real> *rc)
                                    1 / (G.dx2v(j) / ctop(1, k, j, i)) +
                                    1 / (G.dx3v(k) / ctop(2, k, j, i)));
             // Effective "max speed" used for the timestep
-            double ctop_max_zone = Kokkos::min(G.dx1v(i), Kokkos::min(G.dx2v(j), G.dx3v(k))) / ndt_zone;
+            double ctop_max_zone = m::min(G.dx1v(i), m::min(G.dx2v(j), G.dx3v(k))) / ndt_zone;
 
-            if (!Kokkos::isnan(ndt_zone) && (ndt_zone < lminmax.min_val))
+            if (!m::isnan(ndt_zone) && (ndt_zone < lminmax.min_val))
                 lminmax.min_val = ndt_zone;
-            if (!Kokkos::isnan(ctop_max_zone) && (ctop_max_zone > lminmax.max_val))
+            if (!m::isnan(ctop_max_zone) && (ctop_max_zone > lminmax.max_val))
                 lminmax.max_val = ctop_max_zone;
         }
     , Kokkos::MinMax<Real>(minmax));
@@ -444,20 +444,20 @@ Real EstimateRadiativeTimestep(MeshBlockData<Real> *rc)
 
             if (phase_speed) {
                 for (int mu = 1; mu < GR_DIM; mu++) {
-                    if(Kokkos::pow(G.gcon(Loci::center, j, i, 0, mu), 2) -
+                    if(m::pow(G.gcon(Loci::center, j, i, 0, mu), 2) -
                         G.gcon(Loci::center, j, i, mu, mu)*G.gcon(Loci::center, j, i, 0, 0) >= 0.) {
 
-                        double cplus = Kokkos::fabs((-G.gcon(Loci::center, j, i, 0, mu) +
-                                            Kokkos::sqrt(Kokkos::pow(G.gcon(Loci::center, j, i, 0, mu), 2) -
+                        double cplus = m::abs((-G.gcon(Loci::center, j, i, 0, mu) +
+                                            m::sqrt(m::pow(G.gcon(Loci::center, j, i, 0, mu), 2) -
                                                 G.gcon(Loci::center, j, i, mu, mu)*G.gcon(Loci::center, j, i, 0, 0)))/
                                             G.gcon(Loci::center, j, i, 0, 0));
 
-                        double cminus = Kokkos::fabs((-G.gcon(Loci::center, j, i, 0, mu) -
-                                            Kokkos::sqrt(Kokkos::pow(G.gcon(Loci::center, j, i, 0, mu), 2) -
+                        double cminus = m::abs((-G.gcon(Loci::center, j, i, 0, mu) -
+                                            m::sqrt(m::pow(G.gcon(Loci::center, j, i, 0, mu), 2) -
                                                 G.gcon(Loci::center, j, i, mu, mu)*G.gcon(Loci::center, j, i, 0, 0)))/
                                             G.gcon(Loci::center, j, i, 0, 0));
 
-                        light_phase_speed = Kokkos::max(cplus,cminus);
+                        light_phase_speed = m::max(cplus,cminus);
                     } else {
                         light_phase_speed = SMALL;
                     }
@@ -470,9 +470,9 @@ Real EstimateRadiativeTimestep(MeshBlockData<Real> *rc)
             }
             dt_light_local = 1/dt_light_local;
 
-            if (!Kokkos::isnan(dt_light_local) && (dt_light_local < lminmax.min_val))
+            if (!m::isnan(dt_light_local) && (dt_light_local < lminmax.min_val))
                 lminmax.min_val = dt_light_local;
-            if (!Kokkos::isnan(light_phase_speed) && (light_phase_speed > lminmax.max_val))
+            if (!m::isnan(light_phase_speed) && (light_phase_speed > lminmax.max_val))
                 lminmax.max_val = light_phase_speed;
         }
     , Kokkos::MinMax<Real>(minmax));

@@ -182,15 +182,15 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
                 break;
             case BSeedType::ryan:
                 // BR's smoothed poloidal in-torus, EHT standard MAD
-                q = Kokkos::pow(r / rin, 3) * Kokkos::pow(sin(th), 3) * exp(-r / 400) * rho_av - min_rho_q;
+                q = m::pow(r / rin, 3) * m::pow(sin(th), 3) * exp(-r / 400) * rho_av - min_rho_q;
                 break;
             case BSeedType::r3s3:
                 // Just the r^3 sin^3 th term
-                q = Kokkos::pow(r / rin, 3) * Kokkos::pow(sin(th), 3) * rho_av - min_rho_q;
+                q = m::pow(r / rin, 3) * m::pow(sin(th), 3) * rho_av - min_rho_q;
                 break;
             case BSeedType::steep:
                 // Bump power to r^5 sin^5 th term, quieter MAD
-                q = Kokkos::pow(r / rin, 5) * Kokkos::pow(sin(th), 5) * rho_av - min_rho_q;
+                q = m::pow(r / rin, 5) * m::pow(sin(th), 5) * rho_av - min_rho_q;
                 break;
             case BSeedType::gaussian:
                 // Pure vertical threaded field of gaussian strength with FWHM 2*rin (i.e. HM@rin)
@@ -198,9 +198,9 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
                 // Block is to avoid compiler whinging about initialization
                 {
                     Real x = (r / rin) * sin(th);
-                    Real sigma = 2 / Kokkos::sqrt(2 * log(2));
-                    Real u = x / Kokkos::fabs(sigma);
-                    q = (1 / (Kokkos::sqrt(2 * M_PI) * Kokkos::fabs(sigma))) * exp(-u * u / 2);
+                    Real sigma = 2 / m::sqrt(2 * log(2));
+                    Real u = x / m::abs(sigma);
+                    q = (1 / (m::sqrt(2 * M_PI) * m::abs(sigma))) * exp(-u * u / 2);
                 }
                 break;
             default:
@@ -210,7 +210,7 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
 
             if (tilt > 0.0) {
                 // This is *covariant* A_mu
-                const double A_untilt_lower[GR_DIM] = {0., 0., 0., Kokkos::max(q, 0.)};
+                const double A_untilt_lower[GR_DIM] = {0., 0., 0., m::max(q, 0.)};
                 // Raise to contravariant vector, since rotate_polar_vec will need that.
                 // Note we have to do this in the midplane!
                 // The coord_to_native calculation involves an iterative solve for MKS/FMKS
@@ -233,7 +233,7 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
                 VLOOP A(v, k, j, i) = A_tilt_lower[1+v];
             } else {
                 // Some problems rely on a very accurate A->B, which the 
-                A(V3, k, j, i) = Kokkos::max(q, 0.);
+                A(V3, k, j, i) = m::max(q, 0.);
             }
         }
     );

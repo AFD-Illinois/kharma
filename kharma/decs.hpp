@@ -53,6 +53,15 @@
 // Libraries I need directly
 #include "Kokkos_Core.hpp"
 
+#if 1
+// Resolve math functions to new Kokkos versions. Fast?
+namespace m = Kokkos::Experimental;
+#else
+// Resolve to standard library
+namespace m = std;
+#endif
+// TODO CUDA?
+
 // Bare Parthenon defs
 // Anything more leads to circular deps from gr_coordinates.hpp
 // TODO update, this was from very early Parthenon

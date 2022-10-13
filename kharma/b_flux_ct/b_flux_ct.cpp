@@ -374,7 +374,7 @@ double MaxDivB(MeshData<Real> *md)
         pmb->par_reduce("divB_max", ks, ke, js, je, is, ie,
             KOKKOS_LAMBDA_3D_REDUCE {
                 const auto& G = B_U.GetCoords(b);
-                const double local_divb = Kokkos::fabs(corner_div(G, B_U, b, k, j, i, ndim > 2));
+                const double local_divb = m::abs(corner_div(G, B_U, b, k, j, i, ndim > 2));
                 if (local_divb > local_result) local_result = local_divb;
             }
         , max_reducer);

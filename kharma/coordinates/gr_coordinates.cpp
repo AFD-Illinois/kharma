@@ -258,7 +258,7 @@ void init_GRCoordinates(GRCoordinates& G, int n1, int n2, int n3) {
                 // crucial near the poles
                 GReal X[GR_DIM];
                 G.coord(0, j, i, Loci::center, X);
-                if (1) { //(Kokkos::fabs(X[2] - 0) < 0.08 || Kokkos::fabs(X[2] - 1.0) < 0.08)) {
+                if (1) { //(m::abs(X[2] - 0) < 0.08 || m::abs(X[2] - 1.0) < 0.08)) {
                     for (int lam=1; lam < GR_DIM; lam++) {
                         const Loci loc = loc_of(lam);
                         // Get gdet values at faces we calculated above
@@ -274,7 +274,7 @@ void init_GRCoordinates(GRCoordinates& G, int n1, int n2, int n3) {
                         GReal sum_portions, portions[GR_DIM] = {0};
                         DLOOP1 {
                             test_sum += gdet_conn_local(j, i, mu, mu, lam);
-                            portions[mu] = Kokkos::fabs(gdet_conn_local(j, i, mu, mu, lam));
+                            portions[mu] = m::abs(gdet_conn_local(j, i, mu, mu, lam));
                             sum_portions += portions[mu];
                         }
                         DLOOP1 portions[mu] /= sum_portions;

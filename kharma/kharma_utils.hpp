@@ -23,11 +23,11 @@ KOKKOS_INLINE_FUNCTION T clip(const T& n, const T& lower, const T& upper)
 {
 #if TRACE
   // This isn't so useful without context
-  //if (Kokkos::isnan(n)) printf("Clipping a NaN value!\n");
+  //if (m::isnan(n)) printf("Clipping a NaN value!\n");
   //if (n > upper) printf("Clip %g to %g\n", n, upper);
   //if (n < lower) printf("Clip %g to %g\n", n, lower);
 #endif
-  return Kokkos::min(Kokkos::max(lower, n), upper);
+  return m::min(m::max(lower, n), upper);
 }
 // Version which "bounces" any excess over the bounds, useful for the polar coordinate
 template <typename T>
@@ -39,7 +39,7 @@ KOKKOS_INLINE_FUNCTION T bounce(const T& n, const T& lower, const T& upper)
 template <typename T>
 KOKKOS_INLINE_FUNCTION T excise(const T& n, const T& center, const T& range)
 {
-    return (Kokkos::abs(n - center) > range) ? n : ( (n > center) ? center + range : center - range );
+    return (m::abs(n - center) > range) ? n : ( (n > center) ? center + range : center - range );
 }
 
 // Quickly zero n elements of an array

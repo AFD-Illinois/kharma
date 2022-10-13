@@ -99,20 +99,20 @@ TaskStatus InitializeFMTorus(MeshBlockData<Real> *rc, ParameterInput *pin)
                 Real r2 = r*r;
                 Real a2 = a*a;
                 Real DD = r2 - 2. * r + a2;
-                Real AA = Kokkos::pow(r2 + a2, 2) - DD * a2 * sth * sth;
+                Real AA = m::pow(r2 + a2, 2) - DD * a2 * sth * sth;
                 Real SS = r2 + a2 * cth * cth;
 
                 // Calculate rho and u
                 Real hm1 = exp(lnh) - 1.;
-                Real rho_l = Kokkos::pow(hm1 * (gam - 1.) / (kappa * gam),
+                Real rho_l = m::pow(hm1 * (gam - 1.) / (kappa * gam),
                                     1. / (gam - 1.));
-                Real u_l = kappa * Kokkos::pow(rho_l, gam) / (gam - 1.);
+                Real u_l = kappa * m::pow(rho_l, gam) / (gam - 1.);
 
                 // Calculate u^phi
                 Real expm2chi = SS * SS * DD / (AA * AA * sth * sth);
-                Real up1 = Kokkos::sqrt((-1. + Kokkos::sqrt(1. + 4. * l * l * expm2chi)) / 2.);
-                Real up = 2. * a * r * Kokkos::sqrt(1. + up1 * up1) / Kokkos::sqrt(AA * SS * DD) +
-                            Kokkos::sqrt(SS / AA) * up1 / sth;
+                Real up1 = m::sqrt((-1. + m::sqrt(1. + 4. * l * l * expm2chi)) / 2.);
+                Real up = 2. * a * r * m::sqrt(1. + up1 * up1) / m::sqrt(AA * SS * DD) +
+                            m::sqrt(SS / AA) * up1 / sth;
 
                 const Real ucon_tilt[GR_DIM] = {0., 0., 0., up};
                 Real ucon_bl[GR_DIM];

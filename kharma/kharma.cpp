@@ -128,7 +128,7 @@ void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
         int n1tot = pin->GetInteger("parthenon/mesh", "nx1");
         GReal Rout = pin->GetReal("coordinates", "r_out");
         Real a = pin->GetReal("coordinates", "a");
-        GReal Rhor = 1 + Kokkos::sqrt(1 - a*a);
+        GReal Rhor = 1 + m::sqrt(1 - a*a);
         GReal x1max = log(Rout);
         // Set Rin such that we have 5 zones completely inside the event horizon
         // If xeh = log(Rhor), xin = log(Rin), and xout = log(Rout),
@@ -145,7 +145,7 @@ void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
         int n1tot = pin->GetInteger("parthenon/mesh", "nx1");
         GReal Rout = pin->GetReal("coordinates", "r_out");
         Real a = pin->GetReal("coordinates", "a");
-        GReal Rhor = 1 + Kokkos::sqrt(1 - a*a);
+        GReal Rhor = 1 + m::sqrt(1 - a*a);
         // Set Rin such that we have 5 zones completely inside the event horizon
         // i.e. we want Rhor = Rin + 5.5 * (Rout - Rin) / N1TOT:
         GReal Rin = (n1tot * Rhor / 5.5 - Rout) / (-1. + n1tot / 5.5);

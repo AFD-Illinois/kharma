@@ -103,7 +103,7 @@ KOKKOS_INLINE_FUNCTION void check_inflow(const GRCoordinates &G, const VariableP
         VLOOP uvec[v] /= gamma;
 
         // Reset radial velocity so radial 4-velocity is zero
-        Real alpha = 1. / Kokkos::sqrt(-G.gcon(Loci::center, j, i, 0, 0));
+        Real alpha = 1. / m::sqrt(-G.gcon(Loci::center, j, i, 0, 0));
         Real beta1 = G.gcon(Loci::center, j, i, 0, 1) * alpha * alpha;
         uvec[V1] = beta1 / alpha;
 
@@ -117,7 +117,7 @@ KOKKOS_INLINE_FUNCTION void check_inflow(const GRCoordinates &G, const VariableP
 
         clip(vsq, 1.e-13, 1. - 1./(50.*50.));
 
-        gamma = 1./Kokkos::sqrt(1. - vsq);
+        gamma = 1./m::sqrt(1. - vsq);
 
         VLOOP uvec[v] *= gamma;
         VLOOP P(u_start + v, k, j, i) = uvec[v];

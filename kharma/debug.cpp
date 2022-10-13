@@ -121,7 +121,7 @@ TaskStatus CheckNaN(MeshData<Real> *md, int dir, IndexDomain domain)
     , zero_reducer);
     pmb0->par_reduce("ctop_nans", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_MESH_3D_REDUCE_INT {
-            if (Kokkos::isnan(ctop(b, dir-1, k, j, i))) {
+            if (m::isnan(ctop(b, dir-1, k, j, i))) {
                 ++local_result;
             }
         }
