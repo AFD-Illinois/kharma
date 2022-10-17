@@ -197,7 +197,7 @@ TaskStatus Step(MeshData<Real> *mci, MeshData<Real> *mc0, MeshData<Real> *dudt,
     // jacobian (2D)
     // residual, deltaP (implicit only)
     // Pi/Ui, Ps/Us, dUdt, P_solver, dUi, two temps (all vars)
-    const size_t total_scratch_bytes = tensor_size_in_bytes + (2) * fvar_size_in_bytes + (10) * var_size_in_bytes;
+    const size_t total_scratch_bytes = tensor_size_in_bytes + (14) * var_size_in_bytes;
 
     // Iterate.  This loop is outside the kokkos kernel in order to print max_norm
     // There are generally a low and similar number of iterations between
