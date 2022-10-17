@@ -50,7 +50,7 @@ target_link_libraries(${EXE_NAME} PUBLIC kokkos)
 #target_link_libraries(${EXE_NAME} PUBLIC kokkoskernels)
 target_link_libraries(${EXE_NAME} PUBLIC parthenon)
 
-target_link_libraries(${EXE_NAME} PUBLIC gomp)
+#target_link_libraries(${EXE_NAME} PUBLIC gomp)
 
 # OPTIONS
 # These are almost universally performance trade-offs

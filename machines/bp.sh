@@ -77,6 +77,19 @@ if [[ $METAL_HOSTNAME == "ferrum" ]]; then
   fi
 fi
 
+if [[ $HOST == "cheshire"* ]]; then
+
+  export OMP_NUM_THREADS=24
+
+  if [[ "$ARGS" == *"cuda"* ]]; then
+    echo "not yet"
+  else
+    module load compiler mpi/2021
+    PREFIX_PATH="$SOURCE_DIR/external/hdf5"
+  fi
+  
+fi
+
 if [[ $HOST == "cinnabar"* ]]; then
   # All my MPI stacks can use this as the call
   MPI_EXE=mpirun

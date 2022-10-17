@@ -129,9 +129,9 @@ SCRIPT_DIR=$PWD
 # Try to load icc > default/Cray CC > IBM XLC > GCC
 # Generally best to set CXX_NATIVE if you want a particular one
 if [[ -z "$CXX_NATIVE" ]]; then
-  if which icpc >/dev/null 2>&1; then
-    CXX_NATIVE=icpc
-    C_NATIVE=icc
+  if which icpx >/dev/null 2>&1; then
+    CXX_NATIVE=icpx
+    C_NATIVE=icx
   elif which CC >/dev/null 2>&1; then
     CXX_NATIVE=CC
     C_NATIVE=cc

@@ -232,13 +232,10 @@ inline void PrintZone(MeshBlockData<Real> *rc)
 
 inline void Flag(std::string label)
 {
-#pragma omp critical
     if(MPIRank0()) std::cerr << label << std::endl;
 }
 
 inline void Flag(MeshBlockData<Real> *rc, std::string label)
-{
-#pragma omp critical
 {
     if(MPIRank0()) {
         std::cerr << label << std::endl;
@@ -246,11 +243,8 @@ inline void Flag(MeshBlockData<Real> *rc, std::string label)
         if(PRINTZONE) PrintZone(rc);
     }
 }
-}
 
 inline void Flag(MeshData<Real> *md, std::string label)
-{
-#pragma omp critical
 {
     if(MPIRank0()) {
         std::cerr << label << std::endl;
@@ -260,7 +254,6 @@ inline void Flag(MeshData<Real> *md, std::string label)
             if(PRINTZONE) PrintZone(rc);
         }
     }
-}
 }
 
 #else
