@@ -1,6 +1,23 @@
 
 # BP's machines
 
+if [[ $HOST == "cheshire"* ]]; then
+
+  export OMP_NUM_THREADS=24
+
+  if [[ "$ARGS" == *"cuda"* ]]; then
+    module load nvhpc
+    CXX_NATIVE='nvc++'
+    C_NATIVE='nvc'
+  else
+    module load compiler mpi/2021
+  fi
+
+  PREFIX_PATH="$SOURCE_DIR/external/hdf5"
+  NPROC=12
+  MPI_EXE=mpirun
+fi
+
 if [[ $HOST == "toolbox"* || $HOST == "nvhpc"* ]]; then
   METAL_HOSTNAME=$(cat ~/.config/hostname)
 fi
@@ -75,19 +92,6 @@ if [[ $METAL_HOSTNAME == "ferrum" ]]; then
     C_NATIVE="icx"
     CXX_NATIVE="icpx"
   fi
-fi
-
-if [[ $HOST == "cheshire"* ]]; then
-
-  export OMP_NUM_THREADS=24
-
-  if [[ "$ARGS" == *"cuda"* ]]; then
-    echo "not yet"
-  else
-    module load compiler mpi/2021
-    PREFIX_PATH="$SOURCE_DIR/external/hdf5"
-  fi
-  
 fi
 
 if [[ $HOST == "cinnabar"* ]]; then
