@@ -41,6 +41,11 @@
 #include "grmhd_functions.hpp"
 #include "pack.hpp"
 
+<<<<<<< HEAD
+=======
+// Implicit nonlinear solve requires several linear solves per-zone
+// Use Kokkos-kernels QR decomposition & triangular solve, they're fast.
+>>>>>>> 0a77655b0e49a410355b00e139e7c9a0a3916bd7
 #include <batched/dense/KokkosBatched_ApplyQ_Decl.hpp>
 #include <batched/dense/KokkosBatched_QR_Decl.hpp>
 #include <batched/dense/KokkosBatched_Trsv_Decl.hpp>
@@ -282,6 +287,8 @@ TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_i
                         auto residual   = Kokkos::subview(residual_s, Kokkos::ALL(), i);
                         auto jacobian   = Kokkos::subview(jacobian_s, Kokkos::ALL(), Kokkos::ALL(), i);
                         auto delta_prim = Kokkos::subview(delta_prim_s, Kokkos::ALL(), i);
+                        auto trans = Kokkos::subview(trans_s, Kokkos::ALL(), i);
+                        auto work = Kokkos::subview(work_s, Kokkos::ALL(), i);
                         // Temporaries
                         auto tmp1  = Kokkos::subview(tmp1_s, Kokkos::ALL(), i);
                         auto tmp2  = Kokkos::subview(tmp2_s, Kokkos::ALL(), i);
@@ -322,7 +329,8 @@ TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_i
                         // Linear solve by QR decomposition
                         KokkosBatched::SerialQR<KokkosBatched::Algo::QR::Unblocked>::invoke(jacobian, trans, work);
                         KokkosBatched::SerialApplyQ<KokkosBatched::Side::Left, KokkosBatched::Trans::Transpose, KokkosBatched::Algo::ApplyQ::Unblocked>::invoke(jacobian, trans, delta_prim, work);
-                        KokkosBatched::SerialTrsv<KokkosBatched::Uplo::Upper, KokkosBatched::Trans::NoTranspose, KokkosBatched::Diag::NonUnit, KokkosBatched::Algo::Trsv::Unblocked>::invoke(1.0, jacobian, delta_prim);
+                        KokkosBatched::SerialTrsv<KokkosBatched::Uplo::Upper, KokkosBatched::Trans::NoTranspose, KokkosBatched::Diag::NonUnit,KokkosBatched::Algo::Trsv::Unblocked>::invoke(1.0, jacobian, delta_prim);
+
 
                         // Update the guess.  For now lambda == 1, choose on the fly?
                         FLOOP P_solver(ip) += lambda * delta_prim(ip);
