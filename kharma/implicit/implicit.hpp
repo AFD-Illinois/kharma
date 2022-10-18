@@ -82,8 +82,8 @@ KOKKOS_INLINE_FUNCTION void calc_residual(const GRCoordinates& G, const Local& P
                                           const Local& Pi, const Local& Ui, const Local& Ps,
                                           const Local& dudt_explicit, const Local& dUi, const Local& tmp, 
                                           const VarMap& m_p, const VarMap& m_u, const EMHD_parameters& emhd_params,
-                                          const int& nfvar, const int& j, const int& i,
-                                          const Real& gam, const double& dt,
+                                          const EMHD_parameters& emhd_params_tau,const int& nfvar,
+                                          const int& j, const int& i, const Real& gam, const double& dt,
                                           Local& residual)
 {
     // These lines calculate res = (U_test - Ui)/dt - dudt_explicit - 0.5*(dU_new(ip) + dUi(ip)) - dU_time(ip) )
@@ -96,7 +96,7 @@ KOKKOS_INLINE_FUNCTION void calc_residual(const GRCoordinates& G, const Local& P
     if (m_p.Q >= 0) {
         // Compute new implicit source terms and time derivative source terms
         Real dUq, dUdP; // Don't need full array for these
-        EMHD::implicit_sources(G, P_test, m_p, gam, j, i, emhd_params, dUq, dUdP); // dU_new
+        EMHD::implicit_sources(G, P_test, Ps, m_p, gam, j, i, emhd_params_tau, dUq, dUdP); // dU_new
         // ... - 0.5*(dU_new(ip) + dUi(ip)) ...
         residual(m_u.Q) -= 0.5*(dUq + dUi(m_u.Q));
         residual(m_u.DP) -= 0.5*(dUdP + dUi(m_u.DP));
@@ -135,44 +135,45 @@ KOKKOS_INLINE_FUNCTION void calc_residual(const GRCoordinates& G, const Local& P
  * Usually these are Kokkos subviews
  */
 template<typename Local, typename Local2>
-KOKKOS_INLINE_FUNCTION void calc_jacobian(const GRCoordinates& G, const Local& P,
-                                          const Local& Pi, const Local& Ui, const Local& Ps,
-                                          const Local& dudt_explicit, const Local& dUi,
-                                          Local& tmp1, Local& tmp2, Local& tmp3,
-                                          const VarMap& m_p, const VarMap& m_u, const EMHD_parameters& emhd_params,
-                                          const int& nvar, const int& nfvar, const int& j, const int& i,
+KOKKOS_INLINE_FUNCTION void calc_jacobian(const GRCoordinates& G, const Local& P_solver,
+                                          const Local& P_full_step_init, const Local& U_full_step_init, const Local& P_sub_step_init,
+                                          const Local& flux_src, const Local& dU_implicit, Local& tmp1, Local& tmp2, Local& tmp3,
+                                          const VarMap& m_p, const VarMap& m_u, const EMHD_parameters& emhd_params_full_step_init,
+                                          const EMHD_parameters& emhd_params_sub_step_init, const int& nvar, const int& nfvar, const int& j, const int& i,
                                           const Real& jac_delta, const Real& gam, const double& dt,
                                           Local2& jacobian, Local& residual)
 {
     // Calculate residual of P
-    calc_residual(G, P, Pi, Ui, Ps, dudt_explicit, dUi, tmp3, m_p, m_u, emhd_params, nfvar, j, i, gam, dt, residual);
+    calc_residual(G, P_solver, P_full_step_init, U_full_step_init, P_sub_step_init, flux_src, dU_implicit, tmp3,
+                    m_p, m_u, emhd_params_full_step_init, emhd_params_sub_step_init, nfvar, j, i, gam, dt, residual);
 
     // Use one scratchpad as the incremented prims P_delta,
     // one as the new residual residual_delta
     auto& P_delta = tmp1;
     auto& residual_delta = tmp2;
     // set P_delta to P to begin with
-    PLOOP P_delta(ip) = P(ip);
+    PLOOP P_delta(ip) = P_solver(ip);
 
     // Numerically evaluate the Jacobian
     for (int col = 0; col < nfvar; col++) {
         // Compute P_delta, differently depending on whether the prims are small compared to eps
-        if (fabs(P(col)) < (0.5 * jac_delta)) {
-            P_delta(col) = P(col) + jac_delta;
+        if (fabs(P_solver(col)) < (0.5 * jac_delta)) {
+            P_delta(col) = P_solver(col) + jac_delta;
         } else {
-            P_delta(col) = (1 + jac_delta) * P(col);
+            P_delta(col) = (1 + jac_delta) * P_solver(col);
         }
 
         // Compute the residual for P_delta, residual_delta
-        calc_residual(G, P_delta, Pi, Ui, Ps, dudt_explicit, dUi, tmp3, m_p, m_u, emhd_params, nfvar, j, i, gam, dt, residual_delta);
+        calc_residual(G, P_delta, P_full_step_init, U_full_step_init, P_sub_step_init, flux_src, dU_implicit, tmp3, 
+                    m_p, m_u, emhd_params_full_step_init, emhd_params_sub_step_init, nfvar, j, i, gam, dt, residual_delta);
 
         // Compute forward derivatives of each residual vs the primitive col
         for (int row = 0; row < nfvar; row++) {
-            jacobian(row, col) = (residual_delta(row) - residual(row)) / (P_delta(col) - P(col) + SMALL);
+            jacobian(row, col) = (residual_delta(row) - residual(row)) / (P_delta(col) - P_solver(col) + SMALL);
         }
 
         // Reset P_delta in this col
-        P_delta(col) = P(col);
+        P_delta(col) = P_solver(col);
 
     }
 }   

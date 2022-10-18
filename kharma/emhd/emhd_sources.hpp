@@ -50,14 +50,14 @@ namespace EMHD {
  * Implicit source terms for EMHD, evaluated during implicit step calculation
  */
 template<typename Local>
-KOKKOS_INLINE_FUNCTION void implicit_sources(const GRCoordinates& G, const Local& P, const VarMap& m_p,
+KOKKOS_INLINE_FUNCTION void implicit_sources(const GRCoordinates& G, const Local& P, const Local& P_tau, const VarMap& m_p,
                                              const Real& gam, const int& j, const int& i,
-                                             const EMHD_parameters& emhd_params,
+                                             const EMHD_parameters& emhd_params_tau,
                                              Real& dUq, Real& dUdP)
 {
     // These are intentionally the tilde versions!
     Real tau, chi_e, nu_e;
-    EMHD::set_parameters(G, P, m_p, emhd_params, gam, tau, chi_e, nu_e);
+    EMHD::set_parameters(G, P_tau, m_p, emhd_params_tau, gam, tau, chi_e, nu_e);
     dUq  = -G.gdet(Loci::center, j, i) * (P(m_p.Q) / tau);
     dUdP = -G.gdet(Loci::center, j, i) * (P(m_p.DP) / tau);
 }

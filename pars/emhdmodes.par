@@ -65,8 +65,7 @@ verbose = 1
 flag_verbose = 2
 extra_checks = 1
 
-# This block must be present and values filled
-# in all EGRMHD simulations
+# This block must be present and values filled in all EGRMHD simulations
 <emhd>
 on = true
 higher_order_terms = false

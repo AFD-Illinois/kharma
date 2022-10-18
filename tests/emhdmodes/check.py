@@ -73,6 +73,12 @@ if __name__=='__main__':
         gridp['n1'] = dfile['header/n1'][()]
         gridp['n2'] = dfile['header/n2'][()]
         gridp['n3'] = dfile['header/n3'][()]
+        
+        higher_order_terms = dfile['header/higher_order_terms'][()].decode('UTF-8')
+        gam                = dfile['header/gam'][()]
+        tau                = dfile['header/tau'][()]
+        conduction_alpha   = dfile['header/conduction_alpha'][()]
+        viscosity_alpha    = dfile['header/viscosity_alpha'][()]
 
         grid = make_some_grid('cartesian', gridp['n1'], gridp['n2'], gridp['n3'])
         cos_phi = np.cos(k1*grid['x'] + k2*grid['y'] + imag_omega*t)
@@ -99,6 +105,13 @@ if __name__=='__main__':
         var_numerical[7,Ellipsis] = dump['B3'] 
         var_numerical[8,Ellipsis] = dump['q'] 
         var_numerical[9,Ellipsis] = dump['deltaP']
+        
+        if higher_order_terms=="TRUE":
+            Theta = (gam - 1.) * dump['U'] / dump['RHO']
+            cs2   = gam * (gam - 1.) * dump['U'] / (dump['RHO'] + (gam * dump['U']) )
+
+            var_numerical[8,Ellipsis] *= np.sqrt(conduction_alpha * cs2 * dump['RHO'] * Theta**2)
+            var_numerical[9,Ellipsis] *= np.sqrt(viscosity_alpha * cs2 * dump['RHO'] * Theta)
 
         print("\n{:d}".format(RES[r]))
         print(np.mean(np.fabs(var_numerical - var_analytic)[6,Ellipsis]))

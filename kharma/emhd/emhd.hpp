@@ -231,4 +231,34 @@ KOKKOS_INLINE_FUNCTION void convert_q_dP_to_prims(const Real& q, const Real& dP,
     }
 }
 
+inline VariablePack<Real> PackEMHDPrims(MeshBlockData<Real> *rc, PackIndexMap& prims_map, bool coarse=false)
+{
+    auto pmb = rc->GetBlockPointer();
+    MetadataFlag isPrimitive = pmb->packages.Get("GRMHD")->Param<MetadataFlag>("PrimitiveFlag");
+    MetadataFlag isEMHD = pmb->packages.Get("EMHD")->Param<MetadataFlag>("EMHDFlag");
+    return rc->PackVariables({isPrimitive, isEMHD}, prims_map, coarse);
+}
+
+inline MeshBlockPack<VariablePack<Real>> PackEMHDPrims(MeshData<Real> *md, PackIndexMap& prims_map, bool coarse=false)
+{
+    auto pmb = md->GetBlockData(0)->GetBlockPointer();
+    MetadataFlag isPrimitive = pmb->packages.Get("GRMHD")->Param<MetadataFlag>("PrimitiveFlag");
+    MetadataFlag isEMHD = pmb->packages.Get("EMHD")->Param<MetadataFlag>("EMHDFlag");
+    return md->PackVariables(std::vector<MetadataFlag>{isPrimitive, isEMHD}, prims_map, coarse);
+}
+
+inline VariablePack<Real> PackEMHDCons(MeshBlockData<Real> *rc, PackIndexMap& cons_map, bool coarse=false)
+{
+    auto pmb = rc->GetBlockPointer();
+    MetadataFlag isEMHD = pmb->packages.Get("EMHD")->Param<MetadataFlag>("EMHDFlag");
+    return rc->PackVariables({Metadata::Conserved, isEMHD}, cons_map, coarse);
+}
+
+inline MeshBlockPack<VariablePack<Real>> PackEMHDCons(MeshData<Real> *md, PackIndexMap& cons_map, bool coarse=false)
+{
+    auto pmb = md->GetBlockData(0)->GetBlockPointer();
+    MetadataFlag isEMHD = pmb->packages.Get("EMHD")->Param<MetadataFlag>("EMHDFlag");
+    return md->PackVariables(std::vector<MetadataFlag>{Metadata::Conserved, isEMHD}, cons_map, coarse);
+}
+
 } // namespace EMHD

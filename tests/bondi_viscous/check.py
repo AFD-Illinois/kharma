@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 
 if __name__=='__main__':
 	outputdir = os.getcwd()
-	kharmadir = '/home/vdhruv2/kharma'
+	kharmadir = '/data/bh29-home/vdhruv2/kharma'
 	RES = [int(r) for r in sys.argv[1].split(",")]
 	VISCOSITY = 1
 	if VISCOSITY:
@@ -35,7 +35,7 @@ if __name__=='__main__':
 		rho       = np.squeeze(dfile['prims'][Ellipsis,0][()])
 		u         = np.squeeze(dfile['prims'][Ellipsis,1][()])
 		if VISCOSITY:
-			dP_tilde   = np.squeeze(dfile['prims'][Ellipsis,8][()])
+			dP_tilde   = np.squeeze(dfile['prims'][Ellipsis,9][()])
 		
 		t   = dfile['t'][()]
 		gam = dfile['header/gam'][()]
@@ -45,7 +45,7 @@ if __name__=='__main__':
 		if VISCOSITY:
 			if higher_order_terms=="TRUE":
 				tau      = 30.
-				kappa    = 0.01
+				eta      = 0.01
 				P        = (gam - 1.) * u
 				Theta    = P / rho
 				nu_emhd  = eta / rho

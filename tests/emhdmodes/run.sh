@@ -12,7 +12,8 @@ conv_2d() {
       half=$(( $res / 2 ))
       $BASE/run.sh -i $BASE/pars/emhdmodes.par debug/verbose=1 \
                       parthenon/mesh/nx1=$res parthenon/mesh/nx2=$res parthenon/mesh/nx3=1 \
-                      parthenon/meshblock/nx1=$half parthenon/meshblock/nx2=$half parthenon/meshblock/nx3=1 $2
+                      parthenon/meshblock/nx1=$half parthenon/meshblock/nx2=$half parthenon/meshblock/nx3=1 $2 \
+                      b_field/implicit=false
         mv emhdmodes.out0.00000.phdf emhd_2d_${res}_start_${1}.phdf
         mv emhdmodes.out0.final.phdf emhd_2d_${res}_end_${1}.phdf
     done
