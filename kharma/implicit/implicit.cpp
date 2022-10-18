@@ -41,11 +41,9 @@
 #include "grmhd_functions.hpp"
 #include "pack.hpp"
 
-<<<<<<< HEAD
-=======
+
 // Implicit nonlinear solve requires several linear solves per-zone
 // Use Kokkos-kernels QR decomposition & triangular solve, they're fast.
->>>>>>> 0a77655b0e49a410355b00e139e7c9a0a3916bd7
 #include <batched/dense/KokkosBatched_ApplyQ_Decl.hpp>
 #include <batched/dense/KokkosBatched_QR_Decl.hpp>
 #include <batched/dense/KokkosBatched_Trsv_Decl.hpp>
