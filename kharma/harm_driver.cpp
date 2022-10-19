@@ -166,7 +166,7 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         // ADD SOURCES TO CONSERVED VARIABLES
         // Source term for GRMHD, \Gamma * T
         
-        auto t_grmhd_source = tl.AddTask(t_flux_div, GRMHD::AddSource, mc0.get(), mdudt.get());
+        auto t_grmhd_source = tl.AddTask(t_flux_div, GRMHD::AddSource, mc0.get(), mdudt.get(), stage == 1);
         // Source term for constraint-damping.  Applied only to B
         auto t_b_cd_source = t_grmhd_source;
         if (use_b_cd) {

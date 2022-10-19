@@ -16,9 +16,7 @@ TaskStatus InitializeRest(MeshBlockData<Real> *rc, ParameterInput *pin)
     // Time it would take for u to change by half its original value
     Real dyntimes = pin->GetOrAddReal("rest", "dyntimes", 0.5);
 
-    int counter = -5.0;
     Params& g_params = pmb->packages.Get("GRMHD")->AllParams();
-    if(!g_params.hasKey("counter")) g_params.Add("counter", counter, true);
     if(!g_params.hasKey("rho0")) g_params.Add("rho0", rho0);
     if(!g_params.hasKey("u0")) g_params.Add("u0", u0);
     if(!g_params.hasKey("q")) g_params.Add("q", q);
@@ -55,11 +53,8 @@ TaskStatus SetRest(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     const Real q = pmb->packages.Get("GRMHD")->Param<Real>("q");
     const bool context_boundaries = pmb->packages.Get("GRMHD")->Param<bool>("context_boundaries");
 
-    int counter = pmb->packages.Get("GRMHD")->Param<int>("counter");
     const Real tt = pmb->packages.Get("Globals")->Param<Real>("time");
     const Real dt = pmb->packages.Get("Globals")->Param<Real>("dt_last");
-    Real t = tt + 0.5*dt;
-    if ((counter%4) > 1)   t = tt + dt;
     const auto& G = pmb->coords;
 
     IndexRange ib = pmb->cellbounds.GetBoundsI(domain);
@@ -70,7 +65,7 @@ TaskStatus SetRest(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
             Real X[GR_DIM];
             G.coord_embed(k, j, i, Loci::center, X);
             rho(k, j, i) = rho0;
-            u(k, j, i) = u0 + q*t;
+            u(k, j, i) = u0;
             uvec(0, k, j, i) = 0.0;
             uvec(1, k, j, i) = 0.0;
             uvec(2, k, j, i) = 0.0;
@@ -84,12 +79,11 @@ TaskStatus SetRest(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
         const Real ke0 = pmb->packages.Get("GRMHD")->Param<Real>("ke0");
         pmb->par_for("rest_init", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
             KOKKOS_LAMBDA_3D {
-                ktot(k, j, i) = ke0 + (game-1)*pow(rho0, -game)*q*t;
-                kel_const(k, j, i) = ke0 + (game-1)*pow(rho0, -game)*q*t; 
+                ktot(k, j, i) = ke0;
+                kel_const(k, j, i) = ke0; 
             }
         );
     }
-    pmb->packages.Get("GRMHD")->UpdateParam<int>("counter", ++counter);
     Flag("Set");
     return TaskStatus::complete;
 }

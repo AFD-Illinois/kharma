@@ -52,10 +52,10 @@ extra_checks = 1
 solver = none
 
 <rest>
-u0 = 1 
-rho0 = 1 
-q = -1.e-3
-set_tlim = true
+u0 = 1e3
+rho0 = 1e3 
+q = 1
+set_tlim = false
 
 <electrons>
 on = true

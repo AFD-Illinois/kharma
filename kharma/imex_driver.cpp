@@ -109,6 +109,13 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
 
     // Big synchronous region: get & apply fluxes to advance the fluid state
     // num_partitions is usually 1
+    // NOTE: Renamed state names to something more intuitive. 
+    // '_full_step_init' refers to the fluid state at the start of the full time step (Si in iharm3d)
+    // '_sub_step_init' refers to the fluid state at the start of the sub step (Ss in iharm3d)
+    // '_sub_step_final' refers to the fluid state at the end of the sub step (Sf in iharm3d)
+    // '_flux_src' refers to the mesh object corresponding to -divF + S
+    // '_solver' refers to the fluid state passed to the Implicit solver. At the end of the solve
+    // copy P and U from solver state to sub_step_final state.
     const int num_partitions = pmesh->DefaultNumPartitions();
     TaskRegion &single_tasklist_per_pack_region = tc.AddRegion(num_partitions);
     for (int i = 0; i < num_partitions; i++) {
@@ -225,6 +232,8 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         //                             std::vector<MetadataFlag>({isExplicit, Metadata::Independent}),
         //                             md_solver.get(), md_flux_src.get(), 1.0, beta * dt, md_solver.get());
         // Version with half/whole step to match implicit solver
+// mc_solver = beta*mc0 + (1-beta)*mbase + beta*dt*mdudt;
+// suggests mc0 == mbase??
         auto t_explicit_U = tl.AddTask(t_sources, Update::WeightedSumData<MetadataFlag, MeshData<Real>>,
                                     std::vector<MetadataFlag>({isExplicit, Metadata::Independent}),
                                     md_full_step_init.get(), md_flux_src.get(), 1.0, dt_this, md_solver.get());
