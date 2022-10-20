@@ -167,24 +167,6 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, std::shared_ptr<MeshData<Rea
         }
     }
 
-    if (pin->GetString("b_field", "solver") != "none") {
-        // Synchronize our seeded field (incl. primitives) before we print out what divB it has
-        KBoundaries::SyncAllBounds(md, sync_prims);
-
-        // Still print divB, even if we're not initializing/normalizing field here
-        Real divb_max = 0.;
-        if (use_b_flux_ct) {
-            divb_max = B_FluxCT::MaxDivB(md.get());
-        } else if (use_b_cd) {
-            divb_max = B_CD::MaxDivB(md.get());
-        }
-        divb_max = MPIReduce_once(divb_max, MPI_MAX);
-        if (MPIRank0()) {
-            std::cerr << "Starting max divB: " << divb_max << std::endl;
-        }
-    }
-
-
     Flag("Added B Field");
 }
 
@@ -198,6 +180,23 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart, b
     if (!is_restart)
         KHARMA::SeedAndNormalizeB(pin, md);
 
+    // Regardless of algo, we need to initialize the primitive vars in ghost zones during this step
+    // Syncing with sync_prims=false assumes they are initialized
+    bool sync_prims = true;
+
+    if (pin->GetString("b_field", "solver") != "none") {
+        // Synchronize our seeded or initialized field (incl. primitives) before we print out what divB it has
+        KBoundaries::SyncAllBounds(md, sync_prims);
+
+        const bool use_b_flux_ct = pmesh->packages.AllPackages().count("B_FluxCT");
+        const bool use_b_cd = pmesh->packages.AllPackages().count("B_CD");
+
+        // Still print divB, even if we're not initializing/normalizing field here
+        if (use_b_flux_ct) {
+            B_FluxCT::PrintGlobalMaxDivB(md.get());
+        } // TODO B_CD version
+    }
+
     if (pin->GetOrAddBoolean("blob", "add_blob", false)) {
         for (auto &pmb : pmesh->block_list) {
             auto rc = pmb->meshblock_data.Get();
@@ -208,7 +207,6 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart, b
 
     // Sync to fill the ghost zones: prims for ImExDriver, everything for HARMDriver
     Flag("Boundary sync");
-    bool sync_prims = pin->GetString("driver", "type") == "imex";
     KBoundaries::SyncAllBounds(md, sync_prims);
 
     // Extra cleanup & init to do if restarting
@@ -224,6 +222,14 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart, b
         // Clean field divergence across the whole grid
         // Includes boundary syncs
         B_Cleanup::CleanupDivergence(md);
+    }
+
+    if (MPIRank0()) {
+        std::cerr << "Packages in use: " << std::endl;
+        for (auto pkg : pmesh->packages.AllPackages()) {
+            std::cerr << pkg.first << std::endl;
+        }
+        std::cerr << std::endl;
     }
 
     Flag("Post-initialization finished");
