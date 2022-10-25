@@ -2,7 +2,7 @@
 # a.k.a did we break the basics?
 
 # Build against a container image
-#image:
+image: nvcr.io/nvidia/nvhpc:22.9-devel-cuda_multi-rockylinux8
 
 variables:
   GIT_SUBMODULE_STRATEGY: recursive
@@ -15,6 +15,11 @@ stages:
 
 build:
   stage: build
+  variables:
+    PREFIX_PATH="/app/external/hdf5"
+    DEVICE_ARCH=VOLTA70
+    C_NATIVE=nvc
+    CXX_NATIVE=nvc++
   script:
     - bash make.sh clean
   artifacts:

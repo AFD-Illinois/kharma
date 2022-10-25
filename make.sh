@@ -64,20 +64,19 @@ done
 # 3. AMD EPYC Zen2, Zen3
 # However, you may have better luck commenting these tests and letting Kokkos decide
 if [[ -z "$HOST_ARCH" ]]; then
-  if grep GenuineIntel /proc/cpuinfo >/dev/null 2>&1; then
-    HOST_ARCH="HSW"
-  fi
-  if grep AuthenticAMD /proc/cpuinfo >/dev/null 2>&1; then
-    HOST_ARCH="AMDAVX"
-  fi
+  HOST_ARCH="NATIVE"
 fi
 
 # Add some flags only if they're set
 if [[ -v HOST_ARCH ]]; then
   EXTRA_FLAGS="-DKokkos_ARCH_${HOST_ARCH}=ON $EXTRA_FLAGS"
 fi
+# Allow & set multiple device flags, separated by commas
 if [[ -v DEVICE_ARCH ]]; then
-  EXTRA_FLAGS="-DKokkos_ARCH_${DEVICE_ARCH}=ON $EXTRA_FLAGS"
+  readarray -t arch_array < <(awk -F',' '{ for( i=1; i<=NF; i++ ) print $i }' <<<"$DEVICE_ARCH")
+  for arch in "${arch_array[@]}"; do
+    EXTRA_FLAGS="-DKokkos_ARCH_${arch}=ON $EXTRA_FLAGS"
+  done
 fi
 if [[ "$ARGS" == *"trace"* ]]; then
   EXTRA_FLAGS="-DTRACE=1 $EXTRA_FLAGS"
@@ -100,28 +99,7 @@ else
   TYPE=Release
 fi
 
-### Build HDF5 ###
-if [[ "$ARGS" == *"hdf5"* ]]; then
-  H5VER=1.12.0
-  H5VERU=1_12_0
-  cd external
-  rm -rf hdf5*
-  curl https://hdf-wordpress-1.s3.amazonaws.com/wp-content/uploads/manual/HDF5/HDF5_${H5VERU}/source/hdf5-${H5VER}.tar.gz -o hdf5-${H5VER}.tar.gz
-  tar xf hdf5-${H5VER}.tar.gz
-  cd hdf5-${H5VER}/
-  if [[ "$ARGS" == *"icc"* ]]; then
-    CC=mpiicc sh configure --enable-parallel --prefix=$PWD/../hdf5
-  else
-    CC=mpicc sh configure --enable-parallel --prefix=$PWD/../hdf5
-  fi
-  wait 1
-  make -j$NPROC
-  make install
-  make clean
-  cd ../..
-fi
-
-### Build KHARMA ###
+### Set KHARMA Flags ###
 SCRIPT_DIR=$( dirname "$0" )
 cd $SCRIPT_DIR
 SCRIPT_DIR=$PWD
@@ -218,7 +196,30 @@ if [[ $CXX == "icpc" ]]; then
   export CXXFLAGS="-Wno-unknown-pragmas $CXXFLAGS"
 fi
 
-# Make build dir. Recall "clean" means "clean and build"
+### Build HDF5 ###
+# If we're building HDF5, do it after we set *all flags*
+if [[ "$ARGS" == *"hdf5"* ]]; then
+  H5VER=1.12.0
+  H5VERU=1_12_0
+  cd external
+  rm -rf hdf5*
+  curl https://hdf-wordpress-1.s3.amazonaws.com/wp-content/uploads/manual/HDF5/HDF5_${H5VERU}/source/hdf5-${H5VER}.tar.gz -o hdf5-${H5VER}.tar.gz
+  tar xf hdf5-${H5VER}.tar.gz
+  cd hdf5-${H5VER}/
+  if [[ "$ARGS" == *"icc"* ]]; then
+    CC=mpiicc sh configure --enable-parallel --prefix=$PWD/../hdf5
+  else
+    CC=mpicc sh configure --enable-parallel --prefix=$PWD/../hdf5
+  fi
+  wait 1
+  make -j$NPROC
+  make install
+  make clean
+  cd ../..
+fi
+
+### Build KHARMA ###
+# Optionally delete build/, call cmake, call make
 if [[ "$ARGS" == *"clean"* ]]; then
   rm -rf build
 fi
@@ -226,7 +227,7 @@ mkdir -p build
 cd build
 
 if [[ "$ARGS" == *"clean"* ]]; then
-#set -x
+set -x
   cmake ..\
     -DCMAKE_C_COMPILER="$CC" \
     -DCMAKE_CXX_COMPILER="$CXX" \
@@ -241,7 +242,7 @@ if [[ "$ARGS" == *"clean"* ]]; then
     -DKokkos_ENABLE_SYCL=$ENABLE_SYCL \
     -DKokkos_ENABLE_HIP=$ENABLE_HIP \
     $EXTRA_FLAGS
-#set +x
+set +x
 fi
 
 make -j$NPROC
