@@ -21,7 +21,7 @@ build:
     CXX_NATIVE: nvc++
   script:
     - export PREFIX_PATH=$PWD/external/hdf5
-    - make.sh clean cuda hdf5
+    - ./make.sh clean cuda hdf5
   artifacts:
     paths:
       - kharma.*
