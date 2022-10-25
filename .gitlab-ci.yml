@@ -21,7 +21,7 @@ build:
     C_NATIVE: nvc
     CXX_NATIVE: nvc++
   script:
-    - bash make.sh clean
+    - bash make.sh clean cuda hdf5
   artifacts:
     paths:
       - kharma.*
