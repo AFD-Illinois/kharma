@@ -16,7 +16,7 @@ stages:
 build:
   stage: build
   variables:
-    PREFIX_PATH: /app/external/hdf5
+    PREFIX_PATH: "$PWD/external/hdf5"
     DEVICE_ARCH: VOLTA70
     C_NATIVE: nvc
     CXX_NATIVE: nvc++

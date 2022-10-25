@@ -227,7 +227,7 @@ mkdir -p build
 cd build
 
 if [[ "$ARGS" == *"clean"* ]]; then
-set -x
+#set -x
   cmake ..\
     -DCMAKE_C_COMPILER="$CC" \
     -DCMAKE_CXX_COMPILER="$CXX" \
@@ -242,7 +242,7 @@ set -x
     -DKokkos_ENABLE_SYCL=$ENABLE_SYCL \
     -DKokkos_ENABLE_HIP=$ENABLE_HIP \
     $EXTRA_FLAGS
-set +x
+#set +x
 fi
 
 make -j$NPROC
