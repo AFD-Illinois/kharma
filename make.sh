@@ -17,8 +17,8 @@
 #        of most host-side function calls during a step
 # See files in machines/ for machine-specific options
 
-# Processors to use.  Leave blank for all.  Be a good citizen.
-NPROC=
+# Processors to use.  When not specified, will use all.  Be a good citizen.
+#NPROC=8
 
 ### Load machine-specific configurations ###
 # This segment sources a series of machine-specific
@@ -104,18 +104,41 @@ SCRIPT_DIR=$( dirname "$0" )
 cd $SCRIPT_DIR
 SCRIPT_DIR=$PWD
 
-# Try to load icc > default/Cray CC > IBM XLC > GCC
-# Generally best to set CXX_NATIVE if you want a particular one
+# Generally best to set CXX_NATIVE yourself if you want to be sure,
+# but we try to be smart about loading the most specific/advanced/
+# capable compiler available in PATH.
+# Note selection is overridden in HIP, SYCL, and clanggpu modes
 if [[ -z "$CXX_NATIVE" ]]; then
-  if which icpc >/dev/null 2>&1; then
-    CXX_NATIVE=icpc
-    C_NATIVE=icc
+  # If we loaded xlC on Summit, we obviously want to use it
+  if which xlC >/dev/null 2>&1; then
+    CXX_NATIVE=xlC
+    C_NATIVE=xlc
+  # If Cray environment is loaded (Chicoma), use their wrappers
   elif which CC >/dev/null 2>&1; then
     CXX_NATIVE=CC
     C_NATIVE=cc
-  elif which xlC >/dev/null 2>&1; then
-    CXX_NATIVE=xlC
-    C_NATIVE=xlc
+  # Prefer Intel oneAPI compiler over legacy, both over generic
+  elif which icpx >/dev/null 2>&1; then
+    CXX_NATIVE=icpx
+    C_NATIVE=icx
+  elif which icpc >/dev/null 2>&1; then
+    CXX_NATIVE=icpc
+    C_NATIVE=icc
+
+  # Prefer NVHPC over generic compilers
+  elif which nvc++ >/dev/null 2>&1; then
+    CXX_NATIVE=nvc++
+    C_NATIVE=nvc
+  # At this point we compile with clang more often/reliably anyway
+  # AMD AOCC also uses this name
+  elif which clang++ >/dev/null 2>&1; then
+    CXX_NATIVE=clang++
+    C_NATIVE=clang
+  # Maybe we overwrote 'cpp' to point to something
+  elif which cpp >/dev/null 2>&1; then
+    CXX_NATIVE=cpp
+    C_NATIVE=cc
+  # Otherwise, trusty system GCC
   else
     CXX_NATIVE=g++
     C_NATIVE=gcc
@@ -182,7 +205,8 @@ else
   ENABLE_HIP="OFF"
 fi
 
-# Allow for a custom linker program, but use CXX by default
+# Allow for a custom linker program, but use CXX by
+# default as system linker may be older/incompatible
 if [[ -v LINKER ]]; then
   LINKER="$LINKER"
 else
@@ -190,8 +214,6 @@ else
 fi
 
 # Avoid warning on nvcc pragmas Intel doesn't like
-# TODO also add this if we're using Cray cc -> icc
-# TODO is this necessary for icpx?
 if [[ $CXX == "icpc" ]]; then
   export CXXFLAGS="-Wno-unknown-pragmas $CXXFLAGS"
 fi
@@ -219,7 +241,7 @@ if [[ "$ARGS" == *"hdf5"* ]]; then
 fi
 
 ### Build KHARMA ###
-# Optionally delete build/, call cmake, call make
+# Optionally delete build/ to wipe the slate
 if [[ "$ARGS" == *"clean"* ]]; then
   rm -rf build
 fi
