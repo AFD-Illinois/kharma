@@ -19,6 +19,7 @@ build:
     DEVICE_ARCH: VOLTA70
     C_NATIVE: nvc
     CXX_NATIVE: nvc++
+    NPROC: 6
   script:
     - export PREFIX_PATH=$PWD/external/hdf5
     - ./make.sh clean cuda hdf5
