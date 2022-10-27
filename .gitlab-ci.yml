@@ -2,7 +2,7 @@
 # a.k.a did we break the basics?
 
 # Build against a container image
-#image:
+image: nvcr.io/nvidia/nvhpc:22.9-devel-cuda_multi-rockylinux8
 
 variables:
   GIT_SUBMODULE_STRATEGY: recursive
@@ -15,8 +15,14 @@ stages:
 
 build:
   stage: build
+  variables:
+    DEVICE_ARCH: VOLTA70
+    C_NATIVE: nvc
+    CXX_NATIVE: nvc++
+    NPROC: 4
   script:
-    - bash make.sh clean
+    - export PREFIX_PATH=$PWD/external/hdf5
+    - ./make.sh clean cuda hdf5
   artifacts:
     paths:
       - kharma.*
