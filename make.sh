@@ -220,7 +220,7 @@ fi
 
 ### Build HDF5 ###
 # If we're building HDF5, do it after we set *all flags*
-if [[ "$ARGS" == *"hdf5"* ]]; then
+if [[ "$ARGS" == *"hdf5"* && "$ARGS" == *"clean"* ]]; then
   H5VER=1.12.0
   H5VERU=1_12_0
   cd external
@@ -238,6 +238,9 @@ if [[ "$ARGS" == *"hdf5"* ]]; then
   make install
   make clean
   cd ../..
+fi
+if [[ "$ARGS" == *"hdf5"* ]]; then
+  PREFIX_PATH="$PWD/external/hdf5;$PREFIX_PATH"
 fi
 
 ### Build KHARMA ###

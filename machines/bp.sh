@@ -1,6 +1,23 @@
 
 # BP's machines
 
+if [[ $HOST == "cheshire"* ]]; then
+
+  export OMP_NUM_THREADS=24
+
+  if [[ "$ARGS" == *"cuda"* ]]; then
+    # NVHPC. Compiler is chosen automatically now
+    module load nvhpc
+  else
+    # Intel oneAPI
+    module load compiler mpi/2021
+  fi
+
+  PREFIX_PATH="$SOURCE_DIR/external/hdf5"
+  NPROC=12
+  MPI_EXE=mpirun
+fi
+
 if [[ $HOST == "toolbox"* || $HOST == "nvhpc"* ]]; then
   METAL_HOSTNAME=$(cat ~/.config/hostname)
 fi

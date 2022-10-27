@@ -17,12 +17,10 @@ build:
   stage: build
   variables:
     DEVICE_ARCH: VOLTA70
-    C_NATIVE: nvc
-    CXX_NATIVE: nvc++
-    NPROC: 4
+    NPROC: 6
   script:
     - export PREFIX_PATH=$PWD/external/hdf5
-    - ./make.sh clean cuda hdf5
+    - ./make.sh clean hdf5
   artifacts:
     paths:
       - kharma.*
