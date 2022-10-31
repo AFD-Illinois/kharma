@@ -6,10 +6,10 @@ if [[ $HOST == "cheshire"* ]]; then
   export OMP_NUM_THREADS=24
 
   if [[ "$ARGS" == *"cuda"* ]]; then
+    # NVHPC. Compiler is chosen automatically now
     module load nvhpc
-    CXX_NATIVE='nvc++'
-    C_NATIVE='nvc'
   else
+    # Intel oneAPI
     module load compiler mpi/2021
   fi
 
