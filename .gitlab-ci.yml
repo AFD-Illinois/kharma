@@ -5,6 +5,7 @@
 image: nvcr.io/nvidia/nvhpc:22.9-devel-cuda_multi-rockylinux8
 
 variables:
+  OMP_NUM_THREADS: 6
   GIT_SUBMODULE_STRATEGY: recursive
 
 # Install pyharm for verification
