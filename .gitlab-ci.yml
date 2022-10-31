@@ -7,8 +7,13 @@ image: nvcr.io/nvidia/nvhpc:22.9-devel-cuda_multi-rockylinux8
 variables:
   GIT_SUBMODULE_STRATEGY: recursive
 
-# Someday all the tests can be executed by
-# different runners sharing a configuration
+# Install pyharm for verification
+before_script:
+  - git clone https://github.com/AFD-Illinois/pyharm.git
+  - cd pyharm
+  - pip install -e .
+
+# Tests can be executed in parallel
 stages:
   - build
   - tests
@@ -16,7 +21,6 @@ stages:
 build:
   stage: build
   variables:
-    DEVICE_ARCH: VOLTA70
     NPROC: 6
   script:
     - export PREFIX_PATH=$PWD/external/hdf5

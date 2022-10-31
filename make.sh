@@ -234,7 +234,8 @@ if [[ "$ARGS" == *"hdf5"* && "$ARGS" == *"clean"* ]]; then
     CC=mpicc sh configure --enable-parallel --prefix=$PWD/../hdf5
   fi
   wait 1
-  make -j$NPROC
+  # Compiling C takes less memory & is quicker
+  make -j$(( $NPROC * 2 ))
   make install
   make clean
   cd ../..
