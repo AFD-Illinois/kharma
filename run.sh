@@ -29,7 +29,7 @@ export CUDA_LAUNCH_BLOCKING=0
 # Kokkos can be forced to a particular device:
 #export KOKKOS_DEVICE_ID=0
 
-# Choose the kharma from compiled options in order of preference
+# Choose the kharma binary from compiled options in order of preference
 KHARMA_DIR="$(dirname "${BASH_SOURCE[0]}")"
 if [ -f $KHARMA_DIR/kharma.cuda ]; then
   EXE_NAME=kharma.cuda
@@ -54,6 +54,18 @@ do
   source $machine
 done
 export KOKKOS_NUM_DEVICES
+
+# Override MPI_NUM_PROCS at user option "-n"
+if [[ "$1" == "-n" ]]; then
+  MPI_NUM_PROCS="$2"
+  shift
+  shift
+fi
+if [[ "$1" == "-nt" ]]; then
+  export OMP_NUM_THREADS="$2"
+  shift
+  shift
+fi
 
 # Run based on preferences
 if [ -z "$MPI_EXE" ]; then
