@@ -13,7 +13,6 @@ if [[ $HOST == "cheshire"* ]]; then
     module load compiler mpi/2021
   fi
 
-  PREFIX_PATH="$SOURCE_DIR/external/hdf5"
   NPROC=12
   MPI_EXE=mpirun
 fi

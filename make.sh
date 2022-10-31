@@ -224,15 +224,19 @@ if [[ "$ARGS" == *"hdf5"* && "$ARGS" == *"clean"* ]]; then
   H5VER=1.12.0
   H5VERU=1_12_0
   cd external
-  rm -rf hdf5*
-  curl https://hdf-wordpress-1.s3.amazonaws.com/wp-content/uploads/manual/HDF5/HDF5_${H5VERU}/source/hdf5-${H5VER}.tar.gz -o hdf5-${H5VER}.tar.gz
-  tar xf hdf5-${H5VER}.tar.gz
-  cd hdf5-${H5VER}/
-  if [[ "$ARGS" == *"icc"* ]]; then
-    CC=mpiicc sh configure --enable-parallel --prefix=$PWD/../hdf5
-  else
-    CC=mpicc sh configure --enable-parallel --prefix=$PWD/../hdf5
+  if [ ! -d hdf5-${H5VER}/ ]; then
+    curl https://hdf-wordpress-1.s3.amazonaws.com/wp-content/uploads/manual/HDF5/HDF5_${H5VERU}/source/hdf5-${H5VER}.tar.gz -o hdf5-${H5VER}.tar.gz
+    tar xf hdf5-${H5VER}.tar.gz
   fi
+  cd hdf5-${H5VER}/
+  # TODO better ensure we're using C_NATIVE underneath.  e.g. MPI_CFLAGS with -cc
+  if [[ "$ARGS" == *"icc"* ]]; then
+    MPI_CC=mpiicc
+  else
+    MPI_CC=mpicc
+  fi
+  CC=$MPI_CC sh configure -C --enable-parallel --prefix=$PWD/../hdf5 --enable-build-mode=production \
+  --disable-dependency-tracking --disable-hl --disable-tests --disable-tools --disable-shared --disable-deprecated-symbols
   wait 1
   # Compiling C takes less memory & is quicker
   make -j$(( $NPROC * 2 ))

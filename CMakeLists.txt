@@ -26,6 +26,8 @@ set(BUILD_TESTING OFF CACHE BOOL "KHARMA Override")
 set(ENABLE_COMPILER_WARNINGS OFF CACHE BOOL "KHARMA Override")
 # TODO set this here when I upstream or otherwise unfork
 #set(COORDINATE_TYPE GRCoordinates)
+# Always use static HDF5
+set(HDF5_USE_STATIC_LIBRARIES ON CACHE BOOL "KHARMA Override")
 
 # Kokkos options
 set(Kokkos_ENABLE_OPENMP ON CACHE BOOL "KHARMA Override")
@@ -37,7 +39,6 @@ set(Kokkos_ENABLE_AGGRESSIVE_VECTORIZATION ON CACHE BOOL "KHARMA Override")
 # Build only what we need of KokkosKernels
 set(KokkosKernels_ENABLE_TPL_CUSPARSE OFF CACHE BOOL "KHARMA Override")
 set(KokkosKernels_ENABLE_TPL_CUBLAS OFF CACHE BOOL "KHARMA Override")
-
 
 # Parthenon says it doesn't need MPI.  It just *strongly prefers* it, and so do we.
 # Builds without MPI have pretty limited support, you can usually find distribution 
