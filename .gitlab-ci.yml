@@ -9,6 +9,7 @@ variables:
 
 # Install pyharm for verification
 before_script:
+  - dnf install python3 python3-pip
   - git clone https://github.com/AFD-Illinois/pyharm.git
   - cd pyharm
   - pip install -e .
