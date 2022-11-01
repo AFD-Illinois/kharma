@@ -79,7 +79,10 @@ if [[ -v DEVICE_ARCH ]]; then
   done
 fi
 if [[ "$ARGS" == *"trace"* ]]; then
-  EXTRA_FLAGS="-DTRACE=1 $EXTRA_FLAGS"
+  EXTRA_FLAGS="-DKHARMA_TRACE=1 $EXTRA_FLAGS"
+fi
+if [[ "$ARGS" == *"nompi"* ]]; then
+  EXTRA_FLAGS="-DKHARMA_DISABLE_MPI=1 $EXTRA_FLAGS"
 fi
 
 ### Enivoronment Prep ###
@@ -172,9 +175,9 @@ elif [[ "$ARGS" == *"hip"* ]]; then
 elif [[ "$ARGS" == *"cuda"* ]]; then
   export CC="$C_NATIVE"
   export CXX="$SCRIPT_DIR/bin/nvcc_wrapper"
-  if [[ "$ARGS" == *"dryrun"* ]]; then
+  if [[ "$ARGS" == *"wrapper_dryrun"* ]]; then
     export CXXFLAGS="-dryrun $CXXFLAGS"
-    echo "Dry-running with $CXXFLAGS"
+    echo "Dry-running the nvcc wrapper with $CXXFLAGS"
   fi
   export NVCC_WRAPPER_DEFAULT_COMPILER="$CXX_NATIVE"
   # Generally Kokkos sets this, so we don't need to
@@ -235,11 +238,22 @@ if [[ "$ARGS" == *"hdf5"* && "$ARGS" == *"clean"* ]]; then
   else
     MPI_CC=mpicc
   fi
-  CC=$MPI_CC sh configure -C --enable-parallel --prefix=$PWD/../hdf5 --enable-build-mode=production \
-  --disable-dependency-tracking --disable-hl --disable-tests --disable-tools --disable-shared --disable-deprecated-symbols
+
+  if [[ "$ARGS" == *"nompi"* ]]; then
+    CC=$C_NATIVE sh configure -C --prefix=$PWD/../hdf5 --enable-build-mode=production \
+    --disable-dependency-tracking --disable-hl --disable-tests --disable-tools --disable-shared --disable-deprecated-symbols
+  else
+    CC=$MPI_CC sh configure -C --enable-parallel --prefix=$PWD/../hdf5 --enable-build-mode=production \
+    --disable-dependency-tracking --disable-hl --disable-tests --disable-tools --disable-shared --disable-deprecated-symbols
+  fi
   wait 1
-  # Compiling C takes less memory & is quicker
-  make -j$(( $NPROC * 2 ))
+
+  # Compiling C takes less memory
+  if [[ -z $NPROC ]]; then
+    make -j$(( $NPROC * 2 ))
+  else
+    make -j
+  fi
   make install
   make clean
   cd ../..
@@ -257,7 +271,11 @@ mkdir -p build
 cd build
 
 if [[ "$ARGS" == *"clean"* ]]; then
-#set -x
+
+  if [[ "$ARGS" == *"dryrun"* ]]; then
+    set -x
+  fi
+
   cmake ..\
     -DCMAKE_C_COMPILER="$CC" \
     -DCMAKE_CXX_COMPILER="$CXX" \
@@ -272,7 +290,11 @@ if [[ "$ARGS" == *"clean"* ]]; then
     -DKokkos_ENABLE_SYCL=$ENABLE_SYCL \
     -DKokkos_ENABLE_HIP=$ENABLE_HIP \
     $EXTRA_FLAGS
-#set +x
+
+  if [[ "$ARGS" == *"dryrun"* ]]; then
+    set +x
+    exit
+  fi
 fi
 
 make -j$NPROC
