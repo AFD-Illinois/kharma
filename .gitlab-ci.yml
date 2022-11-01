@@ -1,11 +1,15 @@
 # Continuous Integration testing for KHARMA
 # a.k.a did we break the basics?
 
-# 
+# Build on Nvidia image.
+# Can pretty easily change this out
+# Someday we'll build & push a KHARMA image, then test that
 image: nvcr.io/nvidia/nvhpc:22.9-devel-cuda_multi-rockylinux8
 
 variables:
-  OMP_NUM_THREADS: 6
+  NPROC: 24
+  OMP_NUM_THREADS: 24
+  MPI_EXE: mpirun
   GIT_SUBMODULE_STRATEGY: recursive
 
 # Install pyharm for verification
@@ -26,55 +30,32 @@ stages:
 
 build:
   stage: build
-  variables:
-    NPROC: 6
   script:
     - export PREFIX_PATH=$PWD/external/hdf5
-    - ./make.sh clean hdf5
+    - ./make.sh clean cuda hdf5
   artifacts:
     paths:
       - kharma.*
       - make_args
 
-bondi:
+convergence:
   stage: tests
-  before_script:
+  script:
     - cd tests/bondi/
-  script:
+    - bash run.sh
+    - bash check.sh
+    - cd ../mhdmodes
+    - bash run.sh
+    - bash check.sh
+    - cd ../emhdmodes
     - bash run.sh
     - bash check.sh
   artifacts:
     when: always
     paths:
-      - tests/bondi/*.png
-      - tests/bondi/*.hst
-      - tests/bondi/*.txt
-
-mhdmodes:
-  stage: tests
-  before_script:
-    - cd tests/mhdmodes/
-  script:
-    - bash run.sh
-    - bash check.sh
-  artifacts:
-    when: always
-    paths:
-      - tests/mhdmodes/*.png
-      - tests/mhdmodes/*.hst
-      - tests/mhdmodes/*.txt
-
-emhdmodes:
-  stage: tests
-  before_script:
-    - cd tests/emhdmodes/
-  script:
-    - bash run.sh
-    - bash check.sh
-  artifacts:
-    when: always
-    paths:
-      - tests/emhdmodes/*.png
+      - tests/*/*.png
+      - tests/*/*.hst
+      - tests/*/*.txt
 
 noh:
   stage: tests
@@ -94,8 +75,8 @@ bz_monopole:
   before_script:
     - cd tests/bz_monopole
   script:
-    # Make sure to image whatever actually ran,
-    # but fail if it crashed
+    # Always run check.sh, but fail
+    # if run.sh returned error
     - exit_code=0
     - bash run.sh || exit_code=$?
     - bash check.sh

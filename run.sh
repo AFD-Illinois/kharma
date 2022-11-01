@@ -13,9 +13,9 @@
 #export KOKKOS_PROFILE_LIBRARY=$KHARMA_DIR/../kokkos-tools/kp_nvprof_cnnector.so
 
 # Default MPI parameters: no invocation or same processes as Kokkos devices
-MPI_EXE=""
-MPI_NUM_PROCS=1
-MPI_EXTRA_ARGS=""
+MPI_EXE=${MPI_EXE:-}
+MPI_NUM_PROCS=${MPI_NUM_PROCS:-1}
+MPI_EXTRA_ARGS=${MPI_EXTRA_ARGS:-}
 
 ### General run script
 
