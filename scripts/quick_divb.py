@@ -1,10 +1,11 @@
+import sys
 import numpy as np
 import h5py
 
 from pyharm.grid import make_some_grid
 from pyharm.defs import Loci, Slices
 
-f = h5py.File("torus.out1.00100.h5", "r")
+f = h5py.File(sys.argv[1], "r")
 B = f['p'][5:8,:,:,:].transpose(0,3,2,1)
 
 G = make_some_grid('fmks', 288, 128, 128, 0.9375)
