@@ -75,9 +75,6 @@ fi
 if [[ -v DEVICE_ARCH ]]; then
   EXTRA_FLAGS="-DKokkos_ARCH_${DEVICE_ARCH}=ON $EXTRA_FLAGS"
 fi
-if [[ -v PREFIX_PATH ]]; then
-  EXTRA_FLAGS="-DCMAKE_PREFIX_PATH=$PREFIX_PATH $EXTRA_FLAGS"
-fi
 if [[ "$ARGS" == *"trace"* ]]; then
   EXTRA_FLAGS="-DTRACE=1 $EXTRA_FLAGS"
 fi
@@ -100,16 +97,20 @@ fi
 ### Build HDF5 ###
 if [[ "$ARGS" == *"hdf5"* ]]; then
   cd external
-  if [ ! -f hdf5-* ]; then
-    wget https://hdf-wordpress-1.s3.amazonaws.com/wp-content/uploads/manual/HDF5/HDF5_1_12_0/source/hdf5-1.12.0.tar.gz
-    tar xf hdf5-1.12.0.tar.gz
-  fi
+  rm -rf hdf5*
+  curl https://hdf-wordpress-1.s3.amazonaws.com/wp-content/uploads/manual/HDF5/HDF5_1_12_0/source/hdf5-1.12.0.tar.gz -o hdf5.tar.gz
+  tar xf hdf5.tar.gz
   cd hdf5-1.12.0/
-  make clean
-  CC=mpicc ./configure --enable-parallel --prefix=$PWD/../hdf5
+  if [[ "$ARGS" == *"icc"* ]]; then
+    CC=mpiicc sh configure --enable-parallel --prefix=$PWD/../hdf5
+  else
+    CC=mpicc sh configure --enable-parallel --prefix=$PWD/../hdf5
+  fi
+  wait 1
   make -j$NPROC
   make install
   make clean
+  cd ../..
   exit
 fi
 
