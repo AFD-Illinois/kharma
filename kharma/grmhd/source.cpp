@@ -46,15 +46,6 @@ TaskStatus GRMHD::AddSource(MeshData<Real> *md, MeshData<Real> *mdudt, bool firs
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
     // Options
     const Real gam = pmb0->packages.Get("GRMHD")->Param<Real>("gamma");
-    const string prob = pmb0->packages.Get("GRMHD")->Param<string>("problem");
-    Real Q = 0;
-    if (prob == "rest_conserve") {
-        // Since this is right before evolution, if it's the first step then use time as is, otherwise do dt/2 
-        const Real dt = (first_half_step) ? 0 : 0.5*pmb0->packages.Get("Globals")->Param<Real>("dt_last");
-        const Real t = pmb0->packages.Get("Globals")->Param<Real>("time") + dt;
-        const Real q = pmb0->packages.Get("GRMHD")->Param<Real>("q");
-        Q = q*cos(t);
-    }
 
     // Pack variables
     PackIndexMap prims_map, cons_map;
@@ -92,7 +83,7 @@ TaskStatus GRMHD::AddSource(MeshData<Real> *md, MeshData<Real> *mdudt, bool firs
                 }
             }
 
-            dUdt(b, m_u.UU, k, j, i) += new_du[0] + Q;
+            dUdt(b, m_u.UU, k, j, i) += new_du[0];
             VLOOP dUdt(b, m_u.U1 + v, k, j, i) += new_du[1 + v];
         }
     );

@@ -158,8 +158,8 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
 
     // Default implicit iff GRMHD is done implicitly. TODO can we do explicit?
     auto driver_type = pin->GetString("driver", "type");
-    bool grmhd_implicit = packages.Get("GRMHD")->Param<bool>("implicit");
-    bool implicit_e = (driver_type == "imex" && pin->GetOrAddBoolean("electrons", "implicit", grmhd_implicit));
+    bool grmhd_implicit = packages.Get("GRMHD")->Param<bool>("implicit"); // usually false
+    bool implicit_e = (driver_type == "imex" && pin->GetOrAddBoolean("electrons", "implicit", grmhd_implicit)); // so this false too
     params.Add("implicit", implicit_e);
 
     // B fields.  "Primitive" form is field, "conserved" is flux
@@ -174,7 +174,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
         // See grmhd.cpp for full notes on flag changes for ImEx driver
         // Note that default for B is *explicit* evolution
         MetadataFlag areWeImplicit = (implicit_e) ? packages.Get("Implicit")->Param<MetadataFlag>("ImplicitFlag")
-                                                  : packages.Get("Implicit")->Param<MetadataFlag>("ExplicitFlag");
+                                                  : packages.Get("Implicit")->Param<MetadataFlag>("ExplicitFlag"); // so setting entropies as explicit
         flags_cons = std::vector<MetadataFlag>({Metadata::Real, Metadata::Cell, Metadata::Independent, Metadata::Conserved,
                                                 Metadata::WithFluxes, areWeImplicit, isElectrons});
         flags_prim = std::vector<MetadataFlag>({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::FillGhost,
@@ -346,14 +346,14 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
             // Calculate the new total entropy in this cell
             const Real kNew = (gam-1.) * P_new(m_p.UU, k, j, i) / m::pow(P_new(m_p.RHO, k, j, i) ,gam);
 
-            // Dissipation is the real entropy kNew minus any advected entropy from the previous (sub-)step P_new(KTOT)
+            // Dissipation is the real entropy k_energy_conserving minus any advected entropy from the previous (sub-)step P_new(KTOT)
             // Due to floors we can end up with diss==0 or even *slightly* <0, so we require it to be positive here
             // Under the flag "suppress_highb_heat", we set all dissipation to zero at sigma > 1.
             const Real diss = (suppress_highb_heat && (bsq / P(m_p.RHO, k, j, i) > 1.)) ? 0.0 :
                                 m::max((game-1.) / (gam-1.) * m::pow(P(m_p.RHO, k, j, i), gam - game) * (kNew - P_new(m_p.KTOT, k, j, i)), 0.0);
 
             // Reset the entropy to measure next (sub-)step's dissipation
-            P_new(m_p.KTOT, k, j, i) = kNew;
+            P_new(m_p.KTOT, k, j, i) = k_energy_conserving;
 
             // We'll be applying floors inline as we heat electrons, so
             // we cache the floors as entropy limits so they'll be cheaper to apply.
@@ -372,13 +372,16 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
             // Heat different electron passives based on different dissipation fraction models
             // Expressions here closely adapted (read: stolen) from implementation in iharm3d
             // courtesy of Cesar Diaz, see https://github.com/AFD-Illinois/iharm3d
+            
+            // In all of these the electron entropy stored value is the entropy conserving solution 
+                                 // and then when updated it becomes the energy conserving solution
             if (m_p.K_CONSTANT >= 0) {
                 const Real fel = fel_const;
                 // Default is true then enforce kel limits with clamp/clip, else no restrictions on kel
                 if (pmb->packages.Get("Electrons")->Param<bool>("kel_lim")) {
                     P_new(m_p.K_CONSTANT, k, j, i) = clip(P_new(m_p.K_CONSTANT, k, j, i) + fel * diss, kel_min, kel_max);
                 } else {
-                    P_new(m_p.K_CONSTANT, k, j, i) = P_new(m_p.K_CONSTANT, k, j, i) + fel * diss;
+                    P_new(m_p.K_CONSTANT, k, j, i) += fel * diss;
                 }
             }
             if (m_p.K_HOWES >= 0) {
@@ -572,9 +575,65 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
         } 
         // This could be only the GRMHD vars, for this problem, but speed isn't really an issue
         Flux::PtoU(rc);
+    } else if (prob == "hubble" && pmb->packages.Get("GRMHD")->Param<bool>("cooling") && generate_grf) {
+        const Real dt = pmb->packages.Get("Globals")->Param<Real>("dt_last");  // Close enough?
+        const Real t = pmb->packages.Get("Globals")->Param<Real>("time") + 0.5*dt;
+        const Real v0 = pmb->packages.Get("GRMHD")->Param<Real>("v0");
+        const Real ug0 = pmb->packages.Get("GRMHD")->Param<Real>("ug0");
+        Real Q = (ug0 * v0 * (gam - 2) / pow(1 + v0 * t, 3));
+        pmb->par_for("hubble_Q_source_term", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+            KOKKOS_LAMBDA_3D {  P_new(m_p.UU, k, j, i) += Q*dt;  }
+        );
+        Flux::PtoU(rc);
+    } else if (prob == "rest_conserve" && pmb->packages.Get("GRMHD")->Param<Real>("q") != 0. && generate_grf) {
+        const Real dt = pmb->packages.Get("Globals")->Param<Real>("dt_last");  // Close enough?
+        const Real t = pmb->packages.Get("Globals")->Param<Real>("time") + 0.5*dt;
+        const Real Q = pmb->packages.Get("GRMHD")->Param<Real>("q")*pow(t, 2);
+        pmb->par_for("rest_conserve_Q_source_term", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+            KOKKOS_LAMBDA_3D {  P_new(m_p.UU, k, j, i) += Q*dt;  }
+        );
+        Flux::PtoU(rc);
     }
-
     Flag(rc, "Applied");
+    return TaskStatus::complete;
+}
+
+TaskStatus ApplyHeatingSubstep(MeshBlockData<Real> *mbase) {
+    auto pmb0 = mbase->GetBlockPointer();
+    const string prob = pmb0->packages.Get("GRMHD")->Param<string>("problem");
+    if (prob != "rest_conserve" || prob != "hubble") return TaskStatus::complete;
+
+    Flag(mbase, "Applying heating at substep");
+
+    PackIndexMap prims_map;
+    auto P_mbase = GRMHD::PackMHDPrims(mbase, prims_map);
+    const VarMap m_p(prims_map, false);
+
+    Real Q = 0;
+    const Real dt = pmb0->packages.Get("Globals")->Param<Real>("dt_last");  // Close enough?
+    const Real t = pmb0->packages.Get("Globals")->Param<Real>("time") + 0.25*dt;
+    if (prob == "rest_conserve") {
+        const Real q = pmb0->packages.Get("GRMHD")->Param<Real>("q");
+        Q = q*pow(t, 2);
+    } else {
+        const Real v0 = pmb0->packages.Get("GRMHD")->Param<Real>("v0");
+        const Real ug0 = pmb0->packages.Get("GRMHD")->Param<Real>("ug0");
+        const Real gam = pmb0->packages.Get("GRMHD")->Param<Real>("gamma");
+        Q = (ug0 * v0 * (gam - 2) / pow(1 + v0 * t, 3));
+    }
+    IndexDomain domain = IndexDomain::entire;
+    auto ib = mbase->GetBoundsI(domain);
+    auto jb = mbase->GetBoundsJ(domain);
+    auto kb = mbase->GetBoundsK(domain);
+    auto block = IndexRange{0, P_mbase.GetDim(5)-1};
+    
+    pmb0->par_for("heating_substep", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+        KOKKOS_LAMBDA_3D {
+            P_mbase(m_p.UU, k, j, i) += Q*dt*0.5;
+        }
+    );
+
+    Flag(mbase, "Applied heating at substep");
     return TaskStatus::complete;
 }
 

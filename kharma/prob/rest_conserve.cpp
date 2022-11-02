@@ -11,6 +11,7 @@ TaskStatus InitializeRest(MeshBlockData<Real> *rc, ParameterInput *pin)
     bool set_tlim = pin->GetOrAddBoolean("rest", "set_tlim", false);
     const Real u0 = pin->GetOrAddReal("rest", "u0", 1.);
     const Real rho0 = pin->GetOrAddReal("rest", "rho0", 1.);
+    const Real v0 = pin->GetOrAddReal("rest", "v0", 1.);
     const Real q = (pin->DoesParameterExist("rest", "q")) ? pin->GetReal("rest", "q") : 0. ;
     bool context_boundaries = pin->GetOrAddBoolean("rest", "context_boundaries", false);
     // Time it would take for u to change by half its original value
@@ -18,6 +19,7 @@ TaskStatus InitializeRest(MeshBlockData<Real> *rc, ParameterInput *pin)
 
     Params& g_params = pmb->packages.Get("GRMHD")->AllParams();
     if(!g_params.hasKey("rho0")) g_params.Add("rho0", rho0);
+    if(!g_params.hasKey("v0")) g_params.Add("v0", v0);
     if(!g_params.hasKey("u0")) g_params.Add("u0", u0);
     if(!g_params.hasKey("q")) g_params.Add("q", q);
     if(!g_params.hasKey("context_boundaries")) g_params.Add("context_boundaries", context_boundaries);
@@ -49,6 +51,7 @@ TaskStatus SetRest(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     GridVector uvec = rc->Get("prims.uvec").data;
 
     const Real u0 = pmb->packages.Get("GRMHD")->Param<Real>("u0");
+    const Real v0 = pmb->packages.Get("GRMHD")->Param<Real>("v0");
     const Real rho0 = pmb->packages.Get("GRMHD")->Param<Real>("rho0");
     const Real q = pmb->packages.Get("GRMHD")->Param<Real>("q");
     const bool context_boundaries = pmb->packages.Get("GRMHD")->Param<bool>("context_boundaries");
@@ -66,7 +69,7 @@ TaskStatus SetRest(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
             G.coord_embed(k, j, i, Loci::center, X);
             rho(k, j, i) = rho0;
             u(k, j, i) = u0;
-            uvec(0, k, j, i) = 0.0;
+            uvec(0, k, j, i) = v0;
             uvec(1, k, j, i) = 0.0;
             uvec(2, k, j, i) = 0.0;
         }

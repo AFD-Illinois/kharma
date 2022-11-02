@@ -90,12 +90,16 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
     bool use_emhd      = pkgs.count("EMHD");
 
     // Allocate the fluid states ("containers") we need for each block
+    TaskRegion &async_region0 = tc.AddRegion(blocks.size());
     for (int i = 0; i < blocks.size(); i++) {
         auto &pmb = blocks[i];
+        auto &tl = async_region0[i];
         // first make other useful containers
         auto &base = pmb->meshblock_data.Get();
         if (stage == 1) {
             pmb->meshblock_data.Add("dUdt", base);
+            auto t_heating_test = tl.AddTask(t_none, Electrons::ApplyHeatingSubstep, base.get());
+            auto t_u_to_p = tl.AddTask(t_heating_test, Flux::PtoU, base.get(), IndexDomain::entire);
             for (int i = 1; i < integrator->nstages; i++)
                 pmb->meshblock_data.Add(stage_name[i], base);
             // At the end of the step, updating "mbd_sub_step_final" updates the base
@@ -225,7 +229,7 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
 
         // Update any variables for which we should take an explicit step.
         // These calls are the equivalent of what's in HARMDriver
-        // auto t_average = tl.AddTask(t_sources, Update::WeightedSumData<MetadataFlag, MeshData<Real>>,
+        // auto t_average = tl.AddTask(t_sources, Update::WeighatedSumData<MetadataFlag, MeshData<Real>>,
         //                             std::vector<MetadataFlag>({isExplicit, Metadata::Independent}),
         //                             md_sub_step_init.get(), md_full_step_init.get(), beta, (1.0 - beta), md_solver.get());
         // auto t_explicit_U = tl.AddTask(t_average, Update::WeightedSumData<MetadataFlag, MeshData<Real>>,
@@ -273,7 +277,7 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
 
         // If evolving GRMHD explicitly, U_to_P needs a guess in order to converge, so we copy in md_sub_step_init
         auto t_copy_prims = t_none;
-        if (!pkgs.at("GRMHD")->Param<bool>("implicit")) {
+        if (!pkgs.at("GRMHD")->Param<bool>("implicit")) { // Mine is implicit==false as thats the default value
             MetadataFlag isPrimitive = pkgs.at("GRMHD")->Param<MetadataFlag>("PrimitiveFlag");
             MetadataFlag isHD        = pkgs.at("GRMHD")->Param<MetadataFlag>("HDFlag");
             auto t_copy_prims        = tl.AddTask(t_none, Update::WeightedSumData<MetadataFlag, MeshData<Real>>,
