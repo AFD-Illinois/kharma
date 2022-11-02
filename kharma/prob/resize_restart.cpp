@@ -172,6 +172,7 @@ TaskStatus ReadIharmRestart(MeshBlockData<Real> *rc, ParameterInput *pin)
     auto fname = pin->GetString("resize_restart", "fname"); // Require this, don't guess
     bool use_tf = pin->GetOrAddBoolean("resize_restart", "use_tf", false);
     bool use_dt = pin->GetOrAddBoolean("resize_restart", "use_dt", true);
+    bool regrid_only = pin->GetOrAddBoolean("resize_restart", "regrid_only", false);
     const bool is_spherical = pin->GetBoolean("coordinates", "spherical");
 
     // Size of the file mesh
@@ -184,6 +185,8 @@ TaskStatus ReadIharmRestart(MeshBlockData<Real> *rc, ParameterInput *pin)
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
+
+    // TODO check sanity of regrid_only here: startxN AND dxN AND nxN
 
     hdf5_open(fname.c_str());
 
@@ -250,19 +253,31 @@ TaskStatus ReadIharmRestart(MeshBlockData<Real> *rc, ParameterInput *pin)
     // Host-side interpolate & copy into the mirror array
     // TODO Support restart native coordinates != new native coordinates
     // NOTE: KOKKOS USES < not <=!! Therefore the RangePolicy below will seem like it is too big
-    Kokkos::parallel_for("copy_restart_state",
-        Kokkos::MDRangePolicy<Kokkos::OpenMP, Kokkos::Rank<3>>({ks, js, is}, {ke+1, je+1, ie+1}),
-        KOKKOS_LAMBDA_3D {
-            // Get the zone center location
-            GReal X[GR_DIM];
-            G.coord(k, j, i, Loci::center, X);
-            // Interpolate the value at this location from the global grid
-            rho_host(k, j, i) = interp_scalar(G, X, startx, stopx, dx, is_spherical, false, n3tot, n2tot, n1tot, &(ptmp[0*block_sz]));
-            u_host(k, j, i) = interp_scalar(G, X, startx, stopx, dx, is_spherical, false, n3tot, n2tot, n1tot, &(ptmp[1*block_sz]));
-            VLOOP uvec_host(v, k, j, i) = interp_scalar(G, X, startx, stopx, dx, is_spherical, false, n3tot, n2tot, n1tot, &(ptmp[(2+v)*block_sz]));
-            VLOOP B_host(v, k, j, i) = interp_scalar(G, X, startx, stopx, dx, is_spherical, false, n3tot, n2tot, n1tot, &(ptmp[(5+v)*block_sz]));
-        }
-    );
+    if (regrid_only) {
+        Kokkos::parallel_for("copy_restart_state",
+            Kokkos::MDRangePolicy<Kokkos::OpenMP, Kokkos::Rank<3>>({ks, js, is}, {ke+1, je+1, ie+1}),
+            KOKKOS_LAMBDA_3D {
+                rho_host(k, j, i) = ptmp[0*n3tot*n2tot*n1tot + (k-ks)*n2tot*n1tot + (j-js)*n1tot + (i-is)];
+                u_host(k, j, i)   = ptmp[1*n3tot*n2tot*n1tot + (k-ks)*n2tot*n1tot + (j-js)*n1tot + (i-is)];
+                VLOOP uvec_host(v, k, j, i) = ptmp[(2+v)*n3tot*n2tot*n1tot + (k-ks)*n2tot*n1tot + (j-js)*n1tot + (i-is)];
+                VLOOP B_host(v, k, j, i) = ptmp[(5+v)*n3tot*n2tot*n1tot + (k-ks)*n2tot*n1tot + (j-js)*n1tot + (i-is)];
+            }
+        );
+    } else {
+        Kokkos::parallel_for("interp_restart_state",
+            Kokkos::MDRangePolicy<Kokkos::OpenMP, Kokkos::Rank<3>>({ks, js, is}, {ke+1, je+1, ie+1}),
+            KOKKOS_LAMBDA_3D {
+                // Get the zone center location
+                GReal X[GR_DIM];
+                G.coord(k, j, i, Loci::center, X);
+                // Interpolate the value at this location from the global grid
+                rho_host(k, j, i) = interp_scalar(G, X, startx, stopx, dx, is_spherical, false, n3tot, n2tot, n1tot, &(ptmp[0*block_sz]));
+                u_host(k, j, i) = interp_scalar(G, X, startx, stopx, dx, is_spherical, false, n3tot, n2tot, n1tot, &(ptmp[1*block_sz]));
+                VLOOP uvec_host(v, k, j, i) = interp_scalar(G, X, startx, stopx, dx, is_spherical, false, n3tot, n2tot, n1tot, &(ptmp[(2+v)*block_sz]));
+                VLOOP B_host(v, k, j, i) = interp_scalar(G, X, startx, stopx, dx, is_spherical, false, n3tot, n2tot, n1tot, &(ptmp[(5+v)*block_sz]));
+            }
+        );
+    }
     delete[] ptmp;
 
     // Deep copy to device
