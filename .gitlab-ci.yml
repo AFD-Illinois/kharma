@@ -9,6 +9,7 @@ image: nvcr.io/nvidia/nvhpc:22.9-devel-cuda_multi-rockylinux8
 variables:
   NPROC: 24
   OMP_NUM_THREADS: 24
+  HOST_ARCH: HSW
   MPI_EXE: mpirun
   GIT_SUBMODULE_STRATEGY: recursive
 
