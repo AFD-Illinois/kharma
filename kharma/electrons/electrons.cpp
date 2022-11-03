@@ -598,10 +598,11 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
     return TaskStatus::complete;
 }
 
+// Only if prob is rest_conserve or hubble
 TaskStatus ApplyHeatingSubstep(MeshBlockData<Real> *mbase) {
     auto pmb0 = mbase->GetBlockPointer();
     const string prob = pmb0->packages.Get("GRMHD")->Param<string>("problem");
-    if (prob != "rest_conserve" || prob != "hubble") return TaskStatus::complete;
+    if (prob != "rest_conserve" && prob != "hubble") return TaskStatus::complete;
 
     Flag(mbase, "Applying heating at substep");
 
