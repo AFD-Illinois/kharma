@@ -1,5 +1,5 @@
 /* 
- *  File: resize.hpp
+ *  File: interpolation.hpp
  *  
  *  BSD 3-Clause License
  *  
@@ -70,7 +70,8 @@
 KOKKOS_INLINE_FUNCTION void Xtoijk(const GReal XG[GR_DIM],
                                    const GReal startx[GR_DIM], const GReal stopx[GR_DIM],
                                    const GReal dx[GR_DIM],
-                                   int& i, int& j, int& k, GReal del[GR_DIM])
+                                   int& i, int& j, int& k, GReal del[GR_DIM],
+                                   bool nearest=false)
 {
     // If we ever include ghosts in iharm3d-format restarts, we need to clip phi here
     // GReal phi = fmod(XG[3], stopx[3]);
@@ -78,11 +79,19 @@ KOKKOS_INLINE_FUNCTION void Xtoijk(const GReal XG[GR_DIM],
     //     phi += stopx[3];
     GReal phi = XG[3];
 
-    // get provisional zone index. see note above function for details. note we
-    // shift to zone centers because that's where variables are most exact.
-    i = (int) ((XG[1] - startx[1]) / dx[1] - 0.5 + 1000) - 1000;
-    j = (int) ((XG[2] - startx[2]) / dx[2] - 0.5 + 1000) - 1000;
-    k = (int) ((phi   - startx[3]) / dx[3] - 0.5 + 1000) - 1000;
+    if (nearest) {
+        // get the index of the zone we are in: >= left corner?
+        i = (int) ((XG[1] - startx[1]) / dx[1] + 1000) - 1000;
+        j = (int) ((XG[2] - startx[2]) / dx[2] + 1000) - 1000;
+        k = (int) ((phi   - startx[3]) / dx[3] + 1000) - 1000;
+    } else {
+        // Normal operation
+        // get provisional zone index. see note above function for details. note we
+        // shift to zone centers because that's where variables are most exact.
+        i = (int) ((XG[1] - startx[1]) / dx[1] - 0.5 + 1000) - 1000;
+        j = (int) ((XG[2] - startx[2]) / dx[2] - 0.5 + 1000) - 1000;
+        k = (int) ((phi   - startx[3]) / dx[3] - 0.5 + 1000) - 1000;
+    }
 
     // now construct del
     del[1] = (XG[1] - ((i + 0.5) * dx[1] + startx[1])) / dx[1];
@@ -106,7 +115,7 @@ KOKKOS_INLINE_FUNCTION void ijktoX(const GReal startx[GR_DIM], const GReal dx[GR
  * This interpolates a single-array variable 'var' representing a grid of size 'startx' to 'stopx' in
  * native coordinates, returning its value at location X
  */
-KOKKOS_INLINE_FUNCTION Real interp_scalar(const GRCoordinates& G, const GReal X[GR_DIM],
+KOKKOS_INLINE_FUNCTION Real linear_interp(const GRCoordinates& G, const GReal X[GR_DIM],
                                           const GReal startx[GR_DIM], const GReal stopx[GR_DIM],
                                           const GReal dx[GR_DIM], const bool& is_spherical, const bool& weight_by_gdet,
                                           const int& n3, const int& n2, const int& n1,

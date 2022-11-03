@@ -37,14 +37,20 @@
 #include "b_flux_ct.hpp"
 #include "debug.hpp"
 #include "hdf5_utils.h"
+#include "kharma_utils.hpp"
 #include "mpi.hpp"
-#include "resize.hpp"
+#include "interpolation.hpp"
 #include "types.hpp"
 
 #include <sys/stat.h>
 #include <ctype.h>
 
 using namespace Kokkos;
+
+// This is gross, but everything else is grosser
+// What's a little leaked host mem between friends?
+static Real *ptmp = NULL;
+static int blocks_initialized = 0;
 
 // TODO
 // Record & read:
@@ -90,18 +96,20 @@ void ReadIharmRestartHeader(std::string fname, std::unique_ptr<ParameterInput>& 
     hdf5_read_single_val(&cour, "cour", H5T_IEEE_F64LE);
     hdf5_read_single_val(&t, "t", H5T_IEEE_F64LE);
 
-    pin->SetReal("GRMHD", "gamma", gam);
-    pin->SetReal("parthenon/time", "start_time", t);
+    pin->SetPrecise("GRMHD", "gamma", gam);
+    pin->SetPrecise("parthenon/time", "start_time", t);
     // TODO NSTEP, next tdump/tlog, etc?
 
     if (hdf5_exists("a")) {
-        double a, hslope, Rout;
+        double a, hslope, Rin, Rout;
         hdf5_read_single_val(&a, "a", H5T_IEEE_F64LE);
         hdf5_read_single_val(&hslope, "hslope", H5T_IEEE_F64LE);
+        hdf5_read_single_val(&Rin, "Rin", H5T_IEEE_F64LE);
         hdf5_read_single_val(&Rout, "Rout", H5T_IEEE_F64LE);
-        pin->SetReal("coordinates", "a", a);
-        pin->SetReal("coordinates", "hslope", hslope);
-        pin->SetReal("coordinates", "r_out", Rout);
+        pin->SetPrecise("coordinates", "a", a);
+        pin->SetPrecise("coordinates", "hslope", hslope);
+        pin->SetPrecise("coordinates", "r_in", Rin);
+        pin->SetPrecise("coordinates", "r_out", Rout);
 
         // Sadly restarts did not record MKS vs FMKS
         // Guess if not specified in parameter file
@@ -110,10 +118,10 @@ void ReadIharmRestartHeader(std::string fname, std::unique_ptr<ParameterInput>& 
             pin->SetString("coordinates", "transform", "funky");
         }
 
-        pin->SetReal("parthenon/mesh", "x2min", 0.0);
-        pin->SetReal("parthenon/mesh", "x2max", 1.0);
-        pin->SetReal("parthenon/mesh", "x3min", 0.0);
-        pin->SetReal("parthenon/mesh", "x3max", 2*M_PI);
+        pin->SetPrecise("parthenon/mesh", "x2min", 0.0);
+        pin->SetPrecise("parthenon/mesh", "x2max", 1.0);
+        pin->SetPrecise("parthenon/mesh", "x3min", 0.0);
+        pin->SetPrecise("parthenon/mesh", "x3max", 2*M_PI);
 
         // All MKS sims had the usual bcs
         pin->SetString("parthenon/mesh", "ix1_bc", "outflow");
@@ -131,12 +139,12 @@ void ReadIharmRestartHeader(std::string fname, std::unique_ptr<ParameterInput>& 
         hdf5_read_single_val(&x2max, "x2Max", H5T_IEEE_F64LE);
         hdf5_read_single_val(&x3min, "x3Min", H5T_IEEE_F64LE);
         hdf5_read_single_val(&x3max, "x3Max", H5T_IEEE_F64LE);
-        pin->SetReal("parthenon/mesh", "x1min", x1min);
-        pin->SetReal("parthenon/mesh", "x1max", x1max);
-        pin->SetReal("parthenon/mesh", "x2min", x2min);
-        pin->SetReal("parthenon/mesh", "x2max", x2max);
-        pin->SetReal("parthenon/mesh", "x3min", x3min);
-        pin->SetReal("parthenon/mesh", "x3max", x3max);
+        pin->SetPrecise("parthenon/mesh", "x1min", x1min);
+        pin->SetPrecise("parthenon/mesh", "x1max", x1max);
+        pin->SetPrecise("parthenon/mesh", "x2min", x2min);
+        pin->SetPrecise("parthenon/mesh", "x2max", x2max);
+        pin->SetPrecise("parthenon/mesh", "x3min", x3min);
+        pin->SetPrecise("parthenon/mesh", "x3max", x3max);
 
         // Sims like this were of course cartesian
         pin->SetString("coordinates", "base", "cartesian_minkowski");
@@ -175,18 +183,39 @@ TaskStatus ReadIharmRestart(MeshBlockData<Real> *rc, ParameterInput *pin)
     bool regrid_only = pin->GetOrAddBoolean("resize_restart", "regrid_only", false);
     const bool is_spherical = pin->GetBoolean("coordinates", "spherical");
 
-    // Size of the file mesh
+    // Size of the *file* mesh
     hsize_t n1tot = pin->GetInteger("parthenon/mesh", "restart_nx1");
     hsize_t n2tot = pin->GetInteger("parthenon/mesh", "restart_nx2");
     hsize_t n3tot = pin->GetInteger("parthenon/mesh", "restart_nx3");
 
-    // Size/domain of the MeshBlock we're reading to
-    IndexDomain domain = IndexDomain::entire;
-    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
-    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
-    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
+    // Size/domain of the MeshBlock we're reading to.
+    // Note that we only read physical zones. 
+    IndexDomain domain = IndexDomain::interior;
+    const IndexRange ib = pmb->cellbounds.GetBoundsI(domain);
+    const IndexRange jb = pmb->cellbounds.GetBoundsJ(domain);
+    const IndexRange kb = pmb->cellbounds.GetBoundsK(domain);
 
     // TODO check sanity of regrid_only here: startxN AND dxN AND nxN
+    if (regrid_only) {
+        // Check the mesh we're declaring matches
+        if (pin->GetInteger("parthenon/mesh", "nx1") != n1tot ||
+            pin->GetInteger("parthenon/mesh", "nx2") != n2tot ||
+            pin->GetInteger("parthenon/mesh", "nx3") != n3tot) {
+            printf("Mesh size does not match!");
+        }
+        
+        if (!close_to(pin->GetReal("parthenon/mesh", "x1min"),
+                      log(pin->GetReal("coordinates", "r_in"))) ||
+            !close_to(pin->GetReal("parthenon/mesh", "x1max"),
+                      log(pin->GetReal("coordinates", "r_out")))) {
+            printf("Mesh shape does not match!");
+            printf("Rin %g vs %g, Rout %g vs %g",
+                exp(pin->GetReal("parthenon/mesh", "x1min")),
+                pin->GetReal("coordinates", "r_in"),
+                exp(pin->GetReal("parthenon/mesh", "x1max")),
+                pin->GetReal("coordinates", "r_out"));
+        }
+    }
 
     hdf5_open(fname.c_str());
 
@@ -219,11 +248,15 @@ TaskStatus ReadIharmRestart(MeshBlockData<Real> *rc, ParameterInput *pin)
     static hsize_t fdims[] = {nfprim, n3tot, n2tot, n1tot};
     hsize_t fstart[] = {0, 0, 0, 0};
 
-    // TODO don't repeat this read for every block!
-    // Likely requires read once in e.g. InitUserMeshData
-    // -> pass in (pointer) -> delete[] in PostInit or something
-    Real *ptmp = new double[nfprim*n3tot*n2tot*n1tot]; // These will include B & thus be double or upconverted to it
-    hdf5_read_array(ptmp, "p", 4, fdims, fstart, fdims, fdims, fstart, H5T_IEEE_F64LE);
+    // TODO there must be a better way to cache this.  InitUserData and make it a big variable or something?
+    if (ptmp == NULL) {
+        std::cout << "Reading mesh from file..." << std::endl;
+        ptmp = new double[nfprim*n3tot*n2tot*n1tot]; // These will include B & thus be double or upconverted to it
+        hdf5_read_array(ptmp, "p", 4, fdims, fstart, fdims, fdims, fstart, H5T_IEEE_F64LE);
+        std::cout << "Read!" << std::endl;
+    }
+    // If we are going to keep a static pointer, keep count so the last guy can kill it
+    blocks_initialized += 1;
 
     // End HDF5 reads
     hdf5_close();
@@ -248,54 +281,61 @@ TaskStatus ReadIharmRestart(MeshBlockData<Real> *rc, ParameterInput *pin)
                                   (stopx[2] - startx[2])/n2tot,
                                   (stopx[3] - startx[3])/n3tot};
 
-    const int block_sz = n3tot*n2tot*n1tot;
-
+    Flag("Reordering meshblock...");
     // Host-side interpolate & copy into the mirror array
     // TODO Support restart native coordinates != new native coordinates
     // NOTE: KOKKOS USES < not <=!! Therefore the RangePolicy below will seem like it is too big
     if (regrid_only) {
         Kokkos::parallel_for("copy_restart_state",
-            Kokkos::MDRangePolicy<Kokkos::OpenMP, Kokkos::Rank<3>>({ks, js, is}, {ke+1, je+1, ie+1}),
+            Kokkos::MDRangePolicy<Kokkos::OpenMP, Kokkos::Rank<3>>({kb.s, jb.s, ib.s}, {kb.e+1, jb.e+1, ib.e+1}),
             KOKKOS_LAMBDA_3D {
-                rho_host(k, j, i) = ptmp[0*n3tot*n2tot*n1tot + (k-ks)*n2tot*n1tot + (j-js)*n1tot + (i-is)];
-                u_host(k, j, i)   = ptmp[1*n3tot*n2tot*n1tot + (k-ks)*n2tot*n1tot + (j-js)*n1tot + (i-is)];
-                VLOOP uvec_host(v, k, j, i) = ptmp[(2+v)*n3tot*n2tot*n1tot + (k-ks)*n2tot*n1tot + (j-js)*n1tot + (i-is)];
-                VLOOP B_host(v, k, j, i) = ptmp[(5+v)*n3tot*n2tot*n1tot + (k-ks)*n2tot*n1tot + (j-js)*n1tot + (i-is)];
+                GReal X[GR_DIM];
+                G.coord(k, j, i, Loci::center, X); double tmp[GR_DIM];
+                int gk,gj,gi; Xtoijk(X, startx, stopx, dx, gi, gj, gk, tmp, true);
+                // Fill block cells with global equivalents
+                rho_host(k, j, i) = ptmp[0*n3tot*n2tot*n1tot + gk*n2tot*n1tot + gj*n1tot + gi];
+                u_host(k, j, i)   = ptmp[1*n3tot*n2tot*n1tot + gk*n2tot*n1tot + gj*n1tot + gi];
+                VLOOP uvec_host(v, k, j, i) = ptmp[(2+v)*n3tot*n2tot*n1tot + gk*n2tot*n1tot + gj*n1tot + gi];
+                VLOOP B_host(v, k, j, i) = ptmp[(5+v)*n3tot*n2tot*n1tot + gk*n2tot*n1tot + gj*n1tot + gi];
             }
         );
     } else {
         Kokkos::parallel_for("interp_restart_state",
-            Kokkos::MDRangePolicy<Kokkos::OpenMP, Kokkos::Rank<3>>({ks, js, is}, {ke+1, je+1, ie+1}),
+            Kokkos::MDRangePolicy<Kokkos::OpenMP, Kokkos::Rank<3>>({kb.s, jb.s, ib.s}, {kb.e+1, jb.e+1, ib.e+1}),
             KOKKOS_LAMBDA_3D {
                 // Get the zone center location
                 GReal X[GR_DIM];
                 G.coord(k, j, i, Loci::center, X);
                 // Interpolate the value at this location from the global grid
-                rho_host(k, j, i) = interp_scalar(G, X, startx, stopx, dx, is_spherical, false, n3tot, n2tot, n1tot, &(ptmp[0*block_sz]));
-                u_host(k, j, i) = interp_scalar(G, X, startx, stopx, dx, is_spherical, false, n3tot, n2tot, n1tot, &(ptmp[1*block_sz]));
-                VLOOP uvec_host(v, k, j, i) = interp_scalar(G, X, startx, stopx, dx, is_spherical, false, n3tot, n2tot, n1tot, &(ptmp[(2+v)*block_sz]));
-                VLOOP B_host(v, k, j, i) = interp_scalar(G, X, startx, stopx, dx, is_spherical, false, n3tot, n2tot, n1tot, &(ptmp[(5+v)*block_sz]));
+                rho_host(k, j, i) = linear_interp(G, X, startx, stopx, dx, is_spherical, false, n3tot, n2tot, n1tot, &(ptmp[0*n3tot*n2tot*n1tot]));
+                u_host(k, j, i) = linear_interp(G, X, startx, stopx, dx, is_spherical, false, n3tot, n2tot, n1tot, &(ptmp[1*n3tot*n2tot*n1tot]));
+                VLOOP uvec_host(v, k, j, i) = linear_interp(G, X, startx, stopx, dx, is_spherical, false, n3tot, n2tot, n1tot, &(ptmp[(2+v)*n3tot*n2tot*n1tot]));
+                VLOOP B_host(v, k, j, i) = linear_interp(G, X, startx, stopx, dx, is_spherical, false, n3tot, n2tot, n1tot, &(ptmp[(5+v)*n3tot*n2tot*n1tot]));
             }
         );
     }
-    delete[] ptmp;
 
     // Deep copy to device
+    Flag("Copying meshblock to device...");
     rho.DeepCopy(rho_host);
     u.DeepCopy(u_host);
     uvec.DeepCopy(uvec_host);
     B_P.DeepCopy(B_host);
     Kokkos::fence();
 
+    // Close the door on our way out
+    if (blocks_initialized == pmb->pmy_mesh->GetNumMeshBlocksThisRank())
+        delete[] ptmp;
+
     // Set the original simulation's end time, if we wanted that
     // Used pretty much only for MHDModes restart test
     if (use_tf) {
-        pin->SetReal("parthenon/time", "tlim", tf);
+        pin->SetPrecise("parthenon/time", "tlim", tf);
     }
     if (use_dt) {
         // Setting dt here is actually for KHARMA,
         // which returns this from EstimateTimestep in step 0
-        pin->SetReal("parthenon/time", "dt", dt);
+        pin->SetPrecise("parthenon/time", "dt", dt);
     }
 
     return TaskStatus::complete;
