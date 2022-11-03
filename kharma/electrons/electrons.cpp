@@ -446,6 +446,9 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
         }
     );
 
+    const IndexRange myib = pmb->cellbounds.GetBoundsI(IndexDomain::interior);
+    const IndexRange myjb = pmb->cellbounds.GetBoundsJ(IndexDomain::interior);
+    const IndexRange mykb = pmb->cellbounds.GetBoundsK(IndexDomain::interior);
     // A couple of the electron test problems add source terms
     // TODO move this to dUdt with other source terms?
     const std::string prob = pmb->packages.Get("GRMHD")->Param<std::string>("problem");
@@ -474,9 +477,6 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
         );
     } else if (prob == "driven_turbulence") { // Gaussian random field:
         const auto& G = pmb->coords;
-        const IndexRange myib = pmb->cellbounds.GetBoundsI(IndexDomain::interior);
-        const IndexRange myjb = pmb->cellbounds.GetBoundsJ(IndexDomain::interior);
-        const IndexRange mykb = pmb->cellbounds.GetBoundsK(IndexDomain::interior);
         GridScalar rho = rc->Get("prims.rho").data;
         GridVector uvec = rc->Get("prims.uvec").data;
         GridVector grf_normalized = rc->Get("grf_normalized").data;
@@ -581,7 +581,7 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
         const Real v0 = pmb->packages.Get("GRMHD")->Param<Real>("v0");
         const Real ug0 = pmb->packages.Get("GRMHD")->Param<Real>("ug0");
         Real Q = (ug0 * v0 * (gam - 2) / pow(1 + v0 * t, 3));
-        pmb->par_for("hubble_Q_source_term", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+        pmb->par_for("hubble_Q_source_term", mykb.s, mykb.e, myjb.s, myjb.e, myib.s, myib.e,
             KOKKOS_LAMBDA_3D {  P_new(m_p.UU, k, j, i) += Q*dt;  }
         );
         Flux::PtoU(rc);
@@ -589,7 +589,7 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
         const Real dt = pmb->packages.Get("Globals")->Param<Real>("dt_last");  // Close enough?
         const Real t = pmb->packages.Get("Globals")->Param<Real>("time") + 0.5*dt;
         const Real Q = pmb->packages.Get("GRMHD")->Param<Real>("q")*pow(t, 2);
-        pmb->par_for("rest_conserve_Q_source_term", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+        pmb->par_for("rest_conserve_Q_source_term", mykb.s, mykb.e, myjb.s, myjb.e, myib.s, myib.e,
             KOKKOS_LAMBDA_3D {  P_new(m_p.UU, k, j, i) += Q*dt;  }
         );
         Flux::PtoU(rc);
@@ -622,7 +622,7 @@ TaskStatus ApplyHeatingSubstep(MeshBlockData<Real> *mbase) {
         const Real gam = pmb0->packages.Get("GRMHD")->Param<Real>("gamma");
         Q = (ug0 * v0 * (gam - 2) / pow(1 + v0 * t, 3));
     }
-    IndexDomain domain = IndexDomain::entire;
+    IndexDomain domain = IndexDomain::interior;
     auto ib = mbase->GetBoundsI(domain);
     auto jb = mbase->GetBoundsJ(domain);
     auto kb = mbase->GetBoundsK(domain);
