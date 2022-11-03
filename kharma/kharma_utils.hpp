@@ -42,6 +42,12 @@ KOKKOS_INLINE_FUNCTION T excise(const T& n, const T& center, const T& range)
     return (m::abs(n - center) > range) ? n : ( (n > center) ? center + range : center - range );
 }
 
+template <typename T>
+KOKKOS_INLINE_FUNCTION T close_to(const T& x, const T& y, const Real& rel_tol=1e-8, const Real& abs_tol=1e-8)
+{
+    return ((abs(x - y) / y) < rel_tol) || (abs(x) < abs_tol && abs(y) < abs_tol);
+}
+
 // Quickly zero n elements of an array
 // Types can fail to resolve if gzeroN() calls zeroN(),
 // so we duplicate code a bit
