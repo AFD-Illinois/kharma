@@ -109,7 +109,7 @@ inline void FillDerivedBlock(MeshBlockData<Real> *rc) { UtoP(rc); }
  */
 TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real> *rc, bool generate_grf=false);
 
-TaskStatus ApplyHeating(MeshBlockData<Real> *mbase, int stage);
+TaskStatus ApplyHeating(MeshBlockData<Real> *mbase);
 
 /**
  * Diagnostics printed/computed after each step, called from kharma.cpp

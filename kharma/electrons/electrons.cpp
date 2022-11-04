@@ -581,7 +581,7 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
 }
 
 // Only if prob is rest_conserve or hubble
-TaskStatus ApplyHeating(MeshBlockData<Real> * mbase, int stage) {
+TaskStatus ApplyHeating(MeshBlockData<Real> * mbase) {
     auto pmb0 = mbase->GetBlockPointer();
     const string prob = pmb0->packages.Get("GRMHD")->Param<string>("problem");
     if (prob != "rest_conserve" && prob != "hubble") return TaskStatus::complete;
@@ -610,10 +610,9 @@ TaskStatus ApplyHeating(MeshBlockData<Real> * mbase, int stage) {
     auto kb = mbase->GetBoundsK(domain);
     auto block = IndexRange{0, P_mbase.GetDim(5)-1};
     
-    const Real mydt = (stage == 1) ? dt*0.5 : dt;
     pmb0->par_for("heating_substep", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_3D {
-            P_mbase(m_p.UU, k, j, i) += Q*mydt;
+            P_mbase(m_p.UU, k, j, i) += Q*dt*0.5;
         }
     );
     Flux::PtoU(mbase);
