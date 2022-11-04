@@ -25,7 +25,7 @@ before_script:
   - conda activate
   - cd /home/pyharm
   - pip install --user .
-  - cd ..
+  - cd -
 
 # Tests can be executed in parallel,
 # but be careful about GPU arch
