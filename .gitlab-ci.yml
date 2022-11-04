@@ -15,19 +15,20 @@ variables:
   OMPI_ALLOW_RUN_AS_ROOT_CONFIRM: 1
   GIT_SUBMODULE_STRATEGY: recursive
 
-# Install pyharm for verification
+# Install pyharm for verification before all runs
 before_script:
   - nvidia-smi
   - wget -O Miniforge3.sh "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-$(uname)-$(uname -m).sh"
   - bash Miniforge3.sh -b -p "/home/conda"
   - source "/home/conda/etc/profile.d/conda.sh"
-  - git clone https://github.com/AFD-Illinois/pyharm.git
+  - git clone https://github.com/AFD-Illinois/pyharm.git /home/pyharm
   - conda activate
-  - cd pyharm
-  - pip install -e .
+  - cd /home/pyharm
+  - pip install --user .
   - cd ..
 
-# Tests can be executed in parallel
+# Tests can be executed in parallel,
+# but be careful about GPU arch
 stages:
   - build
   - tests
@@ -45,15 +46,19 @@ build:
 convergence:
   stage: tests
   script:
+    # Always run all scripts, but
+    # record any errors
+    - exit_code=0
     - cd tests/bondi/
-    - bash run.sh
-    - bash check.sh
+    - bash run.sh || exit_code=$?
+    - bash check.sh || exit_code=$?
     - cd ../mhdmodes
-    - bash run.sh
-    - bash check.sh
+    - bash run.sh || exit_code=$?
+    - bash check.sh || exit_code=$?
     - cd ../emhdmodes
-    - bash run.sh
-    - bash check.sh
+    - bash run.sh || exit_code=$?
+    - bash check.sh || exit_code=$?
+    - exit $exit_code
   artifacts:
     when: always
     paths:
@@ -61,67 +66,29 @@ convergence:
       - tests/*/*.hst
       - tests/*/*.txt
 
-noh:
+regression:
   stage: tests
-  before_script:
-    - cd tests/noh/
   script:
-    - bash run.sh
-    - bash check.sh
-  artifacts:
-    when: always
-    paths:
-      - tests/noh/*.png
-      - tests/noh/*.hst
-
-bz_monopole:
-  stage: tests
-  before_script:
-    - cd tests/bz_monopole
-  script:
-    # Always run check.sh, but fail
-    # if run.sh returned error
     - exit_code=0
+    - cd tests/noh
     - bash run.sh || exit_code=$?
-    - bash check.sh
+    - bash check.sh || exit_code=$?
+    - cd ../bz_monopole
+    - bash run.sh || exit_code=$?
+    - bash check.sh || exit_code=$?
+    - cd ../tilt_init
+    - bash run.sh || exit_code=$?
+    - bash check.sh || exit_code=$?
+    - cd ../restart
+    - bash run.sh || exit_code=$?
+    - bash check.sh || exit_code=$?
+    - cd ../reinit
+    - bash run.sh || exit_code=$?
+    - bash check.sh || exit_code=$?
     - exit $exit_code
   artifacts:
     when: always
     paths:
-      - tests/bz_monopole/*.png
-      - tests/bz_monopole/*.hst
-
-tilt_init:
-  stage: tests
-  before_script:
-    - cd tests/tilt_init
-  script:
-    - exit_code=0
-    - bash run.sh || exit_code=$?
-    - bash check.sh
-    - exit $exit_code
-  artifacts:
-    when: always
-    paths:
-      - tests/tilt_init/*.png
-      - tests/tilt_init/*.hst
-
-restart:
-  stage: tests
-  before_script:
-    - cd tests/restart
-  script:
-    - bash run.sh
-    - bash check.sh
-  artifacts:
-    when: always
-    paths:
-      - tests/restart/*.png
-
-reinit:
-  stage: tests
-  before_script:
-    - cd tests/reinit
-  script:
-    - bash run.sh
-    - bash check.sh
+      - tests/*/*.png
+      - tests/*/*.hst
+      - tests/*/*.txt
