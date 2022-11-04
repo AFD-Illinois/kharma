@@ -575,44 +575,26 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
         } 
         // This could be only the GRMHD vars, for this problem, but speed isn't really an issue
         Flux::PtoU(rc);
-    } else if (prob == "hubble" && pmb->packages.Get("GRMHD")->Param<bool>("cooling") && generate_grf) {
-        const Real dt = pmb->packages.Get("Globals")->Param<Real>("dt_last");  // Close enough?
-        const Real t = pmb->packages.Get("Globals")->Param<Real>("time") + 0.5*dt;
-        const Real v0 = pmb->packages.Get("GRMHD")->Param<Real>("v0");
-        const Real ug0 = pmb->packages.Get("GRMHD")->Param<Real>("ug0");
-        Real Q = (ug0 * v0 * (gam - 2) / pow(1 + v0 * t, 3));
-        pmb->par_for("hubble_Q_source_term", mykb.s, mykb.e, myjb.s, myjb.e, myib.s, myib.e,
-            KOKKOS_LAMBDA_3D {  P_new(m_p.UU, k, j, i) += Q*dt;  }
-        );
-        Flux::PtoU(rc);
-    } else if (prob == "rest_conserve" && pmb->packages.Get("GRMHD")->Param<Real>("q") != 0. && generate_grf) {
-        const Real dt = pmb->packages.Get("Globals")->Param<Real>("dt_last");  // Close enough?
-        const Real t = pmb->packages.Get("Globals")->Param<Real>("time") + 0.5*dt;
-        const Real Q = pmb->packages.Get("GRMHD")->Param<Real>("q")*pow(t, 2);
-        pmb->par_for("rest_conserve_Q_source_term", mykb.s, mykb.e, myjb.s, myjb.e, myib.s, myib.e,
-            KOKKOS_LAMBDA_3D {  P_new(m_p.UU, k, j, i) += Q*dt;  }
-        );
-        Flux::PtoU(rc);
     }
     Flag(rc, "Applied");
     return TaskStatus::complete;
 }
 
 // Only if prob is rest_conserve or hubble
-TaskStatus ApplyHeatingSubstep(MeshBlockData<Real> *mbase) {
+TaskStatus ApplyHeating(MeshBlockData<Real> * mbase, int stage) {
     auto pmb0 = mbase->GetBlockPointer();
     const string prob = pmb0->packages.Get("GRMHD")->Param<string>("problem");
     if (prob != "rest_conserve" && prob != "hubble") return TaskStatus::complete;
 
-    Flag(mbase, "Applying heating at substep");
+    Flag(mbase, "Applying heating");
 
     PackIndexMap prims_map;
-    auto P_mbase = GRMHD::PackMHDPrims(mbase, prims_map);
+    auto P_mbase = GRMHD::PackHDPrims(mbase, prims_map);
     const VarMap m_p(prims_map, false);
 
     Real Q = 0;
     const Real dt = pmb0->packages.Get("Globals")->Param<Real>("dt_last");  // Close enough?
-    const Real t = pmb0->packages.Get("Globals")->Param<Real>("time") + 0.25*dt;
+    const Real t = pmb0->packages.Get("Globals")->Param<Real>("time") + 0.5*dt;
     if (prob == "rest_conserve") {
         const Real q = pmb0->packages.Get("GRMHD")->Param<Real>("q");
         Q = q*pow(t, 2);
@@ -628,13 +610,14 @@ TaskStatus ApplyHeatingSubstep(MeshBlockData<Real> *mbase) {
     auto kb = mbase->GetBoundsK(domain);
     auto block = IndexRange{0, P_mbase.GetDim(5)-1};
     
+    const Real mydt = (stage == 1) ? dt*0.5 : dt;
     pmb0->par_for("heating_substep", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_3D {
-            P_mbase(m_p.UU, k, j, i) += Q*dt*0.5;
+            P_mbase(m_p.UU, k, j, i) += Q*mydt;
         }
     );
-
-    Flag(mbase, "Applied heating at substep");
+    Flux::PtoU(mbase);
+    Flag(mbase, "Applied heating");
     return TaskStatus::complete;
 }
 
