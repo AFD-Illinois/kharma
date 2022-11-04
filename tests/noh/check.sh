@@ -7,4 +7,4 @@ PYHARMDIR=$HOME/Code/pyharm
 conda activate pyharm
 
 pyharm-convert *.phdf
-python3 $BASEDIR/check.py . . 64,128,256,512,1024,2048,4096 1.666667
+python $BASEDIR/check.py . . 64,128,256,512,1024,2048,4096 1.666667

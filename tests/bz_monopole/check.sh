@@ -5,4 +5,4 @@
 . ~/libs/anaconda3/etc/profile.d/conda.sh
 conda activate pyharm
 
-python3 ./check.py
+python ./check.py
