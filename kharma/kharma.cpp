@@ -54,7 +54,6 @@
 
 #include "bondi.hpp"
 #include "boundaries.hpp"
-#include "fixup.hpp"
 #include "harm_driver.hpp"
 #include "resize_restart.hpp"
 
