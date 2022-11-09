@@ -29,10 +29,6 @@ default:
     - pip install --user .
     - cd -
 
-  # This runs the actual test, but script: can't be defaulted
-  after_script:
-    - ./run.sh
-
   # Always keep logs and plots.  Results should be printed to console!
   artifacts:
     when: always
@@ -64,38 +60,46 @@ bondi:
   stage: tests
   script:
     - cd tests/bondi
+    - ./run.sh
 
 mhdmodes:
   stage: tests
   script:
     - cd tests/mhdmodes
+    - ./run.sh
 
 emhdmodes:
   stage: tests
   script:
     - cd tests/emhdmodes
+    - ./run.sh
 
 noh:
   stage: tests
   script:
     - cd tests/noh
+    - ./run.sh
 
 bz_monopole:
   stage: tests
   script:
     - cd tests/bz_monopole
+    - ./run.sh
 
 tilt_init:
   stage: tests
   script:
     - cd tests/tilt_init
+    - ./run.sh
 
 restart:
   stage: tests
   script:
     - cd tests/restart
+    - ./run.sh
 
 reinit:
   stage: tests
   script:
     - cd tests/reinit
+    - ./run.sh
