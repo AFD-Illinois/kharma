@@ -38,6 +38,7 @@ conv_2d linear_vl GRMHD/reconstruction=linear_vl "in 2D, linear recon with VL li
 
 # And the GRIM/classic driver
 conv_2d imex driver/type=imex "in 2D, with Imex driver"
-conv_2d imex_im "driver/type=imex GRMHD/implicit=true" "in 2D, semi-implicit stepping"
+# TODO when we port this stuff forward to kharmaim
+#conv_2d imex_im "driver/type=imex GRMHD/implicit=true" "in 2D, semi-implicit stepping"
 
 exit $exit_code
