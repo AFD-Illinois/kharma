@@ -2,7 +2,7 @@
 # a.k.a did we break the basics?
 
 # Build on Nvidia image.
-# Can pretty easily change this out
+# Can pretty easily change this out, with changes to build
 # Someday we'll build & push a KHARMA image, then test that
 image: nvcr.io/nvidia/nvhpc:22.9-devel-cuda_multi-rockylinux8
 
@@ -48,6 +48,8 @@ build:
   variables:
     NPROC: 24
     HOST_ARCH: HSW
+  before_script:
+    - echo "Skipping pyharm install in build."
   script:
     - export PREFIX_PATH=$PWD/external/hdf5
     - ./make.sh clean cuda hdf5
