@@ -8,7 +8,7 @@ image: nvcr.io/nvidia/nvhpc:22.9-devel-cuda_multi-rockylinux8
 
 variables:
   OMP_NUM_THREADS: 8
-  OMP_PROC_BIND: false
+  OMP_PROC_BIND: "false"
   MPI_EXE: mpirun
   OMPI_ALLOW_RUN_AS_ROOT: 1
   OMPI_ALLOW_RUN_AS_ROOT_CONFIRM: 1
