@@ -7,6 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 import pyharm
+import pyharm.plots as pplt
 
 RES = [int(x) for x in sys.argv[1].split(",")]
 LONG = sys.argv[2]
@@ -94,13 +95,12 @@ dvar *= amp
 
 # USE DUMPS IN FOLDERS OF GIVEN FORMAT
 for m, res in enumerate(RES):
-    print(DIM, res, SHORT)
+    #print(DIM, res, SHORT)
     dump = pyharm.load_dump("mhd_{}_{}_end_{}.phdf".format(DIM, res, SHORT))
-    params = dump.params
 
-    X1 = dump['x']
-    X2 = dump['y']
-    X3 = dump['z']
+    X1 = dump['X1']
+    X2 = dump['X2']
+    X3 = dump['X3']
 
     dvar_code = []
     dvar_code.append(dump['RHO'] - var0[0])
@@ -125,7 +125,7 @@ fail = 0
 for k in range(NVAR):
     if abs(dvar[k]) != 0.:
         powerfits[k] = np.polyfit(np.log(RES), np.log(L1[:,k]), 1)[0]
-        print("Power fit {}: {}".format(VARS[k], powerfits[k]))
+        print("Power fit {}: {} {}".format(VARS[k], powerfits[k], L1[:,k]))
         if powerfits[k] > -1.9 or ("entropy" not in SHORT and powerfits[k] < -2.1):
             # Allow entropy wave to converge fast, otherwise everything is ~2
             fail = 1

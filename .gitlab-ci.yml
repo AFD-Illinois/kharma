@@ -7,17 +7,17 @@
 image: nvcr.io/nvidia/nvhpc:22.9-devel-cuda_multi-rockylinux8
 
 variables:
-  NPROC: 24
   OMP_NUM_THREADS: 24
-  HOST_ARCH: HSW
   MPI_EXE: mpirun
   OMPI_ALLOW_RUN_AS_ROOT: 1
   OMPI_ALLOW_RUN_AS_ROOT_CONFIRM: 1
   GIT_SUBMODULE_STRATEGY: recursive
 
-# Install pyharm for verification before all runs
-before_script:
-  - nvidia-smi
+### DEFAULT TEST BEHAVIOR ###
+# Be default: install pyharm, then run test in cwd
+# For new tests, write one run.sh script which runs/verifies
+# interleaved, and prints a summary of results.
+script:
   - wget -O Miniforge3.sh "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-$(uname)-$(uname -m).sh"
   - bash Miniforge3.sh -b -p "/home/conda"
   - source "/home/conda/etc/profile.d/conda.sh"
@@ -27,6 +27,14 @@ before_script:
   - cd /home/pyharm
   - pip install --user .
   - cd -
+  - ./run.sh
+
+# Always keep logs and plots.  Results should be printed to console!
+artifacts:
+  when: always
+  paths:
+    - tests/*/*.png
+    - tests/*/*.txt
 
 # Tests can be executed in parallel,
 # but be careful about GPU arch
@@ -34,8 +42,12 @@ stages:
   - build
   - tests
 
+# Build, obviously overrides script/artifacts
 build:
   stage: build
+  variables:
+    NPROC: 24
+    HOST_ARCH: HSW
   script:
     - export PREFIX_PATH=$PWD/external/hdf5
     - ./make.sh clean cuda hdf5
@@ -44,52 +56,42 @@ build:
       - kharma.*
       - make_args
 
-convergence:
+bondi:
   stage: tests
-  script:
-    # Always run all scripts, but
-    # record any errors
-    - exit_code=0
+  before_script:
     - cd tests/bondi/
-    - bash run.sh || exit_code=$?
-    - bash check.sh || exit_code=$?
-    - cd ../mhdmodes
-    - bash run.sh || exit_code=$?
-    - bash check.sh || exit_code=$?
-    - cd ../emhdmodes
-    - bash run.sh || exit_code=$?
-    - bash check.sh || exit_code=$?
-    - exit $exit_code
-  artifacts:
-    when: always
-    paths:
-      - tests/*/*.png
-      - tests/*/*.hst
-      - tests/*/*.txt
 
-regression:
+mhdmodes:
   stage: tests
-  script:
-    - exit_code=0
+  before_script:
+    - cd tests/mhdmodes/
+
+emhdmodes:
+  stage: tests
+  before_script:
+    - cd tests/emhdmodes/
+
+noh:
+  stage: tests
+  before_script:
     - cd tests/noh
-    - bash run.sh || exit_code=$?
-    - bash check.sh || exit_code=$?
+
+bz_monopole:
+  stage: tests
+  before_script:
     - cd ../bz_monopole
-    - bash run.sh || exit_code=$?
-    - bash check.sh || exit_code=$?
+
+tilt_init:
+  stage: tests
+  before_script:
     - cd ../tilt_init
-    - bash run.sh || exit_code=$?
-    - bash check.sh || exit_code=$?
+
+restart:
+  stage: tests
+  before_script:
     - cd ../restart
-    - bash run.sh || exit_code=$?
-    - bash check.sh || exit_code=$?
+
+reinit:
+  stage: tests
+  before_script:
     - cd ../reinit
-    - bash run.sh || exit_code=$?
-    - bash check.sh || exit_code=$?
-    - exit $exit_code
-  artifacts:
-    when: always
-    paths:
-      - tests/*/*.png
-      - tests/*/*.hst
-      - tests/*/*.txt

@@ -14,9 +14,6 @@ SHORT = sys.argv[3]
 
 L1 = []
 
-# 3d Bondi is kind of pointless even in KHARMA...
-# for res in [32, 64]
-
 # 2d
 for res in RES:
     start = pyharm.load_dump("bondi_2d_{}_start_{}.phdf".format(res, SHORT))
