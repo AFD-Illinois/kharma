@@ -57,21 +57,16 @@ do
 done
 
 # If we haven't special-cased already, guess an architecture
-# This ends up fine on most x86 architectures
-# Exceptions:
-# 1. GPUs, obviously
-# 2. AVX512 (Intel on HPC or Gen10+ consumer)
-# 3. AMD EPYC Zen2, Zen3
-# However, you may have better luck commenting these tests and letting Kokkos decide
+# This only works with newer Kokkos, it's always best to
+# specify HOST_ARCH in a machine file once you know it.
 if [[ -z "$HOST_ARCH" ]]; then
   HOST_ARCH="NATIVE"
 fi
+EXTRA_FLAGS="-DKokkos_ARCH_${HOST_ARCH}=ON $EXTRA_FLAGS"
 
-# Add some flags only if they're set
-if [[ -v HOST_ARCH ]]; then
-  EXTRA_FLAGS="-DKokkos_ARCH_${HOST_ARCH}=ON $EXTRA_FLAGS"
-fi
-# Allow & set multiple device flags, separated by commas
+# Kokkos does *not* support compiling for multiple devices!
+# But if they ever do, you can separate a list of DEVICE_ARCH
+# with commas.
 if [[ -v DEVICE_ARCH ]]; then
   readarray -t arch_array < <(awk -F',' '{ for( i=1; i<=NF; i++ ) print $i }' <<<"$DEVICE_ARCH")
   for arch in "${arch_array[@]}"; do

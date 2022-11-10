@@ -1,5 +1,5 @@
 import numpy as np
-import os, sys, h5py, glob
+import os, sys, h5py
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt

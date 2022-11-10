@@ -20,8 +20,6 @@ conv_2d() {
         mv emhdmodes.out0.00000.phdf emhd_2d_${res}_start_${1}.phdf
         mv emhdmodes.out0.final.phdf emhd_2d_${res}_end_${1}.phdf
     done
-    # Very small amplitude by default, preserve double precision
-    pyharm-convert --double *.phdf
     check_code=0
     python check.py $ALL_RES "$3" $1 2d || check_code=$?
     if [[ $check_code != 0 ]]; then
@@ -30,8 +28,6 @@ conv_2d() {
     else
         echo EMHD modes test $3 success
     fi
-    # Avoid converting files again
-    rm *.phdf
 }
 
 # 2D modes use small blocks, could pick up some problems at MPI ranks >> 1
