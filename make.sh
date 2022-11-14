@@ -57,21 +57,16 @@ do
 done
 
 # If we haven't special-cased already, guess an architecture
-# This ends up fine on most x86 architectures
-# Exceptions:
-# 1. GPUs, obviously
-# 2. AVX512 (Intel on HPC or Gen10+ consumer)
-# 3. AMD EPYC Zen2, Zen3
-# However, you may have better luck commenting these tests and letting Kokkos decide
+# This only works with newer Kokkos, it's always best to
+# specify HOST_ARCH in a machine file once you know it.
 if [[ -z "$HOST_ARCH" ]]; then
   HOST_ARCH="NATIVE"
 fi
+EXTRA_FLAGS="-DKokkos_ARCH_${HOST_ARCH}=ON $EXTRA_FLAGS"
 
-# Add some flags only if they're set
-if [[ -v HOST_ARCH ]]; then
-  EXTRA_FLAGS="-DKokkos_ARCH_${HOST_ARCH}=ON $EXTRA_FLAGS"
-fi
-# Allow & set multiple device flags, separated by commas
+# Kokkos does *not* support compiling for multiple devices!
+# But if they ever do, you can separate a list of DEVICE_ARCH
+# with commas.
 if [[ -v DEVICE_ARCH ]]; then
   readarray -t arch_array < <(awk -F',' '{ for( i=1; i<=NF; i++ ) print $i }' <<<"$DEVICE_ARCH")
   for arch in "${arch_array[@]}"; do
@@ -79,7 +74,10 @@ if [[ -v DEVICE_ARCH ]]; then
   done
 fi
 if [[ "$ARGS" == *"trace"* ]]; then
-  EXTRA_FLAGS="-DTRACE=1 $EXTRA_FLAGS"
+  EXTRA_FLAGS="-DKHARMA_TRACE=1 $EXTRA_FLAGS"
+fi
+if [[ "$ARGS" == *"nompi"* ]]; then
+  EXTRA_FLAGS="-DKHARMA_DISABLE_MPI=1 $EXTRA_FLAGS"
 fi
 
 ### Enivoronment Prep ###
@@ -172,9 +170,9 @@ elif [[ "$ARGS" == *"hip"* ]]; then
 elif [[ "$ARGS" == *"cuda"* ]]; then
   export CC="$C_NATIVE"
   export CXX="$SCRIPT_DIR/bin/nvcc_wrapper"
-  if [[ "$ARGS" == *"dryrun"* ]]; then
+  if [[ "$ARGS" == *"wrapper_dryrun"* ]]; then
     export CXXFLAGS="-dryrun $CXXFLAGS"
-    echo "Dry-running with $CXXFLAGS"
+    echo "Dry-running the nvcc wrapper with $CXXFLAGS"
   fi
   export NVCC_WRAPPER_DEFAULT_COMPILER="$CXX_NATIVE"
   # Generally Kokkos sets this, so we don't need to
@@ -235,11 +233,31 @@ if [[ "$ARGS" == *"hdf5"* && "$ARGS" == *"clean"* ]]; then
   else
     MPI_CC=mpicc
   fi
+
+  if [[ "$ARGS" == *"nompi"* ]]; then
+    CC=$C_NATIVE sh configure -C --prefix=$PWD/../hdf5 --enable-build-mode=production \
+    --disable-dependency-tracking --disable-hl --disable-tests --disable-tools --disable-shared --disable-deprecated-symbols
+  else
+    CC=$MPI_CC sh configure -C --enable-parallel --prefix=$PWD/../hdf5 --enable-build-mode=production \
+    --disable-dependency-tracking --disable-hl --disable-tests --disable-tools --disable-shared --disable-deprecated-symbols
+  fi
+  cd hdf5-${H5VER}/
+  # TODO better ensure we're using C_NATIVE underneath.  e.g. MPI_CFLAGS with -cc
+  if [[ "$ARGS" == *"icc"* ]]; then
+    MPI_CC=mpiicc
+  else
+    MPI_CC=mpicc
+  fi
   CC=$MPI_CC sh configure -C --enable-parallel --prefix=$PWD/../hdf5 --enable-build-mode=production \
   --disable-dependency-tracking --disable-hl --disable-tests --disable-tools --disable-shared --disable-deprecated-symbols
   wait 1
-  # Compiling C takes less memory & is quicker
-  make -j$(( $NPROC * 2 ))
+
+  # Compiling C takes less memory
+  if [[ -z $NPROC ]]; then
+    make -j$(( $NPROC * 2 ))
+  else
+    make -j
+  fi
   make install
   make clean
   cd ../..
@@ -257,7 +275,11 @@ mkdir -p build
 cd build
 
 if [[ "$ARGS" == *"clean"* ]]; then
-#set -x
+
+  if [[ "$ARGS" == *"dryrun"* ]]; then
+    set -x
+  fi
+
   cmake ..\
     -DCMAKE_C_COMPILER="$CC" \
     -DCMAKE_CXX_COMPILER="$CXX" \
@@ -272,7 +294,11 @@ if [[ "$ARGS" == *"clean"* ]]; then
     -DKokkos_ENABLE_SYCL=$ENABLE_SYCL \
     -DKokkos_ENABLE_HIP=$ENABLE_HIP \
     $EXTRA_FLAGS
-#set +x
+
+  if [[ "$ARGS" == *"dryrun"* ]]; then
+    set +x
+    exit
+  fi
 fi
 
 make -j$NPROC

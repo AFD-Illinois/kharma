@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 
 # Bondi problem convergence plots
 
@@ -13,9 +13,6 @@ LONG = sys.argv[2]
 SHORT = sys.argv[3]
 
 L1 = []
-
-# 3d Bondi is kind of pointless even in KHARMA...
-# for res in [32, 64]
 
 # 2d
 for res in RES:
