@@ -45,9 +45,6 @@
 #include <sys/stat.h>
 #include <ctype.h>
 
-
-using namespace Kokkos;
-
 // This is gross, but everything else is grosser
 // What's a little leaked host mem between friends?
 static Real *ptmp = NULL;
@@ -287,9 +284,10 @@ TaskStatus ReadIharmRestart(MeshBlockData<Real> *rc, ParameterInput *pin)
     // TODO Support restart native coordinates != new native coordinates
     // NOTE: KOKKOS USES < not <=!! Therefore the RangePolicy below will seem like it is too big
     if (regrid_only) {
-        Kokkos::parallel_for("copy_restart_state",
-            Kokkos::MDRangePolicy<Kokkos::OpenMP, Kokkos::Rank<3>>({kb.s, jb.s, ib.s}, {kb.e+1, jb.e+1, ib.e+1}),
-            KOKKOS_LAMBDA_3D {
+        // Kokkos::parallel_for("copy_restart_state",
+        //     Kokkos::MDRangePolicy<Kokkos::OpenMP, Kokkos::Rank<3>>({kb.s, jb.s, ib.s}, {kb.e+1, jb.e+1, ib.e+1}),
+        //         KOKKOS_LAMBDA_3D {
+        for (int k=kb.s; k <= kb.e; ++k) for (int j=jb.s; j <= jb.e; ++j) for (int i=ib.s; i <= ib.e; ++i) {
                 GReal X[GR_DIM];
                 G.coord(k, j, i, Loci::center, X); double tmp[GR_DIM];
                 int gk,gj,gi; Xtoijk(X, startx, dx, gi, gj, gk, tmp, true);
@@ -299,11 +297,12 @@ TaskStatus ReadIharmRestart(MeshBlockData<Real> *rc, ParameterInput *pin)
                 VLOOP uvec_host(v, k, j, i) = ptmp[(2+v)*n3tot*n2tot*n1tot + gk*n2tot*n1tot + gj*n1tot + gi];
                 VLOOP B_host(v, k, j, i) = ptmp[(5+v)*n3tot*n2tot*n1tot + gk*n2tot*n1tot + gj*n1tot + gi];
             }
-        );
+        // );
     } else {
-        Kokkos::parallel_for("interp_restart_state",
-            Kokkos::MDRangePolicy<Kokkos::OpenMP, Kokkos::Rank<3>>({kb.s, jb.s, ib.s}, {kb.e+1, jb.e+1, ib.e+1}),
-            KOKKOS_LAMBDA_3D {
+        // Kokkos::parallel_for("interp_restart_state",
+        //     Kokkos::MDRangePolicy<Kokkos::OpenMP, Kokkos::Rank<3>>({kb.s, jb.s, ib.s}, {kb.e+1, jb.e+1, ib.e+1}),
+        //     KOKKOS_LAMBDA_3D {
+        for (int k=kb.s; k <= kb.e; ++k) for (int j=jb.s; j <= jb.e; ++j) for (int i=ib.s; i <= ib.e; ++i) {
                 // Get the zone center location
                 GReal X[GR_DIM];
                 G.coord(k, j, i, Loci::center, X);
@@ -313,7 +312,7 @@ TaskStatus ReadIharmRestart(MeshBlockData<Real> *rc, ParameterInput *pin)
                 VLOOP uvec_host(v, k, j, i) = linear_interp(G, X, startx, dx, is_spherical, false, n3tot, n2tot, n1tot, &(ptmp[(2+v)*n3tot*n2tot*n1tot]));
                 VLOOP B_host(v, k, j, i) = linear_interp(G, X, startx, dx, is_spherical, false, n3tot, n2tot, n1tot, &(ptmp[(5+v)*n3tot*n2tot*n1tot]));
             }
-        );
+        // );
     }
 
     // Deep copy to device

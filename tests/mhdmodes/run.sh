@@ -13,7 +13,7 @@ conv_3d() {
     do
       # Eight blocks
       half=$(( $res / 2 ))
-      $BASE/run.sh -i $BASE/pars/mhdmodes.par debug/verbose=1 \
+      $BASE/run.sh -i $BASE/pars/mhdmodes.par debug/verbose=2 \
                       parthenon/mesh/nx1=$res parthenon/mesh/nx2=$res parthenon/mesh/nx3=$res \
                       parthenon/meshblock/nx1=$half parthenon/meshblock/nx2=$half parthenon/meshblock/nx3=$half \
                       $2 >log_${1}_${res}.txt 2>&1
