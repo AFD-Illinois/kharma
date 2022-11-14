@@ -206,14 +206,14 @@ TaskStatus ReadIharmRestart(MeshBlockData<Real> *rc, ParameterInput *pin)
         }
         
         if (!close_to(pin->GetReal("parthenon/mesh", "x1min"),
-                      log(pin->GetReal("coordinates", "r_in"))) ||
+                      m::log(pin->GetReal("coordinates", "r_in"))) ||
             !close_to(pin->GetReal("parthenon/mesh", "x1max"),
-                      log(pin->GetReal("coordinates", "r_out")))) {
+                      m::log(pin->GetReal("coordinates", "r_out")))) {
             printf("Mesh shape does not match!");
             printf("Rin %g vs %g, Rout %g vs %g",
-                exp(pin->GetReal("parthenon/mesh", "x1min")),
+                m::exp(pin->GetReal("parthenon/mesh", "x1min")),
                 pin->GetReal("coordinates", "r_in"),
-                exp(pin->GetReal("parthenon/mesh", "x1max")),
+                m::exp(pin->GetReal("parthenon/mesh", "x1max")),
                 pin->GetReal("coordinates", "r_out"));
         }
     }
