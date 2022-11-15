@@ -45,9 +45,9 @@ set(KokkosKernels_ENABLE_TPL_CUBLAS OFF CACHE BOOL "KHARMA Override")
 # Check out oneAPI or NVHPC for software distributions that include easily-usable,
 # fast MPI modules
 # If you really want to disable MPI, set this to ON and comment the next two lines
-set(PARTHENON_DISABLE_MPI OFF CACHE BOOL "KHARMA Override")
-find_package(MPI REQUIRED)
-include_directories(SYSTEM ${MPI_INCLUDE_PATH})
+set(PARTHENON_DISABLE_MPI ON CACHE BOOL "KHARMA Override")
+#find_package(MPI REQUIRED)
+#include_directories(SYSTEM ${MPI_INCLUDE_PATH})
 
 # OpenMP is strictly required
 find_package(OpenMP REQUIRED)

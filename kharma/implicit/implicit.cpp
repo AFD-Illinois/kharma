@@ -293,7 +293,7 @@ TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_i
                         // Implicit sources at starting state
                         auto dU_implicit = Kokkos::subview(dU_implicit_s, Kokkos::ALL(), i);
                         if (m_p.Q >= 0) {
-                            EMHD::implicit_sources(G, P_full_step_init, P_sub_step_init, m_p, gam, j, i, emhd_params_sub_step_init, 
+                            EMHD::implicit_sources(G, P_full_step_init, P_sub_step_init, m_p, gam, k, j, i, emhd_params_sub_step_init, 
                                                 dU_implicit(m_u.Q), dU_implicit(m_u.DP));
                         }
 
@@ -301,7 +301,7 @@ TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_i
                         // Requires calculating the residual anyway, so we grab it here
                         calc_jacobian(G, P_solver, P_full_step_init, U_full_step_init, P_sub_step_init, 
                                     flux_src, dU_implicit, tmp1, tmp2, tmp3, m_p, m_u, emhd_params_full_step_init,
-                                    emhd_params_sub_step_init, nvar, nfvar, j, i, delta, gam, dt, jacobian, residual);
+                                    emhd_params_sub_step_init, nvar, nfvar, k, j, i, delta, gam, dt, jacobian, residual);
                         // Solve against the negative residual
                         FLOOP delta_prim(ip) = -residual(ip);
 
@@ -330,7 +330,7 @@ TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_i
                         FLOOP P_solver(ip) += lambda * delta_prim(ip);
 
                         calc_residual(G, P_solver, P_full_step_init, U_full_step_init, P_sub_step_init, flux_src, dU_implicit, tmp3,
-                                      m_p, m_u, emhd_params_full_step_init, emhd_params_sub_step_init, nfvar, j, i, gam, dt, residual);
+                                      m_p, m_u, emhd_params_full_step_init, emhd_params_sub_step_init, nfvar, k, j, i, gam, dt, residual);
 
                         // if (am_rank0 && b == 0 && i == 11 && j == 11 && k == 0) {
                         //     printf("Variable ordering: rho %d uu %d u1 %d B1 %d q %d dP %d\n",

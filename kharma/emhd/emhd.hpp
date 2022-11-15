@@ -84,6 +84,7 @@ TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt);
 template<typename Local>
 KOKKOS_INLINE_FUNCTION void set_parameters(const GRCoordinates& G, const Local& P, const VarMap& m_p,
                                            const EMHD_parameters& emhd_params, const Real& gam,
+                                           const int& k, const int& j, const int& i,
                                            Real& tau, Real& chi_e, Real& nu_e)
 {
     if (emhd_params.type == ClosureType::constant) {
@@ -109,17 +110,74 @@ KOKKOS_INLINE_FUNCTION void set_parameters(const GRCoordinates& G, const Local& 
         nu_e  = emhd_params.eta / max(P(m_p.RHO), SMALL);
 
     } else if (emhd_params.type == ClosureType::torus) {
-        // Something complicated
+        FourVectors Dtmp;
+        GRMHD::calc_4vecs(G, P, m_p, j, i, Loci::center, Dtmp);
+        double bsq = max(dot(Dtmp.bcon, Dtmp.bcov), SMALL);
+
+        GReal Xembed[GR_DIM];
+        G.coord_embed(k, j, i, Loci::center, Xembed);
+        GReal r = Xembed[1];
+
+        // Compute dynamical time scale
+        Real tau_dyn = pow(r, 1.5);
+        tau          = tau_dyn;
+
+        Real pg    = (gam - 1.) * P(m_p.UU);
+        Real Theta = pg / P(m_p.RHO);
+        // Compute local sound speed
+        Real cs    = sqrt(gam * pg / (P(m_p.RHO) + (gam * P(m_p.UU)))); 
+
+        Real lambda    = 0.01;
+        Real inv_exp_g = 0.;
+        Real f_fmin    = 0.;
+
+        // Correction due to heat conduction
+        Real q = P(m_p.Q);
+        if (emhd_params.higher_order_terms)
+            q *= sqrt(P(m_p.RHO) * emhd_params.conduction_alpha * pow(cs, 2.) * pow(Theta, 2.));
+        Real q_max   = emhd_params.conduction_alpha * P(m_p.RHO) * pow(cs, 3.);
+        Real q_ratio = fabs(q) / q_max;
+        inv_exp_g    = exp(-(q_ratio - 1.) / lambda);
+        f_fmin       = inv_exp_g / (inv_exp_g + 1.) + 1.e-5;
+
+        tau = min(tau, f_fmin * tau_dyn);
+
+        // Correction due to pressure anisotropy
+        Real dP = P(m_p.DP);
+        if (emhd_params.higher_order_terms)
+            dP *= sqrt(P(m_p.RHO) * emhd_params.viscosity_alpha * pow(cs, 2.) * Theta);
+        Real dP_comp_ratio = max(pg - 2./3. * dP, SMALL) / max(pg  + 1./3. * dP, SMALL);
+        Real dP_plus       = min(0.5 * bsq * dP_comp_ratio, 1.49 * pg / 1.07);
+        Real dP_minus      = max(-bsq, -2.99 * pg / 1.07);
+
+        Real dP_max = 0.;
+        if (dP > 0.)
+            dP_max = dP_plus;
+        else
+            dP_max = dP_minus;
+
+        Real dP_ratio = fabs(dP) / (fabs(dP_max) + SMALL);
+        inv_exp_g     = exp(-(dP_comp_ratio - 1.) / lambda);
+        f_fmin        = inv_exp_g / (inv_exp_g + 1.) + 1.e-5;
+
+        tau = min(tau, f_fmin * tau_dyn);
+
+        // Update thermal diffusivity and kinematic viscosity
+        Real max_alpha = (1 - pow(cs, 2.)) / (2*pow(cs, 2.) + 1.e-12);
+        chi_e = min(max_alpha, emhd_params.conduction_alpha) * pow(cs, 2.) * tau;
+        nu_e  = min(max_alpha, emhd_params.viscosity_alpha) * pow(cs, 2.) * tau;
     } // else yell?
 }
+
 template<typename Global>
 KOKKOS_INLINE_FUNCTION void set_parameters(const GRCoordinates& G, const Global& P, const VarMap& m_p,
                                            const EMHD_parameters& emhd_params, const Real& gam,
                                            const int& k, const int& j, const int& i,
-                                           Real& tau, Real& chi_e, Real& nu_e)
+                                           Real& tau, Real& chi_e, Real& nu_e, const char* global_flag)
 {
     if (emhd_params.type == ClosureType::constant) {
         // Set tau, nu, chi to constants
+        // So far none of our problems use this. Also, the expressions are not quite right based on dimensional analysis.
         tau   = emhd_params.tau;
         chi_e = emhd_params.conduction_alpha;
         nu_e  = emhd_params.viscosity_alpha;
@@ -139,10 +197,71 @@ KOKKOS_INLINE_FUNCTION void set_parameters(const GRCoordinates& G, const Global&
         nu_e  = emhd_params.eta / max(P(m_p.RHO, k, j, i), SMALL);
 
     } else if (emhd_params.type == ClosureType::torus) {
-        // Something complicated
+        Real rho     = P(m_p.RHO, k, j, i);
+        Real uu      = P(m_p.UU, k, j, i);
+        Real qtilde  = P(m_p.Q, k, j, i);
+        Real dPtilde = P(m_p.DP, k, j, i);
+
+        FourVectors Dtmp;
+        GRMHD::calc_4vecs(G, P, m_p, k, j, i, Loci::center, Dtmp);
+        double bsq = max(dot(Dtmp.bcon, Dtmp.bcov), SMALL);
+
+        GReal Xembed[GR_DIM];
+        G.coord_embed(k, j, i, Loci::center, Xembed);
+        GReal r = Xembed[1];
+
+        // Compute dynamical time scale
+        Real tau_dyn = pow(r, 1.5);
+        tau          = tau_dyn;
+
+        Real pg    = (gam - 1.) * uu;
+        Real Theta = pg / rho;
+        // Compute local sound speed
+        Real cs    = sqrt(gam * pg / (rho + (gam * uu))); 
+
+        Real lambda    = 0.01;
+        Real inv_exp_g = 0.;
+        Real f_fmin    = 0.;
+
+        // Correction due to heat conduction
+        Real q = qtilde;
+        if (emhd_params.higher_order_terms)
+            q *= (rho * emhd_params.conduction_alpha * pow(cs, 2.) * pow(Theta, 2.));
+        Real q_max   = emhd_params.conduction_alpha * rho * pow(cs, 3.);
+        Real q_ratio = fabs(q) / q_max;
+        inv_exp_g    = exp(-(q_ratio - 1.) / lambda);
+        f_fmin       = inv_exp_g / (inv_exp_g + 1.) + 1.e-5;
+
+        tau = min(tau, f_fmin * tau_dyn);
+
+        // Correction due to pressure anisotropy
+        Real dP = dPtilde;
+        if (emhd_params.higher_order_terms)
+            dP *= sqrt(rho * emhd_params.viscosity_alpha * pow(cs, 2.) * Theta);
+        Real dP_comp_ratio = max(pg - 2./3. * dP, SMALL) / max(pg  + 1./3. * dP, SMALL);
+        Real dP_plus       = min(0.5 * bsq * dP_comp_ratio, 1.49 * pg / 1.07);
+        Real dP_minus      = max(-bsq, -2.99 * pg / 1.07);
+
+        Real dP_max = 0.;
+        if (dP > 0.)
+            dP_max = dP_plus;
+        else
+            dP_max = dP_minus;
+
+        Real dP_ratio = fabs(dP) / (fabs(dP_max) + SMALL);
+        inv_exp_g     = exp(-(dP_comp_ratio - 1.) / lambda);
+        f_fmin        = inv_exp_g / (inv_exp_g + 1.) + 1.e-5;
+
+        tau = min(tau, f_fmin * tau_dyn);
+
+        // Update thermal diffusivity and kinematic viscosity
+        Real max_alpha = (1 - pow(cs, 2.)) / (2*pow(cs, 2.) + 1.e-12);
+        chi_e = min(max_alpha, emhd_params.conduction_alpha) * pow(cs, 2.) * tau;
+        nu_e  = min(max_alpha, emhd_params.viscosity_alpha) * pow(cs, 2.) * tau;
     } // else yell?
 }
-// Local version for use in initialization, as q/dP need to be converted to prim tilde forms
+
+// ONLY FOR TEST PROBLEMS INITIALIZATION (local version)
 KOKKOS_INLINE_FUNCTION void set_parameters(const GRCoordinates& G, const Real& rho, const Real& u,
                                            const EMHD_parameters& emhd_params, const Real& gam,
                                            const int& k, const int& j, const int& i,
@@ -189,76 +308,27 @@ KOKKOS_INLINE_FUNCTION void calc_tensor(const Real& rho, const Real& u, const Re
     DLOOP1 {
         emhd[mu] = eta * D.ucon[dir] * D.ucov[mu]
                   + ptot * (dir == mu)
-                  - D.bcon[dir] * D.bcov[mu]
-                  + (q / sqrt(bsq)) * ((D.ucon[dir] * D.bcov[mu]) +
-                                       (D.bcon[dir] * D.ucov[mu]))
-                  - dP * ((D.bcon[dir] * D.bcov[mu] / bsq)
-                          - (1./3) * ((dir == mu) + D.ucon[dir] * D.ucov[mu]));
+                  - D.bcon[dir] * D.bcov[mu];
+                //   + (q / sqrt(bsq)) * ((D.ucon[dir] * D.bcov[mu]) +
+                //                        (D.bcon[dir] * D.ucov[mu]))
+                //   - dP * ((D.bcon[dir] * D.bcov[mu] / bsq)
+                //           - (1./3) * ((dir == mu) + D.ucon[dir] * D.ucov[mu]));
     }
 }
 
 // Convert q_tilde and dP_tilde (which are primitives) to q and dP
 // This is required because the stress-energy tensor depends on q and dP
 KOKKOS_INLINE_FUNCTION void convert_prims_to_q_dP(const Real& q_tilde, const Real& dP_tilde,
-                                        const Real& rho, const Real& Theta, 
-                                        const Real& tau, const Real& chi_e, const Real& nu_e,
+                                        const Real& rho, const Real& Theta, const Real& cs2, 
                                         const EMHD_parameters& emhd_params, Real& q, Real& dP)
 {
     q  = q_tilde;
     dP = dP_tilde;
 
     if (emhd_params.higher_order_terms) {
-        q  *= sqrt(chi_e * rho * pow(Theta, 2) /tau);
-        dP *= sqrt(nu_e * rho * Theta /tau);
+        q  *= sqrt(rho * emhd_params.conduction_alpha * cs2 * pow(Theta, 2));
+        dP *= sqrt(rho * emhd_params.viscosity_alpha * cs2 * Theta);
     }
-}
-
-// Convert q and dP to q_tilde and dP_tilde (which are primitives)
-// This is required because,
-//          1. The source terms contain q0_tilde and dP0_tilde
-//          2. Initializations MAY require converting q and dP to q_tilde and dP_tilde
-KOKKOS_INLINE_FUNCTION void convert_q_dP_to_prims(const Real& q, const Real& dP,
-                                        const Real& rho, const Real& Theta, 
-                                        const Real& tau, const Real& chi_e, const Real& nu_e,
-                                        const EMHD_parameters& emhd_params, Real& q_tilde, Real& dP_tilde)
-{
-    q_tilde  = q;
-    dP_tilde = dP;
-
-    if (emhd_params.higher_order_terms) {
-        q_tilde  *= (chi_e != 0) ? sqrt(tau / (chi_e * rho * pow(Theta, 2)) ) : 0.;
-        dP_tilde *= (nu_e  != 0) ? sqrt(tau / (nu_e * rho * Theta) ) : 0.;
-    }
-}
-
-inline VariablePack<Real> PackEMHDPrims(MeshBlockData<Real> *rc, PackIndexMap& prims_map, bool coarse=false)
-{
-    auto pmb = rc->GetBlockPointer();
-    MetadataFlag isPrimitive = pmb->packages.Get("GRMHD")->Param<MetadataFlag>("PrimitiveFlag");
-    MetadataFlag isEMHD = pmb->packages.Get("EMHD")->Param<MetadataFlag>("EMHDFlag");
-    return rc->PackVariables({isPrimitive, isEMHD}, prims_map, coarse);
-}
-
-inline MeshBlockPack<VariablePack<Real>> PackEMHDPrims(MeshData<Real> *md, PackIndexMap& prims_map, bool coarse=false)
-{
-    auto pmb = md->GetBlockData(0)->GetBlockPointer();
-    MetadataFlag isPrimitive = pmb->packages.Get("GRMHD")->Param<MetadataFlag>("PrimitiveFlag");
-    MetadataFlag isEMHD = pmb->packages.Get("EMHD")->Param<MetadataFlag>("EMHDFlag");
-    return md->PackVariables(std::vector<MetadataFlag>{isPrimitive, isEMHD}, prims_map, coarse);
-}
-
-inline VariablePack<Real> PackEMHDCons(MeshBlockData<Real> *rc, PackIndexMap& cons_map, bool coarse=false)
-{
-    auto pmb = rc->GetBlockPointer();
-    MetadataFlag isEMHD = pmb->packages.Get("EMHD")->Param<MetadataFlag>("EMHDFlag");
-    return rc->PackVariables({Metadata::Conserved, isEMHD}, cons_map, coarse);
-}
-
-inline MeshBlockPack<VariablePack<Real>> PackEMHDCons(MeshData<Real> *md, PackIndexMap& cons_map, bool coarse=false)
-{
-    auto pmb = md->GetBlockData(0)->GetBlockPointer();
-    MetadataFlag isEMHD = pmb->packages.Get("EMHD")->Param<MetadataFlag>("EMHDFlag");
-    return md->PackVariables(std::vector<MetadataFlag>{Metadata::Conserved, isEMHD}, cons_map, coarse);
 }
 
 } // namespace EMHD

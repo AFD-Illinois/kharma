@@ -65,15 +65,12 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const Local& P,
 
     Real T[GR_DIM];
     if (m_p.Q >= 0) {
-        // EGRMHD stress-energy tensor w/ first index up, second index down
-        // Get problem closure parameters
-        Real tau, chi_e, nu_e;
-        EMHD::set_parameters(G, P, m_p, emhd_params, gam, tau, chi_e, nu_e);
 
         // Apply higher-order terms conversion if necessary
         Real q, dP;
-        const Real Theta   = (gam - 1) * P(m_p.UU) / P(m_p.RHO);
-        EMHD::convert_prims_to_q_dP(P(m_p.Q), P(m_p.DP), P(m_p.RHO), Theta, tau, chi_e, nu_e, emhd_params, q, dP);
+        const Real Theta = (gam - 1) * P(m_p.UU) / P(m_p.RHO);
+        const Real cs2   = gam * (gam - 1) * P(m_p.UU) / (P(m_p.RHO) + gam * P(m_p.UU));
+        EMHD::convert_prims_to_q_dP(P(m_p.Q), P(m_p.DP), P(m_p.RHO), Theta, cs2, emhd_params, q, dP);
 
         // Then calculate the tensor
         EMHD::calc_tensor(P(m_p.RHO), P(m_p.UU), (gam - 1) * P(m_p.UU), q, dP, D, dir, T);
@@ -172,12 +169,8 @@ KOKKOS_INLINE_FUNCTION void vchar(const GRCoordinates& G, const Local& P, const 
         const Real ee  = bsq + ef;
         const Real va2 = bsq / ee;
 
-        // EMHD corrections to sound speed
-        Real tau, chi_e, nu_e;
-        EMHD::set_parameters(G, P, m, emhd_params, gam, tau, chi_e, nu_e);
-
-        const Real cvis2  = (4./3.) / (P(m.RHO) + (gam * P(m.UU)) ) * P(m.RHO) * nu_e / tau;
-        const Real ccond2 = (gam - 1.) * chi_e / tau;
+        const Real cvis2  = (4./3.) / (P(m.RHO) + (gam * P(m.UU)) ) * P(m.RHO) * emhd_params.viscosity_alpha * cs2;
+        const Real ccond2 = (gam - 1.) * emhd_params.conduction_alpha * cs2;
 
         const Real cscond   = 0.5*(cs2 + ccond2 + sqrt(cs2*cs2 + ccond2*ccond2) ) ;
         const Real cs2_emhd = cscond + cvis2;

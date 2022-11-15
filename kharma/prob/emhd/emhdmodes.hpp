@@ -130,8 +130,12 @@ TaskStatus InitializeEMHDModes(MeshBlockData<Real> *rc, ParameterInput *pin)
                 Real tau, chi_e, nu_e;
                 EMHD::set_parameters(G, rho(k, j, i), u(k, j, i), emhd_params, gam, k, j, i, tau, chi_e, nu_e);
                 Real Theta = (gam - 1) * u(k, j, i) / rho(k, j, i);
-                Real q_tilde, dP_tilde;
-                EMHD::convert_q_dP_to_prims(q(k, j, i), dP(k, j, i), rho(k, j, i), Theta, tau, chi_e, nu_e, emhd_params, q_tilde, dP_tilde);
+                Real q_tilde  = q(k, j, i); 
+                Real dP_tilde = dP(k, j, i);
+                if (emhd_params.higher_order_terms) {
+                    q_tilde  *= (chi_e != 0) ? sqrt(tau / (chi_e * rho(k, j, i) * pow(Theta, 2.))) : 0.;
+                    dP_tilde *= (nu_e  != 0) ? sqrt(tau / (nu_e * rho(k, j, i) * Theta)) : 0.;
+                }
                 q(k, j, i) = q_tilde;
                 dP(k, j, i) = dP_tilde;
             }

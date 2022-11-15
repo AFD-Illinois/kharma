@@ -233,8 +233,12 @@ TaskStatus InitializeAtmosphere(MeshBlockData<Real> *rc, ParameterInput *pin)
                         EMHD::set_parameters(G, rho_temp, u_temp, emhd_params, gam, k, j, i, tau, chi_e, nu_e);
 
                         // Update q_host (and dP_host, which is zero in this problem). These are now q_tilde and dP_tilde
-                        Real q_tilde, dP_tilde;
-                        EMHD::convert_q_dP_to_prims(q_host(k, j, i), dP_host(k, j, i), rho_temp, Theta, tau, chi_e, nu_e, emhd_params, q_tilde, dP_tilde);
+                        Real q_tilde  = q_host(k, j, i);
+                        Real dP_tilde = dP_host(k, j, i);
+                        if (emhd_params.higher_order_terms) {
+                            q_tilde  *= (chi_e != 0) ? sqrt(tau / (chi_e * rho_temp * pow(Theta, 2.))) : 0.;
+                            dP_tilde *= (nu_e  != 0) ? sqrt(tau / (nu_e * rho_temp * Theta)) : 0.;
+                        }
                         q_host(k, j, i)   = q_tilde;
                         dP_host(k, j, i)  = dP_tilde;
                     }
