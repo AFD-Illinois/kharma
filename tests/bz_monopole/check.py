@@ -1,6 +1,5 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 
-# MHD linear modes convergence plots
 import os,sys
 import glob
 import numpy as np
@@ -9,6 +8,7 @@ import matplotlib.pyplot as plt
 import pyharm
 import pyharm.plots.plot_dumps as hplt
 
+# Plots ONLY; no automated failures
 for dumpname in np.sort(glob.glob("bz_monopole.out0.*.phdf")):
     dump = pyharm.load_dump(dumpname)
     fig, ax = plt.subplots(1,1,figsize=(7,7))

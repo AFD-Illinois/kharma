@@ -26,6 +26,8 @@ set(BUILD_TESTING OFF CACHE BOOL "KHARMA Override")
 set(ENABLE_COMPILER_WARNINGS OFF CACHE BOOL "KHARMA Override")
 # TODO set this here when I upstream or otherwise unfork
 #set(COORDINATE_TYPE GRCoordinates)
+# Always use static HDF5
+set(HDF5_USE_STATIC_LIBRARIES ON CACHE BOOL "KHARMA Override")
 
 # Kokkos options
 set(Kokkos_ENABLE_OPENMP ON CACHE BOOL "KHARMA Override")
@@ -38,16 +40,16 @@ set(Kokkos_ENABLE_AGGRESSIVE_VECTORIZATION ON CACHE BOOL "KHARMA Override")
 set(KokkosKernels_ENABLE_TPL_CUSPARSE OFF CACHE BOOL "KHARMA Override")
 set(KokkosKernels_ENABLE_TPL_CUBLAS OFF CACHE BOOL "KHARMA Override")
 
-
-# Parthenon says it doesn't need MPI.  It just *strongly prefers* it, and so do we.
-# Builds without MPI have pretty limited support, you can usually find distribution 
-# packages or other ways to install it on personal machines without too much work.
-# Check out oneAPI or NVHPC for software distributions that include easily-usable,
-# fast MPI modules
-# If you really want to disable MPI, set this to ON and comment the next two lines
-set(PARTHENON_DISABLE_MPI OFF CACHE BOOL "KHARMA Override")
-find_package(MPI REQUIRED)
-include_directories(SYSTEM ${MPI_INCLUDE_PATH})
+# Offer a KHARMA option to disable the MPI requirement
+# The only difference from setting PARTHENON_DISABLE_MPI is that
+# the configure step no longer searches for/fails without it
+if (KHARMA_DISABLE_MPI)
+  set(PARTHENON_DISABLE_MPI ON CACHE BOOL "KHARMA Override")
+else()
+  set(PARTHENON_DISABLE_MPI OFF CACHE BOOL "KHARMA Override")
+  find_package(MPI REQUIRED)
+  include_directories(SYSTEM ${MPI_INCLUDE_PATH})
+endif()
 
 # OpenMP is strictly required
 find_package(OpenMP REQUIRED)

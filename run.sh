@@ -13,15 +13,15 @@
 #export KOKKOS_PROFILE_LIBRARY=$KHARMA_DIR/../kokkos-tools/kp_nvprof_cnnector.so
 
 # Default MPI parameters: no invocation or same processes as Kokkos devices
-MPI_EXE=""
-MPI_NUM_PROCS=1
-MPI_EXTRA_ARGS=""
+MPI_EXE=${MPI_EXE:-}
+MPI_NUM_PROCS=${MPI_NUM_PROCS:-1}
+MPI_EXTRA_ARGS=${MPI_EXTRA_ARGS:-}
 
 ### General run script
 
 # OpenMP directives: use all available threads
-#export OMP_PROC_BIND=spread
-#export OMP_PLACES=threads
+export OMP_PROC_BIND=${OMP_PROC_BIND:-spread}
+export OMP_PLACES=${OMP_PLACES:-threads}
 
 # If you see weird GPU race conditions, setting this
 # to 1 *might* fix them. Maybe.
@@ -29,7 +29,7 @@ export CUDA_LAUNCH_BLOCKING=0
 # Kokkos can be forced to a particular device:
 #export KOKKOS_DEVICE_ID=0
 
-# Choose the kharma from compiled options in order of preference
+# Choose the kharma binary from compiled options in order of preference
 KHARMA_DIR="$(dirname "${BASH_SOURCE[0]}")"
 if [ -f $KHARMA_DIR/kharma.cuda ]; then
   EXE_NAME=kharma.cuda
@@ -54,6 +54,18 @@ do
   source $machine
 done
 export KOKKOS_NUM_DEVICES
+
+# Override MPI_NUM_PROCS at user option "-n"
+if [[ "$1" == "-n" ]]; then
+  MPI_NUM_PROCS="$2"
+  shift
+  shift
+fi
+if [[ "$1" == "-nt" ]]; then
+  export OMP_NUM_THREADS="$2"
+  shift
+  shift
+fi
 
 # Run based on preferences
 if [ -z "$MPI_EXE" ]; then

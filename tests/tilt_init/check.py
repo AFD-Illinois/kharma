@@ -1,6 +1,7 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 
 # Image the first dump
+# Note NO CONSISTENCY CHECKS
 import os,sys
 import glob
 import numpy as np
