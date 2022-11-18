@@ -59,6 +59,7 @@ amp = 1e-8
 
 <floors>
 disable_floors = true
+enable_emhd_limits = false
 
 <debug>
 verbose = 1

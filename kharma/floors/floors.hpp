@@ -40,6 +40,7 @@
 #include "flux_functions.hpp"
 #include "grmhd_functions.hpp"
 #include "U_to_P.hpp"
+#include "emhd.hpp"
 
 #include <parthenon/parthenon.hpp>
 
@@ -62,6 +63,10 @@
 // the flags aren't written
 #define HIT_FLOOR_GEOM_RHO_FLUX 4096
 #define HIT_FLOOR_GEOM_U_FLUX 8192
+
+// Flags for the extended MHD limits
+#define HIT_Q_LIMIT  1
+#define HIT_DP_LIMIT 2
 
 namespace Floors
 {
@@ -106,6 +111,9 @@ class Prescription {
         bool fluid_frame, mixed_frame;
         bool use_r_char, temp_adjust_u, adjust_k;
 
+        // Instability limits
+        bool enable_emhd_limits;
+
         Prescription(const parthenon::Params& params)
         {
             rho_min_geom = params.Get<Real>("rho_min_geom");
@@ -124,6 +132,8 @@ class Prescription {
             use_r_char = params.Get<bool>("use_r_char");
             temp_adjust_u = params.Get<bool>("temp_adjust_u");
             adjust_k = params.Get<bool>("adjust_k");
+
+            enable_emhd_limits = params.Get<bool>("enable_emhd_limits");
         }
 };
 
@@ -417,6 +427,71 @@ KOKKOS_INLINE_FUNCTION int apply_geo_floors(const GRCoordinates& G, Global& P, c
     P(m.UU, k, j, i) += max(0., uflr_geom - P(m.UU, k, j, i));
 
     return fflag;
+}
+
+/**
+ * Apply limits on the Extended MHD variables
+ * 
+ * @return elag, a bitflag indicating whether each particular limit was hit, allowing representation of arbitrary combinations
+ * See decs.h for bit names.
+ * 
+ * The maximum heat flux is limited by the saturated value given by a hot cloud in cold gas.
+ * The bounds on the pressure anisotropy as due to the mirror and firehose instability limits.
+ * 
+ * Although only q, dP are updated here, prim_to_flux updates all conserved. 
+ * This shouldn't be an issue though since PtoU in analytic and will result in the same value for the ideal MHD variables.
+ */
+KOKKOS_INLINE_FUNCTION int apply_instability_limits(const GRCoordinates& G, const VariablePack<Real>& P, const VarMap& m_p,
+                                          const Real& gam, const EMHD::EMHD_parameters& emhd_params, 
+                                          const int& k, const int& j, const int& i, const Floors::Prescription& floors,
+                                          const VariablePack<Real>& U, const VarMap& m_u, const Loci loc=Loci::center)
+{
+    int eflag = 0;
+
+    Real rho      = P(m_p.RHO, k, j, i);
+    Real uu       = P(m_p.UU, k, j, i);
+    Real qtilde  = P(m_p.Q, k, j, i);
+    Real dPtilde = P(m_p.DP, k, j, i);
+
+    Real pg    = (gam - 1.) * uu;
+    Real Theta = pg / rho;
+    Real cs    = sqrt(gam * pg / (rho + (gam * uu)));
+
+    FourVectors D;
+    GRMHD::calc_4vecs(G, P, m_p, k, j, i, Loci::center, D);
+    Real bsq = max(dot(D.bcon, D.bcov), SMALL);
+
+    Real tau, chi_e, nu_e;
+    EMHD::set_parameters(G, P, m_p, emhd_params, gam, k, j, i, tau, chi_e, nu_e, "instability_limits");
+
+    Real q, dP;
+    EMHD::convert_prims_to_q_dP(qtilde, dPtilde, rho, Theta, cs*cs, emhd_params, q, dP);
+
+    Real qmax         = 1.07 * rho * pow(cs, 3.);
+    Real max_frac     = max(fabs(q) / qmax, 1.);
+    if (fabs(q) / qmax > 1.)
+        eflag |= HIT_Q_LIMIT;
+
+    P(m_p.Q, k, j, i) = P(m_p.Q, k, j, i) / max_frac;
+
+    Real dP_comp_ratio = max(pg - 2./3. * dP, SMALL) / max(pg + 1./3. * dP, SMALL);
+    Real dP_plus       = min(1.07 * 0.5 * bsq * dP_comp_ratio, 1.49 * pg);
+    Real dP_minus      = max(-1.07 * bsq, -2.99 * pg);
+
+    if (dP > 0. && (dP / dP_plus > 1.))
+        eflag |= HIT_DP_LIMIT;
+    else if (dP < 0. && (dP / dP_minus > 1.))
+        eflag |= HIT_DP_LIMIT;
+    
+    if (dP > 0.)
+        P(m_p.DP, k, j, i) = P(m_p.DP, k, j, i) * (1. / max(dP / dP_plus, 1.));
+    else
+        P(m_p.DP, k, j, i) = P(m_p.DP, k, j, i) * (1. / max(dP / dP_minus, 1.));
+
+    Flux::p_to_u(G, P, m_p, emhd_params, gam, k, j, i, U, m_u);
+
+    return eflag;
+        
 }
 
 } // namespace Floors
