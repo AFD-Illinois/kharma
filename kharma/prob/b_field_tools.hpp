@@ -38,7 +38,7 @@
 
 // Internal representation of the field initialization preference for quick switch
 // Avoids string comparsion in kernels
-enum BSeedType{constant, monopole, sane, ryan, r3s3, steep, gaussian, bz_monopole, vertical};
+enum BSeedType{constant, monopole, sane, ryan, ryan_quadrupole, r3s3, steep, gaussian, bz_monopole, vertical};
 
 /**
  * Function to parse a string indicating desired field to a BSeedType

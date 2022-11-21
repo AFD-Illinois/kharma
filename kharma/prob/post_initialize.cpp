@@ -72,7 +72,7 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, std::shared_ptr<MeshData<Rea
 
         Flag("Seeding magnetic field");
         // Seed the magnetic field and find the minimum beta
-        Real beta_min = 1.e100, p_max = 0., bsq_max = 0.;
+        Real beta_min = 1.e100, p_max = 0., bsq_max = 0., bsq_min = 0.;
         for (auto &pmb : pmesh->block_list) {
             auto& rc = pmb->meshblock_data.Get();
 
@@ -97,6 +97,7 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, std::shared_ptr<MeshData<Rea
             if (beta_calc_legacy) {
                 Real bsq_local = GetLocalBsqMax(rc.get());
                 if(bsq_local > bsq_max) bsq_max = bsq_local;
+                if(bsq_local < bsq_min) bsq_min = bsq_local;
                 Real p_local = GetLocalPMax(rc.get());
                 if(p_local > p_max) p_max = p_local;
             } else {
@@ -116,6 +117,7 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, std::shared_ptr<MeshData<Rea
             // Calculate current beta_min value
             if (beta_calc_legacy) {
                 bsq_max = MPIReduce_once(bsq_max, MPI_MAX);
+                bsq_min = MPIReduce_once(bsq_min, MPI_MIN);
                 p_max = MPIReduce_once(p_max, MPI_MAX);
                 beta_min = p_max / (0.5 * bsq_max);
             } else {
@@ -123,8 +125,11 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, std::shared_ptr<MeshData<Rea
             }
 
             if (pin->GetInteger("debug", "verbose") > 0) {
-                if (MPIRank0())
+                if (MPIRank0()) {
+                    std::cerr << "bsq_max pre-norm: " << bsq_max << std::endl;
+                    std::cerr << "bsq_min pre-norm: " << bsq_min << std::endl;
                     std::cerr << "Beta min pre-norm: " << beta_min << std::endl;
+                }
             }
 
             // Then normalize B by sqrt(beta/beta_min)
