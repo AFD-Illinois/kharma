@@ -99,20 +99,29 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     params.Add("gamma_max", gamma_max);
 
     // Frame to apply floors: usually we use normal observer frame, but
-    // the option exists to use the fluid frame exclusively or outside a
-    // certain radius.  This option adds fluid at speed, making results
-    // less reliable but velocity reconstructions potentially more robust
+    // the option exists to use the fluid frame exclusively 'fluid' or outside a
+    // certain radius 'mixed'. This option adds fluid at speed, making results
+    // less reliable but velocity reconstructions potentially more robust.
+    // Drift frame floors are now available and preferred when using 
+    // the implicit solver to avoid UtoP calls.
     std::string frame = pin->GetOrAddString("floors", "frame", "normal");
     params.Add("frame", frame);
     if (frame == "normal" || frame == "nof") {
         params.Add("fluid_frame", false);
         params.Add("mixed_frame", false);
+        params.Add("drift_frame", false);
     } else if (frame == "fluid" || frame == "ff") {
         params.Add("fluid_frame", true);
         params.Add("mixed_frame", false);
+        params.Add("drift_frame", false);
     } else if (frame == "mixed") {
         params.Add("fluid_frame", false);
         params.Add("mixed_frame", true);
+        params.Add("drift_frame", false);
+    } else if (frame == "drift") {
+        params.Add("fluid_frame", false);
+        params.Add("mixed_frame", false);
+        params.Add("drift_frame", true);
     } else {
         throw std::invalid_argument("Floor frame "+frame+" not supported");
     }

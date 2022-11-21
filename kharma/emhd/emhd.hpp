@@ -308,7 +308,7 @@ KOKKOS_INLINE_FUNCTION void calc_tensor(const Real& rho, const Real& u, const Re
     DLOOP1 {
         emhd[mu] = eta * D.ucon[dir] * D.ucov[mu]
                   + ptot * (dir == mu)
-                  - D.bcon[dir] * D.bcov[mu];
+                  - D.bcon[dir] * D.bcov[mu]
                   + (q / sqrt(bsq)) * ((D.ucon[dir] * D.bcov[mu]) +
                                        (D.bcon[dir] * D.ucov[mu]))
                   - dP * ((D.bcon[dir] * D.bcov[mu] / bsq)

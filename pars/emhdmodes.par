@@ -62,9 +62,16 @@ disable_floors = true
 enable_emhd_limits = false
 
 <debug>
-verbose = 1
-flag_verbose = 2
+# General verbosity level:
+# 1: general archival info
+# 2: specific debugging logs
+verbose = 0
+# Set to 1 to check each step for wavespeed of zero/NaN & exit
 extra_checks = 1
+# Print summary of all flags hit during each step:
+# 1: Number of flags total
+# 2: Number of flags of each type
+flag_verbose = 0
 
 # This block must be present and values filled in all EGRMHD simulations
 <emhd>
