@@ -395,7 +395,7 @@ TaskStatus PrintGlobalMaxDivB(MeshData<Real> *md)
     // unless we're being verbose. It's not costly to calculate though
     if (pmb0->packages.Get("B_FluxCT")->Param<int>("verbose") >= 1) {
         Flag(md, "Printing divB");
-        static Reduce<Real> max_divb;
+        Reduce<Real> max_divb;
         max_divb.val = B_FluxCT::MaxDivB(md);
         max_divb.StartReduce(0, MPI_MAX);
         while (max_divb.CheckReduce() == TaskStatus::incomplete);

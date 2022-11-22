@@ -227,7 +227,7 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart, b
     if (MPIRank0()) {
         std::cout << "Packages in use: " << std::endl;
         for (auto pkg : pmesh->packages.AllPackages()) {
-            std::cerr << pkg.first << std::endl;
+            std::cout << pkg.first << std::endl;
         }
         std::cout << std::endl;
     }

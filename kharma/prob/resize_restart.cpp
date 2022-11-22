@@ -243,7 +243,7 @@ TaskStatus ReadIharmRestart(MeshBlockData<Real> *rc, ParameterInput *pin)
 
     // Declare known sizes for inputting/outputting primitives
     // We'll only ever read the full block, so this is the size we want
-    static hsize_t fdims[] = {nfprim, n3tot, n2tot, n1tot};
+    hsize_t fdims[] = {nfprim, n3tot, n2tot, n1tot};
     hsize_t fstart[] = {0, 0, 0, 0};
 
     // TODO there must be a better way to cache this.  InitUserData and make it a big variable or something?

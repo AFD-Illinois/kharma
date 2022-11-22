@@ -30,14 +30,11 @@ inline void MPIBarrier()
 }
 
 /**
- * Perform a Parthenon MPI reduction. ONCE.
- * Parthenon does not clean up communicators, and
- * it is further bad practice to allocate a new one per-step.
- * So, avoid this function except in initialization.
- * 
- * Instead, copy/paste the contents & use a static declaration for
- * the AllReduce object.  Replace with a Reduce object if you don't
- * need the result on all ranks.
+ * Perform a Parthenon MPI reduction.
+ * Now that Parthenon cleans up communicators, this is basically
+ * how all reductions should be done.
+ * However, Reduction objects should have a longer lifetime if
+ * possible, as they require some overhead to create/destroy.
  */
 template<typename T>
 inline T MPIReduce_once(T f, MPI_Op O)
