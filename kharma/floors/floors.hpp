@@ -293,7 +293,7 @@ KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, const VariablePa
         } else if (use_df) {
             // Drift frame floors. Refer to Appendix B3 in https://doi.org/10.1093/mnras/stx364 (hereafter R17)
             const Real gdet     = G.gdet(Loci::center, j, i);
-            const Real lapse    = 1./sqrt(-G.gcon(Loci::center, j, i, 0, 0));
+            const Real lapse    = 1./m::sqrt(-G.gcon(Loci::center, j, i, 0, 0));
             double beta[GR_DIM] = {0};
 
             beta[1] = lapse * lapse * G.gcon(Loci::center, j, i, 0, 1);
@@ -304,7 +304,7 @@ KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, const VariablePa
             const Real rho   = P(m_p.RHO, k, j, i);
             const Real uu    = P(m_p.UU, k, j, i);
             const Real pg    = (gam - 1.) * uu;
-            const Real w_old = max(rho + uu + pg, SMALL);
+            const Real w_old = m::max(rho + uu + pg, SMALL);
 
             // Normal observer magnetic field
             Real Bcon[GR_DIM] = {0};
@@ -338,8 +338,8 @@ KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, const VariablePa
             }
 
             // Update rho, uu and compute new enthalpy
-            P(m_p.RHO, k, j, i) = max(rho, rhoflr_max);
-            P(m_p.UU, k, j, i)  = max(uu, uflr_max);
+            P(m_p.RHO, k, j, i) = m::max(rho, rhoflr_max);
+            P(m_p.UU, k, j, i)  = m::max(uu, uflr_max);
             const Real pg_new   = (gam - 1.) * P(m_p.UU, k, j, i);
             const Real w_new    = P(m_p.RHO, k, j, i) + P(m_p.UU, k, j, i) + pg_new;
 
@@ -533,11 +533,11 @@ KOKKOS_INLINE_FUNCTION int apply_instability_limits(const GRCoordinates& G, cons
 
     Real pg    = (gam - 1.) * uu;
     Real Theta = pg / rho;
-    Real cs    = sqrt(gam * pg / (rho + (gam * uu)));
+    Real cs    = m::sqrt(gam * pg / (rho + (gam * uu)));
 
     FourVectors D;
     GRMHD::calc_4vecs(G, P, m_p, k, j, i, Loci::center, D);
-    Real bsq = max(dot(D.bcon, D.bcov), SMALL);
+    Real bsq = m::max(dot(D.bcon, D.bcov), SMALL);
 
     Real tau, chi_e, nu_e;
     EMHD::set_parameters(G, P, m_p, emhd_params, gam, k, j, i, tau, chi_e, nu_e, "instability_limits");
@@ -545,16 +545,16 @@ KOKKOS_INLINE_FUNCTION int apply_instability_limits(const GRCoordinates& G, cons
     Real q, dP;
     EMHD::convert_prims_to_q_dP(qtilde, dPtilde, rho, Theta, cs*cs, emhd_params, q, dP);
 
-    Real qmax         = 1.07 * rho * pow(cs, 3.);
-    Real max_frac     = max(fabs(q) / qmax, 1.);
+    Real qmax         = 1.07 * rho * m::pow(cs, 3.);
+    Real max_frac     = m::max(m::abs(q) / qmax, 1.);
     if (fabs(q) / qmax > 1.)
         eflag |= HIT_Q_LIMIT;
 
     P(m_p.Q, k, j, i) = P(m_p.Q, k, j, i) / max_frac;
 
-    Real dP_comp_ratio = max(pg - 2./3. * dP, SMALL) / max(pg + 1./3. * dP, SMALL);
-    Real dP_plus       = min(1.07 * 0.5 * bsq * dP_comp_ratio, 1.49 * pg);
-    Real dP_minus      = max(-1.07 * bsq, -2.99 * pg);
+    Real dP_comp_ratio = m::max(pg - 2./3. * dP, SMALL) / m::max(pg + 1./3. * dP, SMALL);
+    Real dP_plus       = m::min(1.07 * 0.5 * bsq * dP_comp_ratio, 1.49 * pg);
+    Real dP_minus      = m::max(-1.07 * bsq, -2.99 * pg);
 
     if (dP > 0. && (dP / dP_plus > 1.))
         eflag |= HIT_DP_LIMIT;
@@ -562,9 +562,9 @@ KOKKOS_INLINE_FUNCTION int apply_instability_limits(const GRCoordinates& G, cons
         eflag |= HIT_DP_LIMIT;
     
     if (dP > 0.)
-        P(m_p.DP, k, j, i) = P(m_p.DP, k, j, i) * (1. / max(dP / dP_plus, 1.));
+        P(m_p.DP, k, j, i) = P(m_p.DP, k, j, i) * (1. / m::max(dP / dP_plus, 1.));
     else
-        P(m_p.DP, k, j, i) = P(m_p.DP, k, j, i) * (1. / max(dP / dP_minus, 1.));
+        P(m_p.DP, k, j, i) = P(m_p.DP, k, j, i) * (1. / m::max(dP / dP_minus, 1.));
 
     Flux::p_to_u(G, P, m_p, emhd_params, gam, k, j, i, U, m_u);
 

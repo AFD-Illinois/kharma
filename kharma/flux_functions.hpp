@@ -309,7 +309,7 @@ KOKKOS_INLINE_FUNCTION void vchar(const GRCoordinates& G, const Local& P, const 
         cms2 = cs2_emhd + va2 - cs2_emhd*va2;
     } else if (m.B1 >= 0) {
         // Find fast magnetosonic speed
-        const Real bsq = max(dot(D.bcon, D.bcov), SMALL);
+        const Real bsq = m::max(dot(D.bcon, D.bcov), SMALL);
         const Real ee  = bsq + ef;
         const Real va2 = bsq / ee;
 

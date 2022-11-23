@@ -41,8 +41,9 @@
 
 // Implicit nonlinear solve requires several linear solves per-zone
 // Use Kokkos-kernels QR decomposition & triangular solve, they're fast.
-#include <batched/dense/KokkosBatched_ApplyQ_Decl.hpp>
+#include <batched/dense/KokkosBatched_LU_Decl.hpp>
 #include <batched/dense/KokkosBatched_QR_Decl.hpp>
+#include <batched/dense/KokkosBatched_ApplyQ_Decl.hpp>
 #include <batched/dense/KokkosBatched_Trsv_Decl.hpp>
 
 namespace Implicit
@@ -79,12 +80,14 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     // Implicit solver parameters
     Real jacobian_delta = pin->GetOrAddReal("implicit", "jacobian_delta", 4.e-8);
     params.Add("jacobian_delta", jacobian_delta);
-    Real rootfind_tol = pin->GetOrAddReal("implicit", "rootfind_tol", 1.e-9);
+    Real rootfind_tol = pin->GetOrAddReal("implicit", "rootfind_tol", 1.e-12);
     params.Add("rootfind_tol", rootfind_tol);
     Real linesearch_lambda = pin->GetOrAddReal("implicit", "linesearch_lambda", 1.0);
     params.Add("linesearch_lambda", linesearch_lambda);
     int max_nonlinear_iter = pin->GetOrAddInteger("implicit", "max_nonlinear_iter", 3);
     params.Add("max_nonlinear_iter", max_nonlinear_iter);
+    bool use_qr = pin->GetOrAddBoolean("implicit", "use_qr", true);
+    params.Add("use_qr", use_qr);
 
     // Denote failures/non-converged zones with the same flag as UtoP
     // This does NOT share the same mapping of values
@@ -116,12 +119,17 @@ TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_i
     auto pmb_full_step_init = md_full_step_init->GetBlockData(0)->GetBlockPointer();
     auto pmb_sub_step_init  = md_sub_step_init->GetBlockData(0)->GetBlockPointer();
 
+    // Parameters
     const auto& implicit_par = pmb_full_step_init->packages.Get("Implicit")->AllParams();
     const int iter_max       = implicit_par.Get<int>("max_nonlinear_iter");
     const Real lambda        = implicit_par.Get<Real>("linesearch_lambda");
     const Real delta         = implicit_par.Get<Real>("jacobian_delta");
     const Real rootfind_tol  = implicit_par.Get<Real>("rootfind_tol");
+    const bool use_qr        = implicit_par.Get<bool>("use_qr");
     const Real gam           = pmb_full_step_init->packages.Get("GRMHD")->Param<Real>("gamma");
+    // Misc other constants for inside the kernel
+    const bool am_rank0 = MPIRank0();
+    const Real tiny(SMALL), alpha(1.0);
 
     // We need two sets of emhd_params because we need the relaxation scale
     // at the same state in the implicit source terms
@@ -142,8 +150,8 @@ TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_i
     auto& mbd_full_step_init  = md_full_step_init->GetBlockData(0); // MeshBlockData object, more member functions
     auto ordered_prims = get_ordered_names(mbd_full_step_init.get(), isPrimitive);
     auto ordered_cons  = get_ordered_names(mbd_full_step_init.get(), Metadata::Conserved);
-    //cerr << "Ordered prims:"; for(auto prim: ordered_prims) cerr << " " << prim; cerr << endl;
-    //cerr << "Ordered cons:"; for(auto con: ordered_cons) cerr << " " << con; cerr << endl;
+    //std::cerr << "Ordered prims:"; for(auto prim: ordered_prims) std::cerr << " " << prim; std::cerr << std::endl;
+    //std::cerr << "Ordered cons:"; for(auto con: ordered_cons) std::cerr << " " << con; std::cerr << std::endl;
 
     // Initial state.  Also mapping template
     PackIndexMap prims_map, cons_map;
@@ -173,19 +181,13 @@ TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_i
     const int n3 = bounds.ncellsk(IndexDomain::entire);
 
     // RETURN if there aren't any implicit variables to evolve
-    //cerr << "Solve size " << nfvar << " on prim size " << nvar << endl;
-    // cout << "Solve size " << nfvar << " on prim size " << nvar << endl; // EDIT
-    // for (auto i: get_ordered_names(rci.get(), isPrimitive, true)) // EDIT
-    //     cout << i << ' '; // EDIT
+    //std::cerr << "Solve size " << nfvar << " on prim size " << nvar << std::endl;
     if (nfvar == 0) return TaskStatus::complete;
 
     // The norm of the residual.  We store this to avoid the main kernel
     // also being a 2-stage reduction, which is complex and sucks.
+    // TODO keep this around as a field?
     ParArray4D<Real> norm_all("norm_all", nblock, n3, n2, n1);
-
-    // Prep Jacobian and delta arrays.
-    // This lays out memory correctly & allows splitting kernel as/if we need.
-    const bool am_rank0 = MPIRank0();
 
     // Get meshblock array bounds from Parthenon
     const IndexDomain domain = IndexDomain::interior;
@@ -204,12 +206,12 @@ TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_i
     const int scratch_level = 1; // 0 is actual scratch (tiny); 1 is HBM
     const size_t var_size_in_bytes    = parthenon::ScratchPad2D<Real>::shmem_size(nvar, n1);
     const size_t fvar_size_in_bytes   = parthenon::ScratchPad2D<Real>::shmem_size(nfvar, n1);
-    const size_t tensor_size_in_bytes = parthenon::ScratchPad3D<Real>::shmem_size(nfvar, nvar, n1);
+    const size_t tensor_size_in_bytes = parthenon::ScratchPad3D<Real>::shmem_size(nfvar, nfvar, n1);
     // Allocate enough to cache:
     // jacobian (2D)
     // residual, deltaP (implicit only)
     // P_full_step_init/U_full_step_init, P_sub_step_init/U_sub_step_init, divF_src, P_solver, dU_implicit, two temps (all vars)
-    const size_t total_scratch_bytes = tensor_size_in_bytes + (2) * fvar_size_in_bytes + (10) * var_size_in_bytes;
+    const size_t total_scratch_bytes = tensor_size_in_bytes + (4) * fvar_size_in_bytes + (10) * var_size_in_bytes;
 
     // Iterate.  This loop is outside the kokkos kernel in order to print max_norm
     // There are generally a low and similar number of iterations between
@@ -302,29 +304,34 @@ TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_i
                         // Solve against the negative residual
                         FLOOP delta_prim(ip) = -residual(ip);
 
-                        // if (am_rank0 && b == 0 && i == 11 && j == 11 && k == 0) {
+                        // if (am_rank0 && b == 0 && i == 11 && j == 11 && k == kb.s) {
                         //     printf("Variable ordering: rho %d uu %d u1 %d B1 %d q %d dP %d\n",
                         //             m_p.RHO, m_p.UU, m_p.U1, m_p.B1, m_p.Q, m_p.DP);
                         //     printf("Variable ordering: rho %d uu %d u1 %d B1 %d q %d dP %d\n",
                         //             m_u.RHO, m_u.UU, m_u.U1, m_u.B1, m_u.Q, m_u.DP);
                         //     printf("P_solver: "); PLOOP printf("%6.5e ", P_solver(ip)); printf("\n");
-                        //     printf("Pi: "); PLOOP printf("%6.5e ", Pi(ip)); printf("\n");
-                        //     printf("Ui: "); PLOOP printf("%6.5e ", Ui(ip)); printf("\n");
-                        //     printf("Ps: "); PLOOP printf("%6.5e ", Ps(ip)); printf("\n");
-                        //     printf("Us: "); PLOOP printf("%6.5e ", Us(ip)); printf("\n");
-                        //     printf("dUdt: "); PLOOP printf("%6.5e ", dUdt(ip)); printf("\n");
+                        //     printf("Pi: "); PLOOP printf("%6.5e ", P_full_step_init(ip)); printf("\n");
+                        //     printf("Ui: "); PLOOP printf("%6.5e ", U_full_step_init(ip)); printf("\n");
+                        //     printf("Ps: "); PLOOP printf("%6.5e ", P_sub_step_init(ip)); printf("\n");
+                        //     printf("Us: "); PLOOP printf("%6.5e ", U_sub_step_init(ip)); printf("\n");
+                        //     printf("dUdt: "); PLOOP printf("%6.5e ", dU_implicit(ip)); printf("\n");
                         //     printf("Initial Jacobian:\n"); for (int jp=0; jp<nvar; ++jp) {PLOOP printf("%6.5e\t", jacobian(jp,ip)); printf("\n");}
                         //     printf("Initial residual: "); PLOOP printf("%6.5e ", residual(ip)); printf("\n");
                         //     printf("Initial delta_prim: "); PLOOP printf("%6.5e ", delta_prim(ip)); printf("\n");
                         // }
 
-                        // Linear solve by QR decomposition
-                        KokkosBatched::SerialQR<KokkosBatched::Algo::QR::Unblocked>::invoke(jacobian, trans, work);
-                        KokkosBatched::SerialApplyQ<KokkosBatched::Side::Left, KokkosBatched::Trans::Transpose, KokkosBatched::Algo::ApplyQ::Unblocked>
-                        ::invoke(jacobian, trans, delta_prim, work);
-                        KokkosBatched::SerialTrsv<KokkosBatched::Uplo::Upper, KokkosBatched::Trans::NoTranspose, KokkosBatched::Diag::NonUnit,
-                        KokkosBatched::Algo::Trsv::Unblocked>
-                        ::invoke(1.0, jacobian, delta_prim);
+                        if (use_qr) {
+                            // Linear solve by QR decomposition
+                            KokkosBatched::SerialQR<KokkosBatched::Algo::QR::Unblocked>::invoke(jacobian, trans, work);
+                            KokkosBatched::SerialApplyQ<KokkosBatched::Side::Left, KokkosBatched::Trans::Transpose,
+                                                        KokkosBatched::Algo::ApplyQ::Unblocked>
+                            ::invoke(jacobian, trans, delta_prim, work);
+                        } else {
+                            KokkosBatched::SerialLU<KokkosBatched::Algo::LU::Unblocked>::invoke(jacobian, tiny);
+                        }
+                        KokkosBatched::SerialTrsv<KokkosBatched::Uplo::Upper, KokkosBatched::Trans::NoTranspose, 
+                                                  KokkosBatched::Diag::NonUnit, KokkosBatched::Algo::Trsv::Unblocked>
+                        ::invoke(alpha, jacobian, delta_prim);
 
                         // Update the guess.  For now lambda == 1, choose on the fly?
                         FLOOP P_solver(ip) += lambda * delta_prim(ip);
@@ -332,7 +339,7 @@ TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_i
                         calc_residual(G, P_solver, P_full_step_init, U_full_step_init, P_sub_step_init, flux_src, dU_implicit, tmp3,
                                       m_p, m_u, emhd_params_full_step_init, emhd_params_sub_step_init, nfvar, k, j, i, gam, dt, residual);
 
-                        // if (am_rank0 && b == 0 && i == 11 && j == 11 && k == 0) {
+                        // if (am_rank0 && b == 0 && i == 11 && j == 11 && k == kb.s) {
                         //     printf("Variable ordering: rho %d uu %d u1 %d B1 %d q %d dP %d\n",
                         //             m_p.RHO, m_p.UU, m_p.U1, m_p.B1, m_p.Q, m_p.DP);
                         //     printf("Final residual: "); PLOOP printf("%6.5e ", residual(ip)); printf("\n");

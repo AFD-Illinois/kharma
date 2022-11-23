@@ -160,7 +160,8 @@ TaskStatus InitializeAtmosphere(MeshBlockData<Real> *rc, ParameterInput *pin)
     auto p_bound_host = p_bound.GetHostMirror();
 
     // Load coordinates 'r' and compare against grid values
-    double rCoords[n1 + 2*ng] = {0}, error = 0.;
+    double rCoords[n1 + 2*ng];
+    double error = 0.;
     for (int i = ib.s; i <= ib.e; i++) {
         
         fscanf(fp_r, "%lf", &(rCoords[i]));
