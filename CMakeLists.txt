@@ -39,6 +39,7 @@ set(Kokkos_ENABLE_AGGRESSIVE_VECTORIZATION ON CACHE BOOL "KHARMA Override")
 set(KokkosKernels_ENABLE_TPL_CUSPARSE OFF CACHE BOOL "KHARMA Override")
 set(KokkosKernels_ENABLE_TPL_CUBLAS OFF CACHE BOOL "KHARMA Override")
 
+
 # Offer a KHARMA option to disable the MPI requirement
 # The only difference from setting PARTHENON_DISABLE_MPI is that
 # the configure step no longer searches for/fails without it

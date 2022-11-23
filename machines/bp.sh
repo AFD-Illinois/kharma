@@ -14,7 +14,7 @@ if [[ $HOST == "cheshire"* ]]; then
     module load compiler mpi/2021
   fi
 
-  NPROC=12
+  NPROC=24
   MPI_EXE=mpirun
 fi
 

@@ -79,13 +79,13 @@ conv_3d slow_imex   "mhdmodes/nmode=1 driver/type=imex" "slow mode in 3D, ImEx e
 conv_3d alfven_imex "mhdmodes/nmode=2 driver/type=imex" "Alfven mode in 3D, ImEx explicit"
 conv_3d fast_imex   "mhdmodes/nmode=3 driver/type=imex" "fast mode in 3D, ImEx explicit"
 # B field totally explicit
-#conv_3d slow_imex_semi   "mhdmodes/nmode=1 driver/type=imex GRMHD/implicit=true" "slow mode 3D, ImEx semi-implicit"
-#conv_3d alfven_imex_semi "mhdmodes/nmode=2 driver/type=imex GRMHD/implicit=true" "slow mode 3D, ImEx semi-implicit"
-#conv_3d fast_imex_semi   "mhdmodes/nmode=3 driver/type=imex GRMHD/implicit=true" "slow mode 3D, ImEx semi-implicit"
+conv_3d slow_imex_semi   "mhdmodes/nmode=1 driver/type=imex GRMHD/implicit=true" "slow mode 3D, ImEx semi-implicit"
+conv_3d alfven_imex_semi "mhdmodes/nmode=2 driver/type=imex GRMHD/implicit=true" "Alfven mode 3D, ImEx semi-implicit"
+conv_3d fast_imex_semi   "mhdmodes/nmode=3 driver/type=imex GRMHD/implicit=true" "fast mode 3D, ImEx semi-implicit"
 # All variables semi-implicit
-#conv_3d slow_imex_im   "mhdmodes/nmode=1 driver/type=imex GRMHD/implicit=true b_field/implicit=true" "slow mode 3D, ImEx implicit"
-#conv_3d alfven_imex_im "mhdmodes/nmode=2 driver/type=imex GRMHD/implicit=true b_field/implicit=true" "Alfven mode 3D, ImEx implicit"
-#conv_3d fast_imex_im   "mhdmodes/nmode=3 driver/type=imex GRMHD/implicit=true b_field/implicit=true" "fast mode 3D, ImEx implicit"
+conv_3d slow_imex_im   "mhdmodes/nmode=1 driver/type=imex GRMHD/implicit=true b_field/implicit=true implicit/use_qr=false" "slow mode 3D, ImEx implicit"
+conv_3d alfven_imex_im "mhdmodes/nmode=2 driver/type=imex GRMHD/implicit=true b_field/implicit=true implicit/use_qr=false" "Alfven mode 3D, ImEx implicit"
+conv_3d fast_imex_im   "mhdmodes/nmode=3 driver/type=imex GRMHD/implicit=true b_field/implicit=true implicit/use_qr=false" "fast mode 3D, ImEx implicit"
 
 # 2D modes use small blocks, could pick up some problems at MPI ranks >> 1
 # Currently very slow, plus modes are incorrect

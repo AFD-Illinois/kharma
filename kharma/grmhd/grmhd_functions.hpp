@@ -237,7 +237,7 @@ KOKKOS_INLINE_FUNCTION void calc_4vecs(const GRCoordinates& G, const Global& P, 
 
     if (m.B1 >= 0) {
         D.bcon[0] = 0;
-        VLOOP D.bcon[0] += P(m.B1 + v, k, j, i) * D.ucov[v+1];
+        VLOOP D.bcon[0]  += P(m.B1 + v, k, j, i) * D.ucov[v+1];
         VLOOP D.bcon[v+1] = (P(m.B1 + v, k, j, i) + D.bcon[0] * D.ucon[v+1]) / D.ucon[0];
 
         G.lower(D.bcon, D.bcov, k, j, i, loc);

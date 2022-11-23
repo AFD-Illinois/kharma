@@ -99,20 +99,29 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     params.Add("gamma_max", gamma_max);
 
     // Frame to apply floors: usually we use normal observer frame, but
-    // the option exists to use the fluid frame exclusively or outside a
-    // certain radius.  This option adds fluid at speed, making results
-    // less reliable but velocity reconstructions potentially more robust
+    // the option exists to use the fluid frame exclusively 'fluid' or outside a
+    // certain radius 'mixed'. This option adds fluid at speed, making results
+    // less reliable but velocity reconstructions potentially more robust.
+    // Drift frame floors are now available and preferred when using 
+    // the implicit solver to avoid UtoP calls.
     std::string frame = pin->GetOrAddString("floors", "frame", "normal");
     params.Add("frame", frame);
     if (frame == "normal" || frame == "nof") {
         params.Add("fluid_frame", false);
         params.Add("mixed_frame", false);
+        params.Add("drift_frame", false);
     } else if (frame == "fluid" || frame == "ff") {
         params.Add("fluid_frame", true);
         params.Add("mixed_frame", false);
+        params.Add("drift_frame", false);
     } else if (frame == "mixed") {
         params.Add("fluid_frame", false);
         params.Add("mixed_frame", true);
+        params.Add("drift_frame", false);
+    } else if (frame == "drift") {
+        params.Add("fluid_frame", false);
+        params.Add("mixed_frame", false);
+        params.Add("drift_frame", true);
     } else {
         throw std::invalid_argument("Floor frame "+frame+" not supported");
     }
@@ -126,10 +135,25 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     bool disable_floors = pin->GetOrAddBoolean("floors", "disable_floors", false);
     params.Add("disable_floors", disable_floors);
 
+    // Apply limits on heat flux and pressure anisotropy from velocity space instabilities?
+    // We would want this for the torus runs but not for the test problems. 
+    // For eg: we know that this affects the viscous bondi problem
+    bool enable_emhd_limits = pin->GetOrAddBoolean("floors", "emhd_limits", false);
+    params.Add("enable_emhd_limits", enable_emhd_limits);
+
     // Temporary fix just for being able to save field values
     // Should switch these to "Integer" fields when Parthenon supports it
     Metadata m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
     pkg->AddField("fflag", m);
+
+    // Similar to fflag - will register zones where limits on q and dP are hit
+    // Enabled only if 
+    pkg->AddField("eflag", m);
+    // bool do_emhd = pin->GetOrAddBoolean("emhd", "on", false);
+    // if (do_emhd && enable_emhd_limits) {
+    //     Metadata m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
+    //     pkg->AddField("eflag", m);
+    // }
 
     // Floors should be applied to primitive ("Derived") variables just after they are calculated.
     pkg->PostFillDerivedBlock = Floors::PostFillDerivedBlock;
@@ -140,30 +164,41 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     return pkg;
 }
 
-TaskStatus PostFillDerivedBlock(MeshBlockData<Real> *rc)
+TaskStatus PostFillDerivedBlock(MeshBlockData<Real> *mbd)
 {
-    if (rc->GetBlockPointer()->packages.Get("Floors")->Param<bool>("disable_floors")
-        || !rc->GetBlockPointer()->packages.Get("Globals")->Param<bool>("in_loop")) {
+    if (mbd->GetBlockPointer()->packages.Get("Floors")->Param<bool>("disable_floors")
+        || !mbd->GetBlockPointer()->packages.Get("Globals")->Param<bool>("in_loop")) {
         return TaskStatus::complete;
     } else {
-        return ApplyFloors(rc);
+        return ApplyFloors(mbd);
     }
 }
 
-TaskStatus ApplyFloors(MeshBlockData<Real> *rc, IndexDomain domain)
+TaskStatus ApplyFloors(MeshBlockData<Real> *mbd, IndexDomain domain)
 {
-    Flag(rc, "Apply floors");
-    auto pmb = rc->GetBlockPointer();
+    Flag(mbd, "Apply floors");
+
+    auto pmb                 = mbd->GetBlockPointer();
+    MetadataFlag isPrimitive = pmb->packages.Get("GRMHD")->AllParams().Get<MetadataFlag>("PrimitiveFlag");
 
     PackIndexMap prims_map, cons_map;
-    auto P = GRMHD::PackMHDPrims(rc, prims_map);
-    auto U = GRMHD::PackMHDCons(rc, cons_map);
+    auto P = mbd->PackVariables({isPrimitive}, prims_map);
+    auto U = mbd->PackVariables(std::vector<MetadataFlag>{Metadata::Conserved}, cons_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
 
     const auto& G = pmb->coords;
 
-    GridScalar pflag = rc->Get("pflag").data;
-    GridScalar fflag = rc->Get("fflag").data;
+    GridScalar pflag = mbd->Get("pflag").data;
+    GridScalar fflag = mbd->Get("fflag").data;
+    GridScalar eflag = mbd->Get("eflag").data;
+
+    const bool enable_emhd_limits = mbd->GetBlockPointer()->packages.Get("Floors")->Param<bool>("enable_emhd_limits");
+    EMHD::EMHD_parameters emhd_params;
+    if (enable_emhd_limits) {
+        const auto& pars = pmb->packages.Get("EMHD")->AllParams();
+        emhd_params      = pars.Get<EMHD::EMHD_parameters>("emhd_params");
+        
+    }
 
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
     const Floors::Prescription floors(pmb->packages.Get("Floors")->AllParams());
@@ -172,9 +207,9 @@ TaskStatus ApplyFloors(MeshBlockData<Real> *rc, IndexDomain domain)
     // This selects the entire domain, but we then require pflag >= 0,
     // which keeps us from covering completely uninitialized zones
     // (but still applies to failed UtoP!)
-    const IndexRange ib = rc->GetBoundsI(domain);
-    const IndexRange jb = rc->GetBoundsJ(domain);
-    const IndexRange kb = rc->GetBoundsK(domain);
+    const IndexRange ib = mbd->GetBoundsI(domain);
+    const IndexRange jb = mbd->GetBoundsJ(domain);
+    const IndexRange kb = mbd->GetBoundsK(domain);
     pmb->par_for("apply_floors", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_3D {
             if (((int) pflag(k, j, i)) >= InversionStatus::success) {
@@ -211,8 +246,16 @@ TaskStatus ApplyFloors(MeshBlockData<Real> *rc, IndexDomain domain)
             }
         }
     );
+    pmb->par_for("apply_ceilings", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+        KOKKOS_LAMBDA_3D {
+            // Apply limits to the Extended MHD variables
+            if (enable_emhd_limits)
+                eflag(k, j, i) = apply_instability_limits(G, P, m_p, gam, emhd_params, k, j, i, floors, U, m_u);
+            
+        }
+    );
 
-    Flag(rc, "Applied");
+    Flag(mbd, "Applied");
     return TaskStatus::complete;
 }
 

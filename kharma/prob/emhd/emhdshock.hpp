@@ -44,7 +44,7 @@ using namespace parthenon;
 /**
  * Initialization of the EMHD shock test in magnetized plasma w/viscosity and heat conduction
  * 
- * The BVP solution (EMHD_shock_test.ipynb) is the input to the code.
+ * The BVP solution (kharma/prob/emhd/shock_soln_${RES}_default) is the input to the code.
  * Since the BVP solution is a steady-state, time-independent solution of the EMHD equations,
  * the code should maintain the solution.
  * 
@@ -52,47 +52,38 @@ using namespace parthenon;
  * If higher order terms have been implemented correctly, the primitives should relax to the
  * steady state solution. However, they may differ by a translation to the BVP solution.
  * 
- * Therefore, to quantitatively check the EMHD implementation, we prefer the BVP solution as the input
+ * Therefore, to quantitatively check the EMHD implementation, we prefer the BVP solution as the input.
  */
 
 TaskStatus InitializeEMHDShock(MeshBlockData<Real> *rc, ParameterInput *pin)
 {
     Flag(rc, "Initializing EMHD shock problem");
     auto pmb = rc->GetBlockPointer();
-    GridScalar rho = rc->Get("prims.rho").data;
-    GridScalar u = rc->Get("prims.u").data;
+
+    GridScalar rho  = rc->Get("prims.rho").data;
+    GridScalar u    = rc->Get("prims.u").data;
     GridVector uvec = rc->Get("prims.uvec").data;
-    // It is well and good this problem should cry if B/EMHD are disabled.
-    GridVector B_P = rc->Get("prims.B").data;
-    GridVector q = rc->Get("prims.q").data;
-    GridVector dP = rc->Get("prims.dP").data;
-
-    // Need P for EMHD::set_parameters
-    PackIndexMap prims_map;
-    const MetadataFlag isPrimitive = pmb->packages.Get("GRMHD")->Param<MetadataFlag>("PrimitiveFlag");
-    auto P = rc->PackVariables(std::vector<MetadataFlag>{isPrimitive}, prims_map);
-    const VarMap m_p(prims_map, false);
-
-    // Need fluid adiabatic index to compute pgas and sound speed (for higher order terms)
-    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
+    GridVector B_P  = rc->Get("prims.B").data;
+    GridVector q    = rc->Get("prims.q").data;
+    GridVector dP   = rc->Get("prims.dP").data;
 
     const auto& G = pmb->coords;
 
-    const std::string input = pin->GetOrAddString("emhd", "input" "BVP");
+    // Type of input to the problem
+    const std::string input = pin->GetOrAddString("emhdshock", "input", "BVP");
 
+    // Obtain EMHD params
+    const auto& emhd_pars                    = pmb->packages.Get("EMHD")->AllParams();
+    const EMHD::EMHD_parameters& emhd_params = emhd_pars.Get<EMHD::EMHD_parameters>("emhd_params");
+    // Obtain GRMHD params
+    const auto& grmhd_pars                   = pmb->packages.Get("GRMHD")->AllParams();
+    const Real& gam                          = grmhd_pars.Get<Real>("gamma");
+
+    // Bounds of the domain
     IndexDomain domain = IndexDomain::interior;
     IndexRange ib = pmb->cellbounds.GetBoundsI(domain);
     IndexRange jb = pmb->cellbounds.GetBoundsJ(domain);
     IndexRange kb = pmb->cellbounds.GetBoundsK(domain);
-
-    // Need the EMHD package if higher order terms are considered
-    const bool use_emhd = pkgs.count("EMHD");
-    EMHD::EMHD_parameters emhd_params_tmp;
-    if (use_emhd) {
-        const auto& emhd_pars = pmb0->packages.Get("EMHD")->AllParams();
-        emhd_params_tmp       = emhd_pars.Get<EMHD::EMHD_parameters>("emhd_params");
-    }
-    const EMHD::EMHD_parameters& emhd_params = emhd_params_tmp;
 
     if (input == "BVP"){
 
@@ -106,49 +97,64 @@ TaskStatus InitializeEMHDShock(MeshBlockData<Real> *rc, ParameterInput *pin)
 
         // Assign file pointers
         FILE *fp_rho, *fp_u, *fp_u1, *fp_q, *fp_dP;
-        fp_rho = fopen(fname_rho, "r");
-        fp_u   = fopen(fname_u,   "r");
-        fp_u1  = fopen(fname_u1,  "r");
-        fp_q   = fopen(fname_q,   "r");
-        fp_dP  = fopen(fname_dP,  "r");
+        fp_rho = fopen(fbvp_rho, "r");
+        fp_u   = fopen(fbvp_u,   "r");
+        fp_u1  = fopen(fbvp_u1,  "r");
+        fp_q   = fopen(fbvp_q,   "r");
+        fp_dP  = fopen(fbvp_dP,  "r");
 
-        pmb->par_for("emhdshock_init", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-            KOKKOS_LAMBDA_3D {
-                Real X[GR_DIM];
-                G.coord_embed(k, j, i, Loci::center, X);
+        auto rho_host   = rho.GetHostMirror();
+        auto u_host     = u.GetHostMirror();
+        auto uvec_host  = uvec.GetHostMirror();
+        auto B_host     = B_P.GetHostMirror();
+        auto q_host     = q.GetHostMirror();
+        auto dP_host    = dP.GetHostMirror();
 
-                // First initialize primitives that are read from .txt files
-                fscanf(fp_rho, "%lf", &(rho(k, j, i)));
-                fscanf(fp_u,   "%lf", &(u(k, j, i)));
-                fscanf(fp_u1,  "%lf", &(uvec(0, k, j, i)));
-                fscanf(fp_q,   "%lf", &(q(k, j, i)));
-                fscanf(fp_dP,  "%lf", &(dP(k, j, i)));
+        for (int k = kb.s; k <= kb.e; k++) {
+            for (int j = jb.s; j <= jb.e; j++) {
+                for (int i = ib.s; i <= ib.e; i++) { 
 
-                // Now the remaining primitives
-                uvec(1, k, j, i) = 0.;
-                uvec(2, k, j, i) = 0.;
-                B_P(0, k, j, i)  = 0.;
-                B_P(1, k, j, i)  = 0.;
-                B_P(2, k, j, i)  = 0.;
+                    Real X[GR_DIM];
+                    G.coord_embed(k, j, i, Loci::center, X);
 
-                if (emhd_params.higher_order_terms) {
+                    // First initialize primitives that are read from .txt files
+                    fscanf(fp_rho, "%lf", &(rho_host(k, j, i)));
+                    fscanf(fp_u,   "%lf", &(u_host(k, j, i)));
+                    fscanf(fp_u1,  "%lf", &(uvec_host(0, k, j, i)));
+                    fscanf(fp_q,   "%lf", &(q_host(k, j, i)));
+                    fscanf(fp_dP,  "%lf", &(dP_host(k, j, i)));
 
-                    // Initialize local variables (for improved readability)
-                    const Real& rho   = rho(k, j, i);
-                    const Real& u     = u(k, j, i);
-                    const Real& Theta = (gam - 1.) * u / rho;
+                    // Now the remaining primitives
+                    uvec_host(1, k, j, i) = 0.;
+                    uvec_host(2, k, j, i) = 0.;
+                    B_host(V1, k, j, i)  = 1.e-5;
+                    B_host(V2, k, j, i)  = 0.;
+                    B_host(V3, k, j, i)  = 0.;
 
-                    // Set EMHD parameters
-                    Real tau, chi_e, nu_e;
-                    EMHD::set_parameters(G, P, m_p, emhd_params, gam, k, j, i, tau, chi_e, nu_e);
+                    if (emhd_params.higher_order_terms) {
 
-                    // Update q and dP (which now are q_tilde and dP_tilde)
-                    q(k, j, i)  *= m::sqrt(tau / (chi_e * rho * m::pow(Theta, 2)));
-                    dP(k, j, i) *= m::sqrt(tau / (nu_e * rho * Theta));
+                        // Initialize local variables (for improved readability)
+                        const Real rho_temp   = rho_host(k, j, i);
+                        const Real u_temp     = u_host(k, j, i);
+                        const Real Theta      = (gam - 1.) * u_temp / rho_temp;
+
+                        // Set EMHD parameters
+                        Real tau, chi_e, nu_e;
+                        EMHD::set_parameters(G, rho_temp, u_temp, emhd_params, gam, k, j, i, tau, chi_e, nu_e);
+
+                        // Update q and dP (which now are q_tilde and dP_tilde)
+                        Real q_tilde  = q_host(k, j, i);
+                        Real dP_tilde = dP_host(k, j, i);
+                        if (emhd_params.higher_order_terms) {
+                            q_tilde  *= (chi_e != 0) ? m::sqrt(tau / (chi_e * rho_temp * m::pow(Theta, 2.))) : 0.;
+                            dP_tilde *= (nu_e  != 0) ? m::sqrt(tau / (nu_e * rho_temp * Theta)) : 0.;
+                        }
+                        q_host(k, j, i)  = q_tilde;
+                        dP_host(k, j, i) = dP_tilde;
+                    }
                 }
-
             }
-        );
+        }
 
         // disassociate file pointer
         fclose(fp_rho);
@@ -156,8 +162,19 @@ TaskStatus InitializeEMHDShock(MeshBlockData<Real> *rc, ParameterInput *pin)
         fclose(fp_u1);
         fclose(fp_q);
         fclose(fp_dP);
+
+        // Deep copy to device
+        rho.DeepCopy(rho_host);
+        u.DeepCopy(u_host);
+        uvec.DeepCopy(uvec_host);
+        B_P.DeepCopy(B_host);
+        q.DeepCopy(q_host);
+        dP.DeepCopy(dP_host);
+        Kokkos::fence();
+
     }
 
+    // Any other input corresponds to ideal MHD shock initial conditions
     else {
 
         // Need the limits of the problem size to determine center
@@ -184,21 +201,20 @@ TaskStatus InitializeEMHDShock(MeshBlockData<Real> *rc, ParameterInput *pin)
                 bool lhs = X[1] < x1_center;
 
                 // Initialize primitives
-                rho(k, j, i)     = (lhs) ? rhoL : rhoR;
-                u(k, j, i)       = (lhs) ? uL : uR;
-                uvec(0, k, j, i) = (lhs) ? u1L : u1R;
-                uvec(1, k, j, i) = (lhs) ? u2L : u2R;
-                uvec(2, k, j, i) = (lhs) ? u3L : u3R;
-                B_P(0, k, j, i)  = (lhs) ? B1L : B1R;
-                B_P(1, k, j, i)  = (lhs) ? B2L : B2R;
-                B_P(3, k, j, i)  = (lhs) ? B3L : B3R;
+                rho(k, j, i)      = (lhs) ? rhoL : rhoR;
+                u(k, j, i)        = (lhs) ? uL : uR;
+                uvec(V1, k, j, i) = (lhs) ? u1L : u1R;
+                uvec(V2, k, j, i) = (lhs) ? u2L : u2R;
+                uvec(V3, k, j, i) = (lhs) ? u3L : u3R;
+                B_P(V1, k, j, i)  = (lhs) ? B1L : B1R;
+                B_P(V2, k, j, i)  = (lhs) ? B2L : B2R;
+                B_P(V3, k, j, i)  = (lhs) ? B3L : B3R;
                 q(k ,j, i)       = 0.;   
                 dP(k ,j, i)      = 0.;   
 
             }
 
         );
-
     }
 
     return TaskStatus::complete;

@@ -48,3 +48,11 @@ elif [[ $HOST == *".astro.illinois.edu" ]]; then
     PREFIX_PATH="$MPI_DIR"
   fi
 fi
+# BH29 additions
+if [[ $HOST == "bh29.astro.illinois.edu" ]]; then
+  HOST_ARCH="ZEN1"
+
+  # AOCC Requires system libc++, like icpx
+  #source /opt/AMD/aocc-compiler-3.0.0/setenv_AOCC.sh
+  #CXX_NATIVE="clang++"
+fi

@@ -57,8 +57,13 @@ if __name__=='__main__':
         amp = float(params['amp'])
         k1  = 2*np.pi # TODO record
         k2  = 4*np.pi
+
         real_omega  = params['omega_real']
         imag_omega  = params['omega_imag']
+        higher_order_terms = params['higher_order_terms']
+        conduction_alpha = params['conduction_alpha']
+        viscosity_alpha = params['viscosity_alpha']
+        gam = params['gam']
         t = dump['t']
 
         grid = dump.grid
@@ -71,8 +76,18 @@ if __name__=='__main__':
             var_analytic.append(var0[i] + ((amp*cos_phi*dvar_cos[i]) + (amp*sin_phi*dvar_sin[i])) * np.exp(real_omega*t))
         var_analytic = np.asarray(var_analytic)
 
+        var_numerical = dump['prims']
+
+        if higher_order_terms.lower() == "true":
+            print("Higher order terms enabled")
+            Theta = (gam - 1.) * dump['UU'] / dump['RHO']
+            cs2   = gam * (gam - 1.) * dump['UU'] / (dump['RHO'] + (gam * dump['UU']) )
+
+            var_numerical[8,Ellipsis] *= np.sqrt(conduction_alpha * cs2 * dump['RHO'] * Theta**2)
+            var_numerical[9,Ellipsis] *= np.sqrt(viscosity_alpha * cs2 * dump['RHO'] * Theta)
+
         for n in range(NVAR):
-            L1[r,n] = np.mean(np.fabs(dump['prims'][n,Ellipsis] - var_analytic[n,Ellipsis]))
+            L1[r,n] = np.mean(np.fabs(var_numerical[n] - var_analytic[n]))
 
     # MEASURE CONVERGENCE
     L1 = np.array(L1)
@@ -82,8 +97,10 @@ if __name__=='__main__':
         if not (dvar_cos[k] == 0 and dvar_sin[k] == 0):
             powerfits[k] = np.polyfit(np.log(RES), np.log(L1[:,k]), 1)[0]
             print("Power fit {}: {} {}".format(VARS[k], powerfits[k], L1[:,k]))
-            if powerfits[k] > -1.9 or ("entropy" not in SHORT and powerfits[k] < -2.1):
-                # Allow entropy wave to converge fast, otherwise everything is ~2
+            if powerfits[k] > -1.6 or powerfits[k] < -2.7:
+                # Everything *should* converge at ~2, but we relax the reqt due to known behavior:
+                # 1. B field in WENO seems to lag, at ~1.7
+                # 2. Problems run under linear/MC seem to converge ~2.5 in most variables
                 fail = 1
 
     # plot

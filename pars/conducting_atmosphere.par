@@ -1,0 +1,88 @@
+# Hydrostatic conducting atmosphere
+# Try to maintain the ODE solution that represnts hydrostatic equilibrium
+# Checks the geometrical terms
+# IMPORTANT: This test is different from the other tests in its initialization
+#            It reads in ".txt" files that correspond to the ODE solution (set input to "ODE" in <conducting_atmosphere>)
+#            Run it with a single MPI task
+
+<parthenon/job>
+problem_id = conducting_atmosphere
+
+<parthenon/mesh>
+refinement = none
+numlevel   = 1
+nx1 = 256
+nx2 = 256
+nx3 = 1
+
+<parthenon/meshblock>
+nx1 = 256
+nx2 = 256
+nx3 = 1
+
+
+<coordinates>
+base      = ks
+transform = mks
+a         = 0.0
+hslope    = 1.0
+r_in      = 100.
+r_out     = 300.
+
+<bounds>
+check_inflow_inner = false
+check_inflow_outer = false
+
+
+<parthenon/time>
+tlim       = 150.
+
+<GRMHD>
+cfl            = 0.5
+gamma          = 1.333333
+reconstruction = weno5
+implicit       = true
+
+<b_field>
+implicit        = true
+initial_cleanup = false
+
+
+# IMPORTANT: This block must be present and values filled in all EGRMHD simulations
+<emhd>
+on                 = true
+higher_order_terms = true
+
+closure_type       = kappa_eta
+tau                = 10.
+kappa              = 0.1
+eta                = 0.0
+
+<driver>
+type = imex
+
+<implicit>
+max_nonlinear_iter = 3
+rootfind_tol       = 1.e-20
+jacobian_delta     = 4.e-8
+
+<conducting_atmosphere>
+input = ODE
+
+<floors>
+disable_floors = false
+
+<debug>
+verbose      = 1
+flag_verbose = 2
+extra_checks = 1
+
+<parthenon/output0>
+file_type               = hdf5
+dt                      = 20
+single_precision_output = false
+variables               = prims.rho, prims.u, prims.uvec, prims.B, prims.q, prims.dP
+
+<parthenon/output1>
+file_type = hst
+dt        = 100

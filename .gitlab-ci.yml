@@ -72,11 +72,11 @@ mhdmodes:
     - cd tests/mhdmodes
     - ./run.sh
 
-#emhdmodes:
-#  stage: tests
-#  script:
-#    - cd tests/emhdmodes
-#    - ./run.sh
+emhdmodes:
+  stage: tests
+  script:
+    - cd tests/emhdmodes
+    - ./run.sh
 
 noh:
   stage: tests
