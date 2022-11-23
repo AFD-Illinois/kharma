@@ -33,14 +33,11 @@
  */
 #pragma once
 
-#include <memory>
-
-#include <parthenon/parthenon.hpp>
-
+#include "decs.hpp"
 #include "grmhd_functions.hpp"
 #include "types.hpp"
 
-using namespace parthenon;
+#include <memory>
 
 /**
  * 
@@ -125,6 +122,10 @@ TaskStatus PrintMaxBlockDivB(MeshBlockData<Real> *rc, bool prims, std::string ta
  * Fill fields which are calculated only for output to file
  */
 void FillOutput(MeshBlock *pmb, ParameterInput *pin);
+/**
+ * Fill field "name" with divB
+ */
+void CalcDivB(MeshData<Real> *md, std::string divb_field_name="divB");
 
 /**
  * 2D or 3D divergence, averaging to cell corners

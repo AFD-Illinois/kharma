@@ -99,20 +99,20 @@ TaskStatus InitializeFMTorus(MeshBlockData<Real> *rc, ParameterInput *pin)
                 Real r2 = r*r;
                 Real a2 = a*a;
                 Real DD = r2 - 2. * r + a2;
-                Real AA = pow(r2 + a2, 2) - DD * a2 * sth * sth;
+                Real AA = m::pow(r2 + a2, 2) - DD * a2 * sth * sth;
                 Real SS = r2 + a2 * cth * cth;
 
                 // Calculate rho and u
                 Real hm1 = exp(lnh) - 1.;
-                Real rho_l = pow(hm1 * (gam - 1.) / (kappa * gam),
+                Real rho_l = m::pow(hm1 * (gam - 1.) / (kappa * gam),
                                     1. / (gam - 1.));
-                Real u_l = kappa * pow(rho_l, gam) / (gam - 1.);
+                Real u_l = kappa * m::pow(rho_l, gam) / (gam - 1.);
 
                 // Calculate u^phi
                 Real expm2chi = SS * SS * DD / (AA * AA * sth * sth);
-                Real up1 = sqrt((-1. + sqrt(1. + 4. * l * l * expm2chi)) / 2.);
-                Real up = 2. * a * r * sqrt(1. + up1 * up1) / sqrt(AA * SS * DD) +
-                            sqrt(SS / AA) * up1 / sth;
+                Real up1 = m::sqrt((-1. + m::sqrt(1. + 4. * l * l * expm2chi)) / 2.);
+                Real up = 2. * a * r * m::sqrt(1. + up1 * up1) / m::sqrt(AA * SS * DD) +
+                            m::sqrt(SS / AA) * up1 / sth;
 
                 const Real ucon_tilt[GR_DIM] = {0., 0., 0., up};
                 Real ucon_bl[GR_DIM];
@@ -163,13 +163,13 @@ TaskStatus InitializeFMTorus(MeshBlockData<Real> *rc, ParameterInput *pin)
     // If we print diagnostics, do so only from block 0 as the others do exactly the same thing
     // Since this is initialization, we are guaranteed to have a block 0
     if (pmb->gid == 0 && pmb->packages.Get("GRMHD")->Param<int>("verbose") > 0) {
-        cout << "Calculating maximum density:" << endl;
-        cout << "a = " << a << endl;
-        cout << "dx = " << dx << endl;
-        cout << "x1min->x1max: " << x1min << " " << x1max << endl;
-        cout << "nx1 = " << nx1 << endl;
-        //cout << "x2min->x2max: " << x2min << " " << x2max << endl;
-        //cout << "nx2 = " << nx2 << endl;
+        std::cout << "Calculating maximum density:" << std::endl;
+        std::cout << "a = " << a << std::endl;
+        std::cout << "dx = " << dx << std::endl;
+        std::cout << "x1min->x1max: " << x1min << " " << x1max << std::endl;
+        std::cout << "nx1 = " << nx1 << std::endl;
+        //cout << "x2min->x2max: " << x2min << " " << x2max << std::endl;
+        //cout << "nx2 = " << nx2 << std::endl;
     }
 
     Real rho_max = 0;
@@ -196,7 +196,7 @@ TaskStatus InitializeFMTorus(MeshBlockData<Real> *rc, ParameterInput *pin)
     if(! (pmb->packages.Get("GRMHD")->AllParams().hasKey("rho_norm")))
         pmb->packages.Get("GRMHD")->AllParams().Add("rho_norm", rho_max);
     if (pmb->gid == 0 && pmb->packages.Get("GRMHD")->Param<int>("verbose") > 0) {
-        cout << "Initial maximum density is " << rho_max << endl;
+        std::cout << "Initial maximum density is " << rho_max << std::endl;
     }
 
     pmb->par_for("fm_torus_normalize", ks, ke, js, je, is, ie,
@@ -225,7 +225,7 @@ TaskStatus PerturbU(MeshBlockData<Real> *rc, ParameterInput *pin)
     const int rng_seed = pin->GetOrAddInteger("perturbation", "rng_seed", 31337);
     // Print real seed used for all blocks, to ensure they're different
     if (pmb->packages.Get("GRMHD")->Param<int>("verbose") > 0) {
-        cout << "Seeding RNG in block " << pmb->gid << " with value " << rng_seed + pmb->gid << endl;
+        std::cout << "Seeding RNG in block " << pmb->gid << " with value " << rng_seed + pmb->gid << std::endl;
     }
     const bool serial = pin->GetOrAddInteger("perturbation", "serial", false);
 

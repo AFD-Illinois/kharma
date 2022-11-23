@@ -39,7 +39,6 @@
 
 
 using namespace std::literals::complex_literals;
-using namespace std;
 using namespace parthenon;
 
 /**
@@ -87,7 +86,7 @@ TaskStatus InitializeExplosion(MeshBlockData<Real> *rc, ParameterInput *pin)
             G.coord_embed(k, j, i, Loci::center, X);
             const GReal rx = X[1] - xoff;
             const GReal ry = X[2] - yoff;
-            const Real r = sqrt(rx*rx + ry*ry);
+            const Real r = m::sqrt(rx*rx + ry*ry);
 
             if (r < r_in) {
                 rho(k, j, i) = rho_in;

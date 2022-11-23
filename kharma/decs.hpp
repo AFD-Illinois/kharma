@@ -53,6 +53,15 @@
 // Libraries I need directly
 #include "Kokkos_Core.hpp"
 
+#if 1
+// Resolve math functions to new Kokkos versions. Fast?
+namespace m = Kokkos::Experimental;
+#else
+// Resolve to standard library
+namespace m = std;
+#endif
+// TODO CUDA?
+
 // Bare Parthenon defs
 // Anything more leads to circular deps from gr_coordinates.hpp
 // TODO update, this was from very early Parthenon
@@ -65,7 +74,7 @@
 
 // Parthenon stole our type names
 // Lots of work will need to be done for Real != double
-using Real = parthenon::Real;
+using parthenon::Real;
 using GReal = double;
 
 // A small number, compared to the grid or problem scale
@@ -81,11 +90,6 @@ using GReal = double;
 #define NVEC 3
 #define VLOOP for(int v = 0; v < NVEC; ++v)
 #define VLOOP2 VLOOP for(int w = 0; w < NVEC; ++w)
-// This provides a way of addressing vectors that matches
-// directions, to make derivatives etc more readable
-#define V1 0
-#define V2 1
-#define V3 2
 
 // And an odd but useful loop for ex-iharm3d code
 // This requires nvar to be defined in caller!
@@ -133,15 +137,15 @@ KOKKOS_INLINE_FUNCTION int dir_of(const Loci loc)
 // Emulate old names for possible stronger typing later,
 // and for readability
 // TODO specify ParArrayXD instead of generic?
-using GridScalar = parthenon::ParArrayND<Real>;
-using GridVector = parthenon::ParArrayND<Real>;
-using GridVars = parthenon::ParArrayND<Real>;  // TODO ELIM
+using GridScalar = parthenon::ParArrayND<parthenon::Real>;
+using GridVector = parthenon::ParArrayND<parthenon::Real>;
+using GridVars = parthenon::ParArrayND<parthenon::Real>;  // TODO ELIM
 using GridInt = parthenon::ParArrayND<int>;
 
-using GeomScalar = parthenon::ParArrayND<Real>;
-using GeomVector = parthenon::ParArrayND<Real>;
-using GeomTensor2 = parthenon::ParArrayND<Real>;
-using GeomTensor3 = parthenon::ParArrayND<Real>;
+using GeomScalar = parthenon::ParArrayND<parthenon::Real>;
+using GeomVector = parthenon::ParArrayND<parthenon::Real>;
+using GeomTensor2 = parthenon::ParArrayND<parthenon::Real>;
+using GeomTensor3 = parthenon::ParArrayND<parthenon::Real>;
 
 // Specific lambdas for our array shapes
 #define KOKKOS_LAMBDA_1D KOKKOS_LAMBDA (const int& i)
@@ -161,7 +165,7 @@ using GeomTensor3 = parthenon::ParArrayND<Real>;
 #define KOKKOS_LAMBDA_MESH_VEC KOKKOS_LAMBDA (const int& b, const int &mu, const int &k, const int &j, const int &i)
 
 // TODO separate macros for return type if this becomes a thing?  Or don't macro at all
-#define KOKKOS_LAMBDA_1D_REDUCE KOKKOS_LAMBDA (const int &i, Real &local_result)
+#define KOKKOS_LAMBDA_1D_REDUCE KOKKOS_LAMBDA (const int &i, parthenon::Real &local_result)
 // This is used for timestep and divB, which are explicitly double
 #define KOKKOS_LAMBDA_2D_REDUCE KOKKOS_LAMBDA (const int &j, const int &i, double &local_result)
 #define KOKKOS_LAMBDA_3D_REDUCE KOKKOS_LAMBDA (const int &k, const int &j, const int &i, double &local_result)

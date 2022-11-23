@@ -49,6 +49,10 @@ target_link_libraries(${EXE_NAME} PUBLIC kokkos)
 # We actually only need the header
 #target_link_libraries(${EXE_NAME} PUBLIC kokkoskernels)
 target_link_libraries(${EXE_NAME} PUBLIC parthenon)
+# Sometimes helps with OpenMP
+#target_link_libraries(${EXE_NAME} PUBLIC gomp)
+target_link_libraries(${EXE_NAME} PUBLIC z)
+
 
 # OPTIONS
 # These are almost universally performance trade-offs

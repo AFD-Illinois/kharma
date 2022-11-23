@@ -111,8 +111,11 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         auto &mdudt = pmesh->mesh_data.GetOrAdd("dUdt", i);
         auto &mc_solver = pmesh->mesh_data.GetOrAdd("solver", i);
 
-        auto t_start_recv = tl.AddTask(t_none, &MeshData<Real>::StartReceiving, mc1.get(),
-                                    BoundaryCommSubset::all);
+        auto t_start_recv_bound = tl.AddTask(t_none, parthenon::cell_centered_bvars::StartReceiveBoundBufs<parthenon::BoundaryType::any>, mc1);
+        auto t_start_recv_flux = t_none;
+        if (pmesh->multilevel)
+            t_start_recv_flux = tl.AddTask(t_none, parthenon::cell_centered_bvars::StartReceiveFluxCorrections, mc0);
+        auto t_start_recv = t_start_recv_bound | t_start_recv_flux;
 
         // Calculate the HLL fluxes in each direction
         // This reconstructs the primitives (P) at faces and uses them to calculate fluxes
@@ -143,29 +146,22 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         case ReconstructionType::ppm:
         case ReconstructionType::mp5:
         case ReconstructionType::weno5_lower_poles:
-            cerr << "Reconstruction type not supported!  Supported reconstructions:" << endl;
-            cerr << "donor_cell, linear_mc, linear_vl, weno5" << endl;
+            std::cerr << "Reconstruction type not supported!  Supported reconstructions:" << std::endl;
+            std::cerr << "donor_cell, linear_mc, linear_vl, weno5" << std::endl;
             throw std::invalid_argument("Unsupported reconstruction algorithm!");
         }
         auto t_calculate_flux = t_calculate_flux1 | t_calculate_flux2 | t_calculate_flux3;
 
-        auto t_recv_flux = t_calculate_flux;
-        // TODO this appears to be implemented *only* block-wise, split it into its own region if so
-        // TODO should probably keep track of/wait on all tasks!! Might be a race condition!!
+        auto t_set_flux = t_calculate_flux;
         if (pmesh->multilevel) {
-            // Get flux corrections from AMR neighbors
-            for (auto &pmb : pmesh->block_list) {
-                auto& rc = pmb->meshblock_data.Get();
-                auto t_send_flux =
-                    tl.AddTask(t_calculate_flux, &MeshBlockData<Real>::SendFluxCorrection, rc.get());
-                t_recv_flux =
-                    tl.AddTask(t_calculate_flux, &MeshBlockData<Real>::ReceiveFluxCorrection, rc.get());
-            }
+                tl.AddTask(t_calculate_flux, parthenon::cell_centered_bvars::LoadAndSendFluxCorrections, mc0);
+                auto t_recv_flux = tl.AddTask(t_calculate_flux, parthenon::cell_centered_bvars::ReceiveFluxCorrections, mc0);
+                t_set_flux = tl.AddTask(t_recv_flux, parthenon::cell_centered_bvars::SetFluxCorrections, mc0);
         }
 
         // FIX FLUXES
         // Zero any fluxes through the pole or inflow from outflow boundaries
-        auto t_fix_flux = tl.AddTask(t_recv_flux, KBoundaries::FixFlux, mc0.get());
+        auto t_fix_flux = tl.AddTask(t_set_flux, KBoundaries::FixFlux, mc0.get());
 
         auto t_flux_ct = t_fix_flux;
         if (use_b_flux_ct) {
@@ -283,10 +279,14 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         auto t_fill_derived = tl.AddTask(t_none, Update::FillDerived<MeshBlockData<Real>>, sc1.get());
     }
 
-    // MPI/MeshBlock boundary exchange.
-    // Optionally "packed" to send all data in one call (num_partitions defaults to 1)
-    // Note that in this driver, this block syncs *primitive* variables, not conserved
-    AddBoundarySync(tc, pmesh, blocks, integrator.get(), stage);
+    TaskRegion &sync_region = tc.AddRegion(num_partitions);
+    for (int i = 0; i < num_partitions; i++) {
+        auto &tl = sync_region[i];
+        auto &mc1 = pmesh->mesh_data.GetOrAdd(stage_name[stage], i);
+        // MPI/MeshBlock boundary exchange.
+        // Note that in this driver, this block syncs *primitive* variables, not conserved
+        KBoundaries::AddBoundarySync(t_none, tl, mc1);
+    }
 
     // Async Region: Any post-sync tasks.  Fixups, timestep & AMR things.
     TaskRegion &async_region2 = tc.AddRegion(blocks.size());
@@ -296,15 +296,7 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         auto &sc0 = pmb->meshblock_data.Get(stage_name[stage-1]);
         auto &sc1 = pmb->meshblock_data.Get(stage_name[stage]);
 
-        auto t_clear_comm_flags = tl.AddTask(t_none, &MeshBlockData<Real>::ClearBoundary,
-                                        sc1.get(), BoundaryCommSubset::all);
-
-        auto t_prolongBound = t_clear_comm_flags;
-        if (pmesh->multilevel) {
-            t_prolongBound = tl.AddTask(t_clear_comm_flags, ProlongateBoundaries, sc1);
-        }
-
-        auto t_set_bc = tl.AddTask(t_prolongBound, parthenon::ApplyBoundaryConditions, sc1);
+        auto t_set_bc = tl.AddTask(t_none, parthenon::ApplyBoundaryConditions, sc1);
 
         // If we're evolving even the GRMHD variables explicitly, we need to fix UtoP variable inversion failures
         // Syncing bounds before calling this, and then running it over the whole domain, will make
@@ -350,25 +342,8 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
             auto &tl = single_tasklist_per_pack_region[i];
             auto &mc1 = pmesh->mesh_data.GetOrAdd(stage_name[stage], i);
 
-            auto t_start_recv = tl.AddTask(t_none, &MeshData<Real>::StartReceiving, mc1.get(),
-                                        BoundaryCommSubset::all);
-        }
-
-        AddBoundarySync(tc, pmesh, blocks, integrator.get(), stage);
-
-        TaskRegion &async_region = tc.AddRegion(blocks.size());
-        for (int i = 0; i < blocks.size(); i++) {
-            auto &pmb = blocks[i];
-            auto &tl = async_region[i];
-            auto &sc1 = pmb->meshblock_data.Get(stage_name[stage]);
-
-            auto t_clear_comm_flags = tl.AddTask(t_none, &MeshBlockData<Real>::ClearBoundary,
-                                            sc1.get(), BoundaryCommSubset::all);
-
-            auto t_prolongBound = t_clear_comm_flags;
-            if (pmesh->multilevel) {
-                t_prolongBound = tl.AddTask(t_clear_comm_flags, ProlongateBoundaries, sc1);
-            }
+            auto t_start_recv_bound = tl.AddTask(t_none, parthenon::cell_centered_bvars::StartReceiveBoundBufs<parthenon::BoundaryType::any>, mc1);
+            auto t_bound_sync = KBoundaries::AddBoundarySync(t_start_recv_bound, tl, mc1);
         }
     }
 

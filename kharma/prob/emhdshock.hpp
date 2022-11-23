@@ -37,7 +37,6 @@
 #include "emhd.hpp"
 
 using namespace std::literals::complex_literals;
-using namespace std;
 using namespace parthenon;
 
 #define STRLEN 2048
@@ -144,8 +143,8 @@ TaskStatus InitializeEMHDShock(MeshBlockData<Real> *rc, ParameterInput *pin)
                     EMHD::set_parameters(G, P, m_p, emhd_params, gam, k, j, i, tau, chi_e, nu_e);
 
                     // Update q and dP (which now are q_tilde and dP_tilde)
-                    q(k, j, i)  *= sqrt(tau / (chi_e * rho * pow(Theta, 2)));
-                    dP(k, j, i) *= sqrt(tau / (nu_e * rho * Theta));
+                    q(k, j, i)  *= m::sqrt(tau / (chi_e * rho * m::pow(Theta, 2)));
+                    dP(k, j, i) *= m::sqrt(tau / (nu_e * rho * Theta));
                 }
 
             }

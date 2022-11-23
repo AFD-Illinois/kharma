@@ -39,7 +39,6 @@
 
 
 using namespace std::literals::complex_literals;
-using namespace std;
 using namespace parthenon;
 
 /**
@@ -268,7 +267,7 @@ TaskStatus InitializeMHDModes(MeshBlockData<Real> *rc, ParameterInput *pin)
 
     // Override end time to be exactly 1 period for moving modes, unless we set otherwise
     if (nmode != 0 && one_period) {
-        pin->SetReal("parthenon/time", "tlim", 2. * M_PI / fabs(omega.imag()));
+        pin->SetReal("parthenon/time", "tlim", 2. * M_PI / m::abs(omega.imag()));
     }
 
     return TaskStatus::complete;

@@ -42,10 +42,8 @@
 // types, which are not available when importing this file's header
 #include "types.hpp"
 
-// This file doesn't have MeshBlock access, so it uses raw Kokkos calls
-using namespace parthenon;
-using namespace std;
-using namespace Kokkos;
+using Kokkos::MDRangePolicy;
+using Kokkos::Rank;
 
 // Stepsize for numerical derivatives of the metric
 #define DELTA 1.e-8
@@ -123,7 +121,7 @@ GRCoordinates::GRCoordinates(const RegionSize &rs, ParameterInput *pin): Uniform
     n1 = rs.nx1 + 2*Globals::nghost;
     n2 = rs.nx2 > 1 ? rs.nx2 + 2*Globals::nghost : 1;
     n3 = rs.nx3 > 1 ? rs.nx3 + 2*Globals::nghost : 1;
-    //cout << "Initialized coordinates with nghost " << Globals::nghost << endl;
+    //cout << "Initialized coordinates with nghost " << Globals::nghost << std::endl;
 
     init_GRCoordinates(*this, n1, n2, n3);
 }
@@ -148,7 +146,7 @@ GRCoordinates::GRCoordinates(const GRCoordinates &src, int coarsen): UniformCart
  * fun issues with C++ Lambda capture, which Kokkos brings to the fore
  */
 void init_GRCoordinates(GRCoordinates& G, int n1, int n2, int n3) {
-    //cerr << "Creating GRCoordinate cache size " << n1 << " " << n2 << endl;
+    //cerr << "Creating GRCoordinate cache size " << n1 << " " << n2 << std::endl;
     // Cache geometry.  May be faster than re-computing. May not be.
     G.gcon_direct = GeomTensor2("gcon", NLOC, n2+1, n1+1, GR_DIM, GR_DIM);
     G.gcov_direct = GeomTensor2("gcov", NLOC, n2+1, n1+1, GR_DIM, GR_DIM);
@@ -260,7 +258,7 @@ void init_GRCoordinates(GRCoordinates& G, int n1, int n2, int n3) {
                 // crucial near the poles
                 GReal X[GR_DIM];
                 G.coord(0, j, i, Loci::center, X);
-                if (1) { //(fabs(X[2] - 0) < 0.08 || fabs(X[2] - 1.0) < 0.08)) {
+                if (1) { //(m::abs(X[2] - 0) < 0.08 || m::abs(X[2] - 1.0) < 0.08)) {
                     for (int lam=1; lam < GR_DIM; lam++) {
                         const Loci loc = loc_of(lam);
                         // Get gdet values at faces we calculated above
@@ -276,7 +274,7 @@ void init_GRCoordinates(GRCoordinates& G, int n1, int n2, int n3) {
                         GReal sum_portions, portions[GR_DIM] = {0};
                         DLOOP1 {
                             test_sum += gdet_conn_local(j, i, mu, mu, lam);
-                            portions[mu] = fabs(gdet_conn_local(j, i, mu, mu, lam));
+                            portions[mu] = m::abs(gdet_conn_local(j, i, mu, mu, lam));
                             sum_portions += portions[mu];
                         }
                         DLOOP1 portions[mu] /= sum_portions;

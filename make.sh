@@ -127,20 +127,18 @@ if [[ -z "$CXX_NATIVE" ]]; then
   elif which nvc++ >/dev/null 2>&1; then
     CXX_NATIVE=nvc++
     C_NATIVE=nvc
-  # At this point we compile with clang more often/reliably anyway
-  # AMD AOCC also uses this name
-  elif which clang++ >/dev/null 2>&1; then
-    CXX_NATIVE=clang++
-    C_NATIVE=clang
-  # Maybe we overwrote 'cpp' to point to something
+  # Maybe we overwrote 'c++' to point to something
+  # Usually this is GCC on Linux systems, which is fine
   elif which cpp >/dev/null 2>&1; then
-    CXX_NATIVE=cpp
+    CXX_NATIVE=c++
     C_NATIVE=cc
   # Otherwise, trusty system GCC
   else
     CXX_NATIVE=g++
     C_NATIVE=gcc
   fi
+  # clang/++ will never be used automatically;
+  # blame Apple, who don't support OpenMP
 fi
 
 # CUDA loop options: MANUAL1D_LOOP > MDRANGE_LOOP, TPTTR_LOOP & TPTTRTVR_LOOP don't compile
@@ -228,23 +226,24 @@ if [[ "$ARGS" == *"hdf5"* && "$ARGS" == *"clean"* ]]; then
   fi
   cd hdf5-${H5VER}/
   # TODO better ensure we're using C_NATIVE underneath.  e.g. MPI_CFLAGS with -cc
-  if [[ "$ARGS" == *"icc"* ]]; then
-    MPI_CC=mpiicc
+  if  [[ "$ARGS" == *"nompi"* ]]; then
+    HDF_CC=$C_NATIVE
+    HDF_EXTRA=""
   else
-    MPI_CC=mpicc
+    if [[ "$ARGS" == *"icc"* ]]; then
+      HDF_CC=mpiicc
+      HDF_EXTRA="--enable-parallel"
+    else
+      HDF_CC=mpicc
+      HDF_EXTRA="--enable-parallel"
+    fi
   fi
-
-  if [[ "$ARGS" == *"nompi"* ]]; then
-    CC=$C_NATIVE sh configure -C --prefix=$PWD/../hdf5 --enable-build-mode=production \
-    --disable-dependency-tracking --disable-hl --disable-tests --disable-tools --disable-shared --disable-deprecated-symbols
-  else
-    CC=$MPI_CC sh configure -C --enable-parallel --prefix=$PWD/../hdf5 --enable-build-mode=production \
-    --disable-dependency-tracking --disable-hl --disable-tests --disable-tools --disable-shared --disable-deprecated-symbols
-  fi
+  CC=$HDF_CC sh configure -C $HDF_EXTRA --prefix=$PWD/../hdf5 --enable-build-mode=production \
+  --disable-dependency-tracking --disable-hl --disable-tests --disable-tools --disable-shared --disable-deprecated-symbols
   wait 1
 
   # Compiling C takes less memory
-  if [[ -z $NPROC ]]; then
+  if [[ -v $NPROC ]]; then
     make -j$(( $NPROC * 2 ))
   else
     make -j

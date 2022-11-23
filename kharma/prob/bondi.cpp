@@ -34,8 +34,6 @@
 
 #include "bondi.hpp"
 
-using namespace std;
-
 /**
  * Initialization of a Bondi problem with specified sonic point, BH mdot, and horizon radius
  * TODO mdot and rs are redundant and should be merged into one parameter

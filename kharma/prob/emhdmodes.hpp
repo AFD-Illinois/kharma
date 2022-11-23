@@ -39,7 +39,6 @@
 
 
 using namespace std::literals::complex_literals;
-using namespace std;
 using namespace parthenon;
 
 /**

@@ -34,7 +34,7 @@
 #pragma once
 
 #include "decs.hpp"
-#include <parthenon/parthenon.hpp>
+#include "types.hpp"
 
 // Internal representation of the field initialization preference for quick switch
 // Avoids string comparsion in kernels
@@ -71,21 +71,21 @@ inline BSeedType ParseBSeedType(std::string b_field_type)
  * 
  * Likely not actually what you want
  */
-Real GetLocalBetaMin(MeshBlockData<Real> *rc);
+Real GetLocalBetaMin(parthenon::MeshBlockData<Real> *rc);
 
 /**
  * Get the maximum value of b^2 (twice the magnetic field pressure)
  * over the domain.
  */
-Real GetLocalBsqMax(MeshBlockData<Real> *rc);
+Real GetLocalBsqMax(parthenon::MeshBlockData<Real> *rc);
 /**
  * Get the maximum fluid pressure over the domain
  */
-Real GetLocalPMax(MeshBlockData<Real> *rc);
+Real GetLocalPMax(parthenon::MeshBlockData<Real> *rc);
 
 /**
  * Normalize the magnetic field by dividing by 'factor'
  * 
  * LOCKSTEP: this function expects and preserves P==U
  */
-TaskStatus NormalizeBField(MeshBlockData<Real> *rc, Real factor);
+TaskStatus NormalizeBField(parthenon::MeshBlockData<Real> *rc, Real factor);

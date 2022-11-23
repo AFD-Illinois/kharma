@@ -1,15 +1,14 @@
 #!/bin/bash
 #BSUB -P AST171
-#BSUB -W 02:00
-#BSUB -J KHARMA
+#BSUB -W 24:00
+#BSUB -J KHARMA_killable
 # debug or batch
-#BSUB -q debug
+#BSUB -q killable
 
 # ALWAYS check the following 3 lines before submitting the script
 
-#BSUB -nnodes 8
-NNODES=8
-COMMAND="$@"
+#BSUB -nnodes 1
+NNODES=1
 
 KHARMA_DIR=~/kharma
 
@@ -38,6 +37,23 @@ jsrun -n $NNODES -r 1 hostname
 export OMP_PROC_BIND=spread
 export OMP_PLACES=threads
 export OMP_NUM_THREADS=24
+
+# Copy & correct final regular restart if present, otherwise start fresh
+# h5ls will return 0 (false) if it CAN read the file, so negate that here
+last_restart=$(ls -t . | grep torus.out1.0 | head -1)
+h5ls $last_restart
+if [[ $last_restart != "" && $? == 0 ]]
+then
+  echo "Restart file"
+  cp $last_restart torus.out1.final.rhdf
+  module load python
+  sleep 1 
+  python ~/kharma/scripts/fix_restart.py torus.out1.final.rhdf torus.out1.final_corrected.rhdf
+  COMMAND="-r torus.out1.final_corrected.rhdf b_field/initial_cleanup=false"
+else
+  echo "No restart file"
+  COMMAND="-i torus.par"
+fi
 
 # In order to run anything on the compute nodes, we must specify
 # how we wish to slice them up.  This is done with arguments to

@@ -185,9 +185,9 @@ TaskStatus ApplyFloors(MeshBlockData<Real> *rc, IndexDomain domain)
                 // Record the pflag as well.  KHARMA did not traditionally do this,
                 // because floors were run over uninitialized zones, and thus wrote
                 // garbage pflags.  We now prevent this.
-                // Note that the pflag is recorded only if inversion failed --
-                // floors can paper over zones that really *should* be discarded,
-                // even if they now technically correspond to a physical state.
+                // Note that the pflag is recorded only if inversion failed,
+                // so that a zone is flagged if *either* the initial inversion or
+                // floor inversion failed.
                 // Zones next to the sharp edge of the initial torus, for example,
                 // can produce negative u when inverted, then magically stay invertible
                 // after floors when they should be diffused.

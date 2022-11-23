@@ -34,11 +34,8 @@
 #pragma once
 
 #include "decs.hpp"
-
-#include "mesh/mesh.hpp"
 #include "mpi.hpp"
-
-using namespace std;
+#include "types.hpp"
 
 /**
  * Check the max signal speed (ctop) for 0-values or NaNs.
@@ -75,7 +72,7 @@ KOKKOS_INLINE_FUNCTION void print_matrix(const std::string name, const double g[
 
     if (kill_on_nan) {
         // Additionally kill things if/when we hit NaNs
-        DLOOP2 if (isnan(g[mu][nu])) exit(-1);
+        DLOOP2 if (m::isnan(g[mu][nu])) exit(-1);
     }
 }
 KOKKOS_INLINE_FUNCTION void print_vector(const std::string name, const double v[GR_DIM], bool kill_on_nan=false)
@@ -83,6 +80,6 @@ KOKKOS_INLINE_FUNCTION void print_vector(const std::string name, const double v[
     printf("%s: %g\t%g\t%g\t%g\n", name.c_str(), v[0], v[1], v[2], v[3]);
 
     if (kill_on_nan) {
-        DLOOP2 if (isnan(v[nu])) exit(-1);
+        DLOOP2 if (m::isnan(v[nu])) exit(-1);
     }
 }

@@ -32,8 +32,6 @@
  *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-// Floors.  Apply limits to fluid values to maintain integrable state
-
 #include "implicit.hpp"
 
 #include "debug.hpp"
@@ -41,10 +39,11 @@
 #include "grmhd_functions.hpp"
 #include "pack.hpp"
 
-#include <batched/dense/KokkosBatched_LU_Decl.hpp>
-#include <batched/dense/impl/KokkosBatched_LU_Serial_Impl.hpp>
+// Implicit nonlinear solve requires several linear solves per-zone
+// Use Kokkos-kernels QR decomposition & triangular solve, they're fast.
+#include <batched/dense/KokkosBatched_ApplyQ_Decl.hpp>
+#include <batched/dense/KokkosBatched_QR_Decl.hpp>
 #include <batched/dense/KokkosBatched_Trsv_Decl.hpp>
-using namespace KokkosBatched;
 
 namespace Implicit
 {
@@ -138,8 +137,8 @@ TaskStatus Step(MeshData<Real> *mci, MeshData<Real> *mc0, MeshData<Real> *dudt,
      auto& rci = mci->GetBlockData(0); // MeshBlockData object, more member functions
     auto ordered_prims = get_ordered_names(rci.get(), isPrimitive);
     auto ordered_cons = get_ordered_names(rci.get(), Metadata::Conserved);
-    //cerr << "Ordered prims:"; for(auto prim: ordered_prims) cerr << " " << prim; cerr << endl;
-    //cerr << "Ordered cons:"; for(auto con: ordered_cons) cerr << " " << con; cerr << endl;
+    //cerr << "Ordered prims:"; for(auto prim: ordered_prims) std::cerr << " " << prim; std::cerr << std::endl;
+    //cerr << "Ordered cons:"; for(auto con: ordered_cons) std::cerr << " " << con; std::cerr << std::endl;
 
     // Initial state.  Also mapping template
     PackIndexMap prims_map, cons_map;
@@ -164,7 +163,7 @@ TaskStatus Step(MeshData<Real> *mci, MeshData<Real> *mc0, MeshData<Real> *dudt,
     const int n3 = bounds.ncellsk(IndexDomain::entire);
 
     // RETURN if there aren't any implicit variables to evolve
-    //cerr << "Solve size " << nfvar << " on prim size " << nvar << endl;
+    //cerr << "Solve size " << nfvar << " on prim size " << nvar << std::endl;
     if (nfvar == 0) return TaskStatus::complete;
 
     // The norm of the residual.  We store this to avoid the main kernel
@@ -198,7 +197,7 @@ TaskStatus Step(MeshData<Real> *mci, MeshData<Real> *mc0, MeshData<Real> *dudt,
     // jacobian (2D)
     // residual, deltaP (implicit only)
     // Pi/Ui, Ps/Us, dUdt, P_solver, dUi, two temps (all vars)
-    const size_t total_scratch_bytes = tensor_size_in_bytes + (2) * fvar_size_in_bytes + (10) * var_size_in_bytes;
+    const size_t total_scratch_bytes = tensor_size_in_bytes + (14) * var_size_in_bytes;
 
     // Iterate.  This loop is outside the kokkos kernel in order to print max_norm
     // There are generally a low and similar number of iterations between
@@ -215,6 +214,8 @@ TaskStatus Step(MeshData<Real> *mci, MeshData<Real> *mc0, MeshData<Real> *dudt,
                 ScratchPad3D<Real> jacobian_s(member.team_scratch(scratch_level), nfvar, nfvar, n1);
                 ScratchPad2D<Real> residual_s(member.team_scratch(scratch_level), nfvar, n1);
                 ScratchPad2D<Real> delta_prim_s(member.team_scratch(scratch_level), nfvar, n1);
+                ScratchPad2D<Real> trans_s(member.team_scratch(scratch_level), nfvar, n1);
+                ScratchPad2D<Real> work_s(member.team_scratch(scratch_level), nfvar, n1);
                 // Scratchpads for all vars
                 ScratchPad2D<Real> dUi_s(member.team_scratch(scratch_level), nvar, n1);
                 ScratchPad2D<Real> tmp1_s(member.team_scratch(scratch_level), nvar, n1);
@@ -268,6 +269,8 @@ TaskStatus Step(MeshData<Real> *mci, MeshData<Real> *mc0, MeshData<Real> *dudt,
                         auto residual = Kokkos::subview(residual_s, Kokkos::ALL(), i);
                         auto jacobian = Kokkos::subview(jacobian_s, Kokkos::ALL(), Kokkos::ALL(), i);
                         auto delta_prim = Kokkos::subview(delta_prim_s, Kokkos::ALL(), i);
+                        auto trans = Kokkos::subview(trans_s, Kokkos::ALL(), i);
+                        auto work = Kokkos::subview(work_s, Kokkos::ALL(), i);
                         // Temporaries
                         auto tmp1 = Kokkos::subview(tmp1_s, Kokkos::ALL(), i);
                         auto tmp2 = Kokkos::subview(tmp2_s, Kokkos::ALL(), i);
@@ -301,12 +304,14 @@ TaskStatus Step(MeshData<Real> *mci, MeshData<Real> *mc0, MeshData<Real> *dudt,
                         //     // printf("Initial delta_prim: "); PLOOP printf("%g ", delta_prim(ip)); printf("\n");
                         // }
 
-                        // Linear solve
-                        // This code lightly adapted from Kokkos batched examples
-                        // Replaces our inverse residual with the actual desired delta_prim
-                        KokkosBatched::SerialLU<Algo::LU::Blocked>::invoke(jacobian, tiny);
-                        KokkosBatched::SerialTrsv<Uplo::Upper,Trans::NoTranspose,Diag::NonUnit,Algo::Trsv::Blocked>
-                        ::invoke(alpha, jacobian, delta_prim);
+                        // Linear solve by QR decomposition
+                        KokkosBatched::SerialQR<KokkosBatched::Algo::QR::Unblocked>::invoke(jacobian, trans, work);
+                        KokkosBatched::SerialApplyQ<KokkosBatched::Side::Left, KokkosBatched::Trans::Transpose, KokkosBatched::Algo::ApplyQ::Unblocked>
+                        ::invoke(jacobian, trans, delta_prim, work);
+                        KokkosBatched::SerialTrsv<KokkosBatched::Uplo::Upper, KokkosBatched::Trans::NoTranspose, KokkosBatched::Diag::NonUnit,
+                        KokkosBatched::Algo::Trsv::Unblocked>
+                        ::invoke(1.0, jacobian, delta_prim);
+
 
                         // Update the guess.  For now lambda == 1, choose on the fly?
                         FLOOP P_solver(ip) += lambda * delta_prim(ip);
@@ -326,7 +331,7 @@ TaskStatus Step(MeshData<Real> *mci, MeshData<Real> *mc0, MeshData<Real> *dudt,
                         // I would be tempted to store the whole residual, but it's of variable size
                         norm_all(b, k , j, i) = 0;
                         FLOOP norm_all(b, k, j, i) += residual(ip)*residual(ip);
-                        norm_all(b, k, j, i) = sqrt(norm_all(b, k, j, i)); // TODO faster to scratch cache & copy?
+                        norm_all(b, k, j, i) = m::sqrt(norm_all(b, k, j, i)); // TODO faster to scratch cache & copy?
                     }
                 );
                 member.team_barrier();

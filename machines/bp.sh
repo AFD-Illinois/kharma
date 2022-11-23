@@ -2,7 +2,8 @@
 # BP's machines
 
 if [[ $HOST == "cheshire"* ]]; then
-
+  HOST_ARCH="HSW"
+  DEVICE_ARCH="PASCAL61"
   export OMP_NUM_THREADS=24
 
   if [[ "$ARGS" == *"cuda"* ]]; then

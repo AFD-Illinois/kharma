@@ -71,7 +71,7 @@ KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const Vari
     }
 
     // Convert from conserved variables to four-vectors
-    const Real alpha = 1./sqrt(-G.gcon(loc, j, i, 0, 0));
+    const Real alpha = 1./m::sqrt(-G.gcon(loc, j, i, 0, 0));
     const Real gdet = G.gdet(loc, j, i);
     const Real a_over_g = alpha / gdet;
     const Real D = U(m_u.RHO, k, j, i) * a_over_g;
@@ -103,7 +103,7 @@ KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const Vari
 
     Real Qtcon[GR_DIM];
     DLOOP1 Qtcon[mu] = Qcon[mu] + ncon[mu] * Qdotn;
-    const Real Qtsq = dot(Qcon, Qcov) + pow(Qdotn, 2);
+    const Real Qtsq = dot(Qcon, Qcov) + m::pow(Qdotn, 2);
 
     // Set up eqtn for W'; this is the energy density
     const Real Ep = -Qdotn - D;
@@ -135,9 +135,9 @@ KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const Vari
 
         // Attempt a Halley/Muller/Bailey/Press step
         const Real dedW = (errp - errm) / (Wpp - Wpm);
-        const Real dedW2 = (errp - 2. * err + errm) / pow(h,2);
+        const Real dedW2 = (errp - 2. * err + errm) / m::pow(h,2);
         // TODO look at this clip & the next vs iteration convergence %s
-        const Real f = clip(0.5 * err * dedW2 / pow(dedW,2), -0.3, 0.3);
+        const Real f = clip(0.5 * err * dedW2 / m::pow(dedW,2), -0.3, 0.3);
 
         dW = clip(-err / dedW / (1. - f), -0.5*Wp, 2.0*Wp);
     }
@@ -159,11 +159,11 @@ KOKKOS_INLINE_FUNCTION InversionStatus u_to_p(const GRCoordinates &G, const Vari
 
         Wp += dW;
 
-        if (fabs(dW / Wp) < UTOP_ERRTOL) break;
+        if (m::abs(dW / Wp) < UTOP_ERRTOL) break;
 
         err = err_eqn(gam, Bsq, D, Ep, QdB, Qtsq, Wp, eflag);
 
-        if (fabs(err / Wp) < UTOP_ERRTOL) break;
+        if (m::abs(err / Wp) < UTOP_ERRTOL) break;
     }
     // If there was a bad gamma calculation, do not set primitives other than B
     // Uncomment to error on any bad velocity.  iharm2d/3d do not do this.
@@ -206,11 +206,11 @@ KOKKOS_INLINE_FUNCTION Real err_eqn(const Real& gam, const Real& Bsq, const Real
     const Real W = Wp + D;
     const Real gamma = lorentz_calc_w(Bsq, D, QdB, Qtsq, Wp);
     if (gamma < 1) eflag = InversionStatus::bad_ut;
-    const Real w = W / pow(gamma,2);
+    const Real w = W / m::pow(gamma,2);
     const Real rho = D / gamma;
     const Real p = (w - rho) * (gam - 1) / gam;
 
-    return -Ep + Wp - p + 0.5 * Bsq + 0.5 * (Bsq * Qtsq - QdB * QdB) / pow((Bsq + W), 2);
+    return -Ep + Wp - p + 0.5 * Bsq + 0.5 * (Bsq * Qtsq - QdB * QdB) / m::pow((Bsq + W), 2);
 
 }
 
@@ -233,7 +233,7 @@ KOKKOS_INLINE_FUNCTION Real lorentz_calc_w(const Real& Bsq, const Real& D, const
     if (utsq < -1.e-15 || utsq > 1.e7) {
         return -1.; // This will trigger caller to return an error immediately
     } else {
-        return sqrt(1. + fabs(utsq));
+        return m::sqrt(1. + m::abs(utsq));
     }
 }
 

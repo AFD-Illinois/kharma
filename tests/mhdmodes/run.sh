@@ -13,7 +13,7 @@ conv_3d() {
     do
       # Eight blocks
       half=$(( $res / 2 ))
-      $BASE/run.sh -i $BASE/pars/mhdmodes.par debug/verbose=1 \
+      $BASE/run.sh -i $BASE/pars/mhdmodes.par debug/verbose=2 \
                       parthenon/mesh/nx1=$res parthenon/mesh/nx2=$res parthenon/mesh/nx3=$res \
                       parthenon/meshblock/nx1=$half parthenon/meshblock/nx2=$half parthenon/meshblock/nx3=$half \
                       $2 >log_${1}_${res}.txt 2>&1
@@ -83,9 +83,9 @@ conv_3d fast_imex   "mhdmodes/nmode=3 driver/type=imex" "fast mode in 3D, ImEx e
 #conv_3d alfven_imex_semi "mhdmodes/nmode=2 driver/type=imex GRMHD/implicit=true" "slow mode 3D, ImEx semi-implicit"
 #conv_3d fast_imex_semi   "mhdmodes/nmode=3 driver/type=imex GRMHD/implicit=true" "slow mode 3D, ImEx semi-implicit"
 # All variables semi-implicit
-conv_3d slow_imex_im   "mhdmodes/nmode=1 driver/type=imex GRMHD/implicit=true b_field/implicit=true" "slow mode 3D, ImEx implicit"
-conv_3d alfven_imex_im "mhdmodes/nmode=2 driver/type=imex GRMHD/implicit=true b_field/implicit=true" "Alfven mode 3D, ImEx implicit"
-conv_3d fast_imex_im   "mhdmodes/nmode=3 driver/type=imex GRMHD/implicit=true b_field/implicit=true" "fast mode 3D, ImEx implicit"
+#conv_3d slow_imex_im   "mhdmodes/nmode=1 driver/type=imex GRMHD/implicit=true b_field/implicit=true" "slow mode 3D, ImEx implicit"
+#conv_3d alfven_imex_im "mhdmodes/nmode=2 driver/type=imex GRMHD/implicit=true b_field/implicit=true" "Alfven mode 3D, ImEx implicit"
+#conv_3d fast_imex_im   "mhdmodes/nmode=3 driver/type=imex GRMHD/implicit=true b_field/implicit=true" "fast mode 3D, ImEx implicit"
 
 # 2D modes use small blocks, could pick up some problems at MPI ranks >> 1
 # Currently very slow, plus modes are incorrect
