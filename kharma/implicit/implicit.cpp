@@ -84,25 +84,27 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     params.Add("rootfind_tol", rootfind_tol);
     Real linesearch_lambda = pin->GetOrAddReal("implicit", "linesearch_lambda", 1.0);
     params.Add("linesearch_lambda", linesearch_lambda);
+    int min_nonlinear_iter = pin->GetOrAddInteger("implicit", "min_nonlinear_iter", 1);
+    params.Add("min_nonlinear_iter", min_nonlinear_iter);
     int max_nonlinear_iter = pin->GetOrAddInteger("implicit", "max_nonlinear_iter", 3);
     params.Add("max_nonlinear_iter", max_nonlinear_iter);
     bool use_qr = pin->GetOrAddBoolean("implicit", "use_qr", true);
     params.Add("use_qr", use_qr);
 
-    // Denote failures/non-converged zones with the same flag as UtoP
-    // This does NOT share the same mapping of values
-    // TODO currently unused
-    // Metadata m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
-    // pkg->AddField("pflag", m);
+    int verbose = pin->GetOrAddInteger("debug", "verbose", 0);
+    params.Add("verbose", verbose);
 
-    // When using this package we'll need to distinguish Implicitly and Explicitly-updated variables
+    // TODO some way to denote non-converged zones?  impflag or something?
+
+    // When using this package we'll need to distinguish implicitly and explicitly-updated variables
+    // All independent variables should be marked one or the other when this package is in use
     MetadataFlag isImplicit = Metadata::AllocateNewFlag("Implicit");
     params.Add("ImplicitFlag", isImplicit);
     MetadataFlag isExplicit = Metadata::AllocateNewFlag("Explicit");
     params.Add("ExplicitFlag", isExplicit);
 
     // Anything we need to run from this package on callbacks
-    // None of this will be crucial for the step
+    // Maybe a post-step L2 or flag count or similar
     // pkg->PostFillDerivedBlock = Implicit::PostFillDerivedBlock;
     // pkg->PostStepDiagnosticsMesh = Implicit::PostStepDiagnostics;
 
@@ -121,11 +123,13 @@ TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_i
 
     // Parameters
     const auto& implicit_par = pmb_full_step_init->packages.Get("Implicit")->AllParams();
+    const int iter_min       = implicit_par.Get<int>("min_nonlinear_iter");
     const int iter_max       = implicit_par.Get<int>("max_nonlinear_iter");
     const Real lambda        = implicit_par.Get<Real>("linesearch_lambda");
     const Real delta         = implicit_par.Get<Real>("jacobian_delta");
     const Real rootfind_tol  = implicit_par.Get<Real>("rootfind_tol");
     const bool use_qr        = implicit_par.Get<bool>("use_qr");
+    const int verbose       = implicit_par.Get<int>("verbose");
     const Real gam           = pmb_full_step_init->packages.Get("GRMHD")->Param<Real>("gamma");
     // Misc other constants for inside the kernel
     const bool am_rank0 = MPIRank0();
@@ -216,7 +220,7 @@ TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_i
     // Iterate.  This loop is outside the kokkos kernel in order to print max_norm
     // There are generally a low and similar number of iterations between
     // different zones, so probably acceptable speed loss.
-    for (int iter=0; iter < iter_max; iter++) {
+    for (int iter=1; iter <= iter_max; ++iter) {
         // Flags per iter, since debugging here will be rampant
         Flag(md_solver, "Implicit Iteration:");
 
@@ -367,20 +371,23 @@ TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_i
             }
         );
         
-        // Take the maximum L2 norm on this rank
-        Reduce<Real> max_norm;
-        Kokkos::Max<Real> norm_max(max_norm.val);
-        pmb_sub_step_init->par_reduce("max_norm", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-            KOKKOS_LAMBDA_MESH_3D_REDUCE {
-                if (norm_all(b, k, j, i) > local_result) local_result = norm_all(b, k, j, i);
-            }
-        , norm_max);
-        // Then MPI reduce it
-        max_norm.StartReduce(0, MPI_MAX);
-        while (max_norm.CheckReduce() == TaskStatus::incomplete);
-        if (MPIRank0()) fprintf(stdout, "Nonlinear iter %d. Max L2 norm: %g\n", iter, max_norm.val);
-        // Break if it's less than the total tolerance we set.  TODO per-zone version of this?
-        if (max_norm.val < rootfind_tol) break;
+        // If we need to print or exit on the max norm...
+        if (iter >= iter_min || verbose >= 1) {
+            // Take the maximum L2 norm on this rank
+            Reduce<Real> max_norm;
+            Kokkos::Max<Real> norm_max(max_norm.val);
+            pmb_sub_step_init->par_reduce("max_norm", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+                KOKKOS_LAMBDA_MESH_3D_REDUCE {
+                    if (norm_all(b, k, j, i) > local_result) local_result = norm_all(b, k, j, i);
+                }
+            , norm_max);
+            // Then MPI reduce it
+            max_norm.StartReduce(0, MPI_MAX);
+            while (max_norm.CheckReduce() == TaskStatus::incomplete);
+            if (verbose >= 1 && MPIRank0()) printf("Iteration %d max L2 norm: %g\n", iter, max_norm.val);
+            // Break if it's less than the total tolerance we set.  TODO per-zone version of this?
+            if (iter >= iter_min && max_norm.val < rootfind_tol) break;
+        }
     }
 
     Flag(md_solver, "Implicit Iteration: final");

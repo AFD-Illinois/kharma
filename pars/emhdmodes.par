@@ -28,7 +28,7 @@ ix3_bc = periodic
 ox3_bc = periodic
 
 <parthenon/meshblock>
-nx1 = 128
+nx1 = 64
 nx2 = 64
 nx3 = 1
 
@@ -60,6 +60,11 @@ amp = 1e-8
 disable_floors = true
 enable_emhd_limits = false
 
+<implicit>
+min_nonlinear_iter = 3
+max_nonlinear_iter = 3
+use_qr = false
+
 <debug>
 # General verbosity level:
 # 1: general archival info
@@ -80,9 +85,6 @@ closure_type = sound_speed
 tau = 1.0
 conduction_alpha = 1.0
 viscosity_alpha = 1.0
-
-<implicit>
-max_nonlinear_iter = 3
 
 <parthenon/output0>
 file_type = hdf5
