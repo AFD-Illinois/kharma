@@ -46,9 +46,6 @@
 
 #define LEGACY_TH 1
 
-using namespace parthenon;
-using namespace std;
-
 /**
  * Embedding/Base systems implemented:
  * Minkowski space: Cartesian and Spherical coordinates
@@ -94,7 +91,7 @@ class SphMinkowskiCoords {
         const bool spherical = true;
         KOKKOS_INLINE_FUNCTION void gcov_embed(const GReal Xembed[GR_DIM], Real gcov[GR_DIM][GR_DIM]) const
         {
-            const GReal r = max(Xembed[1], SMALL);
+            const GReal r = m::max(Xembed[1], SMALL);
             const GReal th = excise(excise(Xembed[2], 0.0, SMALL), M_PI, SMALL);
             const GReal sth = sin(th);
 
@@ -102,7 +99,7 @@ class SphMinkowskiCoords {
             gcov[0][0] = 1.;
             gcov[1][1] = 1.;
             gcov[2][2] = r*r;
-            gcov[3][3] = pow(sth*r, 2);
+            gcov[3][3] = m::pow(sth*r, 2);
         }
 };
 
@@ -122,8 +119,8 @@ class SphKSCoords {
             const GReal r = Xembed[1];
             const GReal th = excise(excise(Xembed[2], 0.0, SMALL), M_PI, SMALL);
 
-            const GReal cos2 = pow(cos(th), 2);
-            const GReal sin2 = pow(sin(th), 2);
+            const GReal cos2 = m::pow(cos(th), 2);
+            const GReal sin2 = m::pow(sin(th), 2);
             const GReal rho2 = r*r + a*a*cos2;
 
             gcov[0][0] = -1. + 2.*r/rho2;
@@ -177,7 +174,7 @@ class SphKSCoords {
         // TODO more: isco etc?
         KOKKOS_INLINE_FUNCTION GReal rhor() const
         {
-            return (1. + sqrt(1. - a*a));
+            return (1. + m::sqrt(1. - a*a));
         }
 };
 
@@ -217,7 +214,7 @@ class SphBLCoords {
 
         KOKKOS_INLINE_FUNCTION GReal rhor() const
         {
-            return (1. + sqrt(1. - a*a));
+            return (1. + m::sqrt(1. - a*a));
         }
 };
 
@@ -374,7 +371,7 @@ class FunkyTransform {
         KOKKOS_FUNCTION FunkyTransform(GReal startx1_in, GReal hslope_in, GReal mks_smooth_in, GReal poly_xt_in, GReal poly_alpha_in):
             startx1(startx1_in), hslope(hslope_in), mks_smooth(mks_smooth_in), poly_xt(poly_xt_in), poly_alpha(poly_alpha_in)
             {
-                poly_norm = 0.5 * M_PI * 1./(1. + 1./(poly_alpha + 1.) * 1./pow(poly_xt, poly_alpha));
+                poly_norm = 0.5 * M_PI * 1./(1. + 1./(poly_alpha + 1.) * 1./m::pow(poly_xt, poly_alpha));
             }
 
         // Coordinate transformations
@@ -385,7 +382,7 @@ class FunkyTransform {
 
             const GReal thG = M_PI*Xnative[2] + ((1. - hslope)/2.)*sin(2.*M_PI*Xnative[2]);
             const GReal y = 2*Xnative[2] - 1.;
-            const GReal thJ = poly_norm * y * (1. + pow(y/poly_xt,poly_alpha) / (poly_alpha + 1.)) + 0.5 * M_PI;
+            const GReal thJ = poly_norm * y * (1. + m::pow(y/poly_xt,poly_alpha) / (poly_alpha + 1.)) + 0.5 * M_PI;
 #if LEGACY_TH
             const GReal th = thG + exp(mks_smooth * (startx1 - Xnative[1])) * (thJ - thG);
             Xembed[2] = excise(excise(th, 0.0, SMALL), M_PI, SMALL);
@@ -416,7 +413,7 @@ class FunkyTransform {
                 M_PI * Xnative[2]
                     + poly_norm * (2. * Xnative[2] - 1.)
                         * (1
-                            + (pow((-1. + 2 * Xnative[2]) / poly_xt, poly_alpha))
+                            + (m::pow((-1. + 2 * Xnative[2]) / poly_xt, poly_alpha))
                                 / (1 + poly_alpha))
                     - 1. / 2. * (1. - hslope) * sin(2. * M_PI * Xnative[2]));
             dxdX[2][2] = M_PI + (1. - hslope) * M_PI * cos(2. * M_PI * Xnative[2])
@@ -424,10 +421,10 @@ class FunkyTransform {
                     * (-M_PI
                         + 2. * poly_norm
                             * (1.
-                                + pow((2. * Xnative[2] - 1.) / poly_xt, poly_alpha)
+                                + m::pow((2. * Xnative[2] - 1.) / poly_xt, poly_alpha)
                                     / (poly_alpha + 1.))
                         + (2. * poly_alpha * poly_norm * (2. * Xnative[2] - 1.)
-                            * pow((2. * Xnative[2] - 1.) / poly_xt, poly_alpha - 1.))
+                            * m::pow((2. * Xnative[2] - 1.) / poly_xt, poly_alpha - 1.))
                             / ((1. + poly_alpha) * poly_xt)
                         - (1. - hslope) * M_PI * cos(2. * M_PI * Xnative[2]));
             dxdX[3][3] = 1.;

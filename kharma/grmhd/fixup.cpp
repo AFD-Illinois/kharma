@@ -64,6 +64,7 @@ TaskStatus GRMHD::FixUtoP(MeshBlockData<Real> *rc)
     const int verbose = pars.Get<int>("verbose");
     const Floors::Prescription floors(pmb->packages.Get("Floors")->AllParams());
 
+    // Just as UtoP needs to be applied over all zones, it needs to be fixed over all zones
     const IndexRange ib = rc->GetBoundsI(IndexDomain::entire);
     const IndexRange jb = rc->GetBoundsJ(IndexDomain::entire);
     const IndexRange kb = rc->GetBoundsK(IndexDomain::entire);
@@ -89,7 +90,7 @@ TaskStatus GRMHD::FixUtoP(MeshBlockData<Real> *rc)
                             // If we haven't overstepped array bounds...
                             if (inside(kk, jj, ii, kb, jb, ib)) {
                                 // Weight by distance
-                                double w = 1./(abs(l) + abs(m) + abs(n) + 1);
+                                double w = 1./(m::abs(l) + m::abs(m) + m::abs(n) + 1);
 
                                 // Count only the good cells, if we can
                                 if (((int) pflag(kk, jj, ii)) == InversionStatus::success) {

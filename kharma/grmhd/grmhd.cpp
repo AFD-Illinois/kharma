@@ -55,8 +55,6 @@
 #include "U_to_P.hpp"
 
 using namespace parthenon;
-// Need to access these directly for reductions
-using namespace Kokkos;
 
 
 /**
@@ -105,11 +103,11 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     // These parameters are put in "parthenon/time" to match others, but ultimately we should
     // override the parthenon timestep chooser
     // Minimum timestep, if something about the sound speed goes wonky. Probably won't save you :)
-    double dt_min = pin->GetOrAddPrecise("parthenon/time", "dt_min", 1.e-5);
+    double dt_min = pin->GetOrAddReal("parthenon/time", "dt_min", 1.e-5);
     params.Add("dt_min", dt_min);
     // Starting timestep: guaranteed step 1 timestep returned by EstimateTimestep,
     // usually matters most for restarts
-    double dt_start = pin->GetOrAddPrecise("parthenon/time", "dt", dt_min);
+    double dt_start = pin->GetOrAddReal("parthenon/time", "dt", dt_min);
     params.Add("dt_start", dt_start);
     double max_dt_increase = pin->GetOrAddReal("parthenon/time", "max_dt_increase", 2.0);
     params.Add("max_dt_increase", max_dt_increase);
@@ -136,8 +134,8 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     // } else if (recon == "weno5_lower_poles") {
     //     params.Add("recon", ReconstructionType::weno5_lower_poles);
     } else {
-        cerr << "Reconstruction type not supported!  Supported reconstructions:" << endl;
-        cerr << "donor_cell, linear_mc, linear_vl, weno5" << endl;
+        std::cerr << "Reconstruction type not supported!  Supported reconstructions:" << std::endl;
+        std::cerr << "donor_cell, linear_mc, linear_vl, weno5" << std::endl;
         throw std::invalid_argument("Unsupported reconstruction algorithm!");
     }
 
@@ -330,7 +328,7 @@ void UtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     pmb->par_for("U_to_P", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_3D {
             if (inside(k, j, i, kb_b, jb_b, ib_b) ||
-                abs(P(m_p.RHO, k, j, i)) > SMALL || abs(P(m_p.UU, k, j, i)) > SMALL) {
+                m::abs(P(m_p.RHO, k, j, i)) > SMALL || m::abs(P(m_p.UU, k, j, i)) > SMALL) {
                 // Run over all interior zones and any initialized ghosts
                 pflag(k, j, i) = GRMHD::u_to_p(G, U, m_u, gam, k, j, i, Loci::center, P, m_p);
             } else {
@@ -393,11 +391,11 @@ Real EstimateTimestep(MeshBlockData<Real> *rc)
                                    1 / (G.dx2v(j) / ctop(1, k, j, i)) +
                                    1 / (G.dx3v(k) / ctop(2, k, j, i)));
             // Effective "max speed" used for the timestep
-            double ctop_max_zone = min(G.dx1v(i), min(G.dx2v(j), G.dx3v(k))) / ndt_zone;
+            double ctop_max_zone = m::min(G.dx1v(i), m::min(G.dx2v(j), G.dx3v(k))) / ndt_zone;
 
-            if (!isnan(ndt_zone) && (ndt_zone < lminmax.min_val))
+            if (!m::isnan(ndt_zone) && (ndt_zone < lminmax.min_val))
                 lminmax.min_val = ndt_zone;
-            if (!isnan(ctop_max_zone) && (ctop_max_zone > lminmax.max_val))
+            if (!m::isnan(ctop_max_zone) && (ctop_max_zone > lminmax.max_val))
                 lminmax.max_val = ctop_max_zone;
         }
     , Kokkos::MinMax<Real>(minmax));
@@ -446,20 +444,20 @@ Real EstimateRadiativeTimestep(MeshBlockData<Real> *rc)
 
             if (phase_speed) {
                 for (int mu = 1; mu < GR_DIM; mu++) {
-                    if(pow(G.gcon(Loci::center, j, i, 0, mu), 2) -
+                    if(m::pow(G.gcon(Loci::center, j, i, 0, mu), 2) -
                         G.gcon(Loci::center, j, i, mu, mu)*G.gcon(Loci::center, j, i, 0, 0) >= 0.) {
 
-                        double cplus = fabs((-G.gcon(Loci::center, j, i, 0, mu) +
-                                            sqrt(pow(G.gcon(Loci::center, j, i, 0, mu), 2) -
+                        double cplus = m::abs((-G.gcon(Loci::center, j, i, 0, mu) +
+                                            m::sqrt(m::pow(G.gcon(Loci::center, j, i, 0, mu), 2) -
                                                 G.gcon(Loci::center, j, i, mu, mu)*G.gcon(Loci::center, j, i, 0, 0)))/
                                             G.gcon(Loci::center, j, i, 0, 0));
 
-                        double cminus = fabs((-G.gcon(Loci::center, j, i, 0, mu) -
-                                            sqrt(pow(G.gcon(Loci::center, j, i, 0, mu), 2) -
+                        double cminus = m::abs((-G.gcon(Loci::center, j, i, 0, mu) -
+                                            m::sqrt(m::pow(G.gcon(Loci::center, j, i, 0, mu), 2) -
                                                 G.gcon(Loci::center, j, i, mu, mu)*G.gcon(Loci::center, j, i, 0, 0)))/
                                             G.gcon(Loci::center, j, i, 0, 0));
 
-                        light_phase_speed = max(cplus,cminus);
+                        light_phase_speed = m::max(cplus,cminus);
                     } else {
                         light_phase_speed = SMALL;
                     }
@@ -472,9 +470,9 @@ Real EstimateRadiativeTimestep(MeshBlockData<Real> *rc)
             }
             dt_light_local = 1/dt_light_local;
 
-            if (!isnan(dt_light_local) && (dt_light_local < lminmax.min_val))
+            if (!m::isnan(dt_light_local) && (dt_light_local < lminmax.min_val))
                 lminmax.min_val = dt_light_local;
-            if (!isnan(light_phase_speed) && (light_phase_speed > lminmax.max_val))
+            if (!m::isnan(light_phase_speed) && (light_phase_speed > lminmax.max_val))
                 lminmax.max_val = light_phase_speed;
         }
     , Kokkos::MinMax<Real>(minmax));
@@ -492,9 +490,10 @@ AmrTag CheckRefinement(MeshBlockData<Real> *rc)
     auto pmb = rc->GetBlockPointer();
     auto v = rc->Get("prims.rho").data;
 
-    IndexRange ib = pmb->cellbounds.GetBoundsI(IndexDomain::entire);
-    IndexRange jb = pmb->cellbounds.GetBoundsJ(IndexDomain::entire);
-    IndexRange kb = pmb->cellbounds.GetBoundsK(IndexDomain::entire);
+    IndexDomain domain = IndexDomain::interior;
+    IndexRange ib = pmb->cellbounds.GetBoundsI(domain);
+    IndexRange jb = pmb->cellbounds.GetBoundsJ(domain);
+    IndexRange kb = pmb->cellbounds.GetBoundsK(domain);
 
     typename Kokkos::MinMax<Real>::value_type minmax;
     pmb->par_reduce("check_refinement", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
@@ -536,6 +535,7 @@ TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
     // Check for a soundspeed (ctop) of 0 or NaN
     // This functions as a "last resort" check to stop a
     // simulation on obviously bad data
+    // TODO also be able to print what zone dictated timestep
     if (extra_checks >= 1) {
         CheckNaN(md, X1DIR);
         if (pmesh->ndim > 1) CheckNaN(md, X2DIR);

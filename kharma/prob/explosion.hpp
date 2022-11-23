@@ -39,7 +39,6 @@
 
 
 using namespace std::literals::complex_literals;
-using namespace std;
 using namespace parthenon;
 
 /**
@@ -77,16 +76,17 @@ TaskStatus InitializeExplosion(MeshBlockData<Real> *rc, ParameterInput *pin)
     const Real xoff = pin->GetOrAddReal("explosion", "xoff", 0.0);
     const Real yoff = pin->GetOrAddReal("explosion", "yoff", 0.0);
 
-    IndexRange ib = pmb->cellbounds.GetBoundsI(IndexDomain::entire);
-    IndexRange jb = pmb->cellbounds.GetBoundsJ(IndexDomain::entire);
-    IndexRange kb = pmb->cellbounds.GetBoundsK(IndexDomain::entire);
+    IndexDomain domain = IndexDomain::interior;
+    IndexRange ib = pmb->cellbounds.GetBoundsI(domain);
+    IndexRange jb = pmb->cellbounds.GetBoundsJ(domain);
+    IndexRange kb = pmb->cellbounds.GetBoundsK(domain);
     pmb->par_for("explosion_init", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_3D {
             Real X[GR_DIM];
             G.coord_embed(k, j, i, Loci::center, X);
             const GReal rx = X[1] - xoff;
             const GReal ry = X[2] - yoff;
-            const Real r = sqrt(rx*rx + ry*ry);
+            const Real r = m::sqrt(rx*rx + ry*ry);
 
             if (r < r_in) {
                 rho(k, j, i) = rho_in;

@@ -33,14 +33,11 @@
  */
 #pragma once
 
-#include <memory>
-
-#include <parthenon/parthenon.hpp>
-
+#include "decs.hpp"
 #include "grmhd_functions.hpp"
 #include "types.hpp"
 
-using namespace parthenon;
+#include <memory>
 
 /**
  * 
@@ -59,7 +56,9 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
 /**
  * Get the primitive variables, which in Parthenon's nomenclature are "derived".
  * Also applies floors to the calculated primitives, and fixes up any inversion errors
- *
+ * 
+ * Defaults to entire domain, as the KHARMA algorithm relies on applying UtoP over ghost zones.
+ * 
  * input: Conserved B = sqrt(-gdet) * B^i
  * output: Primitive B = B^i
  */
@@ -73,7 +72,7 @@ inline TaskStatus FillDerivedBlockTask(MeshBlockData<Real> *rc) { UtoP(rc); retu
 /**
  * Inverse of above. Generally only for initialization.
  */
-void PtoU(MeshBlockData<Real> *md, IndexDomain domain=IndexDomain::entire, bool coarse=false);
+void PtoU(MeshBlockData<Real> *md, IndexDomain domain=IndexDomain::interior, bool coarse=false);
 
 /**
  * Modify the B field fluxes to take a constrained-transport step as in Toth (2000)
@@ -107,7 +106,7 @@ inline TaskStatus MaxDivBTask(MeshData<Real> *md, double& divb_max)
  * Currently only used when resizing inputs.
  * TODO option to sprinkle into updates every N steps
  */
-void CleanupDivergence(MeshBlockData<Real> *rc, IndexDomain domain=IndexDomain::entire, bool coarse=false);
+void CleanupDivergence(MeshBlockData<Real> *rc, IndexDomain domain=IndexDomain::interior, bool coarse=false);
 
 /**
  * Diagnostics printed/computed after each step
@@ -123,13 +122,18 @@ TaskStatus PrintMaxBlockDivB(MeshBlockData<Real> *rc, bool prims, std::string ta
  * Fill fields which are calculated only for output to file
  */
 void FillOutput(MeshBlock *pmb, ParameterInput *pin);
+/**
+ * Fill field "name" with divB
+ */
+void CalcDivB(MeshData<Real> *md, std::string divb_field_name="divB");
 
 /**
- * 2D or 3D divergence, averaging to cell corners
+ * ND divergence, averaging to cell corners
+ * TODO likely better templated, as with all ND stuff
  */
 template<typename Global>
 KOKKOS_INLINE_FUNCTION double corner_div(const GRCoordinates& G, const Global& B_U, const int& b,
-                                         const int& k, const int& j, const int& i, const bool& do_3D, const bool& do_2D)
+                                         const int& k, const int& j, const int& i, const bool& do_3D, const bool& do_2D=true)
 {
     const double norm = (do_2D) ? ((do_3D) ? 0.25 : 0.5) : 1.;
     // 1D divergence

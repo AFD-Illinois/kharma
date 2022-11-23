@@ -37,7 +37,6 @@
 #include "emhd.hpp"
 
 using namespace std::literals::complex_literals;
-using namespace std;
 using namespace parthenon;
 
 #define STRLEN 2048
@@ -81,9 +80,10 @@ TaskStatus InitializeEMHDShock(MeshBlockData<Real> *rc, ParameterInput *pin)
     const Real& gam                          = grmhd_pars.Get<Real>("gamma");
 
     // Bounds of the domain
-    IndexRange ib = pmb->cellbounds.GetBoundsI(IndexDomain::interior);
-    IndexRange jb = pmb->cellbounds.GetBoundsJ(IndexDomain::interior);
-    IndexRange kb = pmb->cellbounds.GetBoundsK(IndexDomain::interior);
+    IndexDomain domain = IndexDomain::interior;
+    IndexRange ib = pmb->cellbounds.GetBoundsI(domain);
+    IndexRange jb = pmb->cellbounds.GetBoundsJ(domain);
+    IndexRange kb = pmb->cellbounds.GetBoundsK(domain);
 
     if (input == "BVP"){
 
@@ -146,13 +146,12 @@ TaskStatus InitializeEMHDShock(MeshBlockData<Real> *rc, ParameterInput *pin)
                         Real q_tilde  = q_host(k, j, i);
                         Real dP_tilde = dP_host(k, j, i);
                         if (emhd_params.higher_order_terms) {
-                            q_tilde  *= (chi_e != 0) ? sqrt(tau / (chi_e * rho_temp * pow(Theta, 2.))) : 0.;
-                            dP_tilde *= (nu_e  != 0) ? sqrt(tau / (nu_e * rho_temp * Theta)) : 0.;
+                            q_tilde  *= (chi_e != 0) ? m::sqrt(tau / (chi_e * rho_temp * m::pow(Theta, 2.))) : 0.;
+                            dP_tilde *= (nu_e  != 0) ? m::sqrt(tau / (nu_e * rho_temp * Theta)) : 0.;
                         }
                         q_host(k, j, i)  = q_tilde;
                         dP_host(k, j, i) = dP_tilde;
                     }
-
                 }
             }
         }

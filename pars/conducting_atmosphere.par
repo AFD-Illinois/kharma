@@ -26,7 +26,7 @@ base      = ks
 transform = mks
 a         = 0.0
 hslope    = 1.0
-R_inner   = 100.
+r_in      = 100.
 r_out     = 300.
 
 <bounds>

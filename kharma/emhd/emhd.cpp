@@ -181,7 +181,7 @@ TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
             G.lower(ucon, ucov, k, j, i, Loci::center);
             DLOOP1 ucov_s(b, mu, k, j, i) = ucov[mu];
             // theta
-            theta_s(b, k, j, i) = max((gam - 1) * P(b)(m_p.UU, k, j, i) / P(b)(m_p.RHO, k, j, i), SMALL);
+            theta_s(b, k, j, i) = m::max((gam - 1) * P(b)(m_p.UU, k, j, i) / P(b)(m_p.RHO, k, j, i), SMALL);
         }
     );
 
@@ -197,7 +197,7 @@ TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
             // and the 4-vectors
             FourVectors D;
             GRMHD::calc_4vecs(G, P(b), m_p, k, j, i, Loci::center, D);
-            double bsq = max(dot(D.bcon, D.bcov), SMALL);
+            double bsq = m::max(dot(D.bcon, D.bcov), SMALL);
 
             // Compute gradient of ucov and Theta
             Real grad_ucov[GR_DIM][GR_DIM], grad_Theta[GR_DIM];
@@ -213,8 +213,8 @@ TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
             const Real& dPtilde = P(b)(m_p.DP, k, j, i);
 
             Real q0    = 0;
-            DLOOP1 q0 -= rho * chi_e * (D.bcon[mu] / sqrt(bsq)) * grad_Theta[mu];
-            DLOOP2 q0 -= rho * chi_e * (D.bcon[mu] / sqrt(bsq)) * theta_s(b, k, j, i) * D.ucon[nu] * grad_ucov[nu][mu];
+            DLOOP1 q0 -= rho * chi_e * (D.bcon[mu] / m::sqrt(bsq)) * grad_Theta[mu];
+            DLOOP2 q0 -= rho * chi_e * (D.bcon[mu] / m::sqrt(bsq)) * theta_s(b, k, j, i) * D.ucon[nu] * grad_ucov[nu][mu];
 
             Real dP0     = -rho * nu_e * div_ucon;
             DLOOP2  dP0 += 3. * rho * nu_e * (D.bcon[mu] * D.bcon[nu] / bsq) * grad_ucov[mu][nu];

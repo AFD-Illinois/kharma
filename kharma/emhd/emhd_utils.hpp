@@ -56,9 +56,9 @@ KOKKOS_INLINE_FUNCTION Real linear_monotonized_cd(Real x1, Real x2, Real x3, Rea
     if (Dqm * Dqp <= 0) {
         return 0;
     } else {
-        if ((fabs(Dqm) < fabs(Dqp)) && (fabs (Dqm) < fabs(Dqc))) {
+        if ((m::abs(Dqm) < m::abs(Dqp)) && (fabs (Dqm) < m::abs(Dqc))) {
             return Dqm;
-        } else if (fabs(Dqp) < fabs(Dqc)) {
+        } else if (m::abs(Dqp) < m::abs(Dqc)) {
             return Dqp;
         } else {
             return Dqc;

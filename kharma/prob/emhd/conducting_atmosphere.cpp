@@ -34,6 +34,20 @@
 
 #include "emhd/conducting_atmosphere.hpp"
 
+#ifdef KOKKOS_ENABLE_CUDA
+
+TaskStatus InitializeAtmosphere(MeshBlockData<Real> *rc, ParameterInput *pin)
+{
+    throw std::runtime_error("Conducting Atmosphere problem is not implemented for GPUs!!");
+}
+
+TaskStatus dirichlet_bc(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
+{
+    throw std::runtime_error("Dirichlet BCs are not implemented for GPUs!!");
+}
+
+#else
+
 using namespace std;
 using namespace parthenon;
 
@@ -297,7 +311,8 @@ TaskStatus InitializeAtmosphere(MeshBlockData<Real> *rc, ParameterInput *pin)
 
 }
 
-TaskStatus dirichlet_bc(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse) {
+TaskStatus dirichlet_bc(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
+{
 
     Flag(rc, "Applying Dirichlet boundary conditions along radial direction");
 
@@ -362,3 +377,5 @@ TaskStatus dirichlet_bc(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse
 
     return TaskStatus::complete;
 }
+
+#endif

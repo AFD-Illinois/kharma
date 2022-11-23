@@ -313,7 +313,7 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
             if (pmb->boundary_flag[BoundaryFace::inner_x1] == BoundaryFlag::user) {
                 pmb->par_for("fix_flux_in_l", ks, ke, js, je, is, is,
                     KOKKOS_LAMBDA_3D {
-                        F.flux(X1DIR, m_rho, k, j, i) = min(F.flux(X1DIR, m_rho, k, j, i), 0.);
+                        F.flux(X1DIR, m_rho, k, j, i) = m::min(F.flux(X1DIR, m_rho, k, j, i), 0.);
                     }
                 );
             }
@@ -322,7 +322,7 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
             if (pmb->boundary_flag[BoundaryFace::outer_x1] == BoundaryFlag::user) {
                 pmb->par_for("fix_flux_in_r", ks, ke, js, je, ie_l, ie_l,
                     KOKKOS_LAMBDA_3D {
-                        F.flux(X1DIR, m_rho, k, j, i) = max(F.flux(X1DIR, m_rho, k, j, i), 0.);
+                        F.flux(X1DIR, m_rho, k, j, i) = m::max(F.flux(X1DIR, m_rho, k, j, i), 0.);
                     }
                 );
             }
@@ -353,28 +353,50 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
     return TaskStatus::complete;
 }
 
-void KBoundaries::SyncAllBounds(Mesh *pmesh, bool sync_prims, bool sync_phys)
+TaskID KBoundaries::AddBoundarySync(TaskID t_start, TaskList &tl, std::shared_ptr<MeshData<Real>> mc1)
+{
+    // Readability
+    const auto local = parthenon::BoundaryType::local;
+    const auto nonlocal = parthenon::BoundaryType::nonlocal;
+    // Send all, receive/set local after sending
+    auto send =
+        tl.AddTask(t_start, parthenon::cell_centered_bvars::SendBoundBufs<nonlocal>, mc1);
+
+    auto t_send_local =
+        tl.AddTask(t_start, parthenon::cell_centered_bvars::SendBoundBufs<local>, mc1);
+    auto t_recv_local =
+        tl.AddTask(t_start, parthenon::cell_centered_bvars::ReceiveBoundBufs<local>, mc1);
+    auto t_set_local =
+        tl.AddTask(t_recv_local, parthenon::cell_centered_bvars::SetBounds<local>, mc1);
+
+    // Receive/set nonlocal
+    auto t_recv = tl.AddTask(
+        t_start, parthenon::cell_centered_bvars::ReceiveBoundBufs<nonlocal>, mc1);
+    auto t_set = tl.AddTask(t_recv, parthenon::cell_centered_bvars::SetBounds<nonlocal>, mc1);
+
+    // TODO add AMR prolongate/restrict here (and/or maybe option not to?)
+
+    return t_set | t_set_local;
+}
+
+void KBoundaries::SyncAllBounds(std::shared_ptr<MeshData<Real>> md, bool sync_prims, bool sync_phys)
 {
     Flag("Syncing all bounds");
+    TaskID t_none(0);
+
+    // TODO un-meshblock.
+    auto &block_list = md.get()->GetMeshPointer()->block_list;
 
     if (sync_prims) {
         // If we're syncing the primitive vars, we just sync once
-        // TODO assumes one "partition" i.e. MeshBlock/rank
-        auto& md = pmesh->mesh_data.GetOrAdd("base", 0);
-        while(md->StartReceiving(BoundaryCommSubset::all) != TaskStatus::complete);
-        // Send everything
-        while(cell_centered_bvars::SendBoundaryBuffers(md) != TaskStatus::complete);
-        // Wait on receive
-        while(cell_centered_bvars::ReceiveBoundaryBuffers(md) != TaskStatus::complete);
-        // Set boundaries from buffers
-        while(cell_centered_bvars::SetBoundaries(md) != TaskStatus::complete);
-        while(md->ClearBoundary(BoundaryCommSubset::all) != TaskStatus::complete);
+        TaskCollection tc;
+        auto tr = tc.AddRegion(1);
+        AddBoundarySync(t_none, tr[0], md);
+        while (!tr.Execute());
 
         // Then PtoU
-        for (auto &pmb : pmesh->block_list) {
+        for (auto &pmb : block_list) {
             auto& rc = pmb->meshblock_data.Get();
-            // TODO if amr...
-            //pmb->pbval->ProlongateBoundaries();
 
             Flag("Block fill Conserved");
             Flux::PtoU(rc.get(), IndexDomain::entire);
@@ -389,29 +411,21 @@ void KBoundaries::SyncAllBounds(Mesh *pmesh, bool sync_prims, bool sync_phys)
         // If we're syncing the conserved vars...
         // Honestly, the easiest way through this sync is:
         // 1. PtoU everywhere
-        for (auto &pmb : pmesh->block_list) {
+        for (auto &pmb : block_list) {
             auto& rc = pmb->meshblock_data.Get();
             Flag("Block fill conserved");
             Flux::PtoU(rc.get(), IndexDomain::entire);
         }
 
         // 2. Sync MPI bounds like a normal step
-        // The loops are to wait on actual data, rather than continuing async
-        auto& md = pmesh->mesh_data.GetOrAdd("base", 0);
-        while(md->StartReceiving(BoundaryCommSubset::all) != TaskStatus::complete);
-        // Send everything
-        while(cell_centered_bvars::SendBoundaryBuffers(md) != TaskStatus::complete);
-        // Wait on receive
-        while(cell_centered_bvars::ReceiveBoundaryBuffers(md) != TaskStatus::complete);
-        // Set boundaries from buffers
-        while(cell_centered_bvars::SetBoundaries(md) != TaskStatus::complete);
-        while(md->ClearBoundary(BoundaryCommSubset::all) != TaskStatus::complete);
+        TaskCollection tc;
+        auto tr = tc.AddRegion(1);
+        AddBoundarySync(t_none, tr[0], md);
+        while (!tr.Execute());
 
         // 3. UtoP everywhere
-        for (auto &pmb : pmesh->block_list) {
+        for (auto &pmb : block_list) {
             auto& rc = pmb->meshblock_data.Get();
-            // TODO if amr...
-            //pmb->pbval->ProlongateBoundaries();
 
             Flag("Block fill Derived");
             // Fill P again, including ghost zones

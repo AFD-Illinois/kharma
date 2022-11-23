@@ -353,6 +353,7 @@ double MaxDivB(MeshData<Real> *md)
 
     // This is one kernel call per block, because each block will have different bounds.
     // Could consolidate at the cost of lots of bounds checking.
+    // TODO redo as nested parallel like Parthenon sparse vars?
     double max_divb = 0.0;
     for (int b = block.s; b <= block.e; ++b) {
         auto pmb = md->GetBlockData(b)->GetBlockPointer().get();
@@ -373,7 +374,7 @@ double MaxDivB(MeshData<Real> *md)
         pmb->par_reduce("divB_max", ks, ke, js, je, is, ie,
             KOKKOS_LAMBDA_3D_REDUCE {
                 const auto& G = B_U.GetCoords(b);
-                const double local_divb = fabs(corner_div(G, B_U, b, k, j, i, ndim > 2, ndim > 1));
+                const double local_divb = m::abs(corner_div(G, B_U, b, k, j, i, ndim > 2));
                 if (local_divb > local_result) local_result = local_divb;
             }
         , max_reducer);
@@ -394,11 +395,13 @@ TaskStatus PrintGlobalMaxDivB(MeshData<Real> *md)
     // unless we're being verbose. It's not costly to calculate though
     if (pmb0->packages.Get("B_FluxCT")->Param<int>("verbose") >= 1) {
         Flag(md, "Printing divB");
-        Real max_divb = B_FluxCT::MaxDivB(md);
-        max_divb = MPIReduce(max_divb, MPI_MAX);
+        Reduce<Real> max_divb;
+        max_divb.val = B_FluxCT::MaxDivB(md);
+        max_divb.StartReduce(0, MPI_MAX);
+        while (max_divb.CheckReduce() == TaskStatus::incomplete);
 
         if(MPIRank0()) {
-            cout << "Max DivB: " << max_divb << endl;
+            std::cout << "Max DivB: " << max_divb.val << std::endl;
         }
 
     }
@@ -407,6 +410,42 @@ TaskStatus PrintGlobalMaxDivB(MeshData<Real> *md)
     return TaskStatus::complete;
 }
 
+void CalcDivB(MeshData<Real> *md, std::string divb_field_name)
+{
+    Flag(md, "Calculating divB for output");
+    auto pmesh = md->GetMeshPointer();
+    const int ndim = pmesh->ndim;
+
+    // Packing out here avoids frequent per-mesh packs.  Do we need to?
+    auto B_U = md->PackVariables(std::vector<std::string>{"cons.B"});
+    auto divB = md->PackVariables(std::vector<std::string>{divb_field_name});
+
+    const IndexRange ib = md->GetBoundsI(IndexDomain::interior);
+    const IndexRange jb = md->GetBoundsJ(IndexDomain::interior);
+    const IndexRange kb = md->GetBoundsK(IndexDomain::interior);
+    const IndexRange block = IndexRange{0, B_U.GetDim(5)-1};
+
+    // See MaxDivB for details
+    for (int b = block.s; b <= block.e; ++b) {
+        auto pmb = md->GetBlockData(b)->GetBlockPointer().get();
+
+        const int is = IsDomainBound(pmb, BoundaryFace::inner_x1) ? ib.s + 1 : ib.s;
+        const int ie = IsDomainBound(pmb, BoundaryFace::outer_x1) ? ib.e : ib.e + 1;
+        const int js = IsDomainBound(pmb, BoundaryFace::inner_x2) ? jb.s + 1 : jb.s;
+        const int je = IsDomainBound(pmb, BoundaryFace::outer_x2) ? jb.e : jb.e + 1;
+        const int ks = (IsDomainBound(pmb, BoundaryFace::inner_x3) && ndim > 2) ? kb.s + 1 : kb.s;
+        const int ke = (IsDomainBound(pmb, BoundaryFace::outer_x3) || ndim <= 2) ? kb.e : kb.e + 1;
+
+        pmb->par_for("calc_divB", ks, ke, js, je, is, ie,
+            KOKKOS_LAMBDA_3D {
+                const auto& G = B_U.GetCoords(b);
+                divB(b, 0, k, j, i) = corner_div(G, B_U, b, k, j, i, ndim > 2);
+            }
+        );
+    }
+
+    Flag("Calculated");
+}
 void FillOutput(MeshBlock *pmb, ParameterInput *pin)
 {
     auto rc = pmb->meshblock_data.Get().get();

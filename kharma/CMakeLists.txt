@@ -50,6 +50,10 @@ target_link_libraries(${EXE_NAME} PUBLIC kokkos)
 # We actually only need the header
 #target_link_libraries(${EXE_NAME} PUBLIC kokkoskernels)
 target_link_libraries(${EXE_NAME} PUBLIC parthenon)
+# Sometimes helps with OpenMP
+#target_link_libraries(${EXE_NAME} PUBLIC gomp)
+target_link_libraries(${EXE_NAME} PUBLIC z)
+
 
 # OPTIONS
 # These are almost universally performance trade-offs
@@ -77,9 +81,9 @@ if(FAST_CARTESIAN)
 else()
     target_compile_definitions(${EXE_NAME} PUBLIC FAST_CARTESIAN=0)
 endif()
-# Tracing is added in the command-line call when running  "./make.sh [OPTIONS] trace"
-if(TRACE)
-    message("Compiling with code tracing (printed FLAGs)")
+# Tracing can be added in the command-line make.sh call: "./make.sh [OPTIONS] trace"
+if(KHARMA_TRACE)
+    message("Compiling with code tracing (prints 'Flag' calls)")
     target_compile_definitions(${EXE_NAME} PUBLIC TRACE=1)
 else()
     target_compile_definitions(${EXE_NAME} PUBLIC TRACE=0)

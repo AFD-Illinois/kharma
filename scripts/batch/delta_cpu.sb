@@ -1,0 +1,45 @@
+#!/bin/bash
+# Admin stuff
+#SBATCH -J KHARMA
+#SBATCH -t 24:00:00
+#SBATCH -N 16
+#SBATCH -o "out-%j.txt"
+#SBATCH --account=bbhr-delta-cpu
+
+# Nodes we want
+#SBATCH --partition=cpu
+#SBATCH --tasks-per-node=2
+
+# Node options
+# 2 sockets, 2 tasks
+#SBATCH --cpus-per-task=64
+# ALWAYS reserve full nodes to mitigate memory leaks
+#SBATCH --exclusive
+#SBATCH --mem=0
+
+# NCSA Delta run script
+
+# OpenMP directives: use all available threads
+export OMP_PROC_BIND=spread
+export OMP_PLACES=threads
+
+# Choose the kharma from compiled options in order of preference
+KHARMA_DIR="$HOME/kharma-cpu"
+
+# Optionally use the Kokkos tools to profile kernels
+#export KOKKOS_PROFILE_LIBRARY=$KHARMA_DIR/../kokkos-tools/kp_kernel_timer.so
+#export KOKKOS_PROFILE_LIBRARY=$KHARMA_DIR/../kokkos-tools/kp_nvprof_cnnector.so
+
+# Load any defaults/modules from the machine file
+HOST=$(hostname -f)
+ARGS=$(cat $KHARMA_DIR/make_args)
+for machine in $KHARMA_DIR/machines/*.sh
+do
+  source $machine
+done
+
+export KOKKOS_NUM_DEVICES=$SLURM_NTASKS_PER_NODE
+
+# Run with srun
+# TODO auto-switch to mpirun in interactive?
+srun $KHARMA_DIR/kharma.host -t 23:55:00 -d dumps_kharma "$@"

@@ -34,11 +34,8 @@
 #pragma once
 
 #include "decs.hpp"
-
-#include "mesh/mesh.hpp"
 #include "mpi.hpp"
-
-using namespace std;
+#include "types.hpp"
 
 /**
  * Check the max signal speed (ctop) for 0-values or NaNs.
@@ -50,19 +47,17 @@ TaskStatus CheckNaN(MeshData<Real> *md, int dir, IndexDomain domain=IndexDomain:
  * Check the primitive and conserved variables for negative values that definitely shouldn't be negative
  * That is: primitive rho, u, conserved rho*u^t
  */
-TaskStatus CheckNegative(MeshData<Real> *md, IndexDomain domain);
-
-// The compiler is not so good with aliases.  We guide it.
-// using ParArrayNDHost = ParArrayNDGeneric<Kokkos::View<Real ******, parthenon::LayoutWrapper, Kokkos::HostSpace::memory_space>>;
-// using ParArrayNDIntHost = ParArrayNDGeneric<Kokkos::View<int ******, parthenon::LayoutWrapper, Kokkos::HostSpace::memory_space>>;
+TaskStatus CheckNegative(MeshData<Real> *md, IndexDomain domain=IndexDomain::interior);
 
 /**
- * Function for counting & printing pflags.  Note this needs a host-side array! Call pflags.getHostMirrorAndCopy() first!
+ * Function for counting & printing pflags.
+ * Note that domain::entire will double-count overlapping zones
  */
-int CountPFlags(MeshData<Real> *md, IndexDomain domain=IndexDomain::entire, int verbose=0);
+int CountPFlags(MeshData<Real> *md, IndexDomain domain=IndexDomain::interior, int verbose=0);
 
 /**
- * Function for counting & printing pflags.  Note this needs a host-side array! Call fflags.getHostMirrorAndCopy() first!
+ * Function for counting & printing pflags.
+ * Note that domain::entire will double-count overlapping zones
  */
 int CountFFlags(MeshData<Real> *md, IndexDomain domain=IndexDomain::interior, int verbose=0);
 
@@ -77,7 +72,7 @@ KOKKOS_INLINE_FUNCTION void print_matrix(const std::string name, const double g[
 
     if (kill_on_nan) {
         // Additionally kill things if/when we hit NaNs
-        DLOOP2 if (isnan(g[mu][nu])) exit(-1);
+        DLOOP2 if (m::isnan(g[mu][nu])) exit(-1);
     }
 }
 KOKKOS_INLINE_FUNCTION void print_vector(const std::string name, const double v[GR_DIM], bool kill_on_nan=false)
@@ -85,6 +80,6 @@ KOKKOS_INLINE_FUNCTION void print_vector(const std::string name, const double v[
     printf("%s: %g\t%g\t%g\t%g\n", name.c_str(), v[0], v[1], v[2], v[3]);
 
     if (kill_on_nan) {
-        DLOOP2 if (isnan(v[nu])) exit(-1);
+        DLOOP2 if (m::isnan(v[nu])) exit(-1);
     }
 }

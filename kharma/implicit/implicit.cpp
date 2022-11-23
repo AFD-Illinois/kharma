@@ -32,8 +32,6 @@
  *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-// Floors.  Apply limits to fluid values to maintain integrable state
-
 #include "implicit.hpp"
 
 #include "debug.hpp"
@@ -46,7 +44,6 @@
 #include <batched/dense/KokkosBatched_ApplyQ_Decl.hpp>
 #include <batched/dense/KokkosBatched_QR_Decl.hpp>
 #include <batched/dense/KokkosBatched_Trsv_Decl.hpp>
-using namespace KokkosBatched;
 
 namespace Implicit
 {
@@ -82,7 +79,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     // Implicit solver parameters
     Real jacobian_delta = pin->GetOrAddReal("implicit", "jacobian_delta", 4.e-8);
     params.Add("jacobian_delta", jacobian_delta);
-    Real rootfind_tol = pin->GetOrAddReal("implicit", "rootfind_tol", 1.e-3);
+    Real rootfind_tol = pin->GetOrAddReal("implicit", "rootfind_tol", 1.e-9);
     params.Add("rootfind_tol", rootfind_tol);
     Real linesearch_lambda = pin->GetOrAddReal("implicit", "linesearch_lambda", 1.0);
     params.Add("linesearch_lambda", linesearch_lambda);
@@ -123,6 +120,7 @@ TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_i
     const int iter_max       = implicit_par.Get<int>("max_nonlinear_iter");
     const Real lambda        = implicit_par.Get<Real>("linesearch_lambda");
     const Real delta         = implicit_par.Get<Real>("jacobian_delta");
+    const Real rootfind_tol  = implicit_par.Get<Real>("rootfind_tol");
     const Real gam           = pmb_full_step_init->packages.Get("GRMHD")->Param<Real>("gamma");
 
     // We need two sets of emhd_params because we need the relaxation scale
@@ -187,7 +185,6 @@ TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_i
 
     // Prep Jacobian and delta arrays.
     // This lays out memory correctly & allows splitting kernel as/if we need.
-    const Real alpha = 1, tiny = SMALL;
     const bool am_rank0 = MPIRank0();
 
     // Get meshblock array bounds from Parthenon
@@ -284,12 +281,12 @@ TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_i
                         auto residual   = Kokkos::subview(residual_s, Kokkos::ALL(), i);
                         auto jacobian   = Kokkos::subview(jacobian_s, Kokkos::ALL(), Kokkos::ALL(), i);
                         auto delta_prim = Kokkos::subview(delta_prim_s, Kokkos::ALL(), i);
+                        auto trans = Kokkos::subview(trans_s, Kokkos::ALL(), i);
+                        auto work = Kokkos::subview(work_s, Kokkos::ALL(), i);
                         // Temporaries
                         auto tmp1  = Kokkos::subview(tmp1_s, Kokkos::ALL(), i);
                         auto tmp2  = Kokkos::subview(tmp2_s, Kokkos::ALL(), i);
                         auto tmp3  = Kokkos::subview(tmp3_s, Kokkos::ALL(), i);
-                        auto trans = Kokkos::subview(trans_s, Kokkos::ALL(), i);
-                        auto work  = Kokkos::subview(work_s, Kokkos::ALL(), i);
                         // Implicit sources at starting state
                         auto dU_implicit = Kokkos::subview(dU_implicit_s, Kokkos::ALL(), i);
                         if (m_p.Q >= 0) {
@@ -323,8 +320,11 @@ TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_i
 
                         // Linear solve by QR decomposition
                         KokkosBatched::SerialQR<KokkosBatched::Algo::QR::Unblocked>::invoke(jacobian, trans, work);
-                        KokkosBatched::SerialApplyQ<KokkosBatched::Side::Left, KokkosBatched::Trans::Transpose, KokkosBatched::Algo::ApplyQ::Unblocked>::invoke(jacobian, trans, delta_prim, work);
-                        KokkosBatched::SerialTrsv<KokkosBatched::Uplo::Upper, KokkosBatched::Trans::NoTranspose, KokkosBatched::Diag::NonUnit, KokkosBatched::Algo::Trsv::Unblocked>::invoke(1.0, jacobian, delta_prim);
+                        KokkosBatched::SerialApplyQ<KokkosBatched::Side::Left, KokkosBatched::Trans::Transpose, KokkosBatched::Algo::ApplyQ::Unblocked>
+                        ::invoke(jacobian, trans, delta_prim, work);
+                        KokkosBatched::SerialTrsv<KokkosBatched::Uplo::Upper, KokkosBatched::Trans::NoTranspose, KokkosBatched::Diag::NonUnit,
+                        KokkosBatched::Algo::Trsv::Unblocked>
+                        ::invoke(1.0, jacobian, delta_prim);
 
                         // Update the guess.  For now lambda == 1, choose on the fly?
                         FLOOP P_solver(ip) += lambda * delta_prim(ip);
@@ -344,8 +344,7 @@ TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_i
                         // I would be tempted to store the whole residual, but it's of variable size
                         norm_all(b, k , j, i) = 0;
                         FLOOP norm_all(b, k, j, i) += residual(ip)*residual(ip);
-                        norm_all(b, k, j, i) = sqrt(norm_all(b, k, j, i)); // TODO faster to scratch cache & copy?
-
+                        norm_all(b, k, j, i) = m::sqrt(norm_all(b, k, j, i)); // TODO faster to scratch cache & copy?
                     }
                 );
                 member.team_barrier();
@@ -361,16 +360,20 @@ TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_i
             }
         );
         
-        // Take the maximum L2 norm
-        Real max_norm;
-        Kokkos::Max<Real> norm_max(max_norm);
+        // Take the maximum L2 norm on this rank
+        Reduce<Real> max_norm;
+        Kokkos::Max<Real> norm_max(max_norm.val);
         pmb_sub_step_init->par_reduce("max_norm", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
             KOKKOS_LAMBDA_MESH_3D_REDUCE {
                 if (norm_all(b, k, j, i) > local_result) local_result = norm_all(b, k, j, i);
             }
         , norm_max);
-        max_norm = MPIReduce(max_norm, MPI_MAX);
-        if (MPIRank0()) fprintf(stdout, "Nonlinear iter %d. Max L2 norm: %6.5e\n", iter, max_norm);
+        // Then MPI reduce it
+        max_norm.StartReduce(0, MPI_MAX);
+        while (max_norm.CheckReduce() == TaskStatus::incomplete);
+        if (MPIRank0()) fprintf(stdout, "Nonlinear iter %d. Max L2 norm: %g\n", iter, max_norm.val);
+        // Break if it's less than the total tolerance we set.  TODO per-zone version of this?
+        if (max_norm.val < rootfind_tol) break;
     }
 
     Flag(md_solver, "Implicit Iteration: final");

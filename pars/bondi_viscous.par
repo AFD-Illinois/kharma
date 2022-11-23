@@ -12,7 +12,6 @@ nx2 = 128
 nx3 = 1
 
 <parthenon/meshblock>
-# KHARMA will automatically place ~5 zones inside the EH
 nx1 = 128
 nx2 = 128
 nx3 = 1
@@ -22,9 +21,9 @@ base      = ks
 transform = mks
 a         = 0.0
 hslope    = 1.0
-Rhor      = 3.0
+# Override usual 5 zones in EH by specifying inner radius
+r_in      = 3.0
 r_out     = 20
-
 
 <parthenon/time>
 tlim = 400.0

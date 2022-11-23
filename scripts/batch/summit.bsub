@@ -7,9 +7,9 @@
 
 # ALWAYS check the following 3 lines before submitting the script
 
-#BSUB -nnodes 1
-NNODES=1
-COMMAND="-i sane.par"
+#BSUB -nnodes 8
+NNODES=8
+COMMAND="$@"
 
 KHARMA_DIR=~/kharma
 
@@ -29,7 +29,7 @@ fi
 date
 echo "Job run on nodes:"
 jsrun -n $NNODES -r 1 hostname
-module list
+#module list
 
 # Tell OpenMP explicitly what it's dealing with
 # This also ensures that if we set e.g. NUM_THREADS=6,

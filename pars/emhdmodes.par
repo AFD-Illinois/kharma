@@ -48,11 +48,10 @@ cfl = 0.9
 gamma = 1.333333
 reconstruction = linear_mc
 
-# Default is implicit B,
-# use this to specify explicit if desired
+# Default is to evolve B explicitly,
+# use this to specify implicit evolution
 <b_field>
-implicit = true
-initial_cleanup = false
+implicit = false
 
 <emhdmodes>
 amp = 1e-8

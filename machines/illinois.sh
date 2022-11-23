@@ -11,6 +11,8 @@ elif [[ $HOST == *".astro.illinois.edu" ]]; then
   if [[ $HOST == "bh29"* ]]; then
     # BH29: Zen2 AMD EPYC 7742
     HOST_ARCH="ZEN2"
+    # BH29 benefits from using just 1 thread/core
+    export OMP_NUM_THREADS=64
   else
     # Other machines are Skylake
     HOST_ARCH="SKX"
@@ -23,8 +25,11 @@ elif [[ $HOST == *".astro.illinois.edu" ]]; then
     # Intel ICC
     module purge
     source /opt/intel/oneapi/setvars.sh
+    # Use specifically the old compilers because the new stdlib is broken on BH
     C_NATIVE="icc"
     CXX_NATIVE="icpc"
+    C_FLAGS="-diag-disable=10441"
+    CXX_FLAGS="-diag-disable=10441"
 
   elif [[ $ARGS == *"aocc"* ]]; then
     # AMD AOCC (BH29 only)

@@ -84,7 +84,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin);
  * 
  * LOCKSTEP: this function respects P and returns consistent P<->U
  */
-TaskStatus ApplyFloors(MeshBlockData<Real> *rc);
+TaskStatus ApplyFloors(MeshBlockData<Real> *rc, IndexDomain domain=IndexDomain::entire);
 
 /**
  * Parthenon call wrapper for ApplyFloors, called just after FillDerived == UtoP
@@ -159,7 +159,7 @@ KOKKOS_INLINE_FUNCTION int apply_ceilings(const GRCoordinates& G, const Variable
     if (gamma > floors.gamma_max) {
         fflag |= HIT_FLOOR_GAMMA;
 
-        Real f = sqrt((pow(floors.gamma_max, 2) - 1.)/(pow(gamma, 2) - 1.));
+        Real f = m::sqrt((m::pow(floors.gamma_max, 2) - 1.)/(m::pow(gamma, 2) - 1.));
         VLOOP P(m_p.U1+v, k, j, i) *= f;
     }
 
@@ -167,7 +167,7 @@ KOKKOS_INLINE_FUNCTION int apply_ceilings(const GRCoordinates& G, const Variable
     // Note this technically applies the condition *one step sooner* than legacy, since it operates on
     // the entropy as calculated from current conditions, rather than the value kept from the previous
     // step for calculating dissipation.
-    Real ktot = (gam - 1.) * P(m_p.UU, k, j, i) / pow(P(m_p.RHO, k, j, i), gam);
+    Real ktot = (gam - 1.) * P(m_p.UU, k, j, i) / m::pow(P(m_p.RHO, k, j, i), gam);
     if (ktot > floors.ktot_max) {
         fflag |= HIT_FLOOR_KTOT;
 
@@ -230,13 +230,13 @@ KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, const VariablePa
 
         if (floors.use_r_char) {
             // Steeper floor from iharm3d
-            Real rhoscal = pow(r, -2.) * 1 / (1 + r / floors.r_char);
+            Real rhoscal = m::pow(r, -2.) * 1 / (1 + r / floors.r_char);
             rhoflr_geom  = floors.rho_min_geom * rhoscal;
-            uflr_geom    = floors.u_min_geom * pow(rhoscal, gam);
+            uflr_geom    = floors.u_min_geom * m::pow(rhoscal, gam);
         } else {
             // Original floors from iharm2d
-            rhoflr_geom = floors.rho_min_geom * pow(r, -1.5);
-            uflr_geom   = floors.u_min_geom * pow(r, -2.5); //rhoscal/r as in iharm2d
+            rhoflr_geom = floors.rho_min_geom * m::pow(r, -1.5);
+            uflr_geom   = floors.u_min_geom * m::pow(r, -2.5); //rhoscal/r as in iharm2d
         }
     } else {
         rhoflr_geom = floors.rho_min_geom;
@@ -256,21 +256,21 @@ KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, const VariablePa
     double uflr_b   = bsq / floors.bsq_over_u_max;
 
     // Evaluate max U floor, needed for temp ceiling below
-    double uflr_max = max(uflr_geom, uflr_b);
+    double uflr_max = m::max(uflr_geom, uflr_b);
 
     double rhoflr_max;
     if (!floors.temp_adjust_u) {
         // 3. Temperature ceiling: impose maximum temperature u/rho
         // Take floors on U into account
-        double rhoflr_temp = max(u, uflr_max) / floors.u_over_rho_max;
+        double rhoflr_temp = m::max(u, uflr_max) / floors.u_over_rho_max;
         // Record hitting temperature ceiling
         fflag |= (rhoflr_temp > rho) * HIT_FLOOR_TEMP; // Misnomer for consistency
 
         // Evaluate max rho floor
-        rhoflr_max = max(max(rhoflr_geom, rhoflr_b), rhoflr_temp);
+        rhoflr_max = m::max(m::max(rhoflr_geom, rhoflr_b), rhoflr_temp);
     } else {
         // Evaluate max rho floor
-        rhoflr_max = max(rhoflr_geom, rhoflr_b);
+        rhoflr_max = m::max(rhoflr_geom, rhoflr_b);
     }
 
     // If we need to do anything...
@@ -285,8 +285,8 @@ KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, const VariablePa
         fflag |= (uflr_b > u) * HIT_FLOOR_B_U;
 
         if (use_ff) {
-            P(m_p.RHO, k, j, i) += max(0., rhoflr_max - rho);
-            P(m_p.UU, k, j, i)  += max(0., uflr_max - u);
+            P(m_p.RHO, k, j, i) += m::max(0., rhoflr_max - rho);
+            P(m_p.UU, k, j, i)  += m::max(0., uflr_max - u);
             // TODO should be all Flux
             GRMHD::p_to_u(G, P, m_p, gam, k, j, i, U, m_u, loc);
 
@@ -365,9 +365,8 @@ KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, const VariablePa
         } else {
             // Add the material in the normal observer frame, by:
             // Adding the floors to the primitive variables
-            const Real rho_add = max(0., rhoflr_max - rho);
-            const Real u_add   = max(0., uflr_max - u);
-
+            const Real rho_add = m::max(0., rhoflr_max - rho);
+            const Real u_add   = m::max(0., uflr_max - u);
             const Real uvec[NVEC] = {0}, B[NVEC] = {0};
 
             // Calculating the corresponding conserved variables
@@ -402,8 +401,8 @@ KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, const VariablePa
     // and resets KTOT during floor application without touching KEL
     // TODO move to another loop/function, over electrons.  Have to preserve rho/rho_old ratio tho
     if (floors.adjust_k && (fflag & HIT_FLOOR_GEOM_RHO || fflag & HIT_FLOOR_B_RHO)) {
-        const Real reduce   = pow(rho / P(m_p.RHO, k, j, i), gam);
-        const Real reduce_e = pow(rho / P(m_p.RHO, k, j, i), 4./3); // TODO pipe in real gam_e
+        const Real reduce   = m::pow(rho / P(m_p.RHO, k, j, i), gam);
+        const Real reduce_e = m::pow(rho / P(m_p.RHO, k, j, i), 4./3); // TODO pipe in real gam_e
         if (m_p.KTOT >= 0) P(m_p.KTOT, k, j, i) *= reduce;
         if (m_p.K_CONSTANT >= 0) P(m_p.K_CONSTANT, k, j, i) *= reduce_e;
         if (m_p.K_HOWES >= 0)    P(m_p.K_HOWES, k, j, i)    *= reduce_e;
@@ -440,13 +439,13 @@ KOKKOS_INLINE_FUNCTION int apply_geo_floors(const GRCoordinates& G, Local& P, co
 
         if (floors.use_r_char) {
             // Steeper floor from iharm3d
-            Real rhoscal = pow(r, -2.) * 1 / (1 + r / floors.r_char);
+            Real rhoscal = m::pow(r, -2.) * 1 / (1 + r / floors.r_char);
             rhoflr_geom = floors.rho_min_geom * rhoscal;
-            uflr_geom = floors.u_min_geom * pow(rhoscal, gam);
+            uflr_geom = floors.u_min_geom * m::pow(rhoscal, gam);
         } else {
             // Original floors from iharm2d
-            rhoflr_geom = floors.rho_min_geom * pow(r, -1.5);
-            uflr_geom = floors.u_min_geom * pow(r, -2.5); //rhoscal/r as in iharm2d
+            rhoflr_geom = floors.rho_min_geom * m::pow(r, -1.5);
+            uflr_geom = floors.u_min_geom * m::pow(r, -2.5); //rhoscal/r as in iharm2d
         }
     } else {
         rhoflr_geom = floors.rho_min_geom;
@@ -461,8 +460,8 @@ KOKKOS_INLINE_FUNCTION int apply_geo_floors(const GRCoordinates& G, Local& P, co
     fflag |= (uflr_geom > P(m.UU)) * HIT_FLOOR_GEOM_U_FLUX;
 #endif
 
-    P(m.RHO) += max(0., rhoflr_geom - P(m.RHO));
-    P(m.UU) += max(0., uflr_geom - P(m.UU));
+    P(m.RHO) += m::max(0., rhoflr_geom - P(m.RHO));
+    P(m.UU) += m::max(0., uflr_geom - P(m.UU));
 
     return fflag;
 }
@@ -481,13 +480,13 @@ KOKKOS_INLINE_FUNCTION int apply_geo_floors(const GRCoordinates& G, Global& P, c
 
         if (floors.use_r_char) {
             // Steeper floor from iharm3d
-            Real rhoscal = pow(r, -2.) * 1 / (1 + r / floors.r_char);
+            Real rhoscal = m::pow(r, -2.) * 1 / (1 + r / floors.r_char);
             rhoflr_geom = floors.rho_min_geom * rhoscal;
-            uflr_geom = floors.u_min_geom * pow(rhoscal, gam);
+            uflr_geom = floors.u_min_geom * m::pow(rhoscal, gam);
         } else {
             // Original floors from iharm2d
-            rhoflr_geom = floors.rho_min_geom * pow(r, -1.5);
-            uflr_geom = floors.u_min_geom * pow(r, -2.5); //rhoscal/r as in iharm2d
+            rhoflr_geom = floors.rho_min_geom * m::pow(r, -1.5);
+            uflr_geom = floors.u_min_geom * m::pow(r, -2.5); //rhoscal/r as in iharm2d
         }
     } else {
         rhoflr_geom = floors.rho_min_geom;
@@ -502,8 +501,8 @@ KOKKOS_INLINE_FUNCTION int apply_geo_floors(const GRCoordinates& G, Global& P, c
     fflag |= (uflr_geom > P(m.UU, k, j, i)) * HIT_FLOOR_GEOM_U_FLUX;
 #endif
 
-    P(m.RHO, k, j, i) += max(0., rhoflr_geom - P(m.RHO, k, j, i));
-    P(m.UU, k, j, i) += max(0., uflr_geom - P(m.UU, k, j, i));
+    P(m.RHO, k, j, i) += m::max(0., rhoflr_geom - P(m.RHO, k, j, i));
+    P(m.UU, k, j, i) += m::max(0., uflr_geom - P(m.UU, k, j, i));
 
     return fflag;
 }

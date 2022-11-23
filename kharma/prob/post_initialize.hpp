@@ -47,7 +47,7 @@ namespace KHARMA {
  * Since the latter operation is global, we perform this on the whole mesh
  * once initialization of all other problem data is completed.
  */
-void SeedAndNormalizeB(ParameterInput *pin, Mesh *pmesh);
+void SeedAndNormalizeB(ParameterInput *pin, std::shared_ptr<MeshData<Real>> md);
 
 /**
  * Functions run over the entire mesh after per-block initialization:

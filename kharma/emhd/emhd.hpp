@@ -291,7 +291,7 @@ KOKKOS_INLINE_FUNCTION void set_parameters(const GRCoordinates& G, const Real& r
 
 /**
  * Get a row of the EMHD stress-energy tensor with first index up, second index down.
- * A factor of sqrt(4 pi) is absorbed into the definition of b.
+ * A factor of m::sqrt(4 pi) is absorbed into the definition of b.
  * Note this must be passed the full q, dP, not the primitive prims.q, usually denote qtilde
  *
  * Entirely local!
@@ -301,7 +301,7 @@ KOKKOS_INLINE_FUNCTION void calc_tensor(const Real& rho, const Real& u, const Re
                                         const FourVectors& D, const int& dir,
                                         Real emhd[GR_DIM])
 {
-    const Real bsq = max(dot(D.bcon, D.bcov), SMALL);
+    const Real bsq = m::max(dot(D.bcon, D.bcov), SMALL);
     const Real eta = pgas + rho + u + bsq;
     const Real ptot = pgas + 0.5 * bsq;
 
@@ -309,7 +309,7 @@ KOKKOS_INLINE_FUNCTION void calc_tensor(const Real& rho, const Real& u, const Re
         emhd[mu] = eta * D.ucon[dir] * D.ucov[mu]
                   + ptot * (dir == mu)
                   - D.bcon[dir] * D.bcov[mu]
-                  + (q / sqrt(bsq)) * ((D.ucon[dir] * D.bcov[mu]) +
+                  + (q / m::sqrt(bsq)) * ((D.ucon[dir] * D.bcov[mu]) +
                                        (D.bcon[dir] * D.ucov[mu]))
                   - dP * ((D.bcon[dir] * D.bcov[mu] / bsq)
                           - (1./3) * ((dir == mu) + D.ucon[dir] * D.ucov[mu]));
@@ -326,8 +326,8 @@ KOKKOS_INLINE_FUNCTION void convert_prims_to_q_dP(const Real& q_tilde, const Rea
     dP = dP_tilde;
 
     if (emhd_params.higher_order_terms) {
-        q  *= sqrt(rho * emhd_params.conduction_alpha * cs2 * pow(Theta, 2));
-        dP *= sqrt(rho * emhd_params.viscosity_alpha * cs2 * Theta);
+        q  *= m::sqrt(rho * emhd_params.conduction_alpha * cs2 * m::pow(Theta, 2));
+        dP *= m::sqrt(rho * emhd_params.viscosity_alpha * cs2 * Theta);
     }
 }
 

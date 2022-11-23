@@ -20,7 +20,7 @@ nx3 = 1
 
 <coordinates>
 base = spherical_ks
-transform = mks
+transform = fmks
 r_out = 50
 a = 0.9375
 hslope = 0.3
@@ -30,6 +30,7 @@ poly_alpha = 14.0
 
 <parthenon/time>
 tlim = 3000.0
+nlim = -1
 
 <debug>
 verbose = 1

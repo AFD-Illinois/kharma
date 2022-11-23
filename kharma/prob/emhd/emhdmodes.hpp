@@ -39,7 +39,6 @@
 
 
 using namespace std::literals::complex_literals;
-using namespace std;
 using namespace parthenon;
 
 /**
@@ -70,8 +69,8 @@ TaskStatus InitializeEMHDModes(MeshBlockData<Real> *rc, ParameterInput *pin)
     const Real& gam = grmhd_pars.Get<Real>("gamma");
 
     // TODO actually calculate the mode?  Figure something out
-    const Real omega_real = pin->GetOrAddPrecise("emhdmodes", "omega_real", -0.5533585207638141);
-    const Real omega_imag = pin->GetOrAddPrecise("emhdmodes", "omega_imag", -3.6262571286888425);
+    const Real omega_real = pin->GetOrAddReal("emhdmodes", "omega_real", -0.5533585207638141);
+    const Real omega_imag = pin->GetOrAddReal("emhdmodes", "omega_imag", -3.6262571286888425);
 
     // START POSSIBLE ARGS: take all these as parameters in pin?
     // Also note this is 2D only for now
@@ -92,9 +91,10 @@ TaskStatus InitializeEMHDModes(MeshBlockData<Real> *rc, ParameterInput *pin)
     const Real k2 = 4. * M_PI;
     // END POSSIBLE ARGS
 
-    IndexRange ib = pmb->cellbounds.GetBoundsI(IndexDomain::entire);
-    IndexRange jb = pmb->cellbounds.GetBoundsJ(IndexDomain::entire);
-    IndexRange kb = pmb->cellbounds.GetBoundsK(IndexDomain::entire);
+    IndexDomain domain = IndexDomain::interior;
+    IndexRange ib = pmb->cellbounds.GetBoundsI(domain);
+    IndexRange jb = pmb->cellbounds.GetBoundsJ(domain);
+    IndexRange kb = pmb->cellbounds.GetBoundsK(domain);
     pmb->par_for("emhdmodes_init", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_3D {
             Real X[GR_DIM];

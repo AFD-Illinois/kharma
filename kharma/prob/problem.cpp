@@ -80,7 +80,10 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
     // defined in accompanying headers.
 
     auto prob = pin->GetString("parthenon/job", "problem_id"); // Required parameter
-    if (MPIRank0()) cout << "Initializing problem: " << prob << endl;
+    
+    if (MPIRank0()) {
+        std::cout << "Initializing problem: " << prob << std::endl;
+    }
     TaskStatus status = TaskStatus::fail;
     // GRMHD
     if (prob == "mhdmodes") {
@@ -125,7 +128,7 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
 
     // If we're not restarting, do any grooming of the initial conditions
     if (prob != "resize_restart") {
-        // Pertub the internal energy a bit to encourage accretion
+        // Perturb the internal energy a bit to encourage accretion
         // Note this defaults to zero & is basically turned on only for torii
         if (pin->GetOrAddReal("perturbation", "u_jitter", 0.0) > 0.0) {
             PerturbU(rc.get(), pin);
@@ -135,17 +138,24 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
         if (pmb->packages.AllPackages().count("Electrons")) {
             Electrons::InitElectrons(rc.get(), pin);
         }
-
-        // Apply any floors
-        // This is purposefully done even if floors are disabled,
-        // as it is required for consistent initialization
-        Floors::ApplyFloors(rc.get());
     }
 
     // Fill the conserved variables U,
     // which we'll treat as the independent/fundamental state.
     // P is filled again from this later on
-    Flux::PtoU(rc.get(), IndexDomain::entire);
+    // Note this is needed *after* P is finalized, but
+    // *before* the floor call: normal-observer floors need U populated
+    Flux::PtoU(rc.get(), IndexDomain::interior);
+
+    // If we're not restarting, apply the floors
+    if (prob != "resize_restart") {
+        // This is purposefully done even if floors are disabled,
+        // as it is required for consistent initialization
+        // Note however we do *not* preserve any inversion flags in this call.
+        // There will be subsequent renormalization and re-inversion that will
+        // initialize those flags.
+        Floors::ApplyFloors(rc.get(), IndexDomain::interior);
+    }
 
     Flag(rc.get(), "Initialized Block");
 }

@@ -82,6 +82,8 @@ TaskStatus InitElectrons(MeshBlockData<Real> *rc, ParameterInput *pin);
  * It's easiest to define them with these defaults in the header, register the FillDerived version as
  * Parthenon's callback, and then add the UtoP version in kharma.cpp.
  * 
+ * Defaults to entire domain, as the KHARMA algorithm relies on applying UtoP over ghost zones.
+ * 
  * Function in this package: Get the specific entropy primitive value, by dividing the total entropy K/(rho*u^0)
  */
 void UtoP(MeshBlockData<Real> *rc, IndexDomain domain=IndexDomain::entire, bool coarse=false);
@@ -137,7 +139,7 @@ KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates& G, const VariablePack<Re
                                          const VariablePack<Real>& flux, const VarMap m_u, const Loci loc=Loci::center)
 {
     // Take the factor from the primitives, in case we need to reorder this to happen before GRMHD::prim_to_flux later
-    const Real ut = GRMHD::lorentz_calc(G, P, m_p, k, j, i, loc) * sqrt(-G.gcon(loc, j, i, 0, 0));
+    const Real ut = GRMHD::lorentz_calc(G, P, m_p, k, j, i, loc) * m::sqrt(-G.gcon(loc, j, i, 0, 0));
     const Real rho_ut = P(m_p.RHO, k, j, i) * ut * G.gdet(loc, j, i);
 
     flux(m_u.KTOT, k, j, i) = rho_ut * P(m_p.KTOT, k, j, i);

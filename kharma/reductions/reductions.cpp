@@ -41,7 +41,7 @@ std::shared_ptr<StateDescriptor> Reductions::Initialize(ParameterInput *pin)
     auto pkg = std::make_shared<StateDescriptor>("Reductions");
     Params &params = pkg->AllParams();
 
-    bool add_zones = pin->GetOrAddBoolean("reductions", "add_zones_accretion", true);
+    bool add_zones = pin->GetOrAddBoolean("reductions", "add_zones_accretion", false);
     params.Add("add_zones", add_zones);
     bool add_fluxes = pin->GetOrAddBoolean("reductions", "add_fluxes_accretion", true);
     params.Add("add_fluxes", add_fluxes);
@@ -87,7 +87,7 @@ std::shared_ptr<StateDescriptor> Reductions::Initialize(ParameterInput *pin)
         hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, TotalL, "Ang_Mom"));
 
         hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, TotalEHTLum, "EHT_Lum_Proxy"));
-        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, TotalJetLum, "Jet_Lum"));
+        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, JetLum_50, "Jet_Lum"));
     }
     // Keep a slightly more granular log of flags than the usual dump cadence
     if (add_flags) {

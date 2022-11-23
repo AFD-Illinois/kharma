@@ -155,7 +155,7 @@ TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
         KOKKOS_LAMBDA_MESH_3D {
             const auto& G = B_U.GetCoords(b);
             // Add a source term to B based on psi
-            GReal alpha_c = 1. / sqrt(-G.gcon(Loci::center, j, i, 0, 0));
+            GReal alpha_c = 1. / m::sqrt(-G.gcon(Loci::center, j, i, 0, 0));
             GReal gdet_c = G.gdet(Loci::center, j, i);
 
             double divB = ((B_U(b).flux(X1DIR, V1, k, j, i+1) - B_U(b).flux(X1DIR, V1, k, j, i)) / G.dx1v(i) +
@@ -177,10 +177,10 @@ TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
                 B_DU(b, v, k, j, i) += G.gcon(Loci::center, j, i, 0, v+1) * alpha_c * alpha_c * divB;
             }
             // Update psi using the analytic solution for the source term
-            GReal dalpha1 = ( (1. / sqrt(-G.gcon(Loci::face1, j, i+1, 0, 0))) / G.gdet(Loci::face1, j, i+1)
-                            - (1. / sqrt(-G.gcon(Loci::face1, j, i, 0, 0))) / G.gdet(Loci::face1, j, i)) / G.dx1v(i);
-            GReal dalpha2 = ( (1. / sqrt(-G.gcon(Loci::face2, j+1, i, 0, 0))) / G.gdet(Loci::face2, j+1, i)
-                            - (1. / sqrt(-G.gcon(Loci::face2, j, i, 0, 0))) / G.gdet(Loci::face2, j, i)) / G.dx2v(i);
+            GReal dalpha1 = ( (1. / m::sqrt(-G.gcon(Loci::face1, j, i+1, 0, 0))) / G.gdet(Loci::face1, j, i+1)
+                            - (1. / m::sqrt(-G.gcon(Loci::face1, j, i, 0, 0))) / G.gdet(Loci::face1, j, i)) / G.dx1v(i);
+            GReal dalpha2 = ( (1. / m::sqrt(-G.gcon(Loci::face2, j+1, i, 0, 0))) / G.gdet(Loci::face2, j+1, i)
+                            - (1. / m::sqrt(-G.gcon(Loci::face2, j, i, 0, 0))) / G.gdet(Loci::face2, j, i)) / G.dx2v(i);
             // There is not dalpha3, the coordinate system is symmetric along x3
             psi_DU(b, 0, k, j, i) += B_U(b, V1, k, j, i) * dalpha1 + B_U(b, V2, k, j, i) * dalpha2 - alpha_c * lambda * psi_U(b, 0, k, j, i);
         }
@@ -233,11 +233,13 @@ TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
     // Print this unless we quash everything
     int verbose = pmesh->packages.Get("B_CD")->Param<int>("verbose");
     if (verbose >= 0) {
-        Real max_divb = B_CD::MaxDivB(md);
-        max_divb = MPIReduce(max_divb, MPI_MAX);
+        Reduce<Real> max_divb;
+        max_divb.val = B_CD::MaxDivB(md);
+        max_divb.StartReduce(0, MPI_MAX);
+        while (max_divb.CheckReduce() == TaskStatus::incomplete);
 
         if(MPIRank0()) {
-            cout << "Max DivB: " << max_divb << endl;
+            std::cout << "Max DivB: " << max_divb.val << std::endl;
         }
     }
 

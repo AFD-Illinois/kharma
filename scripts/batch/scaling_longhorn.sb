@@ -1,12 +1,9 @@
 #!/bin/bash
 
-# Submit/run script for a KHARMA scaling test
-# *should* work on any SLURM-based system
+# Submit/run script for a KHARMA scaling test on Longhorn
 #SBATCH -J kharma_scaling
 
 # Appropriate queues:
-# frontera: normal
-# stampede2: flat-quadrant, normal
 # longhorn: development, v100
 #SBATCH -p development
 

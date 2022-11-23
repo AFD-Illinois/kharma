@@ -69,6 +69,7 @@ TaskStatus Current::CalculateCurrent(MeshBlockData<Real> *rc0, MeshBlockData<Rea
 
     // Calculate time-centered primitives
     // We could pack, but we just need the vectors, U1,2,3 and B1,2,3
+    // Apply over the whole grid, as calculating j requires neighbors
     IndexRange ib = pmb->cellbounds.GetBoundsI(IndexDomain::entire);
     IndexRange jb = pmb->cellbounds.GetBoundsJ(IndexDomain::entire);
     IndexRange kb = pmb->cellbounds.GetBoundsK(IndexDomain::entire);
@@ -103,7 +104,7 @@ TaskStatus Current::CalculateCurrent(MeshBlockData<Real> *rc0, MeshBlockData<Rea
             }
 
             // Difference: D_mu F^{mu nu} = 4 \pi j^nu
-            jcon(mu, k, j, i) = 1. / (sqrt(4. * M_PI) * G.gdet(Loci::center, j, i)) *
+            jcon(mu, k, j, i) = 1. / (m::sqrt(4. * M_PI) * G.gdet(Loci::center, j, i)) *
                                 ((gF0p - gF0m) / dt +
                                 (gF1p - gF1m) / (2. * G.dx1v(i)) +
                                 (gF2p - gF2m) / (2. * G.dx2v(j)) +
