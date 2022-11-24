@@ -13,8 +13,8 @@ nx2 = 128
 nx3 = 1
 
 <parthenon/meshblock>
-nx1 = 128
-nx2 = 128
+nx1 = 64
+nx2 = 64
 nx3 = 1
 
 <coordinates>
@@ -42,7 +42,11 @@ rs = 8.0
 
 # Disable floors
 <floors>
-disable_floors = true
+disable_floors = false
+bsq_over_rho_max = 5000
+bsq_over_u_max = 50
+rho_min_geom = 1e-20
+u_min_geom = 1e-20
 
 # We'll be adding material, and that's okay
 <bounds>
@@ -50,6 +54,7 @@ check_inflow_outer = false
 
 <debug>
 verbose = 1
+flag_verbose = 2
 extra_checks = 1
 
 <parthenon/output0>
