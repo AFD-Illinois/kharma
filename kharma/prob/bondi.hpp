@@ -149,9 +149,9 @@ KOKKOS_INLINE_FUNCTION void get_prim_bondi(const GRCoordinates& G, const Coordin
     G.gcon(Loci::center, j, i, gcon);
     fourvel_to_prim(gcon, ucon_mks, u_prim);
 
-    P(m_p.RHO, k, j, i) = rho;
-    P(m_p.UU, k, j, i) = u;
-    P(m_p.U1, k, j, i) = u_prim[0];
-    P(m_p.U2, k, j, i) = u_prim[1];
-    P(m_p.U3, k, j, i) = u_prim[2];
+    if (!isnan(rho)) P(m_p.RHO, k, j, i) = rho;
+    if (!isnan(u)) P(m_p.UU, k, j, i) = u;
+    if (!isnan(u_prim[0])) P(m_p.U1, k, j, i) = u_prim[0];
+    if (!isnan(u_prim[1])) P(m_p.U2, k, j, i) = u_prim[1];
+    if (!isnan(u_prim[2])) P(m_p.U3, k, j, i) = u_prim[2];
 }

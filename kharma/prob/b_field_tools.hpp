@@ -38,7 +38,7 @@
 
 // Internal representation of the field initialization preference for quick switch
 // Avoids string comparsion in kernels
-enum BSeedType{constant, monopole, sane, ryan, r3s3, steep, gaussian, bz_monopole};
+enum BSeedType{constant, monopole, sane, ryan, r3s3, steep, gaussian, bz_monopole, vertical};
 
 /**
  * Function to parse a string indicating desired field to a BSeedType
@@ -61,6 +61,8 @@ inline BSeedType ParseBSeedType(std::string b_field_type)
         return BSeedType::gaussian;
     } else if (b_field_type == "bz_monopole") {
         return BSeedType::bz_monopole;
+    } else if (b_field_type == "vertical") {
+        return BSeedType::vertical;
     } else {
         throw std::invalid_argument("Magnetic field seed type not supported: " + b_field_type);
     }

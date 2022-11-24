@@ -66,7 +66,7 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
     // Require and load what we need if necessary
     Real a, rin, rmax, gam, kappa, rho_norm;
     Real tilt = 0; // Needs to be initialized
-    Real b10 = 0, b20 = 0, b30 = 0;
+    Real b10 = 0, b20 = 0, b30 = 0, bz = 0;
     switch (b_field_flag)
     {
     case BSeedType::constant:
@@ -95,6 +95,9 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
         a = G.coords.get_a();
         break;
     case BSeedType::bz_monopole:
+        break;
+    case BSeedType::vertical:
+        bz = pin->GetOrAddReal("b_field", "bz", 0.);
         break;
     }
 
@@ -203,13 +206,15 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
                     q = (1 / (m::sqrt(2 * M_PI) * m::abs(sigma))) * exp(-u * u / 2);
                 }
                 break;
+            case BSeedType::vertical:
+                q = bz * r * sin(th);
             default:
                 // This shouldn't be reached. Squawk here?
                 break;
             }
 
-            if (tilt > 0.0) {
-                // This is *covariant* A_mu
+            if (tilt != 0.0) {
+                // This is *covariant* A_mu of an untilted disk
                 const double A_untilt_lower[GR_DIM] = {0., 0., 0., m::max(q, 0.)};
                 // Raise to contravariant vector, since rotate_polar_vec will need that.
                 // Note we have to do this in the midplane!
@@ -232,7 +237,7 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
                 G.lower(A_tilt, A_tilt_lower, k, j, i, Loci::corner);
                 VLOOP A(v, k, j, i) = A_tilt_lower[1+v];
             } else {
-                // Some problems rely on a very accurate A->B, which the 
+                // Avoid the extra numerical inaccuracies above if we don't need to tilt
                 A(V3, k, j, i) = m::max(q, 0.);
             }
         }

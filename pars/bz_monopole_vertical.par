@@ -10,8 +10,8 @@ problem_id = bz_monopole
 <parthenon/mesh>
 refinement = none
 numlevel = 1
-nx1 = 128
-nx2 = 128
+nx1 = 64
+nx2 = 64
 nx3 = 1
 
 <parthenon/meshblock>
@@ -22,7 +22,7 @@ nx3 = 1
 <coordinates>
 base = spherical_ks
 transform = fmks
-r_out = 100.
+r_out = 30.
 a = 0.9375
 hslope = 0.3
 mks_smooth = 0.5
@@ -44,8 +44,12 @@ gamma = 1.444444
 reconstruction = weno5
 
 <b_field>
-type = bz_monopole
-norm = false
+type = vertical
+bz = 0.01
+
+<driver>
+type = imex
+two_sync = true
 
 <floors>
 bsq_over_rho_max = 5000

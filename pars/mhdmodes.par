@@ -85,7 +85,7 @@ disable_floors = true
 # General verbosity level:
 # 1: general archival info
 # 2: specific debugging logs
-verbose = 0
+verbose = 1
 # Set to 1 to check each step for wavespeed of zero/NaN & exit
 extra_checks = 0
 # Print summary of all flags hit during each step:
