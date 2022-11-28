@@ -84,6 +84,11 @@ viscosity_alpha = 1.0
 
 <implicit>
 max_nonlinear_iter = 3
+jacobian_delta = 4.e-8
+rootfind_tol = 1.e-20
+linesearch = true
+max_linesearch_iter = 3
+linesearch_eps = 1.e-4
 
 <parthenon/output0>
 file_type = hdf5

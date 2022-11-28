@@ -72,6 +72,7 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
     // '_sub_step_final' refers to the fluid state at the end of the sub step (Sf in iharm3d)
     // '_flux_src' refers to the mesh object corresponding to -divF + S
     // '_solver' refers to the fluid state passed to the Implicit solver. At the end of the solve
+    // '_linesearch' refers to the fluid state updated while performing a linesearch in the solver
     // copy P and U from solver state to sub_step_final state.
 
     TaskCollection tc;
@@ -104,6 +105,8 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
             // When solving, we need a temporary copy with any explicit updates,
             // but not overwriting the beginning- or mid-step values
             pmb->meshblock_data.Add("solver", base);
+            // Need an additional state for linesearch
+            pmb->meshblock_data.Add("linesearch", base);
         }
     }
 
@@ -112,12 +115,16 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
     const int num_partitions = pmesh->DefaultNumPartitions();
     TaskRegion &single_tasklist_per_pack_region = tc.AddRegion(num_partitions);
     for (int i = 0; i < num_partitions; i++) {
+
         auto &tl = single_tasklist_per_pack_region[i];
         auto &md_full_step_init = pmesh->mesh_data.GetOrAdd("base", i);
         auto &md_sub_step_init  = pmesh->mesh_data.GetOrAdd(stage_name[stage - 1], i);
         auto &md_sub_step_final = pmesh->mesh_data.GetOrAdd(stage_name[stage], i);
         auto &md_flux_src       = pmesh->mesh_data.GetOrAdd("dUdt", i);
         auto &md_solver         = pmesh->mesh_data.GetOrAdd("solver", i);
+        auto &md_linesearch     = pmesh->mesh_data.GetOrAdd("linesearch", i);
+
+        const bool linesearch = pkgs.at("Implicit")->Param<bool>("linesearch");
 
         auto t_start_recv = tl.AddTask(t_none, &MeshData<Real>::StartReceiving, md_sub_step_final.get(),
                                     BoundaryCommSubset::all);
@@ -252,12 +259,27 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
                                     std::vector<MetadataFlag>({isImplicit}),
                                     md_sub_step_init.get(), md_sub_step_init.get(), 1.0, 0.0, md_solver.get());
 
-        // Time-step implicit variables by root-finding the residual
-        // This applies the functions of both the update above and FillDerived call below for "isImplicit" variables
-        // This takes dt for the *substep*, not the whole thing, so we multiply total dt by *this step's* beta
         auto t_guess_ready = t_explicit | t_copy_guess;
-        auto t_implicit = tl.AddTask(t_guess_ready, Implicit::Step, md_full_step_init.get(), md_sub_step_init.get(), 
-                                    md_flux_src.get(), md_solver.get(), dt_this);
+
+        // The `solver` MeshData object now has the implicit primitives corresponding to initial/half step and
+        // explicit variables have been updated to match the current step.
+        // Copy the primitives (MetaData::Derived) to the `linesearch` MeshData object if linesearch was enabled.
+        auto t_copy_linesearch = t_none;
+        auto t_implicit        = t_none;
+        if (linesearch) {
+            auto t_copy_linesearch = tl.AddTask(t_guess_ready, Update::WeightedSumData<MetadataFlag, MeshData<Real>>,
+                                                std::vector<MetadataFlag>({Metadata::Derived}), md_solver.get(), 
+                                                md_solver.get(), 1.0, 0.0, md_linesearch.get());
+            // Time-step implicit variables by root-finding the residual
+            // This applies the functions of both the update above and FillDerived call below for "isImplicit" variables
+            // This takes dt for the *substep*, not the whole thing, so we multiply total dt by *this step's* beta
+            auto t_implicit = tl.AddTask(t_copy_linesearch, Implicit::Step, md_full_step_init.get(), md_sub_step_init.get(), 
+                                        md_flux_src.get(), md_linesearch.get(), md_solver.get(), dt_this);
+        }
+        else {
+            auto t_implicit = tl.AddTask(t_guess_ready, Implicit::Step, md_full_step_init.get(), md_sub_step_init.get(), 
+                                        md_flux_src.get(), md_linesearch.get(), md_solver.get(), dt_this);
+        }
 
         // Copy the solver state into the final state md_sub_step_final
         auto t_copy_result = tl.AddTask(t_implicit, Update::WeightedSumData<MetadataFlag, MeshData<Real>>, 
