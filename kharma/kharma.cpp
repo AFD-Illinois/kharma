@@ -139,10 +139,10 @@ void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
         // (VKD) Unless we are running a problem in KS where we don't want to simulate the flow
         //       all the way in till the EH, say the conducting atmosphere test. 
         GReal x1min = (n1tot * log(Rhor) / 5.5 - x1max) / (-1. + n1tot / 5.5);
-        if (prob == "conducting_atmosphere") {
-            GReal R_inner = pin->GetOrAddReal("coordinates", "R_inner", 100.);
-            x1min = log(R_inner * Rhor);
-        } 
+        // if (prob == "conducting_atmosphere") {
+        //     GReal R_inner = pin->GetOrAddReal("coordinates", "R_inner", 100.);
+        //     x1min = log(R_inner * Rhor);
+        // } 
 
         if (x1min < 0.0) {
             throw std::invalid_argument("Not enough radial zones were specified to put 5 zones inside EH!");
@@ -162,10 +162,10 @@ void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
         // (VKD) Unless we are running a problem in KS where we don't want to simulate the flow
         //       all the way in till the EH, say the conducting atmosphere test.
         GReal Rin = (n1tot * Rhor / 5.5 - Rout) / (-1. + n1tot / 5.5);
-        if (prob == "conducting_atmosphere") {
-            GReal R_inner = pin->GetOrAddReal("coordinates", "R_inner", 100.);
-            Rin = R_inner * Rhor;
-        }
+        // if (prob == "conducting_atmosphere") {
+        //     GReal R_inner = pin->GetOrAddReal("coordinates", "R_inner", 100.);
+        //     Rin = R_inner * Rhor;
+        // }
 
         pin->SetPrecise("parthenon/mesh", "x1min", Rin);
         pin->SetPrecise("parthenon/mesh", "x1max", Rout);

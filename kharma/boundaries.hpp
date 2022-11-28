@@ -36,7 +36,7 @@
 #include "decs.hpp"
 
 #include "bondi.hpp"
-#include "emhd/conducting_atmosphere.hpp"
+// #include "emhd/conducting_atmosphere.hpp"
 #include "grmhd_functions.hpp"
 
 /**
