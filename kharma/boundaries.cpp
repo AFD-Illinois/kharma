@@ -74,10 +74,10 @@ void OutflowX1(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, boo
 
     // q will actually have *both* cons & prims (unless using imex driver)
     // We'll only need cons.B specifically tho
-    PackIndexMap prims_map, cons_map;
+    PackIndexMap prims_map, ghosts_map;
     auto P = GRMHD::PackMHDPrims(rc.get(), prims_map, coarse);
-    auto q = rc->PackVariables({Metadata::FillGhost}, cons_map, coarse);
-    const VarMap m_u(cons_map, true), m_p(prims_map, false);
+    auto q = rc->PackVariables({Metadata::FillGhost}, ghosts_map, coarse);
+    const VarMap m_u(ghosts_map, true), m_p(prims_map, false);
     // If we're running imex, q is just the *primitive* variables
     bool prim_ghosts = pmb->packages.Get("GRMHD")->Param<std::string>("driver_type") == "imex";
 
@@ -97,22 +97,19 @@ void OutflowX1(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, boo
     int js_e = bounds.js(ldomain), je_e = bounds.je(ldomain);
     int ks_e = bounds.ks(ldomain), ke_e = bounds.ke(ldomain);
 
-    int ref_tmp, dir_tmp, ibs, ibe;
+    int ref_tmp, ibs, ibe;
     if (domain == IndexDomain::inner_x1) {
-        ref_tmp = bounds.GetBoundsI(IndexDomain::interior).s;
-        dir_tmp = 0;
+        ref_tmp = is;
         ibs = is_e;
         ibe = is - 1;
     } else if (domain == IndexDomain::outer_x1) {
-        ref_tmp = bounds.GetBoundsI(IndexDomain::interior).e;
-        dir_tmp = 1;
+        ref_tmp = ie;
         ibs = ie + 1;
         ibe = ie_e;
     } else {
         throw std::invalid_argument("KHARMA Outflow boundaries only implemented in X1!");
     }
     const int ref = ref_tmp;
-    const int dir = dir_tmp;
 
     // This first loop copies all variables with the "FillGhost" tag into the outer zones
     // This includes some we may replace below
@@ -121,13 +118,14 @@ void OutflowX1(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, boo
             q(p, k, j, i) = q(p, k, j, ref);
         }
     );
-    // Inflow check, always applied
-    pmb->par_for("OutflowX1_check", ks_e, ke_e, js_e, je_e, ibs, ibe,
-        KOKKOS_LAMBDA_3D {
-            // Inflow check
-            if (check_inflow) KBoundaries::check_inflow(G, P, m_p.U1, k, j, i, dir);
-        }
-    );
+    // Inflow check
+    if (check_inflow) {
+        pmb->par_for("OutflowX1_check", ks_e, ke_e, js_e, je_e, ibs, ibe,
+            KOKKOS_LAMBDA_3D {
+                KBoundaries::check_inflow(G, P, domain, m_p.U1, k, j, i);
+            }
+        );
+    }
     if (!prim_ghosts) {
         // Normal operation: We copied both both prim & con GRMHD variables, but we want to apply
         // the boundaries based on just the former, so we run P->U
@@ -157,10 +155,10 @@ void ReflectX2(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, boo
 
     // q will actually have *both* cons & prims (unless using imex driver)
     // We'll only need cons.B specifically tho
-    PackIndexMap prims_map, cons_map;
+    PackIndexMap prims_map, ghosts_map;
     auto P = GRMHD::PackMHDPrims(rc.get(), prims_map, coarse);
-    auto q = rc->PackVariables({Metadata::FillGhost}, cons_map, coarse);
-    const VarMap m_u(cons_map, true), m_p(prims_map, false);
+    auto q = rc->PackVariables({Metadata::FillGhost}, ghosts_map, coarse);
+    const VarMap m_u(ghosts_map, true), m_p(prims_map, false);
     // If we're running imex, q is the *primitive* variables
     bool prim_ghosts = pmb->packages.Get("GRMHD")->Param<std::string>("driver_type") == "imex";
 
@@ -252,7 +250,7 @@ void KBoundaries::OuterX1(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse)
         dirichlet_bc(rc.get(), IndexDomain::outer_x1, coarse);
     } else if (prob == "bondi_viscous") {
         SetBondiViscous(rc.get(), IndexDomain::outer_x1, coarse);
-    }else {
+    } else {
         OutflowX1(rc, IndexDomain::outer_x1, coarse);
     }
     // If we're in KHARMA/HARM driver, we need primitive versions of all the
@@ -430,8 +428,8 @@ void KBoundaries::SyncAllBounds(std::shared_ptr<MeshData<Real>> md, bool sync_pr
             Flag("Block fill Derived");
             // Fill P again, including ghost zones
             // But, sice we sync'd GRHD primitives already,
-            // leave those off by calling *Domain like in a normal
-            // boundary sync
+            // leave those off by calling *Domain
+            // (like we do in a normal boundary sync)
             KHARMA::FillDerivedDomain(rc, IndexDomain::entire, false);
 
             if (sync_phys) {

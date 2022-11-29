@@ -78,10 +78,12 @@ inline BSeedType ParseBSeedType(std::string b_field_type)
 Real GetLocalBetaMin(parthenon::MeshBlockData<Real> *rc);
 
 /**
- * Get the maximum value of b^2 (twice the magnetic field pressure)
- * over the domain.
+ * Get the maximum/minimum value of b^2 (twice the magnetic field pressure)
+ * over the domain.  Latter a good check for >0 & for constant-field init.
  */
 Real GetLocalBsqMax(parthenon::MeshBlockData<Real> *rc);
+Real GetLocalBsqMin(parthenon::MeshBlockData<Real> *rc);
+
 /**
  * Get the maximum fluid pressure over the domain
  */

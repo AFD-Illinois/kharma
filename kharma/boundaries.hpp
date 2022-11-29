@@ -36,7 +36,6 @@
 #include "decs.hpp"
 
 #include "bondi.hpp"
-#include "emhd/conducting_atmosphere.hpp"
 #include "grmhd_functions.hpp"
 
 /**
@@ -90,14 +89,15 @@ void SyncAllBounds(std::shared_ptr<MeshData<Real>> md, bool sync_prims, bool syn
  *
  * @param type: 0 to check outflow from EH, 1 to check inflow from outer edge
  */
-KOKKOS_INLINE_FUNCTION void check_inflow(const GRCoordinates &G, const VariablePack<Real>& P, const int& u_start, const int& k, const int& j, const int& i, int type)
+KOKKOS_INLINE_FUNCTION void check_inflow(const GRCoordinates &G, const VariablePack<Real>& P, const IndexDomain domain,
+                                         const int& index_u1, const int& k, const int& j, const int& i)
 {
     Real uvec[NVEC], ucon[GR_DIM];
-    VLOOP uvec[v] = P(u_start + v, k, j, i);
+    VLOOP uvec[v] = P(index_u1 + v, k, j, i);
     GRMHD::calc_ucon(G, uvec, k, j, i, Loci::center, ucon);
 
-    if (((ucon[1] > 0.) && (type == 0)) ||
-        ((ucon[1] < 0.) && (type == 1)))
+    if (((ucon[1] > 0.) && (domain == IndexDomain::inner_x1)) ||
+        ((ucon[1] < 0.) && (domain == IndexDomain::outer_x1)))
     {
         // Find gamma and remove it from primitive velocity
         double gamma = GRMHD::lorentz_calc(G, uvec, k, j, i, Loci::center);
@@ -121,7 +121,7 @@ KOKKOS_INLINE_FUNCTION void check_inflow(const GRCoordinates &G, const VariableP
         gamma = 1./m::sqrt(1. - vsq);
 
         VLOOP uvec[v] *= gamma;
-        VLOOP P(u_start + v, k, j, i) = uvec[v];
+        VLOOP P(index_u1 + v, k, j, i) = uvec[v];
     }
 }
 

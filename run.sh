@@ -70,14 +70,8 @@ fi
 # Run based on preferences
 if [ -z "$MPI_EXE" ]; then
   echo "Running $KHARMA_DIR/$EXE_NAME $@"
-  $KHARMA_DIR/$EXE_NAME "$@"
+  exec $KHARMA_DIR/$EXE_NAME "$@"
 else
   echo "Running $MPI_EXE -n $MPI_NUM_PROCS $MPI_EXTRA_ARGS $KHARMA_DIR/$EXE_NAME $@"
-  $MPI_EXE -n $MPI_NUM_PROCS $MPI_EXTRA_ARGS $KHARMA_DIR/$EXE_NAME "$@"
+  exec $MPI_EXE -n $MPI_NUM_PROCS $MPI_EXTRA_ARGS $KHARMA_DIR/$EXE_NAME "$@"
 fi
-
-# Examples:
-# Use MPI mapping
-#mpirun -n 2 --map-by ppr:1:numa:pe=14 $KHARMA_DIR/$EXE_NAME "$@"
-# Use the whole machine w/locality via hpcbind
-#$KHARMA_DIR/external/parthenon/external/Kokkos/bin/hpcbind --whole-system -- $KHARMA_DIR/$EXE_NAME "$@"

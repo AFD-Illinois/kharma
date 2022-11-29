@@ -97,6 +97,7 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, std::shared_ptr<MeshData<Rea
             if (beta_calc_legacy) {
                 Real bsq_local = GetLocalBsqMax(rc.get());
                 if(bsq_local > bsq_max) bsq_max = bsq_local;
+                bsq_local = GetLocalBsqMin(rc.get());
                 if(bsq_local < bsq_min) bsq_min = bsq_local;
                 Real p_local = GetLocalPMax(rc.get());
                 if(p_local > p_max) p_max = p_local;
@@ -167,6 +168,7 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, std::shared_ptr<MeshData<Rea
                 beta_min = MPIReduce_once(beta_min, MPI_MIN);
             }
             if (MPIRank0()) {
+                std::cerr << "bsq_max post-norm: " << bsq_max << std::endl;
                 std::cerr << "Beta min post-norm: " << beta_min << std::endl;
             }
         }
@@ -185,9 +187,7 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart, b
     if (!is_restart)
         KHARMA::SeedAndNormalizeB(pin, md);
 
-    // Regardless of algo, we need to initialize the primitive vars in ghost zones during this step
-    // Syncing with sync_prims=false assumes they are initialized
-    bool sync_prims = true;
+    bool sync_prims = pin->GetString("driver", "type") == "imex";
 
     if (pin->GetString("b_field", "solver") != "none") {
         // Synchronize our seeded or initialized field (incl. primitives) before we print out what divB it has

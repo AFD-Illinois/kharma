@@ -65,6 +65,7 @@ TaskStatus GRMHD::FixUtoP(MeshBlockData<Real> *rc)
     const Floors::Prescription floors(pmb->packages.Get("Floors")->AllParams());
 
     // Just as UtoP needs to be applied over all zones, it needs to be fixed over all zones
+    // TODO probably shouldn't fix or use physical ghost zones...
     const IndexRange ib = rc->GetBoundsI(IndexDomain::entire);
     const IndexRange jb = rc->GetBoundsJ(IndexDomain::entire);
     const IndexRange kb = rc->GetBoundsK(IndexDomain::entire);

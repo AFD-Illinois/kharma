@@ -38,6 +38,8 @@
 
 #include "grmhd_functions.hpp"
 
+// TODO KHARMA now has good reduction tooling, use that instead of these
+
 TaskStatus NormalizeBField(MeshBlockData<Real> *rc, Real norm)
 {
     auto pmb = rc->GetBlockPointer();
@@ -112,6 +114,31 @@ Real GetLocalBsqMax(MeshBlockData<Real> *rc)
         }
     , bsq_max_reducer);
     return bsq_max;
+}
+
+Real GetLocalBsqMin(MeshBlockData<Real> *rc)
+{
+    auto pmb = rc->GetBlockPointer();
+    IndexDomain domain = IndexDomain::interior;
+    int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
+    int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
+    int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
+    const auto& G = pmb->coords;
+
+    GridVector uvec = rc->Get("prims.uvec").data;
+    GridVector B_P = rc->Get("prims.B").data;
+
+    Real bsq_min;
+    Kokkos::Min<Real> bsq_min_reducer(bsq_min);
+    pmb->par_reduce("B_field_bsqmax", ks, ke, js, je, is, ie,
+        KOKKOS_LAMBDA_3D_REDUCE {
+            FourVectors Dtmp;
+            GRMHD::calc_4vecs(G, uvec, B_P, k, j, i, Loci::center, Dtmp);
+            double bsq_ij = dot(Dtmp.bcon, Dtmp.bcov);
+            if(bsq_ij < local_result) local_result = bsq_ij;
+        }
+    , bsq_min_reducer);
+    return bsq_min;
 }
 
 Real GetLocalPMax(MeshBlockData<Real> *rc)
