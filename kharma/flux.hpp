@@ -68,7 +68,9 @@ TaskStatus ApplyFluxes(MeshData<Real> *md, MeshData<Real> *mdudt);
  * declaring UtoP vs FillDerived in GRMHD package.
  */
 TaskStatus PtoU(MeshBlockData<Real> *rc, IndexDomain domain=IndexDomain::interior);
-inline TaskStatus PtoUTask(MeshBlockData<Real> *rc) { return PtoU(rc); }
+// The task version is generally used in the MeshBlock/end portion of a step *after* the boundary sync.
+// Therefore it defaults to the entire domain, incl. ghost zones.
+inline TaskStatus PtoUTask(MeshBlockData<Real> *rc, IndexDomain domain=IndexDomain::entire) { return PtoU(rc, domain); }
 
 // Fluxes a.k.a. "Approximate Riemann Solvers"
 // More complex solvers require speed estimates not calculable completely from
