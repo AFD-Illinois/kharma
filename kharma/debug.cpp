@@ -266,21 +266,23 @@ int CountPFlags(MeshData<Real> *md, IndexDomain domain, int verbose)
         Reduce<int> n_cells_r;
         n_cells_r.val = (block.e - block.s + 1) * (kb.e - kb.s + 1) * (jb.e - jb.s + 1) * (ib.e - ib.s + 1);
         n_cells_r.StartReduce(0, MPI_SUM);
-        std::vector<Reduce<int>> reducers;
-        Flag("20");
+        std::vector<std::shared_ptr<Reduce<int>>> reducers;
         for (InversionStatus status : all_status_vals) {
-            Reduce<int> reducer;
-            reducer.val = CountPFlag(md, status, domain);
-            reducer.StartReduce(0, MPI_SUM);
+            // Copying a Reduce<> causes double-free of an MPI comms resource
+            // So we must make them once and refcount them ourselves with shared_ptr
+            // TODO Parthenon should really add refcounting to Reduce<> itself, this
+            // is a sharp edge...
+            std::shared_ptr<Reduce<int>> reducer = std::make_shared<Reduce<int>>();
+            reducer->val = CountPFlag(md, status, domain);
+            reducer->StartReduce(0, MPI_SUM);
             reducers.push_back(reducer);
         }
-        Flag("22");
         while (n_cells_r.CheckReduce() == TaskStatus::incomplete);
         const int n_cells = n_cells_r.val;
         std::vector<int> n_status_present;
-        for (Reduce<int> reducer : reducers) {
-            while (reducer.CheckReduce() == TaskStatus::incomplete);
-            n_status_present.push_back(reducer.val);
+        for (std::shared_ptr<Reduce<int>> reducer : reducers) {
+            while (reducer->CheckReduce() == TaskStatus::incomplete);
+            n_status_present.push_back(reducer->val);
         }
 
         if (MPIRank0()) {
@@ -350,19 +352,21 @@ int CountFFlags(MeshData<Real> *md, IndexDomain domain, int verbose)
         Reduce<int> n_cells_r;
         n_cells_r.val = (block.e - block.s + 1) * (kb.e - kb.s + 1) * (jb.e - jb.s + 1) * (ib.e - ib.s + 1);
         n_cells_r.StartReduce(0, MPI_SUM);
-        std::vector<Reduce<int>> reducers;
+        std::vector<std::shared_ptr<Reduce<int>>> reducers;
         for (int flag : all_flag_vals) {
-            Reduce<int> reducer;
-            reducer.val = CountFFlag(md, flag, domain);
-            reducer.StartReduce(0, MPI_SUM);
+            // Copying a Reduce<> causes double-free of an MPI comms resource
+            // So we must make them once and refcount them ourselves with shared_ptr
+            std::shared_ptr<Reduce<int>> reducer = std::make_shared<Reduce<int>>();
+            reducer->val = CountFFlag(md, flag, domain);
+            reducer->StartReduce(0, MPI_SUM);
             reducers.push_back(reducer);
         }
         while (n_cells_r.CheckReduce() == TaskStatus::incomplete);
         const int n_cells = n_cells_r.val;
         std::vector<int> n_flag_present;
-        for (Reduce<int> reducer : reducers) {
-            while (reducer.CheckReduce() == TaskStatus::incomplete);
-            n_flag_present.push_back(reducer.val);
+        for (std::shared_ptr<Reduce<int>> reducer : reducers) {
+            while (reducer->CheckReduce() == TaskStatus::incomplete);
+            n_flag_present.push_back(reducer->val);
         }
 
         if (MPIRank0()) {

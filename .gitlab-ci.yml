@@ -96,6 +96,12 @@ tilt_init:
     - cd tests/tilt_init
     - ./run.sh
 
+torus_sanity:
+  stage: tests
+  script:
+    - cd tests/torus_sanity
+    - ./run.sh
+
 restart:
   stage: tests
   script:
