@@ -4,39 +4,37 @@ if [[ $HOST == *".summit.olcf.ornl.gov" ]]; then
   HOST_ARCH="POWER9"
   DEVICE_ARCH="VOLTA70"
   # Avoid sysadmin's wrath
-  if [[ $(hostname) == "login"* ]]; then
-    NPROC=16
-  fi
+  NPROC=8
   # Runtime options for one-node test runs
   MPI_EXE="jsrun --smpiargs="-gpu" -r 6 -a 1 -g 1 -c 6 -d packed -b packed:6"
   OMP_NUM_THREADS=24
   KOKKOS_NUM_DEVICES=1
   MPI_NUM_PROCS=6
 
-  # All of these tested with Spectrum MPI 10.4.0.3
-  if [[ "$ARGS" == *"gcc"* ]]; then
-    # Use default GCC
-    module load gcc
-    module load cuda
-    PREFIX_PATH="$HOME/libs/hdf5-gcc10-spectrum"
-  elif [[ "$ARGS" == *"xl"* ]]; then
+  # ONLY GCC WORKS: There are C++17 compile issues with most other combos/stacks
+  # Tested with Spectrum MPI 10.4.0.3
+  module load cmake
+  if [[ "$ARGS" == *"xl"* ]]; then
     # xlC: OpenMP CXX problems
-    module load xl
-    module load cuda
+    #module load xl cuda
     C_NATIVE='xlc'
     CXX_NATIVE='xlc++'
     export NVCC_WRAPPER_HOST_EXTRA_FLAGS='-O3 -qmaxmem=-1'
     export NVCC_WRAPPER_CUDA_EXTRA_FLAGS='-O3 -Xcompiler -qmaxmem=-1'
     #PREFIX_PATH="/sw/summit/hdf5/1.10.6_align/xl/16.1.1-5/"
-  else
+  elif [[ "$ARGS" == *"nvhpc"* ]]; then
     # Use nvc++ compiler in NVHPC
-    module unload cuda
-    module load cmake cuda/nvhpc nvhpc/21.11 spectrum-mpi hdf5/1.10.7
+    module load cuda/11.5.2 nvhpc/22.5 spectrum-mpi hdf5/1.10.7
 
     C_NATIVE="nvc"
     CXX_NATIVE="nvc++"
     export CXXFLAGS="-mp"
     PREFIX_PATH="/gpfs/alpine/proj-shared/ast171/libs/hdf5-nvhpc-21.9"
+  else
+    # Use default GCC
+    module load gcc/11.1.0 hdf5/1.10.7 cuda/11.5.2
+    C_NATIVE='gcc'
+    CXX_NATIVE='g++'
   fi
 fi
 

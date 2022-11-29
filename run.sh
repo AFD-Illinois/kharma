@@ -7,6 +7,7 @@
 #export OMP_NUM_THREADS=28
 # Number of GPUs on the node (doesn't matter for CPU runs)
 #export KOKKOS_NUM_DEVICES=2
+export KOKKOS_MAP_DEVICE_ID_BY="mpi_rank"
 
 # Optionally use the Kokkos tools to profile kernels
 #export KOKKOS_PROFILE_LIBRARY=$KHARMA_DIR/../kokkos-tools/kp_kernel_timer.so
