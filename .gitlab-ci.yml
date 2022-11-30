@@ -78,6 +78,12 @@ emhdmodes:
     - cd tests/emhdmodes
     - ./run.sh
 
+bondi_viscous:
+  stage: tests
+  script:
+    - cd tests/bondi_viscous
+    - ./run.sh
+
 noh:
   stage: tests
   script:
