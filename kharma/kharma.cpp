@@ -146,6 +146,9 @@ void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
                 int nx1 = pin->GetInteger("parthenon/mesh", "nx1");
                 Real a = pin->GetReal("coordinates", "a");
                 GReal Rhor = 1 + sqrt(1 - a*a);
+                if (prob == "bondi_viscous") {
+                    Rhor = pin->GetOrAddReal("coordinates", "Rhor", 3.0);
+                }
                 GReal x1hor = log_r ? log(Rhor) : Rhor;
 
                 // Set Rin such that we have 5 zones completely inside the event horizon

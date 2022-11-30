@@ -21,8 +21,6 @@ base      = ks
 transform = mks
 a         = 0.0
 hslope    = 1.0
-# Override usual 5 zones in EH by specifying inner radius
-r_in      = 3.0
 r_out     = 20
 
 <parthenon/time>
@@ -35,7 +33,7 @@ reconstruction = weno5
 implicit       = true
 
 <b_field>
-implicit = true
+implicit        = false
 initial_cleanup = false
 
 # IMPORTANT: This block must be present and values filled in all EGRMHD simulations
@@ -52,9 +50,12 @@ eta                = 0.01
 type = imex
 
 <implicit>
-max_nonlinear_iter = 3
-rootfind_tol       = 1.e-20
-jacobian_delta     = 4.e-8
+max_nonlinear_iter  = 3
+rootfind_tol        = 1.e-20
+jacobian_delta      = 4.e-8
+linesearch          = true
+max_linesearch_iter = 3
+linesearch_eps      = 1.e-4
 
 <bondi>
 mdot = 1.0
@@ -71,7 +72,7 @@ verbose = 1
 
 <parthenon/output0>
 file_type               = hdf5
-dt                      = 20.0
+dt                      = 100.0
 single_precision_output = false
 variables               = prims.rho, prims.u, prims.uvec, prims.B, prims.q, prims.dP
 

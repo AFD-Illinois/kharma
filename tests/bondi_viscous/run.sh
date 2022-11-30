@@ -1,32 +1,39 @@
 #!/bin/bash
-#set -euo pipefail
+set -euo pipefail
 
-BASE=~/kharma
+BASE=../..
+
+exit_code=0
 
 # Viscous bondi inflow convergence to exercise all terms in the evolution equation of dP
 
 conv_2d() {
-	for res in 32 64 128 256
+	IFS=',' read -ra RES_LIST <<< "$ALL_RES"
+	for res in "${RES_LIST[@]}"
 	do
 		$BASE/run.sh -i $BASE/pars/bondi_viscous.par debug/verbose=1 \
 									parthenon/mesh/nx1=$res parthenon/mesh/nx2=$res parthenon/mesh/nx3=1 \
 									parthenon/meshblock/nx1=$res parthenon/meshblock/nx2=$res parthenon/meshblock/nx3=1 \
-									b_field/implicit=false
-		if [[ -d $res ]]; then
-			echo -e "Resolution directory exists. Clearing existing files in there and copying new files\n"
-			rm -r ${res}
-		else
-			mkdir $res
-		fi
-		. /home/vdhruv2/anaconda3/etc/profile.d/conda.sh
-		conda activate pyharm
-		pyharm-convert --double *.phdf
-		conda deactivate
-		cp -r ./bondi_viscous.out0*.h5 $res
-		mv bondi_viscous.out0.00000.h5 emhd_2d_${res}_start.h5
-		mv bondi_viscous.out0.final.h5 emhd_2d_${res}_end.h5
-		rm -r ./bondi_viscous*
+									b_field/implicit=false $2 >log_${1}_${res}.txt 2>&1
+
+			mv bondi_viscous.out0.00000.phdf emhd_2d_${res}_start_${1}.phdf
+      mv bondi_viscous.out0.final.phdf emhd_2d_${res}_end_${1}.phdf
 	done
+	check_code=0
+	pyharm-convert --double *.phdf
+	python check.py $ALL_RES $1 2d || check_code=$?
+	rm -r *.phdf
+	rm -r *.xdmf
+	rm -r *.out0*
+	if [[ $check_code != 0 ]]; then
+			echo Viscous Bondi test $3 FAIL: $check_code
+			exit_code=1
+	else
+			echo Viscous Bondi test $3 success
+	fi
 }
 
-conv_2d
+ALL_RES="32,64,128,256"
+conv_2d emhd2d_weno GRMHD/reconstruction=weno5 "Viscous Bondi in 2D, WENO5"
+
+exit $exit_code
