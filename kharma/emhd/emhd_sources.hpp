@@ -92,12 +92,12 @@ KOKKOS_INLINE_FUNCTION void time_derivative_sources(const GRCoordinates& G, cons
     DLOOP1 dt_ucov[mu] = (ucov_new[mu] - ucov_old[mu]) / dt;
 
     // Compute div of ucon (only the temporal part is nonzero)
-    Real div_ucon = 0;
+    Real div_ucon    = 0;
     DLOOP1 div_ucon += G.gcon(Loci::center, j, i, 0, mu) * dt_ucov[mu];
     // dTheta/dt
     const Real Theta_new = m::max((gam-1) * P_new(m_p.UU) / P_new(m_p.RHO), SMALL);
     const Real Theta_old = m::max((gam-1) * P_old(m_p.UU) / P_old(m_p.RHO), SMALL);
-    const Real dt_Theta = (Theta_new - Theta_old) / dt;
+    const Real dt_Theta  = (Theta_new - Theta_old) / dt;
 
     // TEMPORAL SOURCE TERMS
     const Real& rho     = P(m_p.RHO);
@@ -105,10 +105,10 @@ KOKKOS_INLINE_FUNCTION void time_derivative_sources(const GRCoordinates& G, cons
     const Real& dPtilde = P(m_p.DP);
     const Real& Theta   = (gam-1) * P(m_p.UU) / P(m_p.RHO);
 
-    Real q0 = -rho * chi_e * (Dtmp.bcon[0] / m::sqrt(bsq)) * dt_Theta;
+    Real q0    = -rho * chi_e * (Dtmp.bcon[0] / m::sqrt(bsq)) * dt_Theta;
     DLOOP1 q0 -= rho * chi_e * (Dtmp.bcon[mu] / m::sqrt(bsq)) * Theta * Dtmp.ucon[0] * dt_ucov[mu];
 
-    Real dP0 = -rho * nu_e * div_ucon;
+    Real dP0    = -rho * nu_e * div_ucon;
     DLOOP1 dP0 += 3. * rho * nu_e * (Dtmp.bcon[0] * Dtmp.bcon[mu] / bsq) * dt_ucov[mu];
 
     Real q0_tilde  = q0; 

@@ -61,9 +61,15 @@ disable_floors = true
 enable_emhd_limits = false
 
 <implicit>
-min_nonlinear_iter = 3
-max_nonlinear_iter = 3
-use_qr = false
+min_nonlinear_iter  = 3
+max_nonlinear_iter  = 3
+jacobian_delta      = 4.e-8
+rootfind_tol        = 1.e-20
+linesearch          = false
+max_linesearch_iter = 3
+linesearch_eps      = 1.e-4
+use_qr              = true
+
 
 <debug>
 # General verbosity level:

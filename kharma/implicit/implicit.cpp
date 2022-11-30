@@ -82,14 +82,21 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     params.Add("jacobian_delta", jacobian_delta);
     Real rootfind_tol = pin->GetOrAddReal("implicit", "rootfind_tol", 1.e-12);
     params.Add("rootfind_tol", rootfind_tol);
-    Real linesearch_lambda = pin->GetOrAddReal("implicit", "linesearch_lambda", 1.0);
-    params.Add("linesearch_lambda", linesearch_lambda);
     int min_nonlinear_iter = pin->GetOrAddInteger("implicit", "min_nonlinear_iter", 1);
     params.Add("min_nonlinear_iter", min_nonlinear_iter);
     int max_nonlinear_iter = pin->GetOrAddInteger("implicit", "max_nonlinear_iter", 3);
     params.Add("max_nonlinear_iter", max_nonlinear_iter);
     bool use_qr = pin->GetOrAddBoolean("implicit", "use_qr", true);
     params.Add("use_qr", use_qr);
+
+    bool linesearch = pin->GetOrAddBoolean("implicit", "linesearch", true);
+    params.Add("linesearch", linesearch);
+    int max_linesearch_iter = pin->GetOrAddInteger("implicit", "max_linesearch_iter", 3);
+    params.Add("max_linesearch_iter", max_linesearch_iter);
+    Real linesearch_eps = pin->GetOrAddReal("implicit", "linesearch_eps", 1.e-4);
+    params.Add("linesearch_eps", linesearch_eps);
+    Real linesearch_lambda = pin->GetOrAddReal("implicit", "linesearch_lambda", 1.0);
+    params.Add("linesearch_lambda", linesearch_lambda);
 
     int verbose = pin->GetOrAddInteger("debug", "verbose", 0);
     params.Add("verbose", verbose);
@@ -113,36 +120,47 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
 }
 
 TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_init, MeshData<Real> *md_flux_src,
-                MeshData<Real> *md_solver, const Real& dt)
+                MeshData<Real> *md_linesearch, MeshData<Real> *md_solver, const Real& dt)
 {
     Flag(md_full_step_init, "Implicit Iteration start, full step");
     Flag(md_sub_step_init, "Implicit Iteration start, sub step");
     Flag(md_flux_src, "Implicit Iteration start, divF and sources");
+    Flag(md_linesearch, "Linesearch");
     auto pmb_full_step_init = md_full_step_init->GetBlockData(0)->GetBlockPointer();
     auto pmb_sub_step_init  = md_sub_step_init->GetBlockData(0)->GetBlockPointer();
+    auto pmb_solver         = md_solver->GetBlockData(0)->GetBlockPointer();
+    auto pmb_linesearch     = md_linesearch->GetBlockData(0)->GetBlockPointer();
 
     // Parameters
     const auto& implicit_par = pmb_full_step_init->packages.Get("Implicit")->AllParams();
     const int iter_min       = implicit_par.Get<int>("min_nonlinear_iter");
     const int iter_max       = implicit_par.Get<int>("max_nonlinear_iter");
-    const Real lambda        = implicit_par.Get<Real>("linesearch_lambda");
     const Real delta         = implicit_par.Get<Real>("jacobian_delta");
     const Real rootfind_tol  = implicit_par.Get<Real>("rootfind_tol");
     const bool use_qr        = implicit_par.Get<bool>("use_qr");
-    const int verbose       = implicit_par.Get<int>("verbose");
+    const int verbose        = implicit_par.Get<int>("verbose");
     const Real gam           = pmb_full_step_init->packages.Get("GRMHD")->Param<Real>("gamma");
+
+    const bool linesearch         = implicit_par.Get<bool>("linesearch");
+    const int max_linesearch_iter = implicit_par.Get<int>("max_linesearch_iter");
+    const Real linesearch_eps     = implicit_par.Get<Real>("linesearch_eps");
+    const Real linesearch_lambda  = implicit_par.Get<Real>("linesearch_lambda");
+
     // Misc other constants for inside the kernel
     const bool am_rank0 = MPIRank0();
     const Real tiny(SMALL), alpha(1.0);
 
     // We need two sets of emhd_params because we need the relaxation scale
     // at the same state in the implicit source terms
-    EMHD_parameters emhd_params_full_step_init, emhd_params_sub_step_init;
+    // Need an object of `EMHD_parameters` for the `linesearch` state
+    EMHD_parameters emhd_params_sub_step_init, emhd_params_solver, emhd_params_linesearch;
     if (pmb_sub_step_init->packages.AllPackages().count("EMHD")) {
-        const auto& pars_full_step_init = pmb_full_step_init->packages.Get("EMHD")->AllParams();
         const auto& pars_sub_step_init  = pmb_sub_step_init->packages.Get("EMHD")->AllParams();
-        emhd_params_full_step_init      = pars_full_step_init.Get<EMHD_parameters>("emhd_params");
+        const auto& pars_solver         = pmb_solver->packages.Get("EMHD")->AllParams();
+        const auto& pars_linesearch     = pmb_linesearch->packages.Get("EMHD")->AllParams();
         emhd_params_sub_step_init       = pars_sub_step_init.Get<EMHD_parameters>("emhd_params");
+        emhd_params_solver              = pars_solver.Get<EMHD_parameters>("emhd_params");
+        emhd_params_linesearch          = pars_linesearch.Get<EMHD_parameters>("emhd_params");
     }
 
     // I don't normally do this, but we *really* care about variable ordering here.
@@ -150,10 +168,10 @@ TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_i
     // just the residual & Jacobian we care about, which makes the solve much faster.
     // This strategy is ugly but potentially gives us complete control,
     // in case Kokkos's un-pivoted LU proves problematic
-    MetadataFlag isPrimitive = pmb_sub_step_init->packages.Get("GRMHD")->Param<MetadataFlag>("PrimitiveFlag");
+    MetadataFlag isPrimitive  = pmb_sub_step_init->packages.Get("GRMHD")->Param<MetadataFlag>("PrimitiveFlag");
     auto& mbd_full_step_init  = md_full_step_init->GetBlockData(0); // MeshBlockData object, more member functions
-    auto ordered_prims = get_ordered_names(mbd_full_step_init.get(), isPrimitive);
-    auto ordered_cons  = get_ordered_names(mbd_full_step_init.get(), Metadata::Conserved);
+    auto ordered_prims        = get_ordered_names(mbd_full_step_init.get(), isPrimitive);
+    auto ordered_cons         = get_ordered_names(mbd_full_step_init.get(), Metadata::Conserved);
     //std::cerr << "Ordered prims:"; for(auto prim: ordered_prims) std::cerr << " " << prim; std::cerr << std::endl;
     //std::cerr << "Ordered cons:"; for(auto con: ordered_cons) std::cerr << " " << con; std::cerr << std::endl;
 
@@ -168,7 +186,8 @@ TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_i
     // Flux divergence plus explicit source terms. This is what we'd be adding.
     auto& flux_src_all = md_flux_src->PackVariables(ordered_cons);
     // Guess at initial state. We update only the implicit primitive vars
-    auto& P_solver_all = md_solver->PackVariables(ordered_prims);
+    auto& P_solver_all     = md_solver->PackVariables(ordered_prims);
+    auto& P_linesearch_all = md_linesearch->PackVariables(ordered_prims);
 
     // Sizes and scratchpads
     const int nblock = U_full_step_init_all.GetDim(5);
@@ -245,6 +264,7 @@ TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_i
                 ScratchPad2D<Real> U_sub_step_init_s(member.team_scratch(scratch_level), nvar, n1);
                 ScratchPad2D<Real> flux_src_s(member.team_scratch(scratch_level), nvar, n1);
                 ScratchPad2D<Real> P_solver_s(member.team_scratch(scratch_level), nvar, n1);
+                ScratchPad2D<Real> P_linesearch_s(member.team_scratch(scratch_level), nvar, n1);
 
                 // Copy some file contents to scratchpads, so we can slice them
                 PLOOP {
@@ -254,9 +274,10 @@ TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_i
                             U_full_step_init_s(ip, i) = U_full_step_init_all(b)(ip, k, j, i);
                             P_sub_step_init_s(ip, i)  = P_sub_step_init_all(b)(ip, k, j, i);
                             U_sub_step_init_s(ip, i)  = U_sub_step_init_all(b)(ip, k, j, i);
-                            flux_src_s(ip, i) = flux_src_all(b)(ip, k, j, i);
-                            P_solver_s(ip, i) = P_solver_all(b)(ip, k, j, i);
-                            dU_implicit_s(ip, i) = 0.;
+                            flux_src_s(ip, i)         = flux_src_all(b)(ip, k, j, i);
+                            P_solver_s(ip, i)         = P_solver_all(b)(ip, k, j, i);
+                            P_linesearch_s(ip, i)     = P_linesearch_all(b)(ip, k, j, i);
+                            dU_implicit_s(ip, i)      = 0.;
                         }
                     );
                 }
@@ -283,6 +304,7 @@ TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_i
                         auto U_sub_step_init  = Kokkos::subview(U_sub_step_init_s, Kokkos::ALL(), i);
                         auto flux_src         = Kokkos::subview(flux_src_s, Kokkos::ALL(), i);
                         auto P_solver         = Kokkos::subview(P_solver_s, Kokkos::ALL(), i);
+                        auto P_linesearch     = Kokkos::subview(P_linesearch_s, Kokkos::ALL(), i);
                         // Solver variables
                         auto residual   = Kokkos::subview(residual_s, Kokkos::ALL(), i);
                         auto jacobian   = Kokkos::subview(jacobian_s, Kokkos::ALL(), Kokkos::ALL(), i);
@@ -300,10 +322,16 @@ TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_i
                                                 dU_implicit(m_u.Q), dU_implicit(m_u.DP));
                         }
 
+                        // Copy `solver` prims to `linesearch`. This doesn't matter for the first step of the solver
+                        // since we do a copy in imex_driver just before, but it is required for the subsequent
+                        // iterations of the solver.
+                        PLOOP P_linesearch(ip) = P_solver(ip);
+                        Real lambda = linesearch_lambda;
+
                         // Jacobian calculation
                         // Requires calculating the residual anyway, so we grab it here
                         calc_jacobian(G, P_solver, P_full_step_init, U_full_step_init, P_sub_step_init, 
-                                    flux_src, dU_implicit, tmp1, tmp2, tmp3, m_p, m_u, emhd_params_full_step_init,
+                                    flux_src, dU_implicit, tmp1, tmp2, tmp3, m_p, m_u, emhd_params_solver,
                                     emhd_params_sub_step_init, nvar, nfvar, k, j, i, delta, gam, dt, jacobian, residual);
                         // Solve against the negative residual
                         FLOOP delta_prim(ip) = -residual(ip);
@@ -337,11 +365,44 @@ TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_i
                                                   KokkosBatched::Diag::NonUnit, KokkosBatched::Algo::Trsv::Unblocked>
                         ::invoke(alpha, jacobian, delta_prim);
 
-                        // Update the guess.  For now lambda == 1, choose on the fly?
+                        // Update the guess
+                        if (linesearch) {
+                            norm_all(b, k, j, i)        = 0;
+                            FLOOP norm_all(b, k, j, i) += residual(ip) * residual(ip);
+                            norm_all(b, k, j, i)        = sqrt(norm_all(b, k, j, i));
+
+                            Real f0      = 0.5 * norm_all(b, k, j, i);
+                            Real fprime0 = -2. * f0;
+
+                            for (int linesearch_iter = 0; linesearch_iter < max_linesearch_iter; linesearch_iter++) {
+                                // Take step
+                                FLOOP P_linesearch(ip) = P_solver(ip) + (lambda * delta_prim(ip));
+
+                                // Compute norm of the residual (loss function)
+                                calc_residual(G, P_linesearch, P_full_step_init, U_full_step_init, P_sub_step_init, flux_src,
+                                            dU_implicit, tmp3, m_p, m_u, emhd_params_linesearch, emhd_params_solver, nfvar,
+                                            k, j, i, gam, dt, residual);
+
+                                norm_all(b, k, j, i)        = 0;
+                                FLOOP norm_all(b, k, j, i) += residual(ip) * residual(ip);
+                                norm_all(b, k, j, i)        = sqrt(norm_all(b, k, j, i));
+                                Real f1 = 0.5 * norm_all(b, k, j, i);
+
+                                // Compute new step length
+                                int condition   = f1 > (f0 * (1. - linesearch_eps * lambda) + SMALL);
+                                Real denom      = (f1 - f0 - (fprime0 * lambda)) * condition + (1 - condition);
+                                Real lambda_new = -fprime0 * lambda * lambda / denom / 2.;
+                                lambda          = lambda * (1 - condition) + (condition * lambda_new);
+
+                                // Check if new solution has converged within required tolerance
+                                if (condition == 0) break;                           
+                            }
+                        }
+
                         FLOOP P_solver(ip) += lambda * delta_prim(ip);
 
                         calc_residual(G, P_solver, P_full_step_init, U_full_step_init, P_sub_step_init, flux_src, dU_implicit, tmp3,
-                                      m_p, m_u, emhd_params_full_step_init, emhd_params_sub_step_init, nfvar, k, j, i, gam, dt, residual);
+                                      m_p, m_u, emhd_params_solver, emhd_params_sub_step_init, nfvar, k, j, i, gam, dt, residual);
 
                         // if (am_rank0 && b == 0 && i == 11 && j == 11 && k == kb.s) {
                         //     printf("Variable ordering: rho %d uu %d u1 %d B1 %d q %d dP %d\n",
@@ -353,9 +414,9 @@ TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_i
 
                         // Store for maximum/output
                         // I would be tempted to store the whole residual, but it's of variable size
-                        norm_all(b, k , j, i) = 0;
+                        norm_all(b, k , j, i)       = 0;
                         FLOOP norm_all(b, k, j, i) += residual(ip)*residual(ip);
-                        norm_all(b, k, j, i) = m::sqrt(norm_all(b, k, j, i)); // TODO faster to scratch cache & copy?
+                        norm_all(b, k, j, i)        = m::sqrt(norm_all(b, k, j, i)); // TODO faster to scratch cache & copy?
                     }
                 );
                 member.team_barrier();
