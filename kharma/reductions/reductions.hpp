@@ -96,7 +96,7 @@ Real DomainSum(MeshData<Real> *md, const Real& radius);
                     GRMHD::calc_4vecs(G, P, m_p, k, j, i, Loci::center, Dtmp); \
                     DLOOP1 Flux::calc_tensor(G, P, m_p, Dtmp, gam, k, j, i, mu, T[mu]); \
                     GReal gdA = G.dx3v(k) * G.dx2v(j) * G.gdet(Loci::center, j, i); \
-                    GReal dA = G.dx3v(k) * G.dx2v(j); \
+                    GReal dA  = G.dx3v(k) * G.dx2v(j); \
                     fn \
                 } \
             , sum_reducer); \

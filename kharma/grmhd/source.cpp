@@ -67,8 +67,8 @@ TaskStatus GRMHD::AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
             // Get stuff we don't want to recalculate every loop iteration
             // This is basically a manual version of GRMHD::calc_tensor but saves recalculating e.g. dot(bcon, bcov) 4 times
             Real pgas = (gam - 1) * P(b, m_p.UU, k, j, i);
-            Real bsq = dot(D.bcon, D.bcov);
-            Real eta = pgas + P(b, m_p.RHO, k, j, i) + P(b, m_p.UU, k, j, i) + bsq;
+            Real bsq  = dot(D.bcon, D.bcov);
+            Real eta  = pgas + P(b, m_p.RHO, k, j, i) + P(b, m_p.UU, k, j, i) + bsq;
             Real ptot = pgas + 0.5 * bsq;
 
             // Contract mhd stress tensor with connection, and multiply by metric determinant

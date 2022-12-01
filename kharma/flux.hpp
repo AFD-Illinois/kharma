@@ -111,17 +111,17 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
     Flag(md, "Recon and flux");
     // Pointers
     auto pmesh = md->GetMeshPointer();
-    auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
+    auto pmb0  = md->GetBlockData(0)->GetBlockPointer();
     // Exit on trivial operations
     const int ndim = pmesh->ndim;
     if (ndim < 3 && dir == X3DIR) return TaskStatus::complete;
     if (ndim < 2 && dir == X2DIR) return TaskStatus::complete;
 
     // Options
-    const auto& pars = pmb0->packages.Get("GRMHD")->AllParams();
-    const auto& globals = pmb0->packages.Get("Globals")->AllParams();
+    const auto& pars       = pmb0->packages.Get("GRMHD")->AllParams();
+    const auto& globals    = pmb0->packages.Get("Globals")->AllParams();
     const auto& floor_pars = pmb0->packages.Get("Floors")->AllParams();
-    const bool use_hlle = pars.Get<bool>("use_hlle");
+    const bool use_hlle    = pars.Get<bool>("use_hlle");
     // Apply post-reconstruction floors.
     // Only enabled for WENO since it is not TVD, and only when other
     // floors are enabled.
@@ -132,9 +132,9 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
     // Check presence of different packages
     const auto& pkgs = pmb0->packages.AllPackages();
     const bool use_b_flux_ct = pkgs.count("B_FluxCT");
-    const bool use_b_cd = pkgs.count("B_CD");
+    const bool use_b_cd      = pkgs.count("B_CD");
     const bool use_electrons = pkgs.count("Electrons");
-    const bool use_emhd = pkgs.count("EMHD");
+    const bool use_emhd      = pkgs.count("EMHD");
     // Pull flag indicating primitive variables
     const MetadataFlag isPrimitive = pars.Get<MetadataFlag>("PrimitiveFlag");
 

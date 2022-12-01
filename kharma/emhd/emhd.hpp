@@ -55,6 +55,7 @@ class EMHD_parameters {
     public:
 
         bool higher_order_terms;
+        bool feedback;
         ClosureType type;
         Real tau;
         Real conduction_alpha;
@@ -297,22 +298,29 @@ KOKKOS_INLINE_FUNCTION void set_parameters(const GRCoordinates& G, const Real& r
  * Entirely local!
  */
 KOKKOS_INLINE_FUNCTION void calc_tensor(const Real& rho, const Real& u, const Real& pgas,
+                                        const EMHD::EMHD_parameters& emhd_params, 
                                         const Real& q, const Real& dP,
                                         const FourVectors& D, const int& dir,
                                         Real emhd[GR_DIM])
 {
-    const Real bsq = m::max(dot(D.bcon, D.bcov), SMALL);
-    const Real eta = pgas + rho + u + bsq;
+    const Real bsq  = m::max(dot(D.bcon, D.bcov), SMALL);
+    const Real eta  = pgas + rho + u + bsq;
     const Real ptot = pgas + 0.5 * bsq;
 
-    DLOOP1 {
-        emhd[mu] = eta * D.ucon[dir] * D.ucov[mu]
-                  + ptot * (dir == mu)
-                  - D.bcon[dir] * D.bcov[mu]
-                  + (q / m::sqrt(bsq)) * ((D.ucon[dir] * D.bcov[mu]) +
-                                       (D.bcon[dir] * D.ucov[mu]))
-                  - dP * ((D.bcon[dir] * D.bcov[mu] / bsq)
-                          - (1./3) * ((dir == mu) + D.ucon[dir] * D.ucov[mu]));
+    if (!emhd_params.feedback) {
+        DLOOP1 {
+            emhd[mu] = eta * D.ucon[dir] * D.ucov[mu]
+                        + ptot * (dir == mu)
+                        - D.bcon[dir] * D.bcov[mu];
+        }
+    } else {
+        DLOOP1 {
+            emhd[mu] = eta * D.ucon[dir] * D.ucov[mu]
+                        + ptot * (dir == mu)
+                        - D.bcon[dir] * D.bcov[mu]
+                        + (q / m::sqrt(bsq)) * ((D.ucon[dir] * D.bcov[mu]) + (D.bcon[dir] * D.ucov[mu]))
+                        - dP * ((D.bcon[dir] * D.bcov[mu] / bsq) - (1./3) * ((dir == mu) + D.ucon[dir] * D.ucov[mu]));
+        }
     }
 }
 
