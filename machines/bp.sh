@@ -25,7 +25,6 @@ fi
 if [[ $METAL_HOSTNAME == "fermium" ]]; then
   HOST_ARCH="AMDAVX"
   DEVICE_ARCH="TURING75"
-  export KOKKOS_NUM_DEVICES=1
   # Nvidia MPI hangs unless I do this
   MPI_EXE=mpirun
 
@@ -105,7 +104,6 @@ if [[ $HOST == "cinnabar"* ]]; then
     # Use NVHPC libraries (GPU-aware OpenMPI!)
     DEVICE_ARCH="KEPLER35"
     MPI_NUM_PROCS=2
-    KOKKOS_NUM_DEVICES=2
     MPI_EXTRA_ARGS="--map-by ppr:1:numa:pe=14"
 
     # Quash warning about my old gpus

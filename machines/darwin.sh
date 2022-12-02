@@ -50,6 +50,5 @@ if [[ $HOSTNAME == "cn"* || $HOSTNAME == "darwin"* ]]; then
   # Runtime
   MPI_EXE="mpirun"
   MPI_NUM_PROCS=2
-  KOKKOS_NUM_DEVICES=2
   MPI_EXTRA_ARGS="--map-by ppr:4:node:pe=8"
 fi
