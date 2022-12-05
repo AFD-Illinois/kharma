@@ -75,7 +75,7 @@ verbose = 1
 file_type               = hdf5
 dt                      = 100.0
 single_precision_output = false
-variables               = prims.rho, prims.u, prims.uvec, prims.B, prims.q, prims.dP
+variables               = prims.rho, prims.u, prims.uvec, prims.B, prims.q, prims.dP, solve_norm, solve_fail
 
 <parthenon/output1>
 file_type = hst

@@ -32,7 +32,7 @@
  *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "fm_torus.hpp"
+#include "../fm_torus.hpp"
 
 #include "mpi.hpp"
 #include "prob_common.hpp"
@@ -41,7 +41,7 @@
 #include <random>
 #include "Kokkos_Random.hpp"
 
-TaskStatus InitializeFMTorus(MeshBlockData<Real> *rc, ParameterInput *pin)
+TaskStatus InitializeFMTorusEMHD(MeshBlockData<Real> *rc, ParameterInput *pin)
 {
     Flag(rc, "Initializing torus problem");
 
@@ -51,8 +51,11 @@ TaskStatus InitializeFMTorus(MeshBlockData<Real> *rc, ParameterInput *pin)
     GridVector uvec = rc->Get("prims.uvec").data;
     GridVector B_P  = rc->Get("prims.B").data;
 
-    // Have a look at InitializeFMTorusEMHD for the EMHD torus initialization
-    const bool use_emhd   = pin->GetOrAddBoolean("emhd", "on", false);
+    // This problem init is exclusively for the EMHD torus; get copies of q and dP
+    const bool use_emhd   = pin->GetOrAddBoolean("emhd", "on", true);
+    GridVector q          = rc->Get("prims.q").data;
+    GridVector dP         = rc->Get("prims.dP").data;
+    const auto& emhd_pars = pmb->packages.Get("EMHD")->AllParams();
 
     const GReal rin      = pin->GetOrAddReal("torus", "rin", 6.0);
     const GReal rmax     = pin->GetOrAddReal("torus", "rmax", 12.0);
@@ -141,10 +144,13 @@ TaskStatus InitializeFMTorus(MeshBlockData<Real> *rc, ParameterInput *pin)
                 fourvel_to_prim(gcon, ucon_native, u_prim);
 
                 rho(k, j, i) = rho_l;
-                u(k, j, i) = u_l;
+                u(k, j, i)   = u_l;
                 uvec(0, k, j, i) = u_prim[0];
                 uvec(1, k, j, i) = u_prim[1];
                 uvec(2, k, j, i) = u_prim[2];
+                // EMHD variables
+                q(k, j, i)  = 0.;
+                dP(k, j, i) = 0.;
             }
         }
     );
@@ -159,7 +165,7 @@ TaskStatus InitializeFMTorus(MeshBlockData<Real> *rc, ParameterInput *pin)
     //GReal x2min = pmb->pmy_mesh->mesh_size.x2min;
     //GReal x2max = pmb->pmy_mesh->mesh_size.x2max;
     GReal dx = 0.001;
-    int nx1 = (x1max - x1min) / dx;
+    int nx1  = (x1max - x1min) / dx;
     //int nx2 = (x2max - x2min) / dx;
 
     // If we print diagnostics, do so only from block 0 as the others do exactly the same thing
@@ -204,67 +210,9 @@ TaskStatus InitializeFMTorus(MeshBlockData<Real> *rc, ParameterInput *pin)
     pmb->par_for("fm_torus_normalize", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D {
             rho(k, j, i) /= rho_max;
-            u(k, j, i) /= rho_max;
+            u(k, j, i)   /= rho_max;
         }
     );
 
-    return TaskStatus::complete;
-}
-
-// TODO move this to a different file
-TaskStatus PerturbU(MeshBlockData<Real> *rc, ParameterInput *pin)
-{
-    Flag(rc, "Applying U perturbation");
-    auto pmb = rc->GetBlockPointer();
-    auto rho = rc->Get("prims.rho").data;
-    auto u = rc->Get("prims.u").data;
-
-    const Real u_jitter = pin->GetReal("perturbation", "u_jitter");
-    // Don't jitter values set by floors
-    const Real jitter_above_rho = pin->GetReal("floors", "rho_min_geom");
-    // Note we add the MeshBlock gid to this value when seeding RNG,
-    // to get a new sequence for every block
-    const int rng_seed = pin->GetOrAddInteger("perturbation", "rng_seed", 31337);
-    // Print real seed used for all blocks, to ensure they're different
-    if (pmb->packages.Get("GRMHD")->Param<int>("verbose") > 0) {
-        std::cout << "Seeding RNG in block " << pmb->gid << " with value " << rng_seed + pmb->gid << std::endl;
-    }
-    const bool serial = pin->GetOrAddInteger("perturbation", "serial", false);
-
-    // Should we jitter ghosts? If first boundary sync doesn't work it's marginally less disruptive
-    IndexDomain domain = IndexDomain::interior;
-    const int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
-    const int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
-    const int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
-
-    if (serial) {
-        // Serial version
-        // Probably guarantees better determinism, but CPU single-thread only
-        std::mt19937 gen(rng_seed + pmb->gid);
-        std::uniform_real_distribution<Real> dis(-u_jitter/2, u_jitter/2);
-
-        auto u_host = u.GetHostMirrorAndCopy();
-        for(int k=ks; k <= ke; k++)
-            for(int j=js; j <= je; j++)
-                for(int i=is; i <= ie; i++)
-                    u_host(k, j, i) *= 1. + dis(gen);
-        u.DeepCopy(u_host);
-    } else {
-        // Kokkos version
-        typedef typename Kokkos::Random_XorShift64_Pool<> RandPoolType;
-        RandPoolType rand_pool(rng_seed + pmb->gid);
-        typedef typename RandPoolType::generator_type gen_type;
-        pmb->par_for("perturb_u", ks, ke, js, je, is, ie,
-            KOKKOS_LAMBDA_3D {
-                if (rho(k, j, i) > jitter_above_rho) {
-                    gen_type rgen = rand_pool.get_state();
-                    u(k, j, i) *= 1. + Kokkos::rand<gen_type, Real>::draw(rgen, -u_jitter/2, u_jitter/2);
-                    rand_pool.free_state(rgen);
-                }
-            }
-        );
-    }
-
-    Flag(rc, "Applied");
     return TaskStatus::complete;
 }

@@ -71,7 +71,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     // So far it's just the viscous Bondi problem that doesn't require feedback
     bool feedback = pin->GetOrAddBoolean("emhd", "feedback", true);
 
-    Real tau = pin->GetOrAddReal("emhd", "tau", 1.0);
+    Real tau              = pin->GetOrAddReal("emhd", "tau", 1.0);
     Real conduction_alpha = pin->GetOrAddReal("emhd", "conduction_alpha", 1.0);
     Real viscosity_alpha  = pin->GetOrAddReal("emhd", "viscosity_alpha", 1.0);
     
@@ -109,7 +109,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     // Floors specific to EMHD calculations? Currently only need to enforce bsq>0 in one denominator
 
     MetadataFlag isPrimitive = packages.Get("GRMHD")->Param<MetadataFlag>("PrimitiveFlag");
-    MetadataFlag isEMHD = Metadata::AllocateNewFlag("EMHDFlag");
+    MetadataFlag isEMHD      = Metadata::AllocateNewFlag("EMHDFlag");
     params.Add("EMHDFlag", isEMHD);
 
     // General options for primitive and conserved scalar variables in ImEx driver

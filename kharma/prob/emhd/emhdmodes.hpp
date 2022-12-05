@@ -51,13 +51,13 @@ TaskStatus InitializeEMHDModes(MeshBlockData<Real> *rc, ParameterInput *pin)
 {
     Flag(rc, "Initializing EMHD Modes problem");
     auto pmb = rc->GetBlockPointer();
-    GridScalar rho = rc->Get("prims.rho").data;
-    GridScalar u = rc->Get("prims.u").data;
+    GridScalar rho  = rc->Get("prims.rho").data;
+    GridScalar u    = rc->Get("prims.u").data;
     GridVector uvec = rc->Get("prims.uvec").data;
     // It is well and good this problem should cry if B/EMHD are disabled.
     GridVector B_P = rc->Get("prims.B").data;
-    GridVector q = rc->Get("prims.q").data;
-    GridVector dP = rc->Get("prims.dP").data;
+    GridVector q   = rc->Get("prims.q").data;
+    GridVector dP  = rc->Get("prims.dP").data;
 
     const auto& G = pmb->coords;
 

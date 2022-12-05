@@ -110,6 +110,56 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     MetadataFlag isExplicit = Metadata::AllocateNewFlag("Explicit");
     params.Add("ExplicitFlag", isExplicit);
 
+    // Allocate additional fields that reflect the success of the solver
+    // L2 norm of the residual
+    Metadata m_real = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
+    pkg->AddField("solve_norm", m_real);
+    // Integer field that saves where the solver fails (rho + drho < 0 || u + du < 0)
+    // Metadata m_int = Metadata({Metadata::Integer, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
+    pkg->AddField("solve_fail", m_real); // TODO: Replace with m_int once Integer is supported for CellVariabl
+
+    bool print_residual = pin->GetOrAddBoolean("implicit", "print_residual", false);
+    params.Add("print_residual", print_residual);
+    // TODO: Find a way to save residuals based on a runtime parameter. We don't want to unnecessarily allocate 
+    // a vector field equal to the number of implicit variables over the entire meshblock if we don't have to. For now,
+    // we just print the value of the residual if the norm exceeds the max_norm.s
+    // Should the solve save the residual vector field? Useful for debugging purposes. Default is NO.
+    // bool save_residual = pin->GetOrAddBoolean("implicit", "save_residual", false);
+    // params.Add("save_residual", save_residual);
+
+    // Vector field to store residual components (only for those variables that are evolved implicitly)
+    // if (save_residual) {
+    //     auto driver_type    = pin->GetString("driver", "type");
+    //     bool grmhd_implicit = (driver_type == "imex") && (pin->GetBoolean("emhd", "on") || pin->GetOrAddBoolean("GRMHD", "implicit", false));
+    //     bool implicit_b     = (driver_type == "imex") && (pin->GetOrAddBoolean("b_field", "implicit", grmhd_implicit));
+    //     bool emhd_enabled   = pin->GetOrAddBoolean("emhd", "on", false);
+    //     int nvars_implicit  = 0;
+    //     if (grmhd_implicit){
+    //         if (emhd_enabled) {
+    //             if (implicit_b) {
+    //                 nvars_implicit = 10;
+    //             }
+    //             else
+    //                 nvars_implicit = 7;
+    //         } else {
+    //             if (implicit_b) {
+    //                 nvars_implicit = 8;
+    //             }
+    //             else
+    //                 nvars_implicit = 6;
+    //         }
+    //     }
+    //     const int nfvar = nvars_implicit;
+        
+    //     // flags_vec = std::vector<MetadataFlag>({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
+    //     // auto flags_vec(flags_vec);
+    //     // flags_vec.push_back(Metadata::Vector);
+    //     std::vector<int> s_vector({nfvar});
+    //     Metadata m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy}, s_vector);
+    //     pkg->AddField("residual", m);
+    // }
+    
+
     // Anything we need to run from this package on callbacks
     // Maybe a post-step L2 or flag count or similar
     // pkg->PostFillDerivedBlock = Implicit::PostFillDerivedBlock;
@@ -145,6 +195,9 @@ TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_i
     const int max_linesearch_iter = implicit_par.Get<int>("max_linesearch_iter");
     const Real linesearch_eps     = implicit_par.Get<Real>("linesearch_eps");
     const Real linesearch_lambda  = implicit_par.Get<Real>("linesearch_lambda");
+
+    const bool print_residual = implicit_par.Get<bool>("print_residual");
+    // const bool save_residual = implicit_par.Get<bool>("save_residual");
 
     // Misc other constants for inside the kernel
     const bool am_rank0 = MPIRank0();
@@ -198,19 +251,28 @@ TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_i
     auto& P_full_step_init_implicit = md_full_step_init->PackVariables(implicit_vars, implicit_prims_map);
     const int nfvar = P_full_step_init_implicit.GetDim(4);
 
+    // Pull fields associated with the solver's performance
+    auto& solve_norm_all = md_solver->PackVariables(std::vector<std::string>{"solve_norm"});
+    auto& solve_fail_all = md_solver->PackVariables(std::vector<std::string>{"solve_fail"});
+    // auto& solve_fail_all = md_solver->GetBlockData(0)->Get("solve_fail").data;
+    
+    // if (save_residual) {
+    //     auto& residual_all = md_solver->GetBlockData(0)->Get("residual").data;
+    // }
+
     auto bounds  = pmb_sub_step_init->cellbounds;
     const int n1 = bounds.ncellsi(IndexDomain::entire);
     const int n2 = bounds.ncellsj(IndexDomain::entire);
     const int n3 = bounds.ncellsk(IndexDomain::entire);
 
     // RETURN if there aren't any implicit variables to evolve
-    //std::cerr << "Solve size " << nfvar << " on prim size " << nvar << std::endl;
+    // std::cerr << "Solve size " << nfvar << " on prim size " << nvar << std::endl;
     if (nfvar == 0) return TaskStatus::complete;
 
     // The norm of the residual.  We store this to avoid the main kernel
     // also being a 2-stage reduction, which is complex and sucks.
     // TODO keep this around as a field?
-    ParArray4D<Real> norm_all("norm_all", nblock, n3, n2, n1);
+    // ParArray4D<Real> norm_all("norm_all", nblock, n3, n2, n1); // EDIT
 
     // Get meshblock array bounds from Parthenon
     const IndexDomain domain = IndexDomain::interior;
@@ -230,12 +292,17 @@ TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_i
     const size_t var_size_in_bytes    = parthenon::ScratchPad2D<Real>::shmem_size(nvar, n1);
     const size_t fvar_size_in_bytes   = parthenon::ScratchPad2D<Real>::shmem_size(nfvar, n1);
     const size_t tensor_size_in_bytes = parthenon::ScratchPad3D<Real>::shmem_size(nfvar, nfvar, n1);
+    const size_t scalar_size_in_bytes = parthenon::ScratchPad1D<Real>::shmem_size(n1);
+    const size_t int_size_in_bytes    = parthenon::ScratchPad1D<int>::shmem_size(n1);
     // Allocate enough to cache:
     // jacobian (2D)
-    // residual, deltaP (implicit only)
-    // P_full_step_init/U_full_step_init, P_sub_step_init/U_sub_step_init, flux_src, P_solver, P_linesearch,
-    // dU_implicit, three temps (all vars)
-    const size_t total_scratch_bytes = tensor_size_in_bytes + (4) * fvar_size_in_bytes + (11) * var_size_in_bytes;
+    // residual, deltaP, trans, work (implicit only)
+    // P_full_step_init/U_full_step_init, P_sub_step_init/U_sub_step_init, flux_src, 
+    // P_solver, P_linesearch, dU_implicit, three temps (all vars)
+    // solve_norm, solve_fail
+    const size_t total_scratch_bytes = tensor_size_in_bytes + (4) * fvar_size_in_bytes + (11) * var_size_in_bytes + \
+                                    (2) * scalar_size_in_bytes;
+                                    //  + int_size_in_bytes;
 
     // Iterate.  This loop is outside the kokkos kernel in order to print max_norm
     // There are generally a low and similar number of iterations between
@@ -266,6 +333,10 @@ TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_i
                 ScratchPad2D<Real> flux_src_s(member.team_scratch(scratch_level), nvar, n1);
                 ScratchPad2D<Real> P_solver_s(member.team_scratch(scratch_level), nvar, n1);
                 ScratchPad2D<Real> P_linesearch_s(member.team_scratch(scratch_level), nvar, n1);
+                // Scratchpads for solver performance diagnostics
+                ScratchPad1D<Real> solve_norm_s(member.team_scratch(scratch_level), n1);
+                // ScratchPad1D<int>  solve_fail_s(member.team_scratch(scratch_level), n1);
+                ScratchPad1D<Real> solve_fail_s(member.team_scratch(scratch_level), n1);
 
                 // Copy some file contents to scratchpads, so we can slice them
                 PLOOP {
@@ -279,6 +350,9 @@ TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_i
                             P_solver_s(ip, i)         = P_solver_all(b)(ip, k, j, i);
                             P_linesearch_s(ip, i)     = P_linesearch_all(b)(ip, k, j, i);
                             dU_implicit_s(ip, i)      = 0.;
+
+                            solve_norm_s(i) = 0.;
+                            solve_fail_s(i) = 0;
                         }
                     );
                 }
@@ -310,14 +384,18 @@ TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_i
                         auto residual   = Kokkos::subview(residual_s, Kokkos::ALL(), i);
                         auto jacobian   = Kokkos::subview(jacobian_s, Kokkos::ALL(), Kokkos::ALL(), i);
                         auto delta_prim = Kokkos::subview(delta_prim_s, Kokkos::ALL(), i);
-                        auto trans = Kokkos::subview(trans_s, Kokkos::ALL(), i);
-                        auto work = Kokkos::subview(work_s, Kokkos::ALL(), i);
+                        auto trans      = Kokkos::subview(trans_s, Kokkos::ALL(), i);
+                        auto work       = Kokkos::subview(work_s, Kokkos::ALL(), i);
                         // Temporaries
                         auto tmp1  = Kokkos::subview(tmp1_s, Kokkos::ALL(), i);
                         auto tmp2  = Kokkos::subview(tmp2_s, Kokkos::ALL(), i);
                         auto tmp3  = Kokkos::subview(tmp3_s, Kokkos::ALL(), i);
                         // Implicit sources at starting state
                         auto dU_implicit = Kokkos::subview(dU_implicit_s, Kokkos::ALL(), i);
+                        // Solver performance diagnostics
+                        auto solve_norm = Kokkos::subview(solve_norm_s, i);
+                        auto solve_fail = Kokkos::subview(solve_fail_s, i);
+
                         if (m_p.Q >= 0) {
                             EMHD::implicit_sources(G, P_full_step_init, P_sub_step_init, m_p, gam, k, j, i, emhd_params_sub_step_init, 
                                                 dU_implicit(m_u.Q), dU_implicit(m_u.DP));
@@ -366,28 +444,41 @@ TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_i
                                                   KokkosBatched::Diag::NonUnit, KokkosBatched::Algo::Trsv::Unblocked>
                         ::invoke(alpha, jacobian, delta_prim);
 
-                        // Update the guess
-                        if (linesearch) {
-                            norm_all(b, k, j, i)        = 0;
-                            FLOOP norm_all(b, k, j, i) += residual(ip) * residual(ip);
-                            norm_all(b, k, j, i)        = sqrt(norm_all(b, k, j, i));
+                        // Check for positive definite values of density and internal energy.
+                        // Break from solve if manual backtracking is not sufficient.
+                        // The primitives will be averaged over good neighbors.
+                        if ((P_solver(m_p.RHO) + lambda*delta_prim(m_p.RHO) < 0.) || (P_solver(m_p.UU) + lambda*delta_prim(m_p.UU) < 0.)) {
+                            solve_fail() = 1;
+                            lambda     = 0.1;
+                        }
+                        if ((P_solver(m_p.RHO) + lambda*delta_prim(m_p.RHO) < 0.) || (P_solver(m_p.UU) + lambda*delta_prim(m_p.UU) < 0.)) {
+                            solve_fail() = 2;
+                            // break; // Doesn't break from the inner par_for. 
+                            // Let it continue for now, but we'll average over the zone later
+                        }
 
-                            Real f0      = 0.5 * norm_all(b, k, j, i);
+                        // Linesearch
+                        if (linesearch) {
+                            solve_norm()        = 0;
+                            FLOOP solve_norm() += residual(ip) * residual(ip);
+                            solve_norm()        = m::sqrt(solve_norm());
+
+                            Real f0      = 0.5 * solve_norm();
                             Real fprime0 = -2. * f0;
 
                             for (int linesearch_iter = 0; linesearch_iter < max_linesearch_iter; linesearch_iter++) {
                                 // Take step
                                 FLOOP P_linesearch(ip) = P_solver(ip) + (lambda * delta_prim(ip));
 
-                                // Compute norm of the residual (loss function)
+                                // Compute solve_norm of the residual (loss function)
                                 calc_residual(G, P_linesearch, P_full_step_init, U_full_step_init, P_sub_step_init, flux_src,
                                             dU_implicit, tmp3, m_p, m_u, emhd_params_linesearch, emhd_params_solver, nfvar,
                                             k, j, i, gam, dt, residual);
 
-                                norm_all(b, k, j, i)        = 0;
-                                FLOOP norm_all(b, k, j, i) += residual(ip) * residual(ip);
-                                norm_all(b, k, j, i)        = sqrt(norm_all(b, k, j, i));
-                                Real f1 = 0.5 * norm_all(b, k, j, i);
+                                solve_norm()        = 0;
+                                FLOOP solve_norm() += residual(ip) * residual(ip);
+                                solve_norm()        = m::sqrt(solve_norm());
+                                Real f1             = 0.5 * solve_norm();
 
                                 // Compute new step length
                                 int condition   = f1 > (f0 * (1. - linesearch_eps * lambda) + SMALL);
@@ -400,6 +491,7 @@ TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_i
                             }
                         }
 
+                        // Update the guess
                         FLOOP P_solver(ip) += lambda * delta_prim(ip);
 
                         calc_residual(G, P_solver, P_full_step_init, U_full_step_init, P_sub_step_init, flux_src, dU_implicit, tmp3,
@@ -415,21 +507,38 @@ TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_i
 
                         // Store for maximum/output
                         // I would be tempted to store the whole residual, but it's of variable size
-                        norm_all(b, k , j, i)       = 0;
-                        FLOOP norm_all(b, k, j, i) += residual(ip)*residual(ip);
-                        norm_all(b, k, j, i)        = m::sqrt(norm_all(b, k, j, i)); // TODO faster to scratch cache & copy?
+                        solve_norm()        = 0;
+                        FLOOP solve_norm() += residual(ip) * residual(ip);
+                        solve_norm()        = m::sqrt(solve_norm()); // TODO faster to scratch cache & copy?
+
+                        if (print_residual) {
+                            if (solve_norm_s(i) > rootfind_tol) {
+                                FLOOP std::cout<<residual(ip)<<" ";
+                                std::cout<<std::endl;
+                            }
+                        }
                     }
                 );
                 member.team_barrier();
 
                 // Copy out (the good bits of) P_solver to the existing array
+                // And copy any other diagnostics that are relevant to analyze the solver's performance
                 FLOOP {
                     parthenon::par_for_inner(member, ib.s, ib.e,
                         [&](const int& i) {
                             P_solver_all(b)(ip, k, j, i) = P_solver_s(ip, i);
+                            // if (save_residual) {
+                            //     residual_all(b, ip, k, j, i) = residual_s(ip, i);
+                            // }
                         }
                     );
                 }
+                parthenon::par_for_inner(member, ib.s, ib.e,
+                    [&](const int& i) {
+                        solve_norm_all(b, 0, k, j, i) = solve_norm_s(i);
+                        solve_fail_all(b, 0, k, j, i) = solve_fail_s(i);
+                    }
+                );
             }
         );
         
@@ -440,7 +549,7 @@ TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_i
             Kokkos::Max<Real> norm_max(max_norm.val);
             pmb_sub_step_init->par_reduce("max_norm", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
                 KOKKOS_LAMBDA_MESH_3D_REDUCE {
-                    if (norm_all(b, k, j, i) > local_result) local_result = norm_all(b, k, j, i);
+                    if (solve_norm_all(b, 0, k, j, i) > local_result) local_result = solve_norm_all(b, 0, k, j, i);
                 }
             , norm_max);
             // Then MPI reduce it

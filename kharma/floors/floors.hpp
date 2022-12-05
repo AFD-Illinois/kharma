@@ -365,8 +365,8 @@ KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, const VariablePa
         } else {
             // Add the material in the normal observer frame, by:
             // Adding the floors to the primitive variables
-            const Real rho_add = m::max(0., rhoflr_max - rho);
-            const Real u_add   = m::max(0., uflr_max - u);
+            const Real rho_add    = m::max(0., rhoflr_max - rho);
+            const Real u_add      = m::max(0., uflr_max - u);
             const Real uvec[NVEC] = {0}, B[NVEC] = {0};
 
             // Calculating the corresponding conserved variables
@@ -440,16 +440,16 @@ KOKKOS_INLINE_FUNCTION int apply_geo_floors(const GRCoordinates& G, Local& P, co
         if (floors.use_r_char) {
             // Steeper floor from iharm3d
             Real rhoscal = m::pow(r, -2.) * 1 / (1 + r / floors.r_char);
-            rhoflr_geom = floors.rho_min_geom * rhoscal;
-            uflr_geom = floors.u_min_geom * m::pow(rhoscal, gam);
+            rhoflr_geom  = floors.rho_min_geom * rhoscal;
+            uflr_geom    = floors.u_min_geom * m::pow(rhoscal, gam);
         } else {
             // Original floors from iharm2d
             rhoflr_geom = floors.rho_min_geom * m::pow(r, -1.5);
-            uflr_geom = floors.u_min_geom * m::pow(r, -2.5); //rhoscal/r as in iharm2d
+            uflr_geom   = floors.u_min_geom * m::pow(r, -2.5); //rhoscal/r as in iharm2d
         }
     } else {
         rhoflr_geom = floors.rho_min_geom;
-        uflr_geom = floors.u_min_geom;
+        uflr_geom   = floors.u_min_geom;
     }
 
     int fflag = 0;
@@ -461,7 +461,7 @@ KOKKOS_INLINE_FUNCTION int apply_geo_floors(const GRCoordinates& G, Local& P, co
 #endif
 
     P(m.RHO) += m::max(0., rhoflr_geom - P(m.RHO));
-    P(m.UU) += m::max(0., uflr_geom - P(m.UU));
+    P(m.UU)  += m::max(0., uflr_geom - P(m.UU));
 
     return fflag;
 }
@@ -481,16 +481,16 @@ KOKKOS_INLINE_FUNCTION int apply_geo_floors(const GRCoordinates& G, Global& P, c
         if (floors.use_r_char) {
             // Steeper floor from iharm3d
             Real rhoscal = m::pow(r, -2.) * 1 / (1 + r / floors.r_char);
-            rhoflr_geom = floors.rho_min_geom * rhoscal;
-            uflr_geom = floors.u_min_geom * m::pow(rhoscal, gam);
+            rhoflr_geom  = floors.rho_min_geom * rhoscal;
+            uflr_geom    = floors.u_min_geom * m::pow(rhoscal, gam);
         } else {
             // Original floors from iharm2d
             rhoflr_geom = floors.rho_min_geom * m::pow(r, -1.5);
-            uflr_geom = floors.u_min_geom * m::pow(r, -2.5); //rhoscal/r as in iharm2d
+            uflr_geom   = floors.u_min_geom * m::pow(r, -2.5); //rhoscal/r as in iharm2d
         }
     } else {
         rhoflr_geom = floors.rho_min_geom;
-        uflr_geom = floors.u_min_geom;
+        uflr_geom   = floors.u_min_geom;
     }
 
     int fflag = 0;
@@ -502,7 +502,7 @@ KOKKOS_INLINE_FUNCTION int apply_geo_floors(const GRCoordinates& G, Global& P, c
 #endif
 
     P(m.RHO, k, j, i) += m::max(0., rhoflr_geom - P(m.RHO, k, j, i));
-    P(m.UU, k, j, i) += m::max(0., uflr_geom - P(m.UU, k, j, i));
+    P(m.UU, k, j, i)  += m::max(0., uflr_geom - P(m.UU, k, j, i));
 
     return fflag;
 }
@@ -528,8 +528,8 @@ KOKKOS_INLINE_FUNCTION int apply_instability_limits(const GRCoordinates& G, cons
 
     Real rho      = P(m_p.RHO, k, j, i);
     Real uu       = P(m_p.UU, k, j, i);
-    Real qtilde  = P(m_p.Q, k, j, i);
-    Real dPtilde = P(m_p.DP, k, j, i);
+    Real qtilde   = P(m_p.Q, k, j, i);
+    Real dPtilde  = P(m_p.DP, k, j, i);
 
     Real pg    = (gam - 1.) * uu;
     Real Theta = pg / rho;

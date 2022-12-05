@@ -117,6 +117,8 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
     // Everything
     } else if (prob == "torus") {
         status = InitializeFMTorus(rc.get(), pin);
+    } else if (prob == "torus_emhd") {
+        status = InitializeFMTorusEMHD(rc.get(), pin);
     } else if (prob == "resize_restart") {
         status = ReadIharmRestart(rc.get(), pin);
     }

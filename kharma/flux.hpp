@@ -152,7 +152,7 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
 
     // Pack variables.  Keep ctop separate
     PackIndexMap prims_map, cons_map;
-    const auto& ctop = md->PackVariables(std::vector<std::string>{"ctop"});
+    const auto& ctop  = md->PackVariables(std::vector<std::string>{"ctop"});
     const auto& P_all = md->PackVariables(std::vector<MetadataFlag>{isPrimitive}, prims_map);
     const auto& U_all = md->PackVariablesAndFluxes(std::vector<MetadataFlag>{Metadata::Conserved}, cons_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
