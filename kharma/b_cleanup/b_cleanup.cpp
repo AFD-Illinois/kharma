@@ -57,6 +57,7 @@ namespace B_Cleanup
 
 std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t packages)
 {
+    Flag("Initializing B Field Cleanup");
     auto pkg = std::make_shared<StateDescriptor>("B_Cleanup");
     Params &params = pkg->AllParams();
 
@@ -233,13 +234,6 @@ void CleanupDivergence(std::shared_ptr<MeshData<Real>>& md)
         }
     }
     auto &msolve = pmesh->mesh_data.GetOrAdd("solve", 0);
-    auto varlist = msolve->GetVariablesByFlag({}, true);
-    std::cout << "Remaining vars: " << varlist.size() << std::endl;
-    for (auto var : varlist) {
-        std::cout << var << " and ";
-    }
-    std::cout << std::endl;
-
 
     // Create a TaskCollection of just the solve,
     // execute it to perform BiCGStab iteration

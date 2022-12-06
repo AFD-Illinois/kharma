@@ -59,6 +59,7 @@
 
 std::shared_ptr<StateDescriptor> KHARMA::InitializeGlobals(ParameterInput *pin)
 {
+    Flag("Initializing Globals");
     // All global mutable state.  All of these and only these parameters are "mutable"
     auto pkg = std::make_shared<StateDescriptor>("Globals");
     Params &params = pkg->AllParams();
@@ -75,6 +76,7 @@ std::shared_ptr<StateDescriptor> KHARMA::InitializeGlobals(ParameterInput *pin)
     // Whether we are computing initial outputs/timestep, or versions in the execution loop
     params.Add("in_loop", false, true);
 
+    Flag("Initialized");
     return pkg;
 }
 void KHARMA::ResetGlobals(ParameterInput *pin, Mesh *pmesh)
@@ -93,6 +95,7 @@ void KHARMA::ResetGlobals(ParameterInput *pin, Mesh *pmesh)
 
 void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
 {
+    Flag("Fixing parameters");
     // Default to 4 ghost zones
     pin->GetOrAddInteger("parthenon/mesh", "nghost", 4);
     std::string recon = pin->GetOrAddString("GRMHD", "reconstruction", "weno5");
@@ -211,6 +214,7 @@ void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
         pin->GetOrAddString("parthenon/mesh", "ox3_bc", "periodic");
         // Cartesian sims must specify the domain!
     }
+    Flag("Fixed");
 }
 
 Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
@@ -218,6 +222,7 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
     // See above
     FixParameters(pin);
 
+    Flag("Initializing packages");
     // Then put together what we're supposed to
     Packages_t packages;
 
@@ -309,6 +314,7 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
         packages.Add(Wind::Initialize(pin.get()));
     }
 
+    Flag("Finished initializing packages");
     return std::move(packages);
 }
 
