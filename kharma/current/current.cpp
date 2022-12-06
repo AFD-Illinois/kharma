@@ -64,16 +64,16 @@ TaskStatus Current::CalculateCurrent(MeshBlockData<Real> *rc0, MeshBlockData<Rea
     int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
     const int ndim = pmb->pmy_mesh->ndim;
 
-    GridVars u_c("P_c", NVEC, n3, n2, n1);
-    GridVector B_P_c("P_c", NVEC, n3, n2, n1);
+    GridVars u_c("u_c", NVEC, n3, n2, n1);
+    GridVector B_P_c("B_P_c", NVEC, n3, n2, n1);
 
     // Calculate time-centered primitives
     // We could pack, but we just need the vectors, U1,2,3 and B1,2,3
     // Apply over the whole grid, as calculating j requires neighbors
-    IndexRange ib = pmb->cellbounds.GetBoundsI(IndexDomain::entire);
-    IndexRange jb = pmb->cellbounds.GetBoundsJ(IndexDomain::entire);
-    IndexRange kb = pmb->cellbounds.GetBoundsK(IndexDomain::entire);
-    IndexRange nb = IndexRange{0, NVEC-1};
+    const IndexRange ib = pmb->cellbounds.GetBoundsI(IndexDomain::entire);
+    const IndexRange jb = pmb->cellbounds.GetBoundsJ(IndexDomain::entire);
+    const IndexRange kb = pmb->cellbounds.GetBoundsK(IndexDomain::entire);
+    const IndexRange nb = IndexRange{0, NVEC-1};
     pmb->par_for("get_center", nb.s, nb.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_VARS {
             u_c(p, k, j, i) = 0.5*(u_old(p, k, j, i) + u_new(p, k, j, i));
@@ -82,11 +82,10 @@ TaskStatus Current::CalculateCurrent(MeshBlockData<Real> *rc0, MeshBlockData<Rea
     );
 
     // Calculate j^{\mu} using centered differences for active zones
-    ib = pmb->cellbounds.GetBoundsI(IndexDomain::interior);
-    jb = pmb->cellbounds.GetBoundsJ(IndexDomain::interior);
-    kb = pmb->cellbounds.GetBoundsK(IndexDomain::interior);
-    nb = IndexRange{0, GR_DIM-1};
-    pmb->par_for("jcon_calc", nb.s, nb.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+    const IndexRange ib_i = pmb->cellbounds.GetBoundsI(IndexDomain::interior);
+    const IndexRange jb_i = pmb->cellbounds.GetBoundsJ(IndexDomain::interior);
+    const IndexRange kb_i = pmb->cellbounds.GetBoundsK(IndexDomain::interior);
+    pmb->par_for("jcon_calc", nb.s, nb.e, kb_i.s, kb_i.e, jb_i.s, jb_i.e, ib_i.s, ib_i.e,
         KOKKOS_LAMBDA_VEC {
             // Get sqrt{-g}*F^{mu nu} at neighboring points
             Real gF2p = 0., gF2m = 0., gF3p = 0., gF3m = 0.;

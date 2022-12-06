@@ -93,16 +93,15 @@ void KHARMA::ResetGlobals(ParameterInput *pin, Mesh *pmesh)
 
 void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
 {
-    // This would set ghost zones dynamically, or leave it up to Parthenon.
-    // TODO get this working so I don't have to when we really want to test it & get scaling happening
-    // std::string recon = pin->GetOrAddString("GRMHD", "reconstruction", "weno5");
-    // if (recon != "donor_cell" && recon != "linear_mc" && recon != "linear_vl") {
-    //     pin->SetInteger("parthenon/mesh", "nghost", 4);
-    //     Globals::nghost = pin->GetInteger("parthenon/mesh", "nghost");
-    // }
-    // For now we always set 4 ghost zones
-    pin->SetInteger("parthenon/mesh", "nghost", 4);
-    Globals::nghost = pin->GetInteger("parthenon/mesh", "nghost");
+    // Ensure 4 ghost zones for anything but linear reconstruction
+    std::string recon = pin->GetOrAddString("GRMHD", "reconstruction", "weno5");
+    if (recon != "donor_cell" && recon != "linear_mc" && recon != "linear_vl") {
+        pin->SetInteger("parthenon/mesh", "nghost", 4);
+        Globals::nghost = pin->GetInteger("parthenon/mesh", "nghost");
+    }
+    if (Globals::nghost < 4) {
+        std::cerr << "WARNING: Using less than 4 ghost zones is untested!" << std::endl;
+    }
 
     // If we're restarting (not via Parthenon), read the restart file to get most parameters
     std::string prob = pin->GetString("parthenon/job", "problem_id");
@@ -122,6 +121,11 @@ void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
     if (coordinate_transform == "exponential") coordinate_transform = "exp";
     if (coordinate_transform == "eks") coordinate_transform = "exp";
     // TODO any other synonyms
+    if (coordinate_base == "spherical_ks" || coordinate_base == "spherical_bl" || coordinate_base == "spherical_minkowski") {
+        pin->SetBoolean("coordinates", "spherical", true);
+    } else {
+        pin->SetBoolean("coordinates", "spherical", false);
+    }
 
     // Spherical systems can specify r_out and optionally r_in,
     // instead of xNmin/max.
@@ -167,8 +171,7 @@ void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
             pin->GetOrAddReal("parthenon/mesh", "x1min", x1min);
         }
     }
-    
-    // Spherical systems also have trivial x{2,3}{min,max}
+
     // Assumption: if we're in a spherical system...
     if (coordinate_base == "spherical_ks" || coordinate_base == "spherical_bl" || coordinate_base == "spherical_minkowski") {
         // ...then we definitely want KHARMA's spherical boundary conditions
@@ -181,7 +184,8 @@ void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
         pin->GetOrAddString("parthenon/mesh", "ix3_bc", "periodic");
         pin->GetOrAddString("parthenon/mesh", "ox3_bc", "periodic");
 
-        // We also know the bounds for most transforms in spherical coords.  Set them.
+        // We also know the bounds for most transforms in spherical coords
+        // Note we *only* set them here if they were not previously set/read!
         if (coordinate_transform == "null" || coordinate_transform == "exp") {
             pin->GetOrAddReal("parthenon/mesh", "x2min", 0.0);
             pin->GetOrAddReal("parthenon/mesh", "x2max", M_PI);
@@ -193,11 +197,16 @@ void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
             pin->GetOrAddReal("parthenon/mesh", "x3min", 0.0);
             pin->GetOrAddReal("parthenon/mesh", "x3max", 2*M_PI);
         } // TODO any other transforms/systems
-
-        // Also record whether we're in spherical coordinates
-        pin->SetBoolean("coordinates", "spherical", true);
     } else {
-        pin->SetBoolean("coordinates", "spherical", false);
+        // Most likely, Cartesian simulations will specify boundary conditions,
+        // but we set defaults here.
+        pin->GetOrAddString("parthenon/mesh", "ix1_bc", "periodic");
+        pin->GetOrAddString("parthenon/mesh", "ox1_bc", "periodic");
+        pin->GetOrAddString("parthenon/mesh", "ix2_bc", "periodic");
+        pin->GetOrAddString("parthenon/mesh", "ox2_bc", "periodic");
+        pin->GetOrAddString("parthenon/mesh", "ix3_bc", "periodic");
+        pin->GetOrAddString("parthenon/mesh", "ox3_bc", "periodic");
+        // Cartesian sims must specify the domain!
     }
 }
 
@@ -343,7 +352,7 @@ void KHARMA::PostStepMeshUserWorkInLoop(Mesh *pmesh, ParameterInput *pin, const 
     // ctop_max has fewer rules. It's just convenient to set here since we're assured of no MPI hangs
     // Since it involves an MPI sync, we only keep track of this when we need it
     if (pmesh->packages.AllPackages().count("B_CD")) {
-        AllReduce<int> ctop_max_last_r;
+        AllReduce<Real> ctop_max_last_r;
         ctop_max_last_r.val = pmesh->packages.Get("Globals")->Param<Real>("ctop_max");
         ctop_max_last_r.StartReduce(MPI_MAX);
         while (ctop_max_last_r.CheckReduce() == TaskStatus::incomplete);

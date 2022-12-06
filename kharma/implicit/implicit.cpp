@@ -374,15 +374,15 @@ TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_i
         // If we need to print or exit on the max norm...
         if (iter >= iter_min || verbose >= 1) {
             // Take the maximum L2 norm on this rank
-            Reduce<Real> max_norm;
+            AllReduce<Real> max_norm;
             Kokkos::Max<Real> norm_max(max_norm.val);
             pmb_sub_step_init->par_reduce("max_norm", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
                 KOKKOS_LAMBDA_MESH_3D_REDUCE {
                     if (norm_all(b, k, j, i) > local_result) local_result = norm_all(b, k, j, i);
                 }
             , norm_max);
-            // Then MPI reduce it
-            max_norm.StartReduce(0, MPI_MAX);
+            // Then MPI AllReduce to copy the global max to every rank
+            max_norm.StartReduce(MPI_MAX);
             while (max_norm.CheckReduce() == TaskStatus::incomplete);
             if (verbose >= 1 && MPIRank0()) printf("Iteration %d max L2 norm: %g\n", iter, max_norm.val);
             // Break if it's less than the total tolerance we set.  TODO per-zone version of this?

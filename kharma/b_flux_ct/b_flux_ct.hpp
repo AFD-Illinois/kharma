@@ -97,9 +97,11 @@ TaskStatus TransportB(MeshData<Real> *md);
  * listed arguments
  */
 double MaxDivB(MeshData<Real> *md);
-// Version for Parthenon tasking as a reduction
-inline TaskStatus MaxDivBTask(MeshData<Real> *md, double& divb_max)
-    { divb_max = MaxDivB(md); return TaskStatus::complete; }
+
+/**
+ * Returns the global maximum value, rather than the maximum over this rank's MeshData
+ */
+double GlobalMaxDivB(MeshData<Real> *md);
 
 /**
  * Clean the magnetic field divergence via successive over-relaxation

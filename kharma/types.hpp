@@ -181,7 +181,7 @@ inline bool IsDomainBound(MeshBlock *pmb, BoundaryFace face)
  */
 #if TRACE
 #define PRINTCORNERS 0
-#define PRINTZONE 1
+#define PRINTZONE 0
 inline void PrintCorner(MeshBlockData<Real> *rc)
 {
     auto rhop = rc->Get("prims.rho").data.GetHostMirrorAndCopy();
@@ -224,12 +224,12 @@ inline void PrintZone(MeshBlockData<Real> *rc)
     auto Bp = rc->Get("prims.B").data.GetHostMirrorAndCopy();
     auto q = rc->Get("prims.q").data.GetHostMirrorAndCopy();
     auto dP = rc->Get("prims.dP").data.GetHostMirrorAndCopy();
-    cerr << "RHO: " << rhop(0,0,100)
+    std::cerr << "RHO: " << rhop(0,0,100)
          << " UU: "  << up(0,0,100)
          << " U: "   << uvecp(0, 0,0,100) << " " << uvecp(1, 0,0,100)<< " " << uvecp(2, 0,0,100)
          << " B: "   << Bp(0, 0,0,100) << " " << Bp(1, 0,0,100) << " " << Bp(2, 0,0,100)
          << " q: "   << q(0,0,100) 
-         << " dP: "  << dP(0,0,100) << endl;
+         << " dP: "  << dP(0,0,100) << std::endl;
 }
 
 inline void Flag(std::string label)

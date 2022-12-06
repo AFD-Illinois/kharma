@@ -386,6 +386,15 @@ double MaxDivB(MeshData<Real> *md)
     return max_divb;
 }
 
+double GlobalMaxDivB(MeshData<Real> *md)
+{
+    AllReduce<Real> max_divb;
+    max_divb.val = MaxDivB(md);
+    max_divb.StartReduce(MPI_MAX);
+    while (max_divb.CheckReduce() == TaskStatus::incomplete);
+    return max_divb.val;
+}
+
 TaskStatus PrintGlobalMaxDivB(MeshData<Real> *md)
 {
     Flag(md, "Printing B field diagnostics");
@@ -395,15 +404,12 @@ TaskStatus PrintGlobalMaxDivB(MeshData<Real> *md)
     // unless we're being verbose. It's not costly to calculate though
     if (pmb0->packages.Get("B_FluxCT")->Param<int>("verbose") >= 1) {
         Flag(md, "Printing divB");
-        Reduce<Real> max_divb;
-        max_divb.val = B_FluxCT::MaxDivB(md);
-        max_divb.StartReduce(0, MPI_MAX);
-        while (max_divb.CheckReduce() == TaskStatus::incomplete);
-
+        // Calculate the maximum from/on all nodes
+        const double divb_max = B_FluxCT::GlobalMaxDivB(md);
+        // Print on rank zero
         if(MPIRank0()) {
-            std::cout << "Max DivB: " << max_divb.val << std::endl;
+            std::cout << "Max DivB: " << divb_max << std::endl;
         }
-
     }
 
     Flag(md, "Printed B field diagnostics");
