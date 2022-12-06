@@ -194,26 +194,28 @@ void ReadIharmRestartHeader(std::string fname, std::unique_ptr<ParameterInput>& 
             pin->SetReal("coordinates", "r_out", Rout);
             // xNmin/max will then be set by kharma.cpp.
         }
-
-        // Set the coordinate system 
-        if (file_in_spherical) {
-            pin->SetReal("coordinates", "a", a);
-            pin->SetReal("coordinates", "hslope", hslope);
-
-            // Sadly restarts did not record MKS vs FMKS
-            // Guess FMKS if not specified in parameter file
-            pin->SetString("coordinates", "base", "spherical_ks");
-            if (!pin->DoesParameterExist("coordinates", "transform")) {
-                pin->SetString("coordinates", "transform", "funky");
-            }
-        } else {
-            std::cout << "Guessing the restart file is in Cartesian coordinates!" << std::endl;
-            // Anything without a BH spin was pretty likely Cartesian
-            pin->SetString("coordinates", "base", "cartesian_minkowski");
-            pin->SetString("coordinates", "transform", "null");
-        }
-        // Boundary conditions will be set based on coordinate system in kharma.cpp
     }
+
+    // Set the coordinate system to match the restart file *even if we're resizing*
+    // Mapping to new spins/systems is theoretically fine, but we do not want to
+    // do this in any applications yet
+    if (file_in_spherical) {
+        pin->SetReal("coordinates", "a", a);
+        pin->SetReal("coordinates", "hslope", hslope);
+
+        // Sadly restarts did not record MKS vs FMKS
+        // Guess FMKS if not specified in parameter file
+        pin->SetString("coordinates", "base", "spherical_ks");
+        if (!pin->DoesParameterExist("coordinates", "transform")) {
+            pin->SetString("coordinates", "transform", "funky");
+        }
+    } else {
+        std::cout << "Guessing the restart file is in Cartesian coordinates!" << std::endl;
+        // Anything without a BH spin was pretty likely Cartesian
+        pin->SetString("coordinates", "base", "cartesian_minkowski");
+        pin->SetString("coordinates", "transform", "null");
+    }
+    // Boundary conditions will be set based on coordinate system in kharma.cpp
 
     // We should always use the restart's fluid gamma & current time
     pin->SetReal("GRMHD", "gamma", gam);
