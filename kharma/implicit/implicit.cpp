@@ -374,7 +374,7 @@ TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_i
         // If we need to print or exit on the max norm...
         if (iter >= iter_min || verbose >= 1) {
             // Take the maximum L2 norm on this rank
-            AllReduce<Real> max_norm;
+            static AllReduce<Real> max_norm;
             Kokkos::Max<Real> norm_max(max_norm.val);
             pmb_sub_step_init->par_reduce("max_norm", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
                 KOKKOS_LAMBDA_MESH_3D_REDUCE {

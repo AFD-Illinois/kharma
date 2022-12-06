@@ -129,7 +129,7 @@ TaskStatus CheckNaN(MeshData<Real> *md, int dir, IndexDomain domain)
 
     // Reductions in parallel
     // Only need to reduce to head node, saves time
-    Reduce<int> nzero_tot, nnan_tot;
+    static Reduce<int> nzero_tot, nnan_tot;
     nzero_tot.val = nzero;
     nnan_tot.val = nnan;
     nzero_tot.StartReduce(0, MPI_SUM);
@@ -190,7 +190,7 @@ TaskStatus CheckNegative(MeshData<Real> *md, IndexDomain domain)
     , sum_reducer_u);
 
     // Reductions in parallel
-    Reduce<int> nless_tot, nless_rho_tot, nless_u_tot;
+    static Reduce<int> nless_tot, nless_rho_tot, nless_u_tot;
     nless_tot.val = nless;
     nless_rho_tot.val = nless_rho;
     nless_u_tot.val = nless_u;
@@ -238,7 +238,7 @@ int CountPFlags(MeshData<Real> *md, IndexDomain domain, int verbose)
     , sum_reducer);
 
     // Need the total on all ranks to evaluate the if statement below
-    AllReduce<int> n_tot;
+    static AllReduce<int> n_tot;
     n_tot.val = nflags;
     n_tot.StartReduce(MPI_SUM);
     while (n_tot.CheckReduce() == TaskStatus::incomplete);
@@ -247,6 +247,8 @@ int CountPFlags(MeshData<Real> *md, IndexDomain domain, int verbose)
     // If necessary, count each flag
     // This is slow, but it can be slow: it's not called for normal operation
     if (verbose > 0 && nflags > 0) {
+        // These are necessary because iterating enums still sucks
+        // Would love a clean single-spot way to do this...
         std::vector<InversionStatus> all_status_vals = {InversionStatus::neg_input,
                                                         InversionStatus::max_iter,
                                                         InversionStatus::bad_ut,
@@ -263,19 +265,19 @@ int CountPFlags(MeshData<Real> *md, IndexDomain domain, int verbose)
                                                      "Negative rho & U"};
 
         // Overlap reductions to save time
-        Reduce<int> n_cells_r;
+        static Reduce<int> n_cells_r;
         n_cells_r.val = (block.e - block.s + 1) * (kb.e - kb.s + 1) * (jb.e - jb.s + 1) * (ib.e - ib.s + 1);
         n_cells_r.StartReduce(0, MPI_SUM);
-        std::vector<std::shared_ptr<Reduce<int>>> reducers;
-        for (InversionStatus status : all_status_vals) {
-            // Copying a Reduce<> causes double-free of an MPI comms resource
-            // So we must make them once and refcount them ourselves with shared_ptr
-            // TODO Parthenon should really add refcounting to Reduce<> itself, this
-            // is a sharp edge...
-            std::shared_ptr<Reduce<int>> reducer = std::make_shared<Reduce<int>>();
-            reducer->val = CountPFlag(md, status, domain);
-            reducer->StartReduce(0, MPI_SUM);
-            reducers.push_back(reducer);
+        static std::vector<std::shared_ptr<Reduce<int>>> reducers;
+        if (reducers.size() == 0) {
+            for (InversionStatus status : all_status_vals) {
+                std::shared_ptr<Reduce<int>> reducer = std::make_shared<Reduce<int>>();
+                reducers.push_back(reducer);
+            }
+        }
+        for (int i=0; i < reducers.size(); ++i) {
+            reducers[i]->val = CountPFlag(md, all_status_vals[i], domain);
+            reducers[i]->StartReduce(0, MPI_SUM);
         }
         while (n_cells_r.CheckReduce() == TaskStatus::incomplete);
         const int n_cells = n_cells_r.val;
@@ -326,7 +328,7 @@ int CountFFlags(MeshData<Real> *md, IndexDomain domain, int verbose)
     , sum_reducer);
 
     // Need this on all nodes to evaluate the following if statement
-    AllReduce<int> n_tot;
+    static AllReduce<int> n_tot;
     n_tot.val = nflags;
     n_tot.StartReduce(MPI_SUM);
     while (n_tot.CheckReduce() == TaskStatus::incomplete);
@@ -349,17 +351,20 @@ int CountFFlags(MeshData<Real> *md, IndexDomain domain, int verbose)
                                                    "KTOT"};
 
         // Overlap reductions to save time
-        Reduce<int> n_cells_r;
+        static Reduce<int> n_cells_r;
         n_cells_r.val = (block.e - block.s + 1) * (kb.e - kb.s + 1) * (jb.e - jb.s + 1) * (ib.e - ib.s + 1);
         n_cells_r.StartReduce(0, MPI_SUM);
-        std::vector<std::shared_ptr<Reduce<int>>> reducers;
-        for (int flag : all_flag_vals) {
-            // Copying a Reduce<> causes double-free of an MPI comms resource
-            // So we must make them once and refcount them ourselves with shared_ptr
-            std::shared_ptr<Reduce<int>> reducer = std::make_shared<Reduce<int>>();
-            reducer->val = CountFFlag(md, flag, domain);
-            reducer->StartReduce(0, MPI_SUM);
-            reducers.push_back(reducer);
+        static std::vector<std::shared_ptr<Reduce<int>>> reducers;
+        // TODO there's absolutely reduction-of-view examples.  C'mon
+        if (reducers.size() == 0) {
+            for (int flag : all_flag_vals) {
+                std::shared_ptr<Reduce<int>> reducer = std::make_shared<Reduce<int>>();
+                reducers.push_back(reducer);
+            }
+        }
+        for (int i=0; i < reducers.size(); ++i) {
+            reducers[i]->val = CountFFlag(md, all_flag_vals[i], domain);
+            reducers[i]->StartReduce(0, MPI_SUM);
         }
         while (n_cells_r.CheckReduce() == TaskStatus::incomplete);
         const int n_cells = n_cells_r.val;

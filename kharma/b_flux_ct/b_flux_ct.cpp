@@ -388,7 +388,7 @@ double MaxDivB(MeshData<Real> *md)
 
 double GlobalMaxDivB(MeshData<Real> *md)
 {
-    AllReduce<Real> max_divb;
+    static AllReduce<Real> max_divb;
     max_divb.val = MaxDivB(md);
     max_divb.StartReduce(MPI_MAX);
     while (max_divb.CheckReduce() == TaskStatus::incomplete);

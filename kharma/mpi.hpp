@@ -39,7 +39,8 @@ inline void MPIBarrier()
 template<typename T>
 inline T MPIReduce_once(T f, MPI_Op O)
 {
-    parthenon::AllReduce<T> reduction;
+    // TODO Can this borrow from an object with global lifetime?
+    static parthenon::AllReduce<T> reduction;
     reduction.val = f;
     reduction.StartReduce(O);
     // Wait on results
