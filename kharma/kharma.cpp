@@ -93,12 +93,15 @@ void KHARMA::ResetGlobals(ParameterInput *pin, Mesh *pmesh)
 
 void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
 {
-    // Ensure 4 ghost zones for anything but linear reconstruction
+    // Default to 4 ghost zones
+    pin->GetOrAddInteger("parthenon/mesh", "nghost", 4);
     std::string recon = pin->GetOrAddString("GRMHD", "reconstruction", "weno5");
+    // Enforce 4 ghost zones for reconstructions not known to work with fewer
     if (recon != "donor_cell" && recon != "linear_mc" && recon != "linear_vl") {
         pin->SetInteger("parthenon/mesh", "nghost", 4);
         Globals::nghost = pin->GetInteger("parthenon/mesh", "nghost");
     }
+    // Warn if using less than 4 ghost zones in any circumstances, it's still not tested well
     if (Globals::nghost < 4) {
         std::cerr << "WARNING: Using less than 4 ghost zones is untested!" << std::endl;
     }
