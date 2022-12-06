@@ -189,9 +189,8 @@ void CleanupDivergence(std::shared_ptr<MeshData<Real>>& md)
     auto always_solve = pkg->Param<bool>("always_solve");
     auto verbose = pkg->Param<int>("verbose");
     auto solver = pkg->Param<BiCGStabSolver<int>>("solver");
-
     MetadataFlag isMHD = pmesh->packages.Get("GRMHD")->Param<MetadataFlag>("MHDFlag");
-    bool sync_prims = pmesh->packages.Get("GRMHD")->Param<std::string>("driver_type") == "imex";
+
 
     if (MPIRank0() && verbose > 0) {
         std::cout << "Cleaning divB to relative tolerance " << rel_tolerance << std::endl;
@@ -215,7 +214,7 @@ void CleanupDivergence(std::shared_ptr<MeshData<Real>>& md)
     // This gets signed divB on all physical corners (total (N+1)^3)
     // and syncs ghost zones
     B_FluxCT::CalcDivB(md.get(), "divB_RHS");
-    KBoundaries::SyncAllBounds(md, sync_prims);
+    KBoundaries::SyncAllBounds(md);
 
     // Add a solver container and associated MeshData
     for (auto& pmb : pmesh->block_list) {
@@ -250,7 +249,7 @@ void CleanupDivergence(std::shared_ptr<MeshData<Real>>& md)
     auto t_solve_step = solver.CreateTaskList(t_none, 0, tr, md, msolve);
     while (!tr.Execute());
     // Make sure solution's ghost zones are sync'd
-    KBoundaries::SyncAllBounds(msolve, sync_prims);
+    KBoundaries::SyncAllBounds(msolve);
 
     // Apply the result
     if (MPIRank0() && verbose > 0) {
@@ -260,7 +259,7 @@ void CleanupDivergence(std::shared_ptr<MeshData<Real>>& md)
     B_Cleanup::ApplyP(msolve.get(), md.get());
 
     // Synchronize to update ghost zones
-    KBoundaries::SyncAllBounds(md, sync_prims);
+    KBoundaries::SyncAllBounds(md);
 
     // Recalculate divB max for one last check
     const double divb_end = B_FluxCT::GlobalMaxDivB(md.get());

@@ -377,12 +377,19 @@ TaskID KBoundaries::AddBoundarySync(TaskID t_start, TaskList &tl, std::shared_pt
     return t_set | t_set_local;
 }
 
-void KBoundaries::SyncAllBounds(std::shared_ptr<MeshData<Real>> md, bool sync_prims, bool sync_phys)
+void KBoundaries::SyncAllBounds(std::shared_ptr<MeshData<Real>> md, bool apply_domain_bounds)
 {
     Flag("Syncing all bounds");
     TaskID t_none(0);
 
-    // TODO un-meshblock.
+    // If we're using the ImEx driver, where primitives are fundamental, "AddBoundarySync"
+    // will only sync those, and we can call PtoU over everything after.
+    // If "AddBoundarySync" means syncing conserved variables, we have to call PtoU *before*
+    // the MPI sync operation, then recover the primitive vars *again* afterward.
+    auto pmesh = md->GetMeshPointer();
+    bool sync_prims = pmesh->packages.Get("GRMHD")->Param<std::string>("driver_type") == "imex";
+
+    // TODO un-meshblock the rest of this
     auto &block_list = md.get()->GetMeshPointer()->block_list;
 
     if (sync_prims) {
@@ -399,7 +406,7 @@ void KBoundaries::SyncAllBounds(std::shared_ptr<MeshData<Real>> md, bool sync_pr
             Flag("Block fill Conserved");
             Flux::PtoU(rc.get(), IndexDomain::entire);
 
-            if (sync_phys) {
+            if (apply_domain_bounds) {
                 Flag("Block physical bounds");
                 // Physical boundary conditions
                 parthenon::ApplyBoundaryConditions(rc);
@@ -432,7 +439,7 @@ void KBoundaries::SyncAllBounds(std::shared_ptr<MeshData<Real>> md, bool sync_pr
             // (like we do in a normal boundary sync)
             KHARMA::FillDerivedDomain(rc, IndexDomain::entire, false);
 
-            if (sync_phys) {
+            if (apply_domain_bounds) {
                 Flag("Block physical bounds");
                 // Physical boundary conditions
                 parthenon::ApplyBoundaryConditions(rc);
