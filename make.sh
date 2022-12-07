@@ -79,6 +79,9 @@ fi
 if [[ "$ARGS" == *"nompi"* ]]; then
   EXTRA_FLAGS="-DKHARMA_DISABLE_MPI=1 $EXTRA_FLAGS"
 fi
+if [[ "$ARGS" == *"noimplicit"* ]]; then
+  EXTRA_FLAGS="-DKHARMA_DISABLE_IMPLICIT=1 $EXTRA_FLAGS"
+fi
 
 ### Enivoronment Prep ###
 if [[ "$(which python3 2>/dev/null)" == *"conda"* ]]; then

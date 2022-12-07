@@ -330,7 +330,8 @@ TaskStatus FixPolarFlux(MeshData<Real> *md)
 TaskStatus TransportB(MeshData<Real> *md)
 {
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
-    if (pmb0->packages.Get("B_FluxCT")->Param<bool>("fix_polar_flux")) {
+    if (pmb0->packages.Get("B_FluxCT")->Param<bool>("fix_polar_flux")
+        && pmb0->coords.coords.spherical()) {
         FixPolarFlux(md);
     }
     FluxCT(md);

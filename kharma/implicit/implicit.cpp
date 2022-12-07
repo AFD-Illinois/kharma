@@ -39,13 +39,6 @@
 #include "grmhd_functions.hpp"
 #include "pack.hpp"
 
-// Implicit nonlinear solve requires several linear solves per-zone
-// Use Kokkos-kernels QR decomposition & triangular solve, they're fast.
-#include <batched/dense/KokkosBatched_LU_Decl.hpp>
-#include <batched/dense/KokkosBatched_QR_Decl.hpp>
-#include <batched/dense/KokkosBatched_ApplyQ_Decl.hpp>
-#include <batched/dense/KokkosBatched_Trsv_Decl.hpp>
-
 namespace Implicit
 {
 
@@ -111,6 +104,15 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     Flag("Initialized");
     return pkg;
 }
+
+#if ENABLE_IMPLICIT
+
+// Implicit nonlinear solve requires several linear solves per-zone
+// Use Kokkos-kernels QR decomposition & triangular solve, they're fast.
+#include <batched/dense/KokkosBatched_LU_Decl.hpp>
+#include <batched/dense/KokkosBatched_QR_Decl.hpp>
+#include <batched/dense/KokkosBatched_ApplyQ_Decl.hpp>
+#include <batched/dense/KokkosBatched_Trsv_Decl.hpp>
 
 TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_init, MeshData<Real> *md_flux_src,
                 MeshData<Real> *md_solver, const Real& dt)
@@ -395,5 +397,40 @@ TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_i
     return TaskStatus::complete;
 
 }
+
+#else
+
+TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_init, MeshData<Real> *md_flux_src,
+                MeshData<Real> *md_solver, const Real& dt)
+{
+    Flag("Dummy implicit solve");
+    auto pmb_sub_step_init  = md_sub_step_init->GetBlockData(0)->GetBlockPointer();
+
+    MetadataFlag isPrimitive = pmb_sub_step_init->packages.Get("GRMHD")->Param<MetadataFlag>("PrimitiveFlag");
+    auto& mbd_full_step_init  = md_full_step_init->GetBlockData(0); // MeshBlockData object, more member functions
+
+    // Get number of variables
+    auto ordered_cons  = get_ordered_names(mbd_full_step_init.get(), Metadata::Conserved);
+    PackIndexMap cons_map;
+    auto& U_full_step_init_all = md_full_step_init->PackVariables(ordered_cons, cons_map);
+    const int nvar   = U_full_step_init_all.GetDim(4);
+
+    // Get number of implicit variables
+    auto implicit_vars = get_ordered_names(mbd_full_step_init.get(), isPrimitive, true);
+    PackIndexMap implicit_prims_map;
+    auto& P_full_step_init_implicit = md_full_step_init->PackVariables(implicit_vars, implicit_prims_map);
+    const int nfvar = P_full_step_init_implicit.GetDim(4);
+
+    // RETURN if there aren't any implicit variables to evolve
+    std::cerr << "Solve size " << nfvar << " on prim size " << nvar << std::endl;
+    if (nfvar == 0) {
+        return TaskStatus::complete;
+    } else {
+        throw std::runtime_error("Cannot evolve variables implicitly: KHARMA was compiled without implicit solver!");
+    }
+    Flag("End dummy implicit solve");
+}
+
+#endif
 
 } // namespace Implicit
