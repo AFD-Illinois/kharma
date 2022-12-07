@@ -47,6 +47,7 @@
 #include "bondi.hpp"
 #include "emhd/conducting_atmosphere.hpp"
 #include "emhd/bondi_viscous.hpp"
+#include "resize_restart_kharma.hpp" // Hyerin
 //#include "hubble.hpp"
 
 // Going to need all modules' headers here
@@ -226,10 +227,18 @@ void KBoundaries::InnerX1(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse)
     // TODO implement as named callback, give combo start/bound problems their own "packages"
     auto pmb = rc->GetBlockPointer();
     std::string prob = pmb->packages.Get("GRMHD")->Param<std::string>("problem");
+    Real x1min = pmb->packages.Get("GRMHD")->Param<Real>("x1min"); //Hyerin
     if (prob == "hubble") {
        //SetHubble(rc.get(), IndexDomain::inner_x1, coarse);
     } else if (prob == "conducting_atmosphere"){
         dirichlet_bc(rc.get(), IndexDomain::inner_x1, coarse);
+    } else if ((prob == "resize_restart_kharma")&& (x1min>1)){
+        // Hyerin (if the inner x1 bound is far from BH, constant bc)
+        SetKharmaRestart(rc.get(), IndexDomain::inner_x1,coarse);
+    } else if ((prob == "bondi") && (x1min>1)){ // Hyerin
+        SetBondi(rc.get(), IndexDomain::inner_x1,coarse);
+    //} else if ((prob == "gizmo_shell") && (x1min>1)){ // Hyerin
+    //    SetGizmoShell(rc.get(), IndexDomain::inner_x1,coarse);
     } else {
         OutflowX1(rc, IndexDomain::inner_x1, coarse);
     }
@@ -250,6 +259,8 @@ void KBoundaries::OuterX1(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse)
         dirichlet_bc(rc.get(), IndexDomain::outer_x1, coarse);
     } else if (prob == "bondi_viscous") {
         SetBondiViscous(rc.get(), IndexDomain::outer_x1, coarse);
+    } else if (prob == "resize_restart_kharma") { // Hyerin, constant boundary condition
+        SetKharmaRestart(rc.get(),IndexDomain::outer_x1, coarse);
     } else {
         OutflowX1(rc, IndexDomain::outer_x1, coarse);
     }

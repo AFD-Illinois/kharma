@@ -147,7 +147,8 @@ int main(int argc, char *argv[])
         std::cout << "Running post-initialization tasks..." << std::endl;
 
     auto prob = pin->GetString("parthenon/job", "problem_id");
-    bool is_restart = (prob == "resize_restart") || pman.IsRestart();
+    //bool is_restart = (prob == "resize_restart") || pman.IsRestart();
+    bool is_restart = (prob == "resize_restart") || (prob == "resize_restart_kharma") || pman.IsRestart(); // Hyerin
     bool is_resize = (prob == "resize_restart") && !pman.IsRestart();
     KHARMA::PostInitialize(pin, pmesh, is_restart, is_resize);
     Flag("Post-initialization completed");

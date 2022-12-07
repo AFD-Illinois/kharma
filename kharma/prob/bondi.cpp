@@ -45,12 +45,16 @@ TaskStatus InitializeBondi(MeshBlockData<Real> *rc, ParameterInput *pin)
 
     const Real mdot = pin->GetOrAddReal("bondi", "mdot", 1.0);
     const Real rs = pin->GetOrAddReal("bondi", "rs", 8.0);
+    // r_shell : the radius of the shell where inside this radius is filled with vacuum. If 0, the simulation is initialized to Bondi everywhere
+    const Real r_shell = pin->GetOrAddReal("bondi", "r_shell", 0.); 
 
     // Add these to package properties, since they continue to be needed on boundaries
     if(! (pmb->packages.Get("GRMHD")->AllParams().hasKey("mdot")))
         pmb->packages.Get("GRMHD")->AddParam<Real>("mdot", mdot);
     if(! (pmb->packages.Get("GRMHD")->AllParams().hasKey("rs")))
         pmb->packages.Get("GRMHD")->AddParam<Real>("rs", rs);
+    if(! (pmb->packages.Get("GRMHD")->AllParams().hasKey("r_shell")))
+        pmb->packages.Get("GRMHD")->AddParam<Real>("r_shell", r_shell);
 
     // Set the whole domain to the analytic solution to begin
     SetBondi(rc);
@@ -72,6 +76,7 @@ TaskStatus SetBondi(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     const Real mdot = pmb->packages.Get("GRMHD")->Param<Real>("mdot");
     const Real rs = pmb->packages.Get("GRMHD")->Param<Real>("rs");
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
+    const Real r_shell = pmb->packages.Get("GRMHD")->Param<Real>("r_shell");
 
     // Just the X1 right boundary
     GRCoordinates G = pmb->coords;
@@ -87,6 +92,9 @@ TaskStatus SetBondi(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     if (domain == IndexDomain::outer_x1) {
         ibs = bounds.GetBoundsI(IndexDomain::interior).e+1;
         ibe = bounds.GetBoundsI(IndexDomain::entire).e;
+    } else if (domain == IndexDomain::inner_x1) {
+        ibs = bounds.GetBoundsI(IndexDomain::entire).s;
+        ibe = bounds.GetBoundsI(IndexDomain::interior).s-1;
     } else {
         ibs = bounds.GetBoundsI(domain).s;
         ibe = bounds.GetBoundsI(domain).e;
@@ -95,7 +103,7 @@ TaskStatus SetBondi(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     IndexRange kb_e = bounds.GetBoundsK(IndexDomain::entire);
     pmb->par_for("bondi_boundary", kb_e.s, kb_e.e, jb_e.s, jb_e.e, ibs, ibe,
         KOKKOS_LAMBDA_3D {
-            get_prim_bondi(G, cs, P, m_p, gam, bl, ks, mdot, rs, k, j, i);
+            get_prim_bondi(G, cs, P, m_p, gam, bl, ks, mdot, rs, r_shell, k, j, i);
             // TODO all flux
             GRMHD::p_to_u(G, P, m_p, gam, k, j, i, U, m_u);
         }

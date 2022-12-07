@@ -48,6 +48,7 @@
 #include "explosion.hpp"
 #include "fm_torus.hpp"
 #include "resize_restart.hpp"
+#include "resize_restart_kharma.hpp"
 #include "kelvin_helmholtz.hpp"
 #include "bz_monopole.hpp"
 #include "mhdmodes.hpp"
@@ -78,6 +79,13 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
 
     // Breakout to call the appropriate initialization function,
     // defined in accompanying headers.
+    
+    
+    // Hyerin
+    // save x1min for boundary conditions in boundaries.cpp
+    const Real x1min = pin->GetReal("parthenon/mesh", "x1min");
+    if(! (pmb->packages.Get("GRMHD")->AllParams().hasKey("x1min")))
+        pmb->packages.Get("GRMHD")->AddParam<Real>("x1min", x1min);
 
     auto prob = pin->GetString("parthenon/job", "problem_id"); // Required parameter
     
@@ -119,6 +127,8 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
         status = InitializeFMTorus(rc.get(), pin);
     } else if (prob == "resize_restart") {
         status = ReadIharmRestart(rc.get(), pin);
+    } else if (prob == "resize_restart_kharma") { // Hyerin
+        status = ReadKharmaRestart(rc.get(), pin);
     }
 
     // If we didn't initialize a problem, yell
@@ -127,7 +137,7 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
     }
 
     // If we're not restarting, do any grooming of the initial conditions
-    if (prob != "resize_restart") {
+    if ((prob != "resize_restart") && (prob != "resize_restart_kharma")) { //Hyerin
         // Perturb the internal energy a bit to encourage accretion
         // Note this defaults to zero & is basically turned on only for torii
         if (pin->GetOrAddReal("perturbation", "u_jitter", 0.0) > 0.0) {
