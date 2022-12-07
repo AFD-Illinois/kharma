@@ -39,10 +39,8 @@
 #include "grmhd_functions.hpp"
 #include "pack.hpp"
 
-namespace Implicit
+std::vector<std::string> Implicit::get_ordered_names(MeshBlockData<Real> *rc, const MetadataFlag& flag, bool only_implicit)
 {
-
-std::vector<std::string> get_ordered_names(MeshBlockData<Real> *rc, const MetadataFlag& flag, bool only_implicit=false) {
     auto pmb0 = rc->GetBlockPointer();
     MetadataFlag isImplicit = pmb0->packages.Get("Implicit")->Param<MetadataFlag>("ImplicitFlag");
     MetadataFlag isExplicit = pmb0->packages.Get("Implicit")->Param<MetadataFlag>("ExplicitFlag");
@@ -64,7 +62,7 @@ std::vector<std::string> get_ordered_names(MeshBlockData<Real> *rc, const Metada
     return out;
 }
 
-std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
+std::shared_ptr<StateDescriptor> Implicit::Initialize(ParameterInput *pin)
 {
     Flag("Initializing Implicit Package");
     auto pkg = std::make_shared<StateDescriptor>("Implicit");
@@ -114,7 +112,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
 #include <batched/dense/KokkosBatched_ApplyQ_Decl.hpp>
 #include <batched/dense/KokkosBatched_Trsv_Decl.hpp>
 
-TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_init, MeshData<Real> *md_flux_src,
+TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_init, MeshData<Real> *md_flux_src,
                 MeshData<Real> *md_solver, const Real& dt)
 {
     Flag(md_full_step_init, "Implicit Iteration start, full step");
@@ -400,7 +398,7 @@ TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_i
 
 #else
 
-TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_init, MeshData<Real> *md_flux_src,
+TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_init, MeshData<Real> *md_flux_src,
                 MeshData<Real> *md_solver, const Real& dt)
 {
     Flag("Dummy implicit solve");
@@ -432,5 +430,3 @@ TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_i
 }
 
 #endif
-
-} // namespace Implicit
