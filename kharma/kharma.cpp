@@ -56,6 +56,7 @@
 #include "boundaries.hpp"
 #include "harm_driver.hpp"
 #include "resize_restart.hpp"
+#include "resize_restart_kharma.hpp"
 
 std::shared_ptr<StateDescriptor> KHARMA::InitializeGlobals(ParameterInput *pin)
 {
@@ -109,6 +110,9 @@ void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
     if (prob == "resize_restart") {
         ReadIharmRestartHeader(pin->GetString("resize_restart", "fname"), pin);
     }
+    if (prob == "resize_restart_kharma") {
+        ReadKharmaRestartHeader(pin->GetString("resize_restart", "fname"), pin);
+    }
 
     // Then handle coordinate systems and boundaries!
     std::string coordinate_base = pin->GetString("coordinates", "base");
@@ -142,6 +146,9 @@ void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
                 GReal Rin = pin->GetReal("coordinates", "r_in");
                 GReal x1min = log_r ? log(Rin) : Rin;
                 pin->GetOrAddReal("parthenon/mesh", "x1min", x1min);
+                if (Rin < 2.5){ // warn to check if there are 5 zones inside the event horizon
+                  std::cout << "Hyerin: Rin = " << Rin << ". Check if there are 5 zones inside the EH." << std::endl;
+                }
             } else {
                 int nx1 = pin->GetInteger("parthenon/mesh", "nx1");
                 Real a = pin->GetReal("coordinates", "a");
