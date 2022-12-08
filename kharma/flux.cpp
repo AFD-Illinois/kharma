@@ -48,12 +48,14 @@ TaskStatus Flux::PtoU(MeshBlockData<Real> *rc, IndexDomain domain)
     auto pmb = rc->GetBlockPointer();
     // Options
     const auto& pars = pmb->packages.Get("GRMHD")->AllParams();
-    const Real gam = pars.Get<Real>("gamma");
-    auto pkgs = pmb->packages.AllPackages();
-    const bool flux_ct = pkgs.count("B_FluxCT");
-    const bool b_cd = pkgs.count("B_CD");
+    const Real gam   = pars.Get<Real>("gamma");
+    auto pkgs        = pmb->packages.AllPackages();
+
+    const bool flux_ct       = pkgs.count("B_FluxCT");
+    const bool b_cd          = pkgs.count("B_CD");
     const bool use_electrons = pkgs.count("Electrons");
-    const bool use_emhd = pkgs.count("EMHD");
+    const bool use_emhd      = pkgs.count("EMHD");
+    
     MetadataFlag isPrimitive = pars.Get<MetadataFlag>("PrimitiveFlag");
 
     EMHD::EMHD_parameters emhd_params_tmp;
@@ -115,5 +117,65 @@ TaskStatus Flux::PtoU(MeshBlockData<Real> *rc, IndexDomain domain)
     );
 
     Flag(rc, "Got conserved variables");
+    return TaskStatus::complete;
+}
+
+TaskStatus Flux::AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
+{
+    Flag(mdudt, "Adding source terms to uu, uvec");
+    // Pointers
+    auto pmesh = md->GetMeshPointer();
+    auto& mbd  = md->GetBlockData(0);
+    auto pmb0  = md->GetBlockData(0)->GetBlockPointer();
+    // Options
+    const Real gam = pmb0->packages.Get("GRMHD")->Param<Real>("gamma");
+    const auto use_emhd = pmb0->packages.AllPackages().count("EMHD");
+
+    // Pack variables
+    const MetadataFlag isPrimitive = pmb0->packages.Get("GRMHD")->Param<MetadataFlag>("PrimitiveFlag");
+    PackIndexMap prims_map, cons_map;
+    auto P    = md->PackVariables(std::vector<MetadataFlag>{isPrimitive}, prims_map);
+    auto dUdt = mdudt->PackVariables(std::vector<MetadataFlag>{Metadata::Conserved}, cons_map);
+    const VarMap m_p(prims_map, false), m_u(cons_map, true);
+
+    // EMHD params
+    EMHD::EMHD_parameters emhd_params_tmp;
+    if (use_emhd) {
+        const auto& emhd_pars = pmb0->packages.Get("EMHD")->AllParams();
+        emhd_params_tmp = emhd_pars.Get<EMHD::EMHD_parameters>("emhd_params");
+    }
+    const EMHD::EMHD_parameters& emhd_params = emhd_params_tmp;
+    
+    // Get sizes
+    IndexDomain domain = IndexDomain::interior;
+    auto ib = md->GetBoundsI(domain);
+    auto jb = md->GetBoundsJ(domain);
+    auto kb = md->GetBoundsK(domain);
+    auto block = IndexRange{0, P.GetDim(5)-1};
+
+    pmb0->par_for("tmunu_source", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+        KOKKOS_LAMBDA_MESH_3D {
+            const auto& G = dUdt.GetCoords(b);
+            FourVectors D;
+            GRMHD::calc_4vecs(G, P(b), m_p, k, j, i, Loci::center, D);
+            // Call Flux::calc_tensor which will in turn call the right calc_tensor based on the number of primitives
+            Real T[GR_DIM]      = {0};
+            Real new_du[GR_DIM] = {0};
+            DLOOP2 {
+                Flux::calc_tensor(G, P(b), m_p, D, emhd_params, gam, k, j, i, mu, T);
+                Real Tmunu  = T[nu];
+
+                // Contract mhd stress tensor with connection, and multiply by metric determinant
+                for (int lam = 0; lam < GR_DIM; ++lam) {
+                    new_du[lam] += Tmunu * G.gdet_conn(j, i, nu, lam, mu);
+                }
+            }
+
+            dUdt(b, m_u.UU, k, j, i)           += new_du[0];
+            VLOOP dUdt(b, m_u.U1 + v, k, j, i) += new_du[1 + v];
+        }
+    );
+
+    Flag(mdudt, "Added");
     return TaskStatus::complete;
 }

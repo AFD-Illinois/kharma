@@ -54,7 +54,6 @@ KOKKOS_INLINE_FUNCTION void calc_tensor(const GRCoordinates& G, const Local& P, 
                                         Real T[GR_DIM])
 {
     if (m_p.Q >= 0) {
-
         // Apply higher-order terms conversion if necessary
         Real q, dP;
         const Real Theta = (gam - 1) * P(m_p.UU) / P(m_p.RHO);
@@ -70,8 +69,31 @@ KOKKOS_INLINE_FUNCTION void calc_tensor(const GRCoordinates& G, const Local& P, 
         // GRHD stress-energy tensor w/ first index up, second index down
         GRHD::calc_tensor(P(m_p.RHO), P(m_p.UU), (gam - 1) * P(m_p.UU), D, dir, T);
     }
+}
 
-    // if (i == 11 && j == 11) printf("mhd: %6.5e %6.5e %6.5e %6.5e %6.5e\n", flux(m_u.RHO), T[0], T[1], T[2], T[3]);
+template<typename Global>
+KOKKOS_INLINE_FUNCTION void calc_tensor(const GRCoordinates& G, const Global& P, const VarMap& m_p, const FourVectors D,
+                                        const EMHD::EMHD_parameters& emhd_params, const Real& gam, 
+                                        const int& k, const int& j, const int& i, const int& dir,
+                                        Real T[GR_DIM])
+{
+    if (m_p.Q >= 0) {
+
+        // Apply higher-order terms conversion if necessary
+        Real q, dP;
+        const Real Theta = (gam - 1) * P(m_p.UU, k, j, i) / P(m_p.RHO, k, j, i);
+        const Real cs2   = gam * (gam - 1) * P(m_p.UU, k, j, i) / (P(m_p.RHO, k, j, i) + gam * P(m_p.UU, k, j, i));
+        EMHD::convert_prims_to_q_dP(P(m_p.Q, k, j, i), P(m_p.DP, k, j, i), P(m_p.RHO, k, j, i), Theta, cs2, emhd_params, q, dP);
+
+        // Then calculate the tensor
+        EMHD::calc_tensor(P(m_p.RHO, k, j, i), P(m_p.UU, k, j, i), (gam - 1) * P(m_p.UU, k, j, i), emhd_params, q, dP, D, dir, T);
+    } else if (m_p.B1 >= 0) {
+        // GRMHD stress-energy tensor w/ first index up, second index down
+        GRMHD::calc_tensor(P(m_p.RHO, k, j, i), P(m_p.UU, k, j, i), (gam - 1) * P(m_p.UU, k, j, i), D, dir, T);
+    } else {
+        // GRHD stress-energy tensor w/ first index up, second index down
+        GRHD::calc_tensor(P(m_p.RHO, k, j, i), P(m_p.UU, k, j, i), (gam - 1) * P(m_p.UU, k, j, i), D, dir, T);
+    }
 }
 
 template<typename Local>
@@ -295,6 +317,10 @@ KOKKOS_INLINE_FUNCTION void vchar(const GRCoordinates& G, const Local& P, const 
     const Real cs2 = gam * (gam - 1) * P(m.UU) / ef;
     Real cms2;
     if (m.Q > 0) {
+         // Get the EGRMHD parameters
+        Real tau, chi_e, nu_e;
+        EMHD::set_parameters(G, P, m, emhd_params, gam, k, j, i, tau, chi_e, nu_e);        
+        
         // Find fast magnetosonic speed
         const Real bsq = m::max(dot(D.bcon, D.bcov), SMALL);
         const Real ee  = bsq + ef;

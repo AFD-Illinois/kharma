@@ -207,7 +207,8 @@ KOKKOS_INLINE_FUNCTION int apply_ceilings(const GRCoordinates& G, const Variable
  * LOCKSTEP: this function respects P and ignores U in order to return consistent P<->U
  */
 KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, const VariablePack<Real>& P, const VarMap& m_p,
-                                        const Real& gam, const int& k, const int& j, const int& i, const Floors::Prescription& floors,
+                                        const Real& gam, const EMHD::EMHD_parameters& emhd_params,
+                                        const int& k, const int& j, const int& i, const Floors::Prescription& floors,
                                         const VariablePack<Real>& U, const VarMap& m_u, const Loci loc=Loci::center)
 {
     int fflag = 0;
@@ -314,7 +315,7 @@ KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, const VariablePa
             Bcon[2] = P(m_p.B2, k, j, i);
             Bcon[3] = P(m_p.B3, k, j, i);
             DLOOP2 Bcov[mu] += G.gcov(Loci::center, j, i, mu, nu) * Bcon[nu];
-            const Real Bsq   = dot(Bcon, Bcov);
+            const Real Bsq   = m::max(dot(Bcon, Bcov), SMALL);
 
             // Normal observer fluid momentum
             Real Qcov[GR_DIM] = {0};
@@ -361,6 +362,9 @@ KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, const VariablePa
             P(m_p.U1, k, j, i) = Dtmp.ucon[1] + (beta[1] * gamma/lapse);
             P(m_p.U2, k, j, i) = Dtmp.ucon[2] + (beta[2] * gamma/lapse);
             P(m_p.U3, k, j, i) = Dtmp.ucon[3] + (beta[3] * gamma/lapse);
+
+            // Update the conserved variables
+            Flux::p_to_u(G, P, m_p, emhd_params, gam, k, j, i, U, m_u);
 
         } else {
             // Add the material in the normal observer frame, by:

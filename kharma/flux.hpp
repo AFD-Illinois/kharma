@@ -68,7 +68,12 @@ TaskStatus ApplyFluxes(MeshData<Real> *md, MeshData<Real> *mdudt);
  * declaring UtoP vs FillDerived in GRMHD package.
  */
 TaskStatus PtoU(MeshBlockData<Real> *rc, IndexDomain domain=IndexDomain::interior);
-inline TaskStatus PtoUTask(MeshBlockData<Real> *rc) { return PtoU(rc); }
+inline TaskStatus PtoUTask(MeshBlockData<Real> *rc, IndexDomain domain=IndexDomain::entire) { return PtoU(rc, domain); }
+
+/**
+ * Function to compute and apply the source terms to internal energy and velocity conserved vars over the entire grid.
+ */
+TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt);
 
 // Fluxes a.k.a. "Approximate Riemann Solvers"
 // More complex solvers require speed estimates not calculable completely from

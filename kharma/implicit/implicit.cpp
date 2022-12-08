@@ -118,11 +118,9 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     // Metadata m_int = Metadata({Metadata::Integer, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
     pkg->AddField("solve_fail", m_real); // TODO: Replace with m_int once Integer is supported for CellVariabl
 
-    bool print_residual = pin->GetOrAddBoolean("implicit", "print_residual", false);
-    params.Add("print_residual", print_residual);
     // TODO: Find a way to save residuals based on a runtime parameter. We don't want to unnecessarily allocate 
-    // a vector field equal to the number of implicit variables over the entire meshblock if we don't have to. For now,
-    // we just print the value of the residual if the norm exceeds the max_norm.s
+    // a vector field equal to the number of implicit variables over the entire meshblock if we don't have to.
+    
     // Should the solve save the residual vector field? Useful for debugging purposes. Default is NO.
     // bool save_residual = pin->GetOrAddBoolean("implicit", "save_residual", false);
     // params.Add("save_residual", save_residual);
@@ -196,7 +194,6 @@ TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_i
     const Real linesearch_eps     = implicit_par.Get<Real>("linesearch_eps");
     const Real linesearch_lambda  = implicit_par.Get<Real>("linesearch_lambda");
 
-    const bool print_residual = implicit_par.Get<bool>("print_residual");
     // const bool save_residual = implicit_par.Get<bool>("save_residual");
 
     // Misc other constants for inside the kernel
@@ -415,7 +412,7 @@ TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_i
                         // Solve against the negative residual
                         FLOOP delta_prim(ip) = -residual(ip);
 
-                        // if (am_rank0 && b == 0 && i == 11 && j == 11 && k == kb.s) {
+                        // if (am_rank0 && b == 0 && i == 10 && j == 10 && k == kb.s) {
                         //     printf("Variable ordering: rho %d uu %d u1 %d B1 %d q %d dP %d\n",
                         //             m_p.RHO, m_p.UU, m_p.U1, m_p.B1, m_p.Q, m_p.DP);
                         //     printf("Variable ordering: rho %d uu %d u1 %d B1 %d q %d dP %d\n",
@@ -426,9 +423,9 @@ TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_i
                         //     printf("Ps: "); PLOOP printf("%6.5e ", P_sub_step_init(ip)); printf("\n");
                         //     printf("Us: "); PLOOP printf("%6.5e ", U_sub_step_init(ip)); printf("\n");
                         //     printf("dUdt: "); PLOOP printf("%6.5e ", dU_implicit(ip)); printf("\n");
-                        //     printf("Initial Jacobian:\n"); for (int jp=0; jp<nvar; ++jp) {PLOOP printf("%6.5e\t", jacobian(jp,ip)); printf("\n");}
-                        //     printf("Initial residual: "); PLOOP printf("%6.5e ", residual(ip)); printf("\n");
-                        //     printf("Initial delta_prim: "); PLOOP printf("%6.5e ", delta_prim(ip)); printf("\n");
+                        //     printf("Initial Jacobian:\n"); for (int jp=0; jp<nfvar; ++jp) {FLOOP printf("%6.5e\t", jacobian(jp,ip)); printf("\n");}
+                        //     printf("Initial residual: "); FLOOP printf("%6.5e ", residual(ip)); printf("\n");
+                        //     printf("Initial delta_prim: "); FLOOP printf("%6.5e ", delta_prim(ip)); printf("\n");
                         // }
 
                         if (use_qr) {
@@ -510,13 +507,6 @@ TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_i
                         solve_norm()        = 0;
                         FLOOP solve_norm() += residual(ip) * residual(ip);
                         solve_norm()        = m::sqrt(solve_norm()); // TODO faster to scratch cache & copy?
-
-                        if (print_residual) {
-                            if (solve_norm_s(i) > rootfind_tol) {
-                                FLOOP std::cout<<residual(ip)<<" ";
-                                std::cout<<std::endl;
-                            }
-                        }
                     }
                 );
                 member.team_barrier();

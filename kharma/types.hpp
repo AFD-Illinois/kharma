@@ -224,12 +224,26 @@ inline void PrintZone(MeshBlockData<Real> *rc)
     auto Bp = rc->Get("prims.B").data.GetHostMirrorAndCopy();
     auto q = rc->Get("prims.q").data.GetHostMirrorAndCopy();
     auto dP = rc->Get("prims.dP").data.GetHostMirrorAndCopy();
-    std::cerr << "RHO: " << rhop(0,0,100)
-         << " UU: "  << up(0,0,100)
-         << " U: "   << uvecp(0, 0,0,100) << " " << uvecp(1, 0,0,100)<< " " << uvecp(2, 0,0,100)
-         << " B: "   << Bp(0, 0,0,100) << " " << Bp(1, 0,0,100) << " " << Bp(2, 0,0,100)
-         << " q: "   << q(0,0,100) 
-         << " dP: "  << dP(0,0,100) << std::endl;
+
+    auto rhoU = rc->Get("cons.rho").data.GetHostMirrorAndCopy();
+    auto uU = rc->Get("cons.u").data.GetHostMirrorAndCopy();
+    auto uvecU = rc->Get("cons.uvec").data.GetHostMirrorAndCopy();
+    auto BU = rc->Get("cons.B").data.GetHostMirrorAndCopy();
+    auto qU = rc->Get("cons.q").data.GetHostMirrorAndCopy();
+    auto dPU = rc->Get("cons.dP").data.GetHostMirrorAndCopy();
+
+    std::cerr << "RHO: " << rhop(0,108,63)
+         << " UU: "  << up(0,108,63)
+         << " U: "   << uvecp(0,0,108,63) << " " << uvecp(1,0,108,63)<< " " << uvecp(2,0,108,63)
+         << " B: "   << Bp(0,0,108,63) << " " << Bp(1,0,108,63) << " " << Bp(2,0,108,63)
+         << " q: "   << q(0,108,63) 
+         << " dP: "  << dP(0,108,63) << std::endl;
+    std::cerr << "RHO: " << rhoU(0,108,63)
+         << " UU: "  << uU(0,108,63)
+         << " U: "   << uvecU(0,0,108,63) << " " << uvecU(1,0,108,63)<< " " << uvecU(2,0,108,63)
+         << " B: "   << BU(0,0,108,63) << " " << BU(1,0,108,63) << " " << BU(2,0,108,63)
+         << " q: "   << qU(0,108,63) 
+         << " dP: "  << dPU(0,108,63) << std::endl;
 }
 
 inline void Flag(std::string label)

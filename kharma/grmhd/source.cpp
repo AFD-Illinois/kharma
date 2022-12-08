@@ -43,13 +43,13 @@ TaskStatus GRMHD::AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
     Flag(mdudt, "Adding GRMHD source");
     // Pointers
     auto pmesh = md->GetMeshPointer();
-    auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
+    auto pmb0  = md->GetBlockData(0)->GetBlockPointer();
     // Options
     const Real gam = pmb0->packages.Get("GRMHD")->Param<Real>("gamma");
 
     // Pack variables
     PackIndexMap prims_map, cons_map;
-    auto P = GRMHD::PackMHDPrims(md, prims_map);
+    auto P    = GRMHD::PackMHDPrims(md, prims_map);
     auto dUdt = GRMHD::PackMHDCons(mdudt, cons_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
     // Get sizes

@@ -123,6 +123,7 @@ TaskStatus CheckNaN(MeshData<Real> *md, int dir, IndexDomain domain)
         KOKKOS_LAMBDA_MESH_3D_REDUCE_INT {
             if (m::isnan(ctop(b, dir-1, k, j, i))) {
                 ++local_result;
+                fprintf(stderr, "ctop NaN at %d %d %d along dir %d\n", i, j, k, dir); // EDIT
             }
         }
     , nan_reducer);

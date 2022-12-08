@@ -147,7 +147,6 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     pkg->AddField("fflag", m);
 
     // Similar to fflag - will register zones where limits on q and dP are hit
-    // Enabled only if 
     pkg->AddField("eflag", m);
     // bool do_emhd = pin->GetOrAddBoolean("emhd", "on", false);
     // if (do_emhd && enable_emhd_limits) {
@@ -193,12 +192,12 @@ TaskStatus ApplyFloors(MeshBlockData<Real> *mbd, IndexDomain domain)
     GridScalar eflag = mbd->Get("eflag").data;
 
     const bool enable_emhd_limits = mbd->GetBlockPointer()->packages.Get("Floors")->Param<bool>("enable_emhd_limits");
-    EMHD::EMHD_parameters emhd_params;
+    EMHD::EMHD_parameters emhd_params_tmp;
     if (enable_emhd_limits) {
         const auto& pars = pmb->packages.Get("EMHD")->AllParams();
-        emhd_params      = pars.Get<EMHD::EMHD_parameters>("emhd_params");
-        
+        emhd_params_tmp  = pars.Get<EMHD::EMHD_parameters>("emhd_params");
     }
+    const EMHD::EMHD_parameters& emhd_params = emhd_params_tmp;
 
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
     const Floors::Prescription floors(pmb->packages.Get("Floors")->AllParams());
@@ -214,7 +213,7 @@ TaskStatus ApplyFloors(MeshBlockData<Real> *mbd, IndexDomain domain)
         KOKKOS_LAMBDA_3D {
             if (((int) pflag(k, j, i)) >= InversionStatus::success) {
                 // apply_floors can involve another U_to_P call.  Hide the pflag in bottom 5 bits and retrieve both
-                int comboflag = apply_floors(G, P, m_p, gam, k, j, i, floors, U, m_u);
+                int comboflag = apply_floors(G, P, m_p, gam, emhd_params, k, j, i, floors, U, m_u);
                 fflag(k, j, i) = (comboflag / HIT_FLOOR_GEOM_RHO) * HIT_FLOOR_GEOM_RHO;
 
                 // Record the pflag as well.  KHARMA did not traditionally do this,

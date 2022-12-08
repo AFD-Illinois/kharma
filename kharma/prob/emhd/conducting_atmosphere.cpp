@@ -208,7 +208,7 @@ TaskStatus InitializeAtmosphere(MeshBlockData<Real> *rc, ParameterInput *pin)
                 if (use_emhd)
                     dP_host(k, j, i)   = 0.;
 
-                // Note that the  velocity primitives defined up there isn't quite right.
+                // Note that the velocity primitives defined up there aren't quite right.
                 // For a fluid at rest wrt. the normal observer, ucon = {-1/g_tt,0,0,0}. 
                 // We need to use this info to obtain the correct values for U1, U2 and U3
 
@@ -238,25 +238,22 @@ TaskStatus InitializeAtmosphere(MeshBlockData<Real> *rc, ParameterInput *pin)
                 uvec_host(V2, k, j, i) = ucon[2] + beta[2]*gamma/alpha;
                 uvec_host(V3, k, j, i) = ucon[3] + beta[3]*gamma/alpha;
 
-                if (use_emhd)
-                    if (higher_order_terms){
+                if (use_emhd) {
+                    // Update q_host (and dP_host, which is zero in this problem). These are now q_tilde and dP_tilde
+                    Real q_tilde  = q_host(k, j, i);
+                    Real dP_tilde = dP_host(k, j, i);
 
-                        const Real Theta = (gam - 1.) * u_temp / rho_temp;
-
-                        // Set EMHD parameters
+                    if (emhd_params.higher_order_terms) {
                         Real tau, chi_e, nu_e;
                         EMHD::set_parameters(G, rho_temp, u_temp, emhd_params, gam, k, j, i, tau, chi_e, nu_e);
+                        const Real Theta = (gam - 1.) * u_temp / rho_temp;
 
-                        // Update q_host (and dP_host, which is zero in this problem). These are now q_tilde and dP_tilde
-                        Real q_tilde  = q_host(k, j, i);
-                        Real dP_tilde = dP_host(k, j, i);
-                        if (emhd_params.higher_order_terms) {
-                            q_tilde  *= (chi_e != 0) ? sqrt(tau / (chi_e * rho_temp * pow(Theta, 2.))) : 0.;
-                            dP_tilde *= (nu_e  != 0) ? sqrt(tau / (nu_e * rho_temp * Theta)) : 0.;
-                        }
-                        q_host(k, j, i)   = q_tilde;
-                        dP_host(k, j, i)  = dP_tilde;
+                        q_tilde    *= (chi_e != 0) ? sqrt(tau / (chi_e * rho_temp * pow(Theta, 2.))) : 0.;
+                        dP_tilde   *= (nu_e  != 0) ? sqrt(tau / (nu_e * rho_temp * Theta)) : 0.;
                     }
+                    q_host(k, j, i)   = q_tilde;
+                    dP_host(k, j, i)  = dP_tilde;
+                }
             }
         }
 

@@ -281,8 +281,8 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     // a particular package -- that is, some portion of the things that the package needs done
     // at each step, which must be done at specific times.
     // See the header files defining each of these functions for their purpose and call context.
-    pkg->CheckRefinementBlock = GRMHD::CheckRefinement;
-    pkg->EstimateTimestepBlock = GRMHD::EstimateTimestep;
+    pkg->CheckRefinementBlock    = GRMHD::CheckRefinement;
+    pkg->EstimateTimestepBlock   = GRMHD::EstimateTimestep;
     pkg->PostStepDiagnosticsMesh = GRMHD::PostStepDiagnostics;
 
     return pkg;
@@ -507,7 +507,7 @@ AmrTag CheckRefinement(MeshBlockData<Real> *rc)
     , Kokkos::MinMax<Real>(minmax));
 
     auto pkg = pmb->packages.Get("GRMHD");
-    const auto &refine_tol = pkg->Param<Real>("refine_tol");
+    const auto &refine_tol   = pkg->Param<Real>("refine_tol");
     const auto &derefine_tol = pkg->Param<Real>("derefine_tol");
 
     if (minmax.max_val - minmax.min_val > refine_tol) return AmrTag::refine;

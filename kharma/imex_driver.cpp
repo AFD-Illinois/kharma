@@ -192,11 +192,11 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         // ADD EXPLICIT SOURCES TO CONSERVED VARIABLES
         // Source term for GRMHD, \Gamma * T
         // TODO take this out in Minkowski space
-        auto t_grmhd_source = tl.AddTask(t_flux_div, GRMHD::AddSource, md_sub_step_init.get(), md_flux_src.get());
+        auto t_tmunu_source = tl.AddTask(t_flux_div, Flux::AddSource, md_sub_step_init.get(), md_flux_src.get());
         // Source term for constraint-damping.  Applied only to B
-        auto t_b_cd_source = t_grmhd_source;
+        auto t_b_cd_source = t_tmunu_source;
         if (use_b_cd) {
-            t_b_cd_source = tl.AddTask(t_grmhd_source, B_CD::AddSource, md_sub_step_init.get(), md_flux_src.get());
+            t_b_cd_source = tl.AddTask(t_tmunu_source, B_CD::AddSource, md_sub_step_init.get(), md_flux_src.get());
         }
         // Wind source.  Applied to conserved variables similar to GR source term
         auto t_wind_source = t_b_cd_source;
@@ -314,10 +314,10 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
     TaskRegion &sync_region = tc.AddRegion(num_partitions);
     for (int i = 0; i < num_partitions; i++) {
         auto &tl = sync_region[i];
-        auto &mc1 = pmesh->mesh_data.GetOrAdd(stage_name[stage], i);
+        auto &mbd_sub_step_final = pmesh->mesh_data.GetOrAdd(stage_name[stage], i);
         // MPI/MeshBlock boundary exchange.
         // Note that in this driver, this block syncs *primitive* variables, not conserved
-        KBoundaries::AddBoundarySync(t_none, tl, mc1);
+        KBoundaries::AddBoundarySync(t_none, tl, mbd_sub_step_final);
     }
 
     // Async Region: Any post-sync tasks.  Fixups, timestep & AMR things.
@@ -328,16 +328,16 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         auto &mbd_sub_step_init  = pmb->meshblock_data.Get(stage_name[stage-1]);
         auto &mbd_sub_step_final = pmb->meshblock_data.Get(stage_name[stage]);
 
-        auto t_set_bc = tl.AddTask(t_none, parthenon::ApplyBoundaryConditions, mbd_sub_step_final);
-
         // If we're evolving even the GRMHD variables explicitly, we need to fix UtoP variable inversion failures
         // Syncing bounds before calling this, and then running it over the whole domain, will make
         // behavior for different mesh breakdowns much more similar (identical?), since bad zones in
         // relevant ghost zone ranks will get to use all the same neighbors as if they were in the bulk
-        auto t_fix_derived = t_set_bc;
+        auto t_fix_derived = t_none;
         if (!pkgs.at("GRMHD")->Param<bool>("implicit")) {
-            t_fix_derived = tl.AddTask(t_set_bc, GRMHD::FixUtoP, mbd_sub_step_final.get());
+            t_fix_derived = tl.AddTask(t_fix_derived, GRMHD::FixUtoP, mbd_sub_step_final.get());
         }
+
+        auto t_set_bc = tl.AddTask(t_fix_derived, parthenon::ApplyBoundaryConditions, mbd_sub_step_final);
 
         // Electron heating goes where it does in HARMDriver, for the same reasons
         auto t_heat_electrons = t_fix_derived;
@@ -347,7 +347,7 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         }
 
         // Make sure conserved vars are synchronized at step end
-        auto t_ptou = tl.AddTask(t_heat_electrons, Flux::PtoUTask, mbd_sub_step_final.get());
+        auto t_ptou = tl.AddTask(t_heat_electrons, Flux::PtoUTask, mbd_sub_step_final.get(), IndexDomain::entire);
 
         auto t_step_done = t_ptou;
 

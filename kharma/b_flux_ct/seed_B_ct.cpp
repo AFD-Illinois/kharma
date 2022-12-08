@@ -85,10 +85,10 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
         if (!is_torus)
             throw std::invalid_argument("Magnetic field seed "+b_field_type+" supports only torus problems!");
         // Torus parameters
-        rin = pin->GetReal("torus", "rin");
-        rmax = pin->GetReal("torus", "rmax");
+        rin   = pin->GetReal("torus", "rin");
+        rmax  = pin->GetReal("torus", "rmax");
         kappa = pin->GetReal("torus", "kappa");
-        tilt = pin->GetReal("torus", "tilt") / 180. * M_PI;
+        tilt  = pin->GetReal("torus", "tilt") / 180. * M_PI;
         // Other things we need only for torus evaluation
         gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
         rho_norm = pmb->packages.Get("GRMHD")->Param<Real>("rho_norm");

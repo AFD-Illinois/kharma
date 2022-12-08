@@ -94,6 +94,7 @@ if __name__=='__main__':
 		tracker+=1
 
 	ax.loglog([RES[0], RES[-1]], 0.1*np.asarray([float(RES[0]), float(RES[-1])])**(-2), color='k', linestyle='dashed', label='$N^{-2}$')
+	# ax.loglog([RES[0], RES[-1]], 0.001*np.asarray([float(RES[0]), float(RES[-1])])**(-2), color='k', linestyle='dashed', label='$N^{-2}$')
 	plt.xscale('log', base=2)
 	ax.set_xlabel('Resolution')
 	ax.set_ylabel('L1 norm')

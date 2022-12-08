@@ -1,6 +1,7 @@
-# Extended SANE model mirroring the simulation library
+# SANE model mirroring the simulation library
 # Quite small to run for more than 10kM, 6M/12M F-M torus,
 # Overall simulation size 1000M
+# Uses the IMEX solver
 
 <parthenon/job>
 problem_id = torus
@@ -57,16 +58,6 @@ type            = sane
 beta_min        = 100.
 initial_cleanup = true
 
-# This block must be present and values filled in all EGRMHD simulations
-<emhd>
-on                 = true
-higher_order_terms = true
-feedback           = true
-
-closure_type     = torus
-conduction_alpha = 1.0
-viscosity_alpha  = 1.0
-
 <torus>
 rin  = 6.0
 rmax = 12.0
@@ -80,7 +71,6 @@ rho_min_geom       = 1e-6
 u_min_geom         = 1e-8
 bsq_over_rho_max   = 100
 u_over_rho_max     = 2
-enable_emhd_limits = true
 
 <debug>
 archive_parameters = true
@@ -97,7 +87,7 @@ Tp = 10
 file_type = hdf5
 dt = 5.0
 single_precision_output = true
-variables = prims.rho, prims.u, prims.uvec, prims.B, q, dP, jcon, fflag, pflag, solve_norm, solve_fail, eflag
+variables = prims.rho, prims.u, prims.uvec, prims.B, jcon, fflag, pflag, solve_norm, solve_fail
 
 <parthenon/output1>
 file_type = rst

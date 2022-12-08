@@ -176,7 +176,7 @@ KOKKOS_INLINE_FUNCTION void calc_4vecs(const GRCoordinates& G, const Real uvec[N
 
     // This fn is guaranteed to have B values
     D.bcon[0] = 0;
-    VLOOP D.bcon[0] += B_P[v] * D.ucov[v+1];
+    VLOOP D.bcon[0]  += B_P[v] * D.ucov[v+1];
     VLOOP D.bcon[v+1] = (B_P[v] + D.bcon[0] * D.ucon[v+1]) / D.ucon[0];
 
     G.lower(D.bcon, D.bcov, k, j, i, loc);

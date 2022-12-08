@@ -334,8 +334,13 @@ KOKKOS_INLINE_FUNCTION void convert_prims_to_q_dP(const Real& q_tilde, const Rea
     dP = dP_tilde;
 
     if (emhd_params.higher_order_terms) {
-        q  *= m::sqrt(rho * emhd_params.conduction_alpha * cs2 * m::pow(Theta, 2));
-        dP *= m::sqrt(rho * emhd_params.viscosity_alpha * cs2 * Theta);
+        if (emhd_params.type == ClosureType::kappa_eta) {
+            q  *= m::sqrt(emhd_params.kappa * m::pow(Theta, 2) / emhd_params.tau);
+            dP *= m::sqrt(emhd_params.eta * Theta / emhd_params.tau);
+        } else {
+            q  *= m::sqrt(rho * emhd_params.conduction_alpha * cs2 * m::pow(Theta, 2));
+            dP *= m::sqrt(rho * emhd_params.viscosity_alpha * cs2 * Theta);
+        }
     }
 }
 

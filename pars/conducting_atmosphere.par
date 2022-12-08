@@ -26,25 +26,35 @@ base      = ks
 transform = mks
 a         = 0.0
 hslope    = 1.0
-r_in      = 100.
+r_in      = 200.
 r_out     = 300.
 
 <bounds>
 check_inflow_inner = false
 check_inflow_outer = false
 
-
 <parthenon/time>
 tlim       = 150.
 
+<driver>
+type = imex
+
+<implicit>
+max_nonlinear_iter  = 3
+rootfind_tol        = 1.e-20
+jacobian_delta      = 4.e-8
+linesearch          = true
+max_linesearch_iter = 3
+linesearch_eps      = 1.e-4
+
 <GRMHD>
-cfl            = 0.5
+implicit       = true
+cfl            = 0.9
 gamma          = 1.333333
 reconstruction = weno5
-implicit       = true
 
 <b_field>
-implicit        = true
+implicit        = false
 initial_cleanup = false
 
 
@@ -52,34 +62,26 @@ initial_cleanup = false
 <emhd>
 on                 = true
 higher_order_terms = true
+feedback           = true
 
 closure_type       = kappa_eta
 tau                = 10.
 kappa              = 0.1
 eta                = 0.0
 
-<driver>
-type = imex
-
-<implicit>
-max_nonlinear_iter = 3
-rootfind_tol       = 1.e-20
-jacobian_delta     = 4.e-8
-
 <conducting_atmosphere>
 input = ODE
 
 <floors>
-disable_floors = false
+disable_floors = true
+emhd_limits    = false
 
 <debug>
-verbose      = 1
-flag_verbose = 2
-extra_checks = 1
+verbose = 1
 
 <parthenon/output0>
 file_type               = hdf5
-dt                      = 20
+dt                      = 10
 single_precision_output = false
 variables               = prims.rho, prims.u, prims.uvec, prims.B, prims.q, prims.dP
 
