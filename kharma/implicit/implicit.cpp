@@ -370,7 +370,7 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
                 }
             }
         );
-        
+
         // If we need to print or exit on the max norm...
         if (iter >= iter_min || verbose >= 1) {
             // Take the maximum L2 norm on this rank
@@ -420,7 +420,7 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
     const int nfvar = P_full_step_init_implicit.GetDim(4);
 
     // RETURN if there aren't any implicit variables to evolve
-    std::cerr << "Solve size " << nfvar << " on prim size " << nvar << std::endl;
+    //std::cerr << "Solve size " << nfvar << " on prim size " << nvar << std::endl;
     if (nfvar == 0) {
         return TaskStatus::complete;
     } else {
