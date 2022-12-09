@@ -41,10 +41,12 @@
 #include "flux.hpp"
 #include "gr_coordinates.hpp"
 #include "grmhd.hpp"
+#include "grmhd_functions.hpp"
 #include "types.hpp"
 
 // Problem initialization headers
 #include "bondi.hpp"
+#include "driven_turbulence.hpp"
 #include "explosion.hpp"
 #include "fm_torus.hpp"
 #include "resize_restart.hpp"
@@ -53,21 +55,16 @@
 #include "mhdmodes.hpp"
 #include "orszag_tang.hpp"
 #include "shock_tube.hpp"
+#include "hubble.hpp"
 #include "noh.hpp"
-
+#include "rest_conserve.hpp"
+// EMHD problem headers
 #include "emhd/anisotropic_conduction.hpp"
 #include "emhd/emhdmodes.hpp"
 #include "emhd/emhdshock.hpp"
 #include "emhd/conducting_atmosphere.hpp"
 #include "emhd/bondi_viscous.hpp"
-
-#include "b_field_tools.hpp"
-
-// Package headers
-#include "grmhd_functions.hpp"
-
-#include "bvals/boundary_conditions.hpp"
-#include "mesh/mesh.hpp"
+// TODO electron problem headers?
 
 using namespace parthenon;
 
@@ -103,6 +100,12 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
     // Electrons
     } else if (prob == "noh") {
         status = InitializeNoh(rc.get(), pin);
+    } else if (prob == "hubble") {
+        status = InitializeHubble(rc.get(), pin);
+    } else if (prob == "driven_turbulence") {
+        status = InitializeDrivenTurbulence(rc.get(), pin);
+    } else if (prob == "rest_conserve") {
+        status = InitializeRest(rc.get(), pin);
     // Extended GRMHD
     } else if (prob == "emhdmodes") {
         status = InitializeEMHDModes(rc.get(), pin);

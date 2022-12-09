@@ -20,7 +20,7 @@ nx3 = 1
 
 <coordinates>
 base = spherical_ks
-transform = fmks
+transform = mks
 r_out = 50
 a = 0.9375
 hslope = 0.3
@@ -30,7 +30,6 @@ poly_alpha = 14.0
 
 <parthenon/time>
 tlim = 3000.0
-nlim = -1
 
 <debug>
 verbose = 1
@@ -60,9 +59,15 @@ ktot_max = 1500
 u_over_rho_max = 100
 bsq_over_rho_max = 100
 
+<units>
+MBH = 3.9e6, 4.3e6, 6.5e9
+M_unit_1 = 1e17, 1e18, 1e19
+M_unit_2 = 1e17, 1e18, 1e19
+M_unit_3 = 1e20, 1e21, 1e22
+
 <electrons>
-on = false
-howes = true
+on = true
+howes = false
 kawazura = true
 werner = true
 rowan = true

@@ -1,19 +1,18 @@
-# 1D (Noh) shock test (see Ressler+ 2015)
-# Defaults to non-relativistic electrons for
-# convergence tests.
-# Set gamma_e = 1.333333 for relativistic
+# 1D Noh shock test for electrons
+# Should reproduce electron energies behind the shock
+# as in Ressler+ 2015 eqn. 41
 
 <parthenon/job>
-problem_id = noh
+problem_id = shock
 
 <parthenon/mesh>
 refinement = none
 numlevel = 1
 
-nx1 = 2000
+nx1 = 400
 x1min = 0.0
 x1max = 1.0
-ix1_bc = reflecting
+ix1_bc = outflow
 ox1_bc = outflow
 
 nx2 = 1
@@ -25,7 +24,7 @@ x3min = 0.0
 x3max = 1.0
 
 <parthenon/meshblock>
-nx1 = 2000
+nx1 = 400
 nx2 = 1
 nx3 = 1
 
@@ -34,7 +33,7 @@ base = cartesian_minkowski
 transform = null
 
 <parthenon/time>
-tlim = 20.0
+tlim = 1.0
 integrator = rk2
 dt_min = 0.0001
 
@@ -49,35 +48,29 @@ solver = none
 <electrons>
 on = true
 constant = true
-gamma_e = 1.333333
-fel_0 = 0.
+gamma_e = 1.666667
+fel_0 = 0.0
 fel_constant = 0.5
-diss_sign = false
-kel_min = false
 
-<noh>
-mach = 49.
-rho = 1.
-v0 = 1.e-3
-zero_ug = false
-set_tlim = true
-centered = false
+<shock>
+rhoL = 1.
+PL = 0.01
+u1L = 0.5
+
+rhoR = 1.
+PR = 0.01
+u1R = -0.5
 
 <floors>
 disable_floors = true
 
-<driver>
-type = imex
-
-<debug>
-verbose = 0
-
 <parthenon/output0>
 file_type = hdf5
 dt = 0.1
-single_precision_output = false
+single_precision_output = true
 variables = prims.rho, prims.u, prims.uvec, prims.Ktot, prims.Kel_Constant
 
 <parthenon/output1>
 file_type = hst
 dt = 0.1
+

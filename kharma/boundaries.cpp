@@ -47,7 +47,8 @@
 #include "bondi.hpp"
 #include "emhd/conducting_atmosphere.hpp"
 #include "emhd/bondi_viscous.hpp"
-//#include "hubble.hpp"
+#include "hubble.hpp"
+#include "rest_conserve.hpp"
 
 // Going to need all modules' headers here
 #include "b_flux_ct.hpp"
@@ -227,9 +228,11 @@ void KBoundaries::InnerX1(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse)
     auto pmb = rc->GetBlockPointer();
     std::string prob = pmb->packages.Get("GRMHD")->Param<std::string>("problem");
     if (prob == "hubble") {
-       //SetHubble(rc.get(), IndexDomain::inner_x1, coarse);
+       SetHubble(rc.get(), IndexDomain::inner_x1, coarse);
     } else if (prob == "conducting_atmosphere"){
         dirichlet_bc(rc.get(), IndexDomain::inner_x1, coarse);
+    } else if (prob == "rest_conserve") {
+       SetRest(rc.get(), IndexDomain::inner_x1, coarse);
     } else {
         OutflowX1(rc, IndexDomain::inner_x1, coarse);
     }
@@ -243,7 +246,9 @@ void KBoundaries::OuterX1(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse)
     auto pmb = rc->GetBlockPointer();
     std::string prob = pmb->packages.Get("GRMHD")->Param<std::string>("problem");
     if (prob == "hubble") {
-       //SetHubble(rc.get(), IndexDomain::outer_x1, coarse);
+       SetHubble(rc.get(), IndexDomain::outer_x1, coarse);
+    } else if (prob == "rest_conserve") {
+       SetRest(rc.get(), IndexDomain::inner_x1, coarse);
     } else if (prob == "bondi") {
         SetBondi(rc.get(), IndexDomain::outer_x1, coarse);
     } else if (prob == "conducting_atmosphere"){
@@ -279,9 +284,12 @@ void KBoundaries::OuterX2(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse)
  */
 TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
 {
+    auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
+    if (pmb0->packages.Get("GRMHD")->Param<string>("problem") == "hubble") {
+        return TaskStatus::complete; 
+    }
     Flag("Fixing fluxes");
     auto pmesh = md->GetMeshPointer();
-    auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
 
     bool check_inflow_inner = pmb0->packages.Get("GRMHD")->Param<bool>("check_inflow_inner");
     bool check_inflow_outer = pmb0->packages.Get("GRMHD")->Param<bool>("check_inflow_outer");

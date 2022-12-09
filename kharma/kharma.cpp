@@ -343,6 +343,8 @@ void KHARMA::PreStepMeshUserWorkInLoop(Mesh *pmesh, ParameterInput *pin, const S
     if (!pmesh->packages.Get("Globals")->Param<bool>("in_loop")) {
         pmesh->packages.Get("Globals")->UpdateParam<bool>("in_loop", true);
     }
+    pmesh->packages.Get("Globals")->UpdateParam<double>("dt_last", tm.dt);
+    pmesh->packages.Get("Globals")->UpdateParam<double>("time", tm.time);
 }
 
 void KHARMA::PostStepMeshUserWorkInLoop(Mesh *pmesh, ParameterInput *pin, const SimTime &tm)

@@ -12,6 +12,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX17_STANDARD_COMPILE_OPTION "-std=c++17")
 set(PARTHENON_ENABLE_CPP17 ON CACHE BOOL "KHARMA Override")
 
+# Set the path to include cmake/ dir
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+
 # Parthenon options
 set(PARTHENON_DISABLE_EXAMPLES ON CACHE BOOL "KHARMA Override")
 set(PARTHENON_LINT_DEFAULT OFF CACHE BOOL "KHARMA Override")
@@ -38,7 +41,6 @@ set(Kokkos_ENABLE_AGGRESSIVE_VECTORIZATION ON CACHE BOOL "KHARMA Override")
 # If we build KokkosKernels at all, disable the extras
 set(KokkosKernels_ENABLE_TPL_CUSPARSE OFF CACHE BOOL "KHARMA Override")
 set(KokkosKernels_ENABLE_TPL_CUBLAS OFF CACHE BOOL "KHARMA Override")
-
 
 # Offer a KHARMA option to disable the MPI requirement
 # The only difference from setting PARTHENON_DISABLE_MPI is that

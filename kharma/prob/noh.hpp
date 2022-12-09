@@ -47,56 +47,58 @@ TaskStatus InitializeNoh(MeshBlockData<Real> *rc, ParameterInput *pin)
     GridScalar rho = rc->Get("prims.rho").data;
     GridScalar u = rc->Get("prims.u").data;
     GridVector uvec = rc->Get("prims.uvec").data;
-    GridScalar ktot = rc->Get("prims.Ktot").data;
-    GridScalar kel_constant = rc->Get("prims.Kel_Constant").data;
-
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
-    const Real game = pmb->packages.Get("Electrons")->Param<Real>("gamma_e");
-    const Real fel0 = pmb->packages.Get("Electrons")->Param<Real>("fel_0");
-    const Real fel_constant = pmb->packages.Get("Electrons")->Param<Real>("fel_constant");
     
-    const Real mach = pin->GetOrAddReal("noh", "mach", 49);
-    const Real rhoL = pin->GetOrAddReal("noh", "rhoL", 1.0);
-    const Real rhoR = pin->GetOrAddReal("noh", "rhoR", 1.0);
-    const Real PL = pin->GetOrAddReal("noh", "PL", 0.1);
-    const Real PR = pin->GetOrAddReal("noh", "PR", 0.1);
+    const Real mach = pin->GetOrAddReal("noh", "mach", 49.);
+    const Real rho0 = pin->GetOrAddReal("noh", "rho", 1.0);
+    const Real v0 = pin->GetOrAddReal("noh", "v0", 1.e-3);
+    bool zero_ug = pin->GetOrAddBoolean("noh", "zero_ug", false);
+    bool centered = pin->GetOrAddBoolean("noh", "centered", true);
     bool set_tlim = pin->GetOrAddBoolean("noh", "set_tlim", false);
 
-    const auto& G = pmb->coords;
+    const GReal x1min = pin->GetReal("parthenon/mesh", "x1min");
+    const GReal x1max = pin->GetReal("parthenon/mesh", "x1max");
+    const GReal center = (x1min + x1max) / 2.;
+
+    // Given Mach and knowing that v = 1e-3 and rho = 1, we calculate u
+    double cs2 = m::pow(v0, 2) / m::pow(mach, 2);
+    double gamma = 1. / m::sqrt(1. - m::pow(v0, 2)); // Since we are in flat space
+    const Real P = (zero_ug) ? 0. : rho0 * cs2 / (gam*(gam-1) - cs2*gam);
+
+    if (set_tlim) {
+        pin->SetReal("parthenon/time", "tlim", 0.6*(x1max - x1min)/v0);
+    }
 
     IndexDomain domain = IndexDomain::interior;
     IndexRange ib = pmb->cellbounds.GetBoundsI(domain);
     IndexRange jb = pmb->cellbounds.GetBoundsJ(domain);
     IndexRange kb = pmb->cellbounds.GetBoundsK(domain);
-
-    const Real x1min = pin->GetReal("parthenon/mesh", "x1min");
-    const Real x1max = pin->GetReal("parthenon/mesh", "x1max");
-    const Real center = (x1min + x1max) / 2.;
-
-    // TODO relativistic sound speed
-    Real cs2 = (gam * (gam - 1) * PL) / rhoL;
-    Real v1 = mach * m::sqrt(cs2);
-
-    if (set_tlim) {
-        pin->SetReal("parthenon/time", "tlim", 0.6*(x1max - x1min)/v1);
-    }
-
-    double gamma = 1. / m::sqrt(1. - v1 * v1); // Since we are in flat space
-
-
     pmb->par_for("noh_init", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_3D {
-            Real X[GR_DIM];
-            G.coord_embed(k, j, i, Loci::center, X);
-
-            const bool lhs = X[1] < center;
-            rho(k, j, i) = (lhs) ? rhoL : rhoR;
-            u(k, j, i) = ((lhs) ? PL : PR)/(gam - 1.);
-            uvec(0, k, j, i) = ((lhs) ? v1 : -v1) * gamma;
+            rho(k, j, i) = rho0;
+            u(k, j, i) = P/(gam - 1.);
             uvec(1, k, j, i) = 0.0;
             uvec(2, k, j, i) = 0.0;
         }
     );
+    const auto& G = pmb->coords;
+    if (centered) {
+        pmb->par_for("noh_cent", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+            KOKKOS_LAMBDA_3D {
+                Real X[GR_DIM];
+                G.coord_embed(k, j, i, Loci::center, X);
+                const bool lhs = X[1] < center;
+                uvec(0, k, j, i) = ((lhs) ? v0 : -v0) * gamma;
+            }
+        );
+    } else {
+        pmb->par_for("noh_left", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+            KOKKOS_LAMBDA_3D {
+                u(k, j, i) = P/(gam - 1.);
+                uvec(0, k, j, i) = -v0 * gamma;
+            }
+        );
+    }
 
     Flag(rc, "Initialized 1D (Noh) Shock test");
     return TaskStatus::complete;

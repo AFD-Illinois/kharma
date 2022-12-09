@@ -43,7 +43,6 @@
 
 # Less common options:
 # PREFIX_PATH=
-# EXTRA_FLAGS=
 
 HOST=$(hostname -f)
 if [ -z $HOST ]; then

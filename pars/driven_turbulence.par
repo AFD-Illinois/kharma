@@ -1,0 +1,86 @@
+# Driven turbulence electron heating
+# Perturb 2D state 
+
+<parthenon/job>
+problem_id = driven_turbulence
+
+<parthenon/mesh>
+refinement = none
+numlevel = 1
+
+nx1 = 64
+x1min = 0
+x1max = 1
+ix1_bc = periodic
+ox1_bc = periodic
+
+nx2 = 64
+x2min = 0
+x2max = 1
+ix2_bc = periodic
+ox2_bc = periodic
+
+nx3 = 1
+x3min = -1
+x3max = 1
+ix3_bc = periodic
+ox3_bc = periodic
+
+<parthenon/meshblock>
+nx1 = 64
+nx2 = 64
+nx3 = 1
+
+<coordinates>
+base = cartesian_minkowski
+transform = null
+
+<GRMHD>
+cfl = 0.9
+gamma = 1.666667
+reconstruction = weno5
+
+<b_field>
+type = constant
+b10 = 1
+norm = true
+beta_min = 10
+
+<driven_turbulence>
+cs0 = 8.6e-4
+edot_frac = 0.5
+dt_kick = 2.
+
+<parthenon/time>
+tlim = 31396
+integrator = rk2
+use_dt_light = true
+
+<driver>
+type = imex
+
+<electrons>
+on = true
+constant = true
+kawazura = true
+sharma = true
+fel_constant = 0.5
+gamma_e = 1.333333
+
+<perf>
+two_sync = true
+
+<debug>
+verbose = 1
+flag_verbose = 0
+extra_checks = 1
+
+<parthenon/output0>
+file_type = hdf5
+dt = 5.
+single_precision_output = true
+variables = prims.B, prims.rho, prims.uvec, prims.Ktot, prims.Kel_Constant, prims.Kel_Sharma, prims.Kel_Kawazura, grf_normalized, alfven_speed, ctop, fflag
+
+<parthenon/output1>
+file_type = hst
+dt = 0.5

@@ -53,7 +53,20 @@ target_link_libraries(${EXE_NAME} PUBLIC parthenon)
 # Sometimes helps with OpenMP
 #target_link_libraries(${EXE_NAME} PUBLIC gomp)
 target_link_libraries(${EXE_NAME} PUBLIC z)
-
+# Link FFTW3 if available
+# Let the code know not to use it otherwise
+if (NOT Kokkos_ENABLE_CUDA)
+  find_package(FFTW)
+  if (FFTW_FOUND)
+    target_compile_definitions(${EXE_NAME} PUBLIC USE_FFTW=1)
+    target_link_libraries(${EXE_NAME} PUBLIC fftw3)
+  else()
+    target_compile_definitions(${EXE_NAME} PUBLIC USE_FFTW=0)
+    message(WARNING "Cannot find FFTW! Compiling without driven turbulence test.")
+  endif()
+else()
+  target_compile_definitions(${EXE_NAME} PUBLIC USE_FFTW=0)
+endif()
 
 # OPTIONS
 # These are almost universally performance trade-offs

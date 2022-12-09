@@ -5,6 +5,7 @@ convergence.txt
 *.h5
 *.png
 *.mp4
+*.webm
 core.*
 frames_*/
 

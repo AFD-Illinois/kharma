@@ -43,7 +43,7 @@ elif [[ $HOST == *".astro.illinois.edu" ]]; then
       # Older GCC has no flag for ZEN2
       HOST_ARCH="ZEN"
     fi
-    module load gnu mpich phdf5
+    module load gnu hdf5 fftw3
     # System HDF5 location
     PREFIX_PATH="$MPI_DIR"
   fi
