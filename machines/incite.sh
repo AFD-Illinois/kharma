@@ -11,8 +11,8 @@ if [[ $HOST == *".summit.olcf.ornl.gov" ]]; then
   KOKKOS_NUM_DEVICES=1
   MPI_NUM_PROCS=6
 
-  # ONLY GCC WORKS: There are C++17 compile issues with most other combos/stacks
-  # Tested with Spectrum MPI 10.4.0.3
+  # Summit *hates* C++17.
+  # Use GCC with 14
   module load cmake
   if [[ "$ARGS" == *"xl"* ]]; then
     # xlC: OpenMP CXX problems
@@ -32,7 +32,7 @@ if [[ $HOST == *".summit.olcf.ornl.gov" ]]; then
     PREFIX_PATH="/gpfs/alpine/proj-shared/ast171/libs/hdf5-nvhpc-21.9"
   else
     # Use default GCC
-    module load gcc/11.1.0 hdf5/1.10.7 cuda/11.5.2
+    module load gcc cuda hdf5
     C_NATIVE='gcc'
     CXX_NATIVE='g++'
   fi
