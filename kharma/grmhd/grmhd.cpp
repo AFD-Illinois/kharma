@@ -170,7 +170,8 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     params.Add("implicit", implicit_grmhd);
     // Synchronize boundary variables twice.  Ensures KHARMA is agnostic to the breakdown
     // of meshblocks, at the cost of twice the MPI overhead, for potentially much worse strong scaling.
-    bool two_sync = pin->GetOrAddBoolean("perf", "two_sync", false);
+    bool two_sync = pin->GetOrAddBoolean("perf", "two_sync", false) ||
+                    pin->GetOrAddBoolean("driver", "two_sync", false);
     params.Add("two_sync", two_sync);
 
     // Adaptive mesh refinement options
