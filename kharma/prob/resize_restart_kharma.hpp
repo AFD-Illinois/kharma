@@ -34,13 +34,15 @@ KOKKOS_INLINE_FUNCTION void Xtoindex(const GReal XG[GR_DIM],
 {
     //cout << "Hyerin: entered Xtoindex" <<endl;
     Real dx2, dx2_min;
-    dx2_min=100000.; //arbitrarily large number
 
     // initialize
     iblock =0;
     i = 0;
     j = 0;
     k = 0;
+    dx2_min = m::pow(XG[1]-x1(iblock,i),2.)+
+              m::pow(XG[2]-x2(iblock,j),2.)+
+              m::pow(XG[3]-x3(iblock,k),2.);
 
     for (int iblocktemp = 0; iblocktemp < length[0]; iblocktemp++) {
         for (int itemp = 0; itemp < length[1]; itemp++) {
@@ -95,14 +97,14 @@ KOKKOS_INLINE_FUNCTION void convert_to_utwiddle(const GRCoordinates& G, const Co
 
 KOKKOS_INLINE_FUNCTION void get_prim_restart_kharma(const GRCoordinates& G, const CoordinateEmbedding& coords, const VariablePack<Real>& P, const VarMap& m_p,
                     const SphBLCoords& bl,  const SphKSCoords& ks, 
-                    const Real fx1min, const Real fx1max, const bool should_fill, const bool is_spherical,
+                    const Real fx1min, const Real fx1max, const bool should_fill, const bool is_spherical, const bool include_B,
                     const Real gam, const Real rs,  const Real mdot, const hsize_t length[GR_DIM],
-                    const GridScalar& x1, const GridScalar& x2, const GridScalar& x3, const GridScalar& rho, const GridScalar& u, const GridVector& uvec,
-                    const GridScalar& x1_fill, const GridScalar& x2_fill, const GridScalar& x3_fill, const GridScalar& rho_fill, const GridScalar& u_fill, const GridVector& uvec_fill,
+                    const GridScalar& x1, const GridScalar& x2, const GridScalar& x3, const GridScalar& rho, const GridScalar& u, const GridVector& uvec, const GridVector& B,
+                    const GridScalar& x1_fill, const GridScalar& x2_fill, const GridScalar& x3_fill, const GridScalar& rho_fill, const GridScalar& u_fill, const GridVector& uvec_fill, const GridVector& B_fill,
                     const int& k, const int& j, const int& i) 
 {
     Real rho_temp, u_temp;
-    Real u_prim[NVEC];
+    Real u_prim[NVEC], B_prim[NVEC];
     
     GReal X[GR_DIM];
     G.coord(k, j, i, Loci::center, X);
@@ -125,11 +127,13 @@ KOKKOS_INLINE_FUNCTION void get_prim_restart_kharma(const GRCoordinates& G, cons
         Xtoindex(X, x1, x2, x3, length, iblocktemp, itemp, jtemp, ktemp, del);
         rho_temp = rho(iblocktemp,ktemp,jtemp,itemp);
         u_temp = u(iblocktemp,ktemp,jtemp,itemp);
+        if (include_B) VLOOP B_prim[v] = B(v,iblocktemp,ktemp,jtemp,itemp);
         Real T = get_T(r, C1, C2, n, rs);
                         
         Real ur = -C1 / (m::pow(T, n) * m::pow(r, 2));
         Real ucon_bl[GR_DIM] = {0, ur, 0, 0};
         convert_to_utwiddle(G,coords,bl,ks,k,j,i,ucon_bl,u_prim);
+        
    }
     // HyerinTODO: if fname_fill exists and smaller.
     else if ((should_fill) && ((X[1]>fx1max)||(X[1]<fx1min))) { // fill with the fname_fill
@@ -138,6 +142,7 @@ KOKKOS_INLINE_FUNCTION void get_prim_restart_kharma(const GRCoordinates& G, cons
         rho_temp = rho_fill(iblocktemp,ktemp,jtemp,itemp);
         u_temp = u_fill(iblocktemp,ktemp,jtemp,itemp);
         VLOOP u_prim[v] = uvec_fill(v,iblocktemp,ktemp,jtemp,itemp);
+        if (include_B) VLOOP B_prim[v] = B_fill(v,iblocktemp,ktemp,jtemp,itemp);
     }
     else { 
         Xtoindex(X, x1, x2, x3, length, iblocktemp, itemp, jtemp, ktemp, del);
@@ -147,11 +152,17 @@ KOKKOS_INLINE_FUNCTION void get_prim_restart_kharma(const GRCoordinates& G, cons
         rho_temp = rho(iblocktemp,ktemp,jtemp,itemp);
         u_temp = u(iblocktemp,ktemp,jtemp,itemp);
         VLOOP u_prim[v] = uvec(v,iblocktemp,ktemp,jtemp,itemp);
+        if (include_B) VLOOP B_prim[v] = B(v,iblocktemp,ktemp,jtemp,itemp);
     }
     P(m_p.RHO, k, j, i) = rho_temp;
     P(m_p.UU, k, j, i) = u_temp;
     P(m_p.U1, k, j, i) = u_prim[0]; 
     P(m_p.U2, k, j, i) = u_prim[1];
     P(m_p.U3, k, j, i) = u_prim[2];
+    if (include_B) { // sth like this? Hyerin
+        P(m_p.B1, k, j, i) = B_prim[0]; // TODO: It should actually B_cons/g
+        P(m_p.B2, k, j, i) = B_prim[1];
+        P(m_p.B3, k, j, i) = B_prim[2];
+    }
 
 }

@@ -102,7 +102,7 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
         break;
     }
 
-    IndexDomain domain = IndexDomain::interior;
+    IndexDomain domain = IndexDomain::entire; //Hyerin: why interior?
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
@@ -212,7 +212,7 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
                 }
                 break;
             case BSeedType::vertical:
-                q = bz * r * m::sin(th);
+                q = bz * r * m::sin(th) / 2.;
             default:
                 // This shouldn't be reached. Squawk here?
                 break;
