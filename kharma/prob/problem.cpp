@@ -158,7 +158,7 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
     Flux::PtoU(rc.get(), IndexDomain::interior);
 
     // If we're not restarting, apply the floors
-    if (prob != "resize_restart") {
+    if ((prob != "resize_restart") && (prob != "resize_restart_kharma")) {
         // This is purposefully done even if floors are disabled,
         // as it is required for consistent initialization
         // Note however we do *not* preserve any inversion flags in this call.
