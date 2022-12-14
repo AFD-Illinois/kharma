@@ -57,6 +57,7 @@ namespace B_Cleanup
 
 std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t packages)
 {
+    Flag("Initializing B Field Cleanup");
     auto pkg = std::make_shared<StateDescriptor>("B_Cleanup");
     Params &params = pkg->AllParams();
 
@@ -76,9 +77,6 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     // TODO add an absolute tolerance to the Parthenon BiCGStab solver
     Real abs_tolerance = pin->GetOrAddReal("b_cleanup", "abs_tolerance", 1e-11);
     params.Add("abs_tolerance", abs_tolerance);
-    // TODO why does this need to be so large?
-    Real sor_factor = pin->GetOrAddReal("b_cleanup", "sor_factor", 10.);
-    params.Add("sor_factor", sor_factor);
     int max_iterations = pin->GetOrAddInteger("b_cleanup", "max_iterations", 1e8);
     params.Add("max_iterations", max_iterations);
     int check_interval = pin->GetOrAddInteger("b_cleanup", "check_interval", 20);
@@ -87,6 +85,8 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     params.Add("fail_without_convergence", fail_without_convergence);
     bool warn_without_convergence = pin->GetOrAddBoolean("b_cleanup", "warn_without_convergence", false);
     params.Add("warn_without_convergence", warn_without_convergence);
+    bool always_solve = pin->GetOrAddBoolean("b_cleanup", "always_solve", false);
+    params.Add("always_solve", always_solve);
 
     // TODO find a way to add this to the list every N steps
     int cleanup_interval = pin->GetOrAddInteger("b_cleanup", "cleanup_interval", 0);
@@ -98,6 +98,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     params.Add("bicgstab_check_interval", check_interval);
     params.Add("bicgstab_abort_on_fail", fail_without_convergence);
     params.Add("bicgstab_warn_on_fail", warn_without_convergence);
+    params.Add("bicgstab_print_checks", true);
 
     // Sparse matrix.  Never built, we leave it blank
     pkg->AddParam<std::string>("spm_name", "");
@@ -174,12 +175,6 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     return pkg;
 }
 
-TaskStatus PrintSolverStatus(BiCGStabSolver<int> &solver)
-{
-    solver.CheckConvergence(0, true);
-    return TaskStatus::complete;
-}
-
 void CleanupDivergence(std::shared_ptr<MeshData<Real>>& md)
 {
     Flag(md.get(), "Cleaning up divB");
@@ -192,9 +187,11 @@ void CleanupDivergence(std::shared_ptr<MeshData<Real>>& md)
     auto abs_tolerance = pkg->Param<Real>("abs_tolerance");
     auto fail_flag = pkg->Param<bool>("fail_without_convergence");
     auto warn_flag = pkg->Param<bool>("warn_without_convergence");
+    auto always_solve = pkg->Param<bool>("always_solve");
     auto verbose = pkg->Param<int>("verbose");
     auto solver = pkg->Param<BiCGStabSolver<int>>("solver");
-    bool sync_prims = pmesh->packages.Get("GRMHD")->Param<std::string>("driver_type") == "imex";
+    MetadataFlag isMHD = pmesh->packages.Get("GRMHD")->Param<MetadataFlag>("MHDFlag");
+
 
     if (MPIRank0() && verbose > 0) {
         std::cout << "Cleaning divB to relative tolerance " << rel_tolerance << std::endl;
@@ -203,19 +200,38 @@ void CleanupDivergence(std::shared_ptr<MeshData<Real>>& md)
     }
 
     // Calculate/print inital max divB exactly as we would during run
-    B_FluxCT::PrintGlobalMaxDivB(md.get());
+    const double divb_start = B_FluxCT::GlobalMaxDivB(md.get());
+    if (divb_start < rel_tolerance && !always_solve) {
+        // If divB is "pretty good" and we allow not solving...
+        if (MPIRank0())
+            std::cout << "Magnetic field divergence of " << divb_start << " is below tolerance. Skipping B field cleanup." << std::endl;
+        return;
+    } else {
+        if(MPIRank0())
+            std::cout << "Starting magnetic field divergence: " << divb_start << std::endl;
+    }
 
     // Initialize the divB variable, which we'll be solving against.
     // This gets signed divB on all physical corners (total (N+1)^3)
     // and syncs ghost zones
     B_FluxCT::CalcDivB(md.get(), "divB_RHS");
-    KBoundaries::SyncAllBounds(md, sync_prims);
+    KBoundaries::SyncAllBounds(md);
 
     // Add a solver container and associated MeshData
-    for (int i = 0; i < pmesh->block_list.size(); i++) {
-        auto &pmb = pmesh->block_list[i];
+    for (auto& pmb : pmesh->block_list) {
         auto &base = pmb->meshblock_data.Get();
         pmb->meshblock_data.Add("solve", base);
+    }
+    // The "solve" container really only needs the RHS, the solution, and the scratch array dB
+    // This does not affect the main container, but saves a *lot* of time not syncing
+    // static variables.
+    // There's no MeshData-wide 'Remove' so we go block-by-block
+    for (auto& pmb : pmesh->block_list) {
+        auto rc_s = pmb->meshblock_data.Get("solve");
+        auto varlabels = rc_s->GetVariablesByFlag({isMHD}, true).labels();
+        for (auto varlabel : varlabels) {
+            rc_s->Remove(varlabel);
+        }
     }
     auto &msolve = pmesh->mesh_data.GetOrAdd("solve", 0);
 
@@ -225,10 +241,9 @@ void CleanupDivergence(std::shared_ptr<MeshData<Real>>& md)
     TaskCollection tc;
     auto tr = tc.AddRegion(1);
     auto t_solve_step = solver.CreateTaskList(t_none, 0, tr, md, msolve);
-    //auto t_print_status = tr[0].AddTask(t_solve_step, PrintSolverStatus, solver);
     while (!tr.Execute());
     // Make sure solution's ghost zones are sync'd
-    KBoundaries::SyncAllBounds(msolve, sync_prims);
+    KBoundaries::SyncAllBounds(msolve);
 
     // Apply the result
     if (MPIRank0() && verbose > 0) {
@@ -236,12 +251,15 @@ void CleanupDivergence(std::shared_ptr<MeshData<Real>>& md)
     }
     // Update the magnetic field on physical zones using our solution
     B_Cleanup::ApplyP(msolve.get(), md.get());
-    //B_Cleanup::ApplydB(md.get());
+
     // Synchronize to update ghost zones
-    KBoundaries::SyncAllBounds(md, sync_prims);
+    KBoundaries::SyncAllBounds(md);
 
     // Recalculate divB max for one last check
-    B_FluxCT::PrintGlobalMaxDivB(md.get());
+    const double divb_end = B_FluxCT::GlobalMaxDivB(md.get());
+    if (MPIRank0()) {
+        std::cout << "Magnetic field divergence after cleanup: " << divb_end << std::endl;
+    }
 
     Flag(md.get(), "Cleaned");
 }

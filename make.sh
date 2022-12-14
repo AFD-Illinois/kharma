@@ -79,6 +79,9 @@ fi
 if [[ "$ARGS" == *"nompi"* ]]; then
   EXTRA_FLAGS="-DKHARMA_DISABLE_MPI=1 $EXTRA_FLAGS"
 fi
+if [[ "$ARGS" == *"noimplicit"* ]]; then
+  EXTRA_FLAGS="-DKHARMA_DISABLE_IMPLICIT=1 $EXTRA_FLAGS"
+fi
 
 ### Enivoronment Prep ###
 if [[ "$(which python3 2>/dev/null)" == *"conda"* ]]; then
@@ -175,6 +178,8 @@ elif [[ "$ARGS" == *"cuda"* ]]; then
   export NVCC_WRAPPER_DEFAULT_COMPILER="$CXX_NATIVE"
   # Generally Kokkos sets this, so we don't need to
   #export CXXFLAGS="--expt-relaxed-constexpr $CXXFLAGS"
+  # New NVHPC complains if we don't set this
+  export NVHPC_CUDA_HOME=$CUDA_HOME
   OUTER_LAYOUT="MANUAL1D_LOOP"
   INNER_LAYOUT="TVR_INNER_LOOP"
   ENABLE_OPENMP="ON"
@@ -238,8 +243,10 @@ if [[ "$ARGS" == *"hdf5"* && "$ARGS" == *"clean"* ]]; then
       HDF_EXTRA="--enable-parallel"
     fi
   fi
-  CC=$HDF_CC sh configure -C $HDF_EXTRA --prefix=$PWD/../hdf5 --enable-build-mode=production \
+set -x
+  CC=$HDF_CC sh configure -C $HDF_EXTRA --prefix=$SOURCE_DIR/external/hdf5 --enable-build-mode=production \
   --disable-dependency-tracking --disable-hl --disable-tests --disable-tools --disable-shared --disable-deprecated-symbols
+set +x
   wait 1
 
   # Compiling C takes less memory
@@ -253,7 +260,7 @@ if [[ "$ARGS" == *"hdf5"* && "$ARGS" == *"clean"* ]]; then
   cd ../..
 fi
 if [[ "$ARGS" == *"hdf5"* ]]; then
-  PREFIX_PATH="$PWD/external/hdf5;$PREFIX_PATH"
+  PREFIX_PATH="$SOURCE_DIR/external/hdf5;$PREFIX_PATH"
 fi
 
 ### Build KHARMA ###
@@ -291,6 +298,7 @@ if [[ "$ARGS" == *"clean"* ]]; then
   fi
 fi
 
-make -j$NPROC
-
-cp kharma/kharma.* ..
+if [[ "$ARGS" != *"dryrun"* ]]; then
+  make -j$NPROC
+  cp kharma/kharma.* ..
+fi

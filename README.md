@@ -4,10 +4,16 @@ KHARMA is an implementation of the HARM scheme for gerneral relativistic magneto
 The project is capable of the same GRMHD functions found in e.g. [iharm3d](https://github.com/AFD-Illinois/iharm3d). Support for adaptive mesh refinement is planned, but not yet working for runs involving magnetic field transport.
 
 ## Prerequisites
-KHARMA requires that the system have a C++14-compliant compiler, MPI, and parallel HDF5.  All other dependencies are included as submodules, and can be checked out with `git` by running
+KHARMA requires that the system have a C++17-compliant compiler, MPI, and parallel HDF5.  All other dependencies are included as submodules, and can be checked out with `git` by running
 ```bash
 $ git submodule update --init --recursive
 ```
+
+When updating the KHARMA source code, you may also have to update the submodules with
+```bash
+$ git submodule update --recursive
+```
+Old submodules are a common cause of compile errors!
 
 ## Compiling
 On directly supported systems, or systems with standard install locations, you may be able to run:

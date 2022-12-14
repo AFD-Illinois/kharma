@@ -81,7 +81,7 @@ TaskID AddBoundarySync(TaskID t_start, TaskList &tl, std::shared_ptr<MeshData<Re
  * Single call to sync all boundary conditions.
  * Used anytime boundary sync is needed outside the usual loop of steps.
  */
-void SyncAllBounds(std::shared_ptr<MeshData<Real>> md, bool sync_prims, bool sync_phys=true);
+void SyncAllBounds(std::shared_ptr<MeshData<Real>> md, bool apply_domain_bounds=true);
 
 /**
  * Check for flow into simulation and reset velocity to eliminate it

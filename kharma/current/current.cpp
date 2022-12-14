@@ -52,11 +52,11 @@ TaskStatus Current::CalculateCurrent(MeshBlockData<Real> *rc0, MeshBlockData<Rea
     Flag("Calculating current");
 
     auto pmb = rc0->GetBlockPointer();
-    auto& u_old = rc0->Get("prims.uvec").data;
-    auto& B_P_old = rc0->Get("prims.B").data;
-    auto& u_new = rc1->Get("prims.uvec").data;
-    auto& B_P_new = rc1->Get("prims.B").data;
-    auto& jcon = rc1->Get("jcon").data;
+    GridVector uvec_old = rc0->Get("prims.uvec").data;
+    GridVector B_P_old = rc0->Get("prims.B").data;
+    GridVector uvec_new = rc1->Get("prims.uvec").data;
+    GridVector B_P_new = rc1->Get("prims.B").data;
+    GridVector jcon = rc1->Get("jcon").data;
     const auto& G = pmb->coords;
 
     int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
@@ -64,44 +64,39 @@ TaskStatus Current::CalculateCurrent(MeshBlockData<Real> *rc0, MeshBlockData<Rea
     int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
     const int ndim = pmb->pmy_mesh->ndim;
 
-    GridVars u_c("P_c", NVEC, n3, n2, n1);
-    GridVector B_P_c("P_c", NVEC, n3, n2, n1);
+    GridVector uvec_c("uvec_c", NVEC, n3, n2, n1);
+    GridVector B_P_c("B_P_c", NVEC, n3, n2, n1);
 
     // Calculate time-centered primitives
     // We could pack, but we just need the vectors, U1,2,3 and B1,2,3
     // Apply over the whole grid, as calculating j requires neighbors
-    IndexRange ib = pmb->cellbounds.GetBoundsI(IndexDomain::entire);
-    IndexRange jb = pmb->cellbounds.GetBoundsJ(IndexDomain::entire);
-    IndexRange kb = pmb->cellbounds.GetBoundsK(IndexDomain::entire);
-    IndexRange nb = IndexRange{0, NVEC-1};
-    pmb->par_for("get_center", nb.s, nb.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+    const IndexRange ib = pmb->cellbounds.GetBoundsI(IndexDomain::entire);
+    const IndexRange jb = pmb->cellbounds.GetBoundsJ(IndexDomain::entire);
+    const IndexRange kb = pmb->cellbounds.GetBoundsK(IndexDomain::entire);
+    const IndexRange nv = IndexRange{0, NVEC-1};
+    pmb->par_for("get_center", nv.s, nv.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_VARS {
-            u_c(p, k, j, i) = 0.5*(u_old(p, k, j, i) + u_new(p, k, j, i));
+            uvec_c(p, k, j, i) = 0.5*(uvec_old(p, k, j, i) + uvec_new(p, k, j, i));
             B_P_c(p, k, j, i) = 0.5*(B_P_old(p, k, j, i) + B_P_new(p, k, j, i));
         }
     );
 
     // Calculate j^{\mu} using centered differences for active zones
-    ib = pmb->cellbounds.GetBoundsI(IndexDomain::interior);
-    jb = pmb->cellbounds.GetBoundsJ(IndexDomain::interior);
-    kb = pmb->cellbounds.GetBoundsK(IndexDomain::interior);
-    nb = IndexRange{0, GR_DIM-1};
-    pmb->par_for("jcon_calc", nb.s, nb.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+    const IndexRange ib_i = pmb->cellbounds.GetBoundsI(IndexDomain::interior);
+    const IndexRange jb_i = pmb->cellbounds.GetBoundsJ(IndexDomain::interior);
+    const IndexRange kb_i = pmb->cellbounds.GetBoundsK(IndexDomain::interior);
+    const IndexRange n4v = IndexRange{0, GR_DIM-1};
+    pmb->par_for("jcon_calc", n4v.s, n4v.e, kb_i.s, kb_i.e, jb_i.s, jb_i.e, ib_i.s, ib_i.e,
         KOKKOS_LAMBDA_VEC {
             // Get sqrt{-g}*F^{mu nu} at neighboring points
-            Real gF2p = 0., gF2m = 0., gF3p = 0., gF3m = 0.;
-            Real gF0p = G.gdet(Loci::center, j, i) * Current::get_Fcon(G, u_new, B_P_new, 0, mu, k, j, i);
-            Real gF0m = G.gdet(Loci::center, j, i) * Current::get_Fcon(G, u_old, B_P_old, 0, mu, k, j, i);
-            Real gF1p = G.gdet(Loci::center, j, i+1) * Current::get_Fcon(G, u_c, B_P_c, 1, mu, k, j, i+1);
-            Real gF1m = G.gdet(Loci::center, j, i-1) * Current::get_Fcon(G, u_c, B_P_c, 1, mu, k, j, i-1);
-            if (ndim > 1) {
-                gF2p = G.gdet(Loci::center, j+1, i) * Current::get_Fcon(G, u_c, B_P_c, 2, mu, k, j+1, i);
-                gF2m = G.gdet(Loci::center, j-1, i) * Current::get_Fcon(G, u_c, B_P_c, 2, mu, k, j-1, i);
-            }
-            if (ndim > 2) {
-                gF3p = G.gdet(Loci::center, j, i) * Current::get_Fcon(G, u_c, B_P_c, 3, mu, k+1, j, i);
-                gF3m = G.gdet(Loci::center, j, i) * Current::get_Fcon(G, u_c, B_P_c, 3, mu, k-1, j, i);
-            }
+            const Real gF0p = get_gdet_Fcon(G, uvec_new, B_P_new, 0, mu, k, j, i);
+            const Real gF0m = get_gdet_Fcon(G, uvec_old, B_P_old, 0, mu, k, j, i);
+            const Real gF1p = get_gdet_Fcon(G, uvec_c, B_P_c, 1, mu, k, j, i+1);
+            const Real gF1m = get_gdet_Fcon(G, uvec_c, B_P_c, 1, mu, k, j, i-1);
+            const Real gF2p = (ndim > 1) ? get_gdet_Fcon(G, uvec_c, B_P_c, 2, mu, k, j+1, i) : 0.;
+            const Real gF2m = (ndim > 1) ? get_gdet_Fcon(G, uvec_c, B_P_c, 2, mu, k, j-1, i) : 0.;
+            const Real gF3p = (ndim > 2) ? get_gdet_Fcon(G, uvec_c, B_P_c, 3, mu, k+1, j, i) : 0.;
+            const Real gF3m = (ndim > 2) ? get_gdet_Fcon(G, uvec_c, B_P_c, 3, mu, k-1, j, i) : 0.;
 
             // Difference: D_mu F^{mu nu} = 4 \pi j^nu
             jcon(mu, k, j, i) = 1. / (m::sqrt(4. * M_PI) * G.gdet(Loci::center, j, i)) *
@@ -123,19 +118,22 @@ void Current::FillOutput(MeshBlock *pmb, ParameterInput *pin)
     // The "preserve" container will only exist after we've taken a step,
     // catch that situation
     auto& rc1 = pmb->meshblock_data.Get();
+    auto rc0 = rc1; // Avoid writing rc0's type when initializing. Still light.
     try {
         // Get the state at beginning of the step
-        auto& rc0 = pmb->meshblock_data.Get("preserve");
-
-        // Get the duration of the last timestep from the "Globals" package
-        // (see kharma.cpp)
-        Real dt_last = pmb->packages.Get("Globals")->Param<Real>("dt_last");
-
-        Current::CalculateCurrent(rc0.get(), rc1.get(), dt_last);
+        rc0 = pmb->meshblock_data.Get("preserve");
     } catch (const std::runtime_error& e) {
         // We expect this to happen the first step
         // We just don't need to fill jcon the first time around
+        //std::cerr << "This should only happen once: " << e.what() << std::endl;
+        return;
     }
+
+    // Get the duration of the last timestep from the "Globals" package
+    // (see kharma.cpp)
+    Real dt_last = pmb->packages.Get("Globals")->Param<Real>("dt_last");
+
+    Current::CalculateCurrent(rc0.get(), rc1.get(), dt_last);
 
     Flag("Added");
 }
