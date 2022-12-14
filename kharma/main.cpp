@@ -136,9 +136,9 @@ int main(int argc, char *argv[])
     signal(SIGSEGV, print_backtrace);
 #endif
 
-    auto pin = pman.pinput.get(); // All parameters in the input file or command line
+    auto pin   = pman.pinput.get(); // All parameters in the input file or command line
     auto pmesh = pman.pmesh.get(); // The mesh, with list of blocks & locations, size, etc
-    auto papp = pman.app_input.get(); // The list of callback functions specified above
+    auto papp  = pman.app_input.get(); // The list of callback functions specified above
 
     // Add magnetic field to the problem, initialize ghost zones.
     // Implemented separately outside of MeshBlock since

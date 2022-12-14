@@ -11,7 +11,7 @@ if __name__=='__main__':
     outputdir = './'
 
     NVAR = 10
-    VARS = ['rho', 'u', 'u1', 'u2', 'u3', 'B1', 'B2', 'B3', 'q', 'deltaP']
+    VARS = ['rho', 'u', 'u1', 'u2', 'u3', 'B1', 'B2', 'B3', 'q', 'dP']
     RES = [int(r) for r in sys.argv[1].split(",")]
     LONG = sys.argv[2]
     SHORT = sys.argv[3]
@@ -104,6 +104,7 @@ if __name__=='__main__':
                 fail = 1
 
     # plot
+    colors = ['indigo', 'goldenrod', 'darkgreen', 'crimson', 'xkcd:blue', 'xkcd:magenta', 'green', 'xkcd:yellowgreen', 'xkcd:teal', 'xkcd:olive']
     fig = plt.figure(figsize=(6,6))
     ax = fig.add_subplot(1,1,1)
 
@@ -113,12 +114,12 @@ if __name__=='__main__':
     tracker = 0
     for n in range(NVAR):
         if abs((dvar_cos[n] != 0) or abs(dvar_sin[n] != 0)):
-            ax.loglog(RES, L1[:,n], marker='o', label=pyharm.pretty(VARS[n]))
+            ax.loglog(RES, L1[:,n], color=colors[n], marker='o', label=pyharm.pretty(VARS[n]))
             tracker += 1
 
     ax.loglog([RES[0], RES[-1]], 100*amp*np.asarray([float(RES[0]), float(RES[-1])])**(-2), color='k', linestyle='dashed', label='$N^{-2}$')
     plt.xscale('log', base=2)
     ax.legend()
-    plt.savefig(os.path.join(outputdir, "emhd_linear_mode_convergence_"+SHORT+".png"))
+    plt.savefig(os.path.join(outputdir, "emhd_linear_mode_convergence_"+SHORT+".png"), dpi=300)
 
     exit(fail)

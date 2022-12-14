@@ -64,16 +64,16 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
     TaskCollection tc;
     TaskID t_none(0);
 
-    Real beta = integrator->beta[stage - 1];
-    const Real dt = integrator->dt;
+    Real beta       = integrator->beta[stage - 1];
+    const Real dt   = integrator->dt;
     auto stage_name = integrator->stage_name;
 
     // Which packages we load affects which tasks we'll add to the list
     auto& pkgs = blocks[0]->packages.AllPackages();
-    bool use_b_cd = pkgs.count("B_CD");
+    bool use_b_cd      = pkgs.count("B_CD");
     bool use_b_flux_ct = pkgs.count("B_FluxCT");
     bool use_electrons = pkgs.count("Electrons");
-    bool use_wind = pkgs.count("Wind");
+    bool use_wind      = pkgs.count("Wind");
 
     // Allocate the fields ("containers") we need block by block
     for (int i = 0; i < blocks.size(); i++) {
