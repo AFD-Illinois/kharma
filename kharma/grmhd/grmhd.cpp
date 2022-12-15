@@ -215,7 +215,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
         flags_prim = std::vector<MetadataFlag>({Metadata::Real, Metadata::Cell, Metadata::Derived,
                                                 Metadata::FillGhost, Metadata::Restart,
                                                 isPrimitive, isHD, isMHD});
-        // Conserved variables are actualy rho*u^0 & T^0_mu, but are named after the prims for consistency
+        // Conserved variables are actually rho*u^0 & T^0_mu, but are named after the prims for consistency
         // We will rarely need the conserved variables by name, we will mostly be treating them as a group
         flags_cons = std::vector<MetadataFlag>({Metadata::Real, Metadata::Cell, Metadata::Independent,
                                                 Metadata::WithFluxes, Metadata::FillGhost, Metadata::Restart,

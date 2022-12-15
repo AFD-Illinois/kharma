@@ -89,19 +89,14 @@ TaskStatus Current::CalculateCurrent(MeshBlockData<Real> *rc0, MeshBlockData<Rea
     pmb->par_for("jcon_calc", n4v.s, n4v.e, kb_i.s, kb_i.e, jb_i.s, jb_i.e, ib_i.s, ib_i.e,
         KOKKOS_LAMBDA_VEC {
             // Get sqrt{-g}*F^{mu nu} at neighboring points
-            Real gF2p = 0., gF2m = 0., gF3p = 0., gF3m = 0.;
-            Real gF0p = G.gdet(Loci::center, j, i) * Current::get_Fcon(G, uvec_new, B_P_new, 0, mu, k, j, i);
-            Real gF0m = G.gdet(Loci::center, j, i) * Current::get_Fcon(G, uvec_old, B_P_old, 0, mu, k, j, i);
-            Real gF1p = G.gdet(Loci::center, j, i+1) * Current::get_Fcon(G, uvec_c, B_P_c, 1, mu, k, j, i+1);
-            Real gF1m = G.gdet(Loci::center, j, i-1) * Current::get_Fcon(G, uvec_c, B_P_c, 1, mu, k, j, i-1);
-            if (ndim > 1) {
-                gF2p = G.gdet(Loci::center, j+1, i) * Current::get_Fcon(G, uvec_c, B_P_c, 2, mu, k, j+1, i);
-                gF2m = G.gdet(Loci::center, j-1, i) * Current::get_Fcon(G, uvec_c, B_P_c, 2, mu, k, j-1, i);
-            }
-            if (ndim > 2) {
-                gF3p = G.gdet(Loci::center, j, i) * Current::get_Fcon(G, uvec_c, B_P_c, 3, mu, k+1, j, i);
-                gF3m = G.gdet(Loci::center, j, i) * Current::get_Fcon(G, uvec_c, B_P_c, 3, mu, k-1, j, i);
-            }
+            const Real gF0p = get_gdet_Fcon(G, uvec_new, B_P_new, 0, mu, k, j, i);
+            const Real gF0m = get_gdet_Fcon(G, uvec_old, B_P_old, 0, mu, k, j, i);
+            const Real gF1p = get_gdet_Fcon(G, uvec_c, B_P_c, 1, mu, k, j, i+1);
+            const Real gF1m = get_gdet_Fcon(G, uvec_c, B_P_c, 1, mu, k, j, i-1);
+            const Real gF2p = (ndim > 1) ? get_gdet_Fcon(G, uvec_c, B_P_c, 2, mu, k, j+1, i) : 0.;
+            const Real gF2m = (ndim > 1) ? get_gdet_Fcon(G, uvec_c, B_P_c, 2, mu, k, j-1, i) : 0.;
+            const Real gF3p = (ndim > 2) ? get_gdet_Fcon(G, uvec_c, B_P_c, 3, mu, k+1, j, i) : 0.;
+            const Real gF3m = (ndim > 2) ? get_gdet_Fcon(G, uvec_c, B_P_c, 3, mu, k-1, j, i) : 0.;
 
             // Difference: D_mu F^{mu nu} = 4 \pi j^nu
             jcon(mu, k, j, i) = 1. / (m::sqrt(4. * M_PI) * G.gdet(Loci::center, j, i)) *
@@ -123,14 +118,14 @@ void Current::FillOutput(MeshBlock *pmb, ParameterInput *pin)
     // The "preserve" container will only exist after we've taken a step,
     // catch that situation
     auto& rc1 = pmb->meshblock_data.Get();
-    auto& rc0 = rc1;
+    auto rc0 = rc1; // Avoid writing rc0's type when initializing. Still light.
     try {
         // Get the state at beginning of the step
         rc0 = pmb->meshblock_data.Get("preserve");
     } catch (const std::runtime_error& e) {
         // We expect this to happen the first step
         // We just don't need to fill jcon the first time around
-        //std::cerr << "This should only happen once: " << e.what << std::endl;
+        //std::cerr << "This should only happen once: " << e.what() << std::endl;
         return;
     }
 

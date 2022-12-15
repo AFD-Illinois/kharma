@@ -4,12 +4,13 @@
 # Build on Nvidia image.
 # Can pretty easily change this out, with changes to build
 # Someday we'll build & push a KHARMA image, then test that
-image: nvcr.io/nvidia/nvhpc:22.9-devel-cuda_multi-rockylinux8
+image: nvcr.io/nvidia/nvhpc:22.11-devel-cuda_multi-rockylinux8
 
 variables:
-  OMP_NUM_THREADS: 8
+  OMP_NUM_THREADS: 28
   OMP_PROC_BIND: "false"
   MPI_EXE: mpirun
+  MPI_NUM_PROCS: 2
   OMPI_ALLOW_RUN_AS_ROOT: 1
   OMPI_ALLOW_RUN_AS_ROOT_CONFIRM: 1
   GIT_SUBMODULE_STRATEGY: recursive
@@ -48,7 +49,7 @@ stages:
 build:
   stage: build
   variables:
-    NPROC: 24
+    NPROC: ""
     HOST_ARCH: HSW
   before_script:
     - echo "Skipping pyharm install in build."
