@@ -108,6 +108,7 @@ std::shared_ptr<StateDescriptor> Implicit::Initialize(ParameterInput *pin)
 // Implicit nonlinear solve requires several linear solves per-zone
 // Use Kokkos-kernels QR decomposition & triangular solve, they're fast.
 #include <batched/dense/KokkosBatched_LU_Decl.hpp>
+#include <batched/dense/impl/KokkosBatched_LU_Serial_Impl.hpp>
 #include <batched/dense/KokkosBatched_QR_Decl.hpp>
 #include <batched/dense/KokkosBatched_ApplyQ_Decl.hpp>
 #include <batched/dense/KokkosBatched_Trsv_Decl.hpp>
