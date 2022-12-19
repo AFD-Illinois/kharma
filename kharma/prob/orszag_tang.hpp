@@ -2,8 +2,6 @@
 
 #include "decs.hpp"
 
-
-using namespace std;
 using namespace parthenon;
 
 /**
@@ -35,7 +33,7 @@ TaskStatus InitializeOrszagTang(MeshBlockData<Real> *rc, ParameterInput *pin)
     // Default phase puts the current sheet in the middle of the domain
     const Real phase = pin->GetOrAddReal("orszag_tang", "phase", M_PI);
 
-    IndexDomain domain = IndexDomain::entire;
+    IndexDomain domain = IndexDomain::interior;
     IndexRange ib = pmb->cellbounds.GetBoundsI(domain);
     IndexRange jb = pmb->cellbounds.GetBoundsJ(domain);
     IndexRange kb = pmb->cellbounds.GetBoundsK(domain);

@@ -46,16 +46,8 @@
 #define DEBUG 0
 #endif
 
-// Use global MPI switch
-#ifndef USE_MPI
-// Or set it intelligently here
-#ifdef MPI_COMM_WORLD
-#define USE_MPI 1
-#else
+// We'll never call this for fast/MPI I/O
 #define USE_MPI 0
-#endif
-
-#endif
 
 // Crash on read/write failures.  Saves checking return values like a pleb
 #ifndef FAIL_HARD

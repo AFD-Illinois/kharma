@@ -55,7 +55,7 @@ TaskStatus InitializeBZMonopole(MeshBlockData<Real> *rc, ParameterInput *pin)
     Real rho_min_limit = pin->GetOrAddReal("floors", "rho_min_geom", 1.e-6);
     Real u_min_limit = pin->GetOrAddReal("floors", "u_min_geom", 1.e-8);
 
-    IndexDomain domain = IndexDomain::entire;
+    IndexDomain domain = IndexDomain::interior;
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
@@ -64,7 +64,7 @@ TaskStatus InitializeBZMonopole(MeshBlockData<Real> *rc, ParameterInput *pin)
     const GReal a = G.coords.get_a();
 
     if (pmb->gid == 0 && pmb->packages.Get("GRMHD")->Param<int>("verbose") > 0) {
-        cout << "Initializing BZ monopole." << endl;
+        std::cout << "Initializing BZ monopole." << std::endl;
     }
 
     pmb->par_for("fm_torus_init", ks, ke, js, je, is, ie,
@@ -73,11 +73,11 @@ TaskStatus InitializeBZMonopole(MeshBlockData<Real> *rc, ParameterInput *pin)
             G.coord_embed(k, j, i, Loci::center, Xembed);
             GReal r = Xembed[1];
 
-            GReal r_horizon = 1. + sqrt(1. - a*a);
+            GReal r_horizon = 1. + m::sqrt(1. - a*a);
             GReal r_char = 10. * r_horizon;
 
-            Real trho = rho_min_limit + (r / r_char) / pow(r, 4.) / bsq_o_rho_max;
-            Real tu = u_min_limit + (r / r_char) / pow(r, 4.) / bsq_o_rho_max;
+            Real trho = rho_min_limit + (r / r_char) / m::pow(r, 4.) / bsq_o_rho_max;
+            Real tu = u_min_limit + (r / r_char) / m::pow(r, 4.) / bsq_o_rho_max;
 
             rho(k, j, i) = trho;
             u(k, j, i) = tu;

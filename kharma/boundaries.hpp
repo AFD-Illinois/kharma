@@ -69,10 +69,19 @@ void OuterX2(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse);
 TaskStatus FixFlux(MeshData<Real> *rc);
 
 /**
+ * Add a synchronization step to a task list tl, dependent upon taskID t_start, syncing mesh mc1
+ * 
+ * This sequence is used identically in several places, so it makes sense
+ * to define once and use elsewhere.
+ * TODO could make member of a HARMDriver/ImExDriver superclass?
+ */
+TaskID AddBoundarySync(TaskID t_start, TaskList &tl, std::shared_ptr<MeshData<Real>> mc1);
+
+/**
  * Single call to sync all boundary conditions.
  * Used anytime boundary sync is needed outside the usual loop of steps.
  */
-void SyncAllBounds(Mesh *pmesh, bool sync_prims, bool sync_phys=true);
+void SyncAllBounds(std::shared_ptr<MeshData<Real>> md, bool apply_domain_bounds=true);
 
 /**
  * Check for flow into simulation and reset velocity to eliminate it
@@ -80,38 +89,39 @@ void SyncAllBounds(Mesh *pmesh, bool sync_prims, bool sync_phys=true);
  *
  * @param type: 0 to check outflow from EH, 1 to check inflow from outer edge
  */
-KOKKOS_INLINE_FUNCTION void check_inflow(const GRCoordinates &G, const VariablePack<Real>& P, const int& u_start, const int& k, const int& j, const int& i, int type)
+KOKKOS_INLINE_FUNCTION void check_inflow(const GRCoordinates &G, const VariablePack<Real>& P, const IndexDomain domain,
+                                         const int& index_u1, const int& k, const int& j, const int& i)
 {
     Real uvec[NVEC], ucon[GR_DIM];
-    VLOOP uvec[v] = P(u_start + v, k, j, i);
+    VLOOP uvec[v] = P(index_u1 + v, k, j, i);
     GRMHD::calc_ucon(G, uvec, k, j, i, Loci::center, ucon);
 
-    if (((ucon[1] > 0.) && (type == 0)) ||
-        ((ucon[1] < 0.) && (type == 1)))
+    if (((ucon[1] > 0.) && (domain == IndexDomain::inner_x1)) ||
+        ((ucon[1] < 0.) && (domain == IndexDomain::outer_x1)))
     {
         // Find gamma and remove it from primitive velocity
         double gamma = GRMHD::lorentz_calc(G, uvec, k, j, i, Loci::center);
         VLOOP uvec[v] /= gamma;
 
         // Reset radial velocity so radial 4-velocity is zero
-        Real alpha = 1. / sqrt(-G.gcon(Loci::center, j, i, 0, 0));
+        Real alpha = 1. / m::sqrt(-G.gcon(Loci::center, j, i, 0, 0));
         Real beta1 = G.gcon(Loci::center, j, i, 0, 1) * alpha * alpha;
-        uvec[0] = beta1 / alpha;
+        uvec[V1] = beta1 / alpha;
 
         // Now find new gamma and put it back in
-        Real vsq = G.gcov(Loci::center, j, i, 1, 1) * uvec[0] * uvec[0] +
-                   G.gcov(Loci::center, j, i, 2, 2) * uvec[1] * uvec[1] +
-                   G.gcov(Loci::center, j, i, 3, 3) * uvec[2] * uvec[2] +
-        2. * (G.gcov(Loci::center, j, i, 1, 2) * uvec[0] * uvec[1] +
-              G.gcov(Loci::center, j, i, 1, 3) * uvec[0] * uvec[2] +
-              G.gcov(Loci::center, j, i, 2, 3) * uvec[1] * uvec[2]);
+        Real vsq = G.gcov(Loci::center, j, i, 1, 1) * uvec[V1] * uvec[V1] +
+                   G.gcov(Loci::center, j, i, 2, 2) * uvec[V2] * uvec[V2] +
+                   G.gcov(Loci::center, j, i, 3, 3) * uvec[V3] * uvec[V3] +
+        2. * (G.gcov(Loci::center, j, i, 1, 2) * uvec[V1] * uvec[V2] +
+              G.gcov(Loci::center, j, i, 1, 3) * uvec[V1] * uvec[V3] +
+              G.gcov(Loci::center, j, i, 2, 3) * uvec[V2] * uvec[V3]);
 
         clip(vsq, 1.e-13, 1. - 1./(50.*50.));
 
-        gamma = 1./sqrt(1. - vsq);
+        gamma = 1./m::sqrt(1. - vsq);
 
         VLOOP uvec[v] *= gamma;
-        VLOOP P(u_start + v, k, j, i) = uvec[v];
+        VLOOP P(index_u1 + v, k, j, i) = uvec[v];
     }
 }
 

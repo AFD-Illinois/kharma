@@ -1,11 +1,11 @@
 import numpy as np
-import os, sys, h5py, glob
+import os, sys
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 
-from pyharm.grid import make_some_grid
+import pyharm
 
 if __name__=='__main__':
     outputdir = './'
@@ -13,6 +13,9 @@ if __name__=='__main__':
     NVAR = 10
     VARS = ['rho', 'u', 'u1', 'u2', 'u3', 'B1', 'B2', 'B3', 'q', 'deltaP']
     RES = [int(r) for r in sys.argv[1].split(",")]
+    LONG = sys.argv[2]
+    SHORT = sys.argv[3]
+
 
     # problem params
     var0 = np.zeros(NVAR)
@@ -47,38 +50,25 @@ if __name__=='__main__':
     # loop over RES
     for r in range(len(RES)):
         # load data
-        dfile = h5py.File("emhd_2d_"+str(RES[r])+"_end_"+sys.argv[3]+".h5", 'r')
+        dump = pyharm.load_dump("emhd_2d_"+str(RES[r])+"_end_"+SHORT+".phdf")
 
-        dump = {}
 
-        amp = float(dfile['header/amp'][()])
-        k1  = 2*np.pi
+        params = dump.params
+        amp = float(params['amp'])
+        k1  = 2*np.pi # TODO record
         k2  = 4*np.pi
-        real_omega  = dfile['header/omega_real'][()]
-        imag_omega  = dfile['header/omega_imag'][()]
-        t = dfile['t'][()]
 
-        dump['RHO'] = dfile['prims'][Ellipsis,0][()]
-        dump['U'] = dfile['prims'][Ellipsis,1][()]
-        dump['U1'] = dfile['prims'][Ellipsis,2][()]
-        dump['U2'] = dfile['prims'][Ellipsis,3][()]
-        dump['U3'] = dfile['prims'][Ellipsis,4][()]
-        dump['B1'] = dfile['prims'][Ellipsis,5][()]
-        dump['B2'] = dfile['prims'][Ellipsis,6][()]
-        dump['B3'] = dfile['prims'][Ellipsis,7][()]
-        dump['q'] = dfile['prims'][Ellipsis,8][()]
-        dump['deltaP'] = dfile['prims'][Ellipsis,9][()]
+        real_omega  = params['omega_real']
+        imag_omega  = params['omega_imag']
+        higher_order_terms = params['higher_order_terms']
+        conduction_alpha = params['conduction_alpha']
+        viscosity_alpha = params['viscosity_alpha']
+        gam = params['gam']
+        t = dump['t']
 
-        gridp = {}
-        gridp['n1'] = dfile['header/n1'][()]
-        gridp['n2'] = dfile['header/n2'][()]
-        gridp['n3'] = dfile['header/n3'][()]
-
-        grid = make_some_grid('cartesian', gridp['n1'], gridp['n2'], gridp['n3'])
+        grid = dump.grid
         cos_phi = np.cos(k1*grid['x'] + k2*grid['y'] + imag_omega*t)
         sin_phi = np.sin(k1*grid['x'] + k2*grid['y'] + imag_omega*t)
-
-        dfile.close()
 
         # compute analytic result
         var_analytic  = []
@@ -86,54 +76,49 @@ if __name__=='__main__':
             var_analytic.append(var0[i] + ((amp*cos_phi*dvar_cos[i]) + (amp*sin_phi*dvar_sin[i])) * np.exp(real_omega*t))
         var_analytic = np.asarray(var_analytic)
 
-        # numerical result
-        # TODO 3D, but will need different coeffs too
-        var_numerical = np.zeros((NVAR, grid['n1'], grid['n2']), dtype=float)
-        var_numerical[0,Ellipsis] = dump['RHO'] 
-        var_numerical[1,Ellipsis] = dump['U'] 
-        var_numerical[2,Ellipsis] = dump['U1'] 
-        var_numerical[3,Ellipsis] = dump['U2'] 
-        var_numerical[4,Ellipsis] = dump['U3'] 
-        var_numerical[5,Ellipsis] = dump['B1'] 
-        var_numerical[6,Ellipsis] = dump['B2'] 
-        var_numerical[7,Ellipsis] = dump['B3'] 
-        var_numerical[8,Ellipsis] = dump['q'] 
-        var_numerical[9,Ellipsis] = dump['deltaP']
+        var_numerical = dump['prims']
 
-        print("\n{:d}".format(RES[r]))
-        print(np.mean(np.fabs(var_numerical - var_analytic)[6,Ellipsis]))
+        if higher_order_terms.lower() == "true":
+            print("Higher order terms enabled")
+            Theta = (gam - 1.) * dump['UU'] / dump['RHO']
+            cs2   = gam * (gam - 1.) * dump['UU'] / (dump['RHO'] + (gam * dump['UU']) )
+
+            var_numerical[8,Ellipsis] *= np.sqrt(conduction_alpha * cs2 * dump['RHO'] * Theta**2)
+            var_numerical[9,Ellipsis] *= np.sqrt(viscosity_alpha * cs2 * dump['RHO'] * Theta)
 
         for n in range(NVAR):
-            L1[r,n] = np.mean(np.fabs(var_numerical[n,Ellipsis] - var_analytic[n,Ellipsis]))
+            L1[r,n] = np.mean(np.fabs(var_numerical[n] - var_analytic[n]))
 
-    # plot parameters
-    mpl.rcParams['figure.dpi'] = 300
-    mpl.rcParams['savefig.dpi'] = 300
-    mpl.rcParams['figure.autolayout'] = True
-    mpl.rcParams['axes.titlesize'] = 16
-    mpl.rcParams['axes.labelsize'] = 14
-    mpl.rcParams['xtick.labelsize'] = 12
-    mpl.rcParams['ytick.labelsize'] = 12
-    mpl.rcParams['axes.xmargin'] = 0.02
-    mpl.rcParams['axes.ymargin'] = 0.02
-    mpl.rcParams['legend.fontsize'] = 'medium'
-    colors = ['indigo', 'goldenrod', 'darkgreen', 'crimson', 'xkcd:blue', 'xkcd:magenta', 'green', 'xkcd:yellowgreen', 'xkcd:teal', 'xkcd:olive']
+    # MEASURE CONVERGENCE
+    L1 = np.array(L1)
+    powerfits = [0.,]*NVAR
+    fail = 0
+    for k in range(NVAR):
+        if not (dvar_cos[k] == 0 and dvar_sin[k] == 0):
+            powerfits[k] = np.polyfit(np.log(RES), np.log(L1[:,k]), 1)[0]
+            print("Power fit {}: {} {}".format(VARS[k], powerfits[k], L1[:,k]))
+            if powerfits[k] > -1.6 or powerfits[k] < -2.7:
+                # Everything *should* converge at ~2, but we relax the reqt due to known behavior:
+                # 1. B field in WENO seems to lag, at ~1.7
+                # 2. Problems run under linear/MC seem to converge ~2.5 in most variables
+                fail = 1
 
     # plot
     fig = plt.figure(figsize=(6,6))
     ax = fig.add_subplot(1,1,1)
 
-    fig.suptitle(sys.argv[2])
+    fig.suptitle(LONG)
 
     # loop over prims
     tracker = 0
     for n in range(NVAR):
         if abs((dvar_cos[n] != 0) or abs(dvar_sin[n] != 0)):
-            color = colors[tracker]
-            ax.loglog(RES, L1[:,n], color=color, marker='o', label=VARS[n])
-            tracker+=1
+            ax.loglog(RES, L1[:,n], marker='o', label=pyharm.pretty(VARS[n]))
+            tracker += 1
 
     ax.loglog([RES[0], RES[-1]], 100*amp*np.asarray([float(RES[0]), float(RES[-1])])**(-2), color='k', linestyle='dashed', label='$N^{-2}$')
     plt.xscale('log', base=2)
     ax.legend()
-    plt.savefig(os.path.join(outputdir, "emhd_linear_mode_convergence_"+sys.argv[3]+".png"))
+    plt.savefig(os.path.join(outputdir, "emhd_linear_mode_convergence_"+SHORT+".png"))
+
+    exit(fail)

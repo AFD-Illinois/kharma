@@ -44,9 +44,9 @@ namespace GRMHD {
  * or magnetohydrodynamics (those plus B).
  * 
  * They are just thin convenience wrappers aroung Parthenon's functions to do the same, and you'll
- * see me using rc->PackVariables and md->PackVariables often enough by themselves.
+ * see a bunch of rc->PackVariables and md->PackVariables calls by themselves.
  * Usually, bare calls are for *all* variables (potentially including e-, passives, entropy, etc),
- * whereas these calls are for functions which deal with GRMHD variables only.
+ * whereas these calls are for functions within this package which deal with GRMHD variables only.
  */
 inline VariablePack<Real> PackMHDPrims(MeshBlockData<Real> *rc, PackIndexMap& prims_map, bool coarse=false)
 {

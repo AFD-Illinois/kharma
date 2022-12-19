@@ -43,6 +43,13 @@ namespace Reductions {
 
 std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin);
 
+// Remaining TODO:
+// 1. Run over MeshData since I bundle anyway
+// 2. Add MaxP, MaxBsq, MinBeta, etc.
+// 3. More flexibility with operations?
+// Check blocks for relevance (within/contain some radius)
+// Or, at least avoid calculating all T in all zones each time
+
 // Okay so this requires a little explaining.
 // The point is to share all the code we can between calculations of
 // all of the EH or inner bound fluxes: mdot, edot, ldot, etc, etc, etc
@@ -64,7 +71,6 @@ Real DomainSum(MeshData<Real> *md, const Real& radius);
 // so that it can inherit the variable names (U, P, etc.) from the function context.
 // That is, if we try to define "Function" outside and pass it as a template argument,
 // the compiler has no idea what "U" means
-// TODO this function needs a version/to be able to sum at any particular radius: test per-block X1<X<X2, find corresponding i.
 #define MAKE_SUM2D_FN(name, fn) template<> inline Real AccretionRate<name>(MeshData<Real> *md, const int& i) { \
     Flag("Performing accretion reduction"); \
     auto pmesh = md->GetMeshPointer(); \
@@ -108,9 +114,6 @@ Real DomainSum(MeshData<Real> *md, const Real& radius);
 \
     return result; \
 }
-// Re: B_P and B_U above, they need to not crash but can return nonsense:
-// hence, just use an equivalent-size replacement.
-// There may be more elegant solutions...
 
 // Now we need some valid type names to use in distinguishing functions.
 // The 'enum class' lines just serve to define an arbitrary name as some valid type,
@@ -120,29 +123,29 @@ Real DomainSum(MeshData<Real> *md, const Real& radius);
 // We also provide some implementations.
 // Each of the MAKE_ETC "calls" expands into an implementation of
 // AccretionRate<Type> using the macro we just defined above.
-// TODO These are GRHD/GRMHD *only* for now, they will require a generic Flux::calc_tensor,
-// plus packing & passing
 enum class Mdot : int;
 MAKE_SUM2D_FN(Mdot,
-    // TODO document values here. e.g.:
     // \dot{M} == \int rho * u^1 * gdet * dx2 * dx3
     local_result += -P(m_p.RHO, k, j, i) * Dtmp.ucon[1] * gdA;
 )
 enum class Edot : int;
 MAKE_SUM2D_FN(Edot,
-    // Edot == \int - T^1_0 * gdet * dx2 * dx3
+    // \dot{E} == \int - T^1_0 * gdet * dx2 * dx3
     local_result += -T[X1DIR][X0DIR] * gdA;
 )
 enum class Ldot : int;
 MAKE_SUM2D_FN(Ldot,
-    // Ldot == \int T^1_3 * gdet * dx2 * dx3
+    // \dot{L} == \int T^1_3 * gdet * dx2 * dx3
     local_result += T[X1DIR][X3DIR] * gdA;
 )
 enum class Phi : int;
 MAKE_SUM2D_FN(Phi,
-    // phi == \int |*F^1^0| * gdet * dx2 * dx3 == \int |B1| * gdet * dx2 * dx3
+    // \Phi == \int |*F^1^0| * gdet * dx2 * dx3 == \int |B1| * gdet * dx2 * dx3
     // Can also sum the hemispheres independently to be fancy (TODO?)
-    local_result += 0.5 * fabs(U(m_u.B1, k, j, i)) * dA; // gdet is included in cons.B
+    // This if statement prevents running if no B field is present in the VariablePack
+    if (m_u.B1 >= 0) {
+        local_result += 0.5 * m::abs(U(m_u.B1, k, j, i)) * dA; // gdet is included in cons.B
+    }
 )
 
 // Then we can define the same with fluxes.
@@ -173,8 +176,6 @@ inline Real LdotBoundFlux(MeshData<Real> *md) {return AccretionRate<Ldot_Flux>(m
 inline Real LdotEHFlux(MeshData<Real> *md) {return AccretionRate<Ldot_Flux>(md, 5);}
 
 // Now we repeat the whole process for reductions across the entire domain
-// TODO could probably check blocks for containing/being within radius
-// TODO could at least avoid calculating T in all zones
 
 #define MAKE_SUM3D_FN(name, fn) template<> inline Real DomainSum<name>(MeshData<Real> *md, const Real& radius) { \
     Flag("Performing domain reduction"); \
@@ -256,8 +257,8 @@ MAKE_SUM3D_FN(EHTLum,
     if (X[1] > radius) {
         Real rho = P(m_p.RHO, k, j, i);
         Real Pg = (gam - 1.) * P(m_p.UU, k, j, i);
-        Real Bmag = sqrt(dot(Dtmp.bcon, Dtmp.bcov));
-        Real j_eht = pow(rho, 3.) * pow(Pg, -2.) * exp(-0.2 * pow(rho * rho / (Bmag * Pg * Pg), 1./3.));
+        Real Bmag = m::sqrt(dot(Dtmp.bcon, Dtmp.bcov));
+        Real j_eht = m::pow(rho, 3.) * m::pow(Pg, -2.) * exp(-0.2 * m::pow(rho * rho / (Bmag * Pg * Pg), 1./3.));
         local_result += j_eht * gdV;
     }
 )
@@ -287,7 +288,57 @@ inline Real TotalL(MeshData<Real> *md) {return DomainSum<Ltot>(md, 50.);}
 inline Real TotalEHTLum(MeshData<Real> *md) {return DomainSum<EHTLum>(md, 50.);}
 inline Real JetLum_50(MeshData<Real> *md) {return DomainSum<JetLum>(md, 50.);} // Recall this is *at* not *within*
 
-inline int NPFlags(MeshData<Real> *md) {return CountPFlags(md, IndexDomain::entire, 0);}
+// #define MAKE_MAX_FN(name, fn) template<> inline Real DomainSum<name>(MeshData<Real> *md, const Real& radius) { \
+//     Flag("Performing domain reduction"); \
+//     auto pmesh = md->GetMeshPointer(); \
+// \
+//     Real result = 0.; \
+//     for (auto &pmb : pmesh->block_list) { \
+//         auto& rc = pmb->meshblock_data.Get(); \
+//         if (pmb->boundary_flag[parthenon::BoundaryFace::inner_x1] == BoundaryFlag::user) { \
+//             const auto& pars = pmb->packages.Get("GRMHD")->AllParams(); \
+//             const MetadataFlag isPrimitive = pars.Get<MetadataFlag>("PrimitiveFlag"); \
+//             PackIndexMap prims_map, cons_map; \
+//             const auto& P = rc->PackVariables(std::vector<MetadataFlag>{isPrimitive}, prims_map); \
+//             const auto& U = rc->PackVariablesAndFluxes(std::vector<MetadataFlag>{Metadata::Conserved}, cons_map); \
+//             const VarMap m_u(cons_map, true), m_p(prims_map, false); \
+// \
+//             const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma"); \
+// \
+//             IndexRange ib = pmb->cellbounds.GetBoundsI(IndexDomain::interior); \
+//             IndexRange jb = pmb->cellbounds.GetBoundsJ(IndexDomain::interior); \
+//             IndexRange kb = pmb->cellbounds.GetBoundsK(IndexDomain::interior); \
+//             const auto& G = pmb->coords; \
+// \
+//             Real block_result; \
+//             Kokkos::Sum<Real> sum_reducer(block_result); \
+//             pmb->par_reduce("domain_sum", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e, \
+//                 KOKKOS_LAMBDA_3D_REDUCE { \
+//                     FourVectors Dtmp; \
+//                     Real T[GR_DIM][GR_DIM]; \
+//                     GRMHD::calc_4vecs(G, P, m_p, k, j, i, Loci::center, Dtmp); \
+//                     DLOOP1 Flux::calc_tensor(G, P, m_p, Dtmp, gam, k, j, i, mu, T[mu]); \
+//                     GReal gdV = G.dx3v(k) * G.dx2v(j) * G.dx1v(i) * G.gdet(Loci::center, j, i); \
+//                     GReal dV = G.dx3v(k) * G.dx2v(j) * G.dx1v(i); \
+//                     fn \
+//                 } \
+//             , sum_reducer); \
+//             result += block_result; \
+//         } \
+//     } \
+// \
+//     Flag("Reduced"); \
+// \
+//     return result; \
+// }
+
+// enum class MaxP
+// enum class Max
+// enum class MaxBeta
+// enum class MinBeta
+// enum class 
+
+inline int NPFlags(MeshData<Real> *md) {return CountPFlags(md, IndexDomain::interior, 0);}
 inline int NFFlags(MeshData<Real> *md) {return CountFFlags(md, IndexDomain::interior, 0);}
 
 } // namespace Reductions

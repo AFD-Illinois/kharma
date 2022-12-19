@@ -56,9 +56,9 @@ KOKKOS_INLINE_FUNCTION Real linear_monotonized_cd(Real x1, Real x2, Real x3, Rea
     if (Dqm * Dqp <= 0) {
         return 0;
     } else {
-        if ((fabs(Dqm) < fabs(Dqp)) && (fabs (Dqm) < fabs(Dqc))) {
+        if ((m::abs(Dqm) < m::abs(Dqp)) && (fabs (Dqm) < m::abs(Dqc))) {
             return Dqm;
-        } else if (fabs(Dqp) < fabs(Dqc)) {
+        } else if (m::abs(Dqp) < m::abs(Dqc)) {
             return Dqp;
         } else {
             return Dqc;
@@ -128,7 +128,8 @@ KOKKOS_INLINE_FUNCTION Real slope_calc_vector(const GRCoordinates& G, const Glob
 template<typename Global>
 KOKKOS_INLINE_FUNCTION void gradient_calc(const GRCoordinates& G, const Global& P,
                                           const GridVector& ucov_s, const GridScalar& theta_s,
-                                          const int& b, const int& k, const int& j, const int& i, const bool& do_3d,
+                                          const int& b, const int& k, const int& j, const int& i, 
+                                          const bool& do_3d, const bool& do_2d,
                                           Real grad_ucov[GR_DIM][GR_DIM], Real grad_Theta[GR_DIM])
 {
     // Compute gradient of ucov
@@ -137,7 +138,11 @@ KOKKOS_INLINE_FUNCTION void gradient_calc(const GRCoordinates& G, const Global& 
 
         // slope in direction nu of component mu
         grad_ucov[1][mu] = slope_calc_vector(G, ucov_s, mu, 1, b, k, j, i);
-        grad_ucov[2][mu] = slope_calc_vector(G, ucov_s, mu, 2, b, k, j, i);
+        if (do_2d) {
+            grad_ucov[2][mu] = slope_calc_vector(G, ucov_s, mu, 2, b, k, j, i);
+        } else {
+            grad_ucov[2][mu] = 0.;
+        }
         if (do_3d) {
             grad_ucov[3][mu] = slope_calc_vector(G, ucov_s, mu, 3, b, k, j, i);
         } else {
@@ -150,7 +155,11 @@ KOKKOS_INLINE_FUNCTION void gradient_calc(const GRCoordinates& G, const Global& 
     // Time derivative component is computed in time_derivative_sources
     grad_Theta[0] = 0;
     grad_Theta[1] = slope_calc_scalar(G, theta_s, 1, b, k, j, i);
-    grad_Theta[2] = slope_calc_scalar(G, theta_s, 2, b, k, j, i);
+    if (do_2d) {
+        grad_Theta[2] = slope_calc_scalar(G, theta_s, 2, b, k, j, i);
+    } else {
+        grad_Theta[2] = 0.;
+    } 
     if (do_3d) {
         grad_Theta[3] = slope_calc_scalar(G, theta_s, 3, b, k, j, i);
     } else {

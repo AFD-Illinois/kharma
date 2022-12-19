@@ -32,7 +32,8 @@
  *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <parthenon/parthenon.hpp>
+#include "decs.hpp"
+#include "types.hpp"
 
 /**
  * General preferences for KHARMA.  Anything semi-driver-independent, like loading packages, etc.

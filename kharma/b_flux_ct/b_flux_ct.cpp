@@ -36,12 +36,10 @@
 
 #include "b_flux_ct.hpp"
 
-// For their DivB estimate
-#include "b_cd.hpp"
-
 #include "decs.hpp"
 #include "grmhd.hpp"
 #include "kharma.hpp"
+#include "mpi.hpp"
 
 using namespace parthenon;
 
@@ -249,8 +247,7 @@ TaskStatus FluxCT(MeshData<Real> *md)
     );
 
     // Rewrite EMFs as fluxes, after Toth (2000)
-    // Note that zeroing FX(BX) is *necessary* -- this flux gets filled by GetFlux,
-    // And it's necessary to keep track of it for B_CD
+    // Note that zeroing FX(BX) is *necessary* -- this flux gets filled by GetFlux
     Flag(md, "Calc Fluxes");
 
     // Note these each have different domains, eg il vs ib.  The former extends one index farther if appropriate
@@ -333,7 +330,8 @@ TaskStatus FixPolarFlux(MeshData<Real> *md)
 TaskStatus TransportB(MeshData<Real> *md)
 {
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
-    if (pmb0->packages.Get("B_FluxCT")->Param<bool>("fix_polar_flux")) {
+    if (pmb0->packages.Get("B_FluxCT")->Param<bool>("fix_polar_flux")
+        && pmb0->coords.coords.spherical()) {
         FixPolarFlux(md);
     }
     FluxCT(md);
@@ -356,6 +354,7 @@ double MaxDivB(MeshData<Real> *md)
 
     // This is one kernel call per block, because each block will have different bounds.
     // Could consolidate at the cost of lots of bounds checking.
+    // TODO redo as nested parallel like Parthenon sparse vars?
     double max_divb = 0.0;
     for (int b = block.s; b <= block.e; ++b) {
         auto pmb = md->GetBlockData(b)->GetBlockPointer().get();
@@ -366,8 +365,8 @@ double MaxDivB(MeshData<Real> *md)
         // bordering other meshblocks.
         const int is = IsDomainBound(pmb, BoundaryFace::inner_x1) ? ib.s + 1 : ib.s;
         const int ie = IsDomainBound(pmb, BoundaryFace::outer_x1) ? ib.e : ib.e + 1;
-        const int js = IsDomainBound(pmb, BoundaryFace::inner_x2) ? jb.s + 1 : jb.s;
-        const int je = IsDomainBound(pmb, BoundaryFace::outer_x2) ? jb.e : jb.e + 1;
+        const int js = (IsDomainBound(pmb, BoundaryFace::inner_x2) && ndim > 1) ? jb.s + 1 : jb.s;
+        const int je = (IsDomainBound(pmb, BoundaryFace::outer_x2) || ndim <=1) ? jb.e : jb.e + 1;
         const int ks = (IsDomainBound(pmb, BoundaryFace::inner_x3) && ndim > 2) ? kb.s + 1 : kb.s;
         const int ke = (IsDomainBound(pmb, BoundaryFace::outer_x3) || ndim <= 2) ? kb.e : kb.e + 1;
 
@@ -376,7 +375,7 @@ double MaxDivB(MeshData<Real> *md)
         pmb->par_reduce("divB_max", ks, ke, js, je, is, ie,
             KOKKOS_LAMBDA_3D_REDUCE {
                 const auto& G = B_U.GetCoords(b);
-                const double local_divb = fabs(corner_div(G, B_U, b, k, j, i, ndim > 2));
+                const double local_divb = m::abs(corner_div(G, B_U, b, k, j, i, ndim > 2));
                 if (local_divb > local_result) local_result = local_divb;
             }
         , max_reducer);
@@ -388,6 +387,15 @@ double MaxDivB(MeshData<Real> *md)
     return max_divb;
 }
 
+double GlobalMaxDivB(MeshData<Real> *md)
+{
+    static AllReduce<Real> max_divb;
+    max_divb.val = MaxDivB(md);
+    max_divb.StartReduce(MPI_MAX);
+    while (max_divb.CheckReduce() == TaskStatus::incomplete);
+    return max_divb.val;
+}
+
 TaskStatus PrintGlobalMaxDivB(MeshData<Real> *md)
 {
     Flag(md, "Printing B field diagnostics");
@@ -397,19 +405,54 @@ TaskStatus PrintGlobalMaxDivB(MeshData<Real> *md)
     // unless we're being verbose. It's not costly to calculate though
     if (pmb0->packages.Get("B_FluxCT")->Param<int>("verbose") >= 1) {
         Flag(md, "Printing divB");
-        Real max_divb = B_FluxCT::MaxDivB(md);
-        max_divb = MPIMax(max_divb);
-
+        // Calculate the maximum from/on all nodes
+        const double divb_max = B_FluxCT::GlobalMaxDivB(md);
+        // Print on rank zero
         if(MPIRank0()) {
-            cout << "Max DivB: " << max_divb << endl;
+            std::cout << "Max DivB: " << divb_max << std::endl;
         }
-
     }
 
     Flag(md, "Printed B field diagnostics");
     return TaskStatus::complete;
 }
 
+void CalcDivB(MeshData<Real> *md, std::string divb_field_name)
+{
+    Flag(md, "Calculating divB for output");
+    auto pmesh = md->GetMeshPointer();
+    const int ndim = pmesh->ndim;
+
+    // Packing out here avoids frequent per-mesh packs.  Do we need to?
+    auto B_U = md->PackVariables(std::vector<std::string>{"cons.B"});
+    auto divB = md->PackVariables(std::vector<std::string>{divb_field_name});
+
+    const IndexRange ib = md->GetBoundsI(IndexDomain::interior);
+    const IndexRange jb = md->GetBoundsJ(IndexDomain::interior);
+    const IndexRange kb = md->GetBoundsK(IndexDomain::interior);
+    const IndexRange block = IndexRange{0, B_U.GetDim(5)-1};
+
+    // See MaxDivB for details
+    for (int b = block.s; b <= block.e; ++b) {
+        auto pmb = md->GetBlockData(b)->GetBlockPointer().get();
+
+        const int is = IsDomainBound(pmb, BoundaryFace::inner_x1) ? ib.s + 1 : ib.s;
+        const int ie = IsDomainBound(pmb, BoundaryFace::outer_x1) ? ib.e : ib.e + 1;
+        const int js = IsDomainBound(pmb, BoundaryFace::inner_x2) ? jb.s + 1 : jb.s;
+        const int je = IsDomainBound(pmb, BoundaryFace::outer_x2) ? jb.e : jb.e + 1;
+        const int ks = (IsDomainBound(pmb, BoundaryFace::inner_x3) && ndim > 2) ? kb.s + 1 : kb.s;
+        const int ke = (IsDomainBound(pmb, BoundaryFace::outer_x3) || ndim <= 2) ? kb.e : kb.e + 1;
+
+        pmb->par_for("calc_divB", ks, ke, js, je, is, ie,
+            KOKKOS_LAMBDA_3D {
+                const auto& G = B_U.GetCoords(b);
+                divB(b, 0, k, j, i) = corner_div(G, B_U, b, k, j, i, ndim > 2);
+            }
+        );
+    }
+
+    Flag("Calculated");
+}
 void FillOutput(MeshBlock *pmb, ParameterInput *pin)
 {
     auto rc = pmb->meshblock_data.Get().get();
@@ -429,15 +472,15 @@ void FillOutput(MeshBlock *pmb, ParameterInput *pin)
     const IndexRange kb = rc->GetBoundsK(IndexDomain::interior);
     const int is = IsDomainBound(pmb, BoundaryFace::inner_x1) ? ib.s + 1 : ib.s;
     const int ie = IsDomainBound(pmb, BoundaryFace::outer_x1) ? ib.e : ib.e + 1;
-    const int js = IsDomainBound(pmb, BoundaryFace::inner_x2) ? jb.s + 1 : jb.s;
-    const int je = IsDomainBound(pmb, BoundaryFace::outer_x2) ? jb.e : jb.e + 1;
+    const int js = (IsDomainBound(pmb, BoundaryFace::inner_x2) && ndim > 1) ? jb.s + 1 : jb.s;
+    const int je = (IsDomainBound(pmb, BoundaryFace::outer_x2) || ndim <=1) ? jb.e : jb.e + 1;
     const int ks = (IsDomainBound(pmb, BoundaryFace::inner_x3) && ndim > 2) ? kb.s + 1 : kb.s;
     const int ke = (IsDomainBound(pmb, BoundaryFace::outer_x3) || ndim <= 2) ? kb.e : kb.e + 1;
 
     pmb->par_for("divB_output", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D {
             const auto& G = B_U.GetCoords();
-            divB(0, k, j, i) = corner_div(G, B_U, 0, k, j, i, ndim > 2);
+            divB(0, k, j, i) = corner_div(G, B_U, 0, k, j, i, ndim > 2, ndim > 1);
         }
     );
 

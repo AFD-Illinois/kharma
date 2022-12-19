@@ -41,6 +41,8 @@
 #include "b_flux_ct.hpp"
 #include "grmhd_functions.hpp"
 
+using namespace parthenon;
+
 TaskStatus B_CD::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
 {
     auto pmb = rc->GetBlockPointer();
@@ -129,12 +131,12 @@ TaskStatus B_CD::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
                 break;
             case BSeedType::ryan:
                 // BR's smoothed poloidal in-torus
-                q = pow(sin(th), 3) * pow(r / rin, 3) * exp(-r / 400) * rho_av - min_rho_q;
+                q = m::pow(sin(th), 3) * m::pow(r / rin, 3) * exp(-r / 400) * rho_av - min_rho_q;
                 break;
             case BSeedType::r3s3:
                 // Just the r^3 sin^3 th term, proposed EHT standard MAD
                 // TODO split r3 here and r3s3
-                q = pow(r / rin, 3) * rho_av - min_rho_q;
+                q = m::pow(r / rin, 3) * rho_av - min_rho_q;
                 break;
             case BSeedType::gaussian:
                 // Pure vertical threaded field of gaussian strength with FWHM 2*rin (i.e. HM@rin)
@@ -142,9 +144,9 @@ TaskStatus B_CD::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
                 // Block is to avoid compiler whinging about initialization
                 {
                     Real x = (r / rin) * sin(th);
-                    Real sigma = 2 / sqrt(2 * log(2));
-                    Real u = x / fabs(sigma);
-                    q = (1 / (sqrt(2 * M_PI) * fabs(sigma))) * exp(-u * u / 2);
+                    Real sigma = 2 / m::sqrt(2 * log(2));
+                    Real u = x / m::abs(sigma);
+                    q = (1 / (m::sqrt(2 * M_PI) * m::abs(sigma))) * exp(-u * u / 2);
                 }
                 break;
             default:
@@ -152,7 +154,7 @@ TaskStatus B_CD::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
                 break;
             }
 
-            A3(j, i) = max(q, 0.);
+            A3(j, i) = m::max(q, 0.);
         }
     );
 

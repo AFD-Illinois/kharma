@@ -2,55 +2,74 @@
 # Try to maintain the BVP solution to a discontuinity
 # Checks the higher order terms implementation in flat space
 # IMPORTANT: This test is different from the other tests in its initialization
-             It reads in ".txt" files that correspond to the BVP solution (set input to "BVP" in <emhdshock>)
-             One, in principle, can run this problem with the usual ideal MHD jump conditions but this
-             may not allow a quantitative check
-             Run it with a single MPI task
+#            It reads in ".txt" files that correspond to the BVP solution (set input to "BVP" in <emhdshock>)
+#            One, in principle, can run this problem with the usual ideal MHD jump conditions but this
+#            may not allow a quantitative check
+#            Run it with a single MPI task
 
 <parthenon/job>
-problem_id = emhdmodes
+problem_id = emhdshock
 
 <parthenon/mesh>
 refinement = none
-numlevel = 1
+numlevel   = 1
 
 nx1 = 1024
-x1min = 0.0
-x1max = 1.0
+x1min  = -0.5
+x1max  = 1.5
 ix1_bc = outflow
 ox1_bc = outflow
 
 nx2 = 1
-x2min = 0.0
-x2max = 1.0
+x2min  = 0.0
+x2max  = 1.0
 ix2_bc = periodic
 ox2_bc = periodic
 
 nx3 = 1
-x3min = 0.0
-x3max = 1.0
+x3min  = 0.0
+x3max  = 1.0
 ix3_bc = periodic
 ox3_bc = periodic
 
 <parthenon/meshblock>
-nx1 = 512
+nx1 = 1024
 nx2 = 1
 nx3 = 1
 
 <coordinates>
-base = cartesian_minkowski
+base      = cartesian_minkowski
 transform = null
 
 <parthenon/time>
-tlim = 2.0
 # "RK2" is the only option for implicit solver
+tlim       = 0.5
 integrator = rk2
-dt_min = 0.0001
+dt_min     = 1.e-6
 
 <GRMHD>
-cfl = 0.25
-gamma = 1.333333
-reconstruction = weno5
+cfl            = 0.25
+gamma          = 1.333333
+reconstruction = linear_mc
+
+<b_field>
+implicit        = true
+initial_cleanup = false
+
+# IMPORTANT: This block must be present and values filled in all EGRMHD simulations
+<emhd>
+on                 = true
+higher_order_terms = true
+
+closure_type       = soundspeed
+tau                = 0.1
+conduction_alpha   = 5.0
+viscosity_alpha    = 3.0
+
+<implicit>
+max_nonlinear_iter = 3
+rootfind_tol       = 1.e-20
+jacobian_delta     = 4.e-8
 
 <emhdshock>
 # The input can be the BVP solution or the ideal MHD Rankine-Hugoniot jump conditions
@@ -60,31 +79,16 @@ input = BVP
 disable_floors = true
 
 <debug>
-verbose = 0
-
-# IMPORTANT: This block must be present and values filled in all EGRMHD simulations
-<emhd>
-on = true
-higher_order_terms = true
-closure_type = soundspeed
-tau = 0.1
-conduction_alpha = 5.0
-viscosity_alpha = 3.0
-
-<driver>
-type = imex
-step = implicit
-
-<implicit>
-max_nonlinear_iter = 3
+verbose      = 1
+flag_verbose = 2
+extra_checks = 1
 
 <parthenon/output0>
-file_type = hdf5
-# This is so as to output only the final state
-dt = 100.0
-single_precision_output = true
-variables = prims.rho, prims.u, prims.uvec, prims.B, prims.q, prims.dP
+file_type               = hdf5
+dt                      = 0.05
+single_precision_output = false
+variables               = prims.rho, prims.u, prims.uvec, prims.B, prims.q, prims.dP
 
 <parthenon/output1>
 file_type = hst
-dt = 0.1
+dt        = 0.1

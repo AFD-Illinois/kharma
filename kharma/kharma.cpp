@@ -54,12 +54,12 @@
 
 #include "bondi.hpp"
 #include "boundaries.hpp"
-#include "fixup.hpp"
 #include "harm_driver.hpp"
 #include "resize_restart.hpp"
 
 std::shared_ptr<StateDescriptor> KHARMA::InitializeGlobals(ParameterInput *pin)
 {
+    Flag("Initializing Globals");
     // All global mutable state.  All of these and only these parameters are "mutable"
     auto pkg = std::make_shared<StateDescriptor>("Globals");
     Params &params = pkg->AllParams();
@@ -76,6 +76,7 @@ std::shared_ptr<StateDescriptor> KHARMA::InitializeGlobals(ParameterInput *pin)
     // Whether we are computing initial outputs/timestep, or versions in the execution loop
     params.Add("in_loop", false, true);
 
+    Flag("Initialized");
     return pkg;
 }
 void KHARMA::ResetGlobals(ParameterInput *pin, Mesh *pmesh)
@@ -94,16 +95,17 @@ void KHARMA::ResetGlobals(ParameterInput *pin, Mesh *pmesh)
 
 void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
 {
-    // This would set ghost zones dynamically, or leave it up to Parthenon.
-    // TODO get this working so I don't have to when we really want to test it & get scaling happening
-    // std::string recon = pin->GetOrAddString("GRMHD", "reconstruction", "weno5");
-    // if (recon != "donor_cell" && recon != "linear_mc" && recon != "linear_vl") {
-    //     pin->SetInteger("parthenon/mesh", "nghost", 4);
-    //     Globals::nghost = pin->GetInteger("parthenon/mesh", "nghost");
-    // }
-    // For now we always set 4 ghost zones
+    Flag("Fixing parameters");
+    // Parthenon sets 2 ghost zones as a default.
+    // We can't override that default while allowing a file-specified value.
+    // Fine for now because we crash with 2. (Flux CT)
+    // TODO add under different name?  Better precedence/origin code?
     pin->SetInteger("parthenon/mesh", "nghost", 4);
     Globals::nghost = pin->GetInteger("parthenon/mesh", "nghost");
+    // Warn if using less than 4 ghost zones in any circumstances, it's still not tested well
+    // if (Globals::nghost < 4) {
+    //     std::cerr << "WARNING: Using less than 4 ghost zones is untested!" << std::endl;
+    // }
 
     // If we're restarting (not via Parthenon), read the restart file to get most parameters
     std::string prob = pin->GetString("parthenon/job", "problem_id");
@@ -112,84 +114,105 @@ void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
     }
 
     // Then handle coordinate systems and boundaries!
-    std::string cb = pin->GetString("coordinates", "base");
-    if (cb == "ks") cb = "spherical_ks";
-    if (cb == "bl") cb = "spherical_bl";
-    if (cb == "minkowski") cb = "cartesian_minkowski";
-    std::string ctf = pin->GetOrAddString("coordinates", "transform", "null");
-    if (ctf == "none") ctf = "null";
-    if (ctf == "fmks") ctf = "funky";
-    if (ctf == "mks") ctf = "modified";
-    if (ctf == "exponential") ctf = "exp";
-    if (ctf == "eks") ctf = "exp";
+    std::string coordinate_base = pin->GetString("coordinates", "base");
+    if (coordinate_base == "ks") coordinate_base = "spherical_ks";
+    if (coordinate_base == "bl") coordinate_base = "spherical_bl";
+    if (coordinate_base == "minkowski") coordinate_base = "cartesian_minkowski";
+    std::string coordinate_transform = pin->GetOrAddString("coordinates", "transform", "null");
+    if (coordinate_transform == "none") coordinate_transform = "null";
+    if (coordinate_transform == "fmks") coordinate_transform = "funky";
+    if (coordinate_transform == "mks") coordinate_transform = "modified";
+    if (coordinate_transform == "exponential") coordinate_transform = "exp";
+    if (coordinate_transform == "eks") coordinate_transform = "exp";
     // TODO any other synonyms
-
-    // TODO ask our coordinates what's going on & where to put things
-    if (ctf != "null") {
-        int n1tot = pin->GetInteger("parthenon/mesh", "nx1");
-        GReal Rout = pin->GetReal("coordinates", "r_out");
-        Real a = pin->GetReal("coordinates", "a");
-        GReal Rhor = 1 + sqrt(1 - a*a);
-        GReal x1max = log(Rout);
-        // Set Rin such that we have 5 zones completely inside the event horizon
-        // If xeh = log(Rhor), xin = log(Rin), and xout = log(Rout),
-        // then we want xeh = xin + 5.5 * (xout - xin) / N1TOT:
-        GReal x1min = (n1tot * log(Rhor) / 5.5 - x1max) / (-1. + n1tot / 5.5);
-        if (x1min < 0.0) {
-            throw std::invalid_argument("Not enough radial zones were specified to put 5 zones inside EH!");
-        }
-        //cerr << "Setting x1min: " << x1min << " x1max " << x1max << " based on BH with a=" << a << endl;
-        pin->SetReal("parthenon/mesh", "x1min", x1min);
-        pin->SetReal("parthenon/mesh", "x1max", x1max);
-    } else if (cb == "spherical_ks" || cb == "spherical_bl") {
-        // If we're in GR with a null transform, apply the criterion to our coordinates directly
-        int n1tot = pin->GetInteger("parthenon/mesh", "nx1");
-        GReal Rout = pin->GetReal("coordinates", "r_out");
-        Real a = pin->GetReal("coordinates", "a");
-        GReal Rhor = 1 + sqrt(1 - a*a);
-        // Set Rin such that we have 5 zones completely inside the event horizon
-        // i.e. we want Rhor = Rin + 5.5 * (Rout - Rin) / N1TOT:
-        GReal Rin = (n1tot * Rhor / 5.5 - Rout) / (-1. + n1tot / 5.5);
-        pin->SetReal("parthenon/mesh", "x1min", Rin);
-        pin->SetReal("parthenon/mesh", "x1max", Rout);
-    } else if (cb == "spherical_minkowski") {
-        // In Minkowski space, go to SMALL (TODO all the way to 0?)
-        GReal Rout = pin->GetReal("coordinates", "r_out");
-        pin->SetReal("parthenon/mesh", "x1min", SMALL);
-        pin->SetReal("parthenon/mesh", "x1max", Rout);
-    }
-    
-
-    // Assumption: if we're in a spherical system...
-    if (cb == "spherical_ks" || cb == "spherical_bl" || cb == "spherical_minkowski") {
-        // Record whether we're in spherical coordinates. This should be used only for setting other options,
-        // see CoordinateEmbedding::spherical() for the real authority usable inside kernels
+    if (coordinate_base == "spherical_ks" || coordinate_base == "spherical_bl" || coordinate_base == "spherical_minkowski") {
         pin->SetBoolean("coordinates", "spherical", true);
-        // ...then we definitely want our special sauce boundary conditions
-        // These are inflow in x1 and reflecting in x2, but applied to *primitives* in a custom operation
-        // see boundaries.cpp
-        pin->SetString("parthenon/mesh", "ix1_bc", "user");
-        pin->SetString("parthenon/mesh", "ox1_bc", "user");
-        pin->SetString("parthenon/mesh", "ix2_bc", "user");
-        pin->SetString("parthenon/mesh", "ox2_bc", "user");
-        pin->SetString("parthenon/mesh", "ix3_bc", "periodic");
-        pin->SetString("parthenon/mesh", "ox3_bc", "periodic");
-
-        // We also know the bounds for most transforms in spherical coords.  Set them.
-        if (ctf == "null" || ctf == "exp") {
-            pin->SetReal("parthenon/mesh", "x2min", 0.0);
-            pin->SetReal("parthenon/mesh", "x2max", M_PI);
-            pin->SetReal("parthenon/mesh", "x3min", 0.0);
-            pin->SetReal("parthenon/mesh", "x3max", 2*M_PI);
-        } else if (ctf == "modified" || ctf == "funky") {
-            pin->SetReal("parthenon/mesh", "x2min", 0.0);
-            pin->SetReal("parthenon/mesh", "x2max", 1.0);
-            pin->SetReal("parthenon/mesh", "x3min", 0.0);
-            pin->SetReal("parthenon/mesh", "x3max", 2*M_PI);
-        } // TODO any other transforms/systems
     } else {
         pin->SetBoolean("coordinates", "spherical", false);
     }
+
+    // Spherical systems can specify r_out and optionally r_in,
+    // instead of xNmin/max.
+    // Other systems must specify x1min/max directly in the mesh region
+    if (!pin->DoesParameterExist("parthenon/mesh", "x1min") ||
+        !pin->DoesParameterExist("parthenon/mesh", "x1max")) {
+        // TODO ask our coordinates about this rather than assuming exp()
+        bool log_r = (coordinate_transform != "null");
+
+        // Outer radius is always specified
+        GReal Rout = pin->GetReal("coordinates", "r_out");
+        GReal x1max = log_r ? log(Rout) : Rout;
+        pin->GetOrAddReal("parthenon/mesh", "x1max", x1max);
+
+        if (coordinate_base == "spherical_ks" || coordinate_base == "spherical_bl") {
+            // Set inner radius if not specified
+            if (pin->DoesParameterExist("coordinates", "r_in")) {
+                GReal Rin = pin->GetReal("coordinates", "r_in");
+                GReal x1min = log_r ? log(Rin) : Rin;
+                pin->GetOrAddReal("parthenon/mesh", "x1min", x1min);
+            } else {
+                int nx1 = pin->GetInteger("parthenon/mesh", "nx1");
+                Real a = pin->GetReal("coordinates", "a");
+                GReal Rhor = 1 + sqrt(1 - a*a);
+                GReal x1hor = log_r ? log(Rhor) : Rhor;
+
+                // Set Rin such that we have 5 zones completely inside the event horizon
+                // If xeh = log(Rhor), xin = log(Rin), and xout = log(Rout),
+                // then we want xeh = xin + 5.5 * (xout - xin) / N1TOT:
+                GReal x1min = (nx1 * x1hor / 5.5 - x1max) / (-1. + nx1 / 5.5);
+                if (x1min < 0.0) {
+                    throw std::invalid_argument("Not enough radial zones were specified to put 5 zones inside EH!");
+                }
+                pin->GetOrAddReal("parthenon/mesh", "x1min", x1min);
+            }
+
+            //cout << "Setting x1min: " << x1min << " x1max " << x1max << " based on BH with a=" << a << endl;
+
+        } else if (coordinate_base == "spherical_minkowski") {
+            // In Minkowski coordinates, require Rin so the singularity is at user option
+            GReal Rin = pin->GetReal("coordinates", "r_in");
+            GReal x1min = log_r ? log(Rin) : Rin;
+            pin->GetOrAddReal("parthenon/mesh", "x1min", x1min);
+        }
+    }
+
+    // Assumption: if we're in a spherical system...
+    if (coordinate_base == "spherical_ks" || coordinate_base == "spherical_bl" || coordinate_base == "spherical_minkowski") {
+        // ...then we definitely want KHARMA's spherical boundary conditions
+        // These are inflow in x1 and reflecting in x2, but applied to *primitives* in
+        // a custom operation, see boundaries.cpp
+        pin->GetOrAddString("parthenon/mesh", "ix1_bc", "user");
+        pin->GetOrAddString("parthenon/mesh", "ox1_bc", "user");
+        pin->GetOrAddString("parthenon/mesh", "ix2_bc", "user");
+        pin->GetOrAddString("parthenon/mesh", "ox2_bc", "user");
+        pin->GetOrAddString("parthenon/mesh", "ix3_bc", "periodic");
+        pin->GetOrAddString("parthenon/mesh", "ox3_bc", "periodic");
+
+        // We also know the bounds for most transforms in spherical coords
+        // Note we *only* set them here if they were not previously set/read!
+        if (coordinate_transform == "null" || coordinate_transform == "exp") {
+            pin->GetOrAddReal("parthenon/mesh", "x2min", 0.0);
+            pin->GetOrAddReal("parthenon/mesh", "x2max", M_PI);
+            pin->GetOrAddReal("parthenon/mesh", "x3min", 0.0);
+            pin->GetOrAddReal("parthenon/mesh", "x3max", 2*M_PI);
+        } else if (coordinate_transform == "modified" || coordinate_transform == "funky") {
+            pin->GetOrAddReal("parthenon/mesh", "x2min", 0.0);
+            pin->GetOrAddReal("parthenon/mesh", "x2max", 1.0);
+            pin->GetOrAddReal("parthenon/mesh", "x3min", 0.0);
+            pin->GetOrAddReal("parthenon/mesh", "x3max", 2*M_PI);
+        } // TODO any other transforms/systems
+    } else {
+        // Most likely, Cartesian simulations will specify boundary conditions,
+        // but we set defaults here.
+        pin->GetOrAddString("parthenon/mesh", "ix1_bc", "periodic");
+        pin->GetOrAddString("parthenon/mesh", "ox1_bc", "periodic");
+        pin->GetOrAddString("parthenon/mesh", "ix2_bc", "periodic");
+        pin->GetOrAddString("parthenon/mesh", "ox2_bc", "periodic");
+        pin->GetOrAddString("parthenon/mesh", "ix3_bc", "periodic");
+        pin->GetOrAddString("parthenon/mesh", "ox3_bc", "periodic");
+        // Cartesian sims must specify the domain!
+    }
+    Flag("Fixed");
 }
 
 Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
@@ -197,6 +220,7 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
     // See above
     FixParameters(pin);
 
+    Flag("Initializing packages");
     // Then put together what we're supposed to
     Packages_t packages;
 
@@ -288,6 +312,7 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
         packages.Add(Wind::Initialize(pin.get()));
     }
 
+    Flag("Finished initializing packages");
     return std::move(packages);
 }
 
@@ -334,8 +359,11 @@ void KHARMA::PostStepMeshUserWorkInLoop(Mesh *pmesh, ParameterInput *pin, const 
     // ctop_max has fewer rules. It's just convenient to set here since we're assured of no MPI hangs
     // Since it involves an MPI sync, we only keep track of this when we need it
     if (pmesh->packages.AllPackages().count("B_CD")) {
-        Real ctop_max_last = MPIMax(pmesh->packages.Get("Globals")->Param<Real>("ctop_max"));
-        pmesh->packages.Get("Globals")->UpdateParam<Real>("ctop_max_last", ctop_max_last);
+        static AllReduce<Real> ctop_max_last_r;
+        ctop_max_last_r.val = pmesh->packages.Get("Globals")->Param<Real>("ctop_max");
+        ctop_max_last_r.StartReduce(MPI_MAX);
+        while (ctop_max_last_r.CheckReduce() == TaskStatus::incomplete);
+        pmesh->packages.Get("Globals")->UpdateParam<Real>("ctop_max_last", ctop_max_last_r.val);
         pmesh->packages.Get("Globals")->UpdateParam<Real>("ctop_max", 0.0);
     }
 }
@@ -355,20 +383,15 @@ void KHARMA::PostStepDiagnostics(Mesh *pmesh, ParameterInput *pin, const SimTime
 void KHARMA::FillOutput(MeshBlock *pmb, ParameterInput *pin)
 {
     Flag("Filling output");
-    // Don't fill the output arrays for the first dump, as trying to actually
-    // calculate them can produce errors when we're not in the loop yet.
-    // Instead, they just get added to the file as their starting values, i.e. 0
-    if (pmb->packages.Get("Globals")->Param<bool>("in_loop")) {
-        // TODO for package in packages with registered function...
-        if (pmb->packages.AllPackages().count("Current"))
-            Current::FillOutput(pmb, pin);
-        if (pmb->packages.AllPackages().count("B_FluxCT"))
-            B_FluxCT::FillOutput(pmb, pin);
-        if (pmb->packages.AllPackages().count("B_CD"))
-            B_CD::FillOutput(pmb, pin);
-        if (pmb->packages.AllPackages().count("Electrons"))
-            Electrons::FillOutput(pmb, pin);
-    }
+    // Rewrite this and the above as a callback registration
+    if (pmb->packages.AllPackages().count("Current"))
+        Current::FillOutput(pmb, pin);
+    if (pmb->packages.AllPackages().count("B_FluxCT"))
+        B_FluxCT::FillOutput(pmb, pin);
+    if (pmb->packages.AllPackages().count("B_CD"))
+        B_CD::FillOutput(pmb, pin);
+    if (pmb->packages.AllPackages().count("Electrons"))
+        Electrons::FillOutput(pmb, pin);
     Flag("Filled");
 }
 

@@ -34,11 +34,9 @@
 
 #include "bondi.hpp"
 
-using namespace std;
-
 /**
  * Initialization of a Bondi problem with specified sonic point, BH mdot, and horizon radius
- * TODO mdot and rs are redundant and should be merged into one parameter
+ * TODO mdot and rs are redundant and should be merged into one parameter. Uh, no.
  */
 TaskStatus InitializeBondi(MeshBlockData<Real> *rc, ParameterInput *pin)
 {

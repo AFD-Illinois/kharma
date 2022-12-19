@@ -54,15 +54,12 @@ KOKKOS_INLINE_FUNCTION void calc_tensor(const GRCoordinates& G, const Local& P, 
                                         Real T[GR_DIM])
 {
     if (m_p.Q >= 0) {
-        // EGRMHD stress-energy tensor w/ first index up, second index down
-        // Get problem closure parameters
-        Real tau, chi_e, nu_e;
-        EMHD::set_parameters(G, P, m_p, emhd_params, gam, tau, chi_e, nu_e);
 
         // Apply higher-order terms conversion if necessary
         Real q, dP;
-        const Real Theta   = (gam - 1) * P(m_p.UU) / P(m_p.RHO);
-        EMHD::convert_prims_to_q_dP(P(m_p.Q), P(m_p.DP), P(m_p.RHO), Theta, tau, chi_e, nu_e, emhd_params, q, dP);
+        const Real Theta = (gam - 1) * P(m_p.UU) / P(m_p.RHO);
+        const Real cs2   = gam * (gam - 1) * P(m_p.UU) / (P(m_p.RHO) + gam * P(m_p.UU));
+        EMHD::convert_prims_to_q_dP(P(m_p.Q), P(m_p.DP), P(m_p.RHO), Theta, cs2, emhd_params, q, dP);
 
         // Then calculate the tensor
         EMHD::calc_tensor(P(m_p.RHO), P(m_p.UU), (gam - 1) * P(m_p.UU), q, dP, D, dir, T);
@@ -73,6 +70,8 @@ KOKKOS_INLINE_FUNCTION void calc_tensor(const GRCoordinates& G, const Local& P, 
         // GRHD stress-energy tensor w/ first index up, second index down
         GRHD::calc_tensor(P(m_p.RHO), P(m_p.UU), (gam - 1) * P(m_p.UU), D, dir, T);
     }
+
+    // if (i == 11 && j == 11) printf("mhd: %6.5e %6.5e %6.5e %6.5e %6.5e\n", flux(m_u.RHO), T[0], T[1], T[2], T[3]);
 }
 
 template<typename Local>
@@ -142,7 +141,7 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const Local& P,
                 flux(m_u.PSI) = P(m_p.PSI) * gdet;
             } else {
                 // Psi field update as in Mosta et al (IllinoisGRMHD), alternate explanation Jesse et al (2020)
-                //Real alpha = 1. / sqrt(-G.gcon(Loci::center, j, i, 0, 0));
+                //Real alpha = 1. / m::sqrt(-G.gcon(Loci::center, j, i, 0, 0));
                 //Real beta_dir = G.gcon(Loci::center, j, i, 0, dir) * alpha * alpha;
                 flux(m_u.PSI) = (D.bcon[dir] - G.gcon(Loci::center, j, i, 0, dir) * P(m_p.PSI)) * gdet;
             }
@@ -174,6 +173,88 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const Local& P,
 
 }
 
+template<typename Global>
+KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const Global& P, const VarMap& m_p, const FourVectors D,
+                                         const EMHD::EMHD_parameters& emhd_params, const Real& gam, 
+                                         const int& k, const int& j, const int& i, const int dir,
+                                         const Global& flux, const VarMap& m_u, const Loci loc=Loci::center)
+{
+    const Real gdet = G.gdet(loc, j, i);
+    // Particle number flux
+    flux(m_u.RHO, k, j, i) = P(m_p.RHO, k, j, i) * D.ucon[dir] * gdet;
+
+    Real T[GR_DIM];
+    if (m_p.Q >= 0) {
+
+        // Apply higher-order terms conversion if necessary
+        Real q, dP;
+        const Real Theta = (gam - 1) * P(m_p.UU, k, j, i) / P(m_p.RHO, k, j, i);
+        const Real cs2   = gam * (gam - 1) * P(m_p.UU, k, j, i) / (P(m_p.RHO, k, j, i) + gam * P(m_p.UU, k, j, i));
+        EMHD::convert_prims_to_q_dP(P(m_p.Q, k, j, i), P(m_p.DP, k, j, i), P(m_p.RHO, k, j, i), Theta, cs2, emhd_params, q, dP);
+
+        // Then calculate the tensor
+        EMHD::calc_tensor(P(m_p.RHO, k, j, i), P(m_p.UU, k, j, i), (gam - 1) * P(m_p.UU, k, j, i), q, dP, D, dir, T);
+    } else if (m_p.B1 >= 0) {
+        // GRMHD stress-energy tensor w/ first index up, second index down
+        GRMHD::calc_tensor(P(m_p.RHO, k, j, i), P(m_p.UU, k, j, i), (gam - 1) * P(m_p.UU, k, j, i), D, dir, T);
+    } else {
+        // GRHD stress-energy tensor w/ first index up, second index down
+        GRHD::calc_tensor(P(m_p.RHO, k, j, i), P(m_p.UU, k, j, i), (gam - 1) * P(m_p.UU, k, j, i), D, dir, T);
+    }
+    // if (i == 11 && j == 11) printf("mhd: %6.5e %6.5e %6.5e %6.5e %6.5e\n", flux(m_u.RHO), T[0], T[1], T[2], T[3]);
+    flux(m_u.UU, k, j, i) = T[0] * gdet + flux(m_u.RHO, k, j, i);
+    flux(m_u.U1, k, j, i) = T[1] * gdet;
+    flux(m_u.U2, k, j, i) = T[2] * gdet;
+    flux(m_u.U3, k, j, i) = T[3] * gdet;
+
+    // Magnetic field
+    if (m_p.B1 >= 0) {
+        // Magnetic field
+        if (dir == 0) {
+            VLOOP flux(m_u.B1 + v, k, j, i) = P(m_p.B1 + v, k, j, i) * gdet;
+        } else {
+            // Constraint damping w/Dedner may add also P(m_p.psi) * gdet,
+            // but for us this is in the source term
+            VLOOP flux(m_u.B1 + v, k, j, i) = (D.bcon[v+1] * D.ucon[dir] - D.bcon[dir] * D.ucon[v+1]) * gdet;
+        }
+        // Extra scalar psi for constraint damping, see B_CD
+        if (m_p.PSI >= 0) {
+            if (dir == 0) {
+                flux(m_u.PSI, k, j, i) = P(m_p.PSI, k, j, i) * gdet;
+            } else {
+                // Psi field update as in Mosta et al (IllinoisGRMHD), alternate explanation Jesse et al (2020)
+                //Real alpha = 1. / sqrt(-G.gcon(Loci::center, j, i, 0, 0));
+                //Real beta_dir = G.gcon(Loci::center, j, i, 0, dir) * alpha * alpha;
+                flux(m_u.PSI, k, j, i) = (D.bcon[dir] - G.gcon(Loci::center, j, i, 0, dir) * P(m_p.PSI, k, j, i)) * gdet;
+            }
+        }
+    }
+
+    // EMHD Variables: advect like rho
+    if (m_p.Q >= 0) {
+        flux(m_u.Q, k, j, i)  = P(m_p.Q, k, j, i) * D.ucon[dir] * gdet;
+        flux(m_u.DP, k, j, i) = P(m_p.DP, k, j, i) * D.ucon[dir] * gdet;
+    }
+
+    // Electrons: normalized by density
+    if (m_p.KTOT >= 0) {
+        flux(m_u.KTOT, k, j, i)  = flux(m_u.RHO, k, j, i) * P(m_p.KTOT, k, j, i);
+        if (m_p.K_CONSTANT >= 0)
+            flux(m_u.K_CONSTANT, k, j, i) = flux(m_u.RHO, k, j, i) * P(m_p.K_CONSTANT, k, j, i);
+        if (m_p.K_HOWES >= 0)
+            flux(m_u.K_HOWES, k, j, i)    = flux(m_u.RHO, k, j, i) * P(m_p.K_HOWES, k, j, i);
+        if (m_p.K_KAWAZURA >= 0)
+            flux(m_u.K_KAWAZURA, k, j, i) = flux(m_u.RHO, k, j, i) * P(m_p.K_KAWAZURA, k, j, i);
+        if (m_p.K_WERNER >= 0)
+            flux(m_u.K_WERNER, k, j, i)   = flux(m_u.RHO, k, j, i) * P(m_p.K_WERNER, k, j, i);
+        if (m_p.K_ROWAN >= 0)
+            flux(m_u.K_ROWAN, k, j, i)    = flux(m_u.RHO, k, j, i) * P(m_p.K_ROWAN, k, j, i);
+        if (m_p.K_SHARMA >= 0)
+            flux(m_u.K_SHARMA, k, j, i)   = flux(m_u.RHO, k, j, i) * P(m_p.K_SHARMA, k, j, i);
+    }
+
+}
+
 /**
  * Get the conserved (E)GRMHD variables corresponding to primitives in a zone. Equivalent to prim_to_flux with dir==0
  */
@@ -185,6 +266,18 @@ KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates& G, const Local& P, const
     FourVectors Dtmp;
     GRMHD::calc_4vecs(G, P, m_p, j, i, loc, Dtmp); // TODO switch GRHD/GRMHD?
     prim_to_flux(G, P, m_p, Dtmp, emhd_params, gam, j, i, 0, U, m_u, loc);
+    // printf("%d %d %6.5e %6.5e\n", i, j, P(m_p.Q), P(m_p.DP));
+}
+
+template<typename Global>
+KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates& G, const Global& P, const VarMap& m_p,
+                                   const EMHD::EMHD_parameters& emhd_params, const Real& gam, 
+                                   const int& k, const int& j, const int& i,
+                                   const Global& U, const VarMap& m_u, const Loci& loc=Loci::center)
+{
+    FourVectors Dtmp;
+    GRMHD::calc_4vecs(G, P, m_p, k, j, i, Loci::center, Dtmp);
+    prim_to_flux(G, P, m_p, Dtmp, emhd_params, gam, k, j, i, 0, U, m_u, loc);
 }
 
 /**
@@ -193,18 +286,33 @@ KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates& G, const Local& P, const
  */
 template<typename Local>
 KOKKOS_INLINE_FUNCTION void vchar(const GRCoordinates& G, const Local& P, const VarMap& m, const FourVectors& D,
-                                  const Real& gam, const int& k, const int& j, const int& i, const Loci& loc, const int& dir,
+                                  const Real& gam, const EMHD::EMHD_parameters& emhd_params, 
+                                  const int& k, const int& j, const int& i, const Loci& loc, const int& dir,
                                   Real& cmax, Real& cmin)
 {
     // Find sound speed
-    const Real ef = P(m.RHO) + gam * P(m.UU);
+    const Real ef  = P(m.RHO) + gam * P(m.UU);
     const Real cs2 = gam * (gam - 1) * P(m.UU) / ef;
     Real cms2;
-    if (m.B1 >= 0) {
+    if (m.Q > 0) {
         // Find fast magnetosonic speed
-        const Real bsq = max(dot(D.bcon, D.bcov), SMALL);
-        const Real ee = bsq + ef;
+        const Real bsq = m::max(dot(D.bcon, D.bcov), SMALL);
+        const Real ee  = bsq + ef;
         const Real va2 = bsq / ee;
+
+        const Real cvis2  = (4./3.) / (P(m.RHO) + (gam * P(m.UU)) ) * P(m.RHO) * emhd_params.viscosity_alpha * cs2;
+        const Real ccond2 = (gam - 1.) * emhd_params.conduction_alpha * cs2;
+
+        const Real cscond   = 0.5*(cs2 + ccond2 + sqrt(cs2*cs2 + ccond2*ccond2) ) ;
+        const Real cs2_emhd = cscond + cvis2;
+
+        cms2 = cs2_emhd + va2 - cs2_emhd*va2;
+    } else if (m.B1 >= 0) {
+        // Find fast magnetosonic speed
+        const Real bsq = m::max(dot(D.bcon, D.bcov), SMALL);
+        const Real ee  = bsq + ef;
+        const Real va2 = bsq / ee;
+
         cms2 = cs2 + va2 - cs2 * va2;
     } else {
         cms2 = cs2;
@@ -221,13 +329,13 @@ KOKKOS_INLINE_FUNCTION void vchar(const GRCoordinates& G, const Local& P, const 
         G.raise(Acov, Acon, k, j, i, loc);
         G.raise(Bcov, Bcon, k, j, i, loc);
 
-        const Real Asq = dot(Acon, Acov);
-        const Real Bsq = dot(Bcon, Bcov);
-        const Real Au = dot(Acov, D.ucon);
-        const Real Bu = dot(Bcov, D.ucon);
-        const Real AB = dot(Acon, Bcov);
-        const Real Au2 = Au * Au;
-        const Real Bu2 = Bu * Bu;
+        const Real Asq  = dot(Acon, Acov);
+        const Real Bsq  = dot(Bcon, Bcov);
+        const Real Au   = dot(Acov, D.ucon);
+        const Real Bu   = dot(Bcov, D.ucon);
+        const Real AB   = dot(Acon, Bcov);
+        const Real Au2  = Au * Au;
+        const Real Bu2  = Bu * Bu;
         const Real AuBu = Au * Bu;
 
         A = Bu2 - (Bsq + Bu2) * cms2;
@@ -235,13 +343,13 @@ KOKKOS_INLINE_FUNCTION void vchar(const GRCoordinates& G, const Local& P, const 
         C = Au2 - (Asq + Au2) * cms2;
     }
 
-    Real discr = sqrt(max(B * B - 4. * A * C, 0.));
+    Real discr = m::sqrt(m::max(B * B - 4. * A * C, 0.));
 
     Real vp = -(-B + discr) / (2. * A);
     Real vm = -(-B - discr) / (2. * A);
 
-    cmax = max(vp, vm);
-    cmin = min(vp, vm);
+    cmax = m::max(vp, vm);
+    cmin = m::min(vp, vm);
 }
 
 } // namespace Flux

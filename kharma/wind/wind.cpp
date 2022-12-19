@@ -86,7 +86,7 @@ TaskStatus Wind::AddSource(MeshData<Real> *mdudt)
     const IndexRange block = IndexRange{0, dUdt.GetDim(5) - 1};
 
     // Set the wind via linear ramp-up with time, if enabled
-    const Real current_n = (ramp_end > 0.0) ? min(max(time - ramp_start, 0.0) / (ramp_end - ramp_start), 1.0) * n : n;
+    const Real current_n = (ramp_end > 0.0) ? m::min(m::max(time - ramp_start, 0.0) / (ramp_end - ramp_start), 1.0) * n : n;
 
     pmb0->par_for("add_wind", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_MESH_3D {
@@ -99,7 +99,7 @@ TaskStatus Wind::AddSource(MeshData<Real> *mdudt)
 
             // Particle addition rate: concentrate at poles & center
             // TODO poles only w/e.g. cos2?
-            Real drhopdt = current_n * pow(cos(th), power) / pow(1. + r * r, 2);
+            Real drhopdt = current_n * m::pow(cos(th), power) / m::pow(1. + r * r, 2);
 
             // Insert fluid moving in positive U1, without B field
             // Ramp up like density, since we're not at a set proportion

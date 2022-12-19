@@ -2,8 +2,6 @@
 
 #include "decs.hpp"
 
-
-using namespace std;
 using namespace parthenon;
 
 /**
@@ -24,7 +22,7 @@ TaskStatus InitializeShockTube(MeshBlockData<Real> *rc, ParameterInput *pin)
     const auto& G = pmb->coords;
 
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
-    // TODO something sensible here 
+    // TODO some particular default shock
     const Real rhoL = pin->GetOrAddReal("shock", "rhoL", 0.0);
     const Real rhoR = pin->GetOrAddReal("shock", "rhoR", 0.0);
     const Real PL = pin->GetOrAddReal("shock", "PL", 0.0);
@@ -42,7 +40,7 @@ TaskStatus InitializeShockTube(MeshBlockData<Real> *rc, ParameterInput *pin)
     const Real B3L = pin->GetOrAddReal("shock", "B3L", 0.0);
     const Real B3R = pin->GetOrAddReal("shock", "B3R", 0.0);
 
-    IndexDomain domain = IndexDomain::entire;
+    IndexDomain domain = IndexDomain::interior;
     IndexRange ib = pmb->cellbounds.GetBoundsI(domain);
     IndexRange jb = pmb->cellbounds.GetBoundsJ(domain);
     IndexRange kb = pmb->cellbounds.GetBoundsK(domain);

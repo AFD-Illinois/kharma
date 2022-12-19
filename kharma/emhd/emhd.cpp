@@ -70,6 +70,9 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     Real tau = pin->GetOrAddReal("emhd", "tau", 1.0);
     Real conduction_alpha = pin->GetOrAddReal("emhd", "conduction_alpha", 1.0);
     Real viscosity_alpha = pin->GetOrAddReal("emhd", "viscosity_alpha", 1.0);
+    
+    Real kappa = pin->GetOrAddReal("emhd", "kappa", 1.0);
+    Real eta   = pin->GetOrAddReal("emhd", "eta", 1.0);
 
     EMHD_parameters emhd_params;
     emhd_params.higher_order_terms = higher_order_terms;
@@ -77,14 +80,18 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
         emhd_params.type = ClosureType::constant;
     } else if (closure_type == "sound_speed" || closure_type == "soundspeed") {
         emhd_params.type = ClosureType::soundspeed;
+    } else if (closure_type == "kappa_eta") {
+        emhd_params.type = ClosureType::kappa_eta;
     } else if (closure_type == "torus") {
         emhd_params.type = ClosureType::torus;
     } else {
         throw std::invalid_argument("Invalid Closure type: "+closure_type+". Use constant, sound_speed, or torus");
     }
-    emhd_params.tau = tau;
+    emhd_params.tau              = tau;
     emhd_params.conduction_alpha = conduction_alpha;
-    emhd_params.viscosity_alpha = viscosity_alpha;
+    emhd_params.viscosity_alpha  = viscosity_alpha;
+    emhd_params.kappa            = kappa;
+    emhd_params.eta              = eta;
     params.Add("emhd_params", emhd_params);
 
     // Slope reconstruction on faces. Always linear: default to MC unless we're using VL everywhere
@@ -97,16 +104,16 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     // Floors specific to EMHD calculations? Currently only need to enforce bsq>0 in one denominator
 
     MetadataFlag isPrimitive = packages.Get("GRMHD")->Param<MetadataFlag>("PrimitiveFlag");
-    MetadataFlag isNonideal = Metadata::AllocateNewFlag("Nonideal");
-    params.Add("NonidealFlag", isNonideal);
+    MetadataFlag isEMHD = Metadata::AllocateNewFlag("EMHDFlag");
+    params.Add("EMHDFlag", isEMHD);
 
     // General options for primitive and conserved scalar variables in ImEx driver
     // EMHD is supported only with imex driver and implicit evolution
     MetadataFlag isImplicit = packages.Get("Implicit")->Param<MetadataFlag>("ImplicitFlag");
     Metadata m_con  = Metadata({Metadata::Real, Metadata::Cell, Metadata::Independent, isImplicit,
-                                Metadata::Conserved, Metadata::WithFluxes, isNonideal});
+                                Metadata::Conserved, Metadata::WithFluxes, isEMHD});
     Metadata m_prim = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, isImplicit,
-                                Metadata::FillGhost, Metadata::Restart, isPrimitive, isNonideal});
+                                Metadata::FillGhost, Metadata::Restart, isPrimitive, isEMHD});
 
     // Heat conduction
     pkg->AddField("cons.q", m_con);
@@ -128,20 +135,20 @@ TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
     Flag(mdudt, "Adding EMHD Explicit Sources");
     // Pointers
     auto pmesh = mdudt->GetMeshPointer();
-    auto pmb0 = mdudt->GetBlockData(0)->GetBlockPointer();
+    auto pmb0  = mdudt->GetBlockData(0)->GetBlockPointer();
     // Options
     const auto& gpars = pmb0->packages.Get("GRMHD")->AllParams();
-    const Real gam = gpars.Get<Real>("gamma");
+    const Real gam    = gpars.Get<Real>("gamma");
+    const int ndim    = pmesh->ndim;
     const MetadataFlag isPrimitive = gpars.Get<MetadataFlag>("PrimitiveFlag");
-    const int ndim = pmesh->ndim;
 
-    const auto& pars = pmb0->packages.Get("EMHD")->AllParams();
+    const auto& pars                   = pmb0->packages.Get("EMHD")->AllParams();
     const EMHD_parameters& emhd_params = pars.Get<EMHD_parameters>("emhd_params");
 
     // Pack variables
     PackIndexMap prims_map, cons_map;
-    auto P = md->PackVariables(std::vector<MetadataFlag>{isPrimitive}, prims_map);
-    auto U = md->PackVariables(std::vector<MetadataFlag>{Metadata::Conserved}, cons_map);
+    auto P    = md->PackVariables(std::vector<MetadataFlag>{isPrimitive}, prims_map);
+    auto U    = md->PackVariables(std::vector<MetadataFlag>{Metadata::Conserved}, cons_map);
     auto dUdt = mdudt->PackVariables(std::vector<MetadataFlag>{Metadata::Conserved});
     const VarMap m_p(prims_map, false), m_u(cons_map, true);
 
@@ -166,7 +173,7 @@ TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
     // Calculate & apply source terms
     pmb0->par_for("emhd_sources_pre", block.s, block.e, kl.s, kl.e, jl.s, jl.e, il.s, il.e,
         KOKKOS_LAMBDA_MESH_3D {
-            const auto& G = dUdt.GetCoords(b);
+            const auto& G    = dUdt.GetCoords(b);
             const GReal gdet = G.gdet(Loci::center, j, i);
             // ucon
             Real ucon[GR_DIM], ucov[GR_DIM];
@@ -174,7 +181,7 @@ TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
             G.lower(ucon, ucov, k, j, i, Loci::center);
             DLOOP1 ucov_s(b, mu, k, j, i) = ucov[mu];
             // theta
-            theta_s(b, k, j, i) = max((gam - 1) * P(b)(m_p.UU, k, j, i) / P(b)(m_p.RHO, k, j, i), SMALL);
+            theta_s(b, k, j, i) = m::max((gam - 1) * P(b)(m_p.UU, k, j, i) / P(b)(m_p.RHO, k, j, i), SMALL);
         }
     );
 
@@ -185,40 +192,46 @@ TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
 
             // Get the EGRMHD parameters
             Real tau, chi_e, nu_e;
-            EMHD::set_parameters(G, P(b), m_p, emhd_params, gam, k, j, i, tau, chi_e, nu_e);
+            EMHD::set_parameters(G, P(b), m_p, emhd_params, gam, k, j, i, tau, chi_e, nu_e, "explicit_sources");
 
             // and the 4-vectors
             FourVectors D;
             GRMHD::calc_4vecs(G, P(b), m_p, k, j, i, Loci::center, D);
-            double bsq = max(dot(D.bcon, D.bcov), SMALL);
+            double bsq = m::max(dot(D.bcon, D.bcov), SMALL);
 
             // Compute gradient of ucov and Theta
             Real grad_ucov[GR_DIM][GR_DIM], grad_Theta[GR_DIM];
-            EMHD::gradient_calc(G, P(b), ucov_s, theta_s, b, k, j, i, (ndim > 2), grad_ucov, grad_Theta);
+            EMHD::gradient_calc(G, P(b), ucov_s, theta_s, b, k, j, i, (ndim > 2), (ndim > 1), grad_ucov, grad_Theta);
 
             // Compute div of ucon (all terms but the time-derivative ones are nonzero)
-            Real div_ucon = 0;
+            Real div_ucon    = 0;
             DLOOP2 div_ucon += G.gcon(Loci::center, j, i, mu, nu) * grad_ucov[mu][nu];
 
             // Compute+add explicit source terms (conduction and viscosity)
-            const Real& rho = P(b)(m_p.RHO, k, j, i);
-            Real q0 = 0;
-            DLOOP1 q0 -= rho * chi_e * (D.bcon[mu] / sqrt(bsq)) * grad_Theta[mu];
-            DLOOP2 q0 -= rho * chi_e * (D.bcon[mu] / sqrt(bsq)) * theta_s(b, k, j, i) * D.ucon[nu] * grad_ucov[nu][mu];
+            const Real& rho     = P(b)(m_p.RHO, k, j, i);
+            const Real& qtilde  = P(b)(m_p.Q, k, j, i);
+            const Real& dPtilde = P(b)(m_p.DP, k, j, i);
 
-            Real dP0 = -rho * nu_e * div_ucon;
+            Real q0    = 0;
+            DLOOP1 q0 -= rho * chi_e * (D.bcon[mu] / m::sqrt(bsq)) * grad_Theta[mu];
+            DLOOP2 q0 -= rho * chi_e * (D.bcon[mu] / m::sqrt(bsq)) * theta_s(b, k, j, i) * D.ucon[nu] * grad_ucov[nu][mu];
+
+            Real dP0     = -rho * nu_e * div_ucon;
             DLOOP2  dP0 += 3. * rho * nu_e * (D.bcon[mu] * D.bcon[nu] / bsq) * grad_ucov[mu][nu];
 
-            Real q0_tilde = 0., dP0_tilde = 0;
-            EMHD::convert_q_dP_to_prims(q0, dP0, rho, theta_s(b, k, j, i), tau, chi_e, nu_e, 
-                                        emhd_params, q0_tilde, dP0_tilde);
+            Real q0_tilde  = q0; 
+            Real dP0_tilde = dP0;
+            if (emhd_params.higher_order_terms) {
+                q0_tilde  *= (chi_e != 0) ? sqrt(tau / (chi_e * rho * pow(theta_s(b, k, j, i), 2)) ) : 0.;
+                dP0_tilde *= (nu_e  != 0) ? sqrt(tau / (nu_e * rho * theta_s(b, k, j, i)) ) : 0.;
+            }
 
             dUdt(b, m_u.Q, k, j, i)  += G.gdet(Loci::center, j, i) * q0_tilde / tau;
             dUdt(b, m_u.DP, k, j, i) += G.gdet(Loci::center, j, i) * dP0_tilde / tau;
 
             if (emhd_params.higher_order_terms) {
-                dUdt(b, m_u.Q, k, j, i) += G.gdet(Loci::center, j, i) * (q0_tilde / 2.) * div_ucon;
-                dUdt(b, m_u.DP, k, j, i) += G.gdet(Loci::center, j, i) * (q0_tilde / 2.) * div_ucon;
+                dUdt(b, m_u.Q, k, j, i)  += G.gdet(Loci::center, j, i) * (qtilde / 2.) * div_ucon;
+                dUdt(b, m_u.DP, k, j, i) += G.gdet(Loci::center, j, i) * (dPtilde / 2.) * div_ucon;
             }
         }
     );

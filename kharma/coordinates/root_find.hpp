@@ -71,16 +71,16 @@
     coord_to_embed(Xa, Xtmp); tha = Xtmp[2];\
     coord_to_embed(Xb, Xtmp); thb = Xtmp[2];\
 \
-    if (fabs(tha-th) < ROOTFIND_TOL) {\
+    if (m::abs(tha-th) < ROOTFIND_TOL) {\
         Xnative[2] = Xa[2]; return;\
-    } else if (fabs(thb-th) < ROOTFIND_TOL) {\
+    } else if (m::abs(thb-th) < ROOTFIND_TOL) {\
         Xnative[2] = Xb[2]; return;\
     }\
     for (int i = 0; i < 1000; i++) {\
         Xc[2] = 0.5 * (Xa[2] + Xb[2]);\
         coord_to_embed(Xc, Xtmp); thc = Xtmp[2];\
 \
-        if (fabs(thc - th) < ROOTFIND_TOL) break;\
+        if (m::abs(thc - th) < ROOTFIND_TOL) break;\
         else if ((thc - th) * (thb - th) < 0.) Xa[2] = Xc[2];\
         else Xb[2] = Xc[2];\
     }\

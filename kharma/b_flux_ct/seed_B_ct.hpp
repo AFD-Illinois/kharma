@@ -2,7 +2,7 @@
 #pragma once
 
 #include "decs.hpp"
-#include <parthenon/parthenon.hpp>
+#include "types.hpp"
 
 namespace B_FluxCT
 {

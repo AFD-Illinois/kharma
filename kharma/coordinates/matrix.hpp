@@ -116,9 +116,7 @@ KOKKOS_INLINE_FUNCTION int pp(int P[4])
 {
   int x;
   int p = 0;
-  int v[4];
-
-  for (int j = 0; j < 4; j++) v[j] = 0;
+  int v[4] = {0};
 
   for (int j = 0; j < 4; j++) {
     if (v[j]) {

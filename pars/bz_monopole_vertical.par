@@ -1,0 +1,76 @@
+# FIXME TODO rewrite this head
+# SANE model mirroring the simulation library
+# Overall simulation size 50M, to allow
+# running at small scale on e.g. a laptop
+# Uses MKS coordinates, not Funky variant
+
+<parthenon/job>
+problem_id = bz_monopole
+
+<parthenon/mesh>
+refinement = none
+numlevel = 1
+nx1 = 64
+nx2 = 64
+nx3 = 1
+
+<parthenon/meshblock>
+nx1 = 64
+nx2 = 64
+nx3 = 1
+
+<coordinates>
+base = spherical_ks
+transform = fmks
+r_out = 30.
+a = 0.9375
+hslope = 0.3
+mks_smooth = 0.5
+poly_xt = 0.82
+poly_alpha = 14.0
+
+<parthenon/time>
+tlim = 100.0
+nlim = -1
+
+<debug>
+verbose = 1
+extra_checks = 1
+flag_verbose = 0
+
+<GRMHD>
+cfl = 0.9
+gamma = 1.444444
+reconstruction = weno5
+
+<b_field>
+type = vertical
+bz = 0.01
+
+<driver>
+type = imex
+two_sync = true
+
+<floors>
+bsq_over_rho_max = 5000
+bsq_over_u_max = 50
+rho_min_geom = 1e-20
+u_min_geom = 1e-20
+
+<wind>
+on = false
+ne = 1.e-4
+Tp = 100
+u1 = 0.4
+power = 40
+
+<parthenon/output0>
+file_type = hdf5
+dt = 5.0
+single_precision_output = true
+variables = prims.rho, prims.u, prims.uvec, prims.B, fflag, pflag
+ghost_zones = true
+
+<parthenon/output1>
+file_type = hst
+dt = 0.1

@@ -45,6 +45,8 @@
 
 // Problem-specific boundaries
 #include "bondi.hpp"
+#include "emhd/conducting_atmosphere.hpp"
+#include "emhd/bondi_viscous.hpp"
 //#include "hubble.hpp"
 
 // Going to need all modules' headers here
@@ -72,10 +74,10 @@ void OutflowX1(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, boo
 
     // q will actually have *both* cons & prims (unless using imex driver)
     // We'll only need cons.B specifically tho
-    PackIndexMap prims_map, cons_map;
+    PackIndexMap prims_map, ghosts_map;
     auto P = GRMHD::PackMHDPrims(rc.get(), prims_map, coarse);
-    auto q = rc->PackVariables({Metadata::FillGhost}, cons_map, coarse);
-    const VarMap m_u(cons_map, true), m_p(prims_map, false);
+    auto q = rc->PackVariables({Metadata::FillGhost}, ghosts_map, coarse);
+    const VarMap m_u(ghosts_map, true), m_p(prims_map, false);
     // If we're running imex, q is just the *primitive* variables
     bool prim_ghosts = pmb->packages.Get("GRMHD")->Param<std::string>("driver_type") == "imex";
 
@@ -95,22 +97,19 @@ void OutflowX1(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, boo
     int js_e = bounds.js(ldomain), je_e = bounds.je(ldomain);
     int ks_e = bounds.ks(ldomain), ke_e = bounds.ke(ldomain);
 
-    int ref_tmp, dir_tmp, ibs, ibe;
+    int ref_tmp, ibs, ibe;
     if (domain == IndexDomain::inner_x1) {
-        ref_tmp = bounds.GetBoundsI(IndexDomain::interior).s;
-        dir_tmp = 0;
+        ref_tmp = is;
         ibs = is_e;
         ibe = is - 1;
     } else if (domain == IndexDomain::outer_x1) {
-        ref_tmp = bounds.GetBoundsI(IndexDomain::interior).e;
-        dir_tmp = 1;
+        ref_tmp = ie;
         ibs = ie + 1;
         ibe = ie_e;
     } else {
         throw std::invalid_argument("KHARMA Outflow boundaries only implemented in X1!");
     }
     const int ref = ref_tmp;
-    const int dir = dir_tmp;
 
     // This first loop copies all variables with the "FillGhost" tag into the outer zones
     // This includes some we may replace below
@@ -119,13 +118,14 @@ void OutflowX1(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, boo
             q(p, k, j, i) = q(p, k, j, ref);
         }
     );
-    // Inflow check, always applied
-    pmb->par_for("OutflowX1_check", ks_e, ke_e, js_e, je_e, ibs, ibe,
-        KOKKOS_LAMBDA_3D {
-            // Inflow check
-            if (check_inflow) KBoundaries::check_inflow(G, P, m_p.U1, k, j, i, dir);
-        }
-    );
+    // Inflow check
+    if (check_inflow) {
+        pmb->par_for("OutflowX1_check", ks_e, ke_e, js_e, je_e, ibs, ibe,
+            KOKKOS_LAMBDA_3D {
+                KBoundaries::check_inflow(G, P, domain, m_p.U1, k, j, i);
+            }
+        );
+    }
     if (!prim_ghosts) {
         // Normal operation: We copied both both prim & con GRMHD variables, but we want to apply
         // the boundaries based on just the former, so we run P->U
@@ -155,10 +155,10 @@ void ReflectX2(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, boo
 
     // q will actually have *both* cons & prims (unless using imex driver)
     // We'll only need cons.B specifically tho
-    PackIndexMap prims_map, cons_map;
+    PackIndexMap prims_map, ghosts_map;
     auto P = GRMHD::PackMHDPrims(rc.get(), prims_map, coarse);
-    auto q = rc->PackVariables({Metadata::FillGhost}, cons_map, coarse);
-    const VarMap m_u(cons_map, true), m_p(prims_map, false);
+    auto q = rc->PackVariables({Metadata::FillGhost}, ghosts_map, coarse);
+    const VarMap m_u(ghosts_map, true), m_p(prims_map, false);
     // If we're running imex, q is the *primitive* variables
     bool prim_ghosts = pmb->packages.Get("GRMHD")->Param<std::string>("driver_type") == "imex";
 
@@ -228,6 +228,8 @@ void KBoundaries::InnerX1(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse)
     std::string prob = pmb->packages.Get("GRMHD")->Param<std::string>("problem");
     if (prob == "hubble") {
        //SetHubble(rc.get(), IndexDomain::inner_x1, coarse);
+    } else if (prob == "conducting_atmosphere"){
+        dirichlet_bc(rc.get(), IndexDomain::inner_x1, coarse);
     } else {
         OutflowX1(rc, IndexDomain::inner_x1, coarse);
     }
@@ -244,6 +246,10 @@ void KBoundaries::OuterX1(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse)
        //SetHubble(rc.get(), IndexDomain::outer_x1, coarse);
     } else if (prob == "bondi") {
         SetBondi(rc.get(), IndexDomain::outer_x1, coarse);
+    } else if (prob == "conducting_atmosphere"){
+        dirichlet_bc(rc.get(), IndexDomain::outer_x1, coarse);
+    } else if (prob == "bondi_viscous") {
+        SetBondiViscous(rc.get(), IndexDomain::outer_x1, coarse);
     } else {
         OutflowX1(rc, IndexDomain::outer_x1, coarse);
     }
@@ -305,7 +311,7 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
             if (pmb->boundary_flag[BoundaryFace::inner_x1] == BoundaryFlag::user) {
                 pmb->par_for("fix_flux_in_l", ks, ke, js, je, is, is,
                     KOKKOS_LAMBDA_3D {
-                        F.flux(X1DIR, m_rho, k, j, i) = min(F.flux(X1DIR, m_rho, k, j, i), 0.);
+                        F.flux(X1DIR, m_rho, k, j, i) = m::min(F.flux(X1DIR, m_rho, k, j, i), 0.);
                     }
                 );
             }
@@ -314,7 +320,7 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
             if (pmb->boundary_flag[BoundaryFace::outer_x1] == BoundaryFlag::user) {
                 pmb->par_for("fix_flux_in_r", ks, ke, js, je, ie_l, ie_l,
                     KOKKOS_LAMBDA_3D {
-                        F.flux(X1DIR, m_rho, k, j, i) = max(F.flux(X1DIR, m_rho, k, j, i), 0.);
+                        F.flux(X1DIR, m_rho, k, j, i) = m::max(F.flux(X1DIR, m_rho, k, j, i), 0.);
                     }
                 );
             }
@@ -345,33 +351,63 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
     return TaskStatus::complete;
 }
 
-void KBoundaries::SyncAllBounds(Mesh *pmesh, bool sync_prims, bool sync_phys)
+TaskID KBoundaries::AddBoundarySync(TaskID t_start, TaskList &tl, std::shared_ptr<MeshData<Real>> mc1)
 {
-    // TODO this does syncs per-block.  Correctly and without race conditions afaict,
-    // but they could be done more simply & efficiently per-mesh
+    // Readability
+    const auto local = parthenon::BoundaryType::local;
+    const auto nonlocal = parthenon::BoundaryType::nonlocal;
+    // Send all, receive/set local after sending
+    auto send =
+        tl.AddTask(t_start, parthenon::cell_centered_bvars::SendBoundBufs<nonlocal>, mc1);
+
+    auto t_send_local =
+        tl.AddTask(t_start, parthenon::cell_centered_bvars::SendBoundBufs<local>, mc1);
+    auto t_recv_local =
+        tl.AddTask(t_start, parthenon::cell_centered_bvars::ReceiveBoundBufs<local>, mc1);
+    auto t_set_local =
+        tl.AddTask(t_recv_local, parthenon::cell_centered_bvars::SetBounds<local>, mc1);
+
+    // Receive/set nonlocal
+    auto t_recv = tl.AddTask(
+        t_start, parthenon::cell_centered_bvars::ReceiveBoundBufs<nonlocal>, mc1);
+    auto t_set = tl.AddTask(t_recv, parthenon::cell_centered_bvars::SetBounds<nonlocal>, mc1);
+
+    // TODO add AMR prolongate/restrict here (and/or maybe option not to?)
+
+    return t_set | t_set_local;
+}
+
+void KBoundaries::SyncAllBounds(std::shared_ptr<MeshData<Real>> md, bool apply_domain_bounds)
+{
     Flag("Syncing all bounds");
+    TaskID t_none(0);
+
+    // If we're using the ImEx driver, where primitives are fundamental, "AddBoundarySync"
+    // will only sync those, and we can call PtoU over everything after.
+    // If "AddBoundarySync" means syncing conserved variables, we have to call PtoU *before*
+    // the MPI sync operation, then recover the primitive vars *again* afterward.
+    auto pmesh = md->GetMeshPointer();
+    bool sync_prims = pmesh->packages.Get("GRMHD")->Param<std::string>("driver_type") == "imex";
+
+    // TODO un-meshblock the rest of this
+    auto &block_list = md.get()->GetMeshPointer()->block_list;
 
     if (sync_prims) {
-        // If we're syncing the primitive vars, we just sync
-        for (auto &pmb : pmesh->block_list) {
-            auto& rc = pmb->meshblock_data.Get();
-            Flag("Block sync send");
-            rc->ClearBoundary(BoundaryCommSubset::all);
-            rc->StartReceiving(BoundaryCommSubset::all);
-            rc->SendBoundaryBuffers();
-        }
-        for (auto &pmb : pmesh->block_list) {
-            auto& rc = pmb->meshblock_data.Get();
-            Flag("Block sync receive");
-            rc->ReceiveAndSetBoundariesWithWait();
-            rc->ClearBoundary(BoundaryCommSubset::all);
-            // TODO if amr...
-            //pmb->pbval->ProlongateBoundaries();
+        // If we're syncing the primitive vars, we just sync once
+        TaskCollection tc;
+        auto tr = tc.AddRegion(1);
+        AddBoundarySync(t_none, tr[0], md);
+        while (!tr.Execute());
 
-            Flux::PtoU(rc.get());
+        // Then PtoU
+        for (auto &pmb : block_list) {
+            auto& rc = pmb->meshblock_data.Get();
 
-            if (sync_phys) {
-                Flag("Physical bounds");
+            Flag("Block fill Conserved");
+            Flux::PtoU(rc.get(), IndexDomain::entire);
+
+            if (apply_domain_bounds) {
+                Flag("Block physical bounds");
                 // Physical boundary conditions
                 parthenon::ApplyBoundaryConditions(rc);
             }
@@ -380,45 +416,37 @@ void KBoundaries::SyncAllBounds(Mesh *pmesh, bool sync_prims, bool sync_phys)
         // If we're syncing the conserved vars...
         // Honestly, the easiest way through this sync is:
         // 1. PtoU everywhere
-        // 2. Sync like a normal step, incl. physical bounds
-        // 3. UtoP everywhere
-        // Luckily we're amortized over the whole sim, so we can
-        // take our time.
-        for (auto &pmb : pmesh->block_list) {
+        for (auto &pmb : block_list) {
             auto& rc = pmb->meshblock_data.Get();
-            Flag("Block PtoU");
+            Flag("Block fill conserved");
             Flux::PtoU(rc.get(), IndexDomain::entire);
         }
 
-        for (auto &pmb : pmesh->block_list) {
-            auto& rc = pmb->meshblock_data.Get();
-            Flag("Block sync send");
-            rc->ClearBoundary(BoundaryCommSubset::all);
-            rc->StartReceiving(BoundaryCommSubset::all);
-            rc->SendBoundaryBuffers();
-        }
+        // 2. Sync MPI bounds like a normal step
+        TaskCollection tc;
+        auto tr = tc.AddRegion(1);
+        AddBoundarySync(t_none, tr[0], md);
+        while (!tr.Execute());
 
-        for (auto &pmb : pmesh->block_list) {
+        // 3. UtoP everywhere
+        for (auto &pmb : block_list) {
             auto& rc = pmb->meshblock_data.Get();
-            Flag("Block sync receive");
-            rc->ReceiveAndSetBoundariesWithWait();
-            rc->ClearBoundary(BoundaryCommSubset::all);
-            // TODO if amr...
-            //pmb->pbval->ProlongateBoundaries();
 
-            Flag("Fill Derived");
+            Flag("Block fill Derived");
             // Fill P again, including ghost zones
             // But, sice we sync'd GRHD primitives already,
-            // leave those off by calling *Domain like in a normal
-            // boundary sync
+            // leave those off by calling *Domain
+            // (like we do in a normal boundary sync)
             KHARMA::FillDerivedDomain(rc, IndexDomain::entire, false);
 
-            if (sync_phys) {
-                Flag("Physical bounds");
+            if (apply_domain_bounds) {
+                Flag("Block physical bounds");
                 // Physical boundary conditions
                 parthenon::ApplyBoundaryConditions(rc);
             }
         }
     }
+
+    Kokkos::fence();
     Flag("Sync'd");
 }

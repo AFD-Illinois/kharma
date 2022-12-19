@@ -54,7 +54,7 @@ rho_min_geom = 1e-20
 u_min_geom = 1e-20
 
 <wind>
-on = true
+on = false
 ne = 1.e-4
 Tp = 100
 u1 = 0.4

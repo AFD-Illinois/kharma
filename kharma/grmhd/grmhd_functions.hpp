@@ -41,7 +41,7 @@
 
 /**
  * This namespace is solely for calc_tensor.
- * calc_4vecs above intelligently skips the bcon calculation if B field is not present
+ * GRMHD::calc_4vecs intelligently skips the bcon calculation if B field is not present
  */
 namespace GRHD
 {
@@ -64,7 +64,7 @@ KOKKOS_INLINE_FUNCTION void calc_tensor(const Real& rho, const Real& u, const Re
 /**
  * Device-side GR(M)HD functions
  * Anything reasonably specific to doing GRHD/GRMHD, which will not change:
- * lorentz factor, 4-vectors ucon/bcon
+ * lorentz factor, stress-energy tensor, 4-vectors ucon/bcon
  *
  * These functions mostly have several overloads, related to local vs global variables.
  * Many also have a form for split variables rho, uvec, etc, and one for a full array of primitive variables P.
@@ -90,7 +90,7 @@ KOKKOS_INLINE_FUNCTION Real lorentz_calc(const GRCoordinates& G, const GridVecto
                         G.gcov(loc, j, i, 1, 3) * uvec(V1, k, j, i) * uvec(V3, k, j, i) +
                         G.gcov(loc, j, i, 2, 3) * uvec(V2, k, j, i) * uvec(V3, k, j, i));
 
-    return sqrt(1. + qsq);
+    return m::sqrt(1. + qsq);
 }
 KOKKOS_INLINE_FUNCTION Real lorentz_calc(const GRCoordinates& G, const Real uv[NVEC],
                                          const int& k, const int& j, const int& i,
@@ -103,7 +103,7 @@ KOKKOS_INLINE_FUNCTION Real lorentz_calc(const GRCoordinates& G, const Real uv[N
                         G.gcov(loc, j, i, 1, 3) * uv[V1] * uv[V3] +
                         G.gcov(loc, j, i, 2, 3) * uv[V2] * uv[V3]);
 
-    return sqrt(1. + qsq);
+    return m::sqrt(1. + qsq);
 }
 // Versions for full primitives array
 KOKKOS_INLINE_FUNCTION Real lorentz_calc(const GRCoordinates& G, const VariablePack<Real>& P, const VarMap& m,
@@ -116,7 +116,7 @@ KOKKOS_INLINE_FUNCTION Real lorentz_calc(const GRCoordinates& G, const VariableP
                         G.gcov(loc, j, i, 1, 3) * P(m.U1, k, j, i) * P(m.U3, k, j, i) +
                         G.gcov(loc, j, i, 2, 3) * P(m.U2, k, j, i) * P(m.U3, k, j, i));
 
-    return sqrt(1. + qsq);
+    return m::sqrt(1. + qsq);
 }
 template<typename Local>
 KOKKOS_INLINE_FUNCTION Real lorentz_calc(const GRCoordinates& G, const Local& P, const VarMap& m,
@@ -129,12 +129,12 @@ KOKKOS_INLINE_FUNCTION Real lorentz_calc(const GRCoordinates& G, const Local& P,
                         G.gcov(loc, j, i, 1, 3) * P(m.U1) * P(m.U3) +
                         G.gcov(loc, j, i, 2, 3) * P(m.U2) * P(m.U3));
 
-    return sqrt(1. + qsq);
+    return m::sqrt(1. + qsq);
 }
 
 /**
  * Get a row of the MHD stress-energy tensor with first index up, second index down.
- * A factor of sqrt(4 pi) is absorbed into the definition of b.
+ * A factor of m::sqrt(4 pi) is absorbed into the definition of b.
  * See Gammie & McKinney '04.
  *
  * Entirely local!
@@ -167,7 +167,7 @@ KOKKOS_INLINE_FUNCTION void calc_4vecs(const GRCoordinates& G, const Real uvec[N
                                       FourVectors& D)
 {
     const Real gamma = lorentz_calc(G, uvec, k, j, i, loc);
-    const Real alpha = 1. / sqrt(-G.gcon(loc, j, i, 0, 0));
+    const Real alpha = 1. / m::sqrt(-G.gcon(loc, j, i, 0, 0));
 
     D.ucon[0] = gamma / alpha;
     VLOOP D.ucon[v+1] = uvec[v] - gamma * alpha * G.gcon(loc, j, i, 0, v+1);
@@ -186,7 +186,7 @@ KOKKOS_INLINE_FUNCTION void calc_4vecs(const GRCoordinates& G, const GridVector 
                                       FourVectors& D)
 {
     const Real gamma = lorentz_calc(G, uvec, k, j, i, loc);
-    const Real alpha = 1. / sqrt(-G.gcon(loc, j, i, 0, 0));
+    const Real alpha = 1. / m::sqrt(-G.gcon(loc, j, i, 0, 0));
 
     D.ucon[0] = gamma / alpha;
     VLOOP D.ucon[v+1] = uvec(v, k, j, i) - gamma * alpha * G.gcon(loc, j, i, 0, v+1);
@@ -206,7 +206,7 @@ KOKKOS_INLINE_FUNCTION void calc_4vecs(const GRCoordinates& G, const Local& P, c
                                       const int& j, const int& i, const Loci loc, FourVectors& D)
 {
     const Real gamma = lorentz_calc(G, P, m, j, i, loc);
-    const Real alpha = 1. / sqrt(-G.gcon(loc, j, i, 0, 0));
+    const Real alpha = 1. / m::sqrt(-G.gcon(loc, j, i, 0, 0));
 
     D.ucon[0] = gamma / alpha;
     VLOOP D.ucon[v+1] = P(m.U1 + v) - gamma * alpha * G.gcon(loc, j, i, 0, v+1);
@@ -228,7 +228,7 @@ KOKKOS_INLINE_FUNCTION void calc_4vecs(const GRCoordinates& G, const Global& P, 
                                       const int& k, const int& j, const int& i, const Loci loc, FourVectors& D)
 {
     const Real gamma = lorentz_calc(G, P, m, k, j, i, loc);
-    const Real alpha = 1. / sqrt(-G.gcon(loc, j, i, 0, 0));
+    const Real alpha = 1. / m::sqrt(-G.gcon(loc, j, i, 0, 0));
 
     D.ucon[0] = gamma / alpha;
     VLOOP D.ucon[v+1] = P(m.U1 + v, k, j, i) - gamma * alpha * G.gcon(loc, j, i, 0, v+1);
@@ -237,7 +237,7 @@ KOKKOS_INLINE_FUNCTION void calc_4vecs(const GRCoordinates& G, const Global& P, 
 
     if (m.B1 >= 0) {
         D.bcon[0] = 0;
-        VLOOP D.bcon[0] += P(m.B1 + v, k, j, i) * D.ucov[v+1];
+        VLOOP D.bcon[0]  += P(m.B1 + v, k, j, i) * D.ucov[v+1];
         VLOOP D.bcon[v+1] = (P(m.B1 + v, k, j, i) + D.bcon[0] * D.ucon[v+1]) / D.ucon[0];
 
         G.lower(D.bcon, D.bcov, k, j, i, loc);
@@ -253,7 +253,7 @@ KOKKOS_INLINE_FUNCTION void calc_ucon(const GRCoordinates &G, const GridVector u
                                       Real ucon[GR_DIM])
 {
     const Real gamma = lorentz_calc(G, uvec, k, j, i, loc);
-    const Real alpha = 1. / sqrt(-G.gcon(loc, j, i, 0, 0));
+    const Real alpha = 1. / m::sqrt(-G.gcon(loc, j, i, 0, 0));
 
     ucon[0] = gamma / alpha;
     VLOOP ucon[v+1] = uvec(v, k, j, i) - gamma * alpha * G.gcon(loc, j, i, 0, v+1);
@@ -263,7 +263,7 @@ KOKKOS_INLINE_FUNCTION void calc_ucon(const GRCoordinates &G, const Real uvec[NV
                                       Real ucon[GR_DIM])
 {
     const Real gamma = lorentz_calc(G, uvec, k, j, i, loc);
-    const Real alpha = 1. / sqrt(-G.gcon(loc, j, i, 0, 0));
+    const Real alpha = 1. / m::sqrt(-G.gcon(loc, j, i, 0, 0));
 
     ucon[0] = gamma / alpha;
     VLOOP ucon[v+1] = uvec[v] - gamma * alpha * G.gcon(loc, j, i, 0, v+1);
@@ -274,7 +274,7 @@ KOKKOS_INLINE_FUNCTION void calc_ucon(const GRCoordinates& G, const Local& P, co
                                       Real ucon[GR_DIM])
 {
     const Real gamma = lorentz_calc(G, P, m, j, i, loc);
-    const Real alpha = 1. / sqrt(-G.gcon(loc, j, i, 0, 0));
+    const Real alpha = 1. / m::sqrt(-G.gcon(loc, j, i, 0, 0));
 
     ucon[0] = gamma / alpha;
     VLOOP ucon[v+1] = P(m.U1 + v) - gamma * alpha * G.gcon(loc, j, i, 0, v+1);
@@ -285,7 +285,7 @@ KOKKOS_INLINE_FUNCTION void calc_ucon(const GRCoordinates& G, const Global& P, c
                                       Real ucon[GR_DIM])
 {
     const Real gamma = lorentz_calc(G, P, m, k, j, i, loc);
-    const Real alpha = 1. / sqrt(-G.gcon(loc, j, i, 0, 0));
+    const Real alpha = 1. / m::sqrt(-G.gcon(loc, j, i, 0, 0));
 
     ucon[0] = gamma / alpha;
     VLOOP ucon[v+1] = P(m.U1 + v, k, j, i) - gamma * alpha * G.gcon(loc, j, i, 0, v+1);

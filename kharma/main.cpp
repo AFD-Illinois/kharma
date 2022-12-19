@@ -42,6 +42,7 @@
 #include "mpi.hpp"
 #include "post_initialize.hpp"
 #include "problem.hpp"
+#include "emhd/conducting_atmosphere.hpp"
 
 // Parthenon headers
 #include <parthenon/parthenon.hpp>
@@ -101,7 +102,7 @@ int main(int argc, char *argv[])
 
     pman.app_input->ProcessPackages = KHARMA::ProcessPackages;
     pman.app_input->ProblemGenerator = KHARMA::ProblemGenerator;
-    pman.app_input->UserWorkBeforeOutput = KHARMA::FillOutput;
+    pman.app_input->MeshBlockUserWorkBeforeOutput = KHARMA::FillOutput;
     pman.app_input->PreStepMeshUserWorkInLoop = KHARMA::PreStepMeshUserWorkInLoop;
     pman.app_input->PostStepMeshUserWorkInLoop = KHARMA::PostStepMeshUserWorkInLoop;
     pman.app_input->PostStepDiagnosticsInLoop = KHARMA::PostStepDiagnostics;
@@ -143,7 +144,7 @@ int main(int argc, char *argv[])
     // Implemented separately outside of MeshBlock since
     // this usually involves global reductions for normalization
     if(MPIRank0())
-        cout << "Running post-initialization tasks..." << endl;
+        std::cout << "Running post-initialization tasks..." << std::endl;
 
     auto prob = pin->GetString("parthenon/job", "problem_id");
     bool is_restart = (prob == "resize_restart") || pman.IsRestart();
@@ -169,7 +170,7 @@ int main(int argc, char *argv[])
         std::ostringstream ss;
         auto itt_now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
         ss << "kharma_parsed_parameters_" << std::put_time(std::gmtime(&itt_now), "%FT%TZ") << ".par";
-        fstream pars;
+        std::fstream pars;
         pars.open(ss.str(), std::fstream::out | std::fstream::trunc);
         pin->ParameterDump(pars);
         pars.close();
@@ -179,7 +180,7 @@ int main(int argc, char *argv[])
         // This dumps the full Kokkos config, useful for double-checking
         // that the compile did what we wanted
         ShowConfig();
-        pin->ParameterDump(cout);
+        pin->ParameterDump(std::cout);
     }
 
     // Then execute the driver. This is a Parthenon function inherited by our HARMDriver object,
@@ -188,15 +189,20 @@ int main(int argc, char *argv[])
     Flag("Executing Driver");
 
     if (driver_type == "harm") {
-        cout << "Initializing and running KHARMA driver." << endl;
+        std::cout << "Initializing and running KHARMA driver." << std::endl;
         HARMDriver driver(pin, papp, pmesh);
         auto driver_status = driver.Execute();
     } else if (driver_type == "imex") {
-        cout << "Initializing and running IMEX driver." << endl;
+        std::cout << "Initializing and running IMEX driver." << std::endl;
         ImexDriver driver(pin, papp, pmesh);
         auto driver_status = driver.Execute();
     }
 
+#ifndef KOKKOS_ENABLE_CUDA
+    // Cleanup our global NDArray
+    extern ParArrayND<double> p_bound;
+    p_bound.~ParArrayND<double>();
+#endif
     // Parthenon cleanup includes Kokkos, MPI
     Flag("Finalizing");
     pman.ParthenonFinalize();

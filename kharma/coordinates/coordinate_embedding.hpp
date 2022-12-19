@@ -48,8 +48,9 @@
 #include "matrix.hpp"
 
 /**
- * Coordinates in HARM are logically Cartesian -- that is, in some coordinate system they are evenly spaced
- * However, working in GR allows us to define that "native" or "transformed" coordinate system arbitrarily
+ * Coordinates in HARM are logically Cartesian -- that is, in some coordinate system, here dubbed "native"
+ * coordinates, each cell is a rectangular prism of exactly the same shape as all the others.
+ * However, working in GR allows us to define that "native" coordinate system arbitrarily
  * in relation to the "base" or "embedding" coordinates, which are usually Spherical Kerr-Schild coordinates.
  *
  * That is, as long as we have a bijective map of base<->transformed coordinates, we can define the latter
@@ -275,7 +276,7 @@ class CoordinateEmbedding {
         KOKKOS_INLINE_FUNCTION Real gcon_native(const Real gcov[GR_DIM][GR_DIM], Real gcon[GR_DIM][GR_DIM]) const
         {
             Real gdet = invert(&gcov[0][0], &gcon[0][0]);
-            return sqrt(fabs(gdet));
+            return m::sqrt(m::abs(gdet));
         }
         KOKKOS_INLINE_FUNCTION Real gdet_native(const GReal X[GR_DIM]) const
         {

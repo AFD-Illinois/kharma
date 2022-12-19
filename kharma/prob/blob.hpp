@@ -46,6 +46,8 @@
  * Insert a blob of material at a given temperature,
  * by scaling the density by a factor, then setting the temperature
  * constant.
+ * 
+ * TODO MeshData
  */
 void InsertBlob(MeshBlockData<Real> *rc, ParameterInput *pin)
 {
@@ -69,14 +71,15 @@ void InsertBlob(MeshBlockData<Real> *rc, ParameterInput *pin)
     GReal blob_th = pin->GetOrAddReal("blob", "th", M_PI/8);
     GReal blob_phi = pin->GetOrAddReal("blob", "phi", 0.0);
 
-    IndexRange ib = pmb->cellbounds.GetBoundsI(IndexDomain::entire);
-    IndexRange jb = pmb->cellbounds.GetBoundsJ(IndexDomain::entire);
-    IndexRange kb = pmb->cellbounds.GetBoundsK(IndexDomain::entire);
+    IndexDomain domain = IndexDomain::interior;
+    IndexRange ib = pmb->cellbounds.GetBoundsI(domain);
+    IndexRange jb = pmb->cellbounds.GetBoundsJ(domain);
+    IndexRange kb = pmb->cellbounds.GetBoundsK(domain);
     pmb->par_for("insert_blob", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_3D {
             Real X[GR_DIM];
             G.coord_embed(k, j, i, Loci::center, X);
-            Real d = sqrt(blob_r*blob_r + X[1]*X[1] - 2*blob_r*X[1]*
+            Real d = m::sqrt(blob_r*blob_r + X[1]*X[1] - 2*blob_r*X[1]*
                             (sin(blob_th) * sin(X[2]) * cos(blob_phi - X[3]) + cos(blob_th) * cos(X[2])));
             
             if (d <= sz_out) {

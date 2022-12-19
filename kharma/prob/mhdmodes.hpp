@@ -39,7 +39,6 @@
 
 
 using namespace std::literals::complex_literals;
-using namespace std;
 using namespace parthenon;
 
 /**
@@ -69,8 +68,9 @@ TaskStatus InitializeMHDModes(MeshBlockData<Real> *rc, ParameterInput *pin)
 
     const auto& G = pmb->coords;
 
-    int nmode = pin->GetOrAddInteger("mhdmodes", "nmode", 1);
-    int dir = pin->GetOrAddInteger("mhdmodes", "dir", 0);
+    const int nmode = pin->GetOrAddInteger("mhdmodes", "nmode", 1);
+    const int dir = pin->GetOrAddInteger("mhdmodes", "dir", 0);
+    const bool one_period = pin->GetOrAddBoolean("mhdmodes", "one_period", true);
 
     // START POSSIBLE ARGS: take all these as parameters in pin?
     // Mean state
@@ -244,9 +244,10 @@ TaskStatus InitializeMHDModes(MeshBlockData<Real> *rc, ParameterInput *pin)
         }
     }
 
-    IndexRange ib = pmb->cellbounds.GetBoundsI(IndexDomain::entire);
-    IndexRange jb = pmb->cellbounds.GetBoundsJ(IndexDomain::entire);
-    IndexRange kb = pmb->cellbounds.GetBoundsK(IndexDomain::entire);
+    IndexDomain domain = IndexDomain::interior;
+    IndexRange ib = pmb->cellbounds.GetBoundsI(domain);
+    IndexRange jb = pmb->cellbounds.GetBoundsJ(domain);
+    IndexRange kb = pmb->cellbounds.GetBoundsK(domain);
     pmb->par_for("mhdmodes_init", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_3D {
             Real X[GR_DIM];
@@ -264,9 +265,9 @@ TaskStatus InitializeMHDModes(MeshBlockData<Real> *rc, ParameterInput *pin)
         }
     );
 
-    // Override end time to be exactly 1 period for moving modes
-    if (nmode != 0) {
-        pin->SetReal("parthenon/time", "tlim", 2. * M_PI / fabs(omega.imag()));
+    // Override end time to be exactly 1 period for moving modes, unless we set otherwise
+    if (nmode != 0 && one_period) {
+        pin->SetReal("parthenon/time", "tlim", 2. * M_PI / m::abs(omega.imag()));
     }
 
     return TaskStatus::complete;

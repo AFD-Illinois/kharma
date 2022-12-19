@@ -11,6 +11,7 @@ endif()
 
 AUX_SOURCE_DIRECTORY(${CMAKE_CURRENT_SOURCE_DIR} EXE_NAME_SRC)
 AUX_SOURCE_DIRECTORY(${CMAKE_CURRENT_SOURCE_DIR}/prob EXE_NAME_SRC)
+AUX_SOURCE_DIRECTORY(${CMAKE_CURRENT_SOURCE_DIR}/prob/emhd EXE_NAME_SRC)
 AUX_SOURCE_DIRECTORY(${CMAKE_CURRENT_SOURCE_DIR}/coordinates EXE_NAME_SRC)
 
 AUX_SOURCE_DIRECTORY(${CMAKE_CURRENT_SOURCE_DIR}/b_cd EXE_NAME_SRC)
@@ -49,6 +50,10 @@ target_link_libraries(${EXE_NAME} PUBLIC kokkos)
 # We actually only need the header
 #target_link_libraries(${EXE_NAME} PUBLIC kokkoskernels)
 target_link_libraries(${EXE_NAME} PUBLIC parthenon)
+# Sometimes helps with OpenMP
+#target_link_libraries(${EXE_NAME} PUBLIC gomp)
+target_link_libraries(${EXE_NAME} PUBLIC z)
+
 
 # OPTIONS
 # These are almost universally performance trade-offs
@@ -61,11 +66,6 @@ if(FUSE_FLUX_KERNELS)
 else()
     target_compile_definitions(${EXE_NAME} PUBLIC FUSE_FLUX_KERNELS=0)
 endif()
-if(FUSE_EMF_KERNELS)
-    target_compile_definitions(${EXE_NAME} PUBLIC FUSE_EMF_KERNELS=1)
-else()
-    target_compile_definitions(${EXE_NAME} PUBLIC FUSE_EMF_KERNELS=0)
-endif()
 if(FUSE_FLOOR_KERNELS)
     target_compile_definitions(${EXE_NAME} PUBLIC FUSE_FLOOR_KERNELS=1)
 else()
@@ -76,9 +76,17 @@ if(FAST_CARTESIAN)
 else()
     target_compile_definitions(${EXE_NAME} PUBLIC FAST_CARTESIAN=0)
 endif()
-# Tracing is added in the command-line call when running  "./make.sh [OPTIONS] trace"
-if(TRACE)
-    message("Compiling with code tracing (printed FLAGs)")
+option(KHARMA_DISABLE_IMPLICIT "Compile the implicit solver, requiring kokkos-kernels. Default true" OFF)
+option(KHARMA_TRACE "Compile with tracing: print entry and exit of important functions" OFF)
+if(KHARMA_DISABLE_IMPLICIT)
+    message("Compiling without the implicit solver.  Extended GRMHD will be disabled!")
+    target_compile_definitions(${EXE_NAME} PUBLIC ENABLE_IMPLICIT=0)
+else()
+    target_compile_definitions(${EXE_NAME} PUBLIC ENABLE_IMPLICIT=1)
+endif()
+# Tracing can be added in the command-line make.sh call: "./make.sh [OPTIONS] trace"
+if(KHARMA_TRACE)
+    message("Compiling with code tracing (prints 'Flag' calls)")
     target_compile_definitions(${EXE_NAME} PUBLIC TRACE=1)
 else()
     target_compile_definitions(${EXE_NAME} PUBLIC TRACE=0)
