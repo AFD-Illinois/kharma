@@ -207,22 +207,13 @@ TaskStatus SetKharmaRestart(MeshBlockData<Real> *rc, IndexDomain domain, bool co
 {
     Flag(rc, "Setting KHARMA restart zones");
     auto pmb = rc->GetBlockPointer();
-    GridScalar rho = rc->Get("prims.rho").data;
-    GridScalar u = rc->Get("prims.u").data;
-    GridVector uvec = rc->Get("prims.uvec").data;
     auto b_field_type = pmb->packages.Get("GRMHD")->Param<std::string>("b_field_type");
     const bool include_B = (b_field_type != "none");
-    GridVector B_P; // refer to reductions/reductions.hpp
-    if (include_B) {
-        B_P = rc->Get("prims.B").data;
-    }
+    // A placeholder to save the B fields for SeedBField
+    GridVector B_Save = rc->Get("B_Save").data;
 
     auto& G = pmb->coords;
     
-    //if (pin->GetOrAddString("b_field", "type", "none") != "none") {
-    //    auto B_host = B_P.GetHostMirror(); 
-    //}
-
     // Size/domain of the MeshBlock we're reading to
     int is, ie;
     if (domain == IndexDomain::outer_x1) {// copying from bondi
@@ -246,6 +237,18 @@ TaskStatus SetKharmaRestart(MeshBlockData<Real> *rc, IndexDomain domain, bool co
     hsize_t n2mb = pmb->packages.Get("GRMHD")->Param<int>("rmbnx2");
     hsize_t n3mb = pmb->packages.Get("GRMHD")->Param<int>("rmbnx3");
     hsize_t nBlocks = (int) (n1tot*n2tot*n3tot)/(n1mb*n2mb*n3mb);
+    auto fname = pmb->packages.Get("GRMHD")->Param<std::string>("fname");
+    auto fname_fill = pmb->packages.Get("GRMHD")->Param<std::string>("fname_fill");
+    const bool should_fill = !(fname_fill == "none");
+    const Real fx1min = pmb->packages.Get("GRMHD")->Param<Real>("rx1min");
+    const Real fx1max = pmb->packages.Get("GRMHD")->Param<Real>("rx1max");
+    const Real dx1 = (fx1max - fx1min) / n1tot;
+    const Real fx1min_ghost = fx1min - 4*dx1;
+    PackIndexMap prims_map, cons_map;
+    auto P = GRMHD::PackMHDPrims(rc, prims_map);
+    auto U = GRMHD::PackMHDCons(rc, cons_map);
+    const VarMap m_u(cons_map, true), m_p(prims_map, false);
+    
     if ((domain != IndexDomain::outer_x1) && (domain != IndexDomain::inner_x1)) { 
         // read from a restart file and save it to static GridScalar
         //cout << "Hyerin: reading files" << endl;
@@ -263,8 +266,6 @@ TaskStatus SetKharmaRestart(MeshBlockData<Real> *rc, IndexDomain domain, bool co
         const int block_sz = length[0]*length[1]*length[2]*length[3];
         //std::cout << "lengths " << length[0]  << " " << length[1] <<" " <<  length[2]<<" " << length[3] << std::endl;
         
-        auto fname = pmb->packages.Get("GRMHD")->Param<std::string>("fname");
-        auto fname_fill = pmb->packages.Get("GRMHD")->Param<std::string>("fname_fill");
         
         // read from file and stored in device Hyerin (10/18/2022)
         GridScalar x1_f_device("x1_f_device", length[0], length[1]); 
@@ -303,7 +304,8 @@ TaskStatus SetKharmaRestart(MeshBlockData<Real> *rc, IndexDomain domain, bool co
         hdf5_read_array(rho_file, "prims.rho", 5, fdims, fstart,fdims,fdims,fstart,H5T_IEEE_F64LE);
         hdf5_read_array(u_file, "prims.u", 5, fdims, fstart,fdims,fdims,fstart,H5T_IEEE_F64LE);
         hdf5_read_array(uvec_file, "prims.uvec", 5, fdims_vec, fstart,fdims_vec,fdims_vec,fstart,H5T_IEEE_F64LE);
-        if (include_B) hdf5_read_array(B_file, "prims.B", 5, fdims_vec, fstart,fdims_vec,fdims_vec,fstart,H5T_IEEE_F64LE);
+        //if (include_B) hdf5_read_array(B_file, "prims.B", 5, fdims_vec, fstart,fdims_vec,fdims_vec,fstart,H5T_IEEE_F64LE);
+        if (include_B) hdf5_read_array(B_file, "cons.B", 5, fdims_vec, fstart,fdims_vec,fdims_vec,fstart,H5T_IEEE_F64LE);
         hdf5_read_array(x1_file, "VolumeLocations/x", 2, fdims_x1, fstart_x,fdims_x1,fdims_x1,fstart_x,H5T_IEEE_F64LE);
         hdf5_read_array(x2_file, "VolumeLocations/y", 2, fdims_x2, fstart_x,fdims_x2,fdims_x2,fstart_x,H5T_IEEE_F64LE);
         hdf5_read_array(x3_file, "VolumeLocations/z", 2, fdims_x3, fstart_x,fdims_x3,fdims_x3,fstart_x,H5T_IEEE_F64LE);
@@ -336,15 +338,13 @@ TaskStatus SetKharmaRestart(MeshBlockData<Real> *rc, IndexDomain domain, bool co
             hdf5_read_array(rho_filefill, "prims.rho", 5, fdims, fstart,fdims,fdims,fstart,H5T_IEEE_F64LE);
             hdf5_read_array(u_filefill, "prims.u", 5, fdims, fstart,fdims,fdims,fstart,H5T_IEEE_F64LE);
             hdf5_read_array(uvec_filefill, "prims.uvec", 5, fdims_vec, fstart,fdims_vec,fdims_vec,fstart,H5T_IEEE_F64LE);
-            if (include_B) hdf5_read_array(B_filefill, "prims.B", 5, fdims_vec, fstart,fdims_vec,fdims_vec,fstart,H5T_IEEE_F64LE);
+            //if (include_B) hdf5_read_array(B_filefill, "prims.B", 5, fdims_vec, fstart,fdims_vec,fdims_vec,fstart,H5T_IEEE_F64LE);
+            if (include_B) hdf5_read_array(B_filefill, "cons.B", 5, fdims_vec, fstart,fdims_vec,fdims_vec,fstart,H5T_IEEE_F64LE);
             hdf5_read_array(x1_filefill, "VolumeLocations/x", 2, fdims_x1, fstart_x,fdims_x1,fdims_x1,fstart_x,H5T_IEEE_F64LE);
             hdf5_read_array(x2_filefill, "VolumeLocations/y", 2, fdims_x2, fstart_x,fdims_x2,fdims_x2,fstart_x,H5T_IEEE_F64LE);
             hdf5_read_array(x3_filefill, "VolumeLocations/z", 2, fdims_x3, fstart_x,fdims_x3,fdims_x3,fstart_x,H5T_IEEE_F64LE);
             hdf5_close();
         }
-
-        const Real fx1min = pmb->packages.Get("GRMHD")->Param<Real>("rx1min");
-        const Real fx1max = pmb->packages.Get("GRMHD")->Param<Real>("rx1max");
 
         // save the grid coordinate values to host array
         for (int iblocktemp = 0; iblocktemp < length[0]; iblocktemp++) {
@@ -388,23 +388,17 @@ TaskStatus SetKharmaRestart(MeshBlockData<Real> *rc, IndexDomain domain, bool co
                 }
             }
         }
-        std::cout << "Hyerin: first five Bs" << B_file[0] << " " << B_file[1] << " " << B_file[2] << " " << B_file[3] << " " << B_file[4] << std::endl; 
+        //std::cout << "Hyerin: first five Bs" << B_file[0] << " " << B_file[1] << " " << B_file[2] << " " << B_file[3] << " " << B_file[4] << std::endl; 
         //std::cout << "Hyerin: 6,7,8,9,10 B_f " << B_f_host(0,0,0,0,6) << " " << B_f_host(0,0,0,0,7) << " " << B_f_host(0,0,0,0,8) << " " << B_f_host(0,0,0,0,9) << " " << B_f_host(0,0,0,0,10) << std::endl; 
         const bool is_spherical = pmb->packages.Get("GRMHD")->Param<bool>("spherical");
         const Real mdot = pmb->packages.Get("GRMHD")->Param<Real>("mdot");
         const Real rs = pmb->packages.Get("GRMHD")->Param<Real>("rs");
-        const bool should_fill = !(fname_fill == "none");
         const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
-        //cout << "Hyerin: should fill " << should_fill <<endl;
 
         SphKSCoords kscoord = mpark::get<SphKSCoords>(G.coords.base);
         SphBLCoords blcoord = SphBLCoords(kscoord.a); //, kscoord.ext_g); // modified (11/15/22)
         CoordinateEmbedding coords = G.coords;
 
-        PackIndexMap prims_map, cons_map;
-        auto P = GRMHD::PackMHDPrims(rc, prims_map);
-        auto U = GRMHD::PackMHDCons(rc, cons_map);
-        const VarMap m_u(cons_map, true), m_p(prims_map, false);
       
         // Deep copy to device
         x1_f_device.DeepCopy(x1_f_host);
@@ -436,12 +430,19 @@ TaskStatus SetKharmaRestart(MeshBlockData<Real> *rc, IndexDomain domain, bool co
                     x1_f_device, x2_f_device, x3_f_device, rho_f_device, u_f_device, uvec_f_device, B_f_device,
                     x1_fill_device, x2_fill_device, x3_fill_device, rho_fill_device, u_fill_device, uvec_fill_device, B_fill_device,
                     k, j, i);
-                GRMHD::p_to_u(G,P,m_p,gam,k,j,i,U,m_u);  //TODO: shouldn't I do this too?
+                //GRMHD::p_to_u(G,P,m_p,gam,k,j,i,U,m_u);  //TODO: is this needed? I don't see it in resize_restart.cpp
                 //if (pin->GetOrAddString("b_field", "type", "none") != "none") {
                 //    VLOOP B_host(v, k, j, i) = interp_scalar(G, X, startx, stopx, dx, is_spherical, false, n3tot, n2tot, n1tot, &(B_file[v*block_sz]));
                 //}
+                if (include_B)
+                    get_B_restart_kharma(G, coords, P, m_p, blcoord,  kscoord, 
+                        fx1min, fx1max, should_fill, length,
+                        x1_f_device, x2_f_device, x3_f_device, B_f_device,
+                        x1_fill_device, x2_fill_device, x3_fill_device, B_fill_device, B_Save,
+                        k, j, i);
             }
         );
+        //if (include_B) B_FluxCT::PtoU(rc,domain); // added for B fields
     }
 
    return TaskStatus::complete;

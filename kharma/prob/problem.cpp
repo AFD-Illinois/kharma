@@ -82,10 +82,14 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
     
     
     // Hyerin
-    // save x1min for boundary conditions in boundaries.cpp
+    // save x1min, x_EH for boundary conditions in boundaries.cpp
     const Real x1min = pin->GetReal("parthenon/mesh", "x1min");
+    const Real a = pin->GetReal("coordinates", "a");
+    const GReal x_EH = log(1 + m::sqrt(1 - a*a)); // EH radius
     if(! (pmb->packages.Get("GRMHD")->AllParams().hasKey("x1min")))
         pmb->packages.Get("GRMHD")->AddParam<Real>("x1min", x1min);
+    if(! (pmb->packages.Get("GRMHD")->AllParams().hasKey("x_EH")))
+        pmb->packages.Get("GRMHD")->AddParam<Real>("x_EH", x_EH);
 
     auto prob = pin->GetString("parthenon/job", "problem_id"); // Required parameter
     

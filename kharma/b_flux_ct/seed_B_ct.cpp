@@ -52,6 +52,18 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
     GridScalar rho = rc->Get("prims.rho").data;
     GridVector B_P = rc->Get("prims.B").data;
     GridVector B_U = rc->Get("cons.B").data;
+    GridVector B_Save = rc->Get("B_Save").data;
+    Real fx1min, fx1max, dx1, fx1min_ghost;
+    int n1tot;
+    if (pin->GetString("parthenon/job", "problem_id") == "resize_restart_kharma") {
+        fx1min = pmb->packages.Get("GRMHD")->Param<Real>("rx1min");
+        fx1max = pmb->packages.Get("GRMHD")->Param<Real>("rx1max");
+        n1tot = pmb->packages.Get("GRMHD")->Param<int>("rnx1");
+        dx1 = (fx1max - fx1min) / n1tot;
+        fx1min_ghost = fx1min - 4*dx1;
+    }
+    auto fname_fill = pin->GetOrAddString("resize_restart", "fname_fill", "none");
+    const bool should_fill = !(fname_fill == "none");
 
     Real min_rho_q = pin->GetOrAddReal("b_field", "min_rho_q", 0.2);
     std::string b_field_type = pin->GetString("b_field", "type");
@@ -308,6 +320,29 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
                 B_U(V3, k, j, i) = 0;
             }
         );
+    }
+
+    if (pin->GetString("parthenon/job", "problem_id") == "resize_restart_kharma") {
+        // Hyerin (12/19/22) copy over data after initialization
+        
+        pmb->par_for("copy_B_restart_resize_kharma", ks, ke, js, je, is, ie,
+            KOKKOS_LAMBDA_3D {
+                GReal X[GR_DIM];
+                G.coord(k, j, i, Loci::center, X);
+
+                if ((!should_fill) && (X[1]<fx1min)) {// if cannot be read from restart file
+                    // do nothing. just use the initialization from SeedBField
+                } else {
+                    // overwrite with the saved values
+                    //VLOOP B_P(v, k, j, i) = B_Save(v, k, j, i);
+                    VLOOP B_U(v, k, j, i) = B_Save(v, k, j, i);
+                }
+            }
+        );
+        
+        // update conserved values
+        //B_FluxCT::PtoU(rc,IndexDomain::entire);
+        B_FluxCT::UtoP(rc,IndexDomain::entire);
     }
 
     // Then make sure the primitive versions are updated, too

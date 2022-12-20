@@ -153,6 +153,8 @@ void ReflectX2(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, boo
     auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
     const auto& G = pmb->coords;
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
+    Real x1min = pmb->packages.Get("GRMHD")->Param<Real>("x1min"); //Hyerin
+    Real x_EH = pmb->packages.Get("GRMHD")->Param<Real>("x_EH"); //Hyerin
 
     // q will actually have *both* cons & prims (unless using imex driver)
     // We'll only need cons.B specifically tho
@@ -180,9 +182,13 @@ void ReflectX2(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, boo
     // Side note: this *lags* the X1/X2 corner zones by one step, since X1 is applied first.
     // this is potentially bad
     int ics = (pmb->boundary_flag[BoundaryFace::inner_x1] == BoundaryFlag::user) ? is : is_e;
-    int ice = (pmb->boundary_flag[BoundaryFace::outer_x1] == BoundaryFlag::user) ? ie : ie_e;
+    //int ice = (pmb->boundary_flag[BoundaryFace::outer_x1] == BoundaryFlag::user) ? ie : ie_e;
     //int ics = is_e;
-    //int ice = ie_e;
+    int ice = ie_e;
+    if (x1min > x_EH){
+        ics = is_e; // overwrite the starting index such that 
+        //ice = ie_e; // the reflectx2 bc is also applied to outermost and innermost boundary
+    }
 
     int ref_tmp, add_tmp, jbs, jbe;
     if (domain == IndexDomain::inner_x2) {
