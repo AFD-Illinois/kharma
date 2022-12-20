@@ -107,8 +107,11 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     m = Metadata(flags_cons, s_vector);
     pkg->AddField("cons.B", m);
 
-    m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
+    m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy, Metadata::Restart, Metadata::FillGhost});
     pkg->AddField("divB", m);
+    // Hyerin (12/19/22)
+    m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::FillGhost, Metadata::Vector});
+    pkg->AddField("B_Save", m);
 
     // Ensure that prims get filled
     if (!implicit_b) {
@@ -191,7 +194,7 @@ void PtoU(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     const IndexRange jb = bounds.GetBoundsJ(domain);
     const IndexRange kb = bounds.GetBoundsK(domain);
     const IndexRange vec = IndexRange({0, B_U.GetDim(4)-1});
-    pmb->par_for("UtoP_B", vec.s, vec.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+    pmb->par_for("PtoU_B", vec.s, vec.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_VEC {
             // Update the primitive B-fields
             B_U(mu, k, j, i) = B_P(mu, k, j, i) * G.gdet(Loci::center, j, i);

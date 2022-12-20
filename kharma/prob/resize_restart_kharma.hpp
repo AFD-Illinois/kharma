@@ -7,6 +7,7 @@
 
 // added by Hyerin (10/07/22)
 #include "bondi.hpp"
+#include "b_flux_ct.hpp"
 
 /**
  * Read the header of an KHARMA HDF5 restart file, and set appropriate parameters
@@ -104,7 +105,7 @@ KOKKOS_INLINE_FUNCTION void get_prim_restart_kharma(const GRCoordinates& G, cons
                     const int& k, const int& j, const int& i) 
 {
     Real rho_temp, u_temp;
-    Real u_prim[NVEC], B_prim[NVEC];
+    Real u_prim[NVEC]; //, B_prim[NVEC];
     
     GReal X[GR_DIM];
     G.coord(k, j, i, Loci::center, X);
@@ -127,7 +128,7 @@ KOKKOS_INLINE_FUNCTION void get_prim_restart_kharma(const GRCoordinates& G, cons
         Xtoindex(X, x1, x2, x3, length, iblocktemp, itemp, jtemp, ktemp, del);
         rho_temp = rho(iblocktemp,ktemp,jtemp,itemp);
         u_temp = u(iblocktemp,ktemp,jtemp,itemp);
-        if (include_B) VLOOP B_prim[v] = B(v,iblocktemp,ktemp,jtemp,itemp);
+        //if (include_B) VLOOP B_prim[v] = B(v,iblocktemp,ktemp,jtemp,itemp);
         Real T = get_T(r, C1, C2, n, rs);
                         
         Real ur = -C1 / (m::pow(T, n) * m::pow(r, 2));
@@ -142,7 +143,7 @@ KOKKOS_INLINE_FUNCTION void get_prim_restart_kharma(const GRCoordinates& G, cons
         rho_temp = rho_fill(iblocktemp,ktemp,jtemp,itemp);
         u_temp = u_fill(iblocktemp,ktemp,jtemp,itemp);
         VLOOP u_prim[v] = uvec_fill(v,iblocktemp,ktemp,jtemp,itemp);
-        if (include_B) VLOOP B_prim[v] = B_fill(v,iblocktemp,ktemp,jtemp,itemp);
+        //if (include_B) VLOOP B_prim[v] = B_fill(v,iblocktemp,ktemp,jtemp,itemp);
     }
     else { 
         Xtoindex(X, x1, x2, x3, length, iblocktemp, itemp, jtemp, ktemp, del);
@@ -152,17 +153,66 @@ KOKKOS_INLINE_FUNCTION void get_prim_restart_kharma(const GRCoordinates& G, cons
         rho_temp = rho(iblocktemp,ktemp,jtemp,itemp);
         u_temp = u(iblocktemp,ktemp,jtemp,itemp);
         VLOOP u_prim[v] = uvec(v,iblocktemp,ktemp,jtemp,itemp);
-        if (include_B) VLOOP B_prim[v] = B(v,iblocktemp,ktemp,jtemp,itemp);
+        //if (include_B) VLOOP B_prim[v] = B(v,iblocktemp,ktemp,jtemp,itemp);
     }
     P(m_p.RHO, k, j, i) = rho_temp;
     P(m_p.UU, k, j, i) = u_temp;
     P(m_p.U1, k, j, i) = u_prim[0]; 
     P(m_p.U2, k, j, i) = u_prim[1];
     P(m_p.U3, k, j, i) = u_prim[2];
-    if (include_B) { // sth like this? Hyerin
-        P(m_p.B1, k, j, i) = B_prim[0]; // TODO: It should actually B_cons/g
-        P(m_p.B2, k, j, i) = B_prim[1];
-        P(m_p.B3, k, j, i) = B_prim[2];
+    //if (include_B) { // sth like this? Hyerin
+    //    P(m_p.B1, k, j, i) = B_prim[0]; // TODO: It should actually B_cons/g
+    //    P(m_p.B2, k, j, i) = B_prim[1];
+    //    P(m_p.B3, k, j, i) = B_prim[2];
+        /*
+        if (i<5 && j==0 && k==0) {
+            printf("for i= %i :B field %g %g %g, velocity %g %g %g \n",
+                i, B_prim[0], B_prim[1], B_prim[2],
+                u_prim[0], u_prim[1], u_prim[2]);
+        }*/
+    //}
+
+}
+
+KOKKOS_INLINE_FUNCTION void get_B_restart_kharma(const GRCoordinates& G, const CoordinateEmbedding& coords, const VariablePack<Real>& P, const VarMap& m_p,
+                    const SphBLCoords& bl,  const SphKSCoords& ks, 
+                    const Real fx1min, const Real fx1max, const bool should_fill,
+                    const hsize_t length[GR_DIM],
+                    const GridScalar& x1, const GridScalar& x2, const GridScalar& x3, const GridVector& B,
+                    const GridScalar& x1_fill, const GridScalar& x2_fill, const GridScalar& x3_fill, const GridVector& B_fill, const GridVector& B_save,
+                    const int& k, const int& j, const int& i) 
+{
+    //Real B_prim[NVEC];
+    Real B_cons[NVEC];
+    
+    GReal X[GR_DIM];
+    G.coord(k, j, i, Loci::center, X);
+    GReal del[GR_DIM]; // not really needed now since I am doing nearest neighbor interpolation
+    int iblocktemp, itemp, jtemp, ktemp;
+    // Interpolate the value at this location from the global grid
+    if ((!should_fill) && (X[1]<fx1min)) {// if cannot be read from restart file
+        // do nothing. just use the initialization from SeedBField
+        //VLOOP B_prim[v] = P(m_p.B1 + v, k, j, i);
+   }
+    else if ((should_fill) && ((X[1]>fx1max)||(X[1]<fx1min))) { // fill with the fname_fill
+        Xtoindex(X, x1_fill, x2_fill, x3_fill, length, iblocktemp, itemp, jtemp, ktemp, del);
+        //VLOOP B_prim[v] = B_fill(v,iblocktemp,ktemp,jtemp,itemp);
+        VLOOP B_cons[v] = B_fill(v,iblocktemp,ktemp,jtemp,itemp);
     }
+    else { 
+        Xtoindex(X, x1, x2, x3, length, iblocktemp, itemp, jtemp, ktemp, del);
+        //VLOOP B_prim[v] = B(v,iblocktemp,ktemp,jtemp,itemp);
+        VLOOP B_cons[v] = B(v,iblocktemp,ktemp,jtemp,itemp);
+    }
+
+    //P(m_p.B1, k, j, i) = B_prim[0];
+    //P(m_p.B2, k, j, i) = B_prim[1];
+    //P(m_p.B3, k, j, i) = B_prim[2];
+    //B_save(0, k, j, i) = B_prim[0];
+    //B_save(1, k, j, i) = B_prim[1];
+    //B_save(2, k, j, i) = B_prim[2];
+    B_save(0, k, j, i) = B_cons[0];
+    B_save(1, k, j, i) = B_cons[1];
+    B_save(2, k, j, i) = B_cons[2];
 
 }
