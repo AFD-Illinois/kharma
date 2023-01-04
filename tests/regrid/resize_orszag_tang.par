@@ -1,6 +1,4 @@
-# Restart from an iharm3d snapshot file, resizing to specified mesh
-# Note most parameters here will carry through to running after
-# restarting, as iharm3d restart files do not specify much
+# Resize an OT vortex, keeping most properties
 
 <parthenon/job>
 problem_id = resize_restart
@@ -37,41 +35,39 @@ base = cartesian_minkowski
 transform = none
 
 <parthenon/time>
-tlim = 300000
+tlim = 100
 integrator = rk2
-dt_min = 0.00001
 
 <GRMHD>
 cfl = 0.9
-gamma = 1.666667
+
+<driver>
+type = imex
 
 <resize_restart>
-fname = orszag_tang.out2.00001.h5
+fname = orszag_tang.out1.00009.h5
 use_tf = false
 use_dt = false
 skip_b_cleanup = false
 
 <b_cleanup>
-rel_tolerance = 1.e-9
+rel_tolerance = 1.e-11
 
 <floors>
 disable_floors = true
 
 <debug>
-verbose = 1
-flag_verbose = 2
-extra_checks = 1
+verbose = 0
+flag_verbose = 0
+extra_checks = 0
 
-<parthenon/output0>
-file_type = hdf5
-dt = 1.0
-single_precision_output = true
-variables = prims.rho, prims.u, prims.uvec, prims.B, jcon, fflag, pflag
+#<parthenon/output0>
+#file_type = hdf5
+#dt = 1000.0
+#single_precision_output = true
+#variables = prims.rho, prims.u, prims.uvec, prims.B, jcon, fflag, pflag
 
+# We only need to check the last restart file, specifically divB
 <parthenon/output1>
 file_type = rst
-dt = 50.0
-
-<parthenon/output2>
-file_type = hst
-dt = 0.1
+dt = 1000.0
