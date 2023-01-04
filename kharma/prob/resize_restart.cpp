@@ -272,18 +272,6 @@ TaskStatus ReadIharmRestart(MeshBlockData<Real> *rc, ParameterInput *pin)
                 pin->GetInteger("parthenon/mesh", "nx3"),
                 n1tot, n2tot, n3tot);
         }
-        
-        if (!close_to(pin->GetReal("parthenon/mesh", "x1min"),
-                      m::log(pin->GetReal("coordinates", "r_in"))) ||
-            !close_to(pin->GetReal("parthenon/mesh", "x1max"),
-                      m::log(pin->GetReal("coordinates", "r_out")))) {
-            printf("Mesh shape does not match!");
-            printf("Rin %g vs %g, Rout %g vs %g",
-                m::exp(pin->GetReal("parthenon/mesh", "x1min")),
-                pin->GetReal("coordinates", "r_in"),
-                m::exp(pin->GetReal("parthenon/mesh", "x1max")),
-                pin->GetReal("coordinates", "r_out"));
-        }
 
         if (!close_to(pin->GetReal("parthenon/mesh", "x1min"), startx[1]) ||
             !close_to(pin->GetReal("parthenon/mesh", "x1max"), stopx[1]) ||
@@ -300,6 +288,22 @@ TaskStatus ReadIharmRestart(MeshBlockData<Real> *rc, ParameterInput *pin)
                 pin->GetReal("parthenon/mesh", "x3min"), startx[3],
                 pin->GetReal("parthenon/mesh", "x3max"), stopx[3]);
         }
+
+        if (is_spherical) {
+            // Check that the coordinate parameters r_{in,out} match the mesh
+            if (!close_to(pin->GetReal("parthenon/mesh", "x1min"),
+                        m::log(pin->GetReal("coordinates", "r_in"))) ||
+                !close_to(pin->GetReal("parthenon/mesh", "x1max"),
+                        m::log(pin->GetReal("coordinates", "r_out")))) {
+                printf("Mesh shape does not match!");
+                printf("Rin %g vs %g, Rout %g vs %g",
+                    m::exp(pin->GetReal("parthenon/mesh", "x1min")),
+                    pin->GetReal("coordinates", "r_in"),
+                    m::exp(pin->GetReal("parthenon/mesh", "x1max")),
+                    pin->GetReal("coordinates", "r_out"));
+            }
+        }
+
     }
 
     if(MPIRank0()) std::cout << "Reading mesh from file to cache..." << std::endl;
@@ -319,6 +323,7 @@ TaskStatus ReadIharmRestart(MeshBlockData<Real> *rc, ParameterInput *pin)
     const auto& G = pmb->coords;
 
     // Total file size
+    // TODO separate nmprim to stop at 8 prims if we don't need e-
     hsize_t fdims[] = {nfprim, n3tot, n2tot, n1tot};
 
     // Figure out the subset in global space corresponding to our memory cache
@@ -351,14 +356,20 @@ TaskStatus ReadIharmRestart(MeshBlockData<Real> *rc, ParameterInput *pin)
 
     // Truncate the file read sizes so we don't overrun the file data
     hsize_t fstart[4] = {0, static_max(gks, 0), static_max(gjs, 0), static_max(gis, 0)};
-    // TODO separate nmprim to stop at 8 prims if we don't need e-
-    hsize_t fstop[4] = {nfprim, static_min(gke, n3tot), static_min(gje, n2tot), static_min(gie, n1tot)};
-    hsize_t fcount[4] = {fstop[0] - fstart[0], fstop[1] - fstart[1], fstop[2] - fstart[2], fstop[3] - fstart[3]};
+    // Test gXe against last valid index, i.e. nXtot-1
+    hsize_t fstop[4] = {nfprim-1, static_min(gke, n3tot-1), static_min(gje, n2tot-1), static_min(gie, n1tot-1)};
+    // We add one here to get sizes from indices
+    hsize_t fcount[4] = {fstop[0] - fstart[0] + 1,
+                         fstop[1] - fstart[1] + 1,
+                         fstop[2] - fstart[2] + 1,
+                         fstop[3] - fstart[3] + 1};
     // If we overran an index on the left, we need to leave a blank row (i.e., start at 1 == true) to reflect this
     hsize_t mstart[4] = {0, (gks < 0), (gjs < 0), (gis < 0)};
     // Total memory size is never truncated
-    hsize_t nmk = gke-gks, nmj = gje-gjs, nmi = gie-gis;
+    // This calculation produces XxYx2 arrays for 2D sims w/linear interp but that's fine
+    hsize_t nmk = gke-gks+1, nmj = gje-gjs+1, nmi = gie-gis+1;
     hsize_t mdims[4] = {nfprim, nmk, nmj, nmi};
+    // TODO these should be const but hdf5_read_array yells about it, fix that
     // TODO should yell if any of these fired for nearest-neighbor
 
     // Allocate the array we'll need
@@ -387,7 +398,7 @@ TaskStatus ReadIharmRestart(MeshBlockData<Real> *rc, ParameterInput *pin)
         mstart_tmp[1] = 0;
         hdf5_read_array(ptmp, "p", 4, fdims, fstart_tmp, fcount_tmp, mdims, mstart_tmp, H5T_IEEE_F64LE);
     }
-    if (gke > n3tot && pmb->boundary_flag[BoundaryFace::outer_x3] == BoundaryFlag::periodic) {
+    if (gke > n3tot-1 && pmb->boundary_flag[BoundaryFace::outer_x3] == BoundaryFlag::periodic) {
         RESET_COUNTS
         // same X1/X2, but take only the globally FIRST rank in X3
         fstart_tmp[1] = 0;
@@ -403,7 +414,7 @@ TaskStatus ReadIharmRestart(MeshBlockData<Real> *rc, ParameterInput *pin)
         mstart_tmp[2] = 0;
         hdf5_read_array(ptmp, "p", 4, fdims, fstart_tmp, fcount_tmp, mdims, mstart_tmp, H5T_IEEE_F64LE);
     }
-    if (gje > n2tot && pmb->boundary_flag[BoundaryFace::outer_x2] == BoundaryFlag::periodic) {
+    if (gje > n2tot-1 && pmb->boundary_flag[BoundaryFace::outer_x2] == BoundaryFlag::periodic) {
         RESET_COUNTS
         fstart_tmp[2] = 0;
         fcount_tmp[2] = 1;
@@ -417,7 +428,7 @@ TaskStatus ReadIharmRestart(MeshBlockData<Real> *rc, ParameterInput *pin)
         mstart_tmp[3] = 0;
         hdf5_read_array(ptmp, "p", 4, fdims, fstart_tmp, fcount_tmp, mdims, mstart_tmp, H5T_IEEE_F64LE);
     }
-    if (gie > n1tot && pmb->boundary_flag[BoundaryFace::outer_x1] == BoundaryFlag::periodic) {
+    if (gie > n1tot-1 && pmb->boundary_flag[BoundaryFace::outer_x1] == BoundaryFlag::periodic) {
         RESET_COUNTS
         fstart_tmp[3] = 0;
         fcount_tmp[3] = 1;

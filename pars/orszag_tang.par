@@ -8,13 +8,13 @@ problem_id = orszag_tang
 refinement = none
 numlevel = 1
 
-nx1 = 768
+nx1 = 256
 x1min = -3.141592653589793
 x1max = 3.141592653589793
 ix1_bc = periodic
 ox1_bc = periodic
 
-nx2 = 768
+nx2 = 256
 x2min = -3.141592653589793
 x2max = 3.141592653589793
 ix2_bc = periodic
@@ -27,8 +27,8 @@ ix3_bc = periodic
 ox3_bc = periodic
 
 <parthenon/meshblock>
-nx1 = 768
-nx2 = 768
+nx1 = 256
+nx2 = 128
 nx3 = 1
 
 <coordinates>
@@ -44,6 +44,9 @@ cfl = 0.9
 gamma = 1.666667
 reconstruction = weno5
 
+<driver>
+type = imex
+
 <debug>
 verbose = 0
 flag_verbose = 0
@@ -58,3 +61,7 @@ variables = prims.rho, prims.u, prims.uvec, prims.B, jcon
 <parthenon/output1>
 file_type = hst
 dt = 0.1
+
+<parthenon/output2>
+file_type = rst
+dt = 10.0
