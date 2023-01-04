@@ -383,10 +383,11 @@ int hdf5_read_single_val(void *val, const char *name, hsize_t hdf5_type)
 int hdf5_read_array(void *data, const char *name, size_t rank,
                       hsize_t *fdims, hsize_t *fstart, hsize_t *fcount, hsize_t *mdims, hsize_t *mstart, hsize_t hdf5_type)
 {
-  hid_t filespace = H5Screate_simple(4, fdims, NULL);
+  //hid_t filespace = H5Screate_simple(4, fdims, NULL);
+  hid_t filespace = H5Screate_simple(rank, fdims, NULL); // edited by Hyerin
   H5Sselect_hyperslab(filespace, H5S_SELECT_SET, fstart, NULL, fcount,
     NULL);
-  hid_t memspace = H5Screate_simple(4, mdims, NULL);
+  hid_t memspace = H5Screate_simple(rank, mdims, NULL);
   H5Sselect_hyperslab(memspace, H5S_SELECT_SET, mstart, NULL, fcount,
     NULL);
 
