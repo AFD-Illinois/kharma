@@ -114,3 +114,9 @@ reinit:
   script:
     - cd tests/reinit
     - ./run.sh
+
+regrid:
+  stage: tests
+  script:
+    - cd tests/regrid
+    - ./run.sh
