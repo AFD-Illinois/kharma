@@ -179,6 +179,19 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, std::shared_ptr<MeshData<Rea
 void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart, bool is_resize)
 {
     Flag("Post-initialization started");
+    // This call:
+    // 1. Initializes any magnetic fields which are "seeded," i.e., defined with a magnetic field implementation
+    //    rather than assuming an implementation and setting the field with problem initialization.
+    // 2. Renormalizes magnetic fields based on a desired ratio of maximum magnetic/gas pressures
+    // 3. Adds any extra material which might be superimposed when restarting, e.g. "hotspot" regions a.k.a. "blobs"
+    // 4. Resets a couple of incidental flags, if Parthenon read them from a restart file
+    // 5. If necessary, cleans up any magnetic field divergence present on the grid
+
+    // Coming into this function, the *interior* regions should be initialized with a problem:
+    // that is, at least rho, u, uvec on each physical zone.
+    // If your problem requires custom boundary conditions, these should be implemented
+    // with the problem and called from the functions in KBoundaries.  This will ensure that they get
+    // called during this step, specifically during every call to KBoundaries::SyncAllBounds
 
     // Make sure we've built the MeshData object we'll be synchronizing/updating
     auto &md = pmesh->mesh_data.GetOrAdd("base", 0);
