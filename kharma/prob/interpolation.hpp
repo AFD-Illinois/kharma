@@ -36,36 +36,22 @@
 #include "decs.hpp"
 
 /**
- * Routines for interpolating on a grid, with values given in a flattened array.
- * Mostly used in resize_restart.cpp, which must interpolate from a grid corresponding
- * to an old simulation, read from a file.
+ * Routines for interpolating on a grid, using values given in a flattened array.
+ * Mostly used in resize_restart.cpp, which must interpolate from old simulation
+ * data.
  * 
- * Note that resizing a file nearly always requires fixing the resulting magentic field
- * divergence -- see b_cleanup/ for details.
+ * Note that resizing or resampling of magnetic fields usually requires
+ * fixing a resulting divergence -- see b_cleanup/ for details.
  */
-
 namespace Interpolation {
 
 /**
- * Finds the closest grid zone which lies to the left of the given point in X1,X2, and X3,
- * along with the distance 'del' from that center to X in each coordinate,
- *  for interpolation purposes.
- *
- * Example (from ipole, )
+ * Finds the closest grid zone index (i,j,k) with a center left of the given point.
+ * Additionally returns the point's proportional distance measured from the left
+ * zone center to the right (e.g., to (i+1, j, k) in X1) 
  * 
- *  0    0.5    1
- *  [     |     ]
- *  A  B  C DE  F
- *
- *  startx = 0.
- *  dx = 0.5
- *
- *  A -> (-1, 0.5)
- *  B -> ( 0, 0.0)
- *  C -> ( 0, 0.5)
- *  D -> ( 0, 0.9)
- *  E -> ( 1, 0.0)
- *  F -> ( 1, 0.5)
+ * This proportion is useful in interpolation, since linear interpolation corresponds to
+ * del*var[i+1] + (1. - del)*var[i]
  */
 KOKKOS_INLINE_FUNCTION void Xtoijk(const GReal X[GR_DIM],
                                    const GReal startx[GR_DIM],
@@ -87,7 +73,8 @@ KOKKOS_INLINE_FUNCTION void Xtoijk(const GReal X[GR_DIM],
 }
 
 /**
- *  Translates a point X in native coordinates to a grid zone.
+ * Return the grid zone index (i,j,k) corresponding which contains the point X.
+ * Note this is different from the above!
  */
 KOKKOS_INLINE_FUNCTION void Xtoijk_nearest(const GReal X[GR_DIM],
                                    const GReal startx[GR_DIM],
@@ -101,16 +88,16 @@ KOKKOS_INLINE_FUNCTION void Xtoijk_nearest(const GReal X[GR_DIM],
     k = (int) ((X[3] - startx[3]) / dx[3] + 1000) - 1000;
 }
 
+// For using the ipole routines in a recognizable form on a 1D array
+#define ind(i, j, k) ( (k) * n2 * n1 + (j) * n1 + (i))
+
 /**
- * Dumb linear interpolation: no special cases for boundaries
+ * Dumb linear interpolation: no special cases for boundaries.
  * Takes indices i,j,k and a block size n1, n2, n3,
  * as well as a flat array var.
  * 
  * TODO version(s) with View(s) for real device-side operation
  */
-// For using the ipole routines in a recognizable form on a 1D array
-#define ind(i, j, k) ( (k) * n2 * n1 + (j) * n1 + (i))
-
 KOKKOS_INLINE_FUNCTION Real linear(const int& i, const int& j, const int& k,
                                    const int& n1, const int& n2, const int& n3,
                                    const double del[4], const double *var)
