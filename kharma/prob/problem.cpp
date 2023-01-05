@@ -57,7 +57,6 @@
 #include "shock_tube.hpp"
 #include "hubble.hpp"
 #include "noh.hpp"
-#include "rest_conserve.hpp"
 // EMHD problem headers
 #include "emhd/anisotropic_conduction.hpp"
 #include "emhd/emhdmodes.hpp"
@@ -104,8 +103,6 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
         status = InitializeHubble(rc.get(), pin);
     } else if (prob == "driven_turbulence") {
         status = InitializeDrivenTurbulence(rc.get(), pin);
-    } else if (prob == "rest_conserve") {
-        status = InitializeRest(rc.get(), pin);
     // Extended GRMHD
     } else if (prob == "emhdmodes") {
         status = InitializeEMHDModes(rc.get(), pin);
