@@ -1,0 +1,53 @@
+# Regrid an OT vortex, keeping all properties but the block size
+
+<parthenon/job>
+problem_id = resize_restart
+
+<parthenon/mesh>
+# Set by restart file
+
+<parthenon/meshblock>
+nx1 = 64
+nx2 = 64
+nx3 = 1
+
+<coordinates>
+base = cartesian_minkowski
+transform = none
+
+<parthenon/time>
+tlim = 100
+integrator = rk2
+
+<GRMHD>
+cfl = 0.9
+
+<driver>
+type = imex
+
+<resize_restart>
+fname = orszag_tang.out1.00005.h5
+use_tf = true
+use_dt = false # TODO this is borked somehow
+skip_b_cleanup = true
+regrid_only = true
+
+<floors>
+disable_floors = true
+
+<debug>
+verbose = 0
+flag_verbose = 0
+extra_checks = 0
+
+# Have to compare last output file
+<parthenon/output0>
+file_type = hdf5
+dt = 1000.0
+single_precision_output = true
+variables = prims.rho, prims.u, prims.uvec, prims.B, jcon, fflag, pflag
+
+# Don't check the restart if the last dump matches
+#<parthenon/output1>
+#file_type = rst
+#dt = 1000.0
