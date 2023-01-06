@@ -125,7 +125,9 @@ fail = 0
 for k in range(NVAR):
     if abs(dvar[k]) != 0.:
         powerfits[k] = np.polyfit(np.log(RES), np.log(L1[:,k]), 1)[0]
+
         print("Power fit {}: {} {}".format(VARS[k], powerfits[k], L1[:,k]))
+        # These bounds were chosen heuristically: fast u2/u3 converge fast
         if powerfits[k] > -1.9 or ("entropy" not in SHORT and powerfits[k] < -2.1):
             # Allow entropy wave to converge fast, otherwise everything is ~2
             fail = 1

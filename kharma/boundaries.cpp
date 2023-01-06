@@ -47,7 +47,7 @@
 #include "bondi.hpp"
 #include "emhd/conducting_atmosphere.hpp"
 #include "emhd/bondi_viscous.hpp"
-//#include "hubble.hpp"
+#include "hubble.hpp"
 
 // Going to need all modules' headers here
 #include "b_flux_ct.hpp"
@@ -227,7 +227,7 @@ void KBoundaries::InnerX1(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse)
     auto pmb = rc->GetBlockPointer();
     std::string prob = pmb->packages.Get("GRMHD")->Param<std::string>("problem");
     if (prob == "hubble") {
-       //SetHubble(rc.get(), IndexDomain::inner_x1, coarse);
+       SetHubble(rc.get(), IndexDomain::inner_x1, coarse);
     } else if (prob == "conducting_atmosphere"){
         dirichlet_bc(rc.get(), IndexDomain::inner_x1, coarse);
     } else {
@@ -244,8 +244,6 @@ void KBoundaries::OuterX1(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse)
     std::string prob = pmb->packages.Get("GRMHD")->Param<std::string>("problem");
     if (prob == "hubble") {
        SetHubble(rc.get(), IndexDomain::outer_x1, coarse);
-    } else if (prob == "rest_conserve") {
-       SetRest(rc.get(), IndexDomain::inner_x1, coarse);
     } else if (prob == "bondi") {
         SetBondi(rc.get(), IndexDomain::outer_x1, coarse);
     } else if (prob == "conducting_atmosphere"){

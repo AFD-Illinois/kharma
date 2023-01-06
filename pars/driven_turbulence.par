@@ -39,6 +39,7 @@ transform = null
 cfl = 0.9
 gamma = 1.666667
 reconstruction = weno5
+add_jcon = false
 
 <b_field>
 type = constant
@@ -58,6 +59,7 @@ use_dt_light = true
 
 <driver>
 type = imex
+two_sync = true
 
 <electrons>
 on = true
@@ -66,9 +68,6 @@ kawazura = true
 sharma = true
 fel_constant = 0.5
 gamma_e = 1.333333
-
-<perf>
-two_sync = true
 
 <debug>
 verbose = 1
@@ -79,7 +78,9 @@ extra_checks = 1
 file_type = hdf5
 dt = 5.
 single_precision_output = true
-variables = prims.B, prims.rho, prims.uvec, prims.Ktot, prims.Kel_Constant, prims.Kel_Sharma, prims.Kel_Kawazura, grf_normalized, alfven_speed, ctop, fflag
+variables = prims.rho, prims.u, prims.uvec, prims.B, &
+            prims.Ktot, prims.Kel_Constant, prims.Kel_Sharma, prims.Kel_Kawazura, &
+            grf_normalized, alfven_speed, ctop, fflag, pflag
 
 <parthenon/output1>
 file_type = hst

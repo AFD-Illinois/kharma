@@ -107,7 +107,7 @@ TaskStatus SetHubble(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     IndexRange ib = pmb->cellbounds.GetBoundsI(domain);
     IndexRange jb = pmb->cellbounds.GetBoundsJ(domain);
     IndexRange kb = pmb->cellbounds.GetBoundsK(domain);
-    
+
     if (!context_boundaries || counter < 0) {
         // Setting as in equation 37
         Real toberho = rho0 / (1. + v0*t);

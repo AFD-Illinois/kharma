@@ -128,23 +128,24 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
 
     // Parse various mass and density units to set the different cooling rates
     // These could maybe tie in with Parthenon::Units when we add radiation
+    // TODO pretty soon this can be a GetVector<std::string>!!!
     std::vector<Real> masses = parse_list(pin->GetOrAddString("units", "MBH", "1.0"));
     if (masses != std::vector<Real>{1.0})
     {
         std::vector<std::vector<Real>> munits;
         for (int i=1; i <= masses.size(); ++i) {
-            munits.push_back(parse_list(pin->GetString("units", "M_unit_"+to_string(i))));
+            munits.push_back(parse_list(pin->GetString("units", "M_unit_" + std::to_string(i))));
         }
 
         if (MPIRank0() && verbose > 0) {
-            cout << "Using unit sets:" << endl;
+            std::cout << "Using unit sets:" << std::endl;
             for (int i=0; i < masses.size(); ++i) {
-                cout << endl << masses[i] << ":";
+                std::cout << std::endl << masses[i] << ":";
                 for (auto munit : munits[i]) {
-                    cout << " " << munit;
+                    std::cout << " " << munit;
                 }
             }
-            cout << endl;
+            std::cout << std::endl;
         }
         // This is a vector of Reals
         params.Add("masses", masses);
@@ -239,7 +240,14 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
 
 TaskStatus InitElectrons(MeshBlockData<Real> *rc, ParameterInput *pin)
 {
+    Flag("Initializing electron/fluid entropy values");
     auto pmb = rc->GetBlockPointer();
+
+    // Don't initialize entropies when running hubble problem
+    // TODO option for this in problem params
+    if (pmb->packages.Get("GRMHD")->Param<std::string>("problem") == "hubble") {
+        return TaskStatus::complete;
+    }
 
     MetadataFlag isElectrons = pmb->packages.Get("Electrons")->Param<MetadataFlag>("ElectronsFlag");
     MetadataFlag isPrimitive = pmb->packages.Get("GRMHD")->Param<MetadataFlag>("PrimitiveFlag");
@@ -261,7 +269,7 @@ TaskStatus InitElectrons(MeshBlockData<Real> *rc, ParameterInput *pin)
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
     pmb->par_for("UtoP_electrons", 0, e_P.GetDim(4)-1, ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_VARS {
-            if (p == ktot_index) { // Initialize it even when using Hubble, it will be "erased" immediately after anyway in ApplyElectronHeating
+            if (p == ktot_index) {
                 // Initialize total entropy by definition,
                 e_P(p, k, j, i) = (gam - 1.) * u(k, j, i) * m::pow(rho(k, j, i), -gam);
             } else {
@@ -271,7 +279,9 @@ TaskStatus InitElectrons(MeshBlockData<Real> *rc, ParameterInput *pin)
         }
     );
 
-    // iharm3d syncs bounds here
+    // iharm3d syncs bounds here?
+
+    Flag("Initialized electron/fluid entropy values");
     return TaskStatus::complete;
 }
 
@@ -302,8 +312,8 @@ void UtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 
 }
 
-TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real> *rc)
-{
+TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real> *rc, bool generate_grf)
+{   // takes in '_sub_step_init' and '_sub_step_final'
     Flag(rc, "Applying electron heating");
     auto pmb = rc->GetBlockPointer();
 
@@ -343,14 +353,20 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
             GRMHD::calc_4vecs(G, P, m_p, k, j, i, Loci::center, Dtmp);
             Real bsq = dot(Dtmp.bcon, Dtmp.bcov);
 
-            // Calculate the new total entropy in this cell
-            const Real kNew = (gam-1.) * P_new(m_p.UU, k, j, i) / m::pow(P_new(m_p.RHO, k, j, i) ,gam);
+            // Calculate the new total entropy in this cell considering heating
+            const Real k_energy_conserving = (gam-1.) * P_new(m_p.UU, k, j, i) / m::pow(P_new(m_p.RHO, k, j, i), gam);
 
             // Dissipation is the real entropy k_energy_conserving minus any advected entropy from the previous (sub-)step P_new(KTOT)
-            // Due to floors we can end up with diss==0 or even *slightly* <0, so we require it to be positive here
+            Real diss_tmp = (game-1.) / (gam-1.) * m::pow(P(m_p.RHO, k, j, i), gam - game) * (k_energy_conserving - P_new(m_p.KTOT, k, j, i));
+            //this is eq27                  ratio of heating: Qi/Qe                           advected entropy from prev step
+            // ^ denotes the solution corresponding to entropy conservation
+
             // Under the flag "suppress_highb_heat", we set all dissipation to zero at sigma > 1.
-            const Real diss = (suppress_highb_heat && (bsq / P(m_p.RHO, k, j, i) > 1.)) ? 0.0 :
-                                m::max((game-1.) / (gam-1.) * m::pow(P(m_p.RHO, k, j, i), gam - game) * (kNew - P_new(m_p.KTOT, k, j, i)), 0.0);
+            diss_tmp = (suppress_highb_heat && (bsq / P(m_p.RHO, k, j, i) > 1.)) ? 0.0 : diss_tmp;
+
+            // Default is True diss_sign == Enforce nonnegative
+            // Due to floors we can end up with diss==0 or even *slightly* <0, so we require it to be positive here
+            const Real diss = pmb->packages.Get("Electrons")->Param<bool>("diss_sign") ? m::max(diss_tmp, 0.0) : diss_tmp;
 
             // Reset the entropy to measure next (sub-)step's dissipation
             P_new(m_p.KTOT, k, j, i) = k_energy_conserving;
@@ -359,9 +375,9 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
             // we cache the floors as entropy limits so they'll be cheaper to apply.
             // Note tp_te_min -> kel_max & vice versa
             const Real kel_max = P(m_p.KTOT, k, j, i) * m::pow(P(m_p.RHO, k, j, i), gam - game) /
-                                    (tptemin * (gam - 1.) / (gamp-1.) + (gam-1.) / (game-1.));
+                                    (tptemin * (gam - 1.) / (gamp-1.) + (gam-1.) / (game-1.)); //0.001
             const Real kel_min = P(m_p.KTOT, k, j, i) * m::pow(P(m_p.RHO, k, j, i), gam - game) /
-                                    (tptemax * (gam - 1.) / (gamp-1.) + (gam-1.) / (game-1.));
+                                    (tptemax * (gam - 1.) / (gamp-1.) + (gam-1.) / (game-1.)); //1000
             // Note this differs a little from Ressler '15, who ensure u_e/u_g > 0.01 rather than use temperatures
 
             // The ion temperature is useful for a few models, cache it too.
@@ -449,33 +465,11 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
     const IndexRange myib = pmb->cellbounds.GetBoundsI(IndexDomain::interior);
     const IndexRange myjb = pmb->cellbounds.GetBoundsJ(IndexDomain::interior);
     const IndexRange mykb = pmb->cellbounds.GetBoundsK(IndexDomain::interior);
-    // A couple of the electron test problems add source terms
-    // TODO move this to dUdt with other source terms?
+    // A couple of the electron test problems add source terms to the *fluid*.
+    // we bundle them here because they're generally relevant alongside e- heating,
+    // and should be applied at the same time
     const std::string prob = pmb->packages.Get("GRMHD")->Param<std::string>("problem");
-    if (prob == "hubble") {
-        const Real v0 = pmb->packages.Get("GRMHD")->Param<Real>("v0");
-        const Real ug0 = pmb->packages.Get("GRMHD")->Param<Real>("ug0");
-        const Real dt = pmb->packages.Get("Globals")->Param<Real>("dt_last");  // Close enough?
-        const Real t = pmb->packages.Get("Globals")->Param<Real>("time") + dt;
-        Real Q = (ug0 * v0 * (gam - 2) / pow(1 + v0 * t, 3));
-        pmb->par_for("hubble_Q_source_term", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-            KOKKOS_LAMBDA_3D {
-                const Real Q = -(ug0 * v0 * (gam - 2) / m::pow(1 + v0 * t, 3));
-                P_new(m_p.UU, k, j, i) += Q * dt;
-                // TODO all flux
-                GRMHD::p_to_u(G, P_new, m_p, gam, k, j, i, U_new, m_u);
-            }
-        );
-    } else if (prob == "rest_conserve" && pmb->packages.Get("GRMHD")->Param<Real>("q") != 0. && generate_grf) {
-        const Real dt = pmb->packages.Get("Globals")->Param<Real>("dt_last");  // Close enough?
-        const Real Q = pmb->packages.Get("GRMHD")->Param<Real>("q");
-         pmb->par_for("rest_conserve_Q_source_term", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-            KOKKOS_LAMBDA_3D {
-                P_new(m_p.UU, k, j, i) += Q * dt;
-                GRMHD::p_to_u(G, P_new, m_p, gam, k, j, i, U_new, m_u);
-            }
-        );
-    } else if (prob == "driven_turbulence") { // Gaussian random field:
+    if (prob == "driven_turbulence") { // Gaussian random field:
         const auto& G = pmb->coords;
         GridScalar rho = rc->Get("prims.rho").data;
         GridVector uvec = rc->Get("prims.uvec").data;
@@ -483,9 +477,11 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
         const Real t = pmb->packages.Get("Globals")->Param<Real>("time");
         Real counter = pmb->packages.Get("GRMHD")->Param<Real>("counter");
         const Real dt_kick=  pmb->packages.Get("GRMHD")->Param<Real>("dt_kick");
-        if (generate_grf && counter < t) {  counter+=dt_kick;
+        if (generate_grf && counter < t) {
+            counter += dt_kick;
             pmb->packages.Get("GRMHD")->UpdateParam<Real>("counter", counter);
             printf("Kick applied at time %.32f\n", t);
+
             const Real lx1=  pmb->packages.Get("GRMHD")->Param<Real>("lx1");
             const Real lx2=  pmb->packages.Get("GRMHD")->Param<Real>("lx2");
             const Real edot= pmb->packages.Get("GRMHD")->Param<Real>("drive_edot");
@@ -572,7 +568,7 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
             printf("%.32f\n", A); printf("%.32f\n", Bhalf); printf("%.32f\n", norm_const);
             printf("%.32f\n", (finl_e-init_e)/dt_kick);
             free(dv0); free(dv1);
-        } 
+        }
         // This could be only the GRMHD vars, for this problem, but speed isn't really an issue
         Flux::PtoU(rc);
     }
@@ -580,11 +576,13 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
     return TaskStatus::complete;
 }
 
-// Only if prob is rest_conserve or hubble
+// Only called for Hubble flow problem
 TaskStatus ApplyHeating(MeshBlockData<Real> * mbase) {
     auto pmb0 = mbase->GetBlockPointer();
-    const string prob = pmb0->packages.Get("GRMHD")->Param<string>("problem");
-    if (prob != "rest_conserve" && prob != "hubble") return TaskStatus::complete;
+
+    // This only supports the Hubble flow problem
+    const std::string prob = pmb0->packages.Get("GRMHD")->Param<std::string>("problem");
+    if (prob != "hubble") return TaskStatus::complete;
 
     Flag(mbase, "Applying heating");
 
@@ -595,15 +593,10 @@ TaskStatus ApplyHeating(MeshBlockData<Real> * mbase) {
     Real Q = 0;
     const Real dt = pmb0->packages.Get("Globals")->Param<Real>("dt_last");  // Close enough?
     const Real t = pmb0->packages.Get("Globals")->Param<Real>("time") + 0.5*dt;
-    if (prob == "rest_conserve") {
-        const Real q = pmb0->packages.Get("GRMHD")->Param<Real>("q");
-        Q = q*pow(t, 2);
-    } else {
-        const Real v0 = pmb0->packages.Get("GRMHD")->Param<Real>("v0");
-        const Real ug0 = pmb0->packages.Get("GRMHD")->Param<Real>("ug0");
-        const Real gam = pmb0->packages.Get("GRMHD")->Param<Real>("gamma");
-        Q = (ug0 * v0 * (gam - 2) / pow(1 + v0 * t, 3));
-    }
+    const Real v0 = pmb0->packages.Get("GRMHD")->Param<Real>("v0");
+    const Real ug0 = pmb0->packages.Get("GRMHD")->Param<Real>("ug0");
+    const Real gam = pmb0->packages.Get("GRMHD")->Param<Real>("gamma");
+    Q = (ug0 * v0 * (gam - 2) / pow(1 + v0 * t, 3));
     IndexDomain domain = IndexDomain::interior;
     auto ib = mbase->GetBoundsI(domain);
     auto jb = mbase->GetBoundsJ(domain);

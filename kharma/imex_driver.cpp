@@ -58,13 +58,9 @@
 TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
 {
     // Reminder that NOTHING YOU CALL HERE WILL GET CALLED EVERY STEP
-    // this function is run *once*, and returns a list of what should be done every step.
+    // this function is run only at the *beginning* of the step, and returns a list of what
+    // should be done over the course of the step.
     // No prints or direct function calls here will do what you want, only calls to tl.AddTask()
-
-    // This is *not* likely the task list you are looking for, and is not well commented yet.
-    // See harm_driver.cpp for KHARMA's main driver.
-    // This driver *requires* the "Implicit" package to be loaded, in order to read some flags
-    // it defines for
 
     // NOTE: Renamed state names to something more intuitive. 
     // '_full_step_init' refers to the fluid state at the start of the full time step (Si in iharm3d)
@@ -88,6 +84,7 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
     bool use_electrons = pkgs.count("Electrons");
     bool use_wind      = pkgs.count("Wind");
     bool use_emhd      = pkgs.count("EMHD");
+    std::string prob   = pkgs.at("GRMHD")->Param<std::string>("problem");
 
     // Allocate the fluid states ("containers") we need for each block
     TaskRegion &async_region0 = tc.AddRegion(blocks.size());
@@ -111,14 +108,7 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
     }
 
     // Big synchronous region: get & apply fluxes to advance the fluid state
-    // num_partitions is usually 1
-    // NOTE: Renamed state names to something more intuitive. 
-    // '_full_step_init' refers to the fluid state at the start of the full time step (Si in iharm3d)
-    // '_sub_step_init' refers to the fluid state at the start of the sub step (Ss in iharm3d)
-    // '_sub_step_final' refers to the fluid state at the end of the sub step (Sf in iharm3d)
-    // '_flux_src' refers to the mesh object corresponding to -divF + S
-    // '_solver' refers to the fluid state passed to the Implicit solver. At the end of the solve
-    // copy P and U from solver state to sub_step_final state.
+    // num_partitions is nearly always 1
     const int num_partitions = pmesh->DefaultNumPartitions();
     TaskRegion &single_tasklist_per_pack_region = tc.AddRegion(num_partitions);
     for (int i = 0; i < num_partitions; i++) {
@@ -195,7 +185,7 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         // ADD EXPLICIT SOURCES TO CONSERVED VARIABLES
         // Source term for GRMHD, \Gamma * T
         // TODO take this out in Minkowski space
-        auto t_grmhd_source = tl.AddTask(t_flux_div, GRMHD::AddSource, md_sub_step_init.get(), md_flux_src.get());
+        auto t_grmhd_source = tl.AddTask(t_flux_div, GRMHD::AddSource, md_sub_step_init.get(), md_flux_src.get(), stage == 1);
         // Source term for constraint-damping.  Applied only to B
         auto t_b_cd_source = t_grmhd_source;
         if (use_b_cd) {
@@ -233,18 +223,20 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         //                             md_sub_step_init.get(), md_full_step_init.get(), beta, (1.0 - beta), md_solver.get());
         // auto t_explicit_U = tl.AddTask(t_average, Update::WeightedSumData<MetadataFlag, MeshData<Real>>,
         //                             std::vector<MetadataFlag>({isExplicit, Metadata::Independent}),
-        //                             md_solver.get(), md_flux_src.get(), 1.0, beta * dt, md_solver.get());
+// md_solver += beta*dt*mdudt;         md_solver.get(), md_flux_src.get(), 1.0, beta * dt, md_solver.get());
         // Version with half/whole step to match implicit solver
-// mc_solver = beta*mc0 + (1-beta)*mbase + beta*dt*mdudt;
+// md_solver = beta*mc0 + (1-beta)*mbase + beta*dt*mdudt;
 // suggests mc0 == mbase??
         auto t_explicit_U = tl.AddTask(t_sources, Update::WeightedSumData<MetadataFlag, MeshData<Real>>,
-                                    std::vector<MetadataFlag>({isExplicit, Metadata::Independent}),
-                                    md_full_step_init.get(), md_flux_src.get(), 1.0, dt_this, md_solver.get());
+                                       std::vector<MetadataFlag>({isExplicit, Metadata::Independent}),
+                                       md_full_step_init.get(), md_flux_src.get(), 1.0, dt_this, md_solver.get());
 
         // Make sure the primitive values of any explicit fields are filled
         auto t_explicit_UtoP_B = t_explicit_U;
-        if (!pkgs.at("B_FluxCT")->Param<bool>("implicit"))
+        if (use_b_flux_ct && !pkgs.at("B_FluxCT")->Param<bool>("implicit")) {
             t_explicit_UtoP_B = tl.AddTask(t_explicit_U, B_FluxCT::FillDerivedMeshTask, md_solver.get());
+        }
+
         // If GRMHD is not implicit, but we're still going to be taking an implicit step, call its FillDerived function
         // TODO Would be faster/more flexible if this supported MeshData. Also maybe race condition
         auto t_explicit_UtoP_G = t_explicit_UtoP_B;
@@ -258,9 +250,11 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         auto t_explicit = t_explicit_UtoP_G;
 
         // Copy the current implicit vars in as a guess.  This needs at least the primitive vars
+        // This sets md_solver = md_sub_step_init
         auto t_copy_guess = tl.AddTask(t_sources, Update::WeightedSumData<MetadataFlag, MeshData<Real>>,
                                     std::vector<MetadataFlag>({isImplicit}),
                                     md_sub_step_init.get(), md_sub_step_init.get(), 1.0, 0.0, md_solver.get());
+
 
         // Time-step implicit variables by root-finding the residual
         // This applies the functions of both the update above and FillDerived call below for "isImplicit" variables
@@ -269,14 +263,14 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         auto t_implicit = tl.AddTask(t_guess_ready, Implicit::Step, md_full_step_init.get(), md_sub_step_init.get(), 
                                     md_flux_src.get(), md_solver.get(), dt_this);
 
-        // Copy the solver state into the final state md_sub_step_final
+        // Copy the entire solver state (no flags) into the final state md_sub_step_final
         auto t_copy_result = tl.AddTask(t_implicit, Update::WeightedSumData<MetadataFlag, MeshData<Real>>, 
                                         std::vector<MetadataFlag>({}), md_solver.get(), md_solver.get(), 
                                         1.0, 0.0, md_sub_step_final.get());
 
         // If evolving GRMHD explicitly, U_to_P needs a guess in order to converge, so we copy in md_sub_step_init
         auto t_copy_prims = t_none;
-        if (!pkgs.at("GRMHD")->Param<bool>("implicit")) { // Mine is implicit==false as thats the default value
+        if (!pkgs.at("GRMHD")->Param<bool>("implicit")) {
             MetadataFlag isPrimitive = pkgs.at("GRMHD")->Param<MetadataFlag>("PrimitiveFlag");
             MetadataFlag isHD        = pkgs.at("GRMHD")->Param<MetadataFlag>("HDFlag");
             auto t_copy_prims        = tl.AddTask(t_none, Update::WeightedSumData<MetadataFlag, MeshData<Real>>,
@@ -330,10 +324,15 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         auto t_set_bc = tl.AddTask(t_fix_derived, parthenon::ApplyBoundaryConditions, mbd_sub_step_final);
 
         // Electron heating goes where it does in HARMDriver, for the same reasons
-        auto t_heat_electrons = t_set_bc;
+        auto t_heating_test = t_set_bc;
+        if (prob == "hubble" && stage == 2) {
+            // TODO (later) allow problems to add source terms & boundary conditions in *problem* definitions with callbacks
+            t_heating_test = tl.AddTask(t_set_bc, Electrons::ApplyHeating, mbd_sub_step_final.get());
+        }
+        auto t_heat_electrons = t_heating_test;
         if (use_electrons) {
-            t_heat_electrons = tl.AddTask(t_set_bc, Electrons::ApplyElectronHeating, 
-                                        mbd_sub_step_init.get(), mbd_sub_step_final.get());
+            t_heat_electrons = tl.AddTask(t_heating_test, Electrons::ApplyElectronHeating,
+                                          mbd_sub_step_init.get(), mbd_sub_step_final.get(), stage != 1);
         }
 
         // Make sure conserved vars are synchronized at step end

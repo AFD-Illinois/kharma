@@ -1,19 +1,59 @@
+/* 
+ *  File: gaussian.cpp
+ *  
+ *  BSD 3-Clause License
+ *  
+ *  Copyright (c) 2020, AFD Group at UIUC
+ *  All rights reserved.
+ *  
+ *  Redistribution and use in source and binary forms, with or without
+ *  modification, are permitted provided that the following conditions are met:
+ *  
+ *  1. Redistributions of source code must retain the above copyright notice, this
+ *     list of conditions and the following disclaimer.
+ *  
+ *  2. Redistributions in binary form must reproduce the above copyright notice,
+ *     this list of conditions and the following disclaimer in the documentation
+ *     and/or other materials provided with the distribution.
+ *  
+ *  3. Neither the name of the copyright holder nor the names of its
+ *     contributors may be used to endorse or promote products derived from
+ *     this software without specific prior written permission.
+ *  
+ *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ *  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ *  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ *  DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ *  FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ *  DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ *  SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ *  CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ *  OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
+#include "gaussian.hpp"
 #include "problem.hpp"
-#include "fftw3.h"
+
 #include <cmath>
 #include <random>
-using namespace std;
 
-float normalRand() {
+float normalRand()
+{
+    // TODO this can definitely be Kokkosified
     std::random_device rd{};
     std::mt19937 gen{rd()};
     std::normal_distribution<> d{0,1};
     return d(gen);
 }
 
+#if USE_FFTW
+
+#include "fftw3.h"
 
 void create_grf(int Nx1, int Nx2, double lx1, double lx2, 
-                    double * dv1, double * dv2) {
+                    double * dv1, double * dv2)
+{
     double dkx1 = 2*M_PI/lx1;
     double dkx2 = 2*M_PI/lx2;
     double Dx1 = lx1/Nx1;
@@ -71,3 +111,12 @@ void create_grf(int Nx1, int Nx2, double lx1, double lx2,
     }
     fftw_free(dvkx1);   fftw_free(dvkx2);
 }
+
+#else 
+
+void create_grf(int Nx1, int Nx2, double lx1, double lx2, 
+                    double * dv1, double * dv2)
+{
+    throw std::runtime_error("Attempted to use an FFT to generate a Gaussian random field, but KHARMA was compiled without FFT support!");
+}
+#endif

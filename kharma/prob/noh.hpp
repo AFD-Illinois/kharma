@@ -56,21 +56,23 @@ TaskStatus InitializeNoh(MeshBlockData<Real> *rc, ParameterInput *pin)
     bool centered = pin->GetOrAddBoolean("noh", "centered", true);
     bool set_tlim = pin->GetOrAddBoolean("noh", "set_tlim", false);
 
-    const Real x1min = pin->GetReal("parthenon/mesh", "x1min");
-    const Real x1max = pin->GetReal("parthenon/mesh", "x1max");
-    const Real center = (x1min + x1max) / 2.;
+    const GReal x1min = pin->GetReal("parthenon/mesh", "x1min");
+    const GReal x1max = pin->GetReal("parthenon/mesh", "x1max");
+    const GReal center = (x1min + x1max) / 2.;
 
-    // TODO relativistic sound speed
-    Real cs2 = (gam * (gam - 1) * PL) / rhoL;
-    Real v1 = mach * m::sqrt(cs2);
+    // Given Mach and knowing that v = 1e-3 and rho = 1, we calculate u
+    double cs2 = m::pow(v0, 2) / m::pow(mach, 2);
+    double gamma = 1. / m::sqrt(1. - m::pow(v0, 2)); // Since we are in flat space
+    const Real P = (zero_ug) ? 0. : rho0 * cs2 / (gam*(gam-1) - cs2*gam);
 
     if (set_tlim) {
-        pin->SetReal("parthenon/time", "tlim", 0.6*(x1max - x1min)/v1);
+        pin->SetReal("parthenon/time", "tlim", 0.6*(x1max - x1min)/v0);
     }
 
-    double gamma = 1. / m::sqrt(1. - v1 * v1); // Since we are in flat space
-
-
+    IndexDomain domain = IndexDomain::interior;
+    IndexRange ib = pmb->cellbounds.GetBoundsI(domain);
+    IndexRange jb = pmb->cellbounds.GetBoundsJ(domain);
+    IndexRange kb = pmb->cellbounds.GetBoundsK(domain);
     pmb->par_for("noh_init", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_3D {
             rho(k, j, i) = rho0;
