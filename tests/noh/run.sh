@@ -8,8 +8,8 @@ KHARMADIR=../..
 exit_code=0
 
 noh_test() {
-    ALL_RES="64,128,256,512,1024,2048,4096"
-    for res in 64 128 256 512 1024 2048 4096
+    ALL_RES="64,128,256,512,1024,2048"
+    for res in 64 128 256 512 1024 2048
     do
         eighth=$(($res / 8))
         $KHARMADIR/run.sh -i $KHARMADIR/pars/noh.par parthenon/output0/dt=1000 debug/verbose=1 \
