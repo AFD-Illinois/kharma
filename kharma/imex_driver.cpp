@@ -265,17 +265,17 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         auto t_copy_linesearch = t_none;
         auto t_implicit        = t_none;
         if (linesearch) {
-            auto t_copy_linesearch = tl.AddTask(t_guess_ready, Update::WeightedSumData<MetadataFlag, MeshData<Real>>,
+            t_copy_linesearch = tl.AddTask(t_guess_ready, Update::WeightedSumData<MetadataFlag, MeshData<Real>>,
                                                 std::vector<MetadataFlag>({Metadata::Derived}), md_solver.get(), 
                                                 md_solver.get(), 1.0, 0.0, md_linesearch.get());
             // Time-step implicit variables by root-finding the residual
             // This applies the functions of both the update above and FillDerived call below for "isImplicit" variables
             // This takes dt for the *substep*, not the whole thing, so we multiply total dt by *this step's* beta
-            auto t_implicit = tl.AddTask(t_copy_linesearch, Implicit::Step, md_full_step_init.get(), md_sub_step_init.get(), 
+            t_implicit = tl.AddTask(t_copy_linesearch, Implicit::Step, md_full_step_init.get(), md_sub_step_init.get(), 
                                         md_flux_src.get(), md_linesearch.get(), md_solver.get(), dt_this);
         }
         else {
-            auto t_implicit = tl.AddTask(t_guess_ready, Implicit::Step, md_full_step_init.get(), md_sub_step_init.get(), 
+            t_implicit = tl.AddTask(t_guess_ready, Implicit::Step, md_full_step_init.get(), md_sub_step_init.get(), 
                                         md_flux_src.get(), md_linesearch.get(), md_solver.get(), dt_this);
         }
 
@@ -337,10 +337,16 @@ TaskCollection ImexDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
             t_fix_derived = tl.AddTask(t_fix_derived, GRMHD::FixUtoP, mbd_sub_step_final.get());
         }
 
-        auto t_set_bc = tl.AddTask(t_fix_derived, parthenon::ApplyBoundaryConditions, mbd_sub_step_final);
+        // Fix unconverged (bad) zones in the solver
+        auto t_fix_solve = t_none;
+        if (pkgs.at("GRMHD")->Param<bool>("implicit")) {
+            t_fix_solve = tl.AddTask(t_fix_derived, Implicit::FixSolve, mbd_sub_step_final.get());
+        }
+
+        auto t_set_bc = tl.AddTask(t_fix_solve, parthenon::ApplyBoundaryConditions, mbd_sub_step_final);
 
         // Electron heating goes where it does in HARMDriver, for the same reasons
-        auto t_heat_electrons = t_fix_derived;
+        auto t_heat_electrons = t_set_bc;
         if (use_electrons) {
             t_heat_electrons = tl.AddTask(t_fix_derived, Electrons::ApplyElectronHeating, 
                                         mbd_sub_step_init.get(), mbd_sub_step_final.get());

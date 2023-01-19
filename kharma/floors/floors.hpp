@@ -237,7 +237,7 @@ KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, const VariablePa
         } else {
             // Original floors from iharm2d
             rhoflr_geom = floors.rho_min_geom * m::pow(r, -1.5);
-            uflr_geom   = floors.u_min_geom * m::pow(r, -2.5); //rhoscal/r as in iharm2d
+            uflr_geom   = floors.u_min_geom * m::pow(r, -1.5); //rhoscal/r as in iharm2d
         }
     } else {
         rhoflr_geom = floors.rho_min_geom;
@@ -449,7 +449,7 @@ KOKKOS_INLINE_FUNCTION int apply_geo_floors(const GRCoordinates& G, Local& P, co
         } else {
             // Original floors from iharm2d
             rhoflr_geom = floors.rho_min_geom * m::pow(r, -1.5);
-            uflr_geom   = floors.u_min_geom * m::pow(r, -2.5); //rhoscal/r as in iharm2d
+            uflr_geom   = floors.u_min_geom * m::pow(r, -1.5); //rhoscal/r as in iharm2d
         }
     } else {
         rhoflr_geom = floors.rho_min_geom;

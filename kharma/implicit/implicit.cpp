@@ -39,17 +39,9 @@
 #include "grmhd_functions.hpp"
 #include "pack.hpp"
 
-// Implicit nonlinear solve requires several linear solves per-zone
-// Use Kokkos-kernels QR decomposition & triangular solve, they're fast.
-#include <batched/dense/KokkosBatched_LU_Decl.hpp>
-#include <batched/dense/KokkosBatched_QR_Decl.hpp>
-#include <batched/dense/KokkosBatched_ApplyQ_Decl.hpp>
-#include <batched/dense/KokkosBatched_Trsv_Decl.hpp>
 
-namespace Implicit
+std::vector<std::string> Implicit::get_ordered_names(MeshBlockData<Real> *rc, const MetadataFlag& flag, bool only_implicit)
 {
-
-std::vector<std::string> get_ordered_names(MeshBlockData<Real> *rc, const MetadataFlag& flag, bool only_implicit=false) {
     auto pmb0 = rc->GetBlockPointer();
     MetadataFlag isImplicit = pmb0->packages.Get("Implicit")->Param<MetadataFlag>("ImplicitFlag");
     MetadataFlag isExplicit = pmb0->packages.Get("Implicit")->Param<MetadataFlag>("ExplicitFlag");
@@ -71,7 +63,7 @@ std::vector<std::string> get_ordered_names(MeshBlockData<Real> *rc, const Metada
     return out;
 }
 
-std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
+std::shared_ptr<StateDescriptor> Implicit::Initialize(ParameterInput *pin)
 {
     Flag("Initializing Implicit Package");
     auto pkg = std::make_shared<StateDescriptor>("Implicit");
@@ -116,6 +108,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     pkg->AddField("solve_norm", m_real);
     // Integer field that saves where the solver fails (rho + drho < 0 || u + du < 0)
     // Metadata m_int = Metadata({Metadata::Integer, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
+    m_real = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy, Metadata::FillGhost});
     pkg->AddField("solve_fail", m_real); // TODO: Replace with m_int once Integer is supported for CellVariabl
 
     // TODO: Find a way to save residuals based on a runtime parameter. We don't want to unnecessarily allocate 
@@ -167,7 +160,16 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     return pkg;
 }
 
-TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_init, MeshData<Real> *md_flux_src,
+#if ENABLE_IMPLICIT
+
+// Implicit nonlinear solve requires several linear solves per-zone
+// Use Kokkos-kernels QR decomposition & triangular solve, they're fast.
+#include <batched/dense/KokkosBatched_LU_Decl.hpp>
+#include <batched/dense/KokkosBatched_QR_Decl.hpp>
+#include <batched/dense/KokkosBatched_ApplyQ_Decl.hpp>
+#include <batched/dense/KokkosBatched_Trsv_Decl.hpp>
+
+TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_init, MeshData<Real> *md_flux_src,
                 MeshData<Real> *md_linesearch, MeshData<Real> *md_solver, const Real& dt)
 {
     Flag(md_full_step_init, "Implicit Iteration start, full step");
@@ -349,7 +351,15 @@ TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_i
                             dU_implicit_s(ip, i)      = 0.;
 
                             solve_norm_s(i) = 0.;
-                            solve_fail_s(i) = 0;
+                            if (iter == 1) {
+                                // New beginnings
+                                solve_fail_s(i) = SolverStatus::converged;
+                            }
+                            else {
+                                // Need this to check if the zone had failed in any of the previous iterations.
+                                // If so, we don't attempt to update it again in the implicit solver.
+                                solve_fail_s(i) = solve_fail_all(b, 0, k, j, i);
+                            }
                         }
                     );
                 }
@@ -393,125 +403,159 @@ TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_i
                         auto solve_norm = Kokkos::subview(solve_norm_s, i);
                         auto solve_fail = Kokkos::subview(solve_fail_s, i);
 
-                        if (m_p.Q >= 0) {
-                            EMHD::implicit_sources(G, P_full_step_init, P_sub_step_init, m_p, gam, k, j, i, emhd_params_sub_step_init, 
-                                                dU_implicit(m_u.Q), dU_implicit(m_u.DP));
-                        }
+                        // Perform the solve only if it hadn't failed in any of the previous iterations.
+                        if (solve_fail() != SolverStatus::fail) {
+                            // Now that we know that it isn't a bad zone, reset solve_fail for this iteration
+                            solve_fail() = SolverStatus::converged;
 
-                        // Copy `solver` prims to `linesearch`. This doesn't matter for the first step of the solver
-                        // since we do a copy in imex_driver just before, but it is required for the subsequent
-                        // iterations of the solver.
-                        PLOOP P_linesearch(ip) = P_solver(ip);
-                        Real lambda = linesearch_lambda;
+                            if (m_p.Q >= 0) {
+                                EMHD::implicit_sources(G, P_full_step_init, P_sub_step_init, m_p, gam, k, j, i,
+                                                emhd_params_sub_step_init, dU_implicit(m_u.Q), dU_implicit(m_u.DP));
+                            }
 
-                        // Jacobian calculation
-                        // Requires calculating the residual anyway, so we grab it here
-                        calc_jacobian(G, P_solver, P_full_step_init, U_full_step_init, P_sub_step_init, 
-                                    flux_src, dU_implicit, tmp1, tmp2, tmp3, m_p, m_u, emhd_params_solver,
-                                    emhd_params_sub_step_init, nvar, nfvar, k, j, i, delta, gam, dt, jacobian, residual);
-                        // Solve against the negative residual
-                        FLOOP delta_prim(ip) = -residual(ip);
+                            // Copy `solver` prims to `linesearch`. This doesn't matter for the first step of the solver
+                            // since we do a copy in imex_driver just before, but it is required for the subsequent
+                            // iterations of the solver.
+                            PLOOP P_linesearch(ip) = P_solver(ip);
+                            Real lambda = linesearch_lambda;
 
-                        // if (am_rank0 && b == 0 && i == 10 && j == 10 && k == kb.s) {
-                        //     printf("Variable ordering: rho %d uu %d u1 %d B1 %d q %d dP %d\n",
-                        //             m_p.RHO, m_p.UU, m_p.U1, m_p.B1, m_p.Q, m_p.DP);
-                        //     printf("Variable ordering: rho %d uu %d u1 %d B1 %d q %d dP %d\n",
-                        //             m_u.RHO, m_u.UU, m_u.U1, m_u.B1, m_u.Q, m_u.DP);
-                        //     printf("P_solver: "); PLOOP printf("%6.5e ", P_solver(ip)); printf("\n");
-                        //     printf("Pi: "); PLOOP printf("%6.5e ", P_full_step_init(ip)); printf("\n");
-                        //     printf("Ui: "); PLOOP printf("%6.5e ", U_full_step_init(ip)); printf("\n");
-                        //     printf("Ps: "); PLOOP printf("%6.5e ", P_sub_step_init(ip)); printf("\n");
-                        //     printf("Us: "); PLOOP printf("%6.5e ", U_sub_step_init(ip)); printf("\n");
-                        //     printf("dUdt: "); PLOOP printf("%6.5e ", dU_implicit(ip)); printf("\n");
-                        //     printf("Initial Jacobian:\n"); for (int jp=0; jp<nfvar; ++jp) {FLOOP printf("%6.5e\t", jacobian(jp,ip)); printf("\n");}
-                        //     printf("Initial residual: "); FLOOP printf("%6.5e ", residual(ip)); printf("\n");
-                        //     printf("Initial delta_prim: "); FLOOP printf("%6.5e ", delta_prim(ip)); printf("\n");
-                        // }
+                            // Jacobian calculation
+                            // Requires calculating the residual anyway, so we grab it here
+                            calc_jacobian(G, P_solver, P_full_step_init, U_full_step_init, P_sub_step_init, 
+                                        flux_src, dU_implicit, tmp1, tmp2, tmp3, m_p, m_u, emhd_params_solver,
+                                        emhd_params_sub_step_init, nvar, nfvar, k, j, i, delta, gam, dt, jacobian, residual);
+                            // Solve against the negative residual
+                            FLOOP delta_prim(ip) = -residual(ip);
 
-                        if (use_qr) {
-                            // Linear solve by QR decomposition
-                            KokkosBatched::SerialQR<KokkosBatched::Algo::QR::Unblocked>::invoke(jacobian, trans, work);
-                            KokkosBatched::SerialApplyQ<KokkosBatched::Side::Left, KokkosBatched::Trans::Transpose,
-                                                        KokkosBatched::Algo::ApplyQ::Unblocked>
-                            ::invoke(jacobian, trans, delta_prim, work);
-                        } else {
-                            KokkosBatched::SerialLU<KokkosBatched::Algo::LU::Unblocked>::invoke(jacobian, tiny);
-                        }
-                        KokkosBatched::SerialTrsv<KokkosBatched::Uplo::Upper, KokkosBatched::Trans::NoTranspose, 
-                                                  KokkosBatched::Diag::NonUnit, KokkosBatched::Algo::Trsv::Unblocked>
-                        ::invoke(alpha, jacobian, delta_prim);
+                            #if TRACE
+                            if (am_rank0 && b == 0 && i == iPRINT && j == jPRINT && k == kPRINT) {
+                                std::cerr << "Variable ordering: rho " << int(m_p.RHO) << " uu " << int(m_p.UU)  << " U1 " << int(m_p.U1)  
+                                        << " B1 " << int(m_p.B1)  << " q " << int(m_p.Q)  << " dP " << int(m_p.DP) << std::endl;
+                                std::cerr << "Variable ordering: rho " << int(m_u.RHO) << " uu " << int(m_u.UU)  << " U1 " << int(m_u.U1)  
+                                        << " B1 " << int(m_u.B1)  << " q " << int(m_u.Q)  << " dP " << int(m_u.DP) << std::endl;
+                                std::cerr << "P_solver: "; 
+                                PLOOP {std::cerr << P_solver(ip) << " ";} std::cerr << std::endl;
+                                std::cerr << "Pi: "; 
+                                PLOOP {std::cerr << P_full_step_init(ip) << " ";} std::cerr << std::endl;
+                                std::cerr << "Ui: "; 
+                                PLOOP {std::cerr << U_full_step_init(ip) << " ";} std::cerr << std::endl;
+                                std::cerr << "Ps: "; 
+                                PLOOP {std::cerr << P_sub_step_init(ip) << " ";} std::cerr << std::endl;
+                                std::cerr << "Us: "; 
+                                PLOOP {std::cerr << U_sub_step_init(ip) << " ";} std::cerr << std::endl;
+                                std::cerr << "dUdt: ";
+                                PLOOP {std::cerr << dU_implicit(ip) << " ";} std::cerr << std::endl;
+                                std::cerr << "Initial Jacobian:" << std::endl; 
+                                for (int jp=0; jp<nfvar; ++jp) {FLOOP std::cerr << jacobian(jp,ip) << "\t"; std::cerr << std::endl;}
+                                std::cerr << "Initial residual: "; FLOOP std::cerr << residual(ip) << " "; std::cerr << std::endl;
+                                std::cerr << "Initial delta_prim: "; FLOOP std::cerr << delta_prim(ip) << " "; std::cerr << std::endl;
+                            }
+                            #endif
 
-                        // Check for positive definite values of density and internal energy.
-                        // Break from solve if manual backtracking is not sufficient.
-                        // The primitives will be averaged over good neighbors.
-                        if ((P_solver(m_p.RHO) + lambda*delta_prim(m_p.RHO) < 0.) || (P_solver(m_p.UU) + lambda*delta_prim(m_p.UU) < 0.)) {
-                            solve_fail() = 1;
-                            lambda     = 0.1;
-                        }
-                        if ((P_solver(m_p.RHO) + lambda*delta_prim(m_p.RHO) < 0.) || (P_solver(m_p.UU) + lambda*delta_prim(m_p.UU) < 0.)) {
-                            solve_fail() = 2;
-                            // break; // Doesn't break from the inner par_for. 
-                            // Let it continue for now, but we'll average over the zone later
-                        }
+                            if (use_qr) {
+                                // Linear solve by QR decomposition
+                                KokkosBatched::SerialQR<KokkosBatched::Algo::QR::Unblocked>::invoke(jacobian, trans, work);
+                                KokkosBatched::SerialApplyQ<KokkosBatched::Side::Left, KokkosBatched::Trans::Transpose,
+                                                            KokkosBatched::Algo::ApplyQ::Unblocked>
+                                ::invoke(jacobian, trans, delta_prim, work);
+                            } else {
+                                KokkosBatched::SerialLU<KokkosBatched::Algo::LU::Unblocked>::invoke(jacobian, tiny);
+                            }
+                            KokkosBatched::SerialTrsv<KokkosBatched::Uplo::Upper, KokkosBatched::Trans::NoTranspose, 
+                                                    KokkosBatched::Diag::NonUnit, KokkosBatched::Algo::Trsv::Unblocked>
+                            ::invoke(alpha, jacobian, delta_prim);
 
-                        // Linesearch
-                        if (linesearch) {
-                            solve_norm()        = 0;
-                            FLOOP solve_norm() += residual(ip) * residual(ip);
-                            solve_norm()        = m::sqrt(solve_norm());
+                            #if TRACE
+                            if (am_rank0 && b == 0 && i == iPRINT && j == jPRINT && k == kPRINT) {
+                                std::cerr << "Final delta_prim: "; FLOOP std::cerr << delta_prim(ip) << " "; std::cerr << std::endl;
+                                std::cerr<< std::endl;
+                            }
+                            #endif
 
-                            Real f0      = 0.5 * solve_norm();
-                            Real fprime0 = -2. * f0;
+                            // Check for positive definite values of density and internal energy.
+                            // Ignore zone if manual backtracking is not sufficient.
+                            // The primitives will be averaged over good neighbors.
+                            if ((P_solver(m_p.RHO) + lambda*delta_prim(m_p.RHO) < 0.) || (P_solver(m_p.UU) + lambda*delta_prim(m_p.UU) < 0.)) {
+                                solve_fail() = SolverStatus::backtrack;
+                                lambda       = 0.1;
+                            }
+                            if ((P_solver(m_p.RHO) + lambda*delta_prim(m_p.RHO) < 0.) || (P_solver(m_p.UU) + lambda*delta_prim(m_p.UU) < 0.)) {
+                                solve_fail() = SolverStatus::fail;
+                                // break; // Doesn't break from the inner par_for. 
+                                // Instead we set all fluid primitives to value at beginning of substep.
+                                // We average over neighboring good zones later.
+                                FLOOP P_solver(ip) = P_sub_step_init(ip);
+                            }
 
-                            for (int linesearch_iter = 0; linesearch_iter < max_linesearch_iter; linesearch_iter++) {
-                                // Take step
-                                FLOOP P_linesearch(ip) = P_solver(ip) + (lambda * delta_prim(ip));
+                            // If the solver failed, we don't want to update the implicit primitives for those zones
+                            if (solve_fail() != SolverStatus::fail)
+                            {
+                                // Linesearch
+                                if (linesearch) {
+                                    solve_norm()        = 0;
+                                    FLOOP solve_norm() += residual(ip) * residual(ip);
+                                    solve_norm()        = m::sqrt(solve_norm());
 
-                                // Compute solve_norm of the residual (loss function)
-                                calc_residual(G, P_linesearch, P_full_step_init, U_full_step_init, P_sub_step_init, flux_src,
-                                            dU_implicit, tmp3, m_p, m_u, emhd_params_linesearch, emhd_params_solver, nfvar,
-                                            k, j, i, gam, dt, residual);
+                                    Real f0      = 0.5 * solve_norm();
+                                    Real fprime0 = -2. * f0;
 
+                                    for (int linesearch_iter = 0; linesearch_iter < max_linesearch_iter; linesearch_iter++) {
+                                        // Take step
+                                        FLOOP P_linesearch(ip) = P_solver(ip) + (lambda * delta_prim(ip));
+
+                                        // Compute solve_norm of the residual (loss function)
+                                        calc_residual(G, P_linesearch, P_full_step_init, U_full_step_init, P_sub_step_init, flux_src,
+                                                    dU_implicit, tmp3, m_p, m_u, emhd_params_linesearch, emhd_params_solver, nfvar,
+                                                    k, j, i, gam, dt, residual);
+
+                                        solve_norm()        = 0;
+                                        FLOOP solve_norm() += residual(ip) * residual(ip);
+                                        solve_norm()        = m::sqrt(solve_norm());
+                                        Real f1             = 0.5 * solve_norm();
+
+                                        // Compute new step length
+                                        int condition   = f1 > (f0 * (1. - linesearch_eps * lambda) + SMALL);
+                                        Real denom      = (f1 - f0 - (fprime0 * lambda)) * condition + (1 - condition);
+                                        Real lambda_new = -fprime0 * lambda * lambda / denom / 2.;
+                                        lambda          = lambda * (1 - condition) + (condition * lambda_new);
+
+                                        // Check if new solution has converged within required tolerance
+                                        if (condition == 0) break;                           
+                                    }
+                                }
+
+                                // Update the guess
+                                FLOOP P_solver(ip) += lambda * delta_prim(ip);
+
+                                calc_residual(G, P_solver, P_full_step_init, U_full_step_init, P_sub_step_init, flux_src, dU_implicit, tmp3,
+                                            m_p, m_u, emhd_params_solver, emhd_params_sub_step_init, nfvar, k, j, i, gam, dt, residual);
+
+                                // if (am_rank0 && b == 0 && i == 11 && j == 11 && k == kb.s) {
+                                //     printf("Variable ordering: rho %d uu %d u1 %d B1 %d q %d dP %d\n",
+                                //             m_p.RHO, m_p.UU, m_p.U1, m_p.B1, m_p.Q, m_p.DP);
+                                //     printf("Final residual: "); PLOOP printf("%6.5e ", residual(ip)); printf("\n");
+                                //     printf("Final delta_prim: "); PLOOP printf("%6.5e ", delta_prim(ip)); printf("\n");
+                                //     printf("Final P_solver: "); PLOOP printf("%6.5e ", P_solver(ip)); printf("\n");
+                                // }
+
+                                // Store for maximum/output
+                                // I would be tempted to store the whole residual, but it's of variable size
                                 solve_norm()        = 0;
                                 FLOOP solve_norm() += residual(ip) * residual(ip);
-                                solve_norm()        = m::sqrt(solve_norm());
-                                Real f1             = 0.5 * solve_norm();
+                                solve_norm()        = m::sqrt(solve_norm()); // TODO faster to scratch cache & copy?
 
-                                // Compute new step length
-                                int condition   = f1 > (f0 * (1. - linesearch_eps * lambda) + SMALL);
-                                Real denom      = (f1 - f0 - (fprime0 * lambda)) * condition + (1 - condition);
-                                Real lambda_new = -fprime0 * lambda * lambda / denom / 2.;
-                                lambda          = lambda * (1 - condition) + (condition * lambda_new);
-
-                                // Check if new solution has converged within required tolerance
-                                if (condition == 0) break;                           
+                                // Did we converge to required tolerance? If not, update solve_fail accordingly
+                                if (solve_norm() > rootfind_tol) {
+                                    solve_fail() += SolverStatus::beyond_tol;
+                                }
                             }
                         }
-
-                        // Update the guess
-                        FLOOP P_solver(ip) += lambda * delta_prim(ip);
-
-                        calc_residual(G, P_solver, P_full_step_init, U_full_step_init, P_sub_step_init, flux_src, dU_implicit, tmp3,
-                                      m_p, m_u, emhd_params_solver, emhd_params_sub_step_init, nfvar, k, j, i, gam, dt, residual);
-
-                        // if (am_rank0 && b == 0 && i == 11 && j == 11 && k == kb.s) {
-                        //     printf("Variable ordering: rho %d uu %d u1 %d B1 %d q %d dP %d\n",
-                        //             m_p.RHO, m_p.UU, m_p.U1, m_p.B1, m_p.Q, m_p.DP);
-                        //     printf("Final residual: "); PLOOP printf("%6.5e ", residual(ip)); printf("\n");
-                        //     printf("Final delta_prim: "); PLOOP printf("%6.5e ", delta_prim(ip)); printf("\n");
-                        //     printf("Final P_solver: "); PLOOP printf("%6.5e ", P_solver(ip)); printf("\n");
-                        // }
-
-                        // Store for maximum/output
-                        // I would be tempted to store the whole residual, but it's of variable size
-                        solve_norm()        = 0;
-                        FLOOP solve_norm() += residual(ip) * residual(ip);
-                        solve_norm()        = m::sqrt(solve_norm()); // TODO faster to scratch cache & copy?
                     }
                 );
                 member.team_barrier();
 
-                // Copy out (the good bits of) P_solver to the existing array
+                // Copy out P_solver to the existing array.
+                // We'll copy even the values for the failed zones because it doesn't really matter, it'll be averaged over later.
                 // And copy any other diagnostics that are relevant to analyze the solver's performance
                 FLOOP {
                     parthenon::par_for_inner(member, ib.s, ib.e,
@@ -535,18 +579,34 @@ TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_i
         // If we need to print or exit on the max norm...
         if (iter >= iter_min || verbose >= 1) {
             // Take the maximum L2 norm on this rank
-            Reduce<Real> max_norm;
+            static AllReduce<Real> max_norm;
             Kokkos::Max<Real> norm_max(max_norm.val);
             pmb_sub_step_init->par_reduce("max_norm", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
                 KOKKOS_LAMBDA_MESH_3D_REDUCE {
                     if (solve_norm_all(b, 0, k, j, i) > local_result) local_result = solve_norm_all(b, 0, k, j, i);
                 }
             , norm_max);
-            // Then MPI reduce it
-            max_norm.StartReduce(0, MPI_MAX);
+            // Then MPI reduce AllReduce to copy the global max to every rank
+            max_norm.StartReduce(MPI_MAX);
             while (max_norm.CheckReduce() == TaskStatus::incomplete);
             if (verbose >= 1 && MPIRank0()) printf("Iteration %d max L2 norm: %g\n", iter, max_norm.val);
-            // Break if it's less than the total tolerance we set.  TODO per-zone version of this?
+
+            // Count total number of solver fails
+            int nfails = 0;
+            Kokkos::Sum<int> sum_reducer(nfails);
+            pmb_sub_step_init->par_reduce("count_solver_fails", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+                KOKKOS_LAMBDA_MESH_3D_REDUCE_INT {
+                    if (solve_fail_all(b, 0, k, j, i) == SolverStatus::fail) ++local_result;
+                }
+            , sum_reducer);
+            // Then MPI reduce AllReduce to copy the global max to every rank
+            AllReduce<int> nfails_tot;
+            nfails_tot.val = nfails;
+            nfails_tot.StartReduce(MPI_SUM);
+            while (nfails_tot.CheckReduce() == TaskStatus::incomplete);
+            if (verbose >= 1 && MPIRank0()) printf("Number of failed zones: %d\n", nfails_tot.val);
+
+            // Break if max_norm is less than the total tolerance we set.  TODO per-zone version of this?
             if (iter >= iter_min && max_norm.val < rootfind_tol) break;
         }
     }
@@ -557,4 +617,37 @@ TaskStatus Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_i
 
 }
 
-} // namespace Implicit
+#else
+
+TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_init, MeshData<Real> *md_flux_src,
+                MeshData<Real> *md_linesearch, MeshData<Real> *md_solver, const Real& dt)
+{
+    Flag("Dummy implicit solve");
+    auto pmb_sub_step_init  = md_sub_step_init->GetBlockData(0)->GetBlockPointer();
+
+    MetadataFlag isPrimitive = pmb_sub_step_init->packages.Get("GRMHD")->Param<MetadataFlag>("PrimitiveFlag");
+    auto& mbd_full_step_init  = md_full_step_init->GetBlockData(0); // MeshBlockData object, more member functions
+
+    // Get number of variables
+    auto ordered_cons  = Implicit::get_ordered_names(mbd_full_step_init.get(), Metadata::Conserved);
+    PackIndexMap cons_map;
+    auto& U_full_step_init_all = md_full_step_init->PackVariables(ordered_cons, cons_map);
+    const int nvar   = U_full_step_init_all.GetDim(4);
+
+    // Get number of implicit variables
+    auto implicit_vars = Implicit::get_ordered_names(mbd_full_step_init.get(), isPrimitive, true);
+    PackIndexMap implicit_prims_map;
+    auto& P_full_step_init_implicit = md_full_step_init->PackVariables(implicit_vars, implicit_prims_map);
+    const int nfvar = P_full_step_init_implicit.GetDim(4);
+
+    // RETURN if there aren't any implicit variables to evolve
+    //std::cerr << "Solve size " << nfvar << " on prim size " << nvar << std::endl;
+    if (nfvar == 0) {
+        return TaskStatus::complete;
+    } else {
+        throw std::runtime_error("Cannot evolve variables implicitly: KHARMA was compiled without implicit solver!");
+    }
+    Flag("End dummy implicit solve");
+}
+
+#endif

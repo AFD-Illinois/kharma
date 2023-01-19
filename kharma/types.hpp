@@ -63,6 +63,15 @@ enum ReconstructionType{donor_cell=0, linear_mc, linear_vl, ppm, mp5, weno5, wen
 // Only thrown from function in U_to_P.hpp, see that file for meanings
 enum InversionStatus{success=0, neg_input, max_iter, bad_ut, bad_gamma, neg_rho, neg_u, neg_rhou};
 
+// Denote implicit solver failures (solve_fail). 
+// Thrown from Implicit::Step
+// Status values:
+// `converged`: solver converged to prescribed tolerance
+// `fail`: manual backtracking wasn't good enough. FixSolve will be called
+// `beyond_tol`: solver didn't converge to prescribed tolerance but didn't fail
+// `backtrack`: step length of 1 gave negative rho/uu, but manual backtracking (0.1) sufficed
+enum SolverStatus{converged=0, fail, beyond_tol, backtrack};
+
 // Struct for derived 4-vectors at a point, usually calculated and needed together
 typedef struct {
     Real ucon[GR_DIM];
@@ -182,6 +191,10 @@ inline bool IsDomainBound(MeshBlock *pmb, BoundaryFace face)
 #if TRACE
 #define PRINTCORNERS 0
 #define PRINTZONE 1
+#define PRINTTILE 1
+#define iPRINT 7
+#define jPRINT 111
+#define kPRINT 0
 inline void PrintCorner(MeshBlockData<Real> *rc)
 {
     auto rhop = rc->Get("prims.rho").data.GetHostMirrorAndCopy();
@@ -232,18 +245,69 @@ inline void PrintZone(MeshBlockData<Real> *rc)
     auto qU = rc->Get("cons.q").data.GetHostMirrorAndCopy();
     auto dPU = rc->Get("cons.dP").data.GetHostMirrorAndCopy();
 
-    std::cerr << "RHO: " << rhop(0,108,63)
-         << " UU: "  << up(0,108,63)
-         << " U: "   << uvecp(0,0,108,63) << " " << uvecp(1,0,108,63)<< " " << uvecp(2,0,108,63)
-         << " B: "   << Bp(0,0,108,63) << " " << Bp(1,0,108,63) << " " << Bp(2,0,108,63)
-         << " q: "   << q(0,108,63) 
-         << " dP: "  << dP(0,108,63) << std::endl;
-    std::cerr << "RHO: " << rhoU(0,108,63)
-         << " UU: "  << uU(0,108,63)
-         << " U: "   << uvecU(0,0,108,63) << " " << uvecU(1,0,108,63)<< " " << uvecU(2,0,108,63)
-         << " B: "   << BU(0,0,108,63) << " " << BU(1,0,108,63) << " " << BU(2,0,108,63)
-         << " q: "   << qU(0,108,63) 
-         << " dP: "  << dPU(0,108,63) << std::endl;
+    std::cerr << "(PRIM) RHO: " << rhop(kPRINT,jPRINT,iPRINT)
+         << " UU: "  << up(kPRINT,jPRINT,iPRINT)
+         << " U: "   << uvecp(0,kPRINT,jPRINT,iPRINT) << " " << uvecp(1,kPRINT,jPRINT,iPRINT)<< " " << uvecp(2,kPRINT,jPRINT,iPRINT)
+         << " B: "   << Bp(0,kPRINT,jPRINT,iPRINT) << " " << Bp(1,kPRINT,jPRINT,iPRINT) << " " << Bp(2,kPRINT,jPRINT,iPRINT)
+         << " q: "   << q(kPRINT,jPRINT,iPRINT) 
+         << " dP: "  << dP(kPRINT,jPRINT,iPRINT) << std::endl;
+    std::cerr << "(CONS) RHO: " << rhoU(kPRINT,jPRINT,iPRINT)
+         << " UU: "  << uU(kPRINT,jPRINT,iPRINT)
+         << " U: "   << uvecU(0,kPRINT,jPRINT,iPRINT) << " " << uvecU(1,kPRINT,jPRINT,iPRINT)<< " " << uvecU(2,kPRINT,jPRINT,iPRINT)
+         << " B: "   << BU(0,kPRINT,jPRINT,iPRINT) << " " << BU(1,kPRINT,jPRINT,iPRINT) << " " << BU(2,kPRINT,jPRINT,iPRINT)
+         << " q: "   << qU(kPRINT,jPRINT,iPRINT) 
+         << " dP: "  << dPU(kPRINT,jPRINT,iPRINT) << std::endl;
+}
+
+inline void PrintTile(MeshBlockData<Real> *rc)
+{
+    auto rhop = rc->Get("prims.rho").data.GetHostMirrorAndCopy();
+    auto up = rc->Get("prims.u").data.GetHostMirrorAndCopy();
+    auto uvecp = rc->Get("prims.uvec").data.GetHostMirrorAndCopy();
+    auto Bp = rc->Get("prims.B").data.GetHostMirrorAndCopy();
+    auto q = rc->Get("prims.q").data.GetHostMirrorAndCopy();
+    auto dP = rc->Get("prims.dP").data.GetHostMirrorAndCopy();
+
+    auto rhoU = rc->Get("cons.rho").data.GetHostMirrorAndCopy();
+    auto uU = rc->Get("cons.u").data.GetHostMirrorAndCopy();
+    auto uvecU = rc->Get("cons.uvec").data.GetHostMirrorAndCopy();
+    auto BU = rc->Get("cons.B").data.GetHostMirrorAndCopy();
+    auto qU = rc->Get("cons.q").data.GetHostMirrorAndCopy();
+    auto dPU = rc->Get("cons.dP").data.GetHostMirrorAndCopy();
+
+    const IndexRange ib = rc->GetBoundsI(IndexDomain::interior);
+    const IndexRange jb = rc->GetBoundsJ(IndexDomain::interior);
+    const IndexRange kb = rc->GetBoundsK(IndexDomain::interior);
+    std::cerr << "q(cons):";
+    for (int j=jPRINT-3; j<jPRINT+3; j++) {
+        std::cerr << std::endl;
+        for (int i=iPRINT-3; i<iPRINT+3; i++) {
+            fprintf(stderr, "%.5g\t", qU(kb.s, j, i));
+        }
+    }
+    std::cerr << std::endl << "dP(cons):";
+    for (int j=jPRINT-3; j<jPRINT+3; j++) {
+        std::cerr << std::endl;
+        for (int i=iPRINT-3; i<iPRINT+3; i++) {
+            fprintf(stderr, "%.5g\t", dPU(kb.s, j, i));
+        }
+    }
+    std::cerr << std::endl;
+    std::cerr << "q(prim):";
+    for (int j=jPRINT-3; j<jPRINT+3; j++) {
+        std::cerr << std::endl;
+        for (int i=iPRINT-3; i<iPRINT+3; i++) {
+            fprintf(stderr, "%.5g\t", q(kb.s, j, i));
+        }
+    }
+    std::cerr << std::endl << "dP(prim):";
+    for (int j=jPRINT-3; j<jPRINT+3; j++) {
+        std::cerr << std::endl;
+        for (int i=iPRINT-3; i<iPRINT+3; i++) {
+            fprintf(stderr, "%.5g\t", dP(kb.s, j, i));
+        }
+    }
+    std::cerr << std::endl << std::endl;
 }
 
 inline void Flag(std::string label)
@@ -257,6 +321,7 @@ inline void Flag(MeshBlockData<Real> *rc, std::string label)
         std::cerr << label << std::endl;
         if(PRINTCORNERS) PrintCorner(rc);
         if(PRINTZONE) PrintZone(rc);
+        if(PRINTTILE) PrintTile(rc);
     }
 }
 
@@ -268,6 +333,7 @@ inline void Flag(MeshData<Real> *md, std::string label)
             auto rc = md->GetBlockData(0).get();
             if(PRINTCORNERS) PrintCorner(rc);
             if(PRINTZONE) PrintZone(rc);
+            if(PRINTTILE) PrintTile(rc);
         }
     }
 }
