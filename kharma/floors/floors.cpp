@@ -138,7 +138,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     // Apply limits on heat flux and pressure anisotropy from velocity space instabilities?
     // We would want this for the torus runs but not for the test problems. 
     // For eg: we know that this affects the viscous bondi problem
-    bool enable_emhd_limits = pin->GetOrAddBoolean("floors", "emhd_limits", false);
+    bool enable_emhd_limits = pin->GetOrAddBoolean("floors", "enable_emhd_limits", false);
     params.Add("enable_emhd_limits", enable_emhd_limits);
 
     // Temporary fix just for being able to save field values
@@ -192,6 +192,7 @@ TaskStatus ApplyFloors(MeshBlockData<Real> *mbd, IndexDomain domain)
     GridScalar eflag = mbd->Get("eflag").data;
 
     const bool enable_emhd_limits = mbd->GetBlockPointer()->packages.Get("Floors")->Param<bool>("enable_emhd_limits");
+
     EMHD::EMHD_parameters emhd_params_tmp;
     if (enable_emhd_limits) {
         const auto& pars = pmb->packages.Get("EMHD")->AllParams();
@@ -245,7 +246,7 @@ TaskStatus ApplyFloors(MeshBlockData<Real> *mbd, IndexDomain domain)
             }
         }
     );
-    pmb->par_for("apply_ceilings", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+    pmb->par_for("apply_instability_limits", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_3D {
             // Apply limits to the Extended MHD variables
             if (enable_emhd_limits)

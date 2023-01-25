@@ -51,32 +51,31 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     auto pkg = std::make_shared<StateDescriptor>("EMHD");
     Params &params = pkg->AllParams();
 
-    // Diagnostic data
-    int verbose = pin->GetOrAddInteger("debug", "verbose", 0);
-    params.Add("verbose", verbose);
-    int flag_verbose = pin->GetOrAddInteger("debug", "flag_verbose", 0);
-    params.Add("flag_verbose", flag_verbose);
-    int extra_checks = pin->GetOrAddInteger("debug", "extra_checks", 0);
-    params.Add("extra_checks", extra_checks);
-
     // EMHD Problem/Closure parameters
     // GRIM uses a callback to a problem-specific implementation which sets these
     // We share implementations in one function, controlled by these parameters
     // These are always necessary for performing EGRMHD.
 
     bool higher_order_terms  = pin->GetOrAddBoolean("emhd", "higher_order_terms", false);
+    params.Add("higher_order_terms", higher_order_terms);
     std::string closure_type = pin->GetOrAddString("emhd", "closure_type", "torus");
+    params.Add("closure_type", closure_type);
 
     // Should the EMHD sector feedback onto the ideal MHD variables? The default is 'yes'.
     // So far it's just the viscous Bondi problem that doesn't require feedback
     bool feedback = pin->GetOrAddBoolean("emhd", "feedback", true);
+    params.Add("feedback", feedback);
 
     Real tau              = pin->GetOrAddReal("emhd", "tau", 1.0);
     Real conduction_alpha = pin->GetOrAddReal("emhd", "conduction_alpha", 1.0);
+    params.Add("conduction_alpha", conduction_alpha);
     Real viscosity_alpha  = pin->GetOrAddReal("emhd", "viscosity_alpha", 1.0);
+    params.Add("viscosity_alpha", viscosity_alpha);
     
     Real kappa = pin->GetOrAddReal("emhd", "kappa", 1.0);
+    params.Add("kappa", kappa);
     Real eta   = pin->GetOrAddReal("emhd", "eta", 1.0);
+    params.Add("eta", eta);
 
     EMHD_parameters emhd_params;
     emhd_params.higher_order_terms = higher_order_terms;

@@ -549,6 +549,22 @@ KOKKOS_INLINE_FUNCTION int apply_instability_limits(const GRCoordinates& G, cons
     Real q, dP;
     EMHD::convert_prims_to_q_dP(qtilde, dPtilde, rho, Theta, cs*cs, emhd_params, q, dP);
 
+    #if TRACE
+    if (i == iPRINT && j == jPRINT && k == kPRINT) {
+        std::cerr << "\nInstability limits check (INIT)\n";
+        std::cerr << "tau, chi, nu: " << tau << " " << chi_e << " " << nu_e << " m_p.q, m_p.dP: " << qtilde <<  " " << dPtilde
+        << " q, dP: " << q << " " << dP << "\n";
+    }
+    #endif
+
+    //EDIT
+    if (i == 100 && j == 5 && k == 0) {
+        std::cerr << "\nInstability limits check (INIT)\n";
+        std::cerr << "tau, chi, nu: " << tau << " " << chi_e << " " << nu_e << " bsq: " << bsq << " pg: " << pg <<
+        " m_p.q, m_p.dP: " << qtilde <<  " " << dPtilde << " q, dP: " << q << " " << dP << "\n";
+    }
+
+
     Real qmax         = 1.07 * rho * m::pow(cs, 3.);
     Real max_frac     = m::max(m::abs(q) / qmax, 1.);
     if (fabs(q) / qmax > 1.)
@@ -571,6 +587,24 @@ KOKKOS_INLINE_FUNCTION int apply_instability_limits(const GRCoordinates& G, cons
         P(m_p.DP, k, j, i) = P(m_p.DP, k, j, i) * (1. / m::max(dP / dP_minus, 1.));
 
     Flux::p_to_u(G, P, m_p, emhd_params, gam, k, j, i, U, m_u);
+
+    #if TRACE
+    if (i == iPRINT && j == jPRINT && k == kPRINT) {
+        std::cerr << "Instability limits check (FINAL)\n";
+        std::cerr << "m_p.q, m_p.dP: " << qtilde <<  " " << dPtilde << " q/qmax: " << q / qmax << " dP/dP_mirror: " 
+        << dP / dP_plus << " dP/dP_firehose: " << dP / dP_minus << "\n";
+        std::cerr << "eflag: " << eflag << "\n";
+    }
+    #endif
+
+    //EDIT
+    // if (i == 100 && j == 5 && k == 0) {
+    //     std::cerr << "Instability limits check (FINAL)\n";
+    //     std::cerr << "m_p.q, m_p.dP: " << P(m_p.Q, k, j, i) <<  " " << P(m_p.DP, k, j, i) << " q/qmax: " << q / qmax << " dP/dP_mirror: " 
+    //     << dP / dP_plus << " dP/dP_firehose: " << dP / dP_minus << "\n";
+    //     std::cerr << "P_par / P_perp: " << dP_comp_ratio << " dP_plus: " << dP_plus << " dP_minus: " << dP_minus << "\n";
+    //     std::cerr << "eflag: " << eflag << "\n";
+    // }
 
     return eflag;
         
