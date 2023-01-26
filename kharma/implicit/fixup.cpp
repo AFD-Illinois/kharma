@@ -67,16 +67,24 @@ TaskStatus Implicit::FixSolve(MeshBlockData<Real> *mbd) {
     const IndexRange jb = mbd->GetBoundsJ(IndexDomain::entire);
     const IndexRange kb = mbd->GetBoundsK(IndexDomain::entire);
 
+    auto bounds  = pmb->cellbounds;
+    const int n1 = bounds.ncellsi(IndexDomain::entire);
+    const int n2 = bounds.ncellsj(IndexDomain::entire);
+    const int n3 = bounds.ncellsk(IndexDomain::entire);
+
     const IndexRange ib_b = mbd->GetBoundsI(IndexDomain::interior);
     const IndexRange jb_b = mbd->GetBoundsJ(IndexDomain::interior);
     const IndexRange kb_b = mbd->GetBoundsK(IndexDomain::interior);
+
+    ParArrayND<Real> sum("sum_good_neighbors", nfvar, n3+1, n2+1, n1+1);
+    ParArrayND<Real> sum_x("sum_all_neighbors", nfvar, n3+1, n2+1, n1+1);
 
     pmb->par_for("fix_solver_failures", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_3D {
             // Fix only bad zones
             if ((solve_fail(k, j, i)) == SolverStatus::fail) {
                 double wsum = 0., wsum_x = 0.;
-                double sum[nfvar] = {0.}, sum_x[nfvar] = {0.};
+                // double sum[nfvar] = {0.}, sum_x[nfvar] = {0.};
                 // For all neighboring cells...
                 for (int n = -1; n <= 1; n++) {
                     for (int m = -1; m <= 1; m++) {
@@ -91,11 +99,11 @@ TaskStatus Implicit::FixSolve(MeshBlockData<Real> *mbd) {
                                 if ((solve_fail(kk, jj, ii)) != SolverStatus::fail) {
                                     // Weight by distance.  Note interpolated "fixed" cells stay flagged
                                     wsum += w;
-                                    FLOOP sum[ip] += w * P(ip, kk, jj, ii);
+                                    FLOOP sum(ip, k, j, i) += w * P(ip, kk, jj, ii);
                                 }
                                 // Just in case, keep a sum of even the bad ones
                                 wsum_x += w;
-                                FLOOP sum_x[ip] += w * P(ip, kk, jj, ii);
+                                FLOOP sum_x(ip, k, j, i) += w * P(ip, kk, jj, ii);
                             }
                         }
                     }
@@ -108,7 +116,7 @@ TaskStatus Implicit::FixSolve(MeshBlockData<Real> *mbd) {
                         printf("No neighbors were available at %d %d %d!\n", i, j, k);
 #endif
                 } else {
-                    FLOOP P(ip, k, j, i) = sum[ip]/wsum;
+                    FLOOP P(ip, k, j, i) = sum(ip, k, j, i)/wsum;
                 }
             }
         }
