@@ -14,32 +14,30 @@ then
   HOST_ARCH=ZEN3
   DEVICE_ARCH=AMPERE80
 
-  module load cmake
+  # Load common modules
+  module purge
+  module load modtree/gpu cmake
+  MPI_EXE=mpirun
+
   if [[ $ARGS == *"cuda"* ]]
   then
-    if [[ $ARGS == *"gcc"* ]]
-    then
-      echo "Using default compiler"
-    elif  [[ $ARGS == *"nvhpc"* ]]
-    then
-      # Most recent nvhpc.  Keeps system MPI but uses NVHPC's?
-      #module load nvhpc/22.5
+    # GPU Compile
+    # 4-device MPI
+    MPI_EXTRA_ARGS="--map-by ppr:4:node:pe=16"
+    MPI_NUM_PROCS=4
+
+    if [[ $ARGS == *"nvhpc"* ]]; then
+      # nvhpc only on request, MPI crashes
+      module load nvhpc_latest openmpi-5.0_beta
       C_NATIVE=nvc
       CXX_NATIVE=nvc++
-    else
-      echo "Using default compiler"
+    else # TODO NVHPC not-latest
+      C_NATIVE=gcc
+      CXX_NATIVE=g++
     fi
   else
+    # CPU Compile
     module load modtree/cpu gcc
+    MPI_NUM_PROCS=1
   fi
-  # In-tree HDF5
-  PREFIX_PATH="$SOURCE_DIR/external/hdf5"
-
-  # MPI options
-  MPI_EXE=mpirun
-  MPI_EXTRA_ARGS="--map-by ppr:4:node:pe=16"
-  MPI_NUM_PROCS=4
-  KOKKOS_NUM_DEVICES=4
-
-  module list
 fi

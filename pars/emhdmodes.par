@@ -68,7 +68,7 @@ rootfind_tol        = 1.e-20
 linesearch          = true
 max_linesearch_iter = 3
 linesearch_eps      = 1.e-4
-use_qr              = true
+use_qr              = false
 
 <debug>
 # General verbosity level:

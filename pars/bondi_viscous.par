@@ -46,6 +46,7 @@ jacobian_delta      = 4.e-8
 linesearch          = true
 max_linesearch_iter = 3
 linesearch_eps      = 1.e-4
+use_qr              = false
 
 # IMPORTANT: This block must be present and values filled in all EGRMHD simulations
 <emhd>
