@@ -81,6 +81,10 @@ TaskStatus Implicit::FixSolve(MeshBlockData<Real> *mbd) {
 
     pmb->par_for("fix_solver_failures", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_3D {
+            FLOOP {
+                sum(ip, k, j, i)   = 0.;
+                sum_x(ip, k, j, i) = 0.;
+            }
             // Fix only bad zones
             if ((solve_fail(k, j, i)) == SolverStatus::fail) {
                 double wsum = 0., wsum_x = 0.;
