@@ -168,6 +168,8 @@ std::shared_ptr<StateDescriptor> Implicit::Initialize(ParameterInput *pin)
 #include <batched/dense/KokkosBatched_QR_Decl.hpp>
 #include <batched/dense/KokkosBatched_ApplyQ_Decl.hpp>
 #include <batched/dense/KokkosBatched_Trsv_Decl.hpp>
+#include <batched/dense/KokkosBatched_QR_WithColumnPivoting_Decl.hpp>
+#include <batched/dense/KokkosBatched_ApplyPivot_Decl.hpp>
 
 TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_init, MeshData<Real> *md_flux_src,
                 MeshData<Real> *md_linesearch, MeshData<Real> *md_solver, const Real& dt)
@@ -299,7 +301,7 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
     // P_full_step_init/U_full_step_init, P_sub_step_init/U_sub_step_init, flux_src, 
     // P_solver, P_linesearch, dU_implicit, three temps (all vars)
     // solve_norm, solve_fail
-    const size_t total_scratch_bytes = tensor_size_in_bytes + (4) * fvar_size_in_bytes + (11) * var_size_in_bytes + \
+    const size_t total_scratch_bytes = tensor_size_in_bytes + (5) * fvar_size_in_bytes + (11) * var_size_in_bytes + \
                                     (2) * scalar_size_in_bytes;
                                     //  + int_size_in_bytes;
 
@@ -318,6 +320,7 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
                 ScratchPad3D<Real> jacobian_s(member.team_scratch(scratch_level), nfvar, nfvar, n1);
                 ScratchPad2D<Real> residual_s(member.team_scratch(scratch_level), nfvar, n1);
                 ScratchPad2D<Real> delta_prim_s(member.team_scratch(scratch_level), nfvar, n1);
+                ScratchPad2D<Real> pivot_s(member.team_scratch(scratch_level), nfvar, n1);
                 ScratchPad2D<Real> trans_s(member.team_scratch(scratch_level), nfvar, n1);
                 ScratchPad2D<Real> work_s(member.team_scratch(scratch_level), nfvar, n1);
                 // Scratchpads for all vars
@@ -417,7 +420,6 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
                             // since we do a copy in imex_driver just before, but it is required for the subsequent
                             // iterations of the solver.
                             PLOOP P_linesearch(ip) = P_solver(ip);
-                            Real lambda = linesearch_lambda;
 
                             // Jacobian calculation
                             // Requires calculating the residual anyway, so we grab it here
@@ -427,7 +429,7 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
                             // Solve against the negative residual
                             FLOOP delta_prim(ip) = -residual(ip);
 
-                            #if TRACE
+#if TRACE
                             if (am_rank0 && b == 0 && i == iPRINT && j == jPRINT && k == kPRINT) {
                                 std::cerr << "Variable ordering: rho " << int(m_p.RHO) << " uu " << int(m_p.UU)  << " U1 " << int(m_p.U1)  
                                         << " B1 " << int(m_p.B1)  << " q " << int(m_p.Q)  << " dP " << int(m_p.DP) << std::endl;
@@ -450,8 +452,65 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
                                 std::cerr << "Initial residual: "; FLOOP std::cerr << residual(ip) << " "; std::cerr << std::endl;
                                 std::cerr << "Initial delta_prim: "; FLOOP std::cerr << delta_prim(ip) << " "; std::cerr << std::endl;
                             }
-                            #endif
+#endif
+#if 1
+                        }
+                    }
+                );
+                member.team_barrier();
+                for (int i = ib.s; i <= ib.e; ++i) {
+                    // Solver variables
+                    auto residual   = Kokkos::subview(residual_s, Kokkos::ALL(), i);
+                    auto jacobian   = Kokkos::subview(jacobian_s, Kokkos::ALL(), Kokkos::ALL(), i);
+                    auto delta_prim = Kokkos::subview(delta_prim_s, Kokkos::ALL(), i);
+                    auto pivot      = Kokkos::subview(pivot_s, Kokkos::ALL(), i);
+                    auto trans      = Kokkos::subview(trans_s, Kokkos::ALL(), i);
+                    auto work       = Kokkos::subview(work_s, Kokkos::ALL(), i);
+                    int rank = 0; // Strip const by copying
+                    KokkosBatched::TeamVectorQR_WithColumnPivoting<parthenon::team_mbr_t, KokkosBatched::Algo::QR::Unblocked>
+                        ::invoke(member, jacobian, trans, pivot, work, rank);
+                    member.team_barrier();
+                    KokkosBatched::TeamVectorApplyQ<parthenon::team_mbr_t, KokkosBatched::Side::Left, KokkosBatched::Trans::Transpose,
+                        KokkosBatched::Algo::ApplyQ::Unblocked>
+                        ::invoke(member, jacobian, trans, delta_prim, work);
+                    member.team_barrier();
+                    KokkosBatched::TeamVectorTrsv<parthenon::team_mbr_t, KokkosBatched::Uplo::Upper, KokkosBatched::Trans::NoTranspose,
+                        KokkosBatched::Diag::NonUnit, KokkosBatched::Algo::Trsv::Unblocked>
+                        ::invoke(member, alpha, jacobian, delta_prim);
+                    member.team_barrier();
+                    KokkosBatched::TeamVectorApplyPivot<parthenon::team_mbr_t, KokkosBatched::Side::Left, KokkosBatched::Direct::Backward>
+                        ::invoke(member, pivot, delta_prim);
+                    member.team_barrier();
+                }
 
+                parthenon::par_for_inner(member, ib.s, ib.e,
+                    [&](const int& i) {
+                        // Lots of slicing.  This still ends up faster & cleaner than alternatives I tried
+                        auto P_full_step_init = Kokkos::subview(P_full_step_init_s, Kokkos::ALL(), i);
+                        auto U_full_step_init = Kokkos::subview(U_full_step_init_s, Kokkos::ALL(), i);
+                        auto P_sub_step_init  = Kokkos::subview(P_sub_step_init_s, Kokkos::ALL(), i);
+                        auto U_sub_step_init  = Kokkos::subview(U_sub_step_init_s, Kokkos::ALL(), i);
+                        auto flux_src         = Kokkos::subview(flux_src_s, Kokkos::ALL(), i);
+                        auto P_solver         = Kokkos::subview(P_solver_s, Kokkos::ALL(), i);
+                        auto P_linesearch     = Kokkos::subview(P_linesearch_s, Kokkos::ALL(), i);
+                        // Solver variables
+                        auto residual   = Kokkos::subview(residual_s, Kokkos::ALL(), i);
+                        auto jacobian   = Kokkos::subview(jacobian_s, Kokkos::ALL(), Kokkos::ALL(), i);
+                        auto delta_prim = Kokkos::subview(delta_prim_s, Kokkos::ALL(), i);
+                        auto trans      = Kokkos::subview(trans_s, Kokkos::ALL(), i);
+                        auto work       = Kokkos::subview(work_s, Kokkos::ALL(), i);
+                        // Temporaries
+                        auto tmp1  = Kokkos::subview(tmp1_s, Kokkos::ALL(), i);
+                        auto tmp2  = Kokkos::subview(tmp2_s, Kokkos::ALL(), i);
+                        auto tmp3  = Kokkos::subview(tmp3_s, Kokkos::ALL(), i);
+                        // Implicit sources at starting state
+                        auto dU_implicit = Kokkos::subview(dU_implicit_s, Kokkos::ALL(), i);
+                        // Solver performance diagnostics
+                        auto solve_norm = Kokkos::subview(solve_norm_s, i);
+                        auto solve_fail = Kokkos::subview(solve_fail_s, i);
+
+                        if (solve_fail() != SolverStatus::fail) {
+#else
                             if (use_qr) {
                                 // Linear solve by QR decomposition
                                 KokkosBatched::SerialQR<KokkosBatched::Algo::QR::Unblocked>::invoke(jacobian, trans, work);
@@ -464,17 +523,18 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
                             KokkosBatched::SerialTrsv<KokkosBatched::Uplo::Upper, KokkosBatched::Trans::NoTranspose, 
                                                     KokkosBatched::Diag::NonUnit, KokkosBatched::Algo::Trsv::Unblocked>
                             ::invoke(alpha, jacobian, delta_prim);
-
-                            #if TRACE
+#endif
+#if TRACE
                             if (am_rank0 && b == 0 && i == iPRINT && j == jPRINT && k == kPRINT) {
                                 std::cerr << "Final delta_prim: "; FLOOP std::cerr << delta_prim(ip) << " "; std::cerr << std::endl;
                                 std::cerr<< std::endl;
                             }
-                            #endif
+#endif
 
                             // Check for positive definite values of density and internal energy.
                             // Ignore zone if manual backtracking is not sufficient.
                             // The primitives will be averaged over good neighbors.
+                            Real lambda = linesearch_lambda;
                             if ((P_solver(m_p.RHO) + lambda*delta_prim(m_p.RHO) < 0.) || (P_solver(m_p.UU) + lambda*delta_prim(m_p.UU) < 0.)) {
                                 solve_fail() = SolverStatus::backtrack;
                                 lambda       = 0.1;
