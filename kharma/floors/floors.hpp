@@ -558,11 +558,11 @@ KOKKOS_INLINE_FUNCTION int apply_instability_limits(const GRCoordinates& G, cons
     #endif
 
     //EDIT
-    if (i == 100 && j == 5 && k == 0) {
-        std::cerr << "\nInstability limits check (INIT)\n";
-        std::cerr << "tau, chi, nu: " << tau << " " << chi_e << " " << nu_e << " bsq: " << bsq << " pg: " << pg <<
-        " m_p.q, m_p.dP: " << qtilde <<  " " << dPtilde << " q, dP: " << q << " " << dP << "\n";
-    }
+    // if (i == 100 && j == 5 && k == 0) {
+    //     std::cerr << "\nInstability limits check (INIT)\n";
+    //     std::cerr << "tau, chi, nu: " << tau << " " << chi_e << " " << nu_e << " bsq: " << bsq << " pg: " << pg <<
+    //     " m_p.q, m_p.dP: " << qtilde <<  " " << dPtilde << " q, dP: " << q << " " << dP << "\n";
+    // }
 
 
     Real qmax         = 1.07 * rho * m::pow(cs, 3.);

@@ -134,6 +134,26 @@ TaskStatus Implicit::FixSolve(MeshBlockData<Real> *mbd) {
         KOKKOS_LAMBDA_3D {
             if (( solve_fail(k, j, i)) == SolverStatus::fail)
                 Flux::p_to_u(G, P_all, m_p, emhd_params, gam, k, j, i, U_all, m_u);
+
+            //EDIT
+            // if (i == 160 && j == 120 && k == 0) {
+            //     const Real Theta = (gam - 1) * P_all(m_p.UU, k, j, i) / P_all(m_p.RHO, k, j, i);
+            //     const Real cs2   = gam * (gam - 1) * P_all(m_p.UU, k, j, i) / (P_all(m_p.RHO, k, j, i) + gam * P_all(m_p.UU, k, j, i));
+            //     std::cerr << "\nCHECK CONSISTENCY\n";
+            //     std::cerr << "phi, psi, rho, Theta, cs2: " << emhd_params.conduction_alpha << " " <<
+            //     emhd_params.viscosity_alpha << " " << P_all(m_p.RHO, k, j, i) << " " << Theta << " " << cs2 << "\n";
+            //     std::cerr << "qtilde, dPtilde: " << P_all(m_p.Q, k, j, i) << " " << P_all(m_p.DP, k, j, i) << "\n";
+
+            //     Real q, dP;
+            //     Real tau, chi_e, nu_e;
+            //     EMHD::set_parameters(G, P_all, m_p, emhd_params, gam, k, j, i, tau, chi_e, nu_e, "consistency_check");
+            //     q  = P_all(m_p.Q, k, j, i) * m::sqrt(chi_e * P_all(m_p.RHO, k, j, i) * m::pow(Theta, 2) / tau);
+            //     dP = P_all(m_p.DP, k, j, i) * m::sqrt(nu_e * P_all(m_p.RHO, k, j, i) * Theta / tau);
+            //     std::cerr << "q, dP (from closure parameters): " << q << " " << dP << "\n";
+                
+            //     EMHD::convert_prims_to_q_dP(P_all(m_p.Q, k, j, i), P_all(m_p.DP, k, j, i), P_all(m_p.RHO, k, j, i), Theta, cs2, emhd_params, q, dP);
+            //     std::cerr << "q, dP (from closure scheme): " << q << " " << dP << "\n\n";
+            // }
         }
     );
 
