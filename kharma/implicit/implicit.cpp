@@ -301,7 +301,7 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
     // P_full_step_init/U_full_step_init, P_sub_step_init/U_sub_step_init, flux_src, 
     // P_solver, P_linesearch, dU_implicit, three temps (all vars)
     // solve_norm, solve_fail
-    const size_t total_scratch_bytes = tensor_size_in_bytes + (5) * fvar_size_in_bytes + (11) * var_size_in_bytes + \
+    const size_t total_scratch_bytes = tensor_size_in_bytes + (6) * fvar_size_in_bytes + (11) * var_size_in_bytes + \
                                     (2) * scalar_size_in_bytes;
                                     //  + int_size_in_bytes;
 
@@ -322,7 +322,7 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
                 ScratchPad2D<Real> delta_prim_s(member.team_scratch(scratch_level), nfvar, n1);
                 ScratchPad2D<Real> pivot_s(member.team_scratch(scratch_level), nfvar, n1);
                 ScratchPad2D<Real> trans_s(member.team_scratch(scratch_level), nfvar, n1);
-                ScratchPad2D<Real> work_s(member.team_scratch(scratch_level), nfvar, n1);
+                ScratchPad2D<Real> work_s(member.team_scratch(scratch_level), 2*nfvar, n1);
                 // Scratchpads for all vars
                 ScratchPad2D<Real> dU_implicit_s(member.team_scratch(scratch_level), nvar, n1);
                 ScratchPad2D<Real> tmp1_s(member.team_scratch(scratch_level), nvar, n1);
@@ -394,6 +394,7 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
                         auto residual   = Kokkos::subview(residual_s, Kokkos::ALL(), i);
                         auto jacobian   = Kokkos::subview(jacobian_s, Kokkos::ALL(), Kokkos::ALL(), i);
                         auto delta_prim = Kokkos::subview(delta_prim_s, Kokkos::ALL(), i);
+                        auto pivot      = Kokkos::subview(pivot_s, Kokkos::ALL(), i);
                         auto trans      = Kokkos::subview(trans_s, Kokkos::ALL(), i);
                         auto work       = Kokkos::subview(work_s, Kokkos::ALL(), i);
                         // Temporaries
@@ -453,67 +454,9 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
                                 std::cerr << "Initial delta_prim: "; FLOOP std::cerr << delta_prim(ip) << " "; std::cerr << std::endl;
                             }
 #endif
-#if 1
-                        }
-                    }
-                );
-                member.team_barrier();
-                for (int i = ib.s; i <= ib.e; ++i) {
-                    // Solver variables
-                    auto residual   = Kokkos::subview(residual_s, Kokkos::ALL(), i);
-                    auto jacobian   = Kokkos::subview(jacobian_s, Kokkos::ALL(), Kokkos::ALL(), i);
-                    auto delta_prim = Kokkos::subview(delta_prim_s, Kokkos::ALL(), i);
-                    auto pivot      = Kokkos::subview(pivot_s, Kokkos::ALL(), i);
-                    auto trans      = Kokkos::subview(trans_s, Kokkos::ALL(), i);
-                    auto work       = Kokkos::subview(work_s, Kokkos::ALL(), i);
-                    int rank = 0; // Strip const by copying
-                    KokkosBatched::TeamVectorQR_WithColumnPivoting<parthenon::team_mbr_t, KokkosBatched::Algo::QR::Unblocked>
-                        ::invoke(member, jacobian, trans, pivot, work, rank);
-                    member.team_barrier();
-                    KokkosBatched::TeamVectorApplyQ<parthenon::team_mbr_t, KokkosBatched::Side::Left, KokkosBatched::Trans::Transpose,
-                        KokkosBatched::Algo::ApplyQ::Unblocked>
-                        ::invoke(member, jacobian, trans, delta_prim, work);
-                    member.team_barrier();
-                    KokkosBatched::TeamVectorTrsv<parthenon::team_mbr_t, KokkosBatched::Uplo::Upper, KokkosBatched::Trans::NoTranspose,
-                        KokkosBatched::Diag::NonUnit, KokkosBatched::Algo::Trsv::Unblocked>
-                        ::invoke(member, alpha, jacobian, delta_prim);
-                    member.team_barrier();
-                    KokkosBatched::TeamVectorApplyPivot<parthenon::team_mbr_t, KokkosBatched::Side::Left, KokkosBatched::Direct::Backward>
-                        ::invoke(member, pivot, delta_prim);
-                    member.team_barrier();
-                }
-
-                parthenon::par_for_inner(member, ib.s, ib.e,
-                    [&](const int& i) {
-                        // Lots of slicing.  This still ends up faster & cleaner than alternatives I tried
-                        auto P_full_step_init = Kokkos::subview(P_full_step_init_s, Kokkos::ALL(), i);
-                        auto U_full_step_init = Kokkos::subview(U_full_step_init_s, Kokkos::ALL(), i);
-                        auto P_sub_step_init  = Kokkos::subview(P_sub_step_init_s, Kokkos::ALL(), i);
-                        auto U_sub_step_init  = Kokkos::subview(U_sub_step_init_s, Kokkos::ALL(), i);
-                        auto flux_src         = Kokkos::subview(flux_src_s, Kokkos::ALL(), i);
-                        auto P_solver         = Kokkos::subview(P_solver_s, Kokkos::ALL(), i);
-                        auto P_linesearch     = Kokkos::subview(P_linesearch_s, Kokkos::ALL(), i);
-                        // Solver variables
-                        auto residual   = Kokkos::subview(residual_s, Kokkos::ALL(), i);
-                        auto jacobian   = Kokkos::subview(jacobian_s, Kokkos::ALL(), Kokkos::ALL(), i);
-                        auto delta_prim = Kokkos::subview(delta_prim_s, Kokkos::ALL(), i);
-                        auto trans      = Kokkos::subview(trans_s, Kokkos::ALL(), i);
-                        auto work       = Kokkos::subview(work_s, Kokkos::ALL(), i);
-                        // Temporaries
-                        auto tmp1  = Kokkos::subview(tmp1_s, Kokkos::ALL(), i);
-                        auto tmp2  = Kokkos::subview(tmp2_s, Kokkos::ALL(), i);
-                        auto tmp3  = Kokkos::subview(tmp3_s, Kokkos::ALL(), i);
-                        // Implicit sources at starting state
-                        auto dU_implicit = Kokkos::subview(dU_implicit_s, Kokkos::ALL(), i);
-                        // Solver performance diagnostics
-                        auto solve_norm = Kokkos::subview(solve_norm_s, i);
-                        auto solve_fail = Kokkos::subview(solve_fail_s, i);
-
-                        if (solve_fail() != SolverStatus::fail) {
-#else
                             if (use_qr) {
                                 // Linear solve by QR decomposition
-                                KokkosBatched::SerialQR<KokkosBatched::Algo::QR::Unblocked>::invoke(jacobian, trans, work);
+                                KokkosBatched::SerialQR<KokkosBatched::Algo::QR::Unblocked>::invoke(jacobian, trans, pivot, work);
                                 KokkosBatched::SerialApplyQ<KokkosBatched::Side::Left, KokkosBatched::Trans::Transpose,
                                                             KokkosBatched::Algo::ApplyQ::Unblocked>
                                 ::invoke(jacobian, trans, delta_prim, work);
@@ -523,7 +466,11 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
                             KokkosBatched::SerialTrsv<KokkosBatched::Uplo::Upper, KokkosBatched::Trans::NoTranspose, 
                                                     KokkosBatched::Diag::NonUnit, KokkosBatched::Algo::Trsv::Unblocked>
                             ::invoke(alpha, jacobian, delta_prim);
-#endif
+                            if (use_qr) {
+                                // Linear solve by QR decomposition
+                                KokkosBatched::SerialApplyPivot<KokkosBatched::Side::Left,KokkosBatched::Direct::Backward>
+                                    ::invoke(pivot, delta_prim);
+                            }
 #if TRACE
                             if (am_rank0 && b == 0 && i == iPRINT && j == jPRINT && k == kPRINT) {
                                 std::cerr << "Final delta_prim: "; FLOOP std::cerr << delta_prim(ip) << " "; std::cerr << std::endl;
