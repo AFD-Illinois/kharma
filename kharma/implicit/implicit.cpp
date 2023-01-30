@@ -248,6 +248,7 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
     const int nvar   = U_full_step_init_all.GetDim(4);
     // Get number of implicit variables
     auto implicit_vars = get_ordered_names(mbd_full_step_init.get(), isPrimitive, true);
+    //std::cerr << "Ordered implicit:"; for(auto var: implicit_vars) std::cerr << " " << var; std::cerr << std::endl;
     PackIndexMap implicit_prims_map;
     auto& P_full_step_init_implicit = md_full_step_init->PackVariables(implicit_vars, implicit_prims_map);
     const int nfvar = P_full_step_init_implicit.GetDim(4);
@@ -290,9 +291,9 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
     // to avoid a bunch of indices in all the device-side operations
     // See grmhd_functions.hpp for the other approach with overloads
     const int scratch_level = 1; // 0 is actual scratch (tiny); 1 is HBM
-    const size_t var_size_in_bytes    = parthenon::ScratchPad2D<Real>::shmem_size(nvar, n1);
-    const size_t fvar_size_in_bytes   = parthenon::ScratchPad2D<Real>::shmem_size(nfvar, n1);
-    const size_t tensor_size_in_bytes = parthenon::ScratchPad3D<Real>::shmem_size(nfvar, nfvar, n1);
+    const size_t var_size_in_bytes    = parthenon::ScratchPad2D<Real>::shmem_size(n1, nvar);
+    const size_t fvar_size_in_bytes   = parthenon::ScratchPad2D<Real>::shmem_size(n1, nfvar);
+    const size_t tensor_size_in_bytes = parthenon::ScratchPad3D<Real>::shmem_size(nfvar, n1, nfvar);
     const size_t scalar_size_in_bytes = parthenon::ScratchPad1D<Real>::shmem_size(n1);
     const size_t int_size_in_bytes    = parthenon::ScratchPad1D<int>::shmem_size(n1);
     // Allocate enough to cache:
@@ -317,42 +318,44 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
             KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int& b, const int& k, const int& j) {
                 const auto& G = U_full_step_init_all.GetCoords(b);
                 // Scratchpads for implicit vars
-                ScratchPad3D<Real> jacobian_s(member.team_scratch(scratch_level), nfvar, nfvar, n1);
-                ScratchPad2D<Real> residual_s(member.team_scratch(scratch_level), nfvar, n1);
-                ScratchPad2D<Real> delta_prim_s(member.team_scratch(scratch_level), nfvar, n1);
-                ScratchPad2D<Real> pivot_s(member.team_scratch(scratch_level), nfvar, n1);
-                ScratchPad2D<Real> trans_s(member.team_scratch(scratch_level), nfvar, n1);
-                ScratchPad2D<Real> work_s(member.team_scratch(scratch_level), 2*nfvar, n1);
+                ScratchPad3D<Real> jacobian_s(member.team_scratch(scratch_level), n1, nfvar, nfvar);
+                ScratchPad2D<Real> residual_s(member.team_scratch(scratch_level), n1, nfvar);
+                ScratchPad2D<Real> delta_prim_s(member.team_scratch(scratch_level), n1, nfvar);
+                ScratchPad2D<int> pivot_s(member.team_scratch(scratch_level), n1, nfvar);
+                ScratchPad2D<Real> trans_s(member.team_scratch(scratch_level), n1, nfvar);
+                ScratchPad2D<Real> work_s(member.team_scratch(scratch_level), 2*n1, nfvar);
                 // Scratchpads for all vars
-                ScratchPad2D<Real> dU_implicit_s(member.team_scratch(scratch_level), nvar, n1);
-                ScratchPad2D<Real> tmp1_s(member.team_scratch(scratch_level), nvar, n1);
-                ScratchPad2D<Real> tmp2_s(member.team_scratch(scratch_level), nvar, n1);
-                ScratchPad2D<Real> tmp3_s(member.team_scratch(scratch_level), nvar, n1);
-                ScratchPad2D<Real> P_full_step_init_s(member.team_scratch(scratch_level), nvar, n1);
-                ScratchPad2D<Real> U_full_step_init_s(member.team_scratch(scratch_level), nvar, n1);
-                ScratchPad2D<Real> P_sub_step_init_s(member.team_scratch(scratch_level), nvar, n1);
-                ScratchPad2D<Real> U_sub_step_init_s(member.team_scratch(scratch_level), nvar, n1);
-                ScratchPad2D<Real> flux_src_s(member.team_scratch(scratch_level), nvar, n1);
-                ScratchPad2D<Real> P_solver_s(member.team_scratch(scratch_level), nvar, n1);
-                ScratchPad2D<Real> P_linesearch_s(member.team_scratch(scratch_level), nvar, n1);
+                ScratchPad2D<Real> dU_implicit_s(member.team_scratch(scratch_level), n1, nvar);
+                ScratchPad2D<Real> tmp1_s(member.team_scratch(scratch_level), n1, nvar);
+                ScratchPad2D<Real> tmp2_s(member.team_scratch(scratch_level), n1, nfvar);
+                ScratchPad2D<Real> tmp3_s(member.team_scratch(scratch_level), n1, nvar);
+                ScratchPad2D<Real> P_full_step_init_s(member.team_scratch(scratch_level), n1, nvar);
+                ScratchPad2D<Real> U_full_step_init_s(member.team_scratch(scratch_level), n1, nvar);
+                ScratchPad2D<Real> P_sub_step_init_s(member.team_scratch(scratch_level), n1, nvar);
+                ScratchPad2D<Real> U_sub_step_init_s(member.team_scratch(scratch_level), n1, nvar);
+                ScratchPad2D<Real> flux_src_s(member.team_scratch(scratch_level), n1, nvar);
+                ScratchPad2D<Real> P_solver_s(member.team_scratch(scratch_level), n1, nvar);
+                ScratchPad2D<Real> P_linesearch_s(member.team_scratch(scratch_level), n1, nvar);
                 // Scratchpads for solver performance diagnostics
                 ScratchPad1D<Real> solve_norm_s(member.team_scratch(scratch_level), n1);
-                // ScratchPad1D<int>  solve_fail_s(member.team_scratch(scratch_level), n1);
-                ScratchPad1D<Real> solve_fail_s(member.team_scratch(scratch_level), n1);
+                ScratchPad1D<int> solve_fail_s(member.team_scratch(scratch_level), n1);
 
                 // Copy some file contents to scratchpads, so we can slice them
-                PLOOP {
-                    parthenon::par_for_inner(member, ib.s, ib.e,
+                for(int ip=0; ip < nvar; ++ip) {
+                    parthenon::par_for_inner(member, 0, n1-1,
                         [&](const int& i) {
-                            P_full_step_init_s(ip, i) = P_full_step_init_all(b)(ip, k, j, i);
-                            U_full_step_init_s(ip, i) = U_full_step_init_all(b)(ip, k, j, i);
-                            P_sub_step_init_s(ip, i)  = P_sub_step_init_all(b)(ip, k, j, i);
-                            U_sub_step_init_s(ip, i)  = U_sub_step_init_all(b)(ip, k, j, i);
-                            flux_src_s(ip, i)         = flux_src_all(b)(ip, k, j, i);
-                            P_solver_s(ip, i)         = P_solver_all(b)(ip, k, j, i);
-                            P_linesearch_s(ip, i)     = P_linesearch_all(b)(ip, k, j, i);
-                            dU_implicit_s(ip, i)      = 0.;
+                            P_full_step_init_s(i, ip) = P_full_step_init_all(b)(ip, k, j, i);
+                            U_full_step_init_s(i, ip) = U_full_step_init_all(b)(ip, k, j, i);
+                            P_sub_step_init_s(i, ip)  = P_sub_step_init_all(b)(ip, k, j, i);
+                            U_sub_step_init_s(i, ip)  = U_sub_step_init_all(b)(ip, k, j, i);
+                            flux_src_s(i, ip)         = flux_src_all(b)(ip, k, j, i);
+                            P_solver_s(i, ip)         = P_solver_all(b)(ip, k, j, i);
+                            P_linesearch_s(i, ip)     = P_linesearch_all(b)(ip, k, j, i);
+                            dU_implicit_s(i, ip)      = 0.;
+                            tmp1_s(i, ip) = 0.;
+                            tmp3_s(i, ip) = 0.;
 
+                            // TODO these are run repeatedly a bunch of times
                             solve_norm_s(i) = 0.;
                             if (iter == 1) {
                                 // New beginnings
@@ -367,6 +370,23 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
                     );
                 }
                 member.team_barrier();
+                // For implicit only
+                for(int ip=0; ip < nfvar; ++ip) {
+                    parthenon::par_for_inner(member, 0, n1-1,
+                        [&](const int& i) {
+                            for(int jp=0; jp < nfvar; ++jp)
+                                jacobian_s(ip, jp, i) = 0.;
+                            residual_s(i, ip) = 0.;
+                            delta_prim_s(i, ip) = 0.;
+                            pivot_s(i, ip) = 0;
+                            trans_s(i, ip) = 0.;
+                            work_s(i, ip) = 0.;
+                            work_s(ip+nfvar, i) = 0.;
+                            tmp2_s(i, ip) = 0.;
+                        }
+                    );
+                }
+                member.team_barrier();
 
                 // Copy in the guess or current solution
                 // Note this replaces the implicit portion of P_solver_s --
@@ -374,7 +394,7 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
                 // FLOOP { // Loop over just the implicit "fluid" portion of primitive vars
                 //     parthenon::par_for_inner(member, ib.s, ib.e,
                 //         [&](const int& i) {
-                //             P_solver_s(ip, i) = P_solver_all(b)(ip, k, j, i);
+                //             P_solver_s(i, ip) = P_solver_all(b)(ip, k, j, i);
                 //         }
                 //     );
                 // }
@@ -383,26 +403,26 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
                 parthenon::par_for_inner(member, ib.s, ib.e,
                     [&](const int& i) {
                         // Lots of slicing.  This still ends up faster & cleaner than alternatives I tried
-                        auto P_full_step_init = Kokkos::subview(P_full_step_init_s, Kokkos::ALL(), i);
-                        auto U_full_step_init = Kokkos::subview(U_full_step_init_s, Kokkos::ALL(), i);
-                        auto P_sub_step_init  = Kokkos::subview(P_sub_step_init_s, Kokkos::ALL(), i);
-                        auto U_sub_step_init  = Kokkos::subview(U_sub_step_init_s, Kokkos::ALL(), i);
-                        auto flux_src         = Kokkos::subview(flux_src_s, Kokkos::ALL(), i);
-                        auto P_solver         = Kokkos::subview(P_solver_s, Kokkos::ALL(), i);
-                        auto P_linesearch     = Kokkos::subview(P_linesearch_s, Kokkos::ALL(), i);
+                        auto P_full_step_init = Kokkos::subview(P_full_step_init_s, i, Kokkos::ALL());
+                        auto U_full_step_init = Kokkos::subview(U_full_step_init_s, i, Kokkos::ALL());
+                        auto P_sub_step_init  = Kokkos::subview(P_sub_step_init_s, i, Kokkos::ALL());
+                        auto U_sub_step_init  = Kokkos::subview(U_sub_step_init_s, i, Kokkos::ALL());
+                        auto flux_src         = Kokkos::subview(flux_src_s, i, Kokkos::ALL());
+                        auto P_solver         = Kokkos::subview(P_solver_s, i, Kokkos::ALL());
+                        auto P_linesearch     = Kokkos::subview(P_linesearch_s, i, Kokkos::ALL());
                         // Solver variables
-                        auto residual   = Kokkos::subview(residual_s, Kokkos::ALL(), i);
-                        auto jacobian   = Kokkos::subview(jacobian_s, Kokkos::ALL(), Kokkos::ALL(), i);
-                        auto delta_prim = Kokkos::subview(delta_prim_s, Kokkos::ALL(), i);
-                        auto pivot      = Kokkos::subview(pivot_s, Kokkos::ALL(), i);
-                        auto trans      = Kokkos::subview(trans_s, Kokkos::ALL(), i);
-                        auto work       = Kokkos::subview(work_s, Kokkos::ALL(), i);
+                        auto residual   = Kokkos::subview(residual_s, i, Kokkos::ALL());
+                        auto jacobian   = Kokkos::subview(jacobian_s, i, Kokkos::ALL(), Kokkos::ALL());
+                        auto delta_prim = Kokkos::subview(delta_prim_s, i, Kokkos::ALL());
+                        auto pivot      = Kokkos::subview(pivot_s, i, Kokkos::ALL());
+                        auto trans      = Kokkos::subview(trans_s, i, Kokkos::ALL());
+                        auto work       = Kokkos::subview(work_s, i, Kokkos::ALL());
                         // Temporaries
-                        auto tmp1  = Kokkos::subview(tmp1_s, Kokkos::ALL(), i);
-                        auto tmp2  = Kokkos::subview(tmp2_s, Kokkos::ALL(), i);
-                        auto tmp3  = Kokkos::subview(tmp3_s, Kokkos::ALL(), i);
+                        auto tmp1  = Kokkos::subview(tmp1_s, i, Kokkos::ALL());
+                        auto tmp2  = Kokkos::subview(tmp2_s, i, Kokkos::ALL());
+                        auto tmp3  = Kokkos::subview(tmp3_s, i, Kokkos::ALL());
                         // Implicit sources at starting state
-                        auto dU_implicit = Kokkos::subview(dU_implicit_s, Kokkos::ALL(), i);
+                        auto dU_implicit = Kokkos::subview(dU_implicit_s, i, Kokkos::ALL());
                         // Solver performance diagnostics
                         auto solve_norm = Kokkos::subview(solve_norm_s, i);
                         auto solve_fail = Kokkos::subview(solve_fail_s, i);
@@ -454,6 +474,24 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
                                 std::cerr << "Initial delta_prim: "; FLOOP std::cerr << delta_prim(ip) << " "; std::cerr << std::endl;
                             }
 #endif
+#if 1
+                        }
+                    }
+                );
+                member.team_barrier();
+                parthenon::par_for_inner(member, ib.s, ib.e,
+                    [&](const int& i) {
+                        // Solver variables
+                        auto residual   = Kokkos::subview(residual_s, i, Kokkos::ALL());
+                        auto jacobian   = Kokkos::subview(jacobian_s, i, Kokkos::ALL(), Kokkos::ALL());
+                        auto delta_prim = Kokkos::subview(delta_prim_s, i, Kokkos::ALL());
+                        auto pivot      = Kokkos::subview(pivot_s, i, Kokkos::ALL());
+                        auto trans      = Kokkos::subview(trans_s, i, Kokkos::ALL());
+                        auto work       = Kokkos::subview(work_s, i, Kokkos::ALL());
+                        auto solve_fail = Kokkos::subview(solve_fail_s, i);
+
+                        if (solve_fail() != SolverStatus::fail) {
+#endif
                             if (use_qr) {
                                 // Linear solve by QR decomposition
                                 KokkosBatched::SerialQR<KokkosBatched::Algo::QR::Unblocked>::invoke(jacobian, trans, pivot, work);
@@ -471,6 +509,41 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
                                 KokkosBatched::SerialApplyPivot<KokkosBatched::Side::Left,KokkosBatched::Direct::Backward>
                                     ::invoke(pivot, delta_prim);
                             }
+#if 1
+                        }
+                    }
+                );
+                member.team_barrier();
+
+                parthenon::par_for_inner(member, ib.s, ib.e,
+                    [&](const int& i) {
+                        // Lots of slicing.  This still ends up faster & cleaner than alternatives I tried
+                        auto P_full_step_init = Kokkos::subview(P_full_step_init_s, i, Kokkos::ALL());
+                        auto U_full_step_init = Kokkos::subview(U_full_step_init_s, i, Kokkos::ALL());
+                        auto P_sub_step_init  = Kokkos::subview(P_sub_step_init_s, i, Kokkos::ALL());
+                        auto U_sub_step_init  = Kokkos::subview(U_sub_step_init_s, i, Kokkos::ALL());
+                        auto flux_src         = Kokkos::subview(flux_src_s, i, Kokkos::ALL());
+                        auto P_solver         = Kokkos::subview(P_solver_s, i, Kokkos::ALL());
+                        auto P_linesearch     = Kokkos::subview(P_linesearch_s, i, Kokkos::ALL());
+                        // Solver variables
+                        auto residual   = Kokkos::subview(residual_s, i, Kokkos::ALL());
+                        auto jacobian   = Kokkos::subview(jacobian_s, i, Kokkos::ALL(), Kokkos::ALL());
+                        auto delta_prim = Kokkos::subview(delta_prim_s, i, Kokkos::ALL());
+                        auto pivot      = Kokkos::subview(pivot_s, i, Kokkos::ALL());
+                        auto trans      = Kokkos::subview(trans_s, i, Kokkos::ALL());
+                        auto work       = Kokkos::subview(work_s, i, Kokkos::ALL());
+                        // Temporaries
+                        auto tmp1  = Kokkos::subview(tmp1_s, i, Kokkos::ALL());
+                        auto tmp2  = Kokkos::subview(tmp2_s, i, Kokkos::ALL());
+                        auto tmp3  = Kokkos::subview(tmp3_s, i, Kokkos::ALL());
+                        // Implicit sources at starting state
+                        auto dU_implicit = Kokkos::subview(dU_implicit_s, i, Kokkos::ALL());
+                        // Solver performance diagnostics
+                        auto solve_norm = Kokkos::subview(solve_norm_s, i);
+                        auto solve_fail = Kokkos::subview(solve_fail_s, i);
+
+                        if (solve_fail() != SolverStatus::fail) {
+#endif
 #if TRACE
                             if (am_rank0 && b == 0 && i == iPRINT && j == jPRINT && k == kPRINT) {
                                 std::cerr << "Final delta_prim: "; FLOOP std::cerr << delta_prim(ip) << " "; std::cerr << std::endl;
@@ -567,9 +640,9 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
                 FLOOP {
                     parthenon::par_for_inner(member, ib.s, ib.e,
                         [&](const int& i) {
-                            P_solver_all(b)(ip, k, j, i) = P_solver_s(ip, i);
+                            P_solver_all(b)(ip, k, j, i) = P_solver_s(i, ip);
                             // if (save_residual) {
-                            //     residual_all(b, ip, k, j, i) = residual_s(ip, i);
+                            //     residual_all(b, ip, k, j, i) = residual_s(i, ip);
                             // }
                         }
                     );
