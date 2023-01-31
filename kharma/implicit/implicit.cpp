@@ -174,10 +174,10 @@ std::shared_ptr<StateDescriptor> Implicit::Initialize(ParameterInput *pin)
 TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_init, MeshData<Real> *md_flux_src,
                 MeshData<Real> *md_linesearch, MeshData<Real> *md_solver, const Real& dt)
 {
-    //Flag(md_full_step_init, "Implicit Iteration start, full step");
-    //Flag(md_sub_step_init, "Implicit Iteration start, sub step");
-    //Flag(md_flux_src, "Implicit Iteration start, divF and sources");
-    //Flag(md_linesearch, "Linesearch");
+    Flag(md_full_step_init, "Implicit Iteration start, full step");
+    Flag(md_sub_step_init, "Implicit Iteration start, sub step");
+    Flag(md_flux_src, "Implicit Iteration start, divF and sources");
+    Flag(md_linesearch, "Linesearch");
     auto pmb_full_step_init = md_full_step_init->GetBlockData(0)->GetBlockPointer();
     auto pmb_sub_step_init  = md_sub_step_init->GetBlockData(0)->GetBlockPointer();
     auto pmb_solver         = md_solver->GetBlockData(0)->GetBlockPointer();
@@ -316,7 +316,6 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
         parthenon::par_for_outer(DEFAULT_OUTER_LOOP_PATTERN, "implicit_solve", pmb_sub_step_init->exec_space,
             total_scratch_bytes, scratch_level, block.s, block.e, kb.s, kb.e, jb.s, jb.e,
             KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int& b, const int& k, const int& j) {
-                //printf("Start\n");
                 const auto& G = U_full_step_init_all.GetCoords(b);
                 // Scratchpads for implicit vars
                 ScratchPad3D<Real> jacobian_s(member.team_scratch(scratch_level), n1, nfvar, nfvar);
@@ -340,8 +339,6 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
                 // Scratchpads for solver performance diagnostics
                 ScratchPad1D<Real> solve_norm_s(member.team_scratch(scratch_level), n1);
                 ScratchPad1D<int> solve_fail_s(member.team_scratch(scratch_level), n1);
-
-                //printf("Scratchpads\n");
 
                 // Copy some file contents to scratchpads, so we can slice them
                 for(int ip=0; ip < nvar; ++ip) {
@@ -389,7 +386,6 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
                     );
                 }
                 member.team_barrier();
-                //printf("Scratchpad copies\n");
 
                 // Copy in the guess or current solution
                 // Note this replaces the implicit portion of P_solver_s --
@@ -482,9 +478,6 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
                     }
                 );
                 member.team_barrier();
-
-                //printf("Fill Jacobian\n");
-
                 parthenon::par_for_inner(member, ib.s, ib.e,
                     [&](const int& i) {
                         // Solver variables
@@ -520,8 +513,6 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
                     }
                 );
                 member.team_barrier();
-
-                //printf("Solve\n");
 
                 parthenon::par_for_inner(member, ib.s, ib.e,
                     [&](const int& i) {
@@ -642,8 +633,6 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
                 );
                 member.team_barrier();
 
-                //printf("Residuals\n");
-
                 // Copy out P_solver to the existing array.
                 // We'll copy even the values for the failed zones because it doesn't really matter, it'll be averaged over later.
                 // And copy any other diagnostics that are relevant to analyze the solver's performance
@@ -663,7 +652,6 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
                         solve_fail_all(b, 0, k, j, i) = solve_fail_s(i);
                     }
                 );
-                //printf("Copy back\n");
             }
         );
         
