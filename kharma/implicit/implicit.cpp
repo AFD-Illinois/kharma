@@ -174,10 +174,10 @@ std::shared_ptr<StateDescriptor> Implicit::Initialize(ParameterInput *pin)
 TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_init, MeshData<Real> *md_flux_src,
                 MeshData<Real> *md_linesearch, MeshData<Real> *md_solver, const Real& dt)
 {
-    Flag(md_full_step_init, "Implicit Iteration start, full step");
-    Flag(md_sub_step_init, "Implicit Iteration start, sub step");
-    Flag(md_flux_src, "Implicit Iteration start, divF and sources");
-    Flag(md_linesearch, "Linesearch");
+    //Flag(md_full_step_init, "Implicit Iteration start, full step");
+    //Flag(md_sub_step_init, "Implicit Iteration start, sub step");
+    //Flag(md_flux_src, "Implicit Iteration start, divF and sources");
+    //Flag(md_linesearch, "Linesearch");
     auto pmb_full_step_init = md_full_step_init->GetBlockData(0)->GetBlockPointer();
     auto pmb_sub_step_init  = md_sub_step_init->GetBlockData(0)->GetBlockPointer();
     auto pmb_solver         = md_solver->GetBlockData(0)->GetBlockPointer();
@@ -316,6 +316,7 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
         parthenon::par_for_outer(DEFAULT_OUTER_LOOP_PATTERN, "implicit_solve", pmb_sub_step_init->exec_space,
             total_scratch_bytes, scratch_level, block.s, block.e, kb.s, kb.e, jb.s, jb.e,
             KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int& b, const int& k, const int& j) {
+                //printf("Start\n");
                 const auto& G = U_full_step_init_all.GetCoords(b);
                 // Scratchpads for implicit vars
                 ScratchPad3D<Real> jacobian_s(member.team_scratch(scratch_level), n1, nfvar, nfvar);
@@ -323,7 +324,7 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
                 ScratchPad2D<Real> delta_prim_s(member.team_scratch(scratch_level), n1, nfvar);
                 ScratchPad2D<int> pivot_s(member.team_scratch(scratch_level), n1, nfvar);
                 ScratchPad2D<Real> trans_s(member.team_scratch(scratch_level), n1, nfvar);
-                ScratchPad2D<Real> work_s(member.team_scratch(scratch_level), 2*n1, nfvar);
+                ScratchPad2D<Real> work_s(member.team_scratch(scratch_level), n1, 2*nfvar);
                 // Scratchpads for all vars
                 ScratchPad2D<Real> dU_implicit_s(member.team_scratch(scratch_level), n1, nvar);
                 ScratchPad2D<Real> tmp1_s(member.team_scratch(scratch_level), n1, nvar);
@@ -339,6 +340,8 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
                 // Scratchpads for solver performance diagnostics
                 ScratchPad1D<Real> solve_norm_s(member.team_scratch(scratch_level), n1);
                 ScratchPad1D<int> solve_fail_s(member.team_scratch(scratch_level), n1);
+
+                //printf("Scratchpads\n");
 
                 // Copy some file contents to scratchpads, so we can slice them
                 for(int ip=0; ip < nvar; ++ip) {
@@ -369,24 +372,24 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
                         }
                     );
                 }
-                member.team_barrier();
                 // For implicit only
                 for(int ip=0; ip < nfvar; ++ip) {
                     parthenon::par_for_inner(member, 0, n1-1,
                         [&](const int& i) {
                             for(int jp=0; jp < nfvar; ++jp)
-                                jacobian_s(ip, jp, i) = 0.;
+                                jacobian_s(i, ip, jp) = 0.;
                             residual_s(i, ip) = 0.;
                             delta_prim_s(i, ip) = 0.;
                             pivot_s(i, ip) = 0;
                             trans_s(i, ip) = 0.;
                             work_s(i, ip) = 0.;
-                            work_s(ip+nfvar, i) = 0.;
+                            work_s(i, ip+nfvar) = 0.;
                             tmp2_s(i, ip) = 0.;
                         }
                     );
                 }
                 member.team_barrier();
+                //printf("Scratchpad copies\n");
 
                 // Copy in the guess or current solution
                 // Note this replaces the implicit portion of P_solver_s --
@@ -450,35 +453,38 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
                             // Solve against the negative residual
                             FLOOP delta_prim(ip) = -residual(ip);
 
-#if TRACE
-                            if (am_rank0 && b == 0 && i == iPRINT && j == jPRINT && k == kPRINT) {
-                                std::cerr << "Variable ordering: rho " << int(m_p.RHO) << " uu " << int(m_p.UU)  << " U1 " << int(m_p.U1)  
-                                        << " B1 " << int(m_p.B1)  << " q " << int(m_p.Q)  << " dP " << int(m_p.DP) << std::endl;
-                                std::cerr << "Variable ordering: rho " << int(m_u.RHO) << " uu " << int(m_u.UU)  << " U1 " << int(m_u.U1)  
-                                        << " B1 " << int(m_u.B1)  << " q " << int(m_u.Q)  << " dP " << int(m_u.DP) << std::endl;
-                                std::cerr << "P_solver: "; 
-                                PLOOP {std::cerr << P_solver(ip) << " ";} std::cerr << std::endl;
-                                std::cerr << "Pi: "; 
-                                PLOOP {std::cerr << P_full_step_init(ip) << " ";} std::cerr << std::endl;
-                                std::cerr << "Ui: "; 
-                                PLOOP {std::cerr << U_full_step_init(ip) << " ";} std::cerr << std::endl;
-                                std::cerr << "Ps: "; 
-                                PLOOP {std::cerr << P_sub_step_init(ip) << " ";} std::cerr << std::endl;
-                                std::cerr << "Us: "; 
-                                PLOOP {std::cerr << U_sub_step_init(ip) << " ";} std::cerr << std::endl;
-                                std::cerr << "dUdt: ";
-                                PLOOP {std::cerr << dU_implicit(ip) << " ";} std::cerr << std::endl;
-                                std::cerr << "Initial Jacobian:" << std::endl; 
-                                for (int jp=0; jp<nfvar; ++jp) {FLOOP std::cerr << jacobian(jp,ip) << "\t"; std::cerr << std::endl;}
-                                std::cerr << "Initial residual: "; FLOOP std::cerr << residual(ip) << " "; std::cerr << std::endl;
-                                std::cerr << "Initial delta_prim: "; FLOOP std::cerr << delta_prim(ip) << " "; std::cerr << std::endl;
-                            }
-#endif
+// #if TRACE
+//                             if (am_rank0 && b == 0 && i == iPRINT && j == jPRINT && k == kPRINT) {
+//                                 std::cerr << "Variable ordering: rho " << int(m_p.RHO) << " uu " << int(m_p.UU)  << " U1 " << int(m_p.U1)  
+//                                         << " B1 " << int(m_p.B1)  << " q " << int(m_p.Q)  << " dP " << int(m_p.DP) << std::endl;
+//                                 std::cerr << "Variable ordering: rho " << int(m_u.RHO) << " uu " << int(m_u.UU)  << " U1 " << int(m_u.U1)  
+//                                         << " B1 " << int(m_u.B1)  << " q " << int(m_u.Q)  << " dP " << int(m_u.DP) << std::endl;
+//                                 std::cerr << "P_solver: "; 
+//                                 PLOOP {std::cerr << P_solver(ip) << " ";} std::cerr << std::endl;
+//                                 std::cerr << "Pi: "; 
+//                                 PLOOP {std::cerr << P_full_step_init(ip) << " ";} std::cerr << std::endl;
+//                                 std::cerr << "Ui: "; 
+//                                 PLOOP {std::cerr << U_full_step_init(ip) << " ";} std::cerr << std::endl;
+//                                 std::cerr << "Ps: "; 
+//                                 PLOOP {std::cerr << P_sub_step_init(ip) << " ";} std::cerr << std::endl;
+//                                 std::cerr << "Us: "; 
+//                                 PLOOP {std::cerr << U_sub_step_init(ip) << " ";} std::cerr << std::endl;
+//                                 std::cerr << "dUdt: ";
+//                                 PLOOP {std::cerr << dU_implicit(ip) << " ";} std::cerr << std::endl;
+//                                 std::cerr << "Initial Jacobian:" << std::endl; 
+//                                 for (int jp=0; jp<nfvar; ++jp) {FLOOP std::cerr << jacobian(jp,ip) << "\t"; std::cerr << std::endl;}
+//                                 std::cerr << "Initial residual: "; FLOOP std::cerr << residual(ip) << " "; std::cerr << std::endl;
+//                                 std::cerr << "Initial delta_prim: "; FLOOP std::cerr << delta_prim(ip) << " "; std::cerr << std::endl;
+//                             }
+// #endif
 #if 1
                         }
                     }
                 );
                 member.team_barrier();
+
+                //printf("Fill Jacobian\n");
+
                 parthenon::par_for_inner(member, ib.s, ib.e,
                     [&](const int& i) {
                         // Solver variables
@@ -515,6 +521,8 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
                 );
                 member.team_barrier();
 
+                //printf("Solve\n");
+
                 parthenon::par_for_inner(member, ib.s, ib.e,
                     [&](const int& i) {
                         // Lots of slicing.  This still ends up faster & cleaner than alternatives I tried
@@ -544,12 +552,12 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
 
                         if (solve_fail() != SolverStatus::fail) {
 #endif
-#if TRACE
-                            if (am_rank0 && b == 0 && i == iPRINT && j == jPRINT && k == kPRINT) {
-                                std::cerr << "Final delta_prim: "; FLOOP std::cerr << delta_prim(ip) << " "; std::cerr << std::endl;
-                                std::cerr<< std::endl;
-                            }
-#endif
+// #if TRACE
+//                             if (am_rank0 && b == 0 && i == iPRINT && j == jPRINT && k == kPRINT) {
+//                                 std::cerr << "Final delta_prim: "; FLOOP std::cerr << delta_prim(ip) << " "; std::cerr << std::endl;
+//                                 std::cerr<< std::endl;
+//                             }
+// #endif
 
                             // Check for positive definite values of density and internal energy.
                             // Ignore zone if manual backtracking is not sufficient.
@@ -634,6 +642,8 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
                 );
                 member.team_barrier();
 
+                //printf("Residuals\n");
+
                 // Copy out P_solver to the existing array.
                 // We'll copy even the values for the failed zones because it doesn't really matter, it'll be averaged over later.
                 // And copy any other diagnostics that are relevant to analyze the solver's performance
@@ -653,6 +663,7 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
                         solve_fail_all(b, 0, k, j, i) = solve_fail_s(i);
                     }
                 );
+                //printf("Copy back\n");
             }
         );
         

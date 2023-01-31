@@ -190,8 +190,8 @@ inline bool IsDomainBound(MeshBlock *pmb, BoundaryFace face)
  */
 #if TRACE
 #define PRINTCORNERS 0
-#define PRINTZONE 1
-#define PRINTTILE 1
+#define PRINTZONE 0
+#define PRINTTILE 0
 #define iPRINT 7
 #define jPRINT 111
 #define kPRINT 0
