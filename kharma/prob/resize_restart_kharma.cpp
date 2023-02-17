@@ -210,7 +210,8 @@ TaskStatus SetKharmaRestart(MeshBlockData<Real> *rc, IndexDomain domain, bool co
     auto b_field_type = pmb->packages.Get("GRMHD")->Param<std::string>("b_field_type");
     const bool include_B = (b_field_type != "none");
     // A placeholder to save the B fields for SeedBField
-    GridVector B_Save = rc->Get("B_Save").data;
+    GridVector B_Save;
+    if (include_B) B_Save = rc->Get("B_Save").data;
 
     auto& G = pmb->coords;
     
@@ -243,7 +244,9 @@ TaskStatus SetKharmaRestart(MeshBlockData<Real> *rc, IndexDomain domain, bool co
     const Real fx1min = pmb->packages.Get("GRMHD")->Param<Real>("rx1min");
     const Real fx1max = pmb->packages.Get("GRMHD")->Param<Real>("rx1max");
     const Real dx1 = (fx1max - fx1min) / n1tot;
-    const Real fx1min_ghost = fx1min - 4*dx1;
+    const bool fghostzones = pmb->packages.Get("GRMHD")->Param<bool>("rghostzones");
+    int fnghost = pmb->packages.Get("GRMHD")->Param<int>("rnghost");
+    const Real fx1min_ghost = fx1min - fnghost*dx1;
     PackIndexMap prims_map, cons_map;
     auto P = GRMHD::PackMHDPrims(rc, prims_map);
     auto U = GRMHD::PackMHDCons(rc, cons_map);
@@ -253,8 +256,6 @@ TaskStatus SetKharmaRestart(MeshBlockData<Real> *rc, IndexDomain domain, bool co
         // read from a restart file and save it to static GridScalar
         //cout << "Hyerin: reading files" << endl;
 
-        const bool fghostzones = pmb->packages.Get("GRMHD")->Param<bool>("rghostzones");
-        int fnghost = pmb->packages.Get("GRMHD")->Param<int>("rnghost");
 
         if (! fghostzones) fnghost=0; // reset to 0
         int x3factor=1;
@@ -426,7 +427,7 @@ TaskStatus SetKharmaRestart(MeshBlockData<Real> *rc, IndexDomain domain, bool co
         pmb->par_for("copy_restart_state_kharma", ks, ke, js, je, is, ie,
             KOKKOS_LAMBDA_3D {
                 get_prim_restart_kharma(G, coords, P, m_p, blcoord,  kscoord, 
-                    fx1min, fx1max, should_fill, is_spherical, include_B, gam, rs, mdot, length,
+                    fx1min, fx1max, fnghost, should_fill, is_spherical, include_B, gam, rs, mdot, length,
                     x1_f_device, x2_f_device, x3_f_device, rho_f_device, u_f_device, uvec_f_device, B_f_device,
                     x1_fill_device, x2_fill_device, x3_fill_device, rho_fill_device, u_fill_device, uvec_fill_device, B_fill_device,
                     k, j, i);

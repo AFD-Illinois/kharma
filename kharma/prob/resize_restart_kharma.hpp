@@ -98,7 +98,7 @@ KOKKOS_INLINE_FUNCTION void convert_to_utwiddle(const GRCoordinates& G, const Co
 
 KOKKOS_INLINE_FUNCTION void get_prim_restart_kharma(const GRCoordinates& G, const CoordinateEmbedding& coords, const VariablePack<Real>& P, const VarMap& m_p,
                     const SphBLCoords& bl,  const SphKSCoords& ks, 
-                    const Real fx1min, const Real fx1max, const bool should_fill, const bool is_spherical, const bool include_B,
+                    const Real fx1min, const Real fx1max, const Real fnghost, const bool should_fill, const bool is_spherical, const bool include_B,
                     const Real gam, const Real rs,  const Real mdot, const hsize_t length[GR_DIM],
                     const GridScalar& x1, const GridScalar& x2, const GridScalar& x3, const GridScalar& rho, const GridScalar& u, const GridVector& uvec, const GridVector& B,
                     const GridScalar& x1_fill, const GridScalar& x2_fill, const GridScalar& x3_fill, const GridScalar& rho_fill, const GridScalar& u_fill, const GridVector& uvec_fill, const GridVector& B_fill,
@@ -123,13 +123,22 @@ KOKKOS_INLINE_FUNCTION void get_prim_restart_kharma(const GRCoordinates& G, cons
         GReal Xembed[GR_DIM];
         G.coord_embed(k, j, i, Loci::center, Xembed);
         GReal r = Xembed[1];
-
+  
         // copy over smallest radius states
-        Xtoindex(X, x1, x2, x3, length, iblocktemp, itemp, jtemp, ktemp, del);
+        //Xtoindex(X, x1, x2, x3, length, iblocktemp, itemp, jtemp, ktemp, del);
+        itemp = fnghost; // in order to copy over the physical region, not the ghost region
+        // (02/08/23) instead in order to set the vacuum homogeneous instead of having theta phi dependence, set j and k values
+        jtemp = fnghost;
+        ktemp = fnghost;
         rho_temp = rho(iblocktemp,ktemp,jtemp,itemp);
         u_temp = u(iblocktemp,ktemp,jtemp,itemp);
-        //if (include_B) VLOOP B_prim[v] = B(v,iblocktemp,ktemp,jtemp,itemp);
         Real T = get_T(r, C1, C2, n, rs);
+
+        // (02/08/23) instead in order to set the vacuum homogeneous instead of having theta phi dependence, set to the bondi radius values (assume r_B ~ r_s**2)
+        //Real T_temp = get_T(m::pow(rs,2), C1, C2, n, rs);
+        //rho_temp = m::pow(T_temp, n);
+        //u_temp = rho_temp * T_temp * n;
+        //Real T = get_T(r, C1, C2, n, rs);
                         
         Real ur = -C1 / (m::pow(T, n) * m::pow(r, 2));
         Real ucon_bl[GR_DIM] = {0, ur, 0, 0};
@@ -147,8 +156,6 @@ KOKKOS_INLINE_FUNCTION void get_prim_restart_kharma(const GRCoordinates& G, cons
     }
     else { 
         Xtoindex(X, x1, x2, x3, length, iblocktemp, itemp, jtemp, ktemp, del);
-        //std::cout << "Hyerin: X = " << X[1] << " " << X[2]<< " " << X[3] << std::endl;
-        //std::cout << "Hyerin: x_interp = " << x1(iblocktemp,itemp) << " " << x2(iblock,jtemp)<< " " << x3(iblock,ktemp) <<std::endl;
 
         rho_temp = rho(iblocktemp,ktemp,jtemp,itemp);
         u_temp = u(iblocktemp,ktemp,jtemp,itemp);
@@ -160,17 +167,6 @@ KOKKOS_INLINE_FUNCTION void get_prim_restart_kharma(const GRCoordinates& G, cons
     P(m_p.U1, k, j, i) = u_prim[0]; 
     P(m_p.U2, k, j, i) = u_prim[1];
     P(m_p.U3, k, j, i) = u_prim[2];
-    //if (include_B) { // sth like this? Hyerin
-    //    P(m_p.B1, k, j, i) = B_prim[0]; // TODO: It should actually B_cons/g
-    //    P(m_p.B2, k, j, i) = B_prim[1];
-    //    P(m_p.B3, k, j, i) = B_prim[2];
-        /*
-        if (i<5 && j==0 && k==0) {
-            printf("for i= %i :B field %g %g %g, velocity %g %g %g \n",
-                i, B_prim[0], B_prim[1], B_prim[2],
-                u_prim[0], u_prim[1], u_prim[2]);
-        }*/
-    //}
 
 }
 
@@ -205,12 +201,6 @@ KOKKOS_INLINE_FUNCTION void get_B_restart_kharma(const GRCoordinates& G, const C
         VLOOP B_cons[v] = B(v,iblocktemp,ktemp,jtemp,itemp);
     }
 
-    //P(m_p.B1, k, j, i) = B_prim[0];
-    //P(m_p.B2, k, j, i) = B_prim[1];
-    //P(m_p.B3, k, j, i) = B_prim[2];
-    //B_save(0, k, j, i) = B_prim[0];
-    //B_save(1, k, j, i) = B_prim[1];
-    //B_save(2, k, j, i) = B_prim[2];
     B_save(0, k, j, i) = B_cons[0];
     B_save(1, k, j, i) = B_cons[1];
     B_save(2, k, j, i) = B_cons[2];
