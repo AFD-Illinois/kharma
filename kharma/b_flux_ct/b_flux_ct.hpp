@@ -85,6 +85,9 @@ TaskStatus FluxCT(MeshData<Real> *md);
  */
 TaskStatus FixPolarFlux(MeshData<Real> *md);
 
+// added by Hyerin
+TaskStatus FixX1Flux(MeshData<Real> *md);
+
 /**
  * Task combining the above two (polar fix and FluxCT) for simplicity
  */

@@ -156,6 +156,9 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     // Ensure fluxes through the zero-size face at the pole are zero
     bool fix_flux_pole = pin->GetOrAddBoolean("bounds", "fix_flux_pole", true);
     params.Add("fix_flux_pole", fix_flux_pole);
+    // Ensure fluxes through the zero-size face at the x1 boundary are zero
+    bool fix_flux_x1 = pin->GetOrAddBoolean("b_field", "fix_flux_x1", false);
+    params.Add("fix_flux_x1", fix_flux_x1);
 
     // Driver options
     // The two current drivers are "harm" or "imex", with the former being the usual KHARMA
