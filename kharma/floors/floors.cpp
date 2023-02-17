@@ -148,11 +148,6 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
 
     // Similar to fflag - will register zones where limits on q and dP are hit
     pkg->AddField("eflag", m);
-    // bool do_emhd = pin->GetOrAddBoolean("emhd", "on", false);
-    // if (do_emhd && enable_emhd_limits) {
-    //     Metadata m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
-    //     pkg->AddField("eflag", m);
-    // }
 
     // Floors should be applied to primitive ("Derived") variables just after they are calculated.
     pkg->PostFillDerivedBlock = Floors::PostFillDerivedBlock;

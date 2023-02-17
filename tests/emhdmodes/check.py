@@ -25,7 +25,7 @@ if __name__=='__main__':
     var0[6] = 0.3
 
     # L1 initialization
-    L1 = np.zeros([len(RES), NVAR])
+    L1  = np.zeros([len(RES), NVAR])
     fit = np.zeros([len(RES), NVAR])
 
     # perturbation (for 2D EMHD wave)

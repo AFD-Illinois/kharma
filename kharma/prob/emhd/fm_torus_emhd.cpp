@@ -53,9 +53,16 @@ TaskStatus InitializeFMTorusEMHD(MeshBlockData<Real> *rc, ParameterInput *pin)
 
     // This problem init is exclusively for the EMHD torus; get copies of q and dP
     const bool use_emhd   = pin->GetOrAddBoolean("emhd", "on", true);
-    GridVector q          = rc->Get("prims.q").data;
-    GridVector dP         = rc->Get("prims.dP").data;
-    const auto& emhd_pars = pmb->packages.Get("EMHD")->AllParams();
+    const bool conduction = pmb->packages.Get("EMHD")->Param<bool>("conduction");
+    const bool viscosity  = pmb->packages.Get("EMHD")->Param<bool>("viscosity");
+    
+    // Proxy initializations
+    auto q  = rho;
+    auto dP = rho;
+    if (conduction)
+        q = rc->Get("prims.q").data;
+    if (viscosity)
+        dP = rc->Get("prims.dP").data;
 
     const GReal rin      = pin->GetOrAddReal("torus", "rin", 6.0);
     const GReal rmax     = pin->GetOrAddReal("torus", "rmax", 12.0);
@@ -149,8 +156,10 @@ TaskStatus InitializeFMTorusEMHD(MeshBlockData<Real> *rc, ParameterInput *pin)
                 uvec(1, k, j, i) = u_prim[1];
                 uvec(2, k, j, i) = u_prim[2];
                 // EMHD variables
-                q(k, j, i)  = 0.;
-                dP(k, j, i) = 0.;
+                if (conduction)
+                    q(k, j, i)  = 0.;
+                if (viscosity)
+                    dP(k, j, i) = 0.;
             }
         }
     );

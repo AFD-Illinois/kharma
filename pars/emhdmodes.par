@@ -68,7 +68,7 @@ rootfind_tol        = 1.e-20
 linesearch          = true
 max_linesearch_iter = 3
 linesearch_eps      = 1.e-4
-use_qr              = false
+use_qr              = true
 
 <debug>
 # General verbosity level:
@@ -87,6 +87,9 @@ flag_verbose = 0
 on                 = true
 higher_order_terms = false
 feedback           = true
+
+conduction = true
+viscosity  = true
 
 closure_type     = sound_speed
 tau              = 1.0

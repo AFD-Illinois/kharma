@@ -111,51 +111,6 @@ std::shared_ptr<StateDescriptor> Implicit::Initialize(ParameterInput *pin)
     m_real = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy, Metadata::FillGhost});
     pkg->AddField("solve_fail", m_real); // TODO: Replace with m_int once Integer is supported for CellVariabl
 
-    // TODO: Find a way to save residuals based on a runtime parameter. We don't want to unnecessarily allocate 
-    // a vector field equal to the number of implicit variables over the entire meshblock if we don't have to.
-    
-    // Should the solve save the residual vector field? Useful for debugging purposes. Default is NO.
-    // bool save_residual = pin->GetOrAddBoolean("implicit", "save_residual", false);
-    // params.Add("save_residual", save_residual);
-
-    // Vector field to store residual components (only for those variables that are evolved implicitly)
-    // if (save_residual) {
-    //     auto driver_type    = pin->GetString("driver", "type");
-    //     bool grmhd_implicit = (driver_type == "imex") && (pin->GetBoolean("emhd", "on") || pin->GetOrAddBoolean("GRMHD", "implicit", false));
-    //     bool implicit_b     = (driver_type == "imex") && (pin->GetOrAddBoolean("b_field", "implicit", grmhd_implicit));
-    //     bool emhd_enabled   = pin->GetOrAddBoolean("emhd", "on", false);
-    //     int nvars_implicit  = 0;
-    //     if (grmhd_implicit){
-    //         if (emhd_enabled) {
-    //             if (implicit_b) {
-    //                 nvars_implicit = 10;
-    //             }
-    //             else
-    //                 nvars_implicit = 7;
-    //         } else {
-    //             if (implicit_b) {
-    //                 nvars_implicit = 8;
-    //             }
-    //             else
-    //                 nvars_implicit = 6;
-    //         }
-    //     }
-    //     const int nfvar = nvars_implicit;
-        
-    //     // flags_vec = std::vector<MetadataFlag>({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
-    //     // auto flags_vec(flags_vec);
-    //     // flags_vec.push_back(Metadata::Vector);
-    //     std::vector<int> s_vector({nfvar});
-    //     Metadata m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy}, s_vector);
-    //     pkg->AddField("residual", m);
-    // }
-    
-
-    // Anything we need to run from this package on callbacks
-    // Maybe a post-step L2 or flag count or similar
-    // pkg->PostFillDerivedBlock = Implicit::PostFillDerivedBlock;
-    // pkg->PostStepDiagnosticsMesh = Implicit::PostStepDiagnostics;
-
     Flag("Initialized");
     return pkg;
 }
@@ -256,11 +211,6 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
     // Pull fields associated with the solver's performance
     auto& solve_norm_all = md_solver->PackVariables(std::vector<std::string>{"solve_norm"});
     auto& solve_fail_all = md_solver->PackVariables(std::vector<std::string>{"solve_fail"});
-    // auto& solve_fail_all = md_solver->GetBlockData(0)->Get("solve_fail").data;
-    
-    // if (save_residual) {
-    //     auto& residual_all = md_solver->GetBlockData(0)->Get("residual").data;
-    // }
 
     auto bounds  = pmb_sub_step_init->cellbounds;
     const int n1 = bounds.ncellsi(IndexDomain::entire);
@@ -387,18 +337,6 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
                 }
                 member.team_barrier();
 
-                // Copy in the guess or current solution
-                // Note this replaces the implicit portion of P_solver_s --
-                // any explicit portion was initialized above
-                // FLOOP { // Loop over just the implicit "fluid" portion of primitive vars
-                //     parthenon::par_for_inner(member, ib.s, ib.e,
-                //         [&](const int& i) {
-                //             P_solver_s(i, ip) = P_solver_all(b)(ip, k, j, i);
-                //         }
-                //     );
-                // }
-                // member.team_barrier();
-
                 parthenon::par_for_inner(member, ib.s, ib.e,
                     [&](const int& i) {
                         // Lots of slicing.  This still ends up faster & cleaner than alternatives I tried
@@ -431,9 +369,14 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
                             // Now that we know that it isn't a bad zone, reset solve_fail for this iteration
                             solve_fail() = SolverStatus::converged;
 
-                            if (m_p.Q >= 0) {
+                            if (emhd_params_sub_step_init.conduction || emhd_params_sub_step_init.viscosity) {
+                                Real dUq, dUdP;
                                 EMHD::implicit_sources(G, P_full_step_init, P_sub_step_init, m_p, gam, k, j, i,
-                                                emhd_params_sub_step_init, dU_implicit(m_u.Q), dU_implicit(m_u.DP));
+                                                emhd_params_sub_step_init, dUq, dUdP);
+                                if (emhd_params_sub_step_init.conduction)
+                                    dU_implicit(m_u.Q) = dUq;
+                                if (emhd_params_sub_step_init.viscosity)
+                                    dU_implicit(m_u.DP) = dUdP;
                             }
 
                             // Copy `solver` prims to `linesearch`. This doesn't matter for the first step of the solver
@@ -449,30 +392,6 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
                             // Solve against the negative residual
                             FLOOP delta_prim(ip) = -residual(ip);
 
-// #if TRACE
-//                             if (am_rank0 && b == 0 && i == iPRINT && j == jPRINT && k == kPRINT) {
-//                                 std::cerr << "Variable ordering: rho " << int(m_p.RHO) << " uu " << int(m_p.UU)  << " U1 " << int(m_p.U1)  
-//                                         << " B1 " << int(m_p.B1)  << " q " << int(m_p.Q)  << " dP " << int(m_p.DP) << std::endl;
-//                                 std::cerr << "Variable ordering: rho " << int(m_u.RHO) << " uu " << int(m_u.UU)  << " U1 " << int(m_u.U1)  
-//                                         << " B1 " << int(m_u.B1)  << " q " << int(m_u.Q)  << " dP " << int(m_u.DP) << std::endl;
-//                                 std::cerr << "P_solver: "; 
-//                                 PLOOP {std::cerr << P_solver(ip) << " ";} std::cerr << std::endl;
-//                                 std::cerr << "Pi: "; 
-//                                 PLOOP {std::cerr << P_full_step_init(ip) << " ";} std::cerr << std::endl;
-//                                 std::cerr << "Ui: "; 
-//                                 PLOOP {std::cerr << U_full_step_init(ip) << " ";} std::cerr << std::endl;
-//                                 std::cerr << "Ps: "; 
-//                                 PLOOP {std::cerr << P_sub_step_init(ip) << " ";} std::cerr << std::endl;
-//                                 std::cerr << "Us: "; 
-//                                 PLOOP {std::cerr << U_sub_step_init(ip) << " ";} std::cerr << std::endl;
-//                                 std::cerr << "dUdt: ";
-//                                 PLOOP {std::cerr << dU_implicit(ip) << " ";} std::cerr << std::endl;
-//                                 std::cerr << "Initial Jacobian:" << std::endl; 
-//                                 for (int jp=0; jp<nfvar; ++jp) {FLOOP std::cerr << jacobian(jp,ip) << "\t"; std::cerr << std::endl;}
-//                                 std::cerr << "Initial residual: "; FLOOP std::cerr << residual(ip) << " "; std::cerr << std::endl;
-//                                 std::cerr << "Initial delta_prim: "; FLOOP std::cerr << delta_prim(ip) << " "; std::cerr << std::endl;
-//                             }
-// #endif
 #if 1
                         }
                     }
@@ -543,12 +462,6 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
 
                         if (solve_fail() != SolverStatus::fail) {
 #endif
-// #if TRACE
-//                             if (am_rank0 && b == 0 && i == iPRINT && j == jPRINT && k == kPRINT) {
-//                                 std::cerr << "Final delta_prim: "; FLOOP std::cerr << delta_prim(ip) << " "; std::cerr << std::endl;
-//                                 std::cerr<< std::endl;
-//                             }
-// #endif
 
                             // Check for positive definite values of density and internal energy.
                             // Ignore zone if manual backtracking is not sufficient.
@@ -609,14 +522,6 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
                                 calc_residual(G, P_solver, P_full_step_init, U_full_step_init, P_sub_step_init, flux_src, dU_implicit, tmp3,
                                             m_p, m_u, emhd_params_solver, emhd_params_sub_step_init, nfvar, k, j, i, gam, dt, residual);
 
-                                // if (am_rank0 && b == 0 && i == 11 && j == 11 && k == kb.s) {
-                                //     printf("Variable ordering: rho %d uu %d u1 %d B1 %d q %d dP %d\n",
-                                //             m_p.RHO, m_p.UU, m_p.U1, m_p.B1, m_p.Q, m_p.DP);
-                                //     printf("Final residual: "); PLOOP printf("%6.5e ", residual(ip)); printf("\n");
-                                //     printf("Final delta_prim: "); PLOOP printf("%6.5e ", delta_prim(ip)); printf("\n");
-                                //     printf("Final P_solver: "); PLOOP printf("%6.5e ", P_solver(ip)); printf("\n");
-                                // }
-
                                 // Store for maximum/output
                                 // I would be tempted to store the whole residual, but it's of variable size
                                 solve_norm()        = 0;
@@ -640,9 +545,6 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
                     parthenon::par_for_inner(member, ib.s, ib.e,
                         [&](const int& i) {
                             P_solver_all(b)(ip, k, j, i) = P_solver_s(i, ip);
-                            // if (save_residual) {
-                            //     residual_all(b, ip, k, j, i) = residual_s(i, ip);
-                            // }
                         }
                     );
                 }
@@ -679,7 +581,7 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
                 }
             , sum_reducer);
             // Then MPI reduce AllReduce to copy the global max to every rank
-            AllReduce<int> nfails_tot;
+            static AllReduce<int> nfails_tot;
             nfails_tot.val = nfails;
             nfails_tot.StartReduce(MPI_SUM);
             while (nfails_tot.CheckReduce() == TaskStatus::incomplete);

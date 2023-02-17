@@ -58,8 +58,10 @@ KOKKOS_INLINE_FUNCTION void implicit_sources(const GRCoordinates& G, const Local
     // These are intentionally the tilde versions!
     Real tau, chi_e, nu_e;
     EMHD::set_parameters(G, P_tau, m_p, emhd_params_tau, gam, k, j, i, tau, chi_e, nu_e);
-    dUq  = -G.gdet(Loci::center, j, i) * (P(m_p.Q) / tau);
-    dUdP = -G.gdet(Loci::center, j, i) * (P(m_p.DP) / tau);
+    if (emhd_params_tau.conduction)
+        dUq = -G.gdet(Loci::center, j, i) * (P(m_p.Q) / tau);
+    if (emhd_params_tau.viscosity)
+        dUdP = -G.gdet(Loci::center, j, i) * (P(m_p.DP) / tau);
 }
 
 /**
@@ -101,29 +103,32 @@ KOKKOS_INLINE_FUNCTION void time_derivative_sources(const GRCoordinates& G, cons
 
     // TEMPORAL SOURCE TERMS
     const Real& rho     = P(m_p.RHO);
-    const Real& qtilde  = P(m_p.Q);
-    const Real& dPtilde = P(m_p.DP);
     const Real& Theta   = (gam-1) * P(m_p.UU) / P(m_p.RHO);
 
-    Real q0    = -rho * chi_e * (Dtmp.bcon[0] / m::sqrt(bsq)) * dt_Theta;
-    DLOOP1 q0 -= rho * chi_e * (Dtmp.bcon[mu] / m::sqrt(bsq)) * Theta * Dtmp.ucon[0] * dt_ucov[mu];
+    if (emhd_params.conduction) {
+        const Real& qtilde  = P(m_p.Q);
+        Real q0             = -rho * chi_e * (Dtmp.bcon[0] / m::sqrt(bsq)) * dt_Theta;
+        DLOOP1 q0          -= rho * chi_e * (Dtmp.bcon[mu] / m::sqrt(bsq)) * Theta * Dtmp.ucon[0] * dt_ucov[mu];
+        Real q0_tilde       = q0;
+        if (emhd_params.higher_order_terms)
+            q0_tilde *= (chi_e != 0) ? sqrt(tau / (chi_e * rho * pow(Theta, 2)) ) : 0.;
 
-    Real dP0    = -rho * nu_e * div_ucon;
-    DLOOP1 dP0 += 3. * rho * nu_e * (Dtmp.bcon[0] * Dtmp.bcon[mu] / bsq) * dt_ucov[mu];
-
-    Real q0_tilde  = q0; 
-    Real dP0_tilde = dP0;
-    if (emhd_params.higher_order_terms) {
-        q0_tilde  *= (chi_e != 0) ? sqrt(tau / (chi_e * rho * pow(Theta, 2)) ) : 0.;
-        dP0_tilde *= (nu_e  != 0) ? sqrt(tau / (nu_e * rho * Theta) ) : 0.;
+        dUq  = G.gdet(Loci::center, j, i) * (q0_tilde / tau);
+        if (emhd_params.higher_order_terms)
+            dUq += G.gdet(Loci::center, j, i) * (qtilde / 2.) * div_ucon;
     }
 
-    dUq  = G.gdet(Loci::center, j, i) * (q0_tilde / tau);
-    dUdP = G.gdet(Loci::center, j, i) * (dP0_tilde / tau);
+    if (emhd_params.viscosity) {
+        const Real& dPtilde = P(m_p.DP);
+        Real dP0            = -rho * nu_e * div_ucon;
+        DLOOP1 dP0         += 3. * rho * nu_e * (Dtmp.bcon[0] * Dtmp.bcon[mu] / bsq) * dt_ucov[mu];
+        Real dP0_tilde      = dP0;
+        if (emhd_params.higher_order_terms)
+            dP0_tilde *= (nu_e != 0) ? sqrt(tau / (nu_e * rho * Theta) ) : 0.;
 
-    if (emhd_params.higher_order_terms) {
-        dUq  += G.gdet(Loci::center, j, i) * (qtilde / 2.) * div_ucon;
-        dUdP += G.gdet(Loci::center, j, i) * (dPtilde / 2.) * div_ucon;
+        dUdP = G.gdet(Loci::center, j, i) * (dP0_tilde / tau);
+        if (emhd_params.higher_order_terms)
+            dUdP += G.gdet(Loci::center, j, i) * (dPtilde / 2.) * div_ucon;
     }
 }
 

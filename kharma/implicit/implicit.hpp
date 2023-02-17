@@ -107,36 +107,39 @@ KOKKOS_INLINE_FUNCTION void calc_residual(const GRCoordinates& G, const Local& P
     // (U_test - Ui)/dt - dudt_explicit ...
     FLOOP residual(ip) = (tmp(ip) - Ui(ip)) / dt - dudt_explicit(ip);
 
-    if (m_p.Q >= 0) {
+    if (emhd_params.conduction || emhd_params.viscosity) {
         // Compute new implicit source terms and time derivative source terms
         Real dUq, dUdP; // Don't need full array for these
         EMHD::implicit_sources(G, P_test, Ps, m_p, gam, k, j, i, emhd_params_s, dUq, dUdP); // dU_new
         // ... - 0.5*(dU_new(ip) + dUi(ip)) ...
-        residual(m_u.Q)  -= 0.5*(dUq + dUi(m_u.Q));
-        residual(m_u.DP) -= 0.5*(dUdP + dUi(m_u.DP));
-        // if (i == 11 && j == 11) {
-        //     printf("Implicit sources: "); printf("%6.5e %6.5e", dUq - dUi(m_u.Q), dUdP - dUi(m_u.DP)); printf("\n");
-        // }
+        if (emhd_params.conduction)
+            residual(m_u.Q) -= 0.5*(dUq + dUi(m_u.Q));
+        if (emhd_params.viscosity)
+            residual(m_u.DP) -= 0.5*(dUdP + dUi(m_u.DP));
+
         EMHD::time_derivative_sources(G, P_test, Pi, Ps, m_p, emhd_params_s, gam, dt, k, j, i, dUq, dUdP); // dU_time
         // ... - dU_time(ip)
-        residual(m_u.Q)  -= dUq;
-        residual(m_u.DP) -= dUdP;
-        // if (i == 11 && j == 11) {
-        //     printf("Time derivative sources: "); printf("%6.5e %6.5e", dUq, dUdP); printf("\n");
-        // }
+        if (emhd_params.conduction)
+            residual(m_u.Q) -= dUq;
+        if (emhd_params.viscosity)
+            residual(m_u.DP) -= dUdP;
 
         // Normalize
         Real tau, chi_e, nu_e;
         EMHD::set_parameters(G, Ps, m_p, emhd_params_s, gam, k, j, i, tau, chi_e, nu_e);
-        residual(m_u.Q)  *= tau;
-        residual(m_u.DP) *= tau;
+        if (emhd_params.conduction)
+            residual(m_u.Q) *= tau;
+        if (emhd_params.viscosity)
+            residual(m_u.DP) *= tau;
         if (emhd_params.higher_order_terms){
             Real rho   = Ps(m_p.RHO);
             Real uu    = Ps(m_p.UU);
             Real Theta = (gam - 1.) * uu / rho;
 
-            residual(m_u.Q)  *= (chi_e != 0) ? sqrt(rho * chi_e * tau * pow(Theta, 2)) / tau : 1.;
-            residual(m_u.DP) *= (nu_e != 0)  ? sqrt(rho * nu_e * tau * Theta) / tau : 1.;
+            if (emhd_params.conduction)
+                residual(m_u.Q) *= (chi_e != 0) ? sqrt(rho * chi_e * tau * pow(Theta, 2)) / tau : 1.;
+            if (emhd_params.viscosity)
+                residual(m_u.DP) *= (nu_e != 0) ? sqrt(rho * nu_e * tau * Theta) / tau : 1.;
         }
     }
 

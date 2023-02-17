@@ -29,21 +29,22 @@ if __name__=='__main__':
 		usecols=(0,1,3), unpack=True)
 		
 		# load code data
-		dfile = h5py.File('emhd_2d_{}_end_emhd2d_weno.h5'.format(res), 'r')
+		dump = pyharm.load_dump("emhd_2d_{}_end_emhd2d_weno.phdf".format(res))
 		
-		rho       = np.squeeze(dfile['prims'][Ellipsis,0][()])
-		uu        = np.squeeze(dfile['prims'][Ellipsis,1][()])
-		dP_tilde  = np.squeeze(dfile['prims'][Ellipsis,9][()])
+		params    = dump.params
+		rho       = np.squeeze(dump['RHO'])
+		uu        = np.squeeze(dump['UU'])
+		dP_tilde  = np.squeeze(dump['prims'][8,Ellipsis])
 
-		t   = dfile['t'][()]
-		gam = dfile['header/gam'][()]
-		higher_order_terms = dfile['header/higher_order_terms'][()].decode('UTF-8')
+		t   = dump['t']
+		gam = params['gam']
+		tau = params['tau']
+		eta = params['eta']
+		higher_order_terms = params['higher_order_terms']		
 
     # compute dP
-		if higher_order_terms=="TRUE":
+		if higher_order_terms=="true":
 			print("Res: "+str(res)+"; higher order terms enabled")
-			tau      = 30.
-			eta      = 0.01
 			P        = (gam - 1.) * uu
 			Theta    = P / rho
 			nu_emhd  = eta / rho
