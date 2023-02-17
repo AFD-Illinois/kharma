@@ -63,6 +63,8 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     // Diagnostic & inadvisable flags
     bool fix_flux = pin->GetOrAddBoolean("b_field", "fix_polar_flux", true);
     params.Add("fix_polar_flux", fix_flux);
+    bool fix_flux_x1 = pin->GetOrAddBoolean("b_field", "fix_flux_x1", false);
+    params.Add("fix_flux_x1", fix_flux_x1);
     // WARNING this disables constrained transport, so the field will quickly pick up a divergence.
     // To use another transport, just specify it instead of this one.
     bool disable_flux_ct = pin->GetOrAddBoolean("b_field", "disable_flux_ct", false);
@@ -107,7 +109,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     m = Metadata(flags_cons, s_vector);
     pkg->AddField("cons.B", m);
 
-    m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy, Metadata::Restart, Metadata::FillGhost});
+    m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy, Metadata::Restart}); //, Metadata::FillGhost});
     pkg->AddField("divB", m);
     // Hyerin (12/19/22)
     m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::FillGhost, Metadata::Vector});
@@ -307,7 +309,7 @@ TaskStatus FixPolarFlux(MeshData<Real> *md)
 
         if (pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::user)
         {
-            pmb->par_for("fix_flux_b_l", ks, ke_e, js, js, is, ie+1,
+            pmb->par_for("fix_flux_b_l", ks-1, ke_e+1, js, js, is-1, ie+1+1, // Hyerin (12/28/22)
                 KOKKOS_LAMBDA_3D {
                     B_F.flux(X1DIR, V2, k, j-1, i) = -B_F.flux(X1DIR, V2, k, js, i);
                     if (ndim > 1) B_F.flux(X2DIR, V2, k, j, i) = 0;
@@ -317,7 +319,7 @@ TaskStatus FixPolarFlux(MeshData<Real> *md)
         }
         if (pmb->boundary_flag[BoundaryFace::outer_x2] == BoundaryFlag::user)
         {
-            pmb->par_for("fix_flux_b_r", ks, ke_e, je_e, je_e, is, ie+1,
+            pmb->par_for("fix_flux_b_r", ks-1, ke_e+1, je_e, je_e, is-1, ie+1+1, // Hyerin (12/28/22)
                 KOKKOS_LAMBDA_3D {
                     B_F.flux(X1DIR, V2, k, j, i) = -B_F.flux(X1DIR, V2, k, je, i);
                     if (ndim > 1) B_F.flux(X2DIR, V2, k, j, i) = 0;
@@ -331,12 +333,87 @@ TaskStatus FixPolarFlux(MeshData<Real> *md)
     return TaskStatus::complete;
 }
 
+TaskStatus FixX1Flux(MeshData<Real> *md)
+{
+    Flag(md, "Fixing X1 fluxes");
+    auto pmesh = md->GetMeshPointer();
+    auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
+    
+    IndexDomain domain = IndexDomain::interior;
+    int is = pmb0->cellbounds.is(domain), ie = pmb0->cellbounds.ie(domain);
+    int js = pmb0->cellbounds.js(domain), je = pmb0->cellbounds.je(domain);
+    int js_all = pmb0->cellbounds.js(IndexDomain::entire), je_all = pmb0->cellbounds.je(IndexDomain::entire); // added by Hyerin (12/28/22)
+    int ks = pmb0->cellbounds.ks(domain), ke = pmb0->cellbounds.ke(domain);
+    int ks_all = pmb0->cellbounds.ks(IndexDomain::entire), ke_all = pmb0->cellbounds.ke(IndexDomain::entire); // added by Hyerin (12/28/22)
+    const int ndim = pmesh->ndim;
+
+    int je_e = (ndim > 1) ? je + 1 : je;
+    //int je_e = (ndim > 1) ? je_all + 1 : je_all; // test Hyerin(12/28/22)
+    int ke_e = (ndim > 2) ? ke + 1 : ke;
+    //int ke_e = (ndim > 2) ? ke_all + 1 : ke_all; // test Hyerin (12/28/22)
+    
+    Real x1min = pmb0->packages.Get("GRMHD")->Param<Real>("x1min"); //Hyerin (01/31/23)
+
+    // Assuming the fluxes through the pole are 0,
+    // make sure the polar EMFs are 0 when performing fluxCT
+    // TODO only invoke one kernel? We avoid invocation except on boundaries anyway
+    for (auto &pmb : pmesh->block_list) {
+        auto& rc = pmb->meshblock_data.Get();
+        auto& B_F = rc->PackVariablesAndFluxes(std::vector<std::string>{"cons.B"});
+
+        //added by Hyerin (12/23/22)
+        if ((pmb->boundary_flag[BoundaryFace::inner_x1] == BoundaryFlag::user) && (x1min>1) ) // only apply fix flux for inner bc when it is far from the EH
+        {
+            //pmb->par_for("fix_flux_b_l", ks-1, ke_e+1, js-1, je_e+1, is, is, // test Hyerin (12/28/22)
+            pmb->par_for("fix_flux_b_l", ks_all+1, ke_all+1, js_all+1, je_all+1, is, is, // test Hyerin (12/28/22)
+                KOKKOS_LAMBDA_3D {
+                    /* previous prescription to make the X1DIR flux = 0
+                    B_F.flux(X2DIR, V1, k, j, i-1) = -B_F.flux(X2DIR, V1, k, j, is);
+                    if (ndim > 1) VLOOP B_F.flux(X1DIR, V1+v, k, j, i) = 0;
+                    if (ndim > 2) B_F.flux(X3DIR, V1, k, j, i-1) = -B_F.flux(X3DIR, V1, k, j, is);
+                    */
+                    // (02/06/23) a prescription that allows nonzero flux across X1 boundary but still keeps divB=0
+                    if (ndim > 1) B_F.flux(X2DIR, V1, k, j, i-1) = -B_F.flux(X2DIR, V1, k, j, is) + B_F.flux(X1DIR, V2, k, j, is) + B_F.flux(X1DIR, V2, k, j-1, is);
+                    if (ndim > 2) B_F.flux(X3DIR, V1, k, j, i-1) = -B_F.flux(X3DIR, V1, k, j, is) + B_F.flux(X1DIR, V3, k, j, is) + B_F.flux(X1DIR, V3, k-1, j, is);
+                    /*
+                    if (k == 30 && j==30) {
+                        printf("HYERIN: i,j,k = (%i %i %i) sum is (%g %g %g %g) \n", i, j, k, B_F.flux(X2DIR,V1,k,j,i-1), B_F.flux(X2DIR,V1,k,j,i), B_F.flux(X1DIR,V2,k,j,i), B_F.flux(X1DIR,V2,k,j-1,i));
+                    }
+                    */
+                }
+            );
+        }
+        if (pmb->boundary_flag[BoundaryFace::outer_x1] == BoundaryFlag::user)
+        {
+            pmb->par_for("fix_flux_b_r", ks-1, ke_e+1, js-1, je_e+1, ie+1, ie+1, // test Hyerin (12/28/22)
+                KOKKOS_LAMBDA_3D {
+                    /* previous prescription to make the X1DIR flux = 0
+                    B_F.flux(X2DIR, V1, k, j, i) = -B_F.flux(X2DIR, V1, k, j, ie);
+                    if (ndim > 1) VLOOP B_F.flux(X1DIR, V1+v, k, j, i) = 0;
+                    if (ndim > 2) B_F.flux(X3DIR, V1, k, j, i) = -B_F.flux(X3DIR, V1, k, j, ie);
+                    */
+                    // (02/06/23) a prescription that allows nonzero flux across X1 boundary but still keeps divB=0
+                    if (ndim > 1) B_F.flux(X2DIR, V1, k, j, i) = -B_F.flux(X2DIR, V1, k, j, ie) + B_F.flux(X1DIR, V2, k, j, i) + B_F.flux(X1DIR, V2, k, j-1, i);
+                    if (ndim > 2) B_F.flux(X3DIR, V1, k, j, i) = -B_F.flux(X3DIR, V1, k, j, ie) + B_F.flux(X1DIR, V3, k, j, i) + B_F.flux(X1DIR, V3, k-1, j, i);
+                }
+            );
+        }
+    }
+
+    Flag(md, "Fixed X1 B");
+    return TaskStatus::complete;
+}
+
 TaskStatus TransportB(MeshData<Real> *md)
 {
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
     if (pmb0->packages.Get("B_FluxCT")->Param<bool>("fix_polar_flux")
         && pmb0->coords.coords.spherical()) {
         FixPolarFlux(md);
+    }
+    if (pmb0->packages.Get("B_FluxCT")->Param<bool>("fix_flux_x1") // added by Hyerin
+        && pmb0->coords.coords.spherical()) {
+        FixX1Flux(md);
     }
     FluxCT(md);
     return TaskStatus::complete;
@@ -446,6 +523,7 @@ void CalcDivB(MeshData<Real> *md, std::string divb_field_name)
         const int je = IsDomainBound(pmb, BoundaryFace::outer_x2) ? jb.e : jb.e + 1;
         const int ks = (IsDomainBound(pmb, BoundaryFace::inner_x3) && ndim > 2) ? kb.s + 1 : kb.s;
         const int ke = (IsDomainBound(pmb, BoundaryFace::outer_x3) || ndim <= 2) ? kb.e : kb.e + 1;
+        printf("Hyerin: for calcDivB ks is %i.\n", ks);
 
         pmb->par_for("calc_divB", ks, ke, js, je, is, ie,
             KOKKOS_LAMBDA_3D {
@@ -474,12 +552,33 @@ void FillOutput(MeshBlock *pmb, ParameterInput *pin)
     const IndexRange ib = rc->GetBoundsI(IndexDomain::interior);
     const IndexRange jb = rc->GetBoundsJ(IndexDomain::interior);
     const IndexRange kb = rc->GetBoundsK(IndexDomain::interior);
+    // changed by Hyerin (12/21/22)
+    //const IndexRange ib = rc->GetBoundsI(IndexDomain::entire);
+    //const IndexRange jb = rc->GetBoundsJ(IndexDomain::entire);
+    //const IndexRange kb = rc->GetBoundsK(IndexDomain::entire);
     const int is = IsDomainBound(pmb, BoundaryFace::inner_x1) ? ib.s + 1 : ib.s;
     const int ie = IsDomainBound(pmb, BoundaryFace::outer_x1) ? ib.e : ib.e + 1;
     const int js = (IsDomainBound(pmb, BoundaryFace::inner_x2) && ndim > 1) ? jb.s + 1 : jb.s;
     const int je = (IsDomainBound(pmb, BoundaryFace::outer_x2) || ndim <=1) ? jb.e : jb.e + 1;
     const int ks = (IsDomainBound(pmb, BoundaryFace::inner_x3) && ndim > 2) ? kb.s + 1 : kb.s;
     const int ke = (IsDomainBound(pmb, BoundaryFace::outer_x3) || ndim <= 2) ? kb.e : kb.e + 1;
+    /*
+    int is = IsDomainBound(pmb, BoundaryFace::inner_x1) ? ib.s + 1 : ib.s;
+    int ie = IsDomainBound(pmb, BoundaryFace::outer_x1) ? ib.e : ib.e + 1;
+    int js = (IsDomainBound(pmb, BoundaryFace::inner_x2) && ndim > 1) ? jb.s + 1 : jb.s;
+    int je = (IsDomainBound(pmb, BoundaryFace::outer_x2) || ndim <=1) ? jb.e : jb.e + 1;
+    int ks = (IsDomainBound(pmb, BoundaryFace::inner_x3) && ndim > 2) ? kb.s + 1 : kb.s;
+    int ke = (IsDomainBound(pmb, BoundaryFace::outer_x3) || ndim <= 2) ? kb.e : kb.e + 1;
+
+    if (ndim > 2) { // modified by Hyerin (12/21/22), just to calculate at the ghost zone
+        is = ib.s + 1;
+        ie = ib.e;
+        js = jb.s + 1;
+        je = jb.e;
+        ks = kb.s + 1;
+        ke = kb.e;
+    }
+    */
 
     pmb->par_for("divB_output", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA_3D {
