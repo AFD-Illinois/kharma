@@ -54,8 +54,10 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, std::shared_ptr<MeshData<Rea
 {
     // Check which solver we'll be using
     auto pmesh = md->GetMeshPointer();
+    
     const bool use_b_flux_ct = pmesh->packages.AllPackages().count("B_FluxCT");
-    const bool use_b_cd = pmesh->packages.AllPackages().count("B_CD");
+    const bool use_b_cd      = pmesh->packages.AllPackages().count("B_CD");
+    
     bool sync_prims = pin->GetString("driver", "type") == "imex";
 
     // Add the field for torus problems as a second pass
@@ -155,8 +157,8 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, std::shared_ptr<MeshData<Rea
                 }
             }
             if (beta_calc_legacy) {
-                bsq_max = MPIReduce_once(bsq_max, MPI_MAX);
-                p_max = MPIReduce_once(p_max, MPI_MAX);
+                bsq_max  = MPIReduce_once(bsq_max, MPI_MAX);
+                p_max    = MPIReduce_once(p_max, MPI_MAX);
                 beta_min = p_max / (0.5 * bsq_max);
             } else {
                 beta_min = MPIReduce_once(beta_min, MPI_MIN);

@@ -53,6 +53,7 @@
 #include "mhdmodes.hpp"
 #include "orszag_tang.hpp"
 #include "shock_tube.hpp"
+#include "spherical_accn.hpp"
 #include "noh.hpp"
 
 #include "emhd/anisotropic_conduction.hpp"
@@ -117,6 +118,8 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
     } else if (prob == "bondi_viscous") {
         status = InitializeBondiViscous(rc.get(), pin);
     // Everything
+    } else if (prob == "spherical_accn") {
+        status = InitializeSphericalAccn(rc.get(), pin);
     } else if ((prob == "torus") && (!use_emhd)) {
         status = InitializeFMTorus(rc.get(), pin);
     } else if ((prob == "torus") && (use_emhd)){

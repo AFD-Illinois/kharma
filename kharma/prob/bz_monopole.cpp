@@ -46,14 +46,14 @@ TaskStatus InitializeBZMonopole(MeshBlockData<Real> *rc, ParameterInput *pin)
     Flag(rc, "Initializing BZ monopole problem");
 
     auto pmb = rc->GetBlockPointer();
-    GridScalar rho = rc->Get("prims.rho").data;
-    GridScalar u = rc->Get("prims.u").data;
+    GridScalar rho  = rc->Get("prims.rho").data;
+    GridScalar u    = rc->Get("prims.u").data;
     GridVector uvec = rc->Get("prims.uvec").data;
-    GridVector B_P = rc->Get("prims.B").data;
+    GridVector B_P  = rc->Get("prims.B").data;
 
     Real bsq_o_rho_max = pin->GetOrAddReal("floors", "bsq_over_rho_max", 1.e2);
     Real rho_min_limit = pin->GetOrAddReal("floors", "rho_min_geom", 1.e-6);
-    Real u_min_limit = pin->GetOrAddReal("floors", "u_min_geom", 1.e-8);
+    Real u_min_limit   = pin->GetOrAddReal("floors", "u_min_geom", 1.e-8);
 
     IndexDomain domain = IndexDomain::interior;
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);

@@ -47,6 +47,7 @@
 #include "bondi.hpp"
 #include "emhd/conducting_atmosphere.hpp"
 #include "emhd/bondi_viscous.hpp"
+#include "spherical_accn.hpp"
 //#include "hubble.hpp"
 
 // Going to need all modules' headers here
@@ -252,7 +253,9 @@ void KBoundaries::OuterX1(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse)
         dirichlet_bc(rc.get(), IndexDomain::outer_x1, coarse);
     } else if (prob == "bondi_viscous") {
         SetBondiViscous(rc.get(), IndexDomain::outer_x1, coarse);
-    }else {
+    } else if (prob== "spherical_accn") {
+        dirichlet_bc_sph_accn(rc.get(), IndexDomain::outer_x1, coarse);
+    } else {
         OutflowX1(rc, IndexDomain::outer_x1, coarse);
     }
     // If we're in KHARMA/HARM driver, we need primitive versions of all the
@@ -287,7 +290,7 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
 
     bool check_inflow_inner = pmb0->packages.Get("GRMHD")->Param<bool>("check_inflow_inner");
     bool check_inflow_outer = pmb0->packages.Get("GRMHD")->Param<bool>("check_inflow_outer");
-    bool fix_flux_pole = pmb0->packages.Get("GRMHD")->Param<bool>("fix_flux_pole");
+    bool fix_flux_pole      = pmb0->packages.Get("GRMHD")->Param<bool>("fix_flux_pole");
 
     IndexDomain domain = IndexDomain::interior;
     const int is = pmb0->cellbounds.is(domain), ie = pmb0->cellbounds.ie(domain);

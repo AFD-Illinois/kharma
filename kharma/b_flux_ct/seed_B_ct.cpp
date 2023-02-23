@@ -39,6 +39,7 @@
 #include "b_field_tools.hpp"
 #include "b_flux_ct.hpp"
 #include "fm_torus.hpp"
+#include "spherical_accn.hpp"
 #include "grmhd_functions.hpp"
 #include "prob_common.hpp"
 
@@ -67,6 +68,7 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
     Real a, rin, rmax, gam, kappa, rho_norm;
     Real tilt = 0; // Needs to be initialized
     Real b10 = 0, b20 = 0, b30 = 0;
+    Real u_init, beta_init;
     switch (b_field_flag)
     {
     case BSeedType::constant:
@@ -95,6 +97,11 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
         a = G.coords.get_a();
         break;
     case BSeedType::bz_monopole:
+        break;
+    case BSeedType::vertical:
+        beta_init = pin->GetReal("spherical_accn", "beta_init");
+        u_init    = pmb->packages.Get("GRMHD")->Param<Real>("u_init");
+        gam       = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
         break;
     }
 
@@ -201,6 +208,14 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
                     Real sigma = 2 / m::sqrt(2 * log(2));
                     Real u = x / m::abs(sigma);
                     q = (1 / (m::sqrt(2 * M_PI) * m::abs(sigma))) * exp(-u * u / 2);
+                }
+                break;
+            case BSeedType::vertical:
+                {
+                    Real B0 = 2 * (gam - 1.) * u_init / beta_init;
+                    q  = (1. / 2.) * (B0 * r*r * sin(th)*sin(th));
+                    if (r < 6)
+                        q *= exp(5 * (1 - 6. / r));
                 }
                 break;
             default:

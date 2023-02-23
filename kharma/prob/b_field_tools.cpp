@@ -62,14 +62,16 @@ TaskStatus NormalizeBField(MeshBlockData<Real> *rc, Real norm)
 Real GetLocalBetaMin(MeshBlockData<Real> *rc)
 {
     auto pmb = rc->GetBlockPointer();
+    
     IndexDomain domain = IndexDomain::interior;
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
     const auto& G = pmb->coords;
-    GridScalar u = rc->Get("prims.u").data;
+
+    GridScalar u    = rc->Get("prims.u").data;
     GridVector uvec = rc->Get("prims.uvec").data;
-    GridVector B_P = rc->Get("prims.B").data;
+    GridVector B_P  = rc->Get("prims.B").data;
 
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
 
