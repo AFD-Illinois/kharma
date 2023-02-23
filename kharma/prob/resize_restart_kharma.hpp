@@ -125,7 +125,7 @@ KOKKOS_INLINE_FUNCTION void get_prim_restart_kharma(const GRCoordinates& G, cons
         GReal r = Xembed[1];
   
         // copy over smallest radius states
-        //Xtoindex(X, x1, x2, x3, length, iblocktemp, itemp, jtemp, ktemp, del);
+        Xtoindex(X, x1, x2, x3, length, iblocktemp, itemp, jtemp, ktemp, del);
         itemp = fnghost; // in order to copy over the physical region, not the ghost region
         // (02/08/23) instead in order to set the vacuum homogeneous instead of having theta phi dependence, set j and k values
         jtemp = fnghost;
@@ -156,7 +156,6 @@ KOKKOS_INLINE_FUNCTION void get_prim_restart_kharma(const GRCoordinates& G, cons
     }
     else { 
         Xtoindex(X, x1, x2, x3, length, iblocktemp, itemp, jtemp, ktemp, del);
-
         rho_temp = rho(iblocktemp,ktemp,jtemp,itemp);
         u_temp = u(iblocktemp,ktemp,jtemp,itemp);
         VLOOP u_prim[v] = uvec(v,iblocktemp,ktemp,jtemp,itemp);

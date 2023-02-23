@@ -266,6 +266,7 @@ TaskStatus SetKharmaRestart(MeshBlockData<Real> *rc, IndexDomain domain, bool co
                                     n3mb+2*fnghost*x3factor}; 
         const int block_sz = length[0]*length[1]*length[2]*length[3];
         //std::cout << "lengths " << length[0]  << " " << length[1] <<" " <<  length[2]<<" " << length[3] << std::endl;
+        //printf("lengths %i %i %i %i \n", length[0], length[1], length[2], length[3]);
         
         
         // read from file and stored in device Hyerin (10/18/2022)
