@@ -53,7 +53,7 @@ KOKKOS_INLINE_FUNCTION void calc_tensor(const GRCoordinates& G, const Local& P, 
                                         const EMHD::EMHD_parameters& emhd_params, const Real& gam, const int& dir,
                                         Real T[GR_DIM])
 {
-    if (emhd_params.conduction || emhd_params.viscosity) {
+    if ((m_p.Q >= 0) || (m_p.DP >= 0)) {
         // Apply higher-order terms conversion if necessary
         Real q, dP;
         Real qtilde, dPtilde;
@@ -82,7 +82,7 @@ KOKKOS_INLINE_FUNCTION void calc_tensor(const GRCoordinates& G, const Global& P,
                                         const int& k, const int& j, const int& i, const int& dir,
                                         Real T[GR_DIM])
 {
-    if (emhd_params.conduction || emhd_params.viscosity) {
+    if ((m_p.Q >= 0) || (m_p.DP >= 0)) {
 
         // Apply higher-order terms conversion if necessary
         Real q, dP;
@@ -181,9 +181,9 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const Local& P,
     }
 
     // EMHD Variables: advect like rho
-    if (emhd_params.conduction)
+    if (m_p.Q >= 0)
         flux(m_u.Q) = P(m_p.Q) * D.ucon[dir] * gdet;
-    if (emhd_params.viscosity)
+    if (m_p.DP >= 0)
         flux(m_u.DP) = P(m_p.DP) * D.ucon[dir] * gdet;
 
     // Electrons: normalized by density
@@ -216,7 +216,7 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const Global& P
     flux(m_u.RHO, k, j, i) = P(m_p.RHO, k, j, i) * D.ucon[dir] * gdet;
 
     Real T[GR_DIM];
-    if (emhd_params.conduction || emhd_params.viscosity) {
+    if ((m_p.Q >= 0) || (m_p.DP >= 0)) {
 
         // Apply higher-order terms conversion if necessary
         Real q, dP;
@@ -268,9 +268,9 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const Global& P
     }
 
     // EMHD Variables: advect like rho
-    if (emhd_params.conduction)
+    if (m_p.Q >= 0)
         flux(m_u.Q, k, j, i)  = P(m_p.Q, k, j, i) * D.ucon[dir] * gdet;
-    if (emhd_params.viscosity)
+    if (m_p.DP >= 0)
         flux(m_u.DP, k, j, i) = P(m_p.DP, k, j, i) * D.ucon[dir] * gdet;
 
     // Electrons: normalized by density
@@ -330,7 +330,7 @@ KOKKOS_INLINE_FUNCTION void vchar(const GRCoordinates& G, const Local& P, const 
     const Real ef  = P(m.RHO) + gam * P(m.UU);
     const Real cs2 = gam * (gam - 1) * P(m.UU) / ef;
     Real cms2;
-    if (emhd_params.conduction || emhd_params.viscosity) {
+    if ((m.Q >= 0) || (m.DP >= 0)) {
          // Get the EGRMHD parameters
         Real tau, chi_e, nu_e;
         EMHD::set_parameters(G, P, m, emhd_params, gam, k, j, i, tau, chi_e, nu_e);        

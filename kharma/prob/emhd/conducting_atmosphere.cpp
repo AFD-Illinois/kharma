@@ -311,7 +311,6 @@ TaskStatus InitializeAtmosphere(MeshBlockData<Real> *rc, ParameterInput *pin)
 
 TaskStatus dirichlet_bc(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
-
     Flag(rc, "Applying Dirichlet boundary conditions along radial direction");
 
     auto pmb = rc->GetBlockPointer();

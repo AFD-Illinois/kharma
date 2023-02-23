@@ -128,7 +128,6 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     // We initialize this even if not using mixed frame, for constructing Prescription objs
     Real frame_switch = pin->GetOrAddReal("floors", "frame_switch", 50.);
     params.Add("frame_switch", frame_switch);
-    
 
     // Disable all floors.  It is obviously tremendously inadvisable to
     // set this option to true

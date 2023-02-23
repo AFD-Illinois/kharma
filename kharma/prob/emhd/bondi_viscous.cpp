@@ -104,18 +104,9 @@ TaskStatus SetBondiViscous(MeshBlockData<Real> *rc, IndexDomain domain, bool coa
     pmb->par_for("bondi_boundary", kb_e.s, kb_e.e, jb_e.s, jb_e.e, ibs, ibe,
         KOKKOS_LAMBDA_3D {
             get_prim_bondi_viscous(G, cs, P, m_p, emhd_params, gam, bl, ks, mdot, rs, k, j, i);
-            // GRMHD::p_to_u(G, P, m_p, gam, k, j, i, U, m_u);            
+            GRMHD::p_to_u(G, P, m_p, gam, k, j, i, U, m_u);            
         }
     );
-
-    // for (int i=ibs; i<=ibe; i++) {
-    //     for (int j=jb_e.s; j<=jb_e.e; j++) {
-    //         cout << " " << i << " " << j << " " << "RHO"  << " " << P(m_p.RHO, 0, j, i) << endl;
-    //         cout << " " << i << " " << j << " " << "UU"  << " " << P(m_p.UU, 0, j, i) << endl;
-    //         cout << " " << i << " " << j << " " << "r"  << " " << P(m_p.U1, 0, j, i) << endl;
-    //         cout << " " << i << " " << j << " " << "th" << " " << P(m_p.U2, 0, j, i) << endl;
-    //     }
-    // }
 
     Flag(rc, "Set");
     return TaskStatus::complete;

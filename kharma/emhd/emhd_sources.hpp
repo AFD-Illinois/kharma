@@ -58,9 +58,9 @@ KOKKOS_INLINE_FUNCTION void implicit_sources(const GRCoordinates& G, const Local
     // These are intentionally the tilde versions!
     Real tau, chi_e, nu_e;
     EMHD::set_parameters(G, P_tau, m_p, emhd_params_tau, gam, k, j, i, tau, chi_e, nu_e);
-    if (emhd_params_tau.conduction)
+    if (m_p.Q >= 0)
         dUq = -G.gdet(Loci::center, j, i) * (P(m_p.Q) / tau);
-    if (emhd_params_tau.viscosity)
+    if (m_p.DP >= 0)
         dUdP = -G.gdet(Loci::center, j, i) * (P(m_p.DP) / tau);
 }
 
@@ -105,7 +105,7 @@ KOKKOS_INLINE_FUNCTION void time_derivative_sources(const GRCoordinates& G, cons
     const Real& rho     = P(m_p.RHO);
     const Real& Theta   = (gam-1) * P(m_p.UU) / P(m_p.RHO);
 
-    if (emhd_params.conduction) {
+    if (m_p.Q >= 0) {
         const Real& qtilde  = P(m_p.Q);
         Real q0             = -rho * chi_e * (Dtmp.bcon[0] / m::sqrt(bsq)) * dt_Theta;
         DLOOP1 q0          -= rho * chi_e * (Dtmp.bcon[mu] / m::sqrt(bsq)) * Theta * Dtmp.ucon[0] * dt_ucov[mu];
@@ -118,7 +118,7 @@ KOKKOS_INLINE_FUNCTION void time_derivative_sources(const GRCoordinates& G, cons
             dUq += G.gdet(Loci::center, j, i) * (qtilde / 2.) * div_ucon;
     }
 
-    if (emhd_params.viscosity) {
+    if (m_p.DP >= 0) {
         const Real& dPtilde = P(m_p.DP);
         Real dP0            = -rho * nu_e * div_ucon;
         DLOOP1 dP0         += 3. * rho * nu_e * (Dtmp.bcon[0] * Dtmp.bcon[mu] / bsq) * dt_ucov[mu];
