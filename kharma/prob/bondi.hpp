@@ -150,12 +150,18 @@ KOKKOS_INLINE_FUNCTION void get_prim_bondi(const GRCoordinates& G, const Coordin
     Real ucon_bl[GR_DIM] = {0, ur, 0, 0};
     if (r<r_shell){ // TODO: (Hyerin) should I change this such that I can pass in vacuum values?
         // values at infinity
+        /*
         Real Tinf = (m::sqrt(C2) - 1.) / (n + 1); // temperature at infinity
         rho = m::pow(Tinf,n);
         u = rho * Tinf * n;
-    } else {
-        ucon_bl[1] = 0.; // 10/23/2022 test zero velocity for the bondi shell
-    }
+        */
+        // just match at the r_shell value Hyerin (12/30/22)
+        T = get_T(r_shell, C1, C2, n, rs);
+        rho = m::pow(T, n);
+        u = rho * T * n;
+    } //else {
+    //    ucon_bl[1] = 0.; // 10/23/2022 test zero velocity for the bondi shell
+    //}
     Real gcov_bl[GR_DIM][GR_DIM];
     bl.gcov_embed(Xembed, gcov_bl);
     set_ut(gcov_bl, ucon_bl);
