@@ -227,6 +227,87 @@ void ReflectX2(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, boo
     }
 }
 
+// Single reflecting boundary function for inner and outer bounds
+// copied from ReflectX2
+void ReflectX1(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, bool coarse) {
+    Flag(rc.get(), "Applying KHARMA reflecting X1 bound");
+    std::shared_ptr<MeshBlock> pmb = rc->GetBlockPointer();
+    auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
+    const auto& G = pmb->coords;
+    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
+    Real x1min = pmb->packages.Get("GRMHD")->Param<Real>("x1min"); //Hyerin
+    Real x_EH = pmb->packages.Get("GRMHD")->Param<Real>("x_EH"); //Hyerin
+
+    // q will actually have *both* cons & prims (unless using imex driver)
+    // We'll only need cons.B specifically tho
+    PackIndexMap prims_map, ghosts_map;
+    auto P = GRMHD::PackMHDPrims(rc.get(), prims_map, coarse);
+    auto q = rc->PackVariables({Metadata::FillGhost}, ghosts_map, coarse);
+    //auto& F = rc->PackVariablesAndFluxes({Metadata::WithFluxes}, cons_map); // instead, just directly alter flux to being 0 consistent with B field (check if the flux calculation is called later though)
+    const VarMap m_u(ghosts_map, true), m_p(prims_map, false);
+    // If we're running imex, q is the *primitive* variables
+    bool prim_ghosts = pmb->packages.Get("GRMHD")->Param<std::string>("driver_type") == "imex";
+
+    // KHARMA is very particular about corner boundaries, see above
+    IndexDomain ldomain = IndexDomain::interior;
+    int is = bounds.is(ldomain), ie = bounds.ie(ldomain);
+    int js = bounds.js(ldomain), je = bounds.je(ldomain);
+    int ks = bounds.ks(ldomain), ke = bounds.ke(ldomain);
+    ldomain = IndexDomain::entire;
+    int is_e = bounds.is(ldomain), ie_e = bounds.ie(ldomain);
+    int js_e = bounds.js(ldomain), je_e = bounds.je(ldomain);
+    int ks_e = bounds.ks(ldomain), ke_e = bounds.ke(ldomain);
+
+    int ref_tmp, add_tmp, ibs, ibe;
+    if (domain == IndexDomain::inner_x1) {
+        add_tmp = -1;
+        ref_tmp = bounds.GetBoundsI(IndexDomain::interior).s;
+        ibs = is_e;
+        ibe = is - 1;
+    } else if (domain == IndexDomain::outer_x1) {
+        add_tmp = 1;
+        ref_tmp = bounds.GetBoundsI(IndexDomain::interior).e;
+        ibs = ie + 1;
+        ibe = ie_e;
+    } else {
+        throw std::invalid_argument("KHARMA Reflecting boundaries only implemented in X1!");
+    }
+    const int ref = ref_tmp;
+    const int add = add_tmp;
+
+    // This first loop copies all variables with the "FillGhost" tag into the outer zones
+    // This includes some we may replace below
+    /*
+    pmb->par_for("ReflectX1", 0, q.GetDim(4) - 1, ks_e, ke_e, js_e, je_e, ibs, ibe,
+        KOKKOS_LAMBDA_VARS {
+            if (k == ks_e && j == js_e && i == ibs) printf("Hyerin: p = %i, m_u.U1 = %i, ghosts_map[prims.U1] =%i \n",p, m_u.U1, ghosts_map["prims.uvec"].first);
+            //Real reflect = q.VectorComponent(p) == X1DIR ? -1.0 : 1.0;
+            //if (p != m_u.B1 && p != m_p.B2 && p != m_p.B3) { // Hyerin (02/12/23) don't change the B fields because this is done in b_flux_ct's FixX1Flux routine
+                //q(p, k, j, i) = reflect * q(p, k, j, (ref + add) + (ref - i));
+            //}
+        }
+    );
+    */
+    int idx = ghosts_map["prims.uvec"].first;
+    pmb->par_for("ReflectX1", ks_e, ke_e, js_e, je_e, ibs, ibe,
+        KOKKOS_LAMBDA_3D { // Hyerin (02/13/23) only do for velocities
+            q(idx, k, j, i) = (-1.) * q(idx, k, j, (ref + add) + (ref - i));
+            q(idx+1, k, j, i) = q(idx+1, k, j, (ref + add) + (ref - i));
+            q(idx+2, k, j, i) = q(idx+2, k, j, (ref + add) + (ref - i));
+        }
+    );
+    if (!prim_ghosts) {
+        // Normal operation: see above
+        pmb->par_for("ReflectX1_PtoU", ks_e, ke_e, js_e, je_e, ibs, ibe,
+            KOKKOS_LAMBDA_3D {
+                //if (m_p.B1 >= 0)
+                    //VLOOP P(m_p.B1 + v, k, j, i) = q(m_u.B1 + v, k, j, i) / G.gdet(Loci::center, j, i);
+                GRMHD::p_to_u(G, P, m_p, gam, k, j, i, q, m_u);
+            }
+        );
+    }
+}
+
 // Interface calls into the preceding functions
 void KBoundaries::InnerX1(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse)
 {
@@ -241,8 +322,10 @@ void KBoundaries::InnerX1(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse)
     } else if ((prob == "resize_restart_kharma")&& (x1min>1)){
         // Hyerin (if the inner x1 bound is far from BH, constant bc)
         SetKharmaRestart(rc.get(), IndexDomain::inner_x1,coarse);
+        //ReflectX1(rc, IndexDomain::inner_x1, coarse); // Hyerin (02/12/23) reflecting bc instead of porous bc
     } else if ((prob == "bondi") && (x1min>1)){ // Hyerin
         SetBondi(rc.get(), IndexDomain::inner_x1,coarse);
+        //ReflectX1(rc, IndexDomain::inner_x1, coarse);
     //} else if ((prob == "gizmo_shell") && (x1min>1)){ // Hyerin
     //    SetGizmoShell(rc.get(), IndexDomain::inner_x1,coarse);
     } else {
@@ -261,12 +344,14 @@ void KBoundaries::OuterX1(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse)
        //SetHubble(rc.get(), IndexDomain::outer_x1, coarse);
     } else if (prob == "bondi") {
         SetBondi(rc.get(), IndexDomain::outer_x1, coarse);
+        //ReflectX1(rc, IndexDomain::outer_x1, coarse);
     } else if (prob == "conducting_atmosphere"){
         dirichlet_bc(rc.get(), IndexDomain::outer_x1, coarse);
     } else if (prob == "bondi_viscous") {
         SetBondiViscous(rc.get(), IndexDomain::outer_x1, coarse);
     } else if (prob == "resize_restart_kharma") { // Hyerin, constant boundary condition
         SetKharmaRestart(rc.get(),IndexDomain::outer_x1, coarse);
+        //ReflectX1(rc, IndexDomain::outer_x1, coarse);
     } else {
         OutflowX1(rc, IndexDomain::outer_x1, coarse);
     }
@@ -303,6 +388,7 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
     bool check_inflow_inner = pmb0->packages.Get("GRMHD")->Param<bool>("check_inflow_inner");
     bool check_inflow_outer = pmb0->packages.Get("GRMHD")->Param<bool>("check_inflow_outer");
     bool fix_flux_pole = pmb0->packages.Get("GRMHD")->Param<bool>("fix_flux_pole");
+    bool fix_flux_x1 = pmb0->packages.Get("GRMHD")->Param<bool>("fix_flux_x1");
 
     IndexDomain domain = IndexDomain::interior;
     const int is = pmb0->cellbounds.is(domain), ie = pmb0->cellbounds.ie(domain);
@@ -316,13 +402,14 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
     const int ie_l = ie + 1;
     const int je_l = (ndim > 1) ? je + 1 : je;
     //const int ke_l = (ndim > 2) ? ke + 1 : ke;
-
+  
     for (auto &pmb : pmesh->block_list) {
         auto& rc = pmb->meshblock_data.Get();
 
         PackIndexMap cons_map;
         auto& F = rc->PackVariablesAndFluxes({Metadata::WithFluxes}, cons_map);
         const int m_rho = cons_map["cons.rho"].first;
+        const int m_B = cons_map["cons.B"].first; // Hyerin (12/22/22)
 
         if (check_inflow_inner) {
             if (pmb->boundary_flag[BoundaryFace::inner_x1] == BoundaryFlag::user) {
@@ -345,23 +432,47 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
 
         // This is a lot of zero fluxes!
         if (fix_flux_pole) {
+            //printf("HYERIN: m_B=%i m_rho=%i dim = (%i %i %i %i %i %i)\n",m_B, m_rho,F.GetDim(1),F.GetDim(2), F.GetDim(3), F.GetDim(4), F.GetDim(5),F.GetDim(6));
             if (pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::user) {
                 // This loop covers every flux we need
-                pmb->par_for("fix_flux_pole_l", 0, F.GetDim(4) - 1, ks, ke, js, js, is, ie,
+                pmb->par_for("fix_flux_pole_l", 0, F.GetDim(4) - 1, ks-1, ke+1, js, js, is-1, ie+1, // Hyerin: expanded i and k ranges. see FluxCT. they care about these
                     KOKKOS_LAMBDA_VARS {
                         F.flux(X2DIR, p, k, j, i) = 0.;
+                        //if (p==7 && k==15 && i==is-1){
+                        //    printf("HYERIN: BC B flux %i %i %i = (%g %g %g)\n",i,j,k,F.flux(X2DIR,m_B,ks,js,i),F.flux(X2DIR,m_B+1,ks,js,i),F.flux(X2DIR,m_B+2,ks,js,i));
+                        //}
                     }
                 );
             }
 
             if (pmb->boundary_flag[BoundaryFace::outer_x2] == BoundaryFlag::user) {
-                pmb->par_for("fix_flux_pole_r", 0, F.GetDim(4) - 1, ks, ke, je_l, je_l, is, ie,
+                pmb->par_for("fix_flux_pole_r", 0, F.GetDim(4) - 1, ks-1, ke+1, je_l, je_l, is-1, ie+1,
                     KOKKOS_LAMBDA_VARS {
                         F.flux(X2DIR, p, k, j, i) = 0.;
                     }
                 );
             }
         }
+
+        /* Hyerin (01/03/23) I don't think this is needed. Same thing is applied on FixX1Flux
+        if (fix_flux_x1) {
+        // Hyerin (12/22/22) ensure no ghost zone B field change
+            if (pmb->boundary_flag[BoundaryFace::inner_x1] == BoundaryFlag::user) {
+                pmb->par_for("fix_flux_in_l", ks, ke, js, je, is, is,
+                    KOKKOS_LAMBDA_3D {
+                        VLOOP F.flux(X1DIR, m_B + v, k, j, i) = 0.; // Hyerin (12/22/22) no flux into ghost zones
+                    }
+                );
+            }
+            if (pmb->boundary_flag[BoundaryFace::outer_x1] == BoundaryFlag::user) {
+                pmb->par_for("fix_flux_in_r", ks, ke, js, je, ie_l, ie_l,
+                    KOKKOS_LAMBDA_3D {
+                        VLOOP F.flux(X1DIR, m_B + v, k, j, i) = 0.; // Hyerin (12/22/22) no flux into ghost zones
+                    }
+                );
+            }
+        }
+        */
     }
 
     Flag("Fixed fluxes");
