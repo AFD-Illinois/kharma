@@ -47,6 +47,8 @@ TaskStatus InitializeBondi(MeshBlockData<Real> *rc, ParameterInput *pin)
     const Real rs = pin->GetOrAddReal("bondi", "rs", 8.0);
     // r_shell : the radius of the shell where inside this radius is filled with vacuum. If 0, the simulation is initialized to Bondi everywhere
     const Real r_shell = pin->GetOrAddReal("bondi", "r_shell", 0.); 
+    const bool use_gizmo = pin->GetOrAddBoolean("bondi", "use_gizmo", false);
+    auto datfn = pin->GetOrAddString("gizmo_shell", "datfn", "none");
 
     // Add these to package properties, since they continue to be needed on boundaries
     if(! (pmb->packages.Get("GRMHD")->AllParams().hasKey("mdot")))
@@ -55,6 +57,10 @@ TaskStatus InitializeBondi(MeshBlockData<Real> *rc, ParameterInput *pin)
         pmb->packages.Get("GRMHD")->AddParam<Real>("rs", rs);
     if(! (pmb->packages.Get("GRMHD")->AllParams().hasKey("r_shell")))
         pmb->packages.Get("GRMHD")->AddParam<Real>("r_shell", r_shell);
+    if(! (pmb->packages.Get("GRMHD")->AllParams().hasKey("use_gizmo")))
+        pmb->packages.Get("GRMHD")->AddParam<bool>("use_gizmo", use_gizmo);
+    if(! (pmb->packages.Get("GRMHD")->AllParams().hasKey("gizmo_dat")))
+        pmb->packages.Get("GRMHD")->AddParam<std::string>("gizmo_dat", datfn);
 
     // Set the whole domain to the analytic solution to begin
     SetBondi(rc);
@@ -77,11 +83,13 @@ TaskStatus SetBondi(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     const Real rs = pmb->packages.Get("GRMHD")->Param<Real>("rs");
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
     const Real r_shell = pmb->packages.Get("GRMHD")->Param<Real>("r_shell");
+    const bool use_gizmo = pmb->packages.Get("GRMHD")->Param<bool>("use_gizmo");
+    auto datfn = pmb->packages.Get("GRMHD")->Param<std::string>("gizmo_dat");
 
     // Just the X1 right boundary
     GRCoordinates G = pmb->coords;
     SphKSCoords ks = mpark::get<SphKSCoords>(G.coords.base);
-    SphBLCoords bl = SphBLCoords(ks.a);
+    SphBLCoords bl = SphBLCoords(ks.a, ks.ext_g); // modified
     CoordinateEmbedding cs = G.coords;
 
     // This function currently only handles "outer X1" and "entire" grid domains,
@@ -101,13 +109,77 @@ TaskStatus SetBondi(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     }
     IndexRange jb_e = bounds.GetBoundsJ(IndexDomain::entire);
     IndexRange kb_e = bounds.GetBoundsK(IndexDomain::entire);
-    pmb->par_for("bondi_boundary", kb_e.s, kb_e.e, jb_e.s, jb_e.e, ibs, ibe,
-        KOKKOS_LAMBDA_3D {
-            get_prim_bondi(G, cs, P, m_p, gam, bl, ks, mdot, rs, r_shell, k, j, i);
-            // TODO all flux
-            GRMHD::p_to_u(G, P, m_p, gam, k, j, i, U, m_u);
+    
+    // GIZMO shell, doesn't do anything for radial bdry
+    if (use_gizmo && (domain != IndexDomain::outer_x1) && (domain != IndexDomain::inner_x1)) { 
+        // Read the gizmo data file
+        // TODO: Hyerin: maybe put this into some other function?
+        FILE *fptr;
+        fptr = fopen(datfn.c_str(),"r");
+        const int datlen=100000;
+        Real *rarr = new double[datlen];
+        Real *rhoarr = new double[datlen]; 
+        Real *Tarr = new double[datlen]; 
+        Real *vrarr = new double[datlen]; 
+        Real *Mencarr = new double[datlen]; 
+        int length=0, itemp=0;
+        while (fscanf(fptr,"%lf %lf %lf %lf %lf\n", &(rarr[itemp]), &(rhoarr[itemp]), &(Tarr[itemp]), &(vrarr[itemp]), &(Mencarr[itemp])) == 5) { // assign the read value to variable, and enter it in array
+                itemp++;
         }
-    );
+        fclose(fptr);
+        length=itemp;
+
+        GridVector r_device("r_device", length); 
+        GridVector rho_device("rho_device", length); 
+        GridVector T_device("T_device", length); 
+        GridVector vr_device("vr_device", length); 
+        auto r_host = r_device.GetHostMirror();
+        auto rho_host = rho_device.GetHostMirror();
+        auto T_host = T_device.GetHostMirror();
+        auto vr_host = vr_device.GetHostMirror();
+        for (itemp = 0; itemp < length; itemp++) {
+            r_host(itemp) = rarr[itemp];
+            rho_host(itemp) = rhoarr[itemp];
+            T_host(itemp) = Tarr[itemp];
+            vr_host(itemp) = vrarr[itemp];
+        }
+        r_device.DeepCopy(r_host);
+        rho_device.DeepCopy(rho_host);
+        T_device.DeepCopy(T_host);
+        vr_device.DeepCopy(vr_host);
+            
+        Kokkos::fence();
+
+        pmb->par_for("gizmo_shell", kb_e.s, kb_e.e, jb_e.s, jb_e.e, ibs, ibe,
+            KOKKOS_LAMBDA_3D {
+                // same vacuum conditions at r_shell
+                GReal Xshell[GR_DIM] = {0, r_shell, 0, 0};
+                int i_sh;
+                GReal del_sh;
+                XtoindexGizmo(Xshell, r_device, length, i_sh, del_sh);
+                Real vacuum_rho, vacuum_u_over_rho, vacuum_logrho, vacuum_log_u_over_rho;
+                vacuum_rho = rho_device(i_sh)*(1.-del_sh)+rho_device(i_sh+1)*del_sh;
+                vacuum_u_over_rho = (T_device(i_sh)*(1.-del_sh)+T_device(i_sh+1)*del_sh)/(gam-1.);
+                vacuum_logrho = log10(vacuum_rho);
+                vacuum_log_u_over_rho = log10(vacuum_u_over_rho);
+
+                get_prim_gizmo_shell(G, cs, P, m_p, gam, bl, ks, r_shell, rs, vacuum_logrho, vacuum_log_u_over_rho, 
+                    r_device, rho_device, T_device, vr_device, length, k, j, i);
+                // TODO all flux
+                GRMHD::p_to_u(G, P, m_p, gam, k, j, i, U, m_u);
+            }
+        );
+    }
+    // Bondi
+    else if (! (use_gizmo)) {
+        pmb->par_for("bondi_boundary", kb_e.s, kb_e.e, jb_e.s, jb_e.e, ibs, ibe,
+            KOKKOS_LAMBDA_3D {
+                get_prim_bondi(G, cs, P, m_p, gam, bl, ks, mdot, rs, r_shell, k, j, i);
+                // TODO all flux
+                GRMHD::p_to_u(G, P, m_p, gam, k, j, i, U, m_u);
+            }
+        );
+    }
 
     Flag(rc, "Set");
     return TaskStatus::complete;

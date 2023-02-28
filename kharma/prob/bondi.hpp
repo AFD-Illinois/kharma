@@ -182,3 +182,110 @@ KOKKOS_INLINE_FUNCTION void get_prim_bondi(const GRCoordinates& G, const Coordin
     if (!isnan(u_prim[1])) P(m_p.U2, k, j, i) = u_prim[1];
     if (!isnan(u_prim[2])) P(m_p.U3, k, j, i) = u_prim[2];
 }
+
+KOKKOS_INLINE_FUNCTION void XtoindexGizmo(const GReal XG[GR_DIM],
+                                    const GridScalar& rarr, const int length, int& i, GReal& del)
+{
+    Real dx2, dx2_min;
+    dx2_min=m::pow(XG[1]-rarr(0),2); //100000.; //arbitrarily large number
+
+    i = 0; // initialize
+
+    for (int itemp = 0; itemp < length; itemp++) {
+        if (rarr(itemp) < XG[1]) { // only look for smaller side
+            dx2 = m::pow(XG[1]-rarr(itemp),2); //pow(XG[1]-rarr[itemp],2.);
+
+            // simplest interpolation (Hyerin 07/26/22)
+            if (dx2<dx2_min){
+                dx2_min=dx2;
+                i = itemp;
+            }
+        }
+    }
+    
+    // interpolation (11/14/2022) TODO: write a case where indices hit the boundaries of the data file
+    del = (XG[1]-rarr(i))/(rarr(i+1)-rarr(i));
+}
+/**
+ * Get the GIZMO output values at a particular zone
+ * Note this assumes that there are ghost zones!
+ * TODO: Hyerin: maybe combine with get_prim_bondi 
+ */
+KOKKOS_INLINE_FUNCTION void get_prim_gizmo_shell(const GRCoordinates& G, const CoordinateEmbedding& coords, const VariablePack<Real>& P, const VarMap& m_p,
+                                           const Real& gam, const SphBLCoords& bl,  const SphKSCoords& ks, 
+                                           const Real r_shell, const Real rs, Real vacuum_logrho, Real vacuum_log_u_over_rho,
+                                           const GridScalar& rarr, const GridScalar& rhoarr, const GridScalar& Tarr, const GridScalar& vrarr, const int length,
+                                           const int& k, const int& j, const int& i)
+{
+    // Solution constants for velocity prescriptions
+    // Ideally these could be cached but preformance isn't an issue here
+    Real mdot = 1.; // mdot and rs defined arbitrarily
+    Real n = 1. / (gam - 1.);
+    Real uc = sqrt(mdot / (2. * rs));
+    Real Vc = -sqrt(pow(uc, 2) / (1. - 3. * pow(uc, 2)));
+    Real Tc = -n * pow(Vc, 2) / ((n + 1.) * (n * pow(Vc, 2) - 1.));
+    Real C1 = uc * pow(rs, 2) * pow(Tc, n);
+    Real C2 = pow(1. + (1. + n) * Tc, 2) * (1. - 2. * mdot / rs + pow(C1, 2) / (pow(rs, 4) * pow(Tc, 2 * n)));
+
+    Real smallrho=pow(10.,vacuum_logrho); // pow(10.,-4.);
+    Real smallu = smallrho*pow(10.,vacuum_log_u_over_rho);
+
+    //Real T = smallu/(smallrho*n);
+
+    //Real rs = 1./sqrt(T); //1000.;
+    GReal Xnative[GR_DIM], Xembed[GR_DIM];
+    G.coord(k, j, i, Loci::center, Xnative);
+    G.coord_embed(k, j, i, Loci::center, Xembed);
+    GReal r = Xembed[1];
+
+    Real rho, u;
+    int itemp;
+    GReal del;
+
+    // Unless we're doing a Schwarzchild problem & comparing solutions,
+    // be a little cautious about initializing the Ergosphere zones
+    if (ks.a > 0.1 && r < 2) return;
+
+    Real T = get_T(r, C1, C2, n, rs);
+    Real ur = -C1 / (pow(T, n) * pow(r, 2));
+    //Real ucon_bl[GR_DIM];
+    //ucon_bl[0] = 0.;
+    //ucon_bl[2] = 0.;
+    //ucon_bl[3] = 0.;
+    Real ucon_bl[GR_DIM] = {0, 0, 0, 0};
+    if (r<r_shell*0.9){
+        rho = smallrho;
+        u = smallu;
+        ucon_bl[1] = ur;
+    } else {
+        XtoindexGizmo(Xembed, rarr, length, itemp, del);
+        // linear interpolation
+        if (del < 0 ) { // when r is smaller than GIZMO's range
+            del = 0; // just copy over the smallest r values
+        }
+        rho = rhoarr(itemp)*(1.-del)+rhoarr(itemp+1)*del;
+        u = rho*(Tarr(itemp)*(1.-del)+Tarr(itemp+1)*del)*n;
+        //ucon_bl[1] = 0.; // 10/23/2022 test zero velocity for the bondi shell
+    }
+
+    // Set u^t to make u^r a 4-vector
+    Real gcov_bl[GR_DIM][GR_DIM];
+    bl.gcov_embed(Xembed, gcov_bl);
+    set_ut(gcov_bl, ucon_bl);
+
+    // Then transform that 4-vector to KS, then to native
+    Real ucon_ks[GR_DIM], ucon_mks[GR_DIM];
+    ks.vec_from_bl(Xembed, ucon_bl, ucon_ks);
+    coords.con_vec_to_native(Xnative, ucon_ks, ucon_mks);
+
+    // Convert native 4-vector to primitive u-twiddle, see Gammie '04
+    Real gcon[GR_DIM][GR_DIM], u_prim[NVEC];
+    G.gcon(Loci::center, j, i, gcon);
+    fourvel_to_prim(gcon, ucon_mks, u_prim);
+
+    P(m_p.RHO, k, j, i) = rho;
+    P(m_p.UU, k, j, i) = u;
+    P(m_p.U1, k, j, i) = u_prim[0];
+    P(m_p.U2, k, j, i) = u_prim[1];
+    P(m_p.U3, k, j, i) = u_prim[2];
+}

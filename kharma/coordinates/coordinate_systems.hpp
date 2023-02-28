@@ -111,8 +111,9 @@ class SphKSCoords {
         // BH Spin is a property of KS
         const GReal a;
         const bool spherical = true;
+        const bool ext_g; // added by Hyerin (02/27/23)
 
-        KOKKOS_FUNCTION SphKSCoords(GReal spin): a(spin) {};
+        KOKKOS_FUNCTION SphKSCoords(GReal spin, bool external_gravity): a(spin), ext_g(external_gravity) {};
 
         KOKKOS_INLINE_FUNCTION void gcov_embed(const GReal Xembed[GR_DIM], Real gcov[GR_DIM][GR_DIM]) const
         {
@@ -122,6 +123,11 @@ class SphKSCoords {
             const GReal cos2 = m::pow(cos(th), 2);
             const GReal sin2 = m::pow(sin(th), 2);
             const GReal rho2 = r*r + a*a*cos2;
+            
+            // (Hyerin 11/13/22) test
+            const GReal A = 1.46797639*m::pow(10.,-8);
+            const GReal B = 1.29411117;
+            const GReal Phi_g = (A/(B-1.)) * (m::pow(r,B-1.)-m::pow(2,B-1.));
 
             gcov[0][0] = -1. + 2.*r/rho2;
             gcov[0][1] = 2.*r/rho2;
@@ -142,6 +148,15 @@ class SphKSCoords {
             gcov[3][1] = -a*sin2*(1. + 2.*r/rho2);
             gcov[3][2] = 0.;
             gcov[3][3] = sin2*(rho2 + a*a*sin2*(1. + 2.*r/rho2));
+
+            // Hyerin TODO: add an error when spin != 0
+            if (ext_g) {
+                if (a>0) printf("WARNING: External gravity is not compatible with nonzero spin! \n");
+                gcov[0][0] -= 2. * Phi_g;
+                gcov[0][1] -= 2. * Phi_g;
+                gcov[1][0] -= 2. * Phi_g;
+                gcov[1][1] -= 2. * Phi_g;
+            }
         }
 
         // For converting from BL
@@ -154,6 +169,15 @@ class SphKSCoords {
             trans[0][1] = 2.*r/(r*r - 2.*r + a*a);
             trans[3][1] = a/(r*r - 2.*r + a*a);
 
+            // external gravity from GIZMO
+            const GReal A = 1.46797639*m::pow(10.,-8);
+            const GReal B = 1.29411117;
+            const GReal Phi_g = (A/(B-1.)) * (m::pow(r,B-1.)-m::pow(2,B-1.));
+
+            if (ext_g) {
+                trans[0][1] = (2./r - 2.*Phi_g)/(1. - 2./r + 2.*Phi_g);
+            }
+
             gzero(vcon);
             DLOOP2 vcon[mu] += trans[mu][nu]*vcon_bl[nu];
         }
@@ -165,6 +189,15 @@ class SphKSCoords {
             DLOOP2 rtrans[mu][nu] = (mu == nu);
             rtrans[0][1] = 2.*r/(r*r - 2.*r + a*a);
             rtrans[3][1] = a/(r*r - 2.*r + a*a);
+
+            // external gravity from GIZMO
+            const GReal A = 1.46797639*m::pow(10.,-8);
+            const GReal B = 1.29411117;
+            const GReal Phi_g = (A/(B-1.)) * (m::pow(r,B-1.)-m::pow(2,B-1.));
+            
+            if (ext_g) {
+                rtrans[0][1] = (2./r - 2.*Phi_g)/(1. - 2./r + 2.*Phi_g);
+            }
             invert(&rtrans[0][0], &trans[0][0]);
 
             gzero(vcon);
@@ -186,8 +219,9 @@ class SphBLCoords {
         // BH Spin is a property of BL
         const GReal a;
         const bool spherical = true;
+        const bool ext_g; // added by Hyerin (11/13/22)
 
-        KOKKOS_FUNCTION SphBLCoords(GReal spin): a(spin) {}
+        KOKKOS_FUNCTION SphBLCoords(GReal spin, bool external_gravity): a(spin), ext_g(external_gravity) {}
 
         KOKKOS_INLINE_FUNCTION void gcov_embed(const GReal Xembed[GR_DIM], Real gcov[GR_DIM][GR_DIM]) const
         {
@@ -201,6 +235,11 @@ class SphBLCoords {
             // TODO this and gcov_embed for KS should look more similar...
             const GReal mmu = 1. + a2*cth*cth/r2; // mu is taken as an index
 
+            // (Hyerin 11/13/22) test
+            const GReal A = 1.46797639*m::pow(10.,-8);
+            const GReal B = 1.29411117;
+            const GReal Phi_g = (A/(B-1.)) * (m::pow(r,B-1.)-m::pow(2,B-1.));
+
             gzero2(gcov);
             gcov[0][0]  = -(1. - 2./(r*mmu));
             gcov[0][3]  = -2.*a*s2/(r*mmu);
@@ -208,6 +247,13 @@ class SphBLCoords {
             gcov[2][2]   = r2*mmu;
             gcov[3][0]  = -2.*a*s2/(r*mmu);
             gcov[3][3]   = s2*(r2 + a2 + 2.*a2*s2/(r*mmu));
+
+            // Hyerin TODO: add an error when spin != 0 
+            if (ext_g) {
+                if (a>0) printf("WARNING: External gravity is not compatible with nonzero spin! \n");
+                gcov[0][0] -= 2. * Phi_g;
+                gcov[1][1] *= (1. - 2./r + a2/r2) / (1. - 2./r + 2.*Phi_g);
+            }
         }
 
         // TODO vec to/from ks, put guaranteed ks/bl fns into embedding

@@ -71,8 +71,9 @@ TaskStatus InitializeFMTorus(MeshBlockData<Real> *rc, ParameterInput *pin)
     const auto& G = pmb->coords;
     const bool use_ks = G.coords.is_ks();
     const GReal a = G.coords.get_a();
-    const SphBLCoords blcoords = SphBLCoords(a);
-    const SphKSCoords kscoords = SphKSCoords(a);
+    const bool ext_g = G.coords.is_ext_g();
+    const SphBLCoords blcoords = SphBLCoords(a, ext_g);
+    const SphKSCoords kscoords = SphKSCoords(a, ext_g);
 
     // Fishbone-Moncrief parameters
     Real l = lfish_calc(a, rmax);

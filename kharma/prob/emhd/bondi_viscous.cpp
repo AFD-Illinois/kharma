@@ -83,7 +83,7 @@ TaskStatus SetBondiViscous(MeshBlockData<Real> *rc, IndexDomain domain, bool coa
     // Just the X1 right boundary
     GRCoordinates G        = pmb->coords;
     SphKSCoords ks         = mpark::get<SphKSCoords>(G.coords.base);
-    SphBLCoords bl         = SphBLCoords(ks.a);
+    SphBLCoords bl         = SphBLCoords(ks.a, ks.ext_g);
     CoordinateEmbedding cs = G.coords;
 
     // This function currently only handles "outer X1" and "entire" grid domains,

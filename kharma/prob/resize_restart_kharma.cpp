@@ -398,7 +398,7 @@ TaskStatus SetKharmaRestart(MeshBlockData<Real> *rc, IndexDomain domain, bool co
         const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
 
         SphKSCoords kscoord = mpark::get<SphKSCoords>(G.coords.base);
-        SphBLCoords blcoord = SphBLCoords(kscoord.a); //, kscoord.ext_g); // modified (11/15/22)
+        SphBLCoords blcoord = SphBLCoords(kscoord.a, kscoord.ext_g); // modified (11/15/22)
         CoordinateEmbedding coords = G.coords;
 
       

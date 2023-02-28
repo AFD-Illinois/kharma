@@ -146,6 +146,16 @@ class CoordinateEmbedding {
                 return 0.0; //throw std::invalid_argument("BH Spin is not defined for selected coordinate system!");
             }
         }
+        KOKKOS_INLINE_FUNCTION bool is_ext_g() const
+        {
+            if (mpark::holds_alternative<SphKSCoords>(base)) {
+                return mpark::get<SphKSCoords>(base).ext_g;
+            } else if (mpark::holds_alternative<SphBLCoords>(base)) {
+                return mpark::get<SphBLCoords>(base).ext_g;
+            } else {
+                return 0.0; //throw std::invalid_argument("Ext_g is not defined for selected coordinate system!");
+            }
+        }
         KOKKOS_INLINE_FUNCTION bool is_ks() const
         {
             if (mpark::holds_alternative<SphKSCoords>(base)) {
