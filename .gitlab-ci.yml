@@ -4,7 +4,7 @@
 # Build on Nvidia image.
 # Can pretty easily change this out, with changes to build
 # Someday we'll build & push a KHARMA image, then test that
-image: nvcr.io/nvidia/nvhpc:22.11-devel-cuda_multi-rockylinux8
+image: nvcr.io/nvidia/nvhpc:23.1-devel-cuda12.0-rockylinux8
 
 variables:
   OMP_NUM_THREADS: 28
@@ -14,9 +14,17 @@ variables:
   OMPI_ALLOW_RUN_AS_ROOT: 1
   OMPI_ALLOW_RUN_AS_ROOT_CONFIRM: 1
   GIT_SUBMODULE_STRATEGY: recursive
+  HTTP_PROXY: http://proxyout.lanl.gov:8080
+  http_proxy: http://proxyout.lanl.gov:8080
+  HTTPS_PROXY: http://proxyout.lanl.gov:8080
+  https_proxy: http://proxyout.lanl.gov:8080
+  NO_PROXY: lanl.gov,localhost,127.0.0.1,0.0.0.0,::1
+  no_proxy: lanl.gov,localhost,127.0.0.1,0.0.0.0,::1
 
 ### DEFAULT TEST BEHAVIOR ###
 default:
+  tags:
+    - darwin-docker-shared
   # Be default: install pyharm, then run test in cwd
   # For new tests, write one run.sh script which runs/verifies
   # interleaved, and prints a summary of results.
