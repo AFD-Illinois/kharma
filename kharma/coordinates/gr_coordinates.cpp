@@ -82,10 +82,12 @@ GRCoordinates::GRCoordinates(const RegionSize &rs, ParameterInput *pin): Uniform
         base.emplace<CartMinkowskiCoords>(CartMinkowskiCoords());
     } else if (base_str == "spherical_ks" || base_str == "ks") {
         GReal a = pin->GetReal("coordinates", "a");
-        base.emplace<SphKSCoords>(SphKSCoords(a));
+        bool ext_g = pin->GetOrAddBoolean("coordinates", "ext_g", false); //added by Hyerin
+        base.emplace<SphKSCoords>(SphKSCoords(a, ext_g));
     } else if (base_str == "spherical_bl" || base_str == "bl") {
         GReal a = pin->GetReal("coordinates", "a");
-        base.emplace<SphBLCoords>(SphBLCoords(a));
+        bool ext_g = pin->GetOrAddBoolean("coordinates", "ext_g", false); //added by Hyerin
+        base.emplace<SphBLCoords>(SphBLCoords(a, ext_g));
     } else {
         throw std::invalid_argument("Unsupported base coordinates!");
     }

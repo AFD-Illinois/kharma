@@ -401,7 +401,7 @@ TaskStatus SetKharmaRestart(std::shared_ptr<MeshBlockData<Real>> rc, IndexDomain
         const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
 
         SphKSCoords kscoord = mpark::get<SphKSCoords>(G.coords.base);
-        SphBLCoords blcoord = SphBLCoords(kscoord.a); //, kscoord.ext_g); // modified (11/15/22)
+        SphBLCoords blcoord = SphBLCoords(kscoord.a, kscoord.ext_g); // modified (11/15/22)
         CoordinateEmbedding coords = G.coords;
 
       
@@ -435,7 +435,6 @@ TaskStatus SetKharmaRestart(std::shared_ptr<MeshBlockData<Real>> rc, IndexDomain
                     x1_f_device, x2_f_device, x3_f_device, rho_f_device, u_f_device, uvec_f_device, B_f_device,
                     x1_fill_device, x2_fill_device, x3_fill_device, rho_fill_device, u_fill_device, uvec_fill_device, B_fill_device,
                     k, j, i);
-                //GRMHD::p_to_u(G,P,m_p,gam,k,j,i,U,m_u);  //TODO: is this needed? I don't see it in resize_restart.cpp
                 //if (pin->GetOrAddString("b_field", "type", "none") != "none") {
                 //    VLOOP B_host(v, k, j, i) = interp_scalar(G, X, startx, stopx, dx, is_spherical, false, n3tot, n2tot, n1tot, &(B_file[v*block_sz]));
                 //}
@@ -447,7 +446,6 @@ TaskStatus SetKharmaRestart(std::shared_ptr<MeshBlockData<Real>> rc, IndexDomain
                         k, j, i);
             }
         );
-        //if (include_B) B_FluxCT::PtoU(rc,domain); // added for B fields
     }
 
    return TaskStatus::complete;

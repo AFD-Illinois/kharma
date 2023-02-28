@@ -38,8 +38,7 @@
 #include "flux_functions.hpp"
 
 /**
- * Initialization of a Bondi problem with specified sonic point, BH mdot, and horizon radius
- * TODO mdot and rs are redundant and should be merged into one parameter. Uh, no.
+ * Initialization of a Bondi problem with specified sonic point & accretion rate
  */
 TaskStatus InitializeBondi(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin)
 {
@@ -56,6 +55,8 @@ TaskStatus InitializeBondi(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterIn
     // TODO take r_shell
     const Real rin_bondi = pin->GetOrAddReal("bondi", "r_in", rin_bondi_default);
 
+    const bool fill_interior = pin->GetOrAddBoolean("bondi", "fill_interior", false);
+    const bool zero_velocity = pin->GetOrAddBoolean("bondi", "zero_velocity", false);
 
     // Add these to package properties, since they continue to be needed on boundaries
     // TODO Problems need params
@@ -65,6 +66,10 @@ TaskStatus InitializeBondi(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterIn
         pmb->packages.Get("GRMHD")->AddParam<Real>("rs", rs);
     if(! pmb->packages.Get("GRMHD")->AllParams().hasKey("rin_bondi"))
         pmb->packages.Get("GRMHD")->AddParam<Real>("rin_bondi", rin_bondi);
+    if(! pmb->packages.Get("GRMHD")->AllParams().hasKey("fill_interior_bondi"))
+        pmb->packages.Get("GRMHD")->AddParam<Real>("fill_interior_bondi", fill_interior);
+    if(! pmb->packages.Get("GRMHD")->AllParams().hasKey("zero_velocity_bondi"))
+        pmb->packages.Get("GRMHD")->AddParam<Real>("zero_velocity_bondi", zero_velocity);
 
     // Set this problem to control the outer X1 boundary by default
     // remember to disable inflow_check in parameter file!
@@ -80,7 +85,7 @@ TaskStatus InitializeBondi(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterIn
     // This tests that PostInitialize will correctly fill ghost zones with the boundary we set
     SetBondi(rc, IndexDomain::interior);
 
-    if (rin_bondi > pin->GetReal("coordinates", "r_in")) {
+    if (rin_bondi > pin->GetReal("coordinates", "r_in") && !(fill_interior)) {
         // Apply floors to initialize the rest of the domain (regardless of the 'disable_floors' param)
         // Bondi's BL coordinates do not like the EH, so we replace the zeros with something reasonable.
         Floors::ApplyInitialFloors(rc.get(), IndexDomain::interior);
@@ -106,13 +111,15 @@ TaskStatus SetBondi(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain
     const Real rs = pmb->packages.Get("GRMHD")->Param<Real>("rs");
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
     const Real rin_bondi = pmb->packages.Get("GRMHD")->Param<Real>("rin_bondi");
+    const bool fill_interior = pmb->packages.Get("GRMHD")->Param<Real>("fill_interior_bondi");
+    const bool zero_velocity = pmb->packages.Get("GRMHD")->Param<Real>("zero_velocity_bondi");
 
     const EMHD::EMHD_parameters& emhd_params = EMHD::GetEMHDParameters(pmb->packages);
 
     // Just the X1 right boundary
     GRCoordinates G = pmb->coords;
     SphKSCoords ks = mpark::get<SphKSCoords>(G.coords.base);
-    SphBLCoords bl = SphBLCoords(ks.a);
+    SphBLCoords bl = SphBLCoords(ks.a, ks.ext_g); // modified
     CoordinateEmbedding cs = G.coords;
 
     // Solution constants
@@ -133,21 +140,37 @@ TaskStatus SetBondi(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain
     const IndexRange ib = bounds.GetBoundsI(domain);
     const IndexRange jb = bounds.GetBoundsJ(domain);
     const IndexRange kb = bounds.GetBoundsK(domain);
+
     pmb->par_for("bondi_boundary", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
             GReal Xnative[GR_DIM], Xembed[GR_DIM];
             G.coord(k, j, i, Loci::center, Xnative);
             G.coord_embed(k, j, i, Loci::center, Xembed);
             GReal r = Xembed[1];
-            // Unless we're doing a Schwarzchild problem & comparing solutions,
-            // be a little cautious about initializing the Ergosphere zones
-            if (r < rin_bondi) return;
+
+            // Either fill the interior region with the innermost analytically computed value,
+            // or let it be filled with floor values later
+            if (r < rin_bondi) {
+                if (fill_interior) {
+                    // values at infinity; would need modifications below
+                    /*
+                    Real Tinf = (m::sqrt(C2) - 1.) / (n + 1); // temperature at infinity
+                    rho = m::pow(Tinf,n);
+                    u = rho * Tinf * n;
+                    */
+                    // just match at the rin_bondi value
+                    r = rin_bondi;
+                } else {
+                    return;
+                }
+            }
 
             const Real T = get_T(r, C1, C2, n, rs);
             const Real Tn = m::pow(T, n);
-            const Real ur = -C1 / (Tn * r * r);
             const Real rho = Tn / Kn;
             const Real u = rho * T * n;
+
+            const Real ur = (zero_velocity) ? 0. : -C1 / (Tn * r * r);
 
             // Set u^t to make u^r a 4-vector
             Real ucon_bl[GR_DIM] = {0, ur, 0, 0};
@@ -165,13 +188,13 @@ TaskStatus SetBondi(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain
             G.gcon(Loci::center, j, i, gcon);
             fourvel_to_prim(gcon, ucon_mks, u_prim);
 
-            // This used to have NaN guards. No point, as for optimized builds they are ignored (!)
-            // Now we just avoid initializing near the EH
-            P(m_p.RHO, k, j, i) = rho;
-            P(m_p.UU, k, j, i) = u;
-            P(m_p.U1, k, j, i) = u_prim[0];
-            P(m_p.U2, k, j, i) = u_prim[1];
-            P(m_p.U3, k, j, i) = u_prim[2];
+            // Note that NaN guards, including these, are ignored (!) under -ffast-math flag.
+            // Thus we stay away from initializing at EH where this could happen
+            if(!isnan(rho)) P(m_p.RHO, k, j, i) = rho;
+            if(!isnan(u)) P(m_p.UU, k, j, i) = u;
+            if(!isnan(u_prim[0])) P(m_p.U1, k, j, i) = u_prim[0];
+            if(!isnan(u_prim[1])) P(m_p.U2, k, j, i) = u_prim[1];
+            if(!isnan(u_prim[2])) P(m_p.U3, k, j, i) = u_prim[2];
         }
     );
 

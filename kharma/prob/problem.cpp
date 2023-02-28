@@ -56,7 +56,7 @@
 #include "mhdmodes.hpp"
 #include "orszag_tang.hpp"
 #include "shock_tube.hpp"
-#include "hubble.hpp"
+#include "gizmo.hpp"
 // EMHD problem headers
 #include "emhd/anisotropic_conduction.hpp"
 #include "emhd/emhdmodes.hpp"
@@ -136,6 +136,8 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
         status = ReadIharmRestart(rc, pin);
     } else if (prob == "resize_restart_kharma") { // Hyerin
         status = ReadKharmaRestart(rc, pin);
+    } else if (prob == "gizmo") {
+        status = InitializeGIZMO(rc, pin);
     }
 
     // If we didn't initialize a problem, yell

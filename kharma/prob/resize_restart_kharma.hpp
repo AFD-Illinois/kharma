@@ -71,31 +71,6 @@ KOKKOS_INLINE_FUNCTION void Xtoindex(const GReal XG[GR_DIM],
     del[3] = 0.;// (phi   - ((k) * dx[3] + startx[3])) / dx[3];
 }
 
-
-KOKKOS_INLINE_FUNCTION void convert_to_utwiddle(const GRCoordinates& G, const CoordinateEmbedding& coords,
-                                           const SphBLCoords& bl,  const SphKSCoords& ks, 
-                                           const int& k, const int& j, const int& i, Real ucon_bl[GR_DIM], Real u_prim[NVEC])
-{
-    GReal Xnative[GR_DIM], Xembed[GR_DIM]; //
-    G.coord(k, j, i, Loci::center, Xnative);
-    G.coord_embed(k, j, i, Loci::center, Xembed);
-
-    // Set u^t to make u^r a 4-vector
-    Real gcov_bl[GR_DIM][GR_DIM];
-    bl.gcov_embed(Xembed, gcov_bl);
-    set_ut(gcov_bl, ucon_bl);
-
-    // Then transform that 4-vector to KS, then to native
-    Real ucon_ks[GR_DIM], ucon_mks[GR_DIM];
-    ks.vec_from_bl(Xembed, ucon_bl, ucon_ks);
-    coords.con_vec_to_native(Xnative, ucon_ks, ucon_mks);
-
-    Real gcon[GR_DIM][GR_DIM];
-    G.gcon(Loci::center, j, i, gcon); //TODO: this causes the memory issue!!
-    fourvel_to_prim(gcon, ucon_mks, u_prim);
-
-}
-
 KOKKOS_INLINE_FUNCTION void get_prim_restart_kharma(const GRCoordinates& G, const CoordinateEmbedding& coords, const VariablePack<Real>& P, const VarMap& m_p,
                     const SphBLCoords& bl,  const SphKSCoords& ks, 
                     const Real fx1min, const Real fx1max, const Real fnghost, const bool should_fill, const bool is_spherical, const bool include_B,
@@ -142,7 +117,7 @@ KOKKOS_INLINE_FUNCTION void get_prim_restart_kharma(const GRCoordinates& G, cons
                         
         Real ur = -C1 / (m::pow(T, n) * m::pow(r, 2));
         Real ucon_bl[GR_DIM] = {0, ur, 0, 0};
-        convert_to_utwiddle(G,coords,bl,ks,k,j,i,ucon_bl,u_prim);
+        bl_fourvel_to_prim(G,coords,bl,ks,k,j,i,ucon_bl,u_prim);
         
    }
     // HyerinTODO: if fname_fill exists and smaller.

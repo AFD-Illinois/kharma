@@ -67,15 +67,16 @@ TaskStatus InitializeFMTorus(std::shared_ptr<MeshBlockData<Real>>& rc, Parameter
     const int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
 
     // Get coordinate systems
-    // Different coordinate systems do not inherit from a base
-    // class (see coordinate_systems.hpp, coordinate_embedding.hpp)
-    // so we can't cast or assign them like you'd expect.
-    // Instead we just create copies of each one we'll need.
-    const auto& G              = pmb->coords;
-    const bool use_ks          = G.coords.is_ks();
-    const GReal a              = G.coords.get_a();
-    const SphBLCoords blcoords = SphBLCoords(a);
-    const SphKSCoords kscoords = SphKSCoords(a);
+    // G clearly holds a reference to an existing system G.coords.base,
+    // but we don't know if it's KS or BL coordinates
+    // Since we can't create a system and assign later, we just
+    // rebuild copies of both based on the BH spin "a"
+    const auto& G = pmb->coords;
+    const bool use_ks = G.coords.is_ks();
+    const GReal a = G.coords.get_a();
+    const bool ext_g = G.coords.is_ext_g();
+    const SphBLCoords blcoords = SphBLCoords(a, ext_g);
+    const SphKSCoords kscoords = SphKSCoords(a, ext_g);
 
     // Fishbone-Moncrief parameters
     Real l = lfish_calc(a, rmax);

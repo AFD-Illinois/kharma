@@ -221,3 +221,26 @@ KOKKOS_INLINE_FUNCTION void fourvel_to_prim(const Real gcon[GR_DIM][GR_DIM], con
     u_prim[1] = ucon[2] + ucon[0] * alpha2 * gcon[0][2];
     u_prim[2] = ucon[3] + ucon[0] * alpha2 * gcon[0][3];
 }
+
+KOKKOS_INLINE_FUNCTION void bl_fourvel_to_prim(const GRCoordinates& G, const CoordinateEmbedding& coords,
+                                           const SphBLCoords& bl,  const SphKSCoords& ks, 
+                                           const int& k, const int& j, const int& i, Real ucon_bl[GR_DIM], Real u_prim[NVEC])
+{
+    GReal Xnative[GR_DIM], Xembed[GR_DIM]; //
+    G.coord(k, j, i, Loci::center, Xnative);
+    G.coord_embed(k, j, i, Loci::center, Xembed);
+
+    // Set u^t to make u^r a 4-vector
+    Real gcov_bl[GR_DIM][GR_DIM];
+    bl.gcov_embed(Xembed, gcov_bl);
+    set_ut(gcov_bl, ucon_bl);
+
+    // Then transform that 4-vector to KS, then to native
+    Real ucon_ks[GR_DIM], ucon_mks[GR_DIM];
+    ks.vec_from_bl(Xembed, ucon_bl, ucon_ks);
+    coords.con_vec_to_native(Xnative, ucon_ks, ucon_mks);
+
+    Real gcon[GR_DIM][GR_DIM];
+    G.gcon(Loci::center, j, i, gcon); //TODO: this causes the memory issue!!
+    fourvel_to_prim(gcon, ucon_mks, u_prim);
+}

@@ -68,6 +68,7 @@ KOKKOS_INLINE_FUNCTION Real get_Tfunc(const Real T, const GReal r, const Real C1
     const Real B = C1 / (r * r * m::pow(T, n));
     return A * A * (1. - 2. / r + B * B) - C2;
 }
+
 KOKKOS_INLINE_FUNCTION Real get_T(const GReal r, const Real C1, const Real C2, const Real n, const Real rs)
 {
     Real rtol = 1.e-12;
@@ -86,6 +87,7 @@ KOKKOS_INLINE_FUNCTION Real get_T(const GReal r, const Real C1, const Real C2, c
     f0 = get_Tfunc(T0, r, C1, C2, n);
     T1 = Tmax;
     f1 = get_Tfunc(T1, r, C1, C2, n);
+    // TODO(BSP) find a way to throw/communicate this
     //if (f0 * f1 > 0) throw std::runtime_error("Cannot solve temperature!");
 
     Th = (T0 + T1) / 2.; // a simple bisection method which is stable and fast
