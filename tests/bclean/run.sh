@@ -5,19 +5,20 @@
 
 # User specified values here
 KERR=false
+bz=5e-3
 DIM=3
 NZONES=2 #7
 BASE=8
-NRUNS=2
-START_RUN=0
-DRTAG="bondi_multizone_021823_sane_b_clean"
+NRUNS=100
+START_RUN=0 # if this is not 0, then update start_time, out_to_in, iteration, r_out, r_in to values that you are re-starting from
+DRTAG="bondi_multizone_030423_bclean_${bz}_flr"
 
 # Set paths
 KHARMADIR=../..
 PDR="/n/holylfs05/LABS/bhi/Users/hyerincho/grmhd/" ## parent directory
 DR="${PDR}data/${DRTAG}"
-#parfilename="../../kharma/pars/bondi_multizone/bondi_multizone_00000.par" # parameter file
-parfilename="${PDR}/sane.par" # parameter file
+parfilename="${PDR}/kharma/pars/bondi_multizone/bondi_multizone_00000.par" # parameter file
+#parfilename="${PDR}/sane_save.par" # parameter file
 
 # other values determined automatically
 turn_around=$(($NZONES-1))
@@ -39,7 +40,7 @@ fi
 for (( VAR=$START_RUN; VAR<$NRUNS; VAR++ ))
 do
   args=()
-  echo "iter $iteration, $VAR : t = $start_time, r_out = $r_out, r_in = $r_in"
+  echo "${DRTAG}: iter $iteration, $VAR : t = $start_time, r_out = $r_out, r_in = $r_in"
   logruntime=`echo "scale=20; l($r_out)*3./2-l(1.+$r_out/100000)/2." | bc -l` # round to an integer for the free-fall time (cs^2=0.01 should be updated from the desired rs value) # GIZMO
   runtime=`echo "scale=0; e($logruntime)+1" | bc -l`
   log_u_over_rho=-5.2915149 # test same vacuum conditions as r_shell when (rs=1e2.5)
@@ -49,7 +50,7 @@ do
   
   # set problem type and cleanup
   if [ $VAR -eq 0 ]; then
-    prob="torus" #"bondi"
+    prob="bondi" #"torus" #
     init_c=0
   else
     prob="resize_restart_kharma"
@@ -65,7 +66,8 @@ do
   
   # output time steps
   output0_dt=$((${runtime}/100*10))
-  output1_dt=$((${runtime}/20*10))
+  #output1_dt=$((${runtime}/20*10))
+  output1_dt=$((${runtime}/50*10))
   output2_dt=$((${runtime}/1000*10))
   
   # dt, fname, fname_fill
@@ -100,21 +102,26 @@ do
   out_fn="${PDR}/logs/${DRTAG}/log_multizone$(printf %05d ${VAR})_out"
   err_fn="${PDR}/logs/${DRTAG}/log_multizone$(printf %05d ${VAR})_err"
 
-  srun --mpi=pmix ${PDR}/kharma_fork/kharma.cuda -i ${parfilename} \
+  srun --mpi=pmix ${PDR}/kharma.cuda -i ${parfilename} \
+                                    parthenon/mesh/nx1=64 parthenon/mesh/nx2=64 parthenon/mesh/nx3=64 \
+                                    parthenon/meshblock/nx1=32 parthenon/meshblock/nx2=64 parthenon/meshblock/nx3=32 \
                                     parthenon/job/problem_id=$prob \
-                                    parthenon/time/tlim=${start_time} \
-                                    coordinates/r_in=${r_in} coordinates/r_out=${r_out} \
+                                    parthenon/time/tlim=${start_time}\
+                                    coordinates/r_in=${r_in} coordinates/r_out=${r_out}  coordinates/a=$spin coordinates/hslope=1 coordinates/transform=mks \
                                     bondi/vacuum_logrho=-8.2014518 bondi/vacuum_log_u_over_rho=${log_u_over_rho} \
+                                    floors/disable_floors=false floors/bsq_over_rho_max=100 floors/u_over_rho_max=2 \
+                                    b_field/type=vertical b_field/solver=flux_ct b_field/bz=${bz} \
                                     b_field/fix_flux_x1=0 b_field/initial_cleanup=$init_c \
+                                    b_cleanup/rel_tolerance=1.e-8 \
+                                    resize_restart/base=$BASE resize_restart/nzone=$NZONES resize_restart/iteration=$iteration\
                                     parthenon/output0/dt=$output0_dt \
                                     parthenon/output1/dt=$output1_dt \
                                     parthenon/output2/dt=$output2_dt \
                                     ${args[@]} \
                                     -d ${data_dir} 1> ${out_fn} 2>${err_fn}
-                                    #parthenon/mesh/nx1=64 parthenon/mesh/nx2=64 parthenon/mesh/nx3=64 \
-                                    #parthenon/meshblock/nx1=32 parthenon/meshblock/nx2=32 parthenon/meshblock/nx3=64 \
-                                    #coordinates/r_in=${r_in} coordinates/r_out=${r_out} coordinates/a=$spin \
-                                    #b_field/type=vertical b_field/solver=flux_ct \
+                                    # nlim=10000 for 1e-3  parthenon/time/nlim=$((10000*($VAR+1))) 
+                                    #b_field/fix_flux_x1=1 b_field/initial_cleanup=0 \
+                                    #coordinates/transform=mks coordinates/hslope=1 \ this, for some reason does not work for b cleaning?
 
   if [ $VAR -ne 0 ]; then
     if [ $(($VAR % ($NZONES-1))) -eq 0 ]; then
