@@ -69,6 +69,7 @@ KOKKOS_INLINE_FUNCTION void Xtoindex(const GReal XG[GR_DIM],
     del[1] = 0.; //(XG[1] - ((i) * dx[1] + startx[1])) / dx[1];
     del[2] = 0.;//(XG[2] - ((j) * dx[2] + startx[2])) / dx[2];
     del[3] = 0.;// (phi   - ((k) * dx[3] + startx[3])) / dx[3];
+    if (m::abs(dx2_min/m::pow(XG[1],2.))>1.e-8) printf("Xtoindex: dx2 pretty large = %g at r= %g \n",dx2_min, XG[1]);
 }
 
 KOKKOS_INLINE_FUNCTION void get_prim_restart_kharma(const GRCoordinates& G, const CoordinateEmbedding& coords, const VariablePack<Real>& P, const VarMap& m_p,
@@ -100,7 +101,8 @@ KOKKOS_INLINE_FUNCTION void get_prim_restart_kharma(const GRCoordinates& G, cons
         GReal r = Xembed[1];
   
         // copy over smallest radius states
-        Xtoindex(X, x1, x2, x3, length, iblocktemp, itemp, jtemp, ktemp, del);
+        //Xtoindex(X, x1, x2, x3, length, iblocktemp, itemp, jtemp, ktemp, del);
+        iblocktemp=0; // assuming always this block contains smallest radii?
         itemp = fnghost; // in order to copy over the physical region, not the ghost region
         // (02/08/23) instead in order to set the vacuum homogeneous instead of having theta phi dependence, set j and k values
         jtemp = fnghost;

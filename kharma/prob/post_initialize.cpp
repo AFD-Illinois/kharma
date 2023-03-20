@@ -272,6 +272,11 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart)
     // logic about parsing whether to clean is there
     if (pkgs.count("B_Cleanup")) {
         B_Cleanup::CleanupDivergence(md);
+        // Hyerin (03/02/23) after cleaning, floors should be applied again
+        for (auto &pmb : pmesh->block_list) {
+            auto rc = pmb->meshblock_data.Get();
+            Floors::ApplyFloors(rc.get(), IndexDomain::entire);
+        }
     }
 
     Flag("Post-initialization finished");
