@@ -306,7 +306,7 @@ int CountPFlags(MeshData<Real> *md, IndexDomain domain, int verbose)
 
 int CountFFlags(MeshData<Real> *md, IndexDomain domain, int verbose)
 {
-    Flag("Couting floor hits");
+    Flag("Counting floor hits");
     int nflags = 0;
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
 

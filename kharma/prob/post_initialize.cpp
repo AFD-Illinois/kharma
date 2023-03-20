@@ -224,6 +224,11 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart, b
         // Clean field divergence across the whole grid
         // Includes boundary syncs
         B_Cleanup::CleanupDivergence(md);
+        // Hyerin (03/02/23) after cleaning, floors should be applied again
+        for (auto &pmb : pmesh->block_list) {
+            auto rc = pmb->meshblock_data.Get();
+            Floors::ApplyFloors(rc.get(), IndexDomain::entire);
+        }
     }
 
     if (MPIRank0()) {
