@@ -363,12 +363,31 @@ TaskStatus FixX1Flux(MeshData<Real> *md)
     
     Real x1min = pmb0->packages.Get("GRMHD")->Param<Real>("x1min"); //Hyerin (01/31/23)
 
+    // (03/08/23) places to store
+    //const int n1 = pmb0->cellbounds.ncellsi(IndexDomain::entire);
+    //const int n2 = pmb0->cellbounds.ncellsj(IndexDomain::entire);
+    //const int n3 = pmb0->cellbounds.ncellsk(IndexDomain::entire);
+    //GridScalar B_F_X2_V1("B_F_X2_V1", n3, n2, n1);  // for B_F.flux(X2DIR,V1,k,j,i)
+    //GridScalar B_F_X3_V1("B_F_X3_V1", n3, n2, n1);  // for B_F.flux(X3DIR,V1,k,j,i)
+    //auto B_F_X2_V1_host = B_F_X2_V1.GetHostMirror();
+    //auto B_F_X3_V1_host = B_F_X3_V1.GetHostMirror();
+    //auto B_F_host = x2_fill_device.GetHostMirror();
+    GridVector F1, F2, F3;
+
     // Assuming the fluxes through the pole are 0,
     // make sure the polar EMFs are 0 when performing fluxCT
     // TODO only invoke one kernel? We avoid invocation except on boundaries anyway
     for (auto &pmb : pmesh->block_list) {
         auto& rc = pmb->meshblock_data.Get();
         auto& B_F = rc->PackVariablesAndFluxes(std::vector<std::string>{"cons.B"});
+
+        // (03/08/23)
+        F1 = rc->Get("cons.B").flux[X1DIR]; // B_F.flux(X1DIR,v,k,j,i)
+        F2 = rc->Get("cons.B").flux[X2DIR]; // B_F.flux(X2DIR,v,k,j,i)
+        F3 = rc->Get("cons.B").flux[X3DIR]; // B_F.flux(X3DIR,v,k,j,i)
+        auto F1_host=F1.GetHostMirrorAndCopy();
+        auto F2_host=F2.GetHostMirrorAndCopy();
+        auto F3_host=F3.GetHostMirrorAndCopy();
         
         // update the j and k bounds (Hyerin 02/21/23)
         js_new = js+1; //js-1;
@@ -381,18 +400,25 @@ TaskStatus FixX1Flux(MeshData<Real> *md)
         }
         if (pmb->boundary_flag[BoundaryFace::outer_x2] == BoundaryFlag::user) {
             out_x2 = true;
-            je_new = je_e;
+            je_new = je; //_e;
         }
+
+        //printf("HYERIN: test F1V2 %g\n",F1_host(V2,30,30,is));
+        //pmb->par_for("test", 30,30,30,30,is,is,
+        //    KOKKOS_LAMBDA_3D {
+        //        printf("HYERIN: test B_F(X1DIR,V2) %g, F1V2 %g \n",B_F.flux(X1DIR,V2,k,j,i),F1(V2,k,j,i));
+        //    }
+        //);
 
         //added by Hyerin (12/23/22) TODO: it has to ask if x2 boundary is inner_x2 or outer_x2 and update the jj bounds
         if ((pmb->boundary_flag[BoundaryFace::inner_x1] == BoundaryFlag::user) && (x1min>1) ) // only apply fix flux for inner bc when it is far from the EH
         {   
             for (int ktemp = ks_all+2; ktemp <=ke_all; ktemp++) {
               for (int jtemp = js_new; jtemp <= je_new; jtemp++) {
-            pmb->par_for("fix_flux_b_l", ktemp, ktemp, jtemp, jtemp, is, is, // Hyerin (02/20/23) for 3rd prescription, sequential
+            //pmb->par_for("fix_flux_b_l", ktemp, ktemp, jtemp, jtemp, is, is, // Hyerin (02/20/23) for 3rd prescription, sequential
             //pmb->par_for("fix_flux_b_l", ks_all+2, ke_all, js_new, je_new, is, is, // Hyerin (02/20/23) for 3rd prescription
             //pmb->par_for("fix_flux_b_l", ks_all+1, ke_all+1, js_all+1, je_all+1, is, is, // Hyerin (12/28/22) for 1st & 2nd prescription
-                KOKKOS_LAMBDA_3D {
+               // KOKKOS_LAMBDA_3D {
                     /* 1st prescription to make the X1DIR flux = 0
                     B_F.flux(X2DIR, V1, k, j, i-1) = -B_F.flux(X2DIR, V1, k, j, is);
                     if (ndim > 1) VLOOP B_F.flux(X1DIR, V1+v, k, j, i) = 0;
@@ -404,61 +430,48 @@ TaskStatus FixX1Flux(MeshData<Real> *md)
                     //
                     // (02/20/23) 3rd prescription that is similar to 2nd prescription but not local and nonzero effective flux 
                     if (ndim > 1) {
-                        B_F.flux(X2DIR, V1, k, j, i-1) = -B_F.flux(X2DIR, V1, k, j, is) + B_F.flux(X1DIR, V2, k, j, is) - B_F.flux(X1DIR, V2, k, j-2, is) + B_F.flux(X2DIR, V1, k, j-1, is) + B_F.flux(X2DIR, V1, k, j-1, is-1);
+                        //B_F.flux(X2DIR, V1, k, j, i-1) = -B_F.flux(X2DIR, V1, k, j, is) + B_F.flux(X1DIR, V2, k, j, is) - B_F.flux(X1DIR, V2, k, j-2, is) + B_F.flux(X2DIR, V1, k, j-1, is) + B_F.flux(X2DIR, V1, k, j-1, is-1);
+                        F2_host(V1, ktemp, jtemp, is-1) = -F2_host(V1, ktemp, jtemp, is) + F1_host(V2, ktemp, jtemp, is) - F1_host(V2, ktemp, jtemp-2, is) + F2_host(V1, ktemp, jtemp-1, is) + F2_host(V1, ktemp, jtemp-1, is-1);
                     }
                     if (ndim > 2) {
-                        B_F.flux(X3DIR, V1, k, j, i-1) = -B_F.flux(X3DIR, V1, k, j, is) + B_F.flux(X1DIR, V3, k, j, is) - B_F.flux(X1DIR, V3, k-2, j, is) + B_F.flux(X3DIR, V1, k-1, j, is) + B_F.flux(X3DIR, V1, k-1, j, is-1);
+                        //B_F.flux(X3DIR, V1, k, j, i-1) = -B_F.flux(X3DIR, V1, k, j, is) + B_F.flux(X1DIR, V3, k, j, is) - B_F.flux(X1DIR, V3, k-2, j, is) + B_F.flux(X3DIR, V1, k-1, j, is) + B_F.flux(X3DIR, V1, k-1, j, is-1);
+                        F3_host(V1, ktemp, jtemp, is-1) = -F3_host(V1, ktemp, jtemp, is) + F1_host(V3, ktemp, jtemp, is) - F1_host(V3, ktemp-2, jtemp, is) + F3_host(V1, ktemp-1, jtemp, is) + F3_host(V1, ktemp-1, jtemp, is-1);
                     }
 
-                    if (in_x2 && (j==js)) {// (corners are tricky so let's just initialize)
-                        B_F.flux(X2DIR, V1,k,j,i-1) = -B_F.flux(X1DIR,V2,k,j,i+1) -B_F.flux(X1DIR,V2,k,j-1,i+1);
-                        B_F.flux(X2DIR, V1,k,j,i) = -0.5*B_F.flux(X2DIR,V1,k,j,i-1);
+                    //if (in_x2 && (j==js)) {// (corners are tricky so let's just initialize)
+                    if (in_x2 && (jtemp==js)) {// (corners are tricky so let's just initialize)
+                        //B_F.flux(X2DIR, V1,k,j,i-1) = -B_F.flux(X1DIR,V2,k,j,i+1) -B_F.flux(X1DIR,V2,k,j-1,i+1);
+                        F2_host(V1,ktemp,jtemp,is-1) = -F1_host(V2,ktemp,jtemp,is+1) -F1_host(V2,ktemp,jtemp-1,is+1);
+                        //B_F.flux(X2DIR, V1,k,j,i) = -0.5*B_F.flux(X2DIR,V1,k,j,i-1);
+                        F2_host(V1,ktemp,jtemp,is) = -0.5*F2_host(V1,ktemp,jtemp,is-1);
                     }
-                    if (out_x2 && (j==je_e)) {// (corners are tricky)
+                    //if (out_x2 && (j==je_e)) {// (corners are tricky)
+                    if (out_x2 && (jtemp==je_e)) {// (corners are tricky) ( so maybe just don't touch it...? (03/12/23)
                         //B_F.flux(X2DIR, V1, k, j, i) = -B_F.flux(X2DIR, V1, k, je, is) - B_F.flux(X2DIR, V1, k, je, is-1) 
                         //                                +B_F.flux(X1DIR, V2, k, je, is) + B_F.flux(X1DIR, V2, k, je-1, is);
                         //B_F.flux(X2DIR, V1, k, j, i-1) = -2.*B_F.flux(X1DIR, V2, k, je-1, is) -B_F.flux(X1DIR, V2, k, je, is) + B_F.flux(X1DIR, V2, k, je+1, is)
                         //                                +2.*B_F.flux(X2DIR, V1, k, je, is) + 2.*B_F.flux(X2DIR, V1, k, je, is-1);
-                        B_F.flux(X1DIR,V2,k,j-1,i) = -B_F.flux(X1DIR,V2,k,je-1,i)+B_F.flux(X2DIR,V1,k,je,i)+B_F.flux(X2DIR,V1,k,je,i-1);
-                        B_F.flux(X1DIR,V2,k,j,i) = -B_F.flux(X1DIR,V2,k,je,i);
+                        //B_F.flux(X1DIR,V2,k,j-1,i) = -B_F.flux(X1DIR,V2,k,je-1,i)+B_F.flux(X2DIR,V1,k,je,i)+B_F.flux(X2DIR,V1,k,je,i-1);
+                        F1_host(V2,ktemp,jtemp-1,is) = -F1_host(V2,ktemp,je-1,is)+F2_host(V1,ktemp,je,is)+F2_host(V1,ktemp,je,is-1);
+                        //B_F.flux(X1DIR,V2,k,j,i) = -B_F.flux(X1DIR,V2,k,je,i);
+                        F1_host(V2,ktemp,jtemp,is) = -F1_host(V2,ktemp,je,is);
                     }
                     
                     
-                    /*
-                    if (k == ke_all-5 && j>js-1 && j<js+4) {
-                        Real divB2d, divB3d;
-                        //printf("HYERIN: i,j,k = (%i %i %i) %g = - %g + %g - %g + %g + %g ) \n", i, j, k, B_F.flux(X2DIR,V1,k,j,i-1), B_F.flux(X2DIR,V1,k,j,i), B_F.flux(X1DIR,V2,k,j,i)
-                        //                                    , B_F.flux(X1DIR,V2,k,j-2,i), B_F.flux(X2DIR,V1,k,j-1,i), B_F.flux(X2DIR,V1,k,j-1,i-1));
-                        printf("HYERIN: i,j,k = (%i %i %i) 10=%g, 11=%g, 12=%g 5=%g 7=%g 8=%g sum is %g \n", i, j, k, B_F.flux(X2DIR,V1,k,j,i-1), B_F.flux(X2DIR,V1,k,j,i), B_F.flux(X1DIR,V2,k,j,i)
-                                                            , B_F.flux(X1DIR,V2,k,j-2,i), B_F.flux(X2DIR,V1,k,j-1,i-1), B_F.flux(X2DIR,V1,k,j-1,i),
-                                                            -B_F.flux(X2DIR, V1, k, j, is) + B_F.flux(X1DIR, V2, k, j, is)                                         
-                                                           - B_F.flux(X1DIR, V2, k, j-2, is) + B_F.flux(X2DIR, V1, k, j-1, is) + B_F.flux(X2DIR, V1, k, j-1, is-1));
-                        printf("HYERIN: i,j,k = (%i %i %i) 7=%g, 8=%g, 9=%g 1=%g 2=%g 3=%g \n", i, j, k, B_F.flux(X2DIR,V1,k,j-1,i-1), B_F.flux(X2DIR,V1,k,j-1,i), B_F.flux(X1DIR,V2,k,j-1,i)
-                                                            , B_F.flux(X1DIR,V2,k,j-3,i), B_F.flux(X2DIR,V1,k,j-2,i-1), B_F.flux(X2DIR,V1,k,j-2,i));
-                        divB2d = B_F.flux(X2DIR,V1,k,j,i-1)+B_F.flux(X2DIR,V1,k,j,i)-B_F.flux(X1DIR,V2,k,j-1,i)-B_F.flux(X1DIR,V2,k,j,i)-B_F.flux(X2DIR,V1,k,j-2,i-1)-B_F.flux(X2DIR,V1,k,j-2,i)+B_F.flux(X1DIR,V2,k,j-3,i)+B_F.flux(X1DIR,V2,k,j-2,i);
-                        //divB2d = -B_F.flux(X2DIR,V1,k,j-2,i-1)-B_F.flux(X2DIR,V1,k,j-2,i)+B_F.flux(X1DIR,V2,k,j-3,i)+B_F.flux(X1DIR,V2,k,j-2,i);
-                        divB3d = divB2d + B_F.flux(X2DIR,V1,k-1,j,i-1)+B_F.flux(X2DIR,V1,k-1,j,i)-B_F.flux(X1DIR,V2,k-1,j-1,i)-B_F.flux(X1DIR,V2,k-1,j,i)
-                                        -B_F.flux(X2DIR,V1,k-1,j-2,i-1)-B_F.flux(X2DIR,V1,k-1,j-2,i)+B_F.flux(X1DIR,V2,k-1,j-3,i)+B_F.flux(X1DIR,V2,k-1,j-2,i);
-                        printf("HYERIN: i,j,k = (%i %i %i) %g+%g-%g-%g-%g-%g+%g+%g= -%g+%g= (%g) \n", i, j, k, //B_F.flux(X2DIR,V1,k,j-1,i-1),
-                                                              B_F.flux(X2DIR,V1,k,j,i-1),B_F.flux(X2DIR,V1,k,j,i),B_F.flux(X1DIR,V2,k,j-1,i),B_F.flux(X1DIR,V2,k,j,i),
-                                                              B_F.flux(X2DIR,V1,k,j-2,i-1),B_F.flux(X2DIR,V1,k,j-2,i),B_F.flux(X1DIR,V2,k,j-3,i),B_F.flux(X1DIR,V2,k,j-2,i),B_F.flux(X2DIR,V1,k,j-2,i-1)+B_F.flux(X2DIR,V1,k,j-2,i),B_F.flux(X1DIR,V2,k,j-3,i)+B_F.flux(X1DIR,V2,k,j-2,i), divB2d);
-                        printf("HYERIN: i,j,k = (%i %i %i) sum with k and k-1= (%g) \n", i, j, k, divB3d);
-                    }
-                    */
-                    
-                }
-            );
+                //}
+           // );
               }
             }
+
         }
         if (pmb->boundary_flag[BoundaryFace::outer_x1] == BoundaryFlag::user)
         {
             for (int ktemp = ks_all+2; ktemp <=ke_all; ktemp++) {
               for (int jtemp = js_new; jtemp <= je_new; jtemp++) {
-            pmb->par_for("fix_flux_b_r", ktemp, ktemp, jtemp, jtemp, ie+1, ie+1, // Hyerin (02/20/23) for 3rd prescription, sequential
+            //pmb->par_for("fix_flux_b_r", ktemp, ktemp, jtemp, jtemp, ie+1, ie+1, // Hyerin (02/20/23) for 3rd prescription, sequential
             //pmb->par_for("fix_flux_b_r", ks_all+2, ke_all, js_new, je_new, ie+1, ie+1, // Hyerin (02/20/23) for 3rd prescription
             //pmb->par_for("fix_flux_b_r", ks_all+1, ke_all+1, js_all+1, je_all+1, ie+1, ie+1, // Hyerin (12/28/22) for 1st & 2nd prescription
-                KOKKOS_LAMBDA_3D {
+                //KOKKOS_LAMBDA_3D {
                     /* 1st prescription to make the X1DIR flux = 0
                     B_F.flux(X2DIR, V1, k, j, i) = -B_F.flux(X2DIR, V1, k, j, ie);
                     if (ndim > 1) VLOOP B_F.flux(X1DIR, V1+v, k, j, i) = 0;
@@ -469,28 +482,61 @@ TaskStatus FixX1Flux(MeshData<Real> *md)
                     //if (ndim > 2) B_F.flux(X3DIR, V1, k, j, i) = -B_F.flux(X3DIR, V1, k, j, ie) + B_F.flux(X1DIR, V3, k, j, i) + B_F.flux(X1DIR, V3, k-1, j, i);
                     //
                     // (02/20/23) 3rd prescription that is similar to 2nd prescription but not local and nonzero effective flux 
-                    if (ndim > 1) B_F.flux(X2DIR, V1, k, j, i) = -B_F.flux(X2DIR, V1, k, j, ie) + B_F.flux(X1DIR, V2, k, j, ie+1)
-                                                                   - B_F.flux(X1DIR, V2, k, j-2, ie+1) + B_F.flux(X2DIR, V1, k, j-1, ie) + B_F.flux(X2DIR, V1, k, j-1, ie+1);
-                    if (ndim > 2) B_F.flux(X3DIR, V1, k, j, i) = -B_F.flux(X3DIR, V1, k, j, ie) + B_F.flux(X1DIR, V3, k, j, ie+1)
-                                                                   - B_F.flux(X1DIR, V3, k-2, j, ie+1) + B_F.flux(X3DIR, V1, k-1, j, ie) + B_F.flux(X3DIR, V1, k-1, j, ie+1);
+                    //if (ndim > 1) B_F.flux(X2DIR, V1, k, j, i) = -B_F.flux(X2DIR, V1, k, j, ie) + B_F.flux(X1DIR, V2, k, j, ie+1)
+                    //                                               - B_F.flux(X1DIR, V2, k, j-2, ie+1) + B_F.flux(X2DIR, V1, k, j-1, ie) + B_F.flux(X2DIR, V1, k, j-1, ie+1);
+                    if (ndim > 1) F2_host(V1, ktemp, jtemp, ie+1) = -F2_host(V1, ktemp, jtemp, ie) + F1_host(V2, ktemp, jtemp, ie+1)
+                                                                   - F1_host(V2, ktemp, jtemp-2, ie+1) + F2_host(V1, ktemp, jtemp-1, ie) + F2_host(V1, ktemp, jtemp-1, ie+1);
+                    //if (ndim > 2) B_F.flux(X3DIR, V1, k, j, i) = -B_F.flux(X3DIR, V1, k, j, ie) + B_F.flux(X1DIR, V3, k, j, ie+1)
+                    //                                               - B_F.flux(X1DIR, V3, k-2, j, ie+1) + B_F.flux(X3DIR, V1, k-1, j, ie) + B_F.flux(X3DIR, V1, k-1, j, ie+1);
+                    if (ndim > 2) F3_host(V1, ktemp, jtemp, ie+1) = -F3_host(V1, ktemp, jtemp, ie) + F1_host(V3, ktemp, jtemp, ie+1)
+                                                                   - F1_host(V3, ktemp-2, jtemp, ie+1) + F3_host(V1, ktemp-1, jtemp, ie) + F3_host(V1, ktemp-1, jtemp, ie+1);
 
-                    if (in_x2 && (j==js)) {// (corners are tricky so let's just initialize)
-                        B_F.flux(X2DIR, V1,k,j,i) = -B_F.flux(X1DIR,V2,k,j,ie) -B_F.flux(X1DIR,V2,k,j-1,ie);
-                        B_F.flux(X2DIR, V1,k,j,i-1) = -0.5*B_F.flux(X2DIR,V1,k,j,i);
+                    //if (in_x2 && (j==js)) {// (corners are tricky so let's just initialize)
+                    if (in_x2 && (jtemp==js)) {// (corners are tricky so let's just initialize)
+                        //B_F.flux(X2DIR, V1,k,j,i) = -B_F.flux(X1DIR,V2,k,j,ie) -B_F.flux(X1DIR,V2,k,j-1,ie);
+                        F2_host(V1,ktemp,jtemp,ie+1) = -F1_host(V2,ktemp,jtemp,ie) -F1_host(V2,ktemp,jtemp-1,ie);
+                        //B_F.flux(X2DIR, V1,k,j,i-1) = -0.5*B_F.flux(X2DIR,V1,k,j,i);
+                        F2_host(V1,ktemp,jtemp,ie) = -0.5*F2_host(V1,ktemp,jtemp,ie+1);
                     }
-                    if (out_x2 && (j==je_e)) {// (corners are tricky)
+                    //if (out_x2 && (j==je_e)) {// (corners are tricky)
+                    if (out_x2 && (jtemp==je_e)) {// (corners are tricky)
                         //B_F.flux(X2DIR, V1, k, j, i-1) = -B_F.flux(X2DIR, V1, k, je, ie) - B_F.flux(X2DIR, V1, k, je, ie+1) 
                         //                                +B_F.flux(X1DIR, V2, k, je, ie+1) + B_F.flux(X1DIR, V2, k, je-1, ie+1);
                         //B_F.flux(X2DIR, V1, k, j, i) = -2.*B_F.flux(X1DIR, V2, k, je-1, ie+1) -B_F.flux(X1DIR, V2, k, je, ie+1) + B_F.flux(X1DIR, V2, k, je+1, ie+1)
                         //                                +2.*B_F.flux(X2DIR, V1, k, je, ie) + 2.*B_F.flux(X2DIR, V1, k, je, ie+1);
-                        B_F.flux(X1DIR,V2,k,j-1,i) = -B_F.flux(X1DIR,V2,k,je-1,i)+B_F.flux(X2DIR,V1,k,je,i)+B_F.flux(X2DIR,V1,k,je,i-1);
-                        B_F.flux(X1DIR,V2,k,j,i) = -B_F.flux(X1DIR,V2,k,je,i);
+                        //B_F.flux(X1DIR,V2,k,j-1,i) = -B_F.flux(X1DIR,V2,k,je-1,i)+B_F.flux(X2DIR,V1,k,je,i)+B_F.flux(X2DIR,V1,k,je,i-1);
+                        F1_host(V2,ktemp,jtemp-1,ie+1) = -F1_host(V2,ktemp,je-1,ie+1)+F2_host(V1,ktemp,je,ie+1)+F2_host(V1,ktemp,je,ie);
+                        //B_F.flux(X1DIR,V2,k,j,i) = -B_F.flux(X1DIR,V2,k,je,i);
+                        F1_host(V2,ktemp,jtemp,ie+1) = -F1_host(V2,ktemp,je,ie+1);
                     }
-                }
-            );
+                //}
+            //);
               }
             }
         }
+        // Deep copy to device
+        F1.DeepCopy(F1_host);
+        F2.DeepCopy(F2_host);
+        F3.DeepCopy(F3_host);
+        Kokkos::fence();
+        
+        // put it back to B_F.flux. is this even needed?
+        //pmb->par_for("copy_to_B_F_l", ks_all+2, ke_all, js_new, je_new, is, is,
+        //     KOKKOS_LAMBDA_3D {
+        //        VLOOP B_F.flux(X1DIR,v,k,j,i) = F1(v,k,j,i);
+        //        VLOOP B_F.flux(X2DIR,v,k,j,i) = F2(v,k,j,i);
+        //        VLOOP B_F.flux(X3DIR,v,k,j,i) = F3(v,k,j,i);
+        //     }
+        //);
+        //pmb->par_for("copy_to_B_F_r", ks_all+2, ke_all, js_new, je_new, ie+1, ie+1,
+        //     KOKKOS_LAMBDA_3D {
+        //        VLOOP B_F.flux(X1DIR,v,k,j,i) = F1(v,k,j,i);
+        //        VLOOP B_F.flux(X2DIR,v,k,j,i) = F2(v,k,j,i);
+        //        VLOOP B_F.flux(X3DIR,v,k,j,i) = F3(v,k,j,i);
+        //     }
+        //);
+
+        
     }
 
     Flag(md, "Fixed X1 B");
