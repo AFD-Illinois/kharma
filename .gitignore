@@ -72,3 +72,6 @@ make_args
 # Python files
 __pycache__/
 *.pyc
+
+# added by Hyerin
+*.swp

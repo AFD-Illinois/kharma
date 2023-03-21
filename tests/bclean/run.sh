@@ -11,10 +11,9 @@ NZONES=2 #7
 BASE=8
 NRUNS=100
 START_RUN=0 # if this is not 0, then update start_time, out_to_in, iteration, r_out, r_in to values that you are re-starting from
-DRTAG="bondi_multizone_030423_bclean_${bz}_flr"
+DRTAG="bondi_multizone_031123_bclean_${bz}_flr_test"
 
 # Set paths
-KHARMADIR=../..
 PDR="/n/holylfs05/LABS/bhi/Users/hyerincho/grmhd/" ## parent directory
 DR="${PDR}data/${DRTAG}"
 parfilename="${PDR}/kharma/pars/bondi_multizone/bondi_multizone_00000.par" # parameter file
@@ -104,12 +103,13 @@ do
 
   srun --mpi=pmix ${PDR}/kharma.cuda -i ${parfilename} \
                                     parthenon/mesh/nx1=64 parthenon/mesh/nx2=64 parthenon/mesh/nx3=64 \
-                                    parthenon/meshblock/nx1=32 parthenon/meshblock/nx2=64 parthenon/meshblock/nx3=32 \
+                                    parthenon/meshblock/nx1=16 parthenon/meshblock/nx2=64 parthenon/meshblock/nx3=64 \
                                     parthenon/job/problem_id=$prob \
-                                    parthenon/time/tlim=${start_time}\
+                                    parthenon/time/tlim=${start_time} \
                                     coordinates/r_in=${r_in} coordinates/r_out=${r_out}  coordinates/a=$spin coordinates/hslope=1 coordinates/transform=mks \
                                     bondi/vacuum_logrho=-8.2014518 bondi/vacuum_log_u_over_rho=${log_u_over_rho} \
-                                    floors/disable_floors=false floors/bsq_over_rho_max=100 floors/u_over_rho_max=2 \
+                                    floors/disable_floors=false floors/rho_min_geom=1e-6 floors/u_min_geom=1e-8 \
+                                    floors/bsq_over_rho_max=100 floors/bsq_over_u_max=50 \
                                     b_field/type=vertical b_field/solver=flux_ct b_field/bz=${bz} \
                                     b_field/fix_flux_x1=0 b_field/initial_cleanup=$init_c \
                                     b_cleanup/rel_tolerance=1.e-8 \
@@ -119,7 +119,8 @@ do
                                     parthenon/output2/dt=$output2_dt \
                                     ${args[@]} \
                                     -d ${data_dir} 1> ${out_fn} 2>${err_fn}
-                                    # nlim=10000 for 1e-3  parthenon/time/nlim=$((10000*($VAR+1))) 
+                                    # nlim=10000 for 1e-3   
+                                    # floors/u_over_rho_max=2 
                                     #b_field/fix_flux_x1=1 b_field/initial_cleanup=0 \
                                     #coordinates/transform=mks coordinates/hslope=1 \ this, for some reason does not work for b cleaning?
 
