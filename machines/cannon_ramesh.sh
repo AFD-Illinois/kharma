@@ -19,8 +19,10 @@ if [[ $(hostname -f) == *"rc.fas.harvard.edu" ]]; then
   if [[ "$ARGS" == *"cuda"* ]]; then
     #DEVICE_ARCH=VOLTA70 ## test, (old GPUs)
     DEVICE_ARCH=AMPERE80 ## blackhole_gpu, itc_gpu
-    module load gcc/9.3.0-fasrc01
-    module load openmpi/4.0.5-fasrc01
+    #module load gcc/9.3.0-fasrc01
+    module load gcc/10.2.0-fasrc01 # test
+    #module load openmpi/4.0.5-fasrc01
+    module load openmpi/4.1.3-fasrc03 # test
     #module load cuda/11.1.0-fasrc01
     module load cuda/11.6.2-fasrc01
     export PATH=/n/home09/hyerincho/packages/hdf5-openmpi4.1.1:$PATH
