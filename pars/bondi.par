@@ -17,16 +17,17 @@ nx3 = 1
 # Split into blocks mesh
 # Don't bother with xN boundaries for spherical coordinate systems
 # KHARMA will automatically place ~5 zones inside the EH
-nx1 = 32
-nx2 = 32
+nx1 = 128
+nx2 = 128
 nx3 = 1
 
 <coordinates>
 base = ks
-transform = fmks
+transform = mks
 a = 0.0
 hslope = 0.3
-r_out = 30
+r_in = 3.0
+r_out = 30.0
 
 <parthenon/time>
 tlim = 50.0
@@ -45,7 +46,7 @@ rs = 8.0
 disable_floors = true
 
 # We'll be adding material, and that's okay
-<bounds>
+<boundaries>
 check_inflow_outer = false
 
 <b_field>
@@ -58,10 +59,8 @@ solver = none
 
 <debug>
 verbose = 0
-flag_verbose = 2
-
-<driver>
-type = harm
+flag_verbose = 0
+extra_checks = 1
 
 <parthenon/output0>
 file_type = hdf5

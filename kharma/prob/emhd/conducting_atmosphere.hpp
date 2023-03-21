@@ -44,6 +44,4 @@
 
 #include <parthenon/parthenon.hpp>
 
-TaskStatus InitializeAtmosphere(MeshBlockData<Real> *rc, ParameterInput *pin);
-
-TaskStatus dirichlet_bc(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse);
+TaskStatus InitializeAtmosphere(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin);

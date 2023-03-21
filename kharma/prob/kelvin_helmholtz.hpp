@@ -43,7 +43,7 @@
  * Follows initial conditions from Lecoanet et al. 2015,
  * MNRAS 455, 4274.
  */
-TaskStatus InitializeKelvinHelmholtz(MeshBlockData<Real> *rc, ParameterInput *pin)
+TaskStatus InitializeKelvinHelmholtz(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin)
 {
     auto pmb = rc->GetBlockPointer();
     GridScalar rho = rc->Get("prims.rho").data;
@@ -71,7 +71,7 @@ TaskStatus InitializeKelvinHelmholtz(MeshBlockData<Real> *rc, ParameterInput *pi
     IndexRange jb = pmb->cellbounds.GetBoundsJ(domain);
     IndexRange kb = pmb->cellbounds.GetBoundsK(domain);
     pmb->par_for("kh_init", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-        KOKKOS_LAMBDA_3D {
+        KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
             GReal X[GR_DIM];
             G.coord_embed(k, j, i, Loci::center, X);
 
@@ -84,14 +84,14 @@ TaskStatus InitializeKelvinHelmholtz(MeshBlockData<Real> *rc, ParameterInput *pi
             u(k, j, i) = P0 / (gam - 1.);
             uvec(0, k, j, i) = uflow * (tanh((z - z1) / a) - tanh((z - z2) / a) - 1.);
             uvec(1, k, j, i) = A * sin(2. * M_PI * x) *
-                        (exp(-(z - z1) * (z - z1) / (sigma * sigma)) +
-                        exp(-(z - z2) * (z - z2) / (sigma * sigma)));
+                        (m::exp(-(z - z1) * (z - z1) / (sigma * sigma)) +
+                        m::exp(-(z - z2) * (z - z2) / (sigma * sigma)));
             uvec(2, k, j, i) = 0;
         }
     );
     // Rescale primitive velocities by tscale, and internal energy by the square.
     pmb->par_for("kh_renorm", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-        KOKKOS_LAMBDA_3D {
+        KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
             u(k, j, i) *= tscale * tscale;
             VLOOP uvec(v, k, j, i) *= tscale;
         }

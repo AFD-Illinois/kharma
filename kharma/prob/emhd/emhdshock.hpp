@@ -54,8 +54,7 @@ using namespace parthenon;
  * 
  * Therefore, to quantitatively check the EMHD implementation, we prefer the BVP solution as the input.
  */
-
-TaskStatus InitializeEMHDShock(MeshBlockData<Real> *rc, ParameterInput *pin)
+TaskStatus InitializeEMHDShock(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin)
 {
     Flag(rc, "Initializing EMHD shock problem");
     auto pmb = rc->GetBlockPointer();
@@ -140,7 +139,7 @@ TaskStatus InitializeEMHDShock(MeshBlockData<Real> *rc, ParameterInput *pin)
 
                         // Set EMHD parameters
                         Real tau, chi_e, nu_e;
-                        EMHD::set_parameters(G, rho_temp, u_temp, emhd_params, gam, k, j, i, tau, chi_e, nu_e);
+                        EMHD::set_parameters_init(G, rho_temp, u_temp, emhd_params, gam, k, j, i, tau, chi_e, nu_e);
 
                         // Update q and dP (which now are q_tilde and dP_tilde)
                         Real q_tilde  = q_host(k, j, i);
@@ -192,7 +191,7 @@ TaskStatus InitializeEMHDShock(MeshBlockData<Real> *rc, ParameterInput *pin)
         double B3L  = 0.,     B3R  = 0.;
 
         pmb->par_for("emhdshock_init", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-            KOKKOS_LAMBDA_3D {
+            KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
 
                 Real X[GR_DIM];
                 G.coord_embed(k, j, i, Loci::center, X);

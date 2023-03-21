@@ -10,7 +10,7 @@ using namespace parthenon;
  * 
  * Stolen directly from iharm3D
  */
-TaskStatus InitializeShockTube(MeshBlockData<Real> *rc, ParameterInput *pin)
+TaskStatus InitializeShockTube(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin)
 {
     Flag(rc, "Initializing Shock Tube problem");
     auto pmb = rc->GetBlockPointer();
@@ -50,7 +50,7 @@ TaskStatus InitializeShockTube(MeshBlockData<Real> *rc, ParameterInput *pin)
     const Real center = (x1min + x1max) / 2.;
 
     pmb->par_for("ot_init", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-        KOKKOS_LAMBDA_3D {
+        KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
             Real X[GR_DIM];
             G.coord(k, j, i, Loci::center, X);
 

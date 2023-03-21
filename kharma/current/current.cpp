@@ -34,15 +34,17 @@
 
 #include "current.hpp"
 
-std::shared_ptr<StateDescriptor> Current::Initialize(ParameterInput *pin)
+std::shared_ptr<KHARMAPackage> Current::Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages)
 {
-    auto pkg = std::make_shared<StateDescriptor>("Current");
+    auto pkg = std::make_shared<KHARMAPackage>("Current");
     Params &params = pkg->AllParams();
 
     // 4-current jcon. Calculated only for output
     std::vector<int> s_fourvector({GR_DIM});
     auto m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy}, s_fourvector);
     pkg->AddField("jcon", m);
+
+    pkg->BlockUserWorkBeforeOutput = Current::FillOutput;
 
     return pkg;
 }
@@ -75,7 +77,7 @@ TaskStatus Current::CalculateCurrent(MeshBlockData<Real> *rc0, MeshBlockData<Rea
     const IndexRange kb = pmb->cellbounds.GetBoundsK(IndexDomain::entire);
     const IndexRange nv = IndexRange{0, NVEC-1};
     pmb->par_for("get_center", nv.s, nv.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-        KOKKOS_LAMBDA_VARS {
+        KOKKOS_LAMBDA (const int &p, const int &k, const int &j, const int &i) {
             uvec_c(p, k, j, i) = 0.5*(uvec_old(p, k, j, i) + uvec_new(p, k, j, i));
             B_P_c(p, k, j, i) = 0.5*(B_P_old(p, k, j, i) + B_P_new(p, k, j, i));
         }
@@ -87,7 +89,7 @@ TaskStatus Current::CalculateCurrent(MeshBlockData<Real> *rc0, MeshBlockData<Rea
     const IndexRange kb_i = pmb->cellbounds.GetBoundsK(IndexDomain::interior);
     const IndexRange n4v = IndexRange{0, GR_DIM-1};
     pmb->par_for("jcon_calc", n4v.s, n4v.e, kb_i.s, kb_i.e, jb_i.s, jb_i.e, ib_i.s, ib_i.e,
-        KOKKOS_LAMBDA_VEC {
+        KOKKOS_LAMBDA (const int &mu, const int &k, const int &j, const int &i) {
             // Get sqrt{-g}*F^{mu nu} at neighboring points
             const Real gF0p = get_gdet_Fcon(G, uvec_new, B_P_new, 0, mu, k, j, i);
             const Real gF0m = get_gdet_Fcon(G, uvec_old, B_P_old, 0, mu, k, j, i);
@@ -101,9 +103,9 @@ TaskStatus Current::CalculateCurrent(MeshBlockData<Real> *rc0, MeshBlockData<Rea
             // Difference: D_mu F^{mu nu} = 4 \pi j^nu
             jcon(mu, k, j, i) = 1. / (m::sqrt(4. * M_PI) * G.gdet(Loci::center, j, i)) *
                                 ((gF0p - gF0m) / dt +
-                                (gF1p - gF1m) / (2. * G.dx1v(i)) +
-                                (gF2p - gF2m) / (2. * G.dx2v(j)) +
-                                (gF3p - gF3m) / (2. * G.dx3v(k)));
+                                (gF1p - gF1m) / (2. * G.Dxc<1>(i)) +
+                                (gF2p - gF2m) / (2. * G.Dxc<2>(j)) +
+                                (gF3p - gF3m) / (2. * G.Dxc<3>(k)));
         }
     );
 

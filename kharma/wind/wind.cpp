@@ -31,12 +31,11 @@
  *  OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-
 #include "wind.hpp"
 
-std::shared_ptr<StateDescriptor> Wind::Initialize(ParameterInput *pin)
+std::shared_ptr<KHARMAPackage> Wind::Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages)
 {
-    auto pkg = std::make_shared<StateDescriptor>("Wind");
+    auto pkg = std::make_shared<KHARMAPackage>("Wind");
     Params &params = pkg->AllParams();
 
     // Wind term in funnel
@@ -53,10 +52,14 @@ std::shared_ptr<StateDescriptor> Wind::Initialize(ParameterInput *pin)
     Real ramp_end = pin->GetOrAddReal("wind", "ramp_end", 0.0);
     params.Add("ramp_end", ramp_end);
 
+    pkg->AddSource = Wind::AddSource;
+
+    // TODO track additions?
+
     return pkg;
 }
 
-TaskStatus Wind::AddSource(MeshData<Real> *mdudt)
+TaskStatus Wind::AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
 {
     Flag(mdudt, "Adding wind");
     // Pointers
@@ -89,7 +92,7 @@ TaskStatus Wind::AddSource(MeshData<Real> *mdudt)
     const Real current_n = (ramp_end > 0.0) ? m::min(m::max(time - ramp_start, 0.0) / (ramp_end - ramp_start), 1.0) * n : n;
 
     pmb0->par_for("add_wind", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-        KOKKOS_LAMBDA_MESH_3D {
+        KOKKOS_LAMBDA (const int& b, const int &k, const int &j, const int &i) {
             const auto& G = dUdt.GetCoords(b);
             // Need coordinates to evaluate particle addtn rate
             // Note that makes the wind spherical-only, TODO ensure this
@@ -97,9 +100,8 @@ TaskStatus Wind::AddSource(MeshData<Real> *mdudt)
             G.coord_embed(k, j, i, Loci::center, Xembed);
             GReal r = Xembed[1], th = Xembed[2];
 
-            // Particle addition rate: concentrate at poles & center
-            // TODO poles only w/e.g. cos2?
-            Real drhopdt = current_n * m::pow(cos(th), power) / m::pow(1. + r * r, 2);
+            // Particle addition rate: concentrate at poles
+            Real drhopdt = current_n * m::pow(m::cos(th), power) / m::pow(1. + r * r, 2);
 
             // Insert fluid moving in positive U1, without B field
             // Ramp up like density, since we're not at a set proportion

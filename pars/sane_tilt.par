@@ -33,7 +33,7 @@ gamma = 1.666667
 reconstruction = weno5
 
 <driver>
-type = harm
+type = kharma
 
 <torus>
 rin = 8.0

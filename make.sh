@@ -43,7 +43,6 @@
 
 # Less common options:
 # PREFIX_PATH=
-# EXTRA_FLAGS=
 
 HOST=$(hostname -f)
 if [ -z $HOST ]; then
@@ -81,6 +80,9 @@ if [[ "$ARGS" == *"nompi"* ]]; then
 fi
 if [[ "$ARGS" == *"noimplicit"* ]]; then
   EXTRA_FLAGS="-DKHARMA_DISABLE_IMPLICIT=1 $EXTRA_FLAGS"
+fi
+if [[ "$ARGS" == *"nocleanup"* ]]; then
+  EXTRA_FLAGS="-DKHARMA_DISABLE_CLEANUP=1 $EXTRA_FLAGS"
 fi
 
 ### Enivoronment Prep ###
@@ -125,7 +127,6 @@ if [[ -z "$CXX_NATIVE" ]]; then
   elif which icpc >/dev/null 2>&1; then
     CXX_NATIVE=icpc
     C_NATIVE=icc
-
   # Prefer NVHPC over generic compilers
   elif which nvc++ >/dev/null 2>&1; then
     CXX_NATIVE=nvc++
@@ -218,12 +219,16 @@ fi
 if [[ $CXX == "icpc" ]]; then
   export CXXFLAGS="-Wno-unknown-pragmas $CXXFLAGS"
 fi
+# Avoid icpx's astonishing DEFAULT -ffast-math
+if [[ $CXX == "icpx" ]]; then
+  export CXXFLAGS="-fno-fast-math $CXXFLAGS"
+fi
 
 ### Build HDF5 ###
 # If we're building HDF5, do it after we set *all flags*
 if [[ "$ARGS" == *"hdf5"* && "$ARGS" == *"clean"* ]]; then
-  H5VER=1.12.0
-  H5VERU=1_12_0
+  H5VER=1.12.2
+  H5VERU=1_12_2
   cd external
   if [ ! -d hdf5-${H5VER}/ ]; then
     curl https://hdf-wordpress-1.s3.amazonaws.com/wp-content/uploads/manual/HDF5/HDF5_${H5VERU}/source/hdf5-${H5VER}.tar.gz -o hdf5-${H5VER}.tar.gz
@@ -264,8 +269,13 @@ if [[ "$ARGS" == *"hdf5"* ]]; then
 fi
 
 ### Build KHARMA ###
-# Optionally delete build/ to wipe the slate
+# If we're doing a clean build, prep the source and
+# delete the build directory
 if [[ "$ARGS" == *"clean"* ]]; then
+  cd external/parthenon
+  git apply ../patches/parthenon-*.patch
+  cd -
+
   rm -rf build
 fi
 mkdir -p build

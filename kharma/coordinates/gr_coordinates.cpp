@@ -164,7 +164,7 @@ void init_GRCoordinates(GRCoordinates& G, int n1, int n2, int n3) {
     auto gdet_conn_local = G.gdet_conn_direct;
 
     Kokkos::parallel_for("init_geom", MDRangePolicy<Rank<2>>({0,0}, {n2+1, n1+1}),
-        KOKKOS_LAMBDA_2D {
+        KOKKOS_LAMBDA (const int& j, const int& i) {
             // Iterate through locations. This could be done in fancy ways, but
             // this highlights what's actually going on.
             for (int iloc =0; iloc < NLOC; iloc++) {
@@ -251,7 +251,7 @@ void init_GRCoordinates(GRCoordinates& G, int n1, int n2, int n3) {
     );
     if (CONN_CORRECTIONS) {
         Kokkos::parallel_for("geom_corrections", MDRangePolicy<Rank<2>>({0,0}, {n2, n1}),
-            KOKKOS_LAMBDA_2D {
+            KOKKOS_LAMBDA (const int& j, const int& i) {
                 // In the two directions the grid changes, make sure that we *exactly*
                 // satisfy the req't gdet*conn^mu_mu_nu = d_nu gdet, when evaluated on faces
                 // This will make the source term exactly balance the flux differences,

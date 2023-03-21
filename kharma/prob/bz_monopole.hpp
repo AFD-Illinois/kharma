@@ -7,5 +7,5 @@
 /**
  * Initialize a Blandford-Znajek monopole setup
  */
-TaskStatus InitializeBZMonopole(MeshBlockData<Real> *rc, ParameterInput *pin);
+TaskStatus InitializeBZMonopole(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin);
 

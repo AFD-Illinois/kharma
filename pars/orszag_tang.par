@@ -45,9 +45,9 @@ gamma = 1.666667
 reconstruction = weno5
 
 <debug>
-verbose = 0
-flag_verbose = 0
-extra_checks = 0
+verbose = 1
+flag_verbose = 2
+extra_checks = 1
 
 <parthenon/output0>
 file_type = hdf5
@@ -58,3 +58,9 @@ variables = prims.rho, prims.u, prims.uvec, prims.B, jcon
 <parthenon/output1>
 file_type = hst
 dt = 0.1
+
+# This problem is generally much too short to need
+# checkpointing.  However, we have a test which uses it.
+#<parthenon/output2>
+#file_type = rst
+#dt = 10.0

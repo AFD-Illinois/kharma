@@ -10,6 +10,7 @@ if __name__=='__main__':
     resolutions = sys.argv[3].split(',')
     for r, resolution in enumerate(resolutions):
         resolutions[r] = int(resolution)
+    resolutions = np.array(resolutions)
     gamma_e = float(sys.argv[4])
 
     l1_norm = []
@@ -33,7 +34,9 @@ if __name__=='__main__':
             x1[i] = startx1 + i*dx1
 
         u_e = (kel * rho**gam_e)/(gam_e - 1.)
-        ratio_analytical = np.where(rho != 1., fel/2. * (((gam + 1.)/(gam - 1.))**gam_e * (1. - gam/gam_e) + 1. + gam/gam_e) * ((gam**2 - 1.)/(gam_e**2 - 1.)), 0.)
+        ratio_analytical = np.where(rho > 1.5, \
+                                    fel/2. * (((gam + 1.)/(gam - 1.))**gam_e * (1. - gam/gam_e) + 1. + gam/gam_e) * ((gam**2 - 1.)/(gam_e**2 - 1.)), \
+                                    0.)
 
         plt.figure(figsize=(6,6))
         plt.plot(x1, u_e/uu, label="Computed")
@@ -43,7 +46,15 @@ if __name__=='__main__':
 
         l1_norm.append(np.mean(abs(u_e/uu - ratio_analytical)))
     
-    print(resolutions, l1_norm)
+    l1_norm = np.array(l1_norm)
+    powerfit = np.polyfit(np.log(resolutions), np.log(l1_norm), 1)[0]
+    print("Power fit: {} {}".format(powerfit, l1_norm))
+    # These bounds were chosen heuristically
+    if powerfit < -1.9 and powerfit > -2.1:
+        fail = 0
+    else:
+        fail = 1
+
     # plot
     fig, ax = plt.subplots(1,1,figsize=(8,8))
     ax.plot(resolutions, l1_norm, color='darkblue', marker='^', markersize=8, label='$\\gamma_{{e}}$={:.2f}'.format(gamma_e))
@@ -56,3 +67,5 @@ if __name__=='__main__':
     plt.legend()
     plt.savefig(os.path.join(plotsdir, 'noh_convergence_{:.2f}.png'.format(gamma_e)), dpi=200)
     plt.close()
+
+    exit(fail)

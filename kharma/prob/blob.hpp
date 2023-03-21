@@ -76,7 +76,7 @@ void InsertBlob(MeshBlockData<Real> *rc, ParameterInput *pin)
     IndexRange jb = pmb->cellbounds.GetBoundsJ(domain);
     IndexRange kb = pmb->cellbounds.GetBoundsK(domain);
     pmb->par_for("insert_blob", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-        KOKKOS_LAMBDA_3D {
+        KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
             Real X[GR_DIM];
             G.coord_embed(k, j, i, Loci::center, X);
             Real d = m::sqrt(blob_r*blob_r + X[1]*X[1] - 2*blob_r*X[1]*
@@ -96,7 +96,7 @@ void InsertBlob(MeshBlockData<Real> *rc, ParameterInput *pin)
 
                     // P(m_p.RHO, k, j, i) = rho_out + ramp * (rho_in - rho_out);
                     Real lrho_factor_in = log(rho_factor);
-                    P(m_p.RHO, k, j, i) *= exp(ramp * lrho_factor_in);
+                    P(m_p.RHO, k, j, i) *= m::exp(ramp * lrho_factor_in);
 
                     P(m_p.UU, k, j, i) = u_over_rho * P(m_p.RHO, k, j, i);
                 }

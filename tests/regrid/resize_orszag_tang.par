@@ -1,0 +1,73 @@
+# Resize an OT vortex, keeping most properties
+
+<parthenon/job>
+problem_id = resize_restart
+
+<parthenon/mesh>
+refinement = none
+numlevel = 1
+
+nx1 = 512
+x1min = -3.141592653589793
+x1max = 3.141592653589793
+ix1_bc = periodic
+ox1_bc = periodic
+
+nx2 = 512
+x2min = -3.141592653589793
+x2max = 3.141592653589793
+ix2_bc = periodic
+ox2_bc = periodic
+
+nx3 = 1
+x3min = -0.01
+x3max = 0.01
+ix3_bc = periodic
+ox3_bc = periodic
+
+<parthenon/meshblock>
+nx1 = 512
+nx2 = 256
+nx3 = 1
+
+<coordinates>
+base = cartesian_minkowski
+transform = none
+
+<parthenon/time>
+tlim = 100
+integrator = rk2
+
+<GRMHD>
+cfl = 0.9
+
+<driver>
+type = imex
+
+<resize_restart>
+fname = orszag_tang.out1.00009.h5
+use_tf = false
+use_dt = false
+skip_b_cleanup = false
+
+<b_cleanup>
+rel_tolerance = 1.e-11
+
+<floors>
+disable_floors = true
+
+<debug>
+verbose = 0
+flag_verbose = 0
+extra_checks = 0
+
+#<parthenon/output0>
+#file_type = hdf5
+#dt = 1000.0
+#single_precision_output = true
+#variables = prims.rho, prims.u, prims.uvec, prims.B, jcon, fflag, pflag
+
+# We only need to check the last restart file, specifically divB
+<parthenon/output1>
+file_type = rst
+dt = 1000.0

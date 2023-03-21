@@ -39,6 +39,36 @@
  * General preferences for KHARMA.  Anything semi-driver-independent, like loading packages, etc.
  */
 namespace KHARMA {
+
+/**
+ * Initialize a "package" of global variables: quantities needed randomly in several places.
+ * Some are physical e.g. time, step times. Others track program state like initialization vs. stepping.
+ */
+std::shared_ptr<KHARMAPackage> InitializeGlobals(ParameterInput *pin, std::shared_ptr<Packages_t>& packages);
+
+/**
+ * Version for restarts, called in PostInitialize if we're restarting from a Parthenon restart file
+ * Note this doesn't do very much -- Parthenon is good about restoring things the way we'd like
+ */
+void ResetGlobals(ParameterInput *pin, Mesh *pmesh);
+
+/**
+ * Update variables in Globals package based on Parthenon state incl. SimTime struct
+ */
+void MeshPreStepUserWorkInLoop(Mesh *pmesh, ParameterInput *pin, const SimTime &tm);
+/**
+ * Update variables in Globals package based on Parthenon state incl. SimTime struct
+ */
+void MeshPostStepUserWorkInLoop(Mesh *pmesh, ParameterInput *pin, const SimTime &tm);
+
+/**
+ * Task to add a package.  Lets us queue up all the packages we want in a task list, *then* load them
+ * with correct dependencies and everything!
+ */
+TaskStatus AddPackage(std::shared_ptr<Packages_t>& packages,
+                      std::function<std::shared_ptr<KHARMAPackage>(ParameterInput*, std::shared_ptr<Packages_t>&)> package_init,
+                      ParameterInput *pin);
+
 /**
  * This function messes with all Parthenon's parameters in-place before we hand them to the Mesh,
  * so that KHARMA decks can omit/infer some things parthenon needs.
@@ -53,41 +83,24 @@ void FixParameters(std::unique_ptr<ParameterInput>& pin);
 Packages_t ProcessPackages(std::unique_ptr<ParameterInput>& pin);
 
 /**
- * Initialize a "package" (StateDescriptor) of global variables, quantities needed randomly in several places, like:
- * dt_last, last step time
- * ctop_max, maximum speed on the grid
- * in_loop, whether one step has been completed (for e.g. EstimateTimestep)
+ * Check whether a given field is anywhere in outputs.
+ * Used to avoid calculating expensive fields (jcon, divB) if they
+ * will not even be written.
  */
-std::shared_ptr<StateDescriptor> InitializeGlobals(ParameterInput *pin);
-// Version for restarts, called in PostInitialize if we're restarting from a Parthenon restart file
-void ResetGlobals(ParameterInput *pin, Mesh *pmesh);
+inline bool FieldIsOutput(ParameterInput *pin, std::string name)
+{
+    InputBlock *pib = pin->pfirst_block;
+    while (pib != nullptr) {
+        if (pib->block_name.compare(0, 16, "parthenon/output") == 0 &&
+            pin->DoesParameterExist(pib->block_name, "variables")) {
+            std::string allvars = pin->GetString(pib->block_name, "variables");
+            if (allvars.find(name) != std::string::npos) {
+                return true;
+            }
+        }
+        pib = pib->pnext; // move to next input block name
+    }
+    return false;
+}
 
-/**
- * Imitate Parthenon's FillDerived call, but on only a subset of zones defined by 'domain'
- * Used for boundary calls, see boundaries.cpp
- */
-void FillDerivedDomain(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, int coarse);
-
-/**
- * Code-wide work before each step in the fluid evolution.  Currently just updates globals.
- */
-void PreStepMeshUserWorkInLoop(Mesh *pmesh, ParameterInput *pin, const SimTime &tm);
-
-/**
- * Code-wide work after each step in the fluid evolution.  Currently just updates globals.
- */
-void PostStepMeshUserWorkInLoop(Mesh *pmesh, ParameterInput *pin, const SimTime &tm);
-
-/**
- * Calculate and print diagnostics after each step. Currently:
- * GRMHD: pflags & fflags, negative values in rho,u, ctop of 0 or NaN
- * B fields: MaxDivB
- */
-void PostStepDiagnostics(Mesh *pmesh, ParameterInput *pin, const SimTime &tm);
-
-/**
- * Fill any arrays that are calculated only for output, e.g. divB, jcon, etc.
- * This calls the FillOutput function of each package
- */
-void FillOutput(MeshBlock *pmb, ParameterInput *pin);
 }

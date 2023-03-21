@@ -36,10 +36,8 @@
 #include "decs.hpp"
 
 #include "boundaries.hpp"
-#include "imex_driver.hpp"
-#include "harm_driver.hpp"
+#include "kharma_driver.hpp"
 #include "kharma.hpp"
-#include "mpi.hpp"
 #include "post_initialize.hpp"
 #include "problem.hpp"
 #include "emhd/conducting_atmosphere.hpp"
@@ -100,20 +98,22 @@ int main(int argc, char *argv[])
 {
     ParthenonManager pman;
 
+    // A couple of callbacks are KHARMA-wide single functions
     pman.app_input->ProcessPackages = KHARMA::ProcessPackages;
     pman.app_input->ProblemGenerator = KHARMA::ProblemGenerator;
-    pman.app_input->MeshBlockUserWorkBeforeOutput = KHARMA::FillOutput;
-    pman.app_input->PreStepMeshUserWorkInLoop = KHARMA::PreStepMeshUserWorkInLoop;
-    pman.app_input->PostStepMeshUserWorkInLoop = KHARMA::PostStepMeshUserWorkInLoop;
-    pman.app_input->PostStepDiagnosticsInLoop = KHARMA::PostStepDiagnostics;
+    // A few are passed on to be implemented by packages as they see fit
+    pman.app_input->MeshBlockUserWorkBeforeOutput = Packages::UserWorkBeforeOutput;
+    pman.app_input->PreStepMeshUserWorkInLoop = Packages::PreStepUserWorkInLoop;
+    pman.app_input->PostStepMeshUserWorkInLoop = Packages::PostStepUserWorkInLoop;
+    pman.app_input->PostStepDiagnosticsInLoop = Packages::PostStepDiagnostics;
 
     // Registering KHARMA's boundary functions here doesn't mean they will *always* run:
-    // all periodic boundary conditions are handled by Parthenon.
-    // KHARMA sets the correct options automatically for spherical coordinate systems.
-    pman.app_input->boundary_conditions[parthenon::BoundaryFace::inner_x1] = KBoundaries::InnerX1;
-    pman.app_input->boundary_conditions[parthenon::BoundaryFace::outer_x1] = KBoundaries::OuterX1;
-    pman.app_input->boundary_conditions[parthenon::BoundaryFace::inner_x2] = KBoundaries::InnerX2;
-    pman.app_input->boundary_conditions[parthenon::BoundaryFace::outer_x2] = KBoundaries::OuterX2;
+    // all periodic & internal boundary conditions are handled by Parthenon.
+    // KHARMA sets the correct boundaries automatically for spherical coordinate systems.
+    pman.app_input->boundary_conditions[parthenon::BoundaryFace::inner_x1] = KBoundaries::ApplyBoundaryTemplate<IndexDomain::inner_x1>;
+    pman.app_input->boundary_conditions[parthenon::BoundaryFace::outer_x1] = KBoundaries::ApplyBoundaryTemplate<IndexDomain::outer_x1>;
+    pman.app_input->boundary_conditions[parthenon::BoundaryFace::inner_x2] = KBoundaries::ApplyBoundaryTemplate<IndexDomain::inner_x2>;
+    pman.app_input->boundary_conditions[parthenon::BoundaryFace::outer_x2] = KBoundaries::ApplyBoundaryTemplate<IndexDomain::outer_x2>;
 
     // Parthenon init includes Kokkos, MPI, parses parameters & cmdline,
     // then calls ProcessPackages and ProcessProperties, then constructs the Mesh
@@ -140,28 +140,29 @@ int main(int argc, char *argv[])
     auto pmesh = pman.pmesh.get(); // The mesh, with list of blocks & locations, size, etc
     auto papp = pman.app_input.get(); // The list of callback functions specified above
 
-    // Add magnetic field to the problem, initialize ghost zones.
-    // Implemented separately outside of MeshBlock since
-    // this usually involves global reductions for normalization
-    if(MPIRank0())
+    if(MPIRank0()) {
+        // Note reading "verbose" parameter from "Globals" instead of pin: it may change during simulation
+        if (pmesh->packages.Get("Globals")->Param<int>("verbose") > 0) {
+            // Print a list of all loaded packages.  Surprisingly useful for debugging init logic
+            std::cout << "Packages in use: " << std::endl;
+            for (auto package : pmesh->packages.AllPackages()) {
+                std::cout << package.first << std::endl;
+            }
+            std::cout << std::endl;
+        }
         std::cout << "Running post-initialization tasks..." << std::endl;
+    }
 
+    // PostInitialize: Add magnetic field to the problem, initialize ghost zones.
+    // Any init which may be run even when restarting, or requires all
+    // MeshBlocks to be initialized already
     auto prob = pin->GetString("parthenon/job", "problem_id");
-    bool is_restart = (prob == "resize_restart") || pman.IsRestart();
-    //bool is_restart = (prob == "resize_restart") || (prob == "resize_restart_kharma") || pman.IsRestart(); // Hyerin
-    bool is_resize = (prob == "resize_restart") && !pman.IsRestart();
-    KHARMA::PostInitialize(pin, pmesh, is_restart, is_resize);
+    bool is_restart = (prob == "resize_restart") || (prob == "resize_restart") || pman.IsRestart();
+    KHARMA::PostInitialize(pin, pmesh, is_restart);
     Flag("Post-initialization completed");
 
     // Construct a temporary driver purely for parameter parsing
-    auto driver_type = pin->GetString("driver", "type");
-    if (driver_type == "harm") {
-        HARMDriver driver(pin, papp, pmesh);
-    } else if (driver_type == "imex") {
-        ImexDriver driver(pin, papp, pmesh);
-    } else {
-        throw std::invalid_argument("Expected driver type to be harm or imex!");
-    }
+    KHARMADriver driver(pin, papp, pmesh);
 
     // We could still have set parameters during driver initialization
     // Note the order here is *extremely important* as the first statement has a
@@ -177,7 +178,7 @@ int main(int argc, char *argv[])
         pars.close();
     }
     // Also write parameters to console if we should be wordy
-    if ((pin->GetInteger("debug", "verbose") > 0) && MPIRank0()) {
+    if ((pmesh->packages.Get("Globals")->Param<int>("verbose") > 0) && MPIRank0()) {
         // This dumps the full Kokkos config, useful for double-checking
         // that the compile did what we wanted
         ShowConfig();
@@ -188,22 +189,8 @@ int main(int argc, char *argv[])
     // which will call MakeTaskCollection, then execute the tasks on the mesh for each portion
     // of each step until a stop criterion is reached.
     Flag("Executing Driver");
+    auto driver_status = driver.Execute();
 
-    if (driver_type == "harm") {
-        std::cout << "Initializing and running KHARMA driver." << std::endl;
-        HARMDriver driver(pin, papp, pmesh);
-        auto driver_status = driver.Execute();
-    } else if (driver_type == "imex") {
-        std::cout << "Initializing and running IMEX driver." << std::endl;
-        ImexDriver driver(pin, papp, pmesh);
-        auto driver_status = driver.Execute();
-    }
-
-#ifndef KOKKOS_ENABLE_CUDA
-    // Cleanup our global NDArray
-    extern ParArrayND<double> p_bound;
-    p_bound.~ParArrayND<double>();
-#endif
     // Parthenon cleanup includes Kokkos, MPI
     Flag("Finalizing");
     pman.ParthenonFinalize();

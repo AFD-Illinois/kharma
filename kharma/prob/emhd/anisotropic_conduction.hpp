@@ -42,7 +42,7 @@ using namespace parthenon;
 /**
  * Anisotropic heat conduction problem, see Chandra+ 2017
  */
-TaskStatus InitializeAnisotropicConduction(MeshBlockData<Real> *rc, ParameterInput *pin)
+TaskStatus InitializeAnisotropicConduction(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin)
 {
     Flag(rc, "Initializing EMHD Modes problem");
     auto pmb = rc->GetBlockPointer();
@@ -67,13 +67,13 @@ TaskStatus InitializeAnisotropicConduction(MeshBlockData<Real> *rc, ParameterInp
     IndexRange jb = pmb->cellbounds.GetBoundsJ(IndexDomain::entire);
     IndexRange kb = pmb->cellbounds.GetBoundsK(IndexDomain::entire);
     pmb->par_for("anisotropic_init", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-        KOKKOS_LAMBDA_3D {
+        KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
             Real X[GR_DIM];
             G.coord_embed(k, j, i, Loci::center, X);
             GReal r = m::sqrt(m::pow((X[1] - 0.5), 2) + m::pow((X[2] - 0.5), 2));
 
             // Initialize primitives
-            rho(k, j, i) = 1 - (A * exp(-m::pow(r, 2) / m::pow(R, 2)));
+            rho(k, j, i) = 1 - (A * m::exp(-m::pow(r, 2) / m::pow(R, 2)));
             u(k, j, i) = 1.;
             uvec(0, k, j, i) = 0.;
             uvec(1, k, j, i) = 0.;

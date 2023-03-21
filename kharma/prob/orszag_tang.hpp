@@ -17,7 +17,7 @@ using namespace parthenon;
  * 
  * Stolen directly from iharm2d_v3
  */
-TaskStatus InitializeOrszagTang(MeshBlockData<Real> *rc, ParameterInput *pin)
+TaskStatus InitializeOrszagTang(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin)
 {
     Flag(rc, "Initializing Orszag-Tang problem");
     auto pmb = rc->GetBlockPointer();
@@ -38,7 +38,7 @@ TaskStatus InitializeOrszagTang(MeshBlockData<Real> *rc, ParameterInput *pin)
     IndexRange jb = pmb->cellbounds.GetBoundsJ(domain);
     IndexRange kb = pmb->cellbounds.GetBoundsK(domain);
     pmb->par_for("ot_init", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-        KOKKOS_LAMBDA_3D {
+        KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
             Real X[GR_DIM];
             G.coord(k, j, i, Loci::center, X);
             rho(k, j, i) = 25./9.;
@@ -53,7 +53,7 @@ TaskStatus InitializeOrszagTang(MeshBlockData<Real> *rc, ParameterInput *pin)
     );
     // Rescale primitive velocities & B field by tscale, and internal energy by the square.
     pmb->par_for("ot_renorm", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-        KOKKOS_LAMBDA_3D {
+        KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
             u(k, j, i) *= tscale * tscale;
             VLOOP uvec(v, k, j, i) *= tscale;
             VLOOP B_P(v, k, j, i) *= tscale;

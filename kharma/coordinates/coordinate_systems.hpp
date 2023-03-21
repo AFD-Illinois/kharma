@@ -262,7 +262,7 @@ class ExponentialTransform {
         KOKKOS_INLINE_FUNCTION void coord_to_embed(const GReal Xnative[GR_DIM], GReal Xembed[GR_DIM]) const
         {
             Xembed[0] = Xnative[0];
-            Xembed[1] = exp(Xnative[1]);
+            Xembed[1] = m::exp(Xnative[1]);
 #if LEGACY_TH
             Xembed[2] = excise(excise(Xnative[2], 0.0, SMALL), M_PI, SMALL);
 #else
@@ -284,7 +284,7 @@ class ExponentialTransform {
         {
             gzero2(dxdX);
             dxdX[0][0] = 1.;
-            dxdX[1][1] = exp(Xnative[1]);
+            dxdX[1][1] = m::exp(Xnative[1]);
             dxdX[2][2] = 1.;
             dxdX[3][3] = 1.;
         }
@@ -295,7 +295,7 @@ class ExponentialTransform {
         {
             gzero2(dXdx);
             dXdx[0][0] = 1.;
-            dXdx[1][1] = 1 / exp(Xnative[1]);
+            dXdx[1][1] = 1 / m::exp(Xnative[1]);
             dXdx[2][2] = 1.;
             dXdx[3][3] = 1.;
         }
@@ -316,7 +316,7 @@ class ModifyTransform {
         KOKKOS_INLINE_FUNCTION void coord_to_embed(const GReal Xnative[GR_DIM], GReal Xembed[GR_DIM]) const
         {
             Xembed[0] = Xnative[0];
-            Xembed[1] = exp(Xnative[1]);
+            Xembed[1] = m::exp(Xnative[1]);
 #if LEGACY_TH
             const GReal th = M_PI*Xnative[2] + ((1. - hslope)/2.)*sin(2.*M_PI*Xnative[2]);
             Xembed[2] = excise(excise(th, 0.0, SMALL), M_PI, SMALL);
@@ -340,7 +340,7 @@ class ModifyTransform {
         {
             gzero2(dxdX);
             dxdX[0][0] = 1.;
-            dxdX[1][1] = exp(Xnative[1]);
+            dxdX[1][1] = m::exp(Xnative[1]);
             dxdX[2][2] = M_PI - (hslope - 1.)*M_PI*cos(2.*M_PI*Xnative[2]);
             dxdX[3][3] = 1.;
         }
@@ -351,7 +351,7 @@ class ModifyTransform {
         {
             gzero2(dXdx);
             dXdx[0][0] = 1.;
-            dXdx[1][1] = 1 / exp(Xnative[1]);
+            dXdx[1][1] = 1 / m::exp(Xnative[1]);
             dXdx[2][2] = 1 / (M_PI - (hslope - 1.)*M_PI*cos(2.*M_PI*Xnative[2]));
             dXdx[3][3] = 1.;
         }
@@ -378,16 +378,16 @@ class FunkyTransform {
         KOKKOS_INLINE_FUNCTION void coord_to_embed(const GReal Xnative[GR_DIM], GReal Xembed[GR_DIM]) const
         {
             Xembed[0] = Xnative[0];
-            Xembed[1] = exp(Xnative[1]);
+            Xembed[1] = m::exp(Xnative[1]);
 
             const GReal thG = M_PI*Xnative[2] + ((1. - hslope)/2.)*sin(2.*M_PI*Xnative[2]);
             const GReal y = 2*Xnative[2] - 1.;
             const GReal thJ = poly_norm * y * (1. + m::pow(y/poly_xt,poly_alpha) / (poly_alpha + 1.)) + 0.5 * M_PI;
 #if LEGACY_TH
-            const GReal th = thG + exp(mks_smooth * (startx1 - Xnative[1])) * (thJ - thG);
+            const GReal th = thG + m::exp(mks_smooth * (startx1 - Xnative[1])) * (thJ - thG);
             Xembed[2] = excise(excise(th, 0.0, SMALL), M_PI, SMALL);
 #else
-            Xembed[2] = thG + exp(mks_smooth * (startx1 - Xnative[1])) * (thJ - thG);
+            Xembed[2] = thG + m::exp(mks_smooth * (startx1 - Xnative[1])) * (thJ - thG);
 #endif
             Xembed[3] = Xnative[3];
         }
@@ -406,7 +406,7 @@ class FunkyTransform {
         {
             gzero2(dxdX);
             dxdX[0][0] = 1.;
-            dxdX[1][1] = exp(Xnative[1]);
+            dxdX[1][1] = m::exp(Xnative[1]);
             dxdX[2][1] = -exp(mks_smooth * (startx1 - Xnative[1])) * mks_smooth
                 * (
                 M_PI / 2. -
@@ -417,7 +417,7 @@ class FunkyTransform {
                                 / (1 + poly_alpha))
                     - 1. / 2. * (1. - hslope) * sin(2. * M_PI * Xnative[2]));
             dxdX[2][2] = M_PI + (1. - hslope) * M_PI * cos(2. * M_PI * Xnative[2])
-                + exp(mks_smooth * (startx1 - Xnative[1]))
+                + m::exp(mks_smooth * (startx1 - Xnative[1]))
                     * (-M_PI
                         + 2. * poly_norm
                             * (1.

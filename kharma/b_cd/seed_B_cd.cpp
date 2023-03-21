@@ -91,7 +91,7 @@ TaskStatus B_CD::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
     // Shortcut to field values for easy fields
     if (b_field_flag == BSeedType::constant) {
         pmb->par_for("B_field_B", ks, ke, js, je, is, ie,
-            KOKKOS_LAMBDA_3D {
+            KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
                 // Set B1 directly
                 B_P(0, k, j, i) = b10;
                 B_P(1, k, j, i) = b20;
@@ -101,7 +101,7 @@ TaskStatus B_CD::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
         return TaskStatus::complete;
     } else if (b_field_flag == BSeedType::monopole) {
         pmb->par_for("B_field_B", ks, ke, js, je, is, ie,
-            KOKKOS_LAMBDA_3D {
+            KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
                 // Set B1 directly by normalizing
                 B_P(0, k, j, i) = b10 / G.gdet(Loci::center, j, i);
                 B_P(1, k, j, i) = 0.;
@@ -115,7 +115,7 @@ TaskStatus B_CD::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
     ParArrayND<Real> A3("A", n2, n1);
     // TODO figure out double vs Real here
     pmb->par_for("B_field_A", js+1, je, is+1, ie,
-        KOKKOS_LAMBDA_2D {
+        KOKKOS_LAMBDA (const int& j, const int& i) {
             GReal Xembed[GR_DIM];
             G.coord_embed(0, j, i, Loci::center, Xembed);
             GReal r = Xembed[1], th = Xembed[2];
@@ -131,7 +131,7 @@ TaskStatus B_CD::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
                 break;
             case BSeedType::ryan:
                 // BR's smoothed poloidal in-torus
-                q = m::pow(sin(th), 3) * m::pow(r / rin, 3) * exp(-r / 400) * rho_av - min_rho_q;
+                q = m::pow(sin(th), 3) * m::pow(r / rin, 3) * m::exp(-r / 400) * rho_av - min_rho_q;
                 break;
             case BSeedType::r3s3:
                 // Just the r^3 sin^3 th term, proposed EHT standard MAD
@@ -146,7 +146,7 @@ TaskStatus B_CD::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
                     Real x = (r / rin) * sin(th);
                     Real sigma = 2 / m::sqrt(2 * log(2));
                     Real u = x / m::abs(sigma);
-                    q = (1 / (m::sqrt(2 * M_PI) * m::abs(sigma))) * exp(-u * u / 2);
+                    q = (1 / (m::sqrt(2 * M_PI) * m::abs(sigma))) * m::exp(-u * u / 2);
                 }
                 break;
             default:
@@ -160,14 +160,13 @@ TaskStatus B_CD::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
 
     // Calculate B-field
     pmb->par_for("B_field_B", ks, ke, js+1, je-1, is+1, ie-1,
-        KOKKOS_LAMBDA_3D {
+        KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
             // Take the curl
-            B_P(0, k, j, i) = (A3(j + 1, i) - A3(j-1, i)) / (2 * G.dx2v(j) * G.gdet(Loci::center, j, i));
-            B_P(1, k, j, i) = -(A3(j, i + 1) - A3(j, i-1)) / (2 * G.dx1v(i) * G.gdet(Loci::center, j, i));
+            B_P(0, k, j, i) = (A3(j + 1, i) - A3(j-1, i)) / (2 * G.Dxc<2>(j) * G.gdet(Loci::center, j, i));
+            B_P(1, k, j, i) = -(A3(j, i + 1) - A3(j, i-1)) / (2 * G.Dxc<1>(i) * G.gdet(Loci::center, j, i));
             B_P(2, k, j, i) = 0.;
         }
     );
-    B_FluxCT::PtoU(rc);
 
     return TaskStatus::complete;
 }

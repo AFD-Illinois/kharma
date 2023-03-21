@@ -36,74 +36,257 @@
 
 #include <parthenon/parthenon.hpp>
 
-std::shared_ptr<StateDescriptor> Reductions::Initialize(ParameterInput *pin)
+
+
+Real Reductions::EHReduction(MeshData<Real> *md, UserHistoryOperation op, std::function<Real(REDUCE_FUNCTION_ARGS_EH)> fn, int zone)
 {
-    auto pkg = std::make_shared<StateDescriptor>("Reductions");
-    Params &params = pkg->AllParams();
+    Flag("Performing accretion reduction");
+    auto pmesh = md->GetMeshPointer();
 
-    bool add_zones = pin->GetOrAddBoolean("reductions", "add_zones_accretion", false);
-    params.Add("add_zones", add_zones);
-    bool add_fluxes = pin->GetOrAddBoolean("reductions", "add_fluxes_accretion", true);
-    params.Add("add_fluxes", add_fluxes);
-    bool add_totals = pin->GetOrAddBoolean("reductions", "add_totals", true);
-    params.Add("add_totals", add_totals);
-    bool add_flags = pin->GetOrAddBoolean("reductions", "add_flags", true);
-    params.Add("add_flags", add_flags);
+    Real result = 0.;
+    for (auto &pmb : pmesh->block_list) {
+        // If we're on the inner edge
+        if (pmb->boundary_flag[parthenon::BoundaryFace::inner_x1] == BoundaryFlag::user) {
+            const auto& pars = pmb->packages.Get("GRMHD")->AllParams();
+            const Real gam = pars.Get<Real>("gamma");
 
-    // List (vector) of HistoryOutputVar that will all be enrolled as output variables
-    parthenon::HstVar_list hst_vars = {};
-    // Accretion reductions only apply in spherical coordinates
-    if (pin->GetBoolean("coordinates", "spherical")) {
-        // Zone-based sums
-        if (add_zones) {
-            hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, MdotBound, "Mdot"));
-            hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, MdotEH, "Mdot_EH"));
-            hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, EdotBound, "Edot"));
-            hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, EdotEH, "Edot_EH"));
-            hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, LdotBound, "Ldot"));
-            hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, LdotEH, "Ldot_EH"));
+            auto& rc = pmb->meshblock_data.Get();
+            PackIndexMap prims_map, cons_map;
+            const auto& P = rc->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("Primitive")}, prims_map);
+            const auto& U = rc->PackVariablesAndFluxes(std::vector<MetadataFlag>{Metadata::Conserved}, cons_map);
+            const VarMap m_u(cons_map, true), m_p(prims_map, false);
+
+            IndexRange ib = pmb->cellbounds.GetBoundsI(IndexDomain::interior);
+            IndexRange jb = pmb->cellbounds.GetBoundsJ(IndexDomain::interior);
+            IndexRange kb = pmb->cellbounds.GetBoundsK(IndexDomain::interior);
+            const auto& G = pmb->coords;
+
+            Real block_result; 
+            switch(op) {
+            case UserHistoryOperation::sum: {
+                Kokkos::Sum<Real> sum_reducer(block_result);
+                pmb->par_reduce("accretion_sum", kb.s, kb.e, jb.s, jb.e, ib.s+zone, ib.s+zone,
+                    KOKKOS_LAMBDA (const int &k, const int &j, const int &i, double &local_result) {
+                        local_result += fn(G, P, m_p, U, m_u, gam, k, j, i) * G.Dxc<3>(k) * G.Dxc<2>(j);
+                    }
+                , sum_reducer);
+                result += block_result;
+                break;
+            }
+            case UserHistoryOperation::max: {
+                Kokkos::Max<Real> max_reducer(block_result);
+                pmb->par_reduce("accretion_sum", kb.s, kb.e, jb.s, jb.e, ib.s+zone, ib.s+zone,
+                    KOKKOS_LAMBDA (const int &k, const int &j, const int &i, double &local_result) {
+                        const Real val = fn(G, P, m_p, U, m_u, gam, k, j, i) * G.Dxc<3>(k) * G.Dxc<2>(j);
+                        if (val > local_result) local_result = val;
+                    }
+                , max_reducer);
+                if (block_result > result) result = block_result;
+                break;
+            }
+            case UserHistoryOperation::min: {
+                Kokkos::Min<Real> min_reducer(block_result);
+                pmb->par_reduce("accretion_sum", kb.s, kb.e, jb.s, jb.e, ib.s+zone, ib.s+zone,
+                    KOKKOS_LAMBDA (const int &k, const int &j, const int &i, double &local_result) {
+                        const Real val = fn(G, P, m_p, U, m_u, gam, k, j, i) * G.Dxc<3>(k) * G.Dxc<2>(j);
+                        if (val < local_result) local_result = val;
+                    }
+                , min_reducer);
+                if (block_result < result) result = block_result;
+                break;
+            }
+            }
+        }
+    }
+
+    Flag("Reduced");
+    return result;
+}
+
+Real Reductions::DomainReduction(MeshData<Real> *md, UserHistoryOperation op, std::function<Real(REDUCE_FUNCTION_ARGS_MESH)> fn, Real arg)
+{
+    Flag("Performing domain reduction");
+    auto pmesh = md->GetMeshPointer();
+
+    // TODO TODO MESHDATA THIS
+    Real result = 0.;
+    const auto& pars = pmesh->packages.Get("GRMHD")->AllParams();
+    const Real gam = pars.Get<Real>("gamma");
+
+    PackIndexMap prims_map, cons_map;
+    const auto& P = md->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("Primitive")}, prims_map);
+    const auto& U = md->PackVariablesAndFluxes(std::vector<MetadataFlag>{Metadata::Conserved}, cons_map);
+    const VarMap m_u(cons_map, true), m_p(prims_map, false);
+
+    auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
+    IndexRange ib = pmb0->cellbounds.GetBoundsI(IndexDomain::interior);
+    IndexRange jb = pmb0->cellbounds.GetBoundsJ(IndexDomain::interior);
+    IndexRange kb = pmb0->cellbounds.GetBoundsK(IndexDomain::interior);
+    IndexRange block = IndexRange{0, U.GetDim(5) - 1};
+    
+    switch(op) {
+    case UserHistoryOperation::sum: {
+        Kokkos::Sum<Real> sum_reducer(result);
+        pmb0->par_reduce("domain_sum", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+            KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i, double &local_result) {
+                const auto& G = U.GetCoords(b);
+                local_result += fn(G, P(b), m_p, U(b), m_u, gam, k, j, i, arg) * G.Dxc<3>(k) * G.Dxc<2>(j) * G.Dxc<1>(i);
+            }
+        , sum_reducer);
+        break;
+    }
+    case UserHistoryOperation::max: {
+        Kokkos::Max<Real> max_reducer(result);
+        pmb0->par_reduce("domain_max", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+            KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i, double &local_result) {
+                const auto& G = U.GetCoords(b);
+                const Real val = fn(G, P(b), m_p, U(b), m_u, gam, k, j, i, arg) * G.Dxc<3>(k) * G.Dxc<2>(j) * G.Dxc<1>(i);
+                if (val > local_result) local_result = val;
+            }
+        , max_reducer);
+        break;
+    }
+    case UserHistoryOperation::min: {
+        Kokkos::Min<Real> min_reducer(result);
+        pmb0->par_reduce("domain_min", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+            KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i, double &local_result) {
+                const auto& G = U.GetCoords(b);
+                const Real val = fn(G, P(b), m_p, U(b), m_u, gam, k, j, i, arg) * G.Dxc<3>(k) * G.Dxc<2>(j) * G.Dxc<1>(i);
+                if (val < local_result) local_result = val;
+            }
+        , min_reducer);
+        break;
+    }
+    }
+
+    Flag("Reduced");
+    return result;
+}
+
+/**
+ * Counts occurrences of a particular flag value
+ * 
+ */
+int Reductions::CountFlag(MeshData<Real> *md, std::string field_name, const int& flag_val, IndexDomain domain, bool is_bitflag)
+{
+    auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
+    // Pack variables
+    std::vector<std::string> flag_vec = {field_name};
+    auto& flag = md->PackVariables(flag_vec);
+
+    // Get sizes
+    IndexRange ib = md->GetBoundsI(domain);
+    IndexRange jb = md->GetBoundsJ(domain);
+    IndexRange kb = md->GetBoundsK(domain);
+    IndexRange block = IndexRange{0, flag.GetDim(5) - 1};
+
+    int n_flag;
+    Kokkos::Sum<int> flag_ct(n_flag);
+    pmb0->par_reduce("count_flag", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+        KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i, int &local_result) {
+            if ((is_bitflag && static_cast<int>(flag(b, 0, k, j, i)) & flag_val) ||
+                (!is_bitflag && static_cast<int>(flag(b, 0, k, j, i)) == flag_val))
+                ++local_result;
+        }
+    , flag_ct);
+    return n_flag;
+}
+
+int Reductions::CountFlags(MeshData<Real> *md, std::string field_name, std::map<int, std::string> flag_values, IndexDomain domain, int verbose, bool is_bitflag)
+{
+    Flag("Counting inversion failures");
+    int nflags = 0;
+    auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
+
+    // Pack variables
+    std::vector<std::string> flag_vec = {field_name};
+    auto& flag = md->PackVariables(flag_vec);
+
+    // Get sizes
+    IndexRange ib = md->GetBoundsI(domain);
+    IndexRange jb = md->GetBoundsJ(domain);
+    IndexRange kb = md->GetBoundsK(domain);
+    IndexRange block = IndexRange{0, flag.GetDim(5) - 1};
+
+    // Count all nonzero (technically, >0) values
+    // This works for pflags or fflags, so long as they're separate
+    // We don't count negative pflags as they denote zones that shouldn't be fixed
+    Kokkos::Sum<int> sum_reducer(nflags);
+    pmb0->par_reduce("count_flags", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+        KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i, int &local_result) {
+            if ((int) flag(b, 0, k, j, i) > 0) ++local_result;
+        }
+    , sum_reducer);
+
+    // TODO TODO REPLACE ABOVE WITH SOMETHING LIKE:
+    // array_sum::array_type<Real, 2> res;
+    // parthenon::par_reduce(parthenon::loop_pattern_mdrange_tag, "RadiationResidual1",
+    //                         DevExecSpace(), 0, mout->NumBlocks()-1,
+    //                         0, nang1, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+    // KOKKOS_LAMBDA(const int b, const int n, const int k, const int j, const int i,
+    //                 array_sum::array_type<Real, 2>& dsum) {
+    //     dsum.my_array[0] += fabs(iiter(b,n,k,j,i) - iout(b,n,k,j,i));
+    //     dsum.my_array[1] += iout(b,n,k,j,i);
+    // }, array_sum::GlobalSum<Real, Kokkos::HostSpace, 2>(res));
+
+    // Need the total on all ranks to evaluate the if statement below
+    static AllReduce<int> n_tot;
+    n_tot.val = nflags;
+    n_tot.StartReduce(MPI_SUM);
+    while (n_tot.CheckReduce() == TaskStatus::incomplete);
+    nflags = n_tot.val;
+
+    // If necessary, count each flag
+    // This is slow, but it can be slow: it's not called for normal operation
+    if (verbose > 0 && nflags > 0) {
+        // Overlap reductions to save time
+        // ...at the cost of considerable complexity...
+
+        // TODO TODO eliminate static reducers, they crash the program after it finishes
+        static Reduce<int> n_cells_r;
+        n_cells_r.val = (block.e - block.s + 1) * (kb.e - kb.s + 1) * (jb.e - jb.s + 1) * (ib.e - ib.s + 1);
+        n_cells_r.StartReduce(0, MPI_SUM);
+
+        static std::vector<std::shared_ptr<Reduce<int>>> reducers;
+        // Initialize reducers if they haven't been
+        if (reducers.size() == 0) {
+            for (auto& status : flag_values) {
+                std::shared_ptr<Reduce<int>> reducer = std::make_shared<Reduce<int>>();
+                reducers.push_back(reducer);
+            }
+        }
+        // Count occurrences of each flag value, assign to a reducer in order
+        int i = 0;
+        for (auto& status : flag_values) {
+            reducers[i]->val = CountFlag(md, field_name, (int) status.first, domain, is_bitflag);
+            reducers[i]->StartReduce(0, MPI_SUM);
+            ++i;
+        }
+        while (n_cells_r.CheckReduce() == TaskStatus::incomplete);
+        const int n_cells = n_cells_r.val;
+        // Check each reducer in order, add to a vector
+        std::vector<int> n_status_present;
+        for (std::shared_ptr<Reduce<int>> reducer : reducers) {
+            while (reducer->CheckReduce() == TaskStatus::incomplete);
+            n_status_present.push_back(reducer->val);
         }
 
-        // EH magnetization parameter
-        // TODO option?  Or just record this always?
-        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, PhiBound, "Phi"));
-        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, PhiEH, "Phi_EH"));
-
-        // Count accretion more accurately, as total flux through a spherical shell
-        if (add_fluxes) {
-            hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, MdotBoundFlux, "Mdot_Flux"));
-            hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, MdotEHFlux, "Mdot_EH_Flux"));
-            hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, EdotBoundFlux, "Edot_Flux"));
-            hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, EdotEHFlux, "Edot_EH_Flux"));
-            hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, LdotBoundFlux, "Ldot_Flux"));
-            hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, LdotEHFlux, "Ldot_EH_Flux"));
+        if (MPIRank0()) {
+            std::cout << field_name << ": " << nflags << " (" << (int)(((double) nflags )/n_cells * 100) << "% of all cells)" << std::endl;
+            if (verbose > 1) {
+                // Print nonzero vector contents against flag names in order
+                int i = 0;
+                for (auto& status : flag_values) {
+                    if (n_status_present[i] > 0) std::cout << status.second << ": " << n_status_present[i] << std::endl;
+                    ++i;
+                }
+                std::cout << std::endl;
+            }
         }
+
+        // TODO Print zone locations of bad inversions
     }
 
-    // Grid totals of various quantities potentially of interest
-    if (add_totals) {
-        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, TotalM, "Mass"));
-        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, TotalE, "Egas"));
-        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, TotalL, "Ang_Mom"));
-
-        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, TotalEHTLum, "EHT_Lum_Proxy"));
-        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, JetLum_50, "Jet_Lum"));
-    }
-    // Keep a slightly more granular log of flags than the usual dump cadence
-    if (add_flags) {
-        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, NPFlags, "Num_PFlags"));
-        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, NFFlags, "Num_FFlags"));
-    }
-
-    // Possible additions:
-    // 0. option for "verbose" logs of particular flags hit, using new functions
-    // 1. total 3- and 4-current numbers (best to add in "current" package)
-    // 2. Luminosity proxy sums over smaller areas, e.g. just disk, just disk 3-10M, etc
-    // 3. Total output power, using betagamma and/or just T^0_1 > 0
-    // 4+ basically anything with MI correlated to final image MI...
-
-    // Finally, add the whole list of callbacks to the package Params struct, using a special key
-    pkg->AddParam<>(parthenon::hist_param_key, hst_vars);
-
-    return pkg;
+    Flag("Counted");
+    return nflags;
 }

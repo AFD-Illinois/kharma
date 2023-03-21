@@ -65,8 +65,7 @@ void ReadKharmaRestartHeader(std::string fname, std::unique_ptr<ParameterInput>&
 
     // Read input from restart file 
     // (from external/parthenon/src/parthenon_manager.cpp)
-    std::unique_ptr<RestartReader> restartReader;
-    restartReader = std::make_unique<RestartReader>(fname.c_str());
+    auto restartReader = std::make_unique<RestartReader>(fname.c_str());
 
     // Load input stream
     std::unique_ptr<ParameterInput> fpinput;
@@ -133,11 +132,10 @@ void ReadKharmaRestartHeader(std::string fname, std::unique_ptr<ParameterInput>&
     hslope = fpinput->GetReal("coordinates", "hslope");
     pin->SetReal("coordinates", "hslope", hslope);
 
-    // close hdf5 file to prevent HDF5 hangs and corrupted files
-    restartReader = nullptr;
+    // File closed here when restartReader falls out of scope
 }
 
-TaskStatus ReadKharmaRestart(MeshBlockData<Real> *rc, ParameterInput *pin)
+TaskStatus ReadKharmaRestart(std::shared_ptr<MeshBlockData<Real>> rc, ParameterInput *pin)
 {
     Flag(rc, "Restarting from KHARMA checkpoint file");
 
@@ -197,13 +195,18 @@ TaskStatus ReadKharmaRestart(MeshBlockData<Real> *rc, ParameterInput *pin)
     if(! (pmb->packages.Get("GRMHD")->AllParams().hasKey("b_field_type")))
         pmb->packages.Get("GRMHD")->AddParam<std::string>("b_field_type", fBfield);
 
+    // Register SetKharmaRestart as the X1 boundary condition
+    auto bound_pkg = static_cast<KHARMAPackage*>(pmb->packages.Get("Boundaries").get());
+    bound_pkg->KHARMAInnerX1Boundary = SetKharmaRestart;
+    bound_pkg->KHARMAOuterX1Boundary = SetKharmaRestart;
+
     // Set the whole domain
-    SetKharmaRestart(rc);
+    SetKharmaRestart(rc, IndexDomain::entire, false);
 
    return TaskStatus::complete;
 }
 
-TaskStatus SetKharmaRestart(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
+TaskStatus SetKharmaRestart(std::shared_ptr<MeshBlockData<Real>> rc, IndexDomain domain, bool coarse)
 {
     Flag(rc, "Setting KHARMA restart zones");
     auto pmb = rc->GetBlockPointer();
@@ -248,8 +251,8 @@ TaskStatus SetKharmaRestart(MeshBlockData<Real> *rc, IndexDomain domain, bool co
     int fnghost = pmb->packages.Get("GRMHD")->Param<int>("rnghost");
     const Real fx1min_ghost = fx1min - fnghost*dx1;
     PackIndexMap prims_map, cons_map;
-    auto P = GRMHD::PackMHDPrims(rc, prims_map);
-    auto U = GRMHD::PackMHDCons(rc, cons_map);
+    auto P = GRMHD::PackMHDPrims(rc.get(), prims_map);
+    auto U = GRMHD::PackMHDCons(rc.get(), cons_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
     
     if ((domain != IndexDomain::outer_x1) && (domain != IndexDomain::inner_x1)) { 
@@ -426,7 +429,7 @@ TaskStatus SetKharmaRestart(MeshBlockData<Real> *rc, IndexDomain domain, bool co
 
         // Host-side interpolate & copy into the mirror array
         pmb->par_for("copy_restart_state_kharma", ks, ke, js, je, is, ie,
-            KOKKOS_LAMBDA_3D {
+            KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
                 get_prim_restart_kharma(G, coords, P, m_p, blcoord,  kscoord, 
                     fx1min, fx1max, fnghost, should_fill, is_spherical, include_B, gam, rs, mdot, length,
                     x1_f_device, x2_f_device, x3_f_device, rho_f_device, u_f_device, uvec_f_device, B_f_device,

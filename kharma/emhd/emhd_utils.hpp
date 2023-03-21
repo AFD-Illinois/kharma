@@ -35,6 +35,10 @@
 
 #include "decs.hpp"
 
+#include "reconstruction.hpp"
+
+using KReconstruction::slope_calc;
+
 /**
  * Utilities for the EMHD source terms, things we might conceivably use somewhere else,
  * or use *from* somewhere else instead of here.
@@ -46,88 +50,11 @@
 
 namespace EMHD {
 
-// Linear MC slope limiter
-KOKKOS_INLINE_FUNCTION Real linear_monotonized_cd(Real x1, Real x2, Real x3, Real dx)
-{
-    const Real Dqm = 2 * (x2 - x1) / dx;
-    const Real Dqp = 2 * (x3 - x2) / dx;
-    const Real Dqc = 0.5 * (x3 - x1) / dx;
-
-    if (Dqm * Dqp <= 0) {
-        return 0;
-    } else {
-        if ((m::abs(Dqm) < m::abs(Dqp)) && (fabs (Dqm) < m::abs(Dqc))) {
-            return Dqm;
-        } else if (m::abs(Dqp) < m::abs(Dqc)) {
-            return Dqp;
-        } else {
-            return Dqc;
-        }
-    }
-}
-
-// Linear Van Leer slope limiter
-KOKKOS_INLINE_FUNCTION Real linear_van_leer(Real x1, Real x2, Real x3, Real dx)
-{
-    const Real Dqm = (x2 - x1) / dx;
-    const Real Dqp = (x3 - x2) / dx;
-
-    const Real extrema = Dqm * Dqp;
-
-    if (extrema <= 0) {
-        return 0;
-    } else {
-        return (2 * extrema / (Dqm + Dqp)); 
-    }
-}
-
-/**
- * Compute slope of scalars at faces
- */
-template<typename Global>
-KOKKOS_INLINE_FUNCTION Real slope_calc_scalar(const GRCoordinates& G, const Global& A, const int& dir,
-                                              const int& b, const int& k, const int& j, const int& i, 
-                                              ReconstructionType recon=ReconstructionType::linear_mc)
-{
-    // TODO could generic-ize this, but with two options, screw it
-    if (recon != ReconstructionType::linear_vl) {
-        if (dir == 1) return linear_monotonized_cd(A(b, k, j, i-1), A(b, k, j, i), A(b, k, j, i+1), G.dx1v(i));
-        if (dir == 2) return linear_monotonized_cd(A(b, k, j-1, i), A(b, k, j, i), A(b, k, j+1, i), G.dx2v(j));
-        if (dir == 3) return linear_monotonized_cd(A(b, k-1, j, i), A(b, k, j, i), A(b, k+1, j, i), G.dx3v(k));
-    } else {
-        if (dir == 1) return linear_van_leer(A(b, k, j, i-1), A(b, k, j, i), A(b, k, j, i+1), G.dx1v(i));
-        if (dir == 2) return linear_van_leer(A(b, k, j-1, i), A(b, k, j, i), A(b, k, j+1, i), G.dx2v(j));
-        if (dir == 3) return linear_van_leer(A(b, k-1, j, i), A(b, k, j, i), A(b, k+1, j, i), G.dx3v(k));
-    }
-    return 0.;
-}
-
-/**
- * Compute slope of all  vectors at faces
- */
-template<typename Global>
-KOKKOS_INLINE_FUNCTION Real slope_calc_vector(const GRCoordinates& G, const Global& A, const int& mu,
-                                              const int& dir, const int& b, const int& k, const int& j, const int& i, 
-                                              ReconstructionType recon=ReconstructionType::linear_mc)
-{
-    // TODO could generic-ize this, but with two options, screw it
-    if (recon != ReconstructionType::linear_vl) {
-        if (dir == 1) return linear_monotonized_cd(A(b, mu, k, j, i-1), A(b, mu, k, j, i), A(b, mu, k, j, i+1), G.dx1v(i));
-        if (dir == 2) return linear_monotonized_cd(A(b, mu, k, j-1, i), A(b, mu, k, j, i), A(b, mu, k, j+1, i), G.dx2v(j));
-        if (dir == 3) return linear_monotonized_cd(A(b, mu, k-1, j, i), A(b, mu, k, j, i), A(b, mu, k+1, j, i), G.dx3v(k));
-    } else {
-        if (dir == 1) return linear_van_leer(A(b, mu, k, j, i-1), A(b, mu, k, j, i), A(b, mu, k, j, i+1), G.dx1v(i));
-        if (dir == 2) return linear_van_leer(A(b, mu, k, j-1, i), A(b, mu, k, j, i), A(b, mu, k, j+1, i), G.dx2v(j));
-        if (dir == 3) return linear_van_leer(A(b, mu, k-1, j, i), A(b, mu, k, j, i), A(b, mu, k+1, j, i), G.dx3v(k));
-    }
-    return 0.;
-}
-
 // Compute gradient of four velocities and temperature
 // Called by emhd_explicit_sources
-template<typename Global>
-KOKKOS_INLINE_FUNCTION void gradient_calc(const GRCoordinates& G, const Global& P,
-                                          const GridVector& ucov_s, const GridScalar& theta_s,
+template<KReconstruction::Type recon>
+KOKKOS_INLINE_FUNCTION void gradient_calc(const GRCoordinates& G, const VariablePack<Real>& Temps,
+                                          const int& uvec_index, const int& theta_index,
                                           const int& b, const int& k, const int& j, const int& i, 
                                           const bool& do_3d, const bool& do_2d,
                                           Real grad_ucov[GR_DIM][GR_DIM], Real grad_Theta[GR_DIM])
@@ -137,31 +64,32 @@ KOKKOS_INLINE_FUNCTION void gradient_calc(const GRCoordinates& G, const Global& 
         grad_ucov[0][mu] = 0;
 
         // slope in direction nu of component mu
-        grad_ucov[1][mu] = slope_calc_vector(G, ucov_s, mu, 1, b, k, j, i);
+        grad_ucov[1][mu] = slope_calc<recon, 1>(G, Temps, uvec_index + mu, k, j, i);
         if (do_2d) {
-            grad_ucov[2][mu] = slope_calc_vector(G, ucov_s, mu, 2, b, k, j, i);
+            grad_ucov[2][mu] = slope_calc<recon, 2>(G, Temps, uvec_index + mu, k, j, i);
         } else {
             grad_ucov[2][mu] = 0.;
         }
         if (do_3d) {
-            grad_ucov[3][mu] = slope_calc_vector(G, ucov_s, mu, 3, b, k, j, i);
+            grad_ucov[3][mu] = slope_calc<recon, 3>(G, Temps, uvec_index + mu, k, j, i);
         } else {
             grad_ucov[3][mu] = 0.;
         }
     }
-    DLOOP3 grad_ucov[mu][nu] -= G.conn(j, i, lam, mu, nu) * ucov_s(lam, k, j, i);
+    // TODO skip this if flat space?
+    DLOOP3 grad_ucov[mu][nu] -= G.conn(j, i, lam, mu, nu) * Temps(uvec_index + lam, k, j, i);
 
     // Compute temperature gradient
     // Time derivative component is computed in time_derivative_sources
     grad_Theta[0] = 0;
-    grad_Theta[1] = slope_calc_scalar(G, theta_s, 1, b, k, j, i);
+    grad_Theta[1] = slope_calc<recon, 1>(G, Temps, theta_index, k, j, i);
     if (do_2d) {
-        grad_Theta[2] = slope_calc_scalar(G, theta_s, 2, b, k, j, i);
+        grad_Theta[2] = slope_calc<recon, 2>(G, Temps, theta_index, k, j, i);
     } else {
         grad_Theta[2] = 0.;
     } 
     if (do_3d) {
-        grad_Theta[3] = slope_calc_scalar(G, theta_s, 3, b, k, j, i);
+        grad_Theta[3] = slope_calc<recon, 3>(G, Temps, theta_index, k, j, i);
     } else {
         grad_Theta[3] = 0.;
     }

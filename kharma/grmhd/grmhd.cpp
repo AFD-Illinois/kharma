@@ -34,14 +34,10 @@
 
 #include "grmhd.hpp"
 
-#include <memory>
-
-// Until Parthenon gets a reduce()
-#include "Kokkos_Core.hpp"
-
-#include <parthenon/parthenon.hpp>
-
 #include "decs.hpp"
+
+// TODO eliminate when Parthenon gets reduction types
+#include "Kokkos_Core.hpp"
 
 #include "boundaries.hpp"
 #include "current.hpp"
@@ -49,12 +45,10 @@
 #include "floors.hpp"
 #include "flux.hpp"
 #include "gr_coordinates.hpp"
-#include "grmhd.hpp"
-#include "kharma.hpp"
 #include "grmhd_functions.hpp"
-#include "U_to_P.hpp"
+#include "kharma.hpp"
 
-using namespace parthenon;
+#include <memory>
 
 
 /**
@@ -63,24 +57,21 @@ using namespace parthenon;
 namespace GRMHD
 {
 
-std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t packages)
+std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages)
 {
-    // This function builds and returns a "StateDescriptor" or "Package" object.
+    Flag("Initializing GRMHD");
+    // This function builds and returns a "KHARMAPackage" object, which is a light
+    // superset of Parthenon's "StateDescriptor" class for packages.
     // The most important part of this object is a member of type "Params",
     // which acts more or less like a Python dictionary:
     // it puts values into a map of names->objects, where "objects" are usually
     // floats, strings, and ints, but can be arbitrary classes.
-    // This "dictionary" is *not* totally immutable, but should be treated
-    // as such in every package except "Globals".
-    auto pkg = std::make_shared<StateDescriptor>("GRMHD");
+    // This "dictionary" is mostly immutable, and should always be treated as immutable,
+    // except in the "Globals" package.
+    auto pkg = std::make_shared<KHARMAPackage>("GRMHD");
     Params &params = pkg->AllParams();
 
-    // =================================== PARAMETERS ===================================
-
-    // Add the problem name, so we can be C++ noobs and special-case on string contents
-    std::string problem_name = pin->GetString("parthenon/job", "problem_id");
-    params.Add("problem", problem_name);
-
+    // GRMHD PARAMETERS
     // Fluid gamma for ideal EOS.  Don't guess this.
     // Only ideal EOS are supported, though modifying gamma based on
     // local temperatures would be straightforward.
@@ -91,15 +82,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     double cfl = pin->GetOrAddReal("GRMHD", "cfl", 0.9);
     params.Add("cfl", cfl);
 
-    // Don't even error on this. LLF or bust, baby
-    // TODO move this and recon options out of GRMHD package!
-    std::string flux = pin->GetOrAddString("GRMHD", "flux", "llf");
-    if (flux == "hlle") {
-        params.Add("use_hlle", true);
-    } else {
-        params.Add("use_hlle", false);
-    }
-
+    // TIME PARAMETERS
     // These parameters are put in "parthenon/time" to match others, but ultimately we should
     // override the parthenon timestep chooser
     // Minimum timestep, if something about the sound speed goes wonky. Probably won't save you :)
@@ -121,62 +104,25 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     bool use_dt_light_phase_speed = pin->GetOrAddBoolean("parthenon/time", "use_dt_light_phase_speed", false);
     params.Add("use_dt_light_phase_speed", use_dt_light_phase_speed);
 
-    // Reconstruction scheme: plm, weno5, ppm...
-    std::string recon = pin->GetOrAddString("GRMHD", "reconstruction", "weno5");
-    if (recon == "donor_cell") {
-        params.Add("recon", ReconstructionType::donor_cell);
-    } else if (recon == "linear_vl") {
-        params.Add("recon", ReconstructionType::linear_vl);
-    } else if (recon == "linear_mc") {
-        params.Add("recon", ReconstructionType::linear_mc);
-    } else if (recon == "weno5") {
-        params.Add("recon", ReconstructionType::weno5);
-    // } else if (recon == "weno5_lower_poles") {
-    //     params.Add("recon", ReconstructionType::weno5_lower_poles);
-    } else {
-        std::cerr << "Reconstruction type not supported!  Supported reconstructions:" << std::endl;
-        std::cerr << "donor_cell, linear_mc, linear_vl, weno5" << std::endl;
-        throw std::invalid_argument("Unsupported reconstruction algorithm!");
-    }
-
-    // Diagnostic data
-    int verbose = pin->GetOrAddInteger("debug", "verbose", 0);
-    params.Add("verbose", verbose);
-    int flag_verbose = pin->GetOrAddInteger("debug", "flag_verbose", 0);
-    params.Add("flag_verbose", flag_verbose);
-    int extra_checks = pin->GetOrAddInteger("debug", "extra_checks", 0);
-    params.Add("extra_checks", extra_checks);
-
-    // Option to disable checking the fluxes at boundaries:
-    // Prevent inflow at outer boundaries
-    bool check_inflow_inner = pin->GetOrAddBoolean("bounds", "check_inflow_inner", true);
-    params.Add("check_inflow_inner", check_inflow_inner);
-    bool check_inflow_outer = pin->GetOrAddBoolean("bounds", "check_inflow_outer", true);
-    params.Add("check_inflow_outer", check_inflow_outer);
-    // Ensure fluxes through the zero-size face at the pole are zero
-    bool fix_flux_pole = pin->GetOrAddBoolean("bounds", "fix_flux_pole", true);
-    params.Add("fix_flux_pole", fix_flux_pole);
-    // Ensure fluxes through the zero-size face at the x1 boundary are zero
-    bool fix_flux_x1 = pin->GetOrAddBoolean("b_field", "fix_flux_x1", false);
-    params.Add("fix_flux_x1", fix_flux_x1);
-
-    // Driver options
-    // The two current drivers are "harm" or "imex", with the former being the usual KHARMA
-    // driver, and the latter supporting implicit stepping of some or all variables
-    auto driver_type = pin->GetString("driver", "type"); // This is set in kharma.cpp
-    params.Add("driver_type", driver_type);
+    // IMPLICIT PARAMETERS
     // The ImEx driver is necessary to evolve implicitly, but doesn't require it.  Using explicit
     // updates for GRMHD vars is useful for testing, or if adding just a couple of implicit variables
     // Doing EGRMHD requires implicit evolution of GRMHD variables, of course
-    auto implicit_grmhd = (driver_type == "imex") &&
+    auto& driver = packages->Get("Driver")->AllParams();
+    auto implicit_grmhd = (driver.Get<std::string>("type") == "imex") &&
                           (pin->GetBoolean("emhd", "on") || pin->GetOrAddBoolean("GRMHD", "implicit", false));
     params.Add("implicit", implicit_grmhd);
-    // Synchronize boundary variables twice.  Ensures KHARMA is agnostic to the breakdown
-    // of meshblocks, at the cost of twice the MPI overhead, for potentially much worse strong scaling.
-    bool two_sync = pin->GetOrAddBoolean("perf", "two_sync", false) ||
-                    pin->GetOrAddBoolean("driver", "two_sync", false);
-    params.Add("two_sync", two_sync);
 
+    // Update variable numbers
+    if (implicit_grmhd) {
+        int n_current = driver.Get<int>("n_implicit_vars");
+        driver.Update("n_implicit_vars", n_current+5);
+    } else {
+        int n_current = driver.Get<int>("n_explicit_vars");
+        driver.Update("n_explicit_vars", n_current+5);
+    }
+
+    // AMR PARAMETERS
     // Adaptive mesh refinement options
     // Only active if "refinement" and "numlevel" parameters allow
     Real refine_tol = pin->GetOrAddReal("GRMHD", "refine_tol", 0.5);
@@ -192,53 +138,41 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     // closely-related size (for "Face" and "Edge" fields)
 
     // Add flags to distinguish groups of fields.
-    // This is stretching what the "Params" object should really be carrying,
-    // but the flag values are necessary in many places, and this was the
-    // easiest way to ensure availability.
     // 1. One flag to mark the primitive variables specifically
     // (Parthenon has Metadata::Conserved already)
-    MetadataFlag isPrimitive = Metadata::AllocateNewFlag("Primitive");
-    params.Add("PrimitiveFlag", isPrimitive);
+    Metadata::AddUserFlag("Primitive");
     // 2. And one for hydrodynamics (everything we directly handle in this package)
-    MetadataFlag isHD = Metadata::AllocateNewFlag("HD");
-    params.Add("HDFlag", isHD);
+    Metadata::AddUserFlag("HD");
     // 3. And one for magnetohydrodynamics
     // (all HD fields plus B field, which we'll need to make use of)
-    MetadataFlag isMHD = Metadata::AllocateNewFlag("MHD");
-    params.Add("MHDFlag", isMHD);
+    Metadata::AddUserFlag("MHD");
+    // Mark whether to evolve our variables via the explicit or implicit step inside the driver
+    MetadataFlag areWeImplicit = (implicit_grmhd) ? Metadata::GetUserFlag("Implicit")
+                                                  : Metadata::GetUserFlag("Explicit");
 
-    std::vector<MetadataFlag> flags_prim, flags_cons;
-    if (driver_type == "harm") { // Normal operation
+    std::vector<MetadataFlag> flags_prim = {Metadata::Real, Metadata::Cell, Metadata::Derived, areWeImplicit,
+                                            Metadata::Restart, Metadata::GetUserFlag("Primitive"), Metadata::GetUserFlag("HD"), Metadata::GetUserFlag("MHD")};
+    std::vector<MetadataFlag> flags_cons = {Metadata::Real, Metadata::Cell, Metadata::Independent, areWeImplicit,
+                                            Metadata::WithFluxes, Metadata::Conserved, Metadata::GetUserFlag("HD"), Metadata::GetUserFlag("MHD")};
+
+    bool sync_prims = packages->Get("Driver")->Param<bool>("sync_prims");
+    if (!sync_prims) { // Normal operation
         // As mentioned elsewhere, KHARMA treats the conserved variables as the independent ones,
         // and the primitives as "Derived"
         // Primitives are still used for reconstruction, physical boundaries, and output, and are
         // generally the easier to understand quantities
-        // Note especially their ghost zones are also filled! This is less efficient than syncing just
-        // one or the other, but allows the most flexibility for reasons that should be clearer in harm_driver.cpp
-        flags_prim = std::vector<MetadataFlag>({Metadata::Real, Metadata::Cell, Metadata::Derived,
-                                                Metadata::FillGhost, Metadata::Restart,
-                                                isPrimitive, isHD, isMHD});
-        // Conserved variables are actually rho*u^0 & T^0_mu, but are named after the prims for consistency
-        // We will rarely need the conserved variables by name, we will mostly be treating them as a group
-        flags_cons = std::vector<MetadataFlag>({Metadata::Real, Metadata::Cell, Metadata::Independent,
-                                                Metadata::WithFluxes, Metadata::FillGhost, Metadata::Restart,
-                                                Metadata::Conserved, isHD, isMHD});
-    } else if (driver_type == "imex") { // ImEx driver
-        // When evolving (E)GRMHD implicitly, we instead mark the primitive variables to be synchronized.
+        // TODO can we not sync prims if we're using two_sync?
+        flags_cons.push_back(Metadata::FillGhost);
+        flags_prim.push_back(Metadata::FillGhost);
+    } else { // Treat primitive vars as fundamental
+        // When evolving (E)GRMHD implicitly, we just mark the primitive variables to be synchronized.
         // This won't work for AMR, but it fits much better with the implicit solver, which expects
         // primitive variable inputs and produces primitive variable results.
-
-        // Mark whether to evolve our variables via the explicit or implicit step inside the driver
-        MetadataFlag areWeImplicit = (implicit_grmhd) ? packages.Get("Implicit")->Param<MetadataFlag>("ImplicitFlag")
-                                                      : packages.Get("Implicit")->Param<MetadataFlag>("ExplicitFlag");
-
-        flags_prim = std::vector<MetadataFlag>({Metadata::Real, Metadata::Cell, Metadata::Derived, areWeImplicit,
-                                                Metadata::FillGhost, Metadata::Restart, isPrimitive, isHD, isMHD});
-        flags_cons = std::vector<MetadataFlag>({Metadata::Real, Metadata::Cell, Metadata::Independent, areWeImplicit,
-                                                Metadata::WithFluxes, Metadata::Conserved, isHD, isMHD});
+        flags_prim.push_back(Metadata::FillGhost);
     }
 
     // With the flags sorted & explained, actually declaring fields is easy.
+    // These will be initialized & cleaned automatically for each meshblock
     auto m = Metadata(flags_prim);
     pkg->AddField("prims.rho", m);
     pkg->AddField("prims.u", m);
@@ -257,91 +191,31 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     m = Metadata(flags_cons_vec, s_vector);
     pkg->AddField("cons.uvec", m);
 
-    // No magnetic fields here. KHARMA should operate fine in GRHD without them,
-    // so they are allocated only by B field packages.
-
     // Maximum signal speed (magnitude).
     // Needs to be cached from flux updates for calculating the timestep later
     m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy}, s_vector);
     pkg->AddField("ctop", m);
 
-    // Flag denoting UtoP inversion failures
-    // Only needed if we're actually calling UtoP, but always allocated as it's retrieved often
-    // Needs boundary sync if treating primitive variables as fundamental
-    if (driver_type == "imex" && !implicit_grmhd) {
-        m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy, Metadata::FillGhost});
-    } else {
-        m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
-    }
-    pkg->AddField("pflag", m);
+    // No magnetic fields here. KHARMA should operate fine in GRHD without them,
+    // so they are allocated only by B field packages.
 
-    if (!implicit_grmhd) {
-        // If we're using a step that requires calling UtoP, register it
-        // Calling this messes up implicit stepping, so we only register it here
-        pkg->FillDerivedBlock = GRMHD::FillDerivedBlock;
-    }
+    // A KHARMAPackage also contains quite a few "callbacks," or functions called at
+    // specific points in a step if the package is loaded.
+    // Generally, see the headers for function descriptions.
 
-    // Finally, the StateDescriptor/Package object determines the Callbacks Parthenon makes to
-    // a particular package -- that is, some portion of the things that the package needs done
-    // at each step, which must be done at specific times.
-    // See the header files defining each of these functions for their purpose and call context.
-    pkg->CheckRefinementBlock = GRMHD::CheckRefinement;
-    pkg->EstimateTimestepBlock = GRMHD::EstimateTimestep;
+    //pkg->BlockUtoP // Taken care of by the inverter package since it's hard to do
+    // There's no "Flux" package, so we register the geometric (\Gamma*T) source here. I think it makes sense.
+    pkg->AddSource = Flux::AddGeoSource;
+
+    // Parthenon general callbacks
+    pkg->CheckRefinementBlock    = GRMHD::CheckRefinement;
+    pkg->EstimateTimestepBlock   = GRMHD::EstimateTimestep;
     pkg->PostStepDiagnosticsMesh = GRMHD::PostStepDiagnostics;
 
+    // TODO TODO Reductions
+
+    Flag("Initialized");
     return pkg;
-}
-
-void UtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
-{
-    Flag(rc, "Filling Primitives");
-    auto pmb = rc->GetBlockPointer();
-    const auto& G = pmb->coords;
-
-    PackIndexMap prims_map, cons_map;
-    auto U = GRMHD::PackMHDCons(rc, cons_map);
-    auto P = GRMHD::PackHDPrims(rc, prims_map);
-    const VarMap m_u(cons_map, true), m_p(prims_map, false);
-
-    GridScalar pflag = rc->Get("pflag").data;
-
-    // KHARMA uses only one boundary exchange, in the conserved variables
-    // Except where FixUtoP has no neighbors, and must fix with bad zones, this is fully identical
-    // between #s of MPI ranks, because we sync 4 ghost zones and only require 3 for reconstruction.
-    // Thus as long as the last rank is not flagged, it will be inverted the same way on each process, and
-    // used in the same way for fixups.  If it fails & thus might be different, it is ignored.
-
-    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
-
-    // Get the primitives from our conserved versions
-    // Currently this returns *all* zones, including all ghosts, even
-    // uninitialized zones which are still zero.  We select for initialized
-    // zones only in the loop below, to avoid failures to converge while
-    // calculating primtive vars over as much of the domain as possible
-    // We could (did formerly) save some time here by running over
-    // only zones with initialized conserved variables, but the domain
-    // of such values is not rectangular in the current handling
-    auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
-    const IndexRange ib = bounds.GetBoundsI(domain);
-    const IndexRange jb = bounds.GetBoundsJ(domain);
-    const IndexRange kb = bounds.GetBoundsK(domain);
-    const IndexRange ib_b = bounds.GetBoundsI(IndexDomain::interior);
-    const IndexRange jb_b = bounds.GetBoundsJ(IndexDomain::interior);
-    const IndexRange kb_b = bounds.GetBoundsK(IndexDomain::interior);
-
-    pmb->par_for("U_to_P", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-        KOKKOS_LAMBDA_3D {
-            if (inside(k, j, i, kb_b, jb_b, ib_b) ||
-                m::abs(P(m_p.RHO, k, j, i)) > SMALL || m::abs(P(m_p.UU, k, j, i)) > SMALL) {
-                // Run over all interior zones and any initialized ghosts
-                pflag(k, j, i) = GRMHD::u_to_p(G, U, m_u, gam, k, j, i, Loci::center, P, m_p);
-            } else {
-                // Don't *use* un-initialized zones for fixes, but also don't *fix* them
-                pflag(k, j, i) = -1;
-            }
-        }
-    );
-    Flag(rc, "Filled");
 }
 
 Real EstimateTimestep(MeshBlockData<Real> *rc)
@@ -355,7 +229,7 @@ Real EstimateTimestep(MeshBlockData<Real> *rc)
     auto& ctop = rc->Get("ctop").data;
 
     // TODO: move timestep limiter into an override of SetGlobalTimestep
-    // TODO: move diagnostic printing to PostStepDiagnostics, now it's broken here
+    // TODO: keep location of the max, or be able to look it up in diagnostics
 
     auto& globals = pmb->packages.Get("Globals")->AllParams();
     const auto& grmhd_pars = pmb->packages.Get("GRMHD")->AllParams();
@@ -391,11 +265,11 @@ Real EstimateTimestep(MeshBlockData<Real> *rc)
     pmb->par_reduce("ndt_min", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA(const int k, const int j, const int i,
                       typename Kokkos::MinMax<Real>::value_type &lminmax) {
-            double ndt_zone = 1 / (1 / (G.dx1v(i) / ctop(0, k, j, i)) +
-                                   1 / (G.dx2v(j) / ctop(1, k, j, i)) +
-                                   1 / (G.dx3v(k) / ctop(2, k, j, i)));
+            double ndt_zone = 1 / (1 / (G.Dxc<1>(i) / ctop(0, k, j, i)) +
+                                   1 / (G.Dxc<2>(j) / ctop(1, k, j, i)) +
+                                   1 / (G.Dxc<3>(k) / ctop(2, k, j, i)));
             // Effective "max speed" used for the timestep
-            double ctop_max_zone = m::min(G.dx1v(i), m::min(G.dx2v(j), G.dx3v(k))) / ndt_zone;
+            double ctop_max_zone = m::min(G.Dxc<1>(i), m::min(G.Dxc<2>(j), G.Dxc<3>(k))) / ndt_zone;
 
             if (!m::isnan(ndt_zone) && (ndt_zone < lminmax.min_val))
                 lminmax.min_val = ndt_zone;
@@ -415,8 +289,11 @@ Real EstimateTimestep(MeshBlockData<Real> *rc)
     const double ndt = clip(min_ndt * cfl, dt_min, dt_max);
 
     // Record max ctop, for constraint damping
-    if (nctop > globals.Get<Real>("ctop_max")) {
-        globals.Update<Real>("ctop_max", nctop);
+    // TODO could probably use generic Max inside B_CD package
+    if (pmb->packages.AllPackages().count("B_CD")) {
+        auto& b_cd_params = pmb->packages.Get("B_CD")->AllParams();
+        if (nctop > b_cd_params.Get<Real>("ctop_max"))
+            b_cd_params.Update<Real>("ctop_max", nctop);
     }
 
     Flag(rc, "Estimated");
@@ -435,13 +312,13 @@ Real EstimateRadiativeTimestep(MeshBlockData<Real> *rc)
     const auto& grmhd_pars = pmb->packages.Get("GRMHD")->AllParams();
     const bool phase_speed = grmhd_pars.Get<bool>("use_dt_light_phase_speed");
 
-    const Real dx[GR_DIM] = {0., G.dx1v(0), G.dx2v(0), G.dx3v(0)};
+    const Real dx[GR_DIM] = {0., G.Dxc<1>(0), G.Dxc<2>(0), G.Dxc<3>(0)};
 
     // Leaving minmax in case the max phase speed is useful
     typename Kokkos::MinMax<Real>::value_type minmax;
     pmb->par_reduce("ndt_min", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-        KOKKOS_LAMBDA(const int k, const int j, const int i,
-                      typename Kokkos::MinMax<Real>::value_type &lminmax) {
+        KOKKOS_LAMBDA(const int& k, const int& j, const int& i,
+                      typename Kokkos::MinMax<Real>::value_type& lminmax) {
 
             double light_phase_speed = SMALL;
             double dt_light_local = 0.;
@@ -511,7 +388,7 @@ AmrTag CheckRefinement(MeshBlockData<Real> *rc)
     , Kokkos::MinMax<Real>(minmax));
 
     auto pkg = pmb->packages.Get("GRMHD");
-    const auto &refine_tol = pkg->Param<Real>("refine_tol");
+    const auto &refine_tol   = pkg->Param<Real>("refine_tol");
     const auto &derefine_tol = pkg->Param<Real>("derefine_tol");
 
     if (minmax.max_val - minmax.min_val > refine_tol) return AmrTag::refine;
@@ -525,21 +402,13 @@ TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
     auto pmesh = md->GetMeshPointer();
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
     // Options
-    const auto& pars = pmesh->packages.Get("GRMHD")->AllParams();
-    const int flag_verbose = pars.Get<int>("flag_verbose");
+    const auto& pars = pmesh->packages.Get("Globals")->AllParams();
     const int extra_checks = pars.Get<int>("extra_checks");
-
-    // Debugging/diagnostic info about floor and inversion flags
-    if (flag_verbose >= 1) {
-        Flag("Printing flags");
-        CountPFlags(md, IndexDomain::interior, flag_verbose);
-        CountFFlags(md, IndexDomain::interior, flag_verbose);
-    }
+    Flag("Got pointers");
 
     // Check for a soundspeed (ctop) of 0 or NaN
     // This functions as a "last resort" check to stop a
     // simulation on obviously bad data
-    // TODO also be able to print what zone dictated timestep
     if (extra_checks >= 1) {
         CheckNaN(md, X1DIR);
         if (pmesh->ndim > 1) CheckNaN(md, X2DIR);

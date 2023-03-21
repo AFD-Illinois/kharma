@@ -1,35 +1,32 @@
 # Continuous Integration testing for KHARMA
 # a.k.a did we break the basics?
-
-# Build on Nvidia image.
-# Can pretty easily change this out, with changes to build
-# Someday we'll build & push a KHARMA image, then test that
-image: nvcr.io/nvidia/nvhpc:22.9-devel-cuda_multi-rockylinux8
+# This version run on LANL Darwin
+# See .gitlab-ci-docker.yml for a generic version,
+# which can be run on any Docker runner w/GPUs
 
 variables:
-  OMP_NUM_THREADS: 8
+  GIT_SUBMODULE_STRATEGY: recursive
+  SCHEDULER_PARAMETERS: "-N 1 --qos=debug -p volta-x86"
+  HOST_ARCH: HSW
+  NPROC: ""
+  OMP_NUM_THREADS: 28
   OMP_PROC_BIND: "false"
   MPI_EXE: mpirun
-  OMPI_ALLOW_RUN_AS_ROOT: 1
-  OMPI_ALLOW_RUN_AS_ROOT_CONFIRM: 1
-  GIT_SUBMODULE_STRATEGY: recursive
+  MPI_NUM_PROCS: 2
+  HTTP_PROXY: http://proxyout.lanl.gov:8080
+  http_proxy: http://proxyout.lanl.gov:8080
+  HTTPS_PROXY: http://proxyout.lanl.gov:8080
+  https_proxy: http://proxyout.lanl.gov:8080
+  NO_PROXY: lanl.gov,localhost,127.0.0.1,0.0.0.0,::1
+  no_proxy: lanl.gov,localhost,127.0.0.1,0.0.0.0,::1
 
 ### DEFAULT TEST BEHAVIOR ###
 default:
-  # Be default: install pyharm, then run test in cwd
-  # For new tests, write one run.sh script which runs/verifies
-  # interleaved, and prints a summary of results.
+  tags:
+    - darwin-slurm-shared
+  # Load Python
   before_script:
-    - export PATH="$HOME/.local/bin:$PATH"
-    - wget -O Miniforge3.sh "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-$(uname)-$(uname -m).sh"
-    - bash Miniforge3.sh -b -p "/home/conda"
-    - source "/home/conda/etc/profile.d/conda.sh"
-    - conda install h5py
-    - git clone https://github.com/AFD-Illinois/pyharm.git /home/pyharm
-    - conda activate
-    - cd /home/pyharm
-    - pip install --user .
-    - cd -
+    - module load miniconda3
 
   # Always keep logs and plots.  Results should be printed to console!
   artifacts:
@@ -44,72 +41,35 @@ stages:
   - build
   - tests
 
+# Default rules
+.default-rules:
+  rules:
+    - if: $CI_COMMIT_BRANCH == "dev"
+      when: always
+    - when: manual
+  allow_failure: false
+
 # Build, obviously overrides script/artifacts
 build:
+  extends: .default-rules
   stage: build
-  variables:
-    NPROC: 24
-    HOST_ARCH: HSW
   before_script:
     - echo "Skipping pyharm install in build."
   script:
     - export PREFIX_PATH=$PWD/external/hdf5
-    - ./make.sh clean cuda hdf5
+    - ./make.sh clean cuda hdf5 volta
   artifacts:
     paths:
       - kharma.*
       - make_args
 
-bondi:
+# Run all tests in parallel
+tests:
+  extends: .default-rules
   stage: tests
   script:
-    - cd tests/bondi
+    - cd tests/$TEST
     - ./run.sh
-
-mhdmodes:
-  stage: tests
-  script:
-    - cd tests/mhdmodes
-    - ./run.sh
-
-emhdmodes:
-  stage: tests
-  script:
-    - cd tests/emhdmodes
-    - ./run.sh
-
-noh:
-  stage: tests
-  script:
-    - cd tests/noh
-    - ./run.sh
-
-bz_monopole:
-  stage: tests
-  script:
-    - cd tests/bz_monopole
-    - ./run.sh
-
-tilt_init:
-  stage: tests
-  script:
-    - cd tests/tilt_init
-    - ./run.sh
-
-torus_sanity:
-  stage: tests
-  script:
-    - cd tests/torus_sanity
-    - ./run.sh
-
-restart:
-  stage: tests
-  script:
-    - cd tests/restart
-    - ./run.sh
-
-reinit:
-  stage: tests
-  script:
-    - cd tests/reinit
-    - ./run.sh
+  parallel:
+    matrix:
+      - TEST: [bondi, bz_monopole, emhdmodes, mhdmodes, noh, regrid, reinit, restart, tilt_init, torus_sanity]

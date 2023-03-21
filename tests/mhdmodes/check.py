@@ -16,6 +16,12 @@ if len(sys.argv) > 4:
     DIM = sys.argv[4]
 else:
     DIM = "3d"
+if len(sys.argv) > 5:
+    DIR = int(sys.argv[5])
+else:
+    DIR = 0
+
+print(DIR)
 
 NVAR = 8
 VARS = ['rho', 'u', 'u1', 'u2', 'u3', 'B1', 'B2', 'B3']
@@ -23,7 +29,7 @@ VARS = ['rho', 'u', 'u1', 'u2', 'u3', 'B1', 'B2', 'B3']
 amp = 1.e-4
 k1 = 2.*np.pi
 k2 = 2.*np.pi
-if DIM == "3d":
+if DIM == "3d" and DIR == 0:
     k3 = 2.*np.pi
 else:
     k3 = 0
@@ -41,7 +47,7 @@ L1 = []
 
 # EIGENMODES: 3D
 dvar = np.zeros(NVAR)
-if DIM == "3d":
+if DIM == "3d" and DIR == 0:
     if "entropy" in SHORT:
         dvar[0] = 1.
     if "slow" in SHORT:
@@ -95,8 +101,7 @@ dvar *= amp
 
 # USE DUMPS IN FOLDERS OF GIVEN FORMAT
 for m, res in enumerate(RES):
-    #print(DIM, res, SHORT)
-    dump = pyharm.load_dump("mhd_{}_{}_end_{}.phdf".format(DIM, res, SHORT))
+    dump = pyharm.load_dump("mhd_{}_{}_{}_end.phdf".format(DIM, SHORT, res))
 
     X1 = dump['X1']
     X2 = dump['X2']
@@ -125,7 +130,9 @@ fail = 0
 for k in range(NVAR):
     if abs(dvar[k]) != 0.:
         powerfits[k] = np.polyfit(np.log(RES), np.log(L1[:,k]), 1)[0]
+
         print("Power fit {}: {} {}".format(VARS[k], powerfits[k], L1[:,k]))
+        # These bounds were chosen heuristically: fast u2/u3 converge fast
         if powerfits[k] > -1.9 or ("entropy" not in SHORT and powerfits[k] < -2.1):
             # Allow entropy wave to converge fast, otherwise everything is ~2
             fail = 1
@@ -150,6 +157,6 @@ plt.xlim([RES[0]/np.sqrt(2.), RES[-1]*np.sqrt(2.)])
 plt.xlabel('N'); plt.ylabel('L1')
 plt.title("MHD mode test convergence, {}".format(LONG))
 plt.legend(loc=1)
-plt.savefig("convergence_modes_{}.png".format(SHORT))
+plt.savefig("convergence_modes_{}_{}.png".format(DIM,SHORT))
 
 exit(fail)

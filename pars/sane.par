@@ -13,8 +13,8 @@ nx2 = 64
 nx3 = 64
 
 <parthenon/meshblock>
-nx1 = 32
-nx2 = 32
+nx1 = 128
+nx2 = 64
 nx3 = 32
 
 <coordinates>
@@ -34,11 +34,11 @@ nlim = -1
 <GRMHD>
 cfl = 0.9
 gamma = 1.666667
-reconstruction = weno5
 
 <driver>
-type = imex
+type = kharma
 two_sync = true
+reconstruction = weno5
 
 <torus>
 rin = 6.0
@@ -50,7 +50,8 @@ u_jitter = 0.04
 <b_field>
 type = sane
 beta_min = 100.
-initial_cleanup = true
+fix_eh_flux = false
+fix_exterior_flux = false
 
 <floors>
 rho_min_geom = 1e-6
@@ -59,10 +60,9 @@ bsq_over_rho_max = 100
 u_over_rho_max = 2
 
 <debug>
-archive_parameters = true
 verbose = 1
 extra_checks = 1
-flag_verbose = 0
+flag_verbose = 2
 
 <wind>
 on = false
@@ -73,7 +73,7 @@ Tp = 10
 file_type = hdf5
 dt = 5.0
 single_precision_output = true
-variables = prims.rho, prims.u, prims.uvec, prims.B, jcon, fflag, pflag
+variables = prims.rho, prims.u, prims.uvec, prims.B, jcon, divB
 
 <parthenon/output1>
 file_type = rst

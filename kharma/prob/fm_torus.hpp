@@ -10,7 +10,10 @@
  * @param rin is the torus innermost radius, in r_g
  * @param rmax is the radius of maximum density of the F-M torus in r_g
  */
-TaskStatus InitializeFMTorus(MeshBlockData<Real> *rc, ParameterInput *pin);
+TaskStatus InitializeFMTorus(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin);
+/* Need a different initialization function since we have additional fields (q, dP)
+ * for the EMHD problem that are declared at runtime*/
+TaskStatus InitializeFMTorusEMHD(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin);
 /**
  * Perturb the internal energy by a uniform random proportion per cell.
  * Resulting internal energies will be between u \pm u*u_jitter/2
@@ -19,7 +22,7 @@ TaskStatus InitializeFMTorus(MeshBlockData<Real> *rc, ParameterInput *pin);
  * @param u_jitter see description
  * @param rng_seed is added to the MPI rank to seed the GSL RNG
  */
-TaskStatus PerturbU(MeshBlockData<Real> *rc, ParameterInput *pin);
+TaskStatus PerturbU(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin);
 
 /**
  * Torus solution for ln h, See Fishbone and Moncrief eqn. 3.6. 
@@ -106,7 +109,7 @@ KOKKOS_INLINE_FUNCTION Real fm_torus_rho(const GReal a, const GReal rin, const G
     Real lnh = lnh_calc(a, l, rin, r, th);
     if (lnh >= 0. && r >= rin) {
         // Calculate rho
-        Real hm1 = exp(lnh) - 1.;
+        Real hm1 = m::exp(lnh) - 1.;
         return m::pow(hm1 * (gam - 1.) / (kappa * gam),
                             1. / (gam - 1.));
     } else {

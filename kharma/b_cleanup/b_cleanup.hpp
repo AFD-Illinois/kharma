@@ -53,7 +53,7 @@ namespace B_Cleanup {
 /**
  * Declare fields, initialize (few) parameters
  */
-std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t packages);
+std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages);
 
 /**
  * Single-call divergence cleanup.  Lots of MPI syncs, probably slow to use in task lists.
@@ -67,9 +67,16 @@ void CleanupDivergence(std::shared_ptr<MeshData<Real>>& md);
 //void AddBCleanupTasks(TaskList tl, TaskID t_dep);
 
 /**
+ * Remove the extra solver fields which B_Cleanup added during initialization.
+ * Must be run before every step as the meshblocks are reconstructed per-step from
+ * package variable lists.
+ */
+TaskStatus RemoveExtraFields(BlockList_t &blocks);
+
+/**
  * Calculate the laplacian using divergence at corners
  */
-TaskStatus CornerLaplacian(MeshData<Real>* md, const std::string& p_var, const std::string& lap_var);
+TaskStatus CornerLaplacian(MeshData<Real>* md, const std::string& p_var, MeshData<Real>* md_again, const std::string& lap_var);
 
 /**
  * Apply B -= grad(P) to subtract divergence from the magnetic field

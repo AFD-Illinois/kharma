@@ -40,14 +40,17 @@
 
 using namespace parthenon;
 
-#define EPS 1.e-26
-
 /**
  * This namespace covers custom new reconstructions for KHARMA, and a function which
  * automatically chooses the inner loop based on an enum from decs.hpp
  */
 namespace KReconstruction
 {
+constexpr Real EPS = 1.e-26;
+
+// Enum for types.
+enum class Type{donor_cell=0, linear_mc, linear_vl, ppm, mp5, weno5, weno5_lower_poles};
+
 // BUILD UP (a) LINEAR MC RECONSTRUCTION
 
 // Single-item implementation
@@ -69,7 +72,7 @@ KOKKOS_INLINE_FUNCTION void PiecewiseLinearX1(parthenon::team_mbr_t const &membe
     const int nu = q.GetDim(4) - 1;
     for (int p = 0; p <= nu; ++p) {
         parthenon::par_for_inner(member, il, iu,
-            KOKKOS_LAMBDA_1D {
+            KOKKOS_LAMBDA (const int& i) {
                 Real dql = q(p, k, j, i) - q(p, k, j, i - 1);
                 Real dqr = q(p, k, j, i + 1) - q(p, k, j, i);
                 Real dq = mc(dql, dqr)*dqr;
@@ -87,7 +90,7 @@ KOKKOS_INLINE_FUNCTION void PiecewiseLinearX2(parthenon::team_mbr_t const &membe
     const int nu = q.GetDim(4) - 1;
     for (int p = 0; p <= nu; ++p) {
         parthenon::par_for_inner(member, il, iu,
-            KOKKOS_LAMBDA_1D {
+            KOKKOS_LAMBDA (const int& i) {
                 Real dql = q(p, k, j, i) - q(p, k, j - 1, i);
                 Real dqr = q(p, k, j + 1, i) - q(p, k, j, i);
                 Real dq = mc(dql, dqr)*dqr;
@@ -105,7 +108,7 @@ KOKKOS_INLINE_FUNCTION void PiecewiseLinearX3(parthenon::team_mbr_t const &membe
     const int nu = q.GetDim(4) - 1;
     for (int p = 0; p <= nu; ++p) {
         parthenon::par_for_inner(member, il, iu,
-            KOKKOS_LAMBDA_1D {
+            KOKKOS_LAMBDA (const int& i) {
                 Real dql = q(p, k, j, i) - q(p, k - 1, j, i);
                 Real dqr = q(p, k + 1, j, i) - q(p, k, j, i);
                 Real dq = mc(dql, dqr)*dqr;
@@ -117,14 +120,15 @@ KOKKOS_INLINE_FUNCTION void PiecewiseLinearX3(parthenon::team_mbr_t const &membe
 }
 
 // BUILD UP WENO5 RECONSTRUCTION
+// Adapted from implementation in iharm3d originally by Monika Moscibrodzka
+// References: Tchekhovskoy et al. 2007 (T07), Shu 2011 (S11)
 
 // Single-element implementation: "left" and "right" here are relative to zone centers, so the combo calls will switch them later.
-// WENO interpolation. See Tchekhovskoy et al. 2007 (T07), Shu 2011 (S11)
-// Implemented by Monika Moscibrodzka
 KOKKOS_INLINE_FUNCTION void weno5(const Real& x1, const Real& x2, const Real& x3, const Real& x4, const Real& x5,
                                 Real &lout, Real &rout)
 {
     // Smoothness indicators, T07 A18 or S11 8
+    // TODO are small arrays really the play here?  Should I further reduce cache by increasing flops?
     Real beta[3], c1, c2;
     c1 = x1 - 2.*x2 + x3; c2 = x1 - 4.*x2 + 3.*x3;
     beta[0] = (13./12.)*c1*c1 + (1./4.)*c2*c2;
@@ -134,14 +138,13 @@ KOKKOS_INLINE_FUNCTION void weno5(const Real& x1, const Real& x2, const Real& x3
     beta[2] = (13./12.)*c1*c1 + (1./4.)*c2*c2;
 
     // Nonlinear weights S11 9
-    Real den[3] = {EPS + beta[0], EPS + beta[1], EPS + beta[2]};
-    den[0] *= den[0]; den[1] *= den[1]; den[2] *= den[2];
+    const Real den[3] = {EPS + beta[0]*beta[0], EPS + beta[1]*beta[1], EPS + beta[2]*beta[2]};
 
-    Real wtr[3] = {(1./16.)/den[0], (5./8. )/den[1], (5./16.)/den[2]};
-    Real Wr = wtr[0] + wtr[1] + wtr[2];
+    const Real wtr[3] = {(1./16.)/den[0], (5./8. )/den[1], (5./16.)/den[2]};
+    const Real Wr = wtr[0] + wtr[1] + wtr[2];
 
-    Real wtl[3] = {(1./16.)/den[2], (5./8. )/den[1], (5./16.)/den[0]};
-    Real Wl = wtl[0] + wtl[1] + wtl[2];
+    const Real wtl[3] = {(1./16.)/den[2], (5./8. )/den[1], (5./16.)/den[0]};
+    const Real Wl = wtl[0] + wtl[1] + wtl[2];
 
     // S11 1, 2, 3
     lout = ((3./8.)*x5 - (5./4.)*x4 + (15./8.)*x3)*(wtl[0] / Wl) +
@@ -164,11 +167,10 @@ KOKKOS_INLINE_FUNCTION void weno5l(const Real x1, const Real& x2, const Real& x3
     beta[2] = (13./12.)*c1*c1 + (1./4.)*c2*c2;
 
     // Nonlinear weights S11 9
-    Real den[3] = {EPS + beta[0], EPS + beta[1], EPS + beta[2]};
-    den[0] *= den[0]; den[1] *= den[1]; den[2] *= den[2];
+    const Real den[3] = {EPS + beta[0]*beta[0], EPS + beta[1]*beta[1], EPS + beta[2]*beta[2]};
 
-    Real wtl[3] = {(1./16.)/den[2], (5./8. )/den[1], (5./16.)/den[0]};
-    Real Wl = wtl[0] + wtl[1] + wtl[2];
+    const Real wtl[3] = {(1./16.)/den[2], (5./8. )/den[1], (5./16.)/den[0]};
+    const Real Wl = wtl[0] + wtl[1] + wtl[2];
 
     // S11 1, 2, 3
     lout = ((3./8.)*x5 - (5./4.)*x4 + (15./8.)*x3)*(wtl[0] / Wl) +
@@ -188,12 +190,12 @@ KOKKOS_INLINE_FUNCTION void weno5r(const Real& x1, const Real& x2, const Real& x
     beta[2] = (13./12.)*c1*c1 + (1./4.)*c2*c2;
 
     // Nonlinear weights S11 9
-    Real den[3] = {EPS + beta[0], EPS + beta[1], EPS + beta[2]};
-    den[0] *= den[0]; den[1] *= den[1]; den[2] *= den[2];
+    const Real den[3] = {EPS + beta[0]*beta[0], EPS + beta[1]*beta[1], EPS + beta[2]*beta[2]};
 
-    Real wtr[3] = {(1./16.)/den[0], (5./8. )/den[1], (5./16.)/den[2]};
-    Real Wr = wtr[0] + wtr[1] + wtr[2];
+    const Real wtr[3] = {(1./16.)/den[0], (5./8. )/den[1], (5./16.)/den[2]};
+    const Real Wr = wtr[0] + wtr[1] + wtr[2];
 
+    // S11 1, 2, 3
     rout = ((3./8.)*x1 - (5./4.)*x2 + (15./8.)*x3)*(wtr[0] / Wr) +
             ((-1./8.)*x2 + (3./4.)*x3 + (3./8.)*x4)*(wtr[1] / Wr) +
             ((3./8.)*x3 + (3./4.)*x4 - (1./8.)*x5)*(wtr[2] / Wr);
@@ -212,7 +214,7 @@ KOKKOS_INLINE_FUNCTION void WENO5X1(parthenon::team_mbr_t const &member, const i
     const int nu = q.GetDim(4) - 1;
     for (int p = 0; p <= nu; ++p) {
         parthenon::par_for_inner(member, il, iu,
-            KOKKOS_LAMBDA_1D {
+            KOKKOS_LAMBDA (const int& i) {
                 Real lout, rout;
                 weno5(q(p, k, j, i - 2),
                     q(p, k, j, i - 1),
@@ -233,7 +235,7 @@ KOKKOS_INLINE_FUNCTION void WENO5X2(parthenon::team_mbr_t const &member, const i
     const int nu = q.GetDim(4) - 1;
     for (int p = 0; p <= nu; ++p) {
         parthenon::par_for_inner(member, il, iu,
-            KOKKOS_LAMBDA_1D {
+            KOKKOS_LAMBDA (const int& i) {
                 Real lout, rout;
                 weno5(q(p, k, j - 2, i),
                     q(p, k, j - 1, i),
@@ -253,7 +255,7 @@ KOKKOS_INLINE_FUNCTION void WENO5X2l(parthenon::team_mbr_t const &member, const 
     const int nu = q.GetDim(4) - 1;
     for (int p = 0; p <= nu; ++p) {
         parthenon::par_for_inner(member, il, iu,
-            KOKKOS_LAMBDA_1D {
+            KOKKOS_LAMBDA (const int& i) {
                 Real rout;
                 weno5r(q(p, k, j - 2, i),
                     q(p, k, j - 1, i),
@@ -272,7 +274,7 @@ KOKKOS_INLINE_FUNCTION void WENO5X2r(parthenon::team_mbr_t const &member, const 
     const int nu = q.GetDim(4) - 1;
     for (int p = 0; p <= nu; ++p) {
         parthenon::par_for_inner(member, il, iu,
-            KOKKOS_LAMBDA_1D {
+            KOKKOS_LAMBDA (const int& i) {
                 Real lout;
                 weno5l(q(p, k, j - 2, i),
                     q(p, k, j - 1, i),
@@ -292,7 +294,7 @@ KOKKOS_INLINE_FUNCTION void WENO5X3(parthenon::team_mbr_t const &member, const i
     const int nu = q.GetDim(4) - 1;
     for (int p = 0; p <= nu; ++p) {
         parthenon::par_for_inner(member, il, iu,
-            KOKKOS_LAMBDA_1D {
+            KOKKOS_LAMBDA (const int& i) {
                 Real lout, rout;
                 weno5(q(p, k - 2, j, i),
                     q(p, k - 1, j, i),
@@ -312,7 +314,7 @@ KOKKOS_INLINE_FUNCTION void WENO5X3l(parthenon::team_mbr_t const &member, const 
     const int nu = q.GetDim(4) - 1;
     for (int p = 0; p <= nu; ++p) {
         parthenon::par_for_inner(member, il, iu,
-            KOKKOS_LAMBDA_1D {
+            KOKKOS_LAMBDA (const int& i) {
                 Real rout;
                 weno5r(q(p, k - 2, j, i),
                     q(p, k - 1, j, i),
@@ -331,7 +333,7 @@ KOKKOS_INLINE_FUNCTION void WENO5X3r(parthenon::team_mbr_t const &member, const 
     const int nu = q.GetDim(4) - 1;
     for (int p = 0; p <= nu; ++p) {
         parthenon::par_for_inner(member, il, iu,
-            KOKKOS_LAMBDA_1D {
+            KOKKOS_LAMBDA (const int& i) {
                 Real lout;
                 weno5l(q(p, k - 2, j, i),
                     q(p, k - 1, j, i),
@@ -347,18 +349,18 @@ KOKKOS_INLINE_FUNCTION void WENO5X3r(parthenon::team_mbr_t const &member, const 
 /**
  * Templated calls to different reconstruction algorithms
  * This is basically a compile-time 'if' or 'switch' statement, where all the options get generated
- * at compile-time (see harm_driver.cpp where they're spelled out explicitly)
+ * at compile-time (see driver.cpp for the different instantiations)
  * 
- * We could temlate these directly on the function if Parthenon could agree on what argument list to use
+ * We could template these directly on the function if Parthenon could agree on what argument list to use
  * Better than a runtime decision per outer loop I think
  */
-template <ReconstructionType Recon, int dir>
+template <Type Recon, int dir>
 KOKKOS_INLINE_FUNCTION void reconstruct(parthenon::team_mbr_t& member, const GRCoordinates& G, const VariablePack<Real> &P,
                                         const int& k, const int& j, const int& is_l, const int& ie_l, 
                                         ScratchPad2D<Real> ql, ScratchPad2D<Real> qr) {}
 // DONOR CELL
 template <>
-KOKKOS_INLINE_FUNCTION void reconstruct<ReconstructionType::donor_cell, X1DIR>(parthenon::team_mbr_t& member,
+KOKKOS_INLINE_FUNCTION void reconstruct<Type::donor_cell, X1DIR>(parthenon::team_mbr_t& member,
                                         const GRCoordinates& G, const VariablePack<Real> &P,
                                         const int& k, const int& j, const int& is_l, const int& ie_l, 
                                         ScratchPad2D<Real> ql, ScratchPad2D<Real> qr)
@@ -366,7 +368,7 @@ KOKKOS_INLINE_FUNCTION void reconstruct<ReconstructionType::donor_cell, X1DIR>(p
     DonorCellX1(member, k, j, is_l, ie_l, P, ql, qr);
 }
 template <>
-KOKKOS_INLINE_FUNCTION void reconstruct<ReconstructionType::donor_cell, X2DIR>(parthenon::team_mbr_t& member,
+KOKKOS_INLINE_FUNCTION void reconstruct<Type::donor_cell, X2DIR>(parthenon::team_mbr_t& member,
                                         const GRCoordinates& G, const VariablePack<Real> &P,
                                         const int& k, const int& j, const int& is_l, const int& ie_l, 
                                         ScratchPad2D<Real> ql, ScratchPad2D<Real> qr)
@@ -376,7 +378,7 @@ KOKKOS_INLINE_FUNCTION void reconstruct<ReconstructionType::donor_cell, X2DIR>(p
     DonorCellX2(member, k, j, is_l, ie_l, P, q_u, qr);
 }
 template <>
-KOKKOS_INLINE_FUNCTION void reconstruct<ReconstructionType::donor_cell, X3DIR>(parthenon::team_mbr_t& member,
+KOKKOS_INLINE_FUNCTION void reconstruct<Type::donor_cell, X3DIR>(parthenon::team_mbr_t& member,
                                         const GRCoordinates& G, const VariablePack<Real> &P,
                                         const int& k, const int& j, const int& is_l, const int& ie_l, 
                                         ScratchPad2D<Real> ql, ScratchPad2D<Real> qr)
@@ -387,7 +389,7 @@ KOKKOS_INLINE_FUNCTION void reconstruct<ReconstructionType::donor_cell, X3DIR>(p
 }
 // LINEAR W/VAN LEER
 template <>
-KOKKOS_INLINE_FUNCTION void reconstruct<ReconstructionType::linear_vl, X1DIR>(parthenon::team_mbr_t& member,
+KOKKOS_INLINE_FUNCTION void reconstruct<Type::linear_vl, X1DIR>(parthenon::team_mbr_t& member,
                                         const GRCoordinates& G, const VariablePack<Real> &P,
                                         const int& k, const int& j, const int& is_l, const int& ie_l, 
                                         ScratchPad2D<Real> ql, ScratchPad2D<Real> qr)
@@ -400,7 +402,7 @@ KOKKOS_INLINE_FUNCTION void reconstruct<ReconstructionType::linear_vl, X1DIR>(pa
     PiecewiseLinearX1(member, k, j, is_l, ie_l, G, P, ql, qr, qc, dql, dqr, dqm);
 }
 template <>
-KOKKOS_INLINE_FUNCTION void reconstruct<ReconstructionType::linear_vl, X2DIR>(parthenon::team_mbr_t& member,
+KOKKOS_INLINE_FUNCTION void reconstruct<Type::linear_vl, X2DIR>(parthenon::team_mbr_t& member,
                                         const GRCoordinates& G, const VariablePack<Real> &P,
                                         const int& k, const int& j, const int& is_l, const int& ie_l, 
                                         ScratchPad2D<Real> ql, ScratchPad2D<Real> qr)
@@ -415,7 +417,7 @@ KOKKOS_INLINE_FUNCTION void reconstruct<ReconstructionType::linear_vl, X2DIR>(pa
     PiecewiseLinearX2(member, k, j, is_l, ie_l, G, P, q_u, qr, qc, dql, dqr, dqm);
 }
 template <>
-KOKKOS_INLINE_FUNCTION void reconstruct<ReconstructionType::linear_vl, X3DIR>(parthenon::team_mbr_t& member,
+KOKKOS_INLINE_FUNCTION void reconstruct<Type::linear_vl, X3DIR>(parthenon::team_mbr_t& member,
                                         const GRCoordinates& G, const VariablePack<Real> &P,
                                         const int& k, const int& j, const int& is_l, const int& ie_l, 
                                         ScratchPad2D<Real> ql, ScratchPad2D<Real> qr)
@@ -431,7 +433,7 @@ KOKKOS_INLINE_FUNCTION void reconstruct<ReconstructionType::linear_vl, X3DIR>(pa
 }
 // LINEAR WITH MC
 template <>
-KOKKOS_INLINE_FUNCTION void reconstruct<ReconstructionType::linear_mc, X1DIR>(parthenon::team_mbr_t& member,
+KOKKOS_INLINE_FUNCTION void reconstruct<Type::linear_mc, X1DIR>(parthenon::team_mbr_t& member,
                                         const GRCoordinates& G, const VariablePack<Real> &P,
                                         const int& k, const int& j, const int& is_l, const int& ie_l, 
                                         ScratchPad2D<Real> ql, ScratchPad2D<Real> qr)
@@ -439,7 +441,7 @@ KOKKOS_INLINE_FUNCTION void reconstruct<ReconstructionType::linear_mc, X1DIR>(pa
     KReconstruction::PiecewiseLinearX1(member, k, j, is_l, ie_l, P, ql, qr);
 }
 template <>
-KOKKOS_INLINE_FUNCTION void reconstruct<ReconstructionType::linear_mc, X2DIR>(parthenon::team_mbr_t& member,
+KOKKOS_INLINE_FUNCTION void reconstruct<Type::linear_mc, X2DIR>(parthenon::team_mbr_t& member,
                                         const GRCoordinates& G, const VariablePack<Real> &P,
                                         const int& k, const int& j, const int& is_l, const int& ie_l, 
                                         ScratchPad2D<Real> ql, ScratchPad2D<Real> qr)
@@ -449,7 +451,7 @@ KOKKOS_INLINE_FUNCTION void reconstruct<ReconstructionType::linear_mc, X2DIR>(pa
     KReconstruction::PiecewiseLinearX2(member, k, j, is_l, ie_l, P, q_u, qr);
 }
 template <>
-KOKKOS_INLINE_FUNCTION void reconstruct<ReconstructionType::linear_mc, X3DIR>(parthenon::team_mbr_t& member,
+KOKKOS_INLINE_FUNCTION void reconstruct<Type::linear_mc, X3DIR>(parthenon::team_mbr_t& member,
                                         const GRCoordinates& G, const VariablePack<Real> &P,
                                         const int& k, const int& j, const int& is_l, const int& ie_l, 
                                         ScratchPad2D<Real> ql, ScratchPad2D<Real> qr)
@@ -460,7 +462,7 @@ KOKKOS_INLINE_FUNCTION void reconstruct<ReconstructionType::linear_mc, X3DIR>(pa
 }
 // WENO5
 template <>
-KOKKOS_INLINE_FUNCTION void reconstruct<ReconstructionType::weno5, X1DIR>(parthenon::team_mbr_t& member,
+KOKKOS_INLINE_FUNCTION void reconstruct<Type::weno5, X1DIR>(parthenon::team_mbr_t& member,
                                         const GRCoordinates& G, const VariablePack<Real> &P,
                                         const int& k, const int& j, const int& is_l, const int& ie_l, 
                                         ScratchPad2D<Real> ql, ScratchPad2D<Real> qr)
@@ -468,7 +470,7 @@ KOKKOS_INLINE_FUNCTION void reconstruct<ReconstructionType::weno5, X1DIR>(parthe
     KReconstruction::WENO5X1(member, k, j, is_l, ie_l, P, ql, qr);
 }
 template <>
-KOKKOS_INLINE_FUNCTION void reconstruct<ReconstructionType::weno5, X2DIR>(parthenon::team_mbr_t& member,
+KOKKOS_INLINE_FUNCTION void reconstruct<Type::weno5, X2DIR>(parthenon::team_mbr_t& member,
                                         const GRCoordinates& G, const VariablePack<Real> &P,
                                         const int& k, const int& j, const int& is_l, const int& ie_l, 
                                         ScratchPad2D<Real> ql, ScratchPad2D<Real> qr)
@@ -477,13 +479,99 @@ KOKKOS_INLINE_FUNCTION void reconstruct<ReconstructionType::weno5, X2DIR>(parthe
     KReconstruction::WENO5X2r(member, k, j, is_l, ie_l, P, qr);
 }
 template <>
-KOKKOS_INLINE_FUNCTION void reconstruct<ReconstructionType::weno5, X3DIR>(parthenon::team_mbr_t& member,
+KOKKOS_INLINE_FUNCTION void reconstruct<Type::weno5, X3DIR>(parthenon::team_mbr_t& member,
                                         const GRCoordinates& G, const VariablePack<Real> &P,
                                         const int& k, const int& j, const int& is_l, const int& ie_l, 
                                         ScratchPad2D<Real> ql, ScratchPad2D<Real> qr)
 {
     KReconstruction::WENO5X3l(member, k - 1, j, is_l, ie_l, P, ql);
     KReconstruction::WENO5X3r(member, k, j, is_l, ie_l, P, qr);
+}
+
+/**
+ * Versions computing just the (limited) slope, for linear reconstructions.
+ * Used for gradient calculations needed to implement Extended GRMHD.
+ */
+template <Type Recon>
+KOKKOS_INLINE_FUNCTION Real slope_limit(Real x1, Real x2, Real x3, Real dx);
+// Linear MC slope limiter
+template <>
+KOKKOS_INLINE_FUNCTION Real slope_limit<Type::linear_mc>(Real x1, Real x2, Real x3, Real dx)
+{
+    const Real Dqm = 2 * (x2 - x1) / dx;
+    const Real Dqp = 2 * (x3 - x2) / dx;
+    const Real Dqc = 0.5 * (x3 - x1) / dx;
+
+    if (Dqm * Dqp <= 0) {
+        return 0;
+    } else {
+        if ((m::abs(Dqm) < m::abs(Dqp)) && (m::abs(Dqm) < m::abs(Dqc))) {
+            return Dqm;
+        } else if (m::abs(Dqp) < m::abs(Dqc)) {
+            return Dqp;
+        } else {
+            return Dqc;
+        }
+    }
+}
+// Linear Van Leer slope limiter
+template <>
+KOKKOS_INLINE_FUNCTION Real slope_limit<Type::linear_vl>(Real x1, Real x2, Real x3, Real dx)
+{
+    const Real Dqm = (x2 - x1) / dx;
+    const Real Dqp = (x3 - x2) / dx;
+
+    const Real extrema = Dqm * Dqp;
+
+    if (extrema <= 0) {
+        return 0;
+    } else {
+        return (2 * extrema / (Dqm + Dqp)); 
+    }
+}
+
+/**
+ * Run slope_limit in direction 'dir' using limiter 'recon'
+ */
+template <Type recon, int dir>
+KOKKOS_INLINE_FUNCTION Real slope_calc(const GRCoordinates& G, const VariablePack<Real>& P,
+                                              const int& p, const int& k, const int& j, const int& i);
+// And six implementations.  Why can't you partial-specialize functions?  Why?
+template <>
+KOKKOS_INLINE_FUNCTION Real slope_calc<Type::linear_mc, X1DIR>(const GRCoordinates& G, const VariablePack<Real>& P,
+                                              const int& p, const int& k, const int& j, const int& i)
+{
+    return slope_limit<Type::linear_mc>(P(p, k, j, i-1), P(p, k, j, i), P(p, k, j, i+1), G.Dxc<1>(i));
+}
+template <>
+KOKKOS_INLINE_FUNCTION Real slope_calc<Type::linear_mc, X2DIR>(const GRCoordinates& G, const VariablePack<Real>& P,
+                                              const int& p, const int& k, const int& j, const int& i)
+{
+    return slope_limit<Type::linear_mc>(P(p, k, j-1, i), P(p, k, j, i), P(p, k, j+1, i), G.Dxc<2>(j));
+}
+template <>
+KOKKOS_INLINE_FUNCTION Real slope_calc<Type::linear_mc, X3DIR>(const GRCoordinates& G, const VariablePack<Real>& P,
+                                              const int& p, const int& k, const int& j, const int& i)
+{
+    return slope_limit<Type::linear_mc>(P(p, k-1, j, i), P(p, k, j, i), P(p, k+1, j, i), G.Dxc<3>(k));
+}
+template <>
+KOKKOS_INLINE_FUNCTION Real slope_calc<Type::linear_vl, X1DIR>(const GRCoordinates& G, const VariablePack<Real>& P,
+                                              const int& p, const int& k, const int& j, const int& i)
+{
+    return slope_limit<Type::linear_vl>(P(p, k, j, i-1), P(p, k, j, i), P(p, k, j, i+1), G.Dxc<1>(i));
+}
+template <>
+KOKKOS_INLINE_FUNCTION Real slope_calc<Type::linear_vl, X2DIR>(const GRCoordinates& G, const VariablePack<Real>& P,
+                                              const int& p, const int& k, const int& j, const int& i)
+{
+    return slope_limit<Type::linear_vl>(P(p, k, j-1, i), P(p, k, j, i), P(p, k, j+1, i), G.Dxc<2>(j));
+}
+template <>
+KOKKOS_INLINE_FUNCTION Real slope_calc<Type::linear_vl, X3DIR>(const GRCoordinates& G, const VariablePack<Real>& P,
+                                              const int& p, const int& k, const int& j, const int& i)
+{
+    return slope_limit<Type::linear_vl>(P(p, k-1, j, i), P(p, k, j, i), P(p, k+1, j, i), G.Dxc<3>(k));
 }
 
 } // namespace KReconstruction

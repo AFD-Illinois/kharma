@@ -34,14 +34,13 @@
 
 #include "bz_monopole.hpp"
 
-#include "mpi.hpp"
 #include "prob_common.hpp"
 #include "types.hpp"
 
 #include <random>
 #include "Kokkos_Random.hpp"
 
-TaskStatus InitializeBZMonopole(MeshBlockData<Real> *rc, ParameterInput *pin)
+TaskStatus InitializeBZMonopole(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin)
 {
     Flag(rc, "Initializing BZ monopole problem");
 
@@ -63,12 +62,12 @@ TaskStatus InitializeBZMonopole(MeshBlockData<Real> *rc, ParameterInput *pin)
     const auto& G = pmb->coords;
     const GReal a = G.coords.get_a();
 
-    if (pmb->gid == 0 && pmb->packages.Get("GRMHD")->Param<int>("verbose") > 0) {
+    if (pmb->gid == 0 && pmb->packages.Get("Globals")->Param<int>("verbose") > 0) {
         std::cout << "Initializing BZ monopole." << std::endl;
     }
 
     pmb->par_for("fm_torus_init", ks, ke, js, je, is, ie,
-        KOKKOS_LAMBDA_3D {
+        KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
             GReal Xembed[GR_DIM];
             G.coord_embed(k, j, i, Loci::center, Xembed);
             GReal r = Xembed[1];
@@ -87,6 +86,7 @@ TaskStatus InitializeBZMonopole(MeshBlockData<Real> *rc, ParameterInput *pin)
         }
     );
 
+    Flag(rc, "Initialized");
     return TaskStatus::complete;
 }
 

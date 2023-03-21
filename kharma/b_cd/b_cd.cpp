@@ -35,41 +35,47 @@
 #include "b_cd.hpp"
 
 #include "kharma.hpp"
-#include "mpi.hpp"
 
 using namespace parthenon;
 
 namespace B_CD
 {
 
-std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t packages)
+std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages)
 {
-    auto pkg = std::make_shared<StateDescriptor>("B_CD");
+    auto pkg = std::make_shared<KHARMAPackage>("B_CD");
     Params &params = pkg->AllParams();
 
-    // Diagnostic data
-    int verbose = pin->GetOrAddInteger("debug", "verbose", 0);
-    params.Add("verbose", verbose);
-    int flag_verbose = pin->GetOrAddInteger("debug", "flag_verbose", 0);
-    params.Add("flag_verbose", flag_verbose);
-    int extra_checks = pin->GetOrAddInteger("debug", "extra_checks", 0);
-    params.Add("extra_checks", extra_checks);
-
     // Constraint damping options
-    // Factor "lambda" in 
+    // Factor "lambda" in Dedner TODO tune
     Real damping = pin->GetOrAddReal("b_field", "damping", 0.1);
     params.Add("damping", damping);
 
+    // Accumulator for maximum ctop within an MPI process
+    // That is, this value does NOT generally reflect the actual maximum
+    params.Add("ctop_max", 0.0, true);
+    // Maximum between MPI processes, updated after each step; that is, always a maximum.
+    params.Add("ctop_max_last", 0.0, true);
+
+    // Update variable numbers
+    // auto& driver = packages->Get("Driver")->AllParams();
+    // if (implicit_b) {
+    //     int n_current = driver.Get<int>("n_implicit_vars");
+    //     driver.Update("n_implicit_vars", n_current+3);
+    // } else {
+    //     int n_current = driver.Get<int>("n_explicit_vars");
+    //     driver.Update("n_explicit_vars", n_current+3);
+    // }
+
     std::vector<int> s_vector({NVEC});
 
-    MetadataFlag isPrimitive = packages.Get("GRMHD")->Param<MetadataFlag>("PrimitiveFlag");
-
     // B field as usual
+    // TODO allow for implicit B here
     Metadata m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Independent, Metadata::FillGhost,
                  Metadata::Restart, Metadata::Conserved, Metadata::WithFluxes, Metadata::Vector}, s_vector);
     pkg->AddField("cons.B", m);
     m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived,
-                  Metadata::Restart, isPrimitive, Metadata::Vector}, s_vector);
+                  Metadata::Restart, Metadata::GetUserFlag("Primitive"), Metadata::Vector}, s_vector);
     pkg->AddField("prims.B", m);
 
     // Constraint damping scalar field psi.  Prim and cons forms correspond to B field forms,
@@ -79,15 +85,19 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
                   Metadata::Restart, Metadata::Conserved, Metadata::WithFluxes});
     pkg->AddField("cons.psi_cd", m);
     m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived,
-                  Metadata::Restart, isPrimitive});
+                  Metadata::Restart, Metadata::GetUserFlag("Primitive")});
     pkg->AddField("prims.psi_cd", m);
 
     // We only update the divB field for output
     m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
     pkg->AddField("divB", m);
 
-    pkg->FillDerivedBlock = B_CD::FillDerived;
+    pkg->AddSource = B_CD::AddSource;
+
+    pkg->BlockUtoP = B_CD::BlockUtoP;
+
     pkg->PostStepDiagnosticsMesh = B_CD::PostStepDiagnostics;
+    pkg->MeshPostStepUserWorkInLoop = B_CD::UpdateCtopMax;
 
     // List (vector) of HistoryOutputVar that will all be enrolled as output variables
     parthenon::HstVar_list hst_vars = {};
@@ -99,7 +109,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     return pkg;
 }
 
-void UtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
+void BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
     Flag(rc, "B field UtoP");
     auto pmb = rc->GetBlockPointer();
@@ -116,7 +126,7 @@ void UtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     IndexRange jb = bounds.GetBoundsJ(domain);
     IndexRange kb = bounds.GetBoundsK(domain);
     pmb->par_for("UtoP_B", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-        KOKKOS_LAMBDA_3D {
+        KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
             // Update the primitive B-fields
             Real gdet = G.gdet(Loci::center, j, i);
             VLOOP B_P(v, k, j, i) = B_U(v, k, j, i) / gdet;
@@ -152,35 +162,35 @@ TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
     const IndexRange block = IndexRange{0, B_U.GetDim(5)-1};
 
     pmb0->par_for("AddSource_B_CD", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-        KOKKOS_LAMBDA_MESH_3D {
+        KOKKOS_LAMBDA (const int& b, const int &k, const int &j, const int &i) {
             const auto& G = B_U.GetCoords(b);
             // Add a source term to B based on psi
             GReal alpha_c = 1. / m::sqrt(-G.gcon(Loci::center, j, i, 0, 0));
             GReal gdet_c = G.gdet(Loci::center, j, i);
 
-            double divB = ((B_U(b).flux(X1DIR, V1, k, j, i+1) - B_U(b).flux(X1DIR, V1, k, j, i)) / G.dx1v(i) +
-                           (B_U(b).flux(X2DIR, V2, k, j+1, i) - B_U(b).flux(X2DIR, V2, k, j, i)) / G.dx2v(j));
-            if (ndim > 2) divB += (B_U(b).flux(X3DIR, V3, k+1, j, i) - B_U(b).flux(X3DIR, V3, k, j, i)) / G.dx3v(k);
+            double divB = ((B_U(b).flux(X1DIR, V1, k, j, i+1) - B_U(b).flux(X1DIR, V1, k, j, i)) / G.Dxc<1>(i) +
+                           (B_U(b).flux(X2DIR, V2, k, j+1, i) - B_U(b).flux(X2DIR, V2, k, j, i)) / G.Dxc<2>(j));
+            if (ndim > 2) divB += (B_U(b).flux(X3DIR, V3, k+1, j, i) - B_U(b).flux(X3DIR, V3, k, j, i)) / G.Dxc<3>(k);
             // TODO this needs to include the time derivative right?
 
             VLOOP {
                 // First term: gradient of psi
                 B_DU(b, v, k, j, i) += alpha_c * G.gcon(Loci::center, j, i, v+1, 1) *
-                                       (psi_U(b).flux(X1DIR, 0, k, j, i+1) - psi_U(b).flux(X1DIR, 0, k, j, i)) / G.dx1v(i) +
+                                       (psi_U(b).flux(X1DIR, 0, k, j, i+1) - psi_U(b).flux(X1DIR, 0, k, j, i)) / G.Dxc<1>(i) +
                                        alpha_c * G.gcon(Loci::center, j, i, v+1, 2) *
-                                       (psi_U(b).flux(X2DIR, 0, k, j+1, i) - psi_U(b).flux(X2DIR, 0, k, j, i)) / G.dx2v(j);
+                                       (psi_U(b).flux(X2DIR, 0, k, j+1, i) - psi_U(b).flux(X2DIR, 0, k, j, i)) / G.Dxc<2>(j);
                 if (ndim > 2)
                     B_DU(b, v, k, j, i) += alpha_c * G.gcon(Loci::center, j, i, v+1, 3) *
-                                        (psi_U(b).flux(X3DIR, 0, k+1, j, i) - psi_U(b).flux(X3DIR, 0, k, j, i)) / G.dx3v(k);
+                                        (psi_U(b).flux(X3DIR, 0, k+1, j, i) - psi_U(b).flux(X3DIR, 0, k, j, i)) / G.Dxc<3>(k);
 
                 // Second term: beta^i divB
                 B_DU(b, v, k, j, i) += G.gcon(Loci::center, j, i, 0, v+1) * alpha_c * alpha_c * divB;
             }
             // Update psi using the analytic solution for the source term
             GReal dalpha1 = ( (1. / m::sqrt(-G.gcon(Loci::face1, j, i+1, 0, 0))) / G.gdet(Loci::face1, j, i+1)
-                            - (1. / m::sqrt(-G.gcon(Loci::face1, j, i, 0, 0))) / G.gdet(Loci::face1, j, i)) / G.dx1v(i);
+                            - (1. / m::sqrt(-G.gcon(Loci::face1, j, i, 0, 0))) / G.gdet(Loci::face1, j, i)) / G.Dxc<1>(i);
             GReal dalpha2 = ( (1. / m::sqrt(-G.gcon(Loci::face2, j+1, i, 0, 0))) / G.gdet(Loci::face2, j+1, i)
-                            - (1. / m::sqrt(-G.gcon(Loci::face2, j, i, 0, 0))) / G.gdet(Loci::face2, j, i)) / G.dx2v(i);
+                            - (1. / m::sqrt(-G.gcon(Loci::face2, j, i, 0, 0))) / G.gdet(Loci::face2, j, i)) / G.Dxc<2>(i);
             // There is not dalpha3, the coordinate system is symmetric along x3
             psi_DU(b, 0, k, j, i) += B_U(b, V1, k, j, i) * dalpha1 + B_U(b, V2, k, j, i) * dalpha2 - alpha_c * lambda * psi_U(b, 0, k, j, i);
         }
@@ -213,11 +223,11 @@ Real MaxDivB(MeshData<Real> *md)
     Real bsq_max;
     Kokkos::Max<Real> bsq_max_reducer(bsq_max);
     pmb0->par_reduce("B_field_bsqmax", block.s, block.e, kl.s, kl.e, jl.s, jl.e, il.s, il.e,
-        KOKKOS_LAMBDA_MESH_3D_REDUCE {
+        KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i, double &local_result) {
             const auto& G = B.GetCoords(b);
-            double divb_local = ((B(b).flux(1, V1, k, j, i+1) - B(b).flux(1, V1, k, j, i)) / G.dx1v(i)+
-                                 (B(b).flux(2, V2, k, j+1, i) - B(b).flux(2, V2, k, j, i)) / G.dx2v(j));
-            if (ndim > 2) divb_local += (B(b).flux(3, V3, k+1, j, i) - B(b).flux(3, V3, k, j, i)) / G.dx3v(k);
+            double divb_local = ((B(b).flux(1, V1, k, j, i+1) - B(b).flux(1, V1, k, j, i)) / G.Dxc<1>(i)+
+                                 (B(b).flux(2, V2, k, j+1, i) - B(b).flux(2, V2, k, j, i)) / G.Dxc<2>(j));
+            if (ndim > 2) divb_local += (B(b).flux(3, V3, k+1, j, i) - B(b).flux(3, V3, k, j, i)) / G.Dxc<3>(k);
 
             if(divb_local > local_result) local_result = divb_local;
         }
@@ -231,7 +241,7 @@ TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
     auto pmesh = md->GetMeshPointer();
 
     // Print this unless we quash everything
-    int verbose = pmesh->packages.Get("B_CD")->Param<int>("verbose");
+    int verbose = pmesh->packages.Get("Globals")->Param<int>("verbose");
     if (verbose >= 0) {
         static Reduce<Real> max_divb;
         max_divb.val = B_CD::MaxDivB(md);
@@ -274,14 +284,28 @@ void FillOutput(MeshBlock *pmb, ParameterInput *pin)
     const auto& G = pmb->coords;
 
     pmb->par_for("B_field_bsqmax", kl.s, kl.e, jl.s, jl.e, il.s, il.e,
-        KOKKOS_LAMBDA_3D {
-            double divb_local = ((F1(V1, k, j, i+1) - F1(V1, k, j, i)) / G.dx1v(i) +
-                                 (F2(V2, k, j+1, i) - F2(V2, k, j, i)) / G.dx2v(j));
-            if (ndim > 2) divb_local += (F3(V3, k+1, j, i) - F3(V3, k, j, i)) / G.dx3v(k);
+        KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+            double divb_local = ((F1(V1, k, j, i+1) - F1(V1, k, j, i)) / G.Dxc<1>(i) +
+                                 (F2(V2, k, j+1, i) - F2(V2, k, j, i)) / G.Dxc<2>(j));
+            if (ndim > 2) divb_local += (F3(V3, k+1, j, i) - F3(V3, k, j, i)) / G.Dxc<3>(k);
 
             divB(k, j, i) = divb_local;
         }
     );
+}
+
+void UpdateCtopMax(Mesh *pmesh, ParameterInput *pin, const SimTime &tm)
+{
+    // Reduce and record the maximum sound speed on the grid, to propagate
+    // phi at that speed next step.
+    // Just needs to run after every step, so we use the KHARMA callback at that point.
+    auto& params = pmesh->packages.Get("B_CD")->AllParams();
+    static AllReduce<Real> ctop_max_last_r;
+    ctop_max_last_r.val = params.Get<Real>("ctop_max");
+    ctop_max_last_r.StartReduce(MPI_MAX);
+    while (ctop_max_last_r.CheckReduce() == TaskStatus::incomplete);
+    params.Update<Real>("ctop_max_last", ctop_max_last_r.val);
+    params.Update<Real>("ctop_max", 0.0); // Reset for next max calculation
 }
 
 } // namespace B_CD

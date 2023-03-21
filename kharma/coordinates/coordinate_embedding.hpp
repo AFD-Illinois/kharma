@@ -123,7 +123,6 @@ class CoordinateEmbedding {
         }
 
         // Convenience functions to get common things
-        // TODO add a gcon_embed, gdet_embed
         KOKKOS_INLINE_FUNCTION bool spherical() const
         {
             return mpark::visit( [&](const auto& self) {
@@ -149,6 +148,14 @@ class CoordinateEmbedding {
         KOKKOS_INLINE_FUNCTION bool is_ks() const
         {
             if (mpark::holds_alternative<SphKSCoords>(base)) {
+                return true;
+            } else {
+                return false;
+            }
+        }
+        KOKKOS_INLINE_FUNCTION bool is_cart_minkowski() const
+        {
+            if (mpark::holds_alternative<CartMinkowskiCoords>(base) && mpark::holds_alternative<NullTransform>(transform)) {
                 return true;
             } else {
                 return false;

@@ -47,17 +47,17 @@ using namespace parthenon;
  * Note the end time is not set -- even after exactly 1 period, EMHD modes will
  * have lost amplitude due to having viscosity, which is kind of the point
  */
-TaskStatus InitializeEMHDModes(MeshBlockData<Real> *rc, ParameterInput *pin)
+TaskStatus InitializeEMHDModes(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin)
 {
     Flag(rc, "Initializing EMHD Modes problem");
     auto pmb = rc->GetBlockPointer();
-    GridScalar rho = rc->Get("prims.rho").data;
-    GridScalar u = rc->Get("prims.u").data;
+    GridScalar rho  = rc->Get("prims.rho").data;
+    GridScalar u    = rc->Get("prims.u").data;
     GridVector uvec = rc->Get("prims.uvec").data;
     // It is well and good this problem should cry if B/EMHD are disabled.
     GridVector B_P = rc->Get("prims.B").data;
-    GridVector q = rc->Get("prims.q").data;
-    GridVector dP = rc->Get("prims.dP").data;
+    GridVector q   = rc->Get("prims.q").data;
+    GridVector dP  = rc->Get("prims.dP").data;
 
     const auto& G = pmb->coords;
 
@@ -96,7 +96,7 @@ TaskStatus InitializeEMHDModes(MeshBlockData<Real> *rc, ParameterInput *pin)
     IndexRange jb = pmb->cellbounds.GetBoundsJ(domain);
     IndexRange kb = pmb->cellbounds.GetBoundsK(domain);
     pmb->par_for("emhdmodes_init", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-        KOKKOS_LAMBDA_3D {
+        KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
             Real X[GR_DIM];
             G.coord_embed(k, j, i, Loci::center, X);
             const Real cos_phi = cos(k1*X[1] + k2*X[2]);
@@ -128,7 +128,7 @@ TaskStatus InitializeEMHDModes(MeshBlockData<Real> *rc, ParameterInput *pin)
 
             if (emhd_params.higher_order_terms) {
                 Real tau, chi_e, nu_e;
-                EMHD::set_parameters(G, rho(k, j, i), u(k, j, i), emhd_params, gam, k, j, i, tau, chi_e, nu_e);
+                EMHD::set_parameters_init(G, rho(k, j, i), u(k, j, i), emhd_params, gam, k, j, i, tau, chi_e, nu_e);
                 Real Theta = (gam - 1) * u(k, j, i) / rho(k, j, i);
                 Real q_tilde  = q(k, j, i); 
                 Real dP_tilde = dP(k, j, i);

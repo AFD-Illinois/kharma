@@ -1,0 +1,116 @@
+# Continuous Integration testing for KHARMA
+# a.k.a did we break the basics?
+
+# Build on Nvidia image.
+# Can pretty easily change this out, with changes to build
+# Someday we'll build & push a KHARMA image, then test that
+image: nvcr.io/nvidia/nvhpc:23.1-devel-cuda12.0-rockylinux8
+
+variables:
+  OMP_NUM_THREADS: 28
+  OMP_PROC_BIND: "false"
+  MPI_EXE: mpirun
+  MPI_NUM_PROCS: 2
+  OMPI_ALLOW_RUN_AS_ROOT: 1
+  OMPI_ALLOW_RUN_AS_ROOT_CONFIRM: 1
+  GIT_SUBMODULE_STRATEGY: recursive
+
+### DEFAULT TEST BEHAVIOR ###
+default:
+  # Be default: install pyharm, then run test in cwd
+  # For new tests, write one run.sh script which runs/verifies
+  # interleaved, and prints a summary of results.
+  before_script:
+    - export PATH="$HOME/.local/bin:$PATH"
+    - wget -O Miniforge3.sh "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-$(uname)-$(uname -m).sh"
+    - bash Miniforge3.sh -b -p "/home/conda"
+    - source "/home/conda/etc/profile.d/conda.sh"
+    - conda install h5py
+    - git clone https://github.com/AFD-Illinois/pyharm.git /home/pyharm
+    - conda activate
+    - cd /home/pyharm
+    - pip install --user .
+    - cd -
+
+  # Always keep logs and plots.  Results should be printed to console!
+  artifacts:
+    when: always
+    paths:
+      - tests/*/*.png
+      - tests/*/*.txt
+
+# Tests can be executed in parallel,
+# but be careful about GPU arch
+stages:
+  - build
+  - tests
+
+# Build, obviously overrides script/artifacts
+build:
+  stage: build
+  variables:
+    NPROC: ""
+    HOST_ARCH: HSW
+  before_script:
+    - echo "Skipping pyharm install in build."
+  script:
+    - export PREFIX_PATH=$PWD/external/hdf5
+    - ./make.sh clean cuda hdf5
+  artifacts:
+    paths:
+      - kharma.*
+      - make_args
+
+bondi:
+  stage: tests
+  script:
+    - cd tests/bondi
+    - ./run.sh
+
+mhdmodes:
+  stage: tests
+  script:
+    - cd tests/mhdmodes
+    - ./run.sh
+
+emhdmodes:
+  stage: tests
+  script:
+    - cd tests/emhdmodes
+    - ./run.sh
+
+noh:
+  stage: tests
+  script:
+    - cd tests/noh
+    - ./run.sh
+
+bz_monopole:
+  stage: tests
+  script:
+    - cd tests/bz_monopole
+    - ./run.sh
+
+tilt_init:
+  stage: tests
+  script:
+    - cd tests/tilt_init
+    - ./run.sh
+
+torus_sanity:
+  stage: tests
+  script:
+    - cd tests/torus_sanity
+    - ./run.sh
+
+restart:
+  stage: tests
+  script:
+    - cd tests/restart
+    - ./run.sh
+
+reinit:
+  stage: tests
+  script:
+    - cd tests/reinit
+    - ./run.sh

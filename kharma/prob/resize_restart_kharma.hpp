@@ -20,10 +20,10 @@ void ReadKharmaRestartHeader(std::string fname, std::unique_ptr<ParameterInput>&
  * 
  * Returns stop time tf of the original simulation, for e.g. replicating regression tests
  */
-TaskStatus ReadKharmaRestart(MeshBlockData<Real> *rc, ParameterInput *pin);
+TaskStatus ReadKharmaRestart(std::shared_ptr<MeshBlockData<Real>> rc, ParameterInput *pin);
 
 // newly added by Hyerin (09/06/22)
-TaskStatus SetKharmaRestart(MeshBlockData<Real> *rc, IndexDomain domain=IndexDomain::entire, bool coarse=false);
+TaskStatus SetKharmaRestart(std::shared_ptr<MeshBlockData<Real>> rc, IndexDomain domain, bool coarse);
 
 // Hint form resize.hpp
 // TODO: (Hyerin) should I do const for x1, x2, x3, var?

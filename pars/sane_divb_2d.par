@@ -31,9 +31,6 @@ poly_alpha = 14.0
 tlim = 3000.0
 nlim = -1
 
-<driver>
-type = harm
-
 <GRMHD>
 cfl = 0.9
 gamma = 1.666667

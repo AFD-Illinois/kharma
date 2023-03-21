@@ -14,7 +14,7 @@ if [[ $HOST == "cheshire"* ]]; then
     module load compiler mpi/2021
   fi
 
-  NPROC=24
+  NPROC=16
   MPI_EXE=mpirun
 fi
 
@@ -27,46 +27,6 @@ if [[ $METAL_HOSTNAME == "fermium" ]]; then
   DEVICE_ARCH="TURING75"
   # Nvidia MPI hangs unless I do this
   MPI_EXE=mpirun
-
-  if [[ "$ARGS" == *"cuda"* ]]; then
-    module purge
-    module load nvhpc
-    PREFIX_PATH="$HOME/libs/hdf5-nvhpc"
-    MPI_NUM_PROCS=1
-
-    if [[ "$ARGS" == *"gcc"* ]]; then
-      C_NATIVE=gcc
-      CXX_NATIVE=g++
-    else
-      C_NATIVE=nvc
-      CXX_NATIVE=nvc++
-      export CFLAGS="-mp"
-      export CXXFLAGS="-mp"
-    fi
-  else
-    # To experiment with AMD NUMA
-    #MPI_EXTRA_ARGS="--map-by ppr:2:socket:pe=12"
-    #MPI_NUM_PROCS=2
-    if [[ "$ARGS" == *"gcc"* ]]; then
-      module purge
-      #module load mpi/mpich-x86_64
-      C_NATIVE=gcc
-      CXX_NATIVE=g++
-    elif [[ "$ARGS" == *"clang"* ]]; then
-      module purge
-      module load mpi/mpich-x86_64
-      C_NATIVE=clang
-      CXX_NATIVE=clang++
-      PREFIX_PATH="$HOME/libs/hdf5-clang14"
-    else
-      module purge
-      module load mpi/mpich-x86_64
-      source /opt/AMD/aocc-compiler-3.2.0/setenv_AOCC.sh
-      PREFIX_PATH="$HOME/libs/hdf5-aocc"
-      C_NATIVE=clang
-      CXX_NATIVE=clang++
-    fi
-  fi
 fi
 
 if [[ $METAL_HOSTNAME == "ferrum" ]]; then
@@ -103,7 +63,7 @@ if [[ $HOST == "cinnabar"* ]]; then
   if [[ "$ARGS" == *"cuda"* ]]; then
     # Use NVHPC libraries (GPU-aware OpenMPI!)
     DEVICE_ARCH="KEPLER35"
-    MPI_NUM_PROCS=2
+    MPI_NUM_PROCS=1
     MPI_EXTRA_ARGS="--map-by ppr:1:numa:pe=14"
 
     # Quash warning about my old gpus

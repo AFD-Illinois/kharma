@@ -34,7 +34,8 @@
 #pragma once
 
 #include "decs.hpp"
-#include "mpi.hpp"
+
+#include "kharma_package.hpp"
 
 #include <parthenon/parthenon.hpp>
 
@@ -51,17 +52,10 @@ using parthenon::MeshBlockData;
 
 // This provides a way of addressing vectors that matches
 // directions, to make derivatives etc more readable
+// TODO Spammy to namespace. Keep?
 #define V1 0
 #define V2 1
 #define V3 2
-
-// Denote reconstruction algorithms
-// See reconstruction.hpp for implementations
-enum ReconstructionType{donor_cell=0, linear_mc, linear_vl, ppm, mp5, weno5, weno5_lower_poles};
-
-// Denote inversion failures (pflags). See U_to_P for status explanations
-// Only thrown from function in U_to_P.hpp, see that file for meanings
-enum InversionStatus{success=0, neg_input, max_iter, bad_ut, bad_gamma, neg_rho, neg_u, neg_rhou};
 
 // Struct for derived 4-vectors at a point, usually calculated and needed together
 typedef struct {
@@ -70,6 +64,12 @@ typedef struct {
     Real bcon[GR_DIM];
     Real bcov[GR_DIM];
 } FourVectors;
+
+typedef struct {
+    IndexRange ib;
+    IndexRange jb;
+    IndexRange kb;
+} IndexRange3;
 
 /**
  * Map of the locations of particular variables in a VariablePack
@@ -153,26 +153,105 @@ class VarMap {
 };
 
 /**
- * Functions for checking boundaries in 3D
+ * Functions for checking boundaries in 3D.
+ * Uses IndexRange objects, or this would be in kharma_utils.hpp
  */
-KOKKOS_INLINE_FUNCTION bool inside(const int& k, const int& j, const int& i,
-                                   const IndexRange& kb, const IndexRange& jb, const IndexRange& ib)
-{
-    return (i >= ib.s) && (i <= ib.e) && (j >= jb.s) && (j <= jb.e) && (k >= kb.s) && (k <= kb.e);
-}
 KOKKOS_INLINE_FUNCTION bool outside(const int& k, const int& j, const int& i,
                                     const IndexRange& kb, const IndexRange& jb, const IndexRange& ib)
 {
     return (i < ib.s) || (i > ib.e) || (j < jb.s) || (j > jb.e) || (k < kb.s) || (k > kb.e);
 }
+KOKKOS_INLINE_FUNCTION bool inside(const int& k, const int& j, const int& i,
+                                   const IndexRange& kb, const IndexRange& jb, const IndexRange& ib)
+{
+    // This is faster in the case that the point is outside
+    return !outside(k, j, i, kb, jb, ib);
+}
 
 /**
  * Function for checking boundary flags: is this a domain or internal bound?
  */
-inline bool IsDomainBound(MeshBlock *pmb, BoundaryFace face)
+inline bool IsDomainBound(std::shared_ptr<MeshBlock> pmb, BoundaryFace face)
 {
-    return (pmb->boundary_flag[face] != BoundaryFlag::block &&
-            pmb->boundary_flag[face] != BoundaryFlag::periodic);
+    return !(pmb->boundary_flag[face] == BoundaryFlag::block ||
+             pmb->boundary_flag[face] == BoundaryFlag::periodic);
+}
+
+inline bool BoundaryIsInner(IndexDomain domain)
+{
+    return domain == IndexDomain::inner_x1 ||
+           domain == IndexDomain::inner_x2 ||
+           domain == IndexDomain::inner_x3;
+}
+
+inline int BoundarySide(IndexDomain domain)
+{
+    switch (domain) {
+        case IndexDomain::inner_x1:
+        case IndexDomain::outer_x1:
+            return 1;
+        case IndexDomain::inner_x2:
+        case IndexDomain::outer_x2:
+            return 2;
+        case IndexDomain::inner_x3:
+        case IndexDomain::outer_x3:
+            return 3;
+        default:
+            return 0;
+    }
+}
+
+inline std::string BoundaryName(IndexDomain domain)
+{
+    switch (domain) {
+        case IndexDomain::inner_x1:
+            return "inner_x1";
+        case IndexDomain::outer_x1:
+            return "outer_x1";
+        case IndexDomain::inner_x2:
+            return "inner_x2";
+        case IndexDomain::outer_x2:
+            return "outer_x2";
+        case IndexDomain::inner_x3:
+            return "inner_x3";
+        case IndexDomain::outer_x3:
+            return "outer_x3";
+        case IndexDomain::interior:
+            return "interior";
+        case IndexDomain::entire:
+            return "entire";
+        default:
+            return "unknown";
+    }
+}
+
+/**
+ * Get zones in the domain interior
+ */
+
+/**
+ * Get the 
+ */
+inline IndexRange3 GetPhysicalZones(std::shared_ptr<MeshBlock> pmb, IndexShape& bounds)
+{
+    return IndexRange3{IndexRange{IsDomainBound(pmb, BoundaryFace::inner_x1)
+                                    ? bounds.is(IndexDomain::interior)
+                                    : bounds.is(IndexDomain::entire),
+                                  IsDomainBound(pmb, BoundaryFace::outer_x1)
+                                    ? bounds.ie(IndexDomain::interior)
+                                    : bounds.ie(IndexDomain::entire)},
+                       IndexRange{IsDomainBound(pmb, BoundaryFace::inner_x2)
+                                    ? bounds.js(IndexDomain::interior)
+                                    : bounds.js(IndexDomain::entire),
+                                  IsDomainBound(pmb, BoundaryFace::outer_x2)
+                                    ? bounds.je(IndexDomain::interior)
+                                    : bounds.je(IndexDomain::entire)},
+                       IndexRange{IsDomainBound(pmb, BoundaryFace::inner_x3)
+                                    ? bounds.ks(IndexDomain::interior)
+                                    : bounds.ks(IndexDomain::entire),
+                                  IsDomainBound(pmb, BoundaryFace::outer_x3)
+                                    ? bounds.ke(IndexDomain::interior)
+                                    : bounds.ke(IndexDomain::entire)}};
 }
 
 /**
@@ -224,12 +303,26 @@ inline void PrintZone(MeshBlockData<Real> *rc)
     auto Bp = rc->Get("prims.B").data.GetHostMirrorAndCopy();
     auto q = rc->Get("prims.q").data.GetHostMirrorAndCopy();
     auto dP = rc->Get("prims.dP").data.GetHostMirrorAndCopy();
-    std::cerr << "RHO: " << rhop(0,0,100)
-         << " UU: "  << up(0,0,100)
-         << " U: "   << uvecp(0, 0,0,100) << " " << uvecp(1, 0,0,100)<< " " << uvecp(2, 0,0,100)
-         << " B: "   << Bp(0, 0,0,100) << " " << Bp(1, 0,0,100) << " " << Bp(2, 0,0,100)
-         << " q: "   << q(0,0,100) 
-         << " dP: "  << dP(0,0,100) << std::endl;
+
+    auto rhoU = rc->Get("cons.rho").data.GetHostMirrorAndCopy();
+    auto uU = rc->Get("cons.u").data.GetHostMirrorAndCopy();
+    auto uvecU = rc->Get("cons.uvec").data.GetHostMirrorAndCopy();
+    auto BU = rc->Get("cons.B").data.GetHostMirrorAndCopy();
+    auto qU = rc->Get("cons.q").data.GetHostMirrorAndCopy();
+    auto dPU = rc->Get("cons.dP").data.GetHostMirrorAndCopy();
+
+    std::cerr << "RHO: " << rhop(0,108,63)
+         << " UU: "  << up(0,108,63)
+         << " U: "   << uvecp(0,0,108,63) << " " << uvecp(1,0,108,63)<< " " << uvecp(2,0,108,63)
+         << " B: "   << Bp(0,0,108,63) << " " << Bp(1,0,108,63) << " " << Bp(2,0,108,63)
+         << " q: "   << q(0,108,63) 
+         << " dP: "  << dP(0,108,63) << std::endl;
+    std::cerr << "RHO: " << rhoU(0,108,63)
+         << " UU: "  << uU(0,108,63)
+         << " U: "   << uvecU(0,0,108,63) << " " << uvecU(1,0,108,63)<< " " << uvecU(2,0,108,63)
+         << " B: "   << BU(0,0,108,63) << " " << BU(1,0,108,63) << " " << BU(2,0,108,63)
+         << " q: "   << qU(0,108,63) 
+         << " dP: "  << dPU(0,108,63) << std::endl;
 }
 
 inline void Flag(std::string label)
@@ -263,3 +356,10 @@ inline void Flag(std::string label) {}
 inline void Flag(MeshBlockData<Real> *rc, std::string label) {}
 inline void Flag(MeshData<Real> *md, std::string label) {}
 #endif
+/**
+ * Versions of Flag() that take shared_ptr objects and call through with get()
+ * Avoids having to pay attention to shared_ptr vs * pointers in adding Flag() calls
+ * when diagnosing a problem.
+ */
+inline void Flag(std::shared_ptr<MeshBlockData<Real>>& rc, std::string label) { Flag(rc.get(), label); }
+inline void Flag(std::shared_ptr<MeshData<Real>>& md, std::string label) { Flag(md.get(), label); }

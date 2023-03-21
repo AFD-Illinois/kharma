@@ -61,9 +61,14 @@ disable_floors = true
 enable_emhd_limits = false
 
 <implicit>
-min_nonlinear_iter = 3
-max_nonlinear_iter = 3
-use_qr = false
+min_nonlinear_iter  = 1
+max_nonlinear_iter  = 3
+jacobian_delta      = 4.e-8
+rootfind_tol        = 1.e-20
+linesearch          = true
+max_linesearch_iter = 3
+linesearch_eps      = 1.e-4
+use_qr              = true
 
 <debug>
 # General verbosity level:
@@ -79,12 +84,14 @@ flag_verbose = 0
 
 # This block must be present and values filled in all EGRMHD simulations
 <emhd>
-on = true
+on                 = true
 higher_order_terms = false
-closure_type = sound_speed
-tau = 1.0
+feedback           = true
+
+closure_type     = sound_speed
+tau              = 1.0
 conduction_alpha = 1.0
-viscosity_alpha = 1.0
+viscosity_alpha  = 1.0
 
 <parthenon/output0>
 file_type = hdf5
@@ -92,7 +99,7 @@ file_type = hdf5
 dt = 100.0
 # Output in double due to low amplitude
 single_precision_output = false
-variables = prims.rho, prims.u, prims.uvec, prims.B, prims.q, prims.dP
+variables = prims.rho, prims.u, prims.uvec, prims.B, prims.q, prims.dP, solve_norm, solve_fail
 
 <parthenon/output1>
 file_type = hst

@@ -38,7 +38,7 @@
 
 // Internal representation of the field initialization preference for quick switch
 // Avoids string comparsion in kernels
-enum BSeedType{constant, monopole, sane, ryan, ryan_quadrupole, r3s3, steep, gaussian, bz_monopole, vertical};
+enum BSeedType{constant, monopole, monopole_cube, sane, ryan, ryan_quadrupole, r3s3, steep, gaussian, bz_monopole, vertical};
 
 /**
  * Function to parse a string indicating desired field to a BSeedType
@@ -49,6 +49,8 @@ inline BSeedType ParseBSeedType(std::string b_field_type)
         return BSeedType::constant;
     } else if (b_field_type == "monopole") {
         return BSeedType::monopole;
+    } else if (b_field_type == "monopole_cube") {
+        return BSeedType::monopole_cube;
     } else if (b_field_type == "sane") {
         return BSeedType::sane;
     } else if (b_field_type == "mad" || b_field_type == "ryan") {
@@ -69,29 +71,3 @@ inline BSeedType ParseBSeedType(std::string b_field_type)
         throw std::invalid_argument("Magnetic field seed type not supported: " + b_field_type);
     }
 }
-
-/**
- * Get the minimum value of plasma beta on the (physical, non-ghost) domain
- * 
- * Likely not actually what you want
- */
-Real GetLocalBetaMin(parthenon::MeshBlockData<Real> *rc);
-
-/**
- * Get the maximum/minimum value of b^2 (twice the magnetic field pressure)
- * over the domain.  Latter a good check for >0 & for constant-field init.
- */
-Real GetLocalBsqMax(parthenon::MeshBlockData<Real> *rc);
-Real GetLocalBsqMin(parthenon::MeshBlockData<Real> *rc);
-
-/**
- * Get the maximum fluid pressure over the domain
- */
-Real GetLocalPMax(parthenon::MeshBlockData<Real> *rc);
-
-/**
- * Normalize the magnetic field by dividing by 'factor'
- * 
- * LOCKSTEP: this function expects and preserves P==U
- */
-TaskStatus NormalizeBField(parthenon::MeshBlockData<Real> *rc, Real factor);

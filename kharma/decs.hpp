@@ -53,20 +53,21 @@
 // Libraries I need directly
 #include "Kokkos_Core.hpp"
 
-#if 1
-// Resolve math functions to new Kokkos versions. Fast?
+#if 0
+// Resolve math functions to new Kokkos versions. Faster, maybe
 namespace m = Kokkos::Experimental;
 #else
 // Resolve to standard library
 namespace m = std;
 #endif
-// TODO CUDA?
+// TODO CUDA library explicitly?
 
 // Bare Parthenon defs
 // Anything more leads to circular deps from gr_coordinates.hpp
-// TODO update, this was from very early Parthenon
+// TODO update (carefully), this was from very early Parthenon
 #include "parthenon_arrays.hpp"
 #include "parthenon_mpi.hpp"
+#include "globals.hpp"
 #include "bvals/bvals_interfaces.hpp"
 #include "mesh/domain.hpp"
 
@@ -81,6 +82,10 @@ using GReal = double;
 #define SMALL 1e-20
 
 // GEOMETRY
+// This stuff needs to be in decs.h as it's used by functions in coordinates/,
+// which must be imported *inside Parthenon* in order to use GRCoodrdinates
+// in there
+// TODO version DLOOP(mu,nu)?
 #define GR_DIM 4
 #define DLOOP1 for(int mu = 0; mu < GR_DIM; ++mu)
 #define DLOOP2 DLOOP1 for(int nu = 0; nu < GR_DIM; ++nu)
@@ -89,18 +94,12 @@ using GReal = double;
 
 #define NVEC 3
 #define VLOOP for(int v = 0; v < NVEC; ++v)
-#define VLOOP2 VLOOP for(int w = 0; w < NVEC; ++w)
-
-// And an odd but useful loop for ex-iharm3d code
-// This requires nvar to be defined in caller!
-// It is not a const/global anymore.  So, use this loop carefully
-#define PLOOP for(int ip=0; ip < nvar; ++ip)
 
 // Useful Enums to avoid lots of #defines
 // See following functions and coord() in gr_coordinates.hpp to
 // get an idea of these locations.  All faces/corner are *left* of center
 #define NLOC 5
-enum Loci{face1=0, face2, face3, center, corner};
+enum class Loci{face1=0, face2, face3, center, corner};
 
 // Return the face location corresponding to the direction 'dir'
 KOKKOS_INLINE_FUNCTION Loci loc_of(const int& dir)
@@ -134,43 +133,28 @@ KOKKOS_INLINE_FUNCTION int dir_of(const Loci loc)
     }
 }
 
-// Emulate old names for possible stronger typing later,
-// and for readability
-// TODO specify ParArrayXD instead of generic?
+#ifdef MPI_PARALLEL
+/**
+ * Am I rank 0?  Saves typing vs comparing the global every time
+ */
+inline bool MPIRank0()
+{
+    return (parthenon::Globals::my_rank == 0 ? true : false);
+}
+#else
+/**
+ * Am I rank 0?  Saves typing vs comparing the global every time.
+ * DUMMY function for no-MPI case: constexpr return for slight optimizations.
+ */
+inline bool MPIRank0() { return true; }
+#endif // MPI_PARALLEL
+
+// A few generic "NDArray" overloads for readability.
+// TODO torn on futures of these, as they're used inconsistently
+// Shape+3D ("Grid") arrays
 using GridScalar = parthenon::ParArrayND<parthenon::Real>;
 using GridVector = parthenon::ParArrayND<parthenon::Real>;
-using GridVars = parthenon::ParArrayND<parthenon::Real>;  // TODO ELIM
-using GridInt = parthenon::ParArrayND<int>;
-
+// Shape+2D ("Geom") versions for symmetric geometry
 using GeomScalar = parthenon::ParArrayND<parthenon::Real>;
-using GeomVector = parthenon::ParArrayND<parthenon::Real>;
 using GeomTensor2 = parthenon::ParArrayND<parthenon::Real>;
 using GeomTensor3 = parthenon::ParArrayND<parthenon::Real>;
-
-// Specific lambdas for our array shapes
-#define KOKKOS_LAMBDA_1D KOKKOS_LAMBDA (const int& i)
-#define KOKKOS_LAMBDA_2D KOKKOS_LAMBDA (const int& j, const int& i)
-#define KOKKOS_LAMBDA_3D KOKKOS_LAMBDA (const int &k, const int &j, const int &i)
-#define KOKKOS_LAMBDA_4D KOKKOS_LAMBDA (const int& l, const int &k, const int &j, const int &i)
-#define KOKKOS_LAMBDA_5D KOKKOS_LAMBDA (const int& m, const int& l, const int &k, const int &j, const int &i)
-#define KOKKOS_LAMBDA_VARS KOKKOS_LAMBDA (const int &p, const int &k, const int &j, const int &i)
-#define KOKKOS_LAMBDA_VEC KOKKOS_LAMBDA (const int &mu, const int &k, const int &j, const int &i)
-// Same things for mesh-wide ops
-#define KOKKOS_LAMBDA_MESH_1D KOKKOS_LAMBDA (const int& b, const int& i)
-#define KOKKOS_LAMBDA_MESH_2D KOKKOS_LAMBDA (const int& b, const int& j, const int& i)
-#define KOKKOS_LAMBDA_MESH_3D KOKKOS_LAMBDA (const int& b, const int &k, const int &j, const int &i)
-#define KOKKOS_LAMBDA_MESH_4D KOKKOS_LAMBDA (const int& b, const int& l, const int &k, const int &j, const int &i)
-#define KOKKOS_LAMBDA_MESH_5D KOKKOS_LAMBDA (const int& b, const int& m, const int& l, const int &k, const int &j, const int &i)
-#define KOKKOS_LAMBDA_MESH_VARS KOKKOS_LAMBDA (const int& b, const int &p, const int &k, const int &j, const int &i)
-#define KOKKOS_LAMBDA_MESH_VEC KOKKOS_LAMBDA (const int& b, const int &mu, const int &k, const int &j, const int &i)
-
-// TODO separate macros for return type if this becomes a thing?  Or don't macro at all
-#define KOKKOS_LAMBDA_1D_REDUCE KOKKOS_LAMBDA (const int &i, parthenon::Real &local_result)
-// This is used for timestep and divB, which are explicitly double
-#define KOKKOS_LAMBDA_2D_REDUCE KOKKOS_LAMBDA (const int &j, const int &i, double &local_result)
-#define KOKKOS_LAMBDA_3D_REDUCE KOKKOS_LAMBDA (const int &k, const int &j, const int &i, double &local_result)
-#define KOKKOS_LAMBDA_3D_REDUCE_INT KOKKOS_LAMBDA (const int &k, const int &j, const int &i, int &local_result)
-// Versions for full mesh
-#define KOKKOS_LAMBDA_MESH_3D_REDUCE KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i, double &local_result)
-#define KOKKOS_LAMBDA_MESH_3D_REDUCE_INT KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i, int &local_result)
-#define KOKKOS_LAMBDA_MESH_4D_REDUCE KOKKOS_LAMBDA (const int &b, const int &v, const int &k, const int &j, const int &i, double &local_result)

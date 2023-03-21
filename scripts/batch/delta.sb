@@ -35,7 +35,7 @@ export CUDA_LAUNCH_BLOCKING=0
 #export KOKKOS_DEVICE_ID=0
 
 # Choose the kharma from compiled options in order of preference
-KHARMA_DIR="$HOME/kharma"
+KHARMA_DIR=${KHARMA_DIR:-"$HOME/kharma"}
 
 # Optionally use the Kokkos tools to profile kernels
 #export KOKKOS_PROFILE_LIBRARY=$KHARMA_DIR/../kokkos-tools/kp_kernel_timer.so

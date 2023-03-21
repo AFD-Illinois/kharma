@@ -118,7 +118,7 @@ KOKKOS_INLINE_FUNCTION Real lorentz_calc(const GRCoordinates& G, const VariableP
 
     return m::sqrt(1. + qsq);
 }
-template<typename Local>
+template <typename Local>
 KOKKOS_INLINE_FUNCTION Real lorentz_calc(const GRCoordinates& G, const Local& P, const VarMap& m,
                                          const int& j, const int& i, const Loci& loc=Loci::center)
 {
@@ -176,7 +176,7 @@ KOKKOS_INLINE_FUNCTION void calc_4vecs(const GRCoordinates& G, const Real uvec[N
 
     // This fn is guaranteed to have B values
     D.bcon[0] = 0;
-    VLOOP D.bcon[0] += B_P[v] * D.ucov[v+1];
+    VLOOP D.bcon[0]  += B_P[v] * D.ucov[v+1];
     VLOOP D.bcon[v+1] = (B_P[v] + D.bcon[0] * D.ucon[v+1]) / D.ucon[0];
 
     G.lower(D.bcon, D.bcov, k, j, i, loc);
@@ -201,7 +201,28 @@ KOKKOS_INLINE_FUNCTION void calc_4vecs(const GRCoordinates& G, const GridVector 
     G.lower(D.bcon, D.bcov, k, j, i, loc);
 }
 // Primitive/VarMap versions of calc_4vecs for kernels that use "packed" primitives
-template<typename Local>
+KOKKOS_INLINE_FUNCTION void calc_4vecs(const GRCoordinates& G, const VariablePack<Real>& P, const VarMap& m,
+                                      const int& k, const int& j, const int& i, const Loci loc, FourVectors& D)
+{
+    const Real gamma = lorentz_calc(G, P, m, k, j, i, loc);
+    const Real alpha = 1. / m::sqrt(-G.gcon(loc, j, i, 0, 0));
+
+    D.ucon[0] = gamma / alpha;
+    VLOOP D.ucon[v+1] = P(m.U1 + v, k, j, i) - gamma * alpha * G.gcon(loc, j, i, 0, v+1);
+
+    G.lower(D.ucon, D.ucov, k, j, i, loc);
+
+    if (m.B1 >= 0) {
+        D.bcon[0] = 0;
+        VLOOP D.bcon[0]  += P(m.B1 + v, k, j, i) * D.ucov[v+1];
+        VLOOP D.bcon[v+1] = (P(m.B1 + v, k, j, i) + D.bcon[0] * D.ucon[v+1]) / D.ucon[0];
+
+        G.lower(D.bcon, D.bcov, k, j, i, loc);
+    } else {
+        DLOOP1 D.bcon[mu] = D.bcov[mu] = 0.;
+    }
+}
+template <typename Local>
 KOKKOS_INLINE_FUNCTION void calc_4vecs(const GRCoordinates& G, const Local& P, const VarMap& m,
                                       const int& j, const int& i, const Loci loc, FourVectors& D)
 {
@@ -219,28 +240,6 @@ KOKKOS_INLINE_FUNCTION void calc_4vecs(const GRCoordinates& G, const Local& P, c
         VLOOP D.bcon[v+1] = (P(m.B1 + v) + D.bcon[0] * D.ucon[v+1]) / D.ucon[0];
 
         G.lower(D.bcon, D.bcov, 0, j, i, loc);
-    } else {
-        DLOOP1 D.bcon[mu] = D.bcov[mu] = 0.;
-    }
-}
-template<typename Global>
-KOKKOS_INLINE_FUNCTION void calc_4vecs(const GRCoordinates& G, const Global& P, const VarMap& m,
-                                      const int& k, const int& j, const int& i, const Loci loc, FourVectors& D)
-{
-    const Real gamma = lorentz_calc(G, P, m, k, j, i, loc);
-    const Real alpha = 1. / m::sqrt(-G.gcon(loc, j, i, 0, 0));
-
-    D.ucon[0] = gamma / alpha;
-    VLOOP D.ucon[v+1] = P(m.U1 + v, k, j, i) - gamma * alpha * G.gcon(loc, j, i, 0, v+1);
-
-    G.lower(D.ucon, D.ucov, k, j, i, loc);
-
-    if (m.B1 >= 0) {
-        D.bcon[0] = 0;
-        VLOOP D.bcon[0]  += P(m.B1 + v, k, j, i) * D.ucov[v+1];
-        VLOOP D.bcon[v+1] = (P(m.B1 + v, k, j, i) + D.bcon[0] * D.ucon[v+1]) / D.ucon[0];
-
-        G.lower(D.bcon, D.bcov, k, j, i, loc);
     } else {
         DLOOP1 D.bcon[mu] = D.bcov[mu] = 0.;
     }

@@ -159,29 +159,29 @@ KOKKOS_INLINE_FUNCTION void GRCoordinates::coord(const int& k, const int& j, con
     switch(loc)
     {
     case Loci::face1:
-        X[1] = x1f(i);
-        X[2] = x2v(j);
-        X[3] = x3v(k);
+        X[1] = Xf<1>(i);
+        X[2] = Xc<2>(j);
+        X[3] = Xc<3>(k);
         break;
     case Loci::face2:
-        X[1] = x1v(i);
-        X[2] = x2f(j);
-        X[3] = x3v(k);
+        X[1] = Xc<1>(i);
+        X[2] = Xf<2>(j);
+        X[3] = Xc<3>(k);
         break;
     case Loci::face3:
-        X[1] = x1v(i);
-        X[2] = x2v(j);
-        X[3] = x3f(k);
+        X[1] = Xc<1>(i);
+        X[2] = Xc<2>(j);
+        X[3] = Xf<3>(k);
         break;
     case Loci::center:
-        X[1] = x1v(i);
-        X[2] = x2v(j);
-        X[3] = x3v(k);
+        X[1] = Xc<1>(i);
+        X[2] = Xc<2>(j);
+        X[3] = Xc<3>(k);
         break;
     case Loci::corner:
-        X[1] = x1f(i);
-        X[2] = x2f(j);
-        X[3] = x3f(k);
+        X[1] = Xf<1>(i);
+        X[2] = Xf<2>(j);
+        X[3] = Xf<3>(k);
         break;
     }
 }

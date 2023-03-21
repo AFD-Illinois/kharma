@@ -12,6 +12,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX17_STANDARD_COMPILE_OPTION "-std=c++17")
 set(PARTHENON_ENABLE_CPP17 ON CACHE BOOL "KHARMA Override")
 
+# Set the path to include cmake/ dir
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+
 # Parthenon options
 set(PARTHENON_DISABLE_EXAMPLES ON CACHE BOOL "KHARMA Override")
 set(PARTHENON_LINT_DEFAULT OFF CACHE BOOL "KHARMA Override")
@@ -39,7 +42,6 @@ set(Kokkos_ENABLE_AGGRESSIVE_VECTORIZATION ON CACHE BOOL "KHARMA Override")
 set(KokkosKernels_ENABLE_TPL_CUSPARSE OFF CACHE BOOL "KHARMA Override")
 set(KokkosKernels_ENABLE_TPL_CUBLAS OFF CACHE BOOL "KHARMA Override")
 
-
 # Offer a KHARMA option to disable the MPI requirement
 # The only difference from setting PARTHENON_DISABLE_MPI is that
 # the configure step no longer searches for/fails without it
@@ -59,17 +61,8 @@ add_subdirectory(external/parthenon)
 include_directories(external/parthenon/src)
 # mpark::variant is header only, don't build anything
 include_directories(external/variant/include)
-# Kokkos kernels: don't build them (very slow), just import all headers
-# Requires KokkosKernels_config.h shipped with KHARMA, YMMV
-# In case of issues, uncomment the following line to build them
-#add_subdirectory(external/kokkos-kernels)
-include_directories(external/kokkos-kernels/src)
-include_directories(external/kokkos-kernels/src/batched)
-include_directories(external/kokkos-kernels/src/common)
-include_directories(external/kokkos-kernels/src/batched/dense)
-include_directories(external/kokkos-kernels/src/batched/dense/impl)
-include_directories(external/kokkos-kernels/src/blas)
-include_directories(external/kokkos-kernels/src/blas/impl)
+# Our hacked-up version of the Kokkos kernels
+include_directories(external/kokkos-kernels)
 
 # Finally, build KHARMA
 add_subdirectory(kharma)
