@@ -473,9 +473,7 @@ TaskStatus FixX1Flux(MeshData<Real> *md)
     //auto B_F_host = x2_fill_device.GetHostMirror();
     GridVector F1, F2, F3;
 
-    // Assuming the fluxes through the pole are 0,
-    // make sure the polar EMFs are 0 when performing fluxCT
-    // TODO only invoke one kernel? We avoid invocation except on boundaries anyway
+    // TODO(BSP) try to eliminate full-array copies. Host-parallel applications to inner/outer?
     for (auto &pmb : pmesh->block_list) {
         auto& rc = pmb->meshblock_data.Get();
         auto& B_F = rc->PackVariablesAndFluxes(std::vector<std::string>{"cons.B"});

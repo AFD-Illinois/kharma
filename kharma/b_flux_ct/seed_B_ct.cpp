@@ -277,13 +277,13 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
     // Calculate B-field
     if (ndim > 2) {
         pmb->par_for("B_field_B_3D", ks, ke, js, je, is, ie,
-            KOKKOS_LAMBDA_3D {
+            KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
                 get_B_from_A_3D(G, A, B_U, k, j, i);
             }
         );
     } else {
         pmb->par_for("B_field_B_2D", ks, ke, js, je, is, ie,
-            KOKKOS_LAMBDA_3D {
+            KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
                 get_B_from_A_2D(G, A, B_U, k, j, i);
             }
         );
@@ -377,10 +377,6 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
         
         }
         */
-        
-        // update conserved values
-        //B_FluxCT::PtoU(rc,IndexDomain::entire);
-        B_FluxCT::UtoP(rc,IndexDomain::entire);
     }
 
     // Then make sure the primitive versions are updated, too
