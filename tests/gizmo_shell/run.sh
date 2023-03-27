@@ -10,8 +10,8 @@ DIM=3
 NZONES=7
 BASE=8
 NRUNS=300
-START_RUN=8 # if this is not 0, then update start_time, out_to_in, iteration, r_out, r_in to values that you are re-starting from
-DRTAG="bondi_multizone_030723_gizmo_no_ext_g_128^3"
+START_RUN=34 # if this is not 0, then update start_time, out_to_in, iteration, r_out, r_in to values that you are re-starting from
+DRTAG="bondi_multizone_030723_gizmo_no_ext_g_128^3_restart6"  # reconstruction modified
 
 # Set paths
 KHARMADIR=../..
@@ -21,11 +21,11 @@ parfilename="${PDR}/kharma/pars/bondi_multizone/bondi_multizone_00000.par" # par
 
 # other values determined automatically
 turn_around=$(($NZONES-1))
-start_time=6013548357 #0 #
+start_time=19493738388 #0 #
 out_to_in=-1 # 1 #
-iteration=2 # 1 #eq : (iteration-1)*(NZONES-1)<VAR<=iteration*(NZONES-1)
-r_out=4096 #$((${BASE}**($turn_around+2))) #
-r_in=64 #$((${BASE}**$turn_around)) #
+iteration=6 # 1 #eq : (iteration-1)*(NZONES-1)<VAR<=iteration*(NZONES-1)
+r_out=262144 #$((${BASE}**($turn_around+2))) #
+r_in=4096 #$((${BASE}**$turn_around)) #
 
 # if the directories are not present, make them.
 if [ ! -d "${DR}" ]; then
@@ -107,6 +107,7 @@ do
                                     bondi/use_gizmo=true \
                                     b_field/type=none b_field/solver=none \
                                     b_field/fix_flux_x1=0 b_field/initial_cleanup=0 \
+                                    GRMHD/reconstruction=linear_vl \
                                     resize_restart/base=$BASE resize_restart/nzone=$NZONES resize_restart/iteration=$iteration \
                                     parthenon/output0/dt=$output0_dt \
                                     parthenon/output1/dt=$output1_dt \
