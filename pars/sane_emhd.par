@@ -83,7 +83,6 @@ u_over_rho_max     = 2
 enable_emhd_limits = true
 
 <debug>
-archive_parameters = true
 verbose            = 1
 extra_checks       = 1
 flag_verbose       = 0

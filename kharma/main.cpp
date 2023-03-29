@@ -136,60 +136,49 @@ int main(int argc, char *argv[])
     signal(SIGSEGV, print_backtrace);
 #endif
 
-    auto pin = pman.pinput.get(); // All parameters in the input file or command line
-    auto pmesh = pman.pmesh.get(); // The mesh, with list of blocks & locations, size, etc
-    auto papp = pman.app_input.get(); // The list of callback functions specified above
+    {
+        auto pin = pman.pinput.get(); // All parameters in the input file or command line
+        auto pmesh = pman.pmesh.get(); // The mesh, with list of blocks & locations, size, etc
+        auto papp = pman.app_input.get(); // The list of callback functions specified above
 
-    if(MPIRank0()) {
-        // Note reading "verbose" parameter from "Globals" instead of pin: it may change during simulation
-        if (pmesh->packages.Get("Globals")->Param<int>("verbose") > 0) {
-            // Print a list of all loaded packages.  Surprisingly useful for debugging init logic
-            std::cout << "Packages in use: " << std::endl;
-            for (auto package : pmesh->packages.AllPackages()) {
-                std::cout << package.first << std::endl;
+        if(MPIRank0()) {
+            // Note reading "verbose" parameter from "Globals" instead of pin: it may change during simulation
+            if (pmesh->packages.Get("Globals")->Param<int>("verbose") > 0) {
+                // Print a list of all loaded packages.  Surprisingly useful for debugging init logic
+                std::cout << "Packages in use: " << std::endl;
+                for (auto package : pmesh->packages.AllPackages()) {
+                    std::cout << package.first << std::endl;
+                }
+                std::cout << std::endl;
             }
-            std::cout << std::endl;
+            std::cout << "Running post-initialization tasks..." << std::endl;
         }
-        std::cout << "Running post-initialization tasks..." << std::endl;
+
+        // PostInitialize: Add magnetic field to the problem, initialize ghost zones.
+        // Any init which may be run even when restarting, or requires all
+        // MeshBlocks to be initialized already
+        auto prob = pin->GetString("parthenon/job", "problem_id");
+        bool is_restart = (prob == "resize_restart") || (prob == "resize_restart_kharma") || pman.IsRestart();
+        KHARMA::PostInitialize(pin, pmesh, is_restart);
+        Flag("Post-initialization completed");
+
+        // Construct a temporary driver purely for parameter parsing
+        KHARMADriver driver(pin, papp, pmesh);
+
+        // Write parameters to console if we should be wordy
+        if ((pmesh->packages.Get("Globals")->Param<int>("verbose") > 0) && MPIRank0()) {
+            // This dumps the full Kokkos config, useful for double-checking
+            // that the compile did what we wanted
+            ShowConfig();
+            pin->ParameterDump(std::cout);
+        }
+
+        // Then execute the driver. This is a Parthenon function inherited by our HARMDriver object,
+        // which will call MakeTaskCollection, then execute the tasks on the mesh for each portion
+        // of each step until a stop criterion is reached.
+        Flag("Executing Driver");
+        auto driver_status = driver.Execute();
     }
-
-    // PostInitialize: Add magnetic field to the problem, initialize ghost zones.
-    // Any init which may be run even when restarting, or requires all
-    // MeshBlocks to be initialized already
-    auto prob = pin->GetString("parthenon/job", "problem_id");
-    bool is_restart = (prob == "resize_restart") || (prob == "resize_restart_kharma") || pman.IsRestart();
-    KHARMA::PostInitialize(pin, pmesh, is_restart);
-    Flag("Post-initialization completed");
-
-    // Construct a temporary driver purely for parameter parsing
-    KHARMADriver driver(pin, papp, pmesh);
-
-    // We could still have set parameters during driver initialization
-    // Note the order here is *extremely important* as the first statement has a
-    // side effect which must occur on all MPI ranks
-    if(pin->GetOrAddBoolean("debug", "archive_parameters", false) && MPIRank0()) {
-        // Write *all* parameters to a parfile for posterity
-        std::ostringstream ss;
-        auto itt_now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-        ss << "kharma_parsed_parameters_" << std::put_time(std::gmtime(&itt_now), "%FT%TZ") << ".par";
-        std::fstream pars;
-        pars.open(ss.str(), std::fstream::out | std::fstream::trunc);
-        pin->ParameterDump(pars);
-        pars.close();
-    }
-    // Also write parameters to console if we should be wordy
-    if ((pmesh->packages.Get("Globals")->Param<int>("verbose") > 0) && MPIRank0()) {
-        // This dumps the full Kokkos config, useful for double-checking
-        // that the compile did what we wanted
-        ShowConfig();
-        pin->ParameterDump(std::cout);
-    }
-
-    // Then execute the driver. This is a Parthenon function inherited by our HARMDriver object,
-    // which will call MakeTaskCollection, then execute the tasks on the mesh for each portion
-    // of each step until a stop criterion is reached.
-    Flag("Executing Driver");
-    auto driver_status = driver.Execute();
 
     // Parthenon cleanup includes Kokkos, MPI
     Flag("Finalizing");
