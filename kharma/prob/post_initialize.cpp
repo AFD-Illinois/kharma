@@ -217,10 +217,31 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart, b
         KHARMA::ResetGlobals(pin, pmesh);
     }
 
+
     // If we resized the array, cleanup any field divergence we created
     // Let the user specify to do this, too
     if ((is_restart && is_resize && !pin->GetOrAddBoolean("resize_restart", "skip_b_cleanup", false))
         || pin->GetBoolean("b_field", "initial_cleanup")) {
+        
+        // added by Hyerin (03/08/23) to trigger output just before cleaning (copied from Parthenon's driver/driver.hpp)
+        Real start_time = pin->GetOrAddReal("parthenon/time", "start_time", 0.0);
+        Real tstop = pin->GetOrAddReal("parthenon/time", "tlim",
+                                          std::numeric_limits<Real>::infinity());
+        Real dt =
+            pin->GetOrAddReal("parthenon/time", "dt", std::numeric_limits<Real>::max());
+        const auto ncycle = pin->GetOrAddInteger("parthenon/time", "ncycle", 0);
+        const auto nmax = pin->GetOrAddInteger("parthenon/time", "nlim", -1);
+        const auto nout = pin->GetOrAddInteger("parthenon/time", "ncycle_out", 1);
+        // disable mesh output by default
+        const auto nout_mesh =
+            pin->GetOrAddInteger("parthenon/time", "ncycle_out_mesh", 0);
+        SimTime tm;
+        tm = SimTime(start_time, tstop, nmax, ncycle, nout, nout_mesh, dt); // Hyerin: should I just remove the tm? I think Outputs can handle null
+        std::unique_ptr<Outputs> pouts;
+        pouts = std::make_unique<Outputs>(pmesh, pin, &tm);
+        parthenon::SignalHandler::OutputSignal signal = parthenon::SignalHandler::OutputSignal::now;
+        pouts->MakeOutputs(pmesh, pin, &tm, signal);
+
         // Clean field divergence across the whole grid
         // Includes boundary syncs
         B_Cleanup::CleanupDivergence(md);
