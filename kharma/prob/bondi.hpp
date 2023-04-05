@@ -122,7 +122,7 @@ KOKKOS_INLINE_FUNCTION Real get_T(const GReal r, const Real C1, const Real C2, c
  */
 KOKKOS_INLINE_FUNCTION void get_prim_bondi(const GRCoordinates& G, const CoordinateEmbedding& coords, const VariablePack<Real>& P, const VarMap& m_p,
                                            const Real& gam, const SphBLCoords& bl,  const SphKSCoords& ks, 
-                                           const Real mdot, const Real rs, const Real r_shell, const int& k, const int& j, const int& i)
+                                           const Real mdot, const Real rs, const Real r_shell, const Real uphi, const int& k, const int& j, const int& i)
 {
     // Solution constants
     // Ideally these could be cached but preformance isn't an issue here
@@ -137,6 +137,7 @@ KOKKOS_INLINE_FUNCTION void get_prim_bondi(const GRCoordinates& G, const Coordin
     G.coord(k, j, i, Loci::center, Xnative);
     G.coord_embed(k, j, i, Loci::center, Xembed);
     GReal r = Xembed[1];
+    GReal th = Xembed[2];
     // Unless we're doing a Schwarzchild problem & comparing solutions,
     // be a little cautious about initializing the Ergosphere zones
     if (ks.a > 0.1 && r < 2) return;
@@ -159,9 +160,10 @@ KOKKOS_INLINE_FUNCTION void get_prim_bondi(const GRCoordinates& G, const Coordin
         T = get_T(r_shell, C1, C2, n, rs);
         rho = m::pow(T, n);
         u = rho * T * n;
-    } //else {
+    } else {
     //    ucon_bl[1] = 0.; // 10/23/2022 test zero velocity for the bondi shell
-    //}
+        ucon_bl[3]=uphi*m::sin(th); // 04/04/23 set it to some small angular velocity. smallest at the poles
+    }
     Real gcov_bl[GR_DIM][GR_DIM];
     bl.gcov_embed(Xembed, gcov_bl);
     set_ut(gcov_bl, ucon_bl);
@@ -206,7 +208,7 @@ KOKKOS_INLINE_FUNCTION void XtoindexGizmo(const GReal XG[GR_DIM],
     // interpolation (11/14/2022) TODO: write a case where indices hit the boundaries of the data file
     del = (XG[1]-rarr(i))/(rarr(i+1)-rarr(i));
 
-    if (m::abs(dx2_min/m::pow(XG[1],2))>1.e-8) printf("XtoindexGizmo: dx2 pretty large = %g at r= %g \n",dx2_min, XG[1]);
+    //if (m::abs(dx2_min/m::pow(XG[1],2))>1.e-8) printf("XtoindexGizmo: dx2 frac diff large = %g at r= %g \n",m::sqrt(dx2_min)/XG[1], XG[1]); this is interpolation anyway
 }
 /**
  * Get the GIZMO output values at a particular zone
