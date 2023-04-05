@@ -64,7 +64,7 @@ namespace m = std;
 
 // Bare Parthenon defs
 // Anything more leads to circular deps from gr_coordinates.hpp
-// TODO update (carefully), this was from very early Parthenon
+#include "parameter_input.hpp"
 #include "parthenon_arrays.hpp"
 #include "parthenon_mpi.hpp"
 #include "globals.hpp"

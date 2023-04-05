@@ -130,9 +130,10 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     pkg->AddField("cons.B", m);
 
     // Hyerin (12/19/22)
-    // TODO declare this only on "resize_kharma_restart"
-    m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::FillGhost, Metadata::Vector});
-    pkg->AddField("B_Save", m);
+    if (pin->GetString("parthenon/job", "problem_id") == "resize_restart_kharma") {
+        m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::FillGhost, Metadata::Vector});
+        pkg->AddField("B_Save", m);
+    }
 
     // We exist basically to do this
     pkg->FixFlux = B_FluxCT::FixFlux;

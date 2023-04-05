@@ -267,6 +267,12 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart)
         KHARMA::ResetGlobals(pin, pmesh);
     }
 
+    KHARMADriver::SyncAllBounds(md);
+
+    auto tm = SimTime(0., 0., 0, 0, 0, 0, 0.);
+    auto pouts = std::make_unique<Outputs>(pmesh, pin, &tm);
+    pouts->MakeOutputs(pmesh, pin, &tm, SignalHandler::OutputSignal::now);
+
     // Clean the B field if we've introduced a divergence somewhere
     // Call this any time the package is loaded, all the
     // logic about parsing whether to clean is there

@@ -34,7 +34,7 @@
 
 #include "bz_monopole.hpp"
 
-#include "prob_common.hpp"
+#include "coordinate_utils.hpp"
 #include "types.hpp"
 
 #include <random>

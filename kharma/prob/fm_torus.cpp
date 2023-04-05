@@ -35,7 +35,7 @@
 #include "fm_torus.hpp"
 
 #include "floors.hpp"
-#include "prob_common.hpp"
+#include "coordinate_utils.hpp"
 #include "types.hpp"
 
 #include <random>
@@ -72,11 +72,7 @@ TaskStatus InitializeFMTorus(std::shared_ptr<MeshBlockData<Real>>& rc, Parameter
     // Since we can't create a system and assign later, we just
     // rebuild copies of both based on the BH spin "a"
     const auto& G = pmb->coords;
-    const bool use_ks = G.coords.is_ks();
     const GReal a = G.coords.get_a();
-    const bool ext_g = G.coords.is_ext_g();
-    const SphBLCoords blcoords = SphBLCoords(a, ext_g);
-    const SphKSCoords kscoords = SphKSCoords(a, ext_g);
 
     // Fishbone-Moncrief parameters
     Real l = lfish_calc(a, rmax);
@@ -121,20 +117,10 @@ TaskStatus InitializeFMTorus(std::shared_ptr<MeshBlockData<Real>>& rc, Parameter
                 Real ucon_bl[GR_DIM];
                 rotate_polar_vec(Xmidplane, ucon_tilt, -tilt, Xembed, ucon_bl);
 
-                Real gcov_bl[GR_DIM][GR_DIM];
-                blcoords.gcov_embed(Xembed, gcov_bl);
-                set_ut(gcov_bl, ucon_bl);
-
-                // Then transform that 4-vector to KS if necessary,
+                // Then set u^t and transform the 4-vector to KS if necessary,
                 // and then to native coordinates
                 Real ucon_native[GR_DIM];
-                if (use_ks) {
-                    Real ucon_ks[GR_DIM];
-                    kscoords.vec_from_bl(Xembed, ucon_bl, ucon_ks);
-                    G.coords.con_vec_to_native(Xnative, ucon_ks, ucon_native);
-                } else {
-                    G.coords.con_vec_to_native(Xnative, ucon_bl, ucon_native);
-                }
+                G.coords.bl_fourvel_to_native(Xnative, ucon_bl, ucon_native);
 
                 // Convert native 4-vector to primitive u-twiddle, see Gammie '04
                 Real gcon[GR_DIM][GR_DIM], u_prim[NVEC];

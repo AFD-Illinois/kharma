@@ -189,14 +189,14 @@ void KHARMADriver::SyncAllBounds(std::shared_ptr<MeshData<Real>> md, bool apply_
         for (auto &pmb : block_list) {
             auto& rc = pmb->meshblock_data.Get();
 
-            Flag("Block fill Conserved");
-            Flux::BlockPtoU(rc.get(), IndexDomain::entire, false);
-
             if (apply_domain_bounds) {
                 Flag("Block physical bounds");
                 // Physical boundary conditions
                 parthenon::ApplyBoundaryConditions(rc);
             }
+
+            Flag("Block fill Conserved");
+            Flux::BlockPtoU(rc.get(), IndexDomain::entire, false);
         }
     } else {
         // If we're syncing the conserved vars...

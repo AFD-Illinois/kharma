@@ -73,7 +73,6 @@ KOKKOS_INLINE_FUNCTION void Xtoindex(const GReal XG[GR_DIM],
 }
 
 KOKKOS_INLINE_FUNCTION void get_prim_restart_kharma(const GRCoordinates& G, const CoordinateEmbedding& coords, const VariablePack<Real>& P, const VarMap& m_p,
-                    const SphBLCoords& bl,  const SphKSCoords& ks, 
                     const Real fx1min, const Real fx1max, const Real fnghost, const bool should_fill, const bool is_spherical, const bool include_B,
                     const Real gam, const Real rs,  const Real mdot, const hsize_t length[GR_DIM],
                     const GridScalar& x1, const GridScalar& x2, const GridScalar& x3, const GridScalar& rho, const GridScalar& u, const GridVector& uvec, const GridVector& B,
@@ -96,7 +95,8 @@ KOKKOS_INLINE_FUNCTION void get_prim_restart_kharma(const GRCoordinates& G, cons
         Real C1 = uc * m::pow(rs, 2) * m::pow(Tc, n);
         Real C2 = m::pow(1. + (1. + n) * Tc, 2) * (1. - 2. * mdot / rs + m::pow(C1, 2) / (m::pow(rs, 4) * m::pow(Tc, 2 * n)));
 
-        GReal Xembed[GR_DIM];
+        GReal Xnative[GR_DIM], Xembed[GR_DIM];
+        G.coord(k, j, i, Loci::center, Xnative);
         G.coord_embed(k, j, i, Loci::center, Xembed);
         GReal r = Xembed[1];
   
@@ -119,7 +119,13 @@ KOKKOS_INLINE_FUNCTION void get_prim_restart_kharma(const GRCoordinates& G, cons
                         
         Real ur = -C1 / (m::pow(T, n) * m::pow(r, 2));
         Real ucon_bl[GR_DIM] = {0, ur, 0, 0};
-        bl_fourvel_to_prim(G,coords,bl,ks,k,j,i,ucon_bl,u_prim);
+        Real ucon_native[GR_DIM];
+        coords.bl_fourvel_to_native(Xnative, ucon_bl, ucon_native);
+
+        // Convert native 4-vector to primitive u-twiddle, see Gammie '04
+        Real gcon[GR_DIM][GR_DIM], u_prim[NVEC];
+        G.gcon(Loci::center, j, i, gcon);
+        fourvel_to_prim(gcon, ucon_native, u_prim);
         
    }
     // HyerinTODO: if fname_fill exists and smaller.
@@ -146,8 +152,7 @@ KOKKOS_INLINE_FUNCTION void get_prim_restart_kharma(const GRCoordinates& G, cons
 
 }
 
-KOKKOS_INLINE_FUNCTION void get_B_restart_kharma(const GRCoordinates& G, const CoordinateEmbedding& coords, const VariablePack<Real>& P, const VarMap& m_p,
-                    const SphBLCoords& bl,  const SphKSCoords& ks, 
+KOKKOS_INLINE_FUNCTION void get_B_restart_kharma(const GRCoordinates& G, const VariablePack<Real>& P, const VarMap& m_p,
                     const Real fx1min, const Real fx1max, const bool should_fill,
                     const hsize_t length[GR_DIM],
                     const GridScalar& x1, const GridScalar& x2, const GridScalar& x3, const GridVector& B,

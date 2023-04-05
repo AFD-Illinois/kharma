@@ -217,6 +217,7 @@ TaskStatus SetKharmaRestart(std::shared_ptr<MeshBlockData<Real>> rc, IndexDomain
     if (include_B) B_Save = rc->Get("B_Save").data;
 
     auto& G = pmb->coords;
+    CoordinateEmbedding coords = G.coords;
     
     // Size/domain of the MeshBlock we're reading to
     int is, ie;
@@ -232,7 +233,6 @@ TaskStatus SetKharmaRestart(std::shared_ptr<MeshBlockData<Real>> rc, IndexDomain
     }
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
-    //IndexRange block = IndexRange{0, nb - 1};
     
     const int n1tot = pmb->packages.Get("GRMHD")->Param<int>("rnx1");
     const int n2tot = pmb->packages.Get("GRMHD")->Param<int>("rnx2");
@@ -297,20 +297,21 @@ TaskStatus SetKharmaRestart(std::shared_ptr<MeshBlockData<Real>> rc, IndexDomain
         Real *x1_file = new double[length[0]*length[1]];
         Real *x2_file = new double[length[0]*length[2]];
         Real *x3_file = new double[length[0]*length[3]];
-        //static hsize_t fdims[] = {length[0], length[3], length[2], length[1],1}; //outdated
-        static hsize_t fdims[] = {length[0], 1, length[3], length[2], length[1]};
+        //static hsize_t fdims[] = {length[0], 1, length[3], length[2], length[1],1}; //outdated
+        static hsize_t fdims[] = {length[0], length[3], length[2], length[1]};
         //static hsize_t fdims_vec[] = {length[0], length[3], length[2], length[1],3}; //outdated
         static hsize_t fdims_vec[] = {length[0], 3, length[3], length[2], length[1]};
         static hsize_t fdims_x1[] = {length[0], length[1]};
         static hsize_t fdims_x2[] = {length[0], length[2]};
         static hsize_t fdims_x3[] = {length[0], length[3]};
-        hsize_t fstart[] = {0, 0, 0, 0, 0};
+        hsize_t fstart[] = {0, 0, 0, 0};
+        hsize_t fstart_vec[] = {0, 0, 0, 0, 0};
         hsize_t fstart_x[] = {0, 0};
-        hdf5_read_array(rho_file, "prims.rho", 5, fdims, fstart,fdims,fdims,fstart,H5T_IEEE_F64LE);
-        hdf5_read_array(u_file, "prims.u", 5, fdims, fstart,fdims,fdims,fstart,H5T_IEEE_F64LE);
-        hdf5_read_array(uvec_file, "prims.uvec", 5, fdims_vec, fstart,fdims_vec,fdims_vec,fstart,H5T_IEEE_F64LE);
-        //if (include_B) hdf5_read_array(B_file, "prims.B", 5, fdims_vec, fstart,fdims_vec,fdims_vec,fstart,H5T_IEEE_F64LE);
-        if (include_B) hdf5_read_array(B_file, "cons.B", 5, fdims_vec, fstart,fdims_vec,fdims_vec,fstart,H5T_IEEE_F64LE);
+        hdf5_read_array(rho_file, "prims.rho", 4, fdims, fstart, fdims, fdims, fstart, H5T_IEEE_F64LE);
+        hdf5_read_array(u_file, "prims.u", 4, fdims, fstart, fdims, fdims, fstart, H5T_IEEE_F64LE);
+        hdf5_read_array(uvec_file, "prims.uvec", 5, fdims_vec, fstart_vec, fdims_vec, fdims_vec, fstart_vec, H5T_IEEE_F64LE);
+        //if (include_B) hdf5_read_array(B_file, "prims.B", 5, fdims_vec, fstart_vec, fdims_vec, fdims_vec, fstart_vec, H5T_IEEE_F64LE);
+        if (include_B) hdf5_read_array(B_file, "cons.B", 5, fdims_vec, fstart_vec, fdims_vec, fdims_vec, fstart_vec, H5T_IEEE_F64LE);
         hdf5_read_array(x1_file, "VolumeLocations/x", 2, fdims_x1, fstart_x,fdims_x1,fdims_x1,fstart_x,H5T_IEEE_F64LE);
         hdf5_read_array(x2_file, "VolumeLocations/y", 2, fdims_x2, fstart_x,fdims_x2,fdims_x2,fstart_x,H5T_IEEE_F64LE);
         hdf5_read_array(x3_file, "VolumeLocations/z", 2, fdims_x3, fstart_x,fdims_x3,fdims_x3,fstart_x,H5T_IEEE_F64LE);
@@ -340,11 +341,11 @@ TaskStatus SetKharmaRestart(std::shared_ptr<MeshBlockData<Real>> rc, IndexDomain
         if (fname_fill != "none") { // TODO: here I'm assuming fname and fname_fill has same dimensions, which is not always the case.
             hdf5_open(fname_fill.c_str());
             hdf5_set_directory("/");
-            hdf5_read_array(rho_filefill, "prims.rho", 5, fdims, fstart,fdims,fdims,fstart,H5T_IEEE_F64LE);
-            hdf5_read_array(u_filefill, "prims.u", 5, fdims, fstart,fdims,fdims,fstart,H5T_IEEE_F64LE);
-            hdf5_read_array(uvec_filefill, "prims.uvec", 5, fdims_vec, fstart,fdims_vec,fdims_vec,fstart,H5T_IEEE_F64LE);
-            //if (include_B) hdf5_read_array(B_filefill, "prims.B", 5, fdims_vec, fstart,fdims_vec,fdims_vec,fstart,H5T_IEEE_F64LE);
-            if (include_B) hdf5_read_array(B_filefill, "cons.B", 5, fdims_vec, fstart,fdims_vec,fdims_vec,fstart,H5T_IEEE_F64LE);
+            hdf5_read_array(rho_filefill, "prims.rho", 4, fdims, fstart, fdims, fdims, fstart, H5T_IEEE_F64LE);
+            hdf5_read_array(u_filefill, "prims.u", 4, fdims, fstart, fdims, fdims, fstart, H5T_IEEE_F64LE);
+            hdf5_read_array(uvec_filefill, "prims.uvec", 5, fdims_vec, fstart_vec, fdims_vec, fdims_vec, fstart_vec, H5T_IEEE_F64LE);
+            //if (include_B) hdf5_read_array(B_filefill, "prims.B", 5, fdims_vec, fstart_vec, fdims_vec, fdims_vec, fstart_vec, H5T_IEEE_F64LE);
+            if (include_B) hdf5_read_array(B_filefill, "cons.B", 5, fdims_vec, fstart_vec, fdims_vec, fdims_vec, fstart_vec,H5T_IEEE_F64LE);
             hdf5_read_array(x1_filefill, "VolumeLocations/x", 2, fdims_x1, fstart_x,fdims_x1,fdims_x1,fstart_x,H5T_IEEE_F64LE);
             hdf5_read_array(x2_filefill, "VolumeLocations/y", 2, fdims_x2, fstart_x,fdims_x2,fdims_x2,fstart_x,H5T_IEEE_F64LE);
             hdf5_read_array(x3_filefill, "VolumeLocations/z", 2, fdims_x3, fstart_x,fdims_x3,fdims_x3,fstart_x,H5T_IEEE_F64LE);
@@ -400,10 +401,6 @@ TaskStatus SetKharmaRestart(std::shared_ptr<MeshBlockData<Real>> rc, IndexDomain
         const Real rs = pmb->packages.Get("GRMHD")->Param<Real>("rs");
         const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
 
-        SphKSCoords kscoord = mpark::get<SphKSCoords>(G.coords.base);
-        SphBLCoords blcoord = SphBLCoords(kscoord.a, kscoord.ext_g); // modified (11/15/22)
-        CoordinateEmbedding coords = G.coords;
-
       
         // Deep copy to device
         x1_f_device.DeepCopy(x1_f_host);
@@ -427,10 +424,10 @@ TaskStatus SetKharmaRestart(std::shared_ptr<MeshBlockData<Real>> rc, IndexDomain
         //}
         Kokkos::fence();
 
-        // Host-side interpolate & copy into the mirror array
+        // Device-side interpolate & copy into the mirror array
         pmb->par_for("copy_restart_state_kharma", ks, ke, js, je, is, ie,
             KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-                get_prim_restart_kharma(G, coords, P, m_p, blcoord,  kscoord, 
+                get_prim_restart_kharma(G, coords, P, m_p,
                     fx1min, fx1max, fnghost, should_fill, is_spherical, include_B, gam, rs, mdot, length,
                     x1_f_device, x2_f_device, x3_f_device, rho_f_device, u_f_device, uvec_f_device, B_f_device,
                     x1_fill_device, x2_fill_device, x3_fill_device, rho_fill_device, u_fill_device, uvec_fill_device, B_fill_device,
@@ -438,12 +435,13 @@ TaskStatus SetKharmaRestart(std::shared_ptr<MeshBlockData<Real>> rc, IndexDomain
                 //if (pin->GetOrAddString("b_field", "type", "none") != "none") {
                 //    VLOOP B_host(v, k, j, i) = interp_scalar(G, X, startx, stopx, dx, is_spherical, false, n3tot, n2tot, n1tot, &(B_file[v*block_sz]));
                 //}
-                if (include_B)
-                    get_B_restart_kharma(G, coords, P, m_p, blcoord,  kscoord, 
+                if (include_B) {
+                    get_B_restart_kharma(G, P, m_p,
                         fx1min, fx1max, should_fill, length,
                         x1_f_device, x2_f_device, x3_f_device, B_f_device,
                         x1_fill_device, x2_fill_device, x3_fill_device, B_fill_device, B_Save,
                         k, j, i);
+                }
             }
         );
     }

@@ -1,0 +1,120 @@
+# Bondi flow problem
+# Model a spherically symmetric, unmagnetized inflow
+# Uses more MeshBlocks than necessary, for debugging
+
+<parthenon/job>
+problem_id = bondi #gizmo_shell #bondi_shell #_multizone
+
+<parthenon/mesh>
+# Full mesh size, no refinement
+refinement = none
+numlevel = 1
+nx1 = 64 #128 #  
+nx2 = 64 #128 #  
+nx3 = 64 #128 # nx3_mesh updated from run_kharma.sh
+
+<parthenon/meshblock>
+# Split into blocks mesh
+# Don't bother with xN boundaries for spherical coordinate systems
+# KHARMA will automatically place ~5 zones inside the EH
+nx1 = 32 #64 # nx1_meshblock updated from run_kharma.sh
+nx2 = 32 #64 # nx2_meshblock updated from run_kharma.sh
+nx3 = 64 #128 #64 # nx3_meshblock updated from run_kharma.sh
+
+<coordinates>
+base = ks
+transform = fmks
+mks_smooth = 0
+a = 0.0 # spin updated from run_kharma.sh
+ext_g = true # updated from run_kharma.sh
+hslope = 0.3
+r_out = 16777216 # updated from run_kharma.sh
+r_in = 262144 # updated from run_kharma.sh
+#nghost = 6 # test Hyerin (12/28/22)
+
+<parthenon/time>
+tlim = 5289680481 # updated from run_kharma.sh
+nlim = -1 # updated from run_kharma.sh
+dt_min = 0.00001
+
+<GRMHD>
+cfl = 0.9
+gamma = 1.666667
+reconstruction = weno5
+implicit = false
+
+<bondi>
+mdot = 1.0
+rs = 316.22776601683796  # (1e2.5)#1000.0 #8.0 #300.0 #
+vacuum_logrho= -8.2014518 #-9.6983 #-10 #-5
+vacuum_log_u_over_rho = -5.2915149 # updated from run_kharma.sh
+r_shell = 8388608 # updated from run_kharma.sh
+use_gizmo = false
+
+<gizmo_shell>
+datfn = /n/holylfs05/LABS/bhi/Users/hyerincho/grmhd/data/gizmo/first_test/dat.txt
+
+<resize_restart>
+fname = /n/holylfs05/LABS/bhi/Users/hyerincho/grmhd/data/bondi_multizone_021623_bondi_b_clean/bondi_multizone_00000/bondi.out1.final.rhdf # updated from run_kharma.sh
+fname_fill = none #, updated from run_kharma.sh
+use_dt = false
+base = 8
+nzone = 7
+
+# Disable floors
+<floors>
+disable_floors = true
+rho_min_geom = 1.0e-12
+u_min_geom = 1.0e-15
+
+# We'll be adding material, and that's okay
+<bounds>
+check_inflow_outer = false
+check_inflow_inner = false # Hyerin test (12/22/22)
+#fix_flux_pole      = 0 # Hyerin test (12/22/22)
+
+<perturbation>
+u_jitter=0
+
+<b_field>
+type = vertical # b_field_type updated from run_kharma.sh
+solver = none # b_field_solver updated from run_kharma.sh
+#norm = true # Hyerin (12/29/22) this increases divB in the boundaries, so won't use here
+#beta_min=1000 # Hyerin (12/29/22)
+bz = 1e-4 #1e-6
+#fix_polar_flux = 0 # Hyerin test (12/22/22)
+fix_flux_x1      = 0 #1 # Hyerin test (02/16/23)
+initial_cleanup = true # updated from run_kharma.sh
+
+<b_cleanup>
+rel_tolerance = 1.e-8
+always_solve = true
+
+<debug>
+verbose = 1
+
+<driver>
+type = imex ##
+two_sync = 1
+
+<implicit>
+max_nonlinear_iter = 3
+
+<parthenon/output0>
+file_type = hdf5
+dt = 528968040 # output0_dt updated from run_kharma.sh
+single_precision_output = true #false
+variables = prims.rho, prims.u, prims.uvec, prims.B, fflag, pflag #G.gcov
+ghost_zones = true
+
+<parthenon/output1>
+file_type = rst
+dt = 2644840240 # output1_dt updated from run_kharma.sh
+single_precision_output = false
+variables = prims.rho, prims.u, prims.uvec, prims.B #, prims.B #, cons.rho, cons.u, cons.uvec
+ghost_zones = true
+
+<parthenon/output2>
+file_type = hst
+dt = 52896800 # output2_dt updated from run_kharma.sh
+

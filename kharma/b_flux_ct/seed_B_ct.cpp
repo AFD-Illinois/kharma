@@ -38,9 +38,9 @@
 
 #include "b_field_tools.hpp"
 #include "b_flux_ct.hpp"
+#include "coordinate_utils.hpp"
 #include "fm_torus.hpp"
 #include "grmhd_functions.hpp"
-#include "prob_common.hpp"
 
 using namespace parthenon;
 

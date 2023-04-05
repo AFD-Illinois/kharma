@@ -1,5 +1,5 @@
 diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
-index 81a8a1bd..65ba74f8 100644
+index 67e5d082..0e6d2a7e 100644
 --- a/src/CMakeLists.txt
 +++ b/src/CMakeLists.txt
 @@ -90,7 +90,7 @@ set(COMPILED_WITH ${CMAKE_CXX_COMPILER})
@@ -11,7 +11,7 @@ index 81a8a1bd..65ba74f8 100644
  
  configure_file(config.hpp.in generated/config.hpp @ONLY)
  
-@@ -279,6 +279,8 @@ lint_target(parthenon)
+@@ -285,6 +285,8 @@ lint_target(parthenon)
  target_include_directories(parthenon PUBLIC
    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
    $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/generated>
@@ -32,3 +32,16 @@ index d1290dee..50bfc840 100644
  
  namespace parthenon {
  
+diff --git a/src/interface/meshblock_data.cpp b/src/interface/meshblock_data.cpp
+index 720d708d..de31a71b 100644
+--- a/src/interface/meshblock_data.cpp
++++ b/src/interface/meshblock_data.cpp
+@@ -432,7 +432,7 @@ MeshBlockData<T>::GetVariablesByFlag(const Metadata::FlagCollection &flags,
+ 
+ template <typename T>
+ void MeshBlockData<T>::Remove(const std::string &label) {
+-  throw std::runtime_error("MeshBlockData<T>::Remove not yet implemented");
++  varMap_.erase(label);
+ }
+ 
+ template <typename T>

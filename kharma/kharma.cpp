@@ -157,109 +157,88 @@ void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
         ReadKharmaRestartHeader(pin->GetString("resize_restart", "fname"), pin);
     }
 
-    // Then handle coordinate systems and boundaries!
-    std::string coordinate_base = pin->GetString("coordinates", "base");
-    if (coordinate_base == "ks") coordinate_base = "spherical_ks";
-    if (coordinate_base == "bl") coordinate_base = "spherical_bl";
-    if (coordinate_base == "minkowski") coordinate_base = "cartesian_minkowski";
-    std::string coordinate_transform = pin->GetOrAddString("coordinates", "transform", "null");
-    if (coordinate_transform == "none") coordinate_transform = "null";
-    if (coordinate_transform == "fmks") coordinate_transform = "funky";
-    if (coordinate_transform == "mks") coordinate_transform = "modified";
-    if (coordinate_transform == "exponential") coordinate_transform = "exp";
-    if (coordinate_transform == "eks") coordinate_transform = "exp";
-    // TODO any other synonyms
-    if (coordinate_base == "spherical_ks" || coordinate_base == "spherical_bl" || coordinate_base == "spherical_minkowski") {
-        pin->SetBoolean("coordinates", "spherical", true);
-    } else {
-        pin->SetBoolean("coordinates", "spherical", false);
-    }
+    // Construct a CoordinateEmbedding object.  See coordinate_embedding.hpp for supported systems/tags
+    CoordinateEmbedding tmp_coords(pin.get());
+    // Record whether we're in spherical as we'll need that
+    pin->SetBoolean("coordinates", "spherical", tmp_coords.is_spherical());
 
-    // Spherical systems can specify r_out and optionally r_in,
-    // instead of xNmin/max.
-    // Other systems must specify x1min/max directly in the mesh region
-    if (!pin->DoesParameterExist("parthenon/mesh", "x1min") ||
-        !pin->DoesParameterExist("parthenon/mesh", "x1max")) {
-        // TODO ask our coordinates about this rather than assuming m::exp()
-        bool log_r = (coordinate_transform != "null");
+    // Do a bunch of autodetection/setting in spherical coordinates
+    if (tmp_coords.is_spherical()) {
+        // Spherical systems can specify r_out and optionally r_in,
+        // instead of xNmin/max.
+        if (!pin->DoesParameterExist("parthenon/mesh", "x1min") ||
+            !pin->DoesParameterExist("parthenon/mesh", "x1max")) {
+            // Outer radius is always specified
+            GReal Rout = pin->GetReal("coordinates", "r_out");
+            GReal x1max = tmp_coords.r_to_native(Rout);
+            pin->GetOrAddReal("parthenon/mesh", "x1max", x1max);
 
-        // Outer radius is always specified
-        GReal Rout = pin->GetReal("coordinates", "r_out");
-        GReal x1max = log_r ? log(Rout) : Rout;
-        pin->GetOrAddReal("parthenon/mesh", "x1max", x1max);
-
-        if (coordinate_base == "spherical_ks" || coordinate_base == "spherical_bl") {
-            // Set inner radius if not specified
-            if (pin->DoesParameterExist("coordinates", "r_in")) {
+            if (mpark::holds_alternative<SphMinkowskiCoords>(tmp_coords.base)) {
+                // In Minkowski coordinates, require Rin so the singularity is at user option
                 GReal Rin = pin->GetReal("coordinates", "r_in");
-                GReal x1min = log_r ? log(Rin) : Rin;
+                GReal x1min = tmp_coords.r_to_native(Rin);
                 pin->GetOrAddReal("parthenon/mesh", "x1min", x1min);
-                if (Rin < 2.5){ // warn to check if there are 5 zones inside the event horizon
-                  std::cout << "Hyerin: Rin = " << Rin << ". Check if there are 5 zones inside the EH." << std::endl;
-                }
-            } else {
-                int nx1 = pin->GetInteger("parthenon/mesh", "nx1");
-                const Real a = pin->GetReal("coordinates", "a");
-                // Allow overriding Rhor for bondi_viscous problem
-                const GReal Rhor = pin->GetOrAddReal("coordinates", "Rhor", 1 + sqrt(1 - a*a));
-                const GReal x1hor = log_r ? log(Rhor) : Rhor;
+            } else { // Any spherical BH metric: KS, BL, and derivatives
+                // Set inner radius if not specified
+                if (pin->DoesParameterExist("coordinates", "r_in")) {
+                    GReal Rin = pin->GetReal("coordinates", "r_in");
+                    GReal x1min = tmp_coords.r_to_native(Rin);
+                    pin->GetOrAddReal("parthenon/mesh", "x1min", x1min);
+                    if (Rin < 2.5){ // warn if there are fewer than 5 zones inside the event horizon
+                        GReal dx = (x1max - x1min) / pin->GetInteger("parthenon/mesh", "nx1");
+                        if (tmp_coords.X1_to_embed(x1min + 5*dx) > tmp_coords.get_horizon()) {
+                            std::cerr << "WARNING: inner radius is near/in the EH, but does not allow 5 zones inside!" << std::endl;
+                        }
+                    }
+                } else {
+                    int nx1 = pin->GetInteger("parthenon/mesh", "nx1");
+                    // Allow overriding Rhor for bondi_viscous problem
+                    const GReal Rhor = pin->GetOrAddReal("coordinates", "Rhor", tmp_coords.get_horizon());
+                    const GReal x1hor = tmp_coords.r_to_native(Rhor);
 
-                // Set Rin such that we have 5 zones completely inside the event horizon
-                // If xeh = log(Rhor), xin = log(Rin), and xout = log(Rout),
-                // then we want xeh = xin + 5.5 * (xout - xin) / N1TOT:
-                const GReal x1min = (nx1 * x1hor / 5.5 - x1max) / (-1. + nx1 / 5.5);
-                if (x1min < 0.0) {
-                    throw std::invalid_argument("Not enough radial zones were specified to put 5 zones inside EH!");
+                    // Set Rin such that we have 5 zones completely inside the event horizon
+                    // If xeh = log(Rhor), xin = log(Rin), and xout = log(Rout),
+                    // then we want xeh = xin + 5.5 * (xout - xin) / N1TOT:
+                    const GReal x1min = (nx1 * x1hor / 5.5 - x1max) / (-1. + nx1 / 5.5);
+                    if (x1min < 0.0) {
+                        throw std::invalid_argument("Not enough radial zones were specified to put 5 zones inside EH!");
+                    }
+                    pin->GetOrAddReal("parthenon/mesh", "x1min", x1min);
                 }
-                pin->GetOrAddReal("parthenon/mesh", "x1min", x1min);
+
+                //cout << "Setting x1min: " << x1min << " x1max " << x1max << " based on BH with a=" << a << endl;
+
             }
-
-            //cout << "Setting x1min: " << x1min << " x1max " << x1max << " based on BH with a=" << a << endl;
-
-        } else if (coordinate_base == "spherical_minkowski") {
-            // In Minkowski coordinates, require Rin so the singularity is at user option
-            GReal Rin = pin->GetReal("coordinates", "r_in");
-            GReal x1min = log_r ? log(Rin) : Rin;
-            pin->GetOrAddReal("parthenon/mesh", "x1min", x1min);
         }
-    }
 
-    // Assumption: if we're in a spherical system...
-    if (coordinate_base == "spherical_ks" || coordinate_base == "spherical_bl" || coordinate_base == "spherical_minkowski") {
-        // ...then we definitely want KHARMA's spherical boundary conditions
-        // These are inflow in x1 and reflecting in x2, but applied to *primitives* in
-        // a custom operation, see boundaries.cpp
+        // Spherical systems will also want KHARMA's spherical boundary conditions.
+        // By default, this means inflow in x1 and reflecting in x2, but can be chosen
+        // by *KHARMA* options (not here, since we certainly don't want periodic pole/radial bounds)
         pin->GetOrAddString("parthenon/mesh", "ix1_bc", "user");
         pin->GetOrAddString("parthenon/mesh", "ox1_bc", "user");
         pin->GetOrAddString("parthenon/mesh", "ix2_bc", "user");
         pin->GetOrAddString("parthenon/mesh", "ox2_bc", "user");
         pin->GetOrAddString("parthenon/mesh", "ix3_bc", "periodic");
         pin->GetOrAddString("parthenon/mesh", "ox3_bc", "periodic");
-
-        // We also know the bounds for most transforms in spherical coords
-        // Note we *only* set them here if they were not previously set/read!
-        if (coordinate_transform == "null" || coordinate_transform == "exp") {
-            pin->GetOrAddReal("parthenon/mesh", "x2min", 0.0);
-            pin->GetOrAddReal("parthenon/mesh", "x2max", M_PI);
-            pin->GetOrAddReal("parthenon/mesh", "x3min", 0.0);
-            pin->GetOrAddReal("parthenon/mesh", "x3max", 2*M_PI);
-        } else if (coordinate_transform == "modified" || coordinate_transform == "funky") {
-            pin->GetOrAddReal("parthenon/mesh", "x2min", 0.0);
-            pin->GetOrAddReal("parthenon/mesh", "x2max", 1.0);
-            pin->GetOrAddReal("parthenon/mesh", "x3min", 0.0);
-            pin->GetOrAddReal("parthenon/mesh", "x3max", 2*M_PI);
-        } // TODO any other transforms/systems
     } else {
-        // Most likely, Cartesian simulations will specify boundary conditions,
-        // but we set defaults here.
+        // We can set reasonable default boundary conditions for Cartesian sims,
+        // but not default domain bounds
         pin->GetOrAddString("parthenon/mesh", "ix1_bc", "periodic");
         pin->GetOrAddString("parthenon/mesh", "ox1_bc", "periodic");
         pin->GetOrAddString("parthenon/mesh", "ix2_bc", "periodic");
         pin->GetOrAddString("parthenon/mesh", "ox2_bc", "periodic");
         pin->GetOrAddString("parthenon/mesh", "ix3_bc", "periodic");
         pin->GetOrAddString("parthenon/mesh", "ox3_bc", "periodic");
-        // Cartesian sims must specify the domain!
     }
+
+    // Set default bounds covering our coordinates/transform
+    for (int i = X1DIR; i <= X3DIR; i++) {
+        if (tmp_coords.startx(i) > 0)
+            pin->GetOrAddReal("parthenon/mesh", "x1min", tmp_coords.startx(i));
+        if (tmp_coords.stopx(i) > 0)
+            pin->GetOrAddReal("parthenon/mesh", "x1max", tmp_coords.stopx(i));
+    }
+
     Flag("Fixed");
 }
 

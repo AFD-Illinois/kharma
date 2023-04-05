@@ -70,9 +70,12 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
 
     // Fix the X1/X2 corner by replacing the reflecting condition with the inflow
     // Only needed if x1min is inside BH event horizon, otherwise a nuisance for divB on corners
-    bool inside_eh = spherical && pin->GetBoolean("coordinates", "r_min") < pin->GetBoolean("coordinates", "Rhor");
-    bool fix_corner = pin->GetOrAddBoolean("boundaries", "fix_corner", inside_eh);
-    params.Add("fix_corner", fix_corner);
+    if (spherical) {
+        const Real a = pin->GetReal("coordinates", "a");
+        bool inside_eh = pin->GetBoolean("coordinates", "r_in") < 1 + sqrt(1 - a*a);
+        bool fix_corner = pin->GetOrAddBoolean("boundaries", "fix_corner", inside_eh);
+        params.Add("fix_corner", fix_corner);
+    }
 
     // Allocate space for Dirichlet boundaries if they'll be used
     // We have to trust the user here since the problem will set the function pointers later

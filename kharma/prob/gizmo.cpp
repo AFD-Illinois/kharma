@@ -96,8 +96,6 @@ TaskStatus SetGIZMO(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain
 
     // Just the X1 right boundary
     GRCoordinates G = pmb->coords;
-    SphKSCoords ks = mpark::get<SphKSCoords>(G.coords.base);
-    SphBLCoords bl = SphBLCoords(ks.a, ks.ext_g); // modified
     CoordinateEmbedding cs = G.coords;
 
     // Solution constants
@@ -167,7 +165,7 @@ TaskStatus SetGIZMO(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain
             vacuum_rho = rho_device(i_sh)*(1.-del_sh)+rho_device(i_sh+1)*del_sh;
             vacuum_u_over_rho = (T_device(i_sh)*(1.-del_sh)+T_device(i_sh+1)*del_sh)/(gam-1.);
 
-            get_prim_gizmo_shell(G, cs, P, m_p, gam, bl, ks, rin_init, rs, vacuum_rho, vacuum_u_over_rho, 
+            get_prim_gizmo_shell(G, cs, P, m_p, gam, rin_init, rs, vacuum_rho, vacuum_u_over_rho, 
                 r_device, rho_device, T_device, vr_device, length, k, j, i);
         }
     );

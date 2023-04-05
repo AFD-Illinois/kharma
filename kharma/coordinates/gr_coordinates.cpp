@@ -48,13 +48,6 @@ using Kokkos::Rank;
 // Stepsize for numerical derivatives of the metric
 #define DELTA 1.e-8
 
-// Points to average (one side of a square, odd) when calculating the connections,
-// and metric determinants on faces
-#define CONN_AVG_POINTS 1
-// Whether to make corrections to some metric quantities to match
-// metric determinant derivatives
-#define CONN_CORRECTIONS 0
-
 #if FAST_CARTESIAN
 /**
  * Fast Cartesian GRCoordinates objects just use the underlying UniformCartesian object for everything
@@ -63,80 +56,30 @@ GRCoordinates::GRCoordinates(const RegionSize &rs, ParameterInput *pin): Uniform
 GRCoordinates::GRCoordinates(const GRCoordinates &src, int coarsen): UniformCartesian(src, coarsen) {}
 #else
 // Internal function for initializing cache
-void init_GRCoordinates(GRCoordinates& G, int n1, int n2, int n3);
+void init_GRCoordinates(GRCoordinates& G);
 
 /**
  * Construct a GRCoordinates object with a transformation according to preferences set in the package
  */
-GRCoordinates::GRCoordinates(const RegionSize &rs, ParameterInput *pin): UniformCartesian(rs, pin)
+GRCoordinates::GRCoordinates(const RegionSize &rs, ParameterInput *pin): UniformCartesian(rs, pin),
+    coords(pin)
 {
-    // TODO This is effectively a constructor for the CoordinateEmbedding object
-    // We should move it there so we can handle system names, synonyms & categories in one place
-    std::string base_str = pin->GetString("coordinates", "base"); // Require every problem to specify very basic geometry
-    std::string transform_str = pin->GetString("coordinates", "transform"); // This is guessed in kharma.cpp
-
-    SomeBaseCoords base;
-    if (base_str == "spherical_minkowski") {
-        base.emplace<SphMinkowskiCoords>(SphMinkowskiCoords());
-    } else if (base_str == "cartesian_minkowski" || base_str == "minkowski") {
-        base.emplace<CartMinkowskiCoords>(CartMinkowskiCoords());
-    } else if (base_str == "spherical_ks" || base_str == "ks") {
-        GReal a = pin->GetReal("coordinates", "a");
-        bool ext_g = pin->GetOrAddBoolean("coordinates", "ext_g", false); //added by Hyerin
-        base.emplace<SphKSCoords>(SphKSCoords(a, ext_g));
-    } else if (base_str == "spherical_bl" || base_str == "bl") {
-        GReal a = pin->GetReal("coordinates", "a");
-        bool ext_g = pin->GetOrAddBoolean("coordinates", "ext_g", false); //added by Hyerin
-        base.emplace<SphBLCoords>(SphBLCoords(a, ext_g));
-    } else {
-        throw std::invalid_argument("Unsupported base coordinates!");
-    }
-
-    bool spherical = mpark::visit( [&](const auto& self) {
-                return self.spherical;
-            }, base);
-
-    SomeTransform transform;
-    if (transform_str == "null") {
-        transform.emplace<NullTransform>(NullTransform());
-    } else if (transform_str == "exponential" || transform_str == "exp" || transform_str == "eks") {
-        if (!spherical) throw std::invalid_argument("Transform is for spherical coordinates!");
-        transform.emplace<ExponentialTransform>(ExponentialTransform());
-    } else if (transform_str == "modified" || transform_str == "mks") {
-        if (!spherical) throw std::invalid_argument("Transform is for spherical coordinates!");
-        GReal hslope = pin->GetOrAddReal("coordinates", "hslope", 0.3);
-        transform.emplace<ModifyTransform>(ModifyTransform(hslope));
-    } else if (transform_str == "funky" || transform_str == "fmks") {
-        if (!spherical) throw std::invalid_argument("Transform is for spherical coordinates!");
-        GReal hslope = pin->GetOrAddReal("coordinates", "hslope", 0.3);
-        GReal startx1 = pin->GetReal("parthenon/mesh", "x1min");
-        GReal mks_smooth = pin->GetOrAddReal("coordinates", "mks_smooth", 0.5);
-        GReal poly_xt = pin->GetOrAddReal("coordinates", "poly_xt", 0.82);
-        GReal poly_alpha = pin->GetOrAddReal("coordinates", "poly_alpha", 14.0);
-        transform.emplace<FunkyTransform>(FunkyTransform(startx1, hslope, mks_smooth, poly_xt, poly_alpha));
-    } else {
-        throw std::invalid_argument("Unsupported coordinate transform!");
-    }
-
-    coords = CoordinateEmbedding(base, transform);
-
     n1 = rs.nx1 + 2*Globals::nghost;
     n2 = rs.nx2 > 1 ? rs.nx2 + 2*Globals::nghost : 1;
     n3 = rs.nx3 > 1 ? rs.nx3 + 2*Globals::nghost : 1;
     //cout << "Initialized coordinates with nghost " << Globals::nghost << std::endl;
 
-    init_GRCoordinates(*this, n1, n2, n3);
+    // TODO TODO set averaging/correcting prefs here
+
+    init_GRCoordinates(*this);
 }
 
 
-GRCoordinates::GRCoordinates(const GRCoordinates &src, int coarsen): UniformCartesian(src, coarsen)
+GRCoordinates::GRCoordinates(const GRCoordinates &src, int coarsen): UniformCartesian(src, coarsen),
+    coords(src.coords), n1(src.n1/coarsen), n2(src.n2/coarsen), n3(src.n3/coarsen)
 {
     //std::cerr << "Calling coarsen constructor" << std::endl;
-    coords = src.coords;
-    n1 = src.n1/coarsen;
-    n2 = src.n2/coarsen;
-    n3 = src.n3/coarsen;
-    init_GRCoordinates(*this, n1, n2, n3);
+    init_GRCoordinates(*this);
 }
 
 /**
@@ -147,7 +90,13 @@ GRCoordinates::GRCoordinates(const GRCoordinates &src, int coarsen): UniformCart
  * This needs to be defined *outside* of the GRCoordinates object, because of some
  * fun issues with C++ Lambda capture, which Kokkos brings to the fore
  */
-void init_GRCoordinates(GRCoordinates& G, int n1, int n2, int n3) {
+void init_GRCoordinates(GRCoordinates& G) {
+    const int n1 = G.n1;
+    const int n2 = G.n2;
+    const int n3 = G.n3;
+    const bool correct_connections = G.correct_connections;
+    const int connection_average_points = G.connection_average_points;
+
     //cerr << "Creating GRCoordinate cache size " << n1 << " " << n2 << std::endl;
     // Cache geometry.  May be faster than re-computing. May not be.
     G.gcon_direct = GeomTensor2("gcon", NLOC, n2+1, n1+1, GR_DIM, GR_DIM);
@@ -172,9 +121,9 @@ void init_GRCoordinates(GRCoordinates& G, int n1, int n2, int n3) {
             for (int iloc =0; iloc < NLOC; iloc++) {
                 Loci loc = (Loci) iloc;
                 // radius of points to sample, floor(npoints/2)
-                const int radius = CONN_AVG_POINTS / 2;
-                const int diameter = CONN_AVG_POINTS;
-                const int square = CONN_AVG_POINTS*CONN_AVG_POINTS;
+                const int radius = connection_average_points / 2;
+                const int diameter = connection_average_points;
+                const int square = connection_average_points*connection_average_points;
                 if (loc == Loci::center || loc == Loci::face3) {
                     // This prevents overstepping conn's bounds by halting in the last zone
                     if (i >= n1 || j >= n2) continue;
@@ -188,8 +137,8 @@ void init_GRCoordinates(GRCoordinates& G, int n1, int n2, int n3) {
                             GReal Xn1[GR_DIM], Xn2[GR_DIM];
                             G.coord(0, j, i+1, loc, Xn1);
                             G.coord(0, j+1, i, loc, Xn2);
-                            X[1] += (Xn1[1] - X[1])/CONN_AVG_POINTS * k;
-                            X[2] += (Xn2[2] - X[2])/CONN_AVG_POINTS * l;
+                            X[1] += (Xn1[1] - X[1])/connection_average_points * k;
+                            X[2] += (Xn2[2] - X[2])/connection_average_points * l;
                             // Get geometry at points
                             GReal gcov_loc[GR_DIM][GR_DIM], gcon_loc[GR_DIM][GR_DIM];
                             G.coords.gcov_native(X, gcov_loc);
@@ -233,7 +182,7 @@ void init_GRCoordinates(GRCoordinates& G, int n1, int n2, int n3) {
                             gcon_local(loc, j, i, mu, nu) += gcon_loc[mu][nu] / diameter;
                         }
                     }
-                } else {
+                } else { // corner
                     // Just one point
                     GReal X[GR_DIM];
                     G.coord(0, j, i, loc, X);
@@ -251,7 +200,7 @@ void init_GRCoordinates(GRCoordinates& G, int n1, int n2, int n3) {
             }
         }
     );
-    if (CONN_CORRECTIONS) {
+    if (correct_connections) {
         Kokkos::parallel_for("geom_corrections", MDRangePolicy<Rank<2>>({0,0}, {n2, n1}),
             KOKKOS_LAMBDA (const int& j, const int& i) {
                 // In the two directions the grid changes, make sure that we *exactly*

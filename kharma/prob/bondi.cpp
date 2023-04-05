@@ -118,9 +118,6 @@ TaskStatus SetBondi(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain
 
     // Just the X1 right boundary
     GRCoordinates G = pmb->coords;
-    SphKSCoords ks = mpark::get<SphKSCoords>(G.coords.base);
-    SphBLCoords bl = SphBLCoords(ks.a, ks.ext_g); // modified
-    CoordinateEmbedding cs = G.coords;
 
     // Solution constants
     // These don't depend on which zone we're calculating
@@ -172,21 +169,15 @@ TaskStatus SetBondi(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain
 
             const Real ur = (zero_velocity) ? 0. : -C1 / (Tn * r * r);
 
-            // Set u^t to make u^r a 4-vector
-            Real ucon_bl[GR_DIM] = {0, ur, 0, 0};
-            Real gcov_bl[GR_DIM][GR_DIM];
-            bl.gcov_embed(Xembed, gcov_bl);
-            set_ut(gcov_bl, ucon_bl);
-
-            // Then transform that 4-vector to KS, then to native
-            Real ucon_ks[GR_DIM], ucon_mks[GR_DIM];
-            ks.vec_from_bl(Xembed, ucon_bl, ucon_ks);
-            cs.con_vec_to_native(Xnative, ucon_ks, ucon_mks);
+            // Get the native-coordinate 4-vector corresponding to ur
+            const Real ucon_bl[GR_DIM] = {0, ur, 0, 0};
+            Real ucon_native[GR_DIM];
+            G.coords.bl_fourvel_to_native(Xnative, ucon_bl, ucon_native);
 
             // Convert native 4-vector to primitive u-twiddle, see Gammie '04
             Real gcon[GR_DIM][GR_DIM], u_prim[NVEC];
             G.gcon(Loci::center, j, i, gcon);
-            fourvel_to_prim(gcon, ucon_mks, u_prim);
+            fourvel_to_prim(gcon, ucon_native, u_prim);
 
             // Note that NaN guards, including these, are ignored (!) under -ffast-math flag.
             // Thus we stay away from initializing at EH where this could happen

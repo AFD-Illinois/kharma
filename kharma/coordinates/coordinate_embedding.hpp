@@ -33,19 +33,21 @@
  */
 #pragma once
 
+#include "decs.hpp"
+
+#include "coordinate_systems.hpp"
+#include "coordinate_utils.hpp"
+#include "matrix.hpp"
+
 // std::variant requires C++ exceptions,
 // so it will never be SYCL-ready.
 // Instead we use mpark's reimplementation,
 // patched to never throw exceptions.
 // Because who needs those?
+// TODO(BSP) try to switch to std:: unless using SYCL
 #include <mpark/variant.hpp>
 //#include <variant>
 //namespace mpark = std;
-
-#include "decs.hpp"
-
-#include "coordinate_systems.hpp"
-#include "matrix.hpp"
 
 /**
  * Coordinates in HARM are logically Cartesian -- that is, in some coordinate system, here dubbed "native"
@@ -98,6 +100,8 @@ class CoordinateEmbedding {
                 transform.emplace<NullTransform>(mpark::get<NullTransform>(transform_in));
             } else if (mpark::holds_alternative<ExponentialTransform>(transform_in)) {
                 transform.emplace<ExponentialTransform>(mpark::get<ExponentialTransform>(transform_in));
+            } else if (mpark::holds_alternative<SuperExponentialTransform>(transform_in)) {
+                transform.emplace<SuperExponentialTransform>(mpark::get<SuperExponentialTransform>(transform_in));
             } else if (mpark::holds_alternative<ModifyTransform>(transform_in)) {
                 transform.emplace<ModifyTransform>(mpark::get<ModifyTransform>(transform_in));
             } else if (mpark::holds_alternative<FunkyTransform>(transform_in)) {
@@ -109,12 +113,72 @@ class CoordinateEmbedding {
 #pragma hd_warning_disable
         CoordinateEmbedding() = default;
 #pragma hd_warning_disable
+        CoordinateEmbedding(parthenon::ParameterInput* pin) {
+            const std::string base_str = pin->GetString("coordinates", "base");
+            const std::string transform_str = pin->GetOrAddString("coordinates", "transform", "null");
+
+            // Parse names.  See coordinate_systems.hpp for details
+            if (base_str == "spherical_minkowski") {
+                base.emplace<SphMinkowskiCoords>(SphMinkowskiCoords());
+            } else if (base_str == "cartesian_minkowski" || base_str == "minkowski") {
+                base.emplace<CartMinkowskiCoords>(CartMinkowskiCoords());
+            } else if (base_str == "spherical_ks" || base_str == "ks" ||
+                        base_str == "spherical_ks_extg" || base_str == "ks_extg") {
+                GReal a = pin->GetReal("coordinates", "a");
+                bool ext_g = pin->GetOrAddBoolean("coordinates", "ext_g", false);
+                if (ext_g || base_str == "spherical_ks_extg" || base_str == "ks_extg") {
+                    if (a > 0) throw std::invalid_argument("Transform is for spherical coordinates!");
+                    base.emplace<SphKSExtG>(SphKSExtG(a));
+                } else {
+                    base.emplace<SphKSCoords>(SphKSCoords(a));
+                }
+            } else if (base_str == "spherical_bl" || base_str == "bl" ||
+                        base_str == "spherical_bl_extg" || base_str == "bl_extg") {
+                GReal a = pin->GetReal("coordinates", "a");
+                bool ext_g = pin->GetOrAddBoolean("coordinates", "ext_g", false);
+                if (ext_g || base_str == "spherical_bl_extg" || base_str == "bl_extg") {
+                    if (a > 0) throw std::invalid_argument("Transform is for spherical coordinates!");
+                    base.emplace<SphBLExtG>(SphBLExtG(a));
+                } else {
+                    base.emplace<SphBLCoords>(SphBLCoords(a));
+                }
+            } else {
+                throw std::invalid_argument("Unsupported base coordinates!");
+            }
+
+            bool spherical = is_spherical();
+
+            if (transform_str == "null" || transform_str == "none") {
+                transform.emplace<NullTransform>(NullTransform());
+            } else if (transform_str == "exponential" || transform_str == "exp" || transform_str == "eks") {
+                if (!spherical) throw std::invalid_argument("Transform is for spherical coordinates!");
+                transform.emplace<ExponentialTransform>(ExponentialTransform());
+            } else if (transform_str == "superexponential" || transform_str == "superexp") {
+                if (!spherical) throw std::invalid_argument("Transform is for spherical coordinates!");
+                GReal r_br = pin->GetOrAddReal("coordinates", "r_br", 1000.);
+                GReal npow = pin->GetOrAddReal("coordinates", "npow", 1.0);
+                GReal cpow = pin->GetOrAddReal("coordinates", "cpow", 4.0);
+                transform.emplace<SuperExponentialTransform>(SuperExponentialTransform(r_br, npow, cpow));
+            } else if (transform_str == "modified" || transform_str == "mks") {
+                if (!spherical) throw std::invalid_argument("Transform is for spherical coordinates!");
+                GReal hslope = pin->GetOrAddReal("coordinates", "hslope", 0.3);
+                transform.emplace<ModifyTransform>(ModifyTransform(hslope));
+            } else if (transform_str == "funky" || transform_str == "fmks") {
+                if (!spherical) throw std::invalid_argument("Transform is for spherical coordinates!");
+                GReal hslope = pin->GetOrAddReal("coordinates", "hslope", 0.3);
+                GReal startx1 = pin->GetReal("parthenon/mesh", "x1min");
+                GReal mks_smooth = pin->GetOrAddReal("coordinates", "mks_smooth", 0.5);
+                GReal poly_xt = pin->GetOrAddReal("coordinates", "poly_xt", 0.82);
+                GReal poly_alpha = pin->GetOrAddReal("coordinates", "poly_alpha", 14.0);
+                transform.emplace<FunkyTransform>(FunkyTransform(startx1, hslope, mks_smooth, poly_xt, poly_alpha));
+            } else {
+                throw std::invalid_argument("Unsupported coordinate transform!");
+            }
+        }
+#pragma hd_warning_disable
         KOKKOS_FUNCTION CoordinateEmbedding(SomeBaseCoords& base_in, SomeTransform& transform_in): base(base_in), transform(transform_in) {}
 #pragma hd_warning_disable
-        KOKKOS_FUNCTION CoordinateEmbedding(const CoordinateEmbedding& src)
-        {
-            EmplaceSystems(src.base, src.transform);
-        }
+        KOKKOS_FUNCTION CoordinateEmbedding(const CoordinateEmbedding& src): base(src.base), transform(src.transform) {}
 #pragma hd_warning_disable
         KOKKOS_FUNCTION const CoordinateEmbedding& operator=(const CoordinateEmbedding& src)
         {
@@ -123,53 +187,48 @@ class CoordinateEmbedding {
         }
 
         // Convenience functions to get common things
-        KOKKOS_INLINE_FUNCTION bool spherical() const
+        KOKKOS_INLINE_FUNCTION bool is_spherical() const
         {
             return mpark::visit( [&](const auto& self) {
                 return self.spherical;
             }, base);
         }
-        // KOKKOS_INLINE_FUNCTION GReal rhor() const
-        // {
-        //     return mpark::visit( [&](const auto& self) {
-        //         self.rhor();
-        //     }, base);
-        // }
+        KOKKOS_INLINE_FUNCTION GReal get_horizon() const
+        {
+            if (mpark::holds_alternative<SphKSCoords>(base) ||
+                mpark::holds_alternative<SphBLCoords>(base)) {
+                const GReal a = get_a();
+                return 1 + m::sqrt(1 - a * a);
+            } else {
+                return 0.0;
+            }
+        }
         KOKKOS_INLINE_FUNCTION GReal get_a() const
         {
-            if (mpark::holds_alternative<SphKSCoords>(base)) {
-                return mpark::get<SphKSCoords>(base).a;
-            } else if (mpark::holds_alternative<SphBLCoords>(base)) {
-                return mpark::get<SphBLCoords>(base).a;
-            } else {
-                return 0.0; //throw std::invalid_argument("BH Spin is not defined for selected coordinate system!");
-            }
+            return mpark::visit( [&](const auto& self) {
+                return self.a;
+            }, base);
         }
-        KOKKOS_INLINE_FUNCTION bool is_ext_g() const
+        GReal startx(int dir) const
         {
-            if (mpark::holds_alternative<SphKSCoords>(base)) {
-                return mpark::get<SphKSCoords>(base).ext_g;
-            } else if (mpark::holds_alternative<SphBLCoords>(base)) {
-                return mpark::get<SphBLCoords>(base).ext_g;
-            } else {
-                return 0.0; //throw std::invalid_argument("Ext_g is not defined for selected coordinate system!");
-            }
+            return mpark::visit( [&](const auto& self) {
+                return self.startx[dir - 1];
+            }, transform);
         }
+        GReal stopx(int dir) const
+        {
+            return mpark::visit( [&](const auto& self) {
+                return self.stopx[dir - 1];
+            }, transform);
+        }
+
         KOKKOS_INLINE_FUNCTION bool is_ks() const
         {
-            if (mpark::holds_alternative<SphKSCoords>(base)) {
-                return true;
-            } else {
-                return false;
-            }
+            return mpark::holds_alternative<SphKSCoords>(base);
         }
         KOKKOS_INLINE_FUNCTION bool is_cart_minkowski() const
         {
-            if (mpark::holds_alternative<CartMinkowskiCoords>(base) && mpark::holds_alternative<NullTransform>(transform)) {
-                return true;
-            } else {
-                return false;
-            }
+            return mpark::holds_alternative<CartMinkowskiCoords>(base) && mpark::holds_alternative<NullTransform>(transform);
         }
 
         // Spell out the interface we take from BaseCoords
@@ -204,6 +263,26 @@ class CoordinateEmbedding {
             mpark::visit( [&Xnative, &dXdx](const auto& self) {
                 self.dXdx(Xnative, dXdx);
             }, transform);
+        }
+
+        // Convenience functions: only radial coordinate as others might be cylinderized
+        KOKKOS_INLINE_FUNCTION GReal r_to_native(const GReal r) const
+        {
+            const GReal Xembed[GR_DIM] = {0., r, 0., 0.};
+            GReal Xnative[GR_DIM];
+            mpark::visit( [&Xembed, &Xnative](const auto& self) {
+                self.coord_to_native(Xembed, Xnative);
+            }, transform);
+            return Xnative[1];
+        }
+        KOKKOS_INLINE_FUNCTION GReal X1_to_embed(const GReal X1) const
+        {
+            const GReal Xnative[GR_DIM] = {0., X1, 0., 0.};
+            GReal Xembed[GR_DIM];
+            mpark::visit( [&Xnative, &Xembed](const auto& self) {
+                self.coord_to_embed(Xnative, Xembed);
+            }, transform);
+            return Xembed[1];
         }
 
         // VECTOR TRANSFORMS
@@ -349,5 +428,42 @@ class CoordinateEmbedding {
                     }
                 }
             }
+        }
+
+        /**
+         * Takes a velocity in Boyer-Lindquist coordinates (optionally without time component) and converts it
+         * to KS, and then to native coordinates.
+         * Not guaranteed to be fast.
+         */
+        KOKKOS_INLINE_FUNCTION void bl_fourvel_to_native(const Real Xnative[GR_DIM], const Real ucon_bl[GR_DIM], Real ucon_native[GR_DIM]) const
+        {
+            GReal Xembed[GR_DIM];
+            coord_to_embed(Xnative, Xembed);
+
+            // Set u^t to make u a velocity 4-vector in BL
+            Real gcov_bl[GR_DIM][GR_DIM];
+            if (mpark::holds_alternative<SphKSCoords>(base) ||
+                mpark::holds_alternative<SphBLCoords>(base)) {
+                SphBLCoords(get_a()).gcov_embed(Xembed, gcov_bl);
+            } else if (mpark::holds_alternative<SphKSExtG>(base) ||
+                       mpark::holds_alternative<SphBLExtG>(base)) {
+                SphBLExtG(get_a()).gcov_embed(Xembed, gcov_bl);
+            }
+            GReal ucon_bl_fourv[GR_DIM];
+            DLOOP1 ucon_bl_fourv[mu] = ucon_bl[mu];
+            set_ut(gcov_bl, ucon_bl_fourv);
+
+            // Then transform that 4-vector to KS (or not, if we're using BL base coords)
+            Real ucon_base[GR_DIM];
+            if (mpark::holds_alternative<SphKSCoords>(base)) {
+                mpark::get<SphKSCoords>(base).vec_from_bl(Xembed, ucon_bl_fourv, ucon_base);
+            } else if (mpark::holds_alternative<SphKSExtG>(base)) {
+                mpark::get<SphKSExtG>(base).vec_from_bl(Xembed, ucon_bl_fourv, ucon_base);
+            } else if (mpark::holds_alternative<SphBLCoords>(base) ||
+                       mpark::holds_alternative<SphBLExtG>(base)) {
+                DLOOP1 ucon_base[mu] = ucon_bl_fourv[mu];
+            }
+            // Finally, apply any transform to native coordinates
+            con_vec_to_native(Xnative, ucon_base, ucon_native);
         }
 };

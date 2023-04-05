@@ -66,14 +66,23 @@
 class GRCoordinates : public parthenon::UniformCartesian
 {
 public:
-    // Host-side coordinates object pointer
+    // Coordinate geometry & transform object: metric functions, to/from KS coordinates, etc.
     // Note we keep the actual object in GRCoordinates.  This is a royal pain to implement,
     // but ensures it will get copied device-side by C++14 Lambdas, circumventing *so many* bugs
     CoordinateEmbedding coords;
 
-    // TODO try again to get these from parent always, e.g. with the RegionSize or len()
+    // Store the block size, since UniformCartesian doesn't
     int n1, n2, n3;
-    // And optionally some caches
+
+    // Points to average (one side of a square, odd) when calculating the connections,
+    // and metric determinants on faces
+    int connection_average_points = 1;
+
+    // Whether to "correct" the connection coefficients in order to satisfy
+    // metric determinant derivatives discretized at faces
+    bool correct_connections = false;
+
+    // Caches for geometry values at zone centers/faces/etc
 #if !FAST_CARTESIAN && !NO_CACHE
     GeomTensor2 gcon_direct, gcov_direct;
     GeomScalar gdet_direct;
@@ -90,21 +99,20 @@ public:
     // Interim & copy constructors so that Parthenon can use us like a UniformCartesian object,
     // that is, host- & device-side indiscriminately
     KOKKOS_FUNCTION GRCoordinates(): UniformCartesian() {};
-    KOKKOS_FUNCTION GRCoordinates(const GRCoordinates &src): parthenon::UniformCartesian(src)
+    KOKKOS_FUNCTION GRCoordinates(const GRCoordinates &src): UniformCartesian(src),
+        n1(src.n1), n2(src.n2), n3(src.n3), coords(src.coords)
     {
         //std::cerr << "Calling copy constructor size " << src.n1 << " " << src.n2 << std::endl;
-        coords = src.coords;
-        n1 = src.n1;
-        n2 = src.n2;
-        n3 = src.n3;
-    #if !FAST_CARTESIAN && !NO_CACHE
+#if !FAST_CARTESIAN && !NO_CACHE
         gcon_direct = src.gcon_direct;
         gcov_direct = src.gcov_direct;
         gdet_direct = src.gdet_direct;
         conn_direct = src.conn_direct;
         gdet_conn_direct = src.gdet_conn_direct;
-    #endif
+#endif
     };
+
+    // TODO(BSP) eliminate calls to this from Parthenon, grid should be const
     KOKKOS_FUNCTION GRCoordinates operator=(const GRCoordinates& src)
     {
         //std::cerr << "Calling assignment operator size " << src.n1 << " " << src.n2 << std::endl;
@@ -113,13 +121,13 @@ public:
         n1 = src.n1;
         n2 = src.n2;
         n3 = src.n3;
-    #if !FAST_CARTESIAN && !NO_CACHE
+#if !FAST_CARTESIAN && !NO_CACHE
         gcon_direct = src.gcon_direct;
         gcov_direct = src.gcov_direct;
         gdet_direct = src.gdet_direct;
         conn_direct = src.conn_direct;
         gdet_conn_direct = src.gdet_conn_direct;
-    #endif
+#endif
         return *this;
     };
 

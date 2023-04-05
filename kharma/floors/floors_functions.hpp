@@ -116,7 +116,7 @@ KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, const VariablePa
     // 1. Geometric hard floors, not based on fluid relationships
     Real rhoflr_geom, uflr_geom;
     bool use_ff, use_df;
-    if(G.coords.spherical()) {
+    if(G.coords.is_spherical()) {
         GReal Xembed[GR_DIM];
         G.coord_embed(k, j, i, loc, Xembed);
         GReal r = Xembed[1];
@@ -336,7 +336,7 @@ KOKKOS_INLINE_FUNCTION int apply_geo_floors(const GRCoordinates& G, Local& P, co
 {
     // Apply only the geometric floors
     Real rhoflr_geom, uflr_geom;
-    if(G.coords.spherical()) {
+    if(G.coords.is_spherical()) {
         GReal Xembed[GR_DIM];
         G.coord_embed(0, j, i, loc, Xembed);
         GReal r = Xembed[1];
@@ -377,7 +377,7 @@ KOKKOS_INLINE_FUNCTION int apply_geo_floors(const GRCoordinates& G, Global& P, c
 {
     // Apply only the geometric floors
     Real rhoflr_geom, uflr_geom;
-    if(G.coords.spherical()) {
+    if(G.coords.is_spherical()) {
         GReal Xembed[GR_DIM];
         G.coord_embed(k, j, i, loc, Xembed);
         GReal r = Xembed[1];

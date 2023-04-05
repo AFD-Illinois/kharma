@@ -40,7 +40,7 @@
 #include "flux_functions.hpp"
 #include "grmhd_functions.hpp"
 #include "pack.hpp"
-#include "prob_common.hpp"
+#include "coordinate_utils.hpp"
 #include "types.hpp"
 
 #include <parthenon/parthenon.hpp>
@@ -87,7 +87,7 @@ KOKKOS_INLINE_FUNCTION void XtoindexGIZMO(const GReal XG[GR_DIM],
  * Note this assumes that there are ghost zones!
  */
 KOKKOS_INLINE_FUNCTION void get_prim_gizmo_shell(const GRCoordinates& G, const CoordinateEmbedding& coords, const VariablePack<Real>& P, const VarMap& m_p,
-                                           const Real& gam, const SphBLCoords& bl,  const SphKSCoords& ks, 
+                                           const Real& gam,
                                            const Real rin_init, const Real rs, Real vacuum_rho, Real vacuum_u_over_rho,
                                            const GridScalar& rarr, const GridScalar& rhoarr, const GridScalar& Tarr, const GridScalar& vrarr, const int length,
                                            const int& k, const int& j, const int& i)
@@ -111,13 +111,12 @@ KOKKOS_INLINE_FUNCTION void get_prim_gizmo_shell(const GRCoordinates& G, const C
     // Use Bondi infall velocity
     Real rho, u;
     Real T = get_T(r, C1, C2, n, rs);
-    Real ur = -C1 / (pow(T, n) * pow(r, 2));
-    Real ucon_bl[GR_DIM] = {0, ur, 0, 0};
+    Real ucon_bl[GR_DIM] = {0};
     if (r < rin_init * 0.9){
         // Vacuum values for interior
         rho = vacuum_rho;
         u = vacuum_rho * vacuum_u_over_rho;
-        ucon_bl[1] = ur;
+        ucon_bl[1] = -C1 / (pow(T, n) * pow(r, 2));
     } else {
         // linear interpolation
         int itemp; GReal del;
@@ -130,20 +129,14 @@ KOKKOS_INLINE_FUNCTION void get_prim_gizmo_shell(const GRCoordinates& G, const C
         ucon_bl[1] = 0.;
     }
 
-    // Set u^t to make u^r a 4-vector
-    Real gcov_bl[GR_DIM][GR_DIM];
-    bl.gcov_embed(Xembed, gcov_bl);
-    set_ut(gcov_bl, ucon_bl);
-
-    // Then transform that 4-vector to KS, then to native
-    Real ucon_ks[GR_DIM], ucon_mks[GR_DIM];
-    ks.vec_from_bl(Xembed, ucon_bl, ucon_ks);
-    coords.con_vec_to_native(Xnative, ucon_ks, ucon_mks);
+    // Set u^t and transform to native coordinates
+    GReal ucon_native[GR_DIM];
+    G.coords.bl_fourvel_to_native(Xnative, ucon_bl, ucon_native);
 
     // Convert native 4-vector to primitive u-twiddle, see Gammie '04
     Real gcon[GR_DIM][GR_DIM], u_prim[NVEC];
     G.gcon(Loci::center, j, i, gcon);
-    fourvel_to_prim(gcon, ucon_mks, u_prim);
+    fourvel_to_prim(gcon, ucon_native, u_prim);
 
     P(m_p.RHO, k, j, i) = rho;
     P(m_p.UU, k, j, i) = u;

@@ -35,7 +35,7 @@
 #include "emhd/conducting_atmosphere.hpp"
 
 #include "boundaries.hpp"
-#include "prob_common.hpp"
+#include "coordinate_utils.hpp"
 
 using namespace parthenon;
 
