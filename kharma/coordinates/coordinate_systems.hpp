@@ -348,6 +348,73 @@ class ExponentialTransform {
 };
 
 /**
+ * SuperExponential coordinates, for super simulations
+ * Implementation follows HARMPI described in Tchekhovskoy+
+ */
+class SuperExponentialTransform {
+public:
+  static constexpr GReal startx[3] = {-1, 0., 0.};
+  static constexpr GReal stopx[3] = {-1, M_PI, 2*M_PI};
+
+  const GReal xe1br, xn1br;
+  const double npow2, cpow2;
+
+  // Constructor
+  KOKKOS_FUNCTION SuperExponentialTransform(GReal xe1br_in, double npow2_in, double cpow2_in):
+    xe1br(xe1br_in), npow2(npow2_in), cpow2(cpow2_in), xn1br(m::log(xe1br_in)) {}
+
+  // Coordinate transformations
+  KOKKOS_INLINE_FUNCTION void coord_to_embed(const GReal Xnative[GR_DIM], GReal Xembed[GR_DIM]) const
+  {
+    Xembed[0] = Xnative[0];
+    const GReal super_dist = Xnative[1] - xn1br;
+    Xembed[1] = m::exp(Xnative[1] + (super_dist > 0) * cpow2 * m::pow(super_dist, npow2));
+#if LEGACY_TH
+    Xembed[2] = excise(excise(Xnative[2], 0.0, SMALL), M_PI, SMALL);
+#else
+    Xembed[2] = Xnative[2];
+#endif
+    Xembed[3] = Xnative[3];
+  }
+  KOKKOS_INLINE_FUNCTION void coord_to_native(const GReal Xembed[GR_DIM], GReal Xnative[GR_DIM]) const
+  {
+    Xnative[0] = Xembed[0];
+    Xnative[2] = Xembed[2];
+    Xnative[3] = Xembed[3];
+    // TODO can just take log for x1 < xe1br
+            ROOT_FIND_1
+	      }
+  /**
+   * Transformation matrix for contravariant vectors to embedding, or covariant vectors to native
+   */
+  KOKKOS_INLINE_FUNCTION void dxdX(const GReal Xnative[GR_DIM], Real dxdX[GR_DIM][GR_DIM]) const
+  {
+    gzero2(dxdX);
+    dxdX[0][0] = 1.;
+    const GReal super_dist = Xnative[1] - xn1br;
+    dxdX[1][1] = m::exp(Xnative[1] + (super_dist > 0) * cpow2 * m::pow(super_dist, npow2))
+      * (1 + cpow2 * npow2 * m::pow(super_dist, npow2-1));
+    dxdX[2][2] = 1.;
+    dxdX[3][3] = 1.;
+  }
+  /**
+   * Transformation matrix for contravariant vectors to native, or covariant vectors to embedding
+   */
+  KOKKOS_INLINE_FUNCTION void dXdx(const GReal Xnative[GR_DIM], Real dXdx[GR_DIM][GR_DIM]) const
+  {
+    gzero2(dXdx);
+    dXdx[0][0] = 1.;
+    const GReal super_dist = Xnative[1] - xn1br;
+    dXdx[1][1] = 1 / (m::exp(Xnative[1] + (super_dist > 0) * cpow2 * m::pow(super_dist, npow2))
+		      * (1 + cpow2 * npow2 * m::pow(super_dist, npow2-1)));
+    dXdx[2][2] = 1.;
+    dXdx[3][3] = 1.;
+  }
+};
+
+
+
+/**
  * Modified Kerr-Schild coordinates "MKS"
  * Makes sense only for spherical base systems!
  */
@@ -490,4 +557,4 @@ class FunkyTransform {
 // Bundle coordinates and transforms into umbrella variant types
 // Note nesting isn't allowed -- do it yourself by calling the steps if that's really important...
 using SomeBaseCoords = mpark::variant<SphMinkowskiCoords, CartMinkowskiCoords, SphBLCoords, SphKSCoords>;
-using SomeTransform = mpark::variant<NullTransform, ExponentialTransform, ModifyTransform, FunkyTransform>;
+using SomeTransform = mpark::variant<NullTransform, ExponentialTransform, SuperExponentialTransform, ModifyTransform, FunkyTransform>;

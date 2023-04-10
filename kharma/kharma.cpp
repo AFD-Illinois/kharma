@@ -129,11 +129,14 @@ void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
     if (coordinate_transform == "exponential") coordinate_transform = "exp";
     if (coordinate_transform == "eks") coordinate_transform = "exp";
     // TODO any other synonyms
+    bool spherical;
     if (coordinate_base == "spherical_ks" || coordinate_base == "spherical_bl" || coordinate_base == "spherical_minkowski") {
-        pin->SetBoolean("coordinates", "spherical", true);
+        spherical = true;
     } else {
-        pin->SetBoolean("coordinates", "spherical", false);
+        spherical = false;
     }
+        pin->SetBoolean("coordinates", "spherical", spherical);
+
 
     // Spherical systems can specify r_out and optionally r_in,
     // instead of xNmin/max.
@@ -197,7 +200,7 @@ void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
 
         // We also know the bounds for most transforms in spherical coords
         // Note we *only* set them here if they were not previously set/read!
-        if (coordinate_transform == "null" || coordinate_transform == "exp") {
+        if (coordinate_transform == "null" || coordinate_transform == "exp" || coordinate_transform == "superexp") {
             pin->GetOrAddReal("parthenon/mesh", "x2min", 0.0);
             pin->GetOrAddReal("parthenon/mesh", "x2max", M_PI);
             pin->GetOrAddReal("parthenon/mesh", "x3min", 0.0);

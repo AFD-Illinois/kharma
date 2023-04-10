@@ -98,6 +98,8 @@ class CoordinateEmbedding {
                 transform.emplace<NullTransform>(mpark::get<NullTransform>(transform_in));
             } else if (mpark::holds_alternative<ExponentialTransform>(transform_in)) {
                 transform.emplace<ExponentialTransform>(mpark::get<ExponentialTransform>(transform_in));
+            } else if (mpark::holds_alternative<SuperExponentialTransform>(transform_in)) {
+                transform.emplace<SuperExponentialTransform>(mpark::get<SuperExponentialTransform>(transform_in));
             } else if (mpark::holds_alternative<ModifyTransform>(transform_in)) {
                 transform.emplace<ModifyTransform>(mpark::get<ModifyTransform>(transform_in));
             } else if (mpark::holds_alternative<FunkyTransform>(transform_in)) {
@@ -198,7 +200,16 @@ class CoordinateEmbedding {
                 self.dXdx(Xnative, dXdx);
             }, transform);
         }
-
+        // Convenience functions: only radial coordinate as others might be cylinderized
+        KOKKOS_INLINE_FUNCTION GReal r_to_native(const GReal r) const
+        {
+            const GReal Xembed[GR_DIM] = {0., r, 0., 0.};
+            GReal Xnative[GR_DIM];
+            mpark::visit( [&Xembed, &Xnative](const auto& self) {
+                self.coord_to_native(Xembed, Xnative);
+            }, transform);
+            return Xnative[1];
+        }
         // VECTOR TRANSFORMS
         // Contravariant vectors:
         KOKKOS_INLINE_FUNCTION void con_vec_to_embed(const GReal Xnative[GR_DIM], const GReal vcon_native[GR_DIM], GReal vcon_embed[GR_DIM]) const

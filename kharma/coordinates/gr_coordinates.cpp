@@ -102,6 +102,12 @@ GRCoordinates::GRCoordinates(const RegionSize &rs, ParameterInput *pin): Uniform
     } else if (transform_str == "exponential" || transform_str == "exp" || transform_str == "eks") {
         if (!spherical) throw std::invalid_argument("Transform is for spherical coordinates!");
         transform.emplace<ExponentialTransform>(ExponentialTransform());
+    } else if (transform_str == "superexponential" || transform_str == "superexp") {
+      if (!spherical) throw std::invalid_argument("Transform is for spherical coordinates!");
+      GReal r_br = pin->GetOrAddReal("coordinates", "r_br", 1000.);
+      GReal npow = pin->GetOrAddReal("coordinates", "npow", 1.0);
+      GReal cpow = pin->GetOrAddReal("coordinates", "cpow", 4.0);
+      transform.emplace<SuperExponentialTransform>(SuperExponentialTransform(r_br, npow, cpow));
     } else if (transform_str == "modified" || transform_str == "mks") {
         if (!spherical) throw std::invalid_argument("Transform is for spherical coordinates!");
         GReal hslope = pin->GetOrAddReal("coordinates", "hslope", 0.3);
