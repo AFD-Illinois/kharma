@@ -69,14 +69,16 @@ GRCoordinates::GRCoordinates(const RegionSize &rs, ParameterInput *pin): Uniform
     n3 = rs.nx3 > 1 ? rs.nx3 + 2*Globals::nghost : 1;
     //cout << "Initialized coordinates with nghost " << Globals::nghost << std::endl;
 
-    // TODO TODO set averaging/correcting prefs here
+    connection_average_points = pin->GetOrAddInteger("coordinates", "connection_average_points", 1);
+    correct_connections = pin->GetOrAddBoolean("coordinates", "correct_connections", false);
 
     init_GRCoordinates(*this);
 }
 
-
 GRCoordinates::GRCoordinates(const GRCoordinates &src, int coarsen): UniformCartesian(src, coarsen),
-    coords(src.coords), n1(src.n1/coarsen), n2(src.n2/coarsen), n3(src.n3/coarsen)
+    coords(src.coords), n1(src.n1/coarsen), n2(src.n2/coarsen), n3(src.n3/coarsen),
+    connection_average_points(src.connection_average_points),
+    correct_connections(src.correct_connections)
 {
     //std::cerr << "Calling coarsen constructor" << std::endl;
     init_GRCoordinates(*this);

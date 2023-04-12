@@ -149,10 +149,10 @@ TaskStatus InitializeAtmosphere(std::shared_ptr<MeshBlockData<Real>>& rc, Parame
     const int n1 = pmb->cellbounds.ncellsi(IndexDomain::interior);
     const int ng = ib.e - ib_in.e;
 
-    auto p_bound_left = rc->Get("bound.inner_x1").data;
-    auto p_bound_left_host = p_bound_left.GetHostMirror();
-    auto p_bound_right = rc->Get("bound.outer_x1").data;
-    auto p_bound_right_host = p_bound_right.GetHostMirror();
+    // auto p_bound_left = rc->Get("bound.inner_x1").data;
+    // auto p_bound_left_host = p_bound_left.GetHostMirror();
+    // auto p_bound_right = rc->Get("bound.outer_x1").data;
+    // auto p_bound_right_host = p_bound_right.GetHostMirror();
 
     // Load coordinates 'r' and compare against grid values
     double rCoords[n1 + 2*ng];
@@ -252,34 +252,34 @@ TaskStatus InitializeAtmosphere(std::shared_ptr<MeshBlockData<Real>>& rc, Parame
                 }
 
                 // Save boundary values for Dirichlet boundary conditions
-                if (i < ng) {
-                    p_bound_left_host(m_p.RHO, k, j, i) = rho_host(k, j, i);
-                    p_bound_left_host(m_p.UU, k, j, i) = u_host(k, j, i);
-                    p_bound_left_host(m_p.U1, k, j, i) = uvec_host(V1, k, j, i);
-                    p_bound_left_host(m_p.U2, k, j, i) = uvec_host(V2, k, j, i);
-                    p_bound_left_host(m_p.U3, k, j, i) = uvec_host(V3, k, j, i);
-                    p_bound_left_host(m_p.B1, k, j, i) = B_host(V1, k, j, i);
-                    p_bound_left_host(m_p.B2, k, j, i) = B_host(V2, k, j, i);
-                    p_bound_left_host(m_p.B3, k, j, i) = B_host(V3, k, j, i);
-                    if (use_emhd) {
-                        p_bound_left_host(m_p.Q, k, j, i) = q_host(k, j, i);
-                        p_bound_left_host(m_p.DP, k, j, i) = dP_host(k, j, i);
-                    }
-                } else if (i >= n1 + ng) {
-                    int ii = i - (n1 + ng);
-                    p_bound_right_host(m_p.RHO, k, j, ii) = rho_host(k, j, i);
-                    p_bound_right_host(m_p.UU, k, j, ii) = u_host(k, j, i);
-                    p_bound_right_host(m_p.U1, k, j, ii) = uvec_host(V1, k, j, i);
-                    p_bound_right_host(m_p.U2, k, j, ii) = uvec_host(V2, k, j, i);
-                    p_bound_right_host(m_p.U3, k, j, ii) = uvec_host(V3, k, j, i);
-                    p_bound_right_host(m_p.B1, k, j, ii) = B_host(V1, k, j, i);
-                    p_bound_right_host(m_p.B2, k, j, ii) = B_host(V2, k, j, i);
-                    p_bound_right_host(m_p.B3, k, j, ii) = B_host(V3, k, j, i);
-                    if (use_emhd) {
-                        p_bound_right_host(m_p.Q, k, j, ii) = q_host(k, j, i);
-                        p_bound_right_host(m_p.DP, k, j, ii) = dP_host(k, j, i);
-                    }
-                }
+                // if (i < ng) {
+                //     p_bound_left_host(m_p.RHO, k, j, i) = rho_host(k, j, i);
+                //     p_bound_left_host(m_p.UU, k, j, i) = u_host(k, j, i);
+                //     p_bound_left_host(m_p.U1, k, j, i) = uvec_host(V1, k, j, i);
+                //     p_bound_left_host(m_p.U2, k, j, i) = uvec_host(V2, k, j, i);
+                //     p_bound_left_host(m_p.U3, k, j, i) = uvec_host(V3, k, j, i);
+                //     p_bound_left_host(m_p.B1, k, j, i) = B_host(V1, k, j, i);
+                //     p_bound_left_host(m_p.B2, k, j, i) = B_host(V2, k, j, i);
+                //     p_bound_left_host(m_p.B3, k, j, i) = B_host(V3, k, j, i);
+                //     if (use_emhd) {
+                //         p_bound_left_host(m_p.Q, k, j, i) = q_host(k, j, i);
+                //         p_bound_left_host(m_p.DP, k, j, i) = dP_host(k, j, i);
+                //     }
+                // } else if (i >= n1 + ng) {
+                //     int ii = i - (n1 + ng);
+                //     p_bound_right_host(m_p.RHO, k, j, ii) = rho_host(k, j, i);
+                //     p_bound_right_host(m_p.UU, k, j, ii) = u_host(k, j, i);
+                //     p_bound_right_host(m_p.U1, k, j, ii) = uvec_host(V1, k, j, i);
+                //     p_bound_right_host(m_p.U2, k, j, ii) = uvec_host(V2, k, j, i);
+                //     p_bound_right_host(m_p.U3, k, j, ii) = uvec_host(V3, k, j, i);
+                //     p_bound_right_host(m_p.B1, k, j, ii) = B_host(V1, k, j, i);
+                //     p_bound_right_host(m_p.B2, k, j, ii) = B_host(V2, k, j, i);
+                //     p_bound_right_host(m_p.B3, k, j, ii) = B_host(V3, k, j, i);
+                //     if (use_emhd) {
+                //         p_bound_right_host(m_p.Q, k, j, ii) = q_host(k, j, i);
+                //         p_bound_right_host(m_p.DP, k, j, ii) = dP_host(k, j, i);
+                //     }
+                // }
             }
         }
     }
@@ -300,9 +300,12 @@ TaskStatus InitializeAtmosphere(std::shared_ptr<MeshBlockData<Real>>& rc, Parame
         q.DeepCopy(q_host);
         dP.DeepCopy(dP_host);
     }
-    p_bound_left.DeepCopy(p_bound_left_host);
-    p_bound_right.DeepCopy(p_bound_right_host);
+    // p_bound_left.DeepCopy(p_bound_left_host);
+    // p_bound_right.DeepCopy(p_bound_right_host);
     Kokkos::fence();
+
+    KBoundaries::SetDomainDirichlet(rc, IndexDomain::inner_x1, false);
+    KBoundaries::SetDomainDirichlet(rc, IndexDomain::outer_x1, false);
 
     Flag("Initialized");
     return TaskStatus::complete;

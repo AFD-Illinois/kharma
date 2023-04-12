@@ -157,7 +157,7 @@ int main(int argc, char *argv[])
     // Any init which may be run even when restarting, or requires all
     // MeshBlocks to be initialized already
     auto prob = pin->GetString("parthenon/job", "problem_id");
-    bool is_restart = (prob == "resize_restart") || (prob == "resize_restart") || pman.IsRestart();
+    bool is_restart = (prob == "resize_restart") || (prob == "resize_restart_kharma") || pman.IsRestart();
     KHARMA::PostInitialize(pin, pmesh, is_restart);
     Flag("Post-initialization completed");
 

@@ -34,6 +34,7 @@
 
 #include "bondi.hpp"
 
+#include "boundaries.hpp"
 #include "floors.hpp"
 #include "flux_functions.hpp"
 
@@ -52,8 +53,14 @@ TaskStatus InitializeBondi(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterIn
     // By default, stay away from the outer BL coordinate singularity
     const Real a = pin->GetReal("coordinates", "a");
     const Real rin_bondi_default = 1 + m::sqrt(1 - a*a) + 0.1;
-    // TODO take r_shell
-    const Real rin_bondi = pin->GetOrAddReal("bondi", "r_in", rin_bondi_default);
+    // Prefer parameter bondi/r_in vs bondi/r_shell
+    Real rin_bondi_tmp;
+    if (pin->DoesParameterExist("bondi", "r_in")) {
+        rin_bondi_tmp = pin->GetReal("bondi", "r_in");
+    } else {
+        rin_bondi_tmp = pin->GetOrAddReal("bondi", "r_shell", rin_bondi_default);
+    }
+    const Real rin_bondi = rin_bondi_tmp;
 
     const bool fill_interior = pin->GetOrAddBoolean("bondi", "fill_interior", false);
     const bool zero_velocity = pin->GetOrAddBoolean("bondi", "zero_velocity", false);
@@ -74,16 +81,25 @@ TaskStatus InitializeBondi(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterIn
     // Set this problem to control the outer X1 boundary by default
     // remember to disable inflow_check in parameter file!
     auto bound_pkg = static_cast<KHARMAPackage*>(pmb->packages.Get("Boundaries").get());
-    if (pin->GetOrAddBoolean("bondi", "set_outer_bound", true)) {
-        bound_pkg->KHARMAOuterX1Boundary = SetBondi;
+    if (pin->GetOrAddBoolean("bondi", "use_dirichlet", false)) {
+        SetBondi(rc, IndexDomain::entire);
+        // Register a Dirichlet boundary condition
+        bound_pkg->KHARMAInnerX1Boundary = KBoundaries::Dirichlet;
+        bound_pkg->KHARMAOuterX1Boundary = KBoundaries::Dirichlet;
+        // Fill the Dirichlet caches based on the current ghost zone contents
+        KBoundaries::SetDomainDirichlet(rc, IndexDomain::inner_x1, false);
+        KBoundaries::SetDomainDirichlet(rc, IndexDomain::outer_x1, false);
+    } else {
+        if (pin->GetOrAddBoolean("bondi", "set_outer_bound", true)) {
+            bound_pkg->KHARMAOuterX1Boundary = SetBondi;
+        }
+        if (pin->GetOrAddBoolean("bondi", "set_inner_bound", false)) {
+            bound_pkg->KHARMAInnerX1Boundary = SetBondi;
+        }
+        // Set the interior domain to the analytic solution to begin
+        // This tests that PostInitialize will correctly fill ghost zones with the boundary we set
+        SetBondi(rc, IndexDomain::interior);
     }
-    if (pin->GetOrAddBoolean("bondi", "set_inner_bound", false)) {
-        bound_pkg->KHARMAInnerX1Boundary = SetBondi;
-    }
-
-    // Set the interior domain to the analytic solution to begin
-    // This tests that PostInitialize will correctly fill ghost zones with the boundary we set
-    SetBondi(rc, IndexDomain::interior);
 
     if (rin_bondi > pin->GetReal("coordinates", "r_in") && !(fill_interior)) {
         // Apply floors to initialize the rest of the domain (regardless of the 'disable_floors' param)
@@ -119,18 +135,6 @@ TaskStatus SetBondi(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain
     // Just the X1 right boundary
     GRCoordinates G = pmb->coords;
 
-    // Solution constants
-    // These don't depend on which zone we're calculating
-    const Real n = 1. / (gam - 1.);
-    const Real uc = m::sqrt(1. / (2. * rs));
-    const Real Vc = m::sqrt(uc * uc / (1. - 3. * uc * uc));
-    const Real Tc = -n * Vc * Vc / ((n + 1.) * (n * Vc * Vc - 1.));
-    const Real C1 = uc * rs * rs * m::pow(Tc, n);
-    const Real A = 1. + (1. + n) * Tc;
-    const Real C2 = A * A * (1. - 2. / rs + uc * uc);
-    const Real K  = m::pow(4 * M_PI * C1 / mdot, 1/n);
-    const Real Kn = m::pow(K, n);
-
     // Set the Bondi conditions wherever we're asked
     auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
 
@@ -149,25 +153,16 @@ TaskStatus SetBondi(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain
             // or let it be filled with floor values later
             if (r < rin_bondi) {
                 if (fill_interior) {
-                    // values at infinity; would need modifications below
-                    /*
-                    Real Tinf = (m::sqrt(C2) - 1.) / (n + 1); // temperature at infinity
-                    rho = m::pow(Tinf,n);
-                    u = rho * Tinf * n;
-                    */
                     // just match at the rin_bondi value
                     r = rin_bondi;
+                    // TODO(BSP) could also do values at inf, restore that?
                 } else {
                     return;
                 }
             }
 
-            const Real T = get_T(r, C1, C2, n, rs);
-            const Real Tn = m::pow(T, n);
-            const Real rho = Tn / Kn;
-            const Real u = rho * T * n;
-
-            const Real ur = (zero_velocity) ? 0. : -C1 / (Tn * r * r);
+            Real rho, u, ur;
+            get_bondi_soln(r, rs, mdot, gam, rho, u, ur);
 
             // Get the native-coordinate 4-vector corresponding to ur
             const Real ucon_bl[GR_DIM] = {0, ur, 0, 0};

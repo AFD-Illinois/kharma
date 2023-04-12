@@ -35,6 +35,7 @@
 
 #include "decs.hpp"
 
+#include <cstring>
 #include <memory>
 #include <string>
 #include <stdexcept>
@@ -132,23 +133,28 @@ KOKKOS_INLINE_FUNCTION T close_to(const T& x, const T& y, const Real& rel_tol=1e
 // Quickly zero n elements of an array
 // Types can fail to resolve if gzeroN() calls zeroN(),
 // so we duplicate code a bit
+// TODO forceinline
 template <typename T>
 KOKKOS_INLINE_FUNCTION void zero(T* a, const int& n)
 {
     memset(a, 0, n*sizeof(T));
+    //for(int i = 0; i < n; i++) a[i] = 0.;
 }
 template <typename T>
 KOKKOS_INLINE_FUNCTION void gzero(T a[GR_DIM])
 {
     memset(a, 0, GR_DIM*sizeof(T));
+    //for(int i = 0; i < GR_DIM; i++) a[i] = 0.;
 }
 template <typename T>
 KOKKOS_INLINE_FUNCTION void zero2(T* a[], const int& n)
 {
     memset(&(a[0][0]), 0, n*sizeof(T));
+    //for(int i = 0; i < n; i++) (&(a[0][0]))[i] = 0.;
 }
 template <typename T>
 KOKKOS_INLINE_FUNCTION void gzero2(T a[GR_DIM][GR_DIM])
 {
     memset(&(a[0][0]), 0, GR_DIM*GR_DIM*sizeof(T));
+    //for(int i = 0; i < GR_DIM*GR_DIM; i++) (&(a[0][0]))[i] = 0.;
 }

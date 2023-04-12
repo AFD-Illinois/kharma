@@ -8,6 +8,7 @@ convergence.txt
 *.webm
 core.*
 frames_*/
+logs/
 
 # KHARMA/Parthenon outputs
 *.phdf

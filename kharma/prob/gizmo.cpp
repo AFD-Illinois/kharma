@@ -77,7 +77,7 @@ TaskStatus SetGIZMO(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain
     //std::cerr << "GIZMO on domain: " << BoundaryName(domain) << std::endl;
     // Don't apply GIZMO initialization to X1 boundaries
     if (domain == IndexDomain::outer_x1 || domain == IndexDomain::inner_x1) {
-        return;
+        return TaskStatus::complete;
     }
 
     PackIndexMap prims_map, cons_map;
@@ -97,18 +97,6 @@ TaskStatus SetGIZMO(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain
     // Just the X1 right boundary
     GRCoordinates G = pmb->coords;
     CoordinateEmbedding cs = G.coords;
-
-    // Solution constants
-    // These don't depend on which zone we're calculating
-    const Real n = 1. / (gam - 1.);
-    const Real uc = m::sqrt(1. / (2. * rs));
-    const Real Vc = m::sqrt(uc * uc / (1. - 3. * uc * uc));
-    const Real Tc = -n * Vc * Vc / ((n + 1.) * (n * Vc * Vc - 1.));
-    const Real C1 = uc * rs * rs * m::pow(Tc, n);
-    const Real A = 1. + (1. + n) * Tc;
-    const Real C2 = A * A * (1. - 2. / rs + uc * uc);
-    const Real K  = m::pow(4 * M_PI * C1 / mdot, 1/n);
-    const Real Kn = m::pow(K, n);
 
     // Set the Bondi conditions wherever we're asked
     auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;

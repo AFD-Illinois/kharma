@@ -287,22 +287,6 @@ TaskStatus ReadIharmRestart(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterI
                 pin->GetReal("parthenon/mesh", "x3min"), startx[3],
                 pin->GetReal("parthenon/mesh", "x3max"), stopx[3]);
         }
-
-        if (is_spherical) {
-            // Check that the coordinate parameters r_{in,out} match the mesh
-            if (!close_to(pin->GetReal("parthenon/mesh", "x1min"),
-                        m::log(pin->GetReal("coordinates", "r_in"))) ||
-                !close_to(pin->GetReal("parthenon/mesh", "x1max"),
-                        m::log(pin->GetReal("coordinates", "r_out")))) {
-                printf("Mesh shape does not match!");
-                printf("Rin %g vs %g, Rout %g vs %g",
-                    m::exp(pin->GetReal("parthenon/mesh", "x1min")),
-                    pin->GetReal("coordinates", "r_in"),
-                    m::exp(pin->GetReal("parthenon/mesh", "x1max")),
-                    pin->GetReal("coordinates", "r_out"));
-            }
-        }
-
     }
 
     if(MPIRank0()) std::cout << "Reading mesh from file to cache..." << std::endl;

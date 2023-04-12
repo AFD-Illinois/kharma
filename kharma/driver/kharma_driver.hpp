@@ -109,7 +109,7 @@ class KHARMADriver : public MultiStageDriver {
          * This sequence is used identically in several places, so it makes sense
          * to define once and use elsewhere.
          */
-        static TaskID AddMPIBoundarySync(TaskID t_start, TaskList &tl, std::shared_ptr<MeshData<Real>> mc1);
+        static TaskID AddMPIBoundarySync(const TaskID t_start, TaskList &tl, std::shared_ptr<MeshData<Real>> mc1);
 
         /**
          * Calculate the fluxes in each direction

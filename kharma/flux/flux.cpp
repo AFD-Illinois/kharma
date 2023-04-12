@@ -120,6 +120,68 @@ TaskStatus Flux::MeshPtoU(MeshData<Real> *md, IndexDomain domain, bool coarse)
     return TaskStatus::complete;
 }
 
+TaskStatus Flux::BlockPtoU_Send(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
+{
+    Flag(rc, "Getting conserved GRMHD variables");
+    // Pointers
+    auto pmb = rc->GetBlockPointer();
+    const int ndim = pmb->pmy_mesh->ndim;
+    // Options
+    const auto& pars = pmb->packages.Get("GRMHD")->AllParams();
+    const Real gam = pars.Get<Real>("gamma");
+
+    const EMHD::EMHD_parameters& emhd_params = EMHD::GetEMHDParameters(pmb->packages);
+
+    // Pack variables
+    PackIndexMap prims_map, cons_map;
+    const auto& P = rc->PackVariables({Metadata::GetUserFlag("Primitive")}, prims_map);
+    const auto& U = rc->PackVariables({Metadata::Conserved}, cons_map);
+    const VarMap m_u(cons_map, true), m_p(prims_map, false);
+
+    auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
+    IndexRange ib = bounds.GetBoundsI(domain);
+    IndexRange jb = bounds.GetBoundsJ(domain);
+    IndexRange kb = bounds.GetBoundsK(domain);
+
+    // Modify the bounds to reflect zones we're sending, rather than actual ghosts
+    int ng = Globals::nghost;
+    if (domain == IndexDomain::inner_x1) {
+        ib.s += ng;
+        ib.e += ng;
+    } else if (domain == IndexDomain::outer_x1) {
+        ib.s -= ng;
+        ib.e -= ng;
+    } else if (domain == IndexDomain::inner_x2) {
+        if (ndim < 2) return TaskStatus::complete;
+        jb.s += ng;
+        jb.e += ng;
+    } else if (domain == IndexDomain::outer_x2) {
+        if (ndim < 2) return TaskStatus::complete;
+        jb.s -= ng;
+        jb.e -= ng;
+    } else if (domain == IndexDomain::inner_x3) {
+        if (ndim < 3) return TaskStatus::complete;
+        kb.s += ng;
+        kb.e += ng;
+    } else if (domain == IndexDomain::outer_x3) {
+        if (ndim < 3) return TaskStatus::complete;
+        kb.s -= ng;
+        kb.e -= ng;
+    }
+
+    const auto& G = pmb->coords;
+
+    pmb->par_for("p_to_u", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+        KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+            Flux::p_to_u(G, P, m_p, emhd_params, gam, k, j, i, U, m_u);
+        }
+    );
+
+
+    Flag(rc, "Got conserved variables");
+    return TaskStatus::complete;
+}
+
 void Flux::AddGeoSource(MeshData<Real> *md, MeshData<Real> *mdudt)
 {
     Flag(mdudt, "Adding GRMHD source term");

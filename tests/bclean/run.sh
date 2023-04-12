@@ -16,7 +16,7 @@ DRTAG="."
 # Set paths
 PDR="." ## parent directory
 DR="."
-parfilename="./bondi_multizone_00000.par" # parameter file
+parfilename="./bondi_multizone.par" # parameter file
 KHARMA_DIR=../..
 
 # other values determined automatically
@@ -92,9 +92,11 @@ do
     echo "Restarting with $fname, filling using $fname_fill"
     args+=(" resize_restart/fname=$fname parthenon/time/dt_min=$dt_new")
     args+=(" resize_restart/fname_fill=$fname_fill ")
+    use_dirichlet="true"
   else
     r_shell=$((${r_out}/2))
     args+=(" bondi/r_shell=$r_shell ")
+    use_dirichlet="false"
   fi
 
   # data_dir, logfiles
@@ -103,28 +105,18 @@ do
   err_fn="${PDR}/logs/${DRTAG}/log_multizone$(printf %05d ${VAR})_err"
 
   $KHARMA_DIR/run.sh -n 1 -i ${parfilename} \
-                      parthenon/mesh/nx1=64 parthenon/mesh/nx2=64 parthenon/mesh/nx3=64 \
-                      parthenon/meshblock/nx1=64 parthenon/meshblock/nx2=64 parthenon/meshblock/nx3=64 \
                       parthenon/job/problem_id=$prob \
                       parthenon/time/tlim=${start_time} \
-                      coordinates/r_in=${r_in} coordinates/r_out=${r_out}  coordinates/a=$spin coordinates/hslope=1 coordinates/transform=mks \
-                      bondi/vacuum_logrho=-8.2014518 bondi/vacuum_log_u_over_rho=${log_u_over_rho} \
-                      floors/disable_floors=false floors/rho_min_geom=1e-6 floors/u_min_geom=1e-8 \
-                      floors/bsq_over_rho_max=100 floors/bsq_over_u_max=50 \
-                      b_field/type=vertical b_field/solver=flux_ct b_field/bz=${bz} \
-                      b_field/fix_flux_x1=0 b_field/initial_cleanup=$init_c \
-                      b_cleanup/rel_tolerance=1.e-8 \
+                      coordinates/r_in=${r_in} coordinates/r_out=${r_out} coordinates/a=$spin \
+                      bondi/vacuum_log_u_over_rho=${log_u_over_rho} \
+                      b_field/bz=${bz} b_field/initial_cleanup=$init_c \
+                      boundaries/prob_uses_dirichlet=$use_dirichlet \
                       resize_restart/base=$BASE resize_restart/nzone=$NZONES resize_restart/iteration=$iteration\
                       parthenon/output0/dt=$output0_dt \
                       parthenon/output1/dt=$output1_dt \
                       parthenon/output2/dt=$output2_dt \
                       ${args[@]} \
                       -d ${data_dir} 1> ${out_fn} 2>${err_fn}
-                      # kharma/b_flux_ct/seed_B_ct.cpp
-                      # nlim=10000 for 1e-3   
-                      # floors/u_over_rho_max=2 
-                      #b_field/fix_flux_x1=1 b_field/initial_cleanup=0 \
-                      #coordinates/transform=mks coordinates/hslope=1 \ this, for some reason does not work for b cleaning?
 
   if [ $VAR -ne 0 ]; then
     if [ $(($VAR % ($NZONES-1))) -eq 0 ]; then

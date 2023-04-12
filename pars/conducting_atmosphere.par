@@ -29,8 +29,8 @@ hslope    = 1.0
 r_in      = 200.
 r_out     = 300.
 
-<bounds>
-use_dirichlet = true
+<boundaries>
+prob_uses_dirichlet = true
 check_inflow_inner = false
 check_inflow_outer = false
 
@@ -76,9 +76,6 @@ input = ODE
 <floors>
 disable_floors = true
 emhd_limits    = false
-
-<bounds>
-use_dirichlet = true
 
 <debug>
 verbose = 1

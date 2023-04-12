@@ -94,6 +94,10 @@ class CoordinateEmbedding {
                 base.emplace<SphBLCoords>(mpark::get<SphBLCoords>(base_in));
             } else if (mpark::holds_alternative<SphKSCoords>(base_in)) {
                 base.emplace<SphKSCoords>(mpark::get<SphKSCoords>(base_in));
+            } else if (mpark::holds_alternative<SphKSExtG>(base_in)) {
+                base.emplace<SphKSExtG>(mpark::get<SphKSExtG>(base_in));
+            } else if (mpark::holds_alternative<SphBLExtG>(base_in)) {
+                base.emplace<SphBLExtG>(mpark::get<SphBLExtG>(base_in));
             }
 
             if (mpark::holds_alternative<NullTransform>(transform_in)) {
@@ -166,10 +170,18 @@ class CoordinateEmbedding {
             } else if (transform_str == "funky" || transform_str == "fmks") {
                 if (!spherical) throw std::invalid_argument("Transform is for spherical coordinates!");
                 GReal hslope = pin->GetOrAddReal("coordinates", "hslope", 0.3);
-                GReal startx1 = pin->GetReal("parthenon/mesh", "x1min");
                 GReal mks_smooth = pin->GetOrAddReal("coordinates", "mks_smooth", 0.5);
                 GReal poly_xt = pin->GetOrAddReal("coordinates", "poly_xt", 0.82);
                 GReal poly_alpha = pin->GetOrAddReal("coordinates", "poly_alpha", 14.0);
+                // Set fmks to use x1min from our system for compatibility. Note THIS WILL CHANGE
+                GReal startx1 = 0.; // Default for temporary coordinate construction before mesh, future general default
+                if (pin->DoesParameterExist("coordinates", "fmks_zero_point")) {
+                    startx1 = pin->GetReal("coordinates", "fmks_zero_point");
+                } else if (pin->DoesParameterExist("parthenon/mesh", "x1min")) {
+                    std::cout << "KHARMA WARNING: Constructing FMKS coordinates using mesh x1min is deprecated." << std::endl
+                              << "Set coordinates/fmks_zero_point for consistent behavior." << std::endl;
+                    startx1 = pin->GetReal("parthenon/mesh", "x1min");
+                }
                 transform.emplace<FunkyTransform>(FunkyTransform(startx1, hslope, mks_smooth, poly_xt, poly_alpha));
             } else {
                 throw std::invalid_argument("Unsupported coordinate transform!");
@@ -182,6 +194,9 @@ class CoordinateEmbedding {
 #pragma hd_warning_disable
         KOKKOS_FUNCTION const CoordinateEmbedding& operator=(const CoordinateEmbedding& src)
         {
+            //CoordinateEmbedding copy(src);
+            //base.swap(copy.base);
+            //transform.swap(copy.transform);
             EmplaceSystems(src.base, src.transform);
             return *this;
         }
@@ -229,6 +244,23 @@ class CoordinateEmbedding {
         KOKKOS_INLINE_FUNCTION bool is_cart_minkowski() const
         {
             return mpark::holds_alternative<CartMinkowskiCoords>(base) && mpark::holds_alternative<NullTransform>(transform);
+        }
+
+        KOKKOS_INLINE_FUNCTION std::string variant_names() const
+        {
+            std::string basename(
+                mpark::visit( [&](const auto& self) {
+                    return self.name;
+                }, base)
+            );
+
+            std::string transformname(
+                mpark::visit( [&](const auto& self) {
+                    return self.name;
+                }, transform)
+            );
+
+            return basename + " " + transformname;
         }
 
         // Spell out the interface we take from BaseCoords
@@ -441,7 +473,7 @@ class CoordinateEmbedding {
             coord_to_embed(Xnative, Xembed);
 
             // Set u^t to make u a velocity 4-vector in BL
-            Real gcov_bl[GR_DIM][GR_DIM];
+            GReal gcov_bl[GR_DIM][GR_DIM];
             if (mpark::holds_alternative<SphKSCoords>(base) ||
                 mpark::holds_alternative<SphBLCoords>(base)) {
                 SphBLCoords(get_a()).gcov_embed(Xembed, gcov_bl);
@@ -449,7 +481,8 @@ class CoordinateEmbedding {
                        mpark::holds_alternative<SphBLExtG>(base)) {
                 SphBLExtG(get_a()).gcov_embed(Xembed, gcov_bl);
             }
-            GReal ucon_bl_fourv[GR_DIM];
+
+            Real ucon_bl_fourv[GR_DIM];
             DLOOP1 ucon_bl_fourv[mu] = ucon_bl[mu];
             set_ut(gcov_bl, ucon_bl_fourv);
 

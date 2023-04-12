@@ -59,7 +59,7 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
 #include <KokkosBatched_Trsv_Decl.hpp>
 #include <KokkosBatched_ApplyPivot_Decl.hpp>
 
-std::vector<std::string> Implicit::get_ordered_names(MeshBlockData<Real> *rc, const MetadataFlag& flag, bool only_implicit)
+std::vector<std::string> Implicit::GetOrderedNames(MeshBlockData<Real> *rc, const MetadataFlag& flag, bool only_implicit)
 {
     auto pmb0 = rc->GetBlockPointer();
     std::vector<std::string> out;
@@ -199,8 +199,8 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
     // The implicit variables need to be first, so we know how to iterate over just them to fill
     // just the residual & Jacobian we care about, which makes the solve faster.
     auto& mbd_full_step_init  = md_full_step_init->GetBlockData(0); // MeshBlockData object, more member functions
-    auto ordered_prims        = get_ordered_names(mbd_full_step_init.get(), Metadata::GetUserFlag("Primitive"));
-    auto ordered_cons         = get_ordered_names(mbd_full_step_init.get(), Metadata::Conserved);
+    auto ordered_prims        = GetOrderedNames(mbd_full_step_init.get(), Metadata::GetUserFlag("Primitive"));
+    auto ordered_cons         = GetOrderedNames(mbd_full_step_init.get(), Metadata::Conserved);
     //std::cerr << "Ordered prims:"; for(auto prim: ordered_prims) std::cerr << " " << prim; std::cerr << std::endl;
     //std::cerr << "Ordered cons:"; for(auto con: ordered_cons) std::cerr << " " << con; std::cerr << std::endl;
 
@@ -222,7 +222,7 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
     const int nblock = U_full_step_init_all.GetDim(5);
     const int nvar   = U_full_step_init_all.GetDim(4);
     // Get number of implicit variables
-    auto implicit_vars = get_ordered_names(mbd_full_step_init.get(), Metadata::GetUserFlag("Primitive"), true);
+    auto implicit_vars = GetOrderedNames(mbd_full_step_init.get(), Metadata::GetUserFlag("Primitive"), true);
     PackIndexMap implicit_prims_map;
     auto& P_full_step_init_implicit = md_full_step_init->PackVariables(implicit_vars, implicit_prims_map);
     const int nfvar = P_full_step_init_implicit.GetDim(4);

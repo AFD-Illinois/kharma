@@ -72,7 +72,7 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
     // Only needed if x1min is inside BH event horizon, otherwise a nuisance for divB on corners
     if (spherical) {
         const Real a = pin->GetReal("coordinates", "a");
-        bool inside_eh = pin->GetBoolean("coordinates", "r_in") < 1 + sqrt(1 - a*a);
+        bool inside_eh = pin->GetBoolean("coordinates", "r_in") < (1 + sqrt(1 - a*a));
         bool fix_corner = pin->GetOrAddBoolean("boundaries", "fix_corner", inside_eh);
         params.Add("fix_corner", fix_corner);
     }
@@ -80,24 +80,50 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
     // Allocate space for Dirichlet boundaries if they'll be used
     // We have to trust the user here since the problem will set the function pointers later
     // TODO specify which boundaries individually for cleanliness?
-    bool use_dirichlet = pin->GetOrAddBoolean("boundaries", "use_dirichlet", false);
+    bool use_dirichlet = pin->GetOrAddBoolean("boundaries", "prob_uses_dirichlet", false);
+    params.Add("use_dirichlet", use_dirichlet);
     if (use_dirichlet) {
         auto& driver = packages->Get("Driver")->AllParams();
-        int nvar = driver.Get<int>("n_explicit_vars") + driver.Get<int>("n_implicit_vars");
-        std::cout << "Allocating Dirichlet boundaries for " << nvar << " variables." << std::endl;
-        // TODO We also don't know the mesh size, since it's not constructed. Infer.
-        int ng = pin->GetInteger("parthenon/mesh", "nghost");
-        int nx1 = pin->GetInteger("parthenon/meshblock", "nx1");
-        int n1 = nx1 + 2*ng;
-        int nx2 = pin->GetInteger("parthenon/meshblock", "nx2");
-        int n2 = (nx2 == 1) ? nx2 : nx2 + 2*ng;
-        int nx3 = pin->GetInteger("parthenon/meshblock", "nx3");
-        int n3 = (nx3 == 1) ? nx3 : nx3 + 2*ng;
+
+        // We can't use GetVariablesByFlag yet, so walk through and count manually
+        int nvar = 0;
+        for (auto pkg : packages->AllPackages()) {
+            //std::cerr << pkg.first << ": ";
+            for (auto field : pkg.second->AllFields()) {
+                //std::cerr << field.first.label() << " ";
+                // Specifically ignore the B_Cleanup variables, we don't handle their boundary conditions
+                if (field.second.IsSet(Metadata::FillGhost) && !field.second.IsSet(Metadata::GetUserFlag("B_Cleanup"))) {
+                    if (field.second.Shape().size() < 1) {
+                        nvar += 1;
+                    } else {
+                        nvar += field.second.Shape()[0];
+                    }
+                }
+            }
+            //std::cerr << std::endl;
+        }
+
+        // We also don't know the mesh size, since it's not constructed.  We infer.
+        const int ng = pin->GetInteger("parthenon/mesh", "nghost");
+        const int nx1 = pin->GetInteger("parthenon/meshblock", "nx1");
+        const int n1 = nx1 + 2*ng;
+        const int nx2 = pin->GetInteger("parthenon/meshblock", "nx2");
+        const int n2 = (nx2 == 1) ? nx2 : nx2 + 2*ng;
+        const int nx3 = pin->GetInteger("parthenon/meshblock", "nx3");
+        const int n3 = (nx3 == 1) ? nx3 : nx3 + 2*ng;
+
+        if (pin->GetInteger("debug", "verbose") > 0) {
+            std::cout << "Allocating Dirichlet boundaries for " << nvar << " variables." << std::endl;
+            if (pin->GetInteger("debug", "verbose") > 1) {
+                std::cout << "Initializing Dirichlet bounds with dimensions nvar,n1,n2,n3: " << nvar << " " << n1 << " " << n2 << " " << n3 << " and ng: " << ng << std::endl;
+            }
+        }
 
         // These are declared *backward* from how they will be indexed
         std::vector<int> s_x1({ng, n2, n3, nvar});
         std::vector<int> s_x2({n1, ng, n3, nvar});
         std::vector<int> s_x3({n1, n2, ng, nvar});
+        // Dirichlet conditions must be restored when restarting!  Needs Metadata::Restart when this works!
         Metadata m_x1 = Metadata({Metadata::Real, Metadata::Derived, Metadata::OneCopy}, s_x1);
         Metadata m_x2 = Metadata({Metadata::Real, Metadata::Derived, Metadata::OneCopy}, s_x2);
         Metadata m_x3 = Metadata({Metadata::Real, Metadata::Derived, Metadata::OneCopy}, s_x3);
@@ -204,34 +230,34 @@ void KBoundaries::FixCorner(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomai
     Flag(rc, "Fixed");
 }
 
-void KBoundaries::CorrectBField(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain, bool coarse)
-{
-    Flag(rc, "Correcting the B field w/metric");
-    std::shared_ptr<MeshBlock> pmb = rc->GetBlockPointer();
-    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
+// void KBoundaries::CorrectBField(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain, bool coarse)
+// {
+//     Flag(rc, "Correcting the B field w/metric");
+//     std::shared_ptr<MeshBlock> pmb = rc->GetBlockPointer();
+//     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
 
-    auto B_P = rc->PackVariables(std::vector<std::string>{"prims.B"});
-    // Return if no field to correct
-    if (B_P.GetDim(4) == 0) return;
+//     auto B_P = rc->PackVariables(std::vector<std::string>{"prims.B"});
+//     // Return if no field to correct
+//     if (B_P.GetDim(4) == 0) return;
 
-    const auto& G = pmb->coords;
+//     const auto& G = pmb->coords;
 
-    const auto &bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
-    const int dir = BoundarySide(domain);
-    const auto &range = (dir == 1) ? bounds.GetBoundsI(IndexDomain::interior)
-                            : (dir == 2 ? bounds.GetBoundsJ(IndexDomain::interior)
-                                : bounds.GetBoundsK(IndexDomain::interior));
-    const int ref = BoundaryIsInner(domain) ? range.s : range.e;
+//     const auto &bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
+//     const int dir = BoundarySide(domain);
+//     const auto &range = (dir == 1) ? bounds.GetBoundsI(IndexDomain::interior)
+//                             : (dir == 2 ? bounds.GetBoundsJ(IndexDomain::interior)
+//                                 : bounds.GetBoundsK(IndexDomain::interior));
+//     const int ref = BoundaryIsInner(domain) ? range.s : range.e;
 
-    pmb->par_for_bndry("Correct_B_P", IndexRange{0,NVEC-1}, domain, coarse,
-        KOKKOS_LAMBDA (const int &v, const int &k, const int &j, const int &i) {
-            B_P(v, k, j, i) *= G.gdet(Loci::center, (dir == 2) ? ref : j, (dir == 1) ? ref : i)
-                            / G.gdet(Loci::center, j, i);
-        }
-    );
+//     pmb->par_for_bndry("Correct_B_P", IndexRange{0,NVEC-1}, domain, coarse,
+//         KOKKOS_LAMBDA (const int &v, const int &k, const int &j, const int &i) {
+//             B_P(v, k, j, i) *= G.gdet(Loci::center, (dir == 2) ? ref : j, (dir == 1) ? ref : i)
+//                             / G.gdet(Loci::center, j, i);
+//         }
+//     );
 
-    Flag(rc, "Corrected");
-}
+//     Flag(rc, "Corrected");
+// }
 
 void KBoundaries::DefaultBoundary(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain, bool coarse)
 {
@@ -256,20 +282,60 @@ void KBoundaries::DefaultBoundary(std::shared_ptr<MeshBlockData<Real>>& rc, Inde
     }
 }
 
-void KBoundaries::Dirichlet(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain, bool coarse)
-{
-    Flag(rc, "Applying dirichlet bound");
+void KBoundaries::SetDomainDirichlet(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain, bool coarse) {
+    Flag("Setting Dirichlet bound");
 
     std::shared_ptr<MeshBlock> pmb = rc->GetBlockPointer();
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
 
-    auto q = rc->PackVariables({Metadata::FillGhost}, coarse);
+    using FC = Metadata::FlagCollection;
+    auto q = rc->PackVariables(FC({Metadata::FillGhost}) - FC({Metadata::GetUserFlag("B_Cleanup")}), coarse);
     auto bound = rc->Get("bound."+BoundaryName(domain)).data;
 
-    PackIndexMap prims_map;
-    auto P = GRMHD::PackMHDPrims(rc.get(), prims_map, coarse);
-    const VarMap m_p(prims_map, false); // In case we need it
-    
+    if (q.GetDim(4) != bound.GetDim(4)) {
+        std::cerr << "Boundary cache mismatch! " << bound.GetDim(4) << " vs " << q.GetDim(4) << std::endl;
+    }
+
+    const IndexRange vars = IndexRange{0, q.GetDim(4) - 1};
+    const bool right = !BoundaryIsInner(domain);
+
+    // Subtract off the starting index if we're on the right
+    const auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
+    const int dir = BoundarySide(domain);
+    const int ie = (dir == 1) ? bounds.ie(IndexDomain::interior)+1 : 0;
+    const int je = (dir == 2) ? bounds.je(IndexDomain::interior)+1 : 0;
+    const int ke = (dir == 3) ? bounds.ke(IndexDomain::interior)+1 : 0;
+
+    const auto& G = pmb->coords;
+
+    pmb->par_for_bndry("dirichlet_boundary", vars, domain, coarse,
+        KOKKOS_LAMBDA (const int &p, const int &k, const int &j, const int &i) {
+            if (right) {
+                bound(p, k-ke, j-je, i-ie) = q(p, k, j, i);
+            } else {
+                bound(p, k, j, i) = q(p, k, j, i);
+            }
+        }
+    );
+
+    Flag("Set");
+}
+
+void KBoundaries::Dirichlet(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain, bool coarse)
+{
+    Flag(rc, "Applying Dirichlet bound");
+
+    std::shared_ptr<MeshBlock> pmb = rc->GetBlockPointer();
+    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
+
+    using FC = Metadata::FlagCollection;
+    auto q = rc->PackVariables(FC({Metadata::FillGhost}) - FC({Metadata::GetUserFlag("B_Cleanup")}), coarse);
+    auto bound = rc->Get("bound."+BoundaryName(domain)).data;
+
+    if (q.GetDim(4) != bound.GetDim(4)) {
+        std::cerr << "Boundary cache mismatch! " << bound.GetDim(4) << " vs " << q.GetDim(4) << std::endl;
+    }
+
     const IndexRange vars = IndexRange{0, q.GetDim(4) - 1};
     const bool right = !BoundaryIsInner(domain);
 

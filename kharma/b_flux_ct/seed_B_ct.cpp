@@ -52,16 +52,7 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
     GridScalar rho = rc->Get("prims.rho").data;
     GridVector B_P = rc->Get("prims.B").data;
     GridVector B_U = rc->Get("cons.B").data;
-    GridVector B_Save = rc->Get("B_Save").data;
     Real fx1min, fx1max, dx1, fx1min_ghost;
-    int n1tot;
-    if (pin->GetString("parthenon/job", "problem_id") == "resize_restart_kharma") {
-        fx1min = pmb->packages.Get("GRMHD")->Param<Real>("rx1min");
-        fx1max = pmb->packages.Get("GRMHD")->Param<Real>("rx1max");
-        n1tot = pmb->packages.Get("GRMHD")->Param<int>("rnx1");
-        dx1 = (fx1max - fx1min) / n1tot;
-        fx1min_ghost = fx1min - 4*dx1;
-    }
     auto fname_fill = pin->GetOrAddString("resize_restart", "fname_fill", "none");
     const bool should_fill = !(fname_fill == "none");
 
@@ -114,14 +105,10 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
         break;
     }
 
-    IndexDomain domain = IndexDomain::entire; //Hyerin: why interior?
+    IndexDomain domain = IndexDomain::interior;
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
-    //domain = IndexDomain::entire; // Hyerin: also do it everywhere if it is resize_restart_kharma
-    //int is_all = pmb->cellbounds.is(domain), ie_all = pmb->cellbounds.ie(domain);
-    //int js_all = pmb->cellbounds.js(domain), je_all = pmb->cellbounds.je(domain);
-    //int ks_all = pmb->cellbounds.ks(domain), ke_all = pmb->cellbounds.ke(domain);
     int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
     int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
     int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
@@ -288,99 +275,6 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
             }
         );
     }
-    if (pin->GetString("parthenon/job", "problem_id") == "resize_restart_kharma") {
-        // Hyerin (12/19/22) copy over data after initialization
-
-        pmb->par_for("copy_B_restart_resize_kharma", ks, ke, js, je, is, ie,
-            KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-                GReal X[GR_DIM];
-                G.coord(k, j, i, Loci::center, X);
-
-                if ((!should_fill) && (X[1]<fx1min)) {// if cannot be read from restart file
-                    // do nothing. just use the initialization from SeedBField
-                } else {
-                    // overwrite with the saved values
-                    VLOOP B_U(v, k, j, i) = B_Save(v, k, j, i);
-                }
-            }
-        );
-
-        /*
-        if (ndim > 2) {
-            printf("WARNING: 3D not supported for resize_restart_kharma!!\n");
-        } else{
-        // Hyerin (02/28/23) this needs testing!!
-        // getting A vector by solving vector Poisson eq \Del^2\vec{A}= - \Del \cross \vec{b}
-        GridVector B_interp("B_interp", NVEC, n3, n2, n1); // \vec{b} in rhs
-        int idx, ntot;
-        ntot=n3*n2*n1;
-        if (ndim > 2) ntot *= NVEC;
-        GReal coeffs[ntot][ntot], curl_B[ntot], inv_coeffs[ntot][ntot], A_out[ntot]; 
-        // curl_B : -\Del \cross \vec{b} in rhs
-        // coeffs : \Del^2 in lhs
-        
-        // initialize
-        for (int mu_ = 0; mu_ < ntot; mu_++) {
-            curl_B[mu_] = 0.;
-            A_out[ntot] = 0.;
-            for (int nu_ = 0; nu_ < ntot; nu_++) {
-                coeffs[mu_][nu_] = 0.;
-            }
-        }
-        pmb->par_for("poisson_eq", ks_all, ke_all, js_all, je_all, is_all, ie_all,
-            KOKKOS_LAMBDA_3D {
-                
-                idx=n1*(n2*k+j)+i;
-                B_interp(V3,k,j,i) = 0; //(B_U(2,k,j,i) + B_U(2,k-1,j,i))/2;
-
-                if (i==is_all || j==js_all || k== ks_all) { // think
-                    B_interp(V1,k,j,i) = 0.;
-                    B_interp(V2,k,j,i) = 0.;
-                    curl_B[idx] = 0.;
-                } else {
-                    B_interp(V1,k,j,i) = (B_U(V1,k,j,i) + B_U(V2,k,j,i-1))/2;
-                    B_interp(V2,k,j,i) = (B_U(V2,k,j,i) + B_U(V2,k,j-1,i))/2;
-                    if (ndim > 2) B_interp(V3,k,j,i) = (B_U(V3,k,j,i) + B_U(V3,k-1,j,i))/2;
-                    curl_B[idx] = -(B_interp(V2,k,j,i)-B_interp(V2,k,j,i-1))/G.dx1v(i) + (B_interp(V1,k,j,i)-B_interp(V1,k,j-1,i))/G.dx2v(j);
-                }
-
-                coeffs[idx,idx] = -2.*m::pow(G.dx1v(i),-2.)-2.*m::pow(G.dx2v(j),-2.);
-                coeffs[idx,idx-1] = m::pow(G.dx1v(i)) ;
-                coeffs[idx,idx+1] = m::pow(G.dx1v(i)) ;
-                coeffs[idx,idx-n2] = m::pow(G.dx2v(j)) ;
-                coeffs[idx,idx+n2] = m::pow(G.dx2v(j)) ;
-            }
-        );
-        invert(&coeffs[0][0], &inv_coeffs[0][0]); // TODO: make my own fxn to write up an inverse (numerical recipes in C)
-        // get A from B
-        for (int mu_ = 0; mu_ < ntot; mu_++) {
-            for (int nu_ = 0; nu_ < ntot; nu_++) {
-                A_out[mu] += inv_coeffs[mu_][nu_]*curl_B[nu_];
-            }
-        }
-
-        // store into GridVector
-        pmb->par_for("poisson_eq", ks_all, ke_all, js_all, je_all, is_all, ie_all, // think about ranges
-            KOKKOS_LAMBDA_3D {
-                idx=n1*(n2*k+j)+i;
-                A(V3, k, j, i) = A_out[idx];
-            }
-        );
-        
-        // put it back to B_U
-        pmb->par_for("poisson_eq", ks_all, ke_all, js_all, je_all, is_all, ie_all,
-            KOKKOS_LAMBDA_3D {
-                get_B_from_A_2D(G, A, B_U, k, j, i);
-            }
-        );
-               
-        
-        }
-        */
-    }
-
-    // Then make sure the primitive versions are updated, too
-    B_FluxCT::BlockUtoP(rc, IndexDomain::interior);
 
     return TaskStatus::complete;
 }

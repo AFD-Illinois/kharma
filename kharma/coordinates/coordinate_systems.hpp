@@ -76,6 +76,7 @@
  */
 class CartMinkowskiCoords {
     public:
+        static constexpr char name[] = "CartMinkowskiCoords";
         static constexpr bool spherical = false;
         static constexpr GReal a = 0.0;
         KOKKOS_INLINE_FUNCTION void gcov_embed(const GReal Xembed[GR_DIM], Real gcov[GR_DIM][GR_DIM]) const
@@ -89,6 +90,7 @@ class CartMinkowskiCoords {
  */
 class SphMinkowskiCoords {
     public:
+        static constexpr char name[] = "SphMinkowskiCoords";
         static constexpr bool spherical = true;
         static constexpr GReal a = 0.0;
         KOKKOS_INLINE_FUNCTION void gcov_embed(const GReal Xembed[GR_DIM], Real gcov[GR_DIM][GR_DIM]) const
@@ -110,6 +112,7 @@ class SphMinkowskiCoords {
  */
 class SphKSCoords {
     public:
+        static constexpr char name[] = "SphKSCoords";
         // BH Spin is a property of KS
         const GReal a;
         static constexpr bool spherical = true;
@@ -180,6 +183,7 @@ class SphKSCoords {
  */
 class SphKSExtG {
     public:
+        static constexpr char name[] = "SphKSExtG";
         // BH Spin is a property of KS
         const GReal a;
         static constexpr bool spherical = true;
@@ -263,6 +267,7 @@ class SphKSExtG {
  */
 class SphBLCoords {
     public:
+        static constexpr char name[] = "SphBLCoords";
         // BH Spin is a property of BL
         const GReal a;
         static constexpr bool spherical = true;
@@ -299,6 +304,7 @@ class SphBLCoords {
  */
 class SphBLExtG {
     public:
+        static constexpr char name[] = "SphBLExtG";
         // BH Spin is a property of BL
         const GReal a;
         static constexpr bool spherical = true;
@@ -344,6 +350,7 @@ class SphBLExtG {
  */
 class NullTransform {
     public:
+        static constexpr char name[] = "NullTransform";
         static constexpr GReal startx[3] = {-1, -1, -1};
         static constexpr GReal stopx[3] = {-1, -1, -1};
         // Coordinate transformations
@@ -373,6 +380,7 @@ class NullTransform {
  */
 class ExponentialTransform {
     public:
+        static constexpr char name[] = "ExponentialTransform";
         static constexpr GReal startx[3] = {-1, 0., 0.};
         static constexpr GReal stopx[3] = {-1, M_PI, 2*M_PI};
 
@@ -425,6 +433,7 @@ class ExponentialTransform {
  */
 class SuperExponentialTransform {
     public:
+        static constexpr char name[] = "SuperExponentialTransform";
         static constexpr GReal startx[3] = {-1, 0., 0.};
         static constexpr GReal stopx[3] = {-1, M_PI, 2*M_PI};
 
@@ -465,7 +474,7 @@ class SuperExponentialTransform {
             dxdX[0][0] = 1.;
             const GReal super_dist = Xnative[1] - xn1br;
             dxdX[1][1] = m::exp(Xnative[1] + (super_dist > 0) * cpow2 * m::pow(super_dist, npow2))
-                            * (1 + cpow2 * npow2 * m::pow(super_dist, npow2-1));
+                            * (1 + (super_dist > 0) * cpow2 * npow2 * m::pow(super_dist, npow2-1));
             dxdX[2][2] = 1.;
             dxdX[3][3] = 1.;
         }
@@ -478,7 +487,7 @@ class SuperExponentialTransform {
             dXdx[0][0] = 1.;
             const GReal super_dist = Xnative[1] - xn1br;
             dXdx[1][1] = 1 / (m::exp(Xnative[1] + (super_dist > 0) * cpow2 * m::pow(super_dist, npow2))
-                              * (1 + cpow2 * npow2 * m::pow(super_dist, npow2-1)));
+                              * (1 + (super_dist > 0) * cpow2 * npow2 * m::pow(super_dist, npow2-1)));
             dXdx[2][2] = 1.;
             dXdx[3][3] = 1.;
         }
@@ -490,6 +499,7 @@ class SuperExponentialTransform {
  */
 class ModifyTransform {
     public:
+        static constexpr char name[] = "ModifyTransform";
         static constexpr GReal startx[3] = {-1, 0., 0.};
         static constexpr GReal stopx[3] = {-1, 1., 2*M_PI};
 
@@ -549,6 +559,7 @@ class ModifyTransform {
  */
 class FunkyTransform {
     public:
+        static constexpr char name[] = "FunkyTransform";
         static constexpr GReal startx[3] = {-1, 0., 0.};
         static constexpr GReal stopx[3] = {-1, 1., 2*M_PI};
 

@@ -36,7 +36,7 @@ cfl = 0.9
 gamma = 1.666667
 
 <driver>
-type = kharma
+type = imex
 two_sync = true
 reconstruction = weno5
 

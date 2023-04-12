@@ -39,29 +39,11 @@
 #include "decs.hpp"
 #include "grmhd.hpp"
 #include "kharma.hpp"
-#include "reductions.hpp"
 
 using namespace parthenon;
 
 namespace B_FluxCT
 {
-
-// Reductions: phi uses global machinery, but divB is too 
-// Can also sum the hemispheres independently to be fancy (TODO?)
-KOKKOS_INLINE_FUNCTION Real phi(REDUCE_FUNCTION_ARGS_EH)
-{
-    // \Phi == \int |*F^1^0| * gdet * dx2 * dx3 == \int |B1| * gdet * dx2 * dx3
-    return 0.5 * m::abs(U(m_u.B1, k, j, i)); // factor of gdet already in cons.B
-}
-
-Real ReducePhi0(MeshData<Real> *md)
-{
-    return Reductions::EHReduction(md, UserHistoryOperation::sum, phi, 0);
-}
-Real ReducePhi5(MeshData<Real> *md)
-{
-    return Reductions::EHReduction(md, UserHistoryOperation::sum, phi, 5);
-}
 
 std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages)
 {
@@ -92,6 +74,11 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     // and allow a field divergence to grow unchecked, usually for debugging or comparison reasons
     bool disable_flux_ct = pin->GetOrAddBoolean("b_field", "disable_flux_ct", false);
     params.Add("disable_flux_ct", disable_flux_ct);
+
+    bool kill_on_large_divb = pin->GetOrAddBoolean("b_field", "kill_on_large_divb", true);
+    params.Add("kill_on_large_divb", kill_on_large_divb);
+    Real kill_on_divb_over = pin->GetOrAddReal("b_field", "kill_on_divb_over", 1.e-3);
+    params.Add("kill_on_divb_over", kill_on_divb_over);
 
     // Driver type & implicit marker
     // By default, solve B explicitly
@@ -128,12 +115,6 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     pkg->AddField("prims.B", m);
     m = Metadata(flags_cons, s_vector);
     pkg->AddField("cons.B", m);
-
-    // Hyerin (12/19/22)
-    if (pin->GetString("parthenon/job", "problem_id") == "resize_restart_kharma") {
-        m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::FillGhost, Metadata::Vector});
-        pkg->AddField("B_Save", m);
-    }
 
     // We exist basically to do this
     pkg->FixFlux = B_FluxCT::FixFlux;
@@ -706,7 +687,7 @@ double GlobalMaxDivB(MeshData<Real> *md)
     return max_divb.val;
 }
 
-TaskStatus PrintGlobalMaxDivB(MeshData<Real> *md)
+TaskStatus PrintGlobalMaxDivB(MeshData<Real> *md, bool kill_on_large_divb)
 {
     Flag(md, "Printing B field diagnostics");
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
@@ -718,8 +699,12 @@ TaskStatus PrintGlobalMaxDivB(MeshData<Real> *md)
         // Calculate the maximum from/on all nodes
         const double divb_max = B_FluxCT::GlobalMaxDivB(md);
         // Print on rank zero
-        if(MPIRank0()) {
+        if (MPIRank0()) {
             std::cout << "Max DivB: " << divb_max << std::endl;
+        }
+        if (kill_on_large_divb) {
+            if (divb_max > pmb0->packages.Get("B_FluxCT")->Param<Real>("kill_on_divb_over"))
+                throw std::runtime_error("DivB exceeds maximum! Quitting...");
         }
     }
 

@@ -104,7 +104,8 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, std::shared_ptr<MeshData<Rea
 {
     // Check which solver we'll be using
     auto pmesh = md->GetMeshPointer();
-    const bool use_b_flux_ct = pmesh->packages.AllPackages().count("B_FluxCT");
+    const bool use_b_flux_ct = pmesh->packages.AllPackages().count("B_FluxCT")
+                                || pmesh->packages.AllPackages().count("B_Cleanup");
     const bool use_b_cd = pmesh->packages.AllPackages().count("B_CD");
     const int verbose = pmesh->packages.Get("Globals")->Param<int>("verbose");
 
@@ -177,32 +178,30 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, std::shared_ptr<MeshData<Rea
                     KHARMADriver::Scale(std::vector<std::string>{"prims.B"}, rc.get(), norm);
                 }
             }
-        }
 
-        if (verbose > 0) {
             // Measure again to check. We'll add divB too, later
-            Real bsq_min, bsq_max, p_max, beta_min;
-            if (beta_calc_legacy) {
-                bsq_max = MPIReduce_once(MaxBsq(md.get()), MPI_MAX);
-                p_max = MPIReduce_once(MaxPressure(md.get()), MPI_MAX);
-                beta_min = p_max / (0.5 * bsq_max);
-            } else {
-                beta_min = MPIReduce_once(MinBeta(md.get()), MPI_MIN);
-            }
-            if (MPIRank0()) {
+            if (verbose > 0) {
+                Real bsq_min, bsq_max, p_max, beta_min;
                 if (beta_calc_legacy) {
-                    std::cout << "B^2 max pre-norm: " << bsq_max << std::endl;
-                    std::cout << "Pressure max pre-norm: " << p_max << std::endl;
+                    bsq_max = MPIReduce_once(MaxBsq(md.get()), MPI_MAX);
+                    p_max = MPIReduce_once(MaxPressure(md.get()), MPI_MAX);
+                    beta_min = p_max / (0.5 * bsq_max);
+                } else {
+                    beta_min = MPIReduce_once(MinBeta(md.get()), MPI_MIN);
                 }
-                std::cout << "Beta min pre-norm: " << beta_min << std::endl;
+                if (MPIRank0()) {
+                    if (beta_calc_legacy) {
+                        std::cout << "B^2 max post-norm: " << bsq_max << std::endl;
+                        std::cout << "Pressure max post-norm: " << p_max << std::endl;
+                    }
+                    std::cout << "Beta min post-norm: " << beta_min << std::endl;
+                }
             }
         }
     }
 
     // We've been initializing/manipulating P
-    Flux::MeshPtoU(md.get(), IndexDomain::entire);
-    // Synchronize after
-    KHARMADriver::SyncAllBounds(md);
+    Flux::MeshPtoU(md.get(), IndexDomain::interior);
 
     Flag("Added B Field");
 }
@@ -228,19 +227,20 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart)
 
     auto& pkgs = pmesh->packages.AllPackages();
 
-    // First, make sure any data from the per-block init is synchronized
-    Flag("Initial boundary sync");
-    KHARMADriver::SyncAllBounds(md);
-
     // Then, add/modify any magnetic field left until this step
     // (since B field initialization can depend on global maxima,
     // & is handled by the B field transport package, it's sometimes done here)
     if (!is_restart) {
+        // B field init is not stencil-1, needs boundaries sync'd
+        KHARMADriver::SyncAllBounds(md);
+        // Then init B field on each block
         KHARMA::SeedAndNormalizeB(pin, md);
     }
 
     // Print divB
     if (pin->GetString("b_field", "solver") != "none") {
+        // Another sync to update B fields
+        KHARMA::SeedAndNormalizeB(pin, md);
         // If a B field exists, print divB here
         if (pkgs.count("B_FluxCT")) {
             B_FluxCT::PrintGlobalMaxDivB(md.get());
@@ -257,7 +257,6 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart)
             // This inserts only in vicinity of some global r,th,phi
             InsertBlob(rc.get(), pin);
         }
-        KHARMADriver::SyncAllBounds(md);
     }
 
     // Any extra cleanup & init especially when restarting
@@ -267,18 +266,27 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart)
         KHARMA::ResetGlobals(pin, pmesh);
     }
 
-    KHARMADriver::SyncAllBounds(md);
-
-    auto tm = SimTime(0., 0., 0, 0, 0, 0, 0.);
-    auto pouts = std::make_unique<Outputs>(pmesh, pin, &tm);
-    pouts->MakeOutputs(pmesh, pin, &tm, SignalHandler::OutputSignal::now);
-
     // Clean the B field if we've introduced a divergence somewhere
     // Call this any time the package is loaded, all the
     // logic about parsing whether to clean is there
     if (pkgs.count("B_Cleanup")) {
+        if (pin->GetOrAddBoolean("b_cleanup", "output_before_cleanup", false)) {
+            auto tm = SimTime(0., 0., 0, 0, 0, 0, 0.);
+            auto pouts = std::make_unique<Outputs>(pmesh, pin, &tm);
+            pouts->MakeOutputs(pmesh, pin, &tm, SignalHandler::OutputSignal::now);
+        }
+
         B_Cleanup::CleanupDivergence(md);
+
+        B_Cleanup::RemoveExtraFields(pmesh->block_list);
     }
+
+    // Finally, synchronize boundary values.
+    // This should be the first sync if there is no B field
+    KHARMADriver::SyncAllBounds(md);
+    // And make sure the (trivial) primitive values are up-to-date
+    Packages::MeshUtoPExceptMHD(md.get(), IndexDomain::entire, false);
+
 
     Flag("Post-initialization finished");
 }

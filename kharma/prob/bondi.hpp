@@ -109,3 +109,26 @@ KOKKOS_INLINE_FUNCTION Real get_T(const GReal r, const Real C1, const Real C2, c
 
     return Th;
 }
+
+KOKKOS_INLINE_FUNCTION void get_bondi_soln(const Real &r, const Real &rs, const Real &mdot, const Real &gam,
+                                            Real &rho, Real &u, Real &ur)
+{
+    // Solution constants
+    // These don't depend on which zone we're calculating
+    const Real n = 1. / (gam - 1.);
+    const Real uc = m::sqrt(1. / (2. * rs));
+    const Real Vc = m::sqrt(uc * uc / (1. - 3. * uc * uc));
+    const Real Tc = -n * Vc * Vc / ((n + 1.) * (n * Vc * Vc - 1.));
+    const Real C1 = uc * rs * rs * m::pow(Tc, n);
+    const Real A = 1. + (1. + n) * Tc;
+    const Real C2 = A * A * (1. - 2. / rs + uc * uc);
+    const Real K  = m::pow(4 * M_PI * C1 / mdot, 1/n);
+    const Real Kn = m::pow(K, n);
+
+    const Real T = get_T(r, C1, C2, n, rs);
+    const Real Tn = m::pow(T, n);
+
+    rho = Tn / Kn;
+    u = rho * T * n;
+    ur = -C1 / (Tn * r * r);
+}

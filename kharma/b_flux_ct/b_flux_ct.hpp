@@ -35,6 +35,7 @@
 
 #include "decs.hpp"
 #include "grmhd_functions.hpp"
+#include "reductions.hpp"
 #include "types.hpp"
 
 #include <memory>
@@ -103,9 +104,16 @@ double GlobalMaxDivB(MeshData<Real> *md);
  * Diagnostics printed/computed after each step
  * Currently just max divB
  */
-TaskStatus PrintGlobalMaxDivB(MeshData<Real> *md);
+TaskStatus PrintGlobalMaxDivB(MeshData<Real> *md, bool kill_on_large_divb=false);
+
+/**
+ * Diagnostics function should print divB, and optionally stop execution if it's large
+ */
 inline TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
-    { return PrintGlobalMaxDivB(md); }
+{
+    auto& params = md->GetMeshPointer()->block_list[0]->packages.Get("B_FluxCT")->AllParams();
+    return PrintGlobalMaxDivB(md, params.Get<bool>("kill_on_large_divb"));
+}
 
 /**
  * Fill fields which are calculated only for output to file, i.e., divB
@@ -200,6 +208,23 @@ KOKKOS_INLINE_FUNCTION void center_grad(const GRCoordinates& G, const Global& P,
     B1 = norm*term1/G.Dxc<1>(i);
     B2 = norm*term2/G.Dxc<2>(j);
     B3 = norm*term3/G.Dxc<3>(k);
+}
+
+// Reductions: phi uses global machinery, but divB is too 
+// Can also sum the hemispheres independently to be fancy (TODO?)
+KOKKOS_INLINE_FUNCTION Real phi(REDUCE_FUNCTION_ARGS_EH)
+{
+    // \Phi == \int |*F^1^0| * gdet * dx2 * dx3 == \int |B1| * gdet * dx2 * dx3
+    return 0.5 * m::abs(U(m_u.B1, k, j, i)); // factor of gdet already in cons.B
+}
+
+inline Real ReducePhi0(MeshData<Real> *md)
+{
+    return Reductions::EHReduction(md, UserHistoryOperation::sum, phi, 0);
+}
+inline Real ReducePhi5(MeshData<Real> *md)
+{
+    return Reductions::EHReduction(md, UserHistoryOperation::sum, phi, 5);
 }
 
 }

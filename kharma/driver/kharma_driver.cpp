@@ -55,15 +55,17 @@ std::shared_ptr<KHARMAPackage> KHARMADriver::Initialize(ParameterInput *pin, std
 
     // Driver options
     // The two current drivers are "kharma" or "imex", with the former being the usual KHARMA
-    // driver, and the latter supporting implicit stepping of some or all variables
-    // Mostly, packages should react to the "sync_prims" option and any option they 
+    // driver (formerly HARM driver), and the latter supporting implicit stepping of some or all variables
+    // Mostly, packages should react to e.g. the "sync_prims" option rather than the driver name
     bool do_emhd = pin->GetOrAddBoolean("emhd", "on", false);
     std::string driver_type = pin->GetOrAddString("driver", "type", (do_emhd) ? "imex" : "kharma");
+    if (driver_type == "harm") driver_type = "kharma"; // TODO enum rather than strings?
     params.Add("type", driver_type);
 
     // Record whether we marked the prims or cons as "FillGhost." This also translates to whether we consider
     // primitive or conserved state to be the ground truth when updating values in a step.
-    bool sync_prims = !(driver_type == "kharma" || driver_type == "harm");
+    // Currently "imex" and "simple" drivers both sync primitive vars
+    bool sync_prims = !(driver_type == "kharma");
     params.Add("sync_prims", sync_prims);
 
     // Synchronize boundary variables twice. Ensures KHARMA is agnostic to the breakdown
@@ -112,16 +114,6 @@ void KHARMADriver::AddFullSyncRegion(Mesh* pmesh, TaskCollection& tc, int stage)
 {
     const TaskID t_none(0);
 
-    // MPI boundary exchange, done over MeshData objects/partitions at once
-    const int num_partitions = pmesh->DefaultNumPartitions(); // Usually 1
-    TaskRegion &bound_sync = tc.AddRegion(num_partitions);
-    for (int i = 0; i < num_partitions; i++) {
-        auto &tl = bound_sync[i];
-        // This is a member function of KHARMADriver, so it inherits 'integrator'
-        auto &mbd_sub_step_final = pmesh->mesh_data.GetOrAdd(integrator->stage_name[stage], i);
-        AddMPIBoundarySync(t_none, tl, mbd_sub_step_final);
-    }
-
     // Parthenon's call for bounds is MeshBlock, it sucks
     int nblocks = pmesh->block_list.size();
     TaskRegion &async_region2 = tc.AddRegion(nblocks);
@@ -132,35 +124,65 @@ void KHARMADriver::AddFullSyncRegion(Mesh* pmesh, TaskCollection& tc, int stage)
         tl.AddTask(t_none, parthenon::ApplyBoundaryConditions, mbd_sub_step_final);
     }
 
+    // MPI boundary exchange, done over MeshData objects/partitions at once
+    const int num_partitions = pmesh->DefaultNumPartitions(); // Usually 1
+    TaskRegion &bound_sync = tc.AddRegion(num_partitions);
+    for (int i = 0; i < num_partitions; i++) {
+        auto &tl = bound_sync[i];
+        // This is a member function of KHARMADriver, so it inherits 'integrator'
+        auto &mbd_sub_step_final = pmesh->mesh_data.GetOrAdd(integrator->stage_name[stage], i);
+        AddMPIBoundarySync(t_none, tl, mbd_sub_step_final);
+    }
 }
 
-TaskID KHARMADriver::AddMPIBoundarySync(TaskID t_start, TaskList &tl, std::shared_ptr<MeshData<Real>> mc1)
+TaskID KHARMADriver::AddMPIBoundarySync(const TaskID t_start, TaskList &tl, std::shared_ptr<MeshData<Real>> mc1)
 {
-    // Readability
-    using parthenon::cell_centered_bvars::SendBoundBufs;
-    using parthenon::cell_centered_bvars::ReceiveBoundBufs;
-    using parthenon::cell_centered_bvars::SetBounds;
-    constexpr auto local = parthenon::BoundaryType::local;
-    constexpr auto nonlocal = parthenon::BoundaryType::nonlocal;
-    // Send all, receive/set local after sending
-    auto send =
-        tl.AddTask(t_start, parthenon::cell_centered_bvars::SendBoundBufs<nonlocal>, mc1);
+    auto t_start_sync = t_start;
 
-    auto t_send_local =
-        tl.AddTask(t_start, parthenon::cell_centered_bvars::SendBoundBufs<local>, mc1);
-    auto t_recv_local =
-        tl.AddTask(t_start, parthenon::cell_centered_bvars::ReceiveBoundBufs<local>, mc1);
-    auto t_set_local =
-        tl.AddTask(t_recv_local, parthenon::cell_centered_bvars::SetBounds<local>, mc1);
+    if (0) { //(mc1->GetMeshPointer()->packages.Get("Driver")->Param<bool>("sync_prims")) {
+        TaskID t_all_ptou[mc1->NumBlocks() * BOUNDARY_NFACES];
+        TaskID t_ptou_final(0);
+        int i_task = 0;
+        for (int i_block = 0; i_block < mc1->NumBlocks(); i_block++) {
+            auto &rc = mc1->GetBlockData(i_block);
+            for (int i_bnd = 0; i_bnd < BOUNDARY_NFACES; i_bnd++) {
+                if (rc->GetBlockPointer()->boundary_flag[i_bnd] == BoundaryFlag::block ||
+                    rc->GetBlockPointer()->boundary_flag[i_bnd] == BoundaryFlag::periodic) {
+                    t_all_ptou[i_task] = tl.AddTask(t_start, Flux::BlockPtoU_Send, rc.get(), BoundaryDomain((BoundaryFace) i_bnd), false);
+                    t_ptou_final = t_ptou_final | t_all_ptou[i_task];
+                    i_task++;
+                }
+            }
+        }
+        t_start_sync = t_ptou_final;
+    }
 
-    // Receive/set nonlocal
-    auto t_recv = tl.AddTask(
-        t_start, parthenon::cell_centered_bvars::ReceiveBoundBufs<nonlocal>, mc1);
-    auto t_set = tl.AddTask(t_recv, parthenon::cell_centered_bvars::SetBounds<nonlocal>, mc1);
+    auto t_sync_done = parthenon::cell_centered_bvars::AddBoundaryExchangeTasks(t_start_sync, tl, mc1, mc1->GetMeshPointer()->multilevel);
+    auto t_bounds = t_sync_done;
 
-    // TODO add AMR prolongate/restrict here (and/or maybe option not to?)
+    // TODO(BSP) careful about how AMR interacts with below
+    Kokkos::fence();
 
-    return t_set | t_set_local;
+    // If we're "syncing primitive variables" but just exchanged cons.B, we need to recover the prims
+    if (mc1->GetMeshPointer()->packages.Get("Driver")->Param<bool>("sync_prims")) {
+        TaskID t_all_utop[mc1->NumBlocks() * BOUNDARY_NFACES];
+        TaskID t_utop_final(0);
+        int i_task = 0;
+        for (int i_block = 0; i_block < mc1->NumBlocks(); i_block++) {
+            auto &rc = mc1->GetBlockData(i_block);
+            for (int i_bnd = 0; i_bnd < BOUNDARY_NFACES; i_bnd++) {
+                if (rc->GetBlockPointer()->boundary_flag[i_bnd] == BoundaryFlag::block ||
+                    rc->GetBlockPointer()->boundary_flag[i_bnd] == BoundaryFlag::periodic) {
+                    t_all_utop[i_task] = tl.AddTask(t_sync_done, Packages::BlockUtoPExceptMHD, rc.get(), BoundaryDomain((BoundaryFace) i_bnd), false);
+                    t_utop_final = t_utop_final | t_all_utop[i_task];
+                    i_task++;
+                }
+            }
+        }
+        t_bounds = t_utop_final;
+    }
+
+    return t_bounds;
 }
 
 void KHARMADriver::SyncAllBounds(std::shared_ptr<MeshData<Real>> md, bool apply_domain_bounds)
@@ -168,68 +190,24 @@ void KHARMADriver::SyncAllBounds(std::shared_ptr<MeshData<Real>> md, bool apply_
     Flag("Syncing all bounds");
     TaskID t_none(0);
 
-    // If we're using the ImEx driver, where primitives are fundamental, AddMPIBoundarySync()
-    // will only sync those, and we can call PtoU over everything after.
-    // If "AddMPIBoundarySync" means syncing conserved variables, we have to call PtoU *before*
-    // the MPI sync operation, then recover the primitive vars *again* afterward.
-    auto pmesh = md->GetMeshPointer();
-    bool sync_prims = pmesh->packages.Get("Driver")->Param<bool>("sync_prims");
+    // 1. PtoU on the interior to ensure we're up-to-date
+    Flux::MeshPtoU(md.get(), IndexDomain::interior, false);
 
-    // TODO clean this up when ApplyBoundaryConditions gets a MeshData version
-    auto &block_list = pmesh->block_list;
+    // 2. Sync MPI bounds
+    // This call syncs the primitive variables when using the ImEx driver, and cons
+    //
+    TaskCollection tc;
+    auto tr = tc.AddRegion(1);
+    AddMPIBoundarySync(t_none, tr[0], md);
+    while (!tr.Execute());
 
-    if (sync_prims) {
-        // If we're syncing the primitive vars, we just sync once
-        TaskCollection tc;
-        auto tr = tc.AddRegion(1);
-        AddMPIBoundarySync(t_none, tr[0], md);
-        while (!tr.Execute());
-
-        // Then PtoU
-        for (auto &pmb : block_list) {
+    if (apply_domain_bounds) {
+        // 3. Apply physical bounds block-by-block
+        // TODO clean this up when ApplyBoundaryConditions gets a MeshData version
+        for (auto &pmb : md->GetMeshPointer()->block_list) {
             auto& rc = pmb->meshblock_data.Get();
-
-            if (apply_domain_bounds) {
-                Flag("Block physical bounds");
-                // Physical boundary conditions
-                parthenon::ApplyBoundaryConditions(rc);
-            }
-
-            Flag("Block fill Conserved");
-            Flux::BlockPtoU(rc.get(), IndexDomain::entire, false);
-        }
-    } else {
-        // If we're syncing the conserved vars...
-        // Honestly, the easiest way through this sync is:
-        // 1. PtoU everywhere
-        for (auto &pmb : block_list) {
-            auto& rc = pmb->meshblock_data.Get();
-            Flag("Block fill conserved");
-            Flux::BlockPtoU(rc.get(), IndexDomain::entire, false);
-        }
-
-        // 2. Sync MPI bounds like a normal step
-        TaskCollection tc;
-        auto tr = tc.AddRegion(1);
-        AddMPIBoundarySync(t_none, tr[0], md);
-        while (!tr.Execute());
-
-        // 3. UtoP everywhere
-        for (auto &pmb : block_list) {
-            auto& rc = pmb->meshblock_data.Get();
-
-            Flag("Block fill Derived");
-            // Fill P again, including ghost zones
-            // But, sice we sync'd GRHD primitives already,
-            // leave those off
-            // (like we do in a normal boundary sync)
-            Packages::BlockUtoPExceptMHD(rc.get(), IndexDomain::entire);
-
-            if (apply_domain_bounds) {
-                Flag("Block physical bounds");
-                // Physical boundary conditions
-                parthenon::ApplyBoundaryConditions(rc);
-            }
+            // Physical boundary conditions
+            parthenon::ApplyBoundaryConditions(rc);
         }
     }
 
@@ -267,8 +245,8 @@ TaskID KHARMADriver::AddFluxCalculations(TaskID& t_start, TaskList& tl, KReconst
     case RType::ppm:
     case RType::mp5:
     case RType::weno5_lower_poles:
-        std::cerr << "Reconstruction type not supported!  Supported reconstructions:" << std::endl;
-        std::cerr << "donor_cell, linear_mc, linear_vl, weno5" << std::endl;
+        std::cerr << "Reconstruction type not supported!  Supported reconstructions:" << std::endl
+                  << "donor_cell, linear_mc, linear_vl, weno5" << std::endl;
         throw std::invalid_argument("Unsupported reconstruction algorithm!");
     }
     return t_calculate_flux1 | t_calculate_flux2 | t_calculate_flux3;

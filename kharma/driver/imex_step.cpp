@@ -71,6 +71,12 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
     const bool use_jcon = pkgs.count("Current");
     const bool use_linesearch = (use_implicit) ? pkgs.at("Implicit")->Param<bool>("linesearch") : false;
 
+    // If we cleaned up, this added other fields marked FillDerived
+    // Remove them before we allocate the space
+    if (use_b_cleanup) {
+        B_Cleanup::RemoveExtraFields(blocks);
+    }
+
     // Allocate the fluid states ("containers") we need for each block
     for (auto& pmb : blocks) {
         // first make other useful containers
@@ -97,8 +103,6 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
             }
         }
     }
-
-    //auto t_heating_test = tl.AddTask(t_none, Electrons::ApplyHeating, base.get());
 
     // Big synchronous region: get & apply fluxes to advance the fluid state
     // num_partitions is nearly always 1
@@ -177,8 +181,8 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
         // If evolving GRMHD explicitly, UtoP needs a guess in order to converge, so we copy in md_sub_step_init
         auto t_copy_prims = t_none;
         if (!pkgs.at("GRMHD")->Param<bool>("implicit")) {
-            t_copy_prims        = tl.AddTask(t_none, Copy, std::vector<MetadataFlag>({Metadata::GetUserFlag("HD"), Metadata::GetUserFlag("Primitive")}),
-                                             md_sub_step_init.get(), md_solver.get());
+            t_copy_prims = tl.AddTask(t_none, Copy, std::vector<MetadataFlag>({Metadata::GetUserFlag("HD"), Metadata::GetUserFlag("Primitive")}),
+                                      md_sub_step_init.get(), md_solver.get());
         }
 
         // Make sure the primitive values of *explicitly-evolved* variables are updated.
@@ -276,6 +280,17 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
                 auto tag_refine = tl.AddTask(
                     t_step_done, parthenon::Refinement::Tag<MeshBlockData<Real>>, mbd_sub_step_final.get());
             }
+        }
+    }
+
+    // B Field cleanup: this is a separate solve so it's split out
+    // It's also really slow when enabled so we don't care too much about limiting regions, etc.
+    if (use_b_cleanup && B_Cleanup::CleanupThisStep(pmesh, tm.ncycle)) {
+        TaskRegion &cleanup_region = tc.AddRegion(num_partitions);
+        for (int i = 0; i < num_partitions; i++) {
+            auto &tl = cleanup_region[i];
+            auto &md_sub_step_final = pmesh->mesh_data.GetOrAdd(integrator->stage_name[stage], i);
+            tl.AddTask(t_none, B_Cleanup::CleanupDivergence, md_sub_step_final);
         }
     }
 

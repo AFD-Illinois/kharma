@@ -68,6 +68,9 @@ std::shared_ptr<KHARMAPackage> B_Cleanup::Initialize(ParameterInput *pin, std::s
     auto pkg = std::make_shared<KHARMAPackage>("B_Cleanup");
     Params &params = pkg->AllParams();
 
+    // The solver needs this flag
+    Metadata::AddUserFlag("B_Cleanup");
+
     // Solver options
     // Allow setting tolerance relative to starting value.  Off by default
     Real rel_tolerance = pin->GetOrAddReal("b_cleanup", "rel_tolerance", 1.);
@@ -101,7 +104,7 @@ std::shared_ptr<KHARMAPackage> B_Cleanup::Initialize(ParameterInput *pin, std::s
     // RHS.  Must not just be "divB" as that field does not sync boundaries
     pkg->AddParam<std::string>("rhs_name", "divB_RHS");
     // Construct a solver. We don't need the template parameter, so we use 'int'
-    BiCGStabSolver<int> solver(pkg.get(), rel_tolerance, SparseMatrixAccessor());
+    BiCGStabSolver<int> solver(pkg.get(), rel_tolerance, SparseMatrixAccessor(), {}, {Metadata::GetUserFlag("B_Cleanup")});
     // Set callback
     solver.user_MatVec = B_Cleanup::CornerLaplacian;
 
@@ -109,37 +112,90 @@ std::shared_ptr<KHARMAPackage> B_Cleanup::Initialize(ParameterInput *pin, std::s
 
     // FIELDS
     std::vector<int> s_vector({NVEC});
-    Metadata m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::FillGhost});
-    // Scalar potential, solution to div^2 p = div B
-    pkg->AddField("p", m);
+    std::vector<MetadataFlag> cleanup_flags({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy, Metadata::GetUserFlag("B_Cleanup")});
+    auto cleanup_flags_ghost = cleanup_flags;
+    cleanup_flags_ghost.push_back(Metadata::FillGhost);
+    // Scalar potential, solution to del^2 p = div B
+    pkg->AddField("p", Metadata(cleanup_flags_ghost));
     // Gradient of potential; temporary for gradient calc
-    m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy}, s_vector);
-    pkg->AddField("dB", m);
+    pkg->AddField("dB", Metadata(cleanup_flags, s_vector));
     // Field divergence as RHS, i.e. including boundary sync
-    m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy, Metadata::FillGhost});
-    pkg->AddField("divB_RHS", m);
+    pkg->AddField("divB_RHS", Metadata(cleanup_flags_ghost));
 
 
     // Optionally take care of B field transport ourselves.  Inadvisable.
     // We've already set a default, so only do this if we're *explicitly* asked
-    // TODO there's a long list of stuff to enable this if someone really wants it
     bool manage_field = pin->GetString("b_field", "solver") == "b_cleanup";
     params.Add("manage_field", manage_field);
+    // Set an interval to clean during the run *can be run in addition to a normal solver*!
+    // You might want to do this if, e.g., you care about divergence on faces with outflow/constant conditions
     int cleanup_interval = pin->GetOrAddInteger("b_cleanup", "cleanup_interval", manage_field ? 10 : -1);
     params.Add("cleanup_interval", cleanup_interval);
 
     // Declare fields if we're doing that
     if (manage_field) {
-        throw std::runtime_error("B Cleanup package as transport not implemented!");
+        // Stolen verbatim from FluxCT, except we don't register the FixFlux step obvs
+        // TODO preserve an easier form of divB in this case?
+
+        // Mark if we're evolving implicitly
+        bool implicit_b = pin->GetOrAddBoolean("b_field", "implicit", false);
+        params.Add("implicit", implicit_b);
+        MetadataFlag areWeImplicit = (implicit_b) ? Metadata::GetUserFlag("Implicit")
+                                                    : Metadata::GetUserFlag("Explicit");
+
+        // Flags for B fields.  "Primitive" form is field, "conserved" is flux
+        std::vector<MetadataFlag> flags_prim = {Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::GetUserFlag("Primitive"),
+                                                Metadata::Restart, Metadata::GetUserFlag("MHD"), areWeImplicit, Metadata::Vector};
+        std::vector<MetadataFlag> flags_cons = {Metadata::Real, Metadata::Cell, Metadata::Independent, Metadata::Conserved,
+                                                Metadata::WithFluxes, Metadata::FillGhost, Metadata::GetUserFlag("MHD"), areWeImplicit, Metadata::Vector};
+
+        auto m = Metadata(flags_prim, s_vector);
+        pkg->AddField("prims.B", m);
+        m = Metadata(flags_cons, s_vector);
+        pkg->AddField("cons.B", m);
+
+        // Also ensure that prims get filled, *if* we're evolved explicitly
+        if (!implicit_b) {
+            pkg->MeshUtoP = B_FluxCT::MeshUtoP;
+            pkg->BlockUtoP = B_FluxCT::BlockUtoP;
+        }
+
+        // Register the other callbacks
+        pkg->PostStepDiagnosticsMesh = B_FluxCT::PostStepDiagnostics;
+
+        // The definition of MaxDivB we care about actually changes per-transport,
+        // so calculating it is handled by the transport package
+        // We'd only ever need to declare or calculate divB for output (getting the max is independent)
+        if (KHARMA::FieldIsOutput(pin, "divB")) {
+            pkg->BlockUserWorkBeforeOutput = B_FluxCT::FillOutput;
+            m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
+            pkg->AddField("divB", m);
+        }
+
+        // List (vector) of HistoryOutputVars that will all be enrolled as output variables
+        parthenon::HstVar_list hst_vars = {};
+        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::max, B_FluxCT::MaxDivB, "MaxDivB"));
+        // Event horizon magnetization.  Might be the same or different for different representations?
+        if (pin->GetBoolean("coordinates", "spherical")) {
+            hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, B_FluxCT::ReducePhi0, "Phi_0"));
+            hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, B_FluxCT::ReducePhi5, "Phi_EH"));
+        }
+        // add callbacks for HST output to the Params struct, identified by the `hist_param_key`
+        pkg->AddParam<>(parthenon::hist_param_key, hst_vars);
     }
 
     return pkg;
 }
 
-void B_Cleanup::CleanupDivergence(std::shared_ptr<MeshData<Real>>& md)
+bool B_Cleanup::CleanupThisStep(Mesh* pmesh, int nstep)
 {
-    Flag(md, "Cleaning up divB");
+    auto pkg = pmesh->packages.Get("B_Cleanup");
+    return (pkg->Param<int>("cleanup_interval") > 0) && (nstep % pkg->Param<int>("cleanup_interval") == 0);
+}
 
+// TODO(BSP) Make this add to a TaskCollection rather than operating synchronously
+TaskStatus B_Cleanup::CleanupDivergence(std::shared_ptr<MeshData<Real>>& md)
+{
     auto pmesh = md->GetMeshPointer();
     auto pkg = pmesh->packages.Get("B_Cleanup");
     auto max_iters = pkg->Param<int>("max_iterations");
@@ -164,7 +220,7 @@ void B_Cleanup::CleanupDivergence(std::shared_ptr<MeshData<Real>>& md)
         // If divB is "pretty good" and we allow not solving...
         if (MPIRank0())
             std::cout << "Magnetic field divergence of " << divb_start << " is below tolerance. Skipping B field cleanup." << std::endl;
-        return;
+        return TaskStatus::complete;
     } else {
         if(MPIRank0())
             std::cout << "Starting magnetic field divergence: " << divb_start << std::endl;
@@ -173,6 +229,7 @@ void B_Cleanup::CleanupDivergence(std::shared_ptr<MeshData<Real>>& md)
     // Initialize the divB variable, which we'll be solving against.
     // This gets signed divB on all physical corners (total (N+1)^3)
     // and syncs ghost zones
+    KHARMADriver::SyncAllBounds(md);
     B_FluxCT::CalcDivB(md.get(), "divB_RHS");
     KHARMADriver::SyncAllBounds(md);
 
@@ -208,11 +265,14 @@ void B_Cleanup::CleanupDivergence(std::shared_ptr<MeshData<Real>>& md)
     if (MPIRank0() && verbose > 0) {
         std::cout << "Applying magnetic field correction" << std::endl;
     }
-    // Update the magnetic field on physical zones using our solution
+    // Update the (conserved) magnetic field on physical zones using our solution
     B_Cleanup::ApplyP(msolve.get(), md.get());
 
     // Synchronize to update ghost zones
     KHARMADriver::SyncAllBounds(md);
+
+    // Make sure all primitive vars reflect the solution
+    Packages::MeshUtoPExceptMHD(md.get(), IndexDomain::entire, false);
 
     // Recalculate divB max for one last check
     const double divb_end = B_FluxCT::GlobalMaxDivB(md.get());
@@ -220,10 +280,9 @@ void B_Cleanup::CleanupDivergence(std::shared_ptr<MeshData<Real>>& md)
         std::cout << "Magnetic field divergence after cleanup: " << divb_end << std::endl;
     }
 
-    Flag(md, "Cleaned");
+    return TaskStatus::complete;
 }
 
-// TODO TODO NEEDED? Can we remove the package instead?
 TaskStatus B_Cleanup::RemoveExtraFields(BlockList_t &blocks)
 {
     // If we aren't needed to clean anything...
@@ -234,7 +293,7 @@ TaskStatus B_Cleanup::RemoveExtraFields(BlockList_t &blocks)
         for (auto& pmb : blocks) {
             auto rc_s = pmb->meshblock_data.Get();
             //auto varlabels = rc_s->GetVariablesByName({"pk0", "res0", "divB_RHS", "p"}).labels();
-            for (auto varlabel : {"pk0", "res0", "divB_RHS", "p"}) {
+            for (auto varlabel : {"pk0", "res0", "temp0", "divB_RHS", "p"}) {
                 if (rc_s->HasCellVariable(varlabel))
                     rc_s->Remove(varlabel);
             }
@@ -262,14 +321,13 @@ TaskStatus B_Cleanup::ApplyP(MeshData<Real> *msolve, MeshData<Real> *md)
         KOKKOS_LAMBDA (const int& b, const int &k, const int &j, const int &i) {
             const auto& G = P.GetCoords(b);
             double b1, b2, b3;
+    B_FluxCT::MeshUtoP(md, IndexDomain::interior);
             B_FluxCT::center_grad(G, P, b, k, j, i, ndim > 2, b1, b2, b3);
             B(b, V1, k, j, i) -= b1;
             B(b, V2, k, j, i) -= b2;
             B(b, V3, k, j, i) -= b3;
         }
     );
-
-    B_FluxCT::MeshUtoP(md, IndexDomain::entire);
 
     return TaskStatus::complete;
 }

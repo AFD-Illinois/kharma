@@ -94,29 +94,23 @@ KOKKOS_INLINE_FUNCTION void get_prim_gizmo_shell(const GRCoordinates& G, const C
 {
     // Solution constants for velocity prescriptions
     // Ideally these could be cached but preformance isn't an issue here
-    Real mdot = 1.; // mdot and rs defined arbitrarily
-    Real n = 1. / (gam - 1.);
-    Real uc = sqrt(mdot / (2. * rs));
-    Real Vc = -sqrt(pow(uc, 2) / (1. - 3. * pow(uc, 2)));
-    Real Tc = -n * pow(Vc, 2) / ((n + 1.) * (n * pow(Vc, 2) - 1.));
-    Real C1 = uc * pow(rs, 2) * pow(Tc, n);
-    Real C2 = pow(1. + (1. + n) * Tc, 2) * (1. - 2. * mdot / rs + pow(C1, 2) / (pow(rs, 4) * pow(Tc, 2 * n)));
-
+    Real mdot = 1.; // mdot defined arbitrarily
     //Real rs = 1./sqrt(T); //1000.;
+
     GReal Xnative[GR_DIM], Xembed[GR_DIM];
     G.coord(k, j, i, Loci::center, Xnative);
     G.coord_embed(k, j, i, Loci::center, Xembed);
     GReal r = Xembed[1];
 
-    // Use Bondi infall velocity
-    Real rho, u;
-    Real T = get_T(r, C1, C2, n, rs);
-    Real ucon_bl[GR_DIM] = {0};
+    // Get GIZMO or vacuum/Bondi data
+    Real rho, u, ur;
     if (r < rin_init * 0.9){
         // Vacuum values for interior
         rho = vacuum_rho;
         u = vacuum_rho * vacuum_u_over_rho;
-        ucon_bl[1] = -C1 / (pow(T, n) * pow(r, 2));
+        // Radial velocity from Bondi solution
+        Real rho_tmp, u_tmp;
+        get_bondi_soln(r, rs, mdot, gam, rho_tmp, u_tmp, ur);
     } else {
         // linear interpolation
         int itemp; GReal del;
@@ -125,9 +119,10 @@ KOKKOS_INLINE_FUNCTION void get_prim_gizmo_shell(const GRCoordinates& G, const C
             del = 0; // just copy over the smallest r values
         }
         rho = rhoarr(itemp) * (1.-del) + rhoarr(itemp+1) * del;
-        u = rho * (Tarr(itemp) * (1.-del) + Tarr(itemp+1) * del)*n;
-        ucon_bl[1] = 0.;
+        u = rho * (Tarr(itemp) * (1.-del) + Tarr(itemp+1) * del) / (gam - 1.);
+        ur = 0.;
     }
+    Real ucon_bl[GR_DIM] = {0., ur, 0., 0.};
 
     // Set u^t and transform to native coordinates
     GReal ucon_native[GR_DIM];

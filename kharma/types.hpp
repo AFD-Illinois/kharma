@@ -168,15 +168,6 @@ KOKKOS_INLINE_FUNCTION bool inside(const int& k, const int& j, const int& i,
     return !outside(k, j, i, kb, jb, ib);
 }
 
-/**
- * Function for checking boundary flags: is this a domain or internal bound?
- */
-inline bool IsDomainBound(std::shared_ptr<MeshBlock> pmb, BoundaryFace face)
-{
-    return !(pmb->boundary_flag[face] == BoundaryFlag::block ||
-             pmb->boundary_flag[face] == BoundaryFlag::periodic);
-}
-
 inline bool BoundaryIsInner(IndexDomain domain)
 {
     return domain == IndexDomain::inner_x1 ||
@@ -225,12 +216,37 @@ inline std::string BoundaryName(IndexDomain domain)
     }
 }
 
-/**
- * Get zones in the domain interior
- */
+inline IndexDomain BoundaryDomain(const BoundaryFace face)
+{
+    switch (face) {
+    case BoundaryFace::inner_x1:
+        return IndexDomain::inner_x1;
+    case BoundaryFace::outer_x1:
+        return IndexDomain::outer_x1;
+    case BoundaryFace::inner_x2:
+        return IndexDomain::inner_x2;
+    case BoundaryFace::outer_x2:
+        return IndexDomain::outer_x2;
+    case BoundaryFace::inner_x3:
+        return IndexDomain::inner_x3;
+    case BoundaryFace::outer_x3:
+        return IndexDomain::outer_x3;
+    case BoundaryFace::undef:
+        throw std::runtime_error("Undefined boundary face has no domain!");
+    }
+}
 
 /**
- * Get the 
+ * Function for checking boundary flags: is this a domain or internal bound?
+ */
+inline bool IsDomainBound(std::shared_ptr<MeshBlock> pmb, BoundaryFace face)
+{
+    return !(pmb->boundary_flag[face] == BoundaryFlag::block ||
+             pmb->boundary_flag[face] == BoundaryFlag::periodic);
+}
+/**
+ * Get zones which are inside the physical domain, i.e. set by computation or MPI halo sync,
+ * not by problem boundary conditions. 
  */
 inline IndexRange3 GetPhysicalZones(std::shared_ptr<MeshBlock> pmb, IndexShape& bounds)
 {

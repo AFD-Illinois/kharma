@@ -204,6 +204,7 @@ void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
                         throw std::invalid_argument("Not enough radial zones were specified to put 5 zones inside EH!");
                     }
                     pin->GetOrAddReal("parthenon/mesh", "x1min", x1min);
+                    pin->GetOrAddReal("coordinates", "r_in", tmp_coords.X1_to_embed(Rhor));
                 }
 
                 //cout << "Setting x1min: " << x1min << " x1max " << x1max << " based on BH with a=" << a << endl;
@@ -232,12 +233,26 @@ void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
     }
 
     // Set default bounds covering our coordinates/transform
-    for (int i = X1DIR; i <= X3DIR; i++) {
-        if (tmp_coords.startx(i) > 0)
-            pin->GetOrAddReal("parthenon/mesh", "x1min", tmp_coords.startx(i));
-        if (tmp_coords.stopx(i) > 0)
-            pin->GetOrAddReal("parthenon/mesh", "x1max", tmp_coords.stopx(i));
-    }
+    std::cout << "Coordinate transform has boundaries: "
+                << tmp_coords.startx(1) << " "
+                << tmp_coords.startx(2) << " "
+                << tmp_coords.startx(3) << " to "
+                << tmp_coords.stopx(1) << " "
+                << tmp_coords.stopx(2) << " "
+                << tmp_coords.stopx(3) << std::endl;
+    // TODO(BSP) is this worth looping?  I say probably no.
+    if (tmp_coords.startx(1) >= 0)
+        pin->GetOrAddReal("parthenon/mesh", "x1min", tmp_coords.startx(1));
+    if (tmp_coords.stopx(1) >= 0)
+        pin->GetOrAddReal("parthenon/mesh", "x1max", tmp_coords.stopx(1));
+    if (tmp_coords.startx(2) >= 0)
+        pin->GetOrAddReal("parthenon/mesh", "x2min", tmp_coords.startx(2));
+    if (tmp_coords.stopx(2) >= 0)
+        pin->GetOrAddReal("parthenon/mesh", "x2max", tmp_coords.stopx(2));
+    if (tmp_coords.startx(3) >= 0)
+        pin->GetOrAddReal("parthenon/mesh", "x3min", tmp_coords.startx(3));
+    if (tmp_coords.stopx(3) >= 0)
+        pin->GetOrAddReal("parthenon/mesh", "x3max", tmp_coords.stopx(3));
 
     Flag("Fixed");
 }

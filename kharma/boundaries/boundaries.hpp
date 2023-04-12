@@ -83,6 +83,11 @@ void DefaultBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domai
 void Dirichlet(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain, bool coarse);
 
 /**
+ * Set the current contents of a domain to be the Dirichlet boundary conditions.
+ */
+void SetDomainDirichlet(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain, bool coarse);
+
+/**
  * Fix fluxes on physical boundaries.
  * 1. Ensure no inflow of density onto the domain
  * 2. Ensure flux through the size-zero faces on poles is zero

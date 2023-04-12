@@ -100,7 +100,9 @@ public:
     // that is, host- & device-side indiscriminately
     KOKKOS_FUNCTION GRCoordinates(): UniformCartesian() {};
     KOKKOS_FUNCTION GRCoordinates(const GRCoordinates &src): UniformCartesian(src),
-        n1(src.n1), n2(src.n2), n3(src.n3), coords(src.coords)
+        n1(src.n1), n2(src.n2), n3(src.n3), coords(src.coords),
+        connection_average_points(src.connection_average_points),
+        correct_connections(src.correct_connections)
     {
         //std::cerr << "Calling copy constructor size " << src.n1 << " " << src.n2 << std::endl;
 #if !FAST_CARTESIAN && !NO_CACHE
@@ -121,6 +123,8 @@ public:
         n1 = src.n1;
         n2 = src.n2;
         n3 = src.n3;
+        connection_average_points = src.connection_average_points;
+        correct_connections = src.correct_connections;
 #if !FAST_CARTESIAN && !NO_CACHE
         gcon_direct = src.gcon_direct;
         gcov_direct = src.gcov_direct;

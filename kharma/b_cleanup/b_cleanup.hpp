@@ -58,13 +58,13 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
 /**
  * Single-call divergence cleanup.  Lots of MPI syncs, probably slow to use in task lists.
  */
-void CleanupDivergence(std::shared_ptr<MeshData<Real>>& md);
+TaskStatus CleanupDivergence(std::shared_ptr<MeshData<Real>>& md);
 
 /**
- * Add the iterative tasks required for B field cleanup to the tasklist
- * Likely faster than above if we want to clean periodically
+ * Whether the parameters say to perform cleanup this step, during execution
+ * Takes the mesh pointer to find our package parameters
  */
-//void AddBCleanupTasks(TaskList tl, TaskID t_dep);
+bool CleanupThisStep(Mesh* pmesh, int nstep);
 
 /**
  * Remove the extra solver fields which B_Cleanup added during initialization.

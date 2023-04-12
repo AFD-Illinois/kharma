@@ -83,6 +83,12 @@ TaskCollection KHARMADriver::MakeDefaultTaskCollection(BlockList_t &blocks, int 
     const bool use_electrons = pkgs.count("Electrons");
     const bool use_jcon = pkgs.count("Current");
 
+    // If we cleaned up, this added other fields marked FillDerived
+    // Remove them before we allocate the space
+    if (use_b_cleanup) {
+        B_Cleanup::RemoveExtraFields(blocks);
+    }
+
     // Allocate the fluid states ("containers") we need for each block
     for (auto& pmb : blocks) {
         // first make other useful containers
@@ -235,7 +241,10 @@ TaskCollection KHARMADriver::MakeDefaultTaskCollection(BlockList_t &blocks, int 
                                           mbd_sub_step_init.get(), mbd_sub_step_final.get());
         }
 
-        auto t_step_done = t_heat_electrons;
+        // Make sure *all* conserved vars are synchronized at step end
+        auto t_ptou = tl.AddTask(t_heat_electrons, Flux::BlockPtoU, mbd_sub_step_final.get(), IndexDomain::entire, false);
+
+        auto t_step_done = t_ptou;
 
         // Estimate next time step based on ctop
         if (stage == integrator->nstages) {
@@ -247,6 +256,17 @@ TaskCollection KHARMADriver::MakeDefaultTaskCollection(BlockList_t &blocks, int 
                 auto tag_refine = tl.AddTask(
                     t_step_done, parthenon::Refinement::Tag<MeshBlockData<Real>>, mbd_sub_step_final.get());
             }
+        }
+    }
+
+    // B Field cleanup: this is a separate solve so it's split out
+    // It's also really slow when enabled so we don't care too much about limiting regions, etc.
+    if (use_b_cleanup && B_Cleanup::CleanupThisStep(pmesh, tm.ncycle)) {
+        TaskRegion &cleanup_region = tc.AddRegion(num_partitions);
+        for (int i = 0; i < num_partitions; i++) {
+            auto &tl = cleanup_region[i];
+            auto &md_sub_step_final = pmesh->mesh_data.GetOrAdd(integrator->stage_name[stage], i);
+            tl.AddTask(t_none, B_Cleanup::CleanupDivergence, md_sub_step_final);
         }
     }
 
