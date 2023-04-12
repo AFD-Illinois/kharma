@@ -1,5 +1,5 @@
 diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
-index f45cc979..23fb0f45 100644
+index f45cc979..9d99a1bf 100644
 --- a/src/CMakeLists.txt
 +++ b/src/CMakeLists.txt
 @@ -90,7 +90,7 @@ set(COMPILED_WITH ${CMAKE_CXX_COMPILER})
@@ -11,7 +11,16 @@ index f45cc979..23fb0f45 100644
  
  configure_file(config.hpp.in generated/config.hpp @ONLY)
  
-@@ -301,6 +301,8 @@ lint_target(parthenon)
+@@ -281,6 +281,8 @@ endif()
+ 
+ target_link_libraries(parthenon PUBLIC Kokkos::kokkos)
+ 
++target_link_libraries(parthenon PUBLIC stdc++fs)
++
+ if (PARTHENON_ENABLE_ASCENT)
+   if (ENABLE_MPI)
+     target_link_libraries(parthenon PUBLIC ascent::ascent_mpi)
+@@ -301,6 +303,8 @@ lint_target(parthenon)
  target_include_directories(parthenon PUBLIC
    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
    $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/generated>

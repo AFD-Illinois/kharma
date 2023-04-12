@@ -135,6 +135,8 @@ std::shared_ptr<KHARMAPackage> B_Cleanup::Initialize(ParameterInput *pin, std::s
     // Declare fields if we're doing that
     if (manage_field) {
         // Stolen verbatim from FluxCT, except we don't register the FixFlux step obvs
+        // Probably will crash due to not having the right parameters: add as needed.
+        // Best to crash, this mode is very not supported.
         // TODO preserve an easier form of divB in this case?
 
         // Mark if we're evolving implicitly
