@@ -10,8 +10,8 @@ DIM=3
 NZONES=7
 BASE=8
 NRUNS=300
-START_RUN=34 # if this is not 0, then update start_time, out_to_in, iteration, r_out, r_in to values that you are re-starting from
-DRTAG="bondi_multizone_030723_gizmo_no_ext_g_128^3_restart6"  # reconstruction modified
+START_RUN=0 # if this is not 0, then update start_time, out_to_in, iteration, r_out, r_in to values that you are re-starting from
+DRTAG="bondi_multizone_041223_gizmo_test"
 
 # Set paths
 KHARMADIR=../..
@@ -21,11 +21,11 @@ parfilename="${PDR}/kharma/pars/bondi_multizone/bondi_multizone_00000.par" # par
 
 # other values determined automatically
 turn_around=$(($NZONES-1))
-start_time=19493738388 #0 #
-out_to_in=-1 # 1 #
-iteration=6 # 1 #eq : (iteration-1)*(NZONES-1)<VAR<=iteration*(NZONES-1)
-r_out=262144 #$((${BASE}**($turn_around+2))) #
-r_in=4096 #$((${BASE}**$turn_around)) #
+start_time=0 #19493738388 #
+out_to_in=1 #-1 # 
+iteration=1 #6 # eq : (iteration-1)*(NZONES-1)<VAR<=iteration*(NZONES-1)
+r_out=$((${BASE}**($turn_around+2))) #512 #
+r_in=$((${BASE}**$turn_around)) #8 #
 
 # if the directories are not present, make them.
 if [ ! -d "${DR}" ]; then
@@ -96,18 +96,18 @@ do
   out_fn="${PDR}/logs/${DRTAG}/log_multizone$(printf %05d ${VAR})_out"
   err_fn="${PDR}/logs/${DRTAG}/log_multizone$(printf %05d ${VAR})_err"
 
-  srun --mpi=pmix ${PDR}/kharma.cuda -i ${parfilename}  \
+  srun --mpi=pmix ${PDR}/kharma_gcc10_gizmo_test.cuda -i ${parfilename}  \
                                     parthenon/job/problem_id=$prob \
-                                    parthenon/mesh/nx1=128 parthenon/mesh/nx2=128 parthenon/mesh/nx3=128 \
-                                    parthenon/meshblock/nx1=64 parthenon/meshblock/nx2=64 parthenon/meshblock/nx3=128 \
+                                    parthenon/mesh/nx1=64 parthenon/mesh/nx2=64 parthenon/mesh/nx3=64 \
+                                    parthenon/meshblock/nx1=32 parthenon/meshblock/nx2=32 parthenon/meshblock/nx3=64 \
                                     parthenon/time/tlim=${start_time} \
                                     coordinates/r_in=${r_in} coordinates/r_out=${r_out} coordinates/a=$spin coordinates/ext_g=$EXT_G \
                                     coordinates/transform=mks coordinates/hslope=1 \
+                                    GRMHD/reconstruction=linear_vl \
                                     bondi/vacuum_logrho=-8.2014518 bondi/vacuum_log_u_over_rho=${log_u_over_rho} \
-                                    bondi/use_gizmo=true \
+                                    bondi/use_gizmo=true gizmo_shell/datfn="/n/holylfs05/LABS/bhi/Users/hyerincho/grmhd/data/gizmo/041423_3d/new_snap_deposit_020.hdf5" \
                                     b_field/type=none b_field/solver=none \
                                     b_field/fix_flux_x1=0 b_field/initial_cleanup=0 \
-                                    GRMHD/reconstruction=linear_vl \
                                     resize_restart/base=$BASE resize_restart/nzone=$NZONES resize_restart/iteration=$iteration \
                                     parthenon/output0/dt=$output0_dt \
                                     parthenon/output1/dt=$output1_dt \

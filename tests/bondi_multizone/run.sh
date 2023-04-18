@@ -5,13 +5,16 @@
 
 # User specified values here
 KERR=false
-JITTER=false #true #
+JITTER=true #false #
+ROT=true #false #
+SUPEREXP=false #true #
+ROT_UPHI=0.1 # 1e-10
 DIM=3
 NZONES=7
 BASE=8
 NRUNS=300
-START_RUN=53 # if this is not 0, then update start_time, out_to_in, iteration, r_out, r_in to values that you are re-starting from
-DRTAG="bondi_multizone_030723_bondi_128^3"
+START_RUN=0 # if this is not 0, then update start_time, out_to_in, iteration, r_out, r_in to values that you are re-starting from
+DRTAG="bondi_multizone_041723_bondi_64^3_rot${ROT_UPHI}keprst_jit"
 
 # Set paths
 KHARMADIR=../..
@@ -21,11 +24,12 @@ parfilename="${PDR}/kharma/pars/bondi_multizone/bondi_multizone_00000.par" # par
 
 # other values determined automatically
 turn_around=$(($NZONES-1))
-start_time=32963095169 #0 #
+start_time=0 #100337021259 #
 out_to_in=1 # -1 #
-iteration=9 # eq : (iteration-1)*(NZONES-1)<VAR<=iteration*(NZONES-1)
-r_out=512 #$((${BASE}**($turn_around+2))) #
-r_in=8 #$((${BASE}**$turn_around)) #
+iteration=1 # eq : (iteration-1)*(NZONES-1)<VAR<=iteration*(NZONES-1)
+r_out=$((${BASE}**($turn_around+2))) #512 #
+r_in=$((${BASE}**$turn_around)) #8 #
+ZONE0=$((2*($NZONES-1)))
 
 # if the directories are not present, make them.
 if [ ! -d "${DR}" ]; then
@@ -61,6 +65,14 @@ do
     spin=0.0
   fi
   
+  # set flow rotation
+  if [[ $ROT == "true" ]]; then
+    args+=(" bondi/uphi=$ROT_UPHI ")
+  else
+    args+=(" bondi/uphi=0 ")
+  fi
+
+  
   # output time steps
   output0_dt=$((${runtime}/100*10))
   output1_dt=$((${runtime}/20*10))
@@ -93,12 +105,29 @@ do
     r_shell=$((${r_out}/2))
     args+=(" bondi/r_shell=$r_shell ")
     if [[ $JITTER == "true" ]]; then
-        args+=(" perturbation/u_jitter=0.3 ")
+        args+=(" perturbation/u_jitter=0.1 ")
     else
         args+=(" perturbation/u_jitter=0.0 ")
     fi
   fi
 
+  if [[ $SUPEREXP == "true" ]]; then
+    r_br=4e6 # such that it does not lie exactly on the zone centers or faces #$((2*${BASE}**($NZONES))) # break radius (double, in order to be safe from boundaries)
+    r_superexp=1e8 # outermost radius of super exponential grid
+
+    if [ $(($VAR % $ZONE0)) -eq 0 ]; then
+      args+=(" coordinates/transform=superexp ")
+      args+=(" coordinates/r_br=${r_br} coordinates/npow=2.0 coordinates/cpow=1.0 ")
+      #args+=(" coordinates/r_out=${r_superexp} ")
+    #  args+=(" coordinates/r_out=${r_out} ")
+    else
+      args+=(" coordinates/transform=eks ")
+
+    fi
+    args+=(" coordinates/r_out=${r_out} ")
+  else
+    args+=(" coordinates/transform=mks coordinates/hslope=1 coordinates/r_out=${r_out} ")
+  fi
   
 
   # data_dir, logfiles
@@ -106,13 +135,13 @@ do
   out_fn="${PDR}/logs/${DRTAG}/log_multizone$(printf %05d ${VAR})_out"
   err_fn="${PDR}/logs/${DRTAG}/log_multizone$(printf %05d ${VAR})_err"
 
-  srun --mpi=pmix ${PDR}/kharma.cuda -i ${parfilename} \
+  srun --mpi=pmix ${PDR}/kharma_gcc10_kep_rst.cuda -i ${parfilename} \
                                     parthenon/job/problem_id=$prob \
                                     parthenon/time/tlim=${start_time} parthenon/time/nlim=-1 \
-                                    parthenon/mesh/nx1=128 parthenon/mesh/nx2=128 parthenon/mesh/nx3=128 \
-                                    parthenon/meshblock/nx1=64 parthenon/meshblock/nx2=64 parthenon/meshblock/nx3=128 \
-                                    coordinates/r_in=${r_in} coordinates/r_out=${r_out} coordinates/a=$spin coordinates/ext_g=false \
-                                    coordinates/transform=mks coordinates/hslope=1 \
+                                    parthenon/mesh/nx1=64 parthenon/mesh/nx2=64 parthenon/mesh/nx3=64 \
+                                    parthenon/meshblock/nx1=32 parthenon/meshblock/nx2=32 parthenon/meshblock/nx3=64 \
+                                    coordinates/r_in=${r_in} coordinates/a=$spin coordinates/ext_g=false \
+                                    GRMHD/reconstruction=linear_vl \
                                     bounds/fix_flux_pole=1 \
                                     bondi/vacuum_logrho=-8.2014518 bondi/vacuum_log_u_over_rho=${log_u_over_rho} bondi/use_gizmo=false \
                                     b_field/type=none b_field/solver=none b_field/bz=1e-3 \
@@ -123,6 +152,7 @@ do
                                     parthenon/output2/dt=$output2_dt \
                                     ${args[@]} \
                                     -d ${data_dir} 1> ${out_fn} 2>${err_fn}
+                                    #coordinates/transform=mks coordinates/hslope=1  coordinates/r_out=${r_out}\
 
   if [ $VAR -ne 0 ]; then
     if [ $(($VAR % ($NZONES-1))) -eq 0 ]; then
