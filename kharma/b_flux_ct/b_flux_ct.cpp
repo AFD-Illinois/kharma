@@ -112,7 +112,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy, Metadata::Restart}); //, Metadata::FillGhost});
     pkg->AddField("divB", m);
     // Hyerin (12/19/22)
-    m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::FillGhost, Metadata::Vector});
+    m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::FillGhost, Metadata::Vector}, s_vector);
     pkg->AddField("B_Save", m);
 
     // Ensure that prims get filled
@@ -347,7 +347,6 @@ TaskStatus FixX1Flux(MeshData<Real> *md)
     const int ndim = pmesh->ndim;
     IndexRange ib = pmb0->cellbounds.GetBoundsI(IndexDomain::interior);
     IndexRange jb_e = pmb0->cellbounds.GetBoundsJ(IndexDomain::entire);
-    // TODO(BSP) can these local versions be the entire span?
     IndexRange jb_l = IndexRange{jb_e.s + (ndim > 1), jb_e.e};
     IndexRange kb_e = pmb0->cellbounds.GetBoundsK(IndexDomain::entire);
     IndexRange kb_l = IndexRange{kb_e.s + (ndim > 2), kb_e.e};
