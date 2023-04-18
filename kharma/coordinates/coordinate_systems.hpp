@@ -393,7 +393,7 @@ public:
     dxdX[0][0] = 1.;
     const GReal super_dist = Xnative[1] - xn1br;
     dxdX[1][1] = m::exp(Xnative[1] + (super_dist > 0) * cpow2 * m::pow(super_dist, npow2))
-      * (1 + cpow2 * npow2 * m::pow(super_dist, npow2-1));
+      * (1 + (super_dist > 0) * cpow2 * npow2 * m::pow(super_dist, npow2-1));
     dxdX[2][2] = 1.;
     dxdX[3][3] = 1.;
   }
@@ -406,7 +406,7 @@ public:
     dXdx[0][0] = 1.;
     const GReal super_dist = Xnative[1] - xn1br;
     dXdx[1][1] = 1 / (m::exp(Xnative[1] + (super_dist > 0) * cpow2 * m::pow(super_dist, npow2))
-		      * (1 + cpow2 * npow2 * m::pow(super_dist, npow2-1)));
+		      * (1 + (super_dist > 0) * cpow2 * npow2 * m::pow(super_dist, npow2-1)));
     dXdx[2][2] = 1.;
     dXdx[3][3] = 1.;
   }
