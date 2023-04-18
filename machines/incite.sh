@@ -39,29 +39,21 @@ if [[ $HOST == *".summit.olcf.ornl.gov" ]]; then
 fi
 
 if [[ $HOST == *".alcf.anl.gov" ]]; then
-  if [[ "$ARGS" == *"cuda"* ]]; then
-    module purge
-    module load Core/StdEnv cmake
-    module load nvhpc/21.7
-    #module load nvhpc
-    module load openmpi
-    #module load hdf5
-    HOST_ARCH="AMDAVX"
-    DEVICE_ARCH="AMPERE80"
+  HOST_ARCH=HSW
+  DEVICE_ARCH=AMPERE80
+  module load PrgEnv-gnu
+  module load cudatoolkit-standalone
+  #module load PrgEnv-nvhpc
+  module load cray-hdf5-parallel cmake
+  #export CRAY_CPU_TARGET=x86-64
 
-    #CXXFLAGS="-mp"
-    C_NATIVE="gcc"
-    CXX_NATIVE="g++"
-    #export CXXFLAGS="-g -pg"
+  # Correct some vars set by default PrgEnv-nvhpc
+  #unset CC
+  #unset F77
+  #unset CXX
+  #unset FC
+  #unset F90
 
-    EXTRA_FLAGS="-DCUDAToolkit_ROOT_DIR=/soft/hpc-sdk/Linux_x86_64/21.7/cuda/11.4/ $EXTRA_FLAGS"
-    EXTRA_FLAGS="-DCUDAToolkit_BIN_DIR=/soft/hpc-sdk/Linux_x86_64/21.7/cuda/11.4/bin $EXTRA_FLAGS"
-    EXTRA_FLAGS="-DCUDAToolkit_INCLUDE_DIR=/soft/hpc-sdk/Linux_x86_64/21.7/cuda/11.4/include $EXTRA_FLAGS"
-    PREFIX_PATH="$HOME/libs/hdf5-gcc-openmpi"
-    #PREFIX_PATH="/soft/thetagpu/hpc-sdk/Linux_x86_64/21.7/"
-  else
-    echo "Compiling for KNL"
-    HOST_ARCH="KNL"
-    PREFIX_PATH="$MPICH_DIR"
-  fi
+  EXTRA_FLAGS="-DPARTHENON_DISABLE_HDF5_COMPRESSION=ON $EXTRA_FLAGS"
 fi
+
