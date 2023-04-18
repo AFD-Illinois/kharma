@@ -100,7 +100,7 @@ KOKKOS_INLINE_FUNCTION void convert_to_utwiddle(const GRCoordinates& G, const Co
 KOKKOS_INLINE_FUNCTION void get_prim_restart_kharma(const GRCoordinates& G, const CoordinateEmbedding& coords, const VariablePack<Real>& P, const VarMap& m_p,
                     const SphBLCoords& bl,  const SphKSCoords& ks, 
                     const Real fx1min, const Real fx1max, const Real fnghost, const bool should_fill, const bool is_spherical, const bool include_B,
-                    const Real gam, const Real rs,  const Real mdot, const hsize_t length[GR_DIM],
+                    const Real gam, const Real rs,  const Real mdot, const Real uphi, const hsize_t length[GR_DIM],
                     const GridScalar& x1, const GridScalar& x2, const GridScalar& x3, const GridScalar& rho, const GridScalar& u, const GridVector& uvec, const GridVector& B,
                     const GridScalar& x1_fill, const GridScalar& x2_fill, const GridScalar& x3_fill, const GridScalar& rho_fill, const GridScalar& u_fill, const GridVector& uvec_fill, const GridVector& B_fill,
                     const int& k, const int& j, const int& i) 
@@ -144,6 +144,7 @@ KOKKOS_INLINE_FUNCTION void get_prim_restart_kharma(const GRCoordinates& G, cons
                         
         Real ur = -C1 / (m::pow(T, n) * m::pow(r, 2));
         Real ucon_bl[GR_DIM] = {0, ur, 0, 0};
+        ucon_bl[3]=uphi*m::pow(r,-3./2.); // (04/13/23) a fraction of the kepler 
         convert_to_utwiddle(G,coords,bl,ks,k,j,i,ucon_bl,u_prim);
         
    }

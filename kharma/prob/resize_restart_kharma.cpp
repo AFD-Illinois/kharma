@@ -160,6 +160,7 @@ TaskStatus ReadKharmaRestart(MeshBlockData<Real> *rc, ParameterInput *pin)
     const int nghost = pin->GetReal("parthenon/mesh", "restart_nghost");
     const bool ghost_zones = pin->GetBoolean("parthenon/mesh", "restart_ghostzones");
     auto fBfield = pin->GetOrAddString("b_field", "type", "none");
+    const Real uphi = pin->GetOrAddReal("bondi", "uphi", 0.); 
 
     // Add these to package properties, since they continue to be needed on boundaries
     if(! (pmb->packages.Get("GRMHD")->AllParams().hasKey("rnx1")))
@@ -196,6 +197,8 @@ TaskStatus ReadKharmaRestart(MeshBlockData<Real> *rc, ParameterInput *pin)
         pmb->packages.Get("GRMHD")->AddParam<bool>("rghostzones", ghost_zones);
     if(! (pmb->packages.Get("GRMHD")->AllParams().hasKey("b_field_type")))
         pmb->packages.Get("GRMHD")->AddParam<std::string>("b_field_type", fBfield);
+    if(! (pmb->packages.Get("GRMHD")->AllParams().hasKey("uphi")))
+        pmb->packages.Get("GRMHD")->AddParam<Real>("uphi", uphi);
 
     // Set the whole domain
     SetKharmaRestart(rc);
@@ -212,6 +215,7 @@ TaskStatus SetKharmaRestart(MeshBlockData<Real> *rc, IndexDomain domain, bool co
     // A placeholder to save the B fields for SeedBField
     GridVector B_Save;
     if (include_B) B_Save = rc->Get("B_Save").data;
+    const Real uphi = pmb->packages.Get("GRMHD")->Param<Real>("uphi");
 
     auto& G = pmb->coords;
     
@@ -428,7 +432,7 @@ TaskStatus SetKharmaRestart(MeshBlockData<Real> *rc, IndexDomain domain, bool co
         pmb->par_for("copy_restart_state_kharma", ks, ke, js, je, is, ie,
             KOKKOS_LAMBDA_3D {
                 get_prim_restart_kharma(G, coords, P, m_p, blcoord,  kscoord, 
-                    fx1min, fx1max, fnghost, should_fill, is_spherical, include_B, gam, rs, mdot, length,
+                    fx1min, fx1max, fnghost, should_fill, is_spherical, include_B, gam, rs, mdot, uphi, length,
                     x1_f_device, x2_f_device, x3_f_device, rho_f_device, u_f_device, uvec_f_device, B_f_device,
                     x1_fill_device, x2_fill_device, x3_fill_device, rho_fill_device, u_fill_device, uvec_fill_device, B_fill_device,
                     k, j, i);
