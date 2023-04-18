@@ -131,7 +131,7 @@ KOKKOS_INLINE_FUNCTION void get_prim_restart_kharma(const GRCoordinates& G, cons
         itemp = fnghost; // in order to copy over the physical region, not the ghost region
         // (02/08/23) instead in order to set the vacuum homogeneous instead of having theta phi dependence, set j and k values
         jtemp = fnghost;
-        ktemp = fnghost;
+        ktemp = fnghost * (length[3] > 1);
         rho_temp = rho(iblocktemp,ktemp,jtemp,itemp);
         u_temp = u(iblocktemp,ktemp,jtemp,itemp);
         Real T = get_T(r, C1, C2, n, rs);

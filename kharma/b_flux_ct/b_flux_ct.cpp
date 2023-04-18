@@ -297,15 +297,13 @@ TaskStatus FixPolarFlux(MeshData<Real> *md)
     Flag(md, "Fixing polar B fluxes");
     auto pmesh = md->GetMeshPointer();
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
-    
-    IndexDomain domain = IndexDomain::interior;
-    int is = pmb0->cellbounds.is(domain), ie = pmb0->cellbounds.ie(domain);
-    int js = pmb0->cellbounds.js(domain), je = pmb0->cellbounds.je(domain);
-    int ks = pmb0->cellbounds.ks(domain), ke = pmb0->cellbounds.ke(domain);
-    const int ndim = pmesh->ndim;
 
-    int je_e = (ndim > 1) ? je + 1 : je;
-    int ke_e = (ndim > 2) ? ke + 1 : ke;
+    const int ndim = pmesh->ndim;
+    IndexRange ib_e = pmb0->cellbounds.GetBoundsI(IndexDomain::entire);
+    IndexRange jb = pmb0->cellbounds.GetBoundsJ(IndexDomain::interior);
+    const int js = jb.s;
+    const int je = jb.e + (ndim > 1);
+    IndexRange kb_e = pmb0->cellbounds.GetBoundsK(IndexDomain::entire);
 
     // Assuming the fluxes through the pole are 0,
     // make sure the polar EMFs are 0 when performing fluxCT
@@ -316,7 +314,7 @@ TaskStatus FixPolarFlux(MeshData<Real> *md)
 
         if (pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::user)
         {
-            pmb->par_for("fix_flux_b_l", ks-1, ke_e+1, js, js, is-1, ie+1+1, // Hyerin (12/28/22)
+            pmb->par_for("fix_flux_b_l", kb_e.s, kb_e.e, js, js, ib_e.s, ib_e.e,
                 KOKKOS_LAMBDA_3D {
                     B_F.flux(X1DIR, V2, k, j-1, i) = -B_F.flux(X1DIR, V2, k, js, i);
                     if (ndim > 1) B_F.flux(X2DIR, V2, k, j, i) = 0;
@@ -326,7 +324,7 @@ TaskStatus FixPolarFlux(MeshData<Real> *md)
         }
         if (pmb->boundary_flag[BoundaryFace::outer_x2] == BoundaryFlag::user)
         {
-            pmb->par_for("fix_flux_b_r", ks-1, ke_e+1, je_e, je_e, is-1, ie+1+1, // Hyerin (12/28/22)
+            pmb->par_for("fix_flux_b_r", kb_e.s, kb_e.e, je, je, ib_e.s, ib_e.e,
                 KOKKOS_LAMBDA_3D {
                     B_F.flux(X1DIR, V2, k, j, i) = -B_F.flux(X1DIR, V2, k, je, i);
                     if (ndim > 1) B_F.flux(X2DIR, V2, k, j, i) = 0;
@@ -346,18 +344,13 @@ TaskStatus FixX1Flux(MeshData<Real> *md)
     auto pmesh = md->GetMeshPointer();
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
     
-    IndexDomain domain = IndexDomain::interior;
-    int is = pmb0->cellbounds.is(domain), ie = pmb0->cellbounds.ie(domain);
-    int js = pmb0->cellbounds.js(domain), je = pmb0->cellbounds.je(domain);
-    int js_all = pmb0->cellbounds.js(IndexDomain::entire), je_all = pmb0->cellbounds.je(IndexDomain::entire); // added by Hyerin (12/28/22)
-    int ks = pmb0->cellbounds.ks(domain), ke = pmb0->cellbounds.ke(domain);
-    int ks_all = pmb0->cellbounds.ks(IndexDomain::entire), ke_all = pmb0->cellbounds.ke(IndexDomain::entire); // added by Hyerin (12/28/22)
     const int ndim = pmesh->ndim;
-
-    //int je_e = (ndim > 1) ? je + 1 : je;
-    //int je_e = (ndim > 1) ? je_all + 1 : je_all; // test Hyerin(12/28/22)
-    //int ke_e = (ndim > 2) ? ke + 1 : ke;
-    //int ke_e = (ndim > 2) ? ke_all + 1 : ke_all; // test Hyerin (12/28/22)
+    IndexRange ib = pmb0->cellbounds.GetBoundsI(IndexDomain::interior);
+    IndexRange jb_e = pmb0->cellbounds.GetBoundsJ(IndexDomain::entire);
+    // TODO(BSP) can these local versions be the entire span?
+    IndexRange jb_l = IndexRange{jb_e.s + (ndim > 1), jb_e.e};
+    IndexRange kb_e = pmb0->cellbounds.GetBoundsK(IndexDomain::entire);
+    IndexRange kb_l = IndexRange{kb_e.s + (ndim > 2), kb_e.e};
     
     Real x1min = pmb0->packages.Get("GRMHD")->Param<Real>("x1min"); //Hyerin (01/31/23)
 
@@ -369,9 +362,9 @@ TaskStatus FixX1Flux(MeshData<Real> *md)
         auto& B_F = rc->PackVariablesAndFluxes(std::vector<std::string>{"cons.B"});
 
         //added by Hyerin (12/23/22) TODO: it has to ask if x2 boundary is inner_x2 or outer_x2 and update the jj bounds
-        if ((pmb->boundary_flag[BoundaryFace::inner_x1] == BoundaryFlag::user) && (x1min>1) ) // only apply fix flux for inner bc when it is far from the EH
-        {   
-            pmb->par_for("fix_flux_b_l", ks_all+1, ke_all+1, js_all+1, je_all+1, is, is, // Hyerin (12/28/22) for 1st & 2nd prescription
+        if ((pmb->boundary_flag[BoundaryFace::inner_x1] == BoundaryFlag::user) && (x1min > 1) ) // only apply fix flux for inner bc when it is far from the EH
+        {
+            pmb->par_for("fix_flux_b_l", kb_l.s, kb_l.e, jb_l.s, jb_l.e, ib.s, ib.s, // Hyerin (12/28/22) for 1st & 2nd prescription
                 KOKKOS_LAMBDA_3D {
                     /* 1st prescription to make the X1DIR flux = 0
                     B_F.flux(X2DIR, V1, k, j, i-1) = -B_F.flux(X2DIR, V1, k, j, is);
@@ -379,25 +372,24 @@ TaskStatus FixX1Flux(MeshData<Real> *md)
                     if (ndim > 2) B_F.flux(X3DIR, V1, k, j, i-1) = -B_F.flux(X3DIR, V1, k, j, is);
                     */
                     // (02/06/23) 2nd prescription that allows nonzero flux across X1 boundary but still keeps divB=0 (turns out effectively to have 0 flux)
-                    if (ndim > 1) B_F.flux(X2DIR, V1, k, j, i-1) = -B_F.flux(X2DIR, V1, k, j, is) + B_F.flux(X1DIR, V2, k, j, is) + B_F.flux(X1DIR, V2, k, j-1, is);
-                    if (ndim > 2) B_F.flux(X3DIR, V1, k, j, i-1) = -B_F.flux(X3DIR, V1, k, j, is) + B_F.flux(X1DIR, V3, k, j, is) + B_F.flux(X1DIR, V3, k-1, j, is);
-                    
-                    }
-                );
+                    if (ndim > 1) B_F.flux(X2DIR, V1, k, j, i-1) = -B_F.flux(X2DIR, V1, k, j, i) + B_F.flux(X1DIR, V2, k, j, i) + B_F.flux(X1DIR, V2, k, j-1, i);
+                    if (ndim > 2) B_F.flux(X3DIR, V1, k, j, i-1) = -B_F.flux(X3DIR, V1, k, j, i) + B_F.flux(X1DIR, V3, k, j, i) + B_F.flux(X1DIR, V3, k-1, j, i);
+                }
+            );
 
         }
         if (pmb->boundary_flag[BoundaryFace::outer_x1] == BoundaryFlag::user)
         {
-            pmb->par_for("fix_flux_b_r", ks_all+1, ke_all+1, js_all+1, je_all+1, ie+1, ie+1, // Hyerin (12/28/22) for 1st & 2nd prescription
+            pmb->par_for("fix_flux_b_r", kb_l.s, kb_l.e, jb_l.s, jb_l.e, ib.e+1, ib.e+1, // Hyerin (12/28/22) for 1st & 2nd prescription
                 KOKKOS_LAMBDA_3D {
                     /* 1st prescription to make the X1DIR flux = 0
                     B_F.flux(X2DIR, V1, k, j, i) = -B_F.flux(X2DIR, V1, k, j, ie);
                     if (ndim > 1) VLOOP B_F.flux(X1DIR, V1+v, k, j, i) = 0;
                     if (ndim > 2) B_F.flux(X3DIR, V1, k, j, i) = -B_F.flux(X3DIR, V1, k, j, ie);
                     */
-                    // (02/06/23) 2nd prescription that allows nonzero flux across X1 boundary but still keeps divB=0
-                    if (ndim > 1) B_F.flux(X2DIR, V1, k, j, i) = -B_F.flux(X2DIR, V1, k, j, ie) + B_F.flux(X1DIR, V2, k, j, i) + B_F.flux(X1DIR, V2, k, j-1, i);
-                    if (ndim > 2) B_F.flux(X3DIR, V1, k, j, i) = -B_F.flux(X3DIR, V1, k, j, ie) + B_F.flux(X1DIR, V3, k, j, i) + B_F.flux(X1DIR, V3, k-1, j, i);
+                    // (02/06/23) 2nd prescription that allows nonzero flux across X1 boundary but still keeps divB=0je_all
+                    if (ndim > 1) B_F.flux(X2DIR, V1, k, j, i) = -B_F.flux(X2DIR, V1, k, j, i-1) + B_F.flux(X1DIR, V2, k, j, i) + B_F.flux(X1DIR, V2, k, j-1, i);
+                    if (ndim > 2) B_F.flux(X3DIR, V1, k, j, i) = -B_F.flux(X3DIR, V1, k, j, i-1) + B_F.flux(X1DIR, V3, k, j, i) + B_F.flux(X1DIR, V3, k-1, j, i);
                 }
             );
         }

@@ -390,18 +390,18 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
     bool fix_flux_pole = pmb0->packages.Get("GRMHD")->Param<bool>("fix_flux_pole");
     bool fix_flux_x1 = pmb0->packages.Get("GRMHD")->Param<bool>("fix_flux_x1");
 
-    IndexDomain domain = IndexDomain::interior;
-    const int is = pmb0->cellbounds.is(domain), ie = pmb0->cellbounds.ie(domain);
-    const int js = pmb0->cellbounds.js(domain), je = pmb0->cellbounds.je(domain);
-    const int ks = pmb0->cellbounds.ks(domain), ke = pmb0->cellbounds.ke(domain);
-    const int ndim = pmesh->ndim;
-
     // Fluxes are defined at faces, so there is one more valid flux than
     // valid cell in the face direction.  That is, e.g. F1 is valid on
     // an (N1+1)xN2xN3 grid, F2 on N1x(N2+1)xN3, etc
-    const int ie_l = ie + 1;
-    const int je_l = (ndim > 1) ? je + 1 : je;
-    //const int ke_l = (ndim > 2) ? ke + 1 : ke;
+    // Additionally, B field fluxes matter in ghosts one cell *before* start:
+    // see description in kharma-next branch
+    const int ndim = pmesh->ndim;
+    const IndexRange ib = pmb0->cellbounds.GetBoundsI(IndexDomain::interior);
+    const IndexRange ib_l = IndexRange{ib.s - 1, ib.e + 1};
+    const IndexRange jb = pmb0->cellbounds.GetBoundsJ(IndexDomain::interior);
+    const IndexRange jb_l = IndexRange{jb.s - (ndim > 1), jb.e + (ndim > 1)};
+    const IndexRange kb = pmb0->cellbounds.GetBoundsK(IndexDomain::interior);
+    const IndexRange kb_l = IndexRange{kb.s - (ndim > 2), kb.e + (ndim > 2)};
   
     for (auto &pmb : pmesh->block_list) {
         auto& rc = pmb->meshblock_data.Get();
@@ -413,7 +413,7 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
 
         if (check_inflow_inner) {
             if (pmb->boundary_flag[BoundaryFace::inner_x1] == BoundaryFlag::user) {
-                pmb->par_for("fix_flux_in_l", ks, ke, js, je, is, is,
+                pmb->par_for("fix_flux_in_l", kb.s, kb.e, jb.s, jb.e, ib.s, ib.s,
                     KOKKOS_LAMBDA_3D {
                         F.flux(X1DIR, m_rho, k, j, i) = m::min(F.flux(X1DIR, m_rho, k, j, i), 0.);
                     }
@@ -422,7 +422,7 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
         }
         if (check_inflow_outer) {
             if (pmb->boundary_flag[BoundaryFace::outer_x1] == BoundaryFlag::user) {
-                pmb->par_for("fix_flux_in_r", ks, ke, js, je, ie_l, ie_l,
+                pmb->par_for("fix_flux_in_r", kb.s, kb.e, jb.s, jb.e, ib_l.e, ib_l.e,
                     KOKKOS_LAMBDA_3D {
                         F.flux(X1DIR, m_rho, k, j, i) = m::max(F.flux(X1DIR, m_rho, k, j, i), 0.);
                     }
@@ -435,7 +435,7 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
             //printf("HYERIN: m_B=%i m_rho=%i dim = (%i %i %i %i %i %i)\n",m_B, m_rho,F.GetDim(1),F.GetDim(2), F.GetDim(3), F.GetDim(4), F.GetDim(5),F.GetDim(6));
             if (pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::user) {
                 // This loop covers every flux we need
-                pmb->par_for("fix_flux_pole_l", 0, F.GetDim(4) - 1, ks-1, ke+1, js, js, is-1, ie+1, // Hyerin: expanded i and k ranges. see FluxCT. they care about these
+                pmb->par_for("fix_flux_pole_l", 0, F.GetDim(4) - 1, kb_l.s, kb_l.e, jb.s, jb.s, ib.s-1, ib.e+1, // Hyerin: expanded i and k ranges. see FluxCT. they care about these
                     KOKKOS_LAMBDA_VARS {
                         F.flux(X2DIR, p, k, j, i) = 0.;
                         //if (p==7 && k==15 && i==is-1){
@@ -446,7 +446,7 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
             }
 
             if (pmb->boundary_flag[BoundaryFace::outer_x2] == BoundaryFlag::user) {
-                pmb->par_for("fix_flux_pole_r", 0, F.GetDim(4) - 1, ks-1, ke+1, je_l, je_l, is-1, ie+1,
+                pmb->par_for("fix_flux_pole_r", 0, F.GetDim(4) - 1, kb_l.s, kb_l.e, jb_l.e, jb_l.e, ib.s-1, ib.e+1,
                     KOKKOS_LAMBDA_VARS {
                         F.flux(X2DIR, p, k, j, i) = 0.;
                     }
