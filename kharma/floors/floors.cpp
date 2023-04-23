@@ -205,6 +205,7 @@ TaskStatus ApplyFloors(MeshBlockData<Real> *mbd, IndexDomain domain)
     const IndexRange ib = mbd->GetBoundsI(domain);
     const IndexRange jb = mbd->GetBoundsJ(domain);
     const IndexRange kb = mbd->GetBoundsK(domain);
+    
     pmb->par_for("apply_floors", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA_3D {
             if (((int) pflag(k, j, i)) >= InversionStatus::success) {

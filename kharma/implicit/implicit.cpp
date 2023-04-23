@@ -369,7 +369,7 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
                             // Now that we know that it isn't a bad zone, reset solve_fail for this iteration
                             solve_fail() = SolverStatus::converged;
 
-                            if (emhd_params_sub_step_init.conduction || emhd_params_sub_step_init.viscosity) {
+                            if (m_p.Q >= 0 || m_p.DP >= 0) {
                                 Real dUq, dUdP;
                                 EMHD::implicit_sources(G, P_full_step_init, P_sub_step_init, m_p, gam, k, j, i,
                                                 emhd_params_sub_step_init, dUq, dUdP);

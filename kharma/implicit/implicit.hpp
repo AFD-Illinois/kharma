@@ -107,7 +107,7 @@ KOKKOS_INLINE_FUNCTION void calc_residual(const GRCoordinates& G, const Local& P
     // (U_test - Ui)/dt - dudt_explicit ...
     FLOOP residual(ip) = (tmp(ip) - Ui(ip)) / dt - dudt_explicit(ip);
 
-    if (emhd_params.conduction || emhd_params.viscosity) {
+    if (m_p.Q >= 0 || m_p.DP >= 0) {
         // Compute new implicit source terms and time derivative source terms
         Real dUq, dUdP; // Don't need full array for these
         EMHD::implicit_sources(G, P_test, Ps, m_p, gam, k, j, i, emhd_params_s, dUq, dUdP); // dU_new

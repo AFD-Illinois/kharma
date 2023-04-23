@@ -227,16 +227,17 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
     bool b_cleanup = b_cleanup_package || is_resize || initial_cleanup;
 
     // TODO enable this iff jcon is in the list of outputs
-    bool add_jcon = pin->GetOrAddBoolean("GRMHD", "add_jcon", true);
-    bool do_electrons = pin->GetOrAddBoolean("electrons", "on", false);
+    bool add_jcon      = pin->GetOrAddBoolean("GRMHD", "add_jcon", true);
+    bool do_electrons  = pin->GetOrAddBoolean("electrons", "on", false);
     bool do_reductions = pin->GetOrAddBoolean("reductions", "on", true);
-    bool do_emhd = pin->GetOrAddBoolean("emhd", "on", false);
-    bool do_wind = pin->GetOrAddBoolean("wind", "on", false);
+    bool do_implicit   = pin->GetOrAddBoolean("GRMHD", "implicit", false);
+    bool do_emhd       = pin->GetOrAddBoolean("emhd", "on", false);
+    bool do_wind       = pin->GetOrAddBoolean("wind", "on", false);
 
     // Set the default driver all the way up here, so packages know how to flag
     // prims vs cons (imex stepper syncs prims, but it's the packages' job to mark them)
     std::string driver_type;
-    if (do_emhd) {
+    if (do_implicit) {
         // Default to implicit step for EMHD
         driver_type = pin->GetOrAddString("driver", "type", "imex");
     } else {
