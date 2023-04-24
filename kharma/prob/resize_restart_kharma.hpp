@@ -99,10 +99,11 @@ KOKKOS_INLINE_FUNCTION void convert_to_utwiddle(const GRCoordinates& G, const Co
 
 KOKKOS_INLINE_FUNCTION void get_prim_restart_kharma(const GRCoordinates& G, const CoordinateEmbedding& coords, const VariablePack<Real>& P, const VarMap& m_p,
                     const SphBLCoords& bl,  const SphKSCoords& ks, 
-                    const Real fx1min, const Real fx1max, const Real fnghost, const bool should_fill, const bool is_spherical, const bool include_B,
+                    const Real fx1min, const Real fx1max, const Real fnghost, const bool should_fill, const bool is_spherical,
                     const Real gam, const Real rs,  const Real mdot, const Real uphi, const hsize_t length[GR_DIM],
-                    const GridScalar& x1, const GridScalar& x2, const GridScalar& x3, const GridScalar& rho, const GridScalar& u, const GridVector& uvec, const GridVector& B,
-                    const GridScalar& x1_fill, const GridScalar& x2_fill, const GridScalar& x3_fill, const GridScalar& rho_fill, const GridScalar& u_fill, const GridVector& uvec_fill, const GridVector& B_fill,
+                    const GridScalar& x1, const GridScalar& x2, const GridScalar& x3, const GridScalar& rho, const GridScalar& u, const GridVector& uvec,
+                    const GridScalar& x1_fill, const GridScalar& x2_fill, const GridScalar& x3_fill, const GridScalar& rho_fill, const GridScalar& u_fill, const GridVector& uvec_fill,
+                    const Real vacuum_logrho, const Real vacuum_log_u_over_rho,
                     const int& k, const int& j, const int& i) 
 {
     Real rho_temp, u_temp;
@@ -132,16 +133,15 @@ KOKKOS_INLINE_FUNCTION void get_prim_restart_kharma(const GRCoordinates& G, cons
         // (02/08/23) instead in order to set the vacuum homogeneous instead of having theta phi dependence, set j and k values
         jtemp = fnghost;
         ktemp = fnghost * (length[3] > 1);
-        rho_temp = rho(iblocktemp,ktemp,jtemp,itemp);
-        u_temp = u(iblocktemp,ktemp,jtemp,itemp);
+        if (vacuum_logrho !=0 && vacuum_log_u_over_rho !=0) {
+            rho_temp = m::pow(10.,vacuum_logrho);
+            u_temp = m::pow(10.,vacuum_log_u_over_rho) * rho_temp;
+        } else {
+            rho_temp = rho(iblocktemp,ktemp,jtemp,itemp);
+            u_temp = u(iblocktemp,ktemp,jtemp,itemp);
+        }
         Real T = get_T(r, C1, C2, n, rs);
 
-        // (02/08/23) instead in order to set the vacuum homogeneous instead of having theta phi dependence, set to the bondi radius values (assume r_B ~ r_s**2)
-        //Real T_temp = get_T(m::pow(rs,2), C1, C2, n, rs);
-        //rho_temp = m::pow(T_temp, n);
-        //u_temp = rho_temp * T_temp * n;
-        //Real T = get_T(r, C1, C2, n, rs);
-                        
         Real ur = -C1 / (m::pow(T, n) * m::pow(r, 2));
         Real ucon_bl[GR_DIM] = {0, ur, 0, 0};
         ucon_bl[3]=uphi*m::pow(r,-3./2.); // (04/13/23) a fraction of the kepler 

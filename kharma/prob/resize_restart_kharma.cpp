@@ -161,6 +161,8 @@ TaskStatus ReadKharmaRestart(MeshBlockData<Real> *rc, ParameterInput *pin)
     const bool ghost_zones = pin->GetBoolean("parthenon/mesh", "restart_ghostzones");
     auto fBfield = pin->GetOrAddString("b_field", "type", "none");
     const Real uphi = pin->GetOrAddReal("bondi", "uphi", 0.); 
+    const Real vacuum_logrho = pin->GetOrAddReal("bondi", "vacuum_logrho", 0.);
+    const Real vacuum_log_u_over_rho = pin->GetOrAddReal("bondi", "vacuum_log_u_over_rho", 0.);
 
     // Add these to package properties, since they continue to be needed on boundaries
     if(! (pmb->packages.Get("GRMHD")->AllParams().hasKey("rnx1")))
@@ -199,6 +201,10 @@ TaskStatus ReadKharmaRestart(MeshBlockData<Real> *rc, ParameterInput *pin)
         pmb->packages.Get("GRMHD")->AddParam<std::string>("b_field_type", fBfield);
     if(! (pmb->packages.Get("GRMHD")->AllParams().hasKey("uphi")))
         pmb->packages.Get("GRMHD")->AddParam<Real>("uphi", uphi);
+    if(! (pmb->packages.Get("GRMHD")->AllParams().hasKey("vacuum_logrho")))
+        pmb->packages.Get("GRMHD")->AddParam<Real>("vacuum_logrho", vacuum_logrho);
+    if(! (pmb->packages.Get("GRMHD")->AllParams().hasKey("vacuum_log_u_over_rho")))
+        pmb->packages.Get("GRMHD")->AddParam<Real>("vacuum_log_u_over_rho", vacuum_log_u_over_rho);
 
     // Set the whole domain
     SetKharmaRestart(rc);
@@ -216,6 +222,8 @@ TaskStatus SetKharmaRestart(MeshBlockData<Real> *rc, IndexDomain domain, bool co
     GridVector B_Save;
     if (include_B) B_Save = rc->Get("B_Save").data;
     const Real uphi = pmb->packages.Get("GRMHD")->Param<Real>("uphi");
+    const Real vacuum_logrho = pmb->packages.Get("GRMHD")->Param<Real>("vacuum_logrho");
+    const Real vacuum_log_u_over_rho = pmb->packages.Get("GRMHD")->Param<Real>("vacuum_log_u_over_rho");
 
     auto& G = pmb->coords;
     
@@ -432,9 +440,10 @@ TaskStatus SetKharmaRestart(MeshBlockData<Real> *rc, IndexDomain domain, bool co
         pmb->par_for("copy_restart_state_kharma", ks, ke, js, je, is, ie,
             KOKKOS_LAMBDA_3D {
                 get_prim_restart_kharma(G, coords, P, m_p, blcoord,  kscoord, 
-                    fx1min, fx1max, fnghost, should_fill, is_spherical, include_B, gam, rs, mdot, uphi, length,
-                    x1_f_device, x2_f_device, x3_f_device, rho_f_device, u_f_device, uvec_f_device, B_f_device,
-                    x1_fill_device, x2_fill_device, x3_fill_device, rho_fill_device, u_fill_device, uvec_fill_device, B_fill_device,
+                    fx1min, fx1max, fnghost, should_fill, is_spherical, gam, rs, mdot, uphi, length,
+                    x1_f_device, x2_f_device, x3_f_device, rho_f_device, u_f_device, uvec_f_device,
+                    x1_fill_device, x2_fill_device, x3_fill_device, rho_fill_device, u_fill_device, uvec_fill_device,
+                    vacuum_logrho, vacuum_log_u_over_rho,
                     k, j, i);
                 //GRMHD::p_to_u(G,P,m_p,gam,k,j,i,U,m_u);  //TODO: is this needed? I don't see it in resize_restart.cpp
                 //if (pin->GetOrAddString("b_field", "type", "none") != "none") {
