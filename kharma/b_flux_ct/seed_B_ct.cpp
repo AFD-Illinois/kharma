@@ -228,7 +228,9 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
                 }
                 break;
             case BSeedType::vertical:
-                q = bz * r * m::sin(th) / 2.;
+                //q = bz * r * m::sin(th) / 2.;
+                q = bz * m::pow(r * m::sin(th),2.) / 2.;
+                break;
             default:
                 // This shouldn't be reached. Squawk here?
                 break;
@@ -257,6 +259,13 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
                 double A_tilt_lower[GR_DIM] = {0};
                 G.lower(A_tilt, A_tilt_lower, k, j, i, Loci::corner);
                 VLOOP A(v, k, j, i) = A_tilt_lower[1+v];
+            } else if (bz != 0.0) {
+                // Hyerin (04/19/23) transforming the vector to native
+                //printf("HYERIN: for vertical field, transforming A vector to native\n");
+                const double A_embed[GR_DIM] = {0., 0., 0., q};
+                double A_native[GR_DIM] = {0};
+                G.coords.cov_vec_to_native(Xnative, A_embed, A_native);
+                VLOOP A(v, k, j, i) = A_native[1+v];
             } else {
                 // Some problems rely on a very accurate A->B, which the 
 				A(V3, k, j, i) = q;
