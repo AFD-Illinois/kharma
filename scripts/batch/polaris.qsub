@@ -8,6 +8,7 @@
 #PBS -l filesystems=home:grand
 
 KHARMA_DIR=~/kharma-dev
+WRAPPER=$KHARMA_DIR/bin/mpi_gpu_wrap
 KHARMA_ARGS="-i $KHARMA_DIR/pars/sane_perf.par"
 
 # Print ranks
@@ -36,5 +37,6 @@ done
 # Run KHARMA with mapping
 cd $PBS_O_WORKDIR
 set -x
-mpiexec -n ${NTOTRANKS} --ppn ${NRANKS_PER_NODE} --depth=${NDEPTH} --cpu-bind depth --env OMP_NUM_THREADS=${NTHREADS} -env OMP_PLACES=threads ~/bin/mpi_gpu_wrap $KHARMA_DIR/kharma.cuda $KHARMA_ARGS
+mpiexec -n ${NTOTRANKS} --ppn ${NRANKS_PER_NODE} --depth=${NDEPTH} --cpu-bind depth --env OMP_NUM_THREADS=${NTHREADS} -env OMP_PLACES=threads \
+        $WRAPPER $KHARMA_DIR/kharma.cuda $KHARMA_ARGS
 set +x
