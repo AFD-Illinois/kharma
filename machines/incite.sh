@@ -31,7 +31,8 @@ if [[ $HOST == *".polaris.alcf.anl.gov" ]]; then
   fi
   # Common modules
   module load cray-hdf5-parallel cmake
-
+  module load craype-accel-nvidia80
+  
   # Since we ran 'module purge',
   # The Cray wrappers will warn unless we set this
   export CRAY_CPU_TARGET=x86-64
