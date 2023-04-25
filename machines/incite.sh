@@ -9,6 +9,7 @@ if [[ $HOST == *".polaris.alcf.anl.gov" ]]; then
   module purge
   if [[ $ARGS == *"nvhpc233"* ]]; then
     # DOES NOT WORK: "CUDA 11.4 not installed with this NVHPC"
+    module use /soft/compilers/nvhpc/modulefiles
     module load PrgEnv-nvhpc nvhpc/23.3
     # Guide new NVHPC to a working CUDA?
     # export NVHPC_CUDA_HOME="/opt/nvidia/hpc_sdk/Linux_x86_64/21.9/cuda/11.4"
