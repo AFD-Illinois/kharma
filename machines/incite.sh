@@ -1,67 +1,42 @@
 
 # INCITE resources
-if [[ $HOST == *".summit.olcf.ornl.gov" ]]; then
-  HOST_ARCH="POWER9"
-  DEVICE_ARCH="VOLTA70"
-  # Avoid sysadmin's wrath
-  NPROC=8
-  # Runtime options for one-node test runs
-  MPI_EXE="jsrun --smpiargs="-gpu" -r 6 -a 1 -g 1 -c 6 -d packed -b packed:6"
-  OMP_NUM_THREADS=24
-  KOKKOS_NUM_DEVICES=1
-  MPI_NUM_PROCS=6
 
-  # Summit *hates* C++17.
-  # Use GCC with 14
-  module load cmake
-  if [[ "$ARGS" == *"xl"* ]]; then
-    # xlC: OpenMP CXX problems
-    #module load xl cuda
-    C_NATIVE='xlc'
-    CXX_NATIVE='xlc++'
-    export NVCC_WRAPPER_HOST_EXTRA_FLAGS='-O3 -qmaxmem=-1'
-    export NVCC_WRAPPER_CUDA_EXTRA_FLAGS='-O3 -Xcompiler -qmaxmem=-1'
-    #PREFIX_PATH="/sw/summit/hdf5/1.10.6_align/xl/16.1.1-5/"
-  elif [[ "$ARGS" == *"nvhpc"* ]]; then
-    # Use nvc++ compiler in NVHPC
-    module load cuda/11.5.2 nvhpc/22.5 spectrum-mpi hdf5/1.10.7
+# ALCF: Polaris
+if [[ $HOST == *".polaris.alcf.anl.gov" ]]; then
+  HOST_ARCH=ZEN3
+  DEVICE_ARCH=AMPERE80
 
-    C_NATIVE="nvc"
-    CXX_NATIVE="nvc++"
-    export CXXFLAGS="-mp"
-    PREFIX_PATH="/gpfs/alpine/proj-shared/ast171/libs/hdf5-nvhpc-21.9"
+  module purge
+  if [[ $ARGS == *"nvhpc233"* ]]; then
+    # DOES NOT WORK: "CUDA 11.4 not installed with this NVHPC"
+    module use /soft/compilers/nvhpc/modulefiles
+    module load PrgEnv-nvhpc nvhpc/23.3
+    # Guide new NVHPC to a working CUDA?
+    # export NVHPC_CUDA_HOME="/opt/nvidia/hpc_sdk/Linux_x86_64/21.9/cuda/11.4"
+    # export NVHPC_DEFAULT_CUDA=11.4
+    # export NVCC_WRAPPER_CUDA_EXTRA_FLAGS="-gpu=cuda11.4"
+    # EXTRA_FLAGS="-DCUDA_TOOLKIT_ROOT_DIR=/opt/nvidia/hpc_sdk/Linux_x86_64/21.9/cuda/11.4 $EXTRA_FLAGS"
+  elif [[ $ARGS == *"nvhpc219"* ]]; then
+    # DOES NOT WORK: compile errors in pmmintrin.h & AVX512 intrinsics headers
+    module load PrgEnv-nvhpc
+    # Correct some vars set by default PrgEnv-nvhpc
+    unset CC CXX F77 F90 FC
+    # Try not to require intrinsics?
+    #HOST_ARCH=BDW
+  elif [[ $ARGS == *"gcc"* ]]; then
+    module load PrgEnv-gnu
+    module load cudatoolkit-standalone
   else
-    # Use default GCC
-    module load gcc cuda hdf5
-    C_NATIVE='gcc'
-    CXX_NATIVE='g++'
+    module load PrgEnv-nvhpc nvhpc/23.1
   fi
-fi
+  # Common modules
+  module load cray-hdf5-parallel cmake
+  module load craype-accel-nvidia80
+  
+  # Since we ran 'module purge',
+  # The Cray wrappers will warn unless we set this
+  export CRAY_CPU_TARGET=x86-64
+  # TODO(BSP) need to set CRAYPE_LINK_TYPE=dynamic long-term?
 
-if [[ $HOST == *".alcf.anl.gov" ]]; then
-  if [[ "$ARGS" == *"cuda"* ]]; then
-    module purge
-    module load Core/StdEnv cmake
-    module load nvhpc/21.7
-    #module load nvhpc
-    module load openmpi
-    #module load hdf5
-    HOST_ARCH="AMDAVX"
-    DEVICE_ARCH="AMPERE80"
-
-    #CXXFLAGS="-mp"
-    C_NATIVE="gcc"
-    CXX_NATIVE="g++"
-    #export CXXFLAGS="-g -pg"
-
-    EXTRA_FLAGS="-DCUDAToolkit_ROOT_DIR=/soft/hpc-sdk/Linux_x86_64/21.7/cuda/11.4/ $EXTRA_FLAGS"
-    EXTRA_FLAGS="-DCUDAToolkit_BIN_DIR=/soft/hpc-sdk/Linux_x86_64/21.7/cuda/11.4/bin $EXTRA_FLAGS"
-    EXTRA_FLAGS="-DCUDAToolkit_INCLUDE_DIR=/soft/hpc-sdk/Linux_x86_64/21.7/cuda/11.4/include $EXTRA_FLAGS"
-    PREFIX_PATH="$HOME/libs/hdf5-gcc-openmpi"
-    #PREFIX_PATH="/soft/thetagpu/hpc-sdk/Linux_x86_64/21.7/"
-  else
-    echo "Compiling for KNL"
-    HOST_ARCH="KNL"
-    PREFIX_PATH="$MPICH_DIR"
-  fi
+  EXTRA_FLAGS="-DPARTHENON_DISABLE_HDF5_COMPRESSION=ON $EXTRA_FLAGS"
 fi

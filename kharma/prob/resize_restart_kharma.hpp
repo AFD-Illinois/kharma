@@ -34,42 +34,53 @@ KOKKOS_INLINE_FUNCTION void Xtoindex(const GReal XG[GR_DIM],
                                    int& i, int& j, int& k, GReal del[GR_DIM])
 {
     //cout << "Hyerin: entered Xtoindex" <<endl;
-    Real dx2, dx2_min;
+    Real dx1, dx2, dx3, dx1_min, dx2_min, dx3_min, dx_sum_min;
 
     // initialize
     iblock =0;
     i = 0;
     j = 0;
     k = 0;
-    dx2_min = m::pow(XG[1]-x1(iblock,i),2.)+
-              m::pow(XG[2]-x2(iblock,j),2.)+
-              m::pow(XG[3]-x3(iblock,k),2.);
+    dx1_min = (XG[1]-x1(iblock,i))*(XG[1]-x1(iblock,i));
+    dx2_min = (XG[2]-x2(iblock,j))*(XG[2]-x2(iblock,j));
+    dx3_min = (XG[3]-x3(iblock,k))*(XG[3]-x3(iblock,k));
+    dx_sum_min = dx1_min + dx2_min + dx3_min;
 
     for (int iblocktemp = 0; iblocktemp < length[0]; iblocktemp++) {
+        // independently searching for minimum for i,j,k
         for (int itemp = 0; itemp < length[1]; itemp++) {
-            for (int jtemp = 0; jtemp < length[2]; jtemp++) {
-                for (int ktemp = 0; ktemp < length[3]; ktemp++) {
-                    dx2 = m::pow(XG[1]-x1(iblocktemp,itemp),2.)+
-                          m::pow(XG[2]-x2(iblocktemp,jtemp),2.)+
-                          m::pow(XG[3]-x3(iblocktemp,ktemp),2.);
-
-                    // simplest interpolation (Hyerin 07/26/22)
-                    if (dx2<dx2_min){
-                        dx2_min=dx2;
-                        iblock=iblocktemp;
-                        i = itemp;
-                        j = jtemp;
-                        k = ktemp;
-                    }
-                }
+            dx1 = (XG[1]-x1(iblocktemp,itemp))*(XG[1]-x1(iblocktemp,itemp));
+            if (dx1 < dx1_min) {
+                dx1_min = dx1;
+                i = itemp;
             }
+        }
+        for (int jtemp = 0; jtemp < length[2]; jtemp++) {
+            dx2 = (XG[2]-x2(iblocktemp,jtemp))*(XG[2]-x2(iblocktemp,jtemp));
+            if (dx2 < dx2_min) {
+                dx2_min = dx2;
+                j = jtemp;
+            }
+        }
+        for (int ktemp = 0; ktemp < length[3]; ktemp++) {
+            dx3 = (XG[3]-x3(iblocktemp,ktemp))*(XG[3]-x3(iblocktemp,ktemp));
+            if (dx3 < dx3_min) {
+                dx3_min = dx3;
+                k = ktemp;
+            }
+        }
+        if (dx1_min + dx2_min + dx3_min < dx_sum_min) {
+            dx_sum_min = dx1_min + dx2_min + dx3_min;
+            iblock = iblocktemp;
         }
     }
 
     del[1] = 0.; //(XG[1] - ((i) * dx[1] + startx[1])) / dx[1];
     del[2] = 0.;//(XG[2] - ((j) * dx[2] + startx[2])) / dx[2];
     del[3] = 0.;// (phi   - ((k) * dx[3] + startx[3])) / dx[3];
-    if (m::abs(dx2_min/m::pow(XG[1],2.))>1.e-8) printf("Xtoindex: dx2 pretty large = %g at r= %g \n",dx2_min, XG[1]);
+    if (m::abs(dx1_min/m::pow(XG[1],2.))>1.e-8) printf("Xtoindex: dx2 pretty large = %g at r= %g \n",dx1_min, XG[1]);
+    if (m::abs(dx2_min)>1.e-8) printf("Xtoindex: dx2 pretty large = %g at th = %g \n",dx2_min, XG[2]);
+    if (m::abs(dx3_min)>1.e-8) printf("Xtoindex: dx2 pretty large = %g at phi = %g \n",dx3_min, XG[3]);
 }
 
 
