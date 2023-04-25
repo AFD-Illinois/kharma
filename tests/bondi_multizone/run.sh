@@ -5,16 +5,18 @@
 
 # User specified values here
 KERR=false
-JITTER=true #false #
-ROT=true #false #
+JITTER=false #true #
+ROT=false #true #
 SUPEREXP=false #true #
+SHORT_T_OUT=false
 ROT_UPHI=0.1 # 1e-10
-DIM=3
+DIM=2 #3
 NZONES=7
 BASE=8
 NRUNS=300
 START_RUN=0 # if this is not 0, then update start_time, out_to_in, iteration, r_out, r_in to values that you are re-starting from
-DRTAG="bondi_multizone_041723_bondi_64^3_rot${ROT_UPHI}keprst_jit"
+#DRTAG="bondi_multizone_041723_bondi_64^3_rot${ROT_UPHI}keprst_jit"
+DRTAG="bondi_multizone_041823_2d_test"
 
 # Set paths
 KHARMADIR=../..
@@ -29,7 +31,6 @@ out_to_in=1 # -1 #
 iteration=1 # eq : (iteration-1)*(NZONES-1)<VAR<=iteration*(NZONES-1)
 r_out=$((${BASE}**($turn_around+2))) #512 #
 r_in=$((${BASE}**$turn_around)) #8 #
-ZONE0=$((2*($NZONES-1)))
 
 # if the directories are not present, make them.
 if [ ! -d "${DR}" ]; then
@@ -39,13 +40,25 @@ if [ ! -d "${PDR}logs/${DRTAG}" ]; then
   mkdir "${PDR}logs/${DRTAG}"
 fi
 
+outermost_zone=$((2*($NZONES-1)))
+r_b=100000
+
 ### Start running zone by zone
 for (( VAR=$START_RUN; VAR<$NRUNS; VAR++ ))
 do
   args=()
   echo "${DRTAG} iter $iteration, $VAR : t = $start_time, r_out = $r_out, r_in = $r_in"
-  logruntime=`echo "scale=20; l($r_out)*3./2-l(1.+$r_out/100000)/2." | bc -l` # round to an integer for the free-fall time (cs^2=0.01 should be updated from the desired rs value) # GIZMO
+  logruntime=`echo "scale=20; l($r_out)*3./2-l(1.+$r_out/$r_b)/2." | bc -l` # round to an integer for the free-fall time (cs^2=0.01 should be updated from the desired rs value) # GIZMO
   runtime=`echo "scale=0; e($logruntime)+1" | bc -l`
+  if [[ $SHORT_T_OUT == "true" ]]; then
+    # use the next largest annulus' runtime
+    if [ $(($VAR % $outermost_zone)) -eq 0 ]; then
+      r_out_sm=$((${r_out}/${BASE}))
+      echo "r_out=${r_out}, but I will use next largest annulus' r_out=${r_out_sm} for the runtime"
+      logruntime=`echo "scale=20; l($r_out_sm)*3./2-l(1.+$r_out_sm/$r_b)/2." | bc -l`
+      runtime=`echo "scale=0; e($logruntime)+1" | bc -l`
+    fi
+  fi
   log_u_over_rho=-5.2915149 # test same vacuum conditions as r_shell when (rs=1e2.5)
   start_time=$(($start_time+$runtime))  
 
@@ -134,12 +147,21 @@ do
   data_dir="${DR}/bondi_multizone_$(printf %05d ${VAR})"
   out_fn="${PDR}/logs/${DRTAG}/log_multizone$(printf %05d ${VAR})_out"
   err_fn="${PDR}/logs/${DRTAG}/log_multizone$(printf %05d ${VAR})_err"
+  
+  # configuration
+  if [[ $DIM -gt 2 ]]; then
+    nx3_m=64
+    nx3_mb=64
+  else
+    nx3_m=1
+    nx3_mb=1
+  fi
 
   srun --mpi=pmix ${PDR}/kharma_gcc10_kep_rst.cuda -i ${parfilename} \
                                     parthenon/job/problem_id=$prob \
                                     parthenon/time/tlim=${start_time} parthenon/time/nlim=-1 \
-                                    parthenon/mesh/nx1=64 parthenon/mesh/nx2=64 parthenon/mesh/nx3=64 \
-                                    parthenon/meshblock/nx1=32 parthenon/meshblock/nx2=32 parthenon/meshblock/nx3=64 \
+                                    parthenon/mesh/nx1=64 parthenon/mesh/nx2=64 parthenon/mesh/nx3=$nx3_m \
+                                    parthenon/meshblock/nx1=32 parthenon/meshblock/nx2=32 parthenon/meshblock/nx3=$nx3_mb \
                                     coordinates/r_in=${r_in} coordinates/a=$spin coordinates/ext_g=false \
                                     GRMHD/reconstruction=linear_vl \
                                     bounds/fix_flux_pole=1 \
