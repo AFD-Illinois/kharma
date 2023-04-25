@@ -10,15 +10,13 @@
 KHARMA_DIR=~/kharma-dev
 KHARMA_ARGS="-i $KHARMA_DIR/pars/sane_perf.par"
 
-# For applications that internally handle binding MPI/OpenMP processes to GPUs
-mpiexec -n ${NTOTRANKS} --ppn ${NRANKS_PER_NODE} --depth=${NDEPTH} --cpu-bind depth --env OMP_NUM_THREADS=${NTHREADS} -env OMP_PLACES=threads ./hello_affinity
-
 # Print ranks
 NNODES=`wc -l < $PBS_NODEFILE`
 NRANKS=$(nvidia-smi -L | wc -l) # Number of MPI ranks to spawn per node
 NDEPTH=8 # Number of hardware threads per rank (i.e. spacing between MPI ranks)
 NTHREADS=1 # Number of software threads per rank to launch (i.e. OMP_NUM_THREADS)
 NTOTRANKS=$(( NNODES * NRANKS ))
+#NTOTRANKS=1 # To set manually for scaling/testing
 echo "NUM_OF_NODES= ${NNODES} TOTAL_NUM_RANKS= ${NTOTRANKS} RANKS_PER_NODE= ${NRANKS} THREADS_PER_RANK= ${NTHREADS}"
 
 # OpenMP config
