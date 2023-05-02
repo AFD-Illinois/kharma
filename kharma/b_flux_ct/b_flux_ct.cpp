@@ -299,6 +299,8 @@ TaskStatus FixPolarFlux(MeshData<Real> *md)
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
 
     const int ndim = pmesh->ndim;
+    if (ndim < 2) return TaskStatus::complete;
+
     IndexRange ib_e = pmb0->cellbounds.GetBoundsI(IndexDomain::entire);
     IndexRange jb = pmb0->cellbounds.GetBoundsJ(IndexDomain::interior);
     const int js = jb.s;
@@ -317,7 +319,7 @@ TaskStatus FixPolarFlux(MeshData<Real> *md)
             pmb->par_for("fix_flux_b_l", kb_e.s, kb_e.e, js, js, ib_e.s, ib_e.e,
                 KOKKOS_LAMBDA_3D {
                     B_F.flux(X1DIR, V2, k, j-1, i) = -B_F.flux(X1DIR, V2, k, js, i);
-                    if (ndim > 1) B_F.flux(X2DIR, V2, k, j, i) = 0;
+                    B_F.flux(X2DIR, V2, k, j, i) = 0;
                     if (ndim > 2) B_F.flux(X3DIR, V2, k, j-1, i) = -B_F.flux(X3DIR, V2, k, js, i);
                 }
             );
@@ -327,7 +329,7 @@ TaskStatus FixPolarFlux(MeshData<Real> *md)
             pmb->par_for("fix_flux_b_r", kb_e.s, kb_e.e, je, je, ib_e.s, ib_e.e,
                 KOKKOS_LAMBDA_3D {
                     B_F.flux(X1DIR, V2, k, j, i) = -B_F.flux(X1DIR, V2, k, je, i);
-                    if (ndim > 1) B_F.flux(X2DIR, V2, k, j, i) = 0;
+                    B_F.flux(X2DIR, V2, k, j, i) = 0;
                     if (ndim > 2) B_F.flux(X3DIR, V2, k, j, i) = -B_F.flux(X3DIR, V2, k, je, i);
                 }
             );
@@ -419,6 +421,7 @@ double MaxDivB(MeshData<Real> *md)
     Flag(md, "Calculating divB Mesh");
     auto pmesh = md->GetMeshPointer();
     const int ndim = pmesh->ndim;
+    if (ndim < 2) return 0.0;
 
     // Packing out here avoids frequent per-mesh packs.  Do we need to?
     auto B_U = md->PackVariables(std::vector<std::string>{"cons.B"});
@@ -498,6 +501,7 @@ void CalcDivB(MeshData<Real> *md, std::string divb_field_name)
     Flag(md, "Calculating divB for output");
     auto pmesh = md->GetMeshPointer();
     const int ndim = pmesh->ndim;
+    if (ndim < 2) return;
 
     // Packing out here avoids frequent per-mesh packs.  Do we need to?
     auto B_U = md->PackVariables(std::vector<std::string>{"cons.B"});

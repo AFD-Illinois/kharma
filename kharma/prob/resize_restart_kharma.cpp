@@ -270,15 +270,13 @@ TaskStatus SetKharmaRestart(MeshBlockData<Real> *rc, IndexDomain domain, bool co
 
 
         if (! fghostzones) fnghost=0; // reset to 0
-        int x3factor=1;
-        if (n3tot <= 1) x3factor=0; // if less than 3D, do not add ghosts in x3
         hsize_t length[GR_DIM] = {nBlocks,
                                     n1mb+2*fnghost,
-                                    n2mb+2*fnghost,
-                                    n3mb+2*fnghost*x3factor}; 
+                                    n2mb+2*fnghost*(n2tot > 1),
+                                    n3mb+2*fnghost*(n3tot > 1)}; 
         const int block_sz = length[0]*length[1]*length[2]*length[3];
         //std::cout << "lengths " << length[0]  << " " << length[1] <<" " <<  length[2]<<" " << length[3] << std::endl;
-        //printf("lengths %i %i %i %i \n", length[0], length[1], length[2], length[3]);
+        printf("lengths %i %i %i %i \n", length[0], length[1], length[2], length[3]);
         
         
         // read from file and stored in device Hyerin (10/18/2022)

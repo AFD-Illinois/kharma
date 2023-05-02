@@ -175,7 +175,7 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
             } else {
                 // Use averages for anything else
                 // This loop runs over every corner. Centers do not exist before the first
-                // or after the last, so use the last (ghost) zones available.
+                // or after the last corner, so use the last (ghost) zones available.
                 const int ii = clip(i, is+1, ie);
                 const int jj = clip(j, js+1, je);
                 const int kk = clip(k, ks+1, ke);
@@ -184,9 +184,11 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
                               rho(kk, jj - 1, ii) + rho(kk, jj - 1, ii - 1) +
                               rho(kk - 1, jj, ii)     + rho(kk - 1, jj, ii - 1) +
                               rho(kk - 1, jj - 1, ii) + rho(kk - 1, jj - 1, ii - 1)) / 8;
-                } else {
+                } else if (ndim > 1) {
                     rho_av = (rho(ks, jj, ii)     + rho(ks, jj, ii - 1) +
                               rho(ks, jj - 1, ii) + rho(ks, jj - 1, ii - 1)) / 4;
+                } else {
+                    rho_av = (rho(ks, jj, ii) + rho(ks, jj, ii - 1)) / 2;
                 }
             }
 
@@ -280,7 +282,7 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
                 get_B_from_A_3D(G, A, B_U, k, j, i);
             }
         );
-    } else {
+    } else if (ndim > 1) {
         pmb->par_for("B_field_B_2D", ks, ke, js, je, is, ie,
             KOKKOS_LAMBDA_3D {
                 get_B_from_A_2D(G, A, B_U, k, j, i);

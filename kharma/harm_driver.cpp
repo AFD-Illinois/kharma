@@ -132,9 +132,18 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
             t_calculate_flux2 = tl.AddTask(t_start_recv, Flux::GetFlux<ReconstructionType::weno5, X2DIR>, mc0.get());
             t_calculate_flux3 = tl.AddTask(t_start_recv, Flux::GetFlux<ReconstructionType::weno5, X3DIR>, mc0.get());
             break;
+        case ReconstructionType::weno5_lower_edges:
+            t_calculate_flux1 = tl.AddTask(t_start_recv, Flux::GetFlux<ReconstructionType::weno5_lower_edges, X1DIR>, mc0.get());
+            t_calculate_flux2 = tl.AddTask(t_start_recv, Flux::GetFlux<ReconstructionType::weno5_lower_edges, X2DIR>, mc0.get());
+            t_calculate_flux3 = tl.AddTask(t_start_recv, Flux::GetFlux<ReconstructionType::weno5_lower_edges, X3DIR>, mc0.get());
+            break;
+        case ReconstructionType::weno5_lower_poles:
+            t_calculate_flux1 = tl.AddTask(t_start_recv, Flux::GetFlux<ReconstructionType::weno5_lower_poles, X1DIR>, mc0.get());
+            t_calculate_flux2 = tl.AddTask(t_start_recv, Flux::GetFlux<ReconstructionType::weno5_lower_poles, X2DIR>, mc0.get());
+            t_calculate_flux3 = tl.AddTask(t_start_recv, Flux::GetFlux<ReconstructionType::weno5_lower_poles, X3DIR>, mc0.get());
+            break;
         case ReconstructionType::ppm:
         case ReconstructionType::mp5:
-        case ReconstructionType::weno5_lower_poles:
             std::cerr << "Reconstruction type not supported!  Supported reconstructions:" << std::endl;
             std::cerr << "donor_cell, linear_mc, linear_vl, weno5" << std::endl;
             throw std::invalid_argument("Unsupported reconstruction algorithm!");

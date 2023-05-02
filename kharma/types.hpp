@@ -57,7 +57,7 @@ using parthenon::MeshBlockData;
 
 // Denote reconstruction algorithms
 // See reconstruction.hpp for implementations
-enum ReconstructionType{donor_cell=0, linear_mc, linear_vl, ppm, mp5, weno5, weno5_lower_poles};
+enum ReconstructionType{donor_cell=0, linear_mc, linear_vl, ppm, mp5, weno5, weno5_lower_edges, weno5_lower_poles};
 
 // Denote inversion failures (pflags). See U_to_P for status explanations
 // Only thrown from function in U_to_P.hpp, see that file for meanings

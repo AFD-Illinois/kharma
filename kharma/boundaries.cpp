@@ -431,7 +431,7 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
         }
 
         // This is a lot of zero fluxes!
-        if (fix_flux_pole) {
+        if (fix_flux_pole && ndim > 1) {
             //printf("HYERIN: m_B=%i m_rho=%i dim = (%i %i %i %i %i %i)\n",m_B, m_rho,F.GetDim(1),F.GetDim(2), F.GetDim(3), F.GetDim(4), F.GetDim(5),F.GetDim(6));
             if (pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::user) {
                 // This loop covers every flux we need

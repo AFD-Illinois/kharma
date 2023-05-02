@@ -485,5 +485,73 @@ KOKKOS_INLINE_FUNCTION void reconstruct<ReconstructionType::weno5, X3DIR>(parthe
     KReconstruction::WENO5X3l(member, k - 1, j, is_l, ie_l, P, ql);
     KReconstruction::WENO5X3r(member, k, j, is_l, ie_l, P, qr);
 }
+// WENO5 lowered edges:
+// Linear X1 reconstruction near X1 boundaries
+template <>
+KOKKOS_INLINE_FUNCTION void reconstruct<ReconstructionType::weno5_lower_edges, X1DIR>(parthenon::team_mbr_t& member,
+                                        const GRCoordinates& G, const VariablePack<Real> &P,
+                                        const int& k, const int& j, const int& is_l, const int& ie_l, 
+                                        ScratchPad2D<Real> ql, ScratchPad2D<Real> qr)
+{
+    // This prioiritizes using the same-order fluxes on faces rather than for cells.
+    // Neither is transparently wrong (afaict) but this feels nicer
+    constexpr int o = 5; // offset
+    KReconstruction::WENO5X1(member, k, j, is_l+o, ie_l-o, P, ql, qr);
+    KReconstruction::PiecewiseLinearX1(member, k, j, is_l, is_l+o-1, P, ql, qr);
+    KReconstruction::PiecewiseLinearX1(member, k, j, ie_l-o+1, ie_l, P, ql, qr);
+}
+template <>
+KOKKOS_INLINE_FUNCTION void reconstruct<ReconstructionType::weno5_lower_edges, X2DIR>(parthenon::team_mbr_t& member,
+                                        const GRCoordinates& G, const VariablePack<Real> &P,
+                                        const int& k, const int& j, const int& is_l, const int& ie_l, 
+                                        ScratchPad2D<Real> ql, ScratchPad2D<Real> qr)
+{
+    reconstruct<ReconstructionType::weno5, X2DIR>(member, G, P, k, j, is_l, ie_l, ql, qr);
+}
+template <>
+KOKKOS_INLINE_FUNCTION void reconstruct<ReconstructionType::weno5_lower_edges, X3DIR>(parthenon::team_mbr_t& member,
+                                        const GRCoordinates& G, const VariablePack<Real> &P,
+                                        const int& k, const int& j, const int& is_l, const int& ie_l, 
+                                        ScratchPad2D<Real> ql, ScratchPad2D<Real> qr)
+{
+    reconstruct<ReconstructionType::weno5, X3DIR>(member, G, P, k, j, is_l, ie_l, ql, qr);
+}
+// WENO5 lowered poles:
+// Linear X2 reconstruction near X2 boundaries
+template <>
+KOKKOS_INLINE_FUNCTION void reconstruct<ReconstructionType::weno5_lower_poles, X1DIR>(parthenon::team_mbr_t& member,
+                                        const GRCoordinates& G, const VariablePack<Real> &P,
+                                        const int& k, const int& j, const int& is_l, const int& ie_l, 
+                                        ScratchPad2D<Real> ql, ScratchPad2D<Real> qr)
+{
+    reconstruct<ReconstructionType::weno5, X1DIR>(member, G, P, k, j, is_l, ie_l, ql, qr);
+}
+template <>
+KOKKOS_INLINE_FUNCTION void reconstruct<ReconstructionType::weno5_lower_poles, X2DIR>(parthenon::team_mbr_t& member,
+                                        const GRCoordinates& G, const VariablePack<Real> &P,
+                                        const int& k, const int& j, const int& is_l, const int& ie_l, 
+                                        ScratchPad2D<Real> ql, ScratchPad2D<Real> qr)
+{
+    // This prioiritizes using the same fluxes on faces rather than for cells.
+    // Neither is transparently wrong (afaict) but this feels nicer
+    constexpr int o = 5;
+    if (j > o || j < P.GetDim(1) - o) {
+        KReconstruction::WENO5X2l(member, k, j - 1, is_l+o, ie_l-o, P, ql);
+        KReconstruction::WENO5X2r(member, k, j, is_l+o, ie_l-o, P, qr);
+    } else {
+        ScratchPad2D<Real> q_u(member.team_scratch(1), P.GetDim(4), P.GetDim(1));
+        KReconstruction::PiecewiseLinearX2(member, k, j - 1, is_l, is_l+o-1, P, ql, q_u);
+        KReconstruction::PiecewiseLinearX2(member, k, j, is_l, is_l+o-1, P, q_u, qr);
+    }
+}
+template <>
+KOKKOS_INLINE_FUNCTION void reconstruct<ReconstructionType::weno5_lower_poles, X3DIR>(parthenon::team_mbr_t& member,
+                                        const GRCoordinates& G, const VariablePack<Real> &P,
+                                        const int& k, const int& j, const int& is_l, const int& ie_l, 
+                                        ScratchPad2D<Real> ql, ScratchPad2D<Real> qr)
+{
+    reconstruct<ReconstructionType::weno5, X3DIR>(member, G, P, k, j, is_l, ie_l, ql, qr);
+}
+
 
 } // namespace KReconstruction
