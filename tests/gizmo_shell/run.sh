@@ -40,7 +40,7 @@ outermost_zone=$((2*($NZONES-1)))
 r_b=100000
 
 # GIZMO data
-datfn="${PDR}/data/gizmo/031623_100Myr/dat.txt"
+datfn="${PDR}/data/gizmo/042623_3d/new_snap_deposit_010.hdf5" #"${PDR}/data/gizmo/031623_100Myr/dat.txt"
 logrho=-7.80243572
 log_u_over_rho=-5.34068635
 
@@ -113,8 +113,8 @@ do
   out_fn="${PDR}/logs/${DRTAG}/log_multizone$(printf %05d ${VAR})_out"
   err_fn="${PDR}/logs/${DRTAG}/log_multizone$(printf %05d ${VAR})_err"
 
-  #srun --mpi=pmix ${PDR}/kharma_gcc10_gizmo_test.cuda -i ${parfilename}  \
-  srun --mpi=pmix ${PDR}/kharma_fork/kharma.cuda -i ${parfilename}  \
+  #srun --mpi=pmix ${PDR}/kharma_fork/kharma.cuda -i ${parfilename}  \
+  srun --mpi=pmix ${PDR}/kharma_gizmo.cuda -i ${parfilename}  \
                                     parthenon/job/problem_id=$prob \
                                     parthenon/mesh/nx1=128 parthenon/mesh/nx2=128 parthenon/mesh/nx3=128 \
                                     parthenon/meshblock/nx1=128 parthenon/meshblock/nx2=64 parthenon/meshblock/nx3=64 \
