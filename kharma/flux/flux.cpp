@@ -41,6 +41,49 @@ using namespace parthenon;
 
 // GetFlux is in the header file get_flux.hpp, as it is templated on reconstruction scheme and flux direction
 
+std::shared_ptr<KHARMAPackage> Flux::Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages)
+{
+    Flag("Initializing Flux");
+    auto pkg = std::make_shared<KHARMAPackage>("Flux");
+    Params &params = pkg->AllParams();
+
+    // We can't use GetVariablesByFlag yet, so walk through and count manually
+    int nvar = 0;
+    for (auto pkg : packages->AllPackages()) {
+        for (auto field : pkg.second->AllFields()) {
+            // Specifically ignore the B_Cleanup variables, we don't handle their boundary conditions
+            if (field.second.IsSet(Metadata::WithFluxes)) {
+                if (field.second.Shape().size() < 1) {
+                    nvar += 1;
+                } else {
+                    nvar += field.second.Shape()[0];
+                }
+            }
+        }
+    }
+    std::vector<int> s_flux({nvar});
+    std::vector<MetadataFlag> flags_temp = {Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy};
+    Metadata m = Metadata(flags_temp, s_flux);
+    pkg->AddField("Flux.Pr", m);
+    pkg->AddField("Flux.Pl", m);
+    pkg->AddField("Flux.Ur", m);
+    pkg->AddField("Flux.Ul", m);
+    pkg->AddField("Flux.Fr", m);
+    pkg->AddField("Flux.Fl", m);
+
+    std::vector<int> s_vec({NVEC});
+    m = Metadata(flags_temp, s_vec);
+    pkg->AddField("Flux.cmax", m);
+    pkg->AddField("Flux.cmin", m);
+
+    // Velocities, for upwinding later
+    //pkg->AddField("Flux.vr", m);
+    //pkg->AddField("Flux.vl", m);
+
+    Flag("Initialized");
+    return pkg;
+}
+
 TaskStatus Flux::BlockPtoUMHD(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
     Flag(rc, "Getting conserved GRMHD variables");
@@ -71,7 +114,6 @@ TaskStatus Flux::BlockPtoUMHD(MeshBlockData<Real> *rc, IndexDomain domain, bool 
             Flux::p_to_u_mhd(G, P, m_p, emhd_params, gam, k, j, i, U, m_u);
         }
     );
-
 
     Flag(rc, "Got conserved variables");
     return TaskStatus::complete;
@@ -221,7 +263,7 @@ void Flux::AddGeoSource(MeshData<Real> *md, MeshData<Real> *mdudt)
             Real Tmu[GR_DIM]    = {0};
             Real new_du[GR_DIM] = {0};
             for (int mu = 0; mu < GR_DIM; ++mu) {
-                Flux::calc_tensor(G, P(b), m_p, D, emhd_params, gam, k, j, i, mu, Tmu);
+                Flux::calc_tensor(P(b), m_p, D, emhd_params, gam, k, j, i, mu, Tmu);
                 for (int nu = 0; nu < GR_DIM; ++nu) {
                     // Contract mhd stress tensor with connection, and multiply by metric determinant
                     for (int lam = 0; lam < GR_DIM; ++lam) {

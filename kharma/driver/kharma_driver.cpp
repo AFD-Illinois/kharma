@@ -239,11 +239,11 @@ TaskID KHARMADriver::AddFluxCalculations(TaskID& t_start, TaskList& tl, KReconst
         t_calculate_flux2 = tl.AddTask(t_start, Flux::GetFlux<RType::linear_mc, X2DIR>, md);
         t_calculate_flux3 = tl.AddTask(t_start, Flux::GetFlux<RType::linear_mc, X3DIR>, md);
         break;
-    case RType::linear_vl:
-        t_calculate_flux1 = tl.AddTask(t_start, Flux::GetFlux<RType::linear_vl, X1DIR>, md);
-        t_calculate_flux2 = tl.AddTask(t_start, Flux::GetFlux<RType::linear_vl, X2DIR>, md);
-        t_calculate_flux3 = tl.AddTask(t_start, Flux::GetFlux<RType::linear_vl, X3DIR>, md);
-        break;
+    // case RType::linear_vl:
+    //     t_calculate_flux1 = tl.AddTask(t_start, Flux::GetFlux<RType::linear_vl, X1DIR>, md);
+    //     t_calculate_flux2 = tl.AddTask(t_start, Flux::GetFlux<RType::linear_vl, X2DIR>, md);
+    //     t_calculate_flux3 = tl.AddTask(t_start, Flux::GetFlux<RType::linear_vl, X3DIR>, md);
+    //     break;
     case RType::weno5:
         t_calculate_flux1 = tl.AddTask(t_start, Flux::GetFlux<RType::weno5, X1DIR>, md);
         t_calculate_flux2 = tl.AddTask(t_start, Flux::GetFlux<RType::weno5, X2DIR>, md);
@@ -259,9 +259,8 @@ TaskID KHARMADriver::AddFluxCalculations(TaskID& t_start, TaskList& tl, KReconst
         t_calculate_flux2 = tl.AddTask(t_start, Flux::GetFlux<RType::weno5_lower_poles, X2DIR>, md);
         t_calculate_flux3 = tl.AddTask(t_start, Flux::GetFlux<RType::weno5_lower_poles, X3DIR>, md);
         break;
-    case RType::ppm:
-    case RType::mp5:
-        std::cerr << "Reconstruction type not supported!  Supported reconstructions:" << std::endl
+    default:
+        std::cerr << "Reconstruction type not supported!  Main supported reconstructions:" << std::endl
                   << "donor_cell, linear_mc, linear_vl, weno5" << std::endl;
         throw std::invalid_argument("Unsupported reconstruction algorithm!");
     }

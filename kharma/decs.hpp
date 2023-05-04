@@ -53,9 +53,9 @@
 // Libraries I need directly
 #include "Kokkos_Core.hpp"
 
-#if 0
+#if 1
 // Resolve math functions to new Kokkos versions. Faster, maybe
-namespace m = Kokkos::Experimental;
+namespace m = Kokkos;
 #else
 // Resolve to standard library
 namespace m = std;

@@ -227,19 +227,21 @@ KOKKOS_INLINE_FUNCTION void calc_4vecs(const GRCoordinates& G, const Local& P, c
                                       const int& j, const int& i, const Loci loc, FourVectors& D)
 {
     const Real gamma = lorentz_calc(G, P, m, j, i, loc);
-    const Real alpha = 1. / m::sqrt(-G.gcon(loc, j, i, 0, 0));
+    const Real inv_alpha = m::sqrt(-G.gcon(loc, j, i, 0, 0));
 
-    D.ucon[0] = gamma / alpha;
-    VLOOP D.ucon[v+1] = P(m.U1 + v) - gamma * alpha * G.gcon(loc, j, i, 0, v+1);
+    D.ucon[0] = gamma * inv_alpha;
+    VLOOP D.ucon[v+1] = P(m.U1 + v) - gamma / inv_alpha * G.gcon(loc, j, i, 0, v+1);
 
-    G.lower(D.ucon, D.ucov, 0, j, i, loc);
+    //G.lower(D.ucon, D.ucov, 0, j, i, loc);
+    DLOOP2 D.ucov[mu] += G.gcov(loc, j, i, mu, nu) * D.ucon[nu];
 
     if (m.B1 >= 0) {
         D.bcon[0] = 0;
         VLOOP D.bcon[0] += P(m.B1 + v) * D.ucov[v+1];
         VLOOP D.bcon[v+1] = (P(m.B1 + v) + D.bcon[0] * D.ucon[v+1]) / D.ucon[0];
 
-        G.lower(D.bcon, D.bcov, 0, j, i, loc);
+        //G.lower(D.bcon, D.bcov, 0, j, i, loc);
+        DLOOP2 D.bcov[mu] += G.gcov(loc, j, i, mu, nu) * D.bcon[nu];
     } else {
         DLOOP1 D.bcon[mu] = D.bcov[mu] = 0.;
     }

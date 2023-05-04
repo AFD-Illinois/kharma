@@ -6,7 +6,8 @@
 #PBS -N KHARMA
 #PBS -l select=128
 #PBS -l walltime=1:00:00
-#PBS -q gpu-hackathon
+# large queues: prod, large, backfill-large
+#PBS -q prod
 #PBS -A gpu_hack
 #PBS -l filesystems=home:grand
 NNODES=`wc -l < $PBS_NODEFILE`
@@ -77,8 +78,8 @@ if [[ $DO_STRONG == "true" ]]; then
  
       echo "cycle=100 Running ${size}x${size}x${size} cubed problem with KHARMA on $gpus GPUs (blocksize ${msize1}x${msize2}x${msize3})"
 
-      mpiexec -n $gpus --ppn $NRANKS --depth 8 --cpu-bind depth --env OMP_NUM_THREADS=1 -env OMP_PLACES=threads ~/bin/mpi_gpu_wrap \
-            $KHARMA_DIR/kharma.cuda -i $PARFILE parthenon/time/nlim=102 \
+      mpiexec -n $gpus --ppn $NRANKS --depth 8 --cpu-bind depth --env OMP_NUM_THREADS=1 -env OMP_PLACES=threads $KHARMA_DIR/bin/mpi_gpu_wrap \
+              $KHARMA_DIR/kharma.cuda -i $PARFILE parthenon/time/nlim=102 \
                                     parthenon/mesh/nx1=$size parthenon/mesh/nx2=$size parthenon/mesh/nx3=$size \
                                     parthenon/meshblock/nx1=$msize1 parthenon/meshblock/nx2=$msize2 parthenon/meshblock/nx3=$msize3
 
@@ -149,7 +150,7 @@ if [[ $DO_WEAK == "true" ]]; then
       nblock=$(( $mul1 * $mul2 * $mul3 ))
       echo "cycle=100 Running $size per node problem with KHARMA on $gpus GPUs (total size ${tsize1}x${tsize2}x${tsize3}, $nblock blocks)"
 
-      mpiexec -n $gpus --ppn $NRANKS --depth 8 --cpu-bind depth --env OMP_NUM_THREADS=1 -env OMP_PLACES=threads ~/bin/mpi_gpu_wrap \
+      mpiexec -n $gpus --ppn $NRANKS --depth 8 --cpu-bind depth --env OMP_NUM_THREADS=1 -env OMP_PLACES=threads $KHARMA_DIR/bin/mpi_gpu_wrap \
             $KHARMA_DIR/kharma.cuda -i $PARFILE parthenon/time/nlim=102 \
                                     parthenon/mesh/nx1=$tsize1 parthenon/mesh/nx2=$tsize2 parthenon/mesh/nx3=$tsize3 \
                                     parthenon/meshblock/nx1=$size parthenon/meshblock/nx2=$size parthenon/meshblock/nx3=$size

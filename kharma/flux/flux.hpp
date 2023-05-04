@@ -46,6 +46,8 @@
 
 namespace Flux {
 
+std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages);
+
 /**
  * Add the geometric source term present in the covariant derivative of the stress-energy tensor,
  * S_nu = sqrt(-g) T^kap_lam Gamma^lam_nu_kap

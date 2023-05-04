@@ -59,7 +59,7 @@ KOKKOS_INLINE_FUNCTION Real edot(REDUCE_FUNCTION_ARGS_EH)
     FourVectors Dtmp;
     Real T1[GR_DIM];
     GRMHD::calc_4vecs(G, P, m_p, k, j, i, Loci::center, Dtmp);
-    Flux::calc_tensor(G, P, m_p, Dtmp, gam, k, j, i, X1DIR, T1);
+    Flux::calc_tensor(P, m_p, Dtmp, gam, k, j, i, X1DIR, T1);
     // \dot{E} == \int - T^1_0 * gdet * dx2 * dx3
     return -T1[X0DIR] * G.gdet(Loci::center, j, i);
 }
@@ -68,7 +68,7 @@ KOKKOS_INLINE_FUNCTION Real ldot(REDUCE_FUNCTION_ARGS_EH)
     FourVectors Dtmp;
     Real T1[GR_DIM];
     GRMHD::calc_4vecs(G, P, m_p, k, j, i, Loci::center, Dtmp);
-    Flux::calc_tensor(G, P, m_p, Dtmp, gam, k, j, i, X1DIR, T1);
+    Flux::calc_tensor(P, m_p, Dtmp, gam, k, j, i, X1DIR, T1);
     // \dot{L} == \int T^1_3 * gdet * dx2 * dx3
     return T1[X3DIR] * G.gdet(Loci::center, j, i);
 }
@@ -121,7 +121,7 @@ KOKKOS_INLINE_FUNCTION Real jet_lum(REDUCE_FUNCTION_ARGS_MESH)
         FourVectors Dtmp;
         Real T1[GR_DIM];
         GRMHD::calc_4vecs(G, P(b), m_p, k, j, i, Loci::center, Dtmp);
-        Flux::calc_tensor(G, P(b), m_p, Dtmp, gam, k, j, i, X1DIR, T1);
+        Flux::calc_tensor(P(b), m_p, Dtmp, gam, k, j, i, X1DIR, T1);
         // If sigma > 1...
         if ((dot(Dtmp.bcon, Dtmp.bcov) / P(b, m_p.RHO, k, j, i)) > 1.) {
             // Energy flux, like at EH. 2D integral jacobian, so we have to take X1 off of auto-applied dV

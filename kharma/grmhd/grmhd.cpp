@@ -190,11 +190,6 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     m = Metadata(flags_cons_vec, s_vector);
     pkg->AddField("cons.uvec", m);
 
-    // Maximum signal speed (magnitude).
-    // Needs to be cached from flux updates for calculating the timestep later
-    m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy}, s_vector);
-    pkg->AddField("ctop", m);
-
     // No magnetic fields here. KHARMA should operate fine in GRHD without them,
     // so they are allocated only by B field packages.
 
@@ -227,7 +222,8 @@ Real EstimateTimestep(MeshBlockData<Real> *rc)
     IndexRange jb = pmb->cellbounds.GetBoundsJ(IndexDomain::interior);
     IndexRange kb = pmb->cellbounds.GetBoundsK(IndexDomain::interior);
     const auto& G = pmb->coords;
-    auto& ctop = rc->Get("ctop").data;
+    auto& cmax = rc->Get("Flux.cmax").data;
+    auto& cmin = rc->Get("Flux.cmin").data;
 
     // TODO: move timestep limiter into an override of SetGlobalTimestep
     // TODO: keep location of the max, or be able to look it up in diagnostics
@@ -266,9 +262,9 @@ Real EstimateTimestep(MeshBlockData<Real> *rc)
     pmb->par_reduce("ndt_min", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA(const int k, const int j, const int i,
                       typename Kokkos::MinMax<Real>::value_type &lminmax) {
-            double ndt_zone = 1 / (1 / (G.Dxc<1>(i) / ctop(0, k, j, i)) +
-                                   1 / (G.Dxc<2>(j) / ctop(1, k, j, i)) +
-                                   1 / (G.Dxc<3>(k) / ctop(2, k, j, i)));
+            double ndt_zone = 1 / (1 / (G.Dxc<1>(i) /  m::max(cmax(0, k, j, i), cmin(0, k, j, i))) +
+                                   1 / (G.Dxc<2>(j) /  m::max(cmax(1, k, j, i), cmin(1, k, j, i))) +
+                                   1 / (G.Dxc<3>(k) /  m::max(cmax(2, k, j, i), cmin(2, k, j, i))));
             // Effective "max speed" used for the timestep
             double ctop_max_zone = m::min(G.Dxc<1>(i), m::min(G.Dxc<2>(j), G.Dxc<3>(k))) / ndt_zone;
 

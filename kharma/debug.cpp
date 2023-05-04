@@ -47,13 +47,14 @@ TaskStatus CheckNaN(MeshData<Real> *md, int dir, IndexDomain domain)
     // TODO verbose option?
 
     // Pack variables
-    auto& ctop = md->PackVariables(std::vector<std::string>{"ctop"});
+    auto& cmax = md->PackVariables(std::vector<std::string>{"Flux.cmax"});
+    auto& cmin = md->PackVariables(std::vector<std::string>{"Flux.cmin"});
 
     // Get sizes
     IndexRange ib = md->GetBoundsI(IndexDomain::interior);
     IndexRange jb = md->GetBoundsJ(IndexDomain::interior);
     IndexRange kb = md->GetBoundsK(IndexDomain::interior);
-    IndexRange block = IndexRange{0, ctop.GetDim(5) - 1};
+    IndexRange block = IndexRange{0, cmax.GetDim(5) - 1};
 
     // TODO these two kernels can be one with some Kokkos magic
     int nzero = 0, nnan = 0;
@@ -61,14 +62,14 @@ TaskStatus CheckNaN(MeshData<Real> *md, int dir, IndexDomain domain)
     Kokkos::Sum<int> nan_reducer(nnan);
     pmb0->par_reduce("ctop_zeros", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i, int &local_result) {
-            if (ctop(b, dir-1, k, j, i) <= 0.) {
+            if (m::max(cmax(b, dir-1, k, j, i), cmin(b, dir-1, k, j, i)) <= 0.) {
                 ++local_result;
             }
         }
     , zero_reducer);
     pmb0->par_reduce("ctop_nans", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i, int &local_result) {
-            if (m::isnan(ctop(b, dir-1, k, j, i))) {
+            if (m::isnan(m::max(cmax(b, dir-1, k, j, i), cmin(b, dir-1, k, j, i)))) {
                 ++local_result;
                 printf("ctop NaN at %d %d %d along dir %d\n", i, j, k, dir); // EDIT
             }

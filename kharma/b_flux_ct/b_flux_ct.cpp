@@ -104,7 +104,7 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     params.Add("divb_reducer", AllReduce<Real>());
 
     // FIELDS
-
+    // Vector size: 3x[grid shape]
     std::vector<int> s_vector({NVEC});
 
     // Mark if we're evolving implicitly
@@ -145,6 +145,7 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     // The definition of MaxDivB we care about actually changes per-transport,
     // so calculating it is handled by the transport package
     // We'd only ever need to declare or calculate divB for output (getting the max is independent)
+
     if (KHARMA::FieldIsOutput(pin, "divB")) {
         pkg->BlockUserWorkBeforeOutput = B_FluxCT::FillOutput;
         m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});

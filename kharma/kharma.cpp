@@ -344,8 +344,10 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput> &pin)
     // Execute the whole collection (just in case we do something fancy?)
     while (!tr.Execute()); // TODO this will inf-loop on error
 
-    // The boundaries package may need to know variable counts for allocating memory,
+    // The Flux package needs to know variable counts for allocating memory,
     // so we initialize it after the main dependency tree
+    KHARMA::AddPackage(packages, Flux::Initialize, pin.get());
+    // Same with boundaries
     // TODO only init if at least one boundary is "user"
     KHARMA::AddPackage(packages, KBoundaries::Initialize, pin.get());
 
