@@ -34,7 +34,7 @@ KOKKOS_INLINE_FUNCTION void Xtoindex(const GReal XG[GR_DIM],
                                    int& i, int& j, int& k, GReal del[GR_DIM])
 {
     //cout << "Hyerin: entered Xtoindex" <<endl;
-    Real dx1, dx2, dx3, dx1_min, dx2_min, dx3_min, dx_sum_min;
+    Real dx1, dx2, dx3, dx_sum, dx1_min, dx2_min, dx3_min, dx_sum_min;
 
     // initialize
     iblock =0;
@@ -69,8 +69,11 @@ KOKKOS_INLINE_FUNCTION void Xtoindex(const GReal XG[GR_DIM],
                 k = ktemp;
             }
         }
-        if (dx1_min + dx2_min + dx3_min < dx_sum_min) {
-            dx_sum_min = dx1_min + dx2_min + dx3_min;
+        dx_sum = (XG[1]-x1(iblocktemp,i))*(XG[1]-x1(iblocktemp,i)) + 
+                 (XG[2]-x2(iblocktemp,j))*(XG[2]-x2(iblocktemp,j)) + 
+                 (XG[3]-x3(iblocktemp,k))*(XG[3]-x3(iblocktemp,k));
+        if (dx_sum < dx_sum_min) {
+            dx_sum_min = dx_sum;
             iblock = iblocktemp;
         }
     }
