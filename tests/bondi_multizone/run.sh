@@ -53,6 +53,9 @@ outermost_zone=$((2*($NZONES-1)))
 # if the directories are not present, make them.
 mkdir -p "${DR}"
 
+outermost_zone=$((2*($NZONES-1)))
+r_b=100000
+
 ### Start running zone by zone
 for (( VAR=$START_RUN; VAR<$NRUNS; VAR++ ))
 do
@@ -173,7 +176,6 @@ do
                        parthenon/output2/dt=$output2_dt \
                        ${args[@]} "$@" \
                        -d ${data_dir} 1>${out_fn} 2>&1
-
   if [ $VAR -ne 0 ]; then
     if [ $(($VAR % ($NZONES-1))) -eq 0 ]; then
       out_to_in=$(($out_to_in*(-1)))
