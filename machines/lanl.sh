@@ -60,6 +60,7 @@ if [[ "$HOST" == "ch-fe"* || "$HOST" == "nid"* ]]; then
   # Cray environments get confused easy
   # Make things as simple as possible
   module purge
+  module load cmake
   export CRAY_CPU_TARGET="x86-64"
   # Kokkos claims to need this but doesn't?
   #export CRAYPE_LINK_TYPE="dynamic"
@@ -76,19 +77,24 @@ if [[ "$HOST" == "ch-fe"* || "$HOST" == "nid"* ]]; then
       # Autodetect still ends up using nvc/++
       module load PrgEnv-nvidia cmake
     elif [[ "$ARGS" == *"ctk"* ]]; then
-      module load PrgEnv-gnu gcc/11.2.0 cudatoolkit cmake
+      module load PrgEnv-gnu gcc/11.2.0 cudatoolkit
     elif [[ "$ARGS" == *"gnu"* ]]; then
-      module load PrgEnv-gnu cpe-cuda cuda cmake
+      module load PrgEnv-gnu cpe-cuda cuda
     elif [[ "$ARGS" == *"intel"* ]]; then
-      module load PrgEnv-intel cmake
+      module load PrgEnv-intel
     else
-      module load PrgEnv-nvhpc cmake
+      module load PrgEnv-nvhpc
     fi
   else
-    module load PrgEnv-aocc cmake
+    module load PrgEnv-aocc
+    # Runtime
+    MPI_NUM_PROCS=4
   fi
 
   # Runtime
-  MPI_NUM_PROCS=4
   MPI_EXE=srun
+  MPI_EXTRA_ARGS="--cpu-bind=mask_cpu:0x0*16,0x1*16,0x2*16,0x3*16"
+  unset OMP_NUM_THREADS
+  unset OMP_PROC_BIND
+  unset OMP_PLACES
 fi

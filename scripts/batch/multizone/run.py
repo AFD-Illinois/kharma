@@ -17,7 +17,7 @@ import pyharm
 def format_args(args):
   arg_list = []
   for key in args.keys():
-    arg_list += [key+"={}".format(args[key])]
+    arg_list += [key+"={}".format(args[key]).lower()]
   return arg_list
 
 
@@ -43,9 +43,10 @@ def data_dir(n):
 @click.option('--nruns', default=300, help="Total number of runs to perform")
 @click.option('--spin', default=0.0, help="BH spin")
 @click.option('--bz', default=0.0, help="B field Z component. Zero for no field")
+@click.option('--cfl', default=0.9, help="Courant condition fraction.  Defaults to 0.5 in B field")
 @click.option('--tlim', default=None, help="Enforce a specific tlim for every run (for testing)")
-@click.option('--nlim', default=int(5e4), help="Consistent max number of steps for each run")
-@click.option('--r_b', default=None, help="Bondi radius. None chooses based on nzones")
+@click.option('--nlim', default=-1, help="Consistent max number of steps for each run")
+@click.option('--r_b', default=1.e5, help="Bondi radius. None chooses based on nzones")
 @click.option('--jitter', default=0.0, help="Proportional jitter to apply to starting state. Default 10% w/B field")
 # Flags and options
 @click.option('--kharma_args', default="", help="Arguments for KHARMA run.sh")
@@ -100,14 +101,13 @@ def run_multizone(**kwargs):
         args['bondi/r_shell'] = base**(turn_around+2)/2.
       
         # bondi & vacuum parameters
+        # TODO CALC FLOORS FROM r_b
         if kwargs['nzones'] == 3:
-          if kwargs['r_b'] is None:
-            kwargs['r_b'] = 256
+          kwargs['r_b'] = 256
           logrho = -4.13354231
           log_u_over_rho = -2.57960521
         else:
-          if kwargs['r_b'] is None:
-            kwargs['r_b'] = 1e8
+          kwargs['r_b'] = 1e5
           logrho = -8.2014518
           log_u_over_rho = -5.2915149
         args['bondi/vacuum_logrho'] = logrho
@@ -120,15 +120,21 @@ def run_multizone(**kwargs):
           args['b_field/type'] = "vertical"
           args['b_field/solver'] = "flux_ct"
           args['b_field/bz'] = kwargs['bz']
-          # And compress coordinates to save time
+          # Compress coordinates to save time
           args['coordinates/transform'] = "mks"
-          args["coordinates/hslope"] = 0.3
+          args['coordinates/hslope'] = 0.3
+          # And modify a bunch of defaults
           # Assume we will always want jitter if we have B
           if kwargs['jitter'] == 0.0:
               kwargs['jitter'] = 0.1
+          # Lower the cfl condition in B field
+          kwargs['cfl'] = 0.5
+          # And limit runtime
+          kwargs['nlim'] = int(5e4)
 
         # Parameters directly from defaults/cmd
         args['perturbation/u_jitter'] = kwargs['jitter']
+        args['GRMHD/cfl'] = kwargs['cfl']
         args['coordinates/a'] = kwargs['spin']
         args['coordinates/ext_g'] = kwargs['ext_g']
         args['bondi/use_gizmo'] = kwargs['gizmo']

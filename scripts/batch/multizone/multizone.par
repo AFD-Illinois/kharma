@@ -29,14 +29,14 @@ nlim = -1 # updated from run_kharma.sh
 dt_min = 0.00001
 
 <GRMHD>
-cfl = 0.5
+cfl = 0.9
 gamma = 1.666667
 reconstruction = linear_vl
 add_jcon = false
 
 <bondi>
 mdot = 1.0
-rs = 316.22776601683796  # (1e2.5)#1000.0 #8.0 #300.0 #
+rs = 316.22776601683796
 vacuum_logrho = -8.2014518
 vacuum_log_u_over_rho = -5.2915149 # updated from run_kharma.sh
 r_shell = 8388608 # updated from run_kharma.sh
@@ -53,13 +53,14 @@ base = 8
 nzone = 7
 
 <floors>
+frame = drift
 # Usual geometric floors, no beta floor
 rho_min_geom = 1e-6
 u_min_geom = 1e-8
 bsq_over_u_max = 1e20
 u_over_rho_max = 100
 # Strict sigma, gamma
-bsq_over_rho_max = 3
+bsq_over_rho_max = 100
 gamma_max = 10
 # Does not affect these floors
 adjust_k = 0
