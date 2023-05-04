@@ -128,77 +128,90 @@ KOKKOS_INLINE_FUNCTION void weno5(const Real& x1, const Real& x2, const Real& x3
                                 Real &lout, Real &rout)
 {
     // Smoothness indicators, T07 A18 or S11 8
-    // TODO are small arrays really the play here?  Should I further reduce cache by increasing flops?
-    Real beta[3], c1, c2;
+    Real tmp1, tmp2, tmp3, c1, c2;
     c1 = x1 - 2.*x2 + x3; c2 = x1 - 4.*x2 + 3.*x3;
-    beta[0] = (13./12.)*c1*c1 + (1./4.)*c2*c2;
+    tmp1 = (13./12.)*c1*c1 + (1./4.)*c2*c2;
     c1 = x2 - 2.*x3 + x4; c2 = x4 - x2;
-    beta[1] = (13./12.)*c1*c1 + (1./4.)*c2*c2;
+    tmp2 = (13./12.)*c1*c1 + (1./4.)*c2*c2;
     c1 = x3 - 2.*x4 + x5; c2 = x5 - 4.*x4 + 3.*x3;
-    beta[2] = (13./12.)*c1*c1 + (1./4.)*c2*c2;
+    tmp3 = (13./12.)*c1*c1 + (1./4.)*c2*c2;
 
     // Nonlinear weights S11 9
-    const Real den[3] = {EPS + beta[0]*beta[0], EPS + beta[1]*beta[1], EPS + beta[2]*beta[2]};
+    tmp1 = 1./(EPS + tmp1*tmp1);
+    tmp2 = 1./(EPS + tmp2*tmp2);
+    tmp3 = 1./(EPS + tmp3*tmp3);
 
-    const Real wtr[3] = {(1./16.)/den[0], (5./8. )/den[1], (5./16.)/den[2]};
-    const Real Wr = wtr[0] + wtr[1] + wtr[2];
+    const Real wtr1 = (1./16.) * tmp1;
+    const Real wtr2 = (5./8. ) * tmp2;
+    const Real wtr3 = (5./16.) * tmp3;
+    const Real Wr = wtr1 + wtr2 + wtr3;
 
-    const Real wtl[3] = {(1./16.)/den[2], (5./8. )/den[1], (5./16.)/den[0]};
-    const Real Wl = wtl[0] + wtl[1] + wtl[2];
+    const Real wtl1 = (1./16.) * tmp3;
+    const Real wtl2 = (5./8. ) * tmp2;
+    const Real wtl3 = (5./16.) * tmp1;
+    const Real Wl = wtl1 + wtl2 + wtl3;
 
     // S11 1, 2, 3
-    lout = ((3./8.)*x5 - (5./4.)*x4 + (15./8.)*x3)*(wtl[0] / Wl) +
-            ((-1./8.)*x4 + (3./4.)*x3 + (3./8.)*x2)*(wtl[1] / Wl) +
-            ((3./8.)*x3 + (3./4.)*x2 - (1./8.)*x1)*(wtl[2] / Wl);
-    rout = ((3./8.)*x1 - (5./4.)*x2 + (15./8.)*x3)*(wtr[0] / Wr) +
-            ((-1./8.)*x2 + (3./4.)*x3 + (3./8.)*x4)*(wtr[1] / Wr) +
-            ((3./8.)*x3 + (3./4.)*x4 - (1./8.)*x5)*(wtr[2] / Wr);
+    lout = ((3./8.)*x5 - (5./4.)*x4 + (15./8.)*x3)*(wtl1 / Wl) +
+            ((-1./8.)*x4 + (3./4.)*x3 + (3./8.)*x2)*(wtl2 / Wl) +
+            ((3./8.)*x3 + (3./4.)*x2 - (1./8.)*x1)*(wtl3 / Wl);
+    rout = ((3./8.)*x1 - (5./4.)*x2 + (15./8.)*x3)*(wtr1 / Wr) +
+            ((-1./8.)*x2 + (3./4.)*x3 + (3./8.)*x4)*(wtr2 / Wr) +
+            ((3./8.)*x3 + (3./4.)*x4 - (1./8.)*x5)*(wtr3 / Wr);
 }
 KOKKOS_INLINE_FUNCTION void weno5l(const Real x1, const Real& x2, const Real& x3, const Real x4, const Real& x5,
                                 Real &lout)
 {
     // Smoothness indicators, T07 A18 or S11 8
-    Real beta[3], c1, c2;
+    Real tmp1, tmp2, tmp3, c1, c2;
     c1 = x1 - 2.*x2 + x3; c2 = x1 - 4.*x2 + 3.*x3;
-    beta[0] = (13./12.)*c1*c1 + (1./4.)*c2*c2;
+    tmp1 = (13./12.)*c1*c1 + (1./4.)*c2*c2;
     c1 = x2 - 2.*x3 + x4; c2 = x4 - x2;
-    beta[1] = (13./12.)*c1*c1 + (1./4.)*c2*c2;
+    tmp2 = (13./12.)*c1*c1 + (1./4.)*c2*c2;
     c1 = x3 - 2.*x4 + x5; c2 = x5 - 4.*x4 + 3.*x3;
-    beta[2] = (13./12.)*c1*c1 + (1./4.)*c2*c2;
+    tmp3 = (13./12.)*c1*c1 + (1./4.)*c2*c2;
 
     // Nonlinear weights S11 9
-    const Real den[3] = {EPS + beta[0]*beta[0], EPS + beta[1]*beta[1], EPS + beta[2]*beta[2]};
+    tmp1 = 1./(EPS + tmp1*tmp1);
+    tmp2 = 1./(EPS + tmp2*tmp2);
+    tmp3 = 1./(EPS + tmp3*tmp3);
 
-    const Real wtl[3] = {(1./16.)/den[2], (5./8. )/den[1], (5./16.)/den[0]};
-    const Real Wl = wtl[0] + wtl[1] + wtl[2];
+    const Real wtl1 = (1./16.) * tmp3;
+    const Real wtl2 = (5./8. ) * tmp2;
+    const Real wtl3 = (5./16.) * tmp1;
+    const Real Wl = wtl1 + wtl2 + wtl3;
 
     // S11 1, 2, 3
-    lout = ((3./8.)*x5 - (5./4.)*x4 + (15./8.)*x3)*(wtl[0] / Wl) +
-            ((-1./8.)*x4 + (3./4.)*x3 + (3./8.)*x2)*(wtl[1] / Wl) +
-            ((3./8.)*x3 + (3./4.)*x2 - (1./8.)*x1)*(wtl[2] / Wl);
+    lout = ((3./8.)*x5 - (5./4.)*x4 + (15./8.)*x3)*(wtl1 / Wl) +
+            ((-1./8.)*x4 + (3./4.)*x3 + (3./8.)*x2)*(wtl2 / Wl) +
+            ((3./8.)*x3 + (3./4.)*x2 - (1./8.)*x1)*(wtl3 / Wl);
 }
 KOKKOS_INLINE_FUNCTION void weno5r(const Real& x1, const Real& x2, const Real& x3, const Real x4, const Real& x5,
                                 Real &rout)
 {
     // Smoothness indicators, T07 A18 or S11 8
-    Real beta[3], c1, c2;
+    Real tmp1, tmp2, tmp3, c1, c2;
     c1 = x1 - 2.*x2 + x3; c2 = x1 - 4.*x2 + 3.*x3;
-    beta[0] = (13./12.)*c1*c1 + (1./4.)*c2*c2;
+    tmp1 = (13./12.)*c1*c1 + (1./4.)*c2*c2;
     c1 = x2 - 2.*x3 + x4; c2 = x4 - x2;
-    beta[1] = (13./12.)*c1*c1 + (1./4.)*c2*c2;
+    tmp2 = (13./12.)*c1*c1 + (1./4.)*c2*c2;
     c1 = x3 - 2.*x4 + x5; c2 = x5 - 4.*x4 + 3.*x3;
-    beta[2] = (13./12.)*c1*c1 + (1./4.)*c2*c2;
+    tmp3 = (13./12.)*c1*c1 + (1./4.)*c2*c2;
 
     // Nonlinear weights S11 9
-    const Real den[3] = {EPS + beta[0]*beta[0], EPS + beta[1]*beta[1], EPS + beta[2]*beta[2]};
+    tmp1 = 1./(EPS + tmp1*tmp1);
+    tmp2 = 1./(EPS + tmp2*tmp2);
+    tmp3 = 1./(EPS + tmp3*tmp3);
 
-    const Real wtr[3] = {(1./16.)/den[0], (5./8. )/den[1], (5./16.)/den[2]};
-    const Real Wr = wtr[0] + wtr[1] + wtr[2];
+    const Real wtr1 = (1./16.) * tmp1;
+    const Real wtr2 = (5./8. ) * tmp2;
+    const Real wtr3 = (5./16.) * tmp3;
+    const Real Wr = wtr1 + wtr2 + wtr3;
 
     // S11 1, 2, 3
-    rout = ((3./8.)*x1 - (5./4.)*x2 + (15./8.)*x3)*(wtr[0] / Wr) +
-            ((-1./8.)*x2 + (3./4.)*x3 + (3./8.)*x4)*(wtr[1] / Wr) +
-            ((3./8.)*x3 + (3./4.)*x4 - (1./8.)*x5)*(wtr[2] / Wr);
+    rout = ((3./8.)*x1 - (5./4.)*x2 + (15./8.)*x3)*(wtr1 / Wr) +
+            ((-1./8.)*x2 + (3./4.)*x3 + (3./8.)*x4)*(wtr2 / Wr) +
+            ((3./8.)*x3 + (3./4.)*x4 - (1./8.)*x5)*(wtr3 / Wr);
 }
 
 // Row-wise implementations
