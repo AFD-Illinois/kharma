@@ -15,20 +15,20 @@ import h5py
 import pyharm
 
 def format_args(args):
-  arg_list = []
-  for key in args.keys():
-    arg_list += [key+"={}".format(args[key]).lower()]
-  return arg_list
+    """Format a dict in var=val format for Parthenon"""
+    arg_list = []
+    for key in args.keys():
+        arg_list += [key+"={}".format(args[key]).lower()]
+    return arg_list
 
 
-def calc_runtime(r_out, r_b=1e5):
-  # r/v where v=sqrt(v_ff**2+c_s**2)
-  runtime = r_out/np.sqrt(1./r_out + 1./r_b)
-  runtime /= 2.
-  return runtime
+def calc_runtime(r_out, r_b):
+    """r/v where v=sqrt(v_ff**2+c_s**2)"""
+    return r_out/np.sqrt(1./r_out + 1./r_b)
 
 def data_dir(n):
-  return "{:05d}".format(n)
+    """Data directory naming scheme"""
+    return "{:05d}".format(n)
 
 @click.command()
 # Run parameters
@@ -56,9 +56,8 @@ def data_dir(n):
 @click.option('--gizmo', is_flag=True, help="Start from GIZMO data")
 @click.option('--gizmo_fname', default="../gizmo_data.txt", help="Filename of GIZMO data")
 @click.option('--ext_g', is_flag=True, help="Include external gravity")
-# Don't use these
+# Don't use this
 @click.option('--start_time', default=0.0, help="Starting time. Only use if you know what you're doing.")
-@click.option('--start_cycle', default=0, help="Starting cycle number. Only use if you know what you're doing.")
 def run_multizone(**kwargs):
     """This script runs a "multi-zone" KHARMA sequence.
     The idea is to divide a large domain (~1e8M radius) into several "zones,"
@@ -68,7 +67,7 @@ def run_multizone(**kwargs):
     Each run takes the final state of the last run, expands the domain inward or outward, and
     evolves the resulting domain/state.
     
-    This mode supports magnetic fields, arbitrary overlaps and coordinates, and other niceties.
+    This mode now supports magnetic fields, arbitrary overlaps and coordinates, and other niceties.
     """
     # We're kept in a script subdirectory in kharma/
     mz_dir = os.path.dirname(os.path.realpath(__file__))
@@ -98,39 +97,49 @@ def run_multizone(**kwargs):
         turn_around = kwargs['nzones'] - 1
         args['coordinates/r_out'] = base**(turn_around+2)
         args['coordinates/r_in'] = base**turn_around
-        args['bondi/r_shell'] = base**(turn_around+2)/2.
-      
-        # bondi & vacuum parameters
-        # TODO CALC FLOORS FROM r_b
-        if kwargs['nzones'] == 3:
-          kwargs['r_b'] = 256
-          logrho = -4.13354231
-          log_u_over_rho = -2.57960521
+        # Initialize half-vacuum, unless it's the first GIZMO run
+        if kwargs['gizmo']:
+            args['bondi/r_shell'] = args['coordinates/r_in']
         else:
-          kwargs['r_b'] = 1e5
-          logrho = -8.2014518
-          log_u_over_rho = -5.2915149
+            args['bondi/r_shell'] = base**(turn_around+2)/2.
+
+        # bondi & vacuum parameters
+        # TODO derive these from r_b or gizmo
+        if kwargs['nzones'] == 3:
+            kwargs['r_b'] = 256
+            logrho = -4.13354231
+            log_u_over_rho = -2.57960521
+        elif kwargs['gizmo']:
+            kwargs['r_b'] = 1e5
+            logrho = -7.80243572
+            log_u_over_rho = -5.34068635
+        else:
+            kwargs['r_b'] = 1e5
+            logrho = -8.2014518
+            log_u_over_rho = -5.2915149
         args['bondi/vacuum_logrho'] = logrho
         args['bondi/vacuum_log_u_over_rho'] = log_u_over_rho
         args['bondi/rs'] = np.sqrt(float(kwargs['r_b']))
 
         # B field additions
         if kwargs['bz'] != 0.0:
-          # Set a field to initialize with 
-          args['b_field/type'] = "vertical"
-          args['b_field/solver'] = "flux_ct"
-          args['b_field/bz'] = kwargs['bz']
-          # Compress coordinates to save time
-          args['coordinates/transform'] = "mks"
-          args['coordinates/hslope'] = 0.3
-          # And modify a bunch of defaults
-          # Assume we will always want jitter if we have B
-          if kwargs['jitter'] == 0.0:
-              kwargs['jitter'] = 0.1
-          # Lower the cfl condition in B field
-          kwargs['cfl'] = 0.5
-          # And limit runtime
-          kwargs['nlim'] = int(5e4)
+            # Set a field to initialize with 
+            args['b_field/type'] = "vertical"
+            args['b_field/solver'] = "flux_ct"
+            args['b_field/bz'] = kwargs['bz']
+            # Compress coordinates to save time
+            args['coordinates/transform'] = "mks"
+            args['coordinates/hslope'] = 0.3
+            # Enable the floors
+            args['floors/disable_floors'] = False
+            # And modify a bunch of defaults
+            # Assume we will always want jitter if we have B
+            if kwargs['jitter'] == 0.0:
+                kwargs['jitter'] = 0.1
+            # Lower the cfl condition in B field
+            kwargs['cfl'] = 0.5
+            # And limit runtime
+            kwargs['nlim'] = int(5e4)
 
         # Parameters directly from defaults/cmd
         args['perturbation/u_jitter'] = kwargs['jitter']
@@ -139,6 +148,7 @@ def run_multizone(**kwargs):
         args['coordinates/ext_g'] = kwargs['ext_g']
         args['bondi/use_gizmo'] = kwargs['gizmo']
         args['gizmo_shell/datfn'] = kwargs['gizmo_fname']
+        args['parthenon/time/nlim'] = kwargs['nlim']
         # Mesh size
         args['parthenon/mesh/nx1'] = kwargs['nx1']
         args['parthenon/mesh/nx2'] = kwargs['nx2']
@@ -160,16 +170,18 @@ def run_multizone(**kwargs):
         base = args['resize_restart/base']
         outermost_zone = 2 * (kwargs['nzones'] - 1)
         if kwargs['tlim'] is None:
+            # Calculate free-fall time
             if kwargs['short_t_out'] and run_num % outermost_zone == 0:
                 runtime = calc_runtime(r_out/base, r_b)
                 print("SHORT_T_OUT @ RUN # {}: r_out={:.4g}, but next largest annulus r_out={:.4g} used for the runtime".format(run_num, r_out, r_out/base))
             else:
                 runtime = calc_runtime(r_out, r_b)
+            # B field runs use half this
+            if kwargs['bz'] != 0.0:
+                runtime /= 2
         else:
             runtime = float(kwargs['tlim'])
         args['parthenon/time/tlim'] = kwargs['start_time'] + runtime
-        if kwargs['nlim'] > 0:
-            args['parthenon/time/nlim'] = kwargs['start_cycle'] + kwargs['nlim']
 
         # Output timing (TODO make options)
         args['parthenon/output0/dt'] = max(int(runtime/10.), 1)
@@ -193,9 +205,14 @@ def run_multizone(**kwargs):
         ddir = data_dir(run_num)
         os.makedirs(ddir, exist_ok=True)
         fout = open(ddir+"/kharma.log", "w")
-        subprocess.run([kharma_dir+"/run.sh",] + kwargs['kharma_args'].split(" ") + ["-i", kwargs['parfile'], "-d", ddir] + format_args(args),
+        ret_obj = subprocess.run([kharma_dir+"/run.sh",] + ["-i", kwargs['parfile'], "-d", ddir] + format_args(args),
                       stdout=fout, stderr=subprocess.STDOUT)
         fout.close()
+
+        # Don't continue (& save restart data, etc) if KHARMA returned error
+        if ret_obj.returncode != 0:
+            print("KHARMA returned error: {}.  Exiting.".format(ret_obj.retcode))
+            exit(-1)
 
         # Update parameters for the next pass
         # This updates both kwargs (start_time) and args (coordinates, dt, iteration #, fnames)
@@ -222,7 +239,6 @@ def update_args(run_num, kwargs, args):
     # TODO read all of Params/Info in pyharm
     f = h5py.File(fname, 'r')
     dt_last = f['Params'].attrs['Globals/dt_last']
-    kwargs['start_cycle'] = f['Info'].attrs['NCycle']
     f.close()
 
     # Increment iteration count when we just finished the outermost zone

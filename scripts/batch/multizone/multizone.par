@@ -18,17 +18,20 @@ nx3 = 64
 
 <coordinates>
 base = ks
-transform = exponential
-a = 0.0 # spin updated from run_kharma.sh
+transform = mks
+a = 0.0
+# w/B field, hslope=>0.3
 hslope = 1.0
 ext_g = false
 
 <parthenon/time>
-tlim = 5289680481 # updated from run_kharma.sh
-nlim = -1 # updated from run_kharma.sh
+# Time set in run.py
+tlim = 5289680481
+nlim = -1
 dt_min = 0.00001
 
 <GRMHD>
+# w/B, cfl=>0.5
 cfl = 0.9
 gamma = 1.666667
 reconstruction = linear_vl
@@ -36,24 +39,29 @@ add_jcon = false
 
 <bondi>
 mdot = 1.0
+# All these will be updated by run.py
 rs = 316.22776601683796
 vacuum_logrho = -8.2014518
-vacuum_log_u_over_rho = -5.2915149 # updated from run_kharma.sh
-r_shell = 8388608 # updated from run_kharma.sh
+vacuum_log_u_over_rho = -5.2915149
+r_shell = 8388608
 use_gizmo = false
 
 <gizmo_shell>
 datfn = none
 
 <resize_restart>
-fname = none # updated from run_kharma.sh
-fname_fill = none #, updated from run_kharma.sh
+# All set in run.py
+fname = none
+fname_fill = none
 use_dt = false
 base = 8
 nzone = 7
 
 <floors>
-frame = drift
+# disable by default -- enabling B field overrides
+disable_floors = true
+# This caused issues?
+# frame = drift
 # Usual geometric floors, no beta floor
 rho_min_geom = 1e-6
 u_min_geom = 1e-8
@@ -83,9 +91,11 @@ solver = none
 fix_flux_x1 = true
 
 <debug>
+# Be very clear about errors
 verbose = 1
 flag_verbose = 2
 extra_checks = 1
+archive_parameters = 1
 
 <driver>
 type = harm
@@ -94,19 +104,20 @@ two_sync = true
 <implicit>
 max_nonlinear_iter = 3
 
+# Output timings set in run.py
 <parthenon/output0>
 file_type = hdf5
-dt = 528968040 # output0_dt updated from run_kharma.sh
+dt = 528968040
 single_precision_output = true
-variables = prims.rho, prims.u, prims.uvec, prims.B, fflag, pflag
+variables = prims.rho, prims.u, prims.uvec, prims.B, fflag, pflag, divB
 ghost_zones = true
 
 <parthenon/output1>
 file_type = rst
-dt = 2644840240 # output1_dt updated from run_kharma.sh
+dt = 2644840240
 ghost_zones = true
 
 <parthenon/output2>
 file_type = hst
-dt = 52896800 # output2_dt updated from run_kharma.sh
+dt = 52896800
 
