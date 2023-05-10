@@ -55,14 +55,13 @@ class KHARMAPackage : public StateDescriptor {
 
         // PHYSICS
         // Recovery of primitive variables from conserved.
-        // These can be host-side functions because they are not called from the Uberkernel --
+        // These can be host-side functions because they are not called from GetFlux()
         // rather, they are called on zone center values once per step only.
-        // Called by various Flux::*UtoP*
         std::function<void(MeshBlockData<Real>*, IndexDomain, bool)> BlockUtoP = nullptr;
         std::function<void(MeshData<Real>*, IndexDomain, bool)> MeshUtoP = nullptr;
 
-        // Maybe at some point we'll have 
-        // Since Flux::prim_to_flux must cover everything, it's not worth splitting now
+        // Going the other way, however, is handled by Flux::PtoU.
+        // All PtoU implementations are device-side (called prim_to_flux)
         //std::function<void(MeshBlockData<Real>*, IndexDomain, bool)> BlockPtoU = nullptr;
 
         // Source term to add to the conserved variables during each step
@@ -93,12 +92,9 @@ class KHARMAPackage : public StateDescriptor {
         std::function<void(MeshBlock*, ParameterInput*)> BlockUserWorkBeforeOutput = nullptr;
 
         // BOUNDARIES
-        // Currently only used by the "boundaries" package, or overridden during problem initialization
-        // Note these functions take the boundary domain as an argument, so you can assign the same function to multiple boundaries.
-        std::function<void(std::shared_ptr<MeshBlockData<Real>>&, IndexDomain, bool)> KHARMAInnerX1Boundary = nullptr;
-        std::function<void(std::shared_ptr<MeshBlockData<Real>>&, IndexDomain, bool)> KHARMAOuterX1Boundary = nullptr;
-        std::function<void(std::shared_ptr<MeshBlockData<Real>>&, IndexDomain, bool)> KHARMAInnerX2Boundary = nullptr;
-        std::function<void(std::shared_ptr<MeshBlockData<Real>>&, IndexDomain, bool)> KHARMAOuterX2Boundary = nullptr;
+        // Currently only used by the "boundaries" package
+        // Note these functions take the boundary IndexDomain as an argument, so you can assign the same function to multiple boundaries.
+        std::array<std::function<void(std::shared_ptr<MeshBlockData<Real>>&, bool)>, 6> KBoundaries = {nullptr};
 };
 
 /**

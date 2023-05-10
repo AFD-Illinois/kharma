@@ -38,7 +38,6 @@
 
 TaskStatus InitializeHubble(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin)
 {
-    Flag("Initializing Hubble Flow Electron Heating problem");
     auto pmb = rc->GetBlockPointer();
 
     const Real mach = pin->GetOrAddReal("hubble", "mach", 1.);
@@ -74,21 +73,19 @@ TaskStatus InitializeHubble(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterI
     }
 
     // Replace the boundary conditions
-    auto *bound_pkg = static_cast<KHARMAPackage*>(pmb->packages.Get("Boundaries").get());
-    bound_pkg->KHARMAInnerX1Boundary = SetHubble;
-    bound_pkg->KHARMAOuterX1Boundary = SetHubble;
+    auto *bound_pkg = static_cast<KHARMAPackage*>(pmb->packages.Get("Boundaries"));
+    bound_pkg->KBoundaries[BoundaryFace::inner_x1] = SetHubble<IndexDomain::inner_x1>;
+    bound_pkg->KBoundaries[BoundaryFace::outer_x1] = SetHubble<IndexDomain::outer_x1>;
     bound_pkg->BlockApplyPrimSource = ApplyHubbleHeating;
 
     // Then call the general function to fill the grid
-    SetHubble(rc, IndexDomain::interior);
+    SetHubble<IndexDomain::interior>(rc);
 
-    Flag("Initialized");
     return TaskStatus::complete;
 }
 
-TaskStatus SetHubble(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain, bool coarse)
+TaskStatus SetHubbleImpl(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain, bool coarse)
 {
-    Flag("Setting zones to Hubble Flow");
     auto pmb = rc->GetBlockPointer();
     GridScalar rho = rc->Get("prims.rho").data;
     GridScalar u = rc->Get("prims.u").data;
@@ -179,7 +176,6 @@ TaskStatus SetHubble(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domai
         }
     }
     pmb->packages.Get("GRMHD")->UpdateParam<int>("counter", ++counter);
-    Flag("Set");
     return TaskStatus::complete;
 }
 

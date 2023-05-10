@@ -151,8 +151,7 @@ TaskStatus ApplyGRMHDFloors(MeshBlockData<Real> *rc, IndexDomain domain);
  * "whatever the floor value is."
  * This function can be called even if the Floors package is not initialized.
  */
-TaskStatus ApplyInitialFloors(MeshBlockData<Real> *rc, IndexDomain domain);
-
+TaskStatus ApplyInitialFloors(ParameterInput *pin, MeshBlockData<Real> *mbd, IndexDomain domain);
 /**
  * Print a summary of floors hit
  */

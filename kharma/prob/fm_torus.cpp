@@ -43,8 +43,6 @@
 
 TaskStatus InitializeFMTorus(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin)
 {
-    Flag(rc, "Initializing torus problem");
-
     auto pmb        = rc->GetBlockPointer();
     GridScalar rho  = rc->Get("prims.rho").data;
     GridScalar u    = rc->Get("prims.u").data;
@@ -200,7 +198,7 @@ TaskStatus InitializeFMTorus(std::shared_ptr<MeshBlockData<Real>>& rc, Parameter
     // Since the conserved vars U are not initialized, this is done in *fluid frame*,
     // even if NOF frame is chosen (iharm3d does the same iiuc)
     // This is probably not a huge issue, just good to state explicitly
-    Floors::ApplyInitialFloors(rc.get(), IndexDomain::interior);
+    Floors::ApplyInitialFloors(pin, rc.get(), IndexDomain::interior);
 
     return TaskStatus::complete;
 }

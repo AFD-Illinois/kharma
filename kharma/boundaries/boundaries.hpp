@@ -35,6 +35,8 @@
 
 #include "decs.hpp"
 
+#include "boundary_types.hpp"
+#include "dirichlet.hpp"
 #include "flux.hpp"
 #include "grmhd_functions.hpp"
 
@@ -56,36 +58,15 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
 /**
  * Generic KHARMA override function for Parthenon domain boundary conditions.
  * This is registered as the "user" boundary condition with Parthenon, and
- * replaces Parthenon's reflecting or outflow boundary conditions wherever those
+ * wraps Parthenon's reflecting or outflow boundary conditions wherever those
  * would be applied.
  * 
- * Mostly calls "DefaultBoundary," unless overridden by a problem.
- * 
- * LOCKSTEP: respects P and return consistent P<->U
  */
 void ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, bool coarse);
 // Template version to conform to Parthenon's calling convention. See above.
 template <IndexDomain domain>
 inline void ApplyBoundaryTemplate(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse)
 { ApplyBoundary(rc, domain, coarse); }
-
-/**
- * Boundary conditions when not overridden by a problem (or handled by Parthenon).
- * Outflow boundaries in X1 with an optional check for inflow, Reflecting boundaries in X2
- */
-void DefaultBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, bool coarse);
-
-/**
- * Dirichlet boundaries implementation.
- * Problems can assign these to the KHARMA*Boundary callbacks, then fill the "bound.*"
- * fields populated as a part of the "Boundaries" package.
- */
-void Dirichlet(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain, bool coarse);
-
-/**
- * Set the current contents of a domain to be the Dirichlet boundary conditions.
- */
-void SetDomainDirichlet(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain, bool coarse);
 
 /**
  * Fix fluxes on physical boundaries.
@@ -116,13 +97,6 @@ void CheckInflow(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, b
  * with outflow conditions based on the updated ghost cells.
  */
 void FixCorner(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, bool coarse);
-
-/**
- * We apply Parthenon's boundary condition implementations, which are not GR-aware.
- * When applied to the magnetic field values, the result must be scaled by the relative change
- * in metric determinant.  This function applies that change.
- */
-void CorrectBField(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain, bool coarse);
 
 /**
  * Check for velocity toward the simulation domain in a zone, and eliminate it.

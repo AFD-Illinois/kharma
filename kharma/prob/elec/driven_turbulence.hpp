@@ -43,7 +43,6 @@ using namespace parthenon;
 
 TaskStatus InitializeDrivenTurbulence(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin)
 {
-    Flag(rc, "Initializing Driven Turbulence problem");
     auto pmb = rc->GetBlockPointer();
     GridScalar rho = rc->Get("prims.rho").data;
     GridScalar u = rc->Get("prims.u").data;

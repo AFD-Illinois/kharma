@@ -63,8 +63,8 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     params.Add("gamma_e", gamma_e);
     Real gamma_p = pin->GetOrAddReal("electrons", "gamma_p", 5./3);
     params.Add("gamma_p", gamma_p);
-    bool diss_sign = pin->GetOrAddBoolean("electrons", "diss_sign", true);
-    params.Add("diss_sign", diss_sign);
+    bool enforce_positive_dissipation = pin->GetOrAddBoolean("electrons", "enforce_positive_dissipation", true);
+    params.Add("enforce_positive_dissipation", enforce_positive_dissipation);
     bool kel_lim = pin->GetOrAddBoolean("electrons", "kel_lim", true);
     params.Add("kel_lim", kel_lim);
     // This is used only in constant model
@@ -331,6 +331,7 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
     // Floors
     const Real tptemin = pmb->packages.Get("Electrons")->Param<Real>("tp_over_te_min");
     const Real tptemax = pmb->packages.Get("Electrons")->Param<Real>("tp_over_te_max");
+    const bool enforce_positive_diss = pmb->packages.Get("Electrons")->Param<bool>("enforce_positive_dissipation");
 
     // This function (and any primitive-variable sources) needs to be run over the entire domain,
     // because the boundary zones have already been updated and so the same calculations must be applied
@@ -358,7 +359,7 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
 
             // Default is True diss_sign == Enforce nonnegative
             // Due to floors we can end up with diss==0 or even *slightly* <0, so we require it to be positive here
-            const Real diss = pmb->packages.Get("Electrons")->Param<bool>("diss_sign") ? m::max(diss_tmp, 0.0) : diss_tmp;
+            const Real diss = enforce_positive_diss ? m::max(diss_tmp, 0.0) : diss_tmp;
 
             // Reset the entropy to measure next (sub-)step's dissipation
             P_new(m_p.KTOT, k, j, i) = k_energy_conserving;

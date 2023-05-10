@@ -43,7 +43,6 @@
  */
 TaskStatus InitializeGIZMO(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin)
 {
-    Flag(rc, "Initializing GIZMO problem");
     auto pmb = rc->GetBlockPointer();
 
     const Real mdot = pin->GetOrAddReal("bondi", "mdot", 1.0);
@@ -65,7 +64,6 @@ TaskStatus InitializeGIZMO(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterIn
     // This tests that PostInitialize will correctly fill ghost zones with the boundary we set
     SetGIZMO(rc, IndexDomain::interior);
 
-    Flag(rc, "Initialized");
     return TaskStatus::complete;
 }
 

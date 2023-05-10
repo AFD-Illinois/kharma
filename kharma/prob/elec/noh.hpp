@@ -42,7 +42,6 @@ using namespace parthenon;
  */
 TaskStatus InitializeNoh(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin)
 {
-    Flag(rc, "Initializing 1D (Noh) Shock test");
     auto pmb = rc->GetBlockPointer();
     GridScalar rho = rc->Get("prims.rho").data;
     GridScalar u = rc->Get("prims.u").data;
@@ -100,6 +99,5 @@ TaskStatus InitializeNoh(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInpu
         );
     }
 
-    Flag(rc, "Initialized 1D (Noh) Shock test");
     return TaskStatus::complete;
 }

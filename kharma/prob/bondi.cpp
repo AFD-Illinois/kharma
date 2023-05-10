@@ -43,7 +43,6 @@
  */
 TaskStatus InitializeBondi(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin)
 {
-    Flag(rc, "Initializing Bondi problem");
     auto pmb = rc->GetBlockPointer();
 
     const Real mdot = pin->GetOrAddReal("bondi", "mdot", 1.0);
@@ -80,38 +79,32 @@ TaskStatus InitializeBondi(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterIn
 
     // Set this problem to control the outer X1 boundary by default
     // remember to disable inflow_check in parameter file!
-    auto bound_pkg = static_cast<KHARMAPackage*>(pmb->packages.Get("Boundaries").get());
-    if (pin->GetOrAddBoolean("bondi", "use_dirichlet", false)) {
-        SetBondi(rc, IndexDomain::entire);
-        // Register a Dirichlet boundary condition
-        bound_pkg->KHARMAInnerX1Boundary = KBoundaries::Dirichlet;
-        bound_pkg->KHARMAOuterX1Boundary = KBoundaries::Dirichlet;
-        // Fill the Dirichlet caches based on the current ghost zone contents
-        KBoundaries::SetDomainDirichlet(rc, IndexDomain::inner_x1, false);
-        KBoundaries::SetDomainDirichlet(rc, IndexDomain::outer_x1, false);
+    auto bound_pkg = static_cast<KHARMAPackage*>(pmb->packages.Get("Boundaries"));
+    if (pin->GetString("boundaries", "inner_x1") == "dirichlet" ||
+        pin->GetString("boundaries", "outer_x1") == "dirichlet") {
+        SetBondi<IndexDomain::entire>(rc); // TODO iterate & set any bounds specifically?
     } else {
         if (pin->GetOrAddBoolean("bondi", "set_outer_bound", true)) {
-            bound_pkg->KHARMAOuterX1Boundary = SetBondi;
+            bound_pkg->KBoundaries[BoundaryFace::outer_x1] = SetBondi<IndexDomain::outer_x1>;
         }
         if (pin->GetOrAddBoolean("bondi", "set_inner_bound", false)) {
-            bound_pkg->KHARMAInnerX1Boundary = SetBondi;
+            bound_pkg->KBoundaries[BoundaryFace::inner_x1] = SetBondi<IndexDomain::inner_x1>;
         }
         // Set the interior domain to the analytic solution to begin
         // This tests that PostInitialize will correctly fill ghost zones with the boundary we set
-        SetBondi(rc, IndexDomain::interior);
+        SetBondi<IndexDomain::interior>(rc);
     }
 
     if (rin_bondi > pin->GetReal("coordinates", "r_in") && !(fill_interior)) {
         // Apply floors to initialize the rest of the domain (regardless of the 'disable_floors' param)
         // Bondi's BL coordinates do not like the EH, so we replace the zeros with something reasonable.
-        Floors::ApplyInitialFloors(rc.get(), IndexDomain::interior);
+        Floors::ApplyInitialFloors(pin, rc.get(), IndexDomain::interior);
     }
 
-    Flag(rc, "Initialized");
     return TaskStatus::complete;
 }
 
-TaskStatus SetBondi(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain, bool coarse)
+TaskStatus SetBondiImpl(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain, bool coarse)
 {
     Flag(rc, "Setting Bondi zones");
     auto pmb = rc->GetBlockPointer();

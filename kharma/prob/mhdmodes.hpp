@@ -59,7 +59,6 @@ using namespace parthenon;
  */
 TaskStatus InitializeMHDModes(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin)
 {
-    Flag(rc, "Initializing MHD Modes problem");
     auto pmb = rc->GetBlockPointer();
     GridScalar rho = rc->Get("prims.rho").data;
     GridScalar u = rc->Get("prims.u").data;
@@ -239,6 +238,5 @@ TaskStatus InitializeMHDModes(std::shared_ptr<MeshBlockData<Real>>& rc, Paramete
         pin->SetReal("parthenon/time", "tlim", 2. * M_PI / m::abs(omega.imag()));
     }
 
-    Flag(rc, "Initialized");
     return TaskStatus::complete;
 }

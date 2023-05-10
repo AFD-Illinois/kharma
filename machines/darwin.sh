@@ -46,29 +46,39 @@ if [[ $HOSTNAME == "cn"* || $HOSTNAME == "darwin"* ]]; then
 
   # These are orthogonal to above.
   # Just don't compile for an nv arch without "cuda"
-  NPROC=$(($(nproc) / 2)) # TODO robust?
+  NPROC=$(($(nproc) / 2))
   if [[ "$ARGS" == *"arm-nv"* ]]; then
     HOST_ARCH="ARMV81"
     DEVICE_ARCH="AMPERE80"
     MPI_NUM_PROCS=2
-    MPI_EXTRA_ARGS="--map-by ppr:2:node:pe=$(($NPROC / 2))"
+    NODE_SLICE=2
   elif [[ "$ARGS" == *"ampere"* ]]; then
     HOST_ARCH="ZEN3"
     DEVICE_ARCH="AMPERE80"
     MPI_NUM_PROCS=2
-    MPI_EXTRA_ARGS="--map-by ppr:2:node:pe=$(($NPROC / 2))"
+    NODE_SLICE=2
   elif [[ "$ARGS" == *"volta"* ]]; then
     HOST_ARCH="HSW"
     DEVICE_ARCH="VOLTA70"
     MPI_NUM_PROCS=1
-    # Some nodes only have 1 GPU but be conservative
-    MPI_EXTRA_ARGS="--map-by ppr:2:node:pe=$(($NPROC / 2))"
-  else
+    # Some nodes have 2 GPUs, be conservative
+    NODE_SLICE=2
+  elif [[ "$ARGS" == *"knl"* ]]; then
+    HOST_ARCH="KNL"
+    MPI_NUM_PROCS=1
+    # 4-way SMT, not 2
+    NODE_SLICE=2
+  elif [[ "$ARGS" == *"hsw"* ]]; then
     HOST_ARCH="HSW"
     MPI_NUM_PROCS=1
-    MPI_EXTRA_ARGS="--map-by ppr:1:node:pe=$(($NPROC))"
+    NODE_SLICE=1
+  else
+    echo "Must specify an architecture on Darwin!"
+    exit
   fi
 
   # Runtime
   MPI_EXE="mpirun"
+  # Lead MPI to water
+  MPI_EXTRA_ARGS="--map-by ppr:${MPI_NUM_PROCS}:node:pe=$(($NPROC / $NODE_SLICE))"
 fi

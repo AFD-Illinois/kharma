@@ -7,27 +7,31 @@ problem_id = bondi
 
 <parthenon/mesh>
 # Full mesh size, no refinement
-refinement = none
-numlevel = 1
-nx1 = 128
-nx2 = 128
-nx3 = 1
-
-<parthenon/meshblock>
-# Split into blocks mesh
 # Don't bother with xN boundaries for spherical coordinate systems
 # KHARMA will automatically place ~5 zones inside the EH
 nx1 = 128
 nx2 = 128
 nx3 = 1
 
+<parthenon/meshblock>
+nx1 = 128
+nx2 = 128
+nx3 = 1
+
 <coordinates>
-base = ks
+# Spherical Kerr-Schild coords
+base = spherical_ks
+# MKS of Gammie '03
 transform = mks
+# BH spin
 a = 0.0
+# MKS parameter
 hslope = 0.3
+# Radial domain in r_g
 r_in = 3.0
 r_out = 30.0
+# If using "Funky" MKS later, where is "startx1"?
+fmks_zero_point = 0.0
 
 <parthenon/time>
 tlim = 50.0
@@ -38,15 +42,24 @@ gamma = 1.666667
 reconstruction = weno5
 
 <bondi>
+# Bondi problem parameters:
+# density scaling/accretion rate
 mdot = 1.0
+# Sonic point
 rs = 8.0
 
-# Disable floors
 <floors>
+# Disable floors
 disable_floors = true
+# If using B field, enable w/:
+rho_min_geom = 1e-6
+u_min_geom = 1e-8
+bsq_over_rho_max = 100
+u_over_rho_max = 100
+gamma_max = 10
 
-# We'll be adding material, and that's okay
 <boundaries>
+# We'll be adding material, and that's okay
 check_inflow_outer = false
 
 <b_field>
@@ -56,6 +69,9 @@ solver = none
 # To add magnetic field
 #type = monopole
 #b10 = 1
+# Or
+#type = vertical
+#bz = 0.1
 
 <debug>
 verbose = 0

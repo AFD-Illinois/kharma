@@ -64,12 +64,12 @@ namespace m = std;
 
 // Bare Parthenon defs
 // Anything more leads to circular deps from gr_coordinates.hpp
-#include "parameter_input.hpp"
-#include "parthenon_arrays.hpp"
-#include "parthenon_mpi.hpp"
-#include "globals.hpp"
-#include "bvals/bvals_interfaces.hpp"
-#include "mesh/domain.hpp"
+#include <parameter_input.hpp>
+#include <parthenon_arrays.hpp>
+#include <parthenon_mpi.hpp>
+#include <globals.hpp>
+#include <bvals/bvals_interfaces.hpp>
+#include <mesh/domain.hpp>
 
 // KHARMA DEFINITIONS
 

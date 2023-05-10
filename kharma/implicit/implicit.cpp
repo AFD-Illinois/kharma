@@ -63,17 +63,17 @@ std::vector<std::string> Implicit::GetOrderedNames(MeshBlockData<Real> *rc, cons
 {
     auto pmb0 = rc->GetBlockPointer();
     std::vector<std::string> out;
-    auto vars = rc->GetVariablesByFlag(std::vector<MetadataFlag>({Metadata::GetUserFlag("Implicit"), flag})).labels();
+    auto vars = rc->GetVariablesByFlag({Metadata::GetUserFlag("Implicit"), flag}).vars();
     for (int i=0; i < vars.size(); ++i) {
-        if (rc->Contains(vars[i])) {
-            out.push_back(vars[i]);
+        if (rc->Contains(vars[i]->label())) {
+            out.push_back(vars[i]->label());
         }
     }
     if (!only_implicit) {
-        vars = rc->GetVariablesByFlag(std::vector<MetadataFlag>({Metadata::GetUserFlag("Explicit"), flag})).labels();
+        vars = rc->GetVariablesByFlag({Metadata::GetUserFlag("Explicit"), flag}).vars();
         for (int i=0; i < vars.size(); ++i) {
-            if (rc->Contains(vars[i])) {
-                out.push_back(vars[i]);
+            if (rc->Contains(vars[i]->label())) {
+                out.push_back(vars[i]->label());
             }
         }
     }
@@ -82,7 +82,6 @@ std::vector<std::string> Implicit::GetOrderedNames(MeshBlockData<Real> *rc, cons
 
 std::shared_ptr<KHARMAPackage> Implicit::Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages)
 {
-    Flag("Initializing Implicit Package");
     auto pkg = std::make_shared<KHARMAPackage>("Implicit");
     Params &params = pkg->AllParams();
 
@@ -145,7 +144,6 @@ std::shared_ptr<KHARMAPackage> Implicit::Initialize(ParameterInput *pin, std::sh
     // Anything we need to run from this package on callbacks
     // Maybe a post-step L2 or flag count or similar
 
-    Flag("Initialized");
     return pkg;
 }
 
@@ -156,6 +154,8 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
     Flag(md_sub_step_init, "Implicit Iteration start, sub step");
     Flag(md_flux_src, "Implicit Iteration start, divF and sources");
     Flag(md_linesearch, "Linesearch");
+    // Pull out the block pointers for each sub-step, as we need the *mutable parameters*
+    // of the EMHD package.  TODO(BSP) restrict state back to the variables...
     auto pmb_full_step_init = md_full_step_init->GetBlockData(0)->GetBlockPointer();
     auto pmb_sub_step_init  = md_sub_step_init->GetBlockData(0)->GetBlockPointer();
     auto pmb_solver         = md_solver->GetBlockData(0)->GetBlockPointer();
@@ -199,8 +199,9 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
     // The implicit variables need to be first, so we know how to iterate over just them to fill
     // just the residual & Jacobian we care about, which makes the solve faster.
     auto& mbd_full_step_init  = md_full_step_init->GetBlockData(0); // MeshBlockData object, more member functions
-    auto ordered_prims        = GetOrderedNames(mbd_full_step_init.get(), Metadata::GetUserFlag("Primitive"));
-    auto ordered_cons         = GetOrderedNames(mbd_full_step_init.get(), Metadata::Conserved);
+    
+    auto ordered_prims = GetOrderedNames(mbd_full_step_init.get(), Metadata::GetUserFlag("Primitive"));
+    auto ordered_cons  = GetOrderedNames(mbd_full_step_init.get(), Metadata::Conserved);
     //std::cerr << "Ordered prims:"; for(auto prim: ordered_prims) std::cerr << " " << prim; std::cerr << std::endl;
     //std::cerr << "Ordered cons:"; for(auto con: ordered_cons) std::cerr << " " << con; std::cerr << std::endl;
 

@@ -42,44 +42,26 @@
 
 TaskStatus Packages::FixFlux(MeshData<Real> *md)
 {
-    Flag("Fixing fluxes on mesh");
-    for (auto &package : md->GetMeshPointer()->packages.AllPackages()) {
-        if (KHARMAPackage *kpackage = dynamic_cast<KHARMAPackage*>(package.second.get())) {
-            if (kpackage->FixFlux != nullptr)
-                kpackage->FixFlux(md);
+    Flag("FixFlux");
+    auto kpackages = md->GetMeshPointer()->packages.AllPackagesOfType<KHARMAPackage>();
+    for (auto kpackage : kpackages) {
+        if (kpackage.second->FixFlux != nullptr) {
+            Flag("FixFlux_"+kpackage.first);
+            kpackage.second->FixFlux(md);
+            EndFlag("FixFlux_"+kpackage.first);
         }
     }
-    Flag("Fixed");
+    EndFlag("FixFlux");
     return TaskStatus::complete;
 }
 
-// TaskStatus Packages::BlockPtoU(MeshBlockData<Real> *mbd, IndexDomain domain, bool coarse)
-// {
-//     Flag("Getting conserved variables on block");
-//     for (auto &package : mbd->GetBlockPointer()->packages.AllPackages()) {
-//         if (KHARMAPackage *kpackage = dynamic_cast<KHARMAPackage*>(package.second.get())) {
-//             if (kpackage->BlockPtoU != nullptr)
-//                 kpackage->BlockPtoU(mbd, domain, coarse);
-//         }
-//     }
-//     Flag("Done");
-//     return TaskStatus::complete;
-// }
-// TaskStatus Packages::MeshPtoU(MeshData<Real> *md, IndexDomain domain, bool coarse)
-// {
-//     for (int i=0; i < md->NumBlocks(); ++i)
-//         PtoU(md->GetBlockData(i).get(), domain, coarse);
-//     return TaskStatus::complete;
-// }
-
-TaskStatus Packages::BlockUtoP(MeshBlockData<Real> *mbd, IndexDomain domain, bool coarse)
+TaskStatus Packages::BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
     Flag("Recovering primitive variables");
-    for (auto &package : mbd->GetBlockPointer()->packages.AllPackages()) {
-        if (KHARMAPackage *kpackage = dynamic_cast<KHARMAPackage*>(package.second.get())) {
-            if (kpackage->BlockUtoP != nullptr)
-                kpackage->BlockUtoP(mbd, domain, coarse);
-        }
+    auto kpackages = rc->GetBlockPointer()->packages.ListPackagesOfType<KHARMAPackage>();
+    for (auto kpackage : kpackages) {
+        if (kpackage->BlockUtoP != nullptr)
+            kpackage->BlockUtoP(rc, domain, coarse);
     }
     Flag("Recovered");
     return TaskStatus::complete;

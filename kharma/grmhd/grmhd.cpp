@@ -59,7 +59,6 @@ namespace GRMHD
 
 std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages)
 {
-    Flag("Initializing GRMHD");
     // This function builds and returns a "KHARMAPackage" object, which is a light
     // superset of Parthenon's "StateDescriptor" class for packages.
     // The most important part of this object is a member of type "Params",
@@ -214,7 +213,6 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
 
     // TODO TODO Reductions
 
-    Flag("Initialized");
     return pkg;
 }
 

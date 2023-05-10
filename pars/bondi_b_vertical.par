@@ -9,8 +9,6 @@ problem_id = bondi
 # Full mesh size, no refinement
 # Don't bother with xN boundaries for spherical coordinate systems
 # KHARMA will automatically place ~5 zones inside the EH
-refinement = none
-numlevel = 1
 nx1 = 64
 nx2 = 64
 nx3 = 32

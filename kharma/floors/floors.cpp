@@ -48,7 +48,6 @@ int CountFFlags(MeshData<Real> *md)
 
 std::shared_ptr<KHARMAPackage> Floors::Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages)
 {
-    Flag("Initializing Floors");
     auto pkg = std::make_shared<KHARMAPackage>("Floors");
     Params &params = pkg->AllParams();
 
@@ -153,15 +152,14 @@ std::shared_ptr<KHARMAPackage> Floors::Initialize(ParameterInput *pin, std::shar
     // add callbacks for HST output to the Params struct, identified by the `hist_param_key`
     pkg->AddParam<>(parthenon::hist_param_key, hst_vars);
 
-    Flag("Initialized");
     return pkg;
 }
 
-TaskStatus Floors::ApplyInitialFloors(MeshBlockData<Real> *mbd, IndexDomain domain)
+TaskStatus Floors::ApplyInitialFloors(ParameterInput *pin, MeshBlockData<Real> *mbd, IndexDomain domain)
 {
     Flag(mbd, "Applying first floors");
 
-    auto pmb                 = mbd->GetBlockPointer();
+    auto pmb = mbd->GetBlockPointer();
 
     PackIndexMap prims_map, cons_map;
     auto P = mbd->PackVariables({Metadata::GetUserFlag("Primitive")}, prims_map);
@@ -174,17 +172,16 @@ TaskStatus Floors::ApplyInitialFloors(MeshBlockData<Real> *mbd, IndexDomain doma
 
 
     // If we're going to apply floors through the run, apply the same ones at init
-    // Otherwise pick sensible defaults
+    // Otherwise stick to specified/default geometric floors
     Floors::Prescription floors_tmp;
     if (pmb->packages.AllPackages().count("Floors")) {
         floors_tmp = Floors::Prescription(pmb->packages.Get("Floors")->AllParams());
     } else {
             // JUST rho & u geometric
-            floors_tmp.rho_min_geom = 1e-6;
-            floors_tmp.u_min_geom   = 1e-8;
-            floors_tmp.r_char       = 10.; //unused
-            floors_tmp.frame_switch = 50.; //unused
+            floors_tmp.rho_min_geom = pin->GetOrAddReal("floors", "rho_min_geom", 1e-6);
+            floors_tmp.u_min_geom   = pin->GetOrAddReal("floors", "u_min_geom", 1e-8);
 
+            // Disable everything else, even if it's specified
             floors_tmp.bsq_over_rho_max = 1e20;
             floors_tmp.bsq_over_u_max   = 1e20;
             floors_tmp.u_over_rho_max   = 1e20;
@@ -192,11 +189,13 @@ TaskStatus Floors::ApplyInitialFloors(MeshBlockData<Real> *mbd, IndexDomain doma
             floors_tmp.gamma_max        = 1e20;
 
             floors_tmp.use_r_char    = false;
+            floors_tmp.r_char        = 0.; //unused
             floors_tmp.temp_adjust_u = false;
             floors_tmp.adjust_k      = false;
 
             floors_tmp.fluid_frame   = true;
             floors_tmp.mixed_frame   = false;
+            floors_tmp.frame_switch  = 0.; //unused
             floors_tmp.drift_frame   = false;
     }
     const Floors::Prescription floors = floors_tmp;

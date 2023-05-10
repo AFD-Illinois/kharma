@@ -50,11 +50,15 @@
 TaskStatus InitializeBondi(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin);
 
 /**
- * Set all values on a given domain to the Bondi inflow analytic steady-state solution
- * 
- * Used for initialization and boundary conditions
+ * Set all values on a given domain to the Bondi inflow analytic steady-state solution.
+ * Use the template version when possible, which just calls through
  */
-TaskStatus SetBondi(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain, bool coarse=false);
+TaskStatus SetBondiImpl(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain, bool coarse);
+
+template<IndexDomain domain>
+TaskStatus SetBondi(std::shared_ptr<MeshBlockData<Real>>& rc, bool coarse=false) {
+    SetBondiImpl(rc, domain, coarse);
+}
 
 /**
  * Supporting functions for Bondi flow calculations

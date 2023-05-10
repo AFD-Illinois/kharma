@@ -357,15 +357,9 @@ TaskStatus ReadKharmaRestart(std::shared_ptr<MeshBlockData<Real>> rc, ParameterI
             }
         }
     );
-    // Fill the 
+    // Fill the fluid conserved and magnetic field primitive variables
     Flux::BlockPtoUMHD(rc.get(), IndexDomain::entire, false);
     B_FluxCT::BlockUtoP(rc.get(), IndexDomain::entire, false);
 
-    // Register a Dirichlet boundary condition
-    auto bound_pkg = static_cast<KHARMAPackage*>(pmb->packages.Get("Boundaries").get());
-    bound_pkg->KHARMAInnerX1Boundary = KBoundaries::Dirichlet;
-    bound_pkg->KHARMAOuterX1Boundary = KBoundaries::Dirichlet;
-
-
-   return TaskStatus::complete;
+    return TaskStatus::complete;
 }

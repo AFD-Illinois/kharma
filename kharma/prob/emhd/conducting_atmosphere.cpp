@@ -50,7 +50,6 @@ using namespace parthenon;
  */
 TaskStatus InitializeAtmosphere(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin)
 {
-    
     auto pmb = rc->GetBlockPointer();
 
     // Obtain EMHD params
@@ -58,13 +57,10 @@ TaskStatus InitializeAtmosphere(std::shared_ptr<MeshBlockData<Real>>& rc, Parame
     bool higher_order_terms = false;
     EMHD::EMHD_parameters emhd_params_tmp;
     if (use_emhd) {
-        Flag(rc, "Initializing hydrostatic conducting atmosphere problem");
-        
+        std::cout << "Hydrostatic atmosphere will be conducting w/EMHD" << std::endl;
         const auto& emhd_pars = pmb->packages.Get("EMHD")->AllParams();
         emhd_params_tmp       = emhd_pars.Get<EMHD::EMHD_parameters>("emhd_params");
         higher_order_terms    = emhd_params_tmp.higher_order_terms;
-    } else {
-        Flag(rc, "Initializing hydrostatic atmosphere problem");
     }
     const EMHD::EMHD_parameters& emhd_params = emhd_params_tmp;
 
@@ -76,8 +72,6 @@ TaskStatus InitializeAtmosphere(std::shared_ptr<MeshBlockData<Real>>& rc, Parame
     PackIndexMap prims_map;
     auto P = rc->PackVariables({Metadata::GetUserFlag("Primitive")}, prims_map);
     VarMap m_p(prims_map, false);
-
-    const int nvar = P.GetDim(4);
 
     const auto& G = pmb->coords;
 
@@ -137,31 +131,15 @@ TaskStatus InitializeAtmosphere(std::shared_ptr<MeshBlockData<Real>>& rc, Parame
         dP_host = dP.GetHostMirror();
     }
 
-    // Set dirichlet boundary conditions
-    auto bound_pkg = static_cast<KHARMAPackage*>(pmb->packages.Get("Boundaries").get());
-    bound_pkg->KHARMAInnerX1Boundary = KBoundaries::Dirichlet;
-    bound_pkg->KHARMAOuterX1Boundary = KBoundaries::Dirichlet;
-    // Define ParArrays to store radial boundary values
-    // TODO could probably standardize index use a bit here
-    IndexRange ib_in = pmb->cellbounds.GetBoundsI(IndexDomain::interior);
-    IndexRange jb_in = pmb->cellbounds.GetBoundsJ(IndexDomain::interior);
-    IndexRange kb_in = pmb->cellbounds.GetBoundsK(IndexDomain::interior);
-    const int n1 = pmb->cellbounds.ncellsi(IndexDomain::interior);
-    const int ng = ib.e - ib_in.e;
-
-    // auto p_bound_left = rc->Get("bound.inner_x1").data;
-    // auto p_bound_left_host = p_bound_left.GetHostMirror();
-    // auto p_bound_right = rc->Get("bound.outer_x1").data;
-    // auto p_bound_right_host = p_bound_right.GetHostMirror();
-
     // Load coordinates 'r' and compare against grid values
-    double rCoords[n1 + 2*ng];
+    const int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
+    double rCoords[n1];
     double error = 0.;
+    IndexRange jb_in = pmb->cellbounds.GetBoundsJ(IndexDomain::interior);
     for (int i = ib.s; i <= ib.e; i++) {
         fscanf(fp_r, "%lf", &(rCoords[i]));
-        GReal Xnative[GR_DIM], Xembed[GR_DIM]; 
-        G.coord(0, ng, i, Loci::center, Xnative); // j and k don't matter since we need to compare only the radial coordinate
-        G.coord_embed(0, ng, i, Loci::center, Xembed);
+        GReal Xembed[GR_DIM];
+        G.coord_embed(0, jb_in.s, i, Loci::center, Xembed);
         error = fabs(Xembed[1] - rCoords[i]);
         if (error > 1.e-10) {
             fprintf(stdout, "Error at radial zone i = %d, Error = %8.5e KHARMA: %8.7e, sage nb: %8.7e\n", i, error, Xembed[1], rCoords[i]);
@@ -173,14 +151,13 @@ TaskStatus InitializeAtmosphere(std::shared_ptr<MeshBlockData<Real>>& rc, Parame
     double rho_temp, u_temp, q_temp;
 
     for (int i = ib.s; i <= ib.e; i++) {
-
         fscanf(fp_rho, "%lf", &(rho_temp));
         fscanf(fp_u,   "%lf", &(u_temp));
         if (use_emhd)
             fscanf(fp_q, "%lf", &(q_temp));
 
-        for (int j = jb_in.s; j <= jb_in.e; j++) {
-            for (int k = kb_in.s; k <= kb_in.e; k++) {
+        for (int j = jb.s; j <= jb.e; j++) {
+            for (int k = kb.s; k <= kb.e; k++) {
 
                 GReal Xnative[GR_DIM], Xembed[GR_DIM]; 
                 G.coord(k, j, i, Loci::center, Xnative);
@@ -206,7 +183,6 @@ TaskStatus InitializeAtmosphere(std::shared_ptr<MeshBlockData<Real>>& rc, Parame
                 // For a fluid at rest wrt. the normal observer, ucon = {-1/g_tt,0,0,0}. 
                 // We need to use this info to obtain the correct values for U1, U2 and U3
                 // TODO is this just fourvel_to_prim?
-                
 
                 Real ucon[GR_DIM]         = {0};
                 Real gcov[GR_DIM][GR_DIM] = {0};
@@ -250,36 +226,6 @@ TaskStatus InitializeAtmosphere(std::shared_ptr<MeshBlockData<Real>>& rc, Parame
                     q_host(k, j, i)   = q_tilde;
                     dP_host(k, j, i)  = dP_tilde;
                 }
-
-                // Save boundary values for Dirichlet boundary conditions
-                // if (i < ng) {
-                //     p_bound_left_host(m_p.RHO, k, j, i) = rho_host(k, j, i);
-                //     p_bound_left_host(m_p.UU, k, j, i) = u_host(k, j, i);
-                //     p_bound_left_host(m_p.U1, k, j, i) = uvec_host(V1, k, j, i);
-                //     p_bound_left_host(m_p.U2, k, j, i) = uvec_host(V2, k, j, i);
-                //     p_bound_left_host(m_p.U3, k, j, i) = uvec_host(V3, k, j, i);
-                //     p_bound_left_host(m_p.B1, k, j, i) = B_host(V1, k, j, i);
-                //     p_bound_left_host(m_p.B2, k, j, i) = B_host(V2, k, j, i);
-                //     p_bound_left_host(m_p.B3, k, j, i) = B_host(V3, k, j, i);
-                //     if (use_emhd) {
-                //         p_bound_left_host(m_p.Q, k, j, i) = q_host(k, j, i);
-                //         p_bound_left_host(m_p.DP, k, j, i) = dP_host(k, j, i);
-                //     }
-                // } else if (i >= n1 + ng) {
-                //     int ii = i - (n1 + ng);
-                //     p_bound_right_host(m_p.RHO, k, j, ii) = rho_host(k, j, i);
-                //     p_bound_right_host(m_p.UU, k, j, ii) = u_host(k, j, i);
-                //     p_bound_right_host(m_p.U1, k, j, ii) = uvec_host(V1, k, j, i);
-                //     p_bound_right_host(m_p.U2, k, j, ii) = uvec_host(V2, k, j, i);
-                //     p_bound_right_host(m_p.U3, k, j, ii) = uvec_host(V3, k, j, i);
-                //     p_bound_right_host(m_p.B1, k, j, ii) = B_host(V1, k, j, i);
-                //     p_bound_right_host(m_p.B2, k, j, ii) = B_host(V2, k, j, i);
-                //     p_bound_right_host(m_p.B3, k, j, ii) = B_host(V3, k, j, i);
-                //     if (use_emhd) {
-                //         p_bound_right_host(m_p.Q, k, j, ii) = q_host(k, j, i);
-                //         p_bound_right_host(m_p.DP, k, j, ii) = dP_host(k, j, i);
-                //     }
-                // }
             }
         }
     }
@@ -292,6 +238,7 @@ TaskStatus InitializeAtmosphere(std::shared_ptr<MeshBlockData<Real>>& rc, Parame
         fclose(fp_q);
 
     // Deep copy to device
+    Kokkos::fence();
     rho.DeepCopy(rho_host);
     u.DeepCopy(u_host);
     uvec.DeepCopy(uvec_host);
@@ -300,12 +247,7 @@ TaskStatus InitializeAtmosphere(std::shared_ptr<MeshBlockData<Real>>& rc, Parame
         q.DeepCopy(q_host);
         dP.DeepCopy(dP_host);
     }
-    // p_bound_left.DeepCopy(p_bound_left_host);
-    // p_bound_right.DeepCopy(p_bound_right_host);
     Kokkos::fence();
-
-    KBoundaries::SetDomainDirichlet(rc, IndexDomain::inner_x1, false);
-    KBoundaries::SetDomainDirichlet(rc, IndexDomain::outer_x1, false);
 
     Flag("Initialized");
     return TaskStatus::complete;

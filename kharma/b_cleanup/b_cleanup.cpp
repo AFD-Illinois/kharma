@@ -64,7 +64,6 @@ using namespace parthenon::solvers;
 
 std::shared_ptr<KHARMAPackage> B_Cleanup::Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages)
 {
-    Flag("Initializing B Field Cleanup");
     auto pkg = std::make_shared<KHARMAPackage>("B_Cleanup");
     Params &params = pkg->AllParams();
 
@@ -246,9 +245,9 @@ TaskStatus B_Cleanup::CleanupDivergence(std::shared_ptr<MeshData<Real>>& md)
     // There's no MeshData-wide 'Remove' so we go block-by-block
     for (auto& pmb : pmesh->block_list) {
         auto rc_s = pmb->meshblock_data.Get("solve");
-        auto varlabels = rc_s->GetVariablesByFlag({Metadata::GetUserFlag("MHD")}).labels();
-        for (auto varlabel : varlabels) {
-            rc_s->Remove(varlabel);
+        auto vars = rc_s->GetVariablesByFlag({Metadata::GetUserFlag("MHD")}).vars();
+        for (auto var : vars) {
+            rc_s->Remove(var->label());
         }
     }
     auto &msolve = pmesh->mesh_data.GetOrAdd("solve", 0);
@@ -294,7 +293,6 @@ TaskStatus B_Cleanup::RemoveExtraFields(BlockList_t &blocks)
         // TODO anything FillGhost & not Conserved or Primitive
         for (auto& pmb : blocks) {
             auto rc_s = pmb->meshblock_data.Get();
-            //auto varlabels = rc_s->GetVariablesByName({"pk0", "res0", "divB_RHS", "p"}).labels();
             for (auto varlabel : {"pk0", "res0", "temp0", "divB_RHS", "p"}) {
                 if (rc_s->HasCellVariable(varlabel))
                     rc_s->Remove(varlabel);
@@ -323,7 +321,6 @@ TaskStatus B_Cleanup::ApplyP(MeshData<Real> *msolve, MeshData<Real> *md)
         KOKKOS_LAMBDA (const int& b, const int &k, const int &j, const int &i) {
             const auto& G = P.GetCoords(b);
             double b1, b2, b3;
-    B_FluxCT::MeshUtoP(md, IndexDomain::interior);
             B_FluxCT::center_grad(G, P, b, k, j, i, ndim > 2, b1, b2, b3);
             B(b, V1, k, j, i) -= b1;
             B(b, V2, k, j, i) -= b2;

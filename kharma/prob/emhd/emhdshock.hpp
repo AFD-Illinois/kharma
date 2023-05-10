@@ -56,7 +56,6 @@ using namespace parthenon;
  */
 TaskStatus InitializeEMHDShock(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin)
 {
-    Flag(rc, "Initializing EMHD shock problem");
     auto pmb = rc->GetBlockPointer();
 
     GridScalar rho  = rc->Get("prims.rho").data;

@@ -6,26 +6,17 @@
 problem_id = anisotropic_conduction
 
 <parthenon/mesh>
-refinement = none
-numlevel = 1
-
 nx1 = 256
 x1min = 0.0
 x1max = 1.0
-ix1_bc = periodic
-ox1_bc = periodic
 
 nx2 = 256
 x2min = 0.0
 x2max = 1.0
-ix2_bc = periodic
-ox2_bc = periodic
 
 nx3 = 1
 x3min = 0.0
 x3max = 1.0
-ix3_bc = periodic
-ox3_bc = periodic
 
 <parthenon/meshblock>
 nx1 = 128
@@ -33,13 +24,12 @@ nx2 = 128
 nx3 = 1
 
 <coordinates>
+# Setting Cartesian coords defaults to periodic boundaries
 base = cartesian_minkowski
 transform = null
 
 <parthenon/time>
 tlim = 10.0
-# "RK2" is the only option for implicit solver
-integrator = rk2
 dt_min = 1e-6
 
 <GRMHD>

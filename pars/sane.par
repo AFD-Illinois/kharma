@@ -13,7 +13,7 @@ nx2 = 64
 nx3 = 64
 
 <parthenon/meshblock>
-nx1 = 128
+nx1 = 64
 nx2 = 64
 nx3 = 32
 

@@ -60,7 +60,6 @@
 
 std::shared_ptr<KHARMAPackage> KHARMA::InitializeGlobals(ParameterInput *pin, std::shared_ptr<Packages_t>& packages)
 {
-    Flag("Initializing Globals");
     // All truly global state.  Mostly mutable state in order to avoid scope creep
     auto pkg = std::make_shared<KHARMAPackage>("Globals");
     Params &params = pkg->AllParams();
@@ -92,7 +91,6 @@ std::shared_ptr<KHARMAPackage> KHARMA::InitializeGlobals(ParameterInput *pin, st
     pkg->MeshPreStepUserWorkInLoop = KHARMA::MeshPreStepUserWorkInLoop;
     pkg->MeshPostStepUserWorkInLoop = KHARMA::MeshPostStepUserWorkInLoop;
 
-    Flag("Initialized");
     return pkg;
 }
 void KHARMA::ResetGlobals(ParameterInput *pin, Mesh *pmesh)
@@ -163,6 +161,7 @@ void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
     pin->SetBoolean("coordinates", "spherical", tmp_coords.is_spherical());
 
     // Do a bunch of autodetection/setting in spherical coordinates
+    // Note frequent use of "GetOrAddX": this sets a default if not present but allows overriding
     if (tmp_coords.is_spherical()) {
         // Spherical systems can specify r_out and optionally r_in,
         // instead of xNmin/max.
@@ -184,7 +183,7 @@ void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
                     GReal Rin = pin->GetReal("coordinates", "r_in");
                     GReal x1min = tmp_coords.r_to_native(Rin);
                     pin->GetOrAddReal("parthenon/mesh", "x1min", x1min);
-                    if (Rin < 2.5){ // warn if there are fewer than 5 zones inside the event horizon
+                    if (Rin < 2.0){ // warn if there are fewer than 5 zones inside the event horizon
                         GReal dx = (x1max - x1min) / pin->GetInteger("parthenon/mesh", "nx1");
                         if (tmp_coords.X1_to_embed(x1min + 5*dx) > tmp_coords.get_horizon()) {
                             std::cerr << "WARNING: inner radius is near/in the EH, but does not allow 5 zones inside!" << std::endl;
@@ -206,40 +205,39 @@ void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
                     pin->GetOrAddReal("parthenon/mesh", "x1min", x1min);
                     pin->GetOrAddReal("coordinates", "r_in", tmp_coords.X1_to_embed(Rhor));
                 }
-
-                //cout << "Setting x1min: " << x1min << " x1max " << x1max << " based on BH with a=" << a << endl;
-
             }
         }
 
+        // If the simulation domain extends inside the EH, we change some boundary options
+        pin->SetBoolean("coordinates", "domain_intersects_eh", pin->GetReal("coordinates", "r_in") < tmp_coords.get_horizon());
+
         // Spherical systems will also want KHARMA's spherical boundary conditions.
-        // By default, this means inflow in x1 and reflecting in x2, but can be chosen
-        // by *KHARMA* options (not here, since we certainly don't want periodic pole/radial bounds)
-        pin->GetOrAddString("parthenon/mesh", "ix1_bc", "user");
-        pin->GetOrAddString("parthenon/mesh", "ox1_bc", "user");
-        pin->GetOrAddString("parthenon/mesh", "ix2_bc", "user");
-        pin->GetOrAddString("parthenon/mesh", "ox2_bc", "user");
-        pin->GetOrAddString("parthenon/mesh", "ix3_bc", "periodic");
-        pin->GetOrAddString("parthenon/mesh", "ox3_bc", "periodic");
+        // Note boundaries are now exclusively set by KBoundaries package
+        pin->GetOrAddString("boundaries", "inner_x1", "outflow");
+        pin->GetOrAddString("boundaries", "outer_x1", "outflow");
+        pin->GetOrAddString("boundaries", "inner_x2", "reflecting");
+        pin->GetOrAddString("boundaries", "outer_x2", "reflecting");
+        pin->GetOrAddString("boundaries", "inner_x3", "periodic");
+        pin->GetOrAddString("boundaries", "outer_x3", "periodic");
     } else {
         // We can set reasonable default boundary conditions for Cartesian sims,
         // but not default domain bounds
-        pin->GetOrAddString("parthenon/mesh", "ix1_bc", "periodic");
-        pin->GetOrAddString("parthenon/mesh", "ox1_bc", "periodic");
-        pin->GetOrAddString("parthenon/mesh", "ix2_bc", "periodic");
-        pin->GetOrAddString("parthenon/mesh", "ox2_bc", "periodic");
-        pin->GetOrAddString("parthenon/mesh", "ix3_bc", "periodic");
-        pin->GetOrAddString("parthenon/mesh", "ox3_bc", "periodic");
+        pin->GetOrAddString("boundaries", "inner_x1", "periodic");
+        pin->GetOrAddString("boundaries", "outer_x1", "periodic");
+        pin->GetOrAddString("boundaries", "inner_x2", "periodic");
+        pin->GetOrAddString("boundaries", "outer_x2", "periodic");
+        pin->GetOrAddString("boundaries", "inner_x3", "periodic");
+        pin->GetOrAddString("boundaries", "outer_x3", "periodic");
     }
 
-    // Set default bounds covering our coordinates/transform
-    std::cout << "Coordinate transform has boundaries: "
-                << tmp_coords.startx(1) << " "
-                << tmp_coords.startx(2) << " "
-                << tmp_coords.startx(3) << " to "
-                << tmp_coords.stopx(1) << " "
-                << tmp_coords.stopx(2) << " "
-                << tmp_coords.stopx(3) << std::endl;
+    // Default boundaries are to cover the domain of our native coordinate system
+    // std::cout << "Coordinate transform has boundaries: "
+    //             << tmp_coords.startx(1) << " "
+    //             << tmp_coords.startx(2) << " "
+    //             << tmp_coords.startx(3) << " to "
+    //             << tmp_coords.stopx(1) << " "
+    //             << tmp_coords.stopx(2) << " "
+    //             << tmp_coords.stopx(3) << std::endl;
     // TODO(BSP) is this worth looping?  I say probably no.
     if (tmp_coords.startx(1) >= 0)
         pin->GetOrAddReal("parthenon/mesh", "x1min", tmp_coords.startx(1));
@@ -261,21 +259,24 @@ TaskStatus KHARMA::AddPackage(std::shared_ptr<Packages_t>& packages,
                               std::function<std::shared_ptr<KHARMAPackage>(ParameterInput*, std::shared_ptr<Packages_t>&)> package_init,
                               ParameterInput *pin)
 {
-    packages->Add(package_init(pin, packages));
+    Flag("AddPackage");
+    const auto& pkg = package_init(pin, packages);
+    packages->Add(pkg);
+    EndFlag("AddPackage "+pkg->label());
     return TaskStatus::complete;
 }
 
 Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput> &pin)
 {
-    // See above
+    // See above.  Only run if 
+    //if ()
     FixParameters(pin);
 
-    Flag("Initializing packages");
+    Flag("ProcessPackages");
 
     // Allocate the packages list as a shared pointer, to be updated in various tasks
     auto packages = std::make_shared<Packages_t>();
 
-    Flag("Building task collection");
     TaskCollection tc;
     auto& tr = tc.AddRegion(1);
     auto& tl = tr[0];
@@ -341,7 +342,6 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput> &pin)
     }
 
     // Execute the whole collection (just in case we do something fancy?)
-    Flag("Running package loading tasks");
     while (!tr.Execute()); // TODO this will inf-loop on error
 
     // The boundaries package may need to know variable counts for allocating memory,
@@ -358,8 +358,6 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput> &pin)
         pin->SetString("parthenon/time", "integrator", "vl2");
     }
 
-    
-
-    Flag("Finished initializing all packages"); // TODO print full package list way up here?
+    EndFlag("ProcessPackages"); // TODO print full package list way up here?
     return std::move(*packages);
 }

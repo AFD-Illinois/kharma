@@ -200,8 +200,27 @@ class CoordinateEmbedding {
             EmplaceSystems(src.base, src.transform);
             return *this;
         }
+        // Convenience functions to get common things:
+        // Names (host only)
+#pragma hd_warning_disable
+        KOKKOS_INLINE_FUNCTION std::string variant_names() const
+        {
+            std::string basename(
+                mpark::visit( [&](const auto& self) {
+                    return self.name;
+                }, base)
+            );
 
-        // Convenience functions to get common things
+            std::string transformname(
+                mpark::visit( [&](const auto& self) {
+                    return self.name;
+                }, transform)
+            );
+
+            return basename + " " + transformname;
+        }
+
+        // Properties (host or device)
         KOKKOS_INLINE_FUNCTION bool is_spherical() const
         {
             return mpark::visit( [&](const auto& self) {
@@ -211,7 +230,9 @@ class CoordinateEmbedding {
         KOKKOS_INLINE_FUNCTION GReal get_horizon() const
         {
             if (mpark::holds_alternative<SphKSCoords>(base) ||
-                mpark::holds_alternative<SphBLCoords>(base)) {
+                mpark::holds_alternative<SphBLCoords>(base) ||
+                mpark::holds_alternative<SphKSExtG>(base) ||
+                mpark::holds_alternative<SphBLExtG>(base)) {
                 const GReal a = get_a();
                 return 1 + m::sqrt(1 - a * a);
             } else {
@@ -244,23 +265,6 @@ class CoordinateEmbedding {
         KOKKOS_INLINE_FUNCTION bool is_cart_minkowski() const
         {
             return mpark::holds_alternative<CartMinkowskiCoords>(base) && mpark::holds_alternative<NullTransform>(transform);
-        }
-
-        KOKKOS_INLINE_FUNCTION std::string variant_names() const
-        {
-            std::string basename(
-                mpark::visit( [&](const auto& self) {
-                    return self.name;
-                }, base)
-            );
-
-            std::string transformname(
-                mpark::visit( [&](const auto& self) {
-                    return self.name;
-                }, transform)
-            );
-
-            return basename + " " + transformname;
         }
 
         // Spell out the interface we take from BaseCoords

@@ -41,7 +41,6 @@
 
 std::shared_ptr<KHARMAPackage> KHARMADriver::Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages)
 {
-    Flag("Initializing KHARMA Driver");
     // This function builds and returns a "KHARMAPackage" object, which is a light
     // superset of Parthenon's "StateDescriptor" class for packages.
     // The most important part of this object is a member of type "Params",
@@ -80,14 +79,20 @@ std::shared_ptr<KHARMAPackage> KHARMADriver::Initialize(ParameterInput *pin, std
 
     // Reconstruction scheme: plm, weno5, ppm...
     // Allow an old parameter location
-    std::string recon = pin->GetOrAddString("driver", "reconstruction",
-                                            pin->GetOrAddString("GRMHD", "reconstruction", "weno5"));
+    std::string grmhd_recon_option = pin->GetOrAddString("GRMHD", "reconstruction", "weno5");
+    std::string recon = pin->GetOrAddString("driver", "reconstruction", grmhd_recon_option);
+    bool lower_edges = pin->GetOrAddBoolean("driver", "lower_edges", false);
+    bool lower_poles = pin->GetOrAddBoolean("driver", "lower_poles", false);
     if (recon == "donor_cell") {
         params.Add("recon", KReconstruction::Type::donor_cell);
     } else if (recon == "linear_vl") {
         params.Add("recon", KReconstruction::Type::linear_vl);
     } else if (recon == "linear_mc") {
         params.Add("recon", KReconstruction::Type::linear_mc);
+    } else if (recon == "weno5_lower_edges" || (recon == "weno5" && lower_edges)) {
+        params.Add("recon", KReconstruction::Type::weno5_lower_edges);
+    } else if (recon == "weno5_lower_poles" || (recon == "weno5" && lower_poles)) {
+        params.Add("recon", KReconstruction::Type::weno5_lower_poles);
     } else if (recon == "weno5") {
         params.Add("recon", KReconstruction::Type::weno5);
     } else {
@@ -148,7 +153,8 @@ TaskID KHARMADriver::AddMPIBoundarySync(const TaskID t_start, TaskList &tl, std:
             for (int i_bnd = 0; i_bnd < BOUNDARY_NFACES; i_bnd++) {
                 if (rc->GetBlockPointer()->boundary_flag[i_bnd] == BoundaryFlag::block ||
                     rc->GetBlockPointer()->boundary_flag[i_bnd] == BoundaryFlag::periodic) {
-                    t_all_ptou[i_task] = tl.AddTask(t_start, Flux::BlockPtoU_Send, rc.get(), BoundaryDomain((BoundaryFace) i_bnd), false);
+                    const auto bdomain = KBoundaries::BoundaryDomain((BoundaryFace) i_bnd);
+                    t_all_ptou[i_task] = tl.AddTask(t_start, Flux::BlockPtoU_Send, rc.get(), bdomain, false);
                     t_ptou_final = t_ptou_final | t_all_ptou[i_task];
                     i_task++;
                 }
@@ -173,7 +179,8 @@ TaskID KHARMADriver::AddMPIBoundarySync(const TaskID t_start, TaskList &tl, std:
             for (int i_bnd = 0; i_bnd < BOUNDARY_NFACES; i_bnd++) {
                 if (rc->GetBlockPointer()->boundary_flag[i_bnd] == BoundaryFlag::block ||
                     rc->GetBlockPointer()->boundary_flag[i_bnd] == BoundaryFlag::periodic) {
-                    t_all_utop[i_task] = tl.AddTask(t_sync_done, Packages::BlockUtoPExceptMHD, rc.get(), BoundaryDomain((BoundaryFace) i_bnd), false);
+                    const auto bdomain = KBoundaries::BoundaryDomain((BoundaryFace) i_bnd);
+                    t_all_utop[i_task] = tl.AddTask(t_sync_done, Packages::BlockUtoPExceptMHD, rc.get(), bdomain, false);
                     t_utop_final = t_utop_final | t_all_utop[i_task];
                     i_task++;
                 }
@@ -242,9 +249,18 @@ TaskID KHARMADriver::AddFluxCalculations(TaskID& t_start, TaskList& tl, KReconst
         t_calculate_flux2 = tl.AddTask(t_start, Flux::GetFlux<RType::weno5, X2DIR>, md);
         t_calculate_flux3 = tl.AddTask(t_start, Flux::GetFlux<RType::weno5, X3DIR>, md);
         break;
+    case RType::weno5_lower_edges:
+        t_calculate_flux1 = tl.AddTask(t_start, Flux::GetFlux<RType::weno5_lower_edges, X1DIR>, md);
+        t_calculate_flux2 = tl.AddTask(t_start, Flux::GetFlux<RType::weno5_lower_edges, X2DIR>, md);
+        t_calculate_flux3 = tl.AddTask(t_start, Flux::GetFlux<RType::weno5_lower_edges, X3DIR>, md);
+        break;
+    case RType::weno5_lower_poles:
+        t_calculate_flux1 = tl.AddTask(t_start, Flux::GetFlux<RType::weno5_lower_poles, X1DIR>, md);
+        t_calculate_flux2 = tl.AddTask(t_start, Flux::GetFlux<RType::weno5_lower_poles, X2DIR>, md);
+        t_calculate_flux3 = tl.AddTask(t_start, Flux::GetFlux<RType::weno5_lower_poles, X3DIR>, md);
+        break;
     case RType::ppm:
     case RType::mp5:
-    case RType::weno5_lower_poles:
         std::cerr << "Reconstruction type not supported!  Supported reconstructions:" << std::endl
                   << "donor_cell, linear_mc, linear_vl, weno5" << std::endl;
         throw std::invalid_argument("Unsupported reconstruction algorithm!");

@@ -42,8 +42,6 @@
 
 TaskStatus InitializeBZMonopole(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin)
 {
-    Flag(rc, "Initializing BZ monopole problem");
-
     auto pmb = rc->GetBlockPointer();
     GridScalar rho = rc->Get("prims.rho").data;
     GridScalar u = rc->Get("prims.u").data;
@@ -61,10 +59,6 @@ TaskStatus InitializeBZMonopole(std::shared_ptr<MeshBlockData<Real>>& rc, Parame
 
     const auto& G = pmb->coords;
     const GReal a = G.coords.get_a();
-
-    if (pmb->gid == 0 && pmb->packages.Get("Globals")->Param<int>("verbose") > 0) {
-        std::cout << "Initializing BZ monopole." << std::endl;
-    }
 
     pmb->par_for("fm_torus_init", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
@@ -86,7 +80,6 @@ TaskStatus InitializeBZMonopole(std::shared_ptr<MeshBlockData<Real>>& rc, Parame
         }
     );
 
-    Flag(rc, "Initialized");
     return TaskStatus::complete;
 }
 

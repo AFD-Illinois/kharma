@@ -37,7 +37,7 @@
 #include <parthenon/parthenon.hpp>
 
 
-
+#pragma hd_warning_disable
 Real Reductions::EHReduction(MeshData<Real> *md, UserHistoryOperation op, std::function<Real(REDUCE_FUNCTION_ARGS_EH)> fn, int zone)
 {
     Flag("Performing accretion reduction");
@@ -103,6 +103,7 @@ Real Reductions::EHReduction(MeshData<Real> *md, UserHistoryOperation op, std::f
     return result;
 }
 
+#pragma hd_warning_disable
 Real Reductions::DomainReduction(MeshData<Real> *md, UserHistoryOperation op, std::function<Real(REDUCE_FUNCTION_ARGS_MESH)> fn, Real arg)
 {
     Flag("Performing domain reduction");

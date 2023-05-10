@@ -1,5 +1,5 @@
 diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
-index f45cc979..9d99a1bf 100644
+index 45566b0b..a9abdc1c 100644
 --- a/src/CMakeLists.txt
 +++ b/src/CMakeLists.txt
 @@ -90,7 +90,7 @@ set(COMPILED_WITH ${CMAKE_CXX_COMPILER})
@@ -11,16 +11,7 @@ index f45cc979..9d99a1bf 100644
  
  configure_file(config.hpp.in generated/config.hpp @ONLY)
  
-@@ -281,6 +281,8 @@ endif()
- 
- target_link_libraries(parthenon PUBLIC Kokkos::kokkos)
- 
-+target_link_libraries(parthenon PUBLIC stdc++fs)
-+
- if (PARTHENON_ENABLE_ASCENT)
-   if (ENABLE_MPI)
-     target_link_libraries(parthenon PUBLIC ascent::ascent_mpi)
-@@ -301,6 +303,8 @@ lint_target(parthenon)
+@@ -309,6 +309,8 @@ lint_target(parthenon)
  target_include_directories(parthenon PUBLIC
    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
    $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/generated>
@@ -55,10 +46,10 @@ index 6a1d72c9..b5ba609b 100644
      return it->second;
    }
 diff --git a/src/interface/meshblock_data.cpp b/src/interface/meshblock_data.cpp
-index ca4aa5fb..d7cc33ec 100644
+index 8d5dca57..0ab7dad8 100644
 --- a/src/interface/meshblock_data.cpp
 +++ b/src/interface/meshblock_data.cpp
-@@ -430,7 +430,7 @@ MeshBlockData<T>::GetVariablesByFlag(const Metadata::FlagCollection &flags,
+@@ -440,7 +440,7 @@ MeshBlockData<T>::GetVariablesByUid(const std::vector<Uid_t> &uids) {
  
  template <typename T>
  void MeshBlockData<T>::Remove(const std::string &label) {

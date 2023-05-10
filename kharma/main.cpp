@@ -108,16 +108,18 @@ int main(int argc, char *argv[])
     pman.app_input->PostStepDiagnosticsInLoop = Packages::PostStepDiagnostics;
 
     // Registering KHARMA's boundary functions here doesn't mean they will *always* run:
-    // all periodic & internal boundary conditions are handled by Parthenon.
-    // KHARMA sets the correct boundaries automatically for spherical coordinate systems.
+    // periodic & internal boundary conditions are handled by Parthenon.
+    // KHARMA sets what will run in boundaries.cpp
     pman.app_input->boundary_conditions[parthenon::BoundaryFace::inner_x1] = KBoundaries::ApplyBoundaryTemplate<IndexDomain::inner_x1>;
     pman.app_input->boundary_conditions[parthenon::BoundaryFace::outer_x1] = KBoundaries::ApplyBoundaryTemplate<IndexDomain::outer_x1>;
     pman.app_input->boundary_conditions[parthenon::BoundaryFace::inner_x2] = KBoundaries::ApplyBoundaryTemplate<IndexDomain::inner_x2>;
     pman.app_input->boundary_conditions[parthenon::BoundaryFace::outer_x2] = KBoundaries::ApplyBoundaryTemplate<IndexDomain::outer_x2>;
+    pman.app_input->boundary_conditions[parthenon::BoundaryFace::inner_x3] = KBoundaries::ApplyBoundaryTemplate<IndexDomain::inner_x3>;
+    pman.app_input->boundary_conditions[parthenon::BoundaryFace::outer_x3] = KBoundaries::ApplyBoundaryTemplate<IndexDomain::outer_x3>;
 
     // Parthenon init includes Kokkos, MPI, parses parameters & cmdline,
     // then calls ProcessPackages and ProcessProperties, then constructs the Mesh
-    Flag("Parthenon Initializing");
+    Flag("Parthenon Init");
     auto manager_status = pman.ParthenonInit(argc, argv);
     if (manager_status == ParthenonStatus::complete) {
         pman.ParthenonFinalize();
@@ -127,7 +129,7 @@ int main(int argc, char *argv[])
         pman.ParthenonFinalize();
         return 1;
     }
-    Flag("Parthenon Initialized");
+    EndFlag("Parthenon Init");
 
 #if DEBUG
     // Replace Parthenon signal handlers with something that just prints a backtrace

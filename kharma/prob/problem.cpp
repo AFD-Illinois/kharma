@@ -73,16 +73,16 @@ using namespace parthenon;
 void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
 {
     auto rc = pmb->meshblock_data.Get();
-    Flag(rc, "Initializing Block");
+    auto prob = pin->GetString("parthenon/job", "problem_id"); // Required parameter
+    Flag("Initialize "+prob);
+    // Also just print this, it's important
+    if (MPIRank0()) {
+        std::cout << "Initializing problem: " << prob << std::endl;
+    }
 
     // Breakout to call the appropriate initialization function,
     // defined in accompanying headers.
 
-    auto prob = pin->GetString("parthenon/job", "problem_id"); // Required parameter
-    
-    if (MPIRank0()) {
-        std::cout << "Initializing problem: " << prob << std::endl;
-    }
     TaskStatus status = TaskStatus::fail;
     // MHD
     if (prob == "mhdmodes") {
@@ -159,5 +159,5 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
 
     // Floors are NOT automatically applied at this point anymore.
 
-    Flag(rc, "Initialized Block");
+    EndFlag("Initialize "+prob);
 }

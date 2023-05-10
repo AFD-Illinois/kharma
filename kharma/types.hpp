@@ -35,6 +35,7 @@
 
 #include "decs.hpp"
 
+#include "boundary_types.hpp"
 #include "kharma_package.hpp"
 
 #include <parthenon/parthenon.hpp>
@@ -150,6 +151,7 @@ class VarMap {
             B2 = B1 + 1;
             B3 = B1 + 2;
         }
+        // TODO TODO track total nvar and provide a function
 };
 
 /**
@@ -168,104 +170,29 @@ KOKKOS_INLINE_FUNCTION bool inside(const int& k, const int& j, const int& i,
     return !outside(k, j, i, kb, jb, ib);
 }
 
-inline bool BoundaryIsInner(IndexDomain domain)
-{
-    return domain == IndexDomain::inner_x1 ||
-           domain == IndexDomain::inner_x2 ||
-           domain == IndexDomain::inner_x3;
-}
-
-inline int BoundarySide(IndexDomain domain)
-{
-    switch (domain) {
-        case IndexDomain::inner_x1:
-        case IndexDomain::outer_x1:
-            return 1;
-        case IndexDomain::inner_x2:
-        case IndexDomain::outer_x2:
-            return 2;
-        case IndexDomain::inner_x3:
-        case IndexDomain::outer_x3:
-            return 3;
-        default:
-            return 0;
-    }
-}
-
-inline std::string BoundaryName(IndexDomain domain)
-{
-    switch (domain) {
-        case IndexDomain::inner_x1:
-            return "inner_x1";
-        case IndexDomain::outer_x1:
-            return "outer_x1";
-        case IndexDomain::inner_x2:
-            return "inner_x2";
-        case IndexDomain::outer_x2:
-            return "outer_x2";
-        case IndexDomain::inner_x3:
-            return "inner_x3";
-        case IndexDomain::outer_x3:
-            return "outer_x3";
-        case IndexDomain::interior:
-            return "interior";
-        case IndexDomain::entire:
-            return "entire";
-        default:
-            return "unknown";
-    }
-}
-
-inline IndexDomain BoundaryDomain(const BoundaryFace face)
-{
-    switch (face) {
-    case BoundaryFace::inner_x1:
-        return IndexDomain::inner_x1;
-    case BoundaryFace::outer_x1:
-        return IndexDomain::outer_x1;
-    case BoundaryFace::inner_x2:
-        return IndexDomain::inner_x2;
-    case BoundaryFace::outer_x2:
-        return IndexDomain::outer_x2;
-    case BoundaryFace::inner_x3:
-        return IndexDomain::inner_x3;
-    case BoundaryFace::outer_x3:
-        return IndexDomain::outer_x3;
-    case BoundaryFace::undef:
-        throw std::runtime_error("Undefined boundary face has no domain!");
-    }
-}
-
-/**
- * Function for checking boundary flags: is this a domain or internal bound?
- */
-inline bool IsDomainBound(std::shared_ptr<MeshBlock> pmb, BoundaryFace face)
-{
-    return !(pmb->boundary_flag[face] == BoundaryFlag::block ||
-             pmb->boundary_flag[face] == BoundaryFlag::periodic);
-}
 /**
  * Get zones which are inside the physical domain, i.e. set by computation or MPI halo sync,
  * not by problem boundary conditions. 
  */
 inline IndexRange3 GetPhysicalZones(std::shared_ptr<MeshBlock> pmb, IndexShape& bounds)
 {
-    return IndexRange3{IndexRange{IsDomainBound(pmb, BoundaryFace::inner_x1)
+    using KBoundaries::IsPhysicalBoundary;
+    return IndexRange3{IndexRange{IsPhysicalBoundary(pmb, BoundaryFace::inner_x1)
                                     ? bounds.is(IndexDomain::interior)
                                     : bounds.is(IndexDomain::entire),
-                                  IsDomainBound(pmb, BoundaryFace::outer_x1)
+                                  IsPhysicalBoundary(pmb, BoundaryFace::outer_x1)
                                     ? bounds.ie(IndexDomain::interior)
                                     : bounds.ie(IndexDomain::entire)},
-                       IndexRange{IsDomainBound(pmb, BoundaryFace::inner_x2)
+                       IndexRange{IsPhysicalBoundary(pmb, BoundaryFace::inner_x2)
                                     ? bounds.js(IndexDomain::interior)
                                     : bounds.js(IndexDomain::entire),
-                                  IsDomainBound(pmb, BoundaryFace::outer_x2)
+                                  IsPhysicalBoundary(pmb, BoundaryFace::outer_x2)
                                     ? bounds.je(IndexDomain::interior)
                                     : bounds.je(IndexDomain::entire)},
-                       IndexRange{IsDomainBound(pmb, BoundaryFace::inner_x3)
+                       IndexRange{IsPhysicalBoundary(pmb, BoundaryFace::inner_x3)
                                     ? bounds.ks(IndexDomain::interior)
                                     : bounds.ks(IndexDomain::entire),
-                                  IsDomainBound(pmb, BoundaryFace::outer_x3)
+                                  IsPhysicalBoundary(pmb, BoundaryFace::outer_x3)
                                     ? bounds.ke(IndexDomain::interior)
                                     : bounds.ke(IndexDomain::entire)}};
 }
@@ -343,13 +270,13 @@ inline void PrintZone(MeshBlockData<Real> *rc)
 
 inline void Flag(std::string label)
 {
-    if(MPIRank0()) std::cerr << label << std::endl;
+    if(MPIRank0()) std::cerr << "Entering " << label << std::endl;
 }
 
 inline void Flag(MeshBlockData<Real> *rc, std::string label)
 {
     if(MPIRank0()) {
-        std::cerr << label << std::endl;
+        std::cerr << "Entering " << label << std::endl;
         if(PRINTCORNERS) PrintCorner(rc);
         if(PRINTZONE) PrintZone(rc);
     }
@@ -358,7 +285,35 @@ inline void Flag(MeshBlockData<Real> *rc, std::string label)
 inline void Flag(MeshData<Real> *md, std::string label)
 {
     if(MPIRank0()) {
-        std::cerr << label << std::endl;
+        std::cerr << "Entering " << label << std::endl;
+        if(PRINTCORNERS || PRINTZONE) {
+            auto rc = md->GetBlockData(0).get();
+            if(PRINTCORNERS) PrintCorner(rc);
+            if(PRINTZONE) PrintZone(rc);
+        }
+    }
+}
+
+inline void EndFlag() {}
+
+inline void EndFlag(std::string label)
+{
+    if(MPIRank0()) std::cerr << "Exiting " << label << std::endl;
+}
+
+inline void EndFlag(MeshBlockData<Real> *rc, std::string label)
+{
+    if(MPIRank0()) {
+        std::cerr << "Exiting " << label << std::endl;
+        if(PRINTCORNERS) PrintCorner(rc);
+        if(PRINTZONE) PrintZone(rc);
+    }
+}
+
+inline void EndFlag(MeshData<Real> *md, std::string label)
+{
+    if(MPIRank0()) {
+        std::cerr << "Exiting " << label << std::endl;
         if(PRINTCORNERS || PRINTZONE) {
             auto rc = md->GetBlockData(0).get();
             if(PRINTCORNERS) PrintCorner(rc);
@@ -368,9 +323,34 @@ inline void Flag(MeshData<Real> *md, std::string label)
 }
 
 #else
-inline void Flag(std::string label) {}
-inline void Flag(MeshBlockData<Real> *rc, std::string label) {}
-inline void Flag(MeshData<Real> *md, std::string label) {}
+inline void Flag(std::string label)
+{
+    Kokkos::Profiling::pushRegion(label);
+}
+inline void Flag(MeshBlockData<Real> *rc, std::string label)
+{
+    Kokkos::Profiling::pushRegion(label);
+}
+inline void Flag(MeshData<Real> *md, std::string label)
+{
+    Kokkos::Profiling::pushRegion(label);
+}
+inline void EndFlag()
+{
+    Kokkos::Profiling::popRegion();
+}
+inline void EndFlag(std::string label)
+{
+    Kokkos::Profiling::popRegion();
+}
+inline void EndFlag(MeshBlockData<Real> *rc, std::string label)
+{
+    Kokkos::Profiling::popRegion();
+}
+inline void EndFlag(MeshData<Real> *md, std::string label)
+{
+    Kokkos::Profiling::popRegion();
+}
 #endif
 /**
  * Versions of Flag() that take shared_ptr objects and call through with get()

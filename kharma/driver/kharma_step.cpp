@@ -261,7 +261,7 @@ TaskCollection KHARMADriver::MakeDefaultTaskCollection(BlockList_t &blocks, int 
 
     // B Field cleanup: this is a separate solve so it's split out
     // It's also really slow when enabled so we don't care too much about limiting regions, etc.
-    if (use_b_cleanup && B_Cleanup::CleanupThisStep(pmesh, tm.ncycle)) {
+    if (use_b_cleanup && (stage == integrator->nstages) && B_Cleanup::CleanupThisStep(pmesh, tm.ncycle)) {
         TaskRegion &cleanup_region = tc.AddRegion(num_partitions);
         for (int i = 0; i < num_partitions; i++) {
             auto &tl = cleanup_region[i];
