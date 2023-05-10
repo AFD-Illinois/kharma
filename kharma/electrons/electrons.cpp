@@ -63,10 +63,10 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     params.Add("gamma_e", gamma_e);
     Real gamma_p = pin->GetOrAddReal("electrons", "gamma_p", 5./3);
     params.Add("gamma_p", gamma_p);
-    bool enforce_positive_dissipation = pin->GetOrAddBoolean("electrons", "enforce_positive_dissipation", true);
+    // Whether to enforce that dissipation be positive, i.e. increasing entropy
+    // Probably more accurate to keep off.
+    bool enforce_positive_dissipation = pin->GetOrAddBoolean("electrons", "enforce_positive_dissipation", false);
     params.Add("enforce_positive_dissipation", enforce_positive_dissipation);
-    bool kel_lim = pin->GetOrAddBoolean("electrons", "kel_lim", true);
-    params.Add("kel_lim", kel_lim);
     // This is used only in constant model
     Real fel_const = pin->GetOrAddReal("electrons", "fel_constant", 0.1);
     params.Add("fel_constant", fel_const);
@@ -82,12 +82,13 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     params.Add("fel_0", fel_0);
 
     // Floors
+    // Whether to limit electron entropy K with following two floors
+    bool limit_kel = pin->GetOrAddBoolean("electrons", "limit_kel", true);
+    params.Add("limit_kel", limit_kel);
     Real tp_over_te_min = pin->GetOrAddReal("electrons", "tp_over_te_min", 0.001);
     params.Add("tp_over_te_min", tp_over_te_min);
     Real tp_over_te_max = pin->GetOrAddReal("electrons", "tp_over_te_max", 1000.0);
     params.Add("tp_over_te_max", tp_over_te_max);
-    Real ktot_max = pin->GetOrAddReal("floors", "ktot_max", 1.e20);
-    params.Add("ktot_max", ktot_max);
 
     // Model options
     bool do_constant = pin->GetOrAddBoolean("electrons", "constant", false);
@@ -104,31 +105,15 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     params.Add("do_sharma", do_sharma);
 
     // Parse various mass and density units to set the different cooling rates
-    // These could maybe tie in with Parthenon::Units when we add radiation
-    // TODO pretty soon this can be a GetVector<std::string>!!!
-    // std::vector<Real> masses = parse_list(pin->GetOrAddString("units", "MBH", "1.0"));
-    // if (masses != std::vector<Real>{1.0})
-    // {
-    //     std::vector<std::vector<Real>> munits;
-    //     for (int i=1; i <= masses.size(); ++i) {
-    //         munits.push_back(parse_list(pin->GetString("units", "M_unit_" + std::to_string(i))));
-    //     }
-
-    //     if (MPIRank0() && packages->Get("Globals")->Param<int>("verbose") > 0) {
-    //         std::cout << "Using unit sets:" << std::endl;
-    //         for (int i=0; i < masses.size(); ++i) {
-    //             std::cout << std::endl << masses[i] << ":";
-    //             for (auto munit : munits[i]) {
-    //                 std::cout << " " << munit;
-    //             }
-    //         }
-    //         std::cout << std::endl;
-    //     }
-    //     // This is a vector of Reals
-    //     params.Add("masses", masses);
-    //     // This is a vector of vectors of Reals
-    //     params.Add("munits", munits);
-    // }
+    // TODO actually respect them of course
+    std::vector<Real> masses = pin->GetOrAddVector<Real>("electrons", "masses", std::vector<Real>{});
+    if (masses.size() > 0) {
+        std::vector<std::string> mass_names = pin->GetVector<std::string>("electrons", "masses");
+        std::vector<std::vector<Real>> munits;
+        for (auto mass_name : mass_names) {
+            munits.push_back(pin->GetVector<Real>("electrons", "munits_"+mass_name));
+        }
+    }
 
     // Default implicit iff GRMHD is done implicitly. TODO can we do explicit?
     auto& driver = packages->Get("Driver")->AllParams();
@@ -332,6 +317,7 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
     const Real tptemin = pmb->packages.Get("Electrons")->Param<Real>("tp_over_te_min");
     const Real tptemax = pmb->packages.Get("Electrons")->Param<Real>("tp_over_te_max");
     const bool enforce_positive_diss = pmb->packages.Get("Electrons")->Param<bool>("enforce_positive_dissipation");
+    const bool limit_kel = pmb->packages.Get("Electrons")->Param<bool>("limit_kel");
 
     // This function (and any primitive-variable sources) needs to be run over the entire domain,
     // because the boundary zones have already been updated and so the same calculations must be applied
@@ -387,7 +373,7 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
             if (m_p.K_CONSTANT >= 0) {
                 const Real fel = fel_const;
                 // Default is true then enforce kel limits with clamp/clip, else no restrictions on kel
-                if (pmb->packages.Get("Electrons")->Param<bool>("kel_lim")) {
+                if (limit_kel) {
                     P_new(m_p.K_CONSTANT, k, j, i) = clip(P_new(m_p.K_CONSTANT, k, j, i) + fel * diss, kel_min, kel_max);
                 } else {
                     P_new(m_p.K_CONSTANT, k, j, i) += fel * diss;

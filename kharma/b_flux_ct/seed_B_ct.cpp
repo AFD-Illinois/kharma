@@ -62,6 +62,8 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
     // as well as for good errors, many->one maps, etc.
     BSeedType b_field_flag = ParseBSeedType(b_field_type);
 
+    std::cout << "Seeding B field with type " << b_field_type << std::endl;
+
     // Other parameters we need
     auto prob = pin->GetString("parthenon/job", "problem_id");
     bool is_torus = (prob == "torus");
@@ -69,17 +71,9 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
     // Require and load what we need if necessary
     Real a, rin, rmax, gam, kappa, rho_norm;
     Real tilt = 0; // Needs to be initialized
-    Real b10 = 0, b20 = 0, b30 = 0, bz = 0;
+    Real bz = 0;
     switch (b_field_flag)
     {
-    case BSeedType::constant:
-        b10 = pin->GetOrAddReal("b_field", "b10", 0.);
-        b20 = pin->GetOrAddReal("b_field", "b20", 0.);
-        b30 = pin->GetOrAddReal("b_field", "b30", 0.);
-        break;
-    case BSeedType::monopole:
-        b10 = pin->GetReal("b_field", "b10");
-        break;
     case BSeedType::sane:
     case BSeedType::ryan:
     case BSeedType::ryan_quadrupole:
@@ -103,9 +97,11 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
     case BSeedType::vertical:
         bz = pin->GetOrAddReal("b_field", "bz", 0.);
         break;
+    default:
+        break;
     }
 
-    IndexDomain domain = IndexDomain::interior;
+    IndexDomain domain = IndexDomain::entire;
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
@@ -116,6 +112,9 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
 
     // Shortcut to field values for easy fields
     if (b_field_flag == BSeedType::constant) {
+        const Real b10 = pin->GetOrAddReal("b_field", "b10", 0.);
+        const Real b20 = pin->GetOrAddReal("b_field", "b20", 0.);
+        const Real b30 = pin->GetOrAddReal("b_field", "b30", 0.);
         pmb->par_for("B_field_B", ks, ke, js, je, is, ie,
             KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
                 // Set B1 directly
@@ -125,7 +124,9 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
             }
         );
         return TaskStatus::complete;
-    } else if (b_field_flag == BSeedType::monopole) {
+    }
+    if (b_field_flag == BSeedType::monopole) {
+        const Real b10 = pin->GetReal("b_field", "b10"); // required
         pmb->par_for("B_field_B", ks, ke, js, je, is, ie,
             KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
                 // Set B1 directly by normalizing
@@ -135,7 +136,8 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
             }
         );
         return TaskStatus::complete;
-    } else if (b_field_flag == BSeedType::monopole_cube) {
+    }
+    if (b_field_flag == BSeedType::monopole_cube) {
         pmb->par_for("B_field_B", ks, ke, js, je, is, ie,
             KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
                 // This ignores rin_bondi to keep divB consistent
@@ -147,11 +149,11 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
                 B_P(V3, k, j, i) = 0.;
             }
         );
+        return TaskStatus::complete;
     }
 
     // Find the magnetic vector potential.  In X3 symmetry only A_phi is non-zero,
     // But for tilted conditions we must keep track of all components
-    // TODO there should be an ncornersi,j,k
     ParArrayND<double> A("A", NVEC, n3+1, n2+1, n1+1);
     pmb->par_for("B_field_A", ks, ke+1, js, je+1, is, ie+1,
         KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
@@ -255,8 +257,9 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
                 G.lower(A_tilt, A_tilt_lower, k, j, i, Loci::corner);
                 VLOOP A(v, k, j, i) = A_tilt_lower[1+v];
             } else {
-                // Some problems rely on a very accurate A->B, which the 
-				A(V3, k, j, i) = q;
+                // Some problems rely on a very accurate A->B, which the rotation lacks.
+                // So, we preserve exact values in the no-tilt case.
+                A(V3, k, j, i) = q;
             }
         }
     );
@@ -265,16 +268,21 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
     if (ndim > 2) {
         pmb->par_for("B_field_B_3D", ks, ke, js, je, is, ie,
             KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-                get_B_from_A_3D(G, A, B_U, k, j, i);
+                averaged_curl_3D(G, A, B_U, k, j, i);
+            }
+        );
+    } else if (ndim > 1) {
+        pmb->par_for("B_field_B_2D", ks, ke, js, je, is, ie,
+            KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+                averaged_curl_2D(G, A, B_U, k, j, i);
             }
         );
     } else {
-        pmb->par_for("B_field_B_2D", ks, ke, js, je, is, ie,
-            KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-                get_B_from_A_2D(G, A, B_U, k, j, i);
-            }
-        );
+        throw std::runtime_error("Must initialize 1D field directly!");
     }
+
+    // Finally, make sure we initialize the primitive field too
+    B_FluxCT::BlockUtoP(rc, IndexDomain::entire, false);
 
     return TaskStatus::complete;
 }

@@ -59,7 +59,7 @@ TaskStatus SetHubbleImpl(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain d
 template<IndexDomain domain>
 TaskStatus SetHubble(std::shared_ptr<MeshBlockData<Real>>& rc, bool coarse=false)
 {
-    SetHubbleImpl(rc, domain, coarse);
+    return SetHubbleImpl(rc, domain, coarse);
 }
 
 /**

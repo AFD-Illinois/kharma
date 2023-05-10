@@ -149,6 +149,7 @@ inline IndexDomain BoundaryDomain(const BoundaryFace face)
     case BoundaryFace::outer_x3:
         return IndexDomain::outer_x3;
     case BoundaryFace::undef:
+    default:
         throw std::runtime_error("Undefined boundary face has no domain!");
     }
 }
@@ -170,6 +171,7 @@ inline BoundaryFace BoundaryFaceOf(const IndexDomain domain)
         return BoundaryFace::outer_x3;
     case IndexDomain::interior:
     case IndexDomain::entire:
+    default:
         return BoundaryFace::undef;
     }
 }

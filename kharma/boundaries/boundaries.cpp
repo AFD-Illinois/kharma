@@ -233,7 +233,8 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
     // boundary functions with this one.
 
     auto pmb = rc->GetBlockPointer();
-    auto pkg = static_cast<KHARMAPackage*>(pmb->packages.Get("Boundaries").get());
+    //auto pkg = static_cast<KHARMAPackage*>(pmb->packages.Get("Boundaries").get());
+    auto pkg = pmb->packages.Get<KHARMAPackage>("Boundaries");
     auto& params = pkg->AllParams();
 
     const auto bface = BoundaryFaceOf(domain);

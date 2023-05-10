@@ -57,7 +57,7 @@ TaskStatus SetBondiImpl(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain do
 
 template<IndexDomain domain>
 TaskStatus SetBondi(std::shared_ptr<MeshBlockData<Real>>& rc, bool coarse=false) {
-    SetBondiImpl(rc, domain, coarse);
+    return SetBondiImpl(rc, domain, coarse);
 }
 
 /**

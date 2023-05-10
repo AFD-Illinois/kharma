@@ -18,17 +18,7 @@ namespace B_FluxCT
  */
 TaskStatus SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin);
 
-/**
- * Add flux to BH horizon
- * Applicable to any Kerr-space GRMHD sim, run after import/initialization
- * Preserves divB==0 with a Flux-CT step at end
- */
-//void SeedBHFlux(MeshBlockData<Real> *rc, Real BHflux);
-
-} // namespace B_FluxCT
-
-
-KOKKOS_INLINE_FUNCTION void get_B_from_A_3D(const GRCoordinates& G, const GridVector& A, const GridVector& B_U, const int& k, const int& j, const int& i)
+KOKKOS_INLINE_FUNCTION void averaged_curl_3D(const GRCoordinates& G, const GridVector& A, const GridVector& B_U, const int& k, const int& j, const int& i)
 {
     // Take a flux-ct step from the corner potentials.
     // This needs to be 3D because post-tilt A may not point in the phi direction only
@@ -70,7 +60,7 @@ KOKKOS_INLINE_FUNCTION void get_B_from_A_3D(const GRCoordinates& G, const GridVe
     B_U(V3, k, j, i) = (A2c1f - A2c1b) / G.Dxc<1>(i) - (A1c2f - A1c2b) / G.Dxc<2>(j);
 }
 
-KOKKOS_INLINE_FUNCTION void get_B_from_A_2D(const GRCoordinates& G, const GridVector& A, const GridVector& B_U, const int& k, const int& j, const int& i)
+KOKKOS_INLINE_FUNCTION void averaged_curl_2D(const GRCoordinates& G, const GridVector& A, const GridVector& B_U, const int& k, const int& j, const int& i)
 {
     // A3,2 derivative
     const Real A3c2f = (A(V3, k, j + 1, i) + A(V3, k, j + 1, i + 1)) / 2;
@@ -84,3 +74,5 @@ KOKKOS_INLINE_FUNCTION void get_B_from_A_2D(const GRCoordinates& G, const GridVe
 
     B_U(V3, k, j, i) = 0;
 }
+
+} // namespace B_FluxCT

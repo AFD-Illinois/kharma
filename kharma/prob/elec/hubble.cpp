@@ -73,7 +73,7 @@ TaskStatus InitializeHubble(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterI
     }
 
     // Replace the boundary conditions
-    auto *bound_pkg = static_cast<KHARMAPackage*>(pmb->packages.Get("Boundaries"));
+    auto *bound_pkg = static_cast<KHARMAPackage*>(pmb->packages.Get("Boundaries").get());
     bound_pkg->KBoundaries[BoundaryFace::inner_x1] = SetHubble<IndexDomain::inner_x1>;
     bound_pkg->KBoundaries[BoundaryFace::outer_x1] = SetHubble<IndexDomain::outer_x1>;
     bound_pkg->BlockApplyPrimSource = ApplyHubbleHeating;

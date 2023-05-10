@@ -79,7 +79,7 @@ TaskStatus InitializeBondi(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterIn
 
     // Set this problem to control the outer X1 boundary by default
     // remember to disable inflow_check in parameter file!
-    auto bound_pkg = static_cast<KHARMAPackage*>(pmb->packages.Get("Boundaries"));
+    auto bound_pkg = static_cast<KHARMAPackage*>(pmb->packages.Get("Boundaries").get());
     if (pin->GetString("boundaries", "inner_x1") == "dirichlet" ||
         pin->GetString("boundaries", "outer_x1") == "dirichlet") {
         SetBondi<IndexDomain::entire>(rc); // TODO iterate & set any bounds specifically?
