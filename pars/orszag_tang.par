@@ -60,6 +60,7 @@ file_type = hst
 dt = 0.1
 
 <b_cleanup>
+# B transport experiments: clean every 10 steps
 on = false
 cleanup_interval = 10
 

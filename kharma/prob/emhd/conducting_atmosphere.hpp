@@ -45,3 +45,4 @@
 #include <parthenon/parthenon.hpp>
 
 TaskStatus InitializeAtmosphere(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin);
+
