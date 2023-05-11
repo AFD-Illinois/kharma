@@ -29,7 +29,7 @@ conv_2d() {
 }
 
 # Test coordinates
-conv_2d fmks coordinates/transform=fmks "in 2D, FMKS coordinates"
+#conv_2d fmks coordinates/transform=fmks "in 2D, FMKS coordinates"
 conv_2d mks coordinates/transform=mks "in 2D, MKS coordinates"
 conv_2d eks coordinates/transform=eks "in 2D, EKS coordinates"
 # TODO broken

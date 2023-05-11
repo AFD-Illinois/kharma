@@ -113,7 +113,6 @@ std::shared_ptr<KHARMAPackage> Implicit::Initialize(ParameterInput *pin, std::sh
     Metadata m_real = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
     pkg->AddField("solve_norm", m_real);
     // Integer field that saves where the solver fails (rho + drho < 0 || u + du < 0)
-    // Metadata m_int = Metadata({Metadata::Integer, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
     m_real = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy, Metadata::FillGhost});
     pkg->AddField("solve_fail", m_real); // TODO: Replace with m_int once Integer is supported for CellVariable
 

@@ -8,17 +8,14 @@ namespace B_FluxCT
 {
 
 /**
- * Seed an axisymmetric initialization with magnetic field proportional to fluid density,
- * or density and radius, to create a SANE or MAD flow
- * Note this function expects a normalized P for which rho_max==1
- *
- * @param rin is the interior radius of the torus
- * @param min_rho_q is the minimum density at which there will be magnetic vector potential
- * @param b_field_type is one of "sane" "ryan" "r3s3" or "gaussian", described below (TODO test or remove opts)
+ * Seed a divergence-free magnetic field of user's choice, optionally
+ * proportional to existing fluid density.
+ * Updates primitive and conserved variables.
  */
 TaskStatus SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin);
 
-KOKKOS_INLINE_FUNCTION void averaged_curl_3D(const GRCoordinates& G, const GridVector& A, const GridVector& B_U, const int& k, const int& j, const int& i)
+KOKKOS_INLINE_FUNCTION void averaged_curl_3D(const GRCoordinates& G, const GridVector& A, const GridVector& B_U,
+                                             const int& k, const int& j, const int& i)
 {
     // Take a flux-ct step from the corner potentials.
     // This needs to be 3D because post-tilt A may not point in the phi direction only
@@ -60,7 +57,8 @@ KOKKOS_INLINE_FUNCTION void averaged_curl_3D(const GRCoordinates& G, const GridV
     B_U(V3, k, j, i) = (A2c1f - A2c1b) / G.Dxc<1>(i) - (A1c2f - A1c2b) / G.Dxc<2>(j);
 }
 
-KOKKOS_INLINE_FUNCTION void averaged_curl_2D(const GRCoordinates& G, const GridVector& A, const GridVector& B_U, const int& k, const int& j, const int& i)
+KOKKOS_INLINE_FUNCTION void averaged_curl_2D(const GRCoordinates& G, const GridVector& A, const GridVector& B_U,
+                                             const int& k, const int& j, const int& i)
 {
     // A3,2 derivative
     const Real A3c2f = (A(V3, k, j + 1, i) + A(V3, k, j + 1, i + 1)) / 2;

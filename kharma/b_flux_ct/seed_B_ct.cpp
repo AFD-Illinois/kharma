@@ -111,6 +111,7 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
     int ndim = pmb->pmy_mesh->ndim;
 
     // Shortcut to field values for easy fields
+    bool early_field = false;
     if (b_field_flag == BSeedType::constant) {
         const Real b10 = pin->GetOrAddReal("b_field", "b10", 0.);
         const Real b20 = pin->GetOrAddReal("b_field", "b20", 0.);
@@ -123,7 +124,7 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
                 B_P(V3, k, j, i) = b30;
             }
         );
-        return TaskStatus::complete;
+        early_field = true;
     }
     if (b_field_flag == BSeedType::monopole) {
         const Real b10 = pin->GetReal("b_field", "b10"); // required
@@ -135,7 +136,7 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
                 B_P(V3, k, j, i) = 0.;
             }
         );
-        return TaskStatus::complete;
+        early_field = true;
     }
     if (b_field_flag == BSeedType::monopole_cube) {
         pmb->par_for("B_field_B", ks, ke, js, je, is, ie,
@@ -149,9 +150,15 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
                 B_P(V3, k, j, i) = 0.;
             }
         );
+        early_field = true;
+    }
+    // We still need to update conserved flux values, but then we're done
+    if (early_field) {
+        B_FluxCT::BlockPtoU(rc, IndexDomain::entire, false);
         return TaskStatus::complete;
     }
 
+    // For all other fields...
     // Find the magnetic vector potential.  In X3 symmetry only A_phi is non-zero,
     // But for tilted conditions we must keep track of all components
     ParArrayND<double> A("A", NVEC, n3+1, n2+1, n1+1);
