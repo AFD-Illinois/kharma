@@ -163,7 +163,7 @@ TaskID KHARMADriver::AddMPIBoundarySync(const TaskID t_start, TaskList &tl, std:
         t_start_sync = t_ptou_final;
     }
 
-    auto t_sync_done = parthenon::cell_centered_bvars::AddBoundaryExchangeTasks(t_start_sync, tl, mc1, mc1->GetMeshPointer()->multilevel);
+    auto t_sync_done = parthenon::AddBoundaryExchangeTasks(t_start_sync, tl, mc1, mc1->GetMeshPointer()->multilevel);
     auto t_bounds = t_sync_done;
 
     // TODO(BSP) careful about how AMR interacts with below

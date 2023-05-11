@@ -127,11 +127,10 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
         std::shared_ptr<MeshData<Real>> &md_solver = (use_implicit) ? pmesh->mesh_data.GetOrAdd("solver", i) : md_sub_step_final;
 
         // Start receiving flux corrections and ghost cells
-        namespace cb = parthenon::cell_centered_bvars;
-        auto t_start_recv_bound = tl.AddTask(t_none, cb::StartReceiveBoundBufs<parthenon::BoundaryType::any>, md_sub_step_final);
+        auto t_start_recv_bound = tl.AddTask(t_none, parthenon::StartReceiveBoundBufs<parthenon::BoundaryType::any>, md_sub_step_final);
         auto t_start_recv_flux = t_start_recv_bound;
         if (pmesh->multilevel)
-            t_start_recv_flux = tl.AddTask(t_none, cb::StartReceiveFluxCorrections, md_sub_step_init);
+            t_start_recv_flux = tl.AddTask(t_none, parthenon::StartReceiveFluxCorrections, md_sub_step_init);
         
         // Calculate the flux of each variable through each face
         // This reconstructs the primitives (P) at faces and uses them to calculate fluxes
@@ -142,9 +141,9 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
         // If we're in AMR, correct fluxes from neighbors
         auto t_flux_bounds = t_fluxes;
         if (pmesh->multilevel) {
-            tl.AddTask(t_fluxes, cb::LoadAndSendFluxCorrections, md_sub_step_init);
-            auto t_recv_flux = tl.AddTask(t_fluxes, cb::ReceiveFluxCorrections, md_sub_step_init);
-            t_flux_bounds = tl.AddTask(t_recv_flux, cb::SetFluxCorrections, md_sub_step_init);
+            tl.AddTask(t_fluxes, parthenon::LoadAndSendFluxCorrections, md_sub_step_init);
+            auto t_recv_flux = tl.AddTask(t_fluxes, parthenon::ReceiveFluxCorrections, md_sub_step_init);
+            t_flux_bounds = tl.AddTask(t_recv_flux, parthenon::SetFluxCorrections, md_sub_step_init);
         }
 
         // Any package modifications to the fluxes.  e.g.:

@@ -294,7 +294,7 @@ TaskStatus B_Cleanup::RemoveExtraFields(BlockList_t &blocks)
         for (auto& pmb : blocks) {
             auto rc_s = pmb->meshblock_data.Get();
             for (auto varlabel : {"pk0", "res0", "temp0", "divB_RHS", "p"}) {
-                if (rc_s->HasCellVariable(varlabel))
+                if (rc_s->HasVariable(varlabel))
                     rc_s->Remove(varlabel);
             }
         }

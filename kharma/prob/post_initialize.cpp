@@ -48,7 +48,7 @@
 #include "reductions.hpp"
 #include "types.hpp"
 
-#include "seed_B_ct.hpp"
+#include "seed_B_flux_ct.hpp"
 #include "seed_B_cd.hpp"
 
 /**

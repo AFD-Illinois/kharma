@@ -1,5 +1,5 @@
 /* 
- *  File: seed_B_ct.cpp
+ *  File: seed_B_flux_ct.cpp
  *  
  *  BSD 3-Clause License
  *  
@@ -34,7 +34,7 @@
 
 // Seed a torus of some type with a magnetic field according to its density
 
-#include "seed_B_ct.hpp"
+#include "seed_B_flux_ct.hpp"
 
 #include "b_field_tools.hpp"
 #include "b_flux_ct.hpp"
