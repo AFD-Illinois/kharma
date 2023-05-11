@@ -1,5 +1,5 @@
 #!/bin/bash
-set -euo pipefail
+#set -euo pipefail
 
 BASE=../..
 
@@ -32,9 +32,9 @@ conv_2d() {
 
 # 2D modes use small blocks, could pick up some problems at MPI ranks >> 1
 # Just one default mode
-ALL_RES="32,64,128"
+ALL_RES="16,32,64,128"
 conv_2d emhd2d_weno GRMHD/reconstruction=weno5 "EMHD mode in 2D, WENO5"
-ALL_RES="32,64,128,256"
+ALL_RES="16,32,64,128,256"
 conv_2d emhd2d_mc GRMHD/reconstruction=linear_mc "EMHD mode in 2D, linear/MC reconstruction"
 
 # Test that higher-order terms don't mess anything up

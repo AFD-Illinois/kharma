@@ -177,7 +177,7 @@ TaskStatus InitializeFMTorusEMHD(std::shared_ptr<MeshBlockData<Real>>& rc, Param
 
     // If we print diagnostics, do so only from block 0 as the others do exactly the same thing
     // Since this is initialization, we are guaranteed to have a block 0
-    if (pmb->gid == 0 && pmb->packages.Get("GRMHD")->Param<int>("verbose") > 0) {
+    if (pmb->gid == 0 && pmb->packages.Get("Globals")->Param<int>("verbose") > 0) {
         std::cout << "Calculating maximum density:" << std::endl;
         std::cout << "a = " << a << std::endl;
         std::cout << "dx = " << dx << std::endl;
@@ -210,7 +210,7 @@ TaskStatus InitializeFMTorusEMHD(std::shared_ptr<MeshBlockData<Real>>& rc, Param
     // Record and print normalization factor
     if(! (pmb->packages.Get("GRMHD")->AllParams().hasKey("rho_norm")))
         pmb->packages.Get("GRMHD")->AllParams().Add("rho_norm", rho_max);
-    if (pmb->gid == 0 && pmb->packages.Get("GRMHD")->Param<int>("verbose") > 0) {
+    if (pmb->gid == 0 && pmb->packages.Get("Globals")->Param<int>("verbose") > 0) {
         std::cout << "Initial maximum density is " << rho_max << std::endl;
     }
 

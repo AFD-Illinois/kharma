@@ -83,6 +83,7 @@ KOKKOS_INLINE_FUNCTION void time_derivative_sources(const GRCoordinates& G, cons
     FourVectors Dtmp;
     GRMHD::calc_4vecs(G, P, m_p, j, i, Loci::center, Dtmp);
     double bsq = m::max(dot(Dtmp.bcon, Dtmp.bcov), SMALL);
+    const double mag_b = m::sqrt(bsq);
 
     // TIME DERIVATIVES
     Real ucon[GR_DIM], ucov_new[GR_DIM], ucov_old[GR_DIM];
@@ -107,11 +108,11 @@ KOKKOS_INLINE_FUNCTION void time_derivative_sources(const GRCoordinates& G, cons
 
     if (emhd_params.conduction) {
         const Real& qtilde  = P(m_p.Q);
-        Real q0             = -rho * chi_e * (Dtmp.bcon[0] / m::sqrt(bsq)) * dt_Theta;
-        DLOOP1 q0          -= rho * chi_e * (Dtmp.bcon[mu] / m::sqrt(bsq)) * Theta * Dtmp.ucon[0] * dt_ucov[mu];
+        Real q0             = -rho * chi_e * (Dtmp.bcon[0] / mag_b) * dt_Theta;
+        DLOOP1 q0          -= rho * chi_e * (Dtmp.bcon[mu] / mag_b) * Theta * Dtmp.ucon[0] * dt_ucov[mu];
         Real q0_tilde       = q0;
         if (emhd_params.higher_order_terms)
-            q0_tilde *= (chi_e != 0) ? m::sqrt(tau / (chi_e * rho * m::pow(Theta, 2)) ) : 0.;
+            q0_tilde *= (chi_e != 0) * m::sqrt(tau / (chi_e * rho * m::pow(Theta, 2)) );
 
         dUq  = G.gdet(Loci::center, j, i) * (q0_tilde / tau);
         if (emhd_params.higher_order_terms)
@@ -124,7 +125,7 @@ KOKKOS_INLINE_FUNCTION void time_derivative_sources(const GRCoordinates& G, cons
         DLOOP1 dP0         += 3. * rho * nu_e * (Dtmp.bcon[0] * Dtmp.bcon[mu] / bsq) * dt_ucov[mu];
         Real dP0_tilde      = dP0;
         if (emhd_params.higher_order_terms)
-            dP0_tilde *= (nu_e != 0) ? sqrt(tau / (nu_e * rho * Theta) ) : 0.;
+            dP0_tilde *= (nu_e != 0) * m::sqrt(tau / (nu_e * rho * Theta) );
 
         dUdP = G.gdet(Loci::center, j, i) * (dP0_tilde / tau);
         if (emhd_params.higher_order_terms)

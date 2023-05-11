@@ -56,7 +56,7 @@ reconstruction = weno5
 implicit        = false
 type            = sane
 beta_min        = 100.
-initial_cleanup = true
+initial_cleanup = false
 
 # This block must be present and values filled in all EGRMHD simulations
 <emhd>
@@ -77,16 +77,15 @@ u_jitter = 0.04
 
 <floors>
 frame              = drift
-rho_min_geom       = 1e-3
-u_min_geom         = 1e-5
+rho_min_geom       = 1e-5
+u_min_geom         = 1e-7
 bsq_over_rho_max   = 100
-bsq_over_u_max     = 100
+bsq_over_u_max     = 1e20
 u_over_rho_max     = 100
-gamma_max          = 10
+gamma_max          = 5
 enable_emhd_limits = true
 
 <debug>
-archive_parameters = true
 verbose            = 1
 extra_checks       = 1
 flag_verbose       = 0

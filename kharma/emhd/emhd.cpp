@@ -131,10 +131,9 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
 
     // General options for primitive and conserved scalar variables in ImEx driver
     // EMHD is supported only with imex driver and implicit evolution
-    MetadataFlag isImplicit = packages->Get("Driver")->Param<MetadataFlag>("ImplicitFlag");
-    Metadata m_con  = Metadata({Metadata::Real, Metadata::Cell, Metadata::Independent, isImplicit,
+    Metadata m_con  = Metadata({Metadata::Real, Metadata::Cell, Metadata::Independent, Metadata::GetUserFlag("Implicit"),
                                 Metadata::Conserved, Metadata::WithFluxes, Metadata::GetUserFlag("EMHD")});
-    Metadata m_prim = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, isImplicit,
+    Metadata m_prim = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::GetUserFlag("Implicit"),
                                 Metadata::FillGhost, Metadata::Restart, Metadata::GetUserFlag("Primitive"), Metadata::GetUserFlag("EMHD")});
 
     // Heat conduction
@@ -199,7 +198,7 @@ TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
 
     // Get temporary ucov, Theta for gradients
     PackIndexMap temps_map;
-    auto Temps = md->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("EMHDTemp")}, temps_map);
+    auto Temps = md->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("EMHDTemporary")}, temps_map);
     int m_ucov = temps_map["ucov"].first;
     int m_theta = temps_map["Theta"].first;
 
