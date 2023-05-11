@@ -22,8 +22,6 @@ export OMP_PLACES=${OMP_PLACES:-threads}
 # Force a number of OpenMP threads if it doesn't autodetect
 #export OMP_NUM_THREADS=28
 
-
-
 ### General run script
 
 # Map each MPI rank to one device with Kokkos

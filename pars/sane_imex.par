@@ -4,6 +4,7 @@
 # Uses the IMEX solver
 
 <parthenon/job>
+archive_parameters_timestamp = true
 problem_id = torus
 
 <parthenon/mesh>
@@ -67,9 +68,12 @@ u_jitter = 0.04
 
 <floors>
 frame              = drift
-rho_min_geom       = 1e-6
-u_min_geom         = 1e-8
+rho_min_geom       = 1e-3
+u_min_geom         = 1e-5
 bsq_over_rho_max   = 100
+bsq_over_u_max     = 100
+u_over_rho_max     = 100
+gamma_max          = 10
 u_over_rho_max     = 2
 
 <debug>
@@ -90,7 +94,7 @@ variables = prims.rho, prims.u, prims.uvec, prims.B, jcon, fflag, pflag, solve_n
 
 <parthenon/output1>
 file_type = rst
-dt        = 100.0
+dt        = 5.0
 
 <parthenon/output2>
 file_type = hst

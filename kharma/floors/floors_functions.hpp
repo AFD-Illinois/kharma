@@ -130,12 +130,13 @@ KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, const VariablePa
 
         if (floors.use_r_char) {
             // Steeper floor from iharm3d
-            const Real rhoscal = 1/(r * r * (1 + r / floors.r_char));
+            const Real rhoscal = 1 / (r * r * (1 + r / floors.r_char));
             rhoflr_geom  = floors.rho_min_geom * rhoscal;
             uflr_geom    = floors.u_min_geom * m::pow(rhoscal, gam);
         } else {
             // Original floors from iharm2d
             rhoflr_geom = floors.rho_min_geom * m::pow(r, -1.5);
+            // TODO(BSP) kharmaim moves this to -1.5. Logical?
             uflr_geom   = floors.u_min_geom * m::pow(r, -2.5); //rhoscal/r as in iharm2d
         }
     } else {
@@ -164,7 +165,7 @@ KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, const VariablePa
         // Take floors on U into account
         double rhoflr_temp = m::max(u, uflr_max) / floors.u_over_rho_max;
         // Record hitting temperature ceiling
-        fflag |= (rhoflr_temp > rho) * FFlag::TEMP; // Misnomer for consistency
+        fflag |= (rhoflr_temp > rho) * FFlag::TEMP;
 
         // Evaluate max rho floor
         rhoflr_max = m::max(m::max(rhoflr_geom, rhoflr_b), rhoflr_temp);

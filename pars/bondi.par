@@ -60,7 +60,7 @@ gamma_max = 10
 
 <boundaries>
 # We'll be adding material, and that's okay
-check_inflow_outer = false
+check_inflow_outer_x1 = false
 
 <b_field>
 # No field

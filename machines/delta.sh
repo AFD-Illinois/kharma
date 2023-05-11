@@ -14,7 +14,6 @@ then
   DEVICE_ARCH=AMPERE80
   MPI_EXE=mpirun
 
-  # Load common modules
   module purge
 
   if [[ $ARGS == *"cuda"* ]]
@@ -24,6 +23,7 @@ then
     MPI_EXTRA_ARGS="--map-by ppr:4:node:pe=16"
     MPI_NUM_PROCS=4
 
+    # Load common GPU modules
     module load modtree/gpu hdf5 cmake
 
     if [[ $ARGS == *"nvhpc"* ]]; then

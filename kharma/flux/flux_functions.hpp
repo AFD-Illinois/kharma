@@ -55,12 +55,17 @@ KOKKOS_INLINE_FUNCTION void calc_tensor(const GRCoordinates& G, const Local& P, 
                                         const EMHD::EMHD_parameters& emhd_params, const Real& gam, const int& dir,
                                         Real T[GR_DIM])
 {
-    if (m_p.Q >= 0) {
+    if (m_p.Q >= 0 || m_p.DP >= 0) {
         // Apply higher-order terms conversion if necessary
         Real q, dP;
+        Real qtilde, dPtilde;
+        if (emhd_params.conduction)
+            qtilde = P(m_p.Q);
+        if (emhd_params.viscosity)
+            dPtilde = P(m_p.DP);
         const Real Theta = (gam - 1) * P(m_p.UU) / P(m_p.RHO);
         const Real cs2   = gam * (gam - 1) * P(m_p.UU) / (P(m_p.RHO) + gam * P(m_p.UU));
-        EMHD::convert_prims_to_q_dP(P(m_p.Q), P(m_p.DP), P(m_p.RHO), Theta, cs2, emhd_params, q, dP);
+        EMHD::convert_prims_to_q_dP(qtilde, dPtilde, P(m_p.RHO), Theta, cs2, emhd_params, q, dP);
 
         // Then calculate the tensor
         EMHD::calc_tensor(P(m_p.RHO), P(m_p.UU), (gam - 1) * P(m_p.UU), emhd_params, q, dP, D, dir, T);
@@ -79,12 +84,18 @@ KOKKOS_INLINE_FUNCTION void calc_tensor(const GRCoordinates& G, const Global& P,
                                         const int& k, const int& j, const int& i, const int& dir,
                                         Real T[GR_DIM])
 {
-    if (m_p.Q >= 0) {
+    if (m_p.Q >= 0 || m_p.DP >= 0) {
+
         // Apply higher-order terms conversion if necessary
         Real q, dP;
+        Real qtilde, dPtilde;
+        if (emhd_params.conduction)
+            qtilde = P(m_p.Q, k, j, i);
+        if (emhd_params.viscosity)
+            dPtilde = P(m_p.DP, k, j, i);
         const Real Theta = (gam - 1) * P(m_p.UU, k, j, i) / P(m_p.RHO, k, j, i);
         const Real cs2   = gam * (gam - 1) * P(m_p.UU, k, j, i) / (P(m_p.RHO, k, j, i) + gam * P(m_p.UU, k, j, i));
-        EMHD::convert_prims_to_q_dP(P(m_p.Q, k, j, i), P(m_p.DP, k, j, i), P(m_p.RHO, k, j, i), Theta, cs2, emhd_params, q, dP);
+        EMHD::convert_prims_to_q_dP(qtilde, dPtilde, P(m_p.RHO, k, j, i), Theta, cs2, emhd_params, q, dP);
 
         // Then calculate the tensor
         EMHD::calc_tensor(P(m_p.RHO, k, j, i), P(m_p.UU, k, j, i), (gam - 1) * P(m_p.UU, k, j, i), emhd_params, q, dP, D, dir, T);
@@ -96,6 +107,20 @@ KOKKOS_INLINE_FUNCTION void calc_tensor(const GRCoordinates& G, const Global& P,
         GRHD::calc_tensor(P(m_p.RHO, k, j, i), P(m_p.UU, k, j, i), (gam - 1) * P(m_p.UU, k, j, i), D, dir, T);
     }
 }
+
+// template<typename Local>
+// KOKKOS_INLINE_FUNCTION void calc_tensor(const GRCoordinates& G, const Local& P, const VarMap& m_p, const FourVectors D,
+//                                          const Real& gam, const int& dir,
+//                                          Real T[GR_DIM])
+// {
+//     if (m_p.B1 >= 0) {
+//         // GRMHD stress-energy tensor w/ first index up, second index down
+//         GRMHD::calc_tensor(P(m_p.RHO), P(m_p.UU), (gam - 1) * P(m_p.UU), D, dir, T);
+//     } else {
+//         // GRHD stress-energy tensor w/ first index up, second index down
+//         GRHD::calc_tensor(P(m_p.RHO), P(m_p.UU), (gam - 1) * P(m_p.UU), D, dir, T);
+//     }
+// }
 
 /**
  * Turn the primitive variables at a location into:
@@ -144,10 +169,10 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const Local& P,
     }
 
     // EMHD Variables: advect like rho
-    if (m_p.Q >= 0) {
+    if (m_p.Q >= 0)
         flux(m_u.Q) = P(m_p.Q) * D.ucon[dir] * gdet;
+    if (m_p.DP >= 0)
         flux(m_u.DP) = P(m_p.DP) * D.ucon[dir] * gdet;
-    }
 
     // Electrons: normalized by density
     if (m_p.KTOT >= 0) {
@@ -209,10 +234,10 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const Global& P
     }
 
     // EMHD Variables: advect like rho
-    if (m_p.Q >= 0) {
+    if (m_p.Q >= 0)
         flux(m_u.Q, k, j, i)  = P(m_p.Q, k, j, i) * D.ucon[dir] * gdet;
+    if (m_p.DP >= 0)
         flux(m_u.DP, k, j, i) = P(m_p.DP, k, j, i) * D.ucon[dir] * gdet;
-    }
 
     // Electrons: normalized by density
     if (m_p.KTOT >= 0) {
@@ -302,18 +327,23 @@ KOKKOS_INLINE_FUNCTION void vchar(const GRCoordinates& G, const Local& P, const 
     const Real ef  = P(m.RHO) + gam * P(m.UU);
     const Real cs2 = gam * (gam - 1) * P(m.UU) / ef;
     Real cms2;
-    if (m.Q > 0) {
+    if (m.Q >= 0 || m.DP >= 0) {
          // Get the EGRMHD parameters
         Real tau, chi_e, nu_e;
-        EMHD::set_parameters(G, P, m, emhd_params, gam, j, i, tau, chi_e, nu_e);        
+        EMHD::set_parameters(G, P, m, emhd_params, gam, j, i, tau, chi_e, nu_e);
         
         // Find fast magnetosonic speed
         const Real bsq = m::max(dot(D.bcon, D.bcov), SMALL);
         const Real ee  = bsq + ef;
         const Real va2 = bsq / ee;
 
-        const Real cvis2  = (4./3.) / (P(m.RHO) + (gam * P(m.UU)) ) * P(m.RHO) * emhd_params.viscosity_alpha * cs2;
-        const Real ccond2 = (gam - 1.) * emhd_params.conduction_alpha * cs2;
+        Real ccond2 = 0.;
+        Real cvis2  = 0.;
+
+        if (emhd_params.conduction)
+            ccond2 = (gam - 1.) * emhd_params.conduction_alpha * cs2;
+        if (emhd_params.viscosity)
+            cvis2 = (4./3.) / (P(m.RHO) + (gam * P(m.UU)) ) * P(m.RHO) * emhd_params.viscosity_alpha * cs2;
 
         const Real cscond   = 0.5*(cs2 + ccond2 + sqrt(cs2*cs2 + ccond2*ccond2) ) ;
         const Real cs2_emhd = cscond + cvis2;

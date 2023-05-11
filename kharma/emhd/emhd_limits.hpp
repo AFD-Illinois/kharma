@@ -66,8 +66,11 @@ KOKKOS_INLINE_FUNCTION int apply_instability_limits(const GRCoordinates& G, cons
 
     Real rho      = P(m_p.RHO, k, j, i);
     Real uu       = P(m_p.UU, k, j, i);
-    Real qtilde   = P(m_p.Q, k, j, i);
-    Real dPtilde  = P(m_p.DP, k, j, i);
+    Real qtilde, dPtilde;
+    if (emhd_params.conduction)
+        qtilde   = P(m_p.Q, k, j, i);
+    if (emhd_params.viscosity)
+        dPtilde  = P(m_p.DP, k, j, i);
 
     Real pg    = (gam - 1.) * uu;
     Real Theta = pg / rho;
@@ -83,26 +86,32 @@ KOKKOS_INLINE_FUNCTION int apply_instability_limits(const GRCoordinates& G, cons
     Real q, dP;
     EMHD::convert_prims_to_q_dP(qtilde, dPtilde, rho, Theta, cs*cs, emhd_params, q, dP);
 
-    Real qmax         = 1.07 * rho * cs*cs*cs;
-    Real max_frac     = m::max(m::abs(q) / qmax, 1.);
-    if (m::abs(q) / qmax > 1.)
-        eflag |= HIT_Q_LIMIT;
 
-    P(m_p.Q, k, j, i) = P(m_p.Q, k, j, i) / max_frac;
+    if (emhd_params.conduction) {
+        Real qmax         = 1.07 * rho * m::pow(cs, 3.);
+        Real max_frac     = m::max(m::abs(q) / qmax, 1.);
+        if (fabs(q) / qmax > 1.)
+            eflag |= HIT_Q_LIMIT;
 
-    Real dP_comp_ratio = m::max(pg - 2./3. * dP, SMALL) / m::max(pg + 1./3. * dP, SMALL);
-    Real dP_plus       = m::min(1.07 * 0.5 * bsq * dP_comp_ratio, 1.49 * pg);
-    Real dP_minus      = m::max(-1.07 * bsq, -2.99 * pg);
+        P(m_p.Q, k, j, i) = P(m_p.Q, k, j, i) / max_frac;
+    }
 
-    if (dP > 0. && (dP / dP_plus > 1.))
-        eflag |= HIT_DP_LIMIT;
-    else if (dP < 0. && (dP / dP_minus > 1.))
-        eflag |= HIT_DP_LIMIT;
-    
-    if (dP > 0.)
-        P(m_p.DP, k, j, i) = P(m_p.DP, k, j, i) * (1. / m::max(dP / dP_plus, 1.));
-    else
-        P(m_p.DP, k, j, i) = P(m_p.DP, k, j, i) * (1. / m::max(dP / dP_minus, 1.));
+    if (emhd_params.viscosity) {
+
+        Real dP_comp_ratio = m::max(pg - 2./3. * dP, SMALL) / m::max(pg + 1./3. * dP, SMALL);
+        Real dP_plus       = m::min(1.07 * 0.5 * bsq * dP_comp_ratio, 1.49 * pg);
+        Real dP_minus      = m::max(-1.07 * bsq, -2.99 * pg);
+
+        if (dP > 0. && (dP / dP_plus > 1.))
+            eflag |= HIT_DP_LIMIT;
+        else if (dP < 0. && (dP / dP_minus > 1.))
+            eflag |= HIT_DP_LIMIT;
+        
+        if (dP > 0.)
+            P(m_p.DP, k, j, i) = P(m_p.DP, k, j, i) * (1. / m::max(dP / dP_plus, 1.));
+        else
+            P(m_p.DP, k, j, i) = P(m_p.DP, k, j, i) * (1. / m::max(dP / dP_minus, 1.));
+    }
 
     Flux::p_to_u(G, P, m_p, emhd_params, gam, k, j, i, U, m_u);
 

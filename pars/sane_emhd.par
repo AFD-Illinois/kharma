@@ -3,6 +3,7 @@
 # Overall simulation size 1000M
 
 <parthenon/job>
+archive_parameters_timestamp = true
 problem_id = torus
 
 <parthenon/mesh>
@@ -76,13 +77,16 @@ u_jitter = 0.04
 
 <floors>
 frame              = drift
-rho_min_geom       = 1e-6
-u_min_geom         = 1e-8
+rho_min_geom       = 1e-3
+u_min_geom         = 1e-5
 bsq_over_rho_max   = 100
-u_over_rho_max     = 2
+bsq_over_u_max     = 100
+u_over_rho_max     = 100
+gamma_max          = 10
 enable_emhd_limits = true
 
 <debug>
+archive_parameters = true
 verbose            = 1
 extra_checks       = 1
 flag_verbose       = 0
@@ -96,11 +100,11 @@ Tp = 10
 file_type = hdf5
 dt = 5.0
 single_precision_output = true
-variables = prims.rho, prims.u, prims.uvec, prims.B, q, dP, jcon, fflag, pflag, solve_norm, solve_fail, eflag
+variables = prims.rho, prims.u, prims.uvec, prims.B, prims.q, prims.dP, jcon, fflag, pflag, solve_norm, solve_fail, eflag
 
 <parthenon/output1>
 file_type = rst
-dt        = 100.0
+dt        = 5.0
 
 <parthenon/output2>
 file_type = hst

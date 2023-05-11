@@ -206,7 +206,10 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     // There's no "Flux" package, so we register the geometric (\Gamma*T) source here. I think it makes sense.
     pkg->AddSource = Flux::AddGeoSource;
 
-    // Parthenon general callbacks
+    // Finally, the StateDescriptor/Package object determines the Callbacks Parthenon makes to
+    // a particular package -- that is, some portion of the things that the package needs done
+    // at each step, which must be done at specific times.
+    // See the header files defining each of these functions for their purpose and call context.
     pkg->CheckRefinementBlock    = GRMHD::CheckRefinement;
     pkg->EstimateTimestepBlock   = GRMHD::EstimateTimestep;
     pkg->PostStepDiagnosticsMesh = GRMHD::PostStepDiagnostics;

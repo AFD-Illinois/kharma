@@ -108,17 +108,16 @@ std::shared_ptr<KHARMAPackage> Implicit::Initialize(ParameterInput *pin, std::sh
     Real linesearch_lambda = pin->GetOrAddReal("implicit", "linesearch_lambda", 1.0);
     params.Add("linesearch_lambda", linesearch_lambda);
 
-    // TODO some way to denote non-converged zones?  impflag or something?
-
     // Allocate additional fields that reflect the success of the solver
     // L2 norm of the residual
     Metadata m_real = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
     pkg->AddField("solve_norm", m_real);
     // Integer field that saves where the solver fails (rho + drho < 0 || u + du < 0)
     // Metadata m_int = Metadata({Metadata::Integer, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
-    pkg->AddField("solve_fail", m_real); // TODO: Replace with m_int once Integer is supported for CellVariabl
+    m_real = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy, Metadata::FillGhost});
+    pkg->AddField("solve_fail", m_real); // TODO: Replace with m_int once Integer is supported for CellVariable
 
-    // TODO: Find a way to save residuals based on a runtime parameter. We don't want to unnecessarily allocate 
+    // TODO: Find a way to save all residuals based on a runtime parameter, e.g. below. We don't want to allocate 
     // a vector field equal to the number of implicit variables over the entire meshblock if we don't have to.
     
     // Should the solve save the residual vector field? Useful for debugging purposes. Default is NO.
@@ -140,9 +139,6 @@ std::shared_ptr<KHARMAPackage> Implicit::Initialize(ParameterInput *pin, std::sh
     //     Metadata m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy}, s_vector);
     //     pkg->AddField("residual", m);
     // }
-
-    // Anything we need to run from this package on callbacks
-    // Maybe a post-step L2 or flag count or similar
 
     return pkg;
 }
@@ -224,6 +220,8 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
     const int nvar   = U_full_step_init_all.GetDim(4);
     // Get number of implicit variables
     auto implicit_vars = GetOrderedNames(mbd_full_step_init.get(), Metadata::GetUserFlag("Primitive"), true);
+    //std::cerr << "Ordered implicit:"; for(auto var: implicit_vars) std::cerr << " " << var; std::cerr << std::endl;
+
     PackIndexMap implicit_prims_map;
     auto& P_full_step_init_implicit = md_full_step_init->PackVariables(implicit_vars, implicit_prims_map);
     const int nfvar = P_full_step_init_implicit.GetDim(4);
@@ -231,11 +229,6 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
     // Pull fields associated with the solver's performance
     auto& solve_norm_all = md_solver->PackVariables(std::vector<std::string>{"solve_norm"});
     auto& solve_fail_all = md_solver->PackVariables(std::vector<std::string>{"solve_fail"});
-    // auto& solve_fail_all = md_solver->GetBlockData(0)->Get("solve_fail").data;
-
-    // if (save_residual) {
-    //     auto& residual_all = md_solver->GetBlockData(0)->Get("residual").data;
-    // }
 
     auto bounds  = pmb_sub_step_init->cellbounds;
     const int n1 = bounds.ncellsi(IndexDomain::entire);
@@ -266,10 +259,9 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
     // to avoid a bunch of indices in all the device-side operations
     // See grmhd_functions.hpp for the other approach with overloads
     const int scratch_level = 1; // 0 is actual scratch (tiny); 1 is HBM
-    const size_t var_size_in_bytes    = parthenon::ScratchPad2D<Real>::shmem_size(nvar, n1);
-    const size_t fvar_size_in_bytes   = parthenon::ScratchPad2D<Real>::shmem_size(nfvar, n1);
-    const size_t fvar_int_size_in_bytes   = parthenon::ScratchPad2D<int>::shmem_size(nfvar, n1);
-    const size_t tensor_size_in_bytes = parthenon::ScratchPad3D<Real>::shmem_size(nfvar, nfvar, n1);
+    const size_t var_size_in_bytes    = parthenon::ScratchPad2D<Real>::shmem_size(n1, nvar);
+    const size_t fvar_size_in_bytes   = parthenon::ScratchPad2D<Real>::shmem_size(n1, nfvar);
+    const size_t tensor_size_in_bytes = parthenon::ScratchPad3D<Real>::shmem_size(nfvar, n1, nfvar);
     const size_t scalar_size_in_bytes = parthenon::ScratchPad1D<Real>::shmem_size(n1);
     const size_t int_size_in_bytes    = parthenon::ScratchPad1D<int>::shmem_size(n1);
     // Allocate enough to cache:
@@ -278,8 +270,9 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
     // P_full_step_init/U_full_step_init, P_sub_step_init/U_sub_step_init, flux_src, 
     // P_solver, P_linesearch, dU_implicit, three temps (all vars)
     // solve_norm, solve_fail
-    const size_t total_scratch_bytes = tensor_size_in_bytes + (6) * fvar_size_in_bytes + fvar_int_size_in_bytes
-                                    + (10) * var_size_in_bytes + (2) * scalar_size_in_bytes;
+
+    const size_t total_scratch_bytes = tensor_size_in_bytes + (6) * fvar_size_in_bytes + (11) * var_size_in_bytes + \
+                                    (2) * scalar_size_in_bytes;
                                     //  + int_size_in_bytes;
 
     // Iterate.  This loop is outside the kokkos kernel in order to print max_norm
@@ -294,238 +287,281 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
             KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int& b, const int& k, const int& j) {
                 const auto& G = U_full_step_init_all.GetCoords(b);
                 // Scratchpads for implicit vars
-                ScratchPad3D<Real> jacobian_s(member.team_scratch(scratch_level), nfvar, nfvar, n1);
-                ScratchPad2D<Real> residual_s(member.team_scratch(scratch_level), nfvar, n1);
-                ScratchPad2D<Real> delta_prim_s(member.team_scratch(scratch_level), nfvar, n1);
-                ScratchPad2D<int> pivot_s(member.team_scratch(scratch_level), nfvar, n1);
-                ScratchPad2D<Real> trans_s(member.team_scratch(scratch_level), nfvar, n1);
-                ScratchPad2D<Real> work_s(member.team_scratch(scratch_level), 2*nfvar, n1);
-                // tmp2 holds a residual with only implicit variable errors
-                ScratchPad2D<Real> tmp2_s(member.team_scratch(scratch_level), nfvar, n1);
+                ScratchPad3D<Real> jacobian_s(member.team_scratch(scratch_level), n1, nfvar, nfvar);
+                ScratchPad2D<Real> residual_s(member.team_scratch(scratch_level), n1, nfvar);
+                ScratchPad2D<Real> delta_prim_s(member.team_scratch(scratch_level), n1, nfvar);
+                ScratchPad2D<int> pivot_s(member.team_scratch(scratch_level), n1, nfvar);
+                ScratchPad2D<Real> trans_s(member.team_scratch(scratch_level), n1, nfvar);
+                ScratchPad2D<Real> work_s(member.team_scratch(scratch_level), n1, 2*nfvar);
                 // Scratchpads for all vars
-                ScratchPad2D<Real> dU_implicit_s(member.team_scratch(scratch_level), nvar, n1);
-                ScratchPad2D<Real> tmp1_s(member.team_scratch(scratch_level), nvar, n1);
-                ScratchPad2D<Real> tmp3_s(member.team_scratch(scratch_level), nvar, n1);
-                ScratchPad2D<Real> P_full_step_init_s(member.team_scratch(scratch_level), nvar, n1);
-                ScratchPad2D<Real> U_full_step_init_s(member.team_scratch(scratch_level), nvar, n1);
-                ScratchPad2D<Real> P_sub_step_init_s(member.team_scratch(scratch_level), nvar, n1);
-                ScratchPad2D<Real> U_sub_step_init_s(member.team_scratch(scratch_level), nvar, n1);
-                ScratchPad2D<Real> flux_src_s(member.team_scratch(scratch_level), nvar, n1);
-                ScratchPad2D<Real> P_solver_s(member.team_scratch(scratch_level), nvar, n1);
-                ScratchPad2D<Real> P_linesearch_s(member.team_scratch(scratch_level), nvar, n1);
+                ScratchPad2D<Real> dU_implicit_s(member.team_scratch(scratch_level), n1, nvar);
+                ScratchPad2D<Real> tmp1_s(member.team_scratch(scratch_level), n1, nvar);
+                ScratchPad2D<Real> tmp2_s(member.team_scratch(scratch_level), n1, nfvar);
+                ScratchPad2D<Real> tmp3_s(member.team_scratch(scratch_level), n1, nvar);
+                ScratchPad2D<Real> P_full_step_init_s(member.team_scratch(scratch_level), n1, nvar);
+                ScratchPad2D<Real> U_full_step_init_s(member.team_scratch(scratch_level), n1, nvar);
+                ScratchPad2D<Real> P_sub_step_init_s(member.team_scratch(scratch_level), n1, nvar);
+                ScratchPad2D<Real> U_sub_step_init_s(member.team_scratch(scratch_level), n1, nvar);
+                ScratchPad2D<Real> flux_src_s(member.team_scratch(scratch_level), n1, nvar);
+                ScratchPad2D<Real> P_solver_s(member.team_scratch(scratch_level), n1, nvar);
+                ScratchPad2D<Real> P_linesearch_s(member.team_scratch(scratch_level), n1, nvar);
                 // Scratchpads for solver performance diagnostics
                 ScratchPad1D<Real> solve_norm_s(member.team_scratch(scratch_level), n1);
-                // ScratchPad1D<int>  solve_fail_s(member.team_scratch(scratch_level), n1);
-                ScratchPad1D<Real> solve_fail_s(member.team_scratch(scratch_level), n1);
+                ScratchPad1D<int> solve_fail_s(member.team_scratch(scratch_level), n1);
 
                 // Copy some file contents to scratchpads, so we can slice them
-                PLOOP {
-                    parthenon::par_for_inner(member, ib.s, ib.e,
+                for(int ip=0; ip < nvar; ++ip) {
+                    parthenon::par_for_inner(member, 0, n1-1,
                         [&](const int& i) {
-                            P_full_step_init_s(ip, i) = P_full_step_init_all(b)(ip, k, j, i);
-                            U_full_step_init_s(ip, i) = U_full_step_init_all(b)(ip, k, j, i);
-                            P_sub_step_init_s(ip, i)  = P_sub_step_init_all(b)(ip, k, j, i);
-                            U_sub_step_init_s(ip, i)  = U_sub_step_init_all(b)(ip, k, j, i);
-                            flux_src_s(ip, i)         = flux_src_all(b)(ip, k, j, i);
-                            P_solver_s(ip, i)         = P_solver_all(b)(ip, k, j, i);
-                            P_linesearch_s(ip, i)     = P_linesearch_all(b)(ip, k, j, i);
-                            dU_implicit_s(ip, i)      = 0.;
+                            P_full_step_init_s(i, ip) = P_full_step_init_all(b)(ip, k, j, i);
+                            U_full_step_init_s(i, ip) = U_full_step_init_all(b)(ip, k, j, i);
+                            P_sub_step_init_s(i, ip)  = P_sub_step_init_all(b)(ip, k, j, i);
+                            U_sub_step_init_s(i, ip)  = U_sub_step_init_all(b)(ip, k, j, i);
+                            flux_src_s(i, ip)         = flux_src_all(b)(ip, k, j, i);
+                            P_solver_s(i, ip)         = P_solver_all(b)(ip, k, j, i);
+                            P_linesearch_s(i, ip)     = P_linesearch_all(b)(ip, k, j, i);
+                            dU_implicit_s(i, ip)      = 0.;
+                            tmp1_s(i, ip) = 0.;
+                            tmp3_s(i, ip) = 0.;
 
+                            // TODO these are run repeatedly a bunch of times
                             solve_norm_s(i) = 0.;
-                            solve_fail_s(i) = 0;
+                            if (iter == 1) {
+                                // New beginnings
+                                solve_fail_s(i) = SolverStatus::converged;
+                            }
+                            else {
+                                // Need this to check if the zone had failed in any of the previous iterations.
+                                // If so, we don't attempt to update it again in the implicit solver.
+                                solve_fail_s(i) = solve_fail_all(b, 0, k, j, i);
+                            }
                         }
                     );
                 }
-                member.team_barrier();
-                // For implicit variables only
+                // For implicit only
                 for(int ip=0; ip < nfvar; ++ip) {
                     parthenon::par_for_inner(member, 0, n1-1,
                         [&](const int& i) {
                             for(int jp=0; jp < nfvar; ++jp)
-                                jacobian_s(ip, jp, i) = 0.;
-                            residual_s(ip, i) = 0.;
-                            delta_prim_s(ip, i) = 0.;
-                            pivot_s(ip, i) = 0;
-                            trans_s(ip, i) = 0.;
-                            work_s(ip, i) = 0.;
-                            work_s(ip+nfvar, i) = 0.;
-                            tmp2_s(ip, i) = 0.;
+                                jacobian_s(i, ip, jp) = 0.;
+                            residual_s(i, ip) = 0.;
+                            delta_prim_s(i, ip) = 0.;
+                            pivot_s(i, ip) = 0;
+                            trans_s(i, ip) = 0.;
+                            work_s(i, ip) = 0.;
+                            work_s(i, ip+nfvar) = 0.;
+                            tmp2_s(i, ip) = 0.;
                         }
                     );
                 }
                 member.team_barrier();
 
-                // Copy in the guess or current solution
-                // Note this replaces the implicit portion of P_solver_s --
-                // any explicit portion was initialized above
-                // FLOOP { // Loop over just the implicit "fluid" portion of primitive vars
-                //     parthenon::par_for_inner(member, ib.s, ib.e,
-                //         [&](const int& i) {
-                //             P_solver_s(ip, i) = P_solver_all(b)(ip, k, j, i);
-                //         }
-                //     );
-                // }
-                // member.team_barrier();
-
                 parthenon::par_for_inner(member, ib.s, ib.e,
                     [&](const int& i) {
                         // Lots of slicing.  This still ends up faster & cleaner than alternatives I tried
-                        auto P_full_step_init = Kokkos::subview(P_full_step_init_s, Kokkos::ALL(), i);
-                        auto U_full_step_init = Kokkos::subview(U_full_step_init_s, Kokkos::ALL(), i);
-                        auto P_sub_step_init  = Kokkos::subview(P_sub_step_init_s, Kokkos::ALL(), i);
-                        auto U_sub_step_init  = Kokkos::subview(U_sub_step_init_s, Kokkos::ALL(), i);
-                        auto flux_src         = Kokkos::subview(flux_src_s, Kokkos::ALL(), i);
-                        auto P_solver         = Kokkos::subview(P_solver_s, Kokkos::ALL(), i);
-                        auto P_linesearch     = Kokkos::subview(P_linesearch_s, Kokkos::ALL(), i);
+                        auto P_full_step_init = Kokkos::subview(P_full_step_init_s, i, Kokkos::ALL());
+                        auto U_full_step_init = Kokkos::subview(U_full_step_init_s, i, Kokkos::ALL());
+                        auto P_sub_step_init  = Kokkos::subview(P_sub_step_init_s, i, Kokkos::ALL());
+                        auto U_sub_step_init  = Kokkos::subview(U_sub_step_init_s, i, Kokkos::ALL());
+                        auto flux_src         = Kokkos::subview(flux_src_s, i, Kokkos::ALL());
+                        auto P_solver         = Kokkos::subview(P_solver_s, i, Kokkos::ALL());
+                        auto P_linesearch     = Kokkos::subview(P_linesearch_s, i, Kokkos::ALL());
                         // Solver variables
-                        auto residual   = Kokkos::subview(residual_s, Kokkos::ALL(), i);
-                        auto jacobian   = Kokkos::subview(jacobian_s, Kokkos::ALL(), Kokkos::ALL(), i);
-                        auto delta_prim = Kokkos::subview(delta_prim_s, Kokkos::ALL(), i);
-                        auto pivot      = Kokkos::subview(pivot_s, Kokkos::ALL(), i);
-                        auto trans      = Kokkos::subview(trans_s, Kokkos::ALL(), i);
-                        auto work       = Kokkos::subview(work_s, Kokkos::ALL(), i);
+                        auto residual   = Kokkos::subview(residual_s, i, Kokkos::ALL());
+                        auto jacobian   = Kokkos::subview(jacobian_s, i, Kokkos::ALL(), Kokkos::ALL());
+                        auto delta_prim = Kokkos::subview(delta_prim_s, i, Kokkos::ALL());
+                        auto pivot      = Kokkos::subview(pivot_s, i, Kokkos::ALL());
+                        auto trans      = Kokkos::subview(trans_s, i, Kokkos::ALL());
+                        auto work       = Kokkos::subview(work_s, i, Kokkos::ALL());
                         // Temporaries
-                        auto tmp1  = Kokkos::subview(tmp1_s, Kokkos::ALL(), i);
-                        auto tmp2  = Kokkos::subview(tmp2_s, Kokkos::ALL(), i);
-                        auto tmp3  = Kokkos::subview(tmp3_s, Kokkos::ALL(), i);
+                        auto tmp1  = Kokkos::subview(tmp1_s, i, Kokkos::ALL());
+                        auto tmp2  = Kokkos::subview(tmp2_s, i, Kokkos::ALL());
+                        auto tmp3  = Kokkos::subview(tmp3_s, i, Kokkos::ALL());
                         // Implicit sources at starting state
-                        auto dU_implicit = Kokkos::subview(dU_implicit_s, Kokkos::ALL(), i);
+                        auto dU_implicit = Kokkos::subview(dU_implicit_s, i, Kokkos::ALL());
                         // Solver performance diagnostics
                         auto solve_norm = Kokkos::subview(solve_norm_s, i);
                         auto solve_fail = Kokkos::subview(solve_fail_s, i);
 
-                        if (m_p.Q >= 0) {
-                            EMHD::implicit_sources(G, P_full_step_init, P_sub_step_init, m_p, gam, k, j, i, emhd_params_sub_step_init, 
-                                                dU_implicit(m_u.Q), dU_implicit(m_u.DP));
-                        }
+                        // Perform the solve only if it hadn't failed in any of the previous iterations.
+                        if (solve_fail() != SolverStatus::fail) {
+                            // Now that we know that it isn't a bad zone, reset solve_fail for this iteration
+                            solve_fail() = SolverStatus::converged;
 
-                        // Copy `solver` prims to `linesearch`. This doesn't matter for the first step of the solver
-                        // since we do a copy in imex_step just before, but it is required for the subsequent
-                        // iterations of the solver.
-                        PLOOP P_linesearch(ip) = P_solver(ip);
-                        Real lambda = linesearch_lambda;
-
-                        // Jacobian calculation
-                        // Requires calculating the residual anyway, so we grab it here
-                        calc_jacobian(G, P_solver, P_full_step_init, U_full_step_init, P_sub_step_init, 
-                                    flux_src, dU_implicit, tmp1, tmp2, tmp3, m_p, m_u, emhd_params_solver,
-                                    emhd_params_sub_step_init, nvar, nfvar, k, j, i, delta, gam, dt, jacobian, residual);
-                        // Solve against the negative residual
-                        FLOOP delta_prim(ip) = -residual(ip);
-
-                        // if (am_rank0 && b == 0 && i == 10 && j == 10 && k == kb.s) {
-                        //     printf("Variable ordering: rho %d uu %d u1 %d B1 %d q %d dP %d\n",
-                        //             m_p.RHO, m_p.UU, m_p.U1, m_p.B1, m_p.Q, m_p.DP);
-                        //     printf("Variable ordering: rho %d uu %d u1 %d B1 %d q %d dP %d\n",
-                        //             m_u.RHO, m_u.UU, m_u.U1, m_u.B1, m_u.Q, m_u.DP);
-                        //     printf("P_solver: "); PLOOP printf("%6.5e ", P_solver(ip)); printf("\n");
-                        //     printf("Pi: "); PLOOP printf("%6.5e ", P_full_step_init(ip)); printf("\n");
-                        //     printf("Ui: "); PLOOP printf("%6.5e ", U_full_step_init(ip)); printf("\n");
-                        //     printf("Ps: "); PLOOP printf("%6.5e ", P_sub_step_init(ip)); printf("\n");
-                        //     printf("Us: "); PLOOP printf("%6.5e ", U_sub_step_init(ip)); printf("\n");
-                        //     printf("dUdt: "); PLOOP printf("%6.5e ", dU_implicit(ip)); printf("\n");
-                        //     printf("Initial Jacobian:\n"); for (int jp=0; jp<nfvar; ++jp) {FLOOP printf("%6.5e\t", jacobian(jp,ip)); printf("\n");}
-                        //     printf("Initial residual: "); FLOOP printf("%6.5e ", residual(ip)); printf("\n");
-                        //     printf("Initial delta_prim: "); FLOOP printf("%6.5e ", delta_prim(ip)); printf("\n");
-                        // }
-
-                        if (use_qr) {
-                            // Linear solve by QR decomposition
-                            KokkosBatched::SerialQR<KokkosBatched::Algo::QR::Unblocked>::invoke(jacobian, trans, pivot, work);
-                            KokkosBatched::SerialApplyQ<KokkosBatched::Side::Left, KokkosBatched::Trans::Transpose,
-                                                        KokkosBatched::Algo::ApplyQ::Unblocked>
-                            ::invoke(jacobian, trans, delta_prim, work);
-                        } else {
-                            KokkosBatched::SerialLU<KokkosBatched::Algo::LU::Unblocked>::invoke(jacobian, tiny);
-                        }
-                        KokkosBatched::SerialTrsv<KokkosBatched::Uplo::Upper, KokkosBatched::Trans::NoTranspose, 
-                                                KokkosBatched::Diag::NonUnit, KokkosBatched::Algo::Trsv::Unblocked>
-                        ::invoke(alpha, jacobian, delta_prim);
-                        if (use_qr) {
-                            // Linear solve by QR decomposition
-                            KokkosBatched::SerialApplyPivot<KokkosBatched::Side::Left,KokkosBatched::Direct::Backward>
-                                ::invoke(pivot, delta_prim);
-                        }
-
-                        // Check for positive definite values of density and internal energy.
-                        // Break from solve if manual backtracking is not sufficient.
-                        // The primitives will be averaged over good neighbors.
-                        if ((P_solver(m_p.RHO) + lambda*delta_prim(m_p.RHO) < 0.) || (P_solver(m_p.UU) + lambda*delta_prim(m_p.UU) < 0.)) {
-                            solve_fail() = 1;
-                            lambda     = 0.1;
-                        }
-                        if ((P_solver(m_p.RHO) + lambda*delta_prim(m_p.RHO) < 0.) || (P_solver(m_p.UU) + lambda*delta_prim(m_p.UU) < 0.)) {
-                            solve_fail() = 2;
-                            // break; // Doesn't break from the inner par_for. 
-                            // Let it continue for now, but we'll average over the zone later
-                        }
-
-                        // Linesearch
-                        if (linesearch) {
-                            solve_norm()        = 0;
-                            FLOOP solve_norm() += residual(ip) * residual(ip);
-                            solve_norm()        = m::sqrt(solve_norm());
-
-                            Real f0      = 0.5 * solve_norm();
-                            Real fprime0 = -2. * f0;
-
-                            for (int linesearch_iter = 0; linesearch_iter < max_linesearch_iter; linesearch_iter++) {
-                                // Take step
-                                FLOOP P_linesearch(ip) = P_solver(ip) + (lambda * delta_prim(ip));
-
-                                // Compute solve_norm of the residual (loss function)
-                                calc_residual(G, P_linesearch, P_full_step_init, U_full_step_init, P_sub_step_init, flux_src,
-                                            dU_implicit, tmp3, m_p, m_u, emhd_params_linesearch, emhd_params_solver, nfvar,
-                                            k, j, i, gam, dt, residual);
-
-                                solve_norm()        = 0;
-                                FLOOP solve_norm() += residual(ip) * residual(ip);
-                                solve_norm()        = m::sqrt(solve_norm());
-                                Real f1             = 0.5 * solve_norm();
-
-                                // Compute new step length
-                                int condition   = f1 > (f0 * (1. - linesearch_eps * lambda) + SMALL);
-                                Real denom      = (f1 - f0 - (fprime0 * lambda)) * condition + (1 - condition);
-                                Real lambda_new = -fprime0 * lambda * lambda / denom / 2.;
-                                lambda          = lambda * (1 - condition) + (condition * lambda_new);
-
-                                // Check if new solution has converged within required tolerance
-                                if (condition == 0) break;
+                            if (m_p.Q >= 0 || m_p.DP >= 0) {
+                                Real dUq, dUdP;
+                                EMHD::implicit_sources(G, P_full_step_init, P_sub_step_init, m_p, gam, k, j, i,
+                                                emhd_params_sub_step_init, dUq, dUdP);
+                                if (emhd_params_sub_step_init.conduction)
+                                    dU_implicit(m_u.Q) = dUq;
+                                if (emhd_params_sub_step_init.viscosity)
+                                    dU_implicit(m_u.DP) = dUdP;
                             }
+
+                            // Copy `solver` prims to `linesearch`. This doesn't matter for the first step of the solver
+                            // since we do a copy in imex_driver just before, but it is required for the subsequent
+                            // iterations of the solver.
+                            PLOOP P_linesearch(ip) = P_solver(ip);
+
+                            // Jacobian calculation
+                            // Requires calculating the residual anyway, so we grab it here
+                            calc_jacobian(G, P_solver, P_full_step_init, U_full_step_init, P_sub_step_init, 
+                                        flux_src, dU_implicit, tmp1, tmp2, tmp3, m_p, m_u, emhd_params_solver,
+                                        emhd_params_sub_step_init, nvar, nfvar, k, j, i, delta, gam, dt, jacobian, residual);
+                            // Solve against the negative residual
+                            FLOOP delta_prim(ip) = -residual(ip);
+#if 1
                         }
+                    }
+                );
+                member.team_barrier();
+                parthenon::par_for_inner(member, ib.s, ib.e,
+                    [&](const int& i) {
+                        // Solver variables
+                        auto residual   = Kokkos::subview(residual_s, i, Kokkos::ALL());
+                        auto jacobian   = Kokkos::subview(jacobian_s, i, Kokkos::ALL(), Kokkos::ALL());
+                        auto delta_prim = Kokkos::subview(delta_prim_s, i, Kokkos::ALL());
+                        auto pivot      = Kokkos::subview(pivot_s, i, Kokkos::ALL());
+                        auto trans      = Kokkos::subview(trans_s, i, Kokkos::ALL());
+                        auto work       = Kokkos::subview(work_s, i, Kokkos::ALL());
+                        auto solve_fail = Kokkos::subview(solve_fail_s, i);
 
-                        // Update the guess
-                        FLOOP P_solver(ip) += lambda * delta_prim(ip);
-
-                        calc_residual(G, P_solver, P_full_step_init, U_full_step_init, P_sub_step_init, flux_src, dU_implicit, tmp3,
-                                      m_p, m_u, emhd_params_solver, emhd_params_sub_step_init, nfvar, k, j, i, gam, dt, residual);
-
-                        // if (am_rank0 && b == 0 && i == 11 && j == 11 && k == kb.s) {
-                        //     printf("Variable ordering: rho %d uu %d u1 %d B1 %d q %d dP %d\n",
-                        //             m_p.RHO, m_p.UU, m_p.U1, m_p.B1, m_p.Q, m_p.DP);
-                        //     printf("Final residual: "); PLOOP printf("%6.5e ", residual(ip)); printf("\n");
-                        //     printf("Final delta_prim: "); PLOOP printf("%6.5e ", delta_prim(ip)); printf("\n");
-                        //     printf("Final P_solver: "); PLOOP printf("%6.5e ", P_solver(ip)); printf("\n");
-                        // }
-
-                        // Store for maximum/output
-                        // I would be tempted to store the whole residual, but it's of variable size
-                        solve_norm()        = 0;
-                        FLOOP solve_norm() += residual(ip) * residual(ip);
-                        solve_norm()        = m::sqrt(solve_norm()); // TODO faster to scratch cache & copy?
+                        if (solve_fail() != SolverStatus::fail) {
+#endif
+                            if (use_qr) {
+                                // Linear solve by QR decomposition
+                                KokkosBatched::SerialQR<KokkosBatched::Algo::QR::Unblocked>::invoke(jacobian, trans, pivot, work);
+                                KokkosBatched::SerialApplyQ<KokkosBatched::Side::Left, KokkosBatched::Trans::Transpose,
+                                                            KokkosBatched::Algo::ApplyQ::Unblocked>
+                                ::invoke(jacobian, trans, delta_prim, work);
+                            } else {
+                                KokkosBatched::SerialLU<KokkosBatched::Algo::LU::Unblocked>::invoke(jacobian, tiny);
+                            }
+                            KokkosBatched::SerialTrsv<KokkosBatched::Uplo::Upper, KokkosBatched::Trans::NoTranspose, 
+                                                    KokkosBatched::Diag::NonUnit, KokkosBatched::Algo::Trsv::Unblocked>
+                            ::invoke(alpha, jacobian, delta_prim);
+                            if (use_qr) {
+                                // Linear solve by QR decomposition
+                                KokkosBatched::SerialApplyPivot<KokkosBatched::Side::Left,KokkosBatched::Direct::Backward>
+                                    ::invoke(pivot, delta_prim);
+                            }
+#if 1
+                        }
                     }
                 );
                 member.team_barrier();
 
-                // Copy out (the good bits of) P_solver to the existing array
+                parthenon::par_for_inner(member, ib.s, ib.e,
+                    [&](const int& i) {
+                        // Lots of slicing.  This still ends up faster & cleaner than alternatives I tried
+                        auto P_full_step_init = Kokkos::subview(P_full_step_init_s, i, Kokkos::ALL());
+                        auto U_full_step_init = Kokkos::subview(U_full_step_init_s, i, Kokkos::ALL());
+                        auto P_sub_step_init  = Kokkos::subview(P_sub_step_init_s, i, Kokkos::ALL());
+                        auto U_sub_step_init  = Kokkos::subview(U_sub_step_init_s, i, Kokkos::ALL());
+                        auto flux_src         = Kokkos::subview(flux_src_s, i, Kokkos::ALL());
+                        auto P_solver         = Kokkos::subview(P_solver_s, i, Kokkos::ALL());
+                        auto P_linesearch     = Kokkos::subview(P_linesearch_s, i, Kokkos::ALL());
+                        // Solver variables
+                        auto residual   = Kokkos::subview(residual_s, i, Kokkos::ALL());
+                        auto jacobian   = Kokkos::subview(jacobian_s, i, Kokkos::ALL(), Kokkos::ALL());
+                        auto delta_prim = Kokkos::subview(delta_prim_s, i, Kokkos::ALL());
+                        auto pivot      = Kokkos::subview(pivot_s, i, Kokkos::ALL());
+                        auto trans      = Kokkos::subview(trans_s, i, Kokkos::ALL());
+                        auto work       = Kokkos::subview(work_s, i, Kokkos::ALL());
+                        // Temporaries
+                        auto tmp1  = Kokkos::subview(tmp1_s, i, Kokkos::ALL());
+                        auto tmp2  = Kokkos::subview(tmp2_s, i, Kokkos::ALL());
+                        auto tmp3  = Kokkos::subview(tmp3_s, i, Kokkos::ALL());
+                        // Implicit sources at starting state
+                        auto dU_implicit = Kokkos::subview(dU_implicit_s, i, Kokkos::ALL());
+                        // Solver performance diagnostics
+                        auto solve_norm = Kokkos::subview(solve_norm_s, i);
+                        auto solve_fail = Kokkos::subview(solve_fail_s, i);
+
+                        if (solve_fail() != SolverStatus::fail) {
+#endif
+                            // Check for positive definite values of density and internal energy.
+                            // Ignore zone if manual backtracking is not sufficient.
+                            // The primitives will be averaged over good neighbors.
+                            Real lambda = linesearch_lambda;
+                            if ((P_solver(m_p.RHO) + lambda*delta_prim(m_p.RHO) < 0.) || (P_solver(m_p.UU) + lambda*delta_prim(m_p.UU) < 0.)) {
+                                solve_fail() = SolverStatus::backtrack;
+                                lambda       = 0.1;
+                            }
+                            if ((P_solver(m_p.RHO) + lambda*delta_prim(m_p.RHO) < 0.) || (P_solver(m_p.UU) + lambda*delta_prim(m_p.UU) < 0.)) {
+                                solve_fail() = SolverStatus::fail;
+                                // break; // Doesn't break from the inner par_for. 
+                                // Instead we set all fluid primitives to value at beginning of substep.
+                                // We average over neighboring good zones later.
+                                FLOOP P_solver(ip) = P_sub_step_init(ip);
+                            }
+
+                            // If the solver failed, we don't want to update the implicit primitives for those zones
+                            if (solve_fail() != SolverStatus::fail)
+                            {
+                                // Linesearch
+                                if (linesearch) {
+                                    solve_norm()        = 0;
+                                    FLOOP solve_norm() += residual(ip) * residual(ip);
+                                    solve_norm()        = m::sqrt(solve_norm());
+
+                                    Real f0      = 0.5 * solve_norm();
+                                    Real fprime0 = -2. * f0;
+
+                                    for (int linesearch_iter = 0; linesearch_iter < max_linesearch_iter; linesearch_iter++) {
+                                        // Take step
+                                        FLOOP P_linesearch(ip) = P_solver(ip) + (lambda * delta_prim(ip));
+
+                                        // Compute solve_norm of the residual (loss function)
+                                        calc_residual(G, P_linesearch, P_full_step_init, U_full_step_init, P_sub_step_init, flux_src,
+                                                    dU_implicit, tmp3, m_p, m_u, emhd_params_linesearch, emhd_params_solver, nfvar,
+                                                    k, j, i, gam, dt, residual);
+
+                                        solve_norm()        = 0;
+                                        FLOOP solve_norm() += residual(ip) * residual(ip);
+                                        solve_norm()        = m::sqrt(solve_norm());
+                                        Real f1             = 0.5 * solve_norm();
+
+                                        // Compute new step length
+                                        int condition   = f1 > (f0 * (1. - linesearch_eps * lambda) + SMALL);
+                                        Real denom      = (f1 - f0 - (fprime0 * lambda)) * condition + (1 - condition);
+                                        Real lambda_new = -fprime0 * lambda * lambda / denom / 2.;
+                                        lambda          = lambda * (1 - condition) + (condition * lambda_new);
+
+                                        // Check if new solution has converged within required tolerance
+                                        if (condition == 0) break;                           
+                                    }
+                                }
+
+                                // Update the guess
+                                FLOOP P_solver(ip) += lambda * delta_prim(ip);
+
+                                calc_residual(G, P_solver, P_full_step_init, U_full_step_init, P_sub_step_init, flux_src, dU_implicit, tmp3,
+                                            m_p, m_u, emhd_params_solver, emhd_params_sub_step_init, nfvar, k, j, i, gam, dt, residual);
+
+                                // Store for maximum/output
+                                // I would be tempted to store the whole residual, but it's of variable size
+                                solve_norm()        = 0;
+                                FLOOP solve_norm() += residual(ip) * residual(ip);
+                                solve_norm()        = m::sqrt(solve_norm()); // TODO faster to scratch cache & copy?
+
+                                // Did we converge to required tolerance? If not, update solve_fail accordingly
+                                if (solve_norm() > rootfind_tol) {
+                                    solve_fail() += SolverStatus::beyond_tol;
+                                }
+                            }
+                        }
+                    }
+                );
+                member.team_barrier();
+
+                // Copy out P_solver to the existing array.
+                // We'll copy even the values for the failed zones because it doesn't really matter, it'll be averaged over later.
                 // And copy any other diagnostics that are relevant to analyze the solver's performance
                 FLOOP {
                     parthenon::par_for_inner(member, ib.s, ib.e,
                         [&](const int& i) {
-                            P_solver_all(b)(ip, k, j, i) = P_solver_s(ip, i);
-                            // if (save_residual) {
-                            //     residual_all(b, ip, k, j, i) = residual_s(ip, i);
-                            // }
+                            P_solver_all(b)(ip, k, j, i) = P_solver_s(i, ip);
                         }
                     );
                 }
@@ -544,15 +580,31 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
             static AllReduce<Real> max_norm;
             Kokkos::Max<Real> norm_max(max_norm.val);
             pmb_sub_step_init->par_reduce("max_norm", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-                KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i, double &local_result) {
+                KOKKOS_LAMBDA (const int& b, const int& k, const int& j, const int& i, Real& local_result) {
                     if (solve_norm_all(b, 0, k, j, i) > local_result) local_result = solve_norm_all(b, 0, k, j, i);
                 }
             , norm_max);
-            // Then MPI AllReduce to copy the global max to every rank
+            // Then MPI reduce AllReduce to copy the global max to every rank
             max_norm.StartReduce(MPI_MAX);
             while (max_norm.CheckReduce() == TaskStatus::incomplete);
             if (verbose >= 1 && MPIRank0()) printf("Iteration %d max L2 norm: %g\n", iter, max_norm.val);
-            // Break if it's less than the total tolerance we set.  TODO per-zone version of this?
+
+            // Count total number of solver fails
+            int nfails = 0;
+            Kokkos::Sum<int> sum_reducer(nfails);
+            pmb_sub_step_init->par_reduce("count_solver_fails", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+                KOKKOS_LAMBDA (const int& b, const int& k, const int& j, const int& i, int& local_result) {
+                    if (solve_fail_all(b, 0, k, j, i) == SolverStatus::fail) ++local_result;
+                }
+            , sum_reducer);
+            // Then MPI reduce AllReduce to copy the global max to every rank
+            static AllReduce<int> nfails_tot;
+            nfails_tot.val = nfails;
+            nfails_tot.StartReduce(MPI_SUM);
+            while (nfails_tot.CheckReduce() == TaskStatus::incomplete);
+            if (verbose >= 1 && MPIRank0()) printf("Number of failed zones: %d\n", nfails_tot.val);
+
+            // Break if max_norm is less than the total tolerance we set.  TODO per-zone version of this?
             if (iter >= iter_min && max_norm.val < rootfind_tol) break;
         }
     }
@@ -562,5 +614,4 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
     return TaskStatus::complete;
 
 }
-
 #endif

@@ -152,9 +152,12 @@ TaskStatus ApplyGRMHDFloors(MeshBlockData<Real> *rc, IndexDomain domain);
  * This function can be called even if the Floors package is not initialized.
  */
 TaskStatus ApplyInitialFloors(ParameterInput *pin, MeshBlockData<Real> *mbd, IndexDomain domain);
+
 /**
  * Print a summary of floors hit
  */
+
 TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md);
+
 
 } // namespace Floors

@@ -184,7 +184,6 @@ TaskStatus Flux::BlockPtoU_Send(MeshBlockData<Real> *rc, IndexDomain domain, boo
 
 void Flux::AddGeoSource(MeshData<Real> *md, MeshData<Real> *mdudt)
 {
-    Flag(mdudt, "Adding GRMHD source term");
     // Pointers
     auto pmesh = md->GetMeshPointer();
     auto pmb0  = md->GetBlockData(0)->GetBlockPointer();
@@ -235,6 +234,4 @@ void Flux::AddGeoSource(MeshData<Real> *md, MeshData<Real> *mdudt)
             VLOOP dUdt(b, m_u.U1 + v, k, j, i) += new_du[1 + v];
         }
     );
-
-    Flag(mdudt, "Added");
 }

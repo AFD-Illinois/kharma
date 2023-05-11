@@ -34,19 +34,21 @@ reconstruction = weno5
 implicit       = true
 
 <b_field>
-implicit = true
-type = monopole_cube
+implicit        = false
+initial_cleanup = false
 
 <driver>
 type = imex
 
 <implicit>
+min_nonlinear_iter  = 1
 max_nonlinear_iter  = 3
 rootfind_tol        = 1.e-20
 jacobian_delta      = 4.e-8
 linesearch          = true
 max_linesearch_iter = 3
 linesearch_eps      = 1.e-4
+use_qr              = true
 
 # IMPORTANT: This block must be present and values filled in all EGRMHD simulations
 <emhd>
@@ -54,17 +56,20 @@ on                 = true
 higher_order_terms = true
 feedback           = false
 
-closure_type       = kappa_eta
-tau                = 30.
-kappa              = 0.0
-eta                = 0.01
+conduction = false
+viscosity  = true
+
+closure_type = kappa_eta
+tau          = 30.
+eta          = 0.01
 
 <bondi>
 mdot = 1.0
 rs   = 8.0
 
 <floors>
-disable_floors = true
+disable_floors     = true
+enable_emhd_limits = false
 
 <bounds>
 check_inflow_outer = false
@@ -77,7 +82,7 @@ flag_verbose = 2
 file_type               = hdf5
 dt                      = 100.0
 single_precision_output = false
-variables               = prims.rho, prims.u, prims.uvec, prims.B, prims.q, prims.dP, solve_norm, solve_fail
+variables               = prims.rho, prims.u, prims.uvec, prims.B, prims.dP, solve_norm, solve_fail
 
 <parthenon/output1>
 file_type = hst

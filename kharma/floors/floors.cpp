@@ -247,6 +247,7 @@ TaskStatus Floors::ApplyGRMHDFloors(MeshBlockData<Real> *mbd, IndexDomain domain
     const IndexRange ib = mbd->GetBoundsI(domain);
     const IndexRange jb = mbd->GetBoundsJ(domain);
     const IndexRange kb = mbd->GetBoundsK(domain);
+    
     pmb->par_for("apply_floors", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
             if (((int) pflag(k, j, i)) >= (int) Inverter::Status::success) {

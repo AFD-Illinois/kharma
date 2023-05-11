@@ -80,6 +80,10 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
         std::cout << "Initializing problem: " << prob << std::endl;
     }
 
+    // Using EMHD package affects problem dispatch
+    // TODO(BSP) handle in fm_torus problem?
+    auto use_emhd = pin->GetOrAddBoolean("emhd", "on", false);
+
     // Breakout to call the appropriate initialization function,
     // defined in accompanying headers.
 
@@ -119,8 +123,10 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
     } else if (prob == "bondi_viscous") {
         status = InitializeBondi(rc, pin);
     // Everything
-    } else if (prob == "torus") {
+    } else if ((prob == "torus") && (!use_emhd)) {
         status = InitializeFMTorus(rc, pin);
+    } else if ((prob == "torus") && (use_emhd)){
+        status = InitializeFMTorusEMHD(rc, pin);
     } else if (prob == "resize_restart") {
         status = ReadIharmRestart(rc, pin);
     } else if (prob == "resize_restart_kharma") { // Hyerin
@@ -151,6 +157,15 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
             EMHD::InitEMHDVariables(rc, pin);
         }
     }
+
+    // Note that at this stage we have initialized the fluid primitives ONLY in the torus.
+    // What this means is that in the following `PtoU` call, we will get the NaNs for the conserved vars
+    // outside the torus since the floors are not called yet (we need conserved vars for NOF floors).
+    // In the subsequent `ApplyFloors` call we are able to initialize the NOF floors despite this
+    // because it falls back to fluid frame floors in the event the UtoP is unsuccessful.
+    // TODO: Maybe let the user know that despite asking for NOF floors, fluid frame floors will be applied
+    // the very first time during problem init.
+    // For now, I've opened an issue on github to address this.
 
     // Fill the conserved variables U,
     // which we'll usually treat as the independent/fundamental state.

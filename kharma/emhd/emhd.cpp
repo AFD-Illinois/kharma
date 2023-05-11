@@ -59,18 +59,30 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     // These are always necessary for performing EGRMHD.
 
     bool higher_order_terms  = pin->GetOrAddBoolean("emhd", "higher_order_terms", false);
+    params.Add("higher_order_terms", higher_order_terms);
     std::string closure_type = pin->GetOrAddString("emhd", "closure_type", "torus");
+    params.Add("closure_type", closure_type);
 
     // Should the EMHD sector feedback onto the ideal MHD variables? The default is 'yes'.
     // So far it's just the viscous Bondi problem that doesn't require feedback
     bool feedback = pin->GetOrAddBoolean("emhd", "feedback", true);
+    params.Add("feedback", feedback);
+
+    bool conduction = pin->GetOrAddBoolean("emhd", "conduction", true);
+    params.Add("conduction", conduction);
+    bool viscosity = pin->GetOrAddBoolean("emhd", "viscosity", true);
+    params.Add("viscosity", viscosity);
 
     Real tau              = pin->GetOrAddReal("emhd", "tau", 1.0);
     Real conduction_alpha = pin->GetOrAddReal("emhd", "conduction_alpha", 1.0);
+    params.Add("conduction_alpha", conduction_alpha);
     Real viscosity_alpha  = pin->GetOrAddReal("emhd", "viscosity_alpha", 1.0);
+    params.Add("viscosity_alpha", viscosity_alpha);
     
     Real kappa = pin->GetOrAddReal("emhd", "kappa", 1.0);
+    params.Add("kappa", kappa);
     Real eta   = pin->GetOrAddReal("emhd", "eta", 1.0);
+    params.Add("eta", eta);
 
     EMHD_parameters emhd_params;
     emhd_params.higher_order_terms = higher_order_terms;
@@ -86,6 +98,8 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     } else {
         throw std::invalid_argument("Invalid Closure type: "+closure_type+". Use constant, sound_speed, or torus");
     }
+    emhd_params.conduction       = conduction;
+    emhd_params.viscosity        = viscosity;
     emhd_params.tau              = tau;
     emhd_params.conduction_alpha = conduction_alpha;
     emhd_params.viscosity_alpha  = viscosity_alpha;
@@ -124,11 +138,15 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
                                 Metadata::FillGhost, Metadata::Restart, Metadata::GetUserFlag("Primitive"), Metadata::GetUserFlag("EMHD")});
 
     // Heat conduction
-    pkg->AddField("cons.q", m_con);
-    pkg->AddField("prims.q", m_prim);
+    if (conduction) {
+        pkg->AddField("cons.q", m_con);
+        pkg->AddField("prims.q", m_prim);
+    }
     // Pressure anisotropy
-    pkg->AddField("cons.dP", m_con);
-    pkg->AddField("prims.dP", m_prim);
+    if (viscosity) {
+        pkg->AddField("cons.dP", m_con);
+        pkg->AddField("prims.dP", m_prim);
+    }
 
     // 4vel ucov and temperature Theta are needed as temporaries, but need to be grid-sized anyway.
     // Allow keeping/saving them.
@@ -221,7 +239,8 @@ TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
             // and the 4-vectors
             FourVectors D;
             GRMHD::calc_4vecs(G, P(b), m_p, k, j, i, Loci::center, D);
-            double bsq = m::max(dot(D.bcon, D.bcov), SMALL);
+            const double bsq = m::max(dot(D.bcon, D.bcov), SMALL);
+            const double mag_b = m::sqrt(bsq);
 
             // Compute gradient of ucov and Theta
             Real grad_ucov[GR_DIM][GR_DIM], grad_Theta[GR_DIM];
@@ -233,31 +252,35 @@ TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
             DLOOP2 div_ucon += G.gcon(Loci::center, j, i, mu, nu) * grad_ucov[mu][nu];
 
             // Compute+add explicit source terms (conduction and viscosity)
-            const Real& rho     = P(b)(m_p.RHO, k, j, i);
-            const Real& qtilde  = P(b)(m_p.Q, k, j, i);
-            const Real& dPtilde = P(b)(m_p.DP, k, j, i);
+            const Real& rho = P(b)(m_p.RHO, k, j, i);
             const Real& Theta   = Temps(b)(m_theta, k, j, i);
 
-            Real q0    = 0;
-            DLOOP1 q0 -= rho * chi_e * (D.bcon[mu] / m::sqrt(bsq)) * grad_Theta[mu];
-            DLOOP2 q0 -= rho * chi_e * (D.bcon[mu] / m::sqrt(bsq)) * Theta * D.ucon[nu] * grad_ucov[nu][mu];
 
-            Real dP0     = -rho * nu_e * div_ucon;
-            DLOOP2  dP0 += 3. * rho * nu_e * (D.bcon[mu] * D.bcon[nu] / bsq) * grad_ucov[mu][nu];
+            if (emhd_params.conduction) {
+                const Real& qtilde = P(b)(m_p.Q, k, j, i);
+                Real q0            = 0;
+                DLOOP1 q0         -= rho * chi_e * (D.bcon[mu] / mag_b) * grad_Theta[mu];
+                DLOOP2 q0         -= rho * chi_e * (D.bcon[mu] / mag_b) * Theta * D.ucon[nu] * grad_ucov[nu][mu];
+                Real q0_tilde      = q0; 
+                if (emhd_params.higher_order_terms)
+                    q0_tilde *= (chi_e != 0) * m::sqrt(tau / (chi_e * rho * Theta * Theta) );
 
-            Real q0_tilde  = q0; 
-            Real dP0_tilde = dP0;
-            if (emhd_params.higher_order_terms) {
-                q0_tilde  *= (chi_e != 0) ? m::sqrt(tau / (chi_e * rho * Theta * Theta)) : 0.;
-                dP0_tilde *= (nu_e  != 0) ? m::sqrt(tau / (nu_e * rho * Theta) ) : 0.;
+                dUdt(b, m_u.Q, k, j, i)  += G.gdet(Loci::center, j, i) * q0_tilde / tau;
+                if (emhd_params.higher_order_terms)
+                    dUdt(b, m_u.Q, k, j, i)  += G.gdet(Loci::center, j, i) * (qtilde / 2.) * div_ucon;
             }
 
-            dUdt(b, m_u.Q, k, j, i)  += G.gdet(Loci::center, j, i) * q0_tilde / tau;
-            dUdt(b, m_u.DP, k, j, i) += G.gdet(Loci::center, j, i) * dP0_tilde / tau;
+            if (emhd_params.viscosity) {
+                const Real& dPtilde = P(b)(m_p.DP, k, j, i);
+                Real dP0            = -rho * nu_e * div_ucon;
+                DLOOP2  dP0        += 3. * rho * nu_e * (D.bcon[mu] * D.bcon[nu] / bsq) * grad_ucov[mu][nu];
+                Real dP0_tilde      = dP0;
+                if (emhd_params.higher_order_terms)
+                    dP0_tilde *= (nu_e != 0) * m::sqrt(tau / (nu_e * rho * Theta) );
 
-            if (emhd_params.higher_order_terms) {
-                dUdt(b, m_u.Q, k, j, i)  += G.gdet(Loci::center, j, i) * (qtilde / 2.) * div_ucon;
-                dUdt(b, m_u.DP, k, j, i) += G.gdet(Loci::center, j, i) * (dPtilde / 2.) * div_ucon;
+                dUdt(b, m_u.DP, k, j, i) += G.gdet(Loci::center, j, i) * dP0_tilde / tau;
+                if (emhd_params.higher_order_terms)
+                    dUdt(b, m_u.DP, k, j, i) += G.gdet(Loci::center, j, i) * (dPtilde / 2.) * div_ucon;
             }
         }
     );
