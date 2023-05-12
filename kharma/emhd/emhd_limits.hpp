@@ -88,7 +88,7 @@ KOKKOS_INLINE_FUNCTION int apply_instability_limits(const GRCoordinates& G, cons
 
 
     if (emhd_params.conduction) {
-        Real qmax         = 1.07 * rho * m::pow(cs, 3.);
+        Real qmax         = 1.07 * rho * cs*cs*cs;
         Real max_frac     = m::max(m::abs(q) / qmax, 1.);
         if (fabs(q) / qmax > 1.)
             eflag |= HIT_Q_LIMIT;
