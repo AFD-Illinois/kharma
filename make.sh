@@ -151,6 +151,7 @@ fi
 # Outer: SIMDFOR_LOOP;MANUAL1D_LOOP;MDRANGE_LOOP;TPTTR_LOOP;TPTVR_LOOP;TPTTRTVR_LOOP
 # Inner: SIMDFOR_INNER_LOOP;TVR_INNER_LOOP
 if [[ "$ARGS" == *"sycl"* ]]; then
+  # Only icpx can compile SYCL currently
   export CXX=icpx
   export CC=icx
   OUTER_LAYOUT="MANUAL1D_LOOP"
@@ -160,8 +161,7 @@ if [[ "$ARGS" == *"sycl"* ]]; then
   ENABLE_SYCL="ON"
   ENABLE_HIP="OFF"
 elif [[ "$ARGS" == *"hip"* ]]; then
-  export CXX=hipcc
-  # Is there a hipc?
+  export CXX="$CXX_NATIVE"
   export CC="$C_NATIVE"
   OUTER_LAYOUT="MANUAL1D_LOOP"
   INNER_LAYOUT="TVR_INNER_LOOP"
@@ -273,8 +273,13 @@ fi
 # delete the build directory
 if [[ "$ARGS" == *"clean"* ]]; then
   cd external/parthenon
-  git apply ../patches/parthenon-*.patch
+  git apply -q ../patches/parthenon-*.patch
   cd -
+  if [[ "$ARGS" == *"hip"* ]]; then
+    cd external/variant
+    git apply -q ../patches/variant-hip.patch
+    cd -
+  fi
 
   rm -rf build
 fi

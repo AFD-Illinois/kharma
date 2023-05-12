@@ -67,7 +67,7 @@ Real Reductions::EHReduction(MeshData<Real> *md, UserHistoryOperation op, std::f
                 Kokkos::Sum<Real> sum_reducer(block_result);
                 pmb->par_reduce("accretion_sum", kb.s, kb.e, jb.s, jb.e, ib.s+zone, ib.s+zone,
                     KOKKOS_LAMBDA (const int &k, const int &j, const int &i, double &local_result) {
-                        local_result += fn(G, P, m_p, U, m_u, gam, k, j, i) * G.Dxc<3>(k) * G.Dxc<2>(j);
+                        //local_result += fn(G, P, m_p, U, m_u, gam, k, j, i) * G.Dxc<3>(k) * G.Dxc<2>(j);
                     }
                 , sum_reducer);
                 result += block_result;
@@ -77,7 +77,7 @@ Real Reductions::EHReduction(MeshData<Real> *md, UserHistoryOperation op, std::f
                 Kokkos::Max<Real> max_reducer(block_result);
                 pmb->par_reduce("accretion_sum", kb.s, kb.e, jb.s, jb.e, ib.s+zone, ib.s+zone,
                     KOKKOS_LAMBDA (const int &k, const int &j, const int &i, double &local_result) {
-                        const Real val = fn(G, P, m_p, U, m_u, gam, k, j, i) * G.Dxc<3>(k) * G.Dxc<2>(j);
+                        const Real val = 0.; //fn(G, P, m_p, U, m_u, gam, k, j, i) * G.Dxc<3>(k) * G.Dxc<2>(j);
                         if (val > local_result) local_result = val;
                     }
                 , max_reducer);
@@ -88,7 +88,7 @@ Real Reductions::EHReduction(MeshData<Real> *md, UserHistoryOperation op, std::f
                 Kokkos::Min<Real> min_reducer(block_result);
                 pmb->par_reduce("accretion_sum", kb.s, kb.e, jb.s, jb.e, ib.s+zone, ib.s+zone,
                     KOKKOS_LAMBDA (const int &k, const int &j, const int &i, double &local_result) {
-                        const Real val = fn(G, P, m_p, U, m_u, gam, k, j, i) * G.Dxc<3>(k) * G.Dxc<2>(j);
+                        const Real val = 0.; //fn(G, P, m_p, U, m_u, gam, k, j, i) * G.Dxc<3>(k) * G.Dxc<2>(j);
                         if (val < local_result) local_result = val;
                     }
                 , min_reducer);
@@ -131,7 +131,7 @@ Real Reductions::DomainReduction(MeshData<Real> *md, UserHistoryOperation op, st
         pmb0->par_reduce("domain_sum", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
             KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i, double &local_result) {
                 const auto& G = U.GetCoords(b);
-                local_result += fn(G, P(b), m_p, U(b), m_u, gam, k, j, i, arg) * G.Dxc<3>(k) * G.Dxc<2>(j) * G.Dxc<1>(i);
+                //local_result += fn(G, P(b), m_p, U(b), m_u, gam, k, j, i, arg) * G.Dxc<3>(k) * G.Dxc<2>(j) * G.Dxc<1>(i);
             }
         , sum_reducer);
         break;
@@ -141,7 +141,7 @@ Real Reductions::DomainReduction(MeshData<Real> *md, UserHistoryOperation op, st
         pmb0->par_reduce("domain_max", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
             KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i, double &local_result) {
                 const auto& G = U.GetCoords(b);
-                const Real val = fn(G, P(b), m_p, U(b), m_u, gam, k, j, i, arg) * G.Dxc<3>(k) * G.Dxc<2>(j) * G.Dxc<1>(i);
+                const Real val = 0.; //fn(G, P(b), m_p, U(b), m_u, gam, k, j, i, arg) * G.Dxc<3>(k) * G.Dxc<2>(j) * G.Dxc<1>(i);
                 if (val > local_result) local_result = val;
             }
         , max_reducer);
@@ -152,7 +152,7 @@ Real Reductions::DomainReduction(MeshData<Real> *md, UserHistoryOperation op, st
         pmb0->par_reduce("domain_min", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
             KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i, double &local_result) {
                 const auto& G = U.GetCoords(b);
-                const Real val = fn(G, P(b), m_p, U(b), m_u, gam, k, j, i, arg) * G.Dxc<3>(k) * G.Dxc<2>(j) * G.Dxc<1>(i);
+                const Real val = 0.; //fn(G, P(b), m_p, U(b), m_u, gam, k, j, i, arg) * G.Dxc<3>(k) * G.Dxc<2>(j) * G.Dxc<1>(i);
                 if (val < local_result) local_result = val;
             }
         , min_reducer);

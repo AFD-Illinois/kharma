@@ -1,0 +1,19 @@
+#!/bin/bash
+#SBATCH -A AST185
+#SBATCH -p batch
+#SBATCH -J KHARMA
+
+#SBATCH -q debug
+#SBATCH -t 2:00:00
+
+#SBATCH -N 1
+#SBATCH -o out-%j.txt
+
+
+KHARMA_DIR=~/kharma
+
+export OMP_PROC_BIND=spread
+export OMP_PLACES=threads
+export KOKKOS_MAP_DEVICE_ID_BY=mpi_rank
+
+srun $KHARMA_DIR/kharma.hip "$@"
