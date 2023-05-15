@@ -250,7 +250,14 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
         // relevant ghost zone ranks will get to use all the same neighbors as if they were in the bulk
         auto t_fix_p = tl.AddTask(t_none, Inverter::FixUtoP, mbd_sub_step_final.get());
 
-        auto t_set_bc = tl.AddTask(t_fix_p, parthenon::ApplyBoundaryConditions, mbd_sub_step_final);
+        // Fix unconverged (bad) zones in the solver
+        // TODO fixups as a callback?
+        auto t_fix_solve = t_fix_p;
+        if (pkgs.at("GRMHD")->Param<bool>("implicit")) {
+            t_fix_solve = tl.AddTask(t_fix_p, Implicit::FixSolve, mbd_sub_step_final.get());
+        }
+
+        auto t_set_bc = tl.AddTask(t_fix_solve, parthenon::ApplyBoundaryConditions, mbd_sub_step_final);
 
         // Any package- (likely, problem-) specific source terms which must be applied to primitive variables
         // Apply these only after the final step so they're operator-split

@@ -38,6 +38,7 @@
 #include "grmhd.hpp"
 #include "grmhd_functions.hpp"
 #include "pack.hpp"
+#include "reductions.hpp"
 
 #if DISABLE_IMPLICIT
 
@@ -328,8 +329,7 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
                             if (iter == 1) {
                                 // New beginnings
                                 solve_fail_s(i) = SolverStatus::converged;
-                            }
-                            else {
+                            } else {
                                 // Need this to check if the zone had failed in any of the previous iterations.
                                 // If so, we don't attempt to update it again in the implicit solver.
                                 solve_fail_s(i) = solve_fail_all(b, 0, k, j, i);
@@ -409,7 +409,7 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
                                         emhd_params_sub_step_init, nvar, nfvar, k, j, i, delta, gam, dt, jacobian, residual);
                             // Solve against the negative residual
                             FLOOP delta_prim(ip) = -residual(ip);
-#if 1
+#if 0
                         }
                     }
                 );
@@ -444,7 +444,7 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
                                 KokkosBatched::SerialApplyPivot<KokkosBatched::Side::Left,KokkosBatched::Direct::Backward>
                                     ::invoke(pivot, delta_prim);
                             }
-#if 1
+#if 0
                         }
                     }
                 );
@@ -496,8 +496,7 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
                             }
 
                             // If the solver failed, we don't want to update the implicit primitives for those zones
-                            if (solve_fail() != SolverStatus::fail)
-                            {
+                            if (solve_fail() != SolverStatus::fail) {
                                 // Linesearch
                                 if (linesearch) {
                                     solve_norm()        = 0;
@@ -589,6 +588,7 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
             if (verbose >= 1 && MPIRank0()) printf("Iteration %d max L2 norm: %g\n", iter, max_norm.val);
 
             // Count total number of solver fails
+            // TODO move reductions like this to PostStep
             int nfails = 0;
             Kokkos::Sum<int> sum_reducer(nfails);
             pmb_sub_step_init->par_reduce("count_solver_fails", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
@@ -613,4 +613,24 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
     return TaskStatus::complete;
 
 }
+
+TaskStatus Implicit::PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
+{
+    Flag("Printing Implicit solver diagnostics");
+    auto pmesh = md->GetMeshPointer();
+    auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
+    // Options
+    const auto& pars = pmesh->packages.Get("Globals")->AllParams();
+    const int flag_verbose = pars.Get<int>("flag_verbose");
+
+    // Debugging/diagnostic info about implicit solver
+    // TODO status names
+    // if (flag_verbose >= 1) {
+    //     int nflags = Reductions::CountFlags(md, "solve_fail", Implicit::status_names, IndexDomain::interior, flag_verbose, false);
+    //     // TODO TODO yell here if there are too many flags
+    // }
+
+    return TaskStatus::complete;
+}
+
 #endif
