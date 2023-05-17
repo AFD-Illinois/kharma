@@ -80,10 +80,6 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
         std::cout << "Initializing problem: " << prob << std::endl;
     }
 
-    // Using EMHD package affects problem dispatch
-    // TODO(BSP) handle in fm_torus problem?
-    auto use_emhd = pin->GetOrAddBoolean("emhd", "on", false);
-
     // Breakout to call the appropriate initialization function,
     // defined in accompanying headers.
 
@@ -120,13 +116,9 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
         status = InitializeEMHDShock(rc, pin);
     } else if (prob == "conducting_atmosphere") {
         status = InitializeAtmosphere(rc, pin);
-    } else if (prob == "bondi_viscous") {
-        status = InitializeBondi(rc, pin);
     // Everything
-    } else if ((prob == "torus") && (!use_emhd)) {
+    } else if (prob == "torus") {
         status = InitializeFMTorus(rc, pin);
-    } else if ((prob == "torus") && (use_emhd)){
-        status = InitializeFMTorusEMHD(rc, pin);
     } else if (prob == "resize_restart") {
         status = ReadIharmRestart(rc, pin);
     } else if (prob == "resize_restart_kharma") { // Hyerin
@@ -173,6 +165,10 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
     Flux::BlockPtoU(rc.get(), IndexDomain::interior);
 
     // Floors are NOT automatically applied at this point anymore.
+    // If needed, they should be applied inside the problem's InitializeXXXX
+
+    // Finally, freeze in the current ghost zone values if using Dirichlet conditions
+    KBoundaries::FreezeDirichletBlock(rc.get());
 
     EndFlag("Initialize "+prob);
 }

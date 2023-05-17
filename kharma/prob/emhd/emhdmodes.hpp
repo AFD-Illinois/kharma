@@ -62,8 +62,7 @@ TaskStatus InitializeEMHDModes(std::shared_ptr<MeshBlockData<Real>>& rc, Paramet
 
     const Real amp = pin->GetOrAddReal("emhdmodes", "amp", 1e-8);
 
-    const auto& emhd_pars = pmb->packages.Get("EMHD")->AllParams();
-    const EMHD::EMHD_parameters& emhd_params = emhd_pars.Get<EMHD::EMHD_parameters>("emhd_params");
+    const EMHD::EMHD_parameters& emhd_params = EMHD::GetEMHDParameters(pmb->packages);
     const auto& grmhd_pars = pmb->packages.Get("GRMHD")->AllParams();
     const Real& gam = grmhd_pars.Get<Real>("gamma");
 

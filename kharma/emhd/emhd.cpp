@@ -118,14 +118,9 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     // We would want this for the torus runs but not for the test problems. 
     // For eg: we know that this affects the viscous bondi problem
     bool enable_emhd_limits = pin->GetOrAddBoolean("floors", "emhd_limits", false) ||
-                                pin->GetOrAddBoolean("emhd", "limits", false);
+                                pin->GetOrAddBoolean("emhd", "stability_limits", false);
     // Only enable limits internally if we're actually doing EMHD
     params.Add("enable_emhd_limits", enable_emhd_limits);
-
-    // Update variable numbers
-    auto& driver = packages->Get("Driver")->AllParams();
-    int n_current = driver.Get<int>("n_implicit_vars");
-    driver.Update("n_implicit_vars", n_current+2);
 
     Metadata::AddUserFlag("EMHD");
 

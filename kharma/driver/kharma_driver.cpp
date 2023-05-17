@@ -108,10 +108,6 @@ std::shared_ptr<KHARMAPackage> KHARMADriver::Initialize(ParameterInput *pin, std
     Metadata::AddUserFlag("Implicit");
     Metadata::AddUserFlag("Explicit");
 
-    // Keep track of numbers of variables
-    params.Add("n_explicit_vars", 0, true);
-    params.Add("n_implicit_vars", 0, true);
-
     return pkg;
 }
 

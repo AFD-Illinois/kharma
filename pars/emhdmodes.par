@@ -58,7 +58,6 @@ amp = 1e-8
 
 <floors>
 disable_floors = true
-enable_emhd_limits = false
 
 <implicit>
 min_nonlinear_iter  = 1
@@ -87,6 +86,7 @@ flag_verbose = 0
 on                 = true
 higher_order_terms = false
 feedback           = true
+stability_limits   = true
 
 conduction = true
 viscosity  = true

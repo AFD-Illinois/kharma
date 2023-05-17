@@ -37,6 +37,7 @@
 #include "debug.hpp"
 #include "grmhd.hpp"
 #include "grmhd_functions.hpp"
+#include "kharma.hpp"
 #include "pack.hpp"
 #include "reductions.hpp"
 
@@ -86,6 +87,9 @@ std::shared_ptr<KHARMAPackage> Implicit::Initialize(ParameterInput *pin, std::sh
     auto pkg = std::make_shared<KHARMAPackage>("Implicit");
     Params &params = pkg->AllParams();
 
+    // Implicit evolution must use predictor-corrector i.e. "vl2" integrator
+    pin->SetString("parthenon/time", "integrator", "vl2");
+
     // Implicit solver parameters
     Real jacobian_delta = pin->GetOrAddReal("implicit", "jacobian_delta", 4.e-8);
     params.Add("jacobian_delta", jacobian_delta);
@@ -117,28 +121,16 @@ std::shared_ptr<KHARMAPackage> Implicit::Initialize(ParameterInput *pin, std::sh
     m_real = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy, Metadata::FillGhost});
     pkg->AddField("solve_fail", m_real); // TODO: Replace with m_int once Integer is supported for CellVariable
 
-    // TODO: Find a way to save all residuals based on a runtime parameter, e.g. below. We don't want to allocate 
-    // a vector field equal to the number of implicit variables over the entire meshblock if we don't have to.
-    
     // Should the solve save the residual vector field? Useful for debugging purposes. Default is NO.
-    // bool save_residual = pin->GetOrAddBoolean("implicit", "save_residual", false);
-    // params.Add("save_residual", save_residual);
+    bool save_residual = pin->GetOrAddBoolean("implicit", "save_residual", false);
+    params.Add("save_residual", save_residual);
+    if (save_residual) {
+        int nvars_implicit  = KHARMA::CountVars(packages.get(), Metadata::GetUserFlag("Implicit"));
 
-    // Vector field to store residual components (only for those variables that are evolved implicitly)
-    // if (save_residual) {
-    //     auto driver_type    = pin->GetString("driver", "type");
-    //     bool grmhd_implicit = (driver_type == "imex") && (pin->GetBoolean("emhd", "on") || pin->GetOrAddBoolean("GRMHD", "implicit", false));
-    //     bool implicit_b     = (driver_type == "imex") && (pin->GetOrAddBoolean("b_field", "implicit", grmhd_implicit));
-    //     bool emhd_enabled   = pin->GetOrAddBoolean("emhd", "on", false);
-    //     int nvars_implicit  = // Get this from "Driver"
-        
-    //     // flags_vec = std::vector<MetadataFlag>({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
-    //     // auto flags_vec(flags_vec);
-    //     // flags_vec.push_back(Metadata::Vector);
-    //     std::vector<int> s_vector({nfvar});
-    //     Metadata m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy}, s_vector);
-    //     pkg->AddField("residual", m);
-    // }
+        std::vector<int> s_vars_implicit({nvars_implicit});
+        Metadata m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy}, s_vars_implicit);
+        pkg->AddField("residual", m);
+    }
 
     return pkg;
 }

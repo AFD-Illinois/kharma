@@ -17,8 +17,8 @@ MPI_NUM_PROCS=${MPI_NUM_PROCS:-1}
 MPI_EXTRA_ARGS=${MPI_EXTRA_ARGS:-}
 
 # Default OpenMP directives: use all available threads
-export OMP_PROC_BIND=${OMP_PROC_BIND:-spread}
-export OMP_PLACES=${OMP_PLACES:-threads}
+#export OMP_PROC_BIND=${OMP_PROC_BIND:-spread}
+#export OMP_PLACES=${OMP_PLACES:-threads}
 # Force a number of OpenMP threads if it doesn't autodetect
 #export OMP_NUM_THREADS=28
 
@@ -65,6 +65,11 @@ if [[ "$1" == "-n" ]]; then
 fi
 if [[ "$1" == "-nt" ]]; then
   export OMP_NUM_THREADS="$2"
+  shift
+  shift
+fi
+if [[ "$1" == "-b" ]]; then
+  EXE_NAME="$2"
   shift
   shift
 fi

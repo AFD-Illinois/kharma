@@ -53,6 +53,7 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
     bool spherical = pin->GetBoolean("coordinates", "spherical");
     // Global check inflow sets inner/outer X1 by default
     bool check_inflow_global = pin->GetOrAddBoolean("boundaries", "check_inflow", spherical);
+    // TODO TODO Support old option names check_inflow_inner, check_inflow_outer
 
     // Ensure fluxes through the zero-size face at the pole are zero
     bool zero_polar_flux = pin->GetOrAddBoolean("boundaries", "zero_polar_flux", spherical);
@@ -76,23 +77,7 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
     Metadata m_x1, m_x2, m_x3;
     {
         // We can't use GetVariablesByFlag yet, so walk through and count manually
-        int nvar = 0;
-        for (auto pkg : packages->AllPackages()) {
-            for (auto field : pkg.second->AllFields()) {
-                // Specifically ignore the B_Cleanup variables, we don't handle their boundary conditions
-                // TODO "Present" or "Has" in Packages_t
-                bool is_not_cleanup = packages->AllPackages().count("B_Cleanup")
-                                        ? !field.second.IsSet(Metadata::GetUserFlag("B_Cleanup"))
-                                        : true;
-                if (field.second.IsSet(Metadata::FillGhost) && is_not_cleanup) {
-                    if (field.second.Shape().size() < 1) {
-                        nvar += 1;
-                    } else {
-                        nvar += field.second.Shape()[0];
-                    }
-                }
-            }
-        }
+        int nvar = KHARMA::CountVars(packages.get(), Metadata::FillGhost);
 
         // We also don't know the mesh size, since it's not constructed.  We infer.
         const int ng = pin->GetInteger("parthenon/mesh", "nghost");

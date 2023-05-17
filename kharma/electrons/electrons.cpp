@@ -175,15 +175,6 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     // TODO if nKs == 1 then rename Kel_Whatever -> Kel?
     // TODO record nKs and find a nice way to loop/vector the device-side layout?
 
-    // Update variable numbers
-    if (implicit_e) {
-        int n_current = driver.Get<int>("n_implicit_vars");
-        driver.Update("n_implicit_vars", n_current+nKs);
-    } else {
-        int n_current = driver.Get<int>("n_explicit_vars");
-        driver.Update("n_explicit_vars", n_current+nKs);
-    }
-
     // Problem-specific fields
     if (packages->Get("Globals")->Param<std::string>("problem") == "driven_turbulence") {
         std::vector<int> s_vector({2});

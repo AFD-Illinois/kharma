@@ -57,16 +57,6 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     // Maximum between MPI processes, updated after each step; that is, always a maximum.
     params.Add("ctop_max_last", 0.0, true);
 
-    // Update variable numbers
-    // auto& driver = packages->Get("Driver")->AllParams();
-    // if (implicit_b) {
-    //     int n_current = driver.Get<int>("n_implicit_vars");
-    //     driver.Update("n_implicit_vars", n_current+3);
-    // } else {
-    //     int n_current = driver.Get<int>("n_explicit_vars");
-    //     driver.Update("n_explicit_vars", n_current+3);
-    // }
-
     std::vector<int> s_vector({NVEC});
 
     // B field as usual

@@ -92,15 +92,6 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     bool implicit_b = pin->GetOrAddBoolean("b_field", "implicit", false);
     params.Add("implicit", implicit_b);
 
-    // Update variable numbers
-    if (implicit_b) {
-        int n_current = driver.Get<int>("n_implicit_vars");
-        driver.Update("n_implicit_vars", n_current+3);
-    } else {
-        int n_current = driver.Get<int>("n_explicit_vars");
-        driver.Update("n_explicit_vars", n_current+3);
-    }
-
     params.Add("divb_reducer", AllReduce<Real>());
 
     // FIELDS

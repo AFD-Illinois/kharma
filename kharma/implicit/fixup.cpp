@@ -53,13 +53,11 @@ TaskStatus Implicit::FixSolve(MeshBlockData<Real> *mbd) {
     const auto& G = pmb->coords;
 
     GridScalar solve_fail = mbd->Get("solve_fail").data;
-    GridScalar fflag      = mbd->Get("fflag").data;
 
     const Real gam    = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
     // TODO flag_verbose here. Merge with other fixup into separate package or in GRMHD?
     // We'll want to try new in-depth fixes w/implicit as we go...
-    const int verbose = pmb->packages.Get("Globals")->Param<int>("verbose");
-    const Floors::Prescription floors(pmb->packages.Get("Floors")->AllParams());
+    const int flag_verbose = pmb->packages.Get("Globals")->Param<int>("flag_verbose");
 
     // Boundaries were synced just before the call to this function (cf. imex_driver.cpp). 
     // Which means unsuccessful values were copied to ghost zones. Therefore, we need to loop over entire domain.
@@ -119,7 +117,7 @@ TaskStatus Implicit::FixSolve(MeshBlockData<Real> *mbd) {
                 if(wsum < 1.e-10) {
                     // TODO probably should crash here. Or average anyway?
 #ifndef KOKKOS_ENABLE_SYCL
-                    if (verbose >= 1 && inside(k, j, i, kb_b, jb_b, ib_b)) // If an interior zone...
+                    if (flag_verbose >= 3 && inside(k, j, i, kb_b, jb_b, ib_b)) // If an interior zone...
                         printf("No neighbors were available at %d %d %d!\n", i, j, k);
 #endif // TODO SYCL has cout
                 } else {
@@ -135,15 +133,13 @@ TaskStatus Implicit::FixSolve(MeshBlockData<Real> *mbd) {
     auto& P_all = mbd->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("Primitive")}, prims_map);
     auto& U_all = mbd->PackVariables(std::vector<MetadataFlag>{Metadata::Conserved}, cons_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
-    // Get new sizes
-    const int nvar = P_all.GetDim(4);
 
     // Need emhd_params object
     EMHD_parameters emhd_params = EMHD::GetEMHDParameters(pmb->packages);
 
     pmb->par_for("fix_solver_failures_PtoU", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA (const int& k, const int& j, const int& i) {
-            if (( solve_fail(k, j, i)) == SolverStatus::fail)
+            if (solve_fail(k, j, i) == SolverStatus::fail)
                 Flux::p_to_u(G, P_all, m_p, emhd_params, gam, k, j, i, U_all, m_u);
         }
     );

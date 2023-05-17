@@ -112,15 +112,6 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
                           (pin->GetBoolean("emhd", "on") || pin->GetOrAddBoolean("GRMHD", "implicit", false));
     params.Add("implicit", implicit_grmhd);
 
-    // Update variable numbers
-    if (implicit_grmhd) {
-        int n_current = driver.Get<int>("n_implicit_vars");
-        driver.Update("n_implicit_vars", n_current+5);
-    } else {
-        int n_current = driver.Get<int>("n_explicit_vars");
-        driver.Update("n_explicit_vars", n_current+5);
-    }
-
     // AMR PARAMETERS
     // Adaptive mesh refinement options
     // Only active if "refinement" and "numlevel" parameters allow
@@ -264,7 +255,7 @@ Real EstimateTimestep(MeshBlockData<Real> *rc)
 
     typename Kokkos::MinMax<Real>::value_type minmax;
     pmb->par_reduce("ndt_min", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-        KOKKOS_LAMBDA(const int k, const int j, const int i,
+        KOKKOS_LAMBDA (const int k, const int j, const int i,
                       typename Kokkos::MinMax<Real>::value_type &lminmax) {
             double ndt_zone = 1 / (1 / (G.Dxc<1>(i) / ctop(0, k, j, i)) +
                                    1 / (G.Dxc<2>(j) / ctop(1, k, j, i)) +

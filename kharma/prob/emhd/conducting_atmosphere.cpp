@@ -34,6 +34,7 @@
 
 #include "emhd/conducting_atmosphere.hpp"
 
+#include "b_flux_ct.hpp"
 #include "boundaries.hpp"
 #include "coordinate_utils.hpp"
 
@@ -54,15 +55,8 @@ TaskStatus InitializeAtmosphere(std::shared_ptr<MeshBlockData<Real>>& rc, Parame
 
     // Obtain EMHD params
     const bool use_emhd     = pmb->packages.AllPackages().count("EMHD");
-    bool higher_order_terms = false;
-    EMHD::EMHD_parameters emhd_params_tmp;
-    if (use_emhd) {
-        std::cout << "Hydrostatic atmosphere will be conducting w/EMHD" << std::endl;
-        const auto& emhd_pars = pmb->packages.Get("EMHD")->AllParams();
-        emhd_params_tmp       = emhd_pars.Get<EMHD::EMHD_parameters>("emhd_params");
-        higher_order_terms    = emhd_params_tmp.higher_order_terms;
-    }
-    const EMHD::EMHD_parameters& emhd_params = emhd_params_tmp;
+    EMHD::EMHD_parameters emhd_params = EMHD::GetEMHDParameters(pmb->packages);
+    emhd_params.higher_order_terms = false;
 
     // Obtain GRMHD params
     const auto& grmhd_pars = pmb->packages.Get("GRMHD")->AllParams();
@@ -148,6 +142,7 @@ TaskStatus InitializeAtmosphere(std::shared_ptr<MeshBlockData<Real>>& rc, Parame
     }
 
     // Initialize primitives
+    // TODO read->copy->assign on device?
     double rho_temp, u_temp, q_temp;
 
     for (int i = ib.s; i <= ib.e; i++) {
@@ -173,7 +168,7 @@ TaskStatus InitializeAtmosphere(std::shared_ptr<MeshBlockData<Real>>& rc, Parame
                 uvec_host(V1, k, j, i) = 0.;
                 uvec_host(V2, k, j, i) = 0.;
                 uvec_host(V3, k, j, i) = 0.;
-                B_host(V1, k, j, i)    = 1./pow(Xembed[1], 3.);
+                B_host(V1, k, j, i)    = 1./(Xembed[1]*Xembed[1]*Xembed[1]);
                 B_host(V2, k, j, i)    = 0.;
                 B_host(V3, k, j, i)    = 0.;
                 if (use_emhd)
@@ -187,28 +182,21 @@ TaskStatus InitializeAtmosphere(std::shared_ptr<MeshBlockData<Real>>& rc, Parame
                 Real ucon[GR_DIM]         = {0};
                 Real gcov[GR_DIM][GR_DIM] = {0};
                 Real gcon[GR_DIM][GR_DIM] = {0};
-                G.gcov(Loci::center, j, i, gcov);
-                G.gcon(Loci::center, j, i, gcon);
+                // Use functions because we're host-side
+                G.coords.gcov_native(Xnative, gcov);
+                G.coords.gcon_native(Xnative, gcon);
 
-                ucon[0] = 1./sqrt(-gcov[0][0]);
+                ucon[0] = 1. / m::sqrt(-gcov[0][0]);
                 ucon[1] = 0.;
                 ucon[2] = 0.;
                 ucon[3] = 0.;
 
-                double alpha, beta[GR_DIM], gamma;
-
-                // Solve for primitive velocities (utilde)
-                alpha = 1/sqrt(-gcon[0][0]);
-                gamma = ucon[0] * alpha;
-
-                beta[0] = 0.;
-                beta[1] = alpha*alpha*gcon[0][1];
-                beta[2] = alpha*alpha*gcon[0][2];
-                beta[3] = alpha*alpha*gcon[0][3];
-
-                uvec_host(V1, k, j, i) = ucon[1] + beta[1]*gamma/alpha;
-                uvec_host(V2, k, j, i) = ucon[2] + beta[2]*gamma/alpha;
-                uvec_host(V3, k, j, i) = ucon[3] + beta[3]*gamma/alpha;
+                // Solve for & assign primitive velocities (utilde)
+                Real u_prim[NVEC];
+                fourvel_to_prim(gcon, ucon, u_prim);
+                uvec_host(V1, k, j, i) = u_prim[V1];
+                uvec_host(V2, k, j, i) = u_prim[V2];
+                uvec_host(V3, k, j, i) = u_prim[V3];
 
                 if (use_emhd) {
                     // Update q_host (and dP_host, which is zero in this problem). These are now q_tilde and dP_tilde
@@ -220,8 +208,8 @@ TaskStatus InitializeAtmosphere(std::shared_ptr<MeshBlockData<Real>>& rc, Parame
                         EMHD::set_parameters_init(G, rho_temp, u_temp, emhd_params, gam, k, j, i, tau, chi_e, nu_e);
                         const Real Theta = (gam - 1.) * u_temp / rho_temp;
 
-                        q_tilde    *= (chi_e != 0) ? sqrt(tau / (chi_e * rho_temp * pow(Theta, 2.))) : 0.;
-                        dP_tilde   *= (nu_e  != 0) ? sqrt(tau / (nu_e * rho_temp * Theta)) : 0.;
+                        q_tilde    *= (chi_e != 0) * m::sqrt(tau / (chi_e * rho_temp * Theta * Theta));
+                        dP_tilde   *= (nu_e  != 0) * m::sqrt(tau / (nu_e * rho_temp * Theta));
                     }
                     q_host(k, j, i)   = q_tilde;
                     dP_host(k, j, i)  = dP_tilde;
@@ -248,6 +236,9 @@ TaskStatus InitializeAtmosphere(std::shared_ptr<MeshBlockData<Real>>& rc, Parame
         dP.DeepCopy(dP_host);
     }
     Kokkos::fence();
+
+    // Also fill cons.B
+    B_FluxCT::BlockPtoU(rc.get(), IndexDomain::entire, false);
 
     Flag("Initialized");
     return TaskStatus::complete;

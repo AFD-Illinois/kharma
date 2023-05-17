@@ -93,6 +93,7 @@ std::shared_ptr<KHARMAPackage> KHARMA::InitializeGlobals(ParameterInput *pin, st
 
     return pkg;
 }
+
 void KHARMA::ResetGlobals(ParameterInput *pin, Mesh *pmesh)
 {
     // The globals package was loaded & exists, retrieve it
@@ -275,6 +276,7 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput> &pin)
     Flag("ProcessPackages");
 
     // Allocate the packages list as a shared pointer, to be updated in various tasks
+    // TODO print what we're doing here & do some sanity checks, if verbose
     auto packages = std::make_shared<Packages_t>();
 
     TaskCollection tc;
@@ -324,9 +326,8 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput> &pin)
         if (t_b_field == t_none) t_b_field = t_b_cleanup;
     }
 
-    // Enable calculating jcon iff it is in any list of outputs (and there's even B to calculate it)
+    // Enable calculating jcon iff it is in any list of outputs (and there's even B to calculate it).
     // Since it is never required to restart, this is the only time we'd write (hence, need) it
-    // TODO use GetVector & == when available
     if (FieldIsOutput(pin.get(), "jcon") && t_b_field != t_none) {
         auto t_current = tl.AddTask(t_b_field, KHARMA::AddPackage, packages, Current::Initialize, pin.get());
     }
@@ -344,19 +345,16 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput> &pin)
     // Execute the whole collection (just in case we do something fancy?)
     while (!tr.Execute()); // TODO this will inf-loop on error
 
-    // The boundaries package may need to know variable counts for allocating memory,
-    // so we initialize it after the main dependency tree
-    // TODO only init if at least one boundary is "user"
-    KHARMA::AddPackage(packages, KBoundaries::Initialize, pin.get());
-
-    // Load the implicit package *last*, if there are any variables which need implicit evolution
-    // TODO print what we're doing here & do some sanity checks, if verbose
-    int n_implicit = packages->Get("Driver")->Param<int>("n_implicit_vars");
+    // Load the implicit package last, and only if there are any variables which need implicit evolution
+    int n_implicit = CountVars(packages.get(), Metadata::GetUserFlag("Implicit"));
     if (n_implicit > 0) {
         KHARMA::AddPackage(packages, Implicit::Initialize, pin.get());
-        // Implicit evolution must use predictor-corrector i.e. "vl2" integrator
-        pin->SetString("parthenon/time", "integrator", "vl2");
     }
+
+    // The boundaries package may need to know variable counts for allocating memory,
+    // so we initialize it after *everything* else
+    // TODO avoid init if e.g. all periodic boundaries?
+    KHARMA::AddPackage(packages, KBoundaries::Initialize, pin.get());
 
     EndFlag("ProcessPackages"); // TODO print full package list way up here?
     return std::move(*packages);

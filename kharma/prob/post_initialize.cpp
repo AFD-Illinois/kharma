@@ -281,5 +281,9 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart)
     // And make sure the trivial primitive values are up-to-date
     Packages::MeshUtoPExceptMHD(md.get(), IndexDomain::entire, false);
 
+    auto tm = SimTime(0., 0., 0, 0, 0, 0, 0.);
+    auto pouts = std::make_unique<Outputs>(pmesh, pin, &tm);
+    pouts->MakeOutputs(pmesh, pin, &tm, SignalHandler::OutputSignal::now);
+
     Flag("Post-initialization finished");
 }

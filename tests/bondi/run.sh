@@ -28,6 +28,8 @@ conv_2d() {
     fi
 }
 
+conv_2d dirichlet "boundaries/inner_x1=dirichlet boundaries/outer_x1=dirichlet" "in 2D, Dirichlet boundaries"
+
 # Test coordinates
 #conv_2d fmks coordinates/transform=fmks "in 2D, FMKS coordinates"
 conv_2d mks coordinates/transform=mks "in 2D, MKS coordinates"
