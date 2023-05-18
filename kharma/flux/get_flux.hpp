@@ -31,6 +31,8 @@
  *  OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+#pragma once
+
 #include "flux.hpp"
 
 #include "floors_functions.hpp"
@@ -57,7 +59,6 @@ namespace Flux {
 template <KReconstruction::Type Recon, int dir>
 inline TaskStatus GetFlux(MeshData<Real> *md)
 {
-    Flag(md, "Recon and flux");
     // Pointers
     auto pmesh = md->GetMeshPointer();
     auto pmb0  = md->GetBlockData(0)->GetBlockPointer();
@@ -65,6 +66,8 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
     const int ndim = pmesh->ndim;
     if (ndim < 3 && dir == X3DIR) return TaskStatus::complete;
     if (ndim < 2 && dir == X2DIR) return TaskStatus::complete;
+
+    Flag("GetFlux_"+std::to_string(dir));
 
     // Options
     const auto& pars       = pmb0->packages.Get("Driver")->AllParams();
@@ -103,7 +106,6 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
     const auto& P_all = md->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("Primitive")}, prims_map);
     const auto& U_all = md->PackVariablesAndFluxes(std::vector<MetadataFlag>{Metadata::Conserved}, cons_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
-    //Flag(md, "Packed variables");
 
     const auto& Pl_all = md->PackVariables(std::vector<std::string>{"Flux.Pl"});
     const auto& Pr_all = md->PackVariables(std::vector<std::string>{"Flux.Pr"});
@@ -136,7 +138,6 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
                                             4*(Recon == KReconstruction::Type::linear_vl)) * var_size_in_bytes;
     const size_t flux_scratch_bytes = 3 * var_size_in_bytes;
 
-    Flag(md, "Recon kernel");
     // This isn't a pmb0->par_for_outer because Parthenon's current overloaded definitions
     // do not accept three pairs of bounds, which we need in order to iterate over blocks
     parthenon::par_for_outer(DEFAULT_OUTER_LOOP_PATTERN, "calc_flux_recon", pmb0->exec_space,
@@ -305,7 +306,7 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
         }
     );
 
-    Flag(md, "Finished recon and flux");
+    EndFlag();
     return TaskStatus::complete;
 }
 

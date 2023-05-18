@@ -151,7 +151,7 @@ class VarMap {
             B2 = B1 + 1;
             B3 = B1 + 2;
         }
-        // TODO TODO track total nvar and provide a function
+        
 };
 
 /**
@@ -197,198 +197,68 @@ inline IndexRange3 GetPhysicalZones(std::shared_ptr<MeshBlock> pmb, IndexShape& 
                                     : bounds.ke(IndexDomain::entire)}};
 }
 
+#if DEBUG
 /**
- * Functions for "tracing" execution by printing strings (and optionally state of zones)
- * at each important function entry/exit
+ * Function to generate outputs wherever, whenever.
+ */
+inline void OutputNow(Mesh *pmesh, std::string name)
+{
+    auto tm = SimTime(0., 0., 0, 0, 0, 0, 0.);
+    auto pouts = std::make_unique<Outputs>(pmesh, pin, &tm);
+    auto pin = pmesh->packages.Get("Globals")->Param<ParameterInput>("pin");
+    pouts->MakeOutputs(pmesh, pin, &tm, SignalHandler::OutputSignal::now);
+    // TODO: find most recently written "now" files and move them to "name"
+}
+#endif
+
+/**
+ * Functions for "tracing" execution by printing strings at each entry/exit.
+ * Normally, they profile the code, but they can print a nested execution trace.
+ * 
+ * Don't laugh at my dumb mutex, it works.
  */
 #if TRACE
-#define PRINTCORNERS 0
-#define PRINTZONE 0
-#define PRINTTILE 0
-#define iPRINT 7
-#define jPRINT 111
-#define kPRINT 0
-inline void PrintCorner(MeshBlockData<Real> *rc)
-{
-    auto rhop = rc->Get("prims.rho").data.GetHostMirrorAndCopy();
-    auto up = rc->Get("prims.u").data.GetHostMirrorAndCopy();
-    auto uvecp = rc->Get("prims.uvec").data.GetHostMirrorAndCopy();
-    auto Bp = rc->Get("prims.B").data.GetHostMirrorAndCopy();
-    auto rhoc = rc->Get("cons.rho").data.GetHostMirrorAndCopy();
-    auto uc = rc->Get("cons.u").data.GetHostMirrorAndCopy();
-    auto uvecc = rc->Get("cons.uvec").data.GetHostMirrorAndCopy();
-    auto Bu = rc->Get("cons.B").data.GetHostMirrorAndCopy();
-    //auto p = rc->Get("p").data.GetHostMirrorAndCopy();
-    auto pflag = rc->Get("pflag").data.GetHostMirrorAndCopy();
-    //auto q = rc->Get("prims.q").data.GetHostMirrorAndCopy();
-    //auto dP = rc->Get("prims.dP").data.GetHostMirrorAndCopy();
-    const IndexRange ib = rc->GetBoundsI(IndexDomain::interior);
-    const IndexRange jb = rc->GetBoundsJ(IndexDomain::interior);
-    const IndexRange kb = rc->GetBoundsK(IndexDomain::interior);
-    std::cerr << "p:";
-    for (int j=0; j<8; j++) {
-        std::cerr << std::endl;
-        for (int i=0; i<8; i++) {
-            fprintf(stderr, "%.5g\t", pflag(kb.s, j, i));
-        }
-    }
-    // std::cerr << std::endl << "B1:";
-    // for (int j=0; j<8; j++) {
-    //     std::cerr << std::endl;
-    //     for (int i=0; i<8; i++) {
-    //         fprintf(stderr, "%.5g\t", Bu(V1, kb.s, j, i));
-    //     }
-    // }
-    std::cerr << std::endl << std::endl;
-}
-
-inline void PrintZone(MeshBlockData<Real> *rc)
-{
-    auto rhop = rc->Get("prims.rho").data.GetHostMirrorAndCopy();
-    auto up = rc->Get("prims.u").data.GetHostMirrorAndCopy();
-    auto uvecp = rc->Get("prims.uvec").data.GetHostMirrorAndCopy();
-    auto Bp = rc->Get("prims.B").data.GetHostMirrorAndCopy();
-    auto q = rc->Get("prims.q").data.GetHostMirrorAndCopy();
-    auto dP = rc->Get("prims.dP").data.GetHostMirrorAndCopy();
-
-    auto rhoU = rc->Get("cons.rho").data.GetHostMirrorAndCopy();
-    auto uU = rc->Get("cons.u").data.GetHostMirrorAndCopy();
-    auto uvecU = rc->Get("cons.uvec").data.GetHostMirrorAndCopy();
-    auto BU = rc->Get("cons.B").data.GetHostMirrorAndCopy();
-    auto qU = rc->Get("cons.q").data.GetHostMirrorAndCopy();
-    auto dPU = rc->Get("cons.dP").data.GetHostMirrorAndCopy();
-
-    std::cerr << "(PRIM) RHO: " << rhop(kPRINT,jPRINT,iPRINT)
-         << " UU: "  << up(kPRINT,jPRINT,iPRINT)
-         << " U: "   << uvecp(0,kPRINT,jPRINT,iPRINT) << " " << uvecp(1,kPRINT,jPRINT,iPRINT)<< " " << uvecp(2,kPRINT,jPRINT,iPRINT)
-         << " B: "   << Bp(0,kPRINT,jPRINT,iPRINT) << " " << Bp(1,kPRINT,jPRINT,iPRINT) << " " << Bp(2,kPRINT,jPRINT,iPRINT)
-         << " q: "   << q(kPRINT,jPRINT,iPRINT) 
-         << " dP: "  << dP(kPRINT,jPRINT,iPRINT) << std::endl;
-    std::cerr << "(CONS) RHO: " << rhoU(kPRINT,jPRINT,iPRINT)
-         << " UU: "  << uU(kPRINT,jPRINT,iPRINT)
-         << " U: "   << uvecU(0,kPRINT,jPRINT,iPRINT) << " " << uvecU(1,kPRINT,jPRINT,iPRINT)<< " " << uvecU(2,kPRINT,jPRINT,iPRINT)
-         << " B: "   << BU(0,kPRINT,jPRINT,iPRINT) << " " << BU(1,kPRINT,jPRINT,iPRINT) << " " << BU(2,kPRINT,jPRINT,iPRINT)
-         << " q: "   << qU(kPRINT,jPRINT,iPRINT) 
-         << " dP: "  << dPU(kPRINT,jPRINT,iPRINT) << std::endl;
-}
-
-inline void PrintTile(MeshBlockData<Real> *rc)
-{
-    auto rhop = rc->Get("prims.rho").data.GetHostMirrorAndCopy();
-    auto up = rc->Get("prims.u").data.GetHostMirrorAndCopy();
-    auto uvecp = rc->Get("prims.uvec").data.GetHostMirrorAndCopy();
-    auto Bp = rc->Get("prims.B").data.GetHostMirrorAndCopy();
-    auto q = rc->Get("prims.q").data.GetHostMirrorAndCopy();
-    auto dP = rc->Get("prims.dP").data.GetHostMirrorAndCopy();
-
-    auto rhoU = rc->Get("cons.rho").data.GetHostMirrorAndCopy();
-    auto uU = rc->Get("cons.u").data.GetHostMirrorAndCopy();
-    auto uvecU = rc->Get("cons.uvec").data.GetHostMirrorAndCopy();
-    auto BU = rc->Get("cons.B").data.GetHostMirrorAndCopy();
-    auto qU = rc->Get("cons.q").data.GetHostMirrorAndCopy();
-    auto dPU = rc->Get("cons.dP").data.GetHostMirrorAndCopy();
-
-    const IndexRange ib = rc->GetBoundsI(IndexDomain::interior);
-    const IndexRange jb = rc->GetBoundsJ(IndexDomain::interior);
-    const IndexRange kb = rc->GetBoundsK(IndexDomain::interior);
-    std::cerr << "q(cons):";
-    for (int j=jPRINT-3; j<jPRINT+3; j++) {
-        std::cerr << std::endl;
-        for (int i=iPRINT-3; i<iPRINT+3; i++) {
-            fprintf(stderr, "%.5g\t", qU(kb.s, j, i));
-        }
-    }
-    std::cerr << std::endl << "dP(cons):";
-    for (int j=jPRINT-3; j<jPRINT+3; j++) {
-        std::cerr << std::endl;
-        for (int i=iPRINT-3; i<iPRINT+3; i++) {
-            fprintf(stderr, "%.5g\t", dPU(kb.s, j, i));
-        }
-    }
-    std::cerr << std::endl;
-    std::cerr << "q(prim):";
-    for (int j=jPRINT-3; j<jPRINT+3; j++) {
-        std::cerr << std::endl;
-        for (int i=iPRINT-3; i<iPRINT+3; i++) {
-            fprintf(stderr, "%.5g\t", q(kb.s, j, i));
-        }
-    }
-    std::cerr << std::endl << "dP(prim):";
-    for (int j=jPRINT-3; j<jPRINT+3; j++) {
-        std::cerr << std::endl;
-        for (int i=iPRINT-3; i<iPRINT+3; i++) {
-            fprintf(stderr, "%.5g\t", dP(kb.s, j, i));
-        }
-    }
-    std::cerr << std::endl << std::endl;
-}
-
+// Can we namespace these?
+extern int kharma_debug_trace_indent;
+extern int kharma_debug_trace_mutex;
+#define MAX_INDENT_SPACES 160
 inline void Flag(std::string label)
 {
-    if(MPIRank0()) std::cerr << "Entering " << label << std::endl;
-}
-
-inline void Flag(MeshBlockData<Real> *rc, std::string label)
-{
     if(MPIRank0()) {
-        std::cerr << "Entering " << label << std::endl;
-        if(PRINTCORNERS) PrintCorner(rc);
-        if(PRINTZONE) PrintZone(rc);
-        if(PRINTTILE) PrintTile(rc);
+        int& indent = kharma_debug_trace_indent;
+        int& mutex = kharma_debug_trace_mutex;
+        // If no other thread is printing one of these...
+        while (mutex != 0);
+        // ... take the mutex and print
+        mutex = 1;
+        char tab[MAX_INDENT_SPACES] = {0};
+        // Make very sure the indent does not exceed the available space.
+        // Forgetting EndFlag() is easy and buffer overflows are bad.
+        indent = m::max(m::min(indent, MAX_INDENT_SPACES/2), 0);
+        for (int i=0; i < indent; i++) tab[i*2] = tab[i*2+1] = ' ';
+        // Print everything in one call so we have the best chance of coherence
+        fprintf(stderr, "%sStarting %s\n", tab, label.c_str());
+        indent = m::min(indent++, MAX_INDENT_SPACES/2);
+        // Release mutex
+        mutex = 0;
     }
 }
-
-inline void Flag(MeshData<Real> *md, std::string label)
+inline void EndFlag()
 {
     if(MPIRank0()) {
-        std::cerr << "Entering " << label << std::endl;
-        if(PRINTCORNERS || PRINTZONE) {
-            auto rc = md->GetBlockData(0).get();
-            if(PRINTCORNERS) PrintCorner(rc);
-            if(PRINTZONE) PrintZone(rc);
-        }
+        int& indent = kharma_debug_trace_indent;
+        int& mutex = kharma_debug_trace_mutex;
+        while (mutex != 0);
+        mutex = 1;
+        indent = m::min(m::max(indent--, 0), MAX_INDENT_SPACES/2);
+        char tab[MAX_INDENT_SPACES] = {0};
+        for (int i=0; i < indent; i++) tab[i*2] = tab[i*2+1] = ' ';
+        fprintf(stderr, "%sDone\n", tab);
+        mutex = 0;
     }
 }
-
-inline void EndFlag() {}
-
-inline void EndFlag(std::string label)
-{
-    if(MPIRank0()) std::cerr << "Exiting " << label << std::endl;
-}
-
-inline void EndFlag(MeshBlockData<Real> *rc, std::string label)
-{
-    if(MPIRank0()) {
-        std::cerr << "Exiting " << label << std::endl;
-        if(PRINTCORNERS) PrintCorner(rc);
-        if(PRINTZONE) PrintZone(rc);
-    }
-}
-
-inline void EndFlag(MeshData<Real> *md, std::string label)
-{
-    if(MPIRank0()) {
-        std::cerr << "Exiting " << label << std::endl;
-        if(PRINTCORNERS || PRINTZONE) {
-            auto rc = md->GetBlockData(0).get();
-            if(PRINTCORNERS) PrintCorner(rc);
-            if(PRINTZONE) PrintZone(rc);
-            if(PRINTTILE) PrintTile(rc);
-        }
-    }
-}
-
 #else
 inline void Flag(std::string label)
-{
-    Kokkos::Profiling::pushRegion(label);
-}
-inline void Flag(MeshBlockData<Real> *rc, std::string label)
-{
-    Kokkos::Profiling::pushRegion(label);
-}
-inline void Flag(MeshData<Real> *md, std::string label)
 {
     Kokkos::Profiling::pushRegion(label);
 }
@@ -396,23 +266,4 @@ inline void EndFlag()
 {
     Kokkos::Profiling::popRegion();
 }
-inline void EndFlag(std::string label)
-{
-    Kokkos::Profiling::popRegion();
-}
-inline void EndFlag(MeshBlockData<Real> *rc, std::string label)
-{
-    Kokkos::Profiling::popRegion();
-}
-inline void EndFlag(MeshData<Real> *md, std::string label)
-{
-    Kokkos::Profiling::popRegion();
-}
 #endif
-/**
- * Versions of Flag() that take shared_ptr objects and call through with get()
- * Avoids having to pay attention to shared_ptr vs * pointers in adding Flag() calls
- * when diagnosing a problem.
- */
-inline void Flag(std::shared_ptr<MeshBlockData<Real>>& rc, std::string label) { Flag(rc.get(), label); }
-inline void Flag(std::shared_ptr<MeshData<Real>>& md, std::string label) { Flag(md.get(), label); }

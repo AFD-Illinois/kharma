@@ -63,6 +63,7 @@ initial_cleanup = false
 on                 = true
 higher_order_terms = true
 feedback           = true
+stability_limits   = true
 
 closure_type     = torus
 conduction_alpha = 1.0
@@ -83,7 +84,6 @@ bsq_over_rho_max   = 100
 bsq_over_u_max     = 1e20
 u_over_rho_max     = 100
 gamma_max          = 5
-enable_emhd_limits = true
 
 <debug>
 verbose            = 1

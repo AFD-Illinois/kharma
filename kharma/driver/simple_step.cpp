@@ -38,7 +38,6 @@
 
 TaskCollection KHARMADriver::MakeSimpleTaskCollection(BlockList_t &blocks, int stage)
 {
-    Flag("Generating non-MPI task collection");
     // This is probably incompatible with everything
 
     // TODO check for incompatibilities at some point:

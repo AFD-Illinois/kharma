@@ -49,8 +49,8 @@ rho_min_geom = 1e-20
 u_min_geom = 1e-20
 
 # We'll be adding material, and that's okay
-<bounds>
-check_inflow_outer = false
+<boundaries>
+check_inflow_outer_x1 = false
 
 <debug>
 verbose = 1

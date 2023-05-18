@@ -54,34 +54,33 @@ conv_2d() {
     fi
 }
 
-#conv_2d entropy_nob "mhdmodes/nmode=0 b_field/solver=none" "entropy mode in 2D"
+# Normal MHD modes, 2D, defaults
 conv_2d slow mhdmodes/nmode=1 "slow mode in 2D"
-#conv_2d alfven mhdmodes/nmode=2 "Alfven mode in 2D"
+conv_2d alfven mhdmodes/nmode=2 "Alfven mode in 2D"
 conv_2d fast mhdmodes/nmode=3 "fast mode in 2D"
 
-# These 3 double as a demo of why WENO is great
-#conv_3d entropy mhdmodes/nmode=0 "entropy mode in 3D"
-#conv_3d entropy_mc "mhdmodes/nmode=0 GRMHD/reconstruction=linear_mc" "entropy mode in 3D, linear/MC reconstruction"
-#conv_3d entropy_vl "mhdmodes/nmode=0 GRMHD/reconstruction=linear_vl" "entropy mode in 3D, linear/VL reconstruction"
-# Other modes don't benefit, exercise WENO most since we use it
-#conv_3d slow "mhdmodes/nmode=1 mhdmodes/dir=3" "slow mode in 3D"
-#conv_3d alfven "mhdmodes/nmode=2 mhdmodes/dir=3" "Alfven mode in 3D"
-#conv_3d fast "mhdmodes/nmode=3 mhdmodes/dir=3" "fast mode in 3D"
-# And we've got to test classic/GRIM stepping
-#conv_3d slow_imex   "mhdmodes/nmode=1 driver/type=imex" "slow mode in 3D, ImEx explicit"
-#conv_3d alfven_imex "mhdmodes/nmode=2 driver/type=imex" "Alfven mode in 3D, ImEx explicit"
-#conv_3d fast_imex   "mhdmodes/nmode=3 driver/type=imex" "fast mode in 3D, ImEx explicit"
-# B field totally explicit
-#conv_3d slow_imex_semi   "mhdmodes/nmode=1 driver/type=imex GRMHD/implicit=true b_field/implicit=false" "slow mode 3D, ImEx semi-implicit"
-#conv_3d alfven_imex_semi "mhdmodes/nmode=2 driver/type=imex GRMHD/implicit=true b_field/implicit=false" "Alfven mode 3D, ImEx semi-implicit"
-#conv_3d fast_imex_semi   "mhdmodes/nmode=3 driver/type=imex GRMHD/implicit=true b_field/implicit=false" "fast mode 3D, ImEx semi-implicit"
-# All variables semi-implicit
-#conv_3d slow_imex_im   "mhdmodes/nmode=1 driver/type=imex GRMHD/implicit=true b_field/implicit=true" "slow mode 3D, ImEx implicit"
-#conv_3d alfven_imex_im "mhdmodes/nmode=2 driver/type=imex GRMHD/implicit=true b_field/implicit=true" "Alfven mode 3D, ImEx implicit"
-#conv_3d fast_imex_im   "mhdmodes/nmode=3 driver/type=imex GRMHD/implicit=true b_field/implicit=true" "fast mode 3D, ImEx implicit"
+# Entropy mode as reconstruction demo
+#conv_2d entropy_nob "mhdmodes/nmode=0 b_field/solver=none" "entropy mode in 2D, no B field" # TODO init currently requires B
+conv_3d entropy mhdmodes/nmode=0 "entropy mode in 3D"
+conv_3d entropy_mc "mhdmodes/nmode=0 GRMHD/reconstruction=linear_mc" "entropy mode in 3D, linear/MC reconstruction"
+conv_3d entropy_vl "mhdmodes/nmode=0 GRMHD/reconstruction=linear_vl" "entropy mode in 3D, linear/VL reconstruction"
 
-# 2D modes use small blocks, could pick up some problems at MPI ranks >> 1
-# Currently very slow, plus modes are incorrect
-#conv_2d fast2d mhdmodes/nmode=3
+# ImEx driver
+conv_2d slow_imex   "mhdmodes/nmode=1 driver/type=imex" "slow mode in 3D, ImEx explicit"
+conv_2d alfven_imex "mhdmodes/nmode=2 driver/type=imex" "Alfven mode in 3D, ImEx explicit"
+conv_2d fast_imex   "mhdmodes/nmode=3 driver/type=imex" "fast mode in 3D, ImEx explicit"
+# B field totally explicit
+conv_2d slow_imex_semi   "mhdmodes/nmode=1 driver/type=imex GRMHD/implicit=true b_field/implicit=false" "slow mode 3D, ImEx semi-implicit"
+conv_2d alfven_imex_semi "mhdmodes/nmode=2 driver/type=imex GRMHD/implicit=true b_field/implicit=false" "Alfven mode 3D, ImEx semi-implicit"
+conv_2d fast_imex_semi   "mhdmodes/nmode=3 driver/type=imex GRMHD/implicit=true b_field/implicit=false" "fast mode 3D, ImEx semi-implicit"
+# All variables semi-implicit
+conv_2d slow_imex_im   "mhdmodes/nmode=1 driver/type=imex GRMHD/implicit=true b_field/implicit=true b_field/kill_on_large_divb=false" "slow mode 3D, ImEx implicit"
+conv_2d alfven_imex_im "mhdmodes/nmode=2 driver/type=imex GRMHD/implicit=true b_field/implicit=true b_field/kill_on_large_divb=false" "Alfven mode 3D, ImEx implicit"
+conv_2d fast_imex_im   "mhdmodes/nmode=3 driver/type=imex GRMHD/implicit=true b_field/implicit=true b_field/kill_on_large_divb=false" "fast mode 3D, ImEx implicit"
+
+# 3D versions, basics only
+conv_3d slow "mhdmodes/nmode=1 mhdmodes/dir=3" "slow mode in 3D"
+conv_3d alfven "mhdmodes/nmode=2 mhdmodes/dir=3" "Alfven mode in 3D"
+conv_3d fast "mhdmodes/nmode=3 mhdmodes/dir=3" "fast mode in 3D"
 
 exit $exit_code

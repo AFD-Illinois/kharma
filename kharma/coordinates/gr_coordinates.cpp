@@ -244,7 +244,5 @@ void init_GRCoordinates(GRCoordinates& G) {
             }
         );
     }
-
-    Flag("GRCoordinates metric init");
 }
 #endif // FAST_CARTESIAN

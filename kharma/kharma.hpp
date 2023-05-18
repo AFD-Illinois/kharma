@@ -82,6 +82,8 @@ void FixParameters(std::unique_ptr<ParameterInput>& pin);
  */
 Packages_t ProcessPackages(std::unique_ptr<ParameterInput>& pin);
 
+// TODO(BSP) not sure where to put these
+
 /**
  * Check whether a given field is anywhere in outputs.
  * Used to avoid calculating expensive fields (jcon, divB) if they
@@ -101,6 +103,38 @@ inline bool FieldIsOutput(ParameterInput *pin, std::string name)
         pib = pib->pnext; // move to next input block name
     }
     return false;
+}
+
+/**
+ * This fn calculates the size a VariablePack *would* be, without making one --
+ * it uses only the package list, and counts through each variable in each package.
+ * Mostly useful for initialization.
+ * TODO can this take flagcollections?  Move to Parthenon...
+ */
+inline int CountVars(Packages_t* packages, MetadataFlag flag)
+{
+    int nvar = 0;
+    for (auto pkg : packages->AllPackages()) {
+        for (auto field : pkg.second->AllFields()) {
+            // Specifically ignore the B_Cleanup variables, we'll never want them separately like this
+            bool is_not_cleanup = packages->AllPackages().count("B_Cleanup")
+                                    ? !field.second.IsSet(Metadata::GetUserFlag("B_Cleanup"))
+                                    : true;
+            if (field.second.IsSet(flag) && is_not_cleanup) {
+                int var_len = 0;
+                if (field.second.IsSet(Metadata::Face)) {
+                    var_len = 3; // TODO non-scalar face fields?
+                } else if (field.second.Shape().size() < 1) {
+                    var_len = 1;
+                } else {
+                    var_len = field.second.Shape()[0];
+                }
+                //std::cout << "flag: " << flag << " var: " << field.first.label() << " size: " << var_len << std::endl;
+                nvar += var_len;
+            }
+        }
+    }
+    return nvar;
 }
 
 }

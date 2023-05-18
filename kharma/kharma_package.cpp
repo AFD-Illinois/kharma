@@ -37,8 +37,7 @@
 
 // PHYSICS-RELATED
 // TODO take & accumulate TaskStatus?  Useful for ::incomplete if we ever want to do that
-// TODO Several of these are unused & commented, but will be used as I meshify different drivers.
-//      Then, I can work on meshifying packages by degrees
+// TODO continue meshification until all is mesh
 
 TaskStatus Packages::FixFlux(MeshData<Real> *md)
 {
@@ -48,114 +47,130 @@ TaskStatus Packages::FixFlux(MeshData<Real> *md)
         if (kpackage.second->FixFlux != nullptr) {
             Flag("FixFlux_"+kpackage.first);
             kpackage.second->FixFlux(md);
-            EndFlag("FixFlux_"+kpackage.first);
+            EndFlag();
         }
     }
-    EndFlag("FixFlux");
+    EndFlag();
     return TaskStatus::complete;
 }
 
 TaskStatus Packages::BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
-    Flag("Recovering primitive variables");
-    auto kpackages = rc->GetBlockPointer()->packages.ListPackagesOfType<KHARMAPackage>();
+    Flag("BlockUtoP");
+    auto kpackages = rc->GetBlockPointer()->packages.AllPackagesOfType<KHARMAPackage>();
     for (auto kpackage : kpackages) {
-        if (kpackage->BlockUtoP != nullptr)
-            kpackage->BlockUtoP(rc, domain, coarse);
+        if (kpackage.second->BlockUtoP != nullptr) {
+            Flag("BlockUtoP_"+kpackage.first);
+            kpackage.second->BlockUtoP(rc, domain, coarse);
+            EndFlag();
+        }
     }
-    Flag("Recovered");
+    EndFlag();
     return TaskStatus::complete;
 }
 TaskStatus Packages::MeshUtoP(MeshData<Real> *md, IndexDomain domain, bool coarse)
 {
+    Flag("MeshUtoP");
     for (int i=0; i < md->NumBlocks(); ++i)
         BlockUtoP(md->GetBlockData(i).get(), domain, coarse);
+    EndFlag();
     return TaskStatus::complete;
 }
 
 TaskStatus Packages::BlockUtoPExceptMHD(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
-    Flag(rc, "Recovering primitive variables on boundaries");
+    Flag("BlockUtoPExceptMHD");
     // We need to re-fill the primitive variables on the physical boundaries,
     // since the driver has already called UtoP for the step.
     // However, this does *not* apply to the GRMHD variables, as the boundary call
     // used/filled their primitive values.  Instead, they will need a PtoU call
-    auto pmb = rc->GetBlockPointer();
-    for (auto &package : pmb->packages.AllPackages()) {
-        if (KHARMAPackage *kpackage = dynamic_cast<KHARMAPackage*>(package.second.get())) {
-            if (package.first != "GRMHD" && package.first != "Inverter") {
-                if (kpackage->BlockUtoP != nullptr)
-                    kpackage->BlockUtoP(rc, domain, coarse);
+    auto kpackages = rc->GetBlockPointer()->packages.AllPackagesOfType<KHARMAPackage>();
+    for (auto kpackage : kpackages) {
+        if (kpackage.first != "GRMHD" && kpackage.first != "Inverter") {
+            if (kpackage.second->BlockUtoP != nullptr) {
+                Flag("BlockUtoPExceptMHD_"+kpackage.first);
+                kpackage.second->BlockUtoP(rc, domain, coarse);
+                EndFlag();
             }
         }
     }
-    Flag(rc, "Recovered");
+    EndFlag();
     return TaskStatus::complete;
 }
 TaskStatus Packages::MeshUtoPExceptMHD(MeshData<Real> *md, IndexDomain domain, bool coarse)
 {
+    Flag("MeshUtoPExceptMHD");
     for (int i=0; i < md->NumBlocks(); ++i)
         BlockUtoPExceptMHD(md->GetBlockData(i).get(), domain, coarse);
+    EndFlag();
     return TaskStatus::complete;
 }
 
 TaskStatus Packages::AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
 {
-    Flag("Adding source terms");
-    for (auto &package : md->GetMeshPointer()->packages.AllPackages()) {
-        if (KHARMAPackage *kpackage = dynamic_cast<KHARMAPackage*>(package.second.get())) {
-            if (kpackage->AddSource != nullptr)
-                kpackage->AddSource(md, mdudt);
+    Flag("AddSource");
+    auto kpackages = md->GetMeshPointer()->packages.AllPackagesOfType<KHARMAPackage>();
+    for (auto kpackage : kpackages) {
+        if (kpackage.second->AddSource != nullptr) {
+            Flag("AddSource_"+kpackage.first);
+            kpackage.second->AddSource(md, mdudt);
+            EndFlag();
         }
     }
-    Flag("Added");
+    EndFlag();
     return TaskStatus::complete;
 }
 
 TaskStatus Packages::BlockApplyPrimSource(MeshBlockData<Real> *rc)
 {
-    Flag("Applying primitive source terms");
-    for (auto &package : rc->GetBlockPointer()->packages.AllPackages()) {
-        if (KHARMAPackage *kpackage = dynamic_cast<KHARMAPackage*>(package.second.get())) {
-            if (kpackage->BlockApplyPrimSource != nullptr)
-                kpackage->BlockApplyPrimSource(rc);
+    // TODO print only if there's calls inside?
+    Flag("BlockApplyPrimSource");
+    auto kpackages = rc->GetBlockPointer()->packages.AllPackagesOfType<KHARMAPackage>();
+    for (auto kpackage : kpackages) {
+        if (kpackage.second->BlockApplyPrimSource != nullptr) {
+            kpackage.second->BlockApplyPrimSource(rc);
         }
     }
-    Flag("Added");
+    EndFlag();
     return TaskStatus::complete;
 }
 
-// TODO will these need to be done on coarse versions?
 TaskStatus Packages::BlockApplyFloors(MeshBlockData<Real> *mbd, IndexDomain domain)
 {
-    Flag("Applying floors");
+    Flag("BlockApplyFloors");
     auto pmb = mbd->GetBlockPointer();
     auto pkgs = pmb->packages.AllPackages();
 
     // Apply the version from "Floors" package first
     if (pkgs.count("Floors")) {
-        KHARMAPackage *kpackage = dynamic_cast<KHARMAPackage*>(pkgs.at("Floors").get());
-        // We *want* to crash on null deref if this kpackage is null, something would be wrong
-        if (kpackage->BlockApplyFloors != nullptr)
-            kpackage->BlockApplyFloors(mbd, domain);
+        KHARMAPackage *pkpackage = pmb->packages.Get<KHARMAPackage>("Floors");
+        if (pkpackage->BlockApplyFloors != nullptr) {
+            Flag("BlockApplyFloors_Floors");
+            pkpackage->BlockApplyFloors(mbd, domain);
+            EndFlag();
+        }
     }
     // Then anything else
-    for (auto &package : mbd->GetBlockPointer()->packages.AllPackages()) {
-        if (package.first != "Floors") {
-            if (KHARMAPackage *kpackage = dynamic_cast<KHARMAPackage*>(package.second.get())) {
-                if (kpackage->BlockApplyFloors != nullptr)
-                    kpackage->BlockApplyFloors(mbd, domain);
+    auto kpackages = pmb->packages.AllPackagesOfType<KHARMAPackage>();
+    for (auto kpackage : kpackages) {
+        if (kpackage.first != "Floors") {
+            if (kpackage.second->BlockApplyFloors != nullptr) {
+                Flag("BlockApplyFloors_"+kpackage.first);
+                kpackage.second->BlockApplyFloors(mbd, domain);
+                EndFlag();
             }
         }
     }
-    Flag("Applied");
+    EndFlag();
 
     return TaskStatus::complete;
 }
 TaskStatus Packages::MeshApplyFloors(MeshData<Real> *md, IndexDomain domain)
 {
+    Flag("MeshApplyFloors");
     for (int i=0; i < md->NumBlocks(); ++i)
         BlockApplyFloors(md->GetBlockData(i).get(), domain);
+    EndFlag();
     return TaskStatus::complete;
 }
 
@@ -163,49 +178,61 @@ TaskStatus Packages::MeshApplyFloors(MeshData<Real> *md, IndexDomain domain)
 // TODO this will need to be mesh'd too
 void Packages::UserWorkBeforeOutput(MeshBlock *pmb, ParameterInput *pin)
 {
-    Flag("Filling output arrays");
-    for (auto &package : pmb->packages.AllPackages()) {
-        if (KHARMAPackage *kpackage = dynamic_cast<KHARMAPackage*>(package.second.get())) {
-            if (kpackage->BlockUserWorkBeforeOutput != nullptr)
-                kpackage->BlockUserWorkBeforeOutput(pmb, pin);
+    Flag("UserWorkBeforeOutput");
+    auto kpackages = pmb->packages.AllPackagesOfType<KHARMAPackage>();
+    for (auto kpackage : kpackages) {
+        if (kpackage.second->BlockUserWorkBeforeOutput != nullptr) {
+            Flag("UserWorkBeforeOutput_"+kpackage.first);
+            kpackage.second->BlockUserWorkBeforeOutput(pmb, pin);
+            EndFlag();
         }
     }
-    Flag("Filled");
+    EndFlag();
 }
 
 void Packages::PreStepUserWorkInLoop(Mesh *pmesh, ParameterInput *pin, const SimTime &tm)
 {
-    Flag("Pre-step package work");
-    for (auto &package : pmesh->packages.AllPackages()) {
-        if (KHARMAPackage *kpackage = dynamic_cast<KHARMAPackage*>(package.second.get())) {
-            if (kpackage->MeshPreStepUserWorkInLoop != nullptr)
-                kpackage->MeshPreStepUserWorkInLoop(pmesh, pin, tm);
+    Flag("PreStepUserWorkInLoop");
+    auto kpackages = pmesh->packages.AllPackagesOfType<KHARMAPackage>();
+    for (auto kpackage : kpackages) {
+        if (kpackage.second->MeshPreStepUserWorkInLoop != nullptr) {
+            Flag("PreStepUserWorkInLoop_"+kpackage.first);
+            kpackage.second->MeshPreStepUserWorkInLoop(pmesh, pin, tm);
+            EndFlag();
         }
     }
-    Flag("Done pre-step package work");
+    EndFlag();
 }
 
 void Packages::PostStepUserWorkInLoop(Mesh *pmesh, ParameterInput *pin, const SimTime &tm)
 {
-    Flag("Post-step package work");
-    for (auto &package : pmesh->packages.AllPackages()) {
-        if (KHARMAPackage *kpackage = dynamic_cast<KHARMAPackage*>(package.second.get())) {
-            if (kpackage->MeshPostStepUserWorkInLoop != nullptr)
-                kpackage->MeshPostStepUserWorkInLoop(pmesh, pin, tm);
+    Flag("PostStepUserWorkInLoop");
+    auto kpackages = pmesh->packages.AllPackagesOfType<KHARMAPackage>();
+    for (auto kpackage : kpackages) {
+        if (kpackage.second->MeshPostStepUserWorkInLoop != nullptr) {
+            Flag("PostStepUserWorkInLoop_"+kpackage.first);
+            kpackage.second->MeshPostStepUserWorkInLoop(pmesh, pin, tm);
+            EndFlag();
         }
     }
+    EndFlag();
 }
 
 void Packages::PostStepDiagnostics(Mesh *pmesh, ParameterInput *pin, const SimTime &tm)
 {
     // Parthenon's version of this has a bug, but I would probably subclass it anyway.
     // very useful to have a single per-step spot to control any routine print statements
+    Flag("PostStepDiagnostics");
     const auto& md = pmesh->mesh_data.GetOrAdd("base", 0).get();
     if (md->NumBlocks() > 0) {
         for (auto &package : pmesh->packages.AllPackages()) {
-            if (package.second->PostStepDiagnosticsMesh != nullptr)
+            if (package.second->PostStepDiagnosticsMesh != nullptr) {
+                Flag("PostStepDiagnostics_"+package.first);
                 package.second->PostStepDiagnosticsMesh(tm, md);
+                EndFlag();
+            }
         }
     }
+    EndFlag();
 }
 

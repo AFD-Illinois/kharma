@@ -55,6 +55,7 @@
 TaskCollection KHARMADriver::MakeTaskCollection(BlockList_t &blocks, int stage)
 {
     std::string driver_type = blocks[0]->packages.Get("Driver")->Param<std::string>("type");
+    Flag("MakeTaskCollection_"+driver_type);
     if (driver_type == "imex") {
         return MakeImExTaskCollection(blocks, stage);
     } else if (driver_type == "simple") {
@@ -62,11 +63,11 @@ TaskCollection KHARMADriver::MakeTaskCollection(BlockList_t &blocks, int stage)
     } else {
         return MakeDefaultTaskCollection(blocks, stage);
     }
+    EndFlag();
 }
 
 TaskCollection KHARMADriver::MakeDefaultTaskCollection(BlockList_t &blocks, int stage)
 {
-    Flag("Generating default task collection");
     // Reminder that this list is created BEFORE any of the list contents are run!
     // Prints or function calls here will likely not do what you want: instead, add to the list by calling tl.AddTask()
 
@@ -276,6 +277,5 @@ TaskCollection KHARMADriver::MakeDefaultTaskCollection(BlockList_t &blocks, int 
     const auto &two_sync = pkgs.at("Driver")->Param<bool>("two_sync");
     if (two_sync) KHARMADriver::AddFullSyncRegion(pmesh, tc, stage);
 
-    Flag("Generated");
     return tc;
 }

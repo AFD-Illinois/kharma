@@ -304,7 +304,6 @@ TaskStatus B_Cleanup::RemoveExtraFields(BlockList_t &blocks)
 
 TaskStatus B_Cleanup::ApplyP(MeshData<Real> *msolve, MeshData<Real> *md)
 {
-    Flag(md, "Applying correction from P");
     // Apply on physical zones only, we'll be syncing/updating ghosts
     const IndexRange ib = md->GetBoundsI(IndexDomain::interior);
     const IndexRange jb = md->GetBoundsJ(IndexDomain::interior);
@@ -333,7 +332,6 @@ TaskStatus B_Cleanup::ApplyP(MeshData<Real> *msolve, MeshData<Real> *md)
 
 TaskStatus B_Cleanup::CornerLaplacian(MeshData<Real>* md, const std::string& p_var, MeshData<Real>* md_again, const std::string& lap_var)
 {
-    Flag(md, "Calculating & summing divB");
     // Cover ghost cells; maximize since both ops have stencil >1
     const IndexRange ib = md->GetBoundsI(IndexDomain::entire);
     const IndexRange jb = md->GetBoundsJ(IndexDomain::entire);

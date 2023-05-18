@@ -49,7 +49,8 @@ void Dirichlet(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse)
  * Freeze any dirichlet boundary conditions in their current forms.
  */
 void FreezeDirichlet(std::shared_ptr<MeshData<Real>> &md);
+void FreezeDirichletBlock(MeshBlockData<Real> *rc);
 
-void SetDomainDirichlet(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, bool coarse);
+void SetDomainDirichlet(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse);
 
 }

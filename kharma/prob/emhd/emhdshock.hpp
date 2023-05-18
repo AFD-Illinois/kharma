@@ -71,8 +71,7 @@ TaskStatus InitializeEMHDShock(std::shared_ptr<MeshBlockData<Real>>& rc, Paramet
     const std::string input = pin->GetOrAddString("emhdshock", "input", "BVP");
 
     // Obtain EMHD params
-    const auto& emhd_pars                    = pmb->packages.Get("EMHD")->AllParams();
-    const EMHD::EMHD_parameters& emhd_params = emhd_pars.Get<EMHD::EMHD_parameters>("emhd_params");
+    const EMHD::EMHD_parameters& emhd_params = EMHD::GetEMHDParameters(pmb->packages);
     // Obtain GRMHD params
     const auto& grmhd_pars                   = pmb->packages.Get("GRMHD")->AllParams();
     const Real& gam                          = grmhd_pars.Get<Real>("gamma");
@@ -144,7 +143,7 @@ TaskStatus InitializeEMHDShock(std::shared_ptr<MeshBlockData<Real>>& rc, Paramet
                         Real q_tilde  = q_host(k, j, i);
                         Real dP_tilde = dP_host(k, j, i);
                         if (emhd_params.higher_order_terms) {
-                            q_tilde  *= (chi_e != 0) ? m::sqrt(tau / (chi_e * rho_temp * m::pow(Theta, 2.))) : 0.;
+                            q_tilde  *= (chi_e != 0) ? m::sqrt(tau / (chi_e * rho_temp * Theta * Theta)) : 0.;
                             dP_tilde *= (nu_e  != 0) ? m::sqrt(tau / (nu_e * rho_temp * Theta)) : 0.;
                         }
                         q_host(k, j, i)  = q_tilde;
@@ -170,10 +169,7 @@ TaskStatus InitializeEMHDShock(std::shared_ptr<MeshBlockData<Real>>& rc, Paramet
         dP.DeepCopy(dP_host);
         Kokkos::fence();
 
-    }
-
-    // Any other input corresponds to ideal MHD shock initial conditions
-    else {
+    } else { // Any other input corresponds to ideal MHD shock initial conditions
 
         // Need the limits of the problem size to determine center
         const Real x1min = pin->GetReal("parthenon/mesh", "x1min");

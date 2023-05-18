@@ -92,15 +92,6 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     bool implicit_b = pin->GetOrAddBoolean("b_field", "implicit", false);
     params.Add("implicit", implicit_b);
 
-    // Update variable numbers
-    if (implicit_b) {
-        int n_current = driver.Get<int>("n_implicit_vars");
-        driver.Update("n_implicit_vars", n_current+3);
-    } else {
-        int n_current = driver.Get<int>("n_explicit_vars");
-        driver.Update("n_explicit_vars", n_current+3);
-    }
-
     params.Add("divb_reducer", AllReduce<Real>());
 
     // FIELDS
@@ -169,7 +160,6 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
 // TODO template and use as a model for future
 void MeshUtoP(MeshData<Real> *md, IndexDomain domain, bool coarse)
 {
-    Flag(md, "B UtoP Mesh");
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
 
     const auto& B_U = md->PackVariables(std::vector<std::string>{"cons.B"});
@@ -192,7 +182,6 @@ void MeshUtoP(MeshData<Real> *md, IndexDomain domain, bool coarse)
 }
 void BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
-    Flag(rc, "B UtoP Block");
     auto pmb = rc->GetBlockPointer();
 
     auto B_U = rc->PackVariables(std::vector<std::string>{"cons.B"});
@@ -216,7 +205,6 @@ void BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 
 void BlockPtoU(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
-    Flag(rc, "B PtoU Block");
     auto pmb = rc->GetBlockPointer();
 
     auto B_U = rc->PackVariables(std::vector<std::string>{"cons.B"});
@@ -240,6 +228,7 @@ void BlockPtoU(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 
 void FixFlux(MeshData<Real> *md)
 {
+    // TODO flags here
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
     auto& params = pmb0->packages.Get("B_FluxCT")->AllParams();
     if (params.Get<bool>("fix_polar_flux")) {
@@ -259,7 +248,6 @@ void FixFlux(MeshData<Real> *md)
 
 void FluxCT(MeshData<Real> *md)
 {
-    Flag(md, "Flux CT");
     // Pointers
     auto pmesh = md->GetMeshPointer();
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
@@ -282,7 +270,6 @@ void FluxCT(MeshData<Real> *md)
     const IndexRange kl = (ndim > 2) ? IndexRange{kb.s, kb.e + 1} : kb;
 
     // Calculate emf around each face
-    Flag(md, "Calc EMFs");
     pmb0->par_for("flux_ct_emf", block.s, block.e, kl.s, kl.e, jl.s, jl.e, il.s, il.e,
         KOKKOS_LAMBDA (const int& b, const int &k, const int &j, const int &i) {
             emf_pack(b, V3, k, j, i) =  0.25 * (B_F(b).flux(X1DIR, V2, k, j, i) + B_F(b).flux(X1DIR, V2, k, j-1, i) -
@@ -298,8 +285,6 @@ void FluxCT(MeshData<Real> *md)
 
     // Rewrite EMFs as fluxes, after Toth (2000)
     // Note that zeroing FX(BX) is *necessary* -- this flux gets filled by GetFlux
-    Flag(md, "Calc Fluxes");
-
     // Note these each have different domains, eg il vs ib.  The former extends one index farther if appropriate
     pmb0->par_for("flux_ct_1", block.s, block.e, kb.s, kb.e, jb.s, jb.e, il.s, il.e,
         KOKKOS_LAMBDA (const int& b, const int &k, const int &j, const int &i) {
@@ -324,13 +309,10 @@ void FluxCT(MeshData<Real> *md)
             }
         );
     }
-    
-    Flag(md, "CT Finished");
 }
 
 void FixBoundaryFlux(MeshData<Real> *md, IndexDomain domain, bool coarse)
 {
-    Flag(md, "Fixing polar B fluxes");
     auto pmesh = md->GetMeshPointer();
     auto pmb0 = pmesh->block_list[0];
     const int ndim = pmesh->ndim;
@@ -465,8 +447,6 @@ void FixBoundaryFlux(MeshData<Real> *md, IndexDomain domain, bool coarse)
         }
 
     }
-
-    Flag(md, "Fixed polar B");
 }
 
 IndexRange ValidDivBX1(MeshBlock *pmb)
@@ -483,7 +463,6 @@ IndexRange ValidDivBX1(MeshBlock *pmb)
 
 double MaxDivB(MeshData<Real> *md)
 {
-    Flag(md, "Calculating divB Mesh");
     auto pmesh = md->GetMeshPointer();
     const int ndim = pmesh->ndim;
 
@@ -520,7 +499,6 @@ double MaxDivB(MeshData<Real> *md)
         if (max_divb_block > max_divb) max_divb = max_divb_block;
     }
 
-    Flag("Calculated");
     return max_divb;
 }
 
@@ -535,13 +513,11 @@ double GlobalMaxDivB(MeshData<Real> *md)
 
 TaskStatus PrintGlobalMaxDivB(MeshData<Real> *md, bool kill_on_large_divb)
 {
-    Flag(md, "Printing B field diagnostics");
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
 
     // Since this is in the history file now, I don't bother printing it
     // unless we're being verbose. It's not costly to calculate though
     if (pmb0->packages.Get("Globals")->Param<int>("verbose") >= 1) {
-        Flag(md, "Printing divB");
         // Calculate the maximum from/on all nodes
         const double divb_max = B_FluxCT::GlobalMaxDivB(md);
         // Print on rank zero
@@ -554,7 +530,6 @@ TaskStatus PrintGlobalMaxDivB(MeshData<Real> *md, bool kill_on_large_divb)
         }
     }
 
-    Flag(md, "Printed B field diagnostics");
     return TaskStatus::complete;
 }
 
@@ -562,7 +537,6 @@ TaskStatus PrintGlobalMaxDivB(MeshData<Real> *md, bool kill_on_large_divb)
 
 void CalcDivB(MeshData<Real> *md, std::string divb_field_name)
 {
-    Flag(md, "Calculating divB for output");
     auto pmesh = md->GetMeshPointer();
     const int ndim = pmesh->ndim;
 
@@ -590,13 +564,10 @@ void CalcDivB(MeshData<Real> *md, std::string divb_field_name)
             }
         );
     }
-
-    Flag("Calculated");
 }
 void FillOutput(MeshBlock *pmb, ParameterInput *pin)
 {
     auto rc = pmb->meshblock_data.Get().get();
-    Flag(rc, "Calculating divB for output");
     const int ndim = pmb->pmy_mesh->ndim;
     if (ndim < 2) return;
 
@@ -618,8 +589,6 @@ void FillOutput(MeshBlock *pmb, ParameterInput *pin)
             divB(0, k, j, i) = corner_div(G, B_U, 0, k, j, i, ndim > 2);
         }
     );
-
-    Flag(rc, "Output divB");
 }
 
 } // namespace B_FluxCT

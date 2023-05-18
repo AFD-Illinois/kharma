@@ -37,7 +37,9 @@
 #include "debug.hpp"
 #include "grmhd.hpp"
 #include "grmhd_functions.hpp"
+#include "kharma.hpp"
 #include "pack.hpp"
+#include "reductions.hpp"
 
 #if DISABLE_IMPLICIT
 
@@ -85,6 +87,9 @@ std::shared_ptr<KHARMAPackage> Implicit::Initialize(ParameterInput *pin, std::sh
     auto pkg = std::make_shared<KHARMAPackage>("Implicit");
     Params &params = pkg->AllParams();
 
+    // Implicit evolution must use predictor-corrector i.e. "vl2" integrator
+    pin->SetString("parthenon/time", "integrator", "vl2");
+
     // Implicit solver parameters
     Real jacobian_delta = pin->GetOrAddReal("implicit", "jacobian_delta", 4.e-8);
     params.Add("jacobian_delta", jacobian_delta);
@@ -116,28 +121,16 @@ std::shared_ptr<KHARMAPackage> Implicit::Initialize(ParameterInput *pin, std::sh
     m_real = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy, Metadata::FillGhost});
     pkg->AddField("solve_fail", m_real); // TODO: Replace with m_int once Integer is supported for CellVariable
 
-    // TODO: Find a way to save all residuals based on a runtime parameter, e.g. below. We don't want to allocate 
-    // a vector field equal to the number of implicit variables over the entire meshblock if we don't have to.
-    
     // Should the solve save the residual vector field? Useful for debugging purposes. Default is NO.
-    // bool save_residual = pin->GetOrAddBoolean("implicit", "save_residual", false);
-    // params.Add("save_residual", save_residual);
+    bool save_residual = pin->GetOrAddBoolean("implicit", "save_residual", false);
+    params.Add("save_residual", save_residual);
+    if (save_residual) {
+        int nvars_implicit  = KHARMA::CountVars(packages.get(), Metadata::GetUserFlag("Implicit"));
 
-    // Vector field to store residual components (only for those variables that are evolved implicitly)
-    // if (save_residual) {
-    //     auto driver_type    = pin->GetString("driver", "type");
-    //     bool grmhd_implicit = (driver_type == "imex") && (pin->GetBoolean("emhd", "on") || pin->GetOrAddBoolean("GRMHD", "implicit", false));
-    //     bool implicit_b     = (driver_type == "imex") && (pin->GetOrAddBoolean("b_field", "implicit", grmhd_implicit));
-    //     bool emhd_enabled   = pin->GetOrAddBoolean("emhd", "on", false);
-    //     int nvars_implicit  = // Get this from "Driver"
-        
-    //     // flags_vec = std::vector<MetadataFlag>({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
-    //     // auto flags_vec(flags_vec);
-    //     // flags_vec.push_back(Metadata::Vector);
-    //     std::vector<int> s_vector({nfvar});
-    //     Metadata m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy}, s_vector);
-    //     pkg->AddField("residual", m);
-    // }
+        std::vector<int> s_vars_implicit({nvars_implicit});
+        Metadata m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy}, s_vars_implicit);
+        pkg->AddField("residual", m);
+    }
 
     return pkg;
 }
@@ -145,10 +138,7 @@ std::shared_ptr<KHARMAPackage> Implicit::Initialize(ParameterInput *pin, std::sh
 TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_init, MeshData<Real> *md_flux_src,
                 MeshData<Real> *md_linesearch, MeshData<Real> *md_solver, const Real& dt)
 {
-    Flag(md_full_step_init, "Implicit Iteration start, full step");
-    Flag(md_sub_step_init, "Implicit Iteration start, sub step");
-    Flag(md_flux_src, "Implicit Iteration start, divF and sources");
-    Flag(md_linesearch, "Linesearch");
+    Flag("Implicit::Step");
     // Pull out the block pointers for each sub-step, as we need the *mutable parameters*
     // of the EMHD package.  TODO(BSP) restrict state back to the variables...
     auto pmb_full_step_init = md_full_step_init->GetBlockData(0)->GetBlockPointer();
@@ -279,7 +269,7 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
     // different zones, so probably acceptable speed loss.
     for (int iter=1; iter <= iter_max; ++iter) {
         // Flags per iter, since debugging here will be rampant
-        Flag(md_solver, "Implicit Iteration:");
+        Flag("ImplicitIteration_"+std::to_string(iter));
 
         parthenon::par_for_outer(DEFAULT_OUTER_LOOP_PATTERN, "implicit_solve", pmb_sub_step_init->exec_space,
             total_scratch_bytes, scratch_level, block.s, block.e, kb.s, kb.e, jb.s, jb.e,
@@ -328,8 +318,7 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
                             if (iter == 1) {
                                 // New beginnings
                                 solve_fail_s(i) = SolverStatus::converged;
-                            }
-                            else {
+                            } else {
                                 // Need this to check if the zone had failed in any of the previous iterations.
                                 // If so, we don't attempt to update it again in the implicit solver.
                                 solve_fail_s(i) = solve_fail_all(b, 0, k, j, i);
@@ -409,7 +398,7 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
                                         emhd_params_sub_step_init, nvar, nfvar, k, j, i, delta, gam, dt, jacobian, residual);
                             // Solve against the negative residual
                             FLOOP delta_prim(ip) = -residual(ip);
-#if 1
+#if 0
                         }
                     }
                 );
@@ -444,7 +433,7 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
                                 KokkosBatched::SerialApplyPivot<KokkosBatched::Side::Left,KokkosBatched::Direct::Backward>
                                     ::invoke(pivot, delta_prim);
                             }
-#if 1
+#if 0
                         }
                     }
                 );
@@ -496,8 +485,7 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
                             }
 
                             // If the solver failed, we don't want to update the implicit primitives for those zones
-                            if (solve_fail() != SolverStatus::fail)
-                            {
+                            if (solve_fail() != SolverStatus::fail) {
                                 // Linesearch
                                 if (linesearch) {
                                     solve_norm()        = 0;
@@ -589,6 +577,7 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
             if (verbose >= 1 && MPIRank0()) printf("Iteration %d max L2 norm: %g\n", iter, max_norm.val);
 
             // Count total number of solver fails
+            // TODO move reductions like this to PostStep
             int nfails = 0;
             Kokkos::Sum<int> sum_reducer(nfails);
             pmb_sub_step_init->par_reduce("count_solver_fails", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
@@ -606,11 +595,31 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
             // Break if max_norm is less than the total tolerance we set.  TODO per-zone version of this?
             if (iter >= iter_min && max_norm.val < rootfind_tol) break;
         }
+        EndFlag();
     }
 
-    Flag(md_solver, "Implicit Iteration: final");
+    EndFlag();
 
     return TaskStatus::complete;
 
 }
+
+TaskStatus Implicit::PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
+{
+    auto pmesh = md->GetMeshPointer();
+    auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
+    // Options
+    const auto& pars = pmesh->packages.Get("Globals")->AllParams();
+    const int flag_verbose = pars.Get<int>("flag_verbose");
+
+    // Debugging/diagnostic info about implicit solver
+    // TODO status names
+    // if (flag_verbose >= 1) {
+    //     int nflags = Reductions::CountFlags(md, "solve_fail", Implicit::status_names, IndexDomain::interior, flag_verbose, false);
+    //     // TODO TODO yell here if there are too many flags
+    // }
+
+    return TaskStatus::complete;
+}
+
 #endif

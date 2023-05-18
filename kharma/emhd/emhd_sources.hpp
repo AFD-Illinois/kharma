@@ -112,7 +112,7 @@ KOKKOS_INLINE_FUNCTION void time_derivative_sources(const GRCoordinates& G, cons
         DLOOP1 q0          -= rho * chi_e * (Dtmp.bcon[mu] / mag_b) * Theta * Dtmp.ucon[0] * dt_ucov[mu];
         Real q0_tilde       = q0;
         if (emhd_params.higher_order_terms)
-            q0_tilde *= (chi_e != 0) * m::sqrt(tau / (chi_e * rho * m::pow(Theta, 2)) );
+            q0_tilde *= (chi_e != 0) ? m::sqrt(tau / (chi_e * rho * Theta * Theta)) : 0.0;
 
         dUq  = G.gdet(Loci::center, j, i) * (q0_tilde / tau);
         if (emhd_params.higher_order_terms)
@@ -125,7 +125,7 @@ KOKKOS_INLINE_FUNCTION void time_derivative_sources(const GRCoordinates& G, cons
         DLOOP1 dP0         += 3. * rho * nu_e * (Dtmp.bcon[0] * Dtmp.bcon[mu] / bsq) * dt_ucov[mu];
         Real dP0_tilde      = dP0;
         if (emhd_params.higher_order_terms)
-            dP0_tilde *= (nu_e != 0) * m::sqrt(tau / (nu_e * rho * Theta) );
+            dP0_tilde *= (nu_e != 0) ? m::sqrt(tau / (nu_e * rho * Theta)) : 0.0;
 
         dUdP = G.gdet(Loci::center, j, i) * (dP0_tilde / tau);
         if (emhd_params.higher_order_terms)

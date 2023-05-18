@@ -38,6 +38,7 @@
 
 #include "b_field_tools.hpp"
 #include "b_flux_ct.hpp"
+#include "boundaries.hpp"
 #include "coordinate_utils.hpp"
 #include "fm_torus.hpp"
 #include "grmhd_functions.hpp"
@@ -155,6 +156,7 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
     // We still need to update conserved flux values, but then we're done
     if (early_field) {
         B_FluxCT::BlockPtoU(rc, IndexDomain::entire, false);
+        KBoundaries::FreezeDirichletBlock(rc);
         return TaskStatus::complete;
     }
 

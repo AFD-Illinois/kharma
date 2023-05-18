@@ -108,10 +108,6 @@ std::shared_ptr<KHARMAPackage> KHARMADriver::Initialize(ParameterInput *pin, std
     Metadata::AddUserFlag("Implicit");
     Metadata::AddUserFlag("Explicit");
 
-    // Keep track of numbers of variables
-    params.Add("n_explicit_vars", 0, true);
-    params.Add("n_implicit_vars", 0, true);
-
     return pkg;
 }
 
@@ -194,7 +190,7 @@ TaskID KHARMADriver::AddMPIBoundarySync(const TaskID t_start, TaskList &tl, std:
 
 void KHARMADriver::SyncAllBounds(std::shared_ptr<MeshData<Real>> md, bool apply_domain_bounds)
 {
-    Flag("Syncing all bounds");
+    Flag("SyncAllBounds");
     TaskID t_none(0);
 
     // 1. PtoU on the interior to ensure we're up-to-date
@@ -218,7 +214,7 @@ void KHARMADriver::SyncAllBounds(std::shared_ptr<MeshData<Real>> md, bool apply_
         }
     }
 
-    Flag("Sync'd");
+    EndFlag();
 }
 
 TaskID KHARMADriver::AddFluxCalculations(TaskID& t_start, TaskList& tl, KReconstruction::Type recon, MeshData<Real> *md)

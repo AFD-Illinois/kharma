@@ -32,8 +32,8 @@ nx2 = 1
 nx3 = 1
 
 <boundaries>
-check_inflow_inner = false
-check_inflow_outer = false
+check_inflow_inner_x1 = false
+check_inflow_outer_x1 = false
 
 <coordinates>
 base = cartesian_minkowski

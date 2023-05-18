@@ -74,15 +74,11 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
 {
     auto rc = pmb->meshblock_data.Get();
     auto prob = pin->GetString("parthenon/job", "problem_id"); // Required parameter
-    Flag("Initialize "+prob);
+    Flag("ProblemGenerator_"+prob);
     // Also just print this, it's important
     if (MPIRank0()) {
         std::cout << "Initializing problem: " << prob << std::endl;
     }
-
-    // Using EMHD package affects problem dispatch
-    // TODO(BSP) handle in fm_torus problem?
-    auto use_emhd = pin->GetOrAddBoolean("emhd", "on", false);
 
     // Breakout to call the appropriate initialization function,
     // defined in accompanying headers.
@@ -120,13 +116,9 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
         status = InitializeEMHDShock(rc, pin);
     } else if (prob == "conducting_atmosphere") {
         status = InitializeAtmosphere(rc, pin);
-    } else if (prob == "bondi_viscous") {
-        status = InitializeBondi(rc, pin);
     // Everything
-    } else if ((prob == "torus") && (!use_emhd)) {
+    } else if (prob == "torus") {
         status = InitializeFMTorus(rc, pin);
-    } else if ((prob == "torus") && (use_emhd)){
-        status = InitializeFMTorusEMHD(rc, pin);
     } else if (prob == "resize_restart") {
         status = ReadIharmRestart(rc, pin);
     } else if (prob == "resize_restart_kharma") { // Hyerin
@@ -158,21 +150,20 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
         }
     }
 
-    // Note that at this stage we have initialized the fluid primitives ONLY in the torus.
-    // What this means is that in the following `PtoU` call, we will get the NaNs for the conserved vars
-    // outside the torus since the floors are not called yet (we need conserved vars for NOF floors).
-    // In the subsequent `ApplyFloors` call we are able to initialize the NOF floors despite this
-    // because it falls back to fluid frame floors in the event the UtoP is unsuccessful.
-    // TODO: Maybe let the user know that despite asking for NOF floors, fluid frame floors will be applied
-    // the very first time during problem init.
-    // For now, I've opened an issue on github to address this.
+    // TODO blob here?
+
+    // Floors are NOT automatically applied at this point anymore.
+    // If needed, they are applied within the problem-specific call.
+    // See InitializeFMTorus in fm_torus.cpp for the details for torus problems.
 
     // Fill the conserved variables U,
     // which we'll usually treat as the independent/fundamental state.
     // This will need to be repeated once magnetic field is seeded
-    Flux::BlockPtoU(rc.get(), IndexDomain::interior);
+    // Note we do the whole domain, in case we're using Dirichlet conditions
+    Flux::BlockPtoU(rc.get(), IndexDomain::entire);
 
-    // Floors are NOT automatically applied at this point anymore.
+    // Finally, freeze in the current ghost zone values if using Dirichlet conditions
+    KBoundaries::FreezeDirichletBlock(rc.get());
 
-    EndFlag("Initialize "+prob);
+    EndFlag();
 }

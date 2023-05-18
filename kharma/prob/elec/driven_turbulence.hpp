@@ -85,7 +85,6 @@ TaskStatus InitializeDrivenTurbulence(std::shared_ptr<MeshBlockData<Real>>& rc, 
         }
     );
 
-    Flag(rc, "Initialized");
     return TaskStatus::complete;
 }
 
@@ -96,7 +95,6 @@ TaskStatus InitializeDrivenTurbulence(std::shared_ptr<MeshBlockData<Real>>& rc, 
  */
 void ApplyDrivingTurbulence(MeshBlockData<Real> *rc)
 {
-    Flag("Applying Driven Turbulence kick");
     auto pmb = rc->GetBlockPointer();
     const IndexRange myib = pmb->cellbounds.GetBoundsI(IndexDomain::interior);
     const IndexRange myjb = pmb->cellbounds.GetBoundsJ(IndexDomain::interior);

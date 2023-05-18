@@ -43,8 +43,8 @@ rs = 8.0
 disable_floors = true
 
 # We'll be adding material, and that's okay
-<bounds>
-check_inflow_outer = false
+<boundaries>
+check_inflow_outer_x1 = false
 
 <b_field>
 # Constant pure-vertical field

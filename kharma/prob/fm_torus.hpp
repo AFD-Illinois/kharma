@@ -11,11 +11,6 @@
  * @param rmax is the radius of maximum density of the F-M torus in r_g
  */
 TaskStatus InitializeFMTorus(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin);
-/**
- * Need a different initialization function since we have additional fields (q, dP)
- * for the EMHD problem that are declared at runtime
- */
-TaskStatus InitializeFMTorusEMHD(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin);
 
 /**
  * Perturb the internal energy by a uniform random proportion per cell.

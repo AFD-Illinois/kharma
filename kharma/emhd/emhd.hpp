@@ -40,6 +40,7 @@
 using namespace parthenon;
 
 // Always disabled when implicit solver is disabled
+// TODO separate flag, also error properly at runtime
 #if DISABLE_IMPLICIT
 #define DISABLE_EMHD 1
 #endif
@@ -79,6 +80,25 @@ class EMHD_parameters {
  * Initialization: handle parameters, 
  */
 std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages);
+
+/**
+ * Add EGRMHD explicit source terms: anything which can be calculated once
+ * and added to the general dU/dt term along with e.g. GRMHD source, wind, etc
+ */
+TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt);
+
+/**
+ * Set q and dP to sensible starting values if they are not initialized by the problem.
+ * Currently a no-op as sensible values are zeros.
+ */
+void InitEMHDVariables(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin);
+
+/**
+ * Recover primitive qtilde, dPtilde from "conserved" forms {qtilde,dPtilde}*u^0*gdet.
+ * Since the implicit step does this for us, this is only needed for boundaries,
+ * which sync/set conserved forms.
+ */
+void BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse);
 
 /**
  * Get the EMHD parameters needed on the device side.
@@ -184,12 +204,12 @@ KOKKOS_INLINE_FUNCTION void set_parameters(const GRCoordinates& G, const Local& 
         const GReal r = Xembed[1];
 
         // Compute dynamical time scale
-        const Real tau_dyn = m::pow(r, 1.5);
+        const Real tau_dyn = m::sqrt(r*r*r);
 
         const Real pg    = (gam - 1.) * P(m_p.UU);
         const Real Theta = pg / P(m_p.RHO);
         // Compute local sound speed
-        const Real cs    = m::sqrt(gam * pg / (P(m_p.RHO) + (gam * P(m_p.UU)))); 
+        const Real cs2    = gam * pg / (P(m_p.RHO) + (gam * P(m_p.UU)));
 
         Real lambda    = 0.01;
         Real inv_exp_g = 0.;
@@ -199,10 +219,10 @@ KOKKOS_INLINE_FUNCTION void set_parameters(const GRCoordinates& G, const Local& 
         if (emhd_params.conduction) {
             Real q = P(m_p.Q);
             if (emhd_params.higher_order_terms)
-                q *= sqrt(P(m_p.RHO) * emhd_params.conduction_alpha * m::pow(cs, 2.) * m::pow(Theta, 2.));
-            Real q_max   = emhd_params.conduction_alpha * P(m_p.RHO) * m::pow(cs, 3.);
-            Real q_ratio = fabs(q) / q_max;
-            inv_exp_g    = exp(-(q_ratio - 1.) / lambda);
+                q *= m::sqrt(P(m_p.RHO) * emhd_params.conduction_alpha * cs2 * Theta * Theta);
+            Real q_max   = emhd_params.conduction_alpha * P(m_p.RHO) * cs2 * m::sqrt(cs2);
+            Real q_ratio = m::abs(q) / q_max;
+            inv_exp_g    = m::exp(-(q_ratio - 1.) / lambda);
             f_fmin       = inv_exp_g / (inv_exp_g + 1.) + 1.e-5;
 
             tau = m::min(tau, f_fmin * tau_dyn);
@@ -212,16 +232,12 @@ KOKKOS_INLINE_FUNCTION void set_parameters(const GRCoordinates& G, const Local& 
         if (emhd_params.viscosity) {
             Real dP = P(m_p.DP);
             if (emhd_params.higher_order_terms)
-                dP *= sqrt(P(m_p.RHO) * emhd_params.viscosity_alpha * m::pow(cs, 2.) * Theta);
+                dP *= sqrt(P(m_p.RHO) * emhd_params.viscosity_alpha * cs2 * Theta);
             Real dP_comp_ratio = m::max(pg - 2./3. * dP, SMALL) / m::max(pg  + 1./3. * dP, SMALL);
             Real dP_plus       = m::min(0.5 * bsq * dP_comp_ratio, 1.49 * pg / 1.07);
             Real dP_minus      = m::max(-bsq, -2.99 * pg / 1.07);
 
-            Real dP_max = 0.;
-            if (dP > 0.)
-                dP_max = dP_plus;
-            else
-                dP_max = dP_minus;
+            Real dP_max = (dP > 0.) ? dP_plus : dP_minus;
 
             Real dP_ratio = m::abs(dP) / (m::abs(dP_max) + SMALL);
             inv_exp_g     = m::exp(-(dP_comp_ratio - 1.) / lambda);
@@ -231,11 +247,11 @@ KOKKOS_INLINE_FUNCTION void set_parameters(const GRCoordinates& G, const Local& 
         }
 
         // Update thermal diffusivity and kinematic viscosity
-        Real max_alpha = (1 - m::pow(cs, 2.)) / (2*m::pow(cs, 2.) + 1.e-12);
+        Real max_alpha = (1 - cs2) / (2 * cs2 + 1.e-12);
         if (emhd_params.conduction)
-            chi_e = m::min(max_alpha, emhd_params.conduction_alpha) * m::pow(cs, 2.) * tau;
+            chi_e = m::min(max_alpha, emhd_params.conduction_alpha) * cs2 * tau;
         if (emhd_params.viscosity)
-            nu_e = m::min(max_alpha, emhd_params.viscosity_alpha) * m::pow(cs, 2.) * tau;
+            nu_e = m::min(max_alpha, emhd_params.viscosity_alpha) * cs2 * tau;
     } // else yell?
 }
 
@@ -264,7 +280,7 @@ KOKKOS_INLINE_FUNCTION void set_parameters(const GRCoordinates& G, const Variabl
         if (emhd_params.viscosity)
             nu_e = emhd_params.viscosity_alpha * cs2 * tau;
 
-    } else if (emhd_params.type == ClosureType::kappa_eta){
+    } else if (emhd_params.type == ClosureType::kappa_eta) {
         // Set tau = const, chi = kappa / rho, nu = eta / rho
 
         tau = emhd_params.tau;
@@ -274,24 +290,22 @@ KOKKOS_INLINE_FUNCTION void set_parameters(const GRCoordinates& G, const Variabl
             nu_e = emhd_params.eta / m::max(P(m_p.RHO, k, j, i), SMALL);
 
     } else if (emhd_params.type == ClosureType::torus) {
-        Real rho = P(m_p.RHO, k, j, i);
-        Real uu  = P(m_p.UU, k, j, i);
-
         FourVectors Dtmp;
         GRMHD::calc_4vecs(G, P, m_p, k, j, i, Loci::center, Dtmp);
+        // TODO need this max() if we're correcting later?
         double bsq = m::max(dot(Dtmp.bcon, Dtmp.bcov), SMALL);
 
         GReal Xembed[GR_DIM];
         G.coord_embed(k, j, i, Loci::center, Xembed);
-        GReal r = Xembed[1];
+        const GReal r = Xembed[1];
 
         // Compute dynamical time scale
-        Real tau_dyn = pow(r, 1.5);
+        const Real tau_dyn = m::sqrt(r*r*r);
 
-        Real pg    = (gam - 1.) * uu;
-        Real Theta = pg / rho;
+        const Real pg    = (gam - 1.) * P(m_p.UU, k, j, i);
+        const Real Theta = pg / P(m_p.RHO, k, j, i);
         // Compute local sound speed
-        Real cs    = sqrt(gam * pg / (rho + (gam * uu))); 
+        const Real cs2    = gam * pg / (P(m_p.RHO, k, j, i) + (gam * P(m_p.UU, k, j, i)));
 
         Real lambda    = 0.01;
         Real inv_exp_g = 0.;
@@ -299,13 +313,12 @@ KOKKOS_INLINE_FUNCTION void set_parameters(const GRCoordinates& G, const Variabl
 
         // Correction due to heat conduction
         if (emhd_params.conduction) {
-            Real qtilde  = P(m_p.Q, k, j, i);
-            Real q       = qtilde;
+            Real q = P(m_p.Q, k, j, i);
             if (emhd_params.higher_order_terms)
-                q *= (rho * emhd_params.conduction_alpha * pow(cs, 2.) * pow(Theta, 2.));
-            Real q_max   = emhd_params.conduction_alpha * rho * pow(cs, 3.);
-            Real q_ratio = fabs(q) / q_max;
-            inv_exp_g    = exp(-(q_ratio - 1.) / lambda);
+                q *= m::sqrt(P(m_p.RHO, k, j, i) * emhd_params.conduction_alpha * cs2 * Theta * Theta);
+            Real q_max   = emhd_params.conduction_alpha * P(m_p.RHO, k, j, i) * cs2 * m::sqrt(cs2);
+            Real q_ratio = m::abs(q) / q_max;
+            inv_exp_g    = m::exp(-(q_ratio - 1.) / lambda);
             f_fmin       = inv_exp_g / (inv_exp_g + 1.) + 1.e-5;
 
             tau = m::min(tau, f_fmin * tau_dyn);
@@ -313,19 +326,14 @@ KOKKOS_INLINE_FUNCTION void set_parameters(const GRCoordinates& G, const Variabl
 
         // Correction due to pressure anisotropy
         if (emhd_params.viscosity) {
-            Real dPtilde = P(m_p.DP, k, j, i);
-            Real dP      = dPtilde;
+            Real dP = P(m_p.DP, k, j, i);
             if (emhd_params.higher_order_terms)
-                dP *= sqrt(rho * emhd_params.viscosity_alpha * pow(cs, 2.) * Theta);
+                dP *= m::sqrt(P(m_p.RHO, k, j, i) * emhd_params.viscosity_alpha * cs2 * Theta);
             Real dP_comp_ratio = m::max(pg - 2./3. * dP, SMALL) / m::max(pg  + 1./3. * dP, SMALL);
             Real dP_plus       = m::min(0.5 * bsq * dP_comp_ratio, 1.49 * pg / 1.07);
             Real dP_minus      = m::max(-bsq, -2.99 * pg / 1.07);
 
-            Real dP_max = 0.;
-            if (dP > 0.)
-                dP_max = dP_plus;
-            else
-                dP_max = dP_minus;
+            Real dP_max = (dP > 0.) ? dP_plus : dP_minus;
 
             Real dP_ratio = m::abs(dP) / (m::abs(dP_max) + SMALL);
             inv_exp_g     = m::exp(-(dP_comp_ratio - 1.) / lambda);
@@ -335,11 +343,11 @@ KOKKOS_INLINE_FUNCTION void set_parameters(const GRCoordinates& G, const Variabl
         }
 
         // Update thermal diffusivity and kinematic viscosity
-        Real max_alpha = (1 - m::pow(cs, 2.)) / (2*m::pow(cs, 2.) + 1.e-12);
+        Real max_alpha = (1 - cs2) / (2 * cs2 + 1.e-12);
         if (emhd_params.conduction)
-            chi_e = m::min(max_alpha, emhd_params.conduction_alpha) * m::pow(cs, 2.) * tau;
+            chi_e = m::min(max_alpha, emhd_params.conduction_alpha) * cs2 * tau;
         if (emhd_params.viscosity)
-            nu_e = m::min(max_alpha, emhd_params.viscosity_alpha) * m::pow(cs, 2.) * tau;
+            nu_e = m::min(max_alpha, emhd_params.viscosity_alpha) * cs2 * tau;
     } // else yell?
 }
 
@@ -391,18 +399,19 @@ KOKKOS_INLINE_FUNCTION void calc_tensor(const Real& rho, const Real& u, const Re
                                         Real emhd[GR_DIM])
 {
     const Real bsq  = m::max(dot(D.bcon, D.bcov), SMALL);
+    const Real b_mag = m::sqrt(bsq);
     const Real eta  = pgas + rho + u + bsq;
     const Real ptot = pgas + 0.5 * bsq;
 
     DLOOP1 emhd[mu] = eta * D.ucon[dir] * D.ucov[mu] + ptot * (dir == mu) - D.bcon[dir] * D.bcov[mu];
-    
+
     if (emhd_params.feedback) {
         if (emhd_params.conduction)
             DLOOP1
-                emhd[mu] += (q / m::sqrt(bsq)) * ((D.ucon[dir] * D.bcov[mu]) + (D.bcon[dir] * D.ucov[mu]));
+                emhd[mu] += (q / b_mag) * ((D.ucon[dir] * D.bcov[mu]) + (D.bcon[dir] * D.ucov[mu]));
         if (emhd_params.viscosity)                
             DLOOP1
-                emhd[mu] -= dP * ((D.bcon[dir] * D.bcov[mu] / bsq) - (1./3) * ((dir == mu) + D.ucon[dir] * D.ucov[mu]));
+                emhd[mu] -= dP * ((D.bcon[dir] * D.bcov[mu] / bsq) - (1./3.) * ((dir == mu) + D.ucon[dir] * D.ucov[mu]));
     }
 }
 
@@ -416,10 +425,12 @@ KOKKOS_INLINE_FUNCTION void convert_prims_to_q_dP(const Real& q_tilde, const Rea
         q = q_tilde;
         if (emhd_params.higher_order_terms) {
             if (emhd_params.type == ClosureType::kappa_eta)
-                q *= m::sqrt(emhd_params.kappa * m::pow(Theta, 2) / emhd_params.tau);
+                q *= m::sqrt(emhd_params.kappa * Theta * Theta / emhd_params.tau);
             else
-                q *= m::sqrt(rho * emhd_params.conduction_alpha * cs2 * m::pow(Theta, 2));
+                q *= m::sqrt(rho * emhd_params.conduction_alpha * cs2 * Theta * Theta);
         }
+    } else {
+        q = 0.;
     }
 
     if (emhd_params.viscosity) {
@@ -430,6 +441,8 @@ KOKKOS_INLINE_FUNCTION void convert_prims_to_q_dP(const Real& q_tilde, const Rea
             else
                 dP *= m::sqrt(rho * emhd_params.viscosity_alpha * cs2 * Theta);
         }
+    } else {
+        dP = 0.;
     }
 }
 #endif

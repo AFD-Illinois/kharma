@@ -93,6 +93,7 @@ std::shared_ptr<KHARMAPackage> KHARMA::InitializeGlobals(ParameterInput *pin, st
 
     return pkg;
 }
+
 void KHARMA::ResetGlobals(ParameterInput *pin, Mesh *pmesh)
 {
     // The globals package was loaded & exists, retrieve it
@@ -109,7 +110,6 @@ void KHARMA::ResetGlobals(ParameterInput *pin, Mesh *pmesh)
 
 void KHARMA::MeshPreStepUserWorkInLoop(Mesh *pmesh, ParameterInput *pin, const SimTime &tm)
 {
-    Flag("KHARMA Pre-step");
     auto& globals = pmesh->packages.Get("Globals")->AllParams();
     if (!globals.Get<bool>("in_loop")) {
         globals.Update<bool>("in_loop", true);
@@ -120,7 +120,6 @@ void KHARMA::MeshPreStepUserWorkInLoop(Mesh *pmesh, ParameterInput *pin, const S
 
 void KHARMA::MeshPostStepUserWorkInLoop(Mesh *pmesh, ParameterInput *pin, const SimTime &tm)
 {
-    Flag("KHARMA Post-step");
     // Knowing this works took a little digging into Parthenon's EvolutionDriver.
     // The order of operations after calling Step() is:
     // 1. Call PostStepUserWorkInLoop and PostStepDiagnostics (this function and following)
@@ -252,17 +251,18 @@ void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
     if (tmp_coords.stopx(3) >= 0)
         pin->GetOrAddReal("parthenon/mesh", "x3max", tmp_coords.stopx(3));
 
-    Flag("Fixed");
+    EndFlag();
 }
 
 TaskStatus KHARMA::AddPackage(std::shared_ptr<Packages_t>& packages,
                               std::function<std::shared_ptr<KHARMAPackage>(ParameterInput*, std::shared_ptr<Packages_t>&)> package_init,
                               ParameterInput *pin)
 {
-    Flag("AddPackage");
+    // TODO package names before initialization
     const auto& pkg = package_init(pin, packages);
     packages->Add(pkg);
-    EndFlag("AddPackage "+pkg->label());
+    Flag("AddPackage_"+pkg->label());
+    EndFlag();
     return TaskStatus::complete;
 }
 
@@ -275,6 +275,7 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput> &pin)
     Flag("ProcessPackages");
 
     // Allocate the packages list as a shared pointer, to be updated in various tasks
+    // TODO print what we're doing here & do some sanity checks, if verbose
     auto packages = std::make_shared<Packages_t>();
 
     TaskCollection tc;
@@ -324,9 +325,8 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput> &pin)
         if (t_b_field == t_none) t_b_field = t_b_cleanup;
     }
 
-    // Enable calculating jcon iff it is in any list of outputs (and there's even B to calculate it)
+    // Enable calculating jcon iff it is in any list of outputs (and there's even B to calculate it).
     // Since it is never required to restart, this is the only time we'd write (hence, need) it
-    // TODO use GetVector & == when available
     if (FieldIsOutput(pin.get(), "jcon") && t_b_field != t_none) {
         auto t_current = tl.AddTask(t_b_field, KHARMA::AddPackage, packages, Current::Initialize, pin.get());
     }
@@ -344,22 +344,24 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput> &pin)
     // Execute the whole collection (just in case we do something fancy?)
     while (!tr.Execute()); // TODO this will inf-loop on error
 
-    // The Flux package needs to know variable counts for allocating memory,
-    // so we initialize it after the main dependency tree
+    // There are some packages which must be loaded after all physics
+    // Easier to load them separately than list dependencies
+
+    // Flux temporaries must be full size
     KHARMA::AddPackage(packages, Flux::Initialize, pin.get());
-    // Same with boundaries
-    // TODO only init if at least one boundary is "user"
+
+    // And any dirichlet/constant boundaries
+    // TODO avoid init if Parthenon will be handling all boundaries?
     KHARMA::AddPackage(packages, KBoundaries::Initialize, pin.get());
 
-    // Load the implicit package *last*, if there are any variables which need implicit evolution
-    // TODO print what we're doing here & do some sanity checks, if verbose
-    int n_implicit = packages->Get("Driver")->Param<int>("n_implicit_vars");
+    // Load the implicit package last, and only if there are any variables which need implicit evolution
+    int n_implicit = CountVars(packages.get(), Metadata::GetUserFlag("Implicit"));
     if (n_implicit > 0) {
         KHARMA::AddPackage(packages, Implicit::Initialize, pin.get());
-        // Implicit evolution must use predictor-corrector i.e. "vl2" integrator
-        pin->SetString("parthenon/time", "integrator", "vl2");
     }
 
-    EndFlag("ProcessPackages"); // TODO print full package list way up here?
+    // TODO print full package list as soon as we know it, up here
+
+    EndFlag();
     return std::move(*packages);
 }

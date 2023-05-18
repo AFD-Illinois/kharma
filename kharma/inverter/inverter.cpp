@@ -45,7 +45,6 @@
 template<Inverter::Type inverter>
 inline void BlockPerformInversion(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
-    Flag(rc, "Filling Primitives");
     auto pmb = rc->GetBlockPointer();
     const auto& G = pmb->coords;
 
@@ -81,7 +80,6 @@ inline void BlockPerformInversion(MeshBlockData<Real> *rc, IndexDomain domain, b
             }
         }
     );
-    Flag(rc, "Filled");
 }
 
 std::shared_ptr<KHARMAPackage> Inverter::Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages)
@@ -147,7 +145,6 @@ void Inverter::BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coars
 
 TaskStatus Inverter::PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
 {
-    Flag("Printing Floor diagnostics");
     auto pmesh = md->GetMeshPointer();
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
     // Options
@@ -156,7 +153,6 @@ TaskStatus Inverter::PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
 
     // Debugging/diagnostic info about floor and inversion flags
     if (flag_verbose >= 1) {
-        Flag("Printing flags");
         int nflags = Reductions::CountFlags(md, "pflag", Inverter::status_names, IndexDomain::interior, flag_verbose, false);
         // TODO TODO yell here if there are too many flags
     }

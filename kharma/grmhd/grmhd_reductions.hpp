@@ -101,7 +101,7 @@ KOKKOS_INLINE_FUNCTION Real eht_lum(REDUCE_FUNCTION_ARGS_MESH)
         Real rho = P(m_p.RHO, b, k, j, i);
         Real Pg = (gam - 1.) * P(b, m_p.UU, k, j, i);
         Real Bmag = m::sqrt(dot(Dtmp.bcon, Dtmp.bcov));
-        Real j_eht = rho*rho*rho/Pg/Pg * m::exp(-0.2 * m::pow(rho * rho / (Bmag * Pg * Pg), 1./3.));
+        Real j_eht = rho*rho*rho/Pg/Pg * m::exp(-0.2 * m::cbrt(rho * rho / (Bmag * Pg * Pg)));
         return j_eht;
     } else {
         return 0.;

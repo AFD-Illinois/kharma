@@ -57,14 +57,14 @@ KOKKOS_INLINE_FUNCTION void calc_tensor(const Local& P, const VarMap& m_p, const
 {
     if (m_p.Q >= 0 || m_p.DP >= 0) {
         // Apply higher-order terms conversion if necessary
-        Real q, dP;
-        Real qtilde, dPtilde;
+        Real qtilde = 0., dPtilde = 0.;
         if (emhd_params.conduction)
             qtilde = P(m_p.Q);
         if (emhd_params.viscosity)
             dPtilde = P(m_p.DP);
         const Real Theta = (gam - 1) * P(m_p.UU) / P(m_p.RHO);
         const Real cs2   = gam * (gam - 1) * P(m_p.UU) / (P(m_p.RHO) + gam * P(m_p.UU));
+        Real q, dP;
         EMHD::convert_prims_to_q_dP(qtilde, dPtilde, P(m_p.RHO), Theta, cs2, emhd_params, q, dP);
 
         // Then calculate the tensor
@@ -87,14 +87,14 @@ KOKKOS_INLINE_FUNCTION void calc_tensor(const Global& P, const VarMap& m_p, cons
     if (m_p.Q >= 0 || m_p.DP >= 0) {
 
         // Apply higher-order terms conversion if necessary
-        Real q, dP;
-        Real qtilde, dPtilde;
+        Real qtilde = 0., dPtilde = 0.;
         if (emhd_params.conduction)
             qtilde = P(m_p.Q, k, j, i);
         if (emhd_params.viscosity)
             dPtilde = P(m_p.DP, k, j, i);
         const Real Theta = (gam - 1) * P(m_p.UU, k, j, i) / P(m_p.RHO, k, j, i);
         const Real cs2   = gam * (gam - 1) * P(m_p.UU, k, j, i) / (P(m_p.RHO, k, j, i) + gam * P(m_p.UU, k, j, i));
+        Real q, dP;
         EMHD::convert_prims_to_q_dP(qtilde, dPtilde, P(m_p.RHO, k, j, i), Theta, cs2, emhd_params, q, dP);
 
         // Then calculate the tensor
@@ -107,20 +107,6 @@ KOKKOS_INLINE_FUNCTION void calc_tensor(const Global& P, const VarMap& m_p, cons
         GRHD::calc_tensor(P(m_p.RHO, k, j, i), P(m_p.UU, k, j, i), (gam - 1) * P(m_p.UU, k, j, i), D, dir, T);
     }
 }
-
-// template<typename Local>
-// KOKKOS_INLINE_FUNCTION void calc_tensor(const GRCoordinates& G, const Local& P, const VarMap& m_p, const FourVectors D,
-//                                          const Real& gam, const int& dir,
-//                                          Real T[GR_DIM])
-// {
-//     if (m_p.B1 >= 0) {
-//         // GRMHD stress-energy tensor w/ first index up, second index down
-//         GRMHD::calc_tensor(P(m_p.RHO), P(m_p.UU), (gam - 1) * P(m_p.UU), D, dir, T);
-//     } else {
-//         // GRHD stress-energy tensor w/ first index up, second index down
-//         GRHD::calc_tensor(P(m_p.RHO), P(m_p.UU), (gam - 1) * P(m_p.UU), D, dir, T);
-//     }
-// }
 
 /**
  * Turn the primitive variables at a location into:
@@ -335,26 +321,22 @@ KOKKOS_INLINE_FUNCTION void vchar(const GRCoordinates& G, const Local& P, const 
         
         // Find fast magnetosonic speed
         const Real bsq = m::max(dot(D.bcon, D.bcov), SMALL);
-        const Real ee  = bsq + ef;
-        const Real va2 = bsq / ee;
+        const Real va2 = bsq / (bsq + ef);
 
-        Real ccond2 = 0.;
-        Real cvis2  = 0.;
+        const Real ccond2 = (emhd_params.conduction)
+            ? (gam - 1.) * emhd_params.conduction_alpha * cs2
+            : 0.0;
+        const Real cvis2 = (emhd_params.viscosity)
+            ? (4./3.) / (P(m.RHO) + (gam * P(m.UU)) ) * P(m.RHO) * emhd_params.viscosity_alpha * cs2
+            : 0.0;
 
-        if (emhd_params.conduction)
-            ccond2 = (gam - 1.) * emhd_params.conduction_alpha * cs2;
-        if (emhd_params.viscosity)
-            cvis2 = (4./3.) / (P(m.RHO) + (gam * P(m.UU)) ) * P(m.RHO) * emhd_params.viscosity_alpha * cs2;
-
-        const Real cscond   = 0.5*(cs2 + ccond2 + sqrt(cs2*cs2 + ccond2*ccond2) ) ;
-        const Real cs2_emhd = cscond + cvis2;
+        const Real cs2_emhd = 0.5*(cs2 + ccond2 + m::sqrt(cs2*cs2 + ccond2*ccond2)) + cvis2;
 
         cms2 = cs2_emhd + va2 - cs2_emhd*va2;
     } else if (m.B1 >= 0) {
         // Find fast magnetosonic speed
         const Real bsq = m::max(dot(D.bcon, D.bcov), SMALL);
-        const Real ee  = bsq + ef;
-        const Real va2 = bsq / ee;
+        const Real va2 = bsq / (bsq + ef);
 
         cms2 = cs2 + va2 - cs2 * va2;
     } else {
@@ -377,13 +359,10 @@ KOKKOS_INLINE_FUNCTION void vchar(const GRCoordinates& G, const Local& P, const 
         const Real Au   = dot(Acov, D.ucon);
         const Real Bu   = dot(Bcov, D.ucon);
         const Real AB   = dot(Acon, Bcov);
-        const Real Au2  = Au * Au;
-        const Real Bu2  = Bu * Bu;
-        const Real AuBu = Au * Bu;
 
-        A = Bu2 - (Bsq + Bu2) * cms2;
-        B = 2. * (AuBu - (AB + AuBu) * cms2);
-        C = Au2 - (Asq + Au2) * cms2;
+        A = Bu*Bu - (Bsq + Bu*Bu) * cms2;
+        B = 2. * (Au*Bu - (AB + Au*Bu) * cms2);
+        C = Au*Au - (Asq + Au*Au) * cms2;
     }
 
     Real discr = m::sqrt(m::max(B * B - 4. * A * C, 0.));

@@ -34,6 +34,7 @@
 
 #include "emhd/conducting_atmosphere.hpp"
 
+#include "b_flux_ct.hpp"
 #include "boundaries.hpp"
 #include "coordinate_utils.hpp"
 
@@ -54,15 +55,8 @@ TaskStatus InitializeAtmosphere(std::shared_ptr<MeshBlockData<Real>>& rc, Parame
 
     // Obtain EMHD params
     const bool use_emhd     = pmb->packages.AllPackages().count("EMHD");
-    bool higher_order_terms = false;
-    EMHD::EMHD_parameters emhd_params_tmp;
-    if (use_emhd) {
-        std::cout << "Hydrostatic atmosphere will be conducting w/EMHD" << std::endl;
-        const auto& emhd_pars = pmb->packages.Get("EMHD")->AllParams();
-        emhd_params_tmp       = emhd_pars.Get<EMHD::EMHD_parameters>("emhd_params");
-        higher_order_terms    = emhd_params_tmp.higher_order_terms;
-    }
-    const EMHD::EMHD_parameters& emhd_params = emhd_params_tmp;
+    EMHD::EMHD_parameters emhd_params = EMHD::GetEMHDParameters(pmb->packages);
+    emhd_params.higher_order_terms = false;
 
     // Obtain GRMHD params
     const auto& grmhd_pars = pmb->packages.Get("GRMHD")->AllParams();
@@ -112,22 +106,25 @@ TaskStatus InitializeAtmosphere(std::shared_ptr<MeshBlockData<Real>>& rc, Parame
     GridScalar u    = rc->Get("prims.u").data; 
     GridVector uvec = rc->Get("prims.uvec").data;
     GridVector B_P  = rc->Get("prims.B").data;
-    GridScalar q;
-    GridScalar dP;
-    if (use_emhd) {
-        q  = rc->Get("prims.q").data;
-        dP = rc->Get("prims.dP").data;
-    }
+
     // Host side mirror of primitives
     auto rho_host   = rho.GetHostMirror();
     auto u_host     = u.GetHostMirror();
     auto uvec_host  = uvec.GetHostMirror();
     auto B_host     = B_P.GetHostMirror();
+
+    // Then for EMHD if enabled
+    GridScalar q;
+    GridScalar dP;
     // Temporary initializations are necessary for auto type
     auto q_host     = rho.GetHostMirror();
     auto dP_host    = rho.GetHostMirror();
-    if (use_emhd) {
+    if (use_emhd && emhd_params.conduction) {
+        q  = rc->Get("prims.q").data;
         q_host  = q.GetHostMirror();
+    }
+    if (use_emhd && emhd_params.viscosity) {
+        dP = rc->Get("prims.dP").data;
         dP_host = dP.GetHostMirror();
     }
 
@@ -140,7 +137,7 @@ TaskStatus InitializeAtmosphere(std::shared_ptr<MeshBlockData<Real>>& rc, Parame
         fscanf(fp_r, "%lf", &(rCoords[i]));
         GReal Xembed[GR_DIM];
         G.coord_embed(0, jb_in.s, i, Loci::center, Xembed);
-        error = fabs(Xembed[1] - rCoords[i]);
+        error = m::abs(Xembed[1] - rCoords[i]);
         if (error > 1.e-10) {
             fprintf(stdout, "Error at radial zone i = %d, Error = %8.5e KHARMA: %8.7e, sage nb: %8.7e\n", i, error, Xembed[1], rCoords[i]);
             exit(-1);
@@ -148,6 +145,7 @@ TaskStatus InitializeAtmosphere(std::shared_ptr<MeshBlockData<Real>>& rc, Parame
     }
 
     // Initialize primitives
+    // TODO read->copy->assign on device?
     double rho_temp, u_temp, q_temp;
 
     for (int i = ib.s; i <= ib.e; i++) {
@@ -170,61 +168,44 @@ TaskStatus InitializeAtmosphere(std::shared_ptr<MeshBlockData<Real>>& rc, Parame
                     q_host(k, j, i) = q_temp;
 
                 // Now the remaining primitives
-                uvec_host(V1, k, j, i) = 0.;
-                uvec_host(V2, k, j, i) = 0.;
-                uvec_host(V3, k, j, i) = 0.;
-                B_host(V1, k, j, i)    = 1./pow(Xembed[1], 3.);
+                B_host(V1, k, j, i)    = 1./(Xembed[1]*Xembed[1]*Xembed[1]);
                 B_host(V2, k, j, i)    = 0.;
                 B_host(V3, k, j, i)    = 0.;
-                if (use_emhd)
+                if (use_emhd && emhd_params.viscosity)
                     dP_host(k, j, i)   = 0.;
 
                 // Note that the velocity primitives defined up there aren't quite right.
                 // For a fluid at rest wrt. the normal observer, ucon = {-1/g_tt,0,0,0}. 
                 // We need to use this info to obtain the correct values for U1, U2 and U3
-                // TODO is this just fourvel_to_prim?
 
                 Real ucon[GR_DIM]         = {0};
                 Real gcov[GR_DIM][GR_DIM] = {0};
                 Real gcon[GR_DIM][GR_DIM] = {0};
-                G.gcov(Loci::center, j, i, gcov);
-                G.gcon(Loci::center, j, i, gcon);
+                // Use functions because we're host-side
+                G.coords.gcov_native(Xnative, gcov);
+                G.coords.gcon_native(Xnative, gcon);
 
-                ucon[0] = 1./sqrt(-gcov[0][0]);
+                ucon[0] = 1. / m::sqrt(-gcov[0][0]);
                 ucon[1] = 0.;
                 ucon[2] = 0.;
                 ucon[3] = 0.;
 
-                double alpha, beta[GR_DIM], gamma;
+                // Solve for & assign primitive velocities (utilde)
+                Real u_prim[NVEC];
+                fourvel_to_prim(gcon, ucon, u_prim);
+                uvec_host(V1, k, j, i) = u_prim[V1];
+                uvec_host(V2, k, j, i) = u_prim[V2];
+                uvec_host(V3, k, j, i) = u_prim[V3];
 
-                // Solve for primitive velocities (utilde)
-                alpha = 1/sqrt(-gcon[0][0]);
-                gamma = ucon[0] * alpha;
-
-                beta[0] = 0.;
-                beta[1] = alpha*alpha*gcon[0][1];
-                beta[2] = alpha*alpha*gcon[0][2];
-                beta[3] = alpha*alpha*gcon[0][3];
-
-                uvec_host(V1, k, j, i) = ucon[1] + beta[1]*gamma/alpha;
-                uvec_host(V2, k, j, i) = ucon[2] + beta[2]*gamma/alpha;
-                uvec_host(V3, k, j, i) = ucon[3] + beta[3]*gamma/alpha;
-
-                if (use_emhd) {
+                if (use_emhd && emhd_params.higher_order_terms) {
                     // Update q_host (and dP_host, which is zero in this problem). These are now q_tilde and dP_tilde
-                    Real q_tilde  = q_host(k, j, i);
-                    Real dP_tilde = dP_host(k, j, i);
-
-                    if (emhd_params.higher_order_terms) {
-                        Real tau, chi_e, nu_e;
-                        EMHD::set_parameters_init(G, rho_temp, u_temp, emhd_params, gam, k, j, i, tau, chi_e, nu_e);
-                        const Real Theta = (gam - 1.) * u_temp / rho_temp;
-
-                        q_tilde    *= (chi_e != 0) ? sqrt(tau / (chi_e * rho_temp * pow(Theta, 2.))) : 0.;
-                        dP_tilde   *= (nu_e  != 0) ? sqrt(tau / (nu_e * rho_temp * Theta)) : 0.;
-                    }
-                    q_host(k, j, i)   = q_tilde;
-                    dP_host(k, j, i)  = dP_tilde;
+                    Real tau, chi_e, nu_e;
+                    EMHD::set_parameters_init(G, rho_temp, u_temp, emhd_params, gam, k, j, i, tau, chi_e, nu_e);
+                    const Real Theta = (gam - 1.) * u_temp / rho_temp;
+                    if (emhd_params.conduction)
+                        q_host(k, j, i)  *= (chi_e != 0) ? m::sqrt(tau / (chi_e * rho_temp * Theta * Theta)) : 0;
+                    if (emhd_params.viscosity)
+                        dP_host(k, j, i) *= (nu_e  != 0) ? m::sqrt(tau / (nu_e * rho_temp * Theta)) : 0;
                 }
             }
         }
@@ -243,13 +224,15 @@ TaskStatus InitializeAtmosphere(std::shared_ptr<MeshBlockData<Real>>& rc, Parame
     u.DeepCopy(u_host);
     uvec.DeepCopy(uvec_host);
     B_P.DeepCopy(B_host);
-    if (use_emhd) {
+    if (use_emhd && emhd_params.conduction)
         q.DeepCopy(q_host);
+    if (use_emhd && emhd_params.viscosity)
         dP.DeepCopy(dP_host);
-    }
     Kokkos::fence();
 
-    Flag("Initialized");
+    // Also fill cons.B
+    B_FluxCT::BlockPtoU(rc.get(), IndexDomain::entire, false);
+
     return TaskStatus::complete;
 
 }

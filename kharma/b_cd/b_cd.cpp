@@ -57,16 +57,6 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     // Maximum between MPI processes, updated after each step; that is, always a maximum.
     params.Add("ctop_max_last", 0.0, true);
 
-    // Update variable numbers
-    // auto& driver = packages->Get("Driver")->AllParams();
-    // if (implicit_b) {
-    //     int n_current = driver.Get<int>("n_implicit_vars");
-    //     driver.Update("n_implicit_vars", n_current+3);
-    // } else {
-    //     int n_current = driver.Get<int>("n_explicit_vars");
-    //     driver.Update("n_explicit_vars", n_current+3);
-    // }
-
     std::vector<int> s_vector({NVEC});
 
     // B field as usual
@@ -111,7 +101,6 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
 
 void BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
-    Flag(rc, "B field UtoP");
     auto pmb = rc->GetBlockPointer();
 
     auto& B_U = rc->Get("cons.B").data;
@@ -134,12 +123,10 @@ void BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
             psi_P(k, j, i) = psi_U(k, j, i) / gdet;
         }
     );
-    Flag(rc, "End B field UtoP");
 }
 
 TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
 {
-    Flag(md, "Adding constraint damping source");
     auto pmesh = md->GetMeshPointer();
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
     const int ndim = pmesh->ndim;
@@ -196,7 +183,6 @@ TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
         }
     );
 
-    Flag("Added");
     return TaskStatus::complete;
 }
 
@@ -237,7 +223,6 @@ Real MaxDivB(MeshData<Real> *md)
 
 TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
 {
-    Flag(md, "Printing B field diagnostics");
     auto pmesh = md->GetMeshPointer();
 
     // Print this unless we quash everything
@@ -253,7 +238,6 @@ TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
         }
     }
 
-    Flag(md, "Printed");
     return TaskStatus::complete;
 }
 

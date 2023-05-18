@@ -118,23 +118,18 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     // We would want this for the torus runs but not for the test problems. 
     // For eg: we know that this affects the viscous bondi problem
     bool enable_emhd_limits = pin->GetOrAddBoolean("floors", "emhd_limits", false) ||
-                                pin->GetOrAddBoolean("emhd", "limits", false);
+                                pin->GetOrAddBoolean("emhd", "stability_limits", false);
     // Only enable limits internally if we're actually doing EMHD
     params.Add("enable_emhd_limits", enable_emhd_limits);
-
-    // Update variable numbers
-    auto& driver = packages->Get("Driver")->AllParams();
-    int n_current = driver.Get<int>("n_implicit_vars");
-    driver.Update("n_implicit_vars", n_current+2);
 
     Metadata::AddUserFlag("EMHD");
 
     // General options for primitive and conserved scalar variables in ImEx driver
     // EMHD is supported only with imex driver and implicit evolution
     Metadata m_con  = Metadata({Metadata::Real, Metadata::Cell, Metadata::Independent, Metadata::GetUserFlag("Implicit"),
-                                Metadata::Conserved, Metadata::WithFluxes, Metadata::GetUserFlag("EMHD")});
+                                Metadata::Restart, Metadata::WithFluxes, Metadata::FillGhost, Metadata::Conserved, Metadata::GetUserFlag("EMHD")});
     Metadata m_prim = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::GetUserFlag("Implicit"),
-                                Metadata::FillGhost, Metadata::Restart, Metadata::GetUserFlag("Primitive"), Metadata::GetUserFlag("EMHD")});
+                                Metadata::GetUserFlag("Primitive"), Metadata::GetUserFlag("EMHD")});
 
     // Heat conduction
     if (conduction) {
@@ -161,13 +156,52 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     Metadata m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
     pkg->AddField("eflag", m);
 
+    // Callbacks
+
+    // This is for boundary syncs and output
+    pkg->BlockUtoP = EMHD::BlockUtoP;
+
+    // Add all explicit source terms -- implicit terms are called from Implicit::Step
     pkg->AddSource = EMHD::AddSource;
 
+    // Add floors
     if (enable_emhd_limits) {
         pkg->BlockApplyFloors = EMHD::ApplyEMHDLimits;
     }
 
     return pkg;
+}
+
+void BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
+{
+    auto pmb = rc->GetBlockPointer();
+
+    PackIndexMap prims_map, cons_map;
+    auto U_E = rc->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("EMHD"), Metadata::Conserved}, cons_map);
+    auto P = rc->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("Primitive")}, prims_map);
+    const VarMap m_p(prims_map, false), m_u(cons_map, true);
+
+    const auto& G = pmb->coords;
+
+    auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
+    const IndexRange ib = bounds.GetBoundsI(domain);
+    const IndexRange jb = bounds.GetBoundsJ(domain);
+    const IndexRange kb = bounds.GetBoundsK(domain);
+
+    pmb->par_for("UtoP_EMHD", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+        KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+            const Real gamma = GRMHD::lorentz_calc(G, P, m_p, k, j, i, Loci::center);
+            const Real inv_alpha = m::sqrt(-G.gcon(Loci::center, j, i, 0, 0));
+            const Real ucon0 = gamma * inv_alpha;
+
+            // Update the primitive EMHD fields
+            if (m_p.Q >= 0)
+                P(m_p.Q, k, j, i) = U_E(m_u.Q, k, j, i) / (ucon0 * G.gdet(Loci::center, j, i));
+            if (m_p.DP >= 0)
+                P(m_p.DP, k, j, i) = U_E(m_u.DP, k, j, i) / (ucon0 * G.gdet(Loci::center, j, i));
+        }
+    );
+    Kokkos::fence();
 }
 
 void InitEMHDVariables(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin)
@@ -177,7 +211,6 @@ void InitEMHDVariables(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput 
 
 TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
 {
-    Flag(mdudt, "Adding EMHD Explicit Sources");
     // Pointers
     auto pmesh = mdudt->GetMeshPointer();
     auto pmb0  = mdudt->GetBlockData(0)->GetBlockPointer();
@@ -262,7 +295,7 @@ TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
                 DLOOP2 q0         -= rho * chi_e * (D.bcon[mu] / mag_b) * Theta * D.ucon[nu] * grad_ucov[nu][mu];
                 Real q0_tilde      = q0; 
                 if (emhd_params.higher_order_terms)
-                    q0_tilde *= (chi_e != 0) * m::sqrt(tau / (chi_e * rho * Theta * Theta) );
+                    q0_tilde *= (chi_e != 0) ? m::sqrt(tau / (chi_e * rho * Theta * Theta)) : 0.0;
 
                 dUdt(b, m_u.Q, k, j, i)  += G.gdet(Loci::center, j, i) * q0_tilde / tau;
                 if (emhd_params.higher_order_terms)
@@ -275,7 +308,7 @@ TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
                 DLOOP2  dP0        += 3. * rho * nu_e * (D.bcon[mu] * D.bcon[nu] / bsq) * grad_ucov[mu][nu];
                 Real dP0_tilde      = dP0;
                 if (emhd_params.higher_order_terms)
-                    dP0_tilde *= (nu_e != 0) * m::sqrt(tau / (nu_e * rho * Theta) );
+                    dP0_tilde *= (nu_e != 0) ? m::sqrt(tau / (nu_e * rho * Theta)) : 0.0;
 
                 dUdt(b, m_u.DP, k, j, i) += G.gdet(Loci::center, j, i) * dP0_tilde / tau;
                 if (emhd_params.higher_order_terms)
@@ -284,7 +317,6 @@ TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
         }
     );
 
-    Flag(mdudt, "Added");
     return TaskStatus::complete;
 }
 

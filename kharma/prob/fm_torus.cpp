@@ -49,8 +49,9 @@ TaskStatus InitializeFMTorus(std::shared_ptr<MeshBlockData<Real>>& rc, Parameter
     GridVector uvec = rc->Get("prims.uvec").data;
     GridVector B_P  = rc->Get("prims.B").data;
 
-    // Have a look at InitializeFMTorusEMHD for the EMHD torus initialization
-    const bool use_emhd   = pin->GetOrAddBoolean("emhd", "on", false);
+    // Are we using EMHD?
+    // TODO does anything really change?  If so use packages.count
+    //const bool use_emhd   = pin->GetOrAddBoolean("emhd", "on", false);
 
     const GReal rin      = pin->GetOrAddReal("torus", "rin", 6.0);
     const GReal rmax     = pin->GetOrAddReal("torus", "rmax", 12.0);
@@ -206,7 +207,6 @@ TaskStatus InitializeFMTorus(std::shared_ptr<MeshBlockData<Real>>& rc, Parameter
 // TODO move this to a different file
 TaskStatus PerturbU(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin)
 {
-    Flag(rc, "Applying U perturbation");
     auto pmb = rc->GetBlockPointer();
     auto rho = rc->Get("prims.rho").data;
     auto u = rc->Get("prims.u").data;
@@ -257,6 +257,5 @@ TaskStatus PerturbU(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pi
         );
     }
 
-    Flag(rc, "Applied");
     return TaskStatus::complete;
 }

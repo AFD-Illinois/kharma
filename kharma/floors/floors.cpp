@@ -157,7 +157,7 @@ std::shared_ptr<KHARMAPackage> Floors::Initialize(ParameterInput *pin, std::shar
 
 TaskStatus Floors::ApplyInitialFloors(ParameterInput *pin, MeshBlockData<Real> *mbd, IndexDomain domain)
 {
-    Flag(mbd, "Applying first floors");
+    Flag("ApplyInitialFloors");
 
     auto pmb = mbd->GetBlockPointer();
 
@@ -216,14 +216,12 @@ TaskStatus Floors::ApplyInitialFloors(ParameterInput *pin, MeshBlockData<Real> *
         }
     );
 
-    Flag(mbd, "Applied");
+    EndFlag();
     return TaskStatus::complete;
 }
 
 TaskStatus Floors::ApplyGRMHDFloors(MeshBlockData<Real> *mbd, IndexDomain domain)
 {
-    Flag(mbd, "Applying GRMHD floors");
-
     auto pmb                 = mbd->GetBlockPointer();
 
     PackIndexMap prims_map, cons_map;
@@ -285,13 +283,11 @@ TaskStatus Floors::ApplyGRMHDFloors(MeshBlockData<Real> *mbd, IndexDomain domain
         }
     );
 
-    Flag(mbd, "Applied");
     return TaskStatus::complete;
 }
 
 TaskStatus Floors::PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
 {
-    Flag("Printing Floor diagnostics");
     auto pmesh = md->GetMeshPointer();
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
     // Options
@@ -300,7 +296,6 @@ TaskStatus Floors::PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
 
     // Debugging/diagnostic info about floor and inversion flags
     if (flag_verbose >= 1) {
-        Flag("Printing flags");
         Reductions::CountFlags(md, "fflag", FFlag::flag_names, IndexDomain::interior, flag_verbose, true);
     }
     return TaskStatus::complete;

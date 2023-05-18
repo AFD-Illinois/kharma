@@ -66,8 +66,8 @@ bsq_over_u_max=50
 # We'll be adding material, and that's okay
 <boundaries>
 prob_uses_dirichlet = false
-check_inflow_outer = false
-check_inflow_inner = false # Hyerin test (12/22/22)
+check_inflow_outer_x1 = false
+check_inflow_inner_x1 = false # Hyerin test (12/22/22)
 fix_corner = false
 #fix_flux_pole      = 0 # Hyerin test (12/22/22)
 
