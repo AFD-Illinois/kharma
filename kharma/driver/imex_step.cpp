@@ -55,7 +55,6 @@
 
 TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int stage)
 {
-    Flag("Generating default task collection");
     // Reminder that this list is created BEFORE any of the list contents are run!
     // Prints or function calls here will likely not do what you want: instead, add to the list by calling tl.AddTask()
 
@@ -307,7 +306,6 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
     // modified on each rank.
     const auto &two_sync = pkgs.at("Driver")->Param<bool>("two_sync");
     if (two_sync) KHARMADriver::AddFullSyncRegion(pmesh, tc, stage);
-
 
     return tc;
 }

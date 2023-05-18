@@ -43,7 +43,7 @@ using namespace parthenon;
 
 TaskStatus Flux::BlockPtoUMHD(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
-    Flag(rc, "Getting conserved GRMHD variables");
+    Flag("Flux::BlockPtoUMHD");
     // Pointers
     auto pmb = rc->GetBlockPointer();
     // Options
@@ -57,7 +57,6 @@ TaskStatus Flux::BlockPtoUMHD(MeshBlockData<Real> *rc, IndexDomain domain, bool 
     const auto& P = rc->PackVariables({Metadata::GetUserFlag("Primitive")}, prims_map);
     const auto& U = rc->PackVariables({Metadata::Conserved}, cons_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
-    const int nvar = U.GetDim(4);
 
     auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
     const IndexRange ib = bounds.GetBoundsI(domain);
@@ -72,14 +71,12 @@ TaskStatus Flux::BlockPtoUMHD(MeshBlockData<Real> *rc, IndexDomain domain, bool 
         }
     );
 
-
-    Flag(rc, "Got conserved variables");
+    EndFlag();
     return TaskStatus::complete;
 }
 
 TaskStatus Flux::BlockPtoU(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
-    Flag(rc, "Getting conserved GRMHD variables");
     // Pointers
     auto pmb = rc->GetBlockPointer();
     // Options
@@ -108,8 +105,6 @@ TaskStatus Flux::BlockPtoU(MeshBlockData<Real> *rc, IndexDomain domain, bool coa
         }
     );
 
-
-    Flag(rc, "Got conserved variables");
     return TaskStatus::complete;
 }
 
@@ -122,7 +117,7 @@ TaskStatus Flux::MeshPtoU(MeshData<Real> *md, IndexDomain domain, bool coarse)
 
 TaskStatus Flux::BlockPtoU_Send(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
-    Flag(rc, "Getting conserved GRMHD variables");
+    // 
     // Pointers
     auto pmb = rc->GetBlockPointer();
     const int ndim = pmb->pmy_mesh->ndim;
@@ -167,7 +162,7 @@ TaskStatus Flux::BlockPtoU_Send(MeshBlockData<Real> *rc, IndexDomain domain, boo
         if (ndim < 3) return TaskStatus::complete;
         kb.s -= ng;
         kb.e -= ng;
-    }
+    } // TODO(BSP) error?
 
     const auto& G = pmb->coords;
 
@@ -177,8 +172,6 @@ TaskStatus Flux::BlockPtoU_Send(MeshBlockData<Real> *rc, IndexDomain domain, boo
         }
     );
 
-
-    Flag(rc, "Got conserved variables");
     return TaskStatus::complete;
 }
 

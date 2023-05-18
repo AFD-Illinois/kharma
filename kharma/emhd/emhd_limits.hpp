@@ -90,7 +90,7 @@ KOKKOS_INLINE_FUNCTION int apply_instability_limits(const GRCoordinates& G, cons
     if (emhd_params.conduction) {
         Real qmax         = 1.07 * rho * cs*cs*cs;
         Real max_frac     = m::max(m::abs(q) / qmax, 1.);
-        if (fabs(q) / qmax > 1.)
+        if (m::abs(q) / qmax > 1.)
             eflag |= HIT_Q_LIMIT;
 
         P(m_p.Q, k, j, i) = P(m_p.Q, k, j, i) / max_frac;
@@ -126,8 +126,6 @@ KOKKOS_INLINE_FUNCTION int apply_instability_limits(const GRCoordinates& G, cons
  */
 inline void ApplyEMHDLimits(MeshBlockData<Real> *mbd, IndexDomain domain)
 {
-    Flag(mbd, "Applying EMHD limits");
-
     auto pmb                 = mbd->GetBlockPointer();
     auto packages            = pmb->packages;
 
@@ -156,8 +154,6 @@ inline void ApplyEMHDLimits(MeshBlockData<Real> *mbd, IndexDomain domain)
             eflag(k, j, i) = apply_instability_limits(G, P, m_p, gam, emhd_params, k, j, i, U, m_u);
         }
     );
-
-    Flag(mbd, "Applied");
 }
 
 } // EMHD

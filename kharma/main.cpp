@@ -76,6 +76,11 @@ void print_backtrace(int sig) {
   exit(1);
 }
 #endif
+// Single globals for proper indentation when tracing execution
+#if TRACE
+int kharma_debug_trace_indent = 0;
+int kharma_debug_trace_mutex = 0;
+#endif
 
 using namespace parthenon;
 
@@ -119,7 +124,7 @@ int main(int argc, char *argv[])
 
     // Parthenon init includes Kokkos, MPI, parses parameters & cmdline,
     // then calls ProcessPackages and ProcessProperties, then constructs the Mesh
-    Flag("Parthenon Init");
+    Flag("ParthenonInit");
     auto manager_status = pman.ParthenonInit(argc, argv);
     if (manager_status == ParthenonStatus::complete) {
         pman.ParthenonFinalize();
@@ -129,7 +134,7 @@ int main(int argc, char *argv[])
         pman.ParthenonFinalize();
         return 1;
     }
-    EndFlag("Parthenon Init");
+    EndFlag();
 
 #if DEBUG
     // Replace Parthenon signal handlers with something that just prints a backtrace
@@ -161,8 +166,14 @@ int main(int argc, char *argv[])
         // MeshBlocks to be initialized already
         auto prob = pin->GetString("parthenon/job", "problem_id");
         bool is_restart = (prob == "resize_restart") || (prob == "resize_restart_kharma") || pman.IsRestart();
+        Flag("PostInitialize");
         KHARMA::PostInitialize(pin, pmesh, is_restart);
-        Flag("Post-initialization completed");
+        EndFlag();
+
+#if DEBUG
+        // Carry the ParameterInput with us, for generating outputs whenever we want
+        pmesh->packages.Get("Globals")->AllParams().Add("pin", pin);
+#endif
 
         // Construct a temporary driver purely for parameter parsing
         KHARMADriver driver(pin, papp, pmesh);
@@ -178,13 +189,15 @@ int main(int argc, char *argv[])
         // Then execute the driver. This is a Parthenon function inherited by our HARMDriver object,
         // which will call MakeTaskCollection, then execute the tasks on the mesh for each portion
         // of each step until a stop criterion is reached.
-        Flag("Executing Driver");
+        Flag("driver.Execute");
         auto driver_status = driver.Execute();
+        EndFlag();
     }
 
     // Parthenon cleanup includes Kokkos, MPI
-    Flag("Finalizing");
+    Flag("ParthenonFinalize");
     pman.ParthenonFinalize();
+    EndFlag();
 
     return 0;
 }

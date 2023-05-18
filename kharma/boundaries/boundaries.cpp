@@ -138,7 +138,7 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
         // TODO TODO any way to save this verbosity with constexpr/macros/something?
         if (btype == "dirichlet") {
             // Dirichlet boundaries: allocate
-            pkg->AddField("bound." + bname, (bdir == X1DIR) ? m_x1 : ((bdir == X2DIR) ? m_x2 : m_x3));
+            pkg->AddField("bounds." + bname, (bdir == X1DIR) ? m_x1 : ((bdir == X2DIR) ? m_x2 : m_x3));
             switch (bface) {
             case BoundaryFace::inner_x1:
                 pkg->KBoundaries[bface] = KBoundaries::Dirichlet<BoundaryFace::inner_x1>;
@@ -212,13 +212,12 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
 
 void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, bool coarse)
 {
-    Flag("Apply boundary");
+    Flag("ApplyBoundary"); // this is not a callback, flag for ourselves
     // KHARMA has to do some extra tasks in addition to just applying the usual
     // boundary conditions.  Therefore, we "wrap" Parthenon's (or our own)
     // boundary functions with this one.
 
     auto pmb = rc->GetBlockPointer();
-    //auto pkg = static_cast<KHARMAPackage*>(pmb->packages.Get("Boundaries").get());
     auto pkg = pmb->packages.Get<KHARMAPackage>("Boundaries");
     auto& params = pkg->AllParams();
 
@@ -229,17 +228,21 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
 
     Flag("Apply "+bname+" boundary: "+btype_name);
     pkg->KBoundaries[bface](rc, coarse);
-    EndFlag("Apply "+bname+" boundary");
+    EndFlag();
 
     // Prevent inflow of material by changing fluid speeds,
     // anywhere we've specified.
     if (params.Get<bool>("check_inflow_" + bname)) {
+        Flag("CheckInflow");
         CheckInflow(rc, domain, coarse);
+        EndFlag();
     }
 
     // If specified, fix corner values when applying X2 boundaries (see function)
     if (params.Get<bool>("fix_corner") && bdir == X2DIR) {
+        Flag("FixCorner");
         FixCorner(rc, domain, coarse);
+        EndFlag();
     }
 
     // Respect the fluid primitives on boundaries (*not* B)
@@ -247,12 +250,11 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
     // For everything else, respect conserved variables
     Packages::BlockUtoPExceptMHD(rc.get(), domain, coarse);
 
-    EndFlag("Apply boundary");
+    EndFlag();
 }
 
 void KBoundaries::CheckInflow(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, bool coarse)
 {
-    Flag("CheckInflow");
     std::shared_ptr<MeshBlock> pmb = rc->GetBlockPointer();
     const auto &G = pmb->coords;
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
@@ -269,12 +271,10 @@ void KBoundaries::CheckInflow(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDom
             KBoundaries::check_inflow(G, P, domain, m_p.U1, k, j, i);
         }
     );
-    EndFlag("CheckInflow");
 }
 
 void KBoundaries::FixCorner(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, bool coarse)
 {
-    Flag("FixCorner");
     std::shared_ptr<MeshBlock> pmb = rc->GetBlockPointer();
     if (pmb->pmy_mesh->ndim < 2)
         return;
@@ -286,7 +286,6 @@ void KBoundaries::FixCorner(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomai
     {
         ApplyBoundary(rc, IndexDomain::inner_x1, coarse);
     }
-    EndFlag("FixCorner");
 }
 
 TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)

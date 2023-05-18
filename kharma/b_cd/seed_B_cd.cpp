@@ -131,7 +131,7 @@ TaskStatus B_CD::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
                 break;
             case BSeedType::ryan:
                 // BR's smoothed poloidal in-torus
-                q = m::pow(sin(th), 3) * m::pow(r / rin, 3) * m::exp(-r / 400) * rho_av - min_rho_q;
+                q = m::pow(m::sin(th), 3) * m::pow(r / rin, 3) * m::exp(-r / 400) * rho_av - min_rho_q;
                 break;
             case BSeedType::r3s3:
                 // Just the r^3 sin^3 th term, proposed EHT standard MAD

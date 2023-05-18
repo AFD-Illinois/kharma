@@ -233,8 +233,6 @@ void ReadIharmRestartHeader(std::string fname, std::unique_ptr<ParameterInput>& 
 
 TaskStatus ReadIharmRestart(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin)
 {
-    Flag(rc, "Restarting from iharm3d checkpoint file");
-
     auto pmb = rc->GetBlockPointer();
 
     const auto fname = pin->GetString("resize_restart", "fname"); // Require this, don't guess
@@ -434,7 +432,6 @@ TaskStatus ReadIharmRestart(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterI
     auto uvec_host = uvec.GetHostMirror();
     auto B_host = B_P.GetHostMirror();
 
-    Flag("Interpolating meshblock...");
     // Interpolate on the host side & copy into the mirror Views
     // Nearest-neighbor interpolation is currently only used when grids exactly correspond -- otherwise, linear interpolation is used
     // to minimize the resulting B field divergence.
@@ -485,7 +482,6 @@ TaskStatus ReadIharmRestart(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterI
     }
 
     // Deep copy to device
-    Flag("Copying meshblock to device...");
     rho.DeepCopy(rho_host);
     u.DeepCopy(u_host);
     uvec.DeepCopy(uvec_host);
@@ -493,7 +489,6 @@ TaskStatus ReadIharmRestart(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterI
     Kokkos::fence();
 
     // Delete our cache.  Only we ever used it, so we're safe here.
-    Flag("Deleting cached interpolation values");
     delete[] ptmp;
 
     return TaskStatus::complete;

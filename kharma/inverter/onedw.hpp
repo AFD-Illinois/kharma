@@ -83,11 +83,11 @@ KOKKOS_INLINE_FUNCTION Real err_eqn(const Real& gam, const Real& Bsq, const Real
     const Real W = Wp + D;
     const Real gamma = lorentz_calc_w(Bsq, D, QdB, Qtsq, Wp);
     if (gamma < 1) eflag = Status::bad_ut;
-    const Real w = W / m::pow(gamma,2);
+    const Real w = W / (gamma*gamma);
     const Real rho = D / gamma;
     const Real p = (w - rho) * (gam - 1) / gam;
 
-    return -Ep + Wp - p + 0.5 * Bsq + 0.5 * (Bsq * Qtsq - QdB * QdB) / m::pow((Bsq + W), 2);
+    return -Ep + Wp - p + 0.5 * Bsq + 0.5 * (Bsq * Qtsq - QdB * QdB) / SQR(Bsq + W);
 
 }
 
@@ -138,7 +138,7 @@ KOKKOS_INLINE_FUNCTION Status u_to_p<Type::onedw>(const GRCoordinates &G, const 
 
     Real Qtcon[GR_DIM];
     DLOOP1 Qtcon[mu] = Qcon[mu] + ncon[mu] * Qdotn;
-    const Real Qtsq = dot(Qcon, Qcov) + m::pow(Qdotn, 2);
+    const Real Qtsq = dot(Qcon, Qcov) + Qdotn*Qdotn;
 
     // Set up eqtn for W'; this is the energy density
     const Real Ep = -Qdotn - D;
@@ -170,9 +170,9 @@ KOKKOS_INLINE_FUNCTION Status u_to_p<Type::onedw>(const GRCoordinates &G, const 
 
         // Attempt a Halley/Muller/Bailey/Press step
         const Real dedW = (errp - errm) / (Wpp - Wpm);
-        const Real dedW2 = (errp - 2. * err + errm) / m::pow(h,2);
+        const Real dedW2 = (errp - 2. * err + errm) / (h*h);
         // TODO look into changing these clipped values?
-        const Real f = clip(0.5 * err * dedW2 / m::pow(dedW,2), -0.3, 0.3);
+        const Real f = clip(0.5 * err * dedW2 / (dedW*dedW), -0.3, 0.3);
 
         dW = clip(-err / dedW / (1. - f), -0.5*Wp, 2.0*Wp);
     }

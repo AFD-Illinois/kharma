@@ -138,10 +138,7 @@ std::shared_ptr<KHARMAPackage> Implicit::Initialize(ParameterInput *pin, std::sh
 TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_init, MeshData<Real> *md_flux_src,
                 MeshData<Real> *md_linesearch, MeshData<Real> *md_solver, const Real& dt)
 {
-    Flag(md_full_step_init, "Implicit Iteration start, full step");
-    Flag(md_sub_step_init, "Implicit Iteration start, sub step");
-    Flag(md_flux_src, "Implicit Iteration start, divF and sources");
-    Flag(md_linesearch, "Linesearch");
+    Flag("Implicit::Step");
     // Pull out the block pointers for each sub-step, as we need the *mutable parameters*
     // of the EMHD package.  TODO(BSP) restrict state back to the variables...
     auto pmb_full_step_init = md_full_step_init->GetBlockData(0)->GetBlockPointer();
@@ -272,7 +269,7 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
     // different zones, so probably acceptable speed loss.
     for (int iter=1; iter <= iter_max; ++iter) {
         // Flags per iter, since debugging here will be rampant
-        Flag(md_solver, "Implicit Iteration:");
+        Flag("ImplicitIteration_"+std::to_string(iter));
 
         parthenon::par_for_outer(DEFAULT_OUTER_LOOP_PATTERN, "implicit_solve", pmb_sub_step_init->exec_space,
             total_scratch_bytes, scratch_level, block.s, block.e, kb.s, kb.e, jb.s, jb.e,
@@ -598,9 +595,10 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
             // Break if max_norm is less than the total tolerance we set.  TODO per-zone version of this?
             if (iter >= iter_min && max_norm.val < rootfind_tol) break;
         }
+        EndFlag();
     }
 
-    Flag(md_solver, "Implicit Iteration: final");
+    EndFlag();
 
     return TaskStatus::complete;
 
@@ -608,7 +606,6 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
 
 TaskStatus Implicit::PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
 {
-    Flag("Printing Implicit solver diagnostics");
     auto pmesh = md->GetMeshPointer();
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
     // Options

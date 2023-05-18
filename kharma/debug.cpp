@@ -40,11 +40,11 @@
 #include "grmhd_functions.hpp"
 #include "types.hpp"
 
+// TODO make this a DomainReduce, and add better verbosity options
 TaskStatus CheckNaN(MeshData<Real> *md, int dir, IndexDomain domain)
 {
-    Flag("Checking ctop for NaNs");
+    Flag("CheckNaN");
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
-    // TODO verbose option?
 
     // Pack variables
     auto& ctop = md->PackVariables(std::vector<std::string>{"ctop"});
@@ -96,13 +96,13 @@ TaskStatus CheckNaN(MeshData<Real> *md, int dir, IndexDomain domain)
     // TODO reimplement printing *where* these values were hit?
     // May not even be that useful, as the cause is usually much earlier
 
-    Flag("Checked");
+    EndFlag();
     return TaskStatus::complete;
 }
 
 TaskStatus CheckNegative(MeshData<Real> *md, IndexDomain domain)
 {
-    Flag("Counting negative values");
+    Flag("CheckNegative");
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
     // Pack variables
     auto rho_p = md->PackVariables(std::vector<std::string>{"prims.rho"});
@@ -159,5 +159,6 @@ TaskStatus CheckNegative(MeshData<Real> *md, IndexDomain domain)
         std::cout << "Number of negative primitive rho, u: " << nless_rho << "," << nless_u << std::endl;
     }
 
+    EndFlag();
     return TaskStatus::complete;
 }

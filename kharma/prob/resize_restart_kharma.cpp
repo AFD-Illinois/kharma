@@ -124,8 +124,6 @@ void ReadKharmaRestartHeader(std::string fname, std::unique_ptr<ParameterInput>&
 
 TaskStatus ReadKharmaRestart(std::shared_ptr<MeshBlockData<Real>> rc, ParameterInput *pin)
 {
-    Flag(rc, "Restarting from KHARMA checkpoint file");
-
     auto pmb = rc->GetBlockPointer();
 
     const hsize_t n1tot = pin->GetInteger("parthenon/mesh", "restart_nx1");

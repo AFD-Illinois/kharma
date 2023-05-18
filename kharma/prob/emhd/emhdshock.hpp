@@ -143,7 +143,7 @@ TaskStatus InitializeEMHDShock(std::shared_ptr<MeshBlockData<Real>>& rc, Paramet
                         Real q_tilde  = q_host(k, j, i);
                         Real dP_tilde = dP_host(k, j, i);
                         if (emhd_params.higher_order_terms) {
-                            q_tilde  *= (chi_e != 0) ? m::sqrt(tau / (chi_e * rho_temp * m::pow(Theta, 2.))) : 0.;
+                            q_tilde  *= (chi_e != 0) ? m::sqrt(tau / (chi_e * rho_temp * Theta * Theta)) : 0.;
                             dP_tilde *= (nu_e  != 0) ? m::sqrt(tau / (nu_e * rho_temp * Theta)) : 0.;
                         }
                         q_host(k, j, i)  = q_tilde;

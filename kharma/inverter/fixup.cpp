@@ -55,7 +55,7 @@ TaskStatus Inverter::FixUtoP(MeshBlockData<Real> *rc)
         return TaskStatus::complete;
     }
 
-    Flag(rc, "Fixing U to P inversions");
+    Flag("Inverter::FixUtoP");
     // Only fixup the core 5 prims
     auto P = GRMHD::PackHDPrims(rc);
 
@@ -152,6 +152,6 @@ TaskStatus Inverter::FixUtoP(MeshBlockData<Real> *rc)
         );
     }
 
-    Flag(rc, "Fixed U to P inversions");
+    EndFlag();
     return TaskStatus::complete;
 }

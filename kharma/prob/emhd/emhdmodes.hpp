@@ -131,8 +131,8 @@ TaskStatus InitializeEMHDModes(std::shared_ptr<MeshBlockData<Real>>& rc, Paramet
                 Real q_tilde  = q(k, j, i); 
                 Real dP_tilde = dP(k, j, i);
                 if (emhd_params.higher_order_terms) {
-                    q_tilde  *= (chi_e != 0) ? sqrt(tau / (chi_e * rho(k, j, i) * pow(Theta, 2.))) : 0.;
-                    dP_tilde *= (nu_e  != 0) ? sqrt(tau / (nu_e * rho(k, j, i) * Theta)) : 0.;
+                    q_tilde  *= (chi_e != 0) ? m::sqrt(tau / (chi_e * rho(k, j, i) * Theta * Theta)) : 0.;
+                    dP_tilde *= (nu_e  != 0) ? m::sqrt(tau / (nu_e * rho(k, j, i) * Theta)) : 0.;
                 }
                 q(k, j, i) = q_tilde;
                 dP(k, j, i) = dP_tilde;

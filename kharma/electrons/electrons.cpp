@@ -191,7 +191,7 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
 
 TaskStatus InitElectrons(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin)
 {
-    Flag("Initializing electron/fluid entropy values");
+    Flag("InitElectrons");
     auto pmb = rc->GetBlockPointer();
 
     // Don't initialize entropies if we've already done so e.g. in Hubble problem
@@ -229,13 +229,12 @@ TaskStatus InitElectrons(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInpu
 
     // iharm3d syncs bounds here, but we do all that in PostInit
 
-    Flag("Initialized electron/fluid entropy values");
+    EndFlag();
     return TaskStatus::complete;
 }
 
 void BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
-    Flag(rc, "UtoP electrons");
     auto pmb = rc->GetBlockPointer();
 
     // No need for a "map" here, we just want everything that fits these
@@ -259,7 +258,6 @@ void BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 
 void BlockPtoU(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
-    Flag(rc, "PtoU electrons");
     auto pmb = rc->GetBlockPointer();
 
     PackIndexMap prims_map, cons_map;
@@ -283,10 +281,7 @@ void BlockPtoU(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 }
 
 TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real> *rc)
-{   // takes in '_sub_step_init' and '_sub_step_final'
-    Flag(rc, "Applying electron heating");
-    auto pmb = rc->GetBlockPointer();
-
+{
     // Need to distinguish different electron models
     // So far, Parthenon's maps of the same sets of variables are consistent,
     // so we only bother with one map of the primitives
@@ -297,6 +292,7 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
     auto& U_new = rc->PackVariables({Metadata::Conserved}, cons_map);
     const VarMap m_p(prims_map, false), m_u(cons_map, true);
 
+    auto pmb = rc->GetBlockPointer();
     const auto& G = pmb->coords;
 
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
@@ -430,7 +426,6 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
         }
     );
 
-    Flag(rc, "Applied");
     return TaskStatus::complete;
 }
 

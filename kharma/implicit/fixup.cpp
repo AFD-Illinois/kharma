@@ -39,7 +39,7 @@
 
 TaskStatus Implicit::FixSolve(MeshBlockData<Real> *mbd) {
 
-    Flag(mbd, "Fixing implicit solver failures");
+    Flag("FixSolve");
     // Get MeshBlock pointer and obtain flag for primitives
     auto pmb = mbd->GetBlockPointer();
 
@@ -144,7 +144,7 @@ TaskStatus Implicit::FixSolve(MeshBlockData<Real> *mbd) {
         }
     );
 
-    Flag(mbd, "Fixed solver failures");
+    EndFlag();
     return TaskStatus::complete;
 
 }

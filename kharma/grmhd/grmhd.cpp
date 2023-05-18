@@ -212,7 +212,10 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
 
 Real EstimateTimestep(MeshBlockData<Real> *rc)
 {
-    Flag(rc, "Estimating timestep");
+    // Normally the caller would place this flag before calling us, but this is from Parthenon
+    // This function is a nice demo of why client-side flagging
+    // like this is inadvisable: you have to EndFlag() at every different return
+    Flag("EstimateTimestep");
     auto pmb = rc->GetBlockPointer();
     IndexRange ib = pmb->cellbounds.GetBoundsI(IndexDomain::interior);
     IndexRange jb = pmb->cellbounds.GetBoundsJ(IndexDomain::interior);
@@ -239,17 +242,20 @@ Real EstimateTimestep(MeshBlockData<Real> *rc)
             } else {
                 globals.Add<double>("dt_light", dt);
             }
+            EndFlag();
             return dt;
         } else {
             // Or Just take from parameters
             double dt = grmhd_pars.Get<double>("dt_start");
             // Record this, since we'll use it to determine the max step increase
             globals.Update<double>("dt_last", dt);
+            EndFlag();
             return dt;
         }
     }
     // If we're still using the light crossing time, skip the rest
     if (grmhd_pars.Get<bool>("use_dt_light")) {
+        EndFlag();
         return globals.Get<double>("dt_light");
     }
 
@@ -288,13 +294,13 @@ Real EstimateTimestep(MeshBlockData<Real> *rc)
             b_cd_params.Update<Real>("ctop_max", nctop);
     }
 
-    Flag(rc, "Estimated");
+    EndFlag();
     return ndt;
 }
 
 Real EstimateRadiativeTimestep(MeshBlockData<Real> *rc)
 {
-    Flag(rc, "Estimating shortest light crossing time");
+    Flag("EstimateRadiativeTimestep");
     auto pmb = rc->GetBlockPointer();
     IndexRange ib = pmb->cellbounds.GetBoundsI(IndexDomain::interior);
     IndexRange jb = pmb->cellbounds.GetBoundsJ(IndexDomain::interior);
@@ -317,16 +323,16 @@ Real EstimateRadiativeTimestep(MeshBlockData<Real> *rc)
 
             if (phase_speed) {
                 for (int mu = 1; mu < GR_DIM; mu++) {
-                    if(m::pow(G.gcon(Loci::center, j, i, 0, mu), 2) -
+                    if(SQR(G.gcon(Loci::center, j, i, 0, mu)) -
                         G.gcon(Loci::center, j, i, mu, mu)*G.gcon(Loci::center, j, i, 0, 0) >= 0.) {
 
                         double cplus = m::abs((-G.gcon(Loci::center, j, i, 0, mu) +
-                                            m::sqrt(m::pow(G.gcon(Loci::center, j, i, 0, mu), 2) -
+                                            m::sqrt(SQR(G.gcon(Loci::center, j, i, 0, mu)) -
                                                 G.gcon(Loci::center, j, i, mu, mu)*G.gcon(Loci::center, j, i, 0, 0)))/
                                             G.gcon(Loci::center, j, i, 0, 0));
 
                         double cminus = m::abs((-G.gcon(Loci::center, j, i, 0, mu) -
-                                            m::sqrt(m::pow(G.gcon(Loci::center, j, i, 0, mu), 2) -
+                                            m::sqrt(SQR(G.gcon(Loci::center, j, i, 0, mu)) -
                                                 G.gcon(Loci::center, j, i, mu, mu)*G.gcon(Loci::center, j, i, 0, 0)))/
                                             G.gcon(Loci::center, j, i, 0, 0));
 
@@ -354,7 +360,7 @@ Real EstimateRadiativeTimestep(MeshBlockData<Real> *rc)
     const double cfl = grmhd_pars.Get<double>("cfl");
     const double ndt = minmax.min_val * cfl;
 
-    Flag(rc, "Estimated");
+    EndFlag();
     return ndt;
 }
 
@@ -390,13 +396,11 @@ AmrTag CheckRefinement(MeshBlockData<Real> *rc)
 
 TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
 {
-    Flag("Printing GRMHD diagnostics");
     auto pmesh = md->GetMeshPointer();
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
     // Options
     const auto& pars = pmesh->packages.Get("Globals")->AllParams();
     const int extra_checks = pars.Get<int>("extra_checks");
-    Flag("Got pointers");
 
     // Check for a soundspeed (ctop) of 0 or NaN
     // This functions as a "last resort" check to stop a
@@ -410,11 +414,9 @@ TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
     // Further checking for any negative values.  Floors should
     // prevent this, so we save it for dire debugging
     if (extra_checks >= 2) {
-        Flag("Printing negative zones");
         CheckNegative(md, IndexDomain::interior);
     }
 
-    Flag("Printed");
     return TaskStatus::complete;
 }
 

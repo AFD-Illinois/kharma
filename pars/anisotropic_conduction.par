@@ -51,6 +51,7 @@ extra_checks = 1
 <emhd>
 on = true
 closure_type = constant
+higher_order_terms = true
 tau = 0.1
 conduction_alpha = 0.01
 viscosity_alpha = 0.0

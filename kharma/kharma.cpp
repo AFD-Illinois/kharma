@@ -110,7 +110,6 @@ void KHARMA::ResetGlobals(ParameterInput *pin, Mesh *pmesh)
 
 void KHARMA::MeshPreStepUserWorkInLoop(Mesh *pmesh, ParameterInput *pin, const SimTime &tm)
 {
-    Flag("KHARMA Pre-step");
     auto& globals = pmesh->packages.Get("Globals")->AllParams();
     if (!globals.Get<bool>("in_loop")) {
         globals.Update<bool>("in_loop", true);
@@ -121,7 +120,6 @@ void KHARMA::MeshPreStepUserWorkInLoop(Mesh *pmesh, ParameterInput *pin, const S
 
 void KHARMA::MeshPostStepUserWorkInLoop(Mesh *pmesh, ParameterInput *pin, const SimTime &tm)
 {
-    Flag("KHARMA Post-step");
     // Knowing this works took a little digging into Parthenon's EvolutionDriver.
     // The order of operations after calling Step() is:
     // 1. Call PostStepUserWorkInLoop and PostStepDiagnostics (this function and following)
@@ -253,17 +251,18 @@ void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
     if (tmp_coords.stopx(3) >= 0)
         pin->GetOrAddReal("parthenon/mesh", "x3max", tmp_coords.stopx(3));
 
-    Flag("Fixed");
+    EndFlag();
 }
 
 TaskStatus KHARMA::AddPackage(std::shared_ptr<Packages_t>& packages,
                               std::function<std::shared_ptr<KHARMAPackage>(ParameterInput*, std::shared_ptr<Packages_t>&)> package_init,
                               ParameterInput *pin)
 {
-    Flag("AddPackage");
+    // TODO package names before initialization
     const auto& pkg = package_init(pin, packages);
     packages->Add(pkg);
-    EndFlag("AddPackage "+pkg->label());
+    Flag("AddPackage_"+pkg->label());
+    EndFlag();
     return TaskStatus::complete;
 }
 
@@ -356,6 +355,8 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput> &pin)
     // TODO avoid init if e.g. all periodic boundaries?
     KHARMA::AddPackage(packages, KBoundaries::Initialize, pin.get());
 
-    EndFlag("ProcessPackages"); // TODO print full package list way up here?
+    // TODO print full package list as soon as we know it, up here
+
+    EndFlag();
     return std::move(*packages);
 }

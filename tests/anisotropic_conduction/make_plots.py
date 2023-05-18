@@ -1,7 +1,10 @@
 # PLOT SNAKE TEST
 
+import os
+import sys
+import h5py, psutil, glob
+
 import numpy as np
-import os, h5py, psutil, glob
 import multiprocessing as mp
 import matplotlib
 matplotlib.use('Agg')
@@ -99,12 +102,12 @@ def plot(dumpno):
 
 
 if __name__=='__main__':
-  params['dumpsdir'] = './dumps_kharma'
+  params['dumpsdir'] = sys.argv[1]
   params['dfirst'] = 0
   params['dlast']  = int(sorted(glob.glob(os.path.join(params['dumpsdir'], 'anisotropic_conduction.out0.0*phdf')))[-1][-9:-5])
   dlist = range(params['dfirst'], params['dlast']+1)
 
-  params['plotsdir'] = './plots'
+  params['plotsdir'] = '.'
   if not os.path.exists(params['plotsdir']):
     os.makedirs(params['plotsdir'])
 

@@ -69,7 +69,6 @@ TaskStatus InitializeGIZMO(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterIn
 
 TaskStatus SetGIZMO(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain, bool coarse)
 {
-    Flag(rc, "Setting zones from GIZMO output");
     auto pmb = rc->GetBlockPointer();
 
     //std::cerr << "GIZMO on domain: " << BoundaryName(domain) << std::endl;
@@ -156,6 +155,5 @@ TaskStatus SetGIZMO(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain
         }
     );
 
-    Flag(rc, "Set");
     return TaskStatus::complete;
 }

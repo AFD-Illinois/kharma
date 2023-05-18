@@ -61,7 +61,6 @@ std::shared_ptr<KHARMAPackage> Wind::Initialize(ParameterInput *pin, std::shared
 
 TaskStatus Wind::AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
 {
-    Flag(mdudt, "Adding wind");
     // Pointers
     auto pmesh = mdudt->GetMeshPointer();
     auto pmb0 = mdudt->GetBlockData(0)->GetBlockPointer();
@@ -101,7 +100,7 @@ TaskStatus Wind::AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
             GReal r = Xembed[1], th = Xembed[2];
 
             // Particle addition rate: concentrate at poles
-            Real drhopdt = current_n * m::pow(m::cos(th), power) / m::pow(1. + r * r, 2);
+            Real drhopdt = current_n * m::pow(m::cos(th), power) / SQR(1. + r * r);
 
             // Insert fluid moving in positive U1, without B field
             // Ramp up like density, since we're not at a set proportion
@@ -121,6 +120,5 @@ TaskStatus Wind::AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
         }
     );
 
-    Flag(mdudt, "Added");
     return TaskStatus::complete;
 }

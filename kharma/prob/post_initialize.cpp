@@ -109,6 +109,8 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, std::shared_ptr<MeshData<Rea
     const bool use_b_cd = pmesh->packages.AllPackages().count("B_CD");
     const int verbose = pmesh->packages.Get("Globals")->Param<int>("verbose");
 
+    // TODO this should be restructured...
+
     Flag("SeedBField");
     // Seed the magnetic field on each block
     for (auto &pmb : pmesh->block_list) {
@@ -121,7 +123,7 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, std::shared_ptr<MeshData<Rea
             B_CD::SeedBField(rc.get(), pin);
         }
     }
-    EndFlag("SeedBField");
+    EndFlag();
 
     // Then, if we're in a torus problem or we explicitly ask for it,
     // normalize the magnetic field according to the density
@@ -157,7 +159,6 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, std::shared_ptr<MeshData<Rea
         }
 
         // Then normalize B by sqrt(beta/beta_min)
-        Flag("Normalizing magnetic field");
         if (beta_min > 0) {
             Real norm = m::sqrt(beta_min/desired_beta_min);
             for (auto &pmb : pmesh->block_list) {
@@ -184,18 +185,15 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, std::shared_ptr<MeshData<Rea
                 std::cout << "Beta min post-norm: " << beta_min << std::endl;
             }
         }
-        EndFlag("NormBField");
+        EndFlag(); //NormBField
     }
 
     // We've been initializing/manipulating P
     Flux::MeshPtoU(md.get(), IndexDomain::entire);
-
-    Flag("Added B Field");
 }
 
 void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart)
 {
-    Flag("Post-initialization started");
     // This call:
     // 1. Initializes any magnetic fields which are "seeded," i.e., defined with a magnetic field implementation
     //    rather than assuming an implementation and setting the field with problem initialization.
@@ -280,10 +278,4 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart)
     KHARMADriver::SyncAllBounds(md);
     // And make sure the trivial primitive values are up-to-date
     Packages::MeshUtoPExceptMHD(md.get(), IndexDomain::entire, false);
-
-    auto tm = SimTime(0., 0., 0, 0, 0, 0, 0.);
-    auto pouts = std::make_unique<Outputs>(pmesh, pin, &tm);
-    pouts->MakeOutputs(pmesh, pin, &tm, SignalHandler::OutputSignal::now);
-
-    Flag("Post-initialization finished");
 }

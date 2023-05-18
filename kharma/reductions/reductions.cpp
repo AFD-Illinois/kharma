@@ -40,7 +40,7 @@
 #pragma hd_warning_disable
 Real Reductions::EHReduction(MeshData<Real> *md, UserHistoryOperation op, std::function<Real(REDUCE_FUNCTION_ARGS_EH)> fn, int zone)
 {
-    Flag("Performing accretion reduction");
+    Flag("EHReduction");
     auto pmesh = md->GetMeshPointer();
 
     Real result = 0.;
@@ -99,14 +99,14 @@ Real Reductions::EHReduction(MeshData<Real> *md, UserHistoryOperation op, std::f
         }
     }
 
-    Flag("Reduced");
+    EndFlag();
     return result;
 }
 
 #pragma hd_warning_disable
 Real Reductions::DomainReduction(MeshData<Real> *md, UserHistoryOperation op, std::function<Real(REDUCE_FUNCTION_ARGS_MESH)> fn, Real arg)
 {
-    Flag("Performing domain reduction");
+    Flag("DomainReduction");
     auto pmesh = md->GetMeshPointer();
 
     // TODO TODO MESHDATA THIS
@@ -160,7 +160,7 @@ Real Reductions::DomainReduction(MeshData<Real> *md, UserHistoryOperation op, st
     }
     }
 
-    Flag("Reduced");
+    EndFlag();
     return result;
 }
 
@@ -195,7 +195,7 @@ int Reductions::CountFlag(MeshData<Real> *md, std::string field_name, const int&
 
 int Reductions::CountFlags(MeshData<Real> *md, std::string field_name, std::map<int, std::string> flag_values, IndexDomain domain, int verbose, bool is_bitflag)
 {
-    Flag("Counting inversion failures");
+    Flag("CountFlags_"+field_name);
     int nflags = 0;
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
 
@@ -226,7 +226,7 @@ int Reductions::CountFlags(MeshData<Real> *md, std::string field_name, std::map<
     //                         0, nang1, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
     // KOKKOS_LAMBDA(const int b, const int n, const int k, const int j, const int i,
     //                 array_sum::array_type<Real, 2>& dsum) {
-    //     dsum.my_array[0] += fabs(iiter(b,n,k,j,i) - iout(b,n,k,j,i));
+    //     dsum.my_array[0] += m::abs(iiter(b,n,k,j,i) - iout(b,n,k,j,i));
     //     dsum.my_array[1] += iout(b,n,k,j,i);
     // }, array_sum::GlobalSum<Real, Kokkos::HostSpace, 2>(res));
 
@@ -288,6 +288,6 @@ int Reductions::CountFlags(MeshData<Real> *md, std::string field_name, std::map<
         // TODO Print zone locations of bad inversions
     }
 
-    Flag("Counted");
+    EndFlag();
     return nflags;
 }

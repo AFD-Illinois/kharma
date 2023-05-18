@@ -49,7 +49,7 @@ void KBoundaries::DirichletImpl(std::shared_ptr<MeshBlockData<Real>> &rc, Bounda
                             ? FC({Metadata::FillGhost}) - FC({Metadata::GetUserFlag("B_Cleanup")})
                             : FC({Metadata::FillGhost});
     auto q = rc->PackVariables(main_ghosts, coarse);
-    auto bound = rc->Get("bound." + BoundaryName(bface)).data;
+    auto bound = rc->Get("bounds." + BoundaryName(bface)).data;
 
     // TODO TODO NAMES
     if (q.GetDim(4) != bound.GetDim(4)) {
@@ -90,6 +90,7 @@ void KBoundaries::FreezeDirichlet(std::shared_ptr<MeshData<Real>> &md)
         auto pmesh = md->GetMeshPointer();
         // ...if this boundary is dirichlet...
         if (pmesh->packages.Get("Boundaries")->Param<std::string>(bname) == "dirichlet") {
+            //std::cout << "Freezing dirichlet " << bname << " on mesh." << std::endl;
             // ...on all blocks...
             for (int i=0; i < md->NumBlocks(); i++) {
                 auto rc = md->GetBlockData(i).get();
@@ -110,6 +111,7 @@ void KBoundaries::FreezeDirichletBlock(MeshBlockData<Real> *rc)
         auto pmb = rc->GetBlockPointer();
         // ...if this boundary is dirichlet...
         if (pmb->packages.Get("Boundaries")->Param<std::string>(bname) == "dirichlet") {
+            //std::cout << "Freezing dirichlet " << bname << " on block." << std::endl;
             auto domain = BoundaryDomain(bface);
             // Set whatever is in that domain as the Dirichlet bound
             SetDomainDirichlet(rc, domain, false);
@@ -128,7 +130,7 @@ void KBoundaries::SetDomainDirichlet(MeshBlockData<Real> *rc, IndexDomain domain
                             ? FC({Metadata::FillGhost}) - FC({Metadata::GetUserFlag("B_Cleanup")})
                             : FC({Metadata::FillGhost});
     auto q = rc->PackVariables(main_ghosts, coarse);
-    auto bound = rc->Get("bound." + BoundaryName(bface)).data;
+    auto bound = rc->Get("bounds." + BoundaryName(bface)).data;
 
     // TODO error?
     if (q.GetDim(4) != bound.GetDim(4)) {

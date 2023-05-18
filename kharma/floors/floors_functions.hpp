@@ -60,7 +60,7 @@ KOKKOS_INLINE_FUNCTION int apply_ceilings(const GRCoordinates& G, const Variable
     if (gamma > floors.gamma_max) {
         fflag |= FFlag::GAMMA;
 
-        Real f = m::sqrt((m::pow(floors.gamma_max, 2) - 1.)/(m::pow(gamma, 2) - 1.));
+        Real f = m::sqrt((SQR(floors.gamma_max) - 1.) / (SQR(gamma) - 1.));
         VLOOP P(m_p.U1+v, k, j, i) *= f;
     }
 
@@ -130,14 +130,14 @@ KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, const VariablePa
 
         if (floors.use_r_char) {
             // Steeper floor from iharm3d
-            const Real rhoscal = 1 / (r * r * (1 + r / floors.r_char));
+            Real rhoscal = 1. / ((r*r) * (1 + r / floors.r_char));
             rhoflr_geom  = floors.rho_min_geom * rhoscal;
             uflr_geom    = floors.u_min_geom * m::pow(rhoscal, gam);
         } else {
             // Original floors from iharm2d
-            rhoflr_geom = floors.rho_min_geom * m::pow(r, -1.5);
-            // TODO(BSP) kharmaim moves this to -1.5. Logical?
-            uflr_geom   = floors.u_min_geom * m::pow(r, -2.5); //rhoscal/r as in iharm2d
+            Real rhoscal = 1. / m::sqrt(r*r*r);
+            rhoflr_geom = floors.rho_min_geom * rhoscal;
+            uflr_geom   = floors.u_min_geom * rhoscal / r;
         }
     } else {
         rhoflr_geom = floors.rho_min_geom;
@@ -193,13 +193,11 @@ KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, const VariablePa
 
         } else if (use_df) {
             // Drift frame floors. Refer to Appendix B3 in https://doi.org/10.1093/mnras/stx364 (hereafter R17)
-            const Real gdet     = G.gdet(Loci::center, j, i);
-            const Real lapse    = 1./m::sqrt(-G.gcon(Loci::center, j, i, 0, 0));
+            const Real lapse2    = 1. / (-G.gcon(Loci::center, j, i, 0, 0));
             double beta[GR_DIM] = {0};
-
-            beta[1] = lapse * lapse * G.gcon(Loci::center, j, i, 0, 1);
-            beta[2] = lapse * lapse * G.gcon(Loci::center, j, i, 0, 2);
-            beta[3] = lapse * lapse * G.gcon(Loci::center, j, i, 0, 3);
+            beta[1] = lapse2 * G.gcon(Loci::center, j, i, 0, 1);
+            beta[2] = lapse2 * G.gcon(Loci::center, j, i, 0, 2);
+            beta[3] = lapse2 * G.gcon(Loci::center, j, i, 0, 3);
 
             // Fluid quantities (four velocities have been computed above)
             const Real rho   = P(m_p.RHO, k, j, i);
@@ -216,6 +214,7 @@ KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, const VariablePa
             Bcon[3] = P(m_p.B3, k, j, i);
             DLOOP2 Bcov[mu] += G.gcov(Loci::center, j, i, mu, nu) * Bcon[nu];
             const Real Bsq   = m::max(dot(Bcon, Bcov), SMALL);
+            const Real B_mag = m::sqrt(Bsq);
 
             // Normal observer fluid momentum
             Real Qcov[GR_DIM] = {0};
@@ -228,15 +227,13 @@ KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, const VariablePa
             double QdotB = dot(Bcon, Qcov);
 
             // Initial parallel velocity (refer R17 Eqn B10)
-            Real vpar = QdotB / (sqrt(Bsq) * w_old * pow(Dtmp.ucon[0], 2.));
+            Real vpar = QdotB / (B_mag * w_old * Dtmp.ucon[0]*Dtmp.ucon[0]);
 
             Real ucon_dr[GR_DIM] = {0};
             // t-component of drift velocity (refer R17 Eqn B13)
-            ucon_dr[0] = 1. / sqrt(pow(Dtmp.ucon[0], -2.) + pow(vpar, 2.));
+            ucon_dr[0] = 1. / m::sqrt(1. / (Dtmp.ucon[0]*Dtmp.ucon[0]) + vpar*vpar);
             // spatial components of drift velocity (refer R17 Eqn B11)
-            for (int mu = 1; mu < GR_DIM; mu++) {
-                ucon_dr[mu] = Dtmp.ucon[mu] * (ucon_dr[0] / Dtmp.ucon[0]) - (vpar * Bcon[mu] * ucon_dr[0] / sqrt(Bsq));
-            }
+            DLOOP1 ucon_dr[mu] = Dtmp.ucon[mu] * (ucon_dr[0] / Dtmp.ucon[0]) - (vpar * Bcon[mu] * ucon_dr[0] / B_mag);
 
             // Update rho, uu and compute new enthalpy
             P(m_p.RHO, k, j, i) = m::max(rho, rhoflr_max);
@@ -245,27 +242,21 @@ KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, const VariablePa
             const Real w_new    = P(m_p.RHO, k, j, i) + P(m_p.UU, k, j, i) + pg_new;
 
             // New parallel velocity (refer R17 Eqn B14)
-            const Real x = (2. * QdotB) / (sqrt(Bsq) * w_new * ucon_dr[0]);
-            vpar = x / (1 + sqrt(1 + x*x)) * (1. / ucon_dr[0]);
+            const Real x = (2. * QdotB) / (B_mag * w_new * ucon_dr[0]);
+            vpar = x / (1 + m::sqrt(1 + x*x)) * (1. / ucon_dr[0]);
 
             // New fluid four velocity (refer R17 Eqns B13 and B11)
-            Dtmp.ucon[0] = 1. / sqrt(pow(ucon_dr[0], -2.) - pow(vpar, 2.));
-            for (int mu = 1; mu < GR_DIM; mu++) {
-                Dtmp.ucon[mu] = ucon_dr[mu] * (Dtmp.ucon[0] / ucon_dr[0]) + (vpar * Bcon[mu] * Dtmp.ucon[0] / sqrt(Bsq));
-            }
+            Dtmp.ucon[0] = 1. / m::sqrt(1/(ucon_dr[0]*ucon_dr[0]) - vpar*vpar);
+            DLOOP1 Dtmp.ucon[mu] = ucon_dr[mu] * (Dtmp.ucon[0] / ucon_dr[0]) + (vpar * Bcon[mu] * Dtmp.ucon[0] / B_mag);
             G.lower(Dtmp.ucon, Dtmp.ucov, k, j, i, Loci::center);
 
-            // New Lorentz factor
-            const Real gamma = Dtmp.ucon[0] * lapse;
-
             // New velocity primitives
-            P(m_p.U1, k, j, i) = Dtmp.ucon[1] + (beta[1] * gamma/lapse);
-            P(m_p.U2, k, j, i) = Dtmp.ucon[2] + (beta[2] * gamma/lapse);
-            P(m_p.U3, k, j, i) = Dtmp.ucon[3] + (beta[3] * gamma/lapse);
+            P(m_p.U1, k, j, i) = Dtmp.ucon[1] + (beta[1] * Dtmp.ucon[0]);
+            P(m_p.U2, k, j, i) = Dtmp.ucon[2] + (beta[2] * Dtmp.ucon[0]);
+            P(m_p.U3, k, j, i) = Dtmp.ucon[3] + (beta[3] * Dtmp.ucon[0]);
 
             // Update the conserved variables
             Flux::p_to_u(G, P, m_p, emhd_params, gam, k, j, i, U, m_u, loc);
-
         } else {
             // Add the material in the normal observer frame, by:
             // Adding the floors to the primitive variables
@@ -344,13 +335,14 @@ KOKKOS_INLINE_FUNCTION int apply_geo_floors(const GRCoordinates& G, Local& P, co
 
         if (floors.use_r_char) {
             // Steeper floor from iharm3d
-            Real rhoscal = m::pow(r, -2.) * 1 / (1 + r / floors.r_char);
+            Real rhoscal = 1. / ((r*r) * (1 + r / floors.r_char));
             rhoflr_geom  = floors.rho_min_geom * rhoscal;
             uflr_geom    = floors.u_min_geom * m::pow(rhoscal, gam);
         } else {
             // Original floors from iharm2d
-            rhoflr_geom = floors.rho_min_geom * m::pow(r, -1.5);
-            uflr_geom   = floors.u_min_geom * m::pow(r, -2.5); //rhoscal/r as in iharm2d
+            Real rhoscal = 1. / m::sqrt(r*r*r);
+            rhoflr_geom = floors.rho_min_geom * rhoscal;
+            uflr_geom   = floors.u_min_geom * rhoscal / r;
         }
     } else {
         rhoflr_geom = floors.rho_min_geom;
@@ -385,13 +377,14 @@ KOKKOS_INLINE_FUNCTION int apply_geo_floors(const GRCoordinates& G, Global& P, c
 
         if (floors.use_r_char) {
             // Steeper floor from iharm3d
-            Real rhoscal = m::pow(r, -2.) * 1 / (1 + r / floors.r_char);
+            Real rhoscal = 1. / ((r*r) * (1 + r / floors.r_char));
             rhoflr_geom  = floors.rho_min_geom * rhoscal;
             uflr_geom    = floors.u_min_geom * m::pow(rhoscal, gam);
         } else {
             // Original floors from iharm2d
-            rhoflr_geom = floors.rho_min_geom * m::pow(r, -1.5);
-            uflr_geom   = floors.u_min_geom * m::pow(r, -2.5); //rhoscal/r as in iharm2d
+            Real rhoscal = 1. / m::sqrt(r*r*r);
+            rhoflr_geom = floors.rho_min_geom * rhoscal;
+            uflr_geom   = floors.u_min_geom * rhoscal / r;
         }
     } else {
         rhoflr_geom = floors.rho_min_geom;

@@ -51,8 +51,6 @@ std::shared_ptr<KHARMAPackage> Current::Initialize(ParameterInput *pin, std::sha
 
 TaskStatus Current::CalculateCurrent(MeshBlockData<Real> *rc0, MeshBlockData<Real> *rc1, const double& dt)
 {
-    Flag("Calculating current");
-
     auto pmb = rc0->GetBlockPointer();
     GridVector uvec_old = rc0->Get("prims.uvec").data;
     GridVector B_P_old = rc0->Get("prims.B").data;
@@ -109,14 +107,11 @@ TaskStatus Current::CalculateCurrent(MeshBlockData<Real> *rc0, MeshBlockData<Rea
         }
     );
 
-    Flag("Calculated");
     return TaskStatus::complete;
 }
 
 void Current::FillOutput(MeshBlock *pmb, ParameterInput *pin)
 {
-    Flag("Adding current");
-
     // The "preserve" container will only exist after we've taken a step,
     // catch that situation
     auto& rc1 = pmb->meshblock_data.Get();
@@ -136,6 +131,4 @@ void Current::FillOutput(MeshBlock *pmb, ParameterInput *pin)
     Real dt_last = pmb->packages.Get("Globals")->Param<Real>("dt_last");
 
     Current::CalculateCurrent(rc0.get(), rc1.get(), dt_last);
-
-    Flag("Added");
 }

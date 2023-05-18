@@ -207,7 +207,6 @@ TaskStatus InitializeFMTorus(std::shared_ptr<MeshBlockData<Real>>& rc, Parameter
 // TODO move this to a different file
 TaskStatus PerturbU(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin)
 {
-    Flag(rc, "Applying U perturbation");
     auto pmb = rc->GetBlockPointer();
     auto rho = rc->Get("prims.rho").data;
     auto u = rc->Get("prims.u").data;
@@ -258,6 +257,5 @@ TaskStatus PerturbU(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pi
         );
     }
 
-    Flag(rc, "Applied");
     return TaskStatus::complete;
 }

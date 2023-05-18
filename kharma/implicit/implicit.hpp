@@ -150,15 +150,15 @@ KOKKOS_INLINE_FUNCTION void calc_residual(const GRCoordinates& G, const Local& P
             residual(m_u.Q) *= tau;
         if (emhd_params.viscosity)
             residual(m_u.DP) *= tau;
-        if (emhd_params.higher_order_terms){
+        if (emhd_params.higher_order_terms) {
             Real rho   = Ps(m_p.RHO);
             Real uu    = Ps(m_p.UU);
             Real Theta = (gam - 1.) * uu / rho;
 
             if (emhd_params.conduction)
-                residual(m_u.Q) *= (chi_e != 0) ? sqrt(rho * chi_e * tau * pow(Theta, 2)) / tau : 1.;
+                residual(m_u.Q) *= (chi_e != 0) ? m::sqrt(rho * chi_e * tau * Theta * Theta) / tau : 1.;
             if (emhd_params.viscosity)
-                residual(m_u.DP) *= (nu_e != 0) ? sqrt(rho * nu_e * tau * Theta) / tau : 1.;
+                residual(m_u.DP) *= (nu_e != 0) ? m::sqrt(rho * nu_e * tau * Theta) / tau : 1.;
         }
     }
 
