@@ -359,7 +359,7 @@ KOKKOS_INLINE_FUNCTION void WENO5X3r(parthenon::team_mbr_t const &member, const 
  * This is basically a compile-time 'if' or 'switch' statement, where all the options get generated
  * at compile-time (see driver.cpp for the different instantiations)
  * 
- * We could template these directly on the function if Partheconst GRCoordinates& G, non could agree on what argument list to use
+ * We could template these directly on the function if Parthenon could agree on what argument list to use
  * Better than a runtime decision per outer loop I think
  */
 template <Type Recon, int dir>
@@ -499,7 +499,7 @@ KOKKOS_INLINE_FUNCTION void reconstruct<Type::weno5, X3DIR>(parthenon::team_mbr_
 // Linear X1 reconstruction near X1 boundaries
 template <>
 KOKKOS_INLINE_FUNCTION void reconstruct<Type::weno5_lower_edges, X1DIR>(parthenon::team_mbr_t& member,
-                                        const GRCoordinates& G, const VariablePack<Real> &P,
+                                        const VariablePack<Real> &P,
                                         const int& k, const int& j, const int& is_l, const int& ie_l, 
                                         ScratchPad2D<Real> ql, ScratchPad2D<Real> qr)
 {
@@ -512,33 +512,33 @@ KOKKOS_INLINE_FUNCTION void reconstruct<Type::weno5_lower_edges, X1DIR>(partheno
 }
 template <>
 KOKKOS_INLINE_FUNCTION void reconstruct<Type::weno5_lower_edges, X2DIR>(parthenon::team_mbr_t& member,
-                                        const GRCoordinates& G, const VariablePack<Real> &P,
+                                        const VariablePack<Real> &P,
                                         const int& k, const int& j, const int& is_l, const int& ie_l, 
                                         ScratchPad2D<Real> ql, ScratchPad2D<Real> qr)
 {
-    reconstruct<Type::weno5, X2DIR>(member, G, P, k, j, is_l, ie_l, ql, qr);
+    reconstruct<Type::weno5, X2DIR>(member, P, k, j, is_l, ie_l, ql, qr);
 }
 template <>
 KOKKOS_INLINE_FUNCTION void reconstruct<Type::weno5_lower_edges, X3DIR>(parthenon::team_mbr_t& member,
-                                        const GRCoordinates& G, const VariablePack<Real> &P,
+                                        const VariablePack<Real> &P,
                                         const int& k, const int& j, const int& is_l, const int& ie_l, 
                                         ScratchPad2D<Real> ql, ScratchPad2D<Real> qr)
 {
-    reconstruct<Type::weno5, X3DIR>(member, G, P, k, j, is_l, ie_l, ql, qr);
+    reconstruct<Type::weno5, X3DIR>(member, P, k, j, is_l, ie_l, ql, qr);
 }
 // WENO5 lowered poles:
 // Linear X2 reconstruction near X2 boundaries
 template <>
 KOKKOS_INLINE_FUNCTION void reconstruct<Type::weno5_lower_poles, X1DIR>(parthenon::team_mbr_t& member,
-                                        const GRCoordinates& G, const VariablePack<Real> &P,
+                                        const VariablePack<Real> &P,
                                         const int& k, const int& j, const int& is_l, const int& ie_l, 
                                         ScratchPad2D<Real> ql, ScratchPad2D<Real> qr)
 {
-    reconstruct<Type::weno5, X1DIR>(member, G, P, k, j, is_l, ie_l, ql, qr);
+    reconstruct<Type::weno5, X1DIR>(member, P, k, j, is_l, ie_l, ql, qr);
 }
 template <>
 KOKKOS_INLINE_FUNCTION void reconstruct<Type::weno5_lower_poles, X2DIR>(parthenon::team_mbr_t& member,
-                                        const GRCoordinates& G, const VariablePack<Real> &P,
+                                        const VariablePack<Real> &P,
                                         const int& k, const int& j, const int& is_l, const int& ie_l, 
                                         ScratchPad2D<Real> ql, ScratchPad2D<Real> qr)
 {
@@ -556,11 +556,11 @@ KOKKOS_INLINE_FUNCTION void reconstruct<Type::weno5_lower_poles, X2DIR>(partheno
 }
 template <>
 KOKKOS_INLINE_FUNCTION void reconstruct<Type::weno5_lower_poles, X3DIR>(parthenon::team_mbr_t& member,
-                                        const GRCoordinates& G, const VariablePack<Real> &P,
+                                        const VariablePack<Real> &P,
                                         const int& k, const int& j, const int& is_l, const int& ie_l, 
                                         ScratchPad2D<Real> ql, ScratchPad2D<Real> qr)
 {
-    reconstruct<Type::weno5, X3DIR>(member, G, P, k, j, is_l, ie_l, ql, qr);
+    reconstruct<Type::weno5, X3DIR>(member, P, k, j, is_l, ie_l, ql, qr);
 }
 
 /**

@@ -140,6 +140,7 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
 
     // This isn't a pmb0->par_for_outer because Parthenon's current overloaded definitions
     // do not accept three pairs of bounds, which we need in order to iterate over blocks
+    Flag("GetFlux_"+std::to_string(dir)+"_recon");
     parthenon::par_for_outer(DEFAULT_OUTER_LOOP_PATTERN, "calc_flux_recon", pmb0->exec_space,
         recon_scratch_bytes, scratch_level, block.s, block.e, kl.s, kl.e, jl.s, jl.e,
         KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int& b, const int& k, const int& j) {
@@ -180,8 +181,9 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
 
         }
     );
+    EndFlag();
 
-    Flag(md, "PtoU Left");
+    Flag("GetFlux_"+std::to_string(dir)+"_left");
     parthenon::par_for_outer(DEFAULT_OUTER_LOOP_PATTERN, "calc_flux_left", pmb0->exec_space,
         flux_scratch_bytes, scratch_level, block.s, block.e, kl.s, kl.e, jl.s, jl.e,
         KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int& b, const int& k, const int& j) {
@@ -236,8 +238,9 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
             }
         }
     );
+    EndFlag();
 
-    Flag(md, "PtoU Right");
+    Flag("GetFlux_"+std::to_string(dir)+"_right");
     parthenon::par_for_outer(DEFAULT_OUTER_LOOP_PATTERN, "calc_flux_right", pmb0->exec_space,
         flux_scratch_bytes, scratch_level, block.s, block.e, kl.s, kl.e, jl.s, jl.e,
         KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int& b, const int& k, const int& j) {
@@ -292,8 +295,9 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
 
         }
     );
+    EndFlag();
 
-    Flag(md, "Riemann kernel");
+    Flag("GetFlux_"+std::to_string(dir)+"_riemann");
     pmb0->par_for("flux_solve", block.s, block.e, 0, nvar-1, kl.s, kl.e, jl.s, jl.e, il.s, il.e,
         KOKKOS_LAMBDA(const int& b, const int& p, const int& k, const int& j, const int& i) {
             // Apply what we've calculated
@@ -305,6 +309,7 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
 
         }
     );
+    EndFlag();
 
     EndFlag();
     return TaskStatus::complete;
