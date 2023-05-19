@@ -192,6 +192,9 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     // There's no "Flux" package, so we register the geometric (\Gamma*T) source here. I think it makes sense.
     pkg->AddSource = Flux::AddGeoSource;
 
+    // On physical boundaries, even if we've sync'd both, respect the application to primitive variables
+    pkg->BoundaryPtoU = Flux::BlockPtoUMHD;
+
     // Finally, the StateDescriptor/Package object determines the Callbacks Parthenon makes to
     // a particular package -- that is, some portion of the things that the package needs done
     // at each step, which must be done at specific times.

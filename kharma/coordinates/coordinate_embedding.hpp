@@ -75,7 +75,7 @@
  * 
  * Each possible class is added to a couple of mpark::variant containers, and then to the chains of if statements below.
  *
- * TODO convenience functions.  Intelligent r/th/phi, x/y/z, KS and BL, a, rhor, etc by auto-translating contents
+ * TODO convenience functions.  Intelligent r/th/phi, x/y/z, KS and BL, a, etc by auto-translating contents
  */
 class CoordinateEmbedding {
     public:

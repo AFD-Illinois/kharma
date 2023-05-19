@@ -62,19 +62,10 @@ KOKKOS_INLINE_FUNCTION void gradient_calc(const GRCoordinates& G, const Variable
     // Compute gradient of ucov
     DLOOP1 {
         grad_ucov[0][mu] = 0;
-
         // slope in direction nu of component mu
-        grad_ucov[1][mu] = slope_calc<recon, 1>(G, Temps, uvec_index + mu, k, j, i);
-        if (do_2d) {
-            grad_ucov[2][mu] = slope_calc<recon, 2>(G, Temps, uvec_index + mu, k, j, i);
-        } else {
-            grad_ucov[2][mu] = 0.;
-        }
-        if (do_3d) {
-            grad_ucov[3][mu] = slope_calc<recon, 3>(G, Temps, uvec_index + mu, k, j, i);
-        } else {
-            grad_ucov[3][mu] = 0.;
-        }
+        grad_ucov[1][mu] = slope_calc<recon, X1DIR>(G, Temps, uvec_index + mu, k, j, i);
+        grad_ucov[2][mu] = (do_2d) ? slope_calc<recon, X2DIR>(G, Temps, uvec_index + mu, k, j, i) : 0.;
+        grad_ucov[3][mu] = (do_3d) ? slope_calc<recon, X3DIR>(G, Temps, uvec_index + mu, k, j, i) : 0.;
     }
     // TODO skip this if flat space?
     DLOOP3 grad_ucov[mu][nu] -= G.conn(j, i, lam, mu, nu) * Temps(uvec_index + lam, k, j, i);
@@ -82,17 +73,9 @@ KOKKOS_INLINE_FUNCTION void gradient_calc(const GRCoordinates& G, const Variable
     // Compute temperature gradient
     // Time derivative component is computed in time_derivative_sources
     grad_Theta[0] = 0;
-    grad_Theta[1] = slope_calc<recon, 1>(G, Temps, theta_index, k, j, i);
-    if (do_2d) {
-        grad_Theta[2] = slope_calc<recon, 2>(G, Temps, theta_index, k, j, i);
-    } else {
-        grad_Theta[2] = 0.;
-    } 
-    if (do_3d) {
-        grad_Theta[3] = slope_calc<recon, 3>(G, Temps, theta_index, k, j, i);
-    } else {
-        grad_Theta[3] = 0.;
-    }
+    grad_Theta[1] = slope_calc<recon, X1DIR>(G, Temps, theta_index, k, j, i);
+    grad_Theta[2] = (do_2d) ? slope_calc<recon, X2DIR>(G, Temps, theta_index, k, j, i) : 0.;
+    grad_Theta[3] = (do_3d) ? slope_calc<recon, X3DIR>(G, Temps, theta_index, k, j, i) : 0.;
 }
 
 } // namespace EMHD

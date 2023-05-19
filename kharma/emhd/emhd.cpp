@@ -125,11 +125,12 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     Metadata::AddUserFlag("EMHD");
 
     // General options for primitive and conserved scalar variables in ImEx driver
-    // EMHD is supported only with imex driver and implicit evolution
+    // EMHD is supported only with imex driver and implicit evolution,
+    // synchronizing primitive variables
     Metadata m_con  = Metadata({Metadata::Real, Metadata::Cell, Metadata::Independent, Metadata::GetUserFlag("Implicit"),
-                                Metadata::Restart, Metadata::WithFluxes, Metadata::FillGhost, Metadata::Conserved, Metadata::GetUserFlag("EMHD")});
+                                Metadata::WithFluxes, Metadata::Conserved, Metadata::GetUserFlag("EMHD")});
     Metadata m_prim = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::GetUserFlag("Implicit"),
-                                Metadata::GetUserFlag("Primitive"), Metadata::GetUserFlag("EMHD")});
+                                Metadata::Restart, Metadata::FillGhost, Metadata::GetUserFlag("Primitive"), Metadata::GetUserFlag("EMHD")});
 
     // Heat conduction
     if (conduction) {
@@ -158,8 +159,12 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
 
     // Callbacks
 
-    // This is for boundary syncs and output
-    pkg->BlockUtoP = EMHD::BlockUtoP;
+    // UtoP is *only* for boundary syncs and output, only register that function
+    // TODO support syncing cons someday
+    //pkg->BoundaryUtoP = EMHD::BlockUtoP;
+
+    // For now, sync primitive variables & call PtoU on physical boundaries
+    pkg->BoundaryPtoU = EMHD::BlockPtoU;
 
     // Add all explicit source terms -- implicit terms are called from Implicit::Step
     pkg->AddSource = EMHD::AddSource;
@@ -172,7 +177,41 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     return pkg;
 }
 
-void BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
+// TODO is relying on GRMHD P variables a mistake here?  They're available on physical boundaries at least,
+// maybe not internal?
+// void BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
+// {
+//     auto pmb = rc->GetBlockPointer();
+
+//     PackIndexMap prims_map, cons_map;
+//     auto U_E = rc->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("EMHD"), Metadata::Conserved}, cons_map);
+//     auto P = rc->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("Primitive")}, prims_map);
+//     const VarMap m_p(prims_map, false), m_u(cons_map, true);
+
+//     const auto& G = pmb->coords;
+
+//     auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
+//     const IndexRange ib = bounds.GetBoundsI(domain);
+//     const IndexRange jb = bounds.GetBoundsJ(domain);
+//     const IndexRange kb = bounds.GetBoundsK(domain);
+
+//     pmb->par_for("UtoP_EMHD", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+//         KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+//             const Real gamma = GRMHD::lorentz_calc(G, P, m_p, k, j, i, Loci::center);
+//             const Real inv_alpha = m::sqrt(-G.gcon(Loci::center, j, i, 0, 0));
+//             const Real ucon0 = gamma * inv_alpha;
+
+//             // Update the primitive EMHD fields
+//             if (m_p.Q >= 0)
+//                 P(m_p.Q, k, j, i) = U_E(m_u.Q, k, j, i) / (ucon0 * G.gdet(Loci::center, j, i));
+//             if (m_p.DP >= 0)
+//                 P(m_p.DP, k, j, i) = U_E(m_u.DP, k, j, i) / (ucon0 * G.gdet(Loci::center, j, i));
+//         }
+//     );
+//     Kokkos::fence();
+// }
+
+void BlockPtoU(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
     auto pmb = rc->GetBlockPointer();
 
@@ -194,14 +233,13 @@ void BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
             const Real inv_alpha = m::sqrt(-G.gcon(Loci::center, j, i, 0, 0));
             const Real ucon0 = gamma * inv_alpha;
 
-            // Update the primitive EMHD fields
+            // Update the conserved EMHD fields
             if (m_p.Q >= 0)
-                P(m_p.Q, k, j, i) = U_E(m_u.Q, k, j, i) / (ucon0 * G.gdet(Loci::center, j, i));
+                U_E(m_u.Q, k, j, i) = P(m_p.Q, k, j, i) * ucon0 * G.gdet(Loci::center, j, i);
             if (m_p.DP >= 0)
-                P(m_p.DP, k, j, i) = U_E(m_u.DP, k, j, i) / (ucon0 * G.gdet(Loci::center, j, i));
+                U_E(m_u.DP, k, j, i) = P(m_p.DP, k, j, i) * ucon0 * G.gdet(Loci::center, j, i);
         }
     );
-    Kokkos::fence();
 }
 
 void InitEMHDVariables(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin)
@@ -223,11 +261,11 @@ TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
     const EMHD_parameters& emhd_params = pars.Get<EMHD_parameters>("emhd_params");
 
     // Pack variables
-    PackIndexMap prims_map, cons_map;
+    PackIndexMap prims_map, cons_map, source_map;
     auto P    = md->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("Primitive")}, prims_map);
     auto U    = md->PackVariables(std::vector<MetadataFlag>{Metadata::Conserved}, cons_map);
-    auto dUdt = mdudt->PackVariables(std::vector<MetadataFlag>{Metadata::Conserved});
-    const VarMap m_p(prims_map, false), m_u(cons_map, true);
+    auto dUdt = mdudt->PackVariables(std::vector<MetadataFlag>{Metadata::Conserved}, source_map);
+    const VarMap m_p(prims_map, false), m_u(cons_map, true), m_s(source_map, true);
 
     // Get temporary ucov, Theta for gradients
     PackIndexMap temps_map;
@@ -272,7 +310,6 @@ TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
             FourVectors D;
             GRMHD::calc_4vecs(G, P(b), m_p, k, j, i, Loci::center, D);
             const double bsq = m::max(dot(D.bcon, D.bcov), SMALL);
-            const double mag_b = m::sqrt(bsq);
 
             // Compute gradient of ucov and Theta
             Real grad_ucov[GR_DIM][GR_DIM], grad_Theta[GR_DIM];
@@ -285,21 +322,22 @@ TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
 
             // Compute+add explicit source terms (conduction and viscosity)
             const Real& rho = P(b)(m_p.RHO, k, j, i);
-            const Real& Theta   = Temps(b)(m_theta, k, j, i);
+            const Real& Theta = Temps(b)(m_theta, k, j, i);
 
 
             if (emhd_params.conduction) {
                 const Real& qtilde = P(b)(m_p.Q, k, j, i);
+                const double inv_mag_b = 1. / m::sqrt(bsq);
                 Real q0            = 0;
-                DLOOP1 q0         -= rho * chi_e * (D.bcon[mu] / mag_b) * grad_Theta[mu];
-                DLOOP2 q0         -= rho * chi_e * (D.bcon[mu] / mag_b) * Theta * D.ucon[nu] * grad_ucov[nu][mu];
+                DLOOP1 q0         -= rho * chi_e * (D.bcon[mu] * inv_mag_b) * grad_Theta[mu];
+                DLOOP2 q0         -= rho * chi_e * (D.bcon[mu] * inv_mag_b) * Theta * D.ucon[nu] * grad_ucov[nu][mu];
                 Real q0_tilde      = q0; 
                 if (emhd_params.higher_order_terms)
                     q0_tilde *= (chi_e != 0) ? m::sqrt(tau / (chi_e * rho * Theta * Theta)) : 0.0;
 
-                dUdt(b, m_u.Q, k, j, i)  += G.gdet(Loci::center, j, i) * q0_tilde / tau;
+                dUdt(b, m_s.Q, k, j, i)  += G.gdet(Loci::center, j, i) * q0_tilde / tau;
                 if (emhd_params.higher_order_terms)
-                    dUdt(b, m_u.Q, k, j, i)  += G.gdet(Loci::center, j, i) * (qtilde / 2.) * div_ucon;
+                    dUdt(b, m_s.Q, k, j, i)  += G.gdet(Loci::center, j, i) * (qtilde / 2.) * div_ucon;
             }
 
             if (emhd_params.viscosity) {
@@ -310,9 +348,9 @@ TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
                 if (emhd_params.higher_order_terms)
                     dP0_tilde *= (nu_e != 0) ? m::sqrt(tau / (nu_e * rho * Theta)) : 0.0;
 
-                dUdt(b, m_u.DP, k, j, i) += G.gdet(Loci::center, j, i) * dP0_tilde / tau;
+                dUdt(b, m_s.DP, k, j, i) += G.gdet(Loci::center, j, i) * dP0_tilde / tau;
                 if (emhd_params.higher_order_terms)
-                    dUdt(b, m_u.DP, k, j, i) += G.gdet(Loci::center, j, i) * (dPtilde / 2.) * div_ucon;
+                    dUdt(b, m_s.DP, k, j, i) += G.gdet(Loci::center, j, i) * (dPtilde / 2.) * div_ucon;
             }
         }
     );

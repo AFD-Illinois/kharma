@@ -202,7 +202,7 @@ void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
                         throw std::invalid_argument("Not enough radial zones were specified to put 5 zones inside EH!");
                     }
                     pin->GetOrAddReal("parthenon/mesh", "x1min", x1min);
-                    pin->GetOrAddReal("coordinates", "r_in", tmp_coords.X1_to_embed(Rhor));
+                    pin->GetOrAddReal("coordinates", "r_in", tmp_coords.X1_to_embed(x1min));
                 }
             }
         }

@@ -140,6 +140,7 @@ TaskID KHARMADriver::AddMPIBoundarySync(const TaskID t_start, TaskList &tl, std:
 {
     auto t_start_sync = t_start;
 
+    // TODO this is likely part of syncing cons of e.g. implicit vars, etc.
     if (0) { //(mc1->GetMeshPointer()->packages.Get("Driver")->Param<bool>("sync_prims")) {
         TaskID t_all_ptou[mc1->NumBlocks() * BOUNDARY_NFACES];
         TaskID t_ptou_final(0);
@@ -165,7 +166,7 @@ TaskID KHARMADriver::AddMPIBoundarySync(const TaskID t_start, TaskList &tl, std:
     // TODO(BSP) careful about how AMR interacts with below
     Kokkos::fence();
 
-    // If we're "syncing primitive variables" but just exchanged cons.B, we need to recover the prims
+    // If we're "syncing primitive variables" but just exchanged conserved variables (B, implicit, etc), we need to recover the prims
     if (mc1->GetMeshPointer()->packages.Get("Driver")->Param<bool>("sync_prims")) {
         TaskID t_all_utop[mc1->NumBlocks() * BOUNDARY_NFACES];
         TaskID t_utop_final(0);
@@ -176,7 +177,7 @@ TaskID KHARMADriver::AddMPIBoundarySync(const TaskID t_start, TaskList &tl, std:
                 if (rc->GetBlockPointer()->boundary_flag[i_bnd] == BoundaryFlag::block ||
                     rc->GetBlockPointer()->boundary_flag[i_bnd] == BoundaryFlag::periodic) {
                     const auto bdomain = KBoundaries::BoundaryDomain((BoundaryFace) i_bnd);
-                    t_all_utop[i_task] = tl.AddTask(t_sync_done, Packages::BlockUtoPExceptMHD, rc.get(), bdomain, false);
+                    t_all_utop[i_task] = tl.AddTask(t_sync_done, Packages::BoundaryUtoP, rc.get(), bdomain, false);
                     t_utop_final = t_utop_final | t_all_utop[i_task];
                     i_task++;
                 }

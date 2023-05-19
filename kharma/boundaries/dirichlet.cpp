@@ -48,12 +48,15 @@ void KBoundaries::DirichletImpl(std::shared_ptr<MeshBlockData<Real>> &rc, Bounda
     FC main_ghosts = pmb->packages.AllPackages().count("B_Cleanup")
                             ? FC({Metadata::FillGhost}) - FC({Metadata::GetUserFlag("B_Cleanup")})
                             : FC({Metadata::FillGhost});
-    auto q = rc->PackVariables(main_ghosts, coarse);
+    PackIndexMap ghostmap;
+    auto q = rc->PackVariables(main_ghosts, ghostmap, coarse);
+    const int q_index = ghostmap["prims.q"].first;
     auto bound = rc->Get("bounds." + BoundaryName(bface)).data;
 
-    // TODO TODO NAMES
     if (q.GetDim(4) != bound.GetDim(4)) {
         std::cerr << "Boundary cache mismatch! " << bound.GetDim(4) << " vs " << q.GetDim(4) << std::endl;
+        std::cerr << "Variables with ghost zones:" << std::endl;
+        ghostmap.print();
     }
 
     const IndexRange vars = IndexRange{0, q.GetDim(4) - 1};
@@ -68,6 +71,7 @@ void KBoundaries::DirichletImpl(std::shared_ptr<MeshBlockData<Real>> &rc, Bounda
 
     const auto &G = pmb->coords;
 
+    // printf("Freezing bounds:\n");
     const auto domain = BoundaryDomain(bface);
     pmb->par_for_bndry(
         "dirichlet_boundary", vars, domain, coarse,
@@ -77,8 +81,11 @@ void KBoundaries::DirichletImpl(std::shared_ptr<MeshBlockData<Real>> &rc, Bounda
             } else {
                 q(p, k, j, i) = bound(p, k, j, i);
             }
+            // if (p == q_index) printf("%g ", q(p, k, j, i));
         }
     );
+    // Kokkos::fence();
+    // printf("\n\n");
 }
 
 void KBoundaries::FreezeDirichlet(std::shared_ptr<MeshData<Real>> &md)

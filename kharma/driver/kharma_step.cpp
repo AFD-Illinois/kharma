@@ -56,14 +56,16 @@ TaskCollection KHARMADriver::MakeTaskCollection(BlockList_t &blocks, int stage)
 {
     std::string driver_type = blocks[0]->packages.Get("Driver")->Param<std::string>("type");
     Flag("MakeTaskCollection_"+driver_type);
+    TaskCollection tc;
     if (driver_type == "imex") {
-        return MakeImExTaskCollection(blocks, stage);
+        tc = MakeImExTaskCollection(blocks, stage);
     } else if (driver_type == "simple") {
-        return MakeSimpleTaskCollection(blocks, stage);
+        tc = MakeSimpleTaskCollection(blocks, stage);
     } else {
-        return MakeDefaultTaskCollection(blocks, stage);
+        tc = MakeDefaultTaskCollection(blocks, stage);
     }
     EndFlag();
+    return tc;
 }
 
 TaskCollection KHARMADriver::MakeDefaultTaskCollection(BlockList_t &blocks, int stage)

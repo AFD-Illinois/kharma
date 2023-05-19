@@ -200,7 +200,8 @@ TaskStatus InitializeAtmosphere(std::shared_ptr<MeshBlockData<Real>>& rc, Parame
                 if (use_emhd && emhd_params.higher_order_terms) {
                     // Update q_host (and dP_host, which is zero in this problem). These are now q_tilde and dP_tilde
                     Real tau, chi_e, nu_e;
-                    EMHD::set_parameters_init(G, rho_temp, u_temp, emhd_params, gam, k, j, i, tau, chi_e, nu_e);
+                    // Zeros are q, dP, and bsq, only needed for torus closure
+                    EMHD::set_parameters(G, rho_temp, u_temp, 0., 0., 0., emhd_params, gam, j, i, tau, chi_e, nu_e);
                     const Real Theta = (gam - 1.) * u_temp / rho_temp;
                     if (emhd_params.conduction)
                         q_host(k, j, i)  *= (chi_e != 0) ? m::sqrt(tau / (chi_e * rho_temp * Theta * Theta)) : 0;
@@ -230,8 +231,11 @@ TaskStatus InitializeAtmosphere(std::shared_ptr<MeshBlockData<Real>>& rc, Parame
         dP.DeepCopy(dP_host);
     Kokkos::fence();
 
-    // Also fill cons.B
+    // Also fill cons
     B_FluxCT::BlockPtoU(rc.get(), IndexDomain::entire, false);
+    EMHD::BlockPtoU(rc.get(), IndexDomain::entire, false);
+    // Freeze the boundaries as soon as we have everything in place
+    KBoundaries::FreezeDirichletBlock(rc.get());
 
     return TaskStatus::complete;
 

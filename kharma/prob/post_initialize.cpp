@@ -277,5 +277,5 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart)
     // This is the first sync if there is no B field
     KHARMADriver::SyncAllBounds(md);
     // And make sure the trivial primitive values are up-to-date
-    Packages::MeshUtoPExceptMHD(md.get(), IndexDomain::entire, false);
+    //Packages::MeshUtoPExceptMHD(md.get(), IndexDomain::entire, false);
 }

@@ -245,10 +245,11 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
         EndFlag();
     }
 
-    // Respect the fluid primitives on boundaries (*not* B)
-    Flux::BlockPtoUMHD(rc.get(), domain, coarse);
+    // Respect the fluid primitives on boundaries (does not include B)
+    // Also currently the EMHD extra variables q, dP
+    Packages::BoundaryPtoU(rc.get(), domain, coarse);
     // For everything else, respect conserved variables
-    Packages::BlockUtoPExceptMHD(rc.get(), domain, coarse);
+    Packages::BoundaryUtoP(rc.get(), domain, coarse);
 
     EndFlag();
 }

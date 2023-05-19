@@ -137,7 +137,8 @@ TaskStatus InitializeEMHDShock(std::shared_ptr<MeshBlockData<Real>>& rc, Paramet
 
                         // Set EMHD parameters
                         Real tau, chi_e, nu_e;
-                        EMHD::set_parameters_init(G, rho_temp, u_temp, emhd_params, gam, k, j, i, tau, chi_e, nu_e);
+                        // Zeros are q, dP, and bsq, only needed for torus closure
+                        EMHD::set_parameters(G, rho_temp, u_temp, 0., 0., 0., emhd_params, gam, j, i, tau, chi_e, nu_e);
 
                         // Update q and dP (which now are q_tilde and dP_tilde)
                         Real q_tilde  = q_host(k, j, i);

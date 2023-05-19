@@ -129,6 +129,8 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
         pkg->MeshUtoP = B_FluxCT::MeshUtoP;
         pkg->BlockUtoP = B_FluxCT::BlockUtoP;
     }
+    // Still need UtoP on boundaries
+    pkg->BoundaryUtoP = B_FluxCT::BlockUtoP;
 
     // Register the other callbacks
     pkg->PostStepDiagnosticsMesh = B_FluxCT::PostStepDiagnostics;

@@ -104,7 +104,7 @@ std::shared_ptr<KHARMAPackage> Floors::Initialize(ParameterInput *pin, std::shar
     // less reliable but velocity reconstructions potentially more robust.
     // Drift frame floors are now available and preferred when using 
     // the implicit solver to avoid UtoP calls.
-    std::string frame = pin->GetOrAddString("floors", "frame", "normal");
+    std::string frame = pin->GetOrAddString("floors", "frame", "drift");
     // TODO TODO ENUM THIS
     params.Add("frame", frame);
     if (frame == "normal" || frame == "nof") {

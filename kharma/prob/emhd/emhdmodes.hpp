@@ -126,7 +126,8 @@ TaskStatus InitializeEMHDModes(std::shared_ptr<MeshBlockData<Real>>& rc, Paramet
 
             if (emhd_params.higher_order_terms) {
                 Real tau, chi_e, nu_e;
-                EMHD::set_parameters_init(G, rho(k, j, i), u(k, j, i), emhd_params, gam, k, j, i, tau, chi_e, nu_e);
+                // Zeros are q, dP, and bsq, only needed for torus closure
+                EMHD::set_parameters(G, rho(k, j, i), u(k, j, i), 0., 0., 0., emhd_params, gam, j, i, tau, chi_e, nu_e);
                 Real Theta = (gam - 1) * u(k, j, i) / rho(k, j, i);
                 Real q_tilde  = q(k, j, i); 
                 Real dP_tilde = dP(k, j, i);

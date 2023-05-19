@@ -272,8 +272,8 @@ TaskStatus B_Cleanup::CleanupDivergence(std::shared_ptr<MeshData<Real>>& md)
     // Synchronize to update ghost zones
     KHARMADriver::SyncAllBounds(md);
 
-    // Make sure all primitive vars reflect the solution
-    Packages::MeshUtoPExceptMHD(md.get(), IndexDomain::entire, false);
+    // Make sure primitive B reflects solution
+    B_FluxCT::MeshUtoP(md.get(), IndexDomain::entire, false);
 
     // Recalculate divB max for one last check
     const double divb_end = B_FluxCT::GlobalMaxDivB(md.get());

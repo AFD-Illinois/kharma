@@ -77,31 +77,32 @@ TaskStatus Packages::MeshUtoP(MeshData<Real> *md, IndexDomain domain, bool coars
     return TaskStatus::complete;
 }
 
-TaskStatus Packages::BlockUtoPExceptMHD(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
+TaskStatus Packages::BoundaryUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
-    Flag("BlockUtoPExceptMHD");
-    // We need to re-fill the primitive variables on the physical boundaries,
-    // since the driver has already called UtoP for the step.
-    // However, this does *not* apply to the GRMHD variables, as the boundary call
-    // used/filled their primitive values.  Instead, they will need a PtoU call
+    Flag("BoundaryUtoP");
     auto kpackages = rc->GetBlockPointer()->packages.AllPackagesOfType<KHARMAPackage>();
     for (auto kpackage : kpackages) {
-        if (kpackage.first != "GRMHD" && kpackage.first != "Inverter") {
-            if (kpackage.second->BlockUtoP != nullptr) {
-                Flag("BlockUtoPExceptMHD_"+kpackage.first);
-                kpackage.second->BlockUtoP(rc, domain, coarse);
-                EndFlag();
-            }
+        if (kpackage.second->BoundaryUtoP != nullptr) {
+            Flag("BoundaryUtoP_"+kpackage.first);
+            kpackage.second->BoundaryUtoP(rc, domain, coarse);
+            EndFlag();
         }
     }
     EndFlag();
     return TaskStatus::complete;
 }
-TaskStatus Packages::MeshUtoPExceptMHD(MeshData<Real> *md, IndexDomain domain, bool coarse)
+
+TaskStatus Packages::BoundaryPtoU(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
-    Flag("MeshUtoPExceptMHD");
-    for (int i=0; i < md->NumBlocks(); ++i)
-        BlockUtoPExceptMHD(md->GetBlockData(i).get(), domain, coarse);
+    Flag("BoundaryPtoU");
+    auto kpackages = rc->GetBlockPointer()->packages.AllPackagesOfType<KHARMAPackage>();
+    for (auto kpackage : kpackages) {
+        if (kpackage.second->BoundaryPtoU != nullptr) {
+            Flag("BoundaryPtoU_"+kpackage.first);
+            kpackage.second->BoundaryPtoU(rc, domain, coarse);
+            EndFlag();
+        }
+    }
     EndFlag();
     return TaskStatus::complete;
 }
