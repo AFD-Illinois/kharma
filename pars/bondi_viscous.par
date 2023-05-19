@@ -22,7 +22,9 @@ transform = mks
 a         = 0.0
 hslope    = 1.0
 r_out     = 20
-r_in      = 3
+# Needed to place 5 zones inside 3M,
+# to match the analytic files.
+Rhor      = 3
 
 <parthenon/time>
 tlim = 400.0
