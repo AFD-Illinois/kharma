@@ -43,7 +43,6 @@ using namespace parthenon;
 
 TaskStatus Flux::BlockPtoUMHD(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
-    Flag("Flux::BlockPtoUMHD");
     // Pointers
     auto pmb = rc->GetBlockPointer();
     // Options
@@ -71,7 +70,6 @@ TaskStatus Flux::BlockPtoUMHD(MeshBlockData<Real> *rc, IndexDomain domain, bool 
         }
     );
 
-    EndFlag();
     return TaskStatus::complete;
 }
 

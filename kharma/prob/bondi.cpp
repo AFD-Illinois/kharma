@@ -65,7 +65,7 @@ TaskStatus InitializeBondi(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterIn
     const bool zero_velocity = pin->GetOrAddBoolean("bondi", "zero_velocity", false);
 
     // Add these to package properties, since they continue to be needed on boundaries
-    // TODO Problems need params
+    // TODO Problems NEED params
     if(! pmb->packages.Get("GRMHD")->AllParams().hasKey("mdot"))
         pmb->packages.Get("GRMHD")->AddParam<Real>("mdot", mdot);
     if(! pmb->packages.Get("GRMHD")->AllParams().hasKey("rs"))

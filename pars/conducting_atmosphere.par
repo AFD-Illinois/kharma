@@ -63,12 +63,13 @@ linesearch_eps      = 1.e-4
 <emhd>
 on = true
 higher_order_terms = true
-feedback = true
-stability_limits = false
+feedback           = true
+stability_limits   = false
+
 closure_type = kappa_eta
-tau = 10.
+tau   = 10.
 kappa = 0.1
-eta = 0.0
+eta   = 0.0
 
 <conducting_atmosphere>
 input = ODE

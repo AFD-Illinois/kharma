@@ -185,7 +185,7 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
         }
 
         // Make sure the primitive values of *explicitly-evolved* variables are updated.
-        // Each package should have a guard which makes UtoP a no-op if it's implicitly evolved
+        // Packages with implicitly-evolved vars should only register BoundaryUtoP or BoundaryPtoU
         auto t_explicit_UtoP = tl.AddTask(t_copy_prims, Packages::MeshUtoP, md_solver.get(), IndexDomain::interior, false);
 
         // Done with explicit update
@@ -243,17 +243,19 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
         auto &mbd_sub_step_init  = pmb->meshblock_data.Get(integrator->stage_name[stage-1]);
         auto &mbd_sub_step_final = pmb->meshblock_data.Get(integrator->stage_name[stage]);
 
-        // If we're evolving the GRMHD variables explicitly, we need to fix UtoP variable inversion failures
+        // If we're evolving the GRMHD variables explicitly, we need to fix UtoP variable inversion failures.
+        // If implicitly, we run a (very similar) fix for solver failures.
         // Syncing bounds before calling this, and then running it over the whole domain, will make
         // behavior for different mesh breakdowns much more similar (identical?), since bad zones in
         // relevant ghost zone ranks will get to use all the same neighbors as if they were in the bulk
-        auto t_fix_p = tl.AddTask(t_none, Inverter::FixUtoP, mbd_sub_step_final.get());
-
-        // Fix unconverged (bad) zones in the solver
         // TODO fixups as a callback?
-        auto t_fix_solve = t_fix_p;
-        if (pkgs.at("GRMHD")->Param<bool>("implicit")) {
-            t_fix_solve = tl.AddTask(t_fix_p, Implicit::FixSolve, mbd_sub_step_final.get());
+        auto t_fix_utop = t_none;
+        if (!pkgs.at("GRMHD")->Param<bool>("implicit")) {
+            t_fix_utop = tl.AddTask(t_none, Inverter::FixUtoP, mbd_sub_step_final.get());
+        }
+        auto t_fix_solve = t_fix_utop;
+        if (use_implicit) {
+            t_fix_solve = tl.AddTask(t_fix_utop, Implicit::FixSolve, mbd_sub_step_final.get());
         }
 
         auto t_set_bc = tl.AddTask(t_fix_solve, parthenon::ApplyBoundaryConditions, mbd_sub_step_final);

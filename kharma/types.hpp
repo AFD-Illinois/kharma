@@ -221,7 +221,7 @@ inline void OutputNow(Mesh *pmesh, std::string name)
 // Can we namespace these?
 extern int kharma_debug_trace_indent;
 extern int kharma_debug_trace_mutex;
-#define MAX_INDENT_SPACES 160
+#define MAX_INDENT_SPACES 80
 inline void Flag(std::string label)
 {
     if(MPIRank0()) {
@@ -231,14 +231,14 @@ inline void Flag(std::string label)
         while (mutex != 0);
         // ... take the mutex and print
         mutex = 1;
-        char tab[MAX_INDENT_SPACES] = {0};
         // Make very sure the indent does not exceed the available space.
         // Forgetting EndFlag() is easy and buffer overflows are bad.
         indent = m::max(m::min(indent, MAX_INDENT_SPACES/2), 0);
+        char tab[MAX_INDENT_SPACES] = {0};
         for (int i=0; i < indent; i++) tab[i*2] = tab[i*2+1] = ' ';
         // Print everything in one call so we have the best chance of coherence
         fprintf(stderr, "%sStarting %s\n", tab, label.c_str());
-        indent = m::min(indent++, MAX_INDENT_SPACES/2);
+        indent = m::min(indent+1, MAX_INDENT_SPACES/2);
         // Release mutex
         mutex = 0;
     }
@@ -250,7 +250,7 @@ inline void EndFlag()
         int& mutex = kharma_debug_trace_mutex;
         while (mutex != 0);
         mutex = 1;
-        indent = m::min(m::max(indent--, 0), MAX_INDENT_SPACES/2);
+        indent = m::min(m::max(indent-1, 0), MAX_INDENT_SPACES/2);
         char tab[MAX_INDENT_SPACES] = {0};
         for (int i=0; i < indent; i++) tab[i*2] = tab[i*2+1] = ' ';
         fprintf(stderr, "%sDone\n", tab);

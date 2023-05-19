@@ -54,9 +54,9 @@ TaskStatus Implicit::FixSolve(MeshBlockData<Real> *mbd) {
 
     GridScalar solve_fail = mbd->Get("solve_fail").data;
 
+    // TODO generalize & make this into FixUtoP also?
+
     const Real gam    = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
-    // TODO flag_verbose here. Merge with other fixup into separate package or in GRMHD?
-    // We'll want to try new in-depth fixes w/implicit as we go...
     const int flag_verbose = pmb->packages.Get("Globals")->Param<int>("flag_verbose");
 
     // Boundaries were synced just before the call to this function (cf. imex_driver.cpp). 

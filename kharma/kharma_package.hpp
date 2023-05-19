@@ -59,6 +59,12 @@ class KHARMAPackage : public StateDescriptor {
         // rather, they are called on zone center values once per step only.
         std::function<void(MeshBlockData<Real>*, IndexDomain, bool)> BlockUtoP = nullptr;
         std::function<void(MeshData<Real>*, IndexDomain, bool)> MeshUtoP = nullptr;
+        // Allow applying UtoP only/separately for physical boundary domains after sync/prolong/restrict
+        // e.g., GRMHD does *not* register this as boundaries are applied to prims,
+        // whereas implicitly-evolved vars *only* register this.
+        std::function<void(MeshBlockData<Real>*, IndexDomain, bool)> BoundaryUtoP = nullptr;
+        // Same thing, the other way. For packages syncing primitives, e.g. GRMHD
+        std::function<void(MeshBlockData<Real>*, IndexDomain, bool)> BoundaryPtoU = nullptr;
 
         // Going the other way, however, is handled by Flux::PtoU.
         // All PtoU implementations are device-side (called prim_to_flux)
@@ -110,20 +116,21 @@ namespace Packages {
 TaskStatus FixFlux(MeshData<Real> *md);
 
 /**
- * 
+ * Fill the primitive variables P using the conserved U
  */
 TaskStatus BlockUtoP(MeshBlockData<Real> *mbd, IndexDomain domain, bool coarse=false);
 TaskStatus MeshUtoP(MeshData<Real> *md, IndexDomain domain, bool coarse=false);
 
 /**
- * Fill the primitive variables P using the conserved U, for every package except "GRMHD."
- * That is, currently, B fields and electrons.
- * This is used for KHARMA's boundaries, which act on (e.g., reflect or outflow) the
- * conserved variables where available (and thus must recover primitives),
- * but act on primitive rho,u,uvec and must leave those alone.
+ * Version of UtoP specifically for boundaries. Some packages sync & apply boundaries to
+ * conserved variables, some to primitive variables.
  */
-TaskStatus BlockUtoPExceptMHD(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse=false);
-TaskStatus MeshUtoPExceptMHD(MeshData<Real> *md, IndexDomain domain, bool coarse=false);
+TaskStatus BoundaryUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse=false);
+/**
+ * P to U for boundaries.  As it's internal to the flux updates, the "normal" PtoU is
+ * implemented device-side and called from the "Flux" package
+ */
+TaskStatus BoundaryPtoU(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse=false);
 
 /**
  * Fill all conserved variables (U) from primitive variables (P), over a whole block

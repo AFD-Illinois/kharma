@@ -230,8 +230,11 @@ TaskStatus InitializeAtmosphere(std::shared_ptr<MeshBlockData<Real>>& rc, Parame
         dP.DeepCopy(dP_host);
     Kokkos::fence();
 
-    // Also fill cons.B
+    // Also fill cons
     B_FluxCT::BlockPtoU(rc.get(), IndexDomain::entire, false);
+    EMHD::BlockPtoU(rc.get(), IndexDomain::entire, false);
+    // Freeze the boundaries as soon as we have everything in place
+    KBoundaries::FreezeDirichletBlock(rc.get());
 
     return TaskStatus::complete;
 

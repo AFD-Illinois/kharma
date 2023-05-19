@@ -88,11 +88,13 @@ TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt);
 void InitEMHDVariables(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin);
 
 /**
- * Recover primitive qtilde, dPtilde from "conserved" forms {qtilde,dPtilde}*u^0*gdet.
- * Since the implicit step does this for us, this is only needed for boundaries,
- * which sync/set conserved forms.
+ * Recover primitive qtilde, dPtilde from "conserved" forms {qtilde,dPtilde}*u^0*gdet,
+ * and vice versa.
+ * These are *not* called in the usual places for explicitly-evolved variables, but instead
+ * only on boundaries in order to sync the primitive/conserved variables specifically.
  */
 void BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse);
+void BlockPtoU(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse);
 
 /**
  * Get the EMHD parameters needed on the device side.

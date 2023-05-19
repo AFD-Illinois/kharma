@@ -33,6 +33,6 @@ conv_2d() {
     fi
 }
 
-#ALL_RES="64,128,256,512"
-ALL_RES="64,128"
+ALL_RES="64,128,256,512"
+#ALL_RES="64,128"
 conv_2d emhd2d_weno GRMHD/reconstruction=weno5 "in 2D, WENO5"
