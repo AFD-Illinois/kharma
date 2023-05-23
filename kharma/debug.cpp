@@ -90,7 +90,7 @@ TaskStatus CheckNaN(MeshData<Real> *md, int dir, IndexDomain domain)
 
     if (MPIRank0() && (nzero > 0 || nnan > 0)) {
         // TODO string formatting in C++ that doesn't suck
-        printf("Max signal speed ctop was 0 or NaN, direction %d (%d zero, %d NaN)", dir, nzero, nnan);
+        fprintf(stderr, "Max signal speed ctop was 0 or NaN, direction %d (%d zero, %d NaN)", dir, nzero, nnan);
         throw std::runtime_error("Bad ctop!");
     }
 

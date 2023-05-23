@@ -1,0 +1,84 @@
+diff --git a/src/solvers/bicgstab_solver.hpp b/src/solvers/bicgstab_solver.hpp
+index 4d23a7e0..b4cede0d 100644
+--- a/src/solvers/bicgstab_solver.hpp
++++ b/src/solvers/bicgstab_solver.hpp
+@@ -149,29 +149,29 @@ class BiCGStabSolver : BiCGStabCounter {
+         precom2 = task_list.AddTask(precom, this->user_precomm_scale, spmd.get(), vec_name); 
+       }
+       auto send =
+-          task_list.AddTask(precom2, parthenon::cell_centered_bvars::SendBoundaryBuffers, spmd);
++          task_list.AddTask(precom2, parthenon::SendBoundaryBuffers, spmd);
+       auto recv = task_list.AddTask(
+-          precom, parthenon::cell_centered_bvars::ReceiveBoundaryBuffers, spmd);
++          precom, parthenon::ReceiveBoundaryBuffers, spmd);
+       auto setb =
+-          task_list.AddTask(recv, parthenon::cell_centered_bvars::SetBoundaries, spmd);
+-      auto prolong =
+-          task_list.AddTask(setb, parthenon::ProlongateBoundariesMD, spmd);
+-      auto postcomm = prolong;
++          task_list.AddTask(recv, parthenon::SetBoundaries, spmd);
++      //auto prolong =
++      //    task_list.AddTask(setb, parthenon::ProlongateBounds, spmd);
++      auto postcomm = setb;
+       if (this->user_postcomm_scale) { 
+-        postcomm = task_list.AddTask(prolong, this->user_postcomm_scale, spmd.get(), vec_name); 
++        postcomm = task_list.AddTask(setb, this->user_postcomm_scale, spmd.get(), vec_name); 
+       }
+ 
+       auto update_rhs = postcomm; 
+       if (this->user_MatVec) {
+-        auto preflx = prolong;
++        auto preflx = setb;
+         if (this->user_pre_fluxcor) { 
+-          auto calc_flx = task_list.AddTask(prolong, this->user_pre_fluxcor, spmd.get(), vec_name, spmd.get(), name_out);
++          auto calc_flx = task_list.AddTask(setb, this->user_pre_fluxcor, spmd.get(), vec_name, spmd.get(), name_out);
+           auto send_flx =
+-            task_list.AddTask(calc_flx, parthenon::cell_centered_bvars::LoadAndSendFluxCorrections, spmd);
++            task_list.AddTask(calc_flx, parthenon::LoadAndSendFluxCorrections, spmd);
+           auto recv_flx =
+-            task_list.AddTask(calc_flx, parthenon::cell_centered_bvars::ReceiveFluxCorrections, spmd);
++            task_list.AddTask(calc_flx, parthenon::ReceiveFluxCorrections, spmd);
+           preflx =
+-            task_list.AddTask(recv_flx, parthenon::cell_centered_bvars::SetFluxCorrections, spmd);
++            task_list.AddTask(recv_flx, parthenon::SetFluxCorrections, spmd);
+         } 
+         update_rhs = task_list.AddTask(preflx, this->user_MatVec, spmd.get(), vec_name, spmd.get(), name_out);
+       } else {
+diff --git a/src/solvers/cg_solver.hpp b/src/solvers/cg_solver.hpp
+index 7f374114..44114453 100644
+--- a/src/solvers/cg_solver.hpp
++++ b/src/solvers/cg_solver.hpp
+@@ -180,11 +180,11 @@ class CG_Solver : public CG_Counter {
+ 
+     // ghost exchange.
+     auto send =
+-        solver.AddTask(axpy1, parthenon::cell_centered_bvars::SendBoundaryBuffers, md);
++        solver.AddTask(axpy1, parthenon::SendBoundaryBuffers, md);
+     auto recv = solver.AddTask(
+-        none, parthenon::cell_centered_bvars::ReceiveBoundaryBuffers, md);
++        none, parthenon::ReceiveBoundaryBuffers, md);
+     auto setb =
+-        solver.AddTask(recv | axpy1, parthenon::cell_centered_bvars::SetBoundaries, md);
++        solver.AddTask(recv | axpy1, parthenon::SetBoundaries, md);
+     
+     // matvec Ap = J*p
+     auto matvec =
+diff --git a/src/solvers/newton_krylov.hpp b/src/solvers/newton_krylov.hpp
+index ba946542..94ed63ec 100644
+--- a/src/solvers/newton_krylov.hpp
++++ b/src/solvers/newton_krylov.hpp
+@@ -178,11 +178,11 @@ class NewtonKrylov : NewtonKrylov_Counter {
+                               md.get(), mdelta.get());
+     // share \Delta x
+     auto send =
+-        ls->AddTask(update, parthenon::cell_centered_bvars::SendBoundaryBuffers, md);
++        ls->AddTask(update, parthenon::SendBoundaryBuffers, md);
+     auto recv = ls->AddTask(none,
+-                            parthenon::cell_centered_bvars::ReceiveBoundaryBuffers, md);
++                            parthenon::ReceiveBoundaryBuffers, md);
+     auto setb =
+-        ls->AddTask(recv | update, parthenon::cell_centered_bvars::SetBoundaries, md);
++        ls->AddTask(recv | update, parthenon::SetBoundaries, md);
+ 
+     // apply physical boundary conditions
+     auto copy = ls->AddTask(setb, &NewtonKrylov<LinSolverType, DataType>::Copy, this,
