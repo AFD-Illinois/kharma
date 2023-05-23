@@ -4,6 +4,7 @@
 # See --help
 
 import os
+import sys
 import click
 import glob
 import subprocess
@@ -40,15 +41,15 @@ def data_dir(n):
 @click.option('--nx3_mb', default=32, help="1-Run phi block resolution")
 @click.option('--nzones', default=8, help="Total number of zones (annuli)")
 @click.option('--base', default=8, help="Exponent base for annulus sizes")
-@click.option('--nruns', default=300, help="Total number of runs to perform")
+@click.option('--nruns', default=3000, help="Total number of runs to perform")
 @click.option('--spin', default=0.0, help="BH spin")
 @click.option('--bz', default=0.0, help="B field Z component. Zero for no field")
-@click.option('--cfl', default=0.9, help="Courant condition fraction.  Defaults to 0.5 in B field")
 @click.option('--tlim', default=None, help="Enforce a specific tlim for every run (for testing)")
 @click.option('--nlim', default=-1, help="Consistent max number of steps for each run")
 @click.option('--r_b', default=1.e5, help="Bondi radius. None chooses based on nzones")
 @click.option('--jitter', default=0.0, help="Proportional jitter to apply to starting state. Default 10% w/B field")
 # Flags and options
+@click.option('--kharma_bin', default="kharma.cuda", help="Name (not path) of KHARMA binary to run")
 @click.option('--kharma_args', default="", help="Arguments for KHARMA run.sh")
 @click.option('--short_t_out', default=True, help="Use shorter outermost annulus")
 @click.option('--restart', is_flag=True, help="Restart from most recent run parameters")
@@ -80,10 +81,16 @@ def run_multizone(**kwargs):
     # 1. Loading last-started run when restarting
     # 2. Computing arguments from kwargs if beginning fresh
     if kwargs['restart']:
+        # Crude, but I need to know what was passed to override on restore
+        kwargs_save = {}
+        for arg in [a.replace("-","").split("=")[0] for a in sys.argv[1:] if "-" in a]:
+            kwargs_save[arg] = kwargs[arg]
         restart_file = open('restart.p', 'rb')
-        kwargs = pickle.load(restart_file)
+        kwargs = {**kwargs, **pickle.load(restart_file)}
         args = pickle.load(restart_file)
         restart_file.close()
+        for arg in kwargs_save.keys():
+            kwargs[arg] = kwargs_save[arg]
     else:
         # First run arguments
         base = kwargs['base']
@@ -137,13 +144,10 @@ def run_multizone(**kwargs):
             if kwargs['jitter'] == 0.0:
                 kwargs['jitter'] = 0.1
             # Lower the cfl condition in B field
-            kwargs['cfl'] = 0.5
-            # And limit runtime
-            kwargs['nlim'] = int(5e4)
+            args['GRMHD/cfl'] = 0.5
 
         # Parameters directly from defaults/cmd
         args['perturbation/u_jitter'] = kwargs['jitter']
-        args['GRMHD/cfl'] = kwargs['cfl']
         args['coordinates/a'] = kwargs['spin']
         args['coordinates/ext_g'] = kwargs['ext_g']
         args['bondi/use_gizmo'] = kwargs['gizmo']
@@ -205,13 +209,18 @@ def run_multizone(**kwargs):
         ddir = data_dir(run_num)
         os.makedirs(ddir, exist_ok=True)
         fout = open(ddir+"/kharma.log", "w")
-        ret_obj = subprocess.run([kharma_dir+"/run.sh",] + ["-i", kwargs['parfile'], "-d", ddir] + format_args(args),
+        if kwargs['kharma_bin'] not in ["", "kharma.cuda"]:
+            kharma_bin_arg = ["-b", kwargs['kharma_bin']]
+        else:
+            kharma_bin_arg = []
+        ret_obj = subprocess.run([kharma_dir+"/run.sh"] + kharma_bin_arg +
+                      ["-i", kwargs['parfile'], "-d", ddir] + format_args(args),
                       stdout=fout, stderr=subprocess.STDOUT)
         fout.close()
 
         # Don't continue (& save restart data, etc) if KHARMA returned error
         if ret_obj.returncode != 0:
-            print("KHARMA returned error: {}.  Exiting.".format(ret_obj.retcode))
+            print("KHARMA returned error: {}. Exiting.".format(ret_obj.retcode))
             exit(-1)
 
         # Update parameters for the next pass
