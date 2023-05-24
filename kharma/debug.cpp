@@ -41,6 +41,8 @@
 #include "types.hpp"
 
 // TODO make this a DomainReduce, and add better verbosity options
+// TODO 
+
 TaskStatus CheckNaN(MeshData<Real> *md, int dir, IndexDomain domain)
 {
     Flag("CheckNaN");

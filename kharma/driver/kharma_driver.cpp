@@ -34,9 +34,9 @@
  */
 #include "kharma_driver.hpp"
 
+#include "b_ct.hpp"
 #include "boundaries.hpp"
 #include "flux.hpp"
-// GetFlux
 #include "get_flux.hpp"
 
 std::shared_ptr<KHARMAPackage> KHARMADriver::Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages)
@@ -220,6 +220,11 @@ void KHARMADriver::SyncAllBounds(std::shared_ptr<MeshData<Real>> md, bool apply_
 
 TaskID KHARMADriver::AddFluxCalculations(TaskID& t_start, TaskList& tl, KReconstruction::Type recon, MeshData<Real> *md)
 {
+    // Pre-calculate B field cell-center values
+    auto t_start_fluxes = t_start;
+    if (md->GetMeshPointer()->packages.AllPackages().count("B_CT"))
+        t_start_fluxes = tl.AddTask(t_start, B_CT::MeshUtoP, md, IndexDomain::entire, false);
+
     // Calculate fluxes in each direction using given reconstruction
     // Must be spelled out so as to generate each templated version of GetFlux<> to be available at runtime
     // Details in flux/get_flux.hpp
@@ -227,38 +232,38 @@ TaskID KHARMADriver::AddFluxCalculations(TaskID& t_start, TaskList& tl, KReconst
     TaskID t_calculate_flux1, t_calculate_flux2, t_calculate_flux3;
     switch (recon) {
     case RType::donor_cell:
-        t_calculate_flux1 = tl.AddTask(t_start, Flux::GetFlux<RType::donor_cell, X1DIR>, md);
-        t_calculate_flux2 = tl.AddTask(t_start, Flux::GetFlux<RType::donor_cell, X2DIR>, md);
-        t_calculate_flux3 = tl.AddTask(t_start, Flux::GetFlux<RType::donor_cell, X3DIR>, md);
+        t_calculate_flux1 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::donor_cell, X1DIR>, md);
+        t_calculate_flux2 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::donor_cell, X2DIR>, md);
+        t_calculate_flux3 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::donor_cell, X3DIR>, md);
         break;
     case RType::linear_mc:
-        t_calculate_flux1 = tl.AddTask(t_start, Flux::GetFlux<RType::linear_mc, X1DIR>, md);
-        t_calculate_flux2 = tl.AddTask(t_start, Flux::GetFlux<RType::linear_mc, X2DIR>, md);
-        t_calculate_flux3 = tl.AddTask(t_start, Flux::GetFlux<RType::linear_mc, X3DIR>, md);
+        t_calculate_flux1 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::linear_mc, X1DIR>, md);
+        t_calculate_flux2 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::linear_mc, X2DIR>, md);
+        t_calculate_flux3 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::linear_mc, X3DIR>, md);
         break;
     // case RType::linear_vl:
-    //     t_calculate_flux1 = tl.AddTask(t_start, Flux::GetFlux<RType::linear_vl, X1DIR>, md);
-    //     t_calculate_flux2 = tl.AddTask(t_start, Flux::GetFlux<RType::linear_vl, X2DIR>, md);
-    //     t_calculate_flux3 = tl.AddTask(t_start, Flux::GetFlux<RType::linear_vl, X3DIR>, md);
+    //     t_calculate_flux1 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::linear_vl, X1DIR>, md);
+    //     t_calculate_flux2 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::linear_vl, X2DIR>, md);
+    //     t_calculate_flux3 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::linear_vl, X3DIR>, md);
     //     break;
     case RType::weno5:
-        t_calculate_flux1 = tl.AddTask(t_start, Flux::GetFlux<RType::weno5, X1DIR>, md);
-        t_calculate_flux2 = tl.AddTask(t_start, Flux::GetFlux<RType::weno5, X2DIR>, md);
-        t_calculate_flux3 = tl.AddTask(t_start, Flux::GetFlux<RType::weno5, X3DIR>, md);
+        t_calculate_flux1 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::weno5, X1DIR>, md);
+        t_calculate_flux2 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::weno5, X2DIR>, md);
+        t_calculate_flux3 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::weno5, X3DIR>, md);
         break;
     case RType::weno5_lower_edges:
-        t_calculate_flux1 = tl.AddTask(t_start, Flux::GetFlux<RType::weno5_lower_edges, X1DIR>, md);
-        t_calculate_flux2 = tl.AddTask(t_start, Flux::GetFlux<RType::weno5_lower_edges, X2DIR>, md);
-        t_calculate_flux3 = tl.AddTask(t_start, Flux::GetFlux<RType::weno5_lower_edges, X3DIR>, md);
+        t_calculate_flux1 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::weno5_lower_edges, X1DIR>, md);
+        t_calculate_flux2 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::weno5_lower_edges, X2DIR>, md);
+        t_calculate_flux3 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::weno5_lower_edges, X3DIR>, md);
         break;
     case RType::weno5_lower_poles:
-        t_calculate_flux1 = tl.AddTask(t_start, Flux::GetFlux<RType::weno5_lower_poles, X1DIR>, md);
-        t_calculate_flux2 = tl.AddTask(t_start, Flux::GetFlux<RType::weno5_lower_poles, X2DIR>, md);
-        t_calculate_flux3 = tl.AddTask(t_start, Flux::GetFlux<RType::weno5_lower_poles, X3DIR>, md);
+        t_calculate_flux1 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::weno5_lower_poles, X1DIR>, md);
+        t_calculate_flux2 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::weno5_lower_poles, X2DIR>, md);
+        t_calculate_flux3 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::weno5_lower_poles, X3DIR>, md);
         break;
     default:
         std::cerr << "Reconstruction type not supported!  Main supported reconstructions:" << std::endl
-                  << "donor_cell, linear_mc, linear_vl, weno5" << std::endl;
+                  << "donor_cell, linear_mc, weno5" << std::endl;
         throw std::invalid_argument("Unsupported reconstruction algorithm!");
     }
     return t_calculate_flux1 | t_calculate_flux2 | t_calculate_flux3;

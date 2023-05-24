@@ -7,10 +7,6 @@
 # -nt (number of OpenMP threads)
 # Note these options must be FIRST and IN ORDER!
 
-# Optionally use the Kokkos tools to profile kernels
-#export KOKKOS_PROFILE_LIBRARY=$KHARMA_DIR/../kokkos-tools/kp_kernel_timer.so
-#export KOKKOS_PROFILE_LIBRARY=$KHARMA_DIR/../kokkos-tools/kp_nvprof_cnnector.so
-
 # Default MPI parameters: don't use MPI or run with 1 process
 MPI_EXE=${MPI_EXE:-}
 MPI_NUM_PROCS=${MPI_NUM_PROCS:-1}
@@ -44,6 +40,11 @@ else
   echo "KHARMA executable not found!"
   exit
 fi
+
+# Optionally use the Kokkos tools to profile kernels
+#export KOKKOS_TOOLS_LIBS=$KHARMA_DIR/../kokkos-tools/kp_kernel_timer.so
+#export KOKKOS_TOOLS_LIBS=$KHARMA_DIR/../kokkos-tools/kp_nvprof_cnnector.so
+#export KOKKOS_TOOLS_LIBS=$KHARMA_DIR/../kokkos-tools/kp_kernel_logger.so
 
 # Load environment from the same files as the compile process
 HOST=$(hostname -f)

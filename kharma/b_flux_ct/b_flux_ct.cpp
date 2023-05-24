@@ -274,14 +274,14 @@ void FluxCT(MeshData<Real> *md)
     // Calculate emf around each face
     pmb0->par_for("flux_ct_emf", block.s, block.e, kl.s, kl.e, jl.s, jl.e, il.s, il.e,
         KOKKOS_LAMBDA (const int& b, const int &k, const int &j, const int &i) {
-            emf_pack(b, V3, k, j, i) =  0.25 * (B_F(b).flux(X1DIR, V2, k, j, i) + B_F(b).flux(X1DIR, V2, k, j-1, i) -
-                                        B_F(b).flux(X2DIR, V1, k, j, i) - B_F(b).flux(X2DIR, V1, k, j, i-1));
             if (ndim > 2) {
-                emf_pack(b, V2, k, j, i) = -0.25 * (B_F(b).flux(X1DIR, V3, k, j, i) + B_F(b).flux(X1DIR, V3, k-1, j, i) -
-                                            B_F(b).flux(X3DIR, V1, k, j, i) - B_F(b).flux(X3DIR, V1, k, j, i-1));
                 emf_pack(b, V1, k, j, i) =  0.25 * (B_F(b).flux(X2DIR, V3, k, j, i) + B_F(b).flux(X2DIR, V3, k-1, j, i) -
                                             B_F(b).flux(X3DIR, V2, k, j, i) - B_F(b).flux(X3DIR, V2, k, j-1, i));
+                emf_pack(b, V2, k, j, i) = 0.25 * (B_F(b).flux(X3DIR, V1, k, j, i) + B_F(b).flux(X3DIR, V1, k, j, i-1) -
+                                            B_F(b).flux(X1DIR, V3, k, j, i) - B_F(b).flux(X1DIR, V3, k-1, j, i));
             }
+            emf_pack(b, V3, k, j, i) =  0.25 * (B_F(b).flux(X1DIR, V2, k, j, i) + B_F(b).flux(X1DIR, V2, k, j-1, i) -
+                                        B_F(b).flux(X2DIR, V1, k, j, i) - B_F(b).flux(X2DIR, V1, k, j, i-1));
         }
     );
 
@@ -330,13 +330,13 @@ void FixBoundaryFlux(MeshData<Real> *md, IndexDomain domain, bool coarse)
 
     // Imagine a corner of the domain, with ghost and physical zones
     // as below, denoted w/'g' and 'p' respectively.
-    // 
+    //    ...
     // g | p | p
-    //-----------
-    // g | p | p
-    //xxx--------
+    //----------- 1
+    // g | p | p ...
+    //xxx-------- 0
     // g | g | g
-    // 
+    //-1   0   1
     // The flux through 'x' is not important for updating a physical zone,
     // as it does not border any.  However, FluxCT considers it when updating
     // nearby fluxes, two of which affect physical zones.

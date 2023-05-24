@@ -1,5 +1,5 @@
 /* 
- *  File: seed_B_cd.hpp
+ *  File: seed_B_ct.cpp
  *  
  *  BSD 3-Clause License
  *  
@@ -33,30 +33,30 @@
  */
 
 // Seed a torus of some type with a magnetic field according to its density
-#pragma once
 
-#include "decs.hpp"
-#include "types.hpp"
+#include "b_ct.hpp"
 
-namespace B_CD
+#include "b_field_tools.hpp"
+#include "coordinate_utils.hpp"
+#include "fm_torus.hpp"
+#include "grmhd_functions.hpp"
+
+using namespace parthenon;
+
+TaskStatus B_CT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
 {
+    auto pmb = rc->GetBlockPointer();
 
-/**
- * Seed an axisymmetric initialization with magnetic field proportional to fluid density,
- * or density and radius, to create a SANE or MAD flow
- * Note this function expects a normalized P for which rho_max==1
- *
- * @param rin is the interior radius of the torus
- * @param min_rho_q is the minimum density at which there will be magnetic vector potential
- * @param b_field_type is one of "sane" "ryan" "r3s3" or "gaussian", described below (TODO test or remove opts)
- */
-TaskStatus SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin);
+    const auto& G = pmb->coords;
+    GridScalar rho = rc->Get("prims.rho").data;
+    GridVector B_P = rc->Get("prims.B").data;
+    GridVector B_U = rc->Get("cons.B").data;
 
-/**
- * Add flux to BH horizon
- * Applicable to any Kerr-space GRMHD sim, run after import/initialization
- * Preserves divB==0 with a Flux-CT step at end
- */
-//void SeedBHFlux(MeshBlockData<Real> *rc, Real BHflux);
+    // Orszag-Tang Vortex
+    
 
-} // namespace B_CD
+    // Finally, make sure we initialize the primitive field too
+    B_CT::BlockUtoP(rc, IndexDomain::entire, false);
+
+    return TaskStatus::complete;
+}

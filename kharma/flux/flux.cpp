@@ -36,6 +36,7 @@
 // Most includes are in the header TODO fix?
 
 #include "grmhd.hpp"
+#include "kharma.hpp"
 
 using namespace parthenon;
 
@@ -47,23 +48,13 @@ std::shared_ptr<KHARMAPackage> Flux::Initialize(ParameterInput *pin, std::shared
     auto pkg = std::make_shared<KHARMAPackage>("Flux");
     Params &params = pkg->AllParams();
 
-    // We can't use GetVariablesByFlag yet, so walk through and count manually
-    int nvar = 0;
-    for (auto pkg : packages->AllPackages()) {
-        for (auto field : pkg.second->AllFields()) {
-            // Specifically ignore the B_Cleanup variables, we don't handle their boundary conditions
-            if (field.second.IsSet(Metadata::WithFluxes)) {
-                if (field.second.Shape().size() < 1) {
-                    nvar += 1;
-                } else {
-                    nvar += field.second.Shape()[0];
-                }
-            }
-        }
-    }
+    // We can't just use GetVariables or something since there's no mesh yet.
+    // That's what this function is for.
+    int nvar = KHARMA::CountVars(packages.get(), Metadata::WithFluxes);
+    std::cout << "Allocating fluxes with nvar: " << nvar << std::endl;
     std::vector<int> s_flux({nvar});
-    std::vector<MetadataFlag> flags_temp = {Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy};
-    Metadata m = Metadata(flags_temp, s_flux);
+    std::vector<MetadataFlag> flags_flux = {Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy};
+    Metadata m = Metadata(flags_flux, s_flux);
     pkg->AddField("Flux.Pr", m);
     pkg->AddField("Flux.Pl", m);
     pkg->AddField("Flux.Ur", m);
@@ -71,14 +62,18 @@ std::shared_ptr<KHARMAPackage> Flux::Initialize(ParameterInput *pin, std::shared
     pkg->AddField("Flux.Fr", m);
     pkg->AddField("Flux.Fl", m);
 
-    std::vector<int> s_vec({NVEC});
-    m = Metadata(flags_temp, s_vec);
+    // TODO move to faces? Not important for these quantities as caches
+    std::vector<int> s_vector({NVEC});
+    std::vector<MetadataFlag> flags_speed = {Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy};
+    m = Metadata(flags_speed, s_vector);
     pkg->AddField("Flux.cmax", m);
     pkg->AddField("Flux.cmin", m);
-
-    // Velocities, for upwinding later
-    //pkg->AddField("Flux.vr", m);
-    //pkg->AddField("Flux.vl", m);
+    // Velocities, for upwinded constrained transport
+    // TODO can be 2-length someday if we want to get spicy
+    if (packages->AllPackages().count("B_CT")) {
+        pkg->AddField("Flux.vr", m);
+        pkg->AddField("Flux.vl", m);
+    }
 
     Flag("Initialized");
     return pkg;
@@ -129,7 +124,7 @@ TaskStatus Flux::BlockPtoU(MeshBlockData<Real> *rc, IndexDomain domain, bool coa
     // Pack variables
     PackIndexMap prims_map, cons_map;
     const auto& P = rc->PackVariables({Metadata::GetUserFlag("Primitive")}, prims_map);
-    const auto& U = rc->PackVariables({Metadata::Conserved}, cons_map);
+    const auto& U = rc->PackVariables({Metadata::Conserved, Metadata::Cell}, cons_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
     const int nvar = U.GetDim(4);
 
@@ -158,7 +153,6 @@ TaskStatus Flux::MeshPtoU(MeshData<Real> *md, IndexDomain domain, bool coarse)
 
 TaskStatus Flux::BlockPtoU_Send(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
-    // 
     // Pointers
     auto pmb = rc->GetBlockPointer();
     const int ndim = pmb->pmy_mesh->ndim;
@@ -207,7 +201,7 @@ TaskStatus Flux::BlockPtoU_Send(MeshBlockData<Real> *rc, IndexDomain domain, boo
 
     const auto& G = pmb->coords;
 
-    pmb->par_for("p_to_u", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+    pmb->par_for("p_to_u_send", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
             Flux::p_to_u(G, P, m_p, emhd_params, gam, k, j, i, U, m_u);
         }

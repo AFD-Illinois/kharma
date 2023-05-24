@@ -133,7 +133,7 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const Local& P,
     flux(m_u.U3) = T[3] * gdet;
 
     // Magnetic field
-    if (m_p.B1 >= 0) {
+    if (m_u.B1 >= 0) {
         // Magnetic field
         if (dir == 0) {
             VLOOP flux(m_u.B1 + v) = P(m_p.B1 + v) * gdet;
@@ -143,7 +143,7 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const Local& P,
             VLOOP flux(m_u.B1 + v) = (D.bcon[v+1] * D.ucon[dir] - D.bcon[dir] * D.ucon[v+1]) * gdet;
         }
         // Extra scalar psi for constraint damping, see B_CD
-        if (m_p.PSI >= 0) {
+        if (m_u.PSI >= 0) {
             if (dir == 0) {
                 flux(m_u.PSI) = P(m_p.PSI) * gdet;
             } else {
@@ -156,25 +156,25 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const Local& P,
     }
 
     // EMHD Variables: advect like rho
-    if (m_p.Q >= 0)
+    if (m_u.Q >= 0)
         flux(m_u.Q) = P(m_p.Q) * D.ucon[dir] * gdet;
-    if (m_p.DP >= 0)
+    if (m_u.DP >= 0)
         flux(m_u.DP) = P(m_p.DP) * D.ucon[dir] * gdet;
 
     // Electrons: normalized by density
-    if (m_p.KTOT >= 0) {
+    if (m_u.KTOT >= 0) {
         flux(m_u.KTOT) = flux(m_u.RHO) * P(m_p.KTOT);
-        if (m_p.K_CONSTANT >= 0)
+        if (m_u.K_CONSTANT >= 0)
             flux(m_u.K_CONSTANT) = flux(m_u.RHO) * P(m_p.K_CONSTANT);
-        if (m_p.K_HOWES >= 0)
+        if (m_u.K_HOWES >= 0)
             flux(m_u.K_HOWES) = flux(m_u.RHO) * P(m_p.K_HOWES);
-        if (m_p.K_KAWAZURA >= 0)
+        if (m_u.K_KAWAZURA >= 0)
             flux(m_u.K_KAWAZURA) = flux(m_u.RHO) * P(m_p.K_KAWAZURA);
-        if (m_p.K_WERNER >= 0)
+        if (m_u.K_WERNER >= 0)
             flux(m_u.K_WERNER) = flux(m_u.RHO) * P(m_p.K_WERNER);
-        if (m_p.K_ROWAN >= 0)
+        if (m_u.K_ROWAN >= 0)
             flux(m_u.K_ROWAN) = flux(m_u.RHO) * P(m_p.K_ROWAN);
-        if (m_p.K_SHARMA >= 0)
+        if (m_u.K_SHARMA >= 0)
             flux(m_u.K_SHARMA) = flux(m_u.RHO) * P(m_p.K_SHARMA);
     }
 }
@@ -198,7 +198,7 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const Global& P
     flux(m_u.U3, k, j, i) = T[3] * gdet;
 
     // Magnetic field
-    if (m_p.B1 >= 0) {
+    if (m_u.B1 >= 0) {
         // Magnetic field
         if (dir == 0) {
             VLOOP flux(m_u.B1 + v, k, j, i) = P(m_p.B1 + v, k, j, i) * gdet;
@@ -208,7 +208,7 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const Global& P
             VLOOP flux(m_u.B1 + v, k, j, i) = (D.bcon[v+1] * D.ucon[dir] - D.bcon[dir] * D.ucon[v+1]) * gdet;
         }
         // Extra scalar psi for constraint damping, see B_CD
-        if (m_p.PSI >= 0) {
+        if (m_u.PSI >= 0) {
             if (dir == 0) {
                 flux(m_u.PSI, k, j, i) = P(m_p.PSI, k, j, i) * gdet;
             } else {
@@ -221,25 +221,25 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const Global& P
     }
 
     // EMHD Variables: advect like rho
-    if (m_p.Q >= 0)
+    if (m_u.Q >= 0)
         flux(m_u.Q, k, j, i)  = P(m_p.Q, k, j, i) * D.ucon[dir] * gdet;
-    if (m_p.DP >= 0)
+    if (m_u.DP >= 0)
         flux(m_u.DP, k, j, i) = P(m_p.DP, k, j, i) * D.ucon[dir] * gdet;
 
     // Electrons: normalized by density
-    if (m_p.KTOT >= 0) {
+    if (m_u.KTOT >= 0) {
         flux(m_u.KTOT, k, j, i)  = flux(m_u.RHO, k, j, i) * P(m_p.KTOT, k, j, i);
-        if (m_p.K_CONSTANT >= 0)
+        if (m_u.K_CONSTANT >= 0)
             flux(m_u.K_CONSTANT, k, j, i) = flux(m_u.RHO, k, j, i) * P(m_p.K_CONSTANT, k, j, i);
-        if (m_p.K_HOWES >= 0)
+        if (m_u.K_HOWES >= 0)
             flux(m_u.K_HOWES, k, j, i)    = flux(m_u.RHO, k, j, i) * P(m_p.K_HOWES, k, j, i);
-        if (m_p.K_KAWAZURA >= 0)
+        if (m_u.K_KAWAZURA >= 0)
             flux(m_u.K_KAWAZURA, k, j, i) = flux(m_u.RHO, k, j, i) * P(m_p.K_KAWAZURA, k, j, i);
-        if (m_p.K_WERNER >= 0)
+        if (m_u.K_WERNER >= 0)
             flux(m_u.K_WERNER, k, j, i)   = flux(m_u.RHO, k, j, i) * P(m_p.K_WERNER, k, j, i);
-        if (m_p.K_ROWAN >= 0)
+        if (m_u.K_ROWAN >= 0)
             flux(m_u.K_ROWAN, k, j, i)    = flux(m_u.RHO, k, j, i) * P(m_p.K_ROWAN, k, j, i);
-        if (m_p.K_SHARMA >= 0)
+        if (m_u.K_SHARMA >= 0)
             flux(m_u.K_SHARMA, k, j, i)   = flux(m_u.RHO, k, j, i) * P(m_p.K_SHARMA, k, j, i);
     }
 }

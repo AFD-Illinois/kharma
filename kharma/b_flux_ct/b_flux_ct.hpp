@@ -55,6 +55,13 @@ namespace B_FluxCT {
 std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages);
 
 /**
+ * Seed a divergence-free magnetic field of user's choice, optionally
+ * proportional to existing fluid density.
+ * Updates primitive and conserved variables.
+ */
+TaskStatus SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin);
+
+/**
  * Get the primitive variables, which in Parthenon's nomenclature are "derived".
  * Also applies floors to the calculated primitives, and fixes up any inversion errors
  * 
@@ -129,6 +136,23 @@ void FillOutput(MeshBlock *pmb, ParameterInput *pin);
  * Fill field "name" with divB
  */
 void CalcDivB(MeshData<Real> *md, std::string divb_field_name="divB");
+
+// Reductions: phi uses global machinery, but divB is too 
+// Can also sum the hemispheres independently to be fancy (TODO?)
+KOKKOS_INLINE_FUNCTION Real phi(REDUCE_FUNCTION_ARGS_EH)
+{
+    // \Phi == \int |*F^1^0| * gdet * dx2 * dx3 == \int |B1| * gdet * dx2 * dx3
+    return 0.5 * m::abs(U(m_u.B1, k, j, i)); // factor of gdet already in cons.B
+}
+
+inline Real ReducePhi0(MeshData<Real> *md)
+{
+    return Reductions::EHReduction(md, UserHistoryOperation::sum, phi, 0);
+}
+inline Real ReducePhi5(MeshData<Real> *md)
+{
+    return Reductions::EHReduction(md, UserHistoryOperation::sum, phi, 5);
+}
 
 /**
  * ND divergence, averaging to cell corners
@@ -216,21 +240,63 @@ KOKKOS_INLINE_FUNCTION void center_grad(const GRCoordinates& G, const Global& P,
     B3 = norm*term3/G.Dxc<3>(k);
 }
 
-// Reductions: phi uses global machinery, but divB is too 
-// Can also sum the hemispheres independently to be fancy (TODO?)
-KOKKOS_INLINE_FUNCTION Real phi(REDUCE_FUNCTION_ARGS_EH)
+KOKKOS_INLINE_FUNCTION void averaged_curl_3D(const GRCoordinates& G, const GridVector& A, const GridVector& B_U,
+                                             const int& k, const int& j, const int& i)
 {
-    // \Phi == \int |*F^1^0| * gdet * dx2 * dx3 == \int |B1| * gdet * dx2 * dx3
-    return 0.5 * m::abs(U(m_u.B1, k, j, i)); // factor of gdet already in cons.B
+    // Take a flux-ct step from the corner potentials.
+    // This needs to be 3D because post-tilt A may not point in the phi direction only
+
+    // A3,2 derivative
+    const Real A3c2f = (A(V3, k, j + 1, i)     + A(V3, k, j + 1, i + 1) + 
+                        A(V3, k + 1, j + 1, i) + A(V3, k + 1, j + 1, i + 1)) / 4;
+    const Real A3c2b = (A(V3, k, j, i)     + A(V3, k, j, i + 1) +
+                        A(V3, k + 1, j, i) + A(V3, k + 1, j, i + 1)) / 4;
+    // A2,3 derivative
+    const Real A2c3f = (A(V2, k + 1, j, i)     + A(V2, k + 1, j, i + 1) +
+                        A(V2, k + 1, j + 1, i) + A(V2, k + 1, j + 1, i + 1)) / 4;
+    const Real A2c3b = (A(V2, k, j, i)     + A(V2, k, j, i + 1) +
+                        A(V2, k, j + 1, i) + A(V2, k, j + 1, i + 1)) / 4;
+    B_U(V1, k, j, i) = (A3c2f - A3c2b) / G.Dxc<2>(j) - (A2c3f - A2c3b) / G.Dxc<3>(k);
+
+    // A1,3 derivative
+    const Real A1c3f = (A(V1, k + 1, j, i)     + A(V1, k + 1, j, i + 1) + 
+                        A(V1, k + 1, j + 1, i) + A(V1, k + 1, j + 1, i + 1)) / 4;
+    const Real A1c3b = (A(V1, k, j, i)     + A(V1, k, j, i + 1) +
+                        A(V1, k, j + 1, i) + A(V1, k, j + 1, i + 1)) / 4;
+    // A3,1 derivative
+    const Real A3c1f = (A(V3, k, j, i + 1)     + A(V3, k + 1, j, i + 1) +
+                        A(V3, k, j + 1, i + 1) + A(V3, k + 1, j + 1, i + 1)) / 4;
+    const Real A3c1b = (A(V3, k, j, i)     + A(V3, k + 1, j, i) +
+                        A(V3, k, j + 1, i) + A(V3, k + 1, j + 1, i)) / 4;
+    B_U(V2, k, j, i) = (A1c3f - A1c3b) / G.Dxc<3>(k) - (A3c1f - A3c1b) / G.Dxc<1>(i);
+
+    // A2,1 derivative
+    const Real A2c1f = (A(V2, k, j, i + 1)     + A(V2, k, j + 1, i + 1) + 
+                        A(V2, k + 1, j, i + 1) + A(V2, k + 1, j + 1, i + 1)) / 4;
+    const Real A2c1b = (A(V2, k, j, i)     + A(V2, k, j + 1, i) +
+                        A(V2, k + 1, j, i) + A(V2, k + 1, j + 1, i)) / 4;
+    // A1,2 derivative
+    const Real A1c2f = (A(V1, k, j + 1, i)     + A(V1, k, j + 1, i + 1) +
+                        A(V1, k + 1, j + 1, i) + A(V1, k + 1, j + 1, i + 1)) / 4;
+    const Real A1c2b = (A(V1, k, j, i)     + A(V1, k, j, i + 1) +
+                        A(V1, k + 1, j, i) + A(V1, k + 1, j, i + 1)) / 4;
+    B_U(V3, k, j, i) = (A2c1f - A2c1b) / G.Dxc<1>(i) - (A1c2f - A1c2b) / G.Dxc<2>(j);
 }
 
-inline Real ReducePhi0(MeshData<Real> *md)
+KOKKOS_INLINE_FUNCTION void averaged_curl_2D(const GRCoordinates& G, const GridVector& A, const GridVector& B_U,
+                                             const int& k, const int& j, const int& i)
 {
-    return Reductions::EHReduction(md, UserHistoryOperation::sum, phi, 0);
-}
-inline Real ReducePhi5(MeshData<Real> *md)
-{
-    return Reductions::EHReduction(md, UserHistoryOperation::sum, phi, 5);
+    // A3,2 derivative
+    const Real A3c2f = (A(V3, k, j + 1, i) + A(V3, k, j + 1, i + 1)) / 2;
+    const Real A3c2b = (A(V3, k, j, i)     + A(V3, k, j, i + 1)) / 2;
+    B_U(V1, k, j, i) = (A3c2f - A3c2b) / G.Dxc<2>(j);
+
+    // A3,1 derivative
+    const Real A3c1f = (A(V3, k, j, i + 1) + A(V3, k, j + 1, i + 1)) / 2;
+    const Real A3c1b = (A(V3, k, j, i)     + A(V3, k, j + 1, i)) / 2;
+    B_U(V2, k, j, i) = - (A3c1f - A3c1b) / G.Dxc<1>(i);
+
+    B_U(V3, k, j, i) = 0;
 }
 
 }

@@ -202,6 +202,9 @@ TaskStatus Floors::ApplyInitialFloors(ParameterInput *pin, MeshBlockData<Real> *
 
     const EMHD::EMHD_parameters& emhd_params = EMHD::GetEMHDParameters(pmb->packages);
 
+    fprintf(stderr, "%d %d %d %d %d\n", m_p.RHO, m_p.UU, m_p.U1, m_p.U2, m_p.U3);
+    fprintf(stderr, "%d %d %d %d %d\n", m_u.RHO, m_u.UU, m_u.U1, m_u.U2, m_u.U3);
+
     // Apply floors over the same zones we just updated with UtoP
     // This selects the entire domain, but we then require pflag >= 0,
     // which keeps us from covering completely uninitialized zones
@@ -209,7 +212,7 @@ TaskStatus Floors::ApplyInitialFloors(ParameterInput *pin, MeshBlockData<Real> *
     const IndexRange ib = mbd->GetBoundsI(domain);
     const IndexRange jb = mbd->GetBoundsJ(domain);
     const IndexRange kb = mbd->GetBoundsK(domain);
-    pmb->par_for("apply_floors", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+    pmb->par_for("apply_initial_floors", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
             apply_floors(G, P, m_p, gam, emhd_params, k, j, i, floors, U, m_u);
             apply_ceilings(G, P, m_p, gam, k, j, i, floors, U, m_u);

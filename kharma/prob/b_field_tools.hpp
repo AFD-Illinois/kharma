@@ -36,6 +36,8 @@
 #include "decs.hpp"
 #include "types.hpp"
 
+
+
 // Internal representation of the field initialization preference for quick switch
 // Avoids string comparsion in kernels
 enum BSeedType{constant, monopole, monopole_cube, sane, ryan, ryan_quadrupole, r3s3, steep, gaussian, bz_monopole, vertical};
@@ -70,4 +72,20 @@ inline BSeedType ParseBSeedType(std::string b_field_type)
     } else {
         throw std::invalid_argument("Magnetic field seed type not supported: " + b_field_type);
     }
+}
+
+/**
+ * Initializer for magnetic fields directly: value of a divergence-free configuration at a point
+ */
+KOKKOS_INLINE_FUNCTION double BSeed_A(BSeedType type, GReal Xembed[GR_DIM])
+{
+
+}
+
+/**
+ * 
+ */
+KOKKOS_INLINE_FUNCTION double BSeed_B(BSeedType type, GReal Xembed[GR_DIM])
+{
+
 }

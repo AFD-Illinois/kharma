@@ -35,6 +35,7 @@
 
 #include "flux.hpp"
 
+#include "domain.hpp"
 #include "floors_functions.hpp"
 
 namespace Flux {
@@ -103,6 +104,7 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
     PackIndexMap prims_map, cons_map;
     const auto& cmax  = md->PackVariables(std::vector<std::string>{"Flux.cmax"});
     const auto& cmin  = md->PackVariables(std::vector<std::string>{"Flux.cmin"});
+    // TODO maybe all WithFluxes vars, split into cell & face?
     const auto& P_all = md->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("Primitive")}, prims_map);
     const auto& U_all = md->PackVariablesAndFluxes(std::vector<MetadataFlag>{Metadata::Conserved}, cons_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
@@ -114,20 +116,14 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
     const auto& Fl_all = md->PackVariables(std::vector<std::string>{"Flux.Fl"});
     const auto& Fr_all = md->PackVariables(std::vector<std::string>{"Flux.Fr"});
 
-    // Get sizes
+    // Get the domain size
+    const IndexRange3 b = KDomain::GetRange(md, IndexDomain::interior, -1, 1);
+    // Get other sizes we need
     const int n1 = pmb0->cellbounds.ncellsi(IndexDomain::entire);
-    const IndexRange ib = md->GetBoundsI(IndexDomain::interior);
-    const IndexRange jb = md->GetBoundsJ(IndexDomain::interior);
-    const IndexRange kb = md->GetBoundsK(IndexDomain::interior);
     const IndexRange block = IndexRange{0, cmax.GetDim(5) - 1};
     const int nvar = U_all.GetDim(4);
-    // 1-zone halo in nontrivial dimensions
-    // We leave is/ie, js/je, ks/ke with their usual definitions for consistency, and define
-    // the loop bounds separately to include the appropriate halo
-    // TODO halo 2 "shouldn't" crash but does.  Artifact of switch to faces?
-    const IndexRange il = IndexRange{ib.s - 1, ib.e + 1};
-    const IndexRange jl = (ndim > 1) ? IndexRange{jb.s - 1, jb.e + 1} : jb;
-    const IndexRange kl = (ndim > 2) ? IndexRange{kb.s - 1, kb.e + 1} : kb;
+    //std::cout << "Calculating fluxes for " << cmax.GetDim(5) << " blocks, "
+    //          << nvar << " variables (" << P_all.GetDim(4) << " primitives)" << std::endl;
 
     // Allocate scratch space
     const int scratch_level = 1; // 0 is actual scratch (tiny); 1 is HBM
@@ -142,20 +138,21 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
     // do not accept three pairs of bounds, which we need in order to iterate over blocks
     Flag("GetFlux_"+std::to_string(dir)+"_recon");
     parthenon::par_for_outer(DEFAULT_OUTER_LOOP_PATTERN, "calc_flux_recon", pmb0->exec_space,
-        recon_scratch_bytes, scratch_level, block.s, block.e, kl.s, kl.e, jl.s, jl.e,
-        KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int& b, const int& k, const int& j) {
-            const auto& G = U_all.GetCoords(b);
+        recon_scratch_bytes, scratch_level, block.s, block.e, b.ks, b.ke, b.js, b.je,
+        KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int& bl, const int& k, const int& j) {
+            const auto& G = U_all.GetCoords(bl);
             ScratchPad2D<Real> Pl_s(member.team_scratch(scratch_level), nvar, n1);
             ScratchPad2D<Real> Pr_s(member.team_scratch(scratch_level), nvar, n1);
 
-            // Wrapper for a big switch statement between reconstruction schemes. Possibly slow.
-            // This function is generally a lot of if statements
-            KReconstruction::reconstruct<Recon, dir>(member, P_all(b), k, j, il.s, il.e, Pl_s, Pr_s);
+            // We template on reconstruction type to avoid a big switch statement here.
+            // Instead, a version of GetFlux() is generated separately for each reconstruction/direction pair.
+            // See reconstruction.hpp for all the implementations.
+            KReconstruction::reconstruct<Recon, dir>(member, P_all(bl), k, j, b.is, b.ie, Pl_s, Pr_s);
 
             // Sync all threads in the team so that scratch memory is consistent
             member.team_barrier();
 
-            parthenon::par_for_inner(member, il.s, il.e,
+            parthenon::par_for_inner(member, b.is, b.ie,
                 [&](const int& i) {
                     auto Pl = Kokkos::subview(Pl_s, Kokkos::ALL(), i);
                     auto Pr = Kokkos::subview(Pr_s, Kokkos::ALL(), i);
@@ -171,39 +168,39 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
 
             // Copy out state (TODO(BSP) eliminate)
             for (int p=0; p < nvar; ++p) {
-                parthenon::par_for_inner(member, il.s, il.e,
+                parthenon::par_for_inner(member, b.is, b.ie,
                     [&](const int& i) {
-                        Pl_all(b, p, k, j, i) = Pl_s(p, i);
-                        Pr_all(b, p, k, j, i) = Pr_s(p, i);
+                        Pl_all(bl, p, k, j, i) = Pl_s(p, i);
+                        Pr_all(bl, p, k, j, i) = Pr_s(p, i);
                     }
                 );
             }
-
+            member.team_barrier();
         }
     );
     EndFlag();
 
     Flag("GetFlux_"+std::to_string(dir)+"_left");
     parthenon::par_for_outer(DEFAULT_OUTER_LOOP_PATTERN, "calc_flux_left", pmb0->exec_space,
-        flux_scratch_bytes, scratch_level, block.s, block.e, kl.s, kl.e, jl.s, jl.e,
-        KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int& b, const int& k, const int& j) {
-            const auto& G = U_all.GetCoords(b);
+        flux_scratch_bytes, scratch_level, block.s, block.e, b.ks, b.ke, b.js, b.je,
+        KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int& bl, const int& k, const int& j) {
+            const auto& G = U_all.GetCoords(bl);
             ScratchPad2D<Real> Pl_s(member.team_scratch(scratch_level), nvar, n1);
             ScratchPad2D<Real> Ul_s(member.team_scratch(scratch_level), nvar, n1);
             ScratchPad2D<Real> Fl_s(member.team_scratch(scratch_level), nvar, n1);
 
             // Copy in state (TODO(BSP) eliminate)
             for (int p=0; p < nvar; ++p) {
-                parthenon::par_for_inner(member, il.s, il.e,
+                parthenon::par_for_inner(member, b.is, b.ie,
                     [&](const int& i) {
-                        Pl_s(p, i) = Pl_all(b, p, k, j, i);
+                        Pl_s(p, i) = Pl_all(bl, p, k, j, i);
                     }
                 );
             }
             member.team_barrier();
 
             // LEFT FACES
-            parthenon::par_for_inner(member, il.s, il.e,
+            parthenon::par_for_inner(member, b.is, b.ie,
                 [&](const int& i) {
                     auto Pl = Kokkos::subview(Pl_s, Kokkos::ALL(), i);
                     auto Ul = Kokkos::subview(Ul_s, Kokkos::ALL(), i);
@@ -221,18 +218,18 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
                     Flux::vchar(G, Pl, m_p, Dtmp, gam, emhd_params, k, j, i, loc, dir, cmaxL, cminL);
 
                     // Record speeds
-                    cmax(b, dir-1, k, j, i) = m::max(0., cmaxL);
-                    cmin(b, dir-1, k, j, i) = m::max(0., -cminL);
+                    cmax(bl, dir-1, k, j, i) = m::max(0., cmaxL);
+                    cmin(bl, dir-1, k, j, i) = m::max(0., -cminL);
                 }
             );
             member.team_barrier();
 
             // Copy out state
             for (int p=0; p < nvar; ++p) {
-                parthenon::par_for_inner(member, il.s, il.e,
+                parthenon::par_for_inner(member, b.is, b.ie,
                     [&](const int& i) {
-                        Ul_all(b, p, k, j, i) = Ul_s(p, i);
-                        Fl_all(b, p, k, j, i) = Fl_s(p, i);
+                        Ul_all(bl, p, k, j, i) = Ul_s(p, i);
+                        Fl_all(bl, p, k, j, i) = Fl_s(p, i);
                     }
                 );
             }
@@ -242,25 +239,25 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
 
     Flag("GetFlux_"+std::to_string(dir)+"_right");
     parthenon::par_for_outer(DEFAULT_OUTER_LOOP_PATTERN, "calc_flux_right", pmb0->exec_space,
-        flux_scratch_bytes, scratch_level, block.s, block.e, kl.s, kl.e, jl.s, jl.e,
-        KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int& b, const int& k, const int& j) {
-            const auto& G = U_all.GetCoords(b);
+        flux_scratch_bytes, scratch_level, block.s, block.e, b.ks, b.ke, b.js, b.je,
+        KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int& bl, const int& k, const int& j) {
+            const auto& G = U_all.GetCoords(bl);
             ScratchPad2D<Real> Pr_s(member.team_scratch(scratch_level), nvar, n1);
             ScratchPad2D<Real> Ur_s(member.team_scratch(scratch_level), nvar, n1);
             ScratchPad2D<Real> Fr_s(member.team_scratch(scratch_level), nvar, n1);
 
             // Copy in state (TODO(BSP) eliminate)
             for (int p=0; p < nvar; ++p) {
-                parthenon::par_for_inner(member, il.s, il.e,
+                parthenon::par_for_inner(member, b.is, b.ie,
                     [&](const int& i) {
-                        Pr_s(p, i) = Pr_all(b, p, k, j, i);
+                        Pr_s(p, i) = Pr_all(bl, p, k, j, i);
                     }
                 );
             }
             member.team_barrier();
 
             // RIGHT FACES, finalize signal speed
-            parthenon::par_for_inner(member, il.s, il.e,
+            parthenon::par_for_inner(member, b.is, b.ie,
                 [&](const int& i) {
                     auto Pr = Kokkos::subview(Pr_s, Kokkos::ALL(), i);
                     auto Ur = Kokkos::subview(Ur_s, Kokkos::ALL(), i);
@@ -277,18 +274,18 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
                     Flux::vchar(G, Pr, m_p, Dtmp, gam, emhd_params, k, j, i, loc, dir, cmaxR, cminR);
 
                     // Calculate cmax/min based on comparison with cached values
-                    cmax(b, dir-1, k, j, i) = m::abs(m::max(cmax(b, dir-1, k, j, i),  cmaxR));
-                    cmin(b, dir-1, k, j, i) = m::abs(m::max(cmin(b, dir-1, k, j, i), -cminR));
+                    cmax(bl, dir-1, k, j, i) = m::abs(m::max(cmax(bl, dir-1, k, j, i),  cmaxR));
+                    cmin(bl, dir-1, k, j, i) = m::abs(m::max(cmin(bl, dir-1, k, j, i), -cminR));
                 }
             );
             member.team_barrier();
 
             // Copy out state
             for (int p=0; p < nvar; ++p) {
-                parthenon::par_for_inner(member, il.s, il.e,
+                parthenon::par_for_inner(member, b.is, b.ie,
                     [&](const int& i) {
-                        Ur_all(b, p, k, j, i) = Ur_s(p, i);
-                        Fr_all(b, p, k, j, i) = Fr_s(p, i);
+                        Ur_all(bl, p, k, j, i) = Ur_s(p, i);
+                        Fr_all(bl, p, k, j, i) = Fr_s(p, i);
                     }
                 );
             }
@@ -297,18 +294,29 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
     );
     EndFlag();
 
+    // Apply what we've calculated
     Flag("GetFlux_"+std::to_string(dir)+"_riemann");
-    pmb0->par_for("flux_solve", block.s, block.e, 0, nvar-1, kl.s, kl.e, jl.s, jl.e, il.s, il.e,
-        KOKKOS_LAMBDA(const int& b, const int& p, const int& k, const int& j, const int& i) {
-            // Apply what we've calculated
-            // TODO OTHER FLUXES AGAIN
-            U_all(b).flux(dir, p, k, j, i) = llf(Fl_all(b, p, k, j, i), Fr_all(b, p, k, j, i),
-                                                 cmax(b, dir-1, k, j, i), cmin(b, dir-1, k, j, i),
-                                                 Ul_all(b, p, k, j, i), Ur_all(b, p, k, j, i));
+    if (use_hlle) { // More fluxes would need a template
+        pmb0->par_for("flux_hlle", block.s, block.e, 0, nvar-1, b.ks, b.ke, b.js, b.je, b.is, b.ie,
+            KOKKOS_LAMBDA(const int& bl, const int& p, const int& k, const int& j, const int& i) {
+                U_all(bl).flux(dir, p, k, j, i) = hlle(Fl_all(bl, p, k, j, i), Fr_all(bl, p, k, j, i),
+                                                      cmax(bl, dir-1, k, j, i), cmin(bl, dir-1, k, j, i),
+                                                      Ul_all(bl, p, k, j, i), Ur_all(bl, p, k, j, i));
 
 
-        }
-    );
+            }
+        );
+    } else {
+        pmb0->par_for("flux_llf", block.s, block.e, 0, nvar-1, b.ks, b.ke, b.js, b.je, b.is, b.ie,
+            KOKKOS_LAMBDA(const int& bl, const int& p, const int& k, const int& j, const int& i) {
+                U_all(bl).flux(dir, p, k, j, i) = llf(Fl_all(bl, p, k, j, i), Fr_all(bl, p, k, j, i),
+                                                     cmax(bl, dir-1, k, j, i), cmin(bl, dir-1, k, j, i),
+                                                     Ul_all(bl, p, k, j, i), Ur_all(bl, p, k, j, i));
+
+
+            }
+        );
+    }
     EndFlag();
 
     EndFlag();

@@ -53,10 +53,19 @@ using parthenon::MeshBlockData;
 
 // This provides a way of addressing vectors that matches
 // directions, to make derivatives etc more readable
-// TODO Spammy to namespace. Keep?
+// TODO is there something tricky with statics we can do here to type?
 #define V1 0
 #define V2 1
 #define V3 2
+
+// Let's also rename Parthenon's very specific location names to something generic & readable
+using TE = parthenon::TopologicalElement;
+constexpr TE F1 = TE::FX;
+constexpr TE F2 = TE::FY;
+constexpr TE F3 = TE::FZ;
+constexpr TE E1 = TE::EYZ;
+constexpr TE E2 = TE::EXZ;
+constexpr TE E3 = TE::EXY;
 
 // Struct for derived 4-vectors at a point, usually calculated and needed together
 typedef struct {
@@ -67,10 +76,19 @@ typedef struct {
 } FourVectors;
 
 typedef struct {
-    IndexRange ib;
-    IndexRange jb;
-    IndexRange kb;
+    uint is;
+    uint ie;
+    uint js;
+    uint je;
+    uint ks;
+    uint ke;
 } IndexRange3;
+
+typedef struct {
+    uint n1;
+    uint n2;
+    uint n3;
+} IndexSize3;
 
 /**
  * Map of the locations of particular variables in a VariablePack
@@ -90,7 +108,7 @@ class VarMap {
     public:
         // Use int8. 127 values ought to be enough for anybody, right?
         // Basic primitive variables
-        int8_t RHO, UU, U1, U2, U3, B1, B2, B3;
+        int8_t RHO, UU, U1, U2, U3, B1, B2, B3, Bf1, Bf2, Bf3;
         // Tracker variables
         int8_t RHO_ADDED, UU_ADDED, PASSIVE;
         // Electron entropy/energy tracking
@@ -108,6 +126,7 @@ class VarMap {
                 U1 = name_map["cons.uvec"].first;
                 // B
                 B1 = name_map["cons.B"].first;
+                Bf1 = name_map["cons.fB"].first;
                 PSI = name_map["cons.psi_cd"].first;
                 // Floors
                 RHO_ADDED = name_map["cons.rho_added"].first;
@@ -130,6 +149,7 @@ class VarMap {
                 U1 = name_map["prims.uvec"].first;
                 // B
                 B1 = name_map["prims.B"].first;
+                Bf1 = name_map["prims.fB"].first;
                 PSI = name_map["prims.psi_cd"].first;
                 // Floors (TODO cons only?)
                 RHO_ADDED = name_map["prims.rho_added"].first;
@@ -146,56 +166,21 @@ class VarMap {
                 Q = name_map["prims.q"].first;
                 DP = name_map["prims.dP"].first;
             }
-            U2 = U1 + 1;
-            U3 = U1 + 2;
-            B2 = B1 + 1;
-            B3 = B1 + 2;
+            if (U1 >= 0) {
+                U2 = U1 + 1;
+                U3 = U1 + 2;
+            }
+            if (B1 >= 0) {
+                B2 = B1 + 1;
+                B3 = B1 + 2;
+            }
+            if (Bf1 >= 0) {
+                Bf2 = Bf1 + 1;
+                Bf3 = Bf1 + 2;
+            }
         }
         
 };
-
-/**
- * Functions for checking boundaries in 3D.
- * Uses IndexRange objects, or this would be in kharma_utils.hpp
- */
-KOKKOS_INLINE_FUNCTION bool outside(const int& k, const int& j, const int& i,
-                                    const IndexRange& kb, const IndexRange& jb, const IndexRange& ib)
-{
-    return (i < ib.s) || (i > ib.e) || (j < jb.s) || (j > jb.e) || (k < kb.s) || (k > kb.e);
-}
-KOKKOS_INLINE_FUNCTION bool inside(const int& k, const int& j, const int& i,
-                                   const IndexRange& kb, const IndexRange& jb, const IndexRange& ib)
-{
-    // This is faster in the case that the point is outside
-    return !outside(k, j, i, kb, jb, ib);
-}
-
-/**
- * Get zones which are inside the physical domain, i.e. set by computation or MPI halo sync,
- * not by problem boundary conditions. 
- */
-inline IndexRange3 GetPhysicalZones(std::shared_ptr<MeshBlock> pmb, IndexShape& bounds)
-{
-    using KBoundaries::IsPhysicalBoundary;
-    return IndexRange3{IndexRange{IsPhysicalBoundary(pmb, BoundaryFace::inner_x1)
-                                    ? bounds.is(IndexDomain::interior)
-                                    : bounds.is(IndexDomain::entire),
-                                  IsPhysicalBoundary(pmb, BoundaryFace::outer_x1)
-                                    ? bounds.ie(IndexDomain::interior)
-                                    : bounds.ie(IndexDomain::entire)},
-                       IndexRange{IsPhysicalBoundary(pmb, BoundaryFace::inner_x2)
-                                    ? bounds.js(IndexDomain::interior)
-                                    : bounds.js(IndexDomain::entire),
-                                  IsPhysicalBoundary(pmb, BoundaryFace::outer_x2)
-                                    ? bounds.je(IndexDomain::interior)
-                                    : bounds.je(IndexDomain::entire)},
-                       IndexRange{IsPhysicalBoundary(pmb, BoundaryFace::inner_x3)
-                                    ? bounds.ks(IndexDomain::interior)
-                                    : bounds.ks(IndexDomain::entire),
-                                  IsPhysicalBoundary(pmb, BoundaryFace::outer_x3)
-                                    ? bounds.ke(IndexDomain::interior)
-                                    : bounds.ke(IndexDomain::entire)}};
-}
 
 #if DEBUG
 /**
@@ -204,8 +189,8 @@ inline IndexRange3 GetPhysicalZones(std::shared_ptr<MeshBlock> pmb, IndexShape& 
 inline void OutputNow(Mesh *pmesh, std::string name)
 {
     auto tm = SimTime(0., 0., 0, 0, 0, 0, 0.);
+    ParameterInput *pin = pmesh->packages.Get("Globals")->Param<ParameterInput*>("pin");
     auto pouts = std::make_unique<Outputs>(pmesh, pin, &tm);
-    auto pin = pmesh->packages.Get("Globals")->Param<ParameterInput>("pin");
     pouts->MakeOutputs(pmesh, pin, &tm, SignalHandler::OutputSignal::now);
     // TODO: find most recently written "now" files and move them to "name"
 }

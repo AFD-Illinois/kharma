@@ -83,6 +83,7 @@ TaskCollection KHARMADriver::MakeDefaultTaskCollection(BlockList_t &blocks, int 
     auto& pkgs = blocks[0]->packages.AllPackages();
     auto& driver_pkg   = pkgs.at("Driver")->AllParams();
     const bool use_b_cleanup = pkgs.count("B_Cleanup");
+    const bool use_b_ct = pkgs.count("B_CT");
     const bool use_electrons = pkgs.count("Electrons");
     const bool use_jcon = pkgs.count("Current");
 
@@ -160,17 +161,34 @@ TaskCollection KHARMADriver::MakeDefaultTaskCollection(BlockList_t &blocks, int 
 
         // Perform the update using the source term
         // Add any proportion of the step start required by the integrator (e.g., RK2)
-        auto t_avg_data = tl.AddTask(t_sources, Update::WeightedSumData<std::vector<MetadataFlag>, MeshData<Real>>,
-                                    std::vector<MetadataFlag>({Metadata::Independent}),
+        // TODO splitting this is stupid, dig into Parthenon & fix
+        auto t_avg_data_c = tl.AddTask(t_sources, Update::WeightedSumData<std::vector<MetadataFlag>, MeshData<Real>>,
+                                    std::vector<MetadataFlag>({Metadata::Independent, Metadata::Cell}),
                                     md_sub_step_init.get(), md_full_step_init.get(),
                                     integrator->gam0[stage-1], integrator->gam1[stage-1],
                                     md_sub_step_final.get());
+        auto t_avg_data = t_avg_data_c;
+        if (use_b_ct) {
+            t_avg_data = tl.AddTask(t_avg_data_c, WeightedSumDataFace,
+                                    std::vector<MetadataFlag>({Metadata::Independent, Metadata::Face}),
+                                    md_sub_step_init.get(), md_full_step_init.get(),
+                                    integrator->gam0[stage-1], integrator->gam1[stage-1],
+                                    md_sub_step_final.get());
+        }
         // apply du/dt to the result
-        auto t_update = tl.AddTask(t_sources, Update::WeightedSumData<std::vector<MetadataFlag>, MeshData<Real>>,
-                                    std::vector<MetadataFlag>({Metadata::Independent}),
+        auto t_update_c = tl.AddTask(t_avg_data, Update::WeightedSumData<std::vector<MetadataFlag>, MeshData<Real>>,
+                                    std::vector<MetadataFlag>({Metadata::Independent, Metadata::Cell}),
                                     md_sub_step_final.get(), md_flux_src.get(),
                                     1.0, integrator->beta[stage-1] * integrator->dt,
                                     md_sub_step_final.get());
+        auto t_update = t_update_c;
+        if (use_b_ct) {
+            t_update = tl.AddTask(t_update_c, WeightedSumDataFace,
+                                  std::vector<MetadataFlag>({Metadata::Independent, Metadata::Face}),
+                                  md_sub_step_final.get(), md_flux_src.get(),
+                                  1.0, integrator->beta[stage-1] * integrator->dt,
+                                  md_sub_step_final.get());
+        }
 
         // UtoP needs a guess in order to converge, so we copy in sc0
         // (but only the fluid primitives!)  Copying and syncing ensures that solves of the same zone

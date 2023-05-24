@@ -34,6 +34,7 @@
 
 #include "implicit.hpp"
 
+#include "domain.hpp"
 #include "floors.hpp"
 #include "flux_functions.hpp"
 
@@ -95,7 +96,7 @@ TaskStatus Implicit::FixSolve(MeshBlockData<Real> *mbd) {
                         for (int l = -1; l <= 1; l++) {
                             int ii = i + l, jj = j + m, kk = k + n;
                             // If we haven't overstepped array bounds...
-                            if (inside(kk, jj, ii, kb, jb, ib)) {
+                            if (KDomain::inside(kk, jj, ii, kb, jb, ib)) {
                                 // Weight by distance
                                 // TODO abs(l) == l*l always?
                                 double w = 1./(m::abs(l) + m::abs(m) + m::abs(n) + 1);
@@ -117,7 +118,7 @@ TaskStatus Implicit::FixSolve(MeshBlockData<Real> *mbd) {
                 if(wsum < 1.e-10) {
                     // TODO probably should crash here. Or average anyway?
 #ifndef KOKKOS_ENABLE_SYCL
-                    if (flag_verbose >= 3 && inside(k, j, i, kb_b, jb_b, ib_b)) // If an interior zone...
+                    if (flag_verbose >= 3 && KDomain::inside(k, j, i, kb_b, jb_b, ib_b)) // If an interior zone...
                         printf("No neighbors were available at %d %d %d!\n", i, j, k);
 #endif // TODO SYCL has cout
                 } else {

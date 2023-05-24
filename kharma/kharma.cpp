@@ -43,6 +43,7 @@
 #include "b_flux_ct.hpp"
 #include "b_cd.hpp"
 #include "b_cleanup.hpp"
+#include "b_ct.hpp"
 #include "current.hpp"
 #include "kharma_driver.hpp"
 #include "electrons.hpp"
@@ -299,14 +300,17 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput> &pin)
     // Bunch of logic here: basically we want to load <=1 solver with an encoded order of preference
     auto t_b_field = t_none;
     std::string b_field_solver = pin->GetOrAddString("b_field", "solver", "flux_ct");
-    if (b_field_solver == "none" || b_field_solver == "b_cleanup") {
+    if (b_field_solver == "none" || b_field_solver == "cleanup" || b_field_solver == "b_cleanup") {
         // Don't add a B field
-    } else if (b_field_solver == "constraint_damping" || b_field_solver == "b_cd") {
+    } else if (b_field_solver == "constrained_transport" || b_field_solver == "face_ct") {
+        t_b_field = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, B_CT::Initialize, pin.get());
+    } else if (b_field_solver == "constraint_damping" || b_field_solver == "cd") {
         // Constraint damping, probably only useful for non-GR MHD systems
         t_b_field = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, B_CD::Initialize, pin.get());
-    } else {
-        // Don't even error on bad values.  This is probably what you want
+    } else if (b_field_solver == "flux_ct") {
         t_b_field = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, B_FluxCT::Initialize, pin.get());
+    } else {
+        throw std::invalid_argument("Invalid solver! Must be e.g., flux_ct, face_ct, cd, cleanup...");
     }
     // Cleanup for the B field, using an elliptic solve for eliminating divB
     // Almost always loaded explicitly in addition to another transport, just for cleaning at simulation start
@@ -361,6 +365,11 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput> &pin)
     }
 
     // TODO print full package list as soon as we know it, up here
+
+#if DEBUG
+    // Carry the ParameterInput with us, for generating outputs whenever we want
+    packages->Get("Globals")->AllParams().Add("pin", pin.get());
+#endif
 
     EndFlag();
     return std::move(*packages);

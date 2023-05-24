@@ -34,8 +34,11 @@
 
 #include "post_initialize.hpp"
 
-#include "b_field_tools.hpp"
+#include "b_cd.hpp"
 #include "b_cleanup.hpp"
+#include "b_ct.hpp"
+#include "b_flux_ct.hpp"
+#include "b_field_tools.hpp"
 #include "blob.hpp"
 #include "boundaries.hpp"
 #include "debug.hpp"
@@ -47,9 +50,6 @@
 #include "kharma_driver.hpp"
 #include "reductions.hpp"
 #include "types.hpp"
-
-#include "seed_B_flux_ct.hpp"
-#include "seed_B_cd.hpp"
 
 /**
  * Perform a Parthenon MPI reduction.
@@ -233,6 +233,8 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart)
 
         if (pkgs.count("B_FluxCT")) {
             B_FluxCT::PrintGlobalMaxDivB(md.get());
+        } else if (pkgs.count("B_CT")) {
+            B_CT::PrintGlobalMaxDivB(md.get());
         } else if (pkgs.count("B_CD")) {
             //B_CD::PrintGlobalMaxDivB(md.get());
         }

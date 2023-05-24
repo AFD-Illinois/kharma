@@ -170,11 +170,8 @@ int main(int argc, char *argv[])
         KHARMA::PostInitialize(pin, pmesh, is_restart);
         EndFlag();
 
-#if DEBUG
-        // Carry the ParameterInput with us, for generating outputs whenever we want
-        pmesh->packages.Get("Globals")->AllParams().Add("pin", pin);
-#endif
-
+        std::string driver_type = pmesh->packages.Get("Driver")->Param<std::string>("type");
+        std::cerr << "Initializing and running " << driver_type << " driver" << std::endl;
         // Construct a temporary driver purely for parameter parsing
         KHARMADriver driver(pin, papp, pmesh);
 

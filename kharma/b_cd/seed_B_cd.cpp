@@ -34,11 +34,10 @@
 
 // Seed a torus of some type with a magnetic field according to its density
 
-#include "seed_B_cd.hpp"
+#include "b_cd.hpp"
 
 #include "b_field_tools.hpp"
 
-#include "b_flux_ct.hpp"
 #include "grmhd_functions.hpp"
 
 using namespace parthenon;

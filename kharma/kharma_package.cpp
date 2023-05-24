@@ -57,9 +57,21 @@ TaskStatus Packages::FixFlux(MeshData<Real> *md)
 TaskStatus Packages::BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
     Flag("BlockUtoP");
+    // Apply UtoP from B_CT, as this fills B primitive var for the GRMHD UtoP
+    // TODO could maybe call this in Inverter, or handle all ordering there, or something
+    auto pmb = rc->GetBlockPointer();
+    auto pkgs = pmb->packages.AllPackages();
+    if (pkgs.count("B_CT")) {
+        KHARMAPackage *pkpackage = pmb->packages.Get<KHARMAPackage>("B_CT");
+        if (pkpackage->BlockUtoP != nullptr) {
+            Flag("BlockUtoP_B_CT");
+            pkpackage->BlockUtoP(rc, domain, coarse);
+            EndFlag();
+        }
+    }
     auto kpackages = rc->GetBlockPointer()->packages.AllPackagesOfType<KHARMAPackage>();
     for (auto kpackage : kpackages) {
-        if (kpackage.second->BlockUtoP != nullptr) {
+        if (kpackage.second->BlockUtoP != nullptr && kpackage.first != "B_CT") {
             Flag("BlockUtoP_"+kpackage.first);
             kpackage.second->BlockUtoP(rc, domain, coarse);
             EndFlag();
@@ -70,6 +82,7 @@ TaskStatus Packages::BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool
 }
 TaskStatus Packages::MeshUtoP(MeshData<Real> *md, IndexDomain domain, bool coarse)
 {
+    // TODO TODO prefer MeshUtoP implementations and fall back
     Flag("MeshUtoP");
     for (int i=0; i < md->NumBlocks(); ++i)
         BlockUtoP(md->GetBlockData(i).get(), domain, coarse);

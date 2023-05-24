@@ -64,7 +64,6 @@ KOKKOS_INLINE_FUNCTION bool failed(T status_flag)
 {
     // Return only values >0, among the failure flags
     return static_cast<int>(status_flag) > static_cast<int>(Status::success);
-    // TODO if in debug mode check flag < neg_rhou
 }
 
 /**

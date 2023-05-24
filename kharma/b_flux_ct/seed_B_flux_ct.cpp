@@ -34,10 +34,9 @@
 
 // Seed a torus of some type with a magnetic field according to its density
 
-#include "seed_B_flux_ct.hpp"
+#include "b_flux_ct.hpp"
 
 #include "b_field_tools.hpp"
-#include "b_flux_ct.hpp"
 #include "boundaries.hpp"
 #include "coordinate_utils.hpp"
 #include "fm_torus.hpp"
