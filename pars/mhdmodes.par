@@ -103,7 +103,7 @@ reconstruction = weno5
 <parthenon/output0>
 file_type = hdf5
 # This is so as to output only the final state
-dt = 0.01
+dt = 0.5
 single_precision_output = true
 variables = prims.rho, prims.u, prims.uvec, prims.B
 

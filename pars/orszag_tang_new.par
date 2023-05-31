@@ -28,7 +28,7 @@ transform = null
 
 <parthenon/time>
 tlim = 100.0
-integrator = rk1
+integrator = rk2
 
 <GRMHD>
 cfl = 0.9
@@ -38,16 +38,16 @@ reconstruction = weno5
 <b_field>
 solver = face_ct
 kill_on_large_divb = false
-
-<b_cleanup>
-# B transport experiments: clean every 10 steps
-on = false
-cleanup_interval = 10
+#ct_scheme = bs99
+ct_scheme = sg09
 
 <debug>
 verbose = 1
 flag_verbose = 2
 extra_checks = 1
+
+<floors>
+disable_floors = true
 
 <parthenon/output0>
 file_type = hdf5
@@ -55,6 +55,7 @@ dt = 1.0
 single_precision_output = true
 # TODO just prims when face fields supported
 variables = prims.rho, prims.u, prims.uvec, prims.B, divB, jcon
+ghost_zones = true
 
 <parthenon/output1>
 file_type = hst

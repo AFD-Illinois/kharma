@@ -37,6 +37,8 @@
 #include "domain.hpp"
 #include "grmhd.hpp"
 #include "kharma.hpp"
+// TODO eliminate sync
+#include "kharma_driver.hpp"
 
 #include <parthenon/parthenon.hpp>
 
@@ -62,7 +64,10 @@ std::shared_ptr<KHARMAPackage> B_CT::Initialize(ParameterInput *pin, std::shared
     Real kill_on_divb_over = pin->GetOrAddReal("b_field", "kill_on_divb_over", 1.e-3);
     params.Add("kill_on_divb_over", kill_on_divb_over);
 
-    // TODO selector BS/LDZ04/LDZ07/GS
+    // Currently bs99, sg09
+    // TODO LDZ04, LDZ07, other GS?
+    std::string ct_scheme = pin->GetOrAddString("b_field", "ct_scheme", "sg09");
+    params.Add("ct_scheme", ct_scheme);
 
     // Add a reducer for divB to params
     params.Add("divb_reducer", AllReduce<Real>());
@@ -74,11 +79,10 @@ std::shared_ptr<KHARMAPackage> B_CT::Initialize(ParameterInput *pin, std::shared
     // Flags for B fields on faces.
     // We don't mark these as "Primitive" and "Conserved" else they'd be bundled
     // with all the cell vars in a bunch of places we don't want
-    // TODO this won't apply in ghosts, probably... if so we'll need to bundle only ::Cell in lots of places
     std::vector<MetadataFlag> flags_prim_f = {Metadata::Real, Metadata::Face, Metadata::Derived,
                                             Metadata::GetUserFlag("Explicit")};
     std::vector<MetadataFlag> flags_cons_f = {Metadata::Real, Metadata::Face, Metadata::Independent,
-                                              Metadata::GetUserFlag("Explicit")}; // TODO TODO Restart, FillGhost
+                                              Metadata::GetUserFlag("Explicit"), Metadata::FillGhost}; // TODO TODO Restart
     auto m = Metadata(flags_prim_f);
     pkg->AddField("prims.fB", m);
     m = Metadata(flags_cons_f);
@@ -97,16 +101,22 @@ std::shared_ptr<KHARMAPackage> B_CT::Initialize(ParameterInput *pin, std::shared
     pkg->AddField("cons.B", m);
 
     // EMF on edges.
-    // TODO TODO ADD Metadata::FillGhost
-    std::vector<MetadataFlag> flags_emf = {Metadata::Real, Metadata::Edge, Metadata::Derived, Metadata::OneCopy};
+    // TODO only sync when needed
+    std::vector<MetadataFlag> flags_emf = {Metadata::Real, Metadata::Edge, Metadata::Derived, Metadata::OneCopy, Metadata::FillGhost};
     m = Metadata(flags_emf);
     pkg->AddField("B_CT.emf", m);
+
+    if (ct_scheme == "sg09") {
+        std::vector<MetadataFlag> flags_emf_c = {Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy};
+        m = Metadata(flags_emf_c, s_vector);
+        pkg->AddField("B_CT.cemf", m);
+    }
 
     // CALLBACKS
 
     // We implement a source term replacement, rather than addition,
     // but same difference, really
-    pkg->AddSource = B_CT::AddSource;
+    //pkg->AddSource = B_CT::AddSource;
 
     // Also ensure that prims get filled, both during step and on boundaries
     //pkg->MeshUtoP = B_CT::MeshUtoP;
@@ -192,63 +202,160 @@ void B_CT::BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 
 // TODO this isn't really a source... it's a replacement of the
 // face-centered fields according to constrained transport rules
-void B_CT::AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
+TaskStatus B_CT::UpdateFaces(std::shared_ptr<MeshData<Real>>& md, std::shared_ptr<MeshData<Real>>& mdudt)
 {
     auto pmesh = md->GetMeshPointer();
     const int ndim = pmesh->ndim;
-
-    // This is what we're replacing
-    auto& dB_Uf_dt = mdudt->PackVariables(std::vector<std::string>{"cons.fB"});
 
     // EMF temporary
     auto& emf_pack = md->PackVariables(std::vector<std::string>{"B_CT.emf"});
 
     // Figure out indices
     const IndexRange3 b = KDomain::GetRange(md, IndexDomain::interior, 0, 1);
-    const IndexRange block = IndexRange{0, dB_Uf_dt.GetDim(5)-1};
+    const IndexRange3 b1 = KDomain::GetRange(md, IndexDomain::interior, -1, 2);
+    const IndexRange block = IndexRange{0, emf_pack.GetDim(5)-1};
 
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer().get();
 
-    // Calculate circulation by averaging fluxes (Balsara & Spicer)
-    auto& B_U = md->PackVariablesAndFluxes(std::vector<std::string>{"cons.B"});
-    pmb0->par_for("B_CT_emf_BS", block.s, block.e, b.ks, b.ke, b.js, b.je, b.is, b.ie,
-        KOKKOS_LAMBDA (const int &bl, const int &k, const int &j, const int &i) {
-            // TODO will we need gdet/cell length here?
-            const auto& G = B_U.GetCoords(bl);
-            if (ndim > 2) {
-                emf_pack(bl, E1, 0, k, j, i) =
-                    0.25*(B_U(bl).flux(X2DIR, V3, k - 1, j, i) + B_U(bl).flux(X2DIR, V3, k, j, i)
-                        - B_U(bl).flux(X3DIR, V2, k, j - 1, i) - B_U(bl).flux(X3DIR, V2, k, j, i));
-                emf_pack(bl, E2, 0, k, j, i) =
-                    0.25*(B_U(bl).flux(X3DIR, V1, k, j, i - 1) + B_U(bl).flux(X3DIR, V1, k, j, i)
-                        - B_U(bl).flux(X1DIR, V3, k - 1, j, i) - B_U(bl).flux(X1DIR, V3, k, j, i));
+    std::string scheme = pmesh->packages.Get("B_CT")->Param<std::string>("ct_scheme");
+    if (scheme == "bs99") {
+        // Calculate circulation by averaging fluxes (BS88)
+        auto& B_U = md->PackVariablesAndFluxes(std::vector<std::string>{"cons.B"});
+        pmb0->par_for("B_CT_emf_BS", block.s, block.e, b1.ks, b1.ke, b1.js, b1.je, b1.is, b1.ie,
+            KOKKOS_LAMBDA (const int &bl, const int &k, const int &j, const int &i) {
+                // TODO will we need gdet/cell length here?
+                const auto& G = B_U.GetCoords(bl);
+                if (ndim > 2) {
+                    emf_pack(bl, E1, 0, k, j, i) =
+                        0.25*(B_U(bl).flux(X2DIR, V3, k - 1, j, i)/G.Dxc<3>(k-1) + B_U(bl).flux(X2DIR, V3, k, j, i)/G.Dxc<3>(k)
+                            - B_U(bl).flux(X3DIR, V2, k, j - 1, i)/G.Dxc<2>(j-1) - B_U(bl).flux(X3DIR, V2, k, j, i)/G.Dxc<2>(j));
+                    emf_pack(bl, E2, 0, k, j, i) =
+                        0.25*(B_U(bl).flux(X3DIR, V1, k, j, i - 1)/G.Dxc<1>(i-1) + B_U(bl).flux(X3DIR, V1, k, j, i)/G.Dxc<1>(i)
+                            - B_U(bl).flux(X1DIR, V3, k - 1, j, i)/G.Dxc<3>(k-1) - B_U(bl).flux(X1DIR, V3, k, j, i)/G.Dxc<3>(k));
+                }
+                emf_pack(bl, E3, 0, k, j, i) =
+                    0.25*(B_U(bl).flux(X1DIR, V2, k, j - 1, i)/G.Dxc<2>(j-1) + B_U(bl).flux(X1DIR, V2, k, j, i)/G.Dxc<2>(j)
+                        - B_U(bl).flux(X2DIR, V1, k, j, i - 1)/G.Dxc<1>(i-1) - B_U(bl).flux(X2DIR, V1, k, j, i)/G.Dxc<1>(i));
             }
-            emf_pack(bl, E3, 0, k, j, i) =
-                0.25*(B_U(bl).flux(X1DIR, V2, k, j - 1, i) + B_U(bl).flux(X1DIR, V2, k, j, i)
-                    - B_U(bl).flux(X2DIR, V1, k, j, i - 1) - B_U(bl).flux(X2DIR, V1, k, j, i));
+        );
+    } else if (scheme == "sg09") {
+        // Average fluxes and derivatives (SG09)
+        auto& uvec = md->PackVariables(std::vector<std::string>{"prims.uvec"});
+        auto& emfc = md->PackVariables(std::vector<std::string>{"B_CT.cemf"});
+        auto& B_U = md->PackVariablesAndFluxes(std::vector<std::string>{"cons.B"});
+        auto& B_P = md->PackVariables(std::vector<std::string>{"prims.B"});
+        // emf in center == -v x B
+        pmb0->par_for("B_CT_emf_GS09", block.s, block.e, b1.ks, b1.ke, b1.js, b1.je, b1.is, b1.ie,
+            KOKKOS_LAMBDA (const int &bl, const int &k, const int &j, const int &i) {
+                VLOOP emfc(bl, v, k, j, i) = 0.;
+                VLOOP3 emfc(bl, x, k, j, i) -= antisym(v, w, x) * uvec(bl, v, k, j, i) * B_U(bl, w, k, j, i);
+            }
+        );
+
+        // Get primitive velocity at face (on right side) (TODO do we need some average?)
+        auto& uvecf = md->PackVariables(std::vector<std::string>{"Flux.vr"});
+
+        pmb0->par_for("B_CT_emf_GS09", block.s, block.e, b1.ks, b1.ke, b1.js, b1.je, b1.is, b1.ie,
+            KOKKOS_LAMBDA (const int &bl, const int &k, const int &j, const int &i) {
+                // TODO will we need gdet/cell length here?
+                const auto& G = B_U.GetCoords(bl);
+
+                // "simple" flux + upwinding method, Stone & Gardiner '09 but also in Stone+08 etc.
+                // Upwinded differences take in order (1-indexed):
+                // 1. EMF component direction to calculate
+                // 2. Direction of derivative
+                // 3. Direction of upwinding
+                // ...then zone number...
+                // and finally, a boolean indicating a leftward (e.g., i-3/4) vs rightward (i-1/4) position
+                if (ndim > 2) {
+                    emf_pack(bl, E1, 0, k, j, i) =
+                        0.25*(B_U(bl).flux(X2DIR, V3, k - 1, j, i)/G.Dxc<3>(k-1) + B_U(bl).flux(X2DIR, V3, k, j, i)/G.Dxc<3>(k)
+                            - B_U(bl).flux(X3DIR, V2, k, j - 1, i)/G.Dxc<2>(j-1) - B_U(bl).flux(X3DIR, V2, k, j, i)/G.Dxc<2>(j))
+                        + (1./4)*(upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 1, 3, 2, k, j, i, false)
+                                - upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 1, 3, 2, k, j, i, true))
+                        + (1./4)*(upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 1, 2, 3, k, j, i, false)
+                                - upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 1, 2, 3, k, j, i, true));
+                    emf_pack(bl, E2, 0, k, j, i) =
+                        0.25*(B_U(bl).flux(X3DIR, V1, k, j, i - 1)/G.Dxc<1>(i-1) + B_U(bl).flux(X3DIR, V1, k, j, i)/G.Dxc<1>(i)
+                            - B_U(bl).flux(X1DIR, V3, k - 1, j, i)/G.Dxc<3>(k-1) - B_U(bl).flux(X1DIR, V3, k, j, i)/G.Dxc<3>(k))
+                        + (1./4)*(upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 2, 1, 3, k, j, i, false)
+                                - upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 2, 1, 3, k, j, i, true))
+                        + (1./4)*(upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 2, 3, 1, k, j, i, false)
+                                - upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 2, 3, 1, k, j, i, true));
+                }
+                emf_pack(bl, E3, 0, k, j, i) =
+                    0.25*(B_U(bl).flux(X1DIR, V2, k, j - 1, i)/G.Dxc<2>(j-1) + B_U(bl).flux(X1DIR, V2, k, j, i)/G.Dxc<2>(j)
+                        - B_U(bl).flux(X2DIR, V1, k, j, i - 1)/G.Dxc<1>(i-1) - B_U(bl).flux(X2DIR, V1, k, j, i)/G.Dxc<1>(i))
+                    + (1./4)*(upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 3, 2, 1, k, j, i, false)
+                            - upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 3, 2, 1, k, j, i, true))
+                    + (1./4)*(upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 3, 1, 2, k, j, i, false)
+                            - upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 3, 1, 2, k, j, i, true));
+            }
+        );
+    } else {
+        throw std::invalid_argument("Invalid CT scheme specified!  Must be one of bs99, sg09");
+    }
+
+    // Parthenon needs a shared_ptr object, but it can be any one...
+    static std::shared_ptr<MeshData<Real>> my_md(md);
+    KHARMADriver::SyncAllBounds(my_md, true);
+    pmb0->par_for("B_CT_Edge1s", block.s, block.e, b1.ks, b1.ke, b1.js, b1.je, b1.is, b1.is,
+        KOKKOS_LAMBDA (const int &bl, const int &k, const int &j, const int &i) {
+            emf_pack(bl, E3, 0, k, j, i) = (emf_pack(bl, E3, 0, k, j, i) + emf_pack(bl, E3, 0, k, j, i-1))/2;
+            emf_pack(bl, E3, 0, k, j, i-1) = emf_pack(bl, E3, 0, k, j, i-2);
+        }
+    );
+    pmb0->par_for("B_CT_Edge1e", block.s, block.e, b1.ks, b1.ke, b1.js, b1.je, b1.ie, b1.ie,
+        KOKKOS_LAMBDA (const int &bl, const int &k, const int &j, const int &i) {
+            emf_pack(bl, E3, 0, k, j, i) = (emf_pack(bl, E3, 0, k, j, i) + emf_pack(bl, E3, 0, k, j, i+1))/2;
+            emf_pack(bl, E3, 0, k, j, i+1) = emf_pack(bl, E3, 0, k, j, i+2);
+        }
+    );
+    pmb0->par_for("B_CT_Edge2s", block.s, block.e, b1.ks, b1.ke, b1.js, b1.js, b1.is, b1.ie,
+        KOKKOS_LAMBDA (const int &bl, const int &k, const int &j, const int &i) {
+            emf_pack(bl, E3, 0, k, j, i) = (emf_pack(bl, E3, 0, k, j, i) + emf_pack(bl, E3, 0, k, j-1, i))/2;
+            emf_pack(bl, E3, 0, k, j-1, i) = emf_pack(bl, E3, 0, k, j-2, i);
+        }
+    );
+    pmb0->par_for("B_CT_Edge2e", block.s, block.e, b1.ks, b1.ke, b1.je, b1.je, b1.is, b1.ie,
+        KOKKOS_LAMBDA (const int &bl, const int &k, const int &j, const int &i) {
+            emf_pack(bl, E3, 0, k, j, i) = (emf_pack(bl, E3, 0, k, j, i) + emf_pack(bl, E3, 0, k, j+1, i))/2;
+            emf_pack(bl, E3, 0, k, j+1, i) = emf_pack(bl, E3, 0, k, j+2, i);
         }
     );
 
-    // TODO LDZ04, LDZ07, GS?
-
+    // This is what we're replacing
+    auto& dB_Uf_dt = mdudt->PackVariables(std::vector<std::string>{"cons.fB"});
     // Circulation -> change in flux at face
     // Note we *replace* whatever this term in the source term was "supposed" to be
-    // TODO stick to defined faces? Or don't bother?
-    pmb0->par_for("B_CT_Circ", block.s, block.e, b.ks, b.ke, b.js, b.je, b.is, b.ie,
+    pmb0->par_for("B_CT_Circ_1", block.s, block.e, b.ks, b.ke, b.js, b.je, b1.is, b1.ie,
         KOKKOS_LAMBDA (const int &bl, const int &k, const int &j, const int &i) {
             const auto& G = dB_Uf_dt.GetCoords(bl);
             dB_Uf_dt(bl, F1, 0, k, j, i) =  emf_pack(bl, E3, 0, k, j + 1, i) - emf_pack(bl, E3, 0, k, j, i);
-            dB_Uf_dt(bl, F2, 0, k, j, i) = -emf_pack(bl, E3, 0, k, j, i + 1) + emf_pack(bl, E3, 0, k, j, i);
-            dB_Uf_dt(bl, F3, 0, k, j, i) = 0.;
             if (ndim > 2) {
                 dB_Uf_dt(bl, F1, 0, k, j, i) += -emf_pack(bl, E2, 0, k + 1, j, i) + emf_pack(bl, E2, 0, k, j, i);
-                dB_Uf_dt(bl, F2, 0, k, j, i) +=  emf_pack(bl, E1, 0, k + 1, j, i) - emf_pack(bl, E1, 0, k, j, i);
-                dB_Uf_dt(bl, F3, 0, k, j, i) +=  emf_pack(bl, E2, 0, k, j, i + 1) - emf_pack(bl, E2, 0, k, j, i)
-                                               - emf_pack(bl, E1, 0, k, j + 1, i) + emf_pack(bl, E1, 0, k, j, i);
             }
-            
         }
     );
+    pmb0->par_for("B_CT_Circ_2", block.s, block.e, b.ks, b.ke, b1.js, b1.je, b.is, b.ie,
+        KOKKOS_LAMBDA (const int &bl, const int &k, const int &j, const int &i) {
+            const auto& G = dB_Uf_dt.GetCoords(bl);
+            dB_Uf_dt(bl, F2, 0, k, j, i) = -emf_pack(bl, E3, 0, k, j, i + 1) + emf_pack(bl, E3, 0, k, j, i);
+            if (ndim > 2) {
+                dB_Uf_dt(bl, F2, 0, k, j, i) +=  emf_pack(bl, E1, 0, k + 1, j, i) - emf_pack(bl, E1, 0, k, j, i);
+            }
+        }
+    );
+    if (ndim > 2) {
+        pmb0->par_for("B_CT_Circ_3", block.s, block.e, b1.ks, b1.ke, b.js, b.je, b.is, b.ie,
+            KOKKOS_LAMBDA (const int &bl, const int &k, const int &j, const int &i) {
+                const auto& G = dB_Uf_dt.GetCoords(bl);
+                dB_Uf_dt(bl, F3, 0, k, j, i) +=  emf_pack(bl, E2, 0, k, j, i + 1) - emf_pack(bl, E2, 0, k, j, i)
+                                            - emf_pack(bl, E1, 0, k, j + 1, i) + emf_pack(bl, E1, 0, k, j, i);
+            }
+        );
+    }
+    return TaskStatus::complete;
 }
 
 
@@ -261,12 +368,9 @@ double B_CT::MaxDivB(MeshData<Real> *md)
     auto B_U = md->PackVariables(std::vector<std::string>{"cons.fB"});
 
     // Figure out indices
-    const IndexRange ibl = md->GetBoundsI(IndexDomain::interior);
-    const IndexRange jbl = md->GetBoundsJ(IndexDomain::interior);
-    const IndexRange kbl = md->GetBoundsK(IndexDomain::interior);
-    const IndexRange ib = IndexRange{ibl.s, ibl.e + 1};
-    const IndexRange jb = IndexRange{jbl.s, jbl.e + (ndim > 1)};
-    const IndexRange kb = IndexRange{kbl.s, kbl.e + (ndim > 2)};
+    const IndexRange ib = md->GetBoundsI(IndexDomain::interior);
+    const IndexRange jb = md->GetBoundsJ(IndexDomain::interior);
+    const IndexRange kb = md->GetBoundsK(IndexDomain::interior);
     const IndexRange block = IndexRange{0, B_U.GetDim(5)-1};
 
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer().get();
@@ -290,7 +394,7 @@ double B_CT::BlockMaxDivB(MeshBlockData<Real> *rc)
     auto B_U = rc->PackVariables(std::vector<std::string>{"cons.fB"});
 
     // Figure out indices
-    const IndexRange3 b = KDomain::GetRange(rc, IndexDomain::interior, 0, 1);
+    const IndexRange3 b = KDomain::GetRange(rc, IndexDomain::interior);
 
     auto pmb = rc->GetBlockPointer();
 
@@ -349,12 +453,9 @@ void B_CT::CalcDivB(MeshData<Real> *md, std::string divb_field_name)
     auto B_U = md->PackVariables(std::vector<std::string>{"cons.fB"});
     auto divB = md->PackVariables(std::vector<std::string>{divb_field_name});
 
-    const IndexRange ibl = md->GetBoundsI(IndexDomain::interior);
-    const IndexRange jbl = md->GetBoundsJ(IndexDomain::interior);
-    const IndexRange kbl = md->GetBoundsK(IndexDomain::interior);
-    const IndexRange ib = IndexRange{ibl.s, ibl.e + 1};
-    const IndexRange jb = IndexRange{jbl.s, jbl.e + (ndim > 1)};
-    const IndexRange kb = IndexRange{kbl.s, kbl.e + (ndim > 2)};
+    const IndexRange ib = md->GetBoundsI(IndexDomain::interior);
+    const IndexRange jb = md->GetBoundsJ(IndexDomain::interior);
+    const IndexRange kb = md->GetBoundsK(IndexDomain::interior);
     const IndexRange block = IndexRange{0, B_U.GetDim(5)-1};
 
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer().get();
@@ -377,13 +478,9 @@ void B_CT::FillOutput(MeshBlock *pmb, ParameterInput *pin)
     auto B_U = rc->PackVariables(std::vector<std::string>{"cons.fB"});
     auto divB = rc->PackVariables(std::vector<std::string>{"divB"});
 
-    const IndexRange ibl = rc->GetBoundsI(IndexDomain::interior);
-    const IndexRange jbl = rc->GetBoundsJ(IndexDomain::interior);
-    const IndexRange kbl = rc->GetBoundsK(IndexDomain::interior);
-
-    const IndexRange ib = IndexRange{ibl.s, ibl.e + 1};
-    const IndexRange jb = IndexRange{jbl.s, jbl.e + (ndim > 1)};
-    const IndexRange kb = IndexRange{kbl.s, kbl.e + (ndim > 2)};
+    const IndexRange ib = rc->GetBoundsI(IndexDomain::interior);
+    const IndexRange jb = rc->GetBoundsJ(IndexDomain::interior);
+    const IndexRange kb = rc->GetBoundsK(IndexDomain::interior);
     const IndexRange block = IndexRange{0, B_U.GetDim(5)-1};
 
     pmb->par_for("divB_output", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,

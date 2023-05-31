@@ -63,6 +63,7 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
     // Pointers
     auto pmesh = md->GetMeshPointer();
     auto pmb0  = md->GetBlockData(0)->GetBlockPointer();
+    auto& packages = pmb0->packages;
     // Exit on trivial operations
     const int ndim = pmesh->ndim;
     if (ndim < 3 && dir == X3DIR) return TaskStatus::complete;
@@ -71,19 +72,20 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
     Flag("GetFlux_"+std::to_string(dir));
 
     // Options
-    const auto& pars       = pmb0->packages.Get("Driver")->AllParams();
-    const auto& mhd_pars   = pmb0->packages.Get("GRMHD")->AllParams();
-    const auto& globals    = pmb0->packages.Get("Globals")->AllParams();
+    const auto& pars       = packages.Get("Driver")->AllParams();
+    const auto& mhd_pars   = packages.Get("GRMHD")->AllParams();
+    const auto& globals    = packages.Get("Globals")->AllParams();
     const bool use_hlle    = pars.Get<bool>("use_hlle");
 
-    const bool reconstruction_floors = pmb0->packages.AllPackages().count("Floors") &&
+    // TODO make this an option in Flux package
+    const bool reconstruction_floors = packages.AllPackages().count("Floors") &&
                                        (Recon == KReconstruction::Type::weno5);
     Floors::Prescription floors_temp;
     if (reconstruction_floors) {
         // Apply post-reconstruction floors.
         // Only enabled for WENO since it is not TVD, and only when other
         // floors are enabled.
-        const auto& floor_pars = pmb0->packages.Get("Floors")->AllParams();
+        const auto& floor_pars = packages.Get("Floors")->AllParams();
         // Pull out a struct of just the actual floor values for speed
         floors_temp = Floors::Prescription(floor_pars);
     }
@@ -93,10 +95,10 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
 
     // Check whether we're using constraint-damping
     // (which requires that a variable be propagated at ctop_max)
-    const bool use_b_cd = pmb0->packages.AllPackages().count("B_CD");
-    const double ctop_max = (use_b_cd) ? pmb0->packages.Get("B_CD")->Param<Real>("ctop_max_last") : 0.0;
+    const bool use_b_cd = packages.AllPackages().count("B_CD");
+    const double ctop_max = (use_b_cd) ? packages.Get("B_CD")->Param<Real>("ctop_max_last") : 0.0;
 
-    const EMHD::EMHD_parameters& emhd_params = EMHD::GetEMHDParameters(pmb0->packages);
+    const EMHD::EMHD_parameters& emhd_params = EMHD::GetEMHDParameters(packages);
 
     const Loci loc = loc_of(dir);
 
@@ -179,6 +181,20 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
         }
     );
     EndFlag();
+
+    // If we have B field on faces, we must replace reconstructed version with that
+    if (pmb0->packages.AllPackages().count("B_CT")) {  // TODO if variable "cons.fB"?
+        const auto& Bf  = md->PackVariables(std::vector<std::string>{"cons.fB"});
+        const TopologicalElement face = (dir == 1) ? F1 : ((dir == 2) ? F2 : F3);
+        pmb0->par_for("replace_face", block.s, block.e, b.ks, b.ke, b.js, b.je, b.is, b.ie,
+            KOKKOS_LAMBDA(const int& bl, const int& k, const int& j, const int& i) {
+                const auto& G = U_all.GetCoords(bl);
+                const double bf = Bf(bl, face, 0, k, j, i) / G.gdet(loc, j, i);
+                Pl_all(bl, m_p.B1+dir-1, k, j, i) = bf;
+                Pr_all(bl, m_p.B1+dir-1, k, j, i) = bf;
+            }
+        );
+    }
 
     Flag("GetFlux_"+std::to_string(dir)+"_left");
     parthenon::par_for_outer(DEFAULT_OUTER_LOOP_PATTERN, "calc_flux_left", pmb0->exec_space,
@@ -318,6 +334,21 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
         );
     }
     EndFlag();
+
+    // Save the face velocities for upwinding/CT later
+    if (packages.AllPackages().count("B_CT")) {
+        Flag("GetFlux_"+std::to_string(dir)+"_store_vel");
+        const auto& vl_all = md->PackVariables(std::vector<std::string>{"Flux.vl"});
+        const auto& vr_all = md->PackVariables(std::vector<std::string>{"Flux.vr"});
+        TopologicalElement face = (dir == 1) ? F1 : (dir == 2) ? F2 : F3;
+        pmb0->par_for("flux_llf", block.s, block.e, 0, NVEC-1, b.ks, b.ke, b.js, b.je, b.is, b.ie,
+            KOKKOS_LAMBDA(const int& bl, const int& v, const int& k, const int& j, const int& i) {
+                vl_all(bl, face, v, k, j, i) = Pl_all(bl, m_p.U1+v, k, j, i);
+                vr_all(bl, face, v, k, j, i) = Pr_all(bl, m_p.U1+v, k, j, i);
+            }
+        );
+        EndFlag();
+    }
 
     EndFlag();
     return TaskStatus::complete;

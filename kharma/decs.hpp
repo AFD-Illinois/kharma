@@ -94,6 +94,8 @@ using GReal = double;
 
 #define NVEC 3
 #define VLOOP for(int v = 0; v < NVEC; ++v)
+#define VLOOP2 VLOOP for(int w = 0; w < NVEC; ++w)
+#define VLOOP3 VLOOP2 for(int x = 0; x < NVEC; ++x)
 
 // Useful enum to avoid lots of #defines
 // See following functions and coord() in gr_coordinates.hpp to

@@ -38,6 +38,7 @@
 #include "b_flux_ct.hpp"
 #include "b_cd.hpp"
 #include "b_cleanup.hpp"
+#include "b_ct.hpp"
 #include "electrons.hpp"
 #include "grmhd.hpp"
 #include "wind.hpp"
@@ -130,7 +131,7 @@ TaskCollection KHARMADriver::MakeDefaultTaskCollection(BlockList_t &blocks, int 
         // Start receiving flux corrections and ghost cells
         auto t_start_recv_bound = tl.AddTask(t_none, parthenon::StartReceiveBoundBufs<parthenon::BoundaryType::any>, md_sub_step_final);
         auto t_start_recv_flux = t_start_recv_bound;
-        if (pmesh->multilevel)
+        if (pmesh->multilevel || use_b_ct)
             t_start_recv_flux = tl.AddTask(t_none, parthenon::StartReceiveFluxCorrections, md_sub_step_init);
 
         // Calculate the flux of each variable through each face
@@ -141,14 +142,14 @@ TaskCollection KHARMADriver::MakeDefaultTaskCollection(BlockList_t &blocks, int 
 
         // If we're in AMR, correct fluxes from neighbors
         auto t_flux_bounds = t_fluxes;
-        if (pmesh->multilevel) {
+        if (pmesh->multilevel || use_b_ct) {
             tl.AddTask(t_fluxes, parthenon::LoadAndSendFluxCorrections, md_sub_step_init);
             auto t_recv_flux = tl.AddTask(t_fluxes, parthenon::ReceiveFluxCorrections, md_sub_step_init);
             t_flux_bounds = tl.AddTask(t_recv_flux, parthenon::SetFluxCorrections, md_sub_step_init);
         }
 
         // Any package modifications to the fluxes.  e.g.:
-        // 1. CT calculations for B field transport
+        // 1. Flux-CT calculations for B field transport
         // 2. Zero fluxes through poles
         // etc 
         auto t_fix_flux = tl.AddTask(t_flux_bounds, Packages::FixFlux, md_sub_step_init.get());
@@ -159,10 +160,16 @@ TaskCollection KHARMADriver::MakeDefaultTaskCollection(BlockList_t &blocks, int 
         // Add any source terms: geometric \Gamma * T, wind, damping, etc etc
         auto t_sources = tl.AddTask(t_flux_div, Packages::AddSource, md_sub_step_init.get(), md_flux_src.get());
 
+        // CT Update step (needs another boundary sync)
+        auto t_ct_update = t_sources;
+        if (use_b_ct) {
+            t_ct_update = tl.AddTask(t_sources, B_CT::UpdateFaces, md_sub_step_init, md_flux_src);
+        }
+
         // Perform the update using the source term
         // Add any proportion of the step start required by the integrator (e.g., RK2)
         // TODO splitting this is stupid, dig into Parthenon & fix
-        auto t_avg_data_c = tl.AddTask(t_sources, Update::WeightedSumData<std::vector<MetadataFlag>, MeshData<Real>>,
+        auto t_avg_data_c = tl.AddTask(t_ct_update, Update::WeightedSumData<std::vector<MetadataFlag>, MeshData<Real>>,
                                     std::vector<MetadataFlag>({Metadata::Independent, Metadata::Cell}),
                                     md_sub_step_init.get(), md_full_step_init.get(),
                                     integrator->gam0[stage-1], integrator->gam1[stage-1],

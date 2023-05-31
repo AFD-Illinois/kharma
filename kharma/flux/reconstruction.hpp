@@ -355,6 +355,54 @@ KOKKOS_INLINE_FUNCTION void WENO5X3r(parthenon::team_mbr_t const &member, const 
 }
 
 /**
+ * Parablic reconstruction, see Collela & Woodward '84
+ *  
+ * Adapted from iharm2d implementation,
+ * originally written by Xiaoyue Guan
+ */
+KOKKOS_INLINE_FUNCTION void para(const Real& x1, const Real& x2, const Real& x3, const Real& x4, const Real& x5,
+          Real& lout, Real& rout)
+{
+    Real y[5], dq[5]; // TODO(BSP) can these be eliminated easily?
+
+    y[0]=x1;
+    y[1]=x2;
+    y[2]=x3;
+    y[3]=x4;
+    y[4]=x5;
+
+    // CW 1.7
+    for (int i=1; i <= 3; i++) {
+        const Real Dqm = 2*(y[i] - y[i-1]);
+        const Real Dqp = 2*(y[i+1] - y[i]);
+        if (Dqm*Dqp <= 0.) {
+            dq[i] = 0.; // CW1.8
+        } else {
+            const Real Dqc = 0.5*(y[i+1] - y[i-1]);
+            dq[i] = m::copysign(m::min(m::abs(Dqc), m::min(m::abs(Dqm), m::abs(Dqp))), Dqc);
+        }
+    }
+
+    // CW 1.6
+    lout = 0.5*(y[2] + y[1]) - (1./6.)*(dq[2] - dq[1]);
+    rout = 0.5*(y[3] + y[2]) - (1./6.)*(dq[3] - dq[2]);
+
+    // CW 1.10
+    if (((rout - y[2]) * (y[2] - lout)) <= 0.) {
+        lout = y[2];
+        rout = y[2];
+    }
+    const Real qd = (rout - lout);
+    const Real qe = 6*(y[2] - 0.5*(lout + rout));
+    if (qd * (qd - qe) < 0.) {
+        lout = 3*y[2] - 2*rout;
+    } else if (qd * (qd + qe) < 0.) {
+        rout = 3*y[2] - 2*lout;
+    }
+}
+
+
+/**
  * Templated calls to different reconstruction algorithms
  * This is basically a compile-time 'if' or 'switch' statement, where all the options get generated
  * at compile-time (see driver.cpp for the different instantiations)

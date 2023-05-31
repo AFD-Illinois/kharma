@@ -67,6 +67,11 @@ constexpr TE E1 = TE::EYZ;
 constexpr TE E2 = TE::EXZ;
 constexpr TE E3 = TE::EXY;
 
+// Any basic type manips, see LocOf in decs etc etc
+KOKKOS_INLINE_FUNCTION TopologicalElement FaceOf(const int& dir) {
+    return (dir == 1) ? F1 : (dir == 2) ? F2 : F3;
+}
+
 // Struct for derived 4-vectors at a point, usually calculated and needed together
 typedef struct {
     Real ucon[GR_DIM];

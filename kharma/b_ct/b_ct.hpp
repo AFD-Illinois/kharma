@@ -35,6 +35,7 @@
 
 #include "decs.hpp"
 #include "grmhd_functions.hpp"
+#include "matrix.hpp"
 #include "reductions.hpp"
 #include "types.hpp"
 
@@ -81,7 +82,7 @@ void BlockPtoU(MeshBlockData<Real> *md, IndexDomain domain, bool coarse=false);
  * Replace conserved face B field components with versions calculated
  * by constrained transport.
  */
-void AddSource(MeshData<Real> *md, MeshData<Real> *mdudt);
+TaskStatus UpdateFaces(std::shared_ptr<MeshData<Real>>& md, std::shared_ptr<MeshData<Real>>& mdudt);
 
 // TODO UNIFY ALL THE FOLLOWING
 
@@ -182,6 +183,47 @@ KOKKOS_INLINE_FUNCTION void curl_2D(const GRCoordinates& G, const GridVector& A,
     B_U(F1, 0, k, j, i) = (A(V3, k, j + 1, i) - A(V3, k, j, i)) / G.Dxc<2>(j);// A3,2 derivative
     B_U(F2, 0, k, j, i) =-(A(V3, k, j, i + 1) - A(V3, k, j, i)) / G.Dxc<1>(i);// A3,1 derivative
     B_U(F3, 0, k, j, i) = 0.;
+}
+
+KOKKOS_INLINE_FUNCTION Real upwind_diff(const VariableFluxPack<Real>& B_U, const VariablePack<Real>& emfc, const VariablePack<Real>& uvec,
+                                        const int& comp, const int& dir, const int& vdir,
+                                        const int& k, const int& j, const int& i, const bool& left_deriv)
+{
+    // See SG09 eq 23
+    // Upwind based on vel(vdir) at the left face in vdir (contact mode)
+    TopologicalElement face = FaceOf(vdir);
+    const Real contact_vel = uvec(face, vdir-1, k, j, i);
+    // Upwind by one zone in dir
+    const int i_up = (vdir == 1) ? i - 1 : i;
+    const int j_up = (vdir == 2) ? j - 1 : j;
+    const int k_up = (vdir == 3) ? k - 1 : k;
+    // Sign for transforming the flux to EMF, based on directions
+    const int emf_sign = antisym(comp-1, dir-1, vdir-1);
+
+    // If we're actually taking the derivative at -3/4, back up which center we use,
+    // and reverse the overall sign
+    const int i_cent = (left_deriv && dir == 1) ? i - 1 : i;
+    const int j_cent = (left_deriv && dir == 2) ? j - 1 : j;
+    const int k_cent = (left_deriv && dir == 3) ? k - 1 : k;
+    const int i_cent_up = (left_deriv && dir == 1) ? i_up - 1 : i_up;
+    const int j_cent_up = (left_deriv && dir == 2) ? j_up - 1 : j_up;
+    const int k_cent_up = (left_deriv && dir == 3) ? k_up - 1 : k_up;
+    const int return_sign = (left_deriv) ? -1 : 1;
+
+
+    // TODO calculate offsets once somehow?
+
+    if (contact_vel > 0) {
+        // Forward: difference at i
+        return return_sign * (emfc(0, k_cent, j_cent, i_cent) - emf_sign * B_U.flux(dir, vdir-1, k, j, i));
+    } else if (contact_vel < 0) {
+        // Back: twice difference at i-1
+        return return_sign * (emfc(0, k_cent_up, j_cent_up, i_cent_up) - emf_sign * B_U.flux(dir, vdir-1, k_up, j_up, i_up));
+    } else {
+        // Half and half
+        return return_sign*0.5*(emfc(0, k_cent, j_cent, i_cent) - emf_sign * B_U.flux(dir, vdir-1, k, j, i) +
+                    emfc(0, k_cent_up, j_cent_up, i_cent_up) - emf_sign * B_U.flux(dir, vdir-1, k_up, j_up, i_up));
+    }
 }
 
 }

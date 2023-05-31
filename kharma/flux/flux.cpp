@@ -53,6 +53,7 @@ std::shared_ptr<KHARMAPackage> Flux::Initialize(ParameterInput *pin, std::shared
     int nvar = KHARMA::CountVars(packages.get(), Metadata::WithFluxes);
     std::cout << "Allocating fluxes with nvar: " << nvar << std::endl;
     std::vector<int> s_flux({nvar});
+    // TODO optionally move all these to faces? Not important yet, no output, more memory
     std::vector<MetadataFlag> flags_flux = {Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy};
     Metadata m = Metadata(flags_flux, s_flux);
     pkg->AddField("Flux.Pr", m);
@@ -62,15 +63,17 @@ std::shared_ptr<KHARMAPackage> Flux::Initialize(ParameterInput *pin, std::shared
     pkg->AddField("Flux.Fr", m);
     pkg->AddField("Flux.Fl", m);
 
-    // TODO move to faces? Not important for these quantities as caches
+    // TODO could formally move this to face
     std::vector<int> s_vector({NVEC});
     std::vector<MetadataFlag> flags_speed = {Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy};
     m = Metadata(flags_speed, s_vector);
     pkg->AddField("Flux.cmax", m);
     pkg->AddField("Flux.cmin", m);
-    // Velocities, for upwinded constrained transport
-    // TODO can be 2-length someday if we want to get spicy
+
+    // Preserve all velocities at faces, for upwinded constrained transport
     if (packages->AllPackages().count("B_CT")) {
+        std::vector<MetadataFlag> flags_vel = {Metadata::Real, Metadata::Face, Metadata::Derived, Metadata::OneCopy};
+        m = Metadata(flags_vel, s_vector);
         pkg->AddField("Flux.vr", m);
         pkg->AddField("Flux.vl", m);
     }

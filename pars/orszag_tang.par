@@ -42,7 +42,7 @@ integrator = rk2
 <GRMHD>
 cfl = 0.9
 gamma = 1.666667
-reconstruction = weno5
+reconstruction = linear_mc
 
 <debug>
 verbose = 1
