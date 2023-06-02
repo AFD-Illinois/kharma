@@ -58,14 +58,16 @@ using parthenon::MeshBlockData;
 #define V2 1
 #define V3 2
 
-// Let's also rename Parthenon's very specific location names to something generic & readable
+// Pull TopologicalElements out to match the above
 using TE = parthenon::TopologicalElement;
-constexpr TE F1 = TE::FX;
-constexpr TE F2 = TE::FY;
-constexpr TE F3 = TE::FZ;
-constexpr TE E1 = TE::EYZ;
-constexpr TE E2 = TE::EXZ;
-constexpr TE E3 = TE::EXY;
+constexpr TE CC = TE::CC;
+constexpr TE F1 = TE::F1;
+constexpr TE F2 = TE::F2;
+constexpr TE F3 = TE::F3;
+constexpr TE E1 = TE::E1;
+constexpr TE E2 = TE::E2;
+constexpr TE E3 = TE::E3;
+constexpr TE NN = TE::NN;
 
 // Any basic type manips, see LocOf in decs etc etc
 KOKKOS_INLINE_FUNCTION TopologicalElement FaceOf(const int& dir) {

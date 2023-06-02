@@ -211,8 +211,8 @@ TaskStatus B_CT::UpdateFaces(std::shared_ptr<MeshData<Real>>& md, std::shared_pt
     auto& emf_pack = md->PackVariables(std::vector<std::string>{"B_CT.emf"});
 
     // Figure out indices
-    const IndexRange3 b = KDomain::GetRange(md, IndexDomain::interior, 0, 1);
-    const IndexRange3 b1 = KDomain::GetRange(md, IndexDomain::interior, -1, 2);
+    const IndexRange3 b = KDomain::GetRange(md, IndexDomain::interior, 0, 0);
+    const IndexRange3 b1 = KDomain::GetRange(md, IndexDomain::interior, 0, 1);
     const IndexRange block = IndexRange{0, emf_pack.GetDim(5)-1};
 
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer().get();
@@ -297,32 +297,32 @@ TaskStatus B_CT::UpdateFaces(std::shared_ptr<MeshData<Real>>& md, std::shared_pt
     }
 
     // Parthenon needs a shared_ptr object, but it can be any one...
-    static std::shared_ptr<MeshData<Real>> my_md(md);
-    KHARMADriver::SyncAllBounds(my_md, true);
-    pmb0->par_for("B_CT_Edge1s", block.s, block.e, b1.ks, b1.ke, b1.js, b1.je, b1.is, b1.is,
-        KOKKOS_LAMBDA (const int &bl, const int &k, const int &j, const int &i) {
-            emf_pack(bl, E3, 0, k, j, i) = (emf_pack(bl, E3, 0, k, j, i) + emf_pack(bl, E3, 0, k, j, i-1))/2;
-            emf_pack(bl, E3, 0, k, j, i-1) = emf_pack(bl, E3, 0, k, j, i-2);
-        }
-    );
-    pmb0->par_for("B_CT_Edge1e", block.s, block.e, b1.ks, b1.ke, b1.js, b1.je, b1.ie, b1.ie,
-        KOKKOS_LAMBDA (const int &bl, const int &k, const int &j, const int &i) {
-            emf_pack(bl, E3, 0, k, j, i) = (emf_pack(bl, E3, 0, k, j, i) + emf_pack(bl, E3, 0, k, j, i+1))/2;
-            emf_pack(bl, E3, 0, k, j, i+1) = emf_pack(bl, E3, 0, k, j, i+2);
-        }
-    );
-    pmb0->par_for("B_CT_Edge2s", block.s, block.e, b1.ks, b1.ke, b1.js, b1.js, b1.is, b1.ie,
-        KOKKOS_LAMBDA (const int &bl, const int &k, const int &j, const int &i) {
-            emf_pack(bl, E3, 0, k, j, i) = (emf_pack(bl, E3, 0, k, j, i) + emf_pack(bl, E3, 0, k, j-1, i))/2;
-            emf_pack(bl, E3, 0, k, j-1, i) = emf_pack(bl, E3, 0, k, j-2, i);
-        }
-    );
-    pmb0->par_for("B_CT_Edge2e", block.s, block.e, b1.ks, b1.ke, b1.je, b1.je, b1.is, b1.ie,
-        KOKKOS_LAMBDA (const int &bl, const int &k, const int &j, const int &i) {
-            emf_pack(bl, E3, 0, k, j, i) = (emf_pack(bl, E3, 0, k, j, i) + emf_pack(bl, E3, 0, k, j+1, i))/2;
-            emf_pack(bl, E3, 0, k, j+1, i) = emf_pack(bl, E3, 0, k, j+2, i);
-        }
-    );
+    // static std::shared_ptr<MeshData<Real>> my_md(md);
+    // KHARMADriver::SyncAllBounds(my_md, true);
+    // pmb0->par_for("B_CT_Edge1s", block.s, block.e, b1.ks, b1.ke, b1.js, b1.je, b1.is, b1.is,
+    //     KOKKOS_LAMBDA (const int &bl, const int &k, const int &j, const int &i) {
+    //         emf_pack(bl, E3, 0, k, j, i) = (emf_pack(bl, E3, 0, k, j, i) + emf_pack(bl, E3, 0, k, j, i-1))/2;
+    //         emf_pack(bl, E3, 0, k, j, i-1) = emf_pack(bl, E3, 0, k, j, i-2);
+    //     }
+    // );
+    // pmb0->par_for("B_CT_Edge1e", block.s, block.e, b1.ks, b1.ke, b1.js, b1.je, b1.ie, b1.ie,
+    //     KOKKOS_LAMBDA (const int &bl, const int &k, const int &j, const int &i) {
+    //         emf_pack(bl, E3, 0, k, j, i) = (emf_pack(bl, E3, 0, k, j, i) + emf_pack(bl, E3, 0, k, j, i+1))/2;
+    //         emf_pack(bl, E3, 0, k, j, i+1) = emf_pack(bl, E3, 0, k, j, i+2);
+    //     }
+    // );
+    // pmb0->par_for("B_CT_Edge2s", block.s, block.e, b1.ks, b1.ke, b1.js, b1.js, b1.is, b1.ie,
+    //     KOKKOS_LAMBDA (const int &bl, const int &k, const int &j, const int &i) {
+    //         emf_pack(bl, E3, 0, k, j, i) = (emf_pack(bl, E3, 0, k, j, i) + emf_pack(bl, E3, 0, k, j-1, i))/2;
+    //         emf_pack(bl, E3, 0, k, j-1, i) = emf_pack(bl, E3, 0, k, j-2, i);
+    //     }
+    // );
+    // pmb0->par_for("B_CT_Edge2e", block.s, block.e, b1.ks, b1.ke, b1.je, b1.je, b1.is, b1.ie,
+    //     KOKKOS_LAMBDA (const int &bl, const int &k, const int &j, const int &i) {
+    //         emf_pack(bl, E3, 0, k, j, i) = (emf_pack(bl, E3, 0, k, j, i) + emf_pack(bl, E3, 0, k, j+1, i))/2;
+    //         emf_pack(bl, E3, 0, k, j+1, i) = emf_pack(bl, E3, 0, k, j+2, i);
+    //     }
+    // );
 
     // This is what we're replacing
     auto& dB_Uf_dt = mdudt->PackVariables(std::vector<std::string>{"cons.fB"});

@@ -267,7 +267,7 @@ void KBoundaries::CheckInflow(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDom
     // Inflow check
     // Iterate over zones w/p=0
     pmb->par_for_bndry(
-        "Outflow_check_inflow", IndexRange{0, 0}, domain, coarse,
+        "Outflow_check_inflow", IndexRange{0, 0}, domain, CC, coarse,
         KOKKOS_LAMBDA(const int &p, const int &k, const int &j, const int &i) {
             KBoundaries::check_inflow(G, P, domain, m_p.U1, k, j, i);
         }
