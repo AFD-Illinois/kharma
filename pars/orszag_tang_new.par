@@ -5,11 +5,11 @@
 problem_id = orszag_tang
 
 <parthenon/mesh>
-nx1 = 512
+nx1 = 1024
 x1min = -3.141592653589793
 x1max = 3.141592653589793
 
-nx2 = 512
+nx2 = 1024
 x2min = -3.141592653589793
 x2max = 3.141592653589793
 
@@ -35,9 +35,12 @@ cfl = 0.9
 gamma = 1.666667
 reconstruction = weno5
 
+<driver>
+flux = hlle
+
 <b_field>
 solver = face_ct
-kill_on_large_divb = false
+kill_on_large_divb = true
 #ct_scheme = bs99
 ct_scheme = sg09
 
