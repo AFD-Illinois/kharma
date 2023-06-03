@@ -299,21 +299,25 @@ KOKKOS_INLINE_FUNCTION void XtoindexGizmo3D(const GReal XG[GR_DIM],
                                     const GridVector& coordarr, const hsize_t length, int& i, GReal& del)
 {
     Real dx2, dx2_min;
-    Real XG_cart[3] = {XG[1]*m::sin(XG[2])*m::cos(XG[3]), XG[1]*m::sin(XG[2])*m::sin(XG[3]), XG[1]*m::cos(XG[2])};
+    //Real XG_cart[3] = {XG[1]*m::sin(XG[2])*m::cos(XG[3]), XG[1]*m::sin(XG[2])*m::sin(XG[3]), XG[1]*m::cos(XG[2])};
 
-    Real x = coordarr(0,0)*m::sin(coordarr(0,1))*m::cos(coordarr(0,2));
-    Real y = coordarr(0,0)*m::sin(coordarr(0,1))*m::sin(coordarr(0,2));
-    Real z = coordarr(0,0)*m::cos(coordarr(0,1));
-    dx2_min=m::pow(XG_cart[0]-x,2)+m::pow(XG_cart[1]-y,2)+m::pow(XG_cart[2]-z,2); 
+    //Real x = coordarr(0,0)*m::sin(coordarr(0,1))*m::cos(coordarr(0,2));
+    //Real y = coordarr(0,0)*m::sin(coordarr(0,1))*m::sin(coordarr(0,2));
+    //Real z = coordarr(0,0)*m::cos(coordarr(0,1));
+    //dx2_min=m::pow(XG_cart[0]-x,2)+m::pow(XG_cart[1]-y,2)+m::pow(XG_cart[2]-z,2); 
+    //dx2_min=m::pow(coordarr(0,0)/XG[1]-1.,2.)+m::pow((coordarr(0,1)-XG[2])/M_PI,2.)+m::pow((coordarr(0,2)-XG[3])/(2.*M_PI),2.); // sum of fractional diff^2 for each r, th, phi
+    dx2_min=m::pow(coordarr(0,0)-XG[1],2.)+m::pow((coordarr(0,1)-XG[2])/M_PI,2.)+m::pow((coordarr(0,2)-XG[3])/(2.*M_PI),2.); // sum of diff^2 for each r, th, phi
 
     i = 0; // initialize
 
     for (int itemp = 0; itemp < length; itemp++) {
         if (coordarr(itemp,0) <= XG[1]) { // only look for smaller side
-            x = coordarr(itemp,0)*m::sin(coordarr(itemp,1))*m::cos(coordarr(itemp,2));
-            y = coordarr(itemp,0)*m::sin(coordarr(itemp,1))*m::sin(coordarr(itemp,2));
-            z = coordarr(itemp,0)*m::cos(coordarr(itemp,1));
-            dx2 = m::pow(XG_cart[0]-x,2)+m::pow(XG_cart[1]-y,2)+m::pow(XG_cart[2]-z,2); 
+            //x = coordarr(itemp,0)*m::sin(coordarr(itemp,1))*m::cos(coordarr(itemp,2));
+            //y = coordarr(itemp,0)*m::sin(coordarr(itemp,1))*m::sin(coordarr(itemp,2));
+            //z = coordarr(itemp,0)*m::cos(coordarr(itemp,1));
+            //dx2 = m::pow(XG_cart[0]-x,2)+m::pow(XG_cart[1]-y,2)+m::pow(XG_cart[2]-z,2); 
+            //dx2 = m::pow(coordarr(itemp,0)/XG[1]-1.,2.)+m::pow((coordarr(itemp,1)-XG[2])/M_PI,2.)+m::pow((coordarr(itemp,2)-XG[3])/(2.*M_PI),2.);
+            dx2 = m::pow(coordarr(itemp,0)-XG[1],2.)+m::pow((coordarr(itemp,1)-XG[2])/M_PI,2.)+m::pow((coordarr(itemp,2)-XG[3])/(2.*M_PI),2.);
 
             // simplest interpolation (Hyerin 07/26/22)
             if (dx2<dx2_min){
@@ -324,7 +328,7 @@ KOKKOS_INLINE_FUNCTION void XtoindexGizmo3D(const GReal XG[GR_DIM],
     }
     
     // No interpolation! Warn if the data points are not exactly on top of each other
-    if (m::abs(dx2_min/m::pow(XG[1],2))>1.e-8) printf("XtoindexGizmo3D: dx2 frac diff large = %g at r= %g \n",m::sqrt(dx2_min)/XG[1], XG[1]);
+    if (m::abs(dx2_min)>1.e-8) printf("XtoindexGizmo3D: dx2 frac diff large = %g at (r,th,phi)=(%lf %lf %lf) fitted=(%lf %lf %lf) \n",m::sqrt(dx2_min), XG[1], XG[2], XG[3], coordarr(i,0),coordarr(i,1),coordarr(i,2));
 }
 /**
  * Get the GIZMO output values at a particular zone for 3D GIZMO data
@@ -353,9 +357,10 @@ KOKKOS_INLINE_FUNCTION void get_prim_gizmo_shell_3d(const GRCoordinates& G, cons
     //Real T = smallu/(smallrho*n);
 
     //Real rs = 1./sqrt(T); //1000.;
-    GReal Xnative[GR_DIM], Xembed[GR_DIM];
+    GReal Xnative[GR_DIM], Xembed[GR_DIM];//, Xembed_corner[GR_DIM];
     G.coord(k, j, i, Loci::center, Xnative);
     G.coord_embed(k, j, i, Loci::center, Xembed);
+    //G.coord_embed(k, j, i, Loci::corner, Xembed_corner); // TODO: get cell centered values from KungYi
     GReal r = Xembed[1];
     GReal th = Xembed[2];
 

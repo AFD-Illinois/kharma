@@ -70,6 +70,11 @@ if [[ "$1" == "-nt" ]]; then
   shift
   shift
 fi
+if [[ "$1" == "-b" ]]; then
+  EXE_NAME="$2"
+  shift
+  shift
+fi
 
 # Run based on preferences
 if [ -z "$MPI_EXE" ]; then

@@ -7,20 +7,19 @@
 KERR=false
 JITTER=true #false #
 ONEZONE=false #true # 
-SHORT_T_OUT=true
+SHORT_T_OUT=false #true # 
 ROT=false #true #
 ROT_UPHI=0.1
-bz=2e-8 #0 #1e-8 #1e-4 #
+bz=1e-4 #2e-8 #1e-8 #0 #
 DIM=3 #2 # 
-NZONES=8 #3 #2 # 
+NZONES=3 #4 # 8 #
 BASE=8
-NRUNS=300
-START_RUN=0 # if !=0, change start_time, out_to_in, iteration, r_out, r_in
-res=64 #32 #96
-DRTAG="bondi_multizone_050223_bflux0_${bz}_${res}^3_n8"
-#DRTAG="bondi_multizone_050123_onezone_bflux0_${bz}_2d_newrs"
-#DRTAG="bondi_multizone_042623_bflux0_${bz}_n3b8_nlim5e4_restart_bsq_over_u"
-#DRTAG="bondi_multizone_042023_onezone_bflux0_2d_${bz}"
+NRUNS=3000
+START_RUN=494 # if !=0, change start_time, out_to_in, iteration, r_out, r_in
+res=128 #64 #96 #32 #
+#DRTAG="bondi_multizone_050423_bflux0_${bz}_${res}^3_n8_test_faster_rst"
+DRTAG="bondi_multizone_050523_bflux0_${bz}_${res}^3_n3_noshort"
+#DRTAG="bondi_multizone_050423_onezone_bflux0_${bz}_2d_n4"
 
 # Set paths
 KHARMADIR=../..
@@ -30,17 +29,17 @@ parfilename="${PDR}/kharma/pars/bondi_multizone/bondi_multizone_00000.par" # par
 
 # other values determined automatically
 turn_around=$(($NZONES-1))
-start_time=0 #`echo "scale=20; 85184.643106985808" | bc -l` # #0 #
+start_time=1424043 #0 #`echo "scale=20; 85184.643106985808" | bc -l` # #
 out_to_in=1 #-1 #
-iteration=1 #16 #
+iteration=247 #
 if [[ $ONEZONE == "true" ]]; then
-  r_out=4096 
+  r_out=$((${BASE}**($turn_around+2))) # 4096 
   r_in=1 
-  NRUNS=1
+  NRUNS=4 #1
   #NZONES=1
 else
-  r_out=$((${BASE}**($turn_around+2))) # 
-  r_in=$((${BASE}**$turn_around)) #
+  r_out=64 #$((${BASE}**($turn_around+2))) # 
+  r_in=1 #$((${BASE}**$turn_around)) #
 fi
 #nlim=0
 
@@ -60,6 +59,8 @@ do
   args=()
   echo "${DRTAG}: iter $iteration, $VAR : t = $start_time, r_out = $r_out, r_in = $r_in"
   if [[ $NZONES -eq 3 ]]; then
+    r_b=256
+  elif [[ $NZONES -eq 4 ]]; then
     r_b=256
   else
     r_b=100000
@@ -168,33 +169,40 @@ do
   if [[ $DIM -gt 2 ]]; then
     nx3_m=$res #32 #
     nx3_mb=$(($res/2)) #$res #
+    nx2_mb=$(($res/2))
   else
     nx3_m=1
     nx3_mb=1
+    nx2_mb=$res  #
   fi
   if [[ $NZONES -eq 3 ]]; then
     logrho=-4.13354231 #-5.686638255139154
     log_u_over_rho=-2.57960521 #-3.6150030239527497
     args+=(" bondi/rs=16 ")
   fi
+  if [[ $NZONES -eq 4 ]]; then
+    logrho=-4.200592800419657
+    log_u_over_rho=-2.62430556
+    args+=(" bondi/rs=16 ")
+  fi
   if [[ $ONEZONE == "true" ]]; then
       #args+=(" bondi/r_shell=256 ")
-      nx1_m=128
-      nx1_mb=128
-      start_time=10000000
-      output1_dt=660 #6420 #2310
+      nx1_m=$((32*($NZONES+1)))
+      nx1_mb=$nx1_m #128
+      start_time=5100000 #10000000
+      output1_dt=1000 #660 #6420 #2310
       nlim=-1
   else
       nx1_m=$res #64
       nx1_mb=$res #64
-      nlim=50000 #$(($nlim+50000)) ##$((50000*($VAR+1)))
+      nlim=$((100000*$res*$res/64/64)) #$(($nlim+50000)) ##$((50000*($VAR+1)))
   fi
-  nx2_mb=$(($res/2)) #$res  #
   if [[ $bz == 0 ]]; then
     nlim=-1
   fi
 
-  srun --mpi=pmix ${PDR}/kharma_nlim.cuda -i ${parfilename} \
+  #srun --mpi=pmix ${PDR}/kharma_nlim.cuda -i ${parfilename} \
+  srun --mpi=pmix ${PDR}/kharma_faster_rst_fixed.cuda -i ${parfilename} \
                                     parthenon/mesh/nx1=$nx1_m parthenon/mesh/nx2=$res parthenon/mesh/nx3=$nx3_m \
                                     parthenon/meshblock/nx1=$nx1_mb parthenon/meshblock/nx2=$nx2_mb parthenon/meshblock/nx3=$nx3_mb \
                                     parthenon/job/problem_id=$prob \
@@ -204,7 +212,7 @@ do
                                     coordinates/transform=mks coordinates/hslope=0.3 \
                                     bondi/vacuum_logrho=${logrho} bondi/vacuum_log_u_over_rho=${log_u_over_rho} \
                                     floors/disable_floors=false floors/rho_min_geom=1e-6 floors/u_min_geom=1e-8 floors/bsq_over_u_max=1e+20 floors/adjust_k=0 \
-                                    floors/bsq_over_rho_max=100 floors/u_over_rho_max=100 floors/gamma_max=10 \
+                                    floors/bsq_over_rho_max=100 floors/u_over_rho_max=100 floors/gamma_max=10 floors/frame=drift \
                                     GRMHD/reconstruction=linear_vl GRMHD/cfl=0.5 GRMHD/add_jcon=0 \
                                     b_field/type=vertical b_field/solver=flux_ct b_field/bz=${bz} \
                                     b_field/fix_flux_x1=1 b_field/initial_cleanup=0 \
@@ -217,8 +225,8 @@ do
                                     -d ${data_dir} 1> ${out_fn} 2>${err_fn}
                                     #parthenon/time/tlim=10000000 \
                                     #parthenon/output1/dt=2310 \
-                                    #  b_field/type=vertical b_field/bz=${bz}
-                                    #floors/bsq_over_rho_max=100 floors/u_over_rho_max=2 \ 
+                                    #  b_field/type=vertical b_field/bz=${bz}flux_ct
+                                    #floors/bsq_over_rho_max=100 floors/u_over_rho_max=2 \  
 
   if [ $VAR -ne 0 ]; then
     if [ $(($VAR % ($NZONES-1))) -eq 0 ]; then

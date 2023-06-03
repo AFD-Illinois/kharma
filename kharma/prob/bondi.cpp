@@ -113,6 +113,8 @@ TaskStatus SetBondi(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     }
     IndexRange jb_e = bounds.GetBoundsJ(IndexDomain::entire);
     IndexRange kb_e = bounds.GetBoundsK(IndexDomain::entire);
+    IndexRange jb = bounds.GetBoundsJ(IndexDomain::interior);
+    IndexRange kb = bounds.GetBoundsK(IndexDomain::interior);
     
     // GIZMO shell, doesn't do anything for radial bdry
     if (use_gizmo && (domain != IndexDomain::outer_x1) && (domain != IndexDomain::inner_x1)) { 
@@ -187,7 +189,7 @@ TaskStatus SetBondi(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
             // read from hdf5 file
             hdf5_open(datfn.c_str());
             hdf5_set_directory("/");
-            hsize_t length=2228224; // TODO: should be able to be retrieved from the data file
+            hsize_t length=7372800; // TODO: should be able to be retrieved from the data file
             Real *coordarr = new double[length*3];
             Real *rhoarr = new double[length];
             Real *Tarr = new double[length];
@@ -227,15 +229,24 @@ TaskStatus SetBondi(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
             v_device.DeepCopy(v_host);
                 
             Kokkos::fence();
-            pmb->par_for("gizmo_shell", kb_e.s, kb_e.e, jb_e.s, jb_e.e, ibs, ibe,
-                KOKKOS_LAMBDA_3D {
-                    // same vacuum conditions at r_shell
-                    GReal Xshell[GR_DIM] = {0, r_shell, 0, 0};
-                    int i_sh;
-                    GReal del_sh;
-                    Real vacuum_rho, vacuum_u_over_rho, vacuum_logrho, vacuum_log_u_over_rho;
 
-                    XtoindexGizmo3D(Xshell, coord_device, length, i_sh, del_sh);
+            //int i_sh;
+            // same vacuum conditions at r_shell // (05/01/23) a better way to do this?
+            //pmb->par_for("gizmo_r_shell", 0, 0,
+            //    KOKKOS_LAMBDA_1D {
+            //        GReal Xshell[GR_DIM] = {0, r_shell, 0, 0};
+            //        GReal del_sh;
+            //        int i_sh_dev;
+            //        XtoindexGizmo3D(Xshell, coord_device, length, i_sh_dev, del_sh);
+            //    }
+            //);
+            //i_sh=i_sh_dev;
+            int i_sh=0; // TODO! Ask Ben
+
+            pmb->par_for("gizmo_shell", kb.s, kb.e, jb.s, jb.e, ibs, ibe,
+                KOKKOS_LAMBDA_3D {
+                    Real vacuum_rho, vacuum_u_over_rho, vacuum_logrho, vacuum_log_u_over_rho;
+                    
                     vacuum_rho = rho_device(i_sh);
                     vacuum_u_over_rho = T_device(i_sh)/(gam-1.);
                     vacuum_logrho = log10(vacuum_rho);

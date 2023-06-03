@@ -1,7 +1,31 @@
 # Harvard Cannon
 
 #if [[ $HOST == *"rc.fas.harvard.edu" ]]; then
-if [[ $(hostname -f) == *"rc.fas.harvard.edu" ]]; then
+if [[ "$ARGS" == *"rocky"* ]]; then
+    echo $(hostname -f)
+    echo ROCKY
+    HOST_ARCH=HSW
+    EXTRA_FLAGS="-DPARTHENON_DISABLE_HDF5_COMPRESSION=ON"
+    echo $ARGS
+    echo "after printing out"
+    module purge
+    module load gcc/10.2.0-fasrc01 openmpi/4.1.0-fasrc01 cmake/3.25.2-fasrc01
+    #module load gcc/12.2.0-fasrc01 mpich/4.1-fasrc01 cmake/3.25.2-fasrc01
+    export MPICH_GPU_SUPPORT_ENABLED=1
+    #module load intel/23.0.0-fasrc01 openmpi/4.1.4-fasrc01 cmake/3.25.2-fasrc01
+
+    #source /n/holylfs05/LABS/bhi/Users/hyerincho/grmhd/spack/share/spack/setup-env.sh
+    #spack clean -m
+    #spack install gcc@10.2.0 openmpi@4.1.3 cmake@3.23.2
+
+    C_NATIVE=gcc
+    CXX_NATIVE=g++
+    export PATH=/n/home09/hyerincho/packages/hdf5-openmpi4.1.1:$PATH
+    if [[ "$ARGS" == *"cuda"* ]]; then
+      DEVICE_ARCH=AMPERE80 ## rocky_gpu
+      module load cuda/12.0.1-fasrc01
+    fi
+elif [[ $(hostname -f) == *"rc.fas.harvard.edu" ]]; then
     echo CANNON
     HOST_ARCH=HSW
     EXTRA_FLAGS="-DPARTHENON_DISABLE_HDF5_COMPRESSION=ON"
@@ -33,8 +57,6 @@ if [[ $(hostname -f) == *"rc.fas.harvard.edu" ]]; then
 
     #module load cmake/3.17.3-fasrc01 # newer versions are usually better
     module load cmake/3.23.2-fasrc01 # with nvhpc
-    #C_NATIVE=gcc
-    #CXX_NATIVE=g++
   if [[ "$ARGS" == *"cuda"* ]]; then
     #DEVICE_ARCH=VOLTA70 ## test, (old GPUs)
     DEVICE_ARCH=AMPERE80 ## blackhole_gpu, itc_gpu
