@@ -86,7 +86,7 @@ flag_verbose = 0
 on                 = true
 higher_order_terms = false
 feedback           = true
-stability_limits   = true
+stability_limits   = false
 
 conduction = true
 viscosity  = true

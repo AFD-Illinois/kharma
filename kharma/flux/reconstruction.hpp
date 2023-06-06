@@ -127,86 +127,159 @@ KOKKOS_INLINE_FUNCTION void PiecewiseLinearX3(parthenon::team_mbr_t const &membe
 KOKKOS_INLINE_FUNCTION void weno5(const Real& x1, const Real& x2, const Real& x3, const Real& x4, const Real& x5,
                                 Real &lout, Real &rout)
 {
+    // // Smoothness indicators, T07 A18 or S11 8
+    // const Real beta1 = (13./12.)*SQR(x1 - 2*x2 + x3)
+    //                  + (1./4.)*SQR(x1 - 4*x2 + 3*x3);
+    // const Real beta2 = (13./12.)*SQR(x2 - 2*x3 + x4)
+    //                  + (1./4.)*SQR(x4 - x2);
+    // const Real beta3 = (13./12.)*SQR(x3 - 2*x4 + x5)
+    //                  + (1./4.)*SQR(x5 - 4*x4 + 3*x3);
+
+    // // Nonlinear weights S11 9
+    // const Real den_inv1 = 1./(EPS + beta1*beta1);
+    // const Real den_inv2 = 1./(EPS + beta2*beta2);
+    // const Real den_inv3 = 1./(EPS + beta3*beta3);
+
+    // // S11 1, 2, 3 left
+    // const Real wtl1 = 0.5 * den_inv3;
+    // const Real wtl2 = 5 * den_inv2;
+    // const Real wtl3 = 2.5 * den_inv1;
+    // lout = ((3*x5  - 10*x4 + 15*x3)*wtl1 +
+    //         (-x4 + 6*x3  + 3*x2)*wtl2 +
+    //         (3*x3  + 6*x2  - x1)*wtl3)
+    //         / (8*(wtl1 + wtl2 + wtl3));
+
+    // // S11 1, 2, 3 right
+    // const Real wtr1 = 0.5 * den_inv1;
+    // const Real wtr2 = 5 * den_inv2;
+    // const Real wtr3 = 2.5 * den_inv3;
+    // rout = ((3*x1 - 10*x2 + 15*x3)*wtr1 +
+    //         (-x2 + 6*x3 + 3*x4)*wtr2 +
+    //         (3*x3 + 6*x4 - x5)*wtr3)
+    //         / (8*(wtr1 + wtr2 + wtr3));
+
+    // OLD RECON
     // Smoothness indicators, T07 A18 or S11 8
-    const Real beta1 = (13./12.)*SQR(x1 - 2*x2 + x3)
-                     + (1./4.)*SQR(x1 - 4*x2 + 3*x3);
-    const Real beta2 = (13./12.)*SQR(x2 - 2*x3 + x4)
-                     + (1./4.)*SQR(x4 - x2);
-    const Real beta3 = (13./12.)*SQR(x3 - 2*x4 + x5)
-                     + (1./4.)*SQR(x5 - 4*x4 + 3*x3);
+    Real beta[3], c1, c2;
+    c1 = x1 - 2.*x2 + x3; c2 = x1 - 4.*x2 + 3.*x3;
+    beta[0] = (13./12.)*c1*c1 + (1./4.)*c2*c2;
+    c1 = x2 - 2.*x3 + x4; c2 = x4 - x2;
+    beta[1] = (13./12.)*c1*c1 + (1./4.)*c2*c2;
+    c1 = x3 - 2.*x4 + x5; c2 = x5 - 4.*x4 + 3.*x3;
+    beta[2] = (13./12.)*c1*c1 + (1./4.)*c2*c2;
 
     // Nonlinear weights S11 9
-    const Real den_inv1 = 1./(EPS + beta1*beta1);
-    const Real den_inv2 = 1./(EPS + beta2*beta2);
-    const Real den_inv3 = 1./(EPS + beta3*beta3);
+    Real den[3] = {EPS + beta[0], EPS + beta[1], EPS + beta[2]};
+    den[0] *= den[0]; den[1] *= den[1]; den[2] *= den[2];
 
-    // S11 1, 2, 3 left
-    const Real wtl1 = 0.5 * den_inv3;
-    const Real wtl2 = 5 * den_inv2;
-    const Real wtl3 = 2.5 * den_inv1;
-    lout = ((3*x5  - 10*x4 + 15*x3)*wtl1 +
-            (-x4 + 6*x3  + 3*x2)*wtl2 +
-            (3*x3  + 6*x2  - x1)*wtl3)
-            / (8*(wtl1 + wtl2 + wtl3));
+    Real wtr[3] = {(1./16.)/den[0], (5./8. )/den[1], (5./16.)/den[2]};
+    Real Wr = wtr[0] + wtr[1] + wtr[2];
 
-    // S11 1, 2, 3 right
-    const Real wtr1 = 0.5 * den_inv1;
-    const Real wtr2 = 5 * den_inv2;
-    const Real wtr3 = 2.5 * den_inv3;
-    rout = ((3*x1 - 10*x2 + 15*x3)*wtr1 +
-            (-x2 + 6*x3 + 3*x4)*wtr2 +
-            (3*x3 + 6*x4 - x5)*wtr3)
-            / (8*(wtr1 + wtr2 + wtr3));
+    Real wtl[3] = {(1./16.)/den[2], (5./8. )/den[1], (5./16.)/den[0]};
+    Real Wl = wtl[0] + wtl[1] + wtl[2];
+
+    // S11 1, 2, 3
+    lout = ((3./8.)*x5 - (5./4.)*x4 + (15./8.)*x3)*(wtl[0] / Wl) +
+            ((-1./8.)*x4 + (3./4.)*x3 + (3./8.)*x2)*(wtl[1] / Wl) +
+            ((3./8.)*x3 + (3./4.)*x2 - (1./8.)*x1)*(wtl[2] / Wl);
+    rout = ((3./8.)*x1 - (5./4.)*x2 + (15./8.)*x3)*(wtr[0] / Wr) +
+            ((-1./8.)*x2 + (3./4.)*x3 + (3./8.)*x4)*(wtr[1] / Wr) +
+            ((3./8.)*x3 + (3./4.)*x4 - (1./8.)*x5)*(wtr[2] / Wr);
 }
 KOKKOS_INLINE_FUNCTION void weno5l(const Real x1, const Real& x2, const Real& x3, const Real x4, const Real& x5,
                                 Real &lout)
 {
+    // // Smoothness indicators, T07 A18 or S11 8
+    // const Real beta1 = (13./12.)*SQR(x1 - 2*x2 + x3)
+    //                  + (1./4.)*SQR(x1 - 4*x2 + 3*x3);
+    // const Real beta2 = (13./12.)*SQR(x2 - 2*x3 + x4)
+    //                  + (1./4.)*SQR(x4 - x2);
+    // const Real beta3 = (13./12.)*SQR(x3 - 2*x4 + x5)
+    //                  + (1./4.)*SQR(x5 - 4*x4 + 3*x3);
+
+    // // Nonlinear weights S11 9
+    // const Real den_inv1 = 1./(EPS + beta1*beta1);
+    // const Real den_inv2 = 1./(EPS + beta2*beta2);
+    // const Real den_inv3 = 1./(EPS + beta3*beta3);
+
+    // // S11 1, 2, 3 left
+    // const Real wtl1 = 0.5 * den_inv3;
+    // const Real wtl2 = 5 * den_inv2;
+    // const Real wtl3 = 2.5 * den_inv1;
+    // lout = ((3*x5  - 10*x4 + 15*x3)*wtl1 +
+    //         (-x4 + 6*x3  + 3*x2)*wtl2 +
+    //         (3*x3  + 6*x2  - x1)*wtl3)
+    //         / (8*(wtl1 + wtl2 + wtl3));
+
+
+    // OLD RECON
     // Smoothness indicators, T07 A18 or S11 8
-    const Real beta1 = (13./12.)*SQR(x1 - 2*x2 + x3)
-                     + (1./4.)*SQR(x1 - 4*x2 + 3*x3);
-    const Real beta2 = (13./12.)*SQR(x2 - 2*x3 + x4)
-                     + (1./4.)*SQR(x4 - x2);
-    const Real beta3 = (13./12.)*SQR(x3 - 2*x4 + x5)
-                     + (1./4.)*SQR(x5 - 4*x4 + 3*x3);
+    Real beta[3], c1, c2;
+    c1 = x1 - 2.*x2 + x3; c2 = x1 - 4.*x2 + 3.*x3;
+    beta[0] = (13./12.)*c1*c1 + (1./4.)*c2*c2;
+    c1 = x2 - 2.*x3 + x4; c2 = x4 - x2;
+    beta[1] = (13./12.)*c1*c1 + (1./4.)*c2*c2;
+    c1 = x3 - 2.*x4 + x5; c2 = x5 - 4.*x4 + 3.*x3;
+    beta[2] = (13./12.)*c1*c1 + (1./4.)*c2*c2;
 
     // Nonlinear weights S11 9
-    const Real den_inv1 = 1./(EPS + beta1*beta1);
-    const Real den_inv2 = 1./(EPS + beta2*beta2);
-    const Real den_inv3 = 1./(EPS + beta3*beta3);
+    Real den[3] = {EPS + beta[0], EPS + beta[1], EPS + beta[2]};
+    den[0] *= den[0]; den[1] *= den[1]; den[2] *= den[2];
 
-    // S11 1, 2, 3 left
-    const Real wtl1 = 0.5 * den_inv3;
-    const Real wtl2 = 5 * den_inv2;
-    const Real wtl3 = 2.5 * den_inv1;
-    lout = ((3*x5  - 10*x4 + 15*x3)*wtl1 +
-            (-x4 + 6*x3  + 3*x2)*wtl2 +
-            (3*x3  + 6*x2  - x1)*wtl3)
-            / (8*(wtl1 + wtl2 + wtl3));
+    Real wtl[3] = {(1./16.)/den[2], (5./8. )/den[1], (5./16.)/den[0]};
+    Real Wl = wtl[0] + wtl[1] + wtl[2];
+
+    // S11 1, 2, 3
+    lout = ((3./8.)*x5 - (5./4.)*x4 + (15./8.)*x3)*(wtl[0] / Wl) +
+            ((-1./8.)*x4 + (3./4.)*x3 + (3./8.)*x2)*(wtl[1] / Wl) +
+            ((3./8.)*x3 + (3./4.)*x2 - (1./8.)*x1)*(wtl[2] / Wl);
 }
 KOKKOS_INLINE_FUNCTION void weno5r(const Real& x1, const Real& x2, const Real& x3, const Real x4, const Real& x5,
                                 Real &rout)
 {
+    // // Smoothness indicators, T07 A18 or S11 8
+    // const Real beta1 = (13./12.)*SQR(x1 - 2*x2 + x3)
+    //                  + (1./4.)*SQR(x1 - 4*x2 + 3*x3);
+    // const Real beta2 = (13./12.)*SQR(x2 - 2*x3 + x4)
+    //                  + (1./4.)*SQR(x4 - x2);
+    // const Real beta3 = (13./12.)*SQR(x3 - 2*x4 + x5)
+    //                  + (1./4.)*SQR(x5 - 4*x4 + 3*x3);
+
+    // // Nonlinear weights S11 9
+    // const Real den_inv1 = 1./(EPS + beta1*beta1);
+    // const Real den_inv2 = 1./(EPS + beta2*beta2);
+    // const Real den_inv3 = 1./(EPS + beta3*beta3);
+
+    // // S11 1, 2, 3 right
+    // const Real wtr1 = 0.5 * den_inv1;
+    // const Real wtr2 = 5 * den_inv2;
+    // const Real wtr3 = 2.5 * den_inv3;
+    // rout = ((3*x1 - 10*x2 + 15*x3)*wtr1 +
+    //         (-x2 + 6*x3 + 3*x4)*wtr2 +
+    //         (3*x3 + 6*x4 - x5)*wtr3)
+    //         / (8*(wtr1 + wtr2 + wtr3));
+
+
+    // OLD RECON
     // Smoothness indicators, T07 A18 or S11 8
-    const Real beta1 = (13./12.)*SQR(x1 - 2*x2 + x3)
-                     + (1./4.)*SQR(x1 - 4*x2 + 3*x3);
-    const Real beta2 = (13./12.)*SQR(x2 - 2*x3 + x4)
-                     + (1./4.)*SQR(x4 - x2);
-    const Real beta3 = (13./12.)*SQR(x3 - 2*x4 + x5)
-                     + (1./4.)*SQR(x5 - 4*x4 + 3*x3);
+    Real beta[3], c1, c2;
+    c1 = x1 - 2.*x2 + x3; c2 = x1 - 4.*x2 + 3.*x3;
+    beta[0] = (13./12.)*c1*c1 + (1./4.)*c2*c2;
+    c1 = x2 - 2.*x3 + x4; c2 = x4 - x2;
+    beta[1] = (13./12.)*c1*c1 + (1./4.)*c2*c2;
+    c1 = x3 - 2.*x4 + x5; c2 = x5 - 4.*x4 + 3.*x3;
+    beta[2] = (13./12.)*c1*c1 + (1./4.)*c2*c2;
 
     // Nonlinear weights S11 9
-    const Real den_inv1 = 1./(EPS + beta1*beta1);
-    const Real den_inv2 = 1./(EPS + beta2*beta2);
-    const Real den_inv3 = 1./(EPS + beta3*beta3);
+    Real den[3] = {EPS + beta[0], EPS + beta[1], EPS + beta[2]};
+    den[0] *= den[0]; den[1] *= den[1]; den[2] *= den[2];
 
-    // S11 1, 2, 3 right
-    const Real wtr1 = 0.5 * den_inv1;
-    const Real wtr2 = 5 * den_inv2;
-    const Real wtr3 = 2.5 * den_inv3;
-    rout = ((3*x1 - 10*x2 + 15*x3)*wtr1 +
-            (-x2 + 6*x3 + 3*x4)*wtr2 +
-            (3*x3 + 6*x4 - x5)*wtr3)
-            / (8*(wtr1 + wtr2 + wtr3));
+    Real wtr[3] = {(1./16.)/den[0], (5./8. )/den[1], (5./16.)/den[2]};
+    Real Wr = wtr[0] + wtr[1] + wtr[2];
+
+    rout = ((3./8.)*x1 - (5./4.)*x2 + (15./8.)*x3)*(wtr[0] / Wr) +
+            ((-1./8.)*x2 + (3./4.)*x3 + (3./8.)*x4)*(wtr[1] / Wr) +
+            ((3./8.)*x3 + (3./4.)*x4 - (1./8.)*x5)*(wtr[2] / Wr);
 }
 
 // Row-wise implementations
