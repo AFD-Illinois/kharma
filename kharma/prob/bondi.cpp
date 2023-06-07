@@ -79,25 +79,36 @@ TaskStatus InitializeBondi(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterIn
 
     // Set this problem to control the outer X1 boundary by default
     // remember to disable inflow_check in parameter file!
-    auto bound_pkg = pmb->packages.Get<KHARMAPackage>("Boundaries");
-    if (pin->GetString("boundaries", "inner_x1") == "dirichlet" ||
-        pin->GetString("boundaries", "outer_x1") == "dirichlet") {
+    // "dirichlet" here means specifically KHARMA's cached boundaries (see boundaries.cpp)
+    // The boudaries below are technically Dirichlet boundaries, too, but
+    // aren't called that for our purposes
+    auto outer_dirichlet = pin->GetString("boundaries", "outer_x1") == "dirichlet";
+    auto inner_dirichlet = pin->GetString("boundaries", "inner_x1") == "dirichlet";
+    if (outer_dirichlet || inner_dirichlet) {
         SetBondi<IndexDomain::entire>(rc); // TODO iterate & set any bounds specifically?
     } else {
-        if (pin->GetOrAddBoolean("bondi", "set_outer_bound", true)) {
-            bound_pkg->KBoundaries[BoundaryFace::outer_x1] = SetBondi<IndexDomain::outer_x1>;
-        }
-        if (pin->GetOrAddBoolean("bondi", "set_inner_bound", false)) {
-            bound_pkg->KBoundaries[BoundaryFace::inner_x1] = SetBondi<IndexDomain::inner_x1>;
-        }
-        // Set the interior domain to the analytic solution to begin
-        // This tests that PostInitialize will correctly fill ghost zones with the boundary we set
+        // Generally, we only set the interior domain, not the ghost zones.
+        // This tests that PostInitialize will correctly fill all ghosts
         SetBondi<IndexDomain::interior>(rc);
     }
 
+    // Default Bondi boundariy conditions: reset the outer boundary using our set function.
+    // Register the callback to replace value from boundaries.cpp, & record the change in pin.
+    auto bound_pkg = pmb->packages.Get<KHARMAPackage>("Boundaries");
+    if (pin->GetOrAddBoolean("bondi", "set_outer_bound", !outer_dirichlet)) {
+        pin->SetString("boundaries", "outer_x1", "bondi");
+        bound_pkg->KBoundaries[BoundaryFace::outer_x1] = SetBondi<IndexDomain::outer_x1>;
+    }
+    // Option to set the inner boundary too.  Ruins convergence
+    if (pin->GetOrAddBoolean("bondi", "set_inner_bound", false)) {
+        pin->SetString("boundaries", "inner_x1", "bondi");
+        bound_pkg->KBoundaries[BoundaryFace::inner_x1] = SetBondi<IndexDomain::inner_x1>;
+    }
+
+    // Apply floors to initialize the any part of the domain we didn't
+    // Bondi's BL coordinates do not like the EH, so we replace the zeros with something reasonable
+    // Note this ignores the "disable_floors" parameter, since it's necessary for initialization
     if (rin_bondi > pin->GetReal("coordinates", "r_in") && !(fill_interior)) {
-        // Apply floors to initialize the rest of the domain (regardless of the 'disable_floors' param)
-        // Bondi's BL coordinates do not like the EH, so we replace the zeros with something reasonable.
         Floors::ApplyInitialFloors(pin, rc.get(), IndexDomain::interior);
     }
 
