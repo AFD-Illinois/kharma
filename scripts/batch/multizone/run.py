@@ -269,7 +269,7 @@ def update_args(run_num, kwargs, args):
     #   print("Moving outward:")
 
     # Choose timestep and radii for the next run: smaller/larger as we step in/out
-    args['parthenon/time/dt_min'] = max(dt_last * kwargs['base']**(-3./2.*out_to_in) / 4, 1e-5)
+    args['parthenon/time/dt'] = max(dt_last * kwargs['base']**(-3./2.*out_to_in) / 4, 1e-5)
     if out_to_in > 0:
         args['coordinates/r_out'] = last_r_out / kwargs['base']
         args['coordinates/r_in'] = last_r_in / kwargs['base']
