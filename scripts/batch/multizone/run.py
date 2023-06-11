@@ -25,7 +25,8 @@ def format_args(args):
 
 def calc_runtime(r_out, r_b):
     """r/v where v=sqrt(v_ff**2+c_s**2)"""
-    return r_out/np.sqrt(1./r_out + 1./r_b)
+    #return r_out/np.sqrt(1./r_out + 1./r_b)
+    return np.power(min(r_out,r_b),3./2)
 
 def data_dir(n):
     """Data directory naming scheme"""
@@ -51,7 +52,7 @@ def data_dir(n):
 # Flags and options
 @click.option('--kharma_bin', default="kharma.cuda", help="Name (not path) of KHARMA binary to run")
 @click.option('--kharma_args', default="", help="Arguments for KHARMA run.sh")
-@click.option('--short_t_out', default=True, help="Use shorter outermost annulus")
+@click.option('--short_t_out', is_flag=True, help="Use shorter outermost annulus")
 @click.option('--restart', is_flag=True, help="Restart from most recent run parameters")
 @click.option('--parfile', default=None, help="Parameter filename")
 @click.option('--gizmo', is_flag=True, help="Start from GIZMO data")
@@ -188,7 +189,7 @@ def run_multizone(**kwargs):
                 runtime = calc_runtime(r_out, r_b)
             # B field runs use half this
             if kwargs['bz'] != 0.0:
-                runtime /= 2
+                runtime /= 10 # 2
         else:
             runtime = float(kwargs['tlim'])
         args['parthenon/time/tlim'] = kwargs['start_time'] + runtime
