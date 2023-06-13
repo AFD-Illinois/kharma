@@ -63,6 +63,18 @@ def create_rst_from_dump(fname,rst_out):
   pickle.dump(args, restart_file)
   restart_file.close()
 
+def update_rst(rst_out):
+  # copy from a reference file
+  kwargs,args = read_rst(ref_rst)
+
+  kwargs["parfile"]=kwargs["parfile"].replace("/n/holylfs05/LABS/bhi/Users/hyerincho/grmhd/kharma_fork","/u/hcho1/kharma")
+    
+  # write a new one
+  restart_file = open(rst_out,'wb')
+  pickle.dump(kwargs, restart_file)
+  pickle.dump(args, restart_file)
+  restart_file.close()
+
 def compare_rst(rst):
   kw1,a1=read_rst(rst)
   kw2,a2=read_rst(ref_rst)
