@@ -10,6 +10,7 @@
 
 if [[ $HOST == *".delta.internal.ncsa.edu" ]]
 then
+  echo "DELTA"
   HOST_ARCH=ZEN3
   DEVICE_ARCH=AMPERE80
 

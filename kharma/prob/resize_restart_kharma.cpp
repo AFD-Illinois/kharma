@@ -445,7 +445,7 @@ TaskStatus SetKharmaRestart(MeshBlockData<Real> *rc, IndexDomain domain, bool co
                     x1_fill_device, x2_fill_device, x3_fill_device, rho_fill_device, u_fill_device, uvec_fill_device,
                     vacuum_logrho, vacuum_log_u_over_rho,
                     k, j, i);
-                //GRMHD::p_to_u(G,P,m_p,gam,k,j,i,U,m_u);  //TODO: is this needed? I don't see it in resize_restart.cpp
+                GRMHD::p_to_u(G,P,m_p,gam,k,j,i,U,m_u);  //TODO: is this needed? I don't see it in resize_restart.cpp
                 //if (pin->GetOrAddString("b_field", "type", "none") != "none") {
                 //    VLOOP B_host(v, k, j, i) = interp_scalar(G, X, startx, stopx, dx, is_spherical, false, n3tot, n2tot, n1tot, &(B_file[v*block_sz]));
                 //}
@@ -457,7 +457,7 @@ TaskStatus SetKharmaRestart(MeshBlockData<Real> *rc, IndexDomain domain, bool co
                         k, j, i);
             }
         );
-        //if (include_B) B_FluxCT::PtoU(rc,domain); // added for B fields
+        if (include_B) B_FluxCT::PtoU(rc,domain); // added for B fields
     }
 
    return TaskStatus::complete;

@@ -129,60 +129,32 @@ KOKKOS_INLINE_FUNCTION void get_prim_restart_kharma(const GRCoordinates& G, cons
     int iblocktemp, itemp, jtemp, ktemp;
     // Interpolate the value at this location from the global grid
     if ((!should_fill) && (X[1]<fx1min)) {// if cannot be read from restart file
-        Real n = 1. / (gam - 1.);
-        Real uc = m::sqrt(mdot / (2. * rs));
-        Real Vc = -m::sqrt(m::pow(uc, 2) / (1. - 3. * m::pow(uc, 2)));
-        Real Tc = -n * m::pow(Vc, 2) / ((n + 1.) * (n * m::pow(Vc, 2) - 1.));
-        Real C1 = uc * m::pow(rs, 2) * m::pow(Tc, n);
-        Real C2 = m::pow(1. + (1. + n) * Tc, 2) * (1. - 2. * mdot / rs + m::pow(C1, 2) / (m::pow(rs, 4) * m::pow(Tc, 2 * n)));
-
-        GReal Xembed[GR_DIM];
-        G.coord_embed(k, j, i, Loci::center, Xembed);
-        GReal r = Xembed[1];
-  
-        // copy over smallest radius states
-        //Xtoindex(X, x1, x2, x3, length, iblocktemp, itemp, jtemp, ktemp, del);
-        iblocktemp=0; // assuming always this block contains smallest radii?
-        itemp = fnghost; // in order to copy over the physical region, not the ghost region
-        // (02/08/23) instead in order to set the vacuum homogeneous instead of having theta phi dependence, set j and k values
-        jtemp = fnghost;
-        ktemp = fnghost * (length[3] > 1);
-        if (vacuum_logrho !=0 && vacuum_log_u_over_rho !=0) {
-            rho_temp = m::pow(10.,vacuum_logrho);
-            u_temp = m::pow(10.,vacuum_log_u_over_rho) * rho_temp;
-        } else {
+        // same as Bondi (06/13/23)
+        get_prim_bondi(G, coords, P, m_p, gam, bl, ks, mdot, rs, 0., uphi, k, j, i);
+    }
+    // HyerinTODO: if fname_fill exists and smaller.
+    else {
+        if ((should_fill) && ((X[1]>fx1max)||(X[1]<fx1min))) { // fill with the fname_fill
+            //Xtoindex(X, &(x1_fill[0]), &(x2_fill[0]), &(x3_fill[0]), length, iblocktemp, itemp, jtemp, ktemp, del);
+            Xtoindex(X, x1_fill, x2_fill, x3_fill, length, iblocktemp, itemp, jtemp, ktemp, del);
+            rho_temp = rho_fill(iblocktemp,ktemp,jtemp,itemp);
+            u_temp = u_fill(iblocktemp,ktemp,jtemp,itemp);
+            VLOOP u_prim[v] = uvec_fill(v,iblocktemp,ktemp,jtemp,itemp);
+            //if (include_B) VLOOP B_prim[v] = B_fill(v,iblocktemp,ktemp,jtemp,itemp);
+        }
+        else { 
+            Xtoindex(X, x1, x2, x3, length, iblocktemp, itemp, jtemp, ktemp, del);
             rho_temp = rho(iblocktemp,ktemp,jtemp,itemp);
             u_temp = u(iblocktemp,ktemp,jtemp,itemp);
+            VLOOP u_prim[v] = uvec(v,iblocktemp,ktemp,jtemp,itemp);
+            //if (include_B) VLOOP B_prim[v] = B(v,iblocktemp,ktemp,jtemp,itemp);
         }
-        Real T = get_T(r, C1, C2, n, rs);
-
-        Real ur = -C1 / (m::pow(T, n) * m::pow(r, 2));
-        Real ucon_bl[GR_DIM] = {0, ur, 0, 0};
-        ucon_bl[3]=uphi*m::pow(r,-3./2.); // (04/13/23) a fraction of the kepler 
-        convert_to_utwiddle(G,coords,bl,ks,k,j,i,ucon_bl,u_prim);
-        
-   }
-    // HyerinTODO: if fname_fill exists and smaller.
-    else if ((should_fill) && ((X[1]>fx1max)||(X[1]<fx1min))) { // fill with the fname_fill
-        //Xtoindex(X, &(x1_fill[0]), &(x2_fill[0]), &(x3_fill[0]), length, iblocktemp, itemp, jtemp, ktemp, del);
-        Xtoindex(X, x1_fill, x2_fill, x3_fill, length, iblocktemp, itemp, jtemp, ktemp, del);
-        rho_temp = rho_fill(iblocktemp,ktemp,jtemp,itemp);
-        u_temp = u_fill(iblocktemp,ktemp,jtemp,itemp);
-        VLOOP u_prim[v] = uvec_fill(v,iblocktemp,ktemp,jtemp,itemp);
-        //if (include_B) VLOOP B_prim[v] = B_fill(v,iblocktemp,ktemp,jtemp,itemp);
+        P(m_p.RHO, k, j, i) = rho_temp;
+        P(m_p.UU, k, j, i) = u_temp;
+        P(m_p.U1, k, j, i) = u_prim[0]; 
+        P(m_p.U2, k, j, i) = u_prim[1];
+        P(m_p.U3, k, j, i) = u_prim[2];
     }
-    else { 
-        Xtoindex(X, x1, x2, x3, length, iblocktemp, itemp, jtemp, ktemp, del);
-        rho_temp = rho(iblocktemp,ktemp,jtemp,itemp);
-        u_temp = u(iblocktemp,ktemp,jtemp,itemp);
-        VLOOP u_prim[v] = uvec(v,iblocktemp,ktemp,jtemp,itemp);
-        //if (include_B) VLOOP B_prim[v] = B(v,iblocktemp,ktemp,jtemp,itemp);
-    }
-    P(m_p.RHO, k, j, i) = rho_temp;
-    P(m_p.UU, k, j, i) = u_temp;
-    P(m_p.U1, k, j, i) = u_prim[0]; 
-    P(m_p.U2, k, j, i) = u_prim[1];
-    P(m_p.U3, k, j, i) = u_prim[2];
 
 }
 
@@ -204,7 +176,6 @@ KOKKOS_INLINE_FUNCTION void get_B_restart_kharma(const GRCoordinates& G, const C
     // Interpolate the value at this location from the global grid
     if ((!should_fill) && (X[1]<fx1min)) {// if cannot be read from restart file
         // do nothing. just use the initialization from SeedBField
-        //VLOOP B_prim[v] = P(m_p.B1 + v, k, j, i);
    }
     else if ((should_fill) && ((X[1]>fx1max)||(X[1]<fx1min))) { // fill with the fname_fill
         Xtoindex(X, x1_fill, x2_fill, x3_fill, length, iblocktemp, itemp, jtemp, ktemp, del);
