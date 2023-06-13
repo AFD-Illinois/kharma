@@ -69,7 +69,7 @@ bsq_over_u_max = 1e20
 u_over_rho_max = 100
 # Strict sigma, gamma
 bsq_over_rho_max = 100
-gamma_max = 10
+gamma_max = 3 #10
 # Does not affect these floors
 adjust_k = 0
 
