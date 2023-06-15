@@ -130,7 +130,7 @@ KOKKOS_INLINE_FUNCTION void get_prim_restart_kharma(const GRCoordinates& G, cons
     // Interpolate the value at this location from the global grid
     if ((!should_fill) && (X[1]<fx1min)) {// if cannot be read from restart file
         // same as Bondi (06/13/23)
-        get_prim_bondi(G, coords, P, m_p, gam, bl, ks, mdot, rs, 0., uphi, k, j, i);
+        get_prim_bondi(G, coords, P, m_p, gam, bl, ks, mdot, rs, rs*rs*100, uphi, k, j, i); // get the solution at r_b*100
     }
     // HyerinTODO: if fname_fill exists and smaller.
     else {

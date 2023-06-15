@@ -78,7 +78,7 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
     // Require and load what we need if necessary
     Real a, rin, rmax, gam, kappa, rho_norm;
     Real tilt = 0; // Needs to be initialized
-    Real b10 = 0, b20 = 0, b30 = 0, bz = 0;
+    Real b10 = 0, b20 = 0, b30 = 0, bz = 0, rb=100000.;
     switch (b_field_flag)
     {
     case BSeedType::constant:
@@ -111,6 +111,10 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
         break;
     case BSeedType::vertical:
         bz = pin->GetOrAddReal("b_field", "bz", 0.);
+        break;
+    case BSeedType::r1s2:
+        bz = pin->GetOrAddReal("b_field", "bz", 0.);
+        rb = m::pow(pin->GetOrAddReal("bondi", "rs", m::sqrt(1e5)),2.);
         break;
     }
 
@@ -231,6 +235,19 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
                 //q = bz * r * m::sin(th) / 2.;
                 q = bz * m::pow(r * m::sin(th),2.) / 2.;
                 break;
+            case BSeedType::r1s2:
+                // Hyerin (06/13/23) a vertical-ish field with 1/r*sqrt(1+3cos^th) strength
+                // to make it continuous to pure uniform vertical field at bondi radius, use modified bz' = bz*rb/2
+                {
+                    //Real x = Xnative[1] - m::log(rb);
+                    //Real tanh = (m::exp(x) - m::exp(-x)) / (m::exp(x) + m::exp(-x));
+                    //Real sw = 0.5 * (1. + tanh); // a switch. if r<rb, 0, else 1
+                    //Real q_1 = bz * m::pow(r * m::sin(th),2.) / 2.; // uniform vertical field
+                    //Real q_2 = (bz * rb /2.) * r * m::pow(m::sin(th),2.); // new solution
+                    //q = q_1*sw + q_2*(1.-sw);
+                    q = bz * (r * r / 2. + r * rb) * m::pow(m::sin(th),2.); // new solution
+                }
+                break;
             default:
                 // This shouldn't be reached. Squawk here?
                 break;
@@ -261,7 +278,6 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
                 VLOOP A(v, k, j, i) = A_tilt_lower[1+v];
             } else if (bz != 0.0) {
                 // Hyerin (04/19/23) transforming the vector to native
-                //printf("HYERIN: for vertical field, transforming A vector to native\n");
                 const double A_embed[GR_DIM] = {0., 0., 0., q};
                 double A_native[GR_DIM] = {0};
                 G.coords.cov_vec_to_native(Xnative, A_embed, A_native);

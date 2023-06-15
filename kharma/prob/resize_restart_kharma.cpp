@@ -62,6 +62,7 @@ void ReadKharmaRestartHeader(std::string fname, std::unique_ptr<ParameterInput>&
 {
     bool use_dt = pin->GetOrAddBoolean("resize_restart", "use_dt", true);
     bool use_tf = pin->GetOrAddBoolean("resize_restart", "use_tf", false);
+    bool use_ti = pin->GetOrAddBoolean("resize_restart", "use_ti", true);
 
     // Read input from restart file 
     // (from external/parthenon/src/parthenon_manager.cpp)
@@ -117,7 +118,9 @@ void ReadKharmaRestartHeader(std::string fname, std::unique_ptr<ParameterInput>&
     //int ncycle = restartReader->GetAttr<int>("Info", "NCycle");
 
     pin->SetReal("GRMHD", "gamma", gam);
-    pin->SetReal("parthenon/time", "start_time", tNow);
+    if (use_ti) {
+        pin->SetReal("parthenon/time", "start_time", tNow);
+    }
     if (use_dt) {
         pin->SetReal("parthenon/time", "dt", dt);
     }

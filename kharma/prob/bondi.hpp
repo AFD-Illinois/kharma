@@ -145,13 +145,23 @@ KOKKOS_INLINE_FUNCTION void get_prim_bondi(const GRCoordinates& G, const Coordin
 
     Real T = get_T(r, C1, C2, n, rs);
     Real ur = -C1 / (m::pow(T, n) * m::pow(r, 2));
-    Real rho = m::pow(T, n);
-    Real u = rho * T * n;
 
     // Set u^t to make u^r a 4-vector
     Real ucon_bl[GR_DIM] = {0, ur, 0, 0};
+
+    // values at infinity (obtained by putting r = rshell)
+    Real rho, u, rho0, T0, u0;
+    T0 = get_T(r_shell, C1, C2, n, rs);
+    rho0 = m::pow(T0, n);
+    u0 = rho0 * T0 * n;
+
+    Real rb = rs * rs; // Bondi radius
+    // interpolation between inner and outer regimes
+    rho = rho0 * (r + rb) / r;
+    //T = T0 * (r + rb) / r; // use the same analytic temperature solution since T already goes like ~1/r
+    u = rho * T * n;
+
     ucon_bl[3]=uphi*m::pow(r,-3./2.); // (04/13/23) a fraction of the kepler //*m::sin(th); // 04/04/23 set it to some small angular velocity. smallest at the poles
-    //}
     Real gcov_bl[GR_DIM][GR_DIM];
     bl.gcov_embed(Xembed, gcov_bl);
     set_ut(gcov_bl, ucon_bl);
