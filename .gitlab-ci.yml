@@ -1,5 +1,5 @@
 
-defaults:
+default:
   # Always keep logs and plots.  Results should be printed to console!
   artifacts:
     when: always
