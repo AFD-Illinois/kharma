@@ -9,15 +9,15 @@ default:
 
 trigger_darwin:
   trigger:
-    include: script/ci/darwin.yml
+    include: scripts/ci/darwin.yml
 
 trigger_nvhpc:
   trigger:
-    include: script/ci/nvhpc.yml
+    include: scripts/ci/nvhpc.yml
 
 trigger_cpu:
   trigger:
-    include: script/ci/cpu.yml
+    include: scripts/ci/cpu.yml
     strategy: depend
 
 # TODO trigger_cpu w/intel or similar container
