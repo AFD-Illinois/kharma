@@ -58,7 +58,6 @@ build:
 
 #Run all tests in parallel
 tests:
-  extends: .default-rules
   stage: tests
   script:
     - cd tests/$TEST
