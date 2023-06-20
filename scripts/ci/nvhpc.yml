@@ -18,7 +18,7 @@ variables:
 ### DEFAULT TEST BEHAVIOR ###
 default:
   tags:
-    - gpu
+    - public-kharma-gpu
   # Be default: install pyharm, then run test in cwd
   # For new tests, write one run.sh script which runs/verifies
   # interleaved, and prints a summary of results.
