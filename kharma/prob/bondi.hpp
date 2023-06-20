@@ -147,6 +147,7 @@ KOKKOS_INLINE_FUNCTION void get_prim_bondi(const GRCoordinates& G, const Coordin
     Real ur = -C1 / (m::pow(T, n) * m::pow(r, 2));
 
     // Set u^t to make u^r a 4-vector
+    ur = 0.;
     Real ucon_bl[GR_DIM] = {0, ur, 0, 0};
 
     // values at infinity (obtained by putting r = rshell)
