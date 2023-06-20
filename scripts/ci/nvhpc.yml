@@ -4,10 +4,10 @@
 # Build on Nvidia image.
 # Can pretty easily change this out, with changes to build
 # Someday we'll build & push a KHARMA image, then test that
-image: nvcr.io/nvidia/nvhpc:23.1-devel-cuda12.0-rockylinux8
+image: nvcr.io/nvidia/nvhpc:23.5-devel-cuda12.1-rockylinux8
 
 variables:
-  OMP_NUM_THREADS: 28
+  OMP_NUM_THREADS: 8
   OMP_PROC_BIND: "false"
   MPI_EXE: mpirun
   MPI_NUM_PROCS: 2
@@ -17,6 +17,8 @@ variables:
 
 ### DEFAULT TEST BEHAVIOR ###
 default:
+  tags:
+    - gpu
   # Be default: install pyharm, then run test in cwd
   # For new tests, write one run.sh script which runs/verifies
   # interleaved, and prints a summary of results.
@@ -31,13 +33,6 @@ default:
     - cd /home/pyharm
     - pip install --user .
     - cd -
-
-  # Always keep logs and plots.  Results should be printed to console!
-  artifacts:
-    when: always
-    paths:
-      - tests/*/*.png
-      - tests/*/*.txt
 
 # Tests can be executed in parallel,
 # but be careful about GPU arch
@@ -61,56 +56,13 @@ build:
       - kharma.*
       - make_args
 
-bondi:
+#Run all tests in parallel
+tests:
+  extends: .default-rules
   stage: tests
   script:
-    - cd tests/bondi
+    - cd tests/$TEST
     - ./run.sh
-
-mhdmodes:
-  stage: tests
-  script:
-    - cd tests/mhdmodes
-    - ./run.sh
-
-emhdmodes:
-  stage: tests
-  script:
-    - cd tests/emhdmodes
-    - ./run.sh
-
-noh:
-  stage: tests
-  script:
-    - cd tests/noh
-    - ./run.sh
-
-bz_monopole:
-  stage: tests
-  script:
-    - cd tests/bz_monopole
-    - ./run.sh
-
-tilt_init:
-  stage: tests
-  script:
-    - cd tests/tilt_init
-    - ./run.sh
-
-torus_sanity:
-  stage: tests
-  script:
-    - cd tests/torus_sanity
-    - ./run.sh
-
-restart:
-  stage: tests
-  script:
-    - cd tests/restart
-    - ./run.sh
-
-reinit:
-  stage: tests
-  script:
-    - cd tests/reinit
-    - ./run.sh
+  parallel:
+    matrix:
+      - TEST: [bondi, bondi_viscous, bz_monopole, emhdmodes, mhdmodes, noh, regrid, reinit, restart, tilt_init, torus_sanity]
