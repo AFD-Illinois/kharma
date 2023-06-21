@@ -46,11 +46,11 @@ build:
     HOST_ARCH: AMDAVX
   before_script:
     - dnf -y groupinstall "Development Tools"
-    - dnf -y install hostname environment-modules gcc-c++ cmake git mpich-devel hdf5-mpich-devel hdf5-mpich-static fftw-devel
+    - dnf -y install hostname environment-modules cmake mpich-devel fftw-devel
     - source /etc/profile
     - module load mpi/mpich-x86_64
   script:
-    - ./make.sh clean
+    - ./make.sh clean hdf5
   artifacts:
     paths:
       - kharma.*
