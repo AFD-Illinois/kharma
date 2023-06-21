@@ -19,6 +19,8 @@ default:
   # For new tests, write one run.sh script which runs/verifies
   # interleaved, and prints a summary of results.
   before_script:
+    - dnf -y install hostname environment-modules mpich fftw
+    - source /etc/profile
     - module load mpi/mpich-x86_64
     - export PATH="$HOME/.local/bin:$PATH"
     - wget -O Miniforge3.sh "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-$(uname)-$(uname -m).sh"
@@ -44,11 +46,11 @@ build:
     HOST_ARCH: AMDAVX
   before_script:
     - dnf -y groupinstall "Development Tools"
-    - dnf -y install hostname gcc-c++ cmake git mpich-devel fftw-devel
+    - dnf -y install hostname environment-modules gcc-c++ cmake git mpich-devel hdf5-mpich-devel hdf5-mpich-static fftw-devel
+    - source /etc/profile
     - module load mpi/mpich-x86_64
   script:
-    - export PREFIX_PATH=$PWD/external/hdf5
-    - ./make.sh clean hdf5
+    - ./make.sh clean
   artifacts:
     paths:
       - kharma.*
