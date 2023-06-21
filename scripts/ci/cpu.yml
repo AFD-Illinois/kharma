@@ -19,7 +19,7 @@ default:
   # For new tests, write one run.sh script which runs/verifies
   # interleaved, and prints a summary of results.
   before_script:
-    - dnf -y install hostname environment-modules mpich fftw
+    - dnf -y install hostname environment-modules mpich fftw wget
     - source /etc/profile
     - module load mpi/mpich-x86_64
     - export PATH="$HOME/.local/bin:$PATH"
