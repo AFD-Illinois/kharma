@@ -19,7 +19,9 @@ default:
   # For new tests, write one run.sh script which runs/verifies
   # interleaved, and prints a summary of results.
   before_script:
-    - module load gnu mpich fftw3 || dnf -y install mpich-devel fftw-devel && module load mpi/mpich-x86_64
+    - dnf -y groupinstall "Development Tools"
+    - dnf -y install gcc-c++ cmake git mpich-devel fftw-devel
+    - module load mpi/mpich-x86_64
     - export PATH="$HOME/.local/bin:$PATH"
     - wget -O Miniforge3.sh "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-$(uname)-$(uname -m).sh"
     - bash Miniforge3.sh -b -p "/home/conda"
