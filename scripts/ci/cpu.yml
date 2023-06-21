@@ -3,7 +3,7 @@
 image: quay.io/centos/centos:stream9
 
 variables:
-  OMP_NUM_THREADS: 8
+  OMP_NUM_THREADS: 4
   OMP_PROC_BIND: "false"
   MPI_EXE: mpirun
   MPI_NUM_PROCS: 2
@@ -19,8 +19,6 @@ default:
   # For new tests, write one run.sh script which runs/verifies
   # interleaved, and prints a summary of results.
   before_script:
-    - dnf -y groupinstall "Development Tools"
-    - dnf -y install gcc-c++ cmake git mpich-devel fftw-devel
     - module load mpi/mpich-x86_64
     - export PATH="$HOME/.local/bin:$PATH"
     - wget -O Miniforge3.sh "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-$(uname)-$(uname -m).sh"
@@ -33,8 +31,7 @@ default:
     - pip install --user .
     - cd -
 
-# Tests can be executed in parallel,
-# but be careful about GPU arch
+# Tests can be executed in parallel
 stages:
   - build
   - tests
@@ -44,9 +41,11 @@ build:
   stage: build
   variables:
     NPROC: ""
-    HOST_ARCH: HSW
+    HOST_ARCH: AMDAVX
   before_script:
-    - echo "Skipping pyharm install in build."
+    - dnf -y groupinstall "Development Tools"
+    - dnf -y install hostname gcc-c++ cmake git mpich-devel fftw-devel
+    - module load mpi/mpich-x86_64
   script:
     - export PREFIX_PATH=$PWD/external/hdf5
     - ./make.sh clean hdf5
