@@ -44,8 +44,8 @@ stages:
 build:
   stage: build
   variables:
-    NPROC: ""
-    HOST_ARCH: HSW
+    NPROC: 8
+    HOST_ARCH: NATIVE
   before_script:
     - echo "Skipping pyharm install in build."
   script:

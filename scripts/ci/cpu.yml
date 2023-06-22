@@ -42,8 +42,8 @@ stages:
 build:
   stage: build
   variables:
-    NPROC: ""
-    HOST_ARCH: AMDAVX
+    NPROC: 4
+    HOST_ARCH: NATIVE
   before_script:
     - dnf -y groupinstall "Development Tools"
     - dnf -y install hostname environment-modules cmake mpich-devel fftw-devel
