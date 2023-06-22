@@ -6,7 +6,10 @@ then
   HOST_ARCH=ZEN3
   DEVICE_ARCH=VEGA90A
 
+  MPI_EXE=srun
+
   if [[ $ARGS == *"hip"* ]]; then
+    # HIP compile for AMD GPUs
     if [[ $ARGS == *"hipcc"* ]]; then
       module load PrgEnv-cray amd-mixed
       CXX_NATIVE=hipcc
@@ -18,9 +21,14 @@ then
       C_NATIVE=cc
       export CXXFLAGS="-fopenmp -mllvm -amdgpu-early-inline-all=true -mllvm -amdgpu-function-calls=false $CXXFLAGS"
     fi
-    MPI_NUM_PROCS=4
+
+    # Runtime
+    MPI_NUM_PROCS=8
+    MPI_EXTRA_ARGS="-c2 --gpus-per-node=8 --gpu-bind=closest"
+    export MPICH_SMP_SINGLE_COPY_MODE=NONE
   else
     # CPU Compile
+    # TODO -c etc etc
     MPI_NUM_PROCS=1
   fi
 fi

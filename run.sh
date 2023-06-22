@@ -34,10 +34,12 @@ export CUDA_LAUNCH_BLOCKING=0
 
 # Choose the kharma binary from compiled options in order of preference
 KHARMA_DIR="$(dirname "${BASH_SOURCE[0]}")"
-if [ -f $KHARMA_DIR/kharma.cuda ]; then
-  EXE_NAME=kharma.cuda
+if [ -f $KHARMA_DIR/kharma.hip ]; then
+  EXE_NAME=kharma.hip
 elif [ -f $KHARMA_DIR/kharma.sycl ]; then
   EXE_NAME=kharma.sycl
+elif [ -f $KHARMA_DIR/kharma.cuda ]; then
+  EXE_NAME=kharma.cuda
 elif [ -f $KHARMA_DIR/kharma.host ]; then
   EXE_NAME=kharma.host
 else
@@ -75,5 +77,6 @@ if [ -z "$MPI_EXE" ]; then
   exec $KHARMA_DIR/$EXE_NAME "$@"
 else
   echo "Running $MPI_EXE -n $MPI_NUM_PROCS $MPI_EXTRA_ARGS $KHARMA_DIR/$EXE_NAME $@"
-  exec $MPI_EXE -n $MPI_NUM_PROCS $MPI_EXTRA_ARGS $KHARMA_DIR/$EXE_NAME "$@"
+  #rocprof --stats --timestamp on exec
+  $MPI_EXE -n $MPI_NUM_PROCS $MPI_EXTRA_ARGS $KHARMA_DIR/$EXE_NAME "$@"
 fi
