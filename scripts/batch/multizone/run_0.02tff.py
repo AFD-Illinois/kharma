@@ -136,7 +136,7 @@ def run_multizone(**kwargs):
         args['bondi/rs'] = np.sqrt(float(kwargs['r_b']))
 
         # B field additions
-        if kwargs['bz'] != 0.0:
+        if 1:#kwargs['bz'] != 0.0:
             # Set a field to initialize with 
             args['b_field/type'] = "r1s2" #"vertical"
             args['b_field/solver'] = "flux_ct"
