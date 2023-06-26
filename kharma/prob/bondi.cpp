@@ -49,6 +49,7 @@ TaskStatus InitializeBondi(MeshBlockData<Real> *rc, ParameterInput *pin)
     const Real r_shell = pin->GetOrAddReal("bondi", "r_shell", 0.); 
     const bool use_gizmo = pin->GetOrAddBoolean("bondi", "use_gizmo", false);
     auto datfn = pin->GetOrAddString("gizmo_shell", "datfn", "none");
+    const Real ur_frac = pin->GetOrAddReal("bondi", "ur_frac", 1.); 
     const Real uphi = pin->GetOrAddReal("bondi", "uphi", 0.); 
 
     // Add these to package properties, since they continue to be needed on boundaries
@@ -62,6 +63,8 @@ TaskStatus InitializeBondi(MeshBlockData<Real> *rc, ParameterInput *pin)
         pmb->packages.Get("GRMHD")->AddParam<bool>("use_gizmo", use_gizmo);
     if(! (pmb->packages.Get("GRMHD")->AllParams().hasKey("gizmo_dat")))
         pmb->packages.Get("GRMHD")->AddParam<std::string>("gizmo_dat", datfn);
+    if(! (pmb->packages.Get("GRMHD")->AllParams().hasKey("ur_frac")))
+        pmb->packages.Get("GRMHD")->AddParam<Real>("ur_frac", ur_frac);
     if(! (pmb->packages.Get("GRMHD")->AllParams().hasKey("uphi")))
         pmb->packages.Get("GRMHD")->AddParam<Real>("uphi", uphi);
 
@@ -88,6 +91,7 @@ TaskStatus SetBondi(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     const Real r_shell = pmb->packages.Get("GRMHD")->Param<Real>("r_shell");
     const bool use_gizmo = pmb->packages.Get("GRMHD")->Param<bool>("use_gizmo");
     auto datfn = pmb->packages.Get("GRMHD")->Param<std::string>("gizmo_dat");
+    const Real ur_frac = pmb->packages.Get("GRMHD")->Param<Real>("ur_frac");
     const Real uphi = pmb->packages.Get("GRMHD")->Param<Real>("uphi");
 
     // Just the X1 right boundary
@@ -264,7 +268,7 @@ TaskStatus SetBondi(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     else if (! (use_gizmo)) {
         pmb->par_for("bondi_boundary", kb_e.s, kb_e.e, jb_e.s, jb_e.e, ibs, ibe,
             KOKKOS_LAMBDA_3D {
-                get_prim_bondi(G, cs, P, m_p, gam, bl, ks, mdot, rs, r_shell, uphi, k, j, i);
+                get_prim_bondi(G, cs, P, m_p, gam, bl, ks, mdot, rs, r_shell, ur_frac, uphi, k, j, i);
                 // TODO all flux
                 GRMHD::p_to_u(G, P, m_p, gam, k, j, i, U, m_u);
             }

@@ -195,8 +195,8 @@ def run_multizone(**kwargs):
         args['parthenon/time/tlim'] = kwargs['start_time'] + runtime
 
         # Output timing (TODO make options)
-        args['parthenon/output0/dt'] = max(int(runtime/4.), 1)
-        args['parthenon/output1/dt'] = max(int(runtime/2.), 1)
+        args['parthenon/output0/dt'] = max((runtime/4.), 1e-7)
+        args['parthenon/output1/dt'] = max((runtime/2.), 1e-7)
         args['parthenon/output2/dt'] = runtime/10 #0.
 
         # Start any future run from this point

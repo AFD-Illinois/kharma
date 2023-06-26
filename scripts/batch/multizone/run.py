@@ -138,7 +138,7 @@ def run_multizone(**kwargs):
         # B field additions
         if kwargs['bz'] != 0.0:
             # Set a field to initialize with 
-            args['b_field/type'] = "vertical"
+            args['b_field/type'] = "r1s2" #"vertical"
             args['b_field/solver'] = "flux_ct"
             args['b_field/bz'] = kwargs['bz']
             # Compress coordinates to save time
@@ -189,15 +189,15 @@ def run_multizone(**kwargs):
                 runtime = calc_runtime(r_out, r_b)
             # B field runs use half this
             if kwargs['bz'] != 0.0:
-                runtime /= 10 # 2
+                runtime /= 50 # 2
         else:
             runtime = float(kwargs['tlim'])
         args['parthenon/time/tlim'] = kwargs['start_time'] + runtime
 
         # Output timing (TODO make options)
-        args['parthenon/output0/dt'] = max(int(runtime/10.), 1)
-        args['parthenon/output1/dt'] = max(int(runtime/5.), 1)
-        args['parthenon/output2/dt'] = runtime/100.
+        args['parthenon/output0/dt'] = max((runtime/4.), 1e-7)
+        args['parthenon/output1/dt'] = max((runtime/2.), 1e-7)
+        args['parthenon/output2/dt'] = runtime/10 #0.
 
         # Start any future run from this point
         kwargs['start_run'] = run_num

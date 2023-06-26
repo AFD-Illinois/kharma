@@ -163,6 +163,7 @@ TaskStatus ReadKharmaRestart(MeshBlockData<Real> *rc, ParameterInput *pin)
     const int nghost = pin->GetReal("parthenon/mesh", "restart_nghost");
     const bool ghost_zones = pin->GetBoolean("parthenon/mesh", "restart_ghostzones");
     auto fBfield = pin->GetOrAddString("b_field", "type", "none");
+    const Real ur_frac = pin->GetOrAddReal("bondi", "ur_frac", 1.); 
     const Real uphi = pin->GetOrAddReal("bondi", "uphi", 0.); 
     const Real vacuum_logrho = pin->GetOrAddReal("bondi", "vacuum_logrho", 0.);
     const Real vacuum_log_u_over_rho = pin->GetOrAddReal("bondi", "vacuum_log_u_over_rho", 0.);
@@ -202,6 +203,8 @@ TaskStatus ReadKharmaRestart(MeshBlockData<Real> *rc, ParameterInput *pin)
         pmb->packages.Get("GRMHD")->AddParam<bool>("rghostzones", ghost_zones);
     if(! (pmb->packages.Get("GRMHD")->AllParams().hasKey("b_field_type")))
         pmb->packages.Get("GRMHD")->AddParam<std::string>("b_field_type", fBfield);
+    if(! (pmb->packages.Get("GRMHD")->AllParams().hasKey("ur_frac")))
+        pmb->packages.Get("GRMHD")->AddParam<Real>("ur_frac", ur_frac);
     if(! (pmb->packages.Get("GRMHD")->AllParams().hasKey("uphi")))
         pmb->packages.Get("GRMHD")->AddParam<Real>("uphi", uphi);
     if(! (pmb->packages.Get("GRMHD")->AllParams().hasKey("vacuum_logrho")))
@@ -224,6 +227,7 @@ TaskStatus SetKharmaRestart(MeshBlockData<Real> *rc, IndexDomain domain, bool co
     // A placeholder to save the B fields for SeedBField
     GridVector B_Save;
     if (include_B) B_Save = rc->Get("B_Save").data;
+    const Real ur_frac = pmb->packages.Get("GRMHD")->Param<Real>("ur_frac");
     const Real uphi = pmb->packages.Get("GRMHD")->Param<Real>("uphi");
     const Real vacuum_logrho = pmb->packages.Get("GRMHD")->Param<Real>("vacuum_logrho");
     const Real vacuum_log_u_over_rho = pmb->packages.Get("GRMHD")->Param<Real>("vacuum_log_u_over_rho");
@@ -443,7 +447,7 @@ TaskStatus SetKharmaRestart(MeshBlockData<Real> *rc, IndexDomain domain, bool co
         pmb->par_for("copy_restart_state_kharma", ks, ke, js, je, is, ie,
             KOKKOS_LAMBDA_3D {
                 get_prim_restart_kharma(G, coords, P, m_p, blcoord,  kscoord, 
-                    fx1min, fx1max, fnghost, should_fill, is_spherical, gam, rs, mdot, uphi, length,
+                    fx1min, fx1max, fnghost, should_fill, is_spherical, gam, rs, mdot, ur_frac, uphi, length,
                     x1_f_device, x2_f_device, x3_f_device, rho_f_device, u_f_device, uvec_f_device,
                     x1_fill_device, x2_fill_device, x3_fill_device, rho_fill_device, u_fill_device, uvec_fill_device,
                     vacuum_logrho, vacuum_log_u_over_rho,

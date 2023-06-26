@@ -123,7 +123,7 @@ KOKKOS_INLINE_FUNCTION Real get_T(const GReal r, const Real C1, const Real C2, c
  */
 KOKKOS_INLINE_FUNCTION void get_prim_bondi(const GRCoordinates& G, const CoordinateEmbedding& coords, const VariablePack<Real>& P, const VarMap& m_p,
                                            const Real& gam, const SphBLCoords& bl,  const SphKSCoords& ks, 
-                                           const Real mdot, const Real rs, const Real r_shell, const Real uphi, const int& k, const int& j, const int& i)
+                                           const Real mdot, const Real rs, const Real r_shell, const Real ur_frac, const Real uphi, const int& k, const int& j, const int& i)
 {
     // Solution constants
     // Ideally these could be cached but preformance isn't an issue here
@@ -144,10 +144,9 @@ KOKKOS_INLINE_FUNCTION void get_prim_bondi(const GRCoordinates& G, const Coordin
     if (ks.a > 0.1 && r < 2) return;
 
     Real T = get_T(r, C1, C2, n, rs);
-    Real ur = -C1 / (m::pow(T, n) * m::pow(r, 2));
+    Real ur = -C1 / (m::pow(T, n) * m::pow(r, 2)) * ur_frac;
 
     // Set u^t to make u^r a 4-vector
-    ur = 0.;
     Real ucon_bl[GR_DIM] = {0, ur, 0, 0};
 
     // values at infinity (obtained by putting r = rshell)
