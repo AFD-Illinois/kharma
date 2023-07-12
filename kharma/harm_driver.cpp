@@ -85,8 +85,11 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
             for (int i = 1; i < integrator->nstages; i++)
                 pmb->meshblock_data.Add(stage_name[i], base);
             // At the end of the step, updating "sc1" updates the base
-            // So we have to keep a copy at the beginning to calculate jcon
+            // Declare a new container (no-op after the first step)
             pmb->meshblock_data.Add("preserve", base);
+            // And actually copy the data.
+            Update::WeightedSumData<MetadataFlag, MeshBlockData<Real>>({},
+                base.get(), base.get(), 1.0, 0.0, pmb->meshblock_data.Get("preserve").get());
         }
     }
 
