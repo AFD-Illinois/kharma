@@ -173,6 +173,7 @@ def run_multizone(**kwargs):
     if kwargs['parfile'] is None:
         kwargs['parfile'] = mz_dir+"/multizone.par"
 
+    stop = False
     # Iterate, starting with the default args and updating as we go
     for run_num in np.arange(kwargs['start_run'], kwargs['nruns']):
         # run times for each annulus
@@ -189,10 +190,15 @@ def run_multizone(**kwargs):
                 runtime = calc_runtime(r_out, r_b)
             # B field runs use half this
             if kwargs['bz'] != 0.0:
-                runtime /= 50 # 2
+                runtime /= np.power(base,3./2)*2
         else:
             runtime = float(kwargs['tlim'])
-        args['parthenon/time/tlim'] = kwargs['start_time'] + runtime
+
+        tlim = kwargs['start_time'] + runtime
+        tlim_max = 500.*np.power(r_b,3./2.)
+        if tlim > tlim_max:
+            stop = True
+        args['parthenon/time/tlim'] = tlim #min(kwargs['start_time'] + runtime,10.*np.power(r_b,3./2))
 
         # Output timing (TODO make options)
         args['parthenon/output0/dt'] = max((runtime/4.), 1e-7)
@@ -229,6 +235,9 @@ def run_multizone(**kwargs):
         if ret_obj.returncode != 0:
             print("KHARMA returned error: {}. Exiting.".format(ret_obj.returncode))
             exit(-1)
+        if stop:
+            print("tlim max reached!")
+            break
 
         # Update parameters for the next pass
         # This updates both kwargs (start_time) and args (coordinates, dt, iteration #, fnames)
