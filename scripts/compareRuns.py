@@ -377,12 +377,12 @@ def _main():
     #ax = plot_Mdot_eta(dirtag, ax, **args)
 
     # 32^3
-    dirtag="071023_beta01"
+    dirtag="071323_beta01_64"
     args['avg']=True
     args['show_Bondi'] = False
     args['show_divisions'] = True
     args['color'] = 'g'
-    args['label']='32^3_'+dirtag[7:]
+    args['label']=dirtag[7:]
     #ax = plot_Mdot_eta(dirtag, ax, **args)
     compare_FE_slice(dirtag)
     #dirtag="061323_diffinit_better"
