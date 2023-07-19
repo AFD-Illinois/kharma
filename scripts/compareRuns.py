@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import glob
 import pyharm
 from pyharm.plots.plot_dumps import plot_xz
+import os #
 import pdb
 
 from make_plot import calc_Mdot, r_average, matplotlib_settings
@@ -31,11 +32,7 @@ def calc_Edot_EN(dump):
 def calc_Edot_KE(dump):
     return -pyharm.shell_sum(dump, 'FE_PAKE')
 
-def plot_Mdot_eta(dirtag, ax_passed=None, color='k', lw=1, marker=None, label=None, show_Bondi=False, show_divisions=False, avg=False):
-    if ax_passed is None:
-        fig,ax = plt.subplots(1,2,figsize=(16,6))
-    else:
-        ax = ax_passed
+def find_edge(dirtag):
     dirs=sorted(glob.glob("../data/"+dirtag+"/*[0-9][0-9][0-9][0-9][0-9]/"))
 
     # find the edge thru a backward search
@@ -46,11 +43,20 @@ def plot_Mdot_eta(dirtag, ax_passed=None, color='k', lw=1, marker=None, label=No
         if zone_num == 0 or zone_num == dump["nzone"]-1:
             edge_run = len(dirs)-1-i
             try:
-                edge_iter = dump["iteration"]
+                edge_iter = int(dump["iteration"])
             except:
-                edge_iter = np.maximum(np.ceil(edge_run/(dump["nzone"]-1)),1) 
+                edge_iter = int(np.maximum(np.ceil(edge_run/(dump["nzone"]-1)),1) )
             break
     print(dirtag+" edge run: ", edge_run, " edge_iter ", edge_iter)
+    return dirs, dump, edge_run, edge_iter
+
+def plot_Mdot_eta(dirtag, ax_passed=None, color='k', lw=1, marker=None, label=None, show_Bondi=False, show_divisions=False, avg=False):
+    if ax_passed is None:
+        fig,ax = plt.subplots(1,2,figsize=(16,6))
+    else:
+        ax = ax_passed
+
+    dirs, dump, edge_run, edge_iter = find_edge(dirtag)
     
     # run backwards nzone times from edge_run
     radii = np.array([])
@@ -88,10 +94,10 @@ def plot_Mdot_eta(dirtag, ax_passed=None, color='k', lw=1, marker=None, label=No
         r_zones=[None]*n_zones
         gdet_zones=[None]*n_zones
         
-        iteration = 1000 #edge_iter//2  # 
+        iteration = 2# edge_iter//2  # 1000 #
         for i in range(iteration*(n_zones-1)+1):
             files=sorted(glob.glob(dirs[edge_run-i]+"/*.phdf")) # HYERIN TEST rhdf -> phdf
-            for file_ in files[len(files)//2:]:  # only add last half
+            for file_ in files[len(files)//100:]:#2:]:  # only add last half
                 dump = pyharm.load_dump(file_,ghost_zones=False)
                 zone = get_zone_num(dump)
                 if Mdot_zones[zone] is None: Mdot_zones[zone] = calc_Mdot(dump) #1+ r_average(dump, dump["ucov"][0]) #
@@ -238,21 +244,8 @@ def plot_shell_summed(ax,dump,x,var,mask=None,color='k',lw=5,already_summed=Fals
 def compare_FE_slice(dirtag,avg=True):
     plt.rcParams.update({'font.size': 60})
     fig, ax = plt.subplots(4,3,figsize=(90,60),sharex=True, sharey='row', gridspec_kw={'height_ratios': [1, 4, 4, 1]})
-    dirs=sorted(glob.glob("../data/"+dirtag+"/*[0-9][0-9][0-9][0-9][0-9]/"))
-
-    # find the edge thru a backward search
-    for i, dr in enumerate(dirs[::-1]):
-        fname=sorted(glob.glob(dr+"*.rhdf"))[-1]
-        dump = pyharm.load_dump(fname,ghost_zones=False)
-        zone_num = get_zone_num(dump)
-        if zone_num == 0 or zone_num == dump["nzone"]-1:
-            edge_run = len(dirs)-1-i
-            try:
-                edge_iter = dump["iteration"]
-            except:
-                edge_iter = np.maximum(np.ceil(edge_run/(dump["nzone"]-1)),1) 
-            break
-    print(dirtag+" edge run: ", edge_run, " edge_iter ", edge_iter)
+    
+    dirs, dump, edge_run, edge_iter = find_edge(dirtag)
     
     # run backwards nzone times from edge_run
     radii = np.array([])
@@ -263,6 +256,13 @@ def compare_FE_slice(dirtag,avg=True):
     FE_adv = np.array([])
     FE_conv = np.array([])
     n_zones = dump["nzone"]
+    r_out = np.power(int(dump["base"]),n_zones+1)
+    if n_zones < 8:
+        vmin=-1e-2
+    else: vmin=-1e-3
+    if "onezone" in dirtag or "oz" in dirtag:
+        n_zones = 1
+        r_out = dump["r_out"]
     n_radii = len(dump["r1d"])
 
     FM_zones=[None]*n_zones
@@ -277,7 +277,7 @@ def compare_FE_slice(dirtag,avg=True):
     r_zones=[None]*n_zones
     dump_zones=[None]*n_zones
     
-    iteration = 100 #edge_iter//2  # 
+    iteration = 2000 #edge_iter//2  # 
     for i in range(iteration*(n_zones-1)+1):
         files=sorted(glob.glob(dirs[edge_run-i]+"/*.phdf")) # HYERIN TEST rhdf -> phdf
         for file_ in files[len(files)//2:]:  # only add last half
@@ -318,18 +318,11 @@ def compare_FE_slice(dirtag,avg=True):
         if zone > 0:
             mask[:int(n_radii/4)] = False
         dump = dump_zones[zone]
-        #gdet = dump["gdet"]
-        #FE_zones[zone] = (FE_zones[zone] * gdet)
-        #FE_Fl_zones[zone] = (FE_Fl_zones[zone] * gdet)
-        #FE_EN_zones[zone] = (FE_EN_zones[zone] * gdet)
-        #FE_KE_zones[zone] = (FE_KE_zones[zone] * gdet)
-        #FE_adv_zones[zone] = (FE_adv_zones[zone] * gdet)
-        #FE_conv_zones[zone] = (FE_conv_zones[zone] * gdet)
 
         # plot 
-        window = (np.log(2), np.log(1e8), 0,1)
-        vmin=-1e-3; vmax=-vmin; lw= 4
-        for i in [0,3]: ax[i,0].set_yscale('log'); ax[i,0].set_ylim([1e-6,1e-3])
+        window = (np.log(2), np.log(r_out), 0,1)
+        vmax=-vmin; lw= 4
+        for i in [0,3]: ax[i,0].set_yscale('log'); ax[i,0].set_ylim([1e-6,-vmin])
         Edot_net = np.squeeze(np.sum(FE_zones[zone] * dump['gdet'] * dump['dx2'] * dump['dx3'],axis=(1,2)))
         x = np.log(r_zones[zone])
         for ax_each in np.array([ax[0],ax[3]]).reshape(-1): plot_shell_summed(ax_each,dump,x,Edot_net,mask=mask, color='k',already_summed=True)
@@ -354,11 +347,88 @@ def compare_FE_slice(dirtag,avg=True):
     ax[2,2].set_title('FE_conv')
     fig.tight_layout()
     fig.suptitle(dirtag[7:]+" runs: {}-{}".format(edge_run-iteration*(n_zones-1),edge_run), y=1.02)
-    plt.savefig("./plots/FE_slice.png")
+    save_path="./plots/"+dirtag
+    if not os.path.exists(save_path):
+        os.makedirs(save_path)
+    savefig_name='/FE_slice.png'
+    plt.savefig(save_path+savefig_name,bbox_inches='tight')
+    plt.savefig("./plots/"+savefig_name,bbox_inches='tight') # make a copy here as well
+    
+def FE_adv_slice(dirtag,avg=True):
+    matplotlib_settings()
+    fig, ax = plt.subplots(1,3,figsize=(24,6),sharex=True, sharey=True)
+    
+    dirs, dump, edge_run, edge_iter = find_edge(dirtag)
+    
+    # run backwards nzone times from edge_run
+    radii = np.array([])
+    FE_adv = np.array([])
+    n_zones = dump["nzone"]
+    r_out = np.power(int(dump["base"]),n_zones+1)
+    if n_zones < 8:
+        vmin=-1e-2
+    else: vmin=-1e-3
+    if "onezone" in dirtag or "oz" in dirtag:
+        n_zones = 1
+        r_out = dump["r_out"]
+    n_radii = len(dump["r1d"])
 
+    FM_zones=[None]*n_zones
+    FE_adv_zones=[None]*n_zones
+    Be_nob_zones=[None]*n_zones
+    num_sum=[0]*n_zones
+    r_zones=[None]*n_zones
+    dump_zones=[None]*n_zones
+    
+    iteration = 200 #edge_iter//2  # 
+    for i in range(iteration*(n_zones-1)+1):
+        files=sorted(glob.glob(dirs[edge_run-i]+"/*.phdf")) # HYERIN TEST rhdf -> phdf
+        for file_ in files[len(files)//2:]:  # only add last half
+            dump = pyharm.load_dump(file_,ghost_zones=False)
+            zone = get_zone_num(dump)
+            if FM_zones[zone] is None: FM_zones[zone] = dump["FM"]
+            else: FM_zones[zone] += dump["FM"]
+            if Be_nob_zones[zone] is None: Be_nob_zones[zone] = dump["Be_nob"]
+            else: Be_nob_zones[zone] += dump["Be_nob"]
+            num_sum[zone]+=1
+            if r_zones[zone] is None:
+                r_zones[zone] = dump["r1d"]
+            if dump_zones[zone] is None:
+                dump_zones[zone] = dump
+    print(num_sum)
+    for zone in range(n_zones):
+        Be_nob_zones[zone] /= num_sum[zone]
+        FM_zones[zone] /= num_sum[zone]
+        FE_adv_zones[zone] = Be_nob_zones[zone]*FM_zones[zone] # advection
 
+        # masking
+        mask = np.full(n_radii, True, dtype=bool)
+        if zone < n_zones-1:
+            mask[-int(n_radii/4):] = False
+        if zone > 0:
+            mask[:int(n_radii/4)] = False
+        dump = dump_zones[zone]
+
+        # plot 
+        window = (np.log(2), np.log(r_out), 0,1)
+        vmax=-vmin; lw= 4
+        x = np.log(r_zones[zone])
+        plot_xz(ax[0], dump, FE_adv_zones[zone] * dump["gdet"] , native=True, symlog=True, vmin=vmin,vmax=vmax, cbar=0,shading='flat',window=window,average=avg, mask=mask)
+        plot_xz(ax[1], dump, Be_nob_zones[zone] , native=True, symlog=True, vmin=vmin,vmax=vmax, cbar=0,shading='flat',window=window,average=avg, mask=mask)
+        plot_xz(ax[2], dump, FM_zones[zone] * dump["gdet"] , native=True, symlog=True, vmin=vmin,vmax=vmax, cbar=0,shading='flat',window=window,average=avg, mask=mask)
 
     
+    ax[0].set_title('FE_adv')
+    ax[1].set_title('Be_nob')
+    ax[2].set_title(r'$\rho u^r \sqrt{-g}$')
+    fig.tight_layout()
+    fig.suptitle(dirtag[7:]+" runs: {}-{}".format(edge_run-iteration*(n_zones-1),edge_run), y=1.02)
+    save_path="./plots/"+dirtag
+    if not os.path.exists(save_path):
+        os.makedirs(save_path)
+    savefig_name='/FE_adv.png'
+    plt.savefig(save_path+savefig_name,bbox_inches='tight')
+    plt.savefig("./plots/"+savefig_name,bbox_inches='tight') # make a copy here as well
 
 def _main():
     fig, ax = plt.subplots(1,2,figsize=(16,6))
@@ -368,23 +438,27 @@ def _main():
     ### rB=1e5 runs
     # hydro
     #dirtag="bondi_multizone_030723_bondi_128^3"
-    #dirtag="062623_hd_ur0"
     #dirtag="bondi_multizone_052423_bondi_64^3_n8_noshock"
     #dirtag="bondi_multizone_041823_bondi_n8b8"
     #dirtag="bondi_multizone_052223_bondi_128^3_n8_nox3split"
     #dirtag="bondi_multizone_022823_bondi_new_coord_noffp"
+    #dirtag="062623_hd_ur0"
     #args['label']='HD'
     #ax = plot_Mdot_eta(dirtag, ax, **args)
 
     # 32^3
     dirtag="071023_beta01"
+    #dirtag="061623_ozrst"
+    #dirtag="062623_n3_tff"
+    #dirtag="071023_n3_beta01"
     args['avg']=True
     args['show_Bondi'] = False
     args['show_divisions'] = True
     args['color'] = 'g'
-    args['label']='32^3_'+dirtag[7:]
+    args['label'] = (dirtag.replace('bondi_multizone_',''))[7:]
     #ax = plot_Mdot_eta(dirtag, ax, **args)
-    compare_FE_slice(dirtag)
+    #compare_FE_slice(dirtag)
+    FE_adv_slice(dirtag)
     #dirtag="061323_diffinit_better"
     #ax = plot_Mdot_eta(dirtag, ax, **args)
 
@@ -448,7 +522,7 @@ def _main():
     """
 
 
-    plt.savefig('./plots/plot_Mdot.png',bbox_inches='tight')
+    #plt.savefig('./plots/plot_Mdot.png',bbox_inches='tight')
 
 if __name__ == "__main__":
     _main()
