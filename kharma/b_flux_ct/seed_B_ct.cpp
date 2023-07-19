@@ -116,6 +116,10 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
         bz = pin->GetOrAddReal("b_field", "bz", 0.);
         rb = m::pow(pin->GetOrAddReal("bondi", "rs", m::sqrt(1e5)),2.);
         break;
+    case BSeedType::r34s2:
+        bz = pin->GetOrAddReal("b_field", "bz", 0.);
+        rb = m::pow(pin->GetOrAddReal("bondi", "rs", m::sqrt(1e5)),2.);
+        break;
     }
 
     IndexDomain domain = IndexDomain::entire; //Hyerin: why interior?
@@ -245,7 +249,13 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
                     //Real q_1 = bz * m::pow(r * m::sin(th),2.) / 2.; // uniform vertical field
                     //Real q_2 = (bz * rb /2.) * r * m::pow(m::sin(th),2.); // new solution
                     //q = q_1*sw + q_2*(1.-sw);
-                    q = bz * (r * r / 2. + r * rb) * m::pow(m::sin(th),2.); // new solution
+                    q = bz * (r * r / 2. + r * rb / 2.) * m::pow(m::sin(th),2.); // new solution
+                }
+                break;
+            case BSeedType::r34s2:
+                // Hyerin (06/13/23) a vertical-ish field for Bondi initialization
+                {
+                    q = bz / 2. * (r * r + m::pow(r,3./4.) * m::pow(rb,5./4.)) * m::pow(m::sin(th),2.); // new solution
                 }
                 break;
             default:
