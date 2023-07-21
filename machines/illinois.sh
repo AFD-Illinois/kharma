@@ -22,10 +22,9 @@ elif [[ $HOST == *".astro.illinois.edu" ]]; then
   PREFIX_PATH="$SOURCE_DIR/external/hdf5"
 
   if [[ $ARGS == *"icc"* ]]; then
-    # Intel ICC
+    # Intel ICC ("classic")
     module purge
     source /opt/intel/oneapi/setvars.sh
-    # Use specifically the old compilers because the new stdlib is broken on BH
     C_NATIVE="icc"
     CXX_NATIVE="icpc"
     C_FLAGS="-diag-disable=10441"
@@ -38,14 +37,11 @@ elif [[ $HOST == *".astro.illinois.edu" ]]; then
     CXX_NATIVE="clang++"
 
   else
-    # GNU GCC
-    if [[ $HOST == "bh29"* ]]; then
-      # Older GCC has no flag for ZEN2
-      HOST_ARCH="ZEN"
-    fi
-    module load gnu hdf5 fftw3
-    # System HDF5 location
-    PREFIX_PATH="$MPI_DIR"
+    # GCC 7.5 is too old to compile KHARMA at all. Use new Intel compiler by default
+    module purge
+    source /opt/intel/oneapi/setvars.sh
+    C_NATIVE="icx"
+    CXX_NATIVE="icpx"
   fi
 fi
 # BH29 additions
