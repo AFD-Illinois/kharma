@@ -30,7 +30,7 @@
 DO_STRONG=true
 DO_WEAK=true
 
-KHARMA_DIR=~/kharma
+KHARMA_DIR=$(dirname "$(readlink -f "$0")")/../..
 
 # Global options
 export OMP_PROC_BIND=spread
@@ -38,7 +38,7 @@ export OMP_PLACES=threads
 
 # Strong scaling.  Possibly not optimal due to requiring cubic meshblocks
 if [[ $DO_STRONG == "true" ]]; then
-  for size in 256 512
+  for size in 256 512 1024
   do
     for tpn in 4
     do
