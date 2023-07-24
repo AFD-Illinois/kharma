@@ -127,9 +127,10 @@ class KHARMADriver : public MultiStageDriver {
          * Copy variables matching 'flags' from 'source' to 'dest'.
          * Mostly makes things easier to read.
          */
-        static TaskStatus Copy(std::vector<MetadataFlag> flags, MeshData<Real>* source, MeshData<Real>* dest)
+        template<typename T>
+        static TaskStatus Copy(std::vector<MetadataFlag> flags, T* source, T* dest)
         {
-            return Update::WeightedSumData<std::vector<MetadataFlag>, MeshData<Real>>(flags, source, source, 1., 0., dest);
+            return Update::WeightedSumData<std::vector<MetadataFlag>, T>(flags, source, source, 1., 0., dest);
         }
 
         /**
