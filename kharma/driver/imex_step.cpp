@@ -135,12 +135,11 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
         if (pmesh->multilevel)
             t_start_recv_flux = tl.AddTask(t_none, cb::StartReceiveFluxCorrections, md_sub_step_init);
 
-        for (int i = 0; i < blocks.size(); i++) {
-            auto &pmb = blocks[i];
-            auto &tl  = async_region2[i];
+        auto t_prim_source_first = t_start_recv_flux;
+        for (int j = 0; j < blocks.size(); j++) {
+            auto &pmb = blocks[j];
             auto &mbd_sub_step_init  = pmb->meshblock_data.Get(integrator->stage_name[stage-1]);
             //COOLING:
-            auto t_prim_source_first = t_start_recv_flux
             if(stage == 1){
                 t_prim_source_first = tl.AddTask(t_start_recv_flux, Packages::BlockApplyPrimSource, mbd_sub_step_init.get());
             }
