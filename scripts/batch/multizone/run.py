@@ -134,7 +134,7 @@ def run_multizone(**kwargs):
         args['bondi/vacuum_logrho'] = logrho
         args['bondi/vacuum_log_u_over_rho'] = log_u_over_rho
         args['bondi/rs'] = np.sqrt(float(kwargs['r_b']))
-        args['bondi/ur_frac'] = 0.
+        args['bondi/ur_frac'] = 0
 
         # B field additions
         if kwargs['bz'] != 0.0:
@@ -143,8 +143,14 @@ def run_multizone(**kwargs):
             args['b_field/solver'] = "flux_ct"
             args['b_field/bz'] = kwargs['bz']
             # Compress coordinates to save time
-            args['coordinates/transform'] = "mks"
-            args['coordinates/hslope'] = 0.3
+            if kwargs['nx1'] >= 128:
+                args['coordinates/transform'] = "fmks"
+                args['coordinates/mks_smooth'] = 0.
+                args['coordinates/poly_xt'] = 0.8
+                args['coordinates/poly_alpha'] = 16
+            else:
+                args['coordinates/transform'] = "mks"
+                args['coordinates/hslope'] = 0.3
             # Enable the floors
             args['floors/disable_floors'] = False
             # And modify a bunch of defaults

@@ -1,70 +1,54 @@
 #!/bin/bash
 # Admin stuff
-#SBATCH -J n3_onezone
+#SBATCH -J mz
 #SBATCH -t 160:00:00
 #SBATCH -N 1
-###SBATCH -n 4
-#SBATCH --gres=gpu:1 #4
+#SBATCH -n 4
+#SBATCH --gres=gpu:4
 #SBATCH -o "out-%j.txt"
 
 # Partition
-#SBATCH -p itc_gpu
-#SBATCH -w holygpu8a25206
+#SBATCH -p blackhole_gpu
+####SBATCH -w holygpu8a25105
 
-#SBATCH --mem=8G
+#SBATCH --exclusive
+#SBATCH --mem=0
+
+#SBATCH --mail-type=ALL
+#SBATCH --mail-user=hyerin.cho@cfa.harvard.edu
 
 PROB=bflux
-RES=64
+RES=128
 DIM=3
-NZONES=3
+NZONES=8
 BASE=8
-NRUNS=1
-RESTART=true
-ONEZONE=true
+NRUNS=99999
+RESTART=false #true #
 
 args=()
+
+source ~/venv3/bin/activate
+KHARMA_DIR=/n/holylfs05/LABS/bhi/Users/hyerincho/grmhd/kharma_fork
 
 # meshblocks
 args+=(" --nx1=$RES --nx2=$RES --nx1_mb=$RES")
 if [[ $DIM -gt 2 ]]; then
   args+=(" --nx2_mb=$(($RES/2)) --nx3=$RES --nx3_mb=$(($RES/2))")
+  #args+=(" --nx2_mb=$RES --nx3=$RES --nx3_mb=$RES")
 else
   args+=(" --nx2_mb=$RES --nx3=1 --nx3_mb=1")
 fi
 
 # common things
-args+=(" --nzones=$NZONES --base=$BASE --nruns=$NRUNS --spin=0.0 --nlim=$((100000*$RES*$RES/64/64))")
-#args+=(" --nzones=$NZONES --base=$BASE --nruns=$NRUNS --spin=0.0 --nlim=$((40000*$RES*$RES/64/64))")
+args+=(" --nzones=$NZONES --base=$BASE --nruns=$NRUNS --spin=0.0 --nlim=10000000")
 
-if [[ "$PROB" == *"bflux"* ]]; then
-  if [[ $NZONES -eq 8 ]]; then
-    bz=2e-8
-  elif [[ $NZONES -eq 4 ]]; then
-    bz=1e-8
-  elif [[ $NZONES -eq 3 ]]; then
-    bz=1e-4
-  else
-    bz=2e-8
-  fi
-  args+=(" --bz=$bz --kharma_bin=../kharma_faster_rst_fixed.cuda")
-fi
+bz=2e-7 #2e-8
+args+=(" --bz=$bz --kharma_bin=../kharma_diffbinit.cuda")
 
 if [[ $RESTART == "true" ]]; then
   args+=(" --restart")
 fi
 
-source ~/venv3/bin/activate
-KHARMA_DIR=/n/holylfs05/LABS/bhi/Users/hyerincho/grmhd/kharma_fork
-#HOST=$(hostname -f)
-#ARGS="clean trace cuda gcc10"
-#for machine in $KHARMA_DIR/machines/*.sh
-#do
-#  source $machine
-#done
-
-#export OMP_PROC_BIND=spread
-#export OMP_PLACES=threads
-#KOKKOS_MAP_DEVICE_ID_BY=mpi_rank
 
 # Everything is called from the supervising python script
 # No point in setting a walltime limit, this invokes KHARMA many times
