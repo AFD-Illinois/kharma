@@ -54,6 +54,7 @@
 #include "kelvin_helmholtz.hpp"
 #include "bz_monopole.hpp"
 #include "mhdmodes.hpp"
+#include "flat_space.hpp"
 #include "orszag_tang.hpp"
 #include "shock_tube.hpp"
 #include "gizmo.hpp"

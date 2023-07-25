@@ -109,8 +109,8 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     params.Add("do_heating", do_heating);
     //COOLING:
     if(do_cooling){
-        auto cpkg = pmb->packages.Get<KHARMAPackage>("Electrons");
-        cpkg->BlockApplyPrimSource = ApplyElectronCooling;
+        //auto cpkg = pmb->packages.Get<KHARMAPackage>("Electrons");
+        pkg->BlockApplyPrimSource = ApplyElectronCooling;
     }
 
     // Parse various mass and density units to set the different cooling rates
@@ -447,7 +447,7 @@ TaskStatus ApplyElectronCooling(MeshBlockData<Real> *rc){
     auto pmb = rc->GetBlockPointer();
     const Real game = pmb->packages.Get("Electrons")->Param<Real>("gamma_e");
     const Real dt = pmb->packages.Get("Globals")->Param<Real>("dt_last");
-    double tau = 5.
+    double tau = 5.;
 
     const IndexRange ib = rc->GetBoundsI(IndexDomain::entire);
     const IndexRange jb = rc->GetBoundsJ(IndexDomain::entire);

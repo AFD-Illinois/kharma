@@ -135,9 +135,15 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
         if (pmesh->multilevel)
             t_start_recv_flux = tl.AddTask(t_none, cb::StartReceiveFluxCorrections, md_sub_step_init);
 
-        //COOLING:
-        if(stage == 1){
-            t_prim_source_first = tl.AddTask(t_start_recv_flux, Packages::BlockApplyPrimSource, md_sub_step_init.get());
+        for (int i = 0; i < blocks.size(); i++) {
+            auto &pmb = blocks[i];
+            auto &tl  = async_region2[i];
+            auto &mbd_sub_step_init  = pmb->meshblock_data.Get(integrator->stage_name[stage-1]);
+            //COOLING:
+            auto t_prim_source_first = t_start_recv_flux
+            if(stage == 1){
+                t_prim_source_first = tl.AddTask(t_start_recv_flux, Packages::BlockApplyPrimSource, mbd_sub_step_init.get());
+            }
         }
         
         // Calculate the flux of each variable through each face
@@ -282,8 +288,8 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
         //I will probably comment out this call to heating (this is the first and second call I think, but
         //I added another call up above I think)
         auto t_heat_electrons = t_prim_source_second;
-        if (do_heating) {
-            t_heat_electrons = tl.AddTask(t_prim_source, Electrons::ApplyElectronHeating,
+        if (use_heating) {
+            t_heat_electrons = tl.AddTask(t_prim_source_second, Electrons::ApplyElectronHeating,
                                           mbd_sub_step_init.get(), mbd_sub_step_final.get());
         }
 
