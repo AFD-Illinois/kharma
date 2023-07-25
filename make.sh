@@ -87,6 +87,7 @@ fi
 
 ### Enivoronment Prep ###
 if [[ "$(which python3 2>/dev/null)" == *"conda"* ]]; then
+  echo
   echo "It looks like you have Anaconda loaded."
   echo "Anaconda forces a serial version of HDF5 which may make this compile impossible."
   echo "If you run into trouble, deactivate your environment with 'conda deactivate'"
@@ -272,6 +273,10 @@ fi
 # If we're doing a clean build, prep the source and
 # delete the build directory
 if [[ "$ARGS" == *"clean"* ]]; then
+  echo
+  echo "Patching Parthenon to use KHARMA coordinates."
+  echo "You may see patch errors here, this is normal."
+
   cd external/parthenon
   git apply ../patches/parthenon-*.patch
   cd -
