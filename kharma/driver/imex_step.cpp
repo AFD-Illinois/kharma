@@ -65,6 +65,9 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
     auto& pkgs         = blocks[0]->packages.AllPackages();
     auto& driver_pkg   = pkgs.at("Driver")->AllParams();
     const bool use_electrons = pkgs.count("Electrons");
+    //COOLING:
+    const bool use_heating = pkgs.at("Electrons")->Param<bool>("do_heating");
+    const bool use_cooling = pkgs.at("Electrons")->Param<bool>("do_cooling");
     const bool use_b_cleanup = pkgs.count("B_Cleanup");
     const bool use_implicit = pkgs.count("Implicit");
     const bool use_jcon = pkgs.count("Current");
@@ -131,12 +134,17 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
         auto t_start_recv_flux = t_start_recv_bound;
         if (pmesh->multilevel)
             t_start_recv_flux = tl.AddTask(t_none, cb::StartReceiveFluxCorrections, md_sub_step_init);
+
+        //COOLING:
+        if(stage == 1){
+            t_prim_source_first = tl.AddTask(t_start_recv_flux, Packages::BlockApplyPrimSource, md_sub_step_init.get());
+        }
         
         // Calculate the flux of each variable through each face
         // This reconstructs the primitives (P) at faces and uses them to calculate fluxes
         // of the conserved variables (U) through each face.
         const KReconstruction::Type& recon = driver_pkg.Get<KReconstruction::Type>("recon");
-        auto t_fluxes = KHARMADriver::AddFluxCalculations(t_start_recv_bound, tl, recon, md_sub_step_init.get());
+        auto t_fluxes = KHARMADriver::AddFluxCalculations(t_prim_source_first, tl, recon, md_sub_step_init.get());
 
         // If we're in AMR, correct fluxes from neighbors
         auto t_flux_bounds = t_fluxes;
@@ -262,13 +270,19 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
 
         // Any package- (likely, problem-) specific source terms which must be applied to primitive variables
         // Apply these only after the final step so they're operator-split
-        auto t_prim_source = t_set_bc;
+        auto t_prim_source_second = t_set_bc;
         if (stage == integrator->nstages) {
-            t_prim_source = tl.AddTask(t_set_bc, Packages::BlockApplyPrimSource, mbd_sub_step_final.get());
+            t_prim_source_second = tl.AddTask(t_set_bc, Packages::BlockApplyPrimSource, mbd_sub_step_final.get());
         }
+
+        //COOLING:
+        //so right now, I haven't added in the first call to ApplyElectronCooling
+
         // Electron heating goes where it does in the KHARMA Driver, for the same reasons
-        auto t_heat_electrons = t_prim_source;
-        if (use_electrons) {
+        //I will probably comment out this call to heating (this is the first and second call I think, but
+        //I added another call up above I think)
+        auto t_heat_electrons = t_prim_source_second;
+        if (do_heating) {
             t_heat_electrons = tl.AddTask(t_prim_source, Electrons::ApplyElectronHeating,
                                           mbd_sub_step_init.get(), mbd_sub_step_final.get());
         }

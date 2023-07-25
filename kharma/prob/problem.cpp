@@ -89,6 +89,8 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
         status = InitializeMHDModes(rc, pin);
     } else if (prob == "orszag_tang") {
         status = InitializeOrszagTang(rc, pin);
+    } else if (prob == "flat_space") {
+        status = Initialize_flat_space(rc, pin); // COOLING:
     } else if (prob == "explosion") {
         status = InitializeExplosion(rc, pin);
     } else if (prob == "kelvin_helmholtz") {

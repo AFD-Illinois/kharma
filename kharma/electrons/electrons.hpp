@@ -103,6 +103,8 @@ void BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse=false);
  * TODO this function should update fflag to reflect temperature ratio floor hits
  */
 TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real> *rc);
+//COOLING:
+TaskStatus ApplyElectronCooling(MeshBlockData<Real> *rc);
 
 /**
  * KHARMA requires some method for getting conserved variables from primitives, as well.

@@ -1,0 +1,110 @@
+# flat space problem
+#COOLING:
+
+<parthenon/job>
+problem_id = flat_space
+
+# Size and parameters of the full mesh
+# KHARMA does not yet support AMR,
+# so all mesh declarations will have
+# the first two parameters
+<parthenon/mesh>
+refinement = none
+numlevel = 1
+
+nx1 = 10
+nx2 = 10
+nx3 = 1
+
+x1min = 0.0
+x1max = 1.0
+x2min = 0.0
+x2max = 1.0
+x3min = 0.0
+x3max = 1.0
+
+ix1_bc = periodic
+ox1_bc = periodic
+ix2_bc = periodic
+ox2_bc = periodic
+ix3_bc = periodic
+ox3_bc = periodic
+
+# Size of a mesh block
+# # of meshblocks must be >= the number of MPI ranks,
+# however there may be multiple blocks per rank
+<parthenon/meshblock>
+nx1 = 10
+nx2 = 10
+nx3 = 1
+
+# Set boring box coordinates. Explanations in bondi.par
+<coordinates>
+base = cartesian_minkowski
+transform = null
+
+<parthenon/time>
+# tlim will be overridden depending on the problem
+tlim = 20.0
+integrator = vl2
+# Minimum is also the starting timestep
+dt_min = 0.0001
+
+<GRMHD>
+cfl = 0.9
+gamma = 1.333333
+# Whether to evolve these variables with an
+# implicit solver similar to GRIM
+implicit = false
+
+<b_field>
+solver = none
+
+<floors>
+# Disable all floor applications in this problem
+disable_floors = true
+
+#COOLING: I just added this part without any other initialization, 
+#idk if <electrons> needs other initialization
+<electrons>
+on = true
+cooling = true
+heating = false
+howes = true
+kawazura = true
+werner = true
+rowan = true
+sharma = true
+
+<debug>
+# General verbosity level:
+# 1: general archival info
+# 2: specific debugging logs
+verbose = 0
+# Set to 1 to check each step for wavespeed of zero/NaN & exit
+extra_checks = 1
+# Print summary of all flags hit during each step:
+# 1: Number of flags total
+# 2: Number of flags of each type
+flag_verbose = 0
+
+<driver>
+# Driver, of type "kharma" or "imex".  The former
+# Synchronizes mostly the conserved variables,
+# the latter synchronizes primitives.
+type = imex
+reconstruction = weno5
+
+# Primary HDF5 output enabled in most problems
+<parthenon/output0>
+file_type = hdf5
+# This is so as to output only the final state
+dt = 0.2
+single_precision_output = false
+variables = prims.rho, prims.u, prims.uvec, prims.Kel_Howes
+
+# Text file with statistics (e.g. fluxes, floors hit)
+# recorded over time
+<parthenon/output1>
+file_type = hst
+dt = 0.2
