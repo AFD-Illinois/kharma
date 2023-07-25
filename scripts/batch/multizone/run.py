@@ -134,6 +134,7 @@ def run_multizone(**kwargs):
         args['bondi/vacuum_logrho'] = logrho
         args['bondi/vacuum_log_u_over_rho'] = log_u_over_rho
         args['bondi/rs'] = np.sqrt(float(kwargs['r_b']))
+        args['bondi/ur_frac'] = 0
 
         # B field additions
         if kwargs['bz'] != 0.0:
