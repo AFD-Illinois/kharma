@@ -259,7 +259,7 @@ def update_args(run_num, kwargs, args):
     args['parthenon/job/problem_id']="resize_restart_kharma"
 
     # Filename to restart from
-    fname_dir = "{:05d}".format(run_num)
+    fname_dir = data_dir(run_num)
     fname=glob.glob(fname_dir+"/*final.rhdf")[0]
     # Get start_time, ncycle, dt from previous run
     kwargs['start_time'] = pyharm.io.get_dump_time(fname)
