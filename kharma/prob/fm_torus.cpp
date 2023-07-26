@@ -235,6 +235,12 @@ TaskStatus PerturbU(MeshBlockData<Real> *rc, ParameterInput *pin)
     const int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
     const int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
     const int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
+    
+    // HYERIN (07/26/23) get fx1min and fx1max
+    const Real fx1min = pin->GetOrAddReal("parthenon/mesh", "restart_x1min", -1);
+    const Real fx1max = pin->GetOrAddReal("parthenon/mesh", "restart_x1max", -1);
+    const bool rstf_exists = ((fx1min > 0) && (fx1max > 0)); // restart file exists?
+    auto& G = pmb->coords;
 
     if (serial) {
         // Serial version
@@ -255,10 +261,14 @@ TaskStatus PerturbU(MeshBlockData<Real> *rc, ParameterInput *pin)
         typedef typename RandPoolType::generator_type gen_type;
         pmb->par_for("perturb_u", ks, ke, js, je, is, ie,
             KOKKOS_LAMBDA_3D {
-                if (rho(k, j, i) > jitter_above_rho) {
-                    gen_type rgen = rand_pool.get_state();
-                    u(k, j, i) *= 1. + Kokkos::rand<gen_type, Real>::draw(rgen, -u_jitter/2, u_jitter/2);
-                    rand_pool.free_state(rgen);
+                GReal X[GR_DIM];
+                G.coord(k, j, i, Loci::center, X);
+                if ((! rstf_exists) || (X[1]<fx1min) || (X[1]>fx1max)) {
+                    if (rho(k, j, i) > jitter_above_rho) {
+                        gen_type rgen = rand_pool.get_state();
+                        u(k, j, i) *= 1. + Kokkos::rand<gen_type, Real>::draw(rgen, -u_jitter/2, u_jitter/2);
+                        rand_pool.free_state(rgen);
+                    }
                 }
             }
         );
