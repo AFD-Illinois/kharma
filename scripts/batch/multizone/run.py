@@ -60,6 +60,7 @@ def data_dir(n):
 @click.option('--ext_g', is_flag=True, help="Include external gravity")
 # Don't use this
 @click.option('--start_time', default=0.0, help="Starting time. Only use if you know what you're doing.")
+@click.option('--onezone', is_flag=True, help="Run onezone instead..")
 def run_multizone(**kwargs):
     """This script runs a "multi-zone" KHARMA sequence.
     The idea is to divide a large domain (~1e8M radius) into several "zones,"
@@ -106,7 +107,10 @@ def run_multizone(**kwargs):
 
         turn_around = kwargs['nzones'] - 1
         args['coordinates/r_out'] = base**(turn_around+2)
-        args['coordinates/r_in'] = base**turn_around
+        if kwargs['onezone']:
+            args['coordinates/r_in'] = 1
+        else:
+            args['coordinates/r_in'] = base**turn_around
         # Initialize half-vacuum, unless it's the first GIZMO run
         if kwargs['gizmo']:
             args['bondi/r_shell'] = args['coordinates/r_in']
@@ -115,7 +119,7 @@ def run_multizone(**kwargs):
 
         # bondi & vacuum parameters
         # TODO derive these from r_b or gizmo
-        if kwargs['nzones'] == 3 or kwargs['nzones'] == 6:
+        if args['coordinates/r_out'] < 1e4: #kwargs['nzones'] == 3 or kwargs['nzones'] == 6:
             kwargs['r_b'] = 256
             logrho = -4.13354231
             log_u_over_rho = -2.57960521
@@ -143,7 +147,7 @@ def run_multizone(**kwargs):
             args['b_field/solver'] = "flux_ct"
             args['b_field/bz'] = kwargs['bz']
             # Compress coordinates to save time
-            if kwargs['nx1'] >= 128:
+            if kwargs['nx1'] >= 128 and not kwargs['onezone']:
                 args['coordinates/transform'] = "fmks"
                 args['coordinates/mks_smooth'] = 0.
                 args['coordinates/poly_xt'] = 0.8
@@ -168,10 +172,13 @@ def run_multizone(**kwargs):
         args['gizmo_shell/datfn'] = kwargs['gizmo_fname']
         args['parthenon/time/nlim'] = kwargs['nlim']
         # Mesh size
-        args['parthenon/mesh/nx1'] = kwargs['nx1']
+        if kwargs['onezone']:
+            args['parthenon/mesh/nx1'] = int((kwargs['nx1']/2.)*(kwargs['nzones']+1))
+        else:
+            args['parthenon/mesh/nx1'] = kwargs['nx1']
         args['parthenon/mesh/nx2'] = kwargs['nx2']
         args['parthenon/mesh/nx3'] = kwargs['nx3']
-        args['parthenon/meshblock/nx1'] = kwargs['nx1_mb']
+        args['parthenon/meshblock/nx1'] = args['parthenon/mesh/nx1']
         args['parthenon/meshblock/nx2'] = kwargs['nx2_mb']
         args['parthenon/meshblock/nx3'] = kwargs['nx3_mb']
 
@@ -208,6 +215,8 @@ def run_multizone(**kwargs):
         args['parthenon/time/tlim'] = tlim #min(kwargs['start_time'] + runtime,10.*np.power(r_b,3./2))
 
         # Output timing (TODO make options)
+        if kwargs['onezone']:
+            runtime = calc_runtime(r_out, r_b)
         args['parthenon/output0/dt'] = max((runtime/4.), 1e-7)
         args['parthenon/output1/dt'] = max((runtime/2.), 1e-7)
         args['parthenon/output2/dt'] = runtime/10 #0.
