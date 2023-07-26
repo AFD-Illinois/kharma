@@ -310,6 +310,7 @@ def update_args(run_num, kwargs, args):
         # TODO explain why this number is correct
         fname_fill_dir = data_dir(2 * (iteration - 1) * (kwargs['nzones'] - 1) - (run_num + 1))
         fname_fill = glob.glob(fname_fill_dir+"/*final.rhdf")[0]
+        args['perturbation/u_jitter'] = 0. # jitter is turned off when not initializing.
     args['resize_restart/fname'] = fname
     args['resize_restart/fname_fill'] = fname_fill
 
