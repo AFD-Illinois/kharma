@@ -326,9 +326,9 @@ TaskStatus FixPolarFlux(MeshData<Real> *md)
         {
             pmb->par_for("fix_flux_b_r", kb_e.s, kb_e.e, je, je, ib_e.s, ib_e.e,
                 KOKKOS_LAMBDA_3D {
-                    B_F.flux(X1DIR, V2, k, j, i) = -B_F.flux(X1DIR, V2, k, je, i);
+                    B_F.flux(X1DIR, V2, k, j, i) = -B_F.flux(X1DIR, V2, k, jb.e, i);
                     if (ndim > 1) B_F.flux(X2DIR, V2, k, j, i) = 0;
-                    if (ndim > 2) B_F.flux(X3DIR, V2, k, j, i) = -B_F.flux(X3DIR, V2, k, je, i);
+                    if (ndim > 2) B_F.flux(X3DIR, V2, k, j, i) = -B_F.flux(X3DIR, V2, k, jb.e, i);
                 }
             );
         }
