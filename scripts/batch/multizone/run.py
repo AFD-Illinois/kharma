@@ -32,6 +32,15 @@ def data_dir(n):
     """Data directory naming scheme"""
     return "{:05d}".format(n)
 
+def calc_nx1(kwargs, r_out=None, r_in=None):#(given_nx1, nzones):
+    """adjust to a new nx1 for a larger annulus to have effectively the same resolution as other annuli """
+    if r_out is None: r_out = kwargs['r_out']
+    if r_in is None: r_in = kwargs['r_in']
+    nzones_plus_one = int(np.log(r_out/r_in)/np.log(kwargs['base'])) # equal to (nzones+1)
+    given_nx1 = kwargs['nx1']
+    nx1 = int((given_nx1/2.)*(nzones_plus_one))
+    return nx1
+
 @click.command()
 # Run parameters
 @click.option('--nx1', default=64, help="1-Run radial resolution")
@@ -60,7 +69,10 @@ def data_dir(n):
 @click.option('--ext_g', is_flag=True, help="Include external gravity")
 # Don't use this
 @click.option('--start_time', default=0.0, help="Starting time. Only use if you know what you're doing.")
-@click.option('--onezone', is_flag=True, help="Run onezone instead..")
+@click.option('--onezone', is_flag=True, help="Run onezone instead.")
+@click.option('--lin_recon', is_flag=True, help="Use linear reconstruction instead of weno.")
+@click.option('--combine_out_ann', is_flag=True, help="Combine outer annuli larger than Bondi radius.")
+@click.option('--move_rin', is_flag=True, help="Move r_in instead of switching btw same sized annuli.")
 def run_multizone(**kwargs):
     """This script runs a "multi-zone" KHARMA sequence.
     The idea is to divide a large domain (~1e8M radius) into several "zones,"
@@ -163,6 +175,11 @@ def run_multizone(**kwargs):
                 kwargs['jitter'] = 0.1
             # Lower the cfl condition in B field
             args['GRMHD/cfl'] = 0.5
+            if kwargs['lin_recon']:
+                args['GRMHD/reconstruction'] = "linear_vl"
+            else:
+                # use weno5
+                args['GRMHD/reconstruction'] = "weno5"
 
         # Parameters directly from defaults/cmd
         args['perturbation/u_jitter'] = kwargs['jitter']
@@ -171,16 +188,30 @@ def run_multizone(**kwargs):
         args['bondi/use_gizmo'] = kwargs['gizmo']
         args['gizmo_shell/datfn'] = kwargs['gizmo_fname']
         args['parthenon/time/nlim'] = kwargs['nlim']
-        # Mesh size
-        if kwargs['onezone']:
-            args['parthenon/mesh/nx1'] = int((kwargs['nx1']/2.)*(kwargs['nzones']+1))
+
+        # effective nzonesa (Hyerin 07/27/23)
+        if kwargs['combine_out_ann'] or kwargs['move_rin']:
+            # think what's the smallest annulus where the logarithmic middle radius is larger than r_b 
+            # (i.e. 8^n > 1e5 for base=8 r_b=1e5 where n is the nth smallest annulus)
+            kwargs['nzones_eff'] = int(np.ceil(np.log(kwargs['r_b'])/np.log(kwargs['base'])))
+            args['coordinates/r_in'] = base**(kwargs['nzones_eff']-1)
         else:
-            args['parthenon/mesh/nx1'] = kwargs['nx1']
+            kwargs['nzones_eff'] = kwargs['nzones']
+        args['resize_restart/nzone_eff'] = kwargs['nzones_eff']
+
+        # Mesh size
+        #if kwargs['onezone'] or kwargs['combine_out_ann'] or kwargs['move_rin']:
+        args['parthenon/mesh/nx1'] = calc_nx1(kwargs,args['coordinates/r_out'],args['coordinates/r_in'])#kwargs['nzones'])#int((kwargs['nx1']/2.)*(kwargs['nzones']+1))
+            #args['parthenon/mesh/nx1'] = calc_nx1(kwargs['nx1'],kwargs['nzones']-kwargs['nzones_eff']+1)
+            #int((kwargs['nx1']/2.)*((kwargs['nzones']-kwargs['nzones_eff']+1)+1)) # number of zones for last annulus is nzones-nzones_eff+1
+        #else:
+            #args['parthenon/mesh/nx1'] = kwargs['nx1']
         args['parthenon/mesh/nx2'] = kwargs['nx2']
         args['parthenon/mesh/nx3'] = kwargs['nx3']
         args['parthenon/meshblock/nx1'] = args['parthenon/mesh/nx1']
         args['parthenon/meshblock/nx2'] = kwargs['nx2_mb']
         args['parthenon/meshblock/nx3'] = kwargs['nx3_mb']
+
 
     # Any derived parameters once we've loaded args/kwargs
     # Default parameters are in mz_dir
@@ -194,14 +225,15 @@ def run_multizone(**kwargs):
         r_out = args['coordinates/r_out']
         r_b = float(kwargs['r_b'])
         base = args['resize_restart/base']
-        outermost_zone = 2 * (kwargs['nzones'] - 1)
+        #outermost_zone = 2 * (kwargs['nzones'] - 1)
         if kwargs['tlim'] is None:
             # Calculate free-fall time
-            if kwargs['short_t_out'] and run_num % outermost_zone == 0:
-                runtime = calc_runtime(r_out/base, r_b)
-                print("SHORT_T_OUT @ RUN # {}: r_out={:.4g}, but next largest annulus r_out={:.4g} used for the runtime".format(run_num, r_out, r_out/base))
-            else:
-                runtime = calc_runtime(r_out, r_b)
+            #if kwargs['short_t_out'] and run_num % outermost_zone == 0:
+            #    runtime = calc_runtime(r_out/base, r_b)
+            #    print("SHORT_T_OUT @ RUN # {}: r_out={:.4g}, but next largest annulus r_out={:.4g} used for the runtime".format(run_num, r_out, r_out/base))
+            #else:
+            if not kwargs['move_rin']: runtime = calc_runtime(r_out, r_b)
+            else: runtime = calc_runtime(args['coordinates/r_in']*base**2,r_b)
             # B field runs use half this
             if kwargs['bz'] != 0.0:
                 runtime /= np.power(base,3./2)*2
@@ -283,7 +315,7 @@ def update_args(run_num, kwargs, args):
     f.close()
 
     # Increment iteration count when we just finished the outermost zone
-    if run_num > 0 and run_num % (kwargs['nzones'] - 1) == 0:
+    if run_num > 0 and run_num % (kwargs['nzones_eff'] - 1) == 0:
         iteration += 1
     args['resize_restart/iteration'] = iteration
 
@@ -297,18 +329,29 @@ def update_args(run_num, kwargs, args):
     # Choose timestep and radii for the next run: smaller/larger as we step in/out
     args['parthenon/time/dt'] = max(dt_last * kwargs['base']**(-3./2.*out_to_in) / 4, 1e-5)
     if out_to_in > 0:
-        args['coordinates/r_out'] = last_r_out / kwargs['base']
+        if not kwargs['move_rin']: args['coordinates/r_out'] = last_r_in * kwargs['base'] #last_r_out / kwargs['base']
         args['coordinates/r_in'] = last_r_in / kwargs['base']
     else:
-        args['coordinates/r_out'] = last_r_out * kwargs['base']
+        if not kwargs['move_rin']: args['coordinates/r_out'] = last_r_out * kwargs['base']
         args['coordinates/r_in'] = last_r_in * kwargs['base']
+    
+    if kwargs['combine_out_ann'] and args['coordinates/r_in']>= kwargs['base']**(kwargs['nzones_eff']-1):
+        # if the next simulation is at the largest annulus,
+        # make r_out and nx1 larger
+        args['coordinates/r_out'] = kwargs['base']**(kwargs['nzones']+1)
+        #args['parthenon/mesh/nx1'] = larger_ann_nx1(kwargs['nx1'],kwargs['nzones']-kwargs['nzones_eff']+1)
+    args['parthenon/mesh/nx1'] = calc_nx1(kwargs,args['coordinates/r_out'],args['coordinates/r_in'])
+    #else:
+        #args['parthenon/mesh/nx1'] = kwargs['nx1'] # given nx1
+    args['parthenon/meshblock/nx1'] = args['parthenon/mesh/nx1']
+
 
     # Get filename to fill in the rest that fname doesn't cover
-    if run_num + 1 < kwargs['nzones']:
+    if run_num + 1 < kwargs['nzones_eff']:
         fname_fill = "none"
     else:
         # TODO explain why this number is correct
-        fname_fill_dir = data_dir(2 * (iteration - 1) * (kwargs['nzones'] - 1) - (run_num + 1))
+        fname_fill_dir = data_dir(2 * (iteration - 1) * (kwargs['nzones_eff'] - 1) - (run_num + 1))
         fname_fill = glob.glob(fname_fill_dir+"/*final.rhdf")[0]
         args['perturbation/u_jitter'] = 0. # jitter is turned off when not initializing.
     args['resize_restart/fname'] = fname

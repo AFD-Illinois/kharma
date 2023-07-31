@@ -114,7 +114,7 @@ KOKKOS_INLINE_FUNCTION void convert_to_utwiddle(const GRCoordinates& G, const Co
 KOKKOS_INLINE_FUNCTION void get_prim_restart_kharma(const GRCoordinates& G, const CoordinateEmbedding& coords, const VariablePack<Real>& P, const VarMap& m_p,
                     const SphBLCoords& bl,  const SphKSCoords& ks, 
                     const Real fx1min, const Real fx1max, const Real fnghost, const bool should_fill, const bool is_spherical,
-                    const Real gam, const Real rs,  const Real mdot, const Real ur_frac, const Real uphi, const hsize_t length[GR_DIM],
+                    const Real gam, const Real rs,  const Real mdot, const Real ur_frac, const Real uphi, const hsize_t length[GR_DIM], const hsize_t length_fill[GR_DIM],
                     const GridScalar& x1, const GridScalar& x2, const GridScalar& x3, const GridScalar& rho, const GridScalar& u, const GridVector& uvec,
                     const GridScalar& x1_fill, const GridScalar& x2_fill, const GridScalar& x3_fill, const GridScalar& rho_fill, const GridScalar& u_fill, const GridVector& uvec_fill,
                     const Real vacuum_logrho, const Real vacuum_log_u_over_rho,
@@ -136,7 +136,7 @@ KOKKOS_INLINE_FUNCTION void get_prim_restart_kharma(const GRCoordinates& G, cons
     else {
         if ((should_fill) && ((X[1]>fx1max)||(X[1]<fx1min))) { // fill with the fname_fill
             //Xtoindex(X, &(x1_fill[0]), &(x2_fill[0]), &(x3_fill[0]), length, iblocktemp, itemp, jtemp, ktemp, del);
-            Xtoindex(X, x1_fill, x2_fill, x3_fill, length, iblocktemp, itemp, jtemp, ktemp, del);
+            Xtoindex(X, x1_fill, x2_fill, x3_fill, length_fill, iblocktemp, itemp, jtemp, ktemp, del);
             rho_temp = rho_fill(iblocktemp,ktemp,jtemp,itemp);
             u_temp = u_fill(iblocktemp,ktemp,jtemp,itemp);
             VLOOP u_prim[v] = uvec_fill(v,iblocktemp,ktemp,jtemp,itemp);
@@ -161,7 +161,7 @@ KOKKOS_INLINE_FUNCTION void get_prim_restart_kharma(const GRCoordinates& G, cons
 KOKKOS_INLINE_FUNCTION void get_B_restart_kharma(const GRCoordinates& G, const CoordinateEmbedding& coords, const VariablePack<Real>& P, const VarMap& m_p,
                     const SphBLCoords& bl,  const SphKSCoords& ks, 
                     const Real fx1min, const Real fx1max, const bool should_fill,
-                    const hsize_t length[GR_DIM],
+                    const hsize_t length[GR_DIM], const hsize_t length_fill[GR_DIM],
                     const GridScalar& x1, const GridScalar& x2, const GridScalar& x3, const GridVector& B,
                     const GridScalar& x1_fill, const GridScalar& x2_fill, const GridScalar& x3_fill, const GridVector& B_fill, const GridVector& B_save,
                     const int& k, const int& j, const int& i) 
@@ -178,7 +178,7 @@ KOKKOS_INLINE_FUNCTION void get_B_restart_kharma(const GRCoordinates& G, const C
         // do nothing. just use the initialization from SeedBField
    }
     else if ((should_fill) && ((X[1]>fx1max)||(X[1]<fx1min))) { // fill with the fname_fill
-        Xtoindex(X, x1_fill, x2_fill, x3_fill, length, iblocktemp, itemp, jtemp, ktemp, del);
+        Xtoindex(X, x1_fill, x2_fill, x3_fill, length_fill, iblocktemp, itemp, jtemp, ktemp, del);
         //VLOOP B_prim[v] = B_fill(v,iblocktemp,ktemp,jtemp,itemp);
         VLOOP B_cons[v] = B_fill(v,iblocktemp,ktemp,jtemp,itemp);
     }
