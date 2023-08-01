@@ -73,6 +73,8 @@ def calc_nx1(kwargs, r_out=None, r_in=None):#(given_nx1, nzones):
 @click.option('--lin_recon', is_flag=True, help="Use linear reconstruction instead of weno.")
 @click.option('--combine_out_ann', is_flag=True, help="Combine outer annuli larger than Bondi radius.")
 @click.option('--move_rin', is_flag=True, help="Move r_in instead of switching btw same sized annuli.")
+@click.option('--gamma_max', default=3, help="Gamma_max floor.")
+@click.option('--df', is_flag=True, help="Use drift frame instead of normal when applying floors.")
 def run_multizone(**kwargs):
     """This script runs a "multi-zone" KHARMA sequence.
     The idea is to divide a large domain (~1e8M radius) into several "zones,"
@@ -169,6 +171,9 @@ def run_multizone(**kwargs):
                 args['coordinates/hslope'] = 0.3
             # Enable the floors
             args['floors/disable_floors'] = False
+            args['floors/gamma_max'] = kwargs['gamma_max']
+            if kwargs['df']:
+                args['floors/frame'] = 'drift'
             # And modify a bunch of defaults
             # Assume we will always want jitter if we have B unless a 2D problem
             if kwargs['jitter'] == 0.0 and kwargs['nx3']>1 :
