@@ -106,7 +106,7 @@ KOKKOS_INLINE_FUNCTION void convert_to_utwiddle(const GRCoordinates& G, const Co
     coords.con_vec_to_native(Xnative, ucon_ks, ucon_mks);
 
     Real gcon[GR_DIM][GR_DIM];
-    G.gcon(Loci::center, j, i, gcon); //TODO: this causes the memory issue!!
+    G.gcon(Loci::center, j, i, gcon); 
     fourvel_to_prim(gcon, ucon_mks, u_prim);
 
 }

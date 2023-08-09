@@ -9,8 +9,10 @@ if [[ "$ARGS" == *"rocky"* ]]; then
     echo $ARGS
     echo "after printing out"
     module purge
-    module load gcc/10.2.0-fasrc01 openmpi/4.1.0-fasrc01 cmake/3.25.2-fasrc01
-    #module load gcc/12.2.0-fasrc01 mpich/4.1-fasrc01 cmake/3.25.2-fasrc01
+    #module load gcc/10.2.0-fasrc01 openmpi/4.1.0-fasrc01 
+    
+    # CUDA aware MPI
+    module load gcc/12.2.0-fasrc01 openmpi/4.1.5-fasrc02 cmake/3.25.2-fasrc01
     export MPICH_GPU_SUPPORT_ENABLED=1
     #module load intel/23.0.0-fasrc01 openmpi/4.1.4-fasrc01 cmake/3.25.2-fasrc01
 
