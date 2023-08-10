@@ -38,6 +38,7 @@
 #include <parthenon/parthenon.hpp>
 
 #include "decs.hpp"
+#include "version.hpp"
 
 // Packages
 #include "b_flux_ct.hpp"
@@ -86,6 +87,11 @@ std::shared_ptr<KHARMAPackage> KHARMA::InitializeGlobals(ParameterInput *pin, st
     // to be more general as it matures.
     std::string problem_name = pin->GetString("parthenon/job", "problem_id");
     params.Add("problem", problem_name);
+
+    // Finally, the code version.  Recorded so it gets passed to output files & for printing
+    params.Add("version", KHARMA::Version::GIT_VERSION);
+    params.Add("SHA1", KHARMA::Version::GIT_SHA1);
+    params.Add("branch", KHARMA::Version::GIT_REFSPEC);
 
     // Update the times with callbacks
     pkg->MeshPreStepUserWorkInLoop = KHARMA::MeshPreStepUserWorkInLoop;

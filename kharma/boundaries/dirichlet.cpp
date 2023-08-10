@@ -74,7 +74,7 @@ void KBoundaries::DirichletImpl(std::shared_ptr<MeshBlockData<Real>> &rc, Bounda
     // printf("Freezing bounds:\n");
     const auto domain = BoundaryDomain(bface);
     pmb->par_for_bndry(
-        "dirichlet_boundary", vars, domain, coarse,
+        "dirichlet_boundary", vars, domain, TopologicalElement::CC, coarse,
         KOKKOS_LAMBDA(const int &p, const int &k, const int &j, const int &i) {
             if (right) {
                 q(p, k, j, i) = bound(p, k - ke, j - je, i - ie);
@@ -157,7 +157,7 @@ void KBoundaries::SetDomainDirichlet(MeshBlockData<Real> *rc, IndexDomain domain
     const auto &G = pmb->coords;
 
     pmb->par_for_bndry(
-        "dirichlet_boundary", vars, domain, coarse,
+        "dirichlet_boundary", vars, domain, TopologicalElement::CC, coarse,
         KOKKOS_LAMBDA(const int &p, const int &k, const int &j, const int &i) {
             if (right) {
                 bound(p, k - ke, j - je, i - ie) = q(p, k, j, i);

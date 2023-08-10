@@ -77,7 +77,9 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
     Flag("ProblemGenerator_"+prob);
     // Also just print this, it's important
     if (MPIRank0()) {
-        std::cout << "Initializing problem: " << prob << std::endl;
+        static bool printed_msg = false;
+        if (!printed_msg) std::cout << "Initializing problem: " << prob << std::endl;
+        printed_msg = true;
     }
 
     // Breakout to call the appropriate initialization function,
