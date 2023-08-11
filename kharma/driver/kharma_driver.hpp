@@ -56,6 +56,9 @@ class KHARMADriver : public MultiStageDriver {
 
         static std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages);
 
+        // Eliminate Parthenon's print statements when starting up the driver, we have a bunch of our own
+        void PreExecute() { timer_main.reset(); }
+
         /**
          * A Driver object orchestrates everything that has to be done to a mesh to take a step.
          * The function MakeTaskCollection outlines everything to be done in one sub-step,
@@ -88,11 +91,14 @@ class KHARMADriver : public MultiStageDriver {
         TaskCollection MakeImExTaskCollection(BlockList_t &blocks, int stage);
 
         /**
-         * A simple step for experimentation.  Does NOT support MPI, 
+         * A simple step for experimentation/new implementations.  Does NOT support MPI, or much of anything optional.
          */
         TaskCollection MakeSimpleTaskCollection(BlockList_t &blocks, int stage);
 
-
+        /**
+         * Add the flux calculations in each direction.  Since the flux functions are templated on which
+         * reconstruction is being used, this amounts to a lot of shared lines.
+         */
         static TaskID AddFluxCalculations(TaskID& t_start, TaskList& tl, KReconstruction::Type recon, MeshData<Real> *md);
 
         /**

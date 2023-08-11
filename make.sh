@@ -1,10 +1,10 @@
 #!/bin/bash
 
 # Make script for KHARMA
-# Used to decide flags and call cmake
+# Used to set sensible default flags and call cmake/make
 # Usage:
 # ./make.sh [option1] [option2]
-
+#
 # clean: BUILD by re-running cmake, restarting the make process from nothing.
 #        That is, "./make.sh clean" == "make clean" + "make"
 #        Always use 'clean' when switching Release<->Debug or OpenMP<->CUDA
@@ -16,36 +16,20 @@
 #        actually *runtime* parameters e.g. verbose, flag_verbose, etc
 # trace: Configure with execution tracing: print at the beginning and end
 #        of most host-side function calls during a step
-
-# Disabling features at compile-time:
+# hdf5:  Download & compile HDF5, rather than looking for a system version
+# cleanhdf5:  Reconfigure HDF5 from scratch, rather than just recompiling
 # nompi:      Disable MPI and don't search/link it
 # noimplicit: Disable implicit solver, avoids pulling in Kokkos-kernels
 # nocleanup:  Disable magnetic field cleaning code for resizing, avoids
 #             pulling in some unofficial Parthenon code.
+# Many machine files have additional options, check machines/machinename.sh
 
-# Processors to use.  Define this in the machine file.
-#NPROC=8
+# Make processes to use
+# Set conservatively as nvcc/nvc++ uses a *lot* of memory
+# Set in environment or override in machine file
+NPROC=${NPROC:-8}
 
 ### Load machine-specific configurations ###
-# This segment sources a series of machine-specific
-# definitions from the machines/ directory.
-# If the host isn't listed, the CPU & GPU arch will be guessed
-# See e.g. tacc.sh for an example to get started writing a machine file,
-# or specify any options you need manually below
-
-# Example Kokkos_ARCH options:
-# CPUs: BDW, SKX, KNL, AMDAVX, ZEN2, ZEN3, POWER9
-# ARM: ARMV80, ARMV81, ARMV8_THUNDERX2, A64FX
-# GPUs: VOLTA70, TURING75, AMPERE80, HOPPER90, VEGA90A, INTEL_GEN
-
-# HOST_ARCH=
-# DEVICE_ARCH=
-# C_NATIVE=
-# CXX_NATIVE=
-
-# Less common options:
-# PREFIX_PATH=
-
 HOST=$(hostname -f)
 if [ -z $HOST ]; then
   HOST=$(hostname)
@@ -91,10 +75,11 @@ fi
 if [[ "$(which python3 2>/dev/null)" == *"conda"* ]]; then
   echo
   echo "It looks like you have Anaconda loaded."
-  echo "Anaconda forces a serial version of HDF5 which may make this compile impossible."
+  echo "Anaconda loads a serial version of HDF5 which may make this compile impossible."
   echo "If you run into trouble, deactivate your environment with 'conda deactivate'"
 fi
 # Save arguments if we've changed them
+# Used in run.sh for loading the same modules/etc.
 if [[ "$ARGS" == *"clean"* ]]; then
   echo "$ARGS" > $SOURCE_DIR/make_args
 fi
@@ -118,7 +103,8 @@ if [[ -z "$CXX_NATIVE" ]]; then
   if which CC >/dev/null 2>&1; then
     CXX_NATIVE=CC
     C_NATIVE=cc
-    OMP_FLAG="-homp"
+    # In case this isn't Cray, use the more common flag
+    OMP_FLAG="-fopenomp"
   # Prefer Intel oneAPI compiler over legacy, both over generic
   elif which icpx >/dev/null 2>&1; then
     CXX_NATIVE=icpx
@@ -148,7 +134,11 @@ if [[ -z "$CXX_NATIVE" ]]; then
   # clang/++ will never be used automatically;
   # blame Apple, who don't support OpenMP
 fi
-export CXXFLAGS="$OMP_FLAG $CXXFLAGS"
+# Disable OpenMP for HIP compiles, it gets confused
+# and thinks we want to use OMP 5.0 offload stuff
+if [[ "$ARGS" != *"hip"* ]]; then
+  export CXXFLAGS="$OMP_FLAG $CXXFLAGS"
+fi
 
 # Set compilers
 # Options are named different so we can override w/wrapper for CUDA
@@ -191,7 +181,7 @@ elif [[ "$ARGS" == *"cuda"* ]]; then
   ENABLE_CUDA="ON"
   ENABLE_SYCL="OFF"
   ENABLE_HIP="OFF"
-elif [[ "$ARGS" == *"cudahpc"* ]]; then
+elif [[ "$ARGS" == *"nvc++"* ]]; then
   OUTER_LAYOUT="MANUAL1D_LOOP"
   INNER_LAYOUT="TVR_INNER_LOOP"
   ENABLE_OPENMP="ON"
@@ -230,11 +220,16 @@ if [[ "$ARGS" == *"hdf5"* && "$ARGS" == *"clean"* ]]; then
   H5VER=1.12.2
   H5VERU=1_12_2
   cd external
+  # Allow complete reconfigure (for switching compilers, takes longer)
   if [[ "$ARGS" == *"cleanhdf5"* ]]; then
     rm -rf hdf5-${H5VER}/
   fi
-  if [ ! -d hdf5-${H5VER}/ ]; then
+  # Download if needed
+  if [ ! -f hdf5-${H5VER}.tar.gz ]; then
     curl https://hdf-wordpress-1.s3.amazonaws.com/wp-content/uploads/manual/HDF5/HDF5_${H5VERU}/source/hdf5-${H5VER}.tar.gz -o hdf5-${H5VER}.tar.gz
+  fi
+  # Unpack if needed (or deleted)
+  if [ ! -d hdf5-${H5VER}/ ]; then
     tar xf hdf5-${H5VER}.tar.gz
   fi
   cd hdf5-${H5VER}/
