@@ -1,5 +1,5 @@
 /* 
- *  File: inverter.hpp
+ *  File: version.hpp
  *  
  *  BSD 3-Clause License
  *  
@@ -33,49 +33,14 @@
  */
 #pragma once
 
-#include "decs.hpp"
-#include "types.hpp"
+#include <string>
 
-// Implementation of u_to_p must be defined before instantiation below
-// Additionally, invert_template contains the Type and Status enums
-#include "invert_template.hpp"
-#include "onedw.hpp"
-
-#include "pack.hpp"
-
-using namespace parthenon;
-
-/**
- * Recover primitive variables from conserved forms.
- * Currently can only use the 1D_W scheme of Noble et al. (2006),
- * but this is the spot for alternate implementations
- */
-namespace Inverter {
-
-std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages);
-
-/**
- * Get the primitive variables
- * This just computes P, and only for the GRHD fluid varaibles rho, u, uvec.
- *
- * Defaults to entire domain, as the KHARMA algorithm relies on applying UtoP over ghost zones.
- * 
- * input: U, whatever form
- * output: U and P match down to inversion errors
- */
-void BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse);
-
-/**
- * Smooth over inversion failures, usually by averaging values of the primitive variables from each neighboring zone
- * a.k.a. Diffusion?  What diffusion?  There is no diffusion here.
- * 
- * LOCKSTEP: this function expects and should preserve P<->U
- */
-TaskStatus FixUtoP(MeshBlockData<Real> *rc);
-
-/**
- * Print details of any inversion failures or fixed zones
- */
-TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md);
-
+namespace KHARMA
+{
+  struct Version
+  {
+    static const std::string GIT_SHA1;
+    static const std::string GIT_VERSION;
+    static const std::string GIT_REFSPEC;
+  };
 }

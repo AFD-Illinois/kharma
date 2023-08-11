@@ -103,7 +103,8 @@ std::shared_ptr<KHARMAPackage> B_Cleanup::Initialize(ParameterInput *pin, std::s
     // RHS.  Must not just be "divB" as that field does not sync boundaries
     pkg->AddParam<std::string>("rhs_name", "divB_RHS");
     // Construct a solver. We don't need the template parameter, so we use 'int'
-    BiCGStabSolver<int> solver(pkg.get(), rel_tolerance, SparseMatrixAccessor(), {}, {Metadata::GetUserFlag("B_Cleanup")});
+    // TODO TODO
+    BiCGStabSolver<int> solver(pkg.get(), rel_tolerance, SparseMatrixAccessor(), {}); //, {Metadata::GetUserFlag("B_Cleanup")});
     // Set callback
     solver.user_MatVec = B_Cleanup::CornerLaplacian;
 

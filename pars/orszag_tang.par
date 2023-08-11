@@ -42,7 +42,7 @@ integrator = rk2
 <GRMHD>
 cfl = 0.9
 gamma = 1.666667
-reconstruction = linear_mc
+reconstruction = weno5
 
 <debug>
 verbose = 1
@@ -53,7 +53,7 @@ extra_checks = 1
 file_type = hdf5
 dt = 1.0
 single_precision_output = true
-variables = prims.rho, prims.u, prims.uvec, prims.B, jcon
+variables = prims, jcon
 
 <parthenon/output1>
 file_type = hst

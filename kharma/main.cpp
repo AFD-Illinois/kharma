@@ -143,14 +143,32 @@ int main(int argc, char *argv[])
     signal(SIGSEGV, print_backtrace);
 #endif
 
+    // Begin code block to ensure driver is cleaned up
     {
         auto pin = pman.pinput.get(); // All parameters in the input file or command line
         auto pmesh = pman.pmesh.get(); // The mesh, with list of blocks & locations, size, etc
         auto papp = pman.app_input.get(); // The list of callback functions specified above
 
         if(MPIRank0()) {
+            const int &verbose = pmesh->packages.Get("Globals")->Param<int>("verbose");
+            // Always print the version header, because it's fun
+            // TODO(someone) proper banner w/refs, names
+            const std::string &version = pmesh->packages.Get("Globals")->Param<std::string>("version");
+            const std::string &branch = pmesh->packages.Get("Globals")->Param<std::string>("branch");
+            const std::string &sha1 = pmesh->packages.Get("Globals")->Param<std::string>("SHA1");
+            std::cout << std::endl;
+            std::cout << "Starting KHARMA, version " << version << std::endl;
+            if (verbose > 0) std::cout << "Branch " << branch << ", commit hash: " << sha1 << std::endl;
+            std::cout << std::endl;
+            std::cout << "KHARMA is released under the BSD 3-clause license." << std::endl;
+            std::cout << "Source code for this program is available at https://github.com/AFD-Illinois/kharma/" << std::endl;
+            std::cout << std::endl;
+
             // Note reading "verbose" parameter from "Globals" instead of pin: it may change during simulation
-            if (pmesh->packages.Get("Globals")->Param<int>("verbose") > 0) {
+            if (verbose > 0) {
+                // Print a list of variables as Parthenon used to (still does)
+                std::cout << "#Variables in use:\n" << *(pmesh->resolved_packages) << std::endl;
+
                 // Print a list of all loaded packages.  Surprisingly useful for debugging init logic
                 std::cout << "Packages in use: " << std::endl;
                 for (auto package : pmesh->packages.AllPackages()) {

@@ -139,8 +139,8 @@ TaskStatus InitializeFMTorus(std::shared_ptr<MeshBlockData<Real>>& rc, Parameter
     // Done device-side for speed (for large 2D meshes this may get bad) but may work fine in HostSpace
     // Note this covers the full domain on each rank: it doesn't need a grid so it's not a memory problem,
     // and an MPI synch as is done for beta_min would be a headache
-    GReal x1min = pmb->pmy_mesh->mesh_size.x1min;
-    GReal x1max = pmb->pmy_mesh->mesh_size.x1max;
+    GReal x1min = pmb->pmy_mesh->mesh_size.xmin(X1DIR); // TODO probably could get domain from GRCoords
+    GReal x1max = pmb->pmy_mesh->mesh_size.xmax(X1DIR);
     // Add back 2D if torus solution may not be largest in midplane (before tilt ofc)
     //GReal x2min = pmb->pmy_mesh->mesh_size.x2min;
     //GReal x2max = pmb->pmy_mesh->mesh_size.x2max;

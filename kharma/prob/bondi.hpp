@@ -91,8 +91,8 @@ KOKKOS_INLINE_FUNCTION Real get_T(const GReal r, const Real C1, const Real C2, c
     f0 = get_Tfunc(T0, r, C1, C2, n);
     T1 = Tmax;
     f1 = get_Tfunc(T1, r, C1, C2, n);
-    // TODO(BSP) find a way to throw/communicate this
-    //if (f0 * f1 > 0) throw std::runtime_error("Cannot solve temperature!");
+    // TODO(BSP) where does this trigger an error?  Can we make it clearer?
+    if (f0 * f1 > 0) return -1.;
 
     Th = (T0 + T1) / 2.; // a simple bisection method which is stable and fast
     fh = get_Tfunc(Th, r, C1, C2, n);

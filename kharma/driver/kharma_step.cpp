@@ -107,6 +107,8 @@ TaskCollection KHARMADriver::MakeDefaultTaskCollection(BlockList_t &blocks, int 
                 // At the end of the step, updating "mbd_sub_step_final" updates the base
                 // So we have to keep a copy at the beginning to calculate jcon
                 pmb->meshblock_data.Add("preserve", base);
+                // Above only copies on allocate -- ensure we copy every step
+                Copy<MeshBlockData<Real>>({}, base.get(), pmb->meshblock_data.Get("preserve").get());
             }
         }
     }
@@ -202,7 +204,7 @@ TaskCollection KHARMADriver::MakeDefaultTaskCollection(BlockList_t &blocks, int 
         // on adjacent ranks are seeded with the same value, which keeps them (more) similar
         auto t_copy_prims = t_update;
         if (integrator->nstages > 1) {
-            t_copy_prims = tl.AddTask(t_none, Copy, std::vector<MetadataFlag>({Metadata::GetUserFlag("HD"), Metadata::GetUserFlag("Primitive")}),
+            t_copy_prims = tl.AddTask(t_none, Copy<MeshData<Real>>, std::vector<MetadataFlag>({Metadata::GetUserFlag("HD"), Metadata::GetUserFlag("Primitive")}),
                                                 md_sub_step_init.get(), md_sub_step_final.get());
         }
 

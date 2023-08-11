@@ -54,9 +54,8 @@ TaskStatus InitializeAtmosphere(std::shared_ptr<MeshBlockData<Real>>& rc, Parame
     auto pmb = rc->GetBlockPointer();
 
     // Obtain EMHD params
-    const bool use_emhd     = pmb->packages.AllPackages().count("EMHD");
+    const bool use_emhd = pmb->packages.AllPackages().count("EMHD");
     EMHD::EMHD_parameters emhd_params = EMHD::GetEMHDParameters(pmb->packages);
-    emhd_params.higher_order_terms = false;
 
     // Obtain GRMHD params
     const auto& grmhd_pars = pmb->packages.Get("GRMHD")->AllParams();

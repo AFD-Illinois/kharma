@@ -5,11 +5,11 @@
 problem_id = orszag_tang
 
 <parthenon/mesh>
-nx1 = 1024
+nx1 = 256
 x1min = -3.141592653589793
 x1max = 3.141592653589793
 
-nx2 = 1024
+nx2 = 256
 x2min = -3.141592653589793
 x2max = 3.141592653589793
 
@@ -18,8 +18,8 @@ x3min = -0.01
 x3max = 0.01
 
 <parthenon/meshblock>
-nx1 = 512
-nx2 = 512
+nx1 = 128
+nx2 = 128
 nx3 = 1
 
 <coordinates>

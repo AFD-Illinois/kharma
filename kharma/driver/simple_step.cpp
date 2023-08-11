@@ -113,7 +113,7 @@ TaskCollection KHARMADriver::MakeSimpleTaskCollection(BlockList_t &blocks, int s
         // UtoP needs a guess in order to converge, so we copy in md_sub_step_init
         auto t_copy_prims = t_update;
         if (integrator->nstages > 1) {
-            t_copy_prims = tl.AddTask(t_none, Copy, std::vector<MetadataFlag>({Metadata::GetUserFlag("HD"), Metadata::GetUserFlag("Primitive")}),
+            t_copy_prims = tl.AddTask(t_none, Copy<MeshData<Real>>, std::vector<MetadataFlag>({Metadata::GetUserFlag("HD"), Metadata::GetUserFlag("Primitive")}),
                                                 md_sub_step_init.get(), md_sub_step_final.get());
         }
 

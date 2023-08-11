@@ -89,6 +89,8 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
                 // At the end of the step, updating "mbd_sub_step_final" updates the base
                 // So we have to keep a copy at the beginning to calculate jcon
                 pmb->meshblock_data.Add("preserve", base);
+                // Above only copies on allocate -- ensure we copy every step
+                Copy<MeshBlockData<Real>>({}, base.get(), pmb->meshblock_data.Get("preserve").get());
             }
 
             if (use_implicit) {
@@ -102,7 +104,7 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
             }
         }
     }
-
+    
     // Big synchronous region: get & apply fluxes to advance the fluid state
     // num_partitions is nearly always 1
     const int num_partitions = pmesh->DefaultNumPartitions();
@@ -179,7 +181,7 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
         // If evolving GRMHD explicitly, UtoP needs a guess in order to converge, so we copy in md_sub_step_init
         auto t_copy_prims = t_none;
         if (!pkgs.at("GRMHD")->Param<bool>("implicit")) {
-            t_copy_prims = tl.AddTask(t_none, Copy, std::vector<MetadataFlag>({Metadata::GetUserFlag("HD"), Metadata::GetUserFlag("Primitive")}),
+            t_copy_prims = tl.AddTask(t_none, Copy<MeshData<Real>>, std::vector<MetadataFlag>({Metadata::GetUserFlag("HD"), Metadata::GetUserFlag("Primitive")}),
                                       md_sub_step_init.get(), md_solver.get());
         }
 
@@ -197,7 +199,7 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
 
             // Copy the current state of any implicitly-evolved vars (at least the prims) in as a guess.
             // This sets md_solver = md_sub_step_init
-            auto t_copy_guess = tl.AddTask(t_sources, Copy, std::vector<MetadataFlag>({Metadata::GetUserFlag("Implicit")}),
+            auto t_copy_guess = tl.AddTask(t_sources, Copy<MeshData<Real>>, std::vector<MetadataFlag>({Metadata::GetUserFlag("Implicit")}),
                                         md_sub_step_init.get(), md_solver.get());
 
             auto t_guess_ready = t_explicit | t_copy_guess;
@@ -207,7 +209,7 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
             // Copy the primitives to the `linesearch` MeshData object if linesearch was enabled.
             auto t_copy_linesearch = t_guess_ready;
             if (use_linesearch) {
-                t_copy_linesearch = tl.AddTask(t_guess_ready, Copy, std::vector<MetadataFlag>({Metadata::GetUserFlag("Primitive")}),
+                t_copy_linesearch = tl.AddTask(t_guess_ready, Copy<MeshData<Real>>, std::vector<MetadataFlag>({Metadata::GetUserFlag("Primitive")}),
                                                 md_solver.get(), md_linesearch.get());
             }
 
@@ -220,7 +222,7 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
 
             // Copy the entire solver state (everything defined on the grid, i.e. 'Cell') into the final state md_sub_step_final
             // If we're entirely explicit, we just declare these equal
-            t_implicit = tl.AddTask(t_implicit_step, Copy, std::vector<MetadataFlag>({Metadata::Cell}),
+            t_implicit = tl.AddTask(t_implicit_step, Copy<MeshData<Real>>, std::vector<MetadataFlag>({Metadata::Cell}),
                                     md_solver.get(), md_sub_step_final.get());
 
         }

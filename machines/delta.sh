@@ -26,14 +26,18 @@ then
     # Load common GPU modules
     module load modtree/gpu hdf5 cmake
 
-    if [[ $ARGS == *"nvhpc"* ]]; then
+    if [[ $ARGS == *"latest"* ]]; then
       # nvhpc only on request, MPI crashes
       module load nvhpc_latest openmpi-5.0_beta
       C_NATIVE=nvc
       CXX_NATIVE=nvc++
-    else # TODO NVHPC not-latest
+    elif [[ $ARGS == *"gcc"* ]]; then
       C_NATIVE=gcc
       CXX_NATIVE=g++
+    else
+      module load nvhpc
+      #C_NATIVE=nvc
+      #CXX_NATIVE=nvc++
     fi
   else
     # CPU Compile
