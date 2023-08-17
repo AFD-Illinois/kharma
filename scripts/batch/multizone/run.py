@@ -62,6 +62,7 @@ def calc_nx1(kwargs, r_out=None, r_in=None):#(given_nx1, nzones):
 @click.option('--kharma_bin', default="kharma.cuda", help="Name (not path) of KHARMA binary to run")
 @click.option('--kharma_args', default="", help="Arguments for KHARMA run.sh")
 @click.option('--short_t_out', is_flag=True, help="Use shorter outermost annulus")
+@click.option('--long_t_in', is_flag=True, help="Use longer time for innermost annulus")
 @click.option('--restart', is_flag=True, help="Restart from most recent run parameters")
 @click.option('--parfile', default=None, help="Parameter filename")
 @click.option('--gizmo', is_flag=True, help="Start from GIZMO data")
@@ -241,7 +242,10 @@ def run_multizone(**kwargs):
             else: runtime = calc_runtime(args['coordinates/r_in']*base**2,r_b)
             # B field runs use half this
             if kwargs['bz'] != 0.0:
-                runtime /= np.power(base,3./2)*2
+                runtime /= np.power(base,3./2)*2 # half of free-fall time at the log middle radius
+                if kwargs['long_t_in'] and args['coordinates/r_in']<2:
+                    print("LONG_T_IN @ RUN # {}: using longer runtime".format(run_num))
+                    runtime *= 20 # 10 tff at the log middle radius
         else:
             runtime = float(kwargs['tlim'])
 
