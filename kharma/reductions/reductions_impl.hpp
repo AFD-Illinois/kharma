@@ -73,10 +73,10 @@ void Reductions::Start(MeshData<Real> *md, int channel, T val, MPI_Op op)
     auto& pars = md->GetMeshPointer()->packages.Get("Reductions")->AllParams();
     auto *reduce_pool = pars.GetMutable<std::vector<Reduce<T>>>(pool_name);
     while (reduce_pool->size() <= channel) reduce_pool->push_back(Reduce<T>());
-    auto& vector_int_reduce = (*reduce_pool)[channel];
+    auto& reduce = (*reduce_pool)[channel];
     // Fill with flags
-    vector_int_reduce.val = val;
-    vector_int_reduce.StartReduce(0, op);
+    reduce.val = val;
+    reduce.StartReduce(0, op);
 }
 template<typename T>
 void Reductions::StartToAll(MeshData<Real> *md, int channel, T val, MPI_Op op)
@@ -86,10 +86,10 @@ void Reductions::StartToAll(MeshData<Real> *md, int channel, T val, MPI_Op op)
     auto& pars = md->GetMeshPointer()->packages.Get("Reductions")->AllParams();
     auto *allreduce_pool = pars.GetMutable<std::vector<AllReduce<T>>>(pool_name);
     while (allreduce_pool->size() <= channel) allreduce_pool->push_back(AllReduce<T>());
-    auto& vector_int_reduce = (*allreduce_pool)[channel];
+    auto& reduce = (*allreduce_pool)[channel];
     // Fill with flags
-    vector_int_reduce.val = val;
-    vector_int_reduce.StartReduce(op);
+    reduce.val = val;
+    reduce.StartReduce(op);
 }
 
 // MPI reduction checks
@@ -111,7 +111,7 @@ T Reductions::CheckOnAll(MeshData<Real> *md, int channel)
     // Get the relevant reducer and result
     const std::string pool_name = GetPoolName<T, true>();
     auto& pars = md->GetMeshPointer()->packages.Get("Reductions")->AllParams();
-    auto *reduce_pool = pars.GetMutable<std::vector<Reduce<T>>>(pool_name);
+    auto *reduce_pool = pars.GetMutable<std::vector<AllReduce<T>>>(pool_name);
     auto& reducer = (*reduce_pool)[channel];
 
     while (reducer.CheckReduce() == TaskStatus::incomplete);

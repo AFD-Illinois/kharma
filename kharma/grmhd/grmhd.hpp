@@ -74,7 +74,7 @@ void FillOutput(MeshBlock *pmb, ParameterInput *pin);
 
 /**
  * Diagnostics performed after each step.
- * Currently finds any negative flags or 0/NaN values in ctop
+ * Currently just looks for negative density/internal energy
  */
 TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *rc);
 }

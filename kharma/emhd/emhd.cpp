@@ -122,15 +122,16 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     // Only enable limits internally if we're actually doing EMHD
     params.Add("enable_emhd_limits", enable_emhd_limits);
 
-    Metadata::AddUserFlag("EMHD");
+
+    Metadata::AddUserFlag("EMHDVar");
 
     // General options for primitive and conserved scalar variables in ImEx driver
     // EMHD is supported only with imex driver and implicit evolution,
     // synchronizing primitive variables
     Metadata m_con  = Metadata({Metadata::Real, Metadata::Cell, Metadata::Independent, Metadata::GetUserFlag("Implicit"),
-                                Metadata::WithFluxes, Metadata::Conserved, Metadata::GetUserFlag("EMHD")});
+                                Metadata::WithFluxes, Metadata::Conserved, Metadata::GetUserFlag("EMHDVar")});
     Metadata m_prim = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::GetUserFlag("Implicit"),
-                                Metadata::Restart, Metadata::FillGhost, Metadata::GetUserFlag("Primitive"), Metadata::GetUserFlag("EMHD")});
+                                Metadata::Restart, Metadata::FillGhost, Metadata::GetUserFlag("Primitive"), Metadata::GetUserFlag("EMHDVar")});
 
     // Heat conduction
     if (conduction) {
@@ -184,7 +185,7 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
 //     auto pmb = rc->GetBlockPointer();
 
 //     PackIndexMap prims_map, cons_map;
-//     auto U_E = rc->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("EMHD"), Metadata::Conserved}, cons_map);
+//     auto U_E = rc->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("EMHDVar"), Metadata::Conserved}, cons_map);
 //     auto P = rc->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("Primitive")}, prims_map);
 //     const VarMap m_p(prims_map, false), m_u(cons_map, true);
 
@@ -216,7 +217,7 @@ void BlockPtoU(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     auto pmb = rc->GetBlockPointer();
 
     PackIndexMap prims_map, cons_map;
-    auto U_E = rc->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("EMHD"), Metadata::Conserved}, cons_map);
+    auto U_E = rc->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("EMHDVar"), Metadata::Conserved}, cons_map);
     auto P = rc->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("Primitive")}, prims_map);
     const VarMap m_p(prims_map, false), m_u(cons_map, true);
 

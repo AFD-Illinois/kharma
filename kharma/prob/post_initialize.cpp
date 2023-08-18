@@ -92,8 +92,6 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, std::shared_ptr<MeshData<Rea
     const bool use_b_cd = pmesh->packages.AllPackages().count("B_CD");
     const int verbose = pmesh->packages.Get("Globals")->Param<int>("verbose");
 
-    fprintf(stderr, "0.5");
-
     Flag("SeedBField");
     // Seed the magnetic field on each block
     for (auto &pmb : pmesh->block_list) {
@@ -107,8 +105,6 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, std::shared_ptr<MeshData<Rea
         }
     }
     EndFlag();
-
-    fprintf(stderr, "0.9");
 
     // Then, if we're in a torus problem or we explicitly ask for it,
     // normalize the magnetic field according to the density
@@ -127,11 +123,8 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, std::shared_ptr<MeshData<Rea
         // Calculate current beta_min value
         Real bsq_max, p_max, beta_min;
         if (beta_calc_legacy) {
-            fprintf(stderr, "1");
             bsq_max = MPIReduce_once(MaxBsq(md.get()), MPI_MAX);
-            fprintf(stderr, "2");
             p_max = MPIReduce_once(MaxPressure(md.get()), MPI_MAX);
-            fprintf(stderr, "3");
             beta_min = p_max / (0.5 * bsq_max);
         } else {
             beta_min = MPIReduce_once(MinBeta(md.get()), MPI_MIN);
@@ -194,35 +187,28 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart)
     // If your problem requires custom boundary conditions, these should be implemented
     // with the problem and assigned to the relevant functions in the "Boundaries" package.
 
-    fprintf(stderr, "0.0");
     auto &md = pmesh->mesh_data.Get();
 
     auto& pkgs = pmesh->packages.AllPackages();
 
-    fprintf(stderr, "0.1");
     // Magnetic field operations
     if (pin->GetString("b_field", "solver") != "none") {
         // If we need to seed a field based on the problem's fluid initialization...
         if (pin->GetOrAddString("b_field", "type", "none") != "none" && !is_restart) {
             // B field init is not stencil-1, needs boundaries sync'd.
             // FreezeDirichlet ensures any Dirichlet conditions aren't overwritten by zeros
-            fprintf(stderr, "0.2");
             KBoundaries::FreezeDirichlet(md);
             KHARMADriver::SyncAllBounds(md);
 
-            fprintf(stderr, "0.3");
             // Then init B field on each block...
             KHARMA::SeedAndNormalizeB(pin, md);
         }
-        fprintf(stderr, "4");
 
         // Regardless, if evolving a field we should print max(divB)
         // divB is not stencil-1 and we may not have run the above.
         // If we did, we still need another sync, so it works out
         KBoundaries::FreezeDirichlet(md);
         KHARMADriver::SyncAllBounds(md);
-
-        fprintf(stderr, "5");
 
         if (pkgs.count("B_FluxCT")) {
             B_FluxCT::PrintGlobalMaxDivB(md.get());
@@ -232,8 +218,6 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart)
             //B_CD::PrintGlobalMaxDivB(md.get());
         }
     }
-
-    fprintf(stderr, "6");
 
     // Add any hotspots.
     // Note any other modifications made when restarting should be made around here
@@ -245,16 +229,12 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart)
         }
     }
 
-    fprintf(stderr, "7");
-
     // Any extra cleanup & init especially when restarting
     if (is_restart) {
         // Parthenon restores all parameters (global vars) when restarting,
         // but KHARMA needs a few (currently one) reset instead
         KHARMA::ResetGlobals(pin, pmesh);
     }
-
-    fprintf(stderr, "8");
 
     // Clean the B field if we've introduced a divergence somewhere
     // We call this function any time the package is loaded:
@@ -269,8 +249,6 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart)
         // This does its own MPI syncs
         B_Cleanup::CleanupDivergence(md);
     }
-
-    fprintf(stderr, "9");
 
     // Finally, synchronize boundary values.
     // Freeze any Dirichlet physical boundaries as they are now, after cleanup/sync/etc.
