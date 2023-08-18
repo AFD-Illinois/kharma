@@ -80,7 +80,8 @@ static const std::map<int, std::string> flag_names = {
     {TEMP, "TEMPERATURE"},
     {KTOT, "ENTROPY"},
     {GEOM_RHO_FLUX, "GEOM_RHO_ON_RECON"},
-    {GEOM_U_FLUX, "GEOM_U_ON_RECON"}};
+    {GEOM_U_FLUX, "GEOM_U_ON_RECON"}
+};
 }
 
 namespace Floors {

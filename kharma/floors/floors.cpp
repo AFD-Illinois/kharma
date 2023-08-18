@@ -34,7 +34,6 @@
 #include "floors.hpp"
 #include "floors_functions.hpp"
 
-#include "debug.hpp"
 #include "grmhd.hpp"
 #include "grmhd_functions.hpp"
 #include "pack.hpp"
@@ -43,7 +42,7 @@
 
 int CountFFlags(MeshData<Real> *md)
 {
-    return Reductions::CountFlags(md, "fflag", FFlag::flag_names, IndexDomain::interior, 0, true);
+    return Reductions::CountFlags(md, "fflag", FFlag::flag_names, IndexDomain::interior, true)[0];
 }
 
 std::shared_ptr<KHARMAPackage> Floors::Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages)
@@ -225,7 +224,7 @@ TaskStatus Floors::ApplyInitialFloors(ParameterInput *pin, MeshBlockData<Real> *
 
 TaskStatus Floors::ApplyGRMHDFloors(MeshBlockData<Real> *mbd, IndexDomain domain)
 {
-    auto pmb                 = mbd->GetBlockPointer();
+    auto pmb = mbd->GetBlockPointer();
 
     PackIndexMap prims_map, cons_map;
     auto P = mbd->PackVariables({Metadata::GetUserFlag("Primitive")}, prims_map);
@@ -286,6 +285,9 @@ TaskStatus Floors::ApplyGRMHDFloors(MeshBlockData<Real> *mbd, IndexDomain domain
         }
     );
 
+    //if (flag_verbose)
+    //Reductions::StartFlagReduce(md, "fflag", FFlag::flag_names, IndexDomain::interior, true, 0);
+
     return TaskStatus::complete;
 }
 
@@ -297,9 +299,15 @@ TaskStatus Floors::PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
     const auto& pars = pmesh->packages.Get("Globals")->AllParams();
     const int flag_verbose = pars.Get<int>("flag_verbose");
 
-    // Debugging/diagnostic info about floor and inversion flags
-    if (flag_verbose >= 1) {
-        Reductions::CountFlags(md, "fflag", FFlag::flag_names, IndexDomain::interior, flag_verbose, true);
+    // Debugging/diagnostic info about floor flags
+    if (flag_verbose > 0) {
+        // TODO this should move to ApplyGRMHDFloors when everything goes MeshData
+        Reductions::StartFlagReduce(md, "fflag", FFlag::flag_names, IndexDomain::interior, true, 0);
+        // Debugging/diagnostic info about floor and inversion flags
+        Reductions::CheckFlagReduceAndPrintHits(md, "fflag", FFlag::flag_names, IndexDomain::interior, true, 0);
     }
+
+    // Anything else (energy conservation? Added material stats?)
+
     return TaskStatus::complete;
 }

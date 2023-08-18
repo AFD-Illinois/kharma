@@ -76,8 +76,8 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
 
     Metadata m_x1, m_x2, m_x3;
     {
-        // We can't use GetVariablesByFlag yet, so walk through and count manually
-        int nvar = KHARMA::CountVars(packages.get(), Metadata::FillGhost);
+        // We can't use GetVariablesByFlag yet, so ask the packages
+        int nvar = KHARMA::PackDimension(packages.get(), Metadata::FillGhost);
 
         // We also don't know the mesh size, since it's not constructed.  We infer.
         const int ng = pin->GetInteger("parthenon/mesh", "nghost");

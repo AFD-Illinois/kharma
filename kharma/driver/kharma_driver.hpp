@@ -59,6 +59,9 @@ class KHARMADriver : public MultiStageDriver {
         // Eliminate Parthenon's print statements when starting up the driver, we have a bunch of our own
         void PreExecute() { timer_main.reset(); }
 
+        // Also override the timestep calculation, so we can start moving options etc out of GRMHD package
+        void SetGlobalTimeStep();
+
         /**
          * A Driver object orchestrates everything that has to be done to a mesh to take a step.
          * The function MakeTaskCollection outlines everything to be done in one sub-step,
@@ -74,19 +77,22 @@ class KHARMADriver : public MultiStageDriver {
          * 4. Recover primtive variables
          * 4a. Apply any stability limits (floors)
          * 4b. Fix any errors in recovering the primitives, re-apply floors
-         * 5. Apply any source terms (KEL), or calculate outputs (jcon) which require the change in primitive values
+         * 5. Apply any source terms (KEL), or calculate outputs (jcon) which use the primitive variables
          * 
          * This is before any synchronization between different blocks, etc, etc.
-         * Both task lists proceed roughly in this order, and you'll see the same broad outlines in both.
+         * All task lists proceed roughly in this order, but differ in which variables they synchronize via MPI,
+         * or whether they synchronize at all.
          */
         TaskCollection MakeTaskCollection(BlockList_t &blocks, int stage);
+
+        /**
+         * The default step, synchronizing conserved variables and then recovering primitive variables in the ghost zones.
+         */
         TaskCollection MakeDefaultTaskCollection(BlockList_t &blocks, int stage);
 
         /**
-         * This "TaskCollection" (step) 
-         * ImexDriver syncs primitive variables and treats them as fundamental, whereas HARMDriver syncs conserved variables.
-         * This allows ImexDriver to optionally use a semi-implicit step, adding a per-zone implicit solve via the 'Implicit'
-         * package, instead of just explicit RK2 time-stepping.  This driver also allows explicit-only RK2 operation
+         * This step syncs primitive variables and treats them as fundamental
+         * This accommodates semi-implicit stepping, allowing evolving theories with implicit source terms such as extended MHD
          */
         TaskCollection MakeImExTaskCollection(BlockList_t &blocks, int stage);
 
@@ -95,6 +101,8 @@ class KHARMADriver : public MultiStageDriver {
          */
         TaskCollection MakeSimpleTaskCollection(BlockList_t &blocks, int stage);
 
+        // The different drivers share substantially similar portions of the full task list, which we gather into
+
         /**
          * Add the flux calculations in each direction.  Since the flux functions are templated on which
          * reconstruction is being used, this amounts to a lot of shared lines.
@@ -102,10 +110,10 @@ class KHARMADriver : public MultiStageDriver {
         static TaskID AddFluxCalculations(TaskID& t_start, TaskList& tl, KReconstruction::Type recon, MeshData<Real> *md);
 
         /**
-         * Add just the synchronization step to a task list tl, dependent upon taskID t_start, syncing mesh mc1
+         * Add a synchronization retion to an existing TaskCollection tc.
+         * Since the region is self-contained, does not return a TaskID
          * 
-         * This sequence is used identically in several places, so it makes sense
-         * to define once and use elsewhere.
+         * This function polls the 'integrator' member or it would be static too
          */
         void AddFullSyncRegion(Mesh* pmesh, TaskCollection& tc, int stage);
 

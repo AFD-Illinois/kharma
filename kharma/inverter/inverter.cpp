@@ -39,45 +39,6 @@
 #include "domain.hpp"
 #include "reductions.hpp"
 
-/**
- * Internal inversion fn, templated on inverter type.  Calls through to templated u_to_p
- * This is called with the correct template argument from BlockUtoP
- */
-template<Inverter::Type inverter>
-inline void BlockPerformInversion(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
-{
-    auto pmb = rc->GetBlockPointer();
-    const auto& G = pmb->coords;
-
-    PackIndexMap prims_map, cons_map;
-    auto U = GRMHD::PackMHDCons(rc, cons_map);
-    auto P = GRMHD::PackHDPrims(rc, prims_map);
-    const VarMap m_u(cons_map, true), m_p(prims_map, false);
-
-    GridScalar pflag = rc->Get("pflag").data;
-
-    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
-
-    const Real err_tol = pmb->packages.Get("Inverter")->Param<Real>("err_tol");
-    const int iter_max = pmb->packages.Get("Inverter")->Param<int>("iter_max");
-    const Real stepsize = pmb->packages.Get("Inverter")->Param<Real>("stepsize");
-
-    // Get the primitives from our conserved versions
-    // Notice we recover variables for only the physical (interior or MPI-boundary)
-    // zones!  These are the only ones which are filled at our point in the step
-    auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
-    const IndexRange3 b = KDomain::GetPhysicalRange(rc);
-
-    pmb->par_for("U_to_P", b.ks, b.ke, b.js, b.je, b.is, b.ie,
-        KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-            if (KDomain::inside(k, j, i, b)) {
-                // Run over all interior zones and any initialized ghosts
-                pflag(k, j, i) = static_cast<double>(Inverter::u_to_p<inverter>(G, U, m_u, gam, k, j, i, P, m_p, Loci::center));
-            }
-        }
-    );
-}
-
 std::shared_ptr<KHARMAPackage> Inverter::Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages)
 {
     auto pkg = std::make_shared<KHARMAPackage>("Inverter");
@@ -126,6 +87,45 @@ std::shared_ptr<KHARMAPackage> Inverter::Initialize(ParameterInput *pin, std::sh
     return pkg;
 }
 
+/**
+ * Internal inversion fn, templated on inverter type.  Calls through to templated u_to_p
+ * This is called with the correct template argument from BlockUtoP
+ */
+template<Inverter::Type inverter>
+inline void BlockPerformInversion(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
+{
+    auto pmb = rc->GetBlockPointer();
+    const auto& G = pmb->coords;
+
+    PackIndexMap prims_map, cons_map;
+    auto U = GRMHD::PackMHDCons(rc, cons_map);
+    auto P = GRMHD::PackHDPrims(rc, prims_map);
+    const VarMap m_u(cons_map, true), m_p(prims_map, false);
+
+    GridScalar pflag = rc->Get("pflag").data;
+
+    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
+
+    const Real err_tol = pmb->packages.Get("Inverter")->Param<Real>("err_tol");
+    const int iter_max = pmb->packages.Get("Inverter")->Param<int>("iter_max");
+    const Real stepsize = pmb->packages.Get("Inverter")->Param<Real>("stepsize");
+
+    // Get the primitives from our conserved versions
+    // Notice we recover variables for only the physical (interior or MPI-boundary)
+    // zones!  These are the only ones which are filled at our point in the step
+    auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
+    const IndexRange3 b = KDomain::GetPhysicalRange(rc);
+
+    pmb->par_for("U_to_P", b.ks, b.ke, b.js, b.je, b.is, b.ie,
+        KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+            if (KDomain::inside(k, j, i, b)) {
+                // Run over all interior zones and any initialized ghosts
+                pflag(k, j, i) = static_cast<double>(Inverter::u_to_p<inverter>(G, U, m_u, gam, k, j, i, P, m_p, Loci::center));
+            }
+        }
+    );
+}
+
 void Inverter::BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
     // This only chooses an implementation.  See BlockPerformInversion and implementations e.g. onedw.hpp
@@ -137,6 +137,7 @@ void Inverter::BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coars
     case Type::none:
         break;
     }
+    //Reductions::StartFlagReduce(md, "pflag", Inverter::status_names, IndexDomain::interior, false, 1);
 }
 
 TaskStatus Inverter::PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
@@ -148,9 +149,11 @@ TaskStatus Inverter::PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
     const int flag_verbose = pars.Get<int>("flag_verbose");
 
     // Debugging/diagnostic info about floor and inversion flags
+    // TODO grab the total and die on too many
     if (flag_verbose >= 1) {
-        int nflags = Reductions::CountFlags(md, "pflag", Inverter::status_names, IndexDomain::interior, flag_verbose, false);
-        // TODO TODO yell here if there are too many flags
+        // TODO this should move into BlockUtoP when everything goes MeshData
+        Reductions::StartFlagReduce(md, "pflag", Inverter::status_names, IndexDomain::interior, false, 1);
+        Reductions::CheckFlagReduceAndPrintHits(md, "pflag", Inverter::status_names, IndexDomain::interior, false, 1);
     }
 
     return TaskStatus::complete;

@@ -383,13 +383,15 @@ double B_CT::BlockMaxDivB(MeshBlockData<Real> *rc)
     return max_divb;
 }
 
-double B_CT::GlobalMaxDivB(MeshData<Real> *md)
+double B_CT::GlobalMaxDivB(MeshData<Real> *md, bool all_reduce)
 {
-    static AllReduce<Real> max_divb;
-    max_divb.val = MaxDivB(md);
-    max_divb.StartReduce(MPI_MAX);
-    while (max_divb.CheckReduce() == TaskStatus::incomplete);
-    return max_divb.val;
+    if (all_reduce) {
+        Reductions::StartToAll<Real>(md, 2, MaxDivB(md), MPI_MAX);
+        return Reductions::CheckOnAll<Real>(md, 2);
+    } else {
+        Reductions::Start<Real>(md, 2, MaxDivB(md), MPI_MAX);
+        return Reductions::Check<Real>(md, 2);
+    }
 }
 
 TaskStatus B_CT::PrintGlobalMaxDivB(MeshData<Real> *md, bool kill_on_large_divb)

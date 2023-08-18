@@ -44,7 +44,6 @@
 #include "wind.hpp"
 // Other headers
 #include "boundaries.hpp"
-#include "debug.hpp"
 #include "flux.hpp"
 #include "resize_restart.hpp"
 #include "implicit.hpp"
@@ -70,37 +69,28 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
     const bool use_jcon = pkgs.count("Current");
     const bool use_linesearch = (use_implicit) ? pkgs.at("Implicit")->Param<bool>("linesearch") : false;
 
-    // If we cleaned up, this added other fields marked FillDerived
-    // Remove them before we allocate the space
-    if (use_b_cleanup) {
-        B_Cleanup::RemoveExtraFields(blocks);
-    }
-
-    // Allocate the fluid states ("containers") we need for each block
-    for (auto& pmb : blocks) {
-        // first make other useful containers
-        auto &base = pmb->meshblock_data.Get();
-        if (stage == 1) {
-            pmb->meshblock_data.Add("dUdt", base);
-            for (int i = 1; i < integrator->nstages; i++)
-                pmb->meshblock_data.Add(integrator->stage_name[i], base);
-            
-            if (use_jcon) {
-                // At the end of the step, updating "mbd_sub_step_final" updates the base
-                // So we have to keep a copy at the beginning to calculate jcon
-                pmb->meshblock_data.Add("preserve", base);
-                // Above only copies on allocate -- ensure we copy every step
-                Copy<MeshBlockData<Real>>({}, base.get(), pmb->meshblock_data.Get("preserve").get());
-            }
-
-            if (use_implicit) {
-                // When solving, we need a temporary copy with any explicit updates,
-                // but not overwriting the beginning- or mid-step values
-                pmb->meshblock_data.Add("solver", base);
-                if (use_linesearch) {
-                    // Need an additional state for linesearch
-                    pmb->meshblock_data.Add("linesearch", base);
-                }
+    // Allocate/copy the things we need
+    // TODO these can now be reduced by including the var lists/flags which actually need to be allocated
+    // TODO except the Copy they can be run on step 1 only
+    if (stage == 1) {
+        auto &base = pmesh->mesh_data.Get();
+        // Fluxes
+        pmesh->mesh_data.Add("dUdt");
+        for (int i = 1; i < integrator->nstages; i++)
+            pmesh->mesh_data.Add(integrator->stage_name[i]);
+        // Preserve state for time derivatives if we need to output current
+        if (use_jcon) {
+            pmesh->mesh_data.Add("preserve");
+            // Above only copies on allocate -- ensure we copy every step
+            Copy<MeshData<Real>>({}, base.get(), pmesh->mesh_data.Get("preserve").get());
+        }
+        if (use_implicit) {
+            // When solving, we need a temporary copy with any explicit updates,
+            // but not overwriting the beginning- or mid-step values
+            pmesh->mesh_data.Add("solver");
+            if (use_linesearch) {
+                // Need an additional state for linesearch
+                pmesh->mesh_data.Add("linesearch");
             }
         }
     }

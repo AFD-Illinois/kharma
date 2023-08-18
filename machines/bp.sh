@@ -27,6 +27,14 @@ if [[ $METAL_HOSTNAME == "fermium" ]]; then
   DEVICE_ARCH="TURING75"
   # Nvidia MPI hangs unless I do this
   MPI_EXE=mpirun
+
+  if [[ "$ARGS" == *"cuda"* ]]; then
+    echo "Nothing special for cuda"
+  else
+    # AMD for CPUs
+    CXX_NATIVE=clang++
+    C_NATIVE=clang
+  fi
 fi
 
 if [[ $METAL_HOSTNAME == "ferrum" ]]; then

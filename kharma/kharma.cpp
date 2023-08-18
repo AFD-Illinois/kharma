@@ -301,6 +301,8 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput> &pin)
     auto t_grmhd = tl.AddTask(t_globals | t_driver, KHARMA::AddPackage, packages, GRMHD::Initialize, pin.get());
     // Inverter (TODO: split out fixups, then don't load this when GRMHD isn't loaded)
     auto t_inverter = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, Inverter::Initialize, pin.get());
+    // Reductions, needed for most other packages
+    auto t_reductions = tl.AddTask(t_none, KHARMA::AddPackage, packages, Reductions::Initialize, pin.get());
 
     // B field solvers, to ensure divB ~= 0.
     // Bunch of logic here: basically we want to load <=1 solver with an encoded order of preference
@@ -335,12 +337,8 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput> &pin)
         if (t_b_field == t_none) t_b_field = t_b_cleanup;
     }
 
-    // Enable calculating jcon iff it is in any list of outputs (and there's even B to calculate it).
-    // Since it is never required to restart, this is the only time we'd write (hence, need) it
-    if (FieldIsOutput(pin.get(), "jcon") && t_b_field != t_none) {
-        auto t_current = tl.AddTask(t_b_field, KHARMA::AddPackage, packages, Current::Initialize, pin.get());
-    }
-    // Electrons are usually boring but not impossible without a B field (TODO add a test?)
+    // Optional standalone packages
+    // Electrons are boring but not impossible without a B field (TODO add a test?)
     if (pin->GetOrAddBoolean("electrons", "on", false)) {
         auto t_electrons = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, Electrons::Initialize, pin.get());
     }
@@ -349,6 +347,11 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput> &pin)
     }
     if (pin->GetOrAddBoolean("wind", "on", false)) {
         auto t_electrons = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, Wind::Initialize, pin.get());
+    }
+    // Enable calculating jcon iff it is in any list of outputs (and there's even B to calculate it).
+    // Since it is never required to restart, this is the only time we'd write (hence, need) it
+    if (FieldIsOutput(pin.get(), "jcon") && t_b_field != t_none) {
+        auto t_current = tl.AddTask(t_b_field, KHARMA::AddPackage, packages, Current::Initialize, pin.get());
     }
 
     // Execute the whole collection (just in case we do something fancy?)
@@ -365,7 +368,8 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput> &pin)
     KHARMA::AddPackage(packages, KBoundaries::Initialize, pin.get());
 
     // Load the implicit package last, and only if there are any variables which need implicit evolution
-    int n_implicit = CountVars(packages.get(), Metadata::GetUserFlag("Implicit"));
+    auto all_implicit = Metadata::FlagCollection(Metadata::GetUserFlag("Implicit"));
+    int n_implicit = PackDimension(packages.get(), Metadata::GetUserFlag("Implicit"));
     if (n_implicit > 0) {
         KHARMA::AddPackage(packages, Implicit::Initialize, pin.get());
     }

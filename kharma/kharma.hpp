@@ -31,6 +31,7 @@
  *  OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+#pragma once
 
 #include "decs.hpp"
 #include "types.hpp"
@@ -109,32 +110,36 @@ inline bool FieldIsOutput(ParameterInput *pin, std::string name)
  * This fn calculates the size a VariablePack *would* be, without making one --
  * it uses only the package list, and counts through each variable in each package.
  * Mostly useful for initialization.
- * TODO can this take flagcollections?  Move to Parthenon...
  */
-inline int CountVars(Packages_t* packages, MetadataFlag flag)
+inline int PackDimension(Packages_t* packages, Metadata::FlagCollection fc)
 {
+    // We want to exclude anything specific to B field cleanup & not used elsewhere
+    // (confusingly, this isn't *necessarily* everything in the B_Cleanup package)
+    if (packages->AllPackages().count("B_Cleanup"))
+        fc = fc - Metadata::GetUserFlag("B_Cleanup");
+
+    // Count dimensions (1 for scalars + vector lengths) of each package's variables
     int nvar = 0;
     for (auto pkg : packages->AllPackages()) {
-        for (auto field : pkg.second->AllFields()) {
-            // Specifically ignore the B_Cleanup variables, we'll never want them separately like this
-            bool is_not_cleanup = packages->AllPackages().count("B_Cleanup")
-                                    ? !field.second.IsSet(Metadata::GetUserFlag("B_Cleanup"))
-                                    : true;
-            if (field.second.IsSet(flag) && is_not_cleanup) {
-                int var_len = 0;
-                if (field.second.IsSet(Metadata::Face)) {
-                    var_len = 3; // TODO non-scalar face fields?
-                } else if (field.second.Shape().size() < 1) {
-                    var_len = 1;
-                } else {
-                    var_len = field.second.Shape()[0];
-                }
-                //std::cout << "flag: " << flag << " var: " << field.first.label() << " size: " << var_len << std::endl;
-                nvar += var_len;
-            }
-        }
+        nvar += pkg.second->GetPackDimension(fc);
     }
     return nvar;
+}
+
+/**
+ * This fn calculates the size a VariablePack *would* be, without making one --
+ * it uses only the package list, and counts through each variable in each package.
+ * Mostly useful for initialization.
+ */
+inline std::vector<std::string> GetVariableNames(Packages_t* packages, Metadata::FlagCollection fc)
+{
+    // Count dimensions (1 for scalars + vector lengths) of each package's variables
+    std::vector<std::string> names;
+    for (auto pkg : packages->AllPackages()) {
+        std::vector<std::string> pnames = pkg.second->GetVariableNames(fc);
+        names.insert(names.end(), pnames.begin(), pnames.end());
+    }
+    return names;
 }
 
 }

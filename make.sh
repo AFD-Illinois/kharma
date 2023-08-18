@@ -255,6 +255,7 @@ if [[ "$ARGS" == *"hdf5"* && "$ARGS" == *"clean"* ]]; then
 
   echo Configuring HDF5...
 
+  export CFLAGS="-fPIC $CFLAGS"
   CC=$HDF_CC sh configure -C $HDF_EXTRA --prefix=$SOURCE_DIR/external/hdf5 --enable-build-mode=production \
   --disable-dependency-tracking --disable-hl --disable-tests --disable-tools --disable-shared --disable-deprecated-symbols > build-hdf5.log
   sleep 1

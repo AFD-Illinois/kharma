@@ -44,7 +44,6 @@
 #include "wind.hpp"
 // Other headers
 #include "boundaries.hpp"
-#include "debug.hpp"
 #include "flux.hpp"
 #include "resize_restart.hpp"
 #include "implicit.hpp"
@@ -87,12 +86,6 @@ TaskCollection KHARMADriver::MakeDefaultTaskCollection(BlockList_t &blocks, int 
     const bool use_b_ct = pkgs.count("B_CT");
     const bool use_electrons = pkgs.count("Electrons");
     const bool use_jcon = pkgs.count("Current");
-
-    // If we cleaned up, this added other fields marked FillDerived
-    // Remove them before we allocate the space
-    if (use_b_cleanup) {
-        B_Cleanup::RemoveExtraFields(blocks);
-    }
 
     // Allocate the fluid states ("containers") we need for each block
     for (auto& pmb : blocks) {

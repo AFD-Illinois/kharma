@@ -37,6 +37,7 @@
 
 #include "boundary_types.hpp"
 #include "kharma_package.hpp"
+#include "reductions_types.hpp"
 
 #include <parthenon/parthenon.hpp>
 

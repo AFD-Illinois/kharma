@@ -110,8 +110,10 @@ double MaxDivB(MeshData<Real> *md);
 
 /**
  * Returns the global maximum value, rather than the maximum over this rank's MeshData
+ * 
+ * By default, only returns the correct value on rank 0 for printing
  */
-double GlobalMaxDivB(MeshData<Real> *md);
+double GlobalMaxDivB(MeshData<Real> *md, bool all_reduce=false);
 
 /**
  * Diagnostics printed/computed after each step
@@ -124,7 +126,7 @@ TaskStatus PrintGlobalMaxDivB(MeshData<Real> *md, bool kill_on_large_divb=false)
  */
 inline TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
 {
-    auto& params = md->GetMeshPointer()->block_list[0]->packages.Get("B_FluxCT")->AllParams();
+    auto& params = md->GetMeshPointer()->packages.Get("B_FluxCT")->AllParams();
     return PrintGlobalMaxDivB(md, params.Get<bool>("kill_on_large_divb"));
 }
 
@@ -133,25 +135,17 @@ inline TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
  */
 void FillOutput(MeshBlock *pmb, ParameterInput *pin);
 /**
- * Fill field "name" with divB
+ * Fill the field 'divb_field_name' with divB
  */
 void CalcDivB(MeshData<Real> *md, std::string divb_field_name="divB");
 
-// Reductions: phi uses global machinery, but divB is too 
-// Can also sum the hemispheres independently to be fancy (TODO?)
-KOKKOS_INLINE_FUNCTION Real phi(REDUCE_FUNCTION_ARGS_EH)
-{
-    // \Phi == \int |*F^1^0| * gdet * dx2 * dx3 == \int |B1| * gdet * dx2 * dx3
-    return 0.5 * m::abs(U(m_u.B1, k, j, i)); // factor of gdet already in cons.B
-}
-
 inline Real ReducePhi0(MeshData<Real> *md)
 {
-    return Reductions::EHReduction(md, UserHistoryOperation::sum, phi, 0);
+    return Reductions::EHReduction<Reductions::Var::phi, Real>(md, UserHistoryOperation::sum, 0);
 }
 inline Real ReducePhi5(MeshData<Real> *md)
 {
-    return Reductions::EHReduction(md, UserHistoryOperation::sum, phi, 5);
+    return Reductions::EHReduction<Reductions::Var::phi, Real>(md, UserHistoryOperation::sum, 5);
 }
 
 /**

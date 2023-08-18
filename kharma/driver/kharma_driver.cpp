@@ -266,5 +266,35 @@ TaskID KHARMADriver::AddFluxCalculations(TaskID& t_start, TaskList& tl, KReconst
                   << "donor_cell, linear_mc, weno5" << std::endl;
         throw std::invalid_argument("Unsupported reconstruction algorithm!");
     }
-    return t_calculate_flux1 | t_calculate_flux2 | t_calculate_flux3;
+    auto t_calc_fluxes = t_calculate_flux1 | t_calculate_flux2 | t_calculate_flux3;
+
+    auto t_ctop = t_calc_fluxes;
+    if (md->GetMeshPointer()->packages.Get("Globals")->Param<int>("extra_checks") > 0) {
+        auto t_ctop = tl.AddTask(t_calc_fluxes, Flux::CheckCtop, md);
+    }
+
+    return t_ctop;
+}
+
+void KHARMADriver::SetGlobalTimeStep()
+{
+  // TODO TODO apply the limits from GRMHD package here
+  if (tm.dt < 0.1 * std::numeric_limits<Real>::max()) {
+    tm.dt *= 2.0;
+  }
+  Real big = std::numeric_limits<Real>::max();
+  for (auto const &pmb : pmesh->block_list) {
+    tm.dt = std::min(tm.dt, pmb->NewDt());
+    pmb->SetAllowedDt(big);
+  }
+
+    // TODO start reduce at the end of the per-meshblock stuff, check here
+#ifdef MPI_PARALLEL
+  PARTHENON_MPI_CHECK(MPI_Allreduce(MPI_IN_PLACE, &tm.dt, 1, MPI_PARTHENON_REAL, MPI_MIN,
+                                    MPI_COMM_WORLD));
+#endif
+
+  if (tm.time < tm.tlim &&
+      (tm.tlim - tm.time) < tm.dt) // timestep would take us past desired endpoint
+    tm.dt = tm.tlim - tm.time;
 }

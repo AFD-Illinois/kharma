@@ -41,7 +41,6 @@
 #include "b_field_tools.hpp"
 #include "blob.hpp"
 #include "boundaries.hpp"
-#include "debug.hpp"
 #include "floors.hpp"
 #include "flux.hpp"
 #include "gr_coordinates.hpp"
@@ -56,6 +55,7 @@
  * Should only be used in initialization code, as the
  * reducer object & MPI comm are created on entry &
  * cleaned on exit
+ * TODO use Reductions stuff?
  */
 template<typename T>
 inline T MPIReduce_once(T f, MPI_Op O)
@@ -69,35 +69,18 @@ inline T MPIReduce_once(T f, MPI_Op O)
     return reduction.val;
 }
 
-// Define reductions we need just for PostInitialize code.
-// TODO namespace...
-KOKKOS_INLINE_FUNCTION Real bsq(REDUCE_FUNCTION_ARGS_MESH)
-{
-    FourVectors Dtmp;
-    GRMHD::calc_4vecs(G, P, m_p, k, j, i, Loci::center, Dtmp);
-    return dot(Dtmp.bcon, Dtmp.bcov);
-}
-KOKKOS_INLINE_FUNCTION Real gas_pres(REDUCE_FUNCTION_ARGS_MESH)
-{
-    return (gam - 1) * P(m_p.UU, k, j, i);
-}
-KOKKOS_INLINE_FUNCTION Real gas_beta(REDUCE_FUNCTION_ARGS_MESH)
-{
-    FourVectors Dtmp;
-    GRMHD::calc_4vecs(G, P, m_p, k, j, i, Loci::center, Dtmp);
-    return ((gam - 1) * P(m_p.UU, k, j, i))/(0.5*(dot(Dtmp.bcon, Dtmp.bcov) + SMALL));
-}
+// Shorter names for the reductions we use here
 Real MaxBsq(MeshData<Real> *md)
 {
-    return Reductions::DomainReduction(md, UserHistoryOperation::max, bsq, 0.0);
+    return Reductions::DomainReduction<Reductions::Var::bsq, Real>(md, UserHistoryOperation::max);
 }
 Real MaxPressure(MeshData<Real> *md)
 {
-    return Reductions::DomainReduction(md, UserHistoryOperation::max, gas_pres, 0.0);
+    return Reductions::DomainReduction<Reductions::Var::gas_pressure, Real>(md, UserHistoryOperation::max);
 }
 Real MinBeta(MeshData<Real> *md)
 {
-    return Reductions::DomainReduction(md, UserHistoryOperation::min, gas_beta, 0.0);
+    return Reductions::DomainReduction<Reductions::Var::beta, Real>(md, UserHistoryOperation::min);
 }
 
 void KHARMA::SeedAndNormalizeB(ParameterInput *pin, std::shared_ptr<MeshData<Real>> md)
@@ -109,7 +92,7 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, std::shared_ptr<MeshData<Rea
     const bool use_b_cd = pmesh->packages.AllPackages().count("B_CD");
     const int verbose = pmesh->packages.Get("Globals")->Param<int>("verbose");
 
-    // TODO this should be restructured...
+    fprintf(stderr, "0.5");
 
     Flag("SeedBField");
     // Seed the magnetic field on each block
@@ -124,6 +107,8 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, std::shared_ptr<MeshData<Rea
         }
     }
     EndFlag();
+
+    fprintf(stderr, "0.9");
 
     // Then, if we're in a torus problem or we explicitly ask for it,
     // normalize the magnetic field according to the density
@@ -142,9 +127,11 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, std::shared_ptr<MeshData<Rea
         // Calculate current beta_min value
         Real bsq_max, p_max, beta_min;
         if (beta_calc_legacy) {
-            std::cout << "Max is " << MaxBsq(md.get()) << std::endl;
+            fprintf(stderr, "1");
             bsq_max = MPIReduce_once(MaxBsq(md.get()), MPI_MAX);
+            fprintf(stderr, "2");
             p_max = MPIReduce_once(MaxPressure(md.get()), MPI_MAX);
+            fprintf(stderr, "3");
             beta_min = p_max / (0.5 * bsq_max);
         } else {
             beta_min = MPIReduce_once(MinBeta(md.get()), MPI_MIN);
@@ -207,29 +194,35 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart)
     // If your problem requires custom boundary conditions, these should be implemented
     // with the problem and assigned to the relevant functions in the "Boundaries" package.
 
-    // Make sure we've built the MeshData object we'll be synchronizing/updating
-    auto &md = pmesh->mesh_data.GetOrAdd("base", 0);
+    fprintf(stderr, "0.0");
+    auto &md = pmesh->mesh_data.Get();
 
     auto& pkgs = pmesh->packages.AllPackages();
 
+    fprintf(stderr, "0.1");
     // Magnetic field operations
     if (pin->GetString("b_field", "solver") != "none") {
         // If we need to seed a field based on the problem's fluid initialization...
         if (pin->GetOrAddString("b_field", "type", "none") != "none" && !is_restart) {
             // B field init is not stencil-1, needs boundaries sync'd.
             // FreezeDirichlet ensures any Dirichlet conditions aren't overwritten by zeros
+            fprintf(stderr, "0.2");
             KBoundaries::FreezeDirichlet(md);
             KHARMADriver::SyncAllBounds(md);
 
+            fprintf(stderr, "0.3");
             // Then init B field on each block...
             KHARMA::SeedAndNormalizeB(pin, md);
         }
+        fprintf(stderr, "4");
 
         // Regardless, if evolving a field we should print max(divB)
         // divB is not stencil-1 and we may not have run the above.
         // If we did, we still need another sync, so it works out
         KBoundaries::FreezeDirichlet(md);
         KHARMADriver::SyncAllBounds(md);
+
+        fprintf(stderr, "5");
 
         if (pkgs.count("B_FluxCT")) {
             B_FluxCT::PrintGlobalMaxDivB(md.get());
@@ -239,6 +232,8 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart)
             //B_CD::PrintGlobalMaxDivB(md.get());
         }
     }
+
+    fprintf(stderr, "6");
 
     // Add any hotspots.
     // Note any other modifications made when restarting should be made around here
@@ -250,12 +245,16 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart)
         }
     }
 
+    fprintf(stderr, "7");
+
     // Any extra cleanup & init especially when restarting
     if (is_restart) {
         // Parthenon restores all parameters (global vars) when restarting,
         // but KHARMA needs a few (currently one) reset instead
         KHARMA::ResetGlobals(pin, pmesh);
     }
+
+    fprintf(stderr, "8");
 
     // Clean the B field if we've introduced a divergence somewhere
     // We call this function any time the package is loaded:
@@ -269,9 +268,9 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart)
 
         // This does its own MPI syncs
         B_Cleanup::CleanupDivergence(md);
-
-        B_Cleanup::RemoveExtraFields(pmesh->block_list);
     }
+
+    fprintf(stderr, "9");
 
     // Finally, synchronize boundary values.
     // Freeze any Dirichlet physical boundaries as they are now, after cleanup/sync/etc.

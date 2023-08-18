@@ -36,7 +36,6 @@
 
 #include "b_field_tools.hpp"
 #include "boundaries.hpp"
-#include "debug.hpp"
 #include "electrons.hpp"
 #include "floors.hpp"
 #include "flux.hpp"
