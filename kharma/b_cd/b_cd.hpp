@@ -47,7 +47,7 @@ using namespace parthenon;
  *
  * This requires only the values at cell centers, and preserves a cell-centered divergence representation
  * 
- * This implementation includes conversion from "primitive" to "conserved" B and back,
+ * This implementation includes conversion from "GRPrimitive" to "conserved" B and back,
  * i.e. between field strength and flux via multiplying by gdet.
  */
 namespace B_CD {

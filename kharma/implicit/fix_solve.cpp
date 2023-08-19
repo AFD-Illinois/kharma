@@ -46,7 +46,7 @@ TaskStatus Implicit::FixSolve(MeshBlockData<Real> *mbd) {
 
     // Get number of implicit variables
     PackIndexMap implicit_prims_map;
-    auto implicit_vars = Implicit::GetOrderedNames(mbd, Metadata::GetUserFlag("Primitive"), true);
+    auto implicit_vars = Implicit::GetOrderedNames(mbd, Metadata::GetUserFlag("GRPrimitive"), true);
     auto& P            = mbd->PackVariables(implicit_vars, implicit_prims_map);
     const int nfvar    = P.GetDim(4);
 
@@ -131,8 +131,8 @@ TaskStatus Implicit::FixSolve(MeshBlockData<Real> *mbd) {
     // Since floors were applied earlier, we assume the zones obtained by averaging the neighbors also respect the floors.
     // Compute new conserved variables
     PackIndexMap prims_map, cons_map;
-    auto& P_all = mbd->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("Primitive")}, prims_map);
-    auto& U_all = mbd->PackVariables(std::vector<MetadataFlag>{Metadata::Conserved}, cons_map);
+    auto& P_all = mbd->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("GRPrimitive")}, prims_map);
+    auto& U_all = mbd->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("GRConserved")}, cons_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
 
     // Need emhd_params object

@@ -171,7 +171,7 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
         // If evolving GRMHD explicitly, UtoP needs a guess in order to converge, so we copy in md_sub_step_init
         auto t_copy_prims = t_none;
         if (!pkgs.at("GRMHD")->Param<bool>("implicit")) {
-            t_copy_prims = tl.AddTask(t_none, Copy<MeshData<Real>>, std::vector<MetadataFlag>({Metadata::GetUserFlag("HD"), Metadata::GetUserFlag("Primitive")}),
+            t_copy_prims = tl.AddTask(t_none, Copy<MeshData<Real>>, std::vector<MetadataFlag>({Metadata::GetUserFlag("HD"), Metadata::GetUserFlag("GRPrimitive")}),
                                       md_sub_step_init.get(), md_solver.get());
         }
 
@@ -199,7 +199,7 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
             // Copy the primitives to the `linesearch` MeshData object if linesearch was enabled.
             auto t_copy_linesearch = t_guess_ready;
             if (use_linesearch) {
-                t_copy_linesearch = tl.AddTask(t_guess_ready, Copy<MeshData<Real>>, std::vector<MetadataFlag>({Metadata::GetUserFlag("Primitive")}),
+                t_copy_linesearch = tl.AddTask(t_guess_ready, Copy<MeshData<Real>>, std::vector<MetadataFlag>({Metadata::GetUserFlag("GRPrimitive")}),
                                                 md_solver.get(), md_linesearch.get());
             }
 

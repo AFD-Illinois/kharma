@@ -62,20 +62,21 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     // B field as usual
     // TODO allow for implicit B here
     Metadata m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Independent, Metadata::FillGhost,
-                 Metadata::Restart, Metadata::Conserved, Metadata::WithFluxes, Metadata::Vector}, s_vector);
+                 Metadata::Restart, Metadata::GetUserFlag("GRConserved"), Metadata::Conserved,
+                 Metadata::WithFluxes, Metadata::Vector}, s_vector);
     pkg->AddField("cons.B", m);
     m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived,
-                  Metadata::Restart, Metadata::GetUserFlag("Primitive"), Metadata::Vector}, s_vector);
+                  Metadata::Restart, Metadata::GetUserFlag("GRPrimitive"), Metadata::Vector}, s_vector);
     pkg->AddField("prims.B", m);
 
     // Constraint damping scalar field psi.  Prim and cons forms correspond to B field forms,
     // i.e. differ by a factor of gdet.  This is apparently marginally more stable in some
     // circumstances.
     m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Independent, Metadata::FillGhost,
-                  Metadata::Restart, Metadata::Conserved, Metadata::WithFluxes});
+                  Metadata::Restart, Metadata::GetUserFlag("GRConserved"), Metadata::Conserved, Metadata::WithFluxes});
     pkg->AddField("cons.psi_cd", m);
     m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived,
-                  Metadata::Restart, Metadata::GetUserFlag("Primitive")});
+                  Metadata::Restart, Metadata::GetUserFlag("GRPrimitive")});
     pkg->AddField("prims.psi_cd", m);
 
     // We only update the divB field for output

@@ -126,9 +126,9 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     MetadataFlag areWeImplicit = (implicit_e) ? Metadata::GetUserFlag("Implicit")
                                               : Metadata::GetUserFlag("Explicit");
 
-    std::vector<MetadataFlag> flags_cons = {Metadata::Real, Metadata::Cell, Metadata::Independent, Metadata::Conserved,
+    std::vector<MetadataFlag> flags_cons = {Metadata::Real, Metadata::Cell, Metadata::Independent, Metadata::GetUserFlag("GRConserved"), Metadata::Conserved,
                                             Metadata::WithFluxes, Metadata::FillGhost, areWeImplicit, Metadata::GetUserFlag("Electrons")};
-    std::vector<MetadataFlag> flags_prim = {Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::GetUserFlag("Primitive"),
+    std::vector<MetadataFlag> flags_prim = {Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::GetUserFlag("GRPrimitive"),
                                             Metadata::Restart, areWeImplicit, Metadata::GetUserFlag("Electrons")};
 
     // Total entropy, used to track changes
@@ -201,7 +201,7 @@ TaskStatus InitElectrons(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInpu
 
     // Need to distinguish KTOT from the other variables, so we record which it is
     PackIndexMap prims_map;
-    auto& e_P = rc->PackVariables({Metadata::GetUserFlag("Electrons"), Metadata::GetUserFlag("Primitive")}, prims_map);
+    auto& e_P = rc->PackVariables({Metadata::GetUserFlag("Electrons"), Metadata::GetUserFlag("GRPrimitive")}, prims_map);
     const int ktot_index = prims_map["prims.Ktot"].first;
     // Just need these two from the rest of Prims
     GridScalar rho = rc->Get("prims.rho").data;
@@ -238,8 +238,8 @@ void BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     auto pmb = rc->GetBlockPointer();
 
     // No need for a "map" here, we just want everything that fits these
-    auto& e_P = rc->PackVariables({Metadata::GetUserFlag("Electrons"), Metadata::GetUserFlag("Primitive")});
-    auto& e_U = rc->PackVariables({Metadata::GetUserFlag("Electrons"), Metadata::Conserved});
+    auto& e_P = rc->PackVariables({Metadata::GetUserFlag("Electrons"), Metadata::GetUserFlag("GRPrimitive")});
+    auto& e_U = rc->PackVariables({Metadata::GetUserFlag("Electrons"), Metadata::GetUserFlag("GRConserved")});
     // And then the local density
     GridScalar rho_U = rc->Get("cons.rho").data;
 
@@ -261,8 +261,8 @@ void BlockPtoU(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     auto pmb = rc->GetBlockPointer();
 
     PackIndexMap prims_map, cons_map;
-    auto& P = rc->PackVariables({Metadata::GetUserFlag("Primitive")}, prims_map);
-    auto& U = rc->PackVariables({Metadata::Conserved}, cons_map);
+    auto& P = rc->PackVariables({Metadata::GetUserFlag("GRPrimitive")}, prims_map);
+    auto& U = rc->PackVariables({Metadata::GetUserFlag("GRConserved")}, cons_map);
     const VarMap m_p(prims_map, false), m_u(cons_map, true);
     // And then the local density
     GridScalar rho_P = rc->Get("cons.rho").data;
@@ -287,9 +287,9 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
     // so we only bother with one map of the primitives
     // TODO Parthenon can definitely build a pack from a map, though
     PackIndexMap prims_map, cons_map;
-    auto& P = rc_old->PackVariables({Metadata::GetUserFlag("Primitive")}, prims_map);
-    auto& P_new = rc->PackVariables({Metadata::GetUserFlag("Primitive")}, prims_map);
-    auto& U_new = rc->PackVariables({Metadata::Conserved}, cons_map);
+    auto& P = rc_old->PackVariables({Metadata::GetUserFlag("GRPrimitive")}, prims_map);
+    auto& P_new = rc->PackVariables({Metadata::GetUserFlag("GRPrimitive")}, prims_map);
+    auto& U_new = rc->PackVariables({Metadata::GetUserFlag("GRConserved")}, cons_map);
     const VarMap m_p(prims_map, false), m_u(cons_map, true);
 
     auto pmb = rc->GetBlockPointer();

@@ -32,6 +32,7 @@ if [[ $METAL_HOSTNAME == "fermium" ]]; then
     echo "Nothing special for cuda"
   else
     # AMD for CPUs
+    module load aocc-compiler-4.1.0 mpi
     CXX_NATIVE=clang++
     C_NATIVE=clang
   fi

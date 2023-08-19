@@ -186,8 +186,8 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
     // just the residual & Jacobian we care about, which makes the solve faster.
     auto& mbd_full_step_init  = md_full_step_init->GetBlockData(0); // MeshBlockData object, more member functions
     
-    auto ordered_prims = GetOrderedNames(mbd_full_step_init.get(), Metadata::GetUserFlag("Primitive"));
-    auto ordered_cons  = GetOrderedNames(mbd_full_step_init.get(), Metadata::Conserved);
+    auto ordered_prims = GetOrderedNames(mbd_full_step_init.get(), Metadata::GetUserFlag("GRPrimitive"));
+    auto ordered_cons  = GetOrderedNames(mbd_full_step_init.get(), Metadata::GetUserFlag("GRConserved"));
     //std::cerr << "Ordered prims:"; for(auto prim: ordered_prims) std::cerr << " " << prim; std::cerr << std::endl;
     //std::cerr << "Ordered cons:"; for(auto con: ordered_cons) std::cerr << " " << con; std::cerr << std::endl;
 
@@ -209,7 +209,7 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
     const int nblock = U_full_step_init_all.GetDim(5);
     const int nvar   = U_full_step_init_all.GetDim(4);
     // Get number of implicit variables
-    auto implicit_vars = GetOrderedNames(mbd_full_step_init.get(), Metadata::GetUserFlag("Primitive"), true);
+    auto implicit_vars = GetOrderedNames(mbd_full_step_init.get(), Metadata::GetUserFlag("GRPrimitive"), true);
     //std::cerr << "Ordered implicit:"; for(auto var: implicit_vars) std::cerr << " " << var; std::cerr << std::endl;
 
     PackIndexMap implicit_prims_map;

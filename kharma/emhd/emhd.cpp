@@ -129,9 +129,9 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     // EMHD is supported only with imex driver and implicit evolution,
     // synchronizing primitive variables
     Metadata m_con  = Metadata({Metadata::Real, Metadata::Cell, Metadata::Independent, Metadata::GetUserFlag("Implicit"),
-                                Metadata::WithFluxes, Metadata::Conserved, Metadata::GetUserFlag("EMHDVar")});
+                                Metadata::WithFluxes, Metadata::GetUserFlag("GRConserved"), Metadata::Conserved, Metadata::GetUserFlag("EMHDVar")});
     Metadata m_prim = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::GetUserFlag("Implicit"),
-                                Metadata::Restart, Metadata::FillGhost, Metadata::GetUserFlag("Primitive"), Metadata::GetUserFlag("EMHDVar")});
+                                Metadata::Restart, Metadata::FillGhost, Metadata::GetUserFlag("GRPrimitive"), Metadata::GetUserFlag("EMHDVar")});
 
     // Heat conduction
     if (conduction) {
@@ -186,7 +186,7 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
 
 //     PackIndexMap prims_map, cons_map;
 //     auto U_E = rc->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("EMHDVar"), Metadata::Conserved}, cons_map);
-//     auto P = rc->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("Primitive")}, prims_map);
+//     auto P = rc->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("GRPrimitive")}, prims_map);
 //     const VarMap m_p(prims_map, false), m_u(cons_map, true);
 
 //     const auto& G = pmb->coords;
@@ -217,8 +217,8 @@ void BlockPtoU(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     auto pmb = rc->GetBlockPointer();
 
     PackIndexMap prims_map, cons_map;
-    auto U_E = rc->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("EMHDVar"), Metadata::Conserved}, cons_map);
-    auto P = rc->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("Primitive")}, prims_map);
+    auto U_E = rc->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("EMHDVar"), Metadata::GetUserFlag("GRConserved")}, cons_map);
+    auto P = rc->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("GRPrimitive")}, prims_map);
     const VarMap m_p(prims_map, false), m_u(cons_map, true);
 
     const auto& G = pmb->coords;
@@ -263,9 +263,9 @@ TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
 
     // Pack variables
     PackIndexMap prims_map, cons_map, source_map;
-    auto P    = md->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("Primitive")}, prims_map);
-    auto U    = md->PackVariables(std::vector<MetadataFlag>{Metadata::Conserved}, cons_map);
-    auto dUdt = mdudt->PackVariables(std::vector<MetadataFlag>{Metadata::Conserved}, source_map);
+    auto P    = md->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("GRPrimitive")}, prims_map);
+    auto U    = md->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("GRConserved")}, cons_map);
+    auto dUdt = mdudt->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("GRConserved")}, source_map);
     const VarMap m_p(prims_map, false), m_u(cons_map, true), m_s(source_map, true);
 
     // Get temporary ucov, Theta for gradients

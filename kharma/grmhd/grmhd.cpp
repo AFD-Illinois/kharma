@@ -127,8 +127,9 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
 
     // Add flags to distinguish groups of fields.
     // 1. One flag to mark the primitive variables specifically
-    // (Parthenon has Metadata::Conserved already)
-    Metadata::AddUserFlag("Primitive");
+    // (Parthenon has Metadata::Conserved already, but that has special meanings for it)
+    Metadata::AddUserFlag("GRPrimitive");
+    Metadata::AddUserFlag("GRConserved");
     // 2. And one for hydrodynamics (everything we directly handle in this package)
     Metadata::AddUserFlag("HD");
     // 3. And one for magnetohydrodynamics
@@ -139,9 +140,11 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
                                                   : Metadata::GetUserFlag("Explicit");
 
     std::vector<MetadataFlag> flags_prim = {Metadata::Real, Metadata::Cell, Metadata::Derived, areWeImplicit,
-                                            Metadata::Restart, Metadata::GetUserFlag("Primitive"), Metadata::GetUserFlag("HD"), Metadata::GetUserFlag("MHD")};
+                                            Metadata::Restart, Metadata::GetUserFlag("GRPrimitive"),
+                                            Metadata::GetUserFlag("HD"), Metadata::GetUserFlag("MHD")};
     std::vector<MetadataFlag> flags_cons = {Metadata::Real, Metadata::Cell, Metadata::Independent, areWeImplicit,
-                                            Metadata::WithFluxes, Metadata::Conserved, Metadata::GetUserFlag("HD"), Metadata::GetUserFlag("MHD")};
+                                            Metadata::WithFluxes, Metadata::GetUserFlag("GRConserved"), Metadata::Conserved,
+                                            Metadata::GetUserFlag("HD"), Metadata::GetUserFlag("MHD")};
 
     bool sync_prims = packages->Get("Driver")->Param<bool>("sync_prims");
     if (!sync_prims) { // Normal operation

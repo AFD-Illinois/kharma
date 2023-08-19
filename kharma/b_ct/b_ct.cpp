@@ -41,6 +41,7 @@
 #include "kharma_driver.hpp"
 
 #include <parthenon/parthenon.hpp>
+#include <prolong_restrict/pr_ops.hpp>
 
 using namespace parthenon;
 
@@ -77,22 +78,23 @@ std::shared_ptr<KHARMAPackage> B_CT::Initialize(ParameterInput *pin, std::shared
     // TODO maybe one day implicit?
 
     // Flags for B fields on faces.
-    // We don't mark these as "Primitive" and "Conserved" else they'd be bundled
+    // We don't mark these as "GRPrimitive" and "GRConserved" else they'd be bundled
     // with all the cell vars in a bunch of places we don't want
     std::vector<MetadataFlag> flags_prim_f = {Metadata::Real, Metadata::Face, Metadata::Derived,
                                             Metadata::GetUserFlag("Explicit")};
-    std::vector<MetadataFlag> flags_cons_f = {Metadata::Real, Metadata::Face, Metadata::Independent,
+    std::vector<MetadataFlag> flags_cons_f = {Metadata::Real, Metadata::Face, Metadata::Independent, Metadata::Conserved,
                                               Metadata::GetUserFlag("Explicit"), Metadata::FillGhost}; // TODO TODO Restart
     auto m = Metadata(flags_prim_f);
     pkg->AddField("prims.fB", m);
     m = Metadata(flags_cons_f);
+    m.RegisterRefinementOps<parthenon::refinement_ops::ProlongateSharedMinMod, parthenon::refinement_ops::RestrictAverage, ProlongateInternalOlivares>();
     pkg->AddField("cons.fB", m);
 
     // Cell-centered versions.  Needed for BS, not for other schemes.
     // Probably will want to keep primitives for e.g. correct PtoU of MHD vars, but cons maybe can go
-    std::vector<MetadataFlag> flags_prim = {Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::GetUserFlag("Primitive"),
+    std::vector<MetadataFlag> flags_prim = {Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::GetUserFlag("GRPrimitive"),
                                             Metadata::GetUserFlag("MHD"), Metadata::GetUserFlag("Explicit"), Metadata::Vector};
-    std::vector<MetadataFlag> flags_cons = {Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::Conserved, Metadata::WithFluxes,
+    std::vector<MetadataFlag> flags_cons = {Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::GetUserFlag("GRConserved"), Metadata::WithFluxes,
                                             Metadata::GetUserFlag("MHD"), Metadata::GetUserFlag("Explicit"), Metadata::Vector};
     std::vector<int> s_vector({NVEC});
     m = Metadata(flags_prim, s_vector);
@@ -102,7 +104,7 @@ std::shared_ptr<KHARMAPackage> B_CT::Initialize(ParameterInput *pin, std::shared
 
     // EMF on edges.
     // TODO only sync when needed
-    std::vector<MetadataFlag> flags_emf = {Metadata::Real, Metadata::Edge, Metadata::Derived, Metadata::OneCopy, Metadata::FillGhost};
+    std::vector<MetadataFlag> flags_emf = {Metadata::Real, Metadata::Edge, Metadata::Derived, Metadata::OneCopy};
     m = Metadata(flags_emf);
     pkg->AddField("B_CT.emf", m);
 
@@ -125,7 +127,6 @@ std::shared_ptr<KHARMAPackage> B_CT::Initialize(ParameterInput *pin, std::shared
 
     // Register the other callbacks
     pkg->PostStepDiagnosticsMesh = B_CT::PostStepDiagnostics;
-    // TODO TODO prolongation/restriction will be registered here too
 
     // The definition of MaxDivB we care about actually changes per-transport,
     // so calculating it is handled by the transport package
@@ -138,15 +139,15 @@ std::shared_ptr<KHARMAPackage> B_CT::Initialize(ParameterInput *pin, std::shared
 
     // List (vector) of HistoryOutputVars that will all be enrolled as output variables
     // LATER
-    // parthenon::HstVar_list hst_vars = {};
-    // hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::max, B_CT::MaxDivB, "MaxDivB"));
-    // // Event horizon magnetization.  Might be the same or different for different representations?
-    // if (pin->GetBoolean("coordinates", "spherical")) {
-    //     hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, ReducePhi0, "Phi_0"));
-    //     hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, ReducePhi5, "Phi_EH"));
-    // }
-    // // add callbacks for HST output to the Params struct, identified by the `hist_param_key`
-    // pkg->AddParam<>(parthenon::hist_param_key, hst_vars);
+    parthenon::HstVar_list hst_vars = {};
+    hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::max, B_CT::MaxDivB, "MaxDivB"));
+    // Event horizon magnetization.  Might be the same or different for different representations?
+    if (pin->GetBoolean("coordinates", "spherical")) {
+        // hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, ReducePhi0, "Phi_0"));
+        // hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, ReducePhi5, "Phi_EH"));
+    }
+    // add callbacks for HST output to the Params struct, identified by the `hist_param_key`
+    pkg->AddParam<>(parthenon::hist_param_key, hst_vars);
 
     return pkg;
 }

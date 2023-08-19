@@ -46,7 +46,7 @@
  *
  * This requires only the values at cell centers
  * 
- * This implementation includes conversion from "primitive" to "conserved" B and back
+ * This implementation includes conversion from "GRPrimitive" to "conserved" B and back
  */
 namespace B_FluxCT {
 /**

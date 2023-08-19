@@ -210,4 +210,122 @@ KOKKOS_INLINE_FUNCTION Real upwind_diff(const VariableFluxPack<Real>& B_U, const
     }
 }
 
+// Only by formatting may the following be made even a little comprehensible.
+
+template<int diff_face, int diff_side, int offset, int DIM>
+KOKKOS_FORCEINLINE_FUNCTION Real F(const ParArrayND<Real, VariableState> &fine, int l, int m, int n, int fk, int fj, int fi)
+{
+    // TODO compile-time error on misuse?
+    constexpr int df_is_k = 2*(diff_face == V3 && DIM > 2);
+    constexpr int df_is_j = 2*(diff_face == V2 && DIM > 1);
+    constexpr int df_is_i = 2*(diff_face == V1 && DIM > 0);
+    constexpr int ds_is_k = (diff_side == V3 && DIM > 2);
+    constexpr int ds_is_j = (diff_side == V2 && DIM > 1);
+    constexpr int ds_is_i = (diff_side == V1 && DIM > 0);
+    constexpr int of_is_k = (offset == V3 && DIM > 2);
+    constexpr int of_is_j = (offset == V2 && DIM > 1);
+    constexpr int of_is_i = (offset == V1 && DIM > 0);
+    // if(fi == 10 && fj == 10 && fk == 0) {
+    //     fprintf(stderr, "F facediff dir %d sidediff dirr %d off dir %d\nadding terms %d %d %d, -%d %d %d, -%d %d %d, %d %d %d\n",
+    //             diff_face, diff_side, offset,
+    //             df_is_i+ds_is_i+of_is_i, df_is_j+ds_is_j+of_is_j, df_is_k+ds_is_k+of_is_k,
+    //             ds_is_i+of_is_i,         ds_is_j+of_is_j,         ds_is_k+of_is_k,
+    //             df_is_i+of_is_i,         df_is_j+of_is_j,         df_is_k+of_is_k,
+    //             of_is_i                , of_is_j                , of_is_k);
+    // }
+    return fine(diff_face, l, m, n, fk+df_is_k+ds_is_k+of_is_k, fj+df_is_j+ds_is_j+of_is_j, fi+df_is_i+ds_is_i+of_is_i)
+         - fine(diff_face, l, m, n, fk+ds_is_k+of_is_k        , fj+ds_is_j+of_is_j        , fi+ds_is_i+of_is_i)
+         - fine(diff_face, l, m, n, fk+df_is_k+of_is_k        , fj+df_is_j+of_is_j        , fi+df_is_i+of_is_i)
+         + fine(diff_face, l, m, n, fk+of_is_k                , fj+of_is_j                , fi+of_is_i);
+}
+
+struct ProlongateInternalOlivares {
+  static constexpr bool OperationRequired(TopologicalElement fel,
+                                          TopologicalElement cel) {
+    return fel == cel;
+  }
+
+  template <int DIM, TopologicalElement el = TopologicalElement::CC,
+            TopologicalElement cel = TopologicalElement::CC>
+  KOKKOS_FORCEINLINE_FUNCTION static void
+  Do(const int l, const int m, const int n, const int k, const int j, const int i,
+     const IndexRange &ckb, const IndexRange &cjb, const IndexRange &cib,
+     const IndexRange &kb, const IndexRange &jb, const IndexRange &ib,
+     const Coordinates_t &coords, const Coordinates_t &coarse_coords,
+     const ParArrayND<Real, VariableState> *,
+     const ParArrayND<Real, VariableState> *pfine) {
+
+    // Definitely exit on what we can't handle
+    if constexpr (el != TE::F1 && el != TE::F2 && el != TE::F3)
+        return;
+
+    // Handle permutations "naturally."
+    // Olivares et al. is fond of listing x1 versions which permute,
+    // this makes translating/checking those easier
+    constexpr int me = static_cast<int>(el) % 3;
+    constexpr int next = (me+1) % 3;
+    constexpr int third = (me+2) % 3;
+
+    // Exit if we're computing a trivial direction
+    if constexpr ((me == V3 && !(DIM > 2)) || (me == V2 && !(DIM > 1)) || (me == V1 && !(DIM > 0)))
+        return;
+
+    // Fine array, indices
+    auto &fine = *pfine;
+    const int fi = (DIM > 0) ? (i - cib.s) * 2 + ib.s : ib.s;
+    const int fj = (DIM > 1) ? (j - cjb.s) * 2 + jb.s : jb.s;
+    const int fk = (DIM > 2) ? (k - ckb.s) * 2 + kb.s : kb.s;
+
+    // Coefficients selecting a particular formula (see Olivares et al. 2019)
+    // TODO options here. This corresponds to Cunningham, but we could have:
+    // 1. differences of squares of zone dimesnions (Toth)
+    // 2. heuristic based on flux difference of top vs bottom halves (Olivares)
+    //constexpr Real a[3] = {0., 0., 0.};
+    const Real a[3] = {(SQR(coords.Dxc<2>(j)) - SQR(coords.Dxc<3>(k)))/(SQR(coords.Dxc<2>(j)) + SQR(coords.Dxc<3>(k))),
+                       (SQR(coords.Dxc<3>(k)) - SQR(coords.Dxc<1>(i)))/(SQR(coords.Dxc<3>(k)) + SQR(coords.Dxc<1>(i))),
+                       (SQR(coords.Dxc<1>(i)) - SQR(coords.Dxc<2>(j)))/(SQR(coords.Dxc<1>(i)) + SQR(coords.Dxc<2>(j)))};
+
+    // Coefficients for each term evaluating the four sub-faces
+    const Real coeff[4][4] = {{3 + a[next], 1 - a[next], 3 - a[third], 1 + a[third]},
+                              {3 + a[next], 1 - a[next], 1 + a[third], 3 - a[third]},
+                              {1 - a[next], 3 + a[next], 3 - a[third], 1 + a[third]},
+                              {1 - a[next], 3 + a[next], 1 + a[third], 3 - a[third]}};
+
+    constexpr int diff_k = (me == V3), diff_j = (me == V2), diff_i = (me == V1);
+    // if(fi == 10 && fj == 10 && fk == 0) {
+    //     fprintf(stderr, "Prolongating %d %d %d EL %d, DIM %d\n", fi, fj, fk, static_cast<int>(el), DIM);
+    //     fprintf(stderr, "Differencing %d %d %d\n", diff_i, diff_j, diff_k);
+    // }
+
+    // Iterate through the 4 sub-faces
+    for (int elem=0; elem < 4; elem++) {
+        // Make sure we can offset in other directions before doing so, though
+        // TODO eliminate redundant work or template these so the compiler can?
+        const int off_i = (DIM > 0) ? elem%2*(me == V2) + elem/2*(me == V3) + (me == V1) : 0;
+        const int off_j = (DIM > 1) ? elem%2*(me == V3) + elem/2*(me == V1) + (me == V2) : 0;
+        const int off_k = (DIM > 2) ? elem%2*(me == V1) + elem/2*(me == V2) + (me == V3) : 0;
+
+        fine(me, l, m, n, fk+off_k, fj+off_j, fi+off_i) =
+            // Average faces on either side of us in selected direction (diff), on each of the 4 sub-faces (off)
+            0.5*(fine(me, l, m, n, fk+off_k-diff_k, fj+off_j-diff_j, fi+off_i-diff_i) +
+                 fine(me, l, m, n, fk+off_k+diff_k, fj+off_j+diff_j, fi+off_i+diff_i)) +
+            1./16*(coeff[elem][0]*F<next ,me,-1,DIM>(fine, l, m, n, fk, fj, fi) + coeff[elem][1]*F<next,me,third,DIM>(fine, l, m, n, fk, fj, fi)
+                 + coeff[elem][2]*F<third,me,-1,DIM>(fine, l, m, n, fk, fj, fi) + coeff[elem][3]*F<third,me,next,DIM>(fine, l, m, n, fk, fj, fi));
+
+        // if(fi == 10 && fj == 10 && fk == 0 && me == V1) {
+        //     fprintf(stderr, "Elem %d Offset %d %d %d set %g\n", elem, off_i, off_j, off_k, fine(me, l, m, n, fk+off_k, fj+off_j, fi+off_i));
+        //     fprintf(stderr, "Averaging faces %d %d %d and %d %d %d (%g & %g)\n", fi+off_i-diff_i, fj+off_j-diff_j, fk+off_k-diff_k, 
+        //         fi+off_i+diff_i, fj+off_j+diff_j, fk+off_k+diff_k, 
+        //         fine(me, l, m, n, fk+off_k-diff_k, fj+off_j-diff_j, fi+off_i-diff_i),
+        //         fine(me, l, m, n, fk+off_k+diff_k, fj+off_j+diff_j, fi+off_i+diff_i));
+        //     fprintf(stderr, "Coeffs %g %g %g %g\n", coeff[elem][0]*F<next,me,-1,DIM>(fine, l, m, n, fk, fj, fi),
+        //                                             coeff[elem][1]*F<next,me,third,DIM>(fine, l, m, n, fk, fj, fi),
+        //                                             coeff[elem][2]*F<third,me,-1,DIM>(fine, l, m, n, fk, fj, fi),
+        //                                             coeff[elem][3]*F<third,me,next,DIM>(fine, l, m, n, fk, fj, fi));
+        // }
+
+    }
+  }
+};
+
 }

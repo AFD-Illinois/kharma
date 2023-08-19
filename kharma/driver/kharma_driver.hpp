@@ -68,7 +68,7 @@ class KHARMADriver : public MultiStageDriver {
          * so that the driver can repeat calls to create a predictor-corrector, RK2/4, etc.
          * 
          * Unlike MHD, GRMHD must keep two forms of the variables: the conserved variables, and a set of
-         * "primitive" variables more amenable to reconstruction.  To evolve the fluid, the code must:
+         * "GRPrimitive" variables more amenable to reconstruction.  To evolve the fluid, the code must:
          * 1. Reconstruct the right- and left-going components at zone faces, given the primitive variables
          * 2. Calculate the fluxes of conserved quantities through the faces
          * 2a. Apply any fixes to fluxes (e.g., for the magnetic field)

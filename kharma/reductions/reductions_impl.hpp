@@ -131,8 +131,8 @@ T Reductions::EHReduction(MeshData<Real> *md, UserHistoryOperation op, int zone)
     const auto& emhd_params = EMHD::GetEMHDParameters(pmesh->packages);
 
     PackIndexMap prims_map, cons_map;
-    const auto& P = md->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("Primitive")}, prims_map);
-    const auto& U = md->PackVariablesAndFluxes(std::vector<MetadataFlag>{Metadata::Conserved}, cons_map);
+    const auto& P = md->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("GRPrimitive")}, prims_map);
+    const auto& U = md->PackVariablesAndFluxes(std::vector<MetadataFlag>{Metadata::GetUserFlag("GRConserved")}, cons_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
     const auto& cmax = md->PackVariables(std::vector<std::string>{"Flux.cmax"});
     const auto& cmin = md->PackVariables(std::vector<std::string>{"Flux.cmin"});
@@ -210,8 +210,8 @@ T Reductions::DomainReduction(MeshData<Real> *md, UserHistoryOperation op, const
 
     // Just pass in everything we might want. Probably slow?
     PackIndexMap prims_map, cons_map;
-    const auto& P = md->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("Primitive")}, prims_map);
-    const auto& U = md->PackVariablesAndFluxes(std::vector<MetadataFlag>{Metadata::Conserved}, cons_map);
+    const auto& P = md->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("GRPrimitive")}, prims_map);
+    const auto& U = md->PackVariablesAndFluxes(std::vector<MetadataFlag>{Metadata::GetUserFlag("GRConserved")}, cons_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
     const auto& cmax = md->PackVariables(std::vector<std::string>{"Flux.cmax"});
     const auto& cmin = md->PackVariables(std::vector<std::string>{"Flux.cmin"});
