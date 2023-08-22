@@ -115,14 +115,14 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
 
     // Parse various mass and density units to set the different cooling rates
     // TODO actually respect them of course
-    std::vector<Real> masses = pin->GetOrAddVector<Real>("electrons", "masses", std::vector<Real>{});
-    if (masses.size() > 0) {
-        std::vector<std::string> mass_names = pin->GetVector<std::string>("electrons", "masses");
-        std::vector<std::vector<Real>> munits;
-        for (auto mass_name : mass_names) {
-            munits.push_back(pin->GetVector<Real>("electrons", "munits_"+mass_name));
-        }
-    }
+    // std::vector<Real> masses = pin->GetOrAddVector<Real>("electrons", "masses", std::vector<Real>{});
+    // if (masses.size() > 0) {
+    //     std::vector<std::string> mass_names = pin->GetVector<std::string>("electrons", "masses");
+    //     std::vector<std::vector<Real>> munits;
+    //     for (auto mass_name : mass_names) {
+    //         munits.push_back(pin->GetVector<Real>("electrons", "munits_"+mass_name));
+    //     }
+    // }
 
     // Default implicit iff GRMHD is done implicitly. TODO can we do explicit?
     auto& driver = packages->Get("Driver")->AllParams();
@@ -449,9 +449,9 @@ TaskStatus ApplyElectronCooling(MeshBlockData<Real> *rc){
     const Real dt = pmb->packages.Get("Globals")->Param<Real>("dt_last");
     double tau = 5.;
 
-    const IndexRange ib = rc->GetBoundsI(IndexDomain::entire);
-    const IndexRange jb = rc->GetBoundsJ(IndexDomain::entire);
-    const IndexRange kb = rc->GetBoundsK(IndexDomain::entire);
+    const IndexRange ib = rc->GetBoundsI(IndexDomain::interior);
+    const IndexRange jb = rc->GetBoundsJ(IndexDomain::interior);
+    const IndexRange kb = rc->GetBoundsK(IndexDomain::interior);
     pmb->par_for("cool_electrons", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
             double kel = P(m_p.K_HOWES, k, j, i);

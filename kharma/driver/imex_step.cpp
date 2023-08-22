@@ -138,7 +138,7 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
         auto t_prim_source_first = t_start_recv_flux;
         for (int j = 0; j < blocks.size(); j++) {
             auto &pmb = blocks[j];
-            auto &mbd_sub_step_init  = pmb->meshblock_data.Get(integrator->stage_name[stage-1]);
+            auto &mbd_sub_step_init  = pmb->meshblock_data.Get("base");
             //COOLING:
             if(stage == 1){
                 t_prim_source_first = tl.AddTask(t_start_recv_flux, Packages::BlockApplyPrimSource, mbd_sub_step_init.get());
@@ -281,15 +281,15 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
         }
 
         //COOLING:
-        //so right now, I haven't added in the first call to ApplyElectronCooling
 
         // Electron heating goes where it does in the KHARMA Driver, for the same reasons
         //I will probably comment out this call to heating (this is the first and second call I think, but
         //I added another call up above I think)
         auto t_heat_electrons = t_prim_source_second;
         if (use_heating) {
-            t_heat_electrons = tl.AddTask(t_prim_source_second, Electrons::ApplyElectronHeating,
-                                          mbd_sub_step_init.get(), mbd_sub_step_final.get());
+            //t_heat_electrons = tl.AddTask(t_prim_source_second, Electrons::ApplyElectronHeating,
+            //                              mbd_sub_step_init.get(), mbd_sub_step_final.get());
+            //temporarily commented out heating for tests
         }
 
         // Make sure *all* conserved vars are synchronized at step end
