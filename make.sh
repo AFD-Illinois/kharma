@@ -74,6 +74,7 @@ fi
 ### Enivoronment Prep ###
 if [[ "$(which python3 2>/dev/null)" == *"conda"* ]]; then
   echo
+  echo "make.sh note:"
   echo "It looks like you have Anaconda loaded."
   echo "Anaconda loads a serial version of HDF5 which may make this compile impossible."
   echo "If you run into trouble, deactivate your environment with 'conda deactivate'"
@@ -281,7 +282,12 @@ fi
 if [[ "$ARGS" == *"clean"* ]]; then
 
   cd external/parthenon
-  git apply --quiet ../patches/parthenon-*.patch
+  if [[ $(( $(git --version | cut -d '.' -f 2) > 35 )) ]]; then
+    git apply --quiet ../patches/parthenon-*.patch
+  else
+    echo "make.sh note: You may see errors applying patches below. These are normal."
+    git apply ../patches/parthenon-*.patch
+  fi
   cd -
 
   rm -rf build
