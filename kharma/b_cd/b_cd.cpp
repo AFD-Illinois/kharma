@@ -223,20 +223,7 @@ Real MaxDivB(MeshData<Real> *md)
 
 TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
 {
-    auto pmesh = md->GetMeshPointer();
-
-    // Print this unless we quash everything
-    int verbose = pmesh->packages.Get("Globals")->Param<int>("verbose");
-    if (verbose >= 0) {
-        static Reduce<Real> max_divb;
-        max_divb.val = B_CD::MaxDivB(md);
-        max_divb.StartReduce(0, MPI_MAX);
-        while (max_divb.CheckReduce() == TaskStatus::incomplete);
-
-        if(MPIRank0()) {
-            std::cout << "Max DivB: " << max_divb.val << std::endl;
-        }
-    }
+    // TODO. Unify w/other B?
 
     return TaskStatus::complete;
 }
@@ -280,16 +267,17 @@ void FillOutput(MeshBlock *pmb, ParameterInput *pin)
 
 void UpdateCtopMax(Mesh *pmesh, ParameterInput *pin, const SimTime &tm)
 {
+    // TODO use new Reductions stuff for this
     // Reduce and record the maximum sound speed on the grid, to propagate
     // phi at that speed next step.
     // Just needs to run after every step, so we use the KHARMA callback at that point.
-    auto& params = pmesh->packages.Get("B_CD")->AllParams();
-    static AllReduce<Real> ctop_max_last_r;
-    ctop_max_last_r.val = params.Get<Real>("ctop_max");
-    ctop_max_last_r.StartReduce(MPI_MAX);
-    while (ctop_max_last_r.CheckReduce() == TaskStatus::incomplete);
-    params.Update<Real>("ctop_max_last", ctop_max_last_r.val);
-    params.Update<Real>("ctop_max", 0.0); // Reset for next max calculation
+    // auto& params = pmesh->packages.Get("B_CD")->AllParams();
+    // static AllReduce<Real> ctop_max_last_r;
+    // ctop_max_last_r.val = params.Get<Real>("ctop_max");
+    // ctop_max_last_r.StartReduce(MPI_MAX);
+    // while (ctop_max_last_r.CheckReduce() == TaskStatus::incomplete);
+    // params.Update<Real>("ctop_max_last", ctop_max_last_r.val);
+    // params.Update<Real>("ctop_max", 0.0); // Reset for next max calculation
 }
 
 } // namespace B_CD

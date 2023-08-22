@@ -41,7 +41,6 @@
 #include "b_field_tools.hpp"
 #include "blob.hpp"
 #include "boundaries.hpp"
-#include "debug.hpp"
 #include "floors.hpp"
 #include "flux.hpp"
 #include "gr_coordinates.hpp"
@@ -56,6 +55,7 @@
  * Should only be used in initialization code, as the
  * reducer object & MPI comm are created on entry &
  * cleaned on exit
+ * TODO use Reductions stuff?
  */
 template<typename T>
 inline T MPIReduce_once(T f, MPI_Op O)
@@ -69,35 +69,18 @@ inline T MPIReduce_once(T f, MPI_Op O)
     return reduction.val;
 }
 
-// Define reductions we need just for PostInitialize code.
-// TODO namespace...
-KOKKOS_INLINE_FUNCTION Real bsq(REDUCE_FUNCTION_ARGS_MESH)
-{
-    FourVectors Dtmp;
-    GRMHD::calc_4vecs(G, P, m_p, k, j, i, Loci::center, Dtmp);
-    return dot(Dtmp.bcon, Dtmp.bcov);
-}
-KOKKOS_INLINE_FUNCTION Real gas_pres(REDUCE_FUNCTION_ARGS_MESH)
-{
-    return (gam - 1) * P(m_p.UU, k, j, i);
-}
-KOKKOS_INLINE_FUNCTION Real gas_beta(REDUCE_FUNCTION_ARGS_MESH)
-{
-    FourVectors Dtmp;
-    GRMHD::calc_4vecs(G, P, m_p, k, j, i, Loci::center, Dtmp);
-    return ((gam - 1) * P(m_p.UU, k, j, i))/(0.5*(dot(Dtmp.bcon, Dtmp.bcov) + SMALL));
-}
+// Shorter names for the reductions we use here
 Real MaxBsq(MeshData<Real> *md)
 {
-    return Reductions::DomainReduction(md, UserHistoryOperation::max, bsq, 0.0);
+    return Reductions::DomainReduction<Reductions::Var::bsq, Real>(md, UserHistoryOperation::max);
 }
 Real MaxPressure(MeshData<Real> *md)
 {
-    return Reductions::DomainReduction(md, UserHistoryOperation::max, gas_pres, 0.0);
+    return Reductions::DomainReduction<Reductions::Var::gas_pressure, Real>(md, UserHistoryOperation::max);
 }
 Real MinBeta(MeshData<Real> *md)
 {
-    return Reductions::DomainReduction(md, UserHistoryOperation::min, gas_beta, 0.0);
+    return Reductions::DomainReduction<Reductions::Var::beta, Real>(md, UserHistoryOperation::min);
 }
 
 void KHARMA::SeedAndNormalizeB(ParameterInput *pin, std::shared_ptr<MeshData<Real>> md)
@@ -108,8 +91,6 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, std::shared_ptr<MeshData<Rea
                                 || pmesh->packages.AllPackages().count("B_Cleanup");
     const bool use_b_cd = pmesh->packages.AllPackages().count("B_CD");
     const int verbose = pmesh->packages.Get("Globals")->Param<int>("verbose");
-
-    // TODO this should be restructured...
 
     Flag("SeedBField");
     // Seed the magnetic field on each block
@@ -142,7 +123,6 @@ void KHARMA::SeedAndNormalizeB(ParameterInput *pin, std::shared_ptr<MeshData<Rea
         // Calculate current beta_min value
         Real bsq_max, p_max, beta_min;
         if (beta_calc_legacy) {
-            std::cout << "Max is " << MaxBsq(md.get()) << std::endl;
             bsq_max = MPIReduce_once(MaxBsq(md.get()), MPI_MAX);
             p_max = MPIReduce_once(MaxPressure(md.get()), MPI_MAX);
             beta_min = p_max / (0.5 * bsq_max);
@@ -207,8 +187,7 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart)
     // If your problem requires custom boundary conditions, these should be implemented
     // with the problem and assigned to the relevant functions in the "Boundaries" package.
 
-    // Make sure we've built the MeshData object we'll be synchronizing/updating
-    auto &md = pmesh->mesh_data.GetOrAdd("base", 0);
+    auto &md = pmesh->mesh_data.Get();
 
     auto& pkgs = pmesh->packages.AllPackages();
 
@@ -269,8 +248,6 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart)
 
         // This does its own MPI syncs
         B_Cleanup::CleanupDivergence(md);
-
-        B_Cleanup::RemoveExtraFields(pmesh->block_list);
     }
 
     // Finally, synchronize boundary values.

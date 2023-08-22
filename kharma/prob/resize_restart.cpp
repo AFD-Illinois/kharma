@@ -35,7 +35,6 @@
 #include "resize_restart.hpp"
 
 #include "b_flux_ct.hpp"
-#include "debug.hpp"
 #include "hdf5_utils.h"
 #include "kharma_utils.hpp"
 #include "interpolation.hpp"

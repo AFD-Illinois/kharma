@@ -32,29 +32,4 @@ index d1290dee..50bfc840 100644
  
  namespace parthenon {
  
-diff --git a/src/interface/data_collection.cpp b/src/interface/data_collection.cpp
-index 6a1d72c9..b5ba609b 100644
---- a/src/interface/data_collection.cpp
-+++ b/src/interface/data_collection.cpp
-@@ -48,7 +48,7 @@ std::shared_ptr<T> DataCollection<T>::Add(const std::string &name,
-   if (it != containers_.end()) {
-     // check to make sure they are the same
-     if (!(*src == *(it->second))) {
--      PARTHENON_THROW("Error attempting to add a Container to a Collection");
-+      //PARTHENON_THROW("Error attempting to add a Container to a Collection");
-     }
-     return it->second;
-   }
-diff --git a/src/interface/meshblock_data.cpp b/src/interface/meshblock_data.cpp
-index 8d5dca57..0ab7dad8 100644
---- a/src/interface/meshblock_data.cpp
-+++ b/src/interface/meshblock_data.cpp
-@@ -440,7 +440,7 @@ MeshBlockData<T>::GetVariablesByUid(const std::vector<Uid_t> &uids) {
- 
- template <typename T>
- void MeshBlockData<T>::Remove(const std::string &label) {
--  throw std::runtime_error("MeshBlockData<T>::Remove not yet implemented");
-+  varMap_.erase(label);
- }
- 
- template <typename T>
+

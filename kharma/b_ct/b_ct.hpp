@@ -98,7 +98,7 @@ double BlockMaxDivB(MeshBlockData<Real> *rc);
 /**
  * Returns the global maximum value, rather than the maximum over this rank's MeshData
  */
-double GlobalMaxDivB(MeshData<Real> *md);
+double GlobalMaxDivB(MeshData<Real> *md, bool all_reduce=false);
 
 /**
  * Diagnostics printed/computed after each step
@@ -123,22 +123,6 @@ void FillOutput(MeshBlock *pmb, ParameterInput *pin);
  * Fill field "name" with divB
  */
 void CalcDivB(MeshData<Real> *md, std::string divb_field_name="divB");
-
-// Reductions: FOR LATER
-// KOKKOS_INLINE_FUNCTION Real phi(REDUCE_FUNCTION_ARGS_EH)
-// {
-//     // \Phi == \int |*F^1^0| * gdet * dx2 * dx3 == \int |B1| * gdet * dx2 * dx3
-//     return 0.5 * m::abs(U(m_u.B1, k, j, i)); // factor of gdet already in cons.B
-// }
-
-// inline Real ReducePhi0(MeshData<Real> *md)
-// {
-//     return Reductions::EHReduction(md, UserHistoryOperation::sum, phi, 0);
-// }
-// inline Real ReducePhi5(MeshData<Real> *md)
-// {
-//     return Reductions::EHReduction(md, UserHistoryOperation::sum, phi, 5);
-// }
 
 // Device functions
 template<typename Global>

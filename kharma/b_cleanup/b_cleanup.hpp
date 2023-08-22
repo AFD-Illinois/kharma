@@ -67,14 +67,8 @@ TaskStatus CleanupDivergence(std::shared_ptr<MeshData<Real>>& md);
 bool CleanupThisStep(Mesh* pmesh, int nstep);
 
 /**
- * Remove the extra solver fields which B_Cleanup added during initialization.
- * Must be run before every step as the meshblocks are reconstructed per-step from
- * package variable lists.
- */
-TaskStatus RemoveExtraFields(BlockList_t &blocks);
-
-/**
- * Calculate the laplacian using divergence at corners
+ * Calculate the laplacian using divergence at corners.
+ * Extra MeshData arg is just to satisfy Parthenon solver calling convention
  */
 TaskStatus CornerLaplacian(MeshData<Real>* md, const std::string& p_var, MeshData<Real>* md_again, const std::string& lap_var);
 

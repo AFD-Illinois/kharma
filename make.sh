@@ -110,7 +110,7 @@ if [[ -z "$CXX_NATIVE" ]]; then
   elif which icpx >/dev/null 2>&1; then
     CXX_NATIVE=icpx
     C_NATIVE=icx
-    OMP_FLAG="-fopenmp"
+    OMP_FLAG="-fiopenmp"
   elif which icpc >/dev/null 2>&1; then
     CXX_NATIVE=icpc
     C_NATIVE=icc
@@ -201,9 +201,10 @@ fi
 # Allow for a custom linker program, but use CXX by
 # default as system linker may be older/incompatible
 if [[ -v LINKER ]]; then
-  LINKER="$LINKER"
-else
-  LINKER="$CXX"
+  EXTRA_FLAGS="-DCMAKE_LINKER=$LINKER"
+fi
+if [[ "$ARGS" == *"special_link_line"* ]]; then
+  EXTRA_FLAGS="-DCMAKE_CXX_LINK_EXECUTABLE='<CMAKE_LINKER> <FLAGS> <CMAKE_CXX_LINK_FLAGS> <LINK_FLAGS> <OBJECTS> -o <TARGET> <LINK_LIBRARIES>'"
 fi
 
 # Avoid warning on nvcc pragmas Intel doesn't like
@@ -255,6 +256,7 @@ if [[ "$ARGS" == *"hdf5"* && "$ARGS" == *"clean"* ]]; then
 
   echo Configuring HDF5...
 
+  export CFLAGS="-fPIC $CFLAGS"
   CC=$HDF_CC sh configure -C $HDF_EXTRA --prefix=$SOURCE_DIR/external/hdf5 --enable-build-mode=production \
   --disable-dependency-tracking --disable-hl --disable-tests --disable-tools --disable-shared --disable-deprecated-symbols > build-hdf5.log
   sleep 1
@@ -304,8 +306,6 @@ if [[ "$ARGS" == *"clean"* ]]; then
   cmake ..\
     -DCMAKE_C_COMPILER="$CC" \
     -DCMAKE_CXX_COMPILER="$CXX" \
-    -DCMAKE_LINKER="$LINKER" \
-    -DCMAKE_CXX_LINK_EXECUTABLE='<CMAKE_LINKER> <FLAGS> <CMAKE_CXX_LINK_FLAGS> <LINK_FLAGS> <OBJECTS> -o <TARGET> <LINK_LIBRARIES>' \
     -DCMAKE_PREFIX_PATH="$PREFIX_PATH;$CMAKE_PREFIX_PATH" \
     -DCMAKE_BUILD_TYPE=$TYPE \
     -DPAR_LOOP_LAYOUT=$OUTER_LAYOUT \

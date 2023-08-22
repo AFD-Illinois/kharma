@@ -34,7 +34,6 @@
 
 #include "implicit.hpp"
 
-#include "debug.hpp"
 #include "grmhd.hpp"
 #include "grmhd_functions.hpp"
 #include "kharma.hpp"
@@ -125,7 +124,7 @@ std::shared_ptr<KHARMAPackage> Implicit::Initialize(ParameterInput *pin, std::sh
     bool save_residual = pin->GetOrAddBoolean("implicit", "save_residual", false);
     params.Add("save_residual", save_residual);
     if (save_residual) {
-        int nvars_implicit  = KHARMA::CountVars(packages.get(), Metadata::GetUserFlag("Implicit"));
+        int nvars_implicit  = KHARMA::PackDimension(packages.get(), Metadata::GetUserFlag("Implicit"));
 
         std::vector<int> s_vars_implicit({nvars_implicit});
         Metadata m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy}, s_vars_implicit);
@@ -153,7 +152,9 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
     const Real delta         = implicit_par.Get<Real>("jacobian_delta");
     const Real rootfind_tol  = implicit_par.Get<Real>("rootfind_tol");
     const bool use_qr        = implicit_par.Get<bool>("use_qr");
-    const int verbose       = pmb_full_step_init->packages.Get("Globals")->Param<int>("verbose");
+    const auto& globals      = pmb_full_step_init->packages.Get("Globals")->AllParams();
+    const int verbose        = globals.Get<int>("verbose");
+    const int flag_verbose   = globals.Get<int>("flag_verbose");
     const Real gam           = pmb_full_step_init->packages.Get("GRMHD")->Param<Real>("gamma");
 
     const bool linesearch         = implicit_par.Get<bool>("linesearch");
@@ -296,7 +297,7 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
                 ScratchPad2D<Real> P_linesearch_s(member.team_scratch(scratch_level), n1, nvar);
                 // Scratchpads for solver performance diagnostics
                 ScratchPad1D<Real> solve_norm_s(member.team_scratch(scratch_level), n1);
-                ScratchPad1D<int> solve_fail_s(member.team_scratch(scratch_level), n1);
+                ScratchPad1D<SolverStatus> solve_fail_s(member.team_scratch(scratch_level), n1);
 
                 // Copy some file contents to scratchpads, so we can slice them
                 for(int ip=0; ip < nvar; ++ip) {
@@ -321,7 +322,7 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
                             } else {
                                 // Need this to check if the zone had failed in any of the previous iterations.
                                 // If so, we don't attempt to update it again in the implicit solver.
-                                solve_fail_s(i) = solve_fail_all(b, 0, k, j, i);
+                                solve_fail_s(i) = (SolverStatus) solve_fail_all(b, 0, k, j, i);
                             }
                         }
                     );
@@ -534,7 +535,7 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
 
                                 // Did we converge to required tolerance? If not, update solve_fail accordingly
                                 if (solve_norm() > rootfind_tol) {
-                                    solve_fail() += SolverStatus::beyond_tol;
+                                    solve_fail() = SolverStatus::beyond_tol; // TODO was changed from +=. Valid?
                                 }
                             }
                         }
@@ -555,7 +556,7 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
                 parthenon::par_for_inner(member, ib.s, ib.e,
                     [&](const int& i) {
                         solve_norm_all(b, 0, k, j, i) = solve_norm_s(i);
-                        solve_fail_all(b, 0, k, j, i) = solve_fail_s(i);
+                        solve_fail_all(b, 0, k, j, i) = (Real) solve_fail_s(i);
                     }
                 );
             }
@@ -564,42 +565,44 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
         // If we need to print or exit on the max norm...
         if (iter >= iter_min || verbose >= 1) {
             // Take the maximum L2 norm on this rank
-            static AllReduce<Real> max_norm;
-            Kokkos::Max<Real> norm_max(max_norm.val);
+            Real lmax_norm = 0.0;
             pmb_sub_step_init->par_reduce("max_norm", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
                 KOKKOS_LAMBDA (const int& b, const int& k, const int& j, const int& i, Real& local_result) {
                     if (solve_norm_all(b, 0, k, j, i) > local_result) local_result = solve_norm_all(b, 0, k, j, i);
                 }
-            , norm_max);
-            // Then MPI reduce AllReduce to copy the global max to every rank
-            max_norm.StartReduce(MPI_MAX);
-            while (max_norm.CheckReduce() == TaskStatus::incomplete);
-            if (verbose >= 1 && MPIRank0()) printf("Iteration %d max L2 norm: %g\n", iter, max_norm.val);
+            , Kokkos::Max<Real>(lmax_norm));
+            // Then MPI AllReduce to copy the global max to every rank
+            Reductions::StartToAll<Real>(md_solver, 4, lmax_norm, MPI_MAX);
+            Real max_norm = Reductions::CheckOnAll<Real>(md_solver, 4);
 
-            // Count total number of solver fails
-            // TODO move reductions like this to PostStep
-            int nfails = 0;
-            Kokkos::Sum<int> sum_reducer(nfails);
-            pmb_sub_step_init->par_reduce("count_solver_fails", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-                KOKKOS_LAMBDA (const int& b, const int& k, const int& j, const int& i, int& local_result) {
-                    if (solve_fail_all(b, 0, k, j, i) == SolverStatus::fail) ++local_result;
+            if (verbose >= 1) {
+                // Count total number of solver fails
+                int lnfails = 0;
+                pmb_sub_step_init->par_reduce("count_solver_fails", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+                    KOKKOS_LAMBDA (const int& b, const int& k, const int& j, const int& i, int& local_result) {
+                        if ((SolverStatus) solve_fail_all(b, 0, k, j, i) == SolverStatus::fail) ++local_result;
+                    }
+                , Kokkos::Sum<int>(lnfails));
+                // Then reduce to rank 0 to print the iteration by iteration
+                Reductions::Start<int>(md_solver, 5, lnfails, MPI_SUM);
+                int nfails = Reductions::Check<int>(md_solver, 5);
+                if (MPIRank0()) {
+                    printf("Iteration %d max L2 norm: %g, failed zones: %d\n", iter, max_norm, nfails);
                 }
-            , sum_reducer);
-            // Then MPI reduce AllReduce to copy the global max to every rank
-            static AllReduce<int> nfails_tot;
-            nfails_tot.val = nfails;
-            nfails_tot.StartReduce(MPI_SUM);
-            while (nfails_tot.CheckReduce() == TaskStatus::incomplete);
-            if (verbose >= 1 && MPIRank0()) printf("Number of failed zones: %d\n", nfails_tot.val);
+            }
 
-            // Break if max_norm is less than the total tolerance we set.  TODO per-zone version of this?
-            if (iter >= iter_min && max_norm.val < rootfind_tol) break;
+            // Finally, break if max_norm is less than the total tolerance we set
+            // TODO per-zone tolerance with masks?
+            if (iter >= iter_min && max_norm < rootfind_tol) break;
         }
         EndFlag();
     }
 
-    EndFlag();
+    if (flag_verbose > 0) {
+        Reductions::CheckFlagReduceAndPrintHits(md_solver, "solve_fail", Implicit::status_names, IndexDomain::interior, false, 2);
+    }
 
+    EndFlag();
     return TaskStatus::complete;
 
 }
@@ -613,11 +616,9 @@ TaskStatus Implicit::PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
     const int flag_verbose = pars.Get<int>("flag_verbose");
 
     // Debugging/diagnostic info about implicit solver
-    // TODO status names
-    // if (flag_verbose >= 1) {
-    //     int nflags = Reductions::CountFlags(md, "solve_fail", Implicit::status_names, IndexDomain::interior, flag_verbose, false);
-    //     // TODO TODO yell here if there are too many flags
-    // }
+    if (flag_verbose > 0) {
+        Reductions::CheckFlagReduceAndPrintHits(md, "solve_fail", Implicit::status_names, IndexDomain::interior, false, 2);
+    }
 
     return TaskStatus::complete;
 }

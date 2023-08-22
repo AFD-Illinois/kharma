@@ -50,7 +50,7 @@ std::shared_ptr<KHARMAPackage> Flux::Initialize(ParameterInput *pin, std::shared
 
     // We can't just use GetVariables or something since there's no mesh yet.
     // That's what this function is for.
-    int nvar = KHARMA::CountVars(packages.get(), Metadata::WithFluxes);
+    int nvar = KHARMA::PackDimension(packages.get(), Metadata::WithFluxes);
     std::cout << "Allocating fluxes with nvar: " << nvar << std::endl;
     std::vector<int> s_flux({nvar});
     // TODO optionally move all these to faces? Not important yet, no output, more memory
@@ -265,4 +265,37 @@ void Flux::AddGeoSource(MeshData<Real> *md, MeshData<Real> *mdudt)
             VLOOP dUdt(b, m_u.U1 + v, k, j, i) += new_du[1 + v];
         }
     );
+}
+
+TaskStatus Flux::CheckCtop(MeshData<Real> *md)
+{
+    Reductions::DomainReduction<Reductions::Var::nan_ctop, int>(md, UserHistoryOperation::sum, 0);
+    Reductions::DomainReduction<Reductions::Var::zero_ctop, int>(md, UserHistoryOperation::sum, 1);
+    return TaskStatus::complete;
+}
+
+TaskStatus Flux::PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
+{
+    auto pmesh = md->GetMeshPointer();
+    auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
+    // Options
+    const auto& pars = pmesh->packages.Get("Globals")->AllParams();
+    const int extra_checks = pars.Get<int>("extra_checks");
+
+    // Check for a soundspeed (ctop) of 0 or NaN
+    // This functions as a "last resort" check to stop a
+    // simulation on obviously bad data
+    if (extra_checks >= 1) {
+        int nnan = Reductions::Check<int>(md, 0);
+        int nzero = Reductions::Check<int>(md, 1);
+
+        if (MPIRank0() && (nzero > 0 || nnan > 0)) {
+            // TODO string formatting in C++ that doesn't suck
+            fprintf(stderr, "Max signal speed ctop of 0 or NaN (%d zero, %d NaN)", nzero, nnan);
+            throw std::runtime_error("Bad ctop!");
+        }
+
+    }
+
+    return TaskStatus::complete;
 }

@@ -478,7 +478,8 @@ double MaxDivB(MeshData<Real> *md)
     const IndexRange kb = IndexRange{kbl.s, kbl.e + (ndim > 2)};
     const IndexRange block = IndexRange{0, B_U.GetDim(5)-1};
 
-    // TODO Keep zone of max!  Also applies to ctop.
+    // TODO Keep zone of max! See timestep calc
+    // Will need to translate them back to KS to make them useful though
 
     // This is one kernel call per block, because each block will have different bounds.
     // Could consolidate at the cost of lots of bounds checking.
@@ -504,13 +505,15 @@ double MaxDivB(MeshData<Real> *md)
     return max_divb;
 }
 
-double GlobalMaxDivB(MeshData<Real> *md)
+double GlobalMaxDivB(MeshData<Real> *md, bool all_reduce)
 {
-    static AllReduce<Real> max_divb;
-    max_divb.val = MaxDivB(md);
-    max_divb.StartReduce(MPI_MAX);
-    while (max_divb.CheckReduce() == TaskStatus::incomplete);
-    return max_divb.val;
+    if (all_reduce) {
+        Reductions::StartToAll<Real>(md, 2, MaxDivB(md), MPI_MAX);
+        return Reductions::CheckOnAll<Real>(md, 2);
+    } else {
+        Reductions::Start<Real>(md, 2, MaxDivB(md), MPI_MAX);
+        return Reductions::Check<Real>(md, 2);
+    }
 }
 
 TaskStatus PrintGlobalMaxDivB(MeshData<Real> *md, bool kill_on_large_divb)

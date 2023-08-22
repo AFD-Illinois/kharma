@@ -1,5 +1,5 @@
 /* 
- *  File: fixup.cpp
+ *  File: fix_solve.cpp
  *  
  *  BSD 3-Clause License
  *  
@@ -86,7 +86,7 @@ TaskStatus Implicit::FixSolve(MeshBlockData<Real> *mbd) {
                 sum_x(ip, k, j, i) = 0.;
             }
             // Fix only bad zones
-            if ((solve_fail(k, j, i)) == SolverStatus::fail) {
+            if (failed(solve_fail(k, j, i))) {
                 //printf("Fixing zone %d %d %d!\n", i, j, k);
                 double wsum = 0., wsum_x = 0.;
                 // double sum[nfvar] = {0.}, sum_x[nfvar] = {0.};
@@ -102,7 +102,7 @@ TaskStatus Implicit::FixSolve(MeshBlockData<Real> *mbd) {
                                 double w = 1./(m::abs(l) + m::abs(m) + m::abs(n) + 1);
 
                                 // Count only the good cells, if we can
-                                if ((solve_fail(kk, jj, ii)) != SolverStatus::fail) {
+                                if (!failed(solve_fail(kk, jj, ii))) {
                                     // Weight by distance.  Note interpolated "fixed" cells stay flagged
                                     wsum += w;
                                     FLOOP sum(ip, k, j, i) += w * P(ip, kk, jj, ii);
@@ -140,7 +140,7 @@ TaskStatus Implicit::FixSolve(MeshBlockData<Real> *mbd) {
 
     pmb->par_for("fix_solver_failures_PtoU", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA (const int& k, const int& j, const int& i) {
-            if (solve_fail(k, j, i) == SolverStatus::fail)
+            if (failed(solve_fail(k, j, i)))
                 Flux::p_to_u(G, P_all, m_p, emhd_params, gam, k, j, i, U_all, m_u);
         }
     );

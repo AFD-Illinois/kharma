@@ -41,7 +41,6 @@
 
 #include "boundaries.hpp"
 #include "current.hpp"
-#include "debug.hpp"
 #include "floors.hpp"
 #include "flux.hpp"
 #include "gr_coordinates.hpp"
@@ -49,7 +48,6 @@
 #include "kharma.hpp"
 
 #include <memory>
-
 
 /**
  * GRMHD package.  Global operations on General Relativistic Magnetohydrodynamic systems.
@@ -258,25 +256,31 @@ Real EstimateTimestep(MeshBlockData<Real> *rc)
         return globals.Get<double>("dt_light");
     }
 
-    typename Kokkos::MinMax<Real>::value_type minmax;
+    Reductions::Reduce3v minmax;
     pmb->par_reduce("ndt_min", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA (const int k, const int j, const int i,
-                      typename Kokkos::MinMax<Real>::value_type &lminmax) {
+                      Reductions::Reduce3v &lminmax) {
             double ndt_zone = 1 / (1 / (G.Dxc<1>(i) /  m::max(cmax(0, k, j, i), cmin(0, k, j, i))) +
                                    1 / (G.Dxc<2>(j) /  m::max(cmax(1, k, j, i), cmin(1, k, j, i))) +
                                    1 / (G.Dxc<3>(k) /  m::max(cmax(2, k, j, i), cmin(2, k, j, i))));
             // Effective "max speed" used for the timestep
             double ctop_max_zone = m::min(G.Dxc<1>(i), m::min(G.Dxc<2>(j), G.Dxc<3>(k))) / ndt_zone;
 
-            if (!m::isnan(ndt_zone) && (ndt_zone < lminmax.min_val))
+            if (!m::isnan(ndt_zone) && (ndt_zone < lminmax.min_val)) {
                 lminmax.min_val = ndt_zone;
-            if (!m::isnan(ctop_max_zone) && (ctop_max_zone > lminmax.max_val))
+                lminmax.min_loc = std::tuple<int, int, int>{i, j, k};
+            }
+            if (!m::isnan(ctop_max_zone) && (ctop_max_zone > lminmax.max_val)) {
                 lminmax.max_val = ctop_max_zone;
+                lminmax.max_loc = std::tuple<int, int, int>{i, j, k};
+            }
         }
-    , Kokkos::MinMax<Real>(minmax));
+    , Reductions::Reduce3(minmax));
     // Keep dt to do some checks below
     const double min_ndt = minmax.min_val;
     const double nctop = minmax.max_val;
+
+    // TODO print tuples
 
     // Apply limits
     const double cfl = grmhd_pars.Get<double>("cfl");
@@ -401,19 +405,27 @@ TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
     const auto& pars = pmesh->packages.Get("Globals")->AllParams();
     const int extra_checks = pars.Get<int>("extra_checks");
 
-    // Check for a soundspeed (ctop) of 0 or NaN
-    // This functions as a "last resort" check to stop a
-    // simulation on obviously bad data
-    if (extra_checks >= 1) {
-        CheckNaN(md, X1DIR);
-        if (pmesh->ndim > 1) CheckNaN(md, X2DIR);
-        if (pmesh->ndim > 2) CheckNaN(md, X3DIR);
-    }
-
-    // Further checking for any negative values.  Floors should
+    // Checking for any negative values.  Floors should
     // prevent this, so we save it for dire debugging
     if (extra_checks >= 2) {
-        CheckNegative(md, IndexDomain::interior);
+        // Not sure when I'd do the check to hide latency, it's a step-end sort of deal
+        // Just as well it's behind extra_checks 2
+        // This may happen while ch0-1 are in flight from floors, but ch2-4 are now reusable
+        Reductions::DomainReduction<Reductions::Var::neg_rho, int>(md, UserHistoryOperation::sum, 2);
+        Reductions::DomainReduction<Reductions::Var::neg_u, int>(md, UserHistoryOperation::sum, 3);
+        Reductions::DomainReduction<Reductions::Var::neg_rhout, int>(md, UserHistoryOperation::sum, 4);
+        int nless_rho = Reductions::Check<int>(md, 2);
+        int nless_u = Reductions::Check<int>(md, 3);
+        int nless_rhout = Reductions::Check<int>(md, 4);
+
+        if (MPIRank0()) {
+            if (nless_rhout > 0) {
+                std::cout << "Number of negative conserved rho: " << nless_rhout << std::endl;
+            }
+            if (nless_rho > 0 || nless_u > 0) {
+                std::cout << "Number of negative primitive rho, u: " << nless_rho << "," << nless_u << std::endl;
+            }
+        }
     }
 
     return TaskStatus::complete;
