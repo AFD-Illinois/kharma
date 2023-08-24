@@ -76,7 +76,7 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
     bool is_torus = (prob == "torus");
 
     // Require and load what we need if necessary
-    Real a, rin, rmax, gam, kappa, rho_norm;
+    Real a, rin, rmax, gam, kappa, rho_norm, n, rs;
     Real tilt = 0; // Needs to be initialized
     Real b10 = 0, b20 = 0, b30 = 0, bz = 0, rb=100000.;
     switch (b_field_flag)
@@ -114,11 +114,29 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
         break;
     case BSeedType::r1s2:
         bz = pin->GetOrAddReal("b_field", "bz", 0.);
-        rb = m::pow(pin->GetOrAddReal("bondi", "rs", m::sqrt(1e5)),2.);
+        gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
+        n = 1. / (gam - 1.);
+        rs = pin->GetOrAddReal("bondi", "rs", m::sqrt(1e5));
+        if (m::abs(n-1.5) < 0.01) rb = rs * rs;
+        else rb = (4 * (n + 1)) / (2 * (n + 3) - 9) * rs;
+        //rb = m::pow(pin->GetOrAddReal("bondi", "rs", m::sqrt(1e5)),2.);
         break;
     case BSeedType::r34s2:
         bz = pin->GetOrAddReal("b_field", "bz", 0.);
-        rb = m::pow(pin->GetOrAddReal("bondi", "rs", m::sqrt(1e5)),2.);
+        gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
+        n = 1. / (gam - 1.);
+        rs = pin->GetOrAddReal("bondi", "rs", m::sqrt(1e5));
+        if (m::abs(n-1.5) < 0.01) rb = rs * rs;
+        else rb = (4 * (n + 1)) / (2 * (n + 3) - 9) * rs;
+        //rb = m::pow(pin->GetOrAddReal("bondi", "rs", m::sqrt(1e5)),2.);
+        break;
+    case BSeedType::r54s2:
+        bz = pin->GetOrAddReal("b_field", "bz", 0.);
+        gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
+        n = 1. / (gam - 1.);
+        rs = pin->GetOrAddReal("bondi", "rs", m::sqrt(1e5));
+        if (m::abs(n-1.5) < 0.01) rb = rs * rs;
+        else rb = (4 * (n + 1)) / (2 * (n + 3) - 9) * rs;
         break;
     }
 
@@ -256,6 +274,12 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
                 // Hyerin (06/13/23) a vertical-ish field for Bondi initialization
                 {
                     q = bz / 2. * (r * r + m::pow(r,3./4.) * m::pow(rb,5./4.)) * m::pow(m::sin(th),2.); // new solution
+                }
+                break;
+            case BSeedType::r54s2:
+                // Hyerin (08/18/23) a vertical-ish field for gamma=4/3 initialization
+                {
+                    q = bz / 2. * (r * r + m::pow(r,5./4.) * m::pow(rb,3./4.)) * m::pow(m::sin(th),2.); // new solution
                 }
                 break;
             default:

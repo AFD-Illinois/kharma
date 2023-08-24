@@ -155,7 +155,9 @@ KOKKOS_INLINE_FUNCTION void get_prim_bondi(const GRCoordinates& G, const Coordin
     rho0 = m::pow(T0, n);
     u0 = rho0 * T0 * n;
 
-    Real rb = rs * rs; // Bondi radius
+    Real rb; // Bondi radius
+    if (m::abs(n-1.5) < 0.01) rb = rs * rs;
+    else rb = (4 * (n + 1)) / (2 * (n + 3) - 9) * rs;
     // interpolation between inner and outer regimes
     rho = rho0 * (r + rb) / r;
     //T = T0 * (r + rb) / r; // use the same analytic temperature solution since T already goes like ~1/r
