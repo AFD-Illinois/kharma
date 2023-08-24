@@ -1,0 +1,92 @@
+# SANE model mirroring the simulation library
+# Overall simulation size 50M, to allow
+# running at small scale on e.g. a laptop
+# Uses MKS coordinates, not Funky variant
+
+<parthenon/job>
+problem_id = torus
+
+<parthenon/mesh>
+refinement = static
+numlevel = 3
+nx1 = 128
+nx2 = 128
+nx3 = 1
+
+<parthenon/meshblock>
+nx1 = 64
+nx2 = 64
+nx3 = 1
+
+<parthenon/static_refinement0>
+x1min = 1.0
+x1max = 3.0
+x2min = 0.45
+x2max = 0.55
+level = 1
+
+<coordinates>
+base = spherical_ks
+transform = eks
+r_out = 50
+a = 0.9375
+
+<parthenon/time>
+tlim = 3000.0
+nlim = -1
+
+<debug>
+verbose = 1
+extra_checks = 1
+flag_verbose = 0
+
+<GRMHD>
+cfl = 0.9
+gamma = 1.666667
+reconstruction = weno5
+
+<torus>
+rin = 6.0
+rmax = 12.0
+
+<perturbation>
+u_jitter = 0.04
+
+<b_field>
+type = sane
+beta_min = 100.
+
+
+<floors>
+rho_min_geom = 1e-5
+u_min_geom = 1e-7
+ktot_max = 1500
+u_over_rho_max = 100
+bsq_over_rho_max = 100
+
+<electrons>
+on = false
+howes = true
+kawazura = true
+werner = true
+rowan = true
+sharma = true
+
+<wind>
+on = false
+
+<parthenon/output0>
+file_type = hdf5
+dt = 10.0
+single_precision_output = true
+variables = prims.rho, prims.u, prims.uvec, prims.B
+
+# Can't until face field output is enabled
+#<parthenon/output1>
+#file_type = rst
+#dt = 100.0
+#ghost_zones = true
+
+<parthenon/output2>
+file_type = hst
+dt = 0.1

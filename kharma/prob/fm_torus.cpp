@@ -218,7 +218,7 @@ TaskStatus PerturbU(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pi
     // to get a new sequence for every block
     const int rng_seed = pin->GetOrAddInteger("perturbation", "rng_seed", 31337);
     // Print real seed used for all blocks, to ensure they're different
-    if (pmb->packages.Get("Globals")->Param<int>("verbose") > 0) {
+    if (pmb->packages.Get("Globals")->Param<int>("verbose") > 1) {
         std::cout << "Seeding RNG in block " << pmb->gid << " with value " << rng_seed + pmb->gid << std::endl;
     }
     const bool serial = pin->GetOrAddInteger("perturbation", "serial", false);

@@ -158,6 +158,8 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
             case BoundaryFace::outer_x3:
                 pkg->KBoundaries[bface] = KBoundaries::Dirichlet<BoundaryFace::outer_x3>;
                 break;
+            default:
+                break;
             }
         } else if (btype == "reflecting") {
             switch (bface) {
@@ -179,6 +181,8 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
             case BoundaryFace::outer_x3:
                 pkg->KBoundaries[bface] = BoundaryFunction::ReflectOuterX3;
                 break;
+            default:
+                break;
             }
         } else if (btype == "outflow") {
             switch (bface) {
@@ -199,6 +203,8 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
                 break;
             case BoundaryFace::outer_x3:
                 pkg->KBoundaries[bface] = BoundaryFunction::OutflowOuterX3;
+                break;
+            default:
                 break;
             }
         }
@@ -233,7 +239,7 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
     // Prevent inflow of material by changing fluid speeds,
     // anywhere we've specified.
     if (params.Get<bool>("check_inflow_" + bname)) {
-        Flag("CheckInflow");
+        Flag("CheckInflow_"+bname);
         CheckInflow(rc, domain, coarse);
         EndFlag();
     }
@@ -267,7 +273,7 @@ void KBoundaries::CheckInflow(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDom
     // Inflow check
     // Iterate over zones w/p=0
     pmb->par_for_bndry(
-        "Outflow_check_inflow", IndexRange{0, 0}, domain, CC, coarse,
+        "check_inflow", IndexRange{0, 0}, domain, CC, coarse,
         KOKKOS_LAMBDA(const int &p, const int &k, const int &j, const int &i) {
             KBoundaries::check_inflow(G, P, domain, m_p.U1, k, j, i);
         }

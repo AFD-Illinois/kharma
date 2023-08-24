@@ -216,6 +216,7 @@ KOKKOS_INLINE_FUNCTION Real reduction_var<Var::neg_rhout>(REDUCE_FUNCTION_ARGS)
 #endif
 #endif
     }
+    return is_neg;
 }
 template <>
 KOKKOS_INLINE_FUNCTION Real reduction_var<Var::neg_u>(REDUCE_FUNCTION_ARGS)
@@ -229,6 +230,7 @@ KOKKOS_INLINE_FUNCTION Real reduction_var<Var::neg_u>(REDUCE_FUNCTION_ARGS)
 #endif
 #endif
     }
+    return is_neg;
 }
 template <>
 KOKKOS_INLINE_FUNCTION Real reduction_var<Var::neg_rho>(REDUCE_FUNCTION_ARGS)
@@ -242,6 +244,7 @@ KOKKOS_INLINE_FUNCTION Real reduction_var<Var::neg_rho>(REDUCE_FUNCTION_ARGS)
 #endif
 #endif
     }
+    return is_neg;
 }
 
 }

@@ -201,9 +201,6 @@ TaskStatus Floors::ApplyInitialFloors(ParameterInput *pin, MeshBlockData<Real> *
 
     const EMHD::EMHD_parameters& emhd_params = EMHD::GetEMHDParameters(pmb->packages);
 
-    fprintf(stderr, "%d %d %d %d %d\n", m_p.RHO, m_p.UU, m_p.U1, m_p.U2, m_p.U3);
-    fprintf(stderr, "%d %d %d %d %d\n", m_u.RHO, m_u.UU, m_u.U1, m_u.U2, m_u.U3);
-
     // Apply floors over the same zones we just updated with UtoP
     // This selects the entire domain, but we then require pflag >= 0,
     // which keeps us from covering completely uninitialized zones

@@ -51,7 +51,6 @@ std::shared_ptr<KHARMAPackage> Flux::Initialize(ParameterInput *pin, std::shared
     // We can't just use GetVariables or something since there's no mesh yet.
     // That's what this function is for.
     int nvar = KHARMA::PackDimension(packages.get(), Metadata::WithFluxes);
-    std::cout << "Allocating fluxes with nvar: " << nvar << std::endl;
     std::vector<int> s_flux({nvar});
     // TODO optionally move all these to faces? Not important yet, no output, more memory
     std::vector<MetadataFlag> flags_flux = {Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy};
@@ -78,7 +77,7 @@ std::shared_ptr<KHARMAPackage> Flux::Initialize(ParameterInput *pin, std::shared
         pkg->AddField("Flux.vl", m);
     }
 
-    Flag("Initialized");
+    EndFlag();
     return pkg;
 }
 

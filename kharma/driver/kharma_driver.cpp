@@ -189,13 +189,13 @@ TaskID KHARMADriver::AddMPIBoundarySync(const TaskID t_start, TaskList &tl, std:
     return t_bounds;
 }
 
-void KHARMADriver::SyncAllBounds(std::shared_ptr<MeshData<Real>> md, bool apply_domain_bounds)
+TaskStatus KHARMADriver::SyncAllBounds(std::shared_ptr<MeshData<Real>> md, bool apply_domain_bounds)
 {
     Flag("SyncAllBounds");
     TaskID t_none(0);
 
     // 1. PtoU on the interior to ensure we're up-to-date
-    Flux::MeshPtoU(md.get(), IndexDomain::interior, false);
+    //Flux::MeshPtoU(md.get(), IndexDomain::interior, false);
 
     // 2. Sync MPI bounds
     // This call syncs the primitive variables when using the ImEx driver, and cons
@@ -216,6 +216,7 @@ void KHARMADriver::SyncAllBounds(std::shared_ptr<MeshData<Real>> md, bool apply_
     }
 
     EndFlag();
+    return TaskStatus::complete;
 }
 
 TaskID KHARMADriver::AddFluxCalculations(TaskID& t_start, TaskList& tl, KReconstruction::Type recon, MeshData<Real> *md)

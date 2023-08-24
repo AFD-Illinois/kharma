@@ -74,18 +74,18 @@ inline BSeedType ParseBSeedType(std::string b_field_type)
     }
 }
 
-/**
- * Initializer for magnetic fields directly: value of a divergence-free configuration at a point
- */
-KOKKOS_INLINE_FUNCTION double BSeed_A(BSeedType type, GReal Xembed[GR_DIM])
-{
+// /**
+//  * Initializer for magnetic fields directly: value of a divergence-free configuration at a point
+//  */
+// KOKKOS_INLINE_FUNCTION double BSeed_A(BSeedType type, GReal Xembed[GR_DIM])
+// {
 
-}
+// }
 
-/**
- * 
- */
-KOKKOS_INLINE_FUNCTION double BSeed_B(BSeedType type, GReal Xembed[GR_DIM])
-{
+// /**
+//  * 
+//  */
+// KOKKOS_INLINE_FUNCTION double BSeed_B(BSeedType type, GReal Xembed[GR_DIM])
+// {
 
-}
+// }

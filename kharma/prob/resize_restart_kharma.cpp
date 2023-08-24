@@ -43,7 +43,7 @@
 
 // Reads in KHARMA restart file but at a different simulation size
 
-void ReadKharmaRestartHeader(std::string fname, std::unique_ptr<ParameterInput>& pin)
+void ReadKharmaRestartHeader(std::string fname, ParameterInput *pin)
 {
     bool use_dt = pin->GetOrAddBoolean("resize_restart", "use_dt", true);
     bool use_tf = pin->GetOrAddBoolean("resize_restart", "use_tf", false);

@@ -36,7 +36,7 @@
 #include "decs.hpp"
 #include "types.hpp"
 
-#include "reconstruction.hpp"
+#include "flux/reconstruction.hpp"
 
 using namespace parthenon;
 
@@ -68,7 +68,7 @@ class KHARMADriver : public MultiStageDriver {
          * so that the driver can repeat calls to create a predictor-corrector, RK2/4, etc.
          * 
          * Unlike MHD, GRMHD must keep two forms of the variables: the conserved variables, and a set of
-         * "GRPrimitive" variables more amenable to reconstruction.  To evolve the fluid, the code must:
+         * "primitive" variables more amenable to reconstruction.  To evolve the fluid, the code must:
          * 1. Reconstruct the right- and left-going components at zone faces, given the primitive variables
          * 2. Calculate the fluxes of conserved quantities through the faces
          * 2a. Apply any fixes to fluxes (e.g., for the magnetic field)
@@ -133,8 +133,10 @@ class KHARMADriver : public MultiStageDriver {
         /**
          * Single call to sync all boundary conditions (MPI/internal and domain/physical boundaries)
          * Used anytime boundary sync is needed outside the usual loop of steps.
+         * 
+         * Only use this as a task each step when debugging!
          */
-        static void SyncAllBounds(std::shared_ptr<MeshData<Real>> md, bool apply_domain_bounds=true);
+        static TaskStatus SyncAllBounds(std::shared_ptr<MeshData<Real>> md, bool apply_domain_bounds=true);
 
         // TODO swapped versions of these
         /**

@@ -44,6 +44,8 @@
 #include <prolong_restrict/pr_ops.hpp>
 
 using namespace parthenon;
+using parthenon::refinement_ops::ProlongateSharedMinMod;
+using parthenon::refinement_ops::RestrictAverage;
 
 std::shared_ptr<KHARMAPackage> B_CT::Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages)
 {
@@ -87,7 +89,7 @@ std::shared_ptr<KHARMAPackage> B_CT::Initialize(ParameterInput *pin, std::shared
     auto m = Metadata(flags_prim_f);
     pkg->AddField("prims.fB", m);
     m = Metadata(flags_cons_f);
-    m.RegisterRefinementOps<parthenon::refinement_ops::ProlongateSharedMinMod, parthenon::refinement_ops::RestrictAverage, ProlongateInternalOlivares>();
+    m.RegisterRefinementOps<ProlongateSharedMinMod, RestrictAverage, ProlongateInternalOlivares>();
     pkg->AddField("cons.fB", m);
 
     // Cell-centered versions.  Needed for BS, not for other schemes.
@@ -104,8 +106,9 @@ std::shared_ptr<KHARMAPackage> B_CT::Initialize(ParameterInput *pin, std::shared
 
     // EMF on edges.
     // TODO only sync when needed
-    std::vector<MetadataFlag> flags_emf = {Metadata::Real, Metadata::Edge, Metadata::Derived, Metadata::OneCopy};
+    std::vector<MetadataFlag> flags_emf = {Metadata::Real, Metadata::Edge, Metadata::Derived, Metadata::OneCopy, Metadata::FillGhost};
     m = Metadata(flags_emf);
+    m.RegisterRefinementOps<ProlongateSharedMinMod2, RestrictNearest>();
     pkg->AddField("B_CT.emf", m);
 
     if (ct_scheme == "sg09") {
@@ -117,8 +120,8 @@ std::shared_ptr<KHARMAPackage> B_CT::Initialize(ParameterInput *pin, std::shared
     // CALLBACKS
 
     // We implement a source term replacement, rather than addition,
-    // but same difference, really
-    //pkg->AddSource = B_CT::AddSource;
+    // but same difference really
+    pkg->AddSource = B_CT::AddSource;
 
     // Also ensure that prims get filled, both during step and on boundaries
     //pkg->MeshUtoP = B_CT::MeshUtoP;
@@ -180,7 +183,6 @@ void B_CT::BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
             B_Pf(F3, 0, k, j, i) = B_Uf(F3, 0, k, j, i) / G.gdet(Loci::face3, j, i);
         }
     );
-    Kokkos::fence();
     // Average the primitive vals for zone centers (TODO right?)
     const IndexRange3 bc = KDomain::GetRange(rc, domain, coarse);
     pmb->par_for("UtoP_B_center", bc.ks, bc.ke, bc.js, bc.je, bc.is, bc.ie,
@@ -192,21 +194,20 @@ void B_CT::BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
                                           : B_Pf(F3, 0, k, j, i);
         }
     );
-    Kokkos::fence();
     pmb->par_for("UtoP_B_centerPtoU", 0, NVEC-1, bc.ks, bc.ke, bc.js, bc.je, bc.is, bc.ie,
         KOKKOS_LAMBDA (const int &v, const int &k, const int &j, const int &i) {
             B_U(v, k, j, i) = B_P(v, k, j, i) * G.gdet(Loci::center, j, i);
         }
     );
-    Kokkos::fence();
 }
 
-// TODO this isn't really a source... it's a replacement of the
-// face-centered fields according to constrained transport rules
-TaskStatus B_CT::UpdateFaces(std::shared_ptr<MeshData<Real>>& md, std::shared_ptr<MeshData<Real>>& mdudt)
+TaskStatus B_CT::CalculateEMF(MeshData<Real> *md)
 {
     auto pmesh = md->GetMeshPointer();
     const int ndim = pmesh->ndim;
+
+    //md->GetMeshPointer()->mesh_data.Add("emf", md, std::vector<std::string>{"B_CT.emf"});
+    //KHARMADriver::Copy();
 
     // EMF temporary
     auto& emf_pack = md->PackVariables(std::vector<std::string>{"B_CT.emf"});
@@ -296,6 +297,23 @@ TaskStatus B_CT::UpdateFaces(std::shared_ptr<MeshData<Real>>& md, std::shared_pt
     } else {
         throw std::invalid_argument("Invalid CT scheme specified!  Must be one of bs99, sg09");
     }
+    return TaskStatus::complete;
+}
+
+TaskStatus B_CT::AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
+{
+    auto pmesh = md->GetMeshPointer();
+    const int ndim = pmesh->ndim;
+
+    // EMF temporary
+    auto& emf_pack = md->PackVariables(std::vector<std::string>{"B_CT.emf"});
+
+    // Figure out indices
+    const IndexRange3 b = KDomain::GetRange(md, IndexDomain::interior, 0, 0);
+    const IndexRange3 b1 = KDomain::GetRange(md, IndexDomain::interior, 0, 1);
+    const IndexRange block = IndexRange{0, emf_pack.GetDim(5)-1};
+
+    auto pmb0 = md->GetBlockData(0)->GetBlockPointer().get();
 
     // This is what we're replacing
     auto& dB_Uf_dt = mdudt->PackVariables(std::vector<std::string>{"cons.fB"});
@@ -330,8 +348,6 @@ TaskStatus B_CT::UpdateFaces(std::shared_ptr<MeshData<Real>>& md, std::shared_pt
     }
     return TaskStatus::complete;
 }
-
-
 
 double B_CT::MaxDivB(MeshData<Real> *md)
 {
