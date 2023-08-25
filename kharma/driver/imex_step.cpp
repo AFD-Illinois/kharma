@@ -136,14 +136,17 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
             t_start_recv_flux = tl.AddTask(t_none, cb::StartReceiveFluxCorrections, md_sub_step_init);
 
         auto t_prim_source_first = t_start_recv_flux;
-        for (int j = 0; j < blocks.size(); j++) {
+        if(stage == 1){
+            t_prim_source_first = tl.AddTask(t_start_recv_flux, Electrons::ApplyElectronCoolingMD, md_sub_step_init.get());
+        }
+        /*for (int j = 0; j < blocks.size(); j++) {
             auto &pmb = blocks[j];
-            auto &mbd_sub_step_init  = pmb->meshblock_data.Get("base");
+            auto &mbd_sub_step_initial  = pmb->meshblock_data.Get("base");
             //COOLING:
             if(stage == 1){
-                t_prim_source_first = tl.AddTask(t_start_recv_flux, Packages::BlockApplyPrimSource, mbd_sub_step_init.get());
+                t_prim_source_first = tl.AddTask(t_start_recv_flux, Packages::BlockApplyPrimSource, mbd_sub_step_initial.get());
             }
-        }
+        }*/
         
         // Calculate the flux of each variable through each face
         // This reconstructs the primitives (P) at faces and uses them to calculate fluxes

@@ -105,6 +105,7 @@ void BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse=false);
 TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real> *rc);
 //COOLING:
 TaskStatus ApplyElectronCooling(MeshBlockData<Real> *rc);
+TaskStatus ApplyElectronCoolingMD(MeshData<Real> *rc);
 
 /**
  * KHARMA requires some method for getting conserved variables from primitives, as well.
