@@ -201,11 +201,11 @@ inline IndexRange3 GetPhysicalZones(std::shared_ptr<MeshBlock> pmb, IndexShape& 
 /**
  * Function to generate outputs wherever, whenever.
  */
-inline void OutputNow(Mesh *pmesh, std::string name)
+inline void OutputNow(ParameterInput *pin, Mesh *pmesh, std::string name)
 {
     auto tm = SimTime(0., 0., 0, 0, 0, 0, 0.);
     auto pouts = std::make_unique<Outputs>(pmesh, pin, &tm);
-    auto pin = pmesh->packages.Get("Globals")->Param<ParameterInput>("pin");
+    //auto pin = pmesh->packages.Get("Globals")->Param<ParameterInput>("pin");
     pouts->MakeOutputs(pmesh, pin, &tm, SignalHandler::OutputSignal::now);
     // TODO: find most recently written "now" files and move them to "name"
 }
