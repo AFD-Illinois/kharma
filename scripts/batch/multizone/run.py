@@ -208,7 +208,7 @@ def run_multizone(**kwargs):
         args['parthenon/time/nlim'] = kwargs['nlim']
 
         # effective nzones (Hyerin 07/27/23)
-        if kwargs['combine_out_ann'] or kwargs['move_rin']:
+        if (kwargs['combine_out_ann'] or kwargs['move_rin']) and not kwargs['onezone']:
             # think what's the smallest annulus where the logarithmic middle radius is larger than r_b 
             # (i.e. 8^n > 1e5 for base=8 r_b=1e5 where n is the nth smallest annulus)
             kwargs['nzones_eff'] = int(np.ceil(np.log(kwargs['r_b'])/np.log(kwargs['base'])))
@@ -259,7 +259,7 @@ def run_multizone(**kwargs):
                 runtime /= np.power(base,3./2)*2 # half of free-fall time at the log middle radius
                 if kwargs['long_t_in'] and args['coordinates/r_in']<2:
                     print("LONG_T_IN @ RUN # {}: using longer runtime".format(run_num))
-                    runtime *= 20 # 10 tff at the log middle radius
+                    runtime *= 10 # 5 tff at the log middle radius
         else:
             runtime = float(kwargs['tlim'])
 
