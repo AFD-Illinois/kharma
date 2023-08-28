@@ -257,9 +257,14 @@ def run_multizone(**kwargs):
             # B field runs use half this
             if kwargs['bz'] != 0.0:
                 runtime /= np.power(base,3./2)*2 # half of free-fall time at the log middle radius
-                if kwargs['long_t_in'] and args['coordinates/r_in']<2:
-                    print("LONG_T_IN @ RUN # {}: using longer runtime".format(run_num))
-                    runtime *= 10 # 5 tff at the log middle radius
+                if args['coordinates/r_out'] >= base**(kwargs['nzones']+1):
+                    # double the runtime for the outermost annulus
+                    runtime *= 2 
+                if args['coordinates/r_in']<2:
+                    runtime *= 2 # double the runtime for innermost annulus
+                    if kwargs['long_t_in']:
+                        print("LONG_T_IN @ RUN # {}: using longer runtime".format(run_num))
+                        runtime *= 5 # 5 tff at the log middle radius
         else:
             runtime = float(kwargs['tlim'])
 
@@ -272,8 +277,8 @@ def run_multizone(**kwargs):
         # Output timing (TODO make options)
         if kwargs['onezone']:
             runtime = calc_runtime(r_out, r_b)
-        args['parthenon/output0/dt'] = max((runtime/10.), 1e-7)
-        args['parthenon/output1/dt'] = max((runtime/5.), 1e-7)
+        args['parthenon/output0/dt'] = max((runtime/10.), 1e-7) 
+        args['parthenon/output1/dt'] = max((runtime/5.), 1e-7) #
         args['parthenon/output2/dt'] = runtime/10 #0.
 
         # Start any future run from this point
