@@ -360,7 +360,7 @@ class DCSKSCoords {
         const GReal zeta;
         static constexpr bool spherical = true;
 
-        KOKKOS_FUNCTION DCSKSCoords(GReal spin, GReal z): a(spin), zeta(z) {};
+        KOKKOS_FUNCTION DCSKSCoords(GReal spin, GReal z): a(spin), zeta(z) {}
 
         KOKKOS_INLINE_FUNCTION void gcov_embed(const GReal Xembed[GR_DIM], Real gcov[GR_DIM][GR_DIM]) const
         {
@@ -435,8 +435,7 @@ class DCSBLCoords {
         const GReal zeta;
         static constexpr bool spherical = true;
 
-        KOKKOS_FUNCTION DCSBLCoords(GReal spin): a(spin) {}; // make this line so that it also accepts 'zeta' as an argument.
-        KOKKOS_FUNCTION DCSBLCoords(GReal zeta): zeta(zeta) {}; 
+        KOKKOS_FUNCTION DCSBLCoords(GReal spin, GReal z): a(spin), zeta(z) {}
 
         KOKKOS_INLINE_FUNCTION void gcov_embed(const GReal Xembed[GR_DIM], Real gcov[GR_DIM][GR_DIM]) const
         {
@@ -449,11 +448,11 @@ class DCSBLCoords {
             const GReal cth = m::cos(th);
             const GReal sth = m::sin(th);
             const GReal s2t = sth*sth;
-            const GReal c2t = cth*cth ; 
-            const GReal c4t = c2t*c2t ;
+            const GReal c2t = cth*cth; 
+            const GReal c4t = c2t*c2t;
             const GReal rho2 = r*r + a*a*cth*cth;
-            const GReal ep2 = a*a ;
-            const GReal ep4 = ep2*ep2 ;
+            const GReal ep2 = a*a;
+            const GReal ep4 = ep2*ep2;
             const GReal DD = 1. - 2./r + ep2/(r*r);
             const GReal mu = 1. + ep2*cth*cth/(r*r);
 
@@ -481,9 +480,9 @@ class DCSBLCoords {
             482556048*pow(r,4)*c2t - 52440912*pow(r,5)*c2t - 56525400*pow(r,6)*c2t - 6081360*pow(r,7)*c2t + 1400400*pow(r,8)*c2t - 9425700*pow(r,9)*c2t - 3929040*pow(r,10)*c2t + 6584094720*c4t + 1908658080*r*c4t - 2355966000*pow(r,2)*c4t - 996654960*pow(r,3)*c4t - 910785520*pow(r,4)*c4t - 
             310582800*pow(r,5)*c4t - 140389440*pow(r,6)*c4t - 59683820*pow(r,7)*c4t - 28409700*pow(r,8)*c4t))/(40642560*pow(r,11)));
 
-            gcov[3][0] = gcov[0][3] ; 
+            gcov[3][0] = gcov[0][3]; 
 
-            gcov[3][3] = r*r**sth*sth*(1. + ep2/(r*r) + 2.*ep2*s2t/(r*r*r*mu)) + zeta*((ep2*(-365783040*pow(r,4) - 87272640*pow(r,5) - 72770400*pow(r,6) - 11188800*pow(r,7) - 20420640*pow(r,8) - 10735200*pow(r,9) - 4558680*pow(r,10) + 1097349120*pow(r,4)*c2t + 261817920*pow(r,5)*c2t + 218311200*pow(r,6)*c2t + 33566400*pow(r,7)*c2t + 
+            gcov[3][3] = r*r*sth*sth*(1. + ep2/(r*r) + 2.*ep2*s2t/(r*r*r*mu)) + zeta*((ep2*(-365783040*pow(r,4) - 87272640*pow(r,5) - 72770400*pow(r,6) - 11188800*pow(r,7) - 20420640*pow(r,8) - 10735200*pow(r,9) - 4558680*pow(r,10) + 1097349120*pow(r,4)*c2t + 261817920*pow(r,5)*c2t + 218311200*pow(r,6)*c2t + 33566400*pow(r,7)*c2t + 
             61261920*pow(r,8)*c2t + 32205600*pow(r,9)*c2t + 13676040*pow(r,10)*c2t)*s2t)/(40642560*pow(r,11)) + (ep4*(2734228224 - 543127032*r - 389601900*pow(r,2) - 386195220*pow(r,3) + 38195244*pow(r,4) + 78072390*pow(r,5) + 20779287*pow(r,6) + 696903*pow(r,7) + 1872108*pow(r,8) + 3141900*pow(r,9) + 1309680*pow(r,10) - 
             13168189440*c2t - 1371142080*r*c2t + 2300127840*pow(r,2)*c2t + 2045863008*pow(r,3)*c2t + 863148048*pow(r,4)*c2t + 155679408*pow(r,5)*c2t + 111038760*pow(r,6)*c2t + 73328880*pow(r,7)*c2t + 19635120*pow(r,8)*c2t - 9425700*pow(r,9)*c2t - 3929040*pow(r,10)*c2t + 6584094720*c4t - 286040160*r*c4t - 3976950960*pow(r,2)*c4t - 
             1695095280*pow(r,3)*c4t - 1196229520*pow(r,4)*c4t - 466673040*pow(r,5)*c4t - 266062560*pow(r,6)*c4t - 119241500*pow(r,7)*c4t - 42085740*pow(r,8)*c4t)*s2t)/(40642560*pow(r,11)));

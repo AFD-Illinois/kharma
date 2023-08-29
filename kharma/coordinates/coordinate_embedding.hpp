@@ -101,7 +101,7 @@ class CoordinateEmbedding {
             }
             
             // Changes Made. ADDING DCS KS AND BL HERE !! 
-            else if (mpark::holds_alternative<DCSSKSCoords>(base_in)) {
+            else if (mpark::holds_alternative<DCSKSCoords>(base_in)) {
                 base.emplace<DCSKSCoords>(mpark::get<DCSKSCoords>(base_in));
             } else if (mpark::holds_alternative<DCSBLCoords>(base_in)) {
                 base.emplace<DCSBLCoords>(mpark::get<DCSBLCoords>(base_in));
@@ -142,9 +142,9 @@ class CoordinateEmbedding {
                         base_str == "dcs_ks") {                                                    // Changes Made. ADDED DCS KS 
                 GReal a = pin->GetReal("coordinates", "a"); 
                 
-                if (base_str == "dcs_ks") {  // Check for "dcs_ks"
-                GReal zeta = pin->GetReal("coordinates", "zeta"); // Get "zeta" value
-                base.emplace<DCSKSCoords>(DCSKSCoords(a, zeta));
+                if (base_str == "dcs_ks") { 
+                    GReal zeta = pin->GetReal("coordinates", "zeta"); // Get "zeta" value
+                    base.emplace<DCSKSCoords>(DCSKSCoords(a, zeta));
                 }
                 else {
                     bool ext_g = pin->GetOrAddBoolean("coordinates", "ext_g", false);
@@ -161,9 +161,9 @@ class CoordinateEmbedding {
                         base_str == "dcs_bl") {
                 GReal a = pin->GetReal("coordinates", "a");
 
-                if (base_str == "dcs_bl") {  // Check for "dcs_bl"
-                GReal zeta = pin->GetReal("coordinates", "zeta"); // Get "zeta" value
-                base.emplace<DCSBLCoords>(DCSBLCoords(a, zeta));   // Create DCSBLCoords with "a" and "zeta"
+                if (base_str == "dcs_bl") {
+                    GReal zeta = pin->GetReal("coordinates", "zeta"); // Get "zeta" value
+                    base.emplace<DCSBLCoords>(DCSBLCoords(a, zeta));   // Create DCSBLCoords with "a" and "zeta"
                 } else {
                     bool ext_g = pin->GetOrAddBoolean("coordinates", "ext_g", false);
                     if (ext_g || base_str == "spherical_bl_extg" || base_str == "bl_extg") {
