@@ -130,8 +130,8 @@ inline void ApplyEMHDLimits(MeshBlockData<Real> *mbd, IndexDomain domain)
     auto packages            = pmb->packages;
 
     PackIndexMap prims_map, cons_map;
-    auto P = mbd->PackVariables({Metadata::GetUserFlag("GRPrimitive")}, prims_map);
-    auto U = mbd->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("GRConserved")}, cons_map);
+    auto P = mbd->PackVariables({Metadata::GetUserFlag("Primitive")}, prims_map);
+    auto U = mbd->PackVariables(std::vector<MetadataFlag>{Metadata::Conserved}, cons_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
 
     const auto& G = pmb->coords;

@@ -1,5 +1,6 @@
-# GRMHD Modes problem
-# Try to propagate several analytically-amenable linear modes of the MHD equations
+# Kelvin-Helmholtz instability
+# Basic K-H problem, usually used to test AMR
+# since it gets refined in predictable places
 
 <parthenon/job>
 problem_id = kelvin_helmholtz
@@ -79,10 +80,9 @@ gamma = 1.666667
 reconstruction = linear_mc
 
 <b_field>
-#solver = flux_ct # TODO warn on using flux_ct when AMR
+type = none
 solver = face_ct
 kill_on_large_divb = true
-#ct_scheme = bs99
 ct_scheme = sg09
 
 <debug>

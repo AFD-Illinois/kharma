@@ -47,7 +47,7 @@ using namespace parthenon;
  *
  * This requires only the values at cell centers, and preserves a cell-centered divergence representation
  * 
- * This implementation includes conversion from "GRPrimitive" to "conserved" B and back,
+ * This implementation includes conversion from "primitive" to "conserved" B and back,
  * i.e. between field strength and flux via multiplying by gdet.
  */
 namespace B_CD {
@@ -55,17 +55,6 @@ namespace B_CD {
  * Declare fields, initialize (few) parameters
  */
 std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages);
-
-/**
- * Seed an axisymmetric initialization with magnetic field proportional to fluid density,
- * or density and radius, to create a SANE or MAD flow
- * Note this function expects a normalized P for which rho_max==1
- *
- * @param rin is the interior radius of the torus
- * @param min_rho_q is the minimum density at which there will be magnetic vector potential
- * @param b_field_type is one of "sane" "ryan" "r3s3" or "gaussian", described below (TODO test or remove opts)
- */
-TaskStatus SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin);
 
 /**
  * Get the primitive variables, which in Parthenon's nomenclature are "derived".

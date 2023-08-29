@@ -131,8 +131,8 @@ T Reductions::EHReduction(MeshData<Real> *md, UserHistoryOperation op, int zone)
     const auto& emhd_params = EMHD::GetEMHDParameters(pmesh->packages);
 
     PackIndexMap prims_map, cons_map;
-    const auto& P = md->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("GRPrimitive")}, prims_map);
-    const auto& U = md->PackVariablesAndFluxes(std::vector<MetadataFlag>{Metadata::GetUserFlag("GRConserved")}, cons_map);
+    const auto& P = md->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("Primitive")}, prims_map);
+    const auto& U = md->PackVariablesAndFluxes(std::vector<MetadataFlag>{Metadata::Conserved}, cons_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
     const auto& cmax = md->PackVariables(std::vector<std::string>{"Flux.cmax"});
     const auto& cmin = md->PackVariables(std::vector<std::string>{"Flux.cmin"});
@@ -192,10 +192,10 @@ T Reductions::EHReduction(MeshData<Real> *md, UserHistoryOperation op, int zone)
     return result;
 }
 
-#define INSIDE (x[1] > startx[0] && x[2] > startx[1] && x[3] > startx[2]) && \
-                (trivial[0] ? x[1] < startx[0] + G.Dxc<1>(i) : x[1] < stopx[0]) && \
-                (trivial[1] ? x[2] < startx[1] + G.Dxc<2>(j) : x[2] < stopx[1]) && \
-                (trivial[2] ? x[3] < startx[2] + G.Dxc<3>(k) : x[3] < stopx[2])
+#define INSIDE (x[1] > startx1 && x[2] > startx2 && x[3] > startx3) && \
+                (trivial1 ? x[1] < startx1 + G.Dxc<1>(i) : x[1] < stopx1) && \
+                (trivial2 ? x[2] < startx2 + G.Dxc<2>(j) : x[2] < stopx2) && \
+                (trivial3 ? x[3] < startx3 + G.Dxc<3>(k) : x[3] < stopx3)
 
 // TODO additionally template on return type to avoid counting flags with Reals
 template<Reductions::Var var, typename T>
@@ -210,8 +210,8 @@ T Reductions::DomainReduction(MeshData<Real> *md, UserHistoryOperation op, const
 
     // Just pass in everything we might want. Probably slow?
     PackIndexMap prims_map, cons_map;
-    const auto& P = md->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("GRPrimitive")}, prims_map);
-    const auto& U = md->PackVariablesAndFluxes(std::vector<MetadataFlag>{Metadata::GetUserFlag("GRConserved")}, cons_map);
+    const auto& P = md->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("Primitive")}, prims_map);
+    const auto& U = md->PackVariablesAndFluxes(std::vector<MetadataFlag>{Metadata::Conserved}, cons_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
     const auto& cmax = md->PackVariables(std::vector<std::string>{"Flux.cmax"});
     const auto& cmin = md->PackVariables(std::vector<std::string>{"Flux.cmin"});
@@ -226,7 +226,16 @@ T Reductions::DomainReduction(MeshData<Real> *md, UserHistoryOperation op, const
     VLOOP if(startx[v] == stopx[v]) {
         trivial_tmp[v] = true;
     }
-    const bool trivial[3] = {trivial_tmp[0], trivial_tmp[1], trivial_tmp[2]};
+    // Pull values to pass to device, because passing views is cumbersome
+    const bool trivial1 = trivial_tmp[0];
+    const bool trivial2 = trivial_tmp[1];
+    const bool trivial3 = trivial_tmp[2];
+    const GReal startx1 = startx[0];
+    const GReal startx2 = startx[1];
+    const GReal startx3 = startx[2];
+    const GReal stopx1 = stopx[0];
+    const GReal stopx2 = stopx[1];
+    const GReal stopx3 = stopx[2];
 
     T result = 0.;
     MPI_Op mop;
@@ -240,7 +249,7 @@ T Reductions::DomainReduction(MeshData<Real> *md, UserHistoryOperation op, const
                 G.coord_embed(k, j, i, Loci::center, x);
                 if(INSIDE) {
                     local_result += reduction_var<var>(REDUCE_FUNCTION_CALL) *
-                        (!trivial[2]) * G.Dxc<3>(k) * (!trivial[1]) * G.Dxc<2>(j) * (!trivial[0]) * G.Dxc<1>(i);
+                        (!trivial3) * G.Dxc<3>(k) * (!trivial2) * G.Dxc<2>(j) * (!trivial1) * G.Dxc<1>(i);
                 }
             }
         , sum_reducer);
@@ -256,7 +265,7 @@ T Reductions::DomainReduction(MeshData<Real> *md, UserHistoryOperation op, const
                 G.coord_embed(k, j, i, Loci::center, x);
                 if(INSIDE) {
                     const Real val = reduction_var<var>(REDUCE_FUNCTION_CALL) *
-                        (!trivial[2]) * G.Dxc<3>(k) * (!trivial[1]) * G.Dxc<2>(j) * (!trivial[0]) * G.Dxc<1>(i);
+                        (!trivial3) * G.Dxc<3>(k) * (!trivial2) * G.Dxc<2>(j) * (!trivial1) * G.Dxc<1>(i);
                     if (val > local_result) local_result = val;
                 }
             }
@@ -273,7 +282,7 @@ T Reductions::DomainReduction(MeshData<Real> *md, UserHistoryOperation op, const
                 G.coord_embed(k, j, i, Loci::center, x);
                 if(INSIDE) {
                     const Real val = reduction_var<var>(REDUCE_FUNCTION_CALL) *
-                        (!trivial[2]) * G.Dxc<3>(k) * (!trivial[1]) * G.Dxc<2>(j) * (!trivial[0]) * G.Dxc<1>(i);
+                        (!trivial3) * G.Dxc<3>(k) * (!trivial2) * G.Dxc<2>(j) * (!trivial1) * G.Dxc<1>(i);
                     if (val < local_result) local_result = val;
                 }
             }

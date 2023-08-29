@@ -161,8 +161,8 @@ TaskStatus Floors::ApplyInitialFloors(ParameterInput *pin, MeshBlockData<Real> *
     auto pmb = mbd->GetBlockPointer();
 
     PackIndexMap prims_map, cons_map;
-    auto P = mbd->PackVariables({Metadata::GetUserFlag("GRPrimitive")}, prims_map);
-    auto U = mbd->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("GRConserved")}, cons_map);
+    auto P = mbd->PackVariables({Metadata::GetUserFlag("Primitive")}, prims_map);
+    auto U = mbd->PackVariables(std::vector<MetadataFlag>{Metadata::Conserved}, cons_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
 
     const auto& G = pmb->coords;
@@ -224,8 +224,8 @@ TaskStatus Floors::ApplyGRMHDFloors(MeshBlockData<Real> *mbd, IndexDomain domain
     auto pmb = mbd->GetBlockPointer();
 
     PackIndexMap prims_map, cons_map;
-    auto P = mbd->PackVariables({Metadata::GetUserFlag("GRPrimitive")}, prims_map);
-    auto U = mbd->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("GRConserved")}, cons_map);
+    auto P = mbd->PackVariables({Metadata::GetUserFlag("Primitive")}, prims_map);
+    auto U = mbd->PackVariables(std::vector<MetadataFlag>{Metadata::Conserved}, cons_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
 
     const auto& G = pmb->coords;

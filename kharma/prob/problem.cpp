@@ -34,7 +34,6 @@
 
 #include "problem.hpp"
 
-#include "b_field_tools.hpp"
 #include "boundaries.hpp"
 #include "electrons.hpp"
 #include "floors.hpp"
@@ -76,6 +75,7 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
     Flag("ProblemGenerator_"+prob);
     // Also just print this, it's important
     if (MPIRank0()) {
+        // We have no way of tracking whether this is the first block we're initializing
         static bool printed_msg = false;
         if (!printed_msg) std::cout << "Initializing problem: " << prob << std::endl;
         printed_msg = true;

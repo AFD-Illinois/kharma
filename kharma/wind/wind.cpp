@@ -79,7 +79,7 @@ TaskStatus Wind::AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
 
     // Pack variables
     PackIndexMap cons_map;
-    auto dUdt = mdudt->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("GRConserved")}, cons_map);
+    auto dUdt = mdudt->PackVariables(std::vector<MetadataFlag>{Metadata::Conserved}, cons_map);
     const VarMap m_u(cons_map, true);
     // Get sizes
     const IndexRange ib = mdudt->GetBoundsI(IndexDomain::interior);

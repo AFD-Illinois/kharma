@@ -9,6 +9,7 @@ convergence.txt
 core.*
 frames_*/
 logs/
+*.log
 
 # KHARMA/Parthenon outputs
 *.phdf

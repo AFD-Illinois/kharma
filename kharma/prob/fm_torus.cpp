@@ -47,11 +47,6 @@ TaskStatus InitializeFMTorus(std::shared_ptr<MeshBlockData<Real>>& rc, Parameter
     GridScalar rho  = rc->Get("prims.rho").data;
     GridScalar u    = rc->Get("prims.u").data;
     GridVector uvec = rc->Get("prims.uvec").data;
-    GridVector B_P  = rc->Get("prims.B").data;
-
-    // Are we using EMHD?
-    // TODO does anything really change?  If so use packages.count
-    //const bool use_emhd   = pin->GetOrAddBoolean("emhd", "on", false);
 
     const GReal rin      = pin->GetOrAddReal("torus", "rin", 6.0);
     const GReal rmax     = pin->GetOrAddReal("torus", "rmax", 12.0);

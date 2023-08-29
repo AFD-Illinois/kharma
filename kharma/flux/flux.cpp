@@ -93,8 +93,8 @@ TaskStatus Flux::BlockPtoUMHD(MeshBlockData<Real> *rc, IndexDomain domain, bool 
 
     // Pack variables
     PackIndexMap prims_map, cons_map;
-    const auto& P = rc->PackVariables({Metadata::GetUserFlag("GRPrimitive")}, prims_map);
-    const auto& U = rc->PackVariables({Metadata::GetUserFlag("GRConserved")}, cons_map);
+    const auto& P = rc->PackVariables({Metadata::GetUserFlag("Primitive")}, prims_map);
+    const auto& U = rc->PackVariables({Metadata::Conserved}, cons_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
 
     auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
@@ -125,8 +125,8 @@ TaskStatus Flux::BlockPtoU(MeshBlockData<Real> *rc, IndexDomain domain, bool coa
 
     // Pack variables
     PackIndexMap prims_map, cons_map;
-    const auto& P = rc->PackVariables({Metadata::GetUserFlag("GRPrimitive")}, prims_map);
-    const auto& U = rc->PackVariables({Metadata::GetUserFlag("GRConserved")}, cons_map);
+    const auto& P = rc->PackVariables({Metadata::GetUserFlag("Primitive")}, prims_map);
+    const auto& U = rc->PackVariables({Metadata::Conserved}, cons_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
     const int nvar = U.GetDim(4);
 
@@ -166,8 +166,8 @@ TaskStatus Flux::BlockPtoU_Send(MeshBlockData<Real> *rc, IndexDomain domain, boo
 
     // Pack variables
     PackIndexMap prims_map, cons_map;
-    const auto& P = rc->PackVariables({Metadata::GetUserFlag("GRPrimitive")}, prims_map);
-    const auto& U = rc->PackVariables({Metadata::GetUserFlag("GRConserved")}, cons_map);
+    const auto& P = rc->PackVariables({Metadata::GetUserFlag("Primitive")}, prims_map);
+    const auto& U = rc->PackVariables({Metadata::Conserved}, cons_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
 
     auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
@@ -228,8 +228,8 @@ void Flux::AddGeoSource(MeshData<Real> *md, MeshData<Real> *mdudt)
 
     // Pack variables
     PackIndexMap prims_map, cons_map;
-    auto P    = md->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("GRPrimitive")}, prims_map);
-    auto dUdt = mdudt->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("GRConserved")}, cons_map);
+    auto P    = md->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("Primitive")}, prims_map);
+    auto dUdt = mdudt->PackVariables(std::vector<MetadataFlag>{Metadata::Conserved}, cons_map);
     const VarMap m_p(prims_map, false), m_u(cons_map, true);
 
     // EMHD params

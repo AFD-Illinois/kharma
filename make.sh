@@ -215,12 +215,16 @@ fi
 if [[ $CXX == "icpx" ]]; then
   export CXXFLAGS="-fno-fast-math $CXXFLAGS"
 fi
+# Avoid NVC++ complaining constantly about one line in Kokkos
+if [[ $CXX_NATIVE == "nvc++" ]]; then
+  export CXXFLAGS="-diag-suppress 68 $CXXFLAGS"
+fi
 
 ### Build HDF5 ###
 # If we're building HDF5, do it after we set *all flags*
 if [[ "$ARGS" == *"hdf5"* && "$ARGS" == *"clean"* ]]; then
-  H5VER=1.12.2
-  H5VERU=1_12_2
+  H5VER=1.14.2
+  H5VERU=1_14_2
   cd external
   # Allow complete reconfigure (for switching compilers, takes longer)
   if [[ "$ARGS" == *"cleanhdf5"* ]]; then
@@ -228,7 +232,7 @@ if [[ "$ARGS" == *"hdf5"* && "$ARGS" == *"clean"* ]]; then
   fi
   # Download if needed
   if [ ! -f hdf5-${H5VER}.tar.gz ]; then
-    curl https://hdf-wordpress-1.s3.amazonaws.com/wp-content/uploads/manual/HDF5/HDF5_${H5VERU}/source/hdf5-${H5VER}.tar.gz -o hdf5-${H5VER}.tar.gz
+    curl https://hdf-wordpress-1.s3.amazonaws.com/wp-content/uploads/manual/HDF5/HDF5_${H5VERU}/src/hdf5-${H5VER}.tar.gz -o hdf5-${H5VER}.tar.gz
   fi
   # Unpack if needed (or deleted)
   if [ ! -d hdf5-${H5VER}/ ]; then

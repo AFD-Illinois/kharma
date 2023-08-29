@@ -112,10 +112,8 @@ class KHARMADriver : public MultiStageDriver {
         /**
          * Add a synchronization retion to an existing TaskCollection tc.
          * Since the region is self-contained, does not return a TaskID
-         * 
-         * This function polls the 'integrator' member or it would be static too
          */
-        void AddFullSyncRegion(Mesh* pmesh, TaskCollection& tc, int stage);
+        void AddFullSyncRegion(TaskCollection& tc, std::shared_ptr<MeshData<Real>> &md);
 
         /**
          * Add just the synchronization step to a task list tl, dependent upon taskID t_start, syncing mesh mc1
@@ -123,7 +121,8 @@ class KHARMADriver : public MultiStageDriver {
          * This sequence is used identically in several places, so it makes sense
          * to define once and use elsewhere.
          */
-        static TaskID AddMPIBoundarySync(const TaskID t_start, TaskList &tl, std::shared_ptr<MeshData<Real>> mc1);
+        static TaskID AddMPIBoundarySync(const TaskID t_start, TaskList &tl, std::shared_ptr<MeshData<Real>> &md,
+                                         bool sync_prims=false, bool multilevel=false);
 
         /**
          * Calculate the fluxes in each direction
@@ -136,7 +135,7 @@ class KHARMADriver : public MultiStageDriver {
          * 
          * Only use this as a task each step when debugging!
          */
-        static TaskStatus SyncAllBounds(std::shared_ptr<MeshData<Real>> md, bool apply_domain_bounds=true);
+        static TaskStatus SyncAllBounds(std::shared_ptr<MeshData<Real>> &md, bool sync_prims=false, bool multilevel=false);
 
         // TODO swapped versions of these
         /**

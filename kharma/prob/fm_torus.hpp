@@ -37,8 +37,8 @@ KOKKOS_INLINE_FUNCTION Real lnh_calc(const GReal a, const Real l, const GReal ri
     Real SS = r2 + a2 * cth * cth;
 
     Real thin = M_PI / 2.;
-    Real sthin = sin(thin);
-    Real cthin = cos(thin);
+    Real sthin = m::sin(thin);
+    Real cthin = m::cos(thin);
 
     Real rin2 = m::pow(rin, 2);
     Real DDin = rin2 - 2. * rin + a2;
@@ -48,7 +48,7 @@ KOKKOS_INLINE_FUNCTION Real lnh_calc(const GReal a, const Real l, const GReal ri
     if (r >= rin) {
         return
             0.5 *
-                log((1. +
+                m::log((1. +
                         m::sqrt(1. +
                             4. * (l * l * SS * SS) * DD / (AA * AA * sth * sth))) /
                     (SS * DD / AA)) -
@@ -57,7 +57,7 @@ KOKKOS_INLINE_FUNCTION Real lnh_calc(const GReal a, const Real l, const GReal ri
                             (AA * AA * sth * sth)) -
             2. * a * r * l / AA -
             (0.5 *
-                    log((1. +
+                    m::log((1. +
                         m::sqrt(1. +
                             4. * (l * l * SSin * SSin) * DDin /
                                 (AAin * AAin * sthin * sthin))) /

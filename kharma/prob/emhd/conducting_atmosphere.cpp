@@ -63,7 +63,7 @@ TaskStatus InitializeAtmosphere(std::shared_ptr<MeshBlockData<Real>>& rc, Parame
 
     // Get all primitive variables (GRMHD+EMHD if in use)
     PackIndexMap prims_map;
-    auto P = rc->PackVariables({Metadata::GetUserFlag("GRPrimitive")}, prims_map);
+    auto P = rc->PackVariables({Metadata::GetUserFlag("Primitive")}, prims_map);
     VarMap m_p(prims_map, false);
 
     const auto& G = pmb->coords;

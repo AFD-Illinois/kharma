@@ -104,7 +104,7 @@ TaskStatus InitializeKelvinHelmholtz(std::shared_ptr<MeshBlockData<Real>>& rc, P
             KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
                 Real Xembed[GR_DIM];
                 G.coord(k, j, i, Loci::corner, Xembed);
-                A(V3, k, j, i)  = added_b * (Xembed[1] + Xembed[2]) * tscale;
+                A(V3, k, j, i)  = added_b * (Xembed[1]/G.Dxc<1>(i) + Xembed[2]/G.Dxc<2>(j)) * tscale;
             }
         );
         // This fills a couple zones outside the exact interior with bad data

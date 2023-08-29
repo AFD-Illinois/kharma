@@ -46,20 +46,13 @@
  *
  * This requires only the values at cell centers
  * 
- * This implementation includes conversion from "GRPrimitive" to "conserved" B and back
+ * This implementation includes conversion from "primitive" to "conserved" B and back
  */
 namespace B_FluxCT {
 /**
  * Declare fields, initialize (few) parameters
  */
 std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages);
-
-/**
- * Seed a divergence-free magnetic field of user's choice, optionally
- * proportional to existing fluid density.
- * Updates primitive and conserved variables.
- */
-TaskStatus SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin);
 
 /**
  * Get the primitive variables, which in Parthenon's nomenclature are "derived".

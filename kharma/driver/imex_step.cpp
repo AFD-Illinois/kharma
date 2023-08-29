@@ -171,7 +171,7 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
         // If evolving GRMHD explicitly, UtoP needs a guess in order to converge, so we copy in md_sub_step_init
         auto t_copy_prims = t_none;
         if (!pkgs.at("GRMHD")->Param<bool>("implicit")) {
-            t_copy_prims = tl.AddTask(t_none, Copy<MeshData<Real>>, std::vector<MetadataFlag>({Metadata::GetUserFlag("HD"), Metadata::GetUserFlag("GRPrimitive")}),
+            t_copy_prims = tl.AddTask(t_none, Copy<MeshData<Real>>, std::vector<MetadataFlag>({Metadata::GetUserFlag("HD"), Metadata::GetUserFlag("Primitive")}),
                                       md_sub_step_init.get(), md_solver.get());
         }
 
@@ -199,7 +199,7 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
             // Copy the primitives to the `linesearch` MeshData object if linesearch was enabled.
             auto t_copy_linesearch = t_guess_ready;
             if (use_linesearch) {
-                t_copy_linesearch = tl.AddTask(t_guess_ready, Copy<MeshData<Real>>, std::vector<MetadataFlag>({Metadata::GetUserFlag("GRPrimitive")}),
+                t_copy_linesearch = tl.AddTask(t_guess_ready, Copy<MeshData<Real>>, std::vector<MetadataFlag>({Metadata::GetUserFlag("Primitive")}),
                                                 md_solver.get(), md_linesearch.get());
             }
 
@@ -298,7 +298,10 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
     // identical to their physical counterparts, now that they have been
     // modified on each rank.
     const auto &two_sync = pkgs.at("Driver")->Param<bool>("two_sync");
-    if (two_sync) KHARMADriver::AddFullSyncRegion(pmesh, tc, stage);
+    if (two_sync) {
+        auto &md_sub_step_final = pmesh->mesh_data.GetOrAdd(integrator->stage_name[stage], 0);
+        KHARMADriver::AddFullSyncRegion(tc, md_sub_step_final);
+    }
 
     return tc;
 }

@@ -56,13 +56,6 @@ namespace B_CT {
 std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages);
 
 /**
- * Seed a divergence-free magnetic field of user's choice, optionally
- * proportional to existing fluid density.
- * Updates primitive and conserved variables.
- */
-TaskStatus SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin);
-
-/**
  * Get the primitive variables, which in Parthenon's nomenclature are "derived".
  * Also applies floors to the calculated primitives, and fixes up any inversion errors
  * 
@@ -73,12 +66,6 @@ TaskStatus SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin);
  */
 void BlockUtoP(MeshBlockData<Real> *mbd, IndexDomain domain, bool coarse=false);
 TaskStatus MeshUtoP(MeshData<Real> *md, IndexDomain domain, bool coarse=false);
-
-/**
- * Reverse of the above.  Only used by itself during initialization.
- * Generally, use Flux::BlockPtoU or Flux::BlockPtoUExceptMHD.
- */
-void BlockPtoU(MeshBlockData<Real> *md, IndexDomain domain, bool coarse=false);
 
 /**
  * Calculate the EMF around edges of faces caused by the flux of B field
@@ -146,34 +133,45 @@ KOKKOS_INLINE_FUNCTION Real face_div(const GRCoordinates &G, Global &v, const in
     return du / G.CellVolume(k, j, i);
 }
 
-// KOKKOS_INLINE_FUNCTION void curl_2D(const GRCoordinates& G, const GridVector& A, const VariablePack<Real>& B_U,
-//                                              const int& k, const int& j, const int& i)
-// {
-//     B_U(F1, 0, k, j, i) = (A(V3, k, j + 1, i) - A(V3, k, j, i)) / G.Dxc<2>(j);// A3,2 derivative
-//     B_U(F2, 0, k, j, i) =-(A(V3, k, j, i + 1) - A(V3, k, j, i)) / G.Dxc<1>(i);// A3,1 derivative
-//     B_U(F3, 0, k, j, i) = 0.;
-// }
-
 KOKKOS_INLINE_FUNCTION void curl_3D(const GRCoordinates& G, const GridVector& A, const VariablePack<Real>& B_U,
                                              const int& k, const int& j, const int& i)
 {
-    // "CT" to faces from a cell-centered potential
+    // Take a face-ct step from the corner potentials.
+    // This needs to be 3D because post-tilt A may not point in the phi direction only
 
-    B_U(F1, 0, k, j, i) = (A(V3, k, j + 1, i) - A(V3, k, j, i)) / G.Dxc<2>(j) // A3,2 derivative
-                        - (A(V2, k + 1, j, i) - A(V2, k, j, i)) / G.Dxc<3>(k);// A2,3 derivative
+    // A3,2 derivative
+    const Real A3c2f = (A(V3, k, j + 1, i) + A(V3, k + 1, j + 1, i)) / 2;
+    const Real A3c2b = (A(V3, k, j, i)     + A(V3, k + 1, j, i)) / 2;
+    // A2,3 derivative
+    const Real A2c3f = (A(V2, k + 1, j, i) + A(V2, k + 1, j + 1, i)) / 2;
+    const Real A2c3b = (A(V2, k, j, i)     + A(V2, k, j + 1, i)) / 2;
+    B_U(F1, 0, k, j, i) = (A3c2f - A3c2b) - (A2c3f - A2c3b);
 
-    B_U(F2, 0, k, j, i) = (A(V1, k + 1, j, i) - A(V1, k, j, i)) / G.Dxc<3>(k) // A1,3 derivative
-                        - (A(V3, k, j, i + 1) - A(V3, k, j, i)) / G.Dxc<1>(i);// A3,1 derivative
+    // A1,3 derivative
+    const Real A1c3f = (A(V1, k + 1, j, i)     + A(V1, k + 1, j, i + 1)) / 2;
+    const Real A1c3b = (A(V1, k, j, i)         + A(V1, k, j, i + 1)) / 2;
+    // A3,1 derivative
+    const Real A3c1f = (A(V3, k, j, i + 1)     + A(V3, k + 1, j, i + 1)) / 2;
+    const Real A3c1b = (A(V3, k, j, i)         + A(V3, k + 1, j, i)) / 2;
+    B_U(F2, 0, k, j, i) = (A1c3f - A1c3b) - (A3c1f - A3c1b);
 
-    B_U(F3, 0, k, j, i) = (A(V2, k, j, i + 1) - A(V2, k, j, i)) / G.Dxc<1>(i) // A2,1 derivative
-                        - (A(V1, k, j + 1, i) - A(V1, k, j, i)) / G.Dxc<2>(j);// A1,2 derivative
+    // A2,1 derivative
+    const Real A2c1f = (A(V2, k, j, i + 1)     + A(V2, k, j + 1, i + 1)) / 2;
+    const Real A2c1b = (A(V2, k, j, i)     + A(V2, k, j + 1, i)) / 2;
+    // A1,2 derivative
+    const Real A1c2f = (A(V1, k, j + 1, i)     + A(V1, k, j + 1, i + 1)) / 2;
+    const Real A1c2b = (A(V1, k, j, i)     + A(V1, k, j, i + 1)) / 2;
+    B_U(F3, 0, k, j, i) = (A2c1f - A2c1b) - (A1c2f - A1c2b);
 }
 
 KOKKOS_INLINE_FUNCTION void curl_2D(const GRCoordinates& G, const GridVector& A, const VariablePack<Real>& B_U,
-                                             const int& k, const int& j, const int& i)
+                                    const int& k, const int& j, const int& i)
 {
-    B_U(F1, 0, k, j, i) = (A(V3, k, j + 1, i) - A(V3, k, j, i)) / G.Dxc<2>(j);// A3,2 derivative
-    B_U(F2, 0, k, j, i) =-(A(V3, k, j, i + 1) - A(V3, k, j, i)) / G.Dxc<1>(i);// A3,1 derivative
+    // TODO why do these not need 
+    // A3,2 derivative
+    B_U(F1, 0, k, j, i) = (A(V3, k, j + 1, i) - A(V3, k, j, i));
+    // A3,1 derivative
+    B_U(F2, 0, k, j, i) = - (A(V3, k, j, i + 1) - A(V3, k, j, i));
     B_U(F3, 0, k, j, i) = 0.;
 }
 
@@ -337,129 +335,6 @@ struct ProlongateInternalOlivares {
             // }
         }
     }
-};
-
-struct RestrictNearest {
-  static constexpr bool OperationRequired(TopologicalElement fel,
-                                          TopologicalElement cel) {
-    return fel == cel && (fel == E1 || fel == E2 || fel == E3);
-  }
-
-  template <int DIM, TopologicalElement el = TopologicalElement::CC,
-            TopologicalElement /*cel*/ = TopologicalElement::CC>
-  KOKKOS_FORCEINLINE_FUNCTION static void
-  Do(const int l, const int m, const int n, const int ck, const int cj, const int ci,
-     const IndexRange &ckb, const IndexRange &cjb, const IndexRange &cib,
-     const IndexRange &kb, const IndexRange &jb, const IndexRange &ib,
-     const Coordinates_t &coords, const Coordinates_t &coarse_coords,
-     const ParArrayND<Real, VariableState> *pcoarse,
-     const ParArrayND<Real, VariableState> *pfine) {
-
-        auto &coarse = *pcoarse;
-        auto &fine = *pfine;
-
-        constexpr int element_idx = static_cast<int>(el) % 3;
-        const int i = (DIM > 0) ? (ci - cib.s) * 2 + ib.s : ib.s;
-        const int j = (DIM > 1) ? (cj - cjb.s) * 2 + jb.s : jb.s;
-        const int k = (DIM > 2) ? (ck - ckb.s) * 2 + kb.s : kb.s;
-
-        coarse(element_idx, l, m, n, ck, cj, ci) = 0.5*fine(element_idx, l, m, n, k, j, i);
-    }
-};
-
-struct ProlongateSharedMinMod2 {
-  static constexpr bool OperationRequired(TopologicalElement fel,
-                                          TopologicalElement cel) {
-    return fel == cel && (fel == E1 || fel == E2 || fel == E3);
-  }
-
-  template <int DIM, TopologicalElement el = TopologicalElement::CC,
-            TopologicalElement /*cel*/ = TopologicalElement::CC>
-  KOKKOS_FORCEINLINE_FUNCTION static void
-  Do(const int l, const int m, const int n, const int k, const int j, const int i,
-     const IndexRange &ckb, const IndexRange &cjb, const IndexRange &cib,
-     const IndexRange &kb, const IndexRange &jb, const IndexRange &ib,
-     const Coordinates_t &coords, const Coordinates_t &coarse_coords,
-     const ParArrayND<Real, VariableState> *pcoarse,
-     const ParArrayND<Real, VariableState> *pfine) {
-    using namespace parthenon::refinement_ops::util;
-    auto &coarse = *pcoarse;
-    auto &fine = *pfine;
-
-    constexpr int element_idx = static_cast<int>(el) % 3;
-
-    const int fi = (DIM > 0) ? (i - cib.s) * 2 + ib.s : ib.s;
-    const int fj = (DIM > 1) ? (j - cjb.s) * 2 + jb.s : jb.s;
-    const int fk = (DIM > 2) ? (k - ckb.s) * 2 + kb.s : kb.s;
-
-    constexpr bool INCLUDE_X1 =
-        (DIM > 0) && (el == TE::CC || el == TE::F2 || el == TE::F3 || el == TE::E1);
-    constexpr bool INCLUDE_X2 =
-        (DIM > 1) && (el == TE::CC || el == TE::F3 || el == TE::F1 || el == TE::E2);
-    constexpr bool INCLUDE_X3 =
-        (DIM > 2) && (el == TE::CC || el == TE::F1 || el == TE::F2 || el == TE::E3);
-
-    const Real fc = coarse(element_idx, l, m, n, k, j, i);
-
-    Real dx1fm = 0;
-    [[maybe_unused]] Real dx1fp = 0;
-    Real gx1c = 0;
-    if constexpr (INCLUDE_X1) {
-      Real dx1m, dx1p;
-      GetGridSpacings<1, el>(coords, coarse_coords, cib, ib, i, fi, &dx1m, &dx1p, &dx1fm,
-                             &dx1fp);
-      gx1c = GradMinMod(fc, coarse(element_idx, l, m, n, k, j, i - 1),
-                        coarse(element_idx, l, m, n, k, j, i + 1), dx1m, dx1p);
-    }
-
-    Real dx2fm = 0;
-    [[maybe_unused]] Real dx2fp = 0;
-    Real gx2c = 0;
-    if constexpr (INCLUDE_X2) {
-      Real dx2m, dx2p;
-      GetGridSpacings<2, el>(coords, coarse_coords, cjb, jb, j, fj, &dx2m, &dx2p, &dx2fm,
-                             &dx2fp);
-      gx2c = GradMinMod(fc, coarse(element_idx, l, m, n, k, j - 1, i),
-                        coarse(element_idx, l, m, n, k, j + 1, i), dx2m, dx2p);
-    }
-
-    Real dx3fm = 0;
-    [[maybe_unused]] Real dx3fp = 0;
-    Real gx3c = 0;
-    if constexpr (INCLUDE_X3) {
-      Real dx3m, dx3p;
-      GetGridSpacings<3, el>(coords, coarse_coords, ckb, kb, k, fk, &dx3m, &dx3p, &dx3fm,
-                             &dx3fp);
-      gx3c = GradMinMod(fc, coarse(element_idx, l, m, n, k - 1, j, i),
-                        coarse(element_idx, l, m, n, k + 1, j, i), dx3m, dx3p);
-    }
-
-    // KGF: add the off-centered quantities first to preserve FP symmetry
-    // JMM: Extraneous quantities are zero
-    fine(element_idx, l, m, n, fk, fj, fi) =
-        (fc - (gx1c * dx1fm + gx2c * dx2fm + gx3c * dx3fm))*2;
-    if constexpr (INCLUDE_X1)
-      fine(element_idx, l, m, n, fk, fj, fi + 1) =
-          (fc + (gx1c * dx1fp - gx2c * dx2fm - gx3c * dx3fm))*2;
-    if constexpr (INCLUDE_X2)
-      fine(element_idx, l, m, n, fk, fj + 1, fi) =
-          (fc - (gx1c * dx1fm - gx2c * dx2fp + gx3c * dx3fm))*2;
-    if constexpr (INCLUDE_X2 && INCLUDE_X1)
-      fine(element_idx, l, m, n, fk, fj + 1, fi + 1) =
-          (fc + (gx1c * dx1fp + gx2c * dx2fp - gx3c * dx3fm))*2;
-    if constexpr (INCLUDE_X3)
-      fine(element_idx, l, m, n, fk + 1, fj, fi) =
-          (fc - (gx1c * dx1fm + gx2c * dx2fm - gx3c * dx3fp))*2;
-    if constexpr (INCLUDE_X3 && INCLUDE_X1)
-      fine(element_idx, l, m, n, fk + 1, fj, fi + 1) =
-          (fc + (gx1c * dx1fp - gx2c * dx2fm + gx3c * dx3fp))*2;
-    if constexpr (INCLUDE_X3 && INCLUDE_X2)
-      fine(element_idx, l, m, n, fk + 1, fj + 1, fi) =
-          (fc - (gx1c * dx1fm - gx2c * dx2fp - gx3c * dx3fp))*2;
-    if constexpr (INCLUDE_X3 && INCLUDE_X2 && INCLUDE_X1)
-      fine(element_idx, l, m, n, fk + 1, fj + 1, fi + 1) =
-          (fc + (gx1c * dx1fp + gx2c * dx2fp + gx3c * dx3fp))*2;
-  }
 };
 
 }
