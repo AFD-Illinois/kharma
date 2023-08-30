@@ -469,22 +469,26 @@ TaskStatus ApplyElectronCooling(MeshBlockData<Real> *rc){
 }
 
 TaskStatus ApplyElectronCoolingMD(MeshData<Real> *rc){
+    printf("initial comment\n");
     PackIndexMap prims_map, cons_map;
-    auto P = GRMHD::PackMHDPrims(rc, prims_map);
-    auto dUdt = GRMHD::PackMHDCons(rc, cons_map);
+    auto P = rc->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("Primitive")}, prims_map);
     const VarMap m_p(prims_map, false), m_u(cons_map, true);
+    printf("got through the first round\n");
     // Pointers
     auto pmesh = rc->GetMeshPointer();
     auto pmb0 = rc->GetBlockData(0)->GetBlockPointer();
     const Real game = pmb0->packages.Get("Electrons")->Param<Real>("gamma_e");
     const Real dt = pmb0->packages.Get("Globals")->Param<Real>("dt_last");
     double tau = 5.;
+    printf("got through the second round\n");
 
     const IndexRange ib = rc->GetBoundsI(IndexDomain::interior);
     const IndexRange jb = rc->GetBoundsJ(IndexDomain::interior);
     const IndexRange kb = rc->GetBoundsK(IndexDomain::interior);
+    printf("got through the third round\n");
     auto block = IndexRange{0, P.GetDim(5)-1};
-    printf("kel at (5,5) before cooling: %.16f\n", P(0, m_p.K_HOWES, 0, 9, 9));
+    printf("got through fourth round\n");
+    printf("kel at (5,5) before cooling: %.16f\n", P(block.s, m_p.K_HOWES, 0, 9, 9));
     pmb0->par_for("cool_electrons", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i) {
             double kel = P(b, m_p.K_HOWES, k, j, i);
