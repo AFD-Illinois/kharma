@@ -215,10 +215,6 @@ fi
 if [[ $CXX == "icpx" ]]; then
   export CXXFLAGS="-fno-fast-math $CXXFLAGS"
 fi
-# Avoid NVC++ complaining constantly about one line in Kokkos
-if [[ $CXX_NATIVE == "nvc++" ]]; then
-  export CXXFLAGS="-diag-suppress 68 $CXXFLAGS"
-fi
 
 ### Build HDF5 ###
 # If we're building HDF5, do it after we set *all flags*

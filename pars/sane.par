@@ -36,7 +36,7 @@ cfl = 0.9
 gamma = 1.666667
 
 <driver>
-type = imex
+type = kharma
 two_sync = true
 reconstruction = weno5
 
@@ -50,7 +50,6 @@ u_jitter = 0.04
 <b_field>
 type = sane
 beta_min = 100.
-norm = false
 
 <floors>
 rho_min_geom = 1e-6
