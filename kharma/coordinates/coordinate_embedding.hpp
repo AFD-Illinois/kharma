@@ -139,43 +139,43 @@ class CoordinateEmbedding {
 
             } else if (base_str == "spherical_ks" || base_str == "ks" ||
                         base_str == "spherical_ks_extg" || base_str == "ks_extg" || 
-                        base_str == "dcs_ks") {                                                    // Changes Made. ADDED DCS KS 
-                GReal a = pin->GetReal("coordinates", "a"); 
-                
-                if (base_str == "dcs_ks") { 
-                    GReal zeta = pin->GetReal("coordinates", "zeta"); // Get "zeta" value
-                    base.emplace<DCSKSCoords>(DCSKSCoords(a, zeta));
-                }
-                else {
-                    bool ext_g = pin->GetOrAddBoolean("coordinates", "ext_g", false);
-                    if (ext_g || base_str == "spherical_ks_extg" || base_str == "ks_extg") {
-                        if (a > 0) throw std::invalid_argument("Transform is for spherical coordinates!");
-                        base.emplace<SphKSExtG>(SphKSExtG(a));
-                    } else {
-                        base.emplace<SphKSCoords>(SphKSCoords(a));
-                    }
-                }
+                        base_str == "dcs_ks") {
+                            GReal a = pin->GetReal("coordinates", "a"); 
+                            
+                            if (base_str == "dcs_ks") { 
+                                GReal zeta = pin->GetReal("coordinates", "zeta"); // Get "zeta" value
+                                base.emplace<DCSKSCoords>(DCSKSCoords(a, zeta));
+                                
+                            } else {
+                                bool ext_g = pin->GetOrAddBoolean("coordinates", "ext_g", false);
+                                if (ext_g || base_str == "spherical_ks_extg" || base_str == "ks_extg") {
+                                    if (a > 0) throw std::invalid_argument("Transform is for spherical coordinates!");
+                                    base.emplace<SphKSExtG>(SphKSExtG(a));
+                                    } else {
+                                        base.emplace<SphKSCoords>(SphKSCoords(a));
+                                    }
+                                }
 
             } else if (base_str == "spherical_bl" || base_str == "bl" ||
                         base_str == "spherical_bl_extg" || base_str == "bl_extg" ||
                         base_str == "dcs_bl") {
-                GReal a = pin->GetReal("coordinates", "a");
-
-                if (base_str == "dcs_bl") {
-                    GReal zeta = pin->GetReal("coordinates", "zeta"); // Get "zeta" value
-                    base.emplace<DCSBLCoords>(DCSBLCoords(a, zeta));   // Create DCSBLCoords with "a" and "zeta"
-                } else {
-                    bool ext_g = pin->GetOrAddBoolean("coordinates", "ext_g", false);
-                    if (ext_g || base_str == "spherical_bl_extg" || base_str == "bl_extg") {
-                        if (a > 0) throw std::invalid_argument("Transform is for spherical coordinates!");
-                        base.emplace<SphBLExtG>(SphBLExtG(a));
-                    } else {
-                        base.emplace<SphBLCoords>(SphBLCoords(a));
-                    }
-                }
+                            GReal a = pin->GetReal("coordinates", "a");
+                            
+                            if (base_str == "dcs_bl") {
+                                GReal zeta = pin->GetReal("coordinates", "zeta"); // Get "zeta" value
+                                base.emplace<DCSBLCoords>(DCSBLCoords(a, zeta));   // Create DCSBLCoords with "a" and "zeta"
+                            } else {
+                                bool ext_g = pin->GetOrAddBoolean("coordinates", "ext_g", false);
+                                if (ext_g || base_str == "spherical_bl_extg" || base_str == "bl_extg") {
+                                    if (a > 0) throw std::invalid_argument("Transform is for spherical coordinates!");
+                                    base.emplace<SphBLExtG>(SphBLExtG(a));
+                                    } else {
+                                    base.emplace<SphBLCoords>(SphBLCoords(a));
+                                    }
+                                }
 
             } else {
-                throw std::invalid_argument("YOU MADE THE SAME MISTAKE SHREYA");
+                throw std::invalid_argument("Unsupported base coordinates!");
             }
 // ___________________________________________________________________________________________________________________
 
