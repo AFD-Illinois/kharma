@@ -359,7 +359,7 @@ class DCSKSCoords {
         const GReal zeta;
         static constexpr bool spherical = true;
 
-        KOKKOS_FUNCTION DCSKSCoords(GReal spin, GReal z): a(spin), zeta(z) {}
+        KOKKOS_FUNCTION DCSKSCoords(GReal spin, GReal z): a(spin), zeta(z) {} //semicolon here ?
 
         KOKKOS_INLINE_FUNCTION void gcov_embed(const GReal Xembed[GR_DIM], Real gcov[GR_DIM][GR_DIM]) const
         {
