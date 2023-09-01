@@ -452,7 +452,7 @@ TaskStatus ApplyElectronCooling(MeshBlockData<Real> *rc){
     const IndexRange ib = rc->GetBoundsI(IndexDomain::interior);
     const IndexRange jb = rc->GetBoundsJ(IndexDomain::interior);
     const IndexRange kb = rc->GetBoundsK(IndexDomain::interior);
-    printf("kel at (5,5) before cooling: %.16f\n", P(m_p.K_HOWES, 0, 9, 9));
+    printf("kel at (5,5) before cooling: %.16f\n", P(m_p.K_HOWES, 0, 54, 54));
     pmb->par_for("cool_electrons", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
             double kel = P(m_p.K_HOWES, k, j, i);
@@ -465,7 +465,8 @@ TaskStatus ApplyElectronCooling(MeshBlockData<Real> *rc){
     auto& P2 = rc->PackVariables({Metadata::GetUserFlag("Primitive")}, prims_map);
     auto& U2 = rc->PackVariables({Metadata::Conserved}, cons_map);
     const VarMap m_p2(prims_map, false), m_u2(cons_map, true);
-    printf("kel at (5,5) after cooling: %.16f\n", P2(m_p2.K_HOWES, 0, 9, 9));
+    printf("kel at (5,5) after corrector cooling: %.16f\n", P2(m_p2.K_HOWES, 0, 54, 54));
+    printf("end");
 }
 
 TaskStatus ApplyElectronCoolingMD(MeshData<Real> *rc){
@@ -488,7 +489,7 @@ TaskStatus ApplyElectronCoolingMD(MeshData<Real> *rc){
     printf("got through the third round\n");
     auto block = IndexRange{0, P.GetDim(5)-1};
     printf("got through fourth round\n");
-    printf("kel at (5,5) before cooling: %.16f\n", P(block.s, m_p.K_HOWES, 0, 9, 9));
+    printf("kel at (5,5) before cooling: %.16f\n", P(block.s, m_p.K_HOWES, 0, 54, 54));
     pmb0->par_for("cool_electrons", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i) {
             double kel = P(b, m_p.K_HOWES, k, j, i);
@@ -498,9 +499,29 @@ TaskStatus ApplyElectronCoolingMD(MeshData<Real> *rc){
             P(b, m_p.K_HOWES, k, j, i) = uel/pow(rho, game)*(game-1);
         }
     );
-   /* auto P2 = GRMHD::PackMHDPrims(rc, prims_map);
-    auto dUdt2 = GRMHD::PackMHDCons(rc, cons_map);
+    auto P2 = rc->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("Primitive")}, prims_map);
     const VarMap m_p2(prims_map, false), m_u2(cons_map, true);
-    printf("kel at (5,5) after cooling: %.16f\n", P2(0, m_p2.K_HOWES, 0, 9, 9));*/
+    printf("kel at (5,5) after cooling: %.16f\n", P2(block.s, m_p2.K_HOWES, 0, 54, 54));
+    return TaskStatus::complete;
 }
+
+TaskStatus FindKelCoolingMD(MeshData<Real> *rc){
+    //I call this at the end of the first task region
+    PackIndexMap prims_map, cons_map;
+    auto P = rc->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("Primitive")}, prims_map);
+    const VarMap m_p(prims_map, false), m_u(cons_map, true);
+    auto block = IndexRange{0, P.GetDim(5)-1};
+    printf("kel at (5,5) after predictor cooling at block.s: %.16f\n", P(block.s, m_p.K_HOWES, 0, 54, 54));
+    return TaskStatus::complete;
+}
+
+TaskStatus FindKelCoolingMBD(MeshBlockData<Real> *rc){
+    //I call this at the begining of the second task region
+    PackIndexMap prims_map, cons_map;
+    auto& P = rc->PackVariables({Metadata::GetUserFlag("Primitive")}, prims_map);
+    const VarMap m_p(prims_map, false), m_u(cons_map, true);
+    printf("kel at (5,5) after predictor cooling but in the second task region: %.16f\n", P(m_p.K_HOWES, 0, 54, 54));
+    return TaskStatus::complete;
+}
+
 } // namespace Electrons

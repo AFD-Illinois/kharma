@@ -135,22 +135,34 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
         if (pmesh->multilevel)
             t_start_recv_flux = tl.AddTask(t_none, cb::StartReceiveFluxCorrections, md_sub_step_init);
 
+        // Here is where I was testing using different MeshData objects
         auto t_prim_source_first = t_start_recv_flux;
-        if(stage == 1){
+        /*if(stage == integrator->nstages - 1){
             t_prim_source_first = tl.AddTask(t_start_recv_flux, Electrons::ApplyElectronCoolingMD, md_sub_step_init.get());
         }
-        /*for (int j = 0; j < blocks.size(); j++) {
+        auto t_prim_source_second = t_prim_source_first;
+        if(stage == integrator->nstages - 1){
+            t_prim_source_second = tl.AddTask(t_prim_source_first, Electrons::ApplyElectronCoolingMD, md_full_step_init.get());
+        }
+        auto t_prim_source_third = t_prim_source_second;
+        if(stage == integrator->nstages - 1){
+            t_prim_source_third = tl.AddTask(t_prim_source_second, Electrons::ApplyElectronCoolingMD, md_sub_step_final.get());
+        }*/
+
+        //and then here is the version with MeshBlockData stuff
+        for (int j = 0; j < blocks.size(); j++) {
             auto &pmb = blocks[j];
-            auto &mbd_sub_step_initial  = pmb->meshblock_data.Get("base");
+            auto &mbd_sub_step_initial = pmb->meshblock_data.Get("base");
             //COOLING:
             if(stage == 1){
                 t_prim_source_first = tl.AddTask(t_start_recv_flux, Packages::BlockApplyPrimSource, mbd_sub_step_initial.get());
             }
-        }*/
+        }
         
         // Calculate the flux of each variable through each face
         // This reconstructs the primitives (P) at faces and uses them to calculate fluxes
         // of the conserved variables (U) through each face.
+        
         const KReconstruction::Type& recon = driver_pkg.Get<KReconstruction::Type>("recon");
         auto t_fluxes = KHARMADriver::AddFluxCalculations(t_prim_source_first, tl, recon, md_sub_step_init.get());
 
@@ -247,8 +259,16 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
         // With an extra ghost zone, this *should* still allow binary-similar evolution between numbers of mesh blocks,
         // but hasn't been tested to do so yet.
         auto t_floors = tl.AddTask(t_implicit, Packages::MeshApplyFloors, md_sub_step_final.get(), IndexDomain::interior);
-
-        KHARMADriver::AddMPIBoundarySync(t_floors, tl, md_sub_step_final);
+        
+        //COOLING:
+        auto print_kel_here = t_floors;
+        if(stage == integrator->nstages - 1){
+            auto print_kel_here = tl.AddTask(t_floors, Electrons::FindKelCoolingMD, md_sub_step_init.get());
+        }
+        if(stage == integrator->nstages){
+            auto print_kel_here = tl.AddTask(t_floors, Electrons::FindKelCoolingMD, md_sub_step_init.get());
+        }
+        KHARMADriver::AddMPIBoundarySync(print_kel_here, tl, md_sub_step_final);
     }
 
     // Async Region: Any post-sync tasks.  Fixups, timestep & AMR tagging.
@@ -265,6 +285,12 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
         // behavior for different mesh breakdowns much more similar (identical?), since bad zones in
         // relevant ghost zone ranks will get to use all the same neighbors as if they were in the bulk
         // TODO fixups as a callback?
+        auto print_more_kel_here = t_none;
+        auto print_some_more_kel_here = t_none;
+        if(stage == integrator->nstages-1){
+            auto print_more_kel_here = tl.AddTask(t_none, Electrons::FindKelCoolingMBD, mbd_sub_step_init.get());
+            auto print_some_more_kel_here = tl.AddTask(t_none, Electrons::FindKelCoolingMBD, mbd_sub_step_final.get());
+        }
         auto t_fix_utop = t_none;
         if (!pkgs.at("GRMHD")->Param<bool>("implicit")) {
             t_fix_utop = tl.AddTask(t_none, Inverter::FixUtoP, mbd_sub_step_final.get());
@@ -278,9 +304,9 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
 
         // Any package- (likely, problem-) specific source terms which must be applied to primitive variables
         // Apply these only after the final step so they're operator-split
-        auto t_prim_source_second = t_set_bc;
+        auto t_prim_source_fourth = t_set_bc;
         if (stage == integrator->nstages) {
-            t_prim_source_second = tl.AddTask(t_set_bc, Packages::BlockApplyPrimSource, mbd_sub_step_final.get());
+            //t_prim_source_fourth = tl.AddTask(t_set_bc, Packages::BlockApplyPrimSource, mbd_sub_step_final.get());
         }
 
         //COOLING:
@@ -288,7 +314,7 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
         // Electron heating goes where it does in the KHARMA Driver, for the same reasons
         //I will probably comment out this call to heating (this is the first and second call I think, but
         //I added another call up above I think)
-        auto t_heat_electrons = t_prim_source_second;
+        auto t_heat_electrons = t_prim_source_fourth;
         if (use_heating) {
             //t_heat_electrons = tl.AddTask(t_prim_source_second, Electrons::ApplyElectronHeating,
             //                              mbd_sub_step_init.get(), mbd_sub_step_final.get());

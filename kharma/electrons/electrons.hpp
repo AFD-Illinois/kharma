@@ -106,6 +106,8 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
 //COOLING:
 TaskStatus ApplyElectronCooling(MeshBlockData<Real> *rc);
 TaskStatus ApplyElectronCoolingMD(MeshData<Real> *rc);
+TaskStatus FindKelCoolingMD(MeshData<Real> *rc);
+TaskStatus FindKelCoolingMBD(MeshBlockData<Real> *rc);
 
 /**
  * KHARMA requires some method for getting conserved variables from primitives, as well.
