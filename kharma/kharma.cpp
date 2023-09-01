@@ -45,6 +45,7 @@
 #include "b_cd.hpp"
 #include "b_cleanup.hpp"
 #include "b_ct.hpp"
+#include "coord_output.hpp"
 #include "current.hpp"
 #include "kharma_driver.hpp"
 #include "electrons.hpp"
@@ -287,6 +288,10 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput> &pin)
     TaskID t_none(0);
     // The globals package will never have dependencies
     auto t_globals = tl.AddTask(t_none, KHARMA::AddPackage, packages, KHARMA::InitializeGlobals, pin.get());
+    // Neither will grid output, as any mesh will get GRCoordinates objects
+    // FieldIsOutput actually just checks for substring match, so this matches any coords. variable
+    if (FieldIsOutput(pin.get(), "coords."))
+        auto t_coord_out = tl.AddTask(t_none, KHARMA::AddPackage, packages, CoordinateOutput::Initialize, pin.get());
     // Driver package is the foundation
     auto t_driver = tl.AddTask(t_none, KHARMA::AddPackage, packages, KHARMADriver::Initialize, pin.get());
     // Floors package has no dependencies
