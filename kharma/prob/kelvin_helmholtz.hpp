@@ -93,45 +93,45 @@ TaskStatus InitializeKelvinHelmholtz(std::shared_ptr<MeshBlockData<Real>>& rc, P
         }
     );
 
-    if (pmb->packages.AllPackages().count("B_CT")) {
-        auto B_Uf = rc->PackVariables(std::vector<std::string>{"cons.fB"});
-        // Halo one zone right for faces
-        // We don't need any more than that, since curls never take d1dx1
-        IndexRange3 bA = KDomain::GetRange(rc, IndexDomain::entire, 0, 0);
-        IndexSize3 s = KDomain::GetBlockSize(rc);
-        GridVector A("A", NVEC, s.n3, s.n2, s.n1);
-        pmb->par_for("ot_A", bA.ks, bA.ke, bA.js, bA.je, bA.is, bA.ie,
-            KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-                Real Xembed[GR_DIM];
-                G.coord(k, j, i, Loci::corner, Xembed);
-                A(V3, k, j, i)  = added_b * (Xembed[1]/G.Dxc<1>(i) + Xembed[2]/G.Dxc<2>(j)) * tscale;
-            }
-        );
-        // This fills a couple zones outside the exact interior with bad data
-        IndexRange3 bB = KDomain::GetRange(rc, domain, 0, -1);
-        pmb->par_for("ot_B", bB.ks, bB.ke, bB.js, bB.je, bB.is, bB.ie,
-            KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-                B_CT::curl_2D(G, A, B_Uf, k, j, i);
-            }
-        );
-        B_CT::BlockUtoP(rc.get(), IndexDomain::entire, false);
-        double max_divb = B_CT::BlockMaxDivB(rc.get());
-        std::cout << "Block max DivB: " << max_divb << std::endl;
+    // if (pmb->packages.AllPackages().count("B_CT")) {
+    //     auto B_Uf = rc->PackVariables(std::vector<std::string>{"cons.fB"});
+    //     // Halo one zone right for faces
+    //     // We don't need any more than that, since curls never take d1dx1
+    //     IndexRange3 bA = KDomain::GetRange(rc, IndexDomain::entire, 0, 0);
+    //     IndexSize3 s = KDomain::GetBlockSize(rc);
+    //     GridVector A("A", NVEC, s.n3, s.n2, s.n1);
+    //     pmb->par_for("ot_A", bA.ks, bA.ke, bA.js, bA.je, bA.is, bA.ie,
+    //         KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+    //             Real Xembed[GR_DIM];
+    //             G.coord(k, j, i, Loci::corner, Xembed);
+    //             A(V3, k, j, i)  = added_b * (Xembed[1]/G.Dxc<1>(i) + Xembed[2]/G.Dxc<2>(j)) * tscale;
+    //         }
+    //     );
+    //     // This fills a couple zones outside the exact interior with bad data
+    //     IndexRange3 bB = KDomain::GetRange(rc, domain, 0, -1);
+    //     pmb->par_for("ot_B", bB.ks, bB.ke, bB.js, bB.je, bB.is, bB.ie,
+    //         KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+    //             B_CT::curl_2D(G, A, B_Uf, k, j, i);
+    //         }
+    //     );
+    //     B_CT::BlockUtoP(rc.get(), IndexDomain::entire, false);
+    //     double max_divb = B_CT::BlockMaxDivB(rc.get());
+    //     std::cout << "Block max DivB: " << max_divb << std::endl;
 
-    } else if (pmb->packages.AllPackages().count("B_FluxCT") ||
-               pmb->packages.AllPackages().count("B_CD")) {
-        GridVector B_P = rc->Get("prims.B").data;
-        pmb->par_for("ot_B", b.ks, b.ke, b.js, b.je, b.is, b.ie,
-            KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-                Real X[GR_DIM];
-                G.coord(k, j, i, Loci::center, X);
-                B_P(V1, k, j, i) = added_b * tscale;
-                B_P(V2, k, j, i) = added_b * tscale;
-                B_P(V3, k, j, i) = 0.;
-            }
-        );
-        B_FluxCT::BlockPtoU(rc.get(), IndexDomain::entire, false);
-    }
+    // } else if (pmb->packages.AllPackages().count("B_FluxCT") ||
+    //            pmb->packages.AllPackages().count("B_CD")) {
+    //     GridVector B_P = rc->Get("prims.B").data;
+    //     pmb->par_for("ot_B", b.ks, b.ke, b.js, b.je, b.is, b.ie,
+    //         KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+    //             Real X[GR_DIM];
+    //             G.coord(k, j, i, Loci::center, X);
+    //             B_P(V1, k, j, i) = added_b * tscale;
+    //             B_P(V2, k, j, i) = added_b * tscale;
+    //             B_P(V3, k, j, i) = 0.;
+    //         }
+    //     );
+    //     B_FluxCT::BlockPtoU(rc.get(), IndexDomain::entire, false);
+    // }
 
     // Rescale primitive velocities by tscale, and internal energy by the square.
     pmb->par_for("kh_renorm", b.ks, b.ke, b.js, b.je, b.is, b.ie,

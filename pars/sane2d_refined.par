@@ -7,20 +7,20 @@ problem_id = torus
 <parthenon/mesh>
 refinement = static
 numlevel = 2
-nx1 = 256
-nx2 = 256
+nx1 = 192
+nx2 = 192
 nx3 = 1
 
 <parthenon/meshblock>
-nx1 = 128
+nx1 = 64
 nx2 = 64
 nx3 = 1
 
 <parthenon/static_refinement0>
 x1min = 1.0
 x1max = 3.0
-x2min = 1.50
-x2max = 1.60
+x2min = 1.57
+x2max = 1.57
 level = 1
 
 <coordinates>
@@ -67,7 +67,7 @@ bsq_over_rho_max = 100
 
 <parthenon/output0>
 file_type = hdf5
-dt = 10.0
+dt = 0.0
 single_precision_output = true
 variables = prims.rho, prims.u, prims.uvec, prims.B, divB
 

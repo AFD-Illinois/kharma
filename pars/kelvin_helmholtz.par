@@ -15,7 +15,7 @@ x1max = 1.0
 ix1_bc = periodic
 ox1_bc = periodic
 
-nx2 = 256
+nx2 = 192
 x2min = 0.0
 x2max = 2.0
 ix2_bc = periodic
@@ -80,10 +80,12 @@ gamma = 1.666667
 reconstruction = linear_mc
 
 <b_field>
-type = none
+type = constant
+b10 = 1
+b20 = 1
 solver = face_ct
 kill_on_large_divb = true
-ct_scheme = sg09
+ct_scheme = bs99
 
 <debug>
 verbose = 1
@@ -92,6 +94,6 @@ extra_checks = 0
 
 <parthenon/output0>
 file_type = hdf5
-dt = 0.5
+dt = 0.0
 variables = prims.rho, prims.u, prims.uvec, prims.B, divB
 
