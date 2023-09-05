@@ -12,8 +12,8 @@ problem_id = flat_space
 refinement = none
 numlevel = 1
 
-nx1 = 10
-nx2 = 10
+nx1 = 100
+nx2 = 100
 nx3 = 1
 
 x1min = 0.0
@@ -34,8 +34,8 @@ ox3_bc = periodic
 # # of meshblocks must be >= the number of MPI ranks,
 # however there may be multiple blocks per rank
 <parthenon/meshblock>
-nx1 = 10
-nx2 = 10
+nx1 = 100
+nx2 = 100
 nx3 = 1
 
 # Set boring box coordinates. Explanations in bondi.par
