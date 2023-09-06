@@ -99,6 +99,13 @@ class CoordinateEmbedding {
             } else if (mpark::holds_alternative<SphBLExtG>(base_in)) {
                 base.emplace<SphBLExtG>(mpark::get<SphBLExtG>(base_in));
             }
+            
+            // Changes Made. ADDING DCS KS AND BL HERE !! 
+            else if (mpark::holds_alternative<DCSKSCoords>(base_in)) {
+                base.emplace<DCSKSCoords>(mpark::get<DCSKSCoords>(base_in));
+            } else if (mpark::holds_alternative<DCSBLCoords>(base_in)) {
+                base.emplace<DCSBLCoords>(mpark::get<DCSBLCoords>(base_in));
+            }
 
             if (mpark::holds_alternative<NullTransform>(transform_in)) {
                 transform.emplace<NullTransform>(mpark::get<NullTransform>(transform_in));
@@ -112,6 +119,7 @@ class CoordinateEmbedding {
                 transform.emplace<FunkyTransform>(mpark::get<FunkyTransform>(transform_in));
             }
         }
+// ___________________________________________________________________________________________________________________
 
         // Constructors
 #pragma hd_warning_disable
@@ -122,33 +130,54 @@ class CoordinateEmbedding {
             const std::string transform_str = pin->GetOrAddString("coordinates", "transform", "null");
 
             // Parse names.  See coordinate_systems.hpp for details
+
             if (base_str == "spherical_minkowski") {
                 base.emplace<SphMinkowskiCoords>(SphMinkowskiCoords());
+
             } else if (base_str == "cartesian_minkowski" || base_str == "minkowski") {
                 base.emplace<CartMinkowskiCoords>(CartMinkowskiCoords());
+
             } else if (base_str == "spherical_ks" || base_str == "ks" ||
-                        base_str == "spherical_ks_extg" || base_str == "ks_extg") {
-                GReal a = pin->GetReal("coordinates", "a");
-                bool ext_g = pin->GetOrAddBoolean("coordinates", "ext_g", false);
-                if (ext_g || base_str == "spherical_ks_extg" || base_str == "ks_extg") {
-                    if (a > 0) throw std::invalid_argument("Transform is for spherical coordinates!");
-                    base.emplace<SphKSExtG>(SphKSExtG(a));
-                } else {
-                    base.emplace<SphKSCoords>(SphKSCoords(a));
-                }
+                        base_str == "spherical_ks_extg" || base_str == "ks_extg" || 
+                        base_str == "dcs_ks") {
+                            GReal a = pin->GetReal("coordinates", "a"); 
+                            
+                            if (base_str == "dcs_ks") { 
+                                GReal zeta = pin->GetReal("coordinates", "zeta"); // Get "zeta" value
+                                base.emplace<DCSKSCoords>(DCSKSCoords(a, zeta));
+                                
+                            } else {
+                                bool ext_g = pin->GetOrAddBoolean("coordinates", "ext_g", false);
+                                if (ext_g || base_str == "spherical_ks_extg" || base_str == "ks_extg") {
+                                    if (a > 0) throw std::invalid_argument("Transform is for spherical coordinates!");
+                                    base.emplace<SphKSExtG>(SphKSExtG(a));
+                                    } else {
+                                        base.emplace<SphKSCoords>(SphKSCoords(a));
+                                    }
+                                }
+
             } else if (base_str == "spherical_bl" || base_str == "bl" ||
-                        base_str == "spherical_bl_extg" || base_str == "bl_extg") {
-                GReal a = pin->GetReal("coordinates", "a");
-                bool ext_g = pin->GetOrAddBoolean("coordinates", "ext_g", false);
-                if (ext_g || base_str == "spherical_bl_extg" || base_str == "bl_extg") {
-                    if (a > 0) throw std::invalid_argument("Transform is for spherical coordinates!");
-                    base.emplace<SphBLExtG>(SphBLExtG(a));
-                } else {
-                    base.emplace<SphBLCoords>(SphBLCoords(a));
-                }
+                        base_str == "spherical_bl_extg" || base_str == "bl_extg" ||
+                        base_str == "dcs_bl") {
+                            GReal a = pin->GetReal("coordinates", "a");
+                            
+                            if (base_str == "dcs_bl") {
+                                GReal zeta = pin->GetReal("coordinates", "zeta"); // Get "zeta" value
+                                base.emplace<DCSBLCoords>(DCSBLCoords(a, zeta));   // Create DCSBLCoords with "a" and "zeta"
+                            } else {
+                                bool ext_g = pin->GetOrAddBoolean("coordinates", "ext_g", false);
+                                if (ext_g || base_str == "spherical_bl_extg" || base_str == "bl_extg") {
+                                    if (a > 0) throw std::invalid_argument("Transform is for spherical coordinates!");
+                                    base.emplace<SphBLExtG>(SphBLExtG(a));
+                                    } else {
+                                    base.emplace<SphBLCoords>(SphBLCoords(a));
+                                    }
+                                }
+
             } else {
                 throw std::invalid_argument("Unsupported base coordinates!");
             }
+// ___________________________________________________________________________________________________________________
 
             bool spherical = is_spherical();
 
@@ -187,6 +216,9 @@ class CoordinateEmbedding {
                 throw std::invalid_argument("Unsupported coordinate transform!");
             }
         }
+
+    // ___________________________________________________________________________________________________________________
+
 #pragma hd_warning_disable
         KOKKOS_FUNCTION CoordinateEmbedding(SomeBaseCoords& base_in, SomeTransform& transform_in): base(base_in), transform(transform_in) {}
 #pragma hd_warning_disable
@@ -219,6 +251,7 @@ class CoordinateEmbedding {
 
             return basename + " " + transformname;
         }
+    // ___________________________________________________________________________________________________________________
 
         // Properties (host or device)
         KOKKOS_INLINE_FUNCTION bool is_spherical() const
@@ -227,17 +260,25 @@ class CoordinateEmbedding {
                 return self.spherical;
             }, base);
         }
+    // ___________________________________________________________________________________________________________________
+
         KOKKOS_INLINE_FUNCTION GReal get_horizon() const
         {
             if (mpark::holds_alternative<SphKSCoords>(base) ||
                 mpark::holds_alternative<SphBLCoords>(base) ||
                 mpark::holds_alternative<SphKSExtG>(base) ||
-                mpark::holds_alternative<SphBLExtG>(base)) {
+                mpark::holds_alternative<SphBLExtG>(base) ||
+                
+                mpark::holds_alternative<DCSKSCoords>(base) || // Changes Made. 
+                mpark::holds_alternative<DCSBLCoords>(base))
+            {
                 const GReal a = get_a();
                 return 1 + m::sqrt(1 - a * a);
             } else {
                 return 0.0;
             }
+    // ___________________________________________________________________________________________________________________
+
         }
         KOKKOS_INLINE_FUNCTION GReal get_a() const
         {
@@ -245,27 +286,39 @@ class CoordinateEmbedding {
                 return self.a;
             }, base);
         }
+
+        //mayeb a get zeta function 
+    // ___________________________________________________________________________________________________________________
+
         GReal startx(int dir) const
         {
             return mpark::visit( [&](const auto& self) {
                 return self.startx[dir - 1];
             }, transform);
         }
+    // ___________________________________________________________________________________________________________________
+
         GReal stopx(int dir) const
         {
             return mpark::visit( [&](const auto& self) {
                 return self.stopx[dir - 1];
             }, transform);
         }
+    // ___________________________________________________________________________________________________________________
+
+        // Question : How would this change with new coordinate systems ? 
+    // ___________________________________________________________________________________________________________________
 
         KOKKOS_INLINE_FUNCTION bool is_ks() const
         {
             return mpark::holds_alternative<SphKSCoords>(base);
         }
+        
         KOKKOS_INLINE_FUNCTION bool is_cart_minkowski() const
         {
             return mpark::holds_alternative<CartMinkowskiCoords>(base) && mpark::holds_alternative<NullTransform>(transform);
         }
+    // ___________________________________________________________________________________________________________________
 
         // Spell out the interface we take from BaseCoords
         // TODO add a gcon_embed, gdet_embed
@@ -300,10 +353,9 @@ class CoordinateEmbedding {
                 self.dXdx(Xnative, dXdx);
             }, transform);
         }
+    // ___________________________________________________________________________________________________________________
 
-        // Coordinate convenience functions:
-        // transform the radial coordinate alone without len-4 arrays
-        // ...at least not for the user.  These are not fast
+        // Convenience functions: only radial coordinate as others might be cylinderized
         KOKKOS_INLINE_FUNCTION GReal r_to_native(const GReal r) const
         {
             const GReal Xembed[GR_DIM] = {0., r, 0., 0.};
@@ -321,81 +373,6 @@ class CoordinateEmbedding {
                 self.coord_to_embed(Xnative, Xembed);
             }, transform);
             return Xembed[1];
-        }
-
-        // Get a particular coordinate from an array
-        // note these *aren't faster* or less memory, just convenient
-        KOKKOS_INLINE_FUNCTION GReal r_of(const GReal Xnative[GR_DIM]) const
-        {
-            GReal Xembed[GR_DIM];
-            mpark::visit( [&Xnative, &Xembed](const auto& self) {
-                self.coord_to_embed(Xnative, Xembed);
-            }, transform);
-            if (is_spherical()) {
-                return Xembed[1];
-            } else {
-                return m::sqrt(SQR(Xembed[1]) + SQR(Xembed[2]) + SQR(Xembed[3]));
-            }
-        }
-        KOKKOS_INLINE_FUNCTION GReal th_of(const GReal Xnative[GR_DIM]) const
-        {
-            GReal Xembed[GR_DIM];
-            mpark::visit( [&Xnative, &Xembed](const auto& self) {
-                self.coord_to_embed(Xnative, Xembed);
-            }, transform);
-            if (is_spherical()) {
-                return Xembed[2];
-            } else {
-                return m::atan2(m::sqrt(SQR(Xembed[1]) + SQR(Xembed[2])), Xembed[3]);
-            }
-        }
-        KOKKOS_INLINE_FUNCTION GReal phi_of(const GReal Xnative[GR_DIM]) const
-        {
-            GReal Xembed[GR_DIM];
-            mpark::visit( [&Xnative, &Xembed](const auto& self) {
-                self.coord_to_embed(Xnative, Xembed);
-            }, transform);
-            if (is_spherical()) {
-                return Xembed[3];
-            } else {
-                return m::atan2(Xembed[2], Xembed[1]);
-            }
-        }
-        KOKKOS_INLINE_FUNCTION GReal x_of(const GReal Xnative[GR_DIM]) const
-        {
-            GReal Xembed[GR_DIM];
-            mpark::visit( [&Xnative, &Xembed](const auto& self) {
-                self.coord_to_embed(Xnative, Xembed);
-            }, transform);
-            if (!is_spherical()) {
-                return Xembed[1];
-            } else {
-                return Xembed[1] * m::sin(Xembed[2]) * m::cos(Xembed[3]);
-            }
-        }
-        KOKKOS_INLINE_FUNCTION GReal y_of(const GReal Xnative[GR_DIM]) const
-        {
-            GReal Xembed[GR_DIM];
-            mpark::visit( [&Xnative, &Xembed](const auto& self) {
-                self.coord_to_embed(Xnative, Xembed);
-            }, transform);
-            if (!is_spherical()) {
-                return Xembed[2];
-            } else {
-                return Xembed[1] * m::sin(Xembed[2]) * m::sin(Xembed[3]);
-            }
-        }
-        KOKKOS_INLINE_FUNCTION GReal z_of(const GReal Xnative[GR_DIM]) const
-        {
-            GReal Xembed[GR_DIM];
-            mpark::visit( [&Xnative, &Xembed](const auto& self) {
-                self.coord_to_embed(Xnative, Xembed);
-            }, transform);
-            if (!is_spherical()) {
-                return Xembed[3];
-            } else {
-                return Xembed[1] * m::cos(Xembed[2]);
-            }
         }
 
         // VECTOR TRANSFORMS
@@ -462,6 +439,8 @@ class CoordinateEmbedding {
         KOKKOS_INLINE_FUNCTION void con_tensor_to_native(const GReal Xnative[GR_DIM], const GReal tcon_embed[GR_DIM][GR_DIM], GReal tcon_native[GR_DIM][GR_DIM]) const
             {cov_tensor_to_embed(Xnative, tcon_embed, tcon_native);}
 
+    // ___________________________________________________________________________________________________________________
+
         // And then derived metric properties
         KOKKOS_INLINE_FUNCTION void gcov_native(const GReal Xnative[GR_DIM], Real gcov[GR_DIM][GR_DIM]) const
         {
@@ -476,17 +455,23 @@ class CoordinateEmbedding {
             // Transform to native coordinates
             cov_tensor_to_native(Xnative, gcov_em, gcov);
         }
+
+
         KOKKOS_INLINE_FUNCTION Real gcon_native(const GReal X[GR_DIM], Real gcon[GR_DIM][GR_DIM]) const
         {
             Real gcov[GR_DIM][GR_DIM];
             gcov_native(X, gcov);
             return gcon_native(gcov, gcon);
         }
+
+
         KOKKOS_INLINE_FUNCTION Real gcon_native(const Real gcov[GR_DIM][GR_DIM], Real gcon[GR_DIM][GR_DIM]) const
         {
             Real gdet = invert(&gcov[0][0], &gcon[0][0]);
             return m::sqrt(m::abs(gdet));
         }
+
+
         KOKKOS_INLINE_FUNCTION Real gdet_native(const GReal X[GR_DIM]) const
         {
             Real gcov[GR_DIM][GR_DIM], gcon[GR_DIM][GR_DIM];
@@ -542,6 +527,7 @@ class CoordinateEmbedding {
                 }
             }
         }
+    // ___________________________________________________________________________________________________________________
 
         /**
          * Takes a velocity in Boyer-Lindquist coordinates (optionally without time component) and converts it
@@ -581,3 +567,5 @@ class CoordinateEmbedding {
             con_vec_to_native(Xnative, ucon_base, ucon_native);
         }
 };
+
+    // ___________________________________________________________________________________________________________________
