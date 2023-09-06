@@ -161,7 +161,7 @@ if [[ "$ARGS" == *"sycl"* ]]; then
 elif [[ "$ARGS" == *"hip"* ]]; then
   OUTER_LAYOUT="MANUAL1D_LOOP"
   INNER_LAYOUT="TVR_INNER_LOOP"
-  ENABLE_OPENMP="ON"
+  ENABLE_OPENMP="OFF"
   ENABLE_CUDA="OFF"
   ENABLE_SYCL="OFF"
   ENABLE_HIP="ON"

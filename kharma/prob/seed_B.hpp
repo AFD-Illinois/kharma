@@ -46,8 +46,11 @@ enum BSeedType{constant, monopole, monopole_cube, sane, mad, mad_quadrupole, r3s
 
 #define SEEDA_ARGS GReal *x, double rho, double rin, double min_A, double A0
 
+// This will also act as the default implementation for unspecified types,
+// which should all be filled as B field by seed_b below.
+// So, we want to set it to something dramatic.
 template<BSeedType T>
-KOKKOS_INLINE_FUNCTION Real seed_a(SEEDA_ARGS) {}
+KOKKOS_INLINE_FUNCTION Real seed_a(SEEDA_ARGS) { return 0./0.;}
 
 // EHT comparison SANE
 template<>

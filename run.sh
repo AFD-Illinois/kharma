@@ -34,6 +34,8 @@ if [ -f $KHARMA_DIR/kharma.cuda ]; then
   EXE_NAME=kharma.cuda
 elif [ -f $KHARMA_DIR/kharma.sycl ]; then
   EXE_NAME=kharma.sycl
+elif [ -f $KHARMA_DIR/kharma.hip ]; then
+  EXE_NAME=kharma.hip
 elif [ -f $KHARMA_DIR/kharma.host ]; then
   EXE_NAME=kharma.host
 else
