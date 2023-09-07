@@ -71,7 +71,7 @@ std::shared_ptr<KHARMAPackage> CoordinateOutput::Initialize(ParameterInput *pin,
     pkg->AddField("coords.y", m0);
     pkg->AddField("coords.z", m0);
     // Spherical KS coordinates
-    pkg->AddField("coords.Xks", m1);
+    pkg->AddField("coords.Xsph", m1);
     pkg->AddField("coords.r", m0);
     pkg->AddField("coords.th", m0);
     pkg->AddField("coords.phi", m0);
