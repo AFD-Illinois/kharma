@@ -107,6 +107,14 @@ class CoordinateEmbedding {
                 base.emplace<DCSBLCoords>(mpark::get<DCSBLCoords>(base_in));
             }
 
+            // Changes Made. ADDING EDGB KS AND BL HERE !! 
+            else if (mpark::holds_alternative<EDGBKSCoords>(base_in)) {
+                base.emplace<EDGBKSCoords>(mpark::get<EDGBKSCoords>(base_in));
+            } else if (mpark::holds_alternative<EDGBBLCoords>(base_in)) {
+                base.emplace<EDGBBLCoords>(mpark::get<EDGBBLCoords>(base_in));
+            }
+
+
             if (mpark::holds_alternative<NullTransform>(transform_in)) {
                 transform.emplace<NullTransform>(mpark::get<NullTransform>(transform_in));
             } else if (mpark::holds_alternative<ExponentialTransform>(transform_in)) {
@@ -139,14 +147,19 @@ class CoordinateEmbedding {
 
             } else if (base_str == "spherical_ks" || base_str == "ks" ||
                         base_str == "spherical_ks_extg" || base_str == "ks_extg" || 
-                        base_str == "dcs_ks") {
+                        base_str == "dcs_ks"|| base_str == "edgb_ks") {
                             GReal a = pin->GetReal("coordinates", "a"); 
                             
                             if (base_str == "dcs_ks") { 
                                 GReal zeta = pin->GetReal("coordinates", "zeta"); // Get "zeta" value
                                 base.emplace<DCSKSCoords>(DCSKSCoords(a, zeta));
+                            }
+                            else if (base_str == "edgb_ks") {
+                                GReal zeta = pin->GetReal("coordinates", "zeta"); // Get "zeta" value
+                                base.emplace<EDGBKSCoords>(EDGBKSCoords(a, zeta));
+                            }
                                 
-                            } else {
+                            else {
                                 bool ext_g = pin->GetOrAddBoolean("coordinates", "ext_g", false);
                                 if (ext_g || base_str == "spherical_ks_extg" || base_str == "ks_extg") {
                                     if (a > 0) throw std::invalid_argument("Transform is for spherical coordinates!");
@@ -155,16 +168,22 @@ class CoordinateEmbedding {
                                         base.emplace<SphKSCoords>(SphKSCoords(a));
                                     }
                                 }
-
+                        
             } else if (base_str == "spherical_bl" || base_str == "bl" ||
                         base_str == "spherical_bl_extg" || base_str == "bl_extg" ||
-                        base_str == "dcs_bl") {
+                        base_str == "dcs_bl" || base_str == "edgb_bl") {
                             GReal a = pin->GetReal("coordinates", "a");
                             
                             if (base_str == "dcs_bl") {
                                 GReal zeta = pin->GetReal("coordinates", "zeta"); // Get "zeta" value
                                 base.emplace<DCSBLCoords>(DCSBLCoords(a, zeta));   // Create DCSBLCoords with "a" and "zeta"
-                            } else {
+                            }
+                            else if (base_str == "edgb_bl"){
+                                GReal zeta = pin->GetReal("coordinates", "zeta"); // Get "zeta" value
+                                base.emplace<EDGBBLCoords>(EDGBBLCoords(a, zeta));   // Create EDGBBLCoords with "a" and "zeta"
+
+                            }
+                            else {
                                 bool ext_g = pin->GetOrAddBoolean("coordinates", "ext_g", false);
                                 if (ext_g || base_str == "spherical_bl_extg" || base_str == "bl_extg") {
                                     if (a > 0) throw std::invalid_argument("Transform is for spherical coordinates!");
@@ -270,7 +289,9 @@ class CoordinateEmbedding {
                 mpark::holds_alternative<SphBLExtG>(base) ||
                 
                 mpark::holds_alternative<DCSKSCoords>(base) || // Changes Made. 
-                mpark::holds_alternative<DCSBLCoords>(base))
+                mpark::holds_alternative<DCSBLCoords>(base) ||
+                mpark::holds_alternative<EDGBKSCoords>(base) ||
+                mpark::holds_alternative<EDGBBLCoords>(base)) // Changes Made.
             {
                 const GReal a = get_a();
                 return 1 + m::sqrt(1 - a * a);
