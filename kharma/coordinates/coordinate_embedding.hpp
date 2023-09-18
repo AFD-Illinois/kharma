@@ -299,6 +299,8 @@ class CoordinateEmbedding {
             } else {
                 return 0.0;
             }
+
+        
     // ___________________________________________________________________________________________________________________
 
         }
@@ -310,12 +312,12 @@ class CoordinateEmbedding {
         }
 
         //Changes made. a get zeta function 
-        KOKKOS_INLINE_FUNCTION GReal get_zeta() const
-        {
-            return mpark::visit( [&](const auto& self) {
-                return self.zeta;
-            }, base);
-        }
+        // KOKKOS_INLINE_FUNCTION GReal get_zeta() const
+        // {
+        //     return mpark::visit( [&](const auto& self) {
+        //         return self.zeta;
+        //     }, base);
+        // }
 
     // ___________________________________________________________________________________________________________________
 
@@ -645,24 +647,36 @@ class CoordinateEmbedding {
 
             // Set u^t to make u a velocity 4-vector in BL
             GReal gcov_bl[GR_DIM][GR_DIM];
+
+            // // TRYING 
+
             if (mpark::holds_alternative<SphKSCoords>(base) ||
                 mpark::holds_alternative<SphBLCoords>(base)) {
                 SphBLCoords(get_a()).gcov_embed(Xembed, gcov_bl);
+
             } else if (mpark::holds_alternative<SphKSExtG>(base) ||
                        mpark::holds_alternative<SphBLExtG>(base)) {
                 SphBLExtG(get_a()).gcov_embed(Xembed, gcov_bl);
 
-            } else if (mpark::holds_alternative<DCSKSCoords>(base) || 
-                       mpark::holds_alternative<DCSBLCoords>(base)){
-                DCSBLCoords(get_a(), get_zeta()).gcov_embed(Xembed, gcov_bl); // Changes Made. Find out how the zeta value gets called.
+            } else if (mpark::holds_alternative<DCSKSCoords>(base)){
+                GReal zeta = mpark::get<DCSKSCoords>(base).zeta;
+                DCSBLCoords dcsblcoords(get_a(), zeta);
+                dcsblcoords.gcov_embed(Xembed, gcov_bl);       // Changes Made. Find out how the zeta value gets called.
+        
+            } else if (mpark::holds_alternative<DCSBLCoords>(base)){
+                GReal zeta = mpark::get<DCSBLCoords>(base).zeta;
+                DCSBLCoords(get_a(), zeta).gcov_embed(Xembed, gcov_bl);       // Changes Made. Find out how the zeta value gets called.
                 
-            } else if (mpark::holds_alternative<EDGBKSCoords>(base) || 
-                       mpark::holds_alternative<EDGBBLCoords>(base)){         // Changes Made. 
-                EDGBBLCoords(get_a(), get_zeta()).gcov_embed(Xembed, gcov_bl);
+            } else if (mpark::holds_alternative<EDGBKSCoords>(base)){
+                GReal zeta = mpark::get<EDGBKSCoords>(base).zeta;
+                EDGBBLCoords edgbblcoords(get_a(), zeta);
+                edgbblcoords.gcov_embed(Xembed, gcov_bl);       // Changes Made. Find out how the zeta value gets called.
+        
+            } else if (mpark::holds_alternative<EDGBBLCoords>(base)){
+                GReal zeta = mpark::get<EDGBBLCoords>(base).zeta;
+                EDGBBLCoords(get_a(), zeta).gcov_embed(Xembed, gcov_bl);   
             }
-            else {
-                throw std::invalid_argument("Unsupported base coordinates!");
-            }
+    
 
             Real ucon_bl_fourv[GR_DIM];
             DLOOP1 ucon_bl_fourv[mu] = ucon_bl[mu];
@@ -682,11 +696,11 @@ class CoordinateEmbedding {
 
             } else if (mpark::holds_alternative<DCSKSCoords>(base)) {                           // Changes Made.
                 mpark::get<DCSKSCoords>(base).vec_from_bl(Xembed, ucon_bl_fourv, ucon_base); 
-            } else if (mpark::holds_alternative<DCSBLCoords>(base)) {
-                DLOOP1 ucon_base[mu] = ucon_bl_fourv[mu];; 
-
             } else if (mpark::holds_alternative<EDGBKSCoords>(base)) {                          // Changes Made.
                 mpark::get<EDGBKSCoords>(base).vec_from_bl(Xembed, ucon_bl_fourv, ucon_base); 
+
+            } else if (mpark::holds_alternative<DCSBLCoords>(base)) {
+                DLOOP1 ucon_base[mu] = ucon_bl_fourv[mu];; 
             } else if (mpark::holds_alternative<EDGBBLCoords>(base)) {
                 DLOOP1 ucon_base[mu] = ucon_bl_fourv[mu];; 
 
