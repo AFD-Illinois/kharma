@@ -147,7 +147,7 @@ class CoordinateEmbedding {
 
             } else if (base_str == "spherical_ks" || base_str == "ks" ||
                         base_str == "spherical_ks_extg" || base_str == "ks_extg" || 
-                        base_str == "dcs_ks"|| base_str == "edgb_ks") {
+                        base_str == "dcs_ks"|| base_str == "edgb_ks"){
                             GReal a = pin->GetReal("coordinates", "a"); 
                             
                             if (base_str == "dcs_ks") { 
@@ -172,6 +172,7 @@ class CoordinateEmbedding {
             } else if (base_str == "spherical_bl" || base_str == "bl" ||
                         base_str == "spherical_bl_extg" || base_str == "bl_extg" ||
                         base_str == "dcs_bl" || base_str == "edgb_bl") {
+                        // || base_str == "edgb_bl") {
                             GReal a = pin->GetReal("coordinates", "a");
                             
                             if (base_str == "dcs_bl") {
@@ -308,7 +309,14 @@ class CoordinateEmbedding {
             }, base);
         }
 
-        //mayeb a get zeta function 
+        //Changes made. a get zeta function 
+        KOKKOS_INLINE_FUNCTION GReal get_zeta() const
+        {
+            return mpark::visit( [&](const auto& self) {
+                return self.zeta;
+            }, base);
+        }
+
     // ___________________________________________________________________________________________________________________
 
         GReal startx(int dir) const
@@ -643,6 +651,17 @@ class CoordinateEmbedding {
             } else if (mpark::holds_alternative<SphKSExtG>(base) ||
                        mpark::holds_alternative<SphBLExtG>(base)) {
                 SphBLExtG(get_a()).gcov_embed(Xembed, gcov_bl);
+
+            } else if (mpark::holds_alternative<DCSKSCoords>(base) || 
+                       mpark::holds_alternative<DCSBLCoords>(base)){
+                DCSBLCoords(get_a(), get_zeta()).gcov_embed(Xembed, gcov_bl); // Changes Made. Find out how the zeta value gets called.
+                
+            } else if (mpark::holds_alternative<EDGBKSCoords>(base) || 
+                       mpark::holds_alternative<EDGBBLCoords>(base)){         // Changes Made. 
+                EDGBBLCoords(get_a(), get_zeta()).gcov_embed(Xembed, gcov_bl);
+            }
+            else {
+                throw std::invalid_argument("Unsupported base coordinates!");
             }
 
             Real ucon_bl_fourv[GR_DIM];
@@ -653,11 +672,26 @@ class CoordinateEmbedding {
             Real ucon_base[GR_DIM];
             if (mpark::holds_alternative<SphKSCoords>(base)) {
                 mpark::get<SphKSCoords>(base).vec_from_bl(Xembed, ucon_bl_fourv, ucon_base);
+
             } else if (mpark::holds_alternative<SphKSExtG>(base)) {
                 mpark::get<SphKSExtG>(base).vec_from_bl(Xembed, ucon_bl_fourv, ucon_base);
+
             } else if (mpark::holds_alternative<SphBLCoords>(base) ||
                        mpark::holds_alternative<SphBLExtG>(base)) {
                 DLOOP1 ucon_base[mu] = ucon_bl_fourv[mu];
+
+            } else if (mpark::holds_alternative<DCSKSCoords>(base)) {                           // Changes Made.
+                mpark::get<DCSKSCoords>(base).vec_from_bl(Xembed, ucon_bl_fourv, ucon_base); 
+            } else if (mpark::holds_alternative<DCSBLCoords>(base)) {
+                DLOOP1 ucon_base[mu] = ucon_bl_fourv[mu];; 
+
+            } else if (mpark::holds_alternative<EDGBKSCoords>(base)) {                          // Changes Made.
+                mpark::get<EDGBKSCoords>(base).vec_from_bl(Xembed, ucon_bl_fourv, ucon_base); 
+            } else if (mpark::holds_alternative<EDGBBLCoords>(base)) {
+                DLOOP1 ucon_base[mu] = ucon_bl_fourv[mu];; 
+
+            } else {
+                throw std::invalid_argument("Unsupported base coordinates!");
             }
             // Finally, apply any transform to native coordinates
             con_vec_to_native(Xnative, ucon_base, ucon_native);
@@ -665,3 +699,29 @@ class CoordinateEmbedding {
 };
 
     // ___________________________________________________________________________________________________________________
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
