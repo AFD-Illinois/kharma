@@ -113,17 +113,6 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
         pkg->BlockApplyPrimSource = ApplyElectronCooling;
     }
 
-    // Parse various mass and density units to set the different cooling rates
-    // TODO actually respect them of course
-    // std::vector<Real> masses = pin->GetOrAddVector<Real>("electrons", "masses", std::vector<Real>{});
-    // if (masses.size() > 0) {
-    //     std::vector<std::string> mass_names = pin->GetVector<std::string>("electrons", "masses");
-    //     std::vector<std::vector<Real>> munits;
-    //     for (auto mass_name : mass_names) {
-    //         munits.push_back(pin->GetVector<Real>("electrons", "munits_"+mass_name));
-    //     }
-    // }
-
     // Default implicit iff GRMHD is done implicitly. TODO can we do explicit?
     auto& driver = packages->Get("Driver")->AllParams();
     auto driver_type = driver.Get<std::string>("type");
@@ -135,10 +124,26 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     MetadataFlag areWeImplicit = (implicit_e) ? Metadata::GetUserFlag("Implicit")
                                               : Metadata::GetUserFlag("Explicit");
 
-    std::vector<MetadataFlag> flags_cons = {Metadata::Real, Metadata::Cell, Metadata::Independent, Metadata::Conserved,
-                                            Metadata::WithFluxes, Metadata::FillGhost, areWeImplicit, Metadata::GetUserFlag("Electrons")};
     std::vector<MetadataFlag> flags_prim = {Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::GetUserFlag("Primitive"),
                                             Metadata::Restart, areWeImplicit, Metadata::GetUserFlag("Electrons")};
+    std::vector<MetadataFlag> flags_cons = {Metadata::Real, Metadata::Cell, Metadata::Independent, Metadata::Conserved,
+                                            Metadata::WithFluxes, areWeImplicit, Metadata::GetUserFlag("Electrons")};
+
+    bool sync_prims = packages->Get("Driver")->Param<bool>("sync_prims");
+    if (!sync_prims) { // Normal operation
+        // As mentioned elsewhere, KHARMA treats the conserved variables as the independent ones,
+        // and the primitives as "Derived"
+        // Primitives are still used for reconstruction, physical boundaries, and output, and are
+        // generally the easier to understand quantities
+        // TODO can we not sync prims if we're using two_sync?
+        flags_cons.push_back(Metadata::FillGhost);
+        flags_prim.push_back(Metadata::FillGhost);
+    } else { // Treat primitive vars as fundamental
+        // When evolving (E)GRMHD implicitly, we just mark the primitive variables to be synchronized.
+        // This won't work for AMR, but it fits much better with the implicit solver, which expects
+        // primitive variable inputs and produces primitive variable results.
+        flags_prim.push_back(Metadata::FillGhost);
+    }
 
     // Total entropy, used to track changes
     int nKs = 1;
@@ -197,7 +202,6 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
 
     return pkg;
 }
-
 TaskStatus InitElectrons(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin)
 {
     Flag("InitElectrons");
@@ -466,30 +470,75 @@ TaskStatus ApplyElectronCooling(MeshBlockData<Real> *rc){
     auto& U2 = rc->PackVariables({Metadata::Conserved}, cons_map);
     const VarMap m_p2(prims_map, false), m_u2(cons_map, true);
     printf("kel at (5,5) after corrector cooling: %.16f\n", P2(m_p2.K_HOWES, 0, 54, 54));
-    printf("end");
+    Electrons::BlockPtoU(rc, IndexDomain::interior, false);
+}
+
+/* these are function that I no longer need but I don't want to delete quite yet
+TaskStatus ApplyElectronCoolingMBD(MeshBlockData<Real> *rc){
+    PackIndexMap prims_map, cons_map;
+    auto& P = rc->PackVariables({Metadata::GetUserFlag("Primitive")}, prims_map);
+    auto& U = rc->PackVariables({Metadata::Conserved}, cons_map);
+    const VarMap m_p(prims_map, false), m_u(cons_map, true);
+    auto pmb = rc->GetBlockPointer();
+    const Real game = pmb->packages.Get("Electrons")->Param<Real>("gamma_e");
+    const Real dt = pmb->packages.Get("Globals")->Param<Real>("dt_last");
+    double tau = 5.;
+
+    const IndexRange ib = rc->GetBoundsI(IndexDomain::interior);
+    const IndexRange jb = rc->GetBoundsJ(IndexDomain::interior);
+    const IndexRange kb = rc->GetBoundsK(IndexDomain::interior);
+    printf("kel at (5,5) before cooling: %.16f\n", P(m_p.K_HOWES, 0, 54, 54));
+    pmb->par_for("cool_electrons", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+        KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+            double kel = P(m_p.K_HOWES, k, j, i);
+            double rho = P(m_p.RHO, k, j, i);
+            double uel = pow(rho, game)*kel/(game-1);
+            uel = uel*exp(-dt*0.5/(tau));
+            P(m_p.K_HOWES, k, j, i) = uel/pow(rho, game)*(game-1);
+        }
+    );
+    auto& P2 = rc->PackVariables({Metadata::GetUserFlag("Primitive")}, prims_map);
+    auto& U2 = rc->PackVariables({Metadata::Conserved}, cons_map);
+    const VarMap m_p2(prims_map, false), m_u2(cons_map, true);
+    printf("kel at (5,5) after corrector cooling: %.16f\n", P2(m_p2.K_HOWES, 0, 54, 54));
+    return TaskStatus::complete;
+}
+
+TaskStatus SaveKel(MeshBlockData<Real> *rc_init, MeshBlockData<Real> *rc){
+    printf("saving kel...\n");
+    PackIndexMap prims_map, cons_map;
+    auto& P_init = rc_init->PackVariables({Metadata::GetUserFlag("Primitive")}, prims_map);
+    auto& P = rc->PackVariables({Metadata::GetUserFlag("Primitive")}, prims_map);
+    const VarMap m_p(prims_map, false), m_u(cons_map, true);
+    auto pmb = rc_init->GetBlockPointer();
+
+    const IndexRange ib = rc_init->GetBoundsI(IndexDomain::interior);
+    const IndexRange jb = rc_init->GetBoundsJ(IndexDomain::interior);
+    const IndexRange kb = rc_init->GetBoundsK(IndexDomain::interior);
+    pmb->par_for("cool_electrons", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+        KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+            P(m_p.K_HOWES, k, j, i) = P_init(m_p.K_HOWES, k, j, i);
+        }
+    );
+    return TaskStatus::complete;
 }
 
 TaskStatus ApplyElectronCoolingMD(MeshData<Real> *rc){
-    printf("initial comment\n");
     PackIndexMap prims_map, cons_map;
     auto P = rc->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("Primitive")}, prims_map);
     const VarMap m_p(prims_map, false), m_u(cons_map, true);
-    printf("got through the first round\n");
     // Pointers
     auto pmesh = rc->GetMeshPointer();
     auto pmb0 = rc->GetBlockData(0)->GetBlockPointer();
     const Real game = pmb0->packages.Get("Electrons")->Param<Real>("gamma_e");
     const Real dt = pmb0->packages.Get("Globals")->Param<Real>("dt_last");
     double tau = 5.;
-    printf("got through the second round\n");
 
     const IndexRange ib = rc->GetBoundsI(IndexDomain::interior);
     const IndexRange jb = rc->GetBoundsJ(IndexDomain::interior);
     const IndexRange kb = rc->GetBoundsK(IndexDomain::interior);
-    printf("got through the third round\n");
     auto block = IndexRange{0, P.GetDim(5)-1};
-    printf("got through fourth round\n");
-    printf("kel at (5,5) before cooling: %.16f\n", P(block.s, m_p.K_HOWES, 0, 54, 54));
+    printf("cooling electrons...\n");
     pmb0->par_for("cool_electrons", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i) {
             double kel = P(b, m_p.K_HOWES, k, j, i);
@@ -501,17 +550,44 @@ TaskStatus ApplyElectronCoolingMD(MeshData<Real> *rc){
     );
     auto P2 = rc->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("Primitive")}, prims_map);
     const VarMap m_p2(prims_map, false), m_u2(cons_map, true);
-    printf("kel at (5,5) after cooling: %.16f\n", P2(block.s, m_p2.K_HOWES, 0, 54, 54));
     return TaskStatus::complete;
 }
 
+TaskStatus ChangeRhoMD(MeshData<Real> *rc){
+    PackIndexMap prims_map, cons_map;
+    auto P = rc->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("Primitive")}, prims_map);
+    const VarMap m_p(prims_map, false), m_u(cons_map, true);
+    // Pointers
+    auto pmesh = rc->GetMeshPointer();
+    auto pmb0 = rc->GetBlockData(0)->GetBlockPointer();
+
+    const IndexRange ib = rc->GetBoundsI(IndexDomain::entire);
+    const IndexRange jb = rc->GetBoundsJ(IndexDomain::entire);
+    const IndexRange kb = rc->GetBoundsK(IndexDomain::entire);
+    auto block = IndexRange{0, P.GetDim(5)-1};
+    printf("ktot at (50,50) before: %.16f\n", P(block.s, m_p.KTOT, 0, 54, 54));
+    pmb0->par_for("cool_electrons", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+        KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i) {
+            P(b, m_p.KTOT, k, j, i) = 0.500000000000000*P(b, m_p.KTOT, k, j, i);
+        }
+    );
+    auto P2 = rc->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("Primitive")}, prims_map);
+    const VarMap m_p2(prims_map, false), m_u2(cons_map, true);
+    printf("ktot at (50,50) after: %.16f\n", P2(block.s, m_p2.KTOT, 0, 54, 54));
+    return TaskStatus::complete;
+}
+*/
+
+/* these are functions that are used to print stuff from the driver
 TaskStatus FindKelCoolingMD(MeshData<Real> *rc){
     //I call this at the end of the first task region
     PackIndexMap prims_map, cons_map;
     auto P = rc->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("Primitive")}, prims_map);
     const VarMap m_p(prims_map, false), m_u(cons_map, true);
     auto block = IndexRange{0, P.GetDim(5)-1};
-    printf("kel at (5,5) after predictor cooling at block.s: %.16f\n", P(block.s, m_p.K_HOWES, 0, 54, 54));
+    printf("kel at (50,50) Mesh Data: %.16f\n", P(block.s, m_p.K_HOWES, 0, 54, 54));
+    //printf("rho at (50,50) Mesh Data: %.16f\n", P(block.s, m_p.RHO, 0, 54, 54));
+    //printf("ktot at (50,50) Mesh Data: %.16f\n", P(block.s, m_p.KTOT, 0, 54, 54));
     return TaskStatus::complete;
 }
 
@@ -520,8 +596,11 @@ TaskStatus FindKelCoolingMBD(MeshBlockData<Real> *rc){
     PackIndexMap prims_map, cons_map;
     auto& P = rc->PackVariables({Metadata::GetUserFlag("Primitive")}, prims_map);
     const VarMap m_p(prims_map, false), m_u(cons_map, true);
-    printf("kel at (5,5) after predictor cooling but in the second task region: %.16f\n", P(m_p.K_HOWES, 0, 54, 54));
+    printf("kel at (50,50) Mesh Block Data: %.16f\n", P(m_p.K_HOWES, 0, 54, 54));
+    //printf("rho at (50,50) Mesh Block Data: %.16f\n", P(m_p.RHO, 0, 54, 54));
+    //printf("ktot at (50,50) Mesh Block Data: %.16f\n", P(m_p.KTOT, 0, 54, 54));
     return TaskStatus::complete;
 }
+*/
 
 } // namespace Electrons
