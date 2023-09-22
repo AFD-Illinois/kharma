@@ -111,32 +111,39 @@ std::vector<int> Reductions::CountFlags(MeshData<Real> *md, std::string field_na
     IndexRange kb = md->GetBoundsK(domain);
     IndexRange block = IndexRange{0, flag.GetDim(5) - 1};
 
+    // Man, moving arrays is clunky.  Oh well.
     const int n_of_flags = flag_values.size();
-    int flag_val_list[MAX_NFLAGS];
-    int f=0;
+    ParArray1D<int> flag_val_list("flag_values", MAX_NFLAGS);
+    auto flag_val_list_h = flag_val_list.GetHostMirror();
+    int f=1;
     for (auto &flag : flag_values) {
-        flag_val_list[f] = flag.first;
+        flag_val_list_h[f] = flag.first;
         f++;
     }
+    flag_val_list.DeepCopy(flag_val_list_h);
+    Kokkos::fence();
 
     // Count all nonzero (technically, >0) values,
-    // and all values of each 
+    // and all values which match each flag.
     // This works for pflags or fflags, so long as they're separate
     // We don't count negative pflags as they denote zones that shouldn't be fixed
     Reductions::array_type<int, MAX_NFLAGS> flag_reducer;
     pmb0->par_reduce("count_flags", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i, 
                        Reductions::array_type<int, MAX_NFLAGS> &local_result) {
-            if ((int) flag(b, 0, k, j, i) > 0) ++local_result.my_array[0];
-            for (int f=0; f<n_of_flags; f++)
-                if ((is_bitflag && static_cast<int>(flag(b, 0, k, j, i)) & flag_val_list[f]) ||
-                    (!is_bitflag && static_cast<int>(flag(b, 0, k, j, i)) == flag_val_list[f]))
-                ++local_result.my_array[f+1];
+            const int flag_int = static_cast<int>(flag(b, 0, k, j, i));
+            // First element is total count
+            if (flag_int > 0) ++local_result.my_array[0];
+            // The rest of the list is individual flags
+            for (int f=1; f < n_of_flags; f++)
+                if ((is_bitflag && flag_int & flag_val_list(f)) ||
+                    (!is_bitflag && flag_int == flag_val_list(f)))
+                    ++local_result.my_array[f];
         }
-    , Reductions::ArraySum<int, DevExecSpace, MAX_NFLAGS>(flag_reducer));
-    
+    , Reductions::ArraySum<int, HostExecSpace, MAX_NFLAGS>(flag_reducer));
+
     std::vector<int> n_each_flag;
-    for (int f=0; f<n_of_flags+1; f++)
+    for (int f=0; f < n_of_flags+1; f++)
         n_each_flag.push_back(flag_reducer.my_array[f]);
     
     EndFlag();
