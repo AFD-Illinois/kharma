@@ -127,7 +127,7 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
 
     // Add flags to distinguish groups of fields.
     // 1. One flag to mark the primitive variables specifically
-    // (Parthenon has Metadata::Conserved already)
+    // (Parthenon has Metadata::Conserved already, but that has special meanings for it)
     Metadata::AddUserFlag("Primitive");
     // 2. And one for hydrodynamics (everything we directly handle in this package)
     Metadata::AddUserFlag("HD");
@@ -139,9 +139,11 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
                                                   : Metadata::GetUserFlag("Explicit");
 
     std::vector<MetadataFlag> flags_prim = {Metadata::Real, Metadata::Cell, Metadata::Derived, areWeImplicit,
-                                            Metadata::Restart, Metadata::GetUserFlag("Primitive"), Metadata::GetUserFlag("HD"), Metadata::GetUserFlag("MHD")};
+                                            Metadata::Restart, Metadata::GetUserFlag("Primitive"),
+                                            Metadata::GetUserFlag("HD"), Metadata::GetUserFlag("MHD")};
     std::vector<MetadataFlag> flags_cons = {Metadata::Real, Metadata::Cell, Metadata::Independent, areWeImplicit,
-                                            Metadata::WithFluxes, Metadata::Conserved, Metadata::GetUserFlag("HD"), Metadata::GetUserFlag("MHD")};
+                                            Metadata::WithFluxes, Metadata::Conserved, Metadata::Conserved,
+                                            Metadata::GetUserFlag("HD"), Metadata::GetUserFlag("MHD")};
 
     bool sync_prims = packages->Get("Driver")->Param<bool>("sync_prims");
     if (!sync_prims) { // Normal operation
@@ -256,31 +258,28 @@ Real EstimateTimestep(MeshBlockData<Real> *rc)
         return globals.Get<double>("dt_light");
     }
 
-    Reductions::Reduce3v minmax;
+    ParArray1D<Real> min_loc("min_loc", 3);
+
+    // TODO version preserving location, with switch to keep this fast one
+    // std::tuple doesn't work device-side, Kokkos::pair is 2D.  pair of pairs?
+    Real min_ndt = 0.;
     pmb->par_reduce("ndt_min", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA (const int k, const int j, const int i,
-                      Reductions::Reduce3v &lminmax) {
+                      Real &local_result) {
             double ndt_zone = 1 / (1 / (G.Dxc<1>(i) /  m::max(cmax(0, k, j, i), cmin(0, k, j, i))) +
                                    1 / (G.Dxc<2>(j) /  m::max(cmax(1, k, j, i), cmin(1, k, j, i))) +
                                    1 / (G.Dxc<3>(k) /  m::max(cmax(2, k, j, i), cmin(2, k, j, i))));
-            // Effective "max speed" used for the timestep
-            double ctop_max_zone = m::min(G.Dxc<1>(i), m::min(G.Dxc<2>(j), G.Dxc<3>(k))) / ndt_zone;
 
-            if (!m::isnan(ndt_zone) && (ndt_zone < lminmax.min_val)) {
-                lminmax.min_val = ndt_zone;
-                lminmax.min_loc = std::tuple<int, int, int>{i, j, k};
-            }
-            if (!m::isnan(ctop_max_zone) && (ctop_max_zone > lminmax.max_val)) {
-                lminmax.max_val = ctop_max_zone;
-                lminmax.max_loc = std::tuple<int, int, int>{i, j, k};
+            if (!m::isnan(ndt_zone) && (ndt_zone < local_result)) {
+                local_result = ndt_zone;
             }
         }
-    , Reductions::Reduce3(minmax));
-    // Keep dt to do some checks below
-    const double min_ndt = minmax.min_val;
-    const double nctop = minmax.max_val;
+    , Kokkos::Min<Real>(min_ndt));
+    // TODO(BSP) this would need work for non-rectangular grids.
+    const double nctop = m::min(G.Dxc<1>(0), m::min(G.Dxc<2>(0), G.Dxc<3>(0))) / min_ndt;
 
-    // TODO print tuples
+    // TODO print location
+    //std::cout << "New min timestep: " << min_ndt << std::endl;
 
     // Apply limits
     const double cfl = grmhd_pars.Get<double>("cfl");
