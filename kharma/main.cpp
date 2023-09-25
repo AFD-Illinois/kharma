@@ -123,6 +123,11 @@ int main(int argc, char *argv[])
     pman.app_input->boundary_conditions[parthenon::BoundaryFace::inner_x3] = KBoundaries::ApplyBoundaryTemplate<IndexDomain::inner_x3>;
     pman.app_input->boundary_conditions[parthenon::BoundaryFace::outer_x3] = KBoundaries::ApplyBoundaryTemplate<IndexDomain::outer_x3>;
 
+    // Initialize Parthenon for MPI (also Kokkos, parses command line, etc.)
+    Flag("ParthenonInit");
+    auto manager_status = pman.ParthenonInitEnv(argc, argv);
+    EndFlag();
+
     if(MPIRank0()) {
         // Always print the version header, because it's fun
         // TODO(BSP) proper banner w/refs, names
@@ -138,9 +143,8 @@ int main(int argc, char *argv[])
         std::cout << std::endl;
     }
 
-    // Parthenon init includes Kokkos, MPI, parses parameters & cmdline
-    Flag("ParthenonInit");
-    auto manager_status = pman.ParthenonInitEnv(argc, argv);
+    // Check the Parthenon init return code, initialize packages/mesh
+    Flag("InitPackagesAndMesh");
     if (manager_status == ParthenonStatus::complete) {
         pman.ParthenonFinalize();
         return 0;
