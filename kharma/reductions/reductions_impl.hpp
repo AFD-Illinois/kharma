@@ -226,6 +226,7 @@ T Reductions::DomainReduction(MeshData<Real> *md, UserHistoryOperation op, const
     VLOOP if(startx[v] == stopx[v]) {
         trivial_tmp[v] = true;
     }
+
     // Pull values to pass to device, because passing views is cumbersome
     const bool trivial1 = trivial_tmp[0];
     const bool trivial2 = trivial_tmp[1];
