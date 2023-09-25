@@ -3,6 +3,7 @@
 # Chicoma
 if [[ "$HOST" == "ch-fe"* || "$HOST" == "nid00"* ]]; then
   HOST_ARCH="ZEN2"
+  NPROC=64
 
   # Cray environments get confused easy
   # Make things as simple as possible
