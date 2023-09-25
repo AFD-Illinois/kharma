@@ -147,7 +147,8 @@ class CoordinateEmbedding {
 
             } else if (base_str == "spherical_ks" || base_str == "ks" ||
                         base_str == "spherical_ks_extg" || base_str == "ks_extg" || 
-                        base_str == "dcs_ks"|| base_str == "edgb_ks"){
+                        base_str == "dcs_ks"|| base_str == "edgb_ks") {
+                            
                             GReal a = pin->GetReal("coordinates", "a"); 
                             
                             if (base_str == "dcs_ks") { 
@@ -172,14 +173,13 @@ class CoordinateEmbedding {
             } else if (base_str == "spherical_bl" || base_str == "bl" ||
                         base_str == "spherical_bl_extg" || base_str == "bl_extg" ||
                         base_str == "dcs_bl" || base_str == "edgb_bl") {
-                        // || base_str == "edgb_bl") {
                             GReal a = pin->GetReal("coordinates", "a");
                             
                             if (base_str == "dcs_bl") {
                                 GReal zeta = pin->GetReal("coordinates", "zeta"); // Get "zeta" value
                                 base.emplace<DCSBLCoords>(DCSBLCoords(a, zeta));   // Create DCSBLCoords with "a" and "zeta"
                             }
-                            else if (base_str == "edgb_bl"){
+                            else if (base_str == "edgb_bl") {
                                 GReal zeta = pin->GetReal("coordinates", "zeta"); // Get "zeta" value
                                 base.emplace<EDGBBLCoords>(EDGBBLCoords(a, zeta));   // Create EDGBBLCoords with "a" and "zeta"
 
@@ -288,7 +288,6 @@ class CoordinateEmbedding {
                 mpark::holds_alternative<SphBLCoords>(base) ||
                 mpark::holds_alternative<SphKSExtG>(base) ||
                 mpark::holds_alternative<SphBLExtG>(base) ||
-                
                 mpark::holds_alternative<DCSKSCoords>(base) || // Changes Made. 
                 mpark::holds_alternative<DCSBLCoords>(base) ||
                 mpark::holds_alternative<EDGBKSCoords>(base) ||
@@ -335,9 +334,7 @@ class CoordinateEmbedding {
                 return self.stopx[dir - 1];
             }, transform);
         }
-    // ___________________________________________________________________________________________________________________
 
-        // Question : How would this change with new coordinate systems ? 
     // ___________________________________________________________________________________________________________________
 
         KOKKOS_INLINE_FUNCTION bool is_ks() const
@@ -696,13 +693,14 @@ class CoordinateEmbedding {
 
             } else if (mpark::holds_alternative<DCSKSCoords>(base)) {                           // Changes Made.
                 mpark::get<DCSKSCoords>(base).vec_from_bl(Xembed, ucon_bl_fourv, ucon_base); 
+
             } else if (mpark::holds_alternative<EDGBKSCoords>(base)) {                          // Changes Made.
                 mpark::get<EDGBKSCoords>(base).vec_from_bl(Xembed, ucon_bl_fourv, ucon_base); 
 
             } else if (mpark::holds_alternative<DCSBLCoords>(base)) {
-                DLOOP1 ucon_base[mu] = ucon_bl_fourv[mu];; 
+                DLOOP1 ucon_base[mu] = ucon_bl_fourv[mu];
             } else if (mpark::holds_alternative<EDGBBLCoords>(base)) {
-                DLOOP1 ucon_base[mu] = ucon_bl_fourv[mu];; 
+                DLOOP1 ucon_base[mu] = ucon_bl_fourv[mu];
 
             } else {
                 throw std::invalid_argument("Unsupported base coordinates!");
