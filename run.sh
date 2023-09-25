@@ -50,6 +50,7 @@ fi
 # Load environment from the same files as the compile process
 HOST=$(hostname -f)
 ARGS=$(cat $KHARMA_DIR/make_args)
+SOURCE_DIR=$(dirname "$(readlink -f "$0")")
 for machine in $KHARMA_DIR/machines/*.sh
 do
   source $machine
