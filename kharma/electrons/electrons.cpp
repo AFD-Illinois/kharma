@@ -453,36 +453,14 @@ TaskStatus ApplyElectronCooling(MeshBlockData<Real> *rc){
     const Real dt = pmb->packages.Get("Globals")->Param<Real>("dt_last");
     double tau = 5.;
 
-    const IndexRange ib = rc->GetBoundsI(IndexDomain::interior);
-    const IndexRange jb = rc->GetBoundsJ(IndexDomain::interior);
-    const IndexRange kb = rc->GetBoundsK(IndexDomain::interior);
-    printf("kel at (5,5) before cooling: %.16f\n", P(m_p.K_HOWES, 0, 54, 54));
-    pmb->par_for("cool_electrons", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-        KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-            double kel = P(m_p.K_HOWES, k, j, i);
-            double rho = P(m_p.RHO, k, j, i);
-            double uel = pow(rho, game)*kel/(game-1);
-            uel = uel*exp(-dt*0.5/(tau));
-            P(m_p.K_HOWES, k, j, i) = uel/pow(rho, game)*(game-1);
-        }
-    );
-    auto& P2 = rc->PackVariables({Metadata::GetUserFlag("Primitive")}, prims_map);
-    auto& U2 = rc->PackVariables({Metadata::Conserved}, cons_map);
-    const VarMap m_p2(prims_map, false), m_u2(cons_map, true);
-    printf("kel at (5,5) after corrector cooling: %.16f\n", P2(m_p2.K_HOWES, 0, 54, 54));
-    Electrons::BlockPtoU(rc, IndexDomain::interior, false);
-}
+    /*For when you impliment the more complicated test cooling function:
 
-/* these are function that I no longer need but I don't want to delete quite yet
-TaskStatus ApplyElectronCoolingMBD(MeshBlockData<Real> *rc){
-    PackIndexMap prims_map, cons_map;
-    auto& P = rc->PackVariables({Metadata::GetUserFlag("Primitive")}, prims_map);
-    auto& U = rc->PackVariables({Metadata::Conserved}, cons_map);
-    const VarMap m_p(prims_map, false), m_u(cons_map, true);
-    auto pmb = rc->GetBlockPointer();
-    const Real game = pmb->packages.Get("Electrons")->Param<Real>("gamma_e");
-    const Real dt = pmb->packages.Get("Globals")->Param<Real>("dt_last");
-    double tau = 5.;
+    for getting u^t (this is stolen from the heating function):
+    FourVectors Dtmp;
+    GRMHD::calc_4vecs(G, P, m_p, k, j, i, Loci::center, Dtmp);
+
+
+    */
 
     const IndexRange ib = rc->GetBoundsI(IndexDomain::interior);
     const IndexRange jb = rc->GetBoundsJ(IndexDomain::interior);
@@ -501,82 +479,8 @@ TaskStatus ApplyElectronCoolingMBD(MeshBlockData<Real> *rc){
     auto& U2 = rc->PackVariables({Metadata::Conserved}, cons_map);
     const VarMap m_p2(prims_map, false), m_u2(cons_map, true);
     printf("kel at (5,5) after corrector cooling: %.16f\n", P2(m_p2.K_HOWES, 0, 54, 54));
-    return TaskStatus::complete;
+    Electrons::BlockPtoU(rc, IndexDomain::exterior, false);
 }
-
-TaskStatus SaveKel(MeshBlockData<Real> *rc_init, MeshBlockData<Real> *rc){
-    printf("saving kel...\n");
-    PackIndexMap prims_map, cons_map;
-    auto& P_init = rc_init->PackVariables({Metadata::GetUserFlag("Primitive")}, prims_map);
-    auto& P = rc->PackVariables({Metadata::GetUserFlag("Primitive")}, prims_map);
-    const VarMap m_p(prims_map, false), m_u(cons_map, true);
-    auto pmb = rc_init->GetBlockPointer();
-
-    const IndexRange ib = rc_init->GetBoundsI(IndexDomain::interior);
-    const IndexRange jb = rc_init->GetBoundsJ(IndexDomain::interior);
-    const IndexRange kb = rc_init->GetBoundsK(IndexDomain::interior);
-    pmb->par_for("cool_electrons", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-        KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-            P(m_p.K_HOWES, k, j, i) = P_init(m_p.K_HOWES, k, j, i);
-        }
-    );
-    return TaskStatus::complete;
-}
-
-TaskStatus ApplyElectronCoolingMD(MeshData<Real> *rc){
-    PackIndexMap prims_map, cons_map;
-    auto P = rc->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("Primitive")}, prims_map);
-    const VarMap m_p(prims_map, false), m_u(cons_map, true);
-    // Pointers
-    auto pmesh = rc->GetMeshPointer();
-    auto pmb0 = rc->GetBlockData(0)->GetBlockPointer();
-    const Real game = pmb0->packages.Get("Electrons")->Param<Real>("gamma_e");
-    const Real dt = pmb0->packages.Get("Globals")->Param<Real>("dt_last");
-    double tau = 5.;
-
-    const IndexRange ib = rc->GetBoundsI(IndexDomain::interior);
-    const IndexRange jb = rc->GetBoundsJ(IndexDomain::interior);
-    const IndexRange kb = rc->GetBoundsK(IndexDomain::interior);
-    auto block = IndexRange{0, P.GetDim(5)-1};
-    printf("cooling electrons...\n");
-    pmb0->par_for("cool_electrons", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-        KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i) {
-            double kel = P(b, m_p.K_HOWES, k, j, i);
-            double rho = P(b, m_p.RHO, k, j, i);
-            double uel = pow(rho, game)*kel/(game-1);
-            uel = uel*exp(-dt*0.5/(tau));
-            P(b, m_p.K_HOWES, k, j, i) = uel/pow(rho, game)*(game-1);
-        }
-    );
-    auto P2 = rc->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("Primitive")}, prims_map);
-    const VarMap m_p2(prims_map, false), m_u2(cons_map, true);
-    return TaskStatus::complete;
-}
-
-TaskStatus ChangeRhoMD(MeshData<Real> *rc){
-    PackIndexMap prims_map, cons_map;
-    auto P = rc->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("Primitive")}, prims_map);
-    const VarMap m_p(prims_map, false), m_u(cons_map, true);
-    // Pointers
-    auto pmesh = rc->GetMeshPointer();
-    auto pmb0 = rc->GetBlockData(0)->GetBlockPointer();
-
-    const IndexRange ib = rc->GetBoundsI(IndexDomain::entire);
-    const IndexRange jb = rc->GetBoundsJ(IndexDomain::entire);
-    const IndexRange kb = rc->GetBoundsK(IndexDomain::entire);
-    auto block = IndexRange{0, P.GetDim(5)-1};
-    printf("ktot at (50,50) before: %.16f\n", P(block.s, m_p.KTOT, 0, 54, 54));
-    pmb0->par_for("cool_electrons", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-        KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i) {
-            P(b, m_p.KTOT, k, j, i) = 0.500000000000000*P(b, m_p.KTOT, k, j, i);
-        }
-    );
-    auto P2 = rc->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("Primitive")}, prims_map);
-    const VarMap m_p2(prims_map, false), m_u2(cons_map, true);
-    printf("ktot at (50,50) after: %.16f\n", P2(block.s, m_p2.KTOT, 0, 54, 54));
-    return TaskStatus::complete;
-}
-*/
 
 /* these are functions that are used to print stuff from the driver
 TaskStatus FindKelCoolingMD(MeshData<Real> *rc){
