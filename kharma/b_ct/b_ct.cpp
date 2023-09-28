@@ -67,12 +67,18 @@ std::shared_ptr<KHARMAPackage> B_CT::Initialize(ParameterInput *pin, std::shared
     Real kill_on_divb_over = pin->GetOrAddReal("b_field", "kill_on_divb_over", 1.e-3);
     params.Add("kill_on_divb_over", kill_on_divb_over);
 
-    // Currently bs99, sg09
-    // TODO LDZ04, LDZ07, other GS?
-    std::string ct_scheme = pin->GetOrAddString("b_field", "ct_scheme", "sg09");
+    // Currently bs99, gs05_c, gs05_0
+    // TODO gs05_alpha, LDZ04 UCT1, LDZ07 UCT2
+    std::string ct_scheme = pin->GetOrAddString("b_field", "ct_scheme", "bs99");
     params.Add("ct_scheme", ct_scheme);
+    // Use the default Parthenon prolongation operator, rather than the divergence-preserving one
+    // This relies entirely on the EMF communication for preserving the divergence
+    bool lazy_prolongation = pin->GetOrAddBoolean("b_field", "lazy_prolongation", true);
+    // Need to preserve divergence if you refine/derefine during sim i.e. AMR
+    if (lazy_prolongation && pin->GetString("parthenon/mesh", "refinement") == "adaptive")
+        throw std::runtime_error("Cannot use non-preserving prolongation in AMR!");
 
-    // Add a reducer for divB to params
+    // Add a reducer object (MPI communicator) for divB to params
     params.Add("divb_reducer", AllReduce<Real>());
 
     // FIELDS
@@ -87,7 +93,8 @@ std::shared_ptr<KHARMAPackage> B_CT::Initialize(ParameterInput *pin, std::shared
     auto m = Metadata(flags_prim_f);
     pkg->AddField("prims.fB", m);
     m = Metadata(flags_cons_f);
-    m.RegisterRefinementOps<ProlongateSharedMinMod, RestrictAverage, ProlongateInternalOlivares>();
+    if (!lazy_prolongation)
+        m.RegisterRefinementOps<ProlongateSharedMinMod, RestrictAverage, ProlongateInternalOlivares>();
     pkg->AddField("cons.fB", m);
 
     // Cell-centered versions.  Needed for BS, not for other schemes.
@@ -103,12 +110,11 @@ std::shared_ptr<KHARMAPackage> B_CT::Initialize(ParameterInput *pin, std::shared
     pkg->AddField("cons.B", m);
 
     // EMF on edges.
-    // TODO only sync when needed
     std::vector<MetadataFlag> flags_emf = {Metadata::Real, Metadata::Edge, Metadata::Derived, Metadata::OneCopy, Metadata::FillGhost};
     m = Metadata(flags_emf);
     pkg->AddField("B_CT.emf", m);
 
-    if (ct_scheme == "sg09") {
+    if (ct_scheme != "bs99") {
         std::vector<MetadataFlag> flags_emf_c = {Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy};
         m = Metadata(flags_emf_c, s_vector);
         pkg->AddField("B_CT.cemf", m);
@@ -210,90 +216,111 @@ TaskStatus B_CT::CalculateEMF(MeshData<Real> *md)
 
     // Figure out indices
     const IndexRange3 b = KDomain::GetRange(md, IndexDomain::interior, 0, 0);
-    const IndexRange3 b1 = KDomain::GetRange(md, IndexDomain::interior, 0, 1);
+    const IndexRange3 b1 = KDomain::GetRange(md, IndexDomain::interior, -1, 1);
     const IndexRange block = IndexRange{0, emf_pack.GetDim(5)-1};
 
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer().get();
 
     std::string scheme = pmesh->packages.Get("B_CT")->Param<std::string>("ct_scheme");
-    if (scheme == "bs99") {
-        // Calculate circulation by averaging fluxes (BS88)
-        auto& B_U = md->PackVariablesAndFluxes(std::vector<std::string>{"cons.B"});
-        pmb0->par_for("B_CT_emf_BS", block.s, block.e, b1.ks, b1.ke, b1.js, b1.je, b1.is, b1.ie,
-            KOKKOS_LAMBDA (const int &bl, const int &k, const int &j, const int &i) {
-                // TODO will we need gdet/cell length here?
-                const auto& G = B_U.GetCoords(bl);
-                if (ndim > 2) {
-                    emf_pack(bl, E1, 0, k, j, i) = G.Dxc<1>(i) *
-                        0.25*(B_U(bl).flux(X2DIR, V3, k - 1, j, i)/G.Dxc<3>(k-1) + B_U(bl).flux(X2DIR, V3, k, j, i)/G.Dxc<3>(k)
-                            - B_U(bl).flux(X3DIR, V2, k, j - 1, i)/G.Dxc<2>(j-1) - B_U(bl).flux(X3DIR, V2, k, j, i)/G.Dxc<2>(j));
-                    emf_pack(bl, E2, 0, k, j, i) = G.Dxc<2>(j) *
-                        0.25*(B_U(bl).flux(X3DIR, V1, k, j, i - 1)/G.Dxc<1>(i-1) + B_U(bl).flux(X3DIR, V1, k, j, i)/G.Dxc<1>(i)
-                            - B_U(bl).flux(X1DIR, V3, k - 1, j, i)/G.Dxc<3>(k-1) - B_U(bl).flux(X1DIR, V3, k, j, i)/G.Dxc<3>(k));
-                }
-                emf_pack(bl, E3, 0, k, j, i) =
-                    0.25*(G.FaceArea<1>(k, j - 1, i) * B_U(bl).flux(X1DIR, V2, k, j - 1, i) / G.Dxc<2>(j-1)
-                        + G.FaceArea<1>(k, j, i)     * B_U(bl).flux(X1DIR, V2, k, j, i)     / G.Dxc<2>(j)
-                        - G.FaceArea<2>(k, j, i - 1) * B_U(bl).flux(X2DIR, V1, k, j, i - 1) / G.Dxc<1>(i-1)
-                        - G.FaceArea<2>(k, j, i)     * B_U(bl).flux(X2DIR, V1, k, j, i)     / G.Dxc<1>(i));
+
+    // Calculate circulation by averaging fluxes
+    // This is the base of most other schemes, which make corrections
+    // It is the entirety of B&S '99
+    auto& B_U = md->PackVariablesAndFluxes(std::vector<std::string>{"cons.B"});
+    pmb0->par_for("B_CT_emf_BS", block.s, block.e, b1.ks, b1.ke, b1.js, b1.je, b1.is, b1.ie,
+        KOKKOS_LAMBDA (const int &bl, const int &k, const int &j, const int &i) {
+            // The basic EMF per length along edges is the B field flux
+            // We use this form rather than multiply by edge length here,
+            // since the default restriction op averages values
+            const auto& G = B_U.GetCoords(bl);
+            if (ndim > 2) {
+                emf_pack(bl, E1, 0, k, j, i) =
+                    0.25*(B_U(bl).flux(X2DIR, V3, k - 1, j, i) + B_U(bl).flux(X2DIR, V3, k, j, i)
+                        - B_U(bl).flux(X3DIR, V2, k, j - 1, i) - B_U(bl).flux(X3DIR, V2, k, j, i));
+                emf_pack(bl, E2, 0, k, j, i) =
+                    0.25*(B_U(bl).flux(X3DIR, V1, k, j, i - 1) + B_U(bl).flux(X3DIR, V1, k, j, i)
+                        - B_U(bl).flux(X1DIR, V3, k - 1, j, i) - B_U(bl).flux(X1DIR, V3, k, j, i));
             }
-        );
-    } else if (scheme == "sg09") {
-        // Average fluxes and derivatives (SG09)
+            emf_pack(bl, E3, 0, k, j, i) =
+                0.25*(B_U(bl).flux(X1DIR, V2, k, j - 1, i) + B_U(bl).flux(X1DIR, V2, k, j, i)
+                    - B_U(bl).flux(X2DIR, V1, k, j, i - 1) - B_U(bl).flux(X2DIR, V1, k, j, i));
+        }
+    );
+
+    if (scheme == "bs99") {
+        // Nothing more to do
+    } else if (scheme == "gs05_0" || scheme == "gs05_c") {
+        // Additional terms for Stone & Gardiner '09
+        // Average fluxes and derivatives
         auto& uvec = md->PackVariables(std::vector<std::string>{"prims.uvec"});
         auto& emfc = md->PackVariables(std::vector<std::string>{"B_CT.cemf"});
         auto& B_U = md->PackVariablesAndFluxes(std::vector<std::string>{"cons.B"});
         auto& B_P = md->PackVariables(std::vector<std::string>{"prims.B"});
         // emf in center == -v x B
-        pmb0->par_for("B_CT_emf_GS09", block.s, block.e, b1.ks, b1.ke, b1.js, b1.je, b1.is, b1.ie,
+        const IndexRange3 bc = KDomain::GetRange(md, IndexDomain::entire);
+        pmb0->par_for("B_CT_emfc", block.s, block.e, bc.ks, bc.ke, bc.js, bc.je, bc.is, bc.ie,
             KOKKOS_LAMBDA (const int &bl, const int &k, const int &j, const int &i) {
                 VLOOP emfc(bl, v, k, j, i) = 0.;
                 VLOOP3 emfc(bl, x, k, j, i) -= antisym(v, w, x) * uvec(bl, v, k, j, i) * B_U(bl, w, k, j, i);
             }
         );
 
-        // Get primitive velocity at face (on right side) (TODO do we need some average?)
-        auto& uvecf = md->PackVariables(std::vector<std::string>{"Flux.vr"});
-
-        pmb0->par_for("B_CT_emf_GS09", block.s, block.e, b1.ks, b1.ke, b1.js, b1.je, b1.is, b1.ie,
-            KOKKOS_LAMBDA (const int &bl, const int &k, const int &j, const int &i) {
-                // TODO will we need gdet/cell length here?
-                const auto& G = B_U.GetCoords(bl);
-
-                // "simple" flux + upwinding method, Stone & Gardiner '09 but also in Stone+08 etc.
-                // Upwinded differences take in order (1-indexed):
-                // 1. EMF component direction to calculate
-                // 2. Direction of derivative
-                // 3. Direction of upwinding
-                // ...then zone number...
-                // and finally, a boolean indicating a leftward (e.g., i-3/4) vs rightward (i-1/4) position
-                if (ndim > 2) {
-                    emf_pack(bl, E1, 0, k, j, i) = G.Dxc<1>(i) *
-                        0.25*(B_U(bl).flux(X2DIR, V3, k - 1, j, i)/G.Dxc<3>(k-1) + B_U(bl).flux(X2DIR, V3, k, j, i)/G.Dxc<3>(k)
-                            - B_U(bl).flux(X3DIR, V2, k, j - 1, i)/G.Dxc<2>(j-1) - B_U(bl).flux(X3DIR, V2, k, j, i)/G.Dxc<2>(j))
-                        + 0.25*(upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 1, 3, 2, k, j, i, false)
-                              - upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 1, 3, 2, k, j, i, true))
-                        + 0.25*(upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 1, 2, 3, k, j, i, false)
-                              - upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 1, 2, 3, k, j, i, true));
-                    emf_pack(bl, E2, 0, k, j, i) = G.Dxc<2>(j) *
-                        0.25*(B_U(bl).flux(X3DIR, V1, k, j, i - 1)/G.Dxc<1>(i-1) + B_U(bl).flux(X3DIR, V1, k, j, i)/G.Dxc<1>(i)
-                            - B_U(bl).flux(X1DIR, V3, k - 1, j, i)/G.Dxc<3>(k-1) - B_U(bl).flux(X1DIR, V3, k, j, i)/G.Dxc<3>(k))
-                        + 0.25*(upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 2, 1, 3, k, j, i, false)
-                              - upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 2, 1, 3, k, j, i, true))
-                        + 0.25*(upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 2, 3, 1, k, j, i, false)
-                              - upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 2, 3, 1, k, j, i, true));
+        if (scheme == "gs05_0") {
+            pmb0->par_for("B_CT_emf_GS05_0", block.s, block.e, b1.ks, b1.ke, b1.js, b1.je, b1.is, b1.ie,
+                KOKKOS_LAMBDA (const int &bl, const int &k, const int &j, const int &i) {
+                    const auto& G = B_U.GetCoords(bl);
+                    // Just subtract centered emf from twice the face version
+                    // More stable for planar flows even without anything fancy
+                    if (ndim > 2) {
+                        emf_pack(bl, E1, 0, k, j, i) = 2 * emf_pack(bl, E1, 0, k, j, i)
+                            - 0.25*(emfc(bl, V1, k, j, i)     + emfc(bl, V1, k, j - 1, i)
+                                  + emfc(bl, V1, k, j - 1, i) + emfc(bl, V1, k - 1, j - 1, i));
+                        emf_pack(bl, E2, 0, k, j, i) = 2 * emf_pack(bl, E2, 0, k, j, i)
+                            - 0.25*(emfc(bl, V2, k, j, i)     + emfc(bl, V2, k, j, i - 1)
+                                  + emfc(bl, V2, k - 1, j, i) + emfc(bl, V2, k - 1, j, i - 1));
+                    }
+                    emf_pack(bl, E3, 0, k, j, i) = 2 * emf_pack(bl, E3, 0, k, j, i)
+                        - 0.25*(emfc(bl, V3, k, j, i)     + emfc(bl, V3, k, j, i - 1)
+                              + emfc(bl, V3, k, j - 1, i) + emfc(bl, V3, k, j - 1, i - 1));
                 }
-                emf_pack(bl, E3, 0, k, j, i) = G.Dxc<3>(k) *
-                    0.25*(B_U(bl).flux(X1DIR, V2, k, j - 1, i)/G.Dxc<2>(j-1) + B_U(bl).flux(X1DIR, V2, k, j, i)/G.Dxc<2>(j)
-                        - B_U(bl).flux(X2DIR, V1, k, j, i - 1)/G.Dxc<1>(i-1) - B_U(bl).flux(X2DIR, V1, k, j, i)/G.Dxc<1>(i))
-                    + 0.25*(upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 3, 2, 1, k, j, i, false)
-                          - upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 3, 2, 1, k, j, i, true))
-                    + 0.25*(upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 3, 1, 2, k, j, i, false)
-                          - upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 3, 1, 2, k, j, i, true));
-            }
-        );
+            );
+        } else if (scheme == "gs05_c") {
+            // Get primitive velocity at face (on right side) (TODO do we need some average?)
+            auto& uvecf = md->PackVariables(std::vector<std::string>{"Flux.vr"});
+
+            pmb0->par_for("B_CT_emf_GS05_c", block.s, block.e, b1.ks, b1.ke, b1.js, b1.je, b1.is, b1.ie,
+                KOKKOS_LAMBDA (const int &bl, const int &k, const int &j, const int &i) {
+                    const auto& G = B_U.GetCoords(bl);
+
+                    // "simple" flux + upwinding method, Stone & Gardiner '09 but also in Stone+08 etc.
+                    // Upwinded differences take in order (1-indexed):
+                    // 1. EMF component direction to calculate
+                    // 2. Direction of derivative
+                    // 3. Direction of upwinding
+                    // ...then zone number...
+                    // and finally, a boolean indicating a leftward (e.g., i-3/4) vs rightward (i-1/4) position
+                    if (ndim > 2) {
+                        emf_pack(bl, E1, 0, k, j, i) +=
+                              0.25*(upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 1, 3, 2, k, j, i, false)
+                                  - upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 1, 3, 2, k, j, i, true))
+                            + 0.25*(upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 1, 2, 3, k, j, i, false)
+                                  - upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 1, 2, 3, k, j, i, true));
+                        emf_pack(bl, E2, 0, k, j, i) +=
+                              0.25*(upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 2, 1, 3, k, j, i, false)
+                                  - upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 2, 1, 3, k, j, i, true))
+                            + 0.25*(upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 2, 3, 1, k, j, i, false)
+                                  - upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 2, 3, 1, k, j, i, true));
+                    }
+                    emf_pack(bl, E3, 0, k, j, i) +=
+                          0.25*(upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 3, 2, 1, k, j, i, false)
+                              - upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 3, 2, 1, k, j, i, true))
+                        + 0.25*(upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 3, 1, 2, k, j, i, false)
+                              - upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 3, 1, 2, k, j, i, true));
+                }
+            );
+        }
     } else {
-        throw std::invalid_argument("Invalid CT scheme specified!  Must be one of bs99, sg09");
+        throw std::invalid_argument("Invalid CT scheme specified!  Must be one of bs99, gs05_0, gs05_c!");
     }
     return TaskStatus::complete;
 }
@@ -319,25 +346,33 @@ TaskStatus B_CT::AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
     pmb0->par_for("B_CT_Circ_1", block.s, block.e, b.ks, b.ke, b.js, b.je, b1.is, b1.ie,
         KOKKOS_LAMBDA (const int &bl, const int &k, const int &j, const int &i) {
             const auto& G = dB_Uf_dt.GetCoords(bl);
-            dB_Uf_dt(bl, F1, 0, k, j, i) =       (emf_pack(bl, E3, 0, k, j + 1, i) - emf_pack(bl, E3, 0, k, j, i))*G.FaceArea<1>(k, j, i);
+            dB_Uf_dt(bl, F1, 0, k, j, i) = (G.Volume<E3>(k, j + 1, i) * emf_pack(bl, E3, 0, k, j + 1, i)
+                                          - G.Volume<E3>(k, j, i)     * emf_pack(bl, E3, 0, k, j, i));
             if (ndim > 2)
-                dB_Uf_dt(bl, F1, 0, k, j, i) += (-emf_pack(bl, E2, 0, k + 1, j, i) + emf_pack(bl, E2, 0, k, j, i))/G.Dxc<2>(j);
+                dB_Uf_dt(bl, F1, 0, k, j, i) += (-G.Volume<E2>(k + 1, j, i) * emf_pack(bl, E2, 0, k + 1, j, i)
+                                                + G.Volume<E2>(k, j, i)     * emf_pack(bl, E2, 0, k, j, i));
+            dB_Uf_dt(bl, F1, 0, k, j, i) /= G.Volume<F1>(k, j, i);
         }
     );
     pmb0->par_for("B_CT_Circ_2", block.s, block.e, b.ks, b.ke, b1.js, b1.je, b.is, b.ie,
         KOKKOS_LAMBDA (const int &bl, const int &k, const int &j, const int &i) {
             const auto& G = dB_Uf_dt.GetCoords(bl);
-            dB_Uf_dt(bl, F2, 0, k, j, i) =      (-emf_pack(bl, E3, 0, k, j, i + 1) + emf_pack(bl, E3, 0, k, j, i))*G.FaceArea<2>(k, j, i);
+            dB_Uf_dt(bl, F2, 0, k, j, i) = (-G.Volume<E3>(k, j, i + 1) * emf_pack(bl, E3, 0, k, j, i + 1)
+                                           + G.Volume<E3>(k, j, i)     * emf_pack(bl, E3, 0, k, j, i));
             if (ndim > 2)
-                dB_Uf_dt(bl, F2, 0, k, j, i) +=  (emf_pack(bl, E1, 0, k + 1, j, i) - emf_pack(bl, E1, 0, k, j, i))/G.Dxc<1>(i);
+                dB_Uf_dt(bl, F2, 0, k, j, i) +=  (G.Volume<E1>(k + 1, j, i) * emf_pack(bl, E1, 0, k + 1, j, i)
+                                                - G.Volume<E1>(k, j, i)     * emf_pack(bl, E1, 0, k, j, i));
+            dB_Uf_dt(bl, F2, 0, k, j, i) /= G.Volume<F2>(k, j, i);
         }
     );
     if (ndim > 2) {
         pmb0->par_for("B_CT_Circ_3", block.s, block.e, b1.ks, b1.ke, b.js, b.je, b.is, b.ie,
             KOKKOS_LAMBDA (const int &bl, const int &k, const int &j, const int &i) {
                 const auto& G = dB_Uf_dt.GetCoords(bl);
-                dB_Uf_dt(bl, F3, 0, k, j, i) = (emf_pack(bl, E2, 0, k, j, i + 1) - emf_pack(bl, E2, 0, k, j, i))/G.Dxc<2>(j)
-                                            + (-emf_pack(bl, E1, 0, k, j + 1, i) + emf_pack(bl, E1, 0, k, j, i))/G.Dxc<1>(i);
+                dB_Uf_dt(bl, F3, 0, k, j, i) = (G.Volume<E2>(k, j, i + 1) * emf_pack(bl, E2, 0, k, j, i + 1)
+                                              - G.Volume<E2>(k, j, i)     * emf_pack(bl, E2, 0, k, j, i)
+                                              - G.Volume<E1>(k, j + 1, i) * emf_pack(bl, E1, 0, k, j + 1, i)
+                                              + G.Volume<E1>(k, j, i)     * emf_pack(bl, E1, 0, k, j, i)) / G.Volume<F3>(k, j, i);
             }
         );
     }
@@ -442,12 +477,13 @@ TaskStatus B_CT::PrintGlobalMaxDivB(MeshData<Real> *md, bool kill_on_large_divb)
 
     // Since this is in the history file now, I don't bother printing it
     // unless we're being verbose. It's not costly to calculate though
-    if (pmb0->packages.Get("Globals")->Param<int>("verbose") >= 1) {
+    const bool print = pmb0->packages.Get("Globals")->Param<int>("verbose") >= 1;
+    if (print || kill_on_large_divb) {
         // Calculate the maximum from/on all nodes
         const double divb_max = B_CT::GlobalMaxDivB(md);
         // Print on rank zero
-        if (MPIRank0()) {
-            std::cout << "Max DivB: " << divb_max << std::endl;
+        if (MPIRank0() && print) {
+            printf("Max DivB: %g\n", divb_max); // someday I'll learn stream options
         }
         if (kill_on_large_divb) {
             if (divb_max > pmb0->packages.Get("B_CT")->Param<Real>("kill_on_divb_over"))

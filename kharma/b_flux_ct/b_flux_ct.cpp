@@ -522,12 +522,15 @@ TaskStatus PrintGlobalMaxDivB(MeshData<Real> *md, bool kill_on_large_divb)
 
     // Since this is in the history file now, I don't bother printing it
     // unless we're being verbose. It's not costly to calculate though
-    if (pmb0->packages.Get("Globals")->Param<int>("verbose") >= 1) {
+    const bool print = pmb0->packages.Get("Globals")->Param<int>("verbose") >= 1;
+    if (print || kill_on_large_divb) {
         // Calculate the maximum from/on all nodes
         const double divb_max = B_FluxCT::GlobalMaxDivB(md);
         // Print on rank zero
-        if (MPIRank0()) {
-            std::cout << "Max DivB: " << divb_max << std::endl;
+        if (MPIRank0() && print) {
+            // someday I'll learn stream options
+            // for now this is more consistent in #digits/scientific
+            printf("Max DivB: %g\n", divb_max);
         }
         if (kill_on_large_divb) {
             if (divb_max > pmb0->packages.Get("B_FluxCT")->Param<Real>("kill_on_divb_over"))
