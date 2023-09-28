@@ -42,7 +42,6 @@ namespace KDomain {
 
 /**
  * Functions for checking boundaries in 3D.
- * Uses IndexRange objects, or this would be in kharma_utils.hpp
  */
 KOKKOS_INLINE_FUNCTION bool outside(const int& k, const int& j, const int& i,
                                     const IndexRange& kb, const IndexRange& jb, const IndexRange& ib)
@@ -66,6 +65,7 @@ KOKKOS_INLINE_FUNCTION bool inside(const int& k, const int& j, const int& i, con
 }
 
 // TODO(BSP) these really should be in Parthenon
+// There's a templated way to do it I forget, but this would be easier
 template<typename T>
 inline const int& GetNDim(MeshBlockData<T>* rc)
 { return rc->GetBlockPointer()->pmy_mesh->ndim; }

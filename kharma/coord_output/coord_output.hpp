@@ -1,5 +1,5 @@
 /* 
- *  File: seed_B_ct.cpp
+ *  File: coord_output.hpp
  *  
  *  BSD 3-Clause License
  *  
@@ -31,32 +31,22 @@
  *  OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+#pragma once
 
-// Seed a torus of some type with a magnetic field according to its density
-
-#include "b_ct.hpp"
-
-#include "b_field_tools.hpp"
-#include "coordinate_utils.hpp"
-#include "fm_torus.hpp"
 #include "grmhd_functions.hpp"
 
-using namespace parthenon;
+#include <parthenon/parthenon.hpp>
 
-TaskStatus B_CT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
-{
-    auto pmb = rc->GetBlockPointer();
+namespace CoordinateOutput {
 
-    const auto& G = pmb->coords;
-    GridScalar rho = rc->Get("prims.rho").data;
-    GridVector B_P = rc->Get("prims.B").data;
-    GridVector B_U = rc->Get("cons.B").data;
+/**
+ * Initialize the wind package with several options from the input deck
+ */
+std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages);
 
-    // Orszag-Tang Vortex
-    
+/**
+ * Fill the geometry output variables with quantities from the GRCoordinates object over a block
+ */
+TaskStatus BlockUserWorkBeforeOutput(MeshBlock *pmb, ParameterInput *pin);
 
-    // Finally, make sure we initialize the primitive field too
-    B_CT::BlockUtoP(rc, IndexDomain::entire, false);
-
-    return TaskStatus::complete;
 }

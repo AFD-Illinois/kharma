@@ -107,8 +107,8 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
     const auto& cmax  = md->PackVariables(std::vector<std::string>{"Flux.cmax"});
     const auto& cmin  = md->PackVariables(std::vector<std::string>{"Flux.cmin"});
     // TODO maybe all WithFluxes vars, split into cell & face?
-    const auto& P_all = md->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("Primitive")}, prims_map);
-    const auto& U_all = md->PackVariablesAndFluxes(std::vector<MetadataFlag>{Metadata::Conserved}, cons_map);
+    const auto& P_all = md->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("Primitive"), Metadata::Cell}, prims_map);
+    const auto& U_all = md->PackVariablesAndFluxes(std::vector<MetadataFlag>{Metadata::Conserved, Metadata::Cell}, cons_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
 
     const auto& Pl_all = md->PackVariables(std::vector<std::string>{"Flux.Pl"});
@@ -195,6 +195,10 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
             }
         );
     }
+
+    // Now that this is split, we add the biggest TODO in KHARMA
+    // TODO per-package prim_to_flux?  Is that slower?
+    // At least, we need to template on vchar/stress-energy T type
 
     Flag("GetFlux_"+std::to_string(dir)+"_left");
     parthenon::par_for_outer(DEFAULT_OUTER_LOOP_PATTERN, "calc_flux_left", pmb0->exec_space,

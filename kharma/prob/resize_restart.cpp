@@ -58,7 +58,7 @@
 hsize_t static_max(int i, int n) { return static_cast<hsize_t>(m::max(i, n)); }
 hsize_t static_min(int i, int n) { return static_cast<hsize_t>(m::min(i, n)); }
 
-void ReadIharmRestartHeader(std::string fname, std::unique_ptr<ParameterInput>& pin)
+void ReadIharmRestartHeader(std::string fname, ParameterInput *pin)
 {
     // Read the restart file and set parameters that need to be specified at early loading
     hdf5_open(fname.c_str());
@@ -262,7 +262,7 @@ TaskStatus ReadIharmRestart(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterI
             pin->GetInteger("parthenon/mesh", "nx2") != n2tot ||
             pin->GetInteger("parthenon/mesh", "nx3") != n3tot) {
             printf("Mesh size does not match!\n");
-            printf("[%d %d %d] vs [%llu %llu %llu]",
+            printf("[%d %d %d] vs [%lu %lu %lu]",
                 pin->GetInteger("parthenon/mesh", "nx1"),
                 pin->GetInteger("parthenon/mesh", "nx2"),
                 pin->GetInteger("parthenon/mesh", "nx3"),

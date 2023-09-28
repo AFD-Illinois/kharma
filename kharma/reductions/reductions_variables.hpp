@@ -58,7 +58,7 @@ enum class Var{phi, bsq, gas_pressure, mag_pressure, beta,
 
 // Function template for all reductions.
 template<Var T>
-Real reduction_var(REDUCE_FUNCTION_ARGS);
+KOKKOS_INLINE_FUNCTION Real reduction_var(REDUCE_FUNCTION_ARGS);
 
 // Can also sum the hemispheres independently to be fancy (TODO?)
 template <>
@@ -216,6 +216,7 @@ KOKKOS_INLINE_FUNCTION Real reduction_var<Var::neg_rhout>(REDUCE_FUNCTION_ARGS)
 #endif
 #endif
     }
+    return is_neg;
 }
 template <>
 KOKKOS_INLINE_FUNCTION Real reduction_var<Var::neg_u>(REDUCE_FUNCTION_ARGS)
@@ -229,6 +230,7 @@ KOKKOS_INLINE_FUNCTION Real reduction_var<Var::neg_u>(REDUCE_FUNCTION_ARGS)
 #endif
 #endif
     }
+    return is_neg;
 }
 template <>
 KOKKOS_INLINE_FUNCTION Real reduction_var<Var::neg_rho>(REDUCE_FUNCTION_ARGS)
@@ -242,6 +244,7 @@ KOKKOS_INLINE_FUNCTION Real reduction_var<Var::neg_rho>(REDUCE_FUNCTION_ARGS)
 #endif
 #endif
     }
+    return is_neg;
 }
 
 }

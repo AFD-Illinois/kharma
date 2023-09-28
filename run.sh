@@ -12,12 +12,6 @@ MPI_EXE=${MPI_EXE:-}
 MPI_NUM_PROCS=${MPI_NUM_PROCS:-1}
 MPI_EXTRA_ARGS=${MPI_EXTRA_ARGS:-}
 
-# Default OpenMP directives: use all available threads
-#export OMP_PROC_BIND=${OMP_PROC_BIND:-spread}
-#export OMP_PLACES=${OMP_PLACES:-threads}
-# Force a number of OpenMP threads if it doesn't autodetect
-#export OMP_NUM_THREADS=28
-
 ### General run script
 
 # Map each MPI rank to one device with Kokkos
@@ -34,8 +28,15 @@ if [ -f $KHARMA_DIR/kharma.cuda ]; then
   EXE_NAME=kharma.cuda
 elif [ -f $KHARMA_DIR/kharma.sycl ]; then
   EXE_NAME=kharma.sycl
+elif [ -f $KHARMA_DIR/kharma.hip ]; then
+  EXE_NAME=kharma.hip
 elif [ -f $KHARMA_DIR/kharma.host ]; then
   EXE_NAME=kharma.host
+  # Enable OpenMP to use all threads only where not counterproductive
+  export OMP_PROC_BIND=${OMP_PROC_BIND:-spread}
+  export OMP_PLACES=${OMP_PLACES:-threads}
+  # Force a number of OpenMP threads if it doesn't autodetect
+  #export OMP_NUM_THREADS=${OMP_NUM_THREADS:-28}
 else
   echo "KHARMA executable not found!"
   exit
@@ -49,11 +50,16 @@ fi
 # Load environment from the same files as the compile process
 HOST=$(hostname -f)
 ARGS=$(cat $KHARMA_DIR/make_args)
+SOURCE_DIR=$(dirname "$(readlink -f "$0")")
 for machine in $KHARMA_DIR/machines/*.sh
 do
   source $machine
 done
 
+if [[ "$1" == "trace" ]]; then
+  export KOKKOS_TOOLS_LIBS=$KHARMA_DIR/../kokkos-tools/kp_kernel_logger.so
+  shift
+fi
 # Override MPI_NUM_PROCS at user option "-n"
 # and OMP_NUM_THREADS at option "-nt"
 if [[ "$1" == "-n" ]]; then

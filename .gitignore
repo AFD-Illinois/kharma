@@ -9,6 +9,7 @@ convergence.txt
 core.*
 frames_*/
 logs/
+*.log
 
 # KHARMA/Parthenon outputs
 *.phdf
@@ -65,7 +66,7 @@ make_args
 # Executables
 *.host*
 *.cuda*
-*.rocm*
+*.hip*
 *.sycl*
 *.exe
 *.out

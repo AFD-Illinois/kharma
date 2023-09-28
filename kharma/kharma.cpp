@@ -45,6 +45,7 @@
 #include "b_cd.hpp"
 #include "b_cleanup.hpp"
 #include "b_ct.hpp"
+#include "coord_output.hpp"
 #include "current.hpp"
 #include "kharma_driver.hpp"
 #include "electrons.hpp"
@@ -138,19 +139,15 @@ void KHARMA::MeshPostStepUserWorkInLoop(Mesh *pmesh, ParameterInput *pin, const 
     globals.Update<double>("time", tm.time);
 }
 
-void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
+void KHARMA::FixParameters(ParameterInput *pin)
 {
     Flag("Fixing parameters");
     // Parthenon sets 2 ghost zones as a default.
-    // We can't override that default while allowing a file-specified value.
-    // Fine for now because we crash with 2. (Flux CT)
-    // TODO add under different name?  Better precedence/origin code?
-    pin->SetInteger("parthenon/mesh", "nghost", 4);
-    Globals::nghost = pin->GetInteger("parthenon/mesh", "nghost");
-    // Warn if using less than 4 ghost zones in any circumstances, it's still not tested well
-    // if (Globals::nghost < 4) {
-    //     std::cerr << "WARNING: Using less than 4 ghost zones is untested!" << std::endl;
-    // }
+    // We set a better default with our own parameter, and inform Parthenon.
+    // This means that ONLY driver/nghost will be respected
+    // Driver::Initialize will check we set enough for our reconstruction
+    Globals::nghost = pin->GetOrAddInteger("driver", "nghost", 4);
+    pin->SetInteger("parthenon/mesh", "nghost", Globals::nghost);
 
     // If we're restarting (not via Parthenon), read the restart file to get most parameters
     std::string prob = pin->GetString("parthenon/job", "problem_id");
@@ -162,7 +159,7 @@ void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
     }
 
     // Construct a CoordinateEmbedding object.  See coordinate_embedding.hpp for supported systems/tags
-    CoordinateEmbedding tmp_coords(pin.get());
+    CoordinateEmbedding tmp_coords(pin);
     // Record whether we're in spherical as we'll need that
     pin->SetBoolean("coordinates", "spherical", tmp_coords.is_spherical());
 
@@ -275,10 +272,6 @@ TaskStatus KHARMA::AddPackage(std::shared_ptr<Packages_t>& packages,
 
 Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput> &pin)
 {
-    // See above.  Only run if 
-    //if ()
-    FixParameters(pin);
-
     Flag("ProcessPackages");
 
     // Allocate the packages list as a shared pointer, to be updated in various tasks
@@ -291,6 +284,10 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput> &pin)
     TaskID t_none(0);
     // The globals package will never have dependencies
     auto t_globals = tl.AddTask(t_none, KHARMA::AddPackage, packages, KHARMA::InitializeGlobals, pin.get());
+    // Neither will grid output, as any mesh will get GRCoordinates objects
+    // FieldIsOutput actually just checks for substring match, so this matches any coords. variable
+    if (FieldIsOutput(pin.get(), "coords."))
+        auto t_coord_out = tl.AddTask(t_none, KHARMA::AddPackage, packages, CoordinateOutput::Initialize, pin.get());
     // Driver package is the foundation
     auto t_driver = tl.AddTask(t_none, KHARMA::AddPackage, packages, KHARMADriver::Initialize, pin.get());
     // Floors package has no dependencies
@@ -305,11 +302,14 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput> &pin)
     auto t_reductions = tl.AddTask(t_none, KHARMA::AddPackage, packages, Reductions::Initialize, pin.get());
 
     // B field solvers, to ensure divB ~= 0.
-    // Bunch of logic here: basically we want to load <=1 solver with an encoded order of preference
+    // Bunch of logic here: basically we want to load <=1 solver with an encoded order of preference:
+    // 1. Prefer B_CT if AMR since it's compatible
+    // 2. Prefer B_Flux_CT otherwise since it's well-tested
     auto t_b_field = t_none;
-    std::string b_field_solver = pin->GetOrAddString("b_field", "solver", "flux_ct");
+    bool multilevel = pin->GetOrAddString("parthenon/mesh", "refinement", "none") != "none";
+    std::string b_field_solver = pin->GetOrAddString("b_field", "solver",  multilevel ? "face_ct" : "flux_ct");
     if (b_field_solver == "none" || b_field_solver == "cleanup" || b_field_solver == "b_cleanup") {
-        // Don't add a B field
+        // Don't add a B field here
     } else if (b_field_solver == "constrained_transport" || b_field_solver == "face_ct") {
         t_b_field = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, B_CT::Initialize, pin.get());
     } else if (b_field_solver == "constraint_damping" || b_field_solver == "cd") {
@@ -373,8 +373,6 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput> &pin)
     if (n_implicit > 0) {
         KHARMA::AddPackage(packages, Implicit::Initialize, pin.get());
     }
-
-    // TODO print full package list as soon as we know it, up here
 
 #if DEBUG
     // Carry the ParameterInput with us, for generating outputs whenever we want

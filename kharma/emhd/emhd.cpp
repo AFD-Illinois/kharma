@@ -129,7 +129,7 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     // EMHD is supported only with imex driver and implicit evolution,
     // synchronizing primitive variables
     Metadata m_con  = Metadata({Metadata::Real, Metadata::Cell, Metadata::Independent, Metadata::GetUserFlag("Implicit"),
-                                Metadata::WithFluxes, Metadata::Conserved, Metadata::GetUserFlag("EMHDVar")});
+                                Metadata::WithFluxes, Metadata::Conserved, Metadata::Conserved, Metadata::GetUserFlag("EMHDVar")});
     Metadata m_prim = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::GetUserFlag("Implicit"),
                                 Metadata::Restart, Metadata::FillGhost, Metadata::GetUserFlag("Primitive"), Metadata::GetUserFlag("EMHDVar")});
 

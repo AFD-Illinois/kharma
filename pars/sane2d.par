@@ -90,3 +90,16 @@ ghost_zones = true
 <parthenon/output2>
 file_type = hst
 dt = 0.1
+
+# This outputs a geometry file, similar to iharm3d's old 'grid.h5'
+# Not needed for pyharm analysis in Kerr metrics, but useful in
+# a bunch of other contexts.
+<parthenon/output3>
+file_type = hdf5
+dt = 1e20
+single_precision_output = false
+# If you want the convenience and hate disk space, you can add these
+# variables to "normal" dump files like output0 too.
+variables = coords.Xnative, coords.Xsph, &
+            coords.gcon, coords.gcov, coords.gdet, coords.lapse, &
+            coords.conn

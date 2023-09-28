@@ -38,7 +38,6 @@
 #include "b_cleanup.hpp"
 #include "b_ct.hpp"
 #include "b_flux_ct.hpp"
-#include "b_field_tools.hpp"
 #include "blob.hpp"
 #include "boundaries.hpp"
 #include "floors.hpp"
@@ -48,129 +47,8 @@
 #include "kharma.hpp"
 #include "kharma_driver.hpp"
 #include "reductions.hpp"
+#include "seed_B.hpp"
 #include "types.hpp"
-
-/**
- * Perform a Parthenon MPI reduction.
- * Should only be used in initialization code, as the
- * reducer object & MPI comm are created on entry &
- * cleaned on exit
- * TODO use Reductions stuff?
- */
-template<typename T>
-inline T MPIReduce_once(T f, MPI_Op O)
-{
-    parthenon::AllReduce<T> reduction;
-    reduction.val = f;
-    reduction.StartReduce(O);
-    // Wait on results
-    while (reduction.CheckReduce() == parthenon::TaskStatus::incomplete);
-    // TODO catch errors?
-    return reduction.val;
-}
-
-// Shorter names for the reductions we use here
-Real MaxBsq(MeshData<Real> *md)
-{
-    return Reductions::DomainReduction<Reductions::Var::bsq, Real>(md, UserHistoryOperation::max);
-}
-Real MaxPressure(MeshData<Real> *md)
-{
-    return Reductions::DomainReduction<Reductions::Var::gas_pressure, Real>(md, UserHistoryOperation::max);
-}
-Real MinBeta(MeshData<Real> *md)
-{
-    return Reductions::DomainReduction<Reductions::Var::beta, Real>(md, UserHistoryOperation::min);
-}
-
-void KHARMA::SeedAndNormalizeB(ParameterInput *pin, std::shared_ptr<MeshData<Real>> md)
-{
-    // Check which solver we'll be using
-    auto pmesh = md->GetMeshPointer();
-    const bool use_b_flux_ct = pmesh->packages.AllPackages().count("B_FluxCT")
-                                || pmesh->packages.AllPackages().count("B_Cleanup");
-    const bool use_b_cd = pmesh->packages.AllPackages().count("B_CD");
-    const int verbose = pmesh->packages.Get("Globals")->Param<int>("verbose");
-
-    Flag("SeedBField");
-    // Seed the magnetic field on each block
-    for (auto &pmb : pmesh->block_list) {
-        auto& rc = pmb->meshblock_data.Get();
-
-        // This initializes B_P & B_U
-        if (use_b_flux_ct) {
-            B_FluxCT::SeedBField(rc.get(), pin);
-        } else if (use_b_cd) {
-            B_CD::SeedBField(rc.get(), pin);
-        }
-    }
-    EndFlag();
-
-    // Then, if we're in a torus problem or we explicitly ask for it,
-    // normalize the magnetic field according to the density
-    auto prob = pin->GetString("parthenon/job", "problem_id");
-    if (pin->GetOrAddBoolean("b_field", "norm", (prob == "torus"))) {
-        Flag("NormBField");
-        // Default to the general literature beta_min of 100.
-        // As noted above, by default this uses the definition max(P)/max(P_B)!
-        Real desired_beta_min = pin->GetOrAddReal("b_field", "beta_min", 100.);
-
-        // "Legacy" is the much more common normalization:
-        // It's the ratio of max values over the domain i.e. max(P) / max(P_B),
-        // not necessarily a local min(beta)
-        Real beta_calc_legacy = pin->GetOrAddBoolean("b_field", "legacy_norm", true);
-
-        // Calculate current beta_min value
-        Real bsq_max, p_max, beta_min;
-        if (beta_calc_legacy) {
-            bsq_max = MPIReduce_once(MaxBsq(md.get()), MPI_MAX);
-            p_max = MPIReduce_once(MaxPressure(md.get()), MPI_MAX);
-            beta_min = p_max / (0.5 * bsq_max);
-        } else {
-            beta_min = MPIReduce_once(MinBeta(md.get()), MPI_MIN);
-        }
-
-        if (MPIRank0() && verbose > 0) {
-            if (beta_calc_legacy) {
-                std::cout << "B^2 max pre-norm: " << bsq_max << std::endl;
-                std::cout << "Pressure max pre-norm: " << p_max << std::endl;
-            }
-            std::cout << "Beta min pre-norm: " << beta_min << std::endl;
-        }
-
-        // Then normalize B by sqrt(beta/beta_min)
-        if (beta_min > 0) {
-            Real norm = m::sqrt(beta_min/desired_beta_min);
-            for (auto &pmb : pmesh->block_list) {
-                auto& rc = pmb->meshblock_data.Get();
-                KHARMADriver::Scale(std::vector<std::string>{"prims.B"}, rc.get(), norm);
-            }
-        }
-
-        // Measure again to check. We'll add divB too, later
-        if (verbose > 0) {
-            Real bsq_max, p_max, beta_min;
-            if (beta_calc_legacy) {
-                bsq_max = MPIReduce_once(MaxBsq(md.get()), MPI_MAX);
-                p_max = MPIReduce_once(MaxPressure(md.get()), MPI_MAX);
-                beta_min = p_max / (0.5 * bsq_max);
-            } else {
-                beta_min = MPIReduce_once(MinBeta(md.get()), MPI_MIN);
-            }
-            if (MPIRank0()) {
-                if (beta_calc_legacy) {
-                    std::cout << "B^2 max post-norm: " << bsq_max << std::endl;
-                    std::cout << "Pressure max post-norm: " << p_max << std::endl;
-                }
-                std::cout << "Beta min post-norm: " << beta_min << std::endl;
-            }
-        }
-        EndFlag(); //NormBField
-    }
-
-    // We've been initializing/manipulating P
-    Flux::MeshPtoU(md.get(), IndexDomain::entire);
-}
 
 void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart)
 {
@@ -182,10 +60,10 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart)
     // 4. Resets a couple of incidental flags, if Parthenon read them from a restart file
     // 5. If necessary, cleans up any magnetic field divergence present on the grid
 
-    // Coming into this function, the *interior* regions should be initialized with a problem:
+    // Coming into this function, at least the *interior* regions should be initialized with a problem:
     // that is, at least rho, u, uvec on each physical zone.
-    // If your problem requires custom boundary conditions, these should be implemented
-    // with the problem and assigned to the relevant functions in the "Boundaries" package.
+    // If you need Dirichlet boundary conditions, the domain-edge *ghost* zones should also be initialized,
+    // as they will be "frozen in" during this function and applied thereafter.
 
     auto &md = pmesh->mesh_data.Get();
 
@@ -201,7 +79,14 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart)
             KHARMADriver::SyncAllBounds(md);
 
             // Then init B field on each block...
-            KHARMA::SeedAndNormalizeB(pin, md);
+            SeedBField(md.get(), pin);
+
+            // If we're doing a torus problem or explicitly ask for it,
+            // normalize the magnetic field according to the density
+            bool is_torus = pin->GetString("parthenon/job", "problem_id") == "torus";
+            if (pin->GetOrAddBoolean("b_field", "norm", is_torus)) {
+                NormalizeBField(md.get(), pin);
+            }
         }
 
         // Regardless, if evolving a field we should print max(divB)

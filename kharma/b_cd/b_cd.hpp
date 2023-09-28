@@ -57,17 +57,6 @@ namespace B_CD {
 std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages);
 
 /**
- * Seed an axisymmetric initialization with magnetic field proportional to fluid density,
- * or density and radius, to create a SANE or MAD flow
- * Note this function expects a normalized P for which rho_max==1
- *
- * @param rin is the interior radius of the torus
- * @param min_rho_q is the minimum density at which there will be magnetic vector potential
- * @param b_field_type is one of "sane" "ryan" "r3s3" or "gaussian", described below (TODO test or remove opts)
- */
-TaskStatus SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin);
-
-/**
  * Get the primitive variables, which in Parthenon's nomenclature are "derived".
  * Also applies floors to the calculated primitives, and fixes up any inversion errors.
  * 

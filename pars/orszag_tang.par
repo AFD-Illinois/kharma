@@ -8,13 +8,13 @@ problem_id = orszag_tang
 refinement = none
 numlevel = 1
 
-nx1 = 1024
+nx1 = 512
 x1min = -3.141592653589793
 x1max = 3.141592653589793
 ix1_bc = periodic
 ox1_bc = periodic
 
-nx2 = 1024
+nx2 = 512
 x2min = -3.141592653589793
 x2max = 3.141592653589793
 ix2_bc = periodic
@@ -27,8 +27,8 @@ ix3_bc = periodic
 ox3_bc = periodic
 
 <parthenon/meshblock>
-nx1 = 512
-nx2 = 512
+nx1 = 256
+nx2 = 256
 nx3 = 1
 
 <coordinates>

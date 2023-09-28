@@ -160,7 +160,10 @@ TaskCollection KHARMADriver::MakeSimpleTaskCollection(BlockList_t &blocks, int s
     // identical to their physical counterparts, now that they have been
     // modified on each rank.
     const auto &two_sync = pkgs.at("Driver")->Param<bool>("two_sync");
-    if (two_sync) KHARMADriver::AddFullSyncRegion(pmesh, tc, stage);
+    if (two_sync) {
+        auto &md_sub_step_final = pmesh->mesh_data.GetOrAdd(integrator->stage_name[stage], 0);
+        KHARMADriver::AddFullSyncRegion(tc, md_sub_step_final);
+    }
 
     return tc;
 }

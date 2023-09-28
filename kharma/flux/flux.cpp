@@ -51,7 +51,6 @@ std::shared_ptr<KHARMAPackage> Flux::Initialize(ParameterInput *pin, std::shared
     // We can't just use GetVariables or something since there's no mesh yet.
     // That's what this function is for.
     int nvar = KHARMA::PackDimension(packages.get(), Metadata::WithFluxes);
-    std::cout << "Allocating fluxes with nvar: " << nvar << std::endl;
     std::vector<int> s_flux({nvar});
     // TODO optionally move all these to faces? Not important yet, no output, more memory
     std::vector<MetadataFlag> flags_flux = {Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy};
@@ -78,7 +77,7 @@ std::shared_ptr<KHARMAPackage> Flux::Initialize(ParameterInput *pin, std::shared
         pkg->AddField("Flux.vl", m);
     }
 
-    Flag("Initialized");
+    EndFlag();
     return pkg;
 }
 
@@ -127,7 +126,7 @@ TaskStatus Flux::BlockPtoU(MeshBlockData<Real> *rc, IndexDomain domain, bool coa
     // Pack variables
     PackIndexMap prims_map, cons_map;
     const auto& P = rc->PackVariables({Metadata::GetUserFlag("Primitive")}, prims_map);
-    const auto& U = rc->PackVariables({Metadata::Conserved, Metadata::Cell}, cons_map);
+    const auto& U = rc->PackVariables({Metadata::Conserved}, cons_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
     const int nvar = U.GetDim(4);
 

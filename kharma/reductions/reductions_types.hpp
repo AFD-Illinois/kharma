@@ -38,23 +38,8 @@
 
 #include "decs.hpp"
 
-// Reduction types: teach Kokkos to keep a 3-int index, make it usable
-// See grmhd.cpp timestep calc for example
-namespace Kokkos {
-template <>
-struct reduction_identity<std::tuple<int, int, int>> {
-    KOKKOS_FORCEINLINE_FUNCTION constexpr static std::tuple<int, int, int> min() {
-        int max = std::numeric_limits<int>::max();
-        return std::tuple<int, int, int>{max, max, max};
-    }
-};
-}
 namespace Reductions {
-// Types for 3-index reduction
-typedef Kokkos::MinMaxLoc<Real, std::tuple<int, int, int>> Reduce3;
-typedef Reduce3::value_type Reduce3v;
-
-// Array type for reducing arbitrary numbers of reals
+// Array type for reducing arbitrary numbers of reals or ints
 template <class ScalarType, int N>
 struct array_type {
     ScalarType my_array[N];
@@ -75,13 +60,23 @@ struct array_type {
         }
     }
 
-    KOKKOS_INLINE_FUNCTION array_type&
-    operator+=(const array_type& src) {
+    // The kokkos example defines both of these,
+    // but we clearly can't. Guess.
+    KOKKOS_INLINE_FUNCTION
+    array_type& operator+=(const array_type& src) {
         for (int i = 0; i < N; i++) {
             my_array[i] += src.my_array[i];
         }
         return *this;
     }
+
+    // KOKKOS_INLINE_FUNCTION
+    // void operator+=(const array_type& src) {
+    //     for (int i = 0; i < N; i++) {
+    //         my_array[i] += src.my_array[i];
+    //     }
+    // }
+
 };
 
 template <class T, class Space, int N>

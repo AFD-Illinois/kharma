@@ -45,8 +45,9 @@
 // Other headers
 #include "boundaries.hpp"
 #include "flux.hpp"
-#include "resize_restart.hpp"
+#include "kharma.hpp"
 #include "implicit.hpp"
+#include "resize_restart.hpp"
 
 #include <parthenon/parthenon.hpp>
 #include <interface/update.hpp>
@@ -80,7 +81,7 @@ TaskCollection KHARMADriver::MakeDefaultTaskCollection(BlockList_t &blocks, int 
     const TaskID t_none(0);
 
     // Which packages we load affects which tasks we'll add to the list
-    auto& pkgs = blocks[0]->packages.AllPackages();
+    auto& pkgs = pmesh->packages.AllPackages();
     auto& driver_pkg   = pkgs.at("Driver")->AllParams();
     const bool use_b_cleanup = pkgs.count("B_Cleanup");
     const bool use_b_ct = pkgs.count("B_CT");
@@ -106,7 +107,15 @@ TaskCollection KHARMADriver::MakeDefaultTaskCollection(BlockList_t &blocks, int 
         }
     }
 
-    //auto t_heating_test = tl.AddTask(t_none, Electrons::ApplyHeating, base.get());
+    Flag("MakeTaskCollection::fluxes");
+
+    // Build the list of variables we'll be syncing during "normal" boundary exchanges.
+    // This *excludes* anything related to divergence cleaning (which have their own syncs during the clean),
+    // and the EMF (or other edge variables) which are really part of the flux correction sync
+    using FC = Metadata::FlagCollection;
+    auto sync_flags = FC(Metadata::FillGhost) - FC(Metadata::Edge);
+    if (pkgs.count("B_Cleanup")) sync_flags = sync_flags - FC(Metadata::GetUserFlag("B_Cleanup"));
+    std::vector<std::string> sync_vars = KHARMA::GetVariableNames(&(pmesh->packages), sync_flags);
 
     // Big packed region: get and apply new fluxes on all the zones we control
     const int num_partitions = pmesh->DefaultNumPartitions();
@@ -133,12 +142,20 @@ TaskCollection KHARMADriver::MakeDefaultTaskCollection(BlockList_t &blocks, int 
         // This reconstructs the primitives (P) at faces and uses them to calculate fluxes
         // of the conserved variables (U) through each face.
         const KReconstruction::Type& recon = driver_pkg.Get<KReconstruction::Type>("recon");
-        auto t_fluxes = KHARMADriver::AddFluxCalculations(t_start_recv_bound, tl, recon, md_sub_step_init.get());
+        auto t_fluxes = KHARMADriver::AddFluxCalculations(t_start_recv_flux, tl, recon, md_sub_step_init.get());
 
         // If we're in AMR, correct fluxes from neighbors
         auto t_flux_bounds = t_fluxes;
         if (pmesh->multilevel || use_b_ct) {
-            tl.AddTask(t_fluxes, parthenon::LoadAndSendFluxCorrections, md_sub_step_init);
+            auto t_emf = t_fluxes;
+            // TODO this MPI sync should be bundled into fluxcorr
+            if (use_b_ct) {
+                // Pull out a container of only EMF to synchronize
+                auto &md_emf_only = pmesh->mesh_data.AddShallow("EMF", std::vector<std::string>{"B_CT.emf"}); // TODO this gets weird if we partition
+                auto t_emf_local = tl.AddTask(t_fluxes, B_CT::CalculateEMF, md_sub_step_init.get());
+                auto t_emf = KHARMADriver::AddMPIBoundarySync(t_emf_local, tl, md_emf_only);
+            }
+            tl.AddTask(t_emf, parthenon::LoadAndSendFluxCorrections, md_sub_step_init);
             auto t_recv_flux = tl.AddTask(t_fluxes, parthenon::ReceiveFluxCorrections, md_sub_step_init);
             t_flux_bounds = tl.AddTask(t_recv_flux, parthenon::SetFluxCorrections, md_sub_step_init);
         }
@@ -153,18 +170,13 @@ TaskCollection KHARMADriver::MakeDefaultTaskCollection(BlockList_t &blocks, int 
         auto t_flux_div = tl.AddTask(t_fix_flux, Update::FluxDivergence<MeshData<Real>>, md_sub_step_init.get(), md_flux_src.get());
 
         // Add any source terms: geometric \Gamma * T, wind, damping, etc etc
+        // Also where CT sets the change in face fields
         auto t_sources = tl.AddTask(t_flux_div, Packages::AddSource, md_sub_step_init.get(), md_flux_src.get());
-
-        // CT Update step (needs another boundary sync)
-        auto t_ct_update = t_sources;
-        if (use_b_ct) {
-            t_ct_update = tl.AddTask(t_sources, B_CT::UpdateFaces, md_sub_step_init, md_flux_src);
-        }
 
         // Perform the update using the source term
         // Add any proportion of the step start required by the integrator (e.g., RK2)
         // TODO splitting this is stupid, dig into Parthenon & fix
-        auto t_avg_data_c = tl.AddTask(t_ct_update, Update::WeightedSumData<std::vector<MetadataFlag>, MeshData<Real>>,
+        auto t_avg_data_c = tl.AddTask(t_sources, Update::WeightedSumData<std::vector<MetadataFlag>, MeshData<Real>>,
                                     std::vector<MetadataFlag>({Metadata::Independent, Metadata::Cell}),
                                     md_sub_step_init.get(), md_full_step_init.get(),
                                     integrator->gam0[stage-1], integrator->gam1[stage-1],
@@ -201,8 +213,14 @@ TaskCollection KHARMADriver::MakeDefaultTaskCollection(BlockList_t &blocks, int 
                                                 md_sub_step_init.get(), md_sub_step_final.get());
         }
 
+        // TODO the pointers here are weird
+        //auto &md_sync = pmesh->mesh_data.AddShallow("sync", md_sub_step_final, sync_vars);
+        //md_sync->SetMeshPointer(pmesh);
         KHARMADriver::AddMPIBoundarySync(t_copy_prims, tl, md_sub_step_final);
     }
+
+    EndFlag();
+    Flag("MakeTaskCollection::fixes");
 
     // Smaller meshblock region.  This gets touchy because we want to keep ghost zones updated,
     // so very commented
@@ -281,6 +299,9 @@ TaskCollection KHARMADriver::MakeDefaultTaskCollection(BlockList_t &blocks, int 
         }
     }
 
+    EndFlag();
+    Flag("MakeTaskCollection::extras");
+
     // B Field cleanup: this is a separate solve so it's split out
     // It's also really slow when enabled so we don't care too much about limiting regions, etc.
     if (use_b_cleanup && (stage == integrator->nstages) && B_Cleanup::CleanupThisStep(pmesh, tm.ncycle)) {
@@ -297,7 +318,14 @@ TaskCollection KHARMADriver::MakeDefaultTaskCollection(BlockList_t &blocks, int 
     // identical to their physical counterparts, now that they have been
     // modified on each rank.
     const auto &two_sync = pkgs.at("Driver")->Param<bool>("two_sync");
-    if (two_sync) KHARMADriver::AddFullSyncRegion(pmesh, tc, stage);
+    if (two_sync) {
+        auto &md_sub_step_final = pmesh->mesh_data.GetOrAdd(integrator->stage_name[stage], 0);
+        // TODO this gets weird if we partition
+        //auto &md_sync = pmesh->mesh_data.AddShallow("sync", md_sub_step_final, sync_vars);
+        KHARMADriver::AddFullSyncRegion(tc, md_sub_step_final);
+    }
+
+    EndFlag();
 
     return tc;
 }
