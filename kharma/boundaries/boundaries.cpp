@@ -331,16 +331,16 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
     const IndexRange jbf = IndexRange{jbs.s, jbs.e + (ndim > 1)};
     const IndexRange kbf = IndexRange{kbs.s, kbs.e + (ndim > 2)};
 
-    for (auto &pmb : pmesh->block_list)
-    {
+    for (auto &pmb : pmesh->block_list) {
         auto &rc = pmb->meshblock_data.Get();
 
-        for (int i = 0; i < BOUNDARY_NFACES; i++)
-        {
+        for (int i = 0; i < BOUNDARY_NFACES; i++) {
             BoundaryFace bface = (BoundaryFace)i;
             auto bname = BoundaryName(bface);
             auto bdir = BoundaryDirection(bface);
             auto binner = BoundaryIsInner(bface);
+
+            if (bdir > ndim) continue;
 
             // Set ranges based
             IndexRange ib = ibs, jb = jbs, kb = kbs;
@@ -364,7 +364,7 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
                     pmb->par_for(
                         "zero_inflow_flux_" + bname, kb.s, kb.e, jb.s, jb.e, ib.s, ib.s,
                         KOKKOS_LAMBDA(const int &k, const int &j, const int &i) {
-                            F.flux(X1DIR, m_rho, k, j, i) = m::min(F.flux(X1DIR, m_rho, k, j, i), 0.);
+                            F.flux(bdir, m_rho, k, j, i) = m::min(F.flux(bdir, m_rho, k, j, i), 0.);
                         });
                 }
             }
@@ -376,7 +376,7 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
                     pmb->par_for(
                         "zero_flux_" + bname, 0, F.GetDim(4) - 1, kb.s, kb.e, jb.s, jb.s, ib.s, ib.e,
                         KOKKOS_LAMBDA(const int &p, const int &k, const int &j, const int &i) {
-                            F.flux(X2DIR, p, k, j, i) = 0.;
+                            F.flux(bdir, p, k, j, i) = 0.;
                         });
                 }
             }
