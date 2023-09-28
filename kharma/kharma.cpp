@@ -143,15 +143,11 @@ void KHARMA::FixParameters(ParameterInput *pin)
 {
     Flag("Fixing parameters");
     // Parthenon sets 2 ghost zones as a default.
-    // We can't override that default while allowing a file-specified value.
-    // Fine for now because we crash with 2. (Flux CT)
-    // TODO add under different name?  Better precedence/origin code?
-    pin->SetInteger("parthenon/mesh", "nghost", 4);
-    Globals::nghost = pin->GetInteger("parthenon/mesh", "nghost");
-    // Warn if using less than 4 ghost zones in any circumstances, it's still not tested well
-    // if (Globals::nghost < 4) {
-    //     std::cerr << "WARNING: Using less than 4 ghost zones is untested!" << std::endl;
-    // }
+    // We set a better default with our own parameter, and inform Parthenon.
+    // This means that ONLY driver/nghost will be respected
+    // Driver::Initialize will check we set enough for our reconstruction
+    Globals::nghost = pin->GetOrAddInteger("driver", "nghost", 4);
+    pin->SetInteger("parthenon/mesh", "nghost", Globals::nghost);
 
     // If we're restarting (not via Parthenon), read the restart file to get most parameters
     std::string prob = pin->GetString("parthenon/job", "problem_id");

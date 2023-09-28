@@ -92,7 +92,7 @@ TaskStatus InitializeBondi(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterIn
         SetBondi<IndexDomain::interior>(rc);
     }
 
-    // Default Bondi boundariy conditions: reset the outer boundary using our set function.
+    // Default Bondi boundary conditions: reset the outer boundary using our set function.
     // Register the callback to replace value from boundaries.cpp, & record the change in pin.
     auto bound_pkg = pmb->packages.Get<KHARMAPackage>("Boundaries");
     if (pin->GetOrAddBoolean("bondi", "set_outer_bound", !outer_dirichlet)) {

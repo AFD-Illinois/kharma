@@ -196,6 +196,10 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
         );
     }
 
+    // Now that this is split, we add the biggest TODO in KHARMA
+    // TODO per-package prim_to_flux?  Is that slower?
+    // At least, we need to template on vchar/stress-energy T type
+
     Flag("GetFlux_"+std::to_string(dir)+"_left");
     parthenon::par_for_outer(DEFAULT_OUTER_LOOP_PATTERN, "calc_flux_left", pmb0->exec_space,
         flux_scratch_bytes, scratch_level, block.s, block.e, b.ks, b.ke, b.js, b.je,

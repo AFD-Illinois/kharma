@@ -208,7 +208,7 @@ int main(int argc, char *argv[])
     // Begin code block to ensure driver is cleaned up
     {
         std::string driver_type = pmesh->packages.Get("Driver")->Param<std::string>("type");
-        std::cout << "Initializing and running " << driver_type << " driver" << std::endl;
+        if (MPIRank0()) std::cout << "Running " << driver_type << " driver" << std::endl;
 
         // Pull out things we need to give the driver
         auto pin = pman.pinput.get(); // All parameters in the input file or command line
