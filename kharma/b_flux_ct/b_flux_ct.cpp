@@ -102,10 +102,10 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     MetadataFlag areWeImplicit = (implicit_b) ? Metadata::GetUserFlag("Implicit")
                                               : Metadata::GetUserFlag("Explicit");
 
-    // Flags for B fields.  "Primitive" form is field, "conserved" is flux
+    // Flags for B fields. "primitive" form is field, "conserved" is flux
     std::vector<MetadataFlag> flags_prim = {Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::GetUserFlag("Primitive"),
                                             Metadata::Restart, Metadata::GetUserFlag("MHD"), areWeImplicit, Metadata::Vector};
-    std::vector<MetadataFlag> flags_cons = {Metadata::Real, Metadata::Cell, Metadata::Independent, Metadata::Conserved,
+    std::vector<MetadataFlag> flags_cons = {Metadata::Real, Metadata::Cell, Metadata::Independent, Metadata::Conserved, Metadata::Conserved,
                                             Metadata::WithFluxes, Metadata::FillGhost, Metadata::GetUserFlag("MHD"), areWeImplicit, Metadata::Vector};
 
     auto m = Metadata(flags_prim, s_vector);
@@ -522,12 +522,15 @@ TaskStatus PrintGlobalMaxDivB(MeshData<Real> *md, bool kill_on_large_divb)
 
     // Since this is in the history file now, I don't bother printing it
     // unless we're being verbose. It's not costly to calculate though
-    if (pmb0->packages.Get("Globals")->Param<int>("verbose") >= 1) {
+    const bool print = pmb0->packages.Get("Globals")->Param<int>("verbose") >= 1;
+    if (print || kill_on_large_divb) {
         // Calculate the maximum from/on all nodes
         const double divb_max = B_FluxCT::GlobalMaxDivB(md);
         // Print on rank zero
-        if (MPIRank0()) {
-            std::cout << "Max DivB: " << divb_max << std::endl;
+        if (MPIRank0() && print) {
+            // someday I'll learn stream options
+            // for now this is more consistent in #digits/scientific
+            printf("Max DivB: %g\n", divb_max);
         }
         if (kill_on_large_divb) {
             if (divb_max > pmb0->packages.Get("B_FluxCT")->Param<Real>("kill_on_divb_over"))

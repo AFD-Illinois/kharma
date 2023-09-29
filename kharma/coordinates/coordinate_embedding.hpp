@@ -301,7 +301,9 @@ class CoordinateEmbedding {
             }, transform);
         }
 
-        // Convenience functions: only radial coordinate as others might be cylinderized
+        // Coordinate convenience functions:
+        // transform the radial coordinate alone without len-4 arrays
+        // ...at least not for the user.  These are not fast
         KOKKOS_INLINE_FUNCTION GReal r_to_native(const GReal r) const
         {
             const GReal Xembed[GR_DIM] = {0., r, 0., 0.};
@@ -319,6 +321,81 @@ class CoordinateEmbedding {
                 self.coord_to_embed(Xnative, Xembed);
             }, transform);
             return Xembed[1];
+        }
+
+        // Get a particular coordinate from an array
+        // note these *aren't faster* or less memory, just convenient
+        KOKKOS_INLINE_FUNCTION GReal r_of(const GReal Xnative[GR_DIM]) const
+        {
+            GReal Xembed[GR_DIM];
+            mpark::visit( [&Xnative, &Xembed](const auto& self) {
+                self.coord_to_embed(Xnative, Xembed);
+            }, transform);
+            if (is_spherical()) {
+                return Xembed[1];
+            } else {
+                return m::sqrt(SQR(Xembed[1]) + SQR(Xembed[2]) + SQR(Xembed[3]));
+            }
+        }
+        KOKKOS_INLINE_FUNCTION GReal th_of(const GReal Xnative[GR_DIM]) const
+        {
+            GReal Xembed[GR_DIM];
+            mpark::visit( [&Xnative, &Xembed](const auto& self) {
+                self.coord_to_embed(Xnative, Xembed);
+            }, transform);
+            if (is_spherical()) {
+                return Xembed[2];
+            } else {
+                return m::atan2(m::sqrt(SQR(Xembed[1]) + SQR(Xembed[2])), Xembed[3]);
+            }
+        }
+        KOKKOS_INLINE_FUNCTION GReal phi_of(const GReal Xnative[GR_DIM]) const
+        {
+            GReal Xembed[GR_DIM];
+            mpark::visit( [&Xnative, &Xembed](const auto& self) {
+                self.coord_to_embed(Xnative, Xembed);
+            }, transform);
+            if (is_spherical()) {
+                return Xembed[3];
+            } else {
+                return m::atan2(Xembed[2], Xembed[1]);
+            }
+        }
+        KOKKOS_INLINE_FUNCTION GReal x_of(const GReal Xnative[GR_DIM]) const
+        {
+            GReal Xembed[GR_DIM];
+            mpark::visit( [&Xnative, &Xembed](const auto& self) {
+                self.coord_to_embed(Xnative, Xembed);
+            }, transform);
+            if (!is_spherical()) {
+                return Xembed[1];
+            } else {
+                return Xembed[1] * m::sin(Xembed[2]) * m::cos(Xembed[3]);
+            }
+        }
+        KOKKOS_INLINE_FUNCTION GReal y_of(const GReal Xnative[GR_DIM]) const
+        {
+            GReal Xembed[GR_DIM];
+            mpark::visit( [&Xnative, &Xembed](const auto& self) {
+                self.coord_to_embed(Xnative, Xembed);
+            }, transform);
+            if (!is_spherical()) {
+                return Xembed[2];
+            } else {
+                return Xembed[1] * m::sin(Xembed[2]) * m::sin(Xembed[3]);
+            }
+        }
+        KOKKOS_INLINE_FUNCTION GReal z_of(const GReal Xnative[GR_DIM]) const
+        {
+            GReal Xembed[GR_DIM];
+            mpark::visit( [&Xnative, &Xembed](const auto& self) {
+                self.coord_to_embed(Xnative, Xembed);
+            }, transform);
+            if (!is_spherical()) {
+                return Xembed[3];
+            } else {
+                return Xembed[1] * m::cos(Xembed[2]);
+            }
         }
 
         // VECTOR TRANSFORMS

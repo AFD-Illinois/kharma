@@ -83,22 +83,33 @@ std::shared_ptr<KHARMAPackage> KHARMADriver::Initialize(ParameterInput *pin, std
     std::string recon = pin->GetOrAddString("driver", "reconstruction", grmhd_recon_option);
     bool lower_edges = pin->GetOrAddBoolean("driver", "lower_edges", false);
     bool lower_poles = pin->GetOrAddBoolean("driver", "lower_poles", false);
+    int stencil = 0;
     if (recon == "donor_cell") {
         params.Add("recon", KReconstruction::Type::donor_cell);
+        stencil = 1;
     } else if (recon == "linear_vl") {
         params.Add("recon", KReconstruction::Type::linear_vl);
+        stencil = 3;
     } else if (recon == "linear_mc") {
         params.Add("recon", KReconstruction::Type::linear_mc);
+        stencil = 3;
     } else if (recon == "weno5_lower_edges" || (recon == "weno5" && lower_edges)) {
         params.Add("recon", KReconstruction::Type::weno5_lower_edges);
+        stencil = 5;
     } else if (recon == "weno5_lower_poles" || (recon == "weno5" && lower_poles)) {
         params.Add("recon", KReconstruction::Type::weno5_lower_poles);
+        stencil = 5;
     } else if (recon == "weno5") {
         params.Add("recon", KReconstruction::Type::weno5);
+        stencil = 5;
     } else {
         std::cerr << "Reconstruction type not supported!  Supported reconstructions:" << std::endl;
         std::cerr << "donor_cell, linear_mc, linear_vl, weno5" << std::endl;
         throw std::invalid_argument("Unsupported reconstruction algorithm!");
+    }
+    // Warn if using less than 3 ghost zones w/WENO etc, 2 w/Linear, etc.
+    if (Globals::nghost < (stencil/2 + 1)) {
+        throw std::runtime_error("Not enough ghost zones for specified reconstruction!");
     }
 
     // Field flags related to driver operation are defined outside any particular driver
@@ -111,37 +122,30 @@ std::shared_ptr<KHARMAPackage> KHARMADriver::Initialize(ParameterInput *pin, std
     return pkg;
 }
 
-void KHARMADriver::AddFullSyncRegion(Mesh* pmesh, TaskCollection& tc, int stage)
+void KHARMADriver::AddFullSyncRegion(TaskCollection& tc, std::shared_ptr<MeshData<Real>> &md_sync)
 {
     const TaskID t_none(0);
 
-    // Parthenon's call for bounds is MeshBlock, it sucks
-    int nblocks = pmesh->block_list.size();
-    TaskRegion &async_region2 = tc.AddRegion(nblocks);
-    for (int i = 0; i < nblocks; i++) {
-        auto &pmb = pmesh->block_list[i];
-        auto &tl  = async_region2[i];
-        auto &mbd_sub_step_final = pmb->meshblock_data.Get(integrator->stage_name[stage]);
-        tl.AddTask(t_none, parthenon::ApplyBoundaryConditions, mbd_sub_step_final);
-    }
+    bool sync_prims = pmesh->packages.Get("Driver")->Param<bool>("sync_prims");
 
     // MPI boundary exchange, done over MeshData objects/partitions at once
+    // Parthenon includes physical bounds
     const int num_partitions = pmesh->DefaultNumPartitions(); // Usually 1
     TaskRegion &bound_sync = tc.AddRegion(num_partitions);
     for (int i = 0; i < num_partitions; i++) {
         auto &tl = bound_sync[i];
-        // This is a member function of KHARMADriver, so it inherits 'integrator'
-        auto &mbd_sub_step_final = pmesh->mesh_data.GetOrAdd(integrator->stage_name[stage], i);
-        AddMPIBoundarySync(t_none, tl, mbd_sub_step_final);
+        AddMPIBoundarySync(t_none, tl, md_sync, sync_prims, pmesh->multilevel);
     }
 }
 
-TaskID KHARMADriver::AddMPIBoundarySync(const TaskID t_start, TaskList &tl, std::shared_ptr<MeshData<Real>> mc1)
+// We take the extra bools to make this a static method, so SyncAllBounds can be static
+TaskID KHARMADriver::AddMPIBoundarySync(const TaskID t_start, TaskList &tl, std::shared_ptr<MeshData<Real>> &mc1,
+                                        bool sync_prims, bool multilevel)
 {
+    Flag("AddBoundarySync");
     auto t_start_sync = t_start;
 
-    // TODO this is likely part of syncing cons of e.g. implicit vars, etc.
-    if (0) { //(mc1->GetMeshPointer()->packages.Get("Driver")->Param<bool>("sync_prims")) {
+    if (sync_prims) {
         TaskID t_all_ptou[mc1->NumBlocks() * BOUNDARY_NFACES];
         TaskID t_ptou_final(0);
         int i_task = 0;
@@ -160,14 +164,14 @@ TaskID KHARMADriver::AddMPIBoundarySync(const TaskID t_start, TaskList &tl, std:
         t_start_sync = t_ptou_final;
     }
 
-    auto t_sync_done = parthenon::AddBoundaryExchangeTasks(t_start_sync, tl, mc1, mc1->GetMeshPointer()->multilevel);
+    // The Parthenon exchange tasks include applying physical boundary conditions
+    Flag("ParthenonAddSync");
+    auto t_sync_done = parthenon::AddBoundaryExchangeTasks(t_start_sync, tl, mc1, multilevel);
     auto t_bounds = t_sync_done;
-
-    // TODO(BSP) careful about how AMR interacts with below
-    Kokkos::fence();
+    EndFlag();
 
     // If we're "syncing primitive variables" but just exchanged conserved variables (B, implicit, etc), we need to recover the prims
-    if (mc1->GetMeshPointer()->packages.Get("Driver")->Param<bool>("sync_prims")) {
+    if (sync_prims) {
         TaskID t_all_utop[mc1->NumBlocks() * BOUNDARY_NFACES];
         TaskID t_utop_final(0);
         int i_task = 0;
@@ -186,36 +190,24 @@ TaskID KHARMADriver::AddMPIBoundarySync(const TaskID t_start, TaskList &tl, std:
         t_bounds = t_utop_final;
     }
 
+    EndFlag();
     return t_bounds;
 }
 
-void KHARMADriver::SyncAllBounds(std::shared_ptr<MeshData<Real>> md, bool apply_domain_bounds)
+TaskStatus KHARMADriver::SyncAllBounds(std::shared_ptr<MeshData<Real>> &md, bool sync_prims, bool multilevel)
 {
     Flag("SyncAllBounds");
     TaskID t_none(0);
 
-    // 1. PtoU on the interior to ensure we're up-to-date
-    Flux::MeshPtoU(md.get(), IndexDomain::interior, false);
-
-    // 2. Sync MPI bounds
+    // 1. Sync MPI bounds
     // This call syncs the primitive variables when using the ImEx driver, and cons
-    //
     TaskCollection tc;
     auto tr = tc.AddRegion(1);
-    AddMPIBoundarySync(t_none, tr[0], md);
+    AddMPIBoundarySync(t_none, tr[0], md, sync_prims, multilevel);
     while (!tr.Execute());
 
-    if (apply_domain_bounds) {
-        // 3. Apply physical bounds block-by-block
-        // TODO clean this up when ApplyBoundaryConditions gets a MeshData version
-        for (auto &pmb : md->GetMeshPointer()->block_list) {
-            auto& rc = pmb->meshblock_data.Get();
-            // Physical boundary conditions
-            parthenon::ApplyBoundaryConditions(rc);
-        }
-    }
-
     EndFlag();
+    return TaskStatus::complete;
 }
 
 TaskID KHARMADriver::AddFluxCalculations(TaskID& t_start, TaskList& tl, KReconstruction::Type recon, MeshData<Real> *md)

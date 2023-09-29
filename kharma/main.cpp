@@ -41,6 +41,7 @@
 #include "post_initialize.hpp"
 #include "problem.hpp"
 #include "emhd/conducting_atmosphere.hpp"
+#include "version.hpp"
 
 // Parthenon headers
 #include <parthenon/parthenon.hpp>
@@ -122,10 +123,28 @@ int main(int argc, char *argv[])
     pman.app_input->boundary_conditions[parthenon::BoundaryFace::inner_x3] = KBoundaries::ApplyBoundaryTemplate<IndexDomain::inner_x3>;
     pman.app_input->boundary_conditions[parthenon::BoundaryFace::outer_x3] = KBoundaries::ApplyBoundaryTemplate<IndexDomain::outer_x3>;
 
-    // Parthenon init includes Kokkos, MPI, parses parameters & cmdline,
-    // then calls ProcessPackages and ProcessProperties, then constructs the Mesh
+    // Initialize Parthenon for MPI (also Kokkos, parses command line, etc.)
     Flag("ParthenonInit");
-    auto manager_status = pman.ParthenonInit(argc, argv);
+    auto manager_status = pman.ParthenonInitEnv(argc, argv);
+    EndFlag();
+
+    if(MPIRank0()) {
+        // Always print the version header, because it's fun
+        // TODO(BSP) proper banner w/refs, names
+        const std::string &version = KHARMA::Version::GIT_VERSION;
+        const std::string &branch = KHARMA::Version::GIT_REFSPEC;
+        const std::string &sha1 = KHARMA::Version::GIT_SHA1;
+        std::cout << std::endl;
+        std::cout << "Starting KHARMA, version " << version << std::endl;
+        std::cout << "Branch " << branch << ", commit hash: " << sha1 << std::endl;
+        std::cout << std::endl;
+        std::cout << "KHARMA is released under the BSD 3-clause license." << std::endl;
+        std::cout << "Source code is available at https://github.com/AFD-Illinois/kharma/" << std::endl;
+        std::cout << std::endl;
+    }
+
+    // Check the Parthenon init return code, initialize packages/mesh
+    Flag("InitPackagesAndMesh");
     if (manager_status == ParthenonStatus::complete) {
         pman.ParthenonFinalize();
         return 0;
@@ -134,6 +153,14 @@ int main(int argc, char *argv[])
         pman.ParthenonFinalize();
         return 1;
     }
+    auto pin = pman.pinput.get(); // All parameters in the input file or command line
+    // Modify input parameters as we need
+    KHARMA::FixParameters(pin);
+    // InitPackagesEtc calls ProcessPackages, then constructs the Mesh
+    pman.ParthenonInitPackagesAndMesh();
+    // Now pull out the mesh and app_input as well for below
+    auto pmesh = pman.pmesh.get(); // The mesh, with list of blocks & locations, size, etc
+    auto papp = pman.app_input.get(); // The list of callback functions specified above
     EndFlag();
 
 #if DEBUG
@@ -143,65 +170,53 @@ int main(int argc, char *argv[])
     signal(SIGSEGV, print_backtrace);
 #endif
 
-    // Begin code block to ensure driver is cleaned up
-    {
-        auto pin = pman.pinput.get(); // All parameters in the input file or command line
-        auto pmesh = pman.pmesh.get(); // The mesh, with list of blocks & locations, size, etc
-        auto papp = pman.app_input.get(); // The list of callback functions specified above
+    // Note reading "verbose" parameter from "Globals" instead of pin: it may change during simulation
+    const int &verbose = pmesh->packages.Get("Globals")->Param<int>("verbose");
+    if(MPIRank0() && verbose > 0) {
+        // Print a list of variables as Parthenon used to (still does by default)
+        std::cout << "#Variables in use:\n" << *(pmesh->resolved_packages) << std::endl;
 
-        if(MPIRank0()) {
-            const int &verbose = pmesh->packages.Get("Globals")->Param<int>("verbose");
-            // Always print the version header, because it's fun
-            // TODO(someone) proper banner w/refs, names
-            const std::string &version = pmesh->packages.Get("Globals")->Param<std::string>("version");
-            const std::string &branch = pmesh->packages.Get("Globals")->Param<std::string>("branch");
-            const std::string &sha1 = pmesh->packages.Get("Globals")->Param<std::string>("SHA1");
-            std::cout << std::endl;
-            std::cout << "Starting KHARMA, version " << version << std::endl;
-            if (verbose > 0) std::cout << "Branch " << branch << ", commit hash: " << sha1 << std::endl;
-            std::cout << std::endl;
-            std::cout << "KHARMA is released under the BSD 3-clause license." << std::endl;
-            std::cout << "Source code for this program is available at https://github.com/AFD-Illinois/kharma/" << std::endl;
-            std::cout << std::endl;
-
-            // Note reading "verbose" parameter from "Globals" instead of pin: it may change during simulation
-            if (verbose > 0) {
-                // Print a list of variables as Parthenon used to (still does)
-                std::cout << "#Variables in use:\n" << *(pmesh->resolved_packages) << std::endl;
-
-                // Print a list of all loaded packages.  Surprisingly useful for debugging init logic
-                std::cout << "Packages in use: " << std::endl;
-                for (auto package : pmesh->packages.AllPackages()) {
-                    std::cout << package.first << std::endl;
-                }
-                std::cout << std::endl;
-            }
-            std::cout << "Running post-initialization tasks..." << std::endl;
+        // Print a list of all loaded packages.  Surprisingly useful for debugging init logic
+        std::cout << "Packages in use: " << std::endl;
+        for (auto package : pmesh->packages.AllPackages()) {
+            std::cout << package.first << std::endl;
         }
+        std::cout << std::endl;
 
-        // PostInitialize: Add magnetic field to the problem, initialize ghost zones.
-        // Any init which may be run even when restarting, or requires all
-        // MeshBlocks to be initialized already
-        auto prob = pin->GetString("parthenon/job", "problem_id");
-        bool is_restart = (prob == "resize_restart") || (prob == "resize_restart_kharma") || pman.IsRestart();
-        Flag("PostInitialize");
-        KHARMA::PostInitialize(pin, pmesh, is_restart);
-        EndFlag();
-
-        std::string driver_type = pmesh->packages.Get("Driver")->Param<std::string>("type");
-        std::cerr << "Initializing and running " << driver_type << " driver" << std::endl;
-        // Construct a temporary driver purely for parameter parsing
-        KHARMADriver driver(pin, papp, pmesh);
-
-        // Write parameters to console if we should be wordy
-        if ((pmesh->packages.Get("Globals")->Param<int>("verbose") > 0) && MPIRank0()) {
+        // Write all parameters etc. to console if we should be especially wordy
+        if ((verbose > 1) && MPIRank0()) {
             // This dumps the full Kokkos config, useful for double-checking
             // that the compile did what we wanted
-            ShowConfig();
+            parthenon::ShowConfig();
             pin->ParameterDump(std::cout);
         }
 
-        // Then execute the driver. This is a Parthenon function inherited by our HARMDriver object,
+        // This is for the next bit
+        std::cout << "Running post-initialization tasks..." << std::endl;
+    }
+
+    // PostInitialize: Add magnetic field to the problem, initialize ghost zones.
+    // Any init which may be run even when restarting, or requires all
+    // MeshBlocks to be initialized already.
+    // TODO(BSP) split to package hooks
+    auto prob = pin->GetString("parthenon/job", "problem_id");
+    bool is_restart = (prob == "resize_restart") || (prob == "resize_restart_kharma") || pman.IsRestart();
+    Flag("PostInitialize");
+    KHARMA::PostInitialize(pin, pmesh, is_restart);
+    EndFlag();
+
+    // Begin code block to ensure driver is cleaned up
+    {
+        std::string driver_type = pmesh->packages.Get("Driver")->Param<std::string>("type");
+        if (MPIRank0()) std::cout << "Running " << driver_type << " driver" << std::endl;
+
+        // Pull out things we need to give the driver
+        auto pin = pman.pinput.get(); // All parameters in the input file or command line
+
+        // We now have just one driver package, with different TaskLists for different modes
+        KHARMADriver driver(pin, papp, pmesh);
+
+        // Then execute the driver. This is a Parthenon function inherited by our KHARMADriver object,
         // which will call MakeTaskCollection, then execute the tasks on the mesh for each portion
         // of each step until a stop criterion is reached.
         Flag("driver.Execute");

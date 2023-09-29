@@ -158,6 +158,8 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
             case BoundaryFace::outer_x3:
                 pkg->KBoundaries[bface] = KBoundaries::Dirichlet<BoundaryFace::outer_x3>;
                 break;
+            default:
+                break;
             }
         } else if (btype == "reflecting") {
             switch (bface) {
@@ -178,6 +180,8 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
                 break;
             case BoundaryFace::outer_x3:
                 pkg->KBoundaries[bface] = BoundaryFunction::ReflectOuterX3;
+                break;
+            default:
                 break;
             }
         } else if (btype == "outflow") {
@@ -200,6 +204,8 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
             case BoundaryFace::outer_x3:
                 pkg->KBoundaries[bface] = BoundaryFunction::OutflowOuterX3;
                 break;
+            default:
+                break;
             }
         }
     }
@@ -221,6 +227,14 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
     auto pkg = pmb->packages.Get<KHARMAPackage>("Boundaries");
     auto& params = pkg->AllParams();
 
+    // TODO canonize this as a function. Prints all variables in the current MBD/MD object,
+    // which can now be smaller than everything.
+    // std::cout << rc->GetVariableVector().size() << std::endl;
+    // for (auto &var : rc->GetVariableVector()) {
+    //     std::cout << var->label() << " ";
+    // }
+    // std::cout << std::endl;
+
     const auto bface = BoundaryFaceOf(domain);
     const auto bname = BoundaryName(bface);
     const auto btype_name = params.Get<std::string>(bname);
@@ -230,16 +244,22 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
     pkg->KBoundaries[bface](rc, coarse);
     EndFlag();
 
+    // Exit immediately if we're syncing emf alone
+    if (rc->GetVariableVector().size() == 1) {
+        EndFlag();
+        return;
+    }
+
     // Prevent inflow of material by changing fluid speeds,
     // anywhere we've specified.
     if (params.Get<bool>("check_inflow_" + bname)) {
-        Flag("CheckInflow");
+        Flag("CheckInflow_"+bname);
         CheckInflow(rc, domain, coarse);
         EndFlag();
     }
 
     // If specified, fix corner values when applying X2 boundaries (see function)
-    if (params.Get<bool>("fix_corner") && bdir == X2DIR) {
+    if (bdir == X2DIR && params.Get<bool>("fix_corner")) {
         Flag("FixCorner");
         FixCorner(rc, domain, coarse);
         EndFlag();
@@ -267,7 +287,7 @@ void KBoundaries::CheckInflow(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDom
     // Inflow check
     // Iterate over zones w/p=0
     pmb->par_for_bndry(
-        "Outflow_check_inflow", IndexRange{0, 0}, domain, CC, coarse,
+        "check_inflow", IndexRange{0, 0}, domain, CC, coarse,
         KOKKOS_LAMBDA(const int &p, const int &k, const int &j, const int &i) {
             KBoundaries::check_inflow(G, P, domain, m_p.U1, k, j, i);
         }
@@ -281,7 +301,7 @@ void KBoundaries::FixCorner(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomai
         return;
 
     // If we're on the interior edge, re-apply that edge for our block by calling
-    // exactly the same function that Parthenon does.  This ensures we're applying
+    // whatever the X1 boundary is, again.  This ensures we're applying
     // the same thing, just emulating calling it after X2.
     if (pmb->boundary_flag[BoundaryFace::inner_x1] == BoundaryFlag::user)
     {
@@ -311,16 +331,16 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
     const IndexRange jbf = IndexRange{jbs.s, jbs.e + (ndim > 1)};
     const IndexRange kbf = IndexRange{kbs.s, kbs.e + (ndim > 2)};
 
-    for (auto &pmb : pmesh->block_list)
-    {
+    for (auto &pmb : pmesh->block_list) {
         auto &rc = pmb->meshblock_data.Get();
 
-        for (int i = 0; i < BOUNDARY_NFACES; i++)
-        {
+        for (int i = 0; i < BOUNDARY_NFACES; i++) {
             BoundaryFace bface = (BoundaryFace)i;
             auto bname = BoundaryName(bface);
             auto bdir = BoundaryDirection(bface);
             auto binner = BoundaryIsInner(bface);
+
+            if (bdir > ndim) continue;
 
             // Set ranges based
             IndexRange ib = ibs, jb = jbs, kb = kbs;
@@ -344,7 +364,7 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
                     pmb->par_for(
                         "zero_inflow_flux_" + bname, kb.s, kb.e, jb.s, jb.e, ib.s, ib.s,
                         KOKKOS_LAMBDA(const int &k, const int &j, const int &i) {
-                            F.flux(X1DIR, m_rho, k, j, i) = m::min(F.flux(X1DIR, m_rho, k, j, i), 0.);
+                            F.flux(bdir, m_rho, k, j, i) = m::min(F.flux(bdir, m_rho, k, j, i), 0.);
                         });
                 }
             }
@@ -356,7 +376,7 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
                     pmb->par_for(
                         "zero_flux_" + bname, 0, F.GetDim(4) - 1, kb.s, kb.e, jb.s, jb.s, ib.s, ib.e,
                         KOKKOS_LAMBDA(const int &p, const int &k, const int &j, const int &i) {
-                            F.flux(X2DIR, p, k, j, i) = 0.;
+                            F.flux(bdir, p, k, j, i) = 0.;
                         });
                 }
             }

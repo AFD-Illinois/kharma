@@ -13,7 +13,7 @@
  * Read the header of an KHARMA HDF5 restart file, and set appropriate parameters
  * Call this before mesh creation!
  */
-void ReadKharmaRestartHeader(std::string fname, std::unique_ptr<ParameterInput>& pin);
+void ReadKharmaRestartHeader(std::string fname, ParameterInput *pin);
 
 /**
  * Read data from an KHARMA restart file. Does not support >1 meshblock in Parthenon

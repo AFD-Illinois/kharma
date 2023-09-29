@@ -105,7 +105,7 @@ if [[ -z "$CXX_NATIVE" ]]; then
     CXX_NATIVE=CC
     C_NATIVE=cc
     # In case this isn't Cray, use the more common flag
-    OMP_FLAG="-fopenomp"
+    #OMP_FLAG="-fopenomp"
   # Prefer Intel oneAPI compiler over legacy, both over generic
   elif which icpx >/dev/null 2>&1; then
     CXX_NATIVE=icpx
@@ -161,7 +161,7 @@ if [[ "$ARGS" == *"sycl"* ]]; then
 elif [[ "$ARGS" == *"hip"* ]]; then
   OUTER_LAYOUT="MANUAL1D_LOOP"
   INNER_LAYOUT="TVR_INNER_LOOP"
-  ENABLE_OPENMP="ON"
+  ENABLE_OPENMP="OFF"
   ENABLE_CUDA="OFF"
   ENABLE_SYCL="OFF"
   ENABLE_HIP="ON"
@@ -219,8 +219,8 @@ fi
 ### Build HDF5 ###
 # If we're building HDF5, do it after we set *all flags*
 if [[ "$ARGS" == *"hdf5"* && "$ARGS" == *"clean"* ]]; then
-  H5VER=1.12.2
-  H5VERU=1_12_2
+  H5VER=1.14.2
+  H5VERU=1_14_2
   cd external
   # Allow complete reconfigure (for switching compilers, takes longer)
   if [[ "$ARGS" == *"cleanhdf5"* ]]; then
@@ -228,7 +228,7 @@ if [[ "$ARGS" == *"hdf5"* && "$ARGS" == *"clean"* ]]; then
   fi
   # Download if needed
   if [ ! -f hdf5-${H5VER}.tar.gz ]; then
-    curl https://hdf-wordpress-1.s3.amazonaws.com/wp-content/uploads/manual/HDF5/HDF5_${H5VERU}/source/hdf5-${H5VER}.tar.gz -o hdf5-${H5VER}.tar.gz
+    curl https://hdf-wordpress-1.s3.amazonaws.com/wp-content/uploads/manual/HDF5/HDF5_${H5VERU}/src/hdf5-${H5VER}.tar.gz -o hdf5-${H5VER}.tar.gz
   fi
   # Unpack if needed (or deleted)
   if [ ! -d hdf5-${H5VER}/ ]; then

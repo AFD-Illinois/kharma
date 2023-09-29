@@ -47,11 +47,6 @@ TaskStatus InitializeFMTorus(std::shared_ptr<MeshBlockData<Real>>& rc, Parameter
     GridScalar rho  = rc->Get("prims.rho").data;
     GridScalar u    = rc->Get("prims.u").data;
     GridVector uvec = rc->Get("prims.uvec").data;
-    GridVector B_P  = rc->Get("prims.B").data;
-
-    // Are we using EMHD?
-    // TODO does anything really change?  If so use packages.count
-    //const bool use_emhd   = pin->GetOrAddBoolean("emhd", "on", false);
 
     const GReal rin      = pin->GetOrAddReal("torus", "rin", 6.0);
     const GReal rmax     = pin->GetOrAddReal("torus", "rmax", 12.0);
@@ -218,7 +213,7 @@ TaskStatus PerturbU(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pi
     // to get a new sequence for every block
     const int rng_seed = pin->GetOrAddInteger("perturbation", "rng_seed", 31337);
     // Print real seed used for all blocks, to ensure they're different
-    if (pmb->packages.Get("Globals")->Param<int>("verbose") > 0) {
+    if (pmb->packages.Get("Globals")->Param<int>("verbose") > 1) {
         std::cout << "Seeding RNG in block " << pmb->gid << " with value " << rng_seed + pmb->gid << std::endl;
     }
     const bool serial = pin->GetOrAddInteger("perturbation", "serial", false);

@@ -30,7 +30,6 @@ set(ENABLE_COMPILER_WARNINGS OFF CACHE BOOL "KHARMA Override")
 set(HDF5_USE_STATIC_LIBRARIES ON CACHE BOOL "KHARMA Override")
 
 # Kokkos options
-set(Kokkos_ENABLE_OPENMP ON CACHE BOOL "KHARMA Override")
 set(Kokkos_ENABLE_CUDA_LAMBDA ON CACHE BOOL "KHARMA Override")
 set(Kokkos_ENABLE_CUDA_CONSTEXPR ON CACHE BOOL "KHARMA Override")
 set(Kokkos_ENABLE_HWLOC OFF CACHE BOOL "KHARMA Override") # Possible speed improvement?
@@ -51,8 +50,9 @@ else()
   include_directories(SYSTEM ${MPI_INCLUDE_PATH})
 endif()
 
-# OpenMP is strictly required
-find_package(OpenMP REQUIRED)
+# OpenMP is usually used host-side.  We're letting Parthenon/Kokkos
+# find it though, as sometimes we require disabling it fully
+#find_package(OpenMP REQUIRED)
 
 # Build Parthenon
 add_subdirectory(external/parthenon)

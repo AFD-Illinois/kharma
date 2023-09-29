@@ -14,7 +14,7 @@ if [[ $HOST == "cheshire"* ]]; then
     module load compiler mpi/2021
   fi
 
-  NPROC=16
+  NPROC=8
   MPI_EXE=mpirun
 fi
 
@@ -29,9 +29,11 @@ if [[ $METAL_HOSTNAME == "fermium" ]]; then
   MPI_EXE=mpirun
 
   if [[ "$ARGS" == *"cuda"* ]]; then
-    echo "Nothing special for cuda"
+    # Container default is the wrong NVHPC package
+    module swap nvhpc-hpcx nvhpc
   else
     # AMD for CPUs
+    module load aocc-compiler-4.1.0 mpi
     CXX_NATIVE=clang++
     C_NATIVE=clang
   fi
