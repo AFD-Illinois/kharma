@@ -204,28 +204,28 @@ void Packages::UserWorkBeforeOutput(MeshBlock *pmb, ParameterInput *pin)
     EndFlag();
 }
 
-void Packages::PreStepUserWorkInLoop(Mesh *pmesh, ParameterInput *pin, const SimTime &tm)
+void Packages::PreStepWork(Mesh *pmesh, ParameterInput *pin, const SimTime &tm)
 {
-    Flag("PreStepUserWorkInLoop");
+    Flag("PreStepWork");
     auto kpackages = pmesh->packages.AllPackagesOfType<KHARMAPackage>();
     for (auto kpackage : kpackages) {
-        if (kpackage.second->MeshPreStepUserWorkInLoop != nullptr) {
-            Flag("PreStepUserWorkInLoop_"+kpackage.first);
-            kpackage.second->MeshPreStepUserWorkInLoop(pmesh, pin, tm);
+        if (kpackage.second->PreStepWork != nullptr) {
+            Flag("PreStepWork_"+kpackage.first);
+            kpackage.second->PreStepWork(pmesh, pin, tm);
             EndFlag();
         }
     }
     EndFlag();
 }
 
-void Packages::PostStepUserWorkInLoop(Mesh *pmesh, ParameterInput *pin, const SimTime &tm)
+void Packages::PostStepWork(Mesh *pmesh, ParameterInput *pin, const SimTime &tm)
 {
-    Flag("PostStepUserWorkInLoop");
+    Flag("PostStepWork");
     auto kpackages = pmesh->packages.AllPackagesOfType<KHARMAPackage>();
     for (auto kpackage : kpackages) {
-        if (kpackage.second->MeshPostStepUserWorkInLoop != nullptr) {
-            Flag("PostStepUserWorkInLoop_"+kpackage.first);
-            kpackage.second->MeshPostStepUserWorkInLoop(pmesh, pin, tm);
+        if (kpackage.second->PostStepWork != nullptr) {
+            Flag("PostStepWork_"+kpackage.first);
+            kpackage.second->PostStepWork(pmesh, pin, tm);
             EndFlag();
         }
     }
@@ -250,3 +250,16 @@ void Packages::PostStepDiagnostics(Mesh *pmesh, ParameterInput *pin, const SimTi
     EndFlag();
 }
 
+void Packages::PostExecute(Mesh *pmesh, ParameterInput *pin, const SimTime &tm)
+{
+    Flag("KHARMAPostExecute");
+    auto kpackages = pmesh->packages.AllPackagesOfType<KHARMAPackage>();
+    for (auto kpackage : kpackages) {
+        if (kpackage.second->PostExecute != nullptr) {
+            Flag("PostExecute_"+kpackage.first);
+            kpackage.second->PostExecute(pmesh, pin, tm);
+            EndFlag();
+        }
+    }
+    EndFlag();
+}

@@ -290,3 +290,9 @@ void KHARMADriver::SetGlobalTimeStep()
       (tm.tlim - tm.time) < tm.dt) // timestep would take us past desired endpoint
     tm.dt = tm.tlim - tm.time;
 }
+
+void KHARMADriver::PostExecute(DriverStatus status)
+{
+    Packages::PostExecute(pmesh, pinput, tm);
+    EvolutionDriver::PostExecute(status);
+}

@@ -96,8 +96,8 @@ std::shared_ptr<KHARMAPackage> KHARMA::InitializeGlobals(ParameterInput *pin, st
     params.Add("branch", KHARMA::Version::GIT_REFSPEC);
 
     // Update the times with callbacks
-    pkg->MeshPreStepUserWorkInLoop = KHARMA::MeshPreStepUserWorkInLoop;
-    pkg->MeshPostStepUserWorkInLoop = KHARMA::MeshPostStepUserWorkInLoop;
+    pkg->PreStepWork = KHARMA::PreStepWork;
+    pkg->PostStepWork = KHARMA::PostStepWork;
 
     return pkg;
 }
@@ -116,7 +116,7 @@ void KHARMA::ResetGlobals(ParameterInput *pin, Mesh *pmesh)
     // to be restored by Parthenon
 }
 
-void KHARMA::MeshPreStepUserWorkInLoop(Mesh *pmesh, ParameterInput *pin, const SimTime &tm)
+void KHARMA::PreStepWork(Mesh *pmesh, ParameterInput *pin, const SimTime &tm)
 {
     auto& globals = pmesh->packages.Get("Globals")->AllParams();
     if (!globals.Get<bool>("in_loop")) {
@@ -126,11 +126,11 @@ void KHARMA::MeshPreStepUserWorkInLoop(Mesh *pmesh, ParameterInput *pin, const S
     globals.Update<double>("time", tm.time);
 }
 
-void KHARMA::MeshPostStepUserWorkInLoop(Mesh *pmesh, ParameterInput *pin, const SimTime &tm)
+void KHARMA::PostStepWork(Mesh *pmesh, ParameterInput *pin, const SimTime &tm)
 {
-    // Knowing this works took a little digging into Parthenon's EvolutionDriver.
+    // Knowing that this works took a little digging into Parthenon's EvolutionDriver.
     // The order of operations after calling Step() is:
-    // 1. Call PostStepUserWorkInLoop and PostStepDiagnostics (this function and following)
+    // 1. Call PostStepWork and PostStepDiagnostics (this function and following)
     // 2. Set the timestep tm.dt to the minimum from the EstimateTimestep calls
     // 3. Generate any outputs, e.g. jcon
     // Thus we preserve tm.dt (which has not yet been reset) as dt_last for Current::FillOutput

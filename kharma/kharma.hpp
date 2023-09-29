@@ -56,11 +56,11 @@ void ResetGlobals(ParameterInput *pin, Mesh *pmesh);
 /**
  * Update variables in Globals package based on Parthenon state incl. SimTime struct
  */
-void MeshPreStepUserWorkInLoop(Mesh *pmesh, ParameterInput *pin, const SimTime &tm);
+void PreStepWork(Mesh *pmesh, ParameterInput *pin, const SimTime &tm);
 /**
  * Update variables in Globals package based on Parthenon state incl. SimTime struct
  */
-void MeshPostStepUserWorkInLoop(Mesh *pmesh, ParameterInput *pin, const SimTime &tm);
+void PostStepWork(Mesh *pmesh, ParameterInput *pin, const SimTime &tm);
 
 /**
  * Task to add a package.  Lets us queue up all the packages we want in a task list, *then* load them
@@ -126,6 +126,7 @@ inline int PackDimension(Packages_t* packages, Metadata::FlagCollection fc)
     int nvar = 0;
     for (auto pkg : packages->AllPackages()) {
         nvar += pkg.second->GetPackDimension(fc);
+        std::cout << pkg.first << " variables: " << pkg.second->GetPackDimension(fc) << std::endl;
     }
     return nvar;
 }

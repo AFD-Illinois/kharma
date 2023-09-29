@@ -88,7 +88,7 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     pkg->BlockUtoP = B_CD::BlockUtoP;
 
     pkg->PostStepDiagnosticsMesh = B_CD::PostStepDiagnostics;
-    pkg->MeshPostStepUserWorkInLoop = B_CD::UpdateCtopMax;
+    pkg->PostStepWork = B_CD::UpdateCtopMax;
 
     // List (vector) of HistoryOutputVar that will all be enrolled as output variables
     parthenon::HstVar_list hst_vars = {};

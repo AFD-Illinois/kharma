@@ -52,6 +52,9 @@ using namespace parthenon;
 class KHARMAPackage : public StateDescriptor {
     public:
         KHARMAPackage(std::string name) : StateDescriptor(name) {}
+#if TRACE
+        ~KHARMAPackage() { std::cerr << "Destroying package " << label_ << std::endl; }
+#endif
 
         // PHYSICS
         // Recovery of primitive variables from conserved.
@@ -88,14 +91,18 @@ class KHARMAPackage : public StateDescriptor {
 
         // CONVENIENCE
         // Anything to be done before each step begins -- currently just updating global "in_loop"
-        std::function<void(Mesh*, ParameterInput*, const SimTime&)> MeshPreStepUserWorkInLoop = nullptr;
+        std::function<void(Mesh*, ParameterInput*, const SimTime&)> PreStepWork = nullptr;
         // Anything to be done after every step is fully complete -- usually reductions or preservation of variables
-        std::function<void(Mesh*, ParameterInput*, const SimTime&)> MeshPostStepUserWorkInLoop = nullptr;
+        // Note that most diagnostics should go in "PostStepDiagnosticsMesh" instead
+        std::function<void(Mesh*, ParameterInput*, const SimTime&)> PostStepWork = nullptr;
 
         // Anything to be done just before any outputs (dump files, restarts, history files) are made
         // Usually for filling output-only variables
         // TODO Add MeshUserWorkBeforeOutput to Parthenon
         std::function<void(MeshBlock*, ParameterInput*)> BlockUserWorkBeforeOutput = nullptr;
+
+        // Anything at the very end of simulation. Cleanup, summaries, outputs if you're brave
+        std::function<void(Mesh*, ParameterInput*, const SimTime&)> PostExecute = nullptr;
 
         // BOUNDARIES
         // Currently only used by the "boundaries" package
@@ -160,7 +167,8 @@ TaskStatus MeshApplyFloors(MeshData<Real> *md, IndexDomain domain);
 // These are already Parthenon global callbacks -- see their documentation
 // I define them here so I can pass them on to packages
 void UserWorkBeforeOutput(MeshBlock *pmb, ParameterInput *pin);
-void PreStepUserWorkInLoop(Mesh *pmesh, ParameterInput *pin, const SimTime &tm);
-void PostStepUserWorkInLoop(Mesh *pmesh, ParameterInput *pin, const SimTime &tm);
+void PreStepWork(Mesh *pmesh, ParameterInput *pin, const SimTime &tm);
+void PostStepWork(Mesh *pmesh, ParameterInput *pin, const SimTime &tm);
 void PostStepDiagnostics(Mesh *pmesh, ParameterInput *pin, const SimTime &tm);
+void PostExecute(Mesh *pmesh, ParameterInput *pin, const SimTime &tm);
 }

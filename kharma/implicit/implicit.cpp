@@ -593,7 +593,10 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
 
             // Finally, break if max_norm is less than the total tolerance we set
             // TODO per-zone tolerance with masks?
-            if (iter >= iter_min && max_norm < rootfind_tol) break;
+            if (iter >= iter_min && max_norm < rootfind_tol) {
+                EndFlag();
+                break;
+            }
         }
         EndFlag();
     }

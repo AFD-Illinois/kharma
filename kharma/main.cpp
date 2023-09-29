@@ -109,8 +109,8 @@ int main(int argc, char *argv[])
     pman.app_input->ProblemGenerator = KHARMA::ProblemGenerator;
     // A few are passed on to be implemented by packages as they see fit
     pman.app_input->MeshBlockUserWorkBeforeOutput = Packages::UserWorkBeforeOutput;
-    pman.app_input->PreStepMeshUserWorkInLoop = Packages::PreStepUserWorkInLoop;
-    pman.app_input->PostStepMeshUserWorkInLoop = Packages::PostStepUserWorkInLoop;
+    pman.app_input->PreStepMeshUserWorkInLoop = Packages::PreStepWork;
+    pman.app_input->PostStepMeshUserWorkInLoop = Packages::PostStepWork;
     pman.app_input->PostStepDiagnosticsInLoop = Packages::PostStepDiagnostics;
 
     // Registering KHARMA's boundary functions here doesn't mean they will *always* run:
