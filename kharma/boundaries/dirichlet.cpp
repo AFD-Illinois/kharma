@@ -56,7 +56,7 @@ void KBoundaries::DirichletImpl(std::shared_ptr<MeshBlockData<Real>> &rc, Bounda
     auto bound = rc->Get("bounds." + BoundaryName(bface)).data;
 
     if (q.GetDim(4) != bound.GetDim(4)) {
-        std::cerr << "Boundary cache mismatch! " << bound.GetDim(4) << " vs " << q.GetDim(4) << std::endl;
+        std::cerr << "Boundary cache mismatch! boundaries: " << bound.GetDim(4) << " vs pack: " << q.GetDim(4) << std::endl;
         std::cerr << "Variables with ghost zones:" << std::endl;
         ghostmap.print();
     }

@@ -245,6 +245,7 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
     EndFlag();
 
     // Exit immediately if we're syncing emf alone
+    // TODO can we check name?
     if (rc->GetVariableVector().size() == 1) {
         EndFlag();
         return;

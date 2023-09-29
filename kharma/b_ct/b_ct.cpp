@@ -78,9 +78,6 @@ std::shared_ptr<KHARMAPackage> B_CT::Initialize(ParameterInput *pin, std::shared
     if (lazy_prolongation && pin->GetString("parthenon/mesh", "refinement") == "adaptive")
         throw std::runtime_error("Cannot use non-preserving prolongation in AMR!");
 
-    // Add a reducer object (MPI communicator) for divB to params
-    params.Add("divb_reducer", AllReduce<Real>());
-
     // FIELDS
 
     // Flags for B fields on faces.

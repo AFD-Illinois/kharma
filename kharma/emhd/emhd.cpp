@@ -73,6 +73,8 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     bool viscosity = pin->GetOrAddBoolean("emhd", "viscosity", true);
     params.Add("viscosity", viscosity);
 
+    // TODO consider erroring when (the correct subset of) these aren't present,
+    // rather than have defaults that won't work well
     Real tau              = pin->GetOrAddReal("emhd", "tau", 1.0);
     Real conduction_alpha = pin->GetOrAddReal("emhd", "conduction_alpha", 1.0);
     params.Add("conduction_alpha", conduction_alpha);
@@ -122,7 +124,8 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     // Only enable limits internally if we're actually doing EMHD
     params.Add("enable_emhd_limits", enable_emhd_limits);
 
-
+    // Parthenon adds a flag consisting of just the package name,
+    // but it's useless to us since we want just the important variables to carry a name
     Metadata::AddUserFlag("EMHDVar");
 
     // General options for primitive and conserved scalar variables in ImEx driver
