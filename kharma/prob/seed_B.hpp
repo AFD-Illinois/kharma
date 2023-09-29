@@ -40,11 +40,11 @@ TaskStatus SeedBField(MeshData<Real> *md, ParameterInput *pin);
 
 TaskStatus NormalizeBField(MeshData<Real> *md, ParameterInput *pin);
 
-// Internal representation of the field initialization preference for quick switch
-// Avoids string comparsion in kernels
-enum BSeedType{constant, monopole, monopole_cube, sane, mad, mad_quadrupole, r3s3, r5s5, gaussian, bz_monopole, vertical};
+// Internal representation of the field initialization preference, used for templating
+enum BSeedType{constant, monopole, monopole_cube, orszag_tang, orszag_tang_a, wave,
+                sane, mad, mad_quadrupole, r3s3, r5s5, gaussian, bz_monopole, vertical};
 
-#define SEEDA_ARGS GReal *x, double rho, double rin, double min_A, double A0
+#define SEEDA_ARGS GReal *x, const GReal *dxc, double rho, double rin, double min_A, double A0, double arg1
 
 // This will also act as the default implementation for unspecified types,
 // which should all be filled as B field by seed_b below.
@@ -98,7 +98,6 @@ KOKKOS_INLINE_FUNCTION Real seed_a<BSeedType::r5s5>(SEEDA_ARGS)
 
 // Pure vertical threaded field of gaussian strength with FWHM 2*rin (i.e. HM@rin)
 // centered at BH center
-// Block is to avoid compiler whinging about initialization
 template<>
 KOKKOS_INLINE_FUNCTION Real seed_a<BSeedType::gaussian>(SEEDA_ARGS)
 {
@@ -114,31 +113,57 @@ KOKKOS_INLINE_FUNCTION Real seed_a<BSeedType::vertical>(SEEDA_ARGS)
     return A0 * x[1] * m::sin(x[2]) / 2.;
 }
 
-#define SEEDB_ARGS GReal *x, GReal gdet, double b10, double b20, double b30, double &B1, double &B2, double &B3
-
-template<BSeedType T>
-KOKKOS_INLINE_FUNCTION void seed_b(SEEDB_ARGS) {}
-
 template<>
-KOKKOS_INLINE_FUNCTION void seed_b<BSeedType::constant>(SEEDB_ARGS)
+KOKKOS_INLINE_FUNCTION Real seed_a<BSeedType::orszag_tang_a>(SEEDA_ARGS)
 {
-    B1 = b10;
-    B2 = b20;
-    B3 = b30;
+    return A0 * (-0.5 * std::cos(2*x[1] + arg1)
+                        + std::cos(x[2] + arg1));
 }
 
+#undef SEEDA_ARGS
+#define SEEDB_ARGS GReal *x, GReal gdet, double k1, double k2, double k3, double phase, \
+                    double amp_B1, double amp_B2, double amp_B3, \
+                    double amp2_B1, double amp2_B2, double amp2_B3, \
+                    double &B1, double &B2, double &B3
+
+template<BSeedType T>
+KOKKOS_INLINE_FUNCTION void seed_b(SEEDB_ARGS) { B1 = 0./0.; B2 = 0./0.; B3 = 0./0.; }
+
+// Constant field of B10, B20, B30 is always set
+template<>
+KOKKOS_INLINE_FUNCTION void seed_b<BSeedType::constant>(SEEDB_ARGS) {}
+
+// Reduce radial component by gdet for constant flux
 template<>
 KOKKOS_INLINE_FUNCTION void seed_b<BSeedType::monopole>(SEEDB_ARGS)
 {
-    B1 = b10 / gdet;
-    B2 = 0.;
-    B3 = 0.;
+    B1 /= gdet;
 }
 
+// Reduce radial component by the cube of radius
 template<>
 KOKKOS_INLINE_FUNCTION void seed_b<BSeedType::monopole_cube>(SEEDB_ARGS)
 {
-    B1 = 1 / (x[1]*x[1]*x[1]);
-    B2 = 0.;
-    B3 = 0.;
+    B1 /= (x[1]*x[1]*x[1]);
 }
+
+// For mhdmodes or linear waves tests
+template<>
+KOKKOS_INLINE_FUNCTION void seed_b<BSeedType::wave>(SEEDB_ARGS)
+{
+    const Real smode = m::cos(k1 * x[1] + k2 * x[2] + k3 * x[3] + phase);
+    const Real cmode = m::cos(k1 * x[1] + k2 * x[2] + k3 * x[3] + phase);
+    B1 += amp_B1 * cmode + amp2_B1 * smode;
+    B2 += amp_B2 * cmode + amp2_B2 * smode;
+    B3 += amp_B3 * cmode + amp2_B3 * smode;
+}
+
+// For Orszag-Tang vortex
+template<>
+KOKKOS_INLINE_FUNCTION void seed_b<BSeedType::orszag_tang>(SEEDB_ARGS)
+{
+    B1 -= amp_B1 * m::sin(    x[2] + phase );
+    B2 += amp_B2 * m::sin(2.*(x[1] + phase));
+}
+
+#undef SEEDB_ARGS

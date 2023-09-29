@@ -41,6 +41,7 @@
 #include "gr_coordinates.hpp"
 #include "grmhd.hpp"
 #include "grmhd_functions.hpp"
+#include "perturbation.hpp"
 #include "types.hpp"
 
 // Problem initialization headers
@@ -99,8 +100,6 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
     // GRMHD
     } else if (prob == "bondi") {
         status = InitializeBondi(rc, pin);
-    } else if (prob == "bz_monopole") {
-        status = InitializeBZMonopole(rc, pin);
     // Electrons
     } else if (prob == "noh") {
         status = InitializeNoh(rc, pin);
@@ -122,10 +121,13 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
         status = InitializeFMTorus(rc, pin);
     } else if (prob == "resize_restart") {
         status = ReadIharmRestart(rc, pin);
-    } else if (prob == "resize_restart_kharma") { // Hyerin
+    } else if (prob == "resize_restart_kharma") {
         status = ReadKharmaRestart(rc, pin);
     } else if (prob == "gizmo") {
         status = InitializeGIZMO(rc, pin);
+    } else if (prob == "vacuum") {
+        // No need for a separate initializer, just seed w/floors
+        status = Floors::ApplyInitialFloors(pin, rc.get(), IndexDomain::interior);
     }
 
     // If we didn't initialize a problem, yell

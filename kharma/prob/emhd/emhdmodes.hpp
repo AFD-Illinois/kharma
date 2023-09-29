@@ -89,6 +89,8 @@ TaskStatus InitializeEMHDModes(std::shared_ptr<MeshBlockData<Real>>& rc, Paramet
     const Real k2 = 4. * M_PI;
     // END POSSIBLE ARGS
 
+    // TODO SET B PARAMS HERE
+
     IndexDomain domain = IndexDomain::interior;
     IndexRange ib = pmb->cellbounds.GetBoundsI(domain);
     IndexRange jb = pmb->cellbounds.GetBoundsJ(domain);

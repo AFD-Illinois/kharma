@@ -66,7 +66,6 @@ TaskStatus InitializeKelvinHelmholtz(std::shared_ptr<MeshBlockData<Real>>& rc, P
     const Real amp = pin->GetOrAddReal("kelvin_helmholtz", "amp", 0.01);
     const Real z1 = pin->GetOrAddReal("kelvin_helmholtz", "z1", 0.5);
     const Real z2 = pin->GetOrAddReal("kelvin_helmholtz", "z2", 1.5);
-    const Real added_b = pin->GetOrAddReal("kelvin_helmholtz", "added_b", 0.0);
 
     const auto& G = pmb->coords;
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
@@ -77,68 +76,18 @@ TaskStatus InitializeKelvinHelmholtz(std::shared_ptr<MeshBlockData<Real>>& rc, P
         KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
             GReal X[GR_DIM];
             G.coord_embed(k, j, i, Loci::center, X);
-
             // Lecoanet's x <-> x1; z <-> x2
-            GReal x = X[1];
-            GReal z = X[2];
+            GReal zdist1 = X[2] - z1;
+            GReal zdist2 = X[2] - z2;
 
             rho(k, j, i) =
-                rho0 + Drho * 0.5 * (tanh((z - z1) / a) - tanh((z - z2) / a));
-            u(k, j, i) = P0 / (gam - 1.);
-            uvec(0, k, j, i) = uflow * (tanh((z - z1) / a) - tanh((z - z2) / a) - 1.);
-            uvec(1, k, j, i) = amp * sin(2. * M_PI * x) *
-                        (m::exp(-(z - z1) * (z - z1) / (sigma * sigma)) +
-                        m::exp(-(z - z2) * (z - z2) / (sigma * sigma)));
-            uvec(2, k, j, i) = 0;
-        }
-    );
-
-    // if (pmb->packages.AllPackages().count("B_CT")) {
-    //     auto B_Uf = rc->PackVariables(std::vector<std::string>{"cons.fB"});
-    //     // Halo one zone right for faces
-    //     // We don't need any more than that, since curls never take d1dx1
-    //     IndexRange3 bA = KDomain::GetRange(rc, IndexDomain::entire, 0, 0);
-    //     IndexSize3 s = KDomain::GetBlockSize(rc);
-    //     GridVector A("A", NVEC, s.n3, s.n2, s.n1);
-    //     pmb->par_for("ot_A", bA.ks, bA.ke, bA.js, bA.je, bA.is, bA.ie,
-    //         KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-    //             Real Xembed[GR_DIM];
-    //             G.coord(k, j, i, Loci::corner, Xembed);
-    //             A(V3, k, j, i)  = added_b * (Xembed[1]/G.Dxc<1>(i) + Xembed[2]/G.Dxc<2>(j)) * tscale;
-    //         }
-    //     );
-    //     // This fills a couple zones outside the exact interior with bad data
-    //     IndexRange3 bB = KDomain::GetRange(rc, domain, 0, -1);
-    //     pmb->par_for("ot_B", bB.ks, bB.ke, bB.js, bB.je, bB.is, bB.ie,
-    //         KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-    //             B_CT::curl_2D(G, A, B_Uf, k, j, i);
-    //         }
-    //     );
-    //     B_CT::BlockUtoP(rc.get(), IndexDomain::entire, false);
-    //     double max_divb = B_CT::BlockMaxDivB(rc.get());
-    //     std::cout << "Block max DivB: " << max_divb << std::endl;
-
-    // } else if (pmb->packages.AllPackages().count("B_FluxCT") ||
-    //            pmb->packages.AllPackages().count("B_CD")) {
-    //     GridVector B_P = rc->Get("prims.B").data;
-    //     pmb->par_for("ot_B", b.ks, b.ke, b.js, b.je, b.is, b.ie,
-    //         KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-    //             Real X[GR_DIM];
-    //             G.coord(k, j, i, Loci::center, X);
-    //             B_P(V1, k, j, i) = added_b * tscale;
-    //             B_P(V2, k, j, i) = added_b * tscale;
-    //             B_P(V3, k, j, i) = 0.;
-    //         }
-    //     );
-    //     B_FluxCT::BlockPtoU(rc.get(), IndexDomain::entire, false);
-    // }
-
-    // Rescale primitive velocities by tscale, and internal energy by the square.
-    pmb->par_for("kh_renorm", b.ks, b.ke, b.js, b.je, b.is, b.ie,
-        KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-            u(k, j, i) *= tscale * tscale;
-            VLOOP uvec(v, k, j, i) *= tscale;
-            //VLOOP B_P(v, k, j, i) *= tscale; //already done
+                rho0 + Drho * 0.5 * (m::tanh(zdist1 / a) - m::tanh(zdist2 / a));
+            u(k, j, i) = P0 / (gam - 1.) * tscale * tscale;
+            uvec(0, k, j, i) = uflow * (m::tanh(zdist1 / a) - m::tanh(zdist2 / a) - 1.) * tscale;
+            uvec(1, k, j, i) = amp * m::sin(2. * M_PI * X[1]) *
+                        (m::exp(-(zdist1 * zdist1) / (sigma * sigma)) +
+                        m::exp(-(zdist2 * zdist2) / (sigma * sigma))) * tscale;
+            uvec(2, k, j, i) = 0.;
         }
     );
 

@@ -13,16 +13,6 @@
 TaskStatus InitializeFMTorus(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin);
 
 /**
- * Perturb the internal energy by a uniform random proportion per cell.
- * Resulting internal energies will be between u \pm u*u_jitter/2
- * i.e. u_jitter=0.1 -> \pm 5% randomization, 0.95u to 1.05u
- *
- * @param u_jitter see description
- * @param rng_seed is added to the MPI rank to seed the GSL RNG
- */
-TaskStatus PerturbU(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin);
-
-/**
  * Torus solution for ln h, See Fishbone and Moncrief eqn. 3.6. 
  */
 KOKKOS_INLINE_FUNCTION Real lnh_calc(const GReal a, const Real l, const GReal rin, const GReal r, const GReal th)

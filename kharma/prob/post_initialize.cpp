@@ -82,7 +82,7 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart)
             SeedBField(md.get(), pin);
 
             // If we're doing a torus problem or explicitly ask for it,
-            // normalize the magnetic field according to the density
+            // normalize the magnetic field according to the max density
             bool is_torus = pin->GetString("parthenon/job", "problem_id") == "torus";
             if (pin->GetOrAddBoolean("b_field", "norm", is_torus)) {
                 NormalizeBField(md.get(), pin);
@@ -142,4 +142,6 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart)
     KHARMADriver::SyncAllBounds(md);
     // And make sure the trivial primitive values are up-to-date
     //Packages::MeshUtoPExceptMHD(md.get(), IndexDomain::entire, false);
+
+    // TODO output parsed parameters now we have *everything* including any problem configs for B field
 }
