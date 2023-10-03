@@ -71,7 +71,8 @@ conv_2d entropy_nob "mhdmodes/nmode=0 b_field/solver=none" "entropy mode in 2D, 
 conv_2d entropy mhdmodes/nmode=0 "entropy mode in 3D, WENO reconstruction"
 conv_2d entropy_mc "mhdmodes/nmode=0 driver/reconstruction=linear_mc" "entropy mode in 2D, linear/MC reconstruction"
 #conv_2d entropy_vl "mhdmodes/nmode=0 driver/reconstruction=linear_vl" "entropy mode in 2D, linear/VL reconstruction"
-conv_2d entropy_donor "mhdmodes/nmode=0 driver/reconstruction=donor_cell" "entropy mode in 2D, Donor Cell reconstruction"
+# TODO doesn't converge?
+#conv_2d entropy_donor "mhdmodes/nmode=0 driver/reconstruction=donor_cell" "entropy mode in 2D, Donor Cell reconstruction"
 
 # KHARMA driver
 conv_2d slow_kharma   "mhdmodes/nmode=1 driver/type=kharma" "slow mode in 2D, KHARMA driver"

@@ -10,28 +10,24 @@ variables:
   OMPI_ALLOW_RUN_AS_ROOT: 1
   OMPI_ALLOW_RUN_AS_ROOT_CONFIRM: 1
   GIT_SUBMODULE_STRATEGY: recursive
+  MAMBA_ROOT_PREFIX: /mamba
 
 ### DEFAULT TEST BEHAVIOR ###
 default:
   tags:
     - public-kharma-runner
-  # Be default: install pyharm, then run test in cwd
+  # By default: install pyharm, then run test in cwd
   # For new tests, write one run.sh script which runs/verifies
   # interleaved, and prints a summary of results.
   before_script:
-    - dnf -y install hostname environment-modules git mpich fftw wget
+    - dnf -y install hostname environment-modules git mpich fftw bzip2
     - source /etc/profile
     - module load mpi/mpich-x86_64
-    - export PATH="$HOME/.local/bin:$PATH"
-    - wget -O Miniforge3.sh "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-$(uname)-$(uname -m).sh"
-    - bash Miniforge3.sh -b -p "/home/conda"
-    - source "/home/conda/etc/profile.d/conda.sh"
-    - conda install h5py
-    - git clone https://github.com/AFD-Illinois/pyharm.git /home/pyharm
-    - conda activate
-    - cd /home/pyharm
-    - pip install --user .
-    - cd -
+    - curl -Ls https://micro.mamba.pm/api/micromamba/linux-64/latest | tar -xvj bin/micromamba
+    - eval "$(./bin/micromamba shell hook -s posix)"
+    - micromamba create -y -f environment.yml
+    - micromamba activate pyharm
+    - ./install.sh
 
 # Tests can be executed in parallel
 stages:

@@ -215,10 +215,11 @@ TaskStatus B_CT::CalculateEMF(MeshData<Real> *md)
     const IndexRange3 b = KDomain::GetRange(md, IndexDomain::interior, 0, 0);
     const IndexRange3 b1 = KDomain::GetRange(md, IndexDomain::interior, -1, 1);
     const IndexRange block = IndexRange{0, emf_pack.GetDim(5)-1};
+    const int kd = ndim > 2 ? 1 : 0;
+    const int jd = ndim > 1 ? 1 : 0;
+    const int id = ndim > 0 ? 1 : 0;
 
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer().get();
-
-    std::string scheme = pmesh->packages.Get("B_CT")->Param<std::string>("ct_scheme");
 
     // Calculate circulation by averaging fluxes
     // This is the base of most other schemes, which make corrections
@@ -237,13 +238,24 @@ TaskStatus B_CT::CalculateEMF(MeshData<Real> *md)
                 emf_pack(bl, E2, 0, k, j, i) =
                     0.25*(B_U(bl).flux(X3DIR, V1, k, j, i - 1) + B_U(bl).flux(X3DIR, V1, k, j, i)
                         - B_U(bl).flux(X1DIR, V3, k - 1, j, i) - B_U(bl).flux(X1DIR, V3, k, j, i));
+                emf_pack(bl, E3, 0, k, j, i) =
+                    0.25*(B_U(bl).flux(X1DIR, V2, k, j - 1, i) + B_U(bl).flux(X1DIR, V2, k, j, i)
+                        - B_U(bl).flux(X2DIR, V1, k, j, i - 1) - B_U(bl).flux(X2DIR, V1, k, j, i));
+            } else if (ndim > 1) {
+                emf_pack(bl, E1, 0, k, j, i) =  B_U(bl).flux(X2DIR, V3, k, j, i);
+                emf_pack(bl, E2, 0, k, j, i) = -B_U(bl).flux(X1DIR, V3, k, j, i);
+                emf_pack(bl, E3, 0, k, j, i) =
+                    0.25*(B_U(bl).flux(X1DIR, V2, k, j - 1, i) + B_U(bl).flux(X1DIR, V2, k, j, i)
+                        - B_U(bl).flux(X2DIR, V1, k, j, i - 1) - B_U(bl).flux(X2DIR, V1, k, j, i));
+            } else {
+                emf_pack(bl, E1, 0, k, j, i) = 0;
+                emf_pack(bl, E2, 0, k, j, i) = -B_U(bl).flux(X1DIR, V3, k, j, i);
+                emf_pack(bl, E3, 0, k, j, i) =  B_U(bl).flux(X1DIR, V2, k, j, i);
             }
-            emf_pack(bl, E3, 0, k, j, i) =
-                0.25*(B_U(bl).flux(X1DIR, V2, k, j - 1, i) + B_U(bl).flux(X1DIR, V2, k, j, i)
-                    - B_U(bl).flux(X2DIR, V1, k, j, i - 1) - B_U(bl).flux(X2DIR, V1, k, j, i));
         }
     );
 
+    std::string scheme = pmesh->packages.Get("B_CT")->Param<std::string>("ct_scheme");
     if (scheme == "bs99") {
         // Nothing more to do
     } else if (scheme == "gs05_0" || scheme == "gs05_c") {
@@ -268,17 +280,15 @@ TaskStatus B_CT::CalculateEMF(MeshData<Real> *md)
                     const auto& G = B_U.GetCoords(bl);
                     // Just subtract centered emf from twice the face version
                     // More stable for planar flows even without anything fancy
-                    if (ndim > 2) {
-                        emf_pack(bl, E1, 0, k, j, i) = 2 * emf_pack(bl, E1, 0, k, j, i)
-                            - 0.25*(emfc(bl, V1, k, j, i)     + emfc(bl, V1, k, j - 1, i)
-                                  + emfc(bl, V1, k, j - 1, i) + emfc(bl, V1, k - 1, j - 1, i));
-                        emf_pack(bl, E2, 0, k, j, i) = 2 * emf_pack(bl, E2, 0, k, j, i)
-                            - 0.25*(emfc(bl, V2, k, j, i)     + emfc(bl, V2, k, j, i - 1)
-                                  + emfc(bl, V2, k - 1, j, i) + emfc(bl, V2, k - 1, j, i - 1));
-                    }
+                    emf_pack(bl, E1, 0, k, j, i) = 2 * emf_pack(bl, E1, 0, k, j, i)
+                        - 0.25*(emfc(bl, V1, k, j, i)     + emfc(bl, V1, k, j - jd, i)
+                                + emfc(bl, V1, k, j - jd, i) + emfc(bl, V1, k - kd, j - jd, i));
+                    emf_pack(bl, E2, 0, k, j, i) = 2 * emf_pack(bl, E2, 0, k, j, i)
+                        - 0.25*(emfc(bl, V2, k, j, i)     + emfc(bl, V2, k, j, i - id)
+                                + emfc(bl, V2, k - kd, j, i) + emfc(bl, V2, k - kd, j, i - id));
                     emf_pack(bl, E3, 0, k, j, i) = 2 * emf_pack(bl, E3, 0, k, j, i)
-                        - 0.25*(emfc(bl, V3, k, j, i)     + emfc(bl, V3, k, j, i - 1)
-                              + emfc(bl, V3, k, j - 1, i) + emfc(bl, V3, k, j - 1, i - 1));
+                        - 0.25*(emfc(bl, V3, k, j, i)     + emfc(bl, V3, k, j, i - id)
+                              + emfc(bl, V3, k, j - jd, i) + emfc(bl, V3, k, j - jd, i - id));
                 }
             );
         } else if (scheme == "gs05_c") {
@@ -362,17 +372,15 @@ TaskStatus B_CT::AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
             dB_Uf_dt(bl, F2, 0, k, j, i) /= G.Volume<F2>(k, j, i);
         }
     );
-    if (ndim > 2) {
-        pmb0->par_for("B_CT_Circ_3", block.s, block.e, b1.ks, b1.ke, b.js, b.je, b.is, b.ie,
-            KOKKOS_LAMBDA (const int &bl, const int &k, const int &j, const int &i) {
-                const auto& G = dB_Uf_dt.GetCoords(bl);
-                dB_Uf_dt(bl, F3, 0, k, j, i) = (G.Volume<E2>(k, j, i + 1) * emf_pack(bl, E2, 0, k, j, i + 1)
-                                              - G.Volume<E2>(k, j, i)     * emf_pack(bl, E2, 0, k, j, i)
-                                              - G.Volume<E1>(k, j + 1, i) * emf_pack(bl, E1, 0, k, j + 1, i)
-                                              + G.Volume<E1>(k, j, i)     * emf_pack(bl, E1, 0, k, j, i)) / G.Volume<F3>(k, j, i);
-            }
-        );
-    }
+    pmb0->par_for("B_CT_Circ_3", block.s, block.e, b1.ks, b1.ke, b.js, b.je, b.is, b.ie,
+        KOKKOS_LAMBDA (const int &bl, const int &k, const int &j, const int &i) {
+            const auto& G = dB_Uf_dt.GetCoords(bl);
+            dB_Uf_dt(bl, F3, 0, k, j, i) = (G.Volume<E2>(k, j, i + 1) * emf_pack(bl, E2, 0, k, j, i + 1)
+                                            - G.Volume<E2>(k, j, i)     * emf_pack(bl, E2, 0, k, j, i)
+                                            - G.Volume<E1>(k, j + 1, i) * emf_pack(bl, E1, 0, k, j + 1, i)
+                                            + G.Volume<E1>(k, j, i)     * emf_pack(bl, E1, 0, k, j, i)) / G.Volume<F3>(k, j, i);
+        }
+    );
 
     // Explicitly zero polar faces
     // In spherical, zero B2 on X2 face regardless of boundary condition
