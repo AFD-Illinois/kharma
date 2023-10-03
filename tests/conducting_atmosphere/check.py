@@ -52,7 +52,20 @@ if __name__=='__main__':
             q        = q_tilde * np.sqrt(chi_emhd * rho * Theta**2 / tau)
         else:
             q = q_tilde
-        
+
+        fig = plt.figure(figsize=(8,8))
+        plt.plot(np.mean(q, axis=-1))
+        plt.plot(q_analytic)
+        plt.savefig("compare_{}.png".format(res))
+
+        fig = plt.figure(figsize=(8,8))
+        plt.plot(np.mean(q - q_analytic[:,None], axis=-1))
+        plt.savefig("diff_{}.png".format(res))
+
+        # fig, ax = plt.subplots(1,1,figsize=(8,8))
+        # pplt.plot_xy(q - q_analytic[:,None], axis=-1))
+        # plt.savefig("diff_{}.png".format(res))
+
         # compute L1 norm
         # compute L1 norm
         L1[r,0] = np.mean(np.fabs(rho - rho_analytic[:,None]))

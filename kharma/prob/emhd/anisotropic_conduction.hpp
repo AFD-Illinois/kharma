@@ -48,8 +48,7 @@ TaskStatus InitializeAnisotropicConduction(std::shared_ptr<MeshBlockData<Real>>&
     GridScalar rho = rc->Get("prims.rho").data;
     GridScalar u = rc->Get("prims.u").data;
     GridVector uvec = rc->Get("prims.uvec").data;
-    // It is well and good this problem should cry if B/EMHD are disabled.
-    GridVector B_P = rc->Get("prims.B").data;
+    // It is well and good this problem should cry if EMHD is disabled.
     GridVector q = rc->Get("prims.q").data;
     GridVector dP = rc->Get("prims.dP").data;
 
@@ -61,6 +60,14 @@ TaskStatus InitializeAnisotropicConduction(std::shared_ptr<MeshBlockData<Real>>&
     const Real k0 = pin->GetOrAddReal("anisotropic_conduction", "k", 4.);
 
     const Real R = m::sqrt(Rsq);
+
+    pin->GetOrAddString("b_field", "type", "wave");
+    pin->GetOrAddReal("b_field", "phase", 0.);
+    // Constant B1
+    pin->GetOrAddReal("b_field", "B10", B0);
+    // Amp & wavenumber of sin() for B2
+    pin->GetOrAddReal("b_field", "amp2_B2", B0);
+    pin->GetOrAddReal("b_field", "k1", 2*M_PI*k0);
 
     IndexRange ib = pmb->cellbounds.GetBoundsI(IndexDomain::entire);
     IndexRange jb = pmb->cellbounds.GetBoundsJ(IndexDomain::entire);
@@ -77,9 +84,6 @@ TaskStatus InitializeAnisotropicConduction(std::shared_ptr<MeshBlockData<Real>>&
             uvec(0, k, j, i) = 0.;
             uvec(1, k, j, i) = 0.;
             uvec(2, k, j, i) = 0.;
-            B_P(0, k, j, i) = B0;
-            B_P(1, k, j, i) = B0 * sin(2*M_PI*k0*X[1]);
-            B_P(2, k, j, i) = 0;
             q(k, j, i) = 0.;
             dP(k, j, i) = 0.;
         }

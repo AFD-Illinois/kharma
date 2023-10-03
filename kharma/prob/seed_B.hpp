@@ -40,8 +40,18 @@ TaskStatus SeedBField(MeshData<Real> *md, ParameterInput *pin);
 
 TaskStatus NormalizeBField(MeshData<Real> *md, ParameterInput *pin);
 
+/*
+ * B field initializations.
+ * TO ADD A FIELD:
+ * 1. add its internal name to the enum below
+ * 2. Implement the template specialization for your field, either from seed_a<> or seed_b<>
+ * 3. Add your specialization to the `if` statements in SeedBField
+ * 4. If you used seed_b<>, add your case where SeedBFieldType<> selects direct initialization
+ * 5. If you added arguments, make sure the calls in SeedBFieldType<> are up-to-date
+ */
+
 // Internal representation of the field initialization preference, used for templating
-enum BSeedType{constant, monopole, monopole_cube, orszag_tang, orszag_tang_a, wave,
+enum BSeedType{constant, monopole, monopole_cube, orszag_tang, orszag_tang_a, wave, shock_tube,
                 sane, mad, mad_quadrupole, r3s3, r5s5, gaussian, bz_monopole, vertical};
 
 #define SEEDA_ARGS GReal *x, const GReal *dxc, double rho, double rin, double min_A, double A0, double arg1
@@ -151,11 +161,21 @@ KOKKOS_INLINE_FUNCTION void seed_b<BSeedType::monopole_cube>(SEEDB_ARGS)
 template<>
 KOKKOS_INLINE_FUNCTION void seed_b<BSeedType::wave>(SEEDB_ARGS)
 {
-    const Real smode = m::cos(k1 * x[1] + k2 * x[2] + k3 * x[3] + phase);
+    const Real smode = m::sin(k1 * x[1] + k2 * x[2] + k3 * x[3] + phase);
     const Real cmode = m::cos(k1 * x[1] + k2 * x[2] + k3 * x[3] + phase);
     B1 += amp_B1 * cmode + amp2_B1 * smode;
     B2 += amp_B2 * cmode + amp2_B2 * smode;
     B3 += amp_B3 * cmode + amp2_B3 * smode;
+}
+
+// Shock tube init
+template<>
+KOKKOS_INLINE_FUNCTION void seed_b<BSeedType::shock_tube>(SEEDB_ARGS)
+{
+    const bool lhs = x[1] < phase;
+    B1 += (lhs) ? amp_B1 : amp2_B1;
+    B2 += (lhs) ? amp_B2 : amp2_B2;
+    B3 += (lhs) ? amp_B3 : amp2_B3;
 }
 
 // For Orszag-Tang vortex

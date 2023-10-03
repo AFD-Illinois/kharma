@@ -125,7 +125,7 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
         status = ReadKharmaRestart(rc, pin);
     } else if (prob == "gizmo") {
         status = InitializeGIZMO(rc, pin);
-    } else if (prob == "vacuum") {
+    } else if (prob == "vacuum" || prob == "bz_monopole") {
         // No need for a separate initializer, just seed w/floors
         status = Floors::ApplyInitialFloors(pin, rc.get(), IndexDomain::interior);
     }
@@ -153,20 +153,16 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
         }
     }
 
-    // TODO blob here?
-
     // Floors are NOT automatically applied at this point anymore.
     // If needed, they are applied within the problem-specific call.
     // See InitializeFMTorus in fm_torus.cpp for the details for torus problems.
 
-    // Fill the conserved variables U,
-    // which we'll usually treat as the independent/fundamental state.
-    // This will need to be repeated once magnetic field is seeded
-    // Note we do the whole domain, in case we're using Dirichlet conditions
-    Flux::BlockPtoU(rc.get(), IndexDomain::entire);
-
-    // Finally, freeze in the current ghost zone values if using Dirichlet conditions
-    KBoundaries::FreezeDirichletBlock(rc.get());
+    // Note we no longer call PtoU here either, as GRMHD variables' PtoU requires
+    // the magnetic field, which is added in PostInitialize, after all blocks
+    // are filled with other variables (it can be related to density averages which
+    // require correct ghost zones)
+    // ALL OTHER VARIABLES, however, must fill U if a magnetic field will depend on
+    // them in any way, as conserved variables are MPI-synchronized
 
     EndFlag();
 }

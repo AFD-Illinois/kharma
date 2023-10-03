@@ -104,8 +104,8 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart)
         }
     }
 
-    // Add any hotspots.
-    // Note any other modifications made when restarting should be made around here
+    // Add any hotspots *after* we've seeded fields,
+    // since seeding may be based on density
     if (pin->GetOrAddBoolean("blob", "add_blob", false)) {
         for (auto &pmb : pmesh->block_list) {
             auto rc = pmb->meshblock_data.Get();
@@ -121,7 +121,7 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart)
         KHARMA::ResetGlobals(pin, pmesh);
     }
 
-    // Clean the B field if we've introduced a divergence somewhere
+    // Clean the B field, generally for resizing/restarting
     // We call this function any time the package is loaded:
     // if we decided to load it in kharma.cpp, we need to clean.
     if (pkgs.count("B_Cleanup")) {
@@ -135,13 +135,16 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart)
         B_Cleanup::CleanupDivergence(md);
     }
 
+    // If PtoU was called before the B field was initialized or corrected,
+    // the total energy might be wrong.  Now that we have the field,
+    // wipe away any temporary "totals" which may have omitted it
+    Flux::MeshPtoU(md.get(), IndexDomain::entire);
+
     // Finally, synchronize boundary values.
     // Freeze any Dirichlet physical boundaries as they are now, after cleanup/sync/etc.
     KBoundaries::FreezeDirichlet(md);
     // This is the first sync if there is no B field
     KHARMADriver::SyncAllBounds(md);
-    // And make sure the trivial primitive values are up-to-date
-    //Packages::MeshUtoPExceptMHD(md.get(), IndexDomain::entire, false);
 
     // TODO output parsed parameters now we have *everything* including any problem configs for B field
 }

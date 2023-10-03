@@ -63,12 +63,11 @@ TaskStatus InitializeMHDModes(std::shared_ptr<MeshBlockData<Real>>& rc, Paramete
     GridScalar rho = rc->Get("prims.rho").data;
     GridScalar u = rc->Get("prims.u").data;
     GridVector uvec = rc->Get("prims.uvec").data;
-    GridVector B_P = rc->Get("prims.B").data;
 
     const auto& G = pmb->coords;
 
     const int nmode = pin->GetOrAddInteger("mhdmodes", "nmode", 1);
-    const bool one_period = pin->GetOrAddBoolean("mhdmodes", "one_period", true);
+    const bool one_period = pin->GetOrAddBoolean("mhdmodes", "one_period", nmode != 0);
 
     // Mean state
     const Real rho0 = pin->GetOrAddReal("mhdmodes", "rho0", 1.);
@@ -82,6 +81,7 @@ TaskStatus InitializeMHDModes(std::shared_ptr<MeshBlockData<Real>>& rc, Paramete
     // Set to 0 for "full" 3D wave.
     const int dir = pin->GetOrAddInteger("mhdmodes", "dir", 0);
     const Real amp = pin->GetOrAddReal("mhdmodes", "amp", 1.e-4);
+    const Real phase = pin->GetOrAddReal("mhdmodes", "phase", 0.);
 
     // Note the modes below don't work right if you manually set these
     // TODO generate modes on the fly for any k values
@@ -190,12 +190,10 @@ TaskStatus InitializeMHDModes(std::shared_ptr<MeshBlockData<Real>>& rc, Paramete
         }
     }
 
-    // Record the parameters
+    // Record the parameters we set via nmode
     // This might be useful to read when checking, too...
-    // TODO 
     pin->SetReal("mhdmodes", "omega_real", omega.real());
     pin->SetReal("mhdmodes", "omega_imag", omega.imag());
-
     pin->SetReal("mhdmodes", "drho", drho);
     pin->SetReal("mhdmodes", "du", du);
     pin->SetReal("mhdmodes", "du1", du1);
@@ -207,13 +205,16 @@ TaskStatus InitializeMHDModes(std::shared_ptr<MeshBlockData<Real>>& rc, Paramete
 
     // Set B field parameters for our mode
     pin->GetOrAddString("b_field", "type", "wave");
-    pin->GetOrAddReal("b_field", "b10", B10);
-    pin->GetOrAddReal("b_field", "b20", B20);
-    pin->GetOrAddReal("b_field", "b30", B30);
+    pin->GetOrAddReal("b_field", "B10", B10);
+    pin->GetOrAddReal("b_field", "B20", B20);
+    pin->GetOrAddReal("b_field", "B30", B30);
     pin->GetOrAddReal("b_field", "amp_B1", amp*dB1);
     pin->GetOrAddReal("b_field", "amp_B2", amp*dB2);
     pin->GetOrAddReal("b_field", "amp_B3", amp*dB3);
-    pin->GetOrAddReal("b_field", "phase", 0.);
+    pin->GetOrAddReal("b_field", "k1", k1);
+    pin->GetOrAddReal("b_field", "k2", k2);
+    pin->GetOrAddReal("b_field", "k3", k3);
+    pin->GetOrAddReal("b_field", "phase", phase);
 
     IndexDomain domain = IndexDomain::interior;
     IndexRange ib = pmb->cellbounds.GetBoundsI(domain);
@@ -226,14 +227,14 @@ TaskStatus InitializeMHDModes(std::shared_ptr<MeshBlockData<Real>>& rc, Paramete
             Real mode = amp * m::cos(k1 * X[1] + k2 * X[2] + k3 * X[3]);
             rho(k, j, i) = rho0 + drho * mode;
             u(k, j, i) = u0 + du * mode;
-            uvec(0, k, j, i) = u10 + du1 * mode;
-            uvec(1, k, j, i) = u20 + du2 * mode;
-            uvec(2, k, j, i) = u30 + du3 * mode;
+            uvec(V1, k, j, i) = u10 + du1 * mode;
+            uvec(V2, k, j, i) = u20 + du2 * mode;
+            uvec(V3, k, j, i) = u30 + du3 * mode;
         }
     );
 
     // Override end time to be exactly 1 period for moving modes, unless we set otherwise
-    if (nmode != 0 && one_period) {
+    if (one_period) {
         pin->SetReal("parthenon/time", "tlim", 2. * M_PI / m::abs(omega.imag()));
     }
 

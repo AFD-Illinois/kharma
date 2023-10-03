@@ -53,7 +53,6 @@ TaskStatus InitializeKelvinHelmholtz(std::shared_ptr<MeshBlockData<Real>>& rc, P
     GridScalar rho = rc->Get("prims.rho").data;
     GridScalar u = rc->Get("prims.u").data;
     GridVector uvec = rc->Get("prims.uvec").data;
-    GridVector B_P = rc->Get("prims.B").data;
 
     // follows notation of Lecoanet et al. eq. 8 et seq.
     const Real tscale = pin->GetOrAddReal("kelvin_helmholtz", "tscale", 0.05);

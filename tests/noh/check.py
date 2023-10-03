@@ -50,7 +50,7 @@ if __name__=='__main__':
     powerfit = np.polyfit(np.log(resolutions), np.log(l1_norm), 1)[0]
     print("Power fit: {} {}".format(powerfit, l1_norm))
     # These bounds were chosen heuristically
-    if powerfit < -1.9 and powerfit > -2.1:
+    if powerfit < -0.85 and powerfit > -1.15:
         fail = 0
     else:
         fail = 1

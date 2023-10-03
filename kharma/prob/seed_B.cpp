@@ -101,12 +101,16 @@ TaskStatus SeedBFieldType(MeshBlockData<Real> *rc, ParameterInput *pin, IndexDom
     if constexpr (Seed == BSeedType::constant ||
                   Seed == BSeedType::monopole ||
                   Seed == BSeedType::monopole_cube ||
-                  Seed == BSeedType::orszag_tang)
+                  Seed == BSeedType::orszag_tang ||
+                  Seed == BSeedType::wave || 
+                  Seed == BSeedType::shock_tube)
     {
-        // All custom B fields should set what they need of these
-        const Real b10 = pin->GetOrAddReal("b_field", "B10", 0.);
-        const Real b20 = pin->GetOrAddReal("b_field", "B20", 0.);
-        const Real b30 = pin->GetOrAddReal("b_field", "B30", 0.);
+        // All custom B fields should set what they need of these.
+        // We take the same names, but they may mean different things to the
+        // particular init function, check seed_B.hpp
+        const Real B10 = pin->GetOrAddReal("b_field", "B10", 0.);
+        const Real B20 = pin->GetOrAddReal("b_field", "B20", 0.);
+        const Real B30 = pin->GetOrAddReal("b_field", "B30", 0.);
         const Real k1 = pin->GetOrAddReal("b_field", "k1", 0.);
         const Real k2 = pin->GetOrAddReal("b_field", "k2", 0.);
         const Real k3 = pin->GetOrAddReal("b_field", "k3", 0.);
@@ -127,9 +131,10 @@ TaskStatus SeedBFieldType(MeshBlockData<Real> *rc, ParameterInput *pin, IndexDom
                     GReal Xembed[GR_DIM];
                     double null1, null2;
                     double B_Pf1, B_Pf2, B_Pf3;
+                    // TODO handle calling Seed() mid-run and adding field
                     G.coord_embed(k, j, i, Loci::face1, Xembed);
                     GReal gdet = G.gdet(Loci::face1, j, i);
-                    B_Pf1 = b10;
+                    B_Pf1 = B10;
                     seed_b<Seed>(Xembed, gdet, k1, k2, k3, phase,
                                  amp_B1, amp_B2, amp_B3,
                                  amp2_B1, amp2_B2, amp2_B3,
@@ -138,7 +143,7 @@ TaskStatus SeedBFieldType(MeshBlockData<Real> *rc, ParameterInput *pin, IndexDom
 
                     G.coord_embed(k, j, i, Loci::face2, Xembed);
                     gdet = G.gdet(Loci::face2, j, i);
-                    B_Pf2 = b20;
+                    B_Pf2 = B20;
                     seed_b<Seed>(Xembed, gdet, k1, k2, k3, phase,
                                  amp_B1, amp_B2, amp_B3,
                                  amp2_B1, amp2_B2, amp2_B3,
@@ -147,7 +152,7 @@ TaskStatus SeedBFieldType(MeshBlockData<Real> *rc, ParameterInput *pin, IndexDom
 
                     G.coord_embed(k, j, i, Loci::face3, Xembed);
                     gdet = G.gdet(Loci::face3, j, i);
-                    B_Pf3 = b30;
+                    B_Pf3 = B30;
                     seed_b<Seed>(Xembed, gdet, k1, k2, k3, phase,
                                  amp_B1, amp_B2, amp_B3,
                                  amp2_B1, amp2_B2, amp2_B3,
@@ -165,6 +170,9 @@ TaskStatus SeedBFieldType(MeshBlockData<Real> *rc, ParameterInput *pin, IndexDom
                     GReal Xembed[GR_DIM];
                     G.coord_embed(k, j, i, Loci::center, Xembed);
                     const GReal gdet = G.gdet(Loci::center, j, i);
+                    B_P(V1, k, j, i) = B10;
+                    B_P(V2, k, j, i) = B20;
+                    B_P(V3, k, j, i) = B30;
                     seed_b<Seed>(Xembed, gdet, k1, k2, k3, phase,
                                  amp_B1, amp_B2, amp_B3,
                                  amp2_B1, amp2_B2, amp2_B3,
@@ -175,7 +183,7 @@ TaskStatus SeedBFieldType(MeshBlockData<Real> *rc, ParameterInput *pin, IndexDom
             );
             // We still need to update conserved flux values, but then we're done
             B_FluxCT::BlockPtoU(rc, domain);
-        }
+        } // TODO B_CD!!
         return TaskStatus::complete;
     } else { // Seed with vector potential A otherwise
         // Require and load what we need if necessary
@@ -332,7 +340,7 @@ TaskStatus SeedBFieldType(MeshBlockData<Real> *rc, ParameterInput *pin, IndexDom
             }
             // Finally, make sure we initialize the primitive field too
             B_FluxCT::BlockUtoP(rc, domain);
-        }
+        } // TODO B_CD!!
 
         return TaskStatus::complete;
     }
@@ -385,6 +393,8 @@ TaskStatus SeedBField(MeshData<Real> *md, ParameterInput *pin)
             status = SeedBFieldType<BSeedType::orszag_tang_a>(rc, pin);
         } else if (b_field_type == "wave") {
             status = SeedBFieldType<BSeedType::wave>(rc, pin);
+        } else if (b_field_type == "shock_tube") {
+            status = SeedBFieldType<BSeedType::shock_tube>(rc, pin);
         } else {
             throw std::invalid_argument("Magnetic field seed type not supported: " + b_field_type);
         }
