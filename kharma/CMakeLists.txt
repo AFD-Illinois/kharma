@@ -35,6 +35,7 @@ AUX_SOURCE_DIRECTORY(${CMAKE_CURRENT_SOURCE_DIR}/implicit EXE_NAME_SRC)
 AUX_SOURCE_DIRECTORY(${CMAKE_CURRENT_SOURCE_DIR}/inverter EXE_NAME_SRC)
 AUX_SOURCE_DIRECTORY(${CMAKE_CURRENT_SOURCE_DIR}/reductions EXE_NAME_SRC)
 AUX_SOURCE_DIRECTORY(${CMAKE_CURRENT_SOURCE_DIR}/emhd EXE_NAME_SRC)
+AUX_SOURCE_DIRECTORY(${CMAKE_CURRENT_SOURCE_DIR}/tracers EXE_NAME_SRC)
 AUX_SOURCE_DIRECTORY(${CMAKE_CURRENT_SOURCE_DIR}/wind EXE_NAME_SRC)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
@@ -61,6 +62,7 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/implicit)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/inverter)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/reductions)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/emhd)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/tracers)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/wind)
 
 # generate version.cpp file from current git commit in a way that

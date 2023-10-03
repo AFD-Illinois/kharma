@@ -54,6 +54,7 @@
 #include "grmhd.hpp"
 #include "reductions.hpp"
 #include "emhd.hpp"
+#include "tracers.hpp"
 #include "wind.hpp"
 
 #include "bondi.hpp"
@@ -345,13 +346,16 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput> &pin)
     // Optional standalone packages
     // Electrons are boring but not impossible without a B field (TODO add a test?)
     if (pin->GetOrAddBoolean("electrons", "on", false)) {
-        auto t_electrons = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, Electrons::Initialize, pin.get());
+        tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, Electrons::Initialize, pin.get());
     }
     if (pin->GetOrAddBoolean("emhd", "on", false)) {
-        auto t_electrons = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, EMHD::Initialize, pin.get());
+        tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, EMHD::Initialize, pin.get());
     }
     if (pin->GetOrAddBoolean("wind", "on", false)) {
-        auto t_electrons = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, Wind::Initialize, pin.get());
+        tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, Wind::Initialize, pin.get());
+    }
+    if (pin->GetOrAddBoolean("tracers", "on", false)) {
+        tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, Tracers::Initialize, pin.get());
     }
     // Enable calculating jcon iff it is in any list of outputs (and there's even B to calculate it).
     // Since it is never required to restart, this is the only time we'd write (hence, need) it

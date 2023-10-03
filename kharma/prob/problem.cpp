@@ -42,6 +42,7 @@
 #include "grmhd.hpp"
 #include "grmhd_functions.hpp"
 #include "perturbation.hpp"
+#include "tracers.hpp"
 #include "types.hpp"
 
 // Problem initialization headers
@@ -150,6 +151,10 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
 
         if (pmb->packages.AllPackages().count("EMHD")) {
             EMHD::InitEMHDVariables(rc, pin);
+        }
+
+        if (pmb->packages.AllPackages().count("Tracers")) {
+            Tracers::InitParticles(pmb, pin);
         }
     }
 
