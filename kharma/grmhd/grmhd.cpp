@@ -46,6 +46,7 @@
 #include "gr_coordinates.hpp"
 #include "grmhd_functions.hpp"
 #include "kharma.hpp"
+#include "kharma_driver.hpp"
 
 #include <memory>
 
@@ -106,7 +107,7 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     // updates for GRMHD vars is useful for testing, or if adding just a couple of implicit variables
     // Doing EGRMHD requires implicit evolution of GRMHD variables, of course
     auto& driver = packages->Get("Driver")->AllParams();
-    auto implicit_grmhd = (driver.Get<std::string>("type") == "imex") &&
+    auto implicit_grmhd = (driver.Get<DriverType>("type") == DriverType::imex) &&
                           (pin->GetBoolean("emhd", "on") || pin->GetOrAddBoolean("GRMHD", "implicit", false));
     params.Add("implicit", implicit_grmhd);
 
@@ -126,38 +127,25 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     // closely-related size (for "Face" and "Edge" fields)
 
     // Add flags to distinguish groups of fields.
-    // 1. One flag to mark the primitive variables specifically
-    // (Parthenon has Metadata::Conserved already, but that has special meanings for it)
-    Metadata::AddUserFlag("Primitive");
-    // 2. And one for hydrodynamics (everything we directly handle in this package)
+    // Hydrodynamics (everything we directly handle in this package)
     Metadata::AddUserFlag("HD");
-    // 3. And one for magnetohydrodynamics
-    // (all HD fields plus B field, which we'll need to make use of)
+    // Magnetohydrodynamics (all HD fields plus B field, which we'll need to make use of)
     Metadata::AddUserFlag("MHD");
     // Mark whether to evolve our variables via the explicit or implicit step inside the driver
     MetadataFlag areWeImplicit = (implicit_grmhd) ? Metadata::GetUserFlag("Implicit")
                                                   : Metadata::GetUserFlag("Explicit");
+    std::vector<MetadataFlag> flags_grmhd = {Metadata::Cell, areWeImplicit, Metadata::GetUserFlag("HD"), Metadata::GetUserFlag("MHD")};
 
-    std::vector<MetadataFlag> flags_prim = {Metadata::Real, Metadata::Cell, Metadata::Derived, areWeImplicit,
-                                            Metadata::Restart, Metadata::GetUserFlag("Primitive"),
-                                            Metadata::GetUserFlag("HD"), Metadata::GetUserFlag("MHD")};
-    std::vector<MetadataFlag> flags_cons = {Metadata::Real, Metadata::Cell, Metadata::Independent, areWeImplicit,
-                                            Metadata::WithFluxes, Metadata::Conserved, Metadata::Conserved,
-                                            Metadata::GetUserFlag("HD"), Metadata::GetUserFlag("MHD")};
+    auto flags_prim = packages->Get("Driver")->Param<std::vector<MetadataFlag>>("prim_flags");
+    flags_prim.insert(flags_prim.end(), flags_grmhd.begin(), flags_grmhd.end());
+    auto flags_cons = packages->Get("Driver")->Param<std::vector<MetadataFlag>>("cons_flags");
+    flags_cons.insert(flags_cons.end(), flags_grmhd.begin(), flags_grmhd.end());
 
-    bool sync_prims = packages->Get("Driver")->Param<bool>("sync_prims");
-    if (!sync_prims) { // Normal operation
-        // As mentioned elsewhere, KHARMA treats the conserved variables as the independent ones,
-        // and the primitives as "Derived"
-        // Primitives are still used for reconstruction, physical boundaries, and output, and are
-        // generally the easier to understand quantities
-        // TODO can we not sync prims if we're using two_sync?
-        flags_cons.push_back(Metadata::FillGhost);
-        flags_prim.push_back(Metadata::FillGhost);
-    } else { // Treat primitive vars as fundamental
-        // When evolving (E)GRMHD implicitly, we just mark the primitive variables to be synchronized.
-        // This won't work for AMR, but it fits much better with the implicit solver, which expects
-        // primitive variable inputs and produces primitive variable results.
+    // We must additionally fill ghost zones of primitive variables in GRMHD, to seed the solver
+    // Only necessary to add here if syncing conserved vars
+    // Note some startup behavior relies on having the GRHD prims marked for syncing,
+    // so disable sync_utop_seed at your peril
+    if (!driver.Get<bool>("sync_prims") && pin->GetOrAddBoolean("GRMHD", "sync_utop_seed", true)) {
         flags_prim.push_back(Metadata::FillGhost);
     }
 
@@ -189,16 +177,11 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     // Generally, see the headers for function descriptions.
 
     //pkg->BlockUtoP // Taken care of by the inverter package since it's hard to do
-    // There's no "Flux" package, so we register the geometric (\Gamma*T) source here. I think it makes sense.
-    pkg->AddSource = Flux::AddGeoSource;
 
     // On physical boundaries, even if we've sync'd both, respect the application to primitive variables
-    pkg->BoundaryPtoU = Flux::BlockPtoUMHD;
+    pkg->DomainBoundaryPtoU = Flux::BlockPtoUMHD;
 
-    // Finally, the StateDescriptor/Package object determines the Callbacks Parthenon makes to
-    // a particular package -- that is, some portion of the things that the package needs done
-    // at each step, which must be done at specific times.
-    // See the header files defining each of these functions for their purpose and call context.
+    // AMR-related
     pkg->CheckRefinementBlock    = GRMHD::CheckRefinement;
     pkg->EstimateTimestepBlock   = GRMHD::EstimateTimestep;
     pkg->PostStepDiagnosticsMesh = GRMHD::PostStepDiagnostics;
@@ -222,8 +205,9 @@ Real EstimateTimestep(MeshBlockData<Real> *rc)
     auto& cmax = rc->Get("Flux.cmax").data;
     auto& cmin = rc->Get("Flux.cmin").data;
 
-    // TODO: move timestep limiter into an override of SetGlobalTimestep
-    // TODO: keep location of the max, or be able to look it up in diagnostics
+    // TODO: move timestep limiters into KHARMADriver::SetGlobalTimestep
+    // TODO: option to keep location (in embedding coords) of zone which sets step.
+    //       (this will likely be very slow, but we should do it anyway)
 
     auto& globals = pmb->packages.Get("Globals")->AllParams();
     const auto& grmhd_pars = pmb->packages.Get("GRMHD")->AllParams();

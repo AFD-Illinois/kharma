@@ -68,8 +68,7 @@ std::shared_ptr<KHARMAPackage> B_Cleanup::Initialize(ParameterInput *pin, std::s
     auto pkg = std::make_shared<KHARMAPackage>("B_Cleanup");
     Params &params = pkg->AllParams();
 
-    // The solver needs this flag
-    Metadata::AddUserFlag("B_Cleanup");
+    // TODO also support face divB!!
 
     // Solver options
     // Allow setting tolerance relative to starting value.  Off by default
@@ -104,8 +103,9 @@ std::shared_ptr<KHARMAPackage> B_Cleanup::Initialize(ParameterInput *pin, std::s
     // RHS.  Must not just be "divB" as that field does not sync boundaries
     pkg->AddParam<std::string>("rhs_name", "divB_RHS");
     // Construct a solver. We don't need the template parameter, so we use 'int'
-    // TODO TODO
-    BiCGStabSolver<int> solver(pkg.get(), rel_tolerance, SparseMatrixAccessor(), {}); //, {Metadata::GetUserFlag("B_Cleanup")});
+    // The flag "StartupOnly" marks solver variables not to be sync'd later,
+    // even though they're also marked FillGhost
+    BiCGStabSolver<int> solver(pkg.get(), rel_tolerance, SparseMatrixAccessor(), {}, {Metadata::GetUserFlag("StartupOnly")});
     // Set callback
     solver.user_MatVec = B_Cleanup::CornerLaplacian;
 
@@ -113,7 +113,7 @@ std::shared_ptr<KHARMAPackage> B_Cleanup::Initialize(ParameterInput *pin, std::s
 
     // FIELDS
     std::vector<int> s_vector({NVEC});
-    std::vector<MetadataFlag> cleanup_flags({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy, Metadata::GetUserFlag("B_Cleanup")});
+    std::vector<MetadataFlag> cleanup_flags({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy, Metadata::GetUserFlag("StartupOnly")});
     auto cleanup_flags_ghost = cleanup_flags;
     cleanup_flags_ghost.push_back(Metadata::FillGhost);
     // Scalar potential, solution to del^2 p = div B
@@ -135,10 +135,8 @@ std::shared_ptr<KHARMAPackage> B_Cleanup::Initialize(ParameterInput *pin, std::s
 
     // Declare fields if we're doing that
     if (manage_field) {
-        // Stolen verbatim from FluxCT, except we don't register the FixFlux step obvs
-        // Probably will crash due to not having the right parameters: add as needed.
-        // Best to crash, this mode is very not supported.
-        // TODO preserve an easier form of divB in this case?
+        // Stolen verbatim from FluxCT, will need updates to actually use
+        throw std::runtime_error("B field cleanup/projection is set as B field transport! If you really want this, disable this error in source!");
 
         // Mark if we're evolving implicitly
         bool implicit_b = pin->GetOrAddBoolean("b_field", "implicit", false);
@@ -237,7 +235,7 @@ TaskStatus B_Cleanup::CleanupDivergence(std::shared_ptr<MeshData<Real>>& md)
     KHARMADriver::SyncAllBounds(md);
 
     // Add a solver container and associated MeshData
-    std::vector<std::string> names = KHARMA::GetVariableNames(&pmesh->packages, Metadata::GetUserFlag("B_Cleanup"));
+    std::vector<std::string> names = KHARMA::GetVariableNames(&pmesh->packages, {Metadata::GetUserFlag("B_Cleanup"), Metadata::GetUserFlag("StartupOnly")});
     auto &msolve = pmesh->mesh_data.Add("solve", names);
 
     // Create a TaskCollection of just the solve,

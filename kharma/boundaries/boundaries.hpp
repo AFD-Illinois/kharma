@@ -85,18 +85,9 @@ TaskStatus FixFlux(MeshData<Real> *rc);
 void CheckInflow(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, bool coarse);
 
 /**
- * KHARMA is very particular about corner boundaries.
- * In particular, we apply the outflow boundary over ALL X2 & X3.
- * Then we apply the polar bound only where outflow is not applied,
- * and periodic bounds only where neither other bound applies.
- * The latter is accomplished regardless of Parthenon's definitions,
- * since these functions are run after Parthenon's MPI boundary syncs &
- * replace whatever they've done.
- * However, the former must be added after the X2 boundary call,
- * replacing the reflecting conditions in the X1/X2 corner (or in 3D, edge)
- * with outflow conditions based on the updated ghost cells.
+ * Correct for geometry when applying primitive B field boundaries
  */
-void FixCorner(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, bool coarse);
+void CorrectBPrimitive(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain, bool coarse);
 
 /**
  * Check for velocity toward the simulation domain in a zone, and eliminate it.

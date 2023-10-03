@@ -66,10 +66,10 @@ std::shared_ptr<KHARMAPackage> Inverter::Initialize(ParameterInput *pin, std::sh
     // Flag denoting UtoP inversion failures
     // Only needed if we're actually calling UtoP, but always allocated as it's retrieved often
     // Needs boundary sync if treating primitive variables as fundamental
-    bool sync_prims = packages->Get("Driver")->Param<bool>("sync_prims");
+    bool prims_are_fundamental = packages->Get("Driver")->Param<bool>("prims_are_fundamental");
     bool implicit_grmhd = packages->Get("GRMHD")->Param<bool>("implicit");
     Metadata m;
-    if (sync_prims && !implicit_grmhd) {
+    if (prims_are_fundamental && !implicit_grmhd) {
         m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy, Metadata::FillGhost});
     } else {
         m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
@@ -151,7 +151,7 @@ TaskStatus Inverter::PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
     // Debugging/diagnostic info about floor and inversion flags
     // TODO grab the total and die on too many
     if (flag_verbose >= 1) {
-        // TODO this should move into BlockUtoP when everything goes MeshData
+        // TODO this should move into UtoP when everything goes MeshData
         Reductions::StartFlagReduce(md, "pflag", Inverter::status_names, IndexDomain::interior, false, 1);
         Reductions::CheckFlagReduceAndPrintHits(md, "pflag", Inverter::status_names, IndexDomain::interior, false, 1);
     }

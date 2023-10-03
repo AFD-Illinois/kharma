@@ -43,6 +43,8 @@ namespace B_CD
 
 std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages)
 {
+    throw std::runtime_error("Constraint-damping transport is not functional with modern B field initialization!");
+
     auto pkg = std::make_shared<KHARMAPackage>("B_CD");
     Params &params = pkg->AllParams();
 

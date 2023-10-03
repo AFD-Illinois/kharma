@@ -35,7 +35,6 @@
 
 #include "types.hpp"
 
-// PHYSICS-RELATED
 // TODO take & accumulate TaskStatus?  Useful for ::incomplete if we ever want to do that
 // TODO continue meshification until all is mesh
 
@@ -57,8 +56,7 @@ TaskStatus Packages::FixFlux(MeshData<Real> *md)
 TaskStatus Packages::BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
     Flag("BlockUtoP");
-    // Apply UtoP from B_CT, as this fills B primitive var for the GRMHD UtoP
-    // TODO could maybe call this in Inverter, or handle all ordering there, or something
+    // Apply UtoP from B_CT first, as this fills cons.B at cell centers
     auto pmb = rc->GetBlockPointer();
     auto pkgs = pmb->packages.AllPackages();
     if (pkgs.count("B_CT")) {
@@ -105,14 +103,18 @@ TaskStatus Packages::BoundaryUtoP(MeshBlockData<Real> *rc, IndexDomain domain, b
     return TaskStatus::complete;
 }
 
-TaskStatus Packages::BoundaryPtoU(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
+TaskStatus Packages::BoundaryPtoUElseUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
-    Flag("BoundaryPtoU");
+    Flag("DomainBoundaryLockstep");
     auto kpackages = rc->GetBlockPointer()->packages.AllPackagesOfType<KHARMAPackage>();
     for (auto kpackage : kpackages) {
-        if (kpackage.second->BoundaryPtoU != nullptr) {
-            Flag("BoundaryPtoU_"+kpackage.first);
-            kpackage.second->BoundaryPtoU(rc, domain, coarse);
+        if (kpackage.second->DomainBoundaryPtoU != nullptr) {
+            Flag("DomainBoundaryPtoU_"+kpackage.first);
+            kpackage.second->DomainBoundaryPtoU(rc, domain, coarse);
+            EndFlag();
+        } else if (kpackage.second->BoundaryUtoP != nullptr) {
+            Flag("DomainBoundaryUtoP_"+kpackage.first);
+            kpackage.second->BoundaryUtoP(rc, domain, coarse);
             EndFlag();
         }
     }

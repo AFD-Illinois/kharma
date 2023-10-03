@@ -40,6 +40,9 @@
 
 using namespace parthenon;
 
+// See Initialize()
+enum class DriverType{kharma, imex, simple};
+
 /**
  * This is the "Driver" class for KHARMA.
  * A Driver object orchestrates everything that has to be done to a mesh to constitute a step.
@@ -124,8 +127,7 @@ class KHARMADriver : public MultiStageDriver {
          * This sequence is used identically in several places, so it makes sense
          * to define once and use elsewhere.
          */
-        static TaskID AddMPIBoundarySync(const TaskID t_start, TaskList &tl, std::shared_ptr<MeshData<Real>> &md,
-                                         bool sync_prims=false, bool multilevel=false);
+        static TaskID AddMPIBoundarySync(const TaskID t_start, TaskList &tl, std::shared_ptr<MeshData<Real>> &md);
 
         /**
          * Calculate the fluxes in each direction
@@ -136,9 +138,9 @@ class KHARMADriver : public MultiStageDriver {
          * Single call to sync all boundary conditions (MPI/internal and domain/physical boundaries)
          * Used anytime boundary sync is needed outside the usual loop of steps.
          * 
-         * Only use this as a task each step when debugging!
+         * Only use this during the run if you're debugging!
          */
-        static TaskStatus SyncAllBounds(std::shared_ptr<MeshData<Real>> &md, bool sync_prims=false, bool multilevel=false);
+        static TaskStatus SyncAllBounds(std::shared_ptr<MeshData<Real>> &md);
 
         // TODO swapped versions of these
         /**

@@ -100,11 +100,14 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     MetadataFlag areWeImplicit = (implicit_b) ? Metadata::GetUserFlag("Implicit")
                                               : Metadata::GetUserFlag("Explicit");
 
-    // Flags for B fields. "primitive" form is field, "conserved" is flux
-    std::vector<MetadataFlag> flags_prim = {Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::GetUserFlag("Primitive"),
-                                            Metadata::Restart, Metadata::GetUserFlag("MHD"), areWeImplicit, Metadata::Vector};
-    std::vector<MetadataFlag> flags_cons = {Metadata::Real, Metadata::Cell, Metadata::Independent, Metadata::Conserved, Metadata::Conserved,
-                                            Metadata::WithFluxes, Metadata::FillGhost, Metadata::GetUserFlag("MHD"), areWeImplicit, Metadata::Vector};
+    // Flags for B fields
+    std::vector<MetadataFlag> flags_b = {Metadata::Cell, Metadata::GetUserFlag("MHD"), areWeImplicit, Metadata::Vector};
+
+    // "primitive" B field is field, "conserved" is flux
+    auto flags_prim = packages->Get("Driver")->Param<std::vector<MetadataFlag>>("prim_flags");
+    flags_prim.insert(flags_prim.end(), flags_b.begin(), flags_b.end());
+    auto flags_cons = packages->Get("Driver")->Param<std::vector<MetadataFlag>>("cons_flags");
+    flags_cons.insert(flags_cons.end(), flags_b.begin(), flags_b.end());
 
     auto m = Metadata(flags_prim, s_vector);
     pkg->AddField("prims.B", m);
@@ -112,7 +115,7 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     pkg->AddField("cons.B", m);
 
     // Declare EMF temporary variables, to avoid malloc/free during each step
-    // These are edge-centered but we only need the interior + 1-zone halo anyway
+    // Technically these are edge-centered but we only need the interior + 1-zone halo anyway, so we store as a vector
     std::vector<MetadataFlag> flags_emf = {Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy};
     m = Metadata(flags_emf, s_vector);
     pkg->AddField("emf", m);
@@ -465,6 +468,7 @@ double MaxDivB(MeshData<Real> *md)
 {
     auto pmesh = md->GetMeshPointer();
     const int ndim = pmesh->ndim;
+    if (ndim < 2) return 0.;
 
     // Packing out here avoids frequent per-mesh packs.  Do we need to?
     auto B_U = md->PackVariables(std::vector<std::string>{"cons.B"});
@@ -545,6 +549,7 @@ void CalcDivB(MeshData<Real> *md, std::string divb_field_name)
 {
     auto pmesh = md->GetMeshPointer();
     const int ndim = pmesh->ndim;
+    if (ndim < 2) return;
 
     // Packing out here avoids frequent per-mesh packs.  Do we need to?
     auto B_U = md->PackVariables(std::vector<std::string>{"cons.B"});

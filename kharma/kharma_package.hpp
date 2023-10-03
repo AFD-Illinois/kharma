@@ -62,15 +62,16 @@ class KHARMAPackage : public StateDescriptor {
         // rather, they are called on zone center values once per step only.
         std::function<void(MeshBlockData<Real>*, IndexDomain, bool)> BlockUtoP = nullptr;
         std::function<void(MeshData<Real>*, IndexDomain, bool)> MeshUtoP = nullptr;
-        // Allow applying UtoP only/separately for physical boundary domains after sync/prolong/restrict
-        // e.g., GRMHD does *not* register this as boundaries are applied to prims,
-        // whereas implicitly-evolved vars *only* register this.
+        // Allow applying UtoP only/separately for boundary domains after sync/prolong/restrict ops
+        // All packages with independent variables should register this for AMR
         std::function<void(MeshBlockData<Real>*, IndexDomain, bool)> BoundaryUtoP = nullptr;
-        // Same thing, the other way. For packages syncing primitives, e.g. GRMHD
-        std::function<void(MeshBlockData<Real>*, IndexDomain, bool)> BoundaryPtoU = nullptr;
+        // On domain boundaries, however, we sometimes need to respect the primitive variables.
+        // Currently only the GRMHD primitives (rho, u, uvec) do this
+        std::function<void(MeshBlockData<Real>*, IndexDomain, bool)> DomainBoundaryPtoU = nullptr;
 
         // Going the other way, however, is handled by Flux::PtoU.
-        // All PtoU implementations are device-side (called prim_to_flux)
+        // All PtoU implementations are device-side (called prim_to_flux),
+        // so we do not need something like
         //std::function<void(MeshBlockData<Real>*, IndexDomain, bool)> BlockPtoU = nullptr;
 
         // Source term to add to the conserved variables during each step
@@ -85,7 +86,6 @@ class KHARMAPackage : public StateDescriptor {
         std::function<void(MeshData<Real>*)> FixFlux = nullptr;
 
         // Apply any floors or limiters specific to the package (that is, on the package's variables)
-        // Called by Floors::*ApplyFloors
         std::function<void(MeshBlockData<Real>*, IndexDomain)> BlockApplyFloors = nullptr;
         std::function<void(MeshData<Real>*, IndexDomain)> MeshApplyFloors = nullptr;
 
@@ -129,18 +129,21 @@ TaskStatus BlockUtoP(MeshBlockData<Real> *mbd, IndexDomain domain, bool coarse=f
 TaskStatus MeshUtoP(MeshData<Real> *md, IndexDomain domain, bool coarse=false);
 
 /**
- * Version of UtoP specifically for boundaries. Some packages sync & apply boundaries to
- * conserved variables, some to primitive variables.
+ * U to P specifically for boundaries (domain and MPI).
+ * All packages must define this, even if not using UtoP, as KHARMA must sync conserved
+ * variables in AMR mode.
  */
 TaskStatus BoundaryUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse=false);
 /**
- * P to U for boundaries.  As it's internal to the flux updates, the "normal" PtoU is
- * implemented device-side and called from the "Flux" package
+ * For each package, run DomainBoundaryPtoU if available, otherwise BoundaryUtoP.
+ * This is for domain boundaries: if we're syncing the conserved variables, we still
+ * want to apply domain boundaries to the GRHD primitive variables
+ * See KBoundaries::ApplyBoundary for details
  */
-TaskStatus BoundaryPtoU(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse=false);
+TaskStatus BoundaryPtoUElseUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse=false);
 
 /**
- * Fill all conserved variables (U) from primitive variables (P), over a whole block
+ * Fill all conserved variables (U) from primitive variables (P), over a domain on a single block
  */
 // TaskStatus BlockPtoU(MeshBlockData<Real> *mbd, IndexDomain domain, bool coarse=false);
 

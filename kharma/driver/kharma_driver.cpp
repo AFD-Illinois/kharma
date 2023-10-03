@@ -57,15 +57,19 @@ std::shared_ptr<KHARMAPackage> KHARMADriver::Initialize(ParameterInput *pin, std
     // driver (formerly HARM driver), and the latter supporting implicit stepping of some or all variables
     // Mostly, packages should react to e.g. the "sync_prims" option rather than the driver name
     bool do_emhd = pin->GetOrAddBoolean("emhd", "on", false);
-    std::string driver_type = pin->GetOrAddString("driver", "type", (do_emhd) ? "imex" : "kharma");
-    if (driver_type == "harm") driver_type = "kharma"; // TODO enum rather than strings?
+    std::string driver_type_s = pin->GetOrAddString("driver", "type", (do_emhd) ? "imex" : "kharma");
+    DriverType driver_type;
+    if (driver_type_s == "harm" || driver_type_s == "kharma") {
+        driver_type = DriverType::kharma;
+    } else if (driver_type_s == "imex") {
+        driver_type = DriverType::imex;
+    } else if (driver_type_s == "simple") {
+        driver_type = DriverType::simple;
+    } else {
+        throw std::invalid_argument("Driver type must be one of: simple, kharma, imex");
+    }
     params.Add("type", driver_type);
-
-    // Record whether we marked the prims or cons as "FillGhost." This also translates to whether we consider
-    // primitive or conserved state to be the ground truth when updating values in a step.
-    // Currently "imex" and "simple" drivers both sync primitive vars
-    bool sync_prims = !(driver_type == "kharma");
-    params.Add("sync_prims", sync_prims);
+    params.Add("name", driver_type_s);
 
     // Synchronize boundary variables twice. Ensures KHARMA is agnostic to the breakdown
     // of meshblocks, at the cost of twice the MPI overhead, for potentially worse strong scaling.
@@ -87,9 +91,9 @@ std::shared_ptr<KHARMAPackage> KHARMADriver::Initialize(ParameterInput *pin, std
     if (recon == "donor_cell") {
         params.Add("recon", KReconstruction::Type::donor_cell);
         stencil = 1;
-    } else if (recon == "linear_vl") {
-        params.Add("recon", KReconstruction::Type::linear_vl);
-        stencil = 3;
+    // } else if (recon == "linear_vl") {
+    //     params.Add("recon", KReconstruction::Type::linear_vl);
+    //     stencil = 3;
     } else if (recon == "linear_mc") {
         params.Add("recon", KReconstruction::Type::linear_mc);
         stencil = 3;
@@ -104,7 +108,7 @@ std::shared_ptr<KHARMAPackage> KHARMADriver::Initialize(ParameterInput *pin, std
         stencil = 5;
     } else {
         std::cerr << "Reconstruction type not supported!  Supported reconstructions:" << std::endl;
-        std::cerr << "donor_cell, linear_mc, linear_vl, weno5" << std::endl;
+        std::cerr << "donor_cell, linear_mc, weno5, weno5_lower_edges, weno5_lower_poles (linear_vl coming back soon!)" << std::endl;
         throw std::invalid_argument("Unsupported reconstruction algorithm!");
     }
     // Warn if using less than 3 ghost zones w/WENO etc, 2 w/Linear, etc.
@@ -112,12 +116,41 @@ std::shared_ptr<KHARMAPackage> KHARMADriver::Initialize(ParameterInput *pin, std
         throw std::runtime_error("Not enough ghost zones for specified reconstruction!");
     }
 
-    // Field flags related to driver operation are defined outside any particular driver
-    // When using the Implicit package we need to globally distinguish implicitly and explicitly-updated variables
+    // When using the Implicit package we need to globally distinguish implicit & explicit vars
     // All independent variables should be marked one or the other,
     // so we define the flags here to avoid loading order issues
     Metadata::AddUserFlag("Implicit");
     Metadata::AddUserFlag("Explicit");
+
+    // 1. One flag to mark the primitive variables specifically
+    // (Parthenon has Metadata::Conserved already)
+    Metadata::AddUserFlag("Primitive");
+
+    // Finally, a flag for anything used (and possibly sync'd) during startup,
+    // but which should not be evolved (or more importantly, sync'd) during main stepping
+    Metadata::AddUserFlag("StartupOnly");
+
+    // This marks whether we consider primitive or conserved state to be
+    // the ground truth when updating values in a step.
+    // Currently "imex" and "simple" drivers both update primitive vars
+    bool prims_are_fundamental = driver_type != DriverType::kharma;
+    params.Add("prims_are_fundamental", prims_are_fundamental);
+
+    // Finally, we set default flags for primitive and conserved variables
+    // This first mode is only for simulations without AMR/SMR, as primitives shouldn't be prolongated
+    bool sync_prims = prims_are_fundamental &&
+                        (!pin->DoesParameterExist("parthenon/mesh", "numlevel") ||
+                         pin->GetInteger("parthenon/mesh", "numlevel") == 1);
+    params.Add("sync_prims", sync_prims);
+    if (sync_prims) {
+        // If we're not in AMR, we can sync primitive variables directly
+        params.Add("prim_flags", std::vector<MetadataFlag>{Metadata::Real, Metadata::Derived, Metadata::FillGhost, Metadata::Restart, Metadata::GetUserFlag("Primitive")});
+        params.Add("cons_flags", std::vector<MetadataFlag>{Metadata::Real, Metadata::Independent, Metadata::WithFluxes, Metadata::Conserved});
+    } else {
+        // If we're in AMR or using the KHARMA driver anyway, sync conserved vars
+        params.Add("prim_flags", std::vector<MetadataFlag>{Metadata::Real, Metadata::Derived, Metadata::Restart, Metadata::GetUserFlag("Primitive")});
+        params.Add("cons_flags", std::vector<MetadataFlag>{Metadata::Real, Metadata::Independent, Metadata::FillGhost, Metadata::WithFluxes, Metadata::Conserved});
+    }
 
     return pkg;
 }
@@ -126,26 +159,32 @@ void KHARMADriver::AddFullSyncRegion(TaskCollection& tc, std::shared_ptr<MeshDat
 {
     const TaskID t_none(0);
 
-    bool sync_prims = pmesh->packages.Get("Driver")->Param<bool>("sync_prims");
-
     // MPI boundary exchange, done over MeshData objects/partitions at once
     // Parthenon includes physical bounds
     const int num_partitions = pmesh->DefaultNumPartitions(); // Usually 1
     TaskRegion &bound_sync = tc.AddRegion(num_partitions);
     for (int i = 0; i < num_partitions; i++) {
         auto &tl = bound_sync[i];
-        AddMPIBoundarySync(t_none, tl, md_sync, sync_prims, pmesh->multilevel);
+        AddMPIBoundarySync(t_none, tl, md_sync);
     }
 }
 
-// We take the extra bools to make this a static method, so SyncAllBounds can be static
-TaskID KHARMADriver::AddMPIBoundarySync(const TaskID t_start, TaskList &tl, std::shared_ptr<MeshData<Real>> &mc1,
-                                        bool sync_prims, bool multilevel)
+TaskID KHARMADriver::AddMPIBoundarySync(const TaskID t_start, TaskList &tl, std::shared_ptr<MeshData<Real>> &mc1)
 {
     Flag("AddBoundarySync");
     auto t_start_sync = t_start;
 
-    if (sync_prims) {
+    // Pull the mesh pointer from mc1 so we can be a static method
+    auto &params = mc1->GetMeshPointer()->packages.Get("Driver")->AllParams();
+    bool multilevel = mc1->GetMeshPointer()->multilevel;
+
+    // If we're "syncing primitive variables" but must exchange conserved vars to prolong/restrict them,
+    // make sure to run P->U, then sync, then U->P
+    // Note this has the side effect of filling U in some zones,
+    // which must be replaced during e.g. startup code when primitive values should be truth
+    bool prims_are_fundamental = params.Get<bool>("prims_are_fundamental");
+    bool sync_prims = params.Get<bool>("sync_prims");
+    if (prims_are_fundamental && !sync_prims) {
         TaskID t_all_ptou[mc1->NumBlocks() * BOUNDARY_NFACES];
         TaskID t_ptou_final(0);
         int i_task = 0;
@@ -171,7 +210,7 @@ TaskID KHARMADriver::AddMPIBoundarySync(const TaskID t_start, TaskList &tl, std:
     EndFlag();
 
     // If we're "syncing primitive variables" but just exchanged conserved variables (B, implicit, etc), we need to recover the prims
-    if (sync_prims) {
+    if (prims_are_fundamental && !sync_prims) {
         TaskID t_all_utop[mc1->NumBlocks() * BOUNDARY_NFACES];
         TaskID t_utop_final(0);
         int i_task = 0;
@@ -194,16 +233,14 @@ TaskID KHARMADriver::AddMPIBoundarySync(const TaskID t_start, TaskList &tl, std:
     return t_bounds;
 }
 
-TaskStatus KHARMADriver::SyncAllBounds(std::shared_ptr<MeshData<Real>> &md, bool sync_prims, bool multilevel)
+TaskStatus KHARMADriver::SyncAllBounds(std::shared_ptr<MeshData<Real>> &md)
 {
     Flag("SyncAllBounds");
     TaskID t_none(0);
 
-    // 1. Sync MPI bounds
-    // This call syncs the primitive variables when using the ImEx driver, and cons
     TaskCollection tc;
     auto tr = tc.AddRegion(1);
-    AddMPIBoundarySync(t_none, tr[0], md, sync_prims, multilevel);
+    AddMPIBoundarySync(t_none, tr[0], md);
     while (!tr.Execute());
 
     EndFlag();

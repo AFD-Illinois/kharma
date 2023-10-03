@@ -68,7 +68,7 @@ void MeshUtoP(MeshData<Real> *md, IndexDomain domain, bool coarse=false);
 
 /**
  * Reverse of the above.  Only used alone during initialization.
- * Generally, use Flux::BlockPtoU or Flux::BlockPtoUExceptMHD.
+ * Generally, use Flux::BlockPtoU
  */
 void BlockPtoU(MeshBlockData<Real> *md, IndexDomain domain, bool coarse=false);
 

@@ -209,6 +209,10 @@ void KHARMA::FixParameters(ParameterInput *pin)
                     pin->GetOrAddReal("coordinates", "r_in", tmp_coords.X1_to_embed(x1min));
                 }
             }
+        } else {
+            // Add the coordinate versions if they don't exist (usually restarts)
+            pin->GetOrAddReal("coordinates", "r_in", tmp_coords.X1_to_embed(pin->GetReal("parthenon/mesh", "x1min")));
+            pin->GetOrAddReal("coordinates", "r_out", tmp_coords.X1_to_embed(pin->GetReal("parthenon/mesh", "x1max")));
         }
 
         // If the simulation domain extends inside the EH, we change some boundary options
@@ -241,7 +245,8 @@ void KHARMA::FixParameters(ParameterInput *pin)
     //             << tmp_coords.stopx(1) << " "
     //             << tmp_coords.stopx(2) << " "
     //             << tmp_coords.stopx(3) << std::endl;
-    // TODO(BSP) is this worth looping?  I say probably no.
+    // In any coordinate system which sets boundaries (i.e. not Cartesian),
+    // stopx > startx > 0. In Cartesian xNmin/xNmax are required
     if (tmp_coords.startx(1) >= 0)
         pin->GetOrAddReal("parthenon/mesh", "x1min", tmp_coords.startx(1));
     if (tmp_coords.stopx(1) >= 0)

@@ -60,7 +60,7 @@ TaskCollection KHARMADriver::MakeSimpleTaskCollection(BlockList_t &blocks, int s
         }
     }
 
-    //auto t_heating_test = tl.AddTask(t_none, Electrons::ApplyHeating, base.get());
+
 
     // Big synchronous region: get & apply fluxes to advance the fluid state
     // num_partitions is nearly always 1

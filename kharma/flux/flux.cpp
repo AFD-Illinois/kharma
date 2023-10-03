@@ -52,7 +52,7 @@ std::shared_ptr<KHARMAPackage> Flux::Initialize(ParameterInput *pin, std::shared
     // That's what this function is for.
     int nvar = KHARMA::PackDimension(packages.get(), Metadata::WithFluxes);
     std::vector<int> s_flux({nvar});
-    // TODO optionally move all these to faces? Not important yet, no output, more memory
+    // TODO optionally move all these to faces? Not important yet, & faces have no output, more memory
     std::vector<MetadataFlag> flags_flux = {Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy};
     Metadata m = Metadata(flags_flux, s_flux);
     pkg->AddField("Flux.Pr", m);
@@ -62,7 +62,6 @@ std::shared_ptr<KHARMAPackage> Flux::Initialize(ParameterInput *pin, std::shared
     pkg->AddField("Flux.Fr", m);
     pkg->AddField("Flux.Fl", m);
 
-    // TODO could formally move this to face
     std::vector<int> s_vector({NVEC});
     std::vector<MetadataFlag> flags_speed = {Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy};
     m = Metadata(flags_speed, s_vector);
@@ -70,12 +69,15 @@ std::shared_ptr<KHARMAPackage> Flux::Initialize(ParameterInput *pin, std::shared
     pkg->AddField("Flux.cmin", m);
 
     // Preserve all velocities at faces, for upwinded constrained transport
-    if (packages->AllPackages().count("B_CT")) {
+    if (packages->AllPackages().count("B_CT")) { // TODO & GS05_c
         std::vector<MetadataFlag> flags_vel = {Metadata::Real, Metadata::Face, Metadata::Derived, Metadata::OneCopy};
         m = Metadata(flags_vel, s_vector);
         pkg->AddField("Flux.vr", m);
         pkg->AddField("Flux.vl", m);
     }
+
+    // We register the geometric (\Gamma*T) source here
+    pkg->AddSource = Flux::AddGeoSource;
 
     EndFlag();
     return pkg;

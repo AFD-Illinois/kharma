@@ -59,6 +59,11 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
     bool zero_polar_flux = pin->GetOrAddBoolean("boundaries", "zero_polar_flux", spherical);
     params.Add("zero_polar_flux", zero_polar_flux);
 
+    // Apply physical boundaries to conserved GRMHD variables rho u^r, T^mu_nu
+    // Probably inadvisable?
+    bool domain_bounds_on_conserved = pin->GetOrAddBoolean("boundaries", "domain_bounds_on_conserved", false);
+    params.Add("domain_bounds_on_conserved", domain_bounds_on_conserved);
+
     // Fix the X1/X2 corner by replacing the reflecting condition with the inflow
     // Never use this if not in spherical coordinates
     // Activates by default only with reflecting X2/outflow X1 and interior boundary inside EH
@@ -71,8 +76,11 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
              pin->GetString("boundaries", "inner_x1") == "outflow");
         bool inside_eh = pin->GetBoolean("coordinates", "domain_intersects_eh");
         fix_corner = pin->GetOrAddBoolean("boundaries", "fix_corner", correct_bounds && inside_eh);
+        // Allow overriding with specific name
+        fix_corner = pin->GetOrAddBoolean("boundaries", "fix_corner_inner", fix_corner);
     }
-    params.Add("fix_corner", fix_corner);
+    params.Add("fix_corner_inner", fix_corner);
+    params.Add("fix_corner_outer", pin->GetOrAddBoolean("boundaries", "fix_corner_outer", false));
 
     Metadata m_x1, m_x2, m_x3;
     {
@@ -99,8 +107,7 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
     }
 
     // Set options for each boundary
-    for (int i = 0; i < BOUNDARY_NFACES; i++)
-    {
+    for (int i = 0; i < BOUNDARY_NFACES; i++) {
         const auto bface = (BoundaryFace) i;
         const auto bdomain = BoundaryDomain(bface);
         const auto bname = BoundaryName(bface);
@@ -259,18 +266,57 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
         EndFlag();
     }
 
-    // If specified, fix corner values when applying X2 boundaries (see function)
-    if (bdir == X2DIR && params.Get<bool>("fix_corner")) {
-        Flag("FixCorner");
-        FixCorner(rc, domain, coarse);
-        EndFlag();
+    /*
+    * KHARMA is very particular about corner boundaries.
+    * In particular, we apply the outflow boundary over ALL X2 & X3.
+    * Then we apply the polar bound only where outflow is not applied,
+    * and periodic bounds only where neither other bound applies.
+    * The latter is accomplished regardless of Parthenon's definitions,
+    * since these functions are run after Parthenon's MPI boundary syncs &
+    * replace whatever they've done.
+    * However, the former must be added after the X2 boundary call,
+    * replacing the reflecting conditions in the X1/X2 corner (or in 3D, edge)
+    * with outflow conditions based on the updated ghost cells.
+    */
+    if (bdir == X2DIR) {
+        // If we're on the interior edge, re-apply that edge for our block by calling
+        // exactly the same function that Parthenon does.  This ensures we're applying
+        // the same thing, just emulating calling it after X2.
+        if (params.Get<bool>("fix_corner_inner")) {
+            if (pmb->boundary_flag[BoundaryFace::inner_x1] == BoundaryFlag::user) {
+                Flag("FixCorner");
+                ApplyBoundary(rc, IndexDomain::inner_x1, coarse);
+                EndFlag();
+            }
+        }
+        if (params.Get<bool>("fix_corner_outer")) {
+            if (pmb->boundary_flag[BoundaryFace::outer_x1] == BoundaryFlag::user) {
+                Flag("FixCorner");
+                ApplyBoundary(rc, IndexDomain::outer_x1, coarse);
+                EndFlag();
+            }
+        }
     }
 
-    // Respect the fluid primitives on boundaries (does not include B)
-    // Also currently the EMHD extra variables q, dP
-    Packages::BoundaryPtoU(rc.get(), domain, coarse);
-    // For everything else, respect conserved variables
-    Packages::BoundaryUtoP(rc.get(), domain, coarse);
+    // If we applied the domain boundary to primitives (as we usually do)...
+    if (!params.Get<bool>("domain_bounds_on_conserved")) {
+        bool sync_prims = rc->GetBlockPointer()->packages.Get("Driver")->Param<bool>("sync_prims");
+        // There are two modes of operation here:
+        if (sync_prims) {
+            // 1. ImEx w/o AMR:
+            //    PRIMITIVE variables (only) are marked FillGhost
+            //    So, run PtoU on EVERYTHING (and correct the B field)
+            CorrectBPrimitive(rc, domain, coarse);
+            Flux::BlockPtoU(rc.get(), domain, coarse);
+        } else {
+            // 2. Normal (KHARMA driver, ImEx w/AMR):
+            //    CONSERVED variables are marked FillGhost, plus FLUID PRIMITIVES.
+            //    So, run PtoU on FLUID, and UtoP on EVERYTHING ELSE
+            Packages::BoundaryPtoUElseUtoP(rc.get(), domain, coarse);
+        }
+    } else {
+        Packages::BlockUtoP(rc.get(), domain, coarse);
+    }
 
     EndFlag();
 }
@@ -295,19 +341,34 @@ void KBoundaries::CheckInflow(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDom
     );
 }
 
-void KBoundaries::FixCorner(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, bool coarse)
+void KBoundaries::CorrectBPrimitive(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain, bool coarse)
 {
+    Flag("CorrectBPrimitive");
     std::shared_ptr<MeshBlock> pmb = rc->GetBlockPointer();
-    if (pmb->pmy_mesh->ndim < 2)
-        return;
+    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
 
-    // If we're on the interior edge, re-apply that edge for our block by calling
-    // whatever the X1 boundary is, again.  This ensures we're applying
-    // the same thing, just emulating calling it after X2.
-    if (pmb->boundary_flag[BoundaryFace::inner_x1] == BoundaryFlag::user)
-    {
-        ApplyBoundary(rc, IndexDomain::inner_x1, coarse);
-    }
+    auto B_P = rc->PackVariables(std::vector<std::string>{"prims.B"});
+    // Return if no field to correct
+    if (B_P.GetDim(4) == 0) return;
+
+    const auto& G = pmb->coords;
+
+    const auto &bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
+    const int dir = BoundaryDirection(domain);
+    const auto &range = (dir == 1) ? bounds.GetBoundsI(IndexDomain::interior)
+                            : (dir == 2 ? bounds.GetBoundsJ(IndexDomain::interior)
+                                : bounds.GetBoundsK(IndexDomain::interior));
+    const int ref = BoundaryIsInner(domain) ? range.s : range.e;
+
+    pmb->par_for_bndry(
+        "Correct_B_P", IndexRange{0,NVEC-1}, domain, CC, coarse,
+        KOKKOS_LAMBDA (const int &v, const int &k, const int &j, const int &i) {
+            B_P(v, k, j, i) *= G.gdet(Loci::center, (dir == 2) ? ref : j, (dir == 1) ? ref : i)
+                                / G.gdet(Loci::center, j, i);
+        }
+    );
+
+    EndFlag();
 }
 
 TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)

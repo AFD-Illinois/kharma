@@ -124,26 +124,28 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     // Only enable limits internally if we're actually doing EMHD
     params.Add("enable_emhd_limits", enable_emhd_limits);
 
-    // Parthenon adds a flag consisting of just the package name,
-    // but it's useless to us since we want just the important variables to carry a name
-    Metadata::AddUserFlag("EMHDVar");
-
     // General options for primitive and conserved scalar variables in ImEx driver
     // EMHD is supported only with imex driver and implicit evolution,
     // synchronizing primitive variables
-    Metadata m_con  = Metadata({Metadata::Real, Metadata::Cell, Metadata::Independent, Metadata::GetUserFlag("Implicit"),
-                                Metadata::WithFluxes, Metadata::Conserved, Metadata::Conserved, Metadata::GetUserFlag("EMHDVar")});
-    Metadata m_prim = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::GetUserFlag("Implicit"),
-                                Metadata::Restart, Metadata::FillGhost, Metadata::GetUserFlag("Primitive"), Metadata::GetUserFlag("EMHDVar")});
+    Metadata::AddUserFlag("EMHDVar"); // "EMHD" name now taken by Parthenon for general flag, we want this one specific
+    std::vector<MetadataFlag> emhd_flags = {Metadata::Cell, Metadata::GetUserFlag("Implicit"), Metadata::GetUserFlag("EMHD")};
+
+    auto flags_prim = packages->Get("Driver")->Param<std::vector<MetadataFlag>>("prim_flags");
+    flags_prim.insert(flags_prim.end(), emhd_flags.begin(), emhd_flags.end());
+    auto flags_cons = packages->Get("Driver")->Param<std::vector<MetadataFlag>>("cons_flags");
+    flags_cons.insert(flags_cons.end(), emhd_flags.begin(), emhd_flags.end());
+
+    Metadata m_cons = Metadata(flags_cons);
+    Metadata m_prim = Metadata(flags_prim);
 
     // Heat conduction
     if (conduction) {
-        pkg->AddField("cons.q", m_con);
+        pkg->AddField("cons.q", m_cons);
         pkg->AddField("prims.q", m_prim);
     }
     // Pressure anisotropy
     if (viscosity) {
-        pkg->AddField("cons.dP", m_con);
+        pkg->AddField("cons.dP", m_cons);
         pkg->AddField("prims.dP", m_prim);
     }
 
@@ -156,19 +158,15 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     Metadata m_temp_vec = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy, Metadata::GetUserFlag("EMHDTemporary")}, fourv);
     pkg->AddField("ucov", m_temp_vec);
 
-    // This works similarly to the fflag --
+    // This works similarly to the fflag:
     // we register zones where limits on q and dP are hit
     Metadata m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
     pkg->AddField("eflag", m);
 
     // Callbacks
 
-    // UtoP is *only* for boundary syncs and output, only register that function
-    // TODO support syncing cons someday
-    //pkg->BoundaryUtoP = EMHD::BlockUtoP;
-
-    // For now, sync primitive variables & call PtoU on physical boundaries
-    pkg->BoundaryPtoU = EMHD::BlockPtoU;
+    // UtoP function specifically for boundary sync (KHARMA must sync cons for AMR) and output
+    pkg->BoundaryUtoP = EMHD::BlockUtoP;
 
     // Add all explicit source terms -- implicit terms are called from Implicit::Step
     pkg->AddSource = EMHD::AddSource;
@@ -183,37 +181,37 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
 
 // TODO is relying on GRMHD P variables a mistake here?  They're available on physical boundaries at least,
 // maybe not internal?
-// void BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
-// {
-//     auto pmb = rc->GetBlockPointer();
+void BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
+{
+    auto pmb = rc->GetBlockPointer();
 
-//     PackIndexMap prims_map, cons_map;
-//     auto U_E = rc->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("EMHDVar"), Metadata::Conserved}, cons_map);
-//     auto P = rc->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("Primitive")}, prims_map);
-//     const VarMap m_p(prims_map, false), m_u(cons_map, true);
+    PackIndexMap prims_map, cons_map;
+    auto U_E = rc->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("EMHD"), Metadata::Conserved}, cons_map);
+    auto P = rc->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("Primitive")}, prims_map);
+    const VarMap m_p(prims_map, false), m_u(cons_map, true);
 
-//     const auto& G = pmb->coords;
+    const auto& G = pmb->coords;
 
-//     auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
-//     const IndexRange ib = bounds.GetBoundsI(domain);
-//     const IndexRange jb = bounds.GetBoundsJ(domain);
-//     const IndexRange kb = bounds.GetBoundsK(domain);
+    auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
+    const IndexRange ib = bounds.GetBoundsI(domain);
+    const IndexRange jb = bounds.GetBoundsJ(domain);
+    const IndexRange kb = bounds.GetBoundsK(domain);
 
-//     pmb->par_for("UtoP_EMHD", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-//         KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-//             const Real gamma = GRMHD::lorentz_calc(G, P, m_p, k, j, i, Loci::center);
-//             const Real inv_alpha = m::sqrt(-G.gcon(Loci::center, j, i, 0, 0));
-//             const Real ucon0 = gamma * inv_alpha;
+    pmb->par_for("UtoP_EMHD", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+        KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+            const Real gamma = GRMHD::lorentz_calc(G, P, m_p, k, j, i, Loci::center);
+            const Real inv_alpha = m::sqrt(-G.gcon(Loci::center, j, i, 0, 0));
+            const Real ucon0 = gamma * inv_alpha;
 
-//             // Update the primitive EMHD fields
-//             if (m_p.Q >= 0)
-//                 P(m_p.Q, k, j, i) = U_E(m_u.Q, k, j, i) / (ucon0 * G.gdet(Loci::center, j, i));
-//             if (m_p.DP >= 0)
-//                 P(m_p.DP, k, j, i) = U_E(m_u.DP, k, j, i) / (ucon0 * G.gdet(Loci::center, j, i));
-//         }
-//     );
-//     Kokkos::fence();
-// }
+            // Update the primitive EMHD fields
+            if (m_p.Q >= 0)
+                P(m_p.Q, k, j, i) = U_E(m_u.Q, k, j, i) / (ucon0 * G.gdet(Loci::center, j, i));
+            if (m_p.DP >= 0)
+                P(m_p.DP, k, j, i) = U_E(m_u.DP, k, j, i) / (ucon0 * G.gdet(Loci::center, j, i));
+        }
+    );
+    Kokkos::fence();
+}
 
 void BlockPtoU(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
@@ -231,7 +229,7 @@ void BlockPtoU(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     const IndexRange jb = bounds.GetBoundsJ(domain);
     const IndexRange kb = bounds.GetBoundsK(domain);
 
-    pmb->par_for("UtoP_EMHD", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+    pmb->par_for("PtoU_EMHD", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
             const Real gamma = GRMHD::lorentz_calc(G, P, m_p, k, j, i, Loci::center);
             const Real inv_alpha = m::sqrt(-G.gcon(Loci::center, j, i, 0, 0));
