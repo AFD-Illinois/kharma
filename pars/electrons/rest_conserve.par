@@ -2,7 +2,7 @@
 # Try to propagate several analytically-amenable linear modes of the MHD equations
 
 <parthenon/job>
-problem_id = rest_conserve
+problem_id = hubble
 
 <parthenon/mesh>
 refinement = none

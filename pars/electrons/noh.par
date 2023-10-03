@@ -51,11 +51,11 @@ solver = none
 <electrons>
 on = true
 constant = true
-gamma_e = 1.333333
+gamma_e = 1.666667
 fel_0 = 0.
 fel_constant = 0.5
-diss_sign = false
-kel_min = false
+enforce_positive_dissipation = false
+limit_kel = false
 
 <noh>
 mach = 49.
@@ -65,8 +65,8 @@ zero_ug = false
 set_tlim = true
 centered = false
 
-<floors>
-disable_floors = true
+#<floors>
+#disable_floors = true
 
 <driver>
 type = imex
@@ -76,7 +76,7 @@ verbose = 0
 
 <parthenon/output0>
 file_type = hdf5
-dt = 0.1
+dt = 10
 single_precision_output = false
 variables = prims.rho, prims.u, prims.uvec, prims.Ktot, prims.Kel_Constant
 
