@@ -153,7 +153,11 @@ class CoordinateEmbedding {
             bool spherical = is_spherical();
 
             if (transform_str == "null" || transform_str == "none") {
-                transform.emplace<NullTransform>(NullTransform());
+                if (spherical) {
+                    transform.emplace<SphNullTransform>(SphNullTransform());
+                } else {
+                    transform.emplace<NullTransform>(NullTransform());
+                }
             } else if (transform_str == "exponential" || transform_str == "exp" || transform_str == "eks") {
                 if (!spherical) throw std::invalid_argument("Transform is for spherical coordinates!");
                 transform.emplace<ExponentialTransform>(ExponentialTransform());

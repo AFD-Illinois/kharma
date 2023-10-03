@@ -31,7 +31,7 @@ hslope = 0.3
 r_in = 3.0
 r_out = 30.0
 # If using "Funky" MKS later, where is "startx1"?
-fmks_zero_point = 0.0
+fmks_zero_point = 1.0
 
 <parthenon/time>
 tlim = 50.0
@@ -51,12 +51,6 @@ rs = 8.0
 <floors>
 # Disable floors
 disable_floors = true
-# If using B field, enable w/:
-rho_min_geom = 1e-6
-u_min_geom = 1e-8
-bsq_over_rho_max = 100
-u_over_rho_max = 100
-gamma_max = 10
 
 <boundaries>
 # We'll be adding material, and that's okay
@@ -66,12 +60,6 @@ check_inflow_outer_x1 = false
 # No field
 type = none
 solver = none
-# To add magnetic field
-#type = monopole
-#b10 = 1
-# Or
-#type = vertical
-#bz = 0.1
 
 <debug>
 verbose = 0
@@ -83,7 +71,7 @@ file_type = hdf5
 dt = 5.0
 single_precision_output = true
 # Fields not present are silently ignored
-variables = prims.rho, prims.u, prims.uvec, prims.B, pflag
+variables = prims.rho, prims.u, prims.uvec, pflag
 
 <parthenon/output1>
 file_type = hst
