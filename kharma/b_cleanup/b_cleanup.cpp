@@ -87,6 +87,8 @@ std::shared_ptr<KHARMAPackage> B_Cleanup::Initialize(ParameterInput *pin, std::s
     params.Add("warn_without_convergence", warn_without_convergence);
     bool always_solve = pin->GetOrAddBoolean("b_cleanup", "always_solve", false);
     params.Add("always_solve", always_solve);
+    bool use_normalized_divb = pin->GetOrAddBoolean("b_cleanup", "use_normalized_divb", false);
+    params.Add("use_normalized_divb", use_normalized_divb);
 
     // Finally, initialize the solver
     // Translate parameters
@@ -208,6 +210,7 @@ TaskStatus B_Cleanup::CleanupDivergence(std::shared_ptr<MeshData<Real>>& md)
     auto always_solve = pkg->Param<bool>("always_solve");
     auto solver = pkg->Param<BiCGStabSolver<int>>("solver");
     auto verbose = pmesh->packages.Get("Globals")->Param<int>("verbose");
+    auto use_normalized = pkg->Param<bool>("use_normalized_divb");
 
     if (MPIRank0() && verbose > 0) {
         std::cout << "Cleaning divB to relative tolerance " << rel_tolerance << std::endl;
@@ -232,6 +235,21 @@ TaskStatus B_Cleanup::CleanupDivergence(std::shared_ptr<MeshData<Real>>& md)
     // and syncs ghost zones
     KHARMADriver::SyncAllBounds(md);
     B_FluxCT::CalcDivB(md.get(), "divB_RHS");
+    if (use_normalized) {
+        // Normalize divB by local metric determinant for fairer weighting of errors
+        // Note that laplacian operator will also have to be normalized ofc
+        auto divb_rhs = md->PackVariables(std::vector<std::string>{"divB_RHS"});
+        auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
+        const IndexRange ib = md->GetBoundsI(IndexDomain::entire);
+        const IndexRange jb = md->GetBoundsJ(IndexDomain::entire);
+        const IndexRange kb = md->GetBoundsK(IndexDomain::entire);
+        pmb0->par_for("normalize_divB", 0, divb_rhs.GetDim(5)-1, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+            KOKKOS_LAMBDA (const int& b, const int &k, const int &j, const int &i) {
+                const auto& G = divb_rhs.GetCoords(b);
+                divb_rhs(b, 0, k, j, i) /= G.gdet(Loci::corner, j, i);
+            }
+        );
+    }
     KHARMADriver::SyncAllBounds(md);
 
     // Add a solver container and associated MeshData
@@ -300,6 +318,9 @@ TaskStatus B_Cleanup::ApplyP(MeshData<Real> *msolve, MeshData<Real> *md)
 
 TaskStatus B_Cleanup::CornerLaplacian(MeshData<Real>* md, const std::string& p_var, MeshData<Real>* md_again, const std::string& lap_var)
 {
+    auto pkg = md->GetMeshPointer()->packages.Get("B_Cleanup");
+    const auto use_normalized = pkg->Param<bool>("use_normalized_divb");
+
     // Cover ghost cells; maximize since both ops have stencil >1
     const IndexRange ib = md->GetBoundsI(IndexDomain::entire);
     const IndexRange jb = md->GetBoundsJ(IndexDomain::entire);
@@ -339,6 +360,9 @@ TaskStatus B_Cleanup::CornerLaplacian(MeshData<Real>* md, const std::string& p_v
             const auto& G = lap.GetCoords(b);
             // This is the inverse diagonal element of a fictional a_ij Laplacian operator
             lap(b, 0, k, j, i) = B_FluxCT::corner_div(G, dB, b, k, j, i, ndim > 2);
+            if (use_normalized) {
+                lap(b, 0, k, j, i) /= G.gdet(Loci::corner, j, i);
+            }
         }
     );
 
