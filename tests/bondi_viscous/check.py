@@ -28,7 +28,7 @@ if __name__ == '__main__':
     RES   = [int(r) for r in sys.argv[1].split(",")]
     LONG  = sys.argv[2]
     SHORT = sys.argv[3]
-    
+
     L1  = np.zeros([len(RES), NVAR])
     fit = np.zeros([len(RES), NVAR])
 
@@ -38,13 +38,13 @@ if __name__ == '__main__':
         dump = pyharm.load_dump("emhd_2d_{}_end_emhd2d_weno.phdf".format(res), cache_conn=True)
 
         # Compute analytic reference
-        mdot, rc, gam = dump['bondi']['mdot'], dump['bondi']['rs'], dump['gam']
-        eta, tau = dump['emhd']['eta'], dump['emhd']['tau']
+        mdot, rc, gam = dump['bondi/mdot'], dump['bondi/rs'], dump['gam']
+        eta, tau = dump['emhd/eta'], dump['emhd/tau']
         state = bondi.get_bondi_fluid_state(mdot, rc, gam, dump.grid)
         state.params['eta'] = eta
         state.params['tau'] = tau
         dP_check = bondi.compute_dP(mdot, rc, gam, dump.grid, eta, tau)
-        
+
         # load code data
         dump = pyharm.load_dump("emhd_2d_{}_end_emhd2d_weno.phdf".format(res))
 
@@ -52,7 +52,7 @@ if __name__ == '__main__':
         #rho, uu = dump['RHO'], dump['UU']
 
         # compute dP
-        if dump['emhd']['higher_order_terms'] == "true":
+        if dump['emhd/higher_order_terms'] == "true":
             print("Res: "+str(res)+"; higher order terms enabled")
             Theta    = (dump['gam'] - 1.) * uu / rho
             nu_emhd  = eta / rho

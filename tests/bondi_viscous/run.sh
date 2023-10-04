@@ -13,7 +13,7 @@ conv_2d() {
     do
         # Four blocks
         half=$(( $res / 2 ))
-        $BASE/run.sh -i $BASE/pars/bondi_viscous.par debug/verbose=1 parthenon/time/tlim=400 \
+        $BASE/run.sh -i $BASE/pars/emhd/bondi_viscous.par debug/verbose=1 parthenon/time/tlim=400 \
             parthenon/mesh/nx1=$res parthenon/mesh/nx2=$res parthenon/mesh/nx3=1 \
             parthenon/meshblock/nx1=$half parthenon/meshblock/nx2=$half parthenon/meshblock/nx3=1 \
             b_field/implicit=false $2 >log_${1}_${res}.txt 2>&1
@@ -34,6 +34,6 @@ conv_2d() {
 }
 
 ALL_RES="8,16,32,64"
-conv_2d emhd2d_weno GRMHD/reconstruction=weno5 "in 2D, WENO5"
+conv_2d emhd2d_weno driver/reconstruction=weno5 "in 2D, WENO5"
 
 exit $exit_code

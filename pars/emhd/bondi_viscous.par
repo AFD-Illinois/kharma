@@ -31,8 +31,7 @@ implicit       = true
 
 <b_field>
 type            = monopole_cube
-implicit        = false
-initial_cleanup = false
+B10             = 1.
 
 <implicit>
 min_nonlinear_iter  = 1
@@ -65,8 +64,8 @@ rs   = 8.0
 disable_floors = true
 
 <boundaries>
-outer_x1 = dirichlet
-inner_x1 = dirichlet
+#outer_x1 = dirichlet
+#inner_x1 = dirichlet
 check_inflow_outer_x1 = false
 #check_inflow_inner_x1 = false
 
@@ -79,7 +78,7 @@ extra_checks = 1
 file_type               = hdf5
 dt                      = 100.0
 single_precision_output = false
-ghost_zones             = true
+ghost_zones             = false
 variables               = prims, solve_norm, solve_fail
 
 <parthenon/output1>

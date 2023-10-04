@@ -340,6 +340,7 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
     EndFlag();
 
     // Save the face velocities for upwinding/CT later
+    // TODO only for certain GS'05
     if (packages.AllPackages().count("B_CT")) {
         Flag("GetFlux_"+std::to_string(dir)+"_store_vel");
         const auto& vl_all = md->PackVariables(std::vector<std::string>{"Flux.vl"});
