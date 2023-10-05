@@ -68,9 +68,10 @@ void MeshUtoP(MeshData<Real> *md, IndexDomain domain, bool coarse=false);
 
 /**
  * Reverse of the above.  Only used alone during initialization.
- * Generally, use Flux::BlockPtoU
+ * Generally, use Flux::BlockPtoU/Flux::MeshPtoU
  */
 void BlockPtoU(MeshBlockData<Real> *md, IndexDomain domain, bool coarse=false);
+void MeshPtoU(MeshData<Real> *md, IndexDomain domain, bool coarse=false);
 
 /**
  * All flux corrections required by this package
@@ -90,7 +91,6 @@ void FixBoundaryFlux(MeshData<Real> *md, IndexDomain domain, bool coarse);
  * Alternate B field fix for X1 boundary, keeps zero divergence while permitting flux
  * through the boundary, at the cost of a short non-local solve.
  */
-// added by Hyerin
 TaskStatus FixX1Flux(MeshData<Real> *md);
 
 /**
@@ -205,14 +205,14 @@ KOKKOS_INLINE_FUNCTION void center_grad(const GRCoordinates& G, const Global& P,
                                           double& B1, double& B2, double& B3)
 {
     const double norm = (do_3D) ? 0.25 : 0.5;
-    // 2D divergence, averaging to corners
+    // 2D gradient, averaging to centers
     double term1 =  P(b, 0, k, j+1, i+1) + P(b, 0, k, j, i+1)
                   - P(b, 0, k, j+1, i)   - P(b, 0, k, j, i);
     double term2 =  P(b, 0, k, j+1, i+1) + P(b, 0, k, j+1, i)
                   - P(b, 0, k, j, i+1)   - P(b, 0, k, j, i);
     double term3 = 0.;
     if (do_3D) {
-        // Average to corners in 3D, add 3rd flux
+        // Average to centers in 3D, add 3rd flux
         term1 += P(b, 0, k+1, j+1, i+1) + P(b, 0, k+1, j, i+1)
                - P(b, 0, k+1, j+1, i)   - P(b, 0, k+1, j, i);
         term2 += P(b, 0, k+1, j+1, i+1) + P(b, 0, k+1, j+1, i)

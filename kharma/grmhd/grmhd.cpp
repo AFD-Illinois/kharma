@@ -141,6 +141,9 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     auto flags_cons = packages->Get("Driver")->Param<std::vector<MetadataFlag>>("cons_flags");
     flags_cons.insert(flags_cons.end(), flags_grmhd.begin(), flags_grmhd.end());
 
+    // We must additionally save the primtive variables as the "seed" for the next U->P solve
+    flags_prim.push_back(Metadata::Restart);
+
     // We must additionally fill ghost zones of primitive variables in GRMHD, to seed the solver
     // Only necessary to add here if syncing conserved vars
     // Note some startup behavior relies on having the GRHD prims marked for syncing,

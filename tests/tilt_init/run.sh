@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 
 # Run default tilted problem to 5 steps
 ../../run.sh -i ../../pars/mad_tilt.par parthenon/time/nlim=5 debug/verbose=1 \

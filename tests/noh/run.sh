@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 
 # Bash script to run 1D Noh shock test
 

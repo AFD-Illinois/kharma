@@ -144,12 +144,12 @@ std::shared_ptr<KHARMAPackage> KHARMADriver::Initialize(ParameterInput *pin, std
     params.Add("sync_prims", sync_prims);
     if (sync_prims) {
         // If we're not in AMR, we can sync primitive variables directly
-        params.Add("prim_flags", std::vector<MetadataFlag>{Metadata::Real, Metadata::Derived, Metadata::FillGhost, Metadata::Restart, Metadata::GetUserFlag("Primitive")});
-        params.Add("cons_flags", std::vector<MetadataFlag>{Metadata::Real, Metadata::Independent, Metadata::WithFluxes, Metadata::Conserved});
+        params.Add("prim_flags", std::vector<MetadataFlag>{Metadata::Real, Metadata::Derived, Metadata::FillGhost, Metadata::GetUserFlag("Primitive")});
+        params.Add("cons_flags", std::vector<MetadataFlag>{Metadata::Real, Metadata::Independent, Metadata::Restart, Metadata::WithFluxes, Metadata::Conserved});
     } else {
         // If we're in AMR or using the KHARMA driver anyway, sync conserved vars
-        params.Add("prim_flags", std::vector<MetadataFlag>{Metadata::Real, Metadata::Derived, Metadata::Restart, Metadata::GetUserFlag("Primitive")});
-        params.Add("cons_flags", std::vector<MetadataFlag>{Metadata::Real, Metadata::Independent, Metadata::FillGhost, Metadata::WithFluxes, Metadata::Conserved});
+        params.Add("prim_flags", std::vector<MetadataFlag>{Metadata::Real, Metadata::Derived, Metadata::GetUserFlag("Primitive")});
+        params.Add("cons_flags", std::vector<MetadataFlag>{Metadata::Real, Metadata::Independent, Metadata::Restart, Metadata::FillGhost, Metadata::WithFluxes, Metadata::Conserved});
     }
 
     return pkg;

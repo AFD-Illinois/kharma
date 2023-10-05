@@ -206,6 +206,28 @@ void BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     );
 }
 
+void MeshPtoU(MeshData<Real> *md, IndexDomain domain, bool coarse)
+{
+    auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
+
+    const auto& B_U = md->PackVariables(std::vector<std::string>{"cons.B"});
+    const auto& B_P = md->PackVariables(std::vector<std::string>{"prims.B"});
+
+    auto bounds = coarse ? pmb0->c_cellbounds : pmb0->cellbounds;
+    IndexRange ib = bounds.GetBoundsI(domain);
+    IndexRange jb = bounds.GetBoundsJ(domain);
+    IndexRange kb = bounds.GetBoundsK(domain);
+    IndexRange vec = IndexRange{0, B_U.GetDim(4)-1};
+    IndexRange block = IndexRange{0, B_U.GetDim(5)-1};
+
+    pmb0->par_for("UtoP_B", block.s, block.e, vec.s, vec.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+        KOKKOS_LAMBDA (const int& b, const int &mu, const int &k, const int &j, const int &i) {
+            const auto& G = B_U.GetCoords(b);
+            // Update the primitive B-fields
+            B_U(b, mu, k, j, i) = B_P(b, mu, k, j, i) * G.gdet(Loci::center, j, i);
+        }
+    );
+}
 void BlockPtoU(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
     auto pmb = rc->GetBlockPointer();
