@@ -34,6 +34,7 @@
 #include "boundaries.hpp"
 
 #include "decs.hpp"
+#include "domain.hpp"
 #include "kharma.hpp"
 #include "flux.hpp"
 #include "flux_functions.hpp"
@@ -251,9 +252,13 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
     pkg->KBoundaries[bface](rc, coarse);
     EndFlag();
 
-    // Exit immediately if we're syncing emf alone
-    // TODO can we check name?
-    if (rc->GetVariableVector().size() == 1) {
+    // This will now be called in 2 places we might not expect,
+    // where we still may want to control the physical bounds:
+    // 1. Syncing only the EMF during runs with CT
+    // 2. Syncing boundaries while solving for B field
+    // this generally guards against anytime we can't do the below
+    PackIndexMap prims_map;
+    if (GRMHD::PackMHDPrims(rc.get(), prims_map).GetDim(4) == 0) {
         EndFlag();
         return;
     }

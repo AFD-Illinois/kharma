@@ -155,6 +155,13 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart)
 
         // Cleanup is applied to conserved variables
         B_Cleanup::CleanupDivergence(md);
+
+        if (pin->GetOrAddBoolean("b_cleanup", "output_after_cleanup", false)) {
+            auto tm = SimTime(0., 0., 0, 0, 0, 0, 0.);
+            auto pouts = std::make_unique<Outputs>(pmesh, pin, &tm);
+            pouts->MakeOutputs(pmesh, pin, &tm, SignalHandler::OutputSignal::now);
+        }
+
     }
 
     // If PtoU was called before the B field was initialized or corrected,
