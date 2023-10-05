@@ -672,12 +672,12 @@ class EDGBKSCoords {
             const GReal cth = m::cos(th);
             const GReal sth = m::sin(th);
             const GReal s2t = sth*sth;
-            const GReal c2t = cth*cth ; 
-            const GReal c4t = c2t*c2t ;
-            const GReal ep2 = a*a ;
-            const GReal ep4 = ep2*ep2 ;
+            const GReal c2t = cth*cth; 
+            const GReal c4t = c2t*c2t;
+            const GReal ep2 = a*a;
+            const GReal ep4 = ep2*ep2;
 
-            trans[0][0] = 1 ;  
+            trans[0][0] = 1;  
             trans[0][1] = 2.*r/(r*r - 2.*r + a*a) + zeta*(-1./30.*(-2240. + 144.*r + 96.*pow(r,2.) + 390.*pow(r,3.) + 20.*pow(r,4.) + 15.*pow(r,5.))/
             (pow((-2. + r),2.)*pow(r,5.)) + ((564480000 - 1030019200*r + 964723200*pow(r,2) - 425087600*pow(r,3) + 76461320*pow(r,4) - 50376120*pow(r,5) + 25335172*pow(r,6) + 
             149172*pow(r,7) + 1595034*pow(r,8) - 786534*pow(r,9) + 55125*pow(r,10))*ep2)/(220500*pow((-2 + r),3)*pow(r,9)) + (ep4*(-109543950*pow(r,13) + 45518400*pow(r,14) + 5788125*pow(r,15) + pow(r,7)*(42017164588 + 
@@ -685,14 +685,14 @@ class EDGBKSCoords {
             9576000*pow(r,3)*(308359 - 435916*c2t + 217958*c4t) - 360*pow(r,12)*(1391168 - 3179270*c2t + 1589635*c4t) + 330*pow(r,11)*(4960011 - 16855960*c2t + 8427980*c4t) - 672*pow(r,6)*(-422234373 - 
             329391250*c2t + 164695625*c4t) - 4480*pow(r,4)*(6618859 - 417919560*c2t + 208959780*c4t) - 16*pow(r,8)*(1064817521 - 1991920800*c2t + 995960400*c4t) + 
             448*pow(r,5)*(-1334378083 - 3683238390*c2t + 1841619195*c4t) - 4*pow(r,10)*(1003478993 - 4282320390*c2t + 2141160195*c4t) + pow(r,9)*(685673062 - 47384968800*c2t + 23692484400*
-            c4t)))/(61740000*pow((-2 + r),4)*pow(r,13))) ;
-            trans[0][2] = 0 ;
-            trans[0][3] = 0 ;
+            c4t)))/(61740000*pow((-2 + r),4)*pow(r,13)));
+            trans[0][2] = 0;
+            trans[0][3] = 0;
 
-            trans[1][0] = 0 ;
-            trans[1][1] = 1 ; 
-            trans[1][2] = 0 ;
-            trans[1][3] = 0 ;
+            trans[1][0] = 0;
+            trans[1][1] = 1; 
+            trans[1][2] = 0;
+            trans[1][3] = 0;
 
 
             trans[2][0] = 0 ;

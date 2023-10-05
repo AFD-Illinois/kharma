@@ -703,7 +703,9 @@ class CoordinateEmbedding {
                 DLOOP1 ucon_base[mu] = ucon_bl_fourv[mu];
 
             } else {
+                #ifndef KOKKOS_ENABLE_CUDA
                 throw std::invalid_argument("Unsupported base coordinates!");
+                #endif
             }
             // Finally, apply any transform to native coordinates
             con_vec_to_native(Xnative, ucon_base, ucon_native);
