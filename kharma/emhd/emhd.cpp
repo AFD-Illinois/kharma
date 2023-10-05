@@ -128,7 +128,7 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     // EMHD is supported only with imex driver and implicit evolution,
     // synchronizing primitive variables
     Metadata::AddUserFlag("EMHDVar"); // "EMHD" name now taken by Parthenon for general flag, we want this one specific
-    std::vector<MetadataFlag> emhd_flags = {Metadata::Cell, Metadata::GetUserFlag("Implicit"), Metadata::GetUserFlag("EMHD")};
+    std::vector<MetadataFlag> emhd_flags = {Metadata::Cell, Metadata::GetUserFlag("Implicit"), Metadata::GetUserFlag("EMHDVar")};
 
     auto flags_prim = packages->Get("Driver")->Param<std::vector<MetadataFlag>>("prim_flags");
     flags_prim.insert(flags_prim.end(), emhd_flags.begin(), emhd_flags.end());
@@ -185,8 +185,9 @@ void BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
     auto pmb = rc->GetBlockPointer();
 
+    // Get only relevant cons, but all prims as we need the Lorentz factor
     PackIndexMap prims_map, cons_map;
-    auto U_E = rc->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("EMHD"), Metadata::Conserved}, cons_map);
+    auto U_E = rc->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("EMHDVar"), Metadata::Conserved}, cons_map);
     auto P = rc->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("Primitive")}, prims_map);
     const VarMap m_p(prims_map, false), m_u(cons_map, true);
 
@@ -217,9 +218,10 @@ void BlockPtoU(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
     auto pmb = rc->GetBlockPointer();
 
+    // Get only relevant cons, but all prims as we need the Lorentz factor
     PackIndexMap prims_map, cons_map;
-    auto U_E = rc->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("EMHDVar"), Metadata::Conserved}, cons_map);
-    auto P = rc->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("Primitive")}, prims_map);
+    auto U_E = rc->PackVariables({Metadata::GetUserFlag("EMHDVar"), Metadata::Conserved}, cons_map);
+    auto P = rc->PackVariables({Metadata::GetUserFlag("Primitive")}, prims_map);
     const VarMap m_p(prims_map, false), m_u(cons_map, true);
 
     const auto& G = pmb->coords;
