@@ -104,6 +104,8 @@ class CoordinateEmbedding {
                 transform.emplace<ModifyTransform>(mpark::get<ModifyTransform>(transform_in));
             } else if (mpark::holds_alternative<FunkyTransform>(transform_in)) {
                 transform.emplace<FunkyTransform>(mpark::get<FunkyTransform>(transform_in));
+            } else if (mpark::holds_alternative<WidepoleTransform>(transform_in)) {
+                transform.emplace<WidepoleTransform>(mpark::get<WidepoleTransform>(transform_in));
             }
         }
 

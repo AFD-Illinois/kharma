@@ -554,7 +554,73 @@ class FunkyTransform {
         }
 };
 
+/**
+ * Wide-pole Kerr-Schild coordinates
+ * Make sense only for spherical base systems!
+ */
+class WidepoleTransform {
+    public:
+        const GReal lin_frac, n2;
+        GReal smoothness;
+
+        // Constructor
+        KOKKOS_FUNCTION WidepoleTransform(GReal lin_frac_in, GReal dx2_in): lin_frac(lin_frac_in), n2(n2_in) 
+        {
+            if (lin_frac < 1. / (1. / M_PI - 1./ n2 + 1.)) smoothness = -1. / (2. * n2 * log(1. - lin_frac / (1. - lin_frac) * (1. / M_PI - 1. / n2)));
+            else {
+                printf("WARNING: It is harder to have del phi ~ del th. Try using lin_frac < %g \n",  1./ (1. / M_PI - 1./ n2 + 1.));
+                smoothness = 0.8 / n2;
+            }
+        }
+
+        // Coordinate transformations
+        KOKKOS_INLINE_FUNCTION void coord_to_embed(const GReal Xnative[GR_DIM], GReal Xembed[GR_DIM]) const
+        {
+            Xembed[0] = Xnative[0];
+            Xembed[1] = exp(Xnative[1]);
+
+            GReal th;
+            if (Xnative[2] < dx2) th = th_pole * Xnative[2] / dx2;
+            else if (Xnative[2] > 1. - dx2) th = M_PI + th_pole * (Xnative[2] - 1.) / dx2;
+            else th = th_pole + (M_PI - 2. * th_pole) * (Xnative[2] - dx2) / (1.- 2 * dx2);
+            Xembed[2] = excise(excise(th, 0.0, SMALL), M_PI, SMALL);
+            Xembed[3] = Xnative[3];
+        }
+        KOKKOS_INLINE_FUNCTION void coord_to_native(const GReal Xembed[GR_DIM], GReal Xnative[GR_DIM]) const
+        {
+            Xnative[0] = Xembed[0];
+            Xnative[1] = log(Xembed[1]);
+            if (Xembed[2] < th_pole) Xnative[2] = Xembed[2] * dx2 / th_pole;
+            else if (Xembed[2] > M_PI - th_pole) Xnative[2] = 1. + dx2 * (Xembed[2] - M_PI) / th_pole;
+            else Xnative[2] = dx2 + (Xembed[2] - th_pole) * (1. - 2 * dx2) / (M_PI - 2 * th_pole);
+            Xnative[3] = Xembed[3];
+        }
+        /**
+         * Transformation matrix for contravariant vectors to embedding, or covariant vectors to native
+         */
+        KOKKOS_INLINE_FUNCTION void dxdX(const GReal Xnative[GR_DIM], Real dxdX[GR_DIM][GR_DIM]) const
+        {
+            gzero2(dxdX);
+            dxdX[0][0] = 1.;
+            dxdX[1][1] = exp(Xnative[1]);
+            if (Xnative[2] < dx2) dxdX[2][2] = th_pole / dx2;
+            else if (Xnative[2] > 1. - dx2) dxdX[2][2] = th_pole / dx2;
+            else dxdX[2][2] = (M_PI - 2 * th_pole) / (1. - 2 * dx2);
+            dxdX[3][3] = 1.;
+        }
+        /**
+         * Transformation matrix for contravariant vectors to native, or covariant vectors to embedding
+         */
+        KOKKOS_INLINE_FUNCTION void dXdx(const GReal Xnative[GR_DIM], Real dXdx[GR_DIM][GR_DIM]) const
+        {
+            // Okay this one should probably stay numerical
+            Real dxdX_tmp[GR_DIM][GR_DIM];
+            dxdX(Xnative, dxdX_tmp);
+            invert(&dxdX_tmp[0][0],&dXdx[0][0]);
+        }
+};
+
 // Bundle coordinates and transforms into umbrella variant types
 // Note nesting isn't allowed -- do it yourself by calling the steps if that's really important...
 using SomeBaseCoords = mpark::variant<SphMinkowskiCoords, CartMinkowskiCoords, SphBLCoords, SphKSCoords>;
-using SomeTransform = mpark::variant<NullTransform, ExponentialTransform, SuperExponentialTransform, ModifyTransform, FunkyTransform>;
+using SomeTransform = mpark::variant<NullTransform, ExponentialTransform, SuperExponentialTransform, ModifyTransform, FunkyTransform, WidepoleTransform>;
