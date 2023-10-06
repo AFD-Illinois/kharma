@@ -3,7 +3,7 @@
 image: quay.io/centos/centos:stream9
 
 variables:
-  OMP_NUM_THREADS: 4
+  OMP_NUM_THREADS: 8
   OMP_PROC_BIND: "false"
   MPI_EXE: mpirun
   MPI_NUM_PROCS: 2
@@ -40,13 +40,15 @@ build:
   variables:
     NPROC: 8
     HOST_ARCH: NATIVE
+    C_NATIVE: gcc
+    CXX_NATIVE: g++
   before_script:
     - dnf -y groupinstall "Development Tools"
-    - dnf -y install hostname environment-modules cmake mpich-devel hdf5-mpich-devel fftw-devel
+    - dnf -y install hostname environment-modules cmake mpich-devel fftw-devel
     - source /etc/profile
     - module load mpi/mpich-x86_64
   script:
-    - ./make.sh clean
+    - ./make.sh clean hdf5
   artifacts:
     paths:
       - kharma.*
