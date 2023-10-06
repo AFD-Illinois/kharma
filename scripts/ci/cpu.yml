@@ -25,8 +25,10 @@ default:
     - module load mpi/mpich-x86_64
     - curl -Ls https://micro.mamba.pm/api/micromamba/linux-64/latest | tar -xvj bin/micromamba
     - eval "$(./bin/micromamba shell hook -s posix)"
-    - git clone https://github.com/AFD-Illinois/pyharm.git /pyharm && cd /pyharm
-    - micromamba create -y -f environment.yml && micromamba activate pyharm && ./install.sh
+    - git clone -b dev https://github.com/AFD-Illinois/pyharm.git /pyharm
+    - micromamba create -y -f /pyharm/environment.yml
+    - micromamba activate pyharm
+    - cd /pyharm && ./install.sh
 
 # Tests can be executed in parallel
 stages:
