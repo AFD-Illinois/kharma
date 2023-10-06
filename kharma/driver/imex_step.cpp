@@ -64,10 +64,10 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
     // Which packages we've loaded affects which tasks we'll add to the list
     auto& pkgs         = blocks[0]->packages.AllPackages();
     auto& driver_pkg   = pkgs.at("Driver")->AllParams();
-    const bool use_electrons = pkgs.count("Electrons");
+    //const bool use_electrons = pkgs.count("Electrons");
     //COOLING:
-    const bool use_heating = pkgs.at("Electrons")->Param<bool>("do_heating");
-    const bool use_cooling = pkgs.at("Electrons")->Param<bool>("do_cooling");
+    //const bool use_heating = pkgs.at("Electrons")->Param<bool>("do_heating");
+    //const bool use_cooling = pkgs.at("Electrons")->Param<bool>("do_cooling");
     const bool use_b_cleanup = pkgs.count("B_Cleanup");
     const bool use_implicit = pkgs.count("Implicit");
     const bool use_jcon = pkgs.count("Current");
@@ -289,11 +289,11 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
         //I will probably comment out this call to heating (this is the first and second call I think, but
         //I added another call up above I think)
         auto t_heat_electrons = t_prim_source_fourth;
-        if (use_heating) {
+        //if (use_heating) {
             //t_heat_electrons = tl.AddTask(t_prim_source_second, Electrons::ApplyElectronHeating,
             //                              mbd_sub_step_init.get(), mbd_sub_step_final.get());
             //temporarily commented out heating for tests
-        }
+        //}
 
         // Make sure *all* conserved vars are synchronized at step end
         auto t_ptou = tl.AddTask(t_heat_electrons, Flux::BlockPtoU, mbd_sub_step_final.get(), IndexDomain::entire, false);

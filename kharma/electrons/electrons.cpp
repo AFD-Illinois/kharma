@@ -449,18 +449,11 @@ TaskStatus ApplyElectronCooling(MeshBlockData<Real> *rc){
     auto& U = rc->PackVariables({Metadata::Conserved}, cons_map);
     const VarMap m_p(prims_map, false), m_u(cons_map, true);
     auto pmb = rc->GetBlockPointer();
+    const auto& G = pmb->coords;
     const Real game = pmb->packages.Get("Electrons")->Param<Real>("gamma_e");
     const Real dt = pmb->packages.Get("Globals")->Param<Real>("dt_last");
-    double tau = 5.;
-
-    /*For when you impliment the more complicated test cooling function:
-
-    for getting u^t (this is stolen from the heating function):
-    FourVectors Dtmp;
-    GRMHD::calc_4vecs(G, P, m_p, k, j, i, Loci::center, Dtmp);
-
-
-    */
+    double m = 3.0;
+    //double tau = 5.;
 
     const IndexRange ib = rc->GetBoundsI(IndexDomain::interior);
     const IndexRange jb = rc->GetBoundsJ(IndexDomain::interior);
@@ -468,11 +461,39 @@ TaskStatus ApplyElectronCooling(MeshBlockData<Real> *rc){
     printf("kel at (5,5) before cooling: %.16f\n", P(m_p.K_HOWES, 0, 54, 54));
     pmb->par_for("cool_electrons", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+            //for getting u^t: (this is stolen from the heating function):
+            FourVectors Dtmp;
+            GRMHD::calc_4vecs(G, P, m_p, k, j, i, Loci::center, Dtmp);
+            double ut = Dtmp.ucon[0];
+            
+            //for getting uel:
+            double kel = P(m_p.K_HOWES, k, j, i);
+            double rho = P(m_p.RHO, k, j, i);
+            double uel = pow(rho, game)*kel/(game-1);
+
+            //For getting r: (stolen from another function, a lot of them do this)
+            GReal Xembed[GR_DIM];
+            G.coord_embed(0, j, i, Loci::center, Xembed);
+            GReal r = Xembed[1];
+
+            if(i==68&&j==68){
+                printf("r at (64, 64): %.16f\n", r);
+                printf("alpha at (64, 64): %.16f\n", -1*pow(r,-1.5)*m/ut);
+                printf("ut at (64, 64): %.16f\n", ut);
+            }
+
+            //m & dt defined above
+
+            //update:
+            uel = uel*exp(-dt*0.5*pow(r,-1.5)*m/ut);
+            P(m_p.K_HOWES, k, j, i) = uel/pow(rho, game)*(game-1);
+
+            /*This is for the flat space cooling test:
             double kel = P(m_p.K_HOWES, k, j, i);
             double rho = P(m_p.RHO, k, j, i);
             double uel = pow(rho, game)*kel/(game-1);
             uel = uel*exp(-dt*0.5/(tau));
-            P(m_p.K_HOWES, k, j, i) = uel/pow(rho, game)*(game-1);
+            P(m_p.K_HOWES, k, j, i) = uel/pow(rho, game)*(game-1);*/
         }
     );
     auto& P2 = rc->PackVariables({Metadata::GetUserFlag("Primitive")}, prims_map);

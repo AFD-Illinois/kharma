@@ -8,14 +8,14 @@ problem_id = torus
 <parthenon/mesh>
 refinement = none
 numlevel = 1
-nx1 = 128
-nx2 = 64
-nx3 = 64
+nx1 = 256
+nx2 = 256
+nx3 = 1
 
 <parthenon/meshblock>
-nx1 = 64
-nx2 = 64
-nx3 = 32
+nx1 = 256
+nx2 = 256
+nx3 = 1
 
 <coordinates>
 base = spherical_ks
@@ -28,7 +28,7 @@ poly_xt = 0.82
 poly_alpha = 14.0
 
 <parthenon/time>
-tlim = 10000.0
+tlim = 100.0
 nlim = -1
 
 <GRMHD>
@@ -45,10 +45,10 @@ rin = 6.0
 rmax = 12.0
 
 <perturbation>
-u_jitter = 0.04
+u_jitter = 0.00
 
 <b_field>
-type = sane
+type = none
 beta_min = 100.
 norm = false
 
@@ -68,11 +68,24 @@ on = false
 ne = 1.e-4
 Tp = 10
 
+#COOLING: I just added this part without any other initialization, 
+#idk if <electrons> needs other initialization
+<electrons>
+on = true
+cooling = true
+heating = false
+howes = true
+kawazura = true
+werner = true
+rowan = true
+sharma = true
+
 <parthenon/output0>
 file_type = hdf5
 dt = 5.0
 single_precision_output = true
-variables = prims.rho, prims.u, prims.uvec, prims.B, jcon, divB
+variables = prims.rho, prims.u, prims.uvec, prims.B, jcon, divB, prims.Kel_Howes, &
+            coords.Xnative, coords.Xsph, coords.gcon, coords.gcov, coords.gdet, coords.lapse, coords.conn
 
 <parthenon/output1>
 file_type = rst
