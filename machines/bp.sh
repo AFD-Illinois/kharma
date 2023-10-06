@@ -73,6 +73,7 @@ if [[ $HOST == "cinnabar"* ]]; then
   module purge # Handle modules inside this script
   HOST_ARCH="HSW" # This won't change
   DEVICE_ARCH="TURING75"
+  NPROC=56
 
   # Runtime
   MPI_NUM_PROCS=1
@@ -93,7 +94,7 @@ if [[ $HOST == "cinnabar"* ]]; then
       C_NATIVE="gcc"
       CXX_NATIVE="g++"
     else
-      module load nvhpc
+      module load nvhpc/23.7
       PREFIX_PATH="$HOME/libs/hdf5-nvhpc"
       C_NATIVE="nvc"
       CXX_NATIVE="nvc++"

@@ -38,15 +38,15 @@ stages:
 build:
   stage: build
   variables:
-    NPROC: 4
+    NPROC: 8
     HOST_ARCH: NATIVE
   before_script:
     - dnf -y groupinstall "Development Tools"
-    - dnf -y install hostname environment-modules cmake mpich-devel fftw-devel
+    - dnf -y install hostname environment-modules cmake mpich-devel hdf5-mpich-devel fftw-devel
     - source /etc/profile
     - module load mpi/mpich-x86_64
   script:
-    - ./make.sh clean hdf5
+    - ./make.sh clean
   artifacts:
     paths:
       - kharma.*
