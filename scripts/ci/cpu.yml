@@ -29,6 +29,7 @@ default:
     - micromamba create -y -f /pyharm/environment.yml
     - micromamba activate pyharm
     - cd /pyharm && ./install.sh
+    - cd -
 
 # Tests can be executed in parallel
 stages:

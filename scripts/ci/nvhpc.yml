@@ -24,14 +24,12 @@ default:
   # interleaved, and prints a summary of results.
   before_script:
     - export PATH="$HOME/.local/bin:$PATH"
-    - wget -O Miniforge3.sh "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-$(uname)-$(uname -m).sh"
-    - bash Miniforge3.sh -b -p "/home/conda"
-    - source "/home/conda/etc/profile.d/conda.sh"
-    - conda install h5py
-    - git clone https://github.com/AFD-Illinois/pyharm.git /home/pyharm
-    - conda activate
-    - cd /home/pyharm
-    - pip install --user .
+    - curl -Ls https://micro.mamba.pm/api/micromamba/linux-64/latest | tar -xvj bin/micromamba
+    - eval "$(./bin/micromamba shell hook -s posix)"
+    - git clone -b dev https://github.com/AFD-Illinois/pyharm.git /pyharm
+    - micromamba create -y -f /pyharm/environment.yml
+    - micromamba activate pyharm
+    - cd /pyharm && ./install.sh    
     - cd -
 
 # Tests can be executed in parallel,
