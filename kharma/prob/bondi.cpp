@@ -268,7 +268,7 @@ TaskStatus SetBondi(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     else if (! (use_gizmo)) {
         pmb->par_for("bondi_boundary", kb_e.s, kb_e.e, jb_e.s, jb_e.e, ibs, ibe,
             KOKKOS_LAMBDA_3D {
-                get_prim_bondi(G, cs, P, m_p, gam, bl, ks, mdot, rs, r_shell, ur_frac, uphi, k, j, i);
+                get_prim_bondi(G, cs, P, m_p, gam, bl, ks, mdot, rs, ur_frac, uphi, k, j, i);
                 // TODO all flux
                 GRMHD::p_to_u(G, P, m_p, gam, k, j, i, U, m_u);
             }

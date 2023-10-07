@@ -5,16 +5,25 @@ if [[ "$ARGS" == *"rocky"* ]]; then
     echo $(hostname -f)
     echo ROCKY
     HOST_ARCH=HSW
-    EXTRA_FLAGS="-DPARTHENON_DISABLE_HDF5_COMPRESSION=ON"
+    EXTRA_FLAGS="-DPARTHENON_DISABLE_HDF5_COMPRESSION=ON" # -DPARTHENON_ENABLE_HOST_COMM_BUFFERS=ON"
     echo $ARGS
     echo "after printing out"
     module purge
-    #module load gcc/10.2.0-fasrc01 openmpi/4.1.0-fasrc01 
+    if [[ "$ARGS" == *"cudaaware"* ]]; then
+      # CUDA aware MPI
+      module load gcc/12.2.0-fasrc01 openmpi/4.1.5-fasrc02 cmake/3.25.2-fasrc01 hdf5/1.12.2-fasrc01 ucx/1.14.1-fasrc02
+      MPI_NUM_PROCS=4
+      MPI_EXE="srun" #"mpirun" #
+      #export KOKKOS_NUM_DEVICES=4
+    else
+      module load gcc/12.2.0-fasrc01 openmpi/4.1.5-fasrc01 cmake/3.25.2-fasrc01 hdf5/1.12.2-fasrc01
+      #module load gcc/10.2.0-fasrc01 openmpi/4.1.0-fasrc01 cmake/3.25.2-fasrc01
+      export PATH=/n/home09/hyerincho/packages/hdf5-openmpi4.1.1:$PATH # comment this out if you are using module hdf5
+    fi
     
-    # CUDA aware MPI
-    module load gcc/12.2.0-fasrc01 openmpi/4.1.5-fasrc02 cmake/3.25.2-fasrc01
     export MPICH_GPU_SUPPORT_ENABLED=1
     #module load intel/23.0.0-fasrc01 openmpi/4.1.4-fasrc01 cmake/3.25.2-fasrc01
+    #MPI_EXTRA_ARGS="--map-by ppr:4:node:pe=16"
 
     #source /n/holylfs05/LABS/bhi/Users/hyerincho/grmhd/spack/share/spack/setup-env.sh
     #spack clean -m
@@ -22,11 +31,16 @@ if [[ "$ARGS" == *"rocky"* ]]; then
 
     C_NATIVE=gcc
     CXX_NATIVE=g++
-    export PATH=/n/home09/hyerincho/packages/hdf5-openmpi4.1.1:$PATH
     if [[ "$ARGS" == *"cuda"* ]]; then
       DEVICE_ARCH=AMPERE80 ## rocky_gpu
-      module load cuda/12.0.1-fasrc01
+      if [[ "$ARGS" == *"volta"* ]]; then
+        DEVICE_ARCH=VOLTA70
+      fi
+      #module load cuda/12.0.1-fasrc01
+      # CHANGE TO A NEWER CUDA
+      module load cuda/12.2.0-fasrc01
     fi
+    module list
 elif [[ $(hostname -f) == *"rc.fas.harvard.edu" ]]; then
     echo CANNON
     HOST_ARCH=HSW
@@ -90,4 +104,3 @@ elif [[ $(hostname -f) == *"rc.fas.harvard.edu" ]]; then
   fi
 
 fi
-

@@ -114,7 +114,7 @@ KOKKOS_INLINE_FUNCTION void convert_to_utwiddle(const GRCoordinates& G, const Co
 KOKKOS_INLINE_FUNCTION void get_prim_restart_kharma(const GRCoordinates& G, const CoordinateEmbedding& coords, const VariablePack<Real>& P, const VarMap& m_p,
                     const SphBLCoords& bl,  const SphKSCoords& ks, 
                     const Real fx1min, const Real fx1max, const Real fnghost, const bool should_fill, const bool is_spherical,
-                    const Real gam, const Real rs,  const Real mdot, const Real ur_frac, const Real uphi, const hsize_t length[GR_DIM], const hsize_t length_fill[GR_DIM],
+                    const Real gam, const Real rs, const Real mdot, const Real ur_frac, const Real uphi, const hsize_t length[GR_DIM], const hsize_t length_fill[GR_DIM],
                     const GridScalar& x1, const GridScalar& x2, const GridScalar& x3, const GridScalar& rho, const GridScalar& u, const GridVector& uvec,
                     const GridScalar& x1_fill, const GridScalar& x2_fill, const GridScalar& x3_fill, const GridScalar& rho_fill, const GridScalar& u_fill, const GridVector& uvec_fill,
                     const Real vacuum_logrho, const Real vacuum_log_u_over_rho,
@@ -130,7 +130,7 @@ KOKKOS_INLINE_FUNCTION void get_prim_restart_kharma(const GRCoordinates& G, cons
     // Interpolate the value at this location from the global grid
     if ((!should_fill) && (X[1]<fx1min)) {// if cannot be read from restart file
         // same as Bondi (06/13/23)
-        get_prim_bondi(G, coords, P, m_p, gam, bl, ks, mdot, rs, rs*rs*100, ur_frac, uphi, k, j, i); // get the solution at r_b*100
+        get_prim_bondi(G, coords, P, m_p, gam, bl, ks, mdot, rs, ur_frac, uphi, k, j, i);
     }
     // HyerinTODO: if fname_fill exists and smaller.
     else {

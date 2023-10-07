@@ -564,7 +564,7 @@ class WidepoleTransform {
         GReal smoothness;
 
         // Constructor
-        KOKKOS_FUNCTION WidepoleTransform(GReal lin_frac_in, GReal dx2_in): lin_frac(lin_frac_in), n2(n2_in) 
+        KOKKOS_FUNCTION WidepoleTransform(GReal lin_frac_in, GReal n2_in): lin_frac(lin_frac_in), n2(n2_in) 
         {
             if (lin_frac < 1. / (1. / M_PI - 1./ n2 + 1.)) smoothness = -1. / (2. * n2 * log(1. - lin_frac / (1. - lin_frac) * (1. / M_PI - 1. / n2)));
             else {
@@ -578,11 +578,8 @@ class WidepoleTransform {
         {
             Xembed[0] = Xnative[0];
             Xembed[1] = exp(Xnative[1]);
-
             GReal th;
-            if (Xnative[2] < dx2) th = th_pole * Xnative[2] / dx2;
-            else if (Xnative[2] > 1. - dx2) th = M_PI + th_pole * (Xnative[2] - 1.) / dx2;
-            else th = th_pole + (M_PI - 2. * th_pole) * (Xnative[2] - dx2) / (1.- 2 * dx2);
+            th = M_PI / 2. * (1. + 2. * lin_frac * (Xnative[2] - 0.5) + (1. - lin_frac) * exp((Xnative[2] - 1.) / smoothness) - (1. - lin_frac) * exp(-Xnative[2] / smoothness));
             Xembed[2] = excise(excise(th, 0.0, SMALL), M_PI, SMALL);
             Xembed[3] = Xnative[3];
         }
@@ -590,10 +587,9 @@ class WidepoleTransform {
         {
             Xnative[0] = Xembed[0];
             Xnative[1] = log(Xembed[1]);
-            if (Xembed[2] < th_pole) Xnative[2] = Xembed[2] * dx2 / th_pole;
-            else if (Xembed[2] > M_PI - th_pole) Xnative[2] = 1. + dx2 * (Xembed[2] - M_PI) / th_pole;
-            else Xnative[2] = dx2 + (Xembed[2] - th_pole) * (1. - 2 * dx2) / (M_PI - 2 * th_pole);
             Xnative[3] = Xembed[3];
+            // Treat the special case with a macro
+            ROOT_FIND
         }
         /**
          * Transformation matrix for contravariant vectors to embedding, or covariant vectors to native
@@ -603,9 +599,7 @@ class WidepoleTransform {
             gzero2(dxdX);
             dxdX[0][0] = 1.;
             dxdX[1][1] = exp(Xnative[1]);
-            if (Xnative[2] < dx2) dxdX[2][2] = th_pole / dx2;
-            else if (Xnative[2] > 1. - dx2) dxdX[2][2] = th_pole / dx2;
-            else dxdX[2][2] = (M_PI - 2 * th_pole) / (1. - 2 * dx2);
+            dxdX[2][2] = M_PI / 2. * (2. * lin_frac + (1. - lin_frac) / smoothness * exp((Xnative[2] - 1.) / smoothness) + (1. - lin_frac) / smoothness * exp(-Xnative[2] / smoothness));
             dxdX[3][3] = 1.;
         }
         /**

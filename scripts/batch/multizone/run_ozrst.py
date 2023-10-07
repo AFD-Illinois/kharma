@@ -58,6 +58,7 @@ def data_dir(n):
 @click.option('--gizmo', is_flag=True, help="Start from GIZMO data")
 @click.option('--gizmo_fname', default="../gizmo_data.txt", help="Filename of GIZMO data")
 @click.option('--ext_g', is_flag=True, help="Include external gravity")
+@click.option('--cleanup', is_flag=True, help="Clean up divB")
 @click.option('--in2out', is_flag=True, help="Only go from in to out")
 @click.option('--out2in', is_flag=True, help="Only go from out to in")
 # Don't use this
@@ -96,38 +97,43 @@ def run_multizone(**kwargs):
             if 'nlim' not in arg: # can change nlim from previous run
                 kwargs[arg] = kwargs_save[arg]
         args['parthenon/time/nlim'] = kwargs['nlim']
+        fname_dir = data_dir(kwargs['start_run'])
+        fname = sorted(glob.glob(fname_dir+"/*.rhdf"))[-1]
+        kwargs['start_time'] = pyharm.io.get_dump_time(fname)
+        fname_fill1 = fname
+        fname_fill2 = "none"
+        fname_fill3 = "none"
+        fname_fill4 = "none"
+        fname_fill5 = "none"
+        fname_fill6 = "none"
+        fname_fill7 = "none"
+        args['resize_restart/iteration'] += 1
+        kwargs['start_run'] += 1
     else:
         # First run arguments
         base = kwargs['base']
         args = {}
+        args['resize_restart/iteration'] = 1
+        kwargs['start_run'] = 0
         args['parthenon/job/problem_id'] = "resize_restart_kharma"
         args['resize_restart/base'] = base
         args['resize_restart/nzone'] = kwargs['nzones']
-        args['resize_restart/iteration'] = 1
-        kwargs['start_run'] = 0
-        fn_dir = "../072723_weno_g10" #"../071023_beta01" #"../072023_test_to_rst_frm" #
-        fname_num = 31549 #47341 #
+        fn_dir = "../082423_n4" #"../073123_64_weno_g10" #"../072723_weno_g10" #"../071023_beta01" #"../072023_test_to_rst_frm" #
+        fname_num = 4040 #3510 #31549 #47341 #
         fname = glob.glob(fn_dir+"/{:05d}/*final.rhdf".format(fname_num))[0]
+        kwargs['start_time'] = pyharm.io.get_dump_time(fname)
         fname_fill1 = glob.glob(fn_dir+"/{:05d}/*final.rhdf".format(fname_num-1))[0]
         fname_fill2 = glob.glob(fn_dir+"/{:05d}/*final.rhdf".format(fname_num-2))[0]
-        fname_fill3 = glob.glob(fn_dir+"/{:05d}/*final.rhdf".format(fname_num-3))[0]
-        fname_fill4 = glob.glob(fn_dir+"/{:05d}/*final.rhdf".format(fname_num-4))[0]
-        fname_fill5 = glob.glob(fn_dir+"/{:05d}/*final.rhdf".format(fname_num-5))[0]
-        fname_fill6 = glob.glob(fn_dir+"/{:05d}/*final.rhdf".format(fname_num-6))[0]
-        fname_fill7 = glob.glob(fn_dir+"/{:05d}/*final.rhdf".format(fname_num-7))[0]
-        args['resize_restart/fname'] = fname
-        args['resize_restart/fname_fill1'] = fname_fill1
-        args['resize_restart/fname_fill2'] = fname_fill2
-        args['resize_restart/fname_fill3'] = fname_fill3
-        args['resize_restart/fname_fill4'] = fname_fill4
-        args['resize_restart/fname_fill5'] = fname_fill5
-        args['resize_restart/fname_fill6'] = fname_fill6
-        args['resize_restart/fname_fill7'] = fname_fill7
-
-        args['b_field/type'] = "vertical"
-        args['b_field/initial_cleanup'] = 1
-        args['b_cleanup/rel_tolerance'] = 1e-2 # 1e-3 #
-        args['b_cleanup/use_normalized_divb'] = 0 #1 #
+        fname_fill3 = "none" #glob.glob(fn_dir+"/{:05d}/*final.rhdf".format(fname_num-3))[0]
+        fname_fill4 = "none" #glob.glob(fn_dir+"/{:05d}/*final.rhdf".format(fname_num-4))[0]
+        fname_fill5 = "none" #glob.glob(fn_dir+"/{:05d}/*final.rhdf".format(fname_num-5))[0]
+        fname_fill6 = "none"#glob.glob(fn_dir+"/{:05d}/*final.rhdf".format(fname_num-6))[0] #
+        fname_fill7 = "none"#glob.glob(fn_dir+"/{:05d}/*final.rhdf".format(fname_num-7))[0] #
+        if kwargs['cleanup']:
+            args['b_field/type'] = "vertical"
+            args['b_field/initial_cleanup'] = 1
+            args['b_cleanup/rel_tolerance'] = 1e-3 #1e-2 # 
+            args['b_cleanup/use_normalized_divb'] = 0 #1 #
 
         turn_around = kwargs['nzones'] - 1
         args['coordinates/r_out'] = base**(turn_around+2)
@@ -194,6 +200,15 @@ def run_multizone(**kwargs):
         args['parthenon/meshblock/nx1'] = args['parthenon/mesh/nx1'] #kwargs['nx1_mb']
         args['parthenon/meshblock/nx2'] = kwargs['nx2_mb']
         args['parthenon/meshblock/nx3'] = kwargs['nx3_mb']
+    args['resize_restart/fname'] = fname
+    args['resize_restart/fname_fill1'] = fname_fill1
+    args['resize_restart/fname_fill2'] = fname_fill2
+    args['resize_restart/fname_fill3'] = fname_fill3
+    args['resize_restart/fname_fill4'] = fname_fill4
+    args['resize_restart/fname_fill5'] = fname_fill5
+    args['resize_restart/fname_fill6'] = fname_fill6
+    args['resize_restart/fname_fill7'] = fname_fill7
+        
 
     # Any derived parameters once we've loaded args/kwargs
     # Default parameters are in mz_dir
@@ -360,8 +375,9 @@ def update_args(run_num, kwargs, args):
     #if args['coordinates/r_out'] > 1e8:
         #args['b_cleanup/rel_tolerance'] = 1e-5
     #else:
-    args['b_cleanup/rel_tolerance'] = 1e-1 #1e-2 #
-    args['b_cleanup/use_normalized_divb'] = 0 #
+    if kwargs['cleanup']:
+        args['b_cleanup/rel_tolerance'] = 1e-1 #1e-2 #
+        args['b_cleanup/use_normalized_divb'] = 0 #
 
     # Choose timestep and radii for the next run: smaller/larger as we step in/out
     args['parthenon/time/dt'] = max(dt_last * kwargs['base']**(-3./2.*out_to_in) / 4, 1e-5)

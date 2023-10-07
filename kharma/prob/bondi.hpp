@@ -123,7 +123,7 @@ KOKKOS_INLINE_FUNCTION Real get_T(const GReal r, const Real C1, const Real C2, c
  */
 KOKKOS_INLINE_FUNCTION void get_prim_bondi(const GRCoordinates& G, const CoordinateEmbedding& coords, const VariablePack<Real>& P, const VarMap& m_p,
                                            const Real& gam, const SphBLCoords& bl,  const SphKSCoords& ks, 
-                                           const Real mdot, const Real rs, const Real r_shell, const Real ur_frac, const Real uphi, const int& k, const int& j, const int& i)
+                                           const Real mdot, const Real rs, const Real ur_frac, const Real uphi, const int& k, const int& j, const int& i)
 {
     // Solution constants
     // Ideally these could be cached but preformance isn't an issue here
@@ -149,15 +149,15 @@ KOKKOS_INLINE_FUNCTION void get_prim_bondi(const GRCoordinates& G, const Coordin
     // Set u^t to make u^r a 4-vector
     Real ucon_bl[GR_DIM] = {0, ur, 0, 0};
 
-    // values at infinity (obtained by putting r = rshell)
+    // values at infinity (obtained by putting r = 100rb)
+    Real rb; // Bondi radius
+    if (m::abs(n-1.5) < 0.01) rb = rs * rs * 80. / (27. * gam);
+    else rb = (4 * (n + 1)) / (2 * (n + 3) - 9) * rs;
     Real rho, u, rho0, T0, u0;
-    T0 = get_T(r_shell, C1, C2, n, rs);
+    T0 = get_T(100*rb, C1, C2, n, rs); //  at some large radius, which is 100 rb
     rho0 = m::pow(T0, n);
     u0 = rho0 * T0 * n;
 
-    Real rb; // Bondi radius
-    if (m::abs(n-1.5) < 0.01) rb = rs * rs;
-    else rb = (4 * (n + 1)) / (2 * (n + 3) - 9) * rs;
     // interpolation between inner and outer regimes
     rho = rho0 * (r + rb) / r;
     //T = T0 * (r + rb) / r; // use the same analytic temperature solution since T already goes like ~1/r

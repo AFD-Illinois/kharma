@@ -56,7 +56,8 @@ def calc_nx1(kwargs, r_out=None, r_in=None):#(given_nx1, nzones):
 @click.option('--bz', default=0.0, help="B field Z component. Zero for no field")
 @click.option('--tlim', default=None, help="Enforce a specific tlim for every run (for testing)")
 @click.option('--nlim', default=-1, help="Consistent max number of steps for each run")
-@click.option('--r_b', default=1.e5, help="Bondi radius. None chooses based on nzones")
+#@click.option('--r_b', default=1.e5, help="Bondi radius. None chooses based on nzones")
+@click.option('--rs', default=np.sqrt(1.e5), help="sonic radius. None chooses based on nzones")
 @click.option('--jitter', default=0.0, help="Proportional jitter to apply to starting state. Default 10% w/B field")
 # Flags and options
 @click.option('--kharma_bin', default="kharma.cuda", help="Name (not path) of KHARMA binary to run")
@@ -140,11 +141,12 @@ def run_multizone(**kwargs):
         # bondi & vacuum parameters
         # TODO derive these from r_b or gizmo
         if args['coordinates/r_out'] < 1e5 and kwargs['bz']>1e-4: #kwargs['nzones'] == 3 or kwargs['nzones'] == 6:
-            kwargs['r_b'] = 256
+            kwargs['rs'] = 16
             logrho = -4.13354231
             log_u_over_rho = -2.57960521
         elif kwargs['nzones'] == 4:
-            kwargs['r_b'] = 256
+            kwargs['rs'] = 16
+            logrho = -4.13354231
             logrho = -4.200592800419657
             log_u_over_rho = -2.62430556
         elif kwargs['gizmo']:
@@ -152,17 +154,21 @@ def run_multizone(**kwargs):
             logrho = -7.80243572
             log_u_over_rho = -5.34068635
         else:
-            kwargs['r_b'] = 1e5
+            #kwargs['r_b'] = 1e5
             logrho = -8.2014518
             log_u_over_rho = -5.2915149
         args['bondi/vacuum_logrho'] = logrho
         args['bondi/vacuum_log_u_over_rho'] = log_u_over_rho
+        args['bondi/rs'] = kwargs['rs']
         if abs(kwargs['gamma']- 5./3.)<1e-2:
             # only when gamma=5/3, rb=rs^2
-            args['bondi/rs'] = np.sqrt(float(kwargs['r_b']))
+            #args['bondi/rs'] = np.sqrt(float(kwargs['r_b']))
+            r_b = 80.*float(kwargs['rs'])**2/(27.*kwargs['gamma'])
+            print(r_b)
         else:
             n = 1./(kwargs['gamma']-1)
             args['bondi/rs'] = (2*(n+3)-9)/(4*(n+1))*float(kwargs['r_b'])
+            # TODO! change it to r_b calculation
         args['bondi/ur_frac'] = 0
 
         # B field additions
@@ -174,7 +180,7 @@ def run_multizone(**kwargs):
             # Compress coordinates to save time
             if kwargs['coord'] is not None:
                 args['coordinates/transform'] = kwargs['coord']
-                args['coordinates/lin_frac'] = 0.7
+                args['coordinates/th_pole'] = 0.4
             elif kwargs['nx2'] >= 128 and not kwargs['onezone']:
                 args['coordinates/transform'] = "fmks"
                 args['coordinates/mks_smooth'] = 0.
@@ -215,7 +221,7 @@ def run_multizone(**kwargs):
         if (kwargs['combine_out_ann'] or kwargs['move_rin']) and not kwargs['onezone']:
             # think what's the smallest annulus where the logarithmic middle radius is larger than r_b 
             # (i.e. 8^n > 1e5 for base=8 r_b=1e5 where n is the nth smallest annulus)
-            kwargs['nzones_eff'] = int(np.ceil(np.log(kwargs['r_b'])/np.log(kwargs['base'])))
+            kwargs['nzones_eff'] = int(np.ceil(np.log(r_b)/np.log(kwargs['base'])))
             args['coordinates/r_in'] = base**(kwargs['nzones_eff']-1)
             if kwargs['base'] < 2: # this means that the second smallest annulu's r_in is inside the horizon
                 args['coordinates/r_in'] = base**(kwargs['nzones_eff'])
@@ -247,7 +253,7 @@ def run_multizone(**kwargs):
     for run_num in np.arange(kwargs['start_run'], kwargs['nruns']):
         # run times for each annulus
         r_out = args['coordinates/r_out']
-        r_b = float(kwargs['r_b'])
+        #r_b = float(kwargs['r_b'])
         base = args['resize_restart/base']
         #outermost_zone = 2 * (kwargs['nzones'] - 1)
         if kwargs['tlim'] is None:

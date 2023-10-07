@@ -124,6 +124,7 @@ void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
     if (coordinate_base == "minkowski") coordinate_base = "cartesian_minkowski";
     std::string coordinate_transform = pin->GetOrAddString("coordinates", "transform", "null");
     if (coordinate_transform == "none") coordinate_transform = "null";
+    if (coordinate_transform == "wks") coordinate_transform = "widepole";
     if (coordinate_transform == "fmks") coordinate_transform = "funky";
     if (coordinate_transform == "mks") coordinate_transform = "modified";
     if (coordinate_transform == "exponential") coordinate_transform = "exp";
@@ -205,7 +206,7 @@ void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
             pin->GetOrAddReal("parthenon/mesh", "x2max", M_PI);
             pin->GetOrAddReal("parthenon/mesh", "x3min", 0.0);
             pin->GetOrAddReal("parthenon/mesh", "x3max", 2*M_PI);
-        } else if (coordinate_transform == "modified" || coordinate_transform == "funky") {
+        } else if (coordinate_transform == "modified" || coordinate_transform == "funky" || coordinate_transform == "widepole") {
             pin->GetOrAddReal("parthenon/mesh", "x2min", 0.0);
             pin->GetOrAddReal("parthenon/mesh", "x2max", 1.0);
             pin->GetOrAddReal("parthenon/mesh", "x3min", 0.0);

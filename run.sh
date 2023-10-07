@@ -17,8 +17,9 @@ MPI_NUM_PROCS=${MPI_NUM_PROCS:-1}
 MPI_EXTRA_ARGS=${MPI_EXTRA_ARGS:-}
 
 # Default OpenMP directives: use all available threads
-export OMP_PROC_BIND=${OMP_PROC_BIND:-spread}
-export OMP_PLACES=${OMP_PLACES:-threads}
+# HYERIN (09/10/23) these two lines slow down the simulation
+#export OMP_PROC_BIND=${OMP_PROC_BIND:-spread}
+#export OMP_PLACES=${OMP_PLACES:-threads}
 # Force a number of OpenMP threads if it doesn't autodetect
 #export OMP_NUM_THREADS=28
 
@@ -49,7 +50,7 @@ fi
 
 # Load environment from the same files as the compile process
 HOST=$(hostname -f)
-ARGS=$(cat $KHARMA_DIR/make_args)
+ARGS=${ARGS:-$(cat $KHARMA_DIR/make_args)}
 for machine in $KHARMA_DIR/machines/*.sh
 do
   source $machine
@@ -81,6 +82,8 @@ if [ -z "$MPI_EXE" ]; then
   echo "Running $KHARMA_DIR/$EXE_NAME $@"
   exec $KHARMA_DIR/$EXE_NAME "$@"
 else
-  echo "Running $MPI_EXE -n $MPI_NUM_PROCS $MPI_EXTRA_ARGS $KHARMA_DIR/$EXE_NAME $@"
-  exec $MPI_EXE -n $MPI_NUM_PROCS $MPI_EXTRA_ARGS $KHARMA_DIR/$EXE_NAME "$@"
+  echo "Running $MPI_EXE -n $MPI_NUM_PROCS --mpi=pmix $MPI_EXTRA_ARGS $KHARMA_DIR/$EXE_NAME $@"
+  exec $MPI_EXE -n $MPI_NUM_PROCS --mpi=pmix $MPI_EXTRA_ARGS $KHARMA_DIR/$EXE_NAME "$@"
+  #echo "Running $MPI_EXE --mpi=pmix $MPI_EXTRA_ARGS $KHARMA_DIR/$EXE_NAME $@"
+  #exec $MPI_EXE --mpi=pmix $MPI_EXTRA_ARGS $KHARMA_DIR/$EXE_NAME "$@"
 fi

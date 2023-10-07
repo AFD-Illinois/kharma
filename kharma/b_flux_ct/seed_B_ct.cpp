@@ -117,7 +117,7 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
         gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
         n = 1. / (gam - 1.);
         rs = pin->GetOrAddReal("bondi", "rs", m::sqrt(1e5));
-        if (m::abs(n-1.5) < 0.01) rb = rs * rs;
+        if (m::abs(n-1.5) < 0.01) rb = rs * rs * 80. / (27. * gam);
         else rb = (4 * (n + 1)) / (2 * (n + 3) - 9) * rs;
         //rb = m::pow(pin->GetOrAddReal("bondi", "rs", m::sqrt(1e5)),2.);
         break;
@@ -126,7 +126,7 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
         gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
         n = 1. / (gam - 1.);
         rs = pin->GetOrAddReal("bondi", "rs", m::sqrt(1e5));
-        if (m::abs(n-1.5) < 0.01) rb = rs * rs;
+        if (m::abs(n-1.5) < 0.01) rb = rs * rs * 80. / (27. * gam);
         else rb = (4 * (n + 1)) / (2 * (n + 3) - 9) * rs;
         //rb = m::pow(pin->GetOrAddReal("bondi", "rs", m::sqrt(1e5)),2.);
         break;
@@ -135,7 +135,7 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
         gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
         n = 1. / (gam - 1.);
         rs = pin->GetOrAddReal("bondi", "rs", m::sqrt(1e5));
-        if (m::abs(n-1.5) < 0.01) rb = rs * rs;
+        if (m::abs(n-1.5) < 0.01) rb = rs * rs * 80. / (27. * gam);
         else rb = (4 * (n + 1)) / (2 * (n + 3) - 9) * rs;
         break;
     }
