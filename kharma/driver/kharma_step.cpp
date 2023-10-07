@@ -161,7 +161,7 @@ TaskCollection KHARMADriver::MakeDefaultTaskCollection(BlockList_t &blocks, int 
                 // Pull out a container of only EMF to synchronize
                 auto &md_emf_only = pmesh->mesh_data.AddShallow("EMF", std::vector<std::string>{"B_CT.emf"}); // TODO this gets weird if we partition
                 auto t_emf_local = tl.AddTask(t_fluxes, B_CT::CalculateEMF, md_sub_step_init.get());
-                auto t_emf = KHARMADriver::AddMPIBoundarySync(t_emf_local, tl, md_emf_only);
+                auto t_emf = KHARMADriver::AddBoundarySync(t_emf_local, tl, md_emf_only);
             }
             tl.AddTask(t_emf, parthenon::LoadAndSendFluxCorrections, md_sub_step_init);
             auto t_recv_flux = tl.AddTask(t_fluxes, parthenon::ReceiveFluxCorrections, md_sub_step_init);
@@ -221,7 +221,7 @@ TaskCollection KHARMADriver::MakeDefaultTaskCollection(BlockList_t &blocks, int 
                                                 md_sub_step_init.get(), md_sub_step_final.get());
         }
 
-        KHARMADriver::AddMPIBoundarySync(t_copy_prims, tl, md_sync);
+        KHARMADriver::AddBoundarySync(t_copy_prims, tl, md_sync);
     }
 
     EndFlag();

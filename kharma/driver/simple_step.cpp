@@ -125,7 +125,7 @@ TaskCollection KHARMADriver::MakeSimpleTaskCollection(BlockList_t &blocks, int s
         auto t_floors = tl.AddTask(t_UtoP, Packages::MeshApplyFloors, md_sub_step_final.get(), IndexDomain::interior);
 
         // Boundary sync: neighbors must be available for FixUtoP below
-        KHARMADriver::AddMPIBoundarySync(t_floors, tl, md_sub_step_final);
+        KHARMADriver::AddBoundarySync(t_floors, tl, md_sub_step_final);
     }
 
     // Async Region: Any post-sync tasks.  Fixups, timestep & AMR tagging.

@@ -81,12 +81,16 @@ std::shared_ptr<KHARMAPackage> KHARMADriver::Initialize(ParameterInput *pin, std
     std::string flux = pin->GetOrAddString("driver", "flux", "llf");
     params.Add("use_hlle", (flux == "hlle"));
 
-    // Reconstruction scheme: plm, weno5, ppm...
-    // Allow an old parameter location
-    std::string grmhd_recon_option = pin->GetOrAddString("GRMHD", "reconstruction", "weno5");
-    std::string recon = pin->GetOrAddString("driver", "reconstruction", grmhd_recon_option);
+    // Reconstruction scheme.  TODO bunch more here, PPM esp...
+    std::vector<std::string> allowed_vals = {"donor_cell", "linear_mc", "weno5"};
+    std::string recon = pin->GetOrAddString("driver", "reconstruction", "weno5", allowed_vals);
     bool lower_edges = pin->GetOrAddBoolean("driver", "lower_edges", false);
     bool lower_poles = pin->GetOrAddBoolean("driver", "lower_poles", false);
+    if (lower_edges && lower_poles)
+        throw std::runtime_error("Cannot enable lowered reconstruction on edges and poles!");
+    if ((lower_edges || lower_poles) && recon != "weno5")
+        throw std::runtime_error("Lowered reconstructions can only be enabled with weno5!");
+
     int stencil = 0;
     if (recon == "donor_cell") {
         params.Add("recon", KReconstruction::Type::donor_cell);
@@ -97,21 +101,18 @@ std::shared_ptr<KHARMAPackage> KHARMADriver::Initialize(ParameterInput *pin, std
     } else if (recon == "linear_mc") {
         params.Add("recon", KReconstruction::Type::linear_mc);
         stencil = 3;
-    } else if (recon == "weno5_lower_edges" || (recon == "weno5" && lower_edges)) {
+    } else if (recon == "weno5" && lower_edges) {
         params.Add("recon", KReconstruction::Type::weno5_lower_edges);
         stencil = 5;
-    } else if (recon == "weno5_lower_poles" || (recon == "weno5" && lower_poles)) {
+    } else if (recon == "weno5" && lower_poles) {
         params.Add("recon", KReconstruction::Type::weno5_lower_poles);
         stencil = 5;
     } else if (recon == "weno5") {
         params.Add("recon", KReconstruction::Type::weno5);
         stencil = 5;
-    } else {
-        std::cerr << "Reconstruction type not supported!  Supported reconstructions:" << std::endl;
-        std::cerr << "donor_cell, linear_mc, weno5, weno5_lower_edges, weno5_lower_poles (linear_vl coming back soon!)" << std::endl;
-        throw std::invalid_argument("Unsupported reconstruction algorithm!");
-    }
+    } // we only allow these options
     // Warn if using less than 3 ghost zones w/WENO etc, 2 w/Linear, etc.
+    // SMR/AMR independently requires an even number of zones, so we usually use 4
     if (Globals::nghost < (stencil/2 + 1)) {
         throw std::runtime_error("Not enough ghost zones for specified reconstruction!");
     }
@@ -136,12 +137,16 @@ std::shared_ptr<KHARMAPackage> KHARMADriver::Initialize(ParameterInput *pin, std
     bool prims_are_fundamental = driver_type != DriverType::kharma;
     params.Add("prims_are_fundamental", prims_are_fundamental);
 
-    // Finally, we set default flags for primitive and conserved variables
-    // This first mode is only for simulations without AMR/SMR, as primitives shouldn't be prolongated
+    // Which variables we *actually send* via Parthenon/MPI may differ, however.
+    // Prolongation/restriction should happen on conserved vars, so we must sync
+    // those in multilevel meshes.  If prims are funcamental but not sync'd,
+    // we "emulate" syncing them with PtoU/UtoP on boundaries
     bool sync_prims = prims_are_fundamental &&
                         (!pin->DoesParameterExist("parthenon/mesh", "numlevel") ||
                          pin->GetInteger("parthenon/mesh", "numlevel") == 1);
     params.Add("sync_prims", sync_prims);
+    // Finally, we set default flags for primitive and conserved variables
+    // This first mode is only for simulations without AMR/SMR, as primitives shouldn't be prolongated
     if (sync_prims) {
         // If we're not in AMR, we can sync primitive variables directly
         params.Add("prim_flags", std::vector<MetadataFlag>{Metadata::Real, Metadata::Derived, Metadata::FillGhost, Metadata::GetUserFlag("Primitive")});
@@ -165,11 +170,11 @@ void KHARMADriver::AddFullSyncRegion(TaskCollection& tc, std::shared_ptr<MeshDat
     TaskRegion &bound_sync = tc.AddRegion(num_partitions);
     for (int i = 0; i < num_partitions; i++) {
         auto &tl = bound_sync[i];
-        AddMPIBoundarySync(t_none, tl, md_sync);
+        AddBoundarySync(t_none, tl, md_sync);
     }
 }
 
-TaskID KHARMADriver::AddMPIBoundarySync(const TaskID t_start, TaskList &tl, std::shared_ptr<MeshData<Real>> &mc1)
+TaskID KHARMADriver::AddBoundarySync(const TaskID t_start, TaskList &tl, std::shared_ptr<MeshData<Real>> &mc1)
 {
     Flag("AddBoundarySync");
     auto t_start_sync = t_start;
@@ -240,7 +245,7 @@ TaskStatus KHARMADriver::SyncAllBounds(std::shared_ptr<MeshData<Real>> &md)
 
     TaskCollection tc;
     auto tr = tc.AddRegion(1);
-    AddMPIBoundarySync(t_none, tr[0], md);
+    AddBoundarySync(t_none, tr[0], md);
     while (!tr.Execute());
 
     EndFlag();
