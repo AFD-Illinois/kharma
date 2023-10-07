@@ -237,11 +237,12 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
             auto t_implicit_step = tl.AddTask(t_copy_linesearch, Implicit::Step, md_full_step_init.get(), md_sub_step_init.get(), 
                                          md_flux_src.get(), md_linesearch.get(), md_solver.get(), integrator->beta[stage-1] * integrator->dt);
 
-            // Copy the entire solver state (everything defined on the grid, i.e. 'Cell') into the final state md_sub_step_final
+            // Copy the entire solver state (everything defined on the grid, incl. our new Face variables) into the final state md_sub_step_final
             // If we're entirely explicit, we just declare these equal
-            t_implicit = tl.AddTask(t_implicit_step, Copy<MeshData<Real>>, std::vector<MetadataFlag>({Metadata::Cell}),
+            auto t_implicit_c = tl.AddTask(t_implicit_step, Copy<MeshData<Real>>, std::vector<MetadataFlag>({Metadata::Cell}),
                                     md_solver.get(), md_sub_step_final.get());
-
+            t_implicit = tl.AddTask(t_implicit_step, WeightedSumDataFace, std::vector<MetadataFlag>({Metadata::Face}),
+                                    md_solver.get(), md_solver.get(), 1.0, 0.0, md_sub_step_final.get());
         }
 
         // Apply all floors & limits (GRMHD,EMHD,etc), but do *not* immediately correct UtoP failures with FixUtoP --
