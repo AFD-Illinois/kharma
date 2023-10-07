@@ -58,9 +58,9 @@ KOKKOS_INLINE_FUNCTION void calc_tensor(const Local& P, const VarMap& m_p, const
     if (m_p.Q >= 0 || m_p.DP >= 0) {
         // Apply higher-order terms conversion if necessary
         Real qtilde = 0., dPtilde = 0.;
-        if (emhd_params.conduction)
+        if (m_p.Q >= 0)
             qtilde = P(m_p.Q);
-        if (emhd_params.viscosity)
+        if (m_p.DP >= 0)
             dPtilde = P(m_p.DP);
         const Real Theta = (gam - 1) * P(m_p.UU) / P(m_p.RHO);
         const Real cs2   = gam * (gam - 1) * P(m_p.UU) / (P(m_p.RHO) + gam * P(m_p.UU));
@@ -85,12 +85,11 @@ KOKKOS_INLINE_FUNCTION void calc_tensor(const Global& P, const VarMap& m_p, cons
                                         Real T[GR_DIM])
 {
     if (m_p.Q >= 0 || m_p.DP >= 0) {
-
         // Apply higher-order terms conversion if necessary
         Real qtilde = 0., dPtilde = 0.;
-        if (emhd_params.conduction)
+        if (m_p.Q >= 0)
             qtilde = P(m_p.Q, k, j, i);
-        if (emhd_params.viscosity)
+        if (m_p.DP >= 0)
             dPtilde = P(m_p.DP, k, j, i);
         const Real Theta = (gam - 1) * P(m_p.UU, k, j, i) / P(m_p.RHO, k, j, i);
         const Real cs2   = gam * (gam - 1) * P(m_p.UU, k, j, i) / (P(m_p.RHO, k, j, i) + gam * P(m_p.UU, k, j, i));

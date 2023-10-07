@@ -52,6 +52,8 @@ std::shared_ptr<KHARMAPackage> Flux::Initialize(ParameterInput *pin, std::shared
     // That's what this function is for.
     int nvar = KHARMA::PackDimension(packages.get(), Metadata::WithFluxes);
     std::vector<int> s_flux({nvar});
+    if (packages->Get("Globals")->Param<int>("verbose") > 2)
+        std::cout << "Allocating fluxes for " << nvar << " variables" << std::endl;
     // TODO optionally move all these to faces? Not important yet, & faces have no output, more memory
     std::vector<MetadataFlag> flags_flux = {Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy};
     Metadata m = Metadata(flags_flux, s_flux);
