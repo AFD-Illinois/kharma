@@ -31,6 +31,12 @@ default:
     - micromamba activate pyharm
     - cd /pyharm && ./install.sh    
     - cd -
+  # Always keep logs and plots.  Results should be printed to console!
+  artifacts:
+    when: always
+    paths:
+      - tests/*/*.png
+      - tests/*/*.txt
 
 # Tests can be executed in parallel,
 # but be careful about GPU arch

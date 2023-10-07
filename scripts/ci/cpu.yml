@@ -30,6 +30,12 @@ default:
     - micromamba activate pyharm
     - cd /pyharm && ./install.sh
     - cd -
+  # Always keep logs and plots.  Results should be printed to console!
+  artifacts:
+    when: always
+    paths:
+      - tests/*/*.png
+      - tests/*/*.txt
 
 # Tests can be executed in parallel
 stages:
@@ -64,4 +70,5 @@ tests:
     - ./run.sh
   parallel:
     matrix:
-      - TEST: [bondi, bondi_viscous, bz_monopole, emhdmodes, mhdmodes, noh, regrid, reinit, restart, tilt_init, torus_sanity]
+      - TEST: [all_pars, anisotropic_conduction, bondi, bondi_viscous, bz_monopole, \
+               emhdmodes, mhdmodes, noh, regrid, reinit, resize, restart, tilt_init, torus_sanity]
