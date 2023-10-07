@@ -3,7 +3,7 @@
 image: quay.io/centos/centos:stream9
 
 variables:
-  OMP_NUM_THREADS: 8
+  OMP_NUM_THREADS: 6
   OMP_PROC_BIND: "false"
   MPI_EXE: mpirun
   MPI_NUM_PROCS: 2
@@ -23,8 +23,8 @@ default:
     - dnf -y install hostname environment-modules git mpich fftw bzip2
     - source /etc/profile
     - module load mpi/mpich-x86_64
-    - curl -Ls https://micro.mamba.pm/api/micromamba/linux-64/latest | tar -xvj bin/micromamba
-    - eval "$(./bin/micromamba shell hook -s posix)"
+    - curl -Ls https://micro.mamba.pm/api/micromamba/linux-64/latest | tar -xvj /mamba/micromamba
+    - eval "$(/mamba/micromamba shell hook -s posix)"
     - git clone -b dev https://github.com/AFD-Illinois/pyharm.git /pyharm
     - micromamba create -y -f /pyharm/environment.yml
     - micromamba activate pyharm
@@ -46,8 +46,8 @@ stages:
 build:
   stage: build
   variables:
-    NPROC: 8
-    HOST_ARCH: NATIVE
+    NPROC: 12
+    HOST_ARCH: HSW
     C_NATIVE: gcc
     CXX_NATIVE: g++
   before_script:
