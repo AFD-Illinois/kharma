@@ -1,8 +1,11 @@
 import numpy as np
 import os, sys, h5py
+
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+
+import pyharm
 
 if __name__=='__main__':
     plotsdir = sys.argv[1]
@@ -17,17 +20,18 @@ if __name__=='__main__':
 
     # read data
     for r, resolution in enumerate(resolutions):
-        hfp = h5py.File(os.path.join(filesdir, 'noh.out0.final.res{:d}.h5'.format(resolution)))
-        gam = hfp['header/gam'][()]
-        gam_e = hfp['header/gamma_e'][()]
-        fel = hfp['header/fel_constant'][()]
-        rho = np.squeeze(hfp['prims'][Ellipsis,0][()])
-        uu = np.squeeze(hfp['prims'][Ellipsis,1][()])
-        kel = np.squeeze(hfp['prims'][Ellipsis,6][()])
-        startx1 = hfp['header/geom/startx1'][()]
-        dx1 = hfp['header/geom/dx1'][()]
-        n1 = hfp['header/n1'][()]
-        hfp.close()
+        #hfp = h5py.File(os.path.join(filesdir, 'noh.out0.final.res{:d}.h5'.format(resolution)))
+        hfp = pyharm.load_dump('noh.out0.final.res{:d}.phdf'.format(resolution))
+        gam = hfp['gam']
+        gam_e = hfp['gam_e']
+        fel = hfp['electrons/fel_constant']
+        rho = np.squeeze(hfp['rho'])
+        uu = np.squeeze(hfp['u'])
+        kel = np.squeeze(hfp['Kel_Constant'])
+        startx1 = hfp['startx1']
+        dx1 = hfp['dx1']
+        n1 = hfp['n1']
+        del hfp
 
         x1 = np.zeros(n1, dtype=float)
         for i in range(n1):
