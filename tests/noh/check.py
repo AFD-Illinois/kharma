@@ -39,7 +39,8 @@ if __name__=='__main__':
 
         u_e = (kel * rho**gam_e)/(gam_e - 1.)
         ratio_analytical = np.where(rho > 1.5, \
-                                    fel/2. * (((gam + 1.)/(gam - 1.))**gam_e * (1. - gam/gam_e) + 1. + gam/gam_e) * ((gam**2 - 1.)/(gam_e**2 - 1.)), \
+                                    fel/2. * (((gam + 1.)/(gam - 1.))**gam_e * (1. - gam/gam_e) + 1. + gam/gam_e) \
+                                        * ((gam**2 - 1.)/(gam_e**2 - 1.)), \
                                     0.)
 
         plt.figure(figsize=(6,6))
@@ -47,6 +48,11 @@ if __name__=='__main__':
         plt.plot(x1, ratio_analytical*np.ones_like(x1), label="Analytic")
         plt.legend()
         plt.savefig("noh_results_{}.png".format(resolution))
+
+        plt.figure(figsize=(6,6))
+        plt.plot(x1, rho, label="Computed")
+        plt.legend()
+        plt.savefig("noh_rho_{}.png".format(resolution))
 
         l1_norm.append(np.mean(abs(u_e/uu - ratio_analytical)))
     

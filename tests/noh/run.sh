@@ -20,7 +20,6 @@ noh_test() {
 
         cp noh.out0.final.phdf noh.out0.final.res$res.phdf
     done
-    pyharm-convert *.phdf
     check_code=0
     python check.py . . $ALL_RES 1.666667 || check_code=$?
     if [[ $check_code != 0 ]]; then
@@ -29,7 +28,6 @@ noh_test() {
     else
         echo Noh shock test success
     fi
-    rm *.phdf
 }
 
 noh_test

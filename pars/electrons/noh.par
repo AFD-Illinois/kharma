@@ -65,8 +65,8 @@ zero_ug = false
 set_tlim = true
 centered = false
 
-#<floors>
-#disable_floors = true
+<floors>
+disable_floors = true
 
 <driver>
 type = imex
