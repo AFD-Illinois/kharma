@@ -26,9 +26,8 @@ default:
   # interleaved, and prints a summary of results.
   before_script:
     - export PATH="$HOME/.local/bin:$PATH"
-    - mkdir $MAMBA_ROOT_PREFIX
-    - curl -Ls $MAMBA_URL | tar -xOvj bin/micromamba > $MAMBA_ROOT_PREFIX/micromamba
-    - eval "$(/mamba/micromamba shell hook -s posix)"
+    - curl -Ls $MAMBA_URL | tar -xOvj bin/micromamba
+    - eval "$(bin/micromamba shell hook -s posix)"
     - git clone -b dev https://github.com/AFD-Illinois/pyharm.git /pyharm
     - micromamba create -y -f /pyharm/environment.yml
     - micromamba activate pyharm
