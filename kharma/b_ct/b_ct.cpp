@@ -73,7 +73,7 @@ std::shared_ptr<KHARMAPackage> B_CT::Initialize(ParameterInput *pin, std::shared
     params.Add("ct_scheme", ct_scheme);
     // Use the default Parthenon prolongation operator, rather than the divergence-preserving one
     // This relies entirely on the EMF communication for preserving the divergence
-    bool lazy_prolongation = pin->GetOrAddBoolean("b_field", "lazy_prolongation", true);
+    bool lazy_prolongation = pin->GetOrAddBoolean("b_field", "lazy_prolongation", false);
     // Need to preserve divergence if you refine/derefine during sim i.e. AMR
     if (lazy_prolongation && pin->GetString("parthenon/mesh", "refinement") == "adaptive")
         throw std::runtime_error("Cannot use non-preserving prolongation in AMR!");
@@ -83,6 +83,7 @@ std::shared_ptr<KHARMAPackage> B_CT::Initialize(ParameterInput *pin, std::shared
     // Flags for B fields on faces.
     // We don't mark these as "Primitive" and "Conserved" else they'd be bundled
     // with all the cell vars in a bunch of places we don't want
+    // Also note we *always* sync B field conserved var
     std::vector<MetadataFlag> flags_prim_f = {Metadata::Real, Metadata::Face, Metadata::Derived,
                                             Metadata::GetUserFlag("Explicit")};
     std::vector<MetadataFlag> flags_cons_f = {Metadata::Real, Metadata::Face, Metadata::Independent,
@@ -172,6 +173,8 @@ void B_CT::BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     auto B_U = rc->PackVariables(std::vector<std::string>{"cons.B"});
     auto B_P = rc->PackVariables(std::vector<std::string>{"prims.B"});
     const auto& G = pmb->coords;
+    // Return if we're not syncing U & P at all (e.g. edges)
+    if (B_Uf.GetDim(4) == 0) return;
 
     // TODO get rid of prims on faces probably
 
@@ -213,7 +216,7 @@ TaskStatus B_CT::CalculateEMF(MeshData<Real> *md)
 
     // Figure out indices
     const IndexRange3 b = KDomain::GetRange(md, IndexDomain::interior, 0, 0);
-    const IndexRange3 b1 = KDomain::GetRange(md, IndexDomain::interior, -1, 1);
+    const IndexRange3 b1 = KDomain::GetRange(md, IndexDomain::interior, -1, 2);
     const IndexRange block = IndexRange{0, emf_pack.GetDim(5)-1};
     const int kd = ndim > 2 ? 1 : 0;
     const int jd = ndim > 1 ? 1 : 0;

@@ -128,6 +128,11 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
         bool zero_flux = pin->GetOrAddBoolean("boundaries", "zero_flux_" + bname, zero_polar_flux && bdir == X2DIR);
         params.Add("zero_flux_" + bname, zero_flux);
 
+        // Allow specifically dP to outflow in otherwise Dirichlet conditions
+        // Only used for viscous_bondi problem
+        bool outflow_EMHD = pin->GetOrAddBoolean("boundaries", "outflow_EMHD_" + bname, false);
+        params.Add("outflow_EMHD_" + bname, outflow_EMHD);
+
         // BOUNDARY TYPES
         // Get the boundary type we specified in kharma
         auto btype = pin->GetString("boundaries", bname);
@@ -248,6 +253,13 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
     const auto btype_name = params.Get<std::string>(bname);
     const auto bdir = BoundaryDirection(bface);
 
+    // If we're pretending to sync primitives, but applying physical bounds
+    // to conserved variables, make sure we're up to date
+    if (pmb->packages.Get<KHARMAPackage>("Driver")->Param<bool>("prims_are_fundamental") &&
+        params.Get<bool>("domain_bounds_on_conserved")) {
+        Flux::BlockPtoU_Send(rc.get(), domain, coarse);
+    }
+
     Flag("Apply "+bname+" boundary: "+btype_name);
     pkg->KBoundaries[bface](rc, coarse);
     EndFlag();
@@ -268,6 +280,26 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
     if (params.Get<bool>("check_inflow_" + bname)) {
         Flag("CheckInflow_"+bname);
         CheckInflow(rc, domain, coarse);
+        EndFlag();
+    }
+
+    // Allow specifically dP to outflow in otherwise Dirichlet conditions
+    // Only used for viscous_bondi problem
+    // TODO make this more general?
+    if (params.Get<bool>("outflow_EMHD_" + bname)) {
+        Flag("OutflowEMHD_"+bname);
+        auto EMHDg = rc->PackVariables({Metadata::GetUserFlag("EMHDVar"), Metadata::FillGhost});
+        const auto &bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
+        const auto &range = (bdir == 1) ? bounds.GetBoundsI(IndexDomain::interior)
+                                : (bdir == 2 ? bounds.GetBoundsJ(IndexDomain::interior)
+                                    : bounds.GetBoundsK(IndexDomain::interior));
+        const int ref = BoundaryIsInner(domain) ? range.s : range.e;
+        pmb->par_for_bndry(
+            "outflow_EMHD", IndexRange{0,EMHDg.GetDim(4)-1}, domain, CC, coarse,
+            KOKKOS_LAMBDA (const int &v, const int &k, const int &j, const int &i) {
+                EMHDg(v, k, j, i) = EMHDg(v, (bdir == 3) ? ref : k, (bdir == 2) ? ref : j, (bdir == 1) ? ref : i);
+            }
+        );
         EndFlag();
     }
 
@@ -320,7 +352,8 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
             Packages::BoundaryPtoUElseUtoP(rc.get(), domain, coarse);
         }
     } else {
-        Packages::BlockUtoP(rc.get(), domain, coarse);
+        // These get applied the same way regardless of driver
+        Packages::BoundaryUtoP(rc.get(), domain, coarse);
     }
 
     EndFlag();
@@ -350,8 +383,6 @@ void KBoundaries::CorrectBPrimitive(std::shared_ptr<MeshBlockData<Real>>& rc, In
 {
     Flag("CorrectBPrimitive");
     std::shared_ptr<MeshBlock> pmb = rc->GetBlockPointer();
-    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
-
     auto B_P = rc->PackVariables(std::vector<std::string>{"prims.B"});
     // Return if no field to correct
     if (B_P.GetDim(4) == 0) return;

@@ -23,8 +23,8 @@ if __name__ == '__main__':
     outputdir = './'
     kharmadir = '../../'
 
-    NVAR  = 3
-    VARS  = ['rho', 'u', 'dP']
+    NVAR  = 4
+    VARS  = ['rho', 'u', 'dP', 'B']
     RES   = [int(r) for r in sys.argv[1].split(",")]
     LONG  = sys.argv[2]
     SHORT = sys.argv[3]
@@ -44,12 +44,15 @@ if __name__ == '__main__':
         state.params['eta'] = eta
         state.params['tau'] = tau
         dP_check = bondi.compute_dP(mdot, rc, gam, dump.grid, eta, tau)
+        state.cache['dP'] = dP_check
 
         # load code data
         dump = pyharm.load_dump("emhd_2d_{}_end_emhd2d_weno.phdf".format(res))
 
-        rho, uu, dP_tilde = dump['RHO'], dump['UU'], dump['dP']
+        # TODO iterate on names here
+        #rho, uu, dP_tilde = dump['RHO'], dump['UU'], dump['dP']
         #rho, uu = dump['RHO'], dump['UU']
+        rho, uu, dP_tilde, B1 = dump['RHO'], dump['UU'], dump['dP'], dump['B1']
 
         # compute dP
         if dump['emhd/higher_order_terms'] == "true":
@@ -61,17 +64,30 @@ if __name__ == '__main__':
             dP = dP_tilde
 
         # Plot
-        fig = plt.figure(figsize=(6,6))
-        ax = fig.add_subplot(1,1,1)
-        pplt.plot_diff_xz(ax, dump, state, 'rho')
+        for var in ['rho', 'u', 'B1', 'dP']:
+            fig = plt.figure(figsize=(6,6))
+            ax = fig.add_subplot(1,1,1)
+            pplt.plot_diff_xz(ax, dump, state, var)
+            plt.legend()
+            fig.savefig("compare_{}_{}.png".format(var, res))
+            plt.close(fig)
+
+        r_start_ind = 1
+        radius = np.mean(dump.grid['r'][r_start_ind:], axis=(1,2))
+        plt.plot(radius, dP_check[r_start_ind:], label='dP ODE check')
+        plt.plot(radius, np.mean(dump['dP'][r_start_ind:], axis=(1,2)), label='dP0 ODE check')
+        plt.plot(radius, np.mean(state['ucon'][1][r_start_ind:], axis=(1,2)), label='ur')
+        #plt.plot(radius, np.mean(coeff[r_start_ind:], axis=(1,2)), label='coeff')
         plt.legend()
-        fig.savefig("compare_rho_{}.png".format(res))
-        plt.close(fig)
+        plt.savefig('dP_soln_new.png')
+        plt.close()
+
 
         # compute L1 norm
-        L1[r,0] = np.mean(np.fabs(rho[:,0,0] - state['rho'][:,0,0]))
-        L1[r,1] = np.mean(np.fabs(uu[:,0,0]  - state['u'][:,0,0]))
-        L1[r,2] = np.mean(np.fabs(dP[:,0,0]  - dP_check)[1:-1])
+        L1[r,0] = np.mean(np.fabs(rho - state['rho'])[1:-1])
+        L1[r,1] = np.mean(np.fabs(uu  - state['u']))
+        L1[r,2] = np.mean(np.fabs(dP  - dP_check)[1:-1])
+        L1[r,3] = np.mean(np.fabs(B1  - state['B1']))
 
     # MEASURE CONVERGENCE
     L1 = np.array(L1)

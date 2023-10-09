@@ -84,7 +84,7 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
         if (use_jcon) {
             pmesh->mesh_data.Add("preserve");
             // Above only copies on allocate -- ensure we copy every step
-            Copy<MeshData<Real>>({}, base.get(), pmesh->mesh_data.Get("preserve").get());
+            Copy<MeshData<Real>>({Metadata::Cell}, base.get(), pmesh->mesh_data.Get("preserve").get());
         }
         if (use_implicit) {
             // When solving, we need a temporary copy with any explicit updates,

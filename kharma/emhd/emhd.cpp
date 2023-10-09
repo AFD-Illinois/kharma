@@ -167,6 +167,8 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
 
     // UtoP function specifically for boundary sync (KHARMA must sync cons for AMR) and output
     pkg->BoundaryUtoP = EMHD::BlockUtoP;
+    // If we wanted to apply the domian boundaries to primitive EMHD variables
+    //pkg->DomainBoundaryPtoU = EMHD::BlockPtoU;
 
     // Add all explicit source terms -- implicit terms are called from Implicit::Step
     pkg->AddSource = EMHD::AddSource;

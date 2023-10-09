@@ -168,11 +168,18 @@ TaskStatus Flux::BlockPtoU_Send(MeshBlockData<Real> *rc, IndexDomain domain, boo
 
     const EMHD::EMHD_parameters& emhd_params = EMHD::GetEMHDParameters(pmb->packages);
 
-    // Pack variables
+    // Pack variables. We never want to run this on the B field
+    using FC = Metadata::FlagCollection;
+    auto cons_flags = FC(Metadata::Conserved, Metadata::Cell, Metadata::GetUserFlag("HD"));
+    if (pmb->packages.AllPackages().count("EMHD"))
+        cons_flags = cons_flags + FC(Metadata::Conserved, Metadata::Cell, Metadata::GetUserFlag("EMHDVar"));
     PackIndexMap prims_map, cons_map;
-    const auto& P = rc->PackVariables({Metadata::GetUserFlag("Primitive")}, prims_map);
-    const auto& U = rc->PackVariables({Metadata::Conserved}, cons_map);
+    const auto& P = rc->PackVariables({Metadata::GetUserFlag("Primitive"), Metadata::Cell}, prims_map);
+    const auto& U = rc->PackVariables(cons_flags, cons_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
+
+    // Return if we're not syncing U & P at all (e.g. edges)
+    if (P.GetDim(4) == 0) return TaskStatus::complete;
 
     auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
     IndexRange ib = bounds.GetBoundsI(domain);
