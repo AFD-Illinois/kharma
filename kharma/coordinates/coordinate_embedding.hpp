@@ -136,6 +136,7 @@ class CoordinateEmbedding {
         CoordinateEmbedding(parthenon::ParameterInput* pin) {
             const std::string base_str = pin->GetString("coordinates", "base");
             const std::string transform_str = pin->GetOrAddString("coordinates", "transform", "null");
+            const std::string theory = pin->GetOrAddString("coordinates", "theory", "gr");
 
             // Parse names.  See coordinate_systems.hpp for details
 
@@ -152,15 +153,21 @@ class CoordinateEmbedding {
                             GReal a = pin->GetReal("coordinates", "a"); 
                             
                             if (base_str == "dcs_ks") { 
+                                if (theory != "dcs") throw std::invalid_argument("Base coordinates is set to DCS,\
+                                 but theory was not initialized to 'dcs'!");
                                 GReal zeta = pin->GetReal("coordinates", "zeta"); // Get "zeta" value
                                 base.emplace<DCSKSCoords>(DCSKSCoords(a, zeta));
                             }
                             else if (base_str == "edgb_ks") {
+                                if (theory != "edgb") throw std::invalid_argument("Base coordinates is set to EdGB,\
+                                 but theory was not initialized to 'edgb'!");
                                 GReal zeta = pin->GetReal("coordinates", "zeta"); // Get "zeta" value
                                 base.emplace<EDGBKSCoords>(EDGBKSCoords(a, zeta));
                             }
                                 
                             else {
+                                if (theory != "gr") throw std::invalid_argument("Base coordinates is set to GR,\
+                                 but theory was not initialized to 'gr'!");
                                 bool ext_g = pin->GetOrAddBoolean("coordinates", "ext_g", false);
                                 if (ext_g || base_str == "spherical_ks_extg" || base_str == "ks_extg") {
                                     if (a > 0) throw std::invalid_argument("Transform is for spherical coordinates!");

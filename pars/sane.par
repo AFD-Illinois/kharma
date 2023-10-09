@@ -18,7 +18,9 @@ nx2 = 64
 nx3 = 32
 
 <coordinates>
-base = spherical_ks
+base = dcs_ks
+theory = dcs # valid strings - 'gr', 'dcs', 'edgb'
+zeta = 0.1
 transform = fmks
 r_out = 1000
 a = 0.9375
