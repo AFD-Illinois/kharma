@@ -24,7 +24,7 @@ default:
   # interleaved, and prints a summary of results.
   before_script:
     - export PATH="$HOME/.local/bin:$PATH"
-    - curl -Ls https://micro.mamba.pm/api/micromamba/linux-64/latest | tar -xvj /mamba/micromamba
+    - curl -Ls https://micro.mamba.pm/api/micromamba/linux-64/latest | tar -xOvj bin/micromamba > /mamba/micromamba
     - eval "$(/mamba/micromamba shell hook -s posix)"
     - git clone -b dev https://github.com/AFD-Illinois/pyharm.git /pyharm
     - micromamba create -y -f /pyharm/environment.yml
