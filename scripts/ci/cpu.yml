@@ -24,7 +24,7 @@ default:
     - dnf -y install hostname environment-modules git mpich fftw bzip2
     - source /etc/profile
     - module load mpi/mpich-x86_64
-    - curl -Ls $MAMBA_URL | tar -xOvj bin/micromamba
+    - curl -Ls $MAMBA_URL | tar -xvj bin/micromamba
     - eval "$(bin/micromamba shell hook -s posix)"
     - git clone -b dev https://github.com/AFD-Illinois/pyharm.git /pyharm
     - micromamba create -y -f /pyharm/environment.yml
