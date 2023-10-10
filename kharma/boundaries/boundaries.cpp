@@ -340,13 +340,24 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
         }
     }
 
-    // CONSERVED variables are marked FillGhost, plus FLUID PRIMITIVES.
-    // So, run PtoU on FLUID, and UtoP on EVERYTHING ELSE
+    // If we applied the domain boundary to primitives (as we usually do)...
     if (!params.Get<bool>("domain_bounds_on_conserved")) {
-        // Only the GRMHD package defines a BoundaryPtoU
-        Packages::BoundaryPtoUElseUtoP(rc.get(), domain, coarse);
+        bool sync_prims = rc->GetBlockPointer()->packages.Get("Driver")->Param<bool>("sync_prims");
+        // There are two modes of operation here:
+        if (sync_prims) {
+            // 1. ImEx w/o AMR:
+            //    PRIMITIVE variables (only) are marked FillGhost
+            //    So, run PtoU on EVERYTHING (and correct the B field)
+            CorrectBPrimitive(rc, domain, coarse);
+            Flux::BlockPtoU(rc.get(), domain, coarse);
+        } else {
+            // 2. Normal (KHARMA driver, ImEx w/AMR):
+            //    CONSERVED variables are marked FillGhost, plus FLUID PRIMITIVES.
+            //    So, run PtoU on FLUID, and UtoP on EVERYTHING ELSE
+            Packages::BoundaryPtoUElseUtoP(rc.get(), domain, coarse);
+        }
     } else {
-        // Or, apply the boundary to the conserved GRMHD variables, too!
+        // These get applied the same way regardless of driver
         Packages::BoundaryUtoP(rc.get(), domain, coarse);
     }
 
@@ -371,6 +382,34 @@ void KBoundaries::CheckInflow(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDom
             KBoundaries::check_inflow(G, P, domain, m_p.U1, k, j, i);
         }
     );
+}
+
+void KBoundaries::CorrectBPrimitive(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain, bool coarse)
+{
+    Flag("CorrectBPrimitive");
+    std::shared_ptr<MeshBlock> pmb = rc->GetBlockPointer();
+    auto B_P = rc->PackVariables(std::vector<std::string>{"prims.B"});
+    // Return if no field to correct
+    if (B_P.GetDim(4) == 0) return;
+
+    const auto& G = pmb->coords;
+
+    const auto &bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
+    const int dir = BoundaryDirection(domain);
+    const auto &range = (dir == 1) ? bounds.GetBoundsI(IndexDomain::interior)
+                            : (dir == 2 ? bounds.GetBoundsJ(IndexDomain::interior)
+                                : bounds.GetBoundsK(IndexDomain::interior));
+    const int ref = BoundaryIsInner(domain) ? range.s : range.e;
+
+    pmb->par_for_bndry(
+        "Correct_B_P", IndexRange{0,NVEC-1}, domain, CC, coarse,
+        KOKKOS_LAMBDA (const int &v, const int &k, const int &j, const int &i) {
+            B_P(v, k, j, i) *= G.gdet(Loci::center, (dir == 2) ? ref : j, (dir == 1) ? ref : i)
+                                / G.gdet(Loci::center, j, i);
+        }
+    );
+
+    EndFlag();
 }
 
 TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)

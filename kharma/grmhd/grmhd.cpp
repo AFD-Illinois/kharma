@@ -145,8 +145,10 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     flags_prim.push_back(Metadata::Restart);
 
     // We must additionally fill ghost zones of primitive variables in GRMHD, to seed the solver
-    // Disabling this is not well tested regardless of how fancy the solver is, YMMV
-    if (pin->GetOrAddBoolean("GRMHD", "sync_utop_seed", true)) {
+    // Only necessary to add here if syncing conserved vars
+    // Note some startup behavior relies on having the GRHD prims marked for syncing,
+    // so disable sync_utop_seed at your peril
+    if (!driver.Get<bool>("sync_prims") && pin->GetOrAddBoolean("GRMHD", "sync_utop_seed", true)) {
         flags_prim.push_back(Metadata::FillGhost);
     }
 

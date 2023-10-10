@@ -79,7 +79,6 @@ std::shared_ptr<KHARMAPackage> Inverter::Initialize(ParameterInput *pin, std::sh
     // Don't operate at the usual time if GRMHD variables are being evolved implicitly
     if (!implicit_grmhd) {
         pkg->BlockUtoP = Inverter::BlockUtoP;
-        pkg->BoundaryUtoP = Inverter::BlockUtoP;
     }
 
     pkg->PostStepDiagnosticsMesh = Inverter::PostStepDiagnostics;
