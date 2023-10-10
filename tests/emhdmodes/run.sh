@@ -33,7 +33,7 @@ conv_2d() {
 # 2D modes use small blocks, could pick up some problems at MPI ranks >> 1
 # Just one default mode
 ALL_RES="32,64,128"
-conv_2d emhd2d_weno GRMHD/reconstruction=weno5 "EMHD mode in 2D, WENO5"
+conv_2d emhd2d_weno driver/reconstruction=weno5 "EMHD mode in 2D, WENO5"
 # Test that higher-order terms don't mess anything up
 conv_2d emhd2d_higher_order emhd/higher_order_terms=true "EMHD mode in 2D, higher order terms enabled"
 # Test we can use imex/EMHD and face CT

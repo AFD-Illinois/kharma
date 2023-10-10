@@ -26,7 +26,6 @@ default:
   # interleaved, and prints a summary of results.
   before_script:
     - export PATH="$HOME/.local/bin:$PATH"
-    - curl -Ls $MAMBA_URL | tar -xvj bin/micromamba
     - eval "$(bin/micromamba shell hook -s posix)"
     - git clone -b dev https://github.com/AFD-Illinois/pyharm.git /pyharm
     - micromamba create -y -f /pyharm/environment.yml
@@ -53,7 +52,7 @@ build:
     NPROC: 8
     HOST_ARCH: NATIVE
   before_script:
-    - echo "Skipping pyharm install in build."
+    - curl -Ls $MAMBA_URL | tar -xvj bin/micromamba
   script:
     - export PREFIX_PATH=$PWD/external/hdf5
     - ./make.sh clean cuda hdf5
@@ -61,6 +60,7 @@ build:
     paths:
       - kharma.*
       - make_args
+      - bin/micromamba
 
 #Run all tests in parallel
 tests:

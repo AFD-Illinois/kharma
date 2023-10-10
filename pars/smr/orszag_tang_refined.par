@@ -41,7 +41,6 @@ integrator = rk2
 
 <driver>
 type = kharma
-nghost = 6
 
 <GRMHD>
 cfl = 0.9

@@ -64,10 +64,13 @@ rs   = 8.0
 disable_floors = true
 
 <boundaries>
-#outer_x1 = dirichlet
-#inner_x1 = dirichlet
+outer_x1 = dirichlet
+inner_x1 = dirichlet
 check_inflow_outer_x1 = false
-#check_inflow_inner_x1 = false
+check_inflow_inner_x1 = false
+# Force outflow bounds for EMHD vars
+outflow_EMHD_inner_x1 = true
+outflow_EMHD_outer_x1 = true
 
 <debug>
 verbose = 1
@@ -76,9 +79,9 @@ extra_checks = 1
 
 <parthenon/output0>
 file_type               = hdf5
-dt                      = 100.0
+dt                      = 10.0
 single_precision_output = false
-ghost_zones             = false
+ghost_zones             = true
 variables               = prims, solve_norm, solve_fail
 
 <parthenon/output1>

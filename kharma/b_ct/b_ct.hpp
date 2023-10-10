@@ -306,6 +306,10 @@ struct ProlongateInternalOlivares {
             const int off_i = (DIM > 0) ? (elem%2)*(me == V2) + (elem/2)*(me == V3) + (me == V1) : 0;
             const int off_j = (DIM > 1) ? (elem%2)*(me == V3) + (elem/2)*(me == V1) + (me == V2) : 0;
             const int off_k = (DIM > 2) ? (elem%2)*(me == V1) + (elem/2)*(me == V2) + (me == V3) : 0;
+            if (((el == TE::F1) && (fi + off_i > ib.e)) ||
+                ((el == TE::F2) && (fj + off_j > jb.e)) ||
+                ((el == TE::F3) && (fk + off_k > kb.e)))
+                return;
 
             fine(me, l, m, n, fk+off_k, fj+off_j, fi+off_i) = (
                 // Average faces on either side of us in selected direction (diff), on each of the 4 sub-faces (off)
