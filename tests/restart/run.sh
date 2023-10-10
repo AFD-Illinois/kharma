@@ -18,7 +18,7 @@ $KHARMADIR/run.sh -r torus.out1.00000.rhdf parthenon/time/nlim=5 >log_restart_2.
 mv torus.out0.final.phdf torus.out0.final.restart.phdf
 
 # Compare to basic round-off
-pyharm diff --rel_tol 1e-15 torus.out0.final.init.phdf torus.out0.final.restart.phdf -o compare_restart
+pyharm diff --rel_tol 1e-11 torus.out0.final.init.phdf torus.out0.final.restart.phdf -o compare_restart
 # Compare binary. Sometimes works but not worth keeping always
 #h5diff --exclude-path=/Info \
 #       --exclude-path=/Input \

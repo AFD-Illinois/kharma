@@ -103,7 +103,10 @@ inline void BlockPerformInversion(MeshBlockData<Real> *rc, IndexDomain domain, b
     auto P = GRMHD::PackHDPrims(rc, prims_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
 
-    GridScalar pflag = rc->Get("pflag").data;
+    auto pflag = rc->PackVariables(std::vector<std::string>{"pflag"});
+
+    if (U.GetDim(4) == 0 || pflag.GetDim(4) == 0)
+        return;
 
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
 
@@ -121,7 +124,7 @@ inline void BlockPerformInversion(MeshBlockData<Real> *rc, IndexDomain domain, b
         KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
             if (KDomain::inside(k, j, i, b)) {
                 // Run over all interior zones and any initialized ghosts
-                pflag(k, j, i) = static_cast<double>(Inverter::u_to_p<inverter>(G, U, m_u, gam, k, j, i, P, m_p, Loci::center));
+                pflag(0, k, j, i) = static_cast<double>(Inverter::u_to_p<inverter>(G, U, m_u, gam, k, j, i, P, m_p, Loci::center));
             }
         }
     );

@@ -186,6 +186,7 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     }
 
     pkg->BlockUtoP = Electrons::BlockUtoP;
+    pkg->BoundaryUtoP = Electrons::BlockUtoP;
 
     return pkg;
 }
