@@ -63,7 +63,7 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
  * input: Conserved B = sqrt(-gdet) * B^i
  * output: Primitive B = B^i
  */
-void BlockUtoP(MeshBlockData<Real> *md, IndexDomain domain, bool coarse=false);
+TaskStatus BlockUtoP(MeshBlockData<Real> *md, IndexDomain domain, bool coarse=false);
 void MeshUtoP(MeshData<Real> *md, IndexDomain domain, bool coarse=false);
 
 /**

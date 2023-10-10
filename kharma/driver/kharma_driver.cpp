@@ -131,24 +131,13 @@ std::shared_ptr<KHARMAPackage> KHARMADriver::Initialize(ParameterInput *pin, std
     // but which should not be evolved (or more importantly, sync'd) during main stepping
     Metadata::AddUserFlag("StartupOnly");
 
-    // This marks whether we consider primitive or conserved state to be
-    // the ground truth when updating values in a step.
-    // Currently "imex" and "simple" drivers both update primitive vars
-    bool prims_are_fundamental = driver_type != DriverType::kharma;
-    params.Add("prims_are_fundamental", prims_are_fundamental);
-
-    // Which variables we *actually send* via Parthenon/MPI may differ, however.
-    // Prolongation/restriction should happen on conserved vars, so we must sync
-    // those in multilevel meshes.  If prims are funcamental but not sync'd,
-    // we "emulate" syncing them with PtoU/UtoP on boundaries
-    bool sync_prims = prims_are_fundamental &&
-                        (!pin->DoesParameterExist("parthenon/mesh", "numlevel") ||
-                         pin->GetInteger("parthenon/mesh", "numlevel") == 1);
+    // Synchronize primitive variables unless we're using the KHARMA driver that specifically doesn't
+    // This includes for AMR w/ImEx driver
+    // Note the "conserved" B field is always sync'd.  The "primitive" version only differs by sqrt(-g)
+    bool sync_prims = driver_type != DriverType::kharma;
     params.Add("sync_prims", sync_prims);
-    // Finally, we set default flags for primitive and conserved variables
-    // This first mode is only for simulations without AMR/SMR, as primitives shouldn't be prolongated
     if (sync_prims) {
-        // If we're not in AMR, we can sync primitive variables directly
+        // For ImEx/simple drivers, sync/prolongate/restrict primitive variables directly
         params.Add("prim_flags", std::vector<MetadataFlag>{Metadata::Real, Metadata::Derived, Metadata::FillGhost, Metadata::GetUserFlag("Primitive")});
         params.Add("cons_flags", std::vector<MetadataFlag>{Metadata::Real, Metadata::Independent, Metadata::Restart, Metadata::WithFluxes, Metadata::Conserved});
     } else {
@@ -180,42 +169,23 @@ TaskID KHARMADriver::AddBoundarySync(const TaskID t_start, TaskList &tl, std::sh
     auto t_start_sync = t_start;
 
     // Pull the mesh pointer from mc1 so we can be a static method
-    auto &params = mc1->GetMeshPointer()->packages.Get("Driver")->AllParams();
-    bool multilevel = mc1->GetMeshPointer()->multilevel;
+    auto pmesh = mc1->GetMeshPointer();
+    auto &params = pmesh->packages.Get("Driver")->AllParams();
+    bool multilevel = pmesh->multilevel;
 
-    // If we're "syncing primitive variables" but must exchange conserved vars to prolong/restrict them,
-    // make sure to run P->U, then sync, then U->P
-    // Note this has the side effect of filling U in some zones,
-    // which must be replaced during e.g. startup code when primitive values should be truth
-    bool prims_are_fundamental = params.Get<bool>("prims_are_fundamental");
-    bool sync_prims = params.Get<bool>("sync_prims");
-    if (prims_are_fundamental && !sync_prims) {
-        TaskID t_all_ptou[mc1->NumBlocks() * BOUNDARY_NFACES];
-        TaskID t_ptou_final(0);
-        int i_task = 0;
-        for (int i_block = 0; i_block < mc1->NumBlocks(); i_block++) {
-            auto &rc = mc1->GetBlockData(i_block);
-            for (int i_bnd = 0; i_bnd < BOUNDARY_NFACES; i_bnd++) {
-                if (rc->GetBlockPointer()->boundary_flag[i_bnd] == BoundaryFlag::block ||
-                    rc->GetBlockPointer()->boundary_flag[i_bnd] == BoundaryFlag::periodic) {
-                    const auto bdomain = KBoundaries::BoundaryDomain((BoundaryFace) i_bnd);
-                    t_all_ptou[i_task] = tl.AddTask(t_start, Flux::BlockPtoU_Send, rc.get(), bdomain, false);
-                    t_ptou_final = t_ptou_final | t_all_ptou[i_task];
-                    i_task++;
-                }
-            }
-        }
-        t_start_sync = t_ptou_final;
-    }
+    // TODO PtoU for B field when sync_prims?
 
-    // The Parthenon exchange tasks include applying physical boundary conditions
+    // The Parthenon exchange tasks include applying physical boundary conditions now.
+    // We generally do not take advantage of this yet, but good to know when reasoning about initialization.
     Flag("ParthenonAddSync");
     auto t_sync_done = parthenon::AddBoundaryExchangeTasks(t_start_sync, tl, mc1, multilevel);
     auto t_bounds = t_sync_done;
     EndFlag();
 
-    // If we're "syncing primitive variables" but just exchanged conserved variables (B, implicit, etc), we need to recover the prims
-    if (prims_are_fundamental && !sync_prims) {
+    // We always just sync'd the "conserved" magnetic field
+    // Translate back to "primitive" (& cell-centered) field if that's what we'll be using
+    if (params.Get<bool>("sync_prims")) {
+        auto pkgs = pmesh->packages.AllPackages();
         TaskID t_all_utop[mc1->NumBlocks() * BOUNDARY_NFACES];
         TaskID t_utop_final(0);
         int i_task = 0;
@@ -225,7 +195,11 @@ TaskID KHARMADriver::AddBoundarySync(const TaskID t_start, TaskList &tl, std::sh
                 if (rc->GetBlockPointer()->boundary_flag[i_bnd] == BoundaryFlag::block ||
                     rc->GetBlockPointer()->boundary_flag[i_bnd] == BoundaryFlag::periodic) {
                     const auto bdomain = KBoundaries::BoundaryDomain((BoundaryFace) i_bnd);
-                    t_all_utop[i_task] = tl.AddTask(t_sync_done, Packages::BoundaryUtoP, rc.get(), bdomain, false);
+                    if (pkgs.count("B_FluxCT")) {
+                        t_all_utop[i_task] = tl.AddTask(t_sync_done, B_FluxCT::BlockUtoP, rc.get(), bdomain, false);
+                    } else if (pkgs.count("B_CT")) {
+                        t_all_utop[i_task] = tl.AddTask(t_sync_done, B_CT::BlockUtoP, rc.get(), bdomain, false);
+                    }
                     t_utop_final = t_utop_final | t_all_utop[i_task];
                     i_task++;
                 }

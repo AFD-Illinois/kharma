@@ -64,7 +64,7 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
  * input: Conserved B = sqrt(-gdet) * B^i
  * output: Primitive B = B^i
  */
-void BlockUtoP(MeshBlockData<Real> *mbd, IndexDomain domain, bool coarse=false);
+TaskStatus BlockUtoP(MeshBlockData<Real> *mbd, IndexDomain domain, bool coarse=false);
 TaskStatus MeshUtoP(MeshData<Real> *md, IndexDomain domain, bool coarse=false);
 
 /**
@@ -283,9 +283,10 @@ struct ProlongateInternalOlivares {
         const int fk = (DIM > 2) ? (k - ckb.s) * 2 + kb.s : kb.s;
 
         // Coefficients selecting a particular formula (see Olivares et al. 2019)
-        // TODO options here. This corresponds to Cunningham, but we could have:
-        // 1. differences of squares of zone dimesnions (Toth)
-        // 2. heuristic based on flux difference of top vs bottom halves (Olivares)
+        // TODO options here. There are 3 presented:
+        // 1. Zeros (Cunningham)
+        // 2. differences of squares of zone dimesnions (Toth)
+        // 3. heuristic based on flux difference of top vs bottom halves (Olivares)
         // constexpr Real a[3] = {0., 0., 0.};
         const Real a[3] = {(SQR(coords.Dxc<2>(fj)) - SQR(coords.Dxc<3>(fk))) / (SQR(coords.Dxc<2>(fj)) + SQR(coords.Dxc<3>(fk))),
                            (SQR(coords.Dxc<3>(fk)) - SQR(coords.Dxc<1>(fi))) / (SQR(coords.Dxc<3>(fk)) + SQR(coords.Dxc<1>(fi))),
@@ -322,11 +323,6 @@ struct ProlongateInternalOlivares {
                      + coeff[elem][2]*F<third,me,-1,DIM>(fine, coords, l, m, n, fk, fj, fi)
                      + coeff[elem][3]*F<third,me,next,DIM>(fine, coords, l, m, n, fk, fj, fi))
                 ) / coords.Volume<el>(fk+off_k, fj+off_j, fi+off_i);
-            //printf("%d %d\n", fi, fj);
-            // if (fi == 56 && fj == 70)
-            //     printf("I used dir %d offset %d %d %d, %d %d %d\n", me+1,
-            //         off_k-diff_k, off_j-diff_j, off_i-diff_i,
-            //         off_k+diff_k, off_j+diff_j, off_i+diff_i);
         }
     }
 };

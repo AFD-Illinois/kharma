@@ -64,22 +64,20 @@ std::shared_ptr<KHARMAPackage> Inverter::Initialize(ParameterInput *pin, std::sh
     // TODO add version attempting to recover from entropy, stuff like that
 
     // Flag denoting UtoP inversion failures
-    // Only needed if we're actually calling UtoP, but always allocated as it's retrieved often
-    // Needs boundary sync if treating primitive variables as fundamental
-    bool prims_are_fundamental = packages->Get("Driver")->Param<bool>("prims_are_fundamental");
-    bool implicit_grmhd = packages->Get("GRMHD")->Param<bool>("implicit");
+    // Needs boundary sync if treating primitive variables as fundamental, since we need to
+    // avoid failed neighbors when fixing.
+    bool sync_prims = packages->Get("Driver")->Param<bool>("sync_prims");
     Metadata m;
-    if (prims_are_fundamental && !implicit_grmhd) {
+    if (sync_prims) {
         m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy, Metadata::FillGhost});
     } else {
         m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
     }
     pkg->AddField("pflag", m);
 
-    // Don't operate at the usual time if GRMHD variables are being evolved implicitly
-    if (!implicit_grmhd) {
-        pkg->BlockUtoP = Inverter::BlockUtoP;
-    }
+    // We exist basically to do this
+    pkg->BlockUtoP = Inverter::BlockUtoP;
+    pkg->BoundaryUtoP = Inverter::BlockUtoP;
 
     pkg->PostStepDiagnosticsMesh = Inverter::PostStepDiagnostics;
 

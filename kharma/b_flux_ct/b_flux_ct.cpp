@@ -101,22 +101,11 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
                                               : Metadata::GetUserFlag("Explicit");
 
     // Flags for B fields
-    std::vector<MetadataFlag> flags_b = {Metadata::Cell, Metadata::GetUserFlag("MHD"), areWeImplicit, Metadata::Vector};
-
-    // "primitive" B field is field, "conserved" is flux
-    auto flags_prim = packages->Get("Driver")->Param<std::vector<MetadataFlag>>("prim_flags");
-    flags_prim.insert(flags_prim.end(), flags_b.begin(), flags_b.end());
-    auto flags_cons = packages->Get("Driver")->Param<std::vector<MetadataFlag>>("cons_flags");
-    flags_cons.insert(flags_cons.end(), flags_b.begin(), flags_b.end());
-
-    // Always sync B field conserved var, for standardization with B_CT
-    // god std::vector is verbose
-    if (std::find(flags_cons.begin(), flags_cons.end(), Metadata::FillGhost) == flags_cons.end()) {
-        flags_cons.push_back(Metadata::FillGhost);
-    }
-    if (std::find(flags_prim.begin(), flags_prim.end(), Metadata::FillGhost) != flags_prim.end()) {
-        flags_prim.erase(std::remove(flags_prim.begin(), flags_prim.end(), Metadata::FillGhost), flags_prim.end());
-    }
+    // We always mark conserved B to be sync'd for consistency, since it's strictly required for B_CT/AMR
+    std::vector<MetadataFlag> flags_prim = {Metadata::Real, Metadata::Derived, Metadata::GetUserFlag("Primitive"),
+                                            Metadata::Cell, Metadata::GetUserFlag("MHD"), areWeImplicit, Metadata::Vector};
+    std::vector<MetadataFlag> flags_cons = {Metadata::Real, Metadata::Independent, Metadata::Restart, Metadata::FillGhost, Metadata::WithFluxes, Metadata::Conserved,
+                                            Metadata::Cell, Metadata::GetUserFlag("MHD"), areWeImplicit, Metadata::Vector};
 
     auto m = Metadata(flags_prim, s_vector);
     pkg->AddField("prims.B", m);
@@ -192,7 +181,7 @@ void MeshUtoP(MeshData<Real> *md, IndexDomain domain, bool coarse)
         }
     );
 }
-void BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
+TaskStatus BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
     auto pmb = rc->GetBlockPointer();
 
@@ -213,6 +202,7 @@ void BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
             B_P(mu, k, j, i) = B_U(mu, k, j, i) / G.gdet(Loci::center, j, i);
         }
     );
+    return TaskStatus::complete;
 }
 
 void MeshPtoU(MeshData<Real> *md, IndexDomain domain, bool coarse)

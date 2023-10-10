@@ -119,7 +119,7 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
     const auto& Fr_all = md->PackVariables(std::vector<std::string>{"Flux.Fr"});
 
     // Get the domain size
-    const IndexRange3 b = KDomain::GetRange(md, IndexDomain::interior, -1, 1);
+    const IndexRange3 b = KDomain::GetRange(md, IndexDomain::interior, -1, 2);
     // Get other sizes we need
     const int n1 = pmb0->cellbounds.ncellsi(IndexDomain::entire);
     const IndexRange block = IndexRange{0, cmax.GetDim(5) - 1};

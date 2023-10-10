@@ -36,11 +36,14 @@
 #include "decs.hpp"
 #include "domain.hpp"
 #include "kharma.hpp"
-#include "flux.hpp"
 #include "flux_functions.hpp"
 #include "grmhd_functions.hpp"
 #include "pack.hpp"
 #include "types.hpp"
+
+#include "b_ct.hpp"
+#include "b_flux_ct.hpp"
+#include "flux.hpp"
 
 // Parthenon's boundaries
 #include <bvals/boundary_conditions.hpp>
@@ -258,13 +261,6 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
     const auto btype_name = params.Get<std::string>(bname);
     const auto bdir = BoundaryDirection(bface);
 
-    // If we're pretending to sync primitives, but applying physical bounds
-    // to conserved variables, make sure we're up to date
-    if (pmb->packages.Get<KHARMAPackage>("Driver")->Param<bool>("prims_are_fundamental") &&
-        params.Get<bool>("domain_bounds_on_conserved")) {
-        Flux::BlockPtoU_Send(rc.get(), domain, coarse);
-    }
-
     Flag("Apply "+bname+" boundary: "+btype_name);
     pkg->KBoundaries[bface](rc, coarse);
     EndFlag();
@@ -340,25 +336,31 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
         }
     }
 
-    // If we applied the domain boundary to primitives (as we usually do)...
-    if (!params.Get<bool>("domain_bounds_on_conserved")) {
-        bool sync_prims = rc->GetBlockPointer()->packages.Get("Driver")->Param<bool>("sync_prims");
-        // There are two modes of operation here:
-        if (sync_prims) {
-            // 1. ImEx w/o AMR:
-            //    PRIMITIVE variables (only) are marked FillGhost
-            //    So, run PtoU on EVERYTHING (and correct the B field)
-            CorrectBPrimitive(rc, domain, coarse);
-            Flux::BlockPtoU(rc.get(), domain, coarse);
-        } else {
-            // 2. Normal (KHARMA driver, ImEx w/AMR):
-            //    CONSERVED variables are marked FillGhost, plus FLUID PRIMITIVES.
-            //    So, run PtoU on FLUID, and UtoP on EVERYTHING ELSE
-            Packages::BoundaryPtoUElseUtoP(rc.get(), domain, coarse);
+    bool sync_prims = rc->GetBlockPointer()->packages.Get("Driver")->Param<bool>("sync_prims");
+    // There are two modes of operation here:
+    if (sync_prims) {
+        // 1. Exchange/prolongate/restrict PRIMITIVE variables: (ImEx driver)
+        //    Primitive variables and conserved B field are marked FillGhost
+        //    Explicitly run UtoP on B field, then PtoU on everything
+        // TODO there should be a set of B field wrappers that dispatch this
+        auto pkgs = pmb->packages.AllPackages();
+        if (pkgs.count("B_FluxCT")) {
+            B_FluxCT::BlockUtoP(rc.get(), IndexDomain::entire);
+        } else if (pkgs.count("B_CT")) {
+            B_CT::BlockUtoP(rc.get(), IndexDomain::entire);
         }
+        Flux::BlockPtoU(rc.get(), domain, coarse);
     } else {
-        // These get applied the same way regardless of driver
-        Packages::BoundaryUtoP(rc.get(), domain, coarse);
+        // 2. Exchange/prolongate/restrict CONSERVED variables: (KHARMA driver, maybe ImEx+AMR)
+        //    Conserved variables are marked FillGhost, plus FLUID PRIMITIVES.
+        if (!params.Get<bool>("domain_bounds_on_conserved")) {
+            // To apply primitive boundaries to GRMHD, we run PtoU on that ONLY,
+            // and UtoP on EVERYTHING ELSE
+            Packages::BoundaryPtoUElseUtoP(rc.get(), domain, coarse);
+        } else {
+            // If we want to apply boundaries to conserved vars, just run UtoP on EVERYTHING
+            Packages::BoundaryUtoP(rc.get(), domain, coarse);
+        }
     }
 
     EndFlag();

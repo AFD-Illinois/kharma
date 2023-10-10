@@ -301,8 +301,6 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput> &pin)
     }
     // GRMHD needs globals to mark packages
     auto t_grmhd = tl.AddTask(t_globals | t_driver, KHARMA::AddPackage, packages, GRMHD::Initialize, pin.get());
-    // Inverter (TODO: split out fixups, then don't load this when GRMHD isn't loaded)
-    auto t_inverter = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, Inverter::Initialize, pin.get());
     // Reductions, needed for most other packages
     auto t_reductions = tl.AddTask(t_none, KHARMA::AddPackage, packages, Reductions::Initialize, pin.get());
 
@@ -373,10 +371,13 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput> &pin)
     KHARMA::AddPackage(packages, KBoundaries::Initialize, pin.get());
 
     // Load the implicit package last, and only if there are any variables which need implicit evolution
-    auto all_implicit = Metadata::FlagCollection(Metadata::GetUserFlag("Implicit"));
     int n_implicit = PackDimension(packages.get(), Metadata::GetUserFlag("Implicit"));
     if (n_implicit > 0) {
         KHARMA::AddPackage(packages, Implicit::Initialize, pin.get());
+    }
+    // Only load the inverter if GRMHD isn't being evolved implicitly
+    if (PackDimension(packages.get(), {Metadata::GetUserFlag("Implicit"), Metadata::GetUserFlag("MHD")}) < 5) {
+        KHARMA::AddPackage(packages, Inverter::Initialize, pin.get());
     }
 
 #if DEBUG
