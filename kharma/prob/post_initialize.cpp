@@ -174,6 +174,4 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart)
     KBoundaries::FreezeDirichlet(md);
     // This is the first sync if there is no B field
     KHARMADriver::SyncAllBounds(md);
-
-    // TODO output parsed parameters now we have *everything* including any problem configs for B field
 }

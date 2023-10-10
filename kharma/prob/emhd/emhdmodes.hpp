@@ -136,17 +136,13 @@ TaskStatus InitializeEMHDModes(std::shared_ptr<MeshBlockData<Real>>& rc, Paramet
                 // Zeros are q, dP, and bsq, only needed for torus closure
                 EMHD::set_parameters(G, rho(k, j, i), u(k, j, i), 0., 0., 0., emhd_params, gam, j, i, tau, chi_e, nu_e);
                 Real Theta = (gam - 1) * u(k, j, i) / rho(k, j, i);
-                Real q_tilde  = q(k, j, i); 
-                Real dP_tilde = dP(k, j, i);
-                if (emhd_params.higher_order_terms) {
-                    q_tilde  *= (chi_e != 0) ? m::sqrt(tau / (chi_e * rho(k, j, i) * Theta * Theta)) : 0.;
-                    dP_tilde *= (nu_e  != 0) ? m::sqrt(tau / (nu_e * rho(k, j, i) * Theta)) : 0.;
-                }
-                q(k, j, i) = q_tilde;
-                dP(k, j, i) = dP_tilde;
+                q(k, j, i)  *= (chi_e != 0) ? m::sqrt(tau / (chi_e * rho(k, j, i) * Theta * Theta)) : 0.;
+                dP(k, j, i) *= (nu_e  != 0) ? m::sqrt(tau / (nu_e * rho(k, j, i) * Theta)) : 0.;
             }
         }
     );
+
+    Flux::BlockPtoU(rc.get(), IndexDomain::interior, false);
 
     return TaskStatus::complete;
 }

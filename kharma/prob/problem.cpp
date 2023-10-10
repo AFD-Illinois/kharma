@@ -161,8 +161,8 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
     // the magnetic field, which is added in PostInitialize, after all blocks
     // are filled with other variables (it can be related to density averages which
     // require correct ghost zones)
-    // ALL OTHER VARIABLES, however, must fill U if a magnetic field will depend on
-    // them in any way, as conserved variables are MPI-synchronized
+    // If the B field will depend on the conserved variables (for some reason?)
+    // they must be computed by the particular problem.
 
     EndFlag();
 }

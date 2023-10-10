@@ -263,11 +263,9 @@ void BlockPtoU(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     auto pmb = rc->GetBlockPointer();
 
     PackIndexMap prims_map, cons_map;
-    auto& P = rc->PackVariables({Metadata::GetUserFlag("Primitive")}, prims_map);
-    auto& U = rc->PackVariables({Metadata::Conserved}, cons_map);
+    auto& P = rc->PackVariables({Metadata::GetUserFlag("Primitive"), Metadata::Cell}, prims_map);
+    auto& U = rc->PackVariables({Metadata::Conserved, Metadata::Cell}, cons_map);
     const VarMap m_p(prims_map, false), m_u(cons_map, true);
-    // And then the local density
-    GridScalar rho_P = rc->Get("cons.rho").data;
 
     const auto& G = pmb->coords;
 

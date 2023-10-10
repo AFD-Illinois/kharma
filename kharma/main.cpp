@@ -205,6 +205,8 @@ int main(int argc, char *argv[])
     KHARMA::PostInitialize(pin, pmesh, is_restart);
     EndFlag();
 
+    // TODO output parsed parameters *here*, now we have everything including any problem configs for B field
+
     // Begin code block to ensure driver is cleaned up
     {
         if (MPIRank0()) {
