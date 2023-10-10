@@ -55,7 +55,7 @@ std::shared_ptr<KHARMAPackage> KHARMADriver::Initialize(ParameterInput *pin, std
     // Driver options
     // The two current drivers are "kharma" or "imex", with the former being the usual KHARMA
     // driver (formerly HARM driver), and the latter supporting implicit stepping of some or all variables
-    // Mostly, packages should react to e.g. the "sync_prims" option rather than the driver name
+    // Mostly, packages should react to options rather than the driver name
     bool do_emhd = pin->GetOrAddBoolean("emhd", "on", false);
     std::string driver_type_s = pin->GetOrAddString("driver", "type", (do_emhd) ? "imex" : "kharma");
     DriverType driver_type;
@@ -137,25 +137,10 @@ std::shared_ptr<KHARMAPackage> KHARMADriver::Initialize(ParameterInput *pin, std
     bool prims_are_fundamental = driver_type != DriverType::kharma;
     params.Add("prims_are_fundamental", prims_are_fundamental);
 
-    // Which variables we *actually send* via Parthenon/MPI may differ, however.
-    // Prolongation/restriction should happen on conserved vars, so we must sync
-    // those in multilevel meshes.  If prims are funcamental but not sync'd,
-    // we "emulate" syncing them with PtoU/UtoP on boundaries
-    bool sync_prims = prims_are_fundamental &&
-                        (!pin->DoesParameterExist("parthenon/mesh", "numlevel") ||
-                         pin->GetInteger("parthenon/mesh", "numlevel") == 1);
-    params.Add("sync_prims", sync_prims);
-    // Finally, we set default flags for primitive and conserved variables
-    // This first mode is only for simulations without AMR/SMR, as primitives shouldn't be prolongated
-    if (sync_prims) {
-        // If we're not in AMR, we can sync primitive variables directly
-        params.Add("prim_flags", std::vector<MetadataFlag>{Metadata::Real, Metadata::Derived, Metadata::FillGhost, Metadata::GetUserFlag("Primitive")});
-        params.Add("cons_flags", std::vector<MetadataFlag>{Metadata::Real, Metadata::Independent, Metadata::Restart, Metadata::WithFluxes, Metadata::Conserved});
-    } else {
-        // If we're in AMR or using the KHARMA driver anyway, sync conserved vars
-        params.Add("prim_flags", std::vector<MetadataFlag>{Metadata::Real, Metadata::Derived, Metadata::GetUserFlag("Primitive")});
-        params.Add("cons_flags", std::vector<MetadataFlag>{Metadata::Real, Metadata::Independent, Metadata::Restart, Metadata::FillGhost, Metadata::WithFluxes, Metadata::Conserved});
-    }
+    // Now that we're an AMR code, though, we always *sync* conserved variables
+    // This means "emulating" syncing primitives in some cases, by running PtoU -> sync -> UtoP
+    params.Add("prim_flags", std::vector<MetadataFlag>{Metadata::Real, Metadata::Derived, Metadata::GetUserFlag("Primitive")});
+    params.Add("cons_flags", std::vector<MetadataFlag>{Metadata::Real, Metadata::Independent, Metadata::Restart, Metadata::FillGhost, Metadata::WithFluxes, Metadata::Conserved});
 
     return pkg;
 }
@@ -188,8 +173,7 @@ TaskID KHARMADriver::AddBoundarySync(const TaskID t_start, TaskList &tl, std::sh
     // Note this has the side effect of filling U in some zones,
     // which must be replaced during e.g. startup code when primitive values should be truth
     bool prims_are_fundamental = params.Get<bool>("prims_are_fundamental");
-    bool sync_prims = params.Get<bool>("sync_prims");
-    if (prims_are_fundamental && !sync_prims) {
+    if (prims_are_fundamental) {
         TaskID t_all_ptou[mc1->NumBlocks() * BOUNDARY_NFACES];
         TaskID t_ptou_final(0);
         int i_task = 0;
@@ -215,7 +199,7 @@ TaskID KHARMADriver::AddBoundarySync(const TaskID t_start, TaskList &tl, std::sh
     EndFlag();
 
     // If we're "syncing primitive variables" but just exchanged conserved variables (B, implicit, etc), we need to recover the prims
-    if (prims_are_fundamental && !sync_prims) {
+    if (prims_are_fundamental) {
         TaskID t_all_utop[mc1->NumBlocks() * BOUNDARY_NFACES];
         TaskID t_utop_final(0);
         int i_task = 0;

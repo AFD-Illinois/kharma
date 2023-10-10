@@ -109,15 +109,6 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     auto flags_cons = packages->Get("Driver")->Param<std::vector<MetadataFlag>>("cons_flags");
     flags_cons.insert(flags_cons.end(), flags_b.begin(), flags_b.end());
 
-    // Always sync B field conserved var, for standardization with B_CT
-    // god std::vector is verbose
-    if (std::find(flags_cons.begin(), flags_cons.end(), Metadata::FillGhost) == flags_cons.end()) {
-        flags_cons.push_back(Metadata::FillGhost);
-    }
-    if (std::find(flags_prim.begin(), flags_prim.end(), Metadata::FillGhost) != flags_prim.end()) {
-        flags_prim.erase(std::remove(flags_prim.begin(), flags_prim.end(), Metadata::FillGhost), flags_prim.end());
-    }
-
     auto m = Metadata(flags_prim, s_vector);
     pkg->AddField("prims.B", m);
     m = Metadata(flags_cons, s_vector);

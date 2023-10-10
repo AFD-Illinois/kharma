@@ -85,11 +85,6 @@ TaskStatus FixFlux(MeshData<Real> *rc);
 void CheckInflow(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, bool coarse);
 
 /**
- * Correct for geometry when applying primitive B field boundaries
- */
-void CorrectBPrimitive(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain, bool coarse);
-
-/**
  * Check for velocity toward the simulation domain in a zone, and eliminate it.
  */
 KOKKOS_INLINE_FUNCTION void check_inflow(const GRCoordinates &G, const VariablePack<Real>& P, const IndexDomain domain,

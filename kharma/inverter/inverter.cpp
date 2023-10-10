@@ -80,6 +80,7 @@ std::shared_ptr<KHARMAPackage> Inverter::Initialize(ParameterInput *pin, std::sh
     // This package is still loaded because fixes
     if (!implicit_grmhd) {
         pkg->BlockUtoP = Inverter::BlockUtoP;
+        pkg->BoundaryUtoP = Inverter::BlockUtoP;
     }
 
     pkg->PostStepDiagnosticsMesh = Inverter::PostStepDiagnostics;
