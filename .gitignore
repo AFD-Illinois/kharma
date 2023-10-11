@@ -19,6 +19,7 @@ logs/
 # Archival files
 kharma_parsed_*.par
 log_*.txt
+bondi_analytic_*.txt
 
 # Editor documents
 .project
