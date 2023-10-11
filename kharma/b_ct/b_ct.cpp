@@ -177,7 +177,7 @@ TaskStatus B_CT::BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coa
     auto B_P = rc->PackVariables(std::vector<std::string>{"prims.B"});
     const auto& G = pmb->coords;
     // Return if we're not syncing U & P at all (e.g. edges)
-    if (B_Uf.GetDim(4) == 0) return;
+    if (B_Uf.GetDim(4) == 0) return TaskStatus::complete;
 
     // TODO get rid of prims on faces probably
 
