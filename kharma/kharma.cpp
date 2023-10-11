@@ -291,21 +291,28 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput> &pin)
     auto t_globals = tl.AddTask(t_none, KHARMA::AddPackage, packages, KHARMA::InitializeGlobals, pin.get());
     // Neither will grid output, as any mesh will get GRCoordinates objects
     // FieldIsOutput actually just checks for substring match, so this matches any coords. variable
-    if (FieldIsOutput(pin.get(), "coords."))
+    if (FieldIsOutput(pin.get(), "coords.")) {
         auto t_coord_out = tl.AddTask(t_none, KHARMA::AddPackage, packages, CoordinateOutput::Initialize, pin.get());
+    }
     // Driver package is the foundation
     auto t_driver = tl.AddTask(t_none, KHARMA::AddPackage, packages, KHARMADriver::Initialize, pin.get());
-    // Floors package has no dependencies
-    if (!pin->GetOrAddBoolean("floors", "disable_floors", false)) {
-        auto t_floors = tl.AddTask(t_none, KHARMA::AddPackage, packages, Floors::Initialize, pin.get());
-    }
     // GRMHD needs globals to mark packages
     auto t_grmhd = tl.AddTask(t_globals | t_driver, KHARMA::AddPackage, packages, GRMHD::Initialize, pin.get());
+    // Only load the inverter if GRMHD/EMHD isn't being evolved implicitly
+    auto t_inverter = t_grmhd;
+    if (!pin->GetOrAddBoolean("GRMHD", "implicit", pin->GetOrAddBoolean("emhd", "on", false))) {
+        t_inverter = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, Inverter::Initialize, pin.get());
+    }
+    // Floors package depends on having pflag
+    if (!pin->GetOrAddBoolean("floors", "disable_floors", false)) {
+        auto t_floors = tl.AddTask(t_inverter, KHARMA::AddPackage, packages, Floors::Initialize, pin.get());
+    }
     // Reductions, needed for most other packages
     auto t_reductions = tl.AddTask(t_none, KHARMA::AddPackage, packages, Reductions::Initialize, pin.get());
 
     // B field solvers, to ensure divB ~= 0.
     // Bunch of logic here: basically we want to load <=1 solver with an encoded order of preference:
+    // 0. Anything user-specified
     // 1. Prefer B_CT if AMR since it's compatible
     // 2. Prefer B_Flux_CT otherwise since it's well-tested
     auto t_b_field = t_none;
@@ -345,11 +352,11 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput> &pin)
     if (pin->GetOrAddBoolean("electrons", "on", false)) {
         auto t_electrons = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, Electrons::Initialize, pin.get());
     }
-    if (pin->GetOrAddBoolean("emhd", "on", false)) {
-        auto t_electrons = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, EMHD::Initialize, pin.get());
+    if (pin->GetBoolean("emhd", "on")) {
+        auto t_emhd = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, EMHD::Initialize, pin.get());
     }
     if (pin->GetOrAddBoolean("wind", "on", false)) {
-        auto t_electrons = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, Wind::Initialize, pin.get());
+        auto t_wind = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, Wind::Initialize, pin.get());
     }
     // Enable calculating jcon iff it is in any list of outputs (and there's even B to calculate it).
     // Since it is never required to restart, this is the only time we'd write (hence, need) it
@@ -370,14 +377,12 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput> &pin)
     // TODO avoid init if Parthenon will be handling all boundaries?
     KHARMA::AddPackage(packages, KBoundaries::Initialize, pin.get());
 
-    // Load the implicit package last, and only if there are any variables which need implicit evolution
+    // Load the implicit package last, if there are *any* variables that need implicit evolution
+    // This lets us just count by flag, rather than checking all the possible parameters that would
+    // trigger this
     int n_implicit = PackDimension(packages.get(), Metadata::GetUserFlag("Implicit"));
     if (n_implicit > 0) {
         KHARMA::AddPackage(packages, Implicit::Initialize, pin.get());
-    }
-    // Only load the inverter if GRMHD isn't being evolved implicitly
-    if (PackDimension(packages.get(), {Metadata::GetUserFlag("Implicit"), Metadata::GetUserFlag("MHD")}) < 5) {
-        KHARMA::AddPackage(packages, Inverter::Initialize, pin.get());
     }
 
 #if DEBUG

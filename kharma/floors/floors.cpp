@@ -138,6 +138,11 @@ std::shared_ptr<KHARMAPackage> Floors::Initialize(ParameterInput *pin, std::shar
     // Should switch these to "Integer" fields when Parthenon supports it
     Metadata m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
     pkg->AddField("fflag", m);
+    // When not using UtoP, we still need a dummy copy of pflag, too
+    // TODO we shouldn't require pflag
+    if (!packages->AllPackages().count("Inverter")) {
+        pkg->AddField("pflag", m);
+    }
 
     pkg->BlockApplyFloors = Floors::ApplyGRMHDFloors;
     pkg->PostStepDiagnosticsMesh = Floors::PostStepDiagnostics;

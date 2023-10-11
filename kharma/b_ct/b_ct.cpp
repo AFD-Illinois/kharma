@@ -191,7 +191,7 @@ TaskStatus B_CT::BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coa
             B_Pf(F3, 0, k, j, i) = B_Uf(F3, 0, k, j, i) / G.gdet(Loci::face3, j, i);
         }
     );
-    // Average the primitive vals for zone centers (TODO right?)
+    // Average the primitive vals for zone centers
     const IndexRange3 bc = KDomain::GetRange(rc, domain, coarse);
     pmb->par_for("UtoP_B_center", bc.ks, bc.ke, bc.js, bc.je, bc.is, bc.ie,
         KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
