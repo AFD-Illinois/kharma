@@ -39,7 +39,7 @@ if __name__=='__main__':
         
         t   = dfile['t'][()]
         gam = dfile['header/gam'][()]
-        higher_order_terms = dfile['header/higher_order_terms'][()].decode('UTF-8')
+        higher_order_terms = dfile['header/higher_order_terms']
 
         # compute q
         if higher_order_terms=="TRUE":
