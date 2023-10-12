@@ -51,11 +51,11 @@ if __name__ == '__main__':
             Theta    = (dump['gam'] - 1.) * dump['u'] / dump['rho']
             # we're directly modifying the cache here. Inadvisable
             dump.cache['dP'] = dump['dP'] * np.sqrt(eta * Theta / tau)
+            state.cache['dP'] = bondi.compute_dP(mdot, rc, gam, dump.grid, eta, tau, start=np.mean(dump['dP'][-1]))
         else:
             Theta    = (dump['gam'] - 1.) * dump['u'] / dump['rho']
-            state.cache['dP'] /= np.sqrt(eta * Theta / tau)
-
-        state.cache['dP'] = bondi.compute_dP(mdot, rc, gam, dump.grid, eta, tau, start=np.mean(dump['dP'][-1]))
+            state.cache['dP'] = bondi.compute_dP(mdot, rc, gam, dump.grid, eta, tau, start=np.mean(dump['dP'][-1])) / \
+                                np.sqrt(eta * Theta / tau)
 
         # Plot
         for var in ['rho', 'u', 'B1', 'dP']:
