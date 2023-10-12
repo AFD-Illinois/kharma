@@ -43,23 +43,22 @@ if __name__ == '__main__':
         state = bondi.get_bondi_fluid_state(mdot, rc, gam, dump.grid)
         state.params['eta'] = eta
         state.params['tau'] = tau
-        dP_check = bondi.compute_dP(mdot, rc, gam, dump.grid, eta, tau)
-        state.cache['dP'] = dP_check
 
-        # compute dP
+        # compute dP either by adjusting dump to include higher-order terms,
+        # or the computed state to exclude them
         if dump['emhd/higher_order_terms']:
             print("Res: "+str(res)+"; higher order terms enabled")
             Theta    = (dump['gam'] - 1.) * dump['u'] / dump['rho']
-            nu_emhd  = eta / dump['rho']
-            dP       = dump['dP'] * np.sqrt(nu_emhd * dump['rho'] * Theta / tau)
+            # we're directly modifying the cache here. Inadvisable
+            dump.cache['dP'] = dump['dP'] * np.sqrt(eta * Theta / tau)
         else:
-            dP = dump['dP']
             Theta    = (dump['gam'] - 1.) * dump['u'] / dump['rho']
-            nu_emhd  = eta / dump['rho']
-            dP_check /= np.sqrt(nu_emhd * dump['rho'] * Theta / tau)
+            state.cache['dP'] /= np.sqrt(eta * Theta / tau)
+
+        state.cache['dP'] = bondi.compute_dP(mdot, rc, gam, dump.grid, eta, tau, start=np.mean(dump['dP'][-1]))
 
         # Plot
-        for var in ['rho', 'u', 'B1']:
+        for var in ['rho', 'u', 'B1', 'dP']:
             fig = plt.figure(figsize=(6,6))
             ax = fig.add_subplot(1,1,1)
             pplt.plot_diff_xz(ax, dump, state, var)
@@ -67,16 +66,17 @@ if __name__ == '__main__':
             plt.close(fig)
 
         radius = np.mean(dump.grid['r'], axis=(1,2))
-        plt.plot(radius, dP_check, label='dP ODE')
-        plt.plot(radius, np.mean(dP, axis=(1,2)), label='dP code')
+        plt.plot(radius, state['dP'], label='dP ODE')
+        plt.plot(radius, np.mean(dump['dP'], axis=(1,2)), label='dP code')
+        plt.plot(radius, np.mean(dump['dP'], axis=(1,2)) - state['dP'], label='dP diff')
         plt.legend()
-        plt.savefig('compare_dP_{}.png'.format(res))
+        plt.savefig('compare_dP1d_{}.png'.format(res))
         plt.close()
 
         # compute L1 norm
         L1[r,0] = np.mean(np.fabs(dump['rho'] - state['rho']))
         L1[r,1] = np.mean(np.fabs(dump['u']  - state['u']))
-        L1[r,2] = np.mean(np.fabs(dP  - dP_check))
+        L1[r,2] = np.mean(np.fabs(np.mean(dump['dP'], axis=(1,2))  - state['dP'])[2:])
         L1[r,3] = np.mean(np.fabs(dump['B1']  - state['B1']))
 
     # MEASURE CONVERGENCE

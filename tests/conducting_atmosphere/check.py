@@ -39,10 +39,9 @@ if __name__=='__main__':
         
         t   = dfile['t'][()]
         gam = dfile['header/gam'][()]
-        higher_order_terms = dfile['header/higher_order_terms']
 
         # compute q
-        if higher_order_terms=="TRUE":
+        if dfile['header/higher_order_terms']:
             print("Res: "+str(res)+"; higher order terms enabled")
             tau      = 10.
             kappa    = 0.1

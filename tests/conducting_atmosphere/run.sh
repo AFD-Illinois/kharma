@@ -36,3 +36,5 @@ conv_2d() {
 
 ALL_RES="64,128,256,512"
 conv_2d emhd2d_weno driver/reconstruction=weno5 "in 2D, WENO5"
+
+exit $exit_code

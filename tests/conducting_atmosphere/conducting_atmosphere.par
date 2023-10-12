@@ -34,6 +34,8 @@ inner_x1 = dirichlet
 outer_x1 = dirichlet
 check_inflow_inner_x1 = false
 check_inflow_outer_x1 = false
+outflow_EMHD_inner_x1 = true
+outflow_EMHD_outer_x1 = true
 
 <parthenon/time>
 tlim       = 400.
