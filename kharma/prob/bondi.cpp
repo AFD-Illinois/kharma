@@ -51,6 +51,8 @@ TaskStatus InitializeBondi(MeshBlockData<Real> *rc, ParameterInput *pin)
     auto datfn = pin->GetOrAddString("gizmo_shell", "datfn", "none");
     const Real ur_frac = pin->GetOrAddReal("bondi", "ur_frac", 1.); 
     const Real uphi = pin->GetOrAddReal("bondi", "uphi", 0.); 
+    const Real vacuum_logrho = pin->GetOrAddReal("bondi", "vacuum_logrho", 0.); 
+    const Real vacuum_log_u_over_rho = pin->GetOrAddReal("bondi", "vacuum_log_u_over_rho", 0.); 
 
     // Add these to package properties, since they continue to be needed on boundaries
     if(! (pmb->packages.Get("GRMHD")->AllParams().hasKey("mdot")))
@@ -67,6 +69,10 @@ TaskStatus InitializeBondi(MeshBlockData<Real> *rc, ParameterInput *pin)
         pmb->packages.Get("GRMHD")->AddParam<Real>("ur_frac", ur_frac);
     if(! (pmb->packages.Get("GRMHD")->AllParams().hasKey("uphi")))
         pmb->packages.Get("GRMHD")->AddParam<Real>("uphi", uphi);
+    if(! (pmb->packages.Get("GRMHD")->AllParams().hasKey("vacuum_logrho")))
+        pmb->packages.Get("GRMHD")->AddParam<Real>("vacuum_logrho", vacuum_logrho);
+    if(! (pmb->packages.Get("GRMHD")->AllParams().hasKey("vacuum_log_u_over_rho")))
+        pmb->packages.Get("GRMHD")->AddParam<Real>("vacuum_log_u_over_rho", vacuum_log_u_over_rho);
 
     // Set the whole domain to the analytic solution to begin
     SetBondi(rc);
@@ -93,6 +99,8 @@ TaskStatus SetBondi(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     auto datfn = pmb->packages.Get("GRMHD")->Param<std::string>("gizmo_dat");
     const Real ur_frac = pmb->packages.Get("GRMHD")->Param<Real>("ur_frac");
     const Real uphi = pmb->packages.Get("GRMHD")->Param<Real>("uphi");
+    Real vacuum_logrho = pmb->packages.Get("GRMHD")->Param<Real>("vacuum_logrho");
+    Real vacuum_log_u_over_rho = pmb->packages.Get("GRMHD")->Param<Real>("vacuum_log_u_over_rho");
 
     // Just the X1 right boundary
     GRCoordinates G = pmb->coords;
@@ -169,16 +177,18 @@ TaskStatus SetBondi(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
             
             pmb->par_for("gizmo_shell", kb_e.s, kb_e.e, jb_e.s, jb_e.e, ibs, ibe,
                 KOKKOS_LAMBDA_3D {
-                    // same vacuum conditions at r_shell
-                    GReal Xshell[GR_DIM] = {0, r_shell, 0, 0};
-                    int i_sh;
-                    GReal del_sh;
-                    Real vacuum_rho, vacuum_u_over_rho, vacuum_logrho, vacuum_log_u_over_rho;
-                    XtoindexGizmo(Xshell, r_device, length, i_sh, del_sh);
-                    vacuum_rho = rho_device(i_sh)*(1.-del_sh)+rho_device(i_sh+1)*del_sh;
-                    vacuum_u_over_rho = (T_device(i_sh)*(1.-del_sh)+T_device(i_sh+1)*del_sh)/(gam-1.);
-                    vacuum_logrho = log10(vacuum_rho);
-                    vacuum_log_u_over_rho = log10(vacuum_u_over_rho);
+                    //GReal Xshell[GR_DIM] = {0, r_shell, 0, 0};
+                    //int i_sh;
+                    //GReal del_sh;
+                    //Real vacuum_rho, vacuum_u_over_rho; //, vacuum_logrho, vacuum_log_u_over_rho;
+                    //if (m::abs(vacuum_logrho) < 0.001) {
+                        // same vacuum conditions at r_shell
+                    //    XtoindexGizmo(Xshell, r_device, length, i_sh, del_sh);
+                    //    vacuum_rho = rho_device(i_sh)*(1.-del_sh)+rho_device(i_sh+1)*del_sh;
+                    //    vacuum_u_over_rho = (T_device(i_sh)*(1.-del_sh)+T_device(i_sh+1)*del_sh)/(gam-1.);
+                    //    vacuum_logrho = log10(vacuum_rho);
+                    //    vacuum_log_u_over_rho = log10(vacuum_u_over_rho);
+                    //}
                 
                     get_prim_gizmo_shell(G, cs, P, m_p, gam, bl, ks, r_shell, rs, vacuum_logrho, vacuum_log_u_over_rho, 
                                           r_device, rho_device, T_device, vr_device, length, k, j, i);
@@ -234,27 +244,18 @@ TaskStatus SetBondi(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
                 
             Kokkos::fence();
 
-            //int i_sh;
-            // same vacuum conditions at r_shell // (05/01/23) a better way to do this?
-            //pmb->par_for("gizmo_r_shell", 0, 0,
-            //    KOKKOS_LAMBDA_1D {
-            //        GReal Xshell[GR_DIM] = {0, r_shell, 0, 0};
-            //        GReal del_sh;
-            //        int i_sh_dev;
-            //        XtoindexGizmo3D(Xshell, coord_device, length, i_sh_dev, del_sh);
-            //    }
-            //);
-            //i_sh=i_sh_dev;
             int i_sh=0; // TODO! Ask Ben
 
             pmb->par_for("gizmo_shell", kb.s, kb.e, jb.s, jb.e, ibs, ibe,
                 KOKKOS_LAMBDA_3D {
-                    Real vacuum_rho, vacuum_u_over_rho, vacuum_logrho, vacuum_log_u_over_rho;
+                    //Real vacuum_rho, vacuum_u_over_rho; //, vacuum_logrho, vacuum_log_u_over_rho;
                     
-                    vacuum_rho = rho_device(i_sh);
-                    vacuum_u_over_rho = T_device(i_sh)/(gam-1.);
-                    vacuum_logrho = log10(vacuum_rho);
-                    vacuum_log_u_over_rho = log10(vacuum_u_over_rho);
+                    //vacuum_rho = rho_device(i_sh);
+                    //if (m::abs(vacuum_logrho) < 0.001) {
+                    //    vacuum_u_over_rho = T_device(i_sh)/(gam-1.);
+                    //    vacuum_logrho = log10(vacuum_rho);
+                    //    vacuum_log_u_over_rho = log10(vacuum_u_over_rho);
+                    //}
 
                     get_prim_gizmo_shell_3d(G, cs, P, m_p, gam, bl, ks, r_shell, rs, vacuum_logrho, vacuum_log_u_over_rho, 
                                           coord_device, rho_device, T_device, v_device, length, k, j, i);

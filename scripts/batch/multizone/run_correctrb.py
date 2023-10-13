@@ -134,7 +134,7 @@ def run_multizone(**kwargs):
             args['coordinates/r_in'] = base**turn_around
         # Initialize half-vacuum, unless it's the first GIZMO run
         if kwargs['gizmo']:
-            args['bondi/r_shell'] = args['coordinates/r_in']
+            args['bondi/r_shell'] = 3e6 #args['coordinates/r_in']
         else:
             args['bondi/r_shell'] = base**(turn_around+2)/2.
 
@@ -151,7 +151,7 @@ def run_multizone(**kwargs):
             log_u_over_rho = -2.62430556
         elif kwargs['gizmo']:
             #kwargs['r_b'] = 1e5
-            logrho = -7.80243572
+            logrho = -8.33399171 #-7.80243572
             log_u_over_rho = -5.34068635
         else:
             #kwargs['r_b'] = 1e5
@@ -160,15 +160,6 @@ def run_multizone(**kwargs):
         args['bondi/vacuum_logrho'] = logrho
         args['bondi/vacuum_log_u_over_rho'] = log_u_over_rho
         args['bondi/rs'] = kwargs['rs']
-        if abs(kwargs['gamma']- 5./3.)<1e-2:
-            # only when gamma=5/3, rb=rs^2
-            #args['bondi/rs'] = np.sqrt(float(kwargs['r_b']))
-            r_b = 80.*float(kwargs['rs'])**2/(27.*kwargs['gamma'])
-            print(r_b)
-        else:
-            n = 1./(kwargs['gamma']-1)
-            args['bondi/rs'] = (2*(n+3)-9)/(4*(n+1))*float(kwargs['r_b'])
-            # TODO! change it to r_b calculation
         args['bondi/ur_frac'] = 0
 
         # B field additions
@@ -220,8 +211,8 @@ def run_multizone(**kwargs):
         # effective nzones (Hyerin 07/27/23)
         if (kwargs['combine_out_ann'] or kwargs['move_rin']) and not kwargs['onezone']:
             # think what's the smallest annulus where the logarithmic middle radius is larger than r_b 
-            # (i.e. 8^n > 1e5 for base=8 r_b=1e5 where n is the nth smallest annulus)
-            kwargs['nzones_eff'] = int(np.ceil(np.log(r_b)/np.log(kwargs['base'])))
+            # (i.e. 8^n > 1e5 for base=8 r_b=1e5 where n is the nth smallest annulus, just approximate r_b ~ rs^2)
+            kwargs['nzones_eff'] = int(np.ceil(np.log(kwargs['rs']**2)/np.log(kwargs['base'])))
             args['coordinates/r_in'] = base**(kwargs['nzones_eff']-1)
             if kwargs['base'] < 2: # this means that the second smallest annulu's r_in is inside the horizon
                 args['coordinates/r_in'] = base**(kwargs['nzones_eff'])
@@ -247,6 +238,15 @@ def run_multizone(**kwargs):
     # Default parameters are in mz_dir
     if kwargs['parfile'] is None:
         kwargs['parfile'] = mz_dir+"/multizone.par"
+    if abs(kwargs['gamma']- 5./3.)<1e-2:
+        # only when gamma=5/3, rb=rs^2
+        #args['bondi/rs'] = np.sqrt(float(kwargs['r_b']))
+        r_b = 80.*float(kwargs['rs'])**2/(27.*kwargs['gamma'])
+        print(r_b)
+    else:
+        n = 1./(kwargs['gamma']-1)
+        args['bondi/rs'] = (2*(n+3)-9)/(4*(n+1))*float(kwargs['r_b'])
+        # TODO! change it to r_b calculation
 
     stop = False
     # Iterate, starting with the default args and updating as we go

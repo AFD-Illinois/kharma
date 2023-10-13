@@ -121,6 +121,14 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
         else rb = (4 * (n + 1)) / (2 * (n + 3) - 9) * rs;
         //rb = m::pow(pin->GetOrAddReal("bondi", "rs", m::sqrt(1e5)),2.);
         break;
+    case BSeedType::r1gizmo:
+        bz = pin->GetOrAddReal("b_field", "bz", 0.);
+        gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
+        n = 1. / (gam - 1.);
+        rs = pin->GetOrAddReal("bondi", "rs", m::sqrt(1e5));
+        if (m::abs(n-1.5) < 0.01) rb = rs * rs * 80. / (27. * gam);
+        else rb = (4 * (n + 1)) / (2 * (n + 3) - 9) * rs;
+        break;
     case BSeedType::r34s2:
         bz = pin->GetOrAddReal("b_field", "bz", 0.);
         gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
@@ -258,7 +266,7 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
                 q = bz * m::pow(r * m::sin(th),2.) / 2.;
                 break;
             case BSeedType::r1s2:
-                // Hyerin (06/13/23) a vertical-ish field with 1/r*sqrt(1+3cos^th) strength
+                // Hyerin (06/13/23) a vertical-ish field for rho \propto r^-1 initialization with 1/r*sqrt(1+3cos^th) strength
                 // to make it continuous to pure uniform vertical field at bondi radius, use modified bz' = bz*rb/2
                 {
                     //Real x = Xnative[1] - m::log(rb);
@@ -274,6 +282,13 @@ TaskStatus B_FluxCT::SeedBField(MeshBlockData<Real> *rc, ParameterInput *pin)
                 // Hyerin (06/13/23) a vertical-ish field for Bondi initialization
                 {
                     q = bz / 2. * (r * r + m::pow(r,3./4.) * m::pow(rb,5./4.)) * m::pow(m::sin(th),2.); // new solution
+                }
+                break;
+            case BSeedType::r1gizmo:
+                // Hyerin (10/11/23) a vertical-ish field for GIZMO initialization (rho: r^-1 at r<rb and r^-3/2 at r>rb)
+                {
+                    //q = bz / 2. * (r * m::pow(rb, 1./4.) + m::pow(r, 5./4.)) * m::pow(m::sin(th),2.); //
+                    q = bz * (r * m::pow(rb, 1./2.) / 2. + m::pow(r, 3./2.)) * m::pow(m::sin(th),2.); //
                 }
                 break;
             case BSeedType::r54s2:
