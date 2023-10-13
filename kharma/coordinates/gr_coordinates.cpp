@@ -124,7 +124,8 @@ GRCoordinates::GRCoordinates(const RegionSize &rs, ParameterInput *pin): Uniform
         if (!spherical) throw std::invalid_argument("Transform is for spherical coordinates!");
         GReal lin_frac = pin->GetOrAddReal("coordinates", "lin_frac", 0.6);
         GReal nx2 = pin->GetReal("parthenon/mesh", "nx2");
-        transform.emplace<WidepoleTransform>(WidepoleTransform(lin_frac, nx2));
+        GReal nx3 = pin->GetReal("parthenon/mesh", "nx3");
+        transform.emplace<WidepoleTransform>(WidepoleTransform(lin_frac, nx2, nx3));
     } else {
         throw std::invalid_argument("Unsupported coordinate transform!");
     }

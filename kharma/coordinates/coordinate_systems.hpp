@@ -560,15 +560,16 @@ class FunkyTransform {
  */
 class WidepoleTransform {
     public:
-        const GReal lin_frac, n2;
+        const GReal lin_frac, n2, n3;
         GReal smoothness;
 
         // Constructor
-        KOKKOS_FUNCTION WidepoleTransform(GReal lin_frac_in, GReal n2_in): lin_frac(lin_frac_in), n2(n2_in) 
+        KOKKOS_FUNCTION WidepoleTransform(GReal lin_frac_in, GReal n2_in, GReal n3_in): lin_frac(lin_frac_in), n2(n2_in), n3(n3_in) 
         {
-            if (lin_frac < 1. / (1. / M_PI - 1./ n2 + 1.)) smoothness = -1. / (2. * n2 * log(1. - lin_frac / (1. - lin_frac) * (1. / M_PI - 1. / n2)));
+            GReal temp = lin_frac / (1. - lin_frac) * (1. / M_PI - 1. / n3) * n3 / n2;
+            if (abs(temp) < 1) smoothness = 1. / (n2 * log((1. + temp) / (1. - temp)));
             else {
-                printf("WARNING: It is harder to have del phi ~ del th. Try using lin_frac < %g \n",  1./ (1. / M_PI - 1./ n2 + 1.));
+                printf("WARNING: It is harder to have del phi ~ del th. Try using lin_frac < %g \n",  1./ ((1. / M_PI - 1./ n3) * n3 / n2 + 1.));
                 smoothness = 0.8 / n2;
             }
         }
@@ -579,7 +580,8 @@ class WidepoleTransform {
             Xembed[0] = Xnative[0];
             Xembed[1] = exp(Xnative[1]);
             GReal th;
-            th = M_PI / 2. * (1. + 2. * lin_frac * (Xnative[2] - 0.5) + (1. - lin_frac) * exp((Xnative[2] - 1.) / smoothness) - (1. - lin_frac) * exp(-Xnative[2] / smoothness));
+            //th = M_PI / 2. * (1. + 2. * lin_frac * (Xnative[2] - 0.5) + (1. - lin_frac) * exp((Xnative[2] - 1.) / smoothness) - (1. - lin_frac) * exp(-Xnative[2] / smoothness));
+            th = M_PI / 2. * (1. + 2. * lin_frac * (Xnative[2] - 0.5) + (1. - lin_frac) * (tanh((Xnative[2] - 1.) / smoothness) + 1.) - (1. - lin_frac) * (tanh(-Xnative[2] / smoothness) + 1.));
             Xembed[2] = excise(excise(th, 0.0, SMALL), M_PI, SMALL);
             Xembed[3] = Xnative[3];
         }
@@ -599,7 +601,8 @@ class WidepoleTransform {
             gzero2(dxdX);
             dxdX[0][0] = 1.;
             dxdX[1][1] = exp(Xnative[1]);
-            dxdX[2][2] = M_PI / 2. * (2. * lin_frac + (1. - lin_frac) / smoothness * exp((Xnative[2] - 1.) / smoothness) + (1. - lin_frac) / smoothness * exp(-Xnative[2] / smoothness));
+            //dxdX[2][2] = M_PI / 2. * (2. * lin_frac + (1. - lin_frac) / smoothness * exp((Xnative[2] - 1.) / smoothness) + (1. - lin_frac) / smoothness * exp(-Xnative[2] / smoothness));
+            dxdX[2][2] = M_PI / 2. * (2. * lin_frac + (1. - lin_frac) / (smoothness * m::pow(cosh((Xnative[2] - 1.) / smoothness), 2.)) + (1. - lin_frac) / (smoothness * m::pow(cosh(Xnative[2] / smoothness),2.)));
             dxdX[3][3] = 1.;
         }
         /**
