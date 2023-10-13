@@ -125,8 +125,8 @@ class SphKSCoords {
             const GReal rho2 = r*r + a*a*cos2;
             
             // (Hyerin 11/13/22) test
-            const GReal A = 1.46797639*m::pow(10.,-8);
-            const GReal B = 1.29411117;
+            const GReal A = 4.24621057 * m::pow(10.,-9); //1.46797639*m::pow(10.,-8);
+            const GReal B = 1.35721335; //1.29411117;
             const GReal Phi_g = (A/(B-1.)) * (m::pow(r,B-1.)-m::pow(2,B-1.));
 
             gcov[0][0] = -1. + 2.*r/rho2;
@@ -170,8 +170,8 @@ class SphKSCoords {
             trans[3][1] = a/(r*r - 2.*r + a*a);
 
             // external gravity from GIZMO
-            const GReal A = 1.46797639*m::pow(10.,-8);
-            const GReal B = 1.29411117;
+            const GReal A = 4.24621057 * m::pow(10.,-9); //1.46797639*m::pow(10.,-8);
+            const GReal B = 1.35721335; //1.29411117;
             const GReal Phi_g = (A/(B-1.)) * (m::pow(r,B-1.)-m::pow(2,B-1.));
 
             if (ext_g) {
@@ -191,8 +191,8 @@ class SphKSCoords {
             rtrans[3][1] = a/(r*r - 2.*r + a*a);
 
             // external gravity from GIZMO
-            const GReal A = 1.46797639*m::pow(10.,-8);
-            const GReal B = 1.29411117;
+            const GReal A = 4.24621057 * m::pow(10.,-9); //1.46797639*m::pow(10.,-8);
+            const GReal B = 1.35721335; //1.29411117;
             const GReal Phi_g = (A/(B-1.)) * (m::pow(r,B-1.)-m::pow(2,B-1.));
             
             if (ext_g) {
@@ -236,8 +236,8 @@ class SphBLCoords {
             const GReal mmu = 1. + a2*cth*cth/r2; // mu is taken as an index
 
             // (Hyerin 11/13/22) test
-            const GReal A = 1.46797639*m::pow(10.,-8);
-            const GReal B = 1.29411117;
+            const GReal A = 4.24621057 * m::pow(10.,-9); //1.46797639*m::pow(10.,-8);
+            const GReal B = 1.35721335; //1.29411117;
             const GReal Phi_g = (A/(B-1.)) * (m::pow(r,B-1.)-m::pow(2,B-1.));
 
             gzero2(gcov);
