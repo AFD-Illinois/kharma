@@ -9,16 +9,21 @@ if [[ "$ARGS" == *"rocky"* ]]; then
     echo $ARGS
     echo "after printing out"
     module purge
+    module load gcc/12.2.0-fasrc01 openmpi/4.1.5-fasrc02 hdf5/1.12.2-fasrc01
+    if [[ "$ARGS" == *"rdma"* ]]; then
+      module load cmake/3.27.5-fasrc01
+    else
+      module load cmake/3.25.2-fasrc01
+    fi
     if [[ "$ARGS" == *"cudaaware"* ]]; then
       # CUDA aware MPI
-      module load gcc/12.2.0-fasrc01 openmpi/4.1.5-fasrc02 cmake/3.25.2-fasrc01 hdf5/1.12.2-fasrc01 ucx/1.14.1-fasrc02
+      #module load ucx/1.14.1-fasrc02
       MPI_NUM_PROCS=4
       MPI_EXE="srun" #"mpirun" #
       #export KOKKOS_NUM_DEVICES=4
-    else
-      module load gcc/12.2.0-fasrc01 openmpi/4.1.5-fasrc01 cmake/3.25.2-fasrc01 hdf5/1.12.2-fasrc01
+    #else
       #module load gcc/10.2.0-fasrc01 openmpi/4.1.0-fasrc01 cmake/3.25.2-fasrc01
-      export PATH=/n/home09/hyerincho/packages/hdf5-openmpi4.1.1:$PATH # comment this out if you are using module hdf5
+      #export PATH=/n/home09/hyerincho/packages/hdf5-openmpi4.1.1:$PATH # comment this out if you are using module hdf5
     fi
     
     export MPICH_GPU_SUPPORT_ENABLED=1
@@ -36,9 +41,8 @@ if [[ "$ARGS" == *"rocky"* ]]; then
       if [[ "$ARGS" == *"volta"* ]]; then
         DEVICE_ARCH=VOLTA70
       fi
-      #module load cuda/12.0.1-fasrc01
       # CHANGE TO A NEWER CUDA
-      module load cuda/12.2.0-fasrc01
+      #module load cuda/12.2.0-fasrc01 # this should be loaded automatically
     fi
     module list
 elif [[ $(hostname -f) == *"rc.fas.harvard.edu" ]]; then
