@@ -109,8 +109,8 @@ int main(int argc, char *argv[])
     pman.app_input->ProblemGenerator = KHARMA::ProblemGenerator;
     // A few are passed on to be implemented by packages as they see fit
     pman.app_input->MeshBlockUserWorkBeforeOutput = Packages::UserWorkBeforeOutput;
-    pman.app_input->PreStepMeshUserWorkInLoop = Packages::PreStepUserWorkInLoop;
-    pman.app_input->PostStepMeshUserWorkInLoop = Packages::PostStepUserWorkInLoop;
+    pman.app_input->PreStepMeshUserWorkInLoop = Packages::PreStepWork;
+    pman.app_input->PostStepMeshUserWorkInLoop = Packages::PostStepWork;
     pman.app_input->PostStepDiagnosticsInLoop = Packages::PostStepDiagnostics;
 
     // Registering KHARMA's boundary functions here doesn't mean they will *always* run:
@@ -205,10 +205,14 @@ int main(int argc, char *argv[])
     KHARMA::PostInitialize(pin, pmesh, is_restart);
     EndFlag();
 
+    // TODO output parsed parameters *here*, now we have everything including any problem configs for B field
+
     // Begin code block to ensure driver is cleaned up
     {
-        std::string driver_type = pmesh->packages.Get("Driver")->Param<std::string>("type");
-        if (MPIRank0()) std::cout << "Running " << driver_type << " driver" << std::endl;
+        if (MPIRank0()) {
+            std::string driver_name = pmesh->packages.Get("Driver")->Param<std::string>("name");
+            std::cout << "Running " << driver_name << " driver" << std::endl;
+        }
 
         // Pull out things we need to give the driver
         auto pin = pman.pinput.get(); // All parameters in the input file or command line

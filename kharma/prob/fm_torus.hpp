@@ -13,25 +13,18 @@
 TaskStatus InitializeFMTorus(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin);
 
 /**
- * Perturb the internal energy by a uniform random proportion per cell.
- * Resulting internal energies will be between u \pm u*u_jitter/2
- * i.e. u_jitter=0.1 -> \pm 5% randomization, 0.95u to 1.05u
- *
- * @param u_jitter see description
- * @param rng_seed is added to the MPI rank to seed the GSL RNG
- */
-TaskStatus PerturbU(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin);
-
-/**
  * Torus solution for ln h, See Fishbone and Moncrief eqn. 3.6. 
  */
 KOKKOS_INLINE_FUNCTION Real lnh_calc(const GReal a, const Real l, const GReal rin, const GReal r, const GReal th)
 {
-    Real sth = sin(th);
-    Real cth = cos(th);
+    // TODO this isn't faster than splitting into two evaluations of a sub-function,
+    // and it doesn't matter anyway.  Make it clearer
+    Real sth = m::sin(th);
+    Real cth = m::cos(th);
 
-    Real r2 = m::pow(r, 2);
-    Real a2 = m::pow(a, 2);
+    Real r2 = r*r;
+    Real a2 = a*a;
+    // Metric 
     Real DD = r2 - 2. * r + a2;
     Real AA = m::pow(r2 + a2, 2) - DD * a2 * sth * sth;
     Real SS = r2 + a2 * cth * cth;
@@ -56,7 +49,7 @@ KOKKOS_INLINE_FUNCTION Real lnh_calc(const GReal a, const Real l, const GReal ri
                         4. * (l * l * SS * SS) * DD /
                             (AA * AA * sth * sth)) -
             2. * a * r * l / AA -
-            (0.5 *
+                (0.5 *
                     m::log((1. +
                         m::sqrt(1. +
                             4. * (l * l * SSin * SSin) * DDin /
@@ -79,17 +72,14 @@ KOKKOS_INLINE_FUNCTION Real lnh_calc(const GReal a, const Real l, const GReal ri
  */
 KOKKOS_INLINE_FUNCTION Real lfish_calc(const GReal a, const GReal r)
 {
-    return (((m::pow(a, 2) - 2. * a * m::sqrt(r) + m::pow(r, 2)) *
-             ((-2. * a * r *
-               (m::pow(a, 2) - 2. * a * m::sqrt(r) +
-                m::pow(r,
-                    2))) /
-                  m::sqrt(2. * a * m::sqrt(r) + (-3. + r) * r) +
-              ((a + (-2. + r) * m::sqrt(r)) * (m::pow(r, 3) + m::pow(a, 2) *
-                                                            (2. + r))) /
+    GReal sqtr = m::sqrt(r);
+    return ((a*a - 2. * a * sqtr + r*r) *
+             ((-2. * a * r * (a*a - 2. * a * sqtr + r*r)) /
+                  m::sqrt(2. * a * sqtr + (-3. + r) * r) +
+              ((a + (-2. + r) * sqtr) * (r*r*r + a*a * (2. + r))) /
                   m::sqrt(1 + (2. * a) / m::pow(r, 1.5) - 3. / r))) /
-            (m::pow(r, 3) * m::sqrt(2. * a * m::sqrt(r) + (-3. + r) * r) *
-             (m::pow(a, 2) + (-2. + r) * r)));
+            (r*r*r * m::sqrt(2. * a * sqtr + (-3. + r) * r) *
+             (a*a + (-2. + r) * r));
 }
 
 /**
@@ -98,7 +88,7 @@ KOKKOS_INLINE_FUNCTION Real lfish_calc(const GReal a, const GReal r)
  * This function is *not* used for the actual initialization (where rho is calculated
  * alongside the other primitive variables).  Rather, it is for:
  * 1. Normalization, in which the max of this function over the domain is calculated.
- * 2. B field initialization, which requires density the untilted disk for simplicity
+ * 2. B field initialization, which requires density of the untilted disk for simplicity
  */
 KOKKOS_INLINE_FUNCTION Real fm_torus_rho(const GReal a, const GReal rin, const GReal rmax, const Real gam,
                                          const Real kappa, const GReal r, const GReal th)

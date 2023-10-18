@@ -53,8 +53,7 @@ TaskStatus InitializeEMHDModes(std::shared_ptr<MeshBlockData<Real>>& rc, Paramet
     GridScalar rho  = rc->Get("prims.rho").data;
     GridScalar u    = rc->Get("prims.u").data;
     GridVector uvec = rc->Get("prims.uvec").data;
-    // It is well and good this problem should cry if B/EMHD are disabled.
-    GridVector B_P = rc->Get("prims.B").data;
+    // It is well and good this problem should cry if EMHD is disabled.
     GridVector q   = rc->Get("prims.q").data;
     GridVector dP  = rc->Get("prims.dP").data;
 
@@ -89,6 +88,20 @@ TaskStatus InitializeEMHDModes(std::shared_ptr<MeshBlockData<Real>>& rc, Paramet
     const Real k2 = 4. * M_PI;
     // END POSSIBLE ARGS
 
+    // Set magnetic field parameters for our field transport package
+    pin->GetOrAddString("b_field", "type", "wave");
+    pin->GetOrAddReal("b_field", "B10", B10);
+    pin->GetOrAddReal("b_field", "B20", B20);
+    pin->GetOrAddReal("b_field", "B30", B30);
+    pin->GetOrAddReal("b_field", "k1", k1);
+    pin->GetOrAddReal("b_field", "k2", k2);
+
+    pin->GetOrAddReal("b_field", "amp_B1", amp * (-0.05973794979640743));
+    pin->GetOrAddReal("b_field", "amp2_B1", amp * (0.03351707506150924));
+
+    pin->GetOrAddReal("b_field", "amp_B2", amp * (0.02986897489820372));
+    pin->GetOrAddReal("b_field", "amp2_B2", amp * (-0.016758537530754618));
+
     IndexDomain domain = IndexDomain::interior;
     IndexRange ib = pmb->cellbounds.GetBoundsI(domain);
     IndexRange jb = pmb->cellbounds.GetBoundsJ(domain);
@@ -97,8 +110,8 @@ TaskStatus InitializeEMHDModes(std::shared_ptr<MeshBlockData<Real>>& rc, Paramet
         KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
             Real X[GR_DIM];
             G.coord_embed(k, j, i, Loci::center, X);
-            const Real cos_phi = cos(k1*X[1] + k2*X[2]);
-            const Real sin_phi = sin(k1*X[1] + k2*X[2]);
+            const Real cos_phi = m::cos(k1*X[1] + k2*X[2]);
+            const Real sin_phi = m::sin(k1*X[1] + k2*X[2]);
 
             // Perturbations: no higher-order terms
             const Real drho     = amp * (((-0.518522524082246)*cos_phi) + ((0.1792647678001878)*sin_phi));
@@ -106,9 +119,6 @@ TaskStatus InitializeEMHDModes(std::shared_ptr<MeshBlockData<Real>>& rc, Paramet
             const Real du1      = amp * (((0.008463122479547856)*cos_phi) + ((-0.011862022608466367)*sin_phi));
             const Real du2      = amp * (((-0.16175466371870734)*cos_phi) + ((0.034828080823603294)*sin_phi));
             const Real du3      = 0.;
-            const Real dB1      = amp * (((-0.05973794979640743)*cos_phi) + ((0.03351707506150924)*sin_phi));
-            const Real dB2      = amp * (((0.02986897489820372)*cos_phi) - ((0.016758537530754618)*sin_phi));
-            const Real dB3      = 0.;
             const Real dq       = amp * (((0.5233486841539436)*cos_phi) - ((0.04767672501939603)*sin_phi));
             const Real ddelta_p = amp * (((0.2909106062057657)*cos_phi) - ((0.02159452055336572)*sin_phi));
 
@@ -118,9 +128,6 @@ TaskStatus InitializeEMHDModes(std::shared_ptr<MeshBlockData<Real>>& rc, Paramet
             uvec(V1, k, j, i) = u10 + du1;
             uvec(V2, k, j, i) = u20 + du2;
             uvec(V3, k, j, i) = u30 + du3;
-            B_P(V1, k, j, i) = B10 + dB1;
-            B_P(V2, k, j, i) = B20 + dB2;
-            B_P(V3, k, j, i) = B30 + dB3;
             q(k, j, i) = q0 + dq;
             dP(k, j, i) = delta_p0 + ddelta_p;
 
@@ -129,17 +136,13 @@ TaskStatus InitializeEMHDModes(std::shared_ptr<MeshBlockData<Real>>& rc, Paramet
                 // Zeros are q, dP, and bsq, only needed for torus closure
                 EMHD::set_parameters(G, rho(k, j, i), u(k, j, i), 0., 0., 0., emhd_params, gam, j, i, tau, chi_e, nu_e);
                 Real Theta = (gam - 1) * u(k, j, i) / rho(k, j, i);
-                Real q_tilde  = q(k, j, i); 
-                Real dP_tilde = dP(k, j, i);
-                if (emhd_params.higher_order_terms) {
-                    q_tilde  *= (chi_e != 0) ? m::sqrt(tau / (chi_e * rho(k, j, i) * Theta * Theta)) : 0.;
-                    dP_tilde *= (nu_e  != 0) ? m::sqrt(tau / (nu_e * rho(k, j, i) * Theta)) : 0.;
-                }
-                q(k, j, i) = q_tilde;
-                dP(k, j, i) = dP_tilde;
+                q(k, j, i)  *= (chi_e != 0) ? m::sqrt(tau / (chi_e * rho(k, j, i) * Theta * Theta)) : 0.;
+                dP(k, j, i) *= (nu_e  != 0) ? m::sqrt(tau / (nu_e * rho(k, j, i) * Theta)) : 0.;
             }
         }
     );
+
+    Flux::BlockPtoU(rc.get(), IndexDomain::interior, false);
 
     return TaskStatus::complete;
 }

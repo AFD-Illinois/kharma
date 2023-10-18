@@ -1,5 +1,5 @@
 #!/bin/bash
-#set -euo pipefail
+set -euo pipefail
 
 BASE=../..
 
@@ -13,7 +13,7 @@ conv_2d() {
     do
       # Four blocks
       half=$(( $res / 2 ))
-      $BASE/run.sh -i $BASE/pars/emhdmodes.par debug/verbose=1 \
+      $BASE/run.sh -i $BASE/pars/emhd/emhdmodes.par debug/verbose=1 \
                       parthenon/mesh/nx1=$res parthenon/mesh/nx2=$res parthenon/mesh/nx3=1 \
                       parthenon/meshblock/nx1=$half parthenon/meshblock/nx2=$half parthenon/meshblock/nx3=1 \
                       $2 >log_${1}_${res}.txt 2>&1
@@ -23,21 +23,23 @@ conv_2d() {
     check_code=0
     python check.py $ALL_RES "$3" $1 2d || check_code=$?
     if [[ $check_code != 0 ]]; then
-        echo EMHD modes test $3 FAIL: $check_code
+        echo $3 FAIL: $check_code
         exit_code=1
     else
-        echo EMHD modes test $3 success
+        echo $3 success
     fi
 }
 
 # 2D modes use small blocks, could pick up some problems at MPI ranks >> 1
 # Just one default mode
 ALL_RES="32,64,128"
-conv_2d emhd2d_weno GRMHD/reconstruction=weno5 "EMHD mode in 2D, WENO5"
-ALL_RES="16,32,64,128,256"
-conv_2d emhd2d_mc GRMHD/reconstruction=linear_mc "EMHD mode in 2D, linear/MC reconstruction"
-
+conv_2d emhd2d_weno driver/reconstruction=weno5 "EMHD mode in 2D, WENO5"
 # Test that higher-order terms don't mess anything up
 conv_2d emhd2d_higher_order emhd/higher_order_terms=true "EMHD mode in 2D, higher order terms enabled"
+# Test we can use imex/EMHD and face CT
+conv_2d emhd2d_face_ct b_field/solver=face_ct "EMHD mode in 2D w/Face CT"
+
+ALL_RES="16,32,64,128,256"
+conv_2d emhd2d_mc GRMHD/reconstruction=linear_mc "EMHD mode in 2D, linear/MC reconstruction"
 
 exit $exit_code

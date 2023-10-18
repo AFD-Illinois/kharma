@@ -46,6 +46,7 @@
 using namespace parthenon;
 using parthenon::refinement_ops::ProlongateSharedMinMod;
 using parthenon::refinement_ops::RestrictAverage;
+using parthenon::refinement_ops::ProlongateInternalAverage;
 
 std::shared_ptr<KHARMAPackage> B_CT::Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages)
 {
@@ -73,19 +74,17 @@ std::shared_ptr<KHARMAPackage> B_CT::Initialize(ParameterInput *pin, std::shared
     params.Add("ct_scheme", ct_scheme);
     // Use the default Parthenon prolongation operator, rather than the divergence-preserving one
     // This relies entirely on the EMF communication for preserving the divergence
-    bool lazy_prolongation = pin->GetOrAddBoolean("b_field", "lazy_prolongation", true);
+    bool lazy_prolongation = pin->GetOrAddBoolean("b_field", "lazy_prolongation", false);
     // Need to preserve divergence if you refine/derefine during sim i.e. AMR
     if (lazy_prolongation && pin->GetString("parthenon/mesh", "refinement") == "adaptive")
         throw std::runtime_error("Cannot use non-preserving prolongation in AMR!");
-
-    // Add a reducer object (MPI communicator) for divB to params
-    params.Add("divb_reducer", AllReduce<Real>());
 
     // FIELDS
 
     // Flags for B fields on faces.
     // We don't mark these as "Primitive" and "Conserved" else they'd be bundled
     // with all the cell vars in a bunch of places we don't want
+    // Also note we *always* sync B field conserved var
     std::vector<MetadataFlag> flags_prim_f = {Metadata::Real, Metadata::Face, Metadata::Derived,
                                             Metadata::GetUserFlag("Explicit")};
     std::vector<MetadataFlag> flags_cons_f = {Metadata::Real, Metadata::Face, Metadata::Independent,
@@ -95,6 +94,8 @@ std::shared_ptr<KHARMAPackage> B_CT::Initialize(ParameterInput *pin, std::shared
     m = Metadata(flags_cons_f);
     if (!lazy_prolongation)
         m.RegisterRefinementOps<ProlongateSharedMinMod, RestrictAverage, ProlongateInternalOlivares>();
+    else
+        m.RegisterRefinementOps<ProlongateSharedMinMod, RestrictAverage, ProlongateInternalAverage>();
     pkg->AddField("cons.fB", m);
 
     // Cell-centered versions.  Needed for BS, not for other schemes.
@@ -166,7 +167,7 @@ TaskStatus B_CT::MeshUtoP(MeshData<Real> *md, IndexDomain domain, bool coarse)
     return TaskStatus::complete;
 }
 
-void B_CT::BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
+TaskStatus B_CT::BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
     auto pmb = rc->GetBlockPointer();
     const int ndim = pmb->pmy_mesh->ndim;
@@ -175,6 +176,8 @@ void B_CT::BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     auto B_U = rc->PackVariables(std::vector<std::string>{"cons.B"});
     auto B_P = rc->PackVariables(std::vector<std::string>{"prims.B"});
     const auto& G = pmb->coords;
+    // Return if we're not syncing U & P at all (e.g. edges)
+    if (B_Uf.GetDim(4) == 0) return TaskStatus::complete;
 
     // TODO get rid of prims on faces probably
 
@@ -188,7 +191,7 @@ void B_CT::BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
             B_Pf(F3, 0, k, j, i) = B_Uf(F3, 0, k, j, i) / G.gdet(Loci::face3, j, i);
         }
     );
-    // Average the primitive vals for zone centers (TODO right?)
+    // Average the primitive vals for zone centers
     const IndexRange3 bc = KDomain::GetRange(rc, domain, coarse);
     pmb->par_for("UtoP_B_center", bc.ks, bc.ke, bc.js, bc.je, bc.is, bc.ie,
         KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
@@ -204,6 +207,8 @@ void B_CT::BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
             B_U(v, k, j, i) = B_P(v, k, j, i) * G.gdet(Loci::center, j, i);
         }
     );
+
+    return TaskStatus::complete;
 }
 
 TaskStatus B_CT::CalculateEMF(MeshData<Real> *md)
@@ -215,13 +220,11 @@ TaskStatus B_CT::CalculateEMF(MeshData<Real> *md)
     auto& emf_pack = md->PackVariables(std::vector<std::string>{"B_CT.emf"});
 
     // Figure out indices
-    const IndexRange3 b = KDomain::GetRange(md, IndexDomain::interior, 0, 0);
-    const IndexRange3 b1 = KDomain::GetRange(md, IndexDomain::interior, -1, 1);
+    const IndexRange3 b = KDomain::GetRange(md, IndexDomain::entire, 0, 0);
+    const IndexRange3 b1 = KDomain::GetRange(md, IndexDomain::entire, 1, 1);
     const IndexRange block = IndexRange{0, emf_pack.GetDim(5)-1};
 
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer().get();
-
-    std::string scheme = pmesh->packages.Get("B_CT")->Param<std::string>("ct_scheme");
 
     // Calculate circulation by averaging fluxes
     // This is the base of most other schemes, which make corrections
@@ -240,13 +243,24 @@ TaskStatus B_CT::CalculateEMF(MeshData<Real> *md)
                 emf_pack(bl, E2, 0, k, j, i) =
                     0.25*(B_U(bl).flux(X3DIR, V1, k, j, i - 1) + B_U(bl).flux(X3DIR, V1, k, j, i)
                         - B_U(bl).flux(X1DIR, V3, k - 1, j, i) - B_U(bl).flux(X1DIR, V3, k, j, i));
+                emf_pack(bl, E3, 0, k, j, i) =
+                    0.25*(B_U(bl).flux(X1DIR, V2, k, j - 1, i) + B_U(bl).flux(X1DIR, V2, k, j, i)
+                        - B_U(bl).flux(X2DIR, V1, k, j, i - 1) - B_U(bl).flux(X2DIR, V1, k, j, i));
+            } else if (ndim > 1) {
+                emf_pack(bl, E1, 0, k, j, i) =  B_U(bl).flux(X2DIR, V3, k, j, i);
+                emf_pack(bl, E2, 0, k, j, i) = -B_U(bl).flux(X1DIR, V3, k, j, i);
+                emf_pack(bl, E3, 0, k, j, i) =
+                    0.25*(B_U(bl).flux(X1DIR, V2, k, j - 1, i) + B_U(bl).flux(X1DIR, V2, k, j, i)
+                        - B_U(bl).flux(X2DIR, V1, k, j, i - 1) - B_U(bl).flux(X2DIR, V1, k, j, i));
+            } else {
+                emf_pack(bl, E1, 0, k, j, i) = 0;
+                emf_pack(bl, E2, 0, k, j, i) = -B_U(bl).flux(X1DIR, V3, k, j, i);
+                emf_pack(bl, E3, 0, k, j, i) =  B_U(bl).flux(X1DIR, V2, k, j, i);
             }
-            emf_pack(bl, E3, 0, k, j, i) =
-                0.25*(B_U(bl).flux(X1DIR, V2, k, j - 1, i) + B_U(bl).flux(X1DIR, V2, k, j, i)
-                    - B_U(bl).flux(X2DIR, V1, k, j, i - 1) - B_U(bl).flux(X2DIR, V1, k, j, i));
         }
     );
 
+    std::string scheme = pmesh->packages.Get("B_CT")->Param<std::string>("ct_scheme");
     if (scheme == "bs99") {
         // Nothing more to do
     } else if (scheme == "gs05_0" || scheme == "gs05_c") {
@@ -257,8 +271,7 @@ TaskStatus B_CT::CalculateEMF(MeshData<Real> *md)
         auto& B_U = md->PackVariablesAndFluxes(std::vector<std::string>{"cons.B"});
         auto& B_P = md->PackVariables(std::vector<std::string>{"prims.B"});
         // emf in center == -v x B
-        const IndexRange3 bc = KDomain::GetRange(md, IndexDomain::entire);
-        pmb0->par_for("B_CT_emfc", block.s, block.e, bc.ks, bc.ke, bc.js, bc.je, bc.is, bc.ie,
+        pmb0->par_for("B_CT_emfc", block.s, block.e, b.ks, b.ke, b.js, b.je, b.is, b.ie,
             KOKKOS_LAMBDA (const int &bl, const int &k, const int &j, const int &i) {
                 VLOOP emfc(bl, v, k, j, i) = 0.;
                 VLOOP3 emfc(bl, x, k, j, i) -= antisym(v, w, x) * uvec(bl, v, k, j, i) * B_U(bl, w, k, j, i);
@@ -266,22 +279,23 @@ TaskStatus B_CT::CalculateEMF(MeshData<Real> *md)
         );
 
         if (scheme == "gs05_0") {
+            const int kd = ndim > 2 ? 1 : 0;
+            const int jd = ndim > 1 ? 1 : 0;
+            const int id = ndim > 0 ? 1 : 0;
             pmb0->par_for("B_CT_emf_GS05_0", block.s, block.e, b1.ks, b1.ke, b1.js, b1.je, b1.is, b1.ie,
                 KOKKOS_LAMBDA (const int &bl, const int &k, const int &j, const int &i) {
                     const auto& G = B_U.GetCoords(bl);
                     // Just subtract centered emf from twice the face version
                     // More stable for planar flows even without anything fancy
-                    if (ndim > 2) {
-                        emf_pack(bl, E1, 0, k, j, i) = 2 * emf_pack(bl, E1, 0, k, j, i)
-                            - 0.25*(emfc(bl, V1, k, j, i)     + emfc(bl, V1, k, j - 1, i)
-                                  + emfc(bl, V1, k, j - 1, i) + emfc(bl, V1, k - 1, j - 1, i));
-                        emf_pack(bl, E2, 0, k, j, i) = 2 * emf_pack(bl, E2, 0, k, j, i)
-                            - 0.25*(emfc(bl, V2, k, j, i)     + emfc(bl, V2, k, j, i - 1)
-                                  + emfc(bl, V2, k - 1, j, i) + emfc(bl, V2, k - 1, j, i - 1));
-                    }
+                    emf_pack(bl, E1, 0, k, j, i) = 2 * emf_pack(bl, E1, 0, k, j, i)
+                        - 0.25*(emfc(bl, V1, k, j, i)      + emfc(bl, V1, k, j - jd, i)
+                              + emfc(bl, V1, k, j - jd, i) + emfc(bl, V1, k - kd, j - jd, i));
+                    emf_pack(bl, E2, 0, k, j, i) = 2 * emf_pack(bl, E2, 0, k, j, i)
+                        - 0.25*(emfc(bl, V2, k, j, i)      + emfc(bl, V2, k, j, i - id)
+                              + emfc(bl, V2, k - kd, j, i) + emfc(bl, V2, k - kd, j, i - id));
                     emf_pack(bl, E3, 0, k, j, i) = 2 * emf_pack(bl, E3, 0, k, j, i)
-                        - 0.25*(emfc(bl, V3, k, j, i)     + emfc(bl, V3, k, j, i - 1)
-                              + emfc(bl, V3, k, j - 1, i) + emfc(bl, V3, k, j - 1, i - 1));
+                        - 0.25*(emfc(bl, V3, k, j, i)      + emfc(bl, V3, k, j, i - id)
+                              + emfc(bl, V3, k, j - jd, i) + emfc(bl, V3, k, j - jd, i - id));
                 }
             );
         } else if (scheme == "gs05_c") {
@@ -291,7 +305,6 @@ TaskStatus B_CT::CalculateEMF(MeshData<Real> *md)
             pmb0->par_for("B_CT_emf_GS05_c", block.s, block.e, b1.ks, b1.ke, b1.js, b1.je, b1.is, b1.ie,
                 KOKKOS_LAMBDA (const int &bl, const int &k, const int &j, const int &i) {
                     const auto& G = B_U.GetCoords(bl);
-
                     // "simple" flux + upwinding method, Stone & Gardiner '09 but also in Stone+08 etc.
                     // Upwinded differences take in order (1-indexed):
                     // 1. EMF component direction to calculate
@@ -299,6 +312,7 @@ TaskStatus B_CT::CalculateEMF(MeshData<Real> *md)
                     // 3. Direction of upwinding
                     // ...then zone number...
                     // and finally, a boolean indicating a leftward (e.g., i-3/4) vs rightward (i-1/4) position
+                    // TODO(BSP) This doesn't properly support 2D. Yell when it's chosen?
                     if (ndim > 2) {
                         emf_pack(bl, E1, 0, k, j, i) +=
                               0.25*(upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 1, 3, 2, k, j, i, false)
@@ -334,8 +348,8 @@ TaskStatus B_CT::AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
     auto& emf_pack = md->PackVariables(std::vector<std::string>{"B_CT.emf"});
 
     // Figure out indices
-    const IndexRange3 b = KDomain::GetRange(md, IndexDomain::interior, 0, 0);
-    const IndexRange3 b1 = KDomain::GetRange(md, IndexDomain::interior, 0, 1);
+    const IndexRange3 b = KDomain::GetRange(md, IndexDomain::entire, 0, 0);
+    const IndexRange3 b1 = KDomain::GetRange(md, IndexDomain::entire, 0, 1);
     const IndexRange block = IndexRange{0, emf_pack.GetDim(5)-1};
 
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer().get();
@@ -365,17 +379,15 @@ TaskStatus B_CT::AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
             dB_Uf_dt(bl, F2, 0, k, j, i) /= G.Volume<F2>(k, j, i);
         }
     );
-    if (ndim > 2) {
-        pmb0->par_for("B_CT_Circ_3", block.s, block.e, b1.ks, b1.ke, b.js, b.je, b.is, b.ie,
-            KOKKOS_LAMBDA (const int &bl, const int &k, const int &j, const int &i) {
-                const auto& G = dB_Uf_dt.GetCoords(bl);
-                dB_Uf_dt(bl, F3, 0, k, j, i) = (G.Volume<E2>(k, j, i + 1) * emf_pack(bl, E2, 0, k, j, i + 1)
-                                              - G.Volume<E2>(k, j, i)     * emf_pack(bl, E2, 0, k, j, i)
-                                              - G.Volume<E1>(k, j + 1, i) * emf_pack(bl, E1, 0, k, j + 1, i)
-                                              + G.Volume<E1>(k, j, i)     * emf_pack(bl, E1, 0, k, j, i)) / G.Volume<F3>(k, j, i);
-            }
-        );
-    }
+    pmb0->par_for("B_CT_Circ_3", block.s, block.e, b1.ks, b1.ke, b.js, b.je, b.is, b.ie,
+        KOKKOS_LAMBDA (const int &bl, const int &k, const int &j, const int &i) {
+            const auto& G = dB_Uf_dt.GetCoords(bl);
+            dB_Uf_dt(bl, F3, 0, k, j, i) = (G.Volume<E2>(k, j, i + 1) * emf_pack(bl, E2, 0, k, j, i + 1)
+                                            - G.Volume<E2>(k, j, i)     * emf_pack(bl, E2, 0, k, j, i)
+                                            - G.Volume<E1>(k, j + 1, i) * emf_pack(bl, E1, 0, k, j + 1, i)
+                                            + G.Volume<E1>(k, j, i)     * emf_pack(bl, E1, 0, k, j, i)) / G.Volume<F3>(k, j, i);
+        }
+    );
 
     // Explicitly zero polar faces
     // In spherical, zero B2 on X2 face regardless of boundary condition

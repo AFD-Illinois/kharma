@@ -3,35 +3,39 @@
 image: quay.io/centos/centos:stream9
 
 variables:
-  OMP_NUM_THREADS: 4
+  OMP_NUM_THREADS: 6
   OMP_PROC_BIND: "false"
   MPI_EXE: mpirun
   MPI_NUM_PROCS: 2
   OMPI_ALLOW_RUN_AS_ROOT: 1
   OMPI_ALLOW_RUN_AS_ROOT_CONFIRM: 1
   GIT_SUBMODULE_STRATEGY: recursive
+  MAMBA_ROOT_PREFIX: /mamba
+  MAMBA_URL: https://micro.mamba.pm/api/micromamba/linux-64/latest
 
 ### DEFAULT TEST BEHAVIOR ###
 default:
   tags:
     - public-kharma-runner
-  # Be default: install pyharm, then run test in cwd
+  # By default: install pyharm, then run test in cwd
   # For new tests, write one run.sh script which runs/verifies
   # interleaved, and prints a summary of results.
   before_script:
-    - dnf -y install hostname environment-modules git mpich fftw wget
+    - dnf -y install hostname environment-modules git mpich fftw bzip2
     - source /etc/profile
     - module load mpi/mpich-x86_64
-    - export PATH="$HOME/.local/bin:$PATH"
-    - wget -O Miniforge3.sh "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-$(uname)-$(uname -m).sh"
-    - bash Miniforge3.sh -b -p "/home/conda"
-    - source "/home/conda/etc/profile.d/conda.sh"
-    - conda install h5py
-    - git clone https://github.com/AFD-Illinois/pyharm.git /home/pyharm
-    - conda activate
-    - cd /home/pyharm
-    - pip install --user .
+    - eval "$(bin/micromamba shell hook -s posix)"
+    - git clone -b dev https://github.com/AFD-Illinois/pyharm.git /pyharm
+    - micromamba create -y -f /pyharm/environment.yml
+    - micromamba activate pyharm
+    - cd /pyharm && ./install.sh
     - cd -
+  # Always keep logs and plots.  Results should be printed to console!
+  artifacts:
+    when: always
+    paths:
+      - tests/*/*.png
+      - tests/*/*.txt
 
 # Tests can be executed in parallel
 stages:
@@ -42,19 +46,23 @@ stages:
 build:
   stage: build
   variables:
-    NPROC: 4
-    HOST_ARCH: NATIVE
+    NPROC: 12
+    HOST_ARCH: HSW
+    C_NATIVE: gcc
+    CXX_NATIVE: g++
   before_script:
     - dnf -y groupinstall "Development Tools"
     - dnf -y install hostname environment-modules cmake mpich-devel fftw-devel
     - source /etc/profile
     - module load mpi/mpich-x86_64
+    - curl -Ls $MAMBA_URL | tar -xvj bin/micromamba
   script:
     - ./make.sh clean hdf5
   artifacts:
     paths:
       - kharma.*
       - make_args
+      - bin/micromamba
 
 #Run all tests in parallel
 tests:
@@ -64,4 +72,5 @@ tests:
     - ./run.sh
   parallel:
     matrix:
-      - TEST: [bondi, bondi_viscous, bz_monopole, emhdmodes, mhdmodes, noh, regrid, reinit, restart, tilt_init, torus_sanity]
+      - TEST: [all_pars, anisotropic_conduction, bondi, bondi_viscous, bz_monopole, conducting_atmosphere,
+               emhdmodes, mhdmodes, noh, regrid, reinit, resize, restart, tilt_init, torus_sanity]

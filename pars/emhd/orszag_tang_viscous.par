@@ -44,8 +44,10 @@ cfl = 0.9
 gamma = 1.666667
 reconstruction = weno5
 
-<viscosity>
+<emhd>
 on = true
+viscosity = true
+conduction = false
 
 <debug>
 verbose = 0

@@ -39,9 +39,7 @@ transform = null
 <parthenon/time>
 tlim = 2.0
 nlim = -1
-# "RK2" is the only option for implicit solver
-integrator = rk2
-use_dt_light = true
+#use_dt_light = true
 
 <GRMHD>
 cfl = 0.9
@@ -73,8 +71,10 @@ use_qr              = true
 # General verbosity level:
 # 1: general archival info
 # 2: specific debugging logs
+# 3: egregious/temporary notes
 verbose = 0
 # Set to 1 to check each step for wavespeed of zero/NaN & exit
+# 2 enables some rarely seen stuff
 extra_checks = 1
 # Print summary of all flags hit during each step:
 # 1: Number of flags total
@@ -99,7 +99,7 @@ viscosity_alpha  = 1.0
 <parthenon/output0>
 file_type = hdf5
 # Output only final state
-dt = 100.0
+dt = 0.2
 # Output in double due to low amplitude
 single_precision_output = false
 variables = prims.rho, prims.u, prims.uvec, prims.B, prims.q, prims.dP, solve_norm, solve_fail

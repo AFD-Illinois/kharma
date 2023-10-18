@@ -9,10 +9,10 @@ refinement = none
 numlevel = 1
 
 nx1 = 128
-x1min = -0.5
-x1max = 1.5
-ix1_bc = user
-ox1_bc = user
+x1min = -2
+x1max = 2
+ix1_bc = periodic
+ox1_bc = periodic
 
 nx2 = 1
 x2min = -0.01
@@ -31,16 +31,12 @@ nx1 = 128
 nx2 = 1
 nx3 = 1
 
-<boundaries>
-check_inflow_inner_x1 = false
-check_inflow_outer_x1 = false
-
 <coordinates>
 base = cartesian_minkowski
 transform = null
 
 <parthenon/time>
-tlim = 3e-05
+tlim = 10.
 integrator = rk2
 
 <GRMHD>
@@ -49,19 +45,17 @@ gamma = 1.666667
 reconstruction = weno5
 
 <debug>
-verbose = 2
 flag_verbose = 1
 extra_checks = 1
 
 <b_field>
 solver = none
 
-<hubble>
-mach = 1.
-# Optimal number to avoid relativistic effects and keep the ratio between density/internal energy
-v0 = 1e-3
-set_tlim = true
-dyntimes = 1.
+<rest>
+u0 = 1e3
+rho0 = 1e3 
+q = 1
+set_tlim = false
 
 <electrons>
 on = true
@@ -70,7 +64,7 @@ gamma_e = 1.333333
 # This can be anything; we care about evolution of ue
 fel_constant = 1.0
 # To match the ratio eq40
-fel_0 = 0.5
+fel_0 = 1.
 diss_sign = false
 kel_lim = false
 

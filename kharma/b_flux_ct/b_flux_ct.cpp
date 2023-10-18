@@ -92,8 +92,6 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     bool implicit_b = pin->GetOrAddBoolean("b_field", "implicit", false);
     params.Add("implicit", implicit_b);
 
-    params.Add("divb_reducer", AllReduce<Real>());
-
     // FIELDS
     // Vector size: 3x[grid shape]
     std::vector<int> s_vector({NVEC});
@@ -102,11 +100,12 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     MetadataFlag areWeImplicit = (implicit_b) ? Metadata::GetUserFlag("Implicit")
                                               : Metadata::GetUserFlag("Explicit");
 
-    // Flags for B fields. "primitive" form is field, "conserved" is flux
-    std::vector<MetadataFlag> flags_prim = {Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::GetUserFlag("Primitive"),
-                                            Metadata::Restart, Metadata::GetUserFlag("MHD"), areWeImplicit, Metadata::Vector};
-    std::vector<MetadataFlag> flags_cons = {Metadata::Real, Metadata::Cell, Metadata::Independent, Metadata::Conserved, Metadata::Conserved,
-                                            Metadata::WithFluxes, Metadata::FillGhost, Metadata::GetUserFlag("MHD"), areWeImplicit, Metadata::Vector};
+    // Flags for B fields
+    // We always mark conserved B to be sync'd for consistency, since it's strictly required for B_CT/AMR
+    std::vector<MetadataFlag> flags_prim = {Metadata::Real, Metadata::Derived, Metadata::GetUserFlag("Primitive"),
+                                            Metadata::Cell, Metadata::GetUserFlag("MHD"), areWeImplicit, Metadata::Vector};
+    std::vector<MetadataFlag> flags_cons = {Metadata::Real, Metadata::Independent, Metadata::Restart, Metadata::FillGhost, Metadata::WithFluxes, Metadata::Conserved,
+                                            Metadata::Cell, Metadata::GetUserFlag("MHD"), areWeImplicit, Metadata::Vector};
 
     auto m = Metadata(flags_prim, s_vector);
     pkg->AddField("prims.B", m);
@@ -114,7 +113,7 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     pkg->AddField("cons.B", m);
 
     // Declare EMF temporary variables, to avoid malloc/free during each step
-    // These are edge-centered but we only need the interior + 1-zone halo anyway
+    // Technically these are edge-centered but we only need the interior + 1-zone halo anyway, so we store as a vector
     std::vector<MetadataFlag> flags_emf = {Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy};
     m = Metadata(flags_emf, s_vector);
     pkg->AddField("emf", m);
@@ -182,7 +181,7 @@ void MeshUtoP(MeshData<Real> *md, IndexDomain domain, bool coarse)
         }
     );
 }
-void BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
+TaskStatus BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
     auto pmb = rc->GetBlockPointer();
 
@@ -203,8 +202,31 @@ void BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
             B_P(mu, k, j, i) = B_U(mu, k, j, i) / G.gdet(Loci::center, j, i);
         }
     );
+    return TaskStatus::complete;
 }
 
+void MeshPtoU(MeshData<Real> *md, IndexDomain domain, bool coarse)
+{
+    auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
+
+    const auto& B_U = md->PackVariables(std::vector<std::string>{"cons.B"});
+    const auto& B_P = md->PackVariables(std::vector<std::string>{"prims.B"});
+
+    auto bounds = coarse ? pmb0->c_cellbounds : pmb0->cellbounds;
+    IndexRange ib = bounds.GetBoundsI(domain);
+    IndexRange jb = bounds.GetBoundsJ(domain);
+    IndexRange kb = bounds.GetBoundsK(domain);
+    IndexRange vec = IndexRange{0, B_U.GetDim(4)-1};
+    IndexRange block = IndexRange{0, B_U.GetDim(5)-1};
+
+    pmb0->par_for("UtoP_B", block.s, block.e, vec.s, vec.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+        KOKKOS_LAMBDA (const int& b, const int &mu, const int &k, const int &j, const int &i) {
+            const auto& G = B_U.GetCoords(b);
+            // Update the primitive B-fields
+            B_U(b, mu, k, j, i) = B_P(b, mu, k, j, i) * G.gdet(Loci::center, j, i);
+        }
+    );
+}
 void BlockPtoU(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
     auto pmb = rc->GetBlockPointer();
@@ -467,6 +489,7 @@ double MaxDivB(MeshData<Real> *md)
 {
     auto pmesh = md->GetMeshPointer();
     const int ndim = pmesh->ndim;
+    if (ndim < 2) return 0.;
 
     // Packing out here avoids frequent per-mesh packs.  Do we need to?
     auto B_U = md->PackVariables(std::vector<std::string>{"cons.B"});
@@ -547,6 +570,7 @@ void CalcDivB(MeshData<Real> *md, std::string divb_field_name)
 {
     auto pmesh = md->GetMeshPointer();
     const int ndim = pmesh->ndim;
+    if (ndim < 2) return;
 
     // Packing out here avoids frequent per-mesh packs.  Do we need to?
     auto B_U = md->PackVariables(std::vector<std::string>{"cons.B"});

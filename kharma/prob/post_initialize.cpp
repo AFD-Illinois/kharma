@@ -69,6 +69,8 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart)
 
     auto& pkgs = pmesh->packages.AllPackages();
 
+    auto prob_name = pin->GetString("parthenon/job", "problem_id");
+
     // Magnetic field operations
     if (pin->GetString("b_field", "solver") != "none") {
         // If we need to seed a field based on the problem's fluid initialization...
@@ -82,30 +84,16 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart)
             SeedBField(md.get(), pin);
 
             // If we're doing a torus problem or explicitly ask for it,
-            // normalize the magnetic field according to the density
-            bool is_torus = pin->GetString("parthenon/job", "problem_id") == "torus";
+            // normalize the magnetic field according to the max density
+            bool is_torus = prob_name == "torus";
             if (pin->GetOrAddBoolean("b_field", "norm", is_torus)) {
                 NormalizeBField(md.get(), pin);
             }
         }
-
-        // Regardless, if evolving a field we should print max(divB)
-        // divB is not stencil-1 and we may not have run the above.
-        // If we did, we still need another sync, so it works out
-        KBoundaries::FreezeDirichlet(md);
-        KHARMADriver::SyncAllBounds(md);
-
-        if (pkgs.count("B_FluxCT")) {
-            B_FluxCT::PrintGlobalMaxDivB(md.get());
-        } else if (pkgs.count("B_CT")) {
-            B_CT::PrintGlobalMaxDivB(md.get());
-        } else if (pkgs.count("B_CD")) {
-            //B_CD::PrintGlobalMaxDivB(md.get());
-        }
     }
 
-    // Add any hotspots.
-    // Note any other modifications made when restarting should be made around here
+    // Add any hotspots *after* we've seeded fields,
+    // since seeding may be based on density
     if (pin->GetOrAddBoolean("blob", "add_blob", false)) {
         for (auto &pmb : pmesh->block_list) {
             auto rc = pmb->meshblock_data.Get();
@@ -119,9 +107,43 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart)
         // Parthenon restores all parameters (global vars) when restarting,
         // but KHARMA needs a few (currently one) reset instead
         KHARMA::ResetGlobals(pin, pmesh);
+
+        // We only record the conserved magnetic field in KHARMA restarts,
+        // but we record primitive field in iharm3d restarts
+        bool iharm3d_restart = prob_name == "resize_restart";
+        if (!iharm3d_restart) {
+            if (pkgs.count("B_FluxCT")) {
+                B_FluxCT::MeshUtoP(md.get(), IndexDomain::entire);
+            } else if (pkgs.count("B_CT")) {
+                B_CT::MeshUtoP(md.get(), IndexDomain::entire);
+            }
+        } else {
+            if (pkgs.count("B_FluxCT")) {
+                B_FluxCT::MeshPtoU(md.get(), IndexDomain::entire);
+            } else if (pkgs.count("B_CT")) {
+                // TODO this is only true if not cleaning, amend when cleaning supports B_CT
+                throw std::runtime_error("Cannot restart face-centered field from iharm3d!");
+            }
+        }
     }
 
-    // Clean the B field if we've introduced a divergence somewhere
+    if (pin->GetString("b_field", "solver") != "none") {
+        // Regardless of how we initialized, if evolving a field we should print max(divB)
+        // divB is not stencil-1, and we may or may not have initialized or read it
+        // Either way, we still need another sync, so it works out
+        KBoundaries::FreezeDirichlet(md);
+        KHARMADriver::SyncAllBounds(md);
+
+        if (pkgs.count("B_FluxCT")) {
+            B_FluxCT::PrintGlobalMaxDivB(md.get());
+        } else if (pkgs.count("B_CT")) {
+            B_CT::PrintGlobalMaxDivB(md.get());
+        } else if (pkgs.count("B_CD")) {
+            //B_CD::PrintGlobalMaxDivB(md.get());
+        }
+    }
+
+    // Clean the B field, generally for resizing/restarting
     // We call this function any time the package is loaded:
     // if we decided to load it in kharma.cpp, we need to clean.
     if (pkgs.count("B_Cleanup")) {
@@ -131,15 +153,25 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart)
             pouts->MakeOutputs(pmesh, pin, &tm, SignalHandler::OutputSignal::now);
         }
 
-        // This does its own MPI syncs
+        // Cleanup is applied to conserved variables
         B_Cleanup::CleanupDivergence(md);
+
+        if (pin->GetOrAddBoolean("b_cleanup", "output_after_cleanup", false)) {
+            auto tm = SimTime(0., 0., 0, 0, 0, 0, 0.);
+            auto pouts = std::make_unique<Outputs>(pmesh, pin, &tm);
+            pouts->MakeOutputs(pmesh, pin, &tm, SignalHandler::OutputSignal::now);
+        }
+
     }
+
+    // If PtoU was called before the B field was initialized or corrected,
+    // the total energy might be wrong.  Now that we have the field,
+    // wipe away any temporary "totals" which may have omitted it
+    Flux::MeshPtoU(md.get(), IndexDomain::entire);
 
     // Finally, synchronize boundary values.
     // Freeze any Dirichlet physical boundaries as they are now, after cleanup/sync/etc.
     KBoundaries::FreezeDirichlet(md);
     // This is the first sync if there is no B field
     KHARMADriver::SyncAllBounds(md);
-    // And make sure the trivial primitive values are up-to-date
-    //Packages::MeshUtoPExceptMHD(md.get(), IndexDomain::entire, false);
 }

@@ -52,7 +52,9 @@ std::shared_ptr<KHARMAPackage> Flux::Initialize(ParameterInput *pin, std::shared
     // That's what this function is for.
     int nvar = KHARMA::PackDimension(packages.get(), Metadata::WithFluxes);
     std::vector<int> s_flux({nvar});
-    // TODO optionally move all these to faces? Not important yet, no output, more memory
+    if (packages->Get("Globals")->Param<int>("verbose") > 2)
+        std::cout << "Allocating fluxes for " << nvar << " variables" << std::endl;
+    // TODO optionally move all these to faces? Not important yet, & faces have no output, more memory
     std::vector<MetadataFlag> flags_flux = {Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy};
     Metadata m = Metadata(flags_flux, s_flux);
     pkg->AddField("Flux.Pr", m);
@@ -62,7 +64,6 @@ std::shared_ptr<KHARMAPackage> Flux::Initialize(ParameterInput *pin, std::shared
     pkg->AddField("Flux.Fr", m);
     pkg->AddField("Flux.Fl", m);
 
-    // TODO could formally move this to face
     std::vector<int> s_vector({NVEC});
     std::vector<MetadataFlag> flags_speed = {Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy};
     m = Metadata(flags_speed, s_vector);
@@ -70,12 +71,15 @@ std::shared_ptr<KHARMAPackage> Flux::Initialize(ParameterInput *pin, std::shared
     pkg->AddField("Flux.cmin", m);
 
     // Preserve all velocities at faces, for upwinded constrained transport
-    if (packages->AllPackages().count("B_CT")) {
+    if (packages->AllPackages().count("B_CT")) { // TODO & GS05_c
         std::vector<MetadataFlag> flags_vel = {Metadata::Real, Metadata::Face, Metadata::Derived, Metadata::OneCopy};
         m = Metadata(flags_vel, s_vector);
         pkg->AddField("Flux.vr", m);
         pkg->AddField("Flux.vl", m);
     }
+
+    // We register the geometric (\Gamma*T) source here
+    pkg->AddSource = Flux::AddGeoSource;
 
     EndFlag();
     return pkg;
@@ -164,11 +168,18 @@ TaskStatus Flux::BlockPtoU_Send(MeshBlockData<Real> *rc, IndexDomain domain, boo
 
     const EMHD::EMHD_parameters& emhd_params = EMHD::GetEMHDParameters(pmb->packages);
 
-    // Pack variables
+    // Pack variables. We never want to run this on the B field
+    using FC = Metadata::FlagCollection;
+    auto cons_flags = FC(Metadata::Conserved, Metadata::Cell, Metadata::GetUserFlag("HD"));
+    if (pmb->packages.AllPackages().count("EMHD"))
+        cons_flags = cons_flags + FC(Metadata::Conserved, Metadata::Cell, Metadata::GetUserFlag("EMHDVar"));
     PackIndexMap prims_map, cons_map;
-    const auto& P = rc->PackVariables({Metadata::GetUserFlag("Primitive")}, prims_map);
-    const auto& U = rc->PackVariables({Metadata::Conserved}, cons_map);
+    const auto& P = rc->PackVariables({Metadata::GetUserFlag("Primitive"), Metadata::Cell}, prims_map);
+    const auto& U = rc->PackVariables(cons_flags, cons_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
+
+    // Return if we're not syncing U & P at all (e.g. edges)
+    if (P.GetDim(4) == 0) return TaskStatus::complete;
 
     auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
     IndexRange ib = bounds.GetBoundsI(domain);

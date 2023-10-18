@@ -37,7 +37,7 @@ flag_verbose = 0
 <GRMHD>
 cfl = 0.7
 gamma = 1.444444
-reconstruction = weno5
+reconstruction = linear_mc
 
 <b_field>
 type = bz_monopole

@@ -1,60 +1,83 @@
+#!/usr/bin/env python3
+
+import os, sys
+
 import numpy as np
-import os, glob, h5py, sys
+from scipy.interpolate import splrep
+from scipy.integrate import solve_ivp
+
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 
 import pyharm
+import pyharm.grmhd.bondi as bondi
+import pyharm.plots.plot_dumps as pplt
 
+# Check that the computed Bondi solution matches
+# the analytic Bondi solution in rho,u and the
+# ODE results in dP
 
-if __name__=='__main__':
+if __name__ == '__main__':
     outputdir = './'
     kharmadir = '../../'
 
-    NVAR  = 3
-    VARS  = ['rho', 'u', 'dP']
+    NVAR  = 4
+    VARS  = ['rho', 'u', 'dP', 'B']
     RES   = [int(r) for r in sys.argv[1].split(",")]
     LONG  = sys.argv[2]
     SHORT = sys.argv[3]
-    
+
     L1  = np.zeros([len(RES), NVAR])
     fit = np.zeros([len(RES), NVAR])
 
     for r, res in enumerate(RES):
-            
-        # load analytic result
-        fpath = os.path.join(os.curdir,'bondi_viscous_{}_default'.format(res), 'bondi_analytic_{}.txt'.format(res))
-        rho_analytic, uu_analytic, dP_analytic = np.loadtxt(fpath, usecols=(0,1,3), unpack=True)
-        
-        # load code data
-        dump = pyharm.load_dump("emhd_2d_{}_end_emhd2d_weno.phdf".format(res))
-        
-        params    = dump.params
-        rho       = np.squeeze(dump['RHO'])
-        uu        = np.squeeze(dump['UU'])
-        dP_tilde  = np.squeeze(dump['prims'][8,Ellipsis])
 
-        t   = dump['t']
-        gam = params['gam']
-        tau = params['tau']
-        eta = params['eta']
-        higher_order_terms = params['higher_order_terms']		
+        # Load dump for parameters
+        dump = pyharm.load_dump("emhd_2d_{}_end_emhd2d_weno.phdf".format(res), cache_conn=True)
 
-    # compute dP
-        if higher_order_terms=="true":
+        # Compute analytic reference
+        mdot, rc, gam = dump['bondi/mdot'], dump['bondi/rs'], dump['gam']
+        eta, tau = dump['emhd/eta'], dump['emhd/tau']
+        state = bondi.get_bondi_fluid_state(mdot, rc, gam, dump.grid)
+        state.params['eta'] = eta
+        state.params['tau'] = tau
+
+        # compute dP either by adjusting dump to include higher-order terms,
+        # or the computed state to exclude them
+        if dump['emhd/higher_order_terms']:
             print("Res: "+str(res)+"; higher order terms enabled")
-            P        = (gam - 1.) * uu
-            Theta    = P / rho
-            nu_emhd  = eta / rho
-            dP       = dP_tilde * np.sqrt(nu_emhd * rho * Theta / tau)
+            Theta    = (dump['gam'] - 1.) * dump['u'] / dump['rho']
+            # we're directly modifying the cache here. Inadvisable
+            dump.cache['dP'] = dump['dP'] * np.sqrt(eta * Theta / tau)
+            state.cache['dP'] = bondi.compute_dP(mdot, rc, gam, dump.grid, eta, tau, start=np.mean(dump['dP'][-1]))
         else:
-            dP = dP_tilde
-        
+            Theta    = (dump['gam'] - 1.) * dump['u'] / dump['rho']
+            state.cache['dP'] = bondi.compute_dP(mdot, rc, gam, dump.grid, eta, tau, start=np.mean(dump['dP'][-1])) / \
+                                np.sqrt(eta * Theta / tau)
+
+        # Plot
+        for var in ['rho', 'u', 'B1', 'dP']:
+            fig = plt.figure(figsize=(6,6))
+            ax = fig.add_subplot(1,1,1)
+            pplt.plot_diff_xz(ax, dump, state, var)
+            fig.savefig("compare_{}_{}.png".format(var, res))
+            plt.close(fig)
+
+        radius = np.mean(dump.grid['r'], axis=(1,2))
+        plt.plot(radius, state['dP'], label='dP ODE')
+        plt.plot(radius, np.mean(dump['dP'], axis=(1,2)), label='dP code')
+        plt.plot(radius, np.mean(dump['dP'], axis=(1,2)) - state['dP'], label='dP diff')
+        plt.legend()
+        plt.savefig('compare_dP1d_{}.png'.format(res))
+        plt.close()
+
         # compute L1 norm
-        L1[r,0] = np.mean(np.fabs(rho - rho_analytic[:,None]))
-        L1[r,1] = np.mean(np.fabs(uu  - uu_analytic[:,None]))
-        L1[r,2] = np.mean(np.fabs(dP  - dP_analytic[:,None])[1:-1])
+        L1[r,0] = np.mean(np.fabs(dump['rho'] - state['rho']))
+        L1[r,1] = np.mean(np.fabs(dump['u']  - state['u']))
+        L1[r,2] = np.mean(np.fabs(np.mean(dump['dP'], axis=(1,2))  - state['dP'])[2:])
+        L1[r,3] = np.mean(np.fabs(dump['B1']  - state['B1']))
 
     # MEASURE CONVERGENCE
     L1 = np.array(L1)

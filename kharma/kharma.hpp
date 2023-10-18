@@ -56,11 +56,11 @@ void ResetGlobals(ParameterInput *pin, Mesh *pmesh);
 /**
  * Update variables in Globals package based on Parthenon state incl. SimTime struct
  */
-void MeshPreStepUserWorkInLoop(Mesh *pmesh, ParameterInput *pin, const SimTime &tm);
+void PreStepWork(Mesh *pmesh, ParameterInput *pin, const SimTime &tm);
 /**
  * Update variables in Globals package based on Parthenon state incl. SimTime struct
  */
-void MeshPostStepUserWorkInLoop(Mesh *pmesh, ParameterInput *pin, const SimTime &tm);
+void PostStepWork(Mesh *pmesh, ParameterInput *pin, const SimTime &tm);
 
 /**
  * Task to add a package.  Lets us queue up all the packages we want in a task list, *then* load them
@@ -117,15 +117,16 @@ inline bool FieldIsOutput(ParameterInput *pin, std::string name)
  */
 inline int PackDimension(Packages_t* packages, Metadata::FlagCollection fc)
 {
-    // We want to exclude anything specific to B field cleanup & not used elsewhere
-    // (confusingly, this isn't *necessarily* everything in the B_Cleanup package)
-    if (packages->AllPackages().count("B_Cleanup"))
-        fc = fc - Metadata::GetUserFlag("B_Cleanup");
+    // We want to exclude anything specific to startup processes e.g. B field cleanup,
+    // & not used elsewhere
+    if (packages->AllPackages().count("StartupOnly"))
+        fc = fc - Metadata::GetUserFlag("StartupOnly");
 
     // Count dimensions (1 for scalars + vector lengths) of each package's variables
     int nvar = 0;
     for (auto pkg : packages->AllPackages()) {
         nvar += pkg.second->GetPackDimension(fc);
+        // std::cout << pkg.first << " variables: " << pkg.second->GetPackDimension(fc) << std::endl;
     }
     return nvar;
 }

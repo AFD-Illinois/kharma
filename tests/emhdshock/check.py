@@ -9,7 +9,7 @@ from pyharm.grid import make_some_grid
 
 if __name__=='__main__':
 	outputdir = './'
-	kharmadir = '/home/vdhruv2/kharma'
+	kharmadir = '../../'
 	RES = [int(r) for r in sys.argv[1].split(",")]
 	
 	CONDUCTION = 1
@@ -25,13 +25,13 @@ if __name__=='__main__':
 	for r, res in enumerate(RES):
 
 		# load analytic result
-		rho_analytic	 = np.loadtxt(os.path.join(kharmadir, 'kharma/prob/emhd/', 'shock_soln_{}_default'.format(res), 'shock_soln_rho.txt'))
-		u_analytic		 = np.loadtxt(os.path.join(kharmadir, 'kharma/prob/emhd/', 'shock_soln_{}_default'.format(res), 'shock_soln_u.txt'))
-		u1_analytic		 = np.loadtxt(os.path.join(kharmadir, 'kharma/prob/emhd/', 'shock_soln_{}_default'.format(res), 'shock_soln_u1.txt'))
+		rho_analytic	 = np.loadtxt(os.path.join(outputdir, 'shock_soln_{}_default'.format(res), 'shock_soln_rho.txt'))
+		u_analytic		 = np.loadtxt(os.path.join(outputdir, 'shock_soln_{}_default'.format(res), 'shock_soln_u.txt'))
+		u1_analytic		 = np.loadtxt(os.path.join(outputdir, 'shock_soln_{}_default'.format(res), 'shock_soln_u1.txt'))
 		if CONDUCTION:
-			q_analytic   = np.loadtxt(os.path.join(kharmadir, 'kharma/prob/emhd/', 'shock_soln_{}_default'.format(res), 'shock_soln_q.txt'))
-		dP_analytic    = np.loadtxt(os.path.join(kharmadir, 'kharma/prob/emhd/', 'shock_soln_{}_default'.format(res), 'shock_soln_dP.txt'))
-		x_analytic     = np.loadtxt(os.path.join(kharmadir, 'kharma/prob/emhd/', 'shock_soln_{}_default'.format(res), 'shock_soln_xCoords.txt'))
+			q_analytic   = np.loadtxt(os.path.join(outputdir, 'shock_soln_{}_default'.format(res), 'shock_soln_q.txt'))
+		dP_analytic    = np.loadtxt(os.path.join(outputdir, 'shock_soln_{}_default'.format(res), 'shock_soln_dP.txt'))
+		x_analytic     = np.loadtxt(os.path.join(outputdir, 'shock_soln_{}_default'.format(res), 'shock_soln_xCoords.txt'))
 
 		# load code data
 		dfile = h5py.File('emhd_1d_{}_end.h5'.format(res), 'r')

@@ -35,9 +35,10 @@
 
 #include "types.hpp"
 
-// PHYSICS-RELATED
-// TODO take & accumulate TaskStatus?  Useful for ::incomplete if we ever want to do that
-// TODO continue meshification until all is mesh
+// TODO clearly this needs a better concept of ordering.
+// probably this means something that returns an ordered list of packages
+// for the given operation, based on... declared dependencies?
+// it could also use full meshification & return codes
 
 TaskStatus Packages::FixFlux(MeshData<Real> *md)
 {
@@ -57,11 +58,10 @@ TaskStatus Packages::FixFlux(MeshData<Real> *md)
 TaskStatus Packages::BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
     Flag("BlockUtoP");
-    // Apply UtoP from B_CT, as this fills B primitive var for the GRMHD UtoP
-    // TODO could maybe call this in Inverter, or handle all ordering there, or something
+    // Apply UtoP from B_CT first, as this fills cons.B at cell centers
     auto pmb = rc->GetBlockPointer();
-    auto pkgs = pmb->packages.AllPackages();
-    if (pkgs.count("B_CT")) {
+    auto kpackages = rc->GetBlockPointer()->packages.AllPackagesOfType<KHARMAPackage>();
+    if (kpackages.count("B_CT")) {
         KHARMAPackage *pkpackage = pmb->packages.Get<KHARMAPackage>("B_CT");
         if (pkpackage->BlockUtoP != nullptr) {
             Flag("BlockUtoP_B_CT");
@@ -69,9 +69,17 @@ TaskStatus Packages::BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool
             EndFlag();
         }
     }
-    auto kpackages = rc->GetBlockPointer()->packages.AllPackagesOfType<KHARMAPackage>();
+    // Then GRMHD, as some packages require GRMHD prims in place for U->P
+    if (kpackages.count("Inverter")) {
+        KHARMAPackage *pkpackage = pmb->packages.Get<KHARMAPackage>("Inverter");
+        if (pkpackage->BlockUtoP != nullptr) {
+            Flag("BlockUtoP_Inverter");
+            pkpackage->BlockUtoP(rc, domain, coarse);
+            EndFlag();
+        }
+    }
     for (auto kpackage : kpackages) {
-        if (kpackage.second->BlockUtoP != nullptr && kpackage.first != "B_CT") {
+        if (kpackage.second->BlockUtoP != nullptr && kpackage.first != "B_CT" && kpackage.first != "Inverter") {
             Flag("BlockUtoP_"+kpackage.first);
             kpackage.second->BlockUtoP(rc, domain, coarse);
             EndFlag();
@@ -93,9 +101,18 @@ TaskStatus Packages::MeshUtoP(MeshData<Real> *md, IndexDomain domain, bool coars
 TaskStatus Packages::BoundaryUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
     Flag("BoundaryUtoP");
+    auto pmb = rc->GetBlockPointer();
     auto kpackages = rc->GetBlockPointer()->packages.AllPackagesOfType<KHARMAPackage>();
+    if (kpackages.count("Inverter")) {
+        KHARMAPackage *pkpackage = pmb->packages.Get<KHARMAPackage>("Inverter");
+        if (pkpackage->BoundaryUtoP != nullptr) {
+            Flag("BoundaryUtoP_Inverter");
+            pkpackage->BoundaryUtoP(rc, domain, coarse);
+            EndFlag();
+        }
+    }
     for (auto kpackage : kpackages) {
-        if (kpackage.second->BoundaryUtoP != nullptr) {
+        if (kpackage.second->BoundaryUtoP != nullptr && kpackage.first != "Inverter") {
             Flag("BoundaryUtoP_"+kpackage.first);
             kpackage.second->BoundaryUtoP(rc, domain, coarse);
             EndFlag();
@@ -105,14 +122,32 @@ TaskStatus Packages::BoundaryUtoP(MeshBlockData<Real> *rc, IndexDomain domain, b
     return TaskStatus::complete;
 }
 
-TaskStatus Packages::BoundaryPtoU(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
+TaskStatus Packages::BoundaryPtoUElseUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
-    Flag("BoundaryPtoU");
+    Flag("DomainBoundaryLockstep");
+    auto pmb = rc->GetBlockPointer();
     auto kpackages = rc->GetBlockPointer()->packages.AllPackagesOfType<KHARMAPackage>();
+    // Some downstream UtoP rely on GRMHD prims, some cons
+    if (kpackages.count("GRMHD")) {
+        KHARMAPackage *pkpackage = pmb->packages.Get<KHARMAPackage>("GRMHD");
+        if (pkpackage->DomainBoundaryPtoU != nullptr) {
+            Flag("DomainBoundaryPtoU_GRMHD");
+            pkpackage->DomainBoundaryPtoU(rc, domain, coarse);
+            EndFlag();
+        } else if (pkpackage->BoundaryUtoP != nullptr) { // This won't be called
+            Flag("DomainBoundaryUtoP_GRMHD");
+            pkpackage->BoundaryUtoP(rc, domain, coarse);
+            EndFlag();
+        }
+    }
     for (auto kpackage : kpackages) {
-        if (kpackage.second->BoundaryPtoU != nullptr) {
-            Flag("BoundaryPtoU_"+kpackage.first);
-            kpackage.second->BoundaryPtoU(rc, domain, coarse);
+        if (kpackage.second->DomainBoundaryPtoU != nullptr && kpackage.first != "GRMHD") {
+            Flag("DomainBoundaryPtoU_"+kpackage.first);
+            kpackage.second->DomainBoundaryPtoU(rc, domain, coarse);
+            EndFlag();
+        } else if (kpackage.second->BoundaryUtoP != nullptr && kpackage.first != "GRMHD") {
+            Flag("DomainBoundaryUtoP_"+kpackage.first);
+            kpackage.second->BoundaryUtoP(rc, domain, coarse);
             EndFlag();
         }
     }
@@ -204,28 +239,28 @@ void Packages::UserWorkBeforeOutput(MeshBlock *pmb, ParameterInput *pin)
     EndFlag();
 }
 
-void Packages::PreStepUserWorkInLoop(Mesh *pmesh, ParameterInput *pin, const SimTime &tm)
+void Packages::PreStepWork(Mesh *pmesh, ParameterInput *pin, const SimTime &tm)
 {
-    Flag("PreStepUserWorkInLoop");
+    Flag("PreStepWork");
     auto kpackages = pmesh->packages.AllPackagesOfType<KHARMAPackage>();
     for (auto kpackage : kpackages) {
-        if (kpackage.second->MeshPreStepUserWorkInLoop != nullptr) {
-            Flag("PreStepUserWorkInLoop_"+kpackage.first);
-            kpackage.second->MeshPreStepUserWorkInLoop(pmesh, pin, tm);
+        if (kpackage.second->PreStepWork != nullptr) {
+            Flag("PreStepWork_"+kpackage.first);
+            kpackage.second->PreStepWork(pmesh, pin, tm);
             EndFlag();
         }
     }
     EndFlag();
 }
 
-void Packages::PostStepUserWorkInLoop(Mesh *pmesh, ParameterInput *pin, const SimTime &tm)
+void Packages::PostStepWork(Mesh *pmesh, ParameterInput *pin, const SimTime &tm)
 {
-    Flag("PostStepUserWorkInLoop");
+    Flag("PostStepWork");
     auto kpackages = pmesh->packages.AllPackagesOfType<KHARMAPackage>();
     for (auto kpackage : kpackages) {
-        if (kpackage.second->MeshPostStepUserWorkInLoop != nullptr) {
-            Flag("PostStepUserWorkInLoop_"+kpackage.first);
-            kpackage.second->MeshPostStepUserWorkInLoop(pmesh, pin, tm);
+        if (kpackage.second->PostStepWork != nullptr) {
+            Flag("PostStepWork_"+kpackage.first);
+            kpackage.second->PostStepWork(pmesh, pin, tm);
             EndFlag();
         }
     }
@@ -250,3 +285,16 @@ void Packages::PostStepDiagnostics(Mesh *pmesh, ParameterInput *pin, const SimTi
     EndFlag();
 }
 
+void Packages::PostExecute(Mesh *pmesh, ParameterInput *pin, const SimTime &tm)
+{
+    Flag("KHARMAPostExecute");
+    auto kpackages = pmesh->packages.AllPackagesOfType<KHARMAPackage>();
+    for (auto kpackage : kpackages) {
+        if (kpackage.second->PostExecute != nullptr) {
+            Flag("PostExecute_"+kpackage.first);
+            kpackage.second->PostExecute(pmesh, pin, tm);
+            EndFlag();
+        }
+    }
+    EndFlag();
+}

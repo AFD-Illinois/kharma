@@ -20,7 +20,7 @@ KHARMA_DIR=~/kharma-dev
 WRAPPER=$KHARMA_DIR/bin/select_gpu_polaris
 
 # Gotta specify this inline since bsub doesn't do arguments
-PARFILE=~/kharma-dev/pars/scaling_torus.par
+PARFILE=~/kharma-dev/pars/benchmark/scaling_torus.par
 # Allocate in full nodes, vs individual gpus
 min_nodes=1
 min_gpus=1 #$(( $NRANKS * $min_nodes ))

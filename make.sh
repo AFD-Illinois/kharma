@@ -201,10 +201,10 @@ fi
 # Allow for a custom linker program, but use CXX by
 # default as system linker may be older/incompatible
 if [[ -v LINKER ]]; then
-  EXTRA_FLAGS="-DCMAKE_LINKER=$LINKER"
+  EXTRA_FLAGS="$EXTRA_FLAGS -DCMAKE_LINKER=$LINKER"
 fi
 if [[ "$ARGS" == *"special_link_line"* ]]; then
-  EXTRA_FLAGS="-DCMAKE_CXX_LINK_EXECUTABLE='<CMAKE_LINKER> <FLAGS> <CMAKE_CXX_LINK_FLAGS> <LINK_FLAGS> <OBJECTS> -o <TARGET> <LINK_LIBRARIES>'"
+  EXTRA_FLAGS="$EXTRA_FLAGS -DCMAKE_CXX_LINK_EXECUTABLE='<CMAKE_LINKER> <FLAGS> <CMAKE_CXX_LINK_FLAGS> <LINK_FLAGS> <OBJECTS> -o <TARGET> <LINK_LIBRARIES>'"
 fi
 
 # Avoid warning on nvcc pragmas Intel doesn't like
@@ -284,7 +284,7 @@ fi
 if [[ "$ARGS" == *"clean"* ]]; then
 
   cd external/parthenon
-  if [[ $(( $(git --version | cut -d '.' -f 2) > 35 )) ]]; then
+  if [[ $(( $(git --version | cut -d '.' -f 2) > 35 )) == "1" ]]; then
     git apply --quiet ../patches/parthenon-*.patch
   else
     echo "make.sh note: You may see errors applying patches below. These are normal."
@@ -314,7 +314,7 @@ if [[ "$ARGS" == *"clean"* ]]; then
     -DKokkos_ENABLE_CUDA=$ENABLE_CUDA \
     -DKokkos_ENABLE_SYCL=$ENABLE_SYCL \
     -DKokkos_ENABLE_HIP=$ENABLE_HIP \
-    $EXTRA_FLAGS
+    "$EXTRA_FLAGS"
 
   if [[ "$ARGS" == *"dryrun"* ]]; then
     set +x

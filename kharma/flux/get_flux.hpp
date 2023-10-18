@@ -119,13 +119,18 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
     const auto& Fr_all = md->PackVariables(std::vector<std::string>{"Flux.Fr"});
 
     // Get the domain size
-    const IndexRange3 b = KDomain::GetRange(md, IndexDomain::interior, -1, 1);
+    const IndexRange3 b = KDomain::GetRange(md, IndexDomain::interior, -1, 2);
     // Get other sizes we need
     const int n1 = pmb0->cellbounds.ncellsi(IndexDomain::entire);
     const IndexRange block = IndexRange{0, cmax.GetDim(5) - 1};
     const int nvar = U_all.GetDim(4);
-    //std::cout << "Calculating fluxes for " << cmax.GetDim(5) << " blocks, "
-    //          << nvar << " variables (" << P_all.GetDim(4) << " primitives)" << std::endl;
+
+    if (globals.Get<int>("verbose") > 2) {
+        std::cout << "Calculating fluxes for " << cmax.GetDim(5) << " blocks, "
+                << nvar << " variables (" << P_all.GetDim(4) << " primitives)" << std::endl;
+        m_u.print(); m_p.print();
+        emhd_params.print();
+    }
 
     // Allocate scratch space
     const int scratch_level = 1; // 0 is actual scratch (tiny); 1 is HBM
@@ -340,6 +345,7 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
     EndFlag();
 
     // Save the face velocities for upwinding/CT later
+    // TODO only for certain GS'05
     if (packages.AllPackages().count("B_CT")) {
         Flag("GetFlux_"+std::to_string(dir)+"_store_vel");
         const auto& vl_all = md->PackVariables(std::vector<std::string>{"Flux.vl"});

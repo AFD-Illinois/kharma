@@ -34,9 +34,11 @@ inner_x1 = dirichlet
 outer_x1 = dirichlet
 check_inflow_inner_x1 = false
 check_inflow_outer_x1 = false
+outflow_EMHD_inner_x1 = true
+outflow_EMHD_outer_x1 = true
 
 <parthenon/time>
-tlim       = 150.
+tlim       = 400.
 
 <driver>
 type = imex
@@ -89,8 +91,7 @@ extra_checks = 1
 file_type = hdf5
 dt = 10
 single_precision_output = false
-#variables = prims, cons, solve_norm, solve_fail
-variables = prims.rho, prims.u, prims.uvec, prims.B, prims.q, solve_norm, solve_fail
+variables = prims, solve_norm, solve_fail
 ghost_zones = true
 
 <parthenon/output1>

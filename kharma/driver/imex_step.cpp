@@ -84,7 +84,7 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
         if (use_jcon) {
             pmesh->mesh_data.Add("preserve");
             // Above only copies on allocate -- ensure we copy every step
-            Copy<MeshData<Real>>({}, base.get(), pmesh->mesh_data.Get("preserve").get());
+            Copy<MeshData<Real>>({Metadata::Cell}, base.get(), pmesh->mesh_data.Get("preserve").get());
         }
         if (use_implicit) {
             // When solving, we need a temporary copy with any explicit updates,
@@ -132,26 +132,25 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
         auto t_fluxes = KHARMADriver::AddFluxCalculations(t_start_recv_bound, tl, recon, md_sub_step_init.get());
 
         // If we're in AMR, correct fluxes from neighbors
-        auto t_flux_bounds = t_fluxes;
+        auto t_emf = t_fluxes;
         if (pmesh->multilevel || use_b_ct) {
-            auto t_emf = t_fluxes;
-            // TODO this MPI sync should be bundled into fluxcorr
+            tl.AddTask(t_fluxes, parthenon::LoadAndSendFluxCorrections, md_sub_step_init);
+            auto t_recv_flux = tl.AddTask(t_fluxes, parthenon::ReceiveFluxCorrections, md_sub_step_init);
+            auto t_flux_bounds = tl.AddTask(t_recv_flux, parthenon::SetFluxCorrections, md_sub_step_init);
+            auto t_emf = t_flux_bounds;
             if (use_b_ct) {
                 // Pull out a container of only EMF to synchronize
                 auto &md_emf_only = pmesh->mesh_data.AddShallow("EMF", std::vector<std::string>{"B_CT.emf"}); // TODO this gets weird if we partition
-                auto t_emf_local = tl.AddTask(t_fluxes, B_CT::CalculateEMF, md_sub_step_init.get());
-                auto t_emf = KHARMADriver::AddMPIBoundarySync(t_emf_local, tl, md_emf_only);
+                auto t_emf_local = tl.AddTask(t_flux_bounds, B_CT::CalculateEMF, md_sub_step_init.get());
+                auto t_emf = KHARMADriver::AddBoundarySync(t_emf_local, tl, md_emf_only);
             }
-            tl.AddTask(t_emf, parthenon::LoadAndSendFluxCorrections, md_sub_step_init);
-            auto t_recv_flux = tl.AddTask(t_fluxes, parthenon::ReceiveFluxCorrections, md_sub_step_init);
-            t_flux_bounds = tl.AddTask(t_recv_flux, parthenon::SetFluxCorrections, md_sub_step_init);
         }
 
         // Any package modifications to the fluxes.  e.g.:
         // 1. CT calculations for B field transport
         // 2. Zero fluxes through poles
         // etc 
-        auto t_fix_flux = tl.AddTask(t_flux_bounds, Packages::FixFlux, md_sub_step_init.get());
+        auto t_fix_flux = tl.AddTask(t_emf, Packages::FixFlux, md_sub_step_init.get());
 
         // Apply the fluxes to calculate a change in cell-centered values "md_flux_src"
         auto t_flux_div = tl.AddTask(t_fix_flux, Update::FluxDivergence<MeshData<Real>>, md_sub_step_init.get(), md_flux_src.get());
@@ -237,11 +236,12 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
             auto t_implicit_step = tl.AddTask(t_copy_linesearch, Implicit::Step, md_full_step_init.get(), md_sub_step_init.get(), 
                                          md_flux_src.get(), md_linesearch.get(), md_solver.get(), integrator->beta[stage-1] * integrator->dt);
 
-            // Copy the entire solver state (everything defined on the grid, i.e. 'Cell') into the final state md_sub_step_final
+            // Copy the entire solver state (everything defined on the grid, incl. our new Face variables) into the final state md_sub_step_final
             // If we're entirely explicit, we just declare these equal
-            t_implicit = tl.AddTask(t_implicit_step, Copy<MeshData<Real>>, std::vector<MetadataFlag>({Metadata::Cell}),
+            auto t_implicit_c = tl.AddTask(t_implicit_step, Copy<MeshData<Real>>, std::vector<MetadataFlag>({Metadata::Cell}),
                                     md_solver.get(), md_sub_step_final.get());
-
+            t_implicit = tl.AddTask(t_implicit_step, WeightedSumDataFace, std::vector<MetadataFlag>({Metadata::Face}),
+                                    md_solver.get(), md_solver.get(), 1.0, 0.0, md_sub_step_final.get());
         }
 
         // Apply all floors & limits (GRMHD,EMHD,etc), but do *not* immediately correct UtoP failures with FixUtoP --
@@ -250,7 +250,7 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
         // but hasn't been tested to do so yet.
         auto t_floors = tl.AddTask(t_implicit, Packages::MeshApplyFloors, md_sub_step_final.get(), IndexDomain::interior);
 
-        KHARMADriver::AddMPIBoundarySync(t_floors, tl, md_sub_step_final);
+        KHARMADriver::AddBoundarySync(t_floors, tl, md_sub_step_final);
     }
 
     // Async Region: Any post-sync tasks.  Fixups, timestep & AMR tagging.
