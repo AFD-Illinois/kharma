@@ -148,7 +148,7 @@ TaskStatus SeedBFieldType(MeshBlockData<Real> *rc, ParameterInput *pin, IndexDom
                                  amp_B1, amp_B2, amp_B3,
                                  amp2_B1, amp2_B2, amp2_B3,
                                  null1, B_Pf2, null2);
-                    B_Uf(F2, 0, k, j, i) = B_Pf2;
+                    B_Uf(F2, 0, k, j, i) = B_Pf2 * gdet;
 
                     G.coord_embed(k, j, i, Loci::face3, Xembed);
                     gdet = G.gdet(Loci::face3, j, i);
@@ -297,8 +297,7 @@ TaskStatus SeedBFieldType(MeshBlockData<Real> *rc, ParameterInput *pin, IndexDom
                 }
             });
 
-        if (pkgs.count("B_CT"))
-        {
+        if (pkgs.count("B_CT")) {
             auto B_Uf = rc->PackVariables(std::vector<std::string>{"cons.fB"});
             // This fills a couple zones outside the exact interior with bad data
             // Careful of that w/e.g. Dirichlet bounds.
@@ -340,7 +339,7 @@ TaskStatus SeedBFieldType(MeshBlockData<Real> *rc, ParameterInput *pin, IndexDom
             }
             // Finally, make sure we initialize the primitive field too
             B_FluxCT::BlockUtoP(rc, domain);
-        } // TODO B_CD!!
+        }
 
         return TaskStatus::complete;
     }

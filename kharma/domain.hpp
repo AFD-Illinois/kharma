@@ -112,7 +112,6 @@ inline IndexRange3 GetRange(T data, IndexDomain domain, int left_halo=0, int rig
     // Compute sizes with specified halo zones included in non-trivial dimensions
     const int& ndim = GetNDim(data);
     // If ghost & not x1 direction
-    // if 
     const IndexRange il = IndexRange{ib.s + left_halo, ib.e + right_halo};
     const IndexRange jl = (ndim > 1) ? IndexRange{jb.s + left_halo, jb.e + right_halo} : jb;
     const IndexRange kl = (ndim > 2) ? IndexRange{kb.s + left_halo, kb.e + right_halo} : kb;
