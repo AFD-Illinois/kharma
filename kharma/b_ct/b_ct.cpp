@@ -82,16 +82,12 @@ std::shared_ptr<KHARMAPackage> B_CT::Initialize(ParameterInput *pin, std::shared
     // FIELDS
 
     // Flags for B fields on faces.
-    // We don't mark these as "Primitive" and "Conserved" else they'd be bundled
+    // We don't mark these as "Conserved" else they'd be bundled
     // with all the cell vars in a bunch of places we don't want
     // Also note we *always* sync B field conserved var
-    std::vector<MetadataFlag> flags_prim_f = {Metadata::Real, Metadata::Face, Metadata::Derived,
-                                            Metadata::GetUserFlag("Explicit")};
     std::vector<MetadataFlag> flags_cons_f = {Metadata::Real, Metadata::Face, Metadata::Independent,
                                               Metadata::GetUserFlag("Explicit"), Metadata::FillGhost}; // TODO TODO Restart
-    auto m = Metadata(flags_prim_f);
-    pkg->AddField("prims.fB", m);
-    m = Metadata(flags_cons_f);
+    auto m = Metadata(flags_cons_f);
     if (!lazy_prolongation)
         m.RegisterRefinementOps<ProlongateSharedMinMod, RestrictAverage, ProlongateInternalOlivares>();
     else
@@ -172,7 +168,6 @@ TaskStatus B_CT::BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coa
     auto pmb = rc->GetBlockPointer();
     const int ndim = pmb->pmy_mesh->ndim;
     auto B_Uf = rc->PackVariables(std::vector<std::string>{"cons.fB"});
-    auto B_Pf = rc->PackVariables(std::vector<std::string>{"prims.fB"});
     auto B_U = rc->PackVariables(std::vector<std::string>{"cons.B"});
     auto B_P = rc->PackVariables(std::vector<std::string>{"prims.B"});
     const auto& G = pmb->coords;
@@ -182,26 +177,22 @@ TaskStatus B_CT::BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coa
     // TODO get rid of prims on faces probably
 
     // Update the primitive B-fields on faces
-    const IndexRange3 bf = KDomain::GetRange(rc, domain, 0, 1, coarse);
-    pmb->par_for("UtoP_B", bf.ks, bf.ke, bf.js, bf.je, bf.is, bf.ie,
-        KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-            // TODO will we need face area here?
-            B_Pf(F1, 0, k, j, i) = B_Uf(F1, 0, k, j, i) / G.gdet(Loci::face1, j, i);
-            B_Pf(F2, 0, k, j, i) = B_Uf(F2, 0, k, j, i) / G.gdet(Loci::face2, j, i);
-            B_Pf(F3, 0, k, j, i) = B_Uf(F3, 0, k, j, i) / G.gdet(Loci::face3, j, i);
-        }
-    );
-    // Average the primitive vals for zone centers
     const IndexRange3 bc = KDomain::GetRange(rc, domain, coarse);
+
+    // Average the primitive vals to zone centers
     pmb->par_for("UtoP_B_center", bc.ks, bc.ke, bc.js, bc.je, bc.is, bc.ie,
         KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-            B_P(V1, k, j, i) = (B_Pf(F1, 0, k, j, i) +  B_Pf(F1, 0, k, j, i + 1)) / 2;
-            B_P(V2, k, j, i) = (ndim > 1) ? (B_Pf(F2, 0, k, j, i) +  B_Pf(F2, 0, k, j + 1, i)) / 2
-                                          : B_Pf(F2, 0, k, j, i);
-            B_P(V3, k, j, i) = (ndim > 2) ? (B_Pf(F3, 0, k, j, i) +  B_Pf(F3, 0, k + 1, j, i)) / 2
-                                          : B_Pf(F3, 0, k, j, i);
+            B_P(V1, k, j, i) = (B_Uf(F1, 0, k, j, i) / G.gdet(Loci::face1, j, i)
+                              + B_Uf(F1, 0, k, j, i + 1) / G.gdet(Loci::face1, j, i + 1)) / 2;
+            B_P(V2, k, j, i) = (ndim > 1) ? (B_Uf(F2, 0, k, j, i) / G.gdet(Loci::face2, j, i)
+                                           + B_Uf(F2, 0, k, j + 1, i) / G.gdet(Loci::face2, j + 1, i)) / 2
+                                           : B_Uf(F2, 0, k, j, i) / G.gdet(Loci::face2, j, i);
+            B_P(V3, k, j, i) = (ndim > 2) ? (B_Uf(F3, 0, k, j, i) / G.gdet(Loci::face3, j, i)
+                                           + B_Uf(F3, 0, k + 1, j, i) / G.gdet(Loci::face3, j, i)) / 2
+                                          : B_Uf(F3, 0, k, j, i) / G.gdet(Loci::face3, j, i);
         }
     );
+    // Recover conserved B at centers
     pmb->par_for("UtoP_B_centerPtoU", 0, NVEC-1, bc.ks, bc.ke, bc.js, bc.je, bc.is, bc.ie,
         KOKKOS_LAMBDA (const int &v, const int &k, const int &j, const int &i) {
             B_U(v, k, j, i) = B_P(v, k, j, i) * G.gdet(Loci::center, j, i);
