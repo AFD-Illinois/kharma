@@ -174,7 +174,7 @@ int main(int argc, char *argv[])
     const int &verbose = pmesh->packages.Get("Globals")->Param<int>("verbose");
     if(MPIRank0() && verbose > 0) {
         // Print a list of variables as Parthenon used to (still does by default)
-        std::cout << "#Variables in use:\n" << *(pmesh->resolved_packages) << std::endl;
+        std::cout << "Variables in use:\n" << *(pmesh->resolved_packages) << std::endl;
 
         // Print a list of all loaded packages.  Surprisingly useful for debugging init logic
         std::cout << "Packages in use: " << std::endl;
@@ -182,6 +182,11 @@ int main(int argc, char *argv[])
             std::cout << package.first << std::endl;
         }
         std::cout << std::endl;
+
+        // Print the number of meshblocks and ranks in use
+        std::cout << "Running with " << pmesh->block_list.size() << " total meshblocks, " << MPINumRanks() << " MPI ranks." << std::endl;
+        // TODO could print entire distribution if it gets interesting
+        std::cout << "Blocks on rank " << MPIMyRank() << ": " << pmesh->GetNumMeshBlocksThisRank() << "\n" << std::endl;
 
         // Write all parameters etc. to console if we should be especially wordy
         if ((verbose > 1) && MPIRank0()) {

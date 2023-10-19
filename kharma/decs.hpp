@@ -135,7 +135,6 @@ KOKKOS_INLINE_FUNCTION int dir_of(const Loci loc)
     }
 }
 
-#ifdef MPI_PARALLEL
 /**
  * Am I rank 0?  Saves typing vs comparing the global every time
  */
@@ -143,12 +142,17 @@ inline bool MPIRank0()
 {
     return (parthenon::Globals::my_rank == 0 ? true : false);
 }
-#else
 /**
- * DUMMY version for no-MPI case: constexpr return for slight optimizations.
+ * Numbers I could just get as globals, but renamed for consistency
  */
-inline bool MPIRank0() { return true; }
-#endif // MPI_PARALLEL
+inline int MPINumRanks()
+{
+    return parthenon::Globals::nranks;
+}
+inline int MPIMyRank()
+{
+    return parthenon::Globals::my_rank;
+}
 
 // A few generic "NDArray" overloads for readability.
 // TODO torn on futures of these: they're explicitly per-block

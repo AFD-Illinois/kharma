@@ -62,9 +62,6 @@ void B_Cleanup::CleanupDivergence(std::shared_ptr<MeshData<Real>>& md) {}
 using namespace parthenon;
 using namespace parthenon::solvers;
 
-// TODO get the transport manager working later
-// Needs a call every X steps option, probably return a TaskList or TaskRegion
-
 std::shared_ptr<KHARMAPackage> B_Cleanup::Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages)
 {
     auto pkg = std::make_shared<KHARMAPackage>("B_Cleanup");
