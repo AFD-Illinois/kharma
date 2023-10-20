@@ -70,7 +70,7 @@ check_inflow_outer_x1 = false
 check_inflow_inner_x1 = true
 # Force outflow bounds for EMHD vars
 outflow_EMHD_inner_x1 = true
-outflow_EMHD_outer_x1 = false
+outflow_EMHD_outer_x1 = true
 
 <debug>
 verbose = 1
