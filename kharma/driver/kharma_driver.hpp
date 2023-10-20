@@ -165,12 +165,12 @@ class KHARMADriver : public MultiStageDriver {
         static TaskStatus WeightedSumDataFace(const std::vector<MetadataFlag> &flags, MeshData<Real> *in1, MeshData<Real> *in2, const Real w1, const Real w2,
                                 MeshData<Real> *out)
         {
-            Kokkos::Profiling::pushRegion("Task_WeightedSumData");
+            Kokkos::Profiling::pushRegion("Task_WeightedSumDataFace");
             const auto &x = in1->PackVariables(flags);
             const auto &y = in2->PackVariables(flags);
             const auto &z = out->PackVariables(flags);
             parthenon::par_for(
-                DEFAULT_LOOP_PATTERN, "WeightedSumData", DevExecSpace(), 0, x.GetDim(5) - 1, 0,
+                DEFAULT_LOOP_PATTERN, "WeightedSumDataFace", DevExecSpace(), 0, x.GetDim(5) - 1, 0,
                 x.GetDim(4) - 1, 0, x.GetDim(3) - 1, 0, x.GetDim(2) - 1, 0, x.GetDim(1) - 1,
                 KOKKOS_LAMBDA(const int b, const int l, const int k, const int j, const int i) {
                     // TOOD(someone) This is potentially dangerous and/or not intended behavior
@@ -182,7 +182,7 @@ class KHARMADriver : public MultiStageDriver {
                         z(b, F3, l, k, j, i) = w1 * x(b, F3, l, k, j, i) + w2 * y(b, F3, l, k, j, i);
                     }
                 });
-            Kokkos::Profiling::popRegion(); // Task_WeightedSumData
+            Kokkos::Profiling::popRegion(); // Task_WeightedSumDataFace
             return TaskStatus::complete;
         }
 

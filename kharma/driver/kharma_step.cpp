@@ -105,7 +105,7 @@ TaskCollection KHARMADriver::MakeDefaultTaskCollection(BlockList_t &blocks, int 
                 // At the end of the step, updating "mbd_sub_step_final" updates the base
                 // So we have to keep a copy at the beginning to calculate jcon
                 // We have to explicitly copy, since after the first step `Add`==`Get`
-                Copy<MeshBlockData<Real>>({}, base.get(), pmb->meshblock_data.Add("preserve").get());
+                Copy<MeshBlockData<Real>>({Metadata::Cell}, base.get(), pmb->meshblock_data.Add("preserve").get());
             }
         }
     }
