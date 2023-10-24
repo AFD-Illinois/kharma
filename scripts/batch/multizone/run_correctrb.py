@@ -176,10 +176,7 @@ def run_multizone(**kwargs):
             args['b_field/solver'] = "flux_ct"
             args['b_field/bz'] = kwargs['bz']
             # Compress coordinates to save time
-            if kwargs['coord'] is not None:
-                args['coordinates/transform'] = kwargs['coord']
-                args['coordinates/lin_frac'] = 0.7
-            elif kwargs['nx2'] >= 128 and not kwargs['onezone']:
+            if kwargs['nx2'] >= 128 and not kwargs['onezone']:
                 args['coordinates/transform'] = "fmks"
                 args['coordinates/mks_smooth'] = 0.
                 args['coordinates/poly_xt'] = 0.8
@@ -203,6 +200,11 @@ def run_multizone(**kwargs):
             else:
                 # use weno5
                 args['GRMHD/reconstruction'] = "weno5"
+        if kwargs['coord'] is not None:
+            args['coordinates/transform'] = kwargs['coord']
+            # TODO these are only for wks
+            args['coordinates/lin_frac'] = 0.75
+            args['GRMHD/reconstruction'] = "linear_vl"
         args['GRMHD/gamma'] = kwargs["gamma"]
         args['floors/rho_min_geom'] = kwargs['rhomin']
         args['floors/u_min_geom'] = kwargs['umin']
