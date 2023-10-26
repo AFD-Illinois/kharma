@@ -58,7 +58,7 @@
 hsize_t static_max(int i, int n) { return static_cast<hsize_t>(m::max(i, n)); }
 hsize_t static_min(int i, int n) { return static_cast<hsize_t>(m::min(i, n)); }
 
-void ReadIharmRestartHeader(std::string fname, std::unique_ptr<ParameterInput>& pin)
+void ReadIharmRestartHeader(std::string fname, ParameterInput *pin)
 {
     // Read the restart file and set parameters that need to be specified at early loading
     hdf5_open(fname.c_str());

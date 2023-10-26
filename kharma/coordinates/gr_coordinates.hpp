@@ -151,15 +151,19 @@ public:
     KOKKOS_INLINE_FUNCTION void coord(const int& k, const int& j, const int& i, const Loci& loc, GReal X[GR_DIM]) const;
     // Coordinates of the embedding system, usually r,th,phi[KS] or x1,x2,x3[Cartesian]
     KOKKOS_INLINE_FUNCTION void coord_embed(const int& k, const int& j, const int& i, const Loci& loc, GReal Xembed[GR_DIM]) const;
-    // Coordinates in a specific 
+    // Coordinates in specific systems (slow!)
+    KOKKOS_INLINE_FUNCTION GReal r(const int& k, const int& j, const int& i, const Loci& loc=Loci::center) const;
+    KOKKOS_INLINE_FUNCTION GReal th(const int& k, const int& j, const int& i, const Loci& loc=Loci::center) const;
+    KOKKOS_INLINE_FUNCTION GReal phi(const int& k, const int& j, const int& i, const Loci& loc=Loci::center) const;
+    KOKKOS_INLINE_FUNCTION GReal x(const int& k, const int& j, const int& i, const Loci& loc=Loci::center) const;
+    KOKKOS_INLINE_FUNCTION GReal y(const int& k, const int& j, const int& i, const Loci& loc=Loci::center) const;
+    KOKKOS_INLINE_FUNCTION GReal z(const int& k, const int& j, const int& i, const Loci& loc=Loci::center) const;
 
     // Transformations using the cached geometry
     KOKKOS_INLINE_FUNCTION void lower(const Real vcon[GR_DIM], Real vcov[GR_DIM],
                                         const int& k, const int& j, const int& i, const Loci loc) const;
     KOKKOS_INLINE_FUNCTION void raise(const Real vcov[GR_DIM], Real vcon[GR_DIM],
                                         const int& k, const int& j, const int& i, const Loci loc) const;
-
-    // TODO Indexing functions and named slices to make it comfy
 };
 
 /**
@@ -198,24 +202,6 @@ KOKKOS_INLINE_FUNCTION void GRCoordinates::coord(const int& k, const int& j, con
     }
 }
 
-#if FAST_CARTESIAN
-KOKKOS_INLINE_FUNCTION void GRCoordinates::coord_embed(const int& k, const int& j, const int& i, const Loci& loc, GReal Xembed[GR_DIM]) const
-{
-    // Only supports null transform
-    coord(k, j, i, loc, Xembed);
-}
-#else
-/**
- * TODO Currently CANNOT be called from device-side code
- */
-KOKKOS_INLINE_FUNCTION void GRCoordinates::coord_embed(const int& k, const int& j, const int& i, const Loci& loc, GReal Xembed[GR_DIM]) const
-{
-    GReal Xnative[GR_DIM];
-    coord(k, j, i, loc, Xnative);
-    coords.coord_to_embed(Xnative, Xembed);
-}
-#endif
-
 KOKKOS_INLINE_FUNCTION void GRCoordinates::lower(const Real vcon[GR_DIM], Real vcov[GR_DIM],
                                         const int& k, const int& j, const int& i, const Loci loc) const
 {
@@ -235,24 +221,24 @@ KOKKOS_INLINE_FUNCTION void GRCoordinates::raise(const Real vcov[GR_DIM], Real v
 // NORMAL: Cache each zone center and return cached value thereafter
 #if FAST_CARTESIAN
 KOKKOS_INLINE_FUNCTION Real GRCoordinates::gcon(const Loci loc, const int& j, const int& i, const int mu, const int nu) const
-    {return -2*(mu == 0 && nu == 0) + (mu == nu);}
+{ return -2*(mu == 0 && nu == 0) + (mu == nu); }
 KOKKOS_INLINE_FUNCTION Real GRCoordinates::gcov(const Loci loc, const int& j, const int& i, const int mu, const int nu) const
-    {return -2*(mu == 0 && nu == 0) + (mu == nu);}
+{ return -2*(mu == 0 && nu == 0) + (mu == nu); }
 KOKKOS_INLINE_FUNCTION Real GRCoordinates::gdet(const Loci loc, const int& j, const int& i) const
-    {return 1;}
+{ return 1; }
 KOKKOS_INLINE_FUNCTION Real GRCoordinates::conn(const int& j, const int& i, const int mu, const int nu, const int lam) const
-    {return 0;}
+{ return 0; }
 KOKKOS_INLINE_FUNCTION Real GRCoordinates::gdet_conn(const int& j, const int& i, const int mu, const int nu, const int lam) const
-    {return 0;}
+{ return 0; }
 
 KOKKOS_INLINE_FUNCTION void GRCoordinates::gcon(const Loci loc, const int& j, const int& i, Real gcon[GR_DIM][GR_DIM]) const
-    {DLOOP2 gcon[mu][nu] = -2*(mu == 0 && nu == 0) + (mu == nu);}
+{DLOOP2 gcon[mu][nu] = -2*(mu == 0 && nu == 0) + (mu == nu);}
 KOKKOS_INLINE_FUNCTION void GRCoordinates::gcov(const Loci loc, const int& j, const int& i, Real gcov[GR_DIM][GR_DIM]) const
-    {DLOOP2 gcov[mu][nu] = -2*(mu == 0 && nu == 0) + (mu == nu);}
+{DLOOP2 gcov[mu][nu] = -2*(mu == 0 && nu == 0) + (mu == nu);}
 KOKKOS_INLINE_FUNCTION void GRCoordinates::conn(const int& j, const int& i, Real conn[GR_DIM][GR_DIM][GR_DIM]) const
-    {DLOOP3 conn[mu][nu][lam] = 0;}
+{DLOOP3 conn[mu][nu][lam] = 0;}
 KOKKOS_INLINE_FUNCTION void GRCoordinates::gdet_conn(const int& j, const int& i, Real gdet_conn[GR_DIM][GR_DIM][GR_DIM]) const
-    {DLOOP3 gdet_conn[mu][nu][lam] = 0;}
+{DLOOP3 gdet_conn[mu][nu][lam] = 0;}
 #elif NO_CACHE
 // TODO these are currently VERY SLOW.  Rework them to generate just the desired component. (TODO gdet?...)
 // Except conn.  We never need conn fast.
@@ -304,22 +290,107 @@ KOKKOS_INLINE_FUNCTION void GRCoordinates::conn(const int& j, const int& i, Real
 }
 #else
 KOKKOS_INLINE_FUNCTION Real GRCoordinates::gcon(const Loci loc, const int& j, const int& i, const int mu, const int nu) const
-    {return gcon_direct(loc, j, i, mu, nu);}
+{ return gcon_direct(loc, j, i, mu, nu); }
 KOKKOS_INLINE_FUNCTION Real GRCoordinates::gcov(const Loci loc, const int& j, const int& i, const int mu, const int nu) const
-    {return gcov_direct(loc, j, i, mu, nu);}
+{ return gcov_direct(loc, j, i, mu, nu); }
 KOKKOS_INLINE_FUNCTION Real GRCoordinates::gdet(const Loci loc, const int& j, const int& i) const
-    {return gdet_direct(loc, j, i);}
+{ return gdet_direct(loc, j, i); }
 KOKKOS_INLINE_FUNCTION Real GRCoordinates::conn(const int& j, const int& i, const int mu, const int nu, const int lam) const
-    {return conn_direct(j, i, mu, nu, lam);}
+{ return conn_direct(j, i, mu, nu, lam); }
 KOKKOS_INLINE_FUNCTION Real GRCoordinates::gdet_conn(const int& j, const int& i, const int mu, const int nu, const int lam) const
-    {return gdet_conn_direct(j, i, mu, nu, lam);}
+{ return gdet_conn_direct(j, i, mu, nu, lam); }
 
 KOKKOS_INLINE_FUNCTION void GRCoordinates::gcon(const Loci loc, const int& j, const int& i, Real gcon[GR_DIM][GR_DIM]) const
-    {DLOOP2 gcon[mu][nu] = gcon_direct(loc, j, i, mu, nu);}
+{ DLOOP2 gcon[mu][nu] = gcon_direct(loc, j, i, mu, nu); }
 KOKKOS_INLINE_FUNCTION void GRCoordinates::gcov(const Loci loc, const int& j, const int& i, Real gcov[GR_DIM][GR_DIM]) const
-    {DLOOP2 gcov[mu][nu] = gcov_direct(loc, j, i, mu, nu);}
+{ DLOOP2 gcov[mu][nu] = gcov_direct(loc, j, i, mu, nu); }
 KOKKOS_INLINE_FUNCTION void GRCoordinates::conn(const int& j, const int& i, Real conn[GR_DIM][GR_DIM][GR_DIM]) const
-    {DLOOP3 conn[mu][nu][lam] = conn_direct(j, i, mu, nu, lam);}
+{ DLOOP3 conn[mu][nu][lam] = conn_direct(j, i, mu, nu, lam); }
 KOKKOS_INLINE_FUNCTION void GRCoordinates::gdet_conn(const int& j, const int& i, Real gdet_conn[GR_DIM][GR_DIM][GR_DIM]) const
-    {DLOOP3 gdet_conn[mu][nu][lam] = gdet_conn_direct(j, i, mu, nu, lam);}
+{ DLOOP3 gdet_conn[mu][nu][lam] = gdet_conn_direct(j, i, mu, nu, lam); }
+
+#endif
+
+// Two implementations: Fast Cartesian can skip some things
+#if FAST_CARTESIAN
+KOKKOS_INLINE_FUNCTION void GRCoordinates::coord_embed(const int& k, const int& j, const int& i, const Loci& loc, GReal Xembed[GR_DIM]) const
+{
+    // Only supports null transform
+    coord(k, j, i, loc, Xembed);
+}
+
+// TODO this properly.  We just never call r/th/phi in Cart yet anyway
+KOKKOS_INLINE_FUNCTION void r(const int& k, const int& j, const int& i) const
+{ return 0; }
+KOKKOS_INLINE_FUNCTION void th(const int& k, const int& j, const int& i) const
+{ return 0; }
+KOKKOS_INLINE_FUNCTION void phi(const int& k, const int& j, const int& i) const
+{ return 0; }
+KOKKOS_INLINE_FUNCTION void x(const int& k, const int& j, const int& i) const
+{
+    GReal Xembed[GR_DIM];
+    coord(k, j, i, loc, Xembed);
+    return Xembed[1];
+}
+KOKKOS_INLINE_FUNCTION void y(const int& k, const int& j, const int& i) const
+{
+    GReal Xembed[GR_DIM];
+    coord(k, j, i, loc, Xembed);
+    return Xembed[2];
+}
+KOKKOS_INLINE_FUNCTION void z(const int& k, const int& j, const int& i) const
+{
+    GReal Xembed[GR_DIM];
+    coord(k, j, i, loc, Xembed);
+    return Xembed[3];
+}
+
+#else
+
+KOKKOS_INLINE_FUNCTION void GRCoordinates::coord_embed(const int& k, const int& j, const int& i, const Loci& loc, GReal Xembed[GR_DIM]) const
+{
+    GReal Xnative[GR_DIM];
+    coord(k, j, i, loc, Xnative);
+    coords.coord_to_embed(Xnative, Xembed);
+}
+
+// These are basically just call-throughs with coord()
+// TODO should we cache, esp for e.g. floors?
+KOKKOS_INLINE_FUNCTION GReal GRCoordinates::r(const int& k, const int& j, const int& i, const Loci& loc) const
+{
+    GReal Xnative[GR_DIM];
+    coord(k, j, i, loc, Xnative);
+    return coords.r_of(Xnative);
+}
+KOKKOS_INLINE_FUNCTION GReal GRCoordinates::th(const int& k, const int& j, const int& i, const Loci& loc) const
+{
+    GReal Xnative[GR_DIM];
+    coord(k, j, i, loc, Xnative);
+    return coords.th_of(Xnative);
+}
+KOKKOS_INLINE_FUNCTION GReal GRCoordinates::phi(const int& k, const int& j, const int& i, const Loci& loc) const
+{
+    GReal Xnative[GR_DIM];
+    coord(k, j, i, loc, Xnative);
+    return coords.phi_of(Xnative);
+}
+KOKKOS_INLINE_FUNCTION GReal GRCoordinates::x(const int& k, const int& j, const int& i, const Loci& loc) const
+{
+    GReal Xnative[GR_DIM];
+    coord(k, j, i, loc, Xnative);
+    return coords.x_of(Xnative);
+}
+KOKKOS_INLINE_FUNCTION GReal GRCoordinates::y(const int& k, const int& j, const int& i, const Loci& loc) const
+{
+    GReal Xnative[GR_DIM];
+    coord(k, j, i, loc, Xnative);
+    return coords.y_of(Xnative);
+}
+KOKKOS_INLINE_FUNCTION GReal GRCoordinates::z(const int& k, const int& j, const int& i, const Loci& loc) const
+{
+    GReal Xnative[GR_DIM];
+    coord(k, j, i, loc, Xnative);
+    return coords.z_of(Xnative);
+}
+
 #endif

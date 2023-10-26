@@ -8,7 +8,7 @@
  * Read the header of an iharm3d HDF5 restart file, and set appropriate parameters
  * Call this before mesh creation!
  */
-void ReadIharmRestartHeader(std::string fname, std::unique_ptr<ParameterInput>& pin);
+void ReadIharmRestartHeader(std::string fname, ParameterInput *pin);
 
 /**
  * Read data from an iharm3d restart file. Does not support >1 meshblock in Parthenon

@@ -35,9 +35,9 @@
 
 #include "decs.hpp"
 
-#include "boundary_types.hpp"
+#include "boundaries/boundary_types.hpp"
 #include "kharma_package.hpp"
-#include "reductions_types.hpp"
+#include "reductions/reductions_types.hpp"
 
 #include <parthenon/parthenon.hpp>
 

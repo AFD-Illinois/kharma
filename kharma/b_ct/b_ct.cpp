@@ -41,8 +41,11 @@
 #include "kharma_driver.hpp"
 
 #include <parthenon/parthenon.hpp>
+#include <prolong_restrict/pr_ops.hpp>
 
 using namespace parthenon;
+using parthenon::refinement_ops::ProlongateSharedMinMod;
+using parthenon::refinement_ops::RestrictAverage;
 
 std::shared_ptr<KHARMAPackage> B_CT::Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages)
 {
@@ -74,8 +77,6 @@ std::shared_ptr<KHARMAPackage> B_CT::Initialize(ParameterInput *pin, std::shared
 
     // FIELDS
 
-    // TODO maybe one day implicit?
-
     // Flags for B fields on faces.
     // We don't mark these as "Primitive" and "Conserved" else they'd be bundled
     // with all the cell vars in a bunch of places we don't want
@@ -86,6 +87,7 @@ std::shared_ptr<KHARMAPackage> B_CT::Initialize(ParameterInput *pin, std::shared
     auto m = Metadata(flags_prim_f);
     pkg->AddField("prims.fB", m);
     m = Metadata(flags_cons_f);
+    m.RegisterRefinementOps<ProlongateSharedMinMod, RestrictAverage, ProlongateInternalOlivares>();
     pkg->AddField("cons.fB", m);
 
     // Cell-centered versions.  Needed for BS, not for other schemes.
@@ -115,8 +117,8 @@ std::shared_ptr<KHARMAPackage> B_CT::Initialize(ParameterInput *pin, std::shared
     // CALLBACKS
 
     // We implement a source term replacement, rather than addition,
-    // but same difference, really
-    //pkg->AddSource = B_CT::AddSource;
+    // but same difference really
+    pkg->AddSource = B_CT::AddSource;
 
     // Also ensure that prims get filled, both during step and on boundaries
     //pkg->MeshUtoP = B_CT::MeshUtoP;
@@ -125,7 +127,6 @@ std::shared_ptr<KHARMAPackage> B_CT::Initialize(ParameterInput *pin, std::shared
 
     // Register the other callbacks
     pkg->PostStepDiagnosticsMesh = B_CT::PostStepDiagnostics;
-    // TODO TODO prolongation/restriction will be registered here too
 
     // The definition of MaxDivB we care about actually changes per-transport,
     // so calculating it is handled by the transport package
@@ -138,15 +139,15 @@ std::shared_ptr<KHARMAPackage> B_CT::Initialize(ParameterInput *pin, std::shared
 
     // List (vector) of HistoryOutputVars that will all be enrolled as output variables
     // LATER
-    // parthenon::HstVar_list hst_vars = {};
-    // hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::max, B_CT::MaxDivB, "MaxDivB"));
-    // // Event horizon magnetization.  Might be the same or different for different representations?
-    // if (pin->GetBoolean("coordinates", "spherical")) {
-    //     hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, ReducePhi0, "Phi_0"));
-    //     hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, ReducePhi5, "Phi_EH"));
-    // }
-    // // add callbacks for HST output to the Params struct, identified by the `hist_param_key`
-    // pkg->AddParam<>(parthenon::hist_param_key, hst_vars);
+    parthenon::HstVar_list hst_vars = {};
+    hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::max, B_CT::MaxDivB, "MaxDivB"));
+    // Event horizon magnetization.  Might be the same or different for different representations?
+    if (pin->GetBoolean("coordinates", "spherical")) {
+        // hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, ReducePhi0, "Phi_0"));
+        // hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, ReducePhi5, "Phi_EH"));
+    }
+    // add callbacks for HST output to the Params struct, identified by the `hist_param_key`
+    pkg->AddParam<>(parthenon::hist_param_key, hst_vars);
 
     return pkg;
 }
@@ -169,6 +170,8 @@ void B_CT::BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     auto B_P = rc->PackVariables(std::vector<std::string>{"prims.B"});
     const auto& G = pmb->coords;
 
+    // TODO get rid of prims on faces probably
+
     // Update the primitive B-fields on faces
     const IndexRange3 bf = KDomain::GetRange(rc, domain, 0, 1, coarse);
     pmb->par_for("UtoP_B", bf.ks, bf.ke, bf.js, bf.je, bf.is, bf.ie,
@@ -179,7 +182,6 @@ void B_CT::BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
             B_Pf(F3, 0, k, j, i) = B_Uf(F3, 0, k, j, i) / G.gdet(Loci::face3, j, i);
         }
     );
-    Kokkos::fence();
     // Average the primitive vals for zone centers (TODO right?)
     const IndexRange3 bc = KDomain::GetRange(rc, domain, coarse);
     pmb->par_for("UtoP_B_center", bc.ks, bc.ke, bc.js, bc.je, bc.is, bc.ie,
@@ -191,18 +193,14 @@ void B_CT::BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
                                           : B_Pf(F3, 0, k, j, i);
         }
     );
-    Kokkos::fence();
     pmb->par_for("UtoP_B_centerPtoU", 0, NVEC-1, bc.ks, bc.ke, bc.js, bc.je, bc.is, bc.ie,
         KOKKOS_LAMBDA (const int &v, const int &k, const int &j, const int &i) {
             B_U(v, k, j, i) = B_P(v, k, j, i) * G.gdet(Loci::center, j, i);
         }
     );
-    Kokkos::fence();
 }
 
-// TODO this isn't really a source... it's a replacement of the
-// face-centered fields according to constrained transport rules
-TaskStatus B_CT::UpdateFaces(std::shared_ptr<MeshData<Real>>& md, std::shared_ptr<MeshData<Real>>& mdudt)
+TaskStatus B_CT::CalculateEMF(MeshData<Real> *md)
 {
     auto pmesh = md->GetMeshPointer();
     const int ndim = pmesh->ndim;
@@ -226,16 +224,18 @@ TaskStatus B_CT::UpdateFaces(std::shared_ptr<MeshData<Real>>& md, std::shared_pt
                 // TODO will we need gdet/cell length here?
                 const auto& G = B_U.GetCoords(bl);
                 if (ndim > 2) {
-                    emf_pack(bl, E1, 0, k, j, i) =
+                    emf_pack(bl, E1, 0, k, j, i) = G.Dxc<1>(i) *
                         0.25*(B_U(bl).flux(X2DIR, V3, k - 1, j, i)/G.Dxc<3>(k-1) + B_U(bl).flux(X2DIR, V3, k, j, i)/G.Dxc<3>(k)
                             - B_U(bl).flux(X3DIR, V2, k, j - 1, i)/G.Dxc<2>(j-1) - B_U(bl).flux(X3DIR, V2, k, j, i)/G.Dxc<2>(j));
-                    emf_pack(bl, E2, 0, k, j, i) =
+                    emf_pack(bl, E2, 0, k, j, i) = G.Dxc<2>(j) *
                         0.25*(B_U(bl).flux(X3DIR, V1, k, j, i - 1)/G.Dxc<1>(i-1) + B_U(bl).flux(X3DIR, V1, k, j, i)/G.Dxc<1>(i)
                             - B_U(bl).flux(X1DIR, V3, k - 1, j, i)/G.Dxc<3>(k-1) - B_U(bl).flux(X1DIR, V3, k, j, i)/G.Dxc<3>(k));
                 }
                 emf_pack(bl, E3, 0, k, j, i) =
-                    0.25*(B_U(bl).flux(X1DIR, V2, k, j - 1, i)/G.Dxc<2>(j-1) + B_U(bl).flux(X1DIR, V2, k, j, i)/G.Dxc<2>(j)
-                        - B_U(bl).flux(X2DIR, V1, k, j, i - 1)/G.Dxc<1>(i-1) - B_U(bl).flux(X2DIR, V1, k, j, i)/G.Dxc<1>(i));
+                    0.25*(G.FaceArea<1>(k, j - 1, i) * B_U(bl).flux(X1DIR, V2, k, j - 1, i) / G.Dxc<2>(j-1)
+                        + G.FaceArea<1>(k, j, i)     * B_U(bl).flux(X1DIR, V2, k, j, i)     / G.Dxc<2>(j)
+                        - G.FaceArea<2>(k, j, i - 1) * B_U(bl).flux(X2DIR, V1, k, j, i - 1) / G.Dxc<1>(i-1)
+                        - G.FaceArea<2>(k, j, i)     * B_U(bl).flux(X2DIR, V1, k, j, i)     / G.Dxc<1>(i));
             }
         );
     } else if (scheme == "sg09") {
@@ -268,69 +268,111 @@ TaskStatus B_CT::UpdateFaces(std::shared_ptr<MeshData<Real>>& md, std::shared_pt
                 // ...then zone number...
                 // and finally, a boolean indicating a leftward (e.g., i-3/4) vs rightward (i-1/4) position
                 if (ndim > 2) {
-                    emf_pack(bl, E1, 0, k, j, i) =
+                    emf_pack(bl, E1, 0, k, j, i) = G.Dxc<1>(i) *
                         0.25*(B_U(bl).flux(X2DIR, V3, k - 1, j, i)/G.Dxc<3>(k-1) + B_U(bl).flux(X2DIR, V3, k, j, i)/G.Dxc<3>(k)
                             - B_U(bl).flux(X3DIR, V2, k, j - 1, i)/G.Dxc<2>(j-1) - B_U(bl).flux(X3DIR, V2, k, j, i)/G.Dxc<2>(j))
-                        + (1./4)*(upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 1, 3, 2, k, j, i, false)
-                                - upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 1, 3, 2, k, j, i, true))
-                        + (1./4)*(upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 1, 2, 3, k, j, i, false)
-                                - upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 1, 2, 3, k, j, i, true));
-                    emf_pack(bl, E2, 0, k, j, i) =
+                        + 0.25*(upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 1, 3, 2, k, j, i, false)
+                              - upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 1, 3, 2, k, j, i, true))
+                        + 0.25*(upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 1, 2, 3, k, j, i, false)
+                              - upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 1, 2, 3, k, j, i, true));
+                    emf_pack(bl, E2, 0, k, j, i) = G.Dxc<2>(j) *
                         0.25*(B_U(bl).flux(X3DIR, V1, k, j, i - 1)/G.Dxc<1>(i-1) + B_U(bl).flux(X3DIR, V1, k, j, i)/G.Dxc<1>(i)
                             - B_U(bl).flux(X1DIR, V3, k - 1, j, i)/G.Dxc<3>(k-1) - B_U(bl).flux(X1DIR, V3, k, j, i)/G.Dxc<3>(k))
-                        + (1./4)*(upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 2, 1, 3, k, j, i, false)
-                                - upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 2, 1, 3, k, j, i, true))
-                        + (1./4)*(upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 2, 3, 1, k, j, i, false)
-                                - upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 2, 3, 1, k, j, i, true));
+                        + 0.25*(upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 2, 1, 3, k, j, i, false)
+                              - upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 2, 1, 3, k, j, i, true))
+                        + 0.25*(upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 2, 3, 1, k, j, i, false)
+                              - upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 2, 3, 1, k, j, i, true));
                 }
-                emf_pack(bl, E3, 0, k, j, i) =
+                emf_pack(bl, E3, 0, k, j, i) = G.Dxc<3>(k) *
                     0.25*(B_U(bl).flux(X1DIR, V2, k, j - 1, i)/G.Dxc<2>(j-1) + B_U(bl).flux(X1DIR, V2, k, j, i)/G.Dxc<2>(j)
                         - B_U(bl).flux(X2DIR, V1, k, j, i - 1)/G.Dxc<1>(i-1) - B_U(bl).flux(X2DIR, V1, k, j, i)/G.Dxc<1>(i))
-                    + (1./4)*(upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 3, 2, 1, k, j, i, false)
-                            - upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 3, 2, 1, k, j, i, true))
-                    + (1./4)*(upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 3, 1, 2, k, j, i, false)
-                            - upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 3, 1, 2, k, j, i, true));
+                    + 0.25*(upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 3, 2, 1, k, j, i, false)
+                          - upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 3, 2, 1, k, j, i, true))
+                    + 0.25*(upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 3, 1, 2, k, j, i, false)
+                          - upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 3, 1, 2, k, j, i, true));
             }
         );
     } else {
         throw std::invalid_argument("Invalid CT scheme specified!  Must be one of bs99, sg09");
     }
+    return TaskStatus::complete;
+}
+
+TaskStatus B_CT::AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
+{
+    auto pmesh = md->GetMeshPointer();
+    const int ndim = pmesh->ndim;
+
+    // EMF temporary
+    auto& emf_pack = md->PackVariables(std::vector<std::string>{"B_CT.emf"});
+
+    // Figure out indices
+    const IndexRange3 b = KDomain::GetRange(md, IndexDomain::interior, 0, 0);
+    const IndexRange3 b1 = KDomain::GetRange(md, IndexDomain::interior, 0, 1);
+    const IndexRange block = IndexRange{0, emf_pack.GetDim(5)-1};
+
+    auto pmb0 = md->GetBlockData(0)->GetBlockPointer().get();
 
     // This is what we're replacing
     auto& dB_Uf_dt = mdudt->PackVariables(std::vector<std::string>{"cons.fB"});
     // Circulation -> change in flux at face
-    // Note we *replace* whatever this term in the source term was "supposed" to be
     pmb0->par_for("B_CT_Circ_1", block.s, block.e, b.ks, b.ke, b.js, b.je, b1.is, b1.ie,
         KOKKOS_LAMBDA (const int &bl, const int &k, const int &j, const int &i) {
             const auto& G = dB_Uf_dt.GetCoords(bl);
-            dB_Uf_dt(bl, F1, 0, k, j, i) =  emf_pack(bl, E3, 0, k, j + 1, i) - emf_pack(bl, E3, 0, k, j, i);
-            if (ndim > 2) {
-                dB_Uf_dt(bl, F1, 0, k, j, i) += -emf_pack(bl, E2, 0, k + 1, j, i) + emf_pack(bl, E2, 0, k, j, i);
-            }
+            dB_Uf_dt(bl, F1, 0, k, j, i) =       (emf_pack(bl, E3, 0, k, j + 1, i) - emf_pack(bl, E3, 0, k, j, i))*G.FaceArea<1>(k, j, i);
+            if (ndim > 2)
+                dB_Uf_dt(bl, F1, 0, k, j, i) += (-emf_pack(bl, E2, 0, k + 1, j, i) + emf_pack(bl, E2, 0, k, j, i))/G.Dxc<2>(j);
         }
     );
     pmb0->par_for("B_CT_Circ_2", block.s, block.e, b.ks, b.ke, b1.js, b1.je, b.is, b.ie,
         KOKKOS_LAMBDA (const int &bl, const int &k, const int &j, const int &i) {
             const auto& G = dB_Uf_dt.GetCoords(bl);
-            dB_Uf_dt(bl, F2, 0, k, j, i) = -emf_pack(bl, E3, 0, k, j, i + 1) + emf_pack(bl, E3, 0, k, j, i);
-            if (ndim > 2) {
-                dB_Uf_dt(bl, F2, 0, k, j, i) +=  emf_pack(bl, E1, 0, k + 1, j, i) - emf_pack(bl, E1, 0, k, j, i);
-            }
+            dB_Uf_dt(bl, F2, 0, k, j, i) =      (-emf_pack(bl, E3, 0, k, j, i + 1) + emf_pack(bl, E3, 0, k, j, i))*G.FaceArea<2>(k, j, i);
+            if (ndim > 2)
+                dB_Uf_dt(bl, F2, 0, k, j, i) +=  (emf_pack(bl, E1, 0, k + 1, j, i) - emf_pack(bl, E1, 0, k, j, i))/G.Dxc<1>(i);
         }
     );
     if (ndim > 2) {
         pmb0->par_for("B_CT_Circ_3", block.s, block.e, b1.ks, b1.ke, b.js, b.je, b.is, b.ie,
             KOKKOS_LAMBDA (const int &bl, const int &k, const int &j, const int &i) {
                 const auto& G = dB_Uf_dt.GetCoords(bl);
-                dB_Uf_dt(bl, F3, 0, k, j, i) +=  emf_pack(bl, E2, 0, k, j, i + 1) - emf_pack(bl, E2, 0, k, j, i)
-                                            - emf_pack(bl, E1, 0, k, j + 1, i) + emf_pack(bl, E1, 0, k, j, i);
+                dB_Uf_dt(bl, F3, 0, k, j, i) = (emf_pack(bl, E2, 0, k, j, i + 1) - emf_pack(bl, E2, 0, k, j, i))/G.Dxc<2>(j)
+                                            + (-emf_pack(bl, E1, 0, k, j + 1, i) + emf_pack(bl, E1, 0, k, j, i))/G.Dxc<1>(i);
             }
         );
     }
+
+    // Explicitly zero polar faces
+    // In spherical, zero B2 on X2 face regardless of boundary condition
+    // This shouldn't interfere with divB since the face size is zero anyway
+    if (mdudt->GetBlockData(0)->GetBlockPointer()->coords.coords.is_spherical()) {
+        const IndexRange ib = mdudt->GetBoundsI(IndexDomain::entire);
+        const IndexRange kb = mdudt->GetBoundsK(IndexDomain::entire);
+        const int js = mdudt->GetBoundsJ(IndexDomain::interior).s;
+        const int je = mdudt->GetBoundsJ(IndexDomain::interior).e + 1; // Face
+        for (int i_block = 0; i_block < mdudt->NumBlocks(); i_block++) {
+            auto &rc = mdudt->GetBlockData(i_block);
+            auto pmb = rc->GetBlockPointer();
+            auto& dB_Uf_dt_block = rc->PackVariables(std::vector<std::string>{"cons.fB"});
+            if (KBoundaries::IsPhysicalBoundary(pmb, BoundaryFace::inner_x2)) {
+                pmb->par_for("B_CT_zero_B2_in", kb.s, kb.e, js, js, ib.s, ib.e,
+                    KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+                        dB_Uf_dt_block(F2, 0, k, j, i) = 0;
+                    }
+                );
+            }
+            if (KBoundaries::IsPhysicalBoundary(pmb, BoundaryFace::outer_x2)) {
+                pmb->par_for("B_CT_zero_B2_out", kb.s, kb.e, je, je, ib.s, ib.e,
+                    KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+                        dB_Uf_dt_block(F2, 0, k, j, i) = 0;
+                    }
+                );
+            }
+        }
+    }
+
     return TaskStatus::complete;
 }
-
-
 
 double B_CT::MaxDivB(MeshData<Real> *md)
 {

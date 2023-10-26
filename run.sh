@@ -54,6 +54,10 @@ do
   source $machine
 done
 
+if [[ "$1" == "trace" ]]; then
+  export KOKKOS_TOOLS_LIBS=$KHARMA_DIR/../kokkos-tools/kp_kernel_logger.so
+  shift
+fi
 # Override MPI_NUM_PROCS at user option "-n"
 # and OMP_NUM_THREADS at option "-nt"
 if [[ "$1" == "-n" ]]; then

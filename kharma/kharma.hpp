@@ -76,7 +76,7 @@ TaskStatus AddPackage(std::shared_ptr<Packages_t>& packages,
  * This includes boundaries in spherical coordinates, coordinate system translations, etc.
  * This function also handles setting parameters from restart files
  */
-void FixParameters(std::unique_ptr<ParameterInput>& pin);
+void FixParameters(ParameterInput *pin);
 
 /**
  * Load any packages specified in the input parameters
@@ -89,19 +89,23 @@ Packages_t ProcessPackages(std::unique_ptr<ParameterInput>& pin);
  * Check whether a given field is anywhere in outputs.
  * Used to avoid calculating expensive fields (jcon, divB) if they
  * will not even be written.
+ * Note this compares the field name as a substring rather than
+ * an exact match to a vector element, so sub-names like `prims.`
+ * or `coords.` will match any field which contains them.
  */
 inline bool FieldIsOutput(ParameterInput *pin, std::string name)
 {
     InputBlock *pib = pin->pfirst_block;
     while (pib != nullptr) {
-        if (pib->block_name.compare(0, 16, "parthenon/output") == 0 &&
+        // For every output block with a 'variables' entry...
+        if (pib->block_name.find("parthenon/output") != std::string::npos &&
             pin->DoesParameterExist(pib->block_name, "variables")) {
             std::string allvars = pin->GetString(pib->block_name, "variables");
             if (allvars.find(name) != std::string::npos) {
                 return true;
             }
         }
-        pib = pib->pnext; // move to next input block name
+        pib = pib->pnext;
     }
     return false;
 }

@@ -237,7 +237,7 @@ void Packages::PostStepDiagnostics(Mesh *pmesh, ParameterInput *pin, const SimTi
     // Parthenon's version of this has a bug, but I would probably subclass it anyway.
     // very useful to have a single per-step spot to control any routine print statements
     Flag("PostStepDiagnostics");
-    const auto& md = pmesh->mesh_data.GetOrAdd("base", 0).get();
+    const auto& md = pmesh->mesh_data.Get().get();
     if (md->NumBlocks() > 0) {
         for (auto &package : pmesh->packages.AllPackages()) {
             if (package.second->PostStepDiagnosticsMesh != nullptr) {

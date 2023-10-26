@@ -106,6 +106,17 @@ class CoordinateEmbedding {
             } else if (mpark::holds_alternative<DCSBLCoords>(base_in)) {
                 base.emplace<DCSBLCoords>(mpark::get<DCSBLCoords>(base_in));
             }
+<<<<<<< HEAD
+=======
+
+            // Changes Made. ADDING EDGB KS AND BL HERE !! 
+            else if (mpark::holds_alternative<EDGBKSCoords>(base_in)) {
+                base.emplace<EDGBKSCoords>(mpark::get<EDGBKSCoords>(base_in));
+            } else if (mpark::holds_alternative<EDGBBLCoords>(base_in)) {
+                base.emplace<EDGBBLCoords>(mpark::get<EDGBBLCoords>(base_in));
+            }
+
+>>>>>>> feature/gridfile
 
             if (mpark::holds_alternative<NullTransform>(transform_in)) {
                 transform.emplace<NullTransform>(mpark::get<NullTransform>(transform_in));
@@ -128,6 +139,7 @@ class CoordinateEmbedding {
         CoordinateEmbedding(parthenon::ParameterInput* pin) {
             const std::string base_str = pin->GetString("coordinates", "base");
             const std::string transform_str = pin->GetOrAddString("coordinates", "transform", "null");
+            const std::string theory = pin->GetOrAddString("coordinates", "theory", "gr");
 
             // Parse names.  See coordinate_systems.hpp for details
 
@@ -139,6 +151,7 @@ class CoordinateEmbedding {
 
             } else if (base_str == "spherical_ks" || base_str == "ks" ||
                         base_str == "spherical_ks_extg" || base_str == "ks_extg" || 
+<<<<<<< HEAD
                         base_str == "dcs_ks") {
                             GReal a = pin->GetReal("coordinates", "a"); 
                             
@@ -147,6 +160,28 @@ class CoordinateEmbedding {
                                 base.emplace<DCSKSCoords>(DCSKSCoords(a, zeta));
                                 
                             } else {
+=======
+                        base_str == "dcs_ks"|| base_str == "edgb_ks") {
+                            
+                            GReal a = pin->GetReal("coordinates", "a"); 
+                            
+                            if (base_str == "dcs_ks") { 
+                                if (theory != "dcs") throw std::invalid_argument("Base coordinates is set to DCS,\
+                                 but theory was not initialized to 'dcs'!");
+                                GReal zeta = pin->GetReal("coordinates", "zeta"); // Get "zeta" value
+                                base.emplace<DCSKSCoords>(DCSKSCoords(a, zeta));
+                            }
+                            else if (base_str == "edgb_ks") {
+                                if (theory != "edgb") throw std::invalid_argument("Base coordinates is set to EdGB,\
+                                 but theory was not initialized to 'edgb'!");
+                                GReal zeta = pin->GetReal("coordinates", "zeta"); // Get "zeta" value
+                                base.emplace<EDGBKSCoords>(EDGBKSCoords(a, zeta));
+                            }
+                                
+                            else {
+                                if (theory != "gr") throw std::invalid_argument("Base coordinates is set to GR,\
+                                 but theory was not initialized to 'gr'!");
+>>>>>>> feature/gridfile
                                 bool ext_g = pin->GetOrAddBoolean("coordinates", "ext_g", false);
                                 if (ext_g || base_str == "spherical_ks_extg" || base_str == "ks_extg") {
                                     if (a > 0) throw std::invalid_argument("Transform is for spherical coordinates!");
@@ -155,16 +190,33 @@ class CoordinateEmbedding {
                                         base.emplace<SphKSCoords>(SphKSCoords(a));
                                     }
                                 }
+<<<<<<< HEAD
 
             } else if (base_str == "spherical_bl" || base_str == "bl" ||
                         base_str == "spherical_bl_extg" || base_str == "bl_extg" ||
                         base_str == "dcs_bl") {
+=======
+                        
+            } else if (base_str == "spherical_bl" || base_str == "bl" ||
+                        base_str == "spherical_bl_extg" || base_str == "bl_extg" ||
+                        base_str == "dcs_bl" || base_str == "edgb_bl") {
+>>>>>>> feature/gridfile
                             GReal a = pin->GetReal("coordinates", "a");
                             
                             if (base_str == "dcs_bl") {
                                 GReal zeta = pin->GetReal("coordinates", "zeta"); // Get "zeta" value
                                 base.emplace<DCSBLCoords>(DCSBLCoords(a, zeta));   // Create DCSBLCoords with "a" and "zeta"
+<<<<<<< HEAD
                             } else {
+=======
+                            }
+                            else if (base_str == "edgb_bl") {
+                                GReal zeta = pin->GetReal("coordinates", "zeta"); // Get "zeta" value
+                                base.emplace<EDGBBLCoords>(EDGBBLCoords(a, zeta));   // Create EDGBBLCoords with "a" and "zeta"
+
+                            }
+                            else {
+>>>>>>> feature/gridfile
                                 bool ext_g = pin->GetOrAddBoolean("coordinates", "ext_g", false);
                                 if (ext_g || base_str == "spherical_bl_extg" || base_str == "bl_extg") {
                                     if (a > 0) throw std::invalid_argument("Transform is for spherical coordinates!");
@@ -268,15 +320,27 @@ class CoordinateEmbedding {
                 mpark::holds_alternative<SphBLCoords>(base) ||
                 mpark::holds_alternative<SphKSExtG>(base) ||
                 mpark::holds_alternative<SphBLExtG>(base) ||
+<<<<<<< HEAD
                 
                 mpark::holds_alternative<DCSKSCoords>(base) || // Changes Made. 
                 mpark::holds_alternative<DCSBLCoords>(base))
+=======
+                mpark::holds_alternative<DCSKSCoords>(base) || // Changes Made. 
+                mpark::holds_alternative<DCSBLCoords>(base) ||
+                mpark::holds_alternative<EDGBKSCoords>(base) ||
+                mpark::holds_alternative<EDGBBLCoords>(base)) // Changes Made.
+>>>>>>> feature/gridfile
             {
                 const GReal a = get_a();
                 return 1 + m::sqrt(1 - a * a);
             } else {
                 return 0.0;
             }
+<<<<<<< HEAD
+=======
+
+        
+>>>>>>> feature/gridfile
     // ___________________________________________________________________________________________________________________
 
         }
@@ -287,7 +351,18 @@ class CoordinateEmbedding {
             }, base);
         }
 
+<<<<<<< HEAD
         //mayeb a get zeta function 
+=======
+        //Changes made. a get zeta function 
+        // KOKKOS_INLINE_FUNCTION GReal get_zeta() const
+        // {
+        //     return mpark::visit( [&](const auto& self) {
+        //         return self.zeta;
+        //     }, base);
+        // }
+
+>>>>>>> feature/gridfile
     // ___________________________________________________________________________________________________________________
 
         GReal startx(int dir) const
@@ -307,6 +382,8 @@ class CoordinateEmbedding {
     // ___________________________________________________________________________________________________________________
 
         // Question : How would this change with new coordinate systems ? 
+    // ___________________________________________________________________________________________________________________
+
     // ___________________________________________________________________________________________________________________
 
         KOKKOS_INLINE_FUNCTION bool is_ks() const
@@ -373,6 +450,81 @@ class CoordinateEmbedding {
                 self.coord_to_embed(Xnative, Xembed);
             }, transform);
             return Xembed[1];
+        }
+
+        // Get a particular coordinate from an array
+        // note these *aren't faster* or less memory, just convenient
+        KOKKOS_INLINE_FUNCTION GReal r_of(const GReal Xnative[GR_DIM]) const
+        {
+            GReal Xembed[GR_DIM];
+            mpark::visit( [&Xnative, &Xembed](const auto& self) {
+                self.coord_to_embed(Xnative, Xembed);
+            }, transform);
+            if (is_spherical()) {
+                return Xembed[1];
+            } else {
+                return m::sqrt(SQR(Xembed[1]) + SQR(Xembed[2]) + SQR(Xembed[3]));
+            }
+        }
+        KOKKOS_INLINE_FUNCTION GReal th_of(const GReal Xnative[GR_DIM]) const
+        {
+            GReal Xembed[GR_DIM];
+            mpark::visit( [&Xnative, &Xembed](const auto& self) {
+                self.coord_to_embed(Xnative, Xembed);
+            }, transform);
+            if (is_spherical()) {
+                return Xembed[2];
+            } else {
+                return m::atan2(m::sqrt(SQR(Xembed[1]) + SQR(Xembed[2])), Xembed[3]);
+            }
+        }
+        KOKKOS_INLINE_FUNCTION GReal phi_of(const GReal Xnative[GR_DIM]) const
+        {
+            GReal Xembed[GR_DIM];
+            mpark::visit( [&Xnative, &Xembed](const auto& self) {
+                self.coord_to_embed(Xnative, Xembed);
+            }, transform);
+            if (is_spherical()) {
+                return Xembed[3];
+            } else {
+                return m::atan2(Xembed[2], Xembed[1]);
+            }
+        }
+        KOKKOS_INLINE_FUNCTION GReal x_of(const GReal Xnative[GR_DIM]) const
+        {
+            GReal Xembed[GR_DIM];
+            mpark::visit( [&Xnative, &Xembed](const auto& self) {
+                self.coord_to_embed(Xnative, Xembed);
+            }, transform);
+            if (!is_spherical()) {
+                return Xembed[1];
+            } else {
+                return Xembed[1] * m::sin(Xembed[2]) * m::cos(Xembed[3]);
+            }
+        }
+        KOKKOS_INLINE_FUNCTION GReal y_of(const GReal Xnative[GR_DIM]) const
+        {
+            GReal Xembed[GR_DIM];
+            mpark::visit( [&Xnative, &Xembed](const auto& self) {
+                self.coord_to_embed(Xnative, Xembed);
+            }, transform);
+            if (!is_spherical()) {
+                return Xembed[2];
+            } else {
+                return Xembed[1] * m::sin(Xembed[2]) * m::sin(Xembed[3]);
+            }
+        }
+        KOKKOS_INLINE_FUNCTION GReal z_of(const GReal Xnative[GR_DIM]) const
+        {
+            GReal Xembed[GR_DIM];
+            mpark::visit( [&Xnative, &Xembed](const auto& self) {
+                self.coord_to_embed(Xnative, Xembed);
+            }, transform);
+            if (!is_spherical()) {
+                return Xembed[3];
+            } else {
+                return Xembed[1] * m::cos(Xembed[2]);
+            }
         }
 
         // VECTOR TRANSFORMS
@@ -541,13 +693,36 @@ class CoordinateEmbedding {
 
             // Set u^t to make u a velocity 4-vector in BL
             GReal gcov_bl[GR_DIM][GR_DIM];
+
+            // // TRYING 
+
             if (mpark::holds_alternative<SphKSCoords>(base) ||
                 mpark::holds_alternative<SphBLCoords>(base)) {
                 SphBLCoords(get_a()).gcov_embed(Xembed, gcov_bl);
+
             } else if (mpark::holds_alternative<SphKSExtG>(base) ||
                        mpark::holds_alternative<SphBLExtG>(base)) {
                 SphBLExtG(get_a()).gcov_embed(Xembed, gcov_bl);
+
+            } else if (mpark::holds_alternative<DCSKSCoords>(base)){
+                GReal zeta = mpark::get<DCSKSCoords>(base).zeta;
+                DCSBLCoords dcsblcoords(get_a(), zeta);
+                dcsblcoords.gcov_embed(Xembed, gcov_bl);       // Changes Made. Find out how the zeta value gets called.
+        
+            } else if (mpark::holds_alternative<DCSBLCoords>(base)){
+                GReal zeta = mpark::get<DCSBLCoords>(base).zeta;
+                DCSBLCoords(get_a(), zeta).gcov_embed(Xembed, gcov_bl);       // Changes Made. Find out how the zeta value gets called.
+                
+            } else if (mpark::holds_alternative<EDGBKSCoords>(base)){
+                GReal zeta = mpark::get<EDGBKSCoords>(base).zeta;
+                EDGBBLCoords edgbblcoords(get_a(), zeta);
+                edgbblcoords.gcov_embed(Xembed, gcov_bl);       // Changes Made. Find out how the zeta value gets called.
+        
+            } else if (mpark::holds_alternative<EDGBBLCoords>(base)){
+                GReal zeta = mpark::get<EDGBBLCoords>(base).zeta;
+                EDGBBLCoords(get_a(), zeta).gcov_embed(Xembed, gcov_bl);   
             }
+    
 
             Real ucon_bl_fourv[GR_DIM];
             DLOOP1 ucon_bl_fourv[mu] = ucon_bl[mu];
@@ -557,11 +732,29 @@ class CoordinateEmbedding {
             Real ucon_base[GR_DIM];
             if (mpark::holds_alternative<SphKSCoords>(base)) {
                 mpark::get<SphKSCoords>(base).vec_from_bl(Xembed, ucon_bl_fourv, ucon_base);
+
             } else if (mpark::holds_alternative<SphKSExtG>(base)) {
                 mpark::get<SphKSExtG>(base).vec_from_bl(Xembed, ucon_bl_fourv, ucon_base);
+
             } else if (mpark::holds_alternative<SphBLCoords>(base) ||
                        mpark::holds_alternative<SphBLExtG>(base)) {
                 DLOOP1 ucon_base[mu] = ucon_bl_fourv[mu];
+
+            } else if (mpark::holds_alternative<DCSKSCoords>(base)) {                           // Changes Made.
+                mpark::get<DCSKSCoords>(base).vec_from_bl(Xembed, ucon_bl_fourv, ucon_base); 
+
+            } else if (mpark::holds_alternative<EDGBKSCoords>(base)) {                          // Changes Made.
+                mpark::get<EDGBKSCoords>(base).vec_from_bl(Xembed, ucon_bl_fourv, ucon_base); 
+
+            } else if (mpark::holds_alternative<DCSBLCoords>(base)) {
+                DLOOP1 ucon_base[mu] = ucon_bl_fourv[mu];
+            } else if (mpark::holds_alternative<EDGBBLCoords>(base)) {
+                DLOOP1 ucon_base[mu] = ucon_bl_fourv[mu];
+
+            } else {
+                #ifndef KOKKOS_ENABLE_CUDA
+                throw std::invalid_argument("Unsupported base coordinates!");
+                #endif
             }
             // Finally, apply any transform to native coordinates
             con_vec_to_native(Xnative, ucon_base, ucon_native);
@@ -569,3 +762,32 @@ class CoordinateEmbedding {
 };
 
     // ___________________________________________________________________________________________________________________
+<<<<<<< HEAD
+=======
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+>>>>>>> feature/gridfile
