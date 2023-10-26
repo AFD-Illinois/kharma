@@ -109,8 +109,8 @@ int main(int argc, char *argv[])
     pman.app_input->ProblemGenerator = KHARMA::ProblemGenerator;
     // A few are passed on to be implemented by packages as they see fit
     pman.app_input->MeshBlockUserWorkBeforeOutput = Packages::UserWorkBeforeOutput;
-    pman.app_input->PreStepMeshUserWorkInLoop = Packages::PreStepUserWorkInLoop;
-    pman.app_input->PostStepMeshUserWorkInLoop = Packages::PostStepUserWorkInLoop;
+    pman.app_input->PreStepMeshUserWorkInLoop = Packages::PreStepWork;
+    pman.app_input->PostStepMeshUserWorkInLoop = Packages::PostStepWork;
     pman.app_input->PostStepDiagnosticsInLoop = Packages::PostStepDiagnostics;
 
     // Registering KHARMA's boundary functions here doesn't mean they will *always* run:
@@ -122,6 +122,11 @@ int main(int argc, char *argv[])
     pman.app_input->boundary_conditions[parthenon::BoundaryFace::outer_x2] = KBoundaries::ApplyBoundaryTemplate<IndexDomain::outer_x2>;
     pman.app_input->boundary_conditions[parthenon::BoundaryFace::inner_x3] = KBoundaries::ApplyBoundaryTemplate<IndexDomain::inner_x3>;
     pman.app_input->boundary_conditions[parthenon::BoundaryFace::outer_x3] = KBoundaries::ApplyBoundaryTemplate<IndexDomain::outer_x3>;
+
+    // Initialize Parthenon for MPI (also Kokkos, parses command line, etc.)
+    Flag("ParthenonInit");
+    auto manager_status = pman.ParthenonInitEnv(argc, argv);
+    EndFlag();
 
     if(MPIRank0()) {
         // Always print the version header, because it's fun
@@ -138,9 +143,8 @@ int main(int argc, char *argv[])
         std::cout << std::endl;
     }
 
-    // Parthenon init includes Kokkos, MPI, parses parameters & cmdline
-    Flag("ParthenonInit");
-    auto manager_status = pman.ParthenonInitEnv(argc, argv);
+    // Check the Parthenon init return code, initialize packages/mesh
+    Flag("InitPackagesAndMesh");
     if (manager_status == ParthenonStatus::complete) {
         pman.ParthenonFinalize();
         return 0;
@@ -201,10 +205,14 @@ int main(int argc, char *argv[])
     KHARMA::PostInitialize(pin, pmesh, is_restart);
     EndFlag();
 
+    // TODO output parsed parameters *here*, now we have everything including any problem configs for B field
+
     // Begin code block to ensure driver is cleaned up
     {
-        std::string driver_type = pmesh->packages.Get("Driver")->Param<std::string>("type");
-        std::cout << "Initializing and running " << driver_type << " driver" << std::endl;
+        if (MPIRank0()) {
+            std::string driver_name = pmesh->packages.Get("Driver")->Param<std::string>("name");
+            std::cout << "Running " << driver_name << " driver" << std::endl;
+        }
 
         // Pull out things we need to give the driver
         auto pin = pman.pinput.get(); // All parameters in the input file or command line

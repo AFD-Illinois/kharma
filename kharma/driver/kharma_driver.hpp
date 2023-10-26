@@ -40,6 +40,9 @@
 
 using namespace parthenon;
 
+// See Initialize()
+enum class DriverType{kharma, imex, simple};
+
 /**
  * This is the "Driver" class for KHARMA.
  * A Driver object orchestrates everything that has to be done to a mesh to constitute a step.
@@ -57,10 +60,13 @@ class KHARMADriver : public MultiStageDriver {
         static std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages);
 
         // Eliminate Parthenon's print statements when starting up the driver, we have a bunch of our own
-        void PreExecute() { timer_main.reset(); }
+        void PreExecute() override { timer_main.reset(); }
 
         // Also override the timestep calculation, so we can start moving options etc out of GRMHD package
         void SetGlobalTimeStep();
+
+        // And the PostExecute, so we can add a package callback here
+        void PostExecute(DriverStatus status) override;
 
         /**
          * A Driver object orchestrates everything that has to be done to a mesh to take a step.
@@ -83,7 +89,7 @@ class KHARMADriver : public MultiStageDriver {
          * All task lists proceed roughly in this order, but differ in which variables they synchronize via MPI,
          * or whether they synchronize at all.
          */
-        TaskCollection MakeTaskCollection(BlockList_t &blocks, int stage);
+        TaskCollection MakeTaskCollection(BlockList_t &blocks, int stage) override;
 
         /**
          * The default step, synchronizing conserved variables and then recovering primitive variables in the ghost zones.
@@ -121,8 +127,7 @@ class KHARMADriver : public MultiStageDriver {
          * This sequence is used identically in several places, so it makes sense
          * to define once and use elsewhere.
          */
-        static TaskID AddMPIBoundarySync(const TaskID t_start, TaskList &tl, std::shared_ptr<MeshData<Real>> &md,
-                                         bool sync_prims=false, bool multilevel=false);
+        static TaskID AddBoundarySync(const TaskID t_start, TaskList &tl, std::shared_ptr<MeshData<Real>> &md);
 
         /**
          * Calculate the fluxes in each direction
@@ -133,9 +138,9 @@ class KHARMADriver : public MultiStageDriver {
          * Single call to sync all boundary conditions (MPI/internal and domain/physical boundaries)
          * Used anytime boundary sync is needed outside the usual loop of steps.
          * 
-         * Only use this as a task each step when debugging!
+         * Only use this during the run if you're debugging!
          */
-        static TaskStatus SyncAllBounds(std::shared_ptr<MeshData<Real>> &md, bool sync_prims=false, bool multilevel=false);
+        static TaskStatus SyncAllBounds(std::shared_ptr<MeshData<Real>> &md);
 
         // TODO swapped versions of these
         /**
@@ -158,7 +163,8 @@ class KHARMADriver : public MultiStageDriver {
         }
 
         static TaskStatus WeightedSumDataFace(const std::vector<MetadataFlag> &flags, MeshData<Real> *in1, MeshData<Real> *in2, const Real w1, const Real w2,
-                                MeshData<Real> *out) {
+                                MeshData<Real> *out)
+        {
             Kokkos::Profiling::pushRegion("Task_WeightedSumData");
             const auto &x = in1->PackVariables(flags);
             const auto &y = in2->PackVariables(flags);

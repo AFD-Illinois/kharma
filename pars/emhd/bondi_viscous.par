@@ -4,9 +4,6 @@
 problem_id = bondi
 
 <parthenon/mesh>
-# Full mesh size, no refinement
-refinement = none
-numlevel   = 1
 nx1 = 128
 nx2 = 128
 nx3 = 1
@@ -21,10 +18,8 @@ base      = ks
 transform = mks
 a         = 0.0
 hslope    = 1.0
-r_out     = 20
-# Needed to place 5 zones inside 3M,
-# to match the analytic files.
-Rhor      = 3
+r_out     = 20.0
+r_in      = 5.0
 
 <parthenon/time>
 tlim = 400.0
@@ -32,16 +27,11 @@ tlim = 400.0
 <GRMHD>
 cfl            = 0.9
 gamma          = 1.666667
-reconstruction = weno5
 implicit       = true
 
 <b_field>
 type            = monopole_cube
-implicit        = false
-initial_cleanup = false
-
-<driver>
-type = imex
+B10             = 1.
 
 <implicit>
 min_nonlinear_iter  = 1
@@ -75,7 +65,12 @@ disable_floors = true
 
 <boundaries>
 outer_x1 = dirichlet
+inner_x1 = dirichlet
 check_inflow_outer_x1 = false
+check_inflow_inner_x1 = true
+# Force outflow bounds for EMHD vars
+outflow_EMHD_inner_x1 = true
+outflow_EMHD_outer_x1 = true
 
 <debug>
 verbose = 1
@@ -84,8 +79,9 @@ extra_checks = 1
 
 <parthenon/output0>
 file_type               = hdf5
-dt                      = 100.0
+dt                      = 10.0
 single_precision_output = false
+ghost_zones             = false
 variables               = prims, solve_norm, solve_fail
 
 <parthenon/output1>

@@ -55,7 +55,6 @@ TaskStatus InitializeExplosion(std::shared_ptr<MeshBlockData<Real>>& rc, Paramet
     GridScalar rho = rc->Get("prims.rho").data;
     GridScalar u = rc->Get("prims.u").data;
     GridVector uvec = rc->Get("prims.uvec").data;
-    GridVector B_P = rc->Get("prims.B").data;
 
     const auto& G = pmb->coords;
 

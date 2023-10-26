@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 
 # Bash script testing a fresh Orszag-Tang vortex vs a version
 # re-gridded to 64^2 tiles in the middle of the run,
@@ -42,11 +43,11 @@ $KHARMADIR/run.sh -i ./resize_orszag_tang.par >log_resize.txt 2>&1
 # Check the final .rhdf file for sanity (i.e., divB small)
 check_code=0
 pyharm-check-basics resize_restart.out1.final.rhdf || check_code=$?
-if [[ $check_code != 0 ]]; then                                                                                                            
-    echo Resize test FAIL: $check_code                                                                                                     
-    exit_code=1                                                                                                                            
-else                                                                                                                                       
-    echo Resize test success                                                                                                               
+if [[ $check_code != 0 ]]; then
+    echo Resize test FAIL: $check_code
+    exit_code=1
+else
+    echo Resize test success
 fi
 
 exit $exit_code

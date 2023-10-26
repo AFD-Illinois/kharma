@@ -32,6 +32,7 @@ poly_alpha = 14.0
 <parthenon/time>
 tlim = 3000.0
 nlim = -1
+integrator = vl2
 
 <debug>
 verbose = 1
@@ -42,6 +43,9 @@ flag_verbose = 0
 cfl = 0.9
 gamma = 1.666667
 reconstruction = weno5
+
+<driver>
+type = kharma
 
 <torus>
 rin = 6.0
@@ -76,12 +80,10 @@ on = false
 file_type = hdf5
 dt = 10.0
 single_precision_output = true
-# Any fields listed here which are not present (e.g. electrons if disabled)
-# will be silently skipped. '&' character is a line continuation, like '\'
-# Remember that the commas are still necessary, and unknown fields will silently fail!
-variables = prims.rho, prims.u, prims.uvec, prims.B, prims.Ktot, &
-            prims.Kel_Howes, prims.Kel_Kawazura, prims.Kel_Werner, prims.Kel_Rowan, prims.Kel_Sharma, &
-            pflag, fflag
+# Fields beginning with a specifier here will be included (e.g., all prims.XXX)
+# Fields specified but not present are silently skipped
+# If you need a line break, use '&' at line end
+variables = prims, jcon, pflag, fflag
 
 <parthenon/output1>
 file_type = rst

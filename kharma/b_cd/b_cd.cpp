@@ -43,6 +43,8 @@ namespace B_CD
 
 std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages)
 {
+    throw std::runtime_error("Constraint-damping transport is not functional with modern B field initialization!");
+
     auto pkg = std::make_shared<KHARMAPackage>("B_CD");
     Params &params = pkg->AllParams();
 
@@ -88,7 +90,7 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     pkg->BlockUtoP = B_CD::BlockUtoP;
 
     pkg->PostStepDiagnosticsMesh = B_CD::PostStepDiagnostics;
-    pkg->MeshPostStepUserWorkInLoop = B_CD::UpdateCtopMax;
+    pkg->PostStepWork = B_CD::UpdateCtopMax;
 
     // List (vector) of HistoryOutputVar that will all be enrolled as output variables
     parthenon::HstVar_list hst_vars = {};

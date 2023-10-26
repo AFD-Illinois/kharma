@@ -928,6 +928,32 @@ class NullTransform {
             DLOOP2 dXdx[mu][nu] = (mu == nu);
         }
 };
+// This only exists separately to define startx & stopx. Could fall back on base coords for these?
+class SphNullTransform {
+    public:
+        static constexpr char name[] = "SphNullTransform";
+        static constexpr GReal startx[3] = {-1, 0., 0.};
+        static constexpr GReal stopx[3] = {-1, M_PI, 2*M_PI};
+        // Coordinate transformations
+        // Any coordinate value protections (th < 0, th > pi, phi > 2pi) should be in the base system
+        KOKKOS_INLINE_FUNCTION void coord_to_embed(const GReal Xnative[GR_DIM], GReal Xembed[GR_DIM]) const
+        {
+            DLOOP1 Xembed[mu] = Xnative[mu];
+        }
+        KOKKOS_INLINE_FUNCTION void coord_to_native(const GReal Xembed[GR_DIM], GReal Xnative[GR_DIM]) const
+        {
+            DLOOP1 Xnative[mu] = Xembed[mu];
+        }
+        // Tangent space transformation matrices
+        KOKKOS_INLINE_FUNCTION void dxdX(const GReal X[GR_DIM], Real dxdX[GR_DIM][GR_DIM]) const
+        {
+            DLOOP2 dxdX[mu][nu] = (mu == nu);
+        }
+        KOKKOS_INLINE_FUNCTION void dXdx(const GReal X[GR_DIM], Real dXdx[GR_DIM][GR_DIM]) const
+        {
+            DLOOP2 dXdx[mu][nu] = (mu == nu);
+        }
+};
 
 /**
  * Just exponentiate the radial coordinate
@@ -1199,9 +1225,14 @@ class FunkyTransform {
 // These act as a wannabe "interface" or "parent class" with the exception that access requires "mpark::visit"
 // See coordinate_embedding.hpp
 <<<<<<< HEAD
+<<<<<<< HEAD
 using SomeBaseCoords = mpark::variant<SphMinkowskiCoords, CartMinkowskiCoords, SphBLCoords, SphKSCoords, SphBLExtG, SphKSExtG, DCSKSCoords, DCSBLCoords>; // Changes Made. 
 using SomeTransform = mpark::variant<NullTransform, ExponentialTransform, SuperExponentialTransform, ModifyTransform, FunkyTransform>;
 =======
 using SomeBaseCoords = mpark::variant<SphMinkowskiCoords, CartMinkowskiCoords, SphBLCoords, SphKSCoords, SphBLExtG, SphKSExtG, DCSKSCoords, DCSBLCoords, EDGBKSCoords, EDGBBLCoords>; // Changes Made. 
 using SomeTransform = mpark::variant<NullTransform, ExponentialTransform, SuperExponentialTransform, ModifyTransform, FunkyTransform>;
 >>>>>>> feature/gridfile
+=======
+using SomeBaseCoords = mpark::variant<SphMinkowskiCoords, CartMinkowskiCoords, SphBLCoords, SphKSCoords, SphBLExtG, SphKSExtG>;
+using SomeTransform = mpark::variant<NullTransform, SphNullTransform, ExponentialTransform, SuperExponentialTransform, ModifyTransform, FunkyTransform>;
+>>>>>>> parent-repo/kharma-next

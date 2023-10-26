@@ -397,11 +397,11 @@ int hdf5_read_array(void *data, const char *name, size_t rank,
 
   if(DEBUG) {
     fprintf(stderr,"Reading arr %s:\n", path);
-    fprintf(stderr,"Total file size: %llu %llu %llu %llu\n", fdims[0], fdims[1], fdims[2], fdims[3]);
-    fprintf(stderr,"File start: %llu %llu %llu %llu\n", fstart[0], fstart[1], fstart[2], fstart[3]);
-    fprintf(stderr,"File read size: %llu %llu %llu %llu\n", fcount[0], fcount[1], fcount[2], fcount[3]);
-    fprintf(stderr,"Total memory size: %llu %llu %llu %llu\n", mdims[0], mdims[1], mdims[2], mdims[3]);
-    fprintf(stderr,"Memory start: %llu %llu %llu %llu\n\n", mstart[0], mstart[1], mstart[2], mstart[3]);
+    fprintf(stderr,"Total file size: %lu %lu %lu %lu\n", fdims[0], fdims[1], fdims[2], fdims[3]);
+    fprintf(stderr,"File start: %lu %lu %lu %lu\n", fstart[0], fstart[1], fstart[2], fstart[3]);
+    fprintf(stderr,"File read size: %lu %lu %lu %lu\n", fcount[0], fcount[1], fcount[2], fcount[3]);
+    fprintf(stderr,"Total memory size: %lu %lu %lu %lu\n", mdims[0], mdims[1], mdims[2], mdims[3]);
+    fprintf(stderr,"Memory start: %lu %lu %lu %lu\n\n", mstart[0], mstart[1], mstart[2], mstart[3]);
   }
 
   hid_t dset_id = H5Dopen(file_id, path, H5P_DEFAULT);

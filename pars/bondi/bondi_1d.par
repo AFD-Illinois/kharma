@@ -10,12 +10,12 @@ problem_id = bondi
 # Don't bother with xN boundaries for spherical coordinate systems
 # KHARMA will automatically place ~5 zones inside the EH
 nx1 = 128
-nx2 = 128
+nx2 = 1
 nx3 = 1
 
 <parthenon/meshblock>
 nx1 = 128
-nx2 = 128
+nx2 = 1
 nx3 = 1
 
 <coordinates>
@@ -68,7 +68,7 @@ type = none
 solver = none
 # To add magnetic field
 #type = monopole
-#b10 = 1
+#B10 = 1
 # Or
 #type = vertical
 #bz = 0.1

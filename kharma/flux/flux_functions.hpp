@@ -58,9 +58,9 @@ KOKKOS_INLINE_FUNCTION void calc_tensor(const Local& P, const VarMap& m_p, const
     if (m_p.Q >= 0 || m_p.DP >= 0) {
         // Apply higher-order terms conversion if necessary
         Real qtilde = 0., dPtilde = 0.;
-        if (emhd_params.conduction)
+        if (m_p.Q >= 0)
             qtilde = P(m_p.Q);
-        if (emhd_params.viscosity)
+        if (m_p.DP >= 0)
             dPtilde = P(m_p.DP);
         const Real Theta = (gam - 1) * P(m_p.UU) / P(m_p.RHO);
         const Real cs2   = gam * (gam - 1) * P(m_p.UU) / (P(m_p.RHO) + gam * P(m_p.UU));
@@ -73,7 +73,7 @@ KOKKOS_INLINE_FUNCTION void calc_tensor(const Local& P, const VarMap& m_p, const
         // GRMHD stress-energy tensor w/ first index up, second index down
         GRMHD::calc_tensor(P(m_p.RHO), P(m_p.UU), (gam - 1) * P(m_p.UU), D, dir, T);
     } else {
-        // GRHD stress-energy tensor w/ first index up, second index down
+        // GRHD stress-energy tensor
         GRHD::calc_tensor(P(m_p.RHO), P(m_p.UU), (gam - 1) * P(m_p.UU), D, dir, T);
     }
 }
@@ -85,12 +85,11 @@ KOKKOS_INLINE_FUNCTION void calc_tensor(const Global& P, const VarMap& m_p, cons
                                         Real T[GR_DIM])
 {
     if (m_p.Q >= 0 || m_p.DP >= 0) {
-
         // Apply higher-order terms conversion if necessary
         Real qtilde = 0., dPtilde = 0.;
-        if (emhd_params.conduction)
+        if (m_p.Q >= 0)
             qtilde = P(m_p.Q, k, j, i);
-        if (emhd_params.viscosity)
+        if (m_p.DP >= 0)
             dPtilde = P(m_p.DP, k, j, i);
         const Real Theta = (gam - 1) * P(m_p.UU, k, j, i) / P(m_p.RHO, k, j, i);
         const Real cs2   = gam * (gam - 1) * P(m_p.UU, k, j, i) / (P(m_p.RHO, k, j, i) + gam * P(m_p.UU, k, j, i));
@@ -125,8 +124,7 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const Local& P,
 
     // Stress-energy tensor
     Real T[GR_DIM];
-    //calc_tensor(P, m_p, D, emhd_params, gam, dir, T);
-    GRMHD::calc_tensor(P(m_p.RHO), P(m_p.UU), (gam - 1) * P(m_p.UU), D, dir, T);
+    calc_tensor(P, m_p, D, emhd_params, gam, dir, T);
     flux(m_u.UU) = T[0] * gdet + flux(m_u.RHO);
     flux(m_u.U1) = T[1] * gdet;
     flux(m_u.U2) = T[2] * gdet;
@@ -190,8 +188,7 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const Global& P
     flux(m_u.RHO, k, j, i) = P(m_p.RHO, k, j, i) * D.ucon[dir] * gdet;
 
     Real T[GR_DIM];
-    //calc_tensor(P, m_p, D, emhd_params, gam, k, j, i, dir, T);
-    GRMHD::calc_tensor(P(m_p.RHO, k, j, i), P(m_p.UU, k, j, i), (gam - 1) * P(m_p.UU, k, j, i), D, dir, T);
+    calc_tensor(P, m_p, D, emhd_params, gam, k, j, i, dir, T);
     flux(m_u.UU, k, j, i) = T[0] * gdet + flux(m_u.RHO, k, j, i);
     flux(m_u.U1, k, j, i) = T[1] * gdet;
     flux(m_u.U2, k, j, i) = T[2] * gdet;

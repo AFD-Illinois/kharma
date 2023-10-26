@@ -74,6 +74,16 @@ class EMHD_parameters {
         Real kappa;
         Real eta;
 
+        void print() const
+        {
+            printf("EMHD Parameters:\n");
+            printf("higher order: %d feedback: %d conduction: %d viscosity: %d\n",
+                    higher_order_terms, feedback, conduction, viscosity);
+            printf("kappa: %g eta: %g tau: %g conduction_a: %g viscosity_a: %g \n",
+                    kappa, eta, tau, conduction_alpha, viscosity_alpha);
+            // TODO closuretype
+        }
+
 };
 
 /**
@@ -109,7 +119,7 @@ void BlockPtoU(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse);
  */
 inline EMHD_parameters GetEMHDParameters(Packages_t& packages)
 {
-    EMHD::EMHD_parameters emhd_params_tmp;
+    EMHD::EMHD_parameters emhd_params_tmp = {0};
     if (packages.AllPackages().count("EMHD")) {
         emhd_params_tmp = packages.Get("EMHD")->Param<EMHD::EMHD_parameters>("emhd_params");
     }
@@ -257,7 +267,9 @@ KOKKOS_INLINE_FUNCTION void set_parameters(const GRCoordinates& G, const Local& 
     FourVectors Dtmp;
     GRMHD::calc_4vecs(G, P, m_p, j, i, Loci::center, Dtmp);
     double bsq = m::max(dot(Dtmp.bcon, Dtmp.bcov), SMALL);
-    set_parameters(G, P(m_p.RHO), P(m_p.UU), P(m_p.Q), P(m_p.DP),
+    Real qtilde = (m_p.Q >= 0) ? P(m_p.Q) : 0.;
+    Real dPtilde = (m_p.DP >= 0) ? P(m_p.DP) : 0.;
+    set_parameters(G, P(m_p.RHO), P(m_p.UU), qtilde, dPtilde,
                     bsq, emhd_params, gam, j, i, tau, chi_e, nu_e);
 }
 
@@ -269,7 +281,9 @@ KOKKOS_INLINE_FUNCTION void set_parameters(const GRCoordinates& G, const Variabl
     FourVectors Dtmp;
     GRMHD::calc_4vecs(G, P, m_p, k, j, i, Loci::center, Dtmp);
     double bsq = m::max(dot(Dtmp.bcon, Dtmp.bcov), SMALL);
-    set_parameters(G, P(m_p.RHO, k, j, i), P(m_p.UU, k, j, i), P(m_p.Q, k, j, i), P(m_p.DP, k, j, i),
+    Real qtilde = (m_p.Q >= 0) ? P(m_p.Q, k, j, i) : 0.;
+    Real dPtilde = (m_p.DP >= 0) ? P(m_p.DP, k, j, i) : 0.;
+    set_parameters(G, P(m_p.RHO, k, j, i), P(m_p.UU, k, j, i), qtilde, dPtilde,
                     bsq, emhd_params, gam, j, i, tau, chi_e, nu_e);
 }
 

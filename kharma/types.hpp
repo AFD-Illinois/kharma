@@ -177,17 +177,33 @@ class VarMap {
             if (U1 >= 0) {
                 U2 = U1 + 1;
                 U3 = U1 + 2;
+            } else {
+                U2 = -1;
+                U3 = -1;
             }
             if (B1 >= 0) {
                 B2 = B1 + 1;
                 B3 = B1 + 2;
+            } else {
+                B2 = -1;
+                B3 = -1;
             }
             if (Bf1 >= 0) {
                 Bf2 = Bf1 + 1;
                 Bf3 = Bf1 + 2;
+            } else {
+                Bf2 = -1;
+                Bf3 = -1;
             }
         }
-        
+
+        void print() const
+        {
+            printf("VAR MAP:\n");
+            printf("prims: %d %d %d %d %d\n", RHO, UU, U1, U2, U3);
+            printf("B field cell: %d %d %d face: %d %d %d\n", B1, B2, B3, Bf1, Bf2, Bf3);
+            printf("EMHD q: %d dP: %d\n", Q, DP);
+        }
 };
 
 #if DEBUG

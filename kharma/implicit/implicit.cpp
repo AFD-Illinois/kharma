@@ -131,6 +131,10 @@ std::shared_ptr<KHARMAPackage> Implicit::Initialize(ParameterInput *pin, std::sh
         pkg->AddField("residual", m);
     }
 
+    // The major call, to Step(), is done manually from the ImEx driver
+    // But, we just register the diagnostics function to print out solver failures
+    pkg->PostStepDiagnosticsMesh = Implicit::PostStepDiagnostics;
+
     return pkg;
 }
 
@@ -593,14 +597,19 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
 
             // Finally, break if max_norm is less than the total tolerance we set
             // TODO per-zone tolerance with masks?
-            if (iter >= iter_min && max_norm < rootfind_tol) break;
+            if (iter >= iter_min && max_norm < rootfind_tol) {
+                EndFlag();
+                break;
+            }
         }
         EndFlag();
     }
 
-    if (flag_verbose > 0) {
-        Reductions::CheckFlagReduceAndPrintHits(md_solver, "solve_fail", Implicit::status_names, IndexDomain::interior, false, 2);
-    }
+    // if (flag_verbose > 0) {
+    //     // Start the reduction as soon as we have the data
+    //     // Dangerous, so commented
+    //     Reductions::StartFlagReduce(md_solver, "solve_fail", Implicit::status_names, IndexDomain::interior, false, 2);
+    // }
 
     EndFlag();
     return TaskStatus::complete;
@@ -617,6 +626,7 @@ TaskStatus Implicit::PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
 
     // Debugging/diagnostic info about implicit solver
     if (flag_verbose > 0) {
+        Reductions::StartFlagReduce(md, "solve_fail", Implicit::status_names, IndexDomain::interior, false, 2);
         Reductions::CheckFlagReduceAndPrintHits(md, "solve_fail", Implicit::status_names, IndexDomain::interior, false, 2);
     }
 

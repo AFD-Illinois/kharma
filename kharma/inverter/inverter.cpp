@@ -64,23 +64,20 @@ std::shared_ptr<KHARMAPackage> Inverter::Initialize(ParameterInput *pin, std::sh
     // TODO add version attempting to recover from entropy, stuff like that
 
     // Flag denoting UtoP inversion failures
-    // Only needed if we're actually calling UtoP, but always allocated as it's retrieved often
-    // Needs boundary sync if treating primitive variables as fundamental
+    // Needs boundary sync if treating primitive variables as fundamental, since we need to
+    // avoid failed neighbors when fixing.
     bool sync_prims = packages->Get("Driver")->Param<bool>("sync_prims");
-    bool implicit_grmhd = packages->Get("GRMHD")->Param<bool>("implicit");
     Metadata m;
-    if (sync_prims && !implicit_grmhd) {
+    if (sync_prims) {
         m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy, Metadata::FillGhost});
     } else {
         m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
     }
     pkg->AddField("pflag", m);
 
-    // Don't operate if GRMHD variables are being evolved implicitly
-    // This package is still loaded because fixes
-    if (!implicit_grmhd) {
-        pkg->BlockUtoP = Inverter::BlockUtoP;
-    }
+    // We exist basically to do this
+    pkg->BlockUtoP = Inverter::BlockUtoP;
+    pkg->BoundaryUtoP = Inverter::BlockUtoP;
 
     pkg->PostStepDiagnosticsMesh = Inverter::PostStepDiagnostics;
 
@@ -102,7 +99,10 @@ inline void BlockPerformInversion(MeshBlockData<Real> *rc, IndexDomain domain, b
     auto P = GRMHD::PackHDPrims(rc, prims_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
 
-    GridScalar pflag = rc->Get("pflag").data;
+    auto pflag = rc->PackVariables(std::vector<std::string>{"pflag"});
+
+    if (U.GetDim(4) == 0 || pflag.GetDim(4) == 0)
+        return;
 
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
 
@@ -120,7 +120,7 @@ inline void BlockPerformInversion(MeshBlockData<Real> *rc, IndexDomain domain, b
         KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
             if (KDomain::inside(k, j, i, b)) {
                 // Run over all interior zones and any initialized ghosts
-                pflag(k, j, i) = static_cast<double>(Inverter::u_to_p<inverter>(G, U, m_u, gam, k, j, i, P, m_p, Loci::center));
+                pflag(0, k, j, i) = static_cast<double>(Inverter::u_to_p<inverter>(G, U, m_u, gam, k, j, i, P, m_p, Loci::center));
             }
         }
     );
@@ -151,7 +151,7 @@ TaskStatus Inverter::PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
     // Debugging/diagnostic info about floor and inversion flags
     // TODO grab the total and die on too many
     if (flag_verbose >= 1) {
-        // TODO this should move into BlockUtoP when everything goes MeshData
+        // TODO this should move into UtoP when everything goes MeshData
         Reductions::StartFlagReduce(md, "pflag", Inverter::status_names, IndexDomain::interior, false, 1);
         Reductions::CheckFlagReduceAndPrintHits(md, "pflag", Inverter::status_names, IndexDomain::interior, false, 1);
     }

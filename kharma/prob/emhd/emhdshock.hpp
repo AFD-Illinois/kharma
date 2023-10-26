@@ -61,7 +61,6 @@ TaskStatus InitializeEMHDShock(std::shared_ptr<MeshBlockData<Real>>& rc, Paramet
     GridScalar rho  = rc->Get("prims.rho").data;
     GridScalar u    = rc->Get("prims.u").data;
     GridVector uvec = rc->Get("prims.uvec").data;
-    GridVector B_P  = rc->Get("prims.B").data;
     GridVector q    = rc->Get("prims.q").data;
     GridVector dP   = rc->Get("prims.dP").data;
 
@@ -69,6 +68,11 @@ TaskStatus InitializeEMHDShock(std::shared_ptr<MeshBlockData<Real>>& rc, Paramet
 
     // Type of input to the problem
     const std::string input = pin->GetOrAddString("emhdshock", "input", "BVP");
+
+    // Both shocks do not have a B jump condition, just set B10
+    // TODO take magnetization?
+    pin->GetOrAddString("b_field", "type", "constant");
+    pin->GetOrAddReal("b_field", "B10", 1.e-5);
 
     // Obtain EMHD params
     const EMHD::EMHD_parameters& emhd_params = EMHD::GetEMHDParameters(pmb->packages);
@@ -100,10 +104,13 @@ TaskStatus InitializeEMHDShock(std::shared_ptr<MeshBlockData<Real>>& rc, Paramet
         fp_q   = fopen(fbvp_q,   "r");
         fp_dP  = fopen(fbvp_dP,  "r");
 
+        if (fp_rho == NULL || fp_u == NULL || fp_u1 == NULL || fp_q == NULL || fp_dP == NULL) {
+            throw std::runtime_error("Could not open conducting atmosphere solution!");
+        }
+
         auto rho_host   = rho.GetHostMirror();
         auto u_host     = u.GetHostMirror();
         auto uvec_host  = uvec.GetHostMirror();
-        auto B_host     = B_P.GetHostMirror();
         auto q_host     = q.GetHostMirror();
         auto dP_host    = dP.GetHostMirror();
 
@@ -124,9 +131,6 @@ TaskStatus InitializeEMHDShock(std::shared_ptr<MeshBlockData<Real>>& rc, Paramet
                     // Now the remaining primitives
                     uvec_host(1, k, j, i) = 0.;
                     uvec_host(2, k, j, i) = 0.;
-                    B_host(V1, k, j, i)  = 1.e-5;
-                    B_host(V2, k, j, i)  = 0.;
-                    B_host(V3, k, j, i)  = 0.;
 
                     if (emhd_params.higher_order_terms) {
 
@@ -165,7 +169,6 @@ TaskStatus InitializeEMHDShock(std::shared_ptr<MeshBlockData<Real>>& rc, Paramet
         rho.DeepCopy(rho_host);
         u.DeepCopy(u_host);
         uvec.DeepCopy(uvec_host);
-        B_P.DeepCopy(B_host);
         q.DeepCopy(q_host);
         dP.DeepCopy(dP_host);
         Kokkos::fence();
@@ -182,16 +185,13 @@ TaskStatus InitializeEMHDShock(std::shared_ptr<MeshBlockData<Real>>& rc, Paramet
         double u1L  = 1.,     u1R  = 0.32434571;
         double u2L  = 0.,     u2R  = 0.;
         double u3L  = 0.,     u3R  = 0.;
-        double B1L  = 1.e-5,  B1R  = 1.e-5;
-        double B2L  = 0,      B2R  = 0.;
-        double B3L  = 0.,     B3R  = 0.;
+        const GReal x1_center = (x1min + x1max) / 2.;
 
         pmb->par_for("emhdshock_init", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
             KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
 
                 Real X[GR_DIM];
                 G.coord_embed(k, j, i, Loci::center, X);
-                const Real x1_center = (x1min + x1max) / 2.;
 
                 bool lhs = X[1] < x1_center;
 
@@ -201,9 +201,6 @@ TaskStatus InitializeEMHDShock(std::shared_ptr<MeshBlockData<Real>>& rc, Paramet
                 uvec(V1, k, j, i) = (lhs) ? u1L : u1R;
                 uvec(V2, k, j, i) = (lhs) ? u2L : u2R;
                 uvec(V3, k, j, i) = (lhs) ? u3L : u3R;
-                B_P(V1, k, j, i)  = (lhs) ? B1L : B1R;
-                B_P(V2, k, j, i)  = (lhs) ? B2L : B2R;
-                B_P(V3, k, j, i)  = (lhs) ? B3L : B3R;
                 q(k ,j, i)       = 0.;   
                 dP(k ,j, i)      = 0.;   
 
