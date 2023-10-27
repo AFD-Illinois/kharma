@@ -1188,5 +1188,6 @@ class FunkyTransform {
 // See coordinate_embedding.hpp
 
 using SomeBaseCoords = mpark::variant<SphMinkowskiCoords, CartMinkowskiCoords, SphBLCoords, SphKSCoords, SphBLExtG, SphKSExtG, DCSKSCoords, DCSBLCoords, EDGBKSCoords, EDGBBLCoords>; // Changes Made. 
-using SomeTransform = mpark::variant<NullTransform, ExponentialTransform, SuperExponentialTransform, ModifyTransform, FunkyTransform>;
+using SomeTransform = mpark::variant<NullTransform, ExponentialTransform, SuperExponentialTransform, ModifyTransform, FunkyTransform, SphNullTransform>;
 
+// added SphNullTransform
