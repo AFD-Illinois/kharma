@@ -106,8 +106,6 @@ class CoordinateEmbedding {
             } else if (mpark::holds_alternative<DCSBLCoords>(base_in)) {
                 base.emplace<DCSBLCoords>(mpark::get<DCSBLCoords>(base_in));
             }
-<<<<<<< HEAD
-=======
 
             // Changes Made. ADDING EDGB KS AND BL HERE !! 
             else if (mpark::holds_alternative<EDGBKSCoords>(base_in)) {
@@ -116,7 +114,6 @@ class CoordinateEmbedding {
                 base.emplace<EDGBBLCoords>(mpark::get<EDGBBLCoords>(base_in));
             }
 
->>>>>>> feature/gridfile
 
             if (mpark::holds_alternative<NullTransform>(transform_in)) {
                 transform.emplace<NullTransform>(mpark::get<NullTransform>(transform_in));
@@ -151,16 +148,6 @@ class CoordinateEmbedding {
 
             } else if (base_str == "spherical_ks" || base_str == "ks" ||
                         base_str == "spherical_ks_extg" || base_str == "ks_extg" || 
-<<<<<<< HEAD
-                        base_str == "dcs_ks") {
-                            GReal a = pin->GetReal("coordinates", "a"); 
-                            
-                            if (base_str == "dcs_ks") { 
-                                GReal zeta = pin->GetReal("coordinates", "zeta"); // Get "zeta" value
-                                base.emplace<DCSKSCoords>(DCSKSCoords(a, zeta));
-                                
-                            } else {
-=======
                         base_str == "dcs_ks"|| base_str == "edgb_ks") {
                             
                             GReal a = pin->GetReal("coordinates", "a"); 
@@ -181,7 +168,6 @@ class CoordinateEmbedding {
                             else {
                                 if (theory != "gr") throw std::invalid_argument("Base coordinates is set to GR,\
                                  but theory was not initialized to 'gr'!");
->>>>>>> feature/gridfile
                                 bool ext_g = pin->GetOrAddBoolean("coordinates", "ext_g", false);
                                 if (ext_g || base_str == "spherical_ks_extg" || base_str == "ks_extg") {
                                     if (a > 0) throw std::invalid_argument("Transform is for spherical coordinates!");
@@ -190,25 +176,15 @@ class CoordinateEmbedding {
                                         base.emplace<SphKSCoords>(SphKSCoords(a));
                                     }
                                 }
-<<<<<<< HEAD
-
-            } else if (base_str == "spherical_bl" || base_str == "bl" ||
-                        base_str == "spherical_bl_extg" || base_str == "bl_extg" ||
-                        base_str == "dcs_bl") {
-=======
                         
             } else if (base_str == "spherical_bl" || base_str == "bl" ||
                         base_str == "spherical_bl_extg" || base_str == "bl_extg" ||
                         base_str == "dcs_bl" || base_str == "edgb_bl") {
->>>>>>> feature/gridfile
                             GReal a = pin->GetReal("coordinates", "a");
                             
                             if (base_str == "dcs_bl") {
                                 GReal zeta = pin->GetReal("coordinates", "zeta"); // Get "zeta" value
                                 base.emplace<DCSBLCoords>(DCSBLCoords(a, zeta));   // Create DCSBLCoords with "a" and "zeta"
-<<<<<<< HEAD
-                            } else {
-=======
                             }
                             else if (base_str == "edgb_bl") {
                                 GReal zeta = pin->GetReal("coordinates", "zeta"); // Get "zeta" value
@@ -216,7 +192,6 @@ class CoordinateEmbedding {
 
                             }
                             else {
->>>>>>> feature/gridfile
                                 bool ext_g = pin->GetOrAddBoolean("coordinates", "ext_g", false);
                                 if (ext_g || base_str == "spherical_bl_extg" || base_str == "bl_extg") {
                                     if (a > 0) throw std::invalid_argument("Transform is for spherical coordinates!");
@@ -324,27 +299,18 @@ class CoordinateEmbedding {
                 mpark::holds_alternative<SphBLCoords>(base) ||
                 mpark::holds_alternative<SphKSExtG>(base) ||
                 mpark::holds_alternative<SphBLExtG>(base) ||
-<<<<<<< HEAD
-                
-                mpark::holds_alternative<DCSKSCoords>(base) || // Changes Made. 
-                mpark::holds_alternative<DCSBLCoords>(base))
-=======
                 mpark::holds_alternative<DCSKSCoords>(base) || // Changes Made. 
                 mpark::holds_alternative<DCSBLCoords>(base) ||
                 mpark::holds_alternative<EDGBKSCoords>(base) ||
                 mpark::holds_alternative<EDGBBLCoords>(base)) // Changes Made.
->>>>>>> feature/gridfile
             {
                 const GReal a = get_a();
                 return 1 + m::sqrt(1 - a * a);
             } else {
                 return 0.0;
             }
-<<<<<<< HEAD
-=======
 
         
->>>>>>> feature/gridfile
     // ___________________________________________________________________________________________________________________
 
         }
@@ -355,9 +321,6 @@ class CoordinateEmbedding {
             }, base);
         }
 
-<<<<<<< HEAD
-        //mayeb a get zeta function 
-=======
         //Changes made. a get zeta function 
         // KOKKOS_INLINE_FUNCTION GReal get_zeta() const
         // {
@@ -366,7 +329,6 @@ class CoordinateEmbedding {
         //     }, base);
         // }
 
->>>>>>> feature/gridfile
     // ___________________________________________________________________________________________________________________
 
         GReal startx(int dir) const
@@ -766,8 +728,6 @@ class CoordinateEmbedding {
 };
 
     // ___________________________________________________________________________________________________________________
-<<<<<<< HEAD
-=======
 
 
 
@@ -794,4 +754,3 @@ class CoordinateEmbedding {
 
 
 
->>>>>>> feature/gridfile
