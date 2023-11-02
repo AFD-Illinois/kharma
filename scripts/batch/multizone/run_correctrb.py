@@ -73,7 +73,7 @@ def calc_nx1(kwargs, r_out=None, r_in=None):#(given_nx1, nzones):
 # Don't use this
 @click.option('--start_time', default=0.0, help="Starting time. Only use if you know what you're doing.")
 @click.option('--onezone', is_flag=True, help="Run onezone instead.")
-@click.option('--lin_recon', is_flag=True, help="Use linear reconstruction instead of weno.")
+@click.option('--recon', default=None, help="reconstruction method.")
 @click.option('--combine_out_ann', is_flag=True, help="Combine outer annuli larger than Bondi radius.")
 @click.option('--move_rin', is_flag=True, help="Move r_in instead of switching btw same sized annuli.")
 @click.option('--gamma_max', default=10, help="Gamma_max floor.")
@@ -83,6 +83,7 @@ def calc_nx1(kwargs, r_out=None, r_in=None):#(given_nx1, nzones):
 @click.option('--btype', default="r1s2", help="b field type")
 @click.option('--coord', default=None, help="coordinate system")
 @click.option('--df', is_flag=True, help="Use drift frame instead of normal when applying floors.")
+@click.option('--urfrac', default=0, help="ur_frac")
 def run_multizone(**kwargs):
     """This script runs a "multi-zone" KHARMA sequence.
     The idea is to divide a large domain (~1e8M radius) into several "zones,"
@@ -162,12 +163,12 @@ def run_multizone(**kwargs):
             log_u_over_rho = -5.34068635
         else:
             #kwargs['r_b'] = 1e5
-            logrho = -8.2014518
+            logrho = 0 #-8.2014518
             log_u_over_rho = -5.2915149
         args['bondi/vacuum_logrho'] = logrho
         args['bondi/vacuum_log_u_over_rho'] = log_u_over_rho
         args['bondi/rs'] = kwargs['rs']
-        args['bondi/ur_frac'] = 0
+        args['bondi/ur_frac'] = kwargs['urfrac']
 
         # B field additions
         if kwargs['bz'] != 0.0:
@@ -191,20 +192,22 @@ def run_multizone(**kwargs):
                 args['floors/frame'] = 'drift'
             # And modify a bunch of defaults
             # Assume we will always want jitter if we have B unless a 2D problem
-            if kwargs['jitter'] == 0.0 and kwargs['nx3']>1 :
+            if kwargs['jitter'] > 0.0 and kwargs['nx3']>1 : #
                 kwargs['jitter'] = 0.1
             # Lower the cfl condition in B field
             args['GRMHD/cfl'] = 0.5
-            if kwargs['lin_recon']:
-                args['GRMHD/reconstruction'] = "linear_vl"
-            else:
+            if kwargs['recon'] is None:
                 # use weno5
                 args['GRMHD/reconstruction'] = "weno5"
+        #else:
+            #kwargs['jitter'] = 0.0
         if kwargs['coord'] is not None:
             args['coordinates/transform'] = kwargs['coord']
             # TODO these are only for wks
-            args['coordinates/lin_frac'] = 0.75
+            args['coordinates/lin_frac'] = 0.6 #0.75
+            args['coordinates/smoothness'] = 0.02
             args['GRMHD/reconstruction'] = "linear_vl"
+        if kwargs['recon'] is not None: args['GRMHD/reconstruction'] = kwargs['recon']
         args['GRMHD/gamma'] = kwargs["gamma"]
         args['floors/rho_min_geom'] = kwargs['rhomin']
         args['floors/u_min_geom'] = kwargs['umin']

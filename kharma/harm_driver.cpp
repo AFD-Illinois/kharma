@@ -135,9 +135,13 @@ TaskCollection HARMDriver::MakeTaskCollection(BlockList_t &blocks, int stage)
         case ReconstructionType::ppm:
         case ReconstructionType::mp5:
         case ReconstructionType::weno5_lower_poles:
-            std::cerr << "Reconstruction type not supported!  Supported reconstructions:" << std::endl;
-            std::cerr << "donor_cell, linear_mc, linear_vl, weno5" << std::endl;
-            throw std::invalid_argument("Unsupported reconstruction algorithm!");
+            //std::cerr << "Reconstruction type not supported!  Supported reconstructions:" << std::endl;
+            //std::cerr << "donor_cell, linear_mc, linear_vl, weno5" << std::endl;
+            //throw std::invalid_argument("Unsupported reconstruction algorithm!");
+            t_calculate_flux1 = tl.AddTask(t_start_recv, Flux::GetFlux<ReconstructionType::weno5_lower_poles, X1DIR>, mc0.get());
+            t_calculate_flux2 = tl.AddTask(t_start_recv, Flux::GetFlux<ReconstructionType::weno5_lower_poles, X2DIR>, mc0.get());
+            t_calculate_flux3 = tl.AddTask(t_start_recv, Flux::GetFlux<ReconstructionType::weno5_lower_poles, X3DIR>, mc0.get());
+            break;
         }
         auto t_calculate_flux = t_calculate_flux1 | t_calculate_flux2 | t_calculate_flux3;
 

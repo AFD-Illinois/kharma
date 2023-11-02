@@ -131,8 +131,8 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
         params.Add("recon", ReconstructionType::linear_mc);
     } else if (recon == "weno5") {
         params.Add("recon", ReconstructionType::weno5);
-    // } else if (recon == "weno5_lower_poles") {
-    //     params.Add("recon", ReconstructionType::weno5_lower_poles);
+    } else if (recon == "weno5_lower_poles") {
+         params.Add("recon", ReconstructionType::weno5_lower_poles);
     } else {
         std::cerr << "Reconstruction type not supported!  Supported reconstructions:" << std::endl;
         std::cerr << "donor_cell, linear_mc, linear_vl, weno5" << std::endl;
