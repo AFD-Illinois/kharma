@@ -192,7 +192,7 @@ def run_multizone(**kwargs):
                 args['floors/frame'] = 'drift'
             # And modify a bunch of defaults
             # Assume we will always want jitter if we have B unless a 2D problem
-            if kwargs['jitter'] > 0.0 and kwargs['nx3']>1 : #
+            if kwargs['nx3']>1 : #
                 kwargs['jitter'] = 0.1
             # Lower the cfl condition in B field
             args['GRMHD/cfl'] = 0.5
@@ -203,10 +203,16 @@ def run_multizone(**kwargs):
             #kwargs['jitter'] = 0.0
         if kwargs['coord'] is not None:
             args['coordinates/transform'] = kwargs['coord']
-            # TODO these are only for wks
-            args['coordinates/lin_frac'] = 0.6 #0.75
-            args['coordinates/smoothness'] = 0.02
-            args['GRMHD/reconstruction'] = "linear_vl"
+            if kwargs['coord'] == 'fmks':
+                # only for fmks
+                args['coordinates/mks_smooth'] = 0.
+                args['coordinates/poly_xt'] = 0.8
+                args['coordinates/poly_alpha'] = 14
+            elif kwargs['coord'] == 'wks':
+                # TODO these are only for wks
+                args['coordinates/lin_frac'] = 0.6 #0.75
+                args['coordinates/smoothness'] = 0.02
+            #args['GRMHD/reconstruction'] = "linear_vl"
         if kwargs['recon'] is not None: args['GRMHD/reconstruction'] = kwargs['recon']
         args['GRMHD/gamma'] = kwargs["gamma"]
         args['floors/rho_min_geom'] = kwargs['rhomin']

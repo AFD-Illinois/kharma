@@ -504,8 +504,8 @@ KOKKOS_INLINE_FUNCTION void reconstruct<ReconstructionType::weno5_lower_poles, X
 {
     // This prioiritizes using the same fluxes on faces rather than for cells.
     // Neither is transparently wrong (afaict) but this feels nicer
-    constexpr int o = 5;
-    if (j > o || j < P.GetDim(2) - 1 - o) {
+    constexpr int o = 6; //5;
+    if (j > o || j < P.GetDim(2) - o) {
         KReconstruction::WENO5X2l(member, k, j - 1, is_l, ie_l, P, ql);
         KReconstruction::WENO5X2r(member, k, j, is_l, ie_l, P, qr);
     } else {
