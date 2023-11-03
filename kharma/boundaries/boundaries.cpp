@@ -466,11 +466,21 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
                 const int m_rho = cons_map["cons.rho"].first;
                 // ...and if this face of the block corresponds to a global boundary...
                 if (pmb->boundary_flag[bface] == BoundaryFlag::user) {
-                    pmb->par_for(
-                        "zero_inflow_flux_" + bname, kb.s, kb.e, jb.s, jb.e, ib.s, ib.s,
-                        KOKKOS_LAMBDA(const int &k, const int &j, const int &i) {
-                            F.flux(bdir, m_rho, k, j, i) = m::min(F.flux(bdir, m_rho, k, j, i), 0.);
-                        });
+                    if (binner) {
+                        pmb->par_for(
+                            "zero_inflow_flux_" + bname, kb.s, kb.e, jb.s, jb.e, ib.s, ib.s,
+                            KOKKOS_LAMBDA(const int &k, const int &j, const int &i) {
+                                F.flux(bdir, m_rho, k, j, i) = m::min(F.flux(bdir, m_rho, k, j, i), 0.);
+                            }
+                        );
+                    } else {
+                        pmb->par_for(
+                            "zero_inflow_flux_" + bname, kb.s, kb.e, jb.s, jb.e, ib.s, ib.s,
+                            KOKKOS_LAMBDA(const int &k, const int &j, const int &i) {
+                                F.flux(bdir, m_rho, k, j, i) = m::max(F.flux(bdir, m_rho, k, j, i), 0.);
+                            }
+                        );
+                    }
                 }
             }
 
