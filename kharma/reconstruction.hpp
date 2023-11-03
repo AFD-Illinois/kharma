@@ -494,7 +494,13 @@ KOKKOS_INLINE_FUNCTION void reconstruct<ReconstructionType::weno5_lower_poles, X
                                         const int& k, const int& j, const int& is_l, const int& ie_l, 
                                         ScratchPad2D<Real> ql, ScratchPad2D<Real> qr)
 {
-    reconstruct<ReconstructionType::weno5, X1DIR>(member, G, P, k, j, is_l, ie_l, ql, qr);
+    //reconstruct<ReconstructionType::weno5, X1DIR>(member, G, P, k, j, is_l, ie_l, ql, qr);
+    
+    // Linear X1 reconstruction near X1 boundaries (copied from lower_edges in kharma_next)
+    constexpr int o = 5; // offset
+    KReconstruction::WENO5X1(member, k, j, is_l+o, ie_l-o, P, ql, qr);
+    KReconstruction::PiecewiseLinearX1(member, k, j, is_l, is_l+o-1, P, ql, qr);
+    KReconstruction::PiecewiseLinearX1(member, k, j, ie_l-o+1, ie_l, P, ql, qr);
 }
 template <>
 KOKKOS_INLINE_FUNCTION void reconstruct<ReconstructionType::weno5_lower_poles, X2DIR>(parthenon::team_mbr_t& member,
