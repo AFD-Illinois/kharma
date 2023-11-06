@@ -47,6 +47,7 @@ TaskStatus InitializeBondi(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterIn
 
     const Real mdot = pin->GetOrAddReal("bondi", "mdot", 1.0);
     const Real rs = pin->GetOrAddReal("bondi", "rs", 8.0);
+    const Real uphi = pin->GetOrAddReal("bondi", "uphi", 0.); 
 
     // Set the innermost radius to apply the Bondi problem initialization
     // By default, stay away from the outer BL coordinate singularity
@@ -76,6 +77,8 @@ TaskStatus InitializeBondi(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterIn
         pmb->packages.Get("GRMHD")->AddParam<Real>("fill_interior_bondi", fill_interior);
     if(! pmb->packages.Get("GRMHD")->AllParams().hasKey("zero_velocity_bondi"))
         pmb->packages.Get("GRMHD")->AddParam<Real>("zero_velocity_bondi", zero_velocity);
+    if(! (pmb->packages.Get("GRMHD")->AllParams().hasKey("uphi")))
+        pmb->packages.Get("GRMHD")->AddParam<Real>("uphi", uphi);
 
     // Set this problem to control the outer X1 boundary by default
     // remember to disable inflow_check in parameter file!
@@ -137,6 +140,7 @@ TaskStatus SetBondiImpl(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain do
 
     // Just the X1 right boundary
     GRCoordinates G = pmb->coords;
+    const Real uphi = pmb->packages.Get("GRMHD")->Param<Real>("uphi");
 
     // Set the Bondi conditions wherever we're asked
     auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;

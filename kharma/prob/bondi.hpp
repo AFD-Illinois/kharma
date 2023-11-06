@@ -41,6 +41,7 @@
 #include "pack.hpp"
 #include "coordinate_utils.hpp"
 #include "types.hpp"
+#include "hdf5_utils.h"
 
 #include <parthenon/parthenon.hpp>
 

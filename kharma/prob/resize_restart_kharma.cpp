@@ -143,6 +143,7 @@ TaskStatus ReadKharmaRestart(std::shared_ptr<MeshBlockData<Real>> rc, ParameterI
     const bool fghostzones = pin->GetBoolean("parthenon/mesh", "restart_ghostzones");
     auto b_field_type = pin->GetOrAddString("b_field", "type", "none");
     int verbose = pin->GetOrAddInteger("debug", "verbose", 0);
+    const Real uphi = pin->GetOrAddReal("bondi", "uphi", 0.); 
 
     // Derived parameters
     hsize_t nBlocks = (int) (n1tot*n2tot*n3tot)/(n1mb*n2mb*n3mb);
@@ -342,9 +343,9 @@ TaskStatus ReadKharmaRestart(std::shared_ptr<MeshBlockData<Real>> rc, ParameterI
     pmb->par_for("copy_restart_state_kharma", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
             get_prim_restart_kharma(G, coords, P, m_p,
-                fx1min, fx1max, fnghost, should_fill, is_spherical, include_B, gam, rs, mdot, length,
-                x1_f_device, x2_f_device, x3_f_device, rho_f_device, u_f_device, uvec_f_device, B_f_device,
-                x1_fill_device, x2_fill_device, x3_fill_device, rho_fill_device, u_fill_device, uvec_fill_device, B_fill_device,
+                fx1min, fx1max, fnghost, should_fill, is_spherical, gam, rs, mdot, uphi, length,
+                x1_f_device, x2_f_device, x3_f_device, rho_f_device, u_f_device, uvec_f_device,
+                x1_fill_device, x2_fill_device, x3_fill_device, rho_fill_device, u_fill_device, uvec_fill_device,
                 k, j, i);
             if (include_B) {
                 get_B_restart_kharma(G, U, m_u,

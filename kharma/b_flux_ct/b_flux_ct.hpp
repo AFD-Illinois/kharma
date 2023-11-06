@@ -87,6 +87,9 @@ void FluxCT(MeshData<Real> *md);
  */
 void FixBoundaryFlux(MeshData<Real> *md, IndexDomain domain, bool coarse);
 
+// added by Hyerin
+TaskStatus FixX1Flux(MeshData<Real> *md);
+
 /**
  * Alternate B field fix for X1 boundary, keeps zero divergence while permitting flux
  * through the boundary, at the cost of a short non-local solve.

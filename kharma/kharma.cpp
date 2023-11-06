@@ -157,6 +157,8 @@ void KHARMA::FixParameters(ParameterInput *pin)
     if (prob == "resize_restart_kharma") {
         ReadKharmaRestartHeader(pin->GetString("resize_restart", "fname"), pin);
     }
+        pin->SetBoolean("coordinates", "spherical", spherical);
+
 
     // Construct a CoordinateEmbedding object.  See coordinate_embedding.hpp for supported systems/tags
     CoordinateEmbedding tmp_coords(pin);
