@@ -111,6 +111,13 @@ std::vector<std::string> GetOrderedNames(MeshBlockData<Real> *rc, const Metadata
  * @return TaskStatus 
  */
 TaskStatus FixSolve(MeshBlockData<Real> *mbd);
+inline TaskStatus MeshFixSolve(MeshData<Real> *md) {
+    Flag("MeshFixSolve");
+    for (int i=0; i < md->NumBlocks(); ++i)
+        FixSolve(md->GetBlockData(i).get());
+    EndFlag();
+    return TaskStatus::complete;
+}
 
 /**
  * Print diagnostics about number of failed solves

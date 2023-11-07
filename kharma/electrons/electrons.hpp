@@ -103,6 +103,14 @@ void BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse=false);
  * TODO this function should update fflag to reflect temperature ratio floor hits
  */
 TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real> *rc);
+inline TaskStatus MeshApplyElectronHeating(MeshData<Real> *md_old, MeshData<Real> *md)
+{
+    Flag("MeshApplyElectronHeating");
+    for (int i=0; i < md->NumBlocks(); ++i)
+        ApplyElectronHeating(md_old->GetBlockData(i).get(), md->GetBlockData(i).get());
+    EndFlag();
+    return TaskStatus::complete;
+}
 
 /**
  * KHARMA requires some method for getting conserved variables from primitives, as well.
@@ -111,7 +119,7 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
  * package defining new primitive/conserved vars must not only provide a prim_to_flux here,
  * but add it to the list in Flux::prim_to_flux.
  */
-KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates& G, const VariablePack<Real>& P, const VarMap& m_p,
+KOKKOS_FORCEINLINE_FUNCTION void p_to_u(const GRCoordinates& G, const VariablePack<Real>& P, const VarMap& m_p,
                                          const int& k, const int& j, const int& i,
                                          const VariablePack<Real>& flux, const VarMap m_u, const Loci loc=Loci::center)
 {
