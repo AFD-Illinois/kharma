@@ -174,9 +174,6 @@ TaskStatus B_CT::BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coa
     // Return if we're not syncing U & P at all (e.g. edges)
     if (B_Uf.GetDim(4) == 0) return TaskStatus::complete;
 
-    // TODO get rid of prims on faces probably
-
-    // Update the primitive B-fields on faces
     const IndexRange3 bc = KDomain::GetRange(rc, domain, coarse);
 
     // Average the primitive vals to zone centers

@@ -1,6 +1,14 @@
 
 # BP's machines
 
+if [[ $HOST == "pn2400633"* ]]; then
+  export PATH="/opt/homebrew/opt/make/libexec/gnubin:$PATH"
+  PREFIX_PATH=/opt/homebrew/
+  C_NATIVE=/opt/homebrew/bin/gcc-13
+  CXX_NATIVE=/opt/homebrew/bin/g++-13
+  CXXFLAGS="-Wl,-ld_classic"
+fi
+
 if [[ $HOST == "cheshire"* ]]; then
   HOST_ARCH="HSW"
   DEVICE_ARCH="PASCAL61"

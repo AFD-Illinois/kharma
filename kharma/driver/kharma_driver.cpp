@@ -173,8 +173,6 @@ TaskID KHARMADriver::AddBoundarySync(const TaskID t_start, TaskList &tl, std::sh
     auto &params = pmesh->packages.Get("Driver")->AllParams();
     bool multilevel = pmesh->multilevel;
 
-    // TODO PtoU for B field when sync_prims?
-
     // The Parthenon exchange tasks include applying physical boundary conditions now.
     // We generally do not take advantage of this yet, but good to know when reasoning about initialization.
     Flag("ParthenonAddSync");

@@ -287,8 +287,9 @@ TaskStatus SeedBFieldType(MeshBlockData<Real> *rc, ParameterInput *pin, IndexDom
                     G.coords.con_vec_to_native(Xnative, A_tilt_embed, A_tilt);
 
                     // Lower the result as we need curl(A_mu).  Done at local zone.
-                    double A_tilt_lower[GR_DIM] = {0};
-                    G.lower(A_tilt, A_tilt_lower, k, j, i, Loci::corner);
+                    double A_tilt_lower[GR_DIM] = {0}, gcov[GR_DIM][GR_DIM] = {0};
+                    G.coords.gcov_native(Xnative, gcov);
+                    DLOOP2 A_tilt_lower[mu] += gcov[mu][nu] * A_tilt[nu];
                     VLOOP A(v, k, j, i) = A_tilt_lower[1 + v];
                 } else {
                     // Some problems rely on a very accurate A->B, which the rotation lacks.
@@ -318,6 +319,7 @@ TaskStatus SeedBFieldType(MeshBlockData<Real> *rc, ParameterInput *pin, IndexDom
                 throw std::runtime_error("Must initialize 1D field directly!");
             }
             B_CT::BlockUtoP(rc, domain);
+            //std::cout << "Block divB: " << B_CT::BlockMaxDivB(rc) << std::endl;
         } else if (pkgs.count("B_FluxCT")) {
             // Calculate B-field
             GridVector B_U = rc->Get("cons.B").data;
