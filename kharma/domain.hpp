@@ -110,14 +110,18 @@ inline IndexRange3 GetRange(T data, IndexDomain domain, int left_halo=0, int rig
     const IndexRange jb = cellbounds.GetBoundsJ(domain);
     const IndexRange kb = cellbounds.GetBoundsK(domain);
     // Compute sizes with specified halo zones included in non-trivial dimensions
+    // TODO notion of activated x1+x3 with nx2==0?
     const int& ndim = GetNDim(data);
-    // If ghost & not x1 direction
     const IndexRange il = IndexRange{ib.s + left_halo, ib.e + right_halo};
     const IndexRange jl = (ndim > 1) ? IndexRange{jb.s + left_halo, jb.e + right_halo} : jb;
     const IndexRange kl = (ndim > 2) ? IndexRange{kb.s + left_halo, kb.e + right_halo} : kb;
-    return IndexRange3{(uint) il.s, (uint) il.e,
-                       (uint) jl.s, (uint) jl.e,
-                       (uint) kl.s, (uint) kl.e};
+    // Bounds of entire domain, we never mean to go beyond these
+    const IndexRange ibe = cellbounds.GetBoundsI(IndexDomain::entire);
+    const IndexRange jbe = cellbounds.GetBoundsJ(IndexDomain::entire);
+    const IndexRange kbe = cellbounds.GetBoundsK(IndexDomain::entire);
+    return IndexRange3{(uint) m::max(il.s, ibe.s), (uint) m::min(il.e, ibe.e),
+                       (uint) m::max(jl.s, jbe.s), (uint) m::min(jl.e, jbe.e),
+                       (uint) m::max(kl.s, kbe.s), (uint) m::min(kl.e, kbe.e)};
 }
 template<typename T>
 inline IndexRange3 GetRange(T data, IndexDomain domain, bool coarse)
