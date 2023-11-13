@@ -378,9 +378,20 @@ void KBoundaries::CheckInflow(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDom
 
     // Inflow check
     // Iterate over zones w/p=0
-    pmb->par_for_bndry(
-        "check_inflow", IndexRange{0, 0}, domain, CC, coarse,
-        KOKKOS_LAMBDA(const int &p, const int &k, const int &j, const int &i) {
+    // pmb->par_for_bndry(
+    //     "check_inflow", IndexRange{0, 0}, domain, CC, coarse,
+    //     KOKKOS_LAMBDA(const int &p, const int &k, const int &j, const int &i) {
+    //         KBoundaries::check_inflow(G, P, domain, m_p.U1, k, j, i);
+    //     }
+    // );
+    const auto bface = BoundaryFace(domain);
+    const auto bname = BoundaryName(bface);
+    const bool binner = BoundaryIsInner(bface);
+    // One domain interior to boundary
+    auto b = KDomain::GetRange(rc, domain, -((int) !binner), binner, coarse);
+    pmb->par_for(
+        "zero_inflow_" + bname, b.ks, b.ke, b.js, b.je, b.is, b.ie,
+        KOKKOS_LAMBDA(const int &k, const int &j, const int &i) {
             KBoundaries::check_inflow(G, P, domain, m_p.U1, k, j, i);
         }
     );
@@ -427,6 +438,10 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
     // These functions do *not* need an extra row outside the domain,
     // like B_FluxCT::FixBoundaryFlux does.
     const int ndim = pmesh->ndim;
+    // Entire range
+    const IndexRange ibe = pmb0->cellbounds.GetBoundsI(IndexDomain::entire);
+    const IndexRange jbe = pmb0->cellbounds.GetBoundsJ(IndexDomain::entire);
+    const IndexRange kbe = pmb0->cellbounds.GetBoundsK(IndexDomain::entire);
     // Ranges for sides
     const IndexRange ibs = pmb0->cellbounds.GetBoundsI(IndexDomain::interior);
     const IndexRange jbs = pmb0->cellbounds.GetBoundsJ(IndexDomain::interior);
@@ -448,7 +463,7 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
             if (bdir > ndim) continue;
 
             // Set ranges based
-            IndexRange ib = ibs, jb = jbs, kb = kbs;
+            IndexRange ib = ibe, jb = jbe, kb = kbe;
             // Range for inner_x1 bounds is first face only, etc.
             if (bdir == 1) {
                 ib.s = ib.e = (binner) ? ibf.s : ibf.e;
@@ -468,14 +483,14 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
                 if (pmb->boundary_flag[bface] == BoundaryFlag::user) {
                     if (binner) {
                         pmb->par_for(
-                            "zero_inflow_flux_" + bname, kb.s, kb.e, jb.s, jb.e, ib.s, ib.s,
+                            "zero_inflow_flux_" + bname, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
                             KOKKOS_LAMBDA(const int &k, const int &j, const int &i) {
                                 F.flux(bdir, m_rho, k, j, i) = m::min(F.flux(bdir, m_rho, k, j, i), 0.);
                             }
                         );
                     } else {
                         pmb->par_for(
-                            "zero_inflow_flux_" + bname, kb.s, kb.e, jb.s, jb.e, ib.s, ib.s,
+                            "zero_inflow_flux_" + bname, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
                             KOKKOS_LAMBDA(const int &k, const int &j, const int &i) {
                                 F.flux(bdir, m_rho, k, j, i) = m::max(F.flux(bdir, m_rho, k, j, i), 0.);
                             }

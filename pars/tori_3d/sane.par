@@ -20,7 +20,7 @@ nx3 = 32
 <coordinates>
 base = spherical_ks
 transform = fmks
-r_out = 1000
+r_out = 100
 a = 0.9375
 hslope = 0.3
 mks_smooth = 0.5
@@ -71,7 +71,7 @@ Tp = 10
 file_type = hdf5
 dt = 5.0
 single_precision_output = true
-variables = prims.rho, prims.u, prims.uvec, prims.B, jcon, divB
+variables = prims, jcon, divB
 
 <parthenon/output1>
 file_type = rst

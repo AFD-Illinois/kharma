@@ -1,3 +1,7 @@
+# Memory dumps
+core*
+*.swp
+
 # Various script results/logs
 out-*.txt
 *.json
@@ -6,7 +10,6 @@ convergence.txt
 *.png
 *.mp4
 *.webm
-core.*
 frames_*/
 logs/
 *.log
@@ -77,6 +80,3 @@ make_args
 # Python files
 __pycache__/
 *.pyc
-
-# added by Hyerin
-*.swp
