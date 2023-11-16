@@ -103,7 +103,8 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     // Flags for B fields
     // We always mark conserved B to be sync'd for consistency, since it's strictly required for B_CT/AMR
     std::vector<MetadataFlag> flags_prim = {Metadata::Real, Metadata::Derived, Metadata::GetUserFlag("Primitive"),
-                                            Metadata::Cell, Metadata::GetUserFlag("MHD"), areWeImplicit, Metadata::Vector};
+                                            Metadata::Cell, Metadata::GetUserFlag("MHD"), areWeImplicit, Metadata::Vector,
+                                            Metadata::FillGhost, Metadata::Restart}; // added by Hyerin (12/09/2022)
     std::vector<MetadataFlag> flags_cons = {Metadata::Real, Metadata::Independent, Metadata::Restart, Metadata::FillGhost, Metadata::WithFluxes, Metadata::Conserved,
                                             Metadata::Cell, Metadata::GetUserFlag("MHD"), areWeImplicit, Metadata::Vector};
 
@@ -117,6 +118,9 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     std::vector<MetadataFlag> flags_emf = {Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy};
     m = Metadata(flags_emf, s_vector);
     pkg->AddField("emf", m);
+    // Hyerin (12/19/22)
+    m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::FillGhost, Metadata::Vector});
+    pkg->AddField("B_Save", m);
 
     // CALLBACKS
 
@@ -349,8 +353,6 @@ void FixBoundaryFlux(MeshData<Real> *md, IndexDomain domain, bool coarse)
     const IndexRange ib = bounds.GetBoundsI(IndexDomain::interior);
     const IndexRange jb = bounds.GetBoundsJ(IndexDomain::interior);
     const IndexRange kb = bounds.GetBoundsK(IndexDomain::interior);
-    const IndexRange ib_e = bounds.GetBoundsI(IndexDomain::entire);
-    const IndexRange kb_e = bounds.GetBoundsK(IndexDomain::entire);
 
     // Imagine a corner of the domain, with ghost and physical zones
     // as below, denoted w/'g' and 'p' respectively.
@@ -377,8 +379,6 @@ void FixBoundaryFlux(MeshData<Real> *md, IndexDomain domain, bool coarse)
     const IndexRange ibs = IndexRange{ib.s - 1, ib.e + 1};
     const IndexRange jbs = IndexRange{jb.s - (ndim > 1), jb.e + (ndim > 1)};
     const IndexRange kbs = IndexRange{kb.s - (ndim > 2), kb.e + (ndim > 2)};
-    const IndexRange jbes = IndexRange{jb_e.s + (ndim > 1), jb_e.e};
-    const IndexRange kbes = IndexRange{kb_e.s + (ndim > 2), kb_e.e};
 
     // Make sure the polar EMFs are 0 when performing fluxCT
     // Compare this section with calculation of emf3 in FluxCT:
@@ -389,7 +389,7 @@ void FixBoundaryFlux(MeshData<Real> *md, IndexDomain domain, bool coarse)
 
         if (domain == IndexDomain::inner_x2 &&
             pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::user) {
-            pmb->par_for("fix_flux_b_l", kb_e.s, kb_e.e, jbf.s, jbf.s, ib_e.s, ib_e.e,
+            pmb->par_for("fix_flux_b_l", kbs.s, kbs.e, jbf.s, jbf.s, ibs.s, ibs.e,
                 KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
                     B_F.flux(X2DIR, V1, k, j, i) = 0.;
                     B_F.flux(X2DIR, V3, k, j, i) = 0.;
@@ -401,7 +401,7 @@ void FixBoundaryFlux(MeshData<Real> *md, IndexDomain domain, bool coarse)
 
         if (domain == IndexDomain::outer_x2 &&
             pmb->boundary_flag[BoundaryFace::outer_x2] == BoundaryFlag::user) {
-            pmb->par_for("fix_flux_b_r", kb_e.s, kb_e.e, jbf.e, jbf.e, ib_e.s, ib_e.e,
+            pmb->par_for("fix_flux_b_r", kbs.s, kbs.e, jbf.e, jbf.e, ibs.s, ibs.e,
                 KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
                     B_F.flux(X2DIR, V1, k, j, i) = 0.;
                     B_F.flux(X2DIR, V3, k, j, i) = 0.;
@@ -421,7 +421,7 @@ void FixBoundaryFlux(MeshData<Real> *md, IndexDomain domain, bool coarse)
             if (domain == IndexDomain::inner_x1 &&
                 pmb->boundary_flag[BoundaryFace::inner_x1] == BoundaryFlag::user)
             {
-                pmb->par_for("fix_flux_b_in", kbes.s, kbes.e, jbes.s, jbes.e, ibf.s, ibf.s, // Hyerin (12/28/22) for 1st & 2nd prescription
+                pmb->par_for("fix_flux_b_in", kbs.s, kbs.e, jbs.s, jbs.e, ibf.s, ibf.s, // Hyerin (12/28/22) for 1st & 2nd prescription
                     KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
                         // Allows nonzero flux across X1 boundary but still keeps divB=0 (turns out effectively to have 0 flux)
                         if (ndim > 1) B_F.flux(X2DIR, V1, k, j, i-1) = -B_F.flux(X2DIR, V1, k, j, i) + B_F.flux(X1DIR, V2, k, j, i) + B_F.flux(X1DIR, V2, k, j-1, i);
@@ -433,7 +433,7 @@ void FixBoundaryFlux(MeshData<Real> *md, IndexDomain domain, bool coarse)
             if (domain == IndexDomain::outer_x2 &&
                 pmb->boundary_flag[BoundaryFace::outer_x1] == BoundaryFlag::user)
             {
-                pmb->par_for("fix_flux_b_out", kbes.s, kbes.e, jbes.s, jbes.e, ibf.e, ibf.e, // Hyerin (12/28/22) for 1st & 2nd prescription
+                pmb->par_for("fix_flux_b_out", kbs.s, kbs.e, jbs.s, jbs.e, ibf.e, ibf.e, // Hyerin (12/28/22) for 1st & 2nd prescription
                     KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
                         // (02/06/23) 2nd prescription that allows nonzero flux across X1 boundary but still keeps divB=0
                         if (ndim > 1) B_F.flux(X2DIR, V1, k, j, i) = -B_F.flux(X2DIR, V1, k, j, i-1) + B_F.flux(X1DIR, V2, k, j, i) + B_F.flux(X1DIR, V2, k, j-1, i);

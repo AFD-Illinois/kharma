@@ -672,6 +672,10 @@ class FunkyTransform {
  */
 class WidepoleTransform {
     public:
+        static constexpr char name[] = "WidepoleTransform";
+        static constexpr GReal startx[3] = {-1, 0., 0.};
+        static constexpr GReal stopx[3] = {-1, 1., 2*M_PI};
+
         const GReal lin_frac, n2, n3;
         GReal smoothness;
 
@@ -689,7 +693,7 @@ class WidepoleTransform {
                     printf("WARNING: It is harder to have del phi ~ del th. Try using lin_frac < %g \n",  1./ ((1. / M_PI - 1./ n3_temp) * n3_temp / n2 + 1.));
                     smoothness = 0.8 / n2;
                 }
-                //smoothness = 0.02; //m::max(0.01, smoothness); // fix it for now for test
+                smoothness = 0.02; //m::max(0.01, smoothness); // fix it for now for test
             }
         }
 

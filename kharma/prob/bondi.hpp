@@ -137,3 +137,62 @@ KOKKOS_INLINE_FUNCTION void get_bondi_soln(const Real &r, const Real &rs, const 
     u = rho * T * n;
     ur = -C1 / (Tn * r * r);
 }
+
+KOKKOS_INLINE_FUNCTION void get_prim_bondi(const GRCoordinates& G, const bool diffinit, const Real &rs, const Real &mdot, const Real &gam,
+                                            const Real ur_frac, const Real uphi, const Real rin_bondi, const bool fill_interior, Real &rho, Real &u, Real u_prim[NVEC], 
+                                            const int& k, const int& j, const int& i)
+{
+    // Get primitive values initialized
+    GReal Xnative[GR_DIM], Xembed[GR_DIM];
+    G.coord(k, j, i, Loci::center, Xnative);
+    G.coord_embed(k, j, i, Loci::center, Xembed);
+    GReal r = Xembed[1];
+
+    // Either fill the interior region with the innermost analytically computed value,
+    // or let it be filled with floor values later
+    if (r < rin_bondi) {
+        if (fill_interior) {
+            // just match at the rin_bondi value
+            r = rin_bondi;
+            // TODO(BSP) could also do values at inf, restore that?
+        } else {
+            return;
+        }
+    }
+
+    Real rho_tmp, u_tmp, T_tmp, ur_tmp;
+    Real n = 1. / (gam - 1.);
+    get_bondi_soln(r, rs, mdot, gam, rho_tmp, u_tmp, ur_tmp);
+    T_tmp = u_tmp / (rho_tmp * n);
+
+    Real rb; // Bondi radius
+    Real rho0, u0, ur0;
+    if (diffinit) {
+        // Get r^{-1} density initialization instead
+    
+        // values at infinity (obtained by putting r = 100 rb)
+        if (m::abs(n - 1.5) < 0.01) rb = rs * rs * 80. / (27. * gam);
+        else rb = (4 * (n + 1)) / (2 * (n + 3) - 9) * rs;
+        get_bondi_soln(100 * rb, rs, mdot, gam, rho0, u0, ur0);
+
+        // interpolation between inner and outer regimes
+        rho = rho0 * (r + rb) / r;
+        u = rho * T_tmp * n;
+    } else {
+        // Normal bondi initialization
+        rho = rho_tmp;
+        u = u_tmp;
+    }
+    Real ur = ur_tmp; // Bondi radial velocity solution
+
+
+    // Get the native-coordinate 4-vector corresponding to ur
+    const Real ucon_bl[GR_DIM] = {0, ur * ur_frac, 0, uphi * m::pow(r,-3./2.)};
+    Real ucon_native[GR_DIM];
+    G.coords.bl_fourvel_to_native(Xnative, ucon_bl, ucon_native);
+
+    // Convert native 4-vector to primitive u-twiddle, see Gammie '04
+    Real gcon[GR_DIM][GR_DIM];
+    G.gcon(Loci::center, j, i, gcon);
+    fourvel_to_prim(gcon, ucon_native, u_prim);
+}

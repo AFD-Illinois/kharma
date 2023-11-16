@@ -189,6 +189,13 @@ class CoordinateEmbedding {
                     startx1 = pin->GetReal("parthenon/mesh", "x1min");
                 }
                 transform.emplace<FunkyTransform>(FunkyTransform(startx1, hslope, mks_smooth, poly_xt, poly_alpha));
+            } else if (transform_str == "widepole" || transform_str == "wks") {
+                if (!spherical) throw std::invalid_argument("Transform is for spherical coordinates!");
+                GReal lin_frac = pin->GetOrAddReal("coordinates", "lin_frac", 0.6);
+                GReal smoothness = pin->GetOrAddReal("coordinates", "smoothness", -1.0);
+                GReal nx2 = pin->GetReal("parthenon/mesh", "nx2");
+                GReal nx3 = pin->GetReal("parthenon/mesh", "nx3");
+                transform.emplace<WidepoleTransform>(WidepoleTransform(lin_frac, smoothness, nx2, nx3));
             } else {
                 throw std::invalid_argument("Unsupported coordinate transform!");
             }

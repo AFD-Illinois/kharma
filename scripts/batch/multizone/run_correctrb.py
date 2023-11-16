@@ -121,7 +121,7 @@ def run_multizone(**kwargs):
             kwargs['start_run'] += 1
         else:
             for arg in kwargs_save.keys():
-                if 'nlim' not in arg: # can change nlim from previous run
+                if 'nlim' in arg: # can change nlim from previous run
                     kwargs[arg] = kwargs_save[arg]
         args['parthenon/time/nlim'] = kwargs['nlim']
     else:
@@ -285,7 +285,7 @@ def run_multizone(**kwargs):
             # B field runs use half this
             if kwargs['bz'] != 0.0:
                 runtime /= np.power(base,3./2)*2 # half of free-fall time at the log middle radius
-            if args['coordinates/r_out'] >= base**(kwargs['nzones']+1):
+            if args['coordinates/r_in'] >= base**(kwargs['nzones']-1):
                 # double the runtime for the outermost annulus
                 runtime *= 2 
             if args['coordinates/r_in']<2:
@@ -397,7 +397,7 @@ def update_args(run_num, kwargs, args):
             if not kwargs['move_rin']: args['coordinates/r_out'] = last_r_out * kwargs['base']
             args['coordinates/r_in'] = last_r_in * kwargs['base']
         
-        if kwargs['combine_out_ann'] and args['coordinates/r_in']>= kwargs['base']**(kwargs['nzones_eff']-(kwargs['base']>2)):
+        if (kwargs['combine_out_ann'] or kwargs['move_rin']) and args['coordinates/r_in']>= kwargs['base']**(kwargs['nzones_eff']-(kwargs['base']>2)):
             # if the next simulation is at the largest annulus,
             # make r_out and nx1 larger
             # if base < 2, the largest r_in is base^nzones_eff. if not, base^nzones_eff-1

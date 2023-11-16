@@ -84,9 +84,9 @@ KOKKOS_INLINE_FUNCTION void Xtoindex(const GReal XG[GR_DIM],
 
 // TOOD(BSP) these can be merged and moved back into the fn body now
 
-KOKKOS_INLINE_FUNCTION void get_prim_restart_kharma(const GRCoordinates& G, const CoordinateEmbedding& coords, const VariablePack<Real>& P, const VarMap& m_p,
-                    const Real fx1min, const Real fx1max, const Real fnghost, const bool should_fill, const bool is_spherical,
-                    const Real gam, const Real rs,  const Real mdot, const Real uphi, const hsize_t length[GR_DIM], const hsize_t length_fill[GR_DIM],
+KOKKOS_INLINE_FUNCTION void get_prim_restart_kharma(const GRCoordinates& G, const VariablePack<Real>& P, const VarMap& m_p,
+                    const Real fx1min, const Real fx1max, const bool should_fill, const bool is_spherical,
+                    const Real gam, const Real rs, const Real mdot, const Real ur_frac, const Real uphi, const hsize_t length[GR_DIM], const hsize_t length_fill[GR_DIM],
                     const GridScalar& x1, const GridScalar& x2, const GridScalar& x3, const GridScalar& rho_file, const GridScalar& u_file, const GridVector& uvec_file,
                     const GridScalar& x1_fill, const GridScalar& x2_fill, const GridScalar& x3_fill, const GridScalar& rho_fill, const GridScalar& u_fill, const GridVector& uvec_fill,
                     const int& k, const int& j, const int& i) 
@@ -101,36 +101,8 @@ KOKKOS_INLINE_FUNCTION void get_prim_restart_kharma(const GRCoordinates& G, cons
 
     // Interpolate the value at this location from the global grid
     if ((!should_fill) && (X[1]<fx1min)) {// if cannot be read from restart file
-        GReal Xembed[GR_DIM];
-        G.coord_embed(k, j, i, Loci::center, Xembed);
-        GReal r = Xembed[1];
-  
-        // copy over smallest radius states
-        //Xtoindex(X, x1, x2, x3, length, iblocktemp, itemp, jtemp, ktemp, del);
-        iblocktemp = 0; // assuming always this block contains smallest radii?
-        itemp = fnghost; // in order to copy over the physical region, not the ghost region
-        // (02/08/23) instead in order to set the vacuum homogeneous instead of having theta phi dependence, set j and k values
-        jtemp = fnghost;
-        ktemp = fnghost;
-        rho = rho_file(iblocktemp, ktemp, jtemp, itemp);
-        u = u_file(iblocktemp, ktemp, jtemp, itemp);
-
-        // (02/08/23) instead in order to set the vacuum homogeneous instead of having theta phi dependence, set to the bondi radius values (assume r_B ~ r_s**2)
-        //Real T_temp = get_T(m::pow(rs,2), C1, C2, n, rs);
-        //rho_temp = m::pow(T_temp, n);
-        //u_temp = rho_temp * T_temp * n;
-                        
-        Real rho_tmp, u_tmp, ur;
-        get_bondi_soln(r, rs, mdot, gam, rho_tmp, u_tmp, ur);
-        Real ucon_bl[GR_DIM] = {0., ur, 0., 0.};
-        ucon_bl[3] = uphi * m::pow(r,-3./2.); // (04/13/23) a fraction of the kepler 
-        Real ucon_native[GR_DIM];
-        coords.bl_fourvel_to_native(X, ucon_bl, ucon_native);
-
-        // Convert native 4-vector to primitive u-twiddle, see Gammie '04
-        Real gcon[GR_DIM][GR_DIM];
-        G.gcon(Loci::center, j, i, gcon);
-        fourvel_to_prim(gcon, ucon_native, u_prim);
+        // same as Bondi (06/13/23)
+        get_prim_bondi(G, true, rs, mdot, gam, ur_frac, uphi, 1, false, rho, u, u_prim, k, j, i); // TODO(HC) diffinit=true, r_in_bondi = 1, fill_interior = false for now...
 
         // printf("Bondi fill location: %g %g %g %g KS: %g %g %g %g\nr: %g T: %g ur: %g\nucon: %g %g %g %g native: %g %g %g %g\nPrims: %g %g %g %g %g\n",
         //         X[0], X[1], X[2], X[3], Xembed[0], Xembed[1], Xembed[2], Xembed[3],
@@ -140,7 +112,6 @@ KOKKOS_INLINE_FUNCTION void get_prim_restart_kharma(const GRCoordinates& G, cons
    }
     // HyerinTODO: if fname_fill exists and smaller.
     else if ((should_fill) && ((X[1]>fx1max)||(X[1]<fx1min))) { // fill with the fname_fill
-        //Xtoindex(X, &(x1_fill[0]), &(x2_fill[0]), &(x3_fill[0]), length, iblocktemp, itemp, jtemp, ktemp, del);
         Xtoindex(X, x1_fill, x2_fill, x3_fill, length_fill, iblocktemp, itemp, jtemp, ktemp, del);
         rho = rho_fill(iblocktemp, ktemp, jtemp, itemp);
         u = u_fill(iblocktemp, ktemp, jtemp, itemp);
@@ -165,11 +136,11 @@ KOKKOS_INLINE_FUNCTION void get_prim_restart_kharma(const GRCoordinates& G, cons
 
 }
 
-KOKKOS_INLINE_FUNCTION void get_B_restart_kharma(const GRCoordinates& G, const VariablePack<Real>& U, const VarMap& m_u,
+KOKKOS_INLINE_FUNCTION void get_B_restart_kharma(const GRCoordinates& G, 
                     const Real fx1min, const Real fx1max, const bool should_fill,
                     const hsize_t length[GR_DIM], const hsize_t length_fill[GR_DIM],
                     const GridScalar& x1, const GridScalar& x2, const GridScalar& x3, const GridVector& B,
-                    const GridScalar& x1_fill, const GridScalar& x2_fill, const GridScalar& x3_fill, const GridVector& B_fill,
+                    const GridScalar& x1_fill, const GridScalar& x2_fill, const GridScalar& x3_fill, const GridVector& B_fill, const GridVector& B_save,
                     const int& k, const int& j, const int& i) 
 {
     Real B_cons[NVEC];
@@ -180,7 +151,8 @@ KOKKOS_INLINE_FUNCTION void get_B_restart_kharma(const GRCoordinates& G, const V
     int iblocktemp, itemp, jtemp, ktemp;
     // Interpolate the value at this location from the global grid
     if ((!should_fill) && (X[1]<fx1min)) {// if cannot be read from restart file
-        // do nothing. just use the initialization from SeedBField
+        // Just use the initialization from SeedBField
+        VLOOP B_cons[v] = 0.;
    }
     else if ((should_fill) && ((X[1]>fx1max)||(X[1]<fx1min))) { // fill with the fname_fill
         Xtoindex(X, x1_fill, x2_fill, x3_fill, length_fill, iblocktemp, itemp, jtemp, ktemp, del);
@@ -191,5 +163,5 @@ KOKKOS_INLINE_FUNCTION void get_B_restart_kharma(const GRCoordinates& G, const V
         VLOOP B_cons[v] = B(v,iblocktemp,ktemp,jtemp,itemp);
     }
 
-    VLOOP U(m_u.B1 + v, k, j, i) = B_cons[v];
+    VLOOP B_save(v, k, j, i) = B_cons[v];
 }
