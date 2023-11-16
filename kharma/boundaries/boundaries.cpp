@@ -129,8 +129,6 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
         // This is two separate checks, but default to enabling/disabling together for X1 and not elsewhere
         bool check_inflow = pin->GetOrAddBoolean("boundaries", "check_inflow_" + bname, check_inflow_global && bdir == X1DIR);
         params.Add("check_inflow_" + bname, check_inflow);
-        bool check_inflow_flux = pin->GetOrAddBoolean("boundaries", "check_inflow_flux_" + bname, check_inflow);
-        params.Add("check_inflow_flux_" + bname, check_inflow_flux);
 
         // Ensure fluxes through the zero-size face at the pole are zero
         bool zero_flux = pin->GetOrAddBoolean("boundaries", "zero_flux_" + bname, zero_polar_flux && bdir == X2DIR);
@@ -260,6 +258,7 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
     const auto bname = BoundaryName(bface);
     const auto btype_name = params.Get<std::string>(bname);
     const auto bdir = BoundaryDirection(bface);
+    const bool binner = BoundaryIsInner(bface);
 
     Flag("Apply "+bname+" boundary: "+btype_name);
     pkg->KBoundaries[bface](rc, coarse);
@@ -272,6 +271,21 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
     // this generally guards against anytime we can't do the below
     PackIndexMap prims_map;
     if (GRMHD::PackMHDPrims(rc.get(), prims_map).GetDim(4) == 0) {
+        // If we're syncing EMFs and in spherical, explicitly zero polar faces
+        // TODO allow any other face?
+        auto& emf_block = rc->PackVariables(std::vector<std::string>{"B_CT.emf"});
+        if (bdir == X2DIR && pmb->coords.coords.is_spherical() && emf_block.GetDim(4) > 0) {
+            for (TE el : {TE::E1, TE::E3}) { //TE::E2,
+                int off = (binner) ? 1 : -1;
+                pmb->par_for_bndry(
+                    "zero_EMF", IndexRange{0,0}, domain, el, coarse,
+                    KOKKOS_LAMBDA (const int &v, const int &k, const int &j, const int &i) {
+                        emf_block(el, v, k, j + off, i) = 0;
+                    }
+                );
+            }
+        }
+
         EndFlag();
         return;
     }
@@ -376,14 +390,6 @@ void KBoundaries::CheckInflow(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDom
     auto P = GRMHD::PackMHDPrims(rc.get(), prims_map, coarse);
     const VarMap m_p(prims_map, false);
 
-    // Inflow check
-    // Iterate over zones w/p=0
-    // pmb->par_for_bndry(
-    //     "check_inflow", IndexRange{0, 0}, domain, CC, coarse,
-    //     KOKKOS_LAMBDA(const int &p, const int &k, const int &j, const int &i) {
-    //         KBoundaries::check_inflow(G, P, domain, m_p.U1, k, j, i);
-    //     }
-    // );
     const auto bface = BoundaryFace(domain);
     const auto bname = BoundaryName(bface);
     const bool binner = BoundaryIsInner(bface);
@@ -395,34 +401,6 @@ void KBoundaries::CheckInflow(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDom
             KBoundaries::check_inflow(G, P, domain, m_p.U1, k, j, i);
         }
     );
-}
-
-void KBoundaries::CorrectBPrimitive(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain, bool coarse)
-{
-    Flag("CorrectBPrimitive");
-    std::shared_ptr<MeshBlock> pmb = rc->GetBlockPointer();
-    auto B_P = rc->PackVariables(std::vector<std::string>{"prims.B"});
-    // Return if no field to correct
-    if (B_P.GetDim(4) == 0) return;
-
-    const auto& G = pmb->coords;
-
-    const auto &bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
-    const int dir = BoundaryDirection(domain);
-    const auto &range = (dir == 1) ? bounds.GetBoundsI(IndexDomain::interior)
-                            : (dir == 2 ? bounds.GetBoundsJ(IndexDomain::interior)
-                                : bounds.GetBoundsK(IndexDomain::interior));
-    const int ref = BoundaryIsInner(domain) ? range.s : range.e;
-
-    pmb->par_for_bndry(
-        "Correct_B_P", IndexRange{0,NVEC-1}, domain, CC, coarse,
-        KOKKOS_LAMBDA (const int &v, const int &k, const int &j, const int &i) {
-            B_P(v, k, j, i) *= G.gdet(Loci::center, (dir == 2) ? ref : j, (dir == 1) ? ref : i)
-                                / G.gdet(Loci::center, j, i);
-        }
-    );
-
-    EndFlag();
 }
 
 TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
@@ -477,7 +455,7 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
             auto &F = rc->PackVariablesAndFluxes({Metadata::WithFluxes}, cons_map);
 
             // If we should check inflow on this face...
-            if (params.Get<bool>("check_inflow_flux_" + bname)) {
+            if (params.Get<bool>("check_inflow_" + bname)) {
                 const int m_rho = cons_map["cons.rho"].first;
                 // ...and if this face of the block corresponds to a global boundary...
                 if (pmb->boundary_flag[bface] == BoundaryFlag::user) {

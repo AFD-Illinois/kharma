@@ -325,37 +325,6 @@ TaskStatus B_CT::CalculateEMF(MeshData<Real> *md)
         throw std::invalid_argument("Invalid CT scheme specified!  Must be one of bs99, gs05_0, gs05_c!");
     }
 
-    // Explicitly zero polar faces
-    // In spherical, zero B2 on X2 face regardless of boundary condition
-    // This shouldn't interfere with divB since the face size is zero anyway
-    if (md->GetBlockData(0)->GetBlockPointer()->coords.coords.is_spherical()) {
-        const IndexRange ib = md->GetBoundsI(IndexDomain::entire);
-        const IndexRange kb = md->GetBoundsK(IndexDomain::entire);
-        const int js = md->GetBoundsJ(IndexDomain::interior).s;
-        const int je = md->GetBoundsJ(IndexDomain::interior).e + 1; // Face
-        for (int i_block = 0; i_block < md->NumBlocks(); i_block++) {
-            auto &rc = md->GetBlockData(i_block);
-            auto pmb = rc->GetBlockPointer();
-            auto& emf_block = rc->PackVariables(std::vector<std::string>{"B_CT.emf"});
-            if (KBoundaries::IsPhysicalBoundary(pmb, BoundaryFace::inner_x2)) {
-                pmb->par_for("B_CT_zero_B2_in", kb.s, kb.e, js, js, ib.s, ib.e,
-                    KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-                        emf_block(E1, 0, k, j, i) = 0;
-                        emf_block(E3, 0, k, j, i) = 0;
-                    }
-                );
-            }
-            if (KBoundaries::IsPhysicalBoundary(pmb, BoundaryFace::outer_x2)) {
-                pmb->par_for("B_CT_zero_B2_out", kb.s, kb.e, je, je, ib.s, ib.e,
-                    KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-                        emf_block(E1, 0, k, j, i) = 0;
-                        emf_block(E3, 0, k, j, i) = 0;
-                    }
-                );
-            }
-        }
-    }
-
     return TaskStatus::complete;
 }
 
@@ -408,35 +377,6 @@ TaskStatus B_CT::AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
                                             + G.Volume<E1>(k, j, i)     * emf_pack(bl, E1, 0, k, j, i)) / G.Volume<F3>(k, j, i);
         }
     );
-
-    // Explicitly zero polar faces
-    // In spherical, zero B2 on X2 face regardless of boundary condition
-    // This shouldn't interfere with divB since the face size is zero anyway
-    if (mdudt->GetBlockData(0)->GetBlockPointer()->coords.coords.is_spherical()) {
-        const IndexRange ib = mdudt->GetBoundsI(IndexDomain::entire);
-        const IndexRange kb = mdudt->GetBoundsK(IndexDomain::entire);
-        const int js = mdudt->GetBoundsJ(IndexDomain::interior).s;
-        const int je = mdudt->GetBoundsJ(IndexDomain::interior).e + 1; // Face
-        for (int i_block = 0; i_block < mdudt->NumBlocks(); i_block++) {
-            auto &rc = mdudt->GetBlockData(i_block);
-            auto pmb = rc->GetBlockPointer();
-            auto& dB_Uf_dt_block = rc->PackVariables(std::vector<std::string>{"cons.fB"});
-            if (KBoundaries::IsPhysicalBoundary(pmb, BoundaryFace::inner_x2)) {
-                pmb->par_for("B_CT_zero_B2_in", kb.s, kb.e, js, js, ib.s, ib.e,
-                    KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-                        dB_Uf_dt_block(F2, 0, k, j, i) = 0;
-                    }
-                );
-            }
-            if (KBoundaries::IsPhysicalBoundary(pmb, BoundaryFace::outer_x2)) {
-                pmb->par_for("B_CT_zero_B2_out", kb.s, kb.e, je, je, ib.s, ib.e,
-                    KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-                        dB_Uf_dt_block(F2, 0, k, j, i) = 0;
-                    }
-                );
-            }
-        }
-    }
 
     return TaskStatus::complete;
 }
