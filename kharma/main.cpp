@@ -183,17 +183,6 @@ int main(int argc, char *argv[])
         }
         std::cout << std::endl;
 
-        if(pin->GetOrAddBoolean("debug", "archive_parameters", false) && MPIRank0()) {
-            // Write *all* parameters to a parfile for posterity
-            std::ostringstream ss;
-            auto itt_now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-            ss << "kharma_parsed_parameters_" << std::put_time(std::gmtime(&itt_now), "%FT%TZ") << ".par";
-            std::fstream pars;
-            pars.open(ss.str(), std::fstream::out | std::fstream::trunc);
-            pin->ParameterDump(pars);
-            pars.close();
-        }
-
         // Write all parameters etc. to console if we should be especially wordy
         if ((verbose > 1) && MPIRank0()) {
             // This dumps the full Kokkos config, useful for double-checking
