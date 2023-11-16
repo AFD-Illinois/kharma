@@ -12,19 +12,16 @@ if [[ $HOST == *".delta.internal.ncsa.edu" || $HOST == *".delta.ncsa.illinois.ed
 then
   HOST_ARCH=ZEN3
   DEVICE_ARCH=AMPERE80
-  #MPI_EXE=mpirun
+  MPI_EXE=mpirun
 
   module purge
-  echo $ARGS
-  echo $HOST
 
   if [[ $ARGS == *"cuda"* ]]
   then
     # GPU Compile
-    # 4-device MPI
-    #  COMMENT TWO LINES BELOW OUT IF YOURE NOT USING 4 GPUS
-    MPI_EXTRA_ARGS="--map-by ppr:4:node:pe=16"
-    MPI_NUM_PROCS=4
+    # 4-device MPI w/mapping, should play nice with different numbers
+    MPI_NUM_PROCS=${MPI_NUM_PROCS:-4}
+    MPI_EXTRA_ARGS="--map-by ppr:$MPI_NUM_PROCS:node:pe=16"
 
     # Load common GPU modules
     module load modtree/gpu hdf5 cmake

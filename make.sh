@@ -104,8 +104,9 @@ if [[ -z "$CXX_NATIVE" ]]; then
   if which CC >/dev/null 2>&1; then
     CXX_NATIVE=CC
     C_NATIVE=cc
-    # In case this isn't Cray, use the more common flag
-    OMP_FLAG="-fopenomp"
+    # Don't set an OMP flag to use
+    # This could call through to any compiler, & sometimes (Frontier)
+    # we want no OpenMP at all
   # Prefer Intel oneAPI compiler over legacy, both over generic
   elif which icpx >/dev/null 2>&1; then
     CXX_NATIVE=icpx

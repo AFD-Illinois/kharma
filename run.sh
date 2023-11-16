@@ -86,8 +86,6 @@ if [ -z "$MPI_EXE" ]; then
   echo "Running $KHARMA_DIR/$EXE_NAME $@"
   exec $KHARMA_DIR/$EXE_NAME "$@"
 else
-  echo "Running $MPI_EXE -n $MPI_NUM_PROCS --mpi=pmix $MPI_EXTRA_ARGS $KHARMA_DIR/$EXE_NAME $@"
-  exec $MPI_EXE -n $MPI_NUM_PROCS --mpi=pmix $MPI_EXTRA_ARGS $KHARMA_DIR/$EXE_NAME "$@"
-  #echo "Running $MPI_EXE --mpi=pmix $MPI_EXTRA_ARGS $KHARMA_DIR/$EXE_NAME $@"
-  #exec $MPI_EXE --mpi=pmix $MPI_EXTRA_ARGS $KHARMA_DIR/$EXE_NAME "$@"
+  echo "Running $MPI_EXE -n $MPI_NUM_PROCS $MPI_EXTRA_ARGS $KHARMA_DIR/$EXE_NAME $@"
+  exec $MPI_EXE -n $MPI_NUM_PROCS $MPI_EXTRA_ARGS $KHARMA_DIR/$EXE_NAME "$@"
 fi
