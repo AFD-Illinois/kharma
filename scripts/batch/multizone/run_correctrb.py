@@ -50,15 +50,15 @@ def calc_nx1(kwargs, r_out=None, r_in=None):#(given_nx1, nzones):
 @click.option('--nx2_mb', default=32, help="1-Run theta block resolution")
 @click.option('--nx3_mb', default=32, help="1-Run phi block resolution")
 @click.option('--nzones', default=8, help="Total number of zones (annuli)")
-@click.option('--base', default=8, help="Exponent base for annulus sizes")
-@click.option('--nruns', default=300, help="Total number of runs to perform")
+@click.option('--base', default=8., type=float, help="Exponent base for annulus sizes")
+@click.option('--nruns', default=3000, help="Total number of runs to perform")
 @click.option('--spin', default=0.0, help="BH spin")
 @click.option('--bz', default=0.0, help="B field Z component. Zero for no field")
-@click.option('--cfl', default=0.9, help="Courant condition fraction.  Defaults to 0.5 in B field")
 @click.option('--tlim', default=None, help="Enforce a specific tlim for every run (for testing)")
 @click.option('--tmax', default=None, help="Maximum time in units of Bondi time")
-@click.option('--nlim', default=float(5e4), help="Consistent max number of steps for each run")
-@click.option('--r_b', default=1.e5, help="Bondi radius. None chooses based on nzones")
+@click.option('--nlim', default=-1, help="Consistent max number of steps for each run")
+#@click.option('--r_b', default=1.e5, help="Bondi radius. None chooses based on nzones")
+@click.option('--rs', default=np.sqrt(1.e5), help="sonic radius. None chooses based on nzones")
 @click.option('--jitter', default=0.0, help="Proportional jitter to apply to starting state. Default 10% w/B field")
 # Flags and options
 @click.option('--kharma_bin', default="kharma.cuda", help="Name (not path) of KHARMA binary to run")
@@ -73,7 +73,7 @@ def calc_nx1(kwargs, r_out=None, r_in=None):#(given_nx1, nzones):
 # Don't use this
 @click.option('--start_time', default=0.0, help="Starting time. Only use if you know what you're doing.")
 @click.option('--onezone', is_flag=True, help="Run onezone instead.")
-@click.option('--lin_recon', is_flag=True, help="Use linear reconstruction instead of weno.")
+@click.option('--recon', default=None, help="reconstruction method.")
 @click.option('--combine_out_ann', is_flag=True, help="Combine outer annuli larger than Bondi radius.")
 @click.option('--move_rin', is_flag=True, help="Move r_in instead of switching btw same sized annuli.")
 @click.option('--gamma_max', default=10, help="Gamma_max floor.")
@@ -83,6 +83,7 @@ def calc_nx1(kwargs, r_out=None, r_in=None):#(given_nx1, nzones):
 @click.option('--btype', default="r1s2", help="b field type")
 @click.option('--coord', default=None, help="coordinate system")
 @click.option('--df', is_flag=True, help="Use drift frame instead of normal when applying floors.")
+@click.option('--urfrac', default=0, help="ur_frac")
 def run_multizone(**kwargs):
     """This script runs a "multi-zone" KHARMA sequence.
     The idea is to divide a large domain (~1e8M radius) into several "zones,"
@@ -120,7 +121,7 @@ def run_multizone(**kwargs):
             kwargs['start_run'] += 1
         else:
             for arg in kwargs_save.keys():
-                if 'nlim' not in arg: # can change nlim from previous run
+                if 'nlim' in arg: # can change nlim from previous run
                     kwargs[arg] = kwargs_save[arg]
         args['parthenon/time/nlim'] = kwargs['nlim']
     else:
@@ -148,30 +149,26 @@ def run_multizone(**kwargs):
         # bondi & vacuum parameters
         # TODO derive these from r_b or gizmo
         if args['coordinates/r_out'] < 1e5 and kwargs['bz']>1e-4: #kwargs['nzones'] == 3 or kwargs['nzones'] == 6:
-            kwargs['r_b'] = 256
+            kwargs['rs'] = 16
             logrho = -4.13354231
             log_u_over_rho = -2.57960521
         elif kwargs['nzones'] == 4:
-            kwargs['r_b'] = 256
+            kwargs['rs'] = 16
+            logrho = -4.13354231
             logrho = -4.200592800419657
             log_u_over_rho = -2.62430556
         elif kwargs['gizmo']:
             #kwargs['r_b'] = 1e5
-            logrho = -7.80243572
+            logrho = -8.33399171 #-7.80243572
             log_u_over_rho = -5.34068635
         else:
-            kwargs['r_b'] = 1e5
-            logrho = -8.2014518
+            #kwargs['r_b'] = 1e5
+            logrho = 0 #-8.2014518
             log_u_over_rho = -5.2915149
         args['bondi/vacuum_logrho'] = logrho
         args['bondi/vacuum_log_u_over_rho'] = log_u_over_rho
-        if abs(kwargs['gamma']- 5./3.)<1e-2:
-            # only when gamma=5/3, rb=rs^2
-            args['bondi/rs'] = np.sqrt(float(kwargs['r_b']))
-        else:
-            n = 1./(kwargs['gamma']-1)
-            args['bondi/rs'] = (2*(n+3)-9)/(4*(n+1))*float(kwargs['r_b'])
-        args['bondi/ur_frac'] = 0
+        args['bondi/rs'] = kwargs['rs']
+        args['bondi/ur_frac'] = kwargs['urfrac']
 
         # B field additions
         if kwargs['bz'] != 0.0:
@@ -180,10 +177,7 @@ def run_multizone(**kwargs):
             args['b_field/solver'] = "flux_ct"
             args['b_field/bz'] = kwargs['bz']
             # Compress coordinates to save time
-            if kwargs['coord'] is not None:
-                args['coordinates/transform'] = kwargs['coord']
-                args['coordinates/lin_frac'] = 0.7
-            elif kwargs['nx2'] >= 128 and not kwargs['onezone']:
+            if kwargs['nx2'] >= 128 and not kwargs['onezone']:
                 args['coordinates/transform'] = "fmks"
                 args['coordinates/mks_smooth'] = 0.
                 args['coordinates/poly_xt'] = 0.8
@@ -198,22 +192,34 @@ def run_multizone(**kwargs):
                 args['floors/frame'] = 'drift'
             # And modify a bunch of defaults
             # Assume we will always want jitter if we have B unless a 2D problem
-            if kwargs['jitter'] == 0.0 and kwargs['nx3']>1 :
+            if kwargs['nx3']>1 : #
                 kwargs['jitter'] = 0.1
             # Lower the cfl condition in B field
             args['GRMHD/cfl'] = 0.5
-            if kwargs['lin_recon']:
-                args['GRMHD/reconstruction'] = "linear_vl"
-            else:
+            if kwargs['recon'] is None:
                 # use weno5
                 args['GRMHD/reconstruction'] = "weno5"
+        #else:
+            #kwargs['jitter'] = 0.0
+        if kwargs['coord'] is not None:
+            args['coordinates/transform'] = kwargs['coord']
+            if kwargs['coord'] == 'fmks':
+                # only for fmks
+                args['coordinates/mks_smooth'] = 0.
+                args['coordinates/poly_xt'] = 0.8
+                args['coordinates/poly_alpha'] = 14
+            elif kwargs['coord'] == 'wks':
+                # TODO these are only for wks
+                args['coordinates/lin_frac'] = 0.6 #0.75
+                args['coordinates/smoothness'] = 0.02
+            #args['GRMHD/reconstruction'] = "linear_vl"
+        if kwargs['recon'] is not None: args['GRMHD/reconstruction'] = kwargs['recon']
         args['GRMHD/gamma'] = kwargs["gamma"]
         args['floors/rho_min_geom'] = kwargs['rhomin']
         args['floors/u_min_geom'] = kwargs['umin']
 
         # Parameters directly from defaults/cmd
         args['perturbation/u_jitter'] = kwargs['jitter']
-        args['GRMHD/cfl'] = kwargs['cfl']
         args['coordinates/a'] = kwargs['spin']
         args['coordinates/ext_g'] = kwargs['ext_g']
         args['bondi/use_gizmo'] = kwargs['gizmo']
@@ -223,8 +229,8 @@ def run_multizone(**kwargs):
         # effective nzones (Hyerin 07/27/23)
         if (kwargs['combine_out_ann'] or kwargs['move_rin']) and not kwargs['onezone']:
             # think what's the smallest annulus where the logarithmic middle radius is larger than r_b 
-            # (i.e. 8^n > 1e5 for base=8 r_b=1e5 where n is the nth smallest annulus)
-            kwargs['nzones_eff'] = int(np.ceil(np.log(kwargs['r_b'])/np.log(kwargs['base'])))
+            # (i.e. 8^n > 1e5 for base=8 r_b=1e5 where n is the nth smallest annulus, just approximate r_b ~ rs^2)
+            kwargs['nzones_eff'] = int(np.ceil(np.log(kwargs['rs']**2)/np.log(kwargs['base'])))
             args['coordinates/r_in'] = base**(kwargs['nzones_eff']-1)
             if kwargs['base'] < 2: # this means that the second smallest annulu's r_in is inside the horizon
                 args['coordinates/r_in'] = base**(kwargs['nzones_eff'])
@@ -250,13 +256,22 @@ def run_multizone(**kwargs):
     # Default parameters are in mz_dir
     if kwargs['parfile'] is None:
         kwargs['parfile'] = mz_dir+"/multizone.par"
+    if abs(kwargs['gamma']- 5./3.)<1e-2:
+        # only when gamma=5/3, rb=rs^2
+        #args['bondi/rs'] = np.sqrt(float(kwargs['r_b']))
+        r_b = 80.*float(kwargs['rs'])**2/(27.*kwargs['gamma'])
+        print(r_b)
+    else:
+        n = 1./(kwargs['gamma']-1)
+        args['bondi/rs'] = (2*(n+3)-9)/(4*(n+1))*float(kwargs['r_b'])
+        # TODO! change it to r_b calculation
 
     stop = False
     # Iterate, starting with the default args and updating as we go
     for run_num in np.arange(kwargs['start_run'], kwargs['nruns']):
         # run times for each annulus
         r_out = args['coordinates/r_out']
-        r_b = float(kwargs['r_b'])
+        #r_b = float(kwargs['r_b'])
         base = args['resize_restart/base']
         #outermost_zone = 2 * (kwargs['nzones'] - 1)
         if kwargs['tlim'] is None:
@@ -270,7 +285,7 @@ def run_multizone(**kwargs):
             # B field runs use half this
             if kwargs['bz'] != 0.0:
                 runtime /= np.power(base,3./2)*2 # half of free-fall time at the log middle radius
-            if args['coordinates/r_out'] >= base**(kwargs['nzones']+1):
+            if args['coordinates/r_in'] >= base**(kwargs['nzones']-1):
                 # double the runtime for the outermost annulus
                 runtime *= 2 
             if args['coordinates/r_in']<2:
@@ -382,7 +397,7 @@ def update_args(run_num, kwargs, args):
             if not kwargs['move_rin']: args['coordinates/r_out'] = last_r_out * kwargs['base']
             args['coordinates/r_in'] = last_r_in * kwargs['base']
         
-        if kwargs['combine_out_ann'] and args['coordinates/r_in']>= kwargs['base']**(kwargs['nzones_eff']-(kwargs['base']>2)):
+        if (kwargs['combine_out_ann'] or kwargs['move_rin']) and args['coordinates/r_in']>= kwargs['base']**(kwargs['nzones_eff']-(kwargs['base']>2)):
             # if the next simulation is at the largest annulus,
             # make r_out and nx1 larger
             # if base < 2, the largest r_in is base^nzones_eff. if not, base^nzones_eff-1

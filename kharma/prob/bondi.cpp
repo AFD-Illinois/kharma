@@ -47,15 +47,17 @@ TaskStatus InitializeBondi(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterIn
 
     const Real mdot = pin->GetOrAddReal("bondi", "mdot", 1.0);
     const Real rs = pin->GetOrAddReal("bondi", "rs", 8.0);
+    const Real ur_frac = pin->GetOrAddReal("bondi", "ur_frac", 1.);
+    const Real uphi = pin->GetOrAddReal("bondi", "uphi", 0.); 
 
     // Set the innermost radius to apply the Bondi problem initialization
     // By default, stay away from the outer BL coordinate singularity
     const Real a = pin->GetReal("coordinates", "a");
     const Real rin_bondi_default = 1 + m::sqrt(1 - a*a) + 0.1;
-    // Prefer parameter bondi/r_in vs bondi/r_shell
+    // Prefer parameter bondi/r_in_bondi vs bondi/r_shell
     Real rin_bondi_tmp;
-    if (pin->DoesParameterExist("bondi", "r_in")) {
-        rin_bondi_tmp = pin->GetReal("bondi", "r_in");
+    if (pin->DoesParameterExist("bondi", "r_in_bondi")) {
+        rin_bondi_tmp = pin->GetReal("bondi", "r_in_bondi");
     } else {
         rin_bondi_tmp = pin->GetOrAddReal("bondi", "r_shell", rin_bondi_default);
     }
@@ -63,6 +65,7 @@ TaskStatus InitializeBondi(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterIn
 
     const bool fill_interior = pin->GetOrAddBoolean("bondi", "fill_interior", false);
     const bool zero_velocity = pin->GetOrAddBoolean("bondi", "zero_velocity", false);
+    const bool diffinit = pin->GetOrAddBoolean("bondi", "diffinit", false); // uses r^-1 density initialization instead
 
     // Add these to package properties, since they continue to be needed on boundaries
     // TODO Problems NEED params
@@ -76,6 +79,12 @@ TaskStatus InitializeBondi(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterIn
         pmb->packages.Get("GRMHD")->AddParam<Real>("fill_interior_bondi", fill_interior);
     if(! pmb->packages.Get("GRMHD")->AllParams().hasKey("zero_velocity_bondi"))
         pmb->packages.Get("GRMHD")->AddParam<Real>("zero_velocity_bondi", zero_velocity);
+    if(! pmb->packages.Get("GRMHD")->AllParams().hasKey("diffinit_bondi"))
+        pmb->packages.Get("GRMHD")->AddParam<Real>("diffinit_bondi", diffinit);
+    if(! (pmb->packages.Get("GRMHD")->AllParams().hasKey("ur_frac")))
+        pmb->packages.Get("GRMHD")->AddParam<Real>("ur_frac", ur_frac);
+    if(! (pmb->packages.Get("GRMHD")->AllParams().hasKey("uphi")))
+        pmb->packages.Get("GRMHD")->AddParam<Real>("uphi", uphi);
 
     // Set this problem to control the outer X1 boundary by default
     // remember to disable inflow_check in parameter file!
@@ -129,9 +138,12 @@ TaskStatus SetBondiImpl(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain do
     const Real mdot = pmb->packages.Get("GRMHD")->Param<Real>("mdot");
     const Real rs = pmb->packages.Get("GRMHD")->Param<Real>("rs");
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
+    const Real ur_frac = pmb->packages.Get("GRMHD")->Param<Real>("ur_frac");
+    const Real uphi = pmb->packages.Get("GRMHD")->Param<Real>("uphi");
     const Real rin_bondi = pmb->packages.Get("GRMHD")->Param<Real>("rin_bondi");
     const bool fill_interior = pmb->packages.Get("GRMHD")->Param<Real>("fill_interior_bondi");
     const bool zero_velocity = pmb->packages.Get("GRMHD")->Param<Real>("zero_velocity_bondi");
+    const bool diffinit = pmb->packages.Get("GRMHD")->Param<Real>("diffinit_bondi");
 
     const EMHD::EMHD_parameters& emhd_params = EMHD::GetEMHDParameters(pmb->packages);
 
@@ -147,35 +159,10 @@ TaskStatus SetBondiImpl(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain do
 
     pmb->par_for("bondi_boundary", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-            GReal Xnative[GR_DIM], Xembed[GR_DIM];
-            G.coord(k, j, i, Loci::center, Xnative);
-            G.coord_embed(k, j, i, Loci::center, Xembed);
-            GReal r = Xembed[1];
 
-            // Either fill the interior region with the innermost analytically computed value,
-            // or let it be filled with floor values later
-            if (r < rin_bondi) {
-                if (fill_interior) {
-                    // just match at the rin_bondi value
-                    r = rin_bondi;
-                    // TODO(BSP) could also do values at inf, restore that?
-                } else {
-                    return;
-                }
-            }
-
-            Real rho, u, ur;
-            get_bondi_soln(r, rs, mdot, gam, rho, u, ur);
-
-            // Get the native-coordinate 4-vector corresponding to ur
-            const Real ucon_bl[GR_DIM] = {0, ur, 0, 0};
-            Real ucon_native[GR_DIM];
-            G.coords.bl_fourvel_to_native(Xnative, ucon_bl, ucon_native);
-
-            // Convert native 4-vector to primitive u-twiddle, see Gammie '04
-            Real gcon[GR_DIM][GR_DIM], u_prim[NVEC];
-            G.gcon(Loci::center, j, i, gcon);
-            fourvel_to_prim(gcon, ucon_native, u_prim);
+            Real rho, u;
+            Real u_prim[NVEC];
+            get_prim_bondi(G, diffinit, rs, mdot, gam, ur_frac, uphi, rin_bondi, fill_interior, rho, u, u_prim, k, j, i);
 
             // Note that NaN guards, including these, are ignored (!) under -ffast-math flag.
             // Thus we stay away from initializing at EH where this could happen

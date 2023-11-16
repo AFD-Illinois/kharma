@@ -49,7 +49,7 @@ fi
 
 # Load environment from the same files as the compile process
 HOST=$(hostname -f)
-ARGS=$(cat $KHARMA_DIR/make_args)
+ARGS=${ARGS:-$(cat $KHARMA_DIR/make_args)}
 SOURCE_DIR=$(dirname "$(readlink -f "$0")")
 for machine in $KHARMA_DIR/machines/*.sh
 do
@@ -86,6 +86,8 @@ if [ -z "$MPI_EXE" ]; then
   echo "Running $KHARMA_DIR/$EXE_NAME $@"
   exec $KHARMA_DIR/$EXE_NAME "$@"
 else
-  echo "Running $MPI_EXE -n $MPI_NUM_PROCS $MPI_EXTRA_ARGS $KHARMA_DIR/$EXE_NAME $@"
-  exec $MPI_EXE -n $MPI_NUM_PROCS $MPI_EXTRA_ARGS $KHARMA_DIR/$EXE_NAME "$@"
+  echo "Running $MPI_EXE -n $MPI_NUM_PROCS --mpi=pmix $MPI_EXTRA_ARGS $KHARMA_DIR/$EXE_NAME $@"
+  exec $MPI_EXE -n $MPI_NUM_PROCS --mpi=pmix $MPI_EXTRA_ARGS $KHARMA_DIR/$EXE_NAME "$@"
+  #echo "Running $MPI_EXE --mpi=pmix $MPI_EXTRA_ARGS $KHARMA_DIR/$EXE_NAME $@"
+  #exec $MPI_EXE --mpi=pmix $MPI_EXTRA_ARGS $KHARMA_DIR/$EXE_NAME "$@"
 fi
