@@ -7,27 +7,27 @@ problem_id = torus
 <parthenon/mesh>
 refinement = static
 numlevel = 2
-nx1 = 64
-nx2 = 64
-nx3 = 64
+nx1 = 256
+nx2 = 160
+nx3 = 128
 
 <parthenon/meshblock>
-nx1 = 16
-nx2 = 16
-nx3 = 16
+nx1 = 128
+nx2 = 32
+nx3 = 128
 
 <parthenon/static_refinement0>
 x1min = 1.0
 x1max = 2.0
-x2min = 1.50
-x2max = 1.60
+x2min = 0.49
+x2max = 0.51
 x3min = 0.0
 x3max = 6.28
 level = 1
 
 <coordinates>
 base = spherical_ks
-transform = eks
+transform = mks
 r_out = 20
 a = 0.9375
 
@@ -41,7 +41,7 @@ extra_checks = 1
 flag_verbose = 0
 
 <GRMHD>
-cfl = 0.9
+cfl = 0.8
 gamma = 1.666667
 reconstruction = weno5
 
@@ -71,8 +71,8 @@ bsq_over_rho_max = 100
 file_type = hdf5
 dt = 0.0
 single_precision_output = true
-variables = prims.rho, prims.u, prims.uvec, prims.B, divB
-ghost_zones = true
+variables = prims, divB
+#ghost_zones = true
 
 # Can't until face field output is enabled
 #<parthenon/output1>

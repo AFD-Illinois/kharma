@@ -157,6 +157,7 @@ TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt);
  * Add any source terms to the primitive variables.  Applied directly rather than adding to a derivative.
  */
 TaskStatus BlockApplyPrimSource(MeshBlockData<Real> *rc);
+TaskStatus MeshApplyPrimSource(MeshData<Real> *md);
 
 /**
  * Apply all floors, including any package-specific limiters.
