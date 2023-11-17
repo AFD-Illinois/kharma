@@ -264,6 +264,46 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
     pkg->KBoundaries[bface](rc, coarse);
     EndFlag();
 
+    // If we're syncing EMFs and in spherical, explicitly zero polar faces
+    // TODO allow any other face?
+    auto& emfpack = rc->PackVariables(std::vector<std::string>{"B_CT.emf"});
+    if (bdir == X2DIR && pmb->coords.coords.is_spherical() && emfpack.GetDim(4) > 0) {
+        Flag("BoundaryEdge_"+bname);
+        for (TE el : {TE::E1, TE::E3}) {
+            int off = (binner) ? 1 : -1;
+            pmb->par_for_bndry(
+                "zero_EMF", IndexRange{0,0}, domain, el, coarse,
+                KOKKOS_LAMBDA (const int &v, const int &k, const int &j, const int &i) {
+                    emfpack(el, v, k, j + off, i) = 0;
+                }
+            );
+        }
+        EndFlag();
+    }
+
+    // Zero/invert X2 faces at polar X2 boundary
+    auto fpack = rc->PackVariables({Metadata::Face, Metadata::FillGhost});
+    if (bdir == X2DIR && pmb->coords.coords.is_spherical() && fpack.GetDim(4) > 0) {
+        Flag("BoundaryFace_"+bname);
+        // Zero face fluxes
+        auto b = KDomain::GetRange(rc, domain, coarse);
+        // "domain" is the boundary here
+        auto jf = (binner) ? b.je + 1 : b.js;
+        pmb->par_for(
+            "zero_polar_" + bname, b.ks, b.ke, jf, jf, b.is, b.ie,
+            KOKKOS_LAMBDA(const int &k, const int &j, const int &i) {
+                fpack(F2, 0, k, j, i) = 0.;
+            }
+        );
+        pmb->par_for_bndry(
+            "invert_F2_" + bname, IndexRange{0, fpack.GetDim(4)-1}, domain, F2, coarse,
+            KOKKOS_LAMBDA (const int &v, const int &k, const int &j, const int &i) {
+                fpack(F2, 0, k, j, i) *= -1;
+            }
+        );
+        EndFlag();
+    }
+
     // This will now be called in 2 places we might not expect,
     // where we still may want to control the physical bounds:
     // 1. Syncing only the EMF during runs with CT
@@ -271,21 +311,6 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
     // this generally guards against anytime we can't do the below
     PackIndexMap prims_map;
     if (GRMHD::PackMHDPrims(rc.get(), prims_map).GetDim(4) == 0) {
-        // If we're syncing EMFs and in spherical, explicitly zero polar faces
-        // TODO allow any other face?
-        auto& emf_block = rc->PackVariables(std::vector<std::string>{"B_CT.emf"});
-        if (bdir == X2DIR && pmb->coords.coords.is_spherical() && emf_block.GetDim(4) > 0) {
-            for (TE el : {TE::E1, TE::E3}) { //TE::E2,
-                int off = (binner) ? 1 : -1;
-                pmb->par_for_bndry(
-                    "zero_EMF", IndexRange{0,0}, domain, el, coarse,
-                    KOKKOS_LAMBDA (const int &v, const int &k, const int &j, const int &i) {
-                        emf_block(el, v, k, j + off, i) = 0;
-                    }
-                );
-            }
-        }
-
         EndFlag();
         return;
     }
