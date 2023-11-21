@@ -426,7 +426,7 @@ void FixBoundaryFlux(MeshData<Real> *md, IndexDomain domain, bool coarse)
                 );
 
             }
-            if (domain == IndexDomain::outer_x2 &&
+            if (domain == IndexDomain::outer_x1 &&
                 pmb->boundary_flag[BoundaryFace::outer_x1] == BoundaryFlag::user)
             {
                 pmb->par_for("fix_flux_b_out", kbs.s, kbs.e, jbs.s, jbs.e, ibf.e, ibf.e, // Hyerin (12/28/22) for 1st & 2nd prescription
