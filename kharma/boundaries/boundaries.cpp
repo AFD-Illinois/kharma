@@ -415,14 +415,11 @@ void KBoundaries::CheckInflow(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDom
     auto P = GRMHD::PackMHDPrims(rc.get(), prims_map, coarse);
     const VarMap m_p(prims_map, false);
 
-    const auto bface = BoundaryFace(domain);
-    const auto bname = BoundaryName(bface);
-    const bool binner = BoundaryIsInner(bface);
-    // One domain interior to boundary
-    auto b = KDomain::GetRange(rc, domain, -((int) !binner), binner, coarse);
-    pmb->par_for(
-        "zero_inflow_" + bname, b.ks, b.ke, b.js, b.je, b.is, b.ie,
-        KOKKOS_LAMBDA(const int &k, const int &j, const int &i) {
+    // Inflow check
+    // Iterate over all boundary domain zones w/p=0
+    pmb->par_for_bndry(
+        "check_inflow", IndexRange{0, 0}, domain, CC, coarse,
+        KOKKOS_LAMBDA(const int &p, const int &k, const int &j, const int &i) {
             KBoundaries::check_inflow(G, P, domain, m_p.U1, k, j, i);
         }
     );
