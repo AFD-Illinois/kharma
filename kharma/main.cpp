@@ -185,8 +185,8 @@ int main(int argc, char *argv[])
 
         // Print the number of meshblocks and ranks in use
         // TODO get this right
-        // std::cout << "Running with " << pmesh->block_list.size() << " total meshblocks, " << MPINumRanks() << " MPI ranks." << std::endl;
-        // std::cout << "Blocks on rank " << MPIMyRank() << ": " << pmesh->GetNumMeshBlocksThisRank() << "\n" << std::endl;
+        std::cout << "Running with " << pmesh->nbtotal << " total meshblocks, " << MPINumRanks() << " MPI ranks." << std::endl;
+        std::cout << "Blocks on rank " << MPIRank() << ": " << pmesh->block_list.size() << "\n" << std::endl; //pmesh->GetNumMeshBlocksThisRank() << "\n" << std::endl;
 
         // Write all parameters etc. to console if we should be especially wordy
         if ((verbose > 1) && MPIRank0()) {
