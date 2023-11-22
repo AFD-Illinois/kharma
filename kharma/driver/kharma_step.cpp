@@ -165,9 +165,9 @@ TaskCollection KHARMADriver::MakeDefaultTaskCollection(BlockList_t &blocks, int 
             auto t_emf = t_flux_bounds;
             if (use_b_ct) {
                 // Pull out a container of only EMF to synchronize
-                auto &md_b_ct = pmesh->mesh_data.AddShallow("B_CT", std::vector<std::string>{"B_CT.emf"}); // TODO this gets weird if we partition
+                auto &md_emf_only = pmesh->mesh_data.AddShallow("EMF", std::vector<std::string>{"B_CT.emf"}); // TODO this gets weird if we partition
                 auto t_emf_local = tl.AddTask(t_flux_bounds, B_CT::CalculateEMF, md_sub_step_init.get());
-                t_emf = KHARMADriver::AddBoundarySync(t_emf_local, tl, md_b_ct);
+                t_emf = KHARMADriver::AddBoundarySync(t_emf_local, tl, md_emf_only);
             }
             auto t_load_send_flux = tl.AddTask(t_emf, parthenon::LoadAndSendFluxCorrections, md_sub_step_init);
             auto t_recv_flux = tl.AddTask(t_load_send_flux, parthenon::ReceiveFluxCorrections, md_sub_step_init);

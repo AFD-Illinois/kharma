@@ -153,15 +153,16 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
         // If we're in AMR, correct fluxes from neighbors
         auto t_flux_bounds = t_fix_flux;
         if (pmesh->multilevel || use_b_ct) {
-            auto t_load_send_flux = tl.AddTask(t_fix_flux, parthenon::LoadAndSendFluxCorrections, md_sub_step_init);
-            auto t_recv_flux = tl.AddTask(t_load_send_flux, parthenon::ReceiveFluxCorrections, md_sub_step_init);
-            t_flux_bounds = tl.AddTask(t_recv_flux, parthenon::SetFluxCorrections, md_sub_step_init);
+            auto t_emf = t_flux_bounds;
             if (use_b_ct) {
                 // Pull out a container of only EMF to synchronize
                 auto &md_emf_only = pmesh->mesh_data.AddShallow("EMF", std::vector<std::string>{"B_CT.emf"}); // TODO this gets weird if we partition
                 auto t_emf_local = tl.AddTask(t_flux_bounds, B_CT::CalculateEMF, md_sub_step_init.get());
-                t_flux_bounds = KHARMADriver::AddBoundarySync(t_emf_local, tl, md_sub_step_init);
+                t_emf = KHARMADriver::AddBoundarySync(t_emf_local, tl, md_emf_only);
             }
+            auto t_load_send_flux = tl.AddTask(t_emf, parthenon::LoadAndSendFluxCorrections, md_sub_step_init);
+            auto t_recv_flux = tl.AddTask(t_load_send_flux, parthenon::ReceiveFluxCorrections, md_sub_step_init);
+            t_flux_bounds = tl.AddTask(t_recv_flux, parthenon::SetFluxCorrections, md_sub_step_init);
         }
 
         // Apply the fluxes to calculate a change in cell-centered values "md_flux_src"

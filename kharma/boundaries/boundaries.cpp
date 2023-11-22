@@ -265,9 +265,12 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
     EndFlag();
 
     // If we're syncing EMFs and in spherical, explicitly zero polar faces
-    // TODO allow any other face?
+    // Since we manipulate the j coord, we'd overstep coarse bufs
     auto& emfpack = rc->PackVariables(std::vector<std::string>{"B_CT.emf"});
-    if (bdir == X2DIR && pmb->coords.coords.is_spherical() && emfpack.GetDim(4) > 0) {
+    if (bdir == X2DIR &&
+        pmb->coords.coords.is_spherical() &&
+        emfpack.GetDim(4) > 0 &&
+        !coarse) {
         Flag("BoundaryEdge_"+bname);
         for (TE el : {TE::E1, TE::E3}) {
             int off = (binner) ? 1 : -1;
@@ -283,7 +286,9 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
 
     // Zero/invert X2 faces at polar X2 boundary
     auto fpack = rc->PackVariables({Metadata::Face, Metadata::FillGhost});
-    if (bdir == X2DIR && pmb->coords.coords.is_spherical() && fpack.GetDim(4) > 0) {
+    if (bdir == X2DIR &&
+        pmb->coords.coords.is_spherical() &&
+        fpack.GetDim(4) > 0) {
         Flag("BoundaryFace_"+bname);
         // Zero face fluxes
         auto b = KDomain::GetRange(rc, domain, coarse);
@@ -298,7 +303,7 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
         pmb->par_for_bndry(
             "invert_F2_" + bname, IndexRange{0, fpack.GetDim(4)-1}, domain, F2, coarse,
             KOKKOS_LAMBDA (const int &v, const int &k, const int &j, const int &i) {
-                fpack(F2, 0, k, j, i) *= -1;
+                fpack(F2, v, k, j, i) *= -1;
             }
         );
         EndFlag();
@@ -333,7 +338,7 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
         const auto &range = (bdir == 1) ? bounds.GetBoundsI(IndexDomain::interior)
                                 : (bdir == 2 ? bounds.GetBoundsJ(IndexDomain::interior)
                                     : bounds.GetBoundsK(IndexDomain::interior));
-        const int ref = BoundaryIsInner(domain) ? range.s : range.e;
+        const int ref = binner ? range.s : range.e;
         pmb->par_for_bndry(
             "outflow_EMHD", IndexRange{0,EMHDg.GetDim(4)-1}, domain, CC, coarse,
             KOKKOS_LAMBDA (const int &v, const int &k, const int &j, const int &i) {
@@ -384,9 +389,9 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
         // TODO there should be a set of B field wrappers that dispatch this
         auto pkgs = pmb->packages.AllPackages();
         if (pkgs.count("B_FluxCT")) {
-            B_FluxCT::BlockUtoP(rc.get(), IndexDomain::entire);
+            B_FluxCT::BlockUtoP(rc.get(), domain, coarse);
         } else if (pkgs.count("B_CT")) {
-            B_CT::BlockUtoP(rc.get(), IndexDomain::entire);
+            B_CT::BlockUtoP(rc.get(), domain, coarse);
         }
         Flux::BlockPtoU(rc.get(), domain, coarse);
     } else {
