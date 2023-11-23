@@ -149,9 +149,13 @@ inline int MPINumRanks()
 {
     return parthenon::Globals::nranks;
 }
-inline int MPIMyRank()
+inline int MPIRank()
 {
     return parthenon::Globals::my_rank;
+}
+inline int MPIBarrier()
+{
+    return MPI_Barrier(MPI_COMM_WORLD);
 }
 
 // A few generic "NDArray" overloads for readability.
