@@ -63,6 +63,7 @@ TaskStatus InitializeBondi(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterIn
 
     const bool fill_interior = pin->GetOrAddBoolean("bondi", "fill_interior", false);
     const bool zero_velocity = pin->GetOrAddBoolean("bondi", "zero_velocity", false);
+    const bool do_electrons = pin->GetOrAddBoolean("electrons", "on", false);
 
     // Add these to package properties, since they continue to be needed on boundaries
     // TODO Problems NEED params
@@ -76,6 +77,8 @@ TaskStatus InitializeBondi(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterIn
         pmb->packages.Get("GRMHD")->AddParam<Real>("fill_interior_bondi", fill_interior);
     if(! pmb->packages.Get("GRMHD")->AllParams().hasKey("zero_velocity_bondi"))
         pmb->packages.Get("GRMHD")->AddParam<Real>("zero_velocity_bondi", zero_velocity);
+    if(! pmb->packages.Get("Electrons")->AllParams().hasKey("do_electrons_bondi"))
+        pmb->packages.Get("Electrons")->AddParam<Real>("do_electrons_bondi", do_electrons);
 
     // Set this problem to control the outer X1 boundary by default
     // remember to disable inflow_check in parameter file!
@@ -85,11 +88,15 @@ TaskStatus InitializeBondi(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterIn
     auto outer_dirichlet = pin->GetString("boundaries", "outer_x1") == "dirichlet";
     auto inner_dirichlet = pin->GetString("boundaries", "inner_x1") == "dirichlet";
     if (outer_dirichlet || inner_dirichlet) {
+        //printf("setting bondi boundaries exterior... \n");
         SetBondi<IndexDomain::entire>(rc); // TODO iterate & set any bounds specifically?
+        printf("set bondi bounderies entire \n");
     } else {
         // Generally, we only set the interior domain, not the ghost zones.
         // This tests that PostInitialize will correctly fill all ghosts
+        //printf("setting bondi boundaries interior... \n");
         SetBondi<IndexDomain::interior>(rc);
+        printf("set bondi bounderies interior \n");
     }
 
     // Default Bondi boundariy conditions: reset the outer boundary using our set function.
@@ -117,12 +124,14 @@ TaskStatus InitializeBondi(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterIn
 
 TaskStatus SetBondiImpl(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain, bool coarse)
 {
+    
     auto pmb = rc->GetBlockPointer();
 
     //std::cerr << "Bondi on domain: " << BoundaryName(domain) << std::endl;
 
     PackIndexMap prims_map, cons_map;
     auto P = GRMHD::PackMHDPrims(rc.get(), prims_map);
+    auto P_k = rc->PackVariables({Metadata::GetUserFlag("Primitive")}, prims_map);//this line I just added because I wasn't sure if I should edit the PackMHBPrims stuff
     auto U = GRMHD::PackMHDCons(rc.get(), cons_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
 
@@ -132,6 +141,10 @@ TaskStatus SetBondiImpl(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain do
     const Real rin_bondi = pmb->packages.Get("GRMHD")->Param<Real>("rin_bondi");
     const bool fill_interior = pmb->packages.Get("GRMHD")->Param<Real>("fill_interior_bondi");
     const bool zero_velocity = pmb->packages.Get("GRMHD")->Param<Real>("zero_velocity_bondi");
+    const bool do_electrons = pmb->packages.Get("Electrons")->Param<Real>("do_electrons_bondi");
+    const Real fel0 = pmb->packages.Get("Electrons")->Param<Real>("fel_0");
+    const Real game = pmb->packages.Get("Electrons")->Param<Real>("gamma_e");
+
 
     const EMHD::EMHD_parameters& emhd_params = EMHD::GetEMHDParameters(pmb->packages);
 
@@ -179,13 +192,24 @@ TaskStatus SetBondiImpl(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain do
 
             // Note that NaN guards, including these, are ignored (!) under -ffast-math flag.
             // Thus we stay away from initializing at EH where this could happen
-            if(!isnan(rho)) P(m_p.RHO, k, j, i) = rho;
+            if(!isnan(rho)) 
+                P(m_p.RHO, k, j, i) = rho;
+                //if (j==66)
+                //    printf("rho = %.16f, i = %d\n", P(m_p.RHO, k, j, i), i);
             if(!isnan(u)) P(m_p.UU, k, j, i) = u;
             if(!isnan(u_prim[0])) P(m_p.U1, k, j, i) = u_prim[0];
             if(!isnan(u_prim[1])) P(m_p.U2, k, j, i) = u_prim[1];
             if(!isnan(u_prim[2])) P(m_p.U3, k, j, i) = u_prim[2];
+            if(do_electrons && !isnan(rho) && !isnan(u)) {
+                P_k(m_p.K_HOWES, k, j, i) = (game - 1.) * fel0 * u * m::pow(rho, -game);
+                //if(j==66)
+                //    printf("kel: %.16f, r: %.16f, i: %d\n", P_k(m_p.K_HOWES, k, j, i), r, i);
+            }
+            //if(j==66 && i>=132)
+            //    printf("kel: %.16f, i: %d\n", P_k(m_p.K_HOWES, k, j, i - 132), i - 132);
         }
     );
+    //printf("we are done looping over the initialization\n");
 
     return TaskStatus::complete;
 }

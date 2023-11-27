@@ -9,21 +9,20 @@ problem_id = bondi
 # Full mesh size, no refinement
 # Don't bother with xN boundaries for spherical coordinate systems
 # KHARMA will automatically place ~5 zones inside the EH
-
 nx1 = 128
-nx2 = 128
+nx2 = 1
 nx3 = 1
 
 <parthenon/meshblock>
 nx1 = 128
-nx2 = 128
+nx2 = 1
 nx3 = 1
 
 <coordinates>
 # Spherical Kerr-Schild coords
 base = spherical_ks
 # MKS of Gammie '03
-transform = mks
+transform = null
 # BH spin
 a = 0.0
 # MKS parameter
@@ -63,23 +62,13 @@ gamma_max = 10
 # We'll be adding material, and that's okay
 check_inflow_outer_x1 = false
 
-<electrons>
-on = true
-cooling = true
-heating = false
-howes = true
-kawazura = true
-werner = true
-rowan = true
-sharma = true
-
 <b_field>
 # No field
 type = none
 solver = none
 # To add magnetic field
 #type = monopole
-#b10 = 1
+#B10 = 1
 # Or
 #type = vertical
 #bz = 0.1
