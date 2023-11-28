@@ -43,7 +43,7 @@ using namespace parthenon;
 // TODO can SetDirichlet be folded into this?
 void KBoundaries::DirichletImpl(std::shared_ptr<MeshBlockData<Real>> &rc, BoundaryFace bface, bool coarse)
 {
-    std::shared_ptr<MeshBlock> pmb = rc->GetBlockPointer();
+    auto pmb = rc->GetBlockPointer();
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
 
     // Get all ghosts, minus those in the B_Cleanup package if it is present
@@ -93,7 +93,7 @@ void KBoundaries::DirichletImpl(std::shared_ptr<MeshBlockData<Real>> &rc, Bounda
 
 void KBoundaries::SetDomainDirichlet(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
-    std::shared_ptr<MeshBlock> pmb = rc->GetBlockPointer();
+    auto pmb = rc->GetBlockPointer();
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
     const BoundaryFace bface = BoundaryFaceOf(domain);
 
@@ -151,7 +151,7 @@ void KBoundaries::FreezeDirichlet(std::shared_ptr<MeshData<Real>> &md)
             // ...on all blocks...
             for (int i=0; i < md->NumBlocks(); i++) {
                 auto rc = md->GetBlockData(i).get();
-                std::shared_ptr<MeshBlock> pmb = rc->GetBlockPointer();
+                auto pmb = rc->GetBlockPointer();
                 auto domain = BoundaryDomain(bface);
                 // Set whatever is in that domain as the Dirichlet bound
                 SetDomainDirichlet(rc, domain, false);

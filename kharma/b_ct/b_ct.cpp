@@ -85,8 +85,8 @@ std::shared_ptr<KHARMAPackage> B_CT::Initialize(ParameterInput *pin, std::shared
     // We don't mark these as "Conserved" else they'd be bundled
     // with all the cell vars in a bunch of places we don't want
     // Also note we *always* sync B field conserved var
-    std::vector<MetadataFlag> flags_cons_f = {Metadata::Real, Metadata::Face, Metadata::Independent,
-                                              Metadata::GetUserFlag("Explicit"), Metadata::FillGhost}; // TODO TODO Restart
+    std::vector<MetadataFlag> flags_cons_f = {Metadata::Real, Metadata::Face, Metadata::Independent, Metadata::Restart,
+                                              Metadata::GetUserFlag("Explicit"), Metadata::FillGhost};
     auto m = Metadata(flags_cons_f);
     if (!lazy_prolongation)
         m.RegisterRefinementOps<ProlongateSharedMinMod, RestrictAverage, ProlongateInternalOlivares>();
@@ -212,7 +212,7 @@ TaskStatus B_CT::CalculateEMF(MeshData<Real> *md)
     const IndexRange3 b1 = KDomain::GetRange(md, IndexDomain::interior, 0, 1);
     const IndexRange block = IndexRange{0, emf_pack.GetDim(5)-1};
 
-    auto pmb0 = md->GetBlockData(0)->GetBlockPointer().get();
+    auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
 
     // Calculate circulation by averaging fluxes
     // This is the base of most other schemes, which make corrections
@@ -341,7 +341,7 @@ TaskStatus B_CT::AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
     const IndexRange3 b1 = KDomain::GetRange(md, IndexDomain::interior, 0, 1);
     const IndexRange block = IndexRange{0, emf_pack.GetDim(5)-1};
 
-    auto pmb0 = md->GetBlockData(0)->GetBlockPointer().get();
+    auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
 
     // This is what we're replacing
     auto& dB_Uf_dt = mdudt->PackVariables(std::vector<std::string>{"cons.fB"});
@@ -394,7 +394,7 @@ double B_CT::MaxDivB(MeshData<Real> *md)
     const IndexRange kb = md->GetBoundsK(IndexDomain::interior);
     const IndexRange block = IndexRange{0, B_U.GetDim(5)-1};
 
-    auto pmb0 = md->GetBlockData(0)->GetBlockPointer().get();
+    auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
 
     double max_divb;
     Kokkos::Max<double> max_reducer(max_divb);
@@ -482,7 +482,7 @@ void B_CT::CalcDivB(MeshData<Real> *md, std::string divb_field_name)
     const IndexRange kb = md->GetBoundsK(IndexDomain::interior);
     const IndexRange block = IndexRange{0, B_U.GetDim(5)-1};
 
-    auto pmb0 = md->GetBlockData(0)->GetBlockPointer().get();
+    auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
 
     // See MaxDivB for details
     pmb0->par_for("calc_divB", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
@@ -495,7 +495,7 @@ void B_CT::CalcDivB(MeshData<Real> *md, std::string divb_field_name)
 
 void B_CT::FillOutput(MeshBlock *pmb, ParameterInput *pin)
 {
-    auto rc = pmb->meshblock_data.Get().get();
+    auto rc = pmb->meshblock_data.Get();
     const int ndim = pmb->pmy_mesh->ndim;
     if (ndim < 2) return;
 

@@ -412,7 +412,7 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
 
 void KBoundaries::CheckInflow(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, bool coarse)
 {
-    std::shared_ptr<MeshBlock> pmb = rc->GetBlockPointer();
+    auto pmb = rc->GetBlockPointer();
     const auto &G = pmb->coords;
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
 

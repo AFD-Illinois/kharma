@@ -179,7 +179,8 @@ inline BoundaryFace BoundaryFaceOf(const IndexDomain domain)
 /**
  * Function for checking boundary flags: is this a domain or internal bound?
  */
-inline bool IsPhysicalBoundary(std::shared_ptr<MeshBlock> pmb, const BoundaryFace face)
+template<typename T>
+inline bool IsPhysicalBoundary(T pmb, const BoundaryFace face)
 {
     return !(pmb->boundary_flag[face] == BoundaryFlag::block ||
              pmb->boundary_flag[face] == BoundaryFlag::periodic);
