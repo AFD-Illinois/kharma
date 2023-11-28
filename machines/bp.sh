@@ -9,12 +9,13 @@ if [[ $HOST == "cheshire"* ]]; then
   if [[ "$ARGS" == *"cuda"* ]]; then
     # NVHPC. Compiler is chosen automatically now
     module load nvhpc
+    NPROC=8 # so much memory
   else
     # Intel oneAPI
     module load compiler mpi/2021
+    NPROC=24
   fi
-
-  NPROC=24
+  # Even CPU kharma is unkillable without this
   MPI_EXE=mpirun
 fi
 
@@ -24,54 +25,26 @@ fi
 
 if [[ $METAL_HOSTNAME == "fermium" ]]; then
   HOST_ARCH="AMDAVX"
-  DEVICE_ARCH="TURING75"
-  # Nvidia MPI hangs unless I do this
-  MPI_EXE=mpirun
+  # We patch Kokkos to make this gfx1101==rx7800xt
+  DEVICE_ARCH="AMD_GFX1100"
+  # MPI & Kokkos separately dislike running the bin alone
+  #MPI_EXE=mpirun
+  NPROC=24
 
-  if [[ "$ARGS" == *"cuda"* ]]; then
-    module purge
-    module load nvhpc
-    PREFIX_PATH="$HOME/libs/hdf5-nvhpc"
-    MPI_NUM_PROCS=1
-
-    if [[ "$ARGS" == *"gcc"* ]]; then
-      C_NATIVE=gcc
-      CXX_NATIVE=g++
-    else
-      C_NATIVE=nvc
-      CXX_NATIVE=nvc++
-      export CFLAGS="-mp"
-      export CXXFLAGS="-mp"
-    fi
+  if [[ "$ARGS" == *"hip"* ]]; then
+    # AMD for GPUs (this will be run in container, no modules)
+    C_NATIVE=hipcc
+    CXX_NATIVE=hipcc
   else
-    # To experiment with AMD NUMA
-    #MPI_EXTRA_ARGS="--map-by ppr:2:socket:pe=12"
-    #MPI_NUM_PROCS=2
-    if [[ "$ARGS" == *"gcc"* ]]; then
-      module purge
-      #module load mpi/mpich-x86_64
-      C_NATIVE=gcc
-      CXX_NATIVE=g++
-    elif [[ "$ARGS" == *"clang"* ]]; then
-      module purge
-      module load mpi/mpich-x86_64
-      C_NATIVE=clang
-      CXX_NATIVE=clang++
-      PREFIX_PATH="$HOME/libs/hdf5-clang14"
-    else
-      module purge
-      module load mpi/mpich-x86_64
-      source /opt/AMD/aocc-compiler-3.2.0/setenv_AOCC.sh
-      PREFIX_PATH="$HOME/libs/hdf5-aocc"
-      C_NATIVE=clang
-      CXX_NATIVE=clang++
-    fi
+    # AMD for CPUs
+    module load aocc-compiler-4.1.0 mpi
+    CXX_NATIVE=clang++
+    C_NATIVE=clang
   fi
 fi
 
 if [[ $METAL_HOSTNAME == "ferrum" ]]; then
   HOST_ARCH="HSW"
-  DEVICE_ARCH="INTEL_GEN"
   NPROC=6
 
   if [[ "$ARGS" == *"gcc"* ]]; then
@@ -82,12 +55,12 @@ if [[ $METAL_HOSTNAME == "ferrum" ]]; then
     # Intel compiler
     module purge
     module load compiler mpi
-    PREFIX_PATH="$HOME/libs/hdf5-oneapi"
+    C_NATIVE="icc"
+    CXX_NATIVE="icpc"
   else
     # Intel SYCL implementation "DPC++"
     module purge
     module load compiler mpi
-    PREFIX_PATH="$HOME/libs/hdf5-oneapi"
     C_NATIVE="icx"
     CXX_NATIVE="icpx"
   fi
@@ -99,15 +72,19 @@ if [[ $HOST == "cinnabar"* ]]; then
 
   module purge # Handle modules inside this script
   HOST_ARCH="HSW" # This won't change
+  DEVICE_ARCH="TURING75"
+  NPROC=56
+
+  # Runtime
+  MPI_NUM_PROCS=1
+
+  # TODO container:
+  # module swap nvhpc-hpcx nvhpc
 
   if [[ "$ARGS" == *"cuda"* ]]; then
-    # Use NVHPC libraries (GPU-aware OpenMPI!)
-    DEVICE_ARCH="KEPLER35"
-    MPI_NUM_PROCS=2
+    # Runtime
     MPI_EXTRA_ARGS="--map-by ppr:1:numa:pe=14"
 
-    # Quash warning about my old gpus
-    export NVCC_WRAPPER_CUDA_EXTRA_FLAGS="-Wno-deprecated-gpu-targets"
     # System CUDA path
     EXTRA_FLAGS="-DCUDAToolkit_INCLUDE_DIR=/usr/include/cuda $EXTRA_FLAGS"
 
@@ -116,28 +93,24 @@ if [[ $HOST == "cinnabar"* ]]; then
       module load mpi/mpich-x86_64 nvhpc-nompi
       C_NATIVE="gcc"
       CXX_NATIVE="g++"
-      # Uses system GCC, which is old
-      EXTRA_FLAGS="-DPARTHENON_DISABLE_HDF5_COMPRESSION=ON $EXTRA_FLAGS"
     else
-      module load nvhpc
+      module load nvhpc/23.7
       PREFIX_PATH="$HOME/libs/hdf5-nvhpc"
       C_NATIVE="nvc"
       CXX_NATIVE="nvc++"
-      export CXXFLAGS="-mp"
+      #export CXXFLAGS="-mp"
     fi
   else
-    MPI_NUM_PROCS=1
     if [[ "$ARGS" == *"gcc"* ]]; then
       # GCC
       module load mpi/mpich-x86_64
       C_NATIVE="gcc"
       CXX_NATIVE="g++"
-      # Uses system GCC, which is old
-      EXTRA_FLAGS="-DPARTHENON_DISABLE_HDF5_COMPRESSION=ON $EXTRA_FLAGS"
     else
       # Intel by default
       module load compiler mpi
-      PREFIX_PATH="$HOME/libs/hdf5-oneapi"
+      C_NATIVE="icx"
+      CXX_NATIVE="icpx"
     fi
   fi
 fi

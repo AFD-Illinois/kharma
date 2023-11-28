@@ -33,62 +33,19 @@
  */
 #pragma once
 
-#include <memory>
-
-#include <parthenon/parthenon.hpp>
-
-using namespace parthenon;
+#include "decs.hpp"
+#include "types.hpp"
 
 /**
  * This physics package implements General-Relativistic Magnetohydrodynamics
  *
  * Anything specific to GRMHD (but not relating to the particular *order* of operations)
  * is implemented in this namespace, in the files grmhd.cpp, source.cpp, and fixup.cpp.
- * 
- * 
+ * Many device-side functions related to GRMHD are implemented in grmhd_functions.hpp
  */
 namespace GRMHD {
-// For declaring meshes, as well as the full intermediates we need (right & left fluxes etc)
-std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t packages);
-
-/**
- * Get the primitive variables
- * This just computes P, and only for the fluid varaibles.
- * Other packages must convert P->U by registering their version as "FillDerived"
- *
- * Defaults to entire domain, as the KHARMA algorithm relies on applying UtoP over ghost zones.
- * 
- * input: U, whatever form
- * output: U and P match down to inversion errors
- */
-// void UtoP(MeshData<Real> *md, IndexDomain domain=IndexDomain::entire, bool coarse=false);
-// inline void FillDerivedMesh(MeshData<Real> *md) { UtoP(md); }
-void UtoP(MeshBlockData<Real> *rc, IndexDomain domain=IndexDomain::entire, bool coarse=false);
-inline void FillDerivedBlock(MeshBlockData<Real> *rc) { UtoP(rc); }
-inline TaskStatus FillDerivedBlockTask(MeshBlockData<Real> *rc) { UtoP(rc); return TaskStatus::complete; }
-
-/**
- * Smooth over inversion failures by averaging values from each neighboring zone
- * a.k.a. Diffusion?  What diffusion?  There is no diffusion here.
- * 
- * LOCKSTEP: this function expects and should preserve P<->U
- */
-TaskStatus FixUtoP(MeshBlockData<Real> *rc);
-/**
- * Fix the primitive variables
- * Applies floors to the calculated primitives, and fixes up any failed inversions
- *
- * input: U & P, "matching"
- * output: U and P match with inversion errors corrected, and obey floors
- */
-void PostUtoP(MeshBlockData<Real> *rc);
-
-/**
- * Function to apply the GRMHD source term over the entire grid.
- * 
- * Note Flux::ApplyFluxes = parthenon::FluxDivergence + GRMHD::AddSource
- */
-TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt);
+// For declaring variables, as well as the full intermediates we need (right & left fluxes etc)
+std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages);
 
 /**
  * Returns the minimum CFL timestep among all zones in the block,
@@ -117,7 +74,7 @@ void FillOutput(MeshBlock *pmb, ParameterInput *pin);
 
 /**
  * Diagnostics performed after each step.
- * Currently finds any negative flags or 0/NaN values in ctop
+ * Currently just looks for negative density/internal energy
  */
 TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *rc);
 }

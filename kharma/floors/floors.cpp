@@ -31,24 +31,23 @@
  *  OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-
-// Floors.  Apply limits to fluid values to maintain integrable state
-
 #include "floors.hpp"
+#include "floors_functions.hpp"
 
-#include "debug.hpp"
 #include "grmhd.hpp"
 #include "grmhd_functions.hpp"
 #include "pack.hpp"
 
-namespace Floors
-{
+// Floors.  Apply limits to fluid values to maintain integrable state
 
-std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
+int CountFFlags(MeshData<Real> *md)
 {
-    // TODO can I just build/add/use a Prescription here, rather than building one
-    // before each call?
-    auto pkg = std::make_shared<StateDescriptor>("Floors");
+    return Reductions::CountFlags(md, "fflag", FFlag::flag_names, IndexDomain::interior, true)[0];
+}
+
+std::shared_ptr<KHARMAPackage> Floors::Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages)
+{
+    auto pkg = std::make_shared<KHARMAPackage>("Floors");
     Params &params = pkg->AllParams();
 
     // Floor parameters
@@ -94,7 +93,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     bool adjust_k = pin->GetOrAddBoolean("floors", "adjust_k", true);
     params.Add("adjust_k", adjust_k);
 
-    // Limit 
+    // Limit the fluid Lorentz factor gamma
     double gamma_max = pin->GetOrAddReal("floors", "gamma_max", 50.);
     params.Add("gamma_max", gamma_max);
 
@@ -104,7 +103,8 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     // less reliable but velocity reconstructions potentially more robust.
     // Drift frame floors are now available and preferred when using 
     // the implicit solver to avoid UtoP calls.
-    std::string frame = pin->GetOrAddString("floors", "frame", "normal");
+    std::string frame = pin->GetOrAddString("floors", "frame", "drift");
+    // TODO TODO ENUM THIS
     params.Add("frame", frame);
     if (frame == "normal" || frame == "nof") {
         params.Add("fluid_frame", false);
@@ -128,80 +128,83 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin)
     // We initialize this even if not using mixed frame, for constructing Prescription objs
     Real frame_switch = pin->GetOrAddReal("floors", "frame_switch", 50.);
     params.Add("frame_switch", frame_switch);
-    
 
     // Disable all floors.  It is obviously tremendously inadvisable to
     // set this option to true
     bool disable_floors = pin->GetOrAddBoolean("floors", "disable_floors", false);
     params.Add("disable_floors", disable_floors);
 
-    // Apply limits on heat flux and pressure anisotropy from velocity space instabilities?
-    // We would want this for the torus runs but not for the test problems. 
-    // For eg: we know that this affects the viscous bondi problem
-    bool enable_emhd_limits = pin->GetOrAddBoolean("floors", "emhd_limits", false);
-    params.Add("enable_emhd_limits", enable_emhd_limits);
-
     // Temporary fix just for being able to save field values
     // Should switch these to "Integer" fields when Parthenon supports it
     Metadata m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
     pkg->AddField("fflag", m);
+    // When not using UtoP, we still need a dummy copy of pflag, too
+    // TODO we shouldn't require pflag
+    if (!packages->AllPackages().count("Inverter")) {
+        pkg->AddField("pflag", m);
+    }
 
-    // Similar to fflag - will register zones where limits on q and dP are hit
-    // Enabled only if 
-    pkg->AddField("eflag", m);
-    // bool do_emhd = pin->GetOrAddBoolean("emhd", "on", false);
-    // if (do_emhd && enable_emhd_limits) {
-    //     Metadata m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
-    //     pkg->AddField("eflag", m);
-    // }
+    pkg->BlockApplyFloors = Floors::ApplyGRMHDFloors;
+    pkg->PostStepDiagnosticsMesh = Floors::PostStepDiagnostics;
 
-    // Floors should be applied to primitive ("Derived") variables just after they are calculated.
-    pkg->PostFillDerivedBlock = Floors::PostFillDerivedBlock;
-    // Could print floor flags using this package, but they're very similar to pflag
-    // so I'm leaving them together
-    //pkg->PostStepDiagnosticsMesh = GRMHD::PostStepDiagnostics;
+    // List (vector) of HistoryOutputVars that will all be enrolled as output variables
+    parthenon::HstVar_list hst_vars = {};
+    // Count total floors as a history item
+    hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::max, CountFFlags, "FFlags"));
+    // TODO Domain::entire version?
+    // TODO entries for each individual flag?
+    // add callbacks for HST output to the Params struct, identified by the `hist_param_key`
+    pkg->AddParam<>(parthenon::hist_param_key, hst_vars);
 
     return pkg;
 }
 
-TaskStatus PostFillDerivedBlock(MeshBlockData<Real> *mbd)
+TaskStatus Floors::ApplyInitialFloors(ParameterInput *pin, MeshBlockData<Real> *mbd, IndexDomain domain)
 {
-    if (mbd->GetBlockPointer()->packages.Get("Floors")->Param<bool>("disable_floors")
-        || !mbd->GetBlockPointer()->packages.Get("Globals")->Param<bool>("in_loop")) {
-        return TaskStatus::complete;
-    } else {
-        return ApplyFloors(mbd);
-    }
-}
+    Flag("ApplyInitialFloors");
 
-TaskStatus ApplyFloors(MeshBlockData<Real> *mbd, IndexDomain domain)
-{
-    Flag(mbd, "Apply floors");
-
-    auto pmb                 = mbd->GetBlockPointer();
-    MetadataFlag isPrimitive = pmb->packages.Get("GRMHD")->AllParams().Get<MetadataFlag>("PrimitiveFlag");
+    auto pmb = mbd->GetBlockPointer();
 
     PackIndexMap prims_map, cons_map;
-    auto P = mbd->PackVariables({isPrimitive}, prims_map);
+    auto P = mbd->PackVariables({Metadata::GetUserFlag("Primitive")}, prims_map);
     auto U = mbd->PackVariables(std::vector<MetadataFlag>{Metadata::Conserved}, cons_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
 
     const auto& G = pmb->coords;
 
-    GridScalar pflag = mbd->Get("pflag").data;
-    GridScalar fflag = mbd->Get("fflag").data;
-    GridScalar eflag = mbd->Get("eflag").data;
-
-    const bool enable_emhd_limits = mbd->GetBlockPointer()->packages.Get("Floors")->Param<bool>("enable_emhd_limits");
-    EMHD::EMHD_parameters emhd_params;
-    if (enable_emhd_limits) {
-        const auto& pars = pmb->packages.Get("EMHD")->AllParams();
-        emhd_params      = pars.Get<EMHD::EMHD_parameters>("emhd_params");
-        
-    }
-
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
-    const Floors::Prescription floors(pmb->packages.Get("Floors")->AllParams());
+
+
+    // If we're going to apply floors through the run, apply the same ones at init
+    // Otherwise stick to specified/default geometric floors
+    Floors::Prescription floors_tmp;
+    if (pmb->packages.AllPackages().count("Floors")) {
+        floors_tmp = Floors::Prescription(pmb->packages.Get("Floors")->AllParams());
+    } else {
+            // JUST rho & u geometric
+            floors_tmp.rho_min_geom = pin->GetOrAddReal("floors", "rho_min_geom", 1e-6);
+            floors_tmp.u_min_geom   = pin->GetOrAddReal("floors", "u_min_geom", 1e-8);
+
+            // Disable everything else, even if it's specified
+            floors_tmp.bsq_over_rho_max = 1e20;
+            floors_tmp.bsq_over_u_max   = 1e20;
+            floors_tmp.u_over_rho_max   = 1e20;
+            floors_tmp.ktot_max         = 1e20;
+            floors_tmp.gamma_max        = 1e20;
+
+            floors_tmp.use_r_char    = false;
+            floors_tmp.r_char        = 0.; //unused
+            floors_tmp.temp_adjust_u = false;
+            floors_tmp.adjust_k      = false;
+
+            floors_tmp.fluid_frame   = true;
+            floors_tmp.mixed_frame   = false;
+            floors_tmp.frame_switch  = 0.; //unused
+            floors_tmp.drift_frame   = false;
+    }
+    const Floors::Prescription floors = floors_tmp;
+
+    const EMHD::EMHD_parameters& emhd_params = EMHD::GetEMHDParameters(pmb->packages);
 
     // Apply floors over the same zones we just updated with UtoP
     // This selects the entire domain, but we then require pflag >= 0,
@@ -210,24 +213,61 @@ TaskStatus ApplyFloors(MeshBlockData<Real> *mbd, IndexDomain domain)
     const IndexRange ib = mbd->GetBoundsI(domain);
     const IndexRange jb = mbd->GetBoundsJ(domain);
     const IndexRange kb = mbd->GetBoundsK(domain);
+    pmb->par_for("apply_initial_floors", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+        KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+            apply_floors(G, P, m_p, gam, emhd_params, k, j, i, floors, U, m_u);
+            apply_ceilings(G, P, m_p, gam, k, j, i, floors, U, m_u);
+        }
+    );
+
+    EndFlag();
+    return TaskStatus::complete;
+}
+
+TaskStatus Floors::ApplyGRMHDFloors(MeshBlockData<Real> *mbd, IndexDomain domain)
+{
+    auto pmb = mbd->GetBlockPointer();
+
+    PackIndexMap prims_map, cons_map;
+    auto P = mbd->PackVariables({Metadata::GetUserFlag("Primitive")}, prims_map);
+    auto U = mbd->PackVariables(std::vector<MetadataFlag>{Metadata::Conserved}, cons_map);
+    const VarMap m_u(cons_map, true), m_p(prims_map, false);
+
+    const auto& G = pmb->coords;
+
+    GridScalar pflag = mbd->Get("pflag").data;
+    GridScalar fflag = mbd->Get("fflag").data;
+
+    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
+    const Floors::Prescription floors(pmb->packages.Get("Floors")->AllParams());
+    const EMHD::EMHD_parameters& emhd_params = EMHD::GetEMHDParameters(pmb->packages);
+
+    // Apply floors over the same zones we just updated with UtoP
+    // This selects the entire domain, but we then require pflag >= 0,
+    // which keeps us from covering completely uninitialized zones
+    // (but still applies to failed UtoP!)
+    const IndexRange ib = mbd->GetBoundsI(domain);
+    const IndexRange jb = mbd->GetBoundsJ(domain);
+    const IndexRange kb = mbd->GetBoundsK(domain);
+    
     pmb->par_for("apply_floors", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-        KOKKOS_LAMBDA_3D {
-            if (((int) pflag(k, j, i)) >= InversionStatus::success) {
+        KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+            if (((int) pflag(k, j, i)) >= (int) Inverter::Status::success) {
                 // apply_floors can involve another U_to_P call.  Hide the pflag in bottom 5 bits and retrieve both
-                int comboflag = apply_floors(G, P, m_p, gam, k, j, i, floors, U, m_u);
-                fflag(k, j, i) = (comboflag / HIT_FLOOR_GEOM_RHO) * HIT_FLOOR_GEOM_RHO;
+                int comboflag = apply_floors(G, P, m_p, gam, emhd_params, k, j, i, floors, U, m_u);
+                fflag(k, j, i) = (comboflag / FFlag::MINIMUM) * FFlag::MINIMUM;
 
                 // Record the pflag as well.  KHARMA did not traditionally do this,
                 // because floors were run over uninitialized zones, and thus wrote
                 // garbage pflags.  We now prevent this.
                 // Note that the pflag is recorded only if inversion failed,
                 // so that a zone is flagged if *either* the initial inversion or
-                // floor inversion failed.
+                // post-floor inversion failed.
                 // Zones next to the sharp edge of the initial torus, for example,
                 // can produce negative u when inverted, then magically stay invertible
                 // after floors when they should be diffused.
-                if (comboflag % HIT_FLOOR_GEOM_RHO) {
-                    pflag(k, j, i) = comboflag % HIT_FLOOR_GEOM_RHO;
+                if (comboflag % FFlag::MINIMUM) {
+                    pflag(k, j, i) = comboflag % FFlag::MINIMUM;
                 }
 
 #if !FUSE_FLOOR_KERNELS
@@ -235,28 +275,41 @@ TaskStatus ApplyFloors(MeshBlockData<Real> *mbd, IndexDomain domain)
         }
     );
     pmb->par_for("apply_ceilings", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-        KOKKOS_LAMBDA_3D {
-            if (((int) pflag(k, j, i)) >= InversionStatus::success) {
+        KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+            if (((int) pflag(k, j, i)) >= (int) Inverter::Status::success) {
 #endif
                 // Apply ceilings *after* floors, to make the temperature ceiling better-behaved
-                // Ceilings never involve a U_to_P call
+                // Ceilings never involve a u_to_p call
                 int addflag = fflag(k, j, i);
                 addflag |= apply_ceilings(G, P, m_p, gam, k, j, i, floors, U, m_u);
                 fflag(k, j, i) = addflag;
             }
         }
     );
-    pmb->par_for("apply_ceilings", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-        KOKKOS_LAMBDA_3D {
-            // Apply limits to the Extended MHD variables
-            if (enable_emhd_limits)
-                eflag(k, j, i) = apply_instability_limits(G, P, m_p, gam, emhd_params, k, j, i, floors, U, m_u);
-            
-        }
-    );
 
-    Flag(mbd, "Applied");
+    //if (flag_verbose)
+    //Reductions::StartFlagReduce(md, "fflag", FFlag::flag_names, IndexDomain::interior, true, 0);
+
     return TaskStatus::complete;
 }
 
-} // namespace Floors
+TaskStatus Floors::PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
+{
+    auto pmesh = md->GetMeshPointer();
+    auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
+    // Options
+    const auto& pars = pmesh->packages.Get("Globals")->AllParams();
+    const int flag_verbose = pars.Get<int>("flag_verbose");
+
+    // Debugging/diagnostic info about floor flags
+    if (flag_verbose > 0) {
+        // TODO this should move to ApplyGRMHDFloors when everything goes MeshData
+        Reductions::StartFlagReduce(md, "fflag", FFlag::flag_names, IndexDomain::interior, true, 0);
+        // Debugging/diagnostic info about floor and inversion flags
+        Reductions::CheckFlagReduceAndPrintHits(md, "fflag", FFlag::flag_names, IndexDomain::interior, true, 0);
+    }
+
+    // Anything else (energy conservation? Added material stats?)
+
+    return TaskStatus::complete;
+}

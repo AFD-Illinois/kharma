@@ -8,15 +8,13 @@
 # Also note that Delta's hdf5 is no longer serviceable (?)
 # So run './make.sh hdf5 clean cuda'
 
-if [[ $HOST == *".delta.internal.ncsa.edu" ]]
+if [[ $HOST == *".delta.internal.ncsa.edu" || $HOST == *".delta.ncsa.illinois.edu" ]]
 then
   HOST_ARCH=ZEN3
   DEVICE_ARCH=AMPERE80
-
-  # Load common modules
-  module purge
-  module load modtree/gpu cmake
   MPI_EXE=mpirun
+
+  module purge
 
   if [[ $ARGS == *"cuda"* ]]
   then
@@ -25,18 +23,25 @@ then
     MPI_EXTRA_ARGS="--map-by ppr:4:node:pe=16"
     MPI_NUM_PROCS=4
 
-    if [[ $ARGS == *"nvhpc"* ]]; then
+    # Load common GPU modules
+    module load modtree/gpu hdf5 cmake
+
+    if [[ $ARGS == *"latest"* ]]; then
       # nvhpc only on request, MPI crashes
       module load nvhpc_latest openmpi-5.0_beta
       C_NATIVE=nvc
       CXX_NATIVE=nvc++
-    else # TODO NVHPC not-latest
+    elif [[ $ARGS == *"gcc"* ]]; then
       C_NATIVE=gcc
       CXX_NATIVE=g++
+    else
+      module load nvhpc
+      #C_NATIVE=nvc
+      #CXX_NATIVE=nvc++
     fi
   else
     # CPU Compile
-    module load modtree/cpu gcc
+    module load modtree/cpu gcc hdf5 cmake
     MPI_NUM_PROCS=1
   fi
 fi

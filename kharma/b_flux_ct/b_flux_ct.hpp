@@ -35,6 +35,7 @@
 
 #include "decs.hpp"
 #include "grmhd_functions.hpp"
+#include "reductions.hpp"
 #include "types.hpp"
 
 #include <memory>
@@ -51,7 +52,7 @@ namespace B_FluxCT {
 /**
  * Declare fields, initialize (few) parameters
  */
-std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t packages);
+std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages);
 
 /**
  * Get the primitive variables, which in Parthenon's nomenclature are "derived".
@@ -62,33 +63,35 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
  * input: Conserved B = sqrt(-gdet) * B^i
  * output: Primitive B = B^i
  */
-void UtoP(MeshData<Real> *md, IndexDomain domain=IndexDomain::entire, bool coarse=false);
-inline void FillDerivedMesh(MeshData<Real> *md) { UtoP(md); }
-inline TaskStatus FillDerivedMeshTask(MeshData<Real> *md) { UtoP(md); return TaskStatus::complete; }
-void UtoP(MeshBlockData<Real> *md, IndexDomain domain=IndexDomain::entire, bool coarse=false);
-inline void FillDerivedBlock(MeshBlockData<Real> *rc) { UtoP(rc); }
-inline TaskStatus FillDerivedBlockTask(MeshBlockData<Real> *rc) { UtoP(rc); return TaskStatus::complete; }
+TaskStatus BlockUtoP(MeshBlockData<Real> *md, IndexDomain domain, bool coarse=false);
+void MeshUtoP(MeshData<Real> *md, IndexDomain domain, bool coarse=false);
 
 /**
- * Inverse of above. Generally only for initialization.
+ * Reverse of the above.  Only used alone during initialization.
+ * Generally, use Flux::BlockPtoU/Flux::MeshPtoU
  */
-void PtoU(MeshBlockData<Real> *md, IndexDomain domain=IndexDomain::interior, bool coarse=false);
+void BlockPtoU(MeshBlockData<Real> *md, IndexDomain domain, bool coarse=false);
+void MeshPtoU(MeshData<Real> *md, IndexDomain domain, bool coarse=false);
 
+/**
+ * All flux corrections required by this package
+ */
+void FixFlux(MeshData<Real> *md);
 /**
  * Modify the B field fluxes to take a constrained-transport step as in Toth (2000)
  */
-TaskStatus FluxCT(MeshData<Real> *md);
+void FluxCT(MeshData<Real> *md);
+/**
+ * Modify the B field fluxes just beyond the polar (or radial) boundary so as to
+ * ensure no flux through the boundary after applying FluxCT
+ */
+void FixBoundaryFlux(MeshData<Real> *md, IndexDomain domain, bool coarse);
 
 /**
- * Modify the B field fluxes just beyond the polar boundary so as to ensure no flux through it,
- * after applying FluxCT
+ * Alternate B field fix for X1 boundary, keeps zero divergence while permitting flux
+ * through the boundary, at the cost of a short non-local solve.
  */
-TaskStatus FixPolarFlux(MeshData<Real> *md);
-
-/**
- * Task combining the above two (polar fix and FluxCT) for simplicity
- */
-TaskStatus TransportB(MeshData<Real> *md);
+TaskStatus FixX1Flux(MeshData<Real> *md);
 
 /**
  * Calculate maximum corner-centered divergence of magnetic field,
@@ -100,34 +103,43 @@ double MaxDivB(MeshData<Real> *md);
 
 /**
  * Returns the global maximum value, rather than the maximum over this rank's MeshData
+ * 
+ * By default, only returns the correct value on rank 0 for printing
  */
-double GlobalMaxDivB(MeshData<Real> *md);
-
-/**
- * Clean the magnetic field divergence via successive over-relaxation
- * Currently only used when resizing inputs.
- * TODO option to sprinkle into updates every N steps
- */
-void CleanupDivergence(MeshBlockData<Real> *rc, IndexDomain domain=IndexDomain::interior, bool coarse=false);
+double GlobalMaxDivB(MeshData<Real> *md, bool all_reduce=false);
 
 /**
  * Diagnostics printed/computed after each step
  * Currently just max divB
  */
-TaskStatus PrintGlobalMaxDivB(MeshData<Real> *md);
-inline TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
-    { return PrintGlobalMaxDivB(md); }
-// Block version; unused now, kept for future fiascos
-TaskStatus PrintMaxBlockDivB(MeshBlockData<Real> *rc, bool prims, std::string tag);
+TaskStatus PrintGlobalMaxDivB(MeshData<Real> *md, bool kill_on_large_divb=false);
 
 /**
- * Fill fields which are calculated only for output to file
+ * Diagnostics function should print divB, and optionally stop execution if it's large
+ */
+inline TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
+{
+    auto& params = md->GetMeshPointer()->packages.Get("B_FluxCT")->AllParams();
+    return PrintGlobalMaxDivB(md, params.Get<bool>("kill_on_large_divb"));
+}
+
+/**
+ * Fill fields which are calculated only for output to file, i.e., divB
  */
 void FillOutput(MeshBlock *pmb, ParameterInput *pin);
 /**
- * Fill field "name" with divB
+ * Fill the field 'divb_field_name' with divB
  */
 void CalcDivB(MeshData<Real> *md, std::string divb_field_name="divB");
+
+inline Real ReducePhi0(MeshData<Real> *md)
+{
+    return Reductions::EHReduction<Reductions::Var::phi, Real>(md, UserHistoryOperation::sum, 0);
+}
+inline Real ReducePhi5(MeshData<Real> *md)
+{
+    return Reductions::EHReduction<Reductions::Var::phi, Real>(md, UserHistoryOperation::sum, 5);
+}
 
 /**
  * ND divergence, averaging to cell corners
@@ -135,20 +147,15 @@ void CalcDivB(MeshData<Real> *md, std::string divb_field_name="divB");
  */
 template<typename Global>
 KOKKOS_INLINE_FUNCTION double corner_div(const GRCoordinates& G, const Global& B_U, const int& b,
-                                         const int& k, const int& j, const int& i, const bool& do_3D, const bool& do_2D=true)
+                                         const int& k, const int& j, const int& i, const bool& do_3D)
 {
-    const double norm = (do_2D) ? ((do_3D) ? 0.25 : 0.5) : 1.;
-    // 1D divergence
-    double term1 = B_U(b, V1, k, j, i) - B_U(b, V1, k, j, i-1);
-    double term2 = 0.;
+    const double norm = (do_3D) ? 0.25 : 0.5;
+    // 2D divergence, averaging to corners
+    double term1 = B_U(b, V1, k, j, i)   - B_U(b, V1, k, j, i-1) +
+                   B_U(b, V1, k, j-1, i) - B_U(b, V1, k, j-1, i-1);
+    double term2 = B_U(b, V2, k, j, i)   - B_U(b, V2, k, j-1, i) +
+                   B_U(b, V2, k, j, i-1) - B_U(b, V2, k, j-1, i-1);
     double term3 = 0.;
-    if (do_2D) {
-        // 2D divergence, averaging to corners
-        term1 +=   B_U(b, V1, k, j-1, i) - B_U(b, V1, k, j-1, i-1);
-        term2 +=   B_U(b, V2, k, j, i)   + B_U(b, V2, k, j, i-1)
-                        - B_U(b, V2, k, j-1, i) - B_U(b, V2, k, j-1, i-1);
-        term3 += 0.;
-    }
     if (do_3D) {
         // Average to corners in 3D, add 3rd flux
         term1 +=  B_U(b, V1, k-1, j, i)   + B_U(b, V1, k-1, j-1, i)
@@ -160,7 +167,32 @@ KOKKOS_INLINE_FUNCTION double corner_div(const GRCoordinates& G, const Global& B
                 - B_U(b, V3, k-1, j, i)   - B_U(b, V3, k-1, j-1, i)
                 - B_U(b, V3, k-1, j, i-1) - B_U(b, V3, k-1, j-1, i-1);
     }
-    return norm*term1/G.dx1v(i) + norm*term2/G.dx2v(j) + norm*term3/G.dx3v(k);
+    return norm*term1/G.Dxc<1>(i) + norm*term2/G.Dxc<2>(j) + norm*term3/G.Dxc<3>(k);
+}
+template<typename Global>
+KOKKOS_INLINE_FUNCTION double corner_div(const GRCoordinates& G, const Global& P, const VarMap& m_p, 
+                                         const int& b, const int& k, const int& j, const int& i,
+                                         const bool& do_3D)
+{
+    const double norm = (do_3D) ? 0.25 : 0.5;
+    // 2D divergence, averaging to corners
+    double term1 = P(b, m_p.B1, k, j, i)   - P(b, m_p.B1, k, j, i-1) +
+                   P(b, m_p.B1, k, j-1, i) - P(b, m_p.B1, k, j-1, i-1);
+    double term2 = P(b, m_p.B2, k, j, i)   - P(b, m_p.B2, k, j-1, i) +
+                   P(b, m_p.B2, k, j, i-1) - P(b, m_p.B2, k, j-1, i-1);
+    double term3 = 0.;
+    if (do_3D) {
+        // Average to corners in 3D, add 3rd flux
+        term1 +=  P(b, m_p.B1, k-1, j, i)   + P(b, m_p.B1, k-1, j-1, i)
+                - P(b, m_p.B1, k-1, j, i-1) - P(b, m_p.B1, k-1, j-1, i-1);
+        term2 +=  P(b, m_p.B2, k-1, j, i)   + P(b, m_p.B2, k-1, j, i-1)
+                - P(b, m_p.B2, k-1, j-1, i) - P(b, m_p.B2, k-1, j-1, i-1);
+        term3 =   P(b, m_p.B3, k, j, i)     + P(b, m_p.B3, k, j-1, i)
+                + P(b, m_p.B3, k, j, i-1)   + P(b, m_p.B3, k, j-1, i-1)
+                - P(b, m_p.B3, k-1, j, i)   - P(b, m_p.B3, k-1, j-1, i)
+                - P(b, m_p.B3, k-1, j, i-1) - P(b, m_p.B3, k-1, j-1, i-1);
+    }
+    return norm*term1/G.Dxc<1>(i) + norm*term2/G.Dxc<2>(j) + norm*term3/G.Dxc<3>(k);
 }
 
 /**
@@ -173,14 +205,14 @@ KOKKOS_INLINE_FUNCTION void center_grad(const GRCoordinates& G, const Global& P,
                                           double& B1, double& B2, double& B3)
 {
     const double norm = (do_3D) ? 0.25 : 0.5;
-    // 2D divergence, averaging to corners
+    // 2D gradient, averaging to centers
     double term1 =  P(b, 0, k, j+1, i+1) + P(b, 0, k, j, i+1)
                   - P(b, 0, k, j+1, i)   - P(b, 0, k, j, i);
     double term2 =  P(b, 0, k, j+1, i+1) + P(b, 0, k, j+1, i)
                   - P(b, 0, k, j, i+1)   - P(b, 0, k, j, i);
     double term3 = 0.;
     if (do_3D) {
-        // Average to corners in 3D, add 3rd flux
+        // Average to centers in 3D, add 3rd flux
         term1 += P(b, 0, k+1, j+1, i+1) + P(b, 0, k+1, j, i+1)
                - P(b, 0, k+1, j+1, i)   - P(b, 0, k+1, j, i);
         term2 += P(b, 0, k+1, j+1, i+1) + P(b, 0, k+1, j+1, i)
@@ -190,9 +222,68 @@ KOKKOS_INLINE_FUNCTION void center_grad(const GRCoordinates& G, const Global& P,
                - P(b, 0, k, j+1, i+1)   - P(b, 0, k, j, i+1)
                - P(b, 0, k, j+1, i)     - P(b, 0, k, j, i);
     }
-    B1 = norm*term1/G.dx1v(i);
-    B2 = norm*term2/G.dx2v(j);
-    B3 = norm*term3/G.dx3v(k);
+    B1 = norm*term1/G.Dxc<1>(i);
+    B2 = norm*term2/G.Dxc<2>(j);
+    B3 = norm*term3/G.Dxc<3>(k);
+}
+
+KOKKOS_INLINE_FUNCTION void averaged_curl_3D(const GRCoordinates& G, const GridVector& A, const GridVector& B_U,
+                                             const int& k, const int& j, const int& i)
+{
+    // Take a flux-ct step from the corner potentials.
+    // This needs to be 3D because post-tilt A may not point in the phi direction only
+
+    // A3,2 derivative
+    const Real A3c2f = (A(V3, k, j + 1, i)     + A(V3, k, j + 1, i + 1) + 
+                        A(V3, k + 1, j + 1, i) + A(V3, k + 1, j + 1, i + 1)) / 4;
+    const Real A3c2b = (A(V3, k, j, i)     + A(V3, k, j, i + 1) +
+                        A(V3, k + 1, j, i) + A(V3, k + 1, j, i + 1)) / 4;
+    // A2,3 derivative
+    const Real A2c3f = (A(V2, k + 1, j, i)     + A(V2, k + 1, j, i + 1) +
+                        A(V2, k + 1, j + 1, i) + A(V2, k + 1, j + 1, i + 1)) / 4;
+    const Real A2c3b = (A(V2, k, j, i)     + A(V2, k, j, i + 1) +
+                        A(V2, k, j + 1, i) + A(V2, k, j + 1, i + 1)) / 4;
+    B_U(V1, k, j, i) = (A3c2f - A3c2b) / G.Dxc<2>(j) - (A2c3f - A2c3b) / G.Dxc<3>(k);
+
+    // A1,3 derivative
+    const Real A1c3f = (A(V1, k + 1, j, i)     + A(V1, k + 1, j, i + 1) + 
+                        A(V1, k + 1, j + 1, i) + A(V1, k + 1, j + 1, i + 1)) / 4;
+    const Real A1c3b = (A(V1, k, j, i)     + A(V1, k, j, i + 1) +
+                        A(V1, k, j + 1, i) + A(V1, k, j + 1, i + 1)) / 4;
+    // A3,1 derivative
+    const Real A3c1f = (A(V3, k, j, i + 1)     + A(V3, k + 1, j, i + 1) +
+                        A(V3, k, j + 1, i + 1) + A(V3, k + 1, j + 1, i + 1)) / 4;
+    const Real A3c1b = (A(V3, k, j, i)     + A(V3, k + 1, j, i) +
+                        A(V3, k, j + 1, i) + A(V3, k + 1, j + 1, i)) / 4;
+    B_U(V2, k, j, i) = (A1c3f - A1c3b) / G.Dxc<3>(k) - (A3c1f - A3c1b) / G.Dxc<1>(i);
+
+    // A2,1 derivative
+    const Real A2c1f = (A(V2, k, j, i + 1)     + A(V2, k, j + 1, i + 1) + 
+                        A(V2, k + 1, j, i + 1) + A(V2, k + 1, j + 1, i + 1)) / 4;
+    const Real A2c1b = (A(V2, k, j, i)     + A(V2, k, j + 1, i) +
+                        A(V2, k + 1, j, i) + A(V2, k + 1, j + 1, i)) / 4;
+    // A1,2 derivative
+    const Real A1c2f = (A(V1, k, j + 1, i)     + A(V1, k, j + 1, i + 1) +
+                        A(V1, k + 1, j + 1, i) + A(V1, k + 1, j + 1, i + 1)) / 4;
+    const Real A1c2b = (A(V1, k, j, i)     + A(V1, k, j, i + 1) +
+                        A(V1, k + 1, j, i) + A(V1, k + 1, j, i + 1)) / 4;
+    B_U(V3, k, j, i) = (A2c1f - A2c1b) / G.Dxc<1>(i) - (A1c2f - A1c2b) / G.Dxc<2>(j);
+}
+
+KOKKOS_INLINE_FUNCTION void averaged_curl_2D(const GRCoordinates& G, const GridVector& A, const GridVector& B_U,
+                                             const int& k, const int& j, const int& i)
+{
+    // A3,2 derivative
+    const Real A3c2f = (A(V3, k, j + 1, i) + A(V3, k, j + 1, i + 1)) / 2;
+    const Real A3c2b = (A(V3, k, j, i)     + A(V3, k, j, i + 1)) / 2;
+    B_U(V1, k, j, i) = (A3c2f - A3c2b) / G.Dxc<2>(j);
+
+    // A3,1 derivative
+    const Real A3c1f = (A(V3, k, j, i + 1) + A(V3, k, j + 1, i + 1)) / 2;
+    const Real A3c1b = (A(V3, k, j, i)     + A(V3, k, j + 1, i)) / 2;
+    B_U(V2, k, j, i) = - (A3c1f - A3c1b) / G.Dxc<1>(i);
+
+    B_U(V3, k, j, i) = 0;
 }
 
 }

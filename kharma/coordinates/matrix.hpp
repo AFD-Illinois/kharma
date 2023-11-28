@@ -109,16 +109,16 @@ KOKKOS_INLINE_FUNCTION Real invert(const Real *m, Real *invOut)
 
 /**
  * Parity calculation.
- * Due to Norm Hardy; in principle good for general n,
- * but in practice specified for speed/compiler
+ * Due to Norm Hardy; good for general n
  */
-KOKKOS_INLINE_FUNCTION int pp(int P[4])
+template<int n>
+KOKKOS_INLINE_FUNCTION int pp(int P[n])
 {
   int x;
   int p = 0;
-  int v[4] = {0};
+  int v[n] = {0};
 
-  for (int j = 0; j < 4; j++) {
+  for (int j = 0; j < n; j++) {
     if (v[j]) {
       p++;
     } else {
@@ -140,12 +140,6 @@ KOKKOS_INLINE_FUNCTION int pp(int P[4])
 // Completely antisymmetric 4D symbol
 KOKKOS_INLINE_FUNCTION int antisym(int a, int b, int c, int d)
 {
-  // Check for valid permutation
-  if (a < 0 || a > 3) return 100;
-  if (b < 0 || b > 3) return 100;
-  if (c < 0 || c > 3) return 100;
-  if (d < 0 || d > 3) return 100;
-
   // Entries different? 
   if (a == b) return 0;
   if (a == c) return 0;
@@ -157,5 +151,18 @@ KOKKOS_INLINE_FUNCTION int antisym(int a, int b, int c, int d)
   // Determine parity of permutation
   int p[4] = {a, b, c, d};
 
-  return pp(p);
+  return pp<4>(p);
+}
+
+KOKKOS_INLINE_FUNCTION int antisym(int a, int b, int c)
+{
+  // Entries different? 
+  if (a == b) return 0;
+  if (a == c) return 0;
+  if (b == c) return 0;
+
+  // Determine parity of permutation
+  int p[3] = {a, b, c};
+
+  return pp<3>(p);
 }

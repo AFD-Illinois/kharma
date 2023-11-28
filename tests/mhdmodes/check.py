@@ -16,6 +16,12 @@ if len(sys.argv) > 4:
     DIM = sys.argv[4]
 else:
     DIM = "3d"
+if len(sys.argv) > 5:
+    DIR = int(sys.argv[5])
+else:
+    DIR = 0
+
+print(DIR)
 
 NVAR = 8
 VARS = ['rho', 'u', 'u1', 'u2', 'u3', 'B1', 'B2', 'B3']
@@ -23,7 +29,7 @@ VARS = ['rho', 'u', 'u1', 'u2', 'u3', 'B1', 'B2', 'B3']
 amp = 1.e-4
 k1 = 2.*np.pi
 k2 = 2.*np.pi
-if DIM == "3d":
+if DIM == "3d" and DIR == 0:
     k3 = 2.*np.pi
 else:
     k3 = 0
@@ -41,7 +47,7 @@ L1 = []
 
 # EIGENMODES: 3D
 dvar = np.zeros(NVAR)
-if DIM == "3d":
+if DIM == "3d" and DIR == 0:
     if "entropy" in SHORT:
         dvar[0] = 1.
     if "slow" in SHORT:
@@ -54,19 +60,19 @@ if DIM == "3d":
         dvar[6] = 0.0977545707307
         dvar[7] = 0.0977545707307
     if "alfven" in SHORT:
-        dvar[3] =  -0.339683110243
-        dvar[4] =  0.339683110243
-        dvar[6] =  0.620173672946
-        dvar[7] =  -0.620173672946
+        dvar[3] = -0.339683110243
+        dvar[4] = 0.339683110243
+        dvar[6] = 0.620173672946
+        dvar[7] = -0.620173672946
     if "fast" in SHORT:
-        dvar[0]  =  0.481846076323
-        dvar[1]    =  0.642461435098
-        dvar[2]   =  -0.0832240462505
-        dvar[3]   =  -0.224080007379
-        dvar[4]   =  -0.224080007379
-        dvar[5]   =  0.406380545676
-        dvar[6]   =  -0.203190272838
-        dvar[7]   =  -0.203190272838
+        dvar[0] = 0.481846076323
+        dvar[1] = 0.642461435098
+        dvar[2] = -0.0832240462505
+        dvar[3] = -0.224080007379
+        dvar[4] = -0.224080007379
+        dvar[5] = 0.406380545676
+        dvar[6] = -0.203190272838
+        dvar[7] = -0.203190272838
 else:
     # EIGENMODES: 2D
     # We only *convergence check* dir = 3 i.e. X1/X2 plane runs
@@ -95,8 +101,7 @@ dvar *= amp
 
 # USE DUMPS IN FOLDERS OF GIVEN FORMAT
 for m, res in enumerate(RES):
-    #print(DIM, res, SHORT)
-    dump = pyharm.load_dump("mhd_{}_{}_end_{}.phdf".format(DIM, res, SHORT))
+    dump = pyharm.load_dump("mhd_{}_{}_{}_end.phdf".format(DIM, SHORT, res))
 
     X1 = dump['X1']
     X2 = dump['X2']
@@ -108,9 +113,12 @@ for m, res in enumerate(RES):
     dvar_code.append(dump['U1'] - var0[2])
     dvar_code.append(dump['U2'] - var0[3])
     dvar_code.append(dump['U3'] - var0[4])
-    dvar_code.append(dump['B1'] - var0[5])
-    dvar_code.append(dump['B2'] - var0[6])
-    dvar_code.append(dump['B3'] - var0[7])
+    try:
+        dvar_code.append(dump['B1'] - var0[5])
+        dvar_code.append(dump['B2'] - var0[6])
+        dvar_code.append(dump['B3'] - var0[7])
+    except IOError:
+        NVAR = 5
 
     dvar_sol = []
     L1.append([])
@@ -125,7 +133,9 @@ fail = 0
 for k in range(NVAR):
     if abs(dvar[k]) != 0.:
         powerfits[k] = np.polyfit(np.log(RES), np.log(L1[:,k]), 1)[0]
+
         print("Power fit {}: {} {}".format(VARS[k], powerfits[k], L1[:,k]))
+        # These bounds were chosen heuristically: fast u2/u3 converge fast
         if powerfits[k] > -1.9 or ("entropy" not in SHORT and powerfits[k] < -2.1):
             # Allow entropy wave to converge fast, otherwise everything is ~2
             fail = 1
@@ -148,8 +158,8 @@ ax.plot([xmin, xmax], norm*np.asarray([xmin, xmax])**-2., color='k', linestyle='
 plt.xscale('log', base=2); plt.yscale('log')
 plt.xlim([RES[0]/np.sqrt(2.), RES[-1]*np.sqrt(2.)])
 plt.xlabel('N'); plt.ylabel('L1')
-plt.title("MHD mode test convergence, {}".format(LONG))
+plt.title("{}".format(LONG))
 plt.legend(loc=1)
-plt.savefig("convergence_modes_{}.png".format(SHORT))
+plt.savefig("convergence_modes_{}_{}.png".format(DIM,SHORT))
 
 exit(fail)

@@ -8,8 +8,8 @@
 #PBS -l filesystems=home:grand
 
 KHARMA_DIR=~/kharma-dev
-WRAPPER=$KHARMA_DIR/bin/mpi_gpu_wrap
-KHARMA_ARGS="-i $KHARMA_DIR/pars/sane_perf.par"
+WRAPPER=$KHARMA_DIR/bin/select_gpu_polaris
+KHARMA_ARGS="-i $KHARMA_DIR/pars/benchmark/sane_perf.par"
 
 # Print ranks
 NNODES=`wc -l < $PBS_NODEFILE`

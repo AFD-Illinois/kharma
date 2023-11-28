@@ -4,7 +4,7 @@
 #SBATCH -t 24:00:00
 #SBATCH -N 1
 #SBATCH -o "out-%j.txt"
-#SBATCH --account=bbhr-delta-gpu
+#SBATCH --account=bbgv-delta-gpu
 
 # Nodes we want
 #SBATCH --partition=gpuA100x4
@@ -17,7 +17,7 @@
 
 # Node options
 # 8-way nodes are 2 sockets, so this is constant
-#SBATCH --cpus-per-task=16
+#SBATCH --cpus-per-task=4
 # ALWAYS reserve full nodes to mitigate memory leaks
 #SBATCH --exclusive
 #SBATCH --mem=0
@@ -25,8 +25,10 @@
 # NCSA Delta run script
 
 # OpenMP directives: use all available threads
-export OMP_PROC_BIND=spread
-export OMP_PLACES=threads
+# Currently this slows things down on many machines
+# TODO properly assign to particular cores
+#export OMP_PROC_BIND=spread
+#export OMP_PLACES=threads
 
 # If you see weird GPU race conditions, setting this
 # to 1 *might* fix them. Maybe.
@@ -35,7 +37,7 @@ export CUDA_LAUNCH_BLOCKING=0
 #export KOKKOS_DEVICE_ID=0
 
 # Choose the kharma from compiled options in order of preference
-KHARMA_DIR="$HOME/kharma"
+KHARMA_DIR=${KHARMA_DIR:-"$HOME/Code/kharma"}
 
 # Optionally use the Kokkos tools to profile kernels
 #export KOKKOS_PROFILE_LIBRARY=$KHARMA_DIR/../kokkos-tools/kp_kernel_timer.so
@@ -53,4 +55,4 @@ export KOKKOS_NUM_DEVICES=$SLURM_NTASKS_PER_NODE
 
 # Run with srun
 # TODO auto-switch to mpirun in interactive?
-srun $KHARMA_DIR/kharma.cuda -t 23:50:00 -d dumps_kharma "$@"
+mpirun -n 4 --map-by ppr:4:node:pe=16 $KHARMA_DIR/kharma.cuda -t 23:50:00 -d dumps_kharma "$@"

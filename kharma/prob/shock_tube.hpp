@@ -10,14 +10,12 @@ using namespace parthenon;
  * 
  * Stolen directly from iharm3D
  */
-TaskStatus InitializeShockTube(MeshBlockData<Real> *rc, ParameterInput *pin)
+TaskStatus InitializeShockTube(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin)
 {
-    Flag(rc, "Initializing Shock Tube problem");
     auto pmb = rc->GetBlockPointer();
     GridScalar rho = rc->Get("prims.rho").data;
     GridScalar u = rc->Get("prims.u").data;
     GridVector uvec = rc->Get("prims.uvec").data;
-    GridVector B_P = rc->Get("prims.B").data;
 
     const auto& G = pmb->coords;
 
@@ -33,6 +31,7 @@ TaskStatus InitializeShockTube(MeshBlockData<Real> *rc, ParameterInput *pin)
     const Real u2R = pin->GetOrAddReal("shock", "u2R", 0.0);
     const Real u3L = pin->GetOrAddReal("shock", "u3L", 0.0);
     const Real u3R = pin->GetOrAddReal("shock", "u3R", 0.0);
+
     const Real B1L = pin->GetOrAddReal("shock", "B1L", 0.0);
     const Real B1R = pin->GetOrAddReal("shock", "B1R", 0.0);
     const Real B2L = pin->GetOrAddReal("shock", "B2L", 0.0);
@@ -49,8 +48,17 @@ TaskStatus InitializeShockTube(MeshBlockData<Real> *rc, ParameterInput *pin)
     const Real x1max = pin->GetReal("parthenon/mesh", "x1max");
     const Real center = (x1min + x1max) / 2.;
 
+    pin->GetOrAddString("b_field", "type", "shock_tube");
+    pin->GetOrAddReal("b_field", "phase", center);
+    pin->GetOrAddReal("b_field", "amp_B1", B1L);
+    pin->GetOrAddReal("b_field", "amp_B2", B2L);
+    pin->GetOrAddReal("b_field", "amp_B3", B3L);
+    pin->GetOrAddReal("b_field", "amp2_B1", B1R);
+    pin->GetOrAddReal("b_field", "amp2_B2", B2R);
+    pin->GetOrAddReal("b_field", "amp2_B3", B3R);
+
     pmb->par_for("ot_init", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-        KOKKOS_LAMBDA_3D {
+        KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
             Real X[GR_DIM];
             G.coord(k, j, i, Loci::center, X);
 
@@ -60,17 +68,8 @@ TaskStatus InitializeShockTube(MeshBlockData<Real> *rc, ParameterInput *pin)
             uvec(0, k, j, i) = (lhs) ? u1L : u1R;
             uvec(1, k, j, i) = (lhs) ? u2L : u2R;
             uvec(2, k, j, i) = (lhs) ? u3L : u3R;
-            B_P(0, k, j, i)  = (lhs) ? B1L : B1R;
-            B_P(1, k, j, i)  = (lhs) ? B2L : B2R;
-            B_P(2, k, j, i)  = (lhs) ? B3L : B3R;
         }
     );
-
-    if(pmb->packages.AllPackages().count("Electrons")) {
-        // Get e- starting parameters
-
-        // Set e- starting state
-    }
 
     return TaskStatus::complete;
 }

@@ -35,6 +35,10 @@
 #pragma once
 
 #include "decs.hpp"
+#include "domain.hpp"
+#include "types.hpp"
+
+#include "b_ct.hpp"
 
 #include <parthenon/parthenon.hpp>
 
@@ -43,13 +47,12 @@
  * Follows initial conditions from Lecoanet et al. 2015,
  * MNRAS 455, 4274.
  */
-TaskStatus InitializeKelvinHelmholtz(MeshBlockData<Real> *rc, ParameterInput *pin)
+TaskStatus InitializeKelvinHelmholtz(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin)
 {
     auto pmb = rc->GetBlockPointer();
     GridScalar rho = rc->Get("prims.rho").data;
     GridScalar u = rc->Get("prims.u").data;
     GridVector uvec = rc->Get("prims.uvec").data;
-    GridVector B_P = rc->Get("prims.B").data;
 
     // follows notation of Lecoanet et al. eq. 8 et seq.
     const Real tscale = pin->GetOrAddReal("kelvin_helmholtz", "tscale", 0.05);
@@ -59,41 +62,31 @@ TaskStatus InitializeKelvinHelmholtz(MeshBlockData<Real> *rc, ParameterInput *pi
     const Real uflow = pin->GetOrAddReal("kelvin_helmholtz", "uflow", 1.);
     const Real a = pin->GetOrAddReal("kelvin_helmholtz", "a", 0.05);
     const Real sigma = pin->GetOrAddReal("kelvin_helmholtz", "sigma", 0.2);
-    const Real A = pin->GetOrAddReal("kelvin_helmholtz", "A", 0.01);
+    const Real amp = pin->GetOrAddReal("kelvin_helmholtz", "amp", 0.01);
     const Real z1 = pin->GetOrAddReal("kelvin_helmholtz", "z1", 0.5);
     const Real z2 = pin->GetOrAddReal("kelvin_helmholtz", "z2", 1.5);
 
     const auto& G = pmb->coords;
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
 
-    IndexDomain domain = IndexDomain::interior;
-    IndexRange ib = pmb->cellbounds.GetBoundsI(domain);
-    IndexRange jb = pmb->cellbounds.GetBoundsJ(domain);
-    IndexRange kb = pmb->cellbounds.GetBoundsK(domain);
-    pmb->par_for("kh_init", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-        KOKKOS_LAMBDA_3D {
+    IndexDomain domain = IndexDomain::entire;
+    IndexRange3 b = KDomain::GetRange(rc, domain, 0, 0);
+    pmb->par_for("kh_init", b.ks, b.ke, b.js, b.je, b.is, b.ie,
+        KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
             GReal X[GR_DIM];
             G.coord_embed(k, j, i, Loci::center, X);
-
             // Lecoanet's x <-> x1; z <-> x2
-            GReal x = X[1];
-            GReal z = X[2];
+            GReal zdist1 = X[2] - z1;
+            GReal zdist2 = X[2] - z2;
 
             rho(k, j, i) =
-                rho0 + Drho * 0.5 * (tanh((z - z1) / a) - tanh((z - z2) / a));
-            u(k, j, i) = P0 / (gam - 1.);
-            uvec(0, k, j, i) = uflow * (tanh((z - z1) / a) - tanh((z - z2) / a) - 1.);
-            uvec(1, k, j, i) = A * sin(2. * M_PI * x) *
-                        (exp(-(z - z1) * (z - z1) / (sigma * sigma)) +
-                        exp(-(z - z2) * (z - z2) / (sigma * sigma)));
-            uvec(2, k, j, i) = 0;
-        }
-    );
-    // Rescale primitive velocities by tscale, and internal energy by the square.
-    pmb->par_for("kh_renorm", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-        KOKKOS_LAMBDA_3D {
-            u(k, j, i) *= tscale * tscale;
-            VLOOP uvec(v, k, j, i) *= tscale;
+                rho0 + Drho * 0.5 * (m::tanh(zdist1 / a) - m::tanh(zdist2 / a));
+            u(k, j, i) = P0 / (gam - 1.) * tscale * tscale;
+            uvec(0, k, j, i) = uflow * (m::tanh(zdist1 / a) - m::tanh(zdist2 / a) - 1.) * tscale;
+            uvec(1, k, j, i) = amp * m::sin(2. * M_PI * X[1]) *
+                        (m::exp(-(zdist1 * zdist1) / (sigma * sigma)) +
+                        m::exp(-(zdist2 * zdist2) / (sigma * sigma))) * tscale;
+            uvec(2, k, j, i) = 0.;
         }
     );
 

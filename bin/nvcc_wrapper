@@ -44,6 +44,7 @@ xcompiler_args="$NVCC_WRAPPER_HOST_EXTRA_FLAGS"
 
 # Cuda (NVCC) only arguments
 cuda_args="-allow-unsupported-compiler --expt-relaxed-constexpr $NVCC_WRAPPER_CUDA_EXTRA_FLAGS"
+# --resource-usage
 
 # Arguments for both NVCC and Host compiler
 shared_args=""

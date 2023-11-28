@@ -48,14 +48,13 @@ using namespace parthenon;
  * 
  * Originally run on 2D Cartesian domain -6.0, 6.0 with a 200x200 grid, to tlim=4.0
  */
-TaskStatus InitializeExplosion(MeshBlockData<Real> *rc, ParameterInput *pin)
+TaskStatus InitializeExplosion(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin)
 {
     auto pmb = rc->GetBlockPointer();
 
     GridScalar rho = rc->Get("prims.rho").data;
     GridScalar u = rc->Get("prims.u").data;
     GridVector uvec = rc->Get("prims.uvec").data;
-    GridVector B_P = rc->Get("prims.B").data;
 
     const auto& G = pmb->coords;
 
@@ -81,7 +80,7 @@ TaskStatus InitializeExplosion(MeshBlockData<Real> *rc, ParameterInput *pin)
     IndexRange jb = pmb->cellbounds.GetBoundsJ(domain);
     IndexRange kb = pmb->cellbounds.GetBoundsK(domain);
     pmb->par_for("explosion_init", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-        KOKKOS_LAMBDA_3D {
+        KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
             Real X[GR_DIM];
             G.coord_embed(k, j, i, Loci::center, X);
             const GReal rx = X[1] - xoff;
@@ -102,8 +101,8 @@ TaskStatus InitializeExplosion(MeshBlockData<Real> *rc, ParameterInput *pin)
                     const Real lrho_in = log(rho_in);
                     const Real lu_out = log(u_out);
                     const Real lu_in = log(u_in);
-                    rho(k, j, i) = exp(lrho_out + ramp * (lrho_in - lrho_out));
-                    u(k, j, i) = exp(lu_out + ramp * (lu_in - lu_out));
+                    rho(k, j, i) = m::exp(lrho_out + ramp * (lrho_in - lrho_out));
+                    u(k, j, i) = m::exp(lu_out + ramp * (lu_in - lu_out));
                 }
             } else {
                 rho(k, j, i) = rho_out;

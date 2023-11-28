@@ -43,9 +43,9 @@
 using namespace parthenon;
 
 /**
- * This physics package implements B field transport with Flux-CT (Toth 2000)
+ * This physics package implements B field transport with Constraint-Damping (Dedner et al 2002)
  *
- * This requires only the values at cell centers
+ * This requires only the values at cell centers, and preserves a cell-centered divergence representation
  * 
  * This implementation includes conversion from "primitive" to "conserved" B and back,
  * i.e. between field strength and flux via multiplying by gdet.
@@ -54,7 +54,7 @@ namespace B_CD {
 /**
  * Declare fields, initialize (few) parameters
  */
-std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t packages);
+std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages);
 
 /**
  * Get the primitive variables, which in Parthenon's nomenclature are "derived".
@@ -65,8 +65,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
  * input: Conserved B = sqrt(-gdet) * B^i
  * output: Primitive B = B^i
  */
-void UtoP(MeshBlockData<Real> *rc, IndexDomain domain=IndexDomain::entire, bool coarse=false);
-inline void FillDerived(MeshBlockData<Real> *rc) { UtoP(rc); }
+void BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse=false);
 
 /**
  * Add the source term to dUdt, before it is applied to U
@@ -80,6 +79,12 @@ TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt);
  * listed arguments
  */
 Real MaxDivB(MeshData<Real> *md);
+
+/**
+ * Find the maximum wavespeed across the whole grid, to use in propagating
+ * the phi field.
+ */
+void UpdateCtopMax(Mesh *pmesh, ParameterInput *pin, const SimTime &tm);
 
 /**
  * Diagnostics printed/computed after each step
