@@ -78,7 +78,7 @@ if __name__=='__main__':
 
         var_numerical = dump['prims']
 
-        if higher_order_terms.lower() == "true":
+        if higher_order_terms:
             print("Higher order terms enabled")
             Theta = (gam - 1.) * dump['UU'] / dump['RHO']
             cs2   = gam * (gam - 1.) * dump['UU'] / (dump['RHO'] + (gam * dump['UU']) )

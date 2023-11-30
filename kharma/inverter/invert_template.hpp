@@ -58,13 +58,14 @@ static const std::map<int, std::string> status_names = {
     {(int) Status::bad_gamma, "Gamma invalid"},
     {(int) Status::neg_rho, "Negative rho"},
     {(int) Status::neg_u, "Negative U"},
-    {(int) Status::neg_rhou, "Negative rho & U"}};
+    {(int) Status::neg_rhou, "Negative rho & U"}
+};
+
 template <typename T>
 KOKKOS_INLINE_FUNCTION bool failed(T status_flag)
 {
     // Return only values >0, among the failure flags
     return static_cast<int>(status_flag) > static_cast<int>(Status::success);
-    // TODO if in debug mode check flag < neg_rhou
 }
 
 /**

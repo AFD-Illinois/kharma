@@ -71,6 +71,10 @@ TaskStatus InitializeAtmosphere(std::shared_ptr<MeshBlockData<Real>>& rc, Parame
     // Type of input to the problem
     const std::string input = pin->GetOrAddString("conducting_atmosphere", "input", "ODE");
 
+    // Set default B field parameters
+    pin->GetOrAddString("b_field", "type", "monopole_cube");
+    pin->GetOrAddReal("b_field", "B10", 1.);
+
     // Bounds of the domain
     IndexRange ib = pmb->cellbounds.GetBoundsI(IndexDomain::entire);
     IndexRange jb = pmb->cellbounds.GetBoundsJ(IndexDomain::entire);
@@ -104,13 +108,11 @@ TaskStatus InitializeAtmosphere(std::shared_ptr<MeshBlockData<Real>>& rc, Parame
     GridScalar rho  = rc->Get("prims.rho").data; 
     GridScalar u    = rc->Get("prims.u").data; 
     GridVector uvec = rc->Get("prims.uvec").data;
-    GridVector B_P  = rc->Get("prims.B").data;
 
     // Host side mirror of primitives
     auto rho_host   = rho.GetHostMirror();
     auto u_host     = u.GetHostMirror();
     auto uvec_host  = uvec.GetHostMirror();
-    auto B_host     = B_P.GetHostMirror();
 
     // Then for EMHD if enabled
     GridScalar q;
@@ -167,9 +169,6 @@ TaskStatus InitializeAtmosphere(std::shared_ptr<MeshBlockData<Real>>& rc, Parame
                     q_host(k, j, i) = q_temp;
 
                 // Now the remaining primitives
-                B_host(V1, k, j, i)    = 1./(Xembed[1]*Xembed[1]*Xembed[1]);
-                B_host(V2, k, j, i)    = 0.;
-                B_host(V3, k, j, i)    = 0.;
                 if (use_emhd && emhd_params.viscosity)
                     dP_host(k, j, i)   = 0.;
 
@@ -223,7 +222,6 @@ TaskStatus InitializeAtmosphere(std::shared_ptr<MeshBlockData<Real>>& rc, Parame
     rho.DeepCopy(rho_host);
     u.DeepCopy(u_host);
     uvec.DeepCopy(uvec_host);
-    B_P.DeepCopy(B_host);
     if (use_emhd && emhd_params.conduction)
         q.DeepCopy(q_host);
     if (use_emhd && emhd_params.viscosity)

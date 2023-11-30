@@ -51,16 +51,16 @@ namespace Flux
 
 // TODO Q > 0 != emhd_enabled.  Store enablement in emhd_params since we need it anyway
 template<typename Local>
-KOKKOS_INLINE_FUNCTION void calc_tensor(const GRCoordinates& G, const Local& P, const VarMap& m_p, const FourVectors D,
+KOKKOS_INLINE_FUNCTION void calc_tensor(const Local& P, const VarMap& m_p, const FourVectors D,
                                         const EMHD::EMHD_parameters& emhd_params, const Real& gam, const int& dir,
                                         Real T[GR_DIM])
 {
     if (m_p.Q >= 0 || m_p.DP >= 0) {
         // Apply higher-order terms conversion if necessary
         Real qtilde = 0., dPtilde = 0.;
-        if (emhd_params.conduction)
+        if (m_p.Q >= 0)
             qtilde = P(m_p.Q);
-        if (emhd_params.viscosity)
+        if (m_p.DP >= 0)
             dPtilde = P(m_p.DP);
         const Real Theta = (gam - 1) * P(m_p.UU) / P(m_p.RHO);
         const Real cs2   = gam * (gam - 1) * P(m_p.UU) / (P(m_p.RHO) + gam * P(m_p.UU));
@@ -73,24 +73,23 @@ KOKKOS_INLINE_FUNCTION void calc_tensor(const GRCoordinates& G, const Local& P, 
         // GRMHD stress-energy tensor w/ first index up, second index down
         GRMHD::calc_tensor(P(m_p.RHO), P(m_p.UU), (gam - 1) * P(m_p.UU), D, dir, T);
     } else {
-        // GRHD stress-energy tensor w/ first index up, second index down
+        // GRHD stress-energy tensor
         GRHD::calc_tensor(P(m_p.RHO), P(m_p.UU), (gam - 1) * P(m_p.UU), D, dir, T);
     }
 }
 
 template<typename Global>
-KOKKOS_INLINE_FUNCTION void calc_tensor(const GRCoordinates& G, const Global& P, const VarMap& m_p, const FourVectors D,
+KOKKOS_INLINE_FUNCTION void calc_tensor(const Global& P, const VarMap& m_p, const FourVectors D,
                                         const EMHD::EMHD_parameters& emhd_params, const Real& gam, 
                                         const int& k, const int& j, const int& i, const int& dir,
                                         Real T[GR_DIM])
 {
     if (m_p.Q >= 0 || m_p.DP >= 0) {
-
         // Apply higher-order terms conversion if necessary
         Real qtilde = 0., dPtilde = 0.;
-        if (emhd_params.conduction)
+        if (m_p.Q >= 0)
             qtilde = P(m_p.Q, k, j, i);
-        if (emhd_params.viscosity)
+        if (m_p.DP >= 0)
             dPtilde = P(m_p.DP, k, j, i);
         const Real Theta = (gam - 1) * P(m_p.UU, k, j, i) / P(m_p.RHO, k, j, i);
         const Real cs2   = gam * (gam - 1) * P(m_p.UU, k, j, i) / (P(m_p.RHO, k, j, i) + gam * P(m_p.UU, k, j, i));
@@ -125,14 +124,14 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const Local& P,
 
     // Stress-energy tensor
     Real T[GR_DIM];
-    calc_tensor(G, P, m_p, D, emhd_params, gam, dir, T);
+    calc_tensor(P, m_p, D, emhd_params, gam, dir, T);
     flux(m_u.UU) = T[0] * gdet + flux(m_u.RHO);
     flux(m_u.U1) = T[1] * gdet;
     flux(m_u.U2) = T[2] * gdet;
     flux(m_u.U3) = T[3] * gdet;
 
     // Magnetic field
-    if (m_p.B1 >= 0) {
+    if (m_u.B1 >= 0) {
         // Magnetic field
         if (dir == 0) {
             VLOOP flux(m_u.B1 + v) = P(m_p.B1 + v) * gdet;
@@ -142,7 +141,7 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const Local& P,
             VLOOP flux(m_u.B1 + v) = (D.bcon[v+1] * D.ucon[dir] - D.bcon[dir] * D.ucon[v+1]) * gdet;
         }
         // Extra scalar psi for constraint damping, see B_CD
-        if (m_p.PSI >= 0) {
+        if (m_u.PSI >= 0) {
             if (dir == 0) {
                 flux(m_u.PSI) = P(m_p.PSI) * gdet;
             } else {
@@ -155,28 +154,27 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const Local& P,
     }
 
     // EMHD Variables: advect like rho
-    if (m_p.Q >= 0)
+    if (m_u.Q >= 0)
         flux(m_u.Q) = P(m_p.Q) * D.ucon[dir] * gdet;
-    if (m_p.DP >= 0)
+    if (m_u.DP >= 0)
         flux(m_u.DP) = P(m_p.DP) * D.ucon[dir] * gdet;
 
     // Electrons: normalized by density
-    if (m_p.KTOT >= 0) {
+    if (m_u.KTOT >= 0) {
         flux(m_u.KTOT) = flux(m_u.RHO) * P(m_p.KTOT);
-        if (m_p.K_CONSTANT >= 0)
+        if (m_u.K_CONSTANT >= 0)
             flux(m_u.K_CONSTANT) = flux(m_u.RHO) * P(m_p.K_CONSTANT);
-        if (m_p.K_HOWES >= 0)
+        if (m_u.K_HOWES >= 0)
             flux(m_u.K_HOWES) = flux(m_u.RHO) * P(m_p.K_HOWES);
-        if (m_p.K_KAWAZURA >= 0)
+        if (m_u.K_KAWAZURA >= 0)
             flux(m_u.K_KAWAZURA) = flux(m_u.RHO) * P(m_p.K_KAWAZURA);
-        if (m_p.K_WERNER >= 0)
+        if (m_u.K_WERNER >= 0)
             flux(m_u.K_WERNER) = flux(m_u.RHO) * P(m_p.K_WERNER);
-        if (m_p.K_ROWAN >= 0)
+        if (m_u.K_ROWAN >= 0)
             flux(m_u.K_ROWAN) = flux(m_u.RHO) * P(m_p.K_ROWAN);
-        if (m_p.K_SHARMA >= 0)
+        if (m_u.K_SHARMA >= 0)
             flux(m_u.K_SHARMA) = flux(m_u.RHO) * P(m_p.K_SHARMA);
     }
-
 }
 
 template<typename Global>
@@ -190,14 +188,14 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const Global& P
     flux(m_u.RHO, k, j, i) = P(m_p.RHO, k, j, i) * D.ucon[dir] * gdet;
 
     Real T[GR_DIM];
-    calc_tensor(G, P, m_p, D, emhd_params, gam, k, j, i, dir, T);
+    calc_tensor(P, m_p, D, emhd_params, gam, k, j, i, dir, T);
     flux(m_u.UU, k, j, i) = T[0] * gdet + flux(m_u.RHO, k, j, i);
     flux(m_u.U1, k, j, i) = T[1] * gdet;
     flux(m_u.U2, k, j, i) = T[2] * gdet;
     flux(m_u.U3, k, j, i) = T[3] * gdet;
 
     // Magnetic field
-    if (m_p.B1 >= 0) {
+    if (m_u.B1 >= 0) {
         // Magnetic field
         if (dir == 0) {
             VLOOP flux(m_u.B1 + v, k, j, i) = P(m_p.B1 + v, k, j, i) * gdet;
@@ -207,7 +205,7 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const Global& P
             VLOOP flux(m_u.B1 + v, k, j, i) = (D.bcon[v+1] * D.ucon[dir] - D.bcon[dir] * D.ucon[v+1]) * gdet;
         }
         // Extra scalar psi for constraint damping, see B_CD
-        if (m_p.PSI >= 0) {
+        if (m_u.PSI >= 0) {
             if (dir == 0) {
                 flux(m_u.PSI, k, j, i) = P(m_p.PSI, k, j, i) * gdet;
             } else {
@@ -220,25 +218,25 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const Global& P
     }
 
     // EMHD Variables: advect like rho
-    if (m_p.Q >= 0)
+    if (m_u.Q >= 0)
         flux(m_u.Q, k, j, i)  = P(m_p.Q, k, j, i) * D.ucon[dir] * gdet;
-    if (m_p.DP >= 0)
+    if (m_u.DP >= 0)
         flux(m_u.DP, k, j, i) = P(m_p.DP, k, j, i) * D.ucon[dir] * gdet;
 
     // Electrons: normalized by density
-    if (m_p.KTOT >= 0) {
+    if (m_u.KTOT >= 0) {
         flux(m_u.KTOT, k, j, i)  = flux(m_u.RHO, k, j, i) * P(m_p.KTOT, k, j, i);
-        if (m_p.K_CONSTANT >= 0)
+        if (m_u.K_CONSTANT >= 0)
             flux(m_u.K_CONSTANT, k, j, i) = flux(m_u.RHO, k, j, i) * P(m_p.K_CONSTANT, k, j, i);
-        if (m_p.K_HOWES >= 0)
+        if (m_u.K_HOWES >= 0)
             flux(m_u.K_HOWES, k, j, i)    = flux(m_u.RHO, k, j, i) * P(m_p.K_HOWES, k, j, i);
-        if (m_p.K_KAWAZURA >= 0)
+        if (m_u.K_KAWAZURA >= 0)
             flux(m_u.K_KAWAZURA, k, j, i) = flux(m_u.RHO, k, j, i) * P(m_p.K_KAWAZURA, k, j, i);
-        if (m_p.K_WERNER >= 0)
+        if (m_u.K_WERNER >= 0)
             flux(m_u.K_WERNER, k, j, i)   = flux(m_u.RHO, k, j, i) * P(m_p.K_WERNER, k, j, i);
-        if (m_p.K_ROWAN >= 0)
+        if (m_u.K_ROWAN >= 0)
             flux(m_u.K_ROWAN, k, j, i)    = flux(m_u.RHO, k, j, i) * P(m_p.K_ROWAN, k, j, i);
-        if (m_p.K_SHARMA >= 0)
+        if (m_u.K_SHARMA >= 0)
             flux(m_u.K_SHARMA, k, j, i)   = flux(m_u.RHO, k, j, i) * P(m_p.K_SHARMA, k, j, i);
     }
 }
@@ -257,7 +255,7 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux_mhd(const GRCoordinates& G, const Globa
     flux(m_u.RHO, k, j, i) = P(m_p.RHO, k, j, i) * D.ucon[dir] * gdet;
 
     Real T[GR_DIM];
-    calc_tensor(G, P, m_p, D, emhd_params, gam, k, j, i, dir, T);
+    calc_tensor(P, m_p, D, emhd_params, gam, k, j, i, dir, T);
     flux(m_u.UU, k, j, i) = T[0] * gdet + flux(m_u.RHO, k, j, i);
     flux(m_u.U1, k, j, i) = T[1] * gdet;
     flux(m_u.U2, k, j, i) = T[2] * gdet;

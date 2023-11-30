@@ -60,19 +60,19 @@ if DIM == "3d" and DIR == 0:
         dvar[6] = 0.0977545707307
         dvar[7] = 0.0977545707307
     if "alfven" in SHORT:
-        dvar[3] =  -0.339683110243
-        dvar[4] =  0.339683110243
-        dvar[6] =  0.620173672946
-        dvar[7] =  -0.620173672946
+        dvar[3] = -0.339683110243
+        dvar[4] = 0.339683110243
+        dvar[6] = 0.620173672946
+        dvar[7] = -0.620173672946
     if "fast" in SHORT:
-        dvar[0]  =  0.481846076323
-        dvar[1]    =  0.642461435098
-        dvar[2]   =  -0.0832240462505
-        dvar[3]   =  -0.224080007379
-        dvar[4]   =  -0.224080007379
-        dvar[5]   =  0.406380545676
-        dvar[6]   =  -0.203190272838
-        dvar[7]   =  -0.203190272838
+        dvar[0] = 0.481846076323
+        dvar[1] = 0.642461435098
+        dvar[2] = -0.0832240462505
+        dvar[3] = -0.224080007379
+        dvar[4] = -0.224080007379
+        dvar[5] = 0.406380545676
+        dvar[6] = -0.203190272838
+        dvar[7] = -0.203190272838
 else:
     # EIGENMODES: 2D
     # We only *convergence check* dir = 3 i.e. X1/X2 plane runs
@@ -113,9 +113,12 @@ for m, res in enumerate(RES):
     dvar_code.append(dump['U1'] - var0[2])
     dvar_code.append(dump['U2'] - var0[3])
     dvar_code.append(dump['U3'] - var0[4])
-    dvar_code.append(dump['B1'] - var0[5])
-    dvar_code.append(dump['B2'] - var0[6])
-    dvar_code.append(dump['B3'] - var0[7])
+    try:
+        dvar_code.append(dump['B1'] - var0[5])
+        dvar_code.append(dump['B2'] - var0[6])
+        dvar_code.append(dump['B3'] - var0[7])
+    except IOError:
+        NVAR = 5
 
     dvar_sol = []
     L1.append([])
@@ -155,7 +158,7 @@ ax.plot([xmin, xmax], norm*np.asarray([xmin, xmax])**-2., color='k', linestyle='
 plt.xscale('log', base=2); plt.yscale('log')
 plt.xlim([RES[0]/np.sqrt(2.), RES[-1]*np.sqrt(2.)])
 plt.xlabel('N'); plt.ylabel('L1')
-plt.title("MHD mode test convergence, {}".format(LONG))
+plt.title("{}".format(LONG))
 plt.legend(loc=1)
 plt.savefig("convergence_modes_{}_{}.png".format(DIM,SHORT))
 

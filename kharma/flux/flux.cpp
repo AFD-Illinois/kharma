@@ -36,10 +36,54 @@
 // Most includes are in the header TODO fix?
 
 #include "grmhd.hpp"
+#include "kharma.hpp"
 
 using namespace parthenon;
 
 // GetFlux is in the header file get_flux.hpp, as it is templated on reconstruction scheme and flux direction
+
+std::shared_ptr<KHARMAPackage> Flux::Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages)
+{
+    Flag("Initializing Flux");
+    auto pkg = std::make_shared<KHARMAPackage>("Flux");
+    Params &params = pkg->AllParams();
+
+    // We can't just use GetVariables or something since there's no mesh yet.
+    // That's what this function is for.
+    int nvar = KHARMA::PackDimension(packages.get(), Metadata::WithFluxes);
+    std::vector<int> s_flux({nvar});
+    if (packages->Get("Globals")->Param<int>("verbose") > 2)
+        std::cout << "Allocating fluxes for " << nvar << " variables" << std::endl;
+    // TODO optionally move all these to faces? Not important yet, & faces have no output, more memory
+    std::vector<MetadataFlag> flags_flux = {Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy};
+    Metadata m = Metadata(flags_flux, s_flux);
+    pkg->AddField("Flux.Pr", m);
+    pkg->AddField("Flux.Pl", m);
+    pkg->AddField("Flux.Ur", m);
+    pkg->AddField("Flux.Ul", m);
+    pkg->AddField("Flux.Fr", m);
+    pkg->AddField("Flux.Fl", m);
+
+    std::vector<int> s_vector({NVEC});
+    std::vector<MetadataFlag> flags_speed = {Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy};
+    m = Metadata(flags_speed, s_vector);
+    pkg->AddField("Flux.cmax", m);
+    pkg->AddField("Flux.cmin", m);
+
+    // Preserve all velocities at faces, for upwinded constrained transport
+    if (packages->AllPackages().count("B_CT")) { // TODO & GS05_c
+        std::vector<MetadataFlag> flags_vel = {Metadata::Real, Metadata::Face, Metadata::Derived, Metadata::OneCopy};
+        m = Metadata(flags_vel, s_vector);
+        pkg->AddField("Flux.vr", m);
+        pkg->AddField("Flux.vl", m);
+    }
+
+    // We register the geometric (\Gamma*T) source here
+    pkg->AddSource = Flux::AddGeoSource;
+
+    EndFlag();
+    return pkg;
+}
 
 TaskStatus Flux::BlockPtoUMHD(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
@@ -115,7 +159,6 @@ TaskStatus Flux::MeshPtoU(MeshData<Real> *md, IndexDomain domain, bool coarse)
 
 TaskStatus Flux::BlockPtoU_Send(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
-    // 
     // Pointers
     auto pmb = rc->GetBlockPointer();
     const int ndim = pmb->pmy_mesh->ndim;
@@ -125,11 +168,18 @@ TaskStatus Flux::BlockPtoU_Send(MeshBlockData<Real> *rc, IndexDomain domain, boo
 
     const EMHD::EMHD_parameters& emhd_params = EMHD::GetEMHDParameters(pmb->packages);
 
-    // Pack variables
+    // Pack variables. We never want to run this on the B field
+    using FC = Metadata::FlagCollection;
+    auto cons_flags = FC(Metadata::Conserved, Metadata::Cell, Metadata::GetUserFlag("HD"));
+    if (pmb->packages.AllPackages().count("EMHD"))
+        cons_flags = cons_flags + FC(Metadata::Conserved, Metadata::Cell, Metadata::GetUserFlag("EMHDVar"));
     PackIndexMap prims_map, cons_map;
-    const auto& P = rc->PackVariables({Metadata::GetUserFlag("Primitive")}, prims_map);
-    const auto& U = rc->PackVariables({Metadata::Conserved}, cons_map);
+    const auto& P = rc->PackVariables({Metadata::GetUserFlag("Primitive"), Metadata::Cell}, prims_map);
+    const auto& U = rc->PackVariables(cons_flags, cons_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
+
+    // Return if we're not syncing U & P at all (e.g. edges)
+    if (P.GetDim(4) == 0) return TaskStatus::complete;
 
     auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
     IndexRange ib = bounds.GetBoundsI(domain);
@@ -164,7 +214,7 @@ TaskStatus Flux::BlockPtoU_Send(MeshBlockData<Real> *rc, IndexDomain domain, boo
 
     const auto& G = pmb->coords;
 
-    pmb->par_for("p_to_u", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+    pmb->par_for("p_to_u_send", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
             Flux::p_to_u(G, P, m_p, emhd_params, gam, k, j, i, U, m_u);
         }
@@ -212,7 +262,7 @@ void Flux::AddGeoSource(MeshData<Real> *md, MeshData<Real> *mdudt)
             Real Tmu[GR_DIM]    = {0};
             Real new_du[GR_DIM] = {0};
             for (int mu = 0; mu < GR_DIM; ++mu) {
-                Flux::calc_tensor(G, P(b), m_p, D, emhd_params, gam, k, j, i, mu, Tmu);
+                Flux::calc_tensor(P(b), m_p, D, emhd_params, gam, k, j, i, mu, Tmu);
                 for (int nu = 0; nu < GR_DIM; ++nu) {
                     // Contract mhd stress tensor with connection, and multiply by metric determinant
                     for (int lam = 0; lam < GR_DIM; ++lam) {
@@ -225,4 +275,37 @@ void Flux::AddGeoSource(MeshData<Real> *md, MeshData<Real> *mdudt)
             VLOOP dUdt(b, m_u.U1 + v, k, j, i) += new_du[1 + v];
         }
     );
+}
+
+TaskStatus Flux::CheckCtop(MeshData<Real> *md)
+{
+    Reductions::DomainReduction<Reductions::Var::nan_ctop, int>(md, UserHistoryOperation::sum, 0);
+    Reductions::DomainReduction<Reductions::Var::zero_ctop, int>(md, UserHistoryOperation::sum, 1);
+    return TaskStatus::complete;
+}
+
+TaskStatus Flux::PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
+{
+    auto pmesh = md->GetMeshPointer();
+    auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
+    // Options
+    const auto& pars = pmesh->packages.Get("Globals")->AllParams();
+    const int extra_checks = pars.Get<int>("extra_checks");
+
+    // Check for a soundspeed (ctop) of 0 or NaN
+    // This functions as a "last resort" check to stop a
+    // simulation on obviously bad data
+    if (extra_checks >= 1) {
+        int nnan = Reductions::Check<int>(md, 0);
+        int nzero = Reductions::Check<int>(md, 1);
+
+        if (MPIRank0() && (nzero > 0 || nnan > 0)) {
+            // TODO string formatting in C++ that doesn't suck
+            fprintf(stderr, "Max signal speed ctop of 0 or NaN (%d zero, %d NaN)", nzero, nnan);
+            throw std::runtime_error("Bad ctop!");
+        }
+
+    }
+
+    return TaskStatus::complete;
 }

@@ -36,9 +36,12 @@
 #include "decs.hpp"
 #include "types.hpp"
 
-#include "reconstruction.hpp"
+#include "flux/reconstruction.hpp"
 
 using namespace parthenon;
+
+// See Initialize()
+enum class DriverType{kharma, imex, simple};
 
 /**
  * This is the "Driver" class for KHARMA.
@@ -56,6 +59,15 @@ class KHARMADriver : public MultiStageDriver {
 
         static std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages);
 
+        // Eliminate Parthenon's print statements when starting up the driver, we have a bunch of our own
+        void PreExecute() override { timer_main.reset(); }
+
+        // Also override the timestep calculation, so we can start moving options etc out of GRMHD package
+        void SetGlobalTimeStep();
+
+        // And the PostExecute, so we can add a package callback here
+        void PostExecute(DriverStatus status) override;
+
         /**
          * A Driver object orchestrates everything that has to be done to a mesh to take a step.
          * The function MakeTaskCollection outlines everything to be done in one sub-step,
@@ -71,37 +83,43 @@ class KHARMADriver : public MultiStageDriver {
          * 4. Recover primtive variables
          * 4a. Apply any stability limits (floors)
          * 4b. Fix any errors in recovering the primitives, re-apply floors
-         * 5. Apply any source terms (KEL), or calculate outputs (jcon) which require the change in primitive values
+         * 5. Apply any source terms (KEL), or calculate outputs (jcon) which use the primitive variables
          * 
          * This is before any synchronization between different blocks, etc, etc.
-         * Both task lists proceed roughly in this order, and you'll see the same broad outlines in both.
+         * All task lists proceed roughly in this order, but differ in which variables they synchronize via MPI,
+         * or whether they synchronize at all.
          */
-        TaskCollection MakeTaskCollection(BlockList_t &blocks, int stage);
+        TaskCollection MakeTaskCollection(BlockList_t &blocks, int stage) override;
+
+        /**
+         * The default step, synchronizing conserved variables and then recovering primitive variables in the ghost zones.
+         */
         TaskCollection MakeDefaultTaskCollection(BlockList_t &blocks, int stage);
 
         /**
-         * This "TaskCollection" (step) 
-         * ImexDriver syncs primitive variables and treats them as fundamental, whereas HARMDriver syncs conserved variables.
-         * This allows ImexDriver to optionally use a semi-implicit step, adding a per-zone implicit solve via the 'Implicit'
-         * package, instead of just explicit RK2 time-stepping.  This driver also allows explicit-only RK2 operation
+         * This step syncs primitive variables and treats them as fundamental
+         * This accommodates semi-implicit stepping, allowing evolving theories with implicit source terms such as extended MHD
          */
         TaskCollection MakeImExTaskCollection(BlockList_t &blocks, int stage);
 
         /**
-         * A simple step for experimentation.  Does NOT support MPI, 
+         * A simple step for experimentation/new implementations.  Does NOT support MPI, or much of anything optional.
          */
         TaskCollection MakeSimpleTaskCollection(BlockList_t &blocks, int stage);
 
+        // The different drivers share substantially similar portions of the full task list, which we gather into
 
+        /**
+         * Add the flux calculations in each direction.  Since the flux functions are templated on which
+         * reconstruction is being used, this amounts to a lot of shared lines.
+         */
         static TaskID AddFluxCalculations(TaskID& t_start, TaskList& tl, KReconstruction::Type recon, MeshData<Real> *md);
 
         /**
-         * Add just the synchronization step to a task list tl, dependent upon taskID t_start, syncing mesh mc1
-         * 
-         * This sequence is used identically in several places, so it makes sense
-         * to define once and use elsewhere.
+         * Add a synchronization retion to an existing TaskCollection tc.
+         * Since the region is self-contained, does not return a TaskID
          */
-        void AddFullSyncRegion(Mesh* pmesh, TaskCollection& tc, int stage);
+        void AddFullSyncRegion(TaskCollection& tc, std::shared_ptr<MeshData<Real>> &md);
 
         /**
          * Add just the synchronization step to a task list tl, dependent upon taskID t_start, syncing mesh mc1
@@ -109,7 +127,7 @@ class KHARMADriver : public MultiStageDriver {
          * This sequence is used identically in several places, so it makes sense
          * to define once and use elsewhere.
          */
-        static TaskID AddMPIBoundarySync(const TaskID t_start, TaskList &tl, std::shared_ptr<MeshData<Real>> mc1);
+        static TaskID AddBoundarySync(const TaskID t_start, TaskList &tl, std::shared_ptr<MeshData<Real>> &md);
 
         /**
          * Calculate the fluxes in each direction
@@ -119,17 +137,20 @@ class KHARMADriver : public MultiStageDriver {
         /**
          * Single call to sync all boundary conditions (MPI/internal and domain/physical boundaries)
          * Used anytime boundary sync is needed outside the usual loop of steps.
+         * 
+         * Only use this during the run if you're debugging!
          */
-        static void SyncAllBounds(std::shared_ptr<MeshData<Real>> md, bool apply_domain_bounds=true);
+        static TaskStatus SyncAllBounds(std::shared_ptr<MeshData<Real>> &md);
 
         // TODO swapped versions of these
         /**
          * Copy variables matching 'flags' from 'source' to 'dest'.
          * Mostly makes things easier to read.
          */
-        static TaskStatus Copy(std::vector<MetadataFlag> flags, MeshData<Real>* source, MeshData<Real>* dest)
+        template<typename T>
+        static TaskStatus Copy(std::vector<MetadataFlag> flags, T* source, T* dest)
         {
-            return Update::WeightedSumData<std::vector<MetadataFlag>, MeshData<Real>>(flags, source, source, 1., 0., dest);
+            return Update::WeightedSumData<std::vector<MetadataFlag>, T>(flags, source, source, 1., 0., dest);
         }
 
         /**
@@ -139,6 +160,30 @@ class KHARMADriver : public MultiStageDriver {
         static TaskStatus Scale(std::vector<std::string> flags,  MeshBlockData<Real>* source, Real norm)
         {
             return Update::WeightedSumData<std::vector<std::string>, MeshBlockData<Real>>(flags, source, source, norm, 0., source);
+        }
+
+        static TaskStatus WeightedSumDataFace(const std::vector<MetadataFlag> &flags, MeshData<Real> *in1, MeshData<Real> *in2, const Real w1, const Real w2,
+                                MeshData<Real> *out)
+        {
+            Kokkos::Profiling::pushRegion("Task_WeightedSumData");
+            const auto &x = in1->PackVariables(flags);
+            const auto &y = in2->PackVariables(flags);
+            const auto &z = out->PackVariables(flags);
+            parthenon::par_for(
+                DEFAULT_LOOP_PATTERN, "WeightedSumData", DevExecSpace(), 0, x.GetDim(5) - 1, 0,
+                x.GetDim(4) - 1, 0, x.GetDim(3) - 1, 0, x.GetDim(2) - 1, 0, x.GetDim(1) - 1,
+                KOKKOS_LAMBDA(const int b, const int l, const int k, const int j, const int i) {
+                    // TOOD(someone) This is potentially dangerous and/or not intended behavior
+                    // as we still may want to update (or populate) z if any of those vars are
+                    // not allocated yet.
+                    if (x.IsAllocated(b, l) && y.IsAllocated(b, l) && z.IsAllocated(b, l)) {
+                        z(b, F1, l, k, j, i) = w1 * x(b, F1, l, k, j, i) + w2 * y(b, F1, l, k, j, i);
+                        z(b, F2, l, k, j, i) = w1 * x(b, F2, l, k, j, i) + w2 * y(b, F2, l, k, j, i);
+                        z(b, F3, l, k, j, i) = w1 * x(b, F3, l, k, j, i) + w2 * y(b, F3, l, k, j, i);
+                    }
+                });
+            Kokkos::Profiling::popRegion(); // Task_WeightedSumData
+            return TaskStatus::complete;
         }
 
 };

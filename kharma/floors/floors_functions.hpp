@@ -188,9 +188,9 @@ KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, const VariablePa
         if (use_ff) {
             P(m_p.RHO, k, j, i) += m::max(0., rhoflr_max - rho);
             P(m_p.UU, k, j, i)  += m::max(0., uflr_max - u);
-            // TODO should be all Flux
+            // Update conserved variables
+            //Flux::p_to_u(G, P, m_p, emhd_params, gam, k, j, i, U, m_u, loc);
             GRMHD::p_to_u(G, P, m_p, gam, k, j, i, U, m_u, loc);
-
         } else if (use_df) {
             // Drift frame floors. Refer to Appendix B3 in https://doi.org/10.1093/mnras/stx364 (hereafter R17)
             const Real lapse2    = 1. / (-G.gcon(Loci::center, j, i, 0, 0));
@@ -208,10 +208,12 @@ KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, const VariablePa
             // Normal observer magnetic field
             Real Bcon[GR_DIM] = {0};
             Real Bcov[GR_DIM] = {0};
-            Bcon[0] = 0;
-            Bcon[1] = P(m_p.B1, k, j, i);
-            Bcon[2] = P(m_p.B2, k, j, i);
-            Bcon[3] = P(m_p.B3, k, j, i);
+            if (m_p.B1 >= 0) {
+                Bcon[0] = 0;
+                Bcon[1] = P(m_p.B1, k, j, i);
+                Bcon[2] = P(m_p.B2, k, j, i);
+                Bcon[3] = P(m_p.B3, k, j, i);
+            }
             DLOOP2 Bcov[mu] += G.gcov(Loci::center, j, i, mu, nu) * Bcon[nu];
             const Real Bsq   = m::max(dot(Bcon, Bcov), SMALL);
             const Real B_mag = m::sqrt(Bsq);

@@ -92,21 +92,20 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     bool implicit_b = pin->GetOrAddBoolean("b_field", "implicit", false);
     params.Add("implicit", implicit_b);
 
-    params.Add("divb_reducer", AllReduce<Real>());
-
     // FIELDS
-
+    // Vector size: 3x[grid shape]
     std::vector<int> s_vector({NVEC});
 
     // Mark if we're evolving implicitly
     MetadataFlag areWeImplicit = (implicit_b) ? Metadata::GetUserFlag("Implicit")
                                               : Metadata::GetUserFlag("Explicit");
 
-    // Flags for B fields.  "Primitive" form is field, "conserved" is flux
-    std::vector<MetadataFlag> flags_prim = {Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::GetUserFlag("Primitive"),
-                                            Metadata::Restart, Metadata::GetUserFlag("MHD"), areWeImplicit, Metadata::Vector};
-    std::vector<MetadataFlag> flags_cons = {Metadata::Real, Metadata::Cell, Metadata::Independent, Metadata::Conserved,
-                                            Metadata::WithFluxes, Metadata::FillGhost, Metadata::GetUserFlag("MHD"), areWeImplicit, Metadata::Vector};
+    // Flags for B fields
+    // We always mark conserved B to be sync'd for consistency, since it's strictly required for B_CT/AMR
+    std::vector<MetadataFlag> flags_prim = {Metadata::Real, Metadata::Derived, Metadata::GetUserFlag("Primitive"),
+                                            Metadata::Cell, Metadata::GetUserFlag("MHD"), areWeImplicit, Metadata::Vector};
+    std::vector<MetadataFlag> flags_cons = {Metadata::Real, Metadata::Independent, Metadata::Restart, Metadata::FillGhost, Metadata::WithFluxes, Metadata::Conserved,
+                                            Metadata::Cell, Metadata::GetUserFlag("MHD"), areWeImplicit, Metadata::Vector};
 
     auto m = Metadata(flags_prim, s_vector);
     pkg->AddField("prims.B", m);
@@ -114,7 +113,7 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     pkg->AddField("cons.B", m);
 
     // Declare EMF temporary variables, to avoid malloc/free during each step
-    // These are edge-centered but we only need the interior + 1-zone halo anyway
+    // Technically these are edge-centered but we only need the interior + 1-zone halo anyway, so we store as a vector
     std::vector<MetadataFlag> flags_emf = {Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy};
     m = Metadata(flags_emf, s_vector);
     pkg->AddField("emf", m);
@@ -138,6 +137,7 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     // The definition of MaxDivB we care about actually changes per-transport,
     // so calculating it is handled by the transport package
     // We'd only ever need to declare or calculate divB for output (getting the max is independent)
+
     if (KHARMA::FieldIsOutput(pin, "divB")) {
         pkg->BlockUserWorkBeforeOutput = B_FluxCT::FillOutput;
         m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
@@ -181,7 +181,7 @@ void MeshUtoP(MeshData<Real> *md, IndexDomain domain, bool coarse)
         }
     );
 }
-void BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
+TaskStatus BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
     auto pmb = rc->GetBlockPointer();
 
@@ -202,8 +202,31 @@ void BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
             B_P(mu, k, j, i) = B_U(mu, k, j, i) / G.gdet(Loci::center, j, i);
         }
     );
+    return TaskStatus::complete;
 }
 
+void MeshPtoU(MeshData<Real> *md, IndexDomain domain, bool coarse)
+{
+    auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
+
+    const auto& B_U = md->PackVariables(std::vector<std::string>{"cons.B"});
+    const auto& B_P = md->PackVariables(std::vector<std::string>{"prims.B"});
+
+    auto bounds = coarse ? pmb0->c_cellbounds : pmb0->cellbounds;
+    IndexRange ib = bounds.GetBoundsI(domain);
+    IndexRange jb = bounds.GetBoundsJ(domain);
+    IndexRange kb = bounds.GetBoundsK(domain);
+    IndexRange vec = IndexRange{0, B_U.GetDim(4)-1};
+    IndexRange block = IndexRange{0, B_U.GetDim(5)-1};
+
+    pmb0->par_for("UtoP_B", block.s, block.e, vec.s, vec.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+        KOKKOS_LAMBDA (const int& b, const int &mu, const int &k, const int &j, const int &i) {
+            const auto& G = B_U.GetCoords(b);
+            // Update the primitive B-fields
+            B_U(b, mu, k, j, i) = B_P(b, mu, k, j, i) * G.gdet(Loci::center, j, i);
+        }
+    );
+}
 void BlockPtoU(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
     auto pmb = rc->GetBlockPointer();
@@ -273,14 +296,14 @@ void FluxCT(MeshData<Real> *md)
     // Calculate emf around each face
     pmb0->par_for("flux_ct_emf", block.s, block.e, kl.s, kl.e, jl.s, jl.e, il.s, il.e,
         KOKKOS_LAMBDA (const int& b, const int &k, const int &j, const int &i) {
-            emf_pack(b, V3, k, j, i) =  0.25 * (B_F(b).flux(X1DIR, V2, k, j, i) + B_F(b).flux(X1DIR, V2, k, j-1, i) -
-                                        B_F(b).flux(X2DIR, V1, k, j, i) - B_F(b).flux(X2DIR, V1, k, j, i-1));
             if (ndim > 2) {
-                emf_pack(b, V2, k, j, i) = -0.25 * (B_F(b).flux(X1DIR, V3, k, j, i) + B_F(b).flux(X1DIR, V3, k-1, j, i) -
-                                            B_F(b).flux(X3DIR, V1, k, j, i) - B_F(b).flux(X3DIR, V1, k, j, i-1));
                 emf_pack(b, V1, k, j, i) =  0.25 * (B_F(b).flux(X2DIR, V3, k, j, i) + B_F(b).flux(X2DIR, V3, k-1, j, i) -
                                             B_F(b).flux(X3DIR, V2, k, j, i) - B_F(b).flux(X3DIR, V2, k, j-1, i));
+                emf_pack(b, V2, k, j, i) = 0.25 * (B_F(b).flux(X3DIR, V1, k, j, i) + B_F(b).flux(X3DIR, V1, k, j, i-1) -
+                                            B_F(b).flux(X1DIR, V3, k, j, i) - B_F(b).flux(X1DIR, V3, k-1, j, i));
             }
+            emf_pack(b, V3, k, j, i) =  0.25 * (B_F(b).flux(X1DIR, V2, k, j, i) + B_F(b).flux(X1DIR, V2, k, j-1, i) -
+                                        B_F(b).flux(X2DIR, V1, k, j, i) - B_F(b).flux(X2DIR, V1, k, j, i-1));
         }
     );
 
@@ -329,13 +352,13 @@ void FixBoundaryFlux(MeshData<Real> *md, IndexDomain domain, bool coarse)
 
     // Imagine a corner of the domain, with ghost and physical zones
     // as below, denoted w/'g' and 'p' respectively.
-    // 
+    //    ...
     // g | p | p
-    //-----------
-    // g | p | p
-    //xxx--------
+    //----------- 1
+    // g | p | p ...
+    //xxx-------- 0
     // g | g | g
-    // 
+    //-1   0   1
     // The flux through 'x' is not important for updating a physical zone,
     // as it does not border any.  However, FluxCT considers it when updating
     // nearby fluxes, two of which affect physical zones.
@@ -403,7 +426,7 @@ void FixBoundaryFlux(MeshData<Real> *md, IndexDomain domain, bool coarse)
                 );
 
             }
-            if (domain == IndexDomain::outer_x2 &&
+            if (domain == IndexDomain::outer_x1 &&
                 pmb->boundary_flag[BoundaryFace::outer_x1] == BoundaryFlag::user)
             {
                 pmb->par_for("fix_flux_b_out", kbs.s, kbs.e, jbs.s, jbs.e, ibf.e, ibf.e, // Hyerin (12/28/22) for 1st & 2nd prescription
@@ -466,6 +489,7 @@ double MaxDivB(MeshData<Real> *md)
 {
     auto pmesh = md->GetMeshPointer();
     const int ndim = pmesh->ndim;
+    if (ndim < 2) return 0.;
 
     // Packing out here avoids frequent per-mesh packs.  Do we need to?
     auto B_U = md->PackVariables(std::vector<std::string>{"cons.B"});
@@ -477,7 +501,8 @@ double MaxDivB(MeshData<Real> *md)
     const IndexRange kb = IndexRange{kbl.s, kbl.e + (ndim > 2)};
     const IndexRange block = IndexRange{0, B_U.GetDim(5)-1};
 
-    // TODO Keep zone of max!  Also applies to ctop.
+    // TODO Keep zone of max! See timestep calc
+    // Will need to translate them back to KS to make them useful though
 
     // This is one kernel call per block, because each block will have different bounds.
     // Could consolidate at the cost of lots of bounds checking.
@@ -503,13 +528,15 @@ double MaxDivB(MeshData<Real> *md)
     return max_divb;
 }
 
-double GlobalMaxDivB(MeshData<Real> *md)
+double GlobalMaxDivB(MeshData<Real> *md, bool all_reduce)
 {
-    static AllReduce<Real> max_divb;
-    max_divb.val = MaxDivB(md);
-    max_divb.StartReduce(MPI_MAX);
-    while (max_divb.CheckReduce() == TaskStatus::incomplete);
-    return max_divb.val;
+    if (all_reduce) {
+        Reductions::StartToAll<Real>(md, 2, MaxDivB(md), MPI_MAX);
+        return Reductions::CheckOnAll<Real>(md, 2);
+    } else {
+        Reductions::Start<Real>(md, 2, MaxDivB(md), MPI_MAX);
+        return Reductions::Check<Real>(md, 2);
+    }
 }
 
 TaskStatus PrintGlobalMaxDivB(MeshData<Real> *md, bool kill_on_large_divb)
@@ -518,12 +545,15 @@ TaskStatus PrintGlobalMaxDivB(MeshData<Real> *md, bool kill_on_large_divb)
 
     // Since this is in the history file now, I don't bother printing it
     // unless we're being verbose. It's not costly to calculate though
-    if (pmb0->packages.Get("Globals")->Param<int>("verbose") >= 1) {
+    const bool print = pmb0->packages.Get("Globals")->Param<int>("verbose") >= 1;
+    if (print || kill_on_large_divb) {
         // Calculate the maximum from/on all nodes
         const double divb_max = B_FluxCT::GlobalMaxDivB(md);
         // Print on rank zero
-        if (MPIRank0()) {
-            std::cout << "Max DivB: " << divb_max << std::endl;
+        if (MPIRank0() && print) {
+            // someday I'll learn stream options
+            // for now this is more consistent in #digits/scientific
+            printf("Max DivB: %g\n", divb_max);
         }
         if (kill_on_large_divb) {
             if (divb_max > pmb0->packages.Get("B_FluxCT")->Param<Real>("kill_on_divb_over"))
@@ -540,6 +570,7 @@ void CalcDivB(MeshData<Real> *md, std::string divb_field_name)
 {
     auto pmesh = md->GetMeshPointer();
     const int ndim = pmesh->ndim;
+    if (ndim < 2) return;
 
     // Packing out here avoids frequent per-mesh packs.  Do we need to?
     auto B_U = md->PackVariables(std::vector<std::string>{"cons.B"});

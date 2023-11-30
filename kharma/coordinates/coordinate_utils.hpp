@@ -34,6 +34,7 @@
 #pragma once
 
 #include "decs.hpp"
+#include "matrix.hpp"
 
 /**
  * Rotate a set of coordinates 'Xin' by 'angle' about the *y-axis*

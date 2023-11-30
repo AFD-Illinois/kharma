@@ -36,51 +36,8 @@
 // This will include headers in the correct order
 #include "invert_template.hpp"
 
+#include "domain.hpp"
 #include "reductions.hpp"
-
-/**
- * Internal inversion fn, templated on inverter type.  Calls through to templated u_to_p
- * This is called with the correct template argument from BlockUtoP
- */
-template<Inverter::Type inverter>
-inline void BlockPerformInversion(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
-{
-    auto pmb = rc->GetBlockPointer();
-    const auto& G = pmb->coords;
-
-    PackIndexMap prims_map, cons_map;
-    auto U = GRMHD::PackMHDCons(rc, cons_map);
-    auto P = GRMHD::PackHDPrims(rc, prims_map);
-    const VarMap m_u(cons_map, true), m_p(prims_map, false);
-
-    GridScalar pflag = rc->Get("pflag").data;
-
-    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
-
-    const Real err_tol = pmb->packages.Get("Inverter")->Param<Real>("err_tol");
-    const int iter_max = pmb->packages.Get("Inverter")->Param<int>("iter_max");
-    const Real stepsize = pmb->packages.Get("Inverter")->Param<Real>("stepsize");
-
-    // Get the primitives from our conserved versions
-    // Currently this runs over *all* zones, including all ghosts, even
-    // uninitialized zones which are still zero.  We select for initialized
-    // zones only in the loop below, to avoid failures to converge while
-    // calculating primtive vars over as much of the domain as possible
-    // We could (did formerly) save some time here by running over
-    // only zones with initialized conserved variables, but the domain
-    // of such values is not rectangular in the current handling
-    auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
-    const IndexRange3 b = GetPhysicalZones(pmb, bounds);
-
-    pmb->par_for("U_to_P", b.kb.s, b.kb.e, b.jb.s, b.jb.e, b.ib.s, b.ib.e,
-        KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-            if (inside(k, j, i, b.kb, b.jb, b.ib)) {
-                // Run over all interior zones and any initialized ghosts
-                pflag(k, j, i) = static_cast<double>(Inverter::u_to_p<inverter>(G, U, m_u, gam, k, j, i, P, m_p, Loci::center));
-            }
-        }
-    );
-}
 
 std::shared_ptr<KHARMAPackage> Inverter::Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages)
 {
@@ -107,27 +64,66 @@ std::shared_ptr<KHARMAPackage> Inverter::Initialize(ParameterInput *pin, std::sh
     // TODO add version attempting to recover from entropy, stuff like that
 
     // Flag denoting UtoP inversion failures
-    // Only needed if we're actually calling UtoP, but always allocated as it's retrieved often
-    // Needs boundary sync if treating primitive variables as fundamental
+    // Needs boundary sync if treating primitive variables as fundamental, since we need to
+    // avoid failed neighbors when fixing.
     bool sync_prims = packages->Get("Driver")->Param<bool>("sync_prims");
-    bool implicit_grmhd = packages->Get("GRMHD")->Param<bool>("implicit");
     Metadata m;
-    if (sync_prims && !implicit_grmhd) {
+    if (sync_prims) {
         m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy, Metadata::FillGhost});
     } else {
         m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
     }
     pkg->AddField("pflag", m);
 
-    // Don't operate if GRMHD variables are being evolved implicitly
-    // This package is still loaded because fixes
-    if (!implicit_grmhd) {
-        pkg->BlockUtoP = Inverter::BlockUtoP;
-    }
+    // We exist basically to do this
+    pkg->BlockUtoP = Inverter::BlockUtoP;
+    pkg->BoundaryUtoP = Inverter::BlockUtoP;
 
     pkg->PostStepDiagnosticsMesh = Inverter::PostStepDiagnostics;
 
     return pkg;
+}
+
+/**
+ * Internal inversion fn, templated on inverter type.  Calls through to templated u_to_p
+ * This is called with the correct template argument from BlockUtoP
+ */
+template<Inverter::Type inverter>
+inline void BlockPerformInversion(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
+{
+    auto pmb = rc->GetBlockPointer();
+    const auto& G = pmb->coords;
+
+    PackIndexMap prims_map, cons_map;
+    auto U = GRMHD::PackMHDCons(rc, cons_map);
+    auto P = GRMHD::PackHDPrims(rc, prims_map);
+    const VarMap m_u(cons_map, true), m_p(prims_map, false);
+
+    auto pflag = rc->PackVariables(std::vector<std::string>{"pflag"});
+
+    if (U.GetDim(4) == 0 || pflag.GetDim(4) == 0)
+        return;
+
+    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
+
+    const Real err_tol = pmb->packages.Get("Inverter")->Param<Real>("err_tol");
+    const int iter_max = pmb->packages.Get("Inverter")->Param<int>("iter_max");
+    const Real stepsize = pmb->packages.Get("Inverter")->Param<Real>("stepsize");
+
+    // Get the primitives from our conserved versions
+    // Notice we recover variables for only the physical (interior or MPI-boundary)
+    // zones!  These are the only ones which are filled at our point in the step
+    auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
+    const IndexRange3 b = KDomain::GetPhysicalRange(rc);
+
+    pmb->par_for("U_to_P", b.ks, b.ke, b.js, b.je, b.is, b.ie,
+        KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+            if (KDomain::inside(k, j, i, b)) {
+                // Run over all interior zones and any initialized ghosts
+                pflag(0, k, j, i) = static_cast<double>(Inverter::u_to_p<inverter>(G, U, m_u, gam, k, j, i, P, m_p, Loci::center));
+            }
+        }
+    );
 }
 
 void Inverter::BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
@@ -141,6 +137,7 @@ void Inverter::BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coars
     case Type::none:
         break;
     }
+    //Reductions::StartFlagReduce(md, "pflag", Inverter::status_names, IndexDomain::interior, false, 1);
 }
 
 TaskStatus Inverter::PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
@@ -152,9 +149,11 @@ TaskStatus Inverter::PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
     const int flag_verbose = pars.Get<int>("flag_verbose");
 
     // Debugging/diagnostic info about floor and inversion flags
+    // TODO grab the total and die on too many
     if (flag_verbose >= 1) {
-        int nflags = Reductions::CountFlags(md, "pflag", Inverter::status_names, IndexDomain::interior, flag_verbose, false);
-        // TODO TODO yell here if there are too many flags
+        // TODO this should move into UtoP when everything goes MeshData
+        Reductions::StartFlagReduce(md, "pflag", Inverter::status_names, IndexDomain::interior, false, 1);
+        Reductions::CheckFlagReduceAndPrintHits(md, "pflag", Inverter::status_names, IndexDomain::interior, false, 1);
     }
 
     return TaskStatus::complete;

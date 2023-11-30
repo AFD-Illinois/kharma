@@ -34,15 +34,14 @@
 
 #include "problem.hpp"
 
-#include "b_field_tools.hpp"
 #include "boundaries.hpp"
-#include "debug.hpp"
 #include "electrons.hpp"
 #include "floors.hpp"
 #include "flux.hpp"
 #include "gr_coordinates.hpp"
 #include "grmhd.hpp"
 #include "grmhd_functions.hpp"
+#include "perturbation.hpp"
 #include "types.hpp"
 
 // Problem initialization headers
@@ -78,7 +77,10 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
     Flag("ProblemGenerator_"+prob);
     // Also just print this, it's important
     if (MPIRank0()) {
-        std::cout << "Initializing problem: " << prob << std::endl;
+        // We have no way of tracking whether this is the first block we're initializing
+        static bool printed_msg = false;
+        if (!printed_msg) std::cout << "Initializing problem: " << prob << std::endl;
+        printed_msg = true;
     }
 
     // Breakout to call the appropriate initialization function,
@@ -101,8 +103,6 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
     // GRMHD
     } else if (prob == "bondi") {
         status = InitializeBondi(rc, pin);
-    } else if (prob == "bz_monopole") {
-        status = InitializeBZMonopole(rc, pin);
     // Electrons
     } else if (prob == "noh") {
         status = InitializeNoh(rc, pin);
@@ -124,10 +124,13 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
         status = InitializeFMTorus(rc, pin);
     } else if (prob == "resize_restart") {
         status = ReadIharmRestart(rc, pin);
-    } else if (prob == "resize_restart_kharma") { // Hyerin
+    } else if (prob == "resize_restart_kharma") {
         status = ReadKharmaRestart(rc, pin);
     } else if (prob == "gizmo") {
         status = InitializeGIZMO(rc, pin);
+    } else if (prob == "vacuum" || prob == "bz_monopole") {
+        // No need for a separate initializer, just seed w/floors
+        status = Floors::ApplyInitialFloors(pin, rc.get(), IndexDomain::interior);
     }
 
     // If we didn't initialize a problem, yell
@@ -153,20 +156,16 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
         }
     }
 
-    // TODO blob here?
-
     // Floors are NOT automatically applied at this point anymore.
     // If needed, they are applied within the problem-specific call.
     // See InitializeFMTorus in fm_torus.cpp for the details for torus problems.
 
-    // Fill the conserved variables U,
-    // which we'll usually treat as the independent/fundamental state.
-    // This will need to be repeated once magnetic field is seeded
-    // Note we do the whole domain, in case we're using Dirichlet conditions
-    Flux::BlockPtoU(rc.get(), IndexDomain::entire);
-
-    // Finally, freeze in the current ghost zone values if using Dirichlet conditions
-    KBoundaries::FreezeDirichletBlock(rc.get());
+    // Note we no longer call PtoU here either, as GRMHD variables' PtoU requires
+    // the magnetic field, which is added in PostInitialize, after all blocks
+    // are filled with other variables (it can be related to density averages which
+    // require correct ghost zones)
+    // If the B field will depend on the conserved variables (for some reason?)
+    // they must be computed by the particular problem.
 
     EndFlag();
 }

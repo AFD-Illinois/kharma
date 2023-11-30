@@ -33,26 +33,22 @@
  */
 #pragma once
 
-#include "debug.hpp"
+#include "reductions_variables.hpp"
 
 #include "flux_functions.hpp"
 #include "grmhd_functions.hpp"
 #include "types.hpp"
 
-// This is for flux/accretion rate 
-#define REDUCE_FUNCTION_ARGS_EH const GRCoordinates& G, const VariablePack<Real>& P, const VarMap& m_p, \
-                        const VariableFluxPack<Real>& U, const VarMap& m_u, const Real& gam, \
-                        const int& k, const int& j, const int& i
-
-// Notice this list also includes a generic Real-type argument: this is for denoting a radius or placement.
-// Provided as argument in case reductions at/within/etc multiple places are desired
-// (e.g., disk and jet, inner & outer, multiple radii)
-// TODO take off 'b' from arg list and pass block contents?
-#define REDUCE_FUNCTION_ARGS_MESH const GRCoordinates& G, const VariablePack<Real>& P, const VarMap& m_p, \
-                        const VariableFluxPack<Real>& U, const VarMap& m_u, const Real& gam, \
-                        const int& k, const int& j, const int& i, const Real& arg
-
 namespace Reductions {
+
+// Think about how to do channels as not ints
+//constexpr enum class Channel{fflag, pflag, iflag, };
+
+/**
+ * These, too, are a package.
+ * Mostly it exists to keep track of Reducers, so we can clean them up to keep MPI happy.
+ */
+std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages);
 
 /**
  * Perform a reduction using operation 'op' over a spherical shell at the given zone, measured from left side of
@@ -60,15 +56,48 @@ namespace Reductions {
  * As this only runs on innermost blocks, this is intended for accretion/event horizon
  * measurements in black hole simulations.
  */
-Real EHReduction(MeshData<Real> *md, UserHistoryOperation op, std::function<Real(REDUCE_FUNCTION_ARGS_EH)> fn, int zone);
+template<Var var, typename T>
+T EHReduction(MeshData<Real> *md, UserHistoryOperation op, int zone);
 
 /**
- * Perform a reduction using operation 'op' over all zones.
- * The extra 'arg' is passed as the last argument to the device-side function.
- * It is generally used to denote a radius inside, outside, or at which the reduction should be taken.
- * This should be used for 2D shell sums not at the EH: just divide the function result by the zone spacing dx1.
+ * Perform a reduction using operation 'op' over a given domain
+ * This should be used for all 2D shell sums not around the EH:
+ * Just set equal min/max, 2D slices are detected
  */
-Real DomainReduction(MeshData<Real> *md, UserHistoryOperation op, std::function<Real(REDUCE_FUNCTION_ARGS_MESH)> fn, Real arg);
+template<Var var, typename T>
+T DomainReduction(MeshData<Real> *md, UserHistoryOperation op, const GReal startx[3], const GReal stopx[3], int channel=-1);
+template<Var var, typename T>
+T DomainReduction(MeshData<Real> *md, UserHistoryOperation op, int channel=-1) {
+    const GReal startx[3] = {std::numeric_limits<Real>::min(), std::numeric_limits<Real>::min(), std::numeric_limits<Real>::min()};
+    const GReal stopx[3] = {std::numeric_limits<Real>::max(), std::numeric_limits<Real>::max(), std::numeric_limits<Real>::max()};
+    return DomainReduction<var, T>(md, op, startx, stopx, channel);
+}
+
+/**
+ * Start reductions with a value you have on hand
+ */
+template<typename T>
+void Start(MeshData<Real> *md, int channel, T val, MPI_Op op);
+template<typename T>
+void StartToAll(MeshData<Real> *md, int channel, T val, MPI_Op op);
+
+/**
+ * Check the results of reductions that have been started.
+ * Remember channels are COUNTED SEPARATELY between the 4 lists:
+ * Real/default, int, vector<Real> and vector<int> (i.e. Flags)
+ */
+template<typename T>
+T Check(MeshData<Real> *md, int channel);
+template<typename T>
+T CheckOnAll(MeshData<Real> *md, int channel);
+
+/**
+ * Check the results of reductions that have been started.
+ * Remember channels are COUNTED SEPARATELY between the 4 lists:
+ * Real/default, int, vector<Real> and vector<int> (i.e. Flags)
+ */
+template<typename T>
+T Check(MeshData<Real> *md, int channel);
 
 /**
  * Count instances of a particular flag value in the named field.
@@ -78,11 +107,24 @@ Real DomainReduction(MeshData<Real> *md, UserHistoryOperation op, std::function<
 int CountFlag(MeshData<Real> *md, std::string field_name, const int& flag_val, IndexDomain domain, bool is_bitflag);
 
 /**
- * Count instances of a particular flag value in the named field.
+ * Count instances of all flags in the named field.
  * is_bitflag specifies whether multiple flags may be present and will be orthogonal (e.g. FFlag),
  * or whether flags receive consecutive integer values.
- * TODO could return numbers for all flags instead of just printing
  */
-int CountFlags(MeshData<Real> *md, std::string field_name, std::map<int, std::string> flag_values, IndexDomain domain, int verbose, bool is_bitflag);
+std::vector<int> CountFlags(MeshData<Real> *md, std::string field_name, const std::map<int, std::string> &flag_values, IndexDomain domain, bool is_bitflag);
+
+/**
+ * Determine number of local flags hit with CountFlags, and send the value over MPI reducer 'channel'
+ */
+void StartFlagReduce(MeshData<Real> *md, std::string field_name, const std::map<int, std::string> &flag_values, IndexDomain domain, bool is_bitflag, int channel);
+
+/**
+ * Check a flag's MPI reduction and print any flags hit
+ */
+std::vector<int> CheckFlagReduceAndPrintHits(MeshData<Real> *md, std::string field_name, const std::map<int, std::string> &flag_values,
+                                             IndexDomain domain, bool is_bitflag, int channel);
 
 } // namespace Reductions
+
+// See the file for why we do this
+#include "reductions_impl.hpp"

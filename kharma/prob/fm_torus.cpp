@@ -38,20 +38,12 @@
 #include "coordinate_utils.hpp"
 #include "types.hpp"
 
-#include <random>
-#include "Kokkos_Random.hpp"
-
 TaskStatus InitializeFMTorus(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin)
 {
     auto pmb        = rc->GetBlockPointer();
     GridScalar rho  = rc->Get("prims.rho").data;
     GridScalar u    = rc->Get("prims.u").data;
     GridVector uvec = rc->Get("prims.uvec").data;
-    GridVector B_P  = rc->Get("prims.B").data;
-
-    // Are we using EMHD?
-    // TODO does anything really change?  If so use packages.count
-    //const bool use_emhd   = pin->GetOrAddBoolean("emhd", "on", false);
 
     const GReal rin      = pin->GetOrAddReal("torus", "rin", 6.0);
     const GReal rmax     = pin->GetOrAddReal("torus", "rmax", 12.0);
@@ -139,8 +131,8 @@ TaskStatus InitializeFMTorus(std::shared_ptr<MeshBlockData<Real>>& rc, Parameter
     // Done device-side for speed (for large 2D meshes this may get bad) but may work fine in HostSpace
     // Note this covers the full domain on each rank: it doesn't need a grid so it's not a memory problem,
     // and an MPI synch as is done for beta_min would be a headache
-    GReal x1min = pmb->pmy_mesh->mesh_size.x1min;
-    GReal x1max = pmb->pmy_mesh->mesh_size.x1max;
+    GReal x1min = pmb->pmy_mesh->mesh_size.xmin(X1DIR); // TODO probably could get domain from GRCoords
+    GReal x1max = pmb->pmy_mesh->mesh_size.xmax(X1DIR);
     // Add back 2D if torus solution may not be largest in midplane (before tilt ofc)
     //GReal x2min = pmb->pmy_mesh->mesh_size.x2min;
     //GReal x2max = pmb->pmy_mesh->mesh_size.x2max;
@@ -200,62 +192,6 @@ TaskStatus InitializeFMTorus(std::shared_ptr<MeshBlockData<Real>>& rc, Parameter
     // even if NOF frame is chosen (iharm3d does the same iiuc)
     // This is probably not a huge issue, just good to state explicitly
     Floors::ApplyInitialFloors(pin, rc.get(), IndexDomain::interior);
-
-    return TaskStatus::complete;
-}
-
-// TODO move this to a different file
-TaskStatus PerturbU(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin)
-{
-    auto pmb = rc->GetBlockPointer();
-    auto rho = rc->Get("prims.rho").data;
-    auto u = rc->Get("prims.u").data;
-
-    const Real u_jitter = pin->GetReal("perturbation", "u_jitter");
-    // Don't jitter values set by floors
-    const Real jitter_above_rho = pin->GetReal("floors", "rho_min_geom") + 1e-10;
-    // Note we add the MeshBlock gid to this value when seeding RNG,
-    // to get a new sequence for every block
-    const int rng_seed = pin->GetOrAddInteger("perturbation", "rng_seed", 31337);
-    // Print real seed used for all blocks, to ensure they're different
-    if (pmb->packages.Get("Globals")->Param<int>("verbose") > 0) {
-        std::cout << "Seeding RNG in block " << pmb->gid << " with value " << rng_seed + pmb->gid << std::endl;
-    }
-    const bool serial = pin->GetOrAddInteger("perturbation", "serial", false);
-
-    // Should we jitter ghosts? If first boundary sync doesn't work it's marginally less disruptive
-    IndexDomain domain = IndexDomain::interior;
-    const int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
-    const int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
-    const int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
-
-    if (serial) {
-        // Serial version
-        // Probably guarantees better determinism, but CPU single-thread only
-        std::mt19937 gen(rng_seed + pmb->gid);
-        std::uniform_real_distribution<Real> dis(-u_jitter/2, u_jitter/2);
-
-        auto u_host = u.GetHostMirrorAndCopy();
-        for(int k=ks; k <= ke; k++)
-            for(int j=js; j <= je; j++)
-                for(int i=is; i <= ie; i++)
-                    u_host(k, j, i) *= 1. + dis(gen);
-        u.DeepCopy(u_host);
-    } else {
-        // Kokkos version
-        typedef typename Kokkos::Random_XorShift64_Pool<> RandPoolType;
-        RandPoolType rand_pool(rng_seed + pmb->gid);
-        typedef typename RandPoolType::generator_type gen_type;
-        pmb->par_for("perturb_u", ks, ke, js, je, is, ie,
-            KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-                if (rho(k, j, i) > jitter_above_rho) {
-                    gen_type rgen = rand_pool.get_state();
-                    u(k, j, i) *= 1. + Kokkos::rand<gen_type, Real>::draw(rgen, -u_jitter/2, u_jitter/2);
-                    rand_pool.free_state(rgen);
-                }
-            }
-        );
-    }
 
     return TaskStatus::complete;
 }

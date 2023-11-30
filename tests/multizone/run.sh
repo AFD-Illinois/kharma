@@ -1,7 +1,10 @@
-#!/bin/bash 
-# Hyerin (02/17/23) copied from Ben's code
+#!/bin/bash
+set -euo pipefail
 
-# Bash script testing b_clean
+# Test a "multizone" run, consisting of several runs in sequence
+# Adapted from script by Hyerin Cho (02/17/23)
+
+# TODO simplify for single test. Replace with invocation of run.py?
 
 # User specified values here
 KERR=false
@@ -41,10 +44,10 @@ do
   runtime=10
   echo "Running for: " $runtime
   log_u_over_rho=-5.2915149 # test same vacuum conditions as r_shell when (rs=1e2.5)
-  start_time=$(($start_time+$runtime))  
+  start_time=$(($start_time+$runtime))
 
   #parfilename="../../kharma/pars/bondi_multizone/bondi_multizone_$(printf %05d ${VAR}).par" # parameter file
-  
+
   # set problem type and cleanup
   if [ $VAR -eq 0 ]; then
     prob="bondi" #"torus" #
@@ -53,20 +56,20 @@ do
     prob="resize_restart_kharma"
     init_c=1
   fi
-  
+
   # set BH spin
   if [[ $KERR == "true" ]]; then
     spin=0.99
   else
     spin=0.0
   fi
-  
+
   # output time steps
   output0_dt=$((${runtime}/10))
   #output1_dt=$((${runtime}/20*10))
   output1_dt=$((${runtime}/5))
   output2_dt=$((${runtime}/10))
-  
+
   # dt, fname, fname_fill
   if [ $VAR -ne 0 ]; then
     # update dt from the previous run

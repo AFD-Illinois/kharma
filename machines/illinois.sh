@@ -13,9 +13,11 @@ elif [[ $HOST == *".astro.illinois.edu" ]]; then
     HOST_ARCH="ZEN2"
     # BH29 benefits from using just 1 thread/core
     export OMP_NUM_THREADS=64
+    NPROC=64
   else
     # Other machines are Skylake
     HOST_ARCH="SKX"
+    NPROC=36
   fi
 
   # Compile our own HDF5 by default

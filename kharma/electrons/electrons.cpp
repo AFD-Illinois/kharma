@@ -34,6 +34,7 @@
 #include "electrons.hpp"
 
 #include "decs.hpp"
+#include "kharma_driver.hpp"
 #include "flux.hpp"
 #include "grmhd.hpp"
 #include "kharma.hpp"
@@ -113,16 +114,16 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
         pkg->BlockApplyPrimSource = ApplyElectronCooling;
     }
 
-    // Default implicit iff GRMHD is done implicitly. TODO can we do explicit?
+    // Evolving e- implicitly is not tested.  Shouldn't be necessary even in EMHD
     auto& driver = packages->Get("Driver")->AllParams();
-    auto driver_type = driver.Get<std::string>("type");
-    bool grmhd_implicit = packages->Get("GRMHD")->Param<bool>("implicit"); // usually false
-    bool implicit_e = (driver_type == "imex" && pin->GetOrAddBoolean("electrons", "implicit", grmhd_implicit)); // so this false too
+    auto driver_type = driver.Get<DriverType>("type");
+    bool implicit_e = (driver_type == DriverType::imex && pin->GetOrAddBoolean("electrons", "implicit", false));
     params.Add("implicit", implicit_e);
 
-    Metadata::AddUserFlag("Electrons");
+    Metadata::AddUserFlag("Elec");
     MetadataFlag areWeImplicit = (implicit_e) ? Metadata::GetUserFlag("Implicit")
                                               : Metadata::GetUserFlag("Explicit");
+    std::vector<MetadataFlag> flags_elec = {Metadata::Cell, areWeImplicit, Metadata::GetUserFlag("Elec")};
 
     std::vector<MetadataFlag> flags_prim = {Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::GetUserFlag("Primitive"),
                                             Metadata::Restart, areWeImplicit, Metadata::GetUserFlag("Electrons")};
@@ -199,6 +200,7 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     }
 
     pkg->BlockUtoP = Electrons::BlockUtoP;
+    pkg->BoundaryUtoP = Electrons::BlockUtoP;
 
     return pkg;
 }
@@ -214,7 +216,7 @@ TaskStatus InitElectrons(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInpu
 
     // Need to distinguish KTOT from the other variables, so we record which it is
     PackIndexMap prims_map;
-    auto& e_P = rc->PackVariables({Metadata::GetUserFlag("Electrons"), Metadata::GetUserFlag("Primitive")}, prims_map);
+    auto& e_P = rc->PackVariables({Metadata::GetUserFlag("Elec"), Metadata::GetUserFlag("Primitive")}, prims_map);
     const int ktot_index = prims_map["prims.Ktot"].first;
     // Just need these two from the rest of Prims
     GridScalar rho = rc->Get("prims.rho").data;
@@ -251,8 +253,8 @@ void BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     auto pmb = rc->GetBlockPointer();
 
     // No need for a "map" here, we just want everything that fits these
-    auto& e_P = rc->PackVariables({Metadata::GetUserFlag("Electrons"), Metadata::GetUserFlag("Primitive")});
-    auto& e_U = rc->PackVariables({Metadata::GetUserFlag("Electrons"), Metadata::Conserved});
+    auto& e_P = rc->PackVariables({Metadata::GetUserFlag("Elec"), Metadata::GetUserFlag("Primitive")});
+    auto& e_U = rc->PackVariables({Metadata::GetUserFlag("Elec"), Metadata::Conserved});
     // And then the local density
     GridScalar rho_U = rc->Get("cons.rho").data;
 
@@ -274,11 +276,9 @@ void BlockPtoU(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     auto pmb = rc->GetBlockPointer();
 
     PackIndexMap prims_map, cons_map;
-    auto& P = rc->PackVariables({Metadata::GetUserFlag("Primitive")}, prims_map);
-    auto& U = rc->PackVariables({Metadata::Conserved}, cons_map);
+    auto& P = rc->PackVariables({Metadata::GetUserFlag("Primitive"), Metadata::Cell}, prims_map);
+    auto& U = rc->PackVariables({Metadata::Conserved, Metadata::Cell}, cons_map);
     const VarMap m_p(prims_map, false), m_u(cons_map, true);
-    // And then the local density
-    GridScalar rho_P = rc->Get("cons.rho").data;
 
     const auto& G = pmb->coords;
 

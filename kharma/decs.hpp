@@ -53,9 +53,9 @@
 // Libraries I need directly
 #include "Kokkos_Core.hpp"
 
-#if 0
+#if 1
 // Resolve math functions to new Kokkos versions. Faster, maybe
-namespace m = Kokkos::Experimental;
+namespace m = Kokkos;
 #else
 // Resolve to standard library
 namespace m = std;
@@ -94,8 +94,10 @@ using GReal = double;
 
 #define NVEC 3
 #define VLOOP for(int v = 0; v < NVEC; ++v)
+#define VLOOP2 VLOOP for(int w = 0; w < NVEC; ++w)
+#define VLOOP3 VLOOP2 for(int x = 0; x < NVEC; ++x)
 
-// Useful Enums to avoid lots of #defines
+// Useful enum to avoid lots of #defines
 // See following functions and coord() in gr_coordinates.hpp to
 // get an idea of these locations.  All faces/corner are *left* of center
 #define NLOC 5
@@ -143,14 +145,13 @@ inline bool MPIRank0()
 }
 #else
 /**
- * Am I rank 0?  Saves typing vs comparing the global every time.
- * DUMMY function for no-MPI case: constexpr return for slight optimizations.
+ * DUMMY version for no-MPI case: constexpr return for slight optimizations.
  */
 inline bool MPIRank0() { return true; }
 #endif // MPI_PARALLEL
 
 // A few generic "NDArray" overloads for readability.
-// TODO torn on futures of these, as they're used inconsistently
+// TODO torn on futures of these: they're explicitly per-block
 // Shape+3D ("Grid") arrays
 using GridScalar = parthenon::ParArrayND<parthenon::Real>;
 using GridVector = parthenon::ParArrayND<parthenon::Real>;

@@ -43,7 +43,7 @@ dt_min = 0.0001
 <GRMHD>
 cfl = 0.5
 gamma = 1.333333
-reconstruction = linear_vl
+reconstruction = linear_mc
 
 <shock>
 rhoL = 0.1

@@ -64,9 +64,10 @@ void init_GRCoordinates(GRCoordinates& G);
 GRCoordinates::GRCoordinates(const RegionSize &rs, ParameterInput *pin): UniformCartesian(rs, pin),
     coords(pin)
 {
-    n1 = rs.nx1 + 2*Globals::nghost;
-    n2 = rs.nx2 > 1 ? rs.nx2 + 2*Globals::nghost : 1;
-    n3 = rs.nx3 > 1 ? rs.nx3 + 2*Globals::nghost : 1;
+    // TODO use new .symmetric?
+    n1 = rs.nx(X1DIR) + 2*Globals::nghost;
+    n2 = rs.nx(X2DIR) > 1 ? rs.nx(X2DIR) + 2*Globals::nghost : 1;
+    n3 = rs.nx(X3DIR) > 1 ? rs.nx(X3DIR) + 2*Globals::nghost : 1;
     //cout << "Initialized coordinates with nghost " << Globals::nghost << std::endl;
 
     connection_average_points = pin->GetOrAddInteger("coordinates", "connection_average_points", 1);
