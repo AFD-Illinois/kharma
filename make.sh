@@ -217,7 +217,7 @@ fi
 
 ### Build HDF5 ###
 # If we're building HDF5, do it after we set *all flags*
-if [[ "$ARGS" == *"hdf5"* && "$ARGS" == *"clean"* ]]; then
+if [[ "$ARGS" == *"hdf5"* && "$ARGS" == *"clean"* && "$ARGS" != *"dryrun"* ]]; then
   H5VER=1.14.2
   H5VERU=1_14_2
   cd external
