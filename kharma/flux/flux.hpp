@@ -37,7 +37,6 @@
 
 #include <parthenon/parthenon.hpp>
 
-#include "debug.hpp"
 #include "floors.hpp"
 #include "flux_functions.hpp"
 #include "pack.hpp"
@@ -45,6 +44,12 @@
 #include "types.hpp"
 
 namespace Flux {
+
+std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages);
+
+TaskStatus CheckCtop(MeshData<Real> *md);
+
+TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md);
 
 /**
  * Add the geometric source term present in the covariant derivative of the stress-energy tensor,

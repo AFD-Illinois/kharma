@@ -39,6 +39,12 @@
 
 using namespace parthenon;
 
+// Always disabled when implicit solver is disabled
+// TODO separate flag, also error properly at runtime
+#if DISABLE_IMPLICIT
+#define DISABLE_EMHD 1
+#endif
+
 /**
  * This physics package implements the Extended GRMHD "EGRMHD" scheme of Chandra et al. 2015,
  * First implemented in GRIM, of Chandra et al. 2017.
@@ -67,6 +73,16 @@ class EMHD_parameters {
 
         Real kappa;
         Real eta;
+
+        void print() const
+        {
+            printf("EMHD Parameters:\n");
+            printf("higher order: %d feedback: %d conduction: %d viscosity: %d\n",
+                    higher_order_terms, feedback, conduction, viscosity);
+            printf("kappa: %g eta: %g tau: %g conduction_a: %g viscosity_a: %g \n",
+                    kappa, eta, tau, conduction_alpha, viscosity_alpha);
+            // TODO closuretype
+        }
 
 };
 
@@ -103,12 +119,54 @@ void BlockPtoU(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse);
  */
 inline EMHD_parameters GetEMHDParameters(Packages_t& packages)
 {
-    EMHD::EMHD_parameters emhd_params_tmp;
+    EMHD::EMHD_parameters emhd_params_tmp = {0};
     if (packages.AllPackages().count("EMHD")) {
         emhd_params_tmp = packages.Get("EMHD")->Param<EMHD::EMHD_parameters>("emhd_params");
     }
     return emhd_params_tmp;
 }
+
+/**
+ * Add EGRMHD explicit source terms: anything which can be calculated once
+ * and added to the general dU/dt term along with e.g. GRMHD source, wind, etc
+ */
+TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt);
+
+/**
+ * Set q and dP to sensible starting values if they are not initialized by the problem.
+ * Currently a no-op as sensible values are zeros.
+ */
+void InitEMHDVariables(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin);
+
+#if DISABLE_EMHD
+
+template<typename Local>
+KOKKOS_INLINE_FUNCTION void set_parameters(const GRCoordinates& G, const Local& P, const VarMap& m_p,
+                                           const EMHD_parameters& emhd_params, const Real& gam,
+                                           const int& j, const int& i,
+                                           Real& tau, Real& chi_e, Real& nu_e) {}
+
+KOKKOS_INLINE_FUNCTION void set_parameters(const GRCoordinates& G, const VariablePack<Real>& P, const VarMap& m_p,
+                                           const EMHD_parameters& emhd_params, const Real& gam,
+                                           const int& k, const int& j, const int& i,
+                                           Real& tau, Real& chi_e, Real& nu_e) {}
+
+KOKKOS_INLINE_FUNCTION void set_parameters_init(const GRCoordinates& G, const Real& rho, const Real& u,
+                                           const EMHD_parameters& emhd_params, const Real& gam,
+                                           const int& k, const int& j, const int& i,
+                                           Real& tau, Real& chi_e, Real& nu_e) {}
+
+KOKKOS_INLINE_FUNCTION void calc_tensor(const Real& rho, const Real& u, const Real& pgas,
+                                        const EMHD::EMHD_parameters& emhd_params, 
+                                        const Real& q, const Real& dP,
+                                        const FourVectors& D, const int& dir,
+                                        Real emhd[GR_DIM]) {}
+
+KOKKOS_INLINE_FUNCTION void convert_prims_to_q_dP(const Real& q_tilde, const Real& dP_tilde,
+                                        const Real& rho, const Real& Theta, const Real& cs2, 
+                                        const EMHD_parameters& emhd_params, Real& q, Real& dP) {}
+
+#else
 
 /**
  * Set chi, nu, tau. Problem dependent
@@ -209,7 +267,9 @@ KOKKOS_INLINE_FUNCTION void set_parameters(const GRCoordinates& G, const Local& 
     FourVectors Dtmp;
     GRMHD::calc_4vecs(G, P, m_p, j, i, Loci::center, Dtmp);
     double bsq = m::max(dot(Dtmp.bcon, Dtmp.bcov), SMALL);
-    set_parameters(G, P(m_p.RHO), P(m_p.UU), P(m_p.Q), P(m_p.DP),
+    Real qtilde = (m_p.Q >= 0) ? P(m_p.Q) : 0.;
+    Real dPtilde = (m_p.DP >= 0) ? P(m_p.DP) : 0.;
+    set_parameters(G, P(m_p.RHO), P(m_p.UU), qtilde, dPtilde,
                     bsq, emhd_params, gam, j, i, tau, chi_e, nu_e);
 }
 
@@ -221,7 +281,9 @@ KOKKOS_INLINE_FUNCTION void set_parameters(const GRCoordinates& G, const Variabl
     FourVectors Dtmp;
     GRMHD::calc_4vecs(G, P, m_p, k, j, i, Loci::center, Dtmp);
     double bsq = m::max(dot(Dtmp.bcon, Dtmp.bcov), SMALL);
-    set_parameters(G, P(m_p.RHO, k, j, i), P(m_p.UU, k, j, i), P(m_p.Q, k, j, i), P(m_p.DP, k, j, i),
+    Real qtilde = (m_p.Q >= 0) ? P(m_p.Q, k, j, i) : 0.;
+    Real dPtilde = (m_p.DP >= 0) ? P(m_p.DP, k, j, i) : 0.;
+    set_parameters(G, P(m_p.RHO, k, j, i), P(m_p.UU, k, j, i), qtilde, dPtilde,
                     bsq, emhd_params, gam, j, i, tau, chi_e, nu_e);
 }
 
@@ -285,5 +347,6 @@ KOKKOS_INLINE_FUNCTION void convert_prims_to_q_dP(const Real& q_tilde, const Rea
         dP = 0.;
     }
 }
+#endif
 
 } // namespace EMHD

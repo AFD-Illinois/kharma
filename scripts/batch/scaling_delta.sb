@@ -30,7 +30,7 @@
 DO_STRONG=true
 DO_WEAK=true
 
-KHARMA_DIR=~/kharma
+KHARMA_DIR=$(dirname "$(readlink -f "$0")")/../..
 
 # Global options
 export OMP_PROC_BIND=spread
@@ -38,7 +38,7 @@ export OMP_PLACES=threads
 
 # Strong scaling.  Possibly not optimal due to requiring cubic meshblocks
 if [[ $DO_STRONG == "true" ]]; then
-  for size in 256 512
+  for size in 256 512 1024
   do
     for tpn in 4
     do
@@ -65,7 +65,7 @@ if [[ $DO_STRONG == "true" ]]; then
 
         echo "cycle=100 Running $size cubed problem with KHARMA on $nodes nodes with $tpn tasks each (blocksize $msize)"
 
-        srun -n $np $KHARMA_DIR/kharma.cuda -i $KHARMA_DIR/pars/scaling_torus.par parthenon/time/nlim=102 \
+        srun -n $np $KHARMA_DIR/kharma.cuda -i $KHARMA_DIR/pars/benchmark/scaling_torus.par parthenon/time/nlim=102 \
                                              parthenon/mesh/nx1=$size parthenon/mesh/nx2=$size parthenon/mesh/nx3=$size \
                                              parthenon/meshblock/nx1=$msize parthenon/meshblock/nx2=$msize parthenon/meshblock/nx3=$msize
 
@@ -130,7 +130,7 @@ if [[ $DO_WEAK == "true" ]]; then
         nblock=$(( $mul1 * $mul2 * $mul3 ))
         echo "cycle=100 Running $size per node problem with KHARMA on $nodes nodes with $tpn tasks each (total size ${tsize1}x${tsize2}x${tsize3}, $nblock blocks)"
 
-        srun -n $np $KHARMA_DIR/kharma.cuda -i $KHARMA_DIR/pars/scaling_torus.par parthenon/time/nlim=102 \
+        srun -n $np $KHARMA_DIR/kharma.cuda -i $KHARMA_DIR/pars/benchmark/scaling_torus.par parthenon/time/nlim=102 \
                                              parthenon/mesh/nx1=$tsize1 parthenon/mesh/nx2=$tsize2 parthenon/mesh/nx3=$tsize3 \
                                              parthenon/meshblock/nx1=$size parthenon/meshblock/nx2=$size parthenon/meshblock/nx3=$size
 

@@ -43,6 +43,8 @@ namespace B_CD
 
 std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages)
 {
+    throw std::runtime_error("Constraint-damping transport is not functional with modern B field initialization!");
+
     auto pkg = std::make_shared<KHARMAPackage>("B_CD");
     Params &params = pkg->AllParams();
 
@@ -62,7 +64,8 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     // B field as usual
     // TODO allow for implicit B here
     Metadata m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Independent, Metadata::FillGhost,
-                 Metadata::Restart, Metadata::Conserved, Metadata::WithFluxes, Metadata::Vector}, s_vector);
+                 Metadata::Restart, Metadata::Conserved, Metadata::Conserved,
+                 Metadata::WithFluxes, Metadata::Vector}, s_vector);
     pkg->AddField("cons.B", m);
     m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived,
                   Metadata::Restart, Metadata::GetUserFlag("Primitive"), Metadata::Vector}, s_vector);
@@ -72,7 +75,7 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     // i.e. differ by a factor of gdet.  This is apparently marginally more stable in some
     // circumstances.
     m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Independent, Metadata::FillGhost,
-                  Metadata::Restart, Metadata::Conserved, Metadata::WithFluxes});
+                  Metadata::Restart, Metadata::Conserved, Metadata::Conserved, Metadata::WithFluxes});
     pkg->AddField("cons.psi_cd", m);
     m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived,
                   Metadata::Restart, Metadata::GetUserFlag("Primitive")});
@@ -87,7 +90,7 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     pkg->BlockUtoP = B_CD::BlockUtoP;
 
     pkg->PostStepDiagnosticsMesh = B_CD::PostStepDiagnostics;
-    pkg->MeshPostStepUserWorkInLoop = B_CD::UpdateCtopMax;
+    pkg->PostStepWork = B_CD::UpdateCtopMax;
 
     // List (vector) of HistoryOutputVar that will all be enrolled as output variables
     parthenon::HstVar_list hst_vars = {};
@@ -223,20 +226,7 @@ Real MaxDivB(MeshData<Real> *md)
 
 TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
 {
-    auto pmesh = md->GetMeshPointer();
-
-    // Print this unless we quash everything
-    int verbose = pmesh->packages.Get("Globals")->Param<int>("verbose");
-    if (verbose >= 0) {
-        static Reduce<Real> max_divb;
-        max_divb.val = B_CD::MaxDivB(md);
-        max_divb.StartReduce(0, MPI_MAX);
-        while (max_divb.CheckReduce() == TaskStatus::incomplete);
-
-        if(MPIRank0()) {
-            std::cout << "Max DivB: " << max_divb.val << std::endl;
-        }
-    }
+    // TODO. Unify w/other B?
 
     return TaskStatus::complete;
 }
@@ -280,16 +270,17 @@ void FillOutput(MeshBlock *pmb, ParameterInput *pin)
 
 void UpdateCtopMax(Mesh *pmesh, ParameterInput *pin, const SimTime &tm)
 {
+    // TODO use new Reductions stuff for this
     // Reduce and record the maximum sound speed on the grid, to propagate
     // phi at that speed next step.
     // Just needs to run after every step, so we use the KHARMA callback at that point.
-    auto& params = pmesh->packages.Get("B_CD")->AllParams();
-    static AllReduce<Real> ctop_max_last_r;
-    ctop_max_last_r.val = params.Get<Real>("ctop_max");
-    ctop_max_last_r.StartReduce(MPI_MAX);
-    while (ctop_max_last_r.CheckReduce() == TaskStatus::incomplete);
-    params.Update<Real>("ctop_max_last", ctop_max_last_r.val);
-    params.Update<Real>("ctop_max", 0.0); // Reset for next max calculation
+    // auto& params = pmesh->packages.Get("B_CD")->AllParams();
+    // static AllReduce<Real> ctop_max_last_r;
+    // ctop_max_last_r.val = params.Get<Real>("ctop_max");
+    // ctop_max_last_r.StartReduce(MPI_MAX);
+    // while (ctop_max_last_r.CheckReduce() == TaskStatus::incomplete);
+    // params.Update<Real>("ctop_max_last", ctop_max_last_r.val);
+    // params.Update<Real>("ctop_max", 0.0); // Reset for next max calculation
 }
 
 } // namespace B_CD

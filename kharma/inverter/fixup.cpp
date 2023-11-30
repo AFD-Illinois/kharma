@@ -34,6 +34,7 @@
 
 #include "inverter.hpp"
 
+#include "domain.hpp"
 #include "floors.hpp"
 #include "floors_functions.hpp"
 #include "flux_functions.hpp"
@@ -56,7 +57,7 @@ TaskStatus Inverter::FixUtoP(MeshBlockData<Real> *rc)
     }
 
     Flag("Inverter::FixUtoP");
-    // Only fixup the core 5 prims
+    // Only fixup the core 5 prims TODO build by flag, HD + anything implicit
     auto P = GRMHD::PackHDPrims(rc);
 
     GridScalar pflag = rc->Get("pflag").data;
@@ -71,11 +72,11 @@ TaskStatus Inverter::FixUtoP(MeshBlockData<Real> *rc)
     // OR in an MPI boundary.  This is because it is applied *after* the MPI sync,
     // but before physical boundary zones are computed (which it should never use anyway)
 
-    const IndexRange3 b = GetPhysicalZones(pmb, pmb->cellbounds);
+    const IndexRange3 b = KDomain::GetPhysicalRange(rc);
 
     const auto& G = pmb->coords;
 
-    pmb->par_for("fix_U_to_P", b.kb.s, b.kb.e, b.jb.s, b.jb.e, b.ib.s, b.ib.e,
+    pmb->par_for("fix_U_to_P", b.ks, b.ke, b.js, b.je, b.is, b.ie,
         KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
             if (failed(pflag(k, j, i))) {
                 // Luckily fixups are rare, so we don't have to worry about optimizing this *too* much
@@ -87,7 +88,7 @@ TaskStatus Inverter::FixUtoP(MeshBlockData<Real> *rc)
                         for (int l = -1; l <= 1; l++) {
                             int ii = i + l, jj = j + m, kk = k + n;
                             // If we haven't overstepped array bounds...
-                            if (inside(kk, jj, ii, b.kb, b.jb, b.ib)) {
+                            if (KDomain::inside(kk, jj, ii, b)) {
                                 // Weight by distance
                                 double w = 1./(m::abs(l) + m::abs(m) + m::abs(n) + 1);
 
@@ -137,12 +138,12 @@ TaskStatus Inverter::FixUtoP(MeshBlockData<Real> *rc)
         // Get floor flag
         GridScalar fflag = rc->Get("fflag").data;
 
-        pmb->par_for("fix_U_to_P_floors", b.kb.s, b.kb.e, b.jb.s, b.jb.e, b.ib.s, b.ib.e,
+        pmb->par_for("fix_U_to_P_floors", b.ks, b.ke, b.js, b.je, b.is, b.ie,
             KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
                 if (failed(pflag(k, j, i))) {
                     // Make sure all fixed values still abide by floors (floors keep lockstep)
                     // TODO Full floors instead of just geo?
-                    apply_geo_floors(G, P, m_p, gam, k, j, i, floors);
+                    Floors::apply_geo_floors(G, P, m_p, gam, k, j, i, floors);
 
                     // Make sure to keep lockstep
                     // This will only be run for GRMHD, so we can call its p_to_u

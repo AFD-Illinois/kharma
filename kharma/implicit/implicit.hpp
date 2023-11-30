@@ -65,7 +65,20 @@ namespace Implicit
 // `fail`: manual backtracking wasn't good enough. FixSolve will be called
 // `beyond_tol`: solver didn't converge to prescribed tolerance but didn't fail
 // `backtrack`: step length of 1 gave negative rho/uu, but manual backtracking (0.1) sufficed
-enum SolverStatus{converged=0, fail, beyond_tol, backtrack};
+enum class SolverStatus{converged=0, fail, beyond_tol, backtrack};
+
+static const std::map<int, std::string> status_names = {
+    {(int) SolverStatus::fail, "failed"},
+    {(int) SolverStatus::beyond_tol, "beyond tolerance"},
+    {(int) SolverStatus::backtrack, "backtrack"}
+};
+
+template <typename T>
+KOKKOS_INLINE_FUNCTION bool failed(T status_flag)
+{
+    // Return only zones which outright failed
+    return static_cast<int>(status_flag) == static_cast<int>(SolverStatus::fail);
+}
 
 /**
  * Initialization.  Set parameters.

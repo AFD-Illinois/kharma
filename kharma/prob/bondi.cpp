@@ -99,7 +99,7 @@ TaskStatus InitializeBondi(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterIn
         printf("set bondi bounderies interior \n");
     }
 
-    // Default Bondi boundariy conditions: reset the outer boundary using our set function.
+    // Default Bondi boundary conditions: reset the outer boundary using our set function.
     // Register the callback to replace value from boundaries.cpp, & record the change in pin.
     auto bound_pkg = pmb->packages.Get<KHARMAPackage>("Boundaries");
     if (pin->GetOrAddBoolean("bondi", "set_outer_bound", !outer_dirichlet)) {
@@ -210,6 +210,32 @@ TaskStatus SetBondiImpl(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain do
         }
     );
     //printf("we are done looping over the initialization\n");
+
+    // Generally I avoid this, but the viscous Bondi test problem has very unique
+    // boundary requirements to converge.  The GRMHD vars must be held constant,
+    // but the pressure anisotropy allowed to change as necessary with outflow conditions
+    if (pmb->packages.Get("Globals")->Param<std::string>("problem") == "bondi_viscous") {
+        BoundaryFace bface = KBoundaries::BoundaryFaceOf(domain);
+        bool inner = KBoundaries::BoundaryIsInner(bface);
+        IndexRange ib_i = bounds.GetBoundsI(domain);
+        int ref = inner ? ib_i.s : ib_i.e;
+        pmb->par_for("bondi_viscous_boundary", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+            KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+                GReal Xembed[GR_DIM];
+                G.coord_embed(k, j, i, Loci::center, Xembed);
+                GReal r = Xembed[1];
+                // TODO more general?
+                if (m_p.B1 >= 0) {
+                    P(m_p.B1, k, j, i) = 1/(r*r*r);
+                    P(m_p.B2, k, j, i) = 0.;
+                    P(m_p.B3, k, j, i) = 0.;
+                }
+                if (m_p.DP >= 0) {
+                    P(m_p.DP, k, j, i) = P(m_p.DP, k, j, ref);
+                }
+            }
+        );
+    }
 
     return TaskStatus::complete;
 }

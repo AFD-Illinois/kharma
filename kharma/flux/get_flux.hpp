@@ -35,6 +35,7 @@
 
 #include "flux.hpp"
 
+#include "domain.hpp"
 #include "floors_functions.hpp"
 
 namespace Flux {
@@ -47,8 +48,8 @@ namespace Flux {
  *
  * Memory-wise, this fills the "flux" portions of the "conserved" fields.  These will be used
  * over the course of the step to calculate an update to the zone-centered values.
- * This function also fills the "ctop" vector with the signal speed mhd_vchar,
- * used to estimate the timestep later.
+ * This function also fills the "Flux.cmax" & "Flux.cmin" vectors with the signal speeds,
+ * and potentially the "Flux.vl" and "Flux.vr" vectors with the fluid velocities
  * 
  * This function is defined in the header because it is templated on the reconstruction scheme and
  * direction.  Since there are only a few reconstruction schemes supported, and we will only ever
@@ -62,6 +63,7 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
     // Pointers
     auto pmesh = md->GetMeshPointer();
     auto pmb0  = md->GetBlockData(0)->GetBlockPointer();
+    auto& packages = pmb0->packages;
     // Exit on trivial operations
     const int ndim = pmesh->ndim;
     if (ndim < 3 && dir == X3DIR) return TaskStatus::complete;
@@ -70,19 +72,20 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
     Flag("GetFlux_"+std::to_string(dir));
 
     // Options
-    const auto& pars       = pmb0->packages.Get("Driver")->AllParams();
-    const auto& mhd_pars   = pmb0->packages.Get("GRMHD")->AllParams();
-    const auto& globals    = pmb0->packages.Get("Globals")->AllParams();
+    const auto& pars       = packages.Get("Driver")->AllParams();
+    const auto& mhd_pars   = packages.Get("GRMHD")->AllParams();
+    const auto& globals    = packages.Get("Globals")->AllParams();
     const bool use_hlle    = pars.Get<bool>("use_hlle");
 
-    const bool reconstruction_floors = pmb0->packages.AllPackages().count("Floors") &&
+    // TODO make this an option in Flux package
+    const bool reconstruction_floors = packages.AllPackages().count("Floors") &&
                                        (Recon == KReconstruction::Type::weno5);
     Floors::Prescription floors_temp;
     if (reconstruction_floors) {
         // Apply post-reconstruction floors.
         // Only enabled for WENO since it is not TVD, and only when other
         // floors are enabled.
-        const auto& floor_pars = pmb0->packages.Get("Floors")->AllParams();
+        const auto& floor_pars = packages.Get("Floors")->AllParams();
         // Pull out a struct of just the actual floor values for speed
         floors_temp = Floors::Prescription(floor_pars);
     }
@@ -92,70 +95,71 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
 
     // Check whether we're using constraint-damping
     // (which requires that a variable be propagated at ctop_max)
-    const bool use_b_cd = pmb0->packages.AllPackages().count("B_CD");
-    const double ctop_max = (use_b_cd) ? pmb0->packages.Get("B_CD")->Param<Real>("ctop_max_last") : 0.0;
+    const bool use_b_cd = packages.AllPackages().count("B_CD");
+    const double ctop_max = (use_b_cd) ? packages.Get("B_CD")->Param<Real>("ctop_max_last") : 0.0;
 
-    const EMHD::EMHD_parameters& emhd_params = EMHD::GetEMHDParameters(pmb0->packages);
+    const EMHD::EMHD_parameters& emhd_params = EMHD::GetEMHDParameters(packages);
 
     const Loci loc = loc_of(dir);
 
     // Pack variables.  Keep ctop separate
     PackIndexMap prims_map, cons_map;
-    const auto& ctop  = md->PackVariables(std::vector<std::string>{"ctop"});
-    const auto& P_all = md->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("Primitive")}, prims_map);
-    const auto& U_all = md->PackVariablesAndFluxes(std::vector<MetadataFlag>{Metadata::Conserved}, cons_map);
+    const auto& cmax  = md->PackVariables(std::vector<std::string>{"Flux.cmax"});
+    const auto& cmin  = md->PackVariables(std::vector<std::string>{"Flux.cmin"});
+    // TODO maybe all WithFluxes vars, split into cell & face?
+    const auto& P_all = md->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("Primitive"), Metadata::Cell}, prims_map);
+    const auto& U_all = md->PackVariablesAndFluxes(std::vector<MetadataFlag>{Metadata::Conserved, Metadata::Cell}, cons_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
 
-    // Get sizes
+    const auto& Pl_all = md->PackVariables(std::vector<std::string>{"Flux.Pl"});
+    const auto& Pr_all = md->PackVariables(std::vector<std::string>{"Flux.Pr"});
+    const auto& Ul_all = md->PackVariables(std::vector<std::string>{"Flux.Ul"});
+    const auto& Ur_all = md->PackVariables(std::vector<std::string>{"Flux.Ur"});
+    const auto& Fl_all = md->PackVariables(std::vector<std::string>{"Flux.Fl"});
+    const auto& Fr_all = md->PackVariables(std::vector<std::string>{"Flux.Fr"});
+
+    // Get the domain size
+    const IndexRange3 b = KDomain::GetRange(md, IndexDomain::interior, -1, 2);
+    // Get other sizes we need
     const int n1 = pmb0->cellbounds.ncellsi(IndexDomain::entire);
-    const IndexRange ib = md->GetBoundsI(IndexDomain::interior);
-    const IndexRange jb = md->GetBoundsJ(IndexDomain::interior);
-    const IndexRange kb = md->GetBoundsK(IndexDomain::interior);
-    const IndexRange block = IndexRange{0, ctop.GetDim(5) - 1};
+    const IndexRange block = IndexRange{0, cmax.GetDim(5) - 1};
     const int nvar = U_all.GetDim(4);
-    // 1-zone halo in nontrivial dimensions
-    // We leave is/ie, js/je, ks/ke with their usual definitions for consistency, and define
-    // the loop bounds separately to include the appropriate halo
-    // TODO halo 2 "shouldn't" crash but does.  Artifact of switch to faces?
-    const IndexRange il = IndexRange{ib.s - 1, ib.e + 1};
-    const IndexRange jl = (ndim > 1) ? IndexRange{jb.s - 1, jb.e + 1} : jb;
-    const IndexRange kl = (ndim > 2) ? IndexRange{kb.s - 1, kb.e + 1} : kb;
+
+    if (globals.Get<int>("verbose") > 2) {
+        std::cout << "Calculating fluxes for " << cmax.GetDim(5) << " blocks, "
+                << nvar << " variables (" << P_all.GetDim(4) << " primitives)" << std::endl;
+        m_u.print(); m_p.print();
+        emhd_params.print();
+    }
 
     // Allocate scratch space
     const int scratch_level = 1; // 0 is actual scratch (tiny); 1 is HBM
     const size_t var_size_in_bytes = parthenon::ScratchPad2D<Real>::shmem_size(nvar, n1);
-    const size_t speed_size_in_bytes = parthenon::ScratchPad2D<Real>::shmem_size(1, n1);
     // Allocate enough to cache prims, conserved, and fluxes, for left and right faces,
     // plus temporaries inside reconstruction (most use 1, WENO5 uses none, linear_vl uses a bunch)
-    // Then add cmax and cmin!
-    const size_t total_scratch_bytes = (6 + 1*(Recon != KReconstruction::Type::weno5) +
-                                            4*(Recon == KReconstruction::Type::linear_vl)) * var_size_in_bytes
-                                        + 2 * speed_size_in_bytes;
+    const size_t recon_scratch_bytes = (2 + 1*(Recon != KReconstruction::Type::weno5) +
+                                            4*(Recon == KReconstruction::Type::linear_vl)) * var_size_in_bytes;
+    const size_t flux_scratch_bytes = 3 * var_size_in_bytes;
 
     // This isn't a pmb0->par_for_outer because Parthenon's current overloaded definitions
     // do not accept three pairs of bounds, which we need in order to iterate over blocks
-    parthenon::par_for_outer(DEFAULT_OUTER_LOOP_PATTERN, "calc_flux", pmb0->exec_space,
-        total_scratch_bytes, scratch_level, block.s, block.e, kl.s, kl.e, jl.s, jl.e,
-        KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int& b, const int& k, const int& j) {
-            const auto& G = U_all.GetCoords(b);
+    Flag("GetFlux_"+std::to_string(dir)+"_recon");
+    parthenon::par_for_outer(DEFAULT_OUTER_LOOP_PATTERN, "calc_flux_recon", pmb0->exec_space,
+        recon_scratch_bytes, scratch_level, block.s, block.e, b.ks, b.ke, b.js, b.je,
+        KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int& bl, const int& k, const int& j) {
+            const auto& G = U_all.GetCoords(bl);
             ScratchPad2D<Real> Pl_s(member.team_scratch(scratch_level), nvar, n1);
             ScratchPad2D<Real> Pr_s(member.team_scratch(scratch_level), nvar, n1);
-            ScratchPad2D<Real> Ul_s(member.team_scratch(scratch_level), nvar, n1);
-            ScratchPad2D<Real> Ur_s(member.team_scratch(scratch_level), nvar, n1);
-            ScratchPad2D<Real> Fl_s(member.team_scratch(scratch_level), nvar, n1);
-            ScratchPad2D<Real> Fr_s(member.team_scratch(scratch_level), nvar, n1);
-            ScratchPad1D<Real> cmax(member.team_scratch(scratch_level), n1);
-            ScratchPad1D<Real> cmin(member.team_scratch(scratch_level), n1);
 
-            // Wrapper for a big switch statement between reconstruction schemes. Possibly slow.
-            // This function is generally a lot of if statements
-            KReconstruction::reconstruct<Recon, dir>(member, G, P_all(b), k, j, il.s, il.e, Pl_s, Pr_s);
+            // We template on reconstruction type to avoid a big switch statement here.
+            // Instead, a version of GetFlux() is generated separately for each reconstruction/direction pair.
+            // See reconstruction.hpp for all the implementations.
+            KReconstruction::reconstruct<Recon, dir>(member, P_all(bl), k, j, b.is, b.ie, Pl_s, Pr_s);
 
             // Sync all threads in the team so that scratch memory is consistent
             member.team_barrier();
 
-            // Calculate conserved fluxes at centers & faces
-            parthenon::par_for_inner(member, il.s, il.e,
+            parthenon::par_for_inner(member, b.is, b.ie,
                 [&](const int& i) {
                     auto Pl = Kokkos::subview(Pl_s, Kokkos::ALL(), i);
                     auto Pr = Kokkos::subview(Pr_s, Kokkos::ALL(), i);
@@ -165,19 +169,67 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
                         Floors::apply_geo_floors(G, Pl, m_p, gam, j, i, floors, loc);
                         Floors::apply_geo_floors(G, Pr, m_p, gam, j, i, floors, loc);
                     }
-#if !FUSE_FLUX_KERNELS
                 }
             );
             member.team_barrier();
 
-            // LEFT FACES, final ctop
-            parthenon::par_for_inner(member, il.s, il.e,
+            // Copy out state (TODO(BSP) eliminate)
+            for (int p=0; p < nvar; ++p) {
+                parthenon::par_for_inner(member, b.is, b.ie,
+                    [&](const int& i) {
+                        Pl_all(bl, p, k, j, i) = Pl_s(p, i);
+                        Pr_all(bl, p, k, j, i) = Pr_s(p, i);
+                    }
+                );
+            }
+            member.team_barrier();
+        }
+    );
+    EndFlag();
+
+    // If we have B field on faces, we must replace reconstructed version with that
+    if (pmb0->packages.AllPackages().count("B_CT")) {  // TODO if variable "cons.fB"?
+        const auto& Bf  = md->PackVariables(std::vector<std::string>{"cons.fB"});
+        const TopologicalElement face = (dir == 1) ? F1 : ((dir == 2) ? F2 : F3);
+        pmb0->par_for("replace_face", block.s, block.e, b.ks, b.ke, b.js, b.je, b.is, b.ie,
+            KOKKOS_LAMBDA(const int& bl, const int& k, const int& j, const int& i) {
+                const auto& G = U_all.GetCoords(bl);
+                const double bf = Bf(bl, face, 0, k, j, i) / G.gdet(loc, j, i);
+                Pl_all(bl, m_p.B1+dir-1, k, j, i) = bf;
+                Pr_all(bl, m_p.B1+dir-1, k, j, i) = bf;
+            }
+        );
+    }
+
+    // Now that this is split, we add the biggest TODO in KHARMA
+    // TODO per-package prim_to_flux?  Is that slower?
+    // At least, we need to template on vchar/stress-energy T type
+
+    Flag("GetFlux_"+std::to_string(dir)+"_left");
+    parthenon::par_for_outer(DEFAULT_OUTER_LOOP_PATTERN, "calc_flux_left", pmb0->exec_space,
+        flux_scratch_bytes, scratch_level, block.s, block.e, b.ks, b.ke, b.js, b.je,
+        KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int& bl, const int& k, const int& j) {
+            const auto& G = U_all.GetCoords(bl);
+            ScratchPad2D<Real> Pl_s(member.team_scratch(scratch_level), nvar, n1);
+            ScratchPad2D<Real> Ul_s(member.team_scratch(scratch_level), nvar, n1);
+            ScratchPad2D<Real> Fl_s(member.team_scratch(scratch_level), nvar, n1);
+
+            // Copy in state (TODO(BSP) eliminate)
+            for (int p=0; p < nvar; ++p) {
+                parthenon::par_for_inner(member, b.is, b.ie,
+                    [&](const int& i) {
+                        Pl_s(p, i) = Pl_all(bl, p, k, j, i);
+                    }
+                );
+            }
+            member.team_barrier();
+
+            // LEFT FACES
+            parthenon::par_for_inner(member, b.is, b.ie,
                 [&](const int& i) {
                     auto Pl = Kokkos::subview(Pl_s, Kokkos::ALL(), i);
-#endif
                     auto Ul = Kokkos::subview(Ul_s, Kokkos::ALL(), i);
                     auto Fl = Kokkos::subview(Fl_s, Kokkos::ALL(), i);
-                    // LR -> flux
                     // Declare temporary vectors
                     FourVectors Dtmp;
 
@@ -190,26 +242,54 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
                     Real cmaxL, cminL;
                     Flux::vchar(G, Pl, m_p, Dtmp, gam, emhd_params, k, j, i, loc, dir, cmaxL, cminL);
 
-#if !FUSE_FLUX_KERNELS
                     // Record speeds
-                    cmax(i) = m::max(0., cmaxL);
-                    cmin(i) = m::max(0., -cminL);
+                    cmax(bl, dir-1, k, j, i) = m::max(0., cmaxL);
+                    cmin(bl, dir-1, k, j, i) = m::max(0., -cminL);
                 }
             );
             member.team_barrier();
 
-            // RIGHT FACES, final ctop
-            parthenon::par_for_inner(member, il.s, il.e,
+            // Copy out state
+            for (int p=0; p < nvar; ++p) {
+                parthenon::par_for_inner(member, b.is, b.ie,
+                    [&](const int& i) {
+                        Ul_all(bl, p, k, j, i) = Ul_s(p, i);
+                        Fl_all(bl, p, k, j, i) = Fl_s(p, i);
+                    }
+                );
+            }
+        }
+    );
+    EndFlag();
+
+    Flag("GetFlux_"+std::to_string(dir)+"_right");
+    parthenon::par_for_outer(DEFAULT_OUTER_LOOP_PATTERN, "calc_flux_right", pmb0->exec_space,
+        flux_scratch_bytes, scratch_level, block.s, block.e, b.ks, b.ke, b.js, b.je,
+        KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int& bl, const int& k, const int& j) {
+            const auto& G = U_all.GetCoords(bl);
+            ScratchPad2D<Real> Pr_s(member.team_scratch(scratch_level), nvar, n1);
+            ScratchPad2D<Real> Ur_s(member.team_scratch(scratch_level), nvar, n1);
+            ScratchPad2D<Real> Fr_s(member.team_scratch(scratch_level), nvar, n1);
+
+            // Copy in state (TODO(BSP) eliminate)
+            for (int p=0; p < nvar; ++p) {
+                parthenon::par_for_inner(member, b.is, b.ie,
+                    [&](const int& i) {
+                        Pr_s(p, i) = Pr_all(bl, p, k, j, i);
+                    }
+                );
+            }
+            member.team_barrier();
+
+            // RIGHT FACES, finalize signal speed
+            parthenon::par_for_inner(member, b.is, b.ie,
                 [&](const int& i) {
-                    // LR -> flux
-                    // Declare temporary vectors
-                    FourVectors Dtmp;
                     auto Pr = Kokkos::subview(Pr_s, Kokkos::ALL(), i);
-#endif
                     auto Ur = Kokkos::subview(Ur_s, Kokkos::ALL(), i);
                     auto Fr = Kokkos::subview(Fr_s, Kokkos::ALL(), i);
+                    // Declare temporary vectors
+                    FourVectors Dtmp;
                     // Right
-                    // TODO GRMHD/GRHD versions of this
                     GRMHD::calc_4vecs(G, Pr, m_p, j, i, loc, Dtmp);
                     Flux::prim_to_flux(G, Pr, m_p, Dtmp, emhd_params, gam, j, i, 0, Ur, m_u, loc);
                     Flux::prim_to_flux(G, Pr, m_p, Dtmp, emhd_params, gam, j, i, dir, Fr, m_u, loc);
@@ -218,66 +298,67 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
                     Real cmaxR, cminR;
                     Flux::vchar(G, Pr, m_p, Dtmp, gam, emhd_params, k, j, i, loc, dir, cmaxR, cminR);
 
-#if FUSE_FLUX_KERNELS
-                    // Calculate cmax/min from local variables
-                    cmax(i) = m::abs(m::max(cmaxL,  cmaxR));
-                    cmin(i) = m::abs(m::max(-cminL, -cminR));
-
-                    if (use_hlle) {
-                        for (int p=0; p < nvar; ++p)
-                            U_all(b).flux(dir, p, k, j, i) = hlle(Fl(p), Fr(p), cmax(i), cmin(i), Ul(p), Ur(p));
-                    } else {
-                        for (int p=0; p < nvar; ++p)
-                            U_all(b).flux(dir, p, k, j, i) = llf(Fl(p), Fr(p), cmax(i), cmin(i), Ul(p), Ur(p));
-                    }
-                    if (use_b_cd) {
-                        // The unphysical variable psi and its corrections can propagate at the max speed
-                        // for the stepsize, rather than the sound speed
-                        // Since the speeds are the same it will always correspond to the LLF flux
-                        U_all(b).flux(dir, m_u.PSI, k, j, i) = llf(Fl(m_u.PSI), Fr(m_u.PSI), ctop_max, ctop_max, Ul(m_u.PSI), Ur(m_u.PSI));
-                        U_all(b).flux(dir, m_u.B1+dir-1, k, j, i) = llf(Fl(m_u.B1+dir-1), Fr(m_u.B1+dir-1), ctop_max, ctop_max, Ul(m_u.B1+dir-1), Ur(m_u.B1+dir-1));
-                    }
-#else
                     // Calculate cmax/min based on comparison with cached values
-                    cmax(i) = m::abs(m::max(cmax(i),  cmaxR));
-                    cmin(i) = m::abs(m::max(cmin(i), -cminR));
-#endif
-                    // TODO is it faster to write ctop elsewhere?
-                    ctop(b, dir-1, k, j, i) = m::max(cmax(i), cmin(i));
+                    cmax(bl, dir-1, k, j, i) = m::abs(m::max(cmax(bl, dir-1, k, j, i),  cmaxR));
+                    cmin(bl, dir-1, k, j, i) = m::abs(m::max(cmin(bl, dir-1, k, j, i), -cminR));
                 }
             );
             member.team_barrier();
 
-#if !FUSE_FLUX_KERNELS
-            // Apply what we've calculated
+            // Copy out state
             for (int p=0; p < nvar; ++p) {
-                if (use_b_cd && (p == m_u.PSI || p == m_u.B1+dir-1)) {
-                    // The unphysical variable psi and its corrections can propagate at the max speed for the stepsize, rather than the sound speed
-                    // Since the speeds are the same it will always correspond to the LLF flux
-                    parthenon::par_for_inner(member, il.s, il.e,
-                        [&](const int& i) {
-                            U_all(b).flux(dir, p, k, j, i) = llf(Fl_s(p,i), Fr_s(p,i), ctop_max, ctop_max, Ul_s(p,i), Ur_s(p,i));
-                        }
-                    );
-                } else if (use_hlle) {
-                    // Option to try HLLE fluxes for everything else
-                    parthenon::par_for_inner(member, il.s, il.e,
-                        [&](const int& i) {
-                            U_all(b).flux(dir, p, k, j, i) = hlle(Fl_s(p,i), Fr_s(p,i), cmax(i), cmin(i), Ul_s(p,i), Ur_s(p,i));
-                        }
-                    );
-                } else {
-                    // Or LLF, probably safest option
-                    parthenon::par_for_inner(member, il.s, il.e,
-                        [&](const int& i) {
-                            U_all(b).flux(dir, p, k, j, i) = llf(Fl_s(p,i), Fr_s(p,i), cmax(i), cmin(i), Ul_s(p,i), Ur_s(p,i));
-                        }
-                    );
-                }
+                parthenon::par_for_inner(member, b.is, b.ie,
+                    [&](const int& i) {
+                        Ur_all(bl, p, k, j, i) = Ur_s(p, i);
+                        Fr_all(bl, p, k, j, i) = Fr_s(p, i);
+                    }
+                );
             }
-#endif
+
         }
     );
+    EndFlag();
+
+    // Apply what we've calculated
+    Flag("GetFlux_"+std::to_string(dir)+"_riemann");
+    if (use_hlle) { // More fluxes would need a template
+        pmb0->par_for("flux_hlle", block.s, block.e, 0, nvar-1, b.ks, b.ke, b.js, b.je, b.is, b.ie,
+            KOKKOS_LAMBDA(const int& bl, const int& p, const int& k, const int& j, const int& i) {
+                U_all(bl).flux(dir, p, k, j, i) = hlle(Fl_all(bl, p, k, j, i), Fr_all(bl, p, k, j, i),
+                                                      cmax(bl, dir-1, k, j, i), cmin(bl, dir-1, k, j, i),
+                                                      Ul_all(bl, p, k, j, i), Ur_all(bl, p, k, j, i));
+
+
+            }
+        );
+    } else {
+        pmb0->par_for("flux_llf", block.s, block.e, 0, nvar-1, b.ks, b.ke, b.js, b.je, b.is, b.ie,
+            KOKKOS_LAMBDA(const int& bl, const int& p, const int& k, const int& j, const int& i) {
+                U_all(bl).flux(dir, p, k, j, i) = llf(Fl_all(bl, p, k, j, i), Fr_all(bl, p, k, j, i),
+                                                     cmax(bl, dir-1, k, j, i), cmin(bl, dir-1, k, j, i),
+                                                     Ul_all(bl, p, k, j, i), Ur_all(bl, p, k, j, i));
+
+
+            }
+        );
+    }
+    EndFlag();
+
+    // Save the face velocities for upwinding/CT later
+    // TODO only for certain GS'05
+    if (packages.AllPackages().count("B_CT")) {
+        Flag("GetFlux_"+std::to_string(dir)+"_store_vel");
+        const auto& vl_all = md->PackVariables(std::vector<std::string>{"Flux.vl"});
+        const auto& vr_all = md->PackVariables(std::vector<std::string>{"Flux.vr"});
+        TopologicalElement face = (dir == 1) ? F1 : (dir == 2) ? F2 : F3;
+        pmb0->par_for("flux_llf", block.s, block.e, 0, NVEC-1, b.ks, b.ke, b.js, b.je, b.is, b.ie,
+            KOKKOS_LAMBDA(const int& bl, const int& v, const int& k, const int& j, const int& i) {
+                vl_all(bl, face, v, k, j, i) = Pl_all(bl, m_p.U1+v, k, j, i);
+                vr_all(bl, face, v, k, j, i) = Pr_all(bl, m_p.U1+v, k, j, i);
+            }
+        );
+        EndFlag();
+    }
 
     EndFlag();
     return TaskStatus::complete;

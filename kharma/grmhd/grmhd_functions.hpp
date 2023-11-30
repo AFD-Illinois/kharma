@@ -333,7 +333,7 @@ KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates& G, const Global& P, cons
     // Particle number flux
     U(m_u.RHO, k, j, i) = P(m_p.RHO, k, j, i) * Dtmp.ucon[0] * gdet;
 
-    if (m_p.B1 >= 0) {
+    if (m_u.B1 >= 0) {
         // MHD stress-energy tensor w/ first index up, second index down
         Real mhd[GR_DIM];
         GRMHD::calc_tensor(P(m_p.RHO, k, j, i), P(m_p.UU, k, j, i), (gam - 1) * P(m_p.UU, k, j, i), Dtmp, 0, mhd);

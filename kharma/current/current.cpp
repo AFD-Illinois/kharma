@@ -44,6 +44,12 @@ std::shared_ptr<KHARMAPackage> Current::Initialize(ParameterInput *pin, std::sha
     auto m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy}, s_fourvector);
     pkg->AddField("jcon", m);
 
+    // Temporaries
+    std::vector<int> s_vector({NVEC});
+    m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy}, s_vector);
+    pkg->AddField("Current.uvec_c", m);
+    pkg->AddField("Current.B_P_c", m);
+
     pkg->BlockUserWorkBeforeOutput = Current::FillOutput;
 
     return pkg;
@@ -57,15 +63,12 @@ TaskStatus Current::CalculateCurrent(MeshBlockData<Real> *rc0, MeshBlockData<Rea
     GridVector uvec_new = rc1->Get("prims.uvec").data;
     GridVector B_P_new = rc1->Get("prims.B").data;
     GridVector jcon = rc1->Get("jcon").data;
+
+    GridVector uvec_c = rc1->Get("Current.uvec_c").data;
+    GridVector B_P_c = rc1->Get("Current.B_P_c").data;
+
     const auto& G = pmb->coords;
-
-    int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
-    int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
-    int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
     const int ndim = pmb->pmy_mesh->ndim;
-
-    GridVector uvec_c("uvec_c", NVEC, n3, n2, n1);
-    GridVector B_P_c("B_P_c", NVEC, n3, n2, n1);
 
     // Calculate time-centered primitives
     // We could pack, but we just need the vectors, U1,2,3 and B1,2,3
@@ -89,6 +92,7 @@ TaskStatus Current::CalculateCurrent(MeshBlockData<Real> *rc0, MeshBlockData<Rea
     pmb->par_for("jcon_calc", n4v.s, n4v.e, kb_i.s, kb_i.e, jb_i.s, jb_i.e, ib_i.s, ib_i.e,
         KOKKOS_LAMBDA (const int &mu, const int &k, const int &j, const int &i) {
             // Get sqrt{-g}*F^{mu nu} at neighboring points
+            // TODO(BSP) this recalculates Fcon a lot...
             const Real gF0p = get_gdet_Fcon(G, uvec_new, B_P_new, 0, mu, k, j, i);
             const Real gF0m = get_gdet_Fcon(G, uvec_old, B_P_old, 0, mu, k, j, i);
             const Real gF1p = get_gdet_Fcon(G, uvec_c, B_P_c, 1, mu, k, j, i+1);
@@ -101,9 +105,9 @@ TaskStatus Current::CalculateCurrent(MeshBlockData<Real> *rc0, MeshBlockData<Rea
             // Difference: D_mu F^{mu nu} = 4 \pi j^nu
             jcon(mu, k, j, i) = 1. / (m::sqrt(4. * M_PI) * G.gdet(Loci::center, j, i)) *
                                 ((gF0p - gF0m) / dt +
-                                (gF1p - gF1m) / (2. * G.Dxc<1>(i)) +
-                                (gF2p - gF2m) / (2. * G.Dxc<2>(j)) +
-                                (gF3p - gF3m) / (2. * G.Dxc<3>(k)));
+                                (gF1p - gF1m) / (2 * G.Dxc<1>(i)) +
+                                (gF2p - gF2m) / (2 * G.Dxc<2>(j)) +
+                                (gF3p - gF3m) / (2 * G.Dxc<3>(k)));
         }
     );
 

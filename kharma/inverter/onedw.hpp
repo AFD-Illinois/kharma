@@ -100,6 +100,9 @@ KOKKOS_INLINE_FUNCTION Status u_to_p<Type::onedw>(const GRCoordinates &G, const 
                                               const VariablePack<Real>& P, const VarMap& m_p,
                                               const Loci loc)
 {
+    // if (i == 10 && j == 11)
+    //     printf("CONS: %g %g %g %g %g %g %g %g", U(m_u.RHO, k, j, i), U(m_u.UU, k, j, i), U(m_u.U1, k, j, i), U(m_u.U2, k, j, i),
+    //                                         U(m_u.U3, k, j, i), U(m_u.B1, k, j, i), U(m_u.B2, k, j, i), U(m_u.B3, k, j, i));
     // Catch negative density
     if (U(m_u.RHO, k, j, i) <= 0.) {
         return Status::neg_input;

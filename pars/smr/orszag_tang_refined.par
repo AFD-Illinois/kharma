@@ -1,0 +1,78 @@
+# Orszag-Tang Vortex problem:
+# Generate current sheets on short timescales
+
+<parthenon/job>
+problem_id = orszag_tang
+
+<parthenon/mesh>
+refinement = static
+numlevel = 2
+nx1 = 192
+x1min = -3.141592653589793
+x1max = 3.141592653589793
+
+nx2 = 192
+x2min = -3.141592653589793
+x2max = 3.141592653589793
+
+nx3 = 1
+x3min = -0.01
+x3max = 0.01
+
+<parthenon/meshblock>
+nx1 = 64
+nx2 = 64
+nx3 = 1
+
+<parthenon/static_refinement0>
+x1min = 0.0
+x1max = 0.0
+x2min = 0.0
+x2max = 0.0
+level = 1
+
+<coordinates>
+base = cartesian_minkowski
+transform = null
+
+<parthenon/time>
+tlim = 100.0
+integrator = rk2
+
+<driver>
+type = kharma
+
+<GRMHD>
+cfl = 0.9
+gamma = 1.666667
+reconstruction = weno5
+
+<b_field>
+solver = face_ct
+ct_scheme = bs99
+#ct_scheme = gs05_0
+
+<debug>
+verbose = 1
+flag_verbose = 2
+extra_checks = 1
+
+<floors>
+disable_floors = true
+
+<parthenon/output0>
+file_type = hdf5
+dt = 1
+single_precision_output = true
+# TODO just prims when face fields supported
+variables = prims.rho, prims.u, prims.uvec, prims.B, divB, jcon
+
+<parthenon/output1>
+file_type = hst
+dt = 0.1
+
+# This problem is generally much too short to need
+# checkpointing.  However, we have a test which uses it.
+#<parthenon/output2>
+#file_type = rst
+#dt = 10.0

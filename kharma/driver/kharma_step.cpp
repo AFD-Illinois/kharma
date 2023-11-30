@@ -38,15 +38,16 @@
 #include "b_flux_ct.hpp"
 #include "b_cd.hpp"
 #include "b_cleanup.hpp"
+#include "b_ct.hpp"
 #include "electrons.hpp"
 #include "grmhd.hpp"
 #include "wind.hpp"
 // Other headers
 #include "boundaries.hpp"
-#include "debug.hpp"
 #include "flux.hpp"
-#include "resize_restart.hpp"
+#include "kharma.hpp"
 #include "implicit.hpp"
+#include "resize_restart.hpp"
 
 #include <parthenon/parthenon.hpp>
 #include <interface/update.hpp>
@@ -54,15 +55,19 @@
 
 TaskCollection KHARMADriver::MakeTaskCollection(BlockList_t &blocks, int stage)
 {
-    std::string driver_type = blocks[0]->packages.Get("Driver")->Param<std::string>("type");
-    Flag("MakeTaskCollection_"+driver_type);
+    DriverType driver_type = blocks[0]->packages.Get("Driver")->Param<DriverType>("type");
+    Flag("MakeTaskCollection");
     TaskCollection tc;
-    if (driver_type == "imex") {
-        tc = MakeImExTaskCollection(blocks, stage);
-    } else if (driver_type == "simple") {
-        tc = MakeSimpleTaskCollection(blocks, stage);
-    } else {
+    switch (driver_type) {
+    case DriverType::kharma:
         tc = MakeDefaultTaskCollection(blocks, stage);
+        break;
+    case DriverType::imex:
+        tc = MakeImExTaskCollection(blocks, stage);
+        break;
+    case DriverType::simple:
+        tc = MakeSimpleTaskCollection(blocks, stage);
+        break;
     }
     EndFlag();
     return tc;
@@ -80,17 +85,12 @@ TaskCollection KHARMADriver::MakeDefaultTaskCollection(BlockList_t &blocks, int 
     const TaskID t_none(0);
 
     // Which packages we load affects which tasks we'll add to the list
-    auto& pkgs = blocks[0]->packages.AllPackages();
+    auto& pkgs = pmesh->packages.AllPackages();
     auto& driver_pkg   = pkgs.at("Driver")->AllParams();
     const bool use_b_cleanup = pkgs.count("B_Cleanup");
+    const bool use_b_ct = pkgs.count("B_CT");
     const bool use_electrons = pkgs.count("Electrons");
     const bool use_jcon = pkgs.count("Current");
-
-    // If we cleaned up, this added other fields marked FillDerived
-    // Remove them before we allocate the space
-    if (use_b_cleanup) {
-        B_Cleanup::RemoveExtraFields(blocks);
-    }
 
     // Allocate the fluid states ("containers") we need for each block
     for (auto& pmb : blocks) {
@@ -104,12 +104,25 @@ TaskCollection KHARMADriver::MakeDefaultTaskCollection(BlockList_t &blocks, int 
             if (use_jcon) {
                 // At the end of the step, updating "mbd_sub_step_final" updates the base
                 // So we have to keep a copy at the beginning to calculate jcon
-                pmb->meshblock_data.Add("preserve", base);
+                // We have to explicitly copy, since after the first step `Add`==`Get`
+                Copy<MeshBlockData<Real>>({}, base.get(), pmb->meshblock_data.Add("preserve").get());
             }
         }
     }
+    //Copy<MeshData<Real>>({}, pmesh->mesh_data.Get().get(), pmesh->mesh_data.Add("preserve").get());
 
-    //auto t_heating_test = tl.AddTask(t_none, Electrons::ApplyHeating, base.get());
+    Flag("MakeTaskCollection::fluxes");
+
+    // TODO when we can make shallow copies work, copy based on this list for MPI syncs
+    // static std::vector<std::string> sync_vars;
+    // if (sync_vars.size() == 0) {
+    //     // Build the list of variables we'll be syncing during "normal" boundary exchanges.
+    //     // This *excludes* anything related to divergence cleaning (which have their own syncs during the clean),
+    //     // and the EMF (or other edge variables) which are really part of the flux correction sync
+    //     using FC = Metadata::FlagCollection;
+    //     auto sync_flags = FC(Metadata::FillGhost) - FC(Metadata::Edge) - FC(Metadata::GetUserFlag("StartupOnly"));
+    //     sync_vars = KHARMA::GetVariableNames(&(pmesh->packages), sync_flags);
+    // }
 
     // Big packed region: get and apply new fluxes on all the zones we control
     const int num_partitions = pmesh->DefaultNumPartitions();
@@ -125,73 +138,100 @@ TaskCollection KHARMADriver::MakeDefaultTaskCollection(BlockList_t &blocks, int 
         auto &md_sub_step_init  = pmesh->mesh_data.GetOrAdd(integrator->stage_name[stage - 1], i);
         auto &md_sub_step_final = pmesh->mesh_data.GetOrAdd(integrator->stage_name[stage], i);
         auto &md_flux_src       = pmesh->mesh_data.GetOrAdd("dUdt", i);
+        // TODO this doesn't work still for some reason, even if the shallow copy has all variables
+        auto &md_sync = md_sub_step_final; //pmesh->mesh_data.AddShallow("sync", md_sub_step_final);
 
         // Start receiving flux corrections and ghost cells
-        namespace cb = parthenon::cell_centered_bvars;
-        auto t_start_recv_bound = tl.AddTask(t_none, cb::StartReceiveBoundBufs<parthenon::BoundaryType::any>, md_sub_step_final);
+        auto t_start_recv_bound = tl.AddTask(t_none, parthenon::StartReceiveBoundBufs<parthenon::BoundaryType::any>, md_sync);
         auto t_start_recv_flux = t_start_recv_bound;
-        if (pmesh->multilevel)
-            t_start_recv_flux = tl.AddTask(t_none, cb::StartReceiveFluxCorrections, md_sub_step_init);
+        if (pmesh->multilevel || use_b_ct)
+            t_start_recv_flux = tl.AddTask(t_none, parthenon::StartReceiveFluxCorrections, md_sub_step_init);
 
         // Calculate the flux of each variable through each face
         // This reconstructs the primitives (P) at faces and uses them to calculate fluxes
         // of the conserved variables (U) through each face.
         const KReconstruction::Type& recon = driver_pkg.Get<KReconstruction::Type>("recon");
-        auto t_fluxes = KHARMADriver::AddFluxCalculations(t_start_recv_bound, tl, recon, md_sub_step_init.get());
+        auto t_fluxes = KHARMADriver::AddFluxCalculations(t_start_recv_flux, tl, recon, md_sub_step_init.get());
 
         // If we're in AMR, correct fluxes from neighbors
-        auto t_flux_bounds = t_fluxes;
-        if (pmesh->multilevel) {
-            tl.AddTask(t_fluxes, cb::LoadAndSendFluxCorrections, md_sub_step_init);
-            auto t_recv_flux = tl.AddTask(t_fluxes, cb::ReceiveFluxCorrections, md_sub_step_init);
-            t_flux_bounds = tl.AddTask(t_recv_flux, cb::SetFluxCorrections, md_sub_step_init);
+        auto t_emf = t_fluxes;
+        if (pmesh->multilevel || use_b_ct) {
+            tl.AddTask(t_fluxes, parthenon::LoadAndSendFluxCorrections, md_sub_step_init);
+            auto t_recv_flux = tl.AddTask(t_fluxes, parthenon::ReceiveFluxCorrections, md_sub_step_init);
+            auto t_flux_bounds = tl.AddTask(t_recv_flux, parthenon::SetFluxCorrections, md_sub_step_init);
+            auto t_emf = t_flux_bounds;
+            if (use_b_ct) {
+                // Pull out a container of only EMF to synchronize
+                auto &md_b_ct = pmesh->mesh_data.AddShallow("B_CT", std::vector<std::string>{"B_CT.emf"}); // TODO this gets weird if we partition
+                auto t_emf_local = tl.AddTask(t_fluxes, B_CT::CalculateEMF, md_sub_step_init.get());
+                auto t_emf = KHARMADriver::AddBoundarySync(t_emf_local, tl, md_b_ct);
+            }
         }
 
         // Any package modifications to the fluxes.  e.g.:
-        // 1. CT calculations for B field transport
+        // 1. Flux-CT calculations for B field transport
         // 2. Zero fluxes through poles
-        // etc 
-        auto t_fix_flux = tl.AddTask(t_flux_bounds, Packages::FixFlux, md_sub_step_init.get());
+        // etc
+        auto t_fix_flux = tl.AddTask(t_emf, Packages::FixFlux, md_sub_step_init.get());
 
         // Apply the fluxes to calculate a change in cell-centered values "md_flux_src"
         auto t_flux_div = tl.AddTask(t_fix_flux, Update::FluxDivergence<MeshData<Real>>, md_sub_step_init.get(), md_flux_src.get());
 
         // Add any source terms: geometric \Gamma * T, wind, damping, etc etc
+        // Also where CT sets the change in face fields
         auto t_sources = tl.AddTask(t_flux_div, Packages::AddSource, md_sub_step_init.get(), md_flux_src.get());
 
         // Perform the update using the source term
         // Add any proportion of the step start required by the integrator (e.g., RK2)
-        auto t_avg_data = tl.AddTask(t_sources, Update::WeightedSumData<std::vector<MetadataFlag>, MeshData<Real>>,
-                                    std::vector<MetadataFlag>({Metadata::Independent}),
+        // TODO splitting this is stupid, dig into Parthenon & fix
+        auto t_avg_data_c = tl.AddTask(t_sources, Update::WeightedSumData<std::vector<MetadataFlag>, MeshData<Real>>,
+                                    std::vector<MetadataFlag>({Metadata::Independent, Metadata::Cell}),
                                     md_sub_step_init.get(), md_full_step_init.get(),
                                     integrator->gam0[stage-1], integrator->gam1[stage-1],
                                     md_sub_step_final.get());
+        auto t_avg_data = t_avg_data_c;
+        if (use_b_ct) {
+            t_avg_data = tl.AddTask(t_avg_data_c, WeightedSumDataFace,
+                                    std::vector<MetadataFlag>({Metadata::Independent, Metadata::Face}),
+                                    md_sub_step_init.get(), md_full_step_init.get(),
+                                    integrator->gam0[stage-1], integrator->gam1[stage-1],
+                                    md_sub_step_final.get());
+        }
         // apply du/dt to the result
-        auto t_update = tl.AddTask(t_sources, Update::WeightedSumData<std::vector<MetadataFlag>, MeshData<Real>>,
-                                    std::vector<MetadataFlag>({Metadata::Independent}),
+        auto t_update_c = tl.AddTask(t_avg_data, Update::WeightedSumData<std::vector<MetadataFlag>, MeshData<Real>>,
+                                    std::vector<MetadataFlag>({Metadata::Independent, Metadata::Cell}),
                                     md_sub_step_final.get(), md_flux_src.get(),
                                     1.0, integrator->beta[stage-1] * integrator->dt,
                                     md_sub_step_final.get());
+        auto t_update = t_update_c;
+        if (use_b_ct) {
+            t_update = tl.AddTask(t_update_c, WeightedSumDataFace,
+                                    std::vector<MetadataFlag>({Metadata::Independent, Metadata::Face}),
+                                    md_sub_step_final.get(), md_flux_src.get(),
+                                    1.0, integrator->beta[stage-1] * integrator->dt,
+                                    md_sub_step_final.get());
+        }
 
         // UtoP needs a guess in order to converge, so we copy in sc0
         // (but only the fluid primitives!)  Copying and syncing ensures that solves of the same zone
         // on adjacent ranks are seeded with the same value, which keeps them (more) similar
         auto t_copy_prims = t_update;
         if (integrator->nstages > 1) {
-            t_copy_prims = tl.AddTask(t_none, Copy, std::vector<MetadataFlag>({Metadata::GetUserFlag("HD"), Metadata::GetUserFlag("Primitive")}),
+            t_copy_prims = tl.AddTask(t_none, Copy<MeshData<Real>>, std::vector<MetadataFlag>({Metadata::GetUserFlag("HD"), Metadata::GetUserFlag("Primitive")}),
                                                 md_sub_step_init.get(), md_sub_step_final.get());
         }
 
-        KHARMADriver::AddMPIBoundarySync(t_copy_prims, tl, md_sub_step_final);
+        KHARMADriver::AddBoundarySync(t_copy_prims, tl, md_sync);
     }
 
-    // Smaller meshblock region.  This gets touchy because we want to keep ghost zones updated,
-    // so very commented
+    EndFlag();
+    Flag("MakeTaskCollection::fixes");
+
+    // Smaller meshblock region.  This gets touchy because we want to keep ghost zones updated, so it's very commented
     TaskRegion &async_region = tc.AddRegion(blocks.size());
     for (int i = 0; i < blocks.size(); i++) {
         auto &pmb = blocks[i];
         auto &tl = async_region[i];
-        //auto &base = pmb->meshblock_data.Get();
         auto &mbd_sub_step_init = pmb->meshblock_data.Get(integrator->stage_name[stage-1]);
         auto &mbd_sub_step_final = pmb->meshblock_data.Get(integrator->stage_name[stage]);
 
@@ -262,15 +302,16 @@ TaskCollection KHARMADriver::MakeDefaultTaskCollection(BlockList_t &blocks, int 
         }
     }
 
+    EndFlag();
+    Flag("MakeTaskCollection::extras");
+
     // B Field cleanup: this is a separate solve so it's split out
     // It's also really slow when enabled so we don't care too much about limiting regions, etc.
     if (use_b_cleanup && (stage == integrator->nstages) && B_Cleanup::CleanupThisStep(pmesh, tm.ncycle)) {
-        TaskRegion &cleanup_region = tc.AddRegion(num_partitions);
-        for (int i = 0; i < num_partitions; i++) {
-            auto &tl = cleanup_region[i];
-            auto &md_sub_step_final = pmesh->mesh_data.GetOrAdd(integrator->stage_name[stage], i);
-            tl.AddTask(t_none, B_Cleanup::CleanupDivergence, md_sub_step_final);
-        }
+        TaskRegion &cleanup_region = tc.AddRegion(1);
+        auto &tl = cleanup_region[0];
+        auto &md_sub_step_final = pmesh->mesh_data.Get(integrator->stage_name[stage]);
+        tl.AddTask(t_none, B_Cleanup::CleanupDivergence, md_sub_step_final);
     }
 
     // Second boundary sync:
@@ -278,7 +319,13 @@ TaskCollection KHARMADriver::MakeDefaultTaskCollection(BlockList_t &blocks, int 
     // identical to their physical counterparts, now that they have been
     // modified on each rank.
     const auto &two_sync = pkgs.at("Driver")->Param<bool>("two_sync");
-    if (two_sync) KHARMADriver::AddFullSyncRegion(pmesh, tc, stage);
+    if (two_sync) {
+        auto &md_sub_step_final = pmesh->mesh_data.GetOrAdd(integrator->stage_name[stage], 0);
+        auto &md_sync = md_sub_step_final; //pmesh->mesh_data.AddShallow("sync", md_sub_step_final);
+        KHARMADriver::AddFullSyncRegion(tc, md_sync);
+    }
+
+    EndFlag();
 
     return tc;
 }

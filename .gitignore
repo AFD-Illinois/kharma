@@ -9,15 +9,18 @@ convergence.txt
 core.*
 frames_*/
 logs/
+*.log
 
 # KHARMA/Parthenon outputs
 *.phdf
 *.rhdf
 *.xdmf
 *.hst
-# Archival files
+# Archival/test files
 kharma_parsed_*.par
 log_*.txt
+bondi_analytic_*.txt
+atmosphere_soln_*.txt
 
 # Editor documents
 .project
@@ -65,7 +68,7 @@ make_args
 # Executables
 *.host*
 *.cuda*
-*.rocm*
+*.hip*
 *.sycl*
 *.exe
 *.out
