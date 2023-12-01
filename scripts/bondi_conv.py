@@ -12,7 +12,7 @@ from scipy.integrate import odeint, solve_ivp
 sys.path.append('/home/samason4/kharma_cooling/pyharm')
 
 # python3 ./scripts/bondi_conv.py
-
+# right now, it just creates a graph that shows the numerical and anylitical solution rather than a convergence plot
 dump = {}
 grid = {}
 soln = {}
@@ -51,119 +51,6 @@ def gcov_ks(r, th):
 def gcon_ks():
     grid['gcon_ks'] = np.linalg.inv(np.transpose(grid['gcov_ks']))
 
-def dxdX_KS_to_FMKS(): # I don't use this anywhere
-    dxdX = np.zeros((4, 4, grid['n2'], grid['n1']), dtype=float)
-
-    if grid['metric'] == 'mks':
-        dxdX[0,0,Ellipsis] = dxdX[3,3,Ellipsis] = 1
-        dxdX[1,1,Ellipsis] = np.exp(grid['x1'])
-        dxdX[2,2,Ellipsis] = np.pi + (1 - grid['hslope']) * np.pi * np.cos(2 * np.pi * grid['x2'])
-    
-    else:
-        theta_g = (np.pi * grid['x2']) + ((1 - grid['hslope'])/2) * (np.sin(2*np.pi*grid['x2']))
-        theta_j = grid['D'] * (2*grid['x2'] - 1) * (1 + (((2 * grid['x2'] - 1) / grid['poly_xt'])**grid['poly_alpha']) / (1 + grid['poly_alpha'])) + np.pi/2
-        derv_theta_g = np.pi + (1 - grid['hslope']) * np.pi * np.cos(2 * np.pi * grid['x2'])
-        derv_theta_j = (2 * grid['poly_alpha'] * grid['D'] * (2 * grid['x2'] - 1)*((2 * grid['x2'] - 1) / grid['poly_xt'])**(grid['poly_alpha'] - 1)) / (grid['poly_xt'] * (grid['poly_alpha'] + 1)) + 2 * grid['D'] * (1 + (((2 * grid['x2'] - 1) / grid['poly_xt'])**grid['poly_alpha']) / (grid['poly_alpha'] + 1))
-        dxdX[0,0,Ellipsis] = dxdX[3,3,Ellipsis] = 1
-        dxdX[1,1,Ellipsis] = np.exp(grid['x1'])
-        dxdX[2,1,Ellipsis] = -grid['mks_smooth'] * np.exp(-grid['mks_smooth'] * grid['Dx1'][:,np.newaxis]) * (theta_j - theta_g)#this 2,1 should be 1,2 but I switched it to 2,1 so that I could take the transpose in dxdX_FMKS_to_KS()
-        dxdX[2,2,Ellipsis] = derv_theta_g + np.exp(-grid['mks_smooth'] * grid['Dx1'][:,np.newaxis]) * (derv_theta_j - derv_theta_g)
-
-    return dxdX
-
-def dxdX_FMKS_to_KS(): # I don't use this anywhere
-    return (np.transpose(np.linalg.inv(np.transpose(dxdX_KS_to_FMKS()))))#im not terribly confident on the double transpose
-
-def bl_coords_from_x(grid_temp):
-    grid_temp['r']  = np.exp(grid_temp['x1'])
-    grid_temp['th'] = np.pi * grid_temp['x2'] + ((1 - grid['hslope'])/2.) * np.sin(2*np.pi*grid_temp['x2'])
-
-def gcov_ks_from_x(grid_temp):
-    bl_coords_from_x(grid_temp)
-
-    grid_temp['gcov_ks'] = np.zeros_like(grid['gcov'])
-    sigma = grid_temp['r']**2 + (grid_temp['a']**2 * np.cos(grid_temp['th'])**2)
-    
-    grid_temp['gcov_ks'][0,0,Ellipsis] = -1 + 2*grid_temp['r']/sigma
-    grid_temp['gcov_ks'][0,1,Ellipsis] = 2*grid_temp['r']/sigma
-    grid_temp['gcov_ks'][0,3,Ellipsis] = -(2*grid_temp['a']*grid_temp['r']*np.sin(grid_temp['th'])**2)/sigma
-    grid_temp['gcov_ks'][1,0,Ellipsis] = 2*grid_temp['r']/sigma
-    grid_temp['gcov_ks'][1,1,Ellipsis] = 1 + 2*grid_temp['r']/sigma
-    grid_temp['gcov_ks'][1,3,Ellipsis] = -grid_temp['a']*np.sin(grid_temp['th'])**2 * (1 + 2*grid_temp['r']/sigma)
-    grid_temp['gcov_ks'][2,2,Ellipsis] = sigma
-    grid_temp['gcov_ks'][3,0,Ellipsis] = -(2*grid_temp['a']*grid_temp['r']*np.sin(grid_temp['th'])**2)/sigma
-    grid_temp['gcov_ks'][3,1,Ellipsis] = -grid_temp['a']*np.sin(grid_temp['th'])**2 * (1 + 2*grid_temp['r']/sigma)
-    grid_temp['gcov_ks'][3,3,Ellipsis] = np.sin(grid_temp['th'])**2 * (sigma + grid_temp['a']**2*np.sin(grid_temp['th'])**2 * (1 + 2*grid_temp['r']/sigma))
-
-def dxdX_KS_to_MKS_from_x(grid_temp):
-    dxdX = np.zeros((4, 4, grid['n2'], grid['n1']), dtype=float)
-
-    dxdX[0,0,Ellipsis] = dxdX[3,3,Ellipsis] = 1
-    dxdX[1,1,Ellipsis] = np.exp(grid_temp['x1'])
-    dxdX[2,2,Ellipsis] = np.pi + (1 - grid['hslope']) * np.pi * np.cos(2 * np.pi * grid_temp['x2'])
-
-    return dxdX
-
-def dxdX_MKS_to_KS_from_x(grid_temp):
-    dxdX = dxdX_KS_to_MKS_from_x(grid_temp)
-    return np.linalg.inv(dxdX)
-
-def gcov_from_x(grid_temp):
-    gcov_ks_from_x(grid_temp)
-    dxdX = dxdX_KS_to_MKS_from_x(grid_temp)
-
-    grid_temp['gcov'] = np.einsum('ijbn,ijmb->ijmn', dxdX, \
-                        np.einsum('ijam,ijab->ijmb', dxdX, grid_temp['gcov_ks']))
-
-    grid_temp['gcon'] = np.linalg.inv(grid_temp['gcov'])
-
-def conn_func(sigma, alpha, beta):
-    delta = 1.e-5
-    conn = np.zeros((4, 4, 4, grid['n2'], grid['n1']), dtype=float)
-    tmp  = np.zeros_like(conn)
-
-    x = np.zeros((4, grid['n2'], grid['n1']), dtype=float)
-    x[1,Ellipsis] = grid['x1']
-    x[2,Ellipsis] = grid['x2']
-    x[3,Ellipsis] = grid['x3']
-
-    grid_h = {}; grid_h['a'] = grid['a']
-    grid_l = {}; grid_l['a'] = grid['a']
-
-    for mu in range(4):
-        xh = np.copy(x)
-        xl = np.copy(x)
-        xh[mu,Ellipsis] += delta
-        xl[mu,Ellipsis] -= delta
-
-        grid_h['x1'] = xh[1,Ellipsis]
-        grid_h['x2'] = xh[2,Ellipsis]
-        grid_l['x1'] = xl[1,Ellipsis]
-        grid_l['x2'] = xl[2,Ellipsis]
-
-        gcov_from_x(grid_h)
-        gcov_from_x(grid_l)
-
-        for lam in range(4):
-            for nu in range(4):
-                conn[mu,nu,lam,Ellipsis] = (grid_h['gcov'][nu,lam,Ellipsis] - grid_l['gcov'][nu,lam,Ellipsis]) \
-                                            / (xh[mu,Ellipsis] - xl[mu,Ellipsis])
-
-    for lam in range(4):
-        for nu in range(4):
-            for mu in range(4):
-                tmp[mu,nu,lam,Ellipsis] = 0.5 * (conn[mu,lam,nu,Ellipsis] + conn[nu,lam,mu,Ellipsis] \
-                - conn[lam,nu,mu,Ellipsis])
-
-    for lam in range(4):
-        for nu in range(4):
-            for mu in range(4):
-                conn[mu,nu,lam,Ellipsis] = 0
-                for kap in range(4):
-                    conn[mu,nu,lam,Ellipsis] += grid['gcon'][kap,lam,Ellipsis] * tmp[mu,nu,kap,Ellipsis]
-
-    return conn[beta,alpha,sigma,Ellipsis]
-
 def load_data(read_grid=False):
     dfile = fluid_dump.load_dump("./bondi.out0.{0:05}.phdf".format(0))
     dump['rc']    = dfile['rs']
@@ -183,7 +70,7 @@ def load_data(read_grid=False):
 
         grid['rEH_ind'] = np.argmin(np.fabs(grid['r']-dump['rEH']) > 0.)
         grid['n1']  = 128
-        grid['n2']  = 128
+        grid['n2']  = 1
         grid['n3']  = 1
         grid['dx1'] = dfile['dx1']
         grid['dx2'] = dfile['dx2']
@@ -192,6 +79,7 @@ def load_data(read_grid=False):
         grid['x2'] = np.squeeze(gfile['X2'][()])
         grid['x3'] = np.squeeze(gfile['X3'][()])
 
+        #I'm pretty sure this is what I'm supposed to do for grid['metric']
         grid['metric'] = dfile['transform']#dfile['metric'][()].decode('utf-8').lower()
 
         if grid['metric']=='mks' or grid['metric']=='mmks':
@@ -254,8 +142,8 @@ def compute_ub(r, th):
     # Convert ucon(Bl) to ucon(KS)
     dxdX = np.zeros((4, 4), dtype=float)
     dxdX[0,0] = dxdX[1,1] = dxdX[2,2] = dxdX[3,3] = 1.
-    dxdX[1,0] = 2*r / (r**2 - 2.*r + grid['a']**2)#flipped 1 and zero.....................................................
-    dxdX[1,3] = grid['a']/(r**2 - 2.*r + grid['a']**2)#fliped 1 and 3
+    dxdX[1,0] = 2*r / (r**2 - 2.*r + grid['a']**2)#flipped 1 and zero
+    dxdX[1,3] = grid['a']/(r**2 - 2.*r + grid['a']**2)#fliped 1 and 3 (I don't think it actually matters as long as I'm consistant)
 
     ucon_ks = np.zeros((4), dtype=float)
     for mu in range(4):
@@ -264,20 +152,10 @@ def compute_ub(r, th):
 
     soln['ucon_ks'] = ucon_ks
 
-    """# Convert ucon(KS) to ucon(MKS/FMKS)
-    ucon_mks = np.zeros((4, grid['n2'], grid['n1']), dtype=float)
-    dxdX = dxdX_FMKS_to_KS()
-
-    for mu in range(4):
-        for nu in range(4):
-            ucon_mks[mu,Ellipsis] += dxdX[nu,mu,Ellipsis] * ucon_ks[nu,Ellipsis]
-
-    ucov_mks = np.einsum('nmji,nji->mji', grid['gcov'], ucon_mks)"""
-
     # Compute velocity primitives
     velocity = np.zeros((3), dtype=float)
 
-    alpha = 1./np.sqrt(-grid['gcon_ks'][0,0])# should these be gcon instead of gcon_ks? I don't think so because gcon is 4x4x128.............................................
+    alpha = 1./np.sqrt(-grid['gcon_ks'][0,0])# should these be gcon instead of gcon_ks? I don't think so because gcon is 4x4x128
     beta  = np.zeros((3), dtype=float)
     beta[0] = alpha * alpha * grid['gcon_ks'][1,0]
     beta[1] = alpha * alpha * grid['gcon_ks'][2,0]
@@ -289,31 +167,7 @@ def compute_ub(r, th):
     velocity[2] = ucon_ks[3]/gamma + beta[2]/alpha
     soln['velocity'] = velocity
 
-    """# compute magnetic 4-vector
-    B = np.zeros((3, grid['n2'], grid['n1']), dtype=float)
-    # radial magnetic field (B1 = 1/r^3)
-    B[0,Ellipsis] = 1. / grid['r']**3
-
-    gti    = grid['gcon'][1:4,0,Ellipsis]
-    gij    = grid['gcov'][1:4,1:4,Ellipsis]
-    beta_i = np.einsum('sji,ji->sji', gti, grid['lapse']**2)
-    qsq    = np.einsum('yji,yji->ji', np.einsum('yxji,xji->yji', gij, utilde), utilde)
-    gamma  = np.sqrt(1 + qsq)
-    ui     = utilde - np.einsum('sji,ji->sji', beta_i, gamma/grid['lapse'])
-    ut     = gamma/grid['lapse']
-
-    bt = np.einsum('mji,mji->ji', np.einsum('msji,sji->mji', grid['gcov'][:,1:4,Ellipsis], B), ucon_mks)
-    bi = (B + np.einsum('sji,ji->sji', ucon_mks[1:4,Ellipsis], bt)) / ucon_mks[None,0,Ellipsis]
-    bcon_mks = np.append(bt[None,Ellipsis], bi, axis=0)
-    bcov_mks = np.einsum('nmji,nji->mji', grid['gcov'], bcon_mks)
-
-    soln['ucon'] = ucon_mks[:,0,:]
-    soln['ucov'] = ucov_mks[:,0,:]
-    soln['bcon'] = bcon_mks[:,0,:]
-    soln['bcov'] = bcov_mks[:,0,:]
-    soln['bsq']  = np.einsum('mi,mi->i', soln['bcon'], soln['bcov'])"""
-
-def compute_vr_and_ut(r, th):#Sam's Code
+def compute_vr_and_ut(r, th): #Sam's code
     gcov_bl(r, th)
     gcov_ks(r, th)
     gcon_ks()
@@ -348,23 +202,6 @@ def find_error(): #Sam's code
     r = dump_kharma['r'][:, 0, 0]
     #print("dump_kharma['r'].shape: ", dump_kharma['r'].shape)
     x1 = dump_kharma['X1'][:, 0, 0]
-    """U1 = dump_kharma['u1'][:, 64, 0]
-    U2 = dump_kharma['u2'][:, 64, 0]
-    U3 = dump_kharma['u3'][:, 64, 0]
-    gcov = dump_kharma['gcov']
-    gcon = dump_kharma['gcon']
-    lapse = dump_kharma['lapse'][:, 64, 0]
-    qsq1 = gcov[1,1,:, 64, 0]*U1*U1+gcov[2,2,:, 64, 0]*U2*U2+gcov[3,3,:, 64, 0]*U3*U3
-    qsq2 = gcov[1,2,:, 64, 0]*U1*U2+gcov[1,3,:, 64, 0]*U1*U3+gcov[2,3,:, 64, 0]*U2*U3
-    qsq = qsq1+2*qsq2
-    gamma = (1+qsq)**0.5
-    ut = gamma/lapse
-    ut_splrep = splrep(x1, ut)
-    beta = lapse * lapse * gcon[1,0,Ellipsis][:,64,0]
-    vr_splrep = splrep(x1, U1-beta/lapse*gamma)
-    print("gamma: ", gamma)
-    print("\n\n\n", "ut: ", ut)
-"""
 
     load_data(True)
 
@@ -387,11 +224,6 @@ def plot(): #Sam's code
     u_ana = array[1]
     errors = array[2]
     rs = array[3]
-    """for i in range(128):
-        u_num.append(array[0])
-        u_ana.append(array[1])
-    errors.append(array[2])
-    rs.append(array[3])"""
     fig1 = plt.figure()
     print("plotting...")
     plt.plot(rs, u_num, 'go', label = 'u_num')
