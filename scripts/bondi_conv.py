@@ -224,7 +224,7 @@ def get_prim(x1, th):
     sol      = optimize.root(T_func, [T0], args=(x1, C3, C4, N))
     T = sol.x[0]
     if (sol.success!=True):
-        print("Not converged at r = {:.2f}", r)
+        print("Not converged at r = {:.2f}", x1)
 
     # Compute remaining fluid variables
     soln['T'] = T
