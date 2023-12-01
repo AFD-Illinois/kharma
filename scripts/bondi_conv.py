@@ -343,6 +343,10 @@ def model(uel, r):
 
 def find_error():
     dump_kharma = fluid_dump.load_dump("./bondi.out0.{0:05}.phdf".format(0))
+    lastkel = dump_kharma['Kel_Howes'][127, 0, 0]
+    lastrho = dump_kharma['rho'][127, 0, 0]
+    lastgame = 1.333333
+    ulast = lastrho**lastgame*lastkel/(lastgame-1)
     r = dump_kharma['r'][:, 0, 0]
     #print("dump_kharma['r'].shape: ", dump_kharma['r'].shape)
     x1 = dump_kharma['X1'][:, 0, 0]
@@ -371,9 +375,10 @@ def find_error():
     kel2 = dump_kharma2['Kel_Howes'][:, 0, 0]
     game2 = 1.333333
     u_num = rho2**game2*kel2/(game2-1)
-    u_ana = odeint(model, u_num[0], x1)
+    u_ana = np.flip(odeint(model, ulast, np.flip(x1)))
     print("u_num[127]: ", u_num[127])
     print("u_num[0]: ", u_num[0])
+    print("u_ana[127]: ", u_ana[127])
     print("u_ana[0]: ", u_ana[0])
     error = abs(u_num - u_ana)
     return [u_num, u_ana, error, x1]
@@ -392,7 +397,7 @@ def plot():
     fig1 = plt.figure()
     print("plotting...")
     plt.plot(rs, u_num, 'go', label = 'u_num')
-    #plt.plot(rs, u_ana, 'r.', label = 'u_ana')
+    plt.plot(rs, u_ana, 'r.', label = 'u_ana')
     #plt.plot(rs, errors, 'b', label = 'difference between the two')
     plt.xlabel("radius")
     plt.title("potential energies")
@@ -403,16 +408,17 @@ def plot():
     plt.close()
     print("finished plotting")
 
-def find_ind(r_want, th_want, itot, jtot): #I don't use this anywhere
+def find_ind(r_want, th_want, itot, jtot):
     dump_kharma = fluid_dump.load_dump("./bondi.out0.00000.phdf")
     r_output = 0
-    th_output = 0
+    th_output = 64
+    """th_output = 0
     thtemp = dump_kharma['th'][int(itot/2),0,0]
     for j in range (jtot):
         th = dump_kharma['th'][int(itot/2),j,0]
         if(abs(th-th_want)<abs(thtemp-th_want)):
             th_output = j
-            thtemp = th
+            thtemp = th"""
     rtemp = dump_kharma['r'][0,th_output,0]
     for i in range (itot):
         r = dump_kharma['r'][i,th_output,0]
