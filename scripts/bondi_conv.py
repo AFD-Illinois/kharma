@@ -313,7 +313,7 @@ def compute_ub(r, th):
     soln['bcov'] = bcov_mks[:,0,:]
     soln['bsq']  = np.einsum('mi,mi->i', soln['bcon'], soln['bcov'])"""
 
-def compute_vr_and_ut(r, th):
+def compute_vr_and_ut(r, th):#Sam's Code
     gcov_bl(r, th)
     gcov_ks(r, th)
     gcon_ks()
@@ -321,9 +321,7 @@ def compute_vr_and_ut(r, th):
     compute_ub(r, th)
     return [soln['velocity'][0], soln['ucon_ks'][0]]
 
-
-
-def model(uel, r):
+def model(uel, r): # Sam's code
     #idx = find_ind(np.exp(r), np.pi/2, 128, 128)[0]#this just finds the i index where the r at that
     #index is closests to the parameter r passed to model (so this is how I determine which
     # what the velocity and ut is that I should use)
@@ -341,7 +339,7 @@ def model(uel, r):
     dudr = -uel[0]*m/((r**(1.5))*ut_val*v_val)
     return dudr
 
-def find_error():
+def find_error(): #Sam's code
     dump_kharma = fluid_dump.load_dump("./bondi.out0.{0:05}.phdf".format(0))
     lastkel = dump_kharma['Kel_Howes'][127, 0, 0]
     lastrho = dump_kharma['rho'][127, 0, 0]
@@ -383,7 +381,7 @@ def find_error():
     error = abs(u_num - u_ana)
     return [u_num, u_ana, error, x1]
 
-def plot():
+def plot(): #Sam's code
     array = find_error()
     u_num = array[0]
     u_ana = array[1]
@@ -408,33 +406,5 @@ def plot():
     plt.close()
     print("finished plotting")
 
-def find_ind(r_want, th_want, itot, jtot):
-    dump_kharma = fluid_dump.load_dump("./bondi.out0.00000.phdf")
-    r_output = 0
-    th_output = 64
-    """th_output = 0
-    thtemp = dump_kharma['th'][int(itot/2),0,0]
-    for j in range (jtot):
-        th = dump_kharma['th'][int(itot/2),j,0]
-        if(abs(th-th_want)<abs(thtemp-th_want)):
-            th_output = j
-            thtemp = th"""
-    rtemp = dump_kharma['r'][0,th_output,0]
-    for i in range (itot):
-        r = dump_kharma['r'][i,th_output,0]
-        if(abs(r-r_want)<abs(rtemp-r_want)):
-            r_output = i
-            rtemp = r
-    return [r_output, th_output]
-
 if __name__=="__main__":
-    r = 15
-    th = np.pi/2
-    """load_data(True)
-    get_prim(r)
-    gcov_bl(r,th)
-    gcov_ks()
-    gcon_ks()
-    compute_ub()"""
-
     plot()
