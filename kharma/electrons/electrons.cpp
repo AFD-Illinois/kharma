@@ -125,10 +125,17 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
                                               : Metadata::GetUserFlag("Explicit");
     std::vector<MetadataFlag> flags_elec = {Metadata::Cell, areWeImplicit, Metadata::GetUserFlag("Elec")};
 
+    auto flags_prim = packages->Get("Driver")->Param<std::vector<MetadataFlag>>("prim_flags");
+    flags_prim.insert(flags_prim.end(), flags_elec.begin(), flags_elec.end());
+    auto flags_cons = packages->Get("Driver")->Param<std::vector<MetadataFlag>>("cons_flags");
+    flags_cons.insert(flags_cons.end(), flags_elec.begin(), flags_elec.end());
+
+    /*
     std::vector<MetadataFlag> flags_prim = {Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::GetUserFlag("Primitive"),
                                             Metadata::Restart, areWeImplicit, Metadata::GetUserFlag("Electrons")};
     std::vector<MetadataFlag> flags_cons = {Metadata::Real, Metadata::Cell, Metadata::Independent, Metadata::Conserved,
                                             Metadata::WithFluxes, areWeImplicit, Metadata::GetUserFlag("Electrons")};
+    */
 
     bool sync_prims = packages->Get("Driver")->Param<bool>("sync_prims");
     if (!sync_prims) { // Normal operation
@@ -455,10 +462,10 @@ TaskStatus ApplyElectronCooling(MeshBlockData<Real> *rc){
     double m = 3.0;
     //double tau = 5.;
 
-    const IndexRange ib = rc->GetBoundsI(IndexDomain::interior);
-    const IndexRange jb = rc->GetBoundsJ(IndexDomain::interior);
-    const IndexRange kb = rc->GetBoundsK(IndexDomain::interior);
-    printf("kel at (5,5) before cooling: %.16f\n", P(m_p.K_HOWES, 0, 54, 54));
+    const IndexRange ib = rc->GetBoundsI(IndexDomain::entire);
+    const IndexRange jb = rc->GetBoundsJ(IndexDomain::entire);
+    const IndexRange kb = rc->GetBoundsK(IndexDomain::entire);
+    //printf("kel at (5,5) before cooling: %.16f\n", P(m_p.K_HOWES, 0, 54, 54));
     pmb->par_for("cool_electrons", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
             //for getting u^t: (this is stolen from the heating function):
@@ -499,7 +506,7 @@ TaskStatus ApplyElectronCooling(MeshBlockData<Real> *rc){
     auto& P2 = rc->PackVariables({Metadata::GetUserFlag("Primitive")}, prims_map);
     auto& U2 = rc->PackVariables({Metadata::Conserved}, cons_map);
     const VarMap m_p2(prims_map, false), m_u2(cons_map, true);
-    printf("kel at (5,5) after corrector cooling: %.16f\n", P2(m_p2.K_HOWES, 0, 54, 54));
+    //printf("kel at (5,5) after corrector cooling: %.16f\n", P2(m_p2.K_HOWES, 0, 54, 54));
     Electrons::BlockPtoU(rc, IndexDomain::entire, false);
 }
 

@@ -18,39 +18,40 @@ grid = {}
 soln = {}
 
 
-def gcov_bl(r):
-    grid['gcov_bl'] = np.zeros_like(grid['gcov'][:,:,0,0])
+def gcov_bl(r, th):
+    print(grid['gcov'].shape)
+    grid['gcov_bl'] = np.zeros_like(grid['gcov'][:,:,0])
 
     DD = 1 - 2./r + grid['a']**2/r**2
-    mu = 1 + grid['a']**2 * 1 / r**2 #np.cos(th)**2 / r**2
+    mu = 1 + grid['a']**2 * np.cos(th)**2 / r**2
 
     grid['gcov_bl'][0,0] = -(1 - 2./(r * mu))
-    grid['gcov_bl'][0,3] = 0 #-2 * grid['a'] * np.sin(th)**2 / (r * mu)
+    grid['gcov_bl'][0,3] = -2 * grid['a'] * np.sin(th)**2 / (r * mu)
     grid['gcov_bl'][3,0] = grid['gcov_bl'][0,3]
     grid['gcov_bl'][1,1] = mu / DD
     grid['gcov_bl'][2,2] = r**2 * mu
-    grid['gcov_bl'][3,3] = 0 #r**2 * np.sin(th)**2 * (1 + grid['a']**2/r**2 \
-                                    #+ 2 * grid['a']**2 * np.sin(th)**2 / (r**3 * mu))
+    grid['gcov_bl'][3,3] = r**2 * np.sin(th)**2 * (1 + grid['a']**2/r**2 \
+                                    + 2 * grid['a']**2 * np.sin(th)**2 / (r**3 * mu))
 
-def gcov_ks(r):
-    grid['gcov_ks'] = np.zeros_like(grid['gcov'][:,:,0,0])
-    sigma = r**2 + (grid['a']**2) # * np.cos(th)**2)
+def gcov_ks(r, th):
+    grid['gcov_ks'] = np.zeros_like(grid['gcov'][:,:,0])
+    sigma = r**2 + (grid['a']**2 * np.cos(th)**2)
     
     grid['gcov_ks'][0,0] = -1 + 2*r/sigma
     grid['gcov_ks'][0,1] = 2*r/sigma
-    grid['gcov_ks'][0,3] = 0# -(2*grid['a']*r*np.sin(th)**2)/sigma
+    grid['gcov_ks'][0,3] = -(2*grid['a']*r*np.sin(th)**2)/sigma
     grid['gcov_ks'][1,0] = 2*r/sigma
     grid['gcov_ks'][1,1] = 1 + 2*r/sigma
-    grid['gcov_ks'][1,3] = 0#-grid['a']*np.sin(th)**2 * (1 + 2*r/sigma)
+    grid['gcov_ks'][1,3] = -grid['a']*np.sin(th)**2 * (1 + 2*r/sigma)
     grid['gcov_ks'][2,2] = sigma
-    grid['gcov_ks'][3,0] = 0#-(2*grid['a']*r*np.sin(th)**2)/sigma
-    grid['gcov_ks'][3,1] = 0#-grid['a']*np.sin(th)**2 * (1 + 2*r/sigma)
-    grid['gcov_ks'][3,3] = 0#np.sin(th)**2 * (sigma + grid['a']**2*np.sin(th)**2 * (1 + 2*r/sigma))
+    grid['gcov_ks'][3,0] = -(2*grid['a']*r*np.sin(th)**2)/sigma
+    grid['gcov_ks'][3,1] = -grid['a']*np.sin(th)**2 * (1 + 2*r/sigma)
+    grid['gcov_ks'][3,3] = np.sin(th)**2 * (sigma + grid['a']**2*np.sin(th)**2 * (1 + 2*r/sigma))
 
 def gcon_ks():
     grid['gcon_ks'] = np.linalg.inv(np.transpose(grid['gcov_ks']))
 
-def dxdX_KS_to_FMKS():
+def dxdX_KS_to_FMKS(): # I don't use this anywhere
     dxdX = np.zeros((4, 4, grid['n2'], grid['n1']), dtype=float)
 
     if grid['metric'] == 'mks':
@@ -70,7 +71,7 @@ def dxdX_KS_to_FMKS():
 
     return dxdX
 
-def dxdX_FMKS_to_KS():
+def dxdX_FMKS_to_KS(): # I don't use this anywhere
     return (np.transpose(np.linalg.inv(np.transpose(dxdX_KS_to_FMKS()))))#im not terribly confident on the double transpose
 
 def bl_coords_from_x(grid_temp):
@@ -180,7 +181,7 @@ def load_data(read_grid=False):
         grid['th']  = np.squeeze(gfile['th'][()])
         grid['phi'] = np.squeeze(gfile['phi'][()])
 
-        grid['rEH_ind'] = np.argmin(np.fabs(grid['r'][:,0]-dump['rEH']) > 0.)
+        grid['rEH_ind'] = np.argmin(np.fabs(grid['r']-dump['rEH']) > 0.)
         grid['n1']  = 128
         grid['n2']  = 128
         grid['n3']  = 1
@@ -207,7 +208,7 @@ def load_data(read_grid=False):
 def T_func(T, r, C3, C4, N):
     return (1 + (1 + N/2)*T)**2 * (1 - 2./r + (C4**2/(r**4 * T**N))) - C3
 
-def get_prim(x1):
+def get_prim(x1, th):
     N    = 2./ (dump['gam'] - 1)
     rc   = dump['rc']
     mdot = dump['mdot']
@@ -253,7 +254,7 @@ def compute_ub(r, th):
     # Convert ucon(Bl) to ucon(KS)
     dxdX = np.zeros((4, 4), dtype=float)
     dxdX[0,0] = dxdX[1,1] = dxdX[2,2] = dxdX[3,3] = 1.
-    dxdX[1,0] = 2*r / (r**2 - 2.*r + grid['a']**2)#flipped 1 and zero
+    dxdX[1,0] = 2*r / (r**2 - 2.*r + grid['a']**2)#flipped 1 and zero.....................................................
     dxdX[1,3] = grid['a']/(r**2 - 2.*r + grid['a']**2)#fliped 1 and 3
 
     ucon_ks = np.zeros((4), dtype=float)
@@ -276,7 +277,7 @@ def compute_ub(r, th):
     # Compute velocity primitives
     velocity = np.zeros((3), dtype=float)
 
-    alpha = 1./np.sqrt(-grid['gcon_ks'][0,0])
+    alpha = 1./np.sqrt(-grid['gcon_ks'][0,0])# should these be gcon instead of gcon_ks? I don't think so because gcon is 4x4x128.............................................
     beta  = np.zeros((3), dtype=float)
     beta[0] = alpha * alpha * grid['gcon_ks'][1,0]
     beta[1] = alpha * alpha * grid['gcon_ks'][2,0]
@@ -312,12 +313,12 @@ def compute_ub(r, th):
     soln['bcov'] = bcov_mks[:,0,:]
     soln['bsq']  = np.einsum('mi,mi->i', soln['bcon'], soln['bcov'])"""
 
-def compute_vr_and_ut(r):
-    gcov_bl(r)
-    gcov_ks(r)
+def compute_vr_and_ut(r, th):
+    gcov_bl(r, th)
+    gcov_ks(r, th)
     gcon_ks()
-    get_prim(r)
-    compute_ub(r)
+    get_prim(r, th)
+    compute_ub(r, th)
     return [soln['velocity'][0], soln['ucon_ks'][0]]
 
 
@@ -328,23 +329,23 @@ def model(uel, r):
     # what the velocity and ut is that I should use)
     #There will be some error from the v_val and ut_val not being continuous, but it's blowing up really fast
     #print(idx/128 * 100, "percent done")
-    v_ut = compute_vr_and_ut(r)
+    v_ut = compute_vr_and_ut(r, np.pi/2)
     v_val = v_ut[0]
-    ut_val = v_ut[0]
-    if (r < 0):
+    ut_val = v_ut[1]
+    """if (r < 0):
         print("uel: ", uel)
         print("r: ", r)
         print("v_val: ", v_val)
-        print("ut_val: ", ut_val)
+        print("ut_val: ", ut_val)"""
     m = 3.0
     dudr = -uel[0]*m/((r**(1.5))*ut_val*v_val)
     return dudr
 
 def find_error():
     dump_kharma = fluid_dump.load_dump("./bondi.out0.{0:05}.phdf".format(0))
-    r = dump_kharma['r'][:, 64, 0]
+    r = dump_kharma['r'][:, 0, 0]
     #print("dump_kharma['r'].shape: ", dump_kharma['r'].shape)
-    x1 = dump_kharma['X1'][:, 64, 0]
+    x1 = dump_kharma['X1'][:, 0, 0]
     """U1 = dump_kharma['u1'][:, 64, 0]
     U2 = dump_kharma['u2'][:, 64, 0]
     U3 = dump_kharma['u3'][:, 64, 0]
@@ -366,8 +367,8 @@ def find_error():
     load_data(True)
 
     dump_kharma2 = fluid_dump.load_dump("./bondi.out0.final.phdf")
-    rho2 = dump_kharma2['rho'][:, 64, 0]
-    kel2 = dump_kharma2['Kel_Howes'][:, 64, 0]
+    rho2 = dump_kharma2['rho'][:, 0, 0]
+    kel2 = dump_kharma2['Kel_Howes'][:, 0, 0]
     game2 = 1.333333
     u_num = rho2**game2*kel2/(game2-1)
     u_ana = odeint(model, u_num[0], x1)
@@ -375,7 +376,7 @@ def find_error():
     print("u_num[0]: ", u_num[0])
     print("u_ana[0]: ", u_ana[0])
     error = abs(u_num - u_ana)
-    return [u_num, u_ana, error, r]
+    return [u_num, u_ana, error, x1]
 
 def plot():
     array = find_error()
@@ -389,28 +390,29 @@ def plot():
     errors.append(array[2])
     rs.append(array[3])"""
     fig1 = plt.figure()
-    plt.semilogy(rs, u_num, 'go', label = 'u_num')
-    plt.semilogy(rs, u_ana, 'r.', label = 'u_ana')
+    print("plotting...")
+    plt.plot(rs, u_num, 'go', label = 'u_num')
+    #plt.plot(rs, u_ana, 'r.', label = 'u_ana')
     #plt.plot(rs, errors, 'b', label = 'difference between the two')
     plt.xlabel("radius")
     plt.title("potential energies")
     plt.ylabel("u")
     #plt.ylim(0, 5e-7)
     plt.legend()
-    plt.savefig('uel_vs_r_128.png')
+    plt.savefig('uel_vs_r.png')
     plt.close()
+    print("finished plotting")
 
-def find_ind(r_want, th_want, itot, jtot):
+def find_ind(r_want, th_want, itot, jtot): #I don't use this anywhere
     dump_kharma = fluid_dump.load_dump("./bondi.out0.00000.phdf")
     r_output = 0
-    th_output = 64
-    """th_output = 0
+    th_output = 0
     thtemp = dump_kharma['th'][int(itot/2),0,0]
     for j in range (jtot):
         th = dump_kharma['th'][int(itot/2),j,0]
         if(abs(th-th_want)<abs(thtemp-th_want)):
             th_output = j
-            thtemp = th"""
+            thtemp = th
     rtemp = dump_kharma['r'][0,th_output,0]
     for i in range (itot):
         r = dump_kharma['r'][i,th_output,0]
