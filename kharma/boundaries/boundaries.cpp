@@ -264,13 +264,18 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
     pkg->KBoundaries[bface](rc, coarse);
     EndFlag();
 
+    // Nothing below is designed, nor necessary, for coarse buffers
+    if (coarse) {
+        EndFlag();
+        return;
+    }
+
     // If we're syncing EMFs and in spherical, explicitly zero polar faces
     // Since we manipulate the j coord, we'd overstep coarse bufs
     auto& emfpack = rc->PackVariables(std::vector<std::string>{"B_CT.emf"});
     if (bdir == X2DIR &&
         pmb->coords.coords.is_spherical() &&
-        emfpack.GetDim(4) > 0 &&
-        !coarse) {
+        emfpack.GetDim(4) > 0) {
         Flag("BoundaryEdge_"+bname);
         for (TE el : {TE::E1, TE::E3}) {
             int off = (binner) ? 1 : -1;

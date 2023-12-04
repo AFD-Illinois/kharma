@@ -198,7 +198,7 @@ int main(int argc, char *argv[])
     }
     // If very verbose, print # meshblocks on every rank
     if (verbose > 1) {
-        MPIBarrier();
+        //MPIBarrier();
         if (MPIRank() > 0)
             std::cout << "Blocks on rank " << MPIRank() << ": " << pmesh->block_list.size() << "\n" << std::endl;
     }
@@ -234,14 +234,14 @@ int main(int argc, char *argv[])
         auto pin = pman.pinput.get(); // All parameters in the input file or command line
 
         // We now have just one driver package, with different TaskLists for different modes
-        MPIBarrier();
+        //MPIBarrier();
         KHARMADriver driver(pin, papp, pmesh);
 
         // Then execute the driver. This is a Parthenon function inherited by our KHARMADriver object,
         // which will call MakeTaskCollection, then execute the tasks on the mesh for each portion
         // of each step until a stop criterion is reached.
         Flag("driver.Execute");
-        MPIBarrier();
+        //MPIBarrier();
         auto driver_status = driver.Execute();
         EndFlag();
     }
