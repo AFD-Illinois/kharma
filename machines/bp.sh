@@ -19,8 +19,15 @@ if [[ $HOST == "cheshire"* ]]; then
     module load nvhpc
     NPROC=8 # so much memory
   else
-    # Intel oneAPI
-    module load compiler mpi/2021
+    if [[ "$ARGS" == *"gcc"* ]]; then
+      # GCC
+      module load mpi/mpich-x86_64
+      C_NATIVE=gcc
+      CXX_NATIVE=g++
+    else
+      # Intel oneAPI
+      module load compiler mpi/2021
+    fi
     NPROC=24
   fi
   # Even CPU kharma is unkillable without this
