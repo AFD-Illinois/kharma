@@ -48,7 +48,7 @@ if [[ ($HOSTNAME == "cn"* || $HOSTNAME == "darwin"*) &&
   else
     # Default: NVHPC if cuda else IntelLLVM
     if [[ "$ARGS" == *"cuda"* ]]; then
-      module load nvhpc
+      module load nvhpc openmpi
       C_NATIVE="nvc"
       CXX_NATIVE="nvc++"
       # New NVHPC doesn't like CUDA_HOME
