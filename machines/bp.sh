@@ -1,6 +1,14 @@
 
 # BP's machines
 
+if [[ $HOST == "pn2400633"* ]]; then
+  export PATH="/opt/homebrew/opt/make/libexec/gnubin:$PATH"
+  PREFIX_PATH=/opt/homebrew/
+  C_NATIVE=/opt/homebrew/bin/gcc-13
+  CXX_NATIVE=/opt/homebrew/bin/g++-13
+  CXXFLAGS="-Wl,-ld_classic"
+fi
+
 if [[ $HOST == "cheshire"* ]]; then
   HOST_ARCH="HSW"
   DEVICE_ARCH="PASCAL61"
@@ -11,8 +19,15 @@ if [[ $HOST == "cheshire"* ]]; then
     module load nvhpc
     NPROC=8 # so much memory
   else
-    # Intel oneAPI
-    module load compiler mpi/2021
+    if [[ "$ARGS" == *"gcc"* ]]; then
+      # GCC
+      module load mpi/mpich-x86_64
+      C_NATIVE=gcc
+      CXX_NATIVE=g++
+    else
+      # Intel oneAPI
+      module load compiler mpi/2021
+    fi
     NPROC=24
   fi
   # Even CPU kharma is unkillable without this

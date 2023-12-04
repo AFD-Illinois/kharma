@@ -35,6 +35,7 @@
 #include "flux.hpp"
 // Most includes are in the header TODO fix?
 
+#include "b_ct.hpp"
 #include "grmhd.hpp"
 #include "kharma.hpp"
 
@@ -134,6 +135,14 @@ TaskStatus Flux::BlockPtoU(MeshBlockData<Real> *rc, IndexDomain domain, bool coa
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
     const int nvar = U.GetDim(4);
 
+    // Return if we're not syncing U & P at all (e.g. edges)
+    if (P.GetDim(4) == 0) return TaskStatus::complete;
+
+    // Make sure we always update center conserved B from the faces, not the prims
+    if (pmb->packages.AllPackages().count("B_CT"))
+        B_CT::BlockUtoP(rc, domain, coarse);
+
+    // Indices
     auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
     const IndexRange ib = bounds.GetBoundsI(domain);
     const IndexRange jb = bounds.GetBoundsJ(domain);
@@ -181,6 +190,11 @@ TaskStatus Flux::BlockPtoU_Send(MeshBlockData<Real> *rc, IndexDomain domain, boo
     // Return if we're not syncing U & P at all (e.g. edges)
     if (P.GetDim(4) == 0) return TaskStatus::complete;
 
+    // Make sure we always update center conserved B from the faces, not the prims
+    if (pmb->packages.AllPackages().count("B_CT"))
+        B_CT::BlockUtoP(rc, IndexDomain::interior, coarse);
+
+    // Indices
     auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
     IndexRange ib = bounds.GetBoundsI(domain);
     IndexRange jb = bounds.GetBoundsJ(domain);

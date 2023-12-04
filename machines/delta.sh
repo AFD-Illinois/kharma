@@ -13,8 +13,10 @@ then
   HOST_ARCH=ZEN3
   DEVICE_ARCH=AMPERE80
   MPI_EXE=mpirun
+  NPROC=64
 
   module purge
+  module load cmake
 
   if [[ $ARGS == *"cuda"* ]]
   then
@@ -23,8 +25,11 @@ then
     MPI_EXTRA_ARGS="--map-by ppr:4:node:pe=16"
     MPI_NUM_PROCS=4
 
+    # Device-side buffers are broken on some Nvidia machines
+    EXTRA_FLAGS="-DPARTHENON_ENABLE_HOST_COMM_BUFFERS=ON $EXTRA_FLAGS"
+
     # Load common GPU modules
-    module load modtree/gpu hdf5 cmake
+    module load modtree/gpu cmake
 
     if [[ $ARGS == *"latest"* ]]; then
       # nvhpc only on request, MPI crashes
@@ -35,13 +40,13 @@ then
       C_NATIVE=gcc
       CXX_NATIVE=g++
     else
-      module load nvhpc
-      #C_NATIVE=nvc
-      #CXX_NATIVE=nvc++
+      module load nvhpc_latest/22.11 openmpi
+      C_NATIVE=nvc
+      CXX_NATIVE=nvc++
     fi
   else
     # CPU Compile
-    module load modtree/cpu gcc hdf5 cmake
+    module load modtree/cpu gcc
     MPI_NUM_PROCS=1
   fi
 fi

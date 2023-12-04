@@ -76,8 +76,7 @@ if [[ "$(which python3 2>/dev/null)" == *"conda"* ]]; then
   echo
   echo "make.sh note:"
   echo "It looks like you have Anaconda loaded."
-  echo "Anaconda loads a serial version of HDF5 which may make this compile impossible."
-  echo "If you run into trouble, deactivate your environment with 'conda deactivate'"
+  echo "This is usually okay, but double-check the line 'Found MPI_CXX:' below!"
 fi
 # Save arguments if we've changed them
 # Used in run.sh for loading the same modules/etc.
@@ -218,7 +217,7 @@ fi
 
 ### Build HDF5 ###
 # If we're building HDF5, do it after we set *all flags*
-if [[ "$ARGS" == *"hdf5"* && "$ARGS" == *"clean"* ]]; then
+if [[ "$ARGS" == *"hdf5"* && "$ARGS" == *"clean"* && "$ARGS" != *"dryrun"* ]]; then
   H5VER=1.14.2
   H5VERU=1_14_2
   cd external
@@ -314,7 +313,7 @@ if [[ "$ARGS" == *"clean"* ]]; then
     -DKokkos_ENABLE_CUDA=$ENABLE_CUDA \
     -DKokkos_ENABLE_SYCL=$ENABLE_SYCL \
     -DKokkos_ENABLE_HIP=$ENABLE_HIP \
-    "$EXTRA_FLAGS"
+    $EXTRA_FLAGS
 
   if [[ "$ARGS" == *"dryrun"* ]]; then
     set +x

@@ -39,6 +39,7 @@ then
     MPI_NUM_PROCS=8
     MPI_EXTRA_ARGS="-c1 --gpus-per-node=8 --gpu-bind=closest"
     export MPICH_GPU_SUPPORT_ENABLED=1
+    export FI_CXI_RX_MATCH_MODE=software
 
    # Old workaround, for non-GPU MPI only!
    #export MPICH_SMP_SINGLE_COPY_MODE=NONE

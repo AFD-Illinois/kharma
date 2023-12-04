@@ -262,7 +262,7 @@ TaskStatus ReadIharmRestart(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterI
             pin->GetInteger("parthenon/mesh", "nx2") != n2tot ||
             pin->GetInteger("parthenon/mesh", "nx3") != n3tot) {
             printf("Mesh size does not match!\n");
-            printf("[%d %d %d] vs [%lu %lu %lu]",
+            printf("[%d %d %d] vs [%llu %llu %llu]",
                 pin->GetInteger("parthenon/mesh", "nx1"),
                 pin->GetInteger("parthenon/mesh", "nx2"),
                 pin->GetInteger("parthenon/mesh", "nx3"),

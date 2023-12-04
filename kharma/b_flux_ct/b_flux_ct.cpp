@@ -508,7 +508,7 @@ double MaxDivB(MeshData<Real> *md)
     // Could consolidate at the cost of lots of bounds checking.
     double max_divb = 0.0;
     for (int b = block.s; b <= block.e; ++b) {
-        auto pmb = md->GetBlockData(b)->GetBlockPointer().get();
+        auto pmb = md->GetBlockData(b)->GetBlockPointer();
 
         const IndexRange ib = ValidDivBX1(pmb);
 
@@ -585,7 +585,7 @@ void CalcDivB(MeshData<Real> *md, std::string divb_field_name)
 
     // See MaxDivB for details
     for (int b = block.s; b <= block.e; ++b) {
-        auto pmb = md->GetBlockData(b)->GetBlockPointer().get();
+        auto pmb = md->GetBlockData(b)->GetBlockPointer();
 
         const IndexRange ib = ValidDivBX1(pmb);
 

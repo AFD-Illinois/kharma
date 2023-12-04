@@ -187,6 +187,7 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     // AMR-related
     pkg->CheckRefinementBlock    = GRMHD::CheckRefinement;
     pkg->EstimateTimestepBlock   = GRMHD::EstimateTimestep;
+    pkg->EstimateTimestepMesh    = GRMHD::MeshEstimateTimestep;
     pkg->PostStepDiagnosticsMesh = GRMHD::PostStepDiagnostics;
 
     // TODO TODO Reductions

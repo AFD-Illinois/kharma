@@ -22,9 +22,10 @@
 #include "interface/meshblock_data.hpp"
 #include "interface/state_descriptor.hpp"
 #include "kokkos_abstraction.hpp"
-#include "solvers/solver_utils.hpp"
 #include "tasks/task_id.hpp"
 #include "tasks/task_list.hpp"
+
+#include "solver_utils.hpp"
 
 namespace parthenon {
 

@@ -230,29 +230,25 @@ KOKKOS_FORCEINLINE_FUNCTION Real F(const ParArrayND<Real, VariableState> &fine, 
     constexpr int of_is_k = (offset == V3 && DIM > 2);
     constexpr int of_is_j = (offset == V2 && DIM > 1);
     constexpr int of_is_i = (offset == V1 && DIM > 0);
-    // if (fi == 56 && fj == 70)
-    //     printf("I used dir %d offset %d %d %d, %d %d %d, %d %d %d, %d %d %d\n", diff_face+1,
-    //         df_is_k+ds_is_k+of_is_k, df_is_j+ds_is_j+of_is_j, df_is_i+ds_is_i+of_is_i,
-    //         ds_is_k+of_is_k        , ds_is_j+of_is_j        , ds_is_i+of_is_i,
-    //         df_is_k+of_is_k        , df_is_j+of_is_j        , df_is_i+of_is_i,
-    //         of_is_k                , of_is_j                , of_is_i);
     return fine(diff_face, l, m, n,  fk+df_is_k+ds_is_k+of_is_k, fj+df_is_j+ds_is_j+of_is_j, fi+df_is_i+ds_is_i+of_is_i)
-        * coords.FaceArea<diff_face+1>(fk+df_is_k+ds_is_k+of_is_k, fj+df_is_j+ds_is_j+of_is_j, fi+df_is_i+ds_is_i+of_is_i)
+      * coords.FaceArea<diff_face+1>(fk+df_is_k+ds_is_k+of_is_k, fj+df_is_j+ds_is_j+of_is_j, fi+df_is_i+ds_is_i+of_is_i)
          - fine(diff_face, l, m, n,  fk+ds_is_k+of_is_k        , fj+ds_is_j+of_is_j        , fi+ds_is_i+of_is_i)
-        * coords.FaceArea<diff_face+1>(fk+ds_is_k+of_is_k        , fj+ds_is_j+of_is_j        , fi+ds_is_i+of_is_i)
+      * coords.FaceArea<diff_face+1>(fk+ds_is_k+of_is_k        , fj+ds_is_j+of_is_j        , fi+ds_is_i+of_is_i)
          - fine(diff_face, l, m, n,  fk+df_is_k+of_is_k        , fj+df_is_j+of_is_j        , fi+df_is_i+of_is_i)
-        * coords.FaceArea<diff_face+1>(fk+df_is_k+of_is_k        , fj+df_is_j+of_is_j        , fi+df_is_i+of_is_i)
+      * coords.FaceArea<diff_face+1>(fk+df_is_k+of_is_k        , fj+df_is_j+of_is_j        , fi+df_is_i+of_is_i)
          + fine(diff_face, l, m, n,  fk+of_is_k                , fj+of_is_j                , fi+of_is_i)
-        * coords.FaceArea<diff_face+1>(fk+of_is_k                , fj+of_is_j                , fi+of_is_i);
+      * coords.FaceArea<diff_face+1>(fk+of_is_k                , fj+of_is_j                , fi+of_is_i);
 }
 
 struct ProlongateInternalOlivares {
   static constexpr bool OperationRequired(TopologicalElement fel,
                                           TopologicalElement cel) {
-    return fel == cel && (fel == F1 || fel == F2 || fel == F3);
+    // We will always be filling some locations of fine element fel with others of the same element.
+    // However, the chosen coarse element cel defines our *domain*
+    return IsSubmanifold(fel, cel);
   }
 
-  template <int DIM, TopologicalElement el = TopologicalElement::CC,
+  template <int DIM, TopologicalElement fel = TopologicalElement::CC,
             TopologicalElement cel = TopologicalElement::CC>
   KOKKOS_FORCEINLINE_FUNCTION static void
   Do(const int l, const int m, const int n, const int k, const int j, const int i,
@@ -263,20 +259,19 @@ struct ProlongateInternalOlivares {
      const ParArrayND<Real, VariableState> *pfine) {
 
         // Definitely exit on what we can't handle
-        if constexpr (el != TE::F1 && el != TE::F2 && el != TE::F3)
-            return;
-        // Exit if we're computing a trivial direction
-        if constexpr ((el == TE::F3 && (DIM < 3)) || (el == TE::F2 && (DIM < 2)))
+        // This is never hit as currently compiled in KHARMA
+        if constexpr (fel != TE::F1 && fel != TE::F2 && fel != TE::F3)
             return;
 
         // Handle permutations "naturally."
         // Olivares et al. is fond of listing x1 versions which permute,
         // this makes translating/checking those easier
-        constexpr int me = static_cast<int>(el) % 3;
+        constexpr int me = static_cast<int>(fel) % 3;
         constexpr int next = (me+1) % 3;
         constexpr int third = (me+2) % 3;
 
         // Fine array, indices
+        // Note the boundaries are *always the interior*
         auto &fine = *pfine;
         const int fi = (DIM > 0) ? (i - cib.s) * 2 + ib.s : ib.s;
         const int fj = (DIM > 1) ? (j - cjb.s) * 2 + jb.s : jb.s;
@@ -298,31 +293,26 @@ struct ProlongateInternalOlivares {
                                   {1 - a[next], 3 + a[next], 3 - a[third], 1 + a[third]},
                                   {1 - a[next], 3 + a[next], 1 + a[third], 3 - a[third]}};
 
-        constexpr int diff_k = (me == V3), diff_j = (me == V2), diff_i = (me == V1);
+        constexpr int diff_k = (me == V3 && DIM > 2), diff_j = (me == V2 && DIM > 1), diff_i = (me == V1 && DIM > 0);
 
         // Iterate through the 4 sub-faces
         for (int elem=0; elem < 4; elem++) {
             // Make sure we can offset in other directions before doing so, though
-            // TODO eliminate redundant work or template these so the compiler can?
             const int off_i = (DIM > 0) ? (elem%2)*(me == V2) + (elem/2)*(me == V3) + (me == V1) : 0;
             const int off_j = (DIM > 1) ? (elem%2)*(me == V3) + (elem/2)*(me == V1) + (me == V2) : 0;
             const int off_k = (DIM > 2) ? (elem%2)*(me == V1) + (elem/2)*(me == V2) + (me == V3) : 0;
-            if (((el == TE::F1) && (fi + off_i > ib.e)) ||
-                ((el == TE::F2) && (fj + off_j > jb.e)) ||
-                ((el == TE::F3) && (fk + off_k > kb.e)))
-                return;
 
             fine(me, l, m, n, fk+off_k, fj+off_j, fi+off_i) = (
                 // Average faces on either side of us in selected direction (diff), on each of the 4 sub-faces (off)
                 0.5*(fine(me, l, m, n, fk+off_k-diff_k, fj+off_j-diff_j, fi+off_i-diff_i)
-                    * coords.Volume<el>(fk+off_k-diff_k, fj+off_j-diff_j, fi+off_i-diff_i)
+                   * coords.Volume<fel>(fk+off_k-diff_k, fj+off_j-diff_j, fi+off_i-diff_i)
                    + fine(me, l, m, n, fk+off_k+diff_k, fj+off_j+diff_j, fi+off_i+diff_i)
-                    * coords.Volume<el>(fk+off_k+diff_k, fj+off_j+diff_j, fi+off_i+diff_i)) +
-                1./16*(coeff[elem][0]*F<next,me,-1,DIM>(fine, coords, l, m, n, fk, fj, fi)
-                     + coeff[elem][1]*F<next,me,third,DIM>(fine, coords, l, m, n, fk, fj, fi)
-                     + coeff[elem][2]*F<third,me,-1,DIM>(fine, coords, l, m, n, fk, fj, fi)
+                   * coords.Volume<fel>(fk+off_k+diff_k, fj+off_j+diff_j, fi+off_i+diff_i)) +
+                1./16*(coeff[elem][0]*F<next, me,   -1,DIM>(fine, coords, l, m, n, fk, fj, fi)
+                     + coeff[elem][1]*F<next, me,third,DIM>(fine, coords, l, m, n, fk, fj, fi)
+                     + coeff[elem][2]*F<third,me,  -1,DIM>(fine, coords, l, m, n, fk, fj, fi)
                      + coeff[elem][3]*F<third,me,next,DIM>(fine, coords, l, m, n, fk, fj, fi))
-                ) / coords.Volume<el>(fk+off_k, fj+off_j, fi+off_i);
+                ) / coords.Volume<fel>(fk+off_k, fj+off_j, fi+off_i);
         }
     }
 };
