@@ -3,7 +3,8 @@
 # Must list which node you're compiling for,
 # from the options below
 
-if [[ ($HOSTNAME == "cn"* || $HOSTNAME == "darwin"*) && "$PWD" == "/vast"* ]]; then
+if [[ ($HOSTNAME == "cn"* || $HOSTNAME == "darwin"*) &&
+      ("$PWD" == "/projects/jacamar-ci"* || "$PWD" == "/vast"*) ]]; then
   #module purge # This messes things up on ARM nodes
   module load cmake
 
