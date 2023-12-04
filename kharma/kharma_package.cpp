@@ -183,6 +183,14 @@ TaskStatus Packages::BlockApplyPrimSource(MeshBlockData<Real> *rc)
     EndFlag();
     return TaskStatus::complete;
 }
+TaskStatus Packages::MeshApplyPrimSource(MeshData<Real> *md)
+{
+    Flag("MeshApplyPrimSource");
+    for (int i=0; i < md->NumBlocks(); ++i)
+        BlockApplyPrimSource(md->GetBlockData(i).get());
+    EndFlag();
+    return TaskStatus::complete;
+}
 
 TaskStatus Packages::BlockApplyFloors(MeshBlockData<Real> *mbd, IndexDomain domain)
 {

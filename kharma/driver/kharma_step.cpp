@@ -105,7 +105,7 @@ TaskCollection KHARMADriver::MakeDefaultTaskCollection(BlockList_t &blocks, int 
                 // At the end of the step, updating "mbd_sub_step_final" updates the base
                 // So we have to keep a copy at the beginning to calculate jcon
                 // We have to explicitly copy, since after the first step `Add`==`Get`
-                Copy<MeshBlockData<Real>>({}, base.get(), pmb->meshblock_data.Add("preserve").get());
+                Copy<MeshBlockData<Real>>({Metadata::Cell}, base.get(), pmb->meshblock_data.Add("preserve").get());
             }
         }
     }
@@ -153,29 +153,29 @@ TaskCollection KHARMADriver::MakeDefaultTaskCollection(BlockList_t &blocks, int 
         const KReconstruction::Type& recon = driver_pkg.Get<KReconstruction::Type>("recon");
         auto t_fluxes = KHARMADriver::AddFluxCalculations(t_start_recv_flux, tl, recon, md_sub_step_init.get());
 
-        // If we're in AMR, correct fluxes from neighbors
-        auto t_emf = t_fluxes;
-        if (pmesh->multilevel || use_b_ct) {
-            tl.AddTask(t_fluxes, parthenon::LoadAndSendFluxCorrections, md_sub_step_init);
-            auto t_recv_flux = tl.AddTask(t_fluxes, parthenon::ReceiveFluxCorrections, md_sub_step_init);
-            auto t_flux_bounds = tl.AddTask(t_recv_flux, parthenon::SetFluxCorrections, md_sub_step_init);
-            auto t_emf = t_flux_bounds;
-            if (use_b_ct) {
-                // Pull out a container of only EMF to synchronize
-                auto &md_b_ct = pmesh->mesh_data.AddShallow("B_CT", std::vector<std::string>{"B_CT.emf"}); // TODO this gets weird if we partition
-                auto t_emf_local = tl.AddTask(t_fluxes, B_CT::CalculateEMF, md_sub_step_init.get());
-                auto t_emf = KHARMADriver::AddBoundarySync(t_emf_local, tl, md_b_ct);
-            }
-        }
-
         // Any package modifications to the fluxes.  e.g.:
         // 1. Flux-CT calculations for B field transport
         // 2. Zero fluxes through poles
         // etc
-        auto t_fix_flux = tl.AddTask(t_emf, Packages::FixFlux, md_sub_step_init.get());
+        auto t_fix_flux = tl.AddTask(t_fluxes, Packages::FixFlux, md_sub_step_init.get());
+
+        // If we're in AMR, correct fluxes from neighbors
+        auto t_flux_bounds = t_fix_flux;
+        if (pmesh->multilevel || use_b_ct) {
+            auto t_emf = t_flux_bounds;
+            if (use_b_ct) {
+                // Pull out a container of only EMF to synchronize
+                auto &md_emf_only = pmesh->mesh_data.AddShallow("EMF", std::vector<std::string>{"B_CT.emf"}); // TODO this gets weird if we partition
+                auto t_emf_local = tl.AddTask(t_flux_bounds, B_CT::CalculateEMF, md_sub_step_init.get());
+                t_emf = KHARMADriver::AddBoundarySync(t_emf_local, tl, md_emf_only);
+            }
+            auto t_load_send_flux = tl.AddTask(t_emf, parthenon::LoadAndSendFluxCorrections, md_sub_step_init);
+            auto t_recv_flux = tl.AddTask(t_load_send_flux, parthenon::ReceiveFluxCorrections, md_sub_step_init);
+            t_flux_bounds = tl.AddTask(t_recv_flux, parthenon::SetFluxCorrections, md_sub_step_init);
+        }
 
         // Apply the fluxes to calculate a change in cell-centered values "md_flux_src"
-        auto t_flux_div = tl.AddTask(t_fix_flux, Update::FluxDivergence<MeshData<Real>>, md_sub_step_init.get(), md_flux_src.get());
+        auto t_flux_div = tl.AddTask(t_flux_bounds, Update::FluxDivergence<MeshData<Real>>, md_sub_step_init.get(), md_flux_src.get());
 
         // Add any source terms: geometric \Gamma * T, wind, damping, etc etc
         // Also where CT sets the change in face fields
@@ -221,7 +221,7 @@ TaskCollection KHARMADriver::MakeDefaultTaskCollection(BlockList_t &blocks, int 
                                                 md_sub_step_init.get(), md_sub_step_final.get());
         }
 
-        KHARMADriver::AddBoundarySync(t_copy_prims, tl, md_sync);
+        KHARMADriver::AddBoundarySync(t_copy_prims | t_update, tl, md_sync);
     }
 
     EndFlag();

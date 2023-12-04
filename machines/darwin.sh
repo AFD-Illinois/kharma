@@ -3,8 +3,9 @@
 # Must list which node you're compiling for,
 # from the options below
 
-if [[ $HOSTNAME == "cn"* || $HOSTNAME == "darwin"* ]]; then
-  module purge
+if [[ ($HOSTNAME == "cn"* || $HOSTNAME == "darwin"*) &&
+      ("$PWD" == "/projects/jacamar-ci"* || "$PWD" == "/vast"*) ]]; then
+  #module purge # This messes things up on ARM nodes
   module load cmake
 
   # Where we're going, we don't need system libraries
@@ -17,16 +18,16 @@ if [[ $HOSTNAME == "cn"* || $HOSTNAME == "darwin"* ]]; then
 
   # Load compiler...
   if [[ "$ARGS" == *"gcc12"* ]]; then
-    module load openmpi gcc/12.2.0
+    module load gcc/12.2.0 openmpi
     C_NATIVE=gcc
     CXX_NATIVE=g++
   elif [[ "$ARGS" == *"gcc10"* ]]; then
-    module load openmpi gcc/10.4.0
+    module load gcc/10.4.0 openmpi
     C_NATIVE=gcc
     CXX_NATIVE=g++
   elif [[ "$ARGS" == *"gcc"* ]]; then
     # Default GCC
-    module load openmpi gcc/13.1.0
+    #module load gcc/13.1.0 openmpi
     C_NATIVE=gcc
     CXX_NATIVE=g++
   elif [[ "$ARGS" == *"aocc"* ]]; then
@@ -47,7 +48,7 @@ if [[ $HOSTNAME == "cn"* || $HOSTNAME == "darwin"* ]]; then
   else
     # Default: NVHPC if cuda else IntelLLVM
     if [[ "$ARGS" == *"cuda"* ]]; then
-      module load nvhpc
+      module load nvhpc openmpi
       C_NATIVE="nvc"
       CXX_NATIVE="nvc++"
       # New NVHPC doesn't like CUDA_HOME
@@ -79,57 +80,58 @@ if [[ $HOSTNAME == "cn"* || $HOSTNAME == "darwin"* ]]; then
   if [[ "$ARGS" == *"arm-ampere"* ]]; then
     HOST_ARCH="ARMV81"
     DEVICE_ARCH="AMPERE80"
-    MPI_NUM_PROCS=2
-    NODE_SLICE=2
+    MPI_NUM_PROCS_D=2
+    NODE_SLICE=1
   elif [[ "$ARGS" == *"arm-hopper"* ]]; then
     HOST_ARCH="ARMV81"
     DEVICE_ARCH="HOPPER90"
-    MPI_NUM_PROCS=1
+    MPI_NUM_PROCS_D=1
     NODE_SLICE=1
   elif [[ "$ARGS" == *"ampere"* ]]; then
     HOST_ARCH="ZEN3"
     DEVICE_ARCH="AMPERE80"
-    MPI_NUM_PROCS=2
-    NODE_SLICE=2
+    MPI_NUM_PROCS_D=2
+    NODE_SLICE=1
   elif [[ "$ARGS" == *"volta"* ]]; then
     HOST_ARCH="HSW"
     DEVICE_ARCH="VOLTA70"
-    MPI_NUM_PROCS=1
+    MPI_NUM_PROCS_D=1
     # Some nodes have 2 GPUs, be conservative
     NODE_SLICE=2
   elif [[ "$ARGS" == *"knl"* ]]; then
     HOST_ARCH="KNL"
-    MPI_NUM_PROCS=1
+    MPI_NUM_PROCS_D=1
     # 4-way SMT, not 2
     NODE_SLICE=2
   elif [[ "$ARGS" == *"hsw"* ]]; then
     HOST_ARCH="HSW"
-    MPI_NUM_PROCS=1
+    MPI_NUM_PROCS_D=1
     NODE_SLICE=1
   elif [[ "$ARGS" == *"skx"* ]]; then
     HOST_ARCH="SKX"
-    MPI_NUM_PROCS=${MPI_NUM_PROCS:-$NPROC}
-    NODE_SLICE=${MPI_NUM_PROCS:-$NPROC}
+    MPI_NUM_PROCS_D=1
+    NODE_SLICE=1
   elif [[ "$ARGS" == *"zen2"* ]]; then
     HOST_ARCH=ZEN2
-    MPI_NUM_PROCS=1
+    MPI_NUM_PROCS_D=1
     NODE_SLICE=1
   elif [[ "$ARGS" == *"zen3"* ]]; then
     HOST_ARCH=ZEN3
-    MPI_NUM_PROCS=1
+    MPI_NUM_PROCS_D=1
     NODE_SLICE=1
   elif [[ "$ARGS" == *"mi250"* ]]; then
     HOST_ARCH=ZEN3
     DEVICE_ARCH=VEGA90A
-    MPI_NUM_PROCS=8
-    NODE_SLICE=16
+    MPI_NUM_PROCS_D=8
+    NODE_SLICE=2
   else
     echo "Must specify an architecture on Darwin!"
     exit
   fi
+  MPI_NUM_PROCS=${MPI_NUM_PROCS:-$MPI_NUM_PROCS_D}
 
   # Runtime
   MPI_EXE="mpirun"
   # Lead MPI to water
-  MPI_EXTRA_ARGS="--map-by ppr:${MPI_NUM_PROCS}:node:pe=$(($NPROC / $NODE_SLICE))"
+  MPI_EXTRA_ARGS="--map-by ppr:${MPI_NUM_PROCS}:node:pe=$(($NPROC / $MPI_NUM_PROCS / $NODE_SLICE))"
 fi

@@ -72,6 +72,13 @@ void BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse);
  * LOCKSTEP: this function expects and should preserve P<->U
  */
 TaskStatus FixUtoP(MeshBlockData<Real> *rc);
+inline TaskStatus MeshFixUtoP(MeshData<Real> *md) {
+    Flag("MeshFixUtoP");
+    for (int i=0; i < md->NumBlocks(); ++i)
+        FixUtoP(md->GetBlockData(i).get());
+    EndFlag();
+    return TaskStatus::complete;
+}
 
 /**
  * Print details of any inversion failures or fixed zones

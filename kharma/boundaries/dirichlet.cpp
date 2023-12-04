@@ -40,33 +40,34 @@
 
 using namespace parthenon;
 
-// TODO can SetDirichlet be folded into this?
+// TODO TODO unify getter/setter when we add face support
 void KBoundaries::DirichletImpl(std::shared_ptr<MeshBlockData<Real>> &rc, BoundaryFace bface, bool coarse)
 {
-    std::shared_ptr<MeshBlock> pmb = rc->GetBlockPointer();
+    auto pmb = rc->GetBlockPointer();
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
 
     // Get all ghosts, minus those in the B_Cleanup package if it is present
+    // TODO TODO this won't do face fields, need a separate loop over (present) faces
+    // and more logic for bounds buffer size
     using FC = Metadata::FlagCollection;
     FC ghost_vars = FC({Metadata::FillGhost, Metadata::Conserved})
                   + FC({Metadata::FillGhost, Metadata::GetUserFlag("Primitive")})
                   - FC({Metadata::GetUserFlag("StartupOnly")});
     PackIndexMap ghostmap;
     auto q = rc->PackVariables(ghost_vars, ghostmap, coarse);
-    auto bound = rc->Get("bounds." + BoundaryName(bface)).data;
-
     // We're sometimes called without any variables to sync (e.g. syncing flags, EMFs), just return
     if (q.GetDim(4) == 0) return;
 
+    auto bound = rc->Get("Boundaries." + BoundaryName(bface)).data;
     if (q.GetDim(4) != bound.GetDim(4)) {
         std::cerr << "Dirichlet boundary mismatch! Boundary cache: " << bound.GetDim(4) << " for pack: " << q.GetDim(4) << std::endl;
         std::cerr << "Variables with ghost zones:" << std::endl;
         ghostmap.print();
     }
 
+    // Indices
     const IndexRange vars = IndexRange{0, q.GetDim(4) - 1};
     const bool right = !BoundaryIsInner(bface);
-
     // Subtract off the starting index if we're on the right
     const auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
     const int dir = BoundaryDirection(bface);
@@ -93,7 +94,7 @@ void KBoundaries::DirichletImpl(std::shared_ptr<MeshBlockData<Real>> &rc, Bounda
 
 void KBoundaries::SetDomainDirichlet(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
-    std::shared_ptr<MeshBlock> pmb = rc->GetBlockPointer();
+    auto pmb = rc->GetBlockPointer();
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
     const BoundaryFace bface = BoundaryFaceOf(domain);
 
@@ -103,7 +104,7 @@ void KBoundaries::SetDomainDirichlet(MeshBlockData<Real> *rc, IndexDomain domain
     PackIndexMap ghostmap;
     auto q = rc->PackVariables(main_ghosts, ghostmap, coarse);
     const int q_index = ghostmap["prims.q"].first;
-    auto bound = rc->Get("bounds." + BoundaryName(bface)).data;
+    auto bound = rc->Get("Boundaries." + BoundaryName(bface)).data;
 
     // We're sometimes called without any variables to sync (e.g. syncing flags, EMFs), just return
     if (q.GetDim(4) == 0) return;
@@ -151,7 +152,7 @@ void KBoundaries::FreezeDirichlet(std::shared_ptr<MeshData<Real>> &md)
             // ...on all blocks...
             for (int i=0; i < md->NumBlocks(); i++) {
                 auto rc = md->GetBlockData(i).get();
-                std::shared_ptr<MeshBlock> pmb = rc->GetBlockPointer();
+                auto pmb = rc->GetBlockPointer();
                 auto domain = BoundaryDomain(bface);
                 // Set whatever is in that domain as the Dirichlet bound
                 SetDomainDirichlet(rc, domain, false);

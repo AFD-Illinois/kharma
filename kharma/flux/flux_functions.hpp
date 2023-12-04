@@ -51,7 +51,7 @@ namespace Flux
 
 // TODO Q > 0 != emhd_enabled.  Store enablement in emhd_params since we need it anyway
 template<typename Local>
-KOKKOS_INLINE_FUNCTION void calc_tensor(const Local& P, const VarMap& m_p, const FourVectors D,
+KOKKOS_FORCEINLINE_FUNCTION void calc_tensor(const Local& P, const VarMap& m_p, const FourVectors D,
                                         const EMHD::EMHD_parameters& emhd_params, const Real& gam, const int& dir,
                                         Real T[GR_DIM])
 {
@@ -79,7 +79,7 @@ KOKKOS_INLINE_FUNCTION void calc_tensor(const Local& P, const VarMap& m_p, const
 }
 
 template<typename Global>
-KOKKOS_INLINE_FUNCTION void calc_tensor(const Global& P, const VarMap& m_p, const FourVectors D,
+KOKKOS_FORCEINLINE_FUNCTION void calc_tensor(const Global& P, const VarMap& m_p, const FourVectors D,
                                         const EMHD::EMHD_parameters& emhd_params, const Real& gam, 
                                         const int& k, const int& j, const int& i, const int& dir,
                                         Real T[GR_DIM])
@@ -114,7 +114,7 @@ KOKKOS_INLINE_FUNCTION void calc_tensor(const Global& P, const VarMap& m_p, cons
  * Keep in mind loc should usually correspond to dir for perpendicuar fluxes
  */
 template<typename Local>
-KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const Local& P, const VarMap& m_p, const FourVectors D,
+KOKKOS_FORCEINLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const Local& P, const VarMap& m_p, const FourVectors D,
                                          const EMHD::EMHD_parameters& emhd_params, const Real& gam, const int& j, const int& i, const int& dir,
                                          const Local& flux, const VarMap& m_u, const Loci loc=Loci::center)
 {
@@ -178,7 +178,7 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const Local& P,
 }
 
 template<typename Global>
-KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const Global& P, const VarMap& m_p, const FourVectors D,
+KOKKOS_FORCEINLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const Global& P, const VarMap& m_p, const FourVectors D,
                                          const EMHD::EMHD_parameters& emhd_params, const Real& gam, 
                                          const int& k, const int& j, const int& i, const int dir,
                                          const Global& flux, const VarMap& m_u, const Loci loc=Loci::center)
@@ -245,7 +245,7 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const Global& P
  * P->U for just the GRMHD variables, but using the full tensor.  Needed with floors and in a few places
  */
 template<typename Global>
-KOKKOS_INLINE_FUNCTION void prim_to_flux_mhd(const GRCoordinates& G, const Global& P, const VarMap& m_p, const FourVectors D,
+KOKKOS_FORCEINLINE_FUNCTION void prim_to_flux_mhd(const GRCoordinates& G, const Global& P, const VarMap& m_p, const FourVectors D,
                                          const EMHD::EMHD_parameters& emhd_params, const Real& gam, 
                                          const int& k, const int& j, const int& i, const int dir,
                                          const Global& flux, const VarMap& m_u, const Loci loc=Loci::center)
@@ -266,7 +266,7 @@ KOKKOS_INLINE_FUNCTION void prim_to_flux_mhd(const GRCoordinates& G, const Globa
  * Get the conserved (E)GRMHD variables corresponding to primitives in a zone. Equivalent to prim_to_flux with dir==0
  */
 template<typename Local>
-KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates& G, const Local& P, const VarMap& m_p,
+KOKKOS_FORCEINLINE_FUNCTION void p_to_u(const GRCoordinates& G, const Local& P, const VarMap& m_p,
                                    const EMHD::EMHD_parameters& emhd_params, const Real& gam, const int& j, const int& i,
                                    const Local& U, const VarMap& m_u, const Loci& loc=Loci::center)
 {
@@ -276,7 +276,7 @@ KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates& G, const Local& P, const
 }
 
 template<typename Global>
-KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates& G, const Global& P, const VarMap& m_p,
+KOKKOS_FORCEINLINE_FUNCTION void p_to_u(const GRCoordinates& G, const Global& P, const VarMap& m_p,
                                    const EMHD::EMHD_parameters& emhd_params, const Real& gam, 
                                    const int& k, const int& j, const int& i,
                                    const Global& U, const VarMap& m_u, const Loci& loc=Loci::center)
@@ -287,7 +287,7 @@ KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates& G, const Global& P, cons
 }
 
 template<typename Global>
-KOKKOS_INLINE_FUNCTION void p_to_u_mhd(const GRCoordinates& G, const Global& P, const VarMap& m_p,
+KOKKOS_FORCEINLINE_FUNCTION void p_to_u_mhd(const GRCoordinates& G, const Global& P, const VarMap& m_p,
                                    const EMHD::EMHD_parameters& emhd_params, const Real& gam, 
                                    const int& k, const int& j, const int& i,
                                    const Global& U, const VarMap& m_u, const Loci& loc=Loci::center)
@@ -302,7 +302,7 @@ KOKKOS_INLINE_FUNCTION void p_to_u_mhd(const GRCoordinates& G, const Global& P, 
  * This is only called in GetFlux, so we only provide a ScratchPad form
  */
 template<typename Local>
-KOKKOS_INLINE_FUNCTION void vchar(const GRCoordinates& G, const Local& P, const VarMap& m, const FourVectors& D,
+KOKKOS_FORCEINLINE_FUNCTION void vchar(const GRCoordinates& G, const Local& P, const VarMap& m, const FourVectors& D,
                                   const Real& gam, const EMHD::EMHD_parameters& emhd_params, 
                                   const int& k, const int& j, const int& i, const Loci& loc, const int& dir,
                                   Real& cmax, Real& cmin)

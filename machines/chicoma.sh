@@ -32,10 +32,16 @@ if [[ "$HOST" == "ch-fe"* || "$HOST" == "nid00"* ]]; then
   else
     module load PrgEnv-aocc
   fi
-  module load cray-hdf5-parallel cmake
+  # Use your own HDF5, Chicoma's is old
+  #module load cray-hdf5-parallel
+  module load cmake
   # System HDF5 can't use compression
   EXTRA_FLAGS="-DPARTHENON_DISABLE_HDF5_COMPRESSION=ON $EXTRA_FLAGS"
-  export MPICH_GPU_SUPPORT_ENABLED=1
+  # Parthenon crashes with device buffers on some Nvidia machines...
+  # if [conditions]
+  EXTRA_FLAGS="-DPARTHENON_ENABLE_HOST_COMM_BUFFERS=ON $EXTRA_FLAGS"
+  #else
+  #export MPICH_GPU_SUPPORT_ENABLED=1
 
   # Runtime opts
   MPI_EXE=srun

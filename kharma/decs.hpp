@@ -104,7 +104,7 @@ using GReal = double;
 enum class Loci{face1=0, face2, face3, center, corner};
 
 // Return the face location corresponding to the direction 'dir'
-KOKKOS_INLINE_FUNCTION Loci loc_of(const int& dir)
+KOKKOS_FORCEINLINE_FUNCTION Loci loc_of(const int& dir)
 {
     switch (dir) {
     case 0:
@@ -119,7 +119,7 @@ KOKKOS_INLINE_FUNCTION Loci loc_of(const int& dir)
         return Loci::corner;
     }
 }
-KOKKOS_INLINE_FUNCTION int dir_of(const Loci loc)
+KOKKOS_FORCEINLINE_FUNCTION int dir_of(const Loci loc)
 {
     switch (loc) {
     case Loci::center:
@@ -135,7 +135,6 @@ KOKKOS_INLINE_FUNCTION int dir_of(const Loci loc)
     }
 }
 
-#ifdef MPI_PARALLEL
 /**
  * Am I rank 0?  Saves typing vs comparing the global every time
  */
@@ -143,12 +142,21 @@ inline bool MPIRank0()
 {
     return (parthenon::Globals::my_rank == 0 ? true : false);
 }
-#else
 /**
- * DUMMY version for no-MPI case: constexpr return for slight optimizations.
+ * Numbers I could just get as globals, but renamed for consistency
  */
-inline bool MPIRank0() { return true; }
-#endif // MPI_PARALLEL
+inline int MPINumRanks()
+{
+    return parthenon::Globals::nranks;
+}
+inline int MPIRank()
+{
+    return parthenon::Globals::my_rank;
+}
+inline int MPIBarrier()
+{
+    return MPI_Barrier(MPI_COMM_WORLD);
+}
 
 // A few generic "NDArray" overloads for readability.
 // TODO torn on futures of these: they're explicitly per-block
