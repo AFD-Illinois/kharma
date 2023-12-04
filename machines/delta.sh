@@ -20,8 +20,8 @@ then
   then
     # GPU Compile
     # 4-device MPI
-    MPI_EXTRA_ARGS="--map-by ppr:4:node:pe=16"
-    MPI_NUM_PROCS=4
+    MPI_EXTRA_ARGS="--map-by ppr:1:node:pe=16"
+    MPI_NUM_PROCS=1
 
     # Load common GPU modules
     module load modtree/gpu hdf5 cmake

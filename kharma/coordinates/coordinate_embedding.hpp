@@ -292,7 +292,8 @@ class CoordinateEmbedding {
             }, base);
         }
     // ___________________________________________________________________________________________________________________
-
+    // HORIZON CHANGE MADE 
+    
         KOKKOS_INLINE_FUNCTION GReal get_horizon() const
         {
             if (mpark::holds_alternative<SphKSCoords>(base) ||
