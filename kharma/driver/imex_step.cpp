@@ -102,8 +102,10 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
     if (sync_vars.size() == 0) {
         // Build the universe of variables to let Parthenon see when exchanging boundaries.
         // This is built to exclude incidental variables like B field initialization stuff, EMFs, etc.
+        // "Boundaries" packs in buffers e.g. Dirichlet boundaries
         using FC = Metadata::FlagCollection;
-        auto sync_flags = FC({Metadata::GetUserFlag("Primitive"), Metadata::Conserved, Metadata::Face}, true);
+        auto sync_flags = FC({Metadata::GetUserFlag("Primitive"), Metadata::Conserved,
+                              Metadata::Face, Metadata::GetUserFlag("Boundaries")}, true);
         sync_vars = KHARMA::GetVariableNames(&(pmesh->packages), sync_flags);
     }
     // We'll only ever sync the current stage "final"

@@ -152,79 +152,82 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
             pin->SetString("parthenon/mesh", bname_parthenon, "periodic");
         } else {
             pin->SetString("parthenon/mesh", bname_parthenon, "user");
-        }
 
-        // TODO TODO any way to save this verbosity with constexpr/macros/something?
-        if (btype == "dirichlet") {
-            // Dirichlet boundaries: allocate
-            pkg->AddField("bounds." + bname, (bdir == X1DIR) ? m_x1 : ((bdir == X2DIR) ? m_x2 : m_x3));
-            switch (bface) {
-            case BoundaryFace::inner_x1:
-                pkg->KBoundaries[bface] = KBoundaries::Dirichlet<BoundaryFace::inner_x1>;
-                break;
-            case BoundaryFace::outer_x1:
-                pkg->KBoundaries[bface] = KBoundaries::Dirichlet<BoundaryFace::outer_x1>;
-                break;
-            case BoundaryFace::inner_x2:
-                pkg->KBoundaries[bface] = KBoundaries::Dirichlet<BoundaryFace::inner_x2>;
-                break;
-            case BoundaryFace::outer_x2:
-                pkg->KBoundaries[bface] = KBoundaries::Dirichlet<BoundaryFace::outer_x2>;
-                break;
-            case BoundaryFace::inner_x3:
-                pkg->KBoundaries[bface] = KBoundaries::Dirichlet<BoundaryFace::inner_x3>;
-                break;
-            case BoundaryFace::outer_x3:
-                pkg->KBoundaries[bface] = KBoundaries::Dirichlet<BoundaryFace::outer_x3>;
-                break;
-            default:
-                break;
-            }
-        } else if (btype == "reflecting") {
-            switch (bface) {
-            case BoundaryFace::inner_x1:
-                pkg->KBoundaries[bface] = BoundaryFunction::ReflectInnerX1;
-                break;
-            case BoundaryFace::outer_x1:
-                pkg->KBoundaries[bface] = BoundaryFunction::ReflectOuterX1;
-                break;
-            case BoundaryFace::inner_x2:
-                pkg->KBoundaries[bface] = BoundaryFunction::ReflectInnerX2;
-                break;
-            case BoundaryFace::outer_x2:
-                pkg->KBoundaries[bface] = BoundaryFunction::ReflectOuterX2;
-                break;
-            case BoundaryFace::inner_x3:
-                pkg->KBoundaries[bface] = BoundaryFunction::ReflectInnerX3;
-                break;
-            case BoundaryFace::outer_x3:
-                pkg->KBoundaries[bface] = BoundaryFunction::ReflectOuterX3;
-                break;
-            default:
-                break;
-            }
-        } else if (btype == "outflow") {
-            switch (bface) {
-            case BoundaryFace::inner_x1:
-                pkg->KBoundaries[bface] = BoundaryFunction::OutflowInnerX1;
-                break;
-            case BoundaryFace::outer_x1:
-                pkg->KBoundaries[bface] = BoundaryFunction::OutflowOuterX1;
-                break;
-            case BoundaryFace::inner_x2:
-                pkg->KBoundaries[bface] = BoundaryFunction::OutflowInnerX2;
-                break;
-            case BoundaryFace::outer_x2:
-                pkg->KBoundaries[bface] = BoundaryFunction::OutflowOuterX2;
-                break;
-            case BoundaryFace::inner_x3:
-                pkg->KBoundaries[bface] = BoundaryFunction::OutflowInnerX3;
-                break;
-            case BoundaryFace::outer_x3:
-                pkg->KBoundaries[bface] = BoundaryFunction::OutflowOuterX3;
-                break;
-            default:
-                break;
+            // Register the actual boundaries with the package, which our wrapper will use
+            // when called via Parthenon's "user" conditions
+            if (btype == "dirichlet") {
+                // Dirichlet boundaries: allocate
+                pkg->AddField("Boundaries." + bname, (bdir == X1DIR) ? m_x1 : ((bdir == X2DIR) ? m_x2 : m_x3));
+                switch (bface) {
+                case BoundaryFace::inner_x1:
+                    pkg->KBoundaries[bface] = KBoundaries::Dirichlet<BoundaryFace::inner_x1>;
+                    break;
+                case BoundaryFace::outer_x1:
+                    pkg->KBoundaries[bface] = KBoundaries::Dirichlet<BoundaryFace::outer_x1>;
+                    break;
+                case BoundaryFace::inner_x2:
+                    pkg->KBoundaries[bface] = KBoundaries::Dirichlet<BoundaryFace::inner_x2>;
+                    break;
+                case BoundaryFace::outer_x2:
+                    pkg->KBoundaries[bface] = KBoundaries::Dirichlet<BoundaryFace::outer_x2>;
+                    break;
+                case BoundaryFace::inner_x3:
+                    pkg->KBoundaries[bface] = KBoundaries::Dirichlet<BoundaryFace::inner_x3>;
+                    break;
+                case BoundaryFace::outer_x3:
+                    pkg->KBoundaries[bface] = KBoundaries::Dirichlet<BoundaryFace::outer_x3>;
+                    break;
+                default:
+                    break;
+                }
+            } else if (btype == "reflecting") {
+                switch (bface) {
+                case BoundaryFace::inner_x1:
+                    pkg->KBoundaries[bface] = BoundaryFunction::ReflectInnerX1;
+                    break;
+                case BoundaryFace::outer_x1:
+                    pkg->KBoundaries[bface] = BoundaryFunction::ReflectOuterX1;
+                    break;
+                case BoundaryFace::inner_x2:
+                    pkg->KBoundaries[bface] = BoundaryFunction::ReflectInnerX2;
+                    break;
+                case BoundaryFace::outer_x2:
+                    pkg->KBoundaries[bface] = BoundaryFunction::ReflectOuterX2;
+                    break;
+                case BoundaryFace::inner_x3:
+                    pkg->KBoundaries[bface] = BoundaryFunction::ReflectInnerX3;
+                    break;
+                case BoundaryFace::outer_x3:
+                    pkg->KBoundaries[bface] = BoundaryFunction::ReflectOuterX3;
+                    break;
+                default:
+                    break;
+                }
+            } else if (btype == "outflow") {
+                switch (bface) {
+                case BoundaryFace::inner_x1:
+                    pkg->KBoundaries[bface] = BoundaryFunction::OutflowInnerX1;
+                    break;
+                case BoundaryFace::outer_x1:
+                    pkg->KBoundaries[bface] = BoundaryFunction::OutflowOuterX1;
+                    break;
+                case BoundaryFace::inner_x2:
+                    pkg->KBoundaries[bface] = BoundaryFunction::OutflowInnerX2;
+                    break;
+                case BoundaryFace::outer_x2:
+                    pkg->KBoundaries[bface] = BoundaryFunction::OutflowOuterX2;
+                    break;
+                case BoundaryFace::inner_x3:
+                    pkg->KBoundaries[bface] = BoundaryFunction::OutflowInnerX3;
+                    break;
+                case BoundaryFace::outer_x3:
+                    pkg->KBoundaries[bface] = BoundaryFunction::OutflowOuterX3;
+                    break;
+                default:
+                    break;
+                }
+            } else {
+                throw std::runtime_error("Unknown boundary type: "+btype);
             }
         }
     }
@@ -301,7 +304,7 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
         auto jf = (binner) ? b.je + 1 : b.js;
         pmb->par_for(
             "zero_polar_" + bname, b.ks, b.ke, jf, jf, b.is, b.ie,
-            KOKKOS_LAMBDA(const int &k, const int &j, const int &i) {
+            KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
                 fpack(F2, 0, k, j, i) = 0.;
             }
         );
