@@ -52,9 +52,10 @@ TaskStatus NormalizeBField(MeshData<Real> *md, ParameterInput *pin);
 
 // Internal representation of the field initialization preference, used for templating
 enum BSeedType{constant, monopole, monopole_cube, orszag_tang, orszag_tang_a, wave, shock_tube,
-                sane, mad, mad_quadrupole, r3s3, r5s5, gaussian, bz_monopole, vertical};
+                sane, mad, mad_quadrupole, r3s3, r5s5, gaussian, bz_monopole, vertical, vertical_chakrabarti};
 
-#define SEEDA_ARGS GReal *x, const GReal *dxc, double rho, double rin, double min_A, double A0, double arg1
+#define SEEDA_ARGS GReal *x, const GReal *dxc, double rho, double rin, double min_A, double A0, double arg1, bool in_torus,\
+                            double rho_max, double potential_rho_pow, double potential_falloff, double potential_r_pow
 
 // This will also act as the default implementation for unspecified types,
 // which should all be filled as B field by seed_b below.
@@ -128,6 +129,39 @@ KOKKOS_INLINE_FUNCTION Real seed_a<BSeedType::orszag_tang_a>(SEEDA_ARGS)
 {
     return A0 * (-0.5 * std::cos(2*x[1] + arg1)
                         + std::cos(x[2] + arg1));
+}
+
+template<>
+KOKKOS_INLINE_FUNCTION Real seed_a<BSeedType::vertical_chakrabarti>(SEEDA_ARGS)
+{
+    Real r      = x[1];
+    Real th     = x[2];
+    Real sth    = sin(x[2]);
+    Real svarth = std::fabs(sin(th));
+    
+    Real cyl_radius   = r * svarth;
+    Real rcyl_in      = rin;
+    Real rcyl_falloff = potential_falloff;
+
+    Real Aphi = m::pow(cyl_radius / rcyl_in, potential_r_pow);
+    if (potential_falloff != 0) {
+        Aphi *= m::exp(-cyl_radius / rcyl_falloff);
+    }
+    Real Aphi_offset = exp(-rcyl_in/rcyl_falloff);
+    if (cyl_radius < rcyl_in) {
+      Aphi = 0.0;
+    } else {
+      Aphi -= Aphi_offset;
+    }
+    if (potential_rho_pow != 0.0) {
+        if (in_torus) {
+            Aphi *= m::pow(rho / rho_max, potential_rho_pow);
+        } else {
+            Aphi = 0.0;
+        }
+    }
+
+    return Aphi;
 }
 
 #undef SEEDA_ARGS

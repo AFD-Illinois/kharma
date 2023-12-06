@@ -73,7 +73,7 @@ TaskStatus InitializeChakrabartiTorus(std::shared_ptr<MeshBlockData<Real>>& rc, 
 
     // Thermodynamic quantities at rin, rmax
     const Real lnh_in             = lnh_calc(a, rin, rin, 1.0, cc, nn);
-    const Real lnh_peak            = lnh_calc(a, rin, rmax, 1.0, cc, nn) - lnh_in;
+    const Real lnh_peak           = lnh_calc(a, rin, rmax, 1.0, cc, nn) - lnh_in;
     const Real pgas_over_rho_peak = gm1/gam * (m::exp(lnh_peak) - 1.0);
     const Real rho_peak           = m::pow(pgas_over_rho_peak, 1.0 / gm1) / rho_max;
 
