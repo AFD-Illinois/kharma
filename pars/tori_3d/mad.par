@@ -5,6 +5,7 @@
 <parthenon/job>
 archive_parameters_timestamp = true
 problem_id = torus
+torus_type = fishbone_moncrief
 
 <parthenon/mesh>
 refinement = none
