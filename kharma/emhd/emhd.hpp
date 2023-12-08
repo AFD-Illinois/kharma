@@ -110,6 +110,7 @@ void InitEMHDVariables(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput 
  * only on boundaries in order to sync the primitive/conserved variables specifically.
  */
 void BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse);
+void MeshUtoP(MeshData<Real> *md, IndexDomain domain, bool coarse=false);
 void BlockPtoU(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse);
 
 /**
