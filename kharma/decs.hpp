@@ -155,7 +155,11 @@ inline int MPIRank()
 }
 inline int MPIBarrier()
 {
+#if MPI_PARALLEL
     return MPI_Barrier(MPI_COMM_WORLD);
+#else
+    return 0;
+#endif
 }
 
 // A few generic "NDArray" overloads for readability.
