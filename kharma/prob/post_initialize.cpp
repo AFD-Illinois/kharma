@@ -40,6 +40,7 @@
 #include "b_flux_ct.hpp"
 #include "blob.hpp"
 #include "boundaries.hpp"
+#include "emhd.hpp"
 #include "floors.hpp"
 #include "flux.hpp"
 #include "gr_coordinates.hpp"
@@ -115,6 +116,9 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart)
                 B_FluxCT::MeshUtoP(md.get(), IndexDomain::entire);
             } else if (pkgs.count("B_CT")) {
                 B_CT::MeshUtoP(md.get(), IndexDomain::entire);
+            }
+            if (pkgs.count("EMHD")) {
+                EMHD::MeshUtoP(md.get(), IndexDomain::entire);
             }
         } else {
             if (pkgs.count("B_FluxCT")) {
