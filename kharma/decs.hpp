@@ -155,7 +155,7 @@ inline int MPIRank()
 }
 inline int MPIBarrier()
 {
-#if MPI_PARALLEL
+#if ENABLE_MPI
     return MPI_Barrier(MPI_COMM_WORLD);
 #else
     return 0;
