@@ -42,11 +42,11 @@ namespace Wind {
 /**
  * Initialize the wind package with several options from the input deck
  */
-std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin);
+std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages);
 
 /**
- * Add the wind source term.  Applied just after the FluxDivergence/ApplyFluxes calculation
+ * Add the wind source term.  Applied in Flux::AddSource, just after the FluxDivergence calculation
  */
-TaskStatus AddSource(MeshData<Real> *mdudt);
+TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt);
 
 }

@@ -39,11 +39,10 @@
 #include "flux_functions.hpp"
 #include "grmhd_functions.hpp"
 #include "pack.hpp"
-#include "prob_common.hpp"
+#include "coordinate_utils.hpp"
 #include "types.hpp"
 
 #include <parthenon/parthenon.hpp>
 
-TaskStatus InitializeAtmosphere(MeshBlockData<Real> *rc, ParameterInput *pin);
+TaskStatus InitializeAtmosphere(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin);
 
-TaskStatus dirichlet_bc(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse);

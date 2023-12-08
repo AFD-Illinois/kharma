@@ -58,7 +58,7 @@
  * 
  * TODO Cartesian KS base
  * TODO snake coordinate transform for Cartesian Minkowski
- * TODO CMKS, MKS3 transforms, proper Cartesian<->Spherical functions stolen from e.g. prob_common.hpp
+ * TODO CMKS, MKS3 transforms, proper Cartesian<->Spherical functions stolen from e.g. coordinate_utils.hpp
  * TODO overhaul the LEGACY_TH stuff
  * TODO currently avoids returning gcov which might be singular,
  *      is this the correct play vs handling in inversions?
@@ -76,7 +76,9 @@
  */
 class CartMinkowskiCoords {
     public:
-        const bool spherical = false;
+        static constexpr char name[] = "CartMinkowskiCoords";
+        static constexpr bool spherical = false;
+        static constexpr GReal a = 0.0;
         KOKKOS_INLINE_FUNCTION void gcov_embed(const GReal Xembed[GR_DIM], Real gcov[GR_DIM][GR_DIM]) const
         {
             DLOOP2 gcov[mu][nu] = (mu == nu) - 2*(mu == 0 && nu == 0);
@@ -88,18 +90,20 @@ class CartMinkowskiCoords {
  */
 class SphMinkowskiCoords {
     public:
-        const bool spherical = true;
+        static constexpr char name[] = "SphMinkowskiCoords";
+        static constexpr bool spherical = true;
+        static constexpr GReal a = 0.0;
         KOKKOS_INLINE_FUNCTION void gcov_embed(const GReal Xembed[GR_DIM], Real gcov[GR_DIM][GR_DIM]) const
         {
             const GReal r = m::max(Xembed[1], SMALL);
             const GReal th = excise(excise(Xembed[2], 0.0, SMALL), M_PI, SMALL);
-            const GReal sth = sin(th);
+            const GReal sth = m::sin(th);
 
             gzero2(gcov);
             gcov[0][0] = 1.;
             gcov[1][1] = 1.;
             gcov[2][2] = r*r;
-            gcov[3][3] = m::pow(sth*r, 2);
+            gcov[3][3] = sth*sth*r*r;
         }
 };
 
@@ -108,9 +112,10 @@ class SphMinkowskiCoords {
  */
 class SphKSCoords {
     public:
+        static constexpr char name[] = "SphKSCoords";
         // BH Spin is a property of KS
         const GReal a;
-        const bool spherical = true;
+        static constexpr bool spherical = true;
 
         KOKKOS_FUNCTION SphKSCoords(GReal spin): a(spin) {};
 
@@ -119,9 +124,10 @@ class SphKSCoords {
             const GReal r = Xembed[1];
             const GReal th = excise(excise(Xembed[2], 0.0, SMALL), M_PI, SMALL);
 
-            const GReal cos2 = m::pow(cos(th), 2);
-            const GReal sin2 = m::pow(sin(th), 2);
-            const GReal rho2 = r*r + a*a*cos2;
+            const GReal cth = m::cos(th);
+            const GReal sth = m::sin(th);
+            const GReal sin2 = sth*sth;
+            const GReal rho2 = r*r + a*a*cth*cth;
 
             gcov[0][0] = -1. + 2.*r/rho2;
             gcov[0][1] = 2.*r/rho2;
@@ -145,7 +151,6 @@ class SphKSCoords {
         }
 
         // For converting from BL
-        // TODO will we ever need a from_ks?
         KOKKOS_INLINE_FUNCTION void vec_from_bl(const GReal Xembed[GR_DIM], const Real vcon_bl[GR_DIM], Real vcon[GR_DIM]) const
         {
             GReal r = Xembed[1];
@@ -165,16 +170,95 @@ class SphKSCoords {
             DLOOP2 rtrans[mu][nu] = (mu == nu);
             rtrans[0][1] = 2.*r/(r*r - 2.*r + a*a);
             rtrans[3][1] = a/(r*r - 2.*r + a*a);
+
             invert(&rtrans[0][0], &trans[0][0]);
 
             gzero(vcon);
             DLOOP2 vcon[mu] += trans[mu][nu]*vcon_bl[nu];
         }
+};
 
-        // TODO more: isco etc?
-        KOKKOS_INLINE_FUNCTION GReal rhor() const
+/**
+ * Spherical Kerr-Schild coordinates w/ external gravity term
+ */
+class SphKSExtG {
+    public:
+        static constexpr char name[] = "SphKSExtG";
+        // BH Spin is a property of KS
+        const GReal a;
+        static constexpr bool spherical = true;
+
+        static constexpr GReal A = 1.46797639e-8;
+        static constexpr GReal B = 1.29411117;
+
+        KOKKOS_FUNCTION SphKSExtG(GReal spin): a(spin) {};
+
+        KOKKOS_INLINE_FUNCTION void gcov_embed(const GReal Xembed[GR_DIM], Real gcov[GR_DIM][GR_DIM]) const
         {
-            return (1. + m::sqrt(1. - a*a));
+            const GReal r = Xembed[1];
+            const GReal th = excise(excise(Xembed[2], 0.0, SMALL), M_PI, SMALL);
+
+            const GReal cth = m::cos(th);
+            const GReal sth = m::sin(th);
+            const GReal sin2 = sth*sth;
+            const GReal rho2 = r*r + a*a*cth*cth;
+
+            const GReal Phi_g = (A / (B - 1.)) * (m::pow(r, B-1.) - m::pow(2, B-1.));
+
+            gcov[0][0] = -1. + 2.*r/rho2 - 2. * Phi_g;
+            gcov[0][1] = 2.*r/rho2 - 2. * Phi_g;
+            gcov[0][2] = 0.;
+            gcov[0][3] = -2.*a*r*sin2/rho2;
+
+            gcov[1][0] = 2.*r/rho2 - 2. * Phi_g;
+            gcov[1][1] = 1. + 2.*r/rho2 - 2. * Phi_g;
+            gcov[1][2] = 0.;
+            gcov[1][3] = -a*sin2*(1. + 2.*r/rho2);
+
+            gcov[2][0] = 0.;
+            gcov[2][1] = 0.;
+            gcov[2][2] = rho2;
+            gcov[2][3] = 0.;
+
+            gcov[3][0] = -2.*a*r*sin2/rho2;
+            gcov[3][1] = -a*sin2*(1. + 2.*r/rho2);
+            gcov[3][2] = 0.;
+            gcov[3][3] = sin2*(rho2 + a*a*sin2*(1. + 2.*r/rho2));
+        }
+
+        // For converting from BL
+        // TODO will we ever need a from_ks?
+        KOKKOS_INLINE_FUNCTION void vec_from_bl(const GReal Xembed[GR_DIM], const Real vcon_bl[GR_DIM], Real vcon[GR_DIM]) const
+        {
+            GReal r = Xembed[1];
+            Real trans[GR_DIM][GR_DIM];
+            DLOOP2 trans[mu][nu] = (mu == nu);
+
+            // external gravity from GIZMO
+            const GReal Phi_g = (A/(B-1.)) * (m::pow(r,B-1.)-m::pow(2,B-1.));
+
+            trans[0][1] = (2./r - 2.*Phi_g)/(1. - 2./r + 2.*Phi_g);
+            trans[3][1] = a/(r*r - 2.*r + a*a);
+
+            gzero(vcon);
+            DLOOP2 vcon[mu] += trans[mu][nu]*vcon_bl[nu];
+        }
+
+        KOKKOS_INLINE_FUNCTION void vec_to_bl(const GReal Xembed[GR_DIM], const Real vcon_bl[GR_DIM], Real vcon[GR_DIM]) const
+        {
+            GReal r = Xembed[1];
+            GReal rtrans[GR_DIM][GR_DIM], trans[GR_DIM][GR_DIM];
+            DLOOP2 rtrans[mu][nu] = (mu == nu);
+
+            const GReal Phi_g = (A / (B-1.)) * (m::pow(r, B-1.) - m::pow(2, B-1.));
+
+            rtrans[0][1] = (2./r - 2.*Phi_g)/(1. - 2./r + 2.*Phi_g);
+            rtrans[3][1] = a/(r*r - 2.*r + a*a);
+
+            invert(&rtrans[0][0], &trans[0][0]);
+
+            gzero(vcon);
+            DLOOP2 vcon[mu] += trans[mu][nu]*vcon_bl[nu];
         }
 };
 
@@ -183,9 +267,10 @@ class SphKSCoords {
  */
 class SphBLCoords {
     public:
+        static constexpr char name[] = "SphBLCoords";
         // BH Spin is a property of BL
         const GReal a;
-        const bool spherical = true;
+        static constexpr bool spherical = true;
 
         KOKKOS_FUNCTION SphBLCoords(GReal spin): a(spin) {}
 
@@ -193,28 +278,62 @@ class SphBLCoords {
         {
             const GReal r = Xembed[1];
             const GReal th = excise(excise(Xembed[2], 0.0, SMALL), M_PI, SMALL);
-            const GReal cth = cos(th), sth = sin(th);
+            const GReal cth = m::cos(th), sth = m::sin(th);
 
-            const GReal s2 = sth*sth;
+            const GReal sin2 = sth*sth;
             const GReal a2 = a*a;
             const GReal r2 = r*r;
-            // TODO this and gcov_embed for KS should look more similar...
+            // TODO(BSP) this and gcov_embed for KS should look more similar...
             const GReal mmu = 1. + a2*cth*cth/r2; // mu is taken as an index
 
             gzero2(gcov);
             gcov[0][0]  = -(1. - 2./(r*mmu));
-            gcov[0][3]  = -2.*a*s2/(r*mmu);
+            gcov[0][3]  = -2.*a*sin2/(r*mmu);
             gcov[1][1]   = mmu/(1. - 2./r + a2/r2);
             gcov[2][2]   = r2*mmu;
-            gcov[3][0]  = -2.*a*s2/(r*mmu);
-            gcov[3][3]   = s2*(r2 + a2 + 2.*a2*s2/(r*mmu));
+            gcov[3][0]  = -2.*a*sin2/(r*mmu);
+            gcov[3][3]   = sin2*(r2 + a2 + 2.*a2*sin2/(r*mmu));
         }
 
-        // TODO vec to/from ks, put guaranteed ks/bl fns into embedding
+        // TODO(BSP) vec to/from ks, put guaranteed ks/bl fns into embedding
 
-        KOKKOS_INLINE_FUNCTION GReal rhor() const
+};
+
+/**
+ * Boyer-Lindquist coordinates as an embedding system
+ */
+class SphBLExtG {
+    public:
+        static constexpr char name[] = "SphBLExtG";
+        // BH Spin is a property of BL
+        const GReal a;
+        static constexpr bool spherical = true;
+
+        static constexpr GReal A = 1.46797639e-8;
+        static constexpr GReal B = 1.29411117;
+
+        KOKKOS_FUNCTION SphBLExtG(GReal spin): a(spin) {}
+
+        KOKKOS_INLINE_FUNCTION void gcov_embed(const GReal Xembed[GR_DIM], Real gcov[GR_DIM][GR_DIM]) const
         {
-            return (1. + m::sqrt(1. - a*a));
+            const GReal r = Xembed[1];
+            const GReal th = excise(excise(Xembed[2], 0.0, SMALL), M_PI, SMALL);
+            const GReal cth = m::cos(th), sth = m::sin(th);
+
+            const GReal sin2 = sth*sth;
+            const GReal a2 = a*a;
+            const GReal r2 = r*r;
+            const GReal mmu = 1. + a2*cth*cth/r2; // mu is taken as an index
+
+            const GReal Phi_g = (A / (B-1.)) * (m::pow(r, B-1.) - m::pow(2, B-1.));
+
+            gzero2(gcov);
+            gcov[0][0]  = -(1. - 2./(r*mmu)) - 2. * Phi_g;;
+            gcov[0][3]  = -2.*a*sin2/(r*mmu);
+            gcov[1][1]   = mmu / (1. - 2./r + 2.*Phi_g);
+            gcov[2][2]   = r2*mmu;
+            gcov[3][0]  = -2.*a*sin2/(r*mmu);
+            gcov[3][3]   = sin2*(r2 + a2 + 2.*a2*sin2/(r*mmu));
         }
 };
 
@@ -231,6 +350,35 @@ class SphBLCoords {
  */
 class NullTransform {
     public:
+        static constexpr char name[] = "NullTransform";
+        static constexpr GReal startx[3] = {-1, -1, -1};
+        static constexpr GReal stopx[3] = {-1, -1, -1};
+        // Coordinate transformations
+        // Any coordinate value protections (th < 0, th > pi, phi > 2pi) should be in the base system
+        KOKKOS_INLINE_FUNCTION void coord_to_embed(const GReal Xnative[GR_DIM], GReal Xembed[GR_DIM]) const
+        {
+            DLOOP1 Xembed[mu] = Xnative[mu];
+        }
+        KOKKOS_INLINE_FUNCTION void coord_to_native(const GReal Xembed[GR_DIM], GReal Xnative[GR_DIM]) const
+        {
+            DLOOP1 Xnative[mu] = Xembed[mu];
+        }
+        // Tangent space transformation matrices
+        KOKKOS_INLINE_FUNCTION void dxdX(const GReal X[GR_DIM], Real dxdX[GR_DIM][GR_DIM]) const
+        {
+            DLOOP2 dxdX[mu][nu] = (mu == nu);
+        }
+        KOKKOS_INLINE_FUNCTION void dXdx(const GReal X[GR_DIM], Real dXdx[GR_DIM][GR_DIM]) const
+        {
+            DLOOP2 dXdx[mu][nu] = (mu == nu);
+        }
+};
+// This only exists separately to define startx & stopx. Could fall back on base coords for these?
+class SphNullTransform {
+    public:
+        static constexpr char name[] = "SphNullTransform";
+        static constexpr GReal startx[3] = {-1, 0., 0.};
+        static constexpr GReal stopx[3] = {-1, M_PI, 2*M_PI};
         // Coordinate transformations
         // Any coordinate value protections (th < 0, th > pi, phi > 2pi) should be in the base system
         KOKKOS_INLINE_FUNCTION void coord_to_embed(const GReal Xnative[GR_DIM], GReal Xembed[GR_DIM]) const
@@ -258,11 +406,15 @@ class NullTransform {
  */
 class ExponentialTransform {
     public:
+        static constexpr char name[] = "ExponentialTransform";
+        static constexpr GReal startx[3] = {-1, 0., 0.};
+        static constexpr GReal stopx[3] = {-1, M_PI, 2*M_PI};
+
         // Coordinate transformations
         KOKKOS_INLINE_FUNCTION void coord_to_embed(const GReal Xnative[GR_DIM], GReal Xembed[GR_DIM]) const
         {
             Xembed[0] = Xnative[0];
-            Xembed[1] = exp(Xnative[1]);
+            Xembed[1] = m::exp(Xnative[1]);
 #if LEGACY_TH
             Xembed[2] = excise(excise(Xnative[2], 0.0, SMALL), M_PI, SMALL);
 #else
@@ -273,7 +425,7 @@ class ExponentialTransform {
         KOKKOS_INLINE_FUNCTION void coord_to_native(const GReal Xembed[GR_DIM], GReal Xnative[GR_DIM]) const
         {
             Xnative[0] = Xembed[0];
-            Xnative[1] = log(Xembed[1]);
+            Xnative[1] = m::log(Xembed[1]);
             Xnative[2] = Xembed[2];
             Xnative[3] = Xembed[3];
         }
@@ -284,7 +436,7 @@ class ExponentialTransform {
         {
             gzero2(dxdX);
             dxdX[0][0] = 1.;
-            dxdX[1][1] = exp(Xnative[1]);
+            dxdX[1][1] = m::exp(Xnative[1]);
             dxdX[2][2] = 1.;
             dxdX[3][3] = 1.;
         }
@@ -295,7 +447,73 @@ class ExponentialTransform {
         {
             gzero2(dXdx);
             dXdx[0][0] = 1.;
-            dXdx[1][1] = 1 / exp(Xnative[1]);
+            dXdx[1][1] = 1 / m::exp(Xnative[1]);
+            dXdx[2][2] = 1.;
+            dXdx[3][3] = 1.;
+        }
+};
+
+/**
+ * SuperExponential coordinates, for super simulations
+ * Implementation follows HARMPI described in Tchekhovskoy+
+ */
+class SuperExponentialTransform {
+    public:
+        static constexpr char name[] = "SuperExponentialTransform";
+        static constexpr GReal startx[3] = {-1, 0., 0.};
+        static constexpr GReal stopx[3] = {-1, M_PI, 2*M_PI};
+
+        const GReal xe1br, xn1br;
+        const double npow2, cpow2;
+
+        // Constructor
+        KOKKOS_FUNCTION SuperExponentialTransform(GReal xe1br_in, double npow2_in, double cpow2_in):
+            xe1br(xe1br_in), npow2(npow2_in), cpow2(cpow2_in), xn1br(m::log(xe1br_in)) {}
+
+        // Coordinate transformations
+        KOKKOS_INLINE_FUNCTION void coord_to_embed(const GReal Xnative[GR_DIM], GReal Xembed[GR_DIM]) const
+        {
+            Xembed[0] = Xnative[0];
+            const GReal super_dist = Xnative[1] - xn1br;
+            Xembed[1] = m::exp(Xnative[1] + (super_dist > 0) * cpow2 * m::pow(super_dist, npow2));
+#if LEGACY_TH
+            Xembed[2] = excise(excise(Xnative[2], 0.0, SMALL), M_PI, SMALL);
+#else
+            Xembed[2] = Xnative[2];
+#endif
+            Xembed[3] = Xnative[3];
+        }
+        KOKKOS_INLINE_FUNCTION void coord_to_native(const GReal Xembed[GR_DIM], GReal Xnative[GR_DIM]) const
+        {
+            Xnative[0] = Xembed[0];
+            Xnative[2] = Xembed[2];
+            Xnative[3] = Xembed[3];
+            // TODO can just take log for x1 < xe1br
+            ROOT_FIND_1
+        }
+        /**
+         * Transformation matrix for contravariant vectors to embedding, or covariant vectors to native
+         */
+        KOKKOS_INLINE_FUNCTION void dxdX(const GReal Xnative[GR_DIM], Real dxdX[GR_DIM][GR_DIM]) const
+        {
+            gzero2(dxdX);
+            dxdX[0][0] = 1.;
+            const GReal super_dist = Xnative[1] - xn1br;
+            dxdX[1][1] = m::exp(Xnative[1] + (super_dist > 0) * cpow2 * m::pow(super_dist, npow2))
+                            * (1 + (super_dist > 0) * cpow2 * npow2 * m::pow(super_dist, npow2-1));
+            dxdX[2][2] = 1.;
+            dxdX[3][3] = 1.;
+        }
+        /**
+         * Transformation matrix for contravariant vectors to native, or covariant vectors to embedding
+         */
+        KOKKOS_INLINE_FUNCTION void dXdx(const GReal Xnative[GR_DIM], Real dXdx[GR_DIM][GR_DIM]) const
+        {
+            gzero2(dXdx);
+            dXdx[0][0] = 1.;
+            const GReal super_dist = Xnative[1] - xn1br;
+            dXdx[1][1] = 1 / (m::exp(Xnative[1] + (super_dist > 0) * cpow2 * m::pow(super_dist, npow2))
+                              * (1 + (super_dist > 0) * cpow2 * npow2 * m::pow(super_dist, npow2-1)));
             dXdx[2][2] = 1.;
             dXdx[3][3] = 1.;
         }
@@ -307,6 +525,10 @@ class ExponentialTransform {
  */
 class ModifyTransform {
     public:
+        static constexpr char name[] = "ModifyTransform";
+        static constexpr GReal startx[3] = {-1, 0., 0.};
+        static constexpr GReal stopx[3] = {-1, 1., 2*M_PI};
+
         const GReal hslope;
 
         // Constructor
@@ -316,19 +538,19 @@ class ModifyTransform {
         KOKKOS_INLINE_FUNCTION void coord_to_embed(const GReal Xnative[GR_DIM], GReal Xembed[GR_DIM]) const
         {
             Xembed[0] = Xnative[0];
-            Xembed[1] = exp(Xnative[1]);
+            Xembed[1] = m::exp(Xnative[1]);
 #if LEGACY_TH
-            const GReal th = M_PI*Xnative[2] + ((1. - hslope)/2.)*sin(2.*M_PI*Xnative[2]);
+            const GReal th = M_PI*Xnative[2] + ((1. - hslope)/2.)*m::sin(2.*M_PI*Xnative[2]);
             Xembed[2] = excise(excise(th, 0.0, SMALL), M_PI, SMALL);
 #else
-            Xembed[2] = M_PI*Xnative[2] + ((1. - hslope)/2.)*sin(2.*M_PI*Xnative[2]);
+            Xembed[2] = M_PI*Xnative[2] + ((1. - hslope)/2.)*m::sin(2.*M_PI*Xnative[2]);
 #endif
             Xembed[3] = Xnative[3];
         }
         KOKKOS_INLINE_FUNCTION void coord_to_native(const GReal Xembed[GR_DIM], GReal Xnative[GR_DIM]) const
         {
             Xnative[0] = Xembed[0];
-            Xnative[1] = log(Xembed[1]);
+            Xnative[1] = m::log(Xembed[1]);
             Xnative[3] = Xembed[3];
             // Treat the special case with a large macro
             ROOT_FIND
@@ -340,8 +562,8 @@ class ModifyTransform {
         {
             gzero2(dxdX);
             dxdX[0][0] = 1.;
-            dxdX[1][1] = exp(Xnative[1]);
-            dxdX[2][2] = M_PI - (hslope - 1.)*M_PI*cos(2.*M_PI*Xnative[2]);
+            dxdX[1][1] = m::exp(Xnative[1]);
+            dxdX[2][2] = M_PI - (hslope - 1.)*M_PI*m::cos(2.*M_PI*Xnative[2]);
             dxdX[3][3] = 1.;
         }
         /**
@@ -351,8 +573,8 @@ class ModifyTransform {
         {
             gzero2(dXdx);
             dXdx[0][0] = 1.;
-            dXdx[1][1] = 1 / exp(Xnative[1]);
-            dXdx[2][2] = 1 / (M_PI - (hslope - 1.)*M_PI*cos(2.*M_PI*Xnative[2]));
+            dXdx[1][1] = 1 / m::exp(Xnative[1]);
+            dXdx[2][2] = 1 / (M_PI - (hslope - 1.)*M_PI*m::cos(2.*M_PI*Xnative[2]));
             dXdx[3][3] = 1.;
         }
 };
@@ -363,38 +585,41 @@ class ModifyTransform {
  */
 class FunkyTransform {
     public:
+        static constexpr char name[] = "FunkyTransform";
+        static constexpr GReal startx[3] = {-1, 0., 0.};
+        static constexpr GReal stopx[3] = {-1, 1., 2*M_PI};
+
         const GReal startx1;
         const GReal hslope, poly_xt, poly_alpha, mks_smooth;
-        GReal poly_norm; // TODO make this const and use a wrapper/factory to make these things?
+        // Must be *defined* afterward to use constructor below
+        const GReal poly_norm;
 
         // Constructor
         KOKKOS_FUNCTION FunkyTransform(GReal startx1_in, GReal hslope_in, GReal mks_smooth_in, GReal poly_xt_in, GReal poly_alpha_in):
-            startx1(startx1_in), hslope(hslope_in), mks_smooth(mks_smooth_in), poly_xt(poly_xt_in), poly_alpha(poly_alpha_in)
-            {
-                poly_norm = 0.5 * M_PI * 1./(1. + 1./(poly_alpha + 1.) * 1./m::pow(poly_xt, poly_alpha));
-            }
+            startx1(startx1_in), hslope(hslope_in), mks_smooth(mks_smooth_in), poly_xt(poly_xt_in), poly_alpha(poly_alpha_in),
+            poly_norm(0.5 * M_PI * 1./(1. + 1./(poly_alpha + 1.) * 1./m::pow(poly_xt, poly_alpha))) {}
 
         // Coordinate transformations
         KOKKOS_INLINE_FUNCTION void coord_to_embed(const GReal Xnative[GR_DIM], GReal Xembed[GR_DIM]) const
         {
             Xembed[0] = Xnative[0];
-            Xembed[1] = exp(Xnative[1]);
+            Xembed[1] = m::exp(Xnative[1]);
 
-            const GReal thG = M_PI*Xnative[2] + ((1. - hslope)/2.)*sin(2.*M_PI*Xnative[2]);
+            const GReal thG = M_PI*Xnative[2] + ((1. - hslope)/2.)*m::sin(2.*M_PI*Xnative[2]);
             const GReal y = 2*Xnative[2] - 1.;
             const GReal thJ = poly_norm * y * (1. + m::pow(y/poly_xt,poly_alpha) / (poly_alpha + 1.)) + 0.5 * M_PI;
 #if LEGACY_TH
-            const GReal th = thG + exp(mks_smooth * (startx1 - Xnative[1])) * (thJ - thG);
+            const GReal th = thG + m::exp(mks_smooth * (startx1 - Xnative[1])) * (thJ - thG);
             Xembed[2] = excise(excise(th, 0.0, SMALL), M_PI, SMALL);
 #else
-            Xembed[2] = thG + exp(mks_smooth * (startx1 - Xnative[1])) * (thJ - thG);
+            Xembed[2] = thG + m::exp(mks_smooth * (startx1 - Xnative[1])) * (thJ - thG);
 #endif
             Xembed[3] = Xnative[3];
         }
         KOKKOS_INLINE_FUNCTION void coord_to_native(const GReal Xembed[GR_DIM], GReal Xnative[GR_DIM]) const
         {
             Xnative[0] = Xembed[0];
-            Xnative[1] = log(Xembed[1]);
+            Xnative[1] = m::log(Xembed[1]);
             Xnative[3] = Xembed[3];
             // Treat the special case with a macro
             ROOT_FIND
@@ -406,7 +631,7 @@ class FunkyTransform {
         {
             gzero2(dxdX);
             dxdX[0][0] = 1.;
-            dxdX[1][1] = exp(Xnative[1]);
+            dxdX[1][1] = m::exp(Xnative[1]);
             dxdX[2][1] = -exp(mks_smooth * (startx1 - Xnative[1])) * mks_smooth
                 * (
                 M_PI / 2. -
@@ -415,9 +640,9 @@ class FunkyTransform {
                         * (1
                             + (m::pow((-1. + 2 * Xnative[2]) / poly_xt, poly_alpha))
                                 / (1 + poly_alpha))
-                    - 1. / 2. * (1. - hslope) * sin(2. * M_PI * Xnative[2]));
-            dxdX[2][2] = M_PI + (1. - hslope) * M_PI * cos(2. * M_PI * Xnative[2])
-                + exp(mks_smooth * (startx1 - Xnative[1]))
+                    - 1. / 2. * (1. - hslope) * m::sin(2. * M_PI * Xnative[2]));
+            dxdX[2][2] = M_PI + (1. - hslope) * M_PI * m::cos(2. * M_PI * Xnative[2])
+                + m::exp(mks_smooth * (startx1 - Xnative[1]))
                     * (-M_PI
                         + 2. * poly_norm
                             * (1.
@@ -426,7 +651,7 @@ class FunkyTransform {
                         + (2. * poly_alpha * poly_norm * (2. * Xnative[2] - 1.)
                             * m::pow((2. * Xnative[2] - 1.) / poly_xt, poly_alpha - 1.))
                             / ((1. + poly_alpha) * poly_xt)
-                        - (1. - hslope) * M_PI * cos(2. * M_PI * Xnative[2]));
+                        - (1. - hslope) * M_PI * m::cos(2. * M_PI * Xnative[2]));
             dxdX[3][3] = 1.;
         }
         /**
@@ -442,6 +667,7 @@ class FunkyTransform {
 };
 
 // Bundle coordinates and transforms into umbrella variant types
-// Note nesting isn't allowed -- do it yourself by calling the steps if that's really important...
-using SomeBaseCoords = mpark::variant<SphMinkowskiCoords, CartMinkowskiCoords, SphBLCoords, SphKSCoords>;
-using SomeTransform = mpark::variant<NullTransform, ExponentialTransform, ModifyTransform, FunkyTransform>;
+// These act as a wannabe "interface" or "parent class" with the exception that access requires "mpark::visit"
+// See coordinate_embedding.hpp
+using SomeBaseCoords = mpark::variant<SphMinkowskiCoords, CartMinkowskiCoords, SphBLCoords, SphKSCoords, SphBLExtG, SphKSExtG>;
+using SomeTransform = mpark::variant<NullTransform, SphNullTransform, ExponentialTransform, SuperExponentialTransform, ModifyTransform, FunkyTransform>;

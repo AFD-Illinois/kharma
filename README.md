@@ -44,3 +44,10 @@ Except for performance tuning, KHARMA has no compile time parameters: all of the
 
 ## Hacking
 KHARMA has some preliminary documentation for developers, hosted in its GitHub [wiki](https://github.com/AFD-Illinois/kharma/wiki).
+
+## Licenses
+KHARMA is made available under the BSD 3-clause license included in each file and in the file LICENSE at the root of this repository.
+
+This repository also carries a substantial portion of the [Kokkos Kernels](https://github.com/kokkos/kokkos-kernels), in the directory `kharma/implicit/kokkos-kernels-pivoted`, which is provided under the license included in that directory.
+
+Submodules of this repository, [Parthenon](https://github.com/parthenon-hpc-lab/parthenon) and [mpark::variant](https://github.com/mpark/variant) are made available under their own licenses.

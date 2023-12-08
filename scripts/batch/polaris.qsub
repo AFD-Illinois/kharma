@@ -1,0 +1,42 @@
+#!/bin/bash -l
+#PBS -N KHARMA
+#PBS -l select=1
+#PBS -l walltime=0:10:00
+#PBS -q debug
+##PBS -q gpu-hackathon
+#PBS -A gpu_hack
+#PBS -l filesystems=home:grand
+
+KHARMA_DIR=~/kharma-dev
+WRAPPER=$KHARMA_DIR/bin/select_gpu_polaris
+KHARMA_ARGS="-i $KHARMA_DIR/pars/benchmark/sane_perf.par"
+
+# Print ranks
+NNODES=`wc -l < $PBS_NODEFILE`
+NRANKS=$(nvidia-smi -L | wc -l) # Number of MPI ranks to spawn per node
+NDEPTH=8 # Number of hardware threads per rank (i.e. spacing between MPI ranks)
+NTHREADS=1 # Number of software threads per rank to launch (i.e. OMP_NUM_THREADS)
+NTOTRANKS=$(( NNODES * NRANKS ))
+#NTOTRANKS=1 # To set manually for scaling/testing
+echo "NUM_OF_NODES= ${NNODES} TOTAL_NUM_RANKS= ${NTOTRANKS} RANKS_PER_NODE= ${NRANKS} THREADS_PER_RANK= ${NTHREADS}"
+
+# OpenMP config
+export OMP_PROC_BIND=spread
+export OMP_PLACES=threads
+
+export MPICH_GPU_SUPPORT_ENABLED=1
+
+# Load any defaults/modules from the machine file
+HOST=$(hostname -f)
+ARGS=$(cat $KHARMA_DIR/make_args)
+for machine in $KHARMA_DIR/machines/*.sh
+do
+  source $machine
+done
+
+# Run KHARMA with mapping
+cd $PBS_O_WORKDIR
+set -x
+mpiexec -n ${NTOTRANKS} --ppn ${NRANKS_PER_NODE} --depth=${NDEPTH} --cpu-bind depth --env OMP_NUM_THREADS=${NTHREADS} -env OMP_PLACES=threads \
+        $WRAPPER $KHARMA_DIR/kharma.cuda $KHARMA_ARGS
+set +x

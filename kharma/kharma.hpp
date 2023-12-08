@@ -31,6 +31,7 @@
  *  OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+#pragma once
 
 #include "decs.hpp"
 #include "types.hpp"
@@ -39,55 +40,111 @@
  * General preferences for KHARMA.  Anything semi-driver-independent, like loading packages, etc.
  */
 namespace KHARMA {
+
+/**
+ * Initialize a "package" of global variables: quantities needed randomly in several places.
+ * Some are physical e.g. time, step times. Others track program state like initialization vs. stepping.
+ */
+std::shared_ptr<KHARMAPackage> InitializeGlobals(ParameterInput *pin, std::shared_ptr<Packages_t>& packages);
+
+/**
+ * Version for restarts, called in PostInitialize if we're restarting from a Parthenon restart file
+ * Note this doesn't do very much -- Parthenon is good about restoring things the way we'd like
+ */
+void ResetGlobals(ParameterInput *pin, Mesh *pmesh);
+
+/**
+ * Update variables in Globals package based on Parthenon state incl. SimTime struct
+ */
+void PreStepWork(Mesh *pmesh, ParameterInput *pin, const SimTime &tm);
+/**
+ * Update variables in Globals package based on Parthenon state incl. SimTime struct
+ */
+void PostStepWork(Mesh *pmesh, ParameterInput *pin, const SimTime &tm);
+
+/**
+ * Task to add a package.  Lets us queue up all the packages we want in a task list, *then* load them
+ * with correct dependencies and everything!
+ */
+TaskStatus AddPackage(std::shared_ptr<Packages_t>& packages,
+                      std::function<std::shared_ptr<KHARMAPackage>(ParameterInput*, std::shared_ptr<Packages_t>&)> package_init,
+                      ParameterInput *pin);
+
 /**
  * This function messes with all Parthenon's parameters in-place before we hand them to the Mesh,
  * so that KHARMA decks can omit/infer some things parthenon needs.
  * This includes boundaries in spherical coordinates, coordinate system translations, etc.
  * This function also handles setting parameters from restart files
  */
-void FixParameters(std::unique_ptr<ParameterInput>& pin);
+void FixParameters(ParameterInput *pin);
 
 /**
  * Load any packages specified in the input parameters
  */
 Packages_t ProcessPackages(std::unique_ptr<ParameterInput>& pin);
 
-/**
- * Initialize a "package" (StateDescriptor) of global variables, quantities needed randomly in several places, like:
- * dt_last, last step time
- * ctop_max, maximum speed on the grid
- * in_loop, whether one step has been completed (for e.g. EstimateTimestep)
- */
-std::shared_ptr<StateDescriptor> InitializeGlobals(ParameterInput *pin);
-// Version for restarts, called in PostInitialize if we're restarting from a Parthenon restart file
-void ResetGlobals(ParameterInput *pin, Mesh *pmesh);
+// TODO(BSP) not sure where to put these
 
 /**
- * Imitate Parthenon's FillDerived call, but on only a subset of zones defined by 'domain'
- * Used for boundary calls, see boundaries.cpp
+ * Check whether a given field is anywhere in outputs.
+ * Used to avoid calculating expensive fields (jcon, divB) if they
+ * will not even be written.
+ * Note this compares the field name as a substring rather than
+ * an exact match to a vector element, so sub-names like `prims.`
+ * or `coords.` will match any field which contains them.
  */
-void FillDerivedDomain(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, int coarse);
+inline bool FieldIsOutput(ParameterInput *pin, std::string name)
+{
+    InputBlock *pib = pin->pfirst_block;
+    while (pib != nullptr) {
+        // For every output block with a 'variables' entry...
+        if (pib->block_name.find("parthenon/output") != std::string::npos &&
+            pin->DoesParameterExist(pib->block_name, "variables")) {
+            std::string allvars = pin->GetString(pib->block_name, "variables");
+            if (allvars.find(name) != std::string::npos) {
+                return true;
+            }
+        }
+        pib = pib->pnext;
+    }
+    return false;
+}
 
 /**
- * Code-wide work before each step in the fluid evolution.  Currently just updates globals.
+ * This fn calculates the size a VariablePack *would* be, without making one --
+ * it uses only the package list, and counts through each variable in each package.
+ * Mostly useful for initialization.
  */
-void PreStepMeshUserWorkInLoop(Mesh *pmesh, ParameterInput *pin, const SimTime &tm);
+inline int PackDimension(Packages_t* packages, Metadata::FlagCollection fc)
+{
+    // We want to exclude anything specific to startup processes e.g. B field cleanup,
+    // & not used elsewhere
+    if (packages->AllPackages().count("StartupOnly"))
+        fc = fc - Metadata::GetUserFlag("StartupOnly");
+
+    // Count dimensions (1 for scalars + vector lengths) of each package's variables
+    int nvar = 0;
+    for (auto pkg : packages->AllPackages()) {
+        nvar += pkg.second->GetPackDimension(fc);
+        // std::cout << pkg.first << " variables: " << pkg.second->GetPackDimension(fc) << std::endl;
+    }
+    return nvar;
+}
 
 /**
- * Code-wide work after each step in the fluid evolution.  Currently just updates globals.
+ * This fn calculates the size a VariablePack *would* be, without making one --
+ * it uses only the package list, and counts through each variable in each package.
+ * Mostly useful for initialization.
  */
-void PostStepMeshUserWorkInLoop(Mesh *pmesh, ParameterInput *pin, const SimTime &tm);
+inline std::vector<std::string> GetVariableNames(Packages_t* packages, Metadata::FlagCollection fc)
+{
+    // Count dimensions (1 for scalars + vector lengths) of each package's variables
+    std::vector<std::string> names;
+    for (auto pkg : packages->AllPackages()) {
+        std::vector<std::string> pnames = pkg.second->GetVariableNames(fc);
+        names.insert(names.end(), pnames.begin(), pnames.end());
+    }
+    return names;
+}
 
-/**
- * Calculate and print diagnostics after each step. Currently:
- * GRMHD: pflags & fflags, negative values in rho,u, ctop of 0 or NaN
- * B fields: MaxDivB
- */
-void PostStepDiagnostics(Mesh *pmesh, ParameterInput *pin, const SimTime &tm);
-
-/**
- * Fill any arrays that are calculated only for output, e.g. divB, jcon, etc.
- * This calls the FillOutput function of each package
- */
-void FillOutput(MeshBlock *pmb, ParameterInput *pin);
 }

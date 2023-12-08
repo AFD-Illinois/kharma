@@ -34,7 +34,10 @@
 #pragma once
 
 #include "decs.hpp"
-#include "mpi.hpp"
+
+#include "boundaries/boundary_types.hpp"
+#include "kharma_package.hpp"
+#include "reductions/reductions_types.hpp"
 
 #include <parthenon/parthenon.hpp>
 
@@ -51,17 +54,26 @@ using parthenon::MeshBlockData;
 
 // This provides a way of addressing vectors that matches
 // directions, to make derivatives etc more readable
+// TODO is there something tricky with statics we can do here to type?
 #define V1 0
 #define V2 1
 #define V3 2
 
-// Denote reconstruction algorithms
-// See reconstruction.hpp for implementations
-enum ReconstructionType{donor_cell=0, linear_mc, linear_vl, ppm, mp5, weno5, weno5_lower_poles};
+// Pull TopologicalElements out to match the above
+using TE = parthenon::TopologicalElement;
+constexpr TE CC = TE::CC;
+constexpr TE F1 = TE::F1;
+constexpr TE F2 = TE::F2;
+constexpr TE F3 = TE::F3;
+constexpr TE E1 = TE::E1;
+constexpr TE E2 = TE::E2;
+constexpr TE E3 = TE::E3;
+constexpr TE NN = TE::NN;
 
-// Denote inversion failures (pflags). See U_to_P for status explanations
-// Only thrown from function in U_to_P.hpp, see that file for meanings
-enum InversionStatus{success=0, neg_input, max_iter, bad_ut, bad_gamma, neg_rho, neg_u, neg_rhou};
+// Any basic type manips, see LocOf in decs etc etc
+KOKKOS_INLINE_FUNCTION TopologicalElement FaceOf(const int& dir) {
+    return (dir == 1) ? F1 : (dir == 2) ? F2 : F3;
+}
 
 // Struct for derived 4-vectors at a point, usually calculated and needed together
 typedef struct {
@@ -70,6 +82,21 @@ typedef struct {
     Real bcon[GR_DIM];
     Real bcov[GR_DIM];
 } FourVectors;
+
+typedef struct {
+    uint is;
+    uint ie;
+    uint js;
+    uint je;
+    uint ks;
+    uint ke;
+} IndexRange3;
+
+typedef struct {
+    uint n1;
+    uint n2;
+    uint n3;
+} IndexSize3;
 
 /**
  * Map of the locations of particular variables in a VariablePack
@@ -89,7 +116,7 @@ class VarMap {
     public:
         // Use int8. 127 values ought to be enough for anybody, right?
         // Basic primitive variables
-        int8_t RHO, UU, U1, U2, U3, B1, B2, B3;
+        int8_t RHO, UU, U1, U2, U3, B1, B2, B3, Bf1, Bf2, Bf3;
         // Tracker variables
         int8_t RHO_ADDED, UU_ADDED, PASSIVE;
         // Electron entropy/energy tracking
@@ -107,6 +134,7 @@ class VarMap {
                 U1 = name_map["cons.uvec"].first;
                 // B
                 B1 = name_map["cons.B"].first;
+                Bf1 = name_map["cons.fB"].first;
                 PSI = name_map["cons.psi_cd"].first;
                 // Floors
                 RHO_ADDED = name_map["cons.rho_added"].first;
@@ -129,6 +157,7 @@ class VarMap {
                 U1 = name_map["prims.uvec"].first;
                 // B
                 B1 = name_map["prims.B"].first;
+                Bf1 = name_map["prims.fB"].first;
                 PSI = name_map["prims.psi_cd"].first;
                 // Floors (TODO cons only?)
                 RHO_ADDED = name_map["prims.rho_added"].first;
@@ -145,121 +174,105 @@ class VarMap {
                 Q = name_map["prims.q"].first;
                 DP = name_map["prims.dP"].first;
             }
-            U2 = U1 + 1;
-            U3 = U1 + 2;
-            B2 = B1 + 1;
-            B3 = B1 + 2;
+            if (U1 >= 0) {
+                U2 = U1 + 1;
+                U3 = U1 + 2;
+            } else {
+                U2 = -1;
+                U3 = -1;
+            }
+            if (B1 >= 0) {
+                B2 = B1 + 1;
+                B3 = B1 + 2;
+            } else {
+                B2 = -1;
+                B3 = -1;
+            }
+            if (Bf1 >= 0) {
+                Bf2 = Bf1 + 1;
+                Bf3 = Bf1 + 2;
+            } else {
+                Bf2 = -1;
+                Bf3 = -1;
+            }
+        }
+
+        void print() const
+        {
+            printf("VAR MAP:\n");
+            printf("prims: %d %d %d %d %d\n", RHO, UU, U1, U2, U3);
+            printf("B field cell: %d %d %d face: %d %d %d\n", B1, B2, B3, Bf1, Bf2, Bf3);
+            printf("EMHD q: %d dP: %d\n", Q, DP);
         }
 };
 
+#if DEBUG
 /**
- * Functions for checking boundaries in 3D
+ * Function to generate outputs wherever, whenever.
  */
-KOKKOS_INLINE_FUNCTION bool inside(const int& k, const int& j, const int& i,
-                                   const IndexRange& kb, const IndexRange& jb, const IndexRange& ib)
+inline void OutputNow(Mesh *pmesh, std::string name)
 {
-    return (i >= ib.s) && (i <= ib.e) && (j >= jb.s) && (j <= jb.e) && (k >= kb.s) && (k <= kb.e);
+    auto tm = SimTime(0., 0., 0, 0, 0, 0, 0.);
+    ParameterInput *pin = pmesh->packages.Get("Globals")->Param<ParameterInput*>("pin");
+    auto pouts = std::make_unique<Outputs>(pmesh, pin, &tm);
+    pouts->MakeOutputs(pmesh, pin, &tm, SignalHandler::OutputSignal::now);
+    // TODO: find most recently written "now" files and move them to "name"
 }
-KOKKOS_INLINE_FUNCTION bool outside(const int& k, const int& j, const int& i,
-                                    const IndexRange& kb, const IndexRange& jb, const IndexRange& ib)
-{
-    return (i < ib.s) || (i > ib.e) || (j < jb.s) || (j > jb.e) || (k < kb.s) || (k > kb.e);
-}
+#endif
 
 /**
- * Function for checking boundary flags: is this a domain or internal bound?
- */
-inline bool IsDomainBound(MeshBlock *pmb, BoundaryFace face)
-{
-    return (pmb->boundary_flag[face] != BoundaryFlag::block &&
-            pmb->boundary_flag[face] != BoundaryFlag::periodic);
-}
-
-/**
- * Functions for "tracing" execution by printing strings (and optionally state of zones)
- * at each important function entry/exit
+ * Functions for "tracing" execution by printing strings at each entry/exit.
+ * Normally, they profile the code, but they can print a nested execution trace.
+ * 
+ * Don't laugh at my dumb mutex, it works.
  */
 #if TRACE
-#define PRINTCORNERS 0
-#define PRINTZONE 0
-inline void PrintCorner(MeshBlockData<Real> *rc)
-{
-    auto rhop = rc->Get("prims.rho").data.GetHostMirrorAndCopy();
-    auto up = rc->Get("prims.u").data.GetHostMirrorAndCopy();
-    auto uvecp = rc->Get("prims.uvec").data.GetHostMirrorAndCopy();
-    auto Bp = rc->Get("prims.B").data.GetHostMirrorAndCopy();
-    auto rhoc = rc->Get("cons.rho").data.GetHostMirrorAndCopy();
-    auto uc = rc->Get("cons.u").data.GetHostMirrorAndCopy();
-    auto uvecc = rc->Get("cons.uvec").data.GetHostMirrorAndCopy();
-    auto Bu = rc->Get("cons.B").data.GetHostMirrorAndCopy();
-    //auto p = rc->Get("p").data.GetHostMirrorAndCopy();
-    auto pflag = rc->Get("pflag").data.GetHostMirrorAndCopy();
-    //auto q = rc->Get("prims.q").data.GetHostMirrorAndCopy();
-    //auto dP = rc->Get("prims.dP").data.GetHostMirrorAndCopy();
-    const IndexRange ib = rc->GetBoundsI(IndexDomain::interior);
-    const IndexRange jb = rc->GetBoundsJ(IndexDomain::interior);
-    const IndexRange kb = rc->GetBoundsK(IndexDomain::interior);
-    std::cerr << "p:";
-    for (int j=0; j<8; j++) {
-        std::cerr << std::endl;
-        for (int i=0; i<8; i++) {
-            fprintf(stderr, "%.5g\t", pflag(kb.s, j, i));
-        }
-    }
-    // std::cerr << std::endl << "B1:";
-    // for (int j=0; j<8; j++) {
-    //     std::cerr << std::endl;
-    //     for (int i=0; i<8; i++) {
-    //         fprintf(stderr, "%.5g\t", Bu(V1, kb.s, j, i));
-    //     }
-    // }
-    std::cerr << std::endl << std::endl;
-}
-
-inline void PrintZone(MeshBlockData<Real> *rc)
-{
-    auto rhop = rc->Get("prims.rho").data.GetHostMirrorAndCopy();
-    auto up = rc->Get("prims.u").data.GetHostMirrorAndCopy();
-    auto uvecp = rc->Get("prims.uvec").data.GetHostMirrorAndCopy();
-    auto Bp = rc->Get("prims.B").data.GetHostMirrorAndCopy();
-    auto q = rc->Get("prims.q").data.GetHostMirrorAndCopy();
-    auto dP = rc->Get("prims.dP").data.GetHostMirrorAndCopy();
-    std::cerr << "RHO: " << rhop(0,0,100)
-         << " UU: "  << up(0,0,100)
-         << " U: "   << uvecp(0, 0,0,100) << " " << uvecp(1, 0,0,100)<< " " << uvecp(2, 0,0,100)
-         << " B: "   << Bp(0, 0,0,100) << " " << Bp(1, 0,0,100) << " " << Bp(2, 0,0,100)
-         << " q: "   << q(0,0,100) 
-         << " dP: "  << dP(0,0,100) << std::endl;
-}
-
+// Can we namespace these?
+extern int kharma_debug_trace_indent;
+extern int kharma_debug_trace_mutex;
+#define MAX_INDENT_SPACES 80
 inline void Flag(std::string label)
 {
-    if(MPIRank0()) std::cerr << label << std::endl;
-}
-
-inline void Flag(MeshBlockData<Real> *rc, std::string label)
-{
     if(MPIRank0()) {
-        std::cerr << label << std::endl;
-        if(PRINTCORNERS) PrintCorner(rc);
-        if(PRINTZONE) PrintZone(rc);
+        int& indent = kharma_debug_trace_indent;
+        int& mutex = kharma_debug_trace_mutex;
+        // If no other thread is printing one of these...
+        while (mutex != 0);
+        // ... take the mutex and print
+        mutex = 1;
+        // Make very sure the indent does not exceed the available space.
+        // Forgetting EndFlag() is easy and buffer overflows are bad.
+        indent = m::max(m::min(indent, MAX_INDENT_SPACES/2), 0);
+        char tab[MAX_INDENT_SPACES] = {0};
+        for (int i=0; i < indent; i++) tab[i*2] = tab[i*2+1] = ' ';
+        // Print everything in one call so we have the best chance of coherence
+        fprintf(stderr, "%sStarting %s\n", tab, label.c_str());
+        indent = m::min(indent+1, MAX_INDENT_SPACES/2);
+        // Release mutex
+        mutex = 0;
     }
 }
-
-inline void Flag(MeshData<Real> *md, std::string label)
+inline void EndFlag()
 {
     if(MPIRank0()) {
-        std::cerr << label << std::endl;
-        if(PRINTCORNERS || PRINTZONE) {
-            auto rc = md->GetBlockData(0).get();
-            if(PRINTCORNERS) PrintCorner(rc);
-            if(PRINTZONE) PrintZone(rc);
-        }
+        int& indent = kharma_debug_trace_indent;
+        int& mutex = kharma_debug_trace_mutex;
+        while (mutex != 0);
+        mutex = 1;
+        indent = m::min(m::max(indent-1, 0), MAX_INDENT_SPACES/2);
+        char tab[MAX_INDENT_SPACES] = {0};
+        for (int i=0; i < indent; i++) tab[i*2] = tab[i*2+1] = ' ';
+        fprintf(stderr, "%sDone\n", tab);
+        mutex = 0;
     }
 }
-
 #else
-inline void Flag(std::string label) {}
-inline void Flag(MeshBlockData<Real> *rc, std::string label) {}
-inline void Flag(MeshData<Real> *md, std::string label) {}
+inline void Flag(std::string label)
+{
+    Kokkos::Profiling::pushRegion(label);
+}
+inline void EndFlag()
+{
+    Kokkos::Profiling::popRegion();
+}
 #endif

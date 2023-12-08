@@ -85,3 +85,37 @@
         else Xb[2] = Xc[2];\
     }\
     Xnative[2] = Xc[2];
+
+#define ROOT_FIND_1 \
+    double r = Xembed[1];\
+    double ra, rb, rc;\
+\
+    double Xa[GR_DIM], Xb[GR_DIM], Xc[GR_DIM], Xtmp[GR_DIM];\
+    Xa[2] = Xnative[2];\
+    Xa[3] = Xnative[3];\
+\
+    Xb[2] = Xa[2];\
+    Xb[3] = Xa[3];\
+    Xc[2] = Xa[2];\
+    Xc[3] = Xa[3];\
+\
+    Xa[1] = 0.;\
+    Xb[1] = 100.;\
+\
+    coord_to_embed(Xa, Xtmp); ra = Xtmp[1];\
+    coord_to_embed(Xb, Xtmp); rb = Xtmp[1];\
+\
+    if (m::abs(ra-r) < ROOTFIND_TOL) {\
+        Xnative[1] = Xa[1]; return;\
+    } else if (m::abs(rb-r) < ROOTFIND_TOL) {\
+        Xnative[1] = Xb[1]; return;\
+    }\
+    for (int i = 0; i < 1000; i++) {\
+        Xc[1] = 0.5 * (Xa[1] + Xb[1]);\
+        coord_to_embed(Xc, Xtmp); rc = Xtmp[1];\
+\
+        if (m::abs(rc - r) < ROOTFIND_TOL) break;\
+        else if ((rc - r) * (rb - r) < 0.) Xa[1] = Xc[1];\
+        else Xb[1] = Xc[1];\
+    }\
+    Xnative[1] = Xc[1];

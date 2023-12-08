@@ -34,171 +34,66 @@
 
 #include "post_initialize.hpp"
 
-#include "b_field_tools.hpp"
+#include "b_cd.hpp"
 #include "b_cleanup.hpp"
+#include "b_ct.hpp"
+#include "b_flux_ct.hpp"
 #include "blob.hpp"
 #include "boundaries.hpp"
-#include "debug.hpp"
+#include "emhd.hpp"
 #include "floors.hpp"
 #include "flux.hpp"
 #include "gr_coordinates.hpp"
 #include "grmhd.hpp"
 #include "kharma.hpp"
-#include "mpi.hpp"
+#include "kharma_driver.hpp"
+#include "reductions.hpp"
+#include "seed_B.hpp"
 #include "types.hpp"
 
-#include "seed_B_ct.hpp"
-#include "seed_B_cd.hpp"
-
-void KHARMA::SeedAndNormalizeB(ParameterInput *pin, std::shared_ptr<MeshData<Real>> md)
+void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart)
 {
-    // Check which solver we'll be using
-    auto pmesh = md->GetMeshPointer();
-    const bool use_b_flux_ct = pmesh->packages.AllPackages().count("B_FluxCT");
-    const bool use_b_cd = pmesh->packages.AllPackages().count("B_CD");
+    // This call:
+    // 1. Initializes any magnetic fields, according to parameters set by the problem or user.
+    // 2. Renormalizes magnetic fields based on a desired ratio of maximum magnetic/gas pressures
+    // 3. Adds any extra material which might be superimposed when restarting, e.g. "hotspot" regions a.k.a. "blobs"
+    // 4. Resets a couple of incidental flags, if Parthenon read them from a restart file
+    // 5. If necessary, cleans up any magnetic field divergence present on the grid
 
-    // Add the field for torus problems as a second pass
-    // Preserves P==U and ends with all physical zones fully defined
-    if (pin->GetOrAddString("b_field", "type", "none") != "none") {
-        // Calculating B has a stencil outside physical zones
-        Flag("Extra boundary sync for B");
-        KBoundaries::SyncAllBounds(md);
+    // Coming into this function, at least the *interior* regions should be initialized with a problem:
+    // that is, rho, u, uvec, and any nonzero auxiliary variables, on each physical zone.
+    // If you need Dirichlet boundary conditions, the domain-edge *ghost* zones should also be initialized,
+    // as they will be "frozen in" during this function and applied thereafter.
 
-        // "Legacy" is the much more common normalization:
-        // It's the ratio of max values over the domain i.e. max(P) / max(P_B),
-        // not necessarily a local min(beta)
-        Real beta_calc_legacy = pin->GetOrAddBoolean("b_field", "legacy", true);
+    auto &md = pmesh->mesh_data.Get();
 
-        Flag("Seeding magnetic field");
-        // Seed the magnetic field and find the minimum beta
-        Real beta_min = 1.e100, p_max = 0., bsq_max = 0., bsq_min = 0.;
-        for (auto &pmb : pmesh->block_list) {
-            auto& rc = pmb->meshblock_data.Get();
+    auto& pkgs = pmesh->packages.AllPackages();
 
-            // This initializes B_P & B_U
-            if (use_b_flux_ct) {
-                B_FluxCT::SeedBField(rc.get(), pin);
-            } else if (use_b_cd) {
-                B_CD::SeedBField(rc.get(), pin);
-            }
+    auto prob_name = pin->GetString("parthenon/job", "problem_id");
 
-            // TODO should this be added after normalization?
-            // TODO option to add flux slowly during the run?
-            // Real BHflux = pin->GetOrAddReal("b_field", "bhflux", 0.0);
-            // if (BHflux > 0.) {
-            //     if (use_b_flux_ct) {
-            //         B_FluxCT::SeedBHFlux(rc.get(), pin);
-            //     } else if (use_b_cd) {
-            //         B_CD::SeedBHFlux(rc.get(), pin);
-            //     }
-            // }
-
-            if (beta_calc_legacy) {
-                Real bsq_local = GetLocalBsqMax(rc.get());
-                if(bsq_local > bsq_max) bsq_max = bsq_local;
-                bsq_local = GetLocalBsqMin(rc.get());
-                if(bsq_local < bsq_min) bsq_min = bsq_local;
-                Real p_local = GetLocalPMax(rc.get());
-                if(p_local > p_max) p_max = p_local;
-            } else {
-                Real beta_local = GetLocalBetaMin(rc.get());
-                if(beta_local < beta_min) beta_min = beta_local;
-            }
-        }
-
-        // Then, if we're in a torus problem or explicitly ask for it,
-        // normalize the magnetic field according to the density
-        auto prob = pin->GetString("parthenon/job", "problem_id");
-        if (pin->GetOrAddBoolean("b_field", "norm", (prob == "torus"))) {
-            // Default to the general literature beta_min of 100.
-            // As noted above, by default this uses the definition max(P)/max(P_B)!
-            Real desired_beta_min = pin->GetOrAddReal("b_field", "beta_min", 100.);
-
-            // Calculate current beta_min value
-            if (beta_calc_legacy) {
-                bsq_max = MPIReduce_once(bsq_max, MPI_MAX);
-                bsq_min = MPIReduce_once(bsq_min, MPI_MIN);
-                p_max = MPIReduce_once(p_max, MPI_MAX);
-                beta_min = p_max / (0.5 * bsq_max);
-            } else {
-                beta_min = MPIReduce_once(beta_min, MPI_MIN);
-            }
-
-            if (pin->GetInteger("debug", "verbose") > 0) {
-                if (MPIRank0()) {
-                    std::cerr << "bsq_max pre-norm: " << bsq_max << std::endl;
-                    std::cerr << "bsq_min pre-norm: " << bsq_min << std::endl;
-                    std::cerr << "Beta min pre-norm: " << beta_min << std::endl;
-                }
-            }
-
-            // Then normalize B by sqrt(beta/beta_min)
-            Flag("Normalizing magnetic field");
-            if (beta_min > 0) {
-                Real norm = m::sqrt(beta_min/desired_beta_min);
-                for (auto &pmb : pmesh->block_list) {
-                    auto& rc = pmb->meshblock_data.Get();
-                    NormalizeBField(rc.get(), norm);
-                }
-            }
-        }
-
-        if (pin->GetInteger("debug", "verbose") > 0) {
-            // Measure again to check, and add divB for good measure
-            beta_min = 1e100; p_max = 0.; bsq_max = 0.;
-            for (auto &pmb : pmesh->block_list) {
-                auto& rc = pmb->meshblock_data.Get();
-
-                if (beta_calc_legacy) {
-                    Real bsq_local = GetLocalBsqMax(rc.get());
-                    if(bsq_local > bsq_max) bsq_max = bsq_local;
-                    Real p_local = GetLocalPMax(rc.get());
-                    if(p_local > p_max) p_max = p_local;
-                } else {
-                    Real beta_local = GetLocalBetaMin(rc.get());
-                    if(beta_local < beta_min) beta_min = beta_local;
-                }
-            }
-            if (beta_calc_legacy) {
-                bsq_max = MPIReduce_once(bsq_max, MPI_MAX);
-                p_max = MPIReduce_once(p_max, MPI_MAX);
-                beta_min = p_max / (0.5 * bsq_max);
-            } else {
-                beta_min = MPIReduce_once(beta_min, MPI_MIN);
-            }
-            if (MPIRank0()) {
-                std::cerr << "bsq_max post-norm: " << bsq_max << std::endl;
-                std::cerr << "Beta min post-norm: " << beta_min << std::endl;
-            }
-        }
-    }
-
-    Flag("Added B Field");
-}
-
-void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart, bool is_resize)
-{
-    Flag("Post-initialization started");
-
-    // Make sure we've built the MeshData object we'll be synchronizing/updating
-    auto &md = pmesh->mesh_data.GetOrAdd("base", 0);
-
-    if (!is_restart)
-        KHARMA::SeedAndNormalizeB(pin, md);
-
+    // Magnetic field operations
     if (pin->GetString("b_field", "solver") != "none") {
-        // Synchronize our seeded or initialized field (incl. primitives) before we print out what divB it has
-        KBoundaries::SyncAllBounds(md);
+        // If we need to seed a field based on the problem's fluid initialization...
+        if (pin->GetOrAddString("b_field", "type", "none") != "none" && !is_restart) {
+            // B field init is not stencil-1, needs boundaries sync'd.
+            // FreezeDirichlet ensures any Dirichlet conditions aren't overwritten by zeros
+            KBoundaries::FreezeDirichlet(md);
+            KHARMADriver::SyncAllBounds(md);
 
-        const bool use_b_flux_ct = pmesh->packages.AllPackages().count("B_FluxCT");
-        const bool use_b_cd = pmesh->packages.AllPackages().count("B_CD");
+            // Then init B field on each block...
+            SeedBField(md.get(), pin);
 
-        // Still print divB, even if we're not initializing/normalizing field here
-        if (use_b_flux_ct) {
-            B_FluxCT::PrintGlobalMaxDivB(md.get());
-        } // TODO B_CD version
+            // If we're doing a torus problem or explicitly ask for it,
+            // normalize the magnetic field according to the max density
+            bool is_torus = prob_name == "torus";
+            if (pin->GetOrAddBoolean("b_field", "norm", is_torus)) {
+                NormalizeBField(md.get(), pin);
+            }
+        }
     }
 
+    // Add any hotspots *after* we've seeded fields,
+    // since seeding may be based on density
     if (pin->GetOrAddBoolean("blob", "add_blob", false)) {
         for (auto &pmb : pmesh->block_list) {
             auto rc = pmb->meshblock_data.Get();
@@ -207,32 +102,79 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart, b
         }
     }
 
-    // Sync to fill the ghost zones: prims for ImExDriver, everything for HARMDriver
-    Flag("Boundary sync");
-    KBoundaries::SyncAllBounds(md);
-
-    // Extra cleanup & init to do if restarting
+    // Any extra cleanup & init especially when restarting
     if (is_restart) {
-        // Parthenon restored our global data for us, but we don't always want that
+        // Parthenon restores all parameters (global vars) when restarting,
+        // but KHARMA needs a few (currently one) reset instead
         KHARMA::ResetGlobals(pin, pmesh);
-    }
 
-    // If we resized the array, cleanup any field divergence we created
-    // Let the user specify to do this, too
-    if ((is_restart && is_resize && !pin->GetOrAddBoolean("resize_restart", "skip_b_cleanup", false))
-        || pin->GetBoolean("b_field", "initial_cleanup")) {
-        // Clean field divergence across the whole grid
-        // Includes boundary syncs
-        B_Cleanup::CleanupDivergence(md);
-    }
-
-    if (MPIRank0()) {
-        std::cout << "Packages in use: " << std::endl;
-        for (auto pkg : pmesh->packages.AllPackages()) {
-            std::cout << pkg.first << std::endl;
+        // We only record the conserved magnetic field in KHARMA restarts,
+        // but we record primitive field in iharm3d restarts
+        bool iharm3d_restart = prob_name == "resize_restart";
+        if (!iharm3d_restart) {
+            if (pkgs.count("B_FluxCT")) {
+                B_FluxCT::MeshUtoP(md.get(), IndexDomain::entire);
+            } else if (pkgs.count("B_CT")) {
+                B_CT::MeshUtoP(md.get(), IndexDomain::entire);
+            }
+            if (pkgs.count("EMHD")) {
+                EMHD::MeshUtoP(md.get(), IndexDomain::entire);
+            }
+        } else {
+            if (pkgs.count("B_FluxCT")) {
+                B_FluxCT::MeshPtoU(md.get(), IndexDomain::entire);
+            } else if (pkgs.count("B_CT")) {
+                // TODO this is only true if not cleaning, amend when cleaning supports B_CT
+                throw std::runtime_error("Cannot restart face-centered field from iharm3d!");
+            }
         }
-        std::cout << std::endl;
     }
 
-    Flag("Post-initialization finished");
+    if (pin->GetString("b_field", "solver") != "none") {
+        // Regardless of how we initialized, if evolving a field we should print max(divB)
+        // divB is not stencil-1, and we may or may not have initialized or read it
+        // Either way, we still need another sync, so it works out
+        KBoundaries::FreezeDirichlet(md);
+        KHARMADriver::SyncAllBounds(md);
+
+        if (pkgs.count("B_FluxCT")) {
+            B_FluxCT::PrintGlobalMaxDivB(md.get());
+        } else if (pkgs.count("B_CT")) {
+            B_CT::PrintGlobalMaxDivB(md.get());
+        } else if (pkgs.count("B_CD")) {
+            //B_CD::PrintGlobalMaxDivB(md.get());
+        }
+    }
+
+    // Clean the B field, generally for resizing/restarting
+    // We call this function any time the package is loaded:
+    // if we decided to load it in kharma.cpp, we need to clean.
+    if (pkgs.count("B_Cleanup")) {
+        if (pin->GetOrAddBoolean("b_cleanup", "output_before_cleanup", false)) {
+            auto tm = SimTime(0., 0., 0, 0, 0, 0, 0.);
+            auto pouts = std::make_unique<Outputs>(pmesh, pin, &tm);
+            pouts->MakeOutputs(pmesh, pin, &tm, SignalHandler::OutputSignal::now);
+        }
+
+        // Cleanup is applied to conserved variables
+        B_Cleanup::CleanupDivergence(md);
+
+        if (pin->GetOrAddBoolean("b_cleanup", "output_after_cleanup", false)) {
+            auto tm = SimTime(0., 0., 0, 0, 0, 0, 0.);
+            auto pouts = std::make_unique<Outputs>(pmesh, pin, &tm);
+            pouts->MakeOutputs(pmesh, pin, &tm, SignalHandler::OutputSignal::now);
+        }
+
+    }
+
+    // If PtoU was called before the B field was initialized or corrected,
+    // the total energy might be wrong.  Now that we have the field,
+    // wipe away any temporary "totals" which may have omitted it
+    Flux::MeshPtoU(md.get(), IndexDomain::entire);
+
+    // Finally, synchronize boundary values.
+    // Freeze any Dirichlet physical boundaries as they are now, after cleanup/sync/etc.
+    KBoundaries::FreezeDirichlet(md);
+    // This is the first sync if there is no B field
+    KHARMADriver::SyncAllBounds(md);
 }

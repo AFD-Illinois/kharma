@@ -38,12 +38,16 @@
 #include <parthenon/parthenon.hpp>
 
 #include "decs.hpp"
+#include "version.hpp"
 
 // Packages
 #include "b_flux_ct.hpp"
 #include "b_cd.hpp"
 #include "b_cleanup.hpp"
+#include "b_ct.hpp"
+#include "coord_output.hpp"
 #include "current.hpp"
+#include "kharma_driver.hpp"
 #include "electrons.hpp"
 #include "implicit.hpp"
 #include "floors.hpp"
@@ -54,31 +58,50 @@
 
 #include "bondi.hpp"
 #include "boundaries.hpp"
-#include "harm_driver.hpp"
 #include "resize_restart.hpp"
+#include "resize_restart_kharma.hpp"
 
-std::shared_ptr<StateDescriptor> KHARMA::InitializeGlobals(ParameterInput *pin)
+std::shared_ptr<KHARMAPackage> KHARMA::InitializeGlobals(ParameterInput *pin, std::shared_ptr<Packages_t>& packages)
 {
-    Flag("Initializing Globals");
-    // All global mutable state.  All of these and only these parameters are "mutable"
-    auto pkg = std::make_shared<StateDescriptor>("Globals");
+    // All truly global state.  Mostly mutable state in order to avoid scope creep
+    auto pkg = std::make_shared<KHARMAPackage>("Globals");
     Params &params = pkg->AllParams();
     // Current time in the simulation.  For ramping things up, ramping things down,
     // or preventing bad outcomes at known times
     params.Add("time", 0.0, true);
     // Last step's dt (Parthenon SimTime tm.dt), which must be preserved to output jcon
     params.Add("dt_last", 0.0, true);
-    // Accumulator for maximum ctop within an MPI process
-    // That is, this value does NOT generally reflect the actual maximum
-    params.Add("ctop_max", 0.0, true);
-    // Maximum between MPI processes, updated after each step; that is, always a maximum.
-    params.Add("ctop_max_last", 0.0, true);
     // Whether we are computing initial outputs/timestep, or versions in the execution loop
     params.Add("in_loop", false, true);
 
-    Flag("Initialized");
+    // Log levels, the other acceptable global
+    // Made mutable in case we want to bump global log level on certain events
+    // TODO allow a "go_verbose" file watch
+    int verbose = pin->GetOrAddInteger("debug", "verbose", 0);
+    params.Add("verbose", verbose, true);
+    int flag_verbose = pin->GetOrAddInteger("debug", "flag_verbose", 0);
+    params.Add("flag_verbose", flag_verbose, true);
+    int extra_checks = pin->GetOrAddInteger("debug", "extra_checks", 0);
+    params.Add("extra_checks", extra_checks, true);
+
+    // Record the problem name, just in case we need to special-case for different problems.
+    // Please favor packages & options before using this, and modify problem-specific code
+    // to be more general as it matures.
+    std::string problem_name = pin->GetString("parthenon/job", "problem_id");
+    params.Add("problem", problem_name);
+
+    // Finally, the code version.  Recorded so it gets passed to output files & for printing
+    params.Add("version", KHARMA::Version::GIT_VERSION);
+    params.Add("SHA1", KHARMA::Version::GIT_SHA1);
+    params.Add("branch", KHARMA::Version::GIT_REFSPEC);
+
+    // Update the times with callbacks
+    pkg->PreStepWork = KHARMA::PreStepWork;
+    pkg->PostStepWork = KHARMA::PostStepWork;
+
     return pkg;
 }
+
 void KHARMA::ResetGlobals(ParameterInput *pin, Mesh *pmesh)
 {
     // The globals package was loaded & exists, retrieve it
@@ -93,305 +116,280 @@ void KHARMA::ResetGlobals(ParameterInput *pin, Mesh *pmesh)
     // to be restored by Parthenon
 }
 
-void KHARMA::FixParameters(std::unique_ptr<ParameterInput>& pin)
+void KHARMA::PreStepWork(Mesh *pmesh, ParameterInput *pin, const SimTime &tm)
+{
+    auto& globals = pmesh->packages.Get("Globals")->AllParams();
+    if (!globals.Get<bool>("in_loop")) {
+        globals.Update<bool>("in_loop", true);
+    }
+    globals.Update<double>("dt_last", tm.dt);
+    globals.Update<double>("time", tm.time);
+}
+
+void KHARMA::PostStepWork(Mesh *pmesh, ParameterInput *pin, const SimTime &tm)
+{
+    // Knowing that this works took a little digging into Parthenon's EvolutionDriver.
+    // The order of operations after calling Step() is:
+    // 1. Call PostStepWork and PostStepDiagnostics (this function and following)
+    // 2. Set the timestep tm.dt to the minimum from the EstimateTimestep calls
+    // 3. Generate any outputs, e.g. jcon
+    // Thus we preserve tm.dt (which has not yet been reset) as dt_last for Current::FillOutput
+    auto& globals = pmesh->packages.Get("Globals")->AllParams();
+    globals.Update<double>("dt_last", tm.dt);
+    globals.Update<double>("time", tm.time);
+}
+
+void KHARMA::FixParameters(ParameterInput *pin)
 {
     Flag("Fixing parameters");
     // Parthenon sets 2 ghost zones as a default.
-    // We can't override that default while allowing a file-specified value.
-    // Fine for now because we crash with 2. (Flux CT)
-    // TODO add under different name?  Better precedence/origin code?
-    pin->SetInteger("parthenon/mesh", "nghost", 4);
-    Globals::nghost = pin->GetInteger("parthenon/mesh", "nghost");
-    // Warn if using less than 4 ghost zones in any circumstances, it's still not tested well
-    // if (Globals::nghost < 4) {
-    //     std::cerr << "WARNING: Using less than 4 ghost zones is untested!" << std::endl;
-    // }
+    // We set a better default with our own parameter, and inform Parthenon.
+    // This means that ONLY driver/nghost will be respected
+    // Driver::Initialize will check we set enough for our reconstruction
+    Globals::nghost = pin->GetOrAddInteger("driver", "nghost", 4);
+    pin->SetInteger("parthenon/mesh", "nghost", Globals::nghost);
 
     // If we're restarting (not via Parthenon), read the restart file to get most parameters
     std::string prob = pin->GetString("parthenon/job", "problem_id");
     if (prob == "resize_restart") {
         ReadIharmRestartHeader(pin->GetString("resize_restart", "fname"), pin);
     }
-
-    // Then handle coordinate systems and boundaries!
-    std::string coordinate_base = pin->GetString("coordinates", "base");
-    if (coordinate_base == "ks") coordinate_base = "spherical_ks";
-    if (coordinate_base == "bl") coordinate_base = "spherical_bl";
-    if (coordinate_base == "minkowski") coordinate_base = "cartesian_minkowski";
-    std::string coordinate_transform = pin->GetOrAddString("coordinates", "transform", "null");
-    if (coordinate_transform == "none") coordinate_transform = "null";
-    if (coordinate_transform == "fmks") coordinate_transform = "funky";
-    if (coordinate_transform == "mks") coordinate_transform = "modified";
-    if (coordinate_transform == "exponential") coordinate_transform = "exp";
-    if (coordinate_transform == "eks") coordinate_transform = "exp";
-    // TODO any other synonyms
-    if (coordinate_base == "spherical_ks" || coordinate_base == "spherical_bl" || coordinate_base == "spherical_minkowski") {
-        pin->SetBoolean("coordinates", "spherical", true);
-    } else {
-        pin->SetBoolean("coordinates", "spherical", false);
+    if (prob == "resize_restart_kharma") {
+        ReadKharmaRestartHeader(pin->GetString("resize_restart", "fname"), pin);
     }
 
-    // Spherical systems can specify r_out and optionally r_in,
-    // instead of xNmin/max.
-    // Other systems must specify x1min/max directly in the mesh region
-    if (!pin->DoesParameterExist("parthenon/mesh", "x1min") ||
-        !pin->DoesParameterExist("parthenon/mesh", "x1max")) {
-        // TODO ask our coordinates about this rather than assuming exp()
-        bool log_r = (coordinate_transform != "null");
+    // Construct a CoordinateEmbedding object.  See coordinate_embedding.hpp for supported systems/tags
+    CoordinateEmbedding tmp_coords(pin);
+    // Record whether we're in spherical as we'll need that
+    pin->SetBoolean("coordinates", "spherical", tmp_coords.is_spherical());
 
-        // Outer radius is always specified
-        GReal Rout = pin->GetReal("coordinates", "r_out");
-        GReal x1max = log_r ? log(Rout) : Rout;
-        pin->GetOrAddReal("parthenon/mesh", "x1max", x1max);
+    // Do a bunch of autodetection/setting in spherical coordinates
+    // Note frequent use of "GetOrAddX": this sets a default if not present but allows overriding
+    if (tmp_coords.is_spherical()) {
+        // Spherical systems can specify r_out and optionally r_in,
+        // instead of xNmin/max.
+        if (!pin->DoesParameterExist("parthenon/mesh", "x1min") ||
+            !pin->DoesParameterExist("parthenon/mesh", "x1max")) {
+            // Outer radius is always specified
+            GReal Rout = pin->GetReal("coordinates", "r_out");
+            GReal x1max = tmp_coords.r_to_native(Rout);
+            pin->GetOrAddReal("parthenon/mesh", "x1max", x1max);
 
-        if (coordinate_base == "spherical_ks" || coordinate_base == "spherical_bl") {
-            // Set inner radius if not specified
-            if (pin->DoesParameterExist("coordinates", "r_in")) {
+            if (mpark::holds_alternative<SphMinkowskiCoords>(tmp_coords.base)) {
+                // In Minkowski coordinates, require Rin so the singularity is at user option
                 GReal Rin = pin->GetReal("coordinates", "r_in");
-                GReal x1min = log_r ? log(Rin) : Rin;
+                GReal x1min = tmp_coords.r_to_native(Rin);
                 pin->GetOrAddReal("parthenon/mesh", "x1min", x1min);
-            } else {
-                int nx1 = pin->GetInteger("parthenon/mesh", "nx1");
-                Real a = pin->GetReal("coordinates", "a");
-                GReal Rhor = 1 + sqrt(1 - a*a);
-                GReal x1hor = log_r ? log(Rhor) : Rhor;
+            } else { // Any spherical BH metric: KS, BL, and derivatives
+                // Set inner radius if not specified
+                if (pin->DoesParameterExist("coordinates", "r_in")) {
+                    GReal Rin = pin->GetReal("coordinates", "r_in");
+                    GReal x1min = tmp_coords.r_to_native(Rin);
+                    pin->GetOrAddReal("parthenon/mesh", "x1min", x1min);
+                    if (Rin < 2.0){ // warn if there are fewer than 5 zones inside the event horizon
+                        GReal dx = (x1max - x1min) / pin->GetInteger("parthenon/mesh", "nx1");
+                        if (tmp_coords.X1_to_embed(x1min + 5*dx) > tmp_coords.get_horizon()) {
+                            std::cerr << "WARNING: inner radius is near/in the EH, but does not allow 5 zones inside!" << std::endl;
+                        }
+                    }
+                } else {
+                    int nx1 = pin->GetInteger("parthenon/mesh", "nx1");
+                    // Allow overriding Rhor for bondi_viscous problem
+                    const GReal Rhor = pin->GetOrAddReal("coordinates", "Rhor", tmp_coords.get_horizon());
+                    const GReal x1hor = tmp_coords.r_to_native(Rhor);
 
-                // Set Rin such that we have 5 zones completely inside the event horizon
-                // If xeh = log(Rhor), xin = log(Rin), and xout = log(Rout),
-                // then we want xeh = xin + 5.5 * (xout - xin) / N1TOT:
-                GReal x1min = (nx1 * x1hor / 5.5 - x1max) / (-1. + nx1 / 5.5);
-                if (x1min < 0.0) {
-                    throw std::invalid_argument("Not enough radial zones were specified to put 5 zones inside EH!");
+                    // Set Rin such that we have 5 zones completely inside the event horizon
+                    // If xeh = log(Rhor), xin = log(Rin), and xout = log(Rout),
+                    // then we want xeh = xin + 5.5 * (xout - xin) / N1TOT:
+                    const GReal x1min = (nx1 * x1hor / 5.5 - x1max) / (-1. + nx1 / 5.5);
+                    if (x1min < 0.0) {
+                        throw std::invalid_argument("Not enough radial zones were specified to put 5 zones inside EH!");
+                    }
+                    pin->GetOrAddReal("parthenon/mesh", "x1min", x1min);
+                    pin->GetOrAddReal("coordinates", "r_in", tmp_coords.X1_to_embed(x1min));
                 }
-                pin->GetOrAddReal("parthenon/mesh", "x1min", x1min);
             }
-
-            //cout << "Setting x1min: " << x1min << " x1max " << x1max << " based on BH with a=" << a << endl;
-
-        } else if (coordinate_base == "spherical_minkowski") {
-            // In Minkowski coordinates, require Rin so the singularity is at user option
-            GReal Rin = pin->GetReal("coordinates", "r_in");
-            GReal x1min = log_r ? log(Rin) : Rin;
-            pin->GetOrAddReal("parthenon/mesh", "x1min", x1min);
+        } else {
+            // Add the coordinate versions if they don't exist (usually restarts)
+            pin->GetOrAddReal("coordinates", "r_in", tmp_coords.X1_to_embed(pin->GetReal("parthenon/mesh", "x1min")));
+            pin->GetOrAddReal("coordinates", "r_out", tmp_coords.X1_to_embed(pin->GetReal("parthenon/mesh", "x1max")));
         }
-    }
 
-    // Assumption: if we're in a spherical system...
-    if (coordinate_base == "spherical_ks" || coordinate_base == "spherical_bl" || coordinate_base == "spherical_minkowski") {
-        // ...then we definitely want KHARMA's spherical boundary conditions
-        // These are inflow in x1 and reflecting in x2, but applied to *primitives* in
-        // a custom operation, see boundaries.cpp
-        pin->GetOrAddString("parthenon/mesh", "ix1_bc", "user");
-        pin->GetOrAddString("parthenon/mesh", "ox1_bc", "user");
-        pin->GetOrAddString("parthenon/mesh", "ix2_bc", "user");
-        pin->GetOrAddString("parthenon/mesh", "ox2_bc", "user");
-        pin->GetOrAddString("parthenon/mesh", "ix3_bc", "periodic");
-        pin->GetOrAddString("parthenon/mesh", "ox3_bc", "periodic");
+        // If the simulation domain extends inside the EH, we change some boundary options
+        pin->SetBoolean("coordinates", "domain_intersects_eh", pin->GetReal("coordinates", "r_in") < tmp_coords.get_horizon());
 
-        // We also know the bounds for most transforms in spherical coords
-        // Note we *only* set them here if they were not previously set/read!
-        if (coordinate_transform == "null" || coordinate_transform == "exp") {
-            pin->GetOrAddReal("parthenon/mesh", "x2min", 0.0);
-            pin->GetOrAddReal("parthenon/mesh", "x2max", M_PI);
-            pin->GetOrAddReal("parthenon/mesh", "x3min", 0.0);
-            pin->GetOrAddReal("parthenon/mesh", "x3max", 2*M_PI);
-        } else if (coordinate_transform == "modified" || coordinate_transform == "funky") {
-            pin->GetOrAddReal("parthenon/mesh", "x2min", 0.0);
-            pin->GetOrAddReal("parthenon/mesh", "x2max", 1.0);
-            pin->GetOrAddReal("parthenon/mesh", "x3min", 0.0);
-            pin->GetOrAddReal("parthenon/mesh", "x3max", 2*M_PI);
-        } // TODO any other transforms/systems
+        // Spherical systems will also want KHARMA's spherical boundary conditions.
+        // Note boundaries are now exclusively set by KBoundaries package
+        pin->GetOrAddString("boundaries", "inner_x1", "outflow");
+        pin->GetOrAddString("boundaries", "outer_x1", "outflow");
+        pin->GetOrAddString("boundaries", "inner_x2", "reflecting");
+        pin->GetOrAddString("boundaries", "outer_x2", "reflecting");
+        pin->GetOrAddString("boundaries", "inner_x3", "periodic");
+        pin->GetOrAddString("boundaries", "outer_x3", "periodic");
     } else {
-        // Most likely, Cartesian simulations will specify boundary conditions,
-        // but we set defaults here.
-        pin->GetOrAddString("parthenon/mesh", "ix1_bc", "periodic");
-        pin->GetOrAddString("parthenon/mesh", "ox1_bc", "periodic");
-        pin->GetOrAddString("parthenon/mesh", "ix2_bc", "periodic");
-        pin->GetOrAddString("parthenon/mesh", "ox2_bc", "periodic");
-        pin->GetOrAddString("parthenon/mesh", "ix3_bc", "periodic");
-        pin->GetOrAddString("parthenon/mesh", "ox3_bc", "periodic");
-        // Cartesian sims must specify the domain!
+        // We can set reasonable default boundary conditions for Cartesian sims,
+        // but not default domain bounds
+        pin->GetOrAddString("boundaries", "inner_x1", "periodic");
+        pin->GetOrAddString("boundaries", "outer_x1", "periodic");
+        pin->GetOrAddString("boundaries", "inner_x2", "periodic");
+        pin->GetOrAddString("boundaries", "outer_x2", "periodic");
+        pin->GetOrAddString("boundaries", "inner_x3", "periodic");
+        pin->GetOrAddString("boundaries", "outer_x3", "periodic");
     }
-    Flag("Fixed");
+
+    // Default boundaries are to cover the domain of our native coordinate system
+    // std::cout << "Coordinate transform has boundaries: "
+    //             << tmp_coords.startx(1) << " "
+    //             << tmp_coords.startx(2) << " "
+    //             << tmp_coords.startx(3) << " to "
+    //             << tmp_coords.stopx(1) << " "
+    //             << tmp_coords.stopx(2) << " "
+    //             << tmp_coords.stopx(3) << std::endl;
+    // In any coordinate system which sets boundaries (i.e. not Cartesian),
+    // stopx > startx > 0. In Cartesian xNmin/xNmax are required
+    if (tmp_coords.startx(1) >= 0)
+        pin->GetOrAddReal("parthenon/mesh", "x1min", tmp_coords.startx(1));
+    if (tmp_coords.stopx(1) >= 0)
+        pin->GetOrAddReal("parthenon/mesh", "x1max", tmp_coords.stopx(1));
+    if (tmp_coords.startx(2) >= 0)
+        pin->GetOrAddReal("parthenon/mesh", "x2min", tmp_coords.startx(2));
+    if (tmp_coords.stopx(2) >= 0)
+        pin->GetOrAddReal("parthenon/mesh", "x2max", tmp_coords.stopx(2));
+    if (tmp_coords.startx(3) >= 0)
+        pin->GetOrAddReal("parthenon/mesh", "x3min", tmp_coords.startx(3));
+    if (tmp_coords.stopx(3) >= 0)
+        pin->GetOrAddReal("parthenon/mesh", "x3max", tmp_coords.stopx(3));
+
+    EndFlag();
 }
 
-Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
+TaskStatus KHARMA::AddPackage(std::shared_ptr<Packages_t>& packages,
+                              std::function<std::shared_ptr<KHARMAPackage>(ParameterInput*, std::shared_ptr<Packages_t>&)> package_init,
+                              ParameterInput *pin)
 {
-    // See above
-    FixParameters(pin);
+    // TODO package names before initialization
+    const auto& pkg = package_init(pin, packages);
+    packages->Add(pkg);
+    Flag("AddPackage_"+pkg->label());
+    EndFlag();
+    return TaskStatus::complete;
+}
 
-    Flag("Initializing packages");
-    // Then put together what we're supposed to
-    Packages_t packages;
+Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput> &pin)
+{
+    Flag("ProcessPackages");
 
-    // Read all package enablements first so we can set their defaults here,
-    // before any packages are initialized: thus they can know the full list
-    std::string b_field_solver = pin->GetOrAddString("b_field", "solver", "flux_ct");
+    // Allocate the packages list as a shared pointer, to be updated in various tasks
+    // TODO print what we're doing here & do some sanity checks, if verbose
+    auto packages = std::make_shared<Packages_t>();
 
-    // Enable b_cleanup package if we want it explicitly
-    bool b_cleanup_package = pin->GetOrAddBoolean("b_cleanup", "on", false);
-    // OR if we need it for resizing a dump
-    bool is_resize = pin->GetString("parthenon/job", "problem_id") == "resize_restart";
-    // OR if we want an initial cleanup pass for some other reason
-    bool initial_cleanup = pin->GetOrAddBoolean("b_field", "initial_cleanup", false);
-    // These were separated to make sure that the preference keys are initialized,
-    // since short-circuiting prevented that when they were listed below
-    bool b_cleanup = b_cleanup_package || is_resize || initial_cleanup;
-
-    // TODO enable this iff jcon is in the list of outputs
-    bool add_jcon = pin->GetOrAddBoolean("GRMHD", "add_jcon", true);
-    bool do_electrons = pin->GetOrAddBoolean("electrons", "on", false);
-    bool do_reductions = pin->GetOrAddBoolean("reductions", "on", true);
-    bool do_emhd = pin->GetOrAddBoolean("emhd", "on", false);
-    bool do_wind = pin->GetOrAddBoolean("wind", "on", false);
-
-    // Set the default driver all the way up here, so packages know how to flag
-    // prims vs cons (imex stepper syncs prims, but it's the packages' job to mark them)
-    std::string driver_type;
-    if (do_emhd) {
-        // Default to implicit step for EMHD
-        driver_type = pin->GetOrAddString("driver", "type", "imex");
-    } else {
-        driver_type = pin->GetOrAddString("driver", "type", "harm");
+    TaskCollection tc;
+    auto& tr = tc.AddRegion(1);
+    auto& tl = tr[0];
+    TaskID t_none(0);
+    // The globals package will never have dependencies
+    auto t_globals = tl.AddTask(t_none, KHARMA::AddPackage, packages, KHARMA::InitializeGlobals, pin.get());
+    // Neither will grid output, as any mesh will get GRCoordinates objects
+    // FieldIsOutput actually just checks for substring match, so this matches any coords. variable
+    if (FieldIsOutput(pin.get(), "coords.")) {
+        auto t_coord_out = tl.AddTask(t_none, KHARMA::AddPackage, packages, CoordinateOutput::Initialize, pin.get());
     }
-    // Initialize the implicit timestepping package early so we can mark fields to be
-    // updated implicitly vs explicitly
-    if (driver_type == "imex") {
-        packages.Add(Implicit::Initialize(pin.get()));
+    // Driver package is the foundation
+    auto t_driver = tl.AddTask(t_none, KHARMA::AddPackage, packages, KHARMADriver::Initialize, pin.get());
+    // GRMHD needs globals to mark packages
+    auto t_grmhd = tl.AddTask(t_globals | t_driver, KHARMA::AddPackage, packages, GRMHD::Initialize, pin.get());
+    // Only load the inverter if GRMHD/EMHD isn't being evolved implicitly
+    auto t_inverter = t_grmhd;
+    if (!pin->GetOrAddBoolean("GRMHD", "implicit", pin->GetOrAddBoolean("emhd", "on", false))) {
+        t_inverter = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, Inverter::Initialize, pin.get());
     }
+    // Floors package depends on having pflag
+    if (!pin->GetOrAddBoolean("floors", "disable_floors", false)) {
+        auto t_floors = tl.AddTask(t_inverter, KHARMA::AddPackage, packages, Floors::Initialize, pin.get());
+    }
+    // Reductions, needed for most other packages
+    auto t_reductions = tl.AddTask(t_none, KHARMA::AddPackage, packages, Reductions::Initialize, pin.get());
 
-    // Global variables "package."  Mutable global state Parthenon doesn't keep for us.
-    // Always enable.
-    packages.Add(KHARMA::InitializeGlobals(pin.get()));
-
-    // Lots of common functions and variables are still in the GRMHD package,
-    // always initialize it first among physics stuff
-    packages.Add(GRMHD::Initialize(pin.get(), packages));
-
-    // We'll also always want the floors package, even if floors are disabled
-    packages.Add(Floors::Initialize(pin.get()));
-
-    // B field solvers, to ensure divB == 0.
-    if (b_field_solver == "none") {
-        // Don't add a B field
-    } else if (b_field_solver == "constraint_damping" || b_field_solver == "b_cd") {
+    // B field solvers, to ensure divB ~= 0.
+    // Bunch of logic here: basically we want to load <=1 solver with an encoded order of preference:
+    // 0. Anything user-specified
+    // 1. Prefer B_CT if AMR since it's compatible
+    // 2. Prefer B_Flux_CT otherwise since it's well-tested
+    auto t_b_field = t_none;
+    bool multilevel = pin->GetOrAddString("parthenon/mesh", "refinement", "none") != "none";
+    std::string b_field_solver = pin->GetOrAddString("b_field", "solver",  multilevel ? "face_ct" : "flux_ct");
+    if (b_field_solver == "none" || b_field_solver == "cleanup" || b_field_solver == "b_cleanup") {
+        // Don't add a B field here
+    } else if (b_field_solver == "constrained_transport" || b_field_solver == "face_ct") {
+        t_b_field = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, B_CT::Initialize, pin.get());
+    } else if (b_field_solver == "constraint_damping" || b_field_solver == "cd") {
         // Constraint damping, probably only useful for non-GR MHD systems
-        packages.Add(B_CD::Initialize(pin.get(), packages));
+        t_b_field = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, B_CD::Initialize, pin.get());
+    } else if (b_field_solver == "flux_ct") {
+        t_b_field = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, B_FluxCT::Initialize, pin.get());
     } else {
-        // Don't even error on bad values.  This is probably what you want
-        packages.Add(B_FluxCT::Initialize(pin.get(), packages));
+        throw std::invalid_argument("Invalid solver! Must be e.g., flux_ct, face_ct, cd, cleanup...");
     }
-    // Additional cleanup on B field.
-    // Can be enabled with or without a per-step solver, currently used for restart resizing
-    if (b_cleanup) {
-        packages.Add(B_Cleanup::Initialize(pin.get(), packages));
-    }
-    // Unless both a field solver and cleanup routine are disabled,
-    // there is some form of B field present/declared.
-    bool b_field_exists = !(b_field_solver == "none" && !b_cleanup);
-
-    // Add jcon, so long as there's a field to calculate it from
-    if (add_jcon && b_field_exists) {
-        packages.Add(Current::Initialize(pin.get()));
-    }
-
-    // Electrons are boring but not impossible without a B field
-    if (do_electrons) {
-        packages.Add(Electrons::Initialize(pin.get(), packages));
+    // Cleanup for the B field, using an elliptic solve for eliminating divB
+    // Almost always loaded explicitly in addition to another transport, just for cleaning at simulation start
+    // Enable b_cleanup package if we want it explicitly
+    bool b_cleanup_package = pin->GetOrAddBoolean("b_cleanup", "on", (b_field_solver == "b_cleanup"));
+    // OR if we need it for resizing a dump
+    bool is_resize = pin->GetString("parthenon/job", "problem_id") == "resize_restart" &&
+                     !pin->GetOrAddBoolean("resize_restart", "skip_b_cleanup", false);
+    // OR if we ordered an initial cleanup pass for some other reason
+    bool initial_cleanup = pin->GetOrAddBoolean("b_field", "initial_cleanup", false);
+    bool use_b_cleanup = b_cleanup_package || is_resize || initial_cleanup;
+    pin->SetBoolean("b_cleanup", "on", use_b_cleanup);
+    auto t_b_cleanup = t_none;
+    if (use_b_cleanup) {
+        t_b_cleanup = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, B_Cleanup::Initialize, pin.get());
+        if (t_b_field == t_none) t_b_field = t_b_cleanup;
     }
 
-    if (do_reductions) {
-        packages.Add(Reductions::Initialize(pin.get()));
+    // Optional standalone packages
+    // Electrons are boring but not impossible without a B field (TODO add a test?)
+    if (pin->GetOrAddBoolean("electrons", "on", false)) {
+        auto t_electrons = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, Electrons::Initialize, pin.get());
+    }
+    if (pin->GetBoolean("emhd", "on")) {
+        auto t_emhd = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, EMHD::Initialize, pin.get());
+    }
+    if (pin->GetOrAddBoolean("wind", "on", false)) {
+        auto t_wind = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, Wind::Initialize, pin.get());
+    }
+    // Enable calculating jcon iff it is in any list of outputs (and there's even B to calculate it).
+    // Since it is never required to restart, this is the only time we'd write (hence, need) it
+    if (FieldIsOutput(pin.get(), "jcon") && t_b_field != t_none) {
+        auto t_current = tl.AddTask(t_b_field, KHARMA::AddPackage, packages, Current::Initialize, pin.get());
     }
 
-    if (do_emhd) {
-        packages.Add(EMHD::Initialize(pin.get(), packages));
+    // Execute the whole collection (just in case we do something fancy?)
+    while (!tr.Execute()); // TODO this will inf-loop on error
+
+    // There are some packages which must be loaded after all physics
+    // Easier to load them separately than list dependencies
+
+    // Flux temporaries must be full size
+    KHARMA::AddPackage(packages, Flux::Initialize, pin.get());
+
+    // And any dirichlet/constant boundaries
+    // TODO avoid init if Parthenon will be handling all boundaries?
+    KHARMA::AddPackage(packages, KBoundaries::Initialize, pin.get());
+
+    // Load the implicit package last, if there are *any* variables that need implicit evolution
+    // This lets us just count by flag, rather than checking all the possible parameters that would
+    // trigger this
+    int n_implicit = PackDimension(packages.get(), Metadata::GetUserFlag("Implicit"));
+    if (n_implicit > 0) {
+        KHARMA::AddPackage(packages, Implicit::Initialize, pin.get());
     }
 
-    if (do_wind) {
-        packages.Add(Wind::Initialize(pin.get()));
-    }
+#if DEBUG
+    // Carry the ParameterInput with us, for generating outputs whenever we want
+    packages->Get("Globals")->AllParams().Add("pin", pin.get());
+#endif
 
-    Flag("Finished initializing packages");
-    return std::move(packages);
+    EndFlag();
+    return std::move(*packages);
 }
-
-
-// TODO decide on a consistent implementation of foreach packages -> do X
-void KHARMA::FillDerivedDomain(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, int coarse)
-{
-    Flag(rc.get(), "Filling derived variables on boundaries");
-    // We need to re-fill the "derived" (primitive) variables on the physical boundaries,
-    // since we already called "FillDerived" before the ghost zones were initialized
-    // This does *not* apply to the GRMHD variables, as their primitive values are filled
-    // during the boundary call
-    auto pmb = rc->GetBlockPointer();
-    // if (pmb->packages.AllPackages().count("GRMHD"))
-    //     GRMHD::UtoP(rc.get(), domain, coarse);
-    if (pmb->packages.AllPackages().count("B_FluxCT"))
-        B_FluxCT::UtoP(rc.get(), domain, coarse);
-    if (pmb->packages.AllPackages().count("B_CD"))
-        B_CD::UtoP(rc.get(), domain, coarse);
-    if (pmb->packages.AllPackages().count("Electrons"))
-        Electrons::UtoP(rc.get(), domain, coarse);
-
-    Flag(rc.get(), "Filled");
-}
-
-void KHARMA::PreStepMeshUserWorkInLoop(Mesh *pmesh, ParameterInput *pin, const SimTime &tm)
-{
-    if (!pmesh->packages.Get("Globals")->Param<bool>("in_loop")) {
-        pmesh->packages.Get("Globals")->UpdateParam<bool>("in_loop", true);
-    }
-}
-
-void KHARMA::PostStepMeshUserWorkInLoop(Mesh *pmesh, ParameterInput *pin, const SimTime &tm)
-{
-    // Knowing this works took a little digging into Parthenon's EvolutionDriver.
-    // The order of operations after calling Step() is:
-    // 1. Call PostStepUserWorkInLoop and PostStepDiagnostics (this function and following)
-    // 2. Set the timestep tm.dt to the minimum from the EstimateTimestep calls
-    // 3. Generate any outputs, e.g. jcon
-    // Thus we preserve tm.dt (which has not yet been reset) as dt_last for Current::FillOutput
-    pmesh->packages.Get("Globals")->UpdateParam<double>("dt_last", tm.dt);
-    pmesh->packages.Get("Globals")->UpdateParam<double>("time", tm.time);
-
-    // ctop_max has fewer rules. It's just convenient to set here since we're assured of no MPI hangs
-    // Since it involves an MPI sync, we only keep track of this when we need it
-    if (pmesh->packages.AllPackages().count("B_CD")) {
-        static AllReduce<Real> ctop_max_last_r;
-        ctop_max_last_r.val = pmesh->packages.Get("Globals")->Param<Real>("ctop_max");
-        ctop_max_last_r.StartReduce(MPI_MAX);
-        while (ctop_max_last_r.CheckReduce() == TaskStatus::incomplete);
-        pmesh->packages.Get("Globals")->UpdateParam<Real>("ctop_max_last", ctop_max_last_r.val);
-        pmesh->packages.Get("Globals")->UpdateParam<Real>("ctop_max", 0.0);
-    }
-}
-
-void KHARMA::PostStepDiagnostics(Mesh *pmesh, ParameterInput *pin, const SimTime &tm)
-{
-    // Parthenon's version of this has a bug, but I would probably subclass it anyway.
-    // very useful to have a single per-step spot to control any routine print statements
-    const auto& md = pmesh->mesh_data.GetOrAdd("base", 0).get();
-    if (md->NumBlocks() > 0) {
-        for (auto &package : pmesh->packages.AllPackages()) {
-            package.second->PostStepDiagnostics(tm, md);
-        }
-    }
-}
-
-void KHARMA::FillOutput(MeshBlock *pmb, ParameterInput *pin)
-{
-    Flag("Filling output");
-    // Rewrite this and the above as a callback registration
-    if (pmb->packages.AllPackages().count("Current"))
-        Current::FillOutput(pmb, pin);
-    if (pmb->packages.AllPackages().count("B_FluxCT"))
-        B_FluxCT::FillOutput(pmb, pin);
-    if (pmb->packages.AllPackages().count("B_CD"))
-        B_CD::FillOutput(pmb, pin);
-    if (pmb->packages.AllPackages().count("Electrons"))
-        Electrons::FillOutput(pmb, pin);
-    Flag("Filled");
-}
-

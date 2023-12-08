@@ -57,9 +57,11 @@ KOKKOS_INLINE_FUNCTION void implicit_sources(const GRCoordinates& G, const Local
 {
     // These are intentionally the tilde versions!
     Real tau, chi_e, nu_e;
-    EMHD::set_parameters(G, P_tau, m_p, emhd_params_tau, gam, k, j, i, tau, chi_e, nu_e);
-    dUq  = -G.gdet(Loci::center, j, i) * (P(m_p.Q) / tau);
-    dUdP = -G.gdet(Loci::center, j, i) * (P(m_p.DP) / tau);
+    EMHD::set_parameters(G, P_tau, m_p, emhd_params_tau, gam, j, i, tau, chi_e, nu_e);
+    if (emhd_params_tau.conduction)
+        dUq = -G.gdet(Loci::center, j, i) * (P(m_p.Q) / tau);
+    if (emhd_params_tau.viscosity)
+        dUdP = -G.gdet(Loci::center, j, i) * (P(m_p.DP) / tau);
 }
 
 /**
@@ -76,11 +78,12 @@ KOKKOS_INLINE_FUNCTION void time_derivative_sources(const GRCoordinates& G, cons
 {
     // Parameters
     Real tau, chi_e, nu_e;
-    EMHD::set_parameters(G, P, m_p, emhd_params, gam, k, j, i, tau, chi_e, nu_e);
+    EMHD::set_parameters(G, P, m_p, emhd_params, gam, j, i, tau, chi_e, nu_e);
 
     FourVectors Dtmp;
     GRMHD::calc_4vecs(G, P, m_p, j, i, Loci::center, Dtmp);
     double bsq = m::max(dot(Dtmp.bcon, Dtmp.bcov), SMALL);
+    const double mag_b = m::sqrt(bsq);
 
     // TIME DERIVATIVES
     Real ucon[GR_DIM], ucov_new[GR_DIM], ucov_old[GR_DIM];
@@ -92,38 +95,41 @@ KOKKOS_INLINE_FUNCTION void time_derivative_sources(const GRCoordinates& G, cons
     DLOOP1 dt_ucov[mu] = (ucov_new[mu] - ucov_old[mu]) / dt;
 
     // Compute div of ucon (only the temporal part is nonzero)
-    Real div_ucon = 0;
+    Real div_ucon    = 0;
     DLOOP1 div_ucon += G.gcon(Loci::center, j, i, 0, mu) * dt_ucov[mu];
     // dTheta/dt
     const Real Theta_new = m::max((gam-1) * P_new(m_p.UU) / P_new(m_p.RHO), SMALL);
     const Real Theta_old = m::max((gam-1) * P_old(m_p.UU) / P_old(m_p.RHO), SMALL);
-    const Real dt_Theta = (Theta_new - Theta_old) / dt;
+    const Real dt_Theta  = (Theta_new - Theta_old) / dt;
 
     // TEMPORAL SOURCE TERMS
     const Real& rho     = P(m_p.RHO);
-    const Real& qtilde  = P(m_p.Q);
-    const Real& dPtilde = P(m_p.DP);
     const Real& Theta   = (gam-1) * P(m_p.UU) / P(m_p.RHO);
 
-    Real q0 = -rho * chi_e * (Dtmp.bcon[0] / m::sqrt(bsq)) * dt_Theta;
-    DLOOP1 q0 -= rho * chi_e * (Dtmp.bcon[mu] / m::sqrt(bsq)) * Theta * Dtmp.ucon[0] * dt_ucov[mu];
+    if (emhd_params.conduction) {
+        const Real& qtilde  = P(m_p.Q);
+        Real q0             = -rho * chi_e * (Dtmp.bcon[0] / mag_b) * dt_Theta;
+        DLOOP1 q0          -= rho * chi_e * (Dtmp.bcon[mu] / mag_b) * Theta * Dtmp.ucon[0] * dt_ucov[mu];
+        Real q0_tilde       = q0;
+        if (emhd_params.higher_order_terms)
+            q0_tilde *= (chi_e != 0) ? m::sqrt(tau / (chi_e * rho * Theta * Theta)) : 0.0;
 
-    Real dP0 = -rho * nu_e * div_ucon;
-    DLOOP1 dP0 += 3. * rho * nu_e * (Dtmp.bcon[0] * Dtmp.bcon[mu] / bsq) * dt_ucov[mu];
-
-    Real q0_tilde  = q0; 
-    Real dP0_tilde = dP0;
-    if (emhd_params.higher_order_terms) {
-        q0_tilde  *= (chi_e != 0) ? sqrt(tau / (chi_e * rho * pow(Theta, 2)) ) : 0.;
-        dP0_tilde *= (nu_e  != 0) ? sqrt(tau / (nu_e * rho * Theta) ) : 0.;
+        dUq  = G.gdet(Loci::center, j, i) * (q0_tilde / tau);
+        if (emhd_params.higher_order_terms)
+            dUq += G.gdet(Loci::center, j, i) * (qtilde / 2.) * div_ucon;
     }
 
-    dUq  = G.gdet(Loci::center, j, i) * (q0_tilde / tau);
-    dUdP = G.gdet(Loci::center, j, i) * (dP0_tilde / tau);
+    if (emhd_params.viscosity) {
+        const Real& dPtilde = P(m_p.DP);
+        Real dP0            = -rho * nu_e * div_ucon;
+        DLOOP1 dP0         += 3. * rho * nu_e * (Dtmp.bcon[0] * Dtmp.bcon[mu] / bsq) * dt_ucov[mu];
+        Real dP0_tilde      = dP0;
+        if (emhd_params.higher_order_terms)
+            dP0_tilde *= (nu_e != 0) ? m::sqrt(tau / (nu_e * rho * Theta)) : 0.0;
 
-    if (emhd_params.higher_order_terms) {
-        dUq  += G.gdet(Loci::center, j, i) * (qtilde / 2.) * div_ucon;
-        dUdP += G.gdet(Loci::center, j, i) * (dPtilde / 2.) * div_ucon;
+        dUdP = G.gdet(Loci::center, j, i) * (dP0_tilde / tau);
+        if (emhd_params.higher_order_terms)
+            dUdP += G.gdet(Loci::center, j, i) * (dPtilde / 2.) * div_ucon;
     }
 }
 

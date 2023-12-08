@@ -1,0 +1,67 @@
+# Orszag-Tang Vortex problem:
+# Generate current sheets on short timescales
+# Adds a restart file output at 50 time units
+# Also uses ImEx driver, so that the restart
+# file contains all the primitive variables.
+# Also omits history file
+
+<parthenon/job>
+problem_id = orszag_tang
+
+<parthenon/mesh>
+refinement = none
+numlevel = 1
+
+nx1 = 256
+x1min = -3.141592653589793
+x1max = 3.141592653589793
+ix1_bc = periodic
+ox1_bc = periodic
+
+nx2 = 256
+x2min = -3.141592653589793
+x2max = 3.141592653589793
+ix2_bc = periodic
+ox2_bc = periodic
+
+nx3 = 1
+x3min = -0.01
+x3max = 0.01
+ix3_bc = periodic
+ox3_bc = periodic
+
+<parthenon/meshblock>
+nx1 = 256
+nx2 = 128
+nx3 = 1
+
+<coordinates>
+base = cartesian_minkowski
+transform = null
+
+<parthenon/time>
+tlim = 100.0
+integrator = rk2
+
+<GRMHD>
+cfl = 0.9
+gamma = 1.666667
+reconstruction = weno5
+
+<driver>
+type = imex
+
+<debug>
+verbose = 0
+flag_verbose = 0
+extra_checks = 0
+
+<parthenon/output0>
+file_type = hdf5
+dt = 1000.0 # Only output final dump
+single_precision_output = true
+variables = prims.rho, prims.u, prims.uvec, prims.B, jcon
+
+<parthenon/output1>
+file_type = rst
+dt = 10.0

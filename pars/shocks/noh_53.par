@@ -1,0 +1,76 @@
+# 1D Noh shock test for electrons
+# Should reproduce electron energies behind the shock
+# as in Ressler+ 2015 eqn. 41
+
+<parthenon/job>
+problem_id = shock
+
+<parthenon/mesh>
+refinement = none
+numlevel = 1
+
+nx1 = 400
+x1min = 0.0
+x1max = 1.0
+ix1_bc = outflow
+ox1_bc = outflow
+
+nx2 = 1
+x2min = 0.0
+x2max = 1.0
+
+nx3 = 1
+x3min = 0.0
+x3max = 1.0
+
+<parthenon/meshblock>
+nx1 = 400
+nx2 = 1
+nx3 = 1
+
+<coordinates>
+base = cartesian_minkowski
+transform = null
+
+<parthenon/time>
+tlim = 1.0
+integrator = rk2
+dt_min = 0.0001
+
+<GRMHD>
+cfl = 0.9
+gamma = 1.666667
+reconstruction = weno5
+
+<b_field>
+solver = none
+
+<electrons>
+on = true
+constant = true
+gamma_e = 1.666667
+fel_0 = 0.0
+fel_constant = 0.5
+
+<shock>
+rhoL = 1.
+PL = 0.01
+u1L = 0.5
+
+rhoR = 1.
+PR = 0.01
+u1R = -0.5
+
+<floors>
+disable_floors = true
+
+<parthenon/output0>
+file_type = hdf5
+dt = 0.1
+single_precision_output = true
+variables = prims.rho, prims.u, prims.uvec, prims.Ktot, prims.Kel_Constant
+
+<parthenon/output1>
+file_type = hst
+dt = 0.1
+
