@@ -8,8 +8,8 @@
 
 # Nodes we want
 #SBATCH --partition=gpuA100x4
-#SBATCH --gpus-per-node=4
-#SBATCH --tasks-per-node=4
+#SBATCH --gpus-per-node=1
+#SBATCH --tasks-per-node=1
 # OR
 ##SBATCH --partition=gpuA100x8
 ##SBATCH --gpus-per-node=8
@@ -55,4 +55,4 @@ export KOKKOS_NUM_DEVICES=$SLURM_NTASKS_PER_NODE
 
 # Run with srun
 # TODO auto-switch to mpirun in interactive?
-mpirun -n 4 --map-by ppr:4:node:pe=16 $KHARMA_DIR/kharma.cuda -t 23:50:00 -d dumps_kharma "$@"
+mpirun -n 1 --map-by ppr:1:node:pe=16 $KHARMA_DIR/kharma.cuda -t 23:50:00 -d dumps_kharma "$@"

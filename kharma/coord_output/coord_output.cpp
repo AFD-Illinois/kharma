@@ -131,6 +131,15 @@ TaskStatus CoordinateOutput::BlockUserWorkBeforeOutput(MeshBlock *pmb, Parameter
                 // Native
                 GReal Xnative[GR_DIM];
                 G.coord(k, j, i, Loci::center, Xnative);
+
+                // Additions 
+                GReal Xembed[GR_DIM], gcov_embed[GR_DIM][GR_DIM] ;
+                // gcon_embed[GR_DIM][GR_DIM];
+                G.coord_embed(k, j, i, Loci::center, Xembed);
+                G.coords.gcov_embed(Xembed, gcov_embed);
+                // G.coords.gcon_embed(Xembed, gcon_embed);
+                // end of additions
+
                 Geom(mXnative+1, k, j, i) = Geom(mX1, k, j, i) = Xnative[1];
                 Geom(mXnative+2, k, j, i) = Geom(mX2, k, j, i) = Xnative[2];
                 Geom(mXnative+3, k, j, i) = Geom(mX3, k, j, i) = Xnative[3];
@@ -144,7 +153,13 @@ TaskStatus CoordinateOutput::BlockUserWorkBeforeOutput(MeshBlock *pmb, Parameter
                 Geom(mXsph+3, k, j, i) = Geom(mphi, k, j, i) = G.phi(k, j, i);
 
                 // Metric
-                DLOOP2 Geom(mgcov+GR_DIM*mu+nu, k, j, i) = G.gcov(Loci::center, j, i, mu, nu);
+
+                // additions 
+                DLOOP2 Geom(mgcov+GR_DIM*mu+nu, k, j, i) = gcov_embed[mu][nu];
+                // DLOOP2 Geom(mgcon+GR_DIM*mu+nu, k, j, i) = gcon_embed[mu][nu];
+                // end of additions 
+
+                // DLOOP2 Geom(mgcov+GR_DIM*mu+nu, k, j, i) = G.gcov(Loci::center, j, i, mu, nu);
                 DLOOP2 Geom(mgcon+GR_DIM*mu+nu, k, j, i) = G.gcon(Loci::center, j, i, mu, nu);
                 Geom(mgdet, k, j, i) = G.gdet(Loci::center, j, i);
                 Geom(mlapse, k, j, i) = 1. / m::sqrt(-G.gcon(Loci::center, j, i, 0, 0));
