@@ -181,6 +181,38 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     return pkg;
 }
 
+void MeshUtoP(MeshData<Real> *md, IndexDomain domain, bool coarse)
+{
+    auto pmb = md->GetBlockData(0)->GetBlockPointer();
+
+    // Get only relevant cons, but all prims as we need the Lorentz factor
+    PackIndexMap prims_map, cons_map;
+    auto U_E = md->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("EMHDVar"), Metadata::Conserved}, cons_map);
+    auto P   = md->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("Primitive")}, prims_map);
+    const VarMap m_p(prims_map, false), m_u(cons_map, true);
+
+    const auto& G = pmb->coords;
+
+    auto bounds      = coarse ? pmb->c_cellbounds : pmb->cellbounds;
+    IndexRange ib    = bounds.GetBoundsI(domain);
+    IndexRange jb    = bounds.GetBoundsJ(domain);
+    IndexRange kb    = bounds.GetBoundsK(domain);
+    IndexRange block = IndexRange{0, U_E.GetDim(5)-1};
+
+    pmb->par_for("UtoP_EMHD", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+        KOKKOS_LAMBDA (const int& b, const int &k, const int &j, const int &i) { 
+            const Real gamma     = GRMHD::lorentz_calc(G, P(b), m_p, k, j, i, Loci::center);
+            const Real inv_alpha = m::sqrt(-G.gcon(Loci::center, j, i, 0, 0));
+            const Real ucon0     = gamma * inv_alpha;
+
+            // Update the primitive EMHD fields
+            if (m_p.Q >= 0)
+                P(b, m_p.Q, k, j, i) = U_E(b, m_u.Q, k, j, i) / (ucon0 * G.gdet(Loci::center, j, i));
+            if (m_p.DP >= 0)
+                P(b, m_p.DP, k, j, i) = U_E(b, m_u.DP, k, j, i) / (ucon0 * G.gdet(Loci::center, j, i));
+        }
+    );
+}
 void BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
     auto pmb = rc->GetBlockPointer();
