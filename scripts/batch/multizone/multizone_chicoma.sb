@@ -1,0 +1,22 @@
+#!/bin/bash
+# Admin stuff
+#SBATCH -J KHARMA-MZ
+#SBATCH -t 12:00:00
+#SBATCH -N 1
+#SBATCH -o "out-%j.txt"
+
+# Partition
+##SBATCH -p gpu_debug --reservation gpu_debug --qos debug
+#SBATCH -p gpu
+
+# Node options: full, all CPU
+# Note we could do 32 if HT is faster
+#SBATCH --tasks-per-node=4
+#SBATCH --cpus-per-task=16
+#SBATCH --exclusive
+#SBATCH --mem=0
+
+# Everything is called from the supervising python script
+# No point in setting a walltime limit, this invokes KHARMA many times
+KHARMA_DIR=$HOME/Code/kharma-multizone
+exec $KHARMA_DIR/scripts/batch/multizone/run.py "$@"

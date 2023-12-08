@@ -35,10 +35,8 @@
 #include "resize_restart.hpp"
 
 #include "b_flux_ct.hpp"
-#include "debug.hpp"
 #include "hdf5_utils.h"
 #include "kharma_utils.hpp"
-#include "mpi.hpp"
 #include "interpolation.hpp"
 #include "types.hpp"
 
@@ -60,7 +58,7 @@
 hsize_t static_max(int i, int n) { return static_cast<hsize_t>(m::max(i, n)); }
 hsize_t static_min(int i, int n) { return static_cast<hsize_t>(m::min(i, n)); }
 
-void ReadIharmRestartHeader(std::string fname, std::unique_ptr<ParameterInput>& pin)
+void ReadIharmRestartHeader(std::string fname, ParameterInput *pin)
 {
     // Read the restart file and set parameters that need to be specified at early loading
     hdf5_open(fname.c_str());
@@ -180,8 +178,8 @@ void ReadIharmRestartHeader(std::string fname, std::unique_ptr<ParameterInput>& 
 
             // Going from domain->coords values is better to match everything
             if (file_in_spherical) {
-                pin->SetReal("coordinates", "r_in", exp(x1min));
-                pin->SetReal("coordinates", "r_out", exp(x1max));
+                pin->SetReal("coordinates", "r_in", m::exp(x1min));
+                pin->SetReal("coordinates", "r_out", m::exp(x1max));
             }
         } else {
             std::cout << "Guessing geometry when restarting! This is potentially very bad to do!" << std::endl;
@@ -232,10 +230,8 @@ void ReadIharmRestartHeader(std::string fname, std::unique_ptr<ParameterInput>& 
     }
 }
 
-TaskStatus ReadIharmRestart(MeshBlockData<Real> *rc, ParameterInput *pin)
+TaskStatus ReadIharmRestart(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin)
 {
-    Flag(rc, "Restarting from iharm3d checkpoint file");
-
     auto pmb = rc->GetBlockPointer();
 
     const auto fname = pin->GetString("resize_restart", "fname"); // Require this, don't guess
@@ -288,22 +284,6 @@ TaskStatus ReadIharmRestart(MeshBlockData<Real> *rc, ParameterInput *pin)
                 pin->GetReal("parthenon/mesh", "x3min"), startx[3],
                 pin->GetReal("parthenon/mesh", "x3max"), stopx[3]);
         }
-
-        if (is_spherical) {
-            // Check that the coordinate parameters r_{in,out} match the mesh
-            if (!close_to(pin->GetReal("parthenon/mesh", "x1min"),
-                        m::log(pin->GetReal("coordinates", "r_in"))) ||
-                !close_to(pin->GetReal("parthenon/mesh", "x1max"),
-                        m::log(pin->GetReal("coordinates", "r_out")))) {
-                printf("Mesh shape does not match!");
-                printf("Rin %g vs %g, Rout %g vs %g",
-                    m::exp(pin->GetReal("parthenon/mesh", "x1min")),
-                    pin->GetReal("coordinates", "r_in"),
-                    m::exp(pin->GetReal("parthenon/mesh", "x1max")),
-                    pin->GetReal("coordinates", "r_out"));
-            }
-        }
-
     }
 
     if(MPIRank0()) std::cout << "Reading mesh from file to cache..." << std::endl;
@@ -451,7 +431,6 @@ TaskStatus ReadIharmRestart(MeshBlockData<Real> *rc, ParameterInput *pin)
     auto uvec_host = uvec.GetHostMirror();
     auto B_host = B_P.GetHostMirror();
 
-    Flag("Interpolating meshblock...");
     // Interpolate on the host side & copy into the mirror Views
     // Nearest-neighbor interpolation is currently only used when grids exactly correspond -- otherwise, linear interpolation is used
     // to minimize the resulting B field divergence.
@@ -502,7 +481,6 @@ TaskStatus ReadIharmRestart(MeshBlockData<Real> *rc, ParameterInput *pin)
     }
 
     // Deep copy to device
-    Flag("Copying meshblock to device...");
     rho.DeepCopy(rho_host);
     u.DeepCopy(u_host);
     uvec.DeepCopy(uvec_host);
@@ -510,7 +488,6 @@ TaskStatus ReadIharmRestart(MeshBlockData<Real> *rc, ParameterInput *pin)
     Kokkos::fence();
 
     // Delete our cache.  Only we ever used it, so we're safe here.
-    Flag("Deleting cached interpolation values");
     delete[] ptmp;
 
     return TaskStatus::complete;

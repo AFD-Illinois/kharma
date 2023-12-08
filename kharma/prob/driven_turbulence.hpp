@@ -10,7 +10,7 @@ using namespace parthenon;
 
 TaskStatus InitializeDrivenTurbulence(MeshBlockData<Real> *rc, ParameterInput *pin)
 {
-    Flag(rc, "Initializing Driven Turbulence problem");
+    Flag("InitializeDrivenTurbulence");
     auto pmb = rc->GetBlockPointer();
     GridScalar rho = rc->Get("prims.rho").data;
     GridScalar u = rc->Get("prims.u").data;
@@ -52,5 +52,7 @@ TaskStatus InitializeDrivenTurbulence(MeshBlockData<Real> *rc, ParameterInput *p
             u(k, j, i) = u0;
         }
     );
+
+    EndFlag();
     return TaskStatus::complete;
 }

@@ -44,7 +44,7 @@ namespace Current
 /**
  * Initialize output field jcon
  */
-std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin);
+std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages);
 
 /**
  * Fill outputs, namely jcon.  Just calls CalculateCurrent below.

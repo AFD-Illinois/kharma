@@ -34,6 +34,7 @@
 #include "electrons.hpp"
 
 #include "decs.hpp"
+#include "kharma_driver.hpp"
 #include "flux.hpp"
 #include "grmhd.hpp"
 #include "kharma.hpp"
@@ -73,18 +74,10 @@ std::vector<Real> parse_list(std::string s)
     return reals;
 }
 
-std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t packages)
+std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages)
 {
-    auto pkg = std::make_shared<StateDescriptor>("Electrons");
+    auto pkg = std::make_shared<KHARMAPackage>("Electrons");
     Params &params = pkg->AllParams();
-
-    // Diagnostic data
-    int verbose = pin->GetOrAddInteger("debug", "verbose", 0);
-    params.Add("verbose", verbose);
-    int flag_verbose = pin->GetOrAddInteger("debug", "flag_verbose", 0);
-    params.Add("flag_verbose", flag_verbose);
-    int extra_checks = pin->GetOrAddInteger("debug", "extra_checks", 0);
-    params.Add("extra_checks", extra_checks);
 
     // Evolution parameters
     Real gamma_e = pin->GetOrAddReal("electrons", "gamma_e", 4./3);
@@ -93,24 +86,36 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     params.Add("gamma_p", gamma_p);
     Real fel_0 = pin->GetOrAddReal("electrons", "fel_0", 0.01);
     params.Add("fel_0", fel_0);
-    bool diss_sign = pin->GetOrAddBoolean("electrons", "diss_sign", true);
-    params.Add("diss_sign", diss_sign);
     bool kel_lim = pin->GetOrAddBoolean("electrons", "kel_lim", true);
     params.Add("kel_lim", kel_lim);
+
+    // Whether to enforce that dissipation be positive, i.e. increasing entropy
+    // Probably more accurate to keep off.
+    bool enforce_positive_dissipation = pin->GetOrAddBoolean("electrons", "enforce_positive_dissipation", false);
+    params.Add("enforce_positive_dissipation", enforce_positive_dissipation);
+
     // This is used only in constant model
     Real fel_const = pin->GetOrAddReal("electrons", "fel_constant", 0.1);
     params.Add("fel_constant", fel_const);
+
     // This prevented spurious heating when heat_electrons used pre-floored dissipation
     bool suppress_highb_heat = pin->GetOrAddBoolean("electrons", "suppress_highb_heat", false);
     params.Add("suppress_highb_heat", suppress_highb_heat);
 
+    // Initialization
+    bool init_to_fel_0 = pin->GetOrAddBoolean("electrons", "init_to_fel_0", true);
+    params.Add("init_to_fel_0", init_to_fel_0);
+    Real fel_0 = pin->GetOrAddReal("electrons", "fel_0", 0.01);
+    params.Add("fel_0", fel_0);
+
     // Floors
+    // Whether to limit electron entropy K with following two floors
+    bool limit_kel = pin->GetOrAddBoolean("electrons", "limit_kel", true);
+    params.Add("limit_kel", limit_kel);
     Real tp_over_te_min = pin->GetOrAddReal("electrons", "tp_over_te_min", 0.001);
     params.Add("tp_over_te_min", tp_over_te_min);
     Real tp_over_te_max = pin->GetOrAddReal("electrons", "tp_over_te_max", 1000.0);
     params.Add("tp_over_te_max", tp_over_te_max);
-    Real ktot_max = pin->GetOrAddReal("floors", "ktot_max", 1.e20);
-    params.Add("ktot_max", ktot_max);
 
     // Model options
     bool do_constant = pin->GetOrAddBoolean("electrons", "constant", false);
@@ -127,60 +132,31 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     params.Add("do_sharma", do_sharma);
 
     // Parse various mass and density units to set the different cooling rates
-    // These could maybe tie in with Parthenon::Units when we add radiation
-    // TODO pretty soon this can be a GetVector<std::string>!!!
-    std::vector<Real> masses = parse_list(pin->GetOrAddString("units", "MBH", "1.0"));
-    if (masses != std::vector<Real>{1.0})
-    {
+    // TODO actually respect them of course
+    std::vector<Real> masses = pin->GetOrAddVector<Real>("electrons", "masses", std::vector<Real>{});
+    if (masses.size() > 0) {
+        std::vector<std::string> mass_names = pin->GetVector<std::string>("electrons", "masses");
         std::vector<std::vector<Real>> munits;
-        for (int i=1; i <= masses.size(); ++i) {
-            munits.push_back(parse_list(pin->GetString("units", "M_unit_" + std::to_string(i))));
+        for (auto mass_name : mass_names) {
+            munits.push_back(pin->GetVector<Real>("electrons", "munits_"+mass_name));
         }
-
-        if (MPIRank0() && verbose > 0) {
-            std::cout << "Using unit sets:" << std::endl;
-            for (int i=0; i < masses.size(); ++i) {
-                std::cout << std::endl << masses[i] << ":";
-                for (auto munit : munits[i]) {
-                    std::cout << " " << munit;
-                }
-            }
-            std::cout << std::endl;
-        }
-        // This is a vector of Reals
-        params.Add("masses", masses);
-        // This is a vector of vectors of Reals
-        params.Add("munits", munits);
     }
 
-    MetadataFlag isPrimitive = packages.Get("GRMHD")->Param<MetadataFlag>("PrimitiveFlag");
-    MetadataFlag isElectrons = Metadata::AllocateNewFlag("Electrons");
-    params.Add("ElectronsFlag", isElectrons);
-
-    // Default implicit iff GRMHD is done implicitly. TODO can we do explicit?
-    auto driver_type = pin->GetString("driver", "type");
-    bool grmhd_implicit = packages.Get("GRMHD")->Param<bool>("implicit"); // usually false
-    bool implicit_e = (driver_type == "imex" && pin->GetOrAddBoolean("electrons", "implicit", grmhd_implicit)); // so this false too
+    // Evolving e- implicitly is not tested.  Shouldn't be necessary even in EMHD
+    auto& driver = packages->Get("Driver")->AllParams();
+    auto driver_type = driver.Get<DriverType>("type");
+    bool implicit_e = (driver_type == DriverType::imex && pin->GetOrAddBoolean("electrons", "implicit", false));
     params.Add("implicit", implicit_e);
 
-    // B fields.  "Primitive" form is field, "conserved" is flux
-    // See notes there about changes for the Imex driver
-    std::vector<MetadataFlag> flags_prim, flags_cons;
-    if (driver_type == "harm") {
-        flags_cons = std::vector<MetadataFlag>({Metadata::Real, Metadata::Cell, Metadata::Independent, Metadata::FillGhost,
-                                    Metadata::Restart, Metadata::Conserved, Metadata::WithFluxes, isElectrons});
-        flags_prim = std::vector<MetadataFlag>({Metadata::Real, Metadata::Cell, Metadata::Derived,
-                                                isPrimitive, isElectrons});
-    } else if (driver_type == "imex") {
-        // See grmhd.cpp for full notes on flag changes for ImEx driver
-        // Note that default for B is *explicit* evolution
-        MetadataFlag areWeImplicit = (implicit_e) ? packages.Get("Implicit")->Param<MetadataFlag>("ImplicitFlag")
-                                                  : packages.Get("Implicit")->Param<MetadataFlag>("ExplicitFlag"); // so setting entropies as explicit
-        flags_cons = std::vector<MetadataFlag>({Metadata::Real, Metadata::Cell, Metadata::Independent, Metadata::Conserved,
-                                                Metadata::WithFluxes, areWeImplicit, isElectrons});
-        flags_prim = std::vector<MetadataFlag>({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::FillGhost,
-                                                Metadata::Restart, isPrimitive, areWeImplicit, isElectrons});
-    }
+    Metadata::AddUserFlag("Elec");
+    MetadataFlag areWeImplicit = (implicit_e) ? Metadata::GetUserFlag("Implicit")
+                                              : Metadata::GetUserFlag("Explicit");
+    std::vector<MetadataFlag> flags_elec = {Metadata::Cell, areWeImplicit, Metadata::GetUserFlag("Elec")};
+
+    auto flags_prim = packages->Get("Driver")->Param<std::vector<MetadataFlag>>("prim_flags");
+    flags_prim.insert(flags_prim.end(), flags_elec.begin(), flags_elec.end());
+    auto flags_cons = packages->Get("Driver")->Param<std::vector<MetadataFlag>>("cons_flags");
+    flags_cons.insert(flags_cons.end(), flags_elec.begin(), flags_elec.end());
 
     // Total entropy, used to track changes
     int nKs = 1;
@@ -194,6 +170,7 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
         pkg->AddField("grf_normalized", m_vector);
         pkg->AddField("alfven_speed", m);
     }
+
 
     // Individual models
     // TO ADD A MODEL:
@@ -234,26 +211,34 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
     // TODO if nKs == 1 then rename Kel_Whatever -> Kel?
     // TODO record nKs and find a nice way to loop/vector the device-side layout?
 
-    pkg->FillDerivedBlock = Electrons::FillDerivedBlock;
+    // Problem-specific fields
+    if (packages->Get("Globals")->Param<std::string>("problem") == "driven_turbulence") {
+        std::vector<int> s_vector({2});
+        Metadata m_vector = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy}, s_vector);
+        Metadata m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
+        pkg->AddField("grf_normalized", m_vector);
+        pkg->AddField("alfven_speed", m);
+    }
+
+    pkg->BlockUtoP = Electrons::BlockUtoP;
+    pkg->BoundaryUtoP = Electrons::BlockUtoP;
+
     return pkg;
 }
 
-TaskStatus InitElectrons(MeshBlockData<Real> *rc, ParameterInput *pin)
+TaskStatus InitElectrons(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin)
 {
-    Flag("Initializing electron/fluid entropy values");
+    Flag("InitElectrons");
     auto pmb = rc->GetBlockPointer();
 
-    // Don't initialize entropies when running hubble problem
-    // TODO option for this in problem params
-    if (pmb->packages.Get("GRMHD")->Param<std::string>("problem") == "hubble") {
+    // Don't initialize entropies if we've already done so e.g. in Hubble problem
+    if (!pmb->packages.Get("Electrons")->Param<bool>("init_to_fel_0")) {
         return TaskStatus::complete;
     }
 
-    MetadataFlag isElectrons = pmb->packages.Get("Electrons")->Param<MetadataFlag>("ElectronsFlag");
-    MetadataFlag isPrimitive = pmb->packages.Get("GRMHD")->Param<MetadataFlag>("PrimitiveFlag");
     // Need to distinguish KTOT from the other variables, so we record which it is
     PackIndexMap prims_map;
-    auto& e_P = rc->PackVariables({isElectrons, isPrimitive}, prims_map);
+    auto& e_P = rc->PackVariables({Metadata::GetUserFlag("Elec"), Metadata::GetUserFlag("Primitive")}, prims_map);
     const int ktot_index = prims_map["prims.Ktot"].first;
     // Just need these two from the rest of Prims
     GridScalar rho = rc->Get("prims.rho").data;
@@ -268,7 +253,7 @@ TaskStatus InitElectrons(MeshBlockData<Real> *rc, ParameterInput *pin)
     int js = pmb->cellbounds.js(domain), je = pmb->cellbounds.je(domain);
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
     pmb->par_for("UtoP_electrons", 0, e_P.GetDim(4)-1, ks, ke, js, je, is, ie,
-        KOKKOS_LAMBDA_VARS {
+        KOKKOS_LAMBDA (const int &p, const int &k, const int &j, const int &i) {
             if (p == ktot_index) {
                 // Initialize total entropy by definition,
                 e_P(p, k, j, i) = (gam - 1.) * u(k, j, i) * m::pow(rho(k, j, i), -gam);
@@ -279,22 +264,17 @@ TaskStatus InitElectrons(MeshBlockData<Real> *rc, ParameterInput *pin)
         }
     );
 
-    // iharm3d syncs bounds here?
-
-    Flag("Initialized electron/fluid entropy values");
+    EndFlag();
     return TaskStatus::complete;
 }
 
-void UtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
+void BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
-    Flag(rc, "UtoP electrons");
     auto pmb = rc->GetBlockPointer();
 
-    MetadataFlag isElectrons = pmb->packages.Get("Electrons")->Param<MetadataFlag>("ElectronsFlag");
-    MetadataFlag isPrimitive = pmb->packages.Get("GRMHD")->Param<MetadataFlag>("PrimitiveFlag");
     // No need for a "map" here, we just want everything that fits these
-    auto& e_P = rc->PackVariables({isElectrons, isPrimitive});
-    auto& e_U = rc->PackVariables({isElectrons, Metadata::Conserved});
+    auto& e_P = rc->PackVariables({Metadata::GetUserFlag("Elec"), Metadata::GetUserFlag("Primitive")});
+    auto& e_U = rc->PackVariables({Metadata::GetUserFlag("Elec"), Metadata::Conserved});
     // And then the local density
     GridScalar rho_U = rc->Get("cons.rho").data;
 
@@ -305,30 +285,47 @@ void UtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     int js = bounds.js(domain), je = bounds.je(domain);
     int ks = bounds.ks(domain), ke = bounds.ke(domain);
     pmb->par_for("UtoP_electrons", 0, e_P.GetDim(4)-1, ks, ke, js, je, is, ie,
-        KOKKOS_LAMBDA_VARS {
+        KOKKOS_LAMBDA (const int &p, const int &k, const int &j, const int &i) {
             e_P(p, k, j, i) = e_U(p, k, j, i) / rho_U(k, j, i);
         }
     );
-
 }
 
-TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real> *rc, bool generate_grf)
-{   // takes in '_sub_step_init' and '_sub_step_final'
-    Flag(rc, "Applying electron heating");
+void BlockPtoU(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
+{
     auto pmb = rc->GetBlockPointer();
 
-    MetadataFlag isElectrons = pmb->packages.Get("Electrons")->Param<MetadataFlag>("ElectronsFlag");
-    MetadataFlag isPrimitive = pmb->packages.Get("GRMHD")->Param<MetadataFlag>("PrimitiveFlag");
+    PackIndexMap prims_map, cons_map;
+    auto& P = rc->PackVariables({Metadata::GetUserFlag("Primitive"), Metadata::Cell}, prims_map);
+    auto& U = rc->PackVariables({Metadata::Conserved, Metadata::Cell}, cons_map);
+    const VarMap m_p(prims_map, false), m_u(cons_map, true);
+
+    const auto& G = pmb->coords;
+
+    auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
+    int is = bounds.is(domain), ie = bounds.ie(domain);
+    int js = bounds.js(domain), je = bounds.je(domain);
+    int ks = bounds.ks(domain), ke = bounds.ke(domain);
+    pmb->par_for("PtoU_electrons", ks, ke, js, je, is, ie,
+        KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+            Electrons::p_to_u(G, P, m_p, k, j, i, U, m_u);
+        }
+    );
+}
+
+TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real> *rc)
+{
     // Need to distinguish different electron models
     // So far, Parthenon's maps of the same sets of variables are consistent,
     // so we only bother with one map of the primitives
     // TODO Parthenon can definitely build a pack from a map, though
     PackIndexMap prims_map, cons_map;
-    auto& P = rc_old->PackVariables({isPrimitive}, prims_map);
-    auto& P_new = rc->PackVariables({isPrimitive}, prims_map);
+    auto& P = rc_old->PackVariables({Metadata::GetUserFlag("Primitive")}, prims_map);
+    auto& P_new = rc->PackVariables({Metadata::GetUserFlag("Primitive")}, prims_map);
     auto& U_new = rc->PackVariables({Metadata::Conserved}, cons_map);
     const VarMap m_p(prims_map, false), m_u(cons_map, true);
 
+    auto pmb = rc->GetBlockPointer();
     const auto& G = pmb->coords;
 
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
@@ -339,16 +336,18 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
     // Floors
     const Real tptemin = pmb->packages.Get("Electrons")->Param<Real>("tp_over_te_min");
     const Real tptemax = pmb->packages.Get("Electrons")->Param<Real>("tp_over_te_max");
+    const bool enforce_positive_diss = pmb->packages.Get("Electrons")->Param<bool>("enforce_positive_dissipation");
+    const bool limit_kel = pmb->packages.Get("Electrons")->Param<bool>("limit_kel");
 
     // This function (and any primitive-variable sources) needs to be run over the entire domain,
     // because the boundary zones have already been updated and so the same calculations must be applied
     // in order to keep them consistent.
-    // See harm_driver.cpp for the full picture of what gets updated when.
+    // See kharma_step.cpp for the full picture of what gets updated when.
     const IndexRange ib = rc->GetBoundsI(IndexDomain::entire);
     const IndexRange jb = rc->GetBoundsJ(IndexDomain::entire);
     const IndexRange kb = rc->GetBoundsK(IndexDomain::entire);
     pmb->par_for("heat_electrons", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-        KOKKOS_LAMBDA_3D {
+        KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
             FourVectors Dtmp;
             GRMHD::calc_4vecs(G, P, m_p, k, j, i, Loci::center, Dtmp);
             Real bsq = dot(Dtmp.bcon, Dtmp.bcov);
@@ -366,7 +365,7 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
 
             // Default is True diss_sign == Enforce nonnegative
             // Due to floors we can end up with diss==0 or even *slightly* <0, so we require it to be positive here
-            const Real diss = pmb->packages.Get("Electrons")->Param<bool>("diss_sign") ? m::max(diss_tmp, 0.0) : diss_tmp;
+            const Real diss = enforce_positive_diss ? m::max(diss_tmp, 0.0) : diss_tmp;
 
             // Reset the entropy to measure next (sub-)step's dissipation
             P_new(m_p.KTOT, k, j, i) = k_energy_conserving;
@@ -394,7 +393,7 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
             if (m_p.K_CONSTANT >= 0) {
                 const Real fel = fel_const;
                 // Default is true then enforce kel limits with clamp/clip, else no restrictions on kel
-                if (pmb->packages.Get("Electrons")->Param<bool>("kel_lim")) {
+                if (limit_kel) {
                     P_new(m_p.K_CONSTANT, k, j, i) = clip(P_new(m_p.K_CONSTANT, k, j, i) + fel * diss, kel_min, kel_max);
                 } else {
                     P_new(m_p.K_CONSTANT, k, j, i) += fel * diss;
@@ -414,7 +413,7 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
                 const Real c3 = (Trat <= 1.) ? 18. + 5.*logTrat : 18.;
 
                 const Real beta_pow = m::pow(beta, mbeta);
-                const Real qrat = 0.92 * (c2*c2 + beta_pow)/(c3*c3 + beta_pow) * exp(-1./beta) * m::sqrt(MP/ME * Trat);
+                const Real qrat = 0.92 * (c2*c2 + beta_pow)/(c3*c3 + beta_pow) * m::exp(-1./beta) * m::sqrt(MP/ME * Trat);
                 const Real fel = 1./(1. + qrat);
                 P_new(m_p.K_HOWES, k, j, i) = clip(P_new(m_p.K_HOWES, k, j, i) + fel * diss, kel_min, kel_max);
             }
@@ -426,7 +425,7 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
                 const Real pres = P(m_p.RHO, k, j, i) * Tpr; // Proton pressure
                 const Real beta = m::min(pres / bsq * 2, 1.e20);// If somebody enables electrons in a GRHD sim
 
-                const Real QiQe = 35. / (1. + m::pow(beta/15., -1.4) * exp(-0.1 / Trat));
+                const Real QiQe = 35. / (1. + m::pow(beta/15., -1.4) * m::exp(-0.1 / Trat));
                 const Real fel = 1./(1. + QiQe);
                 P_new(m_p.K_KAWAZURA, k, j, i) = clip(P_new(m_p.K_KAWAZURA, k, j, i) + fel * diss, kel_min, kel_max);
             }
@@ -444,7 +443,7 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
                 const Real beta = pres / bsq * 2;
                 const Real sigma = bsq / (P(m_p.RHO, k, j, i) + P(m_p.UU, k, j, i) + pg);
                 const Real betamax = 0.25 / sigma;
-                const Real fel = 0.5 * exp(-m::pow(1 - beta/betamax, 3.3) / (1 + 1.2*m::pow(sigma, 0.7)));
+                const Real fel = 0.5 * m::exp(-m::pow(1 - beta/betamax, 3.3) / (1 + 1.2*m::pow(sigma, 0.7)));
                 P_new(m_p.K_ROWAN, k, j, i) = clip(P_new(m_p.K_ROWAN, k, j, i) + fel * diss, kel_min, kel_max);
             }
             if (m_p.K_SHARMA >= 0) {
@@ -456,9 +455,7 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
                 const Real fel = 1./(1.+1./QeQi);
                 P_new(m_p.K_SHARMA, k, j, i) = clip(P_new(m_p.K_SHARMA, k, j, i) + fel * diss, kel_min, kel_max);
             }
-
-            // Finally, make sure we update the conserved electron variables to keep them in sync
-            Electrons::p_to_u(G, P_new, m_p, k, j, i, U_new, m_u);
+            // Conserved variables are updated at the end of the step
         }
     );
 
@@ -572,19 +569,19 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
         // This could be only the GRMHD vars, for this problem, but speed isn't really an issue
         Flux::PtoU(rc);
     }
-    Flag(rc, "Applied");
+    EndFlag();
     return TaskStatus::complete;
 }
 
 // Only called for Hubble flow problem
-TaskStatus ApplyHeating(MeshBlockData<Real> * mbase) {
+TaskStatus ApplyHubbleHeating(MeshBlockData<Real> * mbase) {
     auto pmb0 = mbase->GetBlockPointer();
 
     // This only supports the Hubble flow problem
     const std::string prob = pmb0->packages.Get("GRMHD")->Param<std::string>("problem");
     if (prob != "hubble") return TaskStatus::complete;
 
-    Flag(mbase, "Applying heating");
+    Flag("ApplyHubbleHeating");
 
     PackIndexMap prims_map;
     auto P_mbase = GRMHD::PackHDPrims(mbase, prims_map);
@@ -609,17 +606,17 @@ TaskStatus ApplyHeating(MeshBlockData<Real> * mbase) {
         }
     );
     Flux::PtoU(mbase);
-    Flag(mbase, "Applied heating");
+    EndFlag();
     return TaskStatus::complete;
 }
 
 TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *rc)
 {
-    Flag(rc, "Printing electron diagnostics");
+    Flag("PostStepDiagnostics");
 
     // Output any diagnostics after a step completes
 
-    Flag(rc, "Printed");
+    EndFlag();
     return TaskStatus::complete;
 }
 

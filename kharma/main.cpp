@@ -36,13 +36,12 @@
 #include "decs.hpp"
 
 #include "boundaries.hpp"
-#include "imex_driver.hpp"
-#include "harm_driver.hpp"
+#include "kharma_driver.hpp"
 #include "kharma.hpp"
-#include "mpi.hpp"
 #include "post_initialize.hpp"
 #include "problem.hpp"
 #include "emhd/conducting_atmosphere.hpp"
+#include "version.hpp"
 
 // Parthenon headers
 #include <parthenon/parthenon.hpp>
@@ -78,6 +77,11 @@ void print_backtrace(int sig) {
   exit(1);
 }
 #endif
+// Single globals for proper indentation when tracing execution
+#if TRACE
+int kharma_debug_trace_indent = 0;
+int kharma_debug_trace_mutex = 0;
+#endif
 
 using namespace parthenon;
 
@@ -100,25 +104,47 @@ int main(int argc, char *argv[])
 {
     ParthenonManager pman;
 
+    // A couple of callbacks are KHARMA-wide single functions
     pman.app_input->ProcessPackages = KHARMA::ProcessPackages;
     pman.app_input->ProblemGenerator = KHARMA::ProblemGenerator;
-    pman.app_input->MeshBlockUserWorkBeforeOutput = KHARMA::FillOutput;
-    pman.app_input->PreStepMeshUserWorkInLoop = KHARMA::PreStepMeshUserWorkInLoop;
-    pman.app_input->PostStepMeshUserWorkInLoop = KHARMA::PostStepMeshUserWorkInLoop;
-    pman.app_input->PostStepDiagnosticsInLoop = KHARMA::PostStepDiagnostics;
+    // A few are passed on to be implemented by packages as they see fit
+    pman.app_input->MeshBlockUserWorkBeforeOutput = Packages::UserWorkBeforeOutput;
+    pman.app_input->PreStepMeshUserWorkInLoop = Packages::PreStepWork;
+    pman.app_input->PostStepMeshUserWorkInLoop = Packages::PostStepWork;
+    pman.app_input->PostStepDiagnosticsInLoop = Packages::PostStepDiagnostics;
 
     // Registering KHARMA's boundary functions here doesn't mean they will *always* run:
-    // all periodic boundary conditions are handled by Parthenon.
-    // KHARMA sets the correct options automatically for spherical coordinate systems.
-    pman.app_input->boundary_conditions[parthenon::BoundaryFace::inner_x1] = KBoundaries::InnerX1;
-    pman.app_input->boundary_conditions[parthenon::BoundaryFace::outer_x1] = KBoundaries::OuterX1;
-    pman.app_input->boundary_conditions[parthenon::BoundaryFace::inner_x2] = KBoundaries::InnerX2;
-    pman.app_input->boundary_conditions[parthenon::BoundaryFace::outer_x2] = KBoundaries::OuterX2;
+    // periodic & internal boundary conditions are handled by Parthenon.
+    // KHARMA sets what will run in boundaries.cpp
+    pman.app_input->boundary_conditions[parthenon::BoundaryFace::inner_x1] = KBoundaries::ApplyBoundaryTemplate<IndexDomain::inner_x1>;
+    pman.app_input->boundary_conditions[parthenon::BoundaryFace::outer_x1] = KBoundaries::ApplyBoundaryTemplate<IndexDomain::outer_x1>;
+    pman.app_input->boundary_conditions[parthenon::BoundaryFace::inner_x2] = KBoundaries::ApplyBoundaryTemplate<IndexDomain::inner_x2>;
+    pman.app_input->boundary_conditions[parthenon::BoundaryFace::outer_x2] = KBoundaries::ApplyBoundaryTemplate<IndexDomain::outer_x2>;
+    pman.app_input->boundary_conditions[parthenon::BoundaryFace::inner_x3] = KBoundaries::ApplyBoundaryTemplate<IndexDomain::inner_x3>;
+    pman.app_input->boundary_conditions[parthenon::BoundaryFace::outer_x3] = KBoundaries::ApplyBoundaryTemplate<IndexDomain::outer_x3>;
 
-    // Parthenon init includes Kokkos, MPI, parses parameters & cmdline,
-    // then calls ProcessPackages and ProcessProperties, then constructs the Mesh
-    Flag("Parthenon Initializing");
-    auto manager_status = pman.ParthenonInit(argc, argv);
+    // Initialize Parthenon for MPI (also Kokkos, parses command line, etc.)
+    Flag("ParthenonInit");
+    auto manager_status = pman.ParthenonInitEnv(argc, argv);
+    EndFlag();
+
+    if(MPIRank0()) {
+        // Always print the version header, because it's fun
+        // TODO(BSP) proper banner w/refs, names
+        const std::string &version = KHARMA::Version::GIT_VERSION;
+        const std::string &branch = KHARMA::Version::GIT_REFSPEC;
+        const std::string &sha1 = KHARMA::Version::GIT_SHA1;
+        std::cout << std::endl;
+        std::cout << "Starting KHARMA, version " << version << std::endl;
+        std::cout << "Branch " << branch << ", commit hash: " << sha1 << std::endl;
+        std::cout << std::endl;
+        std::cout << "KHARMA is released under the BSD 3-clause license." << std::endl;
+        std::cout << "Source code is available at https://github.com/AFD-Illinois/kharma/" << std::endl;
+        std::cout << std::endl;
+    }
+
+    // Check the Parthenon init return code, initialize packages/mesh
+    Flag("InitPackagesAndMesh");
     if (manager_status == ParthenonStatus::complete) {
         pman.ParthenonFinalize();
         return 0;
@@ -127,7 +153,15 @@ int main(int argc, char *argv[])
         pman.ParthenonFinalize();
         return 1;
     }
-    Flag("Parthenon Initialized");
+    auto pin = pman.pinput.get(); // All parameters in the input file or command line
+    // Modify input parameters as we need
+    KHARMA::FixParameters(pin);
+    // InitPackagesEtc calls ProcessPackages, then constructs the Mesh
+    pman.ParthenonInitPackagesAndMesh();
+    // Now pull out the mesh and app_input as well for below
+    auto pmesh = pman.pmesh.get(); // The mesh, with list of blocks & locations, size, etc
+    auto papp = pman.app_input.get(); // The list of callback functions specified above
+    EndFlag();
 
 #if DEBUG
     // Replace Parthenon signal handlers with something that just prints a backtrace
@@ -136,76 +170,86 @@ int main(int argc, char *argv[])
     signal(SIGSEGV, print_backtrace);
 #endif
 
-    auto pin = pman.pinput.get(); // All parameters in the input file or command line
-    auto pmesh = pman.pmesh.get(); // The mesh, with list of blocks & locations, size, etc
-    auto papp = pman.app_input.get(); // The list of callback functions specified above
+    // Note reading "verbose" parameter from "Globals" instead of pin: it may change during simulation
+    const int &verbose = pmesh->packages.Get("Globals")->Param<int>("verbose");
+    if(MPIRank0() && verbose > 0) {
+        // Write all parameters etc. to console if we should be especially wordy
+        // Printed above the rest to stay out of the way
+        if (verbose > 1) {
+            // This dumps the full Kokkos config, useful for double-checking
+            // that the compile did what we wanted
+            parthenon::ShowConfig();
+            pin->ParameterDump(std::cout);
+        }
 
-    // Add magnetic field to the problem, initialize ghost zones.
-    // Implemented separately outside of MeshBlock since
-    // this usually involves global reductions for normalization
-    if(MPIRank0())
-        std::cout << "Running post-initialization tasks..." << std::endl;
+        // Print a list of variables as Parthenon used to (still does by default)
+        std::cout << "Variables in use:\n" << *(pmesh->resolved_packages) << std::endl;
 
+        // Print a list of all loaded packages.  Surprisingly useful for debugging init logic
+        std::cout << "Packages in use: " << std::endl;
+        for (auto package : pmesh->packages.AllPackages()) {
+            std::cout << package.first << std::endl;
+        }
+        std::cout << std::endl;
+
+        // Print the number of meshblocks and ranks in use
+        std::cout << "Running with " << pmesh->nbtotal << " total meshblocks, " << MPINumRanks() << " MPI ranks." << std::endl;
+        std::cout << "Blocks on rank " << MPIRank() << ": " << pmesh->block_list.size() << "\n" << std::endl;
+    }
+    // If very verbose, print # meshblocks on every rank
+    if (verbose > 1) {
+        //MPIBarrier();
+        if (MPIRank() > 0)
+            std::cout << "Blocks on rank " << MPIRank() << ": " << pmesh->block_list.size() << "\n" << std::endl;
+    }
+
+
+    // PostInitialize: Add magnetic field to the problem, initialize ghost zones.
+    // Any init which may be run even when restarting, or requires all
+    // MeshBlocks to be initialized already.
+    // TODO(BSP) split to package hooks
     auto prob = pin->GetString("parthenon/job", "problem_id");
-    bool is_restart = (prob == "resize_restart") || pman.IsRestart();
-    bool is_resize = (prob == "resize_restart") && !pman.IsRestart();
-    KHARMA::PostInitialize(pin, pmesh, is_restart, is_resize);
-    Flag("Post-initialization completed");
-
-    // Construct a temporary driver purely for parameter parsing
-    auto driver_type = pin->GetString("driver", "type");
-    if (driver_type == "harm") {
-        HARMDriver driver(pin, papp, pmesh);
-    } else if (driver_type == "imex") {
-        ImexDriver driver(pin, papp, pmesh);
-    } else {
-        throw std::invalid_argument("Expected driver type to be harm or imex!");
+    bool is_restart = (prob == "resize_restart") || (prob == "resize_restart_kharma") || pman.IsRestart();
+    if(MPIRank0() && verbose > 0) {
+        if (is_restart) {
+            std::cout << "Running post-restart tasks..." << std::endl;
+        } else {
+            std::cout << "Running post-initialization tasks..." << std::endl;
+        }
     }
+    Flag("PostInitialize");
+    KHARMA::PostInitialize(pin, pmesh, is_restart);
+    EndFlag();
 
-    // We could still have set parameters during driver initialization
-    // Note the order here is *extremely important* as the first statement has a
-    // side effect which must occur on all MPI ranks
-    if(pin->GetOrAddBoolean("debug", "archive_parameters", false) && MPIRank0()) {
-        // Write *all* parameters to a parfile for posterity
-        std::ostringstream ss;
-        auto itt_now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-        ss << "kharma_parsed_parameters_" << std::put_time(std::gmtime(&itt_now), "%FT%TZ") << ".par";
-        std::fstream pars;
-        pars.open(ss.str(), std::fstream::out | std::fstream::trunc);
-        pin->ParameterDump(pars);
-        pars.close();
-    }
-    // Also write parameters to console if we should be wordy
-    if ((pin->GetInteger("debug", "verbose") > 0) && MPIRank0()) {
-        // This dumps the full Kokkos config, useful for double-checking
-        // that the compile did what we wanted
-        ShowConfig();
-        pin->ParameterDump(std::cout);
-    }
+    // TODO output parsed parameters *here*, now we have everything including any problem configs for B field
 
-    // Then execute the driver. This is a Parthenon function inherited by our HARMDriver object,
-    // which will call MakeTaskCollection, then execute the tasks on the mesh for each portion
-    // of each step until a stop criterion is reached.
-    Flag("Executing Driver");
+    // Begin code block to ensure driver is cleaned up
+    {
+        if (MPIRank0()) {
+            std::string driver_name = pmesh->packages.Get("Driver")->Param<std::string>("name");
+            std::cout << "Running " << driver_name << " driver" << std::endl;
+        }
 
-    if (driver_type == "harm") {
-        std::cout << "Initializing and running KHARMA driver." << std::endl;
-        HARMDriver driver(pin, papp, pmesh);
+        // Pull out things we need to give the driver
+        auto pin = pman.pinput.get(); // All parameters in the input file or command line
+
+        // We now have just one driver package, with different TaskLists for different modes
+        //MPIBarrier();
+        KHARMADriver driver(pin, papp, pmesh);
+
+        // Then execute the driver. This is a Parthenon function inherited by our KHARMADriver object,
+        // which will call MakeTaskCollection, then execute the tasks on the mesh for each portion
+        // of each step until a stop criterion is reached.
+        Flag("driver.Execute");
+        //MPIBarrier();
         auto driver_status = driver.Execute();
-    } else if (driver_type == "imex") {
-        std::cout << "Initializing and running IMEX driver." << std::endl;
-        ImexDriver driver(pin, papp, pmesh);
-        auto driver_status = driver.Execute();
+        EndFlag();
     }
 
-#ifndef KOKKOS_ENABLE_CUDA
-    // Cleanup our global NDArray
-    extern ParArrayND<double> p_bound;
-    p_bound.~ParArrayND<double>();
-#endif
     // Parthenon cleanup includes Kokkos, MPI
-    Flag("Finalizing");
+    Flag("ParthenonFinalize");
     pman.ParthenonFinalize();
+    EndFlag();
 
     return 0;
 }

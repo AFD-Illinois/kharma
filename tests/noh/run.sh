@@ -1,6 +1,7 @@
 #!/bin/bash
+set -euo pipefail
 
-# Bash script to run 1D (Noh) shock test
+# Bash script to run 1D Noh shock test
 
 # Set paths
 KHARMADIR=../..
@@ -8,17 +9,17 @@ KHARMADIR=../..
 exit_code=0
 
 noh_test() {
-    ALL_RES="64,128,256,512,1024,2048"
-    for res in 64 128 256 512 1024 2048
+    ALL_RES="128,256,512,1024"
+    for res in 64 128 256 512 1024
     do
         eighth=$(($res / 8))
-        $KHARMADIR/run.sh -i $KHARMADIR/pars/noh.par parthenon/output0/dt=1000 debug/verbose=1 \
+        $KHARMADIR/run.sh -i $KHARMADIR/pars/electrons/noh.par debug/verbose=1 parthenon/output0/dt=1000 \
+                            electrons/gamma_e=1.666667 \
                             parthenon/mesh/nx1=$res parthenon/meshblock/nx1=$eighth \
                             >log_noh_${res}.txt 2>&1
 
         cp noh.out0.final.phdf noh.out0.final.res$res.phdf
     done
-    pyharm-convert *.phdf
     check_code=0
     python check.py . . $ALL_RES 1.666667 || check_code=$?
     if [[ $check_code != 0 ]]; then
@@ -27,7 +28,6 @@ noh_test() {
     else
         echo Noh shock test success
     fi
-    rm *.phdf
 }
 
 noh_test

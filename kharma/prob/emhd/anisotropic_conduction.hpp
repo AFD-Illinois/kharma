@@ -42,15 +42,13 @@ using namespace parthenon;
 /**
  * Anisotropic heat conduction problem, see Chandra+ 2017
  */
-TaskStatus InitializeAnisotropicConduction(MeshBlockData<Real> *rc, ParameterInput *pin)
+TaskStatus InitializeAnisotropicConduction(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin)
 {
-    Flag(rc, "Initializing EMHD Modes problem");
     auto pmb = rc->GetBlockPointer();
     GridScalar rho = rc->Get("prims.rho").data;
     GridScalar u = rc->Get("prims.u").data;
     GridVector uvec = rc->Get("prims.uvec").data;
-    // It is well and good this problem should cry if B/EMHD are disabled.
-    GridVector B_P = rc->Get("prims.B").data;
+    // It is well and good this problem should cry if EMHD is disabled.
     GridVector q = rc->Get("prims.q").data;
     GridVector dP = rc->Get("prims.dP").data;
 
@@ -63,24 +61,29 @@ TaskStatus InitializeAnisotropicConduction(MeshBlockData<Real> *rc, ParameterInp
 
     const Real R = m::sqrt(Rsq);
 
+    pin->GetOrAddString("b_field", "type", "wave");
+    pin->GetOrAddReal("b_field", "phase", 0.);
+    // Constant B1
+    pin->GetOrAddReal("b_field", "B10", B0);
+    // Amp & wavenumber of sin() for B2
+    pin->GetOrAddReal("b_field", "amp2_B2", B0);
+    pin->GetOrAddReal("b_field", "k1", 2*M_PI*k0);
+
     IndexRange ib = pmb->cellbounds.GetBoundsI(IndexDomain::entire);
     IndexRange jb = pmb->cellbounds.GetBoundsJ(IndexDomain::entire);
     IndexRange kb = pmb->cellbounds.GetBoundsK(IndexDomain::entire);
     pmb->par_for("anisotropic_init", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-        KOKKOS_LAMBDA_3D {
+        KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
             Real X[GR_DIM];
             G.coord_embed(k, j, i, Loci::center, X);
             GReal r = m::sqrt(m::pow((X[1] - 0.5), 2) + m::pow((X[2] - 0.5), 2));
 
             // Initialize primitives
-            rho(k, j, i) = 1 - (A * exp(-m::pow(r, 2) / m::pow(R, 2)));
+            rho(k, j, i) = 1 - (A * m::exp(-m::pow(r, 2) / m::pow(R, 2)));
             u(k, j, i) = 1.;
             uvec(0, k, j, i) = 0.;
             uvec(1, k, j, i) = 0.;
             uvec(2, k, j, i) = 0.;
-            B_P(0, k, j, i) = B0;
-            B_P(1, k, j, i) = B0 * sin(2*M_PI*k0*X[1]);
-            B_P(2, k, j, i) = 0;
             q(k, j, i) = 0.;
             dP(k, j, i) = 0.;
         }

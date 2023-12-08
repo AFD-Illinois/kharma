@@ -34,22 +34,18 @@
 
 #include "bz_monopole.hpp"
 
-#include "mpi.hpp"
-#include "prob_common.hpp"
+#include "coordinate_utils.hpp"
 #include "types.hpp"
 
 #include <random>
 #include "Kokkos_Random.hpp"
 
-TaskStatus InitializeBZMonopole(MeshBlockData<Real> *rc, ParameterInput *pin)
+TaskStatus InitializeBZMonopole(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin)
 {
-    Flag(rc, "Initializing BZ monopole problem");
-
     auto pmb = rc->GetBlockPointer();
     GridScalar rho = rc->Get("prims.rho").data;
     GridScalar u = rc->Get("prims.u").data;
     GridVector uvec = rc->Get("prims.uvec").data;
-    GridVector B_P = rc->Get("prims.B").data;
 
     Real bsq_o_rho_max = pin->GetOrAddReal("floors", "bsq_over_rho_max", 1.e2);
     Real rho_min_limit = pin->GetOrAddReal("floors", "rho_min_geom", 1.e-6);
@@ -63,12 +59,8 @@ TaskStatus InitializeBZMonopole(MeshBlockData<Real> *rc, ParameterInput *pin)
     const auto& G = pmb->coords;
     const GReal a = G.coords.get_a();
 
-    if (pmb->gid == 0 && pmb->packages.Get("GRMHD")->Param<int>("verbose") > 0) {
-        std::cout << "Initializing BZ monopole." << std::endl;
-    }
-
     pmb->par_for("fm_torus_init", ks, ke, js, je, is, ie,
-        KOKKOS_LAMBDA_3D {
+        KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
             GReal Xembed[GR_DIM];
             G.coord_embed(k, j, i, Loci::center, Xembed);
             GReal r = Xembed[1];

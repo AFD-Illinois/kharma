@@ -34,9 +34,9 @@
 
 #include "current.hpp"
 
-std::shared_ptr<StateDescriptor> Current::Initialize(ParameterInput *pin)
+std::shared_ptr<KHARMAPackage> Current::Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages)
 {
-    auto pkg = std::make_shared<StateDescriptor>("Current");
+    auto pkg = std::make_shared<KHARMAPackage>("Current");
     Params &params = pkg->AllParams();
 
     // 4-current jcon. Calculated only for output
@@ -44,28 +44,31 @@ std::shared_ptr<StateDescriptor> Current::Initialize(ParameterInput *pin)
     auto m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy}, s_fourvector);
     pkg->AddField("jcon", m);
 
+    // Temporaries
+    std::vector<int> s_vector({NVEC});
+    m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy}, s_vector);
+    pkg->AddField("Current.uvec_c", m);
+    pkg->AddField("Current.B_P_c", m);
+
+    pkg->BlockUserWorkBeforeOutput = Current::FillOutput;
+
     return pkg;
 }
 
 TaskStatus Current::CalculateCurrent(MeshBlockData<Real> *rc0, MeshBlockData<Real> *rc1, const double& dt)
 {
-    Flag("Calculating current");
-
     auto pmb = rc0->GetBlockPointer();
     GridVector uvec_old = rc0->Get("prims.uvec").data;
     GridVector B_P_old = rc0->Get("prims.B").data;
     GridVector uvec_new = rc1->Get("prims.uvec").data;
     GridVector B_P_new = rc1->Get("prims.B").data;
     GridVector jcon = rc1->Get("jcon").data;
+
+    GridVector uvec_c = rc1->Get("Current.uvec_c").data;
+    GridVector B_P_c = rc1->Get("Current.B_P_c").data;
+
     const auto& G = pmb->coords;
-
-    int n1 = pmb->cellbounds.ncellsi(IndexDomain::entire);
-    int n2 = pmb->cellbounds.ncellsj(IndexDomain::entire);
-    int n3 = pmb->cellbounds.ncellsk(IndexDomain::entire);
     const int ndim = pmb->pmy_mesh->ndim;
-
-    GridVector uvec_c("uvec_c", NVEC, n3, n2, n1);
-    GridVector B_P_c("B_P_c", NVEC, n3, n2, n1);
 
     // Calculate time-centered primitives
     // We could pack, but we just need the vectors, U1,2,3 and B1,2,3
@@ -75,7 +78,7 @@ TaskStatus Current::CalculateCurrent(MeshBlockData<Real> *rc0, MeshBlockData<Rea
     const IndexRange kb = pmb->cellbounds.GetBoundsK(IndexDomain::entire);
     const IndexRange nv = IndexRange{0, NVEC-1};
     pmb->par_for("get_center", nv.s, nv.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-        KOKKOS_LAMBDA_VARS {
+        KOKKOS_LAMBDA (const int &p, const int &k, const int &j, const int &i) {
             uvec_c(p, k, j, i) = 0.5*(uvec_old(p, k, j, i) + uvec_new(p, k, j, i));
             B_P_c(p, k, j, i) = 0.5*(B_P_old(p, k, j, i) + B_P_new(p, k, j, i));
         }
@@ -87,8 +90,9 @@ TaskStatus Current::CalculateCurrent(MeshBlockData<Real> *rc0, MeshBlockData<Rea
     const IndexRange kb_i = pmb->cellbounds.GetBoundsK(IndexDomain::interior);
     const IndexRange n4v = IndexRange{0, GR_DIM-1};
     pmb->par_for("jcon_calc", n4v.s, n4v.e, kb_i.s, kb_i.e, jb_i.s, jb_i.e, ib_i.s, ib_i.e,
-        KOKKOS_LAMBDA_VEC {
+        KOKKOS_LAMBDA (const int &mu, const int &k, const int &j, const int &i) {
             // Get sqrt{-g}*F^{mu nu} at neighboring points
+            // TODO(BSP) this recalculates Fcon a lot...
             const Real gF0p = get_gdet_Fcon(G, uvec_new, B_P_new, 0, mu, k, j, i);
             const Real gF0m = get_gdet_Fcon(G, uvec_old, B_P_old, 0, mu, k, j, i);
             const Real gF1p = get_gdet_Fcon(G, uvec_c, B_P_c, 1, mu, k, j, i+1);
@@ -101,20 +105,17 @@ TaskStatus Current::CalculateCurrent(MeshBlockData<Real> *rc0, MeshBlockData<Rea
             // Difference: D_mu F^{mu nu} = 4 \pi j^nu
             jcon(mu, k, j, i) = 1. / (m::sqrt(4. * M_PI) * G.gdet(Loci::center, j, i)) *
                                 ((gF0p - gF0m) / dt +
-                                (gF1p - gF1m) / (2. * G.dx1v(i)) +
-                                (gF2p - gF2m) / (2. * G.dx2v(j)) +
-                                (gF3p - gF3m) / (2. * G.dx3v(k)));
+                                (gF1p - gF1m) / (2 * G.Dxc<1>(i)) +
+                                (gF2p - gF2m) / (2 * G.Dxc<2>(j)) +
+                                (gF3p - gF3m) / (2 * G.Dxc<3>(k)));
         }
     );
 
-    Flag("Calculated");
     return TaskStatus::complete;
 }
 
 void Current::FillOutput(MeshBlock *pmb, ParameterInput *pin)
 {
-    Flag("Adding current");
-
     // The "preserve" container will only exist after we've taken a step,
     // catch that situation
     auto& rc1 = pmb->meshblock_data.Get();
@@ -134,6 +135,4 @@ void Current::FillOutput(MeshBlock *pmb, ParameterInput *pin)
     Real dt_last = pmb->packages.Get("Globals")->Param<Real>("dt_last");
 
     Current::CalculateCurrent(rc0.get(), rc1.get(), dt_last);
-
-    Flag("Added");
 }

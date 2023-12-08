@@ -63,7 +63,7 @@ namespace Electrons {
  * For electrons, this means a total entropy Ktot to track dissipation, and electron entropies
  * for each model being run.
  */
-std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t packages);
+std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages);
 
 /**
  * In addition to the standard functions, packages can include extras.  This is called manually
@@ -71,45 +71,51 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin, Packages_t pack
  * 
  * Function in this package: Initialize electron temperatures when setting up the problem. Trivial.
  */
-TaskStatus InitElectrons(MeshBlockData<Real> *rc, ParameterInput *pin);
+TaskStatus InitElectrons(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin);
 
 /**
- * KHARMA requires two forms of the functions for obtaining and fixing the primitive values from
- * conserved fluxes.
- * KHARMA's version needs to take an IndexDomain enum and boundary "coarse" boolean, as it is called
- * by KHARMA itself when updating boundary values (function UtoP below).  The other version should take
- * just the fluid state, to match Parthenon's calling convention for FillDerived functions.
- * It's easiest to define them with these defaults in the header, register the FillDerived version as
- * Parthenon's callback, and then add the UtoP version in kharma.cpp.
+ * Any implementation of UtoP needs to take an IndexDomain enum and boundary "coarse" boolean.
+ * This allows KHARMA to call it over the whole domain (IndexDomain::entire) or just on a boundary
+ * after conserved variables have been updated.
  * 
- * Defaults to entire domain, as the KHARMA algorithm relies on applying UtoP over ghost zones.
+ * Usually this should default to the entire domain, as the KHARMA algorithm relies on applying
+ * UtoP over ghost zones.
  * 
  * Function in this package: Get the specific entropy primitive value, by dividing the total entropy K/(rho*u^0)
  */
-void UtoP(MeshBlockData<Real> *rc, IndexDomain domain=IndexDomain::entire, bool coarse=false);
-inline void FillDerivedBlock(MeshBlockData<Real> *rc) { UtoP(rc); }
+void BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse=false);
 
 /**
- * This heating step is custom for this package:
- * it is added manually to the task list in harm_driver.cpp, just after the call to "FillDerived"
- * a.k.a. "UtoP".  For reasons mentioned there, it must update physical *and* boundary zones.
- * 
- * It calculates how electrons should be heated and updates their entropy values,
+ * This heating step is custom for this package.  It is added manually to any task list in the KHARMADriver,
+ * at the very end of the step. For reasons mentioned there & above, it must update *all* zones, incl. ghosts.
+ *
+ * The function calculates how electrons should be heated and updates their entropy values,
  * using each step's total dissipation (advected vs actual fluid entropy)
  * It applies any or all of several different esimates for this split, to each of the several different
  * primitive variables "prims.Kel_X"
  * Finally, it checks the results against a minimum and maximum temperature ratio T_protons/T_electrons
  * 
- *  To recap re: floors:
+ * To recap re: floors:
  * This function expects two sets of values {rho0, u0, Ktot0} from rc_old and {rho1, u1} from rc,
- * all of which obey all given floors
+ * all of which obey all given floors.
  * It produces end-of-substep values {Ktot1, Kel_X1, Kel_Y1, etc}, which are also guaranteed to obey floors
  * 
  * TODO this function should update fflag to reflect temperature ratio floor hits
  */
 TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real> *rc, bool generate_grf=false);
+inline TaskStatus MeshApplyElectronHeating(MeshData<Real> *md_old, MeshData<Real> *md)
+{
+    Flag("MeshApplyElectronHeating");
+    for (int i=0; i < md->NumBlocks(); ++i)
+        ApplyElectronHeating(md_old->GetBlockData(i).get(), md->GetBlockData(i).get());
+    EndFlag();
+    return TaskStatus::complete;
+}
 
-TaskStatus ApplyHeating(MeshBlockData<Real> *mbase);
+/**
+ * Apply Hubble-flow problem heating
+ */
+TaskStatus ApplyHubbleHeating(MeshBlockData<Real> *mbase);
 
 /**
  * Diagnostics printed/computed after each step, called from kharma.cpp
@@ -129,14 +135,10 @@ void FillOutput(MeshBlock *pmb, ParameterInput *pin);
  * KHARMA requires some method for getting conserved variables from primitives, as well.
  * 
  * However, unlike UtoP, p_to_u is implemented device-side. That means that any
- * package defining new primitive/conserved vars must add them to Flux::prim_to_flux
- * in addition to providing a UtoP function.
- * 
- * Some packages may wish to have their own local p_to_u functions as well, to avoid
- * calling Flux::PtoU where not all conserved variables need to be calculated. This is
- * an example.
+ * package defining new primitive/conserved vars must not only provide a prim_to_flux here,
+ * but add it to the list in Flux::prim_to_flux.
  */
-KOKKOS_INLINE_FUNCTION void p_to_u(const GRCoordinates& G, const VariablePack<Real>& P, const VarMap& m_p,
+KOKKOS_FORCEINLINE_FUNCTION void p_to_u(const GRCoordinates& G, const VariablePack<Real>& P, const VarMap& m_p,
                                          const int& k, const int& j, const int& i,
                                          const VariablePack<Real>& flux, const VarMap m_u, const Loci loc=Loci::center)
 {
