@@ -293,28 +293,44 @@ class CoordinateEmbedding {
         }
     // ___________________________________________________________________________________________________________________
     // HORIZON CHANGE MADE 
-    
+
         KOKKOS_INLINE_FUNCTION GReal get_horizon() const
         {
             if (mpark::holds_alternative<SphKSCoords>(base) ||
                 mpark::holds_alternative<SphBLCoords>(base) ||
                 mpark::holds_alternative<SphKSExtG>(base) ||
-                mpark::holds_alternative<SphBLExtG>(base) ||
-                mpark::holds_alternative<DCSKSCoords>(base) || // Changes Made. 
-                mpark::holds_alternative<DCSBLCoords>(base) ||
-                mpark::holds_alternative<EDGBKSCoords>(base) ||
-                mpark::holds_alternative<EDGBBLCoords>(base)) // Changes Made.
+                mpark::holds_alternative<SphBLExtG>(base)) 
             {
                 const GReal a = get_a();
                 return 1 + m::sqrt(1 - a * a);
-            } else {
+            } 
+            
+            else if (mpark::holds_alternative<DCSKSCoords>(base) || // Changes Made. 
+                mpark::holds_alternative<DCSBLCoords>(base)) 
+            {
+                const GReal a = get_a();
+                const GReal zeta = get_zeta();
+                return (1 + sqrt(1 - pow(a,2))) + (-((915*pow(a,2))/28672) - (351479*pow(a,4))/13762560) * zeta ;
+            }
+
+            else if (mpark::holds_alternative<EDGBKSCoords>(base) || // Changes Made. 
+                mpark::holds_alternative<EDGBBLCoords>(base))
+            {
+                const GReal a = get_a();
+                const GReal zeta = get_zeta();
+                return ((1 + sqrt(1 - pow(a,2))) + (-(49./40.) - (277. *pow(a,2))/960. - (145711.* pow(a,4))/3225600.)* zeta);
+                
+            }
+
+            else 
+            {
                 return 0.0;
             }
 
-        
-    // ___________________________________________________________________________________________________________________
-
         }
+
+// ___________________________________________________________________________________________________________________
+
         KOKKOS_INLINE_FUNCTION GReal get_a() const
         {
             return mpark::visit( [&](const auto& self) {
@@ -323,12 +339,15 @@ class CoordinateEmbedding {
         }
 
         //Changes made. a get zeta function 
-        // KOKKOS_INLINE_FUNCTION GReal get_zeta() const
-        // {
-        //     return mpark::visit( [&](const auto& self) {
-        //         return self.zeta;
-        //     }, base);
-        // }
+        KOKKOS_INLINE_FUNCTION GReal get_zeta() const
+        {
+            if (mpark::holds_alternative<DCSKSCoords>(base)) {
+                return mpark::get<DCSKSCoords>(base).zeta;
+            }
+            else if (mpark::holds_alternative<EDGBKSCoords>(base)) { 
+                return mpark::get<EDGBKSCoords>(base).zeta;
+            }
+        }
 
     // ___________________________________________________________________________________________________________________
 

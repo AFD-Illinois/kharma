@@ -196,6 +196,7 @@ void KHARMA::FixParameters(ParameterInput *pin)
                     int nx1 = pin->GetInteger("parthenon/mesh", "nx1");
                     // Allow overriding Rhor for bondi_viscous problem
                     const GReal Rhor = pin->GetOrAddReal("coordinates", "Rhor", tmp_coords.get_horizon());
+
                     const GReal x1hor = tmp_coords.r_to_native(Rhor);
 
                     // Set Rin such that we have 5 zones completely inside the event horizon
