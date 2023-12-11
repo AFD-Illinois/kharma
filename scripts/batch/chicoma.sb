@@ -1,0 +1,24 @@
+#!/bin/bash
+# Admin stuff
+#SBATCH -A t23_eh_variability_g
+#SBATCH -J KHARMA
+#SBATCH -t 12:00:00
+#SBATCH -N 1
+#SBATCH -o "out-%j.txt"
+
+# Partition
+##SBATCH -p gpu_debug --reservation gpu_debug --qos debug
+#SBATCH -p gpu
+
+# Node options: full, all CPU
+# Note we could do 32 if HT is faster
+#SBATCH --tasks-per-node=4
+#SBATCH --cpus-per-task=16
+#SBATCH --exclusive
+#SBATCH --mem=0
+
+# All options/environment are taken care of in run.sh now
+# I should do that on more machines...
+
+KHARMA_DIR=$HOME/Code/kharma
+$KHARMA_DIR/run.sh -t 11:50:00 "$@"
