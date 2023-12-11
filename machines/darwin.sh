@@ -11,7 +11,7 @@ if [[ ($HOSTNAME == "cn"* || $HOSTNAME == "darwin"*) &&
   # Where we're going, we don't need system libraries
   ARGS="$ARGS hdf5"
 
-  # Load compiler...
+  # 1. Load compiler stack
   if [[ "$ARGS" == *"gcc10"* ]]; then
     module load gcc/10.4.0
     C_NATIVE=gcc
@@ -52,7 +52,7 @@ if [[ ($HOSTNAME == "cn"* || $HOSTNAME == "darwin"*) &&
     fi
   fi
 
-  # ...any accelerator libraries...
+  # 2. Load accelerator libraries
   if [[ "$ARGS" == *"cuda"* ]]; then
     module load cuda/12.0.0 nvhpc
     PREFIX_PATH=$NVHPC_ROOT
@@ -64,10 +64,16 @@ if [[ ($HOSTNAME == "cn"* || $HOSTNAME == "darwin"*) &&
     CXX_NATIVE=hipcc
     export CXXFLAGS="-fopenmp $CXXFLAGS"
   else
+    # load OpenMPI for CPU builds...
     module load openmpi
   fi
 
-  # ...and set architecture
+  # ... or if we force it (CI)
+  if [[ "$ARGS" == *"ompi"* ]]; then
+    module load openmpi
+  fi
+
+  # 3. Set architecture
   # These are orthogonal to above, so long as the hardware
   # supports the paradigm
   # Note this also specifies cores to use for compiling
