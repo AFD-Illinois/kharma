@@ -5,33 +5,24 @@
 
 if [[ ($HOSTNAME == "cn"* || $HOSTNAME == "darwin"*) &&
       ("$PWD" == "/projects/jacamar-ci"* || "$PWD" == "/vast"*) ]]; then
-  #module purge # This messes things up on ARM nodes
+  module purge
   module load cmake
 
   # Where we're going, we don't need system libraries
   ARGS="$ARGS hdf5"
 
-  # Help Darwin find the right modules in automated jobs
-  if [[ "$ARGS" == *"cuda"* && "$ARGS" == *"arm-"* ]]; then
-    export MODULEPATH="/projects/darwin-nv/modulefiles/rhel8/aarch64:/projects/darwin-nv/modulefiles/rhel8/aarch64"
-  fi
-
   # Load compiler...
-  if [[ "$ARGS" == *"gcc12"* ]]; then
-    module load gcc/12.2.0 openmpi
-    C_NATIVE=gcc
-    CXX_NATIVE=g++
-  elif [[ "$ARGS" == *"gcc10"* ]]; then
-    module load gcc/10.4.0 openmpi
+  if [[ "$ARGS" == *"gcc10"* ]]; then
+    module load gcc/10.4.0
     C_NATIVE=gcc
     CXX_NATIVE=g++
   elif [[ "$ARGS" == *"gcc"* ]]; then
     # Default GCC
-    #module load gcc/13.1.0 openmpi
+    module load gcc/12.1.0
     C_NATIVE=gcc
     CXX_NATIVE=g++
   elif [[ "$ARGS" == *"aocc"* ]]; then
-    module load aocc openmpi
+    module load aocc
     C_NATIVE=clang
     CXX_NATIVE=clang++
   elif [[ "$ARGS" == *"nvhpc"* ]]; then
@@ -42,20 +33,20 @@ if [[ ($HOSTNAME == "cn"* || $HOSTNAME == "darwin"*) &&
     export NVHPC_CUDA_HOME="$CUDA_HOME"
     unset CUDA_HOME
   elif [[ "$ARGS" == *"icc"* ]]; then
-    module load intel-classic/2021.3.0 openmpi
+    module load intel-classic/2021.3.0
     C_NATIVE=icc
     CXX_NATIVE=icpc
   else
     # Default: NVHPC if cuda else IntelLLVM
     if [[ "$ARGS" == *"cuda"* ]]; then
-      module load nvhpc openmpi
+      module load nvhpc
       C_NATIVE="nvc"
       CXX_NATIVE="nvc++"
       # New NVHPC doesn't like CUDA_HOME
       export NVHPC_CUDA_HOME="$CUDA_HOME"
       unset CUDA_HOME
     else
-      module load intel openmpi
+      module load intel
       C_NATIVE=icx
       CXX_NATIVE=icpx
     fi
@@ -63,13 +54,17 @@ if [[ ($HOSTNAME == "cn"* || $HOSTNAME == "darwin"*) &&
 
   # ...any accelerator libraries...
   if [[ "$ARGS" == *"cuda"* ]]; then
-    module load cuda/12.0.0
+    module load cuda/12.0.0 nvhpc
+    PREFIX_PATH=$NVHPC_ROOT
+    EXTRA_FLAGS="-DPARTHENON_ENABLE_HOST_COMM_BUFFERS=ON $EXTRA_FLAGS"
   elif [[ "$ARGS" == *"hip"* ]]; then
     module load rocm/5.4.3 #openmpi/5.0.0rc11-gcc_13.1.0
     source ~/libs/env.sh
     C_NATIVE=hipcc
     CXX_NATIVE=hipcc
     export CXXFLAGS="-fopenmp $CXXFLAGS"
+  else
+    module load openmpi
   fi
 
   # ...and set architecture
