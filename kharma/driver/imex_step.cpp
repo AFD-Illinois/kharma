@@ -65,9 +65,9 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
     // Which packages we've loaded affects which tasks we'll add to the list
     auto& pkgs         = blocks[0]->packages.AllPackages();
     auto& driver_pkg   = pkgs.at("Driver")->AllParams();
-    const bool use_electrons = pkgs.count("Electrons");
     const bool use_b_cleanup = pkgs.count("B_Cleanup");
     const bool use_b_ct = pkgs.count("B_CT");
+    const bool use_electrons = pkgs.count("Electrons");
     const bool use_implicit = pkgs.count("Implicit");
     const bool use_jcon = pkgs.count("Current");
     const bool use_linesearch = (use_implicit) ? pkgs.at("Implicit")->Param<bool>("linesearch") : false;
@@ -108,15 +108,12 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
                               Metadata::Face, Metadata::GetUserFlag("Boundaries")}, true);
         sync_vars = KHARMA::GetVariableNames(&(pmesh->packages), sync_flags);
     }
-    // We'll only ever sync the current stage "final"
-    //pmesh->mesh_data.AddShallow("sync", integrator->stage_name[stage], sync_vars);
 
-    // Big synchronous region: get & apply fluxes to advance the fluid state
-    // num_partitions is nearly always 1
+    // Flux region: calculate and apply fluxes to update conserved values
     const int num_partitions = pmesh->DefaultNumPartitions();
-    TaskRegion &single_tasklist_per_pack_region = tc.AddRegion(num_partitions);
+    TaskRegion &flux_region = tc.AddRegion(num_partitions);
     for (int i = 0; i < num_partitions; i++) {
-        auto &tl = single_tasklist_per_pack_region[i];
+        auto &tl = flux_region[i];
         // Container names: 
         // '_full_step_init' refers to the fluid state at the start of the full time step (Si in iharm3d)
         // '_sub_step_init' refers to the fluid state at the start of the sub step (Ss in iharm3d)
@@ -268,11 +265,10 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
         KHARMADriver::AddBoundarySync(t_floors, tl, md_sync);
     }
 
-    // Async Region: Any post-sync tasks.  Fixups, timestep & AMR tagging.
-    //TaskRegion &async_region2 = tc.AddRegion(blocks.size());
-    TaskRegion &async_region2 = tc.AddRegion(num_partitions);
+    // Fix Region: prims/cons sync, floors, fixes, boundary conditions which need primitives
+    TaskRegion &fix_region = tc.AddRegion(num_partitions);
     for (int i = 0; i < num_partitions; i++) {
-        auto &tl  = async_region2[i];
+        auto &tl  = fix_region[i];
         auto &md_sub_step_init  = pmesh->mesh_data.GetOrAdd(integrator->stage_name[stage-1], i);
         auto &md_sub_step_final = pmesh->mesh_data.GetOrAdd(integrator->stage_name[stage], i);
         auto &md_sync = pmesh->mesh_data.AddShallow("sync"+integrator->stage_name[stage]+std::to_string(i), md_sub_step_final, sync_vars);
@@ -343,7 +339,6 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
     // modified on each rank.
     const auto &two_sync = pkgs.at("Driver")->Param<bool>("two_sync");
     if (two_sync) {
-        TaskRegion &async_region3 = tc.AddRegion(num_partitions);
         for (int i = 0; i < num_partitions; i++) {
             auto &md_sub_step_final = pmesh->mesh_data.GetOrAdd(integrator->stage_name[stage], i);
             auto &md_sync = pmesh->mesh_data.AddShallow("sync"+integrator->stage_name[stage]+std::to_string(i), md_sub_step_final, sync_vars);
