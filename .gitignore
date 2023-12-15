@@ -24,6 +24,7 @@ kharma_parsed_*.par
 log_*.txt
 bondi_analytic_*.txt
 atmosphere_soln_*.txt
+shock_soln_*.txt
 
 # Editor documents
 .project
