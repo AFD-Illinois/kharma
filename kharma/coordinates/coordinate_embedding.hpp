@@ -271,15 +271,32 @@ class CoordinateEmbedding {
             return mpark::holds_alternative<CartMinkowskiCoords>(base) && mpark::holds_alternative<NullTransform>(transform);
         }
 
-        // Spell out the interface we take from BaseCoords
-        // TODO add a gcon_embed, gdet_embed
+        // Note this is the one thing we need from BaseCoords
         KOKKOS_INLINE_FUNCTION void gcov_embed(const GReal Xembed[GR_DIM], Real gcov[GR_DIM][GR_DIM]) const
         {
             mpark::visit( [&Xembed, &gcov](const auto& self) {
                 self.gcov_embed(Xembed, gcov);
             }, base);
         }
-        // and from the Transform
+        // All the quantities we can derive from that
+        KOKKOS_INLINE_FUNCTION Real gcon_from_gcov(const Real gcov[GR_DIM][GR_DIM], Real gcon[GR_DIM][GR_DIM]) const
+        {
+            Real gdet = invert(&gcov[0][0], &gcon[0][0]);
+            return m::sqrt(m::abs(gdet));
+        }
+        KOKKOS_INLINE_FUNCTION Real gcon_embed(const GReal Xembed[GR_DIM], Real gcon[GR_DIM][GR_DIM]) const
+        {
+            GReal gcov[GR_DIM][GR_DIM];
+            gcov_embed(Xembed, gcov);
+            return gcon_from_gcov(gcov, gcon);
+        }
+        KOKKOS_INLINE_FUNCTION Real gdet_embed(const GReal Xembed[GR_DIM]) const
+        {
+            GReal gcon[GR_DIM][GR_DIM];
+            return gcon_embed(Xembed, gcon);
+        }
+
+        // Now, everything we take from CoordinateTransform
         KOKKOS_INLINE_FUNCTION void coord_to_embed(const GReal Xnative[GR_DIM], GReal Xembed[GR_DIM]) const
         {
             mpark::visit( [&Xnative, &Xembed](const auto& self) {
@@ -484,18 +501,12 @@ class CoordinateEmbedding {
         {
             Real gcov[GR_DIM][GR_DIM];
             gcov_native(X, gcov);
-            return gcon_native(gcov, gcon);
-        }
-        KOKKOS_INLINE_FUNCTION Real gcon_native(const Real gcov[GR_DIM][GR_DIM], Real gcon[GR_DIM][GR_DIM]) const
-        {
-            Real gdet = invert(&gcov[0][0], &gcon[0][0]);
-            return m::sqrt(m::abs(gdet));
+            return gcon_from_gcov(gcov, gcon);
         }
         KOKKOS_INLINE_FUNCTION Real gdet_native(const GReal X[GR_DIM]) const
         {
-            Real gcov[GR_DIM][GR_DIM], gcon[GR_DIM][GR_DIM];
-            gcov_native(X, gcov);
-            return gcon_native(gcov, gcon);
+            Real gcon[GR_DIM][GR_DIM];
+            return gcon_native(X, gcon);
         }
 
         KOKKOS_INLINE_FUNCTION void conn_native(const GReal X[GR_DIM], const GReal delta, Real conn[GR_DIM][GR_DIM][GR_DIM]) const

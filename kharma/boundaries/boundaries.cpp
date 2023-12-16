@@ -475,7 +475,7 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
 
             if (bdir > ndim) continue;
 
-            // Set ranges based
+            // Set ranges for entire width.  Probably not needed for fluxes but won't hurt
             IndexRange ib = ibe, jb = jbe, kb = kbe;
             // Range for inner_x1 bounds is first face only, etc.
             if (bdir == 1) {
@@ -520,7 +520,8 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
                         "zero_flux_" + bname, 0, F.GetDim(4) - 1, kb.s, kb.e, jb.s, jb.s, ib.s, ib.e,
                         KOKKOS_LAMBDA(const int &p, const int &k, const int &j, const int &i) {
                             F.flux(bdir, p, k, j, i) = 0.;
-                        });
+                        }
+                    );
                 }
             }
         }
