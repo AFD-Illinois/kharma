@@ -46,10 +46,21 @@
 
 // Problem initialization headers
 #include "bondi.hpp"
+#include "explosion.hpp"
+#include "fm_torus.hpp"
+#include "resize_restart.hpp"
+#include "resize_restart_kharma.hpp"
+#include "kelvin_helmholtz.hpp"
+#include "bz_monopole.hpp"
+#include "mhdmodes.hpp"
+#include "orszag_tang.hpp"
+#include "shock_tube.hpp"
 #include "gizmo.hpp"
 // EMHD problem headers
 #include "emhd/anisotropic_conduction.hpp"
-#include "emhd/bondi_viscous.hpp"
+#include "emhd/emhdmodes.hpp"
+#include "emhd/emhdshock.hpp"
+#include "emhd/conducting_atmosphere.hpp"
 // Electron problem headers
 #include "elec/driven_turbulence.hpp"
 #include "elec/hubble.hpp"

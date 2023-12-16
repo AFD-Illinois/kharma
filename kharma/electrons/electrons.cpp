@@ -84,10 +84,6 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     params.Add("gamma_e", gamma_e);
     Real gamma_p = pin->GetOrAddReal("electrons", "gamma_p", 5./3);
     params.Add("gamma_p", gamma_p);
-    Real fel_0 = pin->GetOrAddReal("electrons", "fel_0", 0.01);
-    params.Add("fel_0", fel_0);
-    bool kel_lim = pin->GetOrAddBoolean("electrons", "kel_lim", true);
-    params.Add("kel_lim", kel_lim);
 
     // Whether to enforce that dissipation be positive, i.e. increasing entropy
     // Probably more accurate to keep off.
@@ -163,7 +159,7 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     pkg->AddField("cons.Ktot", flags_cons);
     pkg->AddField("prims.Ktot", flags_prim);
 
-    if ("driven_turbulence" == packages.Get("GRMHD")->Param<std::string>("problem")) {
+    if ("driven_turbulence" == packages->Get("Globals")->Param<std::string>("problem")) {
         std::vector<int> s_vector({2});
         Metadata m_vector = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy}, s_vector);
         Metadata m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
@@ -313,7 +309,7 @@ void BlockPtoU(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     );
 }
 
-TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real> *rc)
+TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real> *rc, bool generate_grf)
 {
     // Need to distinguish different electron models
     // So far, Parthenon's maps of the same sets of variables are consistent,
@@ -465,7 +461,7 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
     // A couple of the electron test problems add source terms to the *fluid*.
     // we bundle them here because they're generally relevant alongside e- heating,
     // and should be applied at the same time
-    const std::string prob = pmb->packages.Get("GRMHD")->Param<std::string>("problem");
+    const std::string prob = pmb->packages.Get("Globals")->Param<std::string>("problem");
     if (prob == "driven_turbulence") { // Gaussian random field:
         const auto& G = pmb->coords;
         GridScalar rho = rc->Get("prims.rho").data;
@@ -494,20 +490,20 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
             Real mean_velocity_num1 = 0;    Kokkos::Sum<Real> mean_velocity_num1_reducer(mean_velocity_num1);
             Real tot_mass = 0;              Kokkos::Sum<Real> tot_mass_reducer(tot_mass);
             pmb->par_reduce("forced_mhd_normal_kick_centering_mean_vel0", mykb.s, mykb.e, myjb.s, myjb.e, myib.s, myib.e,
-                KOKKOS_LAMBDA_3D_REDUCE {
-                    Real cell_mass = (rho(k, j, i) * G.dx3v(k) * G.dx2v(j) * G.dx1v(i));
+                KOKKOS_LAMBDA(const int k, const int j, const int i, Real &local_result) {
+                    Real cell_mass = (rho(k, j, i) * G.Dxc<3>(k) * G.Dxc<2>(j) * G.Dxc<1>(i));
                     local_result += cell_mass * dv0[(i-4)*Nx1+(j-4)];
                 }
             , mean_velocity_num0_reducer);
             pmb->par_reduce("forced_mhd_normal_kick_centering_mean_vel1", mykb.s, mykb.e, myjb.s, myjb.e, myib.s, myib.e,
-                KOKKOS_LAMBDA_3D_REDUCE {
-                    Real cell_mass = (rho(k, j, i) * G.dx3v(k) * G.dx2v(j) * G.dx1v(i));
+                KOKKOS_LAMBDA(const int k, const int j, const int i, Real &local_result) {
+                    Real cell_mass = (rho(k, j, i) * G.Dxc<3>(k) * G.Dxc<2>(j) * G.Dxc<1>(i));
                     local_result += cell_mass * dv1[(i-4)*Nx1+(j-4)];
                 }
             , mean_velocity_num1_reducer);
             pmb->par_reduce("forced_mhd_normal_kick_centering_tot_mass", mykb.s, mykb.e, myjb.s, myjb.e, myib.s, myib.e,
-                KOKKOS_LAMBDA_3D_REDUCE {
-                    local_result += (rho(k, j, i) * G.dx3v(k) * G.dx2v(j) * G.dx1v(i));
+                KOKKOS_LAMBDA(const int k, const int j, const int i, Real &local_result) {
+                    local_result += (rho(k, j, i) * G.Dxc<3>(k) * G.Dxc<2>(j) * G.Dxc<1>(i));
                 }
             , tot_mass_reducer);
             Real mean_velocity0 = mean_velocity_num0/tot_mass;
@@ -523,27 +519,27 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
             Real Bhalf = 0; Real A = 0; Real init_e = 0; 
             Kokkos::Sum<Real> Bhalf_reducer(Bhalf); Kokkos::Sum<Real> A_reducer(A); Kokkos::Sum<Real> init_e_reducer(init_e);
             pmb->par_reduce("forced_mhd_normal_kick_normalization_Bhalf", mykb.s, mykb.e, myjb.s, myjb.e, myib.s, myib.e,
-                KOKKOS_LAMBDA_3D_REDUCE {
-                    Real cell_mass = (rho(k, j, i) * G.dx3v(k) * G.dx2v(j) * G.dx1v(i));
+                KOKKOS_LAMBDA(const int k, const int j, const int i, Real &local_result) {
+                    Real cell_mass = (rho(k, j, i) * G.Dxc<3>(k) * G.Dxc<2>(j) * G.Dxc<1>(i));
                     local_result += cell_mass * (dv0[(i-4)*Nx1+(j-4)]*uvec(0, k, j, i) + dv1[(i-4)*Nx1+(j-4)]*uvec(1, k, j, i));
                 }
             , Bhalf_reducer);
             pmb->par_reduce("forced_mhd_normal_kick_normalization_A", mykb.s, mykb.e, myjb.s, myjb.e, myib.s, myib.e,
-                KOKKOS_LAMBDA_3D_REDUCE {
-                    Real cell_mass = (rho(k, j, i) * G.dx3v(k) * G.dx2v(j) * G.dx1v(i));
+                KOKKOS_LAMBDA(const int k, const int j, const int i, Real &local_result) {
+                    Real cell_mass = (rho(k, j, i) * G.Dxc<3>(k) * G.Dxc<2>(j) * G.Dxc<1>(i));
                     local_result += cell_mass * (pow(dv0[(i-4)*Nx1+(j-4)], 2) + pow(dv1[(i-4)*Nx1+(j-4)], 2));
                 }
             , A_reducer);
             pmb->par_reduce("forced_mhd_normal_kick_init_e", mykb.s, mykb.e, myjb.s, myjb.e, myib.s, myib.e,
-                KOKKOS_LAMBDA_3D_REDUCE {
-                    Real cell_mass = (rho(k, j, i) * G.dx3v(k) * G.dx2v(j) * G.dx1v(i));
+                KOKKOS_LAMBDA(const int k, const int j, const int i, Real &local_result) {
+                    Real cell_mass = (rho(k, j, i) * G.Dxc<3>(k) * G.Dxc<2>(j) * G.Dxc<1>(i));
                     local_result += 0.5 * cell_mass * (pow(uvec(0, k, j, i), 2) + pow(uvec(1, k, j, i), 2));
                 }
             , init_e_reducer);
 
             Real norm_const = (-Bhalf + pow(pow(Bhalf,2) + A*2*dt_kick*edot, 0.5))/A;  // going from k:(0, 0), j:(4, 515), i:(4, 515) inclusive
             pmb->par_for("forced_mhd_normal_kick_setting", mykb.s, mykb.e, myjb.s, myjb.e, myib.s, myib.e,
-                KOKKOS_LAMBDA_3D {
+                KOKKOS_LAMBDA(const int k, const int j, const int i) {
                     grf_normalized(0, k, j, i) = (dv0[(i-4)*Nx1+(j-4)]*norm_const);
                     grf_normalized(1, k, j, i) = (dv1[(i-4)*Nx1+(j-4)]*norm_const);
                     uvec(0, k, j, i) += grf_normalized(0, k, j, i);
@@ -557,8 +553,8 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
 
             Real finl_e = 0;    Kokkos::Sum<Real> finl_e_reducer(finl_e);
             pmb->par_reduce("forced_mhd_normal_kick_finl_e", mykb.s, mykb.e, myjb.s, myjb.e, myib.s, myib.e,
-                KOKKOS_LAMBDA_3D_REDUCE {
-                    Real cell_mass = (rho(k, j, i) * G.dx3v(k) * G.dx2v(j) * G.dx1v(i));
+                KOKKOS_LAMBDA(const int k, const int j, const int i, Real &local_result) {
+                    Real cell_mass = (rho(k, j, i) * G.Dxc<3>(k) * G.Dxc<2>(j) * G.Dxc<1>(i));
                     local_result += 0.5 * cell_mass * (pow(uvec(0, k, j, i), 2) + pow(uvec(1, k, j, i), 2));
                 }
             , finl_e_reducer);
@@ -567,7 +563,7 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
             free(dv0); free(dv1);
         }
         // This could be only the GRMHD vars, for this problem, but speed isn't really an issue
-        Flux::PtoU(rc);
+        Flux::BlockPtoU(rc, IndexDomain::interior);
     }
     EndFlag();
     return TaskStatus::complete;
@@ -578,7 +574,7 @@ TaskStatus ApplyHubbleHeating(MeshBlockData<Real> * mbase) {
     auto pmb0 = mbase->GetBlockPointer();
 
     // This only supports the Hubble flow problem
-    const std::string prob = pmb0->packages.Get("GRMHD")->Param<std::string>("problem");
+    const std::string prob = pmb0->packages.Get("Globals")->Param<std::string>("problem");
     if (prob != "hubble") return TaskStatus::complete;
 
     Flag("ApplyHubbleHeating");
@@ -601,11 +597,11 @@ TaskStatus ApplyHubbleHeating(MeshBlockData<Real> * mbase) {
     auto block = IndexRange{0, P_mbase.GetDim(5)-1};
     
     pmb0->par_for("heating_substep", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-        KOKKOS_LAMBDA_3D {
+        KOKKOS_LAMBDA(const int k, const int j, const int i) {
             P_mbase(m_p.UU, k, j, i) += Q*dt*0.5;
         }
     );
-    Flux::PtoU(mbase);
+    Flux::BlockPtoU(mbase, IndexDomain::interior);
     EndFlag();
     return TaskStatus::complete;
 }

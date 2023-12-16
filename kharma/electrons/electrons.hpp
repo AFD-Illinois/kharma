@@ -103,11 +103,11 @@ void BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse=false);
  * TODO this function should update fflag to reflect temperature ratio floor hits
  */
 TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real> *rc, bool generate_grf=false);
-inline TaskStatus MeshApplyElectronHeating(MeshData<Real> *md_old, MeshData<Real> *md)
+inline TaskStatus MeshApplyElectronHeating(MeshData<Real> *md_old, MeshData<Real> *md, bool generate_grf=false)
 {
     Flag("MeshApplyElectronHeating");
     for (int i=0; i < md->NumBlocks(); ++i)
-        ApplyElectronHeating(md_old->GetBlockData(i).get(), md->GetBlockData(i).get());
+        ApplyElectronHeating(md_old->GetBlockData(i).get(), md->GetBlockData(i).get(), generate_grf);
     EndFlag();
     return TaskStatus::complete;
 }

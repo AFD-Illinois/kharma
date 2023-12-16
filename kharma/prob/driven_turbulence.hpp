@@ -47,7 +47,7 @@ TaskStatus InitializeDrivenTurbulence(MeshBlockData<Real> *rc, ParameterInput *p
     IndexRange myjb = pmb->cellbounds.GetBoundsJ(IndexDomain::interior);
     IndexRange mykb = pmb->cellbounds.GetBoundsK(IndexDomain::interior);
     pmb->par_for("driven_turb_rho_u_init", mykb.s, mykb.e, myjb.s, myjb.e, myib.s, myib.e,
-        KOKKOS_LAMBDA_3D {
+        KOKKOS_LAMBDA(const int k, const int j, const int i) {
             rho(k, j, i) = rho0;
             u(k, j, i) = u0;
         }

@@ -301,7 +301,7 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
         auto t_heat_electrons = t_prim_source;
         if (use_electrons) {
             t_heat_electrons = tl.AddTask(t_prim_source, Electrons::MeshApplyElectronHeating,
-                                          md_sub_step_init.get(), md_sub_step_final.get());
+                                          md_sub_step_init.get(), md_sub_step_final.get(), stage == 1);
         }
 
         // Make sure *all* conserved vars are synchronized at step end

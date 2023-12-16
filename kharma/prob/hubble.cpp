@@ -114,7 +114,7 @@ TaskStatus SetHubble(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
         Real tobeu  = ug0 / pow(1 + v0*t, 2);
         if (!cooling) tobeu  = ug0 / pow(1 + v0*t, gam);
         pmb->par_for("hubble_init", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-            KOKKOS_LAMBDA_3D {
+            KOKKOS_LAMBDA(const int k, const int j, const int i) {
                 Real X[GR_DIM];
                 G.coord_embed(k, j, i, Loci::center, X);
                 rho(k, j, i) = toberho;
@@ -134,7 +134,7 @@ TaskStatus SetHubble(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
             // Without cooling, the entropy of electrons should stay the same, analytic solution.
             if (!cooling) tobeke = (gam - 2) * (game - 1)/(game - 2) * ue0/pow(rho0, game);
             pmb->par_for("hubble_init", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-                KOKKOS_LAMBDA_3D {
+                KOKKOS_LAMBDA(const int k, const int j, const int i) {
                     ktot(k, j, i) = tobeke;
                     kel_const(k, j, i) = tobeke; //Since we are using fel = 1
                 }
@@ -155,7 +155,7 @@ TaskStatus SetHubble(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
         Real context_t = (v0*context_X[1] - uvec(0, 0, context_index))/(uvec(0, 0, context_index)*v0);
         
         pmb->par_for("hubble_init", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-            KOKKOS_LAMBDA_3D {
+            KOKKOS_LAMBDA(const int k, const int j, const int i) {
                 Real X[GR_DIM];
                 G.coord_embed(k, j, i, Loci::center, X);
                 rho(k, j, i) = rho(k, j, context_index);
@@ -166,7 +166,7 @@ TaskStatus SetHubble(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
         if (pmb->packages.AllPackages().count("Electrons")) {
             GridScalar kel_const = rc->Get("prims.Kel_Constant").data;
             pmb->par_for("hubble_init", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-                KOKKOS_LAMBDA_3D {
+                KOKKOS_LAMBDA(const int k, const int j, const int i) {
                     kel_const(k, j, i) = kel_const(k, j, context_index);
                 }
             );

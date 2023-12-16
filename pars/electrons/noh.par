@@ -55,8 +55,6 @@ constant = true
 gamma_e = 1.333333
 fel_0 = 0.
 fel_constant = 0.5
-
-enforce_positive_dissipation = false
 limit_kel = false
 
 <noh>
