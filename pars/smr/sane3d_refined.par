@@ -7,14 +7,14 @@ problem_id = torus
 <parthenon/mesh>
 refinement = static
 numlevel = 2
-nx1 = 256
-nx2 = 160
-nx3 = 128
+nx1 = 128
+nx2 = 64
+nx3 = 64
 
 <parthenon/meshblock>
-nx1 = 128
+nx1 = 32
 nx2 = 32
-nx3 = 128
+nx3 = 32
 
 <parthenon/static_refinement0>
 x1min = 1.0
@@ -35,6 +35,10 @@ a = 0.9375
 tlim = 3000.0
 nlim = -1
 
+<driver>
+#type = imex
+type = kharma
+
 <debug>
 verbose = 1
 extra_checks = 1
@@ -48,12 +52,10 @@ reconstruction = weno5
 <torus>
 rin = 6.0
 rmax = 12.0
+#tilt = 20
 
 <perturbation>
 u_jitter = 0.04
-
-<boundaries>
-fix_corner = false
 
 <b_field>
 solver = face_ct
