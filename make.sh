@@ -29,25 +29,27 @@
 # Set in environment or override in machine file
 NPROC=${NPROC:-8}
 
-### Load machine-specific configurations ###
+### Load basic stuff ###
 HOST=$(hostname -f)
 if [ -z $HOST ]; then
   HOST=$(hostname)
 fi
 ARGS="$*"
 SOURCE_DIR=$(dirname "$(readlink -f "$0")")
-for machine in machines/*.sh
-do
-  source $machine
-done
 
-# If we haven't special-cased already, guess an architecture
-# This only works with newer Kokkos, it's always best to
-# specify HOST_ARCH in a machine file once you know it.
-if [[ -z "$HOST_ARCH" ]]; then
-  HOST_ARCH="NATIVE"
+# A machine config in .config overrides our defaults
+if [ -f $HOME/.config/kharma.sh ]; then
+  source $HOME/.config/kharma.sh
+else
+  for machine in $SOURCE_DIR/machines/*.sh
+  do
+    source $machine
+  done
 fi
-EXTRA_FLAGS="-DKokkos_ARCH_${HOST_ARCH}=ON $EXTRA_FLAGS"
+
+# Default to compiling for the host architecture
+# Always better to specify, though, for cross-compile/older Kokkos support
+EXTRA_FLAGS="-DKokkos_ARCH_${HOST_ARCH:-NATIVE}=ON $EXTRA_FLAGS"
 
 # Kokkos does *not* support compiling for multiple devices!
 # But if they ever do, you can separate a list of DEVICE_ARCH
@@ -73,11 +75,10 @@ fi
 
 ### Enivoronment Prep ###
 if [[ "$(which python3 2>/dev/null)" == *"conda"* ]]; then
-  echo
   echo "make.sh note:"
   echo "It looks like you have Anaconda loaded."
-  echo "Anaconda loads a serial version of HDF5 which may make this compile impossible."
-  echo "If you run into trouble, deactivate your environment with 'conda deactivate'"
+  echo "This is usually okay, but double-check the line 'Found MPI_CXX:' below!"
+  echo
 fi
 # Save arguments if we've changed them
 # Used in run.sh for loading the same modules/etc.
@@ -219,9 +220,10 @@ fi
 
 ### Build HDF5 ###
 # If we're building HDF5, do it after we set *all flags*
-if [[ "$ARGS" == *"hdf5"* && "$ARGS" == *"clean"* ]]; then
+if [[ "$ARGS" == *"hdf5"* && "$ARGS" == *"clean"* && "$ARGS" != *"dryrun"* ]]; then
   H5VER=1.14.2
   H5VERU=1_14_2
+
   cd external
   # Allow complete reconfigure (for switching compilers, takes longer)
   if [[ "$ARGS" == *"cleanhdf5"* ]]; then
@@ -241,18 +243,17 @@ if [[ "$ARGS" == *"hdf5"* && "$ARGS" == *"clean"* ]]; then
     HDF_CC=$C_NATIVE
     HDF_EXTRA=""
   else
-    if [[ "$ARGS" == *"icc"* ]]; then
+    if [[ "$C_NATIVE" == *"icx"* ]]; then
+      HDF_CC=mpiicx
+    elif [[ "$C_NATIVE" == *"icc"* ]]; then
       HDF_CC=mpiicc
-      HDF_EXTRA="--enable-parallel"
-    else
+    elif [[ "$C_NATIVE" == "cc" ]]; then
       # Cray wrappers include MPI
-      if [[ "$C_NATIVE" == "cc" ]]; then
-        HDF_CC=cc
-      else
-        HDF_CC=mpicc
-      fi
-      HDF_EXTRA="--enable-parallel"
+      HDF_CC=cc
+    else
+      HDF_CC=mpicc
     fi
+    HDF_EXTRA="--enable-parallel"
   fi
 
   echo Configuring HDF5...
@@ -315,7 +316,7 @@ if [[ "$ARGS" == *"clean"* ]]; then
     -DKokkos_ENABLE_CUDA=$ENABLE_CUDA \
     -DKokkos_ENABLE_SYCL=$ENABLE_SYCL \
     -DKokkos_ENABLE_HIP=$ENABLE_HIP \
-    "$EXTRA_FLAGS"
+    $EXTRA_FLAGS
 
   if [[ "$ARGS" == *"dryrun"* ]]; then
     set +x

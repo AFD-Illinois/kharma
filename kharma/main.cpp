@@ -173,8 +173,17 @@ int main(int argc, char *argv[])
     // Note reading "verbose" parameter from "Globals" instead of pin: it may change during simulation
     const int &verbose = pmesh->packages.Get("Globals")->Param<int>("verbose");
     if(MPIRank0() && verbose > 0) {
+        // Write all parameters etc. to console if we should be especially wordy
+        // Printed above the rest to stay out of the way
+        if (verbose > 1) {
+            // This dumps the full Kokkos config, useful for double-checking
+            // that the compile did what we wanted
+            parthenon::ShowConfig();
+            pin->ParameterDump(std::cout);
+        }
+
         // Print a list of variables as Parthenon used to (still does by default)
-        std::cout << "#Variables in use:\n" << *(pmesh->resolved_packages) << std::endl;
+        std::cout << "Variables in use:\n" << *(pmesh->resolved_packages) << std::endl;
 
         // Print a list of all loaded packages.  Surprisingly useful for debugging init logic
         std::cout << "Packages in use: " << std::endl;
@@ -183,17 +192,17 @@ int main(int argc, char *argv[])
         }
         std::cout << std::endl;
 
-        // Write all parameters etc. to console if we should be especially wordy
-        if ((verbose > 1) && MPIRank0()) {
-            // This dumps the full Kokkos config, useful for double-checking
-            // that the compile did what we wanted
-            parthenon::ShowConfig();
-            pin->ParameterDump(std::cout);
-        }
-
-        // This is for the next bit
-        std::cout << "Running post-initialization tasks..." << std::endl;
+        // Print the number of meshblocks and ranks in use
+        std::cout << "Running with " << pmesh->nbtotal << " total meshblocks, " << MPINumRanks() << " MPI ranks." << std::endl;
+        std::cout << "Blocks on rank " << MPIRank() << ": " << pmesh->block_list.size() << "\n" << std::endl;
     }
+    // If very verbose, print # meshblocks on every rank
+    if (verbose > 1) {
+        //MPIBarrier();
+        if (MPIRank() > 0)
+            std::cout << "Blocks on rank " << MPIRank() << ": " << pmesh->block_list.size() << "\n" << std::endl;
+    }
+
 
     // PostInitialize: Add magnetic field to the problem, initialize ghost zones.
     // Any init which may be run even when restarting, or requires all
@@ -201,6 +210,14 @@ int main(int argc, char *argv[])
     // TODO(BSP) split to package hooks
     auto prob = pin->GetString("parthenon/job", "problem_id");
     bool is_restart = (prob == "resize_restart") || pman.IsRestart();
+    if(MPIRank0() && verbose > 0) {
+        if (is_restart) {
+            std::cout << "Running post-restart tasks..." << std::endl;
+        } else {
+            std::cout << "Running post-initialization tasks..." << std::endl;
+        }
+    }
+
     Flag("PostInitialize");
     KHARMA::PostInitialize(pin, pmesh, is_restart);
     EndFlag();
@@ -218,12 +235,14 @@ int main(int argc, char *argv[])
         auto pin = pman.pinput.get(); // All parameters in the input file or command line
 
         // We now have just one driver package, with different TaskLists for different modes
+        //MPIBarrier();
         KHARMADriver driver(pin, papp, pmesh);
 
         // Then execute the driver. This is a Parthenon function inherited by our KHARMADriver object,
         // which will call MakeTaskCollection, then execute the tasks on the mesh for each portion
         // of each step until a stop criterion is reached.
         Flag("driver.Execute");
+        //MPIBarrier();
         auto driver_status = driver.Execute();
         EndFlag();
     }

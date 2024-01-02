@@ -57,7 +57,7 @@ build:
     - echo "Skipping pyharm install in build."
   script:
     - export PREFIX_PATH=$PWD/external/hdf5
-    - ./make.sh clean cuda hdf5 volta
+    - ./make.sh clean cuda hdf5 volta ompi
   artifacts:
     paths:
       - kharma.*

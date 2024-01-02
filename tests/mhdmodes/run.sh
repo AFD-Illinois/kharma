@@ -104,6 +104,12 @@ conv_2d slow_highres   "mhdmodes/nmode=1 driver/type=imex" "slow mode in 2D, sim
 conv_2d alfven_highres "mhdmodes/nmode=2 driver/type=imex" "Alfven mode in 2D, simple driver"
 conv_2d fast_highres   "mhdmodes/nmode=3 driver/type=imex" "fast mode in 2D, simple driver"
 
+# Trying for convergence down to 8 zone. This configuration should be able to go the lowest?
+# ALL_RES="8,16,32,64"
+# conv_2d slow_ln "mhdmodes/nmode=1 driver/type=kharma driver/flux=hlle driver/reconstruction=linear_mc b_field/solver=face_ct" "slow mode in 2D"
+# conv_2d alfven_ln "mhdmodes/nmode=2 driver/type=kharma driver/flux=hlle driver/reconstruction=linear_mc b_field/solver=face_ct" "Alfven mode in 2D"
+# conv_2d fast_ln "mhdmodes/nmode=3 driver/type=kharma driver/flux=hlle driver/reconstruction=linear_mc b_field/solver=face_ct" "fast mode in 2D"
+
 # 3D versions, basics only
 ALL_RES="16,24,32"
 conv_3d slow "mhdmodes/nmode=1 mhdmodes/dir=3" "slow mode in 3D"

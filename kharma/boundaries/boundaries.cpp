@@ -129,8 +129,6 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
         // This is two separate checks, but default to enabling/disabling together for X1 and not elsewhere
         bool check_inflow = pin->GetOrAddBoolean("boundaries", "check_inflow_" + bname, check_inflow_global && bdir == X1DIR);
         params.Add("check_inflow_" + bname, check_inflow);
-        bool check_inflow_flux = pin->GetOrAddBoolean("boundaries", "check_inflow_flux_" + bname, check_inflow);
-        params.Add("check_inflow_flux_" + bname, check_inflow_flux);
 
         // Ensure fluxes through the zero-size face at the pole are zero
         bool zero_flux = pin->GetOrAddBoolean("boundaries", "zero_flux_" + bname, zero_polar_flux && bdir == X2DIR);
@@ -154,79 +152,82 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
             pin->SetString("parthenon/mesh", bname_parthenon, "periodic");
         } else {
             pin->SetString("parthenon/mesh", bname_parthenon, "user");
-        }
 
-        // TODO TODO any way to save this verbosity with constexpr/macros/something?
-        if (btype == "dirichlet") {
-            // Dirichlet boundaries: allocate
-            pkg->AddField("bounds." + bname, (bdir == X1DIR) ? m_x1 : ((bdir == X2DIR) ? m_x2 : m_x3));
-            switch (bface) {
-            case BoundaryFace::inner_x1:
-                pkg->KBoundaries[bface] = KBoundaries::Dirichlet<BoundaryFace::inner_x1>;
-                break;
-            case BoundaryFace::outer_x1:
-                pkg->KBoundaries[bface] = KBoundaries::Dirichlet<BoundaryFace::outer_x1>;
-                break;
-            case BoundaryFace::inner_x2:
-                pkg->KBoundaries[bface] = KBoundaries::Dirichlet<BoundaryFace::inner_x2>;
-                break;
-            case BoundaryFace::outer_x2:
-                pkg->KBoundaries[bface] = KBoundaries::Dirichlet<BoundaryFace::outer_x2>;
-                break;
-            case BoundaryFace::inner_x3:
-                pkg->KBoundaries[bface] = KBoundaries::Dirichlet<BoundaryFace::inner_x3>;
-                break;
-            case BoundaryFace::outer_x3:
-                pkg->KBoundaries[bface] = KBoundaries::Dirichlet<BoundaryFace::outer_x3>;
-                break;
-            default:
-                break;
-            }
-        } else if (btype == "reflecting") {
-            switch (bface) {
-            case BoundaryFace::inner_x1:
-                pkg->KBoundaries[bface] = BoundaryFunction::ReflectInnerX1;
-                break;
-            case BoundaryFace::outer_x1:
-                pkg->KBoundaries[bface] = BoundaryFunction::ReflectOuterX1;
-                break;
-            case BoundaryFace::inner_x2:
-                pkg->KBoundaries[bface] = BoundaryFunction::ReflectInnerX2;
-                break;
-            case BoundaryFace::outer_x2:
-                pkg->KBoundaries[bface] = BoundaryFunction::ReflectOuterX2;
-                break;
-            case BoundaryFace::inner_x3:
-                pkg->KBoundaries[bface] = BoundaryFunction::ReflectInnerX3;
-                break;
-            case BoundaryFace::outer_x3:
-                pkg->KBoundaries[bface] = BoundaryFunction::ReflectOuterX3;
-                break;
-            default:
-                break;
-            }
-        } else if (btype == "outflow") {
-            switch (bface) {
-            case BoundaryFace::inner_x1:
-                pkg->KBoundaries[bface] = BoundaryFunction::OutflowInnerX1;
-                break;
-            case BoundaryFace::outer_x1:
-                pkg->KBoundaries[bface] = BoundaryFunction::OutflowOuterX1;
-                break;
-            case BoundaryFace::inner_x2:
-                pkg->KBoundaries[bface] = BoundaryFunction::OutflowInnerX2;
-                break;
-            case BoundaryFace::outer_x2:
-                pkg->KBoundaries[bface] = BoundaryFunction::OutflowOuterX2;
-                break;
-            case BoundaryFace::inner_x3:
-                pkg->KBoundaries[bface] = BoundaryFunction::OutflowInnerX3;
-                break;
-            case BoundaryFace::outer_x3:
-                pkg->KBoundaries[bface] = BoundaryFunction::OutflowOuterX3;
-                break;
-            default:
-                break;
+            // Register the actual boundaries with the package, which our wrapper will use
+            // when called via Parthenon's "user" conditions
+            if (btype == "dirichlet") {
+                // Dirichlet boundaries: allocate
+                pkg->AddField("Boundaries." + bname, (bdir == X1DIR) ? m_x1 : ((bdir == X2DIR) ? m_x2 : m_x3));
+                switch (bface) {
+                case BoundaryFace::inner_x1:
+                    pkg->KBoundaries[bface] = KBoundaries::Dirichlet<BoundaryFace::inner_x1>;
+                    break;
+                case BoundaryFace::outer_x1:
+                    pkg->KBoundaries[bface] = KBoundaries::Dirichlet<BoundaryFace::outer_x1>;
+                    break;
+                case BoundaryFace::inner_x2:
+                    pkg->KBoundaries[bface] = KBoundaries::Dirichlet<BoundaryFace::inner_x2>;
+                    break;
+                case BoundaryFace::outer_x2:
+                    pkg->KBoundaries[bface] = KBoundaries::Dirichlet<BoundaryFace::outer_x2>;
+                    break;
+                case BoundaryFace::inner_x3:
+                    pkg->KBoundaries[bface] = KBoundaries::Dirichlet<BoundaryFace::inner_x3>;
+                    break;
+                case BoundaryFace::outer_x3:
+                    pkg->KBoundaries[bface] = KBoundaries::Dirichlet<BoundaryFace::outer_x3>;
+                    break;
+                default:
+                    break;
+                }
+            } else if (btype == "reflecting") {
+                switch (bface) {
+                case BoundaryFace::inner_x1:
+                    pkg->KBoundaries[bface] = BoundaryFunction::ReflectInnerX1;
+                    break;
+                case BoundaryFace::outer_x1:
+                    pkg->KBoundaries[bface] = BoundaryFunction::ReflectOuterX1;
+                    break;
+                case BoundaryFace::inner_x2:
+                    pkg->KBoundaries[bface] = BoundaryFunction::ReflectInnerX2;
+                    break;
+                case BoundaryFace::outer_x2:
+                    pkg->KBoundaries[bface] = BoundaryFunction::ReflectOuterX2;
+                    break;
+                case BoundaryFace::inner_x3:
+                    pkg->KBoundaries[bface] = BoundaryFunction::ReflectInnerX3;
+                    break;
+                case BoundaryFace::outer_x3:
+                    pkg->KBoundaries[bface] = BoundaryFunction::ReflectOuterX3;
+                    break;
+                default:
+                    break;
+                }
+            } else if (btype == "outflow") {
+                switch (bface) {
+                case BoundaryFace::inner_x1:
+                    pkg->KBoundaries[bface] = BoundaryFunction::OutflowInnerX1;
+                    break;
+                case BoundaryFace::outer_x1:
+                    pkg->KBoundaries[bface] = BoundaryFunction::OutflowOuterX1;
+                    break;
+                case BoundaryFace::inner_x2:
+                    pkg->KBoundaries[bface] = BoundaryFunction::OutflowInnerX2;
+                    break;
+                case BoundaryFace::outer_x2:
+                    pkg->KBoundaries[bface] = BoundaryFunction::OutflowOuterX2;
+                    break;
+                case BoundaryFace::inner_x3:
+                    pkg->KBoundaries[bface] = BoundaryFunction::OutflowInnerX3;
+                    break;
+                case BoundaryFace::outer_x3:
+                    pkg->KBoundaries[bface] = BoundaryFunction::OutflowOuterX3;
+                    break;
+                default:
+                    break;
+                }
+            } else {
+                throw std::runtime_error("Unknown boundary type: "+btype);
             }
         }
     }
@@ -260,10 +261,61 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
     const auto bname = BoundaryName(bface);
     const auto btype_name = params.Get<std::string>(bname);
     const auto bdir = BoundaryDirection(bface);
+    const bool binner = BoundaryIsInner(bface);
 
     Flag("Apply "+bname+" boundary: "+btype_name);
     pkg->KBoundaries[bface](rc, coarse);
     EndFlag();
+
+    // Nothing below is designed, nor necessary, for coarse buffers
+    if (coarse) {
+        EndFlag();
+        return;
+    }
+
+    // If we're syncing EMFs and in spherical, explicitly zero polar faces
+    // Since we manipulate the j coord, we'd overstep coarse bufs
+    auto& emfpack = rc->PackVariables(std::vector<std::string>{"B_CT.emf"});
+    if (bdir == X2DIR &&
+        pmb->coords.coords.is_spherical() &&
+        emfpack.GetDim(4) > 0) {
+        Flag("BoundaryEdge_"+bname);
+        for (TE el : {TE::E1, TE::E3}) {
+            int off = (binner) ? 1 : -1;
+            pmb->par_for_bndry(
+                "zero_EMF", IndexRange{0,0}, domain, el, coarse,
+                KOKKOS_LAMBDA (const int &v, const int &k, const int &j, const int &i) {
+                    emfpack(el, v, k, j + off, i) = 0;
+                }
+            );
+        }
+        EndFlag();
+    }
+
+    // Zero/invert X2 faces at polar X2 boundary
+    auto fpack = rc->PackVariables({Metadata::Face, Metadata::FillGhost});
+    if (bdir == X2DIR &&
+        pmb->coords.coords.is_spherical() &&
+        fpack.GetDim(4) > 0) {
+        Flag("BoundaryFace_"+bname);
+        // Zero face fluxes
+        auto b = KDomain::GetRange(rc, domain, coarse);
+        // "domain" is the boundary here
+        auto jf = (binner) ? b.je + 1 : b.js;
+        pmb->par_for(
+            "zero_polar_" + bname, b.ks, b.ke, jf, jf, b.is, b.ie,
+            KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+                fpack(F2, 0, k, j, i) = 0.;
+            }
+        );
+        pmb->par_for_bndry(
+            "invert_F2_" + bname, IndexRange{0, fpack.GetDim(4)-1}, domain, F2, coarse,
+            KOKKOS_LAMBDA (const int &v, const int &k, const int &j, const int &i) {
+                fpack(F2, v, k, j, i) *= -1;
+            }
+        );
+        EndFlag();
+    }
 
     // This will now be called in 2 places we might not expect,
     // where we still may want to control the physical bounds:
@@ -294,7 +346,7 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
         const auto &range = (bdir == 1) ? bounds.GetBoundsI(IndexDomain::interior)
                                 : (bdir == 2 ? bounds.GetBoundsJ(IndexDomain::interior)
                                     : bounds.GetBoundsK(IndexDomain::interior));
-        const int ref = BoundaryIsInner(domain) ? range.s : range.e;
+        const int ref = binner ? range.s : range.e;
         pmb->par_for_bndry(
             "outflow_EMHD", IndexRange{0,EMHDg.GetDim(4)-1}, domain, CC, coarse,
             KOKKOS_LAMBDA (const int &v, const int &k, const int &j, const int &i) {
@@ -345,9 +397,9 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
         // TODO there should be a set of B field wrappers that dispatch this
         auto pkgs = pmb->packages.AllPackages();
         if (pkgs.count("B_FluxCT")) {
-            B_FluxCT::BlockUtoP(rc.get(), IndexDomain::entire);
+            B_FluxCT::BlockUtoP(rc.get(), domain, coarse);
         } else if (pkgs.count("B_CT")) {
-            B_CT::BlockUtoP(rc.get(), IndexDomain::entire);
+            B_CT::BlockUtoP(rc.get(), domain, coarse);
         }
         Flux::BlockPtoU(rc.get(), domain, coarse);
     } else {
@@ -368,7 +420,7 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
 
 void KBoundaries::CheckInflow(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDomain domain, bool coarse)
 {
-    std::shared_ptr<MeshBlock> pmb = rc->GetBlockPointer();
+    auto pmb = rc->GetBlockPointer();
     const auto &G = pmb->coords;
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
 
@@ -377,41 +429,13 @@ void KBoundaries::CheckInflow(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDom
     const VarMap m_p(prims_map, false);
 
     // Inflow check
-    // Iterate over zones w/p=0
+    // Iterate over all boundary domain zones w/p=0
     pmb->par_for_bndry(
         "check_inflow", IndexRange{0, 0}, domain, CC, coarse,
         KOKKOS_LAMBDA(const int &p, const int &k, const int &j, const int &i) {
             KBoundaries::check_inflow(G, P, domain, m_p.U1, k, j, i);
         }
     );
-}
-
-void KBoundaries::CorrectBPrimitive(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain, bool coarse)
-{
-    Flag("CorrectBPrimitive");
-    std::shared_ptr<MeshBlock> pmb = rc->GetBlockPointer();
-    auto B_P = rc->PackVariables(std::vector<std::string>{"prims.B"});
-    // Return if no field to correct
-    if (B_P.GetDim(4) == 0) return;
-
-    const auto& G = pmb->coords;
-
-    const auto &bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
-    const int dir = BoundaryDirection(domain);
-    const auto &range = (dir == 1) ? bounds.GetBoundsI(IndexDomain::interior)
-                            : (dir == 2 ? bounds.GetBoundsJ(IndexDomain::interior)
-                                : bounds.GetBoundsK(IndexDomain::interior));
-    const int ref = BoundaryIsInner(domain) ? range.s : range.e;
-
-    pmb->par_for_bndry(
-        "Correct_B_P", IndexRange{0,NVEC-1}, domain, CC, coarse,
-        KOKKOS_LAMBDA (const int &v, const int &k, const int &j, const int &i) {
-            B_P(v, k, j, i) *= G.gdet(Loci::center, (dir == 2) ? ref : j, (dir == 1) ? ref : i)
-                                / G.gdet(Loci::center, j, i);
-        }
-    );
-
-    EndFlag();
 }
 
 TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
@@ -427,6 +451,10 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
     // These functions do *not* need an extra row outside the domain,
     // like B_FluxCT::FixBoundaryFlux does.
     const int ndim = pmesh->ndim;
+    // Entire range
+    const IndexRange ibe = pmb0->cellbounds.GetBoundsI(IndexDomain::entire);
+    const IndexRange jbe = pmb0->cellbounds.GetBoundsJ(IndexDomain::entire);
+    const IndexRange kbe = pmb0->cellbounds.GetBoundsK(IndexDomain::entire);
     // Ranges for sides
     const IndexRange ibs = pmb0->cellbounds.GetBoundsI(IndexDomain::interior);
     const IndexRange jbs = pmb0->cellbounds.GetBoundsJ(IndexDomain::interior);
@@ -447,8 +475,8 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
 
             if (bdir > ndim) continue;
 
-            // Set ranges based
-            IndexRange ib = ibs, jb = jbs, kb = kbs;
+            // Set ranges for entire width.  Probably not needed for fluxes but won't hurt
+            IndexRange ib = ibe, jb = jbe, kb = kbe;
             // Range for inner_x1 bounds is first face only, etc.
             if (bdir == 1) {
                 ib.s = ib.e = (binner) ? ibf.s : ibf.e;
@@ -462,20 +490,20 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
             auto &F = rc->PackVariablesAndFluxes({Metadata::WithFluxes}, cons_map);
 
             // If we should check inflow on this face...
-            if (params.Get<bool>("check_inflow_flux_" + bname)) {
+            if (params.Get<bool>("check_inflow_" + bname)) {
                 const int m_rho = cons_map["cons.rho"].first;
                 // ...and if this face of the block corresponds to a global boundary...
                 if (pmb->boundary_flag[bface] == BoundaryFlag::user) {
                     if (binner) {
                         pmb->par_for(
-                            "zero_inflow_flux_" + bname, kb.s, kb.e, jb.s, jb.e, ib.s, ib.s,
+                            "zero_inflow_flux_" + bname, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
                             KOKKOS_LAMBDA(const int &k, const int &j, const int &i) {
                                 F.flux(bdir, m_rho, k, j, i) = m::min(F.flux(bdir, m_rho, k, j, i), 0.);
                             }
                         );
                     } else {
                         pmb->par_for(
-                            "zero_inflow_flux_" + bname, kb.s, kb.e, jb.s, jb.e, ib.s, ib.s,
+                            "zero_inflow_flux_" + bname, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
                             KOKKOS_LAMBDA(const int &k, const int &j, const int &i) {
                                 F.flux(bdir, m_rho, k, j, i) = m::max(F.flux(bdir, m_rho, k, j, i), 0.);
                             }
@@ -492,7 +520,8 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
                         "zero_flux_" + bname, 0, F.GetDim(4) - 1, kb.s, kb.e, jb.s, jb.s, ib.s, ib.e,
                         KOKKOS_LAMBDA(const int &p, const int &k, const int &j, const int &i) {
                             F.flux(bdir, p, k, j, i) = 0.;
-                        });
+                        }
+                    );
                 }
             }
         }

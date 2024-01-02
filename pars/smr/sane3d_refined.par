@@ -7,33 +7,37 @@ problem_id = torus
 <parthenon/mesh>
 refinement = static
 numlevel = 2
-nx1 = 64
+nx1 = 128
 nx2 = 64
 nx3 = 64
 
 <parthenon/meshblock>
-nx1 = 16
-nx2 = 16
-nx3 = 16
+nx1 = 32
+nx2 = 32
+nx3 = 32
 
 <parthenon/static_refinement0>
 x1min = 1.0
 x1max = 2.0
-x2min = 1.50
-x2max = 1.60
+x2min = 0.49
+x2max = 0.51
 x3min = 0.0
 x3max = 6.28
 level = 1
 
 <coordinates>
 base = spherical_ks
-transform = eks
-r_out = 20
+transform = fmks
+r_out = 100
 a = 0.9375
 
 <parthenon/time>
 tlim = 3000.0
 nlim = -1
+
+<driver>
+#type = imex
+type = kharma
 
 <debug>
 verbose = 1
@@ -41,19 +45,17 @@ extra_checks = 1
 flag_verbose = 0
 
 <GRMHD>
-cfl = 0.9
+cfl = 0.8
 gamma = 1.666667
 reconstruction = weno5
 
 <torus>
 rin = 6.0
 rmax = 12.0
+#tilt = 20
 
 <perturbation>
 u_jitter = 0.04
-
-<boundaries>
-fix_corner = false
 
 <b_field>
 solver = face_ct
@@ -69,16 +71,13 @@ bsq_over_rho_max = 100
 
 <parthenon/output0>
 file_type = hdf5
-dt = 0.0
+dt = 5.0
 single_precision_output = true
-variables = prims.rho, prims.u, prims.uvec, prims.B, divB
-ghost_zones = true
+variables = prims, divB, fflag, pflag
 
-# Can't until face field output is enabled
-#<parthenon/output1>
-#file_type = rst
-#dt = 100.0
-#ghost_zones = true
+<parthenon/output1>
+file_type = rst
+dt = 100.0
 
 <parthenon/output2>
 file_type = hst

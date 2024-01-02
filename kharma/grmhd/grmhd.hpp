@@ -55,6 +55,17 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
  * Parthenon will take the minimum and put it in pmy_mesh->dt
  */
 Real EstimateTimestep(MeshBlockData<Real> *rc);
+inline Real MeshEstimateTimestep(MeshData<Real> *md)
+{
+    Flag("MeshEstimateTimestep");
+    Real ndt = std::numeric_limits<Real>::max();
+    for (int i=0; i < md->NumBlocks(); ++i) {
+        double dtb = EstimateTimestep(md->GetBlockData(i).get());
+        if (dtb < ndt) ndt = dtb;
+    }
+    EndFlag();
+    return ndt;
+}
 
 // Internal version for the light phase speed crossing time of smallest zone
 Real EstimateRadiativeTimestep(MeshBlockData<Real> *rc);
