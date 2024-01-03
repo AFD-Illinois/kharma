@@ -54,26 +54,6 @@ using namespace parthenon;
 namespace Electrons
 {
 
-/**
- * Take a parthenon parameter, split on commas,
- * and parse as doubles
- */
-std::vector<Real> parse_list(std::string s)
-{
-    // Tokenizer stolen from Parthenon's output machinery
-    std::string delimiter = ",";
-    size_t pos = 0;
-    std::string token;
-    std::vector<Real> reals;
-    while ((pos = s.find(delimiter)) != std::string::npos) {
-        token = s.substr(0, pos);
-        reals.push_back(std::stod(string_utils::trim(token)));
-        s.erase(0, pos + delimiter.length());
-    }
-    reals.push_back(std::stod(string_utils::trim(s)));
-    return reals;
-}
-
 std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages)
 {
     auto pkg = std::make_shared<KHARMAPackage>("Electrons");
@@ -166,7 +146,6 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
         pkg->AddField("grf_normalized", m_vector);
         pkg->AddField("alfven_speed", m);
     }
-
 
     // Individual models
     // TO ADD A MODEL:
