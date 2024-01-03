@@ -665,14 +665,14 @@ KOKKOS_INLINE_FUNCTION void reconstruct<Type::weno5_lower_poles, X2DIR>(partheno
 {
     // This prioiritizes using the same fluxes on faces rather than for cells.
     // Neither is transparently wrong (afaict) but this feels nicer
-    constexpr int o = 5;
-    if (j > o || j < P.GetDim(1) - o) {
-        KReconstruction::WENO5X2l(member, k, j - 1, is_l+o, ie_l-o, P, ql);
-        KReconstruction::WENO5X2r(member, k, j, is_l+o, ie_l-o, P, qr);
+    constexpr int o = 6; //5;
+    if (j > o || j < P.GetDim(2) - o) {
+        KReconstruction::WENO5X2l(member, k, j - 1, is_l, ie_l, P, ql);
+        KReconstruction::WENO5X2r(member, k, j, is_l, ie_l, P, qr);
     } else {
         ScratchPad2D<Real> q_u(member.team_scratch(1), P.GetDim(4), P.GetDim(1));
-        KReconstruction::PiecewiseLinearX2(member, k, j - 1, is_l, is_l+o-1, P, ql, q_u);
-        KReconstruction::PiecewiseLinearX2(member, k, j, is_l, is_l+o-1, P, q_u, qr);
+        KReconstruction::PiecewiseLinearX2(member, k, j - 1, is_l, ie_l, P, ql, q_u);
+        KReconstruction::PiecewiseLinearX2(member, k, j, is_l, ie_l, P, q_u, qr);
     }
 }
 template <>

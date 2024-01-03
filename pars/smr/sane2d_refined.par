@@ -8,7 +8,7 @@ problem_id = torus
 refinement = static
 numlevel = 2
 nx1 = 512
-nx2 = 640
+nx2 = 256
 nx3 = 1
 
 <parthenon/meshblock>
@@ -50,9 +50,6 @@ rmax = 12.0
 <perturbation>
 u_jitter = 0.04
 
-<boundaries>
-fix_corner = false
-
 <b_field>
 solver = face_ct
 ct_scheme = bs99
@@ -69,13 +66,11 @@ bsq_over_rho_max = 500
 file_type = hdf5
 dt = 5.0
 single_precision_output = true
-variables = prims.rho, prims.u, prims.uvec, prims.B, divB
+variables = prims, divB
 
-# Can't until face field output is enabled
-#<parthenon/output1>
-#file_type = rst
-#dt = 100.0
-#ghost_zones = true
+<parthenon/output1>
+file_type = rst
+dt = 100.0
 
 <parthenon/output2>
 file_type = hst

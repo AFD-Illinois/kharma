@@ -117,6 +117,10 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     std::vector<MetadataFlag> flags_emf = {Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy};
     m = Metadata(flags_emf, s_vector);
     pkg->AddField("emf", m);
+    if (packages->Get("Globals")->Param<std::string>("problem") == "resize_restart_kharma") {
+        m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::FillGhost, Metadata::Vector});
+        pkg->AddField("B_Save", m);
+    }
 
     // CALLBACKS
 
