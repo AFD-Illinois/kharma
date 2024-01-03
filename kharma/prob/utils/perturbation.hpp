@@ -54,7 +54,7 @@ TaskStatus PerturbU(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pi
 
     const Real u_jitter = pin->GetReal("perturbation", "u_jitter");
     // Don't jitter values set by floors
-    //const Real jitter_above_rho = pin->GetReal("floors", "rho_min_geom");
+    const Real jitter_above_rho = pin->GetOrAddReal("perturbation", "jitter_above_rho", pin->GetReal("floors", "rho_min_geom"));
     // Note we add the MeshBlock gid to this value when seeding RNG,
     // to get a new sequence for every block
     const int rng_seed = pin->GetOrAddInteger("perturbation", "rng_seed", 31337);
@@ -98,10 +98,11 @@ TaskStatus PerturbU(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pi
                 GReal X[GR_DIM];
                 G.coord(k, j, i, Loci::center, X);
                 if ((! rstf_exists) || (X[1]<fx1min) || (X[1]>fx1max)) {
-                    //if (rho(k, j, i) > jitter_above_rho) {
-                    gen_type rgen = rand_pool.get_state();
-                    u(k, j, i) *= 1. + Kokkos::rand<gen_type, Real>::draw(rgen, -u_jitter/2, u_jitter/2);
-                    rand_pool.free_state(rgen);
+                    if (rho(k, j, i) > jitter_above_rho) {
+                        gen_type rgen = rand_pool.get_state();
+                        u(k, j, i) *= 1. + Kokkos::rand<gen_type, Real>::draw(rgen, -u_jitter/2, u_jitter/2);
+                        rand_pool.free_state(rgen);
+                    }
                 }
             }
         );

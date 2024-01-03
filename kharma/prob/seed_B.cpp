@@ -240,6 +240,7 @@ TaskStatus SeedBFieldType(MeshBlockData<Real> *rc, ParameterInput *pin, IndexDom
         // For all other fields...
         // Find the magnetic vector potential.  In X3 symmetry only A_phi is non-zero,
         // But for tilted conditions we must keep track of all components
+        // TODO(BSP) Make the vector potential a proper edge-centered field, sync it before B calc
         IndexSize3 sz = KDomain::GetBlockSize(rc);
         ParArrayND<double> A("A", NVEC, sz.n3+1, sz.n2+1, sz.n1+1);
         pmb->par_for(
@@ -264,11 +265,10 @@ TaskStatus SeedBFieldType(MeshBlockData<Real> *rc, ParameterInput *pin, IndexDom
                     rho_av = fm_torus_rho(a, rin, rmax, gam, kappa, r, th) / rho_norm;
                 } else {
                     // Use averages for anything else
-                    // This loop runs over every corner. Centers do not exist before the first
-                    // or after the last, so use the last (ghost) zones available.
-                    const int ii = clip((uint)i, b.is + 1, b.ie);
-                    const int jj = clip((uint)j, b.js + 1, b.je);
-                    const int kk = clip((uint)k, b.ks + 1, b.ke);
+                    // Avoid overstepping array bounds (but allow overstepping domain bounds)
+                    const int ii = clip((uint)i, (uint)1, sz.n1-1);
+                    const int jj = clip((uint)j, (uint)1, sz.n2-1);
+                    const int kk = clip((uint)k, (uint)1, sz.n3-1);
                     if (ndim > 2)
                     {
                         rho_av = (rho(kk, jj, ii) + rho(kk, jj, ii - 1) +
@@ -343,7 +343,7 @@ TaskStatus SeedBFieldType(MeshBlockData<Real> *rc, ParameterInput *pin, IndexDom
         } else if (pkgs.count("B_FluxCT")) {
             // Calculate B-field
             GridVector B_U = rc->Get("cons.B").data;
-            IndexRange3 bl = KDomain::GetRange(rc, domain, 0, 0); // HC(11/13/23) there shouldn't be a halo // TODO will need changes if domain < entire
+            IndexRange3 bl = KDomain::GetRange(rc, domain);
             if (ndim > 2) {
                 pmb->par_for(
                     "B_field_B_3D", bl.ks, bl.ke, bl.js, bl.je, bl.is, bl.ie,

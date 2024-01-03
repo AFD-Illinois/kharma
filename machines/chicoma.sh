@@ -49,7 +49,7 @@ if [[ "$HOST" == "ch-fe"* || "$HOST" == "nid00"* ]]; then
     module load PrgEnv-aocc
     MPI_EXTRA_ARGS="--cpus-per-task=2"
   fi
-  module load cmake cray-hdf5-parallel
+  module load cmake #cray-hdf5-parallel
 
   # Runtime opts
   MPI_EXE="srun"
