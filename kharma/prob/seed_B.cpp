@@ -85,7 +85,6 @@ TaskStatus SeedBFieldType(MeshBlockData<Real> *rc, ParameterInput *pin, IndexDom
 
     // Fields
     GridScalar rho = rc->Get("prims.rho").data;
-    GridVector B_Save = rc->Get("B_Save").data;
     const auto &G = pmb->coords;
 
     // Parameters
@@ -361,6 +360,7 @@ TaskStatus SeedBFieldType(MeshBlockData<Real> *rc, ParameterInput *pin, IndexDom
             }
 
             if (prob == "resize_restart_kharma") {
+                GridVector B_Save = rc->Get("B_Save").data;
                 // Hyerin (12/19/22) copy over data after initialization
                 pmb->par_for(
                     "B_field_B_3D", bl.ks, bl.ke, bl.js, bl.je, bl.is, bl.ie,
