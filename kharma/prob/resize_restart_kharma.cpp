@@ -160,8 +160,8 @@ TaskStatus ReadKharmaRestart(std::shared_ptr<MeshBlockData<Real>> rc, ParameterI
     const hsize_t n3mb = pin->GetInteger("parthenon/meshblock", "restart_nx3");
     auto fname = pin->GetString("resize_restart", "fname"); // Require this, don't guess
     auto fname_fill = pin->GetOrAddString("resize_restart", "fname_fill", "none");
-    const int f_n1tot = pin->GetOrAddInteger("parthenon/mesh", "restart1_nx1", -1);
-    const int f_n1mb = pin->GetOrAddInteger("parthenon/meshblock", "restart1_nx1", -1);
+    const hsize_t f_n1tot = pin->GetOrAddInteger("parthenon/mesh", "restart1_nx1", -1);
+    const hsize_t f_n1mb = pin->GetOrAddInteger("parthenon/meshblock", "restart1_nx1", -1);
     const bool is_spherical = pin->GetBoolean("coordinates", "spherical");
     const Real fx1min = pin->GetReal("parthenon/mesh", "restart_x1min");
     const Real fx1max = pin->GetReal("parthenon/mesh", "restart_x1max");
