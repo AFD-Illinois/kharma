@@ -38,8 +38,9 @@
 #include "flux_functions.hpp"
 
 // Flags for the extended MHD limits
-#define HIT_Q_LIMIT  1
-#define HIT_DP_LIMIT 2
+#define HIT_Q_LIMIT      1
+#define HIT_DP_MAX_LIMIT 2
+#define HIT_DP_MIN_LIMIT 4
 
 namespace EMHD {
 
@@ -86,6 +87,13 @@ KOKKOS_INLINE_FUNCTION int apply_instability_limits(const GRCoordinates& G, cons
     Real q, dP;
     EMHD::convert_prims_to_q_dP(qtilde, dPtilde, rho, Theta, cs*cs, emhd_params, q, dP);
 
+    // if (i==128 && j==128) {
+    //     printf("\n---INSTABILITY LIMITS---\n");
+    //     printf("---Before applying limits---\n");
+    //     printf("Bsq:      %g\n", bsq);
+    //     printf("dP_tilde: %g\n", P(m_p.DP, k, j, i));
+    //     printf("dP:       %g\n", dP);
+    // }
 
     if (emhd_params.conduction) {
         Real qmax         = 1.07 * rho * cs*cs*cs;
@@ -103,21 +111,21 @@ KOKKOS_INLINE_FUNCTION int apply_instability_limits(const GRCoordinates& G, cons
         Real dP_minus      = m::max(-1.07 * bsq, -2.99 * pg);
 
         if (dP > 0. && (dP / dP_plus > 1.))
-            eflag |= HIT_DP_LIMIT;
+            eflag |= HIT_DP_MAX_LIMIT;
         else if (dP < 0. && (dP / dP_minus > 1.))
-            eflag |= HIT_DP_LIMIT;
+            eflag |= HIT_DP_MIN_LIMIT;
         
         if (dP > 0.)
             P(m_p.DP, k, j, i) = P(m_p.DP, k, j, i) * (1. / m::max(dP / dP_plus, 1.));
         else
             P(m_p.DP, k, j, i) = P(m_p.DP, k, j, i) * (1. / m::max(dP / dP_minus, 1.));
+
     }
 
     Flux::p_to_u(G, P, m_p, emhd_params, gam, k, j, i, U, m_u);
 
     return eflag;
-        
-}
+}    
 
 /**
  * Apply limits on the Extended MHD variables q & dP based on instabilities.
