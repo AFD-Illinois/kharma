@@ -240,6 +240,10 @@ class CoordinateEmbedding {
                 return self.spherical;
             }, base);
         }
+        KOKKOS_INLINE_FUNCTION bool is_transformed() const
+        {
+            return !mpark::holds_alternative<NullTransform>(transform);
+        }
         KOKKOS_INLINE_FUNCTION GReal get_horizon() const
         {
             if (mpark::holds_alternative<SphKSCoords>(base) ||
