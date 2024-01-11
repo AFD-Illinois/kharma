@@ -81,8 +81,8 @@ reconstruction = linear_mc
 
 <b_field>
 type = constant
-b10 = 1
-b20 = 1
+B10 = 1
+B20 = 1
 solver = face_ct
 kill_on_large_divb = true
 ct_scheme = bs99

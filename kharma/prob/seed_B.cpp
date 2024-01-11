@@ -107,6 +107,7 @@ TaskStatus SeedBFieldType(MeshBlockData<Real> *rc, ParameterInput *pin, IndexDom
     // Indices
     // TODO handle filling faces with domain < entire more gracefully
     IndexRange3 b = KDomain::GetRange(rc, domain);
+    IndexRange3 bf = KDomain::GetRange(rc, domain, 0, 1);
     int ndim = pmb->pmy_mesh->ndim;
 
     // Shortcut to field values for easy fields
@@ -138,7 +139,7 @@ TaskStatus SeedBFieldType(MeshBlockData<Real> *rc, ParameterInput *pin, IndexDom
             auto B_Uf = rc->PackVariables(std::vector<std::string>{"cons.fB"});
             // Fill at 3 different locations
             pmb->par_for(
-                "B_field_B", b.ks, b.ke, b.js, b.je, b.is, b.ie,
+                "B_field_B", bf.ks, bf.ke, bf.js, bf.je, bf.is, bf.ie,
                 KOKKOS_LAMBDA(const int &k, const int &j, const int &i) {
                     GReal Xembed[GR_DIM];
                     double null1, null2;
@@ -243,7 +244,7 @@ TaskStatus SeedBFieldType(MeshBlockData<Real> *rc, ParameterInput *pin, IndexDom
         IndexSize3 sz = KDomain::GetBlockSize(rc);
         ParArrayND<double> A("A", NVEC, sz.n3+1, sz.n2+1, sz.n1+1);
         pmb->par_for(
-            "B_field_A", b.ks, b.ke+1, b.js, b.je+1, b.is, b.ie+1,
+            "B_field_A", bf.ks, bf.ke, bf.js, bf.je, bf.is, bf.ie,
             KOKKOS_LAMBDA(const int &k, const int &j, const int &i) {
                 GReal Xnative[GR_DIM];
                 GReal Xembed[GR_DIM], Xmidplane[GR_DIM];

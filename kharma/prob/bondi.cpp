@@ -128,12 +128,17 @@ TaskStatus SetBondiImpl(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain do
 {
     auto pmb = rc->GetBlockPointer();
 
-    //std::cerr << "Bondi on domain: " << BoundaryName(domain) << std::endl;
+    //std::cerr << "Bondi on domain: " << KBoundaries::BoundaryName(KBoundaries::BoundaryFaceOf(domain)) << "coarse: " << coarse << std::endl;
 
     PackIndexMap prims_map, cons_map;
     auto P = GRMHD::PackMHDPrims(rc.get(), prims_map);
     auto U = GRMHD::PackMHDCons(rc.get(), cons_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
+
+    // This gets called over various packs -- exit if the pack has no primitive vars
+    if (P.GetDim(4) == 0) {
+        return TaskStatus::complete;
+    }
 
     const Real mdot = pmb->packages.Get("GRMHD")->Param<Real>("mdot");
     const Real rs = pmb->packages.Get("GRMHD")->Param<Real>("rs");
@@ -177,6 +182,7 @@ TaskStatus SetBondiImpl(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain do
     // Generally I avoid this, but the viscous Bondi test problem has very unique
     // boundary requirements to converge.  The GRMHD vars must be held constant,
     // but the pressure anisotropy allowed to change as necessary with outflow conditions
+    // TODO(BSP) this doesn't properly support face_ct, yell if enabled?
     if (pmb->packages.Get("Globals")->Param<std::string>("problem") == "bondi_viscous") {
         BoundaryFace bface = KBoundaries::BoundaryFaceOf(domain);
         bool inner = KBoundaries::BoundaryIsInner(bface);

@@ -51,6 +51,9 @@ conv_2d linear_mc GRMHD/reconstruction=linear_mc "in 2D, linear recon with MC li
 conv_2d imex driver/type=imex "in 2D, with Imex driver"
 conv_2d imex_im "driver/type=imex GRMHD/implicit=true" "in 2D, semi-implicit stepping"
 
-# TODO 3D, esp magnetized w/flux, face CT
+conv_2d b_flux_ct "b_field/type=monopole b_field/B10=1" "in 2D, monopole B field"
+conv_2d b_face_ct "b_field/type=monopole b_field/B10=1 b_field/solver=face_ct" "in 2D, monopole B, face-centered"
+
+# TODO 3D?
 
 exit $exit_code
