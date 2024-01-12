@@ -19,7 +19,7 @@ nx3 = 1
 
 <coordinates>
 base = ks
-transform = fmks
+transform = mks
 a = 0.0
 hslope = 0.3
 r_out = 30
