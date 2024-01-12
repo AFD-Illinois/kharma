@@ -67,7 +67,7 @@ check_inflow_outer_x1 = false
 type = none
 solver = none
 # To add magnetic field
-#type = monopole
+#type = monopole_cube
 #B10 = 1
 # Or
 #type = vertical

@@ -33,6 +33,7 @@ gamma = 1.666667
 reconstruction = weno5
 
 <b_field>
+solver = face_ct
 type = monopole_cube
 B10 = 1
 

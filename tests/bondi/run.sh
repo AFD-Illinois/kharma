@@ -51,6 +51,13 @@ conv_2d linear_mc GRMHD/reconstruction=linear_mc "in 2D, linear recon with MC li
 conv_2d imex driver/type=imex "in 2D, with Imex driver"
 conv_2d imex_im "driver/type=imex GRMHD/implicit=true" "in 2D, semi-implicit stepping"
 
-# TODO 3D, esp magnetized w/flux, face CT
+ALL_RES="16,24,32,48,64"
+conv_2d b_flux_ct "b_field/type=monopole_cube b_field/B10=1 b_field/solver=flux_ct" "in 2D, monopole B field"
+conv_2d b_face_ct "b_field/type=monopole_cube b_field/B10=1 b_field/solver=face_ct" "in 2D, monopole B, face-centered"
+
+ALL_RES="24,32,48,64" # TODO idk why this doesn't work at 16^2
+conv_2d b_face_ct "boundaries/inner_x1=dirichlet boundaries/outer_x1=dirichlet b_field/type=monopole_cube b_field/B10=1 b_field/solver=face_ct" "in 2D, monopole B, face-centered+Dirichlet"
+
+# TODO 3D?
 
 exit $exit_code

@@ -57,7 +57,7 @@ gamma_max = 10
 
 <b_field>
 type = constant
-b10 = 1.0
+B10 = 1.0
 
 <parthenon/output0>
 file_type = hdf5

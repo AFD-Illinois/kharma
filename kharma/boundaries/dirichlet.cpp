@@ -40,104 +40,98 @@
 
 using namespace parthenon;
 
-// TODO TODO unify getter/setter when we add face support
-void KBoundaries::DirichletImpl(std::shared_ptr<MeshBlockData<Real>> &rc, BoundaryFace bface, bool coarse)
+void KBoundaries::DirichletImpl(MeshBlockData<Real> *rc, BoundaryFace bface, bool coarse, bool set)
 {
-    auto pmb = rc->GetBlockPointer();
-    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
-
-    // Get all ghosts, minus those in the B_Cleanup package if it is present
-    // TODO TODO this won't do face fields, need a separate loop over (present) faces
-    // and more logic for bounds buffer size
+    // Get all cell-centered ghosts, minus anything just used at startup
     using FC = Metadata::FlagCollection;
     FC ghost_vars = FC({Metadata::FillGhost, Metadata::Conserved})
                   + FC({Metadata::FillGhost, Metadata::GetUserFlag("Primitive")})
                   - FC({Metadata::GetUserFlag("StartupOnly")});
-    PackIndexMap ghostmap;
-    auto q = rc->PackVariables(ghost_vars, ghostmap, coarse);
+    auto q = rc->PackVariables(ghost_vars, coarse);
+    DirichletSetFromField(rc, q, "Boundaries.", bface, coarse, set, false);
+
+    FC ghost_vars_f = FC({Metadata::FillGhost, Metadata::Face})
+                  - FC({Metadata::GetUserFlag("StartupOnly")});
+    auto q_f = rc->PackVariables(ghost_vars_f, coarse);
+    DirichletSetFromField(rc, q_f, "Boundaries.f.", bface, coarse, set, true);
+}
+
+void KBoundaries::DirichletSetFromField(MeshBlockData<Real> *rc, VariablePack<Real> q, std::string prefix,
+                                        BoundaryFace bface, bool coarse, bool set, bool do_face)
+{
+    auto pmb = rc->GetBlockPointer();
+    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
 
     // We're sometimes called without any variables to sync (e.g. syncing flags, EMFs), just return
     if (q.GetDim(4) == 0) return;
 
-    auto bound = rc->Get("Boundaries." + BoundaryName(bface)).data;
+    auto bound = rc->Get(prefix + BoundaryName(bface)).data;
     if (q.GetDim(4) != bound.GetDim(4)) {
         std::cerr << "Dirichlet boundary mismatch! Boundary cache: " << bound.GetDim(4) << " for pack: " << q.GetDim(4) << std::endl;
-        std::cerr << "Variables with ghost zones:" << std::endl;
-        ghostmap.print();
     }
 
     // Indices
     const IndexRange vars = IndexRange{0, q.GetDim(4) - 1};
     const bool right = !BoundaryIsInner(bface);
-    // Subtract off the starting index if we're on the right
     const auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
     const int dir = BoundaryDirection(bface);
-    const int ie = (dir == 1) ? bounds.ie(IndexDomain::interior) + 1 : 0;
-    const int je = (dir == 2) ? bounds.je(IndexDomain::interior) + 1 : 0;
-    const int ke = (dir == 3) ? bounds.ke(IndexDomain::interior) + 1 : 0;
-
-    const auto &G = pmb->coords;
-
-    // const int q_index = ghostmap["prims.q"].first;
     const auto domain = BoundaryDomain(bface);
-    pmb->par_for_bndry(
-        "dirichlet_boundary", vars, domain, CC, coarse,
-        KOKKOS_LAMBDA(const int &p, const int &k, const int &j, const int &i) {
-            if (right) {
-                q(p, k, j, i) = bound(p, k - ke, j - je, i - ie);
-            } else {
-                q(p, k, j, i) = bound(p, k, j, i);
-            }
-            // if (p == q_index) printf("%g ", q(p, k, j, i));
+
+    if (do_face) {
+        for (auto te : {F1, F2, F3}) {
+            // Subtract off the starting index if we're on the right
+            // Start numbering faces at 0 for both buffers
+            const int ie = (dir == X1DIR) ? bounds.ie(IndexDomain::interior) + 1 + (te == F1) : 0;
+            const int je = (dir == X2DIR) ? bounds.je(IndexDomain::interior) + 1 + (te == F2) : 0;
+            const int ke = (dir == X3DIR) ? bounds.ke(IndexDomain::interior) + 1 + (te == F3) : 0;
+            // Set/recall one face right on left side, left on right side.
+            // This sets the last faces technically on domain
+            const int ioff = (dir == X1DIR && te == F1) ? ((right) ? -1 : 1) : 0;
+            const int joff = (dir == X2DIR && te == F2) ? ((right) ? -1 : 1) : 0;
+            const int koff = (dir == X3DIR && te == F3) ? ((right) ? -1 : 1) : 0;
+            pmb->par_for_bndry(
+                "dirichlet_boundary_face", vars, domain, te, coarse,
+                KOKKOS_LAMBDA(const int &p, const int &k, const int &j, const int &i) {
+                    if (set) {
+                        if (right) {
+                            bound(p, k - ke, j - je, i - ie) = q(p, k + koff, j + joff, i + ioff);
+                        } else {
+                            bound(p, k, j, i) = q(p, k + koff, j + joff, i + ioff);
+                        }
+                    } else {
+                        if (right) {
+                            q(p, k + koff, j + joff, i + ioff) = bound(p, k - ke, j - je, i - ie);
+                        } else {
+                            q(p, k + koff, j + joff, i + ioff) = bound(p, k, j, i);
+                        }
+                    }
+                }
+            );
         }
-    );
-}
-
-void KBoundaries::SetDomainDirichlet(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
-{
-    auto pmb = rc->GetBlockPointer();
-    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
-    const BoundaryFace bface = BoundaryFaceOf(domain);
-
-    using FC = Metadata::FlagCollection;
-    FC ghost_vars = FC({Metadata::FillGhost, Metadata::Conserved}) + FC({Metadata::FillGhost, Metadata::GetUserFlag("Primitive")});
-    FC main_ghosts = ghost_vars - FC({Metadata::GetUserFlag("StartupOnly")});
-    PackIndexMap ghostmap;
-    auto q = rc->PackVariables(main_ghosts, ghostmap, coarse);
-    const int q_index = ghostmap["prims.q"].first;
-
-    // We're sometimes called without any variables to sync (e.g. syncing flags, EMFs), just return
-    if (q.GetDim(4) == 0) return;
-
-    auto bound = rc->Get("Boundaries." + BoundaryName(bface)).data;
-    if (q.GetDim(4) != bound.GetDim(4)) {
-        std::cerr << "Dirichlet boundary mismatch! Boundary cache: " << bound.GetDim(4) << " for pack: " << q.GetDim(4) << std::endl;
-        std::cerr << "Variables with ghost zones:" << std::endl;
-        ghostmap.print();
+    } else {
+        // Subtract off the starting index if we're on the right
+        const int ie = (dir == X1DIR) ? bounds.ie(IndexDomain::interior) + 1 : 0;
+        const int je = (dir == X2DIR) ? bounds.je(IndexDomain::interior) + 1 : 0;
+        const int ke = (dir == X3DIR) ? bounds.ke(IndexDomain::interior) + 1 : 0;
+        pmb->par_for_bndry(
+            "dirichlet_boundary", vars, domain, CC, coarse,
+            KOKKOS_LAMBDA(const int &p, const int &k, const int &j, const int &i) {
+                if (set) {
+                    if (right) {
+                        bound(p, k - ke, j - je, i - ie) = q(p, k, j, i);
+                    } else {
+                        bound(p, k, j, i) = q(p, k, j, i);
+                    }
+                } else {
+                    if (right) {
+                        q(p, k, j, i) = bound(p, k - ke, j - je, i - ie);
+                    } else {
+                        q(p, k, j, i) = bound(p, k, j, i);
+                    }
+                }
+            }
+        );
     }
-
-    const IndexRange vars = IndexRange{0, q.GetDim(4) - 1};
-    const bool right = !BoundaryIsInner(domain);
-
-    // Subtract off the starting index if we're on the right
-    const auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
-    const int dir = BoundaryDirection(bface);
-    const int ie = (dir == 1) ? bounds.ie(IndexDomain::interior) + 1 : 0;
-    const int je = (dir == 2) ? bounds.je(IndexDomain::interior) + 1 : 0;
-    const int ke = (dir == 3) ? bounds.ke(IndexDomain::interior) + 1 : 0;
-
-    const auto &G = pmb->coords;
-
-    pmb->par_for_bndry(
-        "dirichlet_boundary", vars, domain, CC, coarse,
-        KOKKOS_LAMBDA(const int &p, const int &k, const int &j, const int &i) {
-            if (right) {
-                bound(p, k - ke, j - je, i - ie) = q(p, k, j, i);
-            } else {
-                bound(p, k, j, i) = q(p, k, j, i);
-            }
-        }
-    );
 }
 
 void KBoundaries::FreezeDirichlet(std::shared_ptr<MeshData<Real>> &md)
