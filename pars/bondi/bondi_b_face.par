@@ -34,7 +34,7 @@ reconstruction = weno5
 
 <b_field>
 solver = face_ct
-type = monopole
+type = monopole_cube
 B10 = 1
 
 <bondi>
