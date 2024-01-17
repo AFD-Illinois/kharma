@@ -129,8 +129,6 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
             const int nx3 = pin->GetInteger("parthenon/meshblock", "nx3");
             const int n3_f = (nx3 == 1) ? nx3 : nx3 + 2 * ng + 1;
 
-            std::cerr << "Face fluid vars: " << nvar_f << std::endl;
-
             // These are declared *backward* from how they will be indexed
             std::vector<int> s_x1_f({ng_f, n2_f, n3_f, nvar_f});
             std::vector<int> s_x2_f({n1_f, ng_f, n3_f, nvar_f});
