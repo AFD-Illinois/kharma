@@ -114,7 +114,7 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
         std::vector<int> s_x1({ng, n2, n3, nvar});
         std::vector<int> s_x2({n1, ng, n3, nvar});
         std::vector<int> s_x3({n1, n2, ng, nvar});
-        // Dirichlet conditions must be restored when restarting!  Needs Metadata::Restart when this works!
+        // Dirichlet conditions must be restored when restarting!
         m_x1 = Metadata({Metadata::Real, Metadata::Derived, Metadata::OneCopy, Metadata::Restart}, s_x1);
         m_x2 = Metadata({Metadata::Real, Metadata::Derived, Metadata::OneCopy, Metadata::Restart}, s_x2);
         m_x3 = Metadata({Metadata::Real, Metadata::Derived, Metadata::OneCopy, Metadata::Restart}, s_x3);
@@ -129,11 +129,14 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
             const int nx3 = pin->GetInteger("parthenon/meshblock", "nx3");
             const int n3_f = (nx3 == 1) ? nx3 : nx3 + 2 * ng + 1;
 
+            std::cerr << "Face fluid vars: " << nvar_f << std::endl;
+
             // These are declared *backward* from how they will be indexed
             std::vector<int> s_x1_f({ng_f, n2_f, n3_f, nvar_f});
             std::vector<int> s_x2_f({n1_f, ng_f, n3_f, nvar_f});
             std::vector<int> s_x3_f({n1_f, n2_f, ng_f, nvar_f});
-            // Dirichlet conditions must be restored when restarting!
+            // Note these are *NOT* face variables, they cannot be indexed by TopologicalElement.
+            // Instead, we make them a normal vector and use int(TE) % 3
             m_x1_f = Metadata({Metadata::Real, Metadata::Derived, Metadata::OneCopy, Metadata::Restart}, s_x1_f);
             m_x2_f = Metadata({Metadata::Real, Metadata::Derived, Metadata::OneCopy, Metadata::Restart}, s_x2_f);
             m_x3_f = Metadata({Metadata::Real, Metadata::Derived, Metadata::OneCopy, Metadata::Restart}, s_x3_f);
@@ -165,8 +168,8 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
         params.Add("outflow_EMHD_" + bname, outflow_EMHD);
 
         // Invert X2 face values to reflect across polar boundary
-        bool invert_F2 = pin->GetOrAddBoolean("boundaries", "invert_F2_" + bname, (bdir == X2DIR && spherical));
-        params.Add("invert_F2_"+bname, invert_F2);
+        bool invert_F2 = pin->GetOrAddBoolean("boundaries", "reflect_face_vector_" + bname, (bdir == X2DIR && spherical));
+        params.Add("reflect_face_vector_"+bname, invert_F2);
 
         // BOUNDARY TYPES
         // Get the boundary type we specified in kharma
@@ -325,37 +328,38 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
         }
 
         for (TE el : te_list) {
-            int ioff = (bdir == 1) ? ((binner) ? 1 : -1) : 0;
-            int joff = (bdir == 2) ? ((binner) ? 1 : -1) : 0;
-            int koff = (bdir == 3) ? ((binner) ? 1 : -1) : 0;
-            pmb->par_for_bndry(
-                "zero_EMF", IndexRange{0,0}, domain, el, coarse,
-                KOKKOS_LAMBDA (const int &v, const int &k, const int &j, const int &i) {
-                    emfpack(el, v, k + koff, j + joff, i + ioff) = 0;
+            // Augment the domain -- EMF must be zero *on* domain faces, not just beyond
+            auto b = KDomain::GetRange(rc, domain, el, (binner) ? 0 : -1, (binner) ? 1 : 0, coarse);
+            pmb->par_for(
+                "zero_EMF_" + bname, b.ks, b.ke, b.js, b.je, b.is, b.ie,
+                KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+                    emfpack(el, 0, k, j, i) = 0;
                 }
             );
         }
         EndFlag();
     }
 
-    // Zero/invert X2 faces at polar X2 boundary
+    // Zero/invert XN faces at a reflecting XN boundary (nearly always X2)
     auto fpack = rc->PackVariables({Metadata::Face, Metadata::FillGhost});
-    if (params.Get<bool>("invert_F2_" + bname) && fpack.GetDim(4) > 0) {
+    if (params.Get<bool>("reflect_face_vector_" + bname) && fpack.GetDim(4) > 0) {
         Flag("BoundaryFace_"+bname);
-        // Zero face fluxes
-        auto b = KDomain::GetRange(rc, domain, coarse);
-        // "domain" is the boundary here
-        auto jf = (binner) ? b.je + 1 : b.js;
+        TE el = (bdir == 1) ? F1 : (bdir == 2) ? F2 : F3;
+        // This is the domain of the boundary/ghost zones
+        // Augment the domain since we're always modifying e.g. F2 in X2 boundary
+        auto b = KDomain::GetRange(rc, domain, el, (binner) ? 0 : -1, (binner) ? 1 : 0, coarse);
+        // Zero the last physical face, otherwise invert.
+        auto i_f = (binner) ? b.ie : b.is;
+        auto j_f = (binner) ? b.je : b.js;
+        auto k_f = (binner) ? b.ke : b.ks;
+        // Values are *reflected* by Parthenon, but vector must be *inverted* by us
+        // (since Parthenon doesn't know B2 on the F2 face is a vector X2 component & thus switches sign)
         pmb->par_for(
-            "zero_polar_" + bname, b.ks, b.ke, jf, jf, b.is, b.ie,
+            "reflect_face_vector_" + bname, b.ks, b.ke, b.js, b.je, b.is, b.ie,
             KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-                fpack(F2, 0, k, j, i) = 0.;
-            }
-        );
-        pmb->par_for_bndry(
-            "invert_F2_" + bname, IndexRange{0, 0}, domain, F2, coarse,
-            KOKKOS_LAMBDA (const int &v, const int &k, const int &j, const int &i) {
-                fpack(F2, v, k, j, i) *= -1;
+                fpack(el, 0, k, j, i) = ((bdir == 1 && i == i_f) ||
+                                         (bdir == 2 && j == j_f) ||
+                                         (bdir == 3 && j == k_f)) ? 0. : -fpack(el, 0, k, j, i);
             }
         );
         EndFlag();
