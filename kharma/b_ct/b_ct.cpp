@@ -36,6 +36,7 @@
 #include "decs.hpp"
 #include "domain.hpp"
 #include "grmhd.hpp"
+#include "grmhd_functions.hpp"
 #include "kharma.hpp"
 // TODO eliminate sync
 #include "kharma_driver.hpp"
@@ -68,10 +69,13 @@ std::shared_ptr<KHARMAPackage> B_CT::Initialize(ParameterInput *pin, std::shared
     Real kill_on_divb_over = pin->GetOrAddReal("b_field", "kill_on_divb_over", 1.e-3);
     params.Add("kill_on_divb_over", kill_on_divb_over);
 
-    // Currently bs99, gs05_c, gs05_0
     // TODO gs05_alpha, LDZ04 UCT1, LDZ07 UCT2
-    std::string ct_scheme = pin->GetOrAddString("b_field", "ct_scheme", "bs99");
+    std::vector<std::string> ct_scheme_options = {"bs99", "gs05_0", "gs05_c"};
+    std::string ct_scheme = pin->GetOrAddString("b_field", "ct_scheme", "bs99", ct_scheme_options);
     params.Add("ct_scheme", ct_scheme);
+    if (ct_scheme == "gs05_0")
+        std::cerr << "KHARMA WARNING: The G&S '05 epsilon_0 implementation does not pass all convergence tests.\n"
+                  << "Use it at your own risk!\n" << std::endl;
     // Use the default Parthenon prolongation operator, rather than the divergence-preserving one
     // This relies entirely on the EMF communication for preserving the divergence
     bool lazy_prolongation = pin->GetOrAddBoolean("b_field", "lazy_prolongation", false);
@@ -253,16 +257,25 @@ TaskStatus B_CT::CalculateEMF(MeshData<Real> *md)
         // Nothing more to do
     } else if (scheme == "gs05_0" || scheme == "gs05_c") {
         // Additional terms for Stone & Gardiner '09
-        // Average fluxes and derivatives
-        auto& uvec = md->PackVariables(std::vector<std::string>{"prims.uvec"});
+        // Caclulate the EMF at zone centers with primitive B, U1-3
+        PackIndexMap prims_map;
+        auto& P = md->PackVariables(std::vector<std::string>{"prims.uvec", "prims.B"}, prims_map);
+        const VarMap m_p(prims_map, false);
         auto& emfc = md->PackVariables(std::vector<std::string>{"B_CT.cemf"});
-        auto& B_U = md->PackVariablesAndFluxes(std::vector<std::string>{"cons.B"});
-        auto& B_P = md->PackVariables(std::vector<std::string>{"prims.B"});
-        // emf in center == -v x B
-        pmb0->par_for("B_CT_emfc", block.s, block.e, b.ks, b.ke, b.js, b.je, b.is, b.ie,
+        // Need this over whole domain to have halo around EMF caclulation
+        const IndexRange3 be = KDomain::GetRange(md, IndexDomain::entire);
+        pmb0->par_for("B_CT_emfc", block.s, block.e, be.ks, be.ke, be.js, be.je, be.is, be.ie,
             KOKKOS_LAMBDA (const int &bl, const int &k, const int &j, const int &i) {
+                const auto& G = P.GetCoords(bl);
+                Real gdet = G.gdet(Loci::center, j, i);
+
+                // Get the 4vecs
+                FourVectors D;
+                GRMHD::calc_4vecs(G, P(bl), m_p, k, j, i, Loci::center, D);
+
+                // Calculate cell-center EMF.  Abridged from Gammie et al. (9) to select E components
                 VLOOP emfc(bl, v, k, j, i) = 0.;
-                VLOOP3 emfc(bl, x, k, j, i) -= antisym(v, w, x) * uvec(bl, v, k, j, i) * B_U(bl, w, k, j, i);
+                VLOOP DLOOP2 emfc(bl, v, k, j, i) += antisym(0, v+1, mu, nu) * D.ucov[mu] * D.bcov[nu] / gdet;
             }
         );
 
@@ -272,15 +285,17 @@ TaskStatus B_CT::CalculateEMF(MeshData<Real> *md)
             const int id = ndim > 0 ? 1 : 0;
             pmb0->par_for("B_CT_emf_GS05_0", block.s, block.e, b1.ks, b1.ke, b1.js, b1.je, b1.is, b1.ie,
                 KOKKOS_LAMBDA (const int &bl, const int &k, const int &j, const int &i) {
-                    const auto& G = B_U.GetCoords(bl);
+                    const auto& G = emfc.GetCoords(bl);
                     // Just subtract centered emf from twice the face version
                     // More stable for planar flows even without anything fancy
-                    emf_pack(bl, E1, 0, k, j, i) = 2 * emf_pack(bl, E1, 0, k, j, i)
-                        - 0.25*(emfc(bl, V1, k, j, i)      + emfc(bl, V1, k, j - jd, i)
-                              + emfc(bl, V1, k, j - jd, i) + emfc(bl, V1, k - kd, j - jd, i));
-                    emf_pack(bl, E2, 0, k, j, i) = 2 * emf_pack(bl, E2, 0, k, j, i)
-                        - 0.25*(emfc(bl, V2, k, j, i)      + emfc(bl, V2, k, j, i - id)
-                              + emfc(bl, V2, k - kd, j, i) + emfc(bl, V2, k - kd, j, i - id));
+                    if (ndim > 2) {
+                        emf_pack(bl, E1, 0, k, j, i) = 2 * emf_pack(bl, E1, 0, k, j, i)
+                            - 0.25*(emfc(bl, V1, k, j, i)      + emfc(bl, V1, k, j - jd, i)
+                                + emfc(bl, V1, k, j - jd, i) + emfc(bl, V1, k - kd, j - jd, i));
+                        emf_pack(bl, E2, 0, k, j, i) = 2 * emf_pack(bl, E2, 0, k, j, i)
+                            - 0.25*(emfc(bl, V2, k, j, i)      + emfc(bl, V2, k, j, i - id)
+                                + emfc(bl, V2, k - kd, j, i) + emfc(bl, V2, k - kd, j, i - id));
+                    }
                     emf_pack(bl, E3, 0, k, j, i) = 2 * emf_pack(bl, E3, 0, k, j, i)
                         - 0.25*(emfc(bl, V3, k, j, i)      + emfc(bl, V3, k, j, i - id)
                               + emfc(bl, V3, k, j - jd, i) + emfc(bl, V3, k, j - jd, i - id));
@@ -289,6 +304,7 @@ TaskStatus B_CT::CalculateEMF(MeshData<Real> *md)
         } else if (scheme == "gs05_c") {
             // Get primitive velocity at face (on right side) (TODO do we need some average?)
             auto& uvecf = md->PackVariables(std::vector<std::string>{"Flux.vr"});
+            auto& B_U = md->PackVariablesAndFluxes(std::vector<std::string>{"cons.B"});
 
             pmb0->par_for("B_CT_emf_GS05_c", block.s, block.e, b1.ks, b1.ke, b1.js, b1.je, b1.is, b1.ie,
                 KOKKOS_LAMBDA (const int &bl, const int &k, const int &j, const int &i) {
@@ -300,23 +316,22 @@ TaskStatus B_CT::CalculateEMF(MeshData<Real> *md)
                     // 3. Direction of upwinding
                     // ...then zone number...
                     // and finally, a boolean indicating a leftward (e.g., i-3/4) vs rightward (i-1/4) position
-                    // TODO(BSP) This doesn't properly support 2D. Yell when it's chosen?
                     if (ndim > 2) {
                         emf_pack(bl, E1, 0, k, j, i) +=
-                              0.25*(upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 1, 3, 2, k, j, i, false)
+                              0.125*(upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 1, 3, 2, k, j, i, false)
                                   - upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 1, 3, 2, k, j, i, true))
-                            + 0.25*(upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 1, 2, 3, k, j, i, false)
+                            + 0.125*(upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 1, 2, 3, k, j, i, false)
                                   - upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 1, 2, 3, k, j, i, true));
                         emf_pack(bl, E2, 0, k, j, i) +=
-                              0.25*(upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 2, 1, 3, k, j, i, false)
+                              0.125*(upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 2, 1, 3, k, j, i, false)
                                   - upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 2, 1, 3, k, j, i, true))
-                            + 0.25*(upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 2, 3, 1, k, j, i, false)
+                            + 0.125*(upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 2, 3, 1, k, j, i, false)
                                   - upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 2, 3, 1, k, j, i, true));
                     }
                     emf_pack(bl, E3, 0, k, j, i) +=
-                          0.25*(upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 3, 2, 1, k, j, i, false)
+                          0.125*(upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 3, 2, 1, k, j, i, false)
                               - upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 3, 2, 1, k, j, i, true))
-                        + 0.25*(upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 3, 1, 2, k, j, i, false)
+                        + 0.125*(upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 3, 1, 2, k, j, i, false)
                               - upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 3, 1, 2, k, j, i, true));
                 }
             );

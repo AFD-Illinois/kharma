@@ -96,7 +96,15 @@ conv_2d fast_kharma_ct   "mhdmodes/nmode=3 driver/type=kharma b_field/solver=fac
 conv_2d slow_imex_ct   "mhdmodes/nmode=1 driver/type=imex b_field/solver=face_ct" "slow mode in 2D, ImEx explicit w/face CT"
 conv_2d alfven_imex_ct "mhdmodes/nmode=2 driver/type=imex b_field/solver=face_ct" "Alfven mode in 2D, ImEx explicit w/face CT"
 conv_2d fast_imex_ct   "mhdmodes/nmode=3 driver/type=imex b_field/solver=face_ct" "fast mode in 2D, ImEx explicit w/face CT"
+# Upwinded fluxes
+conv_2d slow_kharma_ct_gs05_0   "mhdmodes/nmode=1 driver/type=kharma b_field/solver=face_ct b_field/ct_scheme=gs05_0" "slow mode in 2D, KHARMA driver w/epsilon_0 flux"
+conv_2d alfven_kharma_ct_gs05_0 "mhdmodes/nmode=2 driver/type=kharma b_field/solver=face_ct b_field/ct_scheme=gs05_0" "Alfven mode in 2D, KHARMA driver w/epsilon_0 flux"
+# TODO this barely doesn't work. Boundaries?
+#conv_2d fast_kharma_ct_gs05_0   "mhdmodes/nmode=3 driver/type=kharma b_field/solver=face_ct b_field/ct_scheme=gs05_0" "fast mode in 2D, KHARMA driver w/epsilon_0 flux"
 
+conv_2d slow_kharma_ct_gs05_c   "mhdmodes/nmode=1 driver/type=kharma b_field/solver=face_ct b_field/ct_scheme=gs05_c" "slow mode in 2D, KHARMA driver w/epsilon_c flux"
+conv_2d alfven_kharma_ct_gs05_c "mhdmodes/nmode=2 driver/type=kharma b_field/solver=face_ct b_field/ct_scheme=gs05_c" "Alfven mode in 2D, KHARMA driver w/epsilon_c flux"
+conv_2d fast_kharma_ct_gs05_c   "mhdmodes/nmode=3 driver/type=kharma b_field/solver=face_ct b_field/ct_scheme=gs05_c" "fast mode in 2D, KHARMA driver w/epsilon_c flux"
 
 # simple driver, high res
 ALL_RES="16,24,32,48,64,96,128,192,256"
