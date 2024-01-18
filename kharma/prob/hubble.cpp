@@ -31,13 +31,14 @@
  *  OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+
 #include "hubble.hpp"
 
-#include "pack.hpp"
 #include "types.hpp"
 
-TaskStatus InitializeHubble(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin)
+TaskStatus InitializeHubble(MeshBlockData<Real> *rc, ParameterInput *pin)
 {
+    Flag("InitializeHubble");
     auto pmb = rc->GetBlockPointer();
 
     const Real mach = pin->GetOrAddReal("hubble", "mach", 1.);
@@ -72,20 +73,16 @@ TaskStatus InitializeHubble(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterI
         pin->SetReal("parthenon/time", "tlim", dyntimes / v0);
     }
 
-    // Replace the boundary conditions
-    auto bound_pkg = pmb->packages.Get<KHARMAPackage>("Boundaries");
-    bound_pkg->KBoundaries[BoundaryFace::inner_x1] = SetHubble<IndexDomain::inner_x1>;
-    bound_pkg->KBoundaries[BoundaryFace::outer_x1] = SetHubble<IndexDomain::outer_x1>;
-    bound_pkg->BlockApplyPrimSource = ApplyHubbleHeating;
-
     // Then call the general function to fill the grid
-    SetHubble<IndexDomain::entire>(rc);
+    SetHubble(rc);
 
+    EndFlag();
     return TaskStatus::complete;
 }
 
-TaskStatus SetHubbleImpl(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain, bool coarse)
+TaskStatus SetHubble(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
+    Flag("SetHubble");
     auto pmb = rc->GetBlockPointer();
     GridScalar rho = rc->Get("prims.rho").data;
     GridScalar u = rc->Get("prims.u").data;
@@ -117,7 +114,7 @@ TaskStatus SetHubbleImpl(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain d
         Real tobeu  = ug0 / pow(1 + v0*t, 2);
         if (!cooling) tobeu  = ug0 / pow(1 + v0*t, gam);
         pmb->par_for("hubble_init", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-            KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+            KOKKOS_LAMBDA(const int k, const int j, const int i) {
                 Real X[GR_DIM];
                 G.coord_embed(k, j, i, Loci::center, X);
                 rho(k, j, i) = toberho;
@@ -137,7 +134,7 @@ TaskStatus SetHubbleImpl(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain d
             // Without cooling, the entropy of electrons should stay the same, analytic solution.
             if (!cooling) tobeke = (gam - 2) * (game - 1)/(game - 2) * ue0/pow(rho0, game);
             pmb->par_for("hubble_init", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-                KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+                KOKKOS_LAMBDA(const int k, const int j, const int i) {
                     ktot(k, j, i) = tobeke;
                     kel_const(k, j, i) = tobeke; //Since we are using fel = 1
                 }
@@ -146,16 +143,19 @@ TaskStatus SetHubbleImpl(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain d
     } else { // We assume the fluid is following the solution so we set the boundaries from the real zones
         // Left zone is first one to be called and counter starts at zero
         bool left_zone = !(counter%2);
+        // struct IndexRange {
+        //     int s = 0; /// Starting Index (inclusive)
+        //     int e = 0; /// Ending Index (inclusive)
+        // };
         int context_index = 0;
         if (left_zone) context_index = ib.e + 1;
         else context_index = ib.s - 1;
 
-        Real context_X[GR_DIM];
-        G.coord_embed(0, 0, context_index, Loci::center, context_X);
+        Real context_X[GR_DIM];     G.coord_embed(0, 0, context_index, Loci::center, context_X);
         Real context_t = (v0*context_X[1] - uvec(0, 0, context_index))/(uvec(0, 0, context_index)*v0);
         
         pmb->par_for("hubble_init", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-            KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+            KOKKOS_LAMBDA(const int k, const int j, const int i) {
                 Real X[GR_DIM];
                 G.coord_embed(k, j, i, Loci::center, X);
                 rho(k, j, i) = rho(k, j, context_index);
@@ -166,40 +166,13 @@ TaskStatus SetHubbleImpl(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain d
         if (pmb->packages.AllPackages().count("Electrons")) {
             GridScalar kel_const = rc->Get("prims.Kel_Constant").data;
             pmb->par_for("hubble_init", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-                KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+                KOKKOS_LAMBDA(const int k, const int j, const int i) {
                     kel_const(k, j, i) = kel_const(k, j, context_index);
                 }
             );
         }
     }
     pmb->packages.Get("GRMHD")->UpdateParam<int>("counter", ++counter);
+    EndFlag();
     return TaskStatus::complete;
-}
-
-void ApplyHubbleHeating(MeshBlockData<Real> *mbase)
-{
-    auto pmb0 = mbase->GetBlockPointer();
-
-    PackIndexMap prims_map;
-    auto P_mbase = GRMHD::PackHDPrims(mbase, prims_map);
-    const VarMap m_p(prims_map, false);
-
-    Real Q = 0;
-    const Real dt = pmb0->packages.Get("Globals")->Param<Real>("dt_last");  // Close enough?
-    const Real t = pmb0->packages.Get("Globals")->Param<Real>("time") + 0.5*dt;
-    const Real v0 = pmb0->packages.Get("GRMHD")->Param<Real>("v0");
-    const Real ug0 = pmb0->packages.Get("GRMHD")->Param<Real>("ug0");
-    const Real gam = pmb0->packages.Get("GRMHD")->Param<Real>("gamma");
-    Q = (ug0 * v0 * (gam - 2) / pow(1 + v0 * t, 3));
-    IndexDomain domain = IndexDomain::interior;
-    auto ib = mbase->GetBoundsI(domain);
-    auto jb = mbase->GetBoundsJ(domain);
-    auto kb = mbase->GetBoundsK(domain);
-    auto block = IndexRange{0, P_mbase.GetDim(5)-1};
-    
-    pmb0->par_for("heating_substep", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-        KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-            P_mbase(m_p.UU, k, j, i) += Q*dt*0.5;
-        }
-    );
 }

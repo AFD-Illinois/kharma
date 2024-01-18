@@ -66,7 +66,6 @@
 #include "elec/hubble.hpp"
 #include "elec/noh.hpp"
 
-
 using namespace parthenon;
 
 void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
