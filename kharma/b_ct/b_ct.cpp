@@ -69,10 +69,13 @@ std::shared_ptr<KHARMAPackage> B_CT::Initialize(ParameterInput *pin, std::shared
     Real kill_on_divb_over = pin->GetOrAddReal("b_field", "kill_on_divb_over", 1.e-3);
     params.Add("kill_on_divb_over", kill_on_divb_over);
 
-    // Currently bs99, gs05_c, gs05_0
     // TODO gs05_alpha, LDZ04 UCT1, LDZ07 UCT2
-    std::string ct_scheme = pin->GetOrAddString("b_field", "ct_scheme", "bs99");
+    std::vector<std::string> ct_scheme_options = {"bs99", "gs05_0", "gs05_c"};
+    std::string ct_scheme = pin->GetOrAddString("b_field", "ct_scheme", "bs99", ct_scheme_options);
     params.Add("ct_scheme", ct_scheme);
+    if (ct_scheme == "gs05_0")
+        std::cerr << "KHARMA WARNING: The G&S '05 epsilon_0 implementation does not pass all convergence tests.\n"
+                  << "Use it at your own risk!\n" << std::endl;
     // Use the default Parthenon prolongation operator, rather than the divergence-preserving one
     // This relies entirely on the EMF communication for preserving the divergence
     bool lazy_prolongation = pin->GetOrAddBoolean("b_field", "lazy_prolongation", false);
