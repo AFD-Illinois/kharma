@@ -34,6 +34,7 @@
 
 #include "dirichlet.hpp"
 
+#include "domain.hpp"
 #include "types.hpp"
 
 #include <parthenon/parthenon.hpp>
@@ -48,86 +49,57 @@ void KBoundaries::DirichletImpl(MeshBlockData<Real> *rc, BoundaryFace bface, boo
                   + FC({Metadata::FillGhost, Metadata::GetUserFlag("Primitive")})
                   - FC({Metadata::GetUserFlag("StartupOnly")});
     auto q = rc->PackVariables(ghost_vars, coarse);
-    DirichletSetFromField(rc, q, "Boundaries.", bface, coarse, set, false);
+    auto bound = rc->PackVariables(std::vector<std::string>{"Boundaries." + BoundaryName(bface)});
+    DirichletSetFromField(rc, q, bound, bface, coarse, set, false);
 
     FC ghost_vars_f = FC({Metadata::FillGhost, Metadata::Face})
                   - FC({Metadata::GetUserFlag("StartupOnly")});
     auto q_f = rc->PackVariables(ghost_vars_f, coarse);
-    DirichletSetFromField(rc, q_f, "Boundaries.f.", bface, coarse, set, true);
+    auto bound_f = rc->PackVariables(std::vector<std::string>{"Boundaries.f." + BoundaryName(bface)});
+    DirichletSetFromField(rc, q_f, bound_f, bface, coarse, set, true);
 }
 
-void KBoundaries::DirichletSetFromField(MeshBlockData<Real> *rc, VariablePack<Real> q, std::string prefix,
+void KBoundaries::DirichletSetFromField(MeshBlockData<Real> *rc, VariablePack<Real> &q, VariablePack<Real> &bound,
                                         BoundaryFace bface, bool coarse, bool set, bool do_face)
 {
-    auto pmb = rc->GetBlockPointer();
-    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
-
     // We're sometimes called without any variables to sync (e.g. syncing flags, EMFs), just return
     if (q.GetDim(4) == 0) return;
-
-    auto bound = rc->Get(prefix + BoundaryName(bface)).data;
     if (q.GetDim(4) != bound.GetDim(4)) {
         std::cerr << "Dirichlet boundary mismatch! Boundary cache: " << bound.GetDim(4) << " for pack: " << q.GetDim(4) << std::endl;
     }
 
     // Indices
-    const IndexRange vars = IndexRange{0, q.GetDim(4) - 1};
-    const bool right = !BoundaryIsInner(bface);
-    const auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
+    auto pmb = rc->GetBlockPointer();
+    const bool binner = BoundaryIsInner(bface);
     const int dir = BoundaryDirection(bface);
     const auto domain = BoundaryDomain(bface);
+    const auto bname = BoundaryName(bface);
 
+    std::vector<TopologicalElement> el_list;
     if (do_face) {
-        for (auto te : {F1, F2, F3}) {
-            // Subtract off the starting index if we're on the right
-            // Start numbering faces at 0 for both buffers
-            const int ie = (dir == X1DIR) ? bounds.ie(IndexDomain::interior) + 1 + (te == F1) : 0;
-            const int je = (dir == X2DIR) ? bounds.je(IndexDomain::interior) + 1 + (te == F2) : 0;
-            const int ke = (dir == X3DIR) ? bounds.ke(IndexDomain::interior) + 1 + (te == F3) : 0;
-            // Set/recall one face right on left side, left on right side.
-            // This sets the last faces technically on domain
-            const int ioff = (dir == X1DIR && te == F1) ? ((right) ? -1 : 1) : 0;
-            const int joff = (dir == X2DIR && te == F2) ? ((right) ? -1 : 1) : 0;
-            const int koff = (dir == X3DIR && te == F3) ? ((right) ? -1 : 1) : 0;
-            pmb->par_for_bndry(
-                "dirichlet_boundary_face", vars, domain, te, coarse,
-                KOKKOS_LAMBDA(const int &p, const int &k, const int &j, const int &i) {
-                    if (set) {
-                        if (right) {
-                            bound(p, k - ke, j - je, i - ie) = q(p, k + koff, j + joff, i + ioff);
-                        } else {
-                            bound(p, k, j, i) = q(p, k + koff, j + joff, i + ioff);
-                        }
-                    } else {
-                        if (right) {
-                            q(p, k + koff, j + joff, i + ioff) = bound(p, k - ke, j - je, i - ie);
-                        } else {
-                            q(p, k + koff, j + joff, i + ioff) = bound(p, k, j, i);
-                        }
-                    }
-                }
-            );
-        }
+        el_list = {F1, F2, F3};
     } else {
-        // Subtract off the starting index if we're on the right
-        const int ie = (dir == X1DIR) ? bounds.ie(IndexDomain::interior) + 1 : 0;
-        const int je = (dir == X2DIR) ? bounds.je(IndexDomain::interior) + 1 : 0;
-        const int ke = (dir == X3DIR) ? bounds.ke(IndexDomain::interior) + 1 : 0;
-        pmb->par_for_bndry(
-            "dirichlet_boundary", vars, domain, CC, coarse,
-            KOKKOS_LAMBDA(const int &p, const int &k, const int &j, const int &i) {
+        el_list = {CC};
+    }
+    int el_tot = el_list.size();
+    for (auto el : el_list) {
+        // This is the domain of the boundary/ghost zones
+        IndexRange3 b;
+        if ((el == F1 && dir == 1) || (el == F2 && dir == 2) || (el == F3 && dir == 3)) {
+            // Extend domain by 1 to set domain face values
+            b = KDomain::GetRange(rc, domain, el, (binner) ? 0 : -1, (binner) ? 1 : 0, coarse);
+        } else {
+            b = KDomain::GetRange(rc, domain, el, coarse);
+        }
+
+        // Flatten TopologicalElements when reading/writing to boundaries cache
+        pmb->par_for(
+            "dirichlet_boundary_" + bname, 0, q.GetDim(4)/el_tot-1, b.ks, b.ke, b.js, b.je, b.is, b.ie,
+            KOKKOS_LAMBDA (const int &v, const int &k, const int &j, const int &i) {
                 if (set) {
-                    if (right) {
-                        bound(p, k - ke, j - je, i - ie) = q(p, k, j, i);
-                    } else {
-                        bound(p, k, j, i) = q(p, k, j, i);
-                    }
+                    bound(el_tot*v + (static_cast<int>(el) % el_tot), k - b.ks, j - b.js, i - b.is) = q(el, v, k, j, i);
                 } else {
-                    if (right) {
-                        q(p, k, j, i) = bound(p, k - ke, j - je, i - ie);
-                    } else {
-                        q(p, k, j, i) = bound(p, k, j, i);
-                    }
+                    q(el, v, k, j, i) = bound(el_tot*v + (static_cast<int>(el) % el_tot), k - b.ks, j - b.js, i - b.is);
                 }
             }
         );

@@ -101,32 +101,37 @@ inline const IndexShape& GetCellbounds(std::shared_ptr<MeshData<T>> md, bool coa
  * This seemed more natural for people coming from for loops.
  */
 template<typename T>
-inline IndexRange3 GetRange(T data, IndexDomain domain, int left_halo=0, int right_halo=0, bool coarse=false)
+inline IndexRange3 GetRange(T data, IndexDomain domain, TopologicalElement el=CC, int left_halo=0, int right_halo=0, bool coarse=false)
 {
     // TODO also offsets for e.g. PtoU_Send?
     // Get sizes
     const auto& cellbounds = GetCellbounds(data, coarse);
-    const IndexRange ib = cellbounds.GetBoundsI(domain);
-    const IndexRange jb = cellbounds.GetBoundsJ(domain);
-    const IndexRange kb = cellbounds.GetBoundsK(domain);
+    const IndexRange ib = cellbounds.GetBoundsI(domain, el);
+    const IndexRange jb = cellbounds.GetBoundsJ(domain, el);
+    const IndexRange kb = cellbounds.GetBoundsK(domain, el);
     // Compute sizes with specified halo zones included in non-trivial dimensions
-    // TODO notion of activated x1+x3 with nx2==0?
+    // TODO support arbitrary trivial directions
     const int& ndim = GetNDim(data);
     const IndexRange il = IndexRange{ib.s + left_halo, ib.e + right_halo};
     const IndexRange jl = (ndim > 1) ? IndexRange{jb.s + left_halo, jb.e + right_halo} : jb;
     const IndexRange kl = (ndim > 2) ? IndexRange{kb.s + left_halo, kb.e + right_halo} : kb;
     // Bounds of entire domain, we never mean to go beyond these
-    const IndexRange ibe = cellbounds.GetBoundsI(IndexDomain::entire);
-    const IndexRange jbe = cellbounds.GetBoundsJ(IndexDomain::entire);
-    const IndexRange kbe = cellbounds.GetBoundsK(IndexDomain::entire);
+    const IndexRange ibe = cellbounds.GetBoundsI(IndexDomain::entire, el);
+    const IndexRange jbe = cellbounds.GetBoundsJ(IndexDomain::entire, el);
+    const IndexRange kbe = cellbounds.GetBoundsK(IndexDomain::entire, el);
     return IndexRange3{(uint) m::max(il.s, ibe.s), (uint) m::min(il.e, ibe.e),
                        (uint) m::max(jl.s, jbe.s), (uint) m::min(jl.e, jbe.e),
                        (uint) m::max(kl.s, kbe.s), (uint) m::min(kl.e, kbe.e)};
 }
 template<typename T>
+inline IndexRange3 GetRange(T data, IndexDomain domain, int left_halo, int right_halo, bool coarse=false)
+{
+    return GetRange(data, domain, CC, left_halo, right_halo, coarse);
+}
+template<typename T>
 inline IndexRange3 GetRange(T data, IndexDomain domain, bool coarse)
 {
-    return GetRange(data, domain, 0, 0, coarse);
+    return GetRange(data, domain, CC, 0, 0, coarse);
 }
 /**
  * Get zones which are inside the physical domain, i.e. set by computation or MPI halo sync,
