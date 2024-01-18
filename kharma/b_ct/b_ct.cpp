@@ -285,12 +285,14 @@ TaskStatus B_CT::CalculateEMF(MeshData<Real> *md)
                     const auto& G = emfc.GetCoords(bl);
                     // Just subtract centered emf from twice the face version
                     // More stable for planar flows even without anything fancy
-                    emf_pack(bl, E1, 0, k, j, i) = 2 * emf_pack(bl, E1, 0, k, j, i)
-                        - 0.25*(emfc(bl, V1, k, j, i)      + emfc(bl, V1, k, j - jd, i)
-                              + emfc(bl, V1, k, j - jd, i) + emfc(bl, V1, k - kd, j - jd, i));
-                    emf_pack(bl, E2, 0, k, j, i) = 2 * emf_pack(bl, E2, 0, k, j, i)
-                        - 0.25*(emfc(bl, V2, k, j, i)      + emfc(bl, V2, k, j, i - id)
-                              + emfc(bl, V2, k - kd, j, i) + emfc(bl, V2, k - kd, j, i - id));
+                    if (ndim > 2) {
+                        emf_pack(bl, E1, 0, k, j, i) = 2 * emf_pack(bl, E1, 0, k, j, i)
+                            - 0.25*(emfc(bl, V1, k, j, i)      + emfc(bl, V1, k, j - jd, i)
+                                + emfc(bl, V1, k, j - jd, i) + emfc(bl, V1, k - kd, j - jd, i));
+                        emf_pack(bl, E2, 0, k, j, i) = 2 * emf_pack(bl, E2, 0, k, j, i)
+                            - 0.25*(emfc(bl, V2, k, j, i)      + emfc(bl, V2, k, j, i - id)
+                                + emfc(bl, V2, k - kd, j, i) + emfc(bl, V2, k - kd, j, i - id));
+                    }
                     emf_pack(bl, E3, 0, k, j, i) = 2 * emf_pack(bl, E3, 0, k, j, i)
                         - 0.25*(emfc(bl, V3, k, j, i)      + emfc(bl, V3, k, j, i - id)
                               + emfc(bl, V3, k, j - jd, i) + emfc(bl, V3, k, j - jd, i - id));
@@ -311,7 +313,6 @@ TaskStatus B_CT::CalculateEMF(MeshData<Real> *md)
                     // 3. Direction of upwinding
                     // ...then zone number...
                     // and finally, a boolean indicating a leftward (e.g., i-3/4) vs rightward (i-1/4) position
-                    // TODO(BSP) This doesn't properly support 2D. Yell when it's chosen?
                     if (ndim > 2) {
                         emf_pack(bl, E1, 0, k, j, i) +=
                               0.125*(upwind_diff(B_U(bl), emfc(bl), uvecf(bl), 1, 3, 2, k, j, i, false)
