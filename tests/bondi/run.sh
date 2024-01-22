@@ -1,4 +1,4 @@
-#!/bin/bash
+\#!/bin/bash
 set -euo pipefail
 
 BASE=../..
@@ -56,7 +56,7 @@ conv_2d b_flux_ct "b_field/type=monopole_cube b_field/B10=1 b_field/solver=flux_
 conv_2d b_face_ct "b_field/type=monopole_cube b_field/B10=1 b_field/solver=face_ct" "in 2D, monopole B, face-centered"
 
 ALL_RES="24,32,48,64" # TODO idk why this doesn't work at 16^2
-conv_2d b_face_ct "boundaries/inner_x1=dirichlet boundaries/outer_x1=dirichlet b_field/type=monopole_cube b_field/B10=1 b_field/solver=face_ct" "in 2D, monopole B, face-centered+Dirichlet"
+conv_2d b_face_ct_dirichlet "boundaries/inner_x1=dirichlet boundaries/outer_x1=dirichlet b_field/type=monopole_cube b_field/B10=1 b_field/solver=face_ct" "in 2D, monopole B, face-centered+Dirichlet"
 
 # TODO 3D?
 

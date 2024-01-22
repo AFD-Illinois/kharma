@@ -1,5 +1,5 @@
 /* 
- *  File: dirichlet.hpp
+ *  File: hubble.hpp
  *  
  *  BSD 3-Clause License
  *  
@@ -33,31 +33,25 @@
  */
 #pragma once
 
-#include "boundary_types.hpp"
+#include <complex>
 
-namespace KBoundaries {
+#include "decs.hpp"
 
-// TODO(BSP) privatize probably
-void DirichletImpl(MeshBlockData<Real> *rc, BoundaryFace bface, bool coarse, bool set);
-void DirichletSetFromField(MeshBlockData<Real> *rc, VariablePack<Real> &q, VariablePack<Real> &bound,
-                                        BoundaryFace bface, bool coarse, bool set, bool do_face);
+#include <parthenon/parthenon.hpp>
 
-template <BoundaryFace bface>
-inline void Dirichlet(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse)
-{
-    DirichletImpl(rc.get(), bface, coarse, false);
-}
+using namespace std;
+using namespace parthenon;
 
 /**
- * Freeze any dirichlet boundary conditions in their current forms.
+ * Test of electron entropy/temperature evolution in 1D Hubble-type flow
+ * Test of "Electrons" package
+ * See Ressler+ 2015
  */
-void FreezeDirichlet(std::shared_ptr<MeshData<Real>> &md);
-void FreezeDirichletBlock(MeshBlockData<Real> *rc);
+TaskStatus InitializeHubble(MeshBlockData<Real> *rc, ParameterInput *pin);
 
-inline void SetDomainDirichlet(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
-{
-    auto bface = KBoundaries::BoundaryFaceOf(domain);
-    DirichletImpl(rc, bface, coarse, true);
-}
-
-}
+/**
+ * Set all values on a given domain to the Hubble flow solution
+ * 
+ * Used for initialization and boundary conditions
+ */
+TaskStatus SetHubble(MeshBlockData<Real> *rc, IndexDomain domain=IndexDomain::entire, bool coarse=false);

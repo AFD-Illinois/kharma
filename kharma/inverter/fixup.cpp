@@ -64,8 +64,8 @@ TaskStatus Inverter::FixUtoP(MeshBlockData<Real> *rc)
 
     const auto& pars = pmb->packages.Get("GRMHD")->AllParams();
     const Real gam = pars.Get<Real>("gamma");
+
     // Only yell about neighbors on extreme verbosity.
-    // 
     const int flag_verbose = pmb->packages.Get("Globals")->Param<int>("flag_verbose");
 
     // UtoP is applied and fixed over all "Physical" zones -- anything in the domain,
@@ -112,7 +112,6 @@ TaskStatus Inverter::FixUtoP(MeshBlockData<Real> *rc)
                     if (flag_verbose >= 3)
                         printf("No neighbors were available at %d %d %d!\n", i, j, k);
 #endif
-                    // TODO is there a situation in which this shadow is useful, or do we ditch it?
                     PRIMLOOP P(p, k, j, i) = sum_x[p]/wsum_x;
                 } else {
                     PRIMLOOP P(p, k, j, i) = sum[p]/wsum;
