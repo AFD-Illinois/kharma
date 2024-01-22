@@ -284,6 +284,12 @@ fi
 # delete the build directory
 if [[ "$ARGS" == *"clean"* ]]; then
 
+  # Should do this manually when compiling on backend nodes!
+  if [ ! -f external/parthenon/CMakeLists.txt ]; then
+    git submodule update --recursive --init
+  fi
+
+  # Patch parthenon to use KHARMA's coordinates, anything incidental
   cd external/parthenon
   if [[ $(( $(git --version | cut -d '.' -f 2) > 35 )) == "1" ]]; then
     git apply --quiet ../patches/parthenon-*.patch
@@ -292,6 +298,18 @@ if [[ "$ARGS" == *"clean"* ]]; then
     git apply ../patches/parthenon-*.patch
   fi
   cd -
+
+  # HIP requires device-capable variant functions
+  if [[ "$ARGS" == *"hip"* ]]; then
+    cd external/variant
+    if [[ $(( $(git --version | cut -d '.' -f 2) > 35 )) == "1" ]]; then
+      git apply --quiet ../patches/variant-hip.patch
+    else
+      git apply ../patches/variant-hip.patch
+    fi
+    cd -
+  fi
+
 
   rm -rf build
 fi
