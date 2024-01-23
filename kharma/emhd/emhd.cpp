@@ -110,7 +110,7 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     params.Add("emhd_params", emhd_params);
 
     // Slope reconstruction on faces. Always linear: default to MC unless we're using VL everywhere
-    if (packages->Get("Driver")->Param<KReconstruction::Type>("recon") == KReconstruction::Type::linear_vl) {
+    if (packages->Get("Flux")->Param<KReconstruction::Type>("recon") == KReconstruction::Type::linear_vl) {
         params.Add("slope_recon", KReconstruction::Type::linear_vl);
     } else {
         params.Add("slope_recon", KReconstruction::Type::linear_mc);

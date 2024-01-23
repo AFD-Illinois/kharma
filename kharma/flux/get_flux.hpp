@@ -72,14 +72,13 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
     Flag("GetFlux_"+std::to_string(dir));
 
     // Options
-    const auto& pars       = packages.Get("Driver")->AllParams();
+    const auto& pars       = packages.Get("Flux")->AllParams();
     const auto& mhd_pars   = packages.Get("GRMHD")->AllParams();
     const auto& globals    = packages.Get("Globals")->AllParams();
     const bool use_hlle    = pars.Get<bool>("use_hlle");
 
     // TODO make this an option in Flux package
-    const bool reconstruction_floors = packages.AllPackages().count("Floors") &&
-                                       (Recon == KReconstruction::Type::weno5);
+    const bool reconstruction_floors = pars.Get<bool>("reconstruction_floors");
     Floors::Prescription floors_temp;
     if (reconstruction_floors) {
         // Apply post-reconstruction floors.
@@ -119,7 +118,9 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
     const auto& Fr_all = md->PackVariables(std::vector<std::string>{"Flux.Fr"});
 
     // Get the domain size
-    const IndexRange3 b = KDomain::GetRange(md, IndexDomain::interior, -1, 2);
+    // We need fluxes outside the domain for flux-CT
+    // HOWEVER this calculates one row too many of e.g. X1 face in X1 dir (should be face 0,1 cell -1,1)
+    const IndexRange3 b = KDomain::GetRange(md, IndexDomain::interior, -1, 1);
     // Get other sizes we need
     const int n1 = pmb0->cellbounds.ncellsi(IndexDomain::entire);
     const IndexRange block = IndexRange{0, cmax.GetDim(5) - 1};
@@ -136,9 +137,10 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
     const int scratch_level = 1; // 0 is actual scratch (tiny); 1 is HBM
     const size_t var_size_in_bytes = parthenon::ScratchPad2D<Real>::shmem_size(nvar, n1);
     // Allocate enough to cache prims, conserved, and fluxes, for left and right faces,
-    // plus temporaries inside reconstruction (most use 1, WENO5 uses none, linear_vl uses a bunch)
-    const size_t recon_scratch_bytes = (2 + 1*(Recon != KReconstruction::Type::weno5) +
-                                            4*(Recon == KReconstruction::Type::linear_vl)) * var_size_in_bytes;
+    // plus temporaries inside reconstruction (most use none, donor_cell uses one, linear_vl uses a bunch)
+    using RType = KReconstruction::Type;
+    const size_t recon_scratch_bytes = (2 + 1*(Recon == RType::donor_cell) +
+                                            5*(Recon == RType::linear_vl)) * var_size_in_bytes;
     const size_t flux_scratch_bytes = 3 * var_size_in_bytes;
 
     // This isn't a pmb0->par_for_outer because Parthenon's current overloaded definitions
@@ -188,7 +190,7 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
     EndFlag();
 
     // If we have B field on faces, we must replace reconstructed version with that
-    if (pmb0->packages.AllPackages().count("B_CT")) {  // TODO if variable "cons.fB"?
+    if (pmb0->packages.AllPackages().count("B_CT")) {
         const auto& Bf  = md->PackVariables(std::vector<std::string>{"cons.fB"});
         const TopologicalElement face = (dir == 1) ? F1 : ((dir == 2) ? F2 : F3);
         pmb0->par_for("replace_face", block.s, block.e, b.ks, b.ke, b.js, b.je, b.is, b.ie,

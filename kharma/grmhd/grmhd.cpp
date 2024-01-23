@@ -136,9 +136,9 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
                                                   : Metadata::GetUserFlag("Explicit");
     std::vector<MetadataFlag> flags_grmhd = {Metadata::Cell, areWeImplicit, Metadata::GetUserFlag("HD"), Metadata::GetUserFlag("MHD")};
 
-    auto flags_prim = packages->Get("Driver")->Param<std::vector<MetadataFlag>>("prim_flags");
+    auto flags_prim = driver.Get<std::vector<MetadataFlag>>("prim_flags");
     flags_prim.insert(flags_prim.end(), flags_grmhd.begin(), flags_grmhd.end());
-    auto flags_cons = packages->Get("Driver")->Param<std::vector<MetadataFlag>>("cons_flags");
+    auto flags_cons = driver.Get<std::vector<MetadataFlag>>("cons_flags");
     flags_cons.insert(flags_cons.end(), flags_grmhd.begin(), flags_grmhd.end());
 
     // We must additionally save the primtive variables as the "seed" for the next U->P solve

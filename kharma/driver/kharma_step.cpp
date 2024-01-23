@@ -86,7 +86,7 @@ TaskCollection KHARMADriver::MakeDefaultTaskCollection(BlockList_t &blocks, int 
 
     // Which packages we load affects which tasks we'll add to the list
     auto& pkgs = pmesh->packages.AllPackages();
-    auto& driver_pkg   = pkgs.at("Driver")->AllParams();
+    auto& flux_pkg   = pkgs.at("Flux")->AllParams();
     const bool use_b_cleanup = pkgs.count("B_Cleanup");
     const bool use_b_ct = pkgs.count("B_CT");
     const bool use_electrons = pkgs.count("Electrons");
@@ -148,7 +148,7 @@ TaskCollection KHARMADriver::MakeDefaultTaskCollection(BlockList_t &blocks, int 
         // Calculate the flux of each variable through each face
         // This reconstructs the primitives (P) at faces and uses them to calculate fluxes
         // of the conserved variables (U) through each face.
-        const KReconstruction::Type& recon = driver_pkg.Get<KReconstruction::Type>("recon");
+        const KReconstruction::Type& recon = flux_pkg.Get<KReconstruction::Type>("recon");
         auto t_fluxes = KHARMADriver::AddFluxCalculations(t_start_recv_flux, tl, recon, md_sub_step_init.get());
 
         // Any package modifications to the fluxes.  e.g.:

@@ -77,56 +77,6 @@ std::shared_ptr<KHARMAPackage> KHARMADriver::Initialize(ParameterInput *pin, std
     bool two_sync = pin->GetOrAddBoolean("driver", "two_sync", true);
     params.Add("two_sync", two_sync);
 
-    // Don't even error on this. Use LLF unless the user is very clear otherwise.
-    std::string flux = pin->GetOrAddString("driver", "flux", "llf");
-    params.Add("use_hlle", (flux == "hlle"));
-
-    // Reconstruction scheme
-    std::vector<std::string> allowed_vals = {"donor_cell", "linear_vl", "linear_mc",
-                                             "weno5", "weno5_linear", "ppm", "mp5"};
-    std::string recon = pin->GetOrAddString("driver", "reconstruction", "weno5", allowed_vals);
-    bool lower_edges = pin->GetOrAddBoolean("driver", "lower_edges", false);
-    bool lower_poles = pin->GetOrAddBoolean("driver", "lower_poles", false);
-    if (lower_edges && lower_poles)
-        throw std::runtime_error("Cannot enable lowered reconstruction on edges and poles!");
-    if ((lower_edges || lower_poles) && recon != "weno5")
-        throw std::runtime_error("Lowered reconstructions can only be enabled with weno5!");
-
-    int stencil = 0;
-    if (recon == "donor_cell") {
-        params.Add("recon", KReconstruction::Type::donor_cell);
-        stencil = 1;
-    } else if (recon == "linear_vl") {
-        params.Add("recon", KReconstruction::Type::linear_vl);
-        stencil = 3;
-    } else if (recon == "linear_mc") {
-        params.Add("recon", KReconstruction::Type::linear_mc);
-        stencil = 3;
-    } else if (recon == "weno5" && lower_edges) {
-        params.Add("recon", KReconstruction::Type::weno5_lower_edges);
-        stencil = 5;
-    } else if (recon == "weno5" && lower_poles) {
-        params.Add("recon", KReconstruction::Type::weno5_lower_poles);
-        stencil = 5;
-    } else if (recon == "weno5") {
-        params.Add("recon", KReconstruction::Type::weno5);
-        stencil = 5;
-    } else if (recon == "weno5_linear") {
-        params.Add("recon", KReconstruction::Type::weno5_linear);
-        stencil = 5;
-    } else if (recon == "ppm") {
-        params.Add("recon", KReconstruction::Type::ppm);
-        stencil = 5;
-    } else if (recon == "mp5") {
-        params.Add("recon", KReconstruction::Type::mp5);
-        stencil = 5;
-    }  // we only allow these options
-    // Warn if using less than 3 ghost zones w/WENO etc, 2 w/Linear, etc.
-    // SMR/AMR independently requires an even number of zones, so we usually use 4
-    if (Globals::nghost < (stencil/2 + 1)) {
-        throw std::runtime_error("Not enough ghost zones for specified reconstruction!");
-    }
-
     // When using the Implicit package we need to globally distinguish implicit & explicit vars
     // All independent variables should be marked one or the other,
     // so we define the flags here to avoid loading order issues

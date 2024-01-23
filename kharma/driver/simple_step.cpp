@@ -48,7 +48,7 @@ TaskCollection KHARMADriver::MakeSimpleTaskCollection(BlockList_t &blocks, int s
 
     // Which packages we've loaded affects which tasks we'll add to the list
     auto& pkgs         = blocks[0]->packages.AllPackages();
-    auto& driver_pkg   = pkgs.at("Driver")->AllParams();
+    auto& flux_pkg   = pkgs.at("Flux")->AllParams();
 
     // Allocate the fluid states ("containers") we need for each block
     for (auto& pmb : blocks) {
@@ -81,7 +81,7 @@ TaskCollection KHARMADriver::MakeSimpleTaskCollection(BlockList_t &blocks, int s
         // Calculate the flux of each variable through each face
         // This reconstructs the primitives (P) at faces and uses them to calculate fluxes
         // of the conserved variables (U) through each face.
-        const KReconstruction::Type& recon = driver_pkg.Get<KReconstruction::Type>("recon");
+        const KReconstruction::Type& recon = flux_pkg.Get<KReconstruction::Type>("recon");
         auto t_fluxes = KHARMADriver::AddFluxCalculations(t_none, tl, recon, md_sub_step_init.get());
 
         // Any package modifications to the fluxes.  e.g.:

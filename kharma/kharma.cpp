@@ -291,7 +291,7 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput> &pin)
     auto t_globals = tl.AddTask(t_none, KHARMA::AddPackage, packages, KHARMA::InitializeGlobals, pin.get());
     // Neither will grid output, as any mesh will get GRCoordinates objects
     // FieldIsOutput actually just checks for substring match, so this matches any coords. variable
-    if (FieldIsOutput(pin.get(), "coords.")) {
+    if (FieldIsOutput(pin.get(), "coords")) {
         auto t_coord_out = tl.AddTask(t_none, KHARMA::AddPackage, packages, CoordinateOutput::Initialize, pin.get());
     }
     // Driver package is the foundation
