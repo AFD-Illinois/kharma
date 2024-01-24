@@ -74,13 +74,6 @@ KOKKOS_INLINE_FUNCTION int apply_ceilings(const GRCoordinates& G, const Variable
 
         P(m_p.UU, k, j, i) = floors.ktot_max / ktot * P(m_p.UU, k, j, i);
     }
-    // Also apply the ceiling to the advected entropy KTOT, if we're keeping track of that
-    // (either for electrons, or robust primitive inversions in future)
-    // TODO TODO MOVE TO ELECTRONS PACKAGE (or Flux::p_to_u below!!)
-    if (m_p.KTOT >= 0 && (P(m_p.KTOT, k, j, i) > floors.ktot_max)) {
-        fflag |= FFlag::KTOT;
-        P(m_p.KTOT, k, j, i) = floors.ktot_max;
-    }
 
     // 3. Limit the temperature by controlling u.  Can optionally add density instead, implemented in apply_floors
     if (floors.temp_adjust_u && P(m_p.UU, k, j, i) / P(m_p.RHO, k, j, i) > floors.u_over_rho_max) {
@@ -97,36 +90,20 @@ KOKKOS_INLINE_FUNCTION int apply_ceilings(const GRCoordinates& G, const Variable
     return fflag;
 }
 
-/**
- * Apply floors of several types in determining how to add mass and internal energy to preserve stability.
- * All floors which might apply are recorded separately, then mass/energy are added *in normal observer frame*
- * 
- * @return fflag + pflag: fflag is a flagset starting at the sixth bit from the right.  pflag is a number <32.
- * This returns the sum, with the caller responsible for separating what's desired.
- * 
- * LOCKSTEP: this function respects P and ignores U in order to return consistent P<->U
- */
-KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, const VariablePack<Real>& P, const VarMap& m_p,
-                                        const Real& gam, const EMHD::EMHD_parameters& emhd_params,
-                                        const int& k, const int& j, const int& i, const Floors::Prescription& floors,
-                                        const VariablePack<Real>& U, const VarMap& m_u, const Loci loc=Loci::center)
+KOKKOS_INLINE_FUNCTION int determine_floors(const GRCoordinates& G, const VariablePack<Real>& P, const VarMap& m_p,
+                                        const Real& gam, const int& k, const int& j, const int& i, const Floors::Prescription& floors,
+                                        const VariablePack<Real>& floor_vals)
 {
-    int fflag = 0;
-    // Then apply floors:
+    // Calculate the different floor values in play:
     // 1. Geometric hard floors, not based on fluid relationships
+    // TODO(BSP) can this be cached if it's slow?
     Real rhoflr_geom, uflr_geom;
-    bool use_ff, use_df;
     if(G.coords.is_spherical()) {
         GReal Xembed[GR_DIM];
-        G.coord_embed(k, j, i, loc, Xembed);
+        G.coord_embed(k, j, i, Loci::center, Xembed);
         GReal r = Xembed[1];
         // TODO measure whether this/if 1 is really faster
         // GReal r = m::exp(G.x1v(i));
-
-        // Use the fluid frame if specified, or in outer domain
-        use_ff = floors.fluid_frame || (floors.mixed_frame && r > floors.frame_switch);
-        // Use the drift frame if specified
-        use_df = floors.drift_frame;
 
         if (floors.use_r_char) {
             // Steeper floor from iharm3d
@@ -142,24 +119,23 @@ KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, const VariablePa
     } else {
         rhoflr_geom = floors.rho_min_geom;
         uflr_geom   = floors.u_min_geom;
-        use_ff      = floors.fluid_frame;
-        use_df      = floors.drift_frame;
     }
-    Real rho = P(m_p.RHO, k, j, i);
-    Real u   = P(m_p.UU, k, j, i);
 
     // 2. Magnetization ceilings: impose maximum magnetization sigma = bsq/rho, and inverse beta prop. to bsq/U
     FourVectors Dtmp;
-    // TODO is there a more efficient way to calculate just bsq?
-    GRMHD::calc_4vecs(G, P, m_p, k, j, i, loc, Dtmp);
-    double bsq      = dot(Dtmp.bcon, Dtmp.bcov);
-    double rhoflr_b = bsq / floors.bsq_over_rho_max;
-    double uflr_b   = bsq / floors.bsq_over_u_max;
+    GRMHD::calc_4vecs(G, P, m_p, k, j, i, Loci::center, Dtmp);
+    Real bsq      = dot(Dtmp.bcon, Dtmp.bcov);
+    Real rhoflr_b = bsq / floors.bsq_over_rho_max;
+    Real uflr_b   = bsq / floors.bsq_over_u_max;
 
     // Evaluate max U floor, needed for temp ceiling below
-    double uflr_max = m::max(uflr_geom, uflr_b);
+    Real uflr_max = m::max(uflr_geom, uflr_b);
 
-    double rhoflr_max;
+    const auto& rho = P(m_p.RHO, k, j, i);
+    const auto& u = P(m_p.UU, k, j, i);
+
+    int fflag = 0;
+    Real rhoflr_max;
     if (!floors.temp_adjust_u) {
         // 3. Temperature ceiling: impose maximum temperature u/rho
         // Take floors on U into account
@@ -174,9 +150,7 @@ KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, const VariablePa
         rhoflr_max = m::max(rhoflr_geom, rhoflr_b);
     }
 
-    // If we need to do anything...
     if (rhoflr_max > rho || uflr_max > u) {
-
         // Record all the floors that were hit, using bitflags
         // Record Geometric floor hits
         fflag |= (rhoflr_geom > rho) * FFlag::GEOM_RHO;
@@ -184,141 +158,168 @@ KOKKOS_INLINE_FUNCTION int apply_floors(const GRCoordinates& G, const VariablePa
         // Record Magnetic floor hits
         fflag |= (rhoflr_b > rho) * FFlag::B_RHO;
         fflag |= (uflr_b > u) * FFlag::B_U;
-
-        if (use_ff) {
-            P(m_p.RHO, k, j, i) += m::max(0., rhoflr_max - rho);
-            P(m_p.UU, k, j, i)  += m::max(0., uflr_max - u);
-            // Update conserved variables
-            //Flux::p_to_u(G, P, m_p, emhd_params, gam, k, j, i, U, m_u, loc);
-            GRMHD::p_to_u(G, P, m_p, gam, k, j, i, U, m_u, loc);
-        } else if (use_df) {
-            // Drift frame floors. Refer to Appendix B3 in https://doi.org/10.1093/mnras/stx364 (hereafter R17)
-            const Real lapse2    = 1. / (-G.gcon(Loci::center, j, i, 0, 0));
-            double beta[GR_DIM] = {0};
-            beta[1] = lapse2 * G.gcon(Loci::center, j, i, 0, 1);
-            beta[2] = lapse2 * G.gcon(Loci::center, j, i, 0, 2);
-            beta[3] = lapse2 * G.gcon(Loci::center, j, i, 0, 3);
-
-            // Fluid quantities (four velocities have been computed above)
-            const Real rho   = P(m_p.RHO, k, j, i);
-            const Real uu    = P(m_p.UU, k, j, i);
-            const Real pg    = (gam - 1.) * uu;
-            const Real w_old = m::max(rho + uu + pg, SMALL);
-
-            // Normal observer magnetic field
-            Real Bcon[GR_DIM] = {0};
-            Real Bcov[GR_DIM] = {0};
-            if (m_p.B1 >= 0) {
-                Bcon[0] = 0;
-                Bcon[1] = P(m_p.B1, k, j, i);
-                Bcon[2] = P(m_p.B2, k, j, i);
-                Bcon[3] = P(m_p.B3, k, j, i);
-            }
-            DLOOP2 Bcov[mu] += G.gcov(Loci::center, j, i, mu, nu) * Bcon[nu];
-            const Real Bsq   = m::max(dot(Bcon, Bcov), SMALL);
-            const Real B_mag = m::sqrt(Bsq);
-
-            // Normal observer fluid momentum
-            Real Qcov[GR_DIM] = {0};
-            Qcov[0] = w_old * Dtmp.ucon[0] * Dtmp.ucov[0] + pg;
-            Qcov[1] = w_old * Dtmp.ucon[0] * Dtmp.ucov[1];
-            Qcov[2] = w_old * Dtmp.ucon[0] * Dtmp.ucov[2];
-            Qcov[3] = w_old * Dtmp.ucon[0] * Dtmp.ucov[3];
-
-            // Momentum along magnetic field lines (must be held constant)
-            double QdotB = dot(Bcon, Qcov);
-
-            // Initial parallel velocity (refer R17 Eqn B10)
-            Real vpar = QdotB / (B_mag * w_old * Dtmp.ucon[0]*Dtmp.ucon[0]);
-
-            Real ucon_dr[GR_DIM] = {0};
-            // t-component of drift velocity (refer R17 Eqn B13)
-            ucon_dr[0] = 1. / m::sqrt(1. / (Dtmp.ucon[0]*Dtmp.ucon[0]) + vpar*vpar);
-            // spatial components of drift velocity (refer R17 Eqn B11)
-            DLOOP1 ucon_dr[mu] = Dtmp.ucon[mu] * (ucon_dr[0] / Dtmp.ucon[0]) - (vpar * Bcon[mu] * ucon_dr[0] / B_mag);
-
-            // Update rho, uu and compute new enthalpy
-            P(m_p.RHO, k, j, i) = m::max(rho, rhoflr_max);
-            P(m_p.UU, k, j, i)  = m::max(uu, uflr_max);
-            const Real pg_new   = (gam - 1.) * P(m_p.UU, k, j, i);
-            const Real w_new    = P(m_p.RHO, k, j, i) + P(m_p.UU, k, j, i) + pg_new;
-
-            // New parallel velocity (refer R17 Eqn B14)
-            const Real x = (2. * QdotB) / (B_mag * w_new * ucon_dr[0]);
-            vpar = x / (1 + m::sqrt(1 + x*x)) * (1. / ucon_dr[0]);
-
-            // New fluid four velocity (refer R17 Eqns B13 and B11)
-            Dtmp.ucon[0] = 1. / m::sqrt(1/(ucon_dr[0]*ucon_dr[0]) - vpar*vpar);
-            DLOOP1 Dtmp.ucon[mu] = ucon_dr[mu] * (Dtmp.ucon[0] / ucon_dr[0]) + (vpar * Bcon[mu] * Dtmp.ucon[0] / B_mag);
-            G.lower(Dtmp.ucon, Dtmp.ucov, k, j, i, Loci::center);
-
-            // New velocity primitives
-            P(m_p.U1, k, j, i) = Dtmp.ucon[1] + (beta[1] * Dtmp.ucon[0]);
-            P(m_p.U2, k, j, i) = Dtmp.ucon[2] + (beta[2] * Dtmp.ucon[0]);
-            P(m_p.U3, k, j, i) = Dtmp.ucon[3] + (beta[3] * Dtmp.ucon[0]);
-
-            // Update the conserved variables
-            Flux::p_to_u(G, P, m_p, emhd_params, gam, k, j, i, U, m_u, loc);
-        } else {
-            // Add the material in the normal observer frame.
-            // 1. Calculate how much material we're adding.
-            // This is an estimate, as it's what we'd have to do in fluid frame
-            const Real rho_add    = m::max(0., rhoflr_max - rho);
-            const Real u_add      = m::max(0., uflr_max - u);
-            const Real uvec[NVEC] = {0}, B[NVEC] = {0};
-
-            // 2. Calculate the increase in conserved mass/energy corresponding to the new material.
-            Real rho_ut, T[GR_DIM];
-            GRMHD::p_to_u_mhd(G, rho_add, u_add, uvec, B, gam, k, j, i, rho_ut, T, loc);
-
-            // 3. Add new conserved mass/energy to the current "conserved" state.
-            // Also add to the local primitives as a guess
-            P(m_p.RHO, k, j, i) += rho_add;
-            P(m_p.UU, k, j, i)  += u_add;
-            // Add any velocity here
-            U(m_u.RHO, k, j, i) += rho_ut;
-            U(m_u.UU, k, j, i)  += T[0]; // Note that m_u.U1 != m_u.UU + 1 necessarily
-            U(m_u.U1, k, j, i)  += T[1];
-            U(m_u.U2, k, j, i)  += T[2];
-            U(m_u.U3, k, j, i)  += T[3];
-            
-            // Recover primitive variables from conserved versions
-            // TODO selector here when we get more options
-            Inverter::Status pflag = Inverter::u_to_p<Inverter::Type::onedw>(G, U, m_u, gam, k, j, i, P, m_p, loc);
-            // 4. If the inversion fails, we've effectively already applied the floors in fluid-frame to the prims,
-            // so we just formalize that
-            if (Inverter::failed(pflag)) {
-                Flux::p_to_u(G, P, m_p, emhd_params, gam, k, j, i, U, m_u, loc);
-                fflag += static_cast<int>(pflag);
-            }
-        }
     }
 
-    // TODO separate electron floors!
-    // Ressler adjusts KTOT & KEL to conserve u whenever adjusting rho
-    // but does *not* recommend adjusting them when u hits floors/ceilings
-    // This is in contrast to ebhlight, which heats electrons before applying *any* floors,
-    // and resets KTOT during floor application without touching KEL
-    if (floors.adjust_k && (fflag & FFlag::GEOM_RHO || fflag & FFlag::B_RHO)) {
-        const Real reduce   = m::pow(rho / P(m_p.RHO, k, j, i), gam);
-        const Real reduce_e = m::pow(rho / P(m_p.RHO, k, j, i), 4./3); // TODO pipe in real gam_e
-        if (m_p.KTOT >= 0) P(m_p.KTOT, k, j, i) *= reduce;
-        if (m_p.K_CONSTANT >= 0) P(m_p.K_CONSTANT, k, j, i) *= reduce_e;
-        if (m_p.K_HOWES >= 0)    P(m_p.K_HOWES, k, j, i)    *= reduce_e;
-        if (m_p.K_KAWAZURA >= 0) P(m_p.K_KAWAZURA, k, j, i) *= reduce_e;
-        if (m_p.K_WERNER >= 0)   P(m_p.K_WERNER, k, j, i)   *= reduce_e;
-        if (m_p.K_ROWAN >= 0)    P(m_p.K_ROWAN, k, j, i)    *= reduce_e;
-        if (m_p.K_SHARMA >= 0)   P(m_p.K_SHARMA, k, j, i)   *= reduce_e;
-    }
+    floor_vals(0, k, j, i) = rhoflr_max;
+    floor_vals(1, k, j, i) = uflr_max;
 
-    // Return fflag (with pflag added if NOF floors were used!)
     return fflag;
+}
+
+#define FLOOR_ONE_ARGS const GRCoordinates& G, const VariablePack<Real>& P, const VarMap& m_p, \
+                        const Real& gam, const EMHD::EMHD_parameters& emhd_params, \
+                        const int& k, const int& j, const int& i, const VariablePack<Real>& floor_vals, \
+                        const VariablePack<Real>& U, const VarMap& m_u
+
+/**
+ * Apply floors of several types in determining how to add mass and internal energy to preserve stability.
+ * All floors which might apply are recorded separately, then mass/energy are added *in normal observer frame*
+ * 
+ * @return pflag: in NOF, a number <32 representing any failure of the U->P solve.  Otherwise 0.
+ * 
+ * LOCKSTEP: this function respects P and ignores U in order to return consistent P<->U
+ */
+template<InjectionFrame frame>
+KOKKOS_INLINE_FUNCTION int apply_floors(FLOOR_ONE_ARGS);
+
+template<>
+KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::fluid>(FLOOR_ONE_ARGS)
+{
+    Real rhoflr_max = floor_vals(0, k, j, i);
+    Real uflr_max = floor_vals(1, k, j, i);
+
+    P(m_p.RHO, k, j, i) += m::max(0., rhoflr_max - P(m_p.RHO, k, j, i));
+    P(m_p.UU, k, j, i)  += m::max(0., uflr_max - P(m_p.UU, k, j, i));
+    // Update (GRMHD portion of) conserved variables
+    GRMHD::p_to_u(G, P, m_p, gam, k, j, i, U, m_u, Loci::center);
+    return 0;
+}
+
+template<>
+KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::drift>(FLOOR_ONE_ARGS)
+{
+    Real rhoflr_max = floor_vals(0, k, j, i);
+    Real uflr_max = floor_vals(1, k, j, i);
+
+    // Drift frame floors. Refer to Appendix B3 in https://doi.org/10.1093/mnras/stx364 (hereafter R17)
+    const Real lapse2    = 1. / (-G.gcon(Loci::center, j, i, 0, 0));
+    double beta[GR_DIM] = {0};
+    beta[1] = lapse2 * G.gcon(Loci::center, j, i, 0, 1);
+    beta[2] = lapse2 * G.gcon(Loci::center, j, i, 0, 2);
+    beta[3] = lapse2 * G.gcon(Loci::center, j, i, 0, 3);
+
+    // Fluid quantities (four velocities have been computed above)
+    const Real rho   = P(m_p.RHO, k, j, i);
+    const Real uu    = P(m_p.UU, k, j, i);
+    const Real pg    = (gam - 1.) * uu;
+    const Real w_old = m::max(rho + uu + pg, SMALL);
+
+    // Normal observer magnetic field
+    Real Bcon[GR_DIM] = {0};
+    Real Bcov[GR_DIM] = {0};
+    if (m_p.B1 >= 0) {
+        Bcon[0] = 0;
+        Bcon[1] = P(m_p.B1, k, j, i);
+        Bcon[2] = P(m_p.B2, k, j, i);
+        Bcon[3] = P(m_p.B3, k, j, i);
+    }
+    DLOOP2 Bcov[mu] += G.gcov(Loci::center, j, i, mu, nu) * Bcon[nu];
+    const Real Bsq   = m::max(dot(Bcon, Bcov), SMALL);
+    const Real B_mag = m::sqrt(Bsq);
+
+    // Get four-vectors again
+    FourVectors Dtmp;
+    GRMHD::calc_4vecs(G, P, m_p, k, j, i, Loci::center, Dtmp);
+
+    // Normal observer fluid momentum
+    Real Qcov[GR_DIM] = {0};
+    Qcov[0] = w_old * Dtmp.ucon[0] * Dtmp.ucov[0] + pg;
+    Qcov[1] = w_old * Dtmp.ucon[0] * Dtmp.ucov[1];
+    Qcov[2] = w_old * Dtmp.ucon[0] * Dtmp.ucov[2];
+    Qcov[3] = w_old * Dtmp.ucon[0] * Dtmp.ucov[3];
+
+    // Momentum along magnetic field lines (must be held constant)
+    double QdotB = dot(Bcon, Qcov);
+
+    // Initial parallel velocity (refer R17 Eqn B10)
+    Real vpar = QdotB / (B_mag * w_old * Dtmp.ucon[0]*Dtmp.ucon[0]);
+
+    Real ucon_dr[GR_DIM] = {0};
+    // t-component of drift velocity (refer R17 Eqn B13)
+    ucon_dr[0] = 1. / m::sqrt(1. / (Dtmp.ucon[0]*Dtmp.ucon[0]) + vpar*vpar);
+    // spatial components of drift velocity (refer R17 Eqn B11)
+    DLOOP1 ucon_dr[mu] = Dtmp.ucon[mu] * (ucon_dr[0] / Dtmp.ucon[0]) - (vpar * Bcon[mu] * ucon_dr[0] / B_mag);
+
+    // Update rho, uu and compute new enthalpy
+    P(m_p.RHO, k, j, i) = m::max(rho, rhoflr_max);
+    P(m_p.UU, k, j, i)  = m::max(uu, uflr_max);
+    const Real pg_new   = (gam - 1.) * P(m_p.UU, k, j, i);
+    const Real w_new    = P(m_p.RHO, k, j, i) + P(m_p.UU, k, j, i) + pg_new;
+
+    // New parallel velocity (refer R17 Eqn B14)
+    const Real x = (2. * QdotB) / (B_mag * w_new * ucon_dr[0]);
+    vpar = x / (1 + m::sqrt(1 + x*x)) * (1. / ucon_dr[0]);
+
+    // New fluid four velocity (refer R17 Eqns B13 and B11)
+    Dtmp.ucon[0] = 1. / m::sqrt(1/(ucon_dr[0]*ucon_dr[0]) - vpar*vpar);
+    DLOOP1 Dtmp.ucon[mu] = ucon_dr[mu] * (Dtmp.ucon[0] / ucon_dr[0]) + (vpar * Bcon[mu] * Dtmp.ucon[0] / B_mag);
+    G.lower(Dtmp.ucon, Dtmp.ucov, k, j, i, Loci::center);
+
+    // New velocity primitives
+    P(m_p.U1, k, j, i) = Dtmp.ucon[1] + (beta[1] * Dtmp.ucon[0]);
+    P(m_p.U2, k, j, i) = Dtmp.ucon[2] + (beta[2] * Dtmp.ucon[0]);
+    P(m_p.U3, k, j, i) = Dtmp.ucon[3] + (beta[3] * Dtmp.ucon[0]);
+
+    // Update the conserved variables
+    Flux::p_to_u(G, P, m_p, emhd_params, gam, k, j, i, U, m_u, Loci::center);
+    return 0;
+}
+
+template<>
+KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::normal>(FLOOR_ONE_ARGS)
+{
+    Real rhoflr_max = floor_vals(0, k, j, i);
+    Real uflr_max = floor_vals(1, k, j, i);
+
+    // Add the material in the normal observer frame.
+    // 1. Calculate how much material we're adding.
+    // This is an estimate, as it's what we'd have to do in fluid frame
+    const Real rho_add    = m::max(0., rhoflr_max - P(m_p.RHO, k, j, i));
+    const Real u_add      = m::max(0., uflr_max - P(m_p.UU, k, j, i));
+    const Real uvec[NVEC] = {0}, B[NVEC] = {0};
+
+    // 2. Calculate the increase in conserved mass/energy corresponding to the new material.
+    Real rho_ut, T[GR_DIM];
+    GRMHD::p_to_u_mhd(G, rho_add, u_add, uvec, B, gam, k, j, i, rho_ut, T, Loci::center);
+
+    // 3. Add new conserved mass/energy to the current "conserved" state.
+    // Also add to the local primitives as a guess
+    P(m_p.RHO, k, j, i) += rho_add;
+    P(m_p.UU, k, j, i)  += u_add;
+    // Add any velocity here
+    U(m_u.RHO, k, j, i) += rho_ut;
+    U(m_u.UU, k, j, i)  += T[0]; // Note that m_u.U1 != m_u.UU + 1 necessarily
+    U(m_u.U1, k, j, i)  += T[1];
+    U(m_u.U2, k, j, i)  += T[2];
+    U(m_u.U3, k, j, i)  += T[3];
+    
+    // Recover primitive variables from conserved versions
+    // TODO(BSP) selector here when we get more options
+    Inverter::Status pflag = Inverter::u_to_p<Inverter::Type::onedw>(G, U, m_u, gam, k, j, i, P, m_p, Loci::center);
+    // 4. If the inversion fails, we've effectively already applied the floors in fluid-frame to the prims,
+    // so we just formalize that
+    if (Inverter::failed(pflag)) {
+        Flux::p_to_u(G, P, m_p, emhd_params, gam, k, j, i, U, m_u, Loci::center);
+        return (int) pflag;
+    } else {
+        return 0;
+    }
 }
 
 /**
  * Apply just the geometric floors to a set of local primitives.
  * Specifically called after reconstruction when using non-TVD schemes, e.g. WENO5.
- * Reimplemented to be fast and fit the general prim_to_flux calling convention.
+ * Reimplemented to be fast and fit the general prim_to_flux calling convention, including geometry locations
  * 
  * @return fflag: since no inversion is performed, this just returns a flag representing which geometric floors were hit
  * 

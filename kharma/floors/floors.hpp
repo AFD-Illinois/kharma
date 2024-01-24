@@ -47,6 +47,8 @@
 // Currently not recorded by the caller, so disabled
 #define RECORD_POST_RECON 0
 
+namespace Floors {
+
 namespace FFlag {
 // Floor codes are non-exclusive, so it makes little sense to use an enum
 // Instead, we use bitflags, starting high enough that we can stick the pflag in the bottom 5 bits
@@ -84,7 +86,7 @@ static const std::map<int, std::string> flag_names = {
 };
 }
 
-namespace Floors {
+enum class InjectionFrame{fluid=0, normal, mixed, drift};
 
 /**
  * Struct to hold floor values without cumbersome dictionary/string logistics.
@@ -101,8 +103,7 @@ class Prescription {
         double ktot_max;
         // Limit fluid Lorentz factor
         double gamma_max;
-        // Floor options
-        bool fluid_frame, mixed_frame, drift_frame;
+        // Floor options (frame was MOVED to templating)
         bool use_r_char, temp_adjust_u, adjust_k;
 
         Prescription() {}
@@ -122,10 +123,6 @@ class Prescription {
             use_r_char    = params.Get<bool>("use_r_char");
             temp_adjust_u = params.Get<bool>("temp_adjust_u");
             adjust_k      = params.Get<bool>("adjust_k");
-
-            fluid_frame   = params.Get<bool>("fluid_frame");
-            mixed_frame   = params.Get<bool>("mixed_frame");
-            drift_frame   = params.Get<bool>("drift_frame");
         }
 };
 
@@ -142,7 +139,15 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
  * 
  * LOCKSTEP: this function respects P and returns consistent P<->U
  */
-TaskStatus ApplyGRMHDFloors(MeshBlockData<Real> *rc, IndexDomain domain);
+TaskStatus ApplyGRMHDFloors(MeshData<Real> *md, IndexDomain domain);
+
+/**
+ * Determine just the floor values and flags for the current state, i.e.
+ * 1. floor_vals fields: floor value corresponding to current conditions
+ * 2. fflag, which floors were hit by the current state
+ * This is what ApplyFloors uses to determine the floor values/locations
+ */
+TaskStatus DetermineGRMHDFloors(MeshData<Real> *md, IndexDomain domain, const Floors::Prescription& floors);
 
 /**
  * Apply the same floors as above, in the same way, except:
@@ -155,9 +160,13 @@ TaskStatus ApplyGRMHDFloors(MeshBlockData<Real> *rc, IndexDomain domain);
 TaskStatus ApplyInitialFloors(ParameterInput *pin, MeshBlockData<Real> *mbd, IndexDomain domain);
 
 /**
- * Print a summary of floors hit
+ * Count up all nonzero FFlags on md.  Used for history file reductions.
  */
+int CountFFlags(MeshData<Real> *md);
 
+/**
+ * Print a summary of floors which were hit
+ */
 TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md);
 
 

@@ -52,6 +52,12 @@ TaskStatus CheckCtop(MeshData<Real> *md);
 TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md);
 
 /**
+ * Given a "guess" in which the fflag reflects zones which would fail with current fluxes,
+ * replace fluxes surrounding flagged zones with donor-cell/first-order versions
+ */
+TaskStatus FOFC(MeshData<Real> *md, MeshData<Real> *guess);
+
+/**
  * Add the geometric source term present in the covariant derivative of the stress-energy tensor,
  * S_nu = sqrt(-g) T^kap_lam Gamma^lam_nu_kap
  * This is defined in Flux:: rather than GRMHD:: because the stress-energy tensor may contain

@@ -56,8 +56,9 @@ std::shared_ptr<KHARMAPackage> KHARMADriver::Initialize(ParameterInput *pin, std
     // The two current drivers are "kharma" or "imex", with the former being the usual KHARMA
     // driver (formerly HARM driver), and the latter supporting implicit stepping of some or all variables
     // Mostly, packages should react to e.g. the "sync_prims" option rather than the driver name
+    std::vector<std::string> valid_drivers = {"harm", "kharma", "imex", "simple"};
     bool do_emhd = pin->GetOrAddBoolean("emhd", "on", false);
-    std::string driver_type_s = pin->GetOrAddString("driver", "type", (do_emhd) ? "imex" : "kharma");
+    std::string driver_type_s = pin->GetOrAddString("driver", "type", (do_emhd) ? "imex" : "kharma", valid_drivers);
     DriverType driver_type;
     if (driver_type_s == "harm" || driver_type_s == "kharma") {
         driver_type = DriverType::kharma;
@@ -65,9 +66,7 @@ std::shared_ptr<KHARMAPackage> KHARMADriver::Initialize(ParameterInput *pin, std
         driver_type = DriverType::imex;
     } else if (driver_type_s == "simple") {
         driver_type = DriverType::simple;
-    } else {
-        throw std::invalid_argument("Driver type must be one of: simple, kharma, imex");
-    }
+    } // We prevent this
     params.Add("type", driver_type);
     params.Add("name", driver_type_s);
 
@@ -76,6 +75,16 @@ std::shared_ptr<KHARMAPackage> KHARMADriver::Initialize(ParameterInput *pin, std
     // On by default, disable only after testing that, e.g., divB meets your requirements
     bool two_sync = pin->GetOrAddBoolean("driver", "two_sync", true);
     params.Add("two_sync", two_sync);
+
+    // Record whether to apply first-order flux corrections.
+    // The implementation of this touches a lot of things & has speed implications,
+    // so we keep it in Driver for now.
+    bool default_fofc = false;
+    if (pin->DoesParameterExist("flux", "fofc")) {
+        default_fofc = pin->GetBoolean("flux", "fofc");
+    }
+    bool use_fofc = pin->GetOrAddBoolean("driver", "fofc", default_fofc);
+    params.Add("use_fofc", use_fofc);
 
     // When using the Implicit package we need to globally distinguish implicit & explicit vars
     // All independent variables should be marked one or the other,
@@ -188,8 +197,13 @@ TaskStatus KHARMADriver::SyncAllBounds(std::shared_ptr<MeshData<Real>> &md)
     return TaskStatus::complete;
 }
 
-TaskID KHARMADriver::AddFluxCalculations(TaskID& t_start, TaskList& tl, KReconstruction::Type recon, MeshData<Real> *md)
+TaskID KHARMADriver::AddFluxCalculations(TaskID& t_start, TaskList& tl, MeshData<Real> *md)
 {
+    // Pull reconstruction option to simplify use. TODO shorten?
+    auto pmb0  = md->GetBlockData(0)->GetBlockPointer();
+    auto& pkgs = pmb0->packages.AllPackages();
+    const KReconstruction::Type& recon = pkgs.at("Flux")->Param<KReconstruction::Type>("recon");
+
     // Pre-calculate B field cell-center values
     auto t_start_fluxes = t_start;
     if (md->GetMeshPointer()->packages.AllPackages().count("B_CT"))
@@ -260,6 +274,95 @@ TaskID KHARMADriver::AddFluxCalculations(TaskID& t_start, TaskList& tl, KReconst
     }
 
     return t_ctop;
+}
+
+TaskID KHARMADriver::AddFOFC(TaskID& t_start, TaskList& tl, MeshData<Real> *md,
+                             MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_init,
+                             MeshData<Real> *guess_src, MeshData<Real> *guess, int stage)
+{
+    Flag("FOFC");
+    // Pull reconstruction option to simplify use. TODO shorten?
+    auto pmb0  = md->GetBlockData(0)->GetBlockPointer();
+    auto& pkgs = pmb0->packages.AllPackages();
+    bool use_b_ct = pkgs.count("B_CT");
+
+    // TODO(BSP) thread through separate floor options somehow
+    const Floors::Prescription fofc_floors = Floors::Prescription(pmb0->packages.Get("Floors")->AllParams());
+
+    // Populate guess source term with divergence of the existing fluxes
+    // NOTE this does not include source terms!  Though, could call them here tbh
+    auto t_guess_divergence = tl.AddTask(t_start, Update::FluxDivergence<MeshData<Real>>, md, guess_src);
+    // We at least seem to need to update B?
+    auto t_b_flux = t_guess_divergence;
+    if (use_b_ct) {
+        auto t_emf_local = tl.AddTask(t_start, B_CT::CalculateEMF, md_sub_step_init);
+        t_b_flux = tl.AddTask(t_emf_local | t_guess_divergence, B_CT::AddSource, md, guess_src);
+    }
+    // Update the guess state with the guess source term, and our existing state
+    auto t_guess_update = KHARMADriver::AddStateUpdate(t_b_flux, tl,
+                                                       md_full_step_init, md_sub_step_init, guess_src, guess,
+                                                       use_b_ct, stage);
+    // Uncomment to copy in the existing magnetic field rather than doing the full sync/update.
+    // Faster but seemed unstable.
+    // auto t_copy_face = tl.AddTask(t_start, WeightedSumDataFace,
+    //                         std::vector<MetadataFlag>({Metadata::GetUserFlag("Explicit"), Metadata::Independent, Metadata::Face}),
+    //                         md_sub_step_init, guess, 1.0, 0.0, guess);
+    // Recover primitive variables of the guess
+    auto t_guess_prims = tl.AddTask(t_guess_update, Packages::MeshUtoP, guess, IndexDomain::entire, false);
+    // Check and mark floors
+    auto t_mark_floors = tl.AddTask(t_guess_prims, Floors::DetermineGRMHDFloors, guess, IndexDomain::entire, fofc_floors);
+    // Finally, replace any fluxes bordering marked zones with donor-cell/LLF versions
+    auto t_fofc = tl.AddTask(t_mark_floors, Flux::FOFC, md, guess);
+
+    EndFlag();
+    return t_fofc;
+}
+
+TaskID KHARMADriver::AddStateUpdate(TaskID& t_start, TaskList& tl, MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_init,
+                                MeshData<Real> *md_flux_src, MeshData<Real> *md_update, bool update_face, int stage)
+{
+    // Update all explicitly-evolved variables using the source term
+    // Add any proportion of the step start required by the integrator (e.g., RK2)
+    // TODO splitting this is stupid, but maybe the parallelization actually helps? Eh.
+    auto t_avg_data_c = tl.AddTask(t_start, Update::WeightedSumData<std::vector<MetadataFlag>, MeshData<Real>>,
+                                std::vector<MetadataFlag>({Metadata::GetUserFlag("Explicit"), Metadata::Independent, Metadata::Cell}),
+                                md_sub_step_init, md_full_step_init,
+                                integrator->gam0[stage-1], integrator->gam1[stage-1],
+                                md_update);
+    auto t_avg_data = t_avg_data_c;
+    if (update_face) {
+        t_avg_data = tl.AddTask(t_start, WeightedSumDataFace,
+                                std::vector<MetadataFlag>({Metadata::GetUserFlag("Explicit"), Metadata::Independent, Metadata::Face}),
+                                md_sub_step_init, md_full_step_init,
+                                integrator->gam0[stage-1], integrator->gam1[stage-1],
+                                md_update);
+    }
+    // apply du/dt to the result
+    auto t_update_c = tl.AddTask(t_avg_data, Update::WeightedSumData<std::vector<MetadataFlag>, MeshData<Real>>,
+                                std::vector<MetadataFlag>({Metadata::GetUserFlag("Explicit"), Metadata::Independent, Metadata::Cell}),
+                                md_update, md_flux_src,
+                                1.0, integrator->beta[stage-1] * integrator->dt,
+                                md_update);
+    auto t_update = t_update_c;
+    if (update_face) {
+        t_update = tl.AddTask(t_avg_data, WeightedSumDataFace,
+                                std::vector<MetadataFlag>({Metadata::GetUserFlag("Explicit"), Metadata::Independent, Metadata::Face}),
+                                md_update, md_flux_src,
+                                1.0, integrator->beta[stage-1] * integrator->dt,
+                                md_update);
+    }
+
+    // We'll be running UtoP after this, which needs a guess in order to converge, so we copy in md_sub_step_init
+    auto t_copy_prims = t_update;
+    auto pmb0  = md_full_step_init->GetBlockData(0)->GetBlockPointer();
+    auto& pkgs = pmb0->packages.AllPackages();
+    if (!pkgs.at("GRMHD")->Param<bool>("implicit")) {
+        t_copy_prims = tl.AddTask(t_start, Copy<MeshData<Real>>,
+                                    std::vector<MetadataFlag>({Metadata::GetUserFlag("HD"), Metadata::GetUserFlag("Primitive")}),
+                                    md_sub_step_init, md_update);
+    }
+
+    return t_copy_prims | t_update;
 }
 
 void KHARMADriver::SetGlobalTimeStep()

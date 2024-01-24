@@ -28,7 +28,7 @@ ox3_bc = periodic
 
 <parthenon/meshblock>
 nx1 = 200
-nx2 = 100
+nx2 = 200
 nx3 = 1
 
 <coordinates>
@@ -42,28 +42,39 @@ dt_min = 0.0001
 
 <GRMHD>
 cfl = 0.9
-gamma = 1.333333
-reconstruction = weno5
+gamma = 1.666666
+
+<driver>
+type = kharma
+fofc = true
+
+<flux>
+type = hlle
+reconstruction = weno5_linear
 
 <explosion>
 rho_out = 1e-4
 
 <floors>
-gamma_max = 10
-#rho_min_geom = 1e-12
-#u_min_geom = 1e-14
-#bsq_over_u_max = 1e20
-#bsq_over_rho_max = 1e20
+frame = drift
+rho_min_geom = 1e-6
+u_min_geom = 1e-8
+bsq_over_rho_max = 10000
 
 <b_field>
+solver = face_ct
+ct_scheme = gs05_c
 type = constant
 B10 = 1.0
+
+<debug>
+flag_verbose = 2
 
 <parthenon/output0>
 file_type = hdf5
 dt = 0.2
 single_precision_output = true
-variables = prims.rho, prims.u, prims.uvec, prims.B, fflag, pflag
+variables = prims, fflag, pflag
 
 <parthenon/output1>
 file_type = hst

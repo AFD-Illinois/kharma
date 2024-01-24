@@ -33,14 +33,16 @@
  */
 #include "floors.hpp"
 #include "floors_functions.hpp"
+#include "floors_impl.hpp"
 
+#include "domain.hpp"
 #include "grmhd.hpp"
 #include "grmhd_functions.hpp"
 #include "pack.hpp"
 
 // Floors.  Apply limits to fluid values to maintain integrable state
 
-int CountFFlags(MeshData<Real> *md)
+int Floors::CountFFlags(MeshData<Real> *md)
 {
     return Reductions::CountFlags(md, "fflag", FFlag::flag_names, IndexDomain::interior, true)[0];
 }
@@ -103,28 +105,22 @@ std::shared_ptr<KHARMAPackage> Floors::Initialize(ParameterInput *pin, std::shar
     // less reliable but velocity reconstructions potentially more robust.
     // Drift frame floors are now available and preferred when using 
     // the implicit solver to avoid UtoP calls.
-    std::string frame = pin->GetOrAddString("floors", "frame", "drift");
-    // TODO TODO ENUM THIS
-    params.Add("frame", frame);
-    if (frame == "normal" || frame == "nof") {
-        params.Add("fluid_frame", false);
-        params.Add("mixed_frame", false);
-        params.Add("drift_frame", false);
-    } else if (frame == "fluid" || frame == "ff") {
-        params.Add("fluid_frame", true);
-        params.Add("mixed_frame", false);
-        params.Add("drift_frame", false);
-    } else if (frame == "mixed") {
-        params.Add("fluid_frame", false);
-        params.Add("mixed_frame", true);
-        params.Add("drift_frame", false);
-    } else if (frame == "drift") {
-        params.Add("fluid_frame", false);
-        params.Add("mixed_frame", false);
-        params.Add("drift_frame", true);
-    } else {
-        throw std::invalid_argument("Floor frame "+frame+" not supported");
+    // TODO(BSP) automate/standardize parsing enums like this: classes w/tables like the flags?
+    std::vector<std::string> allowed_floor_frames = {"normal", "fluid",
+                                                     "mixed", "drift"};
+    std::string frame_s = pin->GetOrAddString("floors", "frame", "drift", allowed_floor_frames);
+    InjectionFrame frame;
+    if (frame_s == "normal") {
+        frame = InjectionFrame::normal;
+    } else if (frame_s == "fluid") {
+        frame = InjectionFrame::fluid;
+    } else if (frame_s == "mixed") {
+        frame = InjectionFrame::mixed;
+    } else if (frame_s == "drift") {
+        frame = InjectionFrame::drift;
     }
+    params.Add("frame", frame);
+
     // We initialize this even if not using mixed frame, for constructing Prescription objs
     Real frame_switch = pin->GetOrAddReal("floors", "frame_switch", 50.);
     params.Add("frame_switch", frame_switch);
@@ -134,8 +130,8 @@ std::shared_ptr<KHARMAPackage> Floors::Initialize(ParameterInput *pin, std::shar
     bool disable_floors = pin->GetOrAddBoolean("floors", "disable_floors", false);
     params.Add("disable_floors", disable_floors);
 
-    // Temporary fix just for being able to save field values
-    // Should switch these to "Integer" fields when Parthenon supports it
+    // Flag for which floor conditions were violated.  Used for diagnostics
+    // TODO(BSP) Should switch these to "Integer" fields when Parthenon supports it
     Metadata m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
     pkg->AddField("fflag", m);
     // When not using UtoP, we still need a dummy copy of pflag, too
@@ -144,7 +140,11 @@ std::shared_ptr<KHARMAPackage> Floors::Initialize(ParameterInput *pin, std::shar
         pkg->AddField("pflag", m);
     }
 
-    pkg->BlockApplyFloors = Floors::ApplyGRMHDFloors;
+    // Record by how much floors were violated, so material can be inserted
+    pkg->AddField("Floors.rho_floor", m);
+    pkg->AddField("Floors.u_floor", m);
+
+    pkg->MeshApplyFloors = Floors::ApplyGRMHDFloors;
     pkg->PostStepDiagnosticsMesh = Floors::PostStepDiagnostics;
 
     // List (vector) of HistoryOutputVars that will all be enrolled as output variables
@@ -170,10 +170,11 @@ TaskStatus Floors::ApplyInitialFloors(ParameterInput *pin, MeshBlockData<Real> *
     auto U = mbd->PackVariables(std::vector<MetadataFlag>{Metadata::Conserved, Metadata::Cell}, cons_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
 
+    auto floor_vals = mbd->PackVariables(std::vector<std::string>{"Floors.rho_floor", "Floors.u_floor"});
+
     const auto& G = pmb->coords;
 
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
-
 
     // If we're going to apply floors through the run, apply the same ones at init
     // Otherwise stick to specified/default geometric floors
@@ -196,26 +197,16 @@ TaskStatus Floors::ApplyInitialFloors(ParameterInput *pin, MeshBlockData<Real> *
             floors_tmp.r_char        = 0.; //unused
             floors_tmp.temp_adjust_u = false;
             floors_tmp.adjust_k      = false;
-
-            floors_tmp.fluid_frame   = true;
-            floors_tmp.mixed_frame   = false;
-            floors_tmp.frame_switch  = 0.; //unused
-            floors_tmp.drift_frame   = false;
     }
     const Floors::Prescription floors = floors_tmp;
 
     const EMHD::EMHD_parameters& emhd_params = EMHD::GetEMHDParameters(pmb->packages);
 
-    // Apply floors over the same zones we just updated with UtoP
-    // This selects the entire domain, but we then require pflag >= 0,
-    // which keeps us from covering completely uninitialized zones
-    // (but still applies to failed UtoP!)
-    const IndexRange ib = mbd->GetBoundsI(domain);
-    const IndexRange jb = mbd->GetBoundsJ(domain);
-    const IndexRange kb = mbd->GetBoundsK(domain);
-    pmb->par_for("apply_initial_floors", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+    const IndexRange3 b = KDomain::GetRange(mbd, domain);
+    pmb->par_for("apply_initial_floors", b.ks, b.ke, b.js, b.je, b.is, b.ie,
         KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-            apply_floors(G, P, m_p, gam, emhd_params, k, j, i, floors, U, m_u);
+            determine_floors(G, P, m_p, gam, k, j, i, floors, floor_vals);
+            apply_floors<InjectionFrame::fluid>(G, P, m_p, gam, emhd_params, k, j, i, floor_vals, U, m_u);
             apply_ceilings(G, P, m_p, gam, k, j, i, floors, U, m_u);
         }
     );
@@ -224,73 +215,55 @@ TaskStatus Floors::ApplyInitialFloors(ParameterInput *pin, MeshBlockData<Real> *
     return TaskStatus::complete;
 }
 
-TaskStatus Floors::ApplyGRMHDFloors(MeshBlockData<Real> *mbd, IndexDomain domain)
+TaskStatus Floors::DetermineGRMHDFloors(MeshData<Real> *md, IndexDomain domain, const Floors::Prescription& floors)
 {
-    auto pmb = mbd->GetBlockPointer();
+    auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
 
-    PackIndexMap prims_map, cons_map;
-    auto P = mbd->PackVariables({Metadata::GetUserFlag("Primitive")}, prims_map);
-    auto U = mbd->PackVariables(std::vector<MetadataFlag>{Metadata::Conserved}, cons_map);
-    const VarMap m_u(cons_map, true), m_p(prims_map, false);
+    // Packs of prims and cons
+    PackIndexMap prims_map;
+    auto& P = md->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("Primitive")}, prims_map);
+    const VarMap m_p(prims_map, false);
 
-    const auto& G = pmb->coords;
+    auto fflag = md->PackVariables(std::vector<std::string>{"fflag"});
+    auto pflag = md->PackVariables(std::vector<std::string>{"pflag"});
+    auto floor_vals = md->PackVariables(std::vector<std::string>{"Floors.rho_floor", "Floors.u_floor"});
 
-    GridScalar pflag = mbd->Get("pflag").data;
-    GridScalar fflag = mbd->Get("fflag").data;
+    const Real gam = pmb0->packages.Get("GRMHD")->Param<Real>("gamma");
 
-    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
-    const Floors::Prescription floors(pmb->packages.Get("Floors")->AllParams());
-    const EMHD::EMHD_parameters& emhd_params = EMHD::GetEMHDParameters(pmb->packages);
-
-    // Apply floors over the same zones we just updated with UtoP
-    // This selects the entire domain, but we then require pflag >= 0,
-    // which keeps us from covering completely uninitialized zones
-    // (but still applies to failed UtoP!)
-    const IndexRange ib = mbd->GetBoundsI(domain);
-    const IndexRange jb = mbd->GetBoundsJ(domain);
-    const IndexRange kb = mbd->GetBoundsK(domain);
-    
-    pmb->par_for("apply_floors", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-        KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-            if (((int) pflag(k, j, i)) >= (int) Inverter::Status::success) {
-                // apply_floors can involve another U_to_P call.  Hide the pflag in bottom 5 bits and retrieve both
-                int comboflag = apply_floors(G, P, m_p, gam, emhd_params, k, j, i, floors, U, m_u);
-                fflag(k, j, i) = (comboflag / FFlag::MINIMUM) * FFlag::MINIMUM;
-
-                // Record the pflag as well.  KHARMA did not traditionally do this,
-                // because floors were run over uninitialized zones, and thus wrote
-                // garbage pflags.  We now prevent this.
-                // Note that the pflag is recorded only if inversion failed,
-                // so that a zone is flagged if *either* the initial inversion or
-                // post-floor inversion failed.
-                // Zones next to the sharp edge of the initial torus, for example,
-                // can produce negative u when inverted, then magically stay invertible
-                // after floors when they should be diffused.
-                if (comboflag % FFlag::MINIMUM) {
-                    pflag(k, j, i) = comboflag % FFlag::MINIMUM;
-                }
-
-#if !FUSE_FLOOR_KERNELS
-            }
-        }
-    );
-    pmb->par_for("apply_ceilings", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-        KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-            if (((int) pflag(k, j, i)) >= (int) Inverter::Status::success) {
-#endif
-                // Apply ceilings *after* floors, to make the temperature ceiling better-behaved
-                // Ceilings never involve a u_to_p call
-                int addflag = fflag(k, j, i);
-                addflag |= apply_ceilings(G, P, m_p, gam, k, j, i, floors, U, m_u);
-                fflag(k, j, i) = addflag;
+    const IndexRange3 b = KDomain::GetRange(md, domain);
+    const IndexRange block = IndexRange{0, P.GetDim(5) - 1};
+    pmb0->par_for("determine_floors", block.s, block.e, b.ks, b.ke, b.js, b.je, b.is, b.ie,
+        KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i) {
+            // Flag & apply floors for successful and failed zones, just not corners
+            // TODO(BSP) still necessary?
+            if (((int) pflag(b, 0, k, j, i)) >= (int) Inverter::Status::success) {
+                const auto& G = P.GetCoords(b);
+                fflag(b, 0, k, j, i) = determine_floors(G, P(b), m_p, gam, k, j, i, floors, floor_vals(b));
             }
         }
     );
 
-    //if (flag_verbose)
+    // TODO(BSP) if we can somehow guarantee one call/rank we can start the reduction here
     //Reductions::StartFlagReduce(md, "fflag", FFlag::flag_names, IndexDomain::interior, true, 0);
 
     return TaskStatus::complete;
+}
+
+TaskStatus Floors::ApplyGRMHDFloors(MeshData<Real> *md, IndexDomain domain)
+{
+    auto pmesh = md->GetMeshPointer();
+    const auto& pars = pmesh->packages.Get("Floors")->AllParams();
+    if (pars.Get<InjectionFrame>("frame") == InjectionFrame::normal) {
+        return ApplyFloorsInFrame<InjectionFrame::normal>(md, domain);
+    } else if (pars.Get<InjectionFrame>("frame") == InjectionFrame::fluid) {
+        return ApplyFloorsInFrame<InjectionFrame::fluid>(md, domain);
+    // } else if (pars.Get<InjectionFrame>("frame") == InjectionFrame::mixed) {
+    //     return ApplyFloorsInFrame<InjectionFrame::mixed>(md, domain);
+    } else if (pars.Get<InjectionFrame>("frame") == InjectionFrame::drift) {
+        return ApplyFloorsInFrame<InjectionFrame::drift>(md, domain);
+    } else {
+        throw std::invalid_argument("Floors for requested frame not implemented!");
+    }
 }
 
 TaskStatus Floors::PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
@@ -303,7 +276,6 @@ TaskStatus Floors::PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
 
     // Debugging/diagnostic info about floor flags
     if (flag_verbose > 0) {
-        // TODO this should move to ApplyGRMHDFloors when everything goes MeshData
         Reductions::StartFlagReduce(md, "fflag", FFlag::flag_names, IndexDomain::interior, true, 0);
         // Debugging/diagnostic info about floor and inversion flags
         Reductions::CheckFlagReduceAndPrintHits(md, "fflag", FFlag::flag_names, IndexDomain::interior, true, 0);

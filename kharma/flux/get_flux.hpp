@@ -105,7 +105,7 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
     PackIndexMap prims_map, cons_map;
     const auto& cmax  = md->PackVariables(std::vector<std::string>{"Flux.cmax"});
     const auto& cmin  = md->PackVariables(std::vector<std::string>{"Flux.cmin"});
-    // TODO maybe all WithFluxes vars, split into cell & face?
+
     const auto& P_all = md->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("Primitive"), Metadata::Cell}, prims_map);
     const auto& U_all = md->PackVariablesAndFluxes(std::vector<MetadataFlag>{Metadata::Conserved, Metadata::Cell}, cons_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);

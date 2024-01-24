@@ -148,6 +148,9 @@ std::shared_ptr<KHARMAPackage> Flux::Initialize(ParameterInput *pin, std::shared
         pkg->AddField("Flux.vl", m);
     }
 
+    // Flag for when first-order fluxes were invoked
+
+
     // We register the geometric (\Gamma*T) source here
     pkg->AddSource = Flux::AddGeoSource;
 
@@ -378,6 +381,9 @@ TaskStatus Flux::PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
     // Options
     const auto& pars = pmesh->packages.Get("Globals")->AllParams();
     const int extra_checks = pars.Get<int>("extra_checks");
+
+    // Print any first-order fluxes invoked
+    
 
     // Check for a soundspeed (ctop) of 0 or NaN
     // This functions as a "last resort" check to stop a

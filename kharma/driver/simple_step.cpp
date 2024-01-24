@@ -81,8 +81,7 @@ TaskCollection KHARMADriver::MakeSimpleTaskCollection(BlockList_t &blocks, int s
         // Calculate the flux of each variable through each face
         // This reconstructs the primitives (P) at faces and uses them to calculate fluxes
         // of the conserved variables (U) through each face.
-        const KReconstruction::Type& recon = flux_pkg.Get<KReconstruction::Type>("recon");
-        auto t_fluxes = KHARMADriver::AddFluxCalculations(t_none, tl, recon, md_sub_step_init.get());
+        auto t_fluxes = KHARMADriver::AddFluxCalculations(t_none, tl, md_sub_step_init.get());
 
         // Any package modifications to the fluxes.  e.g.:
         // 1. CT calculations for B field transport
