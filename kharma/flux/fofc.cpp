@@ -53,6 +53,7 @@ TaskStatus Flux::FOFC(MeshData<Real> *md, MeshData<Real> *guess)
     // (not that it matters, the flags are OneCopy)
     auto fflag = guess->PackVariables(std::vector<std::string>{"fflag"});
     auto pflag = guess->PackVariables(std::vector<std::string>{"pflag"});
+    auto fofcflag = guess->PackVariables(std::vector<std::string>{"fofcflag"});
 
     // But we're modifying the live temporaries, and eventually fluxes, here
     const auto& Pl_all = md->PackVariables(std::vector<std::string>{"Flux.Pl"});
@@ -74,6 +75,20 @@ TaskStatus Flux::FOFC(MeshData<Real> *md, MeshData<Real> *guess)
     const Real gam = pmb0->packages.Get("GRMHD")->Param<Real>("gamma");
     const EMHD::EMHD_parameters& emhd_params = EMHD::GetEMHDParameters(packages);
 
+    // Pre-mark cells which will need fluxes reduced.
+    // This avoids a race condition marking them multiple times when iterating faces,
+    // and isolates the potentially slow/weird integer conversion stuff so we can measure the kernel time
+    const IndexRange3 b = KDomain::GetRange(md, IndexDomain::interior, -1, 1);
+    const IndexRange block = IndexRange{0, P_all.GetDim(5) - 1};
+    pmb0->par_for("fofc_replacement", block.s, block.e, b.ks, b.ke, b.js, b.je, b.is, b.ie,
+        KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i) {
+            // if cell failed to invert or would call floors...
+            if (((int) fflag(b, 0, k, j, i) > 0) || ((int) pflag(b, 0, k, j, i) > 0)) {
+                fofcflag(b, 0, k, j, i) = 1;
+            }
+        }
+    );
+
     for (auto el : {F1, F2, F3}) {
         const int dir = (el == F1) ? 1 : ((el == F2) ? 2 : 3);
         if (dir > ndim) continue; // TODO(BSP) if(trivial_direction)
@@ -88,9 +103,8 @@ TaskStatus Flux::FOFC(MeshData<Real> *md, MeshData<Real> *guess)
                 int kk = (dir == 3) ? k - 1 : k;
                 int jj = (dir == 2) ? j - 1 : j;
                 int ii = (dir == 1) ? i - 1 : i;
-                // if either cell failed to invert or would call floors...
-                if (((int) fflag(b, 0, k, j, i) > 0) || ((int) fflag(b, 0, kk, jj, ii) > 0) ||
-                    ((int) pflag(b, 0, k, j, i) > 0) || ((int) pflag(b, 0, kk, jj, ii) > 0)) {
+                // if either bordering cell is marked...
+                if (((int) fofcflag(b, 0, k, j, i) > 0) || ((int) fofcflag(b, 0, kk, jj, ii) > 0)) {
                     const Loci loc = loc_of(dir);
 
                     // "Reconstruct" left & right of this face: left is left cell, right is shared-index

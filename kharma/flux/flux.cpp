@@ -157,6 +157,9 @@ std::shared_ptr<KHARMAPackage> Flux::Initialize(ParameterInput *pin, std::shared
     // We register the geometric (\Gamma*T) source here
     pkg->AddSource = Flux::AddGeoSource;
 
+    // And the post-step diagnostics
+    pkg->PostStepDiagnosticsMesh = Flux::PostStepDiagnostics;
+
     // PROCESS FOFC
     // Flag for when first-order fluxes were invoked
     bool default_fofc = false;
@@ -410,13 +413,18 @@ TaskStatus Flux::CheckCtop(MeshData<Real> *md)
 TaskStatus Flux::PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
 {
     auto pmesh = md->GetMeshPointer();
-    auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
     // Options
     const auto& pars = pmesh->packages.Get("Globals")->AllParams();
     const int extra_checks = pars.Get<int>("extra_checks");
+    const int flag_verbose = pars.Get<int>("flag_verbose");
 
-    // Print any first-order fluxes invoked
-    
+    // Debugging/diagnostic info about FOFC hits
+    if (flag_verbose > 0) {
+        std::map<int, std::string> fofc_label = {{1, "Flux-corrected"}};
+        Reductions::StartFlagReduce(md, "fofcflag", fofc_label, IndexDomain::interior, false, 10);
+        // Debugging/diagnostic info about floor and inversion flags
+        Reductions::CheckFlagReduceAndPrintHits(md, "fofcflag", fofc_label, IndexDomain::interior, false, 10);
+    }
 
     // Check for a soundspeed (ctop) of 0 or NaN
     // This functions as a "last resort" check to stop a

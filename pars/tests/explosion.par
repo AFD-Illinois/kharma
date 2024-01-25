@@ -46,7 +46,6 @@ gamma = 1.333333
 
 <driver>
 type = kharma
-fofc = true
 
 <flux>
 type = hlle
@@ -57,6 +56,12 @@ rho_out = 1e-4
 
 <floors>
 frame = drift
+rho_min_geom = 1e-10
+u_min_geom = 1e-10
+
+<fofc>
+on = true
+gamma_max = 5
 rho_min_geom = 1e-10
 u_min_geom = 1e-10
 
