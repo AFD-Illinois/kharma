@@ -42,7 +42,7 @@ dt_min = 0.0001
 
 <GRMHD>
 cfl = 0.9
-gamma = 1.666666
+gamma = 1.333333
 
 <driver>
 type = kharma
@@ -57,9 +57,8 @@ rho_out = 1e-4
 
 <floors>
 frame = drift
-rho_min_geom = 1e-6
-u_min_geom = 1e-8
-bsq_over_rho_max = 10000
+rho_min_geom = 1e-10
+u_min_geom = 1e-10
 
 <b_field>
 solver = face_ct

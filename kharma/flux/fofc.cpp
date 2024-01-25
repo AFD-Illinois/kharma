@@ -50,8 +50,9 @@ TaskStatus Flux::FOFC(MeshData<Real> *md, MeshData<Real> *guess)
     const int ndim = pmesh->ndim;
 
     // flags of the guess indicate where we lower
-    // (not that it matters, fflag is OneCopy)
+    // (not that it matters, the flags are OneCopy)
     auto fflag = guess->PackVariables(std::vector<std::string>{"fflag"});
+    auto pflag = guess->PackVariables(std::vector<std::string>{"pflag"});
 
     // But we're modifying the live temporaries, and eventually fluxes, here
     const auto& Pl_all = md->PackVariables(std::vector<std::string>{"Flux.Pl"});
@@ -87,8 +88,9 @@ TaskStatus Flux::FOFC(MeshData<Real> *md, MeshData<Real> *guess)
                 int kk = (dir == 3) ? k - 1 : k;
                 int jj = (dir == 2) ? j - 1 : j;
                 int ii = (dir == 1) ? i - 1 : i;
-                // if either cell would need floors...
-                if ( ((int) fflag(b, 0, k, j, i) != 0.) || ((int) fflag(b, 0, kk, jj, ii) != 0)) {
+                // if either cell failed to invert or would call floors...
+                if (((int) fflag(b, 0, k, j, i) > 0) || ((int) fflag(b, 0, kk, jj, ii) > 0) ||
+                    ((int) pflag(b, 0, k, j, i) > 0) || ((int) pflag(b, 0, kk, jj, ii) > 0)) {
                     const Loci loc = loc_of(dir);
 
                     // "Reconstruct" left & right of this face: left is left cell, right is shared-index

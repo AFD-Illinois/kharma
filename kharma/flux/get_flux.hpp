@@ -77,16 +77,13 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
     const auto& globals    = packages.Get("Globals")->AllParams();
     const bool use_hlle    = pars.Get<bool>("use_hlle");
 
-    // TODO make this an option in Flux package
     const bool reconstruction_floors = pars.Get<bool>("reconstruction_floors");
     Floors::Prescription floors_temp;
     if (reconstruction_floors) {
         // Apply post-reconstruction floors.
         // Only enabled for WENO since it is not TVD, and only when other
         // floors are enabled.
-        const auto& floor_pars = packages.Get("Floors")->AllParams();
-        // Pull out a struct of just the actual floor values for speed
-        floors_temp = Floors::Prescription(floor_pars);
+        floors_temp = packages.Get("Floors")->Param<Floors::Prescription>("prescription");
     }
     const Floors::Prescription& floors = floors_temp;
 

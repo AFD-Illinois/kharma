@@ -52,52 +52,8 @@ std::shared_ptr<KHARMAPackage> Floors::Initialize(ParameterInput *pin, std::shar
     auto pkg = std::make_shared<KHARMAPackage>("Floors");
     Params &params = pkg->AllParams();
 
-    // Floor parameters
-    double rho_min_geom, u_min_geom;
-    if (pin->GetBoolean("coordinates", "spherical")) {
-        // In spherical systems, floors drop as r^2, so set them higher by default
-        rho_min_geom = pin->GetOrAddReal("floors", "rho_min_geom", 1.e-6);
-        u_min_geom = pin->GetOrAddReal("floors", "u_min_geom", 1.e-8);
-    } else {
-        rho_min_geom = pin->GetOrAddReal("floors", "rho_min_geom", 1.e-8);
-        u_min_geom = pin->GetOrAddReal("floors", "u_min_geom", 1.e-10);
-    }
-    params.Add("rho_min_geom", rho_min_geom);
-    params.Add("u_min_geom", u_min_geom);
-
-    // In iharm3d, overdensities would run away; one proposed solution was
-    // to decrease the density floor more with radius.  However, in practice
-    // 1. This proved to be a result of the floor vs bsq, not the geometric one
-    // 2. interior density floors are dominated by the floor vs bsq
-    // Also, this changes the internal energy floor pretty drastically --
-    // newly interesting in light of increases to the UU floors
-    bool use_r_char = pin->GetOrAddBoolean("floors", "use_r_char", false);
-    params.Add("use_r_char", use_r_char);
-    double r_char = pin->GetOrAddReal("floors", "r_char", 10);
-    params.Add("r_char", r_char);
-
-    // Floors vs magnetic field.  Most commonly hit & most temperamental
-    double bsq_over_rho_max = pin->GetOrAddReal("floors", "bsq_over_rho_max", 1e20);
-    params.Add("bsq_over_rho_max", bsq_over_rho_max);
-    double bsq_over_u_max = pin->GetOrAddReal("floors", "bsq_over_u_max", 1e20);
-    params.Add("bsq_over_u_max", bsq_over_u_max);
-
-    // Limit temperature or entropy, optionally by siphoning off extra rather
-    // than by adding material.
-    double u_over_rho_max = pin->GetOrAddReal("floors", "u_over_rho_max", 1e20);
-    params.Add("u_over_rho_max", u_over_rho_max);
-    double ktot_max = pin->GetOrAddReal("floors", "ktot_max", 1e20);
-    params.Add("ktot_max", ktot_max);
-    bool temp_adjust_u = pin->GetOrAddBoolean("floors", "temp_adjust_u", false);
-    params.Add("temp_adjust_u", temp_adjust_u);
-    // Adjust electron entropy values when applying density floors to conserve
-    // internal energy, as in Ressler+ but not more recent implementations
-    bool adjust_k = pin->GetOrAddBoolean("floors", "adjust_k", true);
-    params.Add("adjust_k", adjust_k);
-
-    // Limit the fluid Lorentz factor gamma
-    double gamma_max = pin->GetOrAddReal("floors", "gamma_max", 50.);
-    params.Add("gamma_max", gamma_max);
+    // Parse all the particular floor values into a nice struct we can pass device-side
+    params.Add("prescription", Floors::Prescription(pin));
 
     // Frame to apply floors: usually we use normal observer frame, but
     // the option exists to use the fluid frame exclusively 'fluid' or outside a
@@ -121,10 +77,6 @@ std::shared_ptr<KHARMAPackage> Floors::Initialize(ParameterInput *pin, std::shar
     }
     params.Add("frame", frame);
 
-    // We initialize this even if not using mixed frame, for constructing Prescription objs
-    Real frame_switch = pin->GetOrAddReal("floors", "frame_switch", 50.);
-    params.Add("frame_switch", frame_switch);
-
     // Disable all floors.  It is obviously tremendously inadvisable to
     // set this option to true
     bool disable_floors = pin->GetOrAddBoolean("floors", "disable_floors", false);
@@ -140,10 +92,14 @@ std::shared_ptr<KHARMAPackage> Floors::Initialize(ParameterInput *pin, std::shar
         pkg->AddField("pflag", m);
     }
 
-    // Record by how much floors were violated, so material can be inserted
+    // These preserve floor values between the "mark" pass and the actual floor application
+    // They exist because sometimes we need to mark zones which need floors,
+    // but then do e.g. FOFC to them instead in the hope that they will stop needing actual floors
     pkg->AddField("Floors.rho_floor", m);
     pkg->AddField("Floors.u_floor", m);
 
+    // TODO(BSP) THIS IS THE ONLY MeshApplyFloors.  Any others will NOT BE CALLED.
+    // Use BlockApplyFloors in your packages or fix Packages::MeshApplyFloors
     pkg->MeshApplyFloors = Floors::ApplyGRMHDFloors;
     pkg->PostStepDiagnosticsMesh = Floors::PostStepDiagnostics;
 
@@ -180,7 +136,7 @@ TaskStatus Floors::ApplyInitialFloors(ParameterInput *pin, MeshBlockData<Real> *
     // Otherwise stick to specified/default geometric floors
     Floors::Prescription floors_tmp;
     if (pmb->packages.AllPackages().count("Floors")) {
-        floors_tmp = Floors::Prescription(pmb->packages.Get("Floors")->AllParams());
+        floors_tmp = pmb->packages.Get("Floors")->Param<Floors::Prescription>("prescription");
     } else {
             // JUST rho & u geometric
             floors_tmp.rho_min_geom = pin->GetOrAddReal("floors", "rho_min_geom", 1e-6);
@@ -257,8 +213,8 @@ TaskStatus Floors::ApplyGRMHDFloors(MeshData<Real> *md, IndexDomain domain)
         return ApplyFloorsInFrame<InjectionFrame::normal>(md, domain);
     } else if (pars.Get<InjectionFrame>("frame") == InjectionFrame::fluid) {
         return ApplyFloorsInFrame<InjectionFrame::fluid>(md, domain);
-    // } else if (pars.Get<InjectionFrame>("frame") == InjectionFrame::mixed) {
-    //     return ApplyFloorsInFrame<InjectionFrame::mixed>(md, domain);
+    } else if (pars.Get<InjectionFrame>("frame") == InjectionFrame::mixed) {
+        return ApplyFloorsInFrame<InjectionFrame::mixed>(md, domain);
     } else if (pars.Get<InjectionFrame>("frame") == InjectionFrame::drift) {
         return ApplyFloorsInFrame<InjectionFrame::drift>(md, domain);
     } else {

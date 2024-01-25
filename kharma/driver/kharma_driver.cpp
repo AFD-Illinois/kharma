@@ -76,16 +76,6 @@ std::shared_ptr<KHARMAPackage> KHARMADriver::Initialize(ParameterInput *pin, std
     bool two_sync = pin->GetOrAddBoolean("driver", "two_sync", true);
     params.Add("two_sync", two_sync);
 
-    // Record whether to apply first-order flux corrections.
-    // The implementation of this touches a lot of things & has speed implications,
-    // so we keep it in Driver for now.
-    bool default_fofc = false;
-    if (pin->DoesParameterExist("flux", "fofc")) {
-        default_fofc = pin->GetBoolean("flux", "fofc");
-    }
-    bool use_fofc = pin->GetOrAddBoolean("driver", "fofc", default_fofc);
-    params.Add("use_fofc", use_fofc);
-
     // When using the Implicit package we need to globally distinguish implicit & explicit vars
     // All independent variables should be marked one or the other,
     // so we define the flags here to avoid loading order issues
@@ -287,7 +277,7 @@ TaskID KHARMADriver::AddFOFC(TaskID& t_start, TaskList& tl, MeshData<Real> *md,
     bool use_b_ct = pkgs.count("B_CT");
 
     // TODO(BSP) thread through separate floor options somehow
-    const Floors::Prescription fofc_floors = Floors::Prescription(pmb0->packages.Get("Floors")->AllParams());
+    const Floors::Prescription fofc_floors = pmb0->packages.Get("Flux")->Param<Floors::Prescription>("fofc_prescription");
 
     // Populate guess source term with divergence of the existing fluxes
     // NOTE this does not include source terms!  Though, could call them here tbh

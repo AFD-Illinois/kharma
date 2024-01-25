@@ -549,8 +549,6 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
     return TaskStatus::complete;
 }
 
-// TODO TODO(BSP) FIX THIS FUNCTION by piping in fflag, recording floor previously applied
-// Maybe record rho,u floor-val rather than floor?
 void ApplyFloors(MeshBlockData<Real> *mbd, IndexDomain domain)
 {
     auto pmb                 = mbd->GetBlockPointer();
@@ -560,9 +558,12 @@ void ApplyFloors(MeshBlockData<Real> *mbd, IndexDomain domain)
     auto P = mbd->PackVariables({Metadata::GetUserFlag("Primitive")}, prims_map);
     const VarMap m_p(prims_map, false);
 
+    auto fflag = mbd->PackVariables(std::vector<std::string>{"fflag"}, prims_map);
+
     const auto& G = pmb->coords;
 
     const Real gam = packages.Get("GRMHD")->Param<Real>("gamma");
+    const Floors::Prescription floors = packages.Get("Floors")->Param<Floors::Prescription>("prescription");
 
     const IndexRange3 b = KDomain::GetRange(mbd, domain);
     pmb->par_for("apply_electrons_floors", b.ks, b.ke, b.js, b.je, b.is, b.ie,
@@ -570,16 +571,16 @@ void ApplyFloors(MeshBlockData<Real> *mbd, IndexDomain domain)
 
             // Also apply the ceiling to the advected entropy KTOT, if we're keeping track of that
             // (either for electrons, or robust primitive inversions in future)
-            // if (m_p.KTOT >= 0 && (P(m_p.KTOT, k, j, i) > floors.ktot_max)) {
-            //     fflag |= FFlag::KTOT;
-            //     P(m_p.KTOT, k, j, i) = floors.ktot_max;
-            // }
+            if (m_p.KTOT >= 0 && (P(m_p.KTOT, k, j, i) > floors.ktot_max)) {
+                fflag(0, k, j, i) = Floors::FFlag::KTOT | (int) fflag(0, k, j, i);
+                P(m_p.KTOT, k, j, i) = floors.ktot_max;
+            }
 
+            // TODO(BSP) restore Ressler adjustment option
             // Ressler adjusts KTOT & KEL to conserve u whenever adjusting rho
             // but does *not* recommend adjusting them when u hits floors/ceilings
             // This is in contrast to ebhlight, which heats electrons before applying *any* floors,
             // and resets KTOT during floor application without touching KEL
-
             // if (floors.adjust_k && (fflag() & FFlag::GEOM_RHO || fflag() & FFlag::B_RHO)) {
             //     const Real reduce   = m::pow(rho / P(m_p.RHO, k, j, i), gam);
             //     const Real reduce_e = m::pow(rho / P(m_p.RHO, k, j, i), 4./3); // TODO pipe in real gam_e

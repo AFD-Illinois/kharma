@@ -43,6 +43,12 @@ using namespace parthenon;
 
 // GetFlux is in the header file get_flux.hpp, as it is templated on reconstruction scheme and flux direction
 
+int Flux::CountFOFCFlags(MeshData<Real> *md)
+{
+    return Reductions::CountFlags(md, "fofcflag", std::map<int, std::string>{{1, "Flux-corrected"}}, IndexDomain::interior, true)[0];
+}
+
+
 std::shared_ptr<KHARMAPackage> Flux::Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages)
 {
     Flag("Initializing Flux");
@@ -148,11 +154,38 @@ std::shared_ptr<KHARMAPackage> Flux::Initialize(ParameterInput *pin, std::shared
         pkg->AddField("Flux.vl", m);
     }
 
-    // Flag for when first-order fluxes were invoked
-
-
     // We register the geometric (\Gamma*T) source here
     pkg->AddSource = Flux::AddGeoSource;
+
+    // PROCESS FOFC
+    // Flag for when first-order fluxes were invoked
+    bool default_fofc = false;
+    if (pin->DoesParameterExist("driver", "fofc")) {
+        default_fofc = pin->GetBoolean("driver", "fofc");
+    } else if (pin->DoesParameterExist("flux", "fofc")) {
+        default_fofc = pin->GetBoolean("flux", "fofc");
+    }
+    bool use_fofc = pin->GetOrAddBoolean("fofc", "on", default_fofc);
+    params.Add("use_fofc", use_fofc);
+
+    if (use_fofc) {
+        params.Add("fofc_prescription", Floors::Prescription(pin, "fofc"));
+
+        // Flag for whether FOFC was applied, for diagnostics
+        // This could be another bitflag in fflag, but that would be really confusing...
+        Metadata m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
+        pkg->AddField("fofcflag", m);
+
+        // List (vector) of HistoryOutputVars that will all be enrolled as output variables
+        parthenon::HstVar_list hst_vars = {};
+        // Count total floors as a history item
+        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::max, CountFOFCFlags, "FOFCFlags"));
+        // TODO Domain::entire version?
+        // TODO entries for each individual flag?
+        // add callbacks for HST output to the Params struct, identified by the `hist_param_key`
+        pkg->AddParam<>(parthenon::hist_param_key, hst_vars);
+
+    }
 
     EndFlag();
     return pkg;

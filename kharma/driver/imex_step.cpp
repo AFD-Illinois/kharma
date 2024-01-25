@@ -64,11 +64,11 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
 
     // Which packages we've loaded affects which tasks we'll add to the list
     auto& pkgs         = blocks[0]->packages.AllPackages();
-    auto& driver_pkg   = pkgs.at("Driver")->AllParams();
+    auto& flux_pkg   = pkgs.at("Flux")->AllParams();
     const bool use_b_cleanup = pkgs.count("B_Cleanup");
     const bool use_b_ct = pkgs.count("B_CT");
     const bool use_electrons = pkgs.count("Electrons");
-    const bool use_fofc = driver_pkg.Get<bool>("use_fofc");
+    const bool use_fofc = flux_pkg.Get<bool>("use_fofc");
     const bool use_implicit = pkgs.count("Implicit");
     const bool use_jcon = pkgs.count("Current");
     const bool use_linesearch = (use_implicit) ? pkgs.at("Implicit")->Param<bool>("linesearch") : false;

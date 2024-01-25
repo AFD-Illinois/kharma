@@ -304,7 +304,7 @@ KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::normal>(FLOOR_ONE_ARGS)
     U(m_u.U3, k, j, i)  += T[3];
     
     // Recover primitive variables from conserved versions
-    // TODO(BSP) selector here when we get more options
+    // TODO(BSP) add this to the template somehow when kastaun comes online?
     Inverter::Status pflag = Inverter::u_to_p<Inverter::Type::onedw>(G, U, m_u, gam, k, j, i, P, m_p, Loci::center);
     // 4. If the inversion fails, we've effectively already applied the floors in fluid-frame to the prims,
     // so we just formalize that
@@ -313,6 +313,18 @@ KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::normal>(FLOOR_ONE_ARGS)
         return (int) pflag;
     } else {
         return 0;
+    }
+}
+
+template<>
+KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::mixed>(FLOOR_ONE_ARGS)
+{
+    GReal Xembed[GR_DIM];
+    G.coord_embed(k, j, i, Loci::center, Xembed);
+    if (Xembed[1] > 50.) {
+        return apply_floors<InjectionFrame::fluid>(G, P, m_p, gam, emhd_params, k, j, i, floor_vals, U, m_u);
+    } else {
+        return apply_floors<InjectionFrame::normal>(G, P, m_p, gam, emhd_params, k, j, i, floor_vals, U, m_u);
     }
 }
 

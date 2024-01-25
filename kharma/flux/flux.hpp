@@ -85,6 +85,11 @@ TaskStatus MeshPtoU(MeshData<Real> *md, IndexDomain domain, bool coarse=false);
  */
 TaskStatus BlockPtoU_Send(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse);
 
+/**
+ * Count how many zones forced first-order fluxes (*not* the number of fluxes reduced)
+ */
+int CountFOFCFlags(MeshData<Real> *md);
+
 // Fluxes a.k.a. "Approximate Riemann Solvers"
 // More complex solvers require speed estimates not calculable completely from
 // invariants, necessitating frame transformations and related madness.

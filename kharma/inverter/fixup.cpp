@@ -123,7 +123,7 @@ TaskStatus Inverter::FixUtoP(MeshBlockData<Real> *rc)
     // Re-apply floors to fixed zones
     if (pmb->packages.AllPackages().count("Floors")) {
         // Floor prescription from the package
-        const Floors::Prescription floors(pmb->packages.Get("Floors")->AllParams());
+        const Floors::Prescription floors = pmb->packages.Get("Floors")->Param<Floors::Prescription>("prescription");
 
         // We need the full packs of prims/cons for p_to_u
         // Pack new variables
@@ -140,7 +140,7 @@ TaskStatus Inverter::FixUtoP(MeshBlockData<Real> *rc)
         pmb->par_for("fix_U_to_P_floors", b.ks, b.ke, b.js, b.je, b.is, b.ie,
             KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
                 if (failed(pflag(k, j, i))) {
-                    // Make sure all fixed values still abide by floors (floors keep lockstep)
+                    // Make sure all fixed values still abide by floors
                     // TODO Full floors instead of just geo?
                     Floors::apply_geo_floors(G, P, m_p, gam, k, j, i, floors);
 

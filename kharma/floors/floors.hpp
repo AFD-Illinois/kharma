@@ -107,22 +107,45 @@ class Prescription {
         bool use_r_char, temp_adjust_u, adjust_k;
 
         Prescription() {}
-        Prescription(const parthenon::Params& params)
+        Prescription(parthenon::ParameterInput *pin, std::string block="floors")
         {
-            rho_min_geom = params.Get<Real>("rho_min_geom");
-            u_min_geom   = params.Get<Real>("u_min_geom");
-            r_char       = params.Get<GReal>("r_char");
-            frame_switch = params.Get<GReal>("frame_switch");
+            // Floor parameters
+            if (pin->GetBoolean("coordinates", "spherical")) {
+                // In spherical systems, floors drop as r^2, so set them higher by default
+                rho_min_geom = pin->GetOrAddReal(block, "rho_min_geom", 1.e-6);
+                u_min_geom = pin->GetOrAddReal(block, "u_min_geom", 1.e-8);
+            } else {
+                rho_min_geom = pin->GetOrAddReal(block, "rho_min_geom", 1.e-8);
+                u_min_geom = pin->GetOrAddReal(block, "u_min_geom", 1.e-10);
+            }
 
-            bsq_over_rho_max = params.Get<Real>("bsq_over_rho_max");
-            bsq_over_u_max   = params.Get<Real>("bsq_over_u_max");
-            u_over_rho_max   = params.Get<Real>("u_over_rho_max");
-            ktot_max         = params.Get<Real>("ktot_max");
-            gamma_max        = params.Get<Real>("gamma_max");
+            // In iharm3d, overdensities would run away; one proposed solution was
+            // to decrease the density floor more with radius.  However, in practice
+            // 1. This proved to be a result of the floor vs bsq, not the geometric one
+            // 2. interior density floors are dominated by the floor vs bsq
+            // Also, this changes the internal energy floor pretty drastically --
+            // newly interesting in light of increases to the UU floors
+            use_r_char = pin->GetOrAddBoolean(block, "use_r_char", false);
+            r_char = pin->GetOrAddReal(block, "r_char", 10);
 
-            use_r_char    = params.Get<bool>("use_r_char");
-            temp_adjust_u = params.Get<bool>("temp_adjust_u");
-            adjust_k      = params.Get<bool>("adjust_k");
+            // Floors vs magnetic field.  Most commonly hit & most temperamental
+            bsq_over_rho_max = pin->GetOrAddReal(block, "bsq_over_rho_max", 1e20);
+            bsq_over_u_max = pin->GetOrAddReal(block, "bsq_over_u_max", 1e20);
+
+            // Limit temperature or entropy, optionally by siphoning off extra rather
+            // than by adding material.
+            u_over_rho_max = pin->GetOrAddReal(block, "u_over_rho_max", 1e20);
+            ktot_max = pin->GetOrAddReal(block, "ktot_max", 1e20);
+            temp_adjust_u = pin->GetOrAddBoolean(block, "temp_adjust_u", false);
+            // Adjust electron entropy values when applying density floors to conserve
+            // internal energy, as in Ressler+ but not more recent implementations
+            adjust_k = pin->GetOrAddBoolean(block, "adjust_k", true);
+
+            // Limit the fluid Lorentz factor gamma
+            gamma_max = pin->GetOrAddReal(block, "gamma_max", 50.);
+
+            // We initialize this even if not using mixed frame, for constructing Prescription objs
+            frame_switch = pin->GetOrAddReal(block, "frame_switch", 50.);
         }
 };
 

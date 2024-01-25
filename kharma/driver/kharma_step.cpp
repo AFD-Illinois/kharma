@@ -86,11 +86,11 @@ TaskCollection KHARMADriver::MakeDefaultTaskCollection(BlockList_t &blocks, int 
 
     // Which packages we load affects which tasks we'll add to the list
     auto& pkgs = pmesh->packages.AllPackages();
-    auto& driver_pkg   = pkgs.at("Driver")->AllParams();
+    auto& flux_pkg   = pkgs.at("Flux")->AllParams();
     const bool use_b_cleanup = pkgs.count("B_Cleanup");
     const bool use_b_ct = pkgs.count("B_CT");
     const bool use_electrons = pkgs.count("Electrons");
-    const bool use_fofc = driver_pkg.Get<bool>("use_fofc");
+    const bool use_fofc = flux_pkg.Get<bool>("use_fofc");
     const bool use_jcon = pkgs.count("Current");
 
     // Allocate/copy the things we need

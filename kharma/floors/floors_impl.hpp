@@ -59,7 +59,7 @@ TaskStatus ApplyFloorsInFrame(MeshData<Real> *md, IndexDomain domain)
     const Real gam = pmb0->packages.Get("GRMHD")->Param<Real>("gamma");
     const EMHD::EMHD_parameters& emhd_params = EMHD::GetEMHDParameters(pmb0->packages);
     // Still needed for ceilings and determining floors
-    const Floors::Prescription floors(pmb0->packages.Get("Floors")->AllParams());
+    const Floors::Prescription floors = pmb0->packages.Get("Floors")->Param<Floors::Prescription>("prescription");
 
     // Determine floors
     DetermineGRMHDFloors(md, domain, floors);
@@ -97,7 +97,5 @@ TaskStatus ApplyFloorsInFrame(MeshData<Real> *md, IndexDomain domain)
 
     return TaskStatus::complete;
 }
-
-// TODO TODO(BSP) restore specialization for ::mixed by adding r >< r_switch check
 
 } // namespace Floors
