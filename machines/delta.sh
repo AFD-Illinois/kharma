@@ -29,7 +29,7 @@ then
     EXTRA_FLAGS="-DPARTHENON_ENABLE_HOST_COMM_BUFFERS=ON $EXTRA_FLAGS"
 
     # Load common GPU modules
-    module load modtree/gpu cmake
+    module load gcc/11.4.0 cuda/11.8.0  openmpi/4.1.5+cuda
 
     if [[ $ARGS == *"latest"* ]]; then
       # nvhpc only on request, MPI crashes
