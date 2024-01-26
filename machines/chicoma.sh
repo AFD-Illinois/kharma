@@ -11,7 +11,7 @@ if [[ "$HOST" == "ch-fe"* || "$HOST" == "nid00"* ]]; then
 
   # Cray environments get confused easy
   # Make things as simple as possible
-  # TODO ONLY NVHPC WORKS
+  # Only default "nvhpc" module is supported, see HPC docs
   module purge
   export CRAY_CPU_TARGET="x86-64"
   if [[ "$ARGS" == *"cuda"* ]]; then
@@ -30,7 +30,7 @@ if [[ "$HOST" == "ch-fe"* || "$HOST" == "nid00"* ]]; then
       C_NATIVE=nvc
       CXX_NATIVE=nvc++
     else
-      module load PrgEnv-nvhpc
+      module load PrgEnv-nvhpc/8.3.3
     fi
     module load craype-accel-nvidia80
     # GPU runtime opts
@@ -40,18 +40,32 @@ if [[ "$HOST" == "ch-fe"* || "$HOST" == "nid00"* ]]; then
     unset OMP_PLACES
 
     # Sometimes device-side buffers don't work
-    # if [conditions]
-    EXTRA_FLAGS="-DPARTHENON_ENABLE_HOST_COMM_BUFFERS=ON $EXTRA_FLAGS"
-    #else
-    #export MPICH_GPU_SUPPORT_ENABLED=1
+    if [[ "$ARGS" == *"hostside"* ]]; then
+      EXTRA_FLAGS="-DPARTHENON_ENABLE_HOST_COMM_BUFFERS=ON $EXTRA_FLAGS"
+    else
+      export MPICH_GPU_SUPPORT_ENABLED=1
+      export MPICH_GPU_MANAGED_MEMORY_SUPPORT_ENABLED=1
+      # Use the Cray wrappers else runtime errors (?)
+      C_NATIVE=cc
+      CXX_NATIVE=CC
+    fi
 
   else
+    # CPU CASE
     module load PrgEnv-aocc
     MPI_EXTRA_ARGS="--cpus-per-task=2"
   fi
-  module load cmake cray-hdf5-parallel
+
+  # If using system HDF5, disable compression since it's old
+  if [[ "$ARGS" != *"hdf5"* ]]; then
+    module load cray-hdf5-parallel
+    EXTRA_FLAGS="-DPARTHENON_DISABLE_HDF5_COMPRESSION=ON $EXTRA_FLAGS"
+  fi
+
+  module load cmake
 
   # Runtime opts
   MPI_EXE="srun"
-  MPI_NUM_PROCS=""
+  MPI_NUM_PROCS=${MPI_NUM_PROCS:-4}
 fi
+
