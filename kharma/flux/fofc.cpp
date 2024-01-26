@@ -66,10 +66,15 @@ TaskStatus Flux::FOFC(MeshData<Real> *md, MeshData<Real> *guess)
     const auto& cmax  = md->PackVariables(std::vector<std::string>{"Flux.cmax"});
     const auto& cmin  = md->PackVariables(std::vector<std::string>{"Flux.cmin"});
 
+    // TODO this does NOT necessarily leave Flux.xyz vars in a matching state with GetFlux
+    // It will be filled according to m_u/cons_map, which does not contain B
     PackIndexMap cons_map, prims_map;
-    const auto& P_all = md->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("Primitive"), Metadata::Cell}, prims_map);
-    const auto& U_all = md->PackVariablesAndFluxes(std::vector<MetadataFlag>{Metadata::Conserved, Metadata::Cell}, cons_map);
+    std::vector<MetadataFlag> prims_flags = {Metadata::GetUserFlag("Primitive"), Metadata::Cell};
+    std::vector<MetadataFlag> cons_hd = {Metadata::Conserved, Metadata::GetUserFlag("HD"), Metadata::Cell};
+    const auto& P_all = md->PackVariables(prims_flags, prims_map);
+    const auto& U_all = md->PackVariablesAndFluxes(cons_hd, cons_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
+    const int nvar = U_all.GetDim(4);
 
     // Parameters
     const Real gam = pmb0->packages.Get("GRMHD")->Param<Real>("gamma");
@@ -92,7 +97,6 @@ TaskStatus Flux::FOFC(MeshData<Real> *md, MeshData<Real> *guess)
     for (auto el : {F1, F2, F3}) {
         const int dir = (el == F1) ? 1 : ((el == F2) ? 2 : 3);
         if (dir > ndim) continue; // TODO(BSP) if(trivial_direction)
-        const int nvar = P_all.GetDim(4);
         const IndexRange3 b = KDomain::GetRange(md, IndexDomain::interior, el, -1, 1);
         const IndexRange block = IndexRange{0, P_all.GetDim(5) - 1};
         pmb0->par_for("fofc_replacement", block.s, block.e, b.ks, b.ke, b.js, b.je, b.is, b.ie,
