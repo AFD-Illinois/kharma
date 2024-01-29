@@ -107,6 +107,9 @@ std::shared_ptr<KHARMAPackage> Flux::Initialize(ParameterInput *pin, std::shared
     } else if (recon == "ppm") {
         params.Add("recon", KReconstruction::Type::ppm);
         stencil = 5;
+    } else if (recon == "ppmx") {
+        params.Add("recon", KReconstruction::Type::ppmx);
+        stencil = 5;
     } else if (recon == "mp5") {
         params.Add("recon", KReconstruction::Type::mp5);
         stencil = 5;

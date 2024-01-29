@@ -202,7 +202,7 @@ TaskID KHARMADriver::AddFluxCalculations(TaskID& t_start, TaskList& tl, MeshData
     // Calculate fluxes in each direction using given reconstruction
     // Must be spelled out so as to generate each templated version of GetFlux<> to be available at runtime
     // Details in flux/get_flux.hpp
-    // TODO(BSP) there simply must be a better way
+    // TODO(BSP) This could be a macro, maybe... But there's no easy foreach(enum_val): instantiate pattern
     using RType = KReconstruction::Type;
     TaskID t_calculate_flux1, t_calculate_flux2, t_calculate_flux3;
     switch (recon) {
@@ -245,6 +245,11 @@ TaskID KHARMADriver::AddFluxCalculations(TaskID& t_start, TaskList& tl, MeshData
         t_calculate_flux1 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::ppm, X1DIR>, md);
         t_calculate_flux2 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::ppm, X2DIR>, md);
         t_calculate_flux3 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::ppm, X3DIR>, md);
+        break;
+    case RType::ppmx:
+        t_calculate_flux1 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::ppmx, X1DIR>, md);
+        t_calculate_flux2 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::ppmx, X2DIR>, md);
+        t_calculate_flux3 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::ppmx, X3DIR>, md);
         break;
     case RType::mp5:
         t_calculate_flux1 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::mp5, X1DIR>, md);
