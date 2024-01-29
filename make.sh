@@ -309,8 +309,13 @@ if [[ "$ARGS" == *"clean"* ]]; then
       git apply ../patches/variant-hip.patch
     fi
     cd -
-  fi
 
+    # HIP also prefers new Kokkos.
+    # TODO work something out if on HIP machines w/o internet
+    cd external/parthenon
+    git submodule update --remote external/Kokkos
+    cd -
+  fi
 
   rm -rf build
 fi
