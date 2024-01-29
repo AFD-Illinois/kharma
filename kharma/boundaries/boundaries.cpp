@@ -342,10 +342,10 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
     auto fpack = rc->PackVariables({Metadata::Face, Metadata::FillGhost});
     if (params.Get<bool>("reflect_face_vector_" + bname) && fpack.GetDim(4) > 0) {
         Flag("BoundaryFace_"+bname);
-        TE el = (bdir == 1) ? F1 : (bdir == 2) ? F2 : F3;
+        const TopologicalElement face = FaceOf(bdir);
         // This is the domain of the boundary/ghost zones
         // Augment the domain since we're always modifying e.g. F2 in X2 boundary
-        auto b = KDomain::GetRange(rc, domain, el, (binner) ? 0 : -1, (binner) ? 1 : 0, coarse);
+        auto b = KDomain::GetRange(rc, domain, face, (binner) ? 0 : -1, (binner) ? 1 : 0, coarse);
         // Zero the last physical face, otherwise invert.
         auto i_f = (binner) ? b.ie : b.is;
         auto j_f = (binner) ? b.je : b.js;
@@ -355,9 +355,9 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
         pmb->par_for(
             "reflect_face_vector_" + bname, b.ks, b.ke, b.js, b.je, b.is, b.ie,
             KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-                fpack(el, 0, k, j, i) = ((bdir == 1 && i == i_f) ||
-                                         (bdir == 2 && j == j_f) ||
-                                         (bdir == 3 && j == k_f)) ? 0. : -fpack(el, 0, k, j, i);
+                fpack(face, 0, k, j, i) = ((bdir == 1 && i == i_f) ||
+                                           (bdir == 2 && j == j_f) ||
+                                           (bdir == 3 && j == k_f)) ? 0. : -fpack(face, 0, k, j, i);
             }
         );
         EndFlag();

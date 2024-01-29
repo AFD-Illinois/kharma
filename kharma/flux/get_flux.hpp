@@ -115,9 +115,8 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
     const auto& Fr_all = md->PackVariables(std::vector<std::string>{"Flux.Fr"});
 
     // Get the domain size
-    // We need fluxes outside the domain for flux-CT
-    // HOWEVER this calculates one row too many of e.g. X1 face in X1 dir (should be face 0,1 cell -1,1)
-    const IndexRange3 b = KDomain::GetRange(md, IndexDomain::interior, -1, 1);
+    // We need fluxes outside the domain for flux-CT and FOFC: one extra zone update on each side
+    const IndexRange3 b = KDomain::GetRange(md, IndexDomain::interior, FaceOf(dir), -1, 1);
     // Get other sizes we need
     const int n1 = pmb0->cellbounds.ncellsi(IndexDomain::entire);
     const IndexRange block = IndexRange{0, cmax.GetDim(5) - 1};
@@ -189,7 +188,7 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
     // If we have B field on faces, we must replace reconstructed version with that
     if (pmb0->packages.AllPackages().count("B_CT")) {
         const auto& Bf  = md->PackVariables(std::vector<std::string>{"cons.fB"});
-        const TopologicalElement face = (dir == 1) ? F1 : ((dir == 2) ? F2 : F3);
+        const TopologicalElement face = FaceOf(dir);
         pmb0->par_for("replace_face", block.s, block.e, b.ks, b.ke, b.js, b.je, b.is, b.ie,
             KOKKOS_LAMBDA(const int& bl, const int& k, const int& j, const int& i) {
                 const auto& G = U_all.GetCoords(bl);
@@ -349,7 +348,7 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
         Flag("GetFlux_"+std::to_string(dir)+"_store_vel");
         const auto& vl_all = md->PackVariables(std::vector<std::string>{"Flux.vl"});
         const auto& vr_all = md->PackVariables(std::vector<std::string>{"Flux.vr"});
-        TopologicalElement face = (dir == 1) ? F1 : (dir == 2) ? F2 : F3;
+        const TopologicalElement face = FaceOf(dir);
         pmb0->par_for("flux_llf", block.s, block.e, 0, NVEC-1, b.ks, b.ke, b.js, b.je, b.is, b.ie,
             KOKKOS_LAMBDA(const int& bl, const int& v, const int& k, const int& j, const int& i) {
                 vl_all(bl, face, v, k, j, i) = Pl_all(bl, m_p.U1+v, k, j, i);
