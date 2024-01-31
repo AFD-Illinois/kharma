@@ -70,7 +70,7 @@ TaskStatus ApplyFloorsInFrame(MeshData<Real> *md, IndexDomain domain)
         KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i) {
             const auto& G = P.GetCoords(b);
             // Flag & apply floors for successful and failed zones, just not corners
-            if (((int) pflag(b, 0, k, j, i)) >= (int) Inverter::Status::success) {
+            if (Inverter::failed(pflag(b, 0, k, j, i))) {
                 // apply_floors can involve another U_to_P call.  Hide the pflag in bottom 5 bits and retrieve both
                 int pflag_l = apply_floors<frame>(G, P(b), m_p, gam, emhd_params, k, j, i, floor_vals(b), U(b), m_u);
 

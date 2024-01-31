@@ -79,6 +79,8 @@ TaskStatus Flux::FOFC(MeshData<Real> *md, MeshData<Real> *guess)
     // Parameters
     const Real gam = pmb0->packages.Get("GRMHD")->Param<Real>("gamma");
     const EMHD::EMHD_parameters& emhd_params = EMHD::GetEMHDParameters(packages);
+    const bool spherical = pmb0->coords.coords.is_spherical();
+    const GReal r_eh = pmb0->coords.coords.get_horizon();
 
     // Pre-mark cells which will need fluxes reduced.
     // This avoids a race condition marking them multiple times when iterating faces,
@@ -88,7 +90,7 @@ TaskStatus Flux::FOFC(MeshData<Real> *md, MeshData<Real> *guess)
     pmb0->par_for("fofc_replacement", block.s, block.e, b.ks, b.ke, b.js, b.je, b.is, b.ie,
         KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i) {
             // if cell failed to invert or would call floors...
-            if (((int) fflag(b, 0, k, j, i) > 0) || ((int) pflag(b, 0, k, j, i) > 0)) {
+            if (static_cast<int>(fflag(b, 0, k, j, i)) || Inverter::failed(pflag(b, 0, k, j, i))) {
                 fofcflag(b, 0, k, j, i) = 1;
             }
         }
@@ -107,8 +109,10 @@ TaskStatus Flux::FOFC(MeshData<Real> *md, MeshData<Real> *guess)
                 int kk = (dir == 3) ? k - 1 : k;
                 int jj = (dir == 2) ? j - 1 : j;
                 int ii = (dir == 1) ? i - 1 : i;
-                // if either bordering cell is marked...
-                if (((int) fofcflag(b, 0, k, j, i) > 0) || ((int) fofcflag(b, 0, kk, jj, ii) > 0)) {
+                // If either bordering cell is marked, and always inside the EH
+                if (static_cast<int>(fofcflag(b, 0, k, j, i)) ||
+                    static_cast<int>(fofcflag(b, 0, kk, jj, ii)) ||
+                    (spherical && G.r(k, j, i) < r_eh + 0.1)) { // TODO allow customizing
                     const Loci loc = loc_of(dir);
 
                     // "Reconstruct" left & right of this face: left is left cell, right is shared-index

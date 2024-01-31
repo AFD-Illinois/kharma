@@ -279,29 +279,20 @@ TaskID KHARMADriver::AddFOFC(TaskID& t_start, TaskList& tl, MeshData<Real> *md,
     // Pull reconstruction option to simplify use. TODO shorten?
     auto pmb0  = md->GetBlockData(0)->GetBlockPointer();
     auto& pkgs = pmb0->packages.AllPackages();
-    bool use_b_ct = pkgs.count("B_CT");
 
     // TODO(BSP) thread through separate floor options somehow
     const Floors::Prescription fofc_floors = pmb0->packages.Get("Flux")->Param<Floors::Prescription>("fofc_prescription");
 
     // Populate guess source term with divergence of the existing fluxes
     // NOTE this does not include source terms!  Though, could call them here tbh
-    auto t_guess_divergence = tl.AddTask(t_start, Update::FluxDivergence<MeshData<Real>>, md, guess_src);
-    // We at least seem to need to update B?
-    auto t_b_flux = t_guess_divergence;
-    if (use_b_ct) {
-        auto t_emf_local = tl.AddTask(t_start, B_CT::CalculateEMF, md_sub_step_init);
-        t_b_flux = tl.AddTask(t_emf_local | t_guess_divergence, B_CT::AddSource, md, guess_src);
-    }
+    auto t_guess_divergence = tl.AddTask(t_start, FluxDivergence, md, guess_src,
+                                        std::vector<MetadataFlag>{Metadata::Cell, Metadata::WithFluxes}, 1);
     // Update the guess state with the guess source term, and our existing state
-    auto t_guess_update = KHARMADriver::AddStateUpdate(t_b_flux, tl,
+    // Note this includes updating cell-centered B with the fluxes -- we don't care if this version has div
+    auto t_guess_update = KHARMADriver::AddStateUpdate(t_guess_divergence, tl,
                                                        md_full_step_init, md_sub_step_init, guess_src, guess,
-                                                       use_b_ct, stage);
-    // Uncomment to copy in the existing magnetic field rather than doing the full sync/update.
-    // Faster but seemed unstable.
-    // auto t_copy_face = tl.AddTask(t_start, WeightedSumDataFace,
-    //                         std::vector<MetadataFlag>({Metadata::GetUserFlag("Explicit"), Metadata::Independent, Metadata::Face}),
-    //                         md_sub_step_init, guess, 1.0, 0.0, guess);
+                                                       {Metadata::WithFluxes},
+                                                       false, stage);
     // Recover primitive variables of the guess
     auto t_guess_prims = tl.AddTask(t_guess_update, Packages::MeshUtoP, guess, IndexDomain::entire, false);
     // Check and mark floors
@@ -314,34 +305,37 @@ TaskID KHARMADriver::AddFOFC(TaskID& t_start, TaskList& tl, MeshData<Real> *md,
 }
 
 TaskID KHARMADriver::AddStateUpdate(TaskID& t_start, TaskList& tl, MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_init,
-                                MeshData<Real> *md_flux_src, MeshData<Real> *md_update, bool update_face, int stage)
+                                    MeshData<Real> *md_flux_src, MeshData<Real> *md_update, std::vector<MetadataFlag> flags,
+                                    bool update_face, int stage)
 {
     // Update all explicitly-evolved variables using the source term
     // Add any proportion of the step start required by the integrator (e.g., RK2)
+    std::vector<MetadataFlag> flags_cell = flags; flags_cell.push_back(Metadata::Cell);
+    std::vector<MetadataFlag> flags_face = flags; flags_face.push_back(Metadata::Face);
     // TODO splitting this is stupid, but maybe the parallelization actually helps? Eh.
     auto t_avg_data_c = tl.AddTask(t_start, Update::WeightedSumData<std::vector<MetadataFlag>, MeshData<Real>>,
-                                std::vector<MetadataFlag>({Metadata::GetUserFlag("Explicit"), Metadata::Independent, Metadata::Cell}),
+                                std::vector<MetadataFlag>(flags_cell),
                                 md_sub_step_init, md_full_step_init,
                                 integrator->gam0[stage-1], integrator->gam1[stage-1],
                                 md_update);
     auto t_avg_data = t_avg_data_c;
     if (update_face) {
         t_avg_data = tl.AddTask(t_start, WeightedSumDataFace,
-                                std::vector<MetadataFlag>({Metadata::GetUserFlag("Explicit"), Metadata::Independent, Metadata::Face}),
+                                std::vector<MetadataFlag>(flags_face),
                                 md_sub_step_init, md_full_step_init,
                                 integrator->gam0[stage-1], integrator->gam1[stage-1],
                                 md_update);
     }
     // apply du/dt to the result
     auto t_update_c = tl.AddTask(t_avg_data, Update::WeightedSumData<std::vector<MetadataFlag>, MeshData<Real>>,
-                                std::vector<MetadataFlag>({Metadata::GetUserFlag("Explicit"), Metadata::Independent, Metadata::Cell}),
+                                std::vector<MetadataFlag>(flags_cell),
                                 md_update, md_flux_src,
                                 1.0, integrator->beta[stage-1] * integrator->dt,
                                 md_update);
     auto t_update = t_update_c;
     if (update_face) {
         t_update = tl.AddTask(t_avg_data, WeightedSumDataFace,
-                                std::vector<MetadataFlag>({Metadata::GetUserFlag("Explicit"), Metadata::Independent, Metadata::Face}),
+                                std::vector<MetadataFlag>(flags_face),
                                 md_update, md_flux_src,
                                 1.0, integrator->beta[stage-1] * integrator->dt,
                                 md_update);
