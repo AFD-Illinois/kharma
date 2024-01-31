@@ -216,9 +216,9 @@ KOKKOS_INLINE_FUNCTION void set_parameters(const GRCoordinates& G, const Real& r
         const Real Theta = pg / rho;
         // Compute local sound speed, ensure it is defined and >0
         // Passing NaN disables an upper bound (TODO should we have one?)
-        const Real cs2    = clip(gam * pg / (rho + (gam * u)), SMALL, 0./0.);
+        const Real cs2 = clip(gam * pg / (rho + (gam * u)), SMALL, 0./0.);
 
-        constexpr Real lambda    = 0.01;
+        constexpr Real lambda = 0.01;
 
         // Correction due to heat conduction
         if (emhd_params.conduction) {
@@ -245,7 +245,7 @@ KOKKOS_INLINE_FUNCTION void set_parameters(const GRCoordinates& G, const Real& r
                               : m::max(-bsq, -2.99 * pg / 1.07);
 
             const Real dP_ratio = m::abs(dP) / (m::abs(dP_max) + SMALL);
-            const Real inv_exp_g = m::exp((1. - dP_comp_ratio) / lambda);
+            const Real inv_exp_g = m::exp((1. - dP_ratio) / lambda);
             const Real f_fmin    = inv_exp_g / (inv_exp_g + 1.) + 1.e-5;
 
             tau = m::min(tau, f_fmin * tau_dyn);

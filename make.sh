@@ -29,25 +29,27 @@
 # Set in environment or override in machine file
 NPROC=${NPROC:-8}
 
-### Load machine-specific configurations ###
+### Load basic stuff ###
 HOST=$(hostname -f)
 if [ -z $HOST ]; then
   HOST=$(hostname)
 fi
 ARGS="$*"
 SOURCE_DIR=$(dirname "$(readlink -f "$0")")
-for machine in machines/*.sh
-do
-  source $machine
-done
 
-# If we haven't special-cased already, guess an architecture
-# This only works with newer Kokkos, it's always best to
-# specify HOST_ARCH in a machine file once you know it.
-if [[ -z "$HOST_ARCH" ]]; then
-  HOST_ARCH="NATIVE"
+# A machine config in .config overrides our defaults
+if [ -f $HOME/.config/kharma.sh ]; then
+  source $HOME/.config/kharma.sh
+else
+  for machine in $SOURCE_DIR/machines/*.sh
+  do
+    source $machine
+  done
 fi
-EXTRA_FLAGS="-DKokkos_ARCH_${HOST_ARCH}=ON $EXTRA_FLAGS"
+
+# Default to compiling for the host architecture
+# Always better to specify, though, for cross-compile/older Kokkos support
+EXTRA_FLAGS="-DKokkos_ARCH_${HOST_ARCH:-NATIVE}=ON $EXTRA_FLAGS"
 
 # Kokkos does *not* support compiling for multiple devices!
 # But if they ever do, you can separate a list of DEVICE_ARCH
@@ -73,10 +75,10 @@ fi
 
 ### Enivoronment Prep ###
 if [[ "$(which python3 2>/dev/null)" == *"conda"* ]]; then
-  echo
   echo "make.sh note:"
   echo "It looks like you have Anaconda loaded."
   echo "This is usually okay, but double-check the line 'Found MPI_CXX:' below!"
+  echo
 fi
 # Save arguments if we've changed them
 # Used in run.sh for loading the same modules/etc.
@@ -282,6 +284,12 @@ fi
 # delete the build directory
 if [[ "$ARGS" == *"clean"* ]]; then
 
+  # Should do this manually when compiling on backend nodes!
+  if [ ! -f external/parthenon/CMakeLists.txt ]; then
+    git submodule update --recursive --init
+  fi
+
+  # Patch parthenon to use KHARMA's coordinates, anything incidental
   cd external/parthenon
   if [[ $(( $(git --version | cut -d '.' -f 2) > 35 )) == "1" ]]; then
     git apply --quiet ../patches/parthenon-*.patch
@@ -290,6 +298,18 @@ if [[ "$ARGS" == *"clean"* ]]; then
     git apply ../patches/parthenon-*.patch
   fi
   cd -
+
+  # HIP requires device-capable variant functions
+  if [[ "$ARGS" == *"hip"* ]]; then
+    cd external/variant
+    if [[ $(( $(git --version | cut -d '.' -f 2) > 35 )) == "1" ]]; then
+      git apply --quiet ../patches/variant-hip.patch
+    else
+      git apply ../patches/variant-hip.patch
+    fi
+    cd -
+  fi
+
 
   rm -rf build
 fi

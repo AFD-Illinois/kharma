@@ -38,6 +38,7 @@ set(Kokkos_ENABLE_CUDA_CONSTEXPR ON CACHE BOOL "KHARMA Override")
 set(Kokkos_ENABLE_HWLOC OFF CACHE BOOL "KHARMA Override") # Possible speed improvement?
 set(Kokkos_ENABLE_AGGRESSIVE_VECTORIZATION ON CACHE BOOL "KHARMA Override")
 
+# For including the current git revision in the exe
 include(GetGitRevisionDescription)
 get_git_head_revision(GIT_REFSPEC GIT_SHA1)
 git_describe_working_tree(GIT_VERSION --tags)
@@ -52,10 +53,6 @@ else()
   find_package(MPI REQUIRED)
   include_directories(SYSTEM ${MPI_INCLUDE_PATH})
 endif()
-
-# OpenMP is usually used host-side.  We're letting Parthenon/Kokkos
-# find it though, as sometimes we require disabling it fully
-#find_package(OpenMP REQUIRED)
 
 # Build Parthenon
 add_subdirectory(external/parthenon)

@@ -55,6 +55,7 @@ void KBoundaries::DirichletImpl(std::shared_ptr<MeshBlockData<Real>> &rc, Bounda
                   - FC({Metadata::GetUserFlag("StartupOnly")});
     PackIndexMap ghostmap;
     auto q = rc->PackVariables(ghost_vars, ghostmap, coarse);
+
     // We're sometimes called without any variables to sync (e.g. syncing flags, EMFs), just return
     if (q.GetDim(4) == 0) return;
 
@@ -104,11 +105,11 @@ void KBoundaries::SetDomainDirichlet(MeshBlockData<Real> *rc, IndexDomain domain
     PackIndexMap ghostmap;
     auto q = rc->PackVariables(main_ghosts, ghostmap, coarse);
     const int q_index = ghostmap["prims.q"].first;
-    auto bound = rc->Get("Boundaries." + BoundaryName(bface)).data;
 
     // We're sometimes called without any variables to sync (e.g. syncing flags, EMFs), just return
     if (q.GetDim(4) == 0) return;
 
+    auto bound = rc->Get("Boundaries." + BoundaryName(bface)).data;
     if (q.GetDim(4) != bound.GetDim(4)) {
         std::cerr << "Dirichlet boundary mismatch! Boundary cache: " << bound.GetDim(4) << " for pack: " << q.GetDim(4) << std::endl;
         std::cerr << "Variables with ghost zones:" << std::endl;

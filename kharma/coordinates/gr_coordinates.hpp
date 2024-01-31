@@ -135,6 +135,18 @@ public:
         return *this;
     };
 
+    // Correct the coordinate system name for outputs.
+    // So far the only override we need.
+    const char *Name() const {
+        if (coords.is_spherical()) {
+            return "TransformedSpherical";
+        } else if (coords.is_transformed()) {
+            return "TransformedCartesian";
+        } else {
+            return "UniformCartesian";
+        }
+    }
+
     // TODO Test these vs going all-in on full-matrix versions and computing on the fly
     KOKKOS_INLINE_FUNCTION Real gcon(const Loci loc, const int& j, const int& i, const int mu, const int nu) const;
     KOKKOS_INLINE_FUNCTION Real gcov(const Loci loc, const int& j, const int& i, const int mu, const int nu) const;
