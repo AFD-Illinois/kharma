@@ -157,25 +157,26 @@ std::shared_ptr<KHARMAPackage> Flux::Initialize(ParameterInput *pin, std::shared
         pkg->AddField("Flux.vl", m);
     }
 
-    // We register the geometric (\Gamma*T) source here
-    pkg->AddSource = Flux::AddGeoSource;
-
-    // And the post-step diagnostics
-    pkg->PostStepDiagnosticsMesh = Flux::PostStepDiagnostics;
-
     // PROCESS FOFC
-    // Flag for when first-order fluxes were invoked
+    // Accept this a bunch of places, maybe we'll trim this...
+    // Also activate if using HLLE, as fluxes inside EH should be replaced
     bool default_fofc = false;
     if (pin->DoesParameterExist("driver", "fofc")) {
         default_fofc = pin->GetBoolean("driver", "fofc");
     } else if (pin->DoesParameterExist("flux", "fofc")) {
         default_fofc = pin->GetBoolean("flux", "fofc");
+    } else if (params.Get<bool>("use_hlle")) {
+        default_fofc = true;
     }
     bool use_fofc = pin->GetOrAddBoolean("fofc", "on", default_fofc);
     params.Add("use_fofc", use_fofc);
 
     if (use_fofc) {
-        params.Add("fofc_prescription", Floors::Prescription(pin, "fofc"));
+        if (pin->DoesBlockExist("fofc")) {
+            params.Add("fofc_prescription", Floors::Prescription(pin, "fofc"));
+        } else {
+            params.Add("fofc_prescription", Floors::Prescription(pin, "floors"));
+        }
 
         // Flag for whether FOFC was applied, for diagnostics
         // This could be another bitflag in fflag, but that would be really confusing...
@@ -192,6 +193,12 @@ std::shared_ptr<KHARMAPackage> Flux::Initialize(ParameterInput *pin, std::shared
         pkg->AddParam<>(parthenon::hist_param_key, hst_vars);
 
     }
+
+    // We register the geometric (\Gamma*T) source here
+    pkg->AddSource = Flux::AddGeoSource;
+
+    // And the post-step diagnostics
+    pkg->PostStepDiagnosticsMesh = Flux::PostStepDiagnostics;
 
     EndFlag();
     return pkg;

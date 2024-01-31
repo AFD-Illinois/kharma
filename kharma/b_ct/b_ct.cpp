@@ -76,12 +76,15 @@ std::shared_ptr<KHARMAPackage> B_CT::Initialize(ParameterInput *pin, std::shared
     if (ct_scheme == "gs05_0")
         std::cerr << "KHARMA WARNING: The G&S '05 epsilon_0 implementation does not pass all convergence tests.\n"
                   << "Use it at your own risk!\n" << std::endl;
+    if (ct_scheme == "gs05_c")
+        std::cerr << "KHARMA WARNING: The G&S '05 epsilon_c implementation has problems in GR.\n"
+                  << "Use it at your own risk!\n" << std::endl;
     // Use the default Parthenon prolongation operator, rather than the divergence-preserving one
     // This relies entirely on the EMF communication for preserving the divergence
     bool lazy_prolongation = pin->GetOrAddBoolean("b_field", "lazy_prolongation", false);
     // Need to preserve divergence if you refine/derefine during sim i.e. AMR
     if (lazy_prolongation && pin->GetString("parthenon/mesh", "refinement") == "adaptive")
-        throw std::runtime_error("Cannot use non-preserving prolongation in AMR!");
+        throw std::runtime_error("Cannot use non-divergence-preserving prolongation in AMR!");
 
     // FIELDS
 
