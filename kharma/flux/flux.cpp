@@ -424,12 +424,14 @@ TaskStatus Flux::PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
 {
     auto pmesh = md->GetMeshPointer();
     // Options
-    const auto& pars = pmesh->packages.Get("Globals")->AllParams();
-    const int extra_checks = pars.Get<int>("extra_checks");
-    const int flag_verbose = pars.Get<int>("flag_verbose");
+    const auto& globals = pmesh->packages.Get("Globals")->AllParams();
+    const int extra_checks = globals.Get<int>("extra_checks");
+    const int flag_verbose = globals.Get<int>("flag_verbose");
+    const auto& flux_pars = pmesh->packages.Get("Flux")->AllParams();
+    const bool use_fofc = flux_pars.Get<bool>("use_fofc");
 
     // Debugging/diagnostic info about FOFC hits
-    if (flag_verbose > 0) {
+    if (use_fofc && flag_verbose > 0) {
         std::map<int, std::string> fofc_label = {{1, "Flux-corrected"}};
         Reductions::StartFlagReduce(md, "fofcflag", fofc_label, IndexDomain::interior, false, 10);
         // Debugging/diagnostic info about floor and inversion flags
@@ -439,7 +441,7 @@ TaskStatus Flux::PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
     // Check for a soundspeed (ctop) of 0 or NaN
     // This functions as a "last resort" check to stop a
     // simulation on obviously bad data
-    if (extra_checks >= 1) {
+    if (extra_checks > 0) {
         int nnan = Reductions::Check<int>(md, 0);
         int nzero = Reductions::Check<int>(md, 1);
 
