@@ -161,7 +161,7 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
 }
 
 // TODO template and use as a model for future
-void MeshUtoP(MeshData<Real> *md, IndexDomain domain, bool coarse)
+TaskStatus MeshUtoP(MeshData<Real> *md, IndexDomain domain, bool coarse)
 {
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
 
@@ -182,6 +182,7 @@ void MeshUtoP(MeshData<Real> *md, IndexDomain domain, bool coarse)
             B_P(b, mu, k, j, i) = B_U(b, mu, k, j, i) / G.gdet(Loci::center, j, i);
         }
     );
+    return TaskStatus::complete;
 }
 TaskStatus BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {

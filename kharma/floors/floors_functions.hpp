@@ -151,6 +151,17 @@ KOKKOS_INLINE_FUNCTION int determine_floors(const GRCoordinates& G, const Variab
     floor_vals(0, k, j, i) = rhoflr_max;
     floor_vals(1, k, j, i) = uflr_max;
 
+    // Then ceilings, need to record these for FOFC. See real implementation.
+    const Real gamma = GRMHD::lorentz_calc(G, P, m_p, k, j, i, Loci::center);
+    if (gamma > floors.gamma_max) fflag |= FFlag::GAMMA;
+
+    const Real ktot = (gam - 1.) * P(m_p.UU, k, j, i) / m::pow(P(m_p.RHO, k, j, i), gam);
+    if (ktot > floors.ktot_max) fflag |= FFlag::KTOT;
+
+    if (floors.temp_adjust_u)
+        if (P(m_p.UU, k, j, i) / P(m_p.RHO, k, j, i) > floors.u_over_rho_max)
+            fflag |= FFlag::TEMP;
+
     return fflag;
 }
 

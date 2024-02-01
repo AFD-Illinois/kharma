@@ -40,7 +40,8 @@ using namespace parthenon;
 
 // Very bad definitions. TODO get rid of them eventually
 #define NPRIM_MAX 12
-#define PLOOP for(int ip=0; ip < nvar; ++ip)
+#define PLOOP for(int ip=0; ip < nvar_p; ++ip)
+#define ULOOP for(int ip=0; ip < nvar_u; ++ip)
 
 TaskStatus Flux::FOFC(MeshData<Real> *md, MeshData<Real> *guess)
 {
@@ -74,7 +75,8 @@ TaskStatus Flux::FOFC(MeshData<Real> *md, MeshData<Real> *guess)
     const auto& P_all = md->PackVariables(prims_flags, prims_map);
     const auto& U_all = md->PackVariablesAndFluxes(cons_hd, cons_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
-    const int nvar = U_all.GetDim(4);
+    const int nvar_p = P_all.GetDim(4);
+    const int nvar_u = U_all.GetDim(4);
 
     // Parameters
     const Real gam = pmb0->packages.Get("GRMHD")->Param<Real>("gamma");
@@ -87,7 +89,7 @@ TaskStatus Flux::FOFC(MeshData<Real> *md, MeshData<Real> *guess)
     // and isolates the potentially slow/weird integer conversion stuff so we can measure the kernel time
     const IndexRange3 b = KDomain::GetRange(md, IndexDomain::interior, -1, 1);
     const IndexRange block = IndexRange{0, P_all.GetDim(5) - 1};
-    pmb0->par_for("fofc_replacement", block.s, block.e, b.ks, b.ke, b.js, b.je, b.is, b.ie,
+    pmb0->par_for("fofc_mark", block.s, block.e, b.ks, b.ke, b.js, b.je, b.is, b.ie,
         KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i) {
             // if cell failed to invert or would call floors...
             if (static_cast<int>(fflag(b, 0, k, j, i)) || Inverter::failed(pflag(b, 0, k, j, i))) {
@@ -96,10 +98,10 @@ TaskStatus Flux::FOFC(MeshData<Real> *md, MeshData<Real> *guess)
         }
     );
 
-    for (auto el : {F1, F2, F3}) {
-        const int dir = (el == F1) ? 1 : ((el == F2) ? 2 : 3);
-        if (dir > ndim) continue; // TODO(BSP) if(trivial_direction)
-        const IndexRange3 b = KDomain::GetRange(md, IndexDomain::interior, el, -1, 1);
+    for (int dir=1; dir <= ndim; dir++) { // TODO if(trivial_direction) etc
+        const TE el = FaceOf(dir);
+        const Loci loc = loc_of(dir);
+        const IndexRange3 b = KDomain::GetRange(md, IndexDomain::interior, el);
         const IndexRange block = IndexRange{0, P_all.GetDim(5) - 1};
         pmb0->par_for("fofc_replacement", block.s, block.e, b.ks, b.ke, b.js, b.je, b.is, b.ie,
             KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i) {
@@ -113,7 +115,6 @@ TaskStatus Flux::FOFC(MeshData<Real> *md, MeshData<Real> *guess)
                 if (static_cast<int>(fofcflag(b, 0, k, j, i)) ||
                     static_cast<int>(fofcflag(b, 0, kk, jj, ii)) ||
                     (spherical && G.r(k, j, i) < r_eh + 0.1)) { // TODO allow customizing
-                    const Loci loc = loc_of(dir);
 
                     // "Reconstruct" left & right of this face: left is left cell, right is shared-index
                     PLOOP Pl_all(b, ip, k, j, i) = P_all(b, ip, kk, jj, ii);
@@ -143,8 +144,8 @@ TaskStatus Flux::FOFC(MeshData<Real> *md, MeshData<Real> *guess)
                     cmin(b, dir-1, k, j, i) = m::abs(m::max(cmin(b, dir-1, k, j, i), -cminR));
 
 
-                    // Use LLF flux
-                    PLOOP
+                    // Use LLF flux. Note we only replace the 5 fluid variables
+                    ULOOP
                         U_all(b).flux(dir, ip, k, j, i) = llf(Fl_all(b, ip, k, j, i), Fr_all(b, ip, k, j, i),
                                                             cmax(b, dir-1, k, j, i), cmin(b, dir-1, k, j, i),
                                                             Ul_all(b, ip, k, j, i), Ur_all(b, ip, k, j, i));

@@ -280,7 +280,6 @@ TaskID KHARMADriver::AddFOFC(TaskID& t_start, TaskList& tl, MeshData<Real> *md,
     auto pmb0  = md->GetBlockData(0)->GetBlockPointer();
     auto& pkgs = pmb0->packages.AllPackages();
 
-    // TODO(BSP) thread through separate floor options somehow
     const Floors::Prescription fofc_floors = pmb0->packages.Get("Flux")->Param<Floors::Prescription>("fofc_prescription");
 
     // Populate guess source term with divergence of the existing fluxes
@@ -291,10 +290,11 @@ TaskID KHARMADriver::AddFOFC(TaskID& t_start, TaskList& tl, MeshData<Real> *md,
     // Note this includes updating cell-centered B with the fluxes -- we don't care if this version has div
     auto t_guess_update = KHARMADriver::AddStateUpdate(t_guess_divergence, tl,
                                                        md_full_step_init, md_sub_step_init, guess_src, guess,
-                                                       {Metadata::WithFluxes},
+                                                       {Metadata::WithFluxes, Metadata::Cell},
                                                        false, stage);
-    // Recover primitive variables of the guess
-    auto t_guess_prims = tl.AddTask(t_guess_update, Packages::MeshUtoP, guess, IndexDomain::entire, false);
+    // Recover primitive variables of the guess (carefully, since code-wide functions respect B at faces!)
+    auto t_guess_Bp = tl.AddTask(t_guess_update, B_FluxCT::MeshUtoP, guess, IndexDomain::entire, false);
+    auto t_guess_prims = tl.AddTask(t_guess_Bp, Inverter::MeshUtoP, guess, IndexDomain::entire, false);
     // Check and mark floors
     auto t_mark_floors = tl.AddTask(t_guess_prims, Floors::DetermineGRMHDFloors, guess, IndexDomain::entire, fofc_floors);
     // Finally, replace any fluxes bordering marked zones with donor-cell/LLF versions
