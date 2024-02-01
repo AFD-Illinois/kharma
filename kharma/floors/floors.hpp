@@ -95,14 +95,16 @@ enum class InjectionFrame{fluid=0, normal, mixed, drift};
  */
 class Prescription {
     public:
+        // Constant sanity limits
+        Real rho_min_const, u_min_const;
         // Purely geometric limits
-        double rho_min_geom, u_min_geom, r_char, frame_switch;
+        Real rho_min_geom, u_min_geom, r_char;
         // Dynamic limits on magnetization/temperature
-        double bsq_over_rho_max, bsq_over_u_max, u_over_rho_max;
+        Real bsq_over_rho_max, bsq_over_u_max, u_over_rho_max;
         // Limit entropy
-        double ktot_max;
+        Real ktot_max;
         // Limit fluid Lorentz factor
-        double gamma_max;
+        Real gamma_max;
         // Floor options (frame was MOVED to templating)
         bool use_r_char, temp_adjust_u, adjust_k;
 
@@ -114,17 +116,23 @@ class Prescription {
                 // In spherical systems, floors drop as r^2, so set them higher by default
                 rho_min_geom = pin->GetOrAddReal(block, "rho_min_geom", 1.e-6);
                 u_min_geom = pin->GetOrAddReal(block, "u_min_geom", 1.e-8);
-            } else {
-                rho_min_geom = pin->GetOrAddReal(block, "rho_min_geom", 1.e-8);
-                u_min_geom = pin->GetOrAddReal(block, "u_min_geom", 1.e-10);
+                // Some constant for large distances. New, out of the way by default
+                rho_min_const = pin->GetOrAddReal(block, "rho_min_const", 1.e-20);
+                u_min_const = pin->GetOrAddReal(block, "u_min_const", 1.e-20);
+            } else { // TODO spherical cart will also have both
+                // Accept old names
+                Real rho_min_const_default = pin->DoesParameterExist(block, "rho_min_geom") ?
+                                             pin->GetReal(block, "rho_min_geom") : 1.e-8;
+                Real u_min_const_default = pin->DoesParameterExist(block, "u_min_geom") ?
+                                           pin->GetReal(block, "u_min_geom") : 1.e-10;
+                rho_min_const = pin->GetOrAddReal(block, "rho_min_const", rho_min_const_default);
+                u_min_const = pin->GetOrAddReal(block, "u_min_const", u_min_const_default);
             }
 
             // In iharm3d, overdensities would run away; one proposed solution was
             // to decrease the density floor more with radius.  However, in practice
             // 1. This proved to be a result of the floor vs bsq, not the geometric one
             // 2. interior density floors are dominated by the floor vs bsq
-            // Also, this changes the internal energy floor pretty drastically --
-            // newly interesting in light of increases to the UU floors
             use_r_char = pin->GetOrAddBoolean(block, "use_r_char", false);
             r_char = pin->GetOrAddReal(block, "r_char", 10);
 
@@ -143,9 +151,6 @@ class Prescription {
 
             // Limit the fluid Lorentz factor gamma
             gamma_max = pin->GetOrAddReal(block, "gamma_max", 50.);
-
-            // We initialize this even if not using mixed frame, for constructing Prescription objs
-            frame_switch = pin->GetOrAddReal(block, "frame_switch", 50.);
         }
 };
 

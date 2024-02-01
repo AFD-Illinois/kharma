@@ -99,26 +99,14 @@ KOKKOS_INLINE_FUNCTION int determine_floors(const GRCoordinates& G, const Variab
     // TODO(BSP) can this be cached if it's slow?
     Real rhoflr_geom, uflr_geom;
     if(G.coords.is_spherical()) {
-        GReal Xembed[GR_DIM];
-        G.coord_embed(k, j, i, Loci::center, Xembed);
-        GReal r = Xembed[1];
-        // TODO measure whether this/if 1 is really faster
-        // GReal r = m::exp(G.x1v(i));
-
-        if (floors.use_r_char) {
-            // Steeper floor from iharm3d
-            Real rhoscal = 1. / ((r*r) * (1 + r / floors.r_char));
-            rhoflr_geom  = floors.rho_min_geom * rhoscal;
-            uflr_geom    = floors.u_min_geom * m::pow(rhoscal, gam);
-        } else {
-            // Original floors from iharm2d
-            Real rhoscal = 1. / m::sqrt(r*r*r);
-            rhoflr_geom = floors.rho_min_geom * rhoscal;
-            uflr_geom   = floors.u_min_geom * rhoscal / r;
-        }
+        const GReal r = G.r(k, j, i);
+        // r_char sets more aggressive floor close to EH but backs off
+        Real rhoscal = (floors.use_r_char) ? 1. / ((r*r) * (1 + r / floors.r_char)) : 1. / m::sqrt(r*r*r);
+        rhoflr_geom = m::max(floors.rho_min_geom * rhoscal, floors.rho_min_const);
+        uflr_geom   = m::max(floors.u_min_geom * m::pow(rhoscal, gam), floors.u_min_const);
     } else {
-        rhoflr_geom = floors.rho_min_geom;
-        uflr_geom   = floors.u_min_geom;
+        rhoflr_geom = floors.rho_min_const;
+        uflr_geom   = floors.u_min_const;
     }
 
     // 2. Magnetization ceilings: impose maximum magnetization sigma = bsq/rho, and inverse beta prop. to bsq/U
@@ -319,9 +307,8 @@ KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::normal>(FLOOR_ONE_ARGS)
 template<>
 KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::mixed>(FLOOR_ONE_ARGS)
 {
-    GReal Xembed[GR_DIM];
-    G.coord_embed(k, j, i, Loci::center, Xembed);
-    if (Xembed[1] > 50.) {
+    // TODO(BSP) thread through frame_switch option
+    if (G.r(k, j, i) > 50.) {
         return apply_floors<InjectionFrame::fluid>(G, P, m_p, gam, emhd_params, k, j, i, floor_vals, U, m_u);
     } else {
         return apply_floors<InjectionFrame::normal>(G, P, m_p, gam, emhd_params, k, j, i, floor_vals, U, m_u);

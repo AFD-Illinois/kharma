@@ -77,8 +77,13 @@ std::shared_ptr<KHARMAPackage> Floors::Initialize(ParameterInput *pin, std::shar
     }
     params.Add("frame", frame);
 
-    // Disable all floors.  It is obviously tremendously inadvisable to
-    // set this option to true
+    // Switch point for "mixed" frame, r_g
+    if (frame == InjectionFrame::mixed) {
+        GReal frame_switch = pin->GetOrAddReal("floors", "frame_switch", 50.);
+        params.Add("frame_switch", frame_switch);
+    }
+
+    // Disable all floors.  It is obviously tremendously inadvisable to do this
     bool disable_floors = pin->GetOrAddBoolean("floors", "disable_floors", false);
     params.Add("disable_floors", disable_floors);
 

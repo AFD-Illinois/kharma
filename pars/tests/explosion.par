@@ -61,13 +61,14 @@ u_min_geom = 1e-10
 
 <fofc>
 on = true
-gamma_max = 5
-rho_min_geom = 1e-10
-u_min_geom = 1e-10
+rho_min_geom = 1e-9
+u_min_geom = 1e-9
+bsq_over_rho_max = 1
+bsq_over_u_max = 100
 
 <b_field>
 solver = face_ct
-ct_scheme = gs05_c
+ct_scheme = bs99
 type = constant
 B10 = 1.0
 
