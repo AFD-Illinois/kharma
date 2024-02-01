@@ -111,17 +111,14 @@ inline void BlockPerformInversion(MeshBlockData<Real> *rc, IndexDomain domain, b
     const Real stepsize = pmb->packages.Get("Inverter")->Param<Real>("stepsize");
 
     // Get the primitives from our conserved versions
-    // Notice we recover variables for only the physical (interior or MPI-boundary)
+    // Notice we recover variables for only the physical (interior or interior-ghost)
     // zones!  These are the only ones which are filled at our point in the step
     auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
     const IndexRange3 b = KDomain::GetPhysicalRange(rc);
 
     pmb->par_for("U_to_P", b.ks, b.ke, b.js, b.je, b.is, b.ie,
         KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-            if (KDomain::inside(k, j, i, b)) {
-                // Run over all interior zones and any initialized ghosts
-                pflag(0, k, j, i) = static_cast<double>(Inverter::u_to_p<inverter>(G, U, m_u, gam, k, j, i, P, m_p, Loci::center));
-            }
+            pflag(0, k, j, i) = static_cast<double>(Inverter::u_to_p<inverter>(G, U, m_u, gam, k, j, i, P, m_p, Loci::center));
         }
     );
 }

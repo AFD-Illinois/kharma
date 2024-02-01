@@ -190,12 +190,8 @@ TaskStatus Floors::DetermineGRMHDFloors(MeshData<Real> *md, IndexDomain domain, 
     const IndexRange block = IndexRange{0, P.GetDim(5) - 1};
     pmb0->par_for("determine_floors", block.s, block.e, b.ks, b.ke, b.js, b.je, b.is, b.ie,
         KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i) {
-            // Flag & apply floors for successful and failed zones, just not corners
-            // TODO(BSP) still necessary?
-            if (Inverter::failed(pflag(b, 0, k, j, i))) {
-                const auto& G = P.GetCoords(b);
-                fflag(b, 0, k, j, i) = determine_floors(G, P(b), m_p, gam, k, j, i, floors, floor_vals(b));
-            }
+            const auto& G = P.GetCoords(b);
+            fflag(b, 0, k, j, i) = determine_floors(G, P(b), m_p, gam, k, j, i, floors, floor_vals(b));
         }
     );
 
