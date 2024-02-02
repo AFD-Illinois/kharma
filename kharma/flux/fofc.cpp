@@ -40,8 +40,7 @@ using namespace parthenon;
 
 // Very bad definitions. TODO get rid of them eventually
 #define NPRIM_MAX 12
-#define PLOOP for(int ip=0; ip < nvar_p; ++ip)
-#define ULOOP for(int ip=0; ip < nvar_u; ++ip)
+#define PLOOP for(int ip=0; ip < nvar; ++ip)
 
 TaskStatus Flux::FOFC(MeshData<Real> *md, MeshData<Real> *guess)
 {
@@ -71,12 +70,11 @@ TaskStatus Flux::FOFC(MeshData<Real> *md, MeshData<Real> *guess)
     // It will be filled according to m_u/cons_map, which does not contain B
     PackIndexMap cons_map, prims_map;
     std::vector<MetadataFlag> prims_flags = {Metadata::GetUserFlag("Primitive"), Metadata::Cell};
-    std::vector<MetadataFlag> cons_hd = {Metadata::Conserved, Metadata::GetUserFlag("HD"), Metadata::Cell};
+    std::vector<MetadataFlag> cons_hd = {Metadata::Conserved, Metadata::Cell};
     const auto& P_all = md->PackVariables(prims_flags, prims_map);
     const auto& U_all = md->PackVariablesAndFluxes(cons_hd, cons_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
-    const int nvar_p = P_all.GetDim(4);
-    const int nvar_u = U_all.GetDim(4);
+    const int nvar = U_all.GetDim(4);
 
     // Parameters
     const Real gam = pmb0->packages.Get("GRMHD")->Param<Real>("gamma");
@@ -144,8 +142,9 @@ TaskStatus Flux::FOFC(MeshData<Real> *md, MeshData<Real> *guess)
                     cmin(b, dir-1, k, j, i) = m::abs(m::max(cmin(b, dir-1, k, j, i), -cminR));
 
 
-                    // Use LLF flux. Note we only replace the 5 fluid variables
-                    ULOOP
+                    // Use LLF flux. Note we replace fluxes of all variables (including B!)
+                    // This is for a consistent scheme, i.e. all cells FOFC == 
+                    PLOOP
                         U_all(b).flux(dir, ip, k, j, i) = llf(Fl_all(b, ip, k, j, i), Fr_all(b, ip, k, j, i),
                                                             cmax(b, dir-1, k, j, i), cmin(b, dir-1, k, j, i),
                                                             Ul_all(b, ip, k, j, i), Ur_all(b, ip, k, j, i));
