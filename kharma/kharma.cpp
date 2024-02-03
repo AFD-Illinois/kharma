@@ -50,6 +50,7 @@
 #include "kharma_driver.hpp"
 #include "electrons.hpp"
 #include "implicit.hpp"
+#include "inverter.hpp"
 #include "floors.hpp"
 #include "grmhd.hpp"
 #include "reductions.hpp"

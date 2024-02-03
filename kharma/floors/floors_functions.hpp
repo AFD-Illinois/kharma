@@ -34,6 +34,7 @@
 #pragma once
 
 #include "floors.hpp"
+#include "inverter.hpp"
 
 /**
  * Device-side functions for applying GRMHD floors
@@ -303,8 +304,8 @@ KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::normal>(FLOOR_ONE_ARGS)
     U(m_u.U3, k, j, i)  += T[3];
     
     // Recover primitive variables from conserved versions
-    // TODO(BSP) add this to the template somehow when kastaun comes online?
-    Inverter::Status pflag = Inverter::u_to_p<Inverter::Type::onedw>(G, U, m_u, gam, k, j, i, P, m_p, Loci::center);
+    // TODO(BSP) replace w/kastaun when good
+    int pflag = Inverter::u_to_p<Inverter::Type::onedw>(G, U, m_u, gam, k, j, i, P, m_p, Loci::center);
     // 4. If the inversion fails, we've effectively already applied the floors in fluid-frame to the prims,
     // so we just formalize that
     if (Inverter::failed(pflag)) {
@@ -316,7 +317,7 @@ KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::normal>(FLOOR_ONE_ARGS)
 }
 
 template<>
-KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::mixed>(FLOOR_ONE_ARGS)
+KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::mixed_fluid_normal>(FLOOR_ONE_ARGS)
 {
     // TODO(BSP) thread through frame_switch option
     if (G.r(k, j, i) > 50.) {

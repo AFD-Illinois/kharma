@@ -87,6 +87,8 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
     }
     const Floors::Prescription& floors = floors_temp;
 
+    const bool reconstruction_fallback = pars.Get<bool>("reconstruction_fallback");
+
     const Real gam = mhd_pars.Get<Real>("gamma");
 
     // Check whether we're using constraint-damping
@@ -132,11 +134,13 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
     // Allocate scratch space
     const int scratch_level = 1; // 0 is actual scratch (tiny); 1 is HBM
     const size_t var_size_in_bytes = parthenon::ScratchPad2D<Real>::shmem_size(nvar, n1);
+    const size_t line_size_in_bytes = parthenon::ScratchPad1D<int>::shmem_size(n1);
     // Allocate enough to cache prims, conserved, and fluxes, for left and right faces,
     // plus temporaries inside reconstruction (most use none, donor_cell uses one, linear_vl uses a bunch)
     using RType = KReconstruction::Type;
     const size_t recon_scratch_bytes = (2 + 1*(Recon == RType::donor_cell) +
-                                            5*(Recon == RType::linear_vl)) * var_size_in_bytes;
+                                            5*(Recon == RType::linear_vl)) * var_size_in_bytes +
+                                        line_size_in_bytes;
     const size_t flux_scratch_bytes = 3 * var_size_in_bytes;
 
     // This isn't a pmb0->par_for_outer because Parthenon's current overloaded definitions
@@ -148,6 +152,7 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
             const auto& G = U_all.GetCoords(bl);
             ScratchPad2D<Real> Pl_s(member.team_scratch(scratch_level), nvar, n1);
             ScratchPad2D<Real> Pr_s(member.team_scratch(scratch_level), nvar, n1);
+            ScratchPad1D<int> fallback_tvd(member.team_scratch(scratch_level), n1);
 
             // We template on reconstruction type to avoid a big switch statement here.
             // Instead, a version of GetFlux() is generated separately for each reconstruction/direction pair.
@@ -163,13 +168,33 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
                     auto Pr = Kokkos::subview(Pr_s, Kokkos::ALL(), i);
                     // Apply floors to the *reconstructed* primitives, because without TVD
                     // we have no guarantee they remotely resemble the *centered* primitives
-                    if (reconstruction_floors) {
-                        Floors::apply_geo_floors(G, Pl, m_p, gam, j, i, floors, loc);
-                        Floors::apply_geo_floors(G, Pr, m_p, gam, j, i, floors, loc);
+                    // If we selected to fall back to TVD, the floors are at zero (as intended)
+                    if (reconstruction_floors || reconstruction_fallback) {
+                        fallback_tvd(i)  = Floors::apply_geo_floors(G, Pl, m_p, gam, j, i, floors, loc);
+                        fallback_tvd(i) |= Floors::apply_geo_floors(G, Pr, m_p, gam, j, i, floors, loc);
                     }
                 }
             );
             member.team_barrier();
+
+            if (reconstruction_fallback) {
+                int kk = (dir == 3) ? k - 1 : k;
+                int jj = (dir == 2) ? j - 1 : j;
+                for (int p = 0; p <= P_all.GetDim(4) - 1; ++p) {
+                    parthenon::par_for_inner(member, b.is, b.ie,
+                        [&](const int& i) {
+                            int ii = (dir == 1) ? i - 1 : i;
+                            // Donor cell is TVD, shut up
+                            // TODO(BSP) better TVD?
+                            if (fallback_tvd(i)) {
+                                Pl_s(p, i) = P_all(bl, p, kk, jj, ii);
+                                Pr_s(p, i) = P_all(bl, p, k, j, i);
+                            }
+                        }
+                    );
+                }
+                member.team_barrier();
+            }
 
             // Copy out state (TODO(BSP) eliminate)
             for (int p=0; p < nvar; ++p) {

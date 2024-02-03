@@ -95,7 +95,7 @@ KOKKOS_INLINE_FUNCTION Real err_eqn(const Real& gam, const Real& Bsq, const Real
  * 1D_W inverter from Ressler et al. 2006.
  */
 template <>
-KOKKOS_INLINE_FUNCTION Status u_to_p<Type::onedw>(const GRCoordinates &G, const VariablePack<Real>& U, const VarMap& m_u,
+KOKKOS_INLINE_FUNCTION int u_to_p<Type::onedw>(const GRCoordinates &G, const VariablePack<Real>& U, const VarMap& m_u,
                                               const Real& gam, const int& k, const int& j, const int& i,
                                               const VariablePack<Real>& P, const VarMap& m_p,
                                               const Loci loc)
@@ -105,7 +105,7 @@ KOKKOS_INLINE_FUNCTION Status u_to_p<Type::onedw>(const GRCoordinates &G, const 
     //                                         U(m_u.U3, k, j, i), U(m_u.B1, k, j, i), U(m_u.B2, k, j, i), U(m_u.B3, k, j, i));
     // Catch negative density
     if (U(m_u.RHO, k, j, i) <= 0.) {
-        return Status::neg_input;
+        return static_cast<int>(Status::neg_input);
     }
 
     // Convert from conserved variables to four-vectors
@@ -155,7 +155,7 @@ KOKKOS_INLINE_FUNCTION Status u_to_p<Type::onedw>(const GRCoordinates &G, const 
     Real Wp, err;
     {
         const Real gamma = GRMHD::lorentz_calc(G, P, m_p, k, j, i, loc);
-        if (gamma < 1) return Status::bad_ut;
+        if (gamma < 1) return static_cast<int>(Status::bad_ut);
         const Real rho = P(m_p.RHO, k, j, i), u = P(m_p.UU, k, j, i);
 
         Wp = (rho + u + (gam - 1) * u) * gamma * gamma - rho * gamma;
@@ -206,11 +206,11 @@ KOKKOS_INLINE_FUNCTION Status u_to_p<Type::onedw>(const GRCoordinates &G, const 
     // Uncomment to error on any bad velocity.  iharm2d/3d do not do this.
     //if (eflag) return eflag;
     // Return failure to converge
-    if (iter == UTOP_ITER_MAX) return Status::max_iter;
+    if (iter == UTOP_ITER_MAX) return static_cast<int>(Status::max_iter);
 
     // Find utsq, gamma, rho from Wp
     const Real gamma = lorentz_calc_w(Bsq, D, QdB, Qtsq, Wp);
-    if (gamma < 1) return Status::bad_ut;
+    if (gamma < 1) return static_cast<int>(Status::bad_ut);
 
     const Real rho = D / gamma;
     const Real W = Wp + D;
@@ -219,9 +219,9 @@ KOKKOS_INLINE_FUNCTION Status u_to_p<Type::onedw>(const GRCoordinates &G, const 
     const Real u = w - (rho + p);
 
     // Return without updating non-B primitives
-    if (rho < 0 && u < 0) return Status::neg_rhou;
-    else if (rho < 0) return Status::neg_rho;
-    else if (u < 0) return Status::neg_u;
+    if (rho < 0 && u < 0) return static_cast<int>(Status::neg_rhou);
+    else if (rho < 0) return static_cast<int>(Status::neg_rho);
+    else if (u < 0) return static_cast<int>(Status::neg_u);
 
     // Set primitives
     P(m_p.RHO, k, j, i) = rho;
@@ -233,7 +233,7 @@ KOKKOS_INLINE_FUNCTION Status u_to_p<Type::onedw>(const GRCoordinates &G, const 
     P(m_p.U2, k, j, i) = pre * (Qtcon[2] + QdB * Bcon[2] / W);
     P(m_p.U3, k, j, i) = pre * (Qtcon[3] + QdB * Bcon[3] / W);
 
-    return Status::success;
+    return static_cast<int>(Status::success);
 }
 
 } // namespace Inverter

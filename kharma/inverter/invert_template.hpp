@@ -44,7 +44,7 @@
 namespace Inverter {
 
 // Denote inverter types. Currently just one
-enum class Type{none=0, onedw};
+enum class Type{none=0, onedw, kastaun};
 
 // Denote inversion failures (pflags)
 // This enum should grow to cover any inversion algorithm
@@ -83,7 +83,7 @@ KOKKOS_INLINE_FUNCTION bool failed(T status_flag)
  * BEFORE you instantiate the template.
  */
 template<Type inverter>
-KOKKOS_INLINE_FUNCTION Status u_to_p(const GRCoordinates &G, const VariablePack<Real>& U, const VarMap& m_u,
+KOKKOS_INLINE_FUNCTION int u_to_p(const GRCoordinates &G, const VariablePack<Real>& U, const VarMap& m_u,
                                               const Real& gam, const int& k, const int& j, const int& i,
                                               const VariablePack<Real>& P, const VarMap& m_p,
                                               const Loci loc);

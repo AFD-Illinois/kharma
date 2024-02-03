@@ -39,7 +39,6 @@
 #include "b_flux_ct.hpp"
 #include "flux_functions.hpp"
 #include "grmhd_functions.hpp"
-#include "inverter.hpp"
 #include "emhd.hpp"
 #include "reductions.hpp"
 
@@ -86,7 +85,7 @@ static const std::map<int, std::string> flag_names = {
 };
 }
 
-enum class InjectionFrame{fluid=0, normal, mixed, drift};
+enum class InjectionFrame{fluid=0, normal, mixed_fluid_normal, mixed_fluid_drift, drift};
 
 /**
  * Struct to hold floor values without cumbersome dictionary/string logistics.

@@ -41,6 +41,7 @@
 #include "b_ct.hpp"
 #include "b_flux_ct.hpp"
 #include "electrons.hpp"
+#include "inverter.hpp"
 #include "grmhd.hpp"
 #include "wind.hpp"
 // Other headers

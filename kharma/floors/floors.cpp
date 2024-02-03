@@ -38,6 +38,7 @@
 #include "domain.hpp"
 #include "grmhd.hpp"
 #include "grmhd_functions.hpp"
+#include "inverter.hpp"
 #include "pack.hpp"
 
 // Floors.  Apply limits to fluid values to maintain integrable state
@@ -71,16 +72,21 @@ std::shared_ptr<KHARMAPackage> Floors::Initialize(ParameterInput *pin, std::shar
     } else if (frame_s == "fluid") {
         frame = InjectionFrame::fluid;
     } else if (frame_s == "mixed") {
-        frame = InjectionFrame::mixed;
+        frame = InjectionFrame::mixed_fluid_normal;
+    } else if (frame_s == "mixed_drift") {
+        frame = InjectionFrame::mixed_fluid_drift;
     } else if (frame_s == "drift") {
         frame = InjectionFrame::drift;
     }
     params.Add("frame", frame);
 
-    // Switch point for "mixed" frame, r_g
-    if (frame == InjectionFrame::mixed) {
-        GReal frame_switch = pin->GetOrAddReal("floors", "frame_switch", 50.);
-        params.Add("frame_switch", frame_switch);
+    // Switch points for "mixed" frames
+    if (frame == InjectionFrame::mixed_fluid_normal) {
+        GReal frame_switch_r = pin->GetOrAddReal("floors", "frame_switch_r", 50.);
+        params.Add("frame_switch_r", frame_switch_r);
+    } else if (frame == InjectionFrame::mixed_fluid_drift) {
+        GReal frame_switch_beta = pin->GetOrAddReal("floors", "frame_switch_beta", 10.);
+        params.Add("frame_switch_beta", frame_switch_beta);
     }
 
     // Disable all floors.  It is obviously tremendously inadvisable to do this
@@ -214,8 +220,8 @@ TaskStatus Floors::ApplyGRMHDFloors(MeshData<Real> *md, IndexDomain domain)
         return ApplyFloorsInFrame<InjectionFrame::normal>(md, domain);
     } else if (pars.Get<InjectionFrame>("frame") == InjectionFrame::fluid) {
         return ApplyFloorsInFrame<InjectionFrame::fluid>(md, domain);
-    } else if (pars.Get<InjectionFrame>("frame") == InjectionFrame::mixed) {
-        return ApplyFloorsInFrame<InjectionFrame::mixed>(md, domain);
+    } else if (pars.Get<InjectionFrame>("frame") == InjectionFrame::mixed_fluid_normal) {
+        return ApplyFloorsInFrame<InjectionFrame::mixed_fluid_normal>(md, domain);
     } else if (pars.Get<InjectionFrame>("frame") == InjectionFrame::drift) {
         return ApplyFloorsInFrame<InjectionFrame::drift>(md, domain);
     } else {

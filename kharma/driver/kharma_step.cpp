@@ -41,6 +41,7 @@
 #include "b_ct.hpp"
 #include "electrons.hpp"
 #include "grmhd.hpp"
+#include "inverter.hpp"
 #include "wind.hpp"
 // Other headers
 #include "boundaries.hpp"

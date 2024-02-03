@@ -40,6 +40,7 @@
 // Additionally, invert_template contains the Type and Status enums
 #include "invert_template.hpp"
 #include "onedw.hpp"
+#include "kastaun.hpp"
 
 #include "pack.hpp"
 

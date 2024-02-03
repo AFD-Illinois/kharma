@@ -35,6 +35,7 @@
 #include "flux.hpp"
 
 #include "domain.hpp"
+#include "inverter.hpp"
 
 using namespace parthenon;
 

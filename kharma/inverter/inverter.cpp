@@ -33,8 +33,7 @@
  */
 #include "inverter.hpp"
 
-// This will include headers in the correct order
-#include "invert_template.hpp"
+// inverter.hpp includes the template and instantiations in the correct order
 
 #include "domain.hpp"
 #include "reductions.hpp"
@@ -52,9 +51,12 @@ std::shared_ptr<KHARMAPackage> Inverter::Initialize(ParameterInput *pin, std::sh
     Real stepsize = pin->GetOrAddReal("inverter", "stepsize", 1e-5);
     params.Add("stepsize", stepsize);
 
-    std::string inverter_name = pin->GetOrAddString("inverter", "type", "onedw");
+    std::vector<std::string> allowed_inverter_names = {"none", "onedw", "kastaun"};
+    std::string inverter_name = pin->GetOrAddString("inverter", "type", "onedw", allowed_inverter_names);
     if (inverter_name == "onedw") {
         params.Add("inverter_type", Type::onedw);
+    } else if (inverter_name == "kastaun") {
+        params.Add("inverter_type", Type::kastaun);
     } else if (inverter_name == "none") {
         params.Add("inverter_type", Type::none);
     }
@@ -130,6 +132,9 @@ void Inverter::BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coars
     switch(type) {
     case Type::onedw:
         BlockPerformInversion<Type::onedw>(rc, domain, coarse);
+        break;
+    case Type::kastaun:
+        BlockPerformInversion<Type::kastaun>(rc, domain, coarse);
         break;
     case Type::none:
         break;

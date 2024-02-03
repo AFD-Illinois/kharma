@@ -127,6 +127,9 @@ std::shared_ptr<KHARMAPackage> Flux::Initialize(ParameterInput *pin, std::shared
     bool reconstruction_floors = pin->GetOrAddBoolean("flux", "reconstruction_floors", default_recon_floors);
     params.Add("reconstruction_floors", reconstruction_floors);
 
+    bool reconstruction_fallback = pin->GetOrAddBoolean("flux", "reconstruction_fallback", false);
+    params.Add("reconstruction_fallback", reconstruction_fallback);
+
     // We can't just use GetVariables or something since there's no mesh yet.
     // That's what this function is for.
     int nvar = KHARMA::PackDimension(packages.get(), Metadata::WithFluxes);
@@ -168,11 +171,18 @@ std::shared_ptr<KHARMAPackage> Flux::Initialize(ParameterInput *pin, std::shared
     } else if (params.Get<bool>("use_hlle")) {
         default_fofc = true;
     }
+    // We're about to add a <fofc> block for clarity,
+    // but if the user didn't add one we use default floors below
+    bool fofc_block_in_input = pin->DoesBlockExist("fofc");
     bool use_fofc = pin->GetOrAddBoolean("fofc", "on", default_fofc);
     params.Add("use_fofc", use_fofc);
 
     if (use_fofc) {
-        if (pin->DoesBlockExist("fofc")) {
+        // FOFC-specific options
+        bool use_global_speed = pin->GetOrAddBoolean("fofc", "use_global_speed", false);
+        params.Add("use_global_speed", use_global_speed);
+
+        if (pin->GetOrAddBoolean("fofc", "use_custom_floors", fofc_block_in_input)) {
             params.Add("fofc_prescription", Floors::Prescription(pin, "fofc"));
         } else {
             params.Add("fofc_prescription", Floors::Prescription(pin, "floors"));

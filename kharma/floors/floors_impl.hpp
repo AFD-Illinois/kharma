@@ -1,5 +1,5 @@
 /* 
- *  File: floors_functions.hpp
+ *  File: floors_impl.hpp
  *  
  *  BSD 3-Clause License
  *  
