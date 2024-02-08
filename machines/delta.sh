@@ -25,24 +25,26 @@ then
     MPI_EXTRA_ARGS="--map-by ppr:4:node:pe=16"
     MPI_NUM_PROCS=4
 
-    # Device-side buffers are broken on some Nvidia machines
-    EXTRA_FLAGS="-DPARTHENON_ENABLE_HOST_COMM_BUFFERS=ON $EXTRA_FLAGS"
+    if [[ "$ARGS" == *"hostside"* ]]; then
+      # Device-side buffers are broken on some Nvidia machines
+      EXTRA_FLAGS="-DPARTHENON_ENABLE_HOST_COMM_BUFFERS=ON $EXTRA_FLAGS"
+    fi
 
-    # Load common GPU modules
-    module load gcc/11.4.0 cuda/11.8.0  openmpi/4.1.5+cuda
-
-    if [[ $ARGS == *"latest"* ]]; then
-      # nvhpc only on request, MPI crashes
-      module load nvhpc_latest openmpi-5.0_beta
-      C_NATIVE=nvc
-      CXX_NATIVE=nvc++
-    elif [[ $ARGS == *"gcc"* ]]; then
+    if [[ $ARGS == *"gcc"* ]]; then
+      module load gcc/11.4.0 cuda/11.8.0 openmpi/4.1.5+cuda
       C_NATIVE=gcc
       CXX_NATIVE=g++
+    elif [[ $ARGS == *"cray"* ]]; then
+      module load PrgEnv-gnu cuda craype-x86-milan craype-accel-ncsa
+      export MPICH_GPU_SUPPORT_ENABLED=1
+      export MPICH_GPU_MANAGED_MEMORY_SUPPORT_ENABLED=1
+      C_NATIVE=cc
+      CXX_NATIVE=CC
     else
-      module load nvhpc_latest/22.11 openmpi
-      C_NATIVE=nvc
-      CXX_NATIVE=nvc++
+      # Default to gcc since we know that works
+      module load gcc/11.4.0 cuda/11.8.0 openmpi/4.1.5+cuda
+      C_NATIVE=gcc
+      CXX_NATIVE=g++
     fi
   else
     # CPU Compile
