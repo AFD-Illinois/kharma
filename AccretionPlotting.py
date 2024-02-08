@@ -14,7 +14,10 @@ import pyharm
 
 warnings.filterwarnings("ignore")
 
-# SMALL = 1.e-20
+# NOTE
+# 1. Create a directory to store fluxes. Ensure there is directories created with theory names in lowercase before running script. ['gr', 'dcs', 'edgb']
+# 2. Make sure number of dumps specified in 'dlist' at the end of code !! 
+# 3. Make sure paths to dumps AND output directory (fluxdir) is correct !! 
 
 params = {}
 fluxes = {}
@@ -51,10 +54,12 @@ def calc_fluxes(params, dumpno, theory, fluxes_dict):
     dump = pyharm.load_dump(os.path.join(params[f'dumpsdir_{theory.lower()}'], f'torus.out0.{dumpno:05d}.phdf'))
     reh_ind = np.argmin(np.fabs(np.squeeze(dump['r'][:, 0, 0]) - dump['r_eh']))
 
+    # Computing mdot, phibh and time from dumps 
     mdot = -shell_sum(np.squeeze(dump['rho'] * dump['ucon'][1, Ellipsis]), dump, reh_ind)
     phibh = 0.5 * shell_sum(abs(np.squeeze(dump['B'][0, Ellipsis])), dump, reh_ind)
     time = dump['t']
 
+    # Filling in dictionary with values for each theory
     fluxes_dict[f't_{theory}'].append(time)
     fluxes_dict[f'mdot_{theory}'].append(mdot)
     fluxes_dict[f'phibh_{theory}'].append(phibh)
@@ -69,6 +74,7 @@ def calc_fluxes(params, dumpno, theory, fluxes_dict):
 if __name__ == '__main__':
 
     print("Starting the script...")
+    
     # Set directories for each theory
     params['dumpsdir_gr'] = '/scratch/bbgv/smajumdar/T_runs_7000M/vanilla/dumps_kharma'
     params['dumpsdir_dcs'] = '/scratch/bbgv/smajumdar/T_runs_7000M/dcs/dumps_kharma'
