@@ -320,9 +320,9 @@ TaskStatus SeedBFieldType(MeshBlockData<Real> *rc, ParameterInput *pin, IndexDom
 
         if (pkgs.count("B_CT")) {
             auto B_Uf = rc->PackVariables(std::vector<std::string>{"cons.fB"});
-            // This fills a couple zones outside the exact interior with bad data
-            // Careful of that w/e.g. Dirichlet bounds.
-            IndexRange3 bB = KDomain::GetRange(rc, domain, 0, -1);
+            // This is why we make A 1 zone larger than "entire":
+            // we need this stencil-2 op over the whole domain
+            IndexRange3 bB = KDomain::GetRange(rc, domain, 0, 1);
             if (ndim > 2) {
                 pmb->par_for(
                     "ot_B", bB.ks, bB.ke, bB.js, bB.je, bB.is, bB.ie,
