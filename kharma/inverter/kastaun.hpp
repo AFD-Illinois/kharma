@@ -42,6 +42,7 @@
 // We define a specialization based on the Inverter::Type parameter
 #include "invert_template.hpp"
 
+#include "coordinate_utils.hpp"
 #include "floors.hpp"
 #include "grmhd_functions.hpp"
 #include "kharma_utils.hpp"
@@ -225,9 +226,7 @@ void SingleC2P_IdealSRMHD(MHDCons1D &u, const EOS_Data &eos, Real s2, Real b2, R
     max_iter = (iter > max_iter) ? iter : max_iter;
 
     // check if convergence is established within max_iterations.  If not, trigger a C2P
-    // failure and return floored density, pressure, and primitive velocities. Future
-    // development may trigger averaging of (successfully inverted) neighbors in the event
-    // of a C2P failure.
+    // failure and return floored density, pressure, and primitive velocities.
     if (max_iter == max_iterations) {
         w.d = eos.dfloor;
         w.e = eos.pfloor/gm1;
@@ -348,15 +347,18 @@ KOKKOS_INLINE_FUNCTION int u_to_p<Type::kastaun>(const GRCoordinates &G, const V
                                               const VariablePack<Real>& P, const VarMap& m_p,
                                               const Loci loc)
 {
-    // Prep
-    MHDCons1D u = {U(m_u.RHO, k, j, i), U(m_u.U1, k, j, i), U(m_u.U2, k, j, i), U(m_u.U3, k, j, i),
-                   U(m_u.UU, k, j, i), U(m_u.B1, k, j, i), U(m_u.B2, k, j, i), U(m_u.B3, k, j, i)};
+    // Pack an AthenaK "MHDCons"
+    const MHDCons1D u = {U(m_u.RHO, k, j, i),
+                   U(m_u.U1, k, j, i), U(m_u.U2, k, j, i), U(m_u.U3, k, j, i),
+                   U(m_u.UU, k, j, i),
+                   U(m_u.B1, k, j, i), U(m_u.B2, k, j, i), U(m_u.B3, k, j, i)};
     GReal gcon[GR_DIM][GR_DIM], gcov[GR_DIM][GR_DIM];
     G.gcon(Loci::center, j, i, gcon);
     G.gcov(Loci::center, j, i, gcov);
     // Output params
     Real s2, b2, rpar;
     MHDCons1D u_sr;
+    // Convert GRMHD cons to SRMHD for Kastaun solver
     // TODO(BSP) skip this call in Minkowski, calculate s2/b2/rpar separately 
     TransformToSRMHD(u, gcov, gcon, s2, b2, rpar, u_sr);
 
@@ -364,8 +366,8 @@ KOKKOS_INLINE_FUNCTION int u_to_p<Type::kastaun>(const GRCoordinates &G, const V
     eos.gamma = gam;
     eos.dfloor = 1.e-10; // density
     eos.pfloor = 1.e-10; // pressure
-    eos.tfloor = 0.; // temperature
-    eos.sfloor = 0.; // entropy
+    eos.tfloor = 1.e-10; // temperature
+    eos.sfloor = 1.e-10; // entropy
 
     HydPrim1D w;
     bool dfloor_used = false, efloor_used = false, c2p_failure = false;
@@ -375,9 +377,15 @@ KOKKOS_INLINE_FUNCTION int u_to_p<Type::kastaun>(const GRCoordinates &G, const V
                           c2p_failure, max_iter);
     P(m_p.RHO, k, j, i) = w.d;
     P(m_p.UU, k, j, i) = w.e;
-    P(m_p.U1, k, j, i) = w.vx;
-    P(m_p.U2, k, j, i) = w.vy;
-    P(m_p.U3, k, j, i) = w.vz;
+    // Convert velocity back to HARM primitive
+    Real ucon[4] = {0., w.vx, w.vy, w.vz};
+    set_ut(gcov, ucon);
+    Real u_prim[3];
+    fourvel_to_prim(gcon, ucon, u_prim);
+    P(m_p.U1, k, j, i) = u_prim[0];
+    P(m_p.U2, k, j, i) = u_prim[1];
+    P(m_p.U3, k, j, i) = u_prim[2];
+    // Flags
     int flag = 0;
     if (dfloor_used) flag |= Floors::FFlag::GEOM_RHO;
     if (efloor_used) flag |= Floors::FFlag::GEOM_U;
