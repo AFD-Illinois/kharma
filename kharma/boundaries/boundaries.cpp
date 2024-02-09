@@ -339,6 +339,7 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
     }
 
     // Zero/invert XN faces at a reflecting XN boundary (nearly always X2)
+    // Replaces reflecting face values at reflecting boundaries, Parthenon messes them up
     auto fpack = rc->PackVariables({Metadata::Face, Metadata::FillGhost});
     if (params.Get<bool>("reflect_face_vector_" + bname) && fpack.GetDim(4) > 0) {
         Flag("BoundaryFace_"+bname);
@@ -350,14 +351,15 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
         auto i_f = (binner) ? b.ie : b.is;
         auto j_f = (binner) ? b.je : b.js;
         auto k_f = (binner) ? b.ke : b.ks;
-        // Values are *reflected* by Parthenon, but vector must be *inverted* by us
-        // (since Parthenon doesn't know B2 on the F2 face is a vector X2 component & thus switches sign)
         pmb->par_for(
             "reflect_face_vector_" + bname, b.ks, b.ke, b.js, b.je, b.is, b.ie,
             KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+                const int kk = (bdir == 3) ? k_f - (k - k_f) : k;
+                const int jj = (bdir == 2) ? j_f - (j - j_f) : j;
+                const int ii = (bdir == 1) ? i_f - (i - i_f) : i;
                 fpack(face, 0, k, j, i) = ((bdir == 1 && i == i_f) ||
                                            (bdir == 2 && j == j_f) ||
-                                           (bdir == 3 && j == k_f)) ? 0. : -fpack(face, 0, k, j, i);
+                                           (bdir == 3 && k == k_f)) ? 0. : -fpack(face, 0, kk, jj, ii);
             }
         );
         EndFlag();
