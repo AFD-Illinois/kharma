@@ -95,6 +95,7 @@ TaskStatus SeedBFieldType(MeshBlockData<Real> *rc, ParameterInput *pin, IndexDom
     // Indices
     // TODO handle filling faces with domain < entire more gracefully
     IndexRange3 b = KDomain::GetRange(rc, domain);
+    IndexRange3 be = KDomain::GetRange(rc, domain, 0, 1); // Corresponds to GetRange(E1/E2/E3)
     int ndim = pmb->pmy_mesh->ndim;
 
     // Shortcut to field values for easy fields
@@ -221,9 +222,9 @@ TaskStatus SeedBFieldType(MeshBlockData<Real> *rc, ParameterInput *pin, IndexDom
         // Find the magnetic vector potential.  In X3 symmetry only A_phi is non-zero,
         // But for tilted conditions we must keep track of all components
         IndexSize3 sz = KDomain::GetBlockSize(rc);
-        ParArrayND<double> A("A", NVEC, sz.n3, sz.n2, sz.n1);
+        ParArrayND<double> A("A", NVEC, sz.n3+1, sz.n2+1, sz.n1+1); // TODO needs to just be an Edge field
         pmb->par_for(
-            "B_field_A", b.ks, b.ke, b.js, b.je, b.is, b.ie,
+            "B_field_A", be.ks, be.ke, be.js, be.je, be.is, be.ie,
             KOKKOS_LAMBDA(const int &k, const int &j, const int &i) {
                 GReal Xnative[GR_DIM];
                 GReal Xembed[GR_DIM], Xmidplane[GR_DIM];
@@ -246,6 +247,7 @@ TaskStatus SeedBFieldType(MeshBlockData<Real> *rc, ParameterInput *pin, IndexDom
                     // Use averages for anything else
                     // This loop runs over every corner. Centers do not exist before the first
                     // or after the last, so use the last (ghost) zones available.
+                    // TODO make sure this always clips vs "entire"
                     const int ii = clip((uint)i, b.is + 1, b.ie);
                     const int jj = clip((uint)j, b.js + 1, b.je);
                     const int kk = clip((uint)k, b.ks + 1, b.ke);
@@ -300,9 +302,9 @@ TaskStatus SeedBFieldType(MeshBlockData<Real> *rc, ParameterInput *pin, IndexDom
 
         if (pkgs.count("B_CT")) {
             auto B_Uf = rc->PackVariables(std::vector<std::string>{"cons.fB"});
-            // This fills a couple zones outside the exact interior with bad data
-            // Careful of that w/e.g. Dirichlet bounds.
-            IndexRange3 bB = KDomain::GetRange(rc, domain, 0, -1);
+            // This is why we make A 1 zone larger than "entire":
+            // we need this stencil-2 op over the whole domain
+            IndexRange3 bB = KDomain::GetRange(rc, domain, 0, 1);
             if (ndim > 2) {
                 pmb->par_for(
                     "ot_B", bB.ks, bB.ke, bB.js, bB.je, bB.is, bB.ie,
@@ -323,7 +325,7 @@ TaskStatus SeedBFieldType(MeshBlockData<Real> *rc, ParameterInput *pin, IndexDom
         } else if (pkgs.count("B_FluxCT")) {
             // Calculate B-field
             GridVector B_U = rc->Get("cons.B").data;
-            IndexRange3 bl = KDomain::GetRange(rc, domain, 0, -1); // TODO will need changes if domain < entire
+            IndexRange3 bl = KDomain::GetRange(rc, domain);
             if (ndim > 2) {
                 pmb->par_for(
                     "B_field_B_3D", bl.ks, bl.ke, bl.js, bl.je, bl.is, bl.ie,
