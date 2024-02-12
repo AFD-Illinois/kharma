@@ -292,7 +292,7 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
         EndFlag();
     }
 
-    // Zero/invert X2 faces at polar X2 boundary
+    // Replace reflecting face values at reflecting boundaries, Parthenon messes them up
     auto fpack = rc->PackVariables({Metadata::Face, Metadata::FillGhost});
     if (bdir == X2DIR &&
         pmb->coords.coords.is_spherical() &&
@@ -311,7 +311,7 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
         pmb->par_for_bndry(
             "invert_F2_" + bname, IndexRange{0, fpack.GetDim(4)-1}, domain, F2, coarse,
             KOKKOS_LAMBDA (const int &v, const int &k, const int &j, const int &i) {
-                fpack(F2, v, k, j, i) *= -1;
+                fpack(F2, v, k, j, i) = -fpack(F2, v, k, jf - (j-jf), i);
             }
         );
         EndFlag();

@@ -60,7 +60,6 @@ KOKKOS_INLINE_FUNCTION bool inside(const int& k, const int& j, const int& i,
 }
 KOKKOS_INLINE_FUNCTION bool inside(const int& k, const int& j, const int& i, const IndexRange3& b)
 {
-    // This is faster in the case that the point is outside
     return !outside(k, j, i, b);
 }
 

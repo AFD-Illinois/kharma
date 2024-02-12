@@ -126,6 +126,9 @@ TaskStatus SetBondiImpl(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain do
     auto U = GRMHD::PackMHDCons(rc.get(), cons_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
 
+    // Sometimes called when syncing EMFs, etc
+    if (P.GetDim(4) == 0) return TaskStatus::complete;
+
     const Real mdot = pmb->packages.Get("GRMHD")->Param<Real>("mdot");
     const Real rs = pmb->packages.Get("GRMHD")->Param<Real>("rs");
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
@@ -135,7 +138,6 @@ TaskStatus SetBondiImpl(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain do
 
     const EMHD::EMHD_parameters& emhd_params = EMHD::GetEMHDParameters(pmb->packages);
 
-    // Just the X1 right boundary
     GRCoordinates G = pmb->coords;
 
     // Set the Bondi conditions wherever we're asked
