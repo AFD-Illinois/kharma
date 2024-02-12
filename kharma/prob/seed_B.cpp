@@ -127,7 +127,7 @@ TaskStatus SeedBFieldType(MeshBlockData<Real> *rc, ParameterInput *pin, IndexDom
             auto B_Uf = rc->PackVariables(std::vector<std::string>{"cons.fB"});
             // Fill at 3 different locations
             pmb->par_for(
-                "B_field_B", b.ks, b.ke, b.js, b.je, b.is, b.ie,
+                "B_field_B", be.ks, be.ke, be.js, be.je, be.is, be.ie,
                 KOKKOS_LAMBDA(const int &k, const int &j, const int &i) {
                     GReal Xembed[GR_DIM];
                     double null1, null2;
