@@ -48,7 +48,6 @@ enum class Type{none=0, onedw};
 
 // Denote inversion failures (pflags)
 // This enum should grow to cover any inversion algorithm
-// TODO is this better off in its own space like FFlag?
 enum class Status{success=0, neg_input, max_iter, bad_ut, bad_gamma, neg_rho, neg_u, neg_rhou};
 
 static const std::map<int, std::string> status_names = {
