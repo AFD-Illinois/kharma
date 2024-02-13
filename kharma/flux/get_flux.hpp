@@ -154,7 +154,7 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
             // We template on reconstruction type to avoid a big switch statement here.
             // Instead, a version of GetFlux() is generated separately for each reconstruction/direction pair.
             // See reconstruction.hpp for all the implementations.
-            KReconstruction::reconstruct<Recon, dir>(member, P_all(bl), k, j, b.is, b.ie, Pl_s, Pr_s);
+            KReconstruction::ReconstructRow<Recon, dir>(member, P_all(bl), k, j, b.is, b.ie, Pl_s, Pr_s);
 
             // Sync all threads in the team so that scratch memory is consistent
             member.team_barrier();

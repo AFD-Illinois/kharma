@@ -57,7 +57,6 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
     bool spherical = pin->GetBoolean("coordinates", "spherical");
     // Global check inflow sets inner/outer X1 by default
     bool check_inflow_global = pin->GetOrAddBoolean("boundaries", "check_inflow", spherical);
-    // TODO TODO Support old option names check_inflow_inner, check_inflow_outer
 
     // Ensure fluxes through the zero-size face at the pole are zero
     bool zero_polar_flux = pin->GetOrAddBoolean("boundaries", "zero_polar_flux", spherical);
