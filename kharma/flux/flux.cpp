@@ -72,8 +72,8 @@ std::shared_ptr<KHARMAPackage> Flux::Initialize(ParameterInput *pin, std::shared
     } else if (pin->DoesParameterExist("GRMHD", "reconstruction")) {
         default_recon_s = pin->GetString("GRMHD", "reconstruction");
     }
-    std::vector<std::string> recon_allowed_vals = {"donor_cell", "linear_vl", "linear_mc",
-                                             "weno5", "weno5_linear", "ppm", "mp5"};
+    std::vector<std::string> recon_allowed_vals = {"donor_cell", "donor_cell_c", "linear_vl", "linear_mc",
+                                             "weno5", "weno5_linear", "ppm", "ppmx", "mp5"};
     std::string recon = pin->GetOrAddString("flux", "reconstruction", default_recon_s, recon_allowed_vals);
     bool lower_edges = pin->GetOrAddBoolean("flux", "low_order_edges", false);
     bool lower_poles = pin->GetOrAddBoolean("flux", "low_order_poles", false);
@@ -85,6 +85,9 @@ std::shared_ptr<KHARMAPackage> Flux::Initialize(ParameterInput *pin, std::shared
     int stencil = 0;
     if (recon == "donor_cell") {
         params.Add("recon", KReconstruction::Type::donor_cell);
+        stencil = 1;
+    } else if (recon == "donor_cell_c") {
+        params.Add("recon", KReconstruction::Type::donor_cell_c);
         stencil = 1;
     } else if (recon == "linear_vl") {
         params.Add("recon", KReconstruction::Type::linear_vl);

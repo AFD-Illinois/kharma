@@ -46,7 +46,7 @@ namespace KReconstruction
 constexpr Real EPS = 1.e-26;
 
 // Enum for all supported reconstruction types.
-enum class Type{donor_cell=0, linear_mc, linear_vl, ppm, ppmx, mp5, weno5, weno5_lower_edges, weno5_lower_poles, weno5_linear};
+enum class Type{donor_cell=0, donor_cell_c, linear_mc, linear_vl, ppm, ppmx, mp5, weno5, weno5_lower_edges, weno5_lower_poles, weno5_linear};
 
 // Component functions
 KOKKOS_FORCEINLINE_FUNCTION Real mc(const Real dm, const Real dp)
@@ -84,6 +84,24 @@ KOKKOS_INLINE_FUNCTION void reconstruct_left(RECONSTRUCT_ONE_LEFT_ARGS) {}
 
 template<Type recon_type>
 KOKKOS_INLINE_FUNCTION void reconstruct_right(RECONSTRUCT_ONE_RIGHT_ARGS) {}
+
+// Donor-cell
+template<>
+KOKKOS_INLINE_FUNCTION void reconstruct<Type::donor_cell_c>(RECONSTRUCT_ONE_ARGS)
+{
+    rout = x3;
+    lout = x3;
+}
+template<>
+KOKKOS_INLINE_FUNCTION void reconstruct_left<Type::donor_cell_c>(RECONSTRUCT_ONE_LEFT_ARGS)
+{
+    lout = x3;
+}
+template<>
+KOKKOS_INLINE_FUNCTION void reconstruct_right<Type::donor_cell_c>(RECONSTRUCT_ONE_RIGHT_ARGS)
+{
+    rout = x3;
+}
 
 // Linear
 template<>
