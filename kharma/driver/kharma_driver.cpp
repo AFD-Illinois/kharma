@@ -356,7 +356,7 @@ TaskID KHARMADriver::AddStateUpdate(TaskID& t_start, TaskList& tl, MeshData<Real
 
 void KHARMADriver::SetGlobalTimeStep()
 {
-  // TODO TODO apply the limits from GRMHD package here
+  // TODO(BSP) apply the limits from GRMHD package here
   if (tm.dt < 0.1 * std::numeric_limits<Real>::max()) {
     tm.dt *= 2.0;
   }
@@ -366,7 +366,7 @@ void KHARMADriver::SetGlobalTimeStep()
     pmb->SetAllowedDt(big);
   }
 
-    // TODO start reduce at the end of the per-meshblock stuff, check here
+    // TODO(BSP) start reduce at the end of the per-meshblock stuff, then check it here
 #ifdef MPI_PARALLEL
   PARTHENON_MPI_CHECK(MPI_Allreduce(MPI_IN_PLACE, &tm.dt, 1, MPI_PARTHENON_REAL, MPI_MIN,
                                     MPI_COMM_WORLD));
