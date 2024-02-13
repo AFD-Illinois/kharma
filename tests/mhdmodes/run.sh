@@ -69,11 +69,15 @@ conv_2d fast mhdmodes/nmode=3 "fast mode in 2D"
 
 # Entropy mode as reconstruction demo
 conv_2d entropy_nob "mhdmodes/nmode=0 b_field/solver=none" "entropy mode in 2D, no B field"
-conv_2d entropy mhdmodes/nmode=0 "entropy mode in 3D, WENO reconstruction"
-conv_2d entropy_mc "mhdmodes/nmode=0 driver/reconstruction=linear_mc" "entropy mode in 2D, linear/MC reconstruction"
-#conv_2d entropy_vl "mhdmodes/nmode=0 driver/reconstruction=linear_vl" "entropy mode in 2D, linear/VL reconstruction"
-# TODO doesn't converge?
+# Doesn't converge as it gets the propagation speed slightly wrong...
 #conv_2d entropy_donor "mhdmodes/nmode=0 driver/reconstruction=donor_cell" "entropy mode in 2D, Donor Cell reconstruction"
+conv_2d entropy_mc "mhdmodes/nmode=0 driver/reconstruction=linear_mc" "entropy mode in 2D, linear/MC reconstruction"
+# Converges at -1.8, which is below tolerance for the other schemes
+#conv_2d entropy_vl "mhdmodes/nmode=0 driver/reconstruction=linear_vl" "entropy mode in 2D, linear/VL reconstruction"
+conv_2d entropy_weno "mhdmodes/nmode=0 driver/reconstruction=weno5" "entropy mode in 2D, WENO reconstruction"
+conv_2d entropy_weno_lin "mhdmodes/nmode=0 driver/reconstruction=weno5_linear" "entropy mode in 2D, WENO linearized reconstruction"
+conv_2d entropy_ppm "mhdmodes/nmode=0 driver/reconstruction=ppm" "entropy mode in 2D, PPM reconstruction"
+conv_2d entropy_mp5 "mhdmodes/nmode=0 driver/reconstruction=mp5" "entropy mode in 2D, MP5 reconstruction"
 
 # KHARMA driver
 conv_2d slow_kharma   "mhdmodes/nmode=1 driver/type=kharma" "slow mode in 2D, KHARMA driver"

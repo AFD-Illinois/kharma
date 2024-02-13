@@ -81,8 +81,9 @@ std::shared_ptr<KHARMAPackage> KHARMADriver::Initialize(ParameterInput *pin, std
     std::string flux = pin->GetOrAddString("driver", "flux", "llf");
     params.Add("use_hlle", (flux == "hlle"));
 
-    // Reconstruction scheme.  TODO bunch more here, PPM esp...
-    std::vector<std::string> allowed_vals = {"donor_cell", "linear_mc", "weno5"};
+    // Reconstruction scheme
+    std::vector<std::string> allowed_vals = {"donor_cell", "linear_vl", "linear_mc",
+                                             "weno5", "weno5_linear", "ppm", "mp5"};
     std::string recon = pin->GetOrAddString("driver", "reconstruction", "weno5", allowed_vals);
     bool lower_edges = pin->GetOrAddBoolean("driver", "lower_edges", false);
     bool lower_poles = pin->GetOrAddBoolean("driver", "lower_poles", false);
@@ -95,9 +96,9 @@ std::shared_ptr<KHARMAPackage> KHARMADriver::Initialize(ParameterInput *pin, std
     if (recon == "donor_cell") {
         params.Add("recon", KReconstruction::Type::donor_cell);
         stencil = 1;
-    // } else if (recon == "linear_vl") {
-    //     params.Add("recon", KReconstruction::Type::linear_vl);
-    //     stencil = 3;
+    } else if (recon == "linear_vl") {
+        params.Add("recon", KReconstruction::Type::linear_vl);
+        stencil = 3;
     } else if (recon == "linear_mc") {
         params.Add("recon", KReconstruction::Type::linear_mc);
         stencil = 3;
@@ -110,7 +111,16 @@ std::shared_ptr<KHARMAPackage> KHARMADriver::Initialize(ParameterInput *pin, std
     } else if (recon == "weno5") {
         params.Add("recon", KReconstruction::Type::weno5);
         stencil = 5;
-    } // we only allow these options
+    } else if (recon == "weno5_linear") {
+        params.Add("recon", KReconstruction::Type::weno5_linear);
+        stencil = 5;
+    } else if (recon == "ppm") {
+        params.Add("recon", KReconstruction::Type::ppm);
+        stencil = 5;
+    } else if (recon == "mp5") {
+        params.Add("recon", KReconstruction::Type::mp5);
+        stencil = 5;
+    }  // we only allow these options
     // Warn if using less than 3 ghost zones w/WENO etc, 2 w/Linear, etc.
     // SMR/AMR independently requires an even number of zones, so we usually use 4
     if (Globals::nghost < (stencil/2 + 1)) {
@@ -238,6 +248,7 @@ TaskID KHARMADriver::AddFluxCalculations(TaskID& t_start, TaskList& tl, KReconst
     // Calculate fluxes in each direction using given reconstruction
     // Must be spelled out so as to generate each templated version of GetFlux<> to be available at runtime
     // Details in flux/get_flux.hpp
+    // TODO(BSP) there simply must be a better way
     using RType = KReconstruction::Type;
     TaskID t_calculate_flux1, t_calculate_flux2, t_calculate_flux3;
     switch (recon) {
@@ -246,20 +257,15 @@ TaskID KHARMADriver::AddFluxCalculations(TaskID& t_start, TaskList& tl, KReconst
         t_calculate_flux2 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::donor_cell, X2DIR>, md);
         t_calculate_flux3 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::donor_cell, X3DIR>, md);
         break;
+    case RType::linear_vl:
+        t_calculate_flux1 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::linear_vl, X1DIR>, md);
+        t_calculate_flux2 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::linear_vl, X2DIR>, md);
+        t_calculate_flux3 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::linear_vl, X3DIR>, md);
+        break;
     case RType::linear_mc:
         t_calculate_flux1 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::linear_mc, X1DIR>, md);
         t_calculate_flux2 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::linear_mc, X2DIR>, md);
         t_calculate_flux3 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::linear_mc, X3DIR>, md);
-        break;
-    // case RType::linear_vl:
-    //     t_calculate_flux1 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::linear_vl, X1DIR>, md);
-    //     t_calculate_flux2 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::linear_vl, X2DIR>, md);
-    //     t_calculate_flux3 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::linear_vl, X3DIR>, md);
-    //     break;
-    case RType::weno5:
-        t_calculate_flux1 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::weno5, X1DIR>, md);
-        t_calculate_flux2 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::weno5, X2DIR>, md);
-        t_calculate_flux3 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::weno5, X3DIR>, md);
         break;
     case RType::weno5_lower_edges:
         t_calculate_flux1 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::weno5_lower_edges, X1DIR>, md);
@@ -270,6 +276,26 @@ TaskID KHARMADriver::AddFluxCalculations(TaskID& t_start, TaskList& tl, KReconst
         t_calculate_flux1 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::weno5_lower_poles, X1DIR>, md);
         t_calculate_flux2 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::weno5_lower_poles, X2DIR>, md);
         t_calculate_flux3 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::weno5_lower_poles, X3DIR>, md);
+        break;
+    case RType::weno5:
+        t_calculate_flux1 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::weno5, X1DIR>, md);
+        t_calculate_flux2 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::weno5, X2DIR>, md);
+        t_calculate_flux3 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::weno5, X3DIR>, md);
+        break;
+    case RType::weno5_linear:
+        t_calculate_flux1 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::weno5_linear, X1DIR>, md);
+        t_calculate_flux2 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::weno5_linear, X2DIR>, md);
+        t_calculate_flux3 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::weno5_linear, X3DIR>, md);
+        break;
+    case RType::ppm:
+        t_calculate_flux1 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::ppm, X1DIR>, md);
+        t_calculate_flux2 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::ppm, X2DIR>, md);
+        t_calculate_flux3 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::ppm, X3DIR>, md);
+        break;
+    case RType::mp5:
+        t_calculate_flux1 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::mp5, X1DIR>, md);
+        t_calculate_flux2 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::mp5, X2DIR>, md);
+        t_calculate_flux3 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::mp5, X3DIR>, md);
         break;
     default:
         std::cerr << "Reconstruction type not supported!  Main supported reconstructions:" << std::endl
