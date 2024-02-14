@@ -54,7 +54,10 @@ TaskStatus ApplyFloorsInFrame(MeshData<Real> *md, IndexDomain domain)
 
     auto fflag = md->PackVariables(std::vector<std::string>{"fflag"});
     auto pflag = md->PackVariables(std::vector<std::string>{"pflag"});
-    auto floor_vals = md->PackVariables(std::vector<std::string>{"Floors.rho_floor", "Floors.u_floor"});
+    PackIndexMap floors_map;
+    auto floor_vals = md->PackVariables(std::vector<std::string>{"Floors.rho_floor", "Floors.u_floor"}, floors_map);
+    const int rhofi = floors_map["Floors.rho_floor"].first;
+    const int ufi = floors_map["Floors.u_floor"].first;
 
     const Real gam = pmb0->packages.Get("GRMHD")->Param<Real>("gamma");
     const EMHD::EMHD_parameters& emhd_params = EMHD::GetEMHDParameters(pmb0->packages);
@@ -70,7 +73,9 @@ TaskStatus ApplyFloorsInFrame(MeshData<Real> *md, IndexDomain domain)
         KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i) {
             const auto& G = P.GetCoords(b);
             // apply_floors can involve another U_to_P call.  Hide the pflag in bottom 5 bits and retrieve both
-            int pflag_l = apply_floors<frame>(G, P(b), m_p, gam, emhd_params, k, j, i, floor_vals(b), U(b), m_u);
+            int pflag_l = apply_floors<frame>(G, P(b), m_p, gam, emhd_params, k, j, i,
+                                              floor_vals(b, rhofi, k, j, i), floor_vals(b, ufi, k, j, i),
+                                              U(b), m_u);
 
             // Record the pflag if nonzero.  KHARMA did not traditionally do this,
             // because floors were run over uninitialized zones, and thus wrote

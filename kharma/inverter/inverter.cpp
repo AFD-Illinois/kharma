@@ -77,6 +77,10 @@ std::shared_ptr<KHARMAPackage> Inverter::Initialize(ParameterInput *pin, std::sh
     }
     pkg->AddField("pflag", m);
 
+    // When not using floors, we need to declare fflag for ourselves
+    m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy, Metadata::Overridable});
+    pkg->AddField("fflag", m);
+
     // We exist basically to do this
     pkg->BlockUtoP = Inverter::BlockUtoP;
     pkg->BoundaryUtoP = Inverter::BlockUtoP;
@@ -101,6 +105,7 @@ inline void BlockPerformInversion(MeshBlockData<Real> *rc, IndexDomain domain, b
     auto P = GRMHD::PackHDPrims(rc, prims_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
 
+    auto fflag = rc->PackVariables(std::vector<std::string>{"fflag"});
     auto pflag = rc->PackVariables(std::vector<std::string>{"pflag"});
 
     if (U.GetDim(4) == 0 || pflag.GetDim(4) == 0)
@@ -120,7 +125,9 @@ inline void BlockPerformInversion(MeshBlockData<Real> *rc, IndexDomain domain, b
 
     pmb->par_for("U_to_P", b.ks, b.ke, b.js, b.je, b.is, b.ie,
         KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-            pflag(0, k, j, i) = static_cast<double>(Inverter::u_to_p<inverter>(G, U, m_u, gam, k, j, i, P, m_p, Loci::center));
+            int pflagl = Inverter::u_to_p<inverter>(G, U, m_u, gam, k, j, i, P, m_p, Loci::center);
+            pflag(0, k, j, i) = pflagl % Floors::FFlag::MINIMUM;
+            fflag(0, k, j, i) = static_cast<int>(fflag(0, k, j, i)) | (pflagl / Floors::FFlag::MINIMUM);
         }
     );
 }

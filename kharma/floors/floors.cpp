@@ -63,17 +63,17 @@ std::shared_ptr<KHARMAPackage> Floors::Initialize(ParameterInput *pin, std::shar
     // Drift frame floors are now available and preferred when using 
     // the implicit solver to avoid UtoP calls.
     // TODO(BSP) automate/standardize parsing enums like this: classes w/tables like the flags?
-    std::vector<std::string> allowed_floor_frames = {"normal", "fluid",
-                                                     "mixed", "drift"};
+    std::vector<std::string> allowed_floor_frames = {"normal", "fluid", "mixed",
+                                                     "mixed_fluid_normal", "mixed_fluid_drift", "drift"};
     std::string frame_s = pin->GetOrAddString("floors", "frame", "drift", allowed_floor_frames);
     InjectionFrame frame;
     if (frame_s == "normal") {
         frame = InjectionFrame::normal;
     } else if (frame_s == "fluid") {
         frame = InjectionFrame::fluid;
-    } else if (frame_s == "mixed") {
+    } else if (frame_s == "mixed" || frame_s == "mixed_fluid_normal") {
         frame = InjectionFrame::mixed_fluid_normal;
-    } else if (frame_s == "mixed_drift") {
+    } else if (frame_s == "mixed_fluid_drift") {
         frame = InjectionFrame::mixed_fluid_drift;
     } else if (frame_s == "drift") {
         frame = InjectionFrame::drift;
@@ -90,24 +90,23 @@ std::shared_ptr<KHARMAPackage> Floors::Initialize(ParameterInput *pin, std::shar
     }
 
     // Disable all floors.  It is obviously tremendously inadvisable to do this
+    // Note this will only be recorded if false, otherwise we're not loaded at all!
     bool disable_floors = pin->GetOrAddBoolean("floors", "disable_floors", false);
     params.Add("disable_floors", disable_floors);
 
-    // Flag for which floor conditions were violated.  Used for diagnostics
-    // TODO(BSP) Should switch these to "Integer" fields when Parthenon supports it
-    Metadata m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
-    pkg->AddField("fflag", m);
-    // When not using UtoP, we still need a dummy copy of pflag, too
-    // TODO we shouldn't require pflag
-    if (!packages->AllPackages().count("Inverter")) {
-        pkg->AddField("pflag", m);
-    }
-
     // These preserve floor values between the "mark" pass and the actual floor application
-    // They exist because sometimes we need to mark zones which need floors,
-    // but then do e.g. FOFC to them instead in the hope that they will stop needing actual floors
+    // We need them even if floors are disabled, to apply initial values based on some prescription
+    // as a part of problem setup
+    Metadata m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
     pkg->AddField("Floors.rho_floor", m);
     pkg->AddField("Floors.u_floor", m);
+
+    // Flag for which floor conditions were violated.  Used for diagnostics
+    // TODO(BSP) Should switch these to "Integer" fields when Parthenon supports it
+    pkg->AddField("fflag", m);
+    // When not using UtoP, we still need a "dummy" copy of pflag to write the post-flooring flag to
+    m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy, Metadata::Overridable});
+    pkg->AddField("pflag", m);
 
     // TODO(BSP) THIS IS THE ONLY MeshApplyFloors.  Any others will NOT BE CALLED.
     // Use BlockApplyFloors in your packages or fix Packages::MeshApplyFloors
@@ -137,8 +136,6 @@ TaskStatus Floors::ApplyInitialFloors(ParameterInput *pin, MeshBlockData<Real> *
     auto U = mbd->PackVariables(std::vector<MetadataFlag>{Metadata::Conserved, Metadata::Cell}, cons_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
 
-    auto floor_vals = mbd->PackVariables(std::vector<std::string>{"Floors.rho_floor", "Floors.u_floor"});
-
     const auto& G = pmb->coords;
 
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
@@ -149,21 +146,21 @@ TaskStatus Floors::ApplyInitialFloors(ParameterInput *pin, MeshBlockData<Real> *
     if (pmb->packages.AllPackages().count("Floors")) {
         floors_tmp = pmb->packages.Get("Floors")->Param<Floors::Prescription>("prescription");
     } else {
-            // JUST rho & u geometric
-            floors_tmp.rho_min_geom = pin->GetOrAddReal("floors", "rho_min_geom", 1e-6);
-            floors_tmp.u_min_geom   = pin->GetOrAddReal("floors", "u_min_geom", 1e-8);
+        // JUST rho & u geometric
+        floors_tmp.rho_min_geom = pin->GetOrAddReal("floors", "rho_min_geom", 1e-6);
+        floors_tmp.u_min_geom   = pin->GetOrAddReal("floors", "u_min_geom", 1e-8);
 
-            // Disable everything else, even if it's specified
-            floors_tmp.bsq_over_rho_max = 1e20;
-            floors_tmp.bsq_over_u_max   = 1e20;
-            floors_tmp.u_over_rho_max   = 1e20;
-            floors_tmp.ktot_max         = 1e20;
-            floors_tmp.gamma_max        = 1e20;
+        // Disable everything else, even if it's specified
+        floors_tmp.bsq_over_rho_max = 1e20;
+        floors_tmp.bsq_over_u_max   = 1e20;
+        floors_tmp.u_over_rho_max   = 1e20;
+        floors_tmp.ktot_max         = 1e20;
+        floors_tmp.gamma_max        = 1e20;
 
-            floors_tmp.use_r_char    = false;
-            floors_tmp.r_char        = 0.; //unused
-            floors_tmp.temp_adjust_u = false;
-            floors_tmp.adjust_k      = false;
+        floors_tmp.use_r_char    = false;
+        floors_tmp.r_char        = 0.; //unused
+        floors_tmp.temp_adjust_u = false;
+        floors_tmp.adjust_k      = false;
     }
     const Floors::Prescription floors = floors_tmp;
 
@@ -172,8 +169,9 @@ TaskStatus Floors::ApplyInitialFloors(ParameterInput *pin, MeshBlockData<Real> *
     const IndexRange3 b = KDomain::GetRange(mbd, domain);
     pmb->par_for("apply_initial_floors", b.ks, b.ke, b.js, b.je, b.is, b.ie,
         KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-            determine_floors(G, P, m_p, gam, k, j, i, floors, floor_vals);
-            apply_floors<InjectionFrame::fluid>(G, P, m_p, gam, emhd_params, k, j, i, floor_vals, U, m_u);
+            Real rhoflr_max, uflr_max;
+            determine_floors(G, P, m_p, gam, k, j, i, floors, rhoflr_max, uflr_max);
+            apply_floors<InjectionFrame::fluid>(G, P, m_p, gam, emhd_params, k, j, i, rhoflr_max, uflr_max, U, m_u);
             apply_ceilings(G, P, m_p, gam, k, j, i, floors, U, m_u);
         }
     );
@@ -193,7 +191,10 @@ TaskStatus Floors::DetermineGRMHDFloors(MeshData<Real> *md, IndexDomain domain, 
 
     auto fflag = md->PackVariables(std::vector<std::string>{"fflag"});
     auto pflag = md->PackVariables(std::vector<std::string>{"pflag"});
-    auto floor_vals = md->PackVariables(std::vector<std::string>{"Floors.rho_floor", "Floors.u_floor"});
+    PackIndexMap floors_map;
+    auto floor_vals = md->PackVariables(std::vector<std::string>{"Floors.rho_floor", "Floors.u_floor"}, floors_map);
+    const int rhofi = floors_map["Floors.rho_floor"].first;
+    const int ufi = floors_map["Floors.u_floor"].first;
 
     const Real gam = pmb0->packages.Get("GRMHD")->Param<Real>("gamma");
 
@@ -202,7 +203,9 @@ TaskStatus Floors::DetermineGRMHDFloors(MeshData<Real> *md, IndexDomain domain, 
     pmb0->par_for("determine_floors", block.s, block.e, b.ks, b.ke, b.js, b.je, b.is, b.ie,
         KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i) {
             const auto& G = P.GetCoords(b);
-            fflag(b, 0, k, j, i) = determine_floors(G, P(b), m_p, gam, k, j, i, floors, floor_vals(b));
+            fflag(b, 0, k, j, i) = static_cast<int>(fflag(b, 0, k, j, i)) |
+                                    determine_floors(G, P(b), m_p, gam, k, j, i, floors,
+                                                     floor_vals(b, rhofi, k, j, i), floor_vals(b, ufi, k, j, i));
         }
     );
 
@@ -222,6 +225,8 @@ TaskStatus Floors::ApplyGRMHDFloors(MeshData<Real> *md, IndexDomain domain)
         return ApplyFloorsInFrame<InjectionFrame::fluid>(md, domain);
     } else if (pars.Get<InjectionFrame>("frame") == InjectionFrame::mixed_fluid_normal) {
         return ApplyFloorsInFrame<InjectionFrame::mixed_fluid_normal>(md, domain);
+    // } else if (pars.Get<InjectionFrame>("frame") == InjectionFrame::mixed_fluid_drift) {
+    //     return ApplyFloorsInFrame<InjectionFrame::mixed_fluid_drift>(md, domain);
     } else if (pars.Get<InjectionFrame>("frame") == InjectionFrame::drift) {
         return ApplyFloorsInFrame<InjectionFrame::drift>(md, domain);
     } else {

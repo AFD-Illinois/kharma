@@ -42,10 +42,6 @@
 #include "emhd.hpp"
 #include "reductions.hpp"
 
-// Return which floors are hit post-reconstruction
-// Currently not recorded by the caller, so disabled
-#define RECORD_POST_RECON 0
-
 namespace Floors {
 
 namespace FFlag {
@@ -65,6 +61,9 @@ static constexpr int KTOT = 2048;
 // the flags aren't written
 static constexpr int GEOM_RHO_FLUX = 4096;
 static constexpr int GEOM_U_FLUX = 8192;
+// Yet more flags for floors hit during inversion
+static constexpr int INVERTER_RHO = 16384;
+static constexpr int INVERTER_U = 32768;
 // Lowest flag value. Needed for combining floor and other return flags
 static constexpr int MINIMUM = GEOM_RHO;
 
@@ -182,7 +181,7 @@ TaskStatus DetermineGRMHDFloors(MeshData<Real> *md, IndexDomain domain, const Fl
  * 2. Don't record results to 'fflag' or 'pflag'
  * Used for problems where some part of the domain is initialized to
  * "whatever the floor value is."
- * This function can be called even if the Floors package is not initialized.
+ * *This function can be called even if the Floors package is not initialized.*
  */
 TaskStatus ApplyInitialFloors(ParameterInput *pin, MeshBlockData<Real> *mbd, IndexDomain domain);
 

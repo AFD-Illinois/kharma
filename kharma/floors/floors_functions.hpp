@@ -93,7 +93,7 @@ KOKKOS_INLINE_FUNCTION int apply_ceilings(const GRCoordinates& G, const Variable
 
 KOKKOS_INLINE_FUNCTION int determine_floors(const GRCoordinates& G, const VariablePack<Real>& P, const VarMap& m_p,
                                         const Real& gam, const int& k, const int& j, const int& i, const Floors::Prescription& floors,
-                                        const VariablePack<Real>& floor_vals)
+                                        Real& rhoflr_max, Real& uflr_max)
 {
     // Calculate the different floor values in play:
     // 1. Geometric hard floors, not based on fluid relationships
@@ -118,13 +118,12 @@ KOKKOS_INLINE_FUNCTION int determine_floors(const GRCoordinates& G, const Variab
     Real uflr_b   = bsq / floors.bsq_over_u_max;
 
     // Evaluate max U floor, needed for temp ceiling below
-    Real uflr_max = m::max(uflr_geom, uflr_b);
+    uflr_max = m::max(uflr_geom, uflr_b);
 
     const auto& rho = P(m_p.RHO, k, j, i);
     const auto& u = P(m_p.UU, k, j, i);
 
     int fflag = 0;
-    Real rhoflr_max;
     if (!floors.temp_adjust_u) {
         // 3. Temperature ceiling: impose maximum temperature u/rho
         // Take floors on U into account
@@ -149,9 +148,6 @@ KOKKOS_INLINE_FUNCTION int determine_floors(const GRCoordinates& G, const Variab
         fflag |= (uflr_b > u) * FFlag::B_U;
     }
 
-    floor_vals(0, k, j, i) = rhoflr_max;
-    floor_vals(1, k, j, i) = uflr_max;
-
     // Then ceilings, need to record these for FOFC. See real implementation.
     const Real gamma = GRMHD::lorentz_calc(G, P, m_p, k, j, i, Loci::center);
     if (gamma > floors.gamma_max) fflag |= FFlag::GAMMA;
@@ -168,7 +164,7 @@ KOKKOS_INLINE_FUNCTION int determine_floors(const GRCoordinates& G, const Variab
 
 #define FLOOR_ONE_ARGS const GRCoordinates& G, const VariablePack<Real>& P, const VarMap& m_p, \
                         const Real& gam, const EMHD::EMHD_parameters& emhd_params, \
-                        const int& k, const int& j, const int& i, const VariablePack<Real>& floor_vals, \
+                        const int& k, const int& j, const int& i, const Real& rhoflr_max, const Real& uflr_max, \
                         const VariablePack<Real>& U, const VarMap& m_u
 
 /**
@@ -185,9 +181,6 @@ KOKKOS_INLINE_FUNCTION int apply_floors(FLOOR_ONE_ARGS);
 template<>
 KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::fluid>(FLOOR_ONE_ARGS)
 {
-    Real rhoflr_max = floor_vals(0, k, j, i);
-    Real uflr_max = floor_vals(1, k, j, i);
-
     P(m_p.RHO, k, j, i) += m::max(0., rhoflr_max - P(m_p.RHO, k, j, i));
     P(m_p.UU, k, j, i)  += m::max(0., uflr_max - P(m_p.UU, k, j, i));
     // Update (GRMHD portion of) conserved variables
@@ -198,9 +191,6 @@ KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::fluid>(FLOOR_ONE_ARGS)
 template<>
 KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::drift>(FLOOR_ONE_ARGS)
 {
-    Real rhoflr_max = floor_vals(0, k, j, i);
-    Real uflr_max = floor_vals(1, k, j, i);
-
     // Drift frame floors. Refer to Appendix B3 in https://doi.org/10.1093/mnras/stx364 (hereafter R17)
     const Real lapse2    = 1. / (-G.gcon(Loci::center, j, i, 0, 0));
     double beta[GR_DIM] = {0};
@@ -278,9 +268,6 @@ KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::drift>(FLOOR_ONE_ARGS)
 template<>
 KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::normal>(FLOOR_ONE_ARGS)
 {
-    Real rhoflr_max = floor_vals(0, k, j, i);
-    Real uflr_max = floor_vals(1, k, j, i);
-
     // Add the material in the normal observer frame.
     // 1. Calculate how much material we're adding.
     // This is an estimate, as it's what we'd have to do in fluid frame
@@ -321,9 +308,9 @@ KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::mixed_fluid_normal>(FLOO
 {
     // TODO(BSP) thread through frame_switch option
     if (G.r(k, j, i) > 50.) {
-        return apply_floors<InjectionFrame::fluid>(G, P, m_p, gam, emhd_params, k, j, i, floor_vals, U, m_u);
+        return apply_floors<InjectionFrame::fluid>(G, P, m_p, gam, emhd_params, k, j, i, rhoflr_max, uflr_max, U, m_u);
     } else {
-        return apply_floors<InjectionFrame::normal>(G, P, m_p, gam, emhd_params, k, j, i, floor_vals, U, m_u);
+        return apply_floors<InjectionFrame::normal>(G, P, m_p, gam, emhd_params, k, j, i, rhoflr_max, uflr_max, U, m_u);
     }
 }
 
@@ -365,12 +352,9 @@ KOKKOS_INLINE_FUNCTION int apply_geo_floors(const GRCoordinates& G, Local& P, co
     }
 
     int fflag = 0;
-#if RECORD_POST_RECON
-    // Record all the floors that were hit, using bitflags
     // Record Geometric floor hits
     fflag |= (rhoflr_geom > P(m.RHO)) * FFlag::GEOM_RHO_FLUX;
     fflag |= (uflr_geom > P(m.UU)) * FFlag::GEOM_U_FLUX;
-#endif
 
     P(m.RHO) += m::max(0., rhoflr_geom - P(m.RHO));
     P(m.UU)  += m::max(0., uflr_geom - P(m.UU));
@@ -407,12 +391,10 @@ KOKKOS_INLINE_FUNCTION int apply_geo_floors(const GRCoordinates& G, Global& P, c
     }
 
     int fflag = 0;
-#if RECORD_POST_RECON
     // Record all the floors that were hit, using bitflags
     // Record Geometric floor hits
     fflag |= (rhoflr_geom > P(m.RHO, k, j, i)) * FFlag::GEOM_RHO_FLUX;
     fflag |= (uflr_geom > P(m.UU, k, j, i)) * FFlag::GEOM_U_FLUX;
-#endif
 
     P(m.RHO, k, j, i) += m::max(0., rhoflr_geom - P(m.RHO, k, j, i));
     P(m.UU, k, j, i)  += m::max(0., uflr_geom - P(m.UU, k, j, i));
