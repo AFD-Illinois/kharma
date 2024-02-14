@@ -107,7 +107,6 @@ TaskStatus SeedBFieldType(MeshBlockData<Real> *rc, ParameterInput *pin, IndexDom
     // Indices
     // TODO handle filling faces with domain < entire more gracefully
     IndexRange3 b = KDomain::GetRange(rc, domain);
-    IndexRange3 bf = KDomain::GetRange(rc, domain, 0, 1);
     int ndim = pmb->pmy_mesh->ndim;
 
     // Shortcut to field values for easy fields
@@ -138,34 +137,49 @@ TaskStatus SeedBFieldType(MeshBlockData<Real> *rc, ParameterInput *pin, IndexDom
         if (pkgs.count("B_CT")) {
             auto B_Uf = rc->PackVariables(std::vector<std::string>{"cons.fB"});
             // Fill at 3 different locations
+            // Avoid overstepping even as we fill *every face*
+            IndexRange3 b1 = KDomain::GetRange(rc, domain, F1);
             pmb->par_for(
-                "B_field_B", bf.ks, bf.ke, bf.js, bf.je, bf.is, bf.ie,
+                "B_field_B1", b1.ks, b1.ke, b1.js, b1.je, b1.is, b1.ie,
                 KOKKOS_LAMBDA(const int &k, const int &j, const int &i) {
                     GReal Xembed[GR_DIM];
                     double null1, null2;
-                    double B_Pf1, B_Pf2, B_Pf3;
                     // TODO handle calling Seed() mid-run and adding field
                     G.coord_embed(k, j, i, Loci::face1, Xembed);
                     GReal gdet = G.gdet(Loci::face1, j, i);
-                    B_Pf1 = B10;
+                    double B_Pf1 = B10;
                     seed_b<Seed>(Xembed, gdet, k1, k2, k3, phase,
                                  amp_B1, amp_B2, amp_B3,
                                  amp2_B1, amp2_B2, amp2_B3,
                                  B_Pf1, null1, null2);
                     B_Uf(F1, 0, k, j, i) = B_Pf1 * gdet;
-
+                }
+            );
+            IndexRange3 b2 = KDomain::GetRange(rc, domain, F2);
+            pmb->par_for(
+                "B_field_B2", b2.ks, b2.ke, b2.js, b2.je, b2.is, b2.ie,
+                KOKKOS_LAMBDA(const int &k, const int &j, const int &i) {
+                    GReal Xembed[GR_DIM];
+                    double null1, null2;
                     G.coord_embed(k, j, i, Loci::face2, Xembed);
-                    gdet = G.gdet(Loci::face2, j, i);
-                    B_Pf2 = B20;
+                    GReal gdet = G.gdet(Loci::face2, j, i);
+                    double B_Pf2 = B20;
                     seed_b<Seed>(Xembed, gdet, k1, k2, k3, phase,
                                  amp_B1, amp_B2, amp_B3,
                                  amp2_B1, amp2_B2, amp2_B3,
                                  null1, B_Pf2, null2);
                     B_Uf(F2, 0, k, j, i) = B_Pf2 * gdet;
-
+                }
+            );
+            IndexRange3 b3 = KDomain::GetRange(rc, domain, F3);
+            pmb->par_for(
+                "B_field_B2", b3.ks, b3.ke, b3.js, b3.je, b3.is, b3.ie,
+                KOKKOS_LAMBDA(const int &k, const int &j, const int &i) {
+                    GReal Xembed[GR_DIM];
+                    double null1, null2;
                     G.coord_embed(k, j, i, Loci::face3, Xembed);
-                    gdet = G.gdet(Loci::face3, j, i);
-                    B_Pf3 = B30;
+                    GReal gdet = G.gdet(Loci::face3, j, i);
+                    double B_Pf3 = B30;
                     seed_b<Seed>(Xembed, gdet, k1, k2, k3, phase,
                                  amp_B1, amp_B2, amp_B3,
                                  amp2_B1, amp2_B2, amp2_B3,
@@ -241,10 +255,12 @@ TaskStatus SeedBFieldType(MeshBlockData<Real> *rc, ParameterInput *pin, IndexDom
         // Find the magnetic vector potential.  In X3 symmetry only A_phi is non-zero,
         // But for tilted conditions we must keep track of all components
         // TODO(BSP) Make the vector potential a proper edge-centered field, sync it before B calc
+        // that will also allow converting below into E1/E2/E3 loops
+        IndexRange3 be = KDomain::GetRange(rc, domain, 0, 1);
         IndexSize3 sz = KDomain::GetBlockSize(rc);
         ParArrayND<double> A("A", NVEC, sz.n3+1, sz.n2+1, sz.n1+1);
         pmb->par_for(
-            "B_field_A", bf.ks, bf.ke, bf.js, bf.je, bf.is, bf.ie,
+            "B_field_A", be.ks, be.ke, be.js, be.je, be.is, be.ie,
             KOKKOS_LAMBDA(const int &k, const int &j, const int &i) {
                 GReal Xnative[GR_DIM];
                 GReal Xembed[GR_DIM], Xmidplane[GR_DIM];
@@ -324,24 +340,21 @@ TaskStatus SeedBFieldType(MeshBlockData<Real> *rc, ParameterInput *pin, IndexDom
             // we need this stencil-2 op over the whole domain
             IndexRange3 bB = KDomain::GetRange(rc, domain, 0, 1);
             if (ndim > 2) {
-                pmb->par_for(
-                    "ot_B", bB.ks, bB.ke, bB.js, bB.je, bB.is, bB.ie,
-                    KOKKOS_LAMBDA(const int &k, const int &j, const int &i) {
-                        B_CT::curl_3D(G, A, B_Uf, k, j, i);
-                    });
+                B_CT::EdgeCurl<F1,3>(rc, A, B_Uf, domain);
+                B_CT::EdgeCurl<F2,3>(rc, A, B_Uf, domain);
+                B_CT::EdgeCurl<F3,3>(rc, A, B_Uf, domain);
             } else if (ndim > 1) {
-                pmb->par_for(
-                    "ot_B", bB.ks, bB.ke, bB.js, bB.je, bB.is, bB.ie,
-                    KOKKOS_LAMBDA(const int &k, const int &j, const int &i) {
-                        B_CT::curl_2D(G, A, B_Uf, k, j, i);
-                    });
+                B_CT::EdgeCurl<F1,2>(rc, A, B_Uf, domain);
+                B_CT::EdgeCurl<F2,2>(rc, A, B_Uf, domain);
+                B_CT::EdgeCurl<F3,2>(rc, A, B_Uf, domain);
             } else {
                 throw std::runtime_error("Must initialize 1D field directly!");
             }
             B_CT::BlockUtoP(rc, domain);
             //std::cout << "Block divB: " << B_CT::BlockMaxDivB(rc) << std::endl;
         } else if (pkgs.count("B_FluxCT")) {
-            // Calculate B-field
+            // Calculate B-field.  Curl can be run all together since
+            // all directions areover all cells
             GridVector B_U = rc->Get("cons.B").data;
             IndexRange3 bl = KDomain::GetRange(rc, domain);
             if (ndim > 2) {
@@ -349,13 +362,15 @@ TaskStatus SeedBFieldType(MeshBlockData<Real> *rc, ParameterInput *pin, IndexDom
                     "B_field_B_3D", bl.ks, bl.ke, bl.js, bl.je, bl.is, bl.ie,
                     KOKKOS_LAMBDA(const int &k, const int &j, const int &i) {
                         B_FluxCT::averaged_curl_3D(G, A, B_U, k, j, i);
-                    });
+                    }
+                );
             } else if (ndim > 1) {
                 pmb->par_for(
                     "B_field_B_2D", bl.ks, bl.ke, bl.js, bl.je, bl.is, bl.ie,
                     KOKKOS_LAMBDA(const int &k, const int &j, const int &i) {
                         B_FluxCT::averaged_curl_2D(G, A, B_U, k, j, i);
-                    });
+                    }
+                );
             } else {
                 throw std::runtime_error("Must initialize 1D field directly!");
             }
@@ -375,7 +390,8 @@ TaskStatus SeedBFieldType(MeshBlockData<Real> *rc, ParameterInput *pin, IndexDom
                             VLOOP B_U(v, k, j, i) = B_Save(v, k, j, i);
                         }
 
-                    });
+                    }
+                );
 
             }
             // Finally, make sure we initialize the primitive field too

@@ -32,14 +32,12 @@ conv_2d() {
 
 # 2D modes use small blocks, could pick up some problems at MPI ranks >> 1
 # Just one default mode
-ALL_RES="32,64,128"
+ALL_RES="16,32,64,128,256"
+conv_2d emhd2d_mc flux/reconstruction=linear_mc "EMHD mode in 2D, linear/MC reconstruction"
 conv_2d emhd2d_weno flux/reconstruction=weno5 "EMHD mode in 2D, WENO5"
 # Test that higher-order terms don't mess anything up
 conv_2d emhd2d_higher_order emhd/higher_order_terms=true "EMHD mode in 2D, higher order terms enabled"
 # Test we can use imex/EMHD and face CT
 conv_2d emhd2d_face_ct b_field/solver=face_ct "EMHD mode in 2D w/Face CT"
-
-ALL_RES="16,32,64,128,256"
-conv_2d emhd2d_mc flux/reconstruction=linear_mc "EMHD mode in 2D, linear/MC reconstruction"
 
 exit $exit_code
