@@ -53,8 +53,10 @@ TaskStatus PerturbU(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pi
     auto u = rc->Get("prims.u").data;
 
     const Real u_jitter = pin->GetReal("perturbation", "u_jitter");
-    // Don't jitter values set by floors
-    const Real jitter_above_rho = pin->GetOrAddReal("perturbation", "jitter_above_rho", pin->GetReal("floors", "rho_min_geom"));
+    // Don't jitter values set by floors, by default
+    Real rho_min = pin->DoesParameterExist("floors", "rho_min_geom") ? pin->GetReal("floors", "rho_min_geom") :
+                                                                       pin->GetReal("floors", "rho_min_const");
+    const Real jitter_above_rho = pin->GetOrAddReal("perturbation", "jitter_above_rho", rho_min);
     // Note we add the MeshBlock gid to this value when seeding RNG,
     // to get a new sequence for every block
     const int rng_seed = pin->GetOrAddInteger("perturbation", "rng_seed", 31337);
