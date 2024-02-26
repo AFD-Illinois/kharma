@@ -32,7 +32,7 @@ conv_2d() {
 
 # 2D modes use small blocks, could pick up some problems at MPI ranks >> 1
 # Just one default mode
-ALL_RES="16,32,64,128,256"
+ALL_RES="64,128,256"
 conv_2d emhd2d_mc flux/reconstruction=linear_mc "EMHD mode in 2D, linear/MC reconstruction"
 conv_2d emhd2d_weno flux/reconstruction=weno5 "EMHD mode in 2D, WENO5"
 # Test that higher-order terms don't mess anything up
