@@ -55,7 +55,7 @@ KOKKOS_FORCEINLINE_FUNCTION void calc_tensor(const Local& P, const VarMap& m_p, 
                                         const EMHD::EMHD_parameters& emhd_params, const Real& gam, const int& dir,
                                         Real T[GR_DIM])
 {
-    if (m_p.Q >= 0 || m_p.DP >= 0) {
+    if ((m_p.Q >= 0 || m_p.DP >= 0) && emhd_params.feedback) {
         // Apply higher-order terms conversion if necessary
         Real qtilde = 0., dPtilde = 0.;
         if (m_p.Q >= 0)
@@ -68,7 +68,7 @@ KOKKOS_FORCEINLINE_FUNCTION void calc_tensor(const Local& P, const VarMap& m_p, 
         EMHD::convert_prims_to_q_dP(qtilde, dPtilde, P(m_p.RHO), Theta, cs2, emhd_params, q, dP);
 
         // Then calculate the tensor
-        EMHD::calc_tensor(P(m_p.RHO), P(m_p.UU), (gam - 1) * P(m_p.UU), emhd_params, q, dP, D, dir, T);
+        EMHD::calc_tensor(P(m_p.RHO), P(m_p.UU), (gam - 1) * P(m_p.UU), q, dP, D, dir, T);
     } else if (m_p.B1 >= 0) {
         // GRMHD stress-energy tensor w/ first index up, second index down
         GRMHD::calc_tensor(P(m_p.RHO), P(m_p.UU), (gam - 1) * P(m_p.UU), D, dir, T);
@@ -84,7 +84,7 @@ KOKKOS_FORCEINLINE_FUNCTION void calc_tensor(const Global& P, const VarMap& m_p,
                                         const int& k, const int& j, const int& i, const int& dir,
                                         Real T[GR_DIM])
 {
-    if (m_p.Q >= 0 || m_p.DP >= 0) {
+    if ((m_p.Q >= 0 || m_p.DP >= 0) && emhd_params.feedback) {
         // Apply higher-order terms conversion if necessary
         Real qtilde = 0., dPtilde = 0.;
         if (m_p.Q >= 0)
@@ -97,7 +97,7 @@ KOKKOS_FORCEINLINE_FUNCTION void calc_tensor(const Global& P, const VarMap& m_p,
         EMHD::convert_prims_to_q_dP(qtilde, dPtilde, P(m_p.RHO, k, j, i), Theta, cs2, emhd_params, q, dP);
 
         // Then calculate the tensor
-        EMHD::calc_tensor(P(m_p.RHO, k, j, i), P(m_p.UU, k, j, i), (gam - 1) * P(m_p.UU, k, j, i), emhd_params, q, dP, D, dir, T);
+        EMHD::calc_tensor(P(m_p.RHO, k, j, i), P(m_p.UU, k, j, i), (gam - 1) * P(m_p.UU, k, j, i), q, dP, D, dir, T);
     } else if (m_p.B1 >= 0) {
         // GRMHD stress-energy tensor w/ first index up, second index down
         GRMHD::calc_tensor(P(m_p.RHO, k, j, i), P(m_p.UU, k, j, i), (gam - 1) * P(m_p.UU, k, j, i), D, dir, T);
@@ -174,6 +174,71 @@ KOKKOS_FORCEINLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const Loca
             flux(m_u.K_ROWAN) = flux(m_u.RHO) * P(m_p.K_ROWAN);
         if (m_u.K_SHARMA >= 0)
             flux(m_u.K_SHARMA) = flux(m_u.RHO) * P(m_p.K_SHARMA);
+    }
+}
+
+template<typename Global>
+KOKKOS_FORCEINLINE_FUNCTION void prim_to_flux(const GRCoordinates& G, const Global& P, const VarMap& m_p, const FourVectors D,
+                                         const EMHD::EMHD_parameters& emhd_params, const Real& gam,
+                                         const int& k, const int& j, const int& i, const int& dir,
+                                         Real flux[MAX_VARS], const VarMap& m_u, const Loci loc=Loci::center)
+{
+    Real gdet = G.gdet(loc, j, i);
+    // Particle number flux
+    flux[m_u.RHO] = P(m_p.RHO, k, j, i) * D.ucon[dir] * gdet;
+
+    // Stress-energy tensor
+    Real T[GR_DIM];
+    calc_tensor(P, m_p, D, emhd_params, gam, k, j, i, dir, T);
+    flux[m_u.UU] = T[0] * gdet + flux[m_u.RHO];
+    flux[m_u.U1] = T[1] * gdet;
+    flux[m_u.U2] = T[2] * gdet;
+    flux[m_u.U3] = T[3] * gdet;
+
+    // Magnetic field
+    if (m_u.B1 >= 0) {
+        // Magnetic field
+        if (dir == 0) {
+            VLOOP flux[m_u.B1 + v] = P(m_p.B1 + v, k, j, i) * gdet;
+        } else {
+            // Constraint damping w/Dedner may add also P(m_p.psi) * gdet,
+            // but for us this is in the source term
+            VLOOP flux[m_u.B1 + v] = (D.bcon[v+1] * D.ucon[dir] - D.bcon[dir] * D.ucon[v+1]) * gdet;
+        }
+        // Extra scalar psi for constraint damping, see B_CD
+        if (m_u.PSI >= 0) {
+            if (dir == 0) {
+                flux[m_u.PSI] = P(m_p.PSI, k, j, i) * gdet;
+            } else {
+                // Psi field update as in Mosta et al (IllinoisGRMHD), alternate explanation Jesse et al (2020)
+                //Real alpha = 1. / m::sqrt(-G.gcon(Loci::center, j, i, 0, 0));
+                //Real beta_dir = G.gcon(Loci::center, j, i, 0, dir) * alpha * alpha;
+                flux[m_u.PSI] = (D.bcon[dir] - G.gcon(Loci::center, j, i, 0, dir) * P(m_p.PSI, k, j, i)) * gdet;
+            }
+        }
+    }
+
+    // EMHD Variables: advect like rho
+    if (m_u.Q >= 0)
+        flux[m_u.Q] = P(m_p.Q, k, j, i) * D.ucon[dir] * gdet;
+    if (m_u.DP >= 0)
+        flux[m_u.DP] = P(m_p.DP, k, j, i) * D.ucon[dir] * gdet;
+
+    // Electrons: normalized by density
+    if (m_u.KTOT >= 0) {
+        flux[m_u.KTOT] = flux[m_u.RHO] * P(m_p.KTOT, k, j, i);
+        if (m_u.K_CONSTANT >= 0)
+            flux[m_u.K_CONSTANT] = flux[m_u.RHO] * P(m_p.K_CONSTANT, k, j, i);
+        if (m_u.K_HOWES >= 0)
+            flux[m_u.K_HOWES] = flux[m_u.RHO] * P(m_p.K_HOWES, k, j, i);
+        if (m_u.K_KAWAZURA >= 0)
+            flux[m_u.K_KAWAZURA] = flux[m_u.RHO] * P(m_p.K_KAWAZURA, k, j, i);
+        if (m_u.K_WERNER >= 0)
+            flux[m_u.K_WERNER] = flux[m_u.RHO] * P(m_p.K_WERNER, k, j, i);
+        if (m_u.K_ROWAN >= 0)
+            flux[m_u.K_ROWAN] = flux[m_u.RHO] * P(m_p.K_ROWAN, k, j, i);
+        if (m_u.K_SHARMA >= 0)
+            flux[m_u.K_SHARMA] = flux[m_u.RHO] * P(m_p.K_SHARMA, k, j, i);
     }
 }
 
@@ -320,10 +385,10 @@ KOKKOS_FORCEINLINE_FUNCTION void vchar(const GRCoordinates& G, const Local& P, c
         const Real bsq = m::max(dot(D.bcon, D.bcov), SMALL);
         const Real va2 = bsq / (bsq + ef);
 
-        const Real ccond2 = (emhd_params.conduction)
+        const Real ccond2 = (m.Q >= 0)
             ? (gam - 1.) * emhd_params.conduction_alpha * cs2
             : 0.0;
-        const Real cvis2 = (emhd_params.viscosity)
+        const Real cvis2 = (m.DP >= 0)
             ? (4./3.) / (P(m.RHO) + (gam * P(m.UU)) ) * P(m.RHO) * emhd_params.viscosity_alpha * cs2
             : 0.0;
 

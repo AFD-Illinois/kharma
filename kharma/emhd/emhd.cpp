@@ -100,8 +100,6 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     } else {
         throw std::invalid_argument("Invalid Closure type: "+closure_type+". Use constant, sound_speed, or torus");
     }
-    emhd_params.conduction       = conduction;
-    emhd_params.viscosity        = viscosity;
     emhd_params.tau              = tau;
     emhd_params.conduction_alpha = conduction_alpha;
     emhd_params.viscosity_alpha  = viscosity_alpha;
@@ -363,7 +361,7 @@ TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
             const Real& Theta = Temps(b)(m_theta, k, j, i);
 
 
-            if (emhd_params.conduction) {
+            if (m_s.Q >= 0) {
                 const Real& qtilde = P(b)(m_p.Q, k, j, i);
                 const double inv_mag_b = 1. / m::sqrt(bsq);
                 Real q0            = 0;
@@ -378,7 +376,7 @@ TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
                     dUdt(b, m_s.Q, k, j, i)  += G.gdet(Loci::center, j, i) * (qtilde / 2.) * div_ucon;
             }
 
-            if (emhd_params.viscosity) {
+            if (m_s.DP >= 0) {
                 const Real& dPtilde = P(b)(m_p.DP, k, j, i);
                 Real dP0            = -rho * nu_e * div_ucon;
                 DLOOP2  dP0        += 3. * rho * nu_e * (D.bcon[mu] * D.bcon[nu] / bsq) * grad_ucov[mu][nu];
