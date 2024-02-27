@@ -276,13 +276,14 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
                     solve_fail = SolverStatusR::converged;
 
                     if (m_p.Q >= 0 || m_p.DP >= 0) {
+                        Real throwaway;
+                        Real &dUq  = (m_u.Q >= 0)  ? dU_implicit_all(b, m_u.Q, k, j, i) : throwaway;
+                        Real &dUdP = (m_u.DP >= 0) ? dU_implicit_all(b, m_u.DP, k, j, i): throwaway;
                         Real tau, chi_e, nu_e;
                         EMHD::set_parameters(G, P_sub_step_init_all(b), m_p, emhd_params_sub_step_init,
                                                 gam, k, j, i, tau, chi_e, nu_e);
                         EMHD::implicit_sources(G, P_full_step_init_all(b), m_p,
-                                        gam, tau, k, j, i,
-                                        dU_implicit_all(b, m_u.Q, k, j, i),
-                                        dU_implicit_all(b, m_u.DP, k, j, i));
+                                                gam, tau, k, j, i, dUq, dUdP);
                     }
 
                     // Jacobian calculation
