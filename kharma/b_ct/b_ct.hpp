@@ -221,14 +221,14 @@ KOKKOS_INLINE_FUNCTION Real upwind_diff(const VariableFluxPack<Real>& B_U, const
 
     if (contact_vel > 0) {
         // Forward: difference at i
-        return return_sign * (emfc(comp-1, k_cent, j_cent, i_cent) - emf_sign * B_U.flux(dir, vdir-1, k, j, i));
+        return return_sign * (emfc(comp-1, k_cent, j_cent, i_cent) + emf_sign * B_U.flux(dir, vdir-1, k, j, i));
     } else if (contact_vel < 0) {
         // Back: difference at i-1
-        return return_sign * (emfc(comp-1, k_cent_up, j_cent_up, i_cent_up) - emf_sign * B_U.flux(dir, vdir-1, k_up, j_up, i_up));
+        return return_sign * (emfc(comp-1, k_cent_up, j_cent_up, i_cent_up) + emf_sign * B_U.flux(dir, vdir-1, k_up, j_up, i_up));
     } else {
         // Half and half
-        return return_sign*0.5*(emfc(comp-1, k_cent, j_cent, i_cent) - emf_sign * B_U.flux(dir, vdir-1, k, j, i) +
-                    emfc(comp-1, k_cent_up, j_cent_up, i_cent_up) - emf_sign * B_U.flux(dir, vdir-1, k_up, j_up, i_up));
+        return return_sign*0.5*(emfc(comp-1, k_cent, j_cent, i_cent) + emf_sign * B_U.flux(dir, vdir-1, k, j, i) +
+                    emfc(comp-1, k_cent_up, j_cent_up, i_cent_up) + emf_sign * B_U.flux(dir, vdir-1, k_up, j_up, i_up));
     }
 }
 
