@@ -187,8 +187,9 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
     );
     EndFlag();
 
-    // If we have B field on faces, we must replace reconstructed version with that
-    if (pmb0->packages.AllPackages().count("B_CT")) {  // TODO if variable "cons.fB"?
+    // If we have B field on faces, we "must" replace reconstructed version with that
+    // Override at user option due to unreasonable effectiveness
+    if (pmb0->packages.AllPackages().count("B_CT") && pmb0->packages.Get("Flux")->Param<bool>("consistent_face_b")) {
         const auto& Bf  = md->PackVariables(std::vector<std::string>{"cons.fB"});
         const TopologicalElement face = (dir == 1) ? F1 : ((dir == 2) ? F2 : F3);
         pmb0->par_for("replace_face", block.s, block.e, b.ks, b.ke, b.js, b.je, b.is, b.ie,

@@ -49,6 +49,9 @@ std::shared_ptr<KHARMAPackage> Flux::Initialize(ParameterInput *pin, std::shared
     auto pkg = std::make_shared<KHARMAPackage>("Flux");
     Params &params = pkg->AllParams();
 
+    bool consistent_face_b = pin->GetOrAddBoolean("flux", "consistent_face_b", true);
+    params.Add("consistent_face_b", consistent_face_b);
+
     // We can't just use GetVariables or something since there's no mesh yet.
     // That's what this function is for.
     int nvar = KHARMA::PackDimension(packages.get(), Metadata::WithFluxes);
