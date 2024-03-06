@@ -148,6 +148,7 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     // Only necessary to add here if syncing conserved vars
     // Note some startup behavior relies on having the GRHD prims marked for syncing,
     // so disable sync_utop_seed at your peril
+    // TODO work out disabling this automatically if Kastaun solver is enabled (requires no seed to converge)
     if (!driver.Get<bool>("sync_prims") && pin->GetOrAddBoolean("GRMHD", "sync_utop_seed", true)) {
         flags_prim.push_back(Metadata::FillGhost);
     }
@@ -179,7 +180,7 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     // specific points in a step if the package is loaded.
     // Generally, see the headers for function descriptions.
 
-    //pkg->BlockUtoP // Taken care of by the inverter package since it's hard to do
+    //pkg->BlockUtoP // Taken care of by separate "Inverter" package since it's hard to do
 
     // On physical boundaries, even if we've sync'd both, respect the application to primitive variables
     pkg->DomainBoundaryPtoU = Flux::BlockPtoUMHD;

@@ -1,5 +1,5 @@
 /* 
- *  File: flux.hpp
+ *  File: get_flux.hpp
  *  
  *  BSD 3-Clause License
  *  
@@ -138,7 +138,7 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
     // Allocate enough to cache prims, conserved, and fluxes, for left and right faces,
     // plus temporaries inside reconstruction (most use none, donor_cell uses one, linear_vl uses a bunch)
     using RType = KReconstruction::Type;
-    const size_t recon_scratch_bytes = (2 + 1*(Recon == RType::donor_cell) +
+    const size_t recon_scratch_bytes = (4 + 1*(Recon == RType::donor_cell) +
                                             5*(Recon == RType::linear_vl)) * var_size_in_bytes +
                                         line_size_in_bytes;
     const size_t flux_scratch_bytes = 3 * var_size_in_bytes;
@@ -152,6 +152,8 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
             const auto& G = U_all.GetCoords(bl);
             ScratchPad2D<Real> Pl_s(member.team_scratch(scratch_level), nvar, n1);
             ScratchPad2D<Real> Pr_s(member.team_scratch(scratch_level), nvar, n1);
+            ScratchPad2D<Real> Plf_s(member.team_scratch(scratch_level), nvar, n1);
+            ScratchPad2D<Real> Prf_s(member.team_scratch(scratch_level), nvar, n1);
             ScratchPad1D<int> fallback_tvd(member.team_scratch(scratch_level), n1);
 
             // We template on reconstruction type to avoid a big switch statement here.
@@ -178,17 +180,15 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
             member.team_barrier();
 
             if (reconstruction_fallback) {
-                int kk = (dir == 3) ? k - 1 : k;
-                int jj = (dir == 2) ? j - 1 : j;
+                // TODO without the whole thing again? Also, option of scheme?
+                KReconstruction::ReconstructRow<RType::ppm, dir>(member, P_all(bl), k, j, b.is, b.ie, Plf_s, Prf_s);
+                member.team_barrier();
                 for (int p = 0; p <= P_all.GetDim(4) - 1; ++p) {
                     parthenon::par_for_inner(member, b.is, b.ie,
                         [&](const int& i) {
-                            int ii = (dir == 1) ? i - 1 : i;
-                            // Donor cell is TVD, shut up
-                            // TODO(BSP) better TVD?
                             if (fallback_tvd(i)) {
-                                Pl_s(p, i) = P_all(bl, p, kk, jj, ii);
-                                Pr_s(p, i) = P_all(bl, p, k, j, i);
+                                Pl_s(p, i) = Plf_s(p, i);
+                                Pr_s(p, i) = Prf_s(p, i);
                             }
                         }
                     );
@@ -211,11 +211,12 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
     EndFlag();
 
     // If we have B field on faces, we "must" replace reconstructed version with that
-    // Override at user option due to unreasonable effectiveness
-    if (pmb0->packages.AllPackages().count("B_CT") && pmb0->packages.Get("Flux")->Param<bool>("consistent_face_b")) {
+    // Override at user option due to unreasonable effectiveness (https://github.com/AFD-Illinois/kharma/issues/79)
+    if (pmb0->packages.AllPackages().count("B_CT") && packages.Get("B_CT")->Param<bool>("consistent_face_b")) {
         const auto& Bf  = md->PackVariables(std::vector<std::string>{"cons.fB"});
-        const TopologicalElement face = FaceOf(dir);
-        pmb0->par_for("replace_face", block.s, block.e, b.ks, b.ke, b.js, b.je, b.is, b.ie,
+        const TopologicalElement face = FaceOf(dir); // TODO probably can be constexpr, somehow
+        IndexRange3 bi = KDomain::GetRange(md, IndexDomain::interior, face);
+        pmb0->par_for("replace_face", block.s, block.e, bi.ks, bi.ke, bi.js, bi.je, bi.is, bi.ie,
             KOKKOS_LAMBDA(const int& bl, const int& k, const int& j, const int& i) {
                 const auto& G = U_all.GetCoords(bl);
                 const double bf = Bf(bl, face, 0, k, j, i) / G.gdet(loc, j, i);
@@ -227,7 +228,7 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
 
     // Now that this is split, we add the biggest TODO in KHARMA
     // TODO per-package prim_to_flux?  Is that slower?
-    // At least, we need to template on vchar/stress-energy T type
+    // At least, we should refactor to template loops on vchar/stress-energy T type
 
     Flag("GetFlux_"+std::to_string(dir)+"_left");
     parthenon::par_for_outer(DEFAULT_OUTER_LOOP_PATTERN, "calc_flux_left", pmb0->exec_space,
@@ -268,7 +269,7 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
 
                     // Record speeds
                     cmax(bl, dir-1, k, j, i) = m::max(0., cmaxL);
-                    cmin(bl, dir-1, k, j, i) = m::max(0., -cminL);
+                    cmin(bl, dir-1, k, j, i) = m::min(0., cminL);
                 }
             );
             member.team_barrier();
@@ -323,8 +324,8 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
                     Flux::vchar(G, Pr, m_p, Dtmp, gam, emhd_params, k, j, i, loc, dir, cmaxR, cminR);
 
                     // Calculate cmax/min based on comparison with cached values
-                    cmax(bl, dir-1, k, j, i) = m::abs(m::max(cmax(bl, dir-1, k, j, i),  cmaxR));
-                    cmin(bl, dir-1, k, j, i) = m::abs(m::max(cmin(bl, dir-1, k, j, i), -cminR));
+                    cmax(bl, dir-1, k, j, i) =  m::max(cmax(bl, dir-1, k, j, i), cmaxR);
+                    cmin(bl, dir-1, k, j, i) = -m::min(cmin(bl, dir-1, k, j, i), cminR);
                 }
             );
             member.team_barrier();
@@ -351,8 +352,6 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
                 U_all(bl).flux(dir, p, k, j, i) = hlle(Fl_all(bl, p, k, j, i), Fr_all(bl, p, k, j, i),
                                                       cmax(bl, dir-1, k, j, i), cmin(bl, dir-1, k, j, i),
                                                       Ul_all(bl, p, k, j, i), Ur_all(bl, p, k, j, i));
-
-
             }
         );
     } else {
@@ -361,16 +360,14 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
                 U_all(bl).flux(dir, p, k, j, i) = llf(Fl_all(bl, p, k, j, i), Fr_all(bl, p, k, j, i),
                                                      cmax(bl, dir-1, k, j, i), cmin(bl, dir-1, k, j, i),
                                                      Ul_all(bl, p, k, j, i), Ur_all(bl, p, k, j, i));
-
-
             }
         );
     }
     EndFlag();
 
     // Save the face velocities for upwinding/CT later
-    // TODO only for certain GS'05
-    if (packages.AllPackages().count("B_CT")) {
+    // TODO Probably a few reasons to do this, maybe make it a Flux parameter
+    if (packages.AllPackages().count("B_CT") && packages.Get("B_CT")->Param<std::string>("ct_scheme") == "gs05_c") {
         Flag("GetFlux_"+std::to_string(dir)+"_store_vel");
         const auto& vl_all = md->PackVariables(std::vector<std::string>{"Flux.vl"});
         const auto& vr_all = md->PackVariables(std::vector<std::string>{"Flux.vr"});

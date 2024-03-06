@@ -71,17 +71,23 @@ TaskStatus Flux::FOFC(MeshData<Real> *md, MeshData<Real> *guess)
     // It will be filled according to m_u/cons_map, which does not contain B
     PackIndexMap cons_map, prims_map;
     std::vector<MetadataFlag> prims_flags = {Metadata::GetUserFlag("Primitive"), Metadata::Cell};
-    std::vector<MetadataFlag> cons_hd = {Metadata::Conserved, Metadata::Cell};
+    std::vector<MetadataFlag> cons_flags = {Metadata::Conserved, Metadata::Cell};
     const auto& P_all = md->PackVariables(prims_flags, prims_map);
-    const auto& U_all = md->PackVariablesAndFluxes(cons_hd, cons_map);
+    const auto& U_all = md->PackVariablesAndFluxes(cons_flags, cons_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
     const int nvar = U_all.GetDim(4);
 
     // Parameters
     const Real gam = pmb0->packages.Get("GRMHD")->Param<Real>("gamma");
+    const bool use_global = pmb0->packages.Get("Flux")->Param<bool>("fofc_use_glf");
     const EMHD::EMHD_parameters& emhd_params = EMHD::GetEMHDParameters(packages);
     const bool spherical = pmb0->coords.coords.is_spherical();
     const GReal r_eh = pmb0->coords.coords.get_horizon();
+    // With B_CT this will load the preference, without it will set face_b false and never access (empty) Bf
+    // Weird but it works
+    const bool face_b = (packages.AllPackages().count("B_CT") &&
+                        packages.Get("B_CT")->Param<bool>("consistent_face_b"));
+    const auto& Bf = md->PackVariables(std::vector<std::string>{"cons.fB"});
 
     // Pre-mark cells which will need fluxes reduced.
     // This avoids a race condition marking them multiple times when iterating faces,
@@ -118,6 +124,11 @@ TaskStatus Flux::FOFC(MeshData<Real> *md, MeshData<Real> *guess)
                     // "Reconstruct" left & right of this face: left is left cell, right is shared-index
                     PLOOP Pl_all(b, ip, k, j, i) = P_all(b, ip, kk, jj, ii);
                     PLOOP Pr_all(b, ip, k, j, i) = P_all(b, ip, k, j, i);
+                    // Preserve the existing field at the face
+                    if (face_b) {
+                        Pl_all(b, m_p.B1+dir-1, k, j, i) = Bf(b, el, 0, k, j, i) / G.gdet(loc, j, i);
+                        Pr_all(b, m_p.B1+dir-1, k, j, i) = Bf(b, el, 0, k, j, i) / G.gdet(loc, j, i);
+                    }
 
                     FourVectors Dtmp;
                     // Left
@@ -129,7 +140,7 @@ TaskStatus Flux::FOFC(MeshData<Real> *md, MeshData<Real> *guess)
                     Flux::vchar_global(G, Pl_all(b), m_p, Dtmp, gam, emhd_params, k, j, i, loc, dir, cmaxL, cminL);
                     // Record speeds
                     cmax(b, dir-1, k, j, i) = m::max(0., cmaxL);
-                    cmin(b, dir-1, k, j, i) = m::max(0., -cminL);
+                    cmin(b, dir-1, k, j, i) = m::min(0., cminL);
 
                     // Right
                     GRMHD::calc_4vecs(G, Pr_all(b), m_p, k, j, i, loc, Dtmp);
@@ -139,12 +150,18 @@ TaskStatus Flux::FOFC(MeshData<Real> *md, MeshData<Real> *guess)
                     Real cmaxR, cminR;
                     Flux::vchar_global(G, Pr_all(b), m_p, Dtmp, gam, emhd_params, k, j, i, loc, dir, cmaxR, cminR);
                     // Calculate cmax/min based on comparison with cached values
-                    cmax(b, dir-1, k, j, i) = m::abs(m::max(cmax(b, dir-1, k, j, i),  cmaxR));
-                    cmin(b, dir-1, k, j, i) = m::abs(m::max(cmin(b, dir-1, k, j, i), -cminR));
-
+                    if (!use_global) {
+                        cmax(b, dir-1, k, j, i) =  m::max(cmax(b, dir-1, k, j, i), cmaxR);
+                        cmin(b, dir-1, k, j, i) = -m::min(cmin(b, dir-1, k, j, i), cminR);
+                    } else {
+                        // This conveniently also reduces the timestep if necessary
+                        // Though, you should almost certainly set use_dt_light w/this
+                        cmax(b, dir-1, k, j, i) = 1.;
+                        cmin(b, dir-1, k, j, i) = 1.;
+                    }
 
                     // Use LLF flux. Note we replace fluxes of all variables (including B!)
-                    // This is for a consistent scheme, i.e. all cells FOFC == 
+                    // This is for a consistent scheme, i.e. all cells FOFC == using DC+LLF
                     PLOOP
                         U_all(b).flux(dir, ip, k, j, i) = llf(Fl_all(b, ip, k, j, i), Fr_all(b, ip, k, j, i),
                                                             cmax(b, dir-1, k, j, i), cmin(b, dir-1, k, j, i),

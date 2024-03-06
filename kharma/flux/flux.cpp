@@ -133,9 +133,6 @@ std::shared_ptr<KHARMAPackage> Flux::Initialize(ParameterInput *pin, std::shared
     bool reconstruction_fallback = pin->GetOrAddBoolean("flux", "reconstruction_fallback", false);
     params.Add("reconstruction_fallback", reconstruction_fallback);
 
-    bool consistent_face_b = pin->GetOrAddBoolean("flux", "consistent_face_b", true);
-    params.Add("consistent_face_b", consistent_face_b);
-
     // We can't just use GetVariables or something since there's no mesh yet.
     // That's what this function is for.
     int nvar = KHARMA::PackDimension(packages.get(), Metadata::WithFluxes);
@@ -168,30 +165,26 @@ std::shared_ptr<KHARMAPackage> Flux::Initialize(ParameterInput *pin, std::shared
 
     // PROCESS FOFC
     // Accept this a bunch of places, maybe we'll trim this...
-    // Also activate if using HLLE, as fluxes inside EH should be replaced
     bool default_fofc = false;
     if (pin->DoesParameterExist("driver", "fofc")) {
         default_fofc = pin->GetBoolean("driver", "fofc");
     } else if (pin->DoesParameterExist("flux", "fofc")) {
         default_fofc = pin->GetBoolean("flux", "fofc");
-    } else if (params.Get<bool>("use_hlle")) {
-        default_fofc = true;
     }
-    // We're about to add a <fofc> block for clarity,
-    // but if the user didn't add one we use default floors below
-    bool fofc_block_in_input = pin->DoesBlockExist("fofc");
     bool use_fofc = pin->GetOrAddBoolean("fofc", "on", default_fofc);
     params.Add("use_fofc", use_fofc);
 
     if (use_fofc) {
         // FOFC-specific options
-        bool use_global_speed = pin->GetOrAddBoolean("fofc", "use_global_speed", false);
-        params.Add("use_global_speed", use_global_speed);
+        bool use_glf = pin->GetOrAddBoolean("fofc", "use_glf", false);
+        params.Add("fofc_use_glf", use_glf);
 
-        if (pin->GetOrAddBoolean("fofc", "use_custom_floors", fofc_block_in_input)) {
-            params.Add("fofc_prescription", Floors::Prescription(pin, "fofc"));
-        } else {
+        // Use a custom block for fofc floors.  We now do the same for Kastaun, where we can *also* have floors
+        // TODO even post-reconstruction/reconstruction fallback?
+        if (!pin->DoesBlockExist("fofc_floors")) {
             params.Add("fofc_prescription", Floors::Prescription(pin, "floors"));
+        } else {
+            params.Add("fofc_prescription", Floors::Prescription(pin, "fofc_floors"));
         }
 
         // Flag for whether FOFC was applied, for diagnostics
@@ -277,8 +270,8 @@ TaskStatus Flux::BlockPtoU(MeshBlockData<Real> *rc, IndexDomain domain, bool coa
     if (P.GetDim(4) == 0) return TaskStatus::complete;
 
     // Make sure we always update center conserved B from the faces, not the prims
-    if (pmb->packages.AllPackages().count("B_CT"))
-        B_CT::BlockUtoP(rc, domain, coarse);
+    // if (pmb->packages.AllPackages().count("B_CT"))
+    //     B_CT::BlockUtoP(rc, domain, coarse);
 
     // Indices
     auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;

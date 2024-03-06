@@ -316,7 +316,7 @@ KOKKOS_FORCEINLINE_FUNCTION void vchar(const GRCoordinates& G, const Local& P, c
         EMHD::set_parameters(G, P, m, emhd_params, gam, j, i, tau, chi_e, nu_e);
         
         // Find fast magnetosonic speed
-        const Real bsq = m::max(dot(D.bcon, D.bcov), SMALL);
+        const Real bsq = dot(D.bcon, D.bcov);
         const Real va2 = bsq / (bsq + ef);
 
         const Real ccond2 = (emhd_params.conduction)
@@ -331,14 +331,14 @@ KOKKOS_FORCEINLINE_FUNCTION void vchar(const GRCoordinates& G, const Local& P, c
         cms2 = cs2_emhd + va2 - cs2_emhd*va2;
     } else if (m.B1 >= 0) {
         // Find fast magnetosonic speed
-        const Real bsq = m::max(dot(D.bcon, D.bcov), SMALL);
+        const Real bsq = dot(D.bcon, D.bcov);
         const Real va2 = bsq / (bsq + ef);
 
         cms2 = cs2 + va2 - cs2 * va2;
     } else {
         cms2 = cs2;
     }
-    clip(cms2, SMALL, 1.);
+    //clip(cms2, SMALL, 1.);
 
     // Require that speed of wave measured by observer q.ucon is cms2
     Real A, B, C;
@@ -388,7 +388,7 @@ KOKKOS_FORCEINLINE_FUNCTION void vchar_global(const GRCoordinates& G, const Glob
         EMHD::set_parameters(G, P, m, emhd_params, gam, k, j, i, tau, chi_e, nu_e);
         
         // Find fast magnetosonic speed
-        const Real bsq = m::max(dot(D.bcon, D.bcov), SMALL);
+        const Real bsq = dot(D.bcon, D.bcov);
         const Real va2 = bsq / (bsq + ef);
 
         const Real ccond2 = (emhd_params.conduction)
@@ -403,14 +403,13 @@ KOKKOS_FORCEINLINE_FUNCTION void vchar_global(const GRCoordinates& G, const Glob
         cms2 = cs2_emhd + va2 - cs2_emhd*va2;
     } else if (m.B1 >= 0) {
         // Find fast magnetosonic speed
-        const Real bsq = m::max(dot(D.bcon, D.bcov), SMALL);
+        const Real bsq = dot(D.bcon, D.bcov);
         const Real va2 = bsq / (bsq + ef);
 
         cms2 = cs2 + va2 - cs2 * va2;
     } else {
         cms2 = cs2;
     }
-    clip(cms2, SMALL, 1.);
 
     // Require that speed of wave measured by observer q.ucon is cms2
     Real A, B, C;

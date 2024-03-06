@@ -36,126 +36,276 @@
 // Copyright(C) 2020 James M. Stone <jmstone@ias.edu> and the Athena code team
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
+// © 2021-2023. Triad National Security, LLC. All rights reserved.  This
+// program was produced under U.S. Government contract
+// 89233218CNA000001 for Los Alamos National Laboratory (LANL), which
+// is operated by Triad National Security, LLC for the U.S.
+// Department of Energy/National Nuclear Security Administration. All
+// rights in the program are reserved by Triad National Security, LLC,
+// and the U.S. Department of Energy/National Nuclear Security
+// Administration. The Government is granted for itself and others
+// acting on its behalf a nonexclusive, paid-up, irrevocable worldwide
+// license in this material to reproduce, prepare derivative works,
+// distribute copies to the public, perform publicly and display
+// publicly, and to permit others to do so.
 #pragma once
+
+// Robust primitive variable recovery as described in Kastaun et al. (2020)
+// IMPORTANT: The following functions are stolen directly from:
+// Phoebus: https://github.com/lanl/phoebus (con2prim_robust.hpp)
+// AthenaK: https://gitlab.com/theias/hpc/jmstone/athena-parthenon/athenak (ideal_c2p_mhd.hpp)
+// They have been lightly adapted to fit into KHARMA,
+// and hopefully original authors should be clear from comments
 
 // General template
 // We define a specialization based on the Inverter::Type parameter
 #include "invert_template.hpp"
 
 #include "coordinate_utils.hpp"
-#include "floors.hpp"
+#include "floors_functions.hpp"
 #include "grmhd_functions.hpp"
 #include "kharma_utils.hpp"
 
-// The following functions are stolen from AthenaK, ideal_c2p_mhd.hpp
-// They have been lightly adapted to fit into KHARMA
+// This isn't a vecloop, also it takes an argument.
+// Left it in since it's useful and all over Phoebus, maybe we'll adopt it
+#define SPACELOOP(i) for (int i = 0; i < 3; i++)
+#define SPACELOOP2(i, j) SPACELOOP(i) SPACELOOP(j)
+#define SPACETIMELOOP(mu) for (int mu = 0; mu < GR_DIM; mu++)
 
 namespace Inverter {
 
-// structs to store primitive/conserved variables in one-dimension
-// (density, velocity/momentum, internal/total energy, [transverse magnetic field])
-struct HydPrim1D {
-  Real d, vx, vy, vz, e;
-};
-struct HydCons1D {
-  Real d, mx, my, mz, e;
-};
-struct MHDPrim1D {
-  Real d, vx, vy, vz, e, bx, by, bz;
-};
-struct MHDCons1D {
-  Real d, mx, my, mz, e, bx, by, bz;
+/**
+ * Residual class from Phoebus, allowing caching of:
+ * 1. Function arguments other than solution var "mu"
+ * 2. Floors/ceilings and tracking of floor hits
+ * Also handles translating mu->primitive variables
+ */
+class KastaunResidual {
+    public:
+        KOKKOS_FUNCTION
+        KastaunResidual(const Real &D, const Real &q, const Real &bsq, const Real &bsq_rpsq,
+                const Real &rsq, const Real &rbsq, const Real &v0sq, const Real &gam,
+                const Real &rho_floor, const Real &e_floor,
+                const Real &gamma_max, const Real &e_max)
+            : D_(D), q_(q), bsq_(bsq), bsq_rpsq_(bsq_rpsq),
+            rsq_(rsq), rbsq_(rbsq), v0sq_(v0sq), gam_(gam),
+            rho_floor_(rho_floor), e_floor_(e_floor),
+            gamma_max_(gamma_max), e_max_(e_max) {}
+
+        KOKKOS_FORCEINLINE_FUNCTION
+        Real x_mu(const Real mu)
+        {
+            return 1.0 / (1.0 + mu * bsq_);
+        }
+        KOKKOS_FORCEINLINE_FUNCTION
+        Real rbarsq_mu(const Real mu, const Real x) {
+            return x * (x * rsq_ + mu * (1.0 + x) * rbsq_);
+        }
+        KOKKOS_FORCEINLINE_FUNCTION
+        Real qbar_mu(const Real mu, const Real x) {
+            const Real mux = mu * x;
+            return q_ - 0.5 * (bsq_ + mux * mux * bsq_rpsq_);
+        }
+        KOKKOS_FORCEINLINE_FUNCTION
+        Real vhatsq_mu(const Real mu, const Real rbarsq) {
+            const Real vsq_trial = mu * mu * rbarsq;
+            if (vsq_trial > v0sq_) {
+                used_gamma_max_ = true;
+                return v0sq_;
+            } else {
+                used_gamma_max_ = false;
+                return vsq_trial;
+            }
+        }
+        KOKKOS_FORCEINLINE_FUNCTION
+        Real iWhat_mu(const Real vhatsq)
+        {
+            return std::sqrt(1.0 - vhatsq);
+        }
+        KOKKOS_FORCEINLINE_FUNCTION
+        Real rhohat_mu(const Real iWhat) {
+            const Real rho_trial = D_ * iWhat;
+            if (rho_trial <= rho_floor_) {
+                used_density_floor_ = true;
+                return rho_floor_;
+            } else {
+                used_density_floor_ = false;
+                return rho_trial;
+            }
+        }
+        KOKKOS_FORCEINLINE_FUNCTION
+        Real ehat_mu(const Real mu, const Real qbar, const Real rbarsq, const Real vhatsq,
+                    const Real What)
+        {
+            const Real ehat_trial =
+                    What * (qbar - mu * rbarsq) + vhatsq * What * What / (1.0 + What);
+            // Note this floor is approximate, since we haven't landed on a density
+            used_energy_floor_ = false;
+            used_energy_max_ = false;
+            if (ehat_trial <= e_floor_) {
+                used_energy_floor_ = true;
+                return e_floor_;
+            } else if (ehat_trial > e_max_) {
+                used_energy_max_ = true;
+                return e_max_;
+            } else {
+                return ehat_trial;
+            }
+        }
+
+        // Evaluate residual at a value of mu.
+        // Kastaun eqn 44
+        KOKKOS_INLINE_FUNCTION
+        Real operator()(const Real mu) {
+            const Real x = x_mu(mu);
+            const Real rbarsq = rbarsq_mu(mu, x);
+            const Real qbar = qbar_mu(mu, x);
+            const Real vhatsq = vhatsq_mu(mu, rbarsq);
+            const Real iWhat = iWhat_mu(vhatsq);
+            const Real What = 1.0 / iWhat;
+            Real rhohat = rhohat_mu(iWhat);
+            Real ehat = ehat_mu(mu, qbar, rbarsq, vhatsq, What);
+            const Real Phat = ehat * rhohat * (gam_ - 1.0);
+            Real hhat = rhohat * (1.0 + ehat) + Phat;
+            const Real ahat = Phat / (hhat - Phat); // TODO robust this
+            hhat /= rhohat;
+
+            const Real nua = (1.0 + ahat) * (1.0 + ehat) * iWhat;
+            const Real nub = (1.0 + ahat) * (1.0 + qbar - mu * rbarsq);
+            const Real nuhat = std::max(nua, nub);
+
+            const Real muhat = 1.0 / (nuhat + mu * rbarsq);
+            return mu - muhat;
+        }
+
+        // Residual for finding bracket values
+        // Kastaun eqn 49
+        KOKKOS_FORCEINLINE_FUNCTION
+        Real aux_func(const Real mu) {
+            const Real x = 1.0 / (1.0 + mu * bsq_);
+            const Real rbarsq = x * (rsq_ * x + mu * (1.0 + x) * rbsq_);
+            return mu * std::sqrt(1.0 + rbarsq) - 1.0;
+        }
+
+        // Query floors
+        // TODO fold into single int w/FFlag?  That's what we return anyway
+        KOKKOS_INLINE_FUNCTION
+        bool used_density_floor() const { return used_density_floor_; }
+        KOKKOS_INLINE_FUNCTION
+        bool used_energy_floor() const { return used_energy_floor_; }
+        KOKKOS_INLINE_FUNCTION
+        bool used_energy_max() const { return used_energy_max_; }
+        KOKKOS_INLINE_FUNCTION
+        bool used_gamma_max() const { return used_gamma_max_; }
+
+    private:
+        const Real D_, q_, bsq_, bsq_rpsq_, rsq_, rbsq_, v0sq_, gam_;
+        const Real rho_floor_, e_floor_, gamma_max_, e_max_;
+        bool used_density_floor_, used_energy_floor_, used_energy_max_, used_gamma_max_;
 };
 
-struct EOS_Data {
-  Real gamma;        // ratio of specific heats for ideal gas
-  Real dfloor, pfloor, tfloor, sfloor;  // density, pressure, temperature, entropy floors
-};
-
-//----------------------------------------------------------------------------------------
-//! \fn Real equation_49()
-//! \brief Inline function to compute function fa(mu) defined in eq. 49 of Kastaun et al.
-//! The root fa(mu)==0 of this function corresponds to the upper bracket for
-//! solving equation_44
-KOKKOS_INLINE_FUNCTION
-Real equation_49(const Real mu, const Real b2, const Real rp, const Real r, const Real q)
+/**
+ * Robust inversion scheme from Kastaun et al. 2020
+ * Unholy mashup of the transformation/equations from Phoebus (which are coordinate-general),
+ * and the solver from AthenaK (which is easier to read and precomputes the bracket)
+ * TODO keep mu between calls to speed up convergence
+ * TODO better returns: be explicit about pre- and post-inversion floors, cat neg_input too
+ */
+template <>
+KOKKOS_INLINE_FUNCTION int u_to_p<Type::kastaun>(const GRCoordinates& G, const VariablePack<Real>& U, const VarMap& m_u,
+                                              const Real& gam, const int& k, const int& j, const int& i,
+                                              const VariablePack<Real>& P, const VarMap& m_p,
+                                              const Loci& loc, const Floors::Prescription& inverter_floors,
+                                              const int& max_iterations, const Real& tol)
 {
-  Real const x = 1.0/(1.0 + mu*b2);             // (26)
-  Real rbar = (x*x*r*r + mu*x*(1.0 + x)*rp*rp); // (38)
-  return mu*m::sqrt(1.0 + rbar) - 1.0;
-}
+    // Shouldn't need this, KHARMA should die on NaN
+    // But it's here for debugging
+    // int num_nans = std::isnan(U(m_u.RHO, k, j, i)) + std::isnan(U(m_u.U1, k, j, i)) + std::isnan(U(m_u.UU, k, j, i));
+    // if (num_nans > 0) return static_cast<int>(Status::neg_input);
 
-//----------------------------------------------------------------------------------------
-//! \fn Real equation_44()
-//! \brief Inline function to compute function f(mu) defined in eq. 44 of Kastaun et al.
-//! The ConsToPrim algorithms finds the root of this function f(mu)=0
-KOKKOS_INLINE_FUNCTION
-Real equation_44(const Real mu, const Real b2, const Real rpar, const Real r, const Real q,
-                const Real u_d,  EOS_Data eos)
-{
-  Real const x = 1./(1.+mu*b2);                    // (26)
-  Real rbar = (x*x*r*r + mu*x*(1.+x)*rpar*rpar);   // (38)
-  Real qbar = q - 0.5*b2 - 0.5*(mu*mu*(b2*rbar- rpar*rpar)); // (31)
-  Real z2 = (mu*mu*rbar/(m::abs(1.- SQR(mu)*rbar))); // (32)
-  Real w = m::sqrt(1.+z2);
-  Real const wd = u_d/w;                           // (34)
-  Real eps = w*(qbar - mu*rbar) + z2/(w+1.);
-  Real const gm1 = eos.gamma - 1.0;
-  Real epsmin = m::max(eos.pfloor/(wd*gm1), eos.sfloor*pow(wd, gm1)/gm1);
-  eps = m::max(eps, epsmin);
-  Real const h = 1.0 + eos.gamma*eps;              // (43)
-  return mu - 1./(h/w + rbar*mu);                  // (45)
-}
+    // Transform GRMHD variables for the SRMHD Kastaun solver
+    const Real alpha  = 1. / m::sqrt(-G.gcon(loc, j, i, 0, 0));
+    const Real a_over_g = alpha / G.gdet(loc, j, i);
 
+    const Real D = U(m_u.RHO, k, j, i) * a_over_g;
+    const Real D_fl = std::max(D, inverter_floors.rho_min_const);
 
+    Real Qcov[GR_DIM] = {(U(m_u.UU, k, j, i) - U(m_u.RHO, k, j, i)) * a_over_g,
+                    U(m_u.U1, k, j, i) * a_over_g,
+                    U(m_u.U2, k, j, i) * a_over_g,
+                    U(m_u.U3, k, j, i) * a_over_g};
 
+    const Real ncov[GR_DIM] = {(Real) -alpha, 0., 0., 0.};
+    Real ncon[GR_DIM];
+    G.raise(ncov, ncon, k, j, i, loc);
+    const Real q = (-dot(Qcov, ncon) - D) / D;
 
-//----------------------------------------------------------------------------------------
-//! \fn void SingleC2P_IdealSRMHD()
-//! \brief Converts single state of conserved variables into primitive variables for
-//! special relativistic MHD with an ideal gas EOS. Note input CONSERVED state contains
-//! cell-centered magnetic fields, but PRIMITIVE state returned via arguments does not.
-KOKKOS_INLINE_FUNCTION
-void SingleC2P_IdealSRMHD(MHDCons1D &u, const EOS_Data &eos, Real s2, Real b2, Real rpar,
-                          HydPrim1D &w, bool &dfloor_used, bool &efloor_used,
-                          bool &c2p_failure, int &max_iter)
-{
-    // Parameters
-    const int max_iterations = 25;
-    const Real tol = 1.0e-12;
-    const Real gm1 = eos.gamma - 1.0;
+    // r_i
+    // TODO max w/0 or +small
+    Real rcov[3] = {U(m_u.U1, k, j, i) / U(m_u.RHO, k, j, i),
+                    U(m_u.U2, k, j, i) / U(m_u.RHO, k, j, i),
+                    U(m_u.U3, k, j, i) / U(m_u.RHO, k, j, i)};
+    Real rcon[3];
+    Real gupper[GR_DIM][GR_DIM];
+    G.gcon(loc, j, i, gupper);
+    // Ripped from AthenaK's "TransformToSRMHD,"
+    // since we don't use the spatial metric anywhere else.  Original comment:
+    // Gourghoulon says: g^ij = gamma^ij - beta^i beta^j/alpha^2
+    //       g^0i = beta^i/alpha^2
+    //       g^00 = -1/ alpha^2
+    // Hence gamma^ij =  g^ij - g^0i g^0j/g^00
+    rcon[0] = ((gupper[1][1] - gupper[0][1]*gupper[0][1]/gupper[0][0])*rcov[0] +
+                (gupper[1][2] - gupper[0][1]*gupper[0][2]/gupper[0][0])*rcov[1] +
+                (gupper[1][3] - gupper[0][1]*gupper[0][3]/gupper[0][0])*rcov[2]);  // (C26)
 
-    // apply density floor, without changing momentum or energy
-    if (u.d < eos.dfloor) {
-        u.d = eos.dfloor;
-        dfloor_used = true;
+    rcon[1] = ((gupper[2][1] - gupper[0][2]*gupper[0][1]/gupper[0][0])*rcov[0] +
+                (gupper[2][2] - gupper[0][2]*gupper[0][2]/gupper[0][0])*rcov[1] +
+                (gupper[2][3] - gupper[0][2]*gupper[0][3]/gupper[0][0])*rcov[2]);  // (C26)
+
+    rcon[2] = ((gupper[3][1] - gupper[0][3]*gupper[0][1]/gupper[0][0])*rcov[0] +
+                (gupper[3][2] - gupper[0][3]*gupper[0][2]/gupper[0][0])*rcov[1] +
+                (gupper[3][3] - gupper[0][3]*gupper[0][3]/gupper[0][0])*rcov[2]);  // (C26)
+
+    Real rsq = 0.0;
+    SPACELOOP(ii) rsq += rcon[ii]*rcov[ii];
+
+    Real bsq = 0.0;
+    Real bsq_rpsq = 0.0;
+    Real rbsq = 0.0;
+    Real bdotr = 0.0;
+    Real bu[] = {0.0, 0.0, 0.0};
+    if (m_u.B1 >= 0) {
+        const Real sD = 1.0 / m::sqrt(D_fl);
+        // b^i
+        SPACELOOP(ii) {
+            bu[ii] = (U(m_u.B1 + ii, k, j, i) * a_over_g) * sD;
+            bdotr += bu[ii] * rcov[ii];
+        }
+        SPACELOOP2(ii, jj) bsq += G.gcov(loc, j, i, ii + 1, jj + 1) * bu[ii] * bu[jj];
+        bsq = std::max(0.0, bsq);
+
+        rbsq = bdotr * bdotr;
+        bsq_rpsq = bsq * rsq - rbsq;
     }
+    //const Real zsq = rsq / h0sq_; // h0sq_ normalization set to 1 in Phoebus
+    const Real zsq = rsq;
+    const Real v0sq = std::min(zsq / (1.0 + zsq), 1.0 - 1.0 / SQR(inverter_floors.gamma_max));
 
-    // apply energy floor
-    if (u.e < (eos.pfloor/gm1 + 0.5*b2)) {
-        u.e = eos.pfloor/gm1 + 0.5*b2;
-        efloor_used = true;
-    }
+    // residual object. Caches most arguments/floors so calls are single-argument
+    KastaunResidual res(D, q, bsq, bsq_rpsq, rsq, rbsq, v0sq, gam,
+                        inverter_floors.rho_min_const,
+                        inverter_floors.u_min_const/D_fl,
+                        inverter_floors.gamma_max, inverter_floors.u_over_rho_max);
 
-    // Recast all variables (eq 22-24)
-    Real q = u.e/u.d;
-    Real r = m::sqrt(s2)/u.d;
-    Real isqrtd = 1.0/m::sqrt(u.d);
-    Real bx = u.bx*isqrtd;
-    Real by = u.by*isqrtd;
-    Real bz = u.bz*isqrtd;
-
-    // normalize b2 and rpar as well since they contain b
-    b2 /= u.d;
-    rpar *= isqrtd;
-
+    // SOLVE
+    // TODO(BSP) better or faster solver?  (Optionally) skip bracketing?
     // Need to find initial bracket. Requires separate solve
     Real zm = 0.;
     Real zp = 1.; // This is the lowest specific enthalpy admitted by the EOS
 
     // Evaluate master function (eq 49) at bracket values
-    Real fm = equation_49(zm, b2, rpar, r, q);
-    Real fp = equation_49(zp, b2, rpar, r, q);
+    Real fm = res.aux_func(zm);
+    Real fp = res.aux_func(zp);
 
     // For simplicity on the GPU, find roots using the false position method
     int iterations = max_iterations;
@@ -168,7 +318,7 @@ void SingleC2P_IdealSRMHD(MHDCons1D &u, const EOS_Data &eos, Real s2, Real b2, R
     int iter;
     for (iter=0; iter<iterations; ++iter) {
         z =  (zm*fp - zp*fm)/(fp-fm);  // linear interpolation to point f(z)=0
-        Real f = equation_49(z, b2, rpar, r, q);
+        Real f = res.aux_func(z);
         // Quit if convergence reached
         // NOTE(@ermost): both z and f are of order unity
         if ((m::abs(zm-zp) < tol) || (m::abs(f) < tol)) {
@@ -186,7 +336,7 @@ void SingleC2P_IdealSRMHD(MHDCons1D &u, const EOS_Data &eos, Real s2, Real b2, R
             fp = f;
         }
     }
-    max_iter = (iter > max_iter) ? iter : max_iter;
+    // TODO keep track of bracket iter?
 
     // Found brackets. Now find solution in bounded interval, again using the
     // false position method
@@ -194,8 +344,8 @@ void SingleC2P_IdealSRMHD(MHDCons1D &u, const EOS_Data &eos, Real s2, Real b2, R
     zp = z;
 
     // Evaluate master function (eq 44) at bracket values
-    fm = equation_44(zm, b2, rpar, r, q, u.d, eos);
-    fp = equation_44(zp, b2, rpar, r, q, u.d, eos);
+    fm = res(zm);
+    fp = res(zp);
 
     iterations = max_iterations;
     if ((m::abs(zm-zp) < tol) || ((m::abs(fm) + m::abs(fp)) < 2.0*tol)) {
@@ -205,7 +355,7 @@ void SingleC2P_IdealSRMHD(MHDCons1D &u, const EOS_Data &eos, Real s2, Real b2, R
 
     for (iter=0; iter<iterations; ++iter) {
         z = (zm*fp - zp*fm)/(fp-fm);  // linear interpolation to point f(z)=0
-        Real f = equation_44(z, b2, rpar, r, q, u.d, eos);
+        Real f = res(z);
         // Quit if convergence reached
         // NOTE: both z and f are of order unity
         if ((m::abs(zm-zp) < tol) || (m::abs(f) < tol)) {
@@ -223,174 +373,34 @@ void SingleC2P_IdealSRMHD(MHDCons1D &u, const EOS_Data &eos, Real s2, Real b2, R
             fp = f;
         }
     }
-    max_iter = (iter > max_iter) ? iter : max_iter;
+    // TODO keep track of max iter
 
-    // check if convergence is established within max_iterations.  If not, trigger a C2P
-    // failure and return floored density, pressure, and primitive velocities.
-    if (max_iter == max_iterations) {
-        w.d = eos.dfloor;
-        w.e = eos.pfloor/gm1;
-        w.vx = 0.0;
-        w.vy = 0.0;
-        w.vz = 0.0;
-        c2p_failure = true;
-        return;
+    // check if convergence is established within max_iterations.  If not, return
+    // failure without replacing prims, for consistency w/1Dw solver.
+    // We generally replace failed zones with atmosphere later, at user option
+    if (iter == max_iterations) {
+        return static_cast<int>(Status::max_iter);
     }
 
-    // iterations ended, compute primitives from resulting value of z
-    Real &mu = z;
-    Real const x = 1./(1.+mu*b2);                               // (26)
-    Real rbar = (x*x*r*r + mu*x*(1.+x)*rpar*rpar);              // (38)
-    Real qbar = q - 0.5*b2 - 0.5*(mu*mu*(b2*rbar - rpar*rpar)); // (31)
-    Real z2 = (mu*mu*rbar/(m::abs(1.- SQR(mu)*rbar)));            // (32)
-    Real lor = m::sqrt(1.0 + z2);
+    // Now unwrap everything into primitive vars...
+    const Real mu = z;
+    const Real x = res.x_mu(mu);
+    const Real rbarsq = res.rbarsq_mu(mu, x);
+    const Real vsq = res.vhatsq_mu(mu, rbarsq);
+    const Real iW = res.iWhat_mu(vsq);
+    const Real W = 1. / iW;
+    P(m_p.RHO, k, j, i) = res.rhohat_mu(iW);
+    const Real qbar = res.qbar_mu(mu, x);
+    P(m_p.UU, k, j, i) = res.ehat_mu(mu, qbar, rbarsq, vsq, W) * P(m_p.RHO, k, j, i);
+    SPACELOOP(ii) P(m_p.U1 + ii, k, j, i) = W * mu * x * (rcon[ii] + mu * bdotr * bu[ii]);
 
-    // compute density then apply floor
-    Real dens = u.d/lor;
-    if (dens < eos.dfloor) {
-        dens = eos.dfloor;
-        dfloor_used = true;
-    }
-
-    // compute specific internal energy density then apply floors
-    Real eps = lor*(qbar - mu*rbar) + z2/(lor + 1.0);
-    Real epsmin = m::max(eos.pfloor/(dens*gm1), eos.sfloor*pow(dens, gm1)/gm1);
-    if (eps <= epsmin) {
-        eps = epsmin;
-        efloor_used = true;
-    }
-
-    // set parameters required for velocity inversion
-    Real const h = 1.0 + eos.gamma*eps;  // (43)
-    Real const conv = lor/(h*lor + b2);  // (C26)
-
-    // set primitive variables
-    w.d  = dens;
-    w.vx = conv*(u.mx/u.d + bx*rpar/(h*lor));  // (C26)
-    w.vy = conv*(u.my/u.d + by*rpar/(h*lor));  // (C26)
-    w.vz = conv*(u.mz/u.d + bz*rpar/(h*lor));  // (C26)
-    w.e  = dens*eps;
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn void TransformToSRMHD()
-//! \brief Converts single state of conserved variables in GR MHD into conserved
-//! variables for special relativistic MHD with an ideal gas EOS. This allows
-//! the ConsToPrim() function in GR MHD to use SingleP2C_IdealSRMHD() function.
-
-KOKKOS_INLINE_FUNCTION
-void TransformToSRMHD(const MHDCons1D &u, Real glower[][4], Real gupper[][4],
-                      Real &s2, Real &b2, Real &rpar, MHDCons1D &u_sr) {
-    // Need to multiply the conserved density by alpha, so that it
-    // contains a lorentz factor
-    Real alpha = m::sqrt(-1.0/gupper[0][0]);
-    u_sr.d = u.d*alpha;
-
-    // We are evolving T^t_t, but the SR C2P algorithm is only consistent with
-    // alpha^2 T^{tt}.  Therefore compute T^{tt} = g^0\mu T^t_\mu
-    // We are also evolving T^t_t + D as conserved variable, so must convert to E
-    u_sr.e = gupper[0][0]*(u.e - u.d) +
-            gupper[0][1]*u.mx + gupper[0][2]*u.my + gupper[0][3]*u.mz;
-
-    // This is only true if m::sqrt{-g}=1!
-    u_sr.e *= (-1./gupper[0][0]);  // Multiply by alpha^2
-
-    // Subtract density for consistency with the rest of the algorithm
-    u_sr.e -= u_sr.d;
-
-    // Need to treat the conserved momenta. Also they lack an alpha
-    // This is only true if m::sqrt{-g}=1!
-    Real m1l = u.mx*alpha;
-    Real m2l = u.my*alpha;
-    Real m3l = u.mz*alpha;
-
-    // Need to raise indices on u_m1, which transforms using the spatial 3-metric.
-    // Store in u_sr.  This is slightly more involved
-    //
-    // Gourghoulon says: g^ij = gamma^ij - beta^i beta^j/alpha^2
-    //       g^0i = beta^i/alpha^2
-    //       g^00 = -1/ alpha^2
-    // Hence gamma^ij =  g^ij - g^0i g^0j/g^00
-    u_sr.mx = ((gupper[1][1] - gupper[0][1]*gupper[0][1]/gupper[0][0])*m1l +
-                (gupper[1][2] - gupper[0][1]*gupper[0][2]/gupper[0][0])*m2l +
-                (gupper[1][3] - gupper[0][1]*gupper[0][3]/gupper[0][0])*m3l);  // (C26)
-
-    u_sr.my = ((gupper[2][1] - gupper[0][2]*gupper[0][1]/gupper[0][0])*m1l +
-                (gupper[2][2] - gupper[0][2]*gupper[0][2]/gupper[0][0])*m2l +
-                (gupper[2][3] - gupper[0][2]*gupper[0][3]/gupper[0][0])*m3l);  // (C26)
-
-    u_sr.mz = ((gupper[3][1] - gupper[0][3]*gupper[0][1]/gupper[0][0])*m1l +
-                (gupper[3][2] - gupper[0][3]*gupper[0][2]/gupper[0][0])*m2l +
-                (gupper[3][3] - gupper[0][3]*gupper[0][3]/gupper[0][0])*m3l);  // (C26)
-
-    // Compute (S^i S_i) (eqn C2)
-    s2 = (m1l*u_sr.mx) + (m2l*u_sr.my) + (m3l*u_sr.mz);
-
-    // load magnetic fields into SR conserved state. Also they lack an alpha
-    // This is only true if m::sqrt{-g}=1!
-    u_sr.bx = alpha*u.bx;
-    u_sr.by = alpha*u.by;
-    u_sr.bz = alpha*u.bz;
-
-    b2 = glower[1][1]*SQR(u_sr.bx) + glower[2][2]*SQR(u_sr.by) + glower[3][3]*SQR(u_sr.bz) +
-        2.0*(u_sr.bx*(glower[1][2]*u_sr.by + glower[1][3]*u_sr.bz) +
-                        glower[2][3]*u_sr.by*u_sr.bz);
-    rpar = (u_sr.bx*m1l +  u_sr.by*m2l +  u_sr.bz*m3l)/u_sr.d;
-}
-
-/**
- * Robust inversion scheme from Kastaun et al. 2020 (by way of AthenaK, obviously)
- */
-template <>
-KOKKOS_INLINE_FUNCTION int u_to_p<Type::kastaun>(const GRCoordinates &G, const VariablePack<Real>& U, const VarMap& m_u,
-                                              const Real& gam, const int& k, const int& j, const int& i,
-                                              const VariablePack<Real>& P, const VarMap& m_p,
-                                              const Loci loc)
-{
-    // Pack an AthenaK "MHDCons"
-    const MHDCons1D u = {U(m_u.RHO, k, j, i),
-                   U(m_u.U1, k, j, i), U(m_u.U2, k, j, i), U(m_u.U3, k, j, i),
-                   U(m_u.UU, k, j, i),
-                   U(m_u.B1, k, j, i), U(m_u.B2, k, j, i), U(m_u.B3, k, j, i)};
-    GReal gcon[GR_DIM][GR_DIM], gcov[GR_DIM][GR_DIM];
-    G.gcon(Loci::center, j, i, gcon);
-    G.gcov(Loci::center, j, i, gcov);
-    // Output params
-    Real s2, b2, rpar;
-    MHDCons1D u_sr;
-    // Convert GRMHD cons to SRMHD for Kastaun solver
-    // TODO(BSP) skip this call in Minkowski, calculate s2/b2/rpar separately 
-    TransformToSRMHD(u, gcov, gcon, s2, b2, rpar, u_sr);
-
-    EOS_Data eos;
-    eos.gamma = gam;
-    eos.dfloor = 1.e-10; // density
-    eos.pfloor = 1.e-10; // pressure
-    eos.tfloor = 1.e-10; // temperature
-    eos.sfloor = 1.e-10; // entropy
-
-    HydPrim1D w;
-    bool dfloor_used = false, efloor_used = false, c2p_failure = false;
-    int max_iter;
-    SingleC2P_IdealSRMHD(u_sr, eos, s2, b2, rpar,
-                          w, dfloor_used, efloor_used,
-                          c2p_failure, max_iter);
-    P(m_p.RHO, k, j, i) = w.d;
-    P(m_p.UU, k, j, i) = w.e;
-    // Convert velocity back to HARM primitive
-    Real ucon[4] = {0., w.vx, w.vy, w.vz};
-    set_ut(gcov, ucon);
-    Real u_prim[3];
-    fourvel_to_prim(gcon, ucon, u_prim);
-    P(m_p.U1, k, j, i) = u_prim[0];
-    P(m_p.U2, k, j, i) = u_prim[1];
-    P(m_p.U3, k, j, i) = u_prim[2];
-    // Flags
-    int flag = 0;
-    if (dfloor_used) flag |= Floors::FFlag::GEOM_RHO;
-    if (efloor_used) flag |= Floors::FFlag::GEOM_U;
-    if (c2p_failure) flag += static_cast<int>(Status::max_iter);
-    return flag;
+    // ...and record flags
+    int fflag = 0;
+    if (res.used_density_floor()) fflag |= Floors::FFlag::INVERTER_RHO;
+    if (res.used_energy_floor())  fflag |= Floors::FFlag::INVERTER_U;
+    if (res.used_gamma_max())     fflag |= Floors::FFlag::INVERTER_GAMMA;
+    if (res.used_energy_max())    fflag |= Floors::FFlag::INVERTER_U_MAX;
+    return fflag;
 }
 
 }

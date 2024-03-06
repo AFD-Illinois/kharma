@@ -170,9 +170,13 @@ TaskStatus Floors::ApplyInitialFloors(ParameterInput *pin, MeshBlockData<Real> *
     pmb->par_for("apply_initial_floors", b.ks, b.ke, b.js, b.je, b.is, b.ie,
         KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
             Real rhoflr_max, uflr_max;
-            determine_floors(G, P, m_p, gam, k, j, i, floors, rhoflr_max, uflr_max);
-            apply_floors<InjectionFrame::fluid>(G, P, m_p, gam, emhd_params, k, j, i, rhoflr_max, uflr_max, U, m_u);
-            apply_ceilings(G, P, m_p, gam, k, j, i, floors, U, m_u);
+            int fflag = determine_floors(G, P, m_p, gam, k, j, i, floors, rhoflr_max, uflr_max);
+            if (fflag) {
+                apply_floors<InjectionFrame::fluid>(G, P, m_p, gam, k, j, i, rhoflr_max, uflr_max, U, m_u);
+                apply_ceilings(G, P, m_p, gam, k, j, i, floors, U, m_u);
+                // P->U for any modified zones
+                Flux::p_to_u(G, P, m_p, emhd_params, gam, k, j, i, U, m_u, Loci::center);
+            }
         }
     );
 
@@ -225,8 +229,8 @@ TaskStatus Floors::ApplyGRMHDFloors(MeshData<Real> *md, IndexDomain domain)
         return ApplyFloorsInFrame<InjectionFrame::fluid>(md, domain);
     } else if (pars.Get<InjectionFrame>("frame") == InjectionFrame::mixed_fluid_normal) {
         return ApplyFloorsInFrame<InjectionFrame::mixed_fluid_normal>(md, domain);
-    // } else if (pars.Get<InjectionFrame>("frame") == InjectionFrame::mixed_fluid_drift) {
-    //     return ApplyFloorsInFrame<InjectionFrame::mixed_fluid_drift>(md, domain);
+    } else if (pars.Get<InjectionFrame>("frame") == InjectionFrame::mixed_fluid_drift) {
+        return ApplyFloorsInFrame<InjectionFrame::mixed_fluid_drift>(md, domain);
     } else if (pars.Get<InjectionFrame>("frame") == InjectionFrame::drift) {
         return ApplyFloorsInFrame<InjectionFrame::drift>(md, domain);
     } else {

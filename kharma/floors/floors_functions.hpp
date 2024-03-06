@@ -34,7 +34,7 @@
 #pragma once
 
 #include "floors.hpp"
-#include "inverter.hpp"
+#include "onedw.hpp"
 
 /**
  * Device-side functions for applying GRMHD floors
@@ -44,23 +44,16 @@ namespace Floors {
 /**
  * Apply all ceilings together, currently at most one on velocity and two on internal energy
  * 
- * @return fflag, a bitflag indicating whether each particular floor was hit, allowing representation of arbitrary combinations
- * See decs.h for bit names.
- * 
  * LOCKSTEP: this function respects P and returns consistent P<->U
  */
-KOKKOS_INLINE_FUNCTION int apply_ceilings(const GRCoordinates& G, const VariablePack<Real>& P, const VarMap& m_p,
+KOKKOS_INLINE_FUNCTION void apply_ceilings(const GRCoordinates& G, const VariablePack<Real>& P, const VarMap& m_p,
                                           const Real& gam, const int& k, const int& j, const int& i, const Floors::Prescription& floors,
                                           const VariablePack<Real>& U, const VarMap& m_u, const Loci loc=Loci::center)
 {
-    int fflag = 0;
     // First apply ceilings:
     // 1. Limit gamma with respect to normal observer
     Real gamma = GRMHD::lorentz_calc(G, P, m_p, k, j, i, loc);
-
     if (gamma > floors.gamma_max) {
-        fflag |= FFlag::GAMMA;
-
         Real f = m::sqrt((SQR(floors.gamma_max) - 1.) / (SQR(gamma) - 1.));
         VLOOP P(m_p.U1+v, k, j, i) *= f;
     }
@@ -71,24 +64,13 @@ KOKKOS_INLINE_FUNCTION int apply_ceilings(const GRCoordinates& G, const Variable
     // step for calculating dissipation.
     Real ktot = (gam - 1.) * P(m_p.UU, k, j, i) / m::pow(P(m_p.RHO, k, j, i), gam);
     if (ktot > floors.ktot_max) {
-        fflag |= FFlag::KTOT;
-
         P(m_p.UU, k, j, i) = floors.ktot_max / ktot * P(m_p.UU, k, j, i);
     }
 
     // 3. Limit the temperature by controlling u.  Can optionally add density instead, implemented in apply_floors
     if (floors.temp_adjust_u && P(m_p.UU, k, j, i) / P(m_p.RHO, k, j, i) > floors.u_over_rho_max) {
-        fflag |= FFlag::TEMP;
-
         P(m_p.UU, k, j, i) = floors.u_over_rho_max * P(m_p.RHO, k, j, i);
     }
-
-    if (fflag) {
-        // Keep lockstep!
-        GRMHD::p_to_u(G, P, m_p, gam, k, j, i, U, m_u, loc);
-    }
-
-    return fflag;
 }
 
 KOKKOS_INLINE_FUNCTION int determine_floors(const GRCoordinates& G, const VariablePack<Real>& P, const VarMap& m_p,
@@ -149,21 +131,20 @@ KOKKOS_INLINE_FUNCTION int determine_floors(const GRCoordinates& G, const Variab
     }
 
     // Then ceilings, need to record these for FOFC. See real implementation.
-    const Real gamma = GRMHD::lorentz_calc(G, P, m_p, k, j, i, Loci::center);
-    if (gamma > floors.gamma_max) fflag |= FFlag::GAMMA;
+    if (GRMHD::lorentz_calc(G, P, m_p, k, j, i, Loci::center) > floors.gamma_max)
+        fflag |= FFlag::GAMMA;
 
-    const Real ktot = (gam - 1.) * P(m_p.UU, k, j, i) / m::pow(P(m_p.RHO, k, j, i), gam);
-    if (ktot > floors.ktot_max) fflag |= FFlag::KTOT;
+    if ((gam - 1.) * P(m_p.UU, k, j, i) / m::pow(P(m_p.RHO, k, j, i), gam) > floors.ktot_max)
+        fflag |= FFlag::KTOT;
 
-    if (floors.temp_adjust_u)
-        if (P(m_p.UU, k, j, i) / P(m_p.RHO, k, j, i) > floors.u_over_rho_max)
-            fflag |= FFlag::TEMP;
+    if (floors.temp_adjust_u && (P(m_p.UU, k, j, i) / P(m_p.RHO, k, j, i) > floors.u_over_rho_max))
+        fflag |= FFlag::TEMP;
 
     return fflag;
 }
 
 #define FLOOR_ONE_ARGS const GRCoordinates& G, const VariablePack<Real>& P, const VarMap& m_p, \
-                        const Real& gam, const EMHD::EMHD_parameters& emhd_params, \
+                        const Real& gam, \
                         const int& k, const int& j, const int& i, const Real& rhoflr_max, const Real& uflr_max, \
                         const VariablePack<Real>& U, const VarMap& m_u
 
@@ -183,8 +164,6 @@ KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::fluid>(FLOOR_ONE_ARGS)
 {
     P(m_p.RHO, k, j, i) += m::max(0., rhoflr_max - P(m_p.RHO, k, j, i));
     P(m_p.UU, k, j, i)  += m::max(0., uflr_max - P(m_p.UU, k, j, i));
-    // Update (GRMHD portion of) conserved variables
-    GRMHD::p_to_u(G, P, m_p, gam, k, j, i, U, m_u, Loci::center);
     return 0;
 }
 
@@ -259,9 +238,6 @@ KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::drift>(FLOOR_ONE_ARGS)
     P(m_p.U1, k, j, i) = Dtmp.ucon[1] + (beta[1] * Dtmp.ucon[0]);
     P(m_p.U2, k, j, i) = Dtmp.ucon[2] + (beta[2] * Dtmp.ucon[0]);
     P(m_p.U3, k, j, i) = Dtmp.ucon[3] + (beta[3] * Dtmp.ucon[0]);
-
-    // Update the conserved variables
-    Flux::p_to_u(G, P, m_p, emhd_params, gam, k, j, i, U, m_u, Loci::center);
     return 0;
 }
 
@@ -291,16 +267,10 @@ KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::normal>(FLOOR_ONE_ARGS)
     U(m_u.U3, k, j, i)  += T[3];
     
     // Recover primitive variables from conserved versions
-    // TODO(BSP) replace w/kastaun when good
-    int pflag = Inverter::u_to_p<Inverter::Type::onedw>(G, U, m_u, gam, k, j, i, P, m_p, Loci::center);
-    // 4. If the inversion fails, we've effectively already applied the floors in fluid-frame to the prims,
-    // so we just formalize that
-    if (Inverter::failed(pflag)) {
-        Flux::p_to_u(G, P, m_p, emhd_params, gam, k, j, i, U, m_u, Loci::center);
-        return (int) pflag;
-    } else {
-        return 0;
-    }
+    // Kastaun would need real vals here...
+    const Floors::Prescription floor_tmp = {0}; 
+    return Inverter::u_to_p<Inverter::Type::onedw>(G, U, m_u, gam, k, j, i, P, m_p, Loci::center,
+                                                     floor_tmp, 8, 1e-8);
 }
 
 template<>
@@ -308,9 +278,23 @@ KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::mixed_fluid_normal>(FLOO
 {
     // TODO(BSP) thread through frame_switch option
     if (G.r(k, j, i) > 50.) {
-        return apply_floors<InjectionFrame::fluid>(G, P, m_p, gam, emhd_params, k, j, i, rhoflr_max, uflr_max, U, m_u);
+        return apply_floors<InjectionFrame::fluid>(G, P, m_p, gam, k, j, i, rhoflr_max, uflr_max, U, m_u);
     } else {
-        return apply_floors<InjectionFrame::normal>(G, P, m_p, gam, emhd_params, k, j, i, rhoflr_max, uflr_max, U, m_u);
+        return apply_floors<InjectionFrame::normal>(G, P, m_p, gam, k, j, i, rhoflr_max, uflr_max, U, m_u);
+    }
+}
+
+template<>
+KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::mixed_fluid_drift>(FLOOR_ONE_ARGS)
+{
+    // TODO(BSP) thread through frame_switch option
+    FourVectors Dtmp;
+    GRMHD::calc_4vecs(G, P, m_p, k, j, i, Loci::center, Dtmp);
+    Real beta = dot(Dtmp.bcon, Dtmp.bcov) / (2 * (gam - 1.) * P(m_p.UU, k, j, i));
+    if (beta > 10.) {
+        return apply_floors<InjectionFrame::drift>(G, P, m_p, gam, k, j, i, rhoflr_max, uflr_max, U, m_u);
+    } else {
+        return apply_floors<InjectionFrame::normal>(G, P, m_p, gam, k, j, i, rhoflr_max, uflr_max, U, m_u);
     }
 }
 

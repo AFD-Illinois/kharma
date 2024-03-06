@@ -38,6 +38,7 @@
 #include "boundaries.hpp"
 #include "flux.hpp"
 #include "get_flux.hpp"
+#include "inverter.hpp"
 
 std::shared_ptr<KHARMAPackage> KHARMADriver::Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages)
 {

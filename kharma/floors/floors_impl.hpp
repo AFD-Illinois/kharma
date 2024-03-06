@@ -71,29 +71,23 @@ TaskStatus ApplyFloorsInFrame(MeshData<Real> *md, IndexDomain domain)
     const IndexRange block = IndexRange{0, P.GetDim(5) - 1};
     pmb0->par_for("apply_floors", block.s, block.e, b.ks, b.ke, b.js, b.je, b.is, b.ie,
         KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i) {
-            const auto& G = P.GetCoords(b);
-            // apply_floors can involve another U_to_P call.  Hide the pflag in bottom 5 bits and retrieve both
-            int pflag_l = apply_floors<frame>(G, P(b), m_p, gam, emhd_params, k, j, i,
-                                              floor_vals(b, rhofi, k, j, i), floor_vals(b, ufi, k, j, i),
-                                              U(b), m_u);
+            if (static_cast<int>(fflag(b, 0, k, j, i))) {
+                const auto& G = P.GetCoords(b);
+                // apply_floors can involve another U_to_P call.  Hide the pflag in bottom 5 bits and retrieve both
+                int pflag_l = apply_floors<frame>(G, P(b), m_p, gam, k, j, i,
+                                                floor_vals(b, rhofi, k, j, i), floor_vals(b, ufi, k, j, i),
+                                                U(b), m_u);
 
-            // Record the pflag if nonzero.  KHARMA did not traditionally do this,
-            // because floors were run over uninitialized zones, and thus wrote
-            // garbage pflags.  We now prevent this.
-            // Note that the pflag is recorded only if inversion failed,
-            // so that a zone is flagged if *either* the initial inversion or
-            // post-floor inversion failed.
-            // Zones next to the sharp edge of the initial torus, for example,
-            // can produce negative u when inverted, then magically stay invertible
-            // after floors when they should be diffused.
-            if (pflag_l) {
-                pflag(b, 0, k, j, i) = pflag_l;
+                // Record the pflag if nonzero, that is, if *either* the initial inversion or
+                // post-floor inversion failed.
+                if (pflag_l) pflag(b, 0, k, j, i) = pflag_l;
+
+                // Apply ceilings *after* floors, to make the temperature ceiling better-behaved
+                apply_ceilings(G, P(b), m_p, gam, k, j, i, floors, U(b), m_u);
+
+                // P->U for any modified zones
+                Flux::p_to_u(G, P(b), m_p, emhd_params, gam, k, j, i, U(b), m_u, Loci::center);
             }
-
-            // Apply ceilings *after* floors, to make the temperature ceiling better-behaved
-            // Note we're determining/recording fflag here!!
-            fflag(b, 0, k, j, i) = ((int) fflag(b, 0, k, j, i)) |
-                            apply_ceilings(G, P(b), m_p, gam, k, j, i, floors, U(b), m_u);
         }
     );
 

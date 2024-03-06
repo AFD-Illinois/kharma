@@ -80,6 +80,9 @@ std::shared_ptr<KHARMAPackage> B_CT::Initialize(ParameterInput *pin, std::shared
     if (lazy_prolongation && pin->GetString("parthenon/mesh", "refinement") == "adaptive")
         throw std::runtime_error("Cannot use non-divergence-preserving prolongation in AMR!");
 
+    bool consistent_face_b = pin->GetOrAddBoolean("b_field", "consistent_face_b", true);
+    params.Add("consistent_face_b", consistent_face_b);
+
     // FIELDS
 
     // Flags for B fields on faces.

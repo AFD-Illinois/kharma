@@ -64,6 +64,8 @@ static constexpr int GEOM_U_FLUX = 8192;
 // Yet more flags for floors hit during inversion
 static constexpr int INVERTER_RHO = 16384;
 static constexpr int INVERTER_U = 32768;
+static constexpr int INVERTER_GAMMA = 65536;
+static constexpr int INVERTER_U_MAX = 131072;
 // Lowest flag value. Needed for combining floor and other return flags
 static constexpr int MINIMUM = GEOM_RHO;
 
@@ -80,7 +82,11 @@ static const std::map<int, std::string> flag_names = {
     {TEMP, "TEMPERATURE"},
     {KTOT, "ENTROPY"},
     {GEOM_RHO_FLUX, "GEOM_RHO_ON_RECON"},
-    {GEOM_U_FLUX, "GEOM_U_ON_RECON"}
+    {GEOM_U_FLUX, "GEOM_U_ON_RECON"},
+    {INVERTER_RHO, "GEOM_RHO_ON_INVERT"},
+    {INVERTER_U, "GEOM_U_ON_INVERT"},
+    {INVERTER_GAMMA, "GAMMA_ON_INVERT"},
+    {INVERTER_U_MAX, "U_MAX_ON_INVERT"}
 };
 }
 
