@@ -61,26 +61,34 @@ conv_2d() {
     fi
 }
 
-# Normal MHD modes, 2D, defaults
+# New & funky modes 
 ALL_RES="16,24,32,48,64"
-conv_2d slow   "mhdmodes/nmode=1 inverter/type=kastaun" "slow mode in 2D, Kastaun inversion"
-conv_2d alfven "mhdmodes/nmode=2 inverter/type=kastaun" "Alfven mode in 2D, Kastaun inversion"
-conv_2d fast   "mhdmodes/nmode=3 inverter/type=kastaun" "fast mode in 2D, Kastaun inversion"
+OPTS="driver/type=kharma inverter/type=kastaun flux/type=hlle flux/reconstruction=ppmx b_field/solver=face_ct b_field/ct_scheme=sg07"
+conv_2d entropy_ak "mhdmodes/nmode=0 $OPTS" "entropy mode in 2D, AthenaK mode"
+conv_2d slow_ak   "mhdmodes/nmode=1 $OPTS" "slow mode in 2D, AthenaK mode"
+conv_2d alfven_ak "mhdmodes/nmode=2 $OPTS" "Alfven mode in 2D, AthenaK mode"
+conv_2d fast_ak   "mhdmodes/nmode=3 $OPTS" "fast mode in 2D, AthenaK mode"
 
+OPTS="driver/type=kharma inverter/type=kastaun flux/type=hlle b_field/solver=face_ct b_field/ct_scheme=bs99 b_field/ct_scheme=sg07 b_field/consistent_face_b=false"
+conv_2d slow_ak_rec   "mhdmodes/nmode=1 $OPTS" "slow mode in 2D, reconstructed B"
+conv_2d alfven_ak_rec "mhdmodes/nmode=2 $OPTS" "Alfven mode in 2D, reconstructed B"
+conv_2d fast_ak_rec   "mhdmodes/nmode=3 $OPTS" "fast mode in 2D, reconstructed B"
+
+# Normal MHD modes, 2D, defaults
 conv_2d slow mhdmodes/nmode=1 "slow mode in 2D"
 conv_2d alfven mhdmodes/nmode=2 "Alfven mode in 2D"
 conv_2d fast mhdmodes/nmode=3 "fast mode in 2D"
 
 # Entropy mode as reconstruction demo
 conv_2d entropy_nob "mhdmodes/nmode=0 b_field/solver=none" "entropy mode in 2D, no B field"
-# Doesn't converge as it gets the propagation speed slightly wrong...
+# The resolutions we test are too low for these two
 #conv_2d entropy_donor "mhdmodes/nmode=0 driver/reconstruction=donor_cell" "entropy mode in 2D, Donor Cell reconstruction"
-conv_2d entropy_mc "mhdmodes/nmode=0 driver/reconstruction=linear_mc" "entropy mode in 2D, linear/MC reconstruction"
-# Converges at -1.8, which is below tolerance for the other schemes
 #conv_2d entropy_vl "mhdmodes/nmode=0 driver/reconstruction=linear_vl" "entropy mode in 2D, linear/VL reconstruction"
+conv_2d entropy_mc "mhdmodes/nmode=0 driver/reconstruction=linear_mc" "entropy mode in 2D, linear/MC reconstruction"
 conv_2d entropy_weno "mhdmodes/nmode=0 driver/reconstruction=weno5" "entropy mode in 2D, WENO reconstruction"
 conv_2d entropy_weno_lin "mhdmodes/nmode=0 driver/reconstruction=weno5_linear" "entropy mode in 2D, WENO linearized reconstruction"
 conv_2d entropy_ppm "mhdmodes/nmode=0 driver/reconstruction=ppm" "entropy mode in 2D, PPM reconstruction"
+conv_2d entropy_ppmx "mhdmodes/nmode=0 driver/reconstruction=ppm" "entropy mode in 2D, PPMX reconstruction"
 conv_2d entropy_mp5 "mhdmodes/nmode=0 driver/reconstruction=mp5" "entropy mode in 2D, MP5 reconstruction"
 
 # KHARMA driver

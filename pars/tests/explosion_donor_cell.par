@@ -1,7 +1,7 @@
 # Komissarov cylindrical explosion with magnetic field
 # see Komissarov (1999), section 7.3
-# Basically a test of the first-order flux correction (FOFC) code,
-# which falls back to donor-cell reconstruction where zones would have hit floors
+# Uses donor-cell reconstruction for stability and simplicity, 
+# good for looking at code behavior in bad situations.
 # Compare to AthenaK algorithm/GRMHD blast wave test
 
 <parthenon/job>
@@ -30,8 +30,8 @@ ix3_bc = periodic
 ox3_bc = periodic
 
 <parthenon/meshblock>
-nx1 = 200
-nx2 = 200
+nx1 = 100
+nx2 = 100
 nx3 = 1
 
 <coordinates>
@@ -44,15 +44,15 @@ integrator = rk2
 dt_min = 0.0001
 
 <GRMHD>
-cfl = 0.7
+cfl = 0.4
 gamma = 1.333333
 
 <driver>
 type = kharma
 
 <flux>
-type = hlle
-reconstruction = ppm
+type = llf
+reconstruction = donor_cell
 
 <inverter>
 type = kastaun
@@ -60,15 +60,13 @@ fix_average_neighbors = false
 fix_atmosphere = true
 
 <explosion>
+r_in = 0.8
+r_out = 1.0
 rho_out = 1e-4
 
 <floors>
+disable_floors = false
 frame = drift
-rho_min_const = 1e-10
-u_min_const = 1e-10
-
-<fofc>
-on = true
 rho_min_const = 1e-10
 u_min_const = 1e-10
 
@@ -87,7 +85,7 @@ extra_checks = 2
 file_type = hdf5
 dt = 0.1
 single_precision_output = true
-variables = prims, fflag, pflag
+variables = prims, cons.fB, fflag, pflag
 
 <parthenon/output1>
 file_type = hst
