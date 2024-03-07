@@ -4,6 +4,12 @@ set -euo pipefail
 # Bash script testing initialization vs restart of a torus problem
 # Require similarity to round-off after 5 steps
 
+# TODO current tol is 1e-9 but it's been lower in the past
+# Big thing seems to be velocities, which we must rely on
+# recovering correctly...
+# Recovery is O(1e-12) and we're taking 5 steps, so not bad
+# getting some O(1e-10) differences.
+
 # Set paths
 KHARMADIR=../..
 
@@ -13,23 +19,22 @@ test_restart() {
     $KHARMADIR/run.sh -i $KHARMADIR/pars/tori_3d/sane.par parthenon/time/nlim=5 \
     $2 >log_restart_${1}_first.txt 2>&1
 
-    mv torus.out0.final.phdf restart_${1}_first.phdf
+    mv torus.out1.final.rhdf restart_${1}_first.rhdf
 
     sleep 1
 
     $KHARMADIR/run.sh -r torus.out1.00000.rhdf >log_restart_${1}_second.txt 2>&1
 
-    mv torus.out0.final.phdf restart_${1}_second.phdf
+    mv torus.out1.final.rhdf restart_${1}_second.rhdf
 
     check_code=0
     # Compare to some high degree of accuracy
-    # TODO this was formerly 1e-11, we may need to clean up restarting & sequencing of the first steps
-    pyharm diff --rel_tol 1e-9 restart_${1}_first.phdf restart_${1}_second.phdf -o compare_restart || check_code=$?
-    # Compare binary. Sometimes works but not worth keeping always
+    pyharm diff --rel_tol 1e-9 restart_${1}_first.phdf restart_${1}_second.phdf --no_plot || check_code=$?
+    # Compare binary. For someday
     #h5diff --exclude-path=/Info \
     #       --exclude-path=/Input \
-    #       --exclude-path=/divB \
-    #       torus.out0.final.init.phdf torus.out0.final.restart.phdf
+    #       --relative=1e-5 \
+    #       restart_${1}_first.rhdf restart_${1}_second.rhdf || check_code=$?
     if [[ $check_code != 0 ]]; then
         echo Restart test \"$3\" FAIL: $check_code
         exit_code=1
@@ -41,23 +46,22 @@ test_restart_smr() {
     $KHARMADIR/run.sh -i $KHARMADIR/pars/smr/sane2d_refined.par parthenon/time/nlim=5 \
     $2 >log_restart_${1}_first.txt 2>&1
 
-    mv torus.out0.final.phdf restart_${1}_first.phdf
+    mv torus.out1.final.rhdf restart_${1}_first.rhdf
 
     sleep 1
 
     $KHARMADIR/run.sh -r torus.out1.00000.rhdf >log_restart_${1}_second.txt 2>&1
 
-    mv torus.out0.final.phdf restart_${1}_second.phdf
+    mv torus.out1.final.rhdf restart_${1}_second.rhdf
 
     check_code=0
     # Compare to some high degree of accuracy
-    # TODO this was formerly 1e-11, we may need to clean up restarting & sequencing of the first steps
-    pyharm diff --rel_tol 1e-9 restart_${1}_first.phdf restart_${1}_second.phdf -o compare_restart || check_code=$?
-    # Compare binary. Sometimes works but not worth keeping always
+    pyharm diff --rel_tol 1e-9 restart_${1}_first.phdf restart_${1}_second.phdf --no_plot || check_code=$?
+    # Compare binary. For someday
     #h5diff --exclude-path=/Info \
     #       --exclude-path=/Input \
-    #       --exclude-path=/divB \
-    #       torus.out0.final.init.phdf torus.out0.final.restart.phdf
+    #       --relative=1e-5 \
+    #       restart_${1}_first.rhdf restart_${1}_second.rhdf || check_code=$?
     if [[ $check_code != 0 ]]; then
         echo Restart test \"$3\" FAIL: $check_code
         exit_code=1

@@ -73,6 +73,10 @@ std::shared_ptr<KHARMAPackage> B_CT::Initialize(ParameterInput *pin, std::shared
     std::vector<std::string> ct_scheme_options = {"bs99", "gs05_0", "gs05_c", "sg07"};
     std::string ct_scheme = pin->GetOrAddString("b_field", "ct_scheme", "bs99", ct_scheme_options);
     params.Add("ct_scheme", ct_scheme);
+    if (ct_scheme == "gs05_c")
+        std::cout << "KHARMA WARNING: G&S '05 epsilon_c CT is not well-tested." << std::endl
+                  << "Use in GR at your own risk!" << std::endl;
+
     // Use the default Parthenon prolongation operator, rather than the divergence-preserving one
     // This relies entirely on the EMF communication for preserving the divergence
     bool lazy_prolongation = pin->GetOrAddBoolean("b_field", "lazy_prolongation", false);

@@ -63,7 +63,7 @@ KOKKOS_FORCEINLINE_FUNCTION Real mc(const Real dm, const Real dp, const Real alp
 }
 
 // TODO make this a function w/forceinline
-#define MINMOD(a, b) ((a) * (b) > 0.0 ? (fabs(a) < fabs(b) ? (a) : (b)) : 0.0)
+#define MINMOD(a, b) ((a) * (b) > 0.0 ? (m::abs(a) < m::abs(b) ? (a) : (b)) : 0.0)
 
 KOKKOS_INLINE_FUNCTION double Median(double a, double b, double c)
 {
@@ -225,7 +225,7 @@ KOKKOS_INLINE_FUNCTION void reconstruct<Type::weno5_linear>(RECONSTRUCT_ONE_ARGS
     a = x3 - 2.0 * x4 + x5;
     b = x5 - 4.0 * x4 + 3.0 * x3;
     Real beta2 = thirteen_thirds * a * a + b * b + eps;
-    const Real tau5 = std::fabs(beta2 - beta0);
+    const Real tau5 = m::abs(beta2 - beta0);
 
     beta0 = (beta0 + tau5) / beta0;
     beta1 = (beta1 + tau5) / beta1;
@@ -341,44 +341,43 @@ KOKKOS_INLINE_FUNCTION void reconstruct_right<Type::mp5>(RECONSTRUCT_ONE_RIGHT_A
 }
 
 
-// Parablic reconstruction, see Collela & Woodward '84
-// Adapted from iharm2d implementation,
-// originally written by Xiaoyue Guan
+/**
+ * PPM reconstruction, stolen from AthenaK complete with description
+ * 
+ * Original PPM (Colella & Woodward) parabolic reconstruction.  Returns
+ * interpolated values at L/R edges of cell i, that is ql(i+1) and qr(i). Works for
+ * reconstruction in any dimension by passing in the appropriate q_im2,...,q _ip2.
+ */
 template<>
-KOKKOS_INLINE_FUNCTION void reconstruct<Type::ppm>(RECONSTRUCT_ONE_ARGS)
+KOKKOS_INLINE_FUNCTION void reconstruct<Type::ppm>(const Real &q_im2, const Real &q_im1, const Real &q_i, const Real &q_ip1,
+                                                    const Real &q_ip2, Real &qlv, Real &qrv)
 {
-    const Real y[5] = {x1, x2, x3, x4, x5};
-    Real dq[5];
+  //---- Interpolate L/R values (CS eqn 16, PH 3.26 and 3.27) ----
+  // qlv = q at left  side of cell-center = q[i-1/2] = a_{j,-} in CS
+  // qrv = q at right side of cell-center = q[i+1/2] = a_{j,+} in CS
+  qlv = (7.*(q_i + q_im1) - (q_im2 + q_ip1))/12.0;
+  qrv = (7.*(q_i + q_ip1) - (q_im1 + q_ip2))/12.0;
 
-    // CW 1.7
-    // TODO unroll?
-    for (int i=1; i <= 3; i++) {
-        const Real Dqm = 2*(y[i] - y[i-1]);
-        const Real Dqp = 2*(y[i+1] - y[i]);
-        if (Dqm*Dqp <= 0.) {
-            dq[i] = 0.; // CW1.8
-        } else {
-            const Real Dqc = 0.5*(y[i+1] - y[i-1]);
-            dq[i] = m::copysign(m::min(m::abs(Dqc), m::min(m::abs(Dqm), m::abs(Dqp))), Dqc);
-        }
-    }
+  //---- limit qrv and qlv to neighboring cell-centered values (CS eqn 13) ----
+  qlv = m::max(qlv, m::min(q_i, q_im1));
+  qlv = m::min(qlv, m::max(q_i, q_im1));
+  qrv = m::max(qrv, m::min(q_i, q_ip1));
+  qrv = m::min(qrv, m::max(q_i, q_ip1));
 
-    // CW 1.6
-    lout = 0.5*(y[2] + y[1]) - (1./6.)*(dq[2] - dq[1]);
-    rout = 0.5*(y[3] + y[2]) - (1./6.)*(dq[3] - dq[2]);
-
-    // CW 1.10
-    if (((rout - y[2]) * (y[2] - lout)) <= 0.) {
-        lout = y[2];
-        rout = y[2];
+  //--- monotonize interpolated L/R states (CS eqns 14, 15) ---
+  Real qc = qrv - q_i;
+  Real qd = qlv - q_i;
+  if ((qc*qd) >= 0.0) {
+    qlv = q_i;
+    qrv = q_i;
+  } else {
+    if (m::abs(qc) >= 2.0*m::abs(qd)) {
+      qrv = q_i - 2.0*qd;
     }
-    const Real qd = (rout - lout);
-    const Real qe = 6*(y[2] - 0.5*(lout + rout));
-    if (qd * (qd - qe) < 0.) {
-        lout = 3*y[2] - 2*rout;
-    } else if (qd * (qd + qe) < 0.) {
-        rout = 3*y[2] - 2*lout;
+    if (m::abs(qd) >= 2.0*m::abs(qc)) {
+      qlv = q_i - 2.0*qc;
     }
+  }
 }
 // TODO(BSP) We also probably don't save much splitting here, but worth a shot?
 template<>
@@ -396,18 +395,19 @@ KOKKOS_INLINE_FUNCTION void reconstruct_right<Type::ppm>(RECONSTRUCT_ONE_RIGHT_A
 
 /**
  * PPMX extremum-preserving PPM, stolen from AthenaK complete with description
+ * 
  * PPM parabolic reconstruction with Colella & Sekora limiters.  Returns
  * interpolated values at L/R edges of cell i, that is ql(i+1) and qr(i). Works for
  * reconstruction in any dimension by passing in the appropriate q_im2,...,q _ip2.
  */
 template<>
 KOKKOS_INLINE_FUNCTION void reconstruct<Type::ppmx>(const Real &q_im2, const Real &q_im1,
-        const Real &q_i, const Real &q_ip1, const Real &q_ip2, Real &ql_ip1, Real &qr_i) {
+        const Real &q_i, const Real &q_ip1, const Real &q_ip2, Real &qlv, Real &qrv) {
   //---- Compute L/R values (CS eqns 12-15, PH 3.26 and 3.27) ----
   // qlv = q at left  side of cell-center = q[i-1/2] = a_{j,-} in CS
   // qrv = q at right side of cell-center = q[i+1/2] = a_{j,+} in CS
-  Real qlv = (7.*(q_i + q_im1) - (q_im2 + q_ip1))/12.0;
-  Real qrv = (7.*(q_i + q_ip1) - (q_im1 + q_ip2))/12.0;
+  qlv = (7.*(q_i + q_im1) - (q_im2 + q_ip1))/12.0;
+  qrv = (7.*(q_i + q_ip1) - (q_im1 + q_ip2))/12.0;
 
   //---- Apply CS monotonicity limiters to qrv and qlv ----
   // approximate second derivatives at i-1/2 (PH 3.35)
@@ -418,12 +418,12 @@ KOKKOS_INLINE_FUNCTION void reconstruct<Type::ppmx>(const Real &q_im2, const Rea
 
   // limit second derivative (PH 3.36)
   Real d2qlim = 0.0;
-  Real lim_slope = fmin(fabs(d2ql),fabs(d2qr));
+  Real lim_slope = m::min(m::abs(d2ql),m::abs(d2qr));
   if (d2qc > 0.0 && d2ql > 0.0 && d2qr > 0.0) {
-    d2qlim = SIGN(d2qc)*fmin(1.25*lim_slope,fabs(d2qc));
+    d2qlim = SIGN(d2qc)*m::min(1.25*lim_slope,m::abs(d2qc));
   }
   if (d2qc < 0.0 && d2ql < 0.0 && d2qr < 0.0) {
-    d2qlim = SIGN(d2qc)*fmin(1.25*lim_slope,fabs(d2qc));
+    d2qlim = SIGN(d2qc)*m::min(1.25*lim_slope,m::abs(d2qc));
   }
   // compute limited value for qlv (PH 3.33 and 3.34)
   if (((q_im1 - qlv)*(q_i - qlv)) > 0.0) {
@@ -438,12 +438,12 @@ KOKKOS_INLINE_FUNCTION void reconstruct<Type::ppmx>(const Real &q_im2, const Rea
 
   // limit second derivative (PH 3.36)
   d2qlim = 0.0;
-  lim_slope = fmin(fabs(d2ql),fabs(d2qr));
+  lim_slope = m::min(m::abs(d2ql),m::abs(d2qr));
   if (d2qc > 0.0 && d2ql > 0.0 && d2qr > 0.0) {
-    d2qlim = SIGN(d2qc)*fmin(1.25*lim_slope,fabs(d2qc));
+    d2qlim = SIGN(d2qc)*m::min(1.25*lim_slope,m::abs(d2qc));
   }
   if (d2qc < 0.0 && d2ql < 0.0 && d2qr < 0.0) {
-    d2qlim = SIGN(d2qc)*fmin(1.25*lim_slope,fabs(d2qc));
+    d2qlim = SIGN(d2qc)*m::min(1.25*lim_slope,m::abs(d2qc));
   }
   // compute limited value for qrv (PH 3.33 and 3.34)
   if (((q_i - qrv)*(q_ip1 - qrv)) > 0.0) {
@@ -464,18 +464,18 @@ KOKKOS_INLINE_FUNCTION void reconstruct<Type::ppmx>(const Real &q_im2, const Rea
 
     // limit second derivatives (PH 3.38)
     d2qlim = 0.0;
-    lim_slope = fmin(fabs(d2ql),fabs(d2qr));
-    lim_slope = fmin(fabs(d2qc),lim_slope);
+    lim_slope = m::min(m::abs(d2ql),m::abs(d2qr));
+    lim_slope = m::min(m::abs(d2qc),lim_slope);
     if (d2qc > 0.0 && d2ql > 0.0 && d2qr > 0.0 && d2q > 0.0) {
-      d2qlim = SIGN(d2q)*fmin(1.25*lim_slope,fabs(d2q));
+      d2qlim = SIGN(d2q)*m::min(1.25*lim_slope,m::abs(d2q));
     }
     if (d2qc < 0.0 && d2ql < 0.0 && d2qr < 0.0 && d2q < 0.0) {
-      d2qlim = SIGN(d2q)*fmin(1.25*lim_slope,fabs(d2q));
+      d2qlim = SIGN(d2q)*m::min(1.25*lim_slope,m::abs(d2q));
     }
 
     // limit L/R states at extrema (PH 3.39)
     Real rho = 0.0;
-    if ( fabs(d2q) > (1.0e-12)*fmax( fabs(q_im1), fmax(fabs(q_i),fabs(q_ip1))) ) {
+    if ( m::abs(d2q) > (1.0e-12)*m::max( m::abs(q_im1), m::max(m::abs(q_i),m::abs(q_ip1))) ) {
       // Limiter is not sensitive to round-off error.  Use limited slope
       rho = d2qlim/d2q;
     }
@@ -485,18 +485,13 @@ KOKKOS_INLINE_FUNCTION void reconstruct<Type::ppmx>(const Real &q_im2, const Rea
     // Monotonize again, away from extrema (CW eqn 1.10, PH 3.32)
     Real qc = qrv - q_i;
     Real qd = qlv - q_i;
-    if (fabs(qc) >= 2.0*fabs(qd)) {
+    if (m::abs(qc) >= 2.0*m::abs(qd)) {
       qrv = q_i - 2.0*qd;
     }
-    if (fabs(qd) >= 2.0*fabs(qc)) {
+    if (m::abs(qd) >= 2.0*m::abs(qc)) {
       qlv = q_i - 2.0*qc;
     }
   }
-
-  //---- set L/R states ----
-  ql_ip1 = qrv;
-  qr_i   = qlv;
-  return;
 }
 
 

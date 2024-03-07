@@ -113,6 +113,8 @@ std::shared_ptr<KHARMAPackage> Flux::Initialize(ParameterInput *pin, std::shared
     } else if (recon == "ppmx") {
         params.Add("recon", KReconstruction::Type::ppmx);
         stencil = 5;
+        std::cout << "KHARMA WARNING: PPMX reconstruction implemention has known bugs." << std::endl
+                  << "Use at your own risk!" << std::endl;
     } else if (recon == "mp5") {
         params.Add("recon", KReconstruction::Type::mp5);
         stencil = 5;
@@ -268,10 +270,6 @@ TaskStatus Flux::BlockPtoU(MeshBlockData<Real> *rc, IndexDomain domain, bool coa
 
     // Return if we're not syncing U & P at all (e.g. edges)
     if (P.GetDim(4) == 0) return TaskStatus::complete;
-
-    // Make sure we always update center conserved B from the faces, not the prims
-    // if (pmb->packages.AllPackages().count("B_CT"))
-    //     B_CT::BlockUtoP(rc, domain, coarse);
 
     // Indices
     auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;

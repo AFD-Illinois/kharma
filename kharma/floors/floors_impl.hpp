@@ -86,7 +86,7 @@ TaskStatus ApplyFloorsInFrame(MeshData<Real> *md, IndexDomain domain)
                 apply_ceilings(G, P(b), m_p, gam, k, j, i, floors, U(b), m_u);
 
                 // P->U for any modified zones
-                Flux::p_to_u(G, P(b), m_p, emhd_params, gam, k, j, i, U(b), m_u, Loci::center);
+                Flux::p_to_u_mhd(G, P(b), m_p, emhd_params, gam, k, j, i, U(b), m_u, Loci::center);
             }
         }
     );

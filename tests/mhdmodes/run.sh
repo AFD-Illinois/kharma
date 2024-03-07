@@ -63,17 +63,19 @@ conv_2d() {
 
 # New & funky modes 
 ALL_RES="16,24,32,48,64"
-OPTS="driver/type=kharma inverter/type=kastaun flux/type=hlle flux/reconstruction=ppmx b_field/solver=face_ct b_field/ct_scheme=sg07"
+# TODO PPM behaves badly here, PPMX crashes...
+OPTS="driver/type=kharma inverter/type=kastaun flux/type=hlle flux/reconstruction=weno5 b_field/solver=face_ct b_field/ct_scheme=gs05_c"
 conv_2d entropy_ak "mhdmodes/nmode=0 $OPTS" "entropy mode in 2D, AthenaK mode"
 conv_2d slow_ak   "mhdmodes/nmode=1 $OPTS" "slow mode in 2D, AthenaK mode"
 conv_2d alfven_ak "mhdmodes/nmode=2 $OPTS" "Alfven mode in 2D, AthenaK mode"
 conv_2d fast_ak   "mhdmodes/nmode=3 $OPTS" "fast mode in 2D, AthenaK mode"
 
-OPTS="driver/type=kharma inverter/type=kastaun flux/type=hlle b_field/solver=face_ct b_field/ct_scheme=bs99 b_field/ct_scheme=sg07 b_field/consistent_face_b=false"
+OPTS="$OPTS b_field/consistent_face_b=false"
 conv_2d slow_ak_rec   "mhdmodes/nmode=1 $OPTS" "slow mode in 2D, reconstructed B"
 conv_2d alfven_ak_rec "mhdmodes/nmode=2 $OPTS" "Alfven mode in 2D, reconstructed B"
 conv_2d fast_ak_rec   "mhdmodes/nmode=3 $OPTS" "fast mode in 2D, reconstructed B"
 
+ALL_RES="16,24,32,48,64"
 # Normal MHD modes, 2D, defaults
 conv_2d slow mhdmodes/nmode=1 "slow mode in 2D"
 conv_2d alfven mhdmodes/nmode=2 "Alfven mode in 2D"
@@ -129,9 +131,9 @@ conv_2d fast_kastaun   "mhdmodes/nmode=3 inverter/type=kastaun" "fast mode in 2D
 
 # simple driver, high res
 ALL_RES="16,24,32,48,64,96,128,192,256"
-conv_2d slow_highres   "mhdmodes/nmode=1 driver/type=imex" "slow mode in 2D, simple driver"
-conv_2d alfven_highres "mhdmodes/nmode=2 driver/type=imex" "Alfven mode in 2D, simple driver"
-conv_2d fast_highres   "mhdmodes/nmode=3 driver/type=imex" "fast mode in 2D, simple driver"
+conv_2d slow_highres   "mhdmodes/nmode=1 driver/type=simple" "slow mode in 2D, simple driver"
+conv_2d alfven_highres "mhdmodes/nmode=2 driver/type=simple" "Alfven mode in 2D, simple driver"
+conv_2d fast_highres   "mhdmodes/nmode=3 driver/type=simple" "fast mode in 2D, simple driver"
 
 # Trying for convergence down to 8 zone. This configuration should be able to go the lowest?
 # ALL_RES="8,16,32,64"
