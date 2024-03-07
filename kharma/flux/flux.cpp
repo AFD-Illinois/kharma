@@ -258,8 +258,8 @@ TaskStatus Flux::BlockPtoU(MeshBlockData<Real> *rc, IndexDomain domain, bool coa
     const EMHD::EMHD_parameters& emhd_params = EMHD::GetEMHDParameters(pmb->packages);
 
     // Make sure we don't step on face CT: unnecessary so far, might fix ordering mistakes
-    // if (pmb->packages.AllPackages().count("B_CT"))
-    //     B_CT::BlockUtoP(rc, domain, coarse);
+    if (pmb->packages.AllPackages().count("B_CT"))
+        B_CT::BlockUtoP(rc, domain, coarse);
 
     // Pack variables
     PackIndexMap prims_map, cons_map;

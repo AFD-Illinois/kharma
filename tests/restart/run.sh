@@ -17,20 +17,21 @@ exit_code=0
 
 test_restart() {
     $KHARMADIR/run.sh -i $KHARMADIR/pars/tori_3d/sane.par parthenon/time/nlim=5 \
+    parthenon/output0/single_precision_output=false \
     $2 >log_restart_${1}_first.txt 2>&1
 
-    mv torus.out1.final.rhdf restart_${1}_first.rhdf
+    mv torus.out0.final.phdf restart_${1}_first.phdf
 
     sleep 1
 
     $KHARMADIR/run.sh -r torus.out1.00000.rhdf >log_restart_${1}_second.txt 2>&1
 
-    mv torus.out1.final.rhdf restart_${1}_second.rhdf
+    mv torus.out0.final.phdf restart_${1}_second.phdf
 
     check_code=0
     # Compare to some high degree of accuracy
     pyharm diff --rel_tol 1e-9 restart_${1}_first.phdf restart_${1}_second.phdf --no_plot || check_code=$?
-    # Compare binary. For someday
+    # Compare binary. For someday (remember to exclude divb)
     #h5diff --exclude-path=/Info \
     #       --exclude-path=/Input \
     #       --relative=1e-5 \
@@ -44,15 +45,16 @@ test_restart() {
 }
 test_restart_smr() {
     $KHARMADIR/run.sh -i $KHARMADIR/pars/smr/sane2d_refined.par parthenon/time/nlim=5 \
+    parthenon/output0/single_precision_output=false \
     $2 >log_restart_${1}_first.txt 2>&1
 
-    mv torus.out1.final.rhdf restart_${1}_first.rhdf
+    mv torus.out0.final.phdf restart_${1}_first.phdf
 
     sleep 1
 
     $KHARMADIR/run.sh -r torus.out1.00000.rhdf >log_restart_${1}_second.txt 2>&1
 
-    mv torus.out1.final.rhdf restart_${1}_second.rhdf
+    mv torus.out0.final.phdf restart_${1}_second.phdf
 
     check_code=0
     # Compare to some high degree of accuracy
