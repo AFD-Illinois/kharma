@@ -291,7 +291,7 @@ TaskID KHARMADriver::AddFOFC(TaskID& t_start, TaskList& tl, MeshData<Real> *md,
     // Populate guess source term with divergence of the existing fluxes
     // NOTE this does not include source terms!  Though, could call them here tbh
     auto t_guess_divergence = tl.AddTask(t_start, FluxDivergence, md, guess_src,
-                                        std::vector<MetadataFlag>{Metadata::Cell, Metadata::WithFluxes}, 1);
+                                        std::vector<MetadataFlag>{Metadata::Cell, Metadata::WithFluxes}, 3);
     // Update the guess state with the guess source term, and our existing state
     // Note this includes updating cell-centered B with the fluxes -- we don't care if this version has div
     auto t_guess_update = KHARMADriver::AddStateUpdate(t_guess_divergence, tl,
