@@ -184,9 +184,9 @@ std::shared_ptr<KHARMAPackage> Flux::Initialize(ParameterInput *pin, std::shared
         // Use a custom block for fofc floors.  We now do the same for Kastaun, where we can *also* have floors
         // TODO even post-reconstruction/reconstruction fallback?
         if (!pin->DoesBlockExist("fofc_floors")) {
-            params.Add("fofc_prescription", Floors::Prescription(pin, "floors"));
+            params.Add("fofc_prescription", Floors::MakePrescription(pin, "floors"));
         } else {
-            params.Add("fofc_prescription", Floors::Prescription(pin, "fofc_floors"));
+            params.Add("fofc_prescription", Floors::MakePrescription(pin, "fofc_floors"));
         }
 
         // Flag for whether FOFC was applied, for diagnostics

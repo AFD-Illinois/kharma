@@ -92,7 +92,7 @@ TaskStatus Flux::FOFC(MeshData<Real> *md, MeshData<Real> *guess)
     // Pre-mark cells which will need fluxes reduced.
     // This avoids a race condition marking them multiple times when iterating faces,
     // and isolates the potentially slow/weird integer conversion stuff so we can measure the kernel time
-    const IndexRange3 b = KDomain::GetRange(md, IndexDomain::interior, -1, 1);
+    const IndexRange3 b = KDomain::GetRange(md, IndexDomain::interior, -2, 2);
     const IndexRange block = IndexRange{0, P_all.GetDim(5) - 1};
     pmb0->par_for("fofc_mark", block.s, block.e, b.ks, b.ke, b.js, b.je, b.is, b.ie,
         KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i) {
@@ -106,7 +106,7 @@ TaskStatus Flux::FOFC(MeshData<Real> *md, MeshData<Real> *guess)
     for (int dir=1; dir <= ndim; dir++) { // TODO if(trivial_direction) etc
         const TE el = FaceOf(dir);
         const Loci loc = loc_of(dir);
-        const IndexRange3 b = KDomain::GetRange(md, IndexDomain::interior, el);
+        const IndexRange3 b = KDomain::GetRange(md, IndexDomain::interior, el, -1, 1);
         const IndexRange block = IndexRange{0, P_all.GetDim(5) - 1};
         pmb0->par_for("fofc_replacement", block.s, block.e, b.ks, b.ke, b.js, b.je, b.is, b.ie,
             KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i) {

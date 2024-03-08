@@ -111,52 +111,54 @@ class Prescription {
         Real gamma_max;
         // Floor options (frame was MOVED to templating)
         bool use_r_char, temp_adjust_u, adjust_k;
-
-        Prescription() {}
-        Prescription(parthenon::ParameterInput *pin, std::string block="floors")
-        {
-            // Floor parameters
-            if (pin->GetBoolean("coordinates", "spherical")) {
-                // In spherical systems, floors drop as r^2, so set them higher by default
-                rho_min_geom = pin->GetOrAddReal(block, "rho_min_geom", 1.e-6);
-                u_min_geom = pin->GetOrAddReal(block, "u_min_geom", 1.e-8);
-                // Some constant for large distances. New, out of the way by default
-                rho_min_const = pin->GetOrAddReal(block, "rho_min_const", 1.e-20);
-                u_min_const = pin->GetOrAddReal(block, "u_min_const", 1.e-20);
-            } else { // TODO spherical cart will also have both
-                // Accept old names
-                Real rho_min_const_default = pin->DoesParameterExist(block, "rho_min_geom") ?
-                                             pin->GetReal(block, "rho_min_geom") : 1.e-8;
-                Real u_min_const_default = pin->DoesParameterExist(block, "u_min_geom") ?
-                                           pin->GetReal(block, "u_min_geom") : 1.e-10;
-                rho_min_const = pin->GetOrAddReal(block, "rho_min_const", rho_min_const_default);
-                u_min_const = pin->GetOrAddReal(block, "u_min_const", u_min_const_default);
-            }
-
-            // In iharm3d, overdensities would run away; one proposed solution was
-            // to decrease the density floor more with radius.  However, in practice
-            // 1. This proved to be a result of the floor vs bsq, not the geometric one
-            // 2. interior density floors are dominated by the floor vs bsq
-            use_r_char = pin->GetOrAddBoolean(block, "use_r_char", false);
-            r_char = pin->GetOrAddReal(block, "r_char", 10);
-
-            // Floors vs magnetic field.  Most commonly hit & most temperamental
-            bsq_over_rho_max = pin->GetOrAddReal(block, "bsq_over_rho_max", 1e20);
-            bsq_over_u_max = pin->GetOrAddReal(block, "bsq_over_u_max", 1e20);
-
-            // Limit temperature or entropy, optionally by siphoning off extra rather
-            // than by adding material.
-            u_over_rho_max = pin->GetOrAddReal(block, "u_over_rho_max", 1e20);
-            ktot_max = pin->GetOrAddReal(block, "ktot_max", 1e20);
-            temp_adjust_u = pin->GetOrAddBoolean(block, "temp_adjust_u", false);
-            // Adjust electron entropy values when applying density floors to conserve
-            // internal energy, as in Ressler+ but not more recent implementations
-            adjust_k = pin->GetOrAddBoolean(block, "adjust_k", true);
-
-            // Limit the fluid Lorentz factor gamma
-            gamma_max = pin->GetOrAddReal(block, "gamma_max", 50.);
-        }
 };
+
+inline Prescription MakePrescription(parthenon::ParameterInput *pin, std::string block="floors")
+{
+    Prescription p;
+    // Floor parameters
+    if (pin->GetBoolean("coordinates", "spherical")) {
+        // In spherical systems, floors drop as r^2, so set them higher by default
+        p.rho_min_geom = pin->GetOrAddReal(block, "rho_min_geom", 1.e-6);
+        p.u_min_geom = pin->GetOrAddReal(block, "u_min_geom", 1.e-8);
+        // Some constant for large distances. New, out of the way by default
+        p.rho_min_const = pin->GetOrAddReal(block, "rho_min_const", 1.e-20);
+        p.u_min_const = pin->GetOrAddReal(block, "u_min_const", 1.e-20);
+    } else { // TODO spherical cart will also have both
+        // Accept old names
+        Real rho_min_const_default = pin->DoesParameterExist(block, "rho_min_geom") ?
+                                        pin->GetReal(block, "rho_min_geom") : 1.e-8;
+        Real u_min_const_default = pin->DoesParameterExist(block, "u_min_geom") ?
+                                    pin->GetReal(block, "u_min_geom") : 1.e-10;
+        p.rho_min_const = pin->GetOrAddReal(block, "rho_min_const", rho_min_const_default);
+        p.u_min_const = pin->GetOrAddReal(block, "u_min_const", u_min_const_default);
+    }
+
+    // In iharm3d, overdensities would run away; one proposed solution was
+    // to decrease the density floor more with radius.  However, in practice
+    // 1. This proved to be a result of the floor vs bsq, not the geometric one
+    // 2. interior density floors are dominated by the floor vs bsq
+    p.use_r_char = pin->GetOrAddBoolean(block, "use_r_char", false);
+    p.r_char = pin->GetOrAddReal(block, "r_char", 10);
+
+    // Floors vs magnetic field.  Most commonly hit & most temperamental
+    p.bsq_over_rho_max = pin->GetOrAddReal(block, "bsq_over_rho_max", 1e20);
+    p.bsq_over_u_max = pin->GetOrAddReal(block, "bsq_over_u_max", 1e20);
+
+    // Limit temperature or entropy, optionally by siphoning off extra rather
+    // than by adding material.
+    p.u_over_rho_max = pin->GetOrAddReal(block, "u_over_rho_max", 1e20);
+    p.ktot_max = pin->GetOrAddReal(block, "ktot_max", 1e20);
+    p.temp_adjust_u = pin->GetOrAddBoolean(block, "temp_adjust_u", false);
+    // Adjust electron entropy values when applying density floors to conserve
+    // internal energy, as in Ressler+ but not more recent implementations
+    p.adjust_k = pin->GetOrAddBoolean(block, "adjust_k", true);
+
+    // Limit the fluid Lorentz factor gamma
+    p.gamma_max = pin->GetOrAddReal(block, "gamma_max", 50.);
+
+    return p;
+}
 
 /**
  * Initialization.  Set parameters.
