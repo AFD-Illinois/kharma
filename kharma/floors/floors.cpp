@@ -54,7 +54,7 @@ std::shared_ptr<KHARMAPackage> Floors::Initialize(ParameterInput *pin, std::shar
     Params &params = pkg->AllParams();
 
     // Parse all the particular floor values into a nice struct we can pass device-side
-    params.Add("prescription", Floors::Prescription(pin));
+    params.Add("prescription", MakePrescription(pin));
 
     // Frame to apply floors: usually we use normal observer frame, but
     // the option exists to use the fluid frame exclusively 'fluid' or outside a
