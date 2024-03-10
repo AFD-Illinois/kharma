@@ -292,9 +292,16 @@ TaskID KHARMADriver::AddFOFC(TaskID& t_start, TaskList& tl, MeshData<Real> *md,
     // NOTE this does not include source terms!  Though, could call them here tbh
     auto t_guess_divergence = tl.AddTask(t_start, FluxDivergence, md, guess_src,
                                         std::vector<MetadataFlag>{Metadata::Cell, Metadata::WithFluxes}, 3);
+    // Add geometric source term to more accurately predict floor hits.
+    // Could add everything here with Packages::AddSource but would be slower
+    // also would need to deal with B_CT::AddSource == flux update, which we don't want/need
+    auto t_guess_sources = t_guess_divergence;
+    if (pmb0->packages.Get("Flux")->Param<bool>("fofc_use_source_term")) {
+        auto t_guess_sources = tl.AddTask(t_guess_divergence, Flux::AddGeoSourceTask, md, guess_src);
+    }
     // Update the guess state with the guess source term, and our existing state
     // Note this includes updating cell-centered B with the fluxes -- we don't care if this version has div
-    auto t_guess_update = KHARMADriver::AddStateUpdate(t_guess_divergence, tl,
+    auto t_guess_update = KHARMADriver::AddStateUpdate(t_guess_sources, tl,
                                                        md_full_step_init, md_sub_step_init, guess_src, guess,
                                                        {Metadata::WithFluxes, Metadata::Cell},
                                                        false, stage);

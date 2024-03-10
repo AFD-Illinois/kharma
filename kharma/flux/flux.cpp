@@ -181,6 +181,9 @@ std::shared_ptr<KHARMAPackage> Flux::Initialize(ParameterInput *pin, std::shared
         bool use_glf = pin->GetOrAddBoolean("fofc", "use_glf", false);
         params.Add("fofc_use_glf", use_glf);
 
+        bool use_source_term = pin->GetOrAddBoolean("fofc", "use_source_term", true);
+        params.Add("fofc_use_source_term", use_source_term);
+
         // Use a custom block for fofc floors.  We now do the same for Kastaun, where we can *also* have floors
         // TODO even post-reconstruction/reconstruction fallback?
         if (!pin->DoesBlockExist("fofc_floors")) {

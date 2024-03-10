@@ -97,8 +97,11 @@ TaskStatus Flux::FOFC(MeshData<Real> *md, MeshData<Real> *guess)
     pmb0->par_for("fofc_mark", block.s, block.e, b.ks, b.ke, b.js, b.je, b.is, b.ie,
         KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i) {
             // if cell failed to invert or would call floors...
+            // TODO preserve cause in the fofcflag
             if (static_cast<int>(fflag(b, 0, k, j, i)) || Inverter::failed(pflag(b, 0, k, j, i))) {
                 fofcflag(b, 0, k, j, i) = 1;
+            } else {
+                fofcflag(b, 0, k, j, i) = 0;
             }
         }
     );

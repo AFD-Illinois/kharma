@@ -64,6 +64,13 @@ TaskStatus FOFC(MeshData<Real> *md, MeshData<Real> *guess);
  * (E)GR(R)(M)HD terms.
  */
 void AddGeoSource(MeshData<Real> *md, MeshData<Real> *mdudt);
+// Version returning TaskStatus, for calling alone in FOFC "update"
+// TODO(BSP) switch KHARMAPackage (and Parthenon packages?) to expect all TaskStatus
+inline TaskStatus AddGeoSourceTask(MeshData<Real> *md, MeshData<Real> *mdudt)
+{
+    AddGeoSource(md, mdudt);
+    return TaskStatus::complete;
+}
 
 /**
  * Likewise, the conversion P->U, even for just the GRMHD variables, requires (consists of)
