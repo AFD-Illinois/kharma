@@ -63,12 +63,12 @@ TaskStatus FOFC(MeshData<Real> *md, MeshData<Real> *guess);
  * This is defined in Flux:: rather than GRMHD:: because the stress-energy tensor may contain
  * (E)GR(R)(M)HD terms.
  */
-void AddGeoSource(MeshData<Real> *md, MeshData<Real> *mdudt);
+void AddGeoSource(MeshData<Real> *md, MeshData<Real> *mdudt, IndexDomain domain);
 // Version returning TaskStatus, for calling alone in FOFC "update"
 // TODO(BSP) switch KHARMAPackage (and Parthenon packages?) to expect all TaskStatus
-inline TaskStatus AddGeoSourceTask(MeshData<Real> *md, MeshData<Real> *mdudt)
+inline TaskStatus AddGeoSourceTask(MeshData<Real> *md, MeshData<Real> *mdudt, IndexDomain domain)
 {
-    AddGeoSource(md, mdudt);
+    AddGeoSource(md, mdudt, domain);
     return TaskStatus::complete;
 }
 

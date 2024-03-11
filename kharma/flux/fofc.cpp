@@ -96,9 +96,11 @@ TaskStatus Flux::FOFC(MeshData<Real> *md, MeshData<Real> *guess)
     const IndexRange block = IndexRange{0, P_all.GetDim(5) - 1};
     pmb0->par_for("fofc_mark", block.s, block.e, b.ks, b.ke, b.js, b.je, b.is, b.ie,
         KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i) {
+            const auto& G = P_all.GetCoords(b);
             // if cell failed to invert or would call floors...
             // TODO preserve cause in the fofcflag
-            if (static_cast<int>(fflag(b, 0, k, j, i)) || Inverter::failed(pflag(b, 0, k, j, i))) {
+            if (static_cast<int>(fflag(b, 0, k, j, i)) || Inverter::failed(pflag(b, 0, k, j, i)) ||
+                (spherical && G.r(k, j, i) < r_eh + 0.1)) {
                 fofcflag(b, 0, k, j, i) = 1;
             } else {
                 fofcflag(b, 0, k, j, i) = 0;
@@ -121,8 +123,7 @@ TaskStatus Flux::FOFC(MeshData<Real> *md, MeshData<Real> *guess)
                 int ii = (dir == 1) ? i - 1 : i;
                 // If either bordering cell is marked, and always inside the EH
                 if (static_cast<int>(fofcflag(b, 0, k, j, i)) ||
-                    static_cast<int>(fofcflag(b, 0, kk, jj, ii)) ||
-                    (spherical && G.r(k, j, i) < r_eh + 0.1)) { // TODO allow customizing
+                    static_cast<int>(fofcflag(b, 0, kk, jj, ii))) { // TODO allow customizing
 
                     // "Reconstruct" left & right of this face: left is left cell, right is shared-index
                     PLOOP Pl_all(b, ip, k, j, i) = P_all(b, ip, kk, jj, ii);

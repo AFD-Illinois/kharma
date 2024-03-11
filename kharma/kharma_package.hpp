@@ -75,7 +75,7 @@ class KHARMAPackage : public StateDescriptor {
         //std::function<void(MeshBlockData<Real>*, IndexDomain, bool)> BlockPtoU = nullptr;
 
         // Source term to add to the conserved variables during each step
-        std::function<void(MeshData<Real>*, MeshData<Real>*)> AddSource = nullptr;
+        std::function<void(MeshData<Real>*, MeshData<Real>*, IndexDomain)> AddSource = nullptr;
 
         // Source term to apply to primitive variables, needed for some problems in order
         // to control dissipation (Hubble, turbulence).
@@ -151,7 +151,7 @@ TaskStatus BoundaryPtoUElseUtoP(MeshBlockData<Real> *rc, IndexDomain domain, boo
  * Add any source terms to the conserved variables.  Applied over the interior/physical zones only, as these
  * are the only ones well-defined in the only place this function is called.
  */
-TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt);
+TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt, IndexDomain domain);
 
 /**
  * Add any source terms to the primitive variables.  Applied directly rather than adding to a derivative.

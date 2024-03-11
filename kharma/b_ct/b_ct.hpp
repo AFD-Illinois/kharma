@@ -77,7 +77,7 @@ TaskStatus CalculateEMF(MeshData<Real> *md);
  * Calculate the change in magnetic field on faces for this step,
  * from the EMFs at edges.
  */
-TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt);
+TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt, IndexDomain domain);
 
 // TODO UNIFY ALL THE FOLLOWING
 

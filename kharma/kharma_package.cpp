@@ -155,14 +155,14 @@ TaskStatus Packages::BoundaryPtoUElseUtoP(MeshBlockData<Real> *rc, IndexDomain d
     return TaskStatus::complete;
 }
 
-TaskStatus Packages::AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
+TaskStatus Packages::AddSource(MeshData<Real> *md, MeshData<Real> *mdudt, IndexDomain domain)
 {
     Flag("AddSource");
     auto kpackages = md->GetMeshPointer()->packages.AllPackagesOfType<KHARMAPackage>();
     for (auto kpackage : kpackages) {
         if (kpackage.second->AddSource != nullptr) {
             Flag("AddSource_"+kpackage.first);
-            kpackage.second->AddSource(md, mdudt);
+            kpackage.second->AddSource(md, mdudt, domain);
             EndFlag();
         }
     }

@@ -297,7 +297,7 @@ TaskID KHARMADriver::AddFOFC(TaskID& t_start, TaskList& tl, MeshData<Real> *md,
     // also would need to deal with B_CT::AddSource == flux update, which we don't want/need
     auto t_guess_sources = t_guess_divergence;
     if (pmb0->packages.Get("Flux")->Param<bool>("fofc_use_source_term")) {
-        auto t_guess_sources = tl.AddTask(t_guess_divergence, Flux::AddGeoSourceTask, md, guess_src);
+        auto t_guess_sources = tl.AddTask(t_guess_divergence, Flux::AddGeoSourceTask, md, guess_src, IndexDomain::entire);
     }
     // Update the guess state with the guess source term, and our existing state
     // Note this includes updating cell-centered B with the fluxes -- we don't care if this version has div

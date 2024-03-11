@@ -406,7 +406,7 @@ TaskStatus B_CT::CalculateEMF(MeshData<Real> *md)
     return TaskStatus::complete;
 }
 
-TaskStatus B_CT::AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
+TaskStatus B_CT::AddSource(MeshData<Real> *md, MeshData<Real> *mdudt, IndexDomain domain)
 {
     auto pmesh = md->GetMeshPointer();
     const int ndim = pmesh->ndim;
@@ -415,8 +415,9 @@ TaskStatus B_CT::AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
     auto& emf_pack = md->PackVariables(std::vector<std::string>{"B_CT.emf"});
 
     // Figure out indices
-    const IndexRange3 b = KDomain::GetRange(md, IndexDomain::interior, 0, 0);
-    const IndexRange3 b1 = KDomain::GetRange(md, IndexDomain::interior, 0, 1);
+    const IndexRange3 b = KDomain::GetRange(md, domain, 0, 0);
+    // TODO use proper face/edge indexing to ensure we don't overstep
+    const IndexRange3 b1 = KDomain::GetRange(md, domain, 0, 1);
     const IndexRange block = IndexRange{0, emf_pack.GetDim(5)-1};
 
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer();

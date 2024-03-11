@@ -287,7 +287,7 @@ void InitEMHDVariables(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput 
     // Do we actually need anything here?
 }
 
-TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
+TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt, IndexDomain domain)
 {
     // Pointers
     auto pmesh = mdudt->GetMeshPointer();
@@ -314,9 +314,9 @@ TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
     int m_theta = temps_map["Theta"].first;
 
     // Get ranges
-    const IndexRange ib = mdudt->GetBoundsI(IndexDomain::interior);
-    const IndexRange jb = mdudt->GetBoundsJ(IndexDomain::interior);
-    const IndexRange kb = mdudt->GetBoundsK(IndexDomain::interior);
+    const IndexRange ib = mdudt->GetBoundsI(domain);
+    const IndexRange jb = mdudt->GetBoundsJ(domain);
+    const IndexRange kb = mdudt->GetBoundsK(domain);
     const IndexRange block = IndexRange{0, dUdt.GetDim(5) - 1};
     // 1-zone halo in nontrivial dimensions
     const IndexRange il = IndexRange{ib.s-1, ib.e+1};
