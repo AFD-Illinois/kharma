@@ -61,22 +61,36 @@ conv_2d() {
     fi
 }
 
-# Normal MHD modes, 2D, defaults
+# New & funky modes 
 ALL_RES="16,24,32,48,64"
+# TODO PPM behaves badly here, PPMX crashes...
+OPTS="driver/type=kharma inverter/type=kastaun flux/type=hlle flux/reconstruction=weno5 b_field/solver=face_ct b_field/ct_scheme=gs05_c"
+conv_2d entropy_ak "mhdmodes/nmode=0 $OPTS" "entropy mode in 2D, AthenaK mode"
+conv_2d slow_ak   "mhdmodes/nmode=1 $OPTS" "slow mode in 2D, AthenaK mode"
+conv_2d alfven_ak "mhdmodes/nmode=2 $OPTS" "Alfven mode in 2D, AthenaK mode"
+conv_2d fast_ak   "mhdmodes/nmode=3 $OPTS" "fast mode in 2D, AthenaK mode"
+
+OPTS="$OPTS b_field/consistent_face_b=false"
+conv_2d slow_ak_rec   "mhdmodes/nmode=1 $OPTS" "slow mode in 2D, reconstructed B"
+conv_2d alfven_ak_rec "mhdmodes/nmode=2 $OPTS" "Alfven mode in 2D, reconstructed B"
+conv_2d fast_ak_rec   "mhdmodes/nmode=3 $OPTS" "fast mode in 2D, reconstructed B"
+
+ALL_RES="16,24,32,48,64"
+# Normal MHD modes, 2D, defaults
 conv_2d slow mhdmodes/nmode=1 "slow mode in 2D"
 conv_2d alfven mhdmodes/nmode=2 "Alfven mode in 2D"
 conv_2d fast mhdmodes/nmode=3 "fast mode in 2D"
 
 # Entropy mode as reconstruction demo
 conv_2d entropy_nob "mhdmodes/nmode=0 b_field/solver=none" "entropy mode in 2D, no B field"
-# Doesn't converge as it gets the propagation speed slightly wrong...
+# The resolutions we test are too low for these two
 #conv_2d entropy_donor "mhdmodes/nmode=0 driver/reconstruction=donor_cell" "entropy mode in 2D, Donor Cell reconstruction"
-conv_2d entropy_mc "mhdmodes/nmode=0 driver/reconstruction=linear_mc" "entropy mode in 2D, linear/MC reconstruction"
-# Converges at -1.8, which is below tolerance for the other schemes
 #conv_2d entropy_vl "mhdmodes/nmode=0 driver/reconstruction=linear_vl" "entropy mode in 2D, linear/VL reconstruction"
+conv_2d entropy_mc "mhdmodes/nmode=0 driver/reconstruction=linear_mc" "entropy mode in 2D, linear/MC reconstruction"
 conv_2d entropy_weno "mhdmodes/nmode=0 driver/reconstruction=weno5" "entropy mode in 2D, WENO reconstruction"
 conv_2d entropy_weno_lin "mhdmodes/nmode=0 driver/reconstruction=weno5_linear" "entropy mode in 2D, WENO linearized reconstruction"
 conv_2d entropy_ppm "mhdmodes/nmode=0 driver/reconstruction=ppm" "entropy mode in 2D, PPM reconstruction"
+conv_2d entropy_ppmx "mhdmodes/nmode=0 driver/reconstruction=ppm" "entropy mode in 2D, PPMX reconstruction"
 conv_2d entropy_mp5 "mhdmodes/nmode=0 driver/reconstruction=mp5" "entropy mode in 2D, MP5 reconstruction"
 
 # KHARMA driver
@@ -105,16 +119,21 @@ conv_2d slow_kharma_ct_gs05_0   "mhdmodes/nmode=1 driver/type=kharma b_field/sol
 conv_2d alfven_kharma_ct_gs05_0 "mhdmodes/nmode=2 driver/type=kharma b_field/solver=face_ct b_field/ct_scheme=gs05_0" "Alfven mode in 2D, KHARMA driver w/epsilon_0 flux"
 # TODO this barely doesn't work. Boundaries?
 #conv_2d fast_kharma_ct_gs05_0   "mhdmodes/nmode=3 driver/type=kharma b_field/solver=face_ct b_field/ct_scheme=gs05_0" "fast mode in 2D, KHARMA driver w/epsilon_0 flux"
-
 conv_2d slow_kharma_ct_gs05_c   "mhdmodes/nmode=1 driver/type=kharma b_field/solver=face_ct b_field/ct_scheme=gs05_c" "slow mode in 2D, KHARMA driver w/epsilon_c flux"
 conv_2d alfven_kharma_ct_gs05_c "mhdmodes/nmode=2 driver/type=kharma b_field/solver=face_ct b_field/ct_scheme=gs05_c" "Alfven mode in 2D, KHARMA driver w/epsilon_c flux"
 conv_2d fast_kharma_ct_gs05_c   "mhdmodes/nmode=3 driver/type=kharma b_field/solver=face_ct b_field/ct_scheme=gs05_c" "fast mode in 2D, KHARMA driver w/epsilon_c flux"
 
+# Kastaun primitive recovery
+conv_2d slow_kastaun   "mhdmodes/nmode=1 inverter/type=kastaun" "slow mode in 2D, Kastaun inversion"
+conv_2d alfven_kastaun "mhdmodes/nmode=2 inverter/type=kastaun" "Alfven mode in 2D, Kastaun inversion"
+conv_2d fast_kastaun   "mhdmodes/nmode=3 inverter/type=kastaun" "fast mode in 2D, Kastaun inversion"
+
+
 # simple driver, high res
 ALL_RES="16,24,32,48,64,96,128,192,256"
-conv_2d slow_highres   "mhdmodes/nmode=1 driver/type=imex" "slow mode in 2D, simple driver"
-conv_2d alfven_highres "mhdmodes/nmode=2 driver/type=imex" "Alfven mode in 2D, simple driver"
-conv_2d fast_highres   "mhdmodes/nmode=3 driver/type=imex" "fast mode in 2D, simple driver"
+conv_2d slow_highres   "mhdmodes/nmode=1 driver/type=simple" "slow mode in 2D, simple driver"
+conv_2d alfven_highres "mhdmodes/nmode=2 driver/type=simple" "Alfven mode in 2D, simple driver"
+conv_2d fast_highres   "mhdmodes/nmode=3 driver/type=simple" "fast mode in 2D, simple driver"
 
 # Trying for convergence down to 8 zone. This configuration should be able to go the lowest?
 # ALL_RES="8,16,32,64"

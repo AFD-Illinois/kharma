@@ -64,7 +64,7 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
  * output: Primitive B = B^i
  */
 TaskStatus BlockUtoP(MeshBlockData<Real> *md, IndexDomain domain, bool coarse=false);
-void MeshUtoP(MeshData<Real> *md, IndexDomain domain, bool coarse=false);
+TaskStatus MeshUtoP(MeshData<Real> *md, IndexDomain domain, bool coarse=false);
 
 /**
  * Reverse of the above.  Only used alone during initialization.

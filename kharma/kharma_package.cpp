@@ -155,14 +155,14 @@ TaskStatus Packages::BoundaryPtoUElseUtoP(MeshBlockData<Real> *rc, IndexDomain d
     return TaskStatus::complete;
 }
 
-TaskStatus Packages::AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
+TaskStatus Packages::AddSource(MeshData<Real> *md, MeshData<Real> *mdudt, IndexDomain domain)
 {
     Flag("AddSource");
     auto kpackages = md->GetMeshPointer()->packages.AllPackagesOfType<KHARMAPackage>();
     for (auto kpackage : kpackages) {
         if (kpackage.second->AddSource != nullptr) {
             Flag("AddSource_"+kpackage.first);
-            kpackage.second->AddSource(md, mdudt);
+            kpackage.second->AddSource(md, mdudt, domain);
             EndFlag();
         }
     }
@@ -170,63 +170,53 @@ TaskStatus Packages::AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
     return TaskStatus::complete;
 }
 
-TaskStatus Packages::BlockApplyPrimSource(MeshBlockData<Real> *rc)
-{
-    // TODO print only if there's calls inside?
-    Flag("BlockApplyPrimSource");
-    auto kpackages = rc->GetBlockPointer()->packages.AllPackagesOfType<KHARMAPackage>();
-    for (auto kpackage : kpackages) {
-        if (kpackage.second->BlockApplyPrimSource != nullptr) {
-            kpackage.second->BlockApplyPrimSource(rc);
-        }
-    }
-    EndFlag();
-    return TaskStatus::complete;
-}
 TaskStatus Packages::MeshApplyPrimSource(MeshData<Real> *md)
 {
     Flag("MeshApplyPrimSource");
-    for (int i=0; i < md->NumBlocks(); ++i)
-        BlockApplyPrimSource(md->GetBlockData(i).get());
-    EndFlag();
-    return TaskStatus::complete;
-}
-
-TaskStatus Packages::BlockApplyFloors(MeshBlockData<Real> *mbd, IndexDomain domain)
-{
-    Flag("BlockApplyFloors");
-    auto pmb = mbd->GetBlockPointer();
-    auto pkgs = pmb->packages.AllPackages();
-
-    // Apply the version from "Floors" package first
-    if (pkgs.count("Floors")) {
-        KHARMAPackage *pkpackage = pmb->packages.Get<KHARMAPackage>("Floors");
-        if (pkpackage->BlockApplyFloors != nullptr) {
-            Flag("BlockApplyFloors_Floors");
-            pkpackage->BlockApplyFloors(mbd, domain);
-            EndFlag();
-        }
-    }
-    // Then anything else
-    auto kpackages = pmb->packages.AllPackagesOfType<KHARMAPackage>();
-    for (auto kpackage : kpackages) {
-        if (kpackage.first != "Floors") {
-            if (kpackage.second->BlockApplyFloors != nullptr) {
-                Flag("BlockApplyFloors_"+kpackage.first);
-                kpackage.second->BlockApplyFloors(mbd, domain);
-                EndFlag();
+    for (int i=0; i < md->NumBlocks(); ++i) {
+        auto rc = md->GetBlockData(i).get();
+        auto kpackages = rc->GetBlockPointer()->packages.AllPackagesOfType<KHARMAPackage>();
+        for (auto kpackage : kpackages) {
+            if (kpackage.second->BlockApplyPrimSource != nullptr) {
+                kpackage.second->BlockApplyPrimSource(rc);
             }
         }
     }
     EndFlag();
-
     return TaskStatus::complete;
 }
+
 TaskStatus Packages::MeshApplyFloors(MeshData<Real> *md, IndexDomain domain)
 {
     Flag("MeshApplyFloors");
-    for (int i=0; i < md->NumBlocks(); ++i)
-        BlockApplyFloors(md->GetBlockData(i).get(), domain);
+
+    // Apply the version from "Floors" package first
+    auto pmesh = md->GetMeshPointer();
+    auto pkgs = pmesh->packages.AllPackages();
+    if (pkgs.count("Floors")) {
+        KHARMAPackage *pkpackage = pmesh->packages.Get<KHARMAPackage>("Floors");
+        if (pkpackage->MeshApplyFloors != nullptr) {
+            Flag("MeshApplyFloors_Floors");
+            pkpackage->MeshApplyFloors(md, domain);
+            EndFlag();
+        }
+    }
+    // Then everything else i.e. block versions
+    // TODO(BSP) allow Mesh versions and fallback
+    for (int i=0; i < md->NumBlocks(); ++i) {
+        auto mbd = md->GetBlockData(i).get();
+        auto pmb = mbd->GetBlockPointer();
+        auto kpackages = pmb->packages.AllPackagesOfType<KHARMAPackage>();
+        for (auto kpackage : kpackages) {
+            if (kpackage.first != "Floors") {
+                if (kpackage.second->BlockApplyFloors != nullptr) {
+                    Flag("BlockApplyFloors_"+kpackage.first);
+                    kpackage.second->BlockApplyFloors(mbd, domain);
+                    EndFlag();
+                }
+            }
+        }
+    }
     EndFlag();
     return TaskStatus::complete;
 }

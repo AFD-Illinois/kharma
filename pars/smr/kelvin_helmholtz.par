@@ -1,14 +1,13 @@
 # Kelvin-Helmholtz instability
 # Basic K-H problem, usually used to test AMR
 # since it gets refined in predictable places
-# See pars/smr/kelvin_helmholtz*, pars/amr/kelvin_helmholtz*
 
 <parthenon/job>
 problem_id = kelvin_helmholtz
 
 <parthenon/mesh>
-refinement = none
-numlevel = 1
+refinement = static
+numlevel = 3
 
 nx1 = 128
 x1min = 0.0
@@ -33,6 +32,24 @@ nx1 = 64
 nx2 = 64
 nx3 = 1
 
+<parthenon/static_refinement0>
+x1min = 0.4
+x1max = 0.6
+x2min = 0.9
+x2max = 1.1
+x3min = 0.0
+x3max = 0.0
+level = 1
+
+<parthenon/static_refinement1>
+x1min = 0.2
+x1max = 0.3
+x2min = 0.0
+x2max = 0.1
+x3min = 0.0
+x3max = 0.0
+level = 2
+
 <coordinates>
 base = cartesian_minkowski
 transform = null
@@ -55,9 +72,6 @@ type = kharma
 cfl = 0.9
 gamma = 1.666667
 reconstruction = linear_mc
-
-<b_field>
-solver = none
 
 <debug>
 verbose = 1

@@ -47,6 +47,6 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
 /**
  * Add the wind source term.  Applied in Flux::AddSource, just after the FluxDivergence calculation
  */
-TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt);
+TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt, IndexDomain domain);
 
 }

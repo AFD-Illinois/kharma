@@ -40,6 +40,7 @@
 // Additionally, invert_template contains the Type and Status enums
 #include "invert_template.hpp"
 #include "onedw.hpp"
+#include "kastaun.hpp"
 
 #include "pack.hpp"
 
@@ -64,6 +65,13 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
  * output: U and P match down to inversion errors
  */
 void BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse);
+inline TaskStatus MeshUtoP(MeshData<Real> *md, IndexDomain domain, bool coarse) {
+    Flag("MeshUtoP");
+    for (int i=0; i < md->NumBlocks(); ++i)
+        BlockUtoP(md->GetBlockData(i).get(), domain, coarse);
+    EndFlag();
+    return TaskStatus::complete;
+}
 
 /**
  * Smooth over inversion failures, usually by averaging values of the primitive variables from each neighboring zone
