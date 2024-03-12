@@ -415,9 +415,6 @@ TaskStatus B_CT::AddSource(MeshData<Real> *md, MeshData<Real> *mdudt, IndexDomai
     auto& emf_pack = md->PackVariables(std::vector<std::string>{"B_CT.emf"});
 
     // Figure out indices
-    const IndexRange3 b = KDomain::GetRange(md, domain, 0, 0);
-    // TODO use proper face/edge indexing to ensure we don't overstep
-    const IndexRange3 b1 = KDomain::GetRange(md, domain, 0, 1);
     const IndexRange block = IndexRange{0, emf_pack.GetDim(5)-1};
 
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
@@ -425,7 +422,8 @@ TaskStatus B_CT::AddSource(MeshData<Real> *md, MeshData<Real> *mdudt, IndexDomai
     // This is what we're replacing
     auto& dB_Uf_dt = mdudt->PackVariables(std::vector<std::string>{"cons.fB"});
     // Circulation -> change in flux at face
-    pmb0->par_for("B_CT_Circ_1", block.s, block.e, b.ks, b.ke, b.js, b.je, b1.is, b1.ie,
+    const IndexRange3 bf1 = KDomain::GetRange(md, domain, F1);
+    pmb0->par_for("B_CT_Circ_1", block.s, block.e, bf1.ks, bf1.ke, bf1.js, bf1.je, bf1.is, bf1.ie,
         KOKKOS_LAMBDA (const int &bl, const int &k, const int &j, const int &i) {
             const auto& G = dB_Uf_dt.GetCoords(bl);
             dB_Uf_dt(bl, F1, 0, k, j, i) = (-G.Volume<E3>(k, j + 1, i) * emf_pack(bl, E3, 0, k, j + 1, i)
@@ -436,7 +434,8 @@ TaskStatus B_CT::AddSource(MeshData<Real> *md, MeshData<Real> *mdudt, IndexDomai
             dB_Uf_dt(bl, F1, 0, k, j, i) /= G.Volume<F1>(k, j, i);
         }
     );
-    pmb0->par_for("B_CT_Circ_2", block.s, block.e, b.ks, b.ke, b1.js, b1.je, b.is, b.ie,
+    const IndexRange3 bf2 = KDomain::GetRange(md, domain, F2);
+    pmb0->par_for("B_CT_Circ_2", block.s, block.e, bf2.ks, bf2.ke, bf2.js, bf2.je, bf2.is, bf2.ie,
         KOKKOS_LAMBDA (const int &bl, const int &k, const int &j, const int &i) {
             const auto& G = dB_Uf_dt.GetCoords(bl);
             dB_Uf_dt(bl, F2, 0, k, j, i) = (G.Volume<E3>(k, j, i + 1) * emf_pack(bl, E3, 0, k, j, i + 1)
@@ -447,7 +446,8 @@ TaskStatus B_CT::AddSource(MeshData<Real> *md, MeshData<Real> *mdudt, IndexDomai
             dB_Uf_dt(bl, F2, 0, k, j, i) /= G.Volume<F2>(k, j, i);
         }
     );
-    pmb0->par_for("B_CT_Circ_3", block.s, block.e, b1.ks, b1.ke, b.js, b.je, b.is, b.ie,
+    const IndexRange3 bf3 = KDomain::GetRange(md, domain, F3);
+    pmb0->par_for("B_CT_Circ_3", block.s, block.e, bf3.ks, bf3.ke, bf3.js, bf3.je, bf3.is, bf3.ie,
         KOKKOS_LAMBDA (const int &bl, const int &k, const int &j, const int &i) {
             const auto& G = dB_Uf_dt.GetCoords(bl);
             dB_Uf_dt(bl, F3, 0, k, j, i) = (- G.Volume<E2>(k, j, i + 1) * emf_pack(bl, E2, 0, k, j, i + 1)
