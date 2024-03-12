@@ -44,12 +44,18 @@ fi
 
 # Load environment from the same files as the compile process
 HOST=$(hostname -f)
-ARGS=$(cat $KHARMA_DIR/make_args)
+ARGS=${ARGS:-$(cat $KHARMA_DIR/make_args)}
 SOURCE_DIR=$(dirname "$(readlink -f "$0")")
-for machine in $KHARMA_DIR/machines/*.sh
-do
-  source $machine
-done
+
+# A machine config in .config overrides our defaults
+if [ -f $HOME/.config/kharma.sh ]; then
+  source $HOME/.config/kharma.sh
+else
+  for machine in $SOURCE_DIR/machines/*.sh
+  do
+    source $machine
+  done
+fi
 
 if [[ "$1" == "trace" ]]; then
   export KOKKOS_TOOLS_LIBS=$KHARMA_DIR/../kokkos-tools/kp_kernel_logger.so

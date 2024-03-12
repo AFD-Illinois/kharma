@@ -21,9 +21,9 @@ then
   if [[ $ARGS == *"cuda"* ]]
   then
     # GPU Compile
-    # 4-device MPI
-    MPI_EXTRA_ARGS="--map-by ppr:4:node:pe=16"
-    MPI_NUM_PROCS=4
+    # 4-device MPI w/mapping, should play nice with different numbers
+    MPI_NUM_PROCS=${MPI_NUM_PROCS:-4}
+    MPI_EXTRA_ARGS="--map-by ppr:$MPI_NUM_PROCS:node:pe=16"
 
     if [[ "$ARGS" == *"hostside"* ]]; then
       # Device-side buffers are broken on some Nvidia machines

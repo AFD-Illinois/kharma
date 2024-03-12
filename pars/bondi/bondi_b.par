@@ -19,7 +19,7 @@ nx3 = 1
 
 <coordinates>
 base = ks
-transform = fmks
+transform = mks
 a = 0.0
 hslope = 0.3
 r_out = 30
@@ -33,8 +33,8 @@ gamma = 1.666667
 reconstruction = weno5
 
 <b_field>
-type = monopole
-b10 = 1
+type = monopole_cube
+B10 = 1
 
 <bondi>
 mdot = 1.0

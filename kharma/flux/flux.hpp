@@ -51,13 +51,28 @@ TaskStatus CheckCtop(MeshData<Real> *md);
 
 TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md);
 
+TaskStatus MarkFOFC(MeshData<Real> *md);
+
+/**
+ * Given a "guess" in which the fflag reflects zones which would fail with current fluxes,
+ * replace fluxes surrounding flagged zones with donor-cell/first-order versions
+ */
+TaskStatus FOFC(MeshData<Real> *md, MeshData<Real> *guess);
+
 /**
  * Add the geometric source term present in the covariant derivative of the stress-energy tensor,
  * S_nu = sqrt(-g) T^kap_lam Gamma^lam_nu_kap
  * This is defined in Flux:: rather than GRMHD:: because the stress-energy tensor may contain
  * (E)GR(R)(M)HD terms.
  */
-void AddGeoSource(MeshData<Real> *md, MeshData<Real> *mdudt);
+void AddGeoSource(MeshData<Real> *md, MeshData<Real> *mdudt, IndexDomain domain);
+// Version returning TaskStatus, for calling alone in FOFC "update"
+// TODO(BSP) switch KHARMAPackage (and Parthenon packages?) to expect all TaskStatus
+inline TaskStatus AddGeoSourceTask(MeshData<Real> *md, MeshData<Real> *mdudt, IndexDomain domain)
+{
+    AddGeoSource(md, mdudt, domain);
+    return TaskStatus::complete;
+}
 
 /**
  * Likewise, the conversion P->U, even for just the GRMHD variables, requires (consists of)
@@ -78,6 +93,11 @@ TaskStatus MeshPtoU(MeshData<Real> *md, IndexDomain domain, bool coarse=false);
  * cells *sent* (that is, part of the domain) rather than received
  */
 TaskStatus BlockPtoU_Send(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse);
+
+/**
+ * Count how many zones forced first-order fluxes (*not* the number of fluxes reduced)
+ */
+int CountFOFCFlags(MeshData<Real> *md);
 
 // Fluxes a.k.a. "Approximate Riemann Solvers"
 // More complex solvers require speed estimates not calculable completely from

@@ -541,8 +541,9 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
                                 if (isnan(solve_norm())) {
                                     // Unrecoverable
                                     solve_fail() = SolverStatus::fail;
+                                    FLOOP P_solver(ip) = P_sub_step_init(ip);
                                 } else if (solve_norm() > rootfind_tol) {
-                                    solve_fail() = SolverStatus::beyond_tol;
+                                    solve_fail() = SolverStatus::beyond_tol; // TODO was changed from +=. Valid?
                                 }
                             }
                         }

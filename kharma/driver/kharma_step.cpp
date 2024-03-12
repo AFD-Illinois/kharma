@@ -41,6 +41,7 @@
 #include "b_ct.hpp"
 #include "electrons.hpp"
 #include "grmhd.hpp"
+#include "inverter.hpp"
 #include "wind.hpp"
 // Other headers
 #include "boundaries.hpp"
@@ -86,10 +87,11 @@ TaskCollection KHARMADriver::MakeDefaultTaskCollection(BlockList_t &blocks, int 
 
     // Which packages we load affects which tasks we'll add to the list
     auto& pkgs = pmesh->packages.AllPackages();
-    auto& driver_pkg   = pkgs.at("Driver")->AllParams();
+    auto& flux_pkg   = pkgs.at("Flux")->AllParams();
     const bool use_b_cleanup = pkgs.count("B_Cleanup");
     const bool use_b_ct = pkgs.count("B_CT");
     const bool use_electrons = pkgs.count("Electrons");
+    const bool use_fofc = flux_pkg.Get<bool>("use_fofc");
     const bool use_jcon = pkgs.count("Current");
 
     // Allocate/copy the things we need
@@ -106,6 +108,12 @@ TaskCollection KHARMADriver::MakeDefaultTaskCollection(BlockList_t &blocks, int 
             pmesh->mesh_data.Add("preserve");
             // Above only copies on allocate -- ensure we copy every step
             Copy<MeshData<Real>>({Metadata::Cell}, base.get(), pmesh->mesh_data.Get("preserve").get());
+        }
+        // FOFC needs to determine whether the "real" U-divF will violate floors, and needs a safe place to do it.
+        // We populate it later, with each *sub-step*'s initial state
+        if (use_fofc) {
+            pmesh->mesh_data.Add("fofc_source");
+            pmesh->mesh_data.Add("fofc_guess");
         }
     }
 
@@ -148,8 +156,14 @@ TaskCollection KHARMADriver::MakeDefaultTaskCollection(BlockList_t &blocks, int 
         // Calculate the flux of each variable through each face
         // This reconstructs the primitives (P) at faces and uses them to calculate fluxes
         // of the conserved variables (U) through each face.
-        const KReconstruction::Type& recon = driver_pkg.Get<KReconstruction::Type>("recon");
-        auto t_fluxes = KHARMADriver::AddFluxCalculations(t_start_recv_flux, tl, recon, md_sub_step_init.get());
+        auto t_flux_calc = KHARMADriver::AddFluxCalculations(t_start_recv_flux, tl, md_sub_step_init.get());
+        auto t_fluxes = t_flux_calc;
+        if (use_fofc) {
+            auto &guess_src = pmesh->mesh_data.GetOrAdd("fofc_source", i);
+            auto &guess = pmesh->mesh_data.GetOrAdd("fofc_guess", i);
+            auto t_fluxes = KHARMADriver::AddFOFC(t_flux_calc, tl, md_sub_step_init.get(), md_full_step_init.get(),
+                                                  md_sub_step_init.get(), guess_src.get(), guess.get(), stage);
+        }
 
         // Any package modifications to the fluxes.  e.g.:
         // 1. Flux-CT calculations for B field transport
@@ -173,53 +187,19 @@ TaskCollection KHARMADriver::MakeDefaultTaskCollection(BlockList_t &blocks, int 
         }
 
         // Apply the fluxes to calculate a change in cell-centered values "md_flux_src"
-        auto t_flux_div = tl.AddTask(t_flux_bounds, Update::FluxDivergence<MeshData<Real>>, md_sub_step_init.get(), md_flux_src.get());
+        auto t_flux_div = tl.AddTask(t_flux_bounds, FluxDivergence, md_sub_step_init.get(), md_flux_src.get(),
+                                     std::vector<MetadataFlag>{Metadata::Independent, Metadata::Cell, Metadata::WithFluxes}, 0);
 
         // Add any source terms: geometric \Gamma * T, wind, damping, etc etc
         // Also where CT sets the change in face fields
-        auto t_sources = tl.AddTask(t_flux_div, Packages::AddSource, md_sub_step_init.get(), md_flux_src.get());
+        auto t_sources = tl.AddTask(t_flux_div, Packages::AddSource, md_sub_step_init.get(), md_flux_src.get(), IndexDomain::interior);
 
-        // Perform the update using the source term
-        // Add any proportion of the step start required by the integrator (e.g., RK2)
-        // TODO splitting this is stupid, dig into Parthenon & fix
-        auto t_avg_data_c = tl.AddTask(t_sources, Update::WeightedSumData<std::vector<MetadataFlag>, MeshData<Real>>,
-                                    std::vector<MetadataFlag>({Metadata::Independent, Metadata::Cell}),
-                                    md_sub_step_init.get(), md_full_step_init.get(),
-                                    integrator->gam0[stage-1], integrator->gam1[stage-1],
-                                    md_sub_step_final.get());
-        auto t_avg_data = t_avg_data_c;
-        if (use_b_ct) {
-            t_avg_data = tl.AddTask(t_avg_data_c, WeightedSumDataFace,
-                                    std::vector<MetadataFlag>({Metadata::Independent, Metadata::Face}),
-                                    md_sub_step_init.get(), md_full_step_init.get(),
-                                    integrator->gam0[stage-1], integrator->gam1[stage-1],
-                                    md_sub_step_final.get());
-        }
-        // apply du/dt to the result
-        auto t_update_c = tl.AddTask(t_avg_data, Update::WeightedSumData<std::vector<MetadataFlag>, MeshData<Real>>,
-                                    std::vector<MetadataFlag>({Metadata::Independent, Metadata::Cell}),
-                                    md_sub_step_final.get(), md_flux_src.get(),
-                                    1.0, integrator->beta[stage-1] * integrator->dt,
-                                    md_sub_step_final.get());
-        auto t_update = t_update_c;
-        if (use_b_ct) {
-            t_update = tl.AddTask(t_update_c, WeightedSumDataFace,
-                                    std::vector<MetadataFlag>({Metadata::Independent, Metadata::Face}),
-                                    md_sub_step_final.get(), md_flux_src.get(),
-                                    1.0, integrator->beta[stage-1] * integrator->dt,
-                                    md_sub_step_final.get());
-        }
+        auto t_update = KHARMADriver::AddStateUpdate(t_sources, tl, md_full_step_init.get(), md_sub_step_init.get(),
+                                                  md_flux_src.get(), md_sub_step_final.get(),
+                                                  std::vector<MetadataFlag>{Metadata::GetUserFlag("Explicit"), Metadata::Independent},
+                                                  use_b_ct, stage);
 
-        // UtoP needs a guess in order to converge, so we copy in sc0
-        // (but only the fluid primitives!)  Copying and syncing ensures that solves of the same zone
-        // on adjacent ranks are seeded with the same value, which keeps them (more) similar
-        auto t_copy_prims = t_update;
-        if (integrator->nstages > 1) {
-            t_copy_prims = tl.AddTask(t_none, Copy<MeshData<Real>>, std::vector<MetadataFlag>({Metadata::GetUserFlag("HD"), Metadata::GetUserFlag("Primitive")}),
-                                                md_sub_step_init.get(), md_sub_step_final.get());
-        }
-
-        KHARMADriver::AddBoundarySync(t_copy_prims | t_update, tl, md_sync);
+        KHARMADriver::AddBoundarySync(t_update, tl, md_sync);
     }
 
     EndFlag();
@@ -279,7 +259,7 @@ TaskCollection KHARMADriver::MakeDefaultTaskCollection(BlockList_t &blocks, int 
         auto t_heat_electrons = t_prim_source;
         if (use_electrons) {
             t_heat_electrons = tl.AddTask(t_prim_source, Electrons::MeshApplyElectronHeating,
-                                          md_sub_step_init.get(), md_sub_step_final.get());
+                                          md_sub_step_init.get(), md_sub_step_final.get(), stage == 1); // bool is generate_grf
         }
 
         // Make sure *all* conserved vars are synchronized at step end

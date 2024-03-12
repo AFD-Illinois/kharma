@@ -98,10 +98,11 @@ dt = 0.1
 # a bunch of other contexts.
 <parthenon/output3>
 file_type = hdf5
+analysis_output = true
 dt = 1e20
 single_precision_output = false
 # If you want the convenience and hate disk space, you can add these
 # variables to "normal" dump files like output0 too.
 variables = coords.Xnative, coords.Xsph, &
-            coords.gcon, coords.gcov, coords.gdet, coords.lapse, &
-            coords.conn
+            coords.gcon, coords.gcov, coords.gdet, coords.lapse, coords.conn, &
+            coords.gcon_embed, coords.gcov_embed, coords.gdet_embed

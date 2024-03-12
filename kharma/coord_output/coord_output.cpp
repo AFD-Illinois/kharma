@@ -40,23 +40,18 @@ std::shared_ptr<KHARMAPackage> CoordinateOutput::Initialize(ParameterInput *pin,
     auto pkg = std::make_shared<KHARMAPackage>("CoordinateOutput");
     Params &params = pkg->AllParams();
 
-    // Options
-    //Real n = pin->GetOrAddReal("wind", "ne", 2.e-4);
-    //params.Add("ne", n);
+    // Any options? Which fields to output is determined in outputs
 
     // Fields: cell-center values for geometry only
-    // TODO test faces when available, optional lists of locations?
-    Metadata::AddUserFlag("Geometry");
+    // TODO add values elsewhere e.g. faces, edges?
+    // Note these are all marked with the "CoordinateOutput" flag
     std::vector<int> s_4vector({GR_DIM});
     std::vector<int> s_4tensor({GR_DIM, GR_DIM});
     std::vector<int> s_4conn({GR_DIM, GR_DIM, GR_DIM});
     std::vector<MetadataFlag> flags_geom = {Metadata::Real, Metadata::Cell, Metadata::Derived,
-                                            Metadata::OneCopy, Metadata::GetUserFlag("Geometry")};
-    std::vector<MetadataFlag> flags_geom_face = {Metadata::Real, Metadata::Face, Metadata::Derived,
-                                                 Metadata::OneCopy, Metadata::GetUserFlag("Geometry")};
+                                            Metadata::OneCopy};
     auto m0 = Metadata(flags_geom);
     auto m1 = Metadata(flags_geom, s_4vector);
-    auto m1f = Metadata(flags_geom_face, s_4vector);
     auto m2 = Metadata(flags_geom, s_4tensor);
     auto m3 = Metadata(flags_geom, s_4conn);
 
@@ -83,6 +78,14 @@ std::shared_ptr<KHARMAPackage> CoordinateOutput::Initialize(ParameterInput *pin,
     pkg->AddField("coords.lapse", m0);
     pkg->AddField("coords.conn", m3);
 
+    // Metric, embedding (i.e., KS) coordinates
+    pkg->AddField("coords.gcon_embed", m2);
+    pkg->AddField("coords.gcov_embed", m2);
+    pkg->AddField("coords.gdet_embed", m0);
+    // TODO?
+    //pkg->AddField("coords.lapse_embed", m0);
+    //pkg->AddField("coords.conn_embed", m3);
+
     // Register our output.  This will be called before *any* output,
     // but we will only fill the fields before the first.
     // This is all that's needed unless:
@@ -100,7 +103,7 @@ TaskStatus CoordinateOutput::BlockUserWorkBeforeOutput(MeshBlock *pmb, Parameter
         auto rc = pmb->meshblock_data.Get();
 
         PackIndexMap geom_map;
-        auto Geom = rc->PackVariables({Metadata::GetUserFlag("Geometry")}, geom_map);
+        auto Geom = rc->PackVariables({Metadata::GetUserFlag("CoordinateOutput")}, geom_map);
 
         const auto& G = pmb->coords;
 
@@ -125,6 +128,10 @@ TaskStatus CoordinateOutput::BlockUserWorkBeforeOutput(MeshBlock *pmb, Parameter
         const int mlapse = geom_map["coords.lapse"].first;
         const int mconn = geom_map["coords.conn"].first;
 
+        const int mgcov_embed = geom_map["coords.gcov_embed"].first;
+        const int mgcon_embed = geom_map["coords.gcon_embed"].first;
+        const int mgdet_embed = geom_map["coords.gdet_embed"].first;
+
         IndexRange3 b = KDomain::GetRange(rc, IndexDomain::entire);
         pmb->par_for("set_geometry", b.ks, b.ke, b.js, b.je, b.is, b.ie,
             KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
@@ -143,7 +150,7 @@ TaskStatus CoordinateOutput::BlockUserWorkBeforeOutput(MeshBlock *pmb, Parameter
                 Geom(mXsph+2, k, j, i) = Geom(mth, k, j, i) = G.th(k, j, i);
                 Geom(mXsph+3, k, j, i) = Geom(mphi, k, j, i) = G.phi(k, j, i);
 
-                // Metric
+                // Metric, native
                 DLOOP2 Geom(mgcov+GR_DIM*mu+nu, k, j, i) = G.gcov(Loci::center, j, i, mu, nu);
                 DLOOP2 Geom(mgcon+GR_DIM*mu+nu, k, j, i) = G.gcon(Loci::center, j, i, mu, nu);
                 Geom(mgdet, k, j, i) = G.gdet(Loci::center, j, i);
@@ -152,6 +159,14 @@ TaskStatus CoordinateOutput::BlockUserWorkBeforeOutput(MeshBlock *pmb, Parameter
                 // Connection
                 DLOOP3 Geom(mconn+GR_DIM*GR_DIM*mu+GR_DIM*nu+lam, k, j, i) = G.conn(j, i, mu, nu, lam);
 
+                // Metric, embedding
+                GReal Xembed[GR_DIM], gcov_embed[GR_DIM][GR_DIM], gcon_embed[GR_DIM][GR_DIM];
+                G.coord_embed(k, j, i, Loci::center, Xembed);
+                G.coords.gcov_embed(Xembed, gcov_embed);
+                GReal gdet = G.coords.gcon_embed(Xembed, gcon_embed); // Save a tiny bit of time
+                DLOOP2 Geom(mgcov_embed+GR_DIM*mu+nu, k, j, i) = gcov_embed[mu][nu];
+                DLOOP2 Geom(mgcon_embed+GR_DIM*mu+nu, k, j, i) = gcon_embed[mu][nu];
+                Geom(mgdet_embed, k, j, i) = gdet;
             }
         );
 

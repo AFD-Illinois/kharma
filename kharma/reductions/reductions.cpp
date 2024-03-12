@@ -135,7 +135,7 @@ std::vector<int> Reductions::CountFlags(MeshData<Real> *md, std::string field_na
             // First element is total count
             if (flag_int > 0) ++local_result.my_array[0];
             // The rest of the list is individual flags
-            for (int f=1; f < n_of_flags; f++)
+            for (int f=1; f <= n_of_flags; f++)
                 if ((is_bitflag && flag_int & flag_val_list(f)) ||
                     (!is_bitflag && flag_int == flag_val_list(f)))
                     ++local_result.my_array[f];

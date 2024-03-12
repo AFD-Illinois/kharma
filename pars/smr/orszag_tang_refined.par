@@ -25,10 +25,10 @@ nx2 = 64
 nx3 = 1
 
 <parthenon/static_refinement0>
-x1min = 0.0
-x1max = 0.0
-x2min = 0.0
-x2max = 0.0
+x1min = -0.1
+x1max = 0.1
+x2min = -0.1
+x2max = 0.1
 level = 1
 
 <coordinates>
@@ -62,10 +62,9 @@ disable_floors = true
 
 <parthenon/output0>
 file_type = hdf5
-dt = 1
+dt = 1.0
 single_precision_output = true
-# TODO just prims when face fields supported
-variables = prims.rho, prims.u, prims.uvec, prims.B, divB, jcon
+variables = prims, divB, jcon
 
 <parthenon/output1>
 file_type = hst

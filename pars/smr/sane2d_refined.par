@@ -6,14 +6,14 @@ problem_id = torus
 
 <parthenon/mesh>
 refinement = static
-numlevel = 2
-nx1 = 512
-nx2 = 640
+numlevel = 3
+nx1 = 384
+nx2 = 320
 nx3 = 1
 
 <parthenon/meshblock>
-nx1 = 256
-nx2 = 128
+nx1 = 384
+nx2 = 64
 nx3 = 1
 
 <parthenon/static_refinement0>
@@ -41,6 +41,9 @@ flag_verbose = 0
 <GRMHD>
 cfl = 0.9
 gamma = 1.666667
+
+<flux>
+type = hlle
 reconstruction = weno5
 
 <torus>
@@ -50,32 +53,30 @@ rmax = 12.0
 <perturbation>
 u_jitter = 0.04
 
-<boundaries>
-fix_corner = false
-
 <b_field>
 solver = face_ct
-ct_scheme = bs99
+ct_scheme = gs05_c
 type = sane
 beta_min = 100.
 
 <floors>
 rho_min_geom = 1e-6
 u_min_geom = 1e-8
-#u_over_rho_max = 100
-bsq_over_rho_max = 500
+
+<fofc>
+on = true
+rho_min_geom = 1e-6
+u_min_geom = 1e-8
 
 <parthenon/output0>
 file_type = hdf5
 dt = 5.0
 single_precision_output = true
-variables = prims.rho, prims.u, prims.uvec, prims.B, divB
+variables = prims, divB
 
-# Can't until face field output is enabled
-#<parthenon/output1>
-#file_type = rst
-#dt = 100.0
-#ghost_zones = true
+<parthenon/output1>
+file_type = rst
+dt = 100.0
 
 <parthenon/output2>
 file_type = hst

@@ -95,7 +95,7 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
  * Add EGRMHD explicit source terms: anything which can be calculated once
  * and added to the general dU/dt term along with e.g. GRMHD source, wind, etc
  */
-TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt);
+TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt, IndexDomain domain);
 
 /**
  * Set q and dP to sensible starting values if they are not initialized by the problem.
@@ -131,7 +131,7 @@ inline EMHD_parameters GetEMHDParameters(Packages_t& packages)
  * Add EGRMHD explicit source terms: anything which can be calculated once
  * and added to the general dU/dt term along with e.g. GRMHD source, wind, etc
  */
-TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt);
+TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt, IndexDomain domain);
 
 /**
  * Set q and dP to sensible starting values if they are not initialized by the problem.

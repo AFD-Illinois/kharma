@@ -77,7 +77,7 @@ TaskStatus CalculateEMF(MeshData<Real> *md);
  * Calculate the change in magnetic field on faces for this step,
  * from the EMFs at edges.
  */
-TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt);
+TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt, IndexDomain domain);
 
 // TODO UNIFY ALL THE FOLLOWING
 
@@ -131,44 +131,64 @@ KOKKOS_INLINE_FUNCTION Real face_div(const GRCoordinates &G, Global &v, const in
     return du / G.Volume<CC>(k, j, i);
 }
 
-KOKKOS_INLINE_FUNCTION void curl_3D(const GRCoordinates& G, const GridVector& A, const VariablePack<Real>& B_U,
-                                             const int& k, const int& j, const int& i)
-{
-    // Take a face-ct step from the corner potentials.
-    // This needs to be 3D because post-tilt A may not point in the phi direction only
-    // TODO TODO averages probably not physical, think about it
-
-    // A3,2 derivative
-    const Real A3c2f = (A(V3, k, j + 1, i) + A(V3, k + 1, j + 1, i)) / 2;
-    const Real A3c2b = (A(V3, k, j, i)     + A(V3, k + 1, j, i)) / 2;
-    // A2,3 derivative
-    const Real A2c3f = (A(V2, k + 1, j, i) + A(V2, k + 1, j + 1, i)) / 2;
-    const Real A2c3b = (A(V2, k, j, i)     + A(V2, k, j + 1, i)) / 2;
-    B_U(F1, 0, k, j, i) = (A3c2f - A3c2b) / G.Dxc<2>(j) - (A2c3f - A2c3b) / G.Dxc<3>(k);
-
-    // A1,3 derivative
-    const Real A1c3f = (A(V1, k + 1, j, i) + A(V1, k + 1, j, i + 1)) / 2;
-    const Real A1c3b = (A(V1, k, j, i)     + A(V1, k, j, i + 1)) / 2;
-    // A3,1 derivative
-    const Real A3c1f = (A(V3, k, j, i + 1) + A(V3, k + 1, j, i + 1)) / 2;
-    const Real A3c1b = (A(V3, k, j, i)     + A(V3, k + 1, j, i)) / 2;
-    B_U(F2, 0, k, j, i) = (A1c3f - A1c3b) / G.Dxc<3>(k) - (A3c1f - A3c1b) / G.Dxc<1>(i);
-
-    // A2,1 derivative
-    const Real A2c1f = (A(V2, k, j, i + 1) + A(V2, k, j + 1, i + 1)) / 2;
-    const Real A2c1b = (A(V2, k, j, i)     + A(V2, k, j + 1, i)) / 2;
-    // A1,2 derivative
-    const Real A1c2f = (A(V1, k, j + 1, i) + A(V1, k, j + 1, i + 1)) / 2;
-    const Real A1c2b = (A(V1, k, j, i)     + A(V1, k, j, i + 1)) / 2;
-    B_U(F3, 0, k, j, i) = (A2c1f - A2c1b) / G.Dxc<1>(i) - (A1c2f - A1c2b) / G.Dxc<2>(j);
-}
-
-KOKKOS_INLINE_FUNCTION void curl_2D(const GRCoordinates& G, const GridVector& A, const VariablePack<Real>& B_U,
+template<TE el, int NDIM>
+KOKKOS_INLINE_FUNCTION void edge_curl(const GRCoordinates& G, const GridVector& A, const VariablePack<Real>& B_U,
                                     const int& k, const int& j, const int& i)
 {
-    B_U(F1, 0, k, j, i) =   (A(V3, k, j + 1, i) - A(V3, k, j, i)) / G.Dxc<2>(j); // A3,2 derivative
-    B_U(F2, 0, k, j, i) = - (A(V3, k, j, i + 1) - A(V3, k, j, i)) / G.Dxc<1>(i); // A3,1 derivative;
-    B_U(F3, 0, k, j, i) = 0.;
+    if constexpr (NDIM == 2) {
+        if constexpr (el == TE::F1) {
+            // A3,2 derivative
+            B_U(F1, 0, k, j, i) =   (A(V3, k, j + 1, i) - A(V3, k, j, i)) / G.Dxc<2>(j);
+        } else if constexpr (el == TE::F2) {
+            // A3,1 derivative;
+            B_U(F2, 0, k, j, i) = - (A(V3, k, j, i + 1) - A(V3, k, j, i)) / G.Dxc<1>(i);
+        } else if constexpr (el == TE::F3) {
+            B_U(F3, 0, k, j, i) = 0.;
+        }
+    } else if constexpr (NDIM == 3) {
+        // This version is only needed for tilted disks, i.e. where |A| != A_phi
+        // TODO TODO test a tilted disk using this code
+        if constexpr (el == TE::F1) {
+            // A3,2 derivative
+            const Real A3c2f = (A(V3, k, j + 1, i) + A(V3, k + 1, j + 1, i)) / 2;
+            const Real A3c2b = (A(V3, k, j, i)     + A(V3, k + 1, j, i)) / 2;
+            // A2,3 derivative
+            const Real A2c3f = (A(V2, k + 1, j, i) + A(V2, k + 1, j + 1, i)) / 2;
+            const Real A2c3b = (A(V2, k, j, i)     + A(V2, k, j + 1, i)) / 2;
+            B_U(F1, 0, k, j, i) = (A3c2f - A3c2b) / G.Dxc<2>(j) - (A2c3f - A2c3b) / G.Dxc<3>(k);
+        } else if constexpr (el == TE::F2) {
+            // A1,3 derivative
+            const Real A1c3f = (A(V1, k + 1, j, i) + A(V1, k + 1, j, i + 1)) / 2;
+            const Real A1c3b = (A(V1, k, j, i)     + A(V1, k, j, i + 1)) / 2;
+            // A3,1 derivative
+            const Real A3c1f = (A(V3, k, j, i + 1) + A(V3, k + 1, j, i + 1)) / 2;
+            const Real A3c1b = (A(V3, k, j, i)     + A(V3, k + 1, j, i)) / 2;
+            B_U(F2, 0, k, j, i) = (A1c3f - A1c3b) / G.Dxc<3>(k) - (A3c1f - A3c1b) / G.Dxc<1>(i);
+        } else if constexpr (el == TE::F3) {
+            // A2,1 derivative
+            const Real A2c1f = (A(V2, k, j, i + 1) + A(V2, k, j + 1, i + 1)) / 2;
+            const Real A2c1b = (A(V2, k, j, i)     + A(V2, k, j + 1, i)) / 2;
+            // A1,2 derivative
+            const Real A1c2f = (A(V1, k, j + 1, i) + A(V1, k, j + 1, i + 1)) / 2;
+            const Real A1c2b = (A(V1, k, j, i)     + A(V1, k, j, i + 1)) / 2;
+            B_U(F3, 0, k, j, i) = (A2c1f - A2c1b) / G.Dxc<1>(i) - (A1c2f - A1c2b) / G.Dxc<2>(j);
+        }
+    }
+}
+
+template<TE el, int NDIM>
+KOKKOS_INLINE_FUNCTION void EdgeCurl(MeshBlockData<Real> *rc, const GridVector& A,
+                                     const VariablePack<Real>& B_U, IndexDomain domain)
+{
+    auto pmb = rc->GetBlockPointer();
+    const auto &G = pmb->coords;
+    IndexRange3 bB = KDomain::GetRange(rc, domain, el);
+    pmb->par_for(
+        "EdgeCurl", bB.ks, bB.ke, bB.js, bB.je, bB.is, bB.ie,
+        KOKKOS_LAMBDA(const int &k, const int &j, const int &i) {
+            B_CT::edge_curl<el, NDIM>(G, A, B_U, k, j, i);
+        }
+    );
 }
 
 KOKKOS_INLINE_FUNCTION Real upwind_diff(const VariableFluxPack<Real>& B_U, const VariablePack<Real>& emfc, const VariablePack<Real>& uvec,
@@ -201,14 +221,14 @@ KOKKOS_INLINE_FUNCTION Real upwind_diff(const VariableFluxPack<Real>& B_U, const
 
     if (contact_vel > 0) {
         // Forward: difference at i
-        return return_sign * (emfc(comp-1, k_cent, j_cent, i_cent) - emf_sign * B_U.flux(dir, vdir-1, k, j, i));
+        return return_sign * (emfc(comp-1, k_cent, j_cent, i_cent) + emf_sign * B_U.flux(dir, vdir-1, k, j, i));
     } else if (contact_vel < 0) {
-        // Back: twice difference at i-1
-        return return_sign * (emfc(comp-1, k_cent_up, j_cent_up, i_cent_up) - emf_sign * B_U.flux(dir, vdir-1, k_up, j_up, i_up));
+        // Back: difference at i-1
+        return return_sign * (emfc(comp-1, k_cent_up, j_cent_up, i_cent_up) + emf_sign * B_U.flux(dir, vdir-1, k_up, j_up, i_up));
     } else {
         // Half and half
-        return return_sign*0.5*(emfc(comp-1, k_cent, j_cent, i_cent) - emf_sign * B_U.flux(dir, vdir-1, k, j, i) +
-                    emfc(comp-1, k_cent_up, j_cent_up, i_cent_up) - emf_sign * B_U.flux(dir, vdir-1, k_up, j_up, i_up));
+        return return_sign*0.5*(emfc(comp-1, k_cent, j_cent, i_cent) + emf_sign * B_U.flux(dir, vdir-1, k, j, i) +
+                    emfc(comp-1, k_cent_up, j_cent_up, i_cent_up) + emf_sign * B_U.flux(dir, vdir-1, k_up, j_up, i_up));
     }
 }
 

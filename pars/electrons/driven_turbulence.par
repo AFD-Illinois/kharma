@@ -43,7 +43,7 @@ add_jcon = false
 
 <b_field>
 type = constant
-b10 = 1
+B10 = 1
 norm = true
 beta_min = 10
 

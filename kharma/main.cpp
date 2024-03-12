@@ -209,7 +209,7 @@ int main(int argc, char *argv[])
     // MeshBlocks to be initialized already.
     // TODO(BSP) split to package hooks
     auto prob = pin->GetString("parthenon/job", "problem_id");
-    bool is_restart = (prob == "resize_restart") || (prob == "resize_restart_kharma") || pman.IsRestart();
+    bool is_restart = (prob == "resize_restart") || pman.IsRestart();
     if(MPIRank0() && verbose > 0) {
         if (is_restart) {
             std::cout << "Running post-restart tasks..." << std::endl;
@@ -217,6 +217,7 @@ int main(int argc, char *argv[])
             std::cout << "Running post-initialization tasks..." << std::endl;
         }
     }
+
     Flag("PostInitialize");
     KHARMA::PostInitialize(pin, pmesh, is_restart);
     EndFlag();

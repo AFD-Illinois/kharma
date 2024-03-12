@@ -86,9 +86,7 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     Real kill_on_divb_over = pin->GetOrAddReal("b_field", "kill_on_divb_over", 1.e-3);
     params.Add("kill_on_divb_over", kill_on_divb_over);
 
-    // Driver type & implicit marker
     // By default, solve B explicitly
-    auto& driver = packages->Get("Driver")->AllParams();
     bool implicit_b = pin->GetOrAddBoolean("b_field", "implicit", false);
     params.Add("implicit", implicit_b);
 
@@ -117,6 +115,10 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     std::vector<MetadataFlag> flags_emf = {Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy};
     m = Metadata(flags_emf, s_vector);
     pkg->AddField("emf", m);
+    if (packages->Get("Globals")->Param<std::string>("problem") == "resize_restart_kharma") {
+        m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::FillGhost, Metadata::Vector});
+        pkg->AddField("B_Save", m);
+    }
 
     // CALLBACKS
 
@@ -159,7 +161,7 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
 }
 
 // TODO template and use as a model for future
-void MeshUtoP(MeshData<Real> *md, IndexDomain domain, bool coarse)
+TaskStatus MeshUtoP(MeshData<Real> *md, IndexDomain domain, bool coarse)
 {
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
 
@@ -180,6 +182,7 @@ void MeshUtoP(MeshData<Real> *md, IndexDomain domain, bool coarse)
             B_P(b, mu, k, j, i) = B_U(b, mu, k, j, i) / G.gdet(Loci::center, j, i);
         }
     );
+    return TaskStatus::complete;
 }
 TaskStatus BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {

@@ -70,4 +70,5 @@ tests:
     - ./run.sh
   parallel:
     matrix:
-      - TEST: [bondi, bondi_viscous, bz_monopole, emhdmodes, mhdmodes, noh, regrid, reinit, restart, tilt_init, torus_sanity]
+      - TEST: [bondi, bondi_viscous, bz_monopole, emhdmodes, mhdmodes, mhdmodes_smr,
+               noh, regrid, reinit, restart, tilt_init, torus_sanity]

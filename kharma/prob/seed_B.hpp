@@ -52,9 +52,9 @@ TaskStatus NormalizeBField(MeshData<Real> *md, ParameterInput *pin);
 
 // Internal representation of the field initialization preference, used for templating
 enum BSeedType{constant, monopole, monopole_cube, orszag_tang, orszag_tang_a, wave, shock_tube,
-                sane, mad, mad_quadrupole, r3s3, r5s5, gaussian, bz_monopole, vertical};
+                sane, mad, mad_quadrupole, r3s3, r5s5, gaussian, bz_monopole, vertical, r1s2};
 
-#define SEEDA_ARGS GReal *x, const GReal *dxc, double rho, double rin, double min_A, double A0, double arg1
+#define SEEDA_ARGS GReal *x, const GReal *dxc, double rho, double rin, double min_A, double A0, double arg1, double rb
 
 // This will also act as the default implementation for unspecified types,
 // which should all be filled as B field by seed_b below.
@@ -120,7 +120,14 @@ KOKKOS_INLINE_FUNCTION Real seed_a<BSeedType::gaussian>(SEEDA_ARGS)
 template<>
 KOKKOS_INLINE_FUNCTION Real seed_a<BSeedType::vertical>(SEEDA_ARGS)
 {
-    return A0 * x[1] * m::sin(x[2]) / 2.;
+    //return A0 * x[1] * m::sin(x[2]) / 2.;
+    return A0 * (x[1] * m::sin(x[2])) * (x[1] * m::sin(x[2])) / 2.;
+}
+
+template<>
+KOKKOS_INLINE_FUNCTION Real seed_a<BSeedType::r1s2>(SEEDA_ARGS)
+{
+    return A0 * (x[1] * x[1] / 2. + x[1] * rb / 2.) * m::sin(x[2]) * m::sin(x[2]);
 }
 
 template<>

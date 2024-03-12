@@ -102,15 +102,36 @@ void BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse=false);
  * 
  * TODO this function should update fflag to reflect temperature ratio floor hits
  */
-TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real> *rc);
-inline TaskStatus MeshApplyElectronHeating(MeshData<Real> *md_old, MeshData<Real> *md)
+TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real> *rc, bool generate_grf=false);
+inline TaskStatus MeshApplyElectronHeating(MeshData<Real> *md_old, MeshData<Real> *md, bool generate_grf=false)
 {
     Flag("MeshApplyElectronHeating");
     for (int i=0; i < md->NumBlocks(); ++i)
-        ApplyElectronHeating(md_old->GetBlockData(i).get(), md->GetBlockData(i).get());
+        ApplyElectronHeating(md_old->GetBlockData(i).get(), md->GetBlockData(i).get(), generate_grf);
     EndFlag();
     return TaskStatus::complete;
 }
+
+/**
+ * Apply adjustments to KTOT & e- K values based on floors.
+ * Note that Kmin/max limits are applied immediately at heating,
+ * *not* here.
+ */
+void ApplyFloors(MeshBlockData<Real> *mbd, IndexDomain domain);
+
+/**
+ * Diagnostics printed/computed after each step, called from kharma.cpp
+ * 
+ * Function in this package: Currently nothing
+ */
+TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *rc);
+
+/**
+ * Fill fields which are calculated only for output to dump files, called from kharma.cpp
+ * 
+ * Function in this package: Currently nothing
+ */
+void FillOutput(MeshBlock *pmb, ParameterInput *pin);
 
 /**
  * KHARMA requires some method for getting conserved variables from primitives, as well.

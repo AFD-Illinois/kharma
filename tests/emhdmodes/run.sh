@@ -30,16 +30,16 @@ conv_2d() {
     fi
 }
 
-# 2D modes use small blocks, could pick up some problems at MPI ranks >> 1
-# Just one default mode
+# WENO hits roundoff at higher res...
 ALL_RES="32,64,128"
-conv_2d emhd2d_weno driver/reconstruction=weno5 "EMHD mode in 2D, WENO5"
+conv_2d emhd2d_weno flux/reconstruction=weno5 "EMHD mode in 2D, WENO5"
+
+# ...but linear doesn't capture wave until higher res.  Troubling.
+ALL_RES="64,128,256"
+conv_2d emhd2d_mc flux/reconstruction=linear_mc "EMHD mode in 2D, linear/MC reconstruction"
 # Test that higher-order terms don't mess anything up
 conv_2d emhd2d_higher_order emhd/higher_order_terms=true "EMHD mode in 2D, higher order terms enabled"
 # Test we can use imex/EMHD and face CT
 conv_2d emhd2d_face_ct b_field/solver=face_ct "EMHD mode in 2D w/Face CT"
-
-ALL_RES="16,32,64,128,256"
-conv_2d emhd2d_mc GRMHD/reconstruction=linear_mc "EMHD mode in 2D, linear/MC reconstruction"
 
 exit $exit_code

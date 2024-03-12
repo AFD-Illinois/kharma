@@ -41,6 +41,7 @@
 #include "b_ct.hpp"
 #include "b_flux_ct.hpp"
 #include "electrons.hpp"
+#include "inverter.hpp"
 #include "grmhd.hpp"
 #include "wind.hpp"
 // Other headers
@@ -64,10 +65,11 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
 
     // Which packages we've loaded affects which tasks we'll add to the list
     auto& pkgs         = blocks[0]->packages.AllPackages();
-    auto& driver_pkg   = pkgs.at("Driver")->AllParams();
+    auto& flux_pkg   = pkgs.at("Flux")->AllParams();
     const bool use_b_cleanup = pkgs.count("B_Cleanup");
     const bool use_b_ct = pkgs.count("B_CT");
     const bool use_electrons = pkgs.count("Electrons");
+    const bool use_fofc = flux_pkg.Get<bool>("use_fofc");
     const bool use_implicit = pkgs.count("Implicit");
     const bool use_jcon = pkgs.count("Current");
     const bool use_linesearch = (use_implicit) ? pkgs.at("Implicit")->Param<bool>("linesearch") : false;
@@ -86,6 +88,12 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
             pmesh->mesh_data.Add("preserve");
             // Above only copies on allocate -- ensure we copy every step
             Copy<MeshData<Real>>({Metadata::Cell}, base.get(), pmesh->mesh_data.Get("preserve").get());
+        }
+        // FOFC needs to determine whether the "real" U-divF will violate floors, and needs a safe place to do it.
+        // We populate it later, with each *sub-step*'s initial state
+        if (use_fofc) {
+            pmesh->mesh_data.Add("fofc_source");
+            pmesh->mesh_data.Add("fofc_guess");
         }
         if (use_implicit) {
             // When solving, we need a temporary copy with any explicit updates,
@@ -140,8 +148,14 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
         // Calculate the flux of each variable through each face
         // This reconstructs the primitives (P) at faces and uses them to calculate fluxes
         // of the conserved variables (U) through each face.
-        const KReconstruction::Type& recon = driver_pkg.Get<KReconstruction::Type>("recon");
-        auto t_fluxes = KHARMADriver::AddFluxCalculations(t_start_recv_bound, tl, recon, md_sub_step_init.get());
+        auto t_flux_calc = KHARMADriver::AddFluxCalculations(t_start_recv_flux, tl, md_sub_step_init.get());
+        auto t_fluxes = t_flux_calc;
+        if (use_fofc) {
+            auto &guess_src = pmesh->mesh_data.GetOrAdd("fofc_source", i);
+            auto &guess = pmesh->mesh_data.GetOrAdd("fofc_guess", i);
+            auto t_fluxes = KHARMADriver::AddFOFC(t_flux_calc, tl, md_sub_step_init.get(), md_full_step_init.get(),
+                                                  md_sub_step_init.get(), guess_src.get(), guess.get(), stage);
+        }
 
         // Any package modifications to the fluxes.  e.g.:
         // 1. CT calculations for B field transport
@@ -165,57 +179,21 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
         }
 
         // Apply the fluxes to calculate a change in cell-centered values "md_flux_src"
-        auto t_flux_div = tl.AddTask(t_flux_bounds, Update::FluxDivergence<MeshData<Real>>, md_sub_step_init.get(), md_flux_src.get());
+        auto t_flux_div = tl.AddTask(t_flux_bounds, FluxDivergence, md_sub_step_init.get(), md_flux_src.get(),
+                                     std::vector<MetadataFlag>{Metadata::Independent, Metadata::Cell, Metadata::WithFluxes}, 0);
 
         // Add any source terms: geometric \Gamma * T, wind, damping, etc etc
-        auto t_sources = tl.AddTask(t_flux_div, Packages::AddSource, md_sub_step_init.get(), md_flux_src.get());
+        auto t_sources = tl.AddTask(t_flux_div, Packages::AddSource, md_sub_step_init.get(), md_flux_src.get(), IndexDomain::interior);
 
-        // UPDATE VARIABLES
-        // TODO abstract this since the drivers share it
-        // This block is designed to intelligently update a set of variables partially marked "Implicit"
-        // and partially "Explicit," by first doing any explicit updates, then using them as elements
-        // of the "guess" for the implicit solve
-
-        // Update the explicitly-evolved variables using the source term
-        // Add any proportion of the step start required by the integrator (e.g., RK2)
-        auto t_avg_data_c = tl.AddTask(t_sources, Update::WeightedSumData<std::vector<MetadataFlag>, MeshData<Real>>,
-                                    std::vector<MetadataFlag>({Metadata::GetUserFlag("Explicit"), Metadata::Independent, Metadata::Cell}),
-                                    md_sub_step_init.get(), md_full_step_init.get(),
-                                    integrator->gam0[stage-1], integrator->gam1[stage-1],
-                                    md_solver.get());
-        auto t_avg_data = t_avg_data_c;
-        if (use_b_ct) {
-            t_avg_data = tl.AddTask(t_avg_data_c, WeightedSumDataFace,
-                                    std::vector<MetadataFlag>({Metadata::GetUserFlag("Explicit"), Metadata::Independent, Metadata::Face}),
-                                    md_sub_step_init.get(), md_full_step_init.get(),
-                                    integrator->gam0[stage-1], integrator->gam1[stage-1],
-                                    md_solver.get());
-        }
-        // apply du/dt to the result
-        auto t_update_c = tl.AddTask(t_sources, Update::WeightedSumData<std::vector<MetadataFlag>, MeshData<Real>>,
-                                    std::vector<MetadataFlag>({Metadata::GetUserFlag("Explicit"), Metadata::Independent, Metadata::Cell}),
-                                    md_solver.get(), md_flux_src.get(),
-                                    1.0, integrator->beta[stage-1] * integrator->dt,
-                                    md_solver.get());
-        auto t_update = t_update_c;
-        if (use_b_ct) {
-            t_update = tl.AddTask(t_update_c, WeightedSumDataFace,
-                                  std::vector<MetadataFlag>({Metadata::GetUserFlag("Explicit"), Metadata::Independent, Metadata::Face}),
-                                  md_solver.get(), md_flux_src.get(),
-                                  1.0, integrator->beta[stage-1] * integrator->dt,
-                                  md_solver.get());
-        }
-
-        // If evolving GRMHD explicitly, UtoP needs a guess in order to converge, so we copy in md_sub_step_init
-        auto t_copy_prims = t_update;
-        if (!pkgs.at("GRMHD")->Param<bool>("implicit")) {
-            t_copy_prims = tl.AddTask(t_none, Copy<MeshData<Real>>, std::vector<MetadataFlag>({Metadata::GetUserFlag("HD"), Metadata::GetUserFlag("Primitive")}),
-                                      md_sub_step_init.get(), md_solver.get());
-        }
+        // Update explicit state with the explicit fluxes/sources
+        auto t_update = KHARMADriver::AddStateUpdate(t_sources, tl, md_full_step_init.get(), md_sub_step_init.get(),
+                                                     md_flux_src.get(), md_solver.get(),
+                                                     std::vector<MetadataFlag>{Metadata::GetUserFlag("Explicit"), Metadata::Independent},
+                                                     use_b_ct, stage);
 
         // Make sure the primitive values of *explicitly-evolved* variables are updated.
         // Packages with implicitly-evolved vars should only register BoundaryUtoP or BoundaryPtoU
-        auto t_explicit_UtoP = tl.AddTask(t_copy_prims | t_update, Packages::MeshUtoP, md_solver.get(), IndexDomain::entire, false);
+        auto t_explicit_UtoP = tl.AddTask(t_update, Packages::MeshUtoP, md_solver.get(), IndexDomain::entire, false);
 
         // Done with explicit update
         auto t_explicit = t_explicit_UtoP;
@@ -301,7 +279,7 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
         auto t_heat_electrons = t_prim_source;
         if (use_electrons) {
             t_heat_electrons = tl.AddTask(t_prim_source, Electrons::MeshApplyElectronHeating,
-                                          md_sub_step_init.get(), md_sub_step_final.get());
+                                          md_sub_step_init.get(), md_sub_step_final.get(), stage == 1);
         }
 
         // Make sure *all* conserved vars are synchronized at step end

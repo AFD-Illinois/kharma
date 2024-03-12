@@ -188,8 +188,8 @@ class SphKSExtG {
         const GReal a;
         static constexpr bool spherical = true;
 
-        static constexpr GReal A = 1.46797639e-8;
-        static constexpr GReal B = 1.29411117;
+        static constexpr GReal A = 4.24621057e-9; //1.46797639e-8;
+        static constexpr GReal B = 1.35721335; //1.29411117;
 
         KOKKOS_FUNCTION SphKSExtG(GReal spin): a(spin) {};
 
@@ -309,8 +309,8 @@ class SphBLExtG {
         const GReal a;
         static constexpr bool spherical = true;
 
-        static constexpr GReal A = 1.46797639e-8;
-        static constexpr GReal B = 1.29411117;
+        static constexpr GReal A = 4.24621057e-9; //1.46797639e-8;
+        static constexpr GReal B = 1.35721335; //1.29411117;
 
         KOKKOS_FUNCTION SphBLExtG(GReal spin): a(spin) {}
 
@@ -666,8 +666,82 @@ class FunkyTransform {
         }
 };
 
+/**
+ * Wide-pole Kerr-Schild coordinates
+ * Make sense only for spherical base systems!
+ */
+class WidepoleTransform {
+    public:
+        static constexpr char name[] = "WidepoleTransform";
+        static constexpr GReal startx[3] = {-1, 0., 0.};
+        static constexpr GReal stopx[3] = {-1, 1., 2*M_PI};
+
+        const GReal lin_frac, n2, n3;
+        GReal smoothness;
+
+        // Constructor
+        KOKKOS_FUNCTION WidepoleTransform(GReal lin_frac_in, GReal smoothness_in, GReal n2_in, GReal n3_in): lin_frac(lin_frac_in), smoothness(smoothness_in), n2(n2_in), n3(n3_in) 
+        {
+            GReal n3_temp = n3;
+            if (n3 < M_PI) n3_temp = n2;
+            GReal temp;
+            if (smoothness <= 0) {
+                if (lin_frac == 1) temp = 1.;
+                else temp = lin_frac / (1. - lin_frac) * (1. / M_PI - 1. / n3_temp) * n3_temp / n2;
+                if (abs(temp) < 1) smoothness = 1. / (n2 * log((1. + temp) / (1. - temp)));
+                else {
+                    printf("WARNING: It is harder to have del phi ~ del th. Try using lin_frac < %g \n",  1./ ((1. / M_PI - 1./ n3_temp) * n3_temp / n2 + 1.));
+                    smoothness = 0.8 / n2;
+                }
+                smoothness = 0.02; //m::max(0.01, smoothness); // fix it for now for test
+            }
+        }
+
+        // Coordinate transformations
+        KOKKOS_INLINE_FUNCTION void coord_to_embed(const GReal Xnative[GR_DIM], GReal Xembed[GR_DIM]) const
+        {
+            Xembed[0] = Xnative[0];
+            Xembed[1] = exp(Xnative[1]);
+            GReal th;
+            //th = M_PI / 2. * (1. + 2. * lin_frac * (Xnative[2] - 0.5) + (1. - lin_frac) * exp((Xnative[2] - 1.) / smoothness) - (1. - lin_frac) * exp(-Xnative[2] / smoothness));
+            th = M_PI / 2. * (1. + 2. * lin_frac * (Xnative[2] - 0.5) + (1. - lin_frac) * (tanh((Xnative[2] - 1.) / smoothness) + 1.) - (1. - lin_frac) * (tanh(-Xnative[2] / smoothness) + 1.));
+            Xembed[2] = excise(excise(th, 0.0, SMALL), M_PI, SMALL);
+            Xembed[3] = Xnative[3];
+        }
+        KOKKOS_INLINE_FUNCTION void coord_to_native(const GReal Xembed[GR_DIM], GReal Xnative[GR_DIM]) const
+        {
+            Xnative[0] = Xembed[0];
+            Xnative[1] = log(Xembed[1]);
+            Xnative[3] = Xembed[3];
+            // Treat the special case with a macro
+            ROOT_FIND
+        }
+        /**
+         * Transformation matrix for contravariant vectors to embedding, or covariant vectors to native
+         */
+        KOKKOS_INLINE_FUNCTION void dxdX(const GReal Xnative[GR_DIM], Real dxdX[GR_DIM][GR_DIM]) const
+        {
+            gzero2(dxdX);
+            dxdX[0][0] = 1.;
+            dxdX[1][1] = exp(Xnative[1]);
+            //dxdX[2][2] = M_PI / 2. * (2. * lin_frac + (1. - lin_frac) / smoothness * exp((Xnative[2] - 1.) / smoothness) + (1. - lin_frac) / smoothness * exp(-Xnative[2] / smoothness));
+            dxdX[2][2] = M_PI / 2. * (2. * lin_frac + (1. - lin_frac) / (smoothness * m::pow(cosh((Xnative[2] - 1.) / smoothness), 2.)) + (1. - lin_frac) / (smoothness * m::pow(cosh(Xnative[2] / smoothness),2.)));
+            dxdX[3][3] = 1.;
+        }
+        /**
+         * Transformation matrix for contravariant vectors to native, or covariant vectors to embedding
+         */
+        KOKKOS_INLINE_FUNCTION void dXdx(const GReal Xnative[GR_DIM], Real dXdx[GR_DIM][GR_DIM]) const
+        {
+            // Okay this one should probably stay numerical
+            Real dxdX_tmp[GR_DIM][GR_DIM];
+            dxdX(Xnative, dxdX_tmp);
+            invert(&dxdX_tmp[0][0],&dXdx[0][0]);
+        }
+};
+
 // Bundle coordinates and transforms into umbrella variant types
 // These act as a wannabe "interface" or "parent class" with the exception that access requires "mpark::visit"
 // See coordinate_embedding.hpp
 using SomeBaseCoords = mpark::variant<SphMinkowskiCoords, CartMinkowskiCoords, SphBLCoords, SphKSCoords, SphBLExtG, SphKSExtG>;
-using SomeTransform = mpark::variant<NullTransform, SphNullTransform, ExponentialTransform, SuperExponentialTransform, ModifyTransform, FunkyTransform>;
+using SomeTransform = mpark::variant<NullTransform, SphNullTransform, ExponentialTransform, SuperExponentialTransform, ModifyTransform, FunkyTransform, WidepoleTransform>;

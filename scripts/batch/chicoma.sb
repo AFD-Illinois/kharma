@@ -1,6 +1,6 @@
 #!/bin/bash
 # Admin stuff
-#SBATCH -A t23_eh_variability_g
+#SBATCH -A t24_bh_rmhd_g
 #SBATCH -J KHARMA
 #SBATCH -t 12:00:00
 #SBATCH -N 1
@@ -18,7 +18,11 @@
 #SBATCH --mem=0
 
 # All options/environment are taken care of in run.sh now
-# I should do that on more machines...
+# However, breaking this script whenever run.sh breaks is a pain
+
+if [ "$SLURM_NTASKS" == "" ]; then
+  SLURM_NTASKS=4
+fi
 
 KHARMA_DIR=$HOME/Code/kharma
-$KHARMA_DIR/run.sh -t 11:50:00 "$@"
+$KHARMA_DIR/run.sh -n $SLURM_NTASKS -t 11:50:00 "$@"

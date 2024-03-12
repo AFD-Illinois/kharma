@@ -73,4 +73,4 @@ tests:
   parallel:
     matrix:
       - TEST: [all_pars, anisotropic_conduction, bondi, bondi_viscous, bz_monopole, conducting_atmosphere,
-               emhdmodes, mhdmodes, noh, regrid, reinit, resize, restart, tilt_init, torus_sanity]
+               emhdmodes, mhdmodes, mhdmodes_smr, noh, regrid, reinit, resize, restart, tilt_init, torus_sanity]

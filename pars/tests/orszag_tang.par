@@ -42,7 +42,14 @@ integrator = rk2
 <GRMHD>
 cfl = 0.9
 gamma = 1.666667
+
+<flux>
+type = hlle
 reconstruction = weno5
+
+<b_field>
+solver = face_ct
+ct_scheme = sg07
 
 <debug>
 verbose = 1

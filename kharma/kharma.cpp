@@ -50,6 +50,7 @@
 #include "kharma_driver.hpp"
 #include "electrons.hpp"
 #include "implicit.hpp"
+#include "inverter.hpp"
 #include "floors.hpp"
 #include "grmhd.hpp"
 #include "reductions.hpp"
@@ -291,7 +292,7 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput> &pin)
     auto t_globals = tl.AddTask(t_none, KHARMA::AddPackage, packages, KHARMA::InitializeGlobals, pin.get());
     // Neither will grid output, as any mesh will get GRCoordinates objects
     // FieldIsOutput actually just checks for substring match, so this matches any coords. variable
-    if (FieldIsOutput(pin.get(), "coords.")) {
+    if (FieldIsOutput(pin.get(), "coords")) {
         auto t_coord_out = tl.AddTask(t_none, KHARMA::AddPackage, packages, CoordinateOutput::Initialize, pin.get());
     }
     // Driver package is the foundation
@@ -303,7 +304,7 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput> &pin)
     if (!pin->GetOrAddBoolean("GRMHD", "implicit", pin->GetOrAddBoolean("emhd", "on", false))) {
         t_inverter = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, Inverter::Initialize, pin.get());
     }
-    // Floors package depends on having pflag
+    // Floors package is only loaded if floors aren't disabled (TODO rename "on"?)
     if (!pin->GetOrAddBoolean("floors", "disable_floors", false)) {
         auto t_floors = tl.AddTask(t_inverter, KHARMA::AddPackage, packages, Floors::Initialize, pin.get());
     }

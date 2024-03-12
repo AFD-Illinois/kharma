@@ -59,7 +59,7 @@ std::shared_ptr<KHARMAPackage> Wind::Initialize(ParameterInput *pin, std::shared
     return pkg;
 }
 
-TaskStatus Wind::AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
+TaskStatus Wind::AddSource(MeshData<Real> *md, MeshData<Real> *mdudt, IndexDomain domain)
 {
     // Pointers
     auto pmesh = mdudt->GetMeshPointer();

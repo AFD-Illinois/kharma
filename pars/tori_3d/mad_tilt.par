@@ -69,7 +69,7 @@ ramp_end = 5
 file_type = hdf5
 dt = 5.0
 single_precision_output = true
-variables = prims.rho, prims.u, prims.uvec, prims.B, jcon, fflag, pflag
+variables = prims, jcon, fflag, pflag
 
 <parthenon/output1>
 file_type = rst
