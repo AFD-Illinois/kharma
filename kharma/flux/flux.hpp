@@ -51,6 +51,8 @@ TaskStatus CheckCtop(MeshData<Real> *md);
 
 TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md);
 
+TaskStatus MarkFOFC(MeshData<Real> *md);
+
 /**
  * Given a "guess" in which the fflag reflects zones which would fail with current fluxes,
  * replace fluxes surrounding flagged zones with donor-cell/first-order versions

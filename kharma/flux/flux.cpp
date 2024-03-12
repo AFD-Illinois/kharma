@@ -194,7 +194,7 @@ std::shared_ptr<KHARMAPackage> Flux::Initialize(ParameterInput *pin, std::shared
 
         // Flag for whether FOFC was applied, for diagnostics
         // This could be another bitflag in fflag, but that would be really confusing...
-        Metadata m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
+        Metadata m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy, Metadata::FillGhost});
         pkg->AddField("fofcflag", m);
 
         // List (vector) of HistoryOutputVars that will all be enrolled as output variables

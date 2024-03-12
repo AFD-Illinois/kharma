@@ -43,6 +43,41 @@ using namespace parthenon;
 #define NPRIM_MAX 12
 #define PLOOP for(int ip=0; ip < nvar; ++ip)
 
+TaskStatus Flux::MarkFOFC(MeshData<Real> *guess)
+{
+    auto pmb0 = guess->GetBlockData(0)->GetBlockPointer();
+
+    // flags of the guess indicate where we lower
+    // (not that it matters, the flags are OneCopy)
+    auto fflag = guess->PackVariables(std::vector<std::string>{"fflag"});
+    auto pflag = guess->PackVariables(std::vector<std::string>{"pflag"});
+    auto fofcflag = guess->PackVariables(std::vector<std::string>{"fofcflag"});
+
+    // Parameters
+    const bool spherical = pmb0->coords.coords.is_spherical();
+    const GReal r_eh = pmb0->coords.coords.get_horizon();
+
+    // Pre-mark cells which will need fluxes reduced.
+    // This avoids a race condition marking them multiple times when iterating faces,
+    // and isolates the potentially slow/weird integer conversion stuff so we can measure the kernel time
+    const IndexRange3 b = KDomain::GetRange(guess, IndexDomain::entire);
+    const IndexRange block = IndexRange{0, fofcflag.GetDim(5) - 1};
+    pmb0->par_for("fofc_mark", block.s, block.e, b.ks, b.ke, b.js, b.je, b.is, b.ie,
+        KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i) {
+            const auto& G = fofcflag.GetCoords(b);
+            // if cell failed to invert or would call floors...
+            // TODO preserve cause in the fofcflag
+            if (static_cast<int>(fflag(b, 0, k, j, i)) || //Inverter::failed(pflag(b, 0, k, j, i)) ||
+                (spherical && G.r(k, j, i) < r_eh + 0.1)) {
+                fofcflag(b, 0, k, j, i) = 1;
+            } else {
+                fofcflag(b, 0, k, j, i) = 0;
+            }
+        }
+    );
+    return TaskStatus::complete;
+}
+
 TaskStatus Flux::FOFC(MeshData<Real> *md, MeshData<Real> *guess)
 {
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
@@ -50,10 +85,7 @@ TaskStatus Flux::FOFC(MeshData<Real> *md, MeshData<Real> *guess)
     auto pmesh = md->GetMeshPointer();
     const int ndim = pmesh->ndim;
 
-    // flags of the guess indicate where we lower
-    // (not that it matters, the flags are OneCopy)
-    auto fflag = guess->PackVariables(std::vector<std::string>{"fflag"});
-    auto pflag = guess->PackVariables(std::vector<std::string>{"pflag"});
+    // Pick up flag. Optionally synced
     auto fofcflag = guess->PackVariables(std::vector<std::string>{"fofcflag"});
 
     // But we're modifying the live temporaries, and eventually fluxes, here
@@ -81,32 +113,11 @@ TaskStatus Flux::FOFC(MeshData<Real> *md, MeshData<Real> *guess)
     const Real gam = pmb0->packages.Get("GRMHD")->Param<Real>("gamma");
     const bool use_global = pmb0->packages.Get("Flux")->Param<bool>("fofc_use_glf");
     const EMHD::EMHD_parameters& emhd_params = EMHD::GetEMHDParameters(packages);
-    const bool spherical = pmb0->coords.coords.is_spherical();
-    const GReal r_eh = pmb0->coords.coords.get_horizon();
     // With B_CT this will load the preference, without it will set face_b false and never access (empty) Bf
     // Weird but it works
     const bool face_b = (packages.AllPackages().count("B_CT") &&
                         packages.Get("B_CT")->Param<bool>("consistent_face_b"));
     const auto& Bf = md->PackVariables(std::vector<std::string>{"cons.fB"});
-
-    // Pre-mark cells which will need fluxes reduced.
-    // This avoids a race condition marking them multiple times when iterating faces,
-    // and isolates the potentially slow/weird integer conversion stuff so we can measure the kernel time
-    const IndexRange3 b = KDomain::GetRange(md, IndexDomain::interior, -2, 2);
-    const IndexRange block = IndexRange{0, P_all.GetDim(5) - 1};
-    pmb0->par_for("fofc_mark", block.s, block.e, b.ks, b.ke, b.js, b.je, b.is, b.ie,
-        KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i) {
-            const auto& G = P_all.GetCoords(b);
-            // if cell failed to invert or would call floors...
-            // TODO preserve cause in the fofcflag
-            if (static_cast<int>(fflag(b, 0, k, j, i)) || Inverter::failed(pflag(b, 0, k, j, i)) ||
-                (spherical && G.r(k, j, i) < r_eh + 0.1)) {
-                fofcflag(b, 0, k, j, i) = 1;
-            } else {
-                fofcflag(b, 0, k, j, i) = 0;
-            }
-        }
-    );
 
     for (int dir=1; dir <= ndim; dir++) { // TODO if(trivial_direction) etc
         const TE el = FaceOf(dir);
