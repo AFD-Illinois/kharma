@@ -116,7 +116,7 @@ TaskStatus Flux::FOFC(MeshData<Real> *md, MeshData<Real> *guess)
     // With B_CT this will load the preference, without it will set face_b false and never access (empty) Bf
     // Weird but it works
     const bool face_b = (packages.AllPackages().count("B_CT") &&
-                        packages.Get("B_CT")->Param<bool>("consistent_face_b"));
+                        packages.Get("Flux")->Param<bool>("fofc_consistent_face_b"));
     const auto& Bf = md->PackVariables(std::vector<std::string>{"cons.fB"});
 
     for (int dir=1; dir <= ndim; dir++) { // TODO if(trivial_direction) etc
