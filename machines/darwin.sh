@@ -59,6 +59,12 @@ if [[ ($HOSTNAME == "cn"* || $HOSTNAME == "darwin"*) &&
   if [[ "$ARGS" == *"cuda"* ]]; then
     module load cuda/12.0.0 nvhpc
     PREFIX_PATH=$NVHPC_ROOT
+    # A primary purpose of Darwin is profiling, add it to all binaries
+    NVCC_WRAPPER_CUDA_EXTRA_FLAGS="--generate-line-info"
+    # Could experiment with:
+    # 1. -maxrregcount 72, limit registers to increase occupancy
+    # ...
+    # For MPI if no CUDA-aware version
     #EXTRA_FLAGS="-DPARTHENON_ENABLE_HOST_COMM_BUFFERS=ON $EXTRA_FLAGS"
   elif [[ "$ARGS" == *"hip"* ]]; then
     # No MPI or OpenMP -- No OFI OpenMPI on Darwin (right?) and HIP hates OpenMP
@@ -133,7 +139,7 @@ if [[ ($HOSTNAME == "cn"* || $HOSTNAME == "darwin"*) &&
   MPI_NUM_PROCS=${MPI_NUM_PROCS:-$MPI_NUM_PROCS_D}
 
   # Runtime
-  MPI_EXE="mpirun"
+  #MPI_EXE="mpirun"
   # Lead MPI to water
-  MPI_EXTRA_ARGS="--map-by ppr:${MPI_NUM_PROCS}:node:pe=$(($NPROC / $MPI_NUM_PROCS / $NODE_SLICE))"
+  #MPI_EXTRA_ARGS="--map-by ppr:${MPI_NUM_PROCS}:node:pe=$(($NPROC / $MPI_NUM_PROCS / $NODE_SLICE))"
 fi

@@ -115,16 +115,18 @@ TaskStatus InitializeAtmosphere(std::shared_ptr<MeshBlockData<Real>>& rc, Parame
     auto uvec_host  = uvec.GetHostMirror();
 
     // Then for EMHD if enabled
+    const bool use_conduction = pmb->packages.Get("EMHD")->Param<bool>("conduction");
+    const bool use_viscosity = pmb->packages.Get("EMHD")->Param<bool>("viscosity");
     GridScalar q;
     GridScalar dP;
     // Temporary initializations are necessary for auto type
     auto q_host     = rho.GetHostMirror();
     auto dP_host    = rho.GetHostMirror();
-    if (use_emhd && emhd_params.conduction) {
+    if (use_emhd && use_conduction) {
         q  = rc->Get("prims.q").data;
         q_host  = q.GetHostMirror();
     }
-    if (use_emhd && emhd_params.viscosity) {
+    if (use_emhd && use_viscosity) {
         dP = rc->Get("prims.dP").data;
         dP_host = dP.GetHostMirror();
     }
@@ -169,7 +171,7 @@ TaskStatus InitializeAtmosphere(std::shared_ptr<MeshBlockData<Real>>& rc, Parame
                     q_host(k, j, i) = q_temp;
 
                 // Now the remaining primitives
-                if (use_emhd && emhd_params.viscosity)
+                if (use_emhd && use_viscosity)
                     dP_host(k, j, i)   = 0.;
 
                 // Note that the velocity primitives defined up there aren't quite right.
@@ -201,9 +203,9 @@ TaskStatus InitializeAtmosphere(std::shared_ptr<MeshBlockData<Real>>& rc, Parame
                     // Zeros are q, dP, and bsq, only needed for torus closure
                     EMHD::set_parameters(G, rho_temp, u_temp, 0., 0., 0., emhd_params, gam, j, i, tau, chi_e, nu_e);
                     const Real Theta = (gam - 1.) * u_temp / rho_temp;
-                    if (emhd_params.conduction)
+                    if (use_conduction)
                         q_host(k, j, i)  *= (chi_e != 0) ? m::sqrt(tau / (chi_e * rho_temp * Theta * Theta)) : 0;
-                    if (emhd_params.viscosity)
+                    if (use_viscosity)
                         dP_host(k, j, i) *= (nu_e  != 0) ? m::sqrt(tau / (nu_e * rho_temp * Theta)) : 0;
                 }
             }
@@ -222,9 +224,9 @@ TaskStatus InitializeAtmosphere(std::shared_ptr<MeshBlockData<Real>>& rc, Parame
     rho.DeepCopy(rho_host);
     u.DeepCopy(u_host);
     uvec.DeepCopy(uvec_host);
-    if (use_emhd && emhd_params.conduction)
+    if (use_emhd && use_conduction)
         q.DeepCopy(q_host);
-    if (use_emhd && emhd_params.viscosity)
+    if (use_emhd && use_viscosity)
         dP.DeepCopy(dP_host);
     Kokkos::fence();
 
