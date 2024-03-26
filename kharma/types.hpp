@@ -75,6 +75,10 @@ template<typename T>
 KOKKOS_FORCEINLINE_FUNCTION TopologicalElement FaceOf(const T& dir) {
     return (dir == X1DIR) ? F1 : ((dir == X2DIR) ? F2 : F3);
 }
+template<typename T>
+KOKKOS_FORCEINLINE_FUNCTION TopologicalElement EdgeOf(const T& dir) {
+    return (dir == X1DIR) ? E1 : ((dir == X2DIR) ? E2 : E3);
+}
 
 // Struct for derived 4-vectors at a point, usually calculated and needed together
 typedef struct {

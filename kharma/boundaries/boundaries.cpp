@@ -334,6 +334,14 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
                 }
             );
         }
+        // Remaining edge zero'd only *within* domain
+        auto b = KDomain::GetRange(rc, domain, EdgeOf(bdir), coarse);
+        pmb->par_for(
+            "zero_EMF_" + bname, b.ks, b.ke, b.js, b.je, b.is, b.ie,
+            KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+                emfpack(el, 0, k, j, i) = 0;
+            }
+        );
         EndFlag();
     }
 
