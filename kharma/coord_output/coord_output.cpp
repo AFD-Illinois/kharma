@@ -161,14 +161,14 @@ TaskStatus CoordinateOutput::BlockUserWorkBeforeOutput(MeshBlock *pmb, Parameter
 
                 // Metric
 
-                // additions 
+                // additions (altgrav)
                 DLOOP2 Geom(mgcov+GR_DIM*mu+nu, k, j, i) = gcov_embed[mu][nu];
                 // DLOOP2 Geom(mgcon+GR_DIM*mu+nu, k, j, i) = gcon_embed[mu][nu];
                 // end of additions 
 
                 // DLOOP2 Geom(mgcov+GR_DIM*mu+nu, k, j, i) = G.gcov(Loci::center, j, i, mu, nu);
-                // Metric, native
-                DLOOP2 Geom(mgcov+GR_DIM*mu+nu, k, j, i) = G.gcov(Loci::center, j, i, mu, nu);
+                // // Metric, native
+                // DLOOP2 Geom(mgcov+GR_DIM*mu+nu, k, j, i) = G.gcov(Loci::center, j, i, mu, nu); // added from merge
                 DLOOP2 Geom(mgcon+GR_DIM*mu+nu, k, j, i) = G.gcon(Loci::center, j, i, mu, nu);
                 Geom(mgdet, k, j, i) = G.gdet(Loci::center, j, i);
                 Geom(mlapse, k, j, i) = 1. / m::sqrt(-G.gcon(Loci::center, j, i, 0, 0));
@@ -176,14 +176,18 @@ TaskStatus CoordinateOutput::BlockUserWorkBeforeOutput(MeshBlock *pmb, Parameter
                 // Connection
                 DLOOP3 Geom(mconn+GR_DIM*GR_DIM*mu+GR_DIM*nu+lam, k, j, i) = G.conn(j, i, mu, nu, lam);
 
+                // MERGE
+
                 // Metric, embedding
-                GReal Xembed[GR_DIM], gcov_embed[GR_DIM][GR_DIM], gcon_embed[GR_DIM][GR_DIM];
-                G.coord_embed(k, j, i, Loci::center, Xembed);
-                G.coords.gcov_embed(Xembed, gcov_embed);
-                GReal gdet = G.coords.gcon_embed(Xembed, gcon_embed); // Save a tiny bit of time
-                DLOOP2 Geom(mgcov_embed+GR_DIM*mu+nu, k, j, i) = gcov_embed[mu][nu];
-                DLOOP2 Geom(mgcon_embed+GR_DIM*mu+nu, k, j, i) = gcon_embed[mu][nu];
-                Geom(mgdet_embed, k, j, i) = gdet;
+                // GReal Xembed[GR_DIM], gcov_embed[GR_DIM][GR_DIM], gcon_embed[GR_DIM][GR_DIM];
+                // G.coord_embed(k, j, i, Loci::center, Xembed);
+                // G.coords.gcov_embed(Xembed, gcov_embed);
+                // GReal gdet = G.coords.gcon_embed(Xembed, gcon_embed); // Save a tiny bit of time
+                // DLOOP2 Geom(mgcov_embed+GR_DIM*mu+nu, k, j, i) = gcov_embed[mu][nu];
+                // DLOOP2 Geom(mgcon_embed+GR_DIM*mu+nu, k, j, i) = gcon_embed[mu][nu];
+                // Geom(mgdet_embed, k, j, i) = gdet;
+
+                // end of merge additions 
             }
         );
 
