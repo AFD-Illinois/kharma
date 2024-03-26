@@ -71,8 +71,9 @@ constexpr TE E3 = TE::E3;
 constexpr TE NN = TE::NN;
 
 // Any basic type manips, see LocOf in decs etc etc
-KOKKOS_INLINE_FUNCTION TopologicalElement FaceOf(const int& dir) {
-    return (dir == 1) ? F1 : (dir == 2) ? F2 : F3;
+template<typename T>
+KOKKOS_FORCEINLINE_FUNCTION TopologicalElement FaceOf(const T& dir) {
+    return (dir == X1DIR) ? F1 : ((dir == X2DIR) ? F2 : F3);
 }
 
 // Struct for derived 4-vectors at a point, usually calculated and needed together

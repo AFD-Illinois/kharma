@@ -128,7 +128,7 @@ void BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     );
 }
 
-TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
+TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt, IndexDomain domain)
 {
     auto pmesh = md->GetMeshPointer();
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
@@ -146,9 +146,9 @@ TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
     // TODO add source terms to everything else here:
     // U1, U2, U3 get -(del*B) B
     // U gets -B*(grad psi)
-    const IndexRange ib = md->GetBoundsI(IndexDomain::interior);
-    const IndexRange jb = md->GetBoundsJ(IndexDomain::interior);
-    const IndexRange kb = md->GetBoundsK(IndexDomain::interior);
+    const IndexRange ib = md->GetBoundsI(domain);
+    const IndexRange jb = md->GetBoundsJ(domain);
+    const IndexRange kb = md->GetBoundsK(domain);
     const IndexRange block = IndexRange{0, B_U.GetDim(5)-1};
 
     pmb0->par_for("AddSource_B_CD", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,

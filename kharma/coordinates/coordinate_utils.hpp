@@ -98,7 +98,7 @@ KOKKOS_INLINE_FUNCTION void rotate_polar(const GReal Xin[GR_DIM], const GReal an
  */
 KOKKOS_INLINE_FUNCTION void set_dXdx_sph2cart(const GReal X[GR_DIM], GReal dXdx[GR_DIM][GR_DIM])
 {
-    const GReal r = X[1], th = X[2], phi = X[3];
+    const GReal &r = X[1], &th = X[2], &phi = X[3];
     dXdx[0][0] = 1;
     dXdx[1][1] = sin(th)*cos(phi);
     dXdx[1][2] = r*cos(th)*cos(phi);

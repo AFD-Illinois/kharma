@@ -79,7 +79,7 @@ TaskStatus InitializeHubble(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterI
     bound_pkg->BlockApplyPrimSource = ApplyHubbleHeating;
 
     // Then call the general function to fill the grid
-    SetHubble<IndexDomain::interior>(rc);
+    SetHubble<IndexDomain::entire>(rc);
 
     return TaskStatus::complete;
 }
@@ -146,15 +146,12 @@ TaskStatus SetHubbleImpl(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain d
     } else { // We assume the fluid is following the solution so we set the boundaries from the real zones
         // Left zone is first one to be called and counter starts at zero
         bool left_zone = !(counter%2);
-        // struct IndexRange {
-        //     int s = 0; /// Starting Index (inclusive)
-        //     int e = 0; /// Ending Index (inclusive)
-        // };
         int context_index = 0;
         if (left_zone) context_index = ib.e + 1;
         else context_index = ib.s - 1;
 
-        Real context_X[GR_DIM];     G.coord_embed(0, 0, context_index, Loci::center, context_X);
+        Real context_X[GR_DIM];
+        G.coord_embed(0, 0, context_index, Loci::center, context_X);
         Real context_t = (v0*context_X[1] - uvec(0, 0, context_index))/(uvec(0, 0, context_index)*v0);
         
         pmb->par_for("hubble_init", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
@@ -179,6 +176,7 @@ TaskStatus SetHubbleImpl(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain d
     return TaskStatus::complete;
 }
 
+// TODO(BSP) Add MeshApplySource callback & convert this
 void ApplyHubbleHeating(MeshBlockData<Real> *mbase)
 {
     auto pmb0 = mbase->GetBlockPointer();

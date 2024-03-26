@@ -136,9 +136,9 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
                                                   : Metadata::GetUserFlag("Explicit");
     std::vector<MetadataFlag> flags_grmhd = {Metadata::Cell, areWeImplicit, Metadata::GetUserFlag("HD"), Metadata::GetUserFlag("MHD")};
 
-    auto flags_prim = packages->Get("Driver")->Param<std::vector<MetadataFlag>>("prim_flags");
+    auto flags_prim = driver.Get<std::vector<MetadataFlag>>("prim_flags");
     flags_prim.insert(flags_prim.end(), flags_grmhd.begin(), flags_grmhd.end());
-    auto flags_cons = packages->Get("Driver")->Param<std::vector<MetadataFlag>>("cons_flags");
+    auto flags_cons = driver.Get<std::vector<MetadataFlag>>("cons_flags");
     flags_cons.insert(flags_cons.end(), flags_grmhd.begin(), flags_grmhd.end());
 
     // We must additionally save the primtive variables as the "seed" for the next U->P solve
@@ -148,6 +148,7 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     // Only necessary to add here if syncing conserved vars
     // Note some startup behavior relies on having the GRHD prims marked for syncing,
     // so disable sync_utop_seed at your peril
+    // TODO work out disabling this automatically if Kastaun solver is enabled (requires no seed to converge)
     if (!driver.Get<bool>("sync_prims") && pin->GetOrAddBoolean("GRMHD", "sync_utop_seed", true)) {
         flags_prim.push_back(Metadata::FillGhost);
     }
@@ -179,7 +180,7 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     // specific points in a step if the package is loaded.
     // Generally, see the headers for function descriptions.
 
-    //pkg->BlockUtoP // Taken care of by the inverter package since it's hard to do
+    //pkg->BlockUtoP // Taken care of by separate "Inverter" package since it's hard to do
 
     // On physical boundaries, even if we've sync'd both, respect the application to primitive variables
     pkg->DomainBoundaryPtoU = Flux::BlockPtoUMHD;

@@ -52,9 +52,9 @@ TaskStatus Inverter::FixUtoP(MeshBlockData<Real> *rc)
     // if we need to use only fixed zones.
     auto pmb = rc->GetBlockPointer();
     // Bail if we're not enabled
-    if (!pmb->packages.Get("Inverter")->Param<bool>("fix_average_neighbors")) {
-        return TaskStatus::complete;
-    }
+    const bool fix_average = pmb->packages.Get("Inverter")->Param<bool>("fix_average_neighbors");
+    const bool fix_atmo = pmb->packages.Get("Inverter")->Param<bool>("fix_atmosphere");
+    if (!fix_average && !fix_atmo) return TaskStatus::complete;
 
     Flag("Inverter::FixUtoP");
     // Only fixup the core 5 prims TODO build by flag, HD + anything implicit
@@ -64,8 +64,8 @@ TaskStatus Inverter::FixUtoP(MeshBlockData<Real> *rc)
 
     const auto& pars = pmb->packages.Get("GRMHD")->AllParams();
     const Real gam = pars.Get<Real>("gamma");
+
     // Only yell about neighbors on extreme verbosity.
-    // 
     const int flag_verbose = pmb->packages.Get("Globals")->Param<int>("flag_verbose");
 
     // UtoP is applied and fixed over all "Physical" zones -- anything in the domain,
@@ -79,41 +79,36 @@ TaskStatus Inverter::FixUtoP(MeshBlockData<Real> *rc)
     pmb->par_for("fix_U_to_P", b.ks, b.ke, b.js, b.je, b.is, b.ie,
         KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
             if (failed(pflag(k, j, i))) {
-                // Luckily fixups are rare, so we don't have to worry about optimizing this *too* much
-                double wsum = 0., wsum_x = 0.;
-                double sum[NPRIM] = {0.}, sum_x[NPRIM] = {0.};
-                // For all neighboring cells...
-                for (int n = -1; n <= 1; n++) {
-                    for (int m = -1; m <= 1; m++) {
-                        for (int l = -1; l <= 1; l++) {
-                            int ii = i + l, jj = j + m, kk = k + n;
-                            // If we haven't overstepped array bounds...
-                            if (KDomain::inside(kk, jj, ii, b)) {
-                                // Weight by distance
-                                double w = 1./(m::abs(l) + m::abs(m) + m::abs(n) + 1);
-
-                                // Count only the good cells (not failed AND not corner), if we can
-                                if (!failed(pflag(kk, jj, ii))) {
-                                    // Weight by distance.  Note interpolated "fixed" cells stay flagged
-                                    wsum += w;
-                                    PRIMLOOP sum[p] += w * P(p, kk, jj, ii);
+                double wsum = 0.;
+                double sum[NPRIM] = {0.};
+                if (fix_average) {
+                    // Luckily fixups are rare, so we don't have to worry about optimizing this *too* much
+                    // For all neighboring cells...
+                    for (int n = -1; n <= 1; n++) {
+                        for (int m = -1; m <= 1; m++) {
+                            for (int l = -1; l <= 1; l++) {
+                                int ii = i + l, jj = j + m, kk = k + n;
+                                // If we haven't overstepped array bounds...
+                                if (KDomain::inside(kk, jj, ii, b)) {
+                                    // Count only the good cells (not failed AND not corner), if we can
+                                    // Note interpolated "fixed" cells stay flagged
+                                    if (!failed(pflag(kk, jj, ii))) {
+                                        // Weight by distance
+                                        double w = 1./(m::abs(l) + m::abs(m) + m::abs(n) + 1);
+                                        wsum += w;
+                                        PRIMLOOP sum[p] += w * P(p, kk, jj, ii);
+                                    }
                                 }
-                                // Just in case, keep a sum of even the bad ones
-                                wsum_x += w;
-                                PRIMLOOP sum_x[p] += w * P(p, kk, jj, ii);
                             }
                         }
                     }
                 }
 
+                // Set to atmosphere/floors, zero velocity
+                // Fallback fix if we're averaging, only fix if not
                 if(wsum < 1.e-10) {
-                    // TODO probably should crash here.
-#ifndef KOKKOS_ENABLE_SYCL
-                    if (flag_verbose >= 3)
-                        printf("No neighbors were available at %d %d %d!\n", i, j, k);
-#endif
-                    // TODO is there a situation in which this shadow is useful, or do we ditch it?
-                    PRIMLOOP P(p, k, j, i) = sum_x[p]/wsum_x;
+                    // We fill this with floor values below
+                    PRIMLOOP P(p, k, j, i) = 0.;
                 } else {
                     PRIMLOOP P(p, k, j, i) = sum[p]/wsum;
                 }
@@ -122,36 +117,36 @@ TaskStatus Inverter::FixUtoP(MeshBlockData<Real> *rc)
     );
 
     // Re-apply floors to fixed zones
-    if (pmb->packages.AllPackages().count("Floors")) {
-        // Floor prescription from the package
-        const Floors::Prescription floors(pmb->packages.Get("Floors")->AllParams());
+    // Use values from floors package if it's enabled, otherwise any we've been asked to apply
+    const Floors::Prescription floors = pmb->packages.AllPackages().count("Floors") ?
+                                        pmb->packages.Get("Floors")->Param<Floors::Prescription>("prescription") :
+                                        pmb->packages.Get("Inverter")->Param<Floors::Prescription>("inverter_prescription");
 
-        // We need the full packs of prims/cons for p_to_u
-        // Pack new variables
-        PackIndexMap prims_map, cons_map;
-        auto U = GRMHD::PackMHDCons(rc, cons_map);
-        P = GRMHD::PackMHDPrims(rc, prims_map);
-        const VarMap m_u(cons_map, true), m_p(prims_map, false);
-        // Get new sizes
-        const int nvar = P.GetDim(4);
+    // We need the full packs of prims/cons for p_to_u
+    // Pack new variables
+    PackIndexMap prims_map, cons_map;
+    auto U = GRMHD::PackMHDCons(rc, cons_map);
+    P = GRMHD::PackMHDPrims(rc, prims_map);
+    const VarMap m_u(cons_map, true), m_p(prims_map, false);
+    // Get new sizes
+    const int nvar = P.GetDim(4);
 
-        // Get floor flag
-        GridScalar fflag = rc->Get("fflag").data;
+    // Get floor flag
+    GridScalar fflag = rc->Get("fflag").data;
 
-        pmb->par_for("fix_U_to_P_floors", b.ks, b.ke, b.js, b.je, b.is, b.ie,
-            KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-                if (failed(pflag(k, j, i))) {
-                    // Make sure all fixed values still abide by floors (floors keep lockstep)
-                    // TODO Full floors instead of just geo?
-                    Floors::apply_geo_floors(G, P, m_p, gam, k, j, i, floors);
+    pmb->par_for("fix_U_to_P_floors", b.ks, b.ke, b.js, b.je, b.is, b.ie,
+        KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+            if (failed(pflag(k, j, i))) {
+                // Make sure all fixed values still abide by floors
+                // TODO Full floors instead of just geo?
+                Floors::apply_geo_floors(G, P, m_p, gam, k, j, i, floors);
 
-                    // Make sure to keep lockstep
-                    // This will only be run for GRMHD, so we can call its p_to_u
-                    GRMHD::p_to_u(G, P, m_p, gam, k, j, i, U, m_u);
-                }
+                // Make sure to keep lockstep
+                // This will only be run for GRMHD, so we can call its p_to_u
+                GRMHD::p_to_u(G, P, m_p, gam, k, j, i, U, m_u);
             }
-        );
-    }
+        }
+    );
 
     EndFlag();
     return TaskStatus::complete;

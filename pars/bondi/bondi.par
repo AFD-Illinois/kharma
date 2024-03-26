@@ -71,7 +71,7 @@ file_type = hdf5
 dt = 5.0
 single_precision_output = true
 # Fields not present are silently ignored
-variables = prims.rho, prims.u, prims.uvec, pflag
+variables = prims, pflag
 
 <parthenon/output1>
 file_type = hst

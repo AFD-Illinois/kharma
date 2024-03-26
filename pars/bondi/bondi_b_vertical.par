@@ -47,9 +47,11 @@ disable_floors = true
 check_inflow_outer_x1 = false
 
 <b_field>
+solver = face_ct
 # Constant pure-vertical field
 type = vertical
-bz = 0.1
+A0 = 0.1
+norm = false
 
 <debug>
 verbose = 1
@@ -65,7 +67,8 @@ file_type = hdf5
 dt = 5.0
 single_precision_output = false
 # Fields not present are silently ignored
-variables = prims.rho, prims.u, prims.uvec, prims.B, pflag, divB
+variables = prims, pflag, divB, cons.fB
+ghost_zones = true
 
 <parthenon/output1>
 file_type = hst

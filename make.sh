@@ -105,8 +105,9 @@ if [[ -z "$CXX_NATIVE" ]]; then
   if which CC >/dev/null 2>&1; then
     CXX_NATIVE=CC
     C_NATIVE=cc
-    # In case this isn't Cray, use the more common flag
-    #OMP_FLAG="-fopenomp"
+    # Don't set an OMP flag to use
+    # This could call through to any compiler, & sometimes (Frontier)
+    # we want no OpenMP at all
   # Prefer Intel oneAPI compiler over legacy, both over generic
   elif which icpx >/dev/null 2>&1; then
     CXX_NATIVE=icpx
@@ -222,6 +223,7 @@ fi
 if [[ "$ARGS" == *"hdf5"* && "$ARGS" == *"clean"* && "$ARGS" != *"dryrun"* ]]; then
   H5VER=1.14.2
   H5VERU=1_14_2
+
   cd external
   # Allow complete reconfigure (for switching compilers, takes longer)
   if [[ "$ARGS" == *"cleanhdf5"* ]]; then
@@ -241,18 +243,17 @@ if [[ "$ARGS" == *"hdf5"* && "$ARGS" == *"clean"* && "$ARGS" != *"dryrun"* ]]; t
     HDF_CC=$C_NATIVE
     HDF_EXTRA=""
   else
-    if [[ "$ARGS" == *"icc"* ]]; then
+    if [[ "$C_NATIVE" == *"icx"* ]]; then
+      HDF_CC=mpiicx
+    elif [[ "$C_NATIVE" == *"icc"* ]]; then
       HDF_CC=mpiicc
-      HDF_EXTRA="--enable-parallel"
-    else
+    elif [[ "$C_NATIVE" == "cc" ]]; then
       # Cray wrappers include MPI
-      if [[ "$C_NATIVE" == "cc" ]]; then
-        HDF_CC=cc
-      else
-        HDF_CC=mpicc
-      fi
-      HDF_EXTRA="--enable-parallel"
+      HDF_CC=cc
+    else
+      HDF_CC=mpicc
     fi
+    HDF_EXTRA="--enable-parallel"
   fi
 
   echo Configuring HDF5...

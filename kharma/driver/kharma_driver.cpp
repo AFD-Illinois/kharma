@@ -38,6 +38,7 @@
 #include "boundaries.hpp"
 #include "flux.hpp"
 #include "get_flux.hpp"
+#include "inverter.hpp"
 
 std::shared_ptr<KHARMAPackage> KHARMADriver::Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages)
 {
@@ -56,8 +57,9 @@ std::shared_ptr<KHARMAPackage> KHARMADriver::Initialize(ParameterInput *pin, std
     // The two current drivers are "kharma" or "imex", with the former being the usual KHARMA
     // driver (formerly HARM driver), and the latter supporting implicit stepping of some or all variables
     // Mostly, packages should react to e.g. the "sync_prims" option rather than the driver name
+    std::vector<std::string> valid_drivers = {"harm", "kharma", "imex", "simple"};
     bool do_emhd = pin->GetOrAddBoolean("emhd", "on", false);
-    std::string driver_type_s = pin->GetOrAddString("driver", "type", (do_emhd) ? "imex" : "kharma");
+    std::string driver_type_s = pin->GetOrAddString("driver", "type", (do_emhd) ? "imex" : "kharma", valid_drivers);
     DriverType driver_type;
     if (driver_type_s == "harm" || driver_type_s == "kharma") {
         driver_type = DriverType::kharma;
@@ -65,9 +67,7 @@ std::shared_ptr<KHARMAPackage> KHARMADriver::Initialize(ParameterInput *pin, std
         driver_type = DriverType::imex;
     } else if (driver_type_s == "simple") {
         driver_type = DriverType::simple;
-    } else {
-        throw std::invalid_argument("Driver type must be one of: simple, kharma, imex");
-    }
+    } // We prevent this
     params.Add("type", driver_type);
     params.Add("name", driver_type_s);
 
@@ -76,46 +76,6 @@ std::shared_ptr<KHARMAPackage> KHARMADriver::Initialize(ParameterInput *pin, std
     // On by default, disable only after testing that, e.g., divB meets your requirements
     bool two_sync = pin->GetOrAddBoolean("driver", "two_sync", true);
     params.Add("two_sync", two_sync);
-
-    // Don't even error on this. Use LLF unless the user is very clear otherwise.
-    std::string flux = pin->GetOrAddString("driver", "flux", "llf");
-    params.Add("use_hlle", (flux == "hlle"));
-
-    // Reconstruction scheme.  TODO bunch more here, PPM esp...
-    std::vector<std::string> allowed_vals = {"donor_cell", "linear_mc", "weno5"};
-    std::string recon = pin->GetOrAddString("driver", "reconstruction", "weno5", allowed_vals);
-    bool lower_edges = pin->GetOrAddBoolean("driver", "lower_edges", false);
-    bool lower_poles = pin->GetOrAddBoolean("driver", "lower_poles", false);
-    if (lower_edges && lower_poles)
-        throw std::runtime_error("Cannot enable lowered reconstruction on edges and poles!");
-    if ((lower_edges || lower_poles) && recon != "weno5")
-        throw std::runtime_error("Lowered reconstructions can only be enabled with weno5!");
-
-    int stencil = 0;
-    if (recon == "donor_cell") {
-        params.Add("recon", KReconstruction::Type::donor_cell);
-        stencil = 1;
-    // } else if (recon == "linear_vl") {
-    //     params.Add("recon", KReconstruction::Type::linear_vl);
-    //     stencil = 3;
-    } else if (recon == "linear_mc") {
-        params.Add("recon", KReconstruction::Type::linear_mc);
-        stencil = 3;
-    } else if (recon == "weno5" && lower_edges) {
-        params.Add("recon", KReconstruction::Type::weno5_lower_edges);
-        stencil = 5;
-    } else if (recon == "weno5" && lower_poles) {
-        params.Add("recon", KReconstruction::Type::weno5_lower_poles);
-        stencil = 5;
-    } else if (recon == "weno5") {
-        params.Add("recon", KReconstruction::Type::weno5);
-        stencil = 5;
-    } // we only allow these options
-    // Warn if using less than 3 ghost zones w/WENO etc, 2 w/Linear, etc.
-    // SMR/AMR independently requires an even number of zones, so we usually use 4
-    if (Globals::nghost < (stencil/2 + 1)) {
-        throw std::runtime_error("Not enough ghost zones for specified reconstruction!");
-    }
 
     // When using the Implicit package we need to globally distinguish implicit & explicit vars
     // All independent variables should be marked one or the other,
@@ -228,8 +188,13 @@ TaskStatus KHARMADriver::SyncAllBounds(std::shared_ptr<MeshData<Real>> &md)
     return TaskStatus::complete;
 }
 
-TaskID KHARMADriver::AddFluxCalculations(TaskID& t_start, TaskList& tl, KReconstruction::Type recon, MeshData<Real> *md)
+TaskID KHARMADriver::AddFluxCalculations(TaskID& t_start, TaskList& tl, MeshData<Real> *md)
 {
+    // Pull reconstruction option to simplify use. TODO shorten?
+    auto pmb0  = md->GetBlockData(0)->GetBlockPointer();
+    auto& pkgs = pmb0->packages.AllPackages();
+    const KReconstruction::Type& recon = pkgs.at("Flux")->Param<KReconstruction::Type>("recon");
+
     // Pre-calculate B field cell-center values
     auto t_start_fluxes = t_start;
     if (md->GetMeshPointer()->packages.AllPackages().count("B_CT"))
@@ -238,6 +203,7 @@ TaskID KHARMADriver::AddFluxCalculations(TaskID& t_start, TaskList& tl, KReconst
     // Calculate fluxes in each direction using given reconstruction
     // Must be spelled out so as to generate each templated version of GetFlux<> to be available at runtime
     // Details in flux/get_flux.hpp
+    // TODO(BSP) This could be a macro, maybe... But there's no easy foreach(enum_val): instantiate pattern
     using RType = KReconstruction::Type;
     TaskID t_calculate_flux1, t_calculate_flux2, t_calculate_flux3;
     switch (recon) {
@@ -246,20 +212,20 @@ TaskID KHARMADriver::AddFluxCalculations(TaskID& t_start, TaskList& tl, KReconst
         t_calculate_flux2 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::donor_cell, X2DIR>, md);
         t_calculate_flux3 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::donor_cell, X3DIR>, md);
         break;
+    case RType::donor_cell_c:
+        t_calculate_flux1 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::donor_cell_c, X1DIR>, md);
+        t_calculate_flux2 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::donor_cell_c, X2DIR>, md);
+        t_calculate_flux3 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::donor_cell_c, X3DIR>, md);
+        break;
+    case RType::linear_vl:
+        t_calculate_flux1 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::linear_vl, X1DIR>, md);
+        t_calculate_flux2 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::linear_vl, X2DIR>, md);
+        t_calculate_flux3 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::linear_vl, X3DIR>, md);
+        break;
     case RType::linear_mc:
         t_calculate_flux1 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::linear_mc, X1DIR>, md);
         t_calculate_flux2 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::linear_mc, X2DIR>, md);
         t_calculate_flux3 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::linear_mc, X3DIR>, md);
-        break;
-    // case RType::linear_vl:
-    //     t_calculate_flux1 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::linear_vl, X1DIR>, md);
-    //     t_calculate_flux2 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::linear_vl, X2DIR>, md);
-    //     t_calculate_flux3 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::linear_vl, X3DIR>, md);
-    //     break;
-    case RType::weno5:
-        t_calculate_flux1 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::weno5, X1DIR>, md);
-        t_calculate_flux2 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::weno5, X2DIR>, md);
-        t_calculate_flux3 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::weno5, X3DIR>, md);
         break;
     case RType::weno5_lower_edges:
         t_calculate_flux1 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::weno5_lower_edges, X1DIR>, md);
@@ -270,6 +236,31 @@ TaskID KHARMADriver::AddFluxCalculations(TaskID& t_start, TaskList& tl, KReconst
         t_calculate_flux1 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::weno5_lower_poles, X1DIR>, md);
         t_calculate_flux2 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::weno5_lower_poles, X2DIR>, md);
         t_calculate_flux3 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::weno5_lower_poles, X3DIR>, md);
+        break;
+    case RType::weno5:
+        t_calculate_flux1 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::weno5, X1DIR>, md);
+        t_calculate_flux2 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::weno5, X2DIR>, md);
+        t_calculate_flux3 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::weno5, X3DIR>, md);
+        break;
+    case RType::weno5_linear:
+        t_calculate_flux1 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::weno5_linear, X1DIR>, md);
+        t_calculate_flux2 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::weno5_linear, X2DIR>, md);
+        t_calculate_flux3 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::weno5_linear, X3DIR>, md);
+        break;
+    case RType::ppm:
+        t_calculate_flux1 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::ppm, X1DIR>, md);
+        t_calculate_flux2 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::ppm, X2DIR>, md);
+        t_calculate_flux3 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::ppm, X3DIR>, md);
+        break;
+    case RType::ppmx:
+        t_calculate_flux1 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::ppmx, X1DIR>, md);
+        t_calculate_flux2 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::ppmx, X2DIR>, md);
+        t_calculate_flux3 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::ppmx, X3DIR>, md);
+        break;
+    case RType::mp5:
+        t_calculate_flux1 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::mp5, X1DIR>, md);
+        t_calculate_flux2 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::mp5, X2DIR>, md);
+        t_calculate_flux3 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::mp5, X3DIR>, md);
         break;
     default:
         std::cerr << "Reconstruction type not supported!  Main supported reconstructions:" << std::endl
@@ -286,9 +277,105 @@ TaskID KHARMADriver::AddFluxCalculations(TaskID& t_start, TaskList& tl, KReconst
     return t_ctop;
 }
 
+TaskID KHARMADriver::AddFOFC(TaskID& t_start, TaskList& tl, MeshData<Real> *md,
+                             MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_init,
+                             MeshData<Real> *guess_src, MeshData<Real> *guess, int stage)
+{
+    Flag("FOFC");
+    // Pull reconstruction option to simplify use. TODO shorten?
+    auto pmb0  = md->GetBlockData(0)->GetBlockPointer();
+    auto& pkgs = pmb0->packages.AllPackages();
+
+    const Floors::Prescription fofc_floors = pmb0->packages.Get("Flux")->Param<Floors::Prescription>("fofc_prescription");
+
+    // Populate guess source term with divergence of the existing fluxes
+    // NOTE this does not include source terms!  Though, could call them here tbh
+    auto t_guess_divergence = tl.AddTask(t_start, FluxDivergence, md, guess_src,
+                                        std::vector<MetadataFlag>{Metadata::Cell, Metadata::WithFluxes}, 3);
+    // Add geometric source term to more accurately predict floor hits.
+    // Could add everything here with Packages::AddSource but would be slower
+    // also would need to deal with B_CT::AddSource == flux update, which we don't want/need
+    auto t_guess_sources = t_guess_divergence;
+    if (pmb0->packages.Get("Flux")->Param<bool>("fofc_use_source_term")) {
+        auto t_guess_sources = tl.AddTask(t_guess_divergence, Flux::AddGeoSourceTask, md, guess_src, IndexDomain::entire);
+    }
+    // Update the guess state with the guess source term, and our existing state
+    // Note this includes updating cell-centered B with the fluxes -- we don't care if this version has div
+    auto t_guess_update = KHARMADriver::AddStateUpdate(t_guess_sources, tl,
+                                                       md_full_step_init, md_sub_step_init, guess_src, guess,
+                                                       {Metadata::WithFluxes, Metadata::Cell},
+                                                       false, stage);
+    // Recover primitive variables of the guess (carefully, since code-wide functions respect B at faces!)
+    auto t_guess_Bp = tl.AddTask(t_guess_update, B_FluxCT::MeshUtoP, guess, IndexDomain::entire, false);
+    auto t_guess_prims = tl.AddTask(t_guess_Bp, Inverter::MeshUtoP, guess, IndexDomain::entire, false);
+    // Check and mark floors
+    auto t_mark_floors = tl.AddTask(t_guess_prims, Floors::DetermineGRMHDFloors, guess, IndexDomain::entire, fofc_floors);
+    // Determine which cells are FOFC in our block
+    auto t_mark_fofc = tl.AddTask(t_mark_floors, Flux::MarkFOFC, guess);
+    // Sync with neighbor blocks.  This seems to ameliorate an increasing divB on X1 boundaries in GR,
+    // but it should be able to be eliminated
+    auto &md_fofc = pmesh->mesh_data.AddShallow("FOFC", std::vector<std::string>{"fofcflag"}); // TODO this gets weird if we partition
+    auto t_sync_fofc = KHARMADriver::AddBoundarySync(t_mark_fofc, tl, md_fofc);
+    // Finally, replace any fluxes bordering marked zones with donor-cell/LLF versions
+    auto t_fofc = tl.AddTask(t_sync_fofc, Flux::FOFC, md, guess);
+
+    EndFlag();
+    return t_fofc;
+}
+
+TaskID KHARMADriver::AddStateUpdate(TaskID& t_start, TaskList& tl, MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_init,
+                                    MeshData<Real> *md_flux_src, MeshData<Real> *md_update, std::vector<MetadataFlag> flags,
+                                    bool update_face, int stage)
+{
+    // Update all explicitly-evolved variables using the source term
+    // Add any proportion of the step start required by the integrator (e.g., RK2)
+    std::vector<MetadataFlag> flags_cell = flags; flags_cell.push_back(Metadata::Cell);
+    std::vector<MetadataFlag> flags_face = flags; flags_face.push_back(Metadata::Face);
+    // TODO splitting this is stupid, but maybe the parallelization actually helps? Eh.
+    auto t_avg_data_c = tl.AddTask(t_start, Update::WeightedSumData<std::vector<MetadataFlag>, MeshData<Real>>,
+                                std::vector<MetadataFlag>(flags_cell),
+                                md_sub_step_init, md_full_step_init,
+                                integrator->gam0[stage-1], integrator->gam1[stage-1],
+                                md_update);
+    auto t_avg_data = t_avg_data_c;
+    if (update_face) {
+        t_avg_data = tl.AddTask(t_start, WeightedSumDataFace,
+                                std::vector<MetadataFlag>(flags_face),
+                                md_sub_step_init, md_full_step_init,
+                                integrator->gam0[stage-1], integrator->gam1[stage-1],
+                                md_update);
+    }
+    // apply du/dt to the result
+    auto t_update_c = tl.AddTask(t_avg_data, Update::WeightedSumData<std::vector<MetadataFlag>, MeshData<Real>>,
+                                std::vector<MetadataFlag>(flags_cell),
+                                md_update, md_flux_src,
+                                1.0, integrator->beta[stage-1] * integrator->dt,
+                                md_update);
+    auto t_update = t_update_c;
+    if (update_face) {
+        t_update = tl.AddTask(t_avg_data, WeightedSumDataFace,
+                                std::vector<MetadataFlag>(flags_face),
+                                md_update, md_flux_src,
+                                1.0, integrator->beta[stage-1] * integrator->dt,
+                                md_update);
+    }
+
+    // We'll be running UtoP after this, which needs a guess in order to converge, so we copy in md_sub_step_init
+    auto t_copy_prims = t_update;
+    auto pmb0  = md_full_step_init->GetBlockData(0)->GetBlockPointer();
+    auto& pkgs = pmb0->packages.AllPackages();
+    if (!pkgs.at("GRMHD")->Param<bool>("implicit")) {
+        t_copy_prims = tl.AddTask(t_start, Copy<MeshData<Real>>,
+                                    std::vector<MetadataFlag>({Metadata::GetUserFlag("HD"), Metadata::GetUserFlag("Primitive")}),
+                                    md_sub_step_init, md_update);
+    }
+
+    return t_copy_prims | t_update;
+}
+
 void KHARMADriver::SetGlobalTimeStep()
 {
-  // TODO TODO apply the limits from GRMHD package here
+  // TODO(BSP) apply the limits from GRMHD package here
   if (tm.dt < 0.1 * std::numeric_limits<Real>::max()) {
     tm.dt *= 2.0;
   }
@@ -298,7 +385,7 @@ void KHARMADriver::SetGlobalTimeStep()
     pmb->SetAllowedDt(big);
   }
 
-    // TODO start reduce at the end of the per-meshblock stuff, check here
+    // TODO(BSP) start reduce at the end of the per-meshblock stuff, then check it here
 #ifdef MPI_PARALLEL
   PARTHENON_MPI_CHECK(MPI_Allreduce(MPI_IN_PLACE, &tm.dt, 1, MPI_PARTHENON_REAL, MPI_MIN,
                                     MPI_COMM_WORLD));

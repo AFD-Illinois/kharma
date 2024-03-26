@@ -41,9 +41,8 @@ add_jcon = false
 mdot = 1.0
 # All these will be updated by run.py
 rs = 316.22776601683796
-vacuum_logrho = -8.2014518
-vacuum_log_u_over_rho = -5.2915149
-r_shell = 8388608
+r_in_bondi = 2.0
+diffinit = true
 use_gizmo = false
 
 <gizmo_shell>
@@ -75,6 +74,9 @@ adjust_k = 0
 
 <boundaries>
 # Inflow is allowed
+inner_x1 = dirichlet
+outer_x1 = dirichlet
+check_inflow = false
 check_inflow_outer_x1 = false
 check_inflow_inner_x1 = false
 # Otherwise defaults
@@ -108,7 +110,7 @@ max_nonlinear_iter = 3
 <parthenon/output0>
 file_type = hdf5
 dt = 528968040
-single_precision_output = true
+single_precision_output = false
 variables = prims.rho, prims.u, prims.uvec, prims.B, fflag, pflag, divB
 ghost_zones = true
 
