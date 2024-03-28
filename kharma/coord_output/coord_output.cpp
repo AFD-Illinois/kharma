@@ -169,6 +169,7 @@ TaskStatus CoordinateOutput::BlockUserWorkBeforeOutput(MeshBlock *pmb, Parameter
                 // DLOOP2 Geom(mgcov+GR_DIM*mu+nu, k, j, i) = G.gcov(Loci::center, j, i, mu, nu);
                 // // Metric, native
                 // DLOOP2 Geom(mgcov+GR_DIM*mu+nu, k, j, i) = G.gcov(Loci::center, j, i, mu, nu); // added from merge
+                
                 DLOOP2 Geom(mgcon+GR_DIM*mu+nu, k, j, i) = G.gcon(Loci::center, j, i, mu, nu);
                 Geom(mgdet, k, j, i) = G.gdet(Loci::center, j, i);
                 Geom(mlapse, k, j, i) = 1. / m::sqrt(-G.gcon(Loci::center, j, i, 0, 0));

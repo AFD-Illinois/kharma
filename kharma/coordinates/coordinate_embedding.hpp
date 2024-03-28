@@ -626,14 +626,6 @@ class CoordinateEmbedding {
         {
             Real gcov[GR_DIM][GR_DIM];
             gcov_native(X, gcov);
-            return gcon_native(gcov, gcon);
-        }
-
-
-        KOKKOS_INLINE_FUNCTION Real gcon_native(const Real gcov[GR_DIM][GR_DIM], Real gcon[GR_DIM][GR_DIM]) const
-        {
-            Real gdet = invert(&gcov[0][0], &gcon[0][0]);
-            return m::sqrt(m::abs(gdet));
             return gcon_from_gcov(gcov, gcon);
         }
 
