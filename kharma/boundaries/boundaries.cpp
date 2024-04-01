@@ -147,6 +147,9 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
         const auto bname = BoundaryName(bface);
         const auto bdir = BoundaryDirection(bface);
         const auto binner = BoundaryIsInner(bface);
+        // Get the boundary type we specified in kharma
+        auto btype = pin->GetString("boundaries", bname);
+        params.Add(bname, btype);
 
         // OPTIONS FOR ANY BOUNDARY
 
@@ -165,14 +168,10 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
         params.Add("outflow_EMHD_" + bname, outflow_EMHD);
 
         // Invert X2 face values to reflect across polar boundary
-        bool invert_F2 = pin->GetOrAddBoolean("boundaries", "reflect_face_vector_" + bname, (bdir == X2DIR && spherical));
+        bool invert_F2 = pin->GetOrAddBoolean("boundaries", "reflect_face_vector_" + bname, (btype == "reflecting"));
         params.Add("reflect_face_vector_"+bname, invert_F2);
 
-        // BOUNDARY TYPES
-        // Get the boundary type we specified in kharma
-        auto btype = pin->GetString("boundaries", bname);
-        params.Add(bname, btype);
-
+        // OPTIONS FOR SPECIFIC TYPES
         // Zero EMFs to prevent B field escaping the domain in polar/dirichlet bounds
         bool zero_EMF = pin->GetOrAddBoolean("boundaries", "zero_EMF_" + bname, (bdir == X2DIR && spherical)
                                                                              || (btype == "dirichlet"));
@@ -240,6 +239,34 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
                 default:
                     break;
                 }
+            } else if (btype == "transmitting") {
+                switch (bface) {
+                case BoundaryFace::inner_x1:
+                    pkg->KBoundaries[bface] = KBoundaries::OneBlockTransmit<BoundaryFace::inner_x1>;
+                    break;
+                case BoundaryFace::outer_x1:
+                    pkg->KBoundaries[bface] = KBoundaries::OneBlockTransmit<BoundaryFace::outer_x1>;
+                    break;
+                case BoundaryFace::inner_x2:
+                    pkg->KBoundaries[bface] = KBoundaries::OneBlockTransmit<BoundaryFace::inner_x2>;
+                    break;
+                case BoundaryFace::outer_x2:
+                    pkg->KBoundaries[bface] = KBoundaries::OneBlockTransmit<BoundaryFace::outer_x2>;
+                    break;
+                case BoundaryFace::inner_x3:
+                    pkg->KBoundaries[bface] = KBoundaries::OneBlockTransmit<BoundaryFace::inner_x3>;
+                    break;
+                case BoundaryFace::outer_x3:
+                    pkg->KBoundaries[bface] = KBoundaries::OneBlockTransmit<BoundaryFace::outer_x3>;
+                    break;
+                default:
+                    break;
+                }
+                if (pin->GetInteger("parthenon/mesh", "nx3") != pin->GetInteger("parthenon/meshblock", "nx3") ||
+                    pin->GetInteger("parthenon/mesh", "nx3") == 1)
+                    throw std::runtime_error("Transmitting polar boundary conditions require 3D with one block in x3!");
+                if (pin->GetString("coordinates", "transform") == "fmks" || pin->GetString("coordinates", "transform") == "funky")
+                    throw std::runtime_error("Transmitting polar boundary conditions require coordinates symmetric about theta=0!");
             } else if (btype == "outflow") {
                 switch (bface) {
                 case BoundaryFace::inner_x1:
@@ -355,6 +382,7 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
         // This is the domain of the boundary/ghost zones
         // Augment the domain since we're always modifying e.g. F2 in X2 boundary
         auto b = KDomain::GetRange(rc, domain, face, (binner) ? 0 : -1, (binner) ? 1 : 0, coarse);
+        //auto b = KDomain::GetRange(rc, domain, face, coarse);
         // Zero the last physical face, otherwise invert.
         auto i_f = (binner) ? b.ie : b.is;
         auto j_f = (binner) ? b.je : b.js;
@@ -373,11 +401,12 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
         EndFlag();
     }
 
-    // This will now be called in 2 places we might not expect,
+    // This function is called in 2 places we might not expect,
     // where we still may want to control the physical bounds:
     // 1. Syncing only the EMF during runs with CT
     // 2. Syncing boundaries while solving for B field
-    // this generally guards against anytime we can't do the below
+    // but, anything beyond here is really only for the expected case,
+    // with all the fluid variables
     PackIndexMap prims_map;
     if (GRMHD::PackMHDPrims(rc.get(), prims_map).GetDim(4) == 0) {
         EndFlag();
@@ -452,10 +481,10 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
         //    Explicitly run UtoP on B field, then PtoU on everything
         // TODO there should be a set of B field wrappers that dispatch this
         auto pkgs = pmb->packages.AllPackages();
-        if (pkgs.count("B_FluxCT")) {
-            B_FluxCT::BlockUtoP(rc.get(), domain, coarse);
-        } else if (pkgs.count("B_CT")) {
+        if (pkgs.count("B_CT")) {
             B_CT::BlockUtoP(rc.get(), domain, coarse);
+        } else {
+            B_FluxCT::BlockUtoP(rc.get(), domain, coarse);
         }
         Flux::BlockPtoU(rc.get(), domain, coarse);
     } else {

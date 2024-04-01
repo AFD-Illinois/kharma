@@ -68,7 +68,7 @@ TaskStatus Flux::MarkFOFC(MeshData<Real> *guess)
             // if cell failed to invert or would call floors...
             // TODO preserve cause in the fofcflag
             if (static_cast<int>(fflag(b, 0, k, j, i)) || //Inverter::failed(pflag(b, 0, k, j, i)) ||
-                (spherical && G.r(k, j, i) < r_eh + 0.1)) {
+                (spherical && G.r(k, j, i) < r_eh + 0.1)) { // TODO customizable FOFC radius
                 fofcflag(b, 0, k, j, i) = 1;
             } else {
                 fofcflag(b, 0, k, j, i) = 0;
