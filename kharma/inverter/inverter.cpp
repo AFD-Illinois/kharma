@@ -146,7 +146,7 @@ inline void BlockPerformInversion(MeshBlockData<Real> *rc, IndexDomain domain, b
     pmb->par_for("U_to_P", b.ks, b.ke, b.js, b.je, b.is, b.ie,
         KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
             int pflagl = Inverter::u_to_p<inverter>(G, U, m_u, gam, k, j, i, P, m_p, Loci::center,
-                                                    inverter_floors, inverter_floors_inner,  err_tol);
+                                                    inverter_floors, inverter_floors_inner, iter_max, err_tol);
             pflag(0, k, j, i) = pflagl % Floors::FFlag::MINIMUM;
             int fflagl = (pflagl / Floors::FFlag::MINIMUM) * Floors::FFlag::MINIMUM;
             fflag(0, k, j, i) = fflagl;

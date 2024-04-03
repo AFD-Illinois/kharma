@@ -322,7 +322,7 @@ KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::normal>(FLOOR_ONE_ARGS)
     // Kastaun would need real vals here...
     const Floors::Prescription floor_tmp = {0}; 
     return Inverter::u_to_p<Inverter::Type::onedw>(G, U, m_u, gam, k, j, i, P, m_p, Loci::center,
-                                                     floor_tmp, 8, 1e-8);
+                                                     floor_tmp, floor_tmp, 8, 1e-8);
 }
 
 template<>
@@ -371,7 +371,6 @@ KOKKOS_INLINE_FUNCTION int apply_geo_floors(const GRCoordinates& G, Local& P, co
         GReal Xembed[GR_DIM];
         G.coord_embed(0, j, i, loc, Xembed);
         GReal r = Xembed[1];
-        const GReal r = G.r(k, j, i);
         // r_char sets more aggressive floor close to EH but backs off
         Real rhoscal = (floors.use_r_char) ? (r < floors.floors_switch_r) ? 1. / ((r*r) * (1 + r / floors_inner.r_char)) 
                         : 1. / ((r*r) * (1 + r / floors.r_char)) : 1. / m::sqrt(r*r*r);
@@ -407,7 +406,6 @@ KOKKOS_INLINE_FUNCTION int apply_geo_floors(const GRCoordinates& G, Global& P, c
         GReal Xembed[GR_DIM];
         G.coord_embed(0, j, i, loc, Xembed);
         GReal r = Xembed[1];
-        const GReal r = G.r(k, j, i);
         // r_char sets more aggressive floor close to EH but backs off
         Real rhoscal = (floors.use_r_char) ? (r < floors.floors_switch_r) ? 1. / ((r*r) * (1 + r / floors_inner.r_char)) 
                         : 1. / ((r*r) * (1 + r / floors.r_char)) : 1. / m::sqrt(r*r*r);
@@ -419,7 +417,7 @@ KOKKOS_INLINE_FUNCTION int apply_geo_floors(const GRCoordinates& G, Global& P, c
         rhoflr_geom = floors.rho_min_geom;
         uflr_geom   = floors.u_min_geom;
     }
-    
+
     int fflag = 0;
     // Record all the floors that were hit, using bitflags
     // Record Geometric floor hits
