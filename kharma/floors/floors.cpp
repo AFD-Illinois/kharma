@@ -89,6 +89,15 @@ std::shared_ptr<KHARMAPackage> Floors::Initialize(ParameterInput *pin, std::shar
         params.Add("frame_switch_beta", frame_switch_beta);
     }
 
+    // Radius-dependent floors and ceiling in a given frame
+    // Default presciption struct refers to outer domain, i.e., beyond 'floor_switch_r'
+    // Make an additional prescription struct for inner domain.
+    // There are two Floors::Prescription objects even if there is no radius-dependence,
+    // the values will simply if the same in both objects.
+    // Avoids a bunch of if (radius_dependent_floors) else while determining floors.
+    // TODO(VKD): Combine this functionality with frame switching
+    params.Add("prescription_inner", MakePrescriptionInner(pin, MakePrescription(pin)));
+
     // Disable all floors.  It is obviously tremendously inadvisable to do this
     // Note this will only be recorded if false, otherwise we're not loaded at all!
     bool disable_floors = pin->GetOrAddBoolean("floors", "disable_floors", false);
@@ -170,10 +179,11 @@ TaskStatus Floors::ApplyInitialFloors(ParameterInput *pin, MeshBlockData<Real> *
     pmb->par_for("apply_initial_floors", b.ks, b.ke, b.js, b.je, b.is, b.ie,
         KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
             Real rhoflr_max, uflr_max;
-            int fflag = determine_floors(G, P, m_p, gam, k, j, i, floors, rhoflr_max, uflr_max);
+            // Initial floors, so the radius-dependence of floors don't matter that much. 
+            int fflag = determine_floors(G, P, m_p, gam, k, j, i, floors, floors, rhoflr_max, uflr_max);
             if (fflag) {
                 apply_floors<InjectionFrame::fluid>(G, P, m_p, gam, k, j, i, rhoflr_max, uflr_max, U, m_u);
-                apply_ceilings(G, P, m_p, gam, k, j, i, floors, U, m_u);
+                apply_ceilings(G, P, m_p, gam, k, j, i, floors, floors, U, m_u);
                 // P->U for any modified zones
                 Flux::p_to_u_mhd(G, P, m_p, emhd_params, gam, k, j, i, U, m_u, Loci::center);
             }
@@ -184,7 +194,8 @@ TaskStatus Floors::ApplyInitialFloors(ParameterInput *pin, MeshBlockData<Real> *
     return TaskStatus::complete;
 }
 
-TaskStatus Floors::DetermineGRMHDFloors(MeshData<Real> *md, IndexDomain domain, const Floors::Prescription& floors)
+TaskStatus Floors::DetermineGRMHDFloors(MeshData<Real> *md, IndexDomain domain,
+    const Floors::Prescription& floors, const Floors::Prescription& floors_inner)
 {
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
 
@@ -208,7 +219,7 @@ TaskStatus Floors::DetermineGRMHDFloors(MeshData<Real> *md, IndexDomain domain, 
         KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i) {
             const auto& G = P.GetCoords(b);
             fflag(b, 0, k, j, i) = static_cast<int>(fflag(b, 0, k, j, i)) |
-                                    determine_floors(G, P(b), m_p, gam, k, j, i, floors,
+                                    determine_floors(G, P(b), m_p, gam, k, j, i, floors, floors_inner,
                                                      floor_vals(b, rhofi, k, j, i), floor_vals(b, ufi, k, j, i));
         }
     );

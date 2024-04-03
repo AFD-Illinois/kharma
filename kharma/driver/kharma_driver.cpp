@@ -309,7 +309,7 @@ TaskID KHARMADriver::AddFOFC(TaskID& t_start, TaskList& tl, MeshData<Real> *md,
     auto t_guess_Bp = tl.AddTask(t_guess_update, B_FluxCT::MeshUtoP, guess, IndexDomain::entire, false);
     auto t_guess_prims = tl.AddTask(t_guess_Bp, Inverter::MeshUtoP, guess, IndexDomain::entire, false);
     // Check and mark floors
-    auto t_mark_floors = tl.AddTask(t_guess_prims, Floors::DetermineGRMHDFloors, guess, IndexDomain::entire, fofc_floors);
+    auto t_mark_floors = tl.AddTask(t_guess_prims, Floors::DetermineGRMHDFloors, guess, IndexDomain::entire, fofc_floors, fofc_floors);
     // Determine which cells are FOFC in our block
     auto t_mark_fofc = tl.AddTask(t_mark_floors, Flux::MarkFOFC, guess);
     // Sync with neighbor blocks.  This seems to ameliorate an increasing divB on X1 boundaries in GR,
