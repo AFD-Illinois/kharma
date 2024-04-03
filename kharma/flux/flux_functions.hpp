@@ -456,10 +456,10 @@ KOKKOS_FORCEINLINE_FUNCTION void vchar_global(const GRCoordinates& G, const Glob
         const Real bsq = dot(D.bcon, D.bcov);
         const Real va2 = bsq / (bsq + ef);
 
-        const Real ccond2 = (emhd_params.conduction)
+        const Real ccond2 = (m.Q >= 0)
             ? (gam - 1.) * emhd_params.conduction_alpha * cs2
             : 0.0;
-        const Real cvis2 = (emhd_params.viscosity)
+        const Real cvis2 = (m.DP >= 0)
             ? (4./3.) / (P(m.RHO, k, j, i) + (gam * P(m.UU, k, j, i)) ) * P(m.RHO, k, j, i) * emhd_params.viscosity_alpha * cs2
             : 0.0;
 
