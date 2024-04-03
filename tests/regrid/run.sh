@@ -26,9 +26,8 @@ $KHARMADIR/run.sh -i ./regrid_orszag_tang.par >log_regrid.txt 2>&1
 
 mv resize_restart.out0.final.phdf resize_restart.out0.final.regrid.phdf
 
-# compare.py allows for small (5e-10) difference
 check_code=0
-pyharm-diff orszag_tang.out0.final.orig.phdf resize_restart.out0.final.regrid.phdf -o compare_regrid --rel_tol=0.002 || check_code=$?
+pyharm-diff orszag_tang.out0.final.orig.phdf resize_restart.out0.final.regrid.phdf --no_plot --rel_tol=0.002 || check_code=$?
 if [[ $check_code != 0 ]]; then
     echo Regrid test FAIL: $check_code
     exit_code=1

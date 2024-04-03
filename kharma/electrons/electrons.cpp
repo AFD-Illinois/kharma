@@ -34,6 +34,7 @@
 #include "electrons.hpp"
 
 #include "decs.hpp"
+#include "domain.hpp"
 #include "kharma_driver.hpp"
 #include "flux.hpp"
 #include "grmhd.hpp"
@@ -129,9 +130,9 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
                                               : Metadata::GetUserFlag("Explicit");
     std::vector<MetadataFlag> flags_elec = {Metadata::Cell, areWeImplicit, Metadata::GetUserFlag("Elec")};
 
-    auto flags_prim = packages->Get("Driver")->Param<std::vector<MetadataFlag>>("prim_flags");
+    auto flags_prim = driver.Get<std::vector<MetadataFlag>>("prim_flags");
     flags_prim.insert(flags_prim.end(), flags_elec.begin(), flags_elec.end());
-    auto flags_cons = packages->Get("Driver")->Param<std::vector<MetadataFlag>>("cons_flags");
+    auto flags_cons = driver.Get<std::vector<MetadataFlag>>("cons_flags");
     flags_cons.insert(flags_cons.end(), flags_elec.begin(), flags_elec.end());
 
     // Total entropy, used to track changes
@@ -548,41 +549,52 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
     return TaskStatus::complete;
 }
 
-// Only called for Hubble flow problem
-TaskStatus ApplyHubbleHeating(MeshBlockData<Real> * mbase) {
-    auto pmb0 = mbase->GetBlockPointer();
+void ApplyFloors(MeshBlockData<Real> *mbd, IndexDomain domain)
+{
+    auto pmb                 = mbd->GetBlockPointer();
+    auto packages            = pmb->packages;
 
-    // This only supports the Hubble flow problem
-    const std::string prob = pmb0->packages.Get("Globals")->Param<std::string>("problem");
-    if (prob != "hubble") return TaskStatus::complete;
-
-    Flag("ApplyHubbleHeating");
-
-    PackIndexMap prims_map;
-    auto P_mbase = GRMHD::PackHDPrims(mbase, prims_map);
+    PackIndexMap prims_map, cons_map;
+    auto P = mbd->PackVariables({Metadata::GetUserFlag("Primitive")}, prims_map);
     const VarMap m_p(prims_map, false);
 
-    Real Q = 0;
-    const Real dt = pmb0->packages.Get("Globals")->Param<Real>("dt_last");  // Close enough?
-    const Real t = pmb0->packages.Get("Globals")->Param<Real>("time") + 0.5*dt;
-    const Real v0 = pmb0->packages.Get("GRMHD")->Param<Real>("v0");
-    const Real ug0 = pmb0->packages.Get("GRMHD")->Param<Real>("ug0");
-    const Real gam = pmb0->packages.Get("GRMHD")->Param<Real>("gamma");
-    Q = (ug0 * v0 * (gam - 2) / pow(1 + v0 * t, 3));
-    IndexDomain domain = IndexDomain::interior;
-    auto ib = mbase->GetBoundsI(domain);
-    auto jb = mbase->GetBoundsJ(domain);
-    auto kb = mbase->GetBoundsK(domain);
-    auto block = IndexRange{0, P_mbase.GetDim(5)-1};
-    
-    pmb0->par_for("heating_substep", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-        KOKKOS_LAMBDA(const int k, const int j, const int i) {
-            P_mbase(m_p.UU, k, j, i) += Q*dt*0.5;
+    auto fflag = mbd->PackVariables(std::vector<std::string>{"fflag"}, prims_map);
+
+    const auto& G = pmb->coords;
+
+    const Real gam = packages.Get("GRMHD")->Param<Real>("gamma");
+    const Floors::Prescription floors = packages.Get("Floors")->Param<Floors::Prescription>("prescription");
+
+    const IndexRange3 b = KDomain::GetRange(mbd, domain);
+    pmb->par_for("apply_electrons_floors", b.ks, b.ke, b.js, b.je, b.is, b.ie,
+        KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+
+            // Also apply the ceiling to the advected entropy KTOT, if we're keeping track of that
+            // (either for electrons, or robust primitive inversions in future)
+            if (m_p.KTOT >= 0 && (P(m_p.KTOT, k, j, i) > floors.ktot_max)) {
+                fflag(0, k, j, i) = Floors::FFlag::KTOT | (int) fflag(0, k, j, i);
+                P(m_p.KTOT, k, j, i) = floors.ktot_max;
+            }
+
+            // TODO(BSP) restore Ressler adjustment option
+            // Ressler adjusts KTOT & KEL to conserve u whenever adjusting rho
+            // but does *not* recommend adjusting them when u hits floors/ceilings
+            // This is in contrast to ebhlight, which heats electrons before applying *any* floors,
+            // and resets KTOT during floor application without touching KEL
+            // if (floors.adjust_k && (fflag() & FFlag::GEOM_RHO || fflag() & FFlag::B_RHO)) {
+            //     const Real reduce   = m::pow(rho / P(m_p.RHO, k, j, i), gam);
+            //     const Real reduce_e = m::pow(rho / P(m_p.RHO, k, j, i), 4./3); // TODO pipe in real gam_e
+            //     if (m_p.KTOT >= 0) P(m_p.KTOT, k, j, i) *= reduce;
+            //     if (m_p.K_CONSTANT >= 0) P(m_p.K_CONSTANT, k, j, i) *= reduce_e;
+            //     if (m_p.K_HOWES >= 0)    P(m_p.K_HOWES, k, j, i)    *= reduce_e;
+            //     if (m_p.K_KAWAZURA >= 0) P(m_p.K_KAWAZURA, k, j, i) *= reduce_e;
+            //     if (m_p.K_WERNER >= 0)   P(m_p.K_WERNER, k, j, i)   *= reduce_e;
+            //     if (m_p.K_ROWAN >= 0)    P(m_p.K_ROWAN, k, j, i)    *= reduce_e;
+            //     if (m_p.K_SHARMA >= 0)   P(m_p.K_SHARMA, k, j, i)   *= reduce_e;
+            // }
         }
     );
-    Flux::BlockPtoU(mbase, IndexDomain::interior);
-    EndFlag();
-    return TaskStatus::complete;
+    Flux::BlockPtoU(mbd, domain);
 }
 
 TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *rc)
@@ -601,4 +613,4 @@ void FillOutput(MeshBlock *pmb, ParameterInput *pin)
     // but which are not otherwise updated.
 }
 
-} // namespace B_FluxCT
+} // namespace Electrons

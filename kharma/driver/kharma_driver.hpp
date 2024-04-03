@@ -34,6 +34,7 @@
 #pragma once
 
 #include "decs.hpp"
+#include "domain.hpp"
 #include "types.hpp"
 
 #include "flux/reconstruction.hpp"
@@ -107,13 +108,30 @@ class KHARMADriver : public MultiStageDriver {
          */
         TaskCollection MakeSimpleTaskCollection(BlockList_t &blocks, int stage);
 
+        // BUNDLES
         // The different drivers share substantially similar portions of the full task list, which we gather into
-
+        // single functions here
         /**
          * Add the flux calculations in each direction.  Since the flux functions are templated on which
          * reconstruction is being used, this amounts to a lot of shared lines.
          */
-        static TaskID AddFluxCalculations(TaskID& t_start, TaskList& tl, KReconstruction::Type recon, MeshData<Real> *md);
+        static TaskID AddFluxCalculations(TaskID& t_start, TaskList& tl, MeshData<Real> *md);
+
+        /**
+         * Add first-order flux corrections.  This is split out because it needs an additional MeshData object for the "guess"
+         * TODO(BSP) Maybe a less-cowardly approach to adding MeshDatas lets me shove this into AddFluxCalculations
+         */
+        TaskID AddFOFC(TaskID& t_start, TaskList& tl, MeshData<Real> *md,
+                             MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_init,
+                             MeshData<Real> *guess_src, MeshData<Real> *guess, int stage);
+        /**
+         * This function updates a state md_update with the results of an explicit source term calculation
+         * placed in md_flux_src.  It includes initialization/RK factors and so requires full- and sub-step
+         * initial states too.
+         */
+        TaskID AddStateUpdate(TaskID& t_start, TaskList& tl, MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_init,
+                                MeshData<Real> *md_flux_src, MeshData<Real> *md_update, std::vector<MetadataFlag> flags,
+                                bool update_face, int stage);
 
         /**
          * Add a synchronization retion to an existing TaskCollection tc.
@@ -128,11 +146,6 @@ class KHARMADriver : public MultiStageDriver {
          * to define once and use elsewhere.
          */
         static TaskID AddBoundarySync(const TaskID t_start, TaskList &tl, std::shared_ptr<MeshData<Real>> &md);
-
-        /**
-         * Calculate the fluxes in each direction
-         */
-        static TaskID AddFluxCalculation(TaskID& start, TaskList& tl, KReconstruction::Type recon, MeshData<Real> *md);
 
         /**
          * Single call to sync all boundary conditions (MPI/internal and domain/physical boundaries)
@@ -183,6 +196,31 @@ class KHARMADriver : public MultiStageDriver {
                     }
                 });
             Kokkos::Profiling::popRegion(); // Task_WeightedSumDataFace
+            return TaskStatus::complete;
+        }
+
+        static TaskStatus FluxDivergence(MeshData<Real> *in_obj, MeshData<Real> *dudt_obj,
+                                  std::vector<MetadataFlag> flags = {Metadata::WithFluxes, Metadata::Cell},
+                                  int halo=0)
+        {
+            const auto &vin = in_obj->PackVariablesAndFluxes(flags);
+            auto dudt = dudt_obj->PackVariables(flags);
+
+            const IndexRange3 b = KDomain::GetRange(in_obj, IndexDomain::interior, -halo, halo);
+
+            const int ndim = vin.GetNdim();
+            parthenon::par_for(
+                DEFAULT_LOOP_PATTERN, "FluxDivergenceMesh", DevExecSpace(), 0, vin.GetDim(5) - 1, 0,
+                vin.GetDim(4) - 1, b.ks, b.ke, b.js, b.je, b.is, b.ie,
+                KOKKOS_LAMBDA(const int m, const int l, const int k, const int j, const int i) {
+                    if (dudt.IsAllocated(m, l) && vin.IsAllocated(m, l)) {
+                        const auto &coords = vin.GetCoords(m);
+                        const auto &v = vin(m);
+                        dudt(m, l, k, j, i) = Update::FluxDivHelper(l, k, j, i, ndim, coords, v);
+                    }
+                }
+            );
+
             return TaskStatus::complete;
         }
 

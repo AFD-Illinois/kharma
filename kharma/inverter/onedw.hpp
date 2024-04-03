@@ -42,14 +42,6 @@
 
 namespace Inverter {
 
-// TODO TODO MOVE AWAY
-// Accuracy required for U to P
-static constexpr Real UTOP_ERRTOL = 1.e-8;
-// Maximum iterations when doing U to P inversion
-static constexpr int  UTOP_ITER_MAX = 8;
-// Heuristic step size
-static constexpr Real DELTA = 1e-5;
-
 // Could put support fns in their own namespace, but I'm lazy
 /**
  * Fluid relativistic factor gamma in terms of inversion state variables of the Noble 1D_W inverter
@@ -66,7 +58,7 @@ KOKKOS_INLINE_FUNCTION Real lorentz_calc_w(const Real& Bsq, const Real& D, const
     const Real utsq = -((W + WB) * QdBsq + W2 * Qtsq) / (QdBsq * (W + WB) + W2 * (Qtsq - WB * WB));
 
     // Catch utsq < 0 and YELL
-    // TODO latter number should be ~1e3*GAMMAMAX^2
+    // Latter number should be about ~1e3*GAMMAMAX^2, but obvs doesn't need to be precise
     if (utsq < -1.e-15 || utsq > 1.e7) {
         return -1.; // This will trigger caller to return an error immediately
     } else {
@@ -95,17 +87,16 @@ KOKKOS_INLINE_FUNCTION Real err_eqn(const Real& gam, const Real& Bsq, const Real
  * 1D_W inverter from Ressler et al. 2006.
  */
 template <>
-KOKKOS_INLINE_FUNCTION Status u_to_p<Type::onedw>(const GRCoordinates &G, const VariablePack<Real>& U, const VarMap& m_u,
+KOKKOS_INLINE_FUNCTION int u_to_p<Type::onedw>(const GRCoordinates& G, const VariablePack<Real>& U, const VarMap& m_u,
                                               const Real& gam, const int& k, const int& j, const int& i,
                                               const VariablePack<Real>& P, const VarMap& m_p,
-                                              const Loci loc)
+                                              const Loci& loc, const Floors::Prescription& inverter_floors,
+                                              const int& max_iterations, const Real& tol)
 {
-    // if (i == 10 && j == 11)
-    //     printf("CONS: %g %g %g %g %g %g %g %g", U(m_u.RHO, k, j, i), U(m_u.UU, k, j, i), U(m_u.U1, k, j, i), U(m_u.U2, k, j, i),
-    //                                         U(m_u.U3, k, j, i), U(m_u.B1, k, j, i), U(m_u.B2, k, j, i), U(m_u.B3, k, j, i));
+    // TODO try inline floors in the old 1Dw?  Probably not relevant anymore
     // Catch negative density
     if (U(m_u.RHO, k, j, i) <= 0.) {
-        return Status::neg_input;
+        return static_cast<int>(Status::neg_input);
     }
 
     // Convert from conserved variables to four-vectors
@@ -155,7 +146,7 @@ KOKKOS_INLINE_FUNCTION Status u_to_p<Type::onedw>(const GRCoordinates &G, const 
     Real Wp, err;
     {
         const Real gamma = GRMHD::lorentz_calc(G, P, m_p, k, j, i, loc);
-        if (gamma < 1) return Status::bad_ut;
+        if (gamma < 1) return static_cast<int>(Status::bad_ut);
         const Real rho = P(m_p.RHO, k, j, i), u = P(m_p.UU, k, j, i);
 
         Wp = (rho + u + (gam - 1) * u) * gamma * gamma - rho * gamma;
@@ -165,7 +156,8 @@ KOKKOS_INLINE_FUNCTION Status u_to_p<Type::onedw>(const GRCoordinates &G, const 
     Real dW;
     {
         // Step around the guess & evaluate errors
-        const Real Wpm = (1. - DELTA) * Wp; //heuristic
+        // TODO take stepsize as arg?
+        const Real Wpm = (1. - 1.e-5) * Wp; // heuristic
         const Real h = Wp - Wpm;
         const Real Wpp = Wp + h;
         const Real errm = err_eqn(gam, Bsq, D, Ep, QdB, Qtsq, Wpm, eflag);
@@ -188,7 +180,7 @@ KOKKOS_INLINE_FUNCTION Status u_to_p<Type::onedw>(const GRCoordinates &G, const 
 
     // Not good enough?  apply secant method
     int iter = 0;
-    for (iter = 0; iter < UTOP_ITER_MAX; iter++) {
+    for (iter = 0; iter < max_iterations; iter++) {
         dW = clip((Wp1 - Wp) * err / (err - err1), (Real) -0.5*Wp, (Real) 2.0*Wp);
 
         Wp1 = Wp;
@@ -196,21 +188,19 @@ KOKKOS_INLINE_FUNCTION Status u_to_p<Type::onedw>(const GRCoordinates &G, const 
 
         Wp += dW;
 
-        if (m::abs(dW / Wp) < UTOP_ERRTOL) break;
+        if (m::abs(dW / Wp) < tol) break;
 
         err = err_eqn(gam, Bsq, D, Ep, QdB, Qtsq, Wp, eflag);
 
-        if (m::abs(err / Wp) < UTOP_ERRTOL) break;
+        if (m::abs(err / Wp) < tol) break;
     }
-    // If there was a bad gamma calculation, do not set primitives other than B
-    // Uncomment to error on any bad velocity.  iharm2d/3d do not do this.
-    //if (eflag) return eflag;
     // Return failure to converge
-    if (iter == UTOP_ITER_MAX) return Status::max_iter;
+    if (iter == max_iterations) return static_cast<int>(Status::max_iter);
 
     // Find utsq, gamma, rho from Wp
+    // Note we only throw an error if *this* velocity calculation is bad
     const Real gamma = lorentz_calc_w(Bsq, D, QdB, Qtsq, Wp);
-    if (gamma < 1) return Status::bad_ut;
+    if (gamma < 1) return static_cast<int>(Status::bad_ut);
 
     const Real rho = D / gamma;
     const Real W = Wp + D;
@@ -219,9 +209,9 @@ KOKKOS_INLINE_FUNCTION Status u_to_p<Type::onedw>(const GRCoordinates &G, const 
     const Real u = w - (rho + p);
 
     // Return without updating non-B primitives
-    if (rho < 0 && u < 0) return Status::neg_rhou;
-    else if (rho < 0) return Status::neg_rho;
-    else if (u < 0) return Status::neg_u;
+    if (rho < 0 && u < 0) return static_cast<int>(Status::neg_rhou);
+    else if (rho < 0) return static_cast<int>(Status::neg_rho);
+    else if (u < 0) return static_cast<int>(Status::neg_u);
 
     // Set primitives
     P(m_p.RHO, k, j, i) = rho;
@@ -233,7 +223,7 @@ KOKKOS_INLINE_FUNCTION Status u_to_p<Type::onedw>(const GRCoordinates &G, const 
     P(m_p.U2, k, j, i) = pre * (Qtcon[2] + QdB * Bcon[2] / W);
     P(m_p.U3, k, j, i) = pre * (Qtcon[3] + QdB * Bcon[3] / W);
 
-    return Status::success;
+    return static_cast<int>(Status::success);
 }
 
 } // namespace Inverter

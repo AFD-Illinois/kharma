@@ -113,9 +113,11 @@ inline TaskStatus MeshApplyElectronHeating(MeshData<Real> *md_old, MeshData<Real
 }
 
 /**
- * Apply Hubble-flow problem heating
+ * Apply adjustments to KTOT & e- K values based on floors.
+ * Note that Kmin/max limits are applied immediately at heating,
+ * *not* here.
  */
-TaskStatus ApplyHubbleHeating(MeshBlockData<Real> *mbase);
+void ApplyFloors(MeshBlockData<Real> *mbd, IndexDomain domain);
 
 /**
  * Diagnostics printed/computed after each step, called from kharma.cpp

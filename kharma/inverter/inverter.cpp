@@ -33,8 +33,7 @@
  */
 #include "inverter.hpp"
 
-// This will include headers in the correct order
-#include "invert_template.hpp"
+// inverter.hpp includes the template and instantiations in the correct order
 
 #include "domain.hpp"
 #include "reductions.hpp"
@@ -44,36 +43,59 @@ std::shared_ptr<KHARMAPackage> Inverter::Initialize(ParameterInput *pin, std::sh
     auto pkg = std::make_shared<KHARMAPackage>("Inverter");
     Params &params = pkg->AllParams();
 
-    // TODO TODO THESE ARE NO-OPS
-    Real err_tol = pin->GetOrAddReal("inverter", "err_tol", 1e-8);
-    params.Add("err_tol", err_tol);
-    int iter_max = pin->GetOrAddInteger("inverter", "iter_max", 8);
-    params.Add("iter_max", iter_max);
-    Real stepsize = pin->GetOrAddReal("inverter", "stepsize", 1e-5);
-    params.Add("stepsize", stepsize);
-
-    std::string inverter_name = pin->GetOrAddString("inverter", "type", "onedw");
+    // Inversion scheme.  Could be separate packages but they do share a lot,
+    // and could share more e.g. inline floor applications
+    std::vector<std::string> allowed_inverter_names = {"none", "onedw", "kastaun"};
+    std::string inverter_name = pin->GetOrAddString("inverter", "type", "kastaun", allowed_inverter_names);
+    bool use_kastaun = false;
     if (inverter_name == "onedw") {
         params.Add("inverter_type", Type::onedw);
+    } else if (inverter_name == "kastaun") {
+        params.Add("inverter_type", Type::kastaun);
+        use_kastaun = true;
     } else if (inverter_name == "none") {
         params.Add("inverter_type", Type::none);
     }
 
-    bool fix_average_neighbors = pin->GetOrAddBoolean("inverter", "fix_average_neighbors", true);
+    // Solver options
+    // Any other Noble et al. implemented for fun should use lower tol/iter count, see Noble+06
+    Real err_tol = pin->GetOrAddReal("inverter", "err_tol", (use_kastaun) ? 1e-12 : 1e-8);
+    params.Add("err_tol", err_tol);
+    int iter_max = pin->GetOrAddInteger("inverter", "iter_max", (use_kastaun) ? 25 : 8);
+    params.Add("iter_max", iter_max);
+
+    // Floor options
+    // Use a custom block for inverter floors to allow customization.  Not sure anyone *wants* that but...
+    if (!pin->DoesBlockExist("inverter_floors")) {
+        params.Add("inverter_prescription", Floors::MakePrescription(pin, "floors"));
+    } else {
+        params.Add("inverter_prescription", Floors::MakePrescription(pin, "inverter_floors"));
+    }
+
+    // Fixup options
+    bool fix_average_neighbors = pin->GetOrAddBoolean("inverter", "fix_average_neighbors", !use_kastaun);
     params.Add("fix_average_neighbors", fix_average_neighbors);
+    // Fix by replacing with floors, uvec=0. Usually a fallback for no neighbors,
+    // but also used if Kastaun hits max_iter
+    bool fix_atmosphere = pin->GetOrAddBoolean("inverter", "fix_atmosphere", true);
+    params.Add("fix_atmosphere", fix_atmosphere);
     // TODO add version attempting to recover from entropy, stuff like that
 
     // Flag denoting UtoP inversion failures
-    // Needs boundary sync if treating primitive variables as fundamental, since we need to
-    // avoid failed neighbors when fixing.
+    // Needs boundary sync if the fixup code will use neighbors, and if
+    // we're syncing prims and fixing up after
     bool sync_prims = packages->Get("Driver")->Param<bool>("sync_prims");
     Metadata m;
-    if (sync_prims) {
+    if (sync_prims && fix_average_neighbors) {
         m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy, Metadata::FillGhost});
     } else {
         m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
     }
     pkg->AddField("pflag", m);
+
+    // When not using floors, we need to declare fflag for ourselves
+    m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy, Metadata::Overridable});
+    pkg->AddField("fflag", m);
 
     // We exist basically to do this
     pkg->BlockUtoP = Inverter::BlockUtoP;
@@ -99,6 +121,7 @@ inline void BlockPerformInversion(MeshBlockData<Real> *rc, IndexDomain domain, b
     auto P = GRMHD::PackHDPrims(rc, prims_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
 
+    auto fflag = rc->PackVariables(std::vector<std::string>{"fflag"});
     auto pflag = rc->PackVariables(std::vector<std::string>{"pflag"});
 
     if (U.GetDim(4) == 0 || pflag.GetDim(4) == 0)
@@ -106,22 +129,30 @@ inline void BlockPerformInversion(MeshBlockData<Real> *rc, IndexDomain domain, b
 
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
 
-    const Real err_tol = pmb->packages.Get("Inverter")->Param<Real>("err_tol");
-    const int iter_max = pmb->packages.Get("Inverter")->Param<int>("iter_max");
-    const Real stepsize = pmb->packages.Get("Inverter")->Param<Real>("stepsize");
+    auto &pars = pmb->packages.Get("Inverter")->AllParams();
+    const Real err_tol = pars.Get<Real>("err_tol");
+    const int iter_max = pars.Get<int>("iter_max");
+    Floors::Prescription inverter_floors = pars.Get<Floors::Prescription>("inverter_prescription");
 
     // Get the primitives from our conserved versions
-    // Notice we recover variables for only the physical (interior or MPI-boundary)
+    // Notice we recover variables for only the physical (interior or interior-ghost)
     // zones!  These are the only ones which are filled at our point in the step
     auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
     const IndexRange3 b = KDomain::GetPhysicalRange(rc);
 
     pmb->par_for("U_to_P", b.ks, b.ke, b.js, b.je, b.is, b.ie,
         KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-            if (KDomain::inside(k, j, i, b)) {
-                // Run over all interior zones and any initialized ghosts
-                pflag(0, k, j, i) = static_cast<double>(Inverter::u_to_p<inverter>(G, U, m_u, gam, k, j, i, P, m_p, Loci::center));
-            }
+            int pflagl = Inverter::u_to_p<inverter>(G, U, m_u, gam, k, j, i, P, m_p, Loci::center,
+                                                    inverter_floors, iter_max, err_tol);
+            pflag(0, k, j, i) = pflagl % Floors::FFlag::MINIMUM;
+            int fflagl = (pflagl / Floors::FFlag::MINIMUM) * Floors::FFlag::MINIMUM;
+            fflag(0, k, j, i) = fflagl;
+            // Generally after inversion we manipulate P and call this ourselves
+            // Enable this if that doesn't stay true
+            // if (fflagl) {
+            //     // If we applied a floor during recovery, update the cons
+            //     GRMHD::p_to_u(G, P, m_p, gam, k, j, i, U, m_u);
+            // }
         }
     );
 }
@@ -134,9 +165,13 @@ void Inverter::BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coars
     case Type::onedw:
         BlockPerformInversion<Type::onedw>(rc, domain, coarse);
         break;
+    case Type::kastaun:
+        BlockPerformInversion<Type::kastaun>(rc, domain, coarse);
+        break;
     case Type::none:
         break;
     }
+    // This is dangerous since there are many blocks/packs and we need one reduction. For later.
     //Reductions::StartFlagReduce(md, "pflag", Inverter::status_names, IndexDomain::interior, false, 1);
 }
 
@@ -148,12 +183,19 @@ TaskStatus Inverter::PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
     const auto& pars = pmesh->packages.Get("Globals")->AllParams();
     const int flag_verbose = pars.Get<int>("flag_verbose");
 
-    // Debugging/diagnostic info about floor and inversion flags
+    // Debugging/diagnostic info about inversion flags
     // TODO grab the total and die on too many
     if (flag_verbose >= 1) {
         // TODO this should move into UtoP when everything goes MeshData
         Reductions::StartFlagReduce(md, "pflag", Inverter::status_names, IndexDomain::interior, false, 1);
         Reductions::CheckFlagReduceAndPrintHits(md, "pflag", Inverter::status_names, IndexDomain::interior, false, 1);
+
+        // If we're the only floors, print those too
+        if (!pmesh->packages.AllPackages().count("Floors")) {
+            Reductions::StartFlagReduce(md, "fflag", Floors::FFlag::flag_names, IndexDomain::interior, true, 0);
+            // Debugging/diagnostic info about floors
+            Reductions::CheckFlagReduceAndPrintHits(md, "fflag", Floors::FFlag::flag_names, IndexDomain::interior, true, 0);
+        }
     }
 
     return TaskStatus::complete;
