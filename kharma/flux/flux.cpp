@@ -188,8 +188,11 @@ std::shared_ptr<KHARMAPackage> Flux::Initialize(ParameterInput *pin, std::shared
         // TODO even post-reconstruction/reconstruction fallback?
         if (!pin->DoesBlockExist("fofc_floors")) {
             params.Add("fofc_prescription", Floors::MakePrescription(pin, "floors"));
+            params.Add("fofc_prescription_inner", Floors::MakePrescriptionInner(pin, Floors::MakePrescription(pin, "floors"), "floors_inner"));
         } else {
+            // Override inner and outer floors with `fofc_floors` block
             params.Add("fofc_prescription", Floors::MakePrescription(pin, "fofc_floors"));
+            params.Add("fofc_prescription_inner", Floors::MakePrescriptionInner(pin, Floors::MakePrescription(pin, "fofc_floors"), "fofc_floors"));
         }
 
         // Flag for whether FOFC was applied, for diagnostics

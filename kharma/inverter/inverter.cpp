@@ -68,8 +68,10 @@ std::shared_ptr<KHARMAPackage> Inverter::Initialize(ParameterInput *pin, std::sh
     // Use a custom block for inverter floors to allow customization.  Not sure anyone *wants* that but...
     if (!pin->DoesBlockExist("inverter_floors")) {
         params.Add("inverter_prescription", Floors::MakePrescription(pin, "floors"));
+        params.Add("inverter_prescription_inner", Floors::MakePrescriptionInner(pin, Floors::MakePrescription(pin, "floors"), "floors_inner"));
     } else {
         params.Add("inverter_prescription", Floors::MakePrescription(pin, "inverter_floors"));
+        params.Add("inverter_prescription_inner", Floors::MakePrescriptionInner(pin, Floors::MakePrescription(pin, "inverter_floors"), "inverter_floors"));
     }
 
     // Fixup options
@@ -132,7 +134,8 @@ inline void BlockPerformInversion(MeshBlockData<Real> *rc, IndexDomain domain, b
     auto &pars = pmb->packages.Get("Inverter")->AllParams();
     const Real err_tol = pars.Get<Real>("err_tol");
     const int iter_max = pars.Get<int>("iter_max");
-    Floors::Prescription inverter_floors = pars.Get<Floors::Prescription>("inverter_prescription");
+    Floors::Prescription inverter_floors       = pars.Get<Floors::Prescription>("inverter_prescription");
+    Floors::Prescription inverter_floors_inner = pars.Get<Floors::Prescription>("inverter_prescription_inner");
 
     // Get the primitives from our conserved versions
     // Notice we recover variables for only the physical (interior or interior-ghost)
@@ -143,7 +146,7 @@ inline void BlockPerformInversion(MeshBlockData<Real> *rc, IndexDomain domain, b
     pmb->par_for("U_to_P", b.ks, b.ke, b.js, b.je, b.is, b.ie,
         KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
             int pflagl = Inverter::u_to_p<inverter>(G, U, m_u, gam, k, j, i, P, m_p, Loci::center,
-                                                    inverter_floors, iter_max, err_tol);
+                                                    inverter_floors, inverter_floors_inner,  err_tol);
             pflag(0, k, j, i) = pflagl % Floors::FFlag::MINIMUM;
             int fflagl = (pflagl / Floors::FFlag::MINIMUM) * Floors::FFlag::MINIMUM;
             fflag(0, k, j, i) = fflagl;

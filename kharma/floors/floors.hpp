@@ -168,10 +168,10 @@ inline Prescription MakePrescription(parthenon::ParameterInput *pin, std::string
 
 /**
  * Set prescription struct for inner domain (r < floor_switch_r) if 'radius_dependent_floors' is enabled.
- * Sets values provided in the 'floors/inner' block in input par file if provided,
+ * Sets values provided in the 'floors_inner' block in input par file if provided,
  * else sets it equal to the values in the whole/outer domain.
  */
-inline Prescription MakePrescriptionInner(parthenon::ParameterInput *pin, Prescription p_outer, std::string block="floors/inner"){
+inline Prescription MakePrescriptionInner(parthenon::ParameterInput *pin, Prescription p_outer, std::string block="floors_inner"){
     
     Prescription p_inner;
 

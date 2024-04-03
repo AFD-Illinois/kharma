@@ -91,6 +91,7 @@ KOKKOS_INLINE_FUNCTION int u_to_p<Type::onedw>(const GRCoordinates& G, const Var
                                               const Real& gam, const int& k, const int& j, const int& i,
                                               const VariablePack<Real>& P, const VarMap& m_p,
                                               const Loci& loc, const Floors::Prescription& inverter_floors,
+                                              const Floors::Prescription& inverter_floors_inner,
                                               const int& max_iterations, const Real& tol)
 {
     // TODO try inline floors in the old 1Dw?  Probably not relevant anymore

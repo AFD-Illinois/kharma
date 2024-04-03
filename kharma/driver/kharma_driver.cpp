@@ -286,7 +286,8 @@ TaskID KHARMADriver::AddFOFC(TaskID& t_start, TaskList& tl, MeshData<Real> *md,
     auto pmb0  = md->GetBlockData(0)->GetBlockPointer();
     auto& pkgs = pmb0->packages.AllPackages();
 
-    const Floors::Prescription fofc_floors = pmb0->packages.Get("Flux")->Param<Floors::Prescription>("fofc_prescription");
+    const Floors::Prescription fofc_floors       = pmb0->packages.Get("Flux")->Param<Floors::Prescription>("fofc_prescription");
+    const Floors::Prescription fofc_floors_inner = pmb0->packages.Get("Flux")->Param<Floors::Prescription>("fofc_prescription_inner");
 
     // Populate guess source term with divergence of the existing fluxes
     // NOTE this does not include source terms!  Though, could call them here tbh
@@ -309,7 +310,7 @@ TaskID KHARMADriver::AddFOFC(TaskID& t_start, TaskList& tl, MeshData<Real> *md,
     auto t_guess_Bp = tl.AddTask(t_guess_update, B_FluxCT::MeshUtoP, guess, IndexDomain::entire, false);
     auto t_guess_prims = tl.AddTask(t_guess_Bp, Inverter::MeshUtoP, guess, IndexDomain::entire, false);
     // Check and mark floors
-    auto t_mark_floors = tl.AddTask(t_guess_prims, Floors::DetermineGRMHDFloors, guess, IndexDomain::entire, fofc_floors, fofc_floors);
+    auto t_mark_floors = tl.AddTask(t_guess_prims, Floors::DetermineGRMHDFloors, guess, IndexDomain::entire, fofc_floors, fofc_floors_inner);
     // Determine which cells are FOFC in our block
     auto t_mark_fofc = tl.AddTask(t_mark_floors, Flux::MarkFOFC, guess);
     // Sync with neighbor blocks.  This seems to ameliorate an increasing divB on X1 boundaries in GR,

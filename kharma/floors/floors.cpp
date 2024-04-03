@@ -93,9 +93,8 @@ std::shared_ptr<KHARMAPackage> Floors::Initialize(ParameterInput *pin, std::shar
     // Default presciption struct refers to outer domain, i.e., beyond 'floor_switch_r'
     // Make an additional prescription struct for inner domain.
     // There are two Floors::Prescription objects even if there is no radius-dependence,
-    // the values will simply if the same in both objects.
+    // the values will simply be the same if radius-dependent floors are not enabled.
     // Avoids a bunch of if (radius_dependent_floors) else while determining floors.
-    // TODO(VKD): Combine this functionality with frame switching
     params.Add("prescription_inner", MakePrescriptionInner(pin, MakePrescription(pin)));
 
     // Disable all floors.  It is obviously tremendously inadvisable to do this
