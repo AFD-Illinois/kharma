@@ -49,7 +49,7 @@ TaskStatus InitializeBZMonopole(std::shared_ptr<MeshBlockData<Real>>& rc, Parame
 
     Real bsq_o_rho_max = pin->GetOrAddReal("floors", "bsq_over_rho_max", 1.e2);
     Real rho_min_limit = pin->GetOrAddReal("floors", "rho_min_geom", 1.e-6);
-    Real u_min_limit = pin->GetOrAddReal("floors", "u_min_geom", 1.e-8);
+    Real u_min_limit   = pin->GetOrAddReal("floors", "u_min_geom", 1.e-8);
 
     IndexDomain domain = IndexDomain::interior;
     int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);

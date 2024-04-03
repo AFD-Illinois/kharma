@@ -563,7 +563,8 @@ void ApplyFloors(MeshBlockData<Real> *mbd, IndexDomain domain)
     const auto& G = pmb->coords;
 
     const Real gam = packages.Get("GRMHD")->Param<Real>("gamma");
-    const Floors::Prescription floors = packages.Get("Floors")->Param<Floors::Prescription>("prescription");
+    const Floors::Prescription floors       = packages.Get("Floors")->Param<Floors::Prescription>("prescription");
+    const Floors::Prescription floors_inner = packages.Get("Floors")->Param<Floors::Prescription>("prescription_inner");
 
     const IndexRange3 b = KDomain::GetRange(mbd, domain);
     pmb->par_for("apply_electrons_floors", b.ks, b.ke, b.js, b.je, b.is, b.ie,
@@ -571,9 +572,18 @@ void ApplyFloors(MeshBlockData<Real> *mbd, IndexDomain domain)
 
             // Also apply the ceiling to the advected entropy KTOT, if we're keeping track of that
             // (either for electrons, or robust primitive inversions in future)
-            if (m_p.KTOT >= 0 && (P(m_p.KTOT, k, j, i) > floors.ktot_max)) {
+            Real ktot_max;
+            if (floors.radius_dependent_floors && G.coords.is_spherical()) {
+                GReal r = G.r(k, j, i);
+                (r < floors.floors_switch_r) ? ktot_max = floors_inner.ktot_max : floors.ktot_max;
+            }
+            else {
+                ktot_max = floors.ktot_max;
+            }
+
+            if (m_p.KTOT >= 0 && (P(m_p.KTOT, k, j, i) > ktot_max)) {
                 fflag(0, k, j, i) = Floors::FFlag::KTOT | (int) fflag(0, k, j, i);
-                P(m_p.KTOT, k, j, i) = floors.ktot_max;
+                P(m_p.KTOT, k, j, i) = ktot_max;
             }
 
             // TODO(BSP) restore Ressler adjustment option
