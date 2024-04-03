@@ -362,7 +362,8 @@ KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::mixed_fluid_drift>(FLOOR
 template<typename Local>
 KOKKOS_INLINE_FUNCTION int apply_geo_floors(const GRCoordinates& G, Local& P, const VarMap& m,
                                             const Real& gam, const int& j, const int& i,
-                                            const Floors::Prescription& floors, const Loci loc=Loci::center)
+                                            const Floors::Prescription& floors, const Floors::Prescription& floors_inner,
+                                            const Loci loc=Loci::center)
 {
     // Apply only the geometric floors
     Real rhoflr_geom, uflr_geom;
@@ -370,18 +371,14 @@ KOKKOS_INLINE_FUNCTION int apply_geo_floors(const GRCoordinates& G, Local& P, co
         GReal Xembed[GR_DIM];
         G.coord_embed(0, j, i, loc, Xembed);
         GReal r = Xembed[1];
-
-        if (floors.use_r_char) {
-            // Steeper floor from iharm3d
-            Real rhoscal = 1. / ((r*r) * (1 + r / floors.r_char));
-            rhoflr_geom  = floors.rho_min_geom * rhoscal;
-            uflr_geom    = floors.u_min_geom * m::pow(rhoscal, gam);
-        } else {
-            // Original floors from iharm2d
-            Real rhoscal = 1. / m::sqrt(r*r*r);
-            rhoflr_geom = floors.rho_min_geom * rhoscal;
-            uflr_geom   = floors.u_min_geom * rhoscal / r;
-        }
+        const GReal r = G.r(k, j, i);
+        // r_char sets more aggressive floor close to EH but backs off
+        Real rhoscal = (floors.use_r_char) ? (r < floors.floors_switch_r) ? 1. / ((r*r) * (1 + r / floors_inner.r_char)) 
+                        : 1. / ((r*r) * (1 + r / floors.r_char)) : 1. / m::sqrt(r*r*r);
+        rhoflr_geom = (r < floors.floors_switch_r) ? floors_inner.rho_min_geom * rhoscal : floors.rho_min_geom * rhoscal;
+        uflr_geom   = (floors.use_r_char) ? (r < floors.floors_switch_r) ? floors_inner.u_min_geom * m::pow(rhoscal, gam) :
+                        floors.u_min_geom * m::pow(rhoscal, gam) : (r < floors.floors_switch_r) ? 
+                        floors_inner.u_min_geom * rhoscal / r : floors.u_min_geom * rhoscal / r;
     } else {
         rhoflr_geom = floors.rho_min_geom;
         uflr_geom   = floors.u_min_geom;
@@ -401,31 +398,28 @@ KOKKOS_INLINE_FUNCTION int apply_geo_floors(const GRCoordinates& G, Local& P, co
 template<typename Global>
 KOKKOS_INLINE_FUNCTION int apply_geo_floors(const GRCoordinates& G, Global& P, const VarMap& m,
                                             const Real& gam, const int& k, const int& j, const int& i,
-                                            const Floors::Prescription& floors, const Loci loc=Loci::center)
+                                            const Floors::Prescription& floors, const Floors::Prescription& floors_inner,
+                                            const Loci loc=Loci::center)
 {
-    // Apply only the geometric floors
+     // Apply only the geometric floors
     Real rhoflr_geom, uflr_geom;
     if(G.coords.is_spherical()) {
         GReal Xembed[GR_DIM];
-        G.coord_embed(k, j, i, loc, Xembed);
+        G.coord_embed(0, j, i, loc, Xembed);
         GReal r = Xembed[1];
-
-        if (floors.use_r_char) {
-            // Steeper floor from iharm3d
-            Real rhoscal = 1. / ((r*r) * (1 + r / floors.r_char));
-            rhoflr_geom  = floors.rho_min_geom * rhoscal;
-            uflr_geom    = floors.u_min_geom * m::pow(rhoscal, gam);
-        } else {
-            // Original floors from iharm2d
-            Real rhoscal = 1. / m::sqrt(r*r*r);
-            rhoflr_geom = floors.rho_min_geom * rhoscal;
-            uflr_geom   = floors.u_min_geom * rhoscal / r;
-        }
+        const GReal r = G.r(k, j, i);
+        // r_char sets more aggressive floor close to EH but backs off
+        Real rhoscal = (floors.use_r_char) ? (r < floors.floors_switch_r) ? 1. / ((r*r) * (1 + r / floors_inner.r_char)) 
+                        : 1. / ((r*r) * (1 + r / floors.r_char)) : 1. / m::sqrt(r*r*r);
+        rhoflr_geom = (r < floors.floors_switch_r) ? floors_inner.rho_min_geom * rhoscal : floors.rho_min_geom * rhoscal;
+        uflr_geom   = (floors.use_r_char) ? (r < floors.floors_switch_r) ? floors_inner.u_min_geom * m::pow(rhoscal, gam) :
+                        floors.u_min_geom * m::pow(rhoscal, gam) : (r < floors.floors_switch_r) ? 
+                        floors_inner.u_min_geom * rhoscal / r : floors.u_min_geom * rhoscal / r;
     } else {
         rhoflr_geom = floors.rho_min_geom;
         uflr_geom   = floors.u_min_geom;
     }
-
+    
     int fflag = 0;
     // Record all the floors that were hit, using bitflags
     // Record Geometric floor hits
