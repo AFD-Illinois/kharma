@@ -95,7 +95,10 @@ std::shared_ptr<KHARMAPackage> Floors::Initialize(ParameterInput *pin, std::shar
     // There are two Floors::Prescription objects even if there is no radius-dependence,
     // the values will simply be the same if radius-dependent floors are not enabled.
     // Avoids a bunch of if (radius_dependent_floors) else while determining floors.
-    params.Add("prescription_inner", MakePrescriptionInner(pin, MakePrescription(pin)));
+    if (pin->DoesBlockExist("floors_inner"))
+        params.Add("prescription_inner", MakePrescriptionInner(pin, MakePrescription(pin)));
+    else:
+        params.Add("prescription_inner", MakePrescriptionInner(pin, MakePrescription(pin)), "floors");
 
     // Disable all floors.  It is obviously tremendously inadvisable to do this
     // Note this will only be recorded if false, otherwise we're not loaded at all!

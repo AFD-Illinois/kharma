@@ -82,6 +82,14 @@ std::shared_ptr<KHARMAPackage> KHARMADriver::Initialize(ParameterInput *pin, std
     // so we define the flags here to avoid loading order issues
     Metadata::AddUserFlag("Implicit");
     Metadata::AddUserFlag("Explicit");
+    // Add a flag if we wish to use ideal variables explicitly evolved as guess for implicit update.
+    // GRIM uses the fluid state of the previous (sub-)step.
+    // The logic here is that the non-ideal variables do not significantly contribute to the
+    // stress-energy tensor. Hence, we can explicitly update the ideal MHD variables and hope
+    // that this takes us to a region in the parameter space of state variables that 
+    // is close to the true solution. The corrections obtained from the implicit update would then
+    // be small corrections.
+    Metadata::AddUserFlag("IdealGuess");
 
     // 1. One flag to mark the primitive variables specifically
     // (Parthenon has Metadata::Conserved already)

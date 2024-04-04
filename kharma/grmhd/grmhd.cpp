@@ -110,6 +110,9 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     auto implicit_grmhd = (driver.Get<DriverType>("type") == DriverType::imex) &&
                           (pin->GetBoolean("emhd", "on") || pin->GetOrAddBoolean("GRMHD", "implicit", false));
     params.Add("implicit", implicit_grmhd);
+    // Explicitly-evolved ideal MHD variables as guess for Extended MHD runs
+    const bool ideal_guess = pin->GetOrAddBoolean("emhd", "ideal_guess", false);
+    params.Add("ideal_guess", ideal_guess);
 
     // AMR PARAMETERS
     // Adaptive mesh refinement options

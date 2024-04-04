@@ -219,7 +219,6 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
                                                 md_solver.get(), md_linesearch.get());
             }
 
-
             // Time-step implicit variables by root-finding the residual.
             // This calculates the primitive values after the substep for all "isImplicit" variables --
             // no need for separately adding the flux divergence or calling UtoP
