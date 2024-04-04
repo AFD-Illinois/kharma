@@ -49,9 +49,11 @@
 #include "current.hpp"
 #include "kharma_driver.hpp"
 #include "electrons.hpp"
+#include "entropy.hpp"
 #include "implicit.hpp"
 #include "inverter.hpp"
 #include "floors.hpp"
+#include "force_free.hpp"
 #include "grmhd.hpp"
 #include "reductions.hpp"
 #include "emhd.hpp"
@@ -350,15 +352,31 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput> &pin)
 
     // Optional standalone packages
     // Electrons are boring but not impossible without a B field (TODO add a test?)
+    auto t_electrons = t_none;
     if (pin->GetOrAddBoolean("electrons", "on", false)) {
-        auto t_electrons = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, Electrons::Initialize, pin.get());
+        t_electrons = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, Electrons::Initialize, pin.get());
     }
+    auto t_emhd = t_none;
     if (pin->GetBoolean("emhd", "on")) {
-        auto t_emhd = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, EMHD::Initialize, pin.get());
+        t_emhd = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, EMHD::Initialize, pin.get());
     }
+    auto t_wind = t_none;
     if (pin->GetOrAddBoolean("wind", "on", false)) {
-        auto t_wind = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, Wind::Initialize, pin.get());
+        t_wind = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, Wind::Initialize, pin.get());
     }
+    auto t_force_free = t_none;
+    if (pin->GetOrAddBoolean("force_free", "on", false)) {
+        // TODO eventually this and B should not depend on GRMHD
+        // B should just depend on having prims.uvec, which this package should provide if GRMHD is not in use
+        t_force_free = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, Force_Free::Initialize, pin.get());
+    }
+    // Enable entropy advection if we're using force-free or electrons that need it
+    // (TODO now use this in inverter/fixup...)
+    auto t_entropy = t_none;
+    if (t_electrons != t_none || t_force_free != t_none) {
+        t_entropy = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, Entropy::Initialize, pin.get());
+    }
+
     // Enable calculating jcon iff it is in any list of outputs (and there's even B to calculate it).
     // Since it is never required to restart, this is the only time we'd write (hence, need) it
     if (FieldIsOutput(pin.get(), "jcon") && t_b_field != t_none) {

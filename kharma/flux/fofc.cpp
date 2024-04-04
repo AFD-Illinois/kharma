@@ -49,9 +49,9 @@ TaskStatus Flux::MarkFOFC(MeshData<Real> *guess)
 
     // flags of the guess indicate where we lower
     // (not that it matters, the flags are OneCopy)
-    auto fflag = guess->PackVariables(std::vector<std::string>{"fflag"});
-    auto pflag = guess->PackVariables(std::vector<std::string>{"pflag"});
-    auto fofcflag = guess->PackVariables(std::vector<std::string>{"fofcflag"});
+    auto fflag = guess->PackVariables(std::vector<std::string>{"flags.floors"});
+    auto pflag = guess->PackVariables(std::vector<std::string>{"flags.inverter"});
+    auto fofcflag = guess->PackVariables(std::vector<std::string>{"flags.fofc"});
 
     // Parameters
     const bool spherical = pmb0->coords.coords.is_spherical();
@@ -86,7 +86,7 @@ TaskStatus Flux::FOFC(MeshData<Real> *md, MeshData<Real> *guess)
     const int ndim = pmesh->ndim;
 
     // Pick up flag. Optionally synced
-    auto fofcflag = guess->PackVariables(std::vector<std::string>{"fofcflag"});
+    auto fofcflag = guess->PackVariables(std::vector<std::string>{"flags.fofc"});
 
     // But we're modifying the live temporaries, and eventually fluxes, here
     const auto& Pl_all = md->PackVariables(std::vector<std::string>{"Flux.Pl"});

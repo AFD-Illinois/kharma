@@ -88,12 +88,6 @@ void FluxCT(MeshData<Real> *md);
 void FixBoundaryFlux(MeshData<Real> *md, IndexDomain domain, bool coarse);
 
 /**
- * Alternate B field fix for X1 boundary, keeps zero divergence while permitting flux
- * through the boundary, at the cost of a short non-local solve.
- */
-TaskStatus FixX1Flux(MeshData<Real> *md);
-
-/**
  * Calculate maximum corner-centered divergence of magnetic field,
  * to check it is being preserved ~=0
  * Used as a Parthenon History function, so must take exactly the

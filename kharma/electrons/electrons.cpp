@@ -212,10 +212,8 @@ TaskStatus InitElectrons(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInpu
         return TaskStatus::complete;
     }
 
-    // Need to distinguish KTOT from the other variables, so we record which it is
-    PackIndexMap prims_map;
-    auto& e_P = rc->PackVariables({Metadata::GetUserFlag("Elec"), Metadata::GetUserFlag("Primitive")}, prims_map);
-    const int ktot_index = prims_map["prims.Ktot"].first;
+    // Need all the electron entropies together
+    auto& e_P = rc->PackVariables({Metadata::GetUserFlag("Elec"), Metadata::GetUserFlag("Primitive")});
     // Just need these two from the rest of Prims
     GridScalar rho = rc->Get("prims.rho").data;
     GridScalar u = rc->Get("prims.u").data;
@@ -230,13 +228,8 @@ TaskStatus InitElectrons(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInpu
     int ks = pmb->cellbounds.ks(domain), ke = pmb->cellbounds.ke(domain);
     pmb->par_for("UtoP_electrons", 0, e_P.GetDim(4)-1, ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA (const int &p, const int &k, const int &j, const int &i) {
-            if (p == ktot_index) {
-                // Initialize total entropy by definition,
-                e_P(p, k, j, i) = (gam - 1.) * u(k, j, i) * m::pow(rho(k, j, i), -gam);
-            } else {
-                // and e- entropy by given constant initial fraction
-                e_P(p, k, j, i) = (game - 1.) * fel0 * u(k, j, i) * m::pow(rho(k, j, i), -game);
-            }
+            // and e- entropy by given constant initial fraction
+            e_P(p, k, j, i) = (game - 1.) * fel0 * u(k, j, i) * m::pow(rho(k, j, i), -game);
         }
     );
 
@@ -558,7 +551,7 @@ void ApplyFloors(MeshBlockData<Real> *mbd, IndexDomain domain)
     auto P = mbd->PackVariables({Metadata::GetUserFlag("Primitive")}, prims_map);
     const VarMap m_p(prims_map, false);
 
-    auto fflag = mbd->PackVariables(std::vector<std::string>{"fflag"}, prims_map);
+    auto fflag = mbd->PackVariables(std::vector<std::string>{"flags.floors"}, prims_map);
 
     const auto& G = pmb->coords;
 

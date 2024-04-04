@@ -163,7 +163,7 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     // This works similarly to the fflag:
     // we register zones where limits on q and dP are hit
     Metadata m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
-    pkg->AddField("eflag", m);
+    pkg->AddField("flags.emhd", m);
 
     // Callbacks
 
