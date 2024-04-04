@@ -97,7 +97,7 @@ std::shared_ptr<KHARMAPackage> Floors::Initialize(ParameterInput *pin, std::shar
     // Avoids a bunch of if (radius_dependent_floors) else while determining floors.
     if (pin->DoesBlockExist("floors_inner"))
         params.Add("prescription_inner", MakePrescriptionInner(pin, MakePrescription(pin)));
-    else:
+    else
         params.Add("prescription_inner", MakePrescriptionInner(pin, MakePrescription(pin)), "floors");
 
     // Disable all floors.  It is obviously tremendously inadvisable to do this
