@@ -68,7 +68,10 @@ std::shared_ptr<KHARMAPackage> Inverter::Initialize(ParameterInput *pin, std::sh
     // Use a custom block for inverter floors to allow customization.  Not sure anyone *wants* that but...
     if (!pin->DoesBlockExist("inverter_floors")) {
         params.Add("inverter_prescription", Floors::MakePrescription(pin, "floors"));
-        params.Add("inverter_prescription_inner", Floors::MakePrescriptionInner(pin, Floors::MakePrescription(pin, "floors"), "floors_inner"));
+        if (pin->DoesBlockExist("floors_inner"))
+            params.Add("inverter_prescription_inner", Floors::MakePrescriptionInner(pin, Floors::MakePrescription(pin, "floors"), "floors_inner"));
+        else
+            params.Add("inverter_prescription_inner", Floors::MakePrescriptionInner(pin, Floors::MakePrescription(pin, "floors"), "floors"));
     } else {
         params.Add("inverter_prescription", Floors::MakePrescription(pin, "inverter_floors"));
         params.Add("inverter_prescription_inner", Floors::MakePrescriptionInner(pin, Floors::MakePrescription(pin, "inverter_floors"), "inverter_floors"));
