@@ -377,7 +377,7 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
         );
         EndFlag();
     }
-    if (params.Get<bool>("polar_EMF_" + bname) && emfpack.GetDim(4) > 0) {
+    if (params.Get<bool>("average_EMF_" + bname) && emfpack.GetDim(4) > 0) {
         Flag("BoundaryEdge_"+bname);
         if (bdir != 2) {
             throw std::runtime_error("Polar average EMF implemented only in X2!");
