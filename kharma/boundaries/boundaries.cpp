@@ -173,12 +173,14 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
         params.Add("reflect_face_vector_"+bname, invert_F2);
 
         // OPTIONS FOR SPECIFIC TYPES
-        // Zero EMFs to prevent B field escaping the domain in polar/dirichlet bounds
-        bool zero_EMF = pin->GetOrAddBoolean("boundaries", "zero_EMF_" + bname, (btype == "dirichlet"));
+        // Special EMF averaging, slow, manual only
+        bool average_EMF = pin->GetOrAddBoolean("boundaries", "average_EMF_" + bname, false);
+        params.Add("average_EMF_"+bname, average_EMF);
+        // Otherwise, zero EMFs to prevent B field escaping the domain in polar/dirichlet bounds
+        bool zero_EMF = pin->GetOrAddBoolean("boundaries", "zero_EMF_" + bname, ((bdir == X2DIR && spherical)
+                                                                             || (btype == "dirichlet"))
+                                                                             && !average_EMF);
         params.Add("zero_EMF_"+bname, zero_EMF);
-
-        bool polar_EMF = pin->GetOrAddBoolean("boundaries", "polar_EMF_" + bname, (bdir == X2DIR && spherical));
-        params.Add("polar_EMF_"+bname, polar_EMF);
 
         // String manip to get the Parthenon boundary name, e.g., "ox1_bc"
         auto bname_parthenon = bname.substr(0, 1) + "x" + bname.substr(7, 8) + "_bc";

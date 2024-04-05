@@ -80,21 +80,24 @@ void KBoundaries::TransmitSetTE(MeshBlockData<Real> *rc, VariablePack<Real> &q,
     for (auto el : el_list) {
         // Set boundary/ghost zones *only*, not zones on faces
         const IndexRange3 b = KDomain::GetRange(rc, domain, el, coarse);
-        const IndexRange3 be = KDomain::GetRange(rc, IndexDomain::entire, el, coarse);
+        const IndexRange3 bi = KDomain::GetRange(rc, IndexDomain::interior, CC);
 
         if (domain == IndexDomain::inner_x2 || domain == IndexDomain::outer_x2) {
-            const int Nk3p = (b.ke - b.ks + 1); // Physical zones in dir 3
-            const int Nk3p2 = Nk3p/2;           // pi/2 of those
+            const int Nk3p = (bi.ke - bi.ks + 1); // Physical/interior *zones* in dir 3
+            const int Nk3p2 = Nk3p/2;             // pi/2 of those (boundary incompatible with slice sims TODO check+error)
+            const int ksp = bi.ks;                // Offset of first physical zone or face (same number)
             // Pivot element for faces is first domain face (==0), pivot for cells is between b.js/e, b.js/e+/-1
             const int jpivot = (domain == IndexDomain::inner_x2) ? ((el == FaceOf(dir)) ? b.je + 1 : b.je)
                                                                  : ((el == FaceOf(dir)) ? b.js - 1 : b.js);
+            const Real do_face_invert = (el == F3);
             pmb->par_for(
                 "transmitting_polar_boundary_" + bname, 0, q.GetDim(4)/el_tot-1, b.ks, b.ke, b.js, b.je, b.is, b.ie,
                 KOKKOS_LAMBDA (const int &v, const int &k, const int &j, const int &i) {
-                    const int ki = ((k - b.ks + Nk3p2) % Nk3p) + b.ks;
+                    const int ki = ((k - ksp + Nk3p2) % Nk3p) + ksp;
                     const int ji = m::abs(jpivot - j);
                     const int ii = i;
-                    q(el, v, k, j, i) = q(el, v, ki, ji, ii);
+                    const Real invert = (do_face_invert || q(el, v).vector_component == X3DIR) ? -1. : 1.;
+                    q(el, v, k, j, i) = invert * q(el, v, ki, ji, ii);
                 }
             );
             // Explicitly zero B2 face for some reason
