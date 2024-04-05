@@ -39,6 +39,7 @@
 #include "flux_functions.hpp"
 #include "grmhd_functions.hpp"
 #include "pack.hpp"
+#include "reductions.hpp"
 #include "types.hpp"
 
 #include "b_ct.hpp"
@@ -173,9 +174,11 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
 
         // OPTIONS FOR SPECIFIC TYPES
         // Zero EMFs to prevent B field escaping the domain in polar/dirichlet bounds
-        bool zero_EMF = pin->GetOrAddBoolean("boundaries", "zero_EMF_" + bname, (bdir == X2DIR && spherical)
-                                                                             || (btype == "dirichlet"));
+        bool zero_EMF = pin->GetOrAddBoolean("boundaries", "zero_EMF_" + bname, (btype == "dirichlet"));
         params.Add("zero_EMF_"+bname, zero_EMF);
+
+        bool polar_EMF = pin->GetOrAddBoolean("boundaries", "polar_EMF_" + bname, (bdir == X2DIR && spherical));
+        params.Add("polar_EMF_"+bname, polar_EMF);
 
         // String manip to get the Parthenon boundary name, e.g., "ox1_bc"
         auto bname_parthenon = bname.substr(0, 1) + "x" + bname.substr(7, 8) + "_bc";
@@ -372,6 +375,56 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
         );
         EndFlag();
     }
+    if (params.Get<bool>("polar_EMF_" + bname) && emfpack.GetDim(4) > 0) {
+        Flag("BoundaryEdge_"+bname);
+        if (bdir != 2) {
+            throw std::runtime_error("Polar average EMF implemented only in X2!");
+        }
+
+        // Augment the domain -- X3 EMF must be zero *on* polar face, since edge size is 0
+        auto b = KDomain::GetRange(rc, domain, E3, (binner) ? 0 : -1, (binner) ? 1 : 0, coarse);
+        pmb->par_for(
+            "zero_EMF_" + bname, b.ks, b.ke, b.js, b.je, b.is, b.ie,
+            KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+                emfpack(E3, 0, k, j, i) = 0;
+            }
+        );
+
+        // X1 EMF is *averaged* on the face
+        // TODO this is probably extremely slow...
+        // TODO this is likely bad in 2D
+        for (int i = b.is; i <= b.ie; i++) {
+            b = KDomain::GetRange(rc, domain, E1, (binner) ? 0 : -1, (binner) ? 1 : 0, coarse);
+            const int jf = (binner) ? b.je : b.js; // j index of face
+            double emf_sum;
+            Kokkos::Sum<double> sum_reducer(emf_sum);
+            pmb->par_reduce(
+                "reduce_EMF_i", b.ks, b.ke, jf, jf, i, i,
+                KOKKOS_LAMBDA (const int &k, const int &j, const int &i, double &local_result) {
+                    local_result += emfpack(E1, 0, k, j, i);
+                }
+            , sum_reducer);
+            const double emf_av = emf_sum / (b.ie - b.is + 1);
+            pmb->par_for(
+                "set_EMF_i", b.ks, b.ke, jf, jf, i, i,
+                KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+                    emfpack(E1, 0, k, j, i) = emf_av;
+                }
+            );
+        }
+
+        // Remaining X2 EMF zero'd only *within* boundary domain
+        for (auto el : {E1, E2}) {
+            b = KDomain::GetRange(rc, domain, el, coarse);
+            pmb->par_for(
+                "zero_EMF_" + bname, b.ks, b.ke, b.js, b.je, b.is, b.ie,
+                KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+                    emfpack(el, 0, k, j, i) = 0;
+                }
+            );
+        }
+        EndFlag();
+    }
 
     // Zero/invert XN faces at a reflecting XN boundary (nearly always X2)
     // Replaces reflecting face values at reflecting boundaries, Parthenon messes them up
@@ -422,8 +475,7 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
     }
 
     // Allow specifically dP to outflow in otherwise Dirichlet conditions
-    // Only used for viscous_bondi problem
-    // TODO make this more general?
+    // Only used for viscous_bondi problem, should be moved in there somehow
     if (params.Get<bool>("outflow_EMHD_" + bname)) {
         Flag("OutflowEMHD_"+bname);
         auto EMHDg = rc->PackVariables({Metadata::GetUserFlag("EMHDVar"), Metadata::FillGhost});
