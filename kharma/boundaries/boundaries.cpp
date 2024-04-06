@@ -171,8 +171,11 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
         // Invert X2 face values to reflect across polar boundary
         bool invert_F2 = pin->GetOrAddBoolean("boundaries", "reflect_face_vector_" + bname, (btype == "reflecting"));
         params.Add("reflect_face_vector_"+bname, invert_F2);
+        // If you'll have field loops exiting the domain, outflow conditions need to be cleaned so as not to
+        // introduce divergence to the first physical zone.
+        bool clean_face_B = pin->GetOrAddBoolean("boundaries", "clean_face_B_" + bname, (btype == "outflow"));
+        params.Add("clean_face_B_"+bname, clean_face_B);
 
-        // OPTIONS FOR SPECIFIC TYPES
         // Special EMF averaging, slow, manual only
         bool average_EMF = pin->GetOrAddBoolean("boundaries", "average_EMF_" + bname, false);
         params.Add("average_EMF_"+bname, average_EMF);
@@ -181,6 +184,7 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
                                                                              || (btype == "dirichlet"))
                                                                              && !average_EMF);
         params.Add("zero_EMF_"+bname, zero_EMF);
+
 
         // String manip to get the Parthenon boundary name, e.g., "ox1_bc"
         auto bname_parthenon = bname.substr(0, 1) + "x" + bname.substr(7, 8) + "_bc";
@@ -415,7 +419,7 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
             );
         }
 
-        // Remaining X2 EMF zero'd only *within* boundary domain
+        // Remaining X1/X2 EMF zero'd only *within* boundary domain
         for (auto el : {E1, E2}) {
             b = KDomain::GetRange(rc, domain, el, coarse);
             pmb->par_for(
@@ -437,7 +441,6 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
         // This is the domain of the boundary/ghost zones
         // Augment the domain since we're always modifying e.g. F2 in X2 boundary
         auto b = KDomain::GetRange(rc, domain, face, (binner) ? 0 : -1, (binner) ? 1 : 0, coarse);
-        //auto b = KDomain::GetRange(rc, domain, face, coarse);
         // Zero the last physical face, otherwise invert.
         auto i_f = (binner) ? b.ie : b.is;
         auto j_f = (binner) ? b.je : b.js;
@@ -453,6 +456,46 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
                                            (bdir == 3 && k == k_f)) ? 0. : -fpack(face, 0, kk, jj, ii);
             }
         );
+        EndFlag();
+    }
+
+    // Zero/invert XN faces at a reflecting XN boundary (nearly always X2)
+    // Replaces reflecting face values at reflecting boundaries, Parthenon messes them up
+    if (params.Get<bool>("clean_face_B_" + bname) && fpack.GetDim(4) > 0) {
+        Flag("BoundaryFace_"+bname);
+        const TopologicalElement face = FaceOf(bdir);
+        // Correct last domain face, too
+        auto b = KDomain::GetRange(rc, domain, face, (binner) ? 0 : -1, (binner) ? 1 : 0, coarse);
+        // Need the coordinates for this boundary, uniquely
+        auto G = pmb->coords;
+        const int ndim = pmb->pmy_mesh->ndim;
+        if (domain == IndexDomain::inner_x1 || domain == IndexDomain::outer_x1) {
+            const int i_face = (binner) ? b.ie : b.is;
+            for (int iadd = 0; iadd <= (b.ie - b.is); iadd++) {
+                const int i = (binner) ? i_face - iadd : i_face + iadd;
+                const int last_rank_f  = (binner) ? i + 1 : i - 1;
+                const int last_rank_c  = (binner) ? i     : i - 1;
+                const int outward_sign = (binner) ? -1.   : 1.;
+                pmb->par_for(
+                    "correct_face_vector_" + bname, b.ks, b.ke, b.js, b.je, i, i,
+                    KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+                        // Other faces have been updated, just need to clean divergence
+                        // Subtract off their contributions to find ours. Note our partner face contributes differently,
+                        // depending on whether we're the i+1 "outward" face, or the i "innward" face
+                        Real new_face = - (-outward_sign) * fpack(F1, 0, k, j, last_rank_f) * G.Volume<F1>(k, j, last_rank_f)
+                                        - (fpack(F2, 0, k, j + 1, last_rank_c) * G.Volume<F2>(k, j + 1, last_rank_c)
+                                            - fpack(F2, 0, k, j, last_rank_c) * G.Volume<F2>(k, j, last_rank_c));
+                        if (ndim > 2)
+                            new_face -= fpack(F3, 0, k + 1, j, last_rank_c) * G.Volume<F3>(k + 1, j, last_rank_c)
+                                        - fpack(F3, 0, k, j, last_rank_c) * G.Volume<F3>(k, j, last_rank_c);
+
+                        fpack(F1, 0, k, j, i) = outward_sign * new_face / G.Volume<F1>(k, j, i);
+                    }
+                );
+            }
+        } else {
+            throw std::runtime_error("Divergence-free outflow replacement only implemented in X1!");
+        }
         EndFlag();
     }
 
