@@ -113,7 +113,7 @@ class Prescription {
         bool use_r_char, temp_adjust_u, adjust_k;
         // Radius dependent floors?
         bool radius_dependent_floors;
-        GReal floors_switch_r;
+        Real floors_switch_r;
 };
 
 inline Prescription MakePrescription(parthenon::ParameterInput *pin, std::string block="floors")

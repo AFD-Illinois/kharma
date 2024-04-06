@@ -73,6 +73,8 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
     const bool use_implicit = pkgs.count("Implicit");
     const bool use_jcon = pkgs.count("Current");
     const bool use_linesearch = (use_implicit) ? pkgs.at("Implicit")->Param<bool>("linesearch") : false;
+    const bool emhd_enabled = pkgs.count("EMHD");
+    const bool use_ideal_guess = (emhd_enabled) ? pkgs.at("GRMHD")->Param<bool>("ideal_guess") : false;
 
     // Allocate/copy the things we need
     // TODO these can now be reduced by including the var lists/flags which actually need to be allocated
@@ -190,6 +192,13 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
                                                      md_flux_src.get(), md_solver.get(),
                                                      std::vector<MetadataFlag>{Metadata::GetUserFlag("Explicit"), Metadata::Independent},
                                                      use_b_ct, stage);
+
+        // Update ideal MHD variables so that they can be used as a guess for the solver.
+        // Only used if emhd/ideal_guess is enabled.
+        // An additional `AddStateUpdate` task just for variables marked with the `IdealGuess` flag
+        if (use_ideal_guess) {
+            
+        }
 
         // Make sure the primitive values of *explicitly-evolved* variables are updated.
         // Packages with implicitly-evolved vars should only register BoundaryUtoP or BoundaryPtoU

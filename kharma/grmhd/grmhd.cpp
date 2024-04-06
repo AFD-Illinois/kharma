@@ -144,6 +144,10 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     auto flags_cons = driver.Get<std::vector<MetadataFlag>>("cons_flags");
     flags_cons.insert(flags_cons.end(), flags_grmhd.begin(), flags_grmhd.end());
 
+    // Mark whether the ideal MHD variables are to be updated explicitly for the guess to the solver
+    flags_prim.push_back(Metadata::GetUserFlag("IdealGuess"));
+    flags_cons.push_back(Metadata::GetUserFlag("IdealGuess"));
+
     // We must additionally save the primtive variables as the "seed" for the next U->P solve
     flags_prim.push_back(Metadata::Restart);
 
