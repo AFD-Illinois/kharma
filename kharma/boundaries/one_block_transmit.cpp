@@ -89,7 +89,7 @@ void KBoundaries::TransmitSetTE(MeshBlockData<Real> *rc, VariablePack<Real> &q,
             // Pivot element for faces is first domain face (==0), pivot for cells is between b.js/e, b.js/e+/-1
             const int jpivot = (domain == IndexDomain::inner_x2) ? ((el == FaceOf(dir)) ? b.je + 1 : b.je)
                                                                  : ((el == FaceOf(dir)) ? b.js - 1 : b.js);
-            const Real do_face_invert = (el == F3);
+            const bool do_face_invert = (el == F3);
             pmb->par_for(
                 "transmitting_polar_boundary_" + bname, 0, q.GetDim(4)/el_tot-1, b.ks, b.ke, b.js, b.je, b.is, b.ie,
                 KOKKOS_LAMBDA (const int &v, const int &k, const int &j, const int &i) {
