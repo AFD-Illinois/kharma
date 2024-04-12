@@ -397,27 +397,32 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
         );
 
         // X1 EMF is *averaged* on the face
-        // TODO this is probably extremely slow...
-        // TODO this is likely bad in 2D
-        for (int i = b.is; i <= b.ie; i++) {
-            b = KDomain::GetRange(rc, domain, E1, (binner) ? 0 : -1, (binner) ? 1 : 0, coarse);
-            const int jf = (binner) ? b.je : b.js; // j index of face
-            double emf_sum;
-            Kokkos::Sum<double> sum_reducer(emf_sum);
-            pmb->par_reduce(
-                "reduce_EMF_i", b.ks, b.ke, jf, jf, i, i,
-                KOKKOS_LAMBDA (const int &k, const int &j, const int &i, double &local_result) {
-                    local_result += emfpack(E1, 0, k, j, i);
-                }
-            , sum_reducer);
-            const double emf_av = emf_sum / (b.ie - b.is + 1);
-            pmb->par_for(
-                "set_EMF_i", b.ks, b.ke, jf, jf, i, i,
-                KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-                    emfpack(E1, 0, k, j, i) = emf_av;
-                }
-            );
-        }
+        // TODO error if this is called in 2D...
+        // TODO should maybe only be physical zones...
+        b = KDomain::GetRange(rc, domain, E1, (binner) ? 0 : -1, (binner) ? 1 : 0, coarse);
+        IndexRange3 bi = KDomain::GetRange(rc, IndexDomain::interior, E1, coarse);
+        const int jf = (binner) ? b.je : b.js; // j index of polar face
+        parthenon::par_for_outer(DEFAULT_OUTER_LOOP_PATTERN, "reduce_EMF", pmb->exec_space,
+            0, 1, b.is, b.ie,
+            KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int& i) {
+                // Sum the (non-ghost) X1 direction fluxes along the pole at zone i
+                double emf_sum;
+                Kokkos::Sum<double> sum_reducer(emf_sum);
+                parthenon::par_reduce_inner(member, bi.ks, bi.ke,
+                    KOKKOS_LAMBDA (const int &k, double &local_result) {
+                        local_result += emfpack(E1, 0, k, jf, i);
+                    }
+                , sum_reducer);
+
+                // Calculate the average and set all EMFs identically (even ghosts, to keep divB)
+                const double emf_av = emf_sum / (bi.ke - bi.ks + 1);
+                parthenon::par_for_inner(member, b.ks, b.ke,
+                    KOKKOS_LAMBDA (const int &k) {
+                        emfpack(E1, 0, k, jf, i) = emf_av;
+                    }
+                );
+            }
+        );
 
         // Remaining X1/X2 EMF zero'd only *within* boundary domain
         for (auto el : {E1, E2}) {
