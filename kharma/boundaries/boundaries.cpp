@@ -409,7 +409,7 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
                 double emf_sum;
                 Kokkos::Sum<double> sum_reducer(emf_sum);
                 parthenon::par_reduce_inner(member, bi.ks, bi.ke,
-                    KOKKOS_LAMBDA (const int &k, double &local_result) {
+                    [&](const int& k, double& local_result) {
                         local_result += emfpack(E1, 0, k, jf, i);
                     }
                 , sum_reducer);
@@ -417,7 +417,7 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
                 // Calculate the average and set all EMFs identically (even ghosts, to keep divB)
                 const double emf_av = emf_sum / (bi.ke - bi.ks + 1);
                 parthenon::par_for_inner(member, b.ks, b.ke,
-                    KOKKOS_LAMBDA (const int &k) {
+                    [&](const int& k) {
                         emfpack(E1, 0, k, jf, i) = emf_av;
                     }
                 );
@@ -464,12 +464,8 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
         EndFlag();
     }
 
-    // Cleanup XN faces at an outflow XN boundary (currently only X1)
-    // Needed to advect B field lines off the domain without introducing
-    // divergence in the last physical cell.
-    // Implemented based on description in Olivares et al (2019).
-    // Feels against the spirit of CT to be working backward from the answer,
-    // but they *are* just ghost zones...
+    // Zero/invert XN faces at a reflecting XN boundary (nearly always X2)
+    // Replaces reflecting face values at reflecting boundaries, Parthenon messes them up
     if (params.Get<bool>("clean_face_B_" + bname) && fpack.GetDim(4) > 0) {
         Flag("BoundaryFace_"+bname);
         const TopologicalElement face = FaceOf(bdir);
@@ -488,10 +484,10 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
                 pmb->par_for(
                     "correct_face_vector_" + bname, b.ks, b.ke, b.js, b.je, i, i,
                     KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-                        // Other faces have been updated, we just need to clean divergence
-                        // Subtract off their contributions to find ours. Note the signs of X1 contributions flip,
-                        // depending on whether we're the i+1 "outward" face, or the i "inward" face
-                        Real new_face = 0. - (-outward_sign) * fpack(F1, 0, k, j, last_rank_f) * G.Volume<F1>(k, j, last_rank_f)
+                        // Other faces have been updated, just need to clean divergence
+                        // Subtract off their contributions to find ours. Note our partner face contributes differently,
+                        // depending on whether we're the i+1 "outward" face, or the i "innward" face
+                        Real new_face = - (-outward_sign) * fpack(F1, 0, k, j, last_rank_f) * G.Volume<F1>(k, j, last_rank_f)
                                         - (fpack(F2, 0, k, j + 1, last_rank_c) * G.Volume<F2>(k, j + 1, last_rank_c)
                                             - fpack(F2, 0, k, j, last_rank_c) * G.Volume<F2>(k, j, last_rank_c));
                         if (ndim > 2)
