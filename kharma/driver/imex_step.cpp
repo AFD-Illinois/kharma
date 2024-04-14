@@ -265,6 +265,10 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
         // but hasn't been tested to do so yet.
         auto t_floors = tl.AddTask(t_implicit, Packages::MeshApplyFloors, md_sub_step_final.get(), IndexDomain::interior);
 
+        //auto t_print_stuff = tl.AddTask(t_floors, Electrons::FindKelCoolingMD, md_full_step_init.get());
+        //auto t_print_stuff2 = tl.AddTask(t_floors, Electrons::FindKelCoolingMD, md_sub_step_init.get());
+        //auto t_print_stuff3 = tl.AddTask(t_floors, Electrons::FindKelCoolingMD, md_sub_step_final.get());
+
         KHARMADriver::AddBoundarySync(t_floors, tl, md_sub_step_final);
     }
 
@@ -329,6 +333,8 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
                     t_step_done, parthenon::Refinement::Tag<MeshBlockData<Real>>, mbd_sub_step_final.get());
             }
         }
+        //auto t_print = tl.AddTask(t_step_done, Electrons::FindKelCoolingMBD, mbd_sub_step_init.get());
+        //auto t_print2 = tl.AddTask(t_step_done, Electrons::FindKelCoolingMBD, mbd_sub_step_final.get());
     }
 
     // B Field cleanup: this is a separate solve so it's split out

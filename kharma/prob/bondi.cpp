@@ -38,6 +38,8 @@
 #include "floors.hpp"
 #include "flux_functions.hpp"
 
+#define STRLEN 2048
+
 /**
  * Initialization of a Bondi problem with specified sonic point & accretion rate
  */
@@ -64,6 +66,7 @@ TaskStatus InitializeBondi(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterIn
     const bool fill_interior = pin->GetOrAddBoolean("bondi", "fill_interior", false);
     const bool zero_velocity = pin->GetOrAddBoolean("bondi", "zero_velocity", false);
     const bool do_electrons = pin->GetOrAddBoolean("electrons", "on", false);
+    printf("do_electrons: %d \n", do_electrons);
 
     // Add these to package properties, since they continue to be needed on boundaries
     // TODO Problems NEED params
@@ -79,7 +82,7 @@ TaskStatus InitializeBondi(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterIn
         pmb->packages.Get("GRMHD")->AddParam<Real>("zero_velocity_bondi", zero_velocity);
     if(! pmb->packages.Get("Electrons")->AllParams().hasKey("do_electrons_bondi"))
         pmb->packages.Get("Electrons")->AddParam<Real>("do_electrons_bondi", do_electrons);
-
+        
     // Set this problem to control the outer X1 boundary by default
     // remember to disable inflow_check in parameter file!
     // "dirichlet" here means specifically KHARMA's cached boundaries (see boundaries.cpp)
@@ -87,17 +90,25 @@ TaskStatus InitializeBondi(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterIn
     // aren't called that for our purposes
     auto outer_dirichlet = pin->GetString("boundaries", "outer_x1") == "dirichlet";
     auto inner_dirichlet = pin->GetString("boundaries", "inner_x1") == "dirichlet";
+
+    printf("sanity check, %d \n", outer_dirichlet);
+    printf("sanity check, %d \n", inner_dirichlet);
+
     if (outer_dirichlet || inner_dirichlet) {
-        //printf("setting bondi boundaries exterior... \n");
+        printf("setting bondi boundaries exterior... \n");
         SetBondi<IndexDomain::entire>(rc); // TODO iterate & set any bounds specifically?
+        if(do_electrons) SetElectronBondi<IndexDomain::entire>(rc);
         printf("set bondi bounderies entire \n");
     } else {
         // Generally, we only set the interior domain, not the ghost zones.
         // This tests that PostInitialize will correctly fill all ghosts
-        //printf("setting bondi boundaries interior... \n");
+        printf("setting bondi boundaries interior... \n");
         SetBondi<IndexDomain::interior>(rc);
+        if(do_electrons) SetElectronBondi<IndexDomain::interior>(rc);
         printf("set bondi bounderies interior \n");
     }
+
+    printf("now\n");
 
     // Default Bondi boundary conditions: reset the outer boundary using our set function.
     // Register the callback to replace value from boundaries.cpp, & record the change in pin.
@@ -109,7 +120,7 @@ TaskStatus InitializeBondi(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterIn
     // Option to set the inner boundary too.  Ruins convergence
     if (pin->GetOrAddBoolean("bondi", "set_inner_bound", false)) {
         pin->SetString("boundaries", "inner_x1", "bondi");
-        bound_pkg->KBoundaries[BoundaryFace::inner_x1] = SetBondi<IndexDomain::inner_x1>;
+        bound_pkg->KBoundaries[BoundaryFace::inner_x1] = SetBondi<IndexDomain::inner_x1>;//I don't think I need the electron stuff here
     }
 
     // Apply floors to initialize the any part of the domain we didn't
@@ -119,6 +130,7 @@ TaskStatus InitializeBondi(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterIn
         Floors::ApplyInitialFloors(pin, rc.get(), IndexDomain::interior);
     }
 
+    printf("finished initializing bondi\n");
     return TaskStatus::complete;
 }
 
@@ -192,24 +204,36 @@ TaskStatus SetBondiImpl(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain do
 
             // Note that NaN guards, including these, are ignored (!) under -ffast-math flag.
             // Thus we stay away from initializing at EH where this could happen
-            if(!isnan(rho)) 
+            if(!isnan(rho)) {
                 P(m_p.RHO, k, j, i) = rho;
+                printf("setting ghost zone primitives: i=%d\n", i);
+            }
                 //if (j==66)
                 //    printf("rho = %.16f, i = %d\n", P(m_p.RHO, k, j, i), i);
             if(!isnan(u)) P(m_p.UU, k, j, i) = u;
             if(!isnan(u_prim[0])) P(m_p.U1, k, j, i) = u_prim[0];
             if(!isnan(u_prim[1])) P(m_p.U2, k, j, i) = u_prim[1];
             if(!isnan(u_prim[2])) P(m_p.U3, k, j, i) = u_prim[2];
-            if(do_electrons && !isnan(rho) && !isnan(u)) {
-                P_k(m_p.K_HOWES, k, j, i) = (game - 1.) * fel0 * u * m::pow(rho, -game);
+            /*if(do_electrons && !isnan(rho) && !isnan(u)) {
+                P_k(m_p.K_HOWES, k, j, i) = (game - 1.) * 0.5 * u * m::pow(rho, -game);//P_k(m_p.K_HOWES, k, j, i) = (game - 1.) * fel0 * u * m::pow(rho, -game);
+                if(i == 0){
+                    printf("i == 0");
+                }
+                //printf("i=%d, r=%.16f, ur=%.16f, kel=%.16f, rho=%.16f\n", i, r, ur, P_k(m_p.K_HOWES, k, j, i), rho);
+                printf("i=0, r=%.16f, ur=%.16f, kel=%.16f, rho=%.16f\n", i, r, ur, P_k(m_p.K_HOWES, k, j, i), rho);
+                //printf("kel at i=0: %.16f", P_k(m_p.K_HOWES, k, j, 0));
+                //printf("gcov11=%.16f, gcov22=%.16f, gcov33=%.16f\n", G.gcov(Loci::center, j, i, 1, 1), G.gcov(Loci::center, j, i, 2, 2), G.gcov(Loci::center, j, i, 3, 3));
+                //printf("gcov12=%.16f, gcov13=%.16f, gcov23=%.16f\n", G.gcov(Loci::center, j, i, 1, 2), G.gcov(Loci::center, j, i, 1, 3), G.gcov(Loci::center, j, i, 2, 3));
+                //printf("gti10=%.16f, gti00=\n", gcon[1][0], gcon[0, 0]);
+                //printf("i=%d, ur = %.16f\n", i, ur);
                 //if(j==66)
                 //    printf("kel: %.16f, r: %.16f, i: %d\n", P_k(m_p.K_HOWES, k, j, i), r, i);
-            }
+            }*/
             //if(j==66 && i>=132)
             //    printf("kel: %.16f, i: %d\n", P_k(m_p.K_HOWES, k, j, i - 132), i - 132);
         }
     );
-    //printf("we are done looping over the initialization\n");
+    printf("we are done looping over the initialization\n");
 
     // Generally I avoid this, but the viscous Bondi test problem has very unique
     // boundary requirements to converge.  The GRMHD vars must be held constant,
@@ -236,6 +260,88 @@ TaskStatus SetBondiImpl(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain do
             }
         );
     }
+
+    return TaskStatus::complete;
+}
+
+TaskStatus SetElectronBondiImpl(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain)//I do not know what type this i should be
+{
+    auto pmb = rc->GetBlockPointer();
+    const auto& G = pmb->coords;
+    PackIndexMap prims_map;
+    auto P_k = rc->PackVariables({Metadata::GetUserFlag("Primitive")}, prims_map);
+    const VarMap m_p(prims_map, false);
+    // Type of input to the problem
+    //const std::string input = pin->GetOrAddString("bondi", "input", "ODE");//I don't know why this line is important
+
+    // Bounds of the domain
+    IndexRange ib = pmb->cellbounds.GetBoundsI(domain);
+    IndexRange jb = pmb->cellbounds.GetBoundsJ(domain);
+    IndexRange kb = pmb->cellbounds.GetBoundsK(domain);
+
+    // Load file names into strings
+    int res = pmb->cellbounds.GetBoundsI(IndexDomain::entire).e - 7;
+    char fode_kel[STRLEN];
+    printf("res: %d\n", res);
+    sprintf(fode_kel, "soln_kel_%d.txt", res);
+
+    // Assign file pointers
+    FILE *fp_kel;
+    fp_kel = fopen(fode_kel, "r");
+    if (fp_kel == NULL) {
+        throw std::runtime_error("Could not open bondi cooling entropy solution!");
+    }
+
+    // Get primitives individually, so we can use GetHostMirror()
+    // TODO implement VariablePack::GetHostMirror, or mirror a temporary and dump into a pack device-side
+    auto kel  = P_k(m_p.K_HOWES);
+
+    // Host side mirror of primitives
+    auto kel_host   = kel.GetHostMirror();
+
+    // Initialize primitives
+    // TODO read->copy->assign on device?
+    double kel_temp;
+
+    for (int i = ib.s; i <= ib.e; i++) {
+        fscanf(fp_kel, "%lf", &(kel_temp));
+        for (int j = jb.s; j <= jb.e; j++) {
+            for (int k = kb.s; k <= kb.e; k++) {
+                GReal Xnative[GR_DIM], Xembed[GR_DIM]; 
+                G.coord(k, j, i, Loci::center, Xnative);
+                G.coord_embed(k, j, i, Loci::center, Xembed);
+                // initialize primitives that are read from .txt files
+                kel_host(k, j, i)   = kel_temp;
+                printf("resetting electron entropy, i=%d, kel=%.16f\n", i, kel_temp);
+            }
+        }
+    }
+    /*for (int i_temp = ib.s; i_temp <= ib.e; i_temp++) {
+        fscanf(fp_kel, "%lf", &(kel_temp));
+        if(i_temp == i){
+            for (int j = jb.s; j <= jb.e; j++) {
+                for (int k = kb.s; k <= kb.e; k++) {
+
+                    GReal Xnative[GR_DIM], Xembed[GR_DIM]; 
+                    G.coord(k, j, i, Loci::center, Xnative);
+                    G.coord_embed(k, j, i, Loci::center, Xembed);
+
+                    // initialize primitives that are read from .txt files
+                    kel_host(k, j, i)   = kel_temp;
+
+                }
+            }
+        }
+    }*/
+    // disassociate file pointer
+    fclose(fp_kel);
+
+    // Deep copy to device
+    Kokkos::fence();
+    kel.DeepCopy(kel_host);
+    Kokkos::fence();
+
+    KBoundaries::FreezeDirichletBlock(rc.get());
 
     return TaskStatus::complete;
 }

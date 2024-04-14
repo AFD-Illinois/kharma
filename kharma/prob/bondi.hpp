@@ -60,6 +60,13 @@ TaskStatus SetBondi(std::shared_ptr<MeshBlockData<Real>>& rc, bool coarse=false)
     return SetBondiImpl(rc, domain, coarse);
 }
 
+TaskStatus SetElectronBondiImpl(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain);
+
+template<IndexDomain domain>
+TaskStatus SetElectronBondi(std::shared_ptr<MeshBlockData<Real>>& rc) {
+    return SetElectronBondiImpl(rc, domain);
+}
+
 /**
  * Supporting functions for Bondi flow calculations
  * 

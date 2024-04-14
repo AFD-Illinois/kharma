@@ -69,7 +69,7 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     bool enforce_positive_dissipation = pin->GetOrAddBoolean("electrons", "enforce_positive_dissipation", false);
     params.Add("enforce_positive_dissipation", enforce_positive_dissipation);
     // This is used only in constant model
-    Real fel_const = pin->GetOrAddReal("electrons", "fel_constant", 0.1);
+    Real fel_const = pin->GetOrAddReal("electrons", "fel_constant", 0.5);//Real fel_const = pin->GetOrAddReal("electrons", "fel_constant", 0.1);
     params.Add("fel_constant", fel_const);
 
     // This prevented spurious heating when heat_electrons used pre-floored dissipation
@@ -79,7 +79,7 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     // Initialization
     bool init_to_fel_0 = pin->GetOrAddBoolean("electrons", "init_to_fel_0", true);
     params.Add("init_to_fel_0", init_to_fel_0);
-    Real fel_0 = pin->GetOrAddReal("electrons", "fel_0", 0.01);
+    Real fel_0 = pin->GetOrAddReal("electrons", "fel_0", 0.5);//Real fel_0 = pin->GetOrAddReal("electrons", "fel_0", 0.01);
     params.Add("fel_0", fel_0);
 
     // Floors
@@ -401,7 +401,7 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
 
                 const Real beta_pow = m::pow(beta, mbeta);
                 const Real qrat = 0.92 * (c2*c2 + beta_pow)/(c3*c3 + beta_pow) * m::exp(-1./beta) * m::sqrt(MP/ME * Trat);
-                const Real fel = 1./(1. + qrat);
+                const Real fel = 1./(1. + qrat);//*********************************************************************************change fel here?************************************************************
                 P_new(m_p.K_HOWES, k, j, i) = clip(P_new(m_p.K_HOWES, k, j, i) + fel * diss, kel_min, kel_max);
             }
             if (m_p.K_KAWAZURA >= 0) {
@@ -413,7 +413,7 @@ TaskStatus ApplyElectronHeating(MeshBlockData<Real> *rc_old, MeshBlockData<Real>
                 const Real beta = m::min(pres / bsq * 2, 1.e20);// If somebody enables electrons in a GRHD sim
 
                 const Real QiQe = 35. / (1. + m::pow(beta/15., -1.4) * m::exp(-0.1 / Trat));
-                const Real fel = 1./(1. + QiQe);
+                const Real fel = 1./(1. + QiQe);//*********************************************************************************change fel here?************************************************************
                 P_new(m_p.K_KAWAZURA, k, j, i) = clip(P_new(m_p.K_KAWAZURA, k, j, i) + fel * diss, kel_min, kel_max);
             }
             // TODO KAWAZURA 19/20/21 separately?
@@ -461,10 +461,12 @@ TaskStatus ApplyElectronCooling(MeshBlockData<Real> *rc){
     const Real dt = pmb->packages.Get("Globals")->Param<Real>("dt_last");
     double m = 3.0;
     //double tau = 5.;
+    
+    printf("kel at outer ghost zones: %.16f || %.16f || %.16f || %.16f \n", P(m_p.K_HOWES, 132, 0, 0), P(m_p.K_HOWES, 133, 0, 0), P(m_p.K_HOWES, 134, 0, 0), P(m_p.K_HOWES, 135, 0, 0));
 
-    const IndexRange ib = rc->GetBoundsI(IndexDomain::entire);
-    const IndexRange jb = rc->GetBoundsJ(IndexDomain::entire);
-    const IndexRange kb = rc->GetBoundsK(IndexDomain::entire);
+    const IndexRange ib = rc->GetBoundsI(IndexDomain::interior);
+    const IndexRange jb = rc->GetBoundsJ(IndexDomain::interior);
+    const IndexRange kb = rc->GetBoundsK(IndexDomain::interior);
     //printf("kel at (5,5) before cooling: %.16f\n", P(m_p.K_HOWES, 0, 54, 54));
     pmb->par_for("cool_electrons", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
@@ -483,18 +485,11 @@ TaskStatus ApplyElectronCooling(MeshBlockData<Real> *rc){
             G.coord_embed(0, j, i, Loci::center, Xembed);
             GReal r = Xembed[1];
 
-            if(i==68&&j==68){
-                printf("r at (64, 64): %.16f\n", r);
-                printf("alpha at (64, 64): %.16f\n", -1*pow(r,-1.5)*m/ut);
-                printf("ut at (64, 64): %.16f\n", ut);
-            }
-
             //m & dt defined above
 
             //update:
-            uel = uel*exp(-dt*0.5*pow(r,-1.5)*m/ut);
+            uel = uel*exp(-dt*0.5*pow(r,-1.5)*m/(ut));
             P(m_p.K_HOWES, k, j, i) = uel/pow(rho, game)*(game-1);
-
             /*This is for the flat space cooling test:
             double kel = P(m_p.K_HOWES, k, j, i);
             double rho = P(m_p.RHO, k, j, i);
@@ -510,29 +505,28 @@ TaskStatus ApplyElectronCooling(MeshBlockData<Real> *rc){
     Electrons::BlockPtoU(rc, IndexDomain::entire, false);
 }
 
-/* these are functions that are used to print stuff from the driver
+// these are functions that are used to print stuff from the driver
 TaskStatus FindKelCoolingMD(MeshData<Real> *rc){
-    //I call this at the end of the first task region
+    //I call this in the first task region
     PackIndexMap prims_map, cons_map;
     auto P = rc->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("Primitive")}, prims_map);
     const VarMap m_p(prims_map, false), m_u(cons_map, true);
     auto block = IndexRange{0, P.GetDim(5)-1};
-    printf("kel at (50,50) Mesh Data: %.16f\n", P(block.s, m_p.K_HOWES, 0, 54, 54));
+    printf("kel at outer ghost 1st task region: %.16f || %.16f || %.16f || %.16f \n", P(block.s, m_p.K_HOWES, 0, 0, 132), P(block.s, m_p.K_HOWES, 0, 0, 133), P(block.s, m_p.K_HOWES, 0, 0, 134), P(block.s, m_p.K_HOWES, 0, 0, 135));
     //printf("rho at (50,50) Mesh Data: %.16f\n", P(block.s, m_p.RHO, 0, 54, 54));
     //printf("ktot at (50,50) Mesh Data: %.16f\n", P(block.s, m_p.KTOT, 0, 54, 54));
     return TaskStatus::complete;
 }
 
 TaskStatus FindKelCoolingMBD(MeshBlockData<Real> *rc){
-    //I call this at the begining of the second task region
+    //I call this in the second task region
     PackIndexMap prims_map, cons_map;
     auto& P = rc->PackVariables({Metadata::GetUserFlag("Primitive")}, prims_map);
     const VarMap m_p(prims_map, false), m_u(cons_map, true);
-    printf("kel at (50,50) Mesh Block Data: %.16f\n", P(m_p.K_HOWES, 0, 54, 54));
+    printf("kel at outer ghost 2nd task region: %.16f || %.16f || %.16f || %.16f \n", P(m_p.K_HOWES, 132, 0, 0), P(m_p.K_HOWES, 133, 0, 0), P(m_p.K_HOWES, 134, 0, 0), P(m_p.K_HOWES, 135, 0, 0));
     //printf("rho at (50,50) Mesh Block Data: %.16f\n", P(m_p.RHO, 0, 54, 54));
     //printf("ktot at (50,50) Mesh Block Data: %.16f\n", P(m_p.KTOT, 0, 54, 54));
     return TaskStatus::complete;
 }
-*/
 
 } // namespace Electrons
