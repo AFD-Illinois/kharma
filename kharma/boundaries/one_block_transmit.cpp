@@ -97,10 +97,8 @@ void KBoundaries::TransmitSetTE(MeshBlockData<Real> *rc, VariablePack<Real> &q,
         const int Nk3p = (bi.ke - bi.ks + 1);
         const int Nk3p2 = Nk3p/2;
         const int ksp = bi.ks;
-        // Pivot element for corresponding face is one more than pivot for cells/other-faces
-        // X2 dir should be calculated exactly as if reflecting
-        const int jpivot = (binner) ? (corresponding_face ? b.je + 1 : b.je)
-                                    : (corresponding_face ? b.js - 1 : b.js);
+        // Calculate j just like for reflecting conditions
+        const int jpivot = (binner) ? b.je : b.js;
         // B3 component on X3 face should be inverted even if not marked "vector"
         // TODO honor SplitVector here rather than always inverting
         const bool do_face_invert = (el == F3);
