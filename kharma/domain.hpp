@@ -132,6 +132,28 @@ inline IndexRange3 GetRange(T data, IndexDomain domain, bool coarse)
 {
     return GetRange(data, domain, CC, 0, 0, coarse);
 }
+
+/**
+ * Special range to include domain faces when computing boundaries,
+ * as KHARMA's physical boundary conditions set these
+ */
+template<typename T>
+inline IndexRange3 GetBoundaryRange(T data, IndexDomain domain, TopologicalElement el=CC, bool coarse=false)
+{
+    using KBoundaries::BoundaryDirection;
+    using KBoundaries::BoundaryIsInner;
+    const int bdir = BoundaryDirection(domain);
+    if (el == FaceOf(bdir) ||
+        (el == E1 && (bdir == X2DIR || bdir == X3DIR)) ||
+        (el == E2 && (bdir == X1DIR || bdir == X3DIR)) ||
+        (el == E3 && (bdir == X1DIR || bdir == X2DIR))) {
+        const int binner = BoundaryIsInner(domain);
+        return GetRange(data, domain, el, (binner) ? 0 : -1, (binner) ? 1 : 0, coarse);
+    } else {
+        return GetRange(data, domain, el, 0, 0, coarse);
+    }
+}
+
 /**
  * Get zones which are inside the physical domain, i.e. set by computation or MPI halo sync,
  * not by problem boundary conditions.
