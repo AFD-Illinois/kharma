@@ -102,7 +102,7 @@ void KBoundaries::TransmitSetTE(MeshBlockData<Real> *rc, VariablePack<Real> &q,
         const int jpivot = (binner) ? (corresponding_face ? b.je + 1 : b.je)
                                     : (corresponding_face ? b.js - 1 : b.js);
         // B3 component on X3 face should be inverted even if not marked "vector"
-        // TODO currently this inverts everything on F3, probably not desirable
+        // TODO honor SplitVector here rather than always inverting
         const bool do_face_invert = (el == F3);
 
         pmb->par_for(

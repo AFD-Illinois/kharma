@@ -368,8 +368,7 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
     }
 
     // Correct Parthenon's reflecting conditions on the corresponding face
-    // TODO currently expects only cons.fB.  Make more general
-    // TODO just put it in Parthenon
+    // TODO honor SplitVector here, then move it all to Parthenon
     auto fpack = rc->PackVariables({Metadata::Face, Metadata::FillGhost});
     if (params.Get<bool>("reflect_face_vector_" + bname) && fpack.GetDim(4) > 0) {
         Flag("ReflectFace_"+bname);
