@@ -337,8 +337,23 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
     const auto bdir = BoundaryDirection(bface);
     const bool binner = BoundaryIsInner(bface);
 
+    // Always call through to the registered boundary function
+    Flag("Apply "+bname+" boundary: "+btype_name);
+    pkg->KBoundaries[bface](rc, coarse);
+    EndFlag();
+
+    // Then a bunch of common boundary "touchups"
+    // Nothing below is designed, nor necessary, for coarse buffers
+    if (coarse) {
+        EndFlag();
+        return;
+    }
+
     // Delegate EMF boundaries to the B_CT package
     // Only until per-variable boundaries available in Parthenon
+    // Warning: Even though the EMFs are sync'd separately,
+    // they still can sneak into "real" boundary exchanges,
+    // so we can't assume their presence means they are alone
     auto& emfpack = rc->PackVariables(std::vector<std::string>{"B_CT.emf"});
     if (emfpack.GetDim(4) > 0) {
         if (params.Get<bool>("zero_EMF_" + bname)) {
@@ -351,20 +366,6 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
             B_CT::AverageEMF(rc.get(), domain, emfpack, coarse);
             EndFlag();
         }
-        // No traditional boundaries needed for EMFs
-        return;
-    }
-
-    // Otherwise, call through to the registered boundary function
-    Flag("Apply "+bname+" boundary: "+btype_name);
-    pkg->KBoundaries[bface](rc, coarse);
-    EndFlag();
-
-    // Then a bunch of common boundary "touchups"
-    // Nothing below is designed, nor necessary, for coarse buffers
-    if (coarse) {
-        EndFlag();
-        return;
     }
 
     // Correct Parthenon's reflecting conditions on the corresponding face
