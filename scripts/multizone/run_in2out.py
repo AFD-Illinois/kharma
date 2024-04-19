@@ -4,6 +4,7 @@
 # See --help
 
 import os
+import sys
 import click
 import glob
 import subprocess
@@ -24,7 +25,8 @@ def format_args(args):
 
 def calc_runtime(r_out, r_b):
     """r/v where v=sqrt(v_ff**2+c_s**2)"""
-    return r_out/np.sqrt(1./r_out + 1./r_b)
+    #return r_out/np.sqrt(1./r_out + 1./r_b)
+    return np.power(min(r_out,r_b),3./2)
 
 def data_dir(n):
     """Data directory naming scheme"""
@@ -40,17 +42,17 @@ def data_dir(n):
 @click.option('--nx3_mb', default=32, help="1-Run phi block resolution")
 @click.option('--nzones', default=8, help="Total number of zones (annuli)")
 @click.option('--base', default=8, help="Exponent base for annulus sizes")
-@click.option('--nruns', default=300, help="Total number of runs to perform")
+@click.option('--nruns', default=3000, help="Total number of runs to perform")
 @click.option('--spin', default=0.0, help="BH spin")
 @click.option('--bz', default=0.0, help="B field Z component. Zero for no field")
-@click.option('--cfl', default=0.9, help="Courant condition fraction.  Defaults to 0.5 in B field")
 @click.option('--tlim', default=None, help="Enforce a specific tlim for every run (for testing)")
 @click.option('--nlim', default=-1, help="Consistent max number of steps for each run")
 @click.option('--r_b', default=1.e5, help="Bondi radius. None chooses based on nzones")
 @click.option('--jitter', default=0.0, help="Proportional jitter to apply to starting state. Default 10% w/B field")
 # Flags and options
+@click.option('--kharma_bin', default="kharma.cuda", help="Name (not path) of KHARMA binary to run")
 @click.option('--kharma_args', default="", help="Arguments for KHARMA run.sh")
-@click.option('--short_t_out', default=True, help="Use shorter outermost annulus")
+@click.option('--short_t_out', is_flag=True, help="Use shorter outermost annulus")
 @click.option('--restart', is_flag=True, help="Restart from most recent run parameters")
 @click.option('--parfile', default=None, help="Parameter filename")
 @click.option('--gizmo', is_flag=True, help="Start from GIZMO data")
@@ -80,10 +82,18 @@ def run_multizone(**kwargs):
     # 1. Loading last-started run when restarting
     # 2. Computing arguments from kwargs if beginning fresh
     if kwargs['restart']:
+        # Crude, but I need to know what was passed to override on restore
+        kwargs_save = {}
+        for arg in [a.replace("-","").split("=")[0] for a in sys.argv[1:] if "-" in a]:
+            kwargs_save[arg] = kwargs[arg]
         restart_file = open('restart.p', 'rb')
-        kwargs = pickle.load(restart_file)
+        kwargs = {**kwargs, **pickle.load(restart_file)}
         args = pickle.load(restart_file)
         restart_file.close()
+        for arg in kwargs_save.keys():
+            if 'nlim' not in arg: # can change nlim from previous run
+                kwargs[arg] = kwargs_save[arg]
+        args['parthenon/time/nlim'] = kwargs['nlim']
     else:
         # First run arguments
         base = kwargs['base']
@@ -105,10 +115,14 @@ def run_multizone(**kwargs):
 
         # bondi & vacuum parameters
         # TODO derive these from r_b or gizmo
-        if kwargs['nzones'] == 3:
+        if kwargs['nzones'] == 3 or kwargs['nzones'] == 6:
             kwargs['r_b'] = 256
             logrho = -4.13354231
             log_u_over_rho = -2.57960521
+        elif kwargs['nzones'] == 4:
+            kwargs['r_b'] = 256
+            logrho = -4.200592800419657
+            log_u_over_rho = -2.62430556
         elif kwargs['gizmo']:
             kwargs['r_b'] = 1e5
             logrho = -7.80243572
@@ -124,7 +138,7 @@ def run_multizone(**kwargs):
         # B field additions
         if kwargs['bz'] != 0.0:
             # Set a field to initialize with 
-            args['b_field/type'] = "vertical"
+            args['b_field/type'] = "r1s2" #"vertical"
             args['b_field/solver'] = "flux_ct"
             args['b_field/bz'] = kwargs['bz']
             # Compress coordinates to save time
@@ -133,17 +147,14 @@ def run_multizone(**kwargs):
             # Enable the floors
             args['floors/disable_floors'] = False
             # And modify a bunch of defaults
-            # Assume we will always want jitter if we have B
-            if kwargs['jitter'] == 0.0:
+            # Assume we will always want jitter if we have B unless a 2D problem
+            if kwargs['jitter'] == 0.0 and kwargs['nx3']>1 :
                 kwargs['jitter'] = 0.1
             # Lower the cfl condition in B field
-            kwargs['cfl'] = 0.5
-            # And limit runtime
-            kwargs['nlim'] = int(5e4)
+            args['GRMHD/cfl'] = 0.5
 
         # Parameters directly from defaults/cmd
         args['perturbation/u_jitter'] = kwargs['jitter']
-        args['GRMHD/cfl'] = kwargs['cfl']
         args['coordinates/a'] = kwargs['spin']
         args['coordinates/ext_g'] = kwargs['ext_g']
         args['bondi/use_gizmo'] = kwargs['gizmo']
@@ -178,7 +189,7 @@ def run_multizone(**kwargs):
                 runtime = calc_runtime(r_out, r_b)
             # B field runs use half this
             if kwargs['bz'] != 0.0:
-                runtime /= 2
+                runtime /= 10 # 2
         else:
             runtime = float(kwargs['tlim'])
         args['parthenon/time/tlim'] = kwargs['start_time'] + runtime
@@ -205,13 +216,18 @@ def run_multizone(**kwargs):
         ddir = data_dir(run_num)
         os.makedirs(ddir, exist_ok=True)
         fout = open(ddir+"/kharma.log", "w")
-        ret_obj = subprocess.run([kharma_dir+"/run.sh",] + ["-i", kwargs['parfile'], "-d", ddir] + format_args(args),
+        if kwargs['kharma_bin'] not in ["", "kharma.cuda"]:
+            kharma_bin_arg = ["-b", kwargs['kharma_bin']]
+        else:
+            kharma_bin_arg = []
+        ret_obj = subprocess.run([kharma_dir+"/run.sh"] + kharma_bin_arg +
+                      ["-i", kwargs['parfile'], "-d", ddir] + format_args(args),
                       stdout=fout, stderr=subprocess.STDOUT)
         fout.close()
 
         # Don't continue (& save restart data, etc) if KHARMA returned error
         if ret_obj.returncode != 0:
-            print("KHARMA returned error: {}.  Exiting.".format(ret_obj.retcode))
+            print("KHARMA returned error: {}. Exiting.".format(ret_obj.returncode))
             exit(-1)
 
         # Update parameters for the next pass
@@ -230,7 +246,8 @@ def update_args(run_num, kwargs, args):
     fname_dir = "{:05d}".format(run_num)
     fname=glob.glob(fname_dir+"/*final.rhdf")[0]
     # Get start_time, ncycle, dt from previous run
-    kwargs['start_time'] = pyharm.io.get_dump_time(fname)
+    start_time = pyharm.io.get_dump_time(fname)
+    kwargs['start_time'] = start_time
     d = pyharm.load_dump(fname)
     iteration  = d['iteration']
     last_r_out = d['r_out']
@@ -242,33 +259,54 @@ def update_args(run_num, kwargs, args):
     f.close()
 
     # Increment iteration count when we just finished the outermost zone
-    if run_num > 0 and run_num % (kwargs['nzones'] - 1) == 0:
+    outermost = False # about to simulate the outermost annulus
+    innermost = False # go back to innermost annulus
+    if run_num > 0 and int(np.log(last_r_in)/np.log(kwargs["base"])) == kwargs['nzones']-1:
         iteration += 1
+        innermost = True
+    if int(np.log(last_r_in)/np.log(kwargs['base'])) == kwargs['nzones']-2:
+        outermost = True
     args['resize_restart/iteration'] = iteration
 
     # Are we moving inward?
-    out_to_in=(-1)**(1+iteration) # if iteration odd, out_to_in=1, if even, out_to_in=-1
-    # if out_to_in > 0:
-    #   print("Moving inward:")
-    # else:
-    #   print("Moving outward:")
+    out_to_in=-1 # if iteration odd, out_to_in=1, if even, out_to_in=-1
 
     # Choose timestep and radii for the next run: smaller/larger as we step in/out
-    args['parthenon/time/dt_min'] = max(dt_last * kwargs['base']**(-3./2.*out_to_in) / 4, 1e-5)
-    if out_to_in > 0:
-        args['coordinates/r_out'] = last_r_out / kwargs['base']
-        args['coordinates/r_in'] = last_r_in / kwargs['base']
-    else:
-        args['coordinates/r_out'] = last_r_out * kwargs['base']
-        args['coordinates/r_in'] = last_r_in * kwargs['base']
+    if innermost:
+        fname_dir = "{:05d}".format(run_num-(kwargs['nzones']-2))
+        fname=glob.glob(fname_dir+"/*final.rhdf")[0]
 
-    # Get filename to fill in the rest that fname doesn't cover
-    if run_num + 1 < kwargs['nzones']:
-        fname_fill = "none"
-    else:
-        # TODO explain why this number is correct
-        fname_fill_dir = data_dir(2 * (iteration - 1) * (kwargs['nzones'] - 1) - (run_num + 1))
+        args['coordinates/r_out'] = np.power(kwargs['base'],2)
+        args['coordinates/r_in'] = np.power(kwargs['base'],0)
+        fname_fill_dir = data_dir(run_num - (kwargs['nzones']-1))
         fname_fill = glob.glob(fname_fill_dir+"/*final.rhdf")[0]
+
+        f = h5py.File(fname_fill, 'r')
+        args['parthenon/time/start_time'] = start_time
+        args['resize_restart/use_ti'] = False
+        args['parthenon/time/dt'] = f['Params'].attrs['Globals/dt_last']
+        f.close()
+    else:
+        args['resize_restart/use_ti'] = True
+        args['parthenon/time/dt'] = max(dt_last * kwargs['base']**(-3./2.*out_to_in) / 4, 1e-5)
+        if out_to_in > 0:
+            args['coordinates/r_out'] = last_r_out / kwargs['base']
+            args['coordinates/r_in'] = last_r_in / kwargs['base']
+        else:
+            args['coordinates/r_out'] = last_r_out * kwargs['base']
+            args['coordinates/r_in'] = last_r_in * kwargs['base']
+
+        # Get filename to fill in the rest that fname doesn't cover
+        if run_num + 1 < kwargs['nzones']:
+            fname_fill = "none"
+        else:
+            # TODO explain why this number is correct
+            #fname_fill_dir = data_dir(2 * (iteration - 1) * (kwargs['nzones'] - 1) - (run_num + 1))
+            if outermost:
+                fname_fill_dir = data_dir(run_num-(kwargs['nzones']-1))
+            else:
+                fname_fill_dir = data_dir(run_num-(kwargs['nzones']-2))
+            fname_fill = glob.glob(fname_fill_dir+"/*final.rhdf")[0]
     args['resize_restart/fname'] = fname
     args['resize_restart/fname_fill'] = fname_fill
 

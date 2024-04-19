@@ -299,7 +299,6 @@ KOKKOS_FORCEINLINE_FUNCTION void p_to_u_mhd(const GRCoordinates& G, const Global
 
 /**
  * Calculate components of magnetosonic velocity from primitive variables
- * This is only called in GetFlux, so we only provide a ScratchPad form
  */
 template<typename Local>
 KOKKOS_FORCEINLINE_FUNCTION void vchar(const GRCoordinates& G, const Local& P, const VarMap& m, const FourVectors& D,
@@ -317,7 +316,7 @@ KOKKOS_FORCEINLINE_FUNCTION void vchar(const GRCoordinates& G, const Local& P, c
         EMHD::set_parameters(G, P, m, emhd_params, gam, j, i, tau, chi_e, nu_e);
         
         // Find fast magnetosonic speed
-        const Real bsq = m::max(dot(D.bcon, D.bcov), SMALL);
+        const Real bsq = dot(D.bcon, D.bcov);
         const Real va2 = bsq / (bsq + ef);
 
         const Real ccond2 = (emhd_params.conduction)
@@ -332,14 +331,85 @@ KOKKOS_FORCEINLINE_FUNCTION void vchar(const GRCoordinates& G, const Local& P, c
         cms2 = cs2_emhd + va2 - cs2_emhd*va2;
     } else if (m.B1 >= 0) {
         // Find fast magnetosonic speed
-        const Real bsq = m::max(dot(D.bcon, D.bcov), SMALL);
+        const Real bsq = dot(D.bcon, D.bcov);
         const Real va2 = bsq / (bsq + ef);
 
         cms2 = cs2 + va2 - cs2 * va2;
     } else {
         cms2 = cs2;
     }
-    clip(cms2, SMALL, 1.);
+    //clip(cms2, SMALL, 1.);
+
+    // Require that speed of wave measured by observer q.ucon is cms2
+    Real A, B, C;
+    {
+        Real Bcov[GR_DIM] = {1., 0., 0., 0.};
+        Real Acov[GR_DIM] = {0}; Acov[dir] = 1.;
+
+        Real Acon[GR_DIM], Bcon[GR_DIM];
+        G.raise(Acov, Acon, k, j, i, loc);
+        G.raise(Bcov, Bcon, k, j, i, loc);
+
+        const Real Asq  = dot(Acon, Acov);
+        const Real Bsq  = dot(Bcon, Bcov);
+        const Real Au   = dot(Acov, D.ucon);
+        const Real Bu   = dot(Bcov, D.ucon);
+        const Real AB   = dot(Acon, Bcov);
+
+        A = Bu*Bu - (Bsq + Bu*Bu) * cms2;
+        B = 2. * (Au*Bu - (AB + Au*Bu) * cms2);
+        C = Au*Au - (Asq + Au*Au) * cms2;
+    }
+
+    Real discr = m::sqrt(m::max(B * B - 4. * A * C, 0.));
+
+    Real vp = -(-B + discr) / (2. * A);
+    Real vm = -(-B - discr) / (2. * A);
+
+    cmax = m::max(vp, vm);
+    cmin = m::min(vp, vm);
+}
+
+// This is expressly for updating cmin/max for FOFC zones
+// It's named differently because it already took k,j,i so we can't pull the overloading w/different signatures trick
+template<typename Global>
+KOKKOS_FORCEINLINE_FUNCTION void vchar_global(const GRCoordinates& G, const Global& P, const VarMap& m, const FourVectors& D,
+                                  const Real& gam, const EMHD::EMHD_parameters& emhd_params, 
+                                  const int& k, const int& j, const int& i, const Loci& loc, const int& dir,
+                                  Real& cmax, Real& cmin)
+{
+    // Find sound speed
+    const Real ef  = P(m.RHO, k, j, i) + gam * P(m.UU, k, j, i);
+    const Real cs2 = gam * (gam - 1) * P(m.UU, k, j, i) / ef;
+    Real cms2;
+    if (m.Q >= 0 || m.DP >= 0) {
+         // Get the EGRMHD parameters
+        Real tau, chi_e, nu_e;
+        EMHD::set_parameters(G, P, m, emhd_params, gam, k, j, i, tau, chi_e, nu_e);
+        
+        // Find fast magnetosonic speed
+        const Real bsq = dot(D.bcon, D.bcov);
+        const Real va2 = bsq / (bsq + ef);
+
+        const Real ccond2 = (emhd_params.conduction)
+            ? (gam - 1.) * emhd_params.conduction_alpha * cs2
+            : 0.0;
+        const Real cvis2 = (emhd_params.viscosity)
+            ? (4./3.) / (P(m.RHO, k, j, i) + (gam * P(m.UU, k, j, i)) ) * P(m.RHO, k, j, i) * emhd_params.viscosity_alpha * cs2
+            : 0.0;
+
+        const Real cs2_emhd = 0.5*(cs2 + ccond2 + m::sqrt(cs2*cs2 + ccond2*ccond2)) + cvis2;
+
+        cms2 = cs2_emhd + va2 - cs2_emhd*va2;
+    } else if (m.B1 >= 0) {
+        // Find fast magnetosonic speed
+        const Real bsq = dot(D.bcon, D.bcov);
+        const Real va2 = bsq / (bsq + ef);
+
+        cms2 = cs2 + va2 - cs2 * va2;
+    } else {
+        cms2 = cs2;
+    }
 
     // Require that speed of wave measured by observer q.ucon is cms2
     Real A, B, C;

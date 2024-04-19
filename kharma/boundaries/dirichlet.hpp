@@ -37,12 +37,15 @@
 
 namespace KBoundaries {
 
-void DirichletImpl(std::shared_ptr<MeshBlockData<Real>> &rc, BoundaryFace bface, bool coarse);
+// TODO(BSP) privatize probably
+void DirichletImpl(MeshBlockData<Real> *rc, BoundaryFace bface, bool coarse, bool set);
+void DirichletSetFromField(MeshBlockData<Real> *rc, VariablePack<Real> &q, VariablePack<Real> &bound,
+                                        BoundaryFace bface, bool coarse, bool set, bool do_face);
 
 template <BoundaryFace bface>
-void Dirichlet(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse)
+inline void Dirichlet(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse)
 {
-    DirichletImpl(rc, bface, coarse);
+    DirichletImpl(rc.get(), bface, coarse, false);
 }
 
 /**
@@ -51,6 +54,10 @@ void Dirichlet(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse)
 void FreezeDirichlet(std::shared_ptr<MeshData<Real>> &md);
 void FreezeDirichletBlock(MeshBlockData<Real> *rc);
 
-void SetDomainDirichlet(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse);
+inline void SetDomainDirichlet(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
+{
+    auto bface = KBoundaries::BoundaryFaceOf(domain);
+    DirichletImpl(rc, bface, coarse, true);
+}
 
 }

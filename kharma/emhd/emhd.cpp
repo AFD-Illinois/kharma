@@ -60,7 +60,8 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
 
     bool higher_order_terms  = pin->GetOrAddBoolean("emhd", "higher_order_terms", false);
     params.Add("higher_order_terms", higher_order_terms);
-    std::string closure_type = pin->GetOrAddString("emhd", "closure_type", "torus");
+    std::vector<std::string> allowed_closures = {"constant", "sound_speed", "soundspeed", "kappa_eta", "torus"};
+    std::string closure_type = pin->GetOrAddString("emhd", "closure_type", "torus", allowed_closures);
     params.Add("closure_type", closure_type);
 
     // Should the EMHD sector feedback onto the ideal MHD variables? The default is 'yes'.
@@ -97,8 +98,6 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
         emhd_params.type = ClosureType::kappa_eta;
     } else if (closure_type == "torus") {
         emhd_params.type = ClosureType::torus;
-    } else {
-        throw std::invalid_argument("Invalid Closure type: "+closure_type+". Use constant, sound_speed, or torus");
     }
     emhd_params.conduction       = conduction;
     emhd_params.viscosity        = viscosity;
@@ -110,7 +109,9 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     params.Add("emhd_params", emhd_params);
 
     // Slope reconstruction on faces. Always linear: default to MC unless we're using VL everywhere
-    if (packages->Get("Driver")->Param<KReconstruction::Type>("recon") == KReconstruction::Type::linear_vl) {
+    // TODO NOT USED until we template AddSource
+    if (pin->DoesParameterExist("emhd", "slope_recon") && pin->GetString("emhd", "slope_recon") == "linear_vl") {
+        //|| packages->Get("Flux")->Param<KReconstruction::Type>("recon") == KReconstruction::Type::linear_vl) {
         params.Add("slope_recon", KReconstruction::Type::linear_vl);
     } else {
         params.Add("slope_recon", KReconstruction::Type::linear_mc);
@@ -119,9 +120,10 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     // Apply limits on heat flux and pressure anisotropy from velocity space instabilities?
     // We would want this for the torus runs but not for the test problems. 
     // For eg: we know that this affects the viscous bondi problem
-    bool enable_emhd_limits = pin->GetOrAddBoolean("floors", "emhd_limits", false) ||
-                                pin->GetOrAddBoolean("emhd", "stability_limits", false);
-    // Only enable limits internally if we're actually doing EMHD
+    bool emhd_limits_default = false;
+    if (pin->DoesParameterExist("floors", "emhd_limits"))
+        emhd_limits_default = pin->GetBoolean("floors", "emhd_limits");
+    bool enable_emhd_limits = pin->GetOrAddBoolean("emhd", "stability_limits", emhd_limits_default);
     params.Add("enable_emhd_limits", enable_emhd_limits);
 
     // General options for primitive and conserved scalar variables in ImEx driver
@@ -165,7 +167,7 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
 
     // Callbacks
 
-    // UtoP function specifically for boundary sync (KHARMA must sync cons for AMR) and output
+    // UtoP function specifically for boundary sync and output
     pkg->BoundaryUtoP = EMHD::BlockUtoP;
     // If we wanted to apply the domian boundaries to primitive EMHD variables
     //pkg->DomainBoundaryPtoU = EMHD::BlockPtoU;
@@ -285,7 +287,7 @@ void InitEMHDVariables(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput 
     // Do we actually need anything here?
 }
 
-TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
+TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt, IndexDomain domain)
 {
     // Pointers
     auto pmesh = mdudt->GetMeshPointer();
@@ -312,9 +314,9 @@ TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt)
     int m_theta = temps_map["Theta"].first;
 
     // Get ranges
-    const IndexRange ib = mdudt->GetBoundsI(IndexDomain::interior);
-    const IndexRange jb = mdudt->GetBoundsJ(IndexDomain::interior);
-    const IndexRange kb = mdudt->GetBoundsK(IndexDomain::interior);
+    const IndexRange ib = mdudt->GetBoundsI(domain);
+    const IndexRange jb = mdudt->GetBoundsJ(domain);
+    const IndexRange kb = mdudt->GetBoundsK(domain);
     const IndexRange block = IndexRange{0, dUdt.GetDim(5) - 1};
     // 1-zone halo in nontrivial dimensions
     const IndexRange il = IndexRange{ib.s-1, ib.e+1};

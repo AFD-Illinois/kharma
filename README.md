@@ -41,6 +41,6 @@ KHARMA has some preliminary documentation for developers, hosted in its GitHub [
 ## Licenses
 KHARMA is made available under the BSD 3-clause license included in each file and in the file LICENSE at the root of this repository.
 
-This repository also carries a substantial portion of the [Kokkos Kernels](https://github.com/kokkos/kokkos-kernels), in the directory `kharma/implicit/kokkos-kernels-pivoted`, which is provided under the license included in that directory.
+This repository also carries a substantial portion of the [Kokkos Kernels](https://github.com/kokkos/kokkos-kernels), in the directory `external/kokkos-kernels`, which is provided under the license included in that directory.
 
 Submodules of this repository are subject to their own licenses.

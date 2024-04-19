@@ -14,6 +14,7 @@ nx1 = 1024
 x1min = 0.0
 x1max = 1.0
 
+
 nx2 = 1
 x2min = 0.0
 x2max = 1.0
@@ -51,10 +52,9 @@ solver = none
 <electrons>
 on = true
 constant = true
-gamma_e = 1.666667
+gamma_e = 1.333333
 fel_0 = 0.
 fel_constant = 0.5
-enforce_positive_dissipation = false
 limit_kel = false
 
 <noh>

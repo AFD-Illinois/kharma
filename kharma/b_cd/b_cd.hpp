@@ -70,7 +70,7 @@ void BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse=false);
 /**
  * Add the source term to dUdt, before it is applied to U
  */
-TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt);
+TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt, IndexDomain domain);
 
 /**
  * Take a maximum over the divB array, which is updated every step

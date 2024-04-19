@@ -39,6 +39,7 @@
 #include "flux_functions.hpp"
 #include "grmhd_functions.hpp"
 #include "pack.hpp"
+#include "reductions.hpp"
 #include "types.hpp"
 
 #include "b_ct.hpp"
@@ -57,7 +58,6 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
     bool spherical = pin->GetBoolean("coordinates", "spherical");
     // Global check inflow sets inner/outer X1 by default
     bool check_inflow_global = pin->GetOrAddBoolean("boundaries", "check_inflow", spherical);
-    // TODO TODO Support old option names check_inflow_inner, check_inflow_outer
 
     // Ensure fluxes through the zero-size face at the pole are zero
     bool zero_polar_flux = pin->GetOrAddBoolean("boundaries", "zero_polar_flux", spherical);
@@ -86,16 +86,21 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
     params.Add("fix_corner_inner", fix_corner);
     params.Add("fix_corner_outer", pin->GetOrAddBoolean("boundaries", "fix_corner_outer", false));
 
-    Metadata m_x1, m_x2, m_x3;
-    {
-        // We can't use GetVariablesByFlag yet, so ask the packages
-        // These flags get anything that needs a physical boundary during the run
-        using FC = Metadata::FlagCollection;
-        FC ghost_vars = FC({Metadata::FillGhost, Metadata::Conserved})
-                    + FC({Metadata::FillGhost, Metadata::GetUserFlag("Primitive")})
-                    - FC({Metadata::GetUserFlag("StartupOnly")});
-        int nvar = KHARMA::PackDimension(packages.get(), ghost_vars);
+    // We can't use GetVariablesByFlag yet, so ask the packages
+    // These flags get anything that needs a physical boundary during the run
+    using FC = Metadata::FlagCollection;
+    FC ghost_vars = FC({Metadata::FillGhost, Metadata::Conserved})
+                + FC({Metadata::FillGhost, Metadata::GetUserFlag("Primitive")})
+                - FC({Metadata::GetUserFlag("StartupOnly")});
+    int nvar = KHARMA::PackDimension(packages.get(), ghost_vars);
+    // Face-centered fields: some duplicate stuff, leaving it separate for now
+    FC ghost_vars_f = FC({Metadata::FillGhost, Metadata::Face})
+                - FC({Metadata::GetUserFlag("StartupOnly")});
+    int nvar_f = m::max(KHARMA::PackDimension(packages.get(), ghost_vars_f), 1);
 
+    // TODO encapsulate this
+    Metadata m_x1, m_x2, m_x3, m_x1_f, m_x2_f, m_x3_f;
+    {
         // We also don't know the mesh size, since it's not constructed.  We infer.
         const int ng = pin->GetInteger("parthenon/mesh", "nghost");
         const int nx1 = pin->GetInteger("parthenon/meshblock", "nx1");
@@ -109,10 +114,31 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
         std::vector<int> s_x1({ng, n2, n3, nvar});
         std::vector<int> s_x2({n1, ng, n3, nvar});
         std::vector<int> s_x3({n1, n2, ng, nvar});
-        // Dirichlet conditions must be restored when restarting!  Needs Metadata::Restart when this works!
-        m_x1 = Metadata({Metadata::Real, Metadata::Derived, Metadata::OneCopy}, s_x1);
-        m_x2 = Metadata({Metadata::Real, Metadata::Derived, Metadata::OneCopy}, s_x2);
-        m_x3 = Metadata({Metadata::Real, Metadata::Derived, Metadata::OneCopy}, s_x3);
+        // Dirichlet conditions must be restored when restarting!
+        m_x1 = Metadata({Metadata::Real, Metadata::Derived, Metadata::OneCopy, Metadata::Restart}, s_x1);
+        m_x2 = Metadata({Metadata::Real, Metadata::Derived, Metadata::OneCopy, Metadata::Restart}, s_x2);
+        m_x3 = Metadata({Metadata::Real, Metadata::Derived, Metadata::OneCopy, Metadata::Restart}, s_x3);
+
+        if (nvar_f > 0) {
+            // Face mesh sizes
+            const int ng_f = pin->GetInteger("parthenon/mesh", "nghost") + 1;
+            const int nx1 = pin->GetInteger("parthenon/meshblock", "nx1");
+            const int n1_f = (nx2 == 1) ? nx1 : nx1 + 2 * ng + 1;
+            const int nx2 = pin->GetInteger("parthenon/meshblock", "nx2");
+            const int n2_f = (nx2 == 1) ? nx2 : nx2 + 2 * ng + 1;
+            const int nx3 = pin->GetInteger("parthenon/meshblock", "nx3");
+            const int n3_f = (nx3 == 1) ? nx3 : nx3 + 2 * ng + 1;
+
+            // These are declared *backward* from how they will be indexed
+            std::vector<int> s_x1_f({ng_f, n2_f, n3_f, nvar_f});
+            std::vector<int> s_x2_f({n1_f, ng_f, n3_f, nvar_f});
+            std::vector<int> s_x3_f({n1_f, n2_f, ng_f, nvar_f});
+            // Note these are *NOT* face variables, they cannot be indexed by TopologicalElement.
+            // Instead, we make them a normal vector and use int(TE) % 3
+            m_x1_f = Metadata({Metadata::Real, Metadata::Derived, Metadata::OneCopy, Metadata::Restart}, s_x1_f);
+            m_x2_f = Metadata({Metadata::Real, Metadata::Derived, Metadata::OneCopy, Metadata::Restart}, s_x2_f);
+            m_x3_f = Metadata({Metadata::Real, Metadata::Derived, Metadata::OneCopy, Metadata::Restart}, s_x3_f);
+        }
     }
 
     // Set options for each boundary
@@ -122,6 +148,9 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
         const auto bname = BoundaryName(bface);
         const auto bdir = BoundaryDirection(bface);
         const auto binner = BoundaryIsInner(bface);
+        // Get the boundary type we specified in kharma
+        auto btype = pin->GetString("boundaries", bname);
+        params.Add(bname, btype);
 
         // OPTIONS FOR ANY BOUNDARY
 
@@ -139,10 +168,23 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
         bool outflow_EMHD = pin->GetOrAddBoolean("boundaries", "outflow_EMHD_" + bname, false);
         params.Add("outflow_EMHD_" + bname, outflow_EMHD);
 
-        // BOUNDARY TYPES
-        // Get the boundary type we specified in kharma
-        auto btype = pin->GetString("boundaries", bname);
-        params.Add(bname, btype);
+        // Invert X2 face values to reflect across polar boundary
+        bool invert_F2 = pin->GetOrAddBoolean("boundaries", "reflect_face_vector_" + bname, (btype == "reflecting"));
+        params.Add("reflect_face_vector_"+bname, invert_F2);
+        // If you'll have field loops exiting the domain, outflow conditions need to be cleaned so as not to
+        // introduce divergence to the first physical zone.
+        bool clean_face_B = pin->GetOrAddBoolean("boundaries", "clean_face_B_" + bname, (btype == "outflow"));
+        params.Add("clean_face_B_"+bname, clean_face_B);
+
+        // Special EMF averaging.  Probably slow but beneficial for transmitting boundaries
+        bool average_EMF = pin->GetOrAddBoolean("boundaries", "average_EMF_" + bname, (btype == "transmitting"));
+        params.Add("average_EMF_"+bname, average_EMF);
+        // Otherwise, always zero EMFs to prevent B field escaping the domain in polar/dirichlet bounds
+        bool zero_EMF = pin->GetOrAddBoolean("boundaries", "zero_EMF_" + bname, ((bdir == X2DIR && spherical)
+                                                                             || (btype == "dirichlet"))
+                                                                             && !average_EMF);
+        params.Add("zero_EMF_"+bname, zero_EMF);
+
 
         // String manip to get the Parthenon boundary name, e.g., "ox1_bc"
         auto bname_parthenon = bname.substr(0, 1) + "x" + bname.substr(7, 8) + "_bc";
@@ -158,6 +200,9 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
             if (btype == "dirichlet") {
                 // Dirichlet boundaries: allocate
                 pkg->AddField("Boundaries." + bname, (bdir == X1DIR) ? m_x1 : ((bdir == X2DIR) ? m_x2 : m_x3));
+                if (nvar_f > 0) {
+                    pkg->AddField("Boundaries.f." + bname, (bdir == X1DIR) ? m_x1_f : ((bdir == X2DIR) ? m_x2_f : m_x3_f));
+                }
                 switch (bface) {
                 case BoundaryFace::inner_x1:
                     pkg->KBoundaries[bface] = KBoundaries::Dirichlet<BoundaryFace::inner_x1>;
@@ -203,6 +248,35 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
                 default:
                     break;
                 }
+            } else if (btype == "transmitting") {
+                switch (bface) {
+                case BoundaryFace::inner_x1:
+                    pkg->KBoundaries[bface] = KBoundaries::OneBlockTransmit<BoundaryFace::inner_x1>;
+                    break;
+                case BoundaryFace::outer_x1:
+                    pkg->KBoundaries[bface] = KBoundaries::OneBlockTransmit<BoundaryFace::outer_x1>;
+                    break;
+                case BoundaryFace::inner_x2:
+                    pkg->KBoundaries[bface] = KBoundaries::OneBlockTransmit<BoundaryFace::inner_x2>;
+                    break;
+                case BoundaryFace::outer_x2:
+                    pkg->KBoundaries[bface] = KBoundaries::OneBlockTransmit<BoundaryFace::outer_x2>;
+                    break;
+                case BoundaryFace::inner_x3:
+                    pkg->KBoundaries[bface] = KBoundaries::OneBlockTransmit<BoundaryFace::inner_x3>;
+                    break;
+                case BoundaryFace::outer_x3:
+                    pkg->KBoundaries[bface] = KBoundaries::OneBlockTransmit<BoundaryFace::outer_x3>;
+                    break;
+                default:
+                    break;
+                }
+                if (pin->GetInteger("parthenon/mesh", "nx3") != pin->GetInteger("parthenon/meshblock", "nx3") ||
+                    pin->GetInteger("parthenon/mesh", "nx3") == 1)
+                    throw std::runtime_error("Transmitting polar boundary conditions require 3D with one block in x3!");
+                if (pin->GetString("coordinates", "transform") == "fmks" || pin->GetString("coordinates", "transform") == "funky")
+                    throw std::runtime_error("Transmitting polar boundary conditions require coordinates symmetric about theta=0!");
+                // TODO also check for wedge simulations x3<2pi
             } else if (btype == "outflow") {
                 switch (bface) {
                 case BoundaryFace::inner_x1:
@@ -263,65 +337,76 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
     const auto bdir = BoundaryDirection(bface);
     const bool binner = BoundaryIsInner(bface);
 
+    // Always call through to the registered boundary function
     Flag("Apply "+bname+" boundary: "+btype_name);
     pkg->KBoundaries[bface](rc, coarse);
     EndFlag();
 
+    // Then a bunch of common boundary "touchups"
     // Nothing below is designed, nor necessary, for coarse buffers
     if (coarse) {
         EndFlag();
         return;
     }
 
-    // If we're syncing EMFs and in spherical, explicitly zero polar faces
-    // Since we manipulate the j coord, we'd overstep coarse bufs
+    // Delegate EMF boundaries to the B_CT package
+    // Only until per-variable boundaries available in Parthenon
+    // Warning: Even though the EMFs are sync'd separately,
+    // they still can sneak into "real" boundary exchanges,
+    // so we can't assume their presence means they are alone
     auto& emfpack = rc->PackVariables(std::vector<std::string>{"B_CT.emf"});
-    if (bdir == X2DIR &&
-        pmb->coords.coords.is_spherical() &&
-        emfpack.GetDim(4) > 0) {
-        Flag("BoundaryEdge_"+bname);
-        for (TE el : {TE::E1, TE::E3}) {
-            int off = (binner) ? 1 : -1;
-            pmb->par_for_bndry(
-                "zero_EMF", IndexRange{0,0}, domain, el, coarse,
-                KOKKOS_LAMBDA (const int &v, const int &k, const int &j, const int &i) {
-                    emfpack(el, v, k, j + off, i) = 0;
-                }
-            );
+    if (emfpack.GetDim(4) > 0) {
+        if (params.Get<bool>("zero_EMF_" + bname)) {
+            Flag("ZeroEMF_"+bname);
+            B_CT::ZeroEMF(rc.get(), domain, emfpack, coarse);
+            EndFlag();
         }
-        EndFlag();
+        if (params.Get<bool>("average_EMF_" + bname)) {
+            Flag("AverageEMF_"+bname);
+            B_CT::AverageEMF(rc.get(), domain, emfpack, coarse);
+            EndFlag();
+        }
     }
 
-    // Replace reflecting face values at reflecting boundaries, Parthenon messes them up
+    // Correct Parthenon's reflecting conditions on the corresponding face
+    // TODO honor SplitVector here, then move it all to Parthenon
     auto fpack = rc->PackVariables({Metadata::Face, Metadata::FillGhost});
-    if (bdir == X2DIR &&
-        pmb->coords.coords.is_spherical() &&
-        fpack.GetDim(4) > 0) {
-        Flag("BoundaryFace_"+bname);
-        // Zero face fluxes
-        auto b = KDomain::GetRange(rc, domain, coarse);
-        // "domain" is the boundary here
-        auto jf = (binner) ? b.je + 1 : b.js;
+    if (params.Get<bool>("reflect_face_vector_" + bname) && fpack.GetDim(4) > 0) {
+        Flag("ReflectFace_"+bname);
+        const TopologicalElement face = FaceOf(bdir);
+        auto b = KDomain::GetBoundaryRange(rc, domain, face, coarse);
+        // Zero the last physical face, otherwise invert.
+        auto i_f = (binner) ? b.ie : b.is;
+        auto j_f = (binner) ? b.je : b.js;
+        auto k_f = (binner) ? b.ke : b.ks;
         pmb->par_for(
-            "zero_polar_" + bname, b.ks, b.ke, jf, jf, b.is, b.ie,
+            "reflect_face_vector_" + bname, b.ks, b.ke, b.js, b.je, b.is, b.ie,
             KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-                fpack(F2, 0, k, j, i) = 0.;
-            }
-        );
-        pmb->par_for_bndry(
-            "invert_F2_" + bname, IndexRange{0, fpack.GetDim(4)-1}, domain, F2, coarse,
-            KOKKOS_LAMBDA (const int &v, const int &k, const int &j, const int &i) {
-                fpack(F2, v, k, j, i) = -fpack(F2, v, k, jf - (j-jf), i);
+                const int kk = (bdir == 3) ? k_f - (k - k_f) : k;
+                const int jj = (bdir == 2) ? j_f - (j - j_f) : j;
+                const int ii = (bdir == 1) ? i_f - (i - i_f) : i;
+                fpack(face, 0, k, j, i) = ((bdir == 1 && i == i_f) ||
+                                           (bdir == 2 && j == j_f) ||
+                                           (bdir == 3 && k == k_f)) ? 0. : -fpack(face, 0, kk, jj, ii);
             }
         );
         EndFlag();
     }
 
-    // This will now be called in 2 places we might not expect,
+    // Correct orthogonal B field component to eliminate divergence in last rank
+    // and ghosts. Used for outflow conditions when field lines will exit domain
+    if (params.Get<bool>("clean_face_B_" + bname) && fpack.GetDim(4) > 0) {
+        Flag("CleanFaceB_"+bname);
+        B_CT::DestructiveBoundaryClean(rc.get(), domain, fpack, coarse);
+        EndFlag();
+    }
+
+    // This function is called in 2 places we might not expect,
     // where we still may want to control the physical bounds:
     // 1. Syncing only the EMF during runs with CT
     // 2. Syncing boundaries while solving for B field
-    // this generally guards against anytime we can't do the below
+    // but, anything beyond here is really only for the expected case,
+    // with all the fluid variables
     PackIndexMap prims_map;
     if (GRMHD::PackMHDPrims(rc.get(), prims_map).GetDim(4) == 0) {
         EndFlag();
@@ -337,8 +422,7 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
     }
 
     // Allow specifically dP to outflow in otherwise Dirichlet conditions
-    // Only used for viscous_bondi problem
-    // TODO make this more general?
+    // Only used for viscous_bondi problem, should be moved in there somehow
     if (params.Get<bool>("outflow_EMHD_" + bname)) {
         Flag("OutflowEMHD_"+bname);
         auto EMHDg = rc->PackVariables({Metadata::GetUserFlag("EMHDVar"), Metadata::FillGhost});
@@ -369,6 +453,8 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
     * with outflow conditions based on the updated ghost cells.
     */
     if (bdir == X2DIR) {
+        // TODO test more carefully whether this is still needed for face-centered B...
+
         // If we're on the interior edge, re-apply that edge for our block by calling
         // exactly the same function that Parthenon does.  This ensures we're applying
         // the same thing, just emulating calling it after X2.
@@ -388,7 +474,7 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
         }
     }
 
-    bool sync_prims = rc->GetBlockPointer()->packages.Get("Driver")->Param<bool>("sync_prims");
+    bool sync_prims = pmb->packages.Get("Driver")->Param<bool>("sync_prims");
     // There are two modes of operation here:
     if (sync_prims) {
         // 1. Exchange/prolongate/restrict PRIMITIVE variables: (ImEx driver)
@@ -396,14 +482,14 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
         //    Explicitly run UtoP on B field, then PtoU on everything
         // TODO there should be a set of B field wrappers that dispatch this
         auto pkgs = pmb->packages.AllPackages();
-        if (pkgs.count("B_FluxCT")) {
-            B_FluxCT::BlockUtoP(rc.get(), domain, coarse);
-        } else if (pkgs.count("B_CT")) {
+        if (pkgs.count("B_CT")) {
             B_CT::BlockUtoP(rc.get(), domain, coarse);
+        } else {
+            B_FluxCT::BlockUtoP(rc.get(), domain, coarse);
         }
         Flux::BlockPtoU(rc.get(), domain, coarse);
     } else {
-        // 2. Exchange/prolongate/restrict CONSERVED variables: (KHARMA driver, maybe ImEx+AMR)
+        // 2. Exchange/prolongate/restrict CONSERVED variables: (KHARMA driver)
         //    Conserved variables are marked FillGhost, plus FLUID PRIMITIVES.
         if (!params.Get<bool>("domain_bounds_on_conserved")) {
             // To apply primitive boundaries to GRMHD, we run PtoU on that ONLY,
@@ -517,7 +603,7 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
                 // ...and if this face of the block corresponds to a global boundary...
                 if (pmb->boundary_flag[bface] == BoundaryFlag::user) {
                     pmb->par_for(
-                        "zero_flux_" + bname, 0, F.GetDim(4) - 1, kb.s, kb.e, jb.s, jb.s, ib.s, ib.e,
+                        "zero_flux_" + bname, 0, F.GetDim(4) - 1, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
                         KOKKOS_LAMBDA(const int &p, const int &k, const int &j, const int &i) {
                             F.flux(bdir, p, k, j, i) = 0.;
                         }
