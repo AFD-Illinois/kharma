@@ -91,6 +91,10 @@ std::shared_ptr<KHARMAPackage> KHARMADriver::Initialize(ParameterInput *pin, std
     // but which should not be evolved (or more importantly, sync'd) during main stepping
     Metadata::AddUserFlag("StartupOnly");
 
+    // This is a flag Parthenon should have eventually, but we'll prototype in KHARMA
+    // Indicate a 1-element face-centered field is split components of a vector
+    Metadata::AddUserFlag("SplitVector");
+
     // Synchronize primitive variables unless we're using the KHARMA driver that specifically doesn't
     // This includes for AMR w/ImEx driver
     // Note the "conserved" B field is always sync'd.  The "primitive" version only differs by sqrt(-g)
