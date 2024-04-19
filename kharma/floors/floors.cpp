@@ -45,7 +45,7 @@
 
 int Floors::CountFFlags(MeshData<Real> *md)
 {
-    return Reductions::CountFlags(md, "fflag", FFlag::flag_names, IndexDomain::interior, true)[0];
+    return Reductions::CountFlags(md, "flags.floors", FFlag::flag_names, IndexDomain::interior, true)[0];
 }
 
 std::shared_ptr<KHARMAPackage> Floors::Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages)
@@ -103,10 +103,10 @@ std::shared_ptr<KHARMAPackage> Floors::Initialize(ParameterInput *pin, std::shar
 
     // Flag for which floor conditions were violated.  Used for diagnostics
     // TODO(BSP) Should switch these to "Integer" fields when Parthenon supports it
-    pkg->AddField("fflag", m);
+    pkg->AddField("flags.floors", m);
     // When not using UtoP, we still need a "dummy" copy of pflag to write the post-flooring flag to
     m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy, Metadata::Overridable});
-    pkg->AddField("pflag", m);
+    pkg->AddField("flags.inverter", m);
 
     // TODO(BSP) THIS IS THE ONLY MeshApplyFloors.  Any others will NOT BE CALLED.
     // Use BlockApplyFloors in your packages or fix Packages::MeshApplyFloors
@@ -193,8 +193,8 @@ TaskStatus Floors::DetermineGRMHDFloors(MeshData<Real> *md, IndexDomain domain, 
     auto& P = md->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("Primitive")}, prims_map);
     const VarMap m_p(prims_map, false);
 
-    auto fflag = md->PackVariables(std::vector<std::string>{"fflag"});
-    auto pflag = md->PackVariables(std::vector<std::string>{"pflag"});
+    auto fflag = md->PackVariables(std::vector<std::string>{"flags.floors"});
+    auto pflag = md->PackVariables(std::vector<std::string>{"flags.inverter"});
     PackIndexMap floors_map;
     auto floor_vals = md->PackVariables(std::vector<std::string>{"Floors.rho_floor", "Floors.u_floor"}, floors_map);
     const int rhofi = floors_map["Floors.rho_floor"].first;
@@ -214,7 +214,7 @@ TaskStatus Floors::DetermineGRMHDFloors(MeshData<Real> *md, IndexDomain domain, 
     );
 
     // TODO(BSP) if we can somehow guarantee one call/rank we can start the reduction here
-    //Reductions::StartFlagReduce(md, "fflag", FFlag::flag_names, IndexDomain::interior, true, 0);
+    //Reductions::StartFlagReduce(md, "flags.floors", FFlag::flag_names, IndexDomain::interior, true, 0);
 
     return TaskStatus::complete;
 }
@@ -248,9 +248,9 @@ TaskStatus Floors::PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
 
     // Debugging/diagnostic info about floor flags
     if (flag_verbose > 0) {
-        Reductions::StartFlagReduce(md, "fflag", FFlag::flag_names, IndexDomain::interior, true, 0);
+        Reductions::StartFlagReduce(md, "flags.floors", FFlag::flag_names, IndexDomain::interior, true, 0);
         // Debugging/diagnostic info about floor and inversion flags
-        Reductions::CheckFlagReduceAndPrintHits(md, "fflag", FFlag::flag_names, IndexDomain::interior, true, 0);
+        Reductions::CheckFlagReduceAndPrintHits(md, "flags.floors", FFlag::flag_names, IndexDomain::interior, true, 0);
     }
 
     // Anything else (energy conservation? Added material stats?)

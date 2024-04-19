@@ -91,11 +91,11 @@ std::shared_ptr<KHARMAPackage> Inverter::Initialize(ParameterInput *pin, std::sh
     } else {
         m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
     }
-    pkg->AddField("pflag", m);
+    pkg->AddField("flags.inverter", m);
 
     // When not using floors, we need to declare fflag for ourselves
     m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy, Metadata::Overridable});
-    pkg->AddField("fflag", m);
+    pkg->AddField("flags.floors", m);
 
     // We exist basically to do this
     pkg->BlockUtoP = Inverter::BlockUtoP;
@@ -121,8 +121,8 @@ inline void BlockPerformInversion(MeshBlockData<Real> *rc, IndexDomain domain, b
     auto P = GRMHD::PackHDPrims(rc, prims_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
 
-    auto fflag = rc->PackVariables(std::vector<std::string>{"fflag"});
-    auto pflag = rc->PackVariables(std::vector<std::string>{"pflag"});
+    auto fflag = rc->PackVariables(std::vector<std::string>{"flags.floors"});
+    auto pflag = rc->PackVariables(std::vector<std::string>{"flags.inverter"});
 
     if (U.GetDim(4) == 0 || pflag.GetDim(4) == 0)
         return;
@@ -172,7 +172,7 @@ void Inverter::BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coars
         break;
     }
     // This is dangerous since there are many blocks/packs and we need one reduction. For later.
-    //Reductions::StartFlagReduce(md, "pflag", Inverter::status_names, IndexDomain::interior, false, 1);
+    //Reductions::StartFlagReduce(md, "flags.inverter", Inverter::status_names, IndexDomain::interior, false, 1);
 }
 
 TaskStatus Inverter::PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
@@ -187,14 +187,14 @@ TaskStatus Inverter::PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
     // TODO grab the total and die on too many
     if (flag_verbose >= 1) {
         // TODO this should move into UtoP when everything goes MeshData
-        Reductions::StartFlagReduce(md, "pflag", Inverter::status_names, IndexDomain::interior, false, 1);
-        Reductions::CheckFlagReduceAndPrintHits(md, "pflag", Inverter::status_names, IndexDomain::interior, false, 1);
+        Reductions::StartFlagReduce(md, "flags.inverter", Inverter::status_names, IndexDomain::interior, false, 1);
+        Reductions::CheckFlagReduceAndPrintHits(md, "flags.inverter", Inverter::status_names, IndexDomain::interior, false, 1);
 
         // If we're the only floors, print those too
         if (!pmesh->packages.AllPackages().count("Floors")) {
-            Reductions::StartFlagReduce(md, "fflag", Floors::FFlag::flag_names, IndexDomain::interior, true, 0);
+            Reductions::StartFlagReduce(md, "flags.floors", Floors::FFlag::flag_names, IndexDomain::interior, true, 0);
             // Debugging/diagnostic info about floors
-            Reductions::CheckFlagReduceAndPrintHits(md, "fflag", Floors::FFlag::flag_names, IndexDomain::interior, true, 0);
+            Reductions::CheckFlagReduceAndPrintHits(md, "flags.floors", Floors::FFlag::flag_names, IndexDomain::interior, true, 0);
         }
     }
 

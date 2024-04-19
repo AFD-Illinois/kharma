@@ -144,7 +144,7 @@ inline void ApplyEMHDLimits(MeshBlockData<Real> *mbd, IndexDomain domain)
 
     const auto& G = pmb->coords;
 
-    GridScalar eflag = mbd->Get("eflag").data;
+    GridScalar eflag = mbd->Get("flags.emhd").data;
 
     const EMHD::EMHD_parameters& emhd_params = EMHD::GetEMHDParameters(packages);
 

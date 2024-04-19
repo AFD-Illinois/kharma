@@ -262,6 +262,8 @@ TaskCollection KHARMADriver::MakeDefaultTaskCollection(BlockList_t &blocks, int 
                                           md_sub_step_init.get(), md_sub_step_final.get(), stage == 1); // bool is generate_grf
         }
 
+        // End-of-step functions.  Generally, updates to derived/
+
         // Make sure *all* conserved vars are synchronized at step end
         auto t_ptou = tl.AddTask(t_heat_electrons, Flux::MeshPtoU, md_sub_step_final.get(), IndexDomain::entire, false);
 

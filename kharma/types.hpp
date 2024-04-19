@@ -128,6 +128,8 @@ class VarMap {
         int8_t KTOT, K_CONSTANT, K_HOWES, K_KAWAZURA, K_WERNER, K_ROWAN, K_SHARMA;
         // Implicit-solver variables: constraint damping, EGRMHD
         int8_t PSI, Q, DP;
+        // Force-free variables: FF-specific velocity and momentum
+        int8_t UUFF, U1FF, U2FF, U3FF;
         // Total struct size ~20 bytes, < 1 vector of 4 doubles
 
         VarMap(parthenon::PackIndexMap& name_map, bool is_cons)
@@ -155,6 +157,9 @@ class VarMap {
                 // Extended MHD
                 Q = name_map["cons.q"].first;
                 DP = name_map["cons.dP"].first;
+                // FF
+                UUFF = name_map["cons.ff.upar"].first;
+                U1FF = name_map["cons.ff.uvec"].first;
             } else {
                 // HD
                 RHO = name_map["prims.rho"].first;
@@ -178,6 +183,9 @@ class VarMap {
                 // Extended MHD
                 Q = name_map["prims.q"].first;
                 DP = name_map["prims.dP"].first;
+                // FF
+                UUFF = name_map["prims.ff.upar"].first;
+                U1FF = name_map["prims.ff.uvec"].first;
             }
             if (U1 >= 0) {
                 U2 = U1 + 1;
@@ -185,6 +193,13 @@ class VarMap {
             } else {
                 U2 = -1;
                 U3 = -1;
+            }
+            if (U1FF >= 0) {
+                U2FF = U1FF + 1;
+                U3FF = U1FF + 2;
+            } else {
+                U2FF = -1;
+                U3FF = -1;
             }
             if (B1 >= 0) {
                 B2 = B1 + 1;

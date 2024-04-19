@@ -318,7 +318,7 @@ TaskID KHARMADriver::AddFOFC(TaskID& t_start, TaskList& tl, MeshData<Real> *md,
     auto t_mark_fofc = tl.AddTask(t_mark_floors, Flux::MarkFOFC, guess);
     // Sync with neighbor blocks.  This seems to ameliorate an increasing divB on X1 boundaries in GR,
     // but it should be able to be eliminated
-    auto &md_fofc = pmesh->mesh_data.AddShallow("FOFC", std::vector<std::string>{"fofcflag"}); // TODO this gets weird if we partition
+    auto &md_fofc = pmesh->mesh_data.AddShallow("FOFC", std::vector<std::string>{"flags.fofc"}); // TODO this gets weird if we partition
     auto t_sync_fofc = KHARMADriver::AddBoundarySync(t_mark_fofc, tl, md_fofc);
     // Finally, replace any fluxes bordering marked zones with donor-cell/LLF versions
     auto t_fofc = tl.AddTask(t_sync_fofc, Flux::FOFC, md, guess);

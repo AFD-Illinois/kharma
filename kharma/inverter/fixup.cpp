@@ -60,7 +60,7 @@ TaskStatus Inverter::FixUtoP(MeshBlockData<Real> *rc)
     // Only fixup the core 5 prims TODO build by flag, HD + anything implicit
     auto P = GRMHD::PackHDPrims(rc);
 
-    GridScalar pflag = rc->Get("pflag").data;
+    GridScalar pflag = rc->Get("flags.inverter").data;
 
     const auto& pars = pmb->packages.Get("GRMHD")->AllParams();
     const Real gam = pars.Get<Real>("gamma");
@@ -132,7 +132,7 @@ TaskStatus Inverter::FixUtoP(MeshBlockData<Real> *rc)
     const int nvar = P.GetDim(4);
 
     // Get floor flag
-    GridScalar fflag = rc->Get("fflag").data;
+    GridScalar fflag = rc->Get("flags.floors").data;
 
     pmb->par_for("fix_U_to_P_floors", b.ks, b.ke, b.js, b.je, b.is, b.ie,
         KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {

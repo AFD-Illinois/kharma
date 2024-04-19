@@ -131,6 +131,7 @@ KOKKOS_INLINE_FUNCTION Real lorentz_calc(const GRCoordinates& G, const Local& P,
 
     return m::sqrt(1. + qsq);
 }
+// TODO lorentz_calc from ucon direct rather than prims?
 
 /**
  * Get a row of the MHD stress-energy tensor with first index up, second index down.
