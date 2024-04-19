@@ -97,14 +97,14 @@ TaskStatus InitializeBondi(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterIn
     if (outer_dirichlet || inner_dirichlet) {
         printf("setting bondi boundaries exterior... \n");
         SetBondi<IndexDomain::entire>(rc); // TODO iterate & set any bounds specifically?
-        if(do_electrons) SetElectronBondi<IndexDomain::entire>(rc);
+        //if(do_electrons) SetElectronBondi<IndexDomain::entire>(rc);
         printf("set bondi bounderies entire \n");
     } else {
         // Generally, we only set the interior domain, not the ghost zones.
         // This tests that PostInitialize will correctly fill all ghosts
         printf("setting bondi boundaries interior... \n");
         SetBondi<IndexDomain::interior>(rc);
-        if(do_electrons) SetElectronBondi<IndexDomain::interior>(rc);
+        //if(do_electrons) SetElectronBondi<IndexDomain::interior>(rc);
         printf("set bondi bounderies interior \n");
     }
 
@@ -116,11 +116,15 @@ TaskStatus InitializeBondi(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterIn
     if (pin->GetOrAddBoolean("bondi", "set_outer_bound", !outer_dirichlet)) {
         pin->SetString("boundaries", "outer_x1", "bondi");
         bound_pkg->KBoundaries[BoundaryFace::outer_x1] = SetBondi<IndexDomain::outer_x1>;
+        //SetElectronBondi<IndexDomain::outer_x1>(rc);
+        printf("redoing the outer boundary");
     }
     // Option to set the inner boundary too.  Ruins convergence
     if (pin->GetOrAddBoolean("bondi", "set_inner_bound", false)) {
         pin->SetString("boundaries", "inner_x1", "bondi");
-        bound_pkg->KBoundaries[BoundaryFace::inner_x1] = SetBondi<IndexDomain::inner_x1>;//I don't think I need the electron stuff here
+        bound_pkg->KBoundaries[BoundaryFace::inner_x1] = SetBondi<IndexDomain::inner_x1>;
+        //SetElectronBondi<IndexDomain::inner_x1>(rc);//I don't think I need the electron stuff here
+        printf("redoing the inner boundary\n");
     }
 
     // Apply floors to initialize the any part of the domain we didn't
@@ -157,7 +161,7 @@ TaskStatus SetBondiImpl(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain do
     const Real fel0 = pmb->packages.Get("Electrons")->Param<Real>("fel_0");
     const Real game = pmb->packages.Get("Electrons")->Param<Real>("gamma_e");
 
-
+    if(do_electrons) SetElectronBondiImpl(rc, domain);
     const EMHD::EMHD_parameters& emhd_params = EMHD::GetEMHDParameters(pmb->packages);
 
     // Just the X1 right boundary
@@ -275,9 +279,14 @@ TaskStatus SetElectronBondiImpl(std::shared_ptr<MeshBlockData<Real>>& rc, IndexD
     //const std::string input = pin->GetOrAddString("bondi", "input", "ODE");//I don't know why this line is important
 
     // Bounds of the domain
-    IndexRange ib = pmb->cellbounds.GetBoundsI(domain);
-    IndexRange jb = pmb->cellbounds.GetBoundsJ(domain);
-    IndexRange kb = pmb->cellbounds.GetBoundsK(domain);
+    IndexRange ib = pmb->cellbounds.GetBoundsI(IndexDomain::entire);
+    IndexRange jb = pmb->cellbounds.GetBoundsJ(IndexDomain::entire);
+    IndexRange kb = pmb->cellbounds.GetBoundsK(IndexDomain::entire);
+    IndexRange ib_actual = pmb->cellbounds.GetBoundsI(domain);
+    IndexRange jb_actual = pmb->cellbounds.GetBoundsJ(domain);
+    IndexRange kb_actual = pmb->cellbounds.GetBoundsK(domain);
+    printf("ib_actual.s %d:\n", ib_actual.s);
+    printf("ib_actual.e %d:\n", ib_actual.e);
 
     // Load file names into strings
     int res = pmb->cellbounds.GetBoundsI(IndexDomain::entire).e - 7;
@@ -311,28 +320,14 @@ TaskStatus SetElectronBondiImpl(std::shared_ptr<MeshBlockData<Real>>& rc, IndexD
                 G.coord(k, j, i, Loci::center, Xnative);
                 G.coord_embed(k, j, i, Loci::center, Xembed);
                 // initialize primitives that are read from .txt files
-                kel_host(k, j, i)   = kel_temp;
-                printf("resetting electron entropy, i=%d, kel=%.16f\n", i, kel_temp);
-            }
-        }
-    }
-    /*for (int i_temp = ib.s; i_temp <= ib.e; i_temp++) {
-        fscanf(fp_kel, "%lf", &(kel_temp));
-        if(i_temp == i){
-            for (int j = jb.s; j <= jb.e; j++) {
-                for (int k = kb.s; k <= kb.e; k++) {
-
-                    GReal Xnative[GR_DIM], Xembed[GR_DIM]; 
-                    G.coord(k, j, i, Loci::center, Xnative);
-                    G.coord_embed(k, j, i, Loci::center, Xembed);
-
-                    // initialize primitives that are read from .txt files
+                
+                if (i>=ib_actual.s && i<=ib_actual.e && j>=jb_actual.s && j<=jb_actual.e && k>=kb_actual.s && k<=kb_actual.e) {
                     kel_host(k, j, i)   = kel_temp;
-
+                    printf("resetting electron entropy, i=%d, kel=%.16f\n", i, kel_temp);
                 }
             }
         }
-    }*/
+    }
     // disassociate file pointer
     fclose(fp_kel);
 

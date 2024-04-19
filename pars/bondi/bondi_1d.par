@@ -62,8 +62,8 @@ gamma_max = 10
 <boundaries>
 # We'll be adding material, and that's okay
 check_inflow_outer_x1 = false
-inner_x1 = outflow
-outer_x1 = dirichlet
+#inner_x1 = outflow
+#outer_x1 = dirichlet
 
 <electrons>
 on = true
@@ -101,6 +101,7 @@ reconstruction = linear_mc
 file_type = hdf5
 dt = 5.0
 single_precision_output = false
+ghost_zones = true
 # Fields not present are silently ignored
 variables = prims.rho, prims.u, prims.uvec, prims.B, prims.Kel_Howes, pflag, &
             coords.Xnative, coords.Xsph, coords.gcon, coords.gcov, coords.gdet, coords.lapse, coords.conn
