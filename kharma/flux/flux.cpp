@@ -197,6 +197,11 @@ std::shared_ptr<KHARMAPackage> Flux::Initialize(ParameterInput *pin, std::shared
         bool use_source_term = pin->GetOrAddBoolean("fofc", "use_source_term", false);
         params.Add("fofc_use_source_term", use_source_term);
 
+        bool do_last_polar = pin->GetOrAddBoolean("fofc", "last_polar_cell", false);
+        params.Add("fofc_at_pole", do_last_polar);
+        const GReal eh_buffer = pin->GetOrAddReal("fofc", "eh_buffer", 0.1);
+        params.Add("fofc_eh_buffer", eh_buffer);
+
         if (packages->AllPackages().count("B_CT")) {
             // Use consistent B for FOFC (see above)
             // It is mildly inadvisable to disable this
