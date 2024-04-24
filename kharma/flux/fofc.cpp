@@ -57,7 +57,7 @@ TaskStatus Flux::MarkFOFC(MeshData<Real> *guess)
     const auto& pars = pmb0->packages.Get("Flux")->AllParams();
     const bool spherical = pmb0->coords.coords.is_spherical();
     const GReal r_eh = pmb0->coords.coords.get_horizon();
-    const bool do_last_polar = pars.Get<bool>("fofc_at_pole");
+    const int polar_cells = pars.Get<int>("fofc_polar_cells");
     const GReal eh_buffer = pars.Get<GReal>("fofc_eh_buffer");
 
     // Pre-mark cells which will need fluxes reduced.
@@ -79,7 +79,7 @@ TaskStatus Flux::MarkFOFC(MeshData<Real> *guess)
         }
     );
 
-    if (spherical && do_last_polar) {
+    if (spherical && polar_cells > 0) {
         for (int i_block = 0; i_block < guess->NumBlocks(); i_block++) {
             auto &rc = guess->GetBlockData(i_block);
             auto pmb = rc->GetBlockPointer();
@@ -89,19 +89,21 @@ TaskStatus Flux::MarkFOFC(MeshData<Real> *guess)
                 auto lfofcflag = rc->PackVariables(std::vector<std::string>{"fofcflag"});
                 if (is_inner_x2) {
                     const IndexRange3 b = KDomain::GetRange(guess, IndexDomain::inner_x2);
-                    int jpivot = b.je + 1;
-                    pmb0->par_for("fofc_mark_inner_x2", b.ks, b.ke, b.is, b.ie,
-                        KOKKOS_LAMBDA (const int &k, const int &i) {
-                            lfofcflag(0, k, jpivot, i) = 1;
+                    int jstart = b.je + 1;
+                    int jend = jstart + polar_cells - 1;
+                    pmb0->par_for("fofc_mark_inner_x2", b.ks, b.ke, jstart, jend, b.is, b.ie,
+                        KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+                            lfofcflag(0, k, j, i) = 1;
                         }
                     );
                 }
                 if (is_outer_x2) {
                     const IndexRange3 b = KDomain::GetRange(guess, IndexDomain::outer_x2);
-                    int jpivot = b.js - 1;
-                    pmb0->par_for("fofc_mark_outer_x2", b.ks, b.ke, b.is, b.ie,
-                        KOKKOS_LAMBDA (const int &k, const int &i) {
-                            lfofcflag(0, k, jpivot, i) = 1;
+                    int jend = b.js - 1;
+                    int jstart = jend - polar_cells + 1;
+                    pmb0->par_for("fofc_mark_outer_x2", b.ks, b.ke, jstart, jend, b.is, b.ie,
+                        KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+                            lfofcflag(0, k, j, i) = 1;
                         }
                     );
                 }

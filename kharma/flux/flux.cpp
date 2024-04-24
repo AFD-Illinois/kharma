@@ -197,8 +197,8 @@ std::shared_ptr<KHARMAPackage> Flux::Initialize(ParameterInput *pin, std::shared
         bool use_source_term = pin->GetOrAddBoolean("fofc", "use_source_term", false);
         params.Add("fofc_use_source_term", use_source_term);
 
-        bool do_last_polar = pin->GetOrAddBoolean("fofc", "last_polar_cell", false);
-        params.Add("fofc_at_pole", do_last_polar);
+        int fofc_polar_cells = pin->GetOrAddInteger("fofc", "polar_cells", 0);
+        params.Add("fofc_polar_cells", fofc_polar_cells);
         const GReal eh_buffer = pin->GetOrAddReal("fofc", "eh_buffer", 0.1);
         params.Add("fofc_eh_buffer", eh_buffer);
 
