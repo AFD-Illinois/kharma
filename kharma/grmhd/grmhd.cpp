@@ -118,12 +118,6 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     params.Add("refine_tol", refine_tol);
     Real derefine_tol = pin->GetOrAddReal("GRMHD", "derefine_tol", 0.05);
     params.Add("derefine_tol", derefine_tol);
-    
-    // internal SMR :Added by Hyerin (03/07/24)
-    bool ismr_poles = pin->GetOrAddBoolean("GRMHD", "ismr_poles", false);
-    params.Add("ismr_poles", ismr_poles);
-    uint ismr_nlevels = (uint) pin->GetOrAddInteger("GRMHD", "ismr_nlevels", 1);
-    params.Add("ismr_nlevels", ismr_nlevels);
 
     // =================================== FIELDS ===================================
 
@@ -174,16 +168,29 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     m = Metadata(flags_cons);
     pkg->AddField("cons.rho", m);
     pkg->AddField("cons.u", m);
-    pkg->AddField("ismr_rho_avg", m);
-    pkg->AddField("ismr_u_avg", m);
     auto flags_cons_vec(flags_cons);
     flags_cons_vec.push_back(Metadata::Vector);
     m = Metadata(flags_cons_vec, s_vector);
     pkg->AddField("cons.uvec", m);
-    pkg->AddField("ismr_uvec_avg", m);
 
     // No magnetic fields here. KHARMA should operate fine in GRHD without them,
     // so they are allocated only by B field packages.
+
+    // INTERNAL SMR
+    // TODO own package
+    // internal SMR :Added by Hyerin (03/07/24)
+    bool ismr_poles = pin->GetOrAddBoolean("GRMHD", "ismr_poles", false);
+    params.Add("ismr_poles", ismr_poles);
+    if (ismr_poles) {
+        uint ismr_nlevels = (uint) pin->GetOrAddInteger("GRMHD", "ismr_nlevels", 1);
+        params.Add("ismr_nlevels", ismr_nlevels);
+
+        // ISMR caches: not evolved, immediately copied to fluid state after averaging
+        m = Metadata({Metadata::Real, Metadata::Face, Metadata::Derived, Metadata::FillGhost});
+        pkg->AddField("ismr_rho_avg", m);
+        pkg->AddField("ismr_u_avg", m);
+        pkg->AddField("ismr_uvec_avg", m);
+    }
 
     // A KHARMAPackage also contains quite a few "callbacks," or functions called at
     // specific points in a step if the package is loaded.

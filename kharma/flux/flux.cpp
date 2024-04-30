@@ -83,7 +83,12 @@ std::shared_ptr<KHARMAPackage> Flux::Initialize(ParameterInput *pin, std::shared
         throw std::runtime_error("Lowered reconstructions can only be enabled with weno5!");
 
     int stencil = 0;
-    if (recon == "donor_cell") {
+    if (pin->DoesParameterExist("GRMHD", "ismr_poles") && pin->GetBoolean("GRMHD", "ismr_poles")) {
+        // Override for ismr
+        params.Add("recon", KReconstruction::Type::weno5_ismr);
+        pin->SetString("flux", "reconstruction", "weno5_ismr");
+        stencil = 5;
+    } else if (recon == "donor_cell") {
         params.Add("recon", KReconstruction::Type::donor_cell);
         stencil = 1;
     } else if (recon == "donor_cell_c") {

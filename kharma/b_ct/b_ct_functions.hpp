@@ -101,7 +101,7 @@ KOKKOS_INLINE_FUNCTION void edge_curl(const GRCoordinates& G, const GridVector& 
 }
 
 template<TE el, int NDIM>
-KOKKOS_INLINE_FUNCTION void EdgeCurl(MeshBlockData<Real> *rc, const GridVector& A,
+inline void EdgeCurl(MeshBlockData<Real> *rc, const GridVector& A,
                                      const VariablePack<Real>& B_U, IndexDomain domain)
 {
     auto pmb = rc->GetBlockPointer();

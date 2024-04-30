@@ -382,9 +382,9 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
         pmb->par_for(
             "reflect_face_vector_" + bname, b.ks, b.ke, b.js, b.je, b.is, b.ie,
             KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-                if (bdir == X1DIR) fpack(el, 0, k, j, i) = ((i == i_f) ? 0 : -fpack(el, 0, k, j, i_f - (i - i_f)));
-                if (bdir == X2DIR) fpack(el, 0, k, j, i) = ((j == j_f) ? 0 : -fpack(el, 0, k, j_f - (j - j_f), i));
-                if (bdir == X3DIR) fpack(el, 0, k, j, i) = ((k == k_f) ? 0 : -fpack(el, 0, k_f - (k - k_f), j, i));
+                if (bdir == X1DIR) fpack(face, 0, k, j, i) = ((i == i_f) ? 0 : -fpack(face, 0, k, j, i_f - (i - i_f)));
+                if (bdir == X2DIR) fpack(face, 0, k, j, i) = ((j == j_f) ? 0 : -fpack(face, 0, k, j_f - (j - j_f), i));
+                if (bdir == X3DIR) fpack(face, 0, k, j, i) = ((k == k_f) ? 0 : -fpack(face, 0, k_f - (k - k_f), j, i));
             }
         );
         EndFlag();

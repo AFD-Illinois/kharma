@@ -163,8 +163,12 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
             // We template on reconstruction type to avoid a big switch statement here.
             // Instead, a version of GetFlux() is generated separately for each reconstruction/direction pair.
             // See reconstruction.hpp for all the implementations.
-            if (ismr_poles) KReconstruction::ReconstructRow<Recon, dir>(member, P_all(bl), k, j, b.is, b.ie, Pl_s, Pr_s, ismr_nlevels, ng);
-            else KReconstruction::ReconstructRow<Recon, dir>(member, P_all(bl), k, j, b.is, b.ie, Pl_s, Pr_s);
+            // Except internal SMR.  That's potentially its own whole group of schemes
+            if (ismr_poles) {
+                KReconstruction::ReconstructRowIsmr<Recon, dir>(member, P_all(bl), k, j, b.is, b.ie, Pl_s, Pr_s, ismr_nlevels, ng);
+            } else {
+                KReconstruction::ReconstructRow<Recon, dir>(member, P_all(bl), k, j, b.is, b.ie, Pl_s, Pr_s);
+            }
 
             // Sync all threads in the team so that scratch memory is consistent
             member.team_barrier();

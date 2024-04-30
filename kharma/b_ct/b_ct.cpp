@@ -1,25 +1,25 @@
-/* 
+/*
  *  File: b_ct.cpp
- *  
+ *
  *  BSD 3-Clause License
- *  
+ *
  *  Copyright (c) 2020, AFD Group at UIUC
  *  All rights reserved.
- *  
+ *
  *  Redistribution and use in source and binary forms, with or without
  *  modification, are permitted provided that the following conditions are met:
- *  
+ *
  *  1. Redistributions of source code must retain the above copyright notice, this
  *     list of conditions and the following disclaimer.
- *  
+ *
  *  2. Redistributions in binary form must reproduce the above copyright notice,
  *     this list of conditions and the following disclaimer in the documentation
  *     and/or other materials provided with the distribution.
- *  
+ *
  *  3. Neither the name of the copyright holder nor the names of its
  *     contributors may be used to endorse or promote products derived from
  *     this software without specific prior written permission.
- *  
+ *
  *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
  *  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  *  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -125,7 +125,10 @@ std::shared_ptr<KHARMAPackage> B_CT::Initialize(ParameterInput *pin, std::shared
         pkg->AddField("B_CT.cemf", m);
     }
 
+    // INTERNAL SMR
+    // TODO own package, gate on enabling ismr
     // Hyerin (04/04/24) averaged B fields needed for ismr
+    // ISMR cache: not evolved, immediately copied to fluid state after averaging
     m = Metadata({Metadata::Real, Metadata::Face, Metadata::Derived, Metadata::FillGhost});
     pkg->AddField("ismr_fB_avg", m);
 
@@ -653,6 +656,7 @@ TaskStatus B_CT::PrintGlobalMaxDivB(MeshData<Real> *md, bool kill_on_large_divb)
         // Print on rank zero
         if (MPIRank0() && print) {
             printf("Max DivB: %g\n", divb_max); // someday I'll learn stream options
+            std::cout << std::flush; // or how to flush stdout C-style
         }
         if (kill_on_large_divb) {
             if (divb_max > pmb0->packages.Get("B_CT")->Param<Real>("kill_on_divb_over"))
@@ -717,7 +721,7 @@ TaskStatus B_CT::DerefinePoles(MeshData<Real> *md, uint nlevels)
     // HYERIN (01/17/24) this routine is not general yet and only applies to polar boundaries for now.
     //const IndexRange block = IndexRange{0, B_U.GetDim(5)-1};
     auto pmesh = md->GetMeshPointer();
-    
+
     // Figure out indices
     IndexRange3 bCC, bF1, bF2, bF3;
     int j_f, offset, point_out, jps, jp_now;
@@ -744,7 +748,7 @@ TaskStatus B_CT::DerefinePoles(MeshData<Real> *md, uint nlevels)
                 // indices
                 bCC = KDomain::GetRange(rc, IndexDomain::interior, CC);
                 bF1 = KDomain::GetRange(rc, domain, F1, ng, -ng);
-                bF2 = KDomain::GetRange(rc, domain, F2, (binner) ? 0 : -1, (binner) ? 1 : 0, false); 
+                bF2 = KDomain::GetRange(rc, domain, F2, (binner) ? 0 : -1, (binner) ? 1 : 0, false);
                 bF3 = KDomain::GetRange(rc, domain, F3, ng, -ng);
                 j_f = (binner) ? bF2.je : bF2.js; // last physical face
                 jps = (binner) ? j_f + (nlevels - 1) : j_f - (nlevels - 1); // start of the lowest level of derefinement
@@ -763,10 +767,10 @@ TaskStatus B_CT::DerefinePoles(MeshData<Real> *md, uint nlevels)
                         j_c = j + ((binner) ? 0 : -1); // cell center
                         k_fine = (k - ng) % coarse_cell_len; // this fine cell's k-index within the coarse cell
                         k_start = k - k_fine; // starting k-index of the coarse cell
-                        
+
                         // average over fine cells within the coarse cell we're in
                         avg = 0.;
-                        for (ktemp = 0; ktemp < coarse_cell_len; ++ktemp) 
+                        for (ktemp = 0; ktemp < coarse_cell_len; ++ktemp)
                             avg += B_U(F1, 0, k_start + ktemp, j_c, i) * G.Volume<F1>(k_start + ktemp, j_c, i);
                         avg /= coarse_cell_len;
 
@@ -784,7 +788,7 @@ TaskStatus B_CT::DerefinePoles(MeshData<Real> *md, uint nlevels)
                         coarse_cell_len = m::pow(2, ((binner) ? jps - j : j - jps) + 1);
                         k_fine = (k - ng) % coarse_cell_len; // fine cell's k index within the coarse cell
                         k_start = k - k_fine; // starting k-index of the coarse cell
-                                
+
                         if (j == j_f) { // The fine cells have 0 fluxes through the physical-ghost boundaries.
                             B_avg(F2, 0, k, j, i) = 0.;
                         } else { // average the fine cells
@@ -792,7 +796,7 @@ TaskStatus B_CT::DerefinePoles(MeshData<Real> *md, uint nlevels)
                             for (ktemp = 0; ktemp < coarse_cell_len; ++ktemp)
                                 avg += B_U(F2, 0, k_start + ktemp, j, i) * G.Volume<F2>(k_start + ktemp, j, i);
                             avg /= coarse_cell_len;
-                            
+
                             B_avg(F2, 0, k, j, i) = avg;
                         }
                     }
@@ -803,7 +807,7 @@ TaskStatus B_CT::DerefinePoles(MeshData<Real> *md, uint nlevels)
                         int j_c, coarse_cell_len, c_half, ktemp, k_fine, k_start, k_half, k_end, current_lv;
                         Real B_start, B_center, B_end;
                         //const auto& G = B_U.GetCoords(bl);
-                        
+
                         current_lv = ((binner) ? jps - j : j - jps); // the current level of derefinement at given j
                         c_half = m::pow(2, current_lv); // half of the coarse cell's length
                         coarse_cell_len = 2 * c_half;
@@ -812,13 +816,13 @@ TaskStatus B_CT::DerefinePoles(MeshData<Real> *md, uint nlevels)
                         k_start = k - k_fine; // starting k-index of the coarse cell
                         k_half = k_start + c_half;
                         k_end  = k_start + coarse_cell_len; // end k-index of the coarse cell
-                        
+
                         if ((k - ng) % coarse_cell_len == 0) // at the faces of the coarse cells. Don't modify them.
                             B_avg(F3, 0, k, j_c, i) = B_U(F3, 0, k, j_c, i) * G.Volume<F3>(k, j_c, i);
                         else {
                             // F3: The internal faces will take care of the divB=0. The two faces of the coarse cell will remain unchanged.
                             //// First calculate the very central internal face. In other words, deal with the highest level internal face first.
-                            //// Sum of F2 fluxes in the left and right half of the coarse cell each. 
+                            //// Sum of F2 fluxes in the left and right half of the coarse cell each.
                             Real c_left_v = 0., c_right_v = 0.;
                             for (int ktemp = 0; ktemp < c_half; ++ktemp) {
                                 c_left_v  += B_U(F2, 0, k_half - 1 - ktemp, j + offset, i) * G.Volume<F2>(k_half - 1 - ktemp, j + offset, i);
@@ -827,7 +831,7 @@ TaskStatus B_CT::DerefinePoles(MeshData<Real> *md, uint nlevels)
                             B_start = B_U(F3, 0, k_start, j_c, i) * G.Volume<F3>(k_start, j_c, i);
                             B_end   = B_U(F3, 0, k_end,   j_c, i) * G.Volume<F3>(k_end,   j_c, i);
                             B_center = (B_start + B_end + point_out * (c_right_v - c_left_v)) / 2.;
-                            
+
                             if (k == k_half) { // if at the center, then store the calculated value.
                                 B_avg(F3, 0, k, j_c, i) = B_center;
                             } else if (k < k_half) { // interpolate between B_start and B_center
@@ -844,26 +848,26 @@ TaskStatus B_CT::DerefinePoles(MeshData<Real> *md, uint nlevels)
                         int j_c, coarse_cell_len, ktemp, k_fine, k_start;
                         Real avg;
                         //const auto& G = B_U.GetCoords(bl);
-                        
+
                         coarse_cell_len = m::pow(2, ((binner) ? jps - j : j - jps) + 1);
                         j_c = j + ((binner) ? 0 : -1); // cell center
                         k_fine = (k - ng) % coarse_cell_len; // this fine cell's k-index within the coarse cell
                         k_start = k - k_fine; // starting k-index of the coarse cell
-                        
+
                         // rho
                         avg = 0.;
                         for (ktemp = 0; ktemp < coarse_cell_len; ++ktemp)
                             avg += rho_U(0, k_start + ktemp, j_c, i);
                         avg /= coarse_cell_len;
                         rho_avg(0, k, j_c, i) = avg;
-                        
+
                         // u
                         avg = 0.;
                         for (ktemp = 0; ktemp < coarse_cell_len; ++ktemp)
                             avg += u_U(0, k_start + ktemp, j_c, i);
                         avg /= coarse_cell_len;
                         u_avg(0, k, j_c, i) = avg;
-                        
+
                         // uvec
                         VLOOP {
                             avg = 0.;
@@ -874,13 +878,13 @@ TaskStatus B_CT::DerefinePoles(MeshData<Real> *md, uint nlevels)
                         }
                     }
                 );
-                
+
                 // F1 write
                 pmb->par_for("B_CT_derefine_poles_F1", bCC.ks, bCC.ke, j_p.s, j_p.e, bF1.is, bF1.ie,
                     KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
                         //const auto& G = B_U.GetCoords(bl);
                         int j_c = j + ((binner) ? 0 : -1); // cell center
-                        
+
                         B_U(F1, 0, k, j_c, i) = B_avg(F1, 0, k, j_c, i) / G.Volume<F1>(k, j_c, i);
                     }
                 );
@@ -888,7 +892,7 @@ TaskStatus B_CT::DerefinePoles(MeshData<Real> *md, uint nlevels)
                 pmb->par_for("B_CT_derefine_poles_F2", bCC.ks, bCC.ke, j_p.s, j_p.e, bCC.is, bCC.ie,
                     KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
                         //const auto& G = B_U.GetCoords(bl);
-                        
+
                         B_U(F2, 0, k, j, i) = B_avg(F2, 0, k, j, i) / G.Volume<F2>(k, j, i);
                     }
                 );
@@ -897,7 +901,7 @@ TaskStatus B_CT::DerefinePoles(MeshData<Real> *md, uint nlevels)
                     KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
                         //const auto& G = B_U.GetCoords(bl);
                         int j_c = j + ((binner) ? 0 : -1); // cell center
-                        
+
                         B_U(F3, 0, k, j_c, i) = B_avg(F3, 0, k, j_c, i) / G.Volume<F3>(k, j_c, i);
                     }
                 );
@@ -906,7 +910,7 @@ TaskStatus B_CT::DerefinePoles(MeshData<Real> *md, uint nlevels)
                     KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
                         //const auto& G = B_U.GetCoords(bl);
                         int j_c = j + ((binner) ? 0 : -1); // cell center
-                        
+
                         rho_U(0, k, j_c, i) = rho_avg(0, k, j_c, i);
                         u_U(0, k, j_c, i) = u_avg(0, k, j_c, i);
                         VLOOP uvec_U(v, k, j_c, i) = uvec_avg(v, k, j_c, i);
