@@ -90,6 +90,10 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
     const bool reconstruction_fallback = pars.Get<bool>("reconstruction_fallback");
 
     const Real gam = mhd_pars.Get<Real>("gamma");
+    // Added by Hyerin (03/07/24)
+    bool ismr_poles = mhd_pars.Get<bool>("ismr_poles");
+    uint ismr_nlevels = mhd_pars.Get<uint>("ismr_nlevels");
+    int ng = Globals::nghost;
 
     // Check whether we're using constraint-damping
     // (which requires that a variable be propagated at ctop_max)
@@ -159,7 +163,8 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
             // We template on reconstruction type to avoid a big switch statement here.
             // Instead, a version of GetFlux() is generated separately for each reconstruction/direction pair.
             // See reconstruction.hpp for all the implementations.
-            KReconstruction::ReconstructRow<Recon, dir>(member, P_all(bl), k, j, b.is, b.ie, Pl_s, Pr_s);
+            if (ismr_poles) KReconstruction::ReconstructRow<Recon, dir>(member, P_all(bl), k, j, b.is, b.ie, Pl_s, Pr_s, ismr_nlevels, ng);
+            else KReconstruction::ReconstructRow<Recon, dir>(member, P_all(bl), k, j, b.is, b.ie, Pl_s, Pr_s);
 
             // Sync all threads in the team so that scratch memory is consistent
             member.team_barrier();

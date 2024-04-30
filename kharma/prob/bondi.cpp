@@ -54,13 +54,8 @@ TaskStatus InitializeBondi(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterIn
     // By default, stay away from the outer BL coordinate singularity
     const Real a = pin->GetReal("coordinates", "a");
     const Real rin_bondi_default = 1 + m::sqrt(1 - a*a) + 0.1;
-    // Prefer parameter bondi/r_in_bondi vs bondi/r_shell
     Real rin_bondi_tmp;
-    if (pin->DoesParameterExist("bondi", "r_in_bondi")) {
-        rin_bondi_tmp = pin->GetReal("bondi", "r_in_bondi");
-    } else {
-        rin_bondi_tmp = pin->GetOrAddReal("bondi", "r_shell", rin_bondi_default);
-    }
+    rin_bondi_tmp = pin->GetOrAddReal("bondi", "r_in_bondi", rin_bondi_default);
     const Real rin_bondi = rin_bondi_tmp;
 
     const bool fill_interior = pin->GetOrAddBoolean("bondi", "fill_interior", false);

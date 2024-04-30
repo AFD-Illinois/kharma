@@ -12,7 +12,7 @@ if [[ $HOST == *".delta.internal.ncsa.edu" || $HOST == *".delta.ncsa.illinois.ed
 then
   HOST_ARCH=ZEN3
   DEVICE_ARCH=AMPERE80
-  MPI_EXE=mpirun
+  MPI_EXE=srun #mpirun #
   NPROC=64
 
   module purge
@@ -21,9 +21,11 @@ then
   if [[ $ARGS == *"cuda"* ]]
   then
     # GPU Compile
-    # 4-device MPI w/mapping, should play nice with different numbers
-    MPI_NUM_PROCS=${MPI_NUM_PROCS:-4}
-    MPI_EXTRA_ARGS="--map-by ppr:$MPI_NUM_PROCS:node:pe=16"
+    if [[ "$ARGS" == *"4gpu"* ]]; then
+      # 4-device MPI w/mapping, should play nice with different numbers
+      MPI_NUM_PROCS=${MPI_NUM_PROCS:-4}
+      MPI_EXTRA_ARGS="--map-by ppr:$MPI_NUM_PROCS:node:pe=16"
+    fi
 
     if [[ "$ARGS" == *"hostside"* ]]; then
       # Device-side buffers are broken on some Nvidia machines

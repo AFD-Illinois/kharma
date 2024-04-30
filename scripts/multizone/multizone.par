@@ -3,6 +3,7 @@
 
 <parthenon/job>
 problem_id = bondi
+archive_parameters = true
 
 <parthenon/mesh>
 refinement = none
@@ -34,7 +35,6 @@ dt_min = 0.00001
 # w/B, cfl=>0.5
 cfl = 0.9
 gamma = 1.666667
-reconstruction = linear_vl
 add_jcon = false
 
 <bondi>
@@ -60,7 +60,7 @@ nzone = 7
 # disable by default -- enabling B field overrides
 disable_floors = true
 # This caused issues?
-# frame = drift
+frame = drift
 # Usual geometric floors, no beta floor
 rho_min_geom = 1e-6
 u_min_geom = 1e-8
@@ -83,6 +83,7 @@ check_inflow_inner_x1 = false
 
 <perturbation>
 # overridden
+jitter_above_rho = 0 # always apply perturbation when u_jitter > 0
 u_jitter=0
 
 <b_field>
@@ -91,16 +92,20 @@ u_jitter=0
 type = none
 solver = none
 fix_flux_x1 = true
+kill_on_divb_over = 0.1
+
+<b_cleanup>
+output_before_cleanup = true
 
 <debug>
 # Be very clear about errors
 verbose = 1
 flag_verbose = 2
 extra_checks = 1
-archive_parameters = 1
 
 <driver>
 type = harm
+reconstruction = linear_mc
 two_sync = true
 
 <implicit>
@@ -110,8 +115,8 @@ max_nonlinear_iter = 3
 <parthenon/output0>
 file_type = hdf5
 dt = 528968040
-single_precision_output = false
-variables = prims.rho, prims.u, prims.uvec, prims.B, fflag, pflag, divB
+single_precision_output = true
+variables = prims.rho, prims.u, prims.uvec, prims.B, cons.fB, fflag, pflag, divB
 ghost_zones = true
 
 <parthenon/output1>

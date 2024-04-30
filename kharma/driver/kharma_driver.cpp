@@ -265,6 +265,10 @@ TaskID KHARMADriver::AddFluxCalculations(TaskID& t_start, TaskList& tl, MeshData
         t_calculate_flux1 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::mp5, X1DIR>, md);
         t_calculate_flux2 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::mp5, X2DIR>, md);
         t_calculate_flux3 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::mp5, X3DIR>, md);
+    case RType::weno5_ismr:
+        t_calculate_flux1 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::weno5_ismr, X1DIR>, md);
+        t_calculate_flux2 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::weno5_ismr, X2DIR>, md);
+        t_calculate_flux3 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::weno5_ismr, X3DIR>, md);
         break;
     default:
         std::cerr << "Reconstruction type not supported!  Main supported reconstructions:" << std::endl

@@ -46,7 +46,7 @@ namespace KReconstruction
 constexpr Real EPS = 1.e-26;
 
 // Enum for all supported reconstruction types.
-enum class Type{donor_cell=0, donor_cell_c, linear_mc, linear_vl, ppm, ppmx, mp5, weno5, weno5_lower_edges, weno5_lower_poles, weno5_linear};
+enum class Type{donor_cell=0, donor_cell_c, linear_mc, linear_vl, ppm, ppmx, mp5, weno5, weno5_lower_edges, weno5_lower_poles, weno5_linear, weno5_ismr};
 
 // Component functions
 KOKKOS_FORCEINLINE_FUNCTION Real mc(const Real dm, const Real dp)
@@ -742,7 +742,7 @@ KOKKOS_INLINE_FUNCTION void ReconstructRow<Type::weno5_lower_poles, X2DIR>(parth
     // This prioiritizes using the same fluxes on faces rather than for cells.
     // Neither is transparently wrong (afaict) but this feels nicer
     constexpr int o = 6; //5;
-    if (j > o || j < P.GetDim(2) - o) {
+    if (j > o && j < P.GetDim(2) - o) {
         ReconstructX2l<Type::weno5>(member, k, j - 1, is_l, ie_l, P, ql);
         ReconstructX2r<Type::weno5>(member, k, j, is_l, ie_l, P, qr);
     } else {
@@ -757,6 +757,46 @@ KOKKOS_INLINE_FUNCTION void ReconstructRow<Type::weno5_lower_poles, X3DIR>(parth
                                         ScratchPad2D<Real> ql, ScratchPad2D<Real> qr)
 {
     ReconstructRow<Type::weno5, X3DIR>(member, P, k, j, is_l, ie_l, ql, qr);
+}
+
+// ISMR VERSION: take nlevels, ng to inform stride
+template <Type Recon, int dir>
+KOKKOS_INLINE_FUNCTION void ReconstructRow(parthenon::team_mbr_t& member, const VariablePack<Real> &P,
+                                        const int& k, const int& j, const int& is_l, const int& ie_l, 
+                                        ScratchPad2D<Real> ql, ScratchPad2D<Real> qr, uint ismr_nlevels, int ng) {}
+// WENO5 for ismr:
+// Linear X3 reconstruction near X2 boundaries
+template <>
+KOKKOS_INLINE_FUNCTION void ReconstructRow<Type::weno5_ismr, X1DIR>(parthenon::team_mbr_t& member,
+                                        const VariablePack<Real> &P,
+                                        const int& k, const int& j, const int& is_l, const int& ie_l, 
+                                        ScratchPad2D<Real> ql, ScratchPad2D<Real> qr, uint ismr_nlevels, int ng)
+{
+    reconstruct<Type::weno5, X1DIR>(member, P, k, j, is_l, ie_l, ql, qr);
+}
+template <>
+KOKKOS_INLINE_FUNCTION void ReconstructRow<Type::weno5_ismr, X2DIR>(parthenon::team_mbr_t& member,
+                                        const VariablePack<Real> &P,
+                                        const int& k, const int& j, const int& is_l, const int& ie_l, 
+                                        ScratchPad2D<Real> ql, ScratchPad2D<Real> qr, uint ismr_nlevels, int ng)
+{
+    reconstruct<Type::weno5, X2DIR>(member, P, k, j, is_l, ie_l, ql, qr);
+}
+template <>
+KOKKOS_INLINE_FUNCTION void ReconstructRow<Type::weno5_ismr, X3DIR>(parthenon::team_mbr_t& member,
+                                        const VariablePack<Real> &P,
+                                        const int& k, const int& j, const int& is_l, const int& ie_l, 
+                                        ScratchPad2D<Real> ql, ScratchPad2D<Real> qr, uint ismr_nlevels, int ng)
+{
+    if ((j > ng - 1 - ismr_nlevels && j < ng + ismr_nlevels) || 
+        (j > P.GetDim(2) - 1 - ng - ismr_nlevels && j < P.GetDim(2) - ng + ismr_nlevels)) {
+        ScratchPad2D<Real> q_u(member.team_scratch(1), P.GetDim(4), P.GetDim(1));
+        KReconstruction::PiecewiseLinearX3(member, k - 1, j, is_l, ie_l, P, ql, q_u);
+        KReconstruction::PiecewiseLinearX3(member, k, j, is_l, ie_l, P, q_u, qr);
+    } else {
+        KReconstruction::WENO5X3l(member, k - 1, j, is_l, ie_l, P, ql);
+        KReconstruction::WENO5X3r(member, k, j, is_l, ie_l, P, qr);
+    }
 }
 
 /**

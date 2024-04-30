@@ -85,7 +85,7 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
     }
     params.Add("fix_corner_inner", fix_corner);
     params.Add("fix_corner_outer", pin->GetOrAddBoolean("boundaries", "fix_corner_outer", false));
-
+    
     // We can't use GetVariablesByFlag yet, so ask the packages
     // These flags get anything that needs a physical boundary during the run
     using FC = Metadata::FlagCollection;
@@ -382,12 +382,9 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
         pmb->par_for(
             "reflect_face_vector_" + bname, b.ks, b.ke, b.js, b.je, b.is, b.ie,
             KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-                const int kk = (bdir == 3) ? k_f - (k - k_f) : k;
-                const int jj = (bdir == 2) ? j_f - (j - j_f) : j;
-                const int ii = (bdir == 1) ? i_f - (i - i_f) : i;
-                fpack(face, 0, k, j, i) = ((bdir == 1 && i == i_f) ||
-                                           (bdir == 2 && j == j_f) ||
-                                           (bdir == 3 && k == k_f)) ? 0. : -fpack(face, 0, kk, jj, ii);
+                if (bdir == X1DIR) fpack(el, 0, k, j, i) = ((i == i_f) ? 0 : -fpack(el, 0, k, j, i_f - (i - i_f)));
+                if (bdir == X2DIR) fpack(el, 0, k, j, i) = ((j == j_f) ? 0 : -fpack(el, 0, k, j_f - (j - j_f), i));
+                if (bdir == X3DIR) fpack(el, 0, k, j, i) = ((k == k_f) ? 0 : -fpack(el, 0, k_f - (k - k_f), j, i));
             }
         );
         EndFlag();

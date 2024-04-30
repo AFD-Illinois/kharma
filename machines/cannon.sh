@@ -30,7 +30,7 @@ if [[ "$ARGS" == *"rocky"* ]]; then
     #module load intel/23.0.0-fasrc01 openmpi/4.1.4-fasrc01 cmake/3.25.2-fasrc01
     #MPI_EXTRA_ARGS="--map-by ppr:4:node:pe=16"
     # Ben (11/16/23) removed mpi=pmix from run.sh, replace here if needed
-    #MPI_EXTRA_ARGS="--mpi=pmix"
+    MPI_EXTRA_ARGS="--mpi=pmix"
 
     #source /n/holylfs05/LABS/bhi/Users/hyerincho/grmhd/spack/share/spack/setup-env.sh
     #spack clean -m
