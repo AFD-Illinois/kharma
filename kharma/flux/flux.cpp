@@ -73,7 +73,7 @@ std::shared_ptr<KHARMAPackage> Flux::Initialize(ParameterInput *pin, std::shared
         default_recon_s = pin->GetString("GRMHD", "reconstruction");
     }
     std::vector<std::string> recon_allowed_vals = {"donor_cell", "donor_cell_c", "linear_vl", "linear_mc",
-                                             "weno5", "weno5_linear", "ppm", "ppmx", "mp5"};
+                                             "weno5", "weno5_linear", "ppm", "ppmx", "mp5", "weno5_ismr"};
     std::string recon = pin->GetOrAddString("flux", "reconstruction", default_recon_s, recon_allowed_vals);
     bool lower_edges = pin->GetOrAddBoolean("flux", "low_order_edges", false);
     bool lower_poles = pin->GetOrAddBoolean("flux", "low_order_poles", false);

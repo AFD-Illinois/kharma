@@ -235,7 +235,7 @@ Real EstimateTimestep(MeshBlockData<Real> *rc)
 
     // Added by Hyerin (03/07/24)
     bool ismr_poles = grmhd_pars.Get<bool>("ismr_poles");
-    uint ismr_nlevels = grmhd_pars.Get<uint>("ismr_nlevels");
+    uint ismr_nlevels = (ismr_poles) ? grmhd_pars.Get<uint>("ismr_nlevels") : 0;
 
     if (!globals.Get<bool>("in_loop")) {
         if (grmhd_pars.Get<bool>("start_dt_light") ||

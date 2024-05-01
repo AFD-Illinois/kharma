@@ -266,17 +266,14 @@ TaskCollection KHARMADriver::MakeDefaultTaskCollection(BlockList_t &blocks, int 
         auto t_ptou = tl.AddTask(t_heat_electrons, Flux::MeshPtoU, md_sub_step_final.get(), IndexDomain::entire, false);
 
         auto t_step_done = t_ptou;
-        if (use_b_ct) {
+        if (use_b_ct && grmhd_pkg.Get<bool>("ismr_poles")) {
             auto& grmhd_pkg = pkgs.at("GRMHD")->AllParams();
-            bool derefine_poles = grmhd_pkg.Get<bool>("ismr_poles");
             uint nlevels = grmhd_pkg.Get<uint>("ismr_nlevels");
-            if (derefine_poles) {
-                if (nlevels > 0) {
-                    auto t_derefine_poles = tl.AddTask(t_ptou, B_CT::DerefinePoles, md_sub_step_final.get(), nlevels);
-                    t_step_done = tl.AddTask(t_derefine_poles, Packages::MeshUtoP, md_sub_step_final.get(), IndexDomain::entire, false);
-                } else {
-                    printf("WARNING: internal SMR near the poles is requested, but the number of levels should be >= 1. Not operating internal SMR.\n");
-                }
+            if (nlevels > 0) {
+                auto t_derefine_poles = tl.AddTask(t_ptou, B_CT::DerefinePoles, md_sub_step_final.get(), nlevels);
+                t_step_done = tl.AddTask(t_derefine_poles, Packages::MeshUtoP, md_sub_step_final.get(), IndexDomain::entire, false);
+            } else {
+                printf("WARNING: internal SMR near the poles is requested, but the number of levels should be >= 1. Not operating internal SMR.\n");
             }
         }
 

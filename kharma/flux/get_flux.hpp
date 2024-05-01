@@ -92,7 +92,7 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
     const Real gam = mhd_pars.Get<Real>("gamma");
     // Added by Hyerin (03/07/24)
     bool ismr_poles = mhd_pars.Get<bool>("ismr_poles");
-    uint ismr_nlevels = mhd_pars.Get<uint>("ismr_nlevels");
+    uint ismr_nlevels = (ismr_poles) ? mhd_pars.Get<uint>("ismr_nlevels") : 0;
     int ng = Globals::nghost;
 
     // Check whether we're using constraint-damping
