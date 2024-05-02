@@ -91,6 +91,8 @@ TaskStatus MeshPtoU(MeshData<Real> *md, IndexDomain domain, bool coarse=false);
 /**
  * As above, except that IndexDomains of ghost cells are taken to cover
  * cells *sent* (that is, part of the domain) rather than received
+ * 
+ * UNUSED
  */
 TaskStatus BlockPtoU_Send(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse);
 
