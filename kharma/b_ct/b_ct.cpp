@@ -445,6 +445,24 @@ TaskStatus B_CT::AddSource(MeshData<Real> *md, MeshData<Real> *mdudt, IndexDomai
     return TaskStatus::complete;
 }
 
+// void B_CT::ZeroEMF(MeshBlockData<Real> *rc, IndexDomain domain, const VariablePack<Real> &emfpack, bool coarse)
+// {
+//     // TODO might be able to get away with not zeroing ghost EMFs,
+//     // since they shouldn't be used.
+//     auto pmb = rc->GetBlockPointer();
+//     const BoundaryFace bface = KBoundaries::BoundaryFaceOf(domain);
+//     const std::string bname = KBoundaries::BoundaryName(bface);
+//     for (auto &el : {E1, E2, E3}) {
+//         // This inlcudes e.g. E1/E3 edges on X2 face
+//         auto b = KDomain::GetBoundaryRange(rc, domain, el, coarse);
+//         pmb->par_for(
+//             "zero_EMF_" + bname, b.ks, b.ke, b.js, b.je, b.is, b.ie,
+//             KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+//                 emfpack(el, 0, k, j, i) = 0;
+//             }
+//         );
+//     }
+// }
 void B_CT::ZeroEMF(MeshBlockData<Real> *rc, IndexDomain domain, const VariablePack<Real> &emfpack, bool coarse)
 {
     // TODO might be able to get away with not zeroing ghost EMFs,
@@ -452,11 +470,13 @@ void B_CT::ZeroEMF(MeshBlockData<Real> *rc, IndexDomain domain, const VariablePa
     auto pmb = rc->GetBlockPointer();
     const BoundaryFace bface = KBoundaries::BoundaryFaceOf(domain);
     const std::string bname = KBoundaries::BoundaryName(bface);
-    for (auto &el : {E1, E2, E3}) {
+    const bool binner = KBoundaries::BoundaryIsInner(bface);
+    for (auto &el : {E1, E3}) {
         // This inlcudes e.g. E1/E3 edges on X2 face
         auto b = KDomain::GetBoundaryRange(rc, domain, el, coarse);
+        int jf = (binner) ? b.je : b.js;
         pmb->par_for(
-            "zero_EMF_" + bname, b.ks, b.ke, b.js, b.je, b.is, b.ie,
+            "zero_EMF_" + bname, b.ks, b.ke, jf, jf, b.is, b.ie,
             KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
                 emfpack(el, 0, k, j, i) = 0;
             }
@@ -478,21 +498,47 @@ void B_CT::AverageEMF(MeshBlockData<Real> *rc, IndexDomain domain, const Variabl
     // X1 and X2 EMF are zeroed only *within* boundary domain
     // TODO might be able to get away with not zeroing ghost EMFs,
     // since they shouldn't be used.
-    for (auto el : {E1, E2}) {
-        IndexRange3 b = KDomain::GetRange(rc, domain, el, coarse);
-        pmb->par_for(
-            "zero_offaxis_EMF12_" + bname, b.ks, b.ke, b.js, b.je, b.is, b.ie,
-            KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-                emfpack(el, 0, k, j, i) = 0.;
-            }
-        );
-    }
-    // X3 EMF must additionally be zero *on* polar face, since edge size is 0
+    // for (auto el : {E1, E2}) {
+    //     IndexRange3 b = KDomain::GetRange(rc, domain, el, coarse);
+    //     pmb->par_for(
+    //         "zero_offaxis_EMF12_" + bname, b.ks, b.ke, b.js, b.je, b.is, b.ie,
+    //         KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+    //             emfpack(el, 0, k, j, i) = 0.;
+    //         }
+    //     );
+    // }
+    // // X3 EMF must additionally be zero *on* polar face, since edge size is 0
     IndexRange3 b = KDomain::GetBoundaryRange(rc, domain, E3, coarse);
-    pmb->par_for(
-        "zero_offaxis_EMF3_" + bname, b.ks, b.ke, b.js, b.je, b.is, b.ie,
-        KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-            emfpack(E3, 0, k, j, i) = 0;
+    // pmb->par_for(
+    //     "zero_offaxis_EMF3_" + bname, b.ks, b.ke, b.js, b.je, b.is, b.ie,
+    //     KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+    //         emfpack(E3, 0, k, j, i) = 0;
+    //     }
+    // );
+
+    b = KDomain::GetRange(rc, domain, E3, coarse);
+    IndexRange3 bi = KDomain::GetRange(rc, IndexDomain::interior, E3, coarse);
+    const int jf = (binner) ? bi.js : bi.je; // j index of polar face
+    parthenon::par_for_outer(DEFAULT_OUTER_LOOP_PATTERN, "reduce_EMF3_" + bname, pmb->exec_space,
+        0, 1, b.ks, b.ke,
+        KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int& k) {
+            // Sum the (non-ghost) X3 direction fluxes along the side at zone k
+            // Recall both faces fall in the domain, so we neglect the right
+            double emf_sum;
+            Kokkos::Sum<double> sum_reducer(emf_sum);
+            parthenon::par_reduce_inner(member, bi.is, bi.ie - 1,
+                [&](const int& i, double& local_result) {
+                    local_result += emfpack(E3, 0, k, jf, i);
+                }
+            , sum_reducer);
+
+            // Calculate the average and set all EMFs identically (even ghosts, to keep divB)
+            const double emf_av = emf_sum / (bi.ie - bi.is);
+            parthenon::par_for_inner(member, b.is, b.ie,
+                [&](const int& i) {
+                    emfpack(E3, 0, k, jf, i) = emf_av;
+                }
+            );
         }
     );
 
@@ -501,8 +547,7 @@ void B_CT::AverageEMF(MeshBlockData<Real> *rc, IndexDomain domain, const Variabl
 
     // Then X1 EMF on the face is *averaged* along X3
     b = KDomain::GetRange(rc, domain, E1, coarse);
-    IndexRange3 bi = KDomain::GetRange(rc, IndexDomain::interior, E1, coarse);
-    const int jf = (binner) ? bi.js : bi.je; // j index of polar face
+    bi = KDomain::GetRange(rc, IndexDomain::interior, E1, coarse);
     parthenon::par_for_outer(DEFAULT_OUTER_LOOP_PATTERN, "reduce_EMF1_" + bname, pmb->exec_space,
         0, 1, b.is, b.ie,
         KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int& i) {
@@ -591,7 +636,7 @@ double B_CT::MaxDivB(MeshData<Real> *md)
     pmb0->par_reduce("divB_max", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i, double &local_result) {
             const auto& G = B_U.GetCoords(b);
-            double local_divb = face_div(G, B_U(b), ndim, k, j, i);
+            double local_divb = m::abs(face_div(G, B_U(b), ndim, k, j, i));
             if (local_divb > local_result) local_result = local_divb;
         }
     , max_reducer);
@@ -614,7 +659,7 @@ double B_CT::BlockMaxDivB(MeshBlockData<Real> *rc)
     pmb->par_reduce("divB_max", b.ks, b.ke, b.js, b.je, b.is, b.ie,
         KOKKOS_LAMBDA (const int &k, const int &j, const int &i, double &local_result) {
             const auto& G = B_U.GetCoords();
-            double local_divb = face_div(G, B_U, ndim, k, j, i);
+            double local_divb = m::abs(face_div(G, B_U, ndim, k, j, i));
             if (local_divb > local_result) local_result = local_divb;
         }
     , max_reducer);
