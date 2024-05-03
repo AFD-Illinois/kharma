@@ -85,7 +85,12 @@ void FluxCT(MeshData<Real> *md);
  * Modify the B field fluxes just beyond the polar (or radial) boundary so as to
  * ensure no flux through the boundary after applying FluxCT
  */
-void FixBoundaryFlux(MeshData<Real> *md, IndexDomain domain, bool coarse);
+void ZeroBoundaryFlux(MeshData<Real> *md, IndexDomain domain, bool coarse);
+/**
+ * Modify the B field fluxes just beyond the radial (or polar) boundary so as to
+ * ensure the magnetic divergence is zero, even 
+ */
+void Bflux0(MeshData<Real> *md, IndexDomain domain, bool coarse);
 
 /**
  * Alternate B field fix for X1 boundary, keeps zero divergence while permitting flux

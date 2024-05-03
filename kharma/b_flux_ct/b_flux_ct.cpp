@@ -37,6 +37,7 @@
 #include "b_flux_ct.hpp"
 
 #include "decs.hpp"
+#include "domain.hpp"
 #include "grmhd.hpp"
 #include "kharma.hpp"
 
@@ -53,7 +54,7 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     // Diagnostic & inadvisable flags
     // This enables flux corrections to ensure divB preservation even with zero flux of B2 on the polar "face."
     // It effectively makes the pole a superconducting rod
-    // TODO turn into fix_flux_x2 etc.
+    // TODO unify all these options into zero_flux_B and bflux0_B
     bool spherical = pin->GetBoolean("coordinates", "spherical");
     bool fix_polar_flux = pin->GetOrAddBoolean("b_field", "fix_polar_flux", spherical);
     params.Add("fix_polar_flux", fix_polar_flux);
@@ -61,17 +62,23 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     // They require constant (Dirichlet) boundary conditions
     // These are the "Bflux0" prescription designed by Hyerin Cho
     bool fix_flux_x1 = pin->GetOrAddBoolean("b_field", "fix_flux_x1", false);
-    // Split out options. Turn off inner edge by default if inner bound is within EH
+    // Split out options. Turn off inner edge by default if inner bound is within EH (TODO turn on/off based on BOUNDARIES)
     bool r_in_eh = spherical && pin->GetBoolean("coordinates", "domain_intersects_eh");
     bool fix_flux_inner_x1 = pin->GetOrAddBoolean("b_field", "fix_flux_inner_x1", fix_flux_x1 && !r_in_eh);
     params.Add("fix_flux_inner_x1", fix_flux_inner_x1);
     bool fix_flux_outer_x1 = pin->GetOrAddBoolean("b_field", "fix_flux_outer_x1", fix_flux_x1);
     params.Add("fix_flux_outer_x1", fix_flux_outer_x1);
+    // Bflux0 on x2.  NOT good for polar boundaries
+    bool fix_flux_x2 = pin->GetOrAddBoolean("b_field", "fix_flux_x2", false);
+    bool fix_flux_inner_x2 = pin->GetOrAddBoolean("b_field", "fix_flux_inner_x2", fix_flux_x2);
+    params.Add("fix_flux_inner_x2", fix_flux_inner_x2);
+    bool fix_flux_outer_x2 = pin->GetOrAddBoolean("b_field", "fix_flux_outer_x2", fix_flux_x2);
+    params.Add("fix_flux_outer_x2", fix_flux_outer_x2);
     // This reverts to a more ham-fisted fix which explicitly disallows flux crossing the X1 face.
     // This version requires *inverted* B1 across the face, potentially just using reflecting conditions for B
     // Using this version is tremendously inadvisable: consult your simulator before applying.
-    bool use_old_x1_fix = pin->GetOrAddBoolean("b_field", "use_old_x1_fix", false);
-    params.Add("use_old_x1_fix", use_old_x1_fix);
+    bool use_old_flux_fix = pin->GetOrAddBoolean("b_field", "use_old_flux_fix", false);
+    params.Add("use_old_flux_fix", use_old_flux_fix);
 
     // KHARMA requires some kind of field transport if there is a magnetic field allocated
     // Use this if you actually want to disable all magnetic field flux corrections,
@@ -255,18 +262,41 @@ void BlockPtoU(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 
 void FixFlux(MeshData<Real> *md)
 {
-    // TODO flags here
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
     auto& params = pmb0->packages.Get("B_FluxCT")->AllParams();
+    // Poles specifically can't use Bflux0
     if (params.Get<bool>("fix_polar_flux")) {
-        FixBoundaryFlux(md, IndexDomain::inner_x2, false);
-        FixBoundaryFlux(md, IndexDomain::outer_x2, false);
+        ZeroBoundaryFlux(md, IndexDomain::inner_x2, false);
+        ZeroBoundaryFlux(md, IndexDomain::outer_x2, false);
     }
+    // Everything else should default to Bflux0
     if (params.Get<bool>("fix_flux_inner_x1")) {
-        FixBoundaryFlux(md, IndexDomain::inner_x1, false);
+        if (params.Get<bool>("use_old_flux_fix")) {
+            ZeroBoundaryFlux(md, IndexDomain::inner_x1, false);
+        } else {
+            Bflux0(md, IndexDomain::inner_x1, false);
+        }
     }
     if (params.Get<bool>("fix_flux_outer_x1")) {
-        FixBoundaryFlux(md, IndexDomain::outer_x1, false);
+        if (params.Get<bool>("use_old_flux_fix")) {
+            ZeroBoundaryFlux(md, IndexDomain::outer_x1, false);
+        } else {
+            Bflux0(md, IndexDomain::outer_x1, false);
+        }
+    }
+    if (params.Get<bool>("fix_flux_inner_x2")) {
+        if (params.Get<bool>("use_old_flux_fix")) {
+            ZeroBoundaryFlux(md, IndexDomain::inner_x2, false);
+        } else {
+            Bflux0(md, IndexDomain::inner_x2, false);
+        }
+    }
+    if (params.Get<bool>("fix_flux_outer_x2")) {
+        if (params.Get<bool>("use_old_flux_fix")) {
+            ZeroBoundaryFlux(md, IndexDomain::inner_x2, false);
+        } else {
+            Bflux0(md, IndexDomain::outer_x2, false);
+        }
     }
     FluxCT(md);
 }
@@ -338,20 +368,13 @@ void FluxCT(MeshData<Real> *md)
     }
 }
 
-void FixBoundaryFlux(MeshData<Real> *md, IndexDomain domain, bool coarse)
+void ZeroBoundaryFlux(MeshData<Real> *md, IndexDomain domain, bool coarse)
 {
+    // TODO write ONE implementation for any boundary
     auto pmesh = md->GetMeshPointer();
     auto pmb0 = pmesh->block_list[0];
     const int ndim = pmesh->ndim;
     if (ndim < 2) return;
-
-    // Option for old, pre-Bflux0 
-    const bool use_old_x1_fix = pmb0->packages.Get("B_FluxCT")->Param<bool>("use_old_x1_fix");
-
-    auto bounds = coarse ? pmb0->c_cellbounds : pmb0->cellbounds;
-    const IndexRange ib = bounds.GetBoundsI(IndexDomain::interior);
-    const IndexRange jb = bounds.GetBoundsJ(IndexDomain::interior);
-    const IndexRange kb = bounds.GetBoundsK(IndexDomain::interior);
 
     // Imagine a corner of the domain, with ghost and physical zones
     // as below, denoted w/'g' and 'p' respectively.
@@ -368,7 +391,10 @@ void FixBoundaryFlux(MeshData<Real> *md, IndexDomain domain, bool coarse)
     // Therefore in e.g. X1 faces, we need to update fluxes on the domain:
     // [0,N1+1],[-1,N2+1],[-1,N3+1]
     // These indices arrange for that.
-
+    auto bounds = coarse ? pmb0->c_cellbounds : pmb0->cellbounds;
+    const IndexRange ib = bounds.GetBoundsI(IndexDomain::interior);
+    const IndexRange jb = bounds.GetBoundsJ(IndexDomain::interior);
+    const IndexRange kb = bounds.GetBoundsK(IndexDomain::interior);
     // For faces
     const IndexRange ibf = IndexRange{ib.s, ib.e + 1};
     const IndexRange jbf = IndexRange{jb.s, jb.e + 1};
@@ -392,8 +418,8 @@ void FixBoundaryFlux(MeshData<Real> *md, IndexDomain domain, bool coarse)
                 KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
                     B_F.flux(X2DIR, V1, k, j, i) = 0.;
                     B_F.flux(X2DIR, V3, k, j, i) = 0.;
-                    B_F.flux(X1DIR, V2, k, j - 1, i) = -B_F.flux(X1DIR, V2, k, j, i);
-                    if (ndim > 2) B_F.flux(X3DIR, V2, k, j - 1, i) = -B_F.flux(X3DIR, V2, k, j, i);
+                    B_F.flux(X1DIR, V2, k, j-2, i) = -B_F.flux(X1DIR, V2, k, j - 1, i);
+                    if (ndim > 2) B_F.flux(X3DIR, V2, k, j-2, i) = -B_F.flux(X3DIR, V2, k, j - 1, i);
                 }
             );
         }
@@ -409,70 +435,118 @@ void FixBoundaryFlux(MeshData<Real> *md, IndexDomain domain, bool coarse)
                 }
             );
         }
-
-        // TODO(BSP) could check here we're operating with the right boundaries: Dirichlet for Bflux0,
-        // reflecting/B1 reflect for old stuff
-        if (!use_old_x1_fix) {
-            // "Bflux0" prescription for keeping divB~=0 on zone corners of the interior & exterior X1 faces
-            // Courtesy of & implemented by Hyerin Cho
-            // Allows nonzero flux across X1 boundary but still keeps divB=0 (turns out effectively to have 0 flux)
-            // Usable only for Dirichlet conditions
-            if (domain == IndexDomain::inner_x1 &&
-                pmb->boundary_flag[BoundaryFace::inner_x1] == BoundaryFlag::user)
-            {
-                pmb->par_for("fix_flux_b_in", kbs.s, kbs.e, jbs.s, jbs.e, ibf.s, ibf.s, // Hyerin (12/28/22) for 1st & 2nd prescription
-                    KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-                        // Allows nonzero flux across X1 boundary but still keeps divB=0 (turns out effectively to have 0 flux)
-                        if (ndim > 1) B_F.flux(X2DIR, V1, k, j, i-1) = -B_F.flux(X2DIR, V1, k, j, i) + B_F.flux(X1DIR, V2, k, j, i) + B_F.flux(X1DIR, V2, k, j-1, i);
-                        if (ndim > 2) B_F.flux(X3DIR, V1, k, j, i-1) = -B_F.flux(X3DIR, V1, k, j, i) + B_F.flux(X1DIR, V3, k, j, i) + B_F.flux(X1DIR, V3, k-1, j, i);
-                    }
-                );
-
-            }
-            if (domain == IndexDomain::outer_x1 &&
-                pmb->boundary_flag[BoundaryFace::outer_x1] == BoundaryFlag::user)
-            {
-                pmb->par_for("fix_flux_b_out", kbs.s, kbs.e, jbs.s, jbs.e, ibf.e, ibf.e, // Hyerin (12/28/22) for 1st & 2nd prescription
-                    KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-                        // (02/06/23) 2nd prescription that allows nonzero flux across X1 boundary but still keeps divB=0
-                        if (ndim > 1) B_F.flux(X2DIR, V1, k, j, i) = -B_F.flux(X2DIR, V1, k, j, i-1) + B_F.flux(X1DIR, V2, k, j, i) + B_F.flux(X1DIR, V2, k, j-1, i);
-                        if (ndim > 2) B_F.flux(X3DIR, V1, k, j, i) = -B_F.flux(X3DIR, V1, k, j, i-1) + B_F.flux(X1DIR, V3, k, j, i) + B_F.flux(X1DIR, V3, k-1, j, i);
-                    }
-                );
-            }
-        } else {
-            // These boundary conditions need to arrange for B1 to be inverted in ghost cells.
-            // This is no longer pure outflow, but might be thought of as a "nicer" version of
-            // reflecting conditions:
-            // 1. Since B1 is inverted, B1 on the domain face will tend to 0 (it's not quite reflected, but basically)
-            //    (obviously don't enable this for monopole test problems!)
-            // 2. However, B2 and B3 are normal outflow conditions -- despite the fluxes here, the outflow
-            //    conditions will set them equal to the last zone.
-            if (domain == IndexDomain::inner_x1 &&
-                pmb->boundary_flag[BoundaryFace::inner_x1] == BoundaryFlag::user) {
-                pmb->par_for("fix_flux_b_in_old", kbs.s, kbs.e, jbs.s, jbs.e, ibf.s, ibf.s,
-                    KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-                        B_F.flux(X1DIR, V2, k, j, i) = 0.;
-                        B_F.flux(X1DIR, V3, k, j, i) = 0.;
-                        B_F.flux(X2DIR, V1, k, j, i - 1) = -B_F.flux(X2DIR, V1, k, j, i);
-                        if (ndim > 2) B_F.flux(X3DIR, V1, k, j, i - 1) = -B_F.flux(X3DIR, V1, k, j, i);
-                    }
-                );
-            }
-
-            if (domain == IndexDomain::outer_x1 &&
-                pmb->boundary_flag[BoundaryFace::outer_x1] == BoundaryFlag::user) {
-                pmb->par_for("fix_flux_b_out_old", kbs.s, kbs.e, jbs.s, jbs.e, ibf.e, ibf.e,
-                    KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-                        B_F.flux(X1DIR, V2, k, j, i) = 0.;
-                        B_F.flux(X1DIR, V3, k, j, i) = 0.;
-                        B_F.flux(X2DIR, V1, k, j, i) = -B_F.flux(X2DIR, V1, k, j, i - 1);
-                        if (ndim > 2) B_F.flux(X3DIR, V1, k, j, i) = -B_F.flux(X3DIR, V1, k, j, i - 1);
-                    }
-                );
-            }
+        // These boundary conditions need to arrange for B1 to be inverted in ghost cells.
+        // This is no longer pure outflow, but might be thought of as a "nicer" version of
+        // reflecting conditions:
+        // 1. Since B1 is inverted, B1 on the domain face will tend to 0 (it's not quite reflected, but basically)
+        //    (obviously don't enable this for monopole test problems!)
+        // 2. However, B2 and B3 are normal outflow conditions -- despite the fluxes here, the outflow
+        //    conditions will set them equal to the last zone.
+        if (domain == IndexDomain::inner_x1 &&
+            pmb->boundary_flag[BoundaryFace::inner_x1] == BoundaryFlag::user) {
+            pmb->par_for("fix_flux_b_in_old", kbs.s, kbs.e, jbs.s, jbs.e, ibf.s, ibf.s,
+                KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+                    B_F.flux(X1DIR, V2, k, j, i) = 0.;
+                    B_F.flux(X1DIR, V3, k, j, i) = 0.;
+                    B_F.flux(X2DIR, V1, k, j, i - 1) = -B_F.flux(X2DIR, V1, k, j, i);
+                    if (ndim > 2) B_F.flux(X3DIR, V1, k, j, i - 1) = -B_F.flux(X3DIR, V1, k, j, i);
+                }
+            );
         }
 
+        if (domain == IndexDomain::outer_x1 &&
+            pmb->boundary_flag[BoundaryFace::outer_x1] == BoundaryFlag::user) {
+            pmb->par_for("fix_flux_b_out_old", kbs.s, kbs.e, jbs.s, jbs.e, ibf.e, ibf.e,
+                KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+                    B_F.flux(X1DIR, V2, k, j, i) = 0.;
+                    B_F.flux(X1DIR, V3, k, j, i) = 0.;
+                    B_F.flux(X2DIR, V1, k, j, i) = -B_F.flux(X2DIR, V1, k, j, i - 1);
+                    if (ndim > 2) B_F.flux(X3DIR, V1, k, j, i) = -B_F.flux(X3DIR, V1, k, j, i - 1);
+                }
+            );
+        }
+    }
+}
+
+void Bflux0(MeshData<Real> *md, IndexDomain domain, bool coarse)
+{
+    auto pmesh = md->GetMeshPointer();
+    auto pmb0 = pmesh->block_list[0];
+    const int ndim = pmesh->ndim;
+    if (ndim < 2) return;
+
+    // Indices, see ZeroBoundaryFlux
+    auto bounds = coarse ? pmb0->c_cellbounds : pmb0->cellbounds;
+    const IndexRange ib = bounds.GetBoundsI(IndexDomain::interior);
+    const IndexRange jb = bounds.GetBoundsJ(IndexDomain::interior);
+    const IndexRange kb = bounds.GetBoundsK(IndexDomain::interior);
+    // For faces
+    const IndexRange ibf = IndexRange{ib.s, ib.e + 1};
+    const IndexRange jbf = IndexRange{jb.s, jb.e + 1};
+    // Won't need X3 faces
+    //const IndexRange kbf = IndexRange{kb.s, kb.e + (ndim > 2)};
+    // For sides
+    const IndexRange ibs = IndexRange{ib.s - 1, ib.e + 1};
+    const IndexRange jbs = IndexRange{jb.s - (ndim > 1), jb.e + (ndim > 1)};
+    const IndexRange kbs = IndexRange{kb.s - (ndim > 2), kb.e + (ndim > 2)};
+
+    // Make sure the polar EMFs are 0 when performing fluxCT
+    // Compare this section with calculation of emf3 in FluxCT:
+    // these changes ensure that boundary emfs emf3(i,js,k)=0, etc.
+    for (auto &pmb : pmesh->block_list) {
+        auto& rc = pmb->meshblock_data.Get();
+        auto& B_F = rc->PackVariablesAndFluxes(std::vector<std::string>{"cons.B"});
+
+        // "Bflux0" prescription for keeping divB~=0 on zone corners of the interior & exterior X1 faces
+        // Courtesy of & implemented by Hyerin Cho
+        // Allows nonzero flux across X1 boundary but still keeps divB=0 (turns out effectively to have 0 flux)
+        // Usable only for Dirichlet conditions
+        if (domain == IndexDomain::inner_x1 &&
+            pmb->boundary_flag[BoundaryFace::inner_x1] == BoundaryFlag::user)
+        {
+            pmb->par_for("fix_flux_b_in", kbs.s, kbs.e, jbs.s, jbs.e, ibf.s, ibf.s, // Hyerin (12/28/22) for 1st & 2nd prescription
+                KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+                    // Allows nonzero flux across X1 boundary but still keeps divB=0 (turns out effectively to have 0 flux)
+                    if (ndim > 1) B_F.flux(X2DIR, V1, k, j, i-1) = -B_F.flux(X2DIR, V1, k, j, i) + B_F.flux(X1DIR, V2, k, j, i) + B_F.flux(X1DIR, V2, k, j-1, i);
+                    if (ndim > 2) B_F.flux(X3DIR, V1, k, j, i-1) = -B_F.flux(X3DIR, V1, k, j, i) + B_F.flux(X1DIR, V3, k, j, i) + B_F.flux(X1DIR, V3, k-1, j, i);
+                }
+            );
+
+        }
+        if (domain == IndexDomain::inner_x2 &&
+            pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::user)
+        {
+            pmb->par_for("fix_flux_b_in", kbs.s, kbs.e, jbf.s, jbf.s, ibs.s, ibs.e,
+                KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+                    if (ndim > 2) B_F.flux(X3DIR, V2, k, j-1, i) = -B_F.flux(X3DIR, V2, k, j, i) + B_F.flux(X2DIR, V3, k, j, i) + B_F.flux(X2DIR, V3, k-1, j, i);
+                    if (ndim > 1) B_F.flux(X1DIR, V2, k, j-1, i) = -B_F.flux(X1DIR, V2, k, j, i) + B_F.flux(X2DIR, V1, k, j, i) + B_F.flux(X2DIR, V1, k, j, i-1);
+                }
+            );
+
+        }
+
+        // OUTER
+        if (domain == IndexDomain::outer_x1 &&
+            pmb->boundary_flag[BoundaryFace::outer_x1] == BoundaryFlag::user)
+        {
+            pmb->par_for("fix_flux_b_out", kbs.s, kbs.e, jbs.s, jbs.e, ibf.e, ibf.e, // Hyerin (12/28/22) for 1st & 2nd prescription
+                KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+                    // (02/06/23) 2nd prescription that allows nonzero flux across X1 boundary but still keeps divB=0
+                    if (ndim > 1) B_F.flux(X2DIR, V1, k, j, i) = -B_F.flux(X2DIR, V1, k, j, i-1) + B_F.flux(X1DIR, V2, k, j, i) + B_F.flux(X1DIR, V2, k, j-1, i);
+                    if (ndim > 2) B_F.flux(X3DIR, V1, k, j, i) = -B_F.flux(X3DIR, V1, k, j, i-1) + B_F.flux(X1DIR, V3, k, j, i) + B_F.flux(X1DIR, V3, k-1, j, i);
+                }
+            );
+        }
+        if (domain == IndexDomain::outer_x2 &&
+            pmb->boundary_flag[BoundaryFace::outer_x2] == BoundaryFlag::user)
+        {
+            pmb->par_for("fix_flux_b_out", kbs.s, kbs.e, jbf.e, jbf.e, ibs.s, ibs.e,
+                KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+                    if (ndim > 2) B_F.flux(X3DIR, V2, k, j, i) = -B_F.flux(X3DIR, V2, k, j-1, i) + B_F.flux(X2DIR, V3, k, j, i) + B_F.flux(X2DIR, V3, k-1, j, i);
+                    if (ndim > 1) B_F.flux(X1DIR, V2, k, j, i) = -B_F.flux(X1DIR, V2, k, j-1, i) + B_F.flux(X2DIR, V1, k, j, i) + B_F.flux(X2DIR, V1, k, j, i-1);
+                }
+            );
+        }
     }
 }
 
