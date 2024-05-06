@@ -68,7 +68,7 @@ TaskStatus Flux::MarkFOFC(MeshData<Real> *guess)
             // if cell failed to invert or would call floors...
             // TODO preserve cause in the fofcflag
             if (static_cast<int>(fflag(b, 0, k, j, i)) || //Inverter::failed(pflag(b, 0, k, j, i)) ||
-                (spherical && G.r(k, j, i) < r_eh + 0.1)) {
+                (spherical && G.r(k, j, i) < r_eh + 0.1)) { // TODO customizable FOFC radius
                 fofcflag(b, 0, k, j, i) = 1;
             } else {
                 fofcflag(b, 0, k, j, i) = 0;
@@ -116,7 +116,7 @@ TaskStatus Flux::FOFC(MeshData<Real> *md, MeshData<Real> *guess)
     // With B_CT this will load the preference, without it will set face_b false and never access (empty) Bf
     // Weird but it works
     const bool face_b = (packages.AllPackages().count("B_CT") &&
-                        packages.Get("B_CT")->Param<bool>("consistent_face_b"));
+                        packages.Get("Flux")->Param<bool>("fofc_consistent_face_b"));
     const auto& Bf = md->PackVariables(std::vector<std::string>{"cons.fB"});
 
     for (int dir=1; dir <= ndim; dir++) { // TODO if(trivial_direction) etc
