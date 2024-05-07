@@ -193,16 +193,20 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
                                                      std::vector<MetadataFlag>{Metadata::GetUserFlag("Explicit"), Metadata::Independent},
                                                      use_b_ct, stage);
 
-        // Update ideal MHD variables so that they can be used as a guess for the solver.
+        // Update ideal HD variables so that they can be used as a guess for the solver.
         // Only used if emhd/ideal_guess is enabled.
         // An additional `AddStateUpdate` task just for variables marked with the `IdealGuess` flag
+        auto t_ideal_guess = t_update;
         if (use_ideal_guess) {
-            
+            t_ideal_guess = KHARMADriver::AddStateUpdateIdealGuess(t_sources,  tl, md_full_step_init.get(), md_sub_step_init.get(),
+                                                     md_flux_src.get(), md_solver.get(),
+                                                     std::vector<MetadataFlag>{Metadata::GetUserFlag("IdealGuess"), Metadata::Independent},
+                                                     false, stage);
         }
 
         // Make sure the primitive values of *explicitly-evolved* variables are updated.
         // Packages with implicitly-evolved vars should only register BoundaryUtoP or BoundaryPtoU
-        auto t_explicit_UtoP = tl.AddTask(t_update, Packages::MeshUtoP, md_solver.get(), IndexDomain::entire, false);
+        auto t_explicit_UtoP = tl.AddTask(t_ideal_guess, Packages::MeshUtoP, md_solver.get(), IndexDomain::entire, false);
 
         // Done with explicit update
         auto t_explicit = t_explicit_UtoP;
@@ -213,9 +217,12 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
             std::shared_ptr<MeshData<Real>> &md_linesearch = (use_linesearch) ? pmesh->mesh_data.GetOrAdd("linesearch", i) : md_solver;
 
             // Copy the current state of any implicitly-evolved vars (at least the prims) in as a guess.
-            // This sets md_solver = md_sub_step_init
-            auto t_copy_guess = tl.AddTask(t_sources, Copy<MeshData<Real>>, std::vector<MetadataFlag>({Metadata::GetUserFlag("Implicit")}),
+            // If we aren't using the ideal solution as the guess, set md_solver = md_sub_step_init
+            auto t_copy_guess = t_explicit;
+            if (use_ideal_guess) {
+                t_copy_guess = tl.AddTask(t_sources, Copy<MeshData<Real>>, std::vector<MetadataFlag>({Metadata::GetUserFlag("Implicit")}),
                                         md_sub_step_init.get(), md_solver.get());
+            }
 
             auto t_guess_ready = t_explicit | t_copy_guess;
 

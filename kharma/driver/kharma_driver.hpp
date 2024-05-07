@@ -134,6 +134,15 @@ class KHARMADriver : public MultiStageDriver {
                                 bool update_face, int stage);
 
         /**
+         * This function updates a state md_update with the results of an explicit source term calculation
+         * placed in md_flux_src. It is similar to `AddStateUpdate` but applies only to variables marked
+         * with the `IdealGuess` flag.
+         */
+        TaskID AddStateUpdateIdealGuess(TaskID& t_start, TaskList& tl, MeshData<Real> *md_full_step_init, MeshData<Real> *md_sub_step_init,
+                                MeshData<Real> *md_flux_src, MeshData<Real> *md_update, std::vector<MetadataFlag> flags,
+                                bool update_face, int stage);
+
+        /**
          * Add a synchronization retion to an existing TaskCollection tc.
          * Since the region is self-contained, does not return a TaskID
          */

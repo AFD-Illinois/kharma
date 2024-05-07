@@ -85,8 +85,8 @@ std::shared_ptr<KHARMAPackage> KHARMADriver::Initialize(ParameterInput *pin, std
     // Add a flag if we wish to use ideal variables explicitly evolved as guess for implicit update.
     // GRIM uses the fluid state of the previous (sub-)step.
     // The logic here is that the non-ideal variables do not significantly contribute to the
-    // stress-energy tensor. Hence, we can explicitly update the ideal MHD variables and hope
-    // that this takes us to a region in the parameter space of state variables that 
+    // stress-energy tensor. We can explicitly update the ideal MHD variables and hope that this 
+    // takes us to a region in the parameter space of state variables that 
     // is close to the true solution. The corrections obtained from the implicit update would then
     // be small corrections.
     Metadata::AddUserFlag("IdealGuess");
@@ -378,6 +378,56 @@ TaskID KHARMADriver::AddStateUpdate(TaskID& t_start, TaskList& tl, MeshData<Real
     auto pmb0  = md_full_step_init->GetBlockData(0)->GetBlockPointer();
     auto& pkgs = pmb0->packages.AllPackages();
     if (!pkgs.at("GRMHD")->Param<bool>("implicit")) {
+        t_copy_prims = tl.AddTask(t_start, Copy<MeshData<Real>>,
+                                    std::vector<MetadataFlag>({Metadata::GetUserFlag("HD"), Metadata::GetUserFlag("Primitive")}),
+                                    md_sub_step_init, md_update);
+    }
+
+    return t_copy_prims | t_update;
+}
+
+TaskID KHARMADriver::AddStateUpdateIdealGuess(TaskID& t_start, TaskList& tl, MeshData<Real> *md_full_step_init,
+                                    MeshData<Real> *md_sub_step_init, MeshData<Real> *md_flux_src, MeshData<Real> *md_update,
+                                    std::vector<MetadataFlag> flags, bool update_face, int stage)
+{
+    // Update variables marked as IdealGuess
+    // Add any proportion of the step start required by the integrator (e.g., RK2)
+    std::vector<MetadataFlag> flags_cell = flags; flags_cell.push_back(Metadata::Cell);
+    std::vector<MetadataFlag> flags_face = flags; flags_face.push_back(Metadata::Face);
+    // TODO splitting this is stupid, but maybe the parallelization actually helps? Eh.
+    auto t_avg_data_c = tl.AddTask(t_start, Update::WeightedSumData<std::vector<MetadataFlag>, MeshData<Real>>,
+                                std::vector<MetadataFlag>(flags_cell),
+                                md_sub_step_init, md_full_step_init,
+                                integrator->gam0[stage-1], integrator->gam1[stage-1],
+                                md_update);
+    auto t_avg_data = t_avg_data_c;
+    if (update_face) {
+        t_avg_data = tl.AddTask(t_start, WeightedSumDataFace,
+                                std::vector<MetadataFlag>(flags_face),
+                                md_sub_step_init, md_full_step_init,
+                                integrator->gam0[stage-1], integrator->gam1[stage-1],
+                                md_update);
+    }
+    // apply du/dt to the result
+    auto t_update_c = tl.AddTask(t_avg_data, Update::WeightedSumData<std::vector<MetadataFlag>, MeshData<Real>>,
+                                std::vector<MetadataFlag>(flags_cell),
+                                md_update, md_flux_src,
+                                1.0, integrator->beta[stage-1] * integrator->dt,
+                                md_update);
+    auto t_update = t_update_c;
+    if (update_face) {
+        t_update = tl.AddTask(t_avg_data, WeightedSumDataFace,
+                                std::vector<MetadataFlag>(flags_face),
+                                md_update, md_flux_src,
+                                1.0, integrator->beta[stage-1] * integrator->dt,
+                                md_update);
+    }
+
+    // We'll be running UtoP after this, which needs a guess in order to converge, so we copy in md_sub_step_init
+    auto t_copy_prims = t_update;
+    auto pmb0  = md_full_step_init->GetBlockData(0)->GetBlockPointer();
+    auto& pkgs = pmb0->packages.AllPackages();
+    if (pkgs.at("GRMHD")->Param<bool>("ideal_guess")) {
         t_copy_prims = tl.AddTask(t_start, Copy<MeshData<Real>>,
                                     std::vector<MetadataFlag>({Metadata::GetUserFlag("HD"), Metadata::GetUserFlag("Primitive")}),
                                     md_sub_step_init, md_update);
