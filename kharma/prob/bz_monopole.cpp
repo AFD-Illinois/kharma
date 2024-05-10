@@ -58,21 +58,16 @@ TaskStatus InitializeBZMonopole(std::shared_ptr<MeshBlockData<Real>>& rc, Parame
 
     const auto& G = pmb->coords;
     const GReal a = G.coords.get_a();
+    const GReal r_horizon = G.coords.get_horizon();
+    const GReal r_char = 10. * r_horizon;
 
-    pmb->par_for("fm_torus_init", ks, ke, js, je, is, ie,
+    pmb->par_for("bz_monopole_init", ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-            GReal Xembed[GR_DIM];
-            G.coord_embed(k, j, i, Loci::center, Xembed);
-            GReal r = Xembed[1];
+            const GReal r = G.r(k, j, i);
 
-            GReal r_horizon = 1. + m::sqrt(1. - a*a);
-            GReal r_char = 10. * r_horizon;
-
-            Real trho = rho_min_limit + (r / r_char) / m::pow(r, 4.) / bsq_o_rho_max;
-            Real tu = u_min_limit + (r / r_char) / m::pow(r, 4.) / bsq_o_rho_max;
-
-            rho(k, j, i) = trho;
-            u(k, j, i) = tu;
+            const Real level = (r / r_char) / m::pow(r, 4.) / bsq_o_rho_max;
+            rho(k, j, i) = rho_min_limit + level;
+            u(k, j, i) = u_min_limit + level;
             uvec(0, k, j, i) = 0.;
             uvec(1, k, j, i) = 0.;
             uvec(2, k, j, i) = 0.;
