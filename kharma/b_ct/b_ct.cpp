@@ -129,7 +129,7 @@ std::shared_ptr<KHARMAPackage> B_CT::Initialize(ParameterInput *pin, std::shared
     // TODO own package, gate on enabling ismr
     // Hyerin (04/04/24) averaged B fields needed for ismr
     // ISMR cache: not evolved, immediately copied to fluid state after averaging
-    m = Metadata({Metadata::Real, Metadata::Face, Metadata::Derived, Metadata::FillGhost});
+    m = Metadata({Metadata::Real, Metadata::Face, Metadata::Derived, Metadata::OneCopy});
     pkg->AddField("ismr_fB_avg", m);
 
     // CALLBACKS
