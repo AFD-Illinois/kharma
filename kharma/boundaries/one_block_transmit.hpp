@@ -39,8 +39,8 @@ namespace KBoundaries {
 
 // TODO(BSP) privatize probably
 void TransmitImpl(MeshBlockData<Real> *rc, BoundaryFace bface, bool coarse);
-void TransmitSetTE(MeshBlockData<Real> *rc, VariablePack<Real> &q,
-                    BoundaryFace bface, bool coarse, bool do_face);
+void TransmitSetTE(MeshBlockData<Real> *rc, VariablePack<Real> &q, BoundaryFace bface,
+                    PackIndexMap &bounds_map, bool coarse, bool do_face);
 
 template <BoundaryFace bface>
 inline void OneBlockTransmit(std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse)
