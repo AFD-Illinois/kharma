@@ -38,13 +38,8 @@
 #include "floors.hpp"
 #include "flux_functions.hpp"
 
-/**
- * Initialization of a Bondi problem with specified sonic point & accretion rate
- */
-TaskStatus InitializeBondi(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin)
+void AddBondiParameters(ParameterInput *pin, Packages_t &packages)
 {
-    auto pmb = rc->GetBlockPointer();
-
     const Real mdot = pin->GetOrAddReal("bondi", "mdot", 1.0);
     const Real rs = pin->GetOrAddReal("bondi", "rs", 8.0);
     const Real ur_frac = pin->GetOrAddReal("bondi", "ur_frac", 1.);
@@ -64,22 +59,37 @@ TaskStatus InitializeBondi(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterIn
 
     // Add these to package properties, since they continue to be needed on boundaries
     // TODO Problems NEED params
-    if(! pmb->packages.Get("GRMHD")->AllParams().hasKey("mdot"))
-        pmb->packages.Get("GRMHD")->AddParam<Real>("mdot", mdot);
-    if(! pmb->packages.Get("GRMHD")->AllParams().hasKey("rs"))
-        pmb->packages.Get("GRMHD")->AddParam<Real>("rs", rs);
-    if(! pmb->packages.Get("GRMHD")->AllParams().hasKey("rin_bondi"))
-        pmb->packages.Get("GRMHD")->AddParam<Real>("rin_bondi", rin_bondi);
-    if(! pmb->packages.Get("GRMHD")->AllParams().hasKey("fill_interior_bondi"))
-        pmb->packages.Get("GRMHD")->AddParam<Real>("fill_interior_bondi", fill_interior);
-    if(! pmb->packages.Get("GRMHD")->AllParams().hasKey("zero_velocity_bondi"))
-        pmb->packages.Get("GRMHD")->AddParam<Real>("zero_velocity_bondi", zero_velocity);
-    if(! pmb->packages.Get("GRMHD")->AllParams().hasKey("diffinit_bondi"))
-        pmb->packages.Get("GRMHD")->AddParam<Real>("diffinit_bondi", diffinit);
-    if(! (pmb->packages.Get("GRMHD")->AllParams().hasKey("ur_frac")))
-        pmb->packages.Get("GRMHD")->AddParam<Real>("ur_frac", ur_frac);
-    if(! (pmb->packages.Get("GRMHD")->AllParams().hasKey("uphi")))
-        pmb->packages.Get("GRMHD")->AddParam<Real>("uphi", uphi);
+    if(! packages.Get("GRMHD")->AllParams().hasKey("mdot"))
+        packages.Get("GRMHD")->AddParam<Real>("mdot", mdot);
+    if(! packages.Get("GRMHD")->AllParams().hasKey("rs"))
+        packages.Get("GRMHD")->AddParam<Real>("rs", rs);
+    if(! packages.Get("GRMHD")->AllParams().hasKey("rin_bondi"))
+        packages.Get("GRMHD")->AddParam<Real>("rin_bondi", rin_bondi);
+    if(! packages.Get("GRMHD")->AllParams().hasKey("fill_interior_bondi"))
+        packages.Get("GRMHD")->AddParam<Real>("fill_interior_bondi", fill_interior);
+    if(! packages.Get("GRMHD")->AllParams().hasKey("zero_velocity_bondi"))
+        packages.Get("GRMHD")->AddParam<Real>("zero_velocity_bondi", zero_velocity);
+    if(! packages.Get("GRMHD")->AllParams().hasKey("diffinit_bondi"))
+        packages.Get("GRMHD")->AddParam<Real>("diffinit_bondi", diffinit);
+    if(! (packages.Get("GRMHD")->AllParams().hasKey("ur_frac")))
+        packages.Get("GRMHD")->AddParam<Real>("ur_frac", ur_frac);
+    if(! (packages.Get("GRMHD")->AllParams().hasKey("uphi")))
+        packages.Get("GRMHD")->AddParam<Real>("uphi", uphi);
+}
+
+/**
+ * Initialization of a Bondi problem with specified sonic point & accretion rate
+ */
+TaskStatus InitializeBondi(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin)
+{
+    auto pmb = rc->GetBlockPointer();
+
+    // Add parameters we'll need throughout the run to 'GRMHD' package
+    AddBondiParameters(pin, pmb->packages);
+
+    // We need these two
+    const Real rin_bondi = pmb->packages.Get("GRMHD")->Param<Real>("rin_bondi");
+    const bool fill_interior = pmb->packages.Get("GRMHD")->Param<Real>("fill_interior_bondi");
 
     // Set this problem to control the outer X1 boundary by default
     // remember to disable inflow_check in parameter file!

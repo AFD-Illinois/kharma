@@ -33,6 +33,7 @@
  */
 #include "boundaries.hpp"
 
+#include "bondi.hpp"
 #include "decs.hpp"
 #include "domain.hpp"
 #include "kharma.hpp"
@@ -296,6 +297,31 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
                     break;
                 case BoundaryFace::outer_x3:
                     pkg->KBoundaries[bface] = BoundaryFunction::OutflowOuterX3;
+                    break;
+                default:
+                    break;
+                }
+            } else if (btype == "bondi") {
+                // Boundaries will need these to be recorded into a 'Params'
+                AddBondiParameters(pin, *packages);
+                switch (bface) {
+                case BoundaryFace::inner_x1:
+                    pkg->KBoundaries[bface] = SetBondi<IndexDomain::inner_x1>;
+                    break;
+                case BoundaryFace::outer_x1:
+                    pkg->KBoundaries[bface] = SetBondi<IndexDomain::outer_x1>;
+                    break;
+                case BoundaryFace::inner_x2:
+                    pkg->KBoundaries[bface] = SetBondi<IndexDomain::inner_x2>;
+                    break;
+                case BoundaryFace::outer_x2:
+                    pkg->KBoundaries[bface] = SetBondi<IndexDomain::outer_x2>;
+                    break;
+                case BoundaryFace::inner_x3:
+                    pkg->KBoundaries[bface] = SetBondi<IndexDomain::inner_x3>;
+                    break;
+                case BoundaryFace::outer_x3:
+                    pkg->KBoundaries[bface] = SetBondi<IndexDomain::outer_x3>;
                     break;
                 default:
                     break;
