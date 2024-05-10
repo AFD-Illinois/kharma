@@ -25,7 +25,7 @@ conv_2d() {
     done
     check_code=0
     pyharm-convert --double *.phdf
-    python check.py $ALL_RES $1 2d || check_code=$?
+    python3 check.py $ALL_RES $1 2d || check_code=$?
     if [[ $check_code != 0 ]]; then
         echo Conducting atmosphere test $3 FAIL: $check_code
         exit_code=1
@@ -36,5 +36,7 @@ conv_2d() {
 
 ALL_RES="64,128,256,512"
 conv_2d emhd2d_weno driver/reconstruction=weno5 "in 2D, WENO5"
+# Test if it works with ideal solution as guess
+conv_2d emhd2d_weno_ideal_guess emhd/ideal_guess=true "in 2D, WENO5, Ideal guess"
 
 exit $exit_code
