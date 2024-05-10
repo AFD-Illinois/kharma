@@ -108,6 +108,16 @@ void KBoundaries::TransmitSetTE(MeshBlockData<Real> *rc, VariablePack<Real> &q, 
         const int x3_index_3 = bounds_map["cons.B"].second;
         const int x3_index_4 = bounds_map["prims.B"].second;
 
+        //std::cerr << "Transmitting boundary. el=" << static_cast<int>(el) << " do_invert=" << do_face_invert << " corr_face=" << corresponding_face << std::endl;
+        //std::cerr << "Elements: " << q.GetDim(4) << " vector components: ";
+        //pmb->par_for(
+        //    "print_" + bname, 0, q.GetDim(4)-1,
+        //    KOKKOS_LAMBDA (const int &v) {
+        //        printf("%d ", q(el, v).vector_component);
+        //    }
+        //);
+        //std::cerr << std::endl;
+
         pmb->par_for(
             "transmitting_polar_boundary_" + bname, 0, q.GetDim(4)-1, b.ks, b.ke, b.js, b.je, b.is, b.ie,
             KOKKOS_LAMBDA (const int &v, const int &k, const int &j, const int &i) {
@@ -123,4 +133,36 @@ void KBoundaries::TransmitSetTE(MeshBlockData<Real> *rc, VariablePack<Real> &q, 
             }
         );
     }
+
+    if (do_face) {
+        // Subtract the average B3 as "reconnection"
+        IndexRange3 b = KDomain::GetRange(rc, domain, F3, coarse);
+        IndexRange3 bi = KDomain::GetRange(rc, IndexDomain::interior, F3, coarse);
+        const int jf = (binner) ? bi.js : bi.je; // j index of last zone next to pole
+        //printf("q has %d elements", q.GetDim(4));
+        // TODO print details?
+        parthenon::par_for_outer(DEFAULT_OUTER_LOOP_PATTERN, "reduce_B3_" + bname, pmb->exec_space,
+            0, 1, 0, q.GetDim(4)-1, b.is, b.ie,
+            KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int &v, const int& i) {
+                // Sum the first rank of B3
+                double B3_sum;
+                Kokkos::Sum<double> sum_reducer(B3_sum);
+                parthenon::par_reduce_inner(member, bi.ks, bi.ke - 1,
+                    [&](const int& k, double& local_result) {
+                        local_result += q(F3, v, k, jf, i);
+                    }
+                , sum_reducer);
+
+                // Calculate the average and modify all B3 identically
+                // This will preserve their differences->divergence
+                const double B3_av = B3_sum / (bi.ke - bi.ks);
+                parthenon::par_for_inner(member, b.ks, b.ke,
+                    [&](const int& k) {
+                        q(F3, v, k, jf, i) -= B3_av;
+                    }
+                );
+            }
+        );
+    }
+
 }
