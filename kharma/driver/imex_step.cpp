@@ -73,6 +73,8 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
     const bool use_implicit = pkgs.count("Implicit");
     const bool use_jcon = pkgs.count("Current");
     const bool use_linesearch = (use_implicit) ? pkgs.at("Implicit")->Param<bool>("linesearch") : false;
+    const bool emhd_enabled = pkgs.count("EMHD");
+    const bool use_ideal_guess = (emhd_enabled) ? pkgs.at("GRMHD")->Param<bool>("ideal_guess") : false;
 
     // Allocate/copy the things we need
     // TODO these can now be reduced by including the var lists/flags which actually need to be allocated
@@ -191,9 +193,20 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
                                                      std::vector<MetadataFlag>{Metadata::GetUserFlag("Explicit"), Metadata::Independent},
                                                      use_b_ct, stage);
 
+        // Update ideal HD variables so that they can be used as a guess for the solver.
+        // Only used if emhd/ideal_guess is enabled.
+        // An additional `AddStateUpdate` task just for variables marked with the `IdealGuess` flag
+        auto t_ideal_guess = t_update;
+        if (use_ideal_guess) {
+            t_ideal_guess = KHARMADriver::AddStateUpdateIdealGuess(t_sources,  tl, md_full_step_init.get(), md_sub_step_init.get(),
+                                                     md_flux_src.get(), md_solver.get(),
+                                                     std::vector<MetadataFlag>{Metadata::GetUserFlag("IdealGuess"), Metadata::Independent},
+                                                     false, stage);
+        }
+
         // Make sure the primitive values of *explicitly-evolved* variables are updated.
         // Packages with implicitly-evolved vars should only register BoundaryUtoP or BoundaryPtoU
-        auto t_explicit_UtoP = tl.AddTask(t_update, Packages::MeshUtoP, md_solver.get(), IndexDomain::entire, false);
+        auto t_explicit_UtoP = tl.AddTask(t_ideal_guess, Packages::MeshUtoP, md_solver.get(), IndexDomain::entire, false);
 
         // Done with explicit update
         auto t_explicit = t_explicit_UtoP;
@@ -204,9 +217,17 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
             std::shared_ptr<MeshData<Real>> &md_linesearch = (use_linesearch) ? pmesh->mesh_data.GetOrAdd("linesearch", i) : md_solver;
 
             // Copy the current state of any implicitly-evolved vars (at least the prims) in as a guess.
-            // This sets md_solver = md_sub_step_init
-            auto t_copy_guess = tl.AddTask(t_sources, Copy<MeshData<Real>>, std::vector<MetadataFlag>({Metadata::GetUserFlag("Implicit")}),
+            // If we aren't using the ideal solution as the guess, set md_solver = md_sub_step_init
+            auto t_copy_guess       = t_explicit;
+            auto t_copy_emhd_vars   = t_explicit;
+            if (use_ideal_guess) {
+                t_copy_emhd_vars = tl.AddTask(t_sources, Copy<MeshData<Real>>, std::vector<MetadataFlag>({Metadata::GetUserFlag("EMHDVar")}),
                                         md_sub_step_init.get(), md_solver.get());
+                t_copy_guess = t_copy_emhd_vars;
+            } else {
+                t_copy_guess = tl.AddTask(t_sources, Copy<MeshData<Real>>, std::vector<MetadataFlag>({Metadata::GetUserFlag("Implicit")}),
+                                        md_sub_step_init.get(), md_solver.get());
+            }
 
             auto t_guess_ready = t_explicit | t_copy_guess;
 
@@ -218,7 +239,6 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
                 t_copy_linesearch = tl.AddTask(t_guess_ready, Copy<MeshData<Real>>, std::vector<MetadataFlag>({Metadata::GetUserFlag("Primitive")}),
                                                 md_solver.get(), md_linesearch.get());
             }
-
 
             // Time-step implicit variables by root-finding the residual.
             // This calculates the primitive values after the substep for all "isImplicit" variables --

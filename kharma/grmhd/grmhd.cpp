@@ -94,7 +94,7 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     params.Add("max_dt_increase", max_dt_increase);
 
     // Alternatively, you can start with (or just always use) the light (phase) speed crossing time
-    // of the smallest zone.  Useful when you're not sure of/modeling the characteristic velocities
+    // of the smallest zone. Useful when you're not sure of/modeling the characteristic velocities
     bool start_dt_light = pin->GetOrAddBoolean("parthenon/time", "start_dt_light", false);
     params.Add("start_dt_light", start_dt_light);
     bool use_dt_light = pin->GetOrAddBoolean("parthenon/time", "use_dt_light", false);
@@ -110,6 +110,9 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     auto implicit_grmhd = (driver.Get<DriverType>("type") == DriverType::imex) &&
                           (pin->GetBoolean("emhd", "on") || pin->GetOrAddBoolean("GRMHD", "implicit", false));
     params.Add("implicit", implicit_grmhd);
+    // Explicitly-evolved ideal MHD variables as guess for Extended MHD runs
+    const bool ideal_guess = pin->GetOrAddBoolean("emhd", "ideal_guess", false);
+    params.Add("ideal_guess", ideal_guess);
 
     // AMR PARAMETERS
     // Adaptive mesh refinement options
@@ -140,6 +143,12 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     flags_prim.insert(flags_prim.end(), flags_grmhd.begin(), flags_grmhd.end());
     auto flags_cons = driver.Get<std::vector<MetadataFlag>>("cons_flags");
     flags_cons.insert(flags_cons.end(), flags_grmhd.begin(), flags_grmhd.end());
+
+    // Mark whether the ideal MHD variables are to be updated explicitly for the guess to the solver
+    if (ideal_guess) {
+        flags_prim.push_back(Metadata::GetUserFlag("IdealGuess"));
+        flags_cons.push_back(Metadata::GetUserFlag("IdealGuess"));
+    }
 
     // We must additionally save the primtive variables as the "seed" for the next U->P solve
     flags_prim.push_back(Metadata::Restart);

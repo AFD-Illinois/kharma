@@ -300,8 +300,10 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput> &pin)
     // GRMHD needs globals to mark packages
     auto t_grmhd = tl.AddTask(t_globals | t_driver, KHARMA::AddPackage, packages, GRMHD::Initialize, pin.get());
     // Only load the inverter if GRMHD/EMHD isn't being evolved implicitly
+    // Unless we want to use the explicitly-evolved ideal MHD variables as a guess for the solver
     auto t_inverter = t_grmhd;
-    if (!pin->GetOrAddBoolean("GRMHD", "implicit", pin->GetOrAddBoolean("emhd", "on", false))) {
+    if (!pin->GetOrAddBoolean("GRMHD", "implicit", pin->GetOrAddBoolean("emhd", "on", false)) ||
+        pin->GetOrAddBoolean("emhd", "ideal_guess", false)) {
         t_inverter = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, Inverter::Initialize, pin.get());
     }
     // Floors package is only loaded if floors aren't disabled (TODO rename "on"?)

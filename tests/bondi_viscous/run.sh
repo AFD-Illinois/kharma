@@ -22,7 +22,7 @@ conv_2d() {
         mv bondi.out0.final.phdf emhd_2d_${res}_end_${1}.phdf
     done
     check_code=0
-    python check.py $ALL_RES $1 2d || check_code=$?
+    python3 check.py $ALL_RES $1 2d || check_code=$?
     rm -r *.xdmf
     rm -r *.out0*
     if [[ $check_code != 0 ]]; then
@@ -34,6 +34,8 @@ conv_2d() {
 }
 
 ALL_RES="8,16,32,64"
-conv_2d emhd2d_weno driver/reconstruction=weno5 "in 2D, WENO5"
+conv_2d emhd2d_weno driver/reconstruction=weno5 "Viscous Bondi in 2D, WENO5"
+# Test if it works with ideal solution as guess
+conv_2d emhd2d_weno_ideal_guess emhd/ideal_guess=true "Viscous bondi in 2D, WENO5, Ideal guess"
 
 exit $exit_code
