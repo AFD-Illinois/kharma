@@ -197,6 +197,11 @@ std::shared_ptr<KHARMAPackage> Flux::Initialize(ParameterInput *pin, std::shared
         bool use_source_term = pin->GetOrAddBoolean("fofc", "use_source_term", false);
         params.Add("fofc_use_source_term", use_source_term);
 
+        int fofc_polar_cells = pin->GetOrAddInteger("fofc", "polar_cells", 0);
+        params.Add("fofc_polar_cells", fofc_polar_cells);
+        const GReal eh_buffer = pin->GetOrAddReal("fofc", "eh_buffer", 0.1);
+        params.Add("fofc_eh_buffer", eh_buffer);
+
         if (packages->AllPackages().count("B_CT")) {
             // Use consistent B for FOFC (see above)
             // It is mildly inadvisable to disable this
@@ -208,8 +213,14 @@ std::shared_ptr<KHARMAPackage> Flux::Initialize(ParameterInput *pin, std::shared
         // TODO even post-reconstruction/reconstruction fallback?
         if (!pin->DoesBlockExist("fofc_floors")) {
             params.Add("fofc_prescription", Floors::MakePrescription(pin, "floors"));
+            if (pin->DoesBlockExist("floors_inner"))
+                params.Add("fofc_prescription_inner", Floors::MakePrescriptionInner(pin, Floors::MakePrescription(pin, "floors"), "floors_inner"));
+            else
+                params.Add("fofc_prescription_inner", Floors::MakePrescriptionInner(pin, Floors::MakePrescription(pin, "floors"), "floors"));
         } else {
+            // Override inner and outer floors with `fofc_floors` block
             params.Add("fofc_prescription", Floors::MakePrescription(pin, "fofc_floors"));
+            params.Add("fofc_prescription_inner", Floors::MakePrescriptionInner(pin, Floors::MakePrescription(pin, "fofc_floors"), "fofc_floors"));
         }
 
         // Flag for whether FOFC was applied, for diagnostics

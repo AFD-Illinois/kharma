@@ -216,6 +216,7 @@ KOKKOS_INLINE_FUNCTION int u_to_p<Type::kastaun>(const GRCoordinates& G, const V
                                               const Real& gam, const int& k, const int& j, const int& i,
                                               const VariablePack<Real>& P, const VarMap& m_p,
                                               const Loci& loc, const Floors::Prescription& inverter_floors,
+                                              const Floors::Prescription& inverter_floors_inner,
                                               const int& max_iterations, const Real& tol)
 {
     // Shouldn't need this, KHARMA should die on NaN
@@ -228,7 +229,25 @@ KOKKOS_INLINE_FUNCTION int u_to_p<Type::kastaun>(const GRCoordinates& G, const V
     const Real a_over_g = alpha / G.gdet(loc, j, i);
 
     const Real D = U(m_u.RHO, k, j, i) * a_over_g;
-    const Real D_fl = std::max(D, inverter_floors.rho_min_const);
+    // Set floor values based on radius
+    Real rho_min_const, u_min_const, gamma_max, u_over_rho_max;
+    if (inverter_floors.radius_dependent_floors && G.coords.is_spherical()) {
+        // Obtain radius value
+        GReal r = G.r(k, j, i);
+
+        (r < inverter_floors.floors_switch_r) ? rho_min_const  = inverter_floors_inner.rho_min_const : inverter_floors.rho_min_const;
+        (r < inverter_floors.floors_switch_r) ? u_min_const    = inverter_floors_inner.u_min_const : inverter_floors.u_min_const;
+        (r < inverter_floors.floors_switch_r) ? gamma_max      = inverter_floors_inner.gamma_max : inverter_floors.gamma_max;
+        (r < inverter_floors.floors_switch_r) ? u_over_rho_max = inverter_floors_inner.u_over_rho_max : inverter_floors.u_over_rho_max;
+    }
+    else {
+        rho_min_const  = inverter_floors.rho_min_const;
+        u_min_const    = inverter_floors.u_min_const;
+        gamma_max      = inverter_floors.gamma_max;
+        u_over_rho_max = inverter_floors.u_over_rho_max;
+    }
+
+    const Real D_fl = std::max(D, rho_min_const);
 
     Real Qcov[GR_DIM] = {(U(m_u.UU, k, j, i) - U(m_u.RHO, k, j, i)) * a_over_g,
                     U(m_u.U1, k, j, i) * a_over_g,
@@ -289,13 +308,11 @@ KOKKOS_INLINE_FUNCTION int u_to_p<Type::kastaun>(const GRCoordinates& G, const V
     }
     //const Real zsq = rsq / h0sq_; // h0sq_ normalization set to 1 in Phoebus
     const Real zsq = rsq;
-    const Real v0sq = std::min(zsq / (1.0 + zsq), 1.0 - 1.0 / SQR(inverter_floors.gamma_max));
+    const Real v0sq = std::min(zsq / (1.0 + zsq), 1.0 - 1.0 / SQR(gamma_max));
 
     // residual object. Caches most arguments/floors so calls are single-argument
     KastaunResidual res(D, q, bsq, bsq_rpsq, rsq, rbsq, v0sq, gam,
-                        inverter_floors.rho_min_const,
-                        inverter_floors.u_min_const/D_fl,
-                        inverter_floors.gamma_max, inverter_floors.u_over_rho_max);
+                        rho_min_const, u_min_const/D_fl, gamma_max, u_over_rho_max);
 
     // SOLVE
     // TODO(BSP) better or faster solver?  (Optionally) skip bracketing?

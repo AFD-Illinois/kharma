@@ -47,14 +47,26 @@ namespace Floors {
  * LOCKSTEP: this function respects P and returns consistent P<->U
  */
 KOKKOS_INLINE_FUNCTION void apply_ceilings(const GRCoordinates& G, const VariablePack<Real>& P, const VarMap& m_p,
-                                          const Real& gam, const int& k, const int& j, const int& i, const Floors::Prescription& floors,
+                                          const Real& gam, const int& k, const int& j, const int& i,
+                                          const Floors::Prescription& floors, const Floors::Prescription& floors_inner,
                                           const VariablePack<Real>& U, const VarMap& m_u, const Loci loc=Loci::center)
 {
-    // First apply ceilings:
+    // Compute max values for ceilings
+    Real gamma      = GRMHD::lorentz_calc(G, P, m_p, k, j, i, loc);
+    Real ktot       = (gam - 1.) * P(m_p.UU, k, j, i) / m::pow(P(m_p.RHO, k, j, i), gam);
+    Real u_over_rho = P(m_p.UU, k, j, i) / P(m_p.RHO, k, j, i);
+    Real gamma_max, ktot_max, u_over_rho_max;
+    if (floors.radius_dependent_floors && G.coords.is_spherical()) {
+        // Obtain radius value
+        GReal r = G.r(k, j, i);
+        (r < floors.floors_switch_r) ? gamma_max      = floors_inner.gamma_max : floors.gamma_max;
+        (r < floors.floors_switch_r) ? ktot_max       = floors_inner.ktot_max : floors.ktot_max;
+        (r < floors.floors_switch_r) ? u_over_rho_max = floors_inner.u_over_rho_max : floors.u_over_rho_max;
+    }
+
     // 1. Limit gamma with respect to normal observer
-    Real gamma = GRMHD::lorentz_calc(G, P, m_p, k, j, i, loc);
-    if (gamma > floors.gamma_max) {
-        Real f = m::sqrt((SQR(floors.gamma_max) - 1.) / (SQR(gamma) - 1.));
+    if (gamma > gamma_max) {
+        Real f = m::sqrt((SQR(gamma_max) - 1.) / (SQR(gamma) - 1.));
         VLOOP P(m_p.U1+v, k, j, i) *= f;
     }
 
@@ -62,20 +74,19 @@ KOKKOS_INLINE_FUNCTION void apply_ceilings(const GRCoordinates& G, const Variabl
     // Note this technically applies the condition *one step sooner* than legacy, since it operates on
     // the entropy as calculated from current conditions, rather than the value kept from the previous
     // step for calculating dissipation.
-    Real ktot = (gam - 1.) * P(m_p.UU, k, j, i) / m::pow(P(m_p.RHO, k, j, i), gam);
-    if (ktot > floors.ktot_max) {
-        P(m_p.UU, k, j, i) = floors.ktot_max / ktot * P(m_p.UU, k, j, i);
+    if (ktot > ktot_max) {
+        P(m_p.UU, k, j, i) = ktot_max / ktot * P(m_p.UU, k, j, i);
     }
 
     // 3. Limit the temperature by controlling u.  Can optionally add density instead, implemented in apply_floors
-    if (floors.temp_adjust_u && P(m_p.UU, k, j, i) / P(m_p.RHO, k, j, i) > floors.u_over_rho_max) {
-        P(m_p.UU, k, j, i) = floors.u_over_rho_max * P(m_p.RHO, k, j, i);
+    if (floors.temp_adjust_u && P(m_p.UU, k, j, i) / P(m_p.RHO, k, j, i) > u_over_rho_max) {
+        P(m_p.UU, k, j, i) = u_over_rho_max * P(m_p.RHO, k, j, i);
     }
 }
 
 KOKKOS_INLINE_FUNCTION int determine_floors(const GRCoordinates& G, const VariablePack<Real>& P, const VarMap& m_p,
                                         const Real& gam, const int& k, const int& j, const int& i, const Floors::Prescription& floors,
-                                        Real& rhoflr_max, Real& uflr_max)
+                                        const Floors::Prescription& floors_inner, Real& rhoflr_max, Real& uflr_max)
 {
     // Calculate the different floor values in play:
     // 1. Geometric hard floors, not based on fluid relationships
@@ -84,9 +95,12 @@ KOKKOS_INLINE_FUNCTION int determine_floors(const GRCoordinates& G, const Variab
     if(G.coords.is_spherical()) {
         const GReal r = G.r(k, j, i);
         // r_char sets more aggressive floor close to EH but backs off
-        Real rhoscal = (floors.use_r_char) ? 1. / ((r*r) * (1 + r / floors.r_char)) : 1. / m::sqrt(r*r*r);
-        rhoflr_geom = m::max(floors.rho_min_geom * rhoscal, floors.rho_min_const);
-        uflr_geom   = m::max(floors.u_min_geom * m::pow(rhoscal, gam), floors.u_min_const);
+        Real rhoscal = (floors.use_r_char) ? (r < floors.floors_switch_r) ? 1. / ((r*r) * (1 + r / floors_inner.r_char)) 
+                        : 1. / ((r*r) * (1 + r / floors.r_char)) : 1. / m::sqrt(r*r*r);
+        rhoflr_geom = (r < floors.floors_switch_r) ? m::max(floors_inner.rho_min_geom * rhoscal, floors_inner.rho_min_const)
+                        : m::max(floors.rho_min_geom * rhoscal, floors.rho_min_const);
+        uflr_geom   = (r < floors.floors_switch_r) ? m::max(floors_inner.u_min_geom * m::pow(rhoscal, gam), floors_inner.u_min_const)
+                        : m::max(floors.u_min_geom * m::pow(rhoscal, gam), floors.u_min_const);
     } else {
         rhoflr_geom = floors.rho_min_const;
         uflr_geom   = floors.u_min_const;
@@ -95,9 +109,20 @@ KOKKOS_INLINE_FUNCTION int determine_floors(const GRCoordinates& G, const Variab
     // 2. Magnetization ceilings: impose maximum magnetization sigma = bsq/rho, and inverse beta prop. to bsq/U
     FourVectors Dtmp;
     GRMHD::calc_4vecs(G, P, m_p, k, j, i, Loci::center, Dtmp);
-    Real bsq      = dot(Dtmp.bcon, Dtmp.bcov);
-    Real rhoflr_b = bsq / floors.bsq_over_rho_max;
-    Real uflr_b   = bsq / floors.bsq_over_u_max;
+    Real rhoflr_b, uflr_b;
+    // Radius-dependent floors.
+    // Used with spherical coordinate system, i.e., G.r(k,j,i) exist
+    if (floors.radius_dependent_floors && G.coords.is_spherical()) {
+        // Obtain radius value
+        GReal r = G.r(k, j, i);
+        Real bsq = dot(Dtmp.bcon, Dtmp.bcov);
+        rhoflr_b = (r < floors.floors_switch_r) ? (bsq / floors_inner.bsq_over_rho_max) : (bsq / floors.bsq_over_rho_max);
+        uflr_b   = (r < floors.floors_switch_r) ? (bsq / floors_inner.bsq_over_u_max) : (bsq / floors.bsq_over_u_max);
+    } else {
+        Real bsq = dot(Dtmp.bcon, Dtmp.bcov);
+        rhoflr_b = bsq / floors.bsq_over_rho_max;
+        uflr_b   = bsq / floors.bsq_over_u_max;
+    }
 
     // Evaluate max U floor, needed for temp ceiling below
     uflr_max = m::max(uflr_geom, uflr_b);
@@ -109,7 +134,16 @@ KOKKOS_INLINE_FUNCTION int determine_floors(const GRCoordinates& G, const Variab
     if (!floors.temp_adjust_u) {
         // 3. Temperature ceiling: impose maximum temperature u/rho
         // Take floors on U into account
-        double rhoflr_temp = m::max(u, uflr_max) / floors.u_over_rho_max;
+        double rhoflr_temp;
+        if (floors.radius_dependent_floors && G.coords.is_spherical()) {
+            // Obtain radius value
+            GReal r = G.r(k, j, i);
+            rhoflr_temp = (r < floors.floors_switch_r) ? (m::max(u, uflr_max) / floors_inner.u_over_rho_max)
+                : (m::max(u, uflr_max) / floors.u_over_rho_max);
+        } else {
+            rhoflr_temp = m::max(u, uflr_max) / floors.u_over_rho_max;
+        }
+
         // Record hitting temperature ceiling
         fflag |= (rhoflr_temp > rho) * FFlag::TEMP;
 
@@ -131,14 +165,32 @@ KOKKOS_INLINE_FUNCTION int determine_floors(const GRCoordinates& G, const Variab
     }
 
     // Then ceilings, need to record these for FOFC. See real implementation.
-    if (GRMHD::lorentz_calc(G, P, m_p, k, j, i, Loci::center) > floors.gamma_max)
-        fflag |= FFlag::GAMMA;
+    if (floors.radius_dependent_floors && G.coords.is_spherical()) {
+        GReal lorentz_factor, ktot, temperature;
+        // Obtain radius value
+        GReal r = G.r(k, j, i);
 
-    if ((gam - 1.) * P(m_p.UU, k, j, i) / m::pow(P(m_p.RHO, k, j, i), gam) > floors.ktot_max)
-        fflag |= FFlag::KTOT;
+        lorentz_factor = GRMHD::lorentz_calc(G, P, m_p, k, j, i, Loci::center);
+        ktot           = (gam - 1.) * P(m_p.UU, k, j, i) / m::pow(P(m_p.RHO, k, j, i), gam);
+        temperature    = P(m_p.UU, k, j, i) / P(m_p.RHO, k, j, i);
 
-    if (floors.temp_adjust_u && (P(m_p.UU, k, j, i) / P(m_p.RHO, k, j, i) > floors.u_over_rho_max))
-        fflag |= FFlag::TEMP;
+        // Record hits
+        if ((r < floors.floors_switch_r) ? lorentz_factor > floors_inner.gamma_max : lorentz_factor > floors.gamma_max)
+            fflag |= FFlag::GAMMA;
+        if ((r < floors.floors_switch_r) ? ktot > floors_inner.ktot_max : ktot > floors.ktot_max)
+            fflag |= FFlag::KTOT;
+        if ((r < floors.floors_switch_r) ? temperature > floors_inner.u_over_rho_max : temperature > floors.u_over_rho_max)
+            fflag |= FFlag::TEMP;
+    } else {
+        if (GRMHD::lorentz_calc(G, P, m_p, k, j, i, Loci::center) > floors.gamma_max)
+            fflag |= FFlag::GAMMA;
+
+        if ((gam - 1.) * P(m_p.UU, k, j, i) / m::pow(P(m_p.RHO, k, j, i), gam) > floors.ktot_max)
+            fflag |= FFlag::KTOT;
+
+        if (floors.temp_adjust_u && (P(m_p.UU, k, j, i) / P(m_p.RHO, k, j, i) > floors.u_over_rho_max))
+            fflag |= FFlag::TEMP;
+    }
 
     return fflag;
 }
@@ -270,7 +322,7 @@ KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::normal>(FLOOR_ONE_ARGS)
     // Kastaun would need real vals here...
     const Floors::Prescription floor_tmp = {0}; 
     return Inverter::u_to_p<Inverter::Type::onedw>(G, U, m_u, gam, k, j, i, P, m_p, Loci::center,
-                                                     floor_tmp, 8, 1e-8);
+                                                     floor_tmp, floor_tmp, 8, 1e-8);
 }
 
 template<>
@@ -310,7 +362,8 @@ KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::mixed_fluid_drift>(FLOOR
 template<typename Local>
 KOKKOS_INLINE_FUNCTION int apply_geo_floors(const GRCoordinates& G, Local& P, const VarMap& m,
                                             const Real& gam, const int& j, const int& i,
-                                            const Floors::Prescription& floors, const Loci loc=Loci::center)
+                                            const Floors::Prescription& floors, const Floors::Prescription& floors_inner,
+                                            const Loci loc=Loci::center)
 {
     // Apply only the geometric floors
     Real rhoflr_geom, uflr_geom;
@@ -318,18 +371,13 @@ KOKKOS_INLINE_FUNCTION int apply_geo_floors(const GRCoordinates& G, Local& P, co
         GReal Xembed[GR_DIM];
         G.coord_embed(0, j, i, loc, Xembed);
         GReal r = Xembed[1];
-
-        if (floors.use_r_char) {
-            // Steeper floor from iharm3d
-            Real rhoscal = 1. / ((r*r) * (1 + r / floors.r_char));
-            rhoflr_geom  = floors.rho_min_geom * rhoscal;
-            uflr_geom    = floors.u_min_geom * m::pow(rhoscal, gam);
-        } else {
-            // Original floors from iharm2d
-            Real rhoscal = 1. / m::sqrt(r*r*r);
-            rhoflr_geom = floors.rho_min_geom * rhoscal;
-            uflr_geom   = floors.u_min_geom * rhoscal / r;
-        }
+        // r_char sets more aggressive floor close to EH but backs off
+        Real rhoscal = (floors.use_r_char) ? (r < floors.floors_switch_r) ? 1. / ((r*r) * (1 + r / floors_inner.r_char)) 
+                        : 1. / ((r*r) * (1 + r / floors.r_char)) : 1. / m::sqrt(r*r*r);
+        rhoflr_geom = (r < floors.floors_switch_r) ? floors_inner.rho_min_geom * rhoscal : floors.rho_min_geom * rhoscal;
+        uflr_geom   = (floors.use_r_char) ? (r < floors.floors_switch_r) ? floors_inner.u_min_geom * m::pow(rhoscal, gam) :
+                        floors.u_min_geom * m::pow(rhoscal, gam) : (r < floors.floors_switch_r) ? 
+                        floors_inner.u_min_geom * rhoscal / r : floors.u_min_geom * rhoscal / r;
     } else {
         rhoflr_geom = floors.rho_min_geom;
         uflr_geom   = floors.u_min_geom;
@@ -349,26 +397,22 @@ KOKKOS_INLINE_FUNCTION int apply_geo_floors(const GRCoordinates& G, Local& P, co
 template<typename Global>
 KOKKOS_INLINE_FUNCTION int apply_geo_floors(const GRCoordinates& G, Global& P, const VarMap& m,
                                             const Real& gam, const int& k, const int& j, const int& i,
-                                            const Floors::Prescription& floors, const Loci loc=Loci::center)
+                                            const Floors::Prescription& floors, const Floors::Prescription& floors_inner,
+                                            const Loci loc=Loci::center)
 {
-    // Apply only the geometric floors
+     // Apply only the geometric floors
     Real rhoflr_geom, uflr_geom;
     if(G.coords.is_spherical()) {
         GReal Xembed[GR_DIM];
-        G.coord_embed(k, j, i, loc, Xembed);
+        G.coord_embed(0, j, i, loc, Xembed);
         GReal r = Xembed[1];
-
-        if (floors.use_r_char) {
-            // Steeper floor from iharm3d
-            Real rhoscal = 1. / ((r*r) * (1 + r / floors.r_char));
-            rhoflr_geom  = floors.rho_min_geom * rhoscal;
-            uflr_geom    = floors.u_min_geom * m::pow(rhoscal, gam);
-        } else {
-            // Original floors from iharm2d
-            Real rhoscal = 1. / m::sqrt(r*r*r);
-            rhoflr_geom = floors.rho_min_geom * rhoscal;
-            uflr_geom   = floors.u_min_geom * rhoscal / r;
-        }
+        // r_char sets more aggressive floor close to EH but backs off
+        Real rhoscal = (floors.use_r_char) ? (r < floors.floors_switch_r) ? 1. / ((r*r) * (1 + r / floors_inner.r_char)) 
+                        : 1. / ((r*r) * (1 + r / floors.r_char)) : 1. / m::sqrt(r*r*r);
+        rhoflr_geom = (r < floors.floors_switch_r) ? floors_inner.rho_min_geom * rhoscal : floors.rho_min_geom * rhoscal;
+        uflr_geom   = (floors.use_r_char) ? (r < floors.floors_switch_r) ? floors_inner.u_min_geom * m::pow(rhoscal, gam) :
+                        floors.u_min_geom * m::pow(rhoscal, gam) : (r < floors.floors_switch_r) ? 
+                        floors_inner.u_min_geom * rhoscal / r : floors.u_min_geom * rhoscal / r;
     } else {
         rhoflr_geom = floors.rho_min_geom;
         uflr_geom   = floors.u_min_geom;

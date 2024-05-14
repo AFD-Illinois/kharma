@@ -29,7 +29,7 @@ conv_3d() {
         mv mhdmodes.out0.final.phdf mhd_3d_${1}_${res}_end.phdf
     done
     check_code=0
-    python check.py $ALL_RES "$3" $1 3d 3 || check_code=$?
+    python3 check.py $ALL_RES "$3" $1 3d 3 || check_code=$?
     if [[ $check_code != 0 ]]; then
         echo MHD modes test \"$3\" FAIL: $check_code
         exit_code=1
@@ -52,7 +52,7 @@ conv_2d() {
         mv mhdmodes.out0.final.phdf mhd_2d_${1}_${res}_end.phdf
     done
     check_code=0
-    python check.py $ALL_RES "$3" $1  2d || check_code=$?
+    python3 check.py $ALL_RES "$3" $1  2d || check_code=$?
     if [[ $check_code != 0 ]]; then
         echo MHD modes test \"$3\" FAIL: $check_code
         exit_code=1

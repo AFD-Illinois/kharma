@@ -54,8 +54,11 @@ TaskStatus Flux::MarkFOFC(MeshData<Real> *guess)
     auto fofcflag = guess->PackVariables(std::vector<std::string>{"fofcflag"});
 
     // Parameters
+    const auto& pars = pmb0->packages.Get("Flux")->AllParams();
     const bool spherical = pmb0->coords.coords.is_spherical();
     const GReal r_eh = pmb0->coords.coords.get_horizon();
+    const int polar_cells = pars.Get<int>("fofc_polar_cells");
+    const GReal eh_buffer = pars.Get<GReal>("fofc_eh_buffer");
 
     // Pre-mark cells which will need fluxes reduced.
     // This avoids a race condition marking them multiple times when iterating faces,
@@ -68,13 +71,46 @@ TaskStatus Flux::MarkFOFC(MeshData<Real> *guess)
             // if cell failed to invert or would call floors...
             // TODO preserve cause in the fofcflag
             if (static_cast<int>(fflag(b, 0, k, j, i)) || //Inverter::failed(pflag(b, 0, k, j, i)) ||
-                (spherical && G.r(k, j, i) < r_eh + 0.1)) { // TODO customizable FOFC radius
+                (spherical && G.r(k, j, i) < r_eh + eh_buffer)) {
                 fofcflag(b, 0, k, j, i) = 1;
             } else {
                 fofcflag(b, 0, k, j, i) = 0;
             }
         }
     );
+
+    if (spherical && polar_cells > 0) {
+        for (int i_block = 0; i_block < guess->NumBlocks(); i_block++) {
+            auto &rc = guess->GetBlockData(i_block);
+            auto pmb = rc->GetBlockPointer();
+            const bool is_inner_x2 = pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::user;
+            const bool is_outer_x2 = pmb->boundary_flag[BoundaryFace::outer_x2] == BoundaryFlag::user;
+            if (is_inner_x2 || is_outer_x2) {
+                auto lfofcflag = rc->PackVariables(std::vector<std::string>{"fofcflag"});
+                if (is_inner_x2) {
+                    const IndexRange3 b = KDomain::GetRange(guess, IndexDomain::inner_x2);
+                    int jstart = b.je + 1;
+                    int jend = jstart + polar_cells - 1;
+                    pmb0->par_for("fofc_mark_inner_x2", b.ks, b.ke, jstart, jend, b.is, b.ie,
+                        KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+                            lfofcflag(0, k, j, i) = 1;
+                        }
+                    );
+                }
+                if (is_outer_x2) {
+                    const IndexRange3 b = KDomain::GetRange(guess, IndexDomain::outer_x2);
+                    int jend = b.js - 1;
+                    int jstart = jend - polar_cells + 1;
+                    pmb0->par_for("fofc_mark_outer_x2", b.ks, b.ke, jstart, jend, b.is, b.ie,
+                        KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+                            lfofcflag(0, k, j, i) = 1;
+                        }
+                    );
+                }
+            }
+        }
+    }
+
     return TaskStatus::complete;
 }
 
@@ -108,16 +144,16 @@ TaskStatus Flux::FOFC(MeshData<Real> *md, MeshData<Real> *guess)
     const auto& U_all = md->PackVariablesAndFluxes(cons_flags, cons_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
     const int nvar = U_all.GetDim(4);
+    // Okay if this is empty since we won't access it then
+    const auto& Bf = md->PackVariables(std::vector<std::string>{"cons.fB"});
 
     // Parameters
-    const Real gam = pmb0->packages.Get("GRMHD")->Param<Real>("gamma");
-    const bool use_global = pmb0->packages.Get("Flux")->Param<bool>("fofc_use_glf");
+    const auto& pars = packages.Get("Flux")->AllParams();
+    const Real gam = packages.Get("GRMHD")->Param<Real>("gamma");
+    const bool use_global = pars.Get<bool>("fofc_use_glf");
     const EMHD::EMHD_parameters& emhd_params = EMHD::GetEMHDParameters(packages);
-    // With B_CT this will load the preference, without it will set face_b false and never access (empty) Bf
-    // Weird but it works
-    const bool face_b = (packages.AllPackages().count("B_CT") &&
-                        packages.Get("Flux")->Param<bool>("fofc_consistent_face_b"));
-    const auto& Bf = md->PackVariables(std::vector<std::string>{"cons.fB"});
+    // Only fix faces if they exist
+    const bool face_b = (Bf.GetDim(4) > 0 && pars.Get<bool>("fofc_consistent_face_b"));
 
     for (int dir=1; dir <= ndim; dir++) { // TODO if(trivial_direction) etc
         const TE el = FaceOf(dir);
