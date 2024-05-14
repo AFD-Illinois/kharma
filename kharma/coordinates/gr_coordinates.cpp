@@ -96,7 +96,7 @@ GRCoordinates::GRCoordinates(const GRCoordinates &src, int coarsen): UniformCart
 void init_GRCoordinates(GRCoordinates& G) {
     const int n1 = G.n1;
     const int n2 = G.n2;
-    const int n3 = G.n3;
+    //const int n3 = G.n3;
     const bool correct_connections = G.correct_connections;
     const int connection_average_points = G.connection_average_points;
 

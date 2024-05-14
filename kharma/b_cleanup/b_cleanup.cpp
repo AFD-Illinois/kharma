@@ -139,11 +139,13 @@ std::shared_ptr<KHARMAPackage> B_Cleanup::Initialize(ParameterInput *pin, std::s
     int cleanup_interval = pin->GetOrAddInteger("b_cleanup", "cleanup_interval", manage_field ? 10 : -1);
     params.Add("cleanup_interval", cleanup_interval);
 
+    if (manage_field) {
+        throw std::runtime_error("B field cleanup/projection is set as B field transport! If you really want this, disable this error in source code!");
+    }
+
     // Declare fields if we're doing that
     if (manage_field) {
-        // Stolen verbatim from FluxCT, will need updates to actually use
-        throw std::runtime_error("B field cleanup/projection is set as B field transport! If you really want this, disable this error in source!");
-
+        // Stolen verbatim from FluxCT, will need updates from there to actually use
         // Mark if we're evolving implicitly
         bool implicit_b = pin->GetOrAddBoolean("b_field", "implicit", false);
         params.Add("implicit", implicit_b);
