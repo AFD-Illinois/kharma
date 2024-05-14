@@ -100,9 +100,9 @@ void KBoundaries::TransmitSetTE(MeshBlockData<Real> *rc, VariablePack<Real> &q, 
         // Calculate j just like for reflecting conditions
         const int jpivot = (binner) ? b.je : b.js;
         // B3 component on X3 face should be inverted even if not marked "vector"
-        // TODO honor SplitVector here rather than always inverting
+        // TODO honor SplitVector and vector components here rather than hard-coding
         const bool do_face_invert = (el == F3);
-        // TODO figure out fixing '.vector_component'
+        // TODO figure out fixing '.vector_component' in Parthenon
         const int x3_index_1 = bounds_map["cons.uvec"].second;
         const int x3_index_2 = bounds_map["prims.uvec"].second;
         const int x3_index_3 = bounds_map["cons.B"].second;
@@ -133,36 +133,4 @@ void KBoundaries::TransmitSetTE(MeshBlockData<Real> *rc, VariablePack<Real> &q, 
             }
         );
     }
-
-    if (do_face) {
-        // Subtract the average B3 as "reconnection"
-        IndexRange3 b = KDomain::GetRange(rc, domain, F3, coarse);
-        IndexRange3 bi = KDomain::GetRange(rc, IndexDomain::interior, F3, coarse);
-        const int jf = (binner) ? bi.js : bi.je; // j index of last zone next to pole
-        //printf("q has %d elements", q.GetDim(4));
-        // TODO print details?
-        parthenon::par_for_outer(DEFAULT_OUTER_LOOP_PATTERN, "reduce_B3_" + bname, pmb->exec_space,
-            0, 1, 0, q.GetDim(4)-1, b.is, b.ie,
-            KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int &v, const int& i) {
-                // Sum the first rank of B3
-                double B3_sum;
-                Kokkos::Sum<double> sum_reducer(B3_sum);
-                parthenon::par_reduce_inner(member, bi.ks, bi.ke - 1,
-                    [&](const int& k, double& local_result) {
-                        local_result += q(F3, v, k, jf, i);
-                    }
-                , sum_reducer);
-
-                // Calculate the average and modify all B3 identically
-                // This will preserve their differences->divergence
-                const double B3_av = B3_sum / (bi.ke - bi.ks);
-                parthenon::par_for_inner(member, b.ks, b.ke,
-                    [&](const int& k) {
-                        q(F3, v, k, jf, i) -= B3_av;
-                    }
-                );
-            }
-        );
-    }
-
 }

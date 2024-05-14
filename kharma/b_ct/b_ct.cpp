@@ -38,8 +38,6 @@
 #include "grmhd.hpp"
 #include "grmhd_functions.hpp"
 #include "kharma.hpp"
-// TODO eliminate sync
-#include "kharma_driver.hpp"
 
 #include <parthenon/parthenon.hpp>
 #include <prolong_restrict/pr_ops.hpp>
@@ -445,132 +443,6 @@ TaskStatus B_CT::AddSource(MeshData<Real> *md, MeshData<Real> *mdudt, IndexDomai
     return TaskStatus::complete;
 }
 
-void B_CT::ZeroEMF(MeshBlockData<Real> *rc, IndexDomain domain, const VariablePack<Real> &emfpack, bool coarse)
-{
-    // TODO might be able to get away with not zeroing ghost EMFs,
-    // since they shouldn't be used.
-    auto pmb = rc->GetBlockPointer();
-    const BoundaryFace bface = KBoundaries::BoundaryFaceOf(domain);
-    const std::string bname = KBoundaries::BoundaryName(bface);
-    for (auto &el : {E1, E2, E3}) {
-        // This inlcudes e.g. E1/E3 edges on X2 face
-        auto b = KDomain::GetBoundaryRange(rc, domain, el, coarse);
-        pmb->par_for(
-            "zero_EMF_" + bname, b.ks, b.ke, b.js, b.je, b.is, b.ie,
-            KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-                emfpack(el, 0, k, j, i) = 0;
-            }
-        );
-    }
-}
-
-void B_CT::AverageEMF(MeshBlockData<Real> *rc, IndexDomain domain, const VariablePack<Real> &emfpack, bool coarse)
-{
-    auto pmb = rc->GetBlockPointer();
-    const BoundaryFace bface = KBoundaries::BoundaryFaceOf(domain);
-    const std::string bname = KBoundaries::BoundaryName(bface);
-    const int bdir = KBoundaries::BoundaryDirection(bface);
-    const bool binner = KBoundaries::BoundaryIsInner(bface);
-    if (bdir != 2) {
-        throw std::runtime_error("Polar average EMF implemented only in X2!");
-    }
-
-    // X1 and X2 EMF are zeroed only *within* boundary domain
-    // TODO might be able to get away with not zeroing ghost EMFs,
-    // since they shouldn't be used.
-    for (auto el : {E1, E2}) {
-        IndexRange3 b = KDomain::GetRange(rc, domain, el, coarse);
-        pmb->par_for(
-            "zero_offaxis_EMF12_" + bname, b.ks, b.ke, b.js, b.je, b.is, b.ie,
-            KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-                emfpack(el, 0, k, j, i) = 0.;
-            }
-        );
-    }
-    // X3 EMF must additionally be zero *on* polar face, since edge size is 0
-    IndexRange3 b = KDomain::GetBoundaryRange(rc, domain, E3, coarse);
-    pmb->par_for(
-        "zero_offaxis_EMF3_" + bname, b.ks, b.ke, b.js, b.je, b.is, b.ie,
-        KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-            emfpack(E3, 0, k, j, i) = 0;
-        }
-    );
-
-    // In 2D, "averaging" should just mean not zeroing E1
-    if (KDomain::GetNDim(rc) < 3) return;
-
-    // Then X1 EMF on the face is *averaged* along X3
-    b = KDomain::GetRange(rc, domain, E1, coarse);
-    IndexRange3 bi = KDomain::GetRange(rc, IndexDomain::interior, E1, coarse);
-    const int jf = (binner) ? bi.js : bi.je; // j index of polar face
-    parthenon::par_for_outer(DEFAULT_OUTER_LOOP_PATTERN, "reduce_EMF1_" + bname, pmb->exec_space,
-        0, 1, b.is, b.ie,
-        KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int& i) {
-            // Sum the (non-ghost) X1 direction fluxes along the pole at zone i
-            // Recall both faces fall in the domain, so we neglect the right
-            double emf_sum;
-            Kokkos::Sum<double> sum_reducer(emf_sum);
-            parthenon::par_reduce_inner(member, bi.ks, bi.ke - 1,
-                [&](const int& k, double& local_result) {
-                    local_result += emfpack(E1, 0, k, jf, i);
-                }
-            , sum_reducer);
-
-            // Calculate the average and set all EMFs identically (even ghosts, to keep divB)
-            const double emf_av = emf_sum / (bi.ke - bi.ks);
-            parthenon::par_for_inner(member, b.ks, b.ke,
-                [&](const int& k) {
-                    emfpack(E1, 0, k, jf, i) = emf_av;
-                }
-            );
-        }
-    );
-}
-
-void B_CT::DestructiveBoundaryClean(MeshBlockData<Real> *rc, IndexDomain domain, const VariablePack<Real> &fpack, bool coarse)
-{
-    // Set XN faces to keep clean divergence at outflow XN boundary (nearly always X1)
-    // Feels wrong to work backward from no divergence, but they are just outflow...
-    auto pmb = rc->GetBlockPointer();
-    const BoundaryFace bface = KBoundaries::BoundaryFaceOf(domain);
-    const std::string bname = KBoundaries::BoundaryName(bface);
-    const int bdir = KBoundaries::BoundaryDirection(bface);
-    const bool binner = KBoundaries::BoundaryIsInner(bface);
-    const TopologicalElement face = FaceOf(bdir);
-    // Correct last domain face, too
-    auto b = KDomain::GetRange(rc, domain, face, (binner) ? 0 : -1, (binner) ? 1 : 0, coarse);
-    // Need the coordinates for this boundary, uniquely
-    auto G = pmb->coords;
-    const int ndim = pmb->pmy_mesh->ndim;
-    if (domain == IndexDomain::inner_x1 || domain == IndexDomain::outer_x1) {
-        const int i_face = (binner) ? b.ie : b.is;
-        for (int iadd = 0; iadd <= (b.ie - b.is); iadd++) {
-            const int i = (binner) ? i_face - iadd : i_face + iadd;
-            const int last_rank_f  = (binner) ? i + 1 : i - 1;
-            const int last_rank_c  = (binner) ? i     : i - 1;
-            const int outward_sign = (binner) ? -1.   : 1.;
-            pmb->par_for(
-                "correct_face_vector_" + bname, b.ks, b.ke, b.js, b.je, i, i,
-                KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-                    // Other faces have been updated, just need to clean divergence
-                    // Subtract off their contributions to find ours. Note our partner face contributes differently,
-                    // depending on whether we're the i+1 "outward" face, or the i "innward" face
-                    Real new_face = - (-outward_sign) * fpack(F1, 0, k, j, last_rank_f) * G.Volume<F1>(k, j, last_rank_f)
-                                    - (fpack(F2, 0, k, j + 1, last_rank_c) * G.Volume<F2>(k, j + 1, last_rank_c)
-                                        - fpack(F2, 0, k, j, last_rank_c) * G.Volume<F2>(k, j, last_rank_c));
-                    if (ndim > 2)
-                        new_face -= fpack(F3, 0, k + 1, j, last_rank_c) * G.Volume<F3>(k + 1, j, last_rank_c)
-                                    - fpack(F3, 0, k, j, last_rank_c) * G.Volume<F3>(k, j, last_rank_c);
-
-                    fpack(F1, 0, k, j, i) = outward_sign * new_face / G.Volume<F1>(k, j, i);
-                }
-            );
-        }
-    } else {
-        throw std::runtime_error("Divergence-free outflow replacement only implemented in X1!");
-    }
-}
-
 double B_CT::MaxDivB(MeshData<Real> *md)
 {
     auto pmesh = md->GetMeshPointer();
@@ -621,7 +493,6 @@ double B_CT::BlockMaxDivB(MeshBlockData<Real> *rc)
 
     return max_divb;
 }
-
 double B_CT::GlobalMaxDivB(MeshData<Real> *md, bool all_reduce)
 {
     if (all_reduce) {

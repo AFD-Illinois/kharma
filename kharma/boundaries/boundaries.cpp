@@ -168,22 +168,26 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
         bool outflow_EMHD = pin->GetOrAddBoolean("boundaries", "outflow_EMHD_" + bname, false);
         params.Add("outflow_EMHD_" + bname, outflow_EMHD);
 
-        // Invert X2 face values to reflect across polar boundary
-        bool invert_F2 = pin->GetOrAddBoolean("boundaries", "reflect_face_vector_" + bname, (btype == "reflecting"));
-        params.Add("reflect_face_vector_"+bname, invert_F2);
-        // If you'll have field loops exiting the domain, outflow conditions need to be cleaned so as not to
-        // introduce divergence to the first physical zone.
-        bool clean_face_B = pin->GetOrAddBoolean("boundaries", "clean_face_B_" + bname, (btype == "outflow"));
-        params.Add("clean_face_B_"+bname, clean_face_B);
+        if (packages->AllPackages().count("B_CT")) {
+            // Invert X2 face values to reflect across polar boundary
+            bool invert_F2 = pin->GetOrAddBoolean("boundaries", "reflect_face_vector_" + bname, (btype == "reflecting"));
+            params.Add("reflect_face_vector_"+bname, invert_F2);
+            // If you'll have field loops exiting the domain, outflow conditions need to be cleaned so as not to
+            // introduce divergence to the first physical zone.
+            bool clean_face_B = pin->GetOrAddBoolean("boundaries", "clean_face_B_" + bname, (btype == "outflow"));
+            params.Add("clean_face_B_"+bname, clean_face_B);
+            // Forcibly reconnect field loops that get trapped around the pole w/face-CT.  Maybe useful for reflecting too?
+            bool reconnect_face_B = pin->GetOrAddBoolean("boundaries", "reconnect_face_B_" + bname, (btype == "transmitting"));
+            params.Add("reconnect_face_B_"+bname, reconnect_face_B);
 
-        // Special EMF averaging.  Probably slow but beneficial for transmitting boundaries
-        bool average_EMF = pin->GetOrAddBoolean("boundaries", "average_EMF_" + bname, (btype == "transmitting"));
-        params.Add("average_EMF_"+bname, average_EMF);
-        // Otherwise, always zero EMFs to prevent B field escaping the domain in polar/dirichlet bounds
-        bool zero_EMF = pin->GetOrAddBoolean("boundaries", "zero_EMF_" + bname, ((bdir == X2DIR && spherical)
-                                                                             || (btype == "dirichlet"))
-                                                                             && !average_EMF);
-        params.Add("zero_EMF_"+bname, zero_EMF);
+            // Special EMF averaging.  Allows B slippage, e.g. around pole for transmitting or along face for dirichlet
+            bool average_EMF = pin->GetOrAddBoolean("boundaries", "average_EMF_" + bname, (btype == "transmitting")
+                                                                                        || (btype == "dirichlet"));
+            params.Add("average_EMF_"+bname, average_EMF);
+            // Otherwise, always zero EMFs to prevent B field escaping the domain in polar/dirichlet bounds
+            bool zero_EMF = pin->GetOrAddBoolean("boundaries", "zero_EMF_" + bname, !average_EMF);
+            params.Add("zero_EMF_"+bname, zero_EMF);
+        }
 
 
         // String manip to get the Parthenon boundary name, e.g., "ox1_bc"
@@ -337,6 +341,15 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
     const auto bdir = BoundaryDirection(bface);
     const bool binner = BoundaryIsInner(bface);
 
+    // Averaging ops on *physical* cells must be done before computing boundaries
+    auto bfpack = rc->PackVariables({Metadata::Face, Metadata::FillGhost, Metadata::GetUserFlag("B_CT")});
+    if (params.Get<bool>("reconnect_face_B_" + bname) && bfpack.GetDim(4) > 0) {
+        Flag("ReconnectFaceB_"+bname);
+        B_CT::ReconnectBoundaryB3(rc.get(), domain, bfpack, coarse);
+        EndFlag();
+    }
+    // TODO averaging option for U3
+
     // Always call through to the registered boundary function
     Flag("Apply "+bname+" boundary: "+btype_name);
     pkg->KBoundaries[bface](rc, coarse);
@@ -358,19 +371,20 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
     if (emfpack.GetDim(4) > 0) {
         if (params.Get<bool>("zero_EMF_" + bname)) {
             Flag("ZeroEMF_"+bname);
-            B_CT::ZeroEMF(rc.get(), domain, emfpack, coarse);
+            B_CT::ZeroBoundaryEMF(rc.get(), domain, emfpack, coarse);
             EndFlag();
         }
         if (params.Get<bool>("average_EMF_" + bname)) {
             Flag("AverageEMF_"+bname);
-            B_CT::AverageEMF(rc.get(), domain, emfpack, coarse);
+            B_CT::AverageBoundaryEMF(rc.get(), domain, emfpack, coarse);
             EndFlag();
         }
     }
 
     // Correct Parthenon's reflecting conditions on the corresponding face
+    // Note these are REFLECTING SPECIFIC, not suitable for the similar op w/transmitting
     // TODO honor SplitVector here, then move it all to Parthenon
-    auto fpack = rc->PackVariables({Metadata::Face, Metadata::FillGhost});
+    auto fpack = rc->PackVariables({Metadata::Face, Metadata::FillGhost, Metadata::GetUserFlag("SplitVector")});
     if (params.Get<bool>("reflect_face_vector_" + bname) && fpack.GetDim(4) > 0) {
         Flag("ReflectFace_"+bname);
         const TopologicalElement face = FaceOf(bdir);
@@ -380,14 +394,14 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
         auto j_f = (binner) ? b.je : b.js;
         auto k_f = (binner) ? b.ke : b.ks;
         pmb->par_for(
-            "reflect_face_vector_" + bname, b.ks, b.ke, b.js, b.je, b.is, b.ie,
-            KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+            "reflect_face_vector_" + bname, 0, fpack.GetDim(4)-1, b.ks, b.ke, b.js, b.je, b.is, b.ie,
+            KOKKOS_LAMBDA (const int &v, const int &k, const int &j, const int &i) {
                 const int kk = (bdir == 3) ? k_f - (k - k_f) : k;
                 const int jj = (bdir == 2) ? j_f - (j - j_f) : j;
                 const int ii = (bdir == 1) ? i_f - (i - i_f) : i;
-                fpack(face, 0, k, j, i) = ((bdir == 1 && i == i_f) ||
+                fpack(face, v, k, j, i) = ((bdir == 1 && i == i_f) ||
                                            (bdir == 2 && j == j_f) ||
-                                           (bdir == 3 && k == k_f)) ? 0. : -fpack(face, 0, kk, jj, ii);
+                                           (bdir == 3 && k == k_f)) ? 0. : -fpack(face, v, kk, jj, ii);
             }
         );
         EndFlag();
@@ -395,18 +409,18 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
 
     // Correct orthogonal B field component to eliminate divergence in last rank
     // and ghosts. Used for outflow conditions when field lines will exit domain
-    if (params.Get<bool>("clean_face_B_" + bname) && fpack.GetDim(4) > 0) {
+    if (params.Get<bool>("clean_face_B_" + bname) && bfpack.GetDim(4) > 0) {
         Flag("CleanFaceB_"+bname);
-        B_CT::DestructiveBoundaryClean(rc.get(), domain, fpack, coarse);
+        B_CT::DestructiveBoundaryClean(rc.get(), domain, bfpack, coarse);
         EndFlag();
     }
 
-    // This function is called in 2 places we might not expect,
-    // where we still may want to control the physical bounds:
+    // This function, ApplyBoundary, is called in 2 places we might not expect:
     // 1. Syncing only the EMF during runs with CT
     // 2. Syncing boundaries while solving for B field
-    // but, anything beyond here is really only for the expected case,
-    // with all the fluid variables
+    // The above operations are general to these cases
+    // But, anything beyond this point is really only for the expected case,
+    // with all the fluid variables present
     PackIndexMap prims_map;
     if (GRMHD::PackMHDPrims(rc.get(), prims_map).GetDim(4) == 0) {
         EndFlag();
@@ -535,7 +549,7 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
     // valid cell in the face direction.  That is, e.g. F1 is valid on
     // an (N1+1)xN2xN3 grid, F2 on N1x(N2+1)xN3, etc.
     // These functions do *not* need an extra row outside the domain,
-    // like B_FluxCT::FixBoundaryFlux does.
+    // like B_FluxCT::ZeroBoundaryFlux does.
     const int ndim = pmesh->ndim;
     // Entire range
     const IndexRange ibe = pmb0->cellbounds.GetBoundsI(IndexDomain::entire);
