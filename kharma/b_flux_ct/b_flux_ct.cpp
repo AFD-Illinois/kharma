@@ -418,8 +418,8 @@ void ZeroBoundaryFlux(MeshData<Real> *md, IndexDomain domain, bool coarse)
                 KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
                     B_F.flux(X2DIR, V1, k, j, i) = 0.;
                     B_F.flux(X2DIR, V3, k, j, i) = 0.;
-                    B_F.flux(X1DIR, V2, k, j-2, i) = -B_F.flux(X1DIR, V2, k, j - 1, i);
-                    if (ndim > 2) B_F.flux(X3DIR, V2, k, j-2, i) = -B_F.flux(X3DIR, V2, k, j - 1, i);
+                    B_F.flux(X1DIR, V2, k, j-1, i) = -B_F.flux(X1DIR, V2, k, j, i);
+                    if (ndim > 2) B_F.flux(X3DIR, V2, k, j-1, i) = -B_F.flux(X3DIR, V2, k, j, i);
                 }
             );
         }
