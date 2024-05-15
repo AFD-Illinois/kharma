@@ -51,7 +51,7 @@ TaskStatus NormalizeBField(MeshData<Real> *md, ParameterInput *pin);
  */
 
 // Internal representation of the field initialization preference, used for templating
-enum BSeedType{constant, monopole, monopole_cube, orszag_tang, orszag_tang_a, wave, shock_tube,
+enum BSeedType{constant, monopole, orszag_tang, orszag_tang_a, wave, shock_tube,
                 sane, mad, mad_quadrupole, r3s3, r5s5, gaussian, bz_monopole, vertical, r1s2};
 
 #define SEEDA_ARGS GReal *x, const GReal *dxc, double rho, double rin, double min_A, double A0, double arg1, double rb
@@ -150,16 +150,9 @@ KOKKOS_INLINE_FUNCTION void seed_b(SEEDB_ARGS) { B1 = 0./0.; B2 = 0./0.; B3 = 0.
 template<>
 KOKKOS_INLINE_FUNCTION void seed_b<BSeedType::constant>(SEEDB_ARGS) {}
 
-// Reduce radial component by gdet for constant flux
-template<>
-KOKKOS_INLINE_FUNCTION void seed_b<BSeedType::monopole>(SEEDB_ARGS)
-{
-    B1 /= gdet;
-}
-
 // Reduce radial component by the cube of radius
 template<>
-KOKKOS_INLINE_FUNCTION void seed_b<BSeedType::monopole_cube>(SEEDB_ARGS)
+KOKKOS_INLINE_FUNCTION void seed_b<BSeedType::monopole>(SEEDB_ARGS)
 {
     B1 /= (x[1]*x[1]*x[1]);
 }
