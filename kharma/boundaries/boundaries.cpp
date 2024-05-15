@@ -181,9 +181,9 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
             bool reconnect_face_B = pin->GetOrAddBoolean("boundaries", "reconnect_face_B_" + bname, (btype == "transmitting"));
             params.Add("reconnect_face_B_"+bname, reconnect_face_B);
 
-            // Special EMF averaging.  Allows B slippage, e.g. around pole for transmitting or along face for dirichlet
-            bool average_EMF = pin->GetOrAddBoolean("boundaries", "average_EMF_" + bname, (btype == "transmitting")
-                                                                                        || (btype == "dirichlet"));
+            // Special EMF averaging.  Allows B slippage, e.g. around pole for transmitting conditions
+            // Still problems with averaging+dirichlet, maybe corners?
+            bool average_EMF = pin->GetOrAddBoolean("boundaries", "average_EMF_" + bname, (btype == "transmitting"));
             params.Add("average_EMF_"+bname, average_EMF);
             // Otherwise, always zero EMFs to prevent B field escaping the domain in polar/dirichlet bounds
             bool zero_EMF = pin->GetOrAddBoolean("boundaries", "zero_EMF_" + bname, !average_EMF);
