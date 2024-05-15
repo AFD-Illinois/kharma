@@ -171,8 +171,9 @@ inline Prescription MakePrescription(parthenon::ParameterInput *pin, std::string
  * Sets values provided in the 'floors_inner' block in input par file if provided,
  * else sets it equal to the values in the whole/outer domain.
  */
-inline Prescription MakePrescriptionInner(parthenon::ParameterInput *pin, Prescription p_outer, std::string block="floors_inner"){
-    
+inline Prescription MakePrescriptionInner(parthenon::ParameterInput *pin, Prescription p_outer, std::string block="floors_inner")
+{
+    // TODO(BSP) I wonder if there's an easier way to "set if parameter exists" from pin, that would be broadly useful
     Prescription p_inner;
 
     // Floor parameters
@@ -206,8 +207,9 @@ inline Prescription MakePrescriptionInner(parthenon::ParameterInput *pin, Prescr
 
     p_inner.gamma_max = pin->GetOrAddReal(block, "gamma_max", p_outer.gamma_max);
 
-    p_inner.radius_dependent_floors = pin->GetOrAddBoolean("floors", "radius_dependent_floors", p_outer.radius_dependent_floors); 
-    p_inner.floors_switch_r = pin->GetOrAddReal("floors", "floors_switch_r", p_outer.floors_switch_r);
+    // Always grab these from p_outer, they should never differ between outer/inner floors
+    p_inner.radius_dependent_floors = p_outer.radius_dependent_floors; 
+    p_inner.floors_switch_r = p_outer.floors_switch_r;
 
     return p_inner;
 }
@@ -220,8 +222,8 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
 /**
  * Apply density and internal energy floors and ceilings
  * 
- * This function definitely applies floors (regardless of "disable_floors")
- * over the stated domain, by default the entire grid incl. ghost zones.
+ * This function definitely applies floors over the stated domain.
+ * If "Floors" package is not loaded, it is not registered.
  * 
  * LOCKSTEP: this function respects P and returns consistent P<->U
  */
@@ -242,7 +244,7 @@ TaskStatus DetermineGRMHDFloors(MeshData<Real> *md, IndexDomain domain,
  * 2. Don't record results to 'fflag' or 'pflag'
  * Used for problems where some part of the domain is initialized to
  * "whatever the floor value is."
- * *This function can be called even if the Floors package is not initialized.*
+ * *This function can be called even if the Floors package is not initialized, and ignores "floors/on=false"*
  */
 TaskStatus ApplyInitialFloors(ParameterInput *pin, MeshBlockData<Real> *mbd, IndexDomain domain);
 

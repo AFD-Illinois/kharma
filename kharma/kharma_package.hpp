@@ -159,8 +159,7 @@ TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt, IndexDomain doma
 TaskStatus MeshApplyPrimSource(MeshData<Real> *md);
 
 /**
- * Apply all floors, including any package-specific limiters.
- * This function respects "disable_floors".
+ * Apply all registered floors, including any package-specific limiters.
  * 
  * LOCKSTEP: this function respects P and returns consistent P<->U
  */
