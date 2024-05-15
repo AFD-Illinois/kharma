@@ -28,8 +28,6 @@ x1min = 0.0
 x1max = 0.49
 x2min = 0.49
 x2max = 0.51
-x3min = 0.0
-x3max = 1.0
 level = 2
 
 <coordinates>
