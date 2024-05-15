@@ -265,13 +265,30 @@ void KHARMA::FixParameters(ParameterInput *pin)
     // TODO more regions, all 3 directions?
     if (pin->DoesBlockExist("parthenon/static_refinement0")) {
         Real startx1 = pin->GetReal("parthenon/mesh", "x1min");
-        Real lx1 = pin->GetReal("parthenon/mesh", "x1max") - startx1;
+        Real stopx1 = pin->GetReal("parthenon/mesh", "x1max");
+        Real lx1 = stopx1 - startx1;
         Real startx1_prop = pin->GetReal("parthenon/static_refinement0", "x1min");
         Real stopx1_prop = pin->GetReal("parthenon/static_refinement0", "x1max");
         //std::cerr << "StartX1 " << startx1 << " lx1 " << lx1 << "Prop " << startx1_prop << " " << stopx1_prop << std::endl;
         //std::cerr << "Adjust X1 " << startx1_prop*lx1 + startx1 << " to " << stopx1_prop*lx1 + startx1 << std::endl;
-        pin->SetReal("parthenon/static_refinement0", "x1min", startx1_prop*lx1 + startx1);
-        pin->SetReal("parthenon/static_refinement0", "x1max", stopx1_prop*lx1 + startx1);
+        pin->SetReal("parthenon/static_refinement0", "x1min", std::max(startx1_prop*lx1 + startx1, startx1));
+        pin->SetReal("parthenon/static_refinement0", "x1max", std::min(stopx1_prop*lx1 + startx1, stopx1));
+
+        Real startx2 = pin->GetReal("parthenon/mesh", "x2min");
+        Real stopx2 = pin->GetReal("parthenon/mesh", "x2max");
+        Real lx2 = stopx2 - startx2;
+        Real startx2_prop = pin->GetReal("parthenon/static_refinement0", "x2min");
+        Real stopx2_prop = pin->GetReal("parthenon/static_refinement0", "x2max");
+        pin->SetReal("parthenon/static_refinement0", "x2min", std::max(startx2_prop*lx2 + startx2, startx2));
+        pin->SetReal("parthenon/static_refinement0", "x2max", std::min(stopx2_prop*lx2 + startx2, stopx2));
+
+        Real startx3 = pin->GetReal("parthenon/mesh", "x3min");
+        Real stopx3 = pin->GetReal("parthenon/mesh", "x3max");
+        Real lx3 = stopx3 - startx3;
+        Real startx3_prop = pin->GetReal("parthenon/static_refinement0", "x3min");
+        Real stopx3_prop = pin->GetReal("parthenon/static_refinement0", "x3max");
+        pin->SetReal("parthenon/static_refinement0", "x3min", std::max(startx3_prop*lx3 + startx3, startx3));
+        pin->SetReal("parthenon/static_refinement0", "x3max", std::min(stopx3_prop*lx3 + startx3, stopx3));
     }
 
     EndFlag();
