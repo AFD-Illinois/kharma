@@ -119,7 +119,6 @@ template<Inverter::Type inverter>
 inline void BlockPerformInversion(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
     auto pmb = rc->GetBlockPointer();
-    const auto& G = pmb->coords;
 
     PackIndexMap prims_map, cons_map;
     auto U = GRMHD::PackMHDCons(rc, cons_map);
@@ -137,19 +136,25 @@ inline void BlockPerformInversion(MeshBlockData<Real> *rc, IndexDomain domain, b
     auto &pars = pmb->packages.Get("Inverter")->AllParams();
     const Real err_tol = pars.Get<Real>("err_tol");
     const int iter_max = pars.Get<int>("iter_max");
-    Floors::Prescription inverter_floors       = pars.Get<Floors::Prescription>("inverter_prescription");
-    Floors::Prescription inverter_floors_inner = pars.Get<Floors::Prescription>("inverter_prescription_inner");
+    const Floors::Prescription inverter_floors       = pars.Get<Floors::Prescription>("inverter_prescription");
+    const Floors::Prescription inverter_floors_inner = pars.Get<Floors::Prescription>("inverter_prescription_inner");
+    const bool radius_dependent_floors = inverter_floors.radius_dependent_floors;
+
+    const auto& G = pmb->coords;
 
     // Get the primitives from our conserved versions
     // Notice we recover variables for only the physical (interior or interior-ghost)
     // zones!  These are the only ones which are filled at our point in the step
     auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
     const IndexRange3 b = KDomain::GetPhysicalRange(rc);
-
     pmb->par_for("U_to_P", b.ks, b.ke, b.js, b.je, b.is, b.ie,
         KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+            const Floors::Prescription& myfloors = (inverter_floors.radius_dependent_floors
+                                            && G.coords.is_spherical()
+                                            && G.r(k, j, i) < inverter_floors.floors_switch_r) ?
+                                            inverter_floors_inner : inverter_floors;
             int pflagl = Inverter::u_to_p<inverter>(G, U, m_u, gam, k, j, i, P, m_p, Loci::center,
-                                                    inverter_floors, inverter_floors_inner, iter_max, err_tol);
+                                                    myfloors, iter_max, err_tol);
             pflag(0, k, j, i) = pflagl % Floors::FFlag::MINIMUM;
             int fflagl = (pflagl / Floors::FFlag::MINIMUM) * Floors::FFlag::MINIMUM;
             fflag(0, k, j, i) = fflagl;

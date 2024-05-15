@@ -100,11 +100,6 @@ std::shared_ptr<KHARMAPackage> Floors::Initialize(ParameterInput *pin, std::shar
     else
         params.Add("prescription_inner", MakePrescriptionInner(pin, MakePrescription(pin)), "floors");
 
-    // Disable all floors.  It is obviously tremendously inadvisable to do this
-    // Note this will only be recorded if false, otherwise we're not loaded at all!
-    bool disable_floors = pin->GetOrAddBoolean("floors", "disable_floors", false);
-    params.Add("disable_floors", disable_floors);
-
     // These preserve floor values between the "mark" pass and the actual floor application
     // We need them even if floors are disabled, to apply initial values based on some prescription
     // as a part of problem setup
@@ -160,6 +155,8 @@ TaskStatus Floors::ApplyInitialFloors(ParameterInput *pin, MeshBlockData<Real> *
         // JUST rho & u geometric
         floors_tmp.rho_min_geom = pin->GetOrAddReal("floors", "rho_min_geom", 1e-6);
         floors_tmp.u_min_geom   = pin->GetOrAddReal("floors", "u_min_geom", 1e-8);
+        floors_tmp.rho_min_const = pin->GetOrAddReal("floors", "rho_min_const", 1e-20);
+        floors_tmp.u_min_const   = pin->GetOrAddReal("floors", "u_min_const", 1e-20);
 
         // Disable everything else, even if it's specified
         floors_tmp.bsq_over_rho_max = 1e20;

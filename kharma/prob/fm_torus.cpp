@@ -187,8 +187,8 @@ TaskStatus InitializeFMTorus(std::shared_ptr<MeshBlockData<Real>>& rc, Parameter
         }
     );
 
-    // Apply floors to initialize the rest of the domain (regardless of the 'disable_floors' param)
-    // Since the conserved vars U are not initialized, this is done in *fluid frame*,
+    // Apply floors to initialize the rest of the domain (regardless whether we'll use them later)
+    // Since the conserved vars U are not initialized, this is effectively done in *fluid frame*,
     // even if NOF frame is chosen (iharm3d does the same iiuc)
     // This is probably not a huge issue, just good to state explicitly
     Floors::ApplyInitialFloors(pin, rc.get(), IndexDomain::interior);

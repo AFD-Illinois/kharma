@@ -112,7 +112,6 @@ TaskStatus SeedBFieldType(MeshBlockData<Real> *rc, ParameterInput *pin, IndexDom
     // Shortcut to field values for easy fields
     if constexpr (Seed == BSeedType::constant ||
                   Seed == BSeedType::monopole ||
-                  Seed == BSeedType::monopole_cube ||
                   Seed == BSeedType::orszag_tang ||
                   Seed == BSeedType::wave || 
                   Seed == BSeedType::shock_tube)
@@ -425,8 +424,8 @@ TaskStatus SeedBField(MeshData<Real> *md, ParameterInput *pin)
             status = SeedBFieldType<BSeedType::constant>(rc, pin);
         } else if (b_field_type == "monopole") {
             status = SeedBFieldType<BSeedType::monopole>(rc, pin);
-        } else if (b_field_type == "monopole_cube") {
-            status = SeedBFieldType<BSeedType::monopole_cube>(rc, pin);
+        } else if (b_field_type == "monopole_cube") { // Legacy name for the correct monopole init
+            status = SeedBFieldType<BSeedType::monopole>(rc, pin);
         } else if (b_field_type == "sane") {
             status = SeedBFieldType<BSeedType::sane>(rc, pin);
         } else if (b_field_type == "mad") {
