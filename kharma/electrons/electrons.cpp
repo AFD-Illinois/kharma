@@ -572,11 +572,12 @@ void ApplyFloors(MeshBlockData<Real> *mbd, IndexDomain domain)
             // (either for electrons, or robust primitive inversions in future)
             Real ktot_max;
             if (m_p.KTOT >= 0) {
-                if (floors.radius_dependent_floors && G.coords.is_spherical()) {
-                    GReal r = G.r(k, j, i);
-                    (r < floors.floors_switch_r) ? ktot_max = floors_inner.ktot_max : floors.ktot_max;
+                if (floors.radius_dependent_floors && G.coords.is_spherical()
+                    && G.r(k, j, i) < floors.floors_switch_r) {
+                    ktot_max = floors_inner.ktot_max;
+                } else {
+                    ktot_max = floors.ktot_max;
                 }
-                else ktot_max = floors.ktot_max;
                 
                 if (P(m_p.KTOT, k, j, i) > ktot_max) {
                     fflag(0, k, j, i) = Floors::FFlag::KTOT | (int) fflag(0, k, j, i);

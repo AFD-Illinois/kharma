@@ -319,11 +319,16 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput> &pin)
         pin->GetOrAddBoolean("emhd", "ideal_guess", false)) {
         t_inverter = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, Inverter::Initialize, pin.get());
     }
-    // Floors package is only loaded if floors aren't disabled (TODO rename "on"?)
-    if (!pin->GetOrAddBoolean("floors", "disable_floors", false)) {
+    // Floors package is only loaded if floors aren't disabled
+    // Respect legacy version for a while
+    bool floors_on_default = true;
+    if (pin->DoesParameterExist("floors", "disable_floors")) {
+        floors_on_default = !pin->GetBoolean("floors", "disable_floors");
+    }
+    if (pin->GetOrAddBoolean("floors", "on", floors_on_default)) {
         auto t_floors = tl.AddTask(t_inverter, KHARMA::AddPackage, packages, Floors::Initialize, pin.get());
     }
-    // Reductions, needed for most other packages
+    // Reductions, needed by most other packages
     auto t_reductions = tl.AddTask(t_none, KHARMA::AddPackage, packages, Reductions::Initialize, pin.get());
 
     // B field solvers, to ensure divB ~= 0.
@@ -339,7 +344,7 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput> &pin)
     } else if (b_field_solver == "constrained_transport" || b_field_solver == "face_ct") {
         t_b_field = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, B_CT::Initialize, pin.get());
     } else if (b_field_solver == "constraint_damping" || b_field_solver == "cd") {
-        // Constraint damping, probably only useful for non-GR MHD systems
+        // Constraint damping. NON-WORKING
         t_b_field = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, B_CD::Initialize, pin.get());
     } else if (b_field_solver == "flux_ct") {
         t_b_field = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, B_FluxCT::Initialize, pin.get());
@@ -368,7 +373,7 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput> &pin)
     if (pin->GetOrAddBoolean("electrons", "on", false)) {
         auto t_electrons = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, Electrons::Initialize, pin.get());
     }
-    if (pin->GetBoolean("emhd", "on")) {
+    if (pin->GetBoolean("emhd", "on")) { // Set above when deciding to load inverter
         auto t_emhd = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, EMHD::Initialize, pin.get());
     }
     if (pin->GetOrAddBoolean("wind", "on", false)) {

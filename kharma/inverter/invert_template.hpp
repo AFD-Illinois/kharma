@@ -94,7 +94,6 @@ template<Type inverter>
 KOKKOS_INLINE_FUNCTION int u_to_p(const GRCoordinates& G, const VariablePack<Real>& U, const VarMap& m_u,
                                               const Real& gam, const int& k, const int& j, const int& i,
                                               const VariablePack<Real>& P, const VarMap& m_p,
-                                              const Loci& loc, const Floors::Prescription& inverter_floors,
-                                              const Floors::Prescription& inverter_floors_inner,
+                                              const Loci& loc, const Floors::Prescription& floors,
                                               const int& max_iterations, const Real& tol);
 } // namespace Inverter
