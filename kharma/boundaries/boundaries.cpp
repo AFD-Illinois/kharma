@@ -33,6 +33,7 @@
  */
 #include "boundaries.hpp"
 
+#include "bondi.hpp"
 #include "decs.hpp"
 #include "domain.hpp"
 #include "kharma.hpp"
@@ -180,9 +181,9 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
             bool reconnect_face_B = pin->GetOrAddBoolean("boundaries", "reconnect_face_B_" + bname, (btype == "transmitting"));
             params.Add("reconnect_face_B_"+bname, reconnect_face_B);
 
-            // Special EMF averaging.  Allows B slippage, e.g. around pole for transmitting or along face for dirichlet
-            bool average_EMF = pin->GetOrAddBoolean("boundaries", "average_EMF_" + bname, (btype == "transmitting")
-                                                                                        || (btype == "dirichlet"));
+            // Special EMF averaging.  Allows B slippage, e.g. around pole for transmitting conditions
+            // Still problems with averaging+dirichlet, maybe corners?
+            bool average_EMF = pin->GetOrAddBoolean("boundaries", "average_EMF_" + bname, (btype == "transmitting"));
             params.Add("average_EMF_"+bname, average_EMF);
             // Otherwise, always zero EMFs to prevent B field escaping the domain in polar/dirichlet bounds
             bool zero_EMF = pin->GetOrAddBoolean("boundaries", "zero_EMF_" + bname, !average_EMF);
@@ -304,6 +305,31 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
                 default:
                     break;
                 }
+            } else if (btype == "bondi") {
+                // Boundaries will need these to be recorded into a 'Params'
+                AddBondiParameters(pin, *packages);
+                switch (bface) {
+                case BoundaryFace::inner_x1:
+                    pkg->KBoundaries[bface] = SetBondi<IndexDomain::inner_x1>;
+                    break;
+                case BoundaryFace::outer_x1:
+                    pkg->KBoundaries[bface] = SetBondi<IndexDomain::outer_x1>;
+                    break;
+                case BoundaryFace::inner_x2:
+                    pkg->KBoundaries[bface] = SetBondi<IndexDomain::inner_x2>;
+                    break;
+                case BoundaryFace::outer_x2:
+                    pkg->KBoundaries[bface] = SetBondi<IndexDomain::outer_x2>;
+                    break;
+                case BoundaryFace::inner_x3:
+                    pkg->KBoundaries[bface] = SetBondi<IndexDomain::inner_x3>;
+                    break;
+                case BoundaryFace::outer_x3:
+                    pkg->KBoundaries[bface] = SetBondi<IndexDomain::outer_x3>;
+                    break;
+                default:
+                    break;
+                }
             } else {
                 throw std::runtime_error("Unknown boundary type: "+btype);
             }
@@ -342,11 +368,13 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
     const bool binner = BoundaryIsInner(bface);
 
     // Averaging ops on *physical* cells must be done before computing boundaries
-    auto bfpack = rc->PackVariables({Metadata::Face, Metadata::FillGhost, Metadata::GetUserFlag("B_CT")});
-    if (params.Get<bool>("reconnect_face_B_" + bname) && bfpack.GetDim(4) > 0) {
-        Flag("ReconnectFaceB_"+bname);
-        B_CT::ReconnectBoundaryB3(rc.get(), domain, bfpack, coarse);
-        EndFlag();
+    if (pmb->packages.AllPackages().count("B_CT")) {
+        auto bfpack = rc->PackVariables({Metadata::Face, Metadata::FillGhost, Metadata::GetUserFlag("B_CT")});
+        if (params.Get<bool>("reconnect_face_B_" + bname) && bfpack.GetDim(4) > 0) {
+            Flag("ReconnectFaceB_"+bname);
+            B_CT::ReconnectBoundaryB3(rc.get(), domain, bfpack, coarse);
+            EndFlag();
+        }
     }
     // TODO averaging option for U3
 
@@ -362,65 +390,68 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
         return;
     }
 
-    // Delegate EMF boundaries to the B_CT package
-    // Only until per-variable boundaries available in Parthenon
-    // Warning: Even though the EMFs are sync'd separately,
-    // they still can sneak into "real" boundary exchanges,
-    // so we can't assume their presence means they are alone
-    auto& emfpack = rc->PackVariables(std::vector<std::string>{"B_CT.emf"});
-    if (emfpack.GetDim(4) > 0) {
-        if (params.Get<bool>("zero_EMF_" + bname)) {
-            Flag("ZeroEMF_"+bname);
-            B_CT::ZeroBoundaryEMF(rc.get(), domain, emfpack, coarse);
-            EndFlag();
-        }
-        if (params.Get<bool>("average_EMF_" + bname)) {
-            Flag("AverageEMF_"+bname);
-            B_CT::AverageBoundaryEMF(rc.get(), domain, emfpack, coarse);
-            EndFlag();
-        }
-    }
-
-    // Correct Parthenon's reflecting conditions on the corresponding face
-    // Note these are REFLECTING SPECIFIC, not suitable for the similar op w/transmitting
-    // TODO honor SplitVector here, then move it all to Parthenon
-    auto fpack = rc->PackVariables({Metadata::Face, Metadata::FillGhost, Metadata::GetUserFlag("SplitVector")});
-    if (params.Get<bool>("reflect_face_vector_" + bname) && fpack.GetDim(4) > 0) {
-        Flag("ReflectFace_"+bname);
-        const TopologicalElement face = FaceOf(bdir);
-        auto b = KDomain::GetBoundaryRange(rc, domain, face, coarse);
-        // Zero the last physical face, otherwise invert.
-        auto i_f = (binner) ? b.ie : b.is;
-        auto j_f = (binner) ? b.je : b.js;
-        auto k_f = (binner) ? b.ke : b.ks;
-        pmb->par_for(
-            "reflect_face_vector_" + bname, 0, fpack.GetDim(4)-1, b.ks, b.ke, b.js, b.je, b.is, b.ie,
-            KOKKOS_LAMBDA (const int &v, const int &k, const int &j, const int &i) {
-                const int kk = (bdir == 3) ? k_f - (k - k_f) : k;
-                const int jj = (bdir == 2) ? j_f - (j - j_f) : j;
-                const int ii = (bdir == 1) ? i_f - (i - i_f) : i;
-                fpack(face, v, k, j, i) = ((bdir == 1 && i == i_f) ||
-                                           (bdir == 2 && j == j_f) ||
-                                           (bdir == 3 && k == k_f)) ? 0. : -fpack(face, v, kk, jj, ii);
+    // Fixes and special cases for face/edge-centered variabes in B_CT
+    if (pmb->packages.AllPackages().count("B_CT")) {
+        // Delegate EMF boundaries to the B_CT package
+        // Only until per-variable boundaries available in Parthenon
+        // Warning: Even though the EMFs are sync'd separately,
+        // they still can sneak into "real" boundary exchanges,
+        // so we can't assume their presence means they are alone
+        auto& emfpack = rc->PackVariables(std::vector<std::string>{"B_CT.emf"});
+        if (emfpack.GetDim(4) > 0) {
+            if (params.Get<bool>("zero_EMF_" + bname)) {
+                Flag("ZeroEMF_"+bname);
+                B_CT::ZeroBoundaryEMF(rc.get(), domain, emfpack, coarse);
+                EndFlag();
             }
-        );
-        EndFlag();
-    }
+            if (params.Get<bool>("average_EMF_" + bname)) {
+                Flag("AverageEMF_"+bname);
+                B_CT::AverageBoundaryEMF(rc.get(), domain, emfpack, coarse);
+                EndFlag();
+            }
+        }
 
-    // Correct orthogonal B field component to eliminate divergence in last rank
-    // and ghosts. Used for outflow conditions when field lines will exit domain
-    if (params.Get<bool>("clean_face_B_" + bname) && bfpack.GetDim(4) > 0) {
-        Flag("CleanFaceB_"+bname);
-        B_CT::DestructiveBoundaryClean(rc.get(), domain, bfpack, coarse);
-        EndFlag();
+        // Correct Parthenon's reflecting conditions on the corresponding face
+        // Note these are REFLECTING SPECIFIC, not suitable for the similar op w/transmitting
+        // TODO move this to Parthenon.  Move out of this case if we gain non-B_CT face variables
+        auto fpack = rc->PackVariables({Metadata::Face, Metadata::FillGhost, Metadata::GetUserFlag("SplitVector")});
+        if (params.Get<bool>("reflect_face_vector_" + bname) && fpack.GetDim(4) > 0) {
+            Flag("ReflectFace_"+bname);
+            const TopologicalElement face = FaceOf(bdir);
+            auto b = KDomain::GetBoundaryRange(rc, domain, face, coarse);
+            // Zero the last physical face, otherwise invert.
+            auto i_f = (binner) ? b.ie : b.is;
+            auto j_f = (binner) ? b.je : b.js;
+            auto k_f = (binner) ? b.ke : b.ks;
+            pmb->par_for(
+                "reflect_face_vector_" + bname, 0, fpack.GetDim(4)-1, b.ks, b.ke, b.js, b.je, b.is, b.ie,
+                KOKKOS_LAMBDA (const int &v, const int &k, const int &j, const int &i) {
+                    const int kk = (bdir == 3) ? k_f - (k - k_f) : k;
+                    const int jj = (bdir == 2) ? j_f - (j - j_f) : j;
+                    const int ii = (bdir == 1) ? i_f - (i - i_f) : i;
+                    fpack(face, v, k, j, i) = ((bdir == 1 && i == i_f) ||
+                                            (bdir == 2 && j == j_f) ||
+                                            (bdir == 3 && k == k_f)) ? 0. : -fpack(face, v, kk, jj, ii);
+                }
+            );
+            EndFlag();
+        }
+
+        // Correct orthogonal B field component to eliminate divergence in last rank
+        // and ghosts. Used for outflow conditions when field lines will exit domain
+        auto bfpack = rc->PackVariables({Metadata::Face, Metadata::FillGhost, Metadata::GetUserFlag("B_CT")});
+        if (params.Get<bool>("clean_face_B_" + bname) && bfpack.GetDim(4) > 0) {
+            Flag("CleanFaceB_"+bname);
+            B_CT::DestructiveBoundaryClean(rc.get(), domain, bfpack, coarse);
+            EndFlag();
+        }
     }
 
     // This function, ApplyBoundary, is called in 2 places we might not expect:
     // 1. Syncing only the EMF during runs with CT
     // 2. Syncing boundaries while solving for B field
     // The above operations are general to these cases
-    // But, anything beyond this point is really only for the expected case,
-    // with all the fluid variables present
+    // But, anything beyond this point isn't needed for those cases & may crash
     PackIndexMap prims_map;
     if (GRMHD::PackMHDPrims(rc.get(), prims_map).GetDim(4) == 0) {
         EndFlag();

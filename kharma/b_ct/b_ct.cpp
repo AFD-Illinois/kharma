@@ -463,7 +463,7 @@ double B_CT::MaxDivB(MeshData<Real> *md)
     pmb0->par_reduce("divB_max", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i, double &local_result) {
             const auto& G = B_U.GetCoords(b);
-            double local_divb = face_div(G, B_U(b), ndim, k, j, i);
+            double local_divb = m::abs(face_div(G, B_U(b), ndim, k, j, i));
             if (local_divb > local_result) local_result = local_divb;
         }
     , max_reducer);
@@ -486,7 +486,7 @@ double B_CT::BlockMaxDivB(MeshBlockData<Real> *rc)
     pmb->par_reduce("divB_max", b.ks, b.ke, b.js, b.je, b.is, b.ie,
         KOKKOS_LAMBDA (const int &k, const int &j, const int &i, double &local_result) {
             const auto& G = B_U.GetCoords();
-            double local_divb = face_div(G, B_U, ndim, k, j, i);
+            double local_divb = m::abs(face_div(G, B_U, ndim, k, j, i));
             if (local_divb > local_result) local_result = local_divb;
         }
     , max_reducer);

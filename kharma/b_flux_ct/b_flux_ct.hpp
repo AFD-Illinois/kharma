@@ -44,13 +44,13 @@
  * 
  * This physics package implements B field transport with Flux-CT (Toth 2000)
  *
- * This requires only the values at cell centers
+ * This requires only the magnetic field value at cell centers
  * 
  * This implementation includes conversion from "primitive" to "conserved" B and back
  */
 namespace B_FluxCT {
 /**
- * Declare fields, initialize (few) parameters
+ * Declare fields, initialize parameters
  */
 std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages);
 
@@ -74,18 +74,26 @@ void BlockPtoU(MeshBlockData<Real> *md, IndexDomain domain, bool coarse=false);
 void MeshPtoU(MeshData<Real> *md, IndexDomain domain, bool coarse=false);
 
 /**
- * All flux corrections required by this package
+ * Apply all flux corrections required by this package to ensure small divB
  */
 void FixFlux(MeshData<Real> *md);
+
 /**
  * Modify the B field fluxes to take a constrained-transport step as in Toth (2000)
  */
 void FluxCT(MeshData<Real> *md);
+
 /**
  * Modify the B field fluxes just beyond the polar (or radial) boundary so as to
  * ensure no flux through the boundary after applying FluxCT
  */
-void FixBoundaryFlux(MeshData<Real> *md, IndexDomain domain, bool coarse);
+void ZeroBoundaryFlux(MeshData<Real> *md, IndexDomain domain, bool coarse);
+
+/**
+ * Modify the B field fluxes just beyond the radial (or polar) boundary so as to
+ * ensure the magnetic divergence is zero, even 
+ */
+void Bflux0(MeshData<Real> *md, IndexDomain domain, bool coarse);
 
 /**
  * Alternate B field fix for X1 boundary, keeps zero divergence while permitting flux

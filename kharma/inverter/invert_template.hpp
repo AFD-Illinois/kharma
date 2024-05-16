@@ -69,6 +69,13 @@ KOKKOS_INLINE_FUNCTION bool failed(T status_flag)
     return static_cast<int>(status_flag) > static_cast<int>(Status::success);
 }
 
+template <typename T>
+KOKKOS_INLINE_FUNCTION bool valid(T status_flag)
+{
+    // Return only values >0, among the failure flags
+    return static_cast<int>(status_flag) == static_cast<int>(Status::success);
+}
+
 /**
  * Recover local primitive variables, with a one-dimensional Newton-Raphson iterative solver.
  * Iteration starts from the current primitive values, and otherwse may *fail to converge*

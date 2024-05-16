@@ -254,8 +254,6 @@ void BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     // And then the local density
     GridScalar rho_U = rc->Get("cons.rho").data;
 
-    const auto& G = pmb->coords;
-
     auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
     int is = bounds.is(domain), ie = bounds.ie(domain);
     int js = bounds.js(domain), je = bounds.je(domain);
