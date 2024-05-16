@@ -428,7 +428,7 @@ TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
     return TaskStatus::complete;
 }
 
-void GRMHD::CancelBoundaryU3(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
+void CancelBoundaryU3(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
     // We're sometimes called on coarse buffers with or without AMR.
     // Use of transmitting polar conditions when coarse buffers matter (e.g., refinement
