@@ -169,6 +169,7 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
         bool outflow_EMHD = pin->GetOrAddBoolean("boundaries", "outflow_EMHD_" + bname, false);
         params.Add("outflow_EMHD_" + bname, outflow_EMHD);
 
+        // Options specific to face-centered B fields, which require a lot of care at boundaries
         if (packages->AllPackages().count("B_CT")) {
             // Invert X2 face values to reflect across polar boundary
             bool invert_F2 = pin->GetOrAddBoolean("boundaries", "reflect_face_vector_" + bname, (btype == "reflecting"));
@@ -178,8 +179,8 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
             bool clean_face_B = pin->GetOrAddBoolean("boundaries", "clean_face_B_" + bname, (btype == "outflow"));
             params.Add("clean_face_B_"+bname, clean_face_B);
             // Forcibly reconnect field loops that get trapped around the pole w/face-CT.  Maybe useful for reflecting too?
-            bool reconnect_face_B = pin->GetOrAddBoolean("boundaries", "reconnect_face_B_" + bname, (btype == "transmitting"));
-            params.Add("reconnect_face_B_"+bname, reconnect_face_B);
+            bool reconnect_B3 = pin->GetOrAddBoolean("boundaries", "reconnect_B3_" + bname, (btype == "transmitting"));
+            params.Add("reconnect_B3_"+bname, reconnect_B3);
 
             // Special EMF averaging.  Allows B slippage, e.g. around pole for transmitting conditions
             // Still problems with averaging+dirichlet, maybe corners?
@@ -189,6 +190,10 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
             bool zero_EMF = pin->GetOrAddBoolean("boundaries", "zero_EMF_" + bname, !average_EMF);
             params.Add("zero_EMF_"+bname, zero_EMF);
         }
+        // Advect together/cancel U3, under the theory it's in a similar position to B3 above (albeit no CT constraining it)
+        // Not enabled by default as it does not conserve angular momentum and isn't necessary for stability
+        bool cancel_U3 = pin->GetOrAddBoolean("boundaries", "cancel_U3_" + bname, false);
+        params.Add("cancel_U3_"+bname, cancel_U3);
 
 
         // String manip to get the Parthenon boundary name, e.g., "ox1_bc"
@@ -367,16 +372,29 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
     const auto bdir = BoundaryDirection(bface);
     const bool binner = BoundaryIsInner(bface);
 
+    // We get called over a lot of different packs depending on doing physical boundaries, EMF boundaries,
+    // boundaries during solves/GMG, and so on.  Check once whether this is a "normal" boundary condition
+    // with the GRMHD variables
+    // TODO redesign boundary functions as per-package callbacks which take a pack+map
+    // TODO probably retire PackMHDPrims, it's not more useful than just packing on the flag.
+    PackIndexMap dummy_map;
+    bool full_grmhd_boundary = GRMHD::PackMHDPrims(rc.get(), dummy_map).GetDim(4) > 0;
+
     // Averaging ops on *physical* cells must be done before computing boundaries
+    // We should do a PreBoundaries callback...
     if (pmb->packages.AllPackages().count("B_CT")) {
         auto bfpack = rc->PackVariables({Metadata::Face, Metadata::FillGhost, Metadata::GetUserFlag("B_CT")});
-        if (params.Get<bool>("reconnect_face_B_" + bname) && bfpack.GetDim(4) > 0) {
+        if (params.Get<bool>("reconnect_B3_" + bname) && bfpack.GetDim(4) > 0) {
             Flag("ReconnectFaceB_"+bname);
             B_CT::ReconnectBoundaryB3(rc.get(), domain, bfpack, coarse);
             EndFlag();
         }
     }
-    // TODO averaging option for U3
+    if (pmb->packages.AllPackages().count("GRMHD")) {
+        if (params.Get<bool>("cancel_U3_" + bname) && full_grmhd_boundary) {
+            GRMHD::CancelBoundaryU3(rc.get(), domain, coarse);
+        }
+    }
 
     // Always call through to the registered boundary function
     Flag("Apply "+bname+" boundary: "+btype_name);
@@ -452,8 +470,7 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
     // 2. Syncing boundaries while solving for B field
     // The above operations are general to these cases
     // But, anything beyond this point isn't needed for those cases & may crash
-    PackIndexMap prims_map;
-    if (GRMHD::PackMHDPrims(rc.get(), prims_map).GetDim(4) == 0) {
+    if (!full_grmhd_boundary) {
         EndFlag();
         return;
     }

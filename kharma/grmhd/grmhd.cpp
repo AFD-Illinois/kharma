@@ -428,4 +428,55 @@ TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
     return TaskStatus::complete;
 }
 
+void CancelBoundaryU3(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
+{
+    // We're sometimes called on coarse buffers with or without AMR.
+    // Use of transmitting polar conditions when coarse buffers matter (e.g., refinement
+    // boundary touching the pole) is UNSUPPORTED
+    if (coarse) return;
+
+    // Pull boundary properties
+    auto pmb = rc->GetBlockPointer();
+    const BoundaryFace bface = KBoundaries::BoundaryFaceOf(domain);
+    const bool binner = KBoundaries::BoundaryIsInner(bface);
+    const auto bname = KBoundaries::BoundaryName(bface);
+
+    // Pull variables (TODO take packs & maps, see boundaries.cpp)
+    PackIndexMap prims_map, cons_map;
+    auto P = rc->PackVariables({Metadata::GetUserFlag("Primitive"), Metadata::Cell}, prims_map);
+    auto U = rc->PackVariables(std::vector<MetadataFlag>{Metadata::Conserved, Metadata::Cell}, cons_map);
+    const VarMap m_u(cons_map, true), m_p(prims_map, false);
+
+    const auto &G = pmb->coords;
+
+    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
+
+    // Subtract the average B3 as "reconnection"
+    IndexRange3 b = KDomain::GetRange(rc, domain, coarse);
+    IndexRange3 bi = KDomain::GetRange(rc, IndexDomain::interior, coarse);
+    const int jf = (binner) ? bi.js : bi.je; // j index of last zone next to pole
+    parthenon::par_for_outer(DEFAULT_OUTER_LOOP_PATTERN, "reduce_U3_" + bname, pmb->exec_space,
+        0, 1, b.is, b.ie,
+        KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int& i) {
+            // Sum the first rank of U3
+            Real U3_sum = 0.;
+            Kokkos::Sum<Real> sum_reducer(U3_sum);
+            parthenon::par_reduce_inner(member, bi.ks, bi.ke,
+                [&](const int& k, Real& local_result) {
+                    local_result += isnan(P(m_p.U3, k, jf, i)) ? 0. : P(m_p.U3, k, jf, i);
+                }
+            , sum_reducer);
+
+            // Calculate the average and subtract a portion
+            const Real U3_avg = U3_sum / (bi.ke - bi.ks + 1);
+            parthenon::par_for_inner(member, b.ks, b.ke,
+                [&](const int& k) {
+                    P(m_p.U3, k, jf, i) -= U3_avg;
+                    p_to_u(G, P, m_p, gam, k, jf, i, U, m_u);
+                }
+            );
+        }
+    );
+}
+
 } // namespace GRMHD
