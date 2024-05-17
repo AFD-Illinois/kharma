@@ -122,17 +122,41 @@ void CalcDivB(MeshData<Real> *md, std::string divb_field_name="divB");
  * 
  * *mostly. I think
  */
-void ZeroEMF(MeshBlockData<Real> *rc, IndexDomain domain, const VariablePack<Real> &emfpack, bool coarse);
+void ZeroBoundaryEMF(MeshBlockData<Real> *rc, IndexDomain domain, const VariablePack<Real> &emfpack, bool coarse);
 
 /**
  * Average all EMFs corresponding to the coordinate pole location, e.g. usually all E1 on X2 faces
  */
-void AverageEMF(MeshBlockData<Real> *rc, IndexDomain domain, const VariablePack<Real> &emfpack, bool coarse);
+void AverageBoundaryEMF(MeshBlockData<Real> *rc, IndexDomain domain, const VariablePack<Real> &emfpack, bool coarse);
+
+/**
+ * Subtract the average B3 from each face, as if a loop reconnected across the polar boundary.
+ * Preserves divB, since differences across cells remain the same after subtracting a constant.
+ */
+void ReconnectBoundaryB3(MeshBlockData<Real> *rc, IndexDomain domain, const VariablePack<Real> &emfpack, bool coarse);
 
 /**
  * Reset an outflow condition to have no divergence, even if a field line exits the domain.
  * Could maybe be used on other boundaries, but resets the perpendicular face so use with caution.
  */
 void DestructiveBoundaryClean(MeshBlockData<Real> *rc, IndexDomain domain, const VariablePack<Real> &fpack, bool coarse);
+
+/**
+ * Take the curl over the whole domain. Defined in-header since it's templated on face and NDIM
+ */
+template<TE el, int NDIM>
+inline void EdgeCurl(MeshBlockData<Real> *rc, const GridVector& A,
+                                     const VariablePack<Real>& B_U, IndexDomain domain)
+{
+    auto pmb = rc->GetBlockPointer();
+    const auto &G = pmb->coords;
+    IndexRange3 bB = KDomain::GetRange(rc, domain, el);
+    pmb->par_for(
+        "EdgeCurl", bB.ks, bB.ke, bB.js, bB.je, bB.is, bB.ie,
+        KOKKOS_LAMBDA(const int &k, const int &j, const int &i) {
+            B_CT::edge_curl<el, NDIM>(G, A, B_U, k, j, i);
+        }
+    );
+}
 
 }

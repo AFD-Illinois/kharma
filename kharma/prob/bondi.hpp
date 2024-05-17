@@ -51,6 +51,12 @@
 TaskStatus InitializeBondi(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin);
 
 /**
+ * Record parameters Bondi problem (or boundaries!) will need throughout the run
+ * Currently uses "GRMHD" package as convenient proxy (TODO fix that with problem-packages)
+ */
+void AddBondiParameters(ParameterInput *pin, Packages_t &packages);
+
+/**
  * Set all values on a given domain to the Bondi inflow analytic steady-state solution.
  * Use the template version when possible, which just calls through
  */
