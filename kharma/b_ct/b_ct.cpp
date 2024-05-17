@@ -69,7 +69,7 @@ std::shared_ptr<KHARMAPackage> B_CT::Initialize(ParameterInput *pin, std::shared
 
     // TODO gs05_alpha, LDZ04 UCT1, LDZ07 UCT2
     std::vector<std::string> ct_scheme_options = {"bs99", "gs05_0", "gs05_c", "sg07"};
-    std::string ct_scheme = pin->GetOrAddString("b_field", "ct_scheme", "bs99", ct_scheme_options);
+    std::string ct_scheme = pin->GetOrAddString("b_field", "ct_scheme", "sg07", ct_scheme_options);
     params.Add("ct_scheme", ct_scheme);
     if (ct_scheme == "gs05_c")
         std::cout << "KHARMA WARNING: G&S '05 epsilon_c CT is not well-tested." << std::endl
