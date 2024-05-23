@@ -66,8 +66,8 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
     auto& driver_pkg   = pkgs.at("Driver")->AllParams();
     //const bool use_electrons = pkgs.count("Electrons");
     //COOLING:
-    //const bool use_heating = pkgs.at("Electrons")->Param<bool>("do_heating");
-    //const bool use_cooling = pkgs.at("Electrons")->Param<bool>("do_cooling");
+    const bool use_heating = pkgs.at("Electrons")->Param<bool>("do_heating");
+    const bool use_cooling = pkgs.at("Electrons")->Param<bool>("do_cooling");
     const bool use_b_cleanup = pkgs.count("B_Cleanup");
     const bool use_b_ct = pkgs.count("B_CT");
     const bool use_implicit = pkgs.count("Implicit");
@@ -300,22 +300,19 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
 
         // Any package- (likely, problem-) specific source terms which must be applied to primitive variables
         // Apply these only after the final step so they're operator-split
+
+        //COOLING:
         auto t_prim_source_fourth = t_set_bc;
         if (stage == integrator->nstages) {
             t_prim_source_fourth = tl.AddTask(t_set_bc, Packages::BlockApplyPrimSource, mbd_sub_step_final.get());
         }
 
-        //COOLING:
-
         // Electron heating goes where it does in the KHARMA Driver, for the same reasons
-        //I will probably comment out this call to heating (this is the first and second call I think, but
-        //I added another call up above I think)
         auto t_heat_electrons = t_prim_source_fourth;
-        //if (use_heating) {
-            //t_heat_electrons = tl.AddTask(t_prim_source_second, Electrons::ApplyElectronHeating,
-            //                              mbd_sub_step_init.get(), mbd_sub_step_final.get());
-            //temporarily commented out heating for tests
-        //}
+        if (use_heating) {
+            t_heat_electrons = tl.AddTask(t_prim_source_fourth, Electrons::ApplyElectronHeating,
+                                          mbd_sub_step_init.get(), mbd_sub_step_final.get());
+        }
 
         // Make sure *all* conserved vars are synchronized at step end
         auto t_ptou = tl.AddTask(t_heat_electrons, Flux::BlockPtoU, mbd_sub_step_final.get(), IndexDomain::entire, false);

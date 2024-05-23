@@ -64,6 +64,10 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     params.Add("gamma_e", gamma_e);
     Real gamma_p = pin->GetOrAddReal("electrons", "gamma_p", 5./3);
     params.Add("gamma_p", gamma_p);
+    Real M_bh = pin->GetOrAddReal("electrons", "M_bh", pow(6.5,9));
+    params.Add("M_bh", M_bh);
+    Real M_unit = pin->GetOrAddReal("electrons", "M_unit", pow(1.0,28));
+    params.Add("M_unit", M_unit);
     // Whether to enforce that dissipation be positive, i.e. increasing entropy
     // Probably more accurate to keep off.
     bool enforce_positive_dissipation = pin->GetOrAddBoolean("electrons", "enforce_positive_dissipation", false);
@@ -459,10 +463,24 @@ TaskStatus ApplyElectronCooling(MeshBlockData<Real> *rc){
     const auto& G = pmb->coords;
     const Real game = pmb->packages.Get("Electrons")->Param<Real>("gamma_e");
     const Real dt = pmb->packages.Get("Globals")->Param<Real>("dt_last");
-    double m = 3.0;
-    //double tau = 5.;
-    
-    printf("kel at outer ghost zones: %.16f || %.16f || %.16f || %.16f \n", P(m_p.K_HOWES, 132, 0, 0), P(m_p.K_HOWES, 133, 0, 0), P(m_p.K_HOWES, 134, 0, 0), P(m_p.K_HOWES, 135, 0, 0));
+    const Real M_bh = pmb->packages.Get("Electrons")->Param<Real>("M_bh");
+    const Real M_unit = pmb->packages.Get("Electrons")->Param<Real>("M_unit");
+
+    //for the conversion stuff:
+    //MP, ME are defined in the namespace parthenon (above)
+    //M_bh and M_unit are defined in sane.par and electrons.cpp (in the Initialize function and here)
+    double CL = 2.99792458e10; // Speed of light
+    double GNEWT = 6.6742e-8; // Gravitational constant
+    double MSUN = 1.989e33; // grams per solar mass
+    double Kbol = 1.380649e-16; // boltzmann constant
+    double M_bh_cgs = M_bh * MSUN;
+    double L_unit = GNEWT*M_bh_cgs/pow(CL, 2.);
+    double T_unit = L_unit/CL;
+    double RHO_unit = M_unit*pow(L_unit, -3.);
+    double U_unit = RHO_unit*CL*CL;
+    double B_unit = CL*sqrt(4.*M_PI*RHO_unit);
+    double Ne_unit = RHO_unit/(MP + ME);
+    double Thetae_unit = MP/ME;
 
     const IndexRange ib = rc->GetBoundsI(IndexDomain::interior);
     const IndexRange jb = rc->GetBoundsJ(IndexDomain::interior);
@@ -470,32 +488,151 @@ TaskStatus ApplyElectronCooling(MeshBlockData<Real> *rc){
     //printf("kel at (5,5) before cooling: %.16f\n", P(m_p.K_HOWES, 0, 54, 54));
     pmb->par_for("cool_electrons", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-            //for getting u^t: (this is stolen from the heating function):
-            FourVectors Dtmp;
-            GRMHD::calc_4vecs(G, P, m_p, k, j, i, Loci::center, Dtmp);
-            double ut = Dtmp.ucon[0];
-            
-            //for getting uel:
-            double kel = P(m_p.K_HOWES, k, j, i);
-            double rho = P(m_p.RHO, k, j, i);
-            double uel = pow(rho, game)*kel/(game-1);
+            if (m_p.K_HOWES >= 0){
+                //for Bmag in code unit:
+                FourVectors Dtmp;
+                GRMHD::calc_4vecs(G, P, m_p, k, j, i, Loci::center, Dtmp);
+                Real bsq = dot(Dtmp.bcon, Dtmp.bcov);
+                double B_mag_code = pow(bsq, 0.5);
 
-            //For getting r: (stolen from another function, a lot of them do this)
-            GReal Xembed[GR_DIM];
-            G.coord_embed(0, j, i, Loci::center, Xembed);
-            GReal r = Xembed[1];
+                //for getting uel in code units:
+                double kel = P(m_p.K_HOWES, k, j, i);
+                double rho = P(m_p.RHO, k, j, i);
+                double uel = pow(rho, game)*kel/(game-1);
 
-            //m & dt defined above
+                //now cgs for everything:
+                uel = uel*U_unit;
+                double n_e = rho*Ne_unit;
+                double Tel = (game-1.)*uel/(n_e*Kbol);//this is in Kelvin
+                double theta_e = Tel/5.92986e9; // therefore this is unitless
+                double B_mag = B_mag_code*B_unit;
+                double dt_cgs = dt*T_unit;
 
-            //update:
-            uel = uel*exp(-dt*0.5*pow(r,-1.5)*m/(ut));
-            P(m_p.K_HOWES, k, j, i) = uel/pow(rho, game)*(game-1);
-            /*This is for the flat space cooling test:
-            double kel = P(m_p.K_HOWES, k, j, i);
-            double rho = P(m_p.RHO, k, j, i);
-            double uel = pow(rho, game)*kel/(game-1);
-            uel = uel*exp(-dt*0.5/(tau));
-            P(m_p.K_HOWES, k, j, i) = uel/pow(rho, game)*(game-1);*/
+                //update the internal energy:
+                uel = uel*exp(-dt_cgs*0.5*1.28567e-14*B_mag*B_mag*n_e*theta_e*theta_e);
+
+                //convert back to code units:
+                uel = uel/U_unit;
+
+                //update the entropy:
+                P(m_p.K_HOWES, k, j, i) = uel/pow(rho, game)*(game-1);
+            }
+            if (m_p.K_KAWAZURA >= 0){
+                //for Bmag in code unit:
+                FourVectors Dtmp;
+                GRMHD::calc_4vecs(G, P, m_p, k, j, i, Loci::center, Dtmp);
+                Real bsq = dot(Dtmp.bcon, Dtmp.bcov);
+                double B_mag_code = pow(bsq, 0.5);
+
+                //for getting uel in code units:
+                double kel = P(m_p.K_KAWAZURA, k, j, i);
+                double rho = P(m_p.RHO, k, j, i);
+                double uel = pow(rho, game)*kel/(game-1);
+
+                //now cgs for everything:
+                uel = uel*U_unit;
+                double n_e = rho*Ne_unit;
+                double Tel = (game-1.)*uel/(n_e*Kbol);//this is in Kelvin
+                double theta_e = Tel/5.92986e9; // therefore this is unitless
+                double B_mag = B_mag_code*B_unit;
+                double dt_cgs = dt*T_unit;
+
+                //update the internal energy:
+                uel = uel*exp(-dt_cgs*0.5*1.28567e-14*B_mag*B_mag*n_e*theta_e*theta_e);
+
+                //convert back to code units:
+                uel = uel/U_unit;
+
+                //update the entropy:
+                P(m_p.K_KAWAZURA, k, j, i) = uel/pow(rho, game)*(game-1);
+            }
+            if (m_p.K_ROWAN >= 0){
+                //for Bmag in code unit:
+                FourVectors Dtmp;
+                GRMHD::calc_4vecs(G, P, m_p, k, j, i, Loci::center, Dtmp);
+                Real bsq = dot(Dtmp.bcon, Dtmp.bcov);
+                double B_mag_code = pow(bsq, 0.5);
+
+                //for getting uel in code units:
+                double kel = P(m_p.K_ROWAN, k, j, i);
+                double rho = P(m_p.RHO, k, j, i);
+                double uel = pow(rho, game)*kel/(game-1);
+
+                //now cgs for everything:
+                uel = uel*U_unit;
+                double n_e = rho*Ne_unit;
+                double Tel = (game-1.)*uel/(n_e*Kbol);//this is in Kelvin
+                double theta_e = Tel/5.92986e9; // therefore this is unitless
+                double B_mag = B_mag_code*B_unit;
+                double dt_cgs = dt*T_unit;
+
+                //update the internal energy:
+                uel = uel*exp(-dt_cgs*0.5*1.28567e-14*B_mag*B_mag*n_e*theta_e*theta_e);
+
+                //convert back to code units:
+                uel = uel/U_unit;
+
+                //update the entropy:
+                P(m_p.K_ROWAN, k, j, i) = uel/pow(rho, game)*(game-1);
+            }
+            if (m_p.K_SHARMA >= 0){
+                //for Bmag in code unit:
+                FourVectors Dtmp;
+                GRMHD::calc_4vecs(G, P, m_p, k, j, i, Loci::center, Dtmp);
+                Real bsq = dot(Dtmp.bcon, Dtmp.bcov);
+                double B_mag_code = pow(bsq, 0.5);
+
+                //for getting uel in code units:
+                double kel = P(m_p.K_SHARMA, k, j, i);
+                double rho = P(m_p.RHO, k, j, i);
+                double uel = pow(rho, game)*kel/(game-1);
+
+                //now cgs for everything:
+                uel = uel*U_unit;
+                double n_e = rho*Ne_unit;
+                double Tel = (game-1.)*uel/(n_e*Kbol);//this is in Kelvin
+                double theta_e = Tel/5.92986e9; // therefore this is unitless
+                double B_mag = B_mag_code*B_unit;
+                double dt_cgs = dt*T_unit;
+
+                //update the internal energy:
+                uel = uel*exp(-dt_cgs*0.5*1.28567e-14*B_mag*B_mag*n_e*theta_e*theta_e);
+
+                //convert back to code units:
+                uel = uel/U_unit;
+
+                //update the entropy:
+                P(m_p.K_SHARMA, k, j, i) = uel/pow(rho, game)*(game-1);
+            }
+            if (m_p.K_WERNER >= 0){
+                //for Bmag in code unit:
+                FourVectors Dtmp;
+                GRMHD::calc_4vecs(G, P, m_p, k, j, i, Loci::center, Dtmp);
+                Real bsq = dot(Dtmp.bcon, Dtmp.bcov);
+                double B_mag_code = pow(bsq, 0.5);
+
+                //for getting uel in code units:
+                double kel = P(m_p.K_WERNER, k, j, i);
+                double rho = P(m_p.RHO, k, j, i);
+                double uel = pow(rho, game)*kel/(game-1);
+
+                //now cgs for everything:
+                uel = uel*U_unit;
+                double n_e = rho*Ne_unit;
+                double Tel = (game-1.)*uel/(n_e*Kbol);//this is in Kelvin
+                double theta_e = Tel/5.92986e9; // therefore this is unitless
+                double B_mag = B_mag_code*B_unit;
+                double dt_cgs = dt*T_unit;
+
+                //update the internal energy:
+                uel = uel*exp(-dt_cgs*0.5*1.28567e-14*B_mag*B_mag*n_e*theta_e*theta_e);
+
+                //convert back to code units:
+                uel = uel/U_unit;
+
+                //update the entropy:
+                P(m_p.K_WERNER, k, j, i) = uel/pow(rho, game)*(game-1);
+            }
         }
     );
     auto& P2 = rc->PackVariables({Metadata::GetUserFlag("Primitive")}, prims_map);
