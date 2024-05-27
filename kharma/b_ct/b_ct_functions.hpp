@@ -100,28 +100,13 @@ KOKKOS_INLINE_FUNCTION void edge_curl(const GRCoordinates& G, const GridVector& 
     }
 }
 
-template<TE el, int NDIM>
-inline void EdgeCurl(MeshBlockData<Real> *rc, const GridVector& A,
-                                     const VariablePack<Real>& B_U, IndexDomain domain)
-{
-    auto pmb = rc->GetBlockPointer();
-    const auto &G = pmb->coords;
-    IndexRange3 bB = KDomain::GetRange(rc, domain, el);
-    pmb->par_for(
-        "EdgeCurl", bB.ks, bB.ke, bB.js, bB.je, bB.is, bB.ie,
-        KOKKOS_LAMBDA(const int &k, const int &j, const int &i) {
-            B_CT::edge_curl<el, NDIM>(G, A, B_U, k, j, i);
-        }
-    );
-}
-
 KOKKOS_INLINE_FUNCTION Real upwind_diff(const VariableFluxPack<Real>& B_U, const VariablePack<Real>& emfc, const VariablePack<Real>& uvec,
                                         const int& comp, const int& dir, const int& vdir,
                                         const int& k, const int& j, const int& i, const bool& left_deriv)
 {
     // See SG09 eq 23
     // Upwind based on vel(vdir) at the left face in vdir (contact mode)
-    TopologicalElement face = FaceOf(vdir);
+    TopologicalElement face = (vdir == 1) ? F1 : ((vdir == 2) ? F2 : F3); //
     const Real contact_vel = uvec(face, vdir-1, k, j, i);
     // Upwind by one zone in dir
     const int i_up = (vdir == 1) ? i - 1 : i;
@@ -157,6 +142,7 @@ KOKKOS_INLINE_FUNCTION Real upwind_diff(const VariableFluxPack<Real>& B_U, const
 }
 
 // Only through formatting has the following been made even a little comprehensible.
+// TODO move it into Parthenon!
 
 template<int diff_face, int diff_side, int offset, int DIM>
 KOKKOS_FORCEINLINE_FUNCTION Real F(const ParArrayND<Real, VariableState> &fine, const Coordinates_t &coords, int l, int m, int n, int fk, int fj, int fi)

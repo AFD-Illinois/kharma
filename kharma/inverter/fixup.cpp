@@ -121,6 +121,9 @@ TaskStatus Inverter::FixUtoP(MeshBlockData<Real> *rc)
     const Floors::Prescription floors = pmb->packages.AllPackages().count("Floors") ?
                                         pmb->packages.Get("Floors")->Param<Floors::Prescription>("prescription") :
                                         pmb->packages.Get("Inverter")->Param<Floors::Prescription>("inverter_prescription");
+    const Floors::Prescription floors_inner = pmb->packages.AllPackages().count("Floors") ?
+                                        pmb->packages.Get("Floors")->Param<Floors::Prescription>("prescription_inner") :
+                                        pmb->packages.Get("Inverter")->Param<Floors::Prescription>("inverter_prescription");
 
     // We need the full packs of prims/cons for p_to_u
     // Pack new variables
@@ -139,7 +142,7 @@ TaskStatus Inverter::FixUtoP(MeshBlockData<Real> *rc)
             if (failed(pflag(k, j, i))) {
                 // Make sure all fixed values still abide by floors
                 // TODO Full floors instead of just geo?
-                Floors::apply_geo_floors(G, P, m_p, gam, k, j, i, floors);
+                Floors::apply_geo_floors(G, P, m_p, gam, k, j, i, floors, floors_inner);
 
                 // Make sure to keep lockstep
                 // This will only be run for GRMHD, so we can call its p_to_u

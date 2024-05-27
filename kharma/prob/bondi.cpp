@@ -121,7 +121,7 @@ TaskStatus InitializeBondi(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterIn
 
     // Apply floors to initialize the any part of the domain we didn't
     // Bondi's BL coordinates do not like the EH, so we replace the zeros with something reasonable
-    // Note this ignores the "disable_floors" parameter, since it's necessary for initialization
+    // Note this ignores whether the "Floors" package is loaded, since it's necessary for initialization
     if (rin_bondi > pin->GetReal("coordinates", "r_in") && !(fill_interior)) {
         Floors::ApplyInitialFloors(pin, rc.get(), IndexDomain::interior);
     }

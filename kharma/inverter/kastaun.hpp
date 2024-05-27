@@ -215,7 +215,7 @@ template <>
 KOKKOS_INLINE_FUNCTION int u_to_p<Type::kastaun>(const GRCoordinates& G, const VariablePack<Real>& U, const VarMap& m_u,
                                               const Real& gam, const int& k, const int& j, const int& i,
                                               const VariablePack<Real>& P, const VarMap& m_p,
-                                              const Loci& loc, const Floors::Prescription& inverter_floors,
+                                              const Loci& loc, const Floors::Prescription& floors,
                                               const int& max_iterations, const Real& tol)
 {
     // Shouldn't need this, KHARMA should die on NaN
@@ -228,7 +228,8 @@ KOKKOS_INLINE_FUNCTION int u_to_p<Type::kastaun>(const GRCoordinates& G, const V
     const Real a_over_g = alpha / G.gdet(loc, j, i);
 
     const Real D = U(m_u.RHO, k, j, i) * a_over_g;
-    const Real D_fl = std::max(D, inverter_floors.rho_min_const);
+
+    const Real D_fl = std::max(D, floors.rho_min_const);
 
     Real Qcov[GR_DIM] = {(U(m_u.UU, k, j, i) - U(m_u.RHO, k, j, i)) * a_over_g,
                     U(m_u.U1, k, j, i) * a_over_g,
@@ -289,13 +290,12 @@ KOKKOS_INLINE_FUNCTION int u_to_p<Type::kastaun>(const GRCoordinates& G, const V
     }
     //const Real zsq = rsq / h0sq_; // h0sq_ normalization set to 1 in Phoebus
     const Real zsq = rsq;
-    const Real v0sq = std::min(zsq / (1.0 + zsq), 1.0 - 1.0 / SQR(inverter_floors.gamma_max));
+    const Real v0sq = std::min(zsq / (1.0 + zsq), 1.0 - 1.0 / SQR(floors.gamma_max));
 
     // residual object. Caches most arguments/floors so calls are single-argument
     KastaunResidual res(D, q, bsq, bsq_rpsq, rsq, rbsq, v0sq, gam,
-                        inverter_floors.rho_min_const,
-                        inverter_floors.u_min_const/D_fl,
-                        inverter_floors.gamma_max, inverter_floors.u_over_rho_max);
+                        floors.rho_min_const, floors.u_min_const / D_fl,
+                        floors.gamma_max, floors.u_over_rho_max);
 
     // SOLVE
     // TODO(BSP) better or faster solver?  (Optionally) skip bracketing?

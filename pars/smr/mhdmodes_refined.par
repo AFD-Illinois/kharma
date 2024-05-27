@@ -63,6 +63,7 @@ implicit = false
 
 <b_field>
 solver = face_ct
+ct_scheme = bs99
 implicit = false
 
 <floors>

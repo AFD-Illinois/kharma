@@ -79,13 +79,16 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
 
     const bool reconstruction_floors = pars.Get<bool>("reconstruction_floors");
     Floors::Prescription floors_temp;
+    Floors::Prescription floors_inner_temp;
     if (reconstruction_floors) {
         // Apply post-reconstruction floors.
         // Only enabled for WENO since it is not TVD, and only when other
         // floors are enabled.
-        floors_temp = packages.Get("Floors")->Param<Floors::Prescription>("prescription");
+        floors_temp       = packages.Get("Floors")->Param<Floors::Prescription>("prescription");
+        floors_inner_temp = packages.Get("Floors")->Param<Floors::Prescription>("prescription_inner");
     }
     const Floors::Prescription& floors = floors_temp;
+    const Floors::Prescription& floors_inner = floors_inner_temp;
 
     const bool reconstruction_fallback = pars.Get<bool>("reconstruction_fallback");
 
@@ -181,8 +184,8 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
                     // we have no guarantee they remotely resemble the *centered* primitives
                     // If we selected to fall back to TVD, the floors are at zero (as intended)
                     if (reconstruction_floors || reconstruction_fallback) {
-                        fallback_tvd(i)  = Floors::apply_geo_floors(G, Pl, m_p, gam, j, i, floors, loc);
-                        fallback_tvd(i) |= Floors::apply_geo_floors(G, Pr, m_p, gam, j, i, floors, loc);
+                        fallback_tvd(i)  = Floors::apply_geo_floors(G, Pl, m_p, gam, j, i, floors, floors_inner, loc);
+                        fallback_tvd(i) |= Floors::apply_geo_floors(G, Pr, m_p, gam, j, i, floors, floors_inner, loc);
                     }
                 }
             );

@@ -63,9 +63,10 @@ TaskStatus ApplyFloorsInFrame(MeshData<Real> *md, IndexDomain domain)
     const EMHD::EMHD_parameters& emhd_params = EMHD::GetEMHDParameters(pmb0->packages);
     // Still needed for ceilings and determining floors
     const Floors::Prescription floors = pmb0->packages.Get("Floors")->Param<Floors::Prescription>("prescription");
+    const Floors::Prescription floors_inner = pmb0->packages.Get("Floors")->Param<Floors::Prescription>("prescription_inner");
 
     // Determine floors
-    DetermineGRMHDFloors(md, domain, floors);
+    DetermineGRMHDFloors(md, domain, floors, floors_inner);
 
     const IndexRange3 b = KDomain::GetRange(md, domain);
     const IndexRange block = IndexRange{0, P.GetDim(5) - 1};
@@ -83,7 +84,7 @@ TaskStatus ApplyFloorsInFrame(MeshData<Real> *md, IndexDomain domain)
                 if (pflag_l) pflag(b, 0, k, j, i) = pflag_l;
 
                 // Apply ceilings *after* floors, to make the temperature ceiling better-behaved
-                apply_ceilings(G, P(b), m_p, gam, k, j, i, floors, U(b), m_u);
+                apply_ceilings(G, P(b), m_p, gam, k, j, i, floors, floors_inner, U(b), m_u);
 
                 // P->U for any modified zones
                 Flux::p_to_u_mhd(G, P(b), m_p, emhd_params, gam, k, j, i, U(b), m_u, Loci::center);
