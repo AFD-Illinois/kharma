@@ -146,7 +146,7 @@ TaskStatus SetGIZMO(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain
             int i_sh;
             GReal del_sh;
             XtoindexGIZMO(Xshell, r_device, length, i_sh, del_sh);
-            Real vacuum_rho, vacuum_u_over_rho, vacuum_logrho, vacuum_log_u_over_rho;
+            Real vacuum_rho, vacuum_u_over_rho;
             vacuum_rho = rho_device(i_sh)*(1.-del_sh)+rho_device(i_sh+1)*del_sh;
             vacuum_u_over_rho = (T_device(i_sh)*(1.-del_sh)+T_device(i_sh+1)*del_sh)/(gam-1.);
 

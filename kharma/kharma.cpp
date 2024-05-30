@@ -261,6 +261,40 @@ void KHARMA::FixParameters(ParameterInput *pin)
     if (tmp_coords.stopx(3) >= 0)
         pin->GetOrAddReal("parthenon/mesh", "x3max", tmp_coords.stopx(3));
 
+    // Also set x1 refinements as a proportion of size
+    // TODO all regions!
+    if (pin->DoesBlockExist("parthenon/static_refinement0")) {
+        Real startx1 = pin->GetReal("parthenon/mesh", "x1min");
+        Real stopx1 = pin->GetReal("parthenon/mesh", "x1max");
+        Real lx1 = stopx1 - startx1;
+        Real startx1_prop = pin->GetReal("parthenon/static_refinement0", "x1min");
+        Real stopx1_prop = pin->GetReal("parthenon/static_refinement0", "x1max");
+        //std::cerr << "StartX1 " << startx1 << " lx1 " << lx1 << "Prop " << startx1_prop << " " << stopx1_prop << std::endl;
+        //std::cerr << "Adjust X1 " << startx1_prop*lx1 + startx1 << " to " << stopx1_prop*lx1 + startx1 << std::endl;
+        pin->SetReal("parthenon/static_refinement0", "x1min", std::max(startx1_prop*lx1 + startx1, startx1));
+        pin->SetReal("parthenon/static_refinement0", "x1max", std::min(stopx1_prop*lx1 + startx1, stopx1));
+
+        if (pin->DoesParameterExist("parthenon/static_refinement0", "x2min")) {
+            Real startx2 = pin->GetReal("parthenon/mesh", "x2min");
+            Real stopx2 = pin->GetReal("parthenon/mesh", "x2max");
+            Real lx2 = stopx2 - startx2;
+            Real startx2_prop = pin->GetReal("parthenon/static_refinement0", "x2min");
+            Real stopx2_prop = pin->GetReal("parthenon/static_refinement0", "x2max");
+            pin->SetReal("parthenon/static_refinement0", "x2min", std::max(startx2_prop*lx2 + startx2, startx2));
+            pin->SetReal("parthenon/static_refinement0", "x2max", std::min(stopx2_prop*lx2 + startx2, stopx2));
+        }
+
+        if (pin->DoesParameterExist("parthenon/static_refinement0", "x3min")) {
+            Real startx3 = pin->GetReal("parthenon/mesh", "x3min");
+            Real stopx3 = pin->GetReal("parthenon/mesh", "x3max");
+            Real lx3 = stopx3 - startx3;
+            Real startx3_prop = pin->GetReal("parthenon/static_refinement0", "x3min");
+            Real stopx3_prop = pin->GetReal("parthenon/static_refinement0", "x3max");
+            pin->SetReal("parthenon/static_refinement0", "x3min", std::max(startx3_prop*lx3 + startx3, startx3));
+            pin->SetReal("parthenon/static_refinement0", "x3max", std::min(stopx3_prop*lx3 + startx3, stopx3));
+        }
+    }
+
     EndFlag();
 }
 
@@ -300,15 +334,22 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput> &pin)
     // GRMHD needs globals to mark packages
     auto t_grmhd = tl.AddTask(t_globals | t_driver, KHARMA::AddPackage, packages, GRMHD::Initialize, pin.get());
     // Only load the inverter if GRMHD/EMHD isn't being evolved implicitly
+    // Unless we want to use the explicitly-evolved ideal MHD variables as a guess for the solver
     auto t_inverter = t_grmhd;
-    if (!pin->GetOrAddBoolean("GRMHD", "implicit", pin->GetOrAddBoolean("emhd", "on", false))) {
+    if (!pin->GetOrAddBoolean("GRMHD", "implicit", pin->GetOrAddBoolean("emhd", "on", false)) ||
+        pin->GetOrAddBoolean("emhd", "ideal_guess", false)) {
         t_inverter = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, Inverter::Initialize, pin.get());
     }
-    // Floors package is only loaded if floors aren't disabled (TODO rename "on"?)
-    if (!pin->GetOrAddBoolean("floors", "disable_floors", false)) {
+    // Floors package is only loaded if floors aren't disabled
+    // Respect legacy version for a while
+    bool floors_on_default = true;
+    if (pin->DoesParameterExist("floors", "disable_floors")) {
+        floors_on_default = !pin->GetBoolean("floors", "disable_floors");
+    }
+    if (pin->GetOrAddBoolean("floors", "on", floors_on_default)) {
         auto t_floors = tl.AddTask(t_inverter, KHARMA::AddPackage, packages, Floors::Initialize, pin.get());
     }
-    // Reductions, needed for most other packages
+    // Reductions, needed by most other packages
     auto t_reductions = tl.AddTask(t_none, KHARMA::AddPackage, packages, Reductions::Initialize, pin.get());
 
     // B field solvers, to ensure divB ~= 0.
@@ -324,7 +365,7 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput> &pin)
     } else if (b_field_solver == "constrained_transport" || b_field_solver == "face_ct") {
         t_b_field = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, B_CT::Initialize, pin.get());
     } else if (b_field_solver == "constraint_damping" || b_field_solver == "cd") {
-        // Constraint damping, probably only useful for non-GR MHD systems
+        // Constraint damping. NON-WORKING
         t_b_field = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, B_CD::Initialize, pin.get());
     } else if (b_field_solver == "flux_ct") {
         t_b_field = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, B_FluxCT::Initialize, pin.get());
@@ -353,7 +394,7 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput> &pin)
     if (pin->GetOrAddBoolean("electrons", "on", false)) {
         auto t_electrons = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, Electrons::Initialize, pin.get());
     }
-    if (pin->GetBoolean("emhd", "on")) {
+    if (pin->GetBoolean("emhd", "on")) { // Set above when deciding to load inverter
         auto t_emhd = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, EMHD::Initialize, pin.get());
     }
     if (pin->GetOrAddBoolean("wind", "on", false)) {
