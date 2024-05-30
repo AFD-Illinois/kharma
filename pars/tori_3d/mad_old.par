@@ -1,6 +1,7 @@
-# MAD model mirroring the simulation library
+# MAD model mirroring the "Illinois v3" simulation library
 # See EHT MAD GRMHD Code Comparison for problem
 # setup details
+# Stability and code parameters reflect "HARM-like" configuration
 
 <parthenon/job>
 archive_parameters_timestamp = true
