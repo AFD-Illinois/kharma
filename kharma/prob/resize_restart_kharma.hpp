@@ -102,7 +102,7 @@ KOKKOS_INLINE_FUNCTION void get_prim_restart_kharma(const GRCoordinates& G, cons
     // Interpolate the value at this location from the global grid
     if ((!should_fill) && (X[1]<fx1min)) {// if cannot be read from restart file
         // same as Bondi (06/13/23)
-        get_prim_bondi(G, true, rs, mdot, gam, ur_frac, uphi, rin_bondi, false, rho, u, u_prim, k, j, i); // TODO(HC) diffinit=true, fill_interior = false for now...
+        get_prim_bondi(G, true, rs, mdot, gam, ur_frac, uphi, rin_bondi, 0., false, rho, u, u_prim, k, j, i); // TODO(HC) diffinit=true, fill_interior = false for now...
 
         // printf("Bondi fill location: %g %g %g %g KS: %g %g %g %g\nr: %g T: %g ur: %g\nucon: %g %g %g %g native: %g %g %g %g\nPrims: %g %g %g %g %g\n",
         //         X[0], X[1], X[2], X[3], Xembed[0], Xembed[1], Xembed[2], Xembed[3],
