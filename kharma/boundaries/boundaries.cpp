@@ -97,7 +97,7 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
     // Face-centered fields: some duplicate stuff, leaving it separate for now
     FC ghost_vars_f = FC({Metadata::FillGhost, Metadata::Face})
                 - FC({Metadata::GetUserFlag("StartupOnly")});
-    int nvar_f = m::max(KHARMA::PackDimension(packages.get(), ghost_vars_f), 1);
+    int nvar_f = 3 * m::max(KHARMA::PackDimension(packages.get(), ghost_vars_f), 1);
 
     // TODO encapsulate this
     Metadata m_x1, m_x2, m_x3, m_x1_f, m_x2_f, m_x3_f;
@@ -187,7 +187,7 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
             bool average_EMF = pin->GetOrAddBoolean("boundaries", "average_EMF_" + bname, (btype == "transmitting"));
             params.Add("average_EMF_"+bname, average_EMF);
             // Otherwise, always zero EMFs to prevent B field escaping the domain in polar/dirichlet bounds
-            bool zero_EMF = pin->GetOrAddBoolean("boundaries", "zero_EMF_" + bname, !average_EMF);
+            bool zero_EMF = pin->GetOrAddBoolean("boundaries", "zero_EMF_" + bname, (btype == "reflecting"));
             params.Add("zero_EMF_"+bname, zero_EMF);
         }
         // Advect together/cancel U3, under the theory it's in a similar position to B3 above (albeit no CT constraining it)
