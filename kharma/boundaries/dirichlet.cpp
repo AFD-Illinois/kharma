@@ -64,8 +64,8 @@ void KBoundaries::DirichletSetFromField(MeshBlockData<Real> *rc, VariablePack<Re
 {
     // We're sometimes called without any variables to sync (e.g. syncing flags, EMFs), just return
     if (q.GetDim(4) == 0) return;
-    if (q.GetDim(4) != bound.GetDim(4)) {
-        std::cerr << "Dirichlet boundary mismatch! Boundary cache: " << bound.GetDim(4) << " for pack: " << q.GetDim(4) << std::endl;
+    if (q.GetDim(5) * q.GetDim(4) != bound.GetDim(4)) {
+        std::cerr << "Dirichlet boundary mismatch! Boundary cache: " << bound.GetDim(4) << " for pack: " << q.GetDim(4) * q.GetDim(5) << std::endl;
     }
 
     // Indices
@@ -94,7 +94,7 @@ void KBoundaries::DirichletSetFromField(MeshBlockData<Real> *rc, VariablePack<Re
 
         // Flatten TopologicalElements when reading/writing to boundaries cache
         pmb->par_for(
-            "dirichlet_boundary_" + bname, 0, q.GetDim(4)/el_tot-1, b.ks, b.ke, b.js, b.je, b.is, b.ie,
+            "dirichlet_boundary_" + bname, 0, q.GetDim(4)-1, b.ks, b.ke, b.js, b.je, b.is, b.ie,
             KOKKOS_LAMBDA (const int &v, const int &k, const int &j, const int &i) {
                 if (set) {
                     bound(el_tot*v + (static_cast<int>(el) % el_tot), k - b.ks, j - b.js, i - b.is) = q(el, v, k, j, i);

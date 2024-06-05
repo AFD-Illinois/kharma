@@ -97,7 +97,7 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
     // Face-centered fields: some duplicate stuff, leaving it separate for now
     FC ghost_vars_f = FC({Metadata::FillGhost, Metadata::Face})
                 - FC({Metadata::GetUserFlag("StartupOnly")});
-    int nvar_f = m::max(KHARMA::PackDimension(packages.get(), ghost_vars_f), 1);
+    int nvar_f = m::max(KHARMA::PackDimension(packages.get(), ghost_vars_f), 1) * 3;
 
     // TODO encapsulate this
     Metadata m_x1, m_x2, m_x3, m_x1_f, m_x2_f, m_x3_f;
