@@ -79,6 +79,8 @@ outer_x1 = dirichlet
 check_inflow = false
 check_inflow_outer_x1 = false
 check_inflow_inner_x1 = false
+zero_EMF_inner_x3 = false
+zero_EMF_outer_x3 = false
 # Otherwise defaults
 
 <perturbation>
@@ -91,6 +93,7 @@ u_jitter=0
 # No cleanup by default as fix_flux_x1 preserves divB
 type = none
 solver = none
+ct_scheme = bs99
 fix_flux_x1 = true
 kill_on_divb_over = 0.1
 
@@ -128,3 +131,9 @@ ghost_zones = true
 file_type = hst
 dt = 52896800
 
+<inverter>
+type = onedw
+
+<flux>
+consistent_face_b = 0
+reconstruction_floors = 0
