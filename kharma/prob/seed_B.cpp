@@ -254,8 +254,7 @@ TaskStatus SeedBFieldType(MeshBlockData<Real> *rc, ParameterInput *pin, IndexDom
         // Find the magnetic vector potential.  In X3 symmetry only A_phi is non-zero,
         // But for tilted conditions we must keep track of all components
         // TODO(BSP) Make the vector potential a proper edge-centered field, sync it before B calc
-        // that will also allow converting below into E1/E2/E3 loops
-        IndexRange3 be = KDomain::GetRange(rc, domain, 0, 1);
+        IndexRange3 be = KDomain::GetRange(rc, domain, E3);
         IndexSize3 sz = KDomain::GetBlockSize(rc);
         ParArrayND<double> A("A", NVEC, sz.n3+1, sz.n2+1, sz.n1+1);
         pmb->par_for(
