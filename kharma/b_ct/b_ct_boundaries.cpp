@@ -49,9 +49,14 @@ void B_CT::ZeroBoundaryEMF(MeshBlockData<Real> *rc, IndexDomain domain, const Va
     // Select edges which lie on the domain face, zero only those
     for (auto &el : OrthogonalEdges(bdir)) {
         auto b = KDomain::GetBoundaryRange(rc, domain, el, coarse);
-        const int jf = (binner) ? b.je : b.js;
+        int i_face = (binner) ? b.ie : b.is;
+        int j_face = (binner) ? b.je : b.js;
+        int k_face = (binner) ? b.ke : b.ks;
+        IndexRange ib = (bdir == 1) ? IndexRange{i_face, i_face} : IndexRange{b.is, b.ie};
+        IndexRange jb = (bdir == 2) ? IndexRange{j_face, j_face} : IndexRange{b.js, b.je};
+        IndexRange kb = (bdir == 3) ? IndexRange{k_face, k_face} : IndexRange{b.ks, b.ke};
         pmb->par_for(
-            "zero_EMF_" + bname, b.ks, b.ke, jf, jf, b.is, b.ie,
+            "zero_EMF_" + bname, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
             KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
                 emfpack(el, 0, k, j, i) = 0;
             }
