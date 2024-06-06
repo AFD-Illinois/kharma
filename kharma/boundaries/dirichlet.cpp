@@ -64,8 +64,8 @@ void KBoundaries::DirichletSetFromField(MeshBlockData<Real> *rc, VariablePack<Re
 {
     // We're sometimes called without any variables to sync (e.g. syncing flags, EMFs), just return
     if (q.GetDim(4) == 0) return;
-    if (q.GetDim(5) * q.GetDim(4) != bound.GetDim(4)) {
-        std::cerr << "Dirichlet boundary mismatch! Boundary cache: " << bound.GetDim(4) << " for pack: " << q.GetDim(4) * q.GetDim(5) << std::endl;
+    if (q.GetDim(5) * q.GetDim(4) * ((do_face) ? 3 : 1) != bound.GetDim(4)) {
+        std::cerr << "Dirichlet boundary mismatch! Boundary cache: " << bound.GetDim(4) << " for pack: " << q.GetDim(4) * q.GetDim(5) * ((do_face) ? 3 : 1) << std::endl;
     }
 
     // Indices
