@@ -72,10 +72,13 @@ void B_CT::AverageBoundaryEMF(MeshBlockData<Real> *rc, IndexDomain domain, const
     const int bdir = KBoundaries::BoundaryDirection(bface);
     const bool binner = KBoundaries::BoundaryIsInner(bface);
     const int ndim = KDomain::GetNDim(rc);
+    int reflecting_x2 = (pmb->boundary_flag[BoundaryFace::inner_x2] != BoundaryFlag::periodic); // just assume that it's reflecting if not periodic for now
 
     for (auto &el : OrthogonalEdges(bdir)) {
-        if (bdir == X2DIR && el == E3 && pmb->coords.coords.is_spherical()) {
+        if ((bdir == X2DIR && el == E3 && pmb->coords.coords.is_spherical()) || 
+            (bdir == X1DIR && el == E3 && reflecting_x2)) {
             // X3 EMF must be zero *on* polar face, since edge size is 0
+            // or if X2 boundary is reflecting, then EMF3 is set to 0 to avoid conflict with reflecting bc
             IndexRange3 b = KDomain::GetBoundaryRange(rc, domain, el, coarse);
             pmb->par_for(
                 "zero_polar_EMF3_" + bname, b.ks, b.ke, b.js, b.je, b.is, b.ie,
@@ -95,7 +98,7 @@ void B_CT::AverageBoundaryEMF(MeshBlockData<Real> *rc, IndexDomain domain, const
             IndexRange outer;
             if (bdir == X1DIR) {
                 cface = (binner) ? bi.is : bi.ie;
-                if (el == E2) {
+                if (el == E2) { // for bfluxc
                     outer = {b.js, b.je};
                     inner_dir = X3DIR;
                 } else {
@@ -143,8 +146,8 @@ void B_CT::AverageBoundaryEMF(MeshBlockData<Real> *rc, IndexDomain domain, const
                             }
                         , sum_reducer);
                     } else if (inner_dir == X2DIR) {
-                        len = bi.je - bi.js;
-                        parthenon::par_reduce_inner(member, bi.js, bi.je - 1,
+                        len = bi.je - bi.js + reflecting_x2;
+                        parthenon::par_reduce_inner(member, bi.js, bi.je - 1 + reflecting_x2,
                             [&](const int& j, double& local_result) {
                                 local_result += emfpack(el, 0, kk, j, ii);
                             }

@@ -121,6 +121,7 @@ def calc_rb(kwargs):
 @click.option("--derefine_nlevels", default=1, help="Derefine number of levels for internal SMR.")
 @click.option("--output0_dt", default=None, help="output0 dt.")
 @click.option("--dont_kill_on_divb", is_flag=True, help="Don't kill the simulation when the divB is too large. Mostly for test purposes.")
+@click.option("--bfluxc", is_flag=True, help="Apply Bflux-constant.")
 # Don't use this
 @click.option("--start_time", default=0.0, help="Starting time. Only use if you know what you're doing.")
 def run_multizone(**kwargs):
@@ -207,6 +208,9 @@ def run_multizone(**kwargs):
                 args["b_field/initial_cleanup"] = 1
                 args["b_cleanup/rel_tolerance"] = 1.e-5
             if (kwargs["dont_kill_on_divb"]): args["b_field/kill_on_large_divb"] = 0
+            if (kwargs["bfluxc"]): 
+                args["boundaries/average_EMF_inner_x1"] = 1
+                args["boundaries/average_EMF_outer_x1"] = 1
             # Compress coordinates to save time
             if kwargs["nx2"] >= 128 and not kwargs["onezone"]:
                 args["coordinates/transform"] = "fmks"
@@ -445,8 +449,8 @@ def update_args(run_num, kwargs, args):
                 args["coordinates/r_out"] = last_r_out * kwargs["base"]
             args["coordinates/r_in"] = last_r_in * kwargs["base"]
 
+        # if the next simulation is at the largest annulus,
         if (kwargs["combine_out_ann"]) and args["coordinates/r_in"] >= kwargs["base"] ** (kwargs["nzones_eff"] - (kwargs["base"] > 2)):
-            # if the next simulation is at the largest annulus,
             # make r_out and nx1 larger
             # if base < 2, the largest r_in is base^nzones_eff. if not, base^nzones_eff-1
             args["coordinates/r_out"] = kwargs["base"] ** (kwargs["nzones"] + 1)
