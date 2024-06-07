@@ -594,7 +594,7 @@ double MaxDivB(MeshData<Real> *md)
         pmb->par_reduce("divB_max", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
             KOKKOS_LAMBDA (const int &k, const int &j, const int &i, double &local_result) {
                 const auto& G = B_U.GetCoords(b);
-                const double local_divb = m::abs(corner_div(G, B_U, b, k, j, i, ndim > 2));
+                const double local_divb = m::abs(corner_div(G, B_U(b), k, j, i, ndim > 2));
                 if (local_divb > local_result) local_result = local_divb;
             }
         , max_reducer);
@@ -669,7 +669,7 @@ void CalcDivB(MeshData<Real> *md, std::string divb_field_name)
         pmb->par_for("calc_divB", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
             KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
                 const auto& G = B_U.GetCoords(b);
-                divB(b, 0, k, j, i) = corner_div(G, B_U, b, k, j, i, ndim > 2);
+                divB(b, 0, k, j, i) = corner_div(G, B_U(b), k, j, i, ndim > 2);
             }
         );
     }
@@ -695,7 +695,7 @@ void FillOutput(MeshBlock *pmb, ParameterInput *pin)
     pmb->par_for("divB_output", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
             const auto& G = B_U.GetCoords();
-            divB(0, k, j, i) = corner_div(G, B_U, 0, k, j, i, ndim > 2);
+            divB(0, k, j, i) = corner_div(G, B_U, k, j, i, ndim > 2);
         }
     );
 }
