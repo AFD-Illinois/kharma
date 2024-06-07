@@ -64,8 +64,19 @@ void KBoundaries::DirichletSetFromField(MeshBlockData<Real> *rc, VariablePack<Re
 {
     // We're sometimes called without any variables to sync (e.g. syncing flags, EMFs), just return
     if (q.GetDim(4) == 0) return;
-    if (q.GetDim(5) * q.GetDim(4) * ((do_face) ? 3 : 1) != bound.GetDim(4)) {
-        std::cerr << "Dirichlet boundary mismatch! Boundary cache: " << bound.GetDim(4) << " for pack: " << q.GetDim(4) * q.GetDim(5) * ((do_face) ? 3 : 1) << std::endl;
+
+    // Determine elements to run over
+    std::vector<TopologicalElement> el_list;
+    if (do_face) {
+        el_list = {F1, F2, F3};
+    } else {
+        el_list = {CC};
+    }
+    int el_tot = el_list.size();
+
+    // Warn when the cache doesn't match the variables we've been given
+    if ((el_tot * q.GetDim(4)) != bound.GetDim(4)) {
+        std::cerr << "Dirichlet boundary mismatch! Boundary cache: " << bound.GetDim(4) << " for pack: " << el_tot * q.GetDim(4) << std::endl;
     }
 
     // Indices
@@ -74,23 +85,9 @@ void KBoundaries::DirichletSetFromField(MeshBlockData<Real> *rc, VariablePack<Re
     const int dir = BoundaryDirection(bface);
     const auto domain = BoundaryDomain(bface);
     const auto bname = BoundaryName(bface);
-
-    std::vector<TopologicalElement> el_list;
-    if (do_face) {
-        el_list = {F1, F2, F3};
-    } else {
-        el_list = {CC};
-    }
-    int el_tot = el_list.size();
     for (auto el : el_list) {
         // This is the domain of the boundary/ghost zones
-        IndexRange3 b;
-        if ((el == F1 && dir == 1) || (el == F2 && dir == 2) || (el == F3 && dir == 3)) {
-            // Extend domain by 1 to set domain face values
-            b = KDomain::GetRange(rc, domain, el, (binner) ? 0 : -1, (binner) ? 1 : 0, coarse);
-        } else {
-            b = KDomain::GetRange(rc, domain, el, coarse);
-        }
+        IndexRange3 b = KDomain::GetBoundaryRange(rc, domain, el, coarse);
 
         // Flatten TopologicalElements when reading/writing to boundaries cache
         pmb->par_for(
