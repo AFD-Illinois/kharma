@@ -343,7 +343,6 @@ TaskStatus SeedBFieldType(MeshBlockData<Real> *rc, ParameterInput *pin, IndexDom
             auto B_Uf = rc->PackVariables(std::vector<std::string>{"cons.fB"});
             // This is why we make A 1 zone larger than "entire":
             // we need this stencil-2 op over the whole domain
-            IndexRange3 bB = KDomain::GetRange(rc, domain, 0, 1);
             if (ndim > 2) {
                 B_CT::EdgeCurl<F1,3>(rc, A, B_Uf, domain);
                 B_CT::EdgeCurl<F2,3>(rc, A, B_Uf, domain);
@@ -359,16 +358,16 @@ TaskStatus SeedBFieldType(MeshBlockData<Real> *rc, ParameterInput *pin, IndexDom
                 GridVector B_Save = rc->Get("B_Save").data;
                 // Hyerin (12/19/22) copy over data after initialization
                 pmb->par_for(
-                    "B_field_B_3D", be.ks, be.ke, be.js, be.je, be.is, be.ie + 1,
+                    "B_field_B_3D", be.ks, be.ke, be.js, be.je, be.is, be.ie,
                     KOKKOS_LAMBDA(const int &k, const int &j, const int &i) {
                         GReal X[GR_DIM];
-                        G.coord(k, j, i, Loci::center, X);
+                        G.coord(k, j, i, Loci::face1, X);
 
                         if ((!should_fill) && (X[1] < fx1min_ghost)) {// if cannot be read from restart file
                             // do nothing. just use the initialization from SeedBField
                         } else {
                             B_Uf(F1, 0, k, j, i) = B_Save(0, k, j, i);
-                            if (i < be.ie + 1) {
+                            if (i < be.ie) {
                                 B_Uf(F2, 0, k, j, i) = B_Save(1, k, j, i);
                                 B_Uf(F3, 0, k, j, i) = B_Save(2, k, j, i);
                             }
