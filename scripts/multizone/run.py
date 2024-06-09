@@ -89,6 +89,7 @@ def calc_rb(kwargs):
 @click.option("--kharma_bin", default="kharma.cuda", help="Name (not path) of KHARMA binary to run")
 @click.option("--kharma_args", default="", help="Arguments for KHARMA run.sh")
 @click.option("--long_t_in", is_flag=True, help="Use longer time for innermost annulus")
+@click.option("--long_t_in_factor", default=5.0, help="Use longer time for innermost annulus")
 @click.option("--restart", is_flag=True, help="Restart from most recent run parameters")
 @click.option("--parfile", default=None, help="Parameter filename")
 @click.option("--gizmo", is_flag=True, help="Start from GIZMO data")
@@ -320,8 +321,8 @@ def run_multizone(**kwargs):
                 if (not kwargs['one_trun']): runtime *= 2  # double the runtime for innermost annulus
                 if kwargs["long_t_in"]:
                     print("LONG_T_IN @ RUN # {}: using longer runtime".format(run_num))
-                    runtime *= 5  # 5 tff at the log middle radius
-                    if kwargs['one_trun']: runtime *= 2 # compensate one_trun here
+                    runtime *= float(kwargs["long_t_in_factor"])  # 5 tff at the log middle radius (by default)
+                    if kwargs['one_trun']: runtime *= 2 # compensate one_trun here (TODO: this should actually not be done!)
         else:
             runtime = float(kwargs["tlim"])
         if args["coordinates/r_in"] < 2:
