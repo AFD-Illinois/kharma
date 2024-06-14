@@ -57,7 +57,7 @@ norm = false
 <debug>
 verbose = 1
 flag_verbose = 0
-extra_checks = 1
+extra_checks = 0
 
 <driver>
 type = multizone

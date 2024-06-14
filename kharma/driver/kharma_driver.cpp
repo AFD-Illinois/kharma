@@ -68,7 +68,8 @@ std::shared_ptr<KHARMAPackage> KHARMADriver::Initialize(ParameterInput *pin, std
     } else if (driver_type_s == "simple") {
         driver_type = DriverType::simple;
     } else if (driver_type_s == "multizone") {
-        driver_type = DriverType::multizone;  
+        driver_type = DriverType::multizone;
+        pin->SetInteger("parthenon/mesh", "pack_size", 1);
     } // We prevent this
     params.Add("type", driver_type);
     params.Add("name", driver_type_s);
@@ -151,9 +152,9 @@ void KHARMADriver::AddFullSyncRegion(TaskCollection& tc, std::shared_ptr<MeshDat
 
     // MPI boundary exchange, done over MeshData objects/partitions at once
     // Parthenon includes physical bounds
-    const int num_partitions = pmesh->DefaultNumPartitions(); // Usually 1
-    TaskRegion &bound_sync = tc.AddRegion(num_partitions);
-    for (int i = 0; i < num_partitions; i++) {
+    // const int num_partitions = pmesh->DefaultNumPartitions(); // Usually 1
+    TaskRegion &bound_sync = tc.AddRegion(1);
+    for (int i = 0; i < 1; i++) {
         auto &tl = bound_sync[i];
         AddBoundarySync(t_none, tl, md_sync);
     }

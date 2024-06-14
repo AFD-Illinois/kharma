@@ -58,12 +58,23 @@ TaskCollection KHARMADriver::MakeMultizoneTaskCollection(BlockList_t &blocks, in
 {
     // Reminder that this list is created BEFORE any of the list contents are run!
     // Prints or function calls here will likely not do what you want: instead, add to the list by calling tl.AddTask()
+    // pmesh->DefaultNumPartitions()
+    bool is_active[pmesh->block_list.size()] = {0, 0, 1};
+    bool apply_boundary_condition[BOUNDARY_NFACES][pmesh->block_list.size()];
 
-    bool is_active[pmesh->block_list.size()] = {0};
-    bool global_is_active[pmesh->nbtotal] = {0};
-
-    //Multizone::DecideActiveBlocks(pmesh, is_active, global_is_active);
+    //Multizone::DecideActiveBlocks(pmesh, is_active, apply_boundary_condition);
     // TODO Also handle timestep...
+
+    // Estimate next time step based on ctop
+    const int num_partitions = pmesh->DefaultNumPartitions();
+    for (int i = 0; i < num_partitions; i++) {
+        if (is_active[i]) {
+            auto &base = pmesh->mesh_data.GetOrAdd("base", i);
+            auto t_new_dt =
+                tl.AddTask(t_step_done, Update::EstimateTimestep<MeshData<Real>>, base.get());
+        }
+    }
+    SetGlobalTimeStep();
 
     // TaskCollections are a collection of TaskRegions.
     // Each TaskRegion can operate on eash meshblock separately, i.e. one MeshBlockData object (slower),
@@ -117,23 +128,21 @@ TaskCollection KHARMADriver::MakeMultizoneTaskCollection(BlockList_t &blocks, in
     }
 
     // Flux region: calculate and apply fluxes to update conserved values
-    const int num_partitions = pmesh->block_list.size();
     TaskRegion &flux_region = tc.AddRegion(num_partitions);
     for (int i = 0; i < num_partitions; i++) {
         auto &tl = flux_region[i];
-        std::cerr << "HERE" << std::endl;
         auto &md_full_step_init = pmesh->mesh_data.GetOrAdd("base", i);
         auto &md_sub_step_init  = pmesh->mesh_data.GetOrAdd(integrator->stage_name[stage - 1], i);
         auto &md_sub_step_final = pmesh->mesh_data.GetOrAdd(integrator->stage_name[stage], i);
         auto &md_flux_src       = pmesh->mesh_data.GetOrAdd("dUdt", i);
-        auto &md_sync = pmesh->mesh_data.AddShallow("sync"+integrator->stage_name[stage]+std::to_string(i), md_sub_step_final, sync_vars);
-
         auto t_update = t_none;
 
-        if (1) { //(is_active[i]) {
+        std::cerr << pmesh->block_list.size() << " " << pmesh->DefaultNumPartitions() << " " << i << std::endl;
+
+        if (is_active[i]) {
             // Start receiving flux corrections and ghost cells
-            auto t_start_recv_bound = tl.AddTask(t_none, parthenon::StartReceiveBoundBufs<parthenon::BoundaryType::any>, md_sync);
-            auto t_start_recv_flux = t_start_recv_bound;
+            // auto t_start_recv_bound = tl.AddTask(t_none, parthenon::StartReceiveBoundBufs<parthenon::BoundaryType::any>, md_sync);
+            auto t_start_recv_flux = t_none; //t_start_recv_bound;
             if (pmesh->multilevel || use_b_ct)
                 t_start_recv_flux = tl.AddTask(t_none, parthenon::StartReceiveFluxCorrections, md_sub_step_init);
 
@@ -185,11 +194,15 @@ TaskCollection KHARMADriver::MakeMultizoneTaskCollection(BlockList_t &blocks, in
                                                 std::vector<MetadataFlag>{Metadata::GetUserFlag("Explicit"), Metadata::Independent},
                                                 use_b_ct, stage);
         } else {
-            Copy<MeshData<Real>>({Metadata::Cell}, md_full_step_init.get(), md_sync.get());
+            std::cerr << "HERE" << std::endl;
+            Copy<MeshData<Real>>({Metadata::Cell}, md_full_step_init.get(), md_sub_step_final.get());
         }
+    }
 
-        // Always sync, to apply Dirichlet boundaries for the active blocks
-        KHARMADriver::AddBoundarySync(t_update, tl, md_sync);
+    for (int i = 0; i < 1; i++) {
+        auto &md_sub_step_final = pmesh->mesh_data.Add(integrator->stage_name[stage]);
+        auto &md_sync = pmesh->mesh_data.AddShallow("sync"+integrator->stage_name[stage], md_sub_step_final, sync_vars);
+        KHARMADriver::AddFullSyncRegion(tc, md_sync);
     }
 
     EndFlag();
@@ -198,8 +211,8 @@ TaskCollection KHARMADriver::MakeMultizoneTaskCollection(BlockList_t &blocks, in
     // Fix Region: prims/cons sync, floors, fixes, boundary conditions which need primitives
     TaskRegion &fix_region = tc.AddRegion(num_partitions);
     for (int i = 0; i < num_partitions; i++) {
-        // if (!is_active[i])
-        //     continue;
+        if (!is_active[i])
+            continue;
 
         auto &tl = fix_region[i];
         auto &md_sub_step_init  = pmesh->mesh_data.GetOrAdd(integrator->stage_name[stage-1], i);
@@ -239,12 +252,6 @@ TaskCollection KHARMADriver::MakeMultizoneTaskCollection(BlockList_t &blocks, in
                 printf("WARNING: internal SMR near the poles is requested, but the number of levels should be >= 1. Not operating internal SMR.\n");
             }
         }
-
-        // Estimate next time step based on ctop
-        if (stage == integrator->nstages) {
-            auto t_new_dt =
-                tl.AddTask(t_step_done, Update::EstimateTimestep<MeshData<Real>>, md_sub_step_final.get());
-        }
     }
 
     EndFlag();
@@ -257,9 +264,9 @@ TaskCollection KHARMADriver::MakeMultizoneTaskCollection(BlockList_t &blocks, in
     // modified on each rank.
     const auto &two_sync = pkgs.at("Driver")->Param<bool>("two_sync");
     if (two_sync) {
-        for (int i = 0; i < num_partitions; i++) {
-            auto &md_sub_step_final = pmesh->mesh_data.GetOrAdd(integrator->stage_name[stage], i);
-            auto &md_sync = pmesh->mesh_data.AddShallow("sync"+integrator->stage_name[stage]+std::to_string(i), md_sub_step_final, sync_vars);
+        for (int i = 0; i < 1; i++) {
+            auto &md_sub_step_final = pmesh->mesh_data.Add(integrator->stage_name[stage]);
+            auto &md_sync = pmesh->mesh_data.AddShallow("sync"+integrator->stage_name[stage], md_sub_step_final, sync_vars);
             KHARMADriver::AddFullSyncRegion(tc, md_sync);
         }
     }

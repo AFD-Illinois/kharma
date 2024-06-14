@@ -475,6 +475,8 @@ TaskStatus Flux::PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
     const auto& flux_pars = pmesh->packages.Get("Flux")->AllParams();
     const bool use_fofc = flux_pars.Get<bool>("use_fofc");
 
+    std::cerr << "FHERE" << std::endl;
+
     // Debugging/diagnostic info about FOFC hits
     if (use_fofc && flag_verbose > 0) {
         std::map<int, std::string> fofc_label = {{1, "Flux-corrected"}};
@@ -482,6 +484,8 @@ TaskStatus Flux::PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
         // Debugging/diagnostic info about floor and inversion flags
         Reductions::CheckFlagReduceAndPrintHits(md, "fofcflag", fofc_label, IndexDomain::interior, false, 10);
     }
+
+    std::cerr << "FHERE2" << std::endl;
 
     // Check for a soundspeed (ctop) of 0 or NaN
     // This functions as a "last resort" check to stop a
@@ -497,6 +501,8 @@ TaskStatus Flux::PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
         }
 
     }
+
+    std::cerr << "FHERE3" << std::endl;
 
     return TaskStatus::complete;
 }
