@@ -57,7 +57,7 @@ std::shared_ptr<KHARMAPackage> KHARMADriver::Initialize(ParameterInput *pin, std
     // The two current drivers are "kharma" or "imex", with the former being the usual KHARMA
     // driver (formerly HARM driver), and the latter supporting implicit stepping of some or all variables
     // Mostly, packages should react to e.g. the "sync_prims" option rather than the driver name
-    std::vector<std::string> valid_drivers = {"harm", "kharma", "imex", "simple"};
+    std::vector<std::string> valid_drivers = {"harm", "kharma", "imex", "simple", "multizone"};
     bool do_emhd = pin->GetOrAddBoolean("emhd", "on", false);
     std::string driver_type_s = pin->GetOrAddString("driver", "type", (do_emhd) ? "imex" : "kharma", valid_drivers);
     DriverType driver_type;
@@ -67,6 +67,8 @@ std::shared_ptr<KHARMAPackage> KHARMADriver::Initialize(ParameterInput *pin, std
         driver_type = DriverType::imex;
     } else if (driver_type_s == "simple") {
         driver_type = DriverType::simple;
+    } else if (driver_type_s == "multizone") {
+        driver_type = DriverType::multizone;  
     } // We prevent this
     params.Add("type", driver_type);
     params.Add("name", driver_type_s);
@@ -119,6 +121,28 @@ std::shared_ptr<KHARMAPackage> KHARMADriver::Initialize(ParameterInput *pin, std
     }
 
     return pkg;
+}
+
+TaskCollection KHARMADriver::MakeTaskCollection(BlockList_t &blocks, int stage)
+{
+    DriverType driver_type = blocks[0]->packages.Get("Driver")->Param<DriverType>("type");
+    Flag("MakeTaskCollection");
+    TaskCollection tc;
+    switch (driver_type) {
+    case DriverType::kharma:
+        tc = MakeDefaultTaskCollection(blocks, stage);
+        break;
+    case DriverType::imex:
+        tc = MakeImExTaskCollection(blocks, stage);
+        break;
+    case DriverType::simple:
+        tc = MakeSimpleTaskCollection(blocks, stage);
+        break;
+    case DriverType::multizone:
+        tc = MakeMultizoneTaskCollection(blocks, stage);
+    }
+    EndFlag();
+    return tc;
 }
 
 void KHARMADriver::AddFullSyncRegion(TaskCollection& tc, std::shared_ptr<MeshData<Real>> &md_sync)

@@ -42,7 +42,7 @@
 using namespace parthenon;
 
 // See Initialize()
-enum class DriverType{kharma, imex, simple};
+enum class DriverType{kharma, imex, simple, multizone};
 
 /**
  * This is the "Driver" class for KHARMA.
@@ -107,6 +107,11 @@ class KHARMADriver : public MultiStageDriver {
          * A simple step for experimentation/new implementations.  Does NOT support MPI, or much of anything optional.
          */
         TaskCollection MakeSimpleTaskCollection(BlockList_t &blocks, int stage);
+
+        /**
+         * Steps over only portions of a domain, suitable for multi-scale simulations
+         */
+        TaskCollection MakeMultizoneTaskCollection(BlockList_t &blocks, int stage);
 
         // BUNDLES
         // The different drivers share substantially similar portions of the full task list, which we gather into
