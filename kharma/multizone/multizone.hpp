@@ -33,7 +33,8 @@
  */
 #pragma once
 
-#include <memory>
+#include "decs.hpp"
+#include "types.hpp"
 
 #include <parthenon/parthenon.hpp>
 
@@ -51,7 +52,7 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
 /**
  * Diagnostics for multi-zone runs
  */
-TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *rc);
+TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md);
 
 /**
  * Decide which blocks are active
@@ -61,9 +62,9 @@ TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *rc);
 void DecideActiveBlocks(Mesh *pmesh, bool *is_active, bool **apply_boundary_condition);
 
 /**
- * Average EMFs on seams (internal boundaries) between active and passive blocks.
- * This just applies B_CT::AverageEMF for each active border
+ * Average EMFs on seams (internal boundaries) between this block and specified other blocks.
+ * This is a light wrapper around B_CT::AverageEMF which just applies it to certain boundaries.
  */
-TaskStatus AverageEMFSeams(MeshData *pmesh, bool **apply_boundary_condition);
+TaskStatus AverageEMFSeams(MeshData<Real> *md_emf_only, bool *apply_boundary_condition);
 
 } // Multizone

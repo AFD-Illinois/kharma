@@ -42,7 +42,7 @@
 #include "electrons.hpp"
 #include "grmhd.hpp"
 #include "inverter.hpp"
-//#include "multizone.hpp"
+#include "multizone.hpp"
 #include "wind.hpp"
 // Other headers
 #include "boundaries.hpp"
@@ -71,6 +71,8 @@ TaskCollection KHARMADriver::MakeMultizoneTaskCollection(BlockList_t &blocks, in
     TaskCollection tc;
     const TaskID t_none(0);
     const int num_partitions = pmesh->DefaultNumPartitions();
+    if (num_partitions != pmesh->block_list.size())
+        throw std::runtime_error("Multizone operation requires one block per MeshData!");
     
     Flag("MakeTaskCollection::timestep");
 
@@ -103,7 +105,7 @@ TaskCollection KHARMADriver::MakeMultizoneTaskCollection(BlockList_t &blocks, in
     // TODO except the Copy they can be run on step 1 only
     if (stage == 1) {
         auto &base = pmesh->mesh_data.Get();
-        //pmesh->mesh_data.Add(integrator->stage_name[stage]);
+        pmesh->mesh_data.Add(integrator->stage_name[stage]);
         // Fluxes
         pmesh->mesh_data.Add("dUdt");
         for (int i = 1; i < integrator->nstages; i++)
@@ -180,8 +182,8 @@ TaskCollection KHARMADriver::MakeMultizoneTaskCollection(BlockList_t &blocks, in
                     // Pull out a container of only EMF to synchronize
                     auto &md_emf_only = pmesh->mesh_data.AddShallow("EMF", std::vector<std::string>{"B_CT.emf"}); // TODO this gets weird if we partition
                     auto t_emf_local = tl.AddTask(t_flux_bounds, B_CT::CalculateEMF, md_sub_step_init.get());
-                    t_emf = KHARMADriver::AddBoundarySync(t_emf_local, tl, md_emf_only);
-                    //Multizone::AverageEMFSeams(md_emf_only, apply_boundary_condition);
+                    auto t_emf_bounds = KHARMADriver::AddBoundarySync(t_emf_local, tl, md_emf_only);
+                    t_emf = tl.AddTask(t_emf_bounds, Multizone::AverageEMFSeams, md_emf_only.get(), apply_boundary_condition[i]);
                 }
                 auto t_load_send_flux = tl.AddTask(t_emf, parthenon::LoadAndSendFluxCorrections, md_sub_step_init);
                 auto t_recv_flux = tl.AddTask(t_load_send_flux, parthenon::ReceiveFluxCorrections, md_sub_step_init);

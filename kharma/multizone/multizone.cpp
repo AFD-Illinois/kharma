@@ -31,7 +31,7 @@
  *  OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-#include "electrons.hpp"
+#include "multizone.hpp"
 
 #include "decs.hpp"
 #include "kharma.hpp"
@@ -59,14 +59,17 @@ std::shared_ptr<KHARMAPackage> Multizone::Initialize(ParameterInput *pin, std::s
     return pkg;
 }
 
-void DecideActiveBlocks(Mesh *pmesh, bool *is_active, bool **apply_boundary_condition)
+void Multizone::DecideActiveBlocks(Mesh *pmesh, bool *is_active, bool **apply_boundary_condition)
 {
 
 }
 
-TaskStatus AverageEMFSeams(MeshData *pmesh, bool **apply_boundary_condition)
+TaskStatus Multizone::AverageEMFSeams(MeshData<Real> *md_emf_only, bool *apply_boundary_condition)
 {
+    Flag("AverageEMFSeams");
 
+    EndFlag();
+    return TaskStatus::complete;
 }
 
 TaskStatus Multizone::PostStepDiagnostics(const SimTime& tm, MeshData<Real> *rc)
