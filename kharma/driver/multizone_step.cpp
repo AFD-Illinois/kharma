@@ -63,24 +63,31 @@ TaskCollection KHARMADriver::MakeMultizoneTaskCollection(BlockList_t &blocks, in
     bool apply_boundary_condition[BOUNDARY_NFACES][pmesh->block_list.size()];
 
     //Multizone::DecideActiveBlocks(pmesh, is_active, apply_boundary_condition);
-    // TODO Also handle timestep...
 
-    // Estimate next time step based on ctop
-    const int num_partitions = pmesh->DefaultNumPartitions();
-    for (int i = 0; i < num_partitions; i++) {
-        if (is_active[i]) {
-            auto &base = pmesh->mesh_data.GetOrAdd("base", i);
-            auto t_new_dt =
-                tl.AddTask(t_step_done, Update::EstimateTimestep<MeshData<Real>>, base.get());
-        }
-    }
-    SetGlobalTimeStep();
 
     // TaskCollections are a collection of TaskRegions.
     // Each TaskRegion can operate on eash meshblock separately, i.e. one MeshBlockData object (slower),
     // or on a collection of MeshBlock objects called the MeshData
     TaskCollection tc;
     const TaskID t_none(0);
+    const int num_partitions = pmesh->DefaultNumPartitions();
+    
+    Flag("MakeTaskCollection::timestep");
+
+    // Timestep region: calculate timestep based on the newly updated active zones
+    TaskRegion &timestep_region = tc.AddRegion(num_partitions);
+    // Estimate next time step based on ctop
+    for (int i = 0; i < num_partitions; i++) {
+        auto &tl = timestep_region[i];
+        if (is_active[i]) {
+            auto &base = pmesh->mesh_data.GetOrAdd("base", i);
+            auto t_new_dt =
+                tl.AddTask(t_none, Update::EstimateTimestep<MeshData<Real>>, base.get());
+        }
+    }
+    SetGlobalTimeStep();
+    
+    EndFlag();
 
     // Which packages we load affects which tasks we'll add to the list
     auto& pkgs = pmesh->packages.AllPackages();

@@ -113,6 +113,14 @@ void ApplyFloors(MeshBlockData<Real> *mbd, IndexDomain domain);
 TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *rc);
 
 /**
+ * Decide which blocks are active
+ * 
+ * Function in this package: Currently nothing
+ */
+void DecideActiveBlocks(Mesh *pmesh, bool *is_active, bool **apply_boundary_condition) {
+}
+
+/**
  * Fill fields which are calculated only for output to dump files, called from kharma.cpp
  * 
  * Function in this package: Currently nothing
