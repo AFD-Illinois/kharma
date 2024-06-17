@@ -42,6 +42,7 @@
 #include "electrons.hpp"
 #include "grmhd.hpp"
 #include "inverter.hpp"
+//#include "multizone.hpp"
 #include "wind.hpp"
 // Other headers
 #include "boundaries.hpp"
@@ -60,10 +61,9 @@ TaskCollection KHARMADriver::MakeMultizoneTaskCollection(BlockList_t &blocks, in
     // Prints or function calls here will likely not do what you want: instead, add to the list by calling tl.AddTask()
     // pmesh->DefaultNumPartitions()
     bool is_active[pmesh->block_list.size()] = {0, 0, 1};
-    bool apply_boundary_condition[BOUNDARY_NFACES][pmesh->block_list.size()];
+    bool apply_boundary_condition[pmesh->block_list.size()][BOUNDARY_NFACES];
 
     //Multizone::DecideActiveBlocks(pmesh, is_active, apply_boundary_condition);
-
 
     // TaskCollections are a collection of TaskRegions.
     // Each TaskRegion can operate on eash meshblock separately, i.e. one MeshBlockData object (slower),
@@ -103,6 +103,7 @@ TaskCollection KHARMADriver::MakeMultizoneTaskCollection(BlockList_t &blocks, in
     // TODO except the Copy they can be run on step 1 only
     if (stage == 1) {
         auto &base = pmesh->mesh_data.Get();
+        //pmesh->mesh_data.Add(integrator->stage_name[stage]);
         // Fluxes
         pmesh->mesh_data.Add("dUdt");
         for (int i = 1; i < integrator->nstages; i++)
@@ -180,8 +181,7 @@ TaskCollection KHARMADriver::MakeMultizoneTaskCollection(BlockList_t &blocks, in
                     auto &md_emf_only = pmesh->mesh_data.AddShallow("EMF", std::vector<std::string>{"B_CT.emf"}); // TODO this gets weird if we partition
                     auto t_emf_local = tl.AddTask(t_flux_bounds, B_CT::CalculateEMF, md_sub_step_init.get());
                     t_emf = KHARMADriver::AddBoundarySync(t_emf_local, tl, md_emf_only);
-                    // TODO const EMF on seams
-                    //B_CT::AverageEMFSeams(pmesh, global_is_active);
+                    //Multizone::AverageEMFSeams(md_emf_only, apply_boundary_condition);
                 }
                 auto t_load_send_flux = tl.AddTask(t_emf, parthenon::LoadAndSendFluxCorrections, md_sub_step_init);
                 auto t_recv_flux = tl.AddTask(t_load_send_flux, parthenon::ReceiveFluxCorrections, md_sub_step_init);
@@ -264,7 +264,6 @@ TaskCollection KHARMADriver::MakeMultizoneTaskCollection(BlockList_t &blocks, in
     EndFlag();
     Flag("MakeTaskCollection::extras");
 
-    // TODO TODO make faster for large num_partitions, also this should be shared whole between drivers
     // Second boundary sync:
     // ensure that primitive variables in ghost zones are *exactly*
     // identical to their physical counterparts, now that they have been
