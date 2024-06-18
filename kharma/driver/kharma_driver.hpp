@@ -213,6 +213,11 @@ class KHARMADriver : public MultiStageDriver {
             return TaskStatus::complete;
         }
 
+        static TaskStatus CopyFace(std::vector<MetadataFlag> flags, MeshData<Real> *source, MeshData<Real> *dest)
+        {
+            return WeightedSumDataFace(flags, source, source, 1., 0., dest);
+        }
+
         static TaskStatus FluxDivergence(MeshData<Real> *in_obj, MeshData<Real> *dudt_obj,
                                   std::vector<MetadataFlag> flags = {Metadata::WithFluxes, Metadata::Cell},
                                   int halo=0)

@@ -63,9 +63,9 @@ TaskCollection KHARMADriver::MakeMultizoneTaskCollection(BlockList_t &blocks, in
     const int num_blocks = pmesh->block_list.size();
     if (num_partitions != num_blocks)
         throw std::runtime_error("Multizone operation requires one block per MeshData!");
-    
+
     // We know num_blocks == num_partitions, but I'll distinguish out of habit
-    bool is_active[num_blocks] = {false, false, true};
+    bool is_active[num_blocks] = {true, true, true};
     bool apply_boundary_condition[num_blocks][BOUNDARY_NFACES];
     for (int i=0; i < num_blocks; i++)
         for (int j=0; j < BOUNDARY_NFACES; j++)
@@ -80,7 +80,7 @@ TaskCollection KHARMADriver::MakeMultizoneTaskCollection(BlockList_t &blocks, in
     // or on a collection of MeshBlock objects called the MeshData
     TaskCollection tc;
     const TaskID t_none(0);
-    
+
     Flag("MakeTaskCollection::timestep");
 
     // Timestep region: calculate timestep based on the newly updated active zones
@@ -95,7 +95,7 @@ TaskCollection KHARMADriver::MakeMultizoneTaskCollection(BlockList_t &blocks, in
         }
     }
     SetGlobalTimeStep();
-    
+
     EndFlag();
 
     // Which packages we load affects which tasks we'll add to the list
@@ -231,7 +231,10 @@ TaskCollection KHARMADriver::MakeMultizoneTaskCollection(BlockList_t &blocks, in
                                         std::vector<MetadataFlag>{Metadata::GetUserFlag("Explicit"), Metadata::Independent},
                                         use_b_ct, stage);
         } else {
-            Copy<MeshData<Real>>({Metadata::Cell}, md_full_step_init.get(), md_sub_step_final.get());
+            auto t_copy_cell = tl.AddTask(t_none, Copy<MeshData<Real>>, std::vector<MetadataFlag>{Metadata::Cell},
+                                                  md_full_step_init.get(), md_sub_step_final.get());
+            auto t_copy_face = tl.AddTask(t_none, CopyFace, std::vector<MetadataFlag>{Metadata::Face},
+                                                  md_full_step_init.get(), md_sub_step_final.get());
         }
     }
 
