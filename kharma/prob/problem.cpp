@@ -142,7 +142,7 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
 
         // Initialize electron entropies to defaults if enabled
         if (pmb->packages.AllPackages().count("Electrons")) {
-            Electrons::InitElectrons(rc, pin);
+            Electrons::InitElectrons(rc.get(), pin);
         }
 
         if (pmb->packages.AllPackages().count("EMHD")) {

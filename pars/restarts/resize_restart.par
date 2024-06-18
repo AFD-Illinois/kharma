@@ -63,7 +63,7 @@ extra_checks = 1
 file_type = hdf5
 dt = 0.0001
 single_precision_output = true
-variables = prims.rho, prims.u, prims.uvec, prims.B, jcon, fflag, pflag
+variables = prims, divB, jcon, fflag, pflag
 
 <parthenon/output1>
 file_type = rst
