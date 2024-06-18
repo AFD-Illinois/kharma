@@ -52,16 +52,22 @@ namespace B_CT {
 std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages);
 
 /**
- * Get the primitive variables, which in Parthenon's nomenclature are "derived".
- * Also applies floors to the calculated primitives, and fixes up any inversion errors
+ * Get the primitive variables, which in Parthenon's nomenclature are "derived"
  * 
  * Defaults to entire domain, as the KHARMA algorithm relies on applying UtoP over ghost zones.
  * 
- * input: Conserved B = sqrt(-gdet) * B^i
+ * input: Conserved B = sqrt(-g) * B^i
  * output: Primitive B = B^i
  */
 TaskStatus BlockUtoP(MeshBlockData<Real> *mbd, IndexDomain domain, bool coarse=false);
 TaskStatus MeshUtoP(MeshData<Real> *md, IndexDomain domain, bool coarse=false);
+
+/**
+ * Interpolate primitive B to faces, then multiply by gdet
+ * DANGEROUS as it replaces conserved field state. Only used for resizing runs,
+ * and only with B_Cleanup::CleanupDivergence directly afterward!
+ */
+TaskStatus DangerousPtoU(MeshData<Real> *md, IndexDomain domain, bool coarse=false);
 
 /**
  * Calculate the EMF around edges of faces caused by the flux of B field

@@ -202,7 +202,7 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     return pkg;
 }
 
-TaskStatus InitElectrons(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin)
+TaskStatus InitElectrons(MeshBlockData<Real> *rc, ParameterInput *pin)
 {
     Flag("InitElectrons");
     auto pmb = rc->GetBlockPointer();
