@@ -121,7 +121,7 @@ void B_CT::AverageBoundaryEMF(MeshBlockData<Real> *rc, IndexDomain domain, const
                     inner_dir = X1DIR;
                 }
             }
-            parthenon::par_for_outer(DEFAULT_OUTER_LOOP_PATTERN, "reduce_EMF1_" + bname, pmb->exec_space,
+            parthenon::par_for_outer(DEFAULT_OUTER_LOOP_PATTERN, "average_EMF_" + bname, pmb->exec_space,
                 0, 1, outer.s, outer.e,
                 KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int& o) {
                     double emf_sum = 0.;

@@ -59,9 +59,19 @@ TaskCollection KHARMADriver::MakeMultizoneTaskCollection(BlockList_t &blocks, in
 {
     // Reminder that this list is created BEFORE any of the list contents are run!
     // Prints or function calls here will likely not do what you want: instead, add to the list by calling tl.AddTask()
-    // pmesh->DefaultNumPartitions()
-    bool is_active[pmesh->block_list.size()] = {0, 0, 1};
-    bool apply_boundary_condition[pmesh->block_list.size()][BOUNDARY_NFACES];
+    const int num_partitions = pmesh->DefaultNumPartitions();
+    const int num_blocks = pmesh->block_list.size();
+    if (num_partitions != num_blocks)
+        throw std::runtime_error("Multizone operation requires one block per MeshData!");
+    
+    // We know num_blocks == num_partitions, but I'll distinguish out of habit
+    bool is_active[num_blocks] = {false, false, true};
+    bool apply_boundary_condition[num_blocks][BOUNDARY_NFACES];
+    for (int i=0; i < num_blocks; i++)
+        for (int j=0; j < BOUNDARY_NFACES; j++)
+            apply_boundary_condition[i][j] = false;
+    apply_boundary_condition[2][BoundaryFace::inner_x1] = true;
+    apply_boundary_condition[2][BoundaryFace::outer_x1] = true;
 
     //Multizone::DecideActiveBlocks(pmesh, is_active, apply_boundary_condition);
 
@@ -70,9 +80,6 @@ TaskCollection KHARMADriver::MakeMultizoneTaskCollection(BlockList_t &blocks, in
     // or on a collection of MeshBlock objects called the MeshData
     TaskCollection tc;
     const TaskID t_none(0);
-    const int num_partitions = pmesh->DefaultNumPartitions();
-    if (num_partitions != pmesh->block_list.size())
-        throw std::runtime_error("Multizone operation requires one block per MeshData!");
     
     Flag("MakeTaskCollection::timestep");
 
@@ -143,23 +150,12 @@ TaskCollection KHARMADriver::MakeMultizoneTaskCollection(BlockList_t &blocks, in
         auto &tl = flux_region[i];
         auto &md_full_step_init = pmesh->mesh_data.GetOrAdd("base", i);
         auto &md_sub_step_init  = pmesh->mesh_data.GetOrAdd(integrator->stage_name[stage - 1], i);
-        auto &md_sub_step_final = pmesh->mesh_data.GetOrAdd(integrator->stage_name[stage], i);
-        auto &md_flux_src       = pmesh->mesh_data.GetOrAdd("dUdt", i);
-        auto t_update = t_none;
-
-        std::cerr << pmesh->block_list.size() << " " << pmesh->DefaultNumPartitions() << " " << i << std::endl;
 
         if (is_active[i]) {
-            // Start receiving flux corrections and ghost cells
-            // auto t_start_recv_bound = tl.AddTask(t_none, parthenon::StartReceiveBoundBufs<parthenon::BoundaryType::any>, md_sync);
-            auto t_start_recv_flux = t_none; //t_start_recv_bound;
-            if (pmesh->multilevel || use_b_ct)
-                t_start_recv_flux = tl.AddTask(t_none, parthenon::StartReceiveFluxCorrections, md_sub_step_init);
-
             // Calculate the flux of each variable through each face
             // This reconstructs the primitives (P) at faces and uses them to calculate fluxes
             // of the conserved variables (U) through each face.
-            auto t_flux_calc = KHARMADriver::AddFluxCalculations(t_start_recv_flux, tl, md_sub_step_init.get());
+            auto t_flux_calc = KHARMADriver::AddFluxCalculations(t_none, tl, md_sub_step_init.get());
             auto t_fluxes = t_flux_calc;
             if (use_fofc) {
                 auto &guess_src = pmesh->mesh_data.GetOrAdd("fofc_source", i);
@@ -174,45 +170,75 @@ TaskCollection KHARMADriver::MakeMultizoneTaskCollection(BlockList_t &blocks, in
             // etc
             auto t_fix_flux = tl.AddTask(t_fluxes, Packages::FixFlux, md_sub_step_init.get());
 
-            // If we're in AMR, correct fluxes from neighbors
-            auto t_flux_bounds = t_fix_flux;
-            if (pmesh->multilevel || use_b_ct) {
-                auto t_emf = t_flux_bounds;
-                if (use_b_ct) {
-                    // Pull out a container of only EMF to synchronize
-                    auto &md_emf_only = pmesh->mesh_data.AddShallow("EMF", std::vector<std::string>{"B_CT.emf"}); // TODO this gets weird if we partition
-                    auto t_emf_local = tl.AddTask(t_flux_bounds, B_CT::CalculateEMF, md_sub_step_init.get());
-                    auto t_emf_bounds = KHARMADriver::AddBoundarySync(t_emf_local, tl, md_emf_only);
-                    t_emf = tl.AddTask(t_emf_bounds, Multizone::AverageEMFSeams, md_emf_only.get(), apply_boundary_condition[i]);
-                }
-                auto t_load_send_flux = tl.AddTask(t_emf, parthenon::LoadAndSendFluxCorrections, md_sub_step_init);
-                auto t_recv_flux = tl.AddTask(t_load_send_flux, parthenon::ReceiveFluxCorrections, md_sub_step_init);
-                t_flux_bounds = tl.AddTask(t_recv_flux, parthenon::SetFluxCorrections, md_sub_step_init);
+            // Calculate EMFs on active blocks
+            if (use_b_ct) {
+                 tl.AddTask(t_fix_flux, B_CT::CalculateEMF, md_sub_step_init.get());
+            }
+        }
+    }
+
+    // If we're in AMR or B_CT, sync EMFs and correct fluxes for ALL blocks
+    if (pmesh->multilevel || use_b_ct) {
+        TaskRegion &flux_sync_region = tc.AddRegion(1);
+        auto &tl = flux_sync_region[0];
+        auto &md_sub_step_init  = pmesh->mesh_data.Add(integrator->stage_name[stage - 1]);
+        auto &md_emf_only = pmesh->mesh_data.AddShallow("EMF", md_sub_step_init, std::vector<std::string>{"B_CT.emf"});
+        // Start receiving flux corrections and ghost cells
+        // auto t_start_recv_bound = tl.AddTask(t_none, parthenon::StartReceiveBoundBufs<parthenon::BoundaryType::any>, md_sync);
+        auto t_start_recv_flux = t_none;
+        // t_start_recv_flux = tl.AddTask(t_none, parthenon::StartReceiveFluxCorrections, md_sub_step_init);
+        // auto t_emf = t_start_recv_flux;
+        if (use_b_ct) {
+            auto t_emf_bounds = KHARMADriver::AddBoundarySync(t_start_recv_flux, tl, md_emf_only);
+            auto t_emf = t_emf_bounds;
+            // for (int i=0; i < num_blocks; i++) {
+            //     auto &md_sub_step_init  = pmesh->mesh_data.GetOrAdd(integrator->stage_name[stage - 1], i);
+            //     auto &md_emf_only = pmesh->mesh_data.AddShallow("EMF_"+std::to_string(i), md_sub_step_init, std::vector<std::string>{"B_CT.emf"});
+            //     t_emf = tl.AddTask(t_emf, Multizone::AverageEMFSeams, md_emf_only.get(), apply_boundary_condition[i]);
+            // }
+        }
+        // auto t_load_send_flux = tl.AddTask(t_emf, parthenon::LoadAndSendFluxCorrections, md_sub_step_init);
+        // auto t_recv_flux = tl.AddTask(t_load_send_flux, parthenon::ReceiveFluxCorrections, md_sub_step_init);
+        // tl.AddTask(t_recv_flux, parthenon::SetFluxCorrections, md_sub_step_init);
+    }
+
+    // Then continue/finish out the flux calculation
+    TaskRegion &flux_postsync_region = tc.AddRegion(num_partitions);
+    for (int i = 0; i < num_partitions; i++) {
+        auto &tl = flux_postsync_region[i];
+        auto &md_full_step_init = pmesh->mesh_data.GetOrAdd("base", i);
+        auto &md_sub_step_init  = pmesh->mesh_data.GetOrAdd(integrator->stage_name[stage - 1], i);
+        auto &md_sub_step_final = pmesh->mesh_data.GetOrAdd(integrator->stage_name[stage], i);
+        auto &md_flux_src       = pmesh->mesh_data.GetOrAdd("dUdt", i);
+        auto &md_emf_only = pmesh->mesh_data.AddShallow("EMF_"+std::to_string(i), md_sub_step_init, std::vector<std::string>{"B_CT.emf"});
+        if (is_active[i]) {
+            auto t_emf_seams = t_none;
+            if (use_b_ct) {
+                // Correct the EMFs of active zones
+                t_emf_seams = tl.AddTask(t_none, Multizone::AverageEMFSeams, md_emf_only.get(), apply_boundary_condition[i]);
             }
 
             // Apply the fluxes to calculate a change in cell-centered values "md_flux_src"
-            auto t_flux_div = tl.AddTask(t_flux_bounds, FluxDivergence, md_sub_step_init.get(), md_flux_src.get(),
+            auto t_flux_div = tl.AddTask(t_emf_seams, FluxDivergence, md_sub_step_init.get(), md_flux_src.get(),
                                         std::vector<MetadataFlag>{Metadata::Independent, Metadata::Cell, Metadata::WithFluxes}, 0);
 
             // Add any source terms: geometric \Gamma * T, wind, damping, etc etc
             // Also where CT sets the change in face fields
             auto t_sources = tl.AddTask(t_flux_div, Packages::AddSource, md_sub_step_init.get(), md_flux_src.get(), IndexDomain::interior);
 
-            t_update = KHARMADriver::AddStateUpdate(t_sources, tl, md_full_step_init.get(), md_sub_step_init.get(),
-                                                md_flux_src.get(), md_sub_step_final.get(),
-                                                std::vector<MetadataFlag>{Metadata::GetUserFlag("Explicit"), Metadata::Independent},
-                                                use_b_ct, stage);
+            KHARMADriver::AddStateUpdate(t_sources, tl, md_full_step_init.get(), md_sub_step_init.get(),
+                                        md_flux_src.get(), md_sub_step_final.get(),
+                                        std::vector<MetadataFlag>{Metadata::GetUserFlag("Explicit"), Metadata::Independent},
+                                        use_b_ct, stage);
         } else {
-            std::cerr << "HERE" << std::endl;
             Copy<MeshData<Real>>({Metadata::Cell}, md_full_step_init.get(), md_sub_step_final.get());
         }
     }
 
-    for (int i = 0; i < 1; i++) {
-        auto &md_sub_step_final = pmesh->mesh_data.Add(integrator->stage_name[stage]);
-        auto &md_sync = pmesh->mesh_data.AddShallow("sync"+integrator->stage_name[stage], md_sub_step_final, sync_vars);
-        KHARMADriver::AddFullSyncRegion(tc, md_sync);
-    }
+    // Then a full-mesh sync
+    auto &md_sub_step_final = pmesh->mesh_data.Add(integrator->stage_name[stage]);
+    auto &md_sync = pmesh->mesh_data.AddShallow("sync"+integrator->stage_name[stage], md_sub_step_final, sync_vars);
+    KHARMADriver::AddFullSyncRegion(tc, md_sync);
 
     EndFlag();
     Flag("MakeTaskCollection::fixes");
@@ -226,7 +252,7 @@ TaskCollection KHARMADriver::MakeMultizoneTaskCollection(BlockList_t &blocks, in
         auto &tl = fix_region[i];
         auto &md_sub_step_init  = pmesh->mesh_data.GetOrAdd(integrator->stage_name[stage-1], i);
         auto &md_sub_step_final = pmesh->mesh_data.GetOrAdd(integrator->stage_name[stage], i);
-        auto &md_sync = pmesh->mesh_data.AddShallow("sync"+integrator->stage_name[stage]+std::to_string(i), md_sub_step_final, sync_vars);
+        //auto &md_sync = pmesh->mesh_data.AddShallow("sync"+integrator->stage_name[stage]+std::to_string(i), md_sub_step_final, sync_vars);
 
         auto t_utop = tl.AddTask(t_none, Packages::MeshUtoP, md_sub_step_final.get(), IndexDomain::entire, false);
 
@@ -234,11 +260,11 @@ TaskCollection KHARMADriver::MakeMultizoneTaskCollection(BlockList_t &blocks, in
 
         auto t_fix_p = tl.AddTask(t_floors, Inverter::MeshFixUtoP, md_sub_step_final.get());
 
-        auto t_set_bc = tl.AddTask(t_fix_p, parthenon::ApplyBoundaryConditionsOnCoarseOrFineMD, md_sync, false);
+        //auto t_set_bc = tl.AddTask(t_fix_p, parthenon::ApplyBoundaryConditionsOnCoarseOrFineMD, md_sync, false);
 
-        auto t_prim_source = t_set_bc;
+        auto t_prim_source = t_fix_p;
         if (stage == integrator->nstages) {
-            t_prim_source = tl.AddTask(t_set_bc, Packages::MeshApplyPrimSource, md_sub_step_final.get());
+            t_prim_source = tl.AddTask(t_fix_p, Packages::MeshApplyPrimSource, md_sub_step_final.get());
         }
         // Electron heating goes where it does in HARMDriver, for the same reasons
         auto t_heat_electrons = t_prim_source;
@@ -272,11 +298,10 @@ TaskCollection KHARMADriver::MakeMultizoneTaskCollection(BlockList_t &blocks, in
     // modified on each rank.
     const auto &two_sync = pkgs.at("Driver")->Param<bool>("two_sync");
     if (two_sync) {
-        for (int i = 0; i < 1; i++) {
-            auto &md_sub_step_final = pmesh->mesh_data.Add(integrator->stage_name[stage]);
-            auto &md_sync = pmesh->mesh_data.AddShallow("sync"+integrator->stage_name[stage], md_sub_step_final, sync_vars);
-            KHARMADriver::AddFullSyncRegion(tc, md_sync);
-        }
+        // These are inherited from above
+        // auto &md_sub_step_final = pmesh->mesh_data.Add(integrator->stage_name[stage]);
+        // auto &md_sync = pmesh->mesh_data.AddShallow("sync"+integrator->stage_name[stage], md_sub_step_final, sync_vars);
+        KHARMADriver::AddFullSyncRegion(tc, md_sync);
     }
 
     EndFlag();

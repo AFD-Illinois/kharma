@@ -36,6 +36,8 @@
 #include "decs.hpp"
 #include "kharma.hpp"
 
+#include "b_ct.hpp"
+
 #include <parthenon/parthenon.hpp>
 
 using namespace parthenon;
@@ -67,6 +69,23 @@ void Multizone::DecideActiveBlocks(Mesh *pmesh, bool *is_active, bool **apply_bo
 TaskStatus Multizone::AverageEMFSeams(MeshData<Real> *md_emf_only, bool *apply_boundary_condition)
 {
     Flag("AverageEMFSeams");
+
+    for (int i=0; i < BOUNDARY_NFACES; i++) {
+        if (apply_boundary_condition[i]) {
+            auto& rc = md_emf_only->GetBlockData(0); // Only one block
+            // This is the only thing in the MeshData we're passed anyway...
+            auto& emfpack = rc->PackVariables(std::vector<std::string>{"B_CT.emf"});
+            if (0) {
+                B_CT::AverageBoundaryEMF(rc.get(),
+                                        KBoundaries::BoundaryDomain(static_cast<BoundaryFace>(i)),
+                                        emfpack, false);
+            } else {
+                B_CT::ZeroBoundaryEMF(rc.get(),
+                                        KBoundaries::BoundaryDomain(static_cast<BoundaryFace>(i)),
+                                        emfpack, false);
+            }
+        }
+    }
 
     EndFlag();
     return TaskStatus::complete;

@@ -225,7 +225,7 @@ TaskStatus KHARMADriver::SyncAllBounds(std::shared_ptr<MeshData<Real>> &md)
     return TaskStatus::complete;
 }
 
-TaskID KHARMADriver::AddFluxCalculations(TaskID& t_start, TaskList& tl, MeshData<Real> *md)
+TaskID KHARMADriver::AddFluxCalculations(const TaskID& t_start, TaskList& tl, MeshData<Real> *md)
 {
     // Pull reconstruction option to simplify use. TODO shorten?
     auto pmb0  = md->GetBlockData(0)->GetBlockPointer();

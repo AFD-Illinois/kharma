@@ -120,7 +120,7 @@ class KHARMADriver : public MultiStageDriver {
          * Add the flux calculations in each direction.  Since the flux functions are templated on which
          * reconstruction is being used, this amounts to a lot of shared lines.
          */
-        static TaskID AddFluxCalculations(TaskID& t_start, TaskList& tl, MeshData<Real> *md);
+        static TaskID AddFluxCalculations(const TaskID& t_start, TaskList& tl, MeshData<Real> *md);
 
         /**
          * Add first-order flux corrections.  This is split out because it needs an additional MeshData object for the "guess"
