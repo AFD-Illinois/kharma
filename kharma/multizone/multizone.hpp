@@ -50,9 +50,32 @@ namespace Multizone {
 std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages);
 
 /**
- * Diagnostics for multi-zone runs
+ * diagnostics for multi-zone runs
  */
 TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md);
+
+/**
+ * calculate Bondi radius for a given sonic radius rs
+ */
+KOKKOS_INLINE_FUNCTION Real CalcRB(const Real &gam, const Real &rs) {
+    Real n = 1. / (gam - 1);
+    if (m::abs(gam - 5. / 3.) < 1e-2) {
+        return (80. * m::pow(rs, 2.) / (27. * gam));
+    }
+    else return 4. * (1. + n) * rs / ((2. * (n + 3.) - 9.) * gam);
+}
+
+/**
+ * calculate runtime per zone similarly to the original multizone runs
+ */
+KOKKOS_INLINE_FUNCTION Real CalcRuntime(const Real &r_in, const int &base, const Real &gam, const Real &rs, const bool &loc_tchar) {
+    // copying the old calculations even if there is some room for improvement
+    // for ex) it can be min(tB, tchar_at_prev_rin)
+    Real effectve_rout = r_in * m::pow(base, 2.); // as if all zones are evenly sized annuli
+    Real r_b = CalcRB(gam, rs);
+    if (loc_tchar) return effectve_rout / m::sqrt(1. / effectve_rout + 1. / r_b);
+    else return m::pow(m::min(effectve_rout, r_b), 3. / 2.);
+}
 
 /**
  * Decide which blocks are active
