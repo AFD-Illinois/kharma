@@ -4,6 +4,7 @@
 
 <parthenon/job>
 problem_id = bondi
+archive_parameters = true
 
 <parthenon/mesh>
 # Full mesh size, no refinement
@@ -11,20 +12,21 @@ problem_id = bondi
 # KHARMA will automatically place ~5 zones inside the EH
 nx1 = 96
 nx2 = 64
-nx3 = 32
+nx3 = 64
 
 <parthenon/meshblock>
 # Split mesh into blocks of this size
 nx1 = 32
 nx2 = 64
-nx3 = 32
+nx3 = 64
 
 <coordinates>
 base = ks
 transform = mks
 a = 0.0
 hslope = 0.3
-r_out = 30
+r_out = 512
+r_in = 1
 
 <parthenon/time>
 tlim = 2000.0
@@ -62,6 +64,10 @@ extra_checks = 0
 <driver>
 type = multizone
 two_sync = true
+
+<multizone>
+on = 1
+nzones = 2
 
 <parthenon/output0>
 file_type = hdf5

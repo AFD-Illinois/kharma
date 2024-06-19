@@ -56,6 +56,7 @@
 #include "reductions.hpp"
 #include "emhd.hpp"
 #include "wind.hpp"
+#include "multizone.hpp"
 
 #include "bondi.hpp"
 #include "boundaries.hpp"
@@ -399,6 +400,9 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput> &pin)
     }
     if (pin->GetOrAddBoolean("wind", "on", false)) {
         auto t_wind = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, Wind::Initialize, pin.get());
+    }
+    if (pin->GetOrAddBoolean("multizone", "on", false)) {
+        auto t_multizone = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, Multizone::Initialize, pin.get());
     }
     // Enable calculating jcon iff it is in any list of outputs (and there's even B to calculate it).
     // Since it is never required to restart, this is the only time we'd write (hence, need) it

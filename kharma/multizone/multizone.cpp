@@ -44,16 +44,21 @@ using namespace parthenon;
 
 std::shared_ptr<KHARMAPackage> Multizone::Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages)
 {
-    auto pkg = std::make_shared<KHARMAPackage>("Electrons");
+    auto pkg = std::make_shared<KHARMAPackage>("Multizone");
     Params &params = pkg->AllParams();
 
-    // Evolution parameters
-    Real gamma_e = pin->GetOrAddReal("electrons", "gamma_e", 4./3);
-    params.Add("gamma_e", gamma_e);
-    Real gamma_p = pin->GetOrAddReal("electrons", "gamma_p", 5./3);
-    params.Add("gamma_p", gamma_p);
+    // Multizone basic parameters
+    int nzones = pin->GetOrAddInteger("multizone", "nzones", 8);
+    params.Add("nzones", nzones);
+    Real base = pin->GetOrAddReal("multizone", "base", 8.0);
+    params.Add("base", base);
+    int nvcycles = pin->GetOrAddInteger("multizone", "nvcycles", 1);
+    params.Add("nvcycles", nvcycles);
+    int nstep_per_zone = pin->GetOrAddInteger("multizone", "nstep_per_zone", 1);
+    params.Add("nstep_per_zone", nstep_per_zone);
+    bool move_rin = pin->GetOrAddBoolean("multizone", "move_rin", false);
+    params.Add("move_rin", move_rin);
 
-    
 
     //pkg->BlockUtoP = Electrons::BlockUtoP;
     //pkg->BoundaryUtoP = Electrons::BlockUtoP;
@@ -61,8 +66,38 @@ std::shared_ptr<KHARMAPackage> Multizone::Initialize(ParameterInput *pin, std::s
     return pkg;
 }
 
-void Multizone::DecideActiveBlocks(Mesh *pmesh, bool *is_active, bool **apply_boundary_condition)
+void Multizone::DecideActiveBlocks(Mesh *pmesh, const SimTime &tm, bool *is_active) //, bool **apply_boundary_condition)
 {
+    Flag("DecideActiveBlocks");
+    auto &params = pmesh->packages.Get("Multizone")->AllParams();
+
+    // Input parameters
+    int nzones = params.Get<int>("nzones");
+    Real base = params.Get<Real>("base");
+    int nvcycles = params.Get<int>("nvcycles");
+    int nstep_per_zone = params.Get<int>("nstep_per_zone"); // TODO: generalize to when this is not 1
+
+    // Derived parameters
+    int i_within_vcycle = (tm.ncycle % (2 * (nzones - 1)));
+    int izone = m::abs(i_within_vcycle - (nzones - 1));
+    int ivcycle = (tm.ncycle - i_within_vcycle) / (2 * (nzones - 1));
+
+    int r_out = m::pow(base, izone + 2);
+    int r_in = m::pow(base, izone);
+    std::cout << "i_within_vcycle" << i_within_vcycle << " izone " << izone << " ivcycle " << ivcycle << " r_out " << r_out << " r_in " << r_in << std::endl;
+
+    // Determine Active Blocks
+    const int num_blocks = pmesh->block_list.size();
+    GReal x1min, x1max;
+    for (int iblock=0; iblock < num_blocks; iblock++) {
+        auto &pmb = pmesh->block_list[iblock];
+        x1min = pmb->block_size.xmin(X1DIR);
+        x1max = pmb->block_size.xmax(X1DIR);
+        if (x1min < m::log(r_in)) is_active[iblock] = false; // TODO: currently only supporting move_rin = true
+        else is_active[iblock] = true;
+        std::cout << "iblock " << iblock << " x1min " << x1min << " x1max " << x1max << ": is active? " << is_active[iblock] << std::endl;
+    }
+    EndFlag();
 
 }
 
