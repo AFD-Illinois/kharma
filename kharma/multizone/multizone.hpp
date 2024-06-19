@@ -59,7 +59,7 @@ TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md);
  * 
  * Function in this package: Currently nothing
  */
-void DecideActiveBlocks(Mesh *pmesh, const SimTime &tm, bool *is_active); //, bool **apply_boundary_condition);
+void DecideActiveBlocks(Mesh *pmesh, const SimTime &tm, bool *is_active, bool apply_boundary_condition[][BOUNDARY_NFACES]);
 
 /**
  * Average EMFs on seams (internal boundaries) between this block and specified other blocks.

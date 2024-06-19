@@ -67,13 +67,8 @@ TaskCollection KHARMADriver::MakeMultizoneTaskCollection(BlockList_t &blocks, in
     // We know num_blocks == num_partitions, but I'll distinguish out of habit
     bool is_active[num_blocks]; // = {false, false, true};
     bool apply_boundary_condition[num_blocks][BOUNDARY_NFACES];
-    for (int i=0; i < num_blocks; i++)
-        for (int j=0; j < BOUNDARY_NFACES; j++)
-            apply_boundary_condition[i][j] = false;
-    apply_boundary_condition[1][BoundaryFace::inner_x1] = true;
-    apply_boundary_condition[2][BoundaryFace::outer_x1] = true;
 
-    Multizone::DecideActiveBlocks(pmesh, tm, is_active); //, apply_boundary_condition);
+    Multizone::DecideActiveBlocks(pmesh, tm, is_active, apply_boundary_condition);
 
     // TaskCollections are a collection of TaskRegions.
     // Each TaskRegion can operate on eash meshblock separately, i.e. one MeshBlockData object (slower),

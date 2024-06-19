@@ -66,7 +66,7 @@ std::shared_ptr<KHARMAPackage> Multizone::Initialize(ParameterInput *pin, std::s
     return pkg;
 }
 
-void Multizone::DecideActiveBlocks(Mesh *pmesh, const SimTime &tm, bool *is_active) //, bool **apply_boundary_condition)
+void Multizone::DecideActiveBlocks(Mesh *pmesh, const SimTime &tm, bool *is_active, bool apply_boundary_condition[][BOUNDARY_NFACES])
 {
     Flag("DecideActiveBlocks");
     auto &params = pmesh->packages.Get("Multizone")->AllParams();
@@ -76,26 +76,41 @@ void Multizone::DecideActiveBlocks(Mesh *pmesh, const SimTime &tm, bool *is_acti
     Real base = params.Get<Real>("base");
     int nvcycles = params.Get<int>("nvcycles");
     int nstep_per_zone = params.Get<int>("nstep_per_zone"); // TODO: generalize to when this is not 1
+    bool move_rin = params.Get<bool>("move_rin");
 
     // Derived parameters
     int i_within_vcycle = (tm.ncycle % (2 * (nzones - 1)));
     int izone = m::abs(i_within_vcycle - (nzones - 1));
     int ivcycle = (tm.ncycle - i_within_vcycle) / (2 * (nzones - 1));
 
-    int r_out = m::pow(base, izone + 2);
+    int r_out;
     int r_in = m::pow(base, izone);
+    if (move_rin) r_out = m::pow(base, nzones + 1);
+    else r_out =  m::pow(base, izone + 2);
     std::cout << "i_within_vcycle" << i_within_vcycle << " izone " << izone << " ivcycle " << ivcycle << " r_out " << r_out << " r_in " << r_in << std::endl;
 
-    // Determine Active Blocks
     const int num_blocks = pmesh->block_list.size();
+    
+    // Initialize apply_boundary_condition
+    for (int i=0; i < num_blocks; i++)
+        for (int j=0; j < BOUNDARY_NFACES; j++)
+            apply_boundary_condition[i][j] = false;
+
+    // Determine Active Blocks
     GReal x1min, x1max;
     for (int iblock=0; iblock < num_blocks; iblock++) {
         auto &pmb = pmesh->block_list[iblock];
         x1min = pmb->block_size.xmin(X1DIR);
         x1max = pmb->block_size.xmax(X1DIR);
-        if (x1min < m::log(r_in)) is_active[iblock] = false; // TODO: currently only supporting move_rin = true
-        else is_active[iblock] = true;
-        std::cout << "iblock " << iblock << " x1min " << x1min << " x1max " << x1max << ": is active? " << is_active[iblock] << std::endl;
+        if ((x1min < m::log(r_in)) || (x1max > m::log(r_out))) is_active[iblock] = false;
+        else { // active zone
+            is_active[iblock] = true;
+
+            // Decide where to apply bc // TODO: is this ok?
+            if (x1min == m::log(r_in)) apply_boundary_condition[iblock][BoundaryFace::inner_x1] = true;
+            if (x1max == m::log(r_out)) apply_boundary_condition[iblock][BoundaryFace::outer_x1] = true;
+        }
+        std::cout << "iblock " << iblock << " x1min " << x1min << " x1max " << x1max << ": is active? " << is_active[iblock] << ", boundary applied? " << apply_boundary_condition[iblock][BoundaryFace::inner_x1] << apply_boundary_condition[iblock][BoundaryFace::outer_x1] << std::endl;
     }
     EndFlag();
 
