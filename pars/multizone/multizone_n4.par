@@ -1,0 +1,98 @@
+# Native Multizone
+# a.k.a "Single Domain"
+# a.k.a "Fast V-Cycles"
+
+<parthenon/job>
+problem_id = bondi
+archive_parameters = true
+
+<parthenon/mesh>
+# Full mesh size, no refinement
+# Don't bother with xN boundaries for spherical coordinate systems
+# KHARMA will automatically place ~5 zones inside the EH
+nx1 = 160
+nx2 = 64
+nx3 = 64
+
+<parthenon/meshblock>
+# Split mesh into blocks of this size
+nx1 = 32
+nx2 = 64
+nx3 = 64
+
+<coordinates>
+base = ks
+transform = mks
+a = 0.0
+hslope = 0.3
+r_out = 32768
+r_in = 1
+
+<parthenon/time>
+tlim = 2000000
+
+<GRMHD>
+cfl = 0.5
+gamma = 1.6666666666666667
+
+<bondi>
+mdot = 1.0
+rs = 16.0
+ur_frac = 0.0
+diffinit = true
+
+# Disable floors
+<floors>
+disable_floors = false
+rho_min_geom = 1e-6
+u_min_geom = 1e-8
+bsq_over_u_max = 1000
+u_over_rho_max = 100
+bsq_over_rho_max = 100
+gamma_max = 10
+adjust_k = 0
+
+# We'll be adding material, and that's okay
+<boundaries>
+inner_x1 = outflow
+outer_x1 = outflow
+check_inflow_outer_x1 = false
+check_inflow_inner_x1 = true
+
+<b_field>
+solver = face_ct
+ct_scheme = bs99 #sg07
+# Constant pure-vertical field
+type = r1s2
+A0 = 0.0005
+norm = false
+
+<debug>
+verbose = 1
+flag_verbose = 0
+extra_checks = 0
+
+<driver>
+type = multizone
+two_sync = true
+reconstruction = weno5
+
+<multizone>
+on = 1
+nzones = 4
+
+<parthenon/output0>
+file_type = hdf5
+dn = 1000
+single_precision_output = true
+variables = prims, cons.fB, fflag, pflag, divB
+ghost_zones = true
+
+<parthenon/output1>
+file_type = rst
+dn = 10000
+ghost_zones = true
+
+#<parthenon/output2>
+#file_type = hst
+#dt = 0.1

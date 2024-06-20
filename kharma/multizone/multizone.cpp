@@ -149,13 +149,13 @@ void Multizone::DecideActiveBlocks(Mesh *pmesh, const SimTime &tm, bool *is_acti
         auto &pmb = pmesh->block_list[iblock];
         x1min = pmb->block_size.xmin(X1DIR);
         x1max = pmb->block_size.xmax(X1DIR);
-        if ((x1min < active_x1min) || (x1max > active_x1max)) is_active[iblock] = false;
+        if ((x1min + 1.0e-8 < active_x1min) || (x1max - 1.0e-8 > active_x1max)) is_active[iblock] = false;
         else { // active zone
             is_active[iblock] = true;
 
             // Decide where to apply bc // TODO: is this ok?
-            if (m::abs(x1min - active_x1min) / m::max(active_x1min, SMALL) < SMALL) apply_boundary_condition[iblock][BoundaryFace::inner_x1] = true;
-            if (m::abs(x1max - active_x1max) / active_x1max < SMALL) apply_boundary_condition[iblock][BoundaryFace::outer_x1] = true;
+            if (m::abs(x1min - active_x1min) / m::max(active_x1min, SMALL) < 1.e-10) apply_boundary_condition[iblock][BoundaryFace::inner_x1] = true;
+            if (m::abs(x1max - active_x1max) / active_x1max < 1.e-10) apply_boundary_condition[iblock][BoundaryFace::outer_x1] = true;
         }
         std::cout << "iblock " << iblock << " x1min " << x1min << " x1max " << x1max << ": is active? " << is_active[iblock] << ", boundary applied? " << apply_boundary_condition[iblock][BoundaryFace::inner_x1] << apply_boundary_condition[iblock][BoundaryFace::outer_x1] << std::endl;
     }
