@@ -95,4 +95,9 @@ TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *rc);
  */
 void CancelBoundaryU3(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse);
 
+/**
+ * Same but for the conserved angular momentum T3
+ */
+void CancelBoundaryT3(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse);
+
 }

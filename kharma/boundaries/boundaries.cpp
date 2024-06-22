@@ -192,11 +192,12 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
                                                                                     (btype == "dirichlet" && !average_EMF)));
             params.Add("zero_EMF_"+bname, zero_EMF);
         }
-        // Advect together/cancel U3, under the theory it's in a similar position to B3 above (albeit no CT constraining it)
+        // Advect together/cancel U3 or T3, under the theory it's in a similar position to B3 above (albeit no CT constraining it)
         // Not enabled by default as it does not conserve angular momentum and isn't necessary for stability
         bool cancel_U3 = pin->GetOrAddBoolean("boundaries", "cancel_U3_" + bname, false);
         params.Add("cancel_U3_"+bname, cancel_U3);
-
+        bool cancel_T3 = pin->GetOrAddBoolean("boundaries", "cancel_T3_" + bname, false);
+        params.Add("cancel_T3_"+bname, cancel_T3);
 
         // String manip to get the Parthenon boundary name, e.g., "ox1_bc"
         auto bname_parthenon = bname.substr(0, 1) + "x" + bname.substr(7, 8) + "_bc";
@@ -395,6 +396,9 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
     if (pmb->packages.AllPackages().count("GRMHD")) {
         if (params.Get<bool>("cancel_U3_" + bname) && full_grmhd_boundary) {
             GRMHD::CancelBoundaryU3(rc.get(), domain, coarse);
+        }
+        if (params.Get<bool>("cancel_T3_" + bname) && full_grmhd_boundary) {
+            GRMHD::CancelBoundaryT3(rc.get(), domain, coarse);
         }
     }
 
