@@ -78,11 +78,22 @@ KOKKOS_INLINE_FUNCTION Real CalcRuntime(const Real &r_in, const int &base, const
 }
 
 /**
- * Decide which blocks are active
+ * Depending on the location in the V cycles, decide which blocks are active and where to apply boundary conditions for the current step
  * 
- * Function in this package: Currently nothing
  */
-void DecideActiveBlocks(Mesh *pmesh, const SimTime &tm, bool *is_active, bool apply_boundary_condition[][BOUNDARY_NFACES]);
+void DecideActiveBlocksAndBoundaryConditions(Mesh *pmesh, const SimTime &tm, bool *is_active, bool apply_boundary_condition[][BOUNDARY_NFACES]);
+
+/**
+ * Decide whether or not to progress in the V cycle
+ * 
+ */
+TaskStatus DecideToSwitch(MeshData<Real> *md, const SimTime &tm, bool &switch_zone);
+
+/**
+ * Decide which blocks are active for the next step and progress in the V cycle, in order to determine dt
+ * 
+ */
+TaskStatus DecideNextActiveBlocks(MeshData<Real> *md, const SimTime &tm, const int iblock, bool &is_active, const bool switch_zone);
 
 /**
  * Average EMFs on seams (internal boundaries) between this block and specified other blocks.

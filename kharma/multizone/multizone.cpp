@@ -80,11 +80,11 @@ std::shared_ptr<KHARMAPackage> Multizone::Initialize(ParameterInput *pin, std::s
     return pkg;
 }
 
-void Multizone::DecideActiveBlocks(Mesh *pmesh, const SimTime &tm, bool *is_active, bool apply_boundary_condition[][BOUNDARY_NFACES])
+void Multizone::DecideActiveBlocksAndBoundaryConditions(Mesh *pmesh, const SimTime &tm, bool *is_active, bool apply_boundary_condition[][BOUNDARY_NFACES])
 {
-    Flag("DecideActiveBlocks");
+    Flag("DecideActiveBlocksAndBoundaryConditions");
     auto &params = pmesh->packages.Get("Multizone")->AllParams();
-
+    
     // Input parameters
     const int nzones = params.Get<int>("nzones");
     const Real base = params.Get<Real>("base");
@@ -99,33 +99,33 @@ void Multizone::DecideActiveBlocks(Mesh *pmesh, const SimTime &tm, bool *is_acti
     // Current location in V-cycles
     int i_vcycle = params.Get<int>("i_vcycle"); // current i_vcycle
     int i_within_vcycle = params.Get<int>("i_within_vcycle"); // current i_within_vcycle
-    Real t0_zone = params.Get<Real>("t0_zone"); // time at zone-switching
-    int n0_zone = params.Get<int>("n0_zone"); // cycle at zone-switching
+    //Real t0_zone = params.Get<Real>("t0_zone"); // time at zone-switching
+    //int n0_zone = params.Get<int>("n0_zone"); // cycle at zone-switching
     int i_zone = m::abs(i_within_vcycle - (nzones - 1)); // zone number. zone-0 is the smallest annulus.
 
-    // Derived parameters
-    bool switch_zone = false; // determines if we are switching zones here
-    Real temp_rin, runtime_per_zone;
-    int nzones_per_vcycle = 2 * (nzones - 1);
-    if (ncycle_per_zone > 0) switch_zone = (tm.ncycle - n0_zone) >= ncycle_per_zone;
-    else {
-        temp_rin = m::pow(base, i_zone);
-        runtime_per_zone = f_tchar * CalcRuntime(temp_rin, base, gam, bondi_rs, loc_tchar);
-        switch_zone = (tm.time - t0_zone) > runtime_per_zone;
-        //std::cout << "time now " << tm.time << ", t0_zone " << t0_zone << ", runtime_per_zone " << runtime_per_zone << std::endl;
-    }
-    if (switch_zone) {
-        i_within_vcycle += 1;
-        if (i_within_vcycle >= nzones_per_vcycle) { // if completed a V-cycle
-            i_within_vcycle -= nzones_per_vcycle;
-            i_vcycle += 1;
-        }
-        i_zone = m::abs(i_within_vcycle - (nzones - 1)); // update zone number
-        params.Update<int>("i_within_vcycle", i_within_vcycle);
-        params.Update<int>("i_vcycle", i_vcycle);
-        params.Update<Real>("t0_zone", tm.time);
-        params.Update<int>("n0_zone", tm.ncycle);
-    }
+    // Derived parameters (split into other function)
+    //bool switch_zone = false; // determines if we are switching zones here
+    //Real temp_rin, runtime_per_zone;
+    //int nzones_per_vcycle = 2 * (nzones - 1);
+    //if (ncycle_per_zone > 0) switch_zone = (tm.ncycle - n0_zone) >= ncycle_per_zone;
+    //else {
+    //    temp_rin = m::pow(base, i_zone);
+    //    runtime_per_zone = f_tchar * CalcRuntime(temp_rin, base, gam, bondi_rs, loc_tchar);
+    //    switch_zone = (tm.time - t0_zone) > runtime_per_zone;
+    //    //std::cout << "time now " << tm.time << ", t0_zone " << t0_zone << ", runtime_per_zone " << runtime_per_zone << std::endl;
+    //}
+    //if (switch_zone) {
+    //    i_within_vcycle += 1;
+    //    if (i_within_vcycle >= nzones_per_vcycle) { // if completed a V-cycle
+    //        i_within_vcycle -= nzones_per_vcycle;
+    //        i_vcycle += 1;
+    //    }
+    //    i_zone = m::abs(i_within_vcycle - (nzones - 1)); // update zone number
+    //    params.Update<int>("i_within_vcycle", i_within_vcycle);
+    //    params.Update<int>("i_vcycle", i_vcycle);
+    //    params.Update<Real>("t0_zone", tm.time);
+    //    params.Update<int>("n0_zone", tm.ncycle);
+    //}
 
     // Range of radii that is active
     int active_rout;
@@ -157,10 +157,143 @@ void Multizone::DecideActiveBlocks(Mesh *pmesh, const SimTime &tm, bool *is_acti
             if (m::abs(x1min - active_x1min) / m::max(active_x1min, SMALL) < 1.e-10) apply_boundary_condition[iblock][BoundaryFace::inner_x1] = true;
             if (m::abs(x1max - active_x1max) / active_x1max < 1.e-10) apply_boundary_condition[iblock][BoundaryFace::outer_x1] = true;
         }
-        std::cout << "iblock " << iblock << " x1min " << x1min << " x1max " << x1max << ": is active? " << is_active[iblock] << ", boundary applied? " << apply_boundary_condition[iblock][BoundaryFace::inner_x1] << apply_boundary_condition[iblock][BoundaryFace::outer_x1] << std::endl;
+        //std::cout << "iblock " << iblock << " x1min " << x1min << " x1max " << x1max << ": is active? " << is_active[iblock] << ", boundary applied? " << apply_boundary_condition[iblock][BoundaryFace::inner_x1] << apply_boundary_condition[iblock][BoundaryFace::outer_x1] << std::endl;
     }
     EndFlag();
 
+}
+
+TaskStatus Multizone::DecideToSwitch(MeshData<Real> *md, const SimTime &tm, bool &switch_zone)
+{
+    Flag("DecideToSwitch");
+    auto pmesh = md->GetMeshPointer();
+    auto &params = pmesh->packages.Get("Multizone")->AllParams();
+
+    const int next_ncycle = tm.ncycle + 1;
+    const Real next_time = tm.time + tm.dt;
+
+    // Input parameters
+    const int nzones = params.Get<int>("nzones");
+    const Real base = params.Get<Real>("base");
+    const int num_Vcycles = params.Get<int>("num_Vcycles");
+    const int ncycle_per_zone = params.Get<int>("ncycle_per_zone");
+    const Real bondi_rs = params.Get<Real>("bondi_rs");
+    const Real gam = pmesh->packages.Get("GRMHD")->Param<Real>("gamma");
+    const Real f_tchar = params.Get<Real>("f_tchar");
+    const bool loc_tchar = params.Get<bool>("loc_tchar");
+    
+    // Current location in V-cycles
+    int i_vcycle = params.Get<int>("i_vcycle"); // current i_vcycle
+    int i_within_vcycle = params.Get<int>("i_within_vcycle"); // current i_within_vcycle
+    Real t0_zone = params.Get<Real>("t0_zone"); // time at zone-switching
+    int n0_zone = params.Get<int>("n0_zone"); // cycle at zone-switching
+    int i_zone = m::abs(i_within_vcycle - (nzones - 1)); // zone number. zone-0 is the smallest annulus.
+
+    // Derived parameters
+    switch_zone = false; // default
+    Real temp_rin, runtime_per_zone;
+    int nzones_per_vcycle = 2 * (nzones - 1);
+    if (ncycle_per_zone > 0) switch_zone = (next_ncycle - n0_zone) >= ncycle_per_zone;
+    else {
+        temp_rin = m::pow(base, i_zone);
+        runtime_per_zone = f_tchar * CalcRuntime(temp_rin, base, gam, bondi_rs, loc_tchar);
+        switch_zone = (next_time - t0_zone) > runtime_per_zone;
+        //std::cout << "time now " << tm.time << ", t0_zone " << t0_zone << ", runtime_per_zone " << runtime_per_zone << std::endl;
+    }
+    if (switch_zone) {
+        i_within_vcycle += 1;
+        if (i_within_vcycle >= nzones_per_vcycle) { // if completed a V-cycle
+            i_within_vcycle -= nzones_per_vcycle;
+            i_vcycle += 1;
+        }
+        i_zone = m::abs(i_within_vcycle - (nzones - 1)); // update zone number
+        params.Update<int>("i_within_vcycle", i_within_vcycle);
+        params.Update<int>("i_vcycle", i_vcycle);
+        params.Update<Real>("t0_zone", next_time);
+        params.Update<int>("n0_zone", next_ncycle);
+        printf("HYERIN2: switching zone next!\n");
+    }
+
+    EndFlag();
+    return TaskStatus::complete;
+}
+
+TaskStatus Multizone::DecideNextActiveBlocks(MeshData<Real> *md, const SimTime &tm, const int iblock, bool &is_active, const bool switch_zone)
+{
+    Flag("DecideNextActiveBlocks");
+    if (switch_zone) {
+        printf("HYERIN: switching zone here! the block is for %d \n", iblock);
+        auto pmesh = md->GetMeshPointer();
+        auto &params = pmesh->packages.Get("Multizone")->AllParams();
+
+        const int next_ncycle = tm.ncycle + 1;
+        const Real next_time = tm.time + tm.dt;
+
+        // Input parameters
+        const int nzones = params.Get<int>("nzones");
+        const Real base = params.Get<Real>("base");
+        const int num_Vcycles = params.Get<int>("num_Vcycles");
+        //const int ncycle_per_zone = params.Get<int>("ncycle_per_zone");
+        const bool move_rin = params.Get<bool>("move_rin");
+        //const Real bondi_rs = params.Get<Real>("bondi_rs");
+        //const Real gam = pmesh->packages.Get("GRMHD")->Param<Real>("gamma");
+        //const Real f_tchar = params.Get<Real>("f_tchar");
+        //const bool loc_tchar = params.Get<bool>("loc_tchar");
+        
+        // Current location in V-cycles
+        //int i_vcycle = params.Get<int>("i_vcycle"); // current i_vcycle
+        int i_within_vcycle = params.Get<int>("i_within_vcycle"); // current i_within_vcycle
+        //Real t0_zone = params.Get<Real>("t0_zone"); // time at zone-switching
+        //int n0_zone = params.Get<int>("n0_zone"); // cycle at zone-switching
+        int i_zone = m::abs(i_within_vcycle - (nzones - 1)); // zone number. zone-0 is the smallest annulus.
+
+        // Derived parameters
+        //bool switch_zone = false; // determines if we are switching zones here
+        //Real temp_rin, runtime_per_zone;
+        //int nzones_per_vcycle = 2 * (nzones - 1);
+        //if (ncycle_per_zone > 0) switch_zone = (next_ncycle - n0_zone) >= ncycle_per_zone;
+        //else {
+        //    temp_rin = m::pow(base, i_zone);
+        //    runtime_per_zone = f_tchar * CalcRuntime(temp_rin, base, gam, bondi_rs, loc_tchar);
+        //    switch_zone = (next_time - t0_zone) > runtime_per_zone;
+        //    //std::cout << "time now " << tm.time << ", t0_zone " << t0_zone << ", runtime_per_zone " << runtime_per_zone << std::endl;
+        //}
+        //if (switch_zone) {
+        //    i_within_vcycle += 1;
+        //    if (i_within_vcycle >= nzones_per_vcycle) { // if completed a V-cycle
+        //        i_within_vcycle -= nzones_per_vcycle;
+        //        i_vcycle += 1;
+        //    }
+        //    i_zone = m::abs(i_within_vcycle - (nzones - 1)); // update zone number
+        //    params.Update<int>("i_within_vcycle", i_within_vcycle);
+        //    params.Update<int>("i_vcycle", i_vcycle);
+        //    params.Update<Real>("t0_zone", next_time);
+        //    params.Update<int>("n0_zone", next_ncycle);
+        //}
+
+        // Range of radii that is active
+        int active_rout;
+        int active_rin = m::pow(base, i_zone);
+        if (move_rin) active_rout = m::pow(base, nzones + 1);
+        else active_rout =  m::pow(base, i_zone + 2);
+        Real active_x1min = m::log(active_rin);
+        Real active_x1max = m::log(active_rout);
+
+        const int num_blocks = pmesh->block_list.size();
+        
+        // Determine Active Blocks
+        GReal x1min, x1max;
+        //for (int iblock=0; iblock < num_blocks; iblock++) {
+        auto &pmb = pmesh->block_list[iblock];
+        x1min = pmb->block_size.xmin(X1DIR);
+        x1max = pmb->block_size.xmax(X1DIR);
+        if ((x1min + 1.0e-8 < active_x1min) || (x1max - 1.0e-8 > active_x1max)) is_active = false; //[iblock]
+        else is_active = true;
+        //}
+    }
+    EndFlag();
+
+    return TaskStatus::complete;
 }
 
 TaskStatus Multizone::AverageEMFSeams(MeshData<Real> *md_emf_only, bool *apply_boundary_condition)
