@@ -71,7 +71,7 @@ nzones = 2
 
 <parthenon/output0>
 file_type = hdf5
-dt = 5.0
+#dt = 5.0
 single_precision_output = false
 # Fields not present are silently ignored
 variables = prims, pflag, divB, cons.fB

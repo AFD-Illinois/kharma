@@ -56,10 +56,16 @@ std::shared_ptr<KHARMAPackage> Multizone::Initialize(ParameterInput *pin, std::s
     params.Add("num_Vcycles", num_Vcycles);
     const int ncycle_per_zone = pin->GetOrAddInteger("multizone", "ncycle_per_zone", 1); // if -1, switch according to the characteristic timescale
     params.Add("ncycle_per_zone", ncycle_per_zone);
+
+    // Multizone different options
     const bool move_rin = pin->GetOrAddBoolean("multizone", "move_rin", false);
     params.Add("move_rin", move_rin);
+    const bool bflux_const = pin->GetOrAddBoolean("multizone", "bflux_const", false);
+    params.Add("bflux_const", bflux_const);
+    const bool long_t_in = pin->GetOrAddInteger("multizone", "long_t_in", 2); // longer time for innermost annulus
+    params.Add("long_t_in", long_t_in);
     
-    // mutable parameters
+    // mutable parameters - V cycle information
     params.Add("i_within_vcycle", 0, true);
     params.Add("i_vcycle", 0, true);
     params.Add("t0_zone", 0.0, true);
@@ -183,6 +189,7 @@ TaskStatus Multizone::DecideToSwitch(MeshData<Real> *md, const SimTime &tm, bool
     const Real gam = pmesh->packages.Get("GRMHD")->Param<Real>("gamma");
     const Real f_tchar = params.Get<Real>("f_tchar");
     const bool loc_tchar = params.Get<bool>("loc_tchar");
+    const int long_t_in = params.Get<int>("long_t_in");
     
     // Current location in V-cycles
     int i_vcycle = params.Get<int>("i_vcycle"); // current i_vcycle
@@ -195,11 +202,15 @@ TaskStatus Multizone::DecideToSwitch(MeshData<Real> *md, const SimTime &tm, bool
     switch_zone = false; // default
     Real temp_rin, runtime_per_zone;
     int nzones_per_vcycle = 2 * (nzones - 1);
-    if (ncycle_per_zone > 0) switch_zone = (next_ncycle - n0_zone) >= ncycle_per_zone;
+    int longer_factor = 1;
+    if (i_zone == nzones - 1) longer_factor = 2;
+    if (i_zone == 0) longer_factor = long_t_in;
+
+    if (ncycle_per_zone > 0) switch_zone = (next_ncycle - n0_zone) >= ncycle_per_zone * longer_factor;
     else {
         temp_rin = m::pow(base, i_zone);
         runtime_per_zone = f_tchar * CalcRuntime(temp_rin, base, gam, bondi_rs, loc_tchar);
-        switch_zone = (next_time - t0_zone) > runtime_per_zone;
+        switch_zone = (next_time - t0_zone) > runtime_per_zone * longer_factor;
         //std::cout << "time now " << tm.time << ", t0_zone " << t0_zone << ", runtime_per_zone " << runtime_per_zone << std::endl;
     }
     if (switch_zone) {
@@ -300,13 +311,15 @@ TaskStatus Multizone::DecideNextActiveBlocks(MeshData<Real> *md, const SimTime &
 TaskStatus Multizone::AverageEMFSeams(MeshData<Real> *md_emf_only, bool *apply_boundary_condition)
 {
     Flag("AverageEMFSeams");
+    auto &params = md_emf_only->GetMeshPointer()->packages.Get("Multizone")->AllParams();
+    const bool bflux_const = params.Get<bool>("bflux_const");
 
     for (int i=0; i < BOUNDARY_NFACES; i++) {
         if (apply_boundary_condition[i]) {
             auto& rc = md_emf_only->GetBlockData(0); // Only one block
             // This is the only thing in the MeshData we're passed anyway...
             auto& emfpack = rc->PackVariables(std::vector<std::string>{"B_CT.emf"});
-            if (0) {
+            if (bflux_const) {
                 B_CT::AverageBoundaryEMF(rc.get(),
                                         KBoundaries::BoundaryDomain(static_cast<BoundaryFace>(i)),
                                         emfpack, false);
