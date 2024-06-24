@@ -58,7 +58,7 @@ std::shared_ptr<KHARMAPackage> Multizone::Initialize(ParameterInput *pin, std::s
     params.Add("ncycle_per_zone", ncycle_per_zone);
     const bool move_rin = pin->GetOrAddBoolean("multizone", "move_rin", false);
     params.Add("move_rin", move_rin);
-
+    
     // mutable parameters
     params.Add("i_within_vcycle", 0, true);
     params.Add("i_vcycle", 0, true);
@@ -145,16 +145,18 @@ void Multizone::DecideActiveBlocksAndBoundaryConditions(Mesh *pmesh, const SimTi
 
     // Determine Active Blocks
     GReal x1min, x1max;
+    bool inside_eh = false;
     for (int iblock=0; iblock < num_blocks; iblock++) {
         auto &pmb = pmesh->block_list[iblock];
         x1min = pmb->block_size.xmin(X1DIR);
         x1max = pmb->block_size.xmax(X1DIR);
+        inside_eh = (m::exp(x1min) < pmb->coords.coords.get_horizon());
         if ((x1min + 1.0e-8 < active_x1min) || (x1max - 1.0e-8 > active_x1max)) is_active[iblock] = false;
         else { // active zone
             is_active[iblock] = true;
 
             // Decide where to apply bc // TODO: is this ok?
-            if (m::abs(x1min - active_x1min) / m::max(active_x1min, SMALL) < 1.e-10) apply_boundary_condition[iblock][BoundaryFace::inner_x1] = true;
+            if (!inside_eh && (m::abs(x1min - active_x1min) / m::max(active_x1min, SMALL) < 1.e-10)) apply_boundary_condition[iblock][BoundaryFace::inner_x1] = true;
             if (m::abs(x1max - active_x1max) / active_x1max < 1.e-10) apply_boundary_condition[iblock][BoundaryFace::outer_x1] = true;
         }
         //std::cout << "iblock " << iblock << " x1min " << x1min << " x1max " << x1max << ": is active? " << is_active[iblock] << ", boundary applied? " << apply_boundary_condition[iblock][BoundaryFace::inner_x1] << apply_boundary_condition[iblock][BoundaryFace::outer_x1] << std::endl;
@@ -211,7 +213,6 @@ TaskStatus Multizone::DecideToSwitch(MeshData<Real> *md, const SimTime &tm, bool
         params.Update<int>("i_vcycle", i_vcycle);
         params.Update<Real>("t0_zone", next_time);
         params.Update<int>("n0_zone", next_ncycle);
-        printf("HYERIN2: switching zone next!\n");
     }
 
     EndFlag();
