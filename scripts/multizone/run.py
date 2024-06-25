@@ -123,6 +123,8 @@ def calc_rb(kwargs):
 @click.option("--output0_dt", default=None, help="output0 dt.")
 @click.option("--dont_kill_on_divb", is_flag=True, help="Don't kill the simulation when the divB is too large. Mostly for test purposes.")
 @click.option("--bfluxc", is_flag=True, help="Apply Bflux-constant.")
+@click.option("--consistent_b", is_flag=True, help="Use consistent b field instead.")
+@click.option("--outflow_rout", is_flag=True, help="Use outflow bc at the outermost radius.")
 # Don't use this
 @click.option("--start_time", default=0.0, help="Starting time. Only use if you know what you're doing.")
 def run_multizone(**kwargs):
@@ -212,6 +214,7 @@ def run_multizone(**kwargs):
             if (kwargs["bfluxc"]): 
                 args["boundaries/average_EMF_inner_x1"] = 1
                 args["boundaries/average_EMF_outer_x1"] = 1
+            if kwargs["consistent_b"]: args["flux/consistent_face_b"] = 1
             # Compress coordinates to save time
             if kwargs["nx2"] >= 128 and not kwargs["onezone"]:
                 args["coordinates/transform"] = "fmks"
@@ -331,6 +334,12 @@ def run_multizone(**kwargs):
         else:
             args["boundaries/inner_x1"] = "dirichlet"
             args["boundaries/check_inflow_inner_x1"] = 0
+        if kwargs["outflow_rout"]:
+            if r_out >= base ** (kwargs["nzones"] + 1):
+                args["boundaries/outer_x1"] = "outflow"
+                args["bondi/set_outer_bound"] = 0
+            else:
+                args["boundaries/outer_x1"] = "dirichlet"
 
         tlim = kwargs["start_time"] + runtime
         if kwargs["onezone"]:
