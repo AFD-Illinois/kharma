@@ -120,6 +120,12 @@ std::shared_ptr<KHARMAPackage> B_CT::Initialize(ParameterInput *pin, std::shared
         pkg->AddField("B_CT.cemf", m);
     }
 
+    // INTERNAL SMR
+    // Hyerin (04/04/24) averaged B fields needed for ismr
+    // ISMR cache: not evolved, immediately copied to fluid state after averaging
+    m = Metadata({Metadata::Real, Metadata::Face, Metadata::Derived, Metadata::OneCopy});
+    pkg->AddField("ismr.fB_avg", m);
+
     // CALLBACKS
 
     // We implement a source term replacement, rather than addition,
@@ -508,6 +514,147 @@ TaskStatus B_CT::AddSource(MeshData<Real> *md, MeshData<Real> *mdudt, IndexDomai
         }
     );
 
+    return TaskStatus::complete;
+}
+
+TaskStatus B_CT::DerefinePoles(MeshData<Real> *md)
+{
+    // HYERIN (01/17/24) this routine is not general yet and only applies to polar boundaries for now.
+    auto pmesh = md->GetMeshPointer();
+    const uint nlevels = pmesh->packages.Get("ISMR")->Param<uint>("nlevels");
+
+    // Figure out indices
+    int ng = Globals::nghost;
+    for (auto &pmb : pmesh->block_list) {
+        const auto& G = pmb->coords;
+        auto& rc = pmb->meshblock_data.Get();
+        auto B_U = rc->PackVariables(std::vector<std::string>{"cons.fB"});
+        auto B_avg = rc->PackVariables(std::vector<std::string>{"ismr.fB_avg"});
+        for (int i = 0; i < BOUNDARY_NFACES; i++) {
+            BoundaryFace bface = (BoundaryFace) i;
+            auto bname = KBoundaries::BoundaryName(bface);
+            auto bdir = KBoundaries::BoundaryDirection(bface);
+            auto domain = KBoundaries::BoundaryDomain(bface);
+            auto binner = KBoundaries::BoundaryIsInner(bface);
+            if (bdir == X2DIR && pmb->boundary_flag[bface] == BoundaryFlag::user) {
+                // indices
+                IndexRange3 bCC = KDomain::GetRange(rc, IndexDomain::interior, CC);
+                IndexRange3 bF1 = KDomain::GetRange(rc, domain, F1, ng, -ng);
+                IndexRange3 bF2 = KDomain::GetRange(rc, domain, F2, (binner) ? 0 : -1, (binner) ? 1 : 0, false);
+                IndexRange3 bF3 = KDomain::GetRange(rc, domain, F3, ng, -ng);
+                const int j_f = (binner) ? bF2.je : bF2.js; // last physical face
+                const int jps = (binner) ? j_f + (nlevels - 1) : j_f - (nlevels - 1); // start of the lowest level of derefinement
+                const IndexRange j_p = IndexRange{(binner) ? j_f : jps, (binner) ? jps : j_f};  // Range of x2 to be de-refined
+                const int offset = (binner) ? 1 : -1; // offset to read the physical face values
+                const int point_out = offset; // if F2 B field at j_f + offset face is positive when pointing out of the cell, +1.
+
+                // F1 average
+                pmb->par_for("B_CT_derefine_poles_avg_F1", bCC.ks, bCC.ke, j_p.s, j_p.e, bF1.is, bF1.ie,
+                    KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+                        const int coarse_cell_len = m::pow(2, ((binner) ? jps - j : j - jps) + 1);
+                        const int j_c = j + ((binner) ? 0 : -1); // cell center
+                        const int k_fine = (k - ng) % coarse_cell_len; // this fine cell's k-index within the coarse cell
+                        const int k_start = k - k_fine; // starting k-index of the coarse cell
+
+                        // average over fine cells within the coarse cell we're in
+                        Real avg = 0.;
+                        for (int ktemp = 0; ktemp < coarse_cell_len; ++ktemp)
+                            avg += B_U(F1, 0, k_start + ktemp, j_c, i) * G.Volume<F1>(k_start + ktemp, j_c, i);
+                        avg /= coarse_cell_len;
+
+                        B_avg(F1, 0, k, j_c, i) = avg;
+                    }
+                );
+                // F2 average
+                pmb->par_for("B_CT_derefine_poles_avg_F2", bCC.ks, bCC.ke, j_p.s, j_p.e, bCC.is, bCC.ie,
+                    KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+                        const int coarse_cell_len = m::pow(2, ((binner) ? jps - j : j - jps) + 1);
+                        // fine cell's k index within the coarse cell
+                        const int k_fine = (k - ng) % coarse_cell_len;
+                        // starting k-index of the coarse cell
+                        const int k_start = k - k_fine;
+
+                        if (j == j_f) {
+                            // The fine cells have 0 fluxes through the physical-ghost boundaries.
+                            B_avg(F2, 0, k, j, i) = 0.;
+                        } else { // average the fine cells
+                            Real avg = 0.;
+                            for (int ktemp = 0; ktemp < coarse_cell_len; ++ktemp)
+                                avg += B_U(F2, 0, k_start + ktemp, j, i) * G.Volume<F2>(k_start + ktemp, j, i);
+                            avg /= coarse_cell_len;
+
+                            B_avg(F2, 0, k, j, i) = avg;
+                        }
+                    }
+                );
+                // F3 average
+                pmb->par_for("B_CT_derefine_poles_avg_F3", bF3.ks, bF3.ke, j_p.s, j_p.e, bCC.is, bCC.ie,
+                    KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+                        // the current level of derefinement at given j
+                        const int current_lv = ((binner) ? jps - j : j - jps);
+                        // half of the coarse cell's length
+                        const int c_half = m::pow(2, current_lv);
+                        const int coarse_cell_len = 2 * c_half;
+                        // cell center
+                        const int j_c = j + ((binner) ? 0 : -1);
+                        // this fine cell's k-index within the coarse cell
+                        const int k_fine = (k - ng) % coarse_cell_len;
+                        // starting k-index of the coarse cell
+                        const int k_start = k - k_fine;
+                        const int k_half = k_start + c_half;
+                        // end k-index of the coarse cell
+                        const int k_end  = k_start + coarse_cell_len;
+
+                        if ((k - ng) % coarse_cell_len == 0) {
+                            // Don't modify faces of the coarse cells
+                            B_avg(F3, 0, k, j_c, i) = B_U(F3, 0, k, j_c, i) * G.Volume<F3>(k, j_c, i);
+                        } else {
+                            // F3: The internal faces will take care of the divB=0. The two faces of the coarse cell will remain unchanged.
+                            // First calculate the very central internal face. In other words, deal with the highest level internal face first.
+                            // Sum of F2 fluxes in the left and right half of the coarse cell each.
+                            Real c_left_v = 0., c_right_v = 0.;
+                            for (int ktemp = 0; ktemp < c_half; ++ktemp) {
+                                c_left_v  += B_U(F2, 0, k_half - 1 - ktemp, j + offset, i) * G.Volume<F2>(k_half - 1 - ktemp, j + offset, i);
+                                c_right_v += B_U(F2, 0, k_half   + ktemp, j + offset, i) * G.Volume<F2>(k_half     + ktemp, j + offset, i);
+                            }
+                            const Real B_start = B_U(F3, 0, k_start, j_c, i) * G.Volume<F3>(k_start, j_c, i);
+                            const Real B_end   = B_U(F3, 0, k_end,   j_c, i) * G.Volume<F3>(k_end,   j_c, i);
+                            const Real B_center = (B_start + B_end + point_out * (c_right_v - c_left_v)) / 2.;
+
+                            if (k == k_half) { // if at the center, then store the calculated value.
+                                B_avg(F3, 0, k, j_c, i) = B_center;
+                            } else if (k < k_half) { // interpolate between B_start and B_center
+                                B_avg(F3, 0, k, j_c, i) = ((c_half - k_fine) * B_start + k_fine * B_center) / (c_half);
+                            } else if (k > k_half) { // interpolate between B_end and B_center
+                                B_avg(F3, 0, k, j_c, i) = ((k_fine - c_half) * B_end + (coarse_cell_len - k_fine) * B_center) / (c_half);
+                            }
+                        }
+                    }
+                );
+
+                // F1 write
+                pmb->par_for("B_CT_derefine_poles_F1", bCC.ks, bCC.ke, j_p.s, j_p.e, bF1.is, bF1.ie,
+                    KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+                        int j_c = j + ((binner) ? 0 : -1); // cell center
+                        B_U(F1, 0, k, j_c, i) = B_avg(F1, 0, k, j_c, i) / G.Volume<F1>(k, j_c, i);
+                    }
+                );
+                // F2 write
+                pmb->par_for("B_CT_derefine_poles_F2", bCC.ks, bCC.ke, j_p.s, j_p.e, bCC.is, bCC.ie,
+                    KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+                        B_U(F2, 0, k, j, i) = B_avg(F2, 0, k, j, i) / G.Volume<F2>(k, j, i);
+                    }
+                );
+                // F3 write
+                pmb->par_for("B_CT_derefine_poles_F3", bF3.ks, bF3.ke, j_p.s, j_p.e, bCC.is, bCC.ie,
+                    KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+                        int j_c = j + ((binner) ? 0 : -1); // cell center
+                        B_U(F3, 0, k, j_c, i) = B_avg(F3, 0, k, j_c, i) / G.Volume<F3>(k, j_c, i);
+                    }
+                );
+            }
+        }
+    }
     return TaskStatus::complete;
 }
 

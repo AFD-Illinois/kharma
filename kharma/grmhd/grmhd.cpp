@@ -259,15 +259,29 @@ Real EstimateTimestep(MeshBlockData<Real> *rc)
 
     ParArray1D<Real> min_loc("min_loc", 3);
 
+    // Added by Hyerin (03/07/24)
+    // Internal SMR adds a factor to dx3 at poles based on larger cell width
+    // TODO distinguish polar from other ISMR if more modes are added
+    const bool ismr_poles = pmb->packages.AllPackages().count("ISMR");
+    const bool polar_inner_x2 = pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::user;
+    const bool polar_outer_x2 = pmb->boundary_flag[BoundaryFace::outer_x2] == BoundaryFlag::user;
+    const uint ismr_nlevels = (ismr_poles) ? pmb->packages.Get("ISMR")->Param<uint>("nlevels") : 0;
+
     // TODO version preserving location, with switch to keep this fast one
     // std::tuple doesn't work device-side, Kokkos::pair is 2D.  pair of pairs?
     Real min_ndt = 0.;
     pmb->par_reduce("ndt_min", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA (const int k, const int j, const int i,
                       Real &local_result) {
+            int ismr_factor = 1;
+            if (ismr_poles && polar_inner_x2 && j < (jb.s + ismr_nlevels))
+                ismr_factor = m::pow(2, ismr_nlevels - (j - jb.s));
+            if (ismr_poles && polar_outer_x2 && j > (jb.e - ismr_nlevels))
+                ismr_factor = m::pow(2, ismr_nlevels - (jb.e - j));
+
             double ndt_zone = 1 / (1 / (G.Dxc<1>(i) /  m::max(cmax(0, k, j, i), cmin(0, k, j, i))) +
                                    1 / (G.Dxc<2>(j) /  m::max(cmax(1, k, j, i), cmin(1, k, j, i))) +
-                                   1 / (G.Dxc<3>(k) /  m::max(cmax(2, k, j, i), cmin(2, k, j, i))));
+                                   1 / (G.Dxc<3>(k) * ismr_factor /  m::max(cmax(2, k, j, i), cmin(2, k, j, i))));
 
             if (!m::isnan(ndt_zone) && (ndt_zone < local_result)) {
                 local_result = ndt_zone;

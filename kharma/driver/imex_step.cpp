@@ -42,6 +42,7 @@
 #include "b_flux_ct.hpp"
 #include "electrons.hpp"
 #include "inverter.hpp"
+#include "ismr.hpp"
 #include "grmhd.hpp"
 #include "wind.hpp"
 // Other headers
@@ -306,6 +307,14 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
         auto t_ptou = tl.AddTask(t_heat_electrons, Flux::MeshPtoU, md_sub_step_final.get(), IndexDomain::entire, false);
 
         auto t_step_done = t_ptou;
+        if (pkgs.count("ISMR")) {
+            auto t_derefine_fluid = tl.AddTask(t_ptou, ISMR::DerefinePoles, md_sub_step_final.get());
+            auto t_derefine_poles = t_derefine_fluid;
+            if (pkgs.count("B_CT"))
+                t_derefine_poles = tl.AddTask(t_ptou, B_CT::DerefinePoles, md_sub_step_final.get());
+            // TODO this definitely doesn't need to be entire for everyone, v slow
+            t_step_done = tl.AddTask(t_derefine_poles, Packages::MeshUtoP, md_sub_step_final.get(), IndexDomain::entire, false);
+        }
 
         // Estimate next time step based on ctop
         if (stage == integrator->nstages) {

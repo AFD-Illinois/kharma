@@ -51,6 +51,7 @@
 #include "electrons.hpp"
 #include "implicit.hpp"
 #include "inverter.hpp"
+#include "ismr.hpp"
 #include "floors.hpp"
 #include "grmhd.hpp"
 #include "reductions.hpp"
@@ -414,6 +415,11 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput> &pin)
 
     // Flux temporaries must be full size
     KHARMA::AddPackage(packages, Flux::Initialize, pin.get());
+
+    // ISMR temporaries must be full size
+    if (pin->GetOrAddBoolean("ismr", "on", false)) {
+        KHARMA::AddPackage(packages, ISMR::Initialize, pin.get());
+    }
 
     // And any dirichlet/constant boundaries
     // TODO avoid init if Parthenon will be handling all boundaries?
