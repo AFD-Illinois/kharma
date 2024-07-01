@@ -543,7 +543,7 @@ TaskStatus ReadKharmaRestart(std::shared_ptr<MeshBlockData<Real>> rc, ParameterI
         VLOOP {
             if (b_ct) loc = (Loci) v;
             else loc = Loci::center;
-            pmb->par_for("copy_restart_state_kharma", ks, ke + (dir_of(loc) == 3), js, je + (dir_of(loc) == 2), is, ie + (dir_of(loc) == 1),
+            pmb->par_for("copy_B_restart_state_kharma", ks, ke + (dir_of(loc) == 3), js, je + (dir_of(loc) == 2), is, ie + (dir_of(loc) == 1),
                 KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
                         get_B_restart_kharma(G, fx1min_ghost, fx1max_ghost, should_fill, loc, length, f_length, lengthB, f_lengthB,
                             x1_f_device, x2_f_device, x3_f_device,

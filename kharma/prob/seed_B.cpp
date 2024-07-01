@@ -382,7 +382,7 @@ TaskStatus SeedBFieldType(MeshBlockData<Real> *rc, ParameterInput *pin, IndexDom
             // Calculate B-field.  Curl can be run all together since
             // all directions areover all cells
             GridVector B_U = rc->Get("cons.B").data;
-            IndexRange3 bl = KDomain::GetRange(rc, domain);
+            IndexRange3 bl = KDomain::GetRange(rc, IndexDomain::entire);
             if (ndim > 2) {
                 pmb->par_for(
                     "B_field_B_3D", bl.ks, bl.ke, bl.js, bl.je, bl.is, bl.ie,
@@ -410,7 +410,8 @@ TaskStatus SeedBFieldType(MeshBlockData<Real> *rc, ParameterInput *pin, IndexDom
                         GReal X[GR_DIM];
                         G.coord(k, j, i, Loci::center, X);
 
-                        if ((!should_fill) && (X[1] < fx1min_ghost)) {// if cannot be read from restart file
+                        // TODO: here you cannot use fx1min_ghost because the ghost zones are not synced after this. Probably we should sync though
+                        if ((!should_fill) && (X[1] < fx1min)) {// if cannot be read from restart file
                             // do nothing. just use the initialization from SeedBField
                         } else {
                             VLOOP B_U(v, k, j, i) = B_Save(v, k, j, i);

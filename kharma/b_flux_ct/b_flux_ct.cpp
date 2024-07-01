@@ -123,7 +123,7 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     m = Metadata(flags_emf, s_vector);
     pkg->AddField("emf", m);
     if (packages->Get("Globals")->Param<std::string>("problem") == "resize_restart_kharma") {
-        m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::FillGhost, Metadata::Vector});
+        m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::FillGhost, Metadata::Vector}, s_vector);
         pkg->AddField("B_Save", m);
     }
 

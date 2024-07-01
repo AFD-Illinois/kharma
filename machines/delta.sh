@@ -23,8 +23,8 @@ then
     # GPU Compile
     if [[ "$ARGS" == *"4gpu"* ]]; then
       # 4-device MPI w/mapping, should play nice with different numbers
-      MPI_NUM_PROCS=${MPI_NUM_PROCS:-4}
-      MPI_EXTRA_ARGS="--map-by ppr:$MPI_NUM_PROCS:node:pe=16"
+      MPI_NUM_PROCS=4 #${MPI_NUM_PROCS:-4}
+      #MPI_EXTRA_ARGS="--map-by ppr:$MPI_NUM_PROCS:node:pe=16"
     fi
 
     if [[ "$ARGS" == *"hostside"* ]]; then
