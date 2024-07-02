@@ -288,6 +288,8 @@ void B_CT::ReconnectBoundaryB3(MeshBlockData<Real> *rc, IndexDomain domain, cons
     auto B_U = rc->PackVariables(std::vector<std::string>{"cons.B"});
     auto B_P = rc->PackVariables(std::vector<std::string>{"prims.B"});
 
+    const auto& G = pmb->coords;
+
     // Subtract the average B3 as "reconnection"
     IndexRange3 b = KDomain::GetRange(rc, domain, F3, coarse);
     IndexRange3 bi = KDomain::GetRange(rc, IndexDomain::interior, F3, coarse);
