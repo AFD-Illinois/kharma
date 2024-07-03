@@ -62,7 +62,9 @@ std::shared_ptr<KHARMAPackage> Multizone::Initialize(ParameterInput *pin, std::s
     params.Add("move_rin", move_rin);
     const bool bflux_const = pin->GetOrAddBoolean("multizone", "bflux_const", false);
     params.Add("bflux_const", bflux_const);
-    const bool long_t_in = pin->GetOrAddInteger("multizone", "long_t_in", 2); // longer time for innermost annulus
+    const bool one_trun = pin->GetOrAddBoolean("multizone", "one_trun", false);
+    params.Add("one_trun", one_trun);
+    const int long_t_in = pin->GetOrAddInteger("multizone", "long_t_in", 2); // longer time for innermost annulus
     params.Add("long_t_in", long_t_in);
     
     // mutable parameters - V cycle information
@@ -151,19 +153,19 @@ void Multizone::DecideActiveBlocksAndBoundaryConditions(Mesh *pmesh, const SimTi
 
     // Determine Active Blocks
     GReal x1min, x1max;
-    bool inside_eh = false;
+    //bool inside_eh = false;
     for (int iblock=0; iblock < num_blocks; iblock++) {
         auto &pmb = pmesh->block_list[iblock];
         x1min = pmb->block_size.xmin(X1DIR);
         x1max = pmb->block_size.xmax(X1DIR);
-        inside_eh = (m::exp(x1min) < pmb->coords.coords.get_horizon());
+        //inside_eh = (m::exp(x1min) < pmb->coords.coords.get_horizon());
         if ((x1min + 1.0e-8 < active_x1min) || (x1max - 1.0e-8 > active_x1max)) is_active[iblock] = false;
         else { // active zone
             is_active[iblock] = true;
 
             // Decide where to apply bc // TODO: is this ok?
-            if (!inside_eh && (m::abs(x1min - active_x1min) / m::max(active_x1min, SMALL) < 1.e-10)) apply_boundary_condition[iblock][BoundaryFace::inner_x1] = true;
-            if (m::abs(x1max - active_x1max) / active_x1max < 1.e-10) apply_boundary_condition[iblock][BoundaryFace::outer_x1] = true;
+            if ((i_zone != 0) && (m::abs(x1min - active_x1min) / m::max(active_x1min, SMALL) < 1.e-10)) apply_boundary_condition[iblock][BoundaryFace::inner_x1] = true;
+            if ((i_zone != nzones - 1) && m::abs(x1max - active_x1max) / active_x1max < 1.e-10) apply_boundary_condition[iblock][BoundaryFace::outer_x1] = true;
         }
         //std::cout << "iblock " << iblock << " x1min " << x1min << " x1max " << x1max << ": is active? " << is_active[iblock] << ", boundary applied? " << apply_boundary_condition[iblock][BoundaryFace::inner_x1] << apply_boundary_condition[iblock][BoundaryFace::outer_x1] << std::endl;
     }
@@ -189,6 +191,7 @@ TaskStatus Multizone::DecideToSwitch(MeshData<Real> *md, const SimTime &tm, bool
     const Real gam = pmesh->packages.Get("GRMHD")->Param<Real>("gamma");
     const Real f_tchar = params.Get<Real>("f_tchar");
     const bool loc_tchar = params.Get<bool>("loc_tchar");
+    const bool one_trun = params.Get<bool>("one_trun");
     const int long_t_in = params.Get<int>("long_t_in");
     
     // Current location in V-cycles
@@ -203,7 +206,7 @@ TaskStatus Multizone::DecideToSwitch(MeshData<Real> *md, const SimTime &tm, bool
     Real temp_rin, runtime_per_zone;
     int nzones_per_vcycle = 2 * (nzones - 1);
     int longer_factor = 1;
-    if (i_zone == nzones - 1) longer_factor = 2;
+    if ((i_zone == nzones - 1) && !one_trun) longer_factor = 2;
     if (i_zone == 0) longer_factor = long_t_in;
 
     if (ncycle_per_zone > 0) switch_zone = (next_ncycle - n0_zone) >= ncycle_per_zone * longer_factor;
