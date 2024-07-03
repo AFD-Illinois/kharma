@@ -140,7 +140,7 @@ void KHARMA::PostStepWork(Mesh *pmesh, ParameterInput *pin, const SimTime &tm)
     globals.Update<double>("time", tm.time);
 }
 
-void KHARMA::FixParameters(ParameterInput *pin)
+void KHARMA::FixParameters(ParameterInput *pin, bool is_parthenon_restart)
 {
     Flag("Fixing parameters");
     // Parthenon sets 2 ghost zones as a default.
@@ -151,12 +151,14 @@ void KHARMA::FixParameters(ParameterInput *pin)
     pin->SetInteger("parthenon/mesh", "nghost", Globals::nghost);
 
     // If we're restarting (not via Parthenon), read the restart file to get most parameters
-    std::string prob = pin->GetString("parthenon/job", "problem_id");
-    if (prob == "resize_restart") {
-        ReadIharmRestartHeader(pin->GetString("resize_restart", "fname"), pin);
-    }
-    if (prob == "resize_restart_kharma") {
-        ReadKharmaRestartHeader(pin->GetString("resize_restart", "fname"), pin);
+    if (!is_parthenon_restart) {
+        std::string prob = pin->GetString("parthenon/job", "problem_id");
+        if (prob == "resize_restart") {
+            ReadIharmRestartHeader(pin->GetString("resize_restart", "fname"), pin);
+        }
+        if (prob == "resize_restart_kharma") {
+            ReadKharmaRestartHeader(pin->GetString("resize_restart", "fname"), pin);
+        }
     }
 
     // Construct a CoordinateEmbedding object.  See coordinate_embedding.hpp for supported systems/tags
