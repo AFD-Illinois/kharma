@@ -504,6 +504,39 @@ TaskStatus B_Cleanup::CenterLaplacian(MeshData<Real>* md, const std::string& p_v
         }
     );
 
+    // Make sure divB on outflows is 0
+    // Our outflow conditions guarantee divergence-free last zones, so we shouldn't clean for them
+    if (pmb0->packages.Get("Boundaries")->Param<std::string>("inner_x1") == "outflow") {
+        for (int i=0; i < md->GetMeshPointer()->GetNumMeshBlocksThisRank(); i++) {
+            auto rc = md->GetBlockData(i);
+            auto pmb = rc->GetBlockPointer();
+            auto lap_block = rc->PackVariables(std::vector<std::string>{lap_var});
+            const IndexRange3 bic = KDomain::GetRange(md, IndexDomain::interior);
+            if (pmb->boundary_flag[BoundaryFace::inner_x1] == BoundaryFlag::user) {
+                pmb->par_for("lap_boundary", bc.ks, bc.ke, bc.js, bc.je, bc.is, bic.is,
+                    KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+                        lap_block(0, k, j, i) = 0.;
+                    }
+                );
+            }
+        }
+    }
+    if (pmb0->packages.Get("Boundaries")->Param<std::string>("outer_x1") == "outflow") {
+        for (int i=0; i < md->GetMeshPointer()->GetNumMeshBlocksThisRank(); i++) {
+            auto rc = md->GetBlockData(i);
+            auto pmb = rc->GetBlockPointer();
+            auto lap_block = rc->PackVariables(std::vector<std::string>{lap_var});
+            const IndexRange3 bic = KDomain::GetRange(md, IndexDomain::interior);
+            if (pmb->boundary_flag[BoundaryFace::outer_x1] == BoundaryFlag::user) {
+                pmb->par_for("lap_boundary", bc.ks, bc.ke, bc.js, bc.je, bic.ie, bc.ie,
+                    KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+                        lap_block(0, k, j, i) = 0.;
+                    }
+                );
+            }
+        }
+    }
+
     return TaskStatus::complete;
 }
 
