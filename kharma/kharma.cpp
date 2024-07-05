@@ -151,17 +151,19 @@ void KHARMA::FixParameters(ParameterInput *pin, bool is_parthenon_restart)
     pin->SetInteger("parthenon/mesh", "nghost", Globals::nghost);
 
     // If we're restarting (not via Parthenon), read the restart file to get most parameters
+    std::string prob = pin->GetString("parthenon/job", "problem_id");
     if (!is_parthenon_restart) {
-        std::string prob = pin->GetString("parthenon/job", "problem_id");
         if (prob == "resize_restart") {
             ReadIharmRestartHeader(pin->GetString("resize_restart", "fname"), pin);
         }
         if (prob == "resize_restart_kharma") {
             ReadKharmaRestartHeader(pin->GetString("resize_restart", "fname"), pin);
         }
-    } else {
-        // Prevent all the special cases for resize_restart from firing, if we're
-        // restarting from a "normal" Parthenon restart file after resizing previously
+    } else if (prob == "resize_restart") {
+        // If this is a Parthenon restart of a problem named `resize_restart`,
+        // we don't want to trigger all the resizing stuff again.
+        // So we rename the problem, and undo the custom stuff we needed for
+        // resizing.
         pin->SetString("parthenon/job", "problem_id", "resized_restart");
         // Don't automatically clean B on subsequent restarts, either!
         pin->SetBoolean("b_cleanup", "on", false);
