@@ -154,8 +154,9 @@ int main(int argc, char *argv[])
         return 1;
     }
     auto pin = pman.pinput.get(); // All parameters in the input file or command line
-    // Modify input parameters as we need
-    KHARMA::FixParameters(pin);
+    // Modify input parameters as we need. Needs to know if Parthenon set parameters
+    // from our restart file, or whether we need to read them from a file here
+    KHARMA::FixParameters(pin, pman.IsRestart());
     // InitPackagesEtc calls ProcessPackages, then constructs the Mesh
     pman.ParthenonInitPackagesAndMesh();
     // Now pull out the mesh and app_input as well for below
