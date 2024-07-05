@@ -159,6 +159,15 @@ void KHARMA::FixParameters(ParameterInput *pin, bool is_parthenon_restart)
         if (prob == "resize_restart_kharma") {
             ReadKharmaRestartHeader(pin->GetString("resize_restart", "fname"), pin);
         }
+    } else {
+        // Prevent all the special cases for resize_restart from firing, if we're
+        // restarting from a "normal" Parthenon restart file after resizing previously
+        pin->SetString("parthenon/job", "problem_id", "resized_restart");
+        // Don't automatically clean B on subsequent restarts, either!
+        pin->SetBoolean("b_cleanup", "on", false);
+        // Finally, we probably set nlim=0 or 1 for the restarting phase, clear that
+        if (pin->GetInteger("parthenon/time", "nlim") <= 1)
+            pin->SetInteger("parthenon/time", "nlim", -1);
     }
 
     // Construct a CoordinateEmbedding object.  See coordinate_embedding.hpp for supported systems/tags
