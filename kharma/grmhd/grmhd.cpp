@@ -476,6 +476,14 @@ void CancelBoundaryU3(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     parthenon::par_for_outer(DEFAULT_OUTER_LOOP_PATTERN, "reduce_U3_" + bname, pmb->exec_space,
         0, 1, b.is, b.ie,
         KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int& i) {
+            // Recover primitive GRMHD variables from our modified U
+            parthenon::par_for_inner(member, bi.ks, bi.ke,
+                [&](const int& k, Real& local_result) {
+                Inverter::u_to_p<Inverter::Type::kastaun>(G, U, m_u, gam, k, jf, i, P, m_p, Loci::center,
+                                                            floors, 8, 1e-8);
+                }
+            );
+
             // Sum the first rank of U3
             Real U3_sum = 0.;
             Kokkos::Sum<Real> sum_reducer(U3_sum);
