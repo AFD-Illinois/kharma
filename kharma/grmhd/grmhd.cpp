@@ -466,6 +466,7 @@ void CancelBoundaryU3(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
 
+    const Floors::Prescription floors = pmb->packages.Get("Floors")->Param<Floors::Prescription>("prescription");
     const EMHD::EMHD_parameters& emhd_params = EMHD::GetEMHDParameters(pmb->packages);
 
     // Subtract the average B3 as "reconnection"
@@ -485,7 +486,6 @@ void CancelBoundaryU3(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
             , sum_reducer);
 
             // Calculate the average and subtract it
-            const Floors::Prescription floors = pmb->packages.Get("Floors")->Param<Floors::Prescription>("prescription");
             const Real U3_avg = U3_sum / (bi.ke - bi.ks + 1);
             parthenon::par_for_inner(member, b.ks, b.ke,
                 [&](const int& k) {
