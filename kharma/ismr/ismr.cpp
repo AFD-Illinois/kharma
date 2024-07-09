@@ -34,6 +34,7 @@
 #include "ismr.hpp"
 
 #include "domain.hpp"
+#include "inverter.hpp"
 #include "kharma.hpp"
 
 std::shared_ptr<KHARMAPackage> ISMR::Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages)
