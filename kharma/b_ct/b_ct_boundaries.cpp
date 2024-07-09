@@ -259,7 +259,7 @@ void B_CT::DestructiveBoundaryClean(MeshBlockData<Real> *rc, IndexDomain domain,
                 KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
                     Real new_face = - (-outward_sign) * fpack(F3, 0, last_rank_f, j, i) * G.Volume<F3>(last_rank_f, j, i)
                                     - (fpack(F1, 0, last_rank_c, j, i + 1) * G.Volume<F1>(last_rank_c, j, i + 1)
-                                        - fpack(F1, 0, last_rank_c, j, i) * G.Volume<F1>(last_rank_c, j, i));
+                                        - fpack(F1, 0, last_rank_c, j, i) * G.Volume<F1>(last_rank_c, j, i))
                                     - (fpack(F2, 0, last_rank_c, j + 1, i) * G.Volume<F2>(last_rank_c, j + 1, i)
                                         - fpack(F2, 0, last_rank_c, j, i) * G.Volume<F2>(last_rank_c, j, i));
 
