@@ -478,7 +478,7 @@ void CancelBoundaryU3(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
         KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int& i) {
             // Recover primitive GRMHD variables from our modified U
             parthenon::par_for_inner(member, bi.ks, bi.ke,
-                [&](const int& k, Real& local_result) {
+                [&](const int& k) {
                 Inverter::u_to_p<Inverter::Type::kastaun>(G, U, m_u, gam, k, jf, i, P, m_p, Loci::center,
                                                             floors, 8, 1e-8);
                 }
