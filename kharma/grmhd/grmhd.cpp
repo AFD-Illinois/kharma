@@ -452,6 +452,8 @@ void CancelBoundaryU3(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
 
+    const EMHD::EMHD_parameters& emhd_params = EMHD::GetEMHDParameters(pmb->packages);
+
     // Subtract the average B3 as "reconnection"
     IndexRange3 b = KDomain::GetRange(rc, domain, coarse);
     IndexRange3 bi = KDomain::GetRange(rc, IndexDomain::interior, coarse);
@@ -469,11 +471,15 @@ void CancelBoundaryU3(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
             , sum_reducer);
 
             // Calculate the average and subtract it
+            const Floors::Prescription floors = pmb->packages.Get("Floors")->Param<Floors::Prescription>("prescription");
             const Real U3_avg = U3_sum / (bi.ke - bi.ks + 1);
             parthenon::par_for_inner(member, b.ks, b.ke,
                 [&](const int& k) {
                     P(m_p.U3, k, jf, i) -= U3_avg;
-                    p_to_u(G, P, m_p, gam, k, jf, i, U, m_u);
+                    // Apply floors
+                    Floors::apply_geo_floors(G, P, m_p, gam, jf, i, floors, floors, Loci::center);
+                    // Always PtoU, we modified P.  Accomodate EMHD
+                    Flux::p_to_u_mhd(G, P, m_p, emhd_params, gam, k, jf, i, U, m_u);
                 }
             );
         }
@@ -526,9 +532,14 @@ void CancelBoundaryT3(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
             parthenon::par_for_inner(member, b.ks, b.ke,
                 [&](const int& k) {
                     U(m_u.U3, k, jf, i) -= T3_avg;
-                    // Recover primitive variables from our modified U
+                    // Recover primitive GRMHD variables from our modified U
                     Inverter::u_to_p<Inverter::Type::kastaun>(G, U, m_u, gam, k, jf, i, P, m_p, Loci::center,
                                                               floors, 8, 1e-8);
+                    // Floor them
+                    int fflag = Floors::apply_geo_floors(G, P, m_p, gam, jf, i, floors, floors, Loci::center);
+                    // Recalculate U on anything we floored
+                    if (fflag)
+                        p_to_u(G, P, m_p, gam, k, jf, i, U, m_u, Loci::center);
                 }
             );
         }
