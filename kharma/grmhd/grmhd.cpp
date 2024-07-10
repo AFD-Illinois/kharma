@@ -268,18 +268,24 @@ Real EstimateTimestep(MeshBlockData<Real> *rc)
     const uint ismr_nlevels = (ismr_poles) ? pmb->packages.Get("ISMR")->Param<uint>("nlevels") : 0;
 
     // TODO version preserving location, with switch to keep this fast one
+    // TODO if ISMR, split w/simple kernel over regular zones here, kernel over just ISMR in that pkg?
     // std::tuple doesn't work device-side, Kokkos::pair is 2D.  pair of pairs?
     Real min_ndt = 0.;
     pmb->par_reduce("ndt_min", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA (const int k, const int j, const int i,
                       Real &local_result) {
             int ismr_factor = 1;
-            if (ismr_poles && polar_inner_x2 && j < (jb.s + ismr_nlevels))
+            double courant_limit = 1.0;
+            if (ismr_poles && polar_inner_x2 && j < (jb.s + ismr_nlevels)) {
                 ismr_factor = m::pow(2, ismr_nlevels - (j - jb.s));
-            if (ismr_poles && polar_outer_x2 && j > (jb.e - ismr_nlevels))
+                courant_limit = 0.5;
+            }
+            if (ismr_poles && polar_outer_x2 && j > (jb.e - ismr_nlevels)) {
                 ismr_factor = m::pow(2, ismr_nlevels - (jb.e - j));
+                courant_limit = 0.5;
+            }
 
-            double ndt_zone = 1 / (1 / (G.Dxc<1>(i) /  m::max(cmax(0, k, j, i), cmin(0, k, j, i))) +
+            double ndt_zone = courant_limit / (1 / (G.Dxc<1>(i) /  m::max(cmax(0, k, j, i), cmin(0, k, j, i))) +
                                    1 / (G.Dxc<2>(j) /  m::max(cmax(1, k, j, i), cmin(1, k, j, i))) +
                                    1 / (G.Dxc<3>(k) * ismr_factor /  m::max(cmax(2, k, j, i), cmin(2, k, j, i))));
 
