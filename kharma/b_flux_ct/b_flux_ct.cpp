@@ -182,7 +182,7 @@ TaskStatus MeshUtoP(MeshData<Real> *md, IndexDomain domain, bool coarse)
     IndexRange vec = IndexRange{0, B_U.GetDim(4)-1};
     IndexRange block = IndexRange{0, B_U.GetDim(5)-1};
 
-    pmb0->par_for("UtoP_B", block.s, block.e, vec.s, vec.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+    pmb0->par_for("UtoP_B_FluxCT_Mesh", block.s, block.e, vec.s, vec.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA (const int& b, const int &mu, const int &k, const int &j, const int &i) {
             const auto& G = B_U.GetCoords(b);
             // Update the primitive B-fields
@@ -206,7 +206,7 @@ TaskStatus BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     const IndexRange kb = bounds.GetBoundsK(domain);
     const IndexRange vec = IndexRange({0, B_U.GetDim(4)-1});
 
-    pmb->par_for("UtoP_B", vec.s, vec.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+    pmb->par_for("UtoP_B_FluxCT_Block", vec.s, vec.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA (const int &mu, const int &k, const int &j, const int &i) {
             // Update the primitive B-fields
             B_P(mu, k, j, i) = B_U(mu, k, j, i) / G.gdet(Loci::center, j, i);
@@ -229,7 +229,7 @@ void MeshPtoU(MeshData<Real> *md, IndexDomain domain, bool coarse)
     IndexRange vec = IndexRange{0, B_U.GetDim(4)-1};
     IndexRange block = IndexRange{0, B_U.GetDim(5)-1};
 
-    pmb0->par_for("UtoP_B", block.s, block.e, vec.s, vec.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+    pmb0->par_for("PtoU_B_FluxCT_Mesh", block.s, block.e, vec.s, vec.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA (const int& b, const int &mu, const int &k, const int &j, const int &i) {
             const auto& G = B_U.GetCoords(b);
             // Update the primitive B-fields
@@ -252,7 +252,7 @@ void BlockPtoU(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     const IndexRange kb = bounds.GetBoundsK(domain);
     const IndexRange vec = IndexRange({0, B_U.GetDim(4)-1});
 
-    pmb->par_for("UtoP_B", vec.s, vec.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+    pmb->par_for("PtoU_B_FluxCT_Block", vec.s, vec.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA (const int &mu, const int &k, const int &j, const int &i) {
             // Update the conserved B-fields
             B_U(mu, k, j, i) = B_P(mu, k, j, i) * G.gdet(Loci::center, j, i);
