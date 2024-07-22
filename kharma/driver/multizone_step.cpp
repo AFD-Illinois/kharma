@@ -68,9 +68,7 @@ TaskCollection KHARMADriver::MakeMultizoneTaskCollection(BlockList_t &blocks, in
     bool is_active[num_blocks]; // = {false, false, true};
     bool apply_boundary_condition[num_blocks][BOUNDARY_NFACES];
 
-    Multizone::DecideActiveBlocksAndBoundaryConditions(pmesh, tm, is_active, apply_boundary_condition);
-    for (int i = 0; i < num_partitions; i++) 
-        std::cout << "iblock " << i << ": is active? " << is_active[i] << ", boundary applied? " << apply_boundary_condition[i][BoundaryFace::inner_x1] << apply_boundary_condition[i][BoundaryFace::outer_x1] << std::endl;
+    Multizone::DecideActiveBlocksAndBoundaryConditions(pmesh, tm, is_active, apply_boundary_condition, stage == 1);
 
     // TaskCollections are a collection of TaskRegions.
     // Each TaskRegion can operate on eash meshblock separately, i.e. one MeshBlockData object (slower),
@@ -83,16 +81,20 @@ TaskCollection KHARMADriver::MakeMultizoneTaskCollection(BlockList_t &blocks, in
     // Timestep region: calculate timestep based on the newly updated active zones
     //TaskRegion &timestep_region = tc.AddRegion(num_partitions);
     // Estimate next time step based on ctop
-    for (int i = 0; i < num_partitions; i++) {
-        //auto &tl = timestep_region[i];
-        if (is_active[i]) {
+    if (stage == 1) {
+        for (int i = 0; i < num_partitions; i++) {
+            std::cout << "iblock " << i << ": is active? " << is_active[i] << ", boundary applied? " << apply_boundary_condition[i][BoundaryFace::inner_x1] << apply_boundary_condition[i][BoundaryFace::outer_x1] << std::endl;
             auto &base = pmesh->mesh_data.GetOrAdd("base", i);
-            Update::EstimateTimestep<MeshData<Real>>(base.get());
-          //auto t_new_dt =
-          //    tl.AddTask(t_none, Update::EstimateTimestep<MeshData<Real>>, base.get());
+            //auto &tl = timestep_region[i];
+            if (is_active[i]) {
+                Update::EstimateTimestep<MeshData<Real>>(base.get());
+              //auto t_new_dt =
+              //    tl.AddTask(t_none, Update::EstimateTimestep<MeshData<Real>>, base.get());
+            } else base->GetBlockData(0)->SetAllowedDt(std::numeric_limits<Real>::max()); // just ensuring that the inactive zones are not participating
         }
+        SetGlobalTimeStep();
+        std::cout << "HYERIN: actual dt is " << tm.dt << std::endl;
     }
-    SetGlobalTimeStep();
 
     //EndFlag();
 

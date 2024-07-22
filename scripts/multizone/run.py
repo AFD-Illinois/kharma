@@ -89,6 +89,7 @@ def calc_rb(kwargs):
 @click.option("--kharma_bin", default="kharma.cuda", help="Name (not path) of KHARMA binary to run")
 @click.option("--kharma_args", default="", help="Arguments for KHARMA run.sh")
 @click.option("--long_t_in", is_flag=True, help="Use longer time for innermost annulus")
+@click.option("--long_t_in_factor", default=5.0, help="Use longer time for innermost annulus")
 @click.option("--restart", is_flag=True, help="Restart from most recent run parameters")
 @click.option("--parfile", default=None, help="Parameter filename")
 @click.option("--gizmo", is_flag=True, help="Start from GIZMO data")
@@ -121,6 +122,7 @@ def calc_rb(kwargs):
 @click.option("--derefine_nlevels", default=1, help="Derefine number of levels for internal SMR.")
 @click.option("--output0_dt", default=None, help="output0 dt.")
 @click.option("--dont_kill_on_divb", is_flag=True, help="Don't kill the simulation when the divB is too large. Mostly for test purposes.")
+@click.option("--outflow_at_largest_rout", is_flag=True, help="Apply outflow bc at the largest radial boundary.")
 # Don't use this
 @click.option("--start_time", default=0.0, help="Starting time. Only use if you know what you're doing.")
 def run_multizone(**kwargs):
@@ -207,6 +209,9 @@ def run_multizone(**kwargs):
                 args["b_field/initial_cleanup"] = 1
                 args["b_cleanup/rel_tolerance"] = 1.e-5
             if (kwargs["dont_kill_on_divb"]): args["b_field/kill_on_large_divb"] = 0
+            if (kwargs["outflow_at_largest_rout"]): 
+                args["boundaries/outer_x1"] = "outflow"
+                args["bondi/set_outer_bound"] = 0
             # Compress coordinates to save time
             if kwargs["nx2"] >= 128 and not kwargs["onezone"]:
                 args["coordinates/transform"] = "fmks"
@@ -316,8 +321,7 @@ def run_multizone(**kwargs):
                 if (not kwargs['one_trun']): runtime *= 2  # double the runtime for innermost annulus
                 if kwargs["long_t_in"]:
                     print("LONG_T_IN @ RUN # {}: using longer runtime".format(run_num))
-                    runtime *= 5  # 5 tff at the log middle radius
-                    if kwargs['one_trun']: runtime *= 2 # compensate one_trun here
+                    runtime *= float(kwargs["long_t_in_factor"])  # 5 tff at the log middle radius (by default)
         else:
             runtime = float(kwargs["tlim"])
         if args["coordinates/r_in"] < 2:
@@ -445,11 +449,16 @@ def update_args(run_num, kwargs, args):
                 args["coordinates/r_out"] = last_r_out * kwargs["base"]
             args["coordinates/r_in"] = last_r_in * kwargs["base"]
 
-        if (kwargs["combine_out_ann"]) and args["coordinates/r_in"] >= kwargs["base"] ** (kwargs["nzones_eff"] - (kwargs["base"] > 2)):
-            # if the next simulation is at the largest annulus,
-            # make r_out and nx1 larger
-            # if base < 2, the largest r_in is base^nzones_eff. if not, base^nzones_eff-1
-            args["coordinates/r_out"] = kwargs["base"] ** (kwargs["nzones"] + 1)
+        # if the next simulation is at the largest annulus,
+        if args["coordinates/r_in"] >= kwargs["base"] ** (kwargs["nzones_eff"] - (kwargs["base"] > 2)):
+            if (kwargs["combine_out_ann"]):
+                # make r_out and nx1 larger
+                # if base < 2, the largest r_in is base^nzones_eff. if not, base^nzones_eff-1
+                args["coordinates/r_out"] = kwargs["base"] ** (kwargs["nzones"] + 1)
+            if (kwargs["outflow_at_largest_rout"]): args["boundaries/outer_x1"] = "outflow"
+        else:
+            if (kwargs["outflow_at_largest_rout"]): args["boundaries/outer_x1"] = "dirichlet"
+
         if (kwargs["combine_in_ann"]) and args["coordinates/r_in"] <= kwargs["base"]:
             if out_to_in > 0 : args["coordinates/r_in"] = 1
             else: args["coordinates/r_in"] *= kwargs["base"]

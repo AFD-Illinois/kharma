@@ -22,24 +22,28 @@ nx3 = 64
 
 <coordinates>
 base = ks
-transform = mks
+transform = eks
 a = 0.0
-hslope = 0.3
 r_out = 32768
 r_in = 1
 
 <parthenon/time>
-tlim = 2000000
+tlim = 10000000000
 
 <GRMHD>
 cfl = 0.5
 gamma = 1.6666666666666667
+ismr_poles = 1
+ismr_nlevels = 4
 
 <bondi>
-mdot = 1.0
+mdot = 1.832747665572202
 rs = 16.0
-ur_frac = 0.0
+ur_frac = 1.0
+uphi = 0.0
 diffinit = true
+set_outer_bound = 0
+r_in_bondi = 2.0
 
 # Disable floors
 <floors>
@@ -59,6 +63,10 @@ outer_x1 = outflow
 check_inflow_outer_x1 = false
 check_inflow_inner_x1 = true
 
+<perturbation>
+jitter_above_rho = 0 # always apply perturbation when u_jitter > 0
+u_jitter = 0.1
+
 <b_field>
 solver = face_ct
 ct_scheme = bs99 #sg07
@@ -69,8 +77,8 @@ norm = false
 
 <debug>
 verbose = 1
-flag_verbose = 0
-extra_checks = 0
+flag_verbose = 2
+extra_checks = 1
 
 <driver>
 type = multizone
@@ -80,6 +88,7 @@ reconstruction = weno5
 <multizone>
 on = 1
 nzones = 4
+loc_tchar = 0
 
 <parthenon/output0>
 file_type = hdf5
@@ -93,6 +102,6 @@ file_type = rst
 dn = 10000
 ghost_zones = true
 
-#<parthenon/output2>
-#file_type = hst
-#dt = 0.1
+<parthenon/output2>
+file_type = hst
+dn = 100

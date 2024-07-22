@@ -81,7 +81,7 @@ KOKKOS_INLINE_FUNCTION Real CalcRuntime(const Real &r_in, const int &base, const
  * Depending on the location in the V cycles, decide which blocks are active and where to apply boundary conditions for the current step
  * 
  */
-void DecideActiveBlocksAndBoundaryConditions(Mesh *pmesh, const SimTime &tm, bool *is_active, bool apply_boundary_condition[][BOUNDARY_NFACES]);
+void DecideActiveBlocksAndBoundaryConditions(Mesh *pmesh, const SimTime &tm, bool *is_active, bool apply_boundary_condition[][BOUNDARY_NFACES], const bool verbose);
 
 /**
  * Decide whether or not to progress in the V cycle

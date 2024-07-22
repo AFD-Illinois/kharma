@@ -241,6 +241,7 @@ Real EstimateTimestep(MeshBlockData<Real> *rc)
 
     auto& globals = pmb->packages.Get("Globals")->AllParams();
     const auto& grmhd_pars = pmb->packages.Get("GRMHD")->AllParams();
+    const auto& driver_pars = pmb->packages.Get("Driver")->AllParams();
 
     // Added by Hyerin (03/07/24)
     bool ismr_poles = grmhd_pars.Get<bool>("ismr_poles");
@@ -309,7 +310,16 @@ Real EstimateTimestep(MeshBlockData<Real> *rc)
     const double cfl = grmhd_pars.Get<double>("cfl");
     const double dt_min = grmhd_pars.Get<double>("dt_min");
     const double dt_last = globals.Get<double>("dt_last");
-    const double dt_max = grmhd_pars.Get<double>("max_dt_increase") * dt_last;
+    double dt_last_block = dt_last;
+    //if (driver_pars.Get<DriverType>("type") == DriverType::multizone) {
+        //auto &mz_pars = pmb->packages.Get("Multizone")->AllParams();
+        //const Real base = mz_pars.Get<Real>("base");
+        //const int i_within_vcycle = mz_pars.Get<int>("i_within_vcycle");
+        //const bool out_to_in = (i_within_vcycle > 0) && ((i_within_vcycle - (nzones - 1)) <= 0);  // are we in the inward moving leg of the V-cycle?
+        //dt_max_mz = dt_last * m::pow(base, (-3.0 / 2.0 * out_to_in));
+    dt_last_block = pmb->NewNonMaxDt();
+    //}
+    const double dt_max = dt_last_block; //grmhd_pars.Get<double>("max_dt_increase") * dt_last_block;
     const double ndt = clip(min_ndt * cfl, dt_min, dt_max);
 
     // Record max ctop, for constraint damping

@@ -473,9 +473,9 @@ void KHARMADriver::SetGlobalTimeStep()
   //  tm.dt *= 2.0;
   //}
   Real big = std::numeric_limits<Real>::max();
+  tm.dt = big;
   for (auto const &pmb : pmesh->block_list) {
     tm.dt = std::min(tm.dt, pmb->NewDt());
-    pmb->SetAllowedDt(big);
   }
 
     // TODO(BSP) start reduce at the end of the per-meshblock stuff, then check it here
