@@ -472,6 +472,8 @@ void CancelBoundaryU3(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
 
+    const bool sync_prims = pmb->packages.Get("Driver")->Param<bool>("sync_prims");
+
     const Floors::Prescription floors = pmb->packages.Get("Floors")->Param<Floors::Prescription>("prescription");
     const EMHD::EMHD_parameters& emhd_params = EMHD::GetEMHDParameters(pmb->packages);
 
@@ -482,13 +484,15 @@ void CancelBoundaryU3(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     parthenon::par_for_outer(DEFAULT_OUTER_LOOP_PATTERN, "reduce_U3_" + bname, pmb->exec_space,
         0, 1, b.is, b.ie,
         KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int& i) {
-            // Recover primitive GRMHD variables from our modified U
-            parthenon::par_for_inner(member, bi.ks, bi.ke,
-                [&](const int& k) {
-                Inverter::u_to_p<Inverter::Type::kastaun>(G, U, m_u, gam, k, jf, i, P, m_p, Loci::center,
-                                                            floors, 8, 1e-8);
-                }
-            );
+            if (!sync_prims) {
+                // Recover primitive GRMHD variables to sync them
+                parthenon::par_for_inner(member, bi.ks, bi.ke,
+                    [&](const int& k) {
+                    Inverter::u_to_p<Inverter::Type::kastaun>(G, U, m_u, gam, k, jf, i, P, m_p, Loci::center,
+                                                                floors, 8, 1e-8);
+                    }
+                );
+            }
 
             // Sum the first rank of U3
             Real U3_sum = 0.;
@@ -499,7 +503,7 @@ void CancelBoundaryU3(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
                 }
             , sum_reducer);
 
-            // Calculate the average and subtract it
+            // Calculate the average and subtract it, restore conserved vars
             const Real U3_avg = U3_sum / (bi.ke - bi.ks + 1);
             parthenon::par_for_inner(member, b.ks, b.ke,
                 [&](const int& k) {
@@ -537,6 +541,8 @@ void CancelBoundaryT3(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
 
+    const bool sync_prims = pmb->packages.Get("Driver")->Param<bool>("sync_prims");
+
     const Floors::Prescription floors = pmb->packages.Get("Floors")->Param<Floors::Prescription>("prescription");
 
     // Subtract the average B3 as "reconnection"
@@ -546,6 +552,14 @@ void CancelBoundaryT3(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     parthenon::par_for_outer(DEFAULT_OUTER_LOOP_PATTERN, "reduce_T3_" + bname, pmb->exec_space,
         0, 1, b.is, b.ie,
         KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int& i) {
+            if (sync_prims) {
+                parthenon::par_for_inner(member, bi.ks, bi.ke,
+                    [&](const int& k) {
+                        p_to_u(G, P, m_p, gam, k, jf, i, U, m_u, Loci::center);
+                    }
+                );
+            }
+
             // Sum the first rank of the angular momentum T3
             Real T3_sum = 0.;
             Kokkos::Sum<Real> sum_reducer(T3_sum);
