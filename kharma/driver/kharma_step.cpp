@@ -88,7 +88,7 @@ TaskCollection KHARMADriver::MakeDefaultTaskCollection(BlockList_t &blocks, int 
 
     // Which packages we load affects which tasks we'll add to the list
     auto& pkgs = pmesh->packages.AllPackages();
-    auto& flux_pkg   = pkgs.at("Flux")->AllParams();
+    auto& flux_pkg   = pkgs.at("Fluxes")->AllParams();
     const bool use_b_cleanup = pkgs.count("B_Cleanup");
     const bool use_b_ct = pkgs.count("B_CT");
     const bool use_electrons = pkgs.count("Electrons");
@@ -101,20 +101,19 @@ TaskCollection KHARMADriver::MakeDefaultTaskCollection(BlockList_t &blocks, int 
     if (stage == 1) {
         auto &base = pmesh->mesh_data.Get();
         // Fluxes
-        pmesh->mesh_data.Add("dUdt");
+        pmesh->mesh_data.Add("dUdt", base);
         for (int i = 1; i < integrator->nstages; i++)
-            pmesh->mesh_data.Add(integrator->stage_name[i]);
+            pmesh->mesh_data.Add(integrator->stage_name[i], base);
         // Preserve state for time derivatives if we need to output current
         if (use_jcon) {
-            pmesh->mesh_data.Add("preserve");
-            // Above only copies on allocate -- ensure we copy every step
-            Copy<MeshData<Real>>({Metadata::Cell}, base.get(), pmesh->mesh_data.Get("preserve").get());
+            // "Add" returns either the newly added or existing member of the mesh_data collection
+            Copy<MeshData<Real>>({Metadata::Cell}, base.get(), pmesh->mesh_data.Add("preserve", base).get());
         }
         // FOFC needs to determine whether the "real" U-divF will violate floors, and needs a safe place to do it.
         // We populate it later, with each *sub-step*'s initial state
         if (use_fofc) {
-            pmesh->mesh_data.Add("fofc_source");
-            pmesh->mesh_data.Add("fofc_guess");
+            pmesh->mesh_data.Add("fofc_source", base);
+            pmesh->mesh_data.Add("fofc_guess", base);
         }
     }
 
@@ -178,7 +177,7 @@ TaskCollection KHARMADriver::MakeDefaultTaskCollection(BlockList_t &blocks, int 
             auto t_emf = t_flux_bounds;
             if (use_b_ct) {
                 // Pull out a container of only EMF to synchronize
-                auto &md_emf_only = pmesh->mesh_data.AddShallow("EMF", std::vector<std::string>{"B_CT.emf"}); // TODO this gets weird if we partition
+                auto &md_emf_only = pmesh->mesh_data.AddShallow("EMF", md_sub_step_init, std::vector<std::string>{"B_CT.emf"}); // TODO this gets weird if we partition
                 auto t_emf_local = tl.AddTask(t_flux_bounds, B_CT::CalculateEMF, md_sub_step_init.get());
                 t_emf = KHARMADriver::AddBoundarySync(t_emf_local, tl, md_emf_only);
             }

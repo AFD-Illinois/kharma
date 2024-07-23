@@ -375,17 +375,21 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput> &pin)
     // 1. Prefer B_CT if AMR since it's compatible
     // 2. Prefer B_Flux_CT otherwise since it's well-tested
     auto t_b_field = t_none;
+    bool have_b_transport = false;
     bool multilevel = pin->GetOrAddString("parthenon/mesh", "refinement", "none") != "none";
     std::string b_field_solver = pin->GetOrAddString("b_field", "solver",  multilevel ? "face_ct" : "flux_ct");
     if (b_field_solver == "none" || b_field_solver == "cleanup" || b_field_solver == "b_cleanup") {
         // Don't add a B field here
     } else if (b_field_solver == "constrained_transport" || b_field_solver == "face_ct") {
         t_b_field = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, B_CT::Initialize, pin.get());
+        have_b_transport = true;
     } else if (b_field_solver == "constraint_damping" || b_field_solver == "cd") {
         // Constraint damping. NON-WORKING
         t_b_field = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, B_CD::Initialize, pin.get());
+        have_b_transport = true;
     } else if (b_field_solver == "flux_ct") {
         t_b_field = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, B_FluxCT::Initialize, pin.get());
+        have_b_transport = true;
     } else {
         throw std::invalid_argument("Invalid solver! Must be e.g., flux_ct, face_ct, cd, cleanup...");
     }
@@ -403,7 +407,8 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput> &pin)
     auto t_b_cleanup = t_none;
     if (use_b_cleanup) {
         t_b_cleanup = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, B_Cleanup::Initialize, pin.get());
-        if (t_b_field == t_none) t_b_field = t_b_cleanup;
+        // If we're the transport, assign us to the transport setup task too
+        if (!have_b_transport) t_b_field = t_b_cleanup;
     }
 
     // Optional standalone packages
@@ -419,12 +424,12 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput> &pin)
     }
     // Enable calculating jcon iff it is in any list of outputs (and there's even B to calculate it).
     // Since it is never required to restart, this is the only time we'd write (hence, need) it
-    if (FieldIsOutput(pin.get(), "jcon") && t_b_field != t_none) {
+    if (FieldIsOutput(pin.get(), "jcon") && have_b_transport) {
         auto t_current = tl.AddTask(t_b_field, KHARMA::AddPackage, packages, Current::Initialize, pin.get());
     }
 
     // Execute the whole collection (just in case we do something fancy?)
-    while (!tr.Execute()); // TODO this will inf-loop on error
+    tc.Execute(); // TODO check return if Exe ever returns errors
 
     // There are some packages which must be loaded after all physics
     // Easier to load them separately than list dependencies

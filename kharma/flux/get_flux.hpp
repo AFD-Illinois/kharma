@@ -46,7 +46,7 @@ namespace Flux {
  *
  * @param md the current stage MeshData container, holding pointers to all variable data
  *
- * Memory-wise, this fills the "flux" portions of the "conserved" fields.  These will be used
+ * Memory-wise, this fills the fluxes stored with the "conserved" fields.  These will be used
  * over the course of the step to calculate an update to the zone-centered values.
  * This function also fills the "Flux.cmax" & "Flux.cmin" vectors with the signal speeds,
  * and potentially the "Flux.vl" and "Flux.vr" vectors with the fluid velocities
@@ -72,7 +72,7 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
     Flag("GetFlux_"+std::to_string(dir));
 
     // Options
-    const auto& pars       = packages.Get("Flux")->AllParams();
+    const auto& pars       = packages.Get("Fluxes")->AllParams();
     const auto& mhd_pars   = packages.Get("GRMHD")->AllParams();
     const auto& globals    = packages.Get("Globals")->AllParams();
     const bool use_hlle    = pars.Get<bool>("use_hlle");
@@ -222,7 +222,7 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
 
     // If we have B field on faces, we "must" replace reconstructed version with that
     // Override at user option due to unreasonable effectiveness (https://github.com/AFD-Illinois/kharma/issues/79)
-    if (pmb0->packages.AllPackages().count("B_CT") && packages.Get("Flux")->Param<bool>("consistent_face_b")) {
+    if (pmb0->packages.AllPackages().count("B_CT") && packages.Get("Fluxes")->Param<bool>("consistent_face_b")) {
         const auto& Bf  = md->PackVariables(std::vector<std::string>{"cons.fB"});
         const TopologicalElement face = FaceOf(dir); // TODO probably can be constexpr, somehow
         IndexRange3 bi = KDomain::GetRange(md, IndexDomain::interior, face);

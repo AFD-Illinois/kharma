@@ -48,7 +48,7 @@ TaskCollection KHARMADriver::MakeSimpleTaskCollection(BlockList_t &blocks, int s
 
     // Which packages we've loaded affects which tasks we'll add to the list
     auto& pkgs         = blocks[0]->packages.AllPackages();
-    auto& flux_pkg   = pkgs.at("Flux")->AllParams();
+    auto& flux_pkg   = pkgs.at("Fluxes")->AllParams();
 
     // Allocate the fluid states ("containers") we need for each block
     for (auto& pmb : blocks) {

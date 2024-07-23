@@ -500,7 +500,7 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
                                     : bounds.GetBoundsK(IndexDomain::interior));
         const int ref = binner ? range.s : range.e;
         pmb->par_for_bndry(
-            "outflow_EMHD", IndexRange{0,EMHDg.GetDim(4)-1}, domain, CC, coarse,
+            "outflow_EMHD", IndexRange{0,EMHDg.GetDim(4)-1}, domain, CC, coarse, false,
             KOKKOS_LAMBDA (const int &v, const int &k, const int &j, const int &i) {
                 EMHDg(v, k, j, i) = EMHDg(v, (bdir == 3) ? ref : k, (bdir == 2) ? ref : j, (bdir == 1) ? ref : i);
             }
@@ -585,7 +585,7 @@ void KBoundaries::CheckInflow(std::shared_ptr<MeshBlockData<Real>> &rc, IndexDom
     // Inflow check
     // Iterate over all boundary domain zones w/p=0
     pmb->par_for_bndry(
-        "check_inflow", IndexRange{0, 0}, domain, CC, coarse,
+        "check_inflow", IndexRange{0, 0}, domain, CC, coarse, false,
         KOKKOS_LAMBDA(const int &p, const int &k, const int &j, const int &i) {
             KBoundaries::check_inflow(G, P, domain, m_p.U1, k, j, i);
         }
