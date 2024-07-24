@@ -82,7 +82,7 @@ KOKKOS_INLINE_FUNCTION void time_derivative_sources(const GRCoordinates& G, cons
 
     FourVectors Dtmp;
     GRMHD::calc_4vecs(G, P, m_p, j, i, Loci::center, Dtmp);
-    double bsq = m::max(dot(Dtmp.bcon, Dtmp.bcov), SMALL);
+    double bsq = m::max(dot(Dtmp.bcon, Dtmp.bcov), SMALL_NUM);
     const double mag_b = m::sqrt(bsq);
 
     // TIME DERIVATIVES
@@ -98,8 +98,8 @@ KOKKOS_INLINE_FUNCTION void time_derivative_sources(const GRCoordinates& G, cons
     Real div_ucon    = 0;
     DLOOP1 div_ucon += G.gcon(Loci::center, j, i, 0, mu) * dt_ucov[mu];
     // dTheta/dt
-    const Real Theta_new = m::max((gam-1) * P_new(m_p.UU) / P_new(m_p.RHO), SMALL);
-    const Real Theta_old = m::max((gam-1) * P_old(m_p.UU) / P_old(m_p.RHO), SMALL);
+    const Real Theta_new = m::max((gam-1) * P_new(m_p.UU) / P_new(m_p.RHO), SMALL_NUM);
+    const Real Theta_old = m::max((gam-1) * P_old(m_p.UU) / P_old(m_p.RHO), SMALL_NUM);
     const Real dt_Theta  = (Theta_new - Theta_old) / dt;
 
     // TEMPORAL SOURCE TERMS

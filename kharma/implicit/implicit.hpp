@@ -226,7 +226,7 @@ KOKKOS_INLINE_FUNCTION void calc_jacobian(const GRCoordinates& G, const Local& P
 
         // Compute forward derivatives of each residual vs the primitive col
         for (int row = 0; row < nfvar; row++) {
-            jacobian(row, col) = (residual_delta(row) - residual(row)) / (P_delta(col) - P_solver(col) + SMALL);
+            jacobian(row, col) = (residual_delta(row) - residual(row)) / (P_delta(col) - P_solver(col) + SMALL_NUM);
         }
 
         // Reset P_delta in this col

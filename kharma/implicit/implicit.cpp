@@ -170,7 +170,7 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
 
     // Misc other constants for inside the kernel
     const bool am_rank0 = MPIRank0();
-    const Real tiny(SMALL), alpha(1.0);
+    const Real tiny(SMALL_NUM), alpha(1.0);
 
     // We need two sets of emhd_params because we need the relaxation scale
     // at the same state in the implicit source terms
@@ -515,7 +515,7 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
                                         Real f1             = 0.5 * solve_norm();
 
                                         // Compute new step length
-                                        int condition   = f1 > (f0 * (1. - linesearch_eps * lambda) + SMALL);
+                                        int condition   = f1 > (f0 * (1. - linesearch_eps * lambda) + SMALL_NUM);
                                         Real denom      = (f1 - f0 - (fprime0 * lambda)) * condition + (1 - condition);
                                         Real lambda_new = -fprime0 * lambda * lambda / denom / 2.;
                                         lambda          = lambda * (1 - condition) + (condition * lambda_new);

@@ -246,18 +246,18 @@ TaskStatus B_CT::DangerousPtoU(MeshData<Real> *md, IndexDomain domain, bool coar
         for (int i=0; i < md->GetMeshPointer()->GetNumMeshBlocksThisRank(); i++) {
             auto rc = md->GetBlockData(i);
             auto pmb = rc->GetBlockPointer();
-            auto dB_block = rc->PackVariables(std::vector<std::string>{"dB"});
+            auto B_Uf_block = rc->PackVariables(std::vector<std::string>{"cons.fB"});
             if (pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::user) {
-                pmb->par_for("dB_boundary", bf2.ks, bf2.ke, bf2.is, bf2.ie,
+                pmb->par_for("B_Uf_boundary", bf2.ks, bf2.ke, bf2.is, bf2.ie,
                     KOKKOS_LAMBDA (const int &k, const int &i) {
-                        dB_block(F2, 0, k, bf2.js, i) = 0.;
+                        B_Uf_block(F2, 0, k, bf2.js, i) = 0.;
                     }
                 );
             }
             if (pmb->boundary_flag[BoundaryFace::outer_x2] == BoundaryFlag::user) {
-                pmb->par_for("dB_boundary", bf2.ks, bf2.ke, bf2.is, bf2.ie,
+                pmb->par_for("B_Uf_boundary", bf2.ks, bf2.ke, bf2.is, bf2.ie,
                     KOKKOS_LAMBDA (const int &k, const int &i) {
-                        dB_block(F2, 0, k, bf2.je, i) = 0.;
+                        B_Uf_block(F2, 0, k, bf2.je, i) = 0.;
                     }
                 );
             }
@@ -265,6 +265,7 @@ TaskStatus B_CT::DangerousPtoU(MeshData<Real> *md, IndexDomain domain, bool coar
     }
 
     // Also recover conserved B at centers, just in case
+    // TODO would calling UtoP be more stable?
     const IndexRange3 bc = KDomain::GetRange(md, domain, CC, coarse);
     pmb0->par_for("UtoP_B_centerPtoU", block.s, block.e, 0, NVEC-1, bc.ks, bc.ke, bc.js, bc.je, bc.is, bc.ie,
         KOKKOS_LAMBDA (const int &b, const int &v, const int &k, const int &j, const int &i) {

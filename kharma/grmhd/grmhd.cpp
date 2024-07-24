@@ -339,7 +339,7 @@ Real EstimateRadiativeTimestep(MeshBlockData<Real> *rc)
         KOKKOS_LAMBDA(const int& k, const int& j, const int& i,
                       typename Kokkos::MinMax<Real>::value_type& lminmax) {
 
-            double light_phase_speed = SMALL;
+            double light_phase_speed = SMALL_NUM;
             double dt_light_local = 0.;
 
             if (phase_speed) {
@@ -359,7 +359,7 @@ Real EstimateRadiativeTimestep(MeshBlockData<Real> *rc)
 
                         light_phase_speed = m::max(cplus,cminus);
                     } else {
-                        light_phase_speed = SMALL;
+                        light_phase_speed = SMALL_NUM;
                     }
 
                     dt_light_local += 1./(dx[mu]/light_phase_speed);

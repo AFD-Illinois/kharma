@@ -85,7 +85,7 @@ KOKKOS_INLINE_FUNCTION Real reduction_var<Var::beta>(REDUCE_FUNCTION_ARGS)
 {
     FourVectors Dtmp;
     GRMHD::calc_4vecs(G, P, m_p, k, j, i, Loci::center, Dtmp);
-    return ((gam - 1) * P(m_p.UU, k, j, i))/(0.5*(dot(Dtmp.bcon, Dtmp.bcov) + SMALL));
+    return ((gam - 1) * P(m_p.UU, k, j, i))/(0.5*(dot(Dtmp.bcon, Dtmp.bcov) + SMALL_NUM));
 }
 
 // Accretion rates: return a zone's contribution to the surface integral
