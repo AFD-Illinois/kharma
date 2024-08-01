@@ -485,6 +485,7 @@ TaskStatus NormalizeBField(MeshData<Real> *md, ParameterInput *pin)
     } else {
         beta_min = MPIReduce_once(MinBeta(md), MPI_MIN);
     }
+    Real norm = m::sqrt(beta_min/desired_beta_min);
 
     if (MPIRank0() && verbose > 0) {
         if (beta_calc_legacy) {
@@ -492,14 +493,16 @@ TaskStatus NormalizeBField(MeshData<Real> *md, ParameterInput *pin)
             std::cout << "Pressure max pre-norm: " << p_max << std::endl;
         }
         std::cout << "Beta min pre-norm: " << beta_min << std::endl;
+        std::cout << "Normalizing by: " << norm << std::endl;
     }
 
     // Then normalize B by sqrt(beta/beta_min)
     if (beta_min > 0) {
-        Real norm = m::sqrt(beta_min/desired_beta_min);
-        for (auto &pmb : pmesh->block_list) {
-            auto& rc = pmb->meshblock_data.Get();
-            KHARMADriver::Scale(std::vector<std::string>{"prims.B"}, rc.get(), norm);
+        if (pmesh->packages.AllPackages().count("B_CT")) {
+            KHARMADriver::ScaleFace(std::vector<std::string>{"cons.fB"}, md, norm);
+            B_CT::MeshUtoP(md, IndexDomain::entire);
+        } else {
+            KHARMADriver::Scale(std::vector<std::string>{"prims.B", "cons.B"}, md, norm);
         }
     } // else yell?
 

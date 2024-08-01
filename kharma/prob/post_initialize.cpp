@@ -80,7 +80,7 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart)
             KBoundaries::FreezeDirichlet(md);
             KHARMADriver::SyncAllBounds(md);
 
-            // Then init B field on each block...
+            // Then init B field over the mesh...
             SeedBField(md.get(), pin);
 
             // If we're doing a torus problem or explicitly ask for it,
