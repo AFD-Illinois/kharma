@@ -62,7 +62,7 @@ class PoissonEquation {
     {
         using namespace parthenon;
         const int ndim = md->GetMeshPointer()->ndim;
-        IndexRange3 bd = KDomain::GetRange(md, IndexDomain::interior, 0, 1);
+        IndexRange3 bd = KDomain::GetRange(md, IndexDomain::interior);
 
         using TE = parthenon::TopologicalElement;
         constexpr TE te = TE::CC;
@@ -97,11 +97,11 @@ class PoissonEquation {
     }
 
     template <class var_t>
-    static parthenon::TaskStatus
-    CalculateFluxes(std::shared_ptr<parthenon::MeshData<Real>> &md)
+    static parthenon::TaskStatus CalculateFluxes(std::shared_ptr<parthenon::MeshData<Real>> &md)
     {
         using namespace parthenon;
-        const int ndim = md->GetMeshPointer()->ndim;
+        auto pmesh = md->GetMeshPointer();
+        const int ndim = pmesh->ndim;
         IndexRange3 bd = KDomain::GetRange(md, IndexDomain::interior, 0, 1);
 
         using TE = parthenon::TopologicalElement;
@@ -135,23 +135,51 @@ class PoissonEquation {
                 }
             }
         );
+
+        // Make sure B on poles is zero
+        auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
+        if (pmb0->coords.coords.is_spherical()) {
+            for (auto rc : md->GetAllBlockData()) {
+                auto pmb = rc->GetBlockPointer();
+                auto desc =
+                    parthenon::MakePackDescriptor<var_t>(rc.get(), {}, {PDOpt::WithFluxes});
+                auto pack = desc.GetPack(rc.get());
+                const IndexRange3 bc = KDomain::GetRange(md, IndexDomain::entire, F2);
+                const IndexRange3 bi2 = KDomain::GetRange(md, IndexDomain::interior, F2);
+                if (pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::user) {
+                    pmb->par_for("dB_boundary", bc.ks, bc.ke, bc.js, bi2.js, bc.is, bc.ie,
+                        KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+                            pack.flux(0, X2DIR, var_t(), k, j, i) = 0.;
+                        }
+                    );
+                }
+                if (pmb->boundary_flag[BoundaryFace::outer_x2] == BoundaryFlag::user) {
+                    pmb->par_for("dB_boundary", bc.ks, bc.ke, bi2.je, bc.je, bc.is, bc.ie,
+                        KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+                            pack.flux(0, X2DIR, var_t(), k, j, i) = 0.;
+                        }
+                    );
+                }
+            }
+        }
+
         return TaskStatus::complete;
     }
 
     // Calculate A in_t = out_t (in the region covered by md) for a given set of fluxes
     // calculated with in_t (which have possibly been corrected at coarse fine boundaries)
     template <class in_t, class out_t>
-    static parthenon::TaskStatus
-    FluxMultiplyMatrix(std::shared_ptr<parthenon::MeshData<Real>> &md)
+    static parthenon::TaskStatus FluxMultiplyMatrix(std::shared_ptr<parthenon::MeshData<Real>> &md)
     {
         using namespace parthenon;
-        const int ndim = md->GetMeshPointer()->ndim;
-        IndexRange3 bd = KDomain::GetRange(md, IndexDomain::interior, 0, 1);
+        auto pmesh = md->GetMeshPointer();
+        const int ndim = pmesh->ndim;
+        IndexRange3 bd = KDomain::GetRange(md, IndexDomain::interior);
 
         using TE = parthenon::TopologicalElement;
         constexpr TE te = TE::CC;
 
-        auto pkg = md->GetMeshPointer()->packages.Get("B_CleanupGMG");
+        auto pkg = pmesh->packages.Get("B_CleanupGMG");
         const auto alpha = pkg->Param<Real>("diagonal_alpha");
 
         int nblocks = md->NumBlocks();
@@ -185,6 +213,43 @@ class PoissonEquation {
                 }
             }
         );
+
+        // Make sure divB on outflows is 0
+        // Our outflow conditions guarantee divergence-free last zones, so we shouldn't clean for them
+        // TODO only covers x1 for now!
+        const IndexRange3 bc = KDomain::GetRange(md, IndexDomain::entire, te);
+        const IndexRange3 bic = KDomain::GetRange(md, IndexDomain::interior, te);
+        if (pmesh->packages.Get("Boundaries")->Param<std::string>("inner_x1") == "outflow") {
+            for (auto rc : md->GetAllBlockData()) {
+                auto pmb = rc->GetBlockPointer();
+                auto desc =
+                    parthenon::MakePackDescriptor<out_t>(rc.get());
+                auto pack = desc.GetPack(rc.get());
+                if (pmb->boundary_flag[BoundaryFace::inner_x1] == BoundaryFlag::user) {
+                    pmb->par_for("lap_boundary", bc.ks, bc.ke, bc.js, bc.je, bc.is, bic.is,
+                        KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+                            pack(0, te, out_t(), k, j, i) = 0.;
+                        }
+                    );
+                }
+            }
+        }
+        if (pmesh->packages.Get("Boundaries")->Param<std::string>("outer_x1") == "outflow") {
+            for (auto rc : md->GetAllBlockData()) {
+                auto pmb = rc->GetBlockPointer();
+                auto desc =
+                    parthenon::MakePackDescriptor<out_t>(rc.get());
+                auto pack = desc.GetPack(rc.get());
+                if (pmb->boundary_flag[BoundaryFace::outer_x1] == BoundaryFlag::user) {
+                    pmb->par_for("lap_boundary", bc.ks, bc.ke, bc.js, bc.je, bic.ie, bc.ie,
+                        KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+                            pack(0, te, out_t(), k, j, i) = 0.;
+                        }
+                    );
+                }
+            }
+        }
+
         return TaskStatus::complete;
     }
 };

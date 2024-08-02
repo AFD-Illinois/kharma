@@ -219,21 +219,27 @@ TaskStatus B_CT::DangerousPtoU(MeshData<Real> *md, IndexDomain domain, bool coar
 
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
     // Average the primitive vals to faces and multiply by gdet
-    const IndexRange3 bf1 = KDomain::GetRange(md, domain, F1, coarse);
+    const IndexRange3 bf1 = (domain == IndexDomain::entire) ?
+                            KDomain::GetRange(md, domain, F1, coarse, 1, 0) :
+                            KDomain::GetRange(md, domain, F1, coarse);
     pmb0->par_for("PtoU_B_F1", block.s, block.e, bf1.ks, bf1.ke, bf1.js, bf1.je, bf1.is, bf1.ie,
         KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i) {
             const auto& G = B_Uf.GetCoords(b);
             B_Uf(b, F1, 0, k, j, i) = G.gdet(Loci::face1, j, i) * (B_P(b, V1, k, j, i-1) + B_P(b, V1, k, j, i)) / 2;
         }
     );
-    const IndexRange3 bf2 = KDomain::GetRange(md, domain, F2, coarse);
+    const IndexRange3 bf2 = (domain == IndexDomain::entire) ?
+                            KDomain::GetRange(md, domain, F2, coarse, 1, 0) :
+                            KDomain::GetRange(md, domain, F2, coarse);
     pmb0->par_for("PtoU_B_F2", block.s, block.e, bf2.ks, bf2.ke, bf2.js, bf2.je, bf2.is, bf2.ie,
         KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i) {
             const auto& G = B_Uf.GetCoords(b);
             B_Uf(b, F2, 0, k, j, i) = G.gdet(Loci::face2, j, i) * (B_P(b, V2, k, j-1, i) + B_P(b, V2, k, j, i)) / 2;
         }
     );
-    const IndexRange3 bf3 = KDomain::GetRange(md, domain, F3, coarse);
+    const IndexRange3 bf3 = (domain == IndexDomain::entire) ?
+                            KDomain::GetRange(md, domain, F3, coarse, 1, 0) :
+                            KDomain::GetRange(md, domain, F3, coarse);
     pmb0->par_for("PtoU_B_F3", block.s, block.e, bf3.ks, bf3.ke, bf3.js, bf3.je, bf3.is, bf3.ie,
         KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i) {
             const auto& G = B_Uf.GetCoords(b);
@@ -246,18 +252,20 @@ TaskStatus B_CT::DangerousPtoU(MeshData<Real> *md, IndexDomain domain, bool coar
         for (int i=0; i < md->GetMeshPointer()->GetNumMeshBlocksThisRank(); i++) {
             auto rc = md->GetBlockData(i);
             auto pmb = rc->GetBlockPointer();
+            const IndexRange3 be = KDomain::GetRange(md, IndexDomain::entire, coarse);
+            const IndexRange3 bi2 = KDomain::GetRange(md, IndexDomain::interior, F2, coarse);
             auto B_Uf_block = rc->PackVariables(std::vector<std::string>{"cons.fB"});
             if (pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::user) {
-                pmb->par_for("B_Uf_boundary", bf2.ks, bf2.ke, bf2.is, bf2.ie,
+                pmb->par_for("B_Uf_boundary", be.ks, be.ke, be.is, be.ie,
                     KOKKOS_LAMBDA (const int &k, const int &i) {
-                        B_Uf_block(F2, 0, k, bf2.js, i) = 0.;
+                        B_Uf_block(F2, 0, k, bi2.js, i) = 0.;
                     }
                 );
             }
             if (pmb->boundary_flag[BoundaryFace::outer_x2] == BoundaryFlag::user) {
-                pmb->par_for("B_Uf_boundary", bf2.ks, bf2.ke, bf2.is, bf2.ie,
+                pmb->par_for("B_Uf_boundary", be.ks, be.ke, be.is, be.ie,
                     KOKKOS_LAMBDA (const int &k, const int &i) {
-                        B_Uf_block(F2, 0, k, bf2.je, i) = 0.;
+                        B_Uf_block(F2, 0, k, bi2.je, i) = 0.;
                     }
                 );
             }
