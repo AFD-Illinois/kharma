@@ -87,7 +87,8 @@ void DecideActiveBlocksAndBoundaryConditions(Mesh *pmesh, const SimTime &tm, boo
  * Decide whether or not to progress in the V cycle
  * 
  */
-TaskStatus DecideToSwitch(MeshData<Real> *md, const SimTime &tm, bool &switch_zone);
+//TaskStatus DecideToSwitch(MeshData<Real> *md, const SimTime &tm, bool &switch_zone);
+void DecideToSwitch(Mesh *pmesh, const SimTime &tm, bool &switch_zone);
 
 /**
  * Decide which blocks are active for the next step and progress in the V cycle, in order to determine dt

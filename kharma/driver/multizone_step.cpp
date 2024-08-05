@@ -68,6 +68,9 @@ TaskCollection KHARMADriver::MakeMultizoneTaskCollection(BlockList_t &blocks, in
     bool is_active[num_blocks]; // = {false, false, true};
     bool apply_boundary_condition[num_blocks][BOUNDARY_NFACES];
 
+    bool switch_zone = false;
+    if (stage == 1)
+        Multizone::DecideToSwitch(pmesh, tm, switch_zone);
     Multizone::DecideActiveBlocksAndBoundaryConditions(pmesh, tm, is_active, apply_boundary_condition, stage == 1);
 
     // TaskCollections are a collection of TaskRegions.
@@ -112,7 +115,6 @@ TaskCollection KHARMADriver::MakeMultizoneTaskCollection(BlockList_t &blocks, in
     // TODO except the Copy they can be run on step 1 only
     if (stage == 1) {
         auto &base = pmesh->mesh_data.Get();
-        pmesh->mesh_data.Add(integrator->stage_name[stage]);
         // Fluxes
         pmesh->mesh_data.Add("dUdt");
         for (int i = 1; i < integrator->nstages; i++)
@@ -309,34 +311,34 @@ TaskCollection KHARMADriver::MakeMultizoneTaskCollection(BlockList_t &blocks, in
 
     EndFlag();
     
-    Flag("MakeTaskCollection::timestep");
-    // HYERIN (06/20/24) splitting this part to the end for now
-    // Switch region: decide if we want to switch zones
-    TaskRegion &switch_region = tc.AddRegion(1);
-    auto &tl = switch_region[0];
-    auto &md_temp = pmesh->mesh_data.Add(integrator->stage_name[stage]);
-    bool switch_zone = false;
-    auto t_switch = t_none;
-    if (integrator->nstages == stage) {
-        t_switch = tl.AddTask(t_none, Multizone::DecideToSwitch, md_temp.get(), tm, switch_zone);
-    }
-
-    // Timestep region: calculate timestep based on the newly updated active zones
-    //TaskRegion &timestep_region = tc.AddRegion(num_partitions);
-    //auto t_new_active = t_none;
-    //// Estimate next time step based on ctop
-    //for (int i = 0; i < num_partitions; i++) {
-    //    auto &tl = timestep_region[i];
-    //    //if (switch_zone) { // take a next step and re-evaluate the active block
-    //        t_new_active = tl.AddTask(t_none, Multizone::DecideNextActiveBlocks, md_temp.get(), tm, i, is_active[i], switch_zone);
-    //    //}
-    //    if (is_active[i]) {
-    //        auto &base = pmesh->mesh_data.GetOrAdd("base", i);
-    //    //    Update::EstimateTimestep<MeshData<Real>>(base.get());
-    //        auto t_new_dt =
-    //            tl.AddTask(t_new_active, Update::EstimateTimestep<MeshData<Real>>, base.get());
-    //    }
+    //Flag("MakeTaskCollection::timestep");
+    //// HYERIN (06/20/24) splitting this part to the end for now
+    //// Switch region: decide if we want to switch zones
+    //TaskRegion &switch_region = tc.AddRegion(1);
+    //auto &tl = switch_region[0];
+    //auto &md_temp = pmesh->mesh_data.Add(integrator->stage_name[stage]);
+    //bool switch_zone = false;
+    //auto t_switch = t_none;
+    //if (integrator->nstages == stage) {
+    //    t_switch = tl.AddTask(t_none, Multizone::DecideToSwitch, md_temp.get(), tm, switch_zone);
     //}
+
+    //// Timestep region: calculate timestep based on the newly updated active zones
+    ////TaskRegion &timestep_region = tc.AddRegion(num_partitions);
+    ////auto t_new_active = t_none;
+    ////// Estimate next time step based on ctop
+    ////for (int i = 0; i < num_partitions; i++) {
+    ////    auto &tl = timestep_region[i];
+    ////    //if (switch_zone) { // take a next step and re-evaluate the active block
+    ////        t_new_active = tl.AddTask(t_none, Multizone::DecideNextActiveBlocks, md_temp.get(), tm, i, is_active[i], switch_zone);
+    ////    //}
+    ////    if (is_active[i]) {
+    ////        auto &base = pmesh->mesh_data.GetOrAdd("base", i);
+    ////    //    Update::EstimateTimestep<MeshData<Real>>(base.get());
+    ////        auto t_new_dt =
+    ////            tl.AddTask(t_new_active, Update::EstimateTimestep<MeshData<Real>>, base.get());
+    ////    }
+    ////}
     
 
     EndFlag();
