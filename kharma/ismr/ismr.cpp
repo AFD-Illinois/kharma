@@ -49,7 +49,7 @@ std::shared_ptr<KHARMAPackage> ISMR::Initialize(ParameterInput *pin, std::shared
 
     // ISMR cache: not evolved, immediately copied to fluid state after averaging
     // Must be total size of variable list
-    int nvar = KHARMA::PackDimension(packages.get(), Metadata::WithFluxes);
+    int nvar = StateDescriptor::CreateResolvedStateDescriptor(*packages)->GetPackDimension(Metadata::WithFluxes);
     std::vector<int> s_avg({nvar});
     auto m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy}, s_avg);
     pkg->AddField("ismr.vars_avg", m);

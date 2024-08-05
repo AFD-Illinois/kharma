@@ -150,7 +150,7 @@ std::shared_ptr<KHARMAPackage> Flux::Initialize(ParameterInput *pin, std::shared
 
     // We can't just use GetVariables or something since there's no mesh yet.
     // That's what this function is for.
-    int nvar = KHARMA::PackDimension(packages.get(), Metadata::WithFluxes);
+    int nvar = StateDescriptor::CreateResolvedStateDescriptor(*packages)->GetPackDimension(Metadata::WithFluxes);
     std::vector<int> s_flux({nvar});
     if (packages->Get("Globals")->Param<int>("verbose") > 2)
         std::cout << "Allocating fluxes for " << nvar << " variables" << std::endl;

@@ -456,7 +456,7 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput> &pin)
     // Load the implicit package last, if there are *any* variables that need implicit evolution
     // This lets us just count by flag, rather than checking all the possible parameters that would
     // trigger this
-    int n_implicit = PackDimension(packages.get(), Metadata::GetUserFlag("Implicit"));
+    int n_implicit = StateDescriptor::CreateResolvedStateDescriptor(*packages)->GetPackDimension(Metadata::GetUserFlag("Implicit"));
     if (n_implicit > 0) {
         KHARMA::AddPackage(packages, Implicit::Initialize, pin.get());
     }

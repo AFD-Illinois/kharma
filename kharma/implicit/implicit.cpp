@@ -124,7 +124,7 @@ std::shared_ptr<KHARMAPackage> Implicit::Initialize(ParameterInput *pin, std::sh
     bool save_residual = pin->GetOrAddBoolean("implicit", "save_residual", false);
     params.Add("save_residual", save_residual);
     if (save_residual) {
-        int nvars_implicit  = KHARMA::PackDimension(packages.get(), Metadata::GetUserFlag("Implicit"));
+        int nvars_implicit  = StateDescriptor::CreateResolvedStateDescriptor(*packages)->GetPackDimension(Metadata::GetUserFlag("Implicit"));
 
         std::vector<int> s_vars_implicit({nvars_implicit});
         Metadata m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy}, s_vars_implicit);
