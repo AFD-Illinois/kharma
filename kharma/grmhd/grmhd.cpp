@@ -198,6 +198,7 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
         m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
         pkg->AddField("ismr_rho_avg", m);
         pkg->AddField("ismr_u_avg", m);
+        m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy, Metadata::Vector}, s_vector);
         pkg->AddField("ismr_uvec_avg", m);
     }
 
