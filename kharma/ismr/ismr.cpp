@@ -47,6 +47,10 @@ std::shared_ptr<KHARMAPackage> ISMR::Initialize(ParameterInput *pin, std::shared
     uint nlevels = (uint) pin->GetOrAddInteger("ismr", "nlevels", 1);
     params.Add("nlevels", nlevels);
 
+    // Average conserved variables to ensure conservation, unless doing EMHD
+    // where we can't find the primitive vars again!
+    params.Add("average_conserved", (bool) !packages->AllPackages().count("EMHD"));
+
     // ISMR cache: not evolved, immediately copied to fluid state after averaging
     // Must be total size of variable list
     int nvar = KHARMA::PackDimension(packages.get(), Metadata::WithFluxes);
@@ -76,15 +80,16 @@ TaskStatus ISMR::DerefinePoles(MeshData<Real> *md)
     // TODO this routine only applies to polar boundaries for now.
     auto pmesh = md->GetMeshPointer();
     const uint nlevels = pmesh->packages.Get("ISMR")->Param<uint>("nlevels");
+    const bool average_conserved = pmesh->packages.Get("ISMR")->Param<bool>("average_conserved");
+    auto to_average = (average_conserved) ? std::vector<MetadataFlag>{Metadata::Conserved, Metadata::Cell} :
+                                            std::vector<MetadataFlag>{Metadata::GetUserFlag("Primitive"), Metadata::Cell};
 
     // Figure out indices
     int ng = Globals::nghost;
     for (auto &pmb : pmesh->block_list) {
         auto& rc = pmb->meshblock_data.Get();
-        PackIndexMap cons_map, prims_map;
-        auto vars = rc->PackVariables(std::vector<MetadataFlag>{Metadata::WithFluxes}, cons_map);
-        auto P = rc->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("Primitive")}, prims_map);
-        VarMap m_u(cons_map, true), m_p(prims_map, false);
+        PackIndexMap to_avg_map;
+        auto vars = rc->PackVariables(to_average, to_avg_map);
         auto vars_avg = rc->PackVariables(std::vector<std::string>{"ismr.vars_avg"});
         const int nvar = vars.GetDim(4);
         for (int i = 0; i < BOUNDARY_NFACES; i++) {
@@ -132,18 +137,38 @@ TaskStatus ISMR::DerefinePoles(MeshData<Real> *md)
                     }
                 );
 
-                // UtoP for the GRMHD variables
-                const auto& G = pmb->coords;
-                const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
-                const Floors::Prescription floors = pmb->packages.Get("Floors")->Param<Floors::Prescription>("prescription");
-                pmb->par_for("DerefinePoles_UtoP", bCC.ks, bCC.ke, j_p.s, j_p.e, bCC.is, bCC.ie,
-                    KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-                        const int j_c = j + ((binner) ? 0 : -1); // cell center
-                        Inverter::u_to_p<Inverter::Type::kastaun>(G, vars, m_u, gam, k, j_c, i, P, m_p, Loci::center,
-                                            floors, 8, 1e-8);
-                    }
-                );
-                // TODO there SHOULD be no need for floors here. Should test or prove this is always true
+                if (average_conserved) {
+                    // UtoP for the GRMHD variables
+                    PackIndexMap prims_map;
+                    auto P = rc->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("Primitive"), Metadata::Cell}, prims_map);
+                    VarMap m_u(to_avg_map, true), m_p(prims_map, false);
+                    const auto& G = pmb->coords;
+                    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
+                    const Floors::Prescription floors = pmb->packages.Get("Floors")->Param<Floors::Prescription>("prescription");
+                    pmb->par_for("DerefinePoles_UtoP", bCC.ks, bCC.ke, j_p.s, j_p.e, bCC.is, bCC.ie,
+                        KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+                            const int j_c = j + ((binner) ? 0 : -1); // cell center
+                            Inverter::u_to_p<Inverter::Type::kastaun>(G, vars, m_u, gam, k, j_c, i, P, m_p, Loci::center,
+                                                floors, 8, 1e-8);
+                        }
+                    );
+                    // TODO there SHOULD be no need for floors here. Should test or prove this is always true
+                } else {
+                    // PtoU for the GRMHD variables, accommodate EMHD
+                    const EMHD::EMHD_parameters& emhd_params = EMHD::GetEMHDParameters(pmb->packages);
+                    PackIndexMap cons_map;
+                    auto U = rc->PackVariables(std::vector<MetadataFlag>{Metadata::Conserved, Metadata::Cell}, cons_map);
+                    VarMap m_p(to_avg_map, false), m_u(cons_map, true);
+                    const auto& G = pmb->coords;
+                    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
+                    const Floors::Prescription floors = pmb->packages.Get("Floors")->Param<Floors::Prescription>("prescription");
+                    pmb->par_for("DerefinePoles_PtoU", bCC.ks, bCC.ke, j_p.s, j_p.e, bCC.is, bCC.ie,
+                        KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+                            const int j_c = j + ((binner) ? 0 : -1); // cell center
+                            Flux::p_to_u_mhd(G, vars, m_p, emhd_params, gam, k, j_c, i, U, m_u);
+                        }
+                    );
+                }
             }
         }
     }
