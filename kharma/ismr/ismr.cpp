@@ -49,7 +49,7 @@ std::shared_ptr<KHARMAPackage> ISMR::Initialize(ParameterInput *pin, std::shared
 
     // Average conserved variables to ensure conservation, unless doing EMHD
     // where we can't find the primitive vars again!
-    params.Add("average_conserved", (bool) !packages->AllPackages().count("EMHD"));
+    params.Add("average_conserved", true); //(bool) !packages->AllPackages().count("EMHD"));
 
     // ISMR cache: not evolved, immediately copied to fluid state after averaging
     // Must be total size of variable list
@@ -148,8 +148,16 @@ TaskStatus ISMR::DerefinePoles(MeshData<Real> *md)
                     pmb->par_for("DerefinePoles_UtoP", bCC.ks, bCC.ke, j_p.s, j_p.e, bCC.is, bCC.ie,
                         KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
                             const int j_c = j + ((binner) ? 0 : -1); // cell center
+                            // The usual inverter is not EMHD-aware, so it's going to dump all of T into the
+                            // ideal GRMHD fluid variables
                             Inverter::u_to_p<Inverter::Type::kastaun>(G, vars, m_u, gam, k, j_c, i, P, m_p, Loci::center,
                                                 floors, 8, 1e-8);
+                            // Consistent with that, we zero out the EMHD extra variables.  This switches theories to
+                            // evolving ideal GRMHD in ISMR region, but conserves the components of T themselves
+                            if (m_u.Q >= 0) vars(m_u.Q, k, j_c, i) = 0.;
+                            if (m_p.Q >= 0) P(m_p.Q, k, j_c, i) = 0.;
+                            if (m_u.DP >= 0) vars(m_u.DP, k, j_c, i) = 0.;
+                            if (m_p.DP >= 0) P(m_p.DP, k, j_c, i) = 0.;
                         }
                     );
                     // TODO there SHOULD be no need for floors here. Should test or prove this is always true
