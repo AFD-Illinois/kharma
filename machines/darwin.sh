@@ -132,7 +132,7 @@ if [[ ($HOSTNAME == "cn"* || $HOSTNAME == "darwin"*) &&
   MPI_NUM_PROCS=${MPI_NUM_PROCS:-$MPI_NUM_PROCS_D}
 
   # Runtime
-  MPI_EXE="mpirun"
+  #MPI_EXE="mpirun"
   # Lead MPI to water
-  MPI_EXTRA_ARGS="--map-by ppr:${MPI_NUM_PROCS}:node:pe=$(($NPROC / $MPI_NUM_PROCS / $NODE_SLICE))"
+  #MPI_EXTRA_ARGS="--map-by ppr:${MPI_NUM_PROCS}:node:pe=$(($NPROC / $MPI_NUM_PROCS / $NODE_SLICE))"
 fi
