@@ -544,12 +544,12 @@ void CancelBoundaryU3(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
                     // Finally, recalculate cmax/min using cell centers and updated vars, apparently
                     // it can change a lot during this op
                     FourVectors Dtmp;
-                    GRMHD::calc_4vecs(G, P, m_p, jf, i, Loci::center, Dtmp);
-                    Flux::vchar(G, P, m_p, Dtmp, gam, emhd_params, k, jf, i, Loci::center, 1,
+                    GRMHD::calc_4vecs(G, P, m_p, k, jf, i, Loci::center, Dtmp);
+                    Flux::vchar_global(G, P, m_p, Dtmp, gam, emhd_params, k, jf, i, Loci::center, 1,
                                 cmax(0, k, jf, i), cmin(0, k, jf, i));
-                    Flux::vchar(G, P, m_p, Dtmp, gam, emhd_params, k, jf, i, Loci::center, 2,
+                    Flux::vchar_global(G, P, m_p, Dtmp, gam, emhd_params, k, jf, i, Loci::center, 2,
                                 cmax(1, k, jf, i), cmin(1, k, jf, i));
-                    Flux::vchar(G, P, m_p, Dtmp, gam, emhd_params, k, jf, i, Loci::center, 3,
+                    Flux::vchar_global(G, P, m_p, Dtmp, gam, emhd_params, k, jf, i, Loci::center, 3,
                                 cmax(2, k, jf, i), cmin(2, k, jf, i));
                 }
             );
@@ -630,12 +630,12 @@ void CancelBoundaryT3(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
                     // Finally, recalculate cmax/min using cell centers and updated vars, apparently
                     // it can change a lot during this op
                     FourVectors Dtmp;
-                    GRMHD::calc_4vecs(G, P, m_p, jf, i, Loci::center, Dtmp);
-                    Flux::vchar(G, P, m_p, Dtmp, gam, emhd_params, k, jf, i, Loci::center, 1,
+                    GRMHD::calc_4vecs(G, P, m_p, k, jf, i, Loci::center, Dtmp);
+                    Flux::vchar_global(G, P, m_p, Dtmp, gam, emhd_params, k, jf, i, Loci::center, 1,
                                 cmax(0, k, jf, i), cmin(0, k, jf, i));
-                    Flux::vchar(G, P, m_p, Dtmp, gam, emhd_params, k, jf, i, Loci::center, 2,
+                    Flux::vchar_global(G, P, m_p, Dtmp, gam, emhd_params, k, jf, i, Loci::center, 2,
                                 cmax(1, k, jf, i), cmin(1, k, jf, i));
-                    Flux::vchar(G, P, m_p, Dtmp, gam, emhd_params, k, jf, i, Loci::center, 3,
+                    Flux::vchar_global(G, P, m_p, Dtmp, gam, emhd_params, k, jf, i, Loci::center, 3,
                                 cmax(2, k, jf, i), cmin(2, k, jf, i));
 
                 }
