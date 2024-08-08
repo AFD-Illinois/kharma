@@ -141,16 +141,18 @@ for k in range(NVAR):
             fail = 1
 
 # MAKE PLOTS
-fig = plt.figure(figsize=(5,5))
+fig = plt.figure(figsize=(3,3))
 
 ax = fig.add_subplot(1,1,1)
 for k in range(NVAR):
     if abs(dvar[k]) != 0.:
         ax.plot(RES, L1[:,k], marker='s', label=VARS[k])
 
-norm = L1[0,0]*RES[0]*RES[0]
-if norm < 1e-4:
-    norm = L1[0,3]*RES[0]*RES[0]
+if "alfven" in SHORT:
+    norm = L1[0,4]*RES[0]*RES[0]
+else:
+    norm = L1[0,0]*RES[0]*RES[0]
+
 xmin = RES[0]/2.
 xmax = RES[-1]*2.
 ax.plot([xmin, xmax], norm*np.asarray([xmin, xmax])**-2., color='k', linestyle='--', label='N^-2')
@@ -158,8 +160,9 @@ ax.plot([xmin, xmax], norm*np.asarray([xmin, xmax])**-2., color='k', linestyle='
 plt.xscale('log', base=2); plt.yscale('log')
 plt.xlim([RES[0]/np.sqrt(2.), RES[-1]*np.sqrt(2.)])
 plt.xlabel('N'); plt.ylabel('L1')
-plt.title("{}".format(LONG))
+#plt.title("{}".format(LONG))
 plt.legend(loc=1)
-plt.savefig("convergence_modes_{}_{}.png".format(DIM,SHORT))
+plt.subplots_adjust(left=0.25, bottom=0.18, top=0.97, right=0.97)
+plt.savefig("convergence_modes_{}_{}.png".format(DIM,SHORT), dpi=300)
 
 exit(fail)

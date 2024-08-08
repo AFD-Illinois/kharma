@@ -174,10 +174,6 @@ elif [[ "$ARGS" == *"cuda"* ]]; then
     echo "Dry-running the nvcc wrapper with $CXXFLAGS"
   fi
   export NVCC_WRAPPER_DEFAULT_COMPILER="$CXX_NATIVE"
-  # Generally Kokkos sets this, so we don't need to
-  #export CXXFLAGS="--expt-relaxed-constexpr $CXXFLAGS"
-  # New NVHPC complains if we don't set this
-  export NVHPC_CUDA_HOME=$CUDA_HOME
   OUTER_LAYOUT="MANUAL1D_LOOP"
   INNER_LAYOUT="TVR_INNER_LOOP"
   ENABLE_OPENMP="ON"

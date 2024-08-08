@@ -434,7 +434,6 @@ TaskStatus ReadIharmRestart(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterI
     // Interpolate on the host side & copy into the mirror Views
     // Nearest-neighbor interpolation is currently only used when grids exactly correspond -- otherwise, linear interpolation is used
     // to minimize the resulting B field divergence.
-    // NOTE: KOKKOS USES < not <=!! Therefore the RangePolicy below will seem like it is too big
     if (regrid_only) {
         // TODO Kokkos calls here had problems with CUDA, reintroduce/fix
         // OpenMP here conflicts with Kokkos parallel in some cases, so we're stuck

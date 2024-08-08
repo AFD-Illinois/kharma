@@ -82,6 +82,14 @@ std::shared_ptr<KHARMAPackage> KHARMADriver::Initialize(ParameterInput *pin, std
     // so we define the flags here to avoid loading order issues
     Metadata::AddUserFlag("Implicit");
     Metadata::AddUserFlag("Explicit");
+    // Add a flag if we wish to use ideal variables explicitly evolved as guess for implicit update.
+    // GRIM uses the fluid state of the previous (sub-)step.
+    // The logic here is that the non-ideal variables do not significantly contribute to the
+    // stress-energy tensor. We can explicitly update the ideal MHD variables and hope that this 
+    // takes us to a region in the parameter space of state variables that 
+    // is close to the true solution. The corrections obtained from the implicit update would then
+    // be small corrections.
+    Metadata::AddUserFlag("IdealGuess");
 
     // 1. One flag to mark the primitive variables specifically
     // (Parthenon has Metadata::Conserved already)
@@ -90,6 +98,10 @@ std::shared_ptr<KHARMAPackage> KHARMADriver::Initialize(ParameterInput *pin, std
     // Finally, a flag for anything used (and possibly sync'd) during startup,
     // but which should not be evolved (or more importantly, sync'd) during main stepping
     Metadata::AddUserFlag("StartupOnly");
+
+    // This is a flag Parthenon should have eventually, but we'll prototype in KHARMA
+    // Indicate a 1-element face-centered field is split components of a vector
+    Metadata::AddUserFlag("SplitVector");
 
     // Synchronize primitive variables unless we're using the KHARMA driver that specifically doesn't
     // This includes for AMR w/ImEx driver
@@ -286,7 +298,8 @@ TaskID KHARMADriver::AddFOFC(TaskID& t_start, TaskList& tl, MeshData<Real> *md,
     auto pmb0  = md->GetBlockData(0)->GetBlockPointer();
     auto& pkgs = pmb0->packages.AllPackages();
 
-    const Floors::Prescription fofc_floors = pmb0->packages.Get("Flux")->Param<Floors::Prescription>("fofc_prescription");
+    const Floors::Prescription fofc_floors       = pmb0->packages.Get("Flux")->Param<Floors::Prescription>("fofc_prescription");
+    const Floors::Prescription fofc_floors_inner = pmb0->packages.Get("Flux")->Param<Floors::Prescription>("fofc_prescription_inner");
 
     // Populate guess source term with divergence of the existing fluxes
     // NOTE this does not include source terms!  Though, could call them here tbh
@@ -309,7 +322,7 @@ TaskID KHARMADriver::AddFOFC(TaskID& t_start, TaskList& tl, MeshData<Real> *md,
     auto t_guess_Bp = tl.AddTask(t_guess_update, B_FluxCT::MeshUtoP, guess, IndexDomain::entire, false);
     auto t_guess_prims = tl.AddTask(t_guess_Bp, Inverter::MeshUtoP, guess, IndexDomain::entire, false);
     // Check and mark floors
-    auto t_mark_floors = tl.AddTask(t_guess_prims, Floors::DetermineGRMHDFloors, guess, IndexDomain::entire, fofc_floors);
+    auto t_mark_floors = tl.AddTask(t_guess_prims, Floors::DetermineGRMHDFloors, guess, IndexDomain::entire, fofc_floors, fofc_floors_inner);
     // Determine which cells are FOFC in our block
     auto t_mark_fofc = tl.AddTask(t_mark_floors, Flux::MarkFOFC, guess);
     // Sync with neighbor blocks.  This seems to ameliorate an increasing divB on X1 boundaries in GR,
@@ -339,7 +352,7 @@ TaskID KHARMADriver::AddStateUpdate(TaskID& t_start, TaskList& tl, MeshData<Real
                                 md_update);
     auto t_avg_data = t_avg_data_c;
     if (update_face) {
-        t_avg_data = tl.AddTask(t_start, WeightedSumDataFace,
+        t_avg_data = tl.AddTask(t_start, WeightedSumDataFace<MetadataFlag>,
                                 std::vector<MetadataFlag>(flags_face),
                                 md_sub_step_init, md_full_step_init,
                                 integrator->gam0[stage-1], integrator->gam1[stage-1],
@@ -353,7 +366,7 @@ TaskID KHARMADriver::AddStateUpdate(TaskID& t_start, TaskList& tl, MeshData<Real
                                 md_update);
     auto t_update = t_update_c;
     if (update_face) {
-        t_update = tl.AddTask(t_avg_data, WeightedSumDataFace,
+        t_update = tl.AddTask(t_avg_data, WeightedSumDataFace<MetadataFlag>,
                                 std::vector<MetadataFlag>(flags_face),
                                 md_update, md_flux_src,
                                 1.0, integrator->beta[stage-1] * integrator->dt,
@@ -365,6 +378,56 @@ TaskID KHARMADriver::AddStateUpdate(TaskID& t_start, TaskList& tl, MeshData<Real
     auto pmb0  = md_full_step_init->GetBlockData(0)->GetBlockPointer();
     auto& pkgs = pmb0->packages.AllPackages();
     if (!pkgs.at("GRMHD")->Param<bool>("implicit")) {
+        t_copy_prims = tl.AddTask(t_start, Copy<MeshData<Real>>,
+                                    std::vector<MetadataFlag>({Metadata::GetUserFlag("HD"), Metadata::GetUserFlag("Primitive")}),
+                                    md_sub_step_init, md_update);
+    }
+
+    return t_copy_prims | t_update;
+}
+
+TaskID KHARMADriver::AddStateUpdateIdealGuess(TaskID& t_start, TaskList& tl, MeshData<Real> *md_full_step_init,
+                                    MeshData<Real> *md_sub_step_init, MeshData<Real> *md_flux_src, MeshData<Real> *md_update,
+                                    std::vector<MetadataFlag> flags, bool update_face, int stage)
+{
+    // Update variables marked as IdealGuess
+    // Add any proportion of the step start required by the integrator (e.g., RK2)
+    std::vector<MetadataFlag> flags_cell = flags; flags_cell.push_back(Metadata::Cell);
+    std::vector<MetadataFlag> flags_face = flags; flags_face.push_back(Metadata::Face);
+    // TODO splitting this is stupid, but maybe the parallelization actually helps? Eh.
+    auto t_avg_data_c = tl.AddTask(t_start, Update::WeightedSumData<std::vector<MetadataFlag>, MeshData<Real>>,
+                                std::vector<MetadataFlag>(flags_cell),
+                                md_sub_step_init, md_full_step_init,
+                                integrator->gam0[stage-1], integrator->gam1[stage-1],
+                                md_update);
+    auto t_avg_data = t_avg_data_c;
+    if (update_face) {
+        t_avg_data = tl.AddTask(t_start, WeightedSumDataFace<MetadataFlag>,
+                                std::vector<MetadataFlag>(flags_face),
+                                md_sub_step_init, md_full_step_init,
+                                integrator->gam0[stage-1], integrator->gam1[stage-1],
+                                md_update);
+    }
+    // apply du/dt to the result
+    auto t_update_c = tl.AddTask(t_avg_data, Update::WeightedSumData<std::vector<MetadataFlag>, MeshData<Real>>,
+                                std::vector<MetadataFlag>(flags_cell),
+                                md_update, md_flux_src,
+                                1.0, integrator->beta[stage-1] * integrator->dt,
+                                md_update);
+    auto t_update = t_update_c;
+    if (update_face) {
+        t_update = tl.AddTask(t_avg_data, WeightedSumDataFace<MetadataFlag>,
+                                std::vector<MetadataFlag>(flags_face),
+                                md_update, md_flux_src,
+                                1.0, integrator->beta[stage-1] * integrator->dt,
+                                md_update);
+    }
+
+    // We'll be running UtoP after this, which needs a guess in order to converge, so we copy in md_sub_step_init
+    auto t_copy_prims = t_update;
+    auto pmb0  = md_full_step_init->GetBlockData(0)->GetBlockPointer();
+    auto& pkgs = pmb0->packages.AllPackages();
+    if (pkgs.at("GRMHD")->Param<bool>("ideal_guess")) {
         t_copy_prims = tl.AddTask(t_start, Copy<MeshData<Real>>,
                                     std::vector<MetadataFlag>({Metadata::GetUserFlag("HD"), Metadata::GetUserFlag("Primitive")}),
                                     md_sub_step_init, md_update);

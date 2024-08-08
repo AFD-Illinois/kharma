@@ -88,4 +88,16 @@ void FillOutput(MeshBlock *pmb, ParameterInput *pin);
  * Currently just looks for negative density/internal energy
  */
 TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *rc);
+
+/**
+ * Subtract the average phi-component of velocity (U3) next to the pole,
+ * simulating polar velocity advecting together
+ */
+void CancelBoundaryU3(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse);
+
+/**
+ * Same but for the conserved angular momentum T3
+ */
+void CancelBoundaryT3(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse);
+
 }

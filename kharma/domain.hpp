@@ -118,9 +118,9 @@ inline IndexRange3 GetRange(T data, IndexDomain domain, TopologicalElement el=CC
     const IndexRange ibe = cellbounds.GetBoundsI(IndexDomain::entire, el);
     const IndexRange jbe = cellbounds.GetBoundsJ(IndexDomain::entire, el);
     const IndexRange kbe = cellbounds.GetBoundsK(IndexDomain::entire, el);
-    return IndexRange3{(uint) m::max(il.s, ibe.s), (uint) m::min(il.e, ibe.e),
-                       (uint) m::max(jl.s, jbe.s), (uint) m::min(jl.e, jbe.e),
-                       (uint) m::max(kl.s, kbe.s), (uint) m::min(kl.e, kbe.e)};
+    return IndexRange3{m::max(il.s, ibe.s), m::min(il.e, ibe.e),
+                       m::max(jl.s, jbe.s), m::min(jl.e, jbe.e),
+                       m::max(kl.s, kbe.s), m::min(kl.e, kbe.e)};
 }
 template<typename T>
 inline IndexRange3 GetRange(T data, IndexDomain domain, int left_halo, int right_halo, bool coarse=false)
@@ -132,6 +132,28 @@ inline IndexRange3 GetRange(T data, IndexDomain domain, bool coarse)
 {
     return GetRange(data, domain, CC, 0, 0, coarse);
 }
+
+/**
+ * Special range to include domain faces when computing boundaries,
+ * as KHARMA's physical boundary conditions set these
+ */
+template<typename T>
+inline IndexRange3 GetBoundaryRange(T data, IndexDomain domain, TopologicalElement el=CC, bool coarse=false)
+{
+    using KBoundaries::BoundaryDirection;
+    using KBoundaries::BoundaryIsInner;
+    const int bdir = BoundaryDirection(domain);
+    if (el == FaceOf(bdir) ||
+        (el == E1 && (bdir == X2DIR || bdir == X3DIR)) ||
+        (el == E2 && (bdir == X1DIR || bdir == X3DIR)) ||
+        (el == E3 && (bdir == X1DIR || bdir == X2DIR))) {
+        const int binner = BoundaryIsInner(domain);
+        return GetRange(data, domain, el, (binner) ? 0 : -1, (binner) ? 1 : 0, coarse);
+    } else {
+        return GetRange(data, domain, el, 0, 0, coarse);
+    }
+}
+
 /**
  * Get zones which are inside the physical domain, i.e. set by computation or MPI halo sync,
  * not by problem boundary conditions.
@@ -145,23 +167,23 @@ inline IndexRange3 GetPhysicalRange(MeshBlockData<T>* rc)
     const auto pmb = rc->GetBlockPointer();
 
     return IndexRange3{IsPhysicalBoundary(pmb, BoundaryFace::inner_x1)
-                                    ? (uint) bounds.is(IndexDomain::interior)
-                                    : (uint) bounds.is(IndexDomain::entire),
+                                    ? bounds.is(IndexDomain::interior)
+                                    : bounds.is(IndexDomain::entire),
                        IsPhysicalBoundary(pmb, BoundaryFace::outer_x1)
-                                    ? (uint) bounds.ie(IndexDomain::interior)
-                                    : (uint) bounds.ie(IndexDomain::entire),
+                                    ? bounds.ie(IndexDomain::interior)
+                                    : bounds.ie(IndexDomain::entire),
                        IsPhysicalBoundary(pmb, BoundaryFace::inner_x2)
-                                    ? (uint) bounds.js(IndexDomain::interior)
-                                    : (uint) bounds.js(IndexDomain::entire),
+                                    ? bounds.js(IndexDomain::interior)
+                                    : bounds.js(IndexDomain::entire),
                        IsPhysicalBoundary(pmb, BoundaryFace::outer_x2)
-                                    ? (uint) bounds.je(IndexDomain::interior)
-                                    : (uint) bounds.je(IndexDomain::entire),
+                                    ? bounds.je(IndexDomain::interior)
+                                    : bounds.je(IndexDomain::entire),
                        IsPhysicalBoundary(pmb, BoundaryFace::inner_x3)
-                                    ? (uint) bounds.ks(IndexDomain::interior)
-                                    : (uint) bounds.ks(IndexDomain::entire),
+                                    ? bounds.ks(IndexDomain::interior)
+                                    : bounds.ks(IndexDomain::entire),
                        IsPhysicalBoundary(pmb, BoundaryFace::outer_x3)
-                                    ? (uint) bounds.ke(IndexDomain::interior)
-                                    : (uint) bounds.ke(IndexDomain::entire)};
+                                    ? bounds.ke(IndexDomain::interior)
+                                    : bounds.ke(IndexDomain::entire)};
 }
 
 template<typename T>

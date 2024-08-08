@@ -5,7 +5,7 @@
 
 if [[ ($HOSTNAME == "cn"* || $HOSTNAME == "darwin"*) &&
       ("$PWD" == "/projects/jacamar-ci"* || "$PWD" == "/vast"*) ]]; then
-  module purge
+  #module purge
   module load cmake
 
   # Where we're going, we don't need system libraries
@@ -32,9 +32,6 @@ if [[ ($HOSTNAME == "cn"* || $HOSTNAME == "darwin"*) &&
     module load nvhpc
     C_NATIVE="nvc"
     CXX_NATIVE="nvc++"
-    # New NVHPC doesn't like CUDA_HOME
-    export NVHPC_CUDA_HOME="$CUDA_HOME"
-    unset CUDA_HOME
   elif [[ "$ARGS" == *"icc"* ]]; then
     module load intel-classic/2021.3.0
     C_NATIVE=icc
@@ -45,9 +42,6 @@ if [[ ($HOSTNAME == "cn"* || $HOSTNAME == "darwin"*) &&
       module load nvhpc
       C_NATIVE="nvc"
       CXX_NATIVE="nvc++"
-      # New NVHPC doesn't like CUDA_HOME
-      export NVHPC_CUDA_HOME="$CUDA_HOME"
-      unset CUDA_HOME
     else
       module load intel
       C_NATIVE=icx
@@ -57,14 +51,13 @@ if [[ ($HOSTNAME == "cn"* || $HOSTNAME == "darwin"*) &&
 
   # 2. Load accelerator libraries
   if [[ "$ARGS" == *"cuda"* ]]; then
-    module load cuda/12.0.0 nvhpc
-    PREFIX_PATH=$NVHPC_ROOT
-    # A primary purpose of Darwin is profiling, add it to all binaries
-    NVCC_WRAPPER_CUDA_EXTRA_FLAGS="--generate-line-info"
-    # Could experiment with:
-    # 1. -maxrregcount 72, limit registers to increase occupancy
-    # ...
-    # For MPI if no CUDA-aware version
+    module load cuda/12.3.1
+    # Newer NVHPC wants us to leave it alone
+    #unset CUDA_HOME
+    # For manually exporting CUDA and COMM_LIBS
+    #export NVHPC_CUDA_HOME="$CUDA_HOME"
+    #export NVHPC_COMM_LIBS_HOME=/projects/darwin-nv/rhel8/aarch64/packages/nvhpc/Linux_aarch64/24.1/comm_libs
+    #PREFIX_PATH=$NVHPC_ROOT
     #EXTRA_FLAGS="-DPARTHENON_ENABLE_HOST_COMM_BUFFERS=ON $EXTRA_FLAGS"
   elif [[ "$ARGS" == *"hip"* ]]; then
     # No MPI or OpenMP -- No OFI OpenMPI on Darwin (right?) and HIP hates OpenMP

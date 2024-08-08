@@ -79,13 +79,16 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
 
     const bool reconstruction_floors = pars.Get<bool>("reconstruction_floors");
     Floors::Prescription floors_temp;
+    Floors::Prescription floors_inner_temp;
     if (reconstruction_floors) {
         // Apply post-reconstruction floors.
         // Only enabled for WENO since it is not TVD, and only when other
         // floors are enabled.
-        floors_temp = packages.Get("Floors")->Param<Floors::Prescription>("prescription");
+        floors_temp       = packages.Get("Floors")->Param<Floors::Prescription>("prescription");
+        floors_inner_temp = packages.Get("Floors")->Param<Floors::Prescription>("prescription_inner");
     }
     const Floors::Prescription& floors = floors_temp;
+    const Floors::Prescription& floors_inner = floors_inner_temp;
 
     const bool reconstruction_fallback = pars.Get<bool>("reconstruction_fallback");
 
@@ -95,6 +98,9 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
     // (which requires that a variable be propagated at ctop_max)
     const bool use_b_cd = packages.AllPackages().count("B_CD");
     const double ctop_max = (use_b_cd) ? packages.Get("B_CD")->Param<Real>("ctop_max_last") : 0.0;
+
+    const bool use_ismr = packages.AllPackages().count("ISMR");
+    const int ng_plus_nlevels = use_ismr ? packages.Get("ISMR")->Param<uint>("nlevels") + Globals::nghost : 0;
 
     const EMHD::EMHD_parameters& emhd_params = EMHD::GetEMHDParameters(packages);
 
@@ -159,7 +165,11 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
             // We template on reconstruction type to avoid a big switch statement here.
             // Instead, a version of GetFlux() is generated separately for each reconstruction/direction pair.
             // See reconstruction.hpp for all the implementations.
-            KReconstruction::ReconstructRow<Recon, dir>(member, P_all(bl), k, j, b.is, b.ie, Pl_s, Pr_s);
+            if (use_ismr) {
+                KReconstruction::ReconstructRowIsmr<Recon, dir>(member, P_all(bl), k, j, b.is, b.ie, ng_plus_nlevels, Pl_s, Pr_s);
+            } else {
+                KReconstruction::ReconstructRow<Recon, dir>(member, P_all(bl), k, j, b.is, b.ie, Pl_s, Pr_s);
+            }
 
             // Sync all threads in the team so that scratch memory is consistent
             member.team_barrier();
@@ -172,8 +182,8 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
                     // we have no guarantee they remotely resemble the *centered* primitives
                     // If we selected to fall back to TVD, the floors are at zero (as intended)
                     if (reconstruction_floors || reconstruction_fallback) {
-                        fallback_tvd(i)  = Floors::apply_geo_floors(G, Pl, m_p, gam, j, i, floors, loc);
-                        fallback_tvd(i) |= Floors::apply_geo_floors(G, Pr, m_p, gam, j, i, floors, loc);
+                        fallback_tvd(i)  = Floors::apply_geo_floors(G, Pl, m_p, gam, j, i, floors, floors_inner, loc);
+                        fallback_tvd(i) |= Floors::apply_geo_floors(G, Pr, m_p, gam, j, i, floors, floors_inner, loc);
                     }
                 }
             );
@@ -212,7 +222,7 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
 
     // If we have B field on faces, we "must" replace reconstructed version with that
     // Override at user option due to unreasonable effectiveness (https://github.com/AFD-Illinois/kharma/issues/79)
-    if (pmb0->packages.AllPackages().count("B_CT") && packages.Get("B_CT")->Param<bool>("consistent_face_b")) {
+    if (pmb0->packages.AllPackages().count("B_CT") && packages.Get("Flux")->Param<bool>("consistent_face_b")) {
         const auto& Bf  = md->PackVariables(std::vector<std::string>{"cons.fB"});
         const TopologicalElement face = FaceOf(dir); // TODO probably can be constexpr, somehow
         IndexRange3 bi = KDomain::GetRange(md, IndexDomain::interior, face);

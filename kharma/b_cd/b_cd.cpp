@@ -38,13 +38,15 @@
 
 using namespace parthenon;
 
+// THIS MODULE DOESN'T WORK with KHARMA's initialization or modern structure
+// The code is here so that we can ensure it keeps compiling,
+// which should make it easier to reintroduce if we want to later
+
 namespace B_CD
 {
 
 std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages)
 {
-    throw std::runtime_error("Constraint-damping transport is not functional with modern B field initialization!");
-
     auto pkg = std::make_shared<KHARMAPackage>("B_CD");
     Params &params = pkg->AllParams();
 
@@ -99,7 +101,12 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     // add callbacks for HST output to the Params struct, identified by the `hist_param_key`
     pkg->AddParam<>(parthenon::hist_param_key, hst_vars);
 
-    return pkg;
+    // Throw down here, like this, to avoid inaccessible code warnings
+    if (1) {
+        throw std::runtime_error("Constraint-damping transport is not functional with modern B field initialization!");
+    } else {
+        return pkg;
+    }
 }
 
 void BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
@@ -117,7 +124,7 @@ void BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     IndexRange ib = bounds.GetBoundsI(domain);
     IndexRange jb = bounds.GetBoundsJ(domain);
     IndexRange kb = bounds.GetBoundsK(domain);
-    pmb->par_for("UtoP_B", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+    pmb->par_for("UtoP_B_CD", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
             // Update the primitive B-fields
             Real gdet = G.gdet(Loci::center, j, i);

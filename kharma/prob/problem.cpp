@@ -51,7 +51,6 @@
 #include "resize_restart.hpp"
 #include "resize_restart_kharma.hpp"
 #include "kelvin_helmholtz.hpp"
-#include "bz_monopole.hpp"
 #include "mhdmodes.hpp"
 #include "orszag_tang.hpp"
 #include "shock_tube.hpp"
@@ -143,7 +142,7 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
 
         // Initialize electron entropies to defaults if enabled
         if (pmb->packages.AllPackages().count("Electrons")) {
-            Electrons::InitElectrons(rc, pin);
+            Electrons::InitElectrons(rc.get(), pin);
         }
 
         if (pmb->packages.AllPackages().count("EMHD")) {

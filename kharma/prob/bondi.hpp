@@ -51,6 +51,12 @@
 TaskStatus InitializeBondi(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin);
 
 /**
+ * Record parameters Bondi problem (or boundaries!) will need throughout the run
+ * Currently uses "GRMHD" package as convenient proxy (TODO fix that with problem-packages)
+ */
+void AddBondiParameters(ParameterInput *pin, Packages_t &packages);
+
+/**
  * Set all values on a given domain to the Bondi inflow analytic steady-state solution.
  * Use the template version when possible, which just calls through
  */
@@ -156,6 +162,11 @@ KOKKOS_INLINE_FUNCTION void get_prim_bondi(const GRCoordinates& G, const bool di
             r = rin_bondi;
             // TODO(BSP) could also do values at inf, restore that?
         } else {
+            rho = 0.;
+            u = 0.;
+            u_prim[0] = 0.;
+            u_prim[1] = 0.;
+            u_prim[2] = 0.;
             return;
         }
     }

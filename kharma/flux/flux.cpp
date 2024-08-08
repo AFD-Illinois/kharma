@@ -135,6 +135,19 @@ std::shared_ptr<KHARMAPackage> Flux::Initialize(ParameterInput *pin, std::shared
     bool reconstruction_fallback = pin->GetOrAddBoolean("flux", "reconstruction_fallback", false);
     params.Add("reconstruction_fallback", reconstruction_fallback);
 
+    // When calculating the fluxes, replace perpendicular fields (e.g. B2 at F2) with
+    // the value already present at the face
+    // Schemes universally do this, and it is very inadvisable to disable this
+    bool consistent_face_b = false;
+    if (packages->AllPackages().count("B_CT")) {
+        bool default_consistent_b = true;
+        if (pin->DoesParameterExist("b_field", "consistent_face_b")) {
+            default_consistent_b = pin->GetBoolean("b_field", "consistent_face_b");
+        }
+        consistent_face_b = pin->GetOrAddBoolean("flux", "consistent_face_b", default_consistent_b);
+        params.Add("consistent_face_b", consistent_face_b);
+    }
+
     // We can't just use GetVariables or something since there's no mesh yet.
     // That's what this function is for.
     int nvar = KHARMA::PackDimension(packages.get(), Metadata::WithFluxes);
@@ -184,12 +197,30 @@ std::shared_ptr<KHARMAPackage> Flux::Initialize(ParameterInput *pin, std::shared
         bool use_source_term = pin->GetOrAddBoolean("fofc", "use_source_term", false);
         params.Add("fofc_use_source_term", use_source_term);
 
+        int fofc_polar_cells = pin->GetOrAddInteger("fofc", "polar_cells", 0);
+        params.Add("fofc_polar_cells", fofc_polar_cells);
+        const GReal eh_buffer = pin->GetOrAddReal("fofc", "eh_buffer", 0.1);
+        params.Add("fofc_eh_buffer", eh_buffer);
+
+        if (packages->AllPackages().count("B_CT")) {
+            // Use consistent B for FOFC (see above)
+            // It is mildly inadvisable to disable this
+            bool fofc_consistent_face_b = pin->GetOrAddBoolean("fofc", "consistent_face_b", consistent_face_b);
+            params.Add("fofc_consistent_face_b", fofc_consistent_face_b);
+        }
+
         // Use a custom block for fofc floors.  We now do the same for Kastaun, where we can *also* have floors
         // TODO even post-reconstruction/reconstruction fallback?
         if (!pin->DoesBlockExist("fofc_floors")) {
             params.Add("fofc_prescription", Floors::MakePrescription(pin, "floors"));
+            if (pin->DoesBlockExist("floors_inner"))
+                params.Add("fofc_prescription_inner", Floors::MakePrescriptionInner(pin, Floors::MakePrescription(pin, "floors"), "floors_inner"));
+            else
+                params.Add("fofc_prescription_inner", Floors::MakePrescriptionInner(pin, Floors::MakePrescription(pin, "floors"), "floors"));
         } else {
+            // Override inner and outer floors with `fofc_floors` block
             params.Add("fofc_prescription", Floors::MakePrescription(pin, "fofc_floors"));
+            params.Add("fofc_prescription_inner", Floors::MakePrescriptionInner(pin, Floors::MakePrescription(pin, "fofc_floors"), "fofc_floors"));
         }
 
         // Flag for whether FOFC was applied, for diagnostics
