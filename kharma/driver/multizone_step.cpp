@@ -303,10 +303,13 @@ TaskCollection KHARMADriver::MakeMultizoneTaskCollection(BlockList_t &blocks, in
     // modified on each rank.
     const auto &two_sync = pkgs.at("Driver")->Param<bool>("two_sync");
     if (two_sync) {
-        // These are inherited from above
-        // auto &md_sub_step_final = pmesh->mesh_data.Add(integrator->stage_name[stage]);
-        // auto &md_sync = pmesh->mesh_data.AddShallow("sync"+integrator->stage_name[stage], md_sub_step_final, sync_vars);
-        KHARMADriver::AddFullSyncRegion(tc, md_sync);
+        TaskRegion &bound_sync = tc.AddRegion(num_partitions);
+        for (int i = 0; i < num_partitions; i++) {
+            auto &md_sub_step_final = pmesh->mesh_data.GetOrAdd(integrator->stage_name[stage], i);
+            auto &md_sync = pmesh->mesh_data.AddShallow("sync"+integrator->stage_name[stage]+std::to_string(i), md_sub_step_final, sync_vars);
+            //KHARMADriver::AddFullSyncRegion(tc, md_sync);
+            AddBoundarySync(t_none, bound_sync[i], md_sync);
+        }
     }
 
     EndFlag();
@@ -341,7 +344,7 @@ TaskCollection KHARMADriver::MakeMultizoneTaskCollection(BlockList_t &blocks, in
     ////}
     
 
-    EndFlag();
+    //EndFlag();
 
     return tc;
 }

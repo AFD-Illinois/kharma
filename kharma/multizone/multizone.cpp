@@ -82,8 +82,12 @@ std::shared_ptr<KHARMAPackage> Multizone::Initialize(ParameterInput *pin, std::s
     const Real gam = pin->GetReal("GRMHD", "gamma");
     const Real f_tchar = pin->GetOrAddReal("multizone", "f_tchar", m::pow(base, -3. / 2.) / 2.);
     params.Add("f_tchar", f_tchar);
-    const bool loc_tchar = pin->GetOrAddReal("multizone", "loc_tchar", true);
+    const bool loc_tchar = pin->GetOrAddBoolean("multizone", "loc_tchar", true);
     params.Add("loc_tchar", loc_tchar);
+
+    // options when using the ncycles to determine zone-switching
+    const Real f_cap_ncycle = pin->GetOrAddReal("multizone", "f_cap_ncycle", 17.0); // mimicking capped tchar switching when loc_tchar=false
+    params.Add("f_cap_ncycle", f_cap_ncycle);
     
     // Calculate effective number of zones
     int nzones_eff = nzones;
@@ -109,6 +113,7 @@ void Multizone::DecideActiveBlocksAndBoundaryConditions(Mesh *pmesh, const SimTi
 {
     Flag("DecideActiveBlocksAndBoundaryConditions");
     auto &params = pmesh->packages.Get("Multizone")->AllParams();
+    auto &params_bdry = pmesh->packages.Get("Boundaries")->AllParams();
     
     // Input parameters
     const int nzones = params.Get<int>("nzones");
@@ -124,6 +129,7 @@ void Multizone::DecideActiveBlocksAndBoundaryConditions(Mesh *pmesh, const SimTi
     const bool combine_out = params.Get<bool>("combine_out");
     const int active_rin = params.Get<int>("active_rin");
     const int active_rout = params.Get<int>("active_rout");
+    const auto outer_x1_btype_name = params_bdry.Get<std::string>("outer_x1");
 
     // Current location in V-cycles
     int i_vcycle = params.Get<int>("i_vcycle"); // current i_vcycle
@@ -181,7 +187,7 @@ void Multizone::DecideActiveBlocksAndBoundaryConditions(Mesh *pmesh, const SimTi
 
             // Decide where to apply bc // TODO: is this ok?
             if ((i_zone != 0) && (m::abs(x1min - active_x1min) / m::max(active_x1min, SMALL) < 1.e-10)) apply_boundary_condition[iblock][BoundaryFace::inner_x1] = true;
-            if ((i_zone != nzones_eff - 1) && m::abs(x1max - active_x1max) / active_x1max < 1.e-10) apply_boundary_condition[iblock][BoundaryFace::outer_x1] = true;
+            if (((i_zone != nzones_eff - 1) || (outer_x1_btype_name == "dirichlet")) && m::abs(x1max - active_x1max) / active_x1max < 1.e-10) apply_boundary_condition[iblock][BoundaryFace::outer_x1] = true;
         }
         //std::cout << "iblock " << iblock << " x1min " << x1min << " x1max " << x1max << ": is active? " << is_active[iblock] << ", boundary applied? " << apply_boundary_condition[iblock][BoundaryFace::inner_x1] << apply_boundary_condition[iblock][BoundaryFace::outer_x1] << std::endl;
     }
@@ -209,6 +215,7 @@ void Multizone::DecideToSwitch(Mesh *pmesh, const SimTime &tm, bool &switch_zone
     const Real gam = pmesh->packages.Get("GRMHD")->Param<Real>("gamma");
     const Real f_tchar = params.Get<Real>("f_tchar");
     const bool loc_tchar = params.Get<bool>("loc_tchar");
+    const Real f_cap_ncycle = params.Get<Real>("f_cap_ncycle");
     const bool one_trun = params.Get<bool>("one_trun");
     const int long_t_in = params.Get<int>("long_t_in");
     const bool combine_out = params.Get<bool>("combine_out");
@@ -229,7 +236,11 @@ void Multizone::DecideToSwitch(Mesh *pmesh, const SimTime &tm, bool &switch_zone
     if ((i_zone == nzones_eff - 1) && !one_trun) longer_factor = 2;
     if (i_zone == 0) longer_factor = long_t_in;
 
-    if (ncycle_per_zone > 0) switch_zone = (next_ncycle - n0_zone) >= ncycle_per_zone * longer_factor;
+    if (ncycle_per_zone > 0) {
+        Real switch_criterion = ncycle_per_zone * longer_factor;
+        if (! loc_tchar && i_zone == nzones_eff - 1) switch_criterion /= f_cap_ncycle;
+        switch_zone = (next_ncycle - n0_zone) >= switch_criterion;
+    }
     else {
         temp_rin = m::pow(base, i_zone);
         runtime_per_zone = f_tchar * CalcRuntime(temp_rin, base, gam, bondi_rs, loc_tchar);
