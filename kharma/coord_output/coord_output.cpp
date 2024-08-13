@@ -86,9 +86,6 @@ std::shared_ptr<KHARMAPackage> CoordinateOutput::Initialize(ParameterInput *pin,
     //pkg->AddField("coords.lapse_embed", m0);
     //pkg->AddField("coords.conn_embed", m3);
 
-    auto ours = Metadata::FlagCollection{Metadata::GetUserFlag("CoordinateOutput")};
-    std::cout << "Total size of geometry variables: " << pkg->GetPackDimension(ours) << std::endl;
-
     // Register our output.  This will be called before *any* output,
     // but we will only fill the fields before the first.
     // This is all that's needed unless:
@@ -107,7 +104,6 @@ TaskStatus CoordinateOutput::BlockUserWorkBeforeOutput(MeshBlock *pmb, Parameter
 
         PackIndexMap geom_map;
         auto Geom = rc->PackVariables({Metadata::GetUserFlag("CoordinateOutput")}, geom_map);
-        std::cout << "Actual coordinate dimension is: " << Geom.GetDim(4) << std::endl;
 
         const auto& G = pmb->coords;
 
@@ -173,8 +169,6 @@ TaskStatus CoordinateOutput::BlockUserWorkBeforeOutput(MeshBlock *pmb, Parameter
                 Geom(mgdet_embed, k, j, i) = gdet;
             }
         );
-
-
     }
 
     return TaskStatus::complete;
