@@ -118,80 +118,6 @@ T Reductions::CheckOnAll(MeshData<Real> *md, int channel)
     return reducer.val;
 }
 
-#define REDUCE_FUNCTION_CALL G, P(b), m_p, U(b), m_u, cmax(b), cmin(b), emhd_params, gam, k, j, i
-
-template<Reductions::Var var, typename T>
-T Reductions::EHReduction(MeshData<Real> *md, UserHistoryOperation op, int zone)
-{
-    Flag("EHReduction");
-    auto pmesh = md->GetMeshPointer();
-
-    const auto& pars = pmesh->packages.Get("GRMHD")->AllParams();
-    const Real gam = pars.Get<Real>("gamma");
-    const auto& emhd_params = EMHD::GetEMHDParameters(pmesh->packages);
-
-    PackIndexMap prims_map, cons_map;
-    const auto& P = md->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("Primitive")}, prims_map);
-    const auto& U = md->PackVariablesAndFluxes(std::vector<MetadataFlag>{Metadata::Conserved}, cons_map);
-    const VarMap m_u(cons_map, true), m_p(prims_map, false);
-    const auto& cmax = md->PackVariables(std::vector<std::string>{"Flux.cmax"});
-    const auto& cmin = md->PackVariables(std::vector<std::string>{"Flux.cmin"});
-
-    auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
-    IndexRange ib = pmb0->cellbounds.GetBoundsI(IndexDomain::interior);
-    IndexRange jb = pmb0->cellbounds.GetBoundsJ(IndexDomain::interior);
-    IndexRange kb = pmb0->cellbounds.GetBoundsK(IndexDomain::interior);
-    IndexRange block = IndexRange{0, U.GetDim(5) - 1};
-
-    T result(0);
-    int nb = pmesh->GetNumMeshBlocksThisRank();
-    for (int iblock=0; iblock < nb; iblock++) {
-        const auto &pmb = pmesh->block_list[iblock];
-        // Inner-edge blocks only for speed
-        if (pmb->boundary_flag[parthenon::BoundaryFace::inner_x1] == BoundaryFlag::user) {
-            const auto& G = pmb->coords;
-            T block_result;
-            switch(op) {
-            case UserHistoryOperation::sum: {
-                Kokkos::Sum<T> sum_reducer(block_result);
-                pmb->par_reduce("accretion_sum", iblock, iblock, kb.s, kb.e, jb.s, jb.e, ib.s+zone, ib.s+zone,
-                    KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i, T &local_result) {
-                        local_result += reduction_var<var>(REDUCE_FUNCTION_CALL) * G.Dxc<3>(k) * G.Dxc<2>(j);
-                    }
-                , sum_reducer);
-                result += block_result;
-                break;
-            }
-            case UserHistoryOperation::max: {
-                Kokkos::Max<T> max_reducer(block_result);
-                pmb->par_reduce("accretion_sum", iblock, iblock, kb.s, kb.e, jb.s, jb.e, ib.s+zone, ib.s+zone,
-                    KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i, T &local_result) {
-                        const T val = reduction_var<var>(REDUCE_FUNCTION_CALL) * G.Dxc<3>(k) * G.Dxc<2>(j);
-                        if (val > local_result) local_result = val;
-                    }
-                , max_reducer);
-                if (block_result > result) result = block_result;
-                break;
-            }
-            case UserHistoryOperation::min: {
-                Kokkos::Min<T> min_reducer(block_result);
-                pmb->par_reduce("accretion_sum", iblock, iblock, kb.s, kb.e, jb.s, jb.e, ib.s+zone, ib.s+zone,
-                    KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i, T &local_result) {
-                        const T val = reduction_var<var>(REDUCE_FUNCTION_CALL) * G.Dxc<3>(k) * G.Dxc<2>(j);
-                        if (val < local_result) local_result = val;
-                    }
-                , min_reducer);
-                if (block_result < result) result = block_result;
-                break;
-            }
-            }
-        }
-    }
-
-    EndFlag();
-    return result;
-}
-
 #define INSIDE (x[1] > startx1 && x[2] > startx2 && x[3] > startx3) && \
                 (trivial1 ? x[1] < startx1 + G.Dxc<1>(i) : x[1] < stopx1) && \
                 (trivial2 ? x[2] < startx2 + G.Dxc<2>(j) : x[2] < stopx2) && \
@@ -210,8 +136,8 @@ T Reductions::DomainReduction(MeshData<Real> *md, UserHistoryOperation op, const
 
     // Just pass in everything we might want. Probably slow?
     PackIndexMap prims_map, cons_map;
-    const auto& P = md->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("Primitive")}, prims_map);
-    const auto& U = md->PackVariablesAndFluxes(std::vector<MetadataFlag>{Metadata::Conserved}, cons_map);
+    const auto& P = md->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("Primitive"), Metadata::Cell}, prims_map);
+    const auto& U = md->PackVariablesAndFluxes(std::vector<MetadataFlag>{Metadata::Conserved, Metadata::Cell}, cons_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
     const auto& cmax = md->PackVariables(std::vector<std::string>{"Flux.cmax"});
     const auto& cmin = md->PackVariables(std::vector<std::string>{"Flux.cmin"});
@@ -243,6 +169,7 @@ T Reductions::DomainReduction(MeshData<Real> *md, UserHistoryOperation op, const
     switch(op) {
     case UserHistoryOperation::sum: {
         Kokkos::Sum<T> sum_reducer(result);
+        // TODO these should be nested parallel loops to skip blocks fully outside domain
         pmb0->par_reduce("domain_sum", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
             KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i, T &local_result) {
                 const auto& G = U.GetCoords(b);
@@ -304,3 +231,4 @@ T Reductions::DomainReduction(MeshData<Real> *md, UserHistoryOperation op, const
 
 #undef INSIDE
 #undef REDUCE_FUNCTION_CALL
+#undef REDUCE_FUNCTION_ARGS

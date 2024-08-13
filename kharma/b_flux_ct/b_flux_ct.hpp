@@ -140,15 +140,6 @@ void FillOutput(MeshBlock *pmb, ParameterInput *pin);
  */
 void CalcDivB(MeshData<Real> *md, std::string divb_field_name="divB");
 
-inline Real ReducePhi0(MeshData<Real> *md)
-{
-    return Reductions::EHReduction<Reductions::Var::phi, Real>(md, UserHistoryOperation::sum, 0);
-}
-inline Real ReducePhi5(MeshData<Real> *md)
-{
-    return Reductions::EHReduction<Reductions::Var::phi, Real>(md, UserHistoryOperation::sum, 5);
-}
-
 /**
  * ND divergence, averaging to cell corners
  * TODO likely better templated, as with all ND stuff

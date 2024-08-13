@@ -140,57 +140,8 @@ std::shared_ptr<KHARMAPackage> B_Cleanup::Initialize(ParameterInput *pin, std::s
     params.Add("cleanup_interval", cleanup_interval);
 
     if (manage_field) {
-        throw std::runtime_error("B field cleanup/projection is set as B field transport! If you really want this, disable this error in source code!");
-    }
-
-    // Declare fields if we're doing that
-    if (manage_field) {
-        // Stolen verbatim from FluxCT, will need updates from there to actually use
-        // Mark if we're evolving implicitly
-        bool implicit_b = pin->GetOrAddBoolean("b_field", "implicit", false);
-        params.Add("implicit", implicit_b);
-        MetadataFlag areWeImplicit = (implicit_b) ? Metadata::GetUserFlag("Implicit")
-                                                    : Metadata::GetUserFlag("Explicit");
-
-        // Flags for B fields.  "primitive" form is field, "conserved" is flux
-        std::vector<MetadataFlag> flags_prim = {Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::GetUserFlag("Primitive"),
-                                                Metadata::Restart, Metadata::GetUserFlag("MHD"), areWeImplicit, Metadata::Vector};
-        std::vector<MetadataFlag> flags_cons = {Metadata::Real, Metadata::Cell, Metadata::Independent, Metadata::Conserved, Metadata::Conserved,
-                                                Metadata::WithFluxes, Metadata::FillGhost, Metadata::GetUserFlag("MHD"), areWeImplicit, Metadata::Vector};
-
-        auto m = Metadata(flags_prim, s_vector);
-        pkg->AddField("prims.B", m);
-        m = Metadata(flags_cons, s_vector);
-        pkg->AddField("cons.B", m);
-
-        // Also ensure that prims get filled, *if* we're evolved explicitly
-        if (!implicit_b) {
-            pkg->MeshUtoP = B_FluxCT::MeshUtoP;
-            pkg->BlockUtoP = B_FluxCT::BlockUtoP;
-        }
-
-        // Register the other callbacks
-        pkg->PostStepDiagnosticsMesh = B_FluxCT::PostStepDiagnostics;
-
-        // The definition of MaxDivB we care about actually changes per-transport,
-        // so calculating it is handled by the transport package
-        // We'd only ever need to declare or calculate divB for output (getting the max is independent)
-        if (KHARMA::FieldIsOutput(pin, "divB")) {
-            pkg->BlockUserWorkBeforeOutput = B_FluxCT::FillOutput;
-            m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
-            pkg->AddField("divB", m);
-        }
-
-        // List (vector) of HistoryOutputVars that will all be enrolled as output variables
-        parthenon::HstVar_list hst_vars = {};
-        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::max, B_FluxCT::MaxDivB, "MaxDivB"));
-        // Event horizon magnetization.  Might be the same or different for different representations?
-        if (pin->GetBoolean("coordinates", "spherical")) {
-            hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, B_FluxCT::ReducePhi0, "Phi_0"));
-            hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, B_FluxCT::ReducePhi5, "Phi_EH"));
-        }
-        // add callbacks for HST output to the Params struct, identified by the `hist_param_key`
-        pkg->AddParam<>(parthenon::hist_param_key, hst_vars);
+        // Copy in the field initialization from B_CT and/or B_FluxCT here to declare the right stuff
+        throw std::runtime_error("B field cleanup/projection is set as B field transport! This is not implemented!");
     }
 
     return pkg;

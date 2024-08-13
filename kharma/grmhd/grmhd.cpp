@@ -200,7 +200,50 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     pkg->EstimateTimestepMesh    = GRMHD::MeshEstimateTimestep;
     pkg->PostStepDiagnosticsMesh = GRMHD::PostStepDiagnostics;
 
-    // TODO TODO Reductions
+    // List (vector) of HistoryOutputVars that will all be enrolled as output variables
+    parthenon::HstVar_list hst_vars = {};
+    bool do_all = KHARMA::FieldIsOutput(pin, "all_reductions");
+    // Common tracking variables
+    if (do_all || KHARMA::FieldIsOutput(pin, "conserved_vars")) {
+        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, Reductions::Total<Reductions::Var::rhou0>, "Mass"));
+        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, Reductions::Total<Reductions::Var::mix_T00>, "Egas"));
+        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, Reductions::Total<Reductions::Var::mix_T01>, "X1_Mom"));
+        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, Reductions::Total<Reductions::Var::mix_T02>, "X2_Mom"));
+        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, Reductions::Total<Reductions::Var::mix_T03>, "Ang_Mom"));
+    }
+    // TODO these are probably more useful at/within/without certain radii
+    if (do_all || KHARMA::FieldIsOutput(pin, "luminosities")) {
+        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, Reductions::Total<Reductions::Var::eht_lum>, "EHT_Lum_Proxy"));
+        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, Reductions::Total<Reductions::Var::jet_lum>, "Jet_Lum"));
+    }
+    // Event horizon fluxes
+    if (pin->GetBoolean("coordinates", "domain_intersects_eh")) {
+        if (do_all || KHARMA::FieldIsOutput(pin, "eh_fluxes_cell")) {
+            hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, Reductions::SumAt0<Reductions::Var::mdot>, "Mdot"));
+            hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, Reductions::SumAtEH<Reductions::Var::mdot>, "Mdot_EH"));
+            hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, Reductions::SumAt5M<Reductions::Var::mdot>, "Mdot_5M"));
+            hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, Reductions::SumAt0<Reductions::Var::edot>, "Edot"));
+            hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, Reductions::SumAtEH<Reductions::Var::edot>, "Edot_EH"));
+            hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, Reductions::SumAt5M<Reductions::Var::edot>, "Edot_5M"));
+            hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, Reductions::SumAt0<Reductions::Var::ldot>, "Ldot"));
+            hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, Reductions::SumAtEH<Reductions::Var::ldot>, "Ldot_EH"));
+            hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, Reductions::SumAt5M<Reductions::Var::ldot>, "Ldot_5M"));
+        }
+
+        if (do_all || KHARMA::FieldIsOutput(pin, "eh_fluxes_flux")) {
+            hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, Reductions::SumAt0<Reductions::Var::mdot_flux>, "Mdot_Flux"));
+            hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, Reductions::SumAtEH<Reductions::Var::mdot_flux>, "Mdot_EH_Flux"));
+            hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, Reductions::SumAt5M<Reductions::Var::mdot_flux>, "Mdot_5M_Flux"));
+            hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, Reductions::SumAt0<Reductions::Var::edot_flux>, "Edot_Flux"));
+            hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, Reductions::SumAtEH<Reductions::Var::edot_flux>, "Edot_EH_Flux"));
+            hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, Reductions::SumAt5M<Reductions::Var::edot_flux>, "Edot_5M_Flux"));
+            hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, Reductions::SumAt0<Reductions::Var::ldot_flux>, "Ldot_0_Flux"));
+            hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, Reductions::SumAtEH<Reductions::Var::ldot_flux>, "Ldot_EH_Flux"));
+            hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, Reductions::SumAt5M<Reductions::Var::ldot_flux>, "Ldot_5M_Flux"));
+        }
+    }
+    // add callbacks for HST output to the Params struct, identified by the `hist_param_key`
+    pkg->AddParam<>(parthenon::hist_param_key, hst_vars);
 
     return pkg;
 }
