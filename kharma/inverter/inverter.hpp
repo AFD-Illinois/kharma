@@ -89,6 +89,11 @@ inline TaskStatus MeshFixUtoP(MeshData<Real> *md) {
 }
 
 /**
+ * Count up all nonzero PFlags on md.  Used for history file reductions.
+ */
+int CountPFlags(MeshData<Real> *md);
+
+/**
  * Print details of any inversion failures or fixed zones
  */
 TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md);
