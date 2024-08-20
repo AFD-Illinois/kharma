@@ -50,6 +50,10 @@
 // Parthenon's boundaries
 #include <bvals/boundary_conditions.hpp>
 
+// Very bad definition. Still necessary, though
+// TODO get rid of them eventually
+#define PLOOP for(int ip=0; ip < nvar; ++ip)
+
 std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std::shared_ptr<Packages_t> &packages)
 {
     auto pkg = std::make_shared<KHARMAPackage>("Boundaries");
@@ -60,7 +64,13 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
     // Global check inflow sets inner/outer X1 by default
     bool check_inflow_global = pin->GetOrAddBoolean("boundaries", "check_inflow", spherical);
 
-    // Ensure fluxes through the zero-size face at the pole are zero
+    // Option to excise a bit at the poles when calculating fluxes
+    bool excise_polar_flux = pin->GetOrAddBoolean("boundaries", "excise_polar_flux", false);
+    params.Add("excise_polar_flux", excise_polar_flux);
+    if (excise_polar_flux) { // These options are *completely* incompatible
+        pin->SetBoolean("boundaries", "zero_polar_flux", false);
+    }
+    // Otherwise, those fluxes should be zero
     bool zero_polar_flux = pin->GetOrAddBoolean("boundaries", "zero_polar_flux", spherical);
     params.Add("zero_polar_flux", zero_polar_flux);
 
@@ -163,6 +173,10 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
         // Ensure fluxes through the zero-size face at the pole are zero
         bool zero_flux = pin->GetOrAddBoolean("boundaries", "zero_flux_" + bname, zero_polar_flux && bdir == X2DIR);
         params.Add("zero_flux_" + bname, zero_flux);
+
+        // Ensure fluxes through the zero-size face at the pole are zero
+        bool excise_flux = pin->GetOrAddBoolean("boundaries", "excise_flux_" + bname, excise_polar_flux && bdir == X2DIR);
+        params.Add("excise_flux_" + bname, excise_flux);
 
         // Allow specifically dP to outflow in otherwise Dirichlet conditions
         // Only used for viscous_bondi problem
@@ -624,8 +638,8 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
         for (int i = 0; i < BOUNDARY_NFACES; i++) {
             BoundaryFace bface = (BoundaryFace)i;
             auto bname = BoundaryName(bface);
-            auto bdir = BoundaryDirection(bface);
-            auto binner = BoundaryIsInner(bface);
+            const auto bdir = BoundaryDirection(bface);
+            const auto binner = BoundaryIsInner(bface);
 
             if (bdir > ndim) continue;
 
@@ -678,6 +692,85 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
                     );
                 }
             }
+
+            // If we should replace fluxes with excised versions...
+            if (params.Get<bool>("excise_flux_" + bname)) {
+                // ...and if this face of the block corresponds to a global boundary...
+                if (pmb->boundary_flag[bface] == BoundaryFlag::user) {
+
+                    // Going to need the primitive vars
+                    PackIndexMap prims_map;
+                    std::vector<MetadataFlag> prims_flags = {Metadata::GetUserFlag("Primitive"), Metadata::Cell};
+                    const auto& P_all = rc->PackVariables(prims_flags, prims_map);
+                    const VarMap m_u(cons_map, true), m_p(prims_map, false);
+
+                    // And a ton of other stuff
+                    // But we're modifying the live temporaries, and eventually fluxes, here
+                    const auto& Pl_all = rc->PackVariables(std::vector<std::string>{"Flux.Pl"});
+                    const auto& Pr_all = rc->PackVariables(std::vector<std::string>{"Flux.Pr"});
+                    const auto& Ul_all = rc->PackVariables(std::vector<std::string>{"Flux.Ul"});
+                    const auto& Ur_all = rc->PackVariables(std::vector<std::string>{"Flux.Ur"});
+                    const auto& Fl_all = rc->PackVariables(std::vector<std::string>{"Flux.Fl"});
+                    const auto& Fr_all = rc->PackVariables(std::vector<std::string>{"Flux.Fr"});
+                    // I assume we should update cmax/cmin. Else we should use the old ones, so
+                    const auto& cmax  = rc->PackVariables(std::vector<std::string>{"Flux.cmax"});
+                    const auto& cmin  = rc->PackVariables(std::vector<std::string>{"Flux.cmin"});
+
+                    const EMHD::EMHD_parameters& emhd_params = EMHD::GetEMHDParameters(pmb->packages);
+                    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
+                    const auto& G = pmb->coords;
+                    const int nvar = F.GetDim(4);
+
+                    // Replace fluxes through the pole (would be zero) with fluxes through
+                    // the middle of the cell. Only in X2 for dir 2
+                    pmb->par_for(
+                        "excise_flux_" + bname, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+                        KOKKOS_LAMBDA(const int &k, const int &j, const int &i) {
+                            // Face i,j,k borders cell with same index and 1 left with index:
+                            int kk = (bdir == 3) ? k - 1 : k;
+                            int jj = (bdir == 2) ? j - 1 : j;
+                            int ii = (bdir == 1) ? i - 1 : i;
+
+                            // "Reconstruct" at cell midplanes: equivalent to donor-cell
+                            PLOOP Pl_all(ip, k, j, i) = P_all(ip, kk, jj, ii);
+                            PLOOP Pr_all(ip, k, j, i) = P_all(ip, k, j, i);
+
+                            FourVectors Dtmp;
+                            // Left
+                            GRMHD::calc_4vecs(G, Pl_all, m_p, k, j, i, Loci::center, Dtmp);
+                            Flux::prim_to_flux(G, Pl_all, m_p, Dtmp, emhd_params, gam, k, j, i, 0, Ul_all, m_u, Loci::center);
+                            Flux::prim_to_flux(G, Pl_all, m_p, Dtmp, emhd_params, gam, k, j, i, bdir, Fl_all, m_u, Loci::center);
+                            // Magnetosonic speeds
+                            Real cmaxL, cminL;
+                            Flux::vchar_global(G, Pl_all, m_p, Dtmp, gam, emhd_params, k, j, i, Loci::center, bdir, cmaxL, cminL);
+                            // Record speeds
+                            cmax(bdir-1, k, j, i) = m::max(0., cmaxL);
+                            cmin(bdir-1, k, j, i) = m::min(0., cminL);
+
+                            // Right
+                            GRMHD::calc_4vecs(G, Pr_all, m_p, k, j, i, Loci::center, Dtmp);
+                            Flux::prim_to_flux(G, Pr_all, m_p, Dtmp, emhd_params, gam, k, j, i, 0, Ur_all, m_u, Loci::center);
+                            Flux::prim_to_flux(G, Pr_all, m_p, Dtmp, emhd_params, gam, k, j, i, bdir, Fr_all, m_u, Loci::center);
+                            // Magnetosonic speeds
+                            Real cmaxR, cminR;
+                            Flux::vchar_global(G, Pr_all, m_p, Dtmp, gam, emhd_params, k, j, i, Loci::center, bdir, cmaxR, cminR);
+
+                            // Reset cmax/cmin based on our flux
+                            // Double it because zone width is halved (TODO modify GRMHD::EstimateTimestep to do this right)
+                            cmax(bdir-1, k, j, i) =  2 * m::max(cmax(bdir-1, k, j, i), cmaxR);
+                            cmin(bdir-1, k, j, i) = 2 * (-m::min(cmin(bdir-1, k, j, i), cminR));
+
+                            // Use LLF flux. Note we replace fluxes of all variables (including B!)
+                            // This is for a consistent scheme, i.e. all cells FOFC == using DC+LLF
+                            PLOOP
+                                F.flux(bdir, ip, k, j, i) = Flux::llf(Fl_all(ip, k, j, i), Fr_all(ip, k, j, i),
+                                                                    cmax(bdir-1, k, j, i), cmin(bdir-1, k, j, i),
+                                                                    Ul_all(ip, k, j, i), Ur_all(ip, k, j, i));
+                        }
+                    );
+                }
+            }
+
         }
     }
 
