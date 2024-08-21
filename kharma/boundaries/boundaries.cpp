@@ -644,6 +644,7 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
             if (bdir > ndim) continue;
 
             // Set ranges for entire width.  Probably not needed for fluxes but won't hurt
+            // Transmitting fluxes now require at least 1-zone halo as they replace all directions
             IndexRange ib = ibe, jb = jbe, kb = kbe;
             // Range for inner_x1 bounds is first face only, etc.
             if (bdir == 1) {
@@ -697,6 +698,7 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
             if (params.Get<bool>("excise_flux_" + bname)) {
                 // ...and if this face of the block corresponds to a global boundary...
                 if (pmb->boundary_flag[bface] == BoundaryFlag::user) {
+                    if (bdir != 2) throw std::runtime_error("Excised polar fluxes only fully implemented in X2!");
 
                     // Going to need the primitive vars
                     PackIndexMap prims_map;
@@ -720,6 +722,8 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
                     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
                     const auto& G = pmb->coords;
                     const int nvar = F.GetDim(4);
+                    // Cell center of our two which is actually on grid
+                    const int j_cell = (binner) ? jb.s : jb.s - 1;
 
                     // Replace fluxes through the pole (would be zero) with fluxes through
                     // the middle of the cell. Only in X2 for dir 2
@@ -756,16 +760,49 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
                             Flux::vchar_global(G, Pr_all, m_p, Dtmp, gam, emhd_params, k, j, i, Loci::center, bdir, cmaxR, cminR);
 
                             // Reset cmax/cmin based on our flux
-                            // Double it because zone width is halved (TODO modify GRMHD::EstimateTimestep to do this right)
-                            cmax(bdir-1, k, j, i) =  2 * m::max(cmax(bdir-1, k, j, i), cmaxR);
-                            cmin(bdir-1, k, j, i) = 2 * (-m::min(cmin(bdir-1, k, j, i), cminR));
+                            cmax(bdir-1, k, j, i) =  m::max(cmax(bdir-1, k, j, i), cmaxR);
+                            cmin(bdir-1, k, j, i) = -m::min(cmin(bdir-1, k, j, i), cminR);
 
-                            // Use LLF flux. Note we replace fluxes of all variables (including B!)
-                            // This is for a consistent scheme, i.e. all cells FOFC == using DC+LLF
-                            PLOOP
+                            // Use LLF flux
+                            PLOOP {
                                 F.flux(bdir, ip, k, j, i) = Flux::llf(Fl_all(ip, k, j, i), Fr_all(ip, k, j, i),
                                                                     cmax(bdir-1, k, j, i), cmin(bdir-1, k, j, i),
                                                                     Ul_all(ip, k, j, i), Ur_all(ip, k, j, i));
+                                // Our zone now sees only half-size r, th faces, therefore fluxes
+                                // Convert to/from zero-index to modulate
+                                // TODO should actually recalcuate at new face center...
+                                F.flux((bdir - 1 + 1) % 3 + 1, ip, k, j_cell, i) /= 2;
+                                F.flux((bdir - 1 + 2) % 3 + 1, ip, k, j_cell, i) /= 2;
+                            }
+
+                            // Account for the half-size in the timestep later
+                            cmax(bdir-1, k, j, i) *= 2;
+                            cmin(bdir-1, k, j, i) *= 2;
+
+                        }
+                    );
+                    // Then average to make absolutely sure fluxes match
+                    // TODO only for X2 bound currently!
+                    const IndexRange3 bi = KDomain::GetRange(rc, IndexDomain::interior, CC);
+                    const int Nk3p = (bi.ke - bi.ks + 1);
+                    const int Nk3p2 = Nk3p/2;
+                    const int ksp = bi.ks;
+                    // Run over previous X1/X2 but half the X3 range...
+                    pmb->par_for(
+                        "average_excised_flux_" + bname, 0, F.GetDim(4)-1, kb.s, (kb.e-kb.s+1)/2 + kb.s, jb.s, jb.e, ib.s, ib.e,
+                        KOKKOS_LAMBDA(const int &v, const int &k, const int &j, const int &i) {
+                            const int ki = ((k - ksp + Nk3p2) % Nk3p) + ksp;
+                            Real avg = 0.;
+                            if (v == m_u.U2 || v == m_u.B2 || v == m_u.U3 || v == m_u.B3) {
+                                // Flux direction reversed, but *coordinate also reverses*
+                                avg = (F.flux(bdir, v, k, j, i) + F.flux(bdir, v, ki, j, i)) / 2;
+                                F.flux(bdir, v, ki, j, i) = avg;
+                            } else {
+                                // Only the flux direction reverses
+                                avg = (F.flux(bdir, v, k, j, i) - F.flux(bdir, v, ki, j, i)) / 2;
+                                F.flux(bdir, v, ki, j, i) = -avg;
+                            }
+                            F.flux(bdir, v, k, j, i)  = avg;
                         }
                     );
                 }
