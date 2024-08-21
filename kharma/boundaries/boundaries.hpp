@@ -37,7 +37,6 @@
 
 #include "boundary_types.hpp"
 #include "dirichlet.hpp"
-#include "flux.hpp"
 #include "grmhd_functions.hpp"
 #include "one_block_transmit.hpp"
 

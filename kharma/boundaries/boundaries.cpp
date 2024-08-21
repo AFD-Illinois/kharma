@@ -50,6 +50,10 @@
 // Parthenon's boundaries
 #include <bvals/boundary_conditions.hpp>
 
+// Very bad definition. Still necessary, though
+// TODO get rid of them eventually
+#define PLOOP for(int ip=0; ip < nvar; ++ip)
+
 std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std::shared_ptr<Packages_t> &packages)
 {
     auto pkg = std::make_shared<KHARMAPackage>("Boundaries");
@@ -60,7 +64,13 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
     // Global check inflow sets inner/outer X1 by default
     bool check_inflow_global = pin->GetOrAddBoolean("boundaries", "check_inflow", spherical);
 
-    // Ensure fluxes through the zero-size face at the pole are zero
+    // Option to excise a bit at the poles when calculating fluxes
+    bool excise_polar_flux = pin->GetOrAddBoolean("boundaries", "excise_polar_flux", false);
+    params.Add("excise_polar_flux", excise_polar_flux);
+    if (excise_polar_flux) { // These options are *completely* incompatible
+        pin->SetBoolean("boundaries", "zero_polar_flux", false);
+    }
+    // Otherwise, those fluxes should be zero
     bool zero_polar_flux = pin->GetOrAddBoolean("boundaries", "zero_polar_flux", spherical);
     params.Add("zero_polar_flux", zero_polar_flux);
 
@@ -163,6 +173,10 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
         // Ensure fluxes through the zero-size face at the pole are zero
         bool zero_flux = pin->GetOrAddBoolean("boundaries", "zero_flux_" + bname, zero_polar_flux && bdir == X2DIR);
         params.Add("zero_flux_" + bname, zero_flux);
+
+        // Ensure fluxes through the zero-size face at the pole are zero
+        bool excise_flux = pin->GetOrAddBoolean("boundaries", "excise_flux_" + bname, excise_polar_flux && bdir == X2DIR);
+        params.Add("excise_flux_" + bname, excise_flux);
 
         // Allow specifically dP to outflow in otherwise Dirichlet conditions
         // Only used for viscous_bondi problem
@@ -624,12 +638,13 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
         for (int i = 0; i < BOUNDARY_NFACES; i++) {
             BoundaryFace bface = (BoundaryFace)i;
             auto bname = BoundaryName(bface);
-            auto bdir = BoundaryDirection(bface);
-            auto binner = BoundaryIsInner(bface);
+            const auto bdir = BoundaryDirection(bface);
+            const auto binner = BoundaryIsInner(bface);
 
             if (bdir > ndim) continue;
 
             // Set ranges for entire width.  Probably not needed for fluxes but won't hurt
+            // Transmitting fluxes now require at least 1-zone halo as they replace all directions
             IndexRange ib = ibe, jb = jbe, kb = kbe;
             // Range for inner_x1 bounds is first face only, etc.
             if (bdir == 1) {
@@ -678,6 +693,121 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
                     );
                 }
             }
+
+            // If we should replace fluxes with excised versions...
+            if (params.Get<bool>("excise_flux_" + bname)) {
+                // ...and if this face of the block corresponds to a global boundary...
+                if (pmb->boundary_flag[bface] == BoundaryFlag::user) {
+                    if (bdir != 2) throw std::runtime_error("Excised polar fluxes only fully implemented in X2!");
+
+                    // Going to need the primitive vars
+                    PackIndexMap prims_map;
+                    std::vector<MetadataFlag> prims_flags = {Metadata::GetUserFlag("Primitive"), Metadata::Cell};
+                    const auto& P_all = rc->PackVariables(prims_flags, prims_map);
+                    const VarMap m_u(cons_map, true), m_p(prims_map, false);
+
+                    // And a ton of other stuff
+                    // But we're modifying the live temporaries, and eventually fluxes, here
+                    const auto& Pl_all = rc->PackVariables(std::vector<std::string>{"Flux.Pl"});
+                    const auto& Pr_all = rc->PackVariables(std::vector<std::string>{"Flux.Pr"});
+                    const auto& Ul_all = rc->PackVariables(std::vector<std::string>{"Flux.Ul"});
+                    const auto& Ur_all = rc->PackVariables(std::vector<std::string>{"Flux.Ur"});
+                    const auto& Fl_all = rc->PackVariables(std::vector<std::string>{"Flux.Fl"});
+                    const auto& Fr_all = rc->PackVariables(std::vector<std::string>{"Flux.Fr"});
+                    // I assume we should update cmax/cmin. Else we should use the old ones, so
+                    const auto& cmax  = rc->PackVariables(std::vector<std::string>{"Flux.cmax"});
+                    const auto& cmin  = rc->PackVariables(std::vector<std::string>{"Flux.cmin"});
+
+                    const EMHD::EMHD_parameters& emhd_params = EMHD::GetEMHDParameters(pmb->packages);
+                    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
+                    const auto& G = pmb->coords;
+                    const int nvar = F.GetDim(4);
+                    // Cell center of our two which is actually on grid
+                    const int j_cell = (binner) ? jb.s : jb.s - 1;
+
+                    // Replace fluxes through the pole (would be zero) with fluxes through
+                    // the middle of the cell. Only in X2 for dir 2
+                    pmb->par_for(
+                        "excise_flux_" + bname, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+                        KOKKOS_LAMBDA(const int &k, const int &j, const int &i) {
+                            // Face i,j,k borders cell with same index and 1 left with index:
+                            int kk = (bdir == 3) ? k - 1 : k;
+                            int jj = (bdir == 2) ? j - 1 : j;
+                            int ii = (bdir == 1) ? i - 1 : i;
+
+                            // "Reconstruct" at cell midplanes: equivalent to donor-cell
+                            PLOOP Pl_all(ip, k, j, i) = P_all(ip, kk, jj, ii);
+                            PLOOP Pr_all(ip, k, j, i) = P_all(ip, k, j, i);
+
+                            FourVectors Dtmp;
+                            // Left
+                            GRMHD::calc_4vecs(G, Pl_all, m_p, k, j, i, Loci::center, Dtmp);
+                            Flux::prim_to_flux(G, Pl_all, m_p, Dtmp, emhd_params, gam, k, j, i, 0, Ul_all, m_u, Loci::center);
+                            Flux::prim_to_flux(G, Pl_all, m_p, Dtmp, emhd_params, gam, k, j, i, bdir, Fl_all, m_u, Loci::center);
+                            // Magnetosonic speeds
+                            Real cmaxL, cminL;
+                            Flux::vchar_global(G, Pl_all, m_p, Dtmp, gam, emhd_params, k, j, i, Loci::center, bdir, cmaxL, cminL);
+                            // Record speeds
+                            cmax(bdir-1, k, j, i) = m::max(0., cmaxL);
+                            cmin(bdir-1, k, j, i) = m::min(0., cminL);
+
+                            // Right
+                            GRMHD::calc_4vecs(G, Pr_all, m_p, k, j, i, Loci::center, Dtmp);
+                            Flux::prim_to_flux(G, Pr_all, m_p, Dtmp, emhd_params, gam, k, j, i, 0, Ur_all, m_u, Loci::center);
+                            Flux::prim_to_flux(G, Pr_all, m_p, Dtmp, emhd_params, gam, k, j, i, bdir, Fr_all, m_u, Loci::center);
+                            // Magnetosonic speeds
+                            Real cmaxR, cminR;
+                            Flux::vchar_global(G, Pr_all, m_p, Dtmp, gam, emhd_params, k, j, i, Loci::center, bdir, cmaxR, cminR);
+
+                            // Reset cmax/cmin based on our flux
+                            cmax(bdir-1, k, j, i) =  m::max(cmax(bdir-1, k, j, i), cmaxR);
+                            cmin(bdir-1, k, j, i) = -m::min(cmin(bdir-1, k, j, i), cminR);
+
+                            // Use LLF flux
+                            PLOOP {
+                                F.flux(bdir, ip, k, j, i) = Flux::llf(Fl_all(ip, k, j, i), Fr_all(ip, k, j, i),
+                                                                    cmax(bdir-1, k, j, i), cmin(bdir-1, k, j, i),
+                                                                    Ul_all(ip, k, j, i), Ur_all(ip, k, j, i));
+                                // Our zone now sees only half-size r, th faces, therefore fluxes
+                                // Convert to/from zero-index to modulate
+                                // TODO should actually recalcuate at new face center...
+                                F.flux((bdir - 1 + 1) % 3 + 1, ip, k, j_cell, i) /= 2;
+                                F.flux((bdir - 1 + 2) % 3 + 1, ip, k, j_cell, i) /= 2;
+                            }
+
+                            // Account for the half-size in the timestep later
+                            cmax(bdir-1, k, j, i) *= 2;
+                            cmin(bdir-1, k, j, i) *= 2;
+
+                        }
+                    );
+                    // Then average to make absolutely sure fluxes match
+                    // TODO only for X2 bound currently!
+                    const IndexRange3 bi = KDomain::GetRange(rc, IndexDomain::interior, CC);
+                    const int Nk3p = (bi.ke - bi.ks + 1);
+                    const int Nk3p2 = Nk3p/2;
+                    const int ksp = bi.ks;
+                    // Run over previous X1/X2 but half the X3 range...
+                    pmb->par_for(
+                        "average_excised_flux_" + bname, 0, F.GetDim(4)-1, kb.s, (kb.e-kb.s+1)/2 + kb.s, jb.s, jb.e, ib.s, ib.e,
+                        KOKKOS_LAMBDA(const int &v, const int &k, const int &j, const int &i) {
+                            const int ki = ((k - ksp + Nk3p2) % Nk3p) + ksp;
+                            Real avg = 0.;
+                            if (v == m_u.U2 || v == m_u.B2 || v == m_u.U3 || v == m_u.B3) {
+                                // Flux direction reversed, but *coordinate also reverses*
+                                avg = (F.flux(bdir, v, k, j, i) + F.flux(bdir, v, ki, j, i)) / 2;
+                                F.flux(bdir, v, ki, j, i) = avg;
+                            } else {
+                                // Only the flux direction reverses
+                                avg = (F.flux(bdir, v, k, j, i) - F.flux(bdir, v, ki, j, i)) / 2;
+                                F.flux(bdir, v, ki, j, i) = -avg;
+                            }
+                            F.flux(bdir, v, k, j, i)  = avg;
+                        }
+                    );
+                }
+            }
+
         }
     }
 

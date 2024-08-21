@@ -101,8 +101,13 @@ void KBoundaries::TransmitSetTE(MeshBlockData<Real> *rc, VariablePack<Real> &q, 
         const int jpivot = (binner) ? b.je : b.js;
         // B3 component on X3 face should be inverted even if not marked "vector"
         // TODO honor SplitVector and vector components here rather than hard-coding
-        const bool do_face_invert = (el == F3);
+        const bool do_face_invert = (el == F3 || el == F2);
         // TODO figure out fixing '.vector_component' in Parthenon
+        // Subtracting from 'second' ensures -1 returns remain negative
+        const int x2_index_1 = bounds_map["cons.uvec"].second-1;
+        const int x2_index_2 = bounds_map["prims.uvec"].second-1;
+        const int x2_index_3 = bounds_map["cons.B"].second-1;
+        const int x2_index_4 = bounds_map["prims.B"].second-1;
         const int x3_index_1 = bounds_map["cons.uvec"].second;
         const int x3_index_2 = bounds_map["prims.uvec"].second;
         const int x3_index_3 = bounds_map["cons.B"].second;
@@ -124,11 +129,15 @@ void KBoundaries::TransmitSetTE(MeshBlockData<Real> *rc, VariablePack<Real> &q, 
                 const int ki = ((k - ksp + Nk3p2) % Nk3p) + ksp;
                 const int ji = jpivot + reflect_offset + (jpivot - j);
                 const int ii = i;
-                const Real invert = (do_face_invert || v == x3_index_1 || v == x3_index_2 ||
+                const Real invert = (do_face_invert ||
+                                    v == x2_index_1 || v == x2_index_2 ||
+                                    v == x2_index_3 || v == x2_index_4 ||
+                                    v == x3_index_1 || v == x3_index_2 ||
                                     v == x3_index_3 || v == x3_index_4 ||
+                                    q(el, v).vector_component == X2DIR ||
                                     q(el, v).vector_component == X3DIR) ? -1. : 1.;
-                //if (i == 10 && j == 3 && k == 10)
-                //    printf("Set el %d v %d zone %d %d %d from %d %d %d invert: %f\n", el, v, k, j, i, ki, ji, ii, invert);
+                // if (i == 10 && j == 3 && k == 10)
+                //    printf("Set el %d v %d zone %d %d %d from %d %d %d invert: %f\n", (int) el, v, k, j, i, ki, ji, ii, invert);
                 q(el, v, k, j, i) = (corresponding_face && j == jpivot) ? 0. : invert * q(el, v, ki, ji, ii);
             }
         );
