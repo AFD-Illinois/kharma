@@ -757,7 +757,12 @@ KOKKOS_INLINE_FUNCTION void ReconstructRow<Type::weno5_lower_poles, X1DIR>(parth
                                         const int& k, const int& j, const int& is_l, const int& ie_l, 
                                         ScratchPad2D<Real> ql, ScratchPad2D<Real> qr)
 {
-    ReconstructRow<Type::weno5, X1DIR>(member, P, k, j, is_l, ie_l, ql, qr);
+    constexpr int o = 6;
+    if (j > o && j < P.GetDim(2) - o) {
+        ReconstructRow<Type::weno5, X1DIR>(member, P, k, j, is_l, ie_l, ql, qr);
+    } else {
+        ReconstructRow<Type::linear_mc, X1DIR>(member, P, k, j, is_l, ie_l, ql, qr);
+    }
 }
 template <>
 KOKKOS_INLINE_FUNCTION void ReconstructRow<Type::weno5_lower_poles, X2DIR>(parthenon::team_mbr_t& member,
@@ -767,8 +772,9 @@ KOKKOS_INLINE_FUNCTION void ReconstructRow<Type::weno5_lower_poles, X2DIR>(parth
 {
     // This prioiritizes using the same fluxes on faces rather than for cells.
     // Neither is transparently wrong (afaict) but this feels nicer
-    constexpr int o = 6; //5;
-    if (j > o || j < P.GetDim(2) - o) {
+    // Use first 2 physical rows to prevent high-order recon reaching from rank 2 across pole
+    constexpr int o = 6;
+    if (j > o && j < P.GetDim(2) - o) {
         ReconstructX2l<Type::weno5>(member, k, j - 1, is_l, ie_l, P, ql);
         ReconstructX2r<Type::weno5>(member, k, j, is_l, ie_l, P, qr);
     } else {
@@ -782,7 +788,12 @@ KOKKOS_INLINE_FUNCTION void ReconstructRow<Type::weno5_lower_poles, X3DIR>(parth
                                         const int& k, const int& j, const int& is_l, const int& ie_l, 
                                         ScratchPad2D<Real> ql, ScratchPad2D<Real> qr)
 {
-    ReconstructRow<Type::weno5, X3DIR>(member, P, k, j, is_l, ie_l, ql, qr);
+    constexpr int o = 6;
+    if (j > o && j < P.GetDim(2) - o) {
+        ReconstructRow<Type::weno5, X3DIR>(member, P, k, j, is_l, ie_l, ql, qr);
+    } else {
+        ReconstructRow<Type::linear_mc, X3DIR>(member, P, k, j, is_l, ie_l, ql, qr);
+    }
 }
 
 /**
