@@ -241,6 +241,9 @@ void KHARMA::FixParameters(ParameterInput *pin, bool is_parthenon_restart)
         pin->GetOrAddString("boundaries", "inner_x3", "periodic");
         pin->GetOrAddString("boundaries", "outer_x3", "periodic");
     } else {
+        // This will never happen in Minkowski, but sometimes is checked later
+        pin->SetReal("coordinates", "r_in", 0.);
+        pin->SetBoolean("coordinates", "domain_intersects_eh", false);
         // We can set reasonable default boundary conditions for Cartesian sims,
         // but not default domain bounds
         pin->GetOrAddString("boundaries", "inner_x1", "periodic");
