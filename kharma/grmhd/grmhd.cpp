@@ -611,7 +611,7 @@ void CancelBoundaryT3(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     );
 }
 
-Real UpdateAveragedCtop(MeshData<Real> *md)
+void UpdateAveragedCtop(MeshData<Real> *md)
 {
     auto pmesh = md->GetMeshPointer();
     auto& params = pmesh->packages.Get<KHARMAPackage>("Boundaries")->AllParams();
@@ -626,10 +626,14 @@ Real UpdateAveragedCtop(MeshData<Real> *md)
 
             if (bdir > pmesh->ndim) continue;
 
+            bool b3_is_reconnected = (pmesh->packages.AllPackages().count("B_CT")) ?
+                                      params.Get<bool>("reconnect_B3_" + bname) :
+                                      false;
+
             // If we've modified values on the pole...
             if (params.Get<bool>("cancel_T3_" + bname) ||
                 params.Get<bool>("cancel_U3_" + bname) ||
-                params.Get<bool>("reconnect_B3_" + bname)) {
+                b3_is_reconnected) {
                 // ...and if this face of the block corresponds to a global boundary...
                 if (pmb->boundary_flag[bface] == BoundaryFlag::user) {
                     PackIndexMap prims_map, cons_map;
