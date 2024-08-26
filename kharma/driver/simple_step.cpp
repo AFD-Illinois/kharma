@@ -128,30 +128,29 @@ TaskCollection KHARMADriver::MakeSimpleTaskCollection(BlockList_t &blocks, int s
         KHARMADriver::AddBoundarySync(t_floors, tl, md_sub_step_final);
     }
 
-    // Async Region: Any post-sync tasks.  Fixups, timestep & AMR tagging.
-    TaskRegion &async_region2 = tc.AddRegion(blocks.size());
-    for (int i = 0; i < blocks.size(); i++) {
-        auto &pmb = blocks[i];
-        auto &tl  = async_region2[i];
-        auto &mbd_sub_step_final = pmb->meshblock_data.Get(integrator->stage_name[stage]);
+    // Fix Region: prims/cons sync, floors, fixes, boundary conditions which need primitives
+    TaskRegion &fix_region = tc.AddRegion(num_partitions);
+    for (int i = 0; i < num_partitions; i++) {
+        auto &tl = fix_region[i];
+        auto &md_sub_step_final = pmesh->mesh_data.GetOrAdd(integrator->stage_name[stage], i);
 
         // If we're evolving the GRMHD variables explicitly, we need to fix UtoP variable inversion failures
         // Syncing bounds before calling this, and then running it over the whole domain, will make
         // behavior for different mesh breakdowns much more similar (identical?), since bad zones in
         // relevant ghost zone ranks will get to use all the same neighbors as if they were in the bulk
-        auto t_fix_p = tl.AddTask(t_none, Inverter::FixUtoP, mbd_sub_step_final.get());
+        auto t_fix_p = tl.AddTask(t_none, Inverter::MeshFixUtoP, md_sub_step_final.get());
 
-        auto t_set_bc = tl.AddTask(t_fix_p, parthenon::ApplyBoundaryConditions, mbd_sub_step_final);
+        auto t_set_bc = tl.AddTask(t_fix_p, parthenon::ApplyBoundaryConditionsOnCoarseOrFineMD, md_sub_step_final, false);
 
         // Make sure *all* conserved vars are synchronized at step end
-        auto t_ptou = tl.AddTask(t_set_bc, Flux::BlockPtoU, mbd_sub_step_final.get(), IndexDomain::entire, false);
+        auto t_ptou = tl.AddTask(t_set_bc, Flux::MeshPtoU, md_sub_step_final.get(), IndexDomain::entire, false);
 
         auto t_step_done = t_ptou;
 
         // Estimate next time step based on ctop
         if (stage == integrator->nstages) {
             auto t_new_dt =
-                tl.AddTask(t_step_done, Update::EstimateTimestep<MeshBlockData<Real>>, mbd_sub_step_final.get());
+                tl.AddTask(t_step_done, Update::EstimateTimestep<MeshData<Real>>, md_sub_step_final.get());
         }
     }
 
