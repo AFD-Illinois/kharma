@@ -361,6 +361,8 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
     // Callbacks
     // Fix flux
     pkg->FixFlux = KBoundaries::FixFlux;
+    // Source term (only needed for excise_flux)
+    pkg->AddSource = KBoundaries::AddSource;
     return pkg;
 }
 
@@ -619,18 +621,9 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
     // These functions do *not* need an extra row outside the domain,
     // like B_FluxCT::ZeroBoundaryFlux does.
     const int ndim = pmesh->ndim;
-    // Entire range
-    const IndexRange ibe = pmb0->cellbounds.GetBoundsI(IndexDomain::entire);
-    const IndexRange jbe = pmb0->cellbounds.GetBoundsJ(IndexDomain::entire);
-    const IndexRange kbe = pmb0->cellbounds.GetBoundsK(IndexDomain::entire);
-    // Ranges for sides
-    const IndexRange ibs = pmb0->cellbounds.GetBoundsI(IndexDomain::interior);
-    const IndexRange jbs = pmb0->cellbounds.GetBoundsJ(IndexDomain::interior);
-    const IndexRange kbs = pmb0->cellbounds.GetBoundsK(IndexDomain::interior);
-    // Ranges for faces
-    const IndexRange ibf = IndexRange{ibs.s, ibs.e + 1};
-    const IndexRange jbf = IndexRange{jbs.s, jbs.e + (ndim > 1)};
-    const IndexRange kbf = IndexRange{kbs.s, kbs.e + (ndim > 2)};
+    // One-zone halo for fluxes
+    const IndexRange3 bi = KDomain::GetRange(md, IndexDomain::interior);
+    const IndexRange3 b1 = KDomain::GetRange(md, IndexDomain::interior, -1, 1);
 
     for (auto &pmb : pmesh->block_list) {
         auto &rc = pmb->meshblock_data.Get();
@@ -643,16 +636,17 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
 
             if (bdir > ndim) continue;
 
-            // Set ranges for entire width.  Probably not needed for fluxes but won't hurt
-            // Transmitting fluxes now require at least 1-zone halo as they replace all directions
-            IndexRange ib = ibe, jb = jbe, kb = kbe;
+            const IndexRange3 bf = KDomain::GetRange(rc, IndexDomain::interior, FaceOf(bdir));
+
+            // Fluxes are needed in 1-zone halo for FluxCT
+            IndexRange3 b = b1;
             // Range for inner_x1 bounds is first face only, etc.
             if (bdir == 1) {
-                ib.s = ib.e = (binner) ? ibf.s : ibf.e;
+                b.is = b.ie = (binner) ? bf.is : bf.ie;
             } else if (bdir == 2) {
-                jb.s = jb.e = (binner) ? jbf.s : jbf.e;
+                b.js = b.je = (binner) ? bf.js : bf.je;
             } else {
-                kb.s = kb.e = (binner) ? kbf.s : kbf.e;
+                b.ks = b.ke = (binner) ? bf.ks : bf.ke;
             }
 
             PackIndexMap cons_map;
@@ -665,14 +659,14 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
                 if (pmb->boundary_flag[bface] == BoundaryFlag::user) {
                     if (binner) {
                         pmb->par_for(
-                            "zero_inflow_flux_" + bname, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+                            "zero_inflow_flux_" + bname, b.ks, b.ke, b.js, b.je, b.is, b.ie,
                             KOKKOS_LAMBDA(const int &k, const int &j, const int &i) {
                                 F.flux(bdir, m_rho, k, j, i) = m::min(F.flux(bdir, m_rho, k, j, i), 0.);
                             }
                         );
                     } else {
                         pmb->par_for(
-                            "zero_inflow_flux_" + bname, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+                            "zero_inflow_flux_" + bname, b.ks, b.ke, b.js, b.je, b.is, b.ie,
                             KOKKOS_LAMBDA(const int &k, const int &j, const int &i) {
                                 F.flux(bdir, m_rho, k, j, i) = m::max(F.flux(bdir, m_rho, k, j, i), 0.);
                             }
@@ -686,7 +680,7 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
                 // ...and if this face of the block corresponds to a global boundary...
                 if (pmb->boundary_flag[bface] == BoundaryFlag::user) {
                     pmb->par_for(
-                        "zero_flux_" + bname, 0, F.GetDim(4) - 1, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+                        "zero_flux_" + bname, 0, F.GetDim(4) - 1, b.ks, b.ke, b.js, b.je, b.is, b.ie,
                         KOKKOS_LAMBDA(const int &p, const int &k, const int &j, const int &i) {
                             F.flux(bdir, p, k, j, i) = 0.;
                         }
@@ -722,13 +716,59 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
                     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
                     const auto& G = pmb->coords;
                     const int nvar = F.GetDim(4);
+                    const Loci loc = (binner) ? Loci::outer_half : Loci::inner_half;
+
+                    const IndexRange3 bi = KDomain::GetRange(rc, IndexDomain::interior, CC);
                     // Cell center of our two which is actually on grid
-                    const int j_cell = (binner) ? jb.s : jb.s - 1;
+                    const int j_cell = (binner) ? b.js : b.js - 1;
+
+                    // Replace existing X3 fluxes in last row with true half-cell versions
+                    const int dir = X3DIR;
+                    pmb->par_for(
+                        "excise_flux_" + bname, b.ks, b.ke, j_cell, j_cell, b.is, b.ie,
+                        KOKKOS_LAMBDA(const int &k, const int &j, const int &i) {
+                            // Leftover Pl/Pr from X3DIR flux calculation!
+                            const int jn = (binner) ? j+1 : j-1;
+                            PLOOP Pl_all(ip, k, j, i) = 0.75 * Pl_all(ip, k, j, i) + 0.25 * Pl_all(ip, k, jn, i);
+                            PLOOP Pr_all(ip, k, j, i) = 0.75 * Pr_all(ip, k, j, i) + 0.25 * Pr_all(ip, k, jn, i);
+
+                            FourVectors Dtmp;
+                            // Left
+                            GRMHD::calc_4vecs(G, Pl_all, m_p, k, j, i, loc, Dtmp);
+                            Flux::prim_to_flux(G, Pl_all, m_p, Dtmp, emhd_params, gam, k, j, i, 0, Ul_all, m_u, loc);
+                            Flux::prim_to_flux(G, Pl_all, m_p, Dtmp, emhd_params, gam, k, j, i, dir, Fl_all, m_u, loc);
+                            // Magnetosonic speeds
+                            Real cmaxL, cminL;
+                            Flux::vchar_global(G, Pl_all, m_p, Dtmp, gam, emhd_params, k, j, i, loc, dir, cmaxL, cminL);
+                            // Record speeds
+                            cmax(dir-1, k, j, i) = m::max(0., cmaxL);
+                            cmin(dir-1, k, j, i) = m::min(0., cminL);
+
+                            // Right
+                            GRMHD::calc_4vecs(G, Pr_all, m_p, k, j, i, loc, Dtmp);
+                            Flux::prim_to_flux(G, Pr_all, m_p, Dtmp, emhd_params, gam, k, j, i, 0, Ur_all, m_u, loc);
+                            Flux::prim_to_flux(G, Pr_all, m_p, Dtmp, emhd_params, gam, k, j, i, dir, Fr_all, m_u, loc);
+                            // Magnetosonic speeds
+                            Real cmaxR, cminR;
+                            Flux::vchar_global(G, Pr_all, m_p, Dtmp, gam, emhd_params, k, j, i, loc, dir, cmaxR, cminR);
+
+                            // Reset cmax/cmin based on our flux
+                            cmax(dir-1, k, j, i) =  m::max(cmax(dir-1, k, j, i), cmaxR);
+                            cmin(dir-1, k, j, i) = -m::min(cmin(dir-1, k, j, i), cminR);
+
+                            // Use LLF flux
+                            PLOOP {
+                                F.flux(dir, ip, k, j, i) = Flux::llf(Fl_all(ip, k, j, i), Fr_all(ip, k, j, i),
+                                                                    cmax(dir-1, k, j, i), cmin(dir-1, k, j, i),
+                                                                    Ul_all(ip, k, j, i), Ur_all(ip, k, j, i)) * 0.5;
+                            }
+                        }
+                    );
 
                     // Replace fluxes through the pole (would be zero) with fluxes through
-                    // the middle of the cell. Only in X2 for dir 2
+                    // the middle of the cell. Should be general, remember this has 1-zone halo!
                     pmb->par_for(
-                        "excise_flux_" + bname, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+                        "excise_flux_" + bname, b.ks, b.ke, b.js, b.je, b.is, b.ie,
                         KOKKOS_LAMBDA(const int &k, const int &j, const int &i) {
                             // Face i,j,k borders cell with same index and 1 left with index:
                             int kk = (bdir == 3) ? k - 1 : k;
@@ -768,28 +808,29 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
                                 F.flux(bdir, ip, k, j, i) = Flux::llf(Fl_all(ip, k, j, i), Fr_all(ip, k, j, i),
                                                                     cmax(bdir-1, k, j, i), cmin(bdir-1, k, j, i),
                                                                     Ul_all(ip, k, j, i), Ur_all(ip, k, j, i));
-                                // Our zone now sees only half-size r, th faces, therefore fluxes
-                                // Convert to/from zero-index to modulate
-                                // TODO should actually recalcuate at new face center...
-                                F.flux((bdir - 1 + 1) % 3 + 1, ip, k, j_cell, i) /= 2;
-                                F.flux((bdir - 1 + 2) % 3 + 1, ip, k, j_cell, i) /= 2;
+                                // Reduce the X1 flux in a semi-consistent way
+                                const int jc = (binner) ? j_cell + 1 : j_cell;
+                                F.flux(X1DIR, ip, k, j_cell, i) *= 0.5
+                                    * (G.gdet(Loci::face1, j_cell, i) + G.gdet(Loci::corner, jc, i)) / 2 / G.gdet(Loci::face1, j_cell, i);
+                                // This is also a decent guess, but less accurate than recalculating as above
+                                // F.flux(X3DIR, ip, k, j_cell, i) *= 0.5
+                                //     * G.gdet(loc, j_cell, i) / G.gdet(Loci::center, j_cell, i);
                             }
 
                             // Account for the half-size in the timestep later
                             cmax(bdir-1, k, j, i) *= 2;
                             cmin(bdir-1, k, j, i) *= 2;
-
                         }
                     );
                     // Then average to make absolutely sure fluxes match
                     // TODO only for X2 bound currently!
-                    const IndexRange3 bi = KDomain::GetRange(rc, IndexDomain::interior, CC);
+                    // Must pay attention that only physical zones are touched: no averaging w/ghosts!
                     const int Nk3p = (bi.ke - bi.ks + 1);
                     const int Nk3p2 = Nk3p/2;
                     const int ksp = bi.ks;
-                    // Run over previous X1/X2 but half the X3 range...
+                    // Run over X1 *interior* on the X2 face, for half the *interior* X3 range
                     pmb->par_for(
-                        "average_excised_flux_" + bname, 0, F.GetDim(4)-1, kb.s, (kb.e-kb.s+1)/2 + kb.s, jb.s, jb.e, ib.s, ib.e,
+                        "average_excised_flux_" + bname, 0, F.GetDim(4)-1, bi.ks, bi.ks + Nk3p2 - 1, b.js, b.je, bi.is, bi.ie,
                         KOKKOS_LAMBDA(const int &v, const int &k, const int &j, const int &i) {
                             const int ki = ((k - ksp + Nk3p2) % Nk3p) + ksp;
                             Real avg = 0.;
@@ -812,4 +853,59 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
     }
 
     return TaskStatus::complete;
+}
+
+void KBoundaries::AddSource(MeshData<Real> *md, MeshData<Real> *mdudt, IndexDomain domain)
+{
+    // Note we're ignoring "domain," we just add the "source" where it's needed next to the pole
+    auto pmesh = mdudt->GetMeshPointer();
+    auto& params = pmesh->packages.Get<KHARMAPackage>("Boundaries")->AllParams();
+    for (int i=0; i < mdudt->NumBlocks(); ++i) {
+        auto &rc = mdudt->GetBlockData(i);
+        auto pmb = rc->GetBlockPointer();
+        for (int i = 0; i < BOUNDARY_NFACES; i++) {
+            BoundaryFace bface = (BoundaryFace)i;
+            auto bname = KBoundaries::BoundaryName(bface);
+            const auto bdir = KBoundaries::BoundaryDirection(bface);
+            const auto binner = KBoundaries::BoundaryIsInner(bface);
+            const auto bdomain = KBoundaries::BoundaryDomain(bface);
+
+            if (bdir > pmesh->ndim) continue;
+
+            // If we should replace fluxes with excised versions...
+            if (params.Get<bool>("excise_flux_" + bname)) {
+                // ...and if this face of the block corresponds to a global boundary...
+                if (pmb->boundary_flag[bface] == BoundaryFlag::user) {
+                    if (bdir != 2) throw std::runtime_error("Excised polar fluxes only fully implemented in X2!");
+
+                    const IndexRange3 bi = KDomain::GetRange(rc, IndexDomain::interior);
+
+                    // Interior only! We're about to sync anyway
+                    IndexRange3 b = bi;
+                    // Range is last physical cell-center around the pole
+                    if (bdir == 1) {
+                        b.is = b.ie = (binner) ? bi.is : bi.ie;
+                    } else if (bdir == 2) {
+                        b.js = b.je = (binner) ? bi.js : bi.je;
+                    } else {
+                        b.ks = b.ke = (binner) ? bi.ks : bi.ke;
+                    }
+
+                    auto &dUdt = rc->PackVariables({Metadata::WithFluxes});
+                    const auto& G = pmb->coords;
+                    const Loci loc = (binner) ? Loci::outer_half : Loci::inner_half;
+
+                    pmb->par_for(
+                        "normalize_excised_flux_" + bname, 0, dUdt.GetDim(4)-1, b.ks, b.ke, b.js, b.je, b.is, b.ie,
+                        KOKKOS_LAMBDA(const int &v, const int &k, const int &j, const int &i) {
+                            // Factor of 2 because cell is half-size in fluxdiv
+                            // gdet factors move conserved vars at outer cell to the center
+                            dUdt(v, k, j, i) *= 2 * G.gdet(Loci::center, j, i) / G.gdet(loc, j, i);
+                        }
+                    );
+
+                }
+            }
+        }
+    }
 }
