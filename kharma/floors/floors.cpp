@@ -122,7 +122,7 @@ std::shared_ptr<KHARMAPackage> Floors::Initialize(ParameterInput *pin, std::shar
     // List (vector) of HistoryOutputVars that will all be enrolled as output variables
     parthenon::HstVar_list hst_vars = {};
     // Count total floors as a history item
-    hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::max, CountFFlags, "FFlags"));
+    hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, CountFFlags, "FFlags"));
     // TODO Domain::entire version?
     // TODO entries for each individual flag?
     // add callbacks for HST output to the Params struct, identified by the `hist_param_key`

@@ -175,16 +175,8 @@ class KHARMADriver : public MultiStageDriver {
             return Update::WeightedSumData<std::vector<MetadataFlag>, T>(flags, source, source, 1., 0., dest);
         }
 
-        /**
-         * Scale a variable by 'norm'.
-         * Mostly makes things easier to read.
-         */
-        static TaskStatus Scale(std::vector<std::string> flags,  MeshBlockData<Real>* source, Real norm)
-        {
-            return Update::WeightedSumData<std::vector<std::string>, MeshBlockData<Real>>(flags, source, source, norm, 0., source);
-        }
-
-        static TaskStatus WeightedSumDataFace(const std::vector<MetadataFlag> &flags, MeshData<Real> *in1, MeshData<Real> *in2, const Real w1, const Real w2,
+        template<typename MDType>
+        static TaskStatus WeightedSumDataFace(const std::vector<MDType> &flags, MeshData<Real> *in1, MeshData<Real> *in2, const Real w1, const Real w2,
                                 MeshData<Real> *out)
         {
             Kokkos::Profiling::pushRegion("Task_WeightedSumDataFace");
@@ -206,6 +198,19 @@ class KHARMADriver : public MultiStageDriver {
                 });
             Kokkos::Profiling::popRegion(); // Task_WeightedSumDataFace
             return TaskStatus::complete;
+        }
+
+        /**
+         * Scale a variable by 'norm'.
+         * Mostly makes things easier to read.
+         */
+        static TaskStatus Scale(std::vector<std::string> vars,  MeshData<Real>* source, Real norm)
+        {
+            return Update::WeightedSumData<std::vector<std::string>, MeshData<Real>>(vars, source, source, norm, 0., source);
+        }
+        static TaskStatus ScaleFace(std::vector<std::string> vars,  MeshData<Real>* source, Real norm)
+        {
+            return WeightedSumDataFace(vars, source, source, norm, 0., source);
         }
 
         static TaskStatus FluxDivergence(MeshData<Real> *in_obj, MeshData<Real> *dudt_obj,
