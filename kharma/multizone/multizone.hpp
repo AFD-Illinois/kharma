@@ -54,6 +54,8 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
  */
 TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md);
 
+void DumpBeforeSwitch(Mesh *pmesh, ParameterInput *pin, const SimTime &tm);
+
 /**
  * calculate Bondi radius for a given sonic radius rs
  */
@@ -78,6 +80,25 @@ KOKKOS_INLINE_FUNCTION Real CalcRuntime(const Real &r_in, const int &base, const
 }
 
 /**
+ * calculate duration per zone
+ */
+KOKKOS_INLINE_FUNCTION Real CalcDuration(const int i_zone, const int nzones_eff, const bool one_trun, const int long_t_in, const int ncycle_per_zone, const bool loc_tchar, const Real f_cap_ncycle, const Real base, const Real f_tchar, const Real gam, const Real bondi_rs) {
+    int longer_factor = 1;
+    if ((i_zone == nzones_eff - 1) && !one_trun) longer_factor = 2;
+    if (i_zone == 0) longer_factor = long_t_in;
+
+    if (ncycle_per_zone > 0) {
+        Real switch_criterion = ncycle_per_zone * longer_factor;
+        if ((! loc_tchar) && (i_zone == nzones_eff - 1)) switch_criterion /= f_cap_ncycle;
+        return switch_criterion;
+    } else {
+        Real temp_rin = m::pow(base, i_zone);
+        Real runtime_per_zone = f_tchar * CalcRuntime(temp_rin, base, gam, bondi_rs, loc_tchar);
+        return runtime_per_zone * longer_factor;
+    }
+}
+
+/**
  * Depending on the location in the V cycles, decide which blocks are active and where to apply boundary conditions for the current step
  * 
  */
@@ -88,7 +109,7 @@ void DecideActiveBlocksAndBoundaryConditions(Mesh *pmesh, const SimTime &tm, boo
  * 
  */
 //TaskStatus DecideToSwitch(MeshData<Real> *md, const SimTime &tm, bool &switch_zone);
-void DecideToSwitch(Mesh *pmesh, const SimTime &tm, bool &switch_zone);
+void DecideToSwitch(Mesh *pmesh, const SimTime &tm);
 
 /**
  * Decide which blocks are active for the next step and progress in the V cycle, in order to determine dt

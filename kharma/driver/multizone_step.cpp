@@ -68,9 +68,8 @@ TaskCollection KHARMADriver::MakeMultizoneTaskCollection(BlockList_t &blocks, in
     bool is_active[num_blocks]; // = {false, false, true};
     bool apply_boundary_condition[num_blocks][BOUNDARY_NFACES];
 
-    bool switch_zone = false;
     if (stage == 1)
-        Multizone::DecideToSwitch(pmesh, tm, switch_zone);
+        Multizone::DecideToSwitch(pmesh, tm);
     Multizone::DecideActiveBlocksAndBoundaryConditions(pmesh, tm, is_active, apply_boundary_condition, stage == 1);
 
     // TaskCollections are a collection of TaskRegions.

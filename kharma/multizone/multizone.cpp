@@ -75,6 +75,7 @@ std::shared_ptr<KHARMAPackage> Multizone::Initialize(ParameterInput *pin, std::s
     params.Add("i_vcycle", 0, true);
     params.Add("t0_zone", 0.0, true);
     params.Add("n0_zone", 0, true);
+    params.Add("switch_zone", false, true);
 
     // options when using the characteristic time to determine zone-switching
     const Real rs = pin->GetOrAddReal("bondi", "rs", 16.);
@@ -105,6 +106,7 @@ std::shared_ptr<KHARMAPackage> Multizone::Initialize(ParameterInput *pin, std::s
 
     //pkg->BlockUtoP = Electrons::BlockUtoP;
     //pkg->BoundaryUtoP = Electrons::BlockUtoP;
+    pkg->PostStepWork = Multizone::DumpBeforeSwitch;
 
     return pkg;
 }
@@ -187,7 +189,7 @@ void Multizone::DecideActiveBlocksAndBoundaryConditions(Mesh *pmesh, const SimTi
 
             // Decide where to apply bc // TODO: is this ok?
             if ((i_zone != 0) && (m::abs(x1min - active_x1min) / m::max(active_x1min, SMALL) < 1.e-10)) apply_boundary_condition[iblock][BoundaryFace::inner_x1] = true;
-            if (((i_zone != nzones_eff - 1) || (outer_x1_btype_name == "dirichlet")) && m::abs(x1max - active_x1max) / active_x1max < 1.e-10) apply_boundary_condition[iblock][BoundaryFace::outer_x1] = true;
+            if (((i_zone != nzones_eff - 1) || (outer_x1_btype_name == "dirichlet")) && (! move_rin) && m::abs(x1max - active_x1max) / active_x1max < 1.e-10) apply_boundary_condition[iblock][BoundaryFace::outer_x1] = true;
         }
         //std::cout << "iblock " << iblock << " x1min " << x1min << " x1max " << x1max << ": is active? " << is_active[iblock] << ", boundary applied? " << apply_boundary_condition[iblock][BoundaryFace::inner_x1] << apply_boundary_condition[iblock][BoundaryFace::outer_x1] << std::endl;
     }
@@ -195,8 +197,9 @@ void Multizone::DecideActiveBlocksAndBoundaryConditions(Mesh *pmesh, const SimTi
 
 }
 
+
 //TaskStatus Multizone::DecideToSwitch(MeshData<Real> *md, const SimTime &tm, bool &switch_zone)
-void Multizone::DecideToSwitch(Mesh *pmesh, const SimTime &tm, bool &switch_zone)
+void Multizone::DecideToSwitch(Mesh *pmesh, const SimTime &tm)
 {
     Flag("DecideToSwitch");
     //auto pmesh = md->GetMeshPointer();
@@ -220,6 +223,7 @@ void Multizone::DecideToSwitch(Mesh *pmesh, const SimTime &tm, bool &switch_zone
     const int long_t_in = params.Get<int>("long_t_in");
     const bool combine_out = params.Get<bool>("combine_out");
     const bool move_rin = params.Get<bool>("move_rin");
+    const int nzones_per_vcycle = 2 * (nzones_eff - 1);
     
     // Current location in V-cycles
     int i_vcycle = params.Get<int>("i_vcycle"); // current i_vcycle
@@ -227,26 +231,9 @@ void Multizone::DecideToSwitch(Mesh *pmesh, const SimTime &tm, bool &switch_zone
     Real t0_zone = params.Get<Real>("t0_zone"); // time at zone-switching
     int n0_zone = params.Get<int>("n0_zone"); // cycle at zone-switching
     int i_zone = m::abs(i_within_vcycle - (nzones_eff - 1)); // zone number. zone-0 is the smallest annulus.
-
-    // Derived parameters
-    switch_zone = false; // default
-    Real temp_rin, runtime_per_zone;
-    int nzones_per_vcycle = 2 * (nzones_eff - 1);
-    int longer_factor = 1;
-    if ((i_zone == nzones_eff - 1) && !one_trun) longer_factor = 2;
-    if (i_zone == 0) longer_factor = long_t_in;
-
-    if (ncycle_per_zone > 0) {
-        Real switch_criterion = ncycle_per_zone * longer_factor;
-        if (! loc_tchar && i_zone == nzones_eff - 1) switch_criterion /= f_cap_ncycle;
-        switch_zone = (next_ncycle - n0_zone) >= switch_criterion;
-    }
-    else {
-        temp_rin = m::pow(base, i_zone);
-        runtime_per_zone = f_tchar * CalcRuntime(temp_rin, base, gam, bondi_rs, loc_tchar);
-        switch_zone = (next_time - t0_zone) > runtime_per_zone * longer_factor;
-        //std::cout << "time now " << tm.time << ", t0_zone " << t0_zone << ", runtime_per_zone " << runtime_per_zone << std::endl;
-    }
+    
+    // If determined to switch zones, update teh zones accordingly
+    bool switch_zone = params.Get<bool>("switch_zone");
     if (switch_zone) {
         i_within_vcycle += 1;
         if (i_within_vcycle >= nzones_per_vcycle) { // if completed a V-cycle
@@ -256,8 +243,10 @@ void Multizone::DecideToSwitch(Mesh *pmesh, const SimTime &tm, bool &switch_zone
         i_zone = m::abs(i_within_vcycle - (nzones_eff - 1)); // update zone number
         params.Update<int>("i_within_vcycle", i_within_vcycle);
         params.Update<int>("i_vcycle", i_vcycle);
-        params.Update<Real>("t0_zone", next_time);
-        params.Update<int>("n0_zone", next_ncycle);
+        t0_zone = tm.time;
+        n0_zone = tm.ncycle;
+        params.Update<Real>("t0_zone", t0_zone);
+        params.Update<int>("n0_zone", n0_zone);
         
         // Range of radii that is active
         int active_rout;
@@ -267,6 +256,27 @@ void Multizone::DecideToSwitch(Mesh *pmesh, const SimTime &tm, bool &switch_zone
         params.Update<int>("active_rin", active_rin);
         params.Update<int>("active_rout", active_rout);
     }
+
+    // Determine if the zone should be switched next
+    switch_zone = false; // default
+    //Real temp_rin, runtime_per_zone;
+    //int longer_factor = 1;
+    //if ((i_zone == nzones_eff - 1) && !one_trun) longer_factor = 2;
+    //if (i_zone == 0) longer_factor = long_t_in;
+
+    Real switch_criterion = CalcDuration(i_zone, nzones_eff, one_trun, long_t_in, ncycle_per_zone, loc_tchar, f_cap_ncycle, base, f_tchar, gam, bondi_rs);
+
+    if (ncycle_per_zone > 0) {
+        //Real switch_criterion = ncycle_per_zone * longer_factor;
+        //if (! loc_tchar && i_zone == nzones_eff - 1) switch_criterion /= f_cap_ncycle;
+        switch_zone = (next_ncycle - n0_zone) >= switch_criterion;
+    } else {
+        //temp_rin = m::pow(base, i_zone);
+        //runtime_per_zone = f_tchar * CalcRuntime(temp_rin, base, gam, bondi_rs, loc_tchar);
+        switch_zone = (next_time - t0_zone) > switch_criterion; //runtime_per_zone * longer_factor;
+        //std::cout << "time now " << tm.time << ", t0_zone " << t0_zone << ", runtime_per_zone " << runtime_per_zone << std::endl;
+    }
+    params.Update<bool>("switch_zone", switch_zone);
 
     EndFlag();
     //return TaskStatus::complete;
@@ -308,5 +318,19 @@ TaskStatus Multizone::PostStepDiagnostics(const SimTime& tm, MeshData<Real> *rc)
 
     EndFlag();
     return TaskStatus::complete;
+}
+
+//void Multizone::OverrideDumpCadence(Mesh *pmesh, ParameterInput *pin, const SimTime &tm)
+void Multizone::DumpBeforeSwitch(Mesh *pmesh, ParameterInput *pin, const SimTime &tm)
+{
+    auto &params = pmesh->packages.Get("Multizone")->AllParams();
+    const int ncycle_per_zone = params.Get<int>("ncycle_per_zone");
+    const bool switch_zone = params.Get<bool>("switch_zone");
+    if (switch_zone) {
+        // the next output dump cadence is overridden such that only the last dump before switching -> is this possible by doing this?
+        auto tm_copy = tm;
+        auto pouts = std::make_unique<Outputs>(pmesh, pin, &tm_copy);
+        pouts->MakeOutputs(pmesh, pin, &tm_copy, SignalHandler::OutputSignal::analysis);
+    }
 }
 
