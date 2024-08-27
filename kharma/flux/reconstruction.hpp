@@ -742,7 +742,7 @@ KOKKOS_INLINE_FUNCTION void ReconstructRow<Type::weno5_lower_poles, X2DIR>(parth
     // This prioiritizes using the same fluxes on faces rather than for cells.
     // Neither is transparently wrong (afaict) but this feels nicer
     constexpr int o = 6; //5;
-    if (j > o || j < P.GetDim(2) - o) {
+    if (j > o && j < P.GetDim(2) - o) {
         ReconstructX2l<Type::weno5>(member, k, j - 1, is_l, ie_l, P, ql);
         ReconstructX2r<Type::weno5>(member, k, j, is_l, ie_l, P, qr);
     } else {
