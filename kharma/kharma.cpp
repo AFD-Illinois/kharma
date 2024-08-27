@@ -140,7 +140,7 @@ void KHARMA::PostStepWork(Mesh *pmesh, ParameterInput *pin, const SimTime &tm)
     globals.Update<double>("time", tm.time);
 }
 
-void KHARMA::FixParameters(ParameterInput *pin)
+void KHARMA::FixParameters(ParameterInput *pin, bool is_parthenon_restart)
 {
     Flag("Fixing parameters");
     // Parthenon sets 2 ghost zones as a default.
@@ -152,11 +152,24 @@ void KHARMA::FixParameters(ParameterInput *pin)
 
     // If we're restarting (not via Parthenon), read the restart file to get most parameters
     std::string prob = pin->GetString("parthenon/job", "problem_id");
-    if (prob == "resize_restart") {
-        ReadIharmRestartHeader(pin->GetString("resize_restart", "fname"), pin);
-    }
-    if (prob == "resize_restart_kharma") {
-        ReadKharmaRestartHeader(pin->GetString("resize_restart", "fname"), pin);
+    if (!is_parthenon_restart) {
+        if (prob == "resize_restart") {
+            ReadIharmRestartHeader(pin->GetString("resize_restart", "fname"), pin);
+        }
+        if (prob == "resize_restart_kharma") {
+            ReadKharmaRestartHeader(pin->GetString("resize_restart", "fname"), pin);
+        }
+    } else if (prob == "resize_restart") {
+        // If this is a Parthenon restart of a problem named `resize_restart`,
+        // we don't want to trigger all the resizing stuff again.
+        // So we rename the problem, and undo the custom stuff we needed for
+        // resizing.
+        pin->SetString("parthenon/job", "problem_id", "resized_restart");
+        // Don't automatically clean B on subsequent restarts, either!
+        pin->SetBoolean("b_cleanup", "on", false);
+        // Finally, we probably set nlim=0 or 1 for the restarting phase, clear that
+        if (pin->GetInteger("parthenon/time", "nlim") <= 1)
+            pin->SetInteger("parthenon/time", "nlim", -1);
     }
 
     // Construct a CoordinateEmbedding object.  See coordinate_embedding.hpp for supported systems/tags
@@ -228,6 +241,9 @@ void KHARMA::FixParameters(ParameterInput *pin)
         pin->GetOrAddString("boundaries", "inner_x3", "periodic");
         pin->GetOrAddString("boundaries", "outer_x3", "periodic");
     } else {
+        // This will never happen in Minkowski, but sometimes is checked later
+        pin->SetReal("coordinates", "r_in", 0.);
+        pin->SetBoolean("coordinates", "domain_intersects_eh", false);
         // We can set reasonable default boundary conditions for Cartesian sims,
         // but not default domain bounds
         pin->GetOrAddString("boundaries", "inner_x1", "periodic");
@@ -335,9 +351,12 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput> &pin)
     auto t_grmhd = tl.AddTask(t_globals | t_driver, KHARMA::AddPackage, packages, GRMHD::Initialize, pin.get());
     // Only load the inverter if GRMHD/EMHD isn't being evolved implicitly
     // Unless we want to use the explicitly-evolved ideal MHD variables as a guess for the solver
+    // Or we want first-order flux corrections, which rely on a UtoP guess
+    // Note we only accept fofc/on here, not legacy versions/defaults --
+    // FOFC should be explicitly enabled in EMHD!
     auto t_inverter = t_grmhd;
     if (!pin->GetOrAddBoolean("GRMHD", "implicit", pin->GetOrAddBoolean("emhd", "on", false)) ||
-        pin->GetOrAddBoolean("emhd", "ideal_guess", false)) {
+        pin->GetOrAddBoolean("emhd", "ideal_guess", false) || pin->GetOrAddBoolean("fofc", "on", false)) {
         t_inverter = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, Inverter::Initialize, pin.get());
     }
     // Floors package is only loaded if floors aren't disabled

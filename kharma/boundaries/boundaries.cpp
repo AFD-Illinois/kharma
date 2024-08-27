@@ -97,7 +97,7 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
     // Face-centered fields: some duplicate stuff, leaving it separate for now
     FC ghost_vars_f = FC({Metadata::FillGhost, Metadata::Face})
                 - FC({Metadata::GetUserFlag("StartupOnly")});
-    int nvar_f = m::max(KHARMA::PackDimension(packages.get(), ghost_vars_f), 1);
+    int nvar_f = 3 * m::max(KHARMA::PackDimension(packages.get(), ghost_vars_f), 1);
 
     // TODO encapsulate this
     Metadata m_x1, m_x2, m_x3, m_x1_f, m_x2_f, m_x3_f;
@@ -178,23 +178,26 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
             // introduce divergence to the first physical zone.
             bool clean_face_B = pin->GetOrAddBoolean("boundaries", "clean_face_B_" + bname, (btype == "outflow"));
             params.Add("clean_face_B_"+bname, clean_face_B);
-            // Forcibly reconnect field loops that get trapped around the pole w/face-CT.  Maybe useful for reflecting too?
-            bool reconnect_B3 = pin->GetOrAddBoolean("boundaries", "reconnect_B3_" + bname, (btype == "transmitting"));
+            // Forcibly reconnect field loops that get trapped around the polar boundary.  Probably not needed anymore.
+            bool reconnect_B3 = pin->GetOrAddBoolean("boundaries", "reconnect_B3_" + bname, false);
             params.Add("reconnect_B3_"+bname, reconnect_B3);
 
             // Special EMF averaging.  Allows B slippage, e.g. around pole for transmitting conditions
-            // Still problems with averaging+dirichlet, maybe corners?
+            // Useful for certain dirichlet conditions e.g. multizone
             bool average_EMF = pin->GetOrAddBoolean("boundaries", "average_EMF_" + bname, (btype == "transmitting"));
             params.Add("average_EMF_"+bname, average_EMF);
             // Otherwise, always zero EMFs to prevent B field escaping the domain in polar/dirichlet bounds
-            bool zero_EMF = pin->GetOrAddBoolean("boundaries", "zero_EMF_" + bname, !average_EMF);
+            // Default for dirichlet conditions unless averaging is set manually
+            bool zero_EMF = pin->GetOrAddBoolean("boundaries", "zero_EMF_" + bname, (btype == "reflecting" ||
+                                                                                    (btype == "dirichlet" && !average_EMF)));
             params.Add("zero_EMF_"+bname, zero_EMF);
         }
-        // Advect together/cancel U3, under the theory it's in a similar position to B3 above (albeit no CT constraining it)
-        // Not enabled by default as it does not conserve angular momentum and isn't necessary for stability
+        // Advect together/cancel velocity or angular momentum "loops" around the pole, similar to B3 above
+        // Probably not needed anymore, now polar boundary conditions are fixed.  cancel_U3 does not conserve angular momentum.
         bool cancel_U3 = pin->GetOrAddBoolean("boundaries", "cancel_U3_" + bname, false);
         params.Add("cancel_U3_"+bname, cancel_U3);
-
+        bool cancel_T3 = pin->GetOrAddBoolean("boundaries", "cancel_T3_" + bname, false);
+        params.Add("cancel_T3_"+bname, cancel_T3);
 
         // String manip to get the Parthenon boundary name, e.g., "ox1_bc"
         auto bname_parthenon = bname.substr(0, 1) + "x" + bname.substr(7, 8) + "_bc";
@@ -393,6 +396,9 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
     if (pmb->packages.AllPackages().count("GRMHD")) {
         if (params.Get<bool>("cancel_U3_" + bname) && full_grmhd_boundary) {
             GRMHD::CancelBoundaryU3(rc.get(), domain, coarse);
+        }
+        if (params.Get<bool>("cancel_T3_" + bname) && full_grmhd_boundary) {
+            GRMHD::CancelBoundaryT3(rc.get(), domain, coarse);
         }
     }
 

@@ -71,10 +71,18 @@ bool CleanupThisStep(Mesh* pmesh, int nstep);
  * Extra MeshData arg is just to satisfy Parthenon solver calling convention
  */
 TaskStatus CornerLaplacian(MeshData<Real>* md, const std::string& p_var, MeshData<Real>* md_again, const std::string& lap_var);
+/**
+ * Calculate the laplacian using divergence at centers.
+ */
+TaskStatus CenterLaplacian(MeshData<Real>* md, const std::string& p_var, MeshData<Real>* md_again, const std::string& lap_var);
 
 /**
- * Apply B -= grad(P) to subtract divergence from the magnetic field
+ * Apply B -= grad(P) on cell centers to subtract divergence from the magnetic field
  */
-TaskStatus ApplyP(MeshData<Real> *msolve, MeshData<Real> *md);
+TaskStatus ApplyPCenter(MeshData<Real> *msolve, MeshData<Real> *md);
+/**
+ * Apply B -= grad(P) on faces to subtract divergence from the magnetic field
+ */
+TaskStatus ApplyPFace(MeshData<Real> *msolve, MeshData<Real> *md);
 
 } // namespace B_Cleanup

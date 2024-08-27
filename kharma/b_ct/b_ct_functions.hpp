@@ -47,12 +47,31 @@ namespace B_CT {
 template<typename Global>
 KOKKOS_INLINE_FUNCTION Real face_div(const GRCoordinates &G, Global &v, const int &ndim, const int &k, const int &j, const int &i)
 {
-    Real du = (v(F1, 0, k, j, i + 1) * G.Volume<F1>(k, j, i + 1) - v(F1, 0, k, j, i) * G.Volume<F1>(k, j, i));
+    Real du = (v(F1, 0, k, j, i + 1) - v(F1, 0, k, j, i)) / G.Dxc<1>(k, j, i);
     if (ndim > 1)
-        du += (v(F2, 0, k, j + 1, i) * G.Volume<F2>(k, j + 1, i) - v(F2, 0, k, j, i) * G.Volume<F2>(k, j, i));
+        du += (v(F2, 0, k, j + 1, i) - v(F2, 0, k, j, i)) / G.Dxc<2>(k, j, i);
     if (ndim > 2)
-        du += (v(F3, 0, k + 1, j, i) * G.Volume<F3>(k + 1, j, i) - v(F3, 0, k, j, i) * G.Volume<F3>(k, j, i));
-    return du / G.Volume<CC>(k, j, i);
+        du += (v(F3, 0, k + 1, j, i) - v(F3, 0, k, j, i)) / G.Dxc<3>(k, j, i);
+    return du;
+}
+
+/**
+ * Gradient on one face, denoted by DIR. Split vs Flux-CT version because generally
+ * this will be needed in separate loops setting F1, F2, F3, with separate bounds
+ * Note this is backward-difference: face N borders cells N-1 & N
+ */
+template<CoordinateDirection DIR>
+KOKKOS_FORCEINLINE_FUNCTION double face_grad(const GRCoordinates& G, const VariablePack<Real>& P,
+                                          const int& k, const int& j, const int& i)
+{
+    // Backward gradient to cell faces
+    if constexpr (DIR == X1DIR) {
+        return (P(0, k, j, i) - P(0, k, j, i-1)) / G.Dxc<1>(k, j, i);
+    } else if constexpr (DIR == X2DIR) {
+        return (P(0, k, j, i) - P(0, k, j-1, i)) / G.Dxc<2>(k, j, i);
+    } else if constexpr (DIR == X3DIR) {
+        return (P(0, k, j, i) - P(0, k-1, j, i)) / G.Dxc<3>(k, j, i);
+    }
 }
 
 template<TE el, int NDIM>
