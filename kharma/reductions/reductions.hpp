@@ -51,7 +51,9 @@ namespace Reductions {
 std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages);
 
 /**
- * Perform a reduction using operation 'op' over a given domain
+ * Perform a reduction using operation 'op' over a given domain.
+ * Note startx/stopx are in *embedding* coordinates e.g. Kerr-Schild, not MKS/FMKS
+ * 
  * This should be used for all 2D shell sums not around the EH:
  * Just set equal min/max, 2D slices are detected
  */
