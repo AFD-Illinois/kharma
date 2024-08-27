@@ -178,8 +178,8 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
             // introduce divergence to the first physical zone.
             bool clean_face_B = pin->GetOrAddBoolean("boundaries", "clean_face_B_" + bname, (btype == "outflow"));
             params.Add("clean_face_B_"+bname, clean_face_B);
-            // Forcibly reconnect field loops that get trapped around the pole w/face-CT.  Maybe useful for reflecting too?
-            bool reconnect_B3 = pin->GetOrAddBoolean("boundaries", "reconnect_B3_" + bname, (btype == "transmitting"));
+            // Forcibly reconnect field loops that get trapped around the polar boundary.  Probably not needed anymore.
+            bool reconnect_B3 = pin->GetOrAddBoolean("boundaries", "reconnect_B3_" + bname, false);
             params.Add("reconnect_B3_"+bname, reconnect_B3);
 
             // Special EMF averaging.  Allows B slippage, e.g. around pole for transmitting conditions
@@ -192,8 +192,7 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
                                                                                     (btype == "dirichlet" && !average_EMF)));
             params.Add("zero_EMF_"+bname, zero_EMF);
         }
-        // Advect together/cancel U3, under the theory it's in a similar position to B3 above (albeit no CT constraining it)
-        // Not enabled by default as it does not conserve angular momentum and isn't necessary for stability
+        // Advect together/cancel U3 "loops" around the pole, similar to B3 above. Probably not needed anymore.
         bool cancel_U3 = pin->GetOrAddBoolean("boundaries", "cancel_U3_" + bname, false);
         params.Add("cancel_U3_"+bname, cancel_U3);
 
