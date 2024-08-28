@@ -505,9 +505,6 @@ void CancelBoundaryU3(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     auto U = rc->PackVariables(std::vector<MetadataFlag>{Metadata::Conserved, Metadata::Cell}, cons_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
 
-    const auto& cmax  = rc->PackVariables(std::vector<std::string>{"Flux.cmax"});
-    const auto& cmin  = rc->PackVariables(std::vector<std::string>{"Flux.cmin"});
-
     const auto &G = pmb->coords;
 
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
@@ -554,17 +551,6 @@ void CancelBoundaryU3(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 
                     // Always PtoU, we modified P.  Accommodate EMHD
                     Flux::p_to_u_mhd(G, P, m_p, emhd_params, gam, k, jf, i, U, m_u);
-
-                    // Finally, recalculate cmax/min using cell centers and updated vars, apparently
-                    // it can change a lot during this op
-                    FourVectors Dtmp;
-                    GRMHD::calc_4vecs(G, P, m_p, k, jf, i, Loci::center, Dtmp);
-                    Flux::vchar_global(G, P, m_p, Dtmp, gam, emhd_params, k, jf, i, Loci::center, 1,
-                                cmax(0, k, jf, i), cmin(0, k, jf, i));
-                    Flux::vchar_global(G, P, m_p, Dtmp, gam, emhd_params, k, jf, i, Loci::center, 2,
-                                cmax(1, k, jf, i), cmin(1, k, jf, i));
-                    Flux::vchar_global(G, P, m_p, Dtmp, gam, emhd_params, k, jf, i, Loci::center, 3,
-                                cmax(2, k, jf, i), cmin(2, k, jf, i));
                 }
             );
         }
@@ -591,9 +577,6 @@ void CancelBoundaryT3(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     auto P = rc->PackVariables({Metadata::GetUserFlag("Primitive"), Metadata::Cell}, prims_map);
     auto U = rc->PackVariables(std::vector<MetadataFlag>{Metadata::Conserved, Metadata::Cell}, cons_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
-
-    const auto& cmax  = rc->PackVariables(std::vector<std::string>{"Flux.cmax"});
-    const auto& cmin  = rc->PackVariables(std::vector<std::string>{"Flux.cmin"});
 
     const auto &G = pmb->coords;
 
@@ -642,18 +625,6 @@ void CancelBoundaryT3(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
                     // Recalculate U on anything we floored
                     if (fflag)
                         p_to_u(G, P, m_p, gam, k, jf, i, U, m_u, Loci::center);
-
-                    // Finally, recalculate cmax/min using cell centers and updated vars, apparently
-                    // it can change a lot during this op
-                    FourVectors Dtmp;
-                    GRMHD::calc_4vecs(G, P, m_p, k, jf, i, Loci::center, Dtmp);
-                    Flux::vchar_global(G, P, m_p, Dtmp, gam, emhd_params, k, jf, i, Loci::center, 1,
-                                cmax(0, k, jf, i), cmin(0, k, jf, i));
-                    Flux::vchar_global(G, P, m_p, Dtmp, gam, emhd_params, k, jf, i, Loci::center, 2,
-                                cmax(1, k, jf, i), cmin(1, k, jf, i));
-                    Flux::vchar_global(G, P, m_p, Dtmp, gam, emhd_params, k, jf, i, Loci::center, 3,
-                                cmax(2, k, jf, i), cmin(2, k, jf, i));
-
                 }
             );
         }
