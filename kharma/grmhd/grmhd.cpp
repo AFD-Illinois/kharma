@@ -254,9 +254,9 @@ Real EstimateTimestep(MeshData<Real> *md)
     // This function is a nice demo of why client-side flagging
     // like this is inadvisable: you have to EndFlag() at every different return
     Flag("EstimateTimestep");
-    auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
-    auto& globals = pmb0->packages.Get("Globals")->AllParams();
-    const auto& grmhd_pars = pmb0->packages.Get("GRMHD")->AllParams();
+    auto pmesh = md->GetMeshPointer();
+    auto& globals = pmesh->packages.Get("Globals")->AllParams();
+    const auto& grmhd_pars = pmesh->packages.Get("GRMHD")->AllParams();
 
     // If we have to recompute ctop anywhere, we do it now
     UpdateAveragedCtop(md);
@@ -294,28 +294,40 @@ Real EstimateTimestep(MeshData<Real> *md)
     }
 
     // Actually compute the timestep if we have to
-    const auto& cmax  = md->PackVariables(std::vector<std::string>{"Flux.cmax"});
-    const auto& cmin  = md->PackVariables(std::vector<std::string>{"Flux.cmin"});
-
     const IndexRange3 b = KDomain::GetRange(md, IndexDomain::interior);
-    const IndexRange block = IndexRange{0, cmax.GetDim(5)-1};
 
     // TODO version preserving location, with switch to keep this fast one
-    // std::tuple doesn't work device-side, Kokkos::pair is 2D.  pair of pairs?
-    Real min_ndt = 0.;
-    pmb0->par_reduce("ndt_min", block.s, block.e, b.ks, b.ke, b.js, b.je, b.is, b.ie,
-        KOKKOS_LAMBDA (const int b, const int k, const int j, const int i,
-                      Real &local_result) {
-            const auto& G = cmax.GetCoords(b);
-            double ndt_zone = 1 / (1 / (G.Dxc<1>(i) /  m::max(cmax(b, V1, k, j, i), cmin(b, V1, k, j, i))) +
-                                   1 / (G.Dxc<2>(j) /  m::max(cmax(b, V2, k, j, i), cmin(b, V2, k, j, i))) +
-                                   1 / (G.Dxc<3>(k) /  m::max(cmax(b, V3, k, j, i), cmin(b, V3, k, j, i))));
+    // TODO maybe split normal, ISMR timesteps? Excised pole/recalculated ctop too?
+    double min_ndt = std::numeric_limits<double>::max();
+    for (auto &pmb : pmesh->block_list) {
+        auto rc = pmb->meshblock_data.Get().get();
+        // We only need this block-wise to check boundary flags for ISMR, could special-case that
+        const bool polar_inner_x2 = pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::user;
+        const bool polar_outer_x2 = pmb->boundary_flag[BoundaryFace::outer_x2] == BoundaryFlag::user;
 
-            if (!m::isnan(ndt_zone) && (ndt_zone < local_result)) {
-                local_result = ndt_zone;
+        const auto& cmax  = rc->PackVariables(std::vector<std::string>{"Flux.cmax"});
+        const auto& cmin  = rc->PackVariables(std::vector<std::string>{"Flux.cmin"});
+
+        double block_min_ndt = 0.;
+        pmb->par_reduce("ndt_min", b.ks, b.ke, b.js, b.je, b.is, b.ie,
+            KOKKOS_LAMBDA (const int k, const int j, const int i,
+                        double &local_result) {
+                const auto& G = cmax.GetCoords();
+                int ismr_factor = 1;
+                double courant_limit = 1.0;
+
+                double ndt_zone = courant_limit / (1 / (G.Dxc<1>(i) /  m::max(cmax(V1, k, j, i), cmin(V1, k, j, i))) +
+                                    1 / (G.Dxc<2>(j) /  m::max(cmax(V2, k, j, i), cmin(V2, k, j, i))) +
+                                    1 / (G.Dxc<3>(k) * ismr_factor /  m::max(cmax(V3, k, j, i), cmin(V3, k, j, i))));
+
+                if (!m::isnan(ndt_zone) && (ndt_zone < local_result)) {
+                    local_result = ndt_zone;
+                }
             }
-        }
-    , Kokkos::Min<Real>(min_ndt));
+        , Kokkos::Min<double>(block_min_ndt));
+        if (block_min_ndt < min_ndt) min_ndt = block_min_ndt;
+        //std::cerr << "Got block timestep: " << block_min_ndt << std::endl;
+    }
     //std::cerr << "Got min timestep: " << min_ndt << std::endl;
 
     // Apply limits (TODO move into KHARMADriver::SetGlobalTimestep)
@@ -647,6 +659,10 @@ void UpdateAveragedCtop(MeshData<Real> *md)
                     const Floors::Prescription floors = pmb->packages.Get("Floors")->Param<Floors::Prescription>("prescription");
                     const EMHD::EMHD_parameters& emhd_params = EMHD::GetEMHDParameters(pmb->packages);
 
+                    // If we calculated the flux assuming half-size cells,
+                    // we modify ctop rather than special-case in EstimateTimestep
+                    const bool half_cells = params.Get<bool>("excise_flux_" + bname);
+
                     // Recompute ctop in zones affected by averaging
                     IndexRange3 b = KDomain::GetRange(rc, bdomain);
                     IndexRange3 bi = KDomain::GetRange(rc, IndexDomain::interior);
@@ -667,8 +683,16 @@ void UpdateAveragedCtop(MeshData<Real> *md)
                             Flux::vchar_global(G, P, m_p, Dtmp, gam, emhd_params, k, jf, i, Loci::center, X3DIR,
                                         cmax(V3, k, jf, i), cmin_minus);
                             cmin(V3, k, jf, i) = -cmin_minus;
+                            if (half_cells) {
+                                cmin(bdir-1, k, jf, i) *= 0.5;
+                                cmax(bdir-1, k, jf, i) *= 0.5;
+                            }
                         }
                     );
+
+                    if (params.Get<bool>("excise_flux_" + bname)) {
+
+                    }
                 }
             }
         }

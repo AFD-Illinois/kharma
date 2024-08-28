@@ -52,6 +52,7 @@
 #include "implicit.hpp"
 #include "inverter.hpp"
 #include "floors.hpp"
+#include "flux.hpp"
 #include "grmhd.hpp"
 #include "reductions.hpp"
 #include "emhd.hpp"
