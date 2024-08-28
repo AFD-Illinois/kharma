@@ -206,7 +206,8 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(ParameterInput *pin, std:
                                                                                     (btype == "dirichlet" && !average_EMF)));
             params.Add("zero_EMF_"+bname, zero_EMF);
         }
-        // Advect together/cancel U3 "loops" around the pole, similar to B3 above. Probably not needed anymore.
+        // Advect together/cancel velocity or angular momentum "loops" around the pole, similar to B3 above
+        // Probably not needed anymore, now polar boundary conditions are fixed.  cancel_U3 does not conserve angular momentum.
         bool cancel_U3 = pin->GetOrAddBoolean("boundaries", "cancel_U3_" + bname, false);
         params.Add("cancel_U3_"+bname, cancel_U3);
         bool cancel_T3 = pin->GetOrAddBoolean("boundaries", "cancel_T3_" + bname, false);
