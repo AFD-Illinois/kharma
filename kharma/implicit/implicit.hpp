@@ -120,6 +120,11 @@ inline TaskStatus MeshFixSolve(MeshData<Real> *md) {
 }
 
 /**
+ * Count up all nonzero solver flags on md.  Used for history file reductions.
+ */
+int CountSolverFails(MeshData<Real> *md);
+
+/**
  * Print diagnostics about number of failed solves
  */
 TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md);

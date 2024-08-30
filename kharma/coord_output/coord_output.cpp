@@ -191,8 +191,6 @@ TaskStatus CoordinateOutput::BlockUserWorkBeforeOutput(MeshBlock *pmb, Parameter
                 // end of merge additions 
             }
         );
-
-
     }
 
     return TaskStatus::complete;

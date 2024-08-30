@@ -45,20 +45,20 @@ void KBoundaries::TransmitImpl(MeshBlockData<Real> *rc, BoundaryFace bface, bool
 {
     // Get all cell-centered ghosts, minus anything just used at startup
     using FC = Metadata::FlagCollection;
-    FC ghost_vars = FC({Metadata::FillGhost, Metadata::Conserved})
-                  + FC({Metadata::FillGhost, Metadata::GetUserFlag("Primitive")})
+    FC ghost_vars = FC({Metadata::FillGhost, Metadata::Cell})
                   - FC({Metadata::GetUserFlag("StartupOnly")});
-    auto q = rc->PackVariables(ghost_vars, coarse);
-    TransmitSetTE(rc, q, bface, coarse, false);
+    PackIndexMap bounds_map;
+    auto q = rc->PackVariables(ghost_vars, bounds_map, coarse);
+    TransmitSetTE(rc, q, bface, bounds_map, coarse, false);
 
     FC ghost_vars_f = FC({Metadata::FillGhost, Metadata::Face})
-                  - FC({Metadata::GetUserFlag("StartupOnly")});
-    auto q_f = rc->PackVariables(ghost_vars_f, coarse);
-    TransmitSetTE(rc, q_f, bface, coarse, true);
+                    - FC({Metadata::GetUserFlag("StartupOnly")});
+    auto q_f = rc->PackVariables(ghost_vars_f, bounds_map, coarse);
+    TransmitSetTE(rc, q_f, bface, bounds_map, coarse, true);
 }
 
-void KBoundaries::TransmitSetTE(MeshBlockData<Real> *rc, VariablePack<Real> &q,
-                                        BoundaryFace bface, bool coarse, bool do_face)
+void KBoundaries::TransmitSetTE(MeshBlockData<Real> *rc, VariablePack<Real> &q, BoundaryFace bface,
+                                PackIndexMap &bounds_map, bool coarse, bool do_face)
 {
     // We're sometimes called without any variables to sync (e.g. syncing flags, EMFs), just return
     if (q.GetDim(4) == 0) return;
@@ -100,8 +100,28 @@ void KBoundaries::TransmitSetTE(MeshBlockData<Real> *rc, VariablePack<Real> &q,
         // Calculate j just like for reflecting conditions
         const int jpivot = (binner) ? b.je : b.js;
         // B3 component on X3 face should be inverted even if not marked "vector"
-        // TODO honor SplitVector here rather than always inverting
-        const bool do_face_invert = (el == F3);
+        // TODO honor SplitVector and vector components here rather than hard-coding
+        const bool do_face_invert = (el == F3 || el == F2);
+        // TODO figure out fixing '.vector_component' in Parthenon
+        // Subtracting from 'second' ensures -1 returns remain negative
+        const int x2_index_1 = bounds_map["cons.uvec"].second-1;
+        const int x2_index_2 = bounds_map["prims.uvec"].second-1;
+        const int x2_index_3 = bounds_map["cons.B"].second-1;
+        const int x2_index_4 = bounds_map["prims.B"].second-1;
+        const int x3_index_1 = bounds_map["cons.uvec"].second;
+        const int x3_index_2 = bounds_map["prims.uvec"].second;
+        const int x3_index_3 = bounds_map["cons.B"].second;
+        const int x3_index_4 = bounds_map["prims.B"].second;
+
+        //std::cerr << "Transmitting boundary. el=" << static_cast<int>(el) << " do_invert=" << do_face_invert << " corr_face=" << corresponding_face << std::endl;
+        //std::cerr << "Elements: " << q.GetDim(4) << " vector components: ";
+        //pmb->par_for(
+        //    "print_" + bname, 0, q.GetDim(4)-1,
+        //    KOKKOS_LAMBDA (const int &v) {
+        //        printf("%d ", q(el, v).vector_component);
+        //    }
+        //);
+        //std::cerr << std::endl;
 
         pmb->par_for(
             "transmitting_polar_boundary_" + bname, 0, q.GetDim(4)-1, b.ks, b.ke, b.js, b.je, b.is, b.ie,
@@ -109,7 +129,15 @@ void KBoundaries::TransmitSetTE(MeshBlockData<Real> *rc, VariablePack<Real> &q,
                 const int ki = ((k - ksp + Nk3p2) % Nk3p) + ksp;
                 const int ji = jpivot + reflect_offset + (jpivot - j);
                 const int ii = i;
-                const Real invert = (do_face_invert || q(el, v).vector_component == X3DIR) ? -1. : 1.;
+                const Real invert = (do_face_invert ||
+                                    v == x2_index_1 || v == x2_index_2 ||
+                                    v == x2_index_3 || v == x2_index_4 ||
+                                    v == x3_index_1 || v == x3_index_2 ||
+                                    v == x3_index_3 || v == x3_index_4 ||
+                                    q(el, v).vector_component == X2DIR ||
+                                    q(el, v).vector_component == X3DIR) ? -1. : 1.;
+                // if (i == 10 && j == 3 && k == 10)
+                //    printf("Set el %d v %d zone %d %d %d from %d %d %d invert: %f\n", (int) el, v, k, j, i, ki, ji, ii, invert);
                 q(el, v, k, j, i) = (corresponding_face && j == jpivot) ? 0. : invert * q(el, v, ki, ji, ii);
             }
         );

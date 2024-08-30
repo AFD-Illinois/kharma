@@ -254,8 +254,6 @@ void BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     // And then the local density
     GridScalar rho_U = rc->Get("cons.rho").data;
 
-    const auto& G = pmb->coords;
-
     auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
     int is = bounds.is(domain), ie = bounds.ie(domain);
     int js = bounds.js(domain), je = bounds.je(domain);
@@ -563,7 +561,8 @@ void ApplyFloors(MeshBlockData<Real> *mbd, IndexDomain domain)
     const auto& G = pmb->coords;
 
     const Real gam = packages.Get("GRMHD")->Param<Real>("gamma");
-    const Floors::Prescription floors = packages.Get("Floors")->Param<Floors::Prescription>("prescription");
+    const Floors::Prescription floors       = packages.Get("Floors")->Param<Floors::Prescription>("prescription");
+    const Floors::Prescription floors_inner = packages.Get("Floors")->Param<Floors::Prescription>("prescription_inner");
 
     const IndexRange3 b = KDomain::GetRange(mbd, domain);
     pmb->par_for("apply_electrons_floors", b.ks, b.ke, b.js, b.je, b.is, b.ie,
@@ -571,9 +570,19 @@ void ApplyFloors(MeshBlockData<Real> *mbd, IndexDomain domain)
 
             // Also apply the ceiling to the advected entropy KTOT, if we're keeping track of that
             // (either for electrons, or robust primitive inversions in future)
-            if (m_p.KTOT >= 0 && (P(m_p.KTOT, k, j, i) > floors.ktot_max)) {
-                fflag(0, k, j, i) = Floors::FFlag::KTOT | (int) fflag(0, k, j, i);
-                P(m_p.KTOT, k, j, i) = floors.ktot_max;
+            Real ktot_max;
+            if (m_p.KTOT >= 0) {
+                if (floors.radius_dependent_floors && G.coords.is_spherical()
+                    && G.r(k, j, i) < floors.floors_switch_r) {
+                    ktot_max = floors_inner.ktot_max;
+                } else {
+                    ktot_max = floors.ktot_max;
+                }
+                
+                if (P(m_p.KTOT, k, j, i) > ktot_max) {
+                    fflag(0, k, j, i) = Floors::FFlag::KTOT | (int) fflag(0, k, j, i);
+                    P(m_p.KTOT, k, j, i) = ktot_max;
+                }
             }
 
             // TODO(BSP) restore Ressler adjustment option

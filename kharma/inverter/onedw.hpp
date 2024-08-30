@@ -90,11 +90,12 @@ template <>
 KOKKOS_INLINE_FUNCTION int u_to_p<Type::onedw>(const GRCoordinates& G, const VariablePack<Real>& U, const VarMap& m_u,
                                               const Real& gam, const int& k, const int& j, const int& i,
                                               const VariablePack<Real>& P, const VarMap& m_p,
-                                              const Loci& loc, const Floors::Prescription& inverter_floors,
+                                              const Loci& loc, const Floors::Prescription& floors,
                                               const int& max_iterations, const Real& tol)
 {
     // TODO try inline floors in the old 1Dw?  Probably not relevant anymore
     // Catch negative density
+    // TODO(BSP) if we start to see this hit, fix it here by returning P=P_floors
     if (U(m_u.RHO, k, j, i) <= 0.) {
         return static_cast<int>(Status::neg_input);
     }
@@ -129,6 +130,11 @@ KOKKOS_INLINE_FUNCTION int u_to_p<Type::onedw>(const GRCoordinates& G, const Var
     const Real Bsq = dot(Bcon, Bcov);
     const Real QdB = dot(Bcon, Qcov);
     const Real Qdotn = dot(Qcon, ncov);
+
+    // TODO(BSP) check, test if this gets hit unlike above
+    // if (U(m_u.UU, k, j, i) <= gdet*(1e-8) + gdet*Bsq/2) {
+
+    // }
 
     Real Qtcon[GR_DIM];
     DLOOP1 Qtcon[mu] = Qcon[mu] + ncon[mu] * Qdotn;

@@ -69,6 +69,13 @@ KOKKOS_INLINE_FUNCTION bool failed(T status_flag)
     return static_cast<int>(status_flag) > static_cast<int>(Status::success);
 }
 
+template <typename T>
+KOKKOS_INLINE_FUNCTION bool valid(T status_flag)
+{
+    // Return only values >0, among the failure flags
+    return static_cast<int>(status_flag) == static_cast<int>(Status::success);
+}
+
 /**
  * Recover local primitive variables, with a one-dimensional Newton-Raphson iterative solver.
  * Iteration starts from the current primitive values, and otherwse may *fail to converge*
@@ -87,6 +94,6 @@ template<Type inverter>
 KOKKOS_INLINE_FUNCTION int u_to_p(const GRCoordinates& G, const VariablePack<Real>& U, const VarMap& m_u,
                                               const Real& gam, const int& k, const int& j, const int& i,
                                               const VariablePack<Real>& P, const VarMap& m_p,
-                                              const Loci& loc, const Floors::Prescription& inverter_floors,
+                                              const Loci& loc, const Floors::Prescription& floors,
                                               const int& max_iterations, const Real& tol);
 } // namespace Inverter

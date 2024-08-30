@@ -35,10 +35,8 @@ nx3 = 1
 <parthenon/static_refinement0>
 x1min = 0.4
 x1max = 0.6
-x2min = 0.9
-x2max = 1.1
-x3min = 0.0
-x3max = 0.0
+x2min = 0.45
+x2max = 0.55
 level = 1
 
 <parthenon/static_refinement1>

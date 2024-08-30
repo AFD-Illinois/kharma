@@ -51,16 +51,9 @@ namespace Reductions {
 std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages);
 
 /**
- * Perform a reduction using operation 'op' over a spherical shell at the given zone, measured from left side of
- * innermost block in radius.
- * As this only runs on innermost blocks, this is intended for accretion/event horizon
- * measurements in black hole simulations.
- */
-template<Var var, typename T>
-T EHReduction(MeshData<Real> *md, UserHistoryOperation op, int zone);
-
-/**
- * Perform a reduction using operation 'op' over a given domain
+ * Perform a reduction using operation 'op' over a given domain.
+ * Note startx/stopx are in *embedding* coordinates e.g. Kerr-Schild, not MKS/FMKS
+ * 
  * This should be used for all 2D shell sums not around the EH:
  * Just set equal min/max, 2D slices are detected
  */
@@ -68,9 +61,39 @@ template<Var var, typename T>
 T DomainReduction(MeshData<Real> *md, UserHistoryOperation op, const GReal startx[3], const GReal stopx[3], int channel=-1);
 template<Var var, typename T>
 T DomainReduction(MeshData<Real> *md, UserHistoryOperation op, int channel=-1) {
-    const GReal startx[3] = {std::numeric_limits<Real>::min(), std::numeric_limits<Real>::min(), std::numeric_limits<Real>::min()};
-    const GReal stopx[3] = {std::numeric_limits<Real>::max(), std::numeric_limits<Real>::max(), std::numeric_limits<Real>::max()};
+    const GReal startx[3] = {std::numeric_limits<GReal>::min(), std::numeric_limits<GReal>::min(), std::numeric_limits<GReal>::min()};
+    const GReal stopx[3] = {std::numeric_limits<GReal>::max(), std::numeric_limits<GReal>::max(), std::numeric_limits<GReal>::max()};
     return DomainReduction<var, T>(md, op, startx, stopx, channel);
+}
+template<Var var, typename T>
+T ShellReduction(MeshData<Real> *md, UserHistoryOperation op, GReal r, int channel=-1) {
+    const GReal startx[3] = {r, std::numeric_limits<GReal>::min(), std::numeric_limits<GReal>::min()};
+    const GReal stopx[3] = {r, std::numeric_limits<GReal>::max(), std::numeric_limits<GReal>::max()};
+    return DomainReduction<var, T>(md, op, startx, stopx, channel);
+}
+
+// Parthenon doesn't allow taking options, so we define some common reductions
+template<Var var>
+Real SumAt0(MeshData<Real> *md)
+{
+    const GReal r_in = md->GetMeshPointer()->packages.Get("Reductions")->Param<GReal>("domain_r_in");
+    return Reductions::ShellReduction<var, Real>(md, UserHistoryOperation::sum, r_in);
+}
+template<Var var>
+Real SumAtEH(MeshData<Real> *md)
+{
+    const GReal r_eh = md->GetMeshPointer()->block_list[0]->coords.coords.get_horizon();
+    return Reductions::ShellReduction<var, Real>(md, UserHistoryOperation::sum, r_eh);
+}
+template<Var var>
+Real SumAt5M(MeshData<Real> *md)
+{
+    return Reductions::ShellReduction<var, Real>(md, UserHistoryOperation::sum, 5.);
+}
+template<Var var>
+Real Total(MeshData<Real> *md)
+{
+    return Reductions::DomainReduction<var, Real>(md, UserHistoryOperation::sum);
 }
 
 /**

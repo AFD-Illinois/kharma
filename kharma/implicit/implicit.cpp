@@ -81,6 +81,11 @@ std::vector<std::string> Implicit::GetOrderedNames(MeshBlockData<Real> *rc, cons
     return out;
 }
 
+int Implicit::CountSolverFails(MeshData<Real> *md)
+{
+    return Reductions::CountFlags(md, "solve_fail", Implicit::status_names, IndexDomain::interior, false)[0];
+}
+
 std::shared_ptr<KHARMAPackage> Implicit::Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages)
 {
     auto pkg = std::make_shared<KHARMAPackage>("Implicit");
@@ -134,6 +139,13 @@ std::shared_ptr<KHARMAPackage> Implicit::Initialize(ParameterInput *pin, std::sh
     // The major call, to Step(), is done manually from the ImEx driver
     // But, we just register the diagnostics function to print out solver failures
     pkg->PostStepDiagnosticsMesh = Implicit::PostStepDiagnostics;
+
+    // List (vector) of HistoryOutputVars that will all be enrolled as output variables
+    parthenon::HstVar_list hst_vars = {};
+    // Count total floors as a history item
+    hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, CountSolverFails, "ImpSolverFails"));
+    // add callbacks for HST output to the Params struct, identified by the `hist_param_key`
+    pkg->AddParam<>(parthenon::hist_param_key, hst_vars);
 
     return pkg;
 }

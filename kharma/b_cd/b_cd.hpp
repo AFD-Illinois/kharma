@@ -43,6 +43,10 @@
 using namespace parthenon;
 
 /**
+ * THIS MODULE DOESN'T WORK with KHARMA's initialization or modern structure
+ * The code is here so that we can ensure it keeps compiling,
+ * which should make it easier to reintroduce if we want to later
+ *
  * This physics package implements B field transport with Constraint-Damping (Dedner et al 2002)
  *
  * This requires only the values at cell centers, and preserves a cell-centered divergence representation

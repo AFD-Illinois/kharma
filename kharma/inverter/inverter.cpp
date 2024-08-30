@@ -38,6 +38,11 @@
 #include "domain.hpp"
 #include "reductions.hpp"
 
+int Inverter::CountPFlags(MeshData<Real> *md)
+{
+    return Reductions::CountFlags(md, "pflag", Inverter::status_names, IndexDomain::interior, false)[0];
+}
+
 std::shared_ptr<KHARMAPackage> Inverter::Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages)
 {
     auto pkg = std::make_shared<KHARMAPackage>("Inverter");
@@ -68,8 +73,13 @@ std::shared_ptr<KHARMAPackage> Inverter::Initialize(ParameterInput *pin, std::sh
     // Use a custom block for inverter floors to allow customization.  Not sure anyone *wants* that but...
     if (!pin->DoesBlockExist("inverter_floors")) {
         params.Add("inverter_prescription", Floors::MakePrescription(pin, "floors"));
+            if (pin->DoesBlockExist("floors_inner"))
+                params.Add("inverter_prescription_inner", Floors::MakePrescriptionInner(pin, Floors::MakePrescription(pin, "floors"), "floors_inner"));
+            else
+                params.Add("inverter_prescription_inner", Floors::MakePrescriptionInner(pin, Floors::MakePrescription(pin, "floors"), "floors"));
     } else {
         params.Add("inverter_prescription", Floors::MakePrescription(pin, "inverter_floors"));
+        params.Add("inverter_prescription_inner", Floors::MakePrescriptionInner(pin, Floors::MakePrescription(pin, "inverter_floors"), "inverter_floors"));
     }
 
     // Fixup options
@@ -103,6 +113,14 @@ std::shared_ptr<KHARMAPackage> Inverter::Initialize(ParameterInput *pin, std::sh
 
     pkg->PostStepDiagnosticsMesh = Inverter::PostStepDiagnostics;
 
+    // List (vector) of HistoryOutputVars that will all be enrolled as output variables
+    parthenon::HstVar_list hst_vars = {};
+    // Count total floors as a history item
+    hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, CountPFlags, "PFlags"));
+    // TODO entries for each individual flag?
+    // add callbacks for HST output to the Params struct, identified by the `hist_param_key`
+    pkg->AddParam<>(parthenon::hist_param_key, hst_vars);
+
     return pkg;
 }
 
@@ -114,7 +132,6 @@ template<Inverter::Type inverter>
 inline void BlockPerformInversion(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 {
     auto pmb = rc->GetBlockPointer();
-    const auto& G = pmb->coords;
 
     PackIndexMap prims_map, cons_map;
     auto U = GRMHD::PackMHDCons(rc, cons_map);
@@ -132,18 +149,25 @@ inline void BlockPerformInversion(MeshBlockData<Real> *rc, IndexDomain domain, b
     auto &pars = pmb->packages.Get("Inverter")->AllParams();
     const Real err_tol = pars.Get<Real>("err_tol");
     const int iter_max = pars.Get<int>("iter_max");
-    Floors::Prescription inverter_floors = pars.Get<Floors::Prescription>("inverter_prescription");
+    const Floors::Prescription inverter_floors       = pars.Get<Floors::Prescription>("inverter_prescription");
+    const Floors::Prescription inverter_floors_inner = pars.Get<Floors::Prescription>("inverter_prescription_inner");
+    const bool radius_dependent_floors = inverter_floors.radius_dependent_floors;
+
+    const auto& G = pmb->coords;
 
     // Get the primitives from our conserved versions
     // Notice we recover variables for only the physical (interior or interior-ghost)
     // zones!  These are the only ones which are filled at our point in the step
     auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
     const IndexRange3 b = KDomain::GetPhysicalRange(rc);
-
     pmb->par_for("U_to_P", b.ks, b.ke, b.js, b.je, b.is, b.ie,
         KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+            const Floors::Prescription& myfloors = (inverter_floors.radius_dependent_floors
+                                            && G.coords.is_spherical()
+                                            && G.r(k, j, i) < inverter_floors.floors_switch_r) ?
+                                            inverter_floors_inner : inverter_floors;
             int pflagl = Inverter::u_to_p<inverter>(G, U, m_u, gam, k, j, i, P, m_p, Loci::center,
-                                                    inverter_floors, iter_max, err_tol);
+                                                    myfloors, iter_max, err_tol);
             pflag(0, k, j, i) = pflagl % Floors::FFlag::MINIMUM;
             int fflagl = (pflagl / Floors::FFlag::MINIMUM) * Floors::FFlag::MINIMUM;
             fflag(0, k, j, i) = fflagl;
