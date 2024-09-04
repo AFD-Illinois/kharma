@@ -39,12 +39,15 @@
 #include "emhd.hpp"
 #include "flux_functions.hpp"
 
-using namespace parthenon;
-
+// Arguments to computing any variable defined below
 #define REDUCE_FUNCTION_ARGS const GRCoordinates& G, const VariablePack<Real>& P, const VarMap& m_p, \
                         const VariableFluxPack<Real>& U, const VarMap& m_u, \
                         const VariablePack<Real>& cmax, const VariablePack<Real>& cmin,\
                         const EMHD::EMHD_parameters& emhd_params, const Real& gam, const int& k, const int& j, const int& i
+// Call for passing a particular block's values
+#define REDUCE_FUNCTION_CALL G, P(b), m_p, U(b), m_u, cmax(b), cmin(b), emhd_params, gam, k, j, i
+
+using namespace parthenon;
 
 namespace Reductions {
 
@@ -52,7 +55,7 @@ namespace Reductions {
 // Not elegant, but fast & portable.
 // HIPCC doesn't like passing function pointers as we used to do,
 // and it doesn't vectorize anyway. Look forward to more of this pattern in the code
-enum class Var{phi, bsq, gas_pressure, mag_pressure, beta,
+enum class Var{phi, bsq, gas_pressure, beta, rhou0, mix_T00, mix_T01, mix_T02, mix_T03,
                mdot, edot, ldot, mdot_flux, edot_flux, ldot_flux, eht_lum, jet_lum,
                nan_ctop, zero_ctop, neg_rho, neg_u, neg_rhout};
 
@@ -68,6 +71,7 @@ KOKKOS_INLINE_FUNCTION Real reduction_var<Var::phi>(REDUCE_FUNCTION_ARGS)
     return 0.5 * m::abs(U(m_u.B1, k, j, i)); // factor of gdet already in cons.B
 }
 
+// Basic variables
 template <>
 KOKKOS_INLINE_FUNCTION Real reduction_var<Var::bsq>(REDUCE_FUNCTION_ARGS)
 {
@@ -86,6 +90,33 @@ KOKKOS_INLINE_FUNCTION Real reduction_var<Var::beta>(REDUCE_FUNCTION_ARGS)
     FourVectors Dtmp;
     GRMHD::calc_4vecs(G, P, m_p, k, j, i, Loci::center, Dtmp);
     return ((gam - 1) * P(m_p.UU, k, j, i))/(0.5*(dot(Dtmp.bcon, Dtmp.bcov) + SMALL));
+}
+
+// Stuff that should be conserved
+template <>
+KOKKOS_INLINE_FUNCTION Real reduction_var<Var::rhou0>(REDUCE_FUNCTION_ARGS)
+{
+    return U(m_u.RHO, k, j, i);
+}
+template <>
+KOKKOS_INLINE_FUNCTION Real reduction_var<Var::mix_T00>(REDUCE_FUNCTION_ARGS)
+{
+    return U(m_u.UU, k, j, i);
+}
+template <>
+KOKKOS_INLINE_FUNCTION Real reduction_var<Var::mix_T01>(REDUCE_FUNCTION_ARGS)
+{
+    return U(m_u.U1, k, j, i);
+}
+template <>
+KOKKOS_INLINE_FUNCTION Real reduction_var<Var::mix_T02>(REDUCE_FUNCTION_ARGS)
+{
+    return U(m_u.U2, k, j, i);
+}
+template <>
+KOKKOS_INLINE_FUNCTION Real reduction_var<Var::mix_T03>(REDUCE_FUNCTION_ARGS)
+{
+    return U(m_u.U3, k, j, i);
 }
 
 // Accretion rates: return a zone's contribution to the surface integral

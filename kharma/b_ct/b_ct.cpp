@@ -144,13 +144,13 @@ std::shared_ptr<KHARMAPackage> B_CT::Initialize(ParameterInput *pin, std::shared
     }
 
     // List (vector) of HistoryOutputVars that will all be enrolled as output variables
-    // LATER
     parthenon::HstVar_list hst_vars = {};
     hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::max, B_CT::MaxDivB, "MaxDivB"));
     // Event horizon magnetization.  Might be the same or different for different representations?
-    if (pin->GetBoolean("coordinates", "spherical")) {
-        // hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, ReducePhi0, "Phi_0"));
-        // hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, ReducePhi5, "Phi_EH"));
+    if (pin->GetBoolean("coordinates", "domain_intersects_eh")) {
+        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, Reductions::SumAt0<Reductions::Var::phi>, "Phi_0"));
+        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, Reductions::SumAtEH<Reductions::Var::phi>, "Phi_EH"));
+        hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, Reductions::SumAt5M<Reductions::Var::phi>, "Phi_5M"));
     }
     // add callbacks for HST output to the Params struct, identified by the `hist_param_key`
     pkg->AddParam<>(parthenon::hist_param_key, hst_vars);
@@ -196,6 +196,74 @@ TaskStatus B_CT::BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coa
     pmb->par_for("UtoP_B_centerPtoU", 0, NVEC-1, bc.ks, bc.ke, bc.js, bc.je, bc.is, bc.ie,
         KOKKOS_LAMBDA (const int &v, const int &k, const int &j, const int &i) {
             B_U(v, k, j, i) = B_P(v, k, j, i) * G.gdet(Loci::center, j, i);
+        }
+    );
+
+    return TaskStatus::complete;
+}
+
+TaskStatus B_CT::DangerousPtoU(MeshData<Real> *md, IndexDomain domain, bool coarse)
+{
+    auto B_Uf = md->PackVariables(std::vector<std::string>{"cons.fB"});
+    auto B_U = md->PackVariables(std::vector<std::string>{"cons.B"});
+    auto B_P = md->PackVariables(std::vector<std::string>{"prims.B"});
+
+    // Figure out indices
+    const IndexRange block = IndexRange{0, B_Uf.GetDim(5)-1};
+
+    auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
+    // Average the primitive vals to faces and multiply by gdet
+    const IndexRange3 bf1 = KDomain::GetRange(md, domain, F1, coarse);
+    pmb0->par_for("PtoU_B_F1", block.s, block.e, bf1.ks, bf1.ke, bf1.js, bf1.je, bf1.is, bf1.ie,
+        KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i) {
+            const auto& G = B_Uf.GetCoords(b);
+            B_Uf(b, F1, 0, k, j, i) = G.gdet(Loci::face1, j, i) * (B_P(b, V1, k, j, i-1) + B_P(b, V1, k, j, i)) / 2;
+        }
+    );
+    const IndexRange3 bf2 = KDomain::GetRange(md, domain, F2, coarse);
+    pmb0->par_for("PtoU_B_F2", block.s, block.e, bf2.ks, bf2.ke, bf2.js, bf2.je, bf2.is, bf2.ie,
+        KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i) {
+            const auto& G = B_Uf.GetCoords(b);
+            B_Uf(b, F2, 0, k, j, i) = G.gdet(Loci::face2, j, i) * (B_P(b, V2, k, j-1, i) + B_P(b, V2, k, j, i)) / 2;
+        }
+    );
+    const IndexRange3 bf3 = KDomain::GetRange(md, domain, F3, coarse);
+    pmb0->par_for("PtoU_B_F3", block.s, block.e, bf3.ks, bf3.ke, bf3.js, bf3.je, bf3.is, bf3.ie,
+        KOKKOS_LAMBDA (const int &b, const int &k, const int &j, const int &i) {
+            const auto& G = B_Uf.GetCoords(b);
+            B_Uf(b, F3, 0, k, j, i) = G.gdet(Loci::face3, j, i) * (B_P(b, V3, k-1, j, i) + B_P(b, V3, k, j, i)) / 2;
+        }
+    );
+
+    // Make sure B on poles is still zero, even though we've interpolated
+    if (pmb0->coords.coords.is_spherical()) {
+        for (int i=0; i < md->GetMeshPointer()->GetNumMeshBlocksThisRank(); i++) {
+            auto rc = md->GetBlockData(i);
+            auto pmb = rc->GetBlockPointer();
+            auto dB_block = rc->PackVariables(std::vector<std::string>{"dB"});
+            if (pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::user) {
+                pmb->par_for("dB_boundary", bf2.ks, bf2.ke, bf2.is, bf2.ie,
+                    KOKKOS_LAMBDA (const int &k, const int &i) {
+                        dB_block(F2, 0, k, bf2.js, i) = 0.;
+                    }
+                );
+            }
+            if (pmb->boundary_flag[BoundaryFace::outer_x2] == BoundaryFlag::user) {
+                pmb->par_for("dB_boundary", bf2.ks, bf2.ke, bf2.is, bf2.ie,
+                    KOKKOS_LAMBDA (const int &k, const int &i) {
+                        dB_block(F2, 0, k, bf2.je, i) = 0.;
+                    }
+                );
+            }
+        }
+    }
+
+    // Also recover conserved B at centers, just in case
+    const IndexRange3 bc = KDomain::GetRange(md, domain, CC, coarse);
+    pmb0->par_for("UtoP_B_centerPtoU", block.s, block.e, 0, NVEC-1, bc.ks, bc.ke, bc.js, bc.je, bc.is, bc.ie,
+        KOKKOS_LAMBDA (const int &b, const int &v, const int &k, const int &j, const int &i) {
+            const auto& G = B_U.GetCoords(b);
+            B_U(b, v, k, j, i) = B_P(b, v, k, j, i) * G.gdet(Loci::center, j, i);
         }
     );
 

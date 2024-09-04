@@ -250,7 +250,7 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
             // If we're entirely explicit, we just declare these equal
             auto t_implicit_c = tl.AddTask(t_implicit_step, Copy<MeshData<Real>>, std::vector<MetadataFlag>({Metadata::Cell}),
                                     md_solver.get(), md_sub_step_final.get());
-            t_implicit = tl.AddTask(t_implicit_step, WeightedSumDataFace, std::vector<MetadataFlag>({Metadata::Face}),
+            t_implicit = tl.AddTask(t_implicit_step, WeightedSumDataFace<MetadataFlag>, std::vector<MetadataFlag>({Metadata::Face}),
                                     md_solver.get(), md_solver.get(), 1.0, 0.0, md_sub_step_final.get());
         }
 

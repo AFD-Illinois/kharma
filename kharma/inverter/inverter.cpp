@@ -38,6 +38,11 @@
 #include "domain.hpp"
 #include "reductions.hpp"
 
+int Inverter::CountPFlags(MeshData<Real> *md)
+{
+    return Reductions::CountFlags(md, "pflag", Inverter::status_names, IndexDomain::interior, false)[0];
+}
+
 std::shared_ptr<KHARMAPackage> Inverter::Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages)
 {
     auto pkg = std::make_shared<KHARMAPackage>("Inverter");
@@ -107,6 +112,14 @@ std::shared_ptr<KHARMAPackage> Inverter::Initialize(ParameterInput *pin, std::sh
     pkg->BoundaryUtoP = Inverter::BlockUtoP;
 
     pkg->PostStepDiagnosticsMesh = Inverter::PostStepDiagnostics;
+
+    // List (vector) of HistoryOutputVars that will all be enrolled as output variables
+    parthenon::HstVar_list hst_vars = {};
+    // Count total floors as a history item
+    hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, CountPFlags, "PFlags"));
+    // TODO entries for each individual flag?
+    // add callbacks for HST output to the Params struct, identified by the `hist_param_key`
+    pkg->AddParam<>(parthenon::hist_param_key, hst_vars);
 
     return pkg;
 }

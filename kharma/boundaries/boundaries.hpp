@@ -37,7 +37,6 @@
 
 #include "boundary_types.hpp"
 #include "dirichlet.hpp"
-#include "flux.hpp"
 #include "grmhd_functions.hpp"
 #include "one_block_transmit.hpp"
 
@@ -73,9 +72,20 @@ inline void ApplyBoundaryTemplate(std::shared_ptr<MeshBlockData<Real>> &rc, bool
  * Fix fluxes on physical boundaries.
  * 1. Ensure no inflow of density onto the domain
  * 2. Ensure flux through the size-zero faces on poles is zero
- * The latter may be unnecessary
+ * OR
+ * 2. Ensure that fluxes through & around the pole reflect a half-zone excision
  */
 TaskStatus FixFlux(MeshData<Real> *rc);
+
+/**
+ * When fluxes are allowed across the pole, they are computed by assuming half-size zones
+ * next to the pole, with the remaining space excised.  The flux divergence, however,
+ * divides by the full zone volume (as with every other zone on the grid).
+ * This doubles the flux-divergence term to reflect changes to the larger, real zones.
+ * Since *only* the divergence term should be doubled, this must be run *first* after
+ * FluxDivergence, which is ensured by Packages::AddSource.
+ */
+void AddSource(MeshData<Real> *md, MeshData<Real> *mdudt, IndexDomain domain);
 
 // INTERNAL FUNCTIONS
 

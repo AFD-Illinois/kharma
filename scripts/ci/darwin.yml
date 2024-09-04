@@ -26,7 +26,7 @@ default:
     - darwin-slurm-shared
   # Load Python
   before_script:
-    - module load miniconda3
+    - micromamba activate pyharm
 
   # Always keep logs and plots.  Results should be printed to console!
   artifacts:
@@ -56,8 +56,7 @@ build:
   before_script:
     - echo "Skipping pyharm install in build."
   script:
-    - export PREFIX_PATH=$PWD/external/hdf5
-    - ./make.sh clean cuda hdf5 volta
+    - ./make.sh clean cuda volta
   artifacts:
     paths:
       - kharma.*

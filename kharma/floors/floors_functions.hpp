@@ -53,7 +53,7 @@ KOKKOS_INLINE_FUNCTION void apply_ceilings(const GRCoordinates& G, const Variabl
                                           const VariablePack<Real>& U, const VarMap& m_u, const Loci loc=Loci::center)
 {
     // Choose our floor scheme
-    const Floors::Prescription& myfloors = (floors.radius_dependent_floors && G.coords.is_spherical()
+    const Floors::Prescription& myfloors = (floors.radius_dependent_floors
                                             && G.r(k, j, i) < floors.floors_switch_r) ? floors_inner : floors;
 
     // Compute max values for ceilings
@@ -86,7 +86,7 @@ KOKKOS_INLINE_FUNCTION int determine_floors(const GRCoordinates& G, const Variab
                                         const Floors::Prescription& floors_inner, Real& rhoflr_max, Real& uflr_max)
 {
     // Choose our floor scheme
-    const Floors::Prescription& myfloors = (floors.radius_dependent_floors && G.coords.is_spherical()
+    const Floors::Prescription& myfloors = (floors.radius_dependent_floors
                                             && G.r(k, j, i) < floors.floors_switch_r) ? floors_inner : floors;
 
     // Calculate the different floor values in play:
@@ -330,7 +330,7 @@ KOKKOS_INLINE_FUNCTION int apply_geo_floors(const GRCoordinates& G, Local& P, co
                                             const Loci loc=Loci::center)
 {
     // Choose our floor scheme
-    const Floors::Prescription& myfloors = (floors.radius_dependent_floors && G.coords.is_spherical()
+    const Floors::Prescription& myfloors = (floors.radius_dependent_floors
                                             && G.r(0, j, i) < floors.floors_switch_r) ? floors_inner : floors;
 
     // Apply only the geometric floors
@@ -364,7 +364,7 @@ KOKKOS_INLINE_FUNCTION int apply_geo_floors(const GRCoordinates& G, Global& P, c
                                             const Loci loc=Loci::center)
 {
     // Choose our floor scheme
-    const Floors::Prescription& myfloors = (floors.radius_dependent_floors && G.coords.is_spherical()
+    const Floors::Prescription& myfloors = (floors.radius_dependent_floors
                                             && G.r(0, j, i) < floors.floors_switch_r) ? floors_inner : floors;
 
     // Apply only the geometric floors

@@ -162,6 +162,11 @@ KOKKOS_INLINE_FUNCTION void get_prim_bondi(const GRCoordinates& G, const bool di
             r = rin_bondi;
             // TODO(BSP) could also do values at inf, restore that?
         } else {
+            rho = 0.;
+            u = 0.;
+            u_prim[0] = 0.;
+            u_prim[1] = 0.;
+            u_prim[2] = 0.;
             return;
         }
     }

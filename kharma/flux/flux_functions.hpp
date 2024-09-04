@@ -309,6 +309,8 @@ KOKKOS_FORCEINLINE_FUNCTION void vchar(const GRCoordinates& G, const Local& P, c
     // Find sound speed
     const Real ef  = P(m.RHO) + gam * P(m.UU);
     const Real cs2 = gam * (gam - 1) * P(m.UU) / ef;
+    // The fluid sound speed should be at most sqrt(gam-1) for a relativistic fluid
+    clip(cs2, 0., gam - 1.);
     Real cms2;
     if (m.Q >= 0 || m.DP >= 0) {
          // Get the EGRMHD parameters
@@ -338,7 +340,8 @@ KOKKOS_FORCEINLINE_FUNCTION void vchar(const GRCoordinates& G, const Local& P, c
     } else {
         cms2 = cs2;
     }
-    //clip(cms2, SMALL, 1.);
+    // The signal speed should be at most the speed of light
+    clip(cms2, 0., 1.); // TODO would love to record this...
 
     // Require that speed of wave measured by observer q.ucon is cms2
     Real A, B, C;
@@ -381,6 +384,8 @@ KOKKOS_FORCEINLINE_FUNCTION void vchar_global(const GRCoordinates& G, const Glob
     // Find sound speed
     const Real ef  = P(m.RHO, k, j, i) + gam * P(m.UU, k, j, i);
     const Real cs2 = gam * (gam - 1) * P(m.UU, k, j, i) / ef;
+    // The fluid sound speed should be at most sqrt(gam-1) for a relativistic fluid
+    clip(cs2, 0., gam - 1.);
     Real cms2;
     if (m.Q >= 0 || m.DP >= 0) {
          // Get the EGRMHD parameters
@@ -410,6 +415,8 @@ KOKKOS_FORCEINLINE_FUNCTION void vchar_global(const GRCoordinates& G, const Glob
     } else {
         cms2 = cs2;
     }
+    // The signal speed should be at most the speed of light
+    clip(cms2, 0., 1.);
 
     // Require that speed of wave measured by observer q.ucon is cms2
     Real A, B, C;

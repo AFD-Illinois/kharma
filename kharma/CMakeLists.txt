@@ -95,23 +95,11 @@ endif()
 # These are almost universally performance trade-offs,
 # or disabling features that need dependencies.
 # TODO is there any way to make compile options less painful in CMake?
-option(FUSE_FLUX_KERNELS "Bundle the usual four flux calculation kernels (floors,R,L,apply) into one" ON)
-option(FUSE_FLOOR_KERNELS "Bundle applying the floors and ceilings into one kernel" ON)
 option(FAST_CARTESIAN "Break operation in curved spacetimes to make Cartesian Minkowski space computations faster" OFF)
 option(KHARMA_DISABLE_IMPLICIT "Disable the implicit solver, which requires bundled kokkos-kernels. Default false" OFF)
 option(KHARMA_DISABLE_CLEANUP "Disable the magnetic field cleanup module, which requires recent Parthenon. Default false" OFF)
 option(KHARMA_TRACE "Compile with tracing: print entry and exit of important functions. Default false" OFF)
 
-if(FUSE_FLUX_KERNELS)
-    target_compile_definitions(${EXE_NAME} PUBLIC FUSE_FLUX_KERNELS=1)
-else()
-    target_compile_definitions(${EXE_NAME} PUBLIC FUSE_FLUX_KERNELS=0)
-endif()
-if(FUSE_FLOOR_KERNELS)
-    target_compile_definitions(${EXE_NAME} PUBLIC FUSE_FLOOR_KERNELS=1)
-else()
-    target_compile_definitions(${EXE_NAME} PUBLIC FUSE_FLOOR_KERNELS=0)
-endif()
 if(FAST_CARTESIAN)
     message("Compiling for Cartesian coordinates only. GRMHD will be disabled!")
     target_compile_definitions(${EXE_NAME} PUBLIC FAST_CARTESIAN=1)
