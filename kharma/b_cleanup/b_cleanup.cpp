@@ -264,7 +264,7 @@ TaskStatus B_Cleanup::CleanupDivergence(std::shared_ptr<MeshData<Real>>& md)
     // execute it to perform BiCGStab iteration
     TaskID t_none(0);
     TaskCollection tc;
-    auto tr = tc.AddRegion(1);
+    auto& tr = tc.AddRegion(1);
     auto t_solve_step = solver.CreateTaskList(t_none, 0, tr, msolve, msolve);
     tc.Execute();
     // Make sure solution's ghost zones are sync'd

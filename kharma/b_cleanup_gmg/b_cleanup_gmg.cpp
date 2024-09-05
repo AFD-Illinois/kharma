@@ -50,11 +50,36 @@
 using namespace parthenon;
 using parthenon::refinement_ops::ProlongateSharedLinear;
 using parthenon::refinement_ops::RestrictAverage;
+using parthenon::BoundaryFunction::BCSide;
+
+// Build type that selects only variables within our namespace. Internal solver
+// variables have the namespace of input variables prepended, so they will also be
+// selected by this type.
+struct any_bclean : public parthenon::variable_names::base_t<true> {
+  template <class... Ts>
+  KOKKOS_INLINE_FUNCTION any_bclean(Ts &&...args)
+      : base_t<true>(std::forward<Ts>(args)...) {}
+  static std::string name() { return "b_clean_gmg[.].*"; }
+};
+
+template <CoordinateDirection DIR, BCSide SIDE>
+auto GetBC() {
+  return [](std::shared_ptr<MeshBlockData<Real>> &rc, bool coarse) -> void {
+    using namespace parthenon;
+    using namespace parthenon::BoundaryFunction;
+    GenericBC<DIR, SIDE, BCType::FixedFace, any_bclean>(rc, coarse, 0.0);
+  };
+}
 
 std::shared_ptr<KHARMAPackage> B_CleanupGMG::Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages)
 {
     auto pkg = std::make_shared<KHARMAPackage>("B_CleanupGMG");
     Params &params = pkg->AllParams();
+
+  // Set boundary conditions on the pole to 
+  using BF = parthenon::BoundaryFace;
+  pkg->UserBoundaryFunctions[BF::inner_x2].push_back(GetBC<X2DIR, BCSide::Inner>());
+  pkg->UserBoundaryFunctions[BF::outer_x2].push_back(GetBC<X2DIR, BCSide::Outer>());
 
     // TODO implement
     // bool fail_without_convergence = pin->GetOrAddBoolean("b_cleanup", "fail_without_convergence", true);

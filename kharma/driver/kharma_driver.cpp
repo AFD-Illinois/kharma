@@ -190,7 +190,7 @@ TaskStatus KHARMADriver::SyncAllBounds(std::shared_ptr<MeshData<Real>> &md)
     //MPIBarrier();
 
     TaskCollection tc;
-    auto tr = tc.AddRegion(1);
+    auto& tr = tc.AddRegion(1);
     AddBoundarySync(t_none, tr[0], md);
     tc.Execute();
 

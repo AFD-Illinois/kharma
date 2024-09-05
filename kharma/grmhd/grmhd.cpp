@@ -300,10 +300,8 @@ Real EstimateTimestep(MeshData<Real> *md)
     // Added by Hyerin (03/07/24)
     // Internal SMR adds a factor to dx3 at poles based on larger cell width
     // TODO distinguish polar from other ISMR if more modes are added
-    const bool ismr_poles = pmb->packages.AllPackages().count("ISMR");
-    const bool polar_inner_x2 = pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::user;
-    const bool polar_outer_x2 = pmb->boundary_flag[BoundaryFace::outer_x2] == BoundaryFlag::user;
-    const uint ismr_nlevels = (ismr_poles) ? pmb->packages.Get("ISMR")->Param<uint>("nlevels") : 0;
+    const bool ismr_poles = pmesh->packages.AllPackages().count("ISMR");
+    const uint ismr_nlevels = (ismr_poles) ? pmesh->packages.Get("ISMR")->Param<uint>("nlevels") : 0;
 
     // TODO version preserving location, with switch to keep this fast one
     // TODO maybe split normal, ISMR timesteps? Excised pole/recalculated ctop too?
@@ -535,7 +533,7 @@ void CancelBoundaryU3(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
             // Sum the first rank of U3
             Real U3_sum = 0.;
             Kokkos::Sum<Real> sum_reducer(U3_sum);
-            parthenon::par_reduce_inner(member, bi.ks, bi.ke,
+            parthenon::par_reduce_inner(inner_loop_pattern_ttr_tag, member, bi.ks, bi.ke,
                 [&](const int& k, Real& local_result) {
                     local_result += isnan(P(m_p.U3, k, jf, i)) ? 0. : P(m_p.U3, k, jf, i);
                 }
@@ -607,7 +605,7 @@ void CancelBoundaryT3(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
             // Sum the first rank of the angular momentum T3
             Real T3_sum = 0.;
             Kokkos::Sum<Real> sum_reducer(T3_sum);
-            parthenon::par_reduce_inner(member, bi.ks, bi.ke,
+            parthenon::par_reduce_inner(inner_loop_pattern_ttr_tag, member, bi.ks, bi.ke,
                 [&](const int& k, Real& local_result) {
                     local_result += isnan(U(m_u.U3, k, jf, i)) ? 0. : U(m_u.U3, k, jf, i);
                 }

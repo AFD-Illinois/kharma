@@ -117,19 +117,18 @@ class PoissonEquation {
             "CaclulateFluxes", 0, pack.GetNBlocks() - 1, bd.ks, bd.ke, bd.js, bd.je, bd.is, bd.ie,
             KOKKOS_LAMBDA(const int b, const int k, const int j, const int i) {
                 const auto &coords = pack.GetCoordinates(b);
-                Real dx1 = coords.template Dxc<X1DIR>(k, j, i);
+                const Real dx1 = coords.template Dxc<X1DIR>(k, j, i);
                 pack.flux(b, X1DIR, var_t(), k, j, i) =
-                    1 / dx1 *
-                    (pack(b, te, var_t(), k, j, i - 1) - pack(b, te, var_t(), k, j, i));
+                    (pack(b, te, var_t(), k, j, i - 1) - pack(b, te, var_t(), k, j, i)) / dx1;
 
                 if (ndim > 1) {
-                    Real dx2 = coords.template Dxc<X2DIR>(k, j, i);
+                    const Real dx2 = coords.template Dxc<X2DIR>(k, j, i);
                     pack.flux(b, X2DIR, var_t(), k, j, i) =
                         (pack(b, te, var_t(), k, j - 1, i) - pack(b, te, var_t(), k, j, i)) / dx2;
                 }
 
                 if (ndim > 2) {
-                    Real dx3 = coords.template Dxc<X3DIR>(k, j, i);
+                    const Real dx3 = coords.template Dxc<X3DIR>(k, j, i);
                     pack.flux(b, X3DIR, var_t(), k, j, i) =
                         (pack(b, te, var_t(), k - 1, j, i) - pack(b, te, var_t(), k, j, i)) / dx3;
                 }
@@ -138,25 +137,48 @@ class PoissonEquation {
 
         // Make sure B on poles is zero
         auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
-        if (pmb0->coords.coords.is_spherical()) {
+        if (pmb0->coords.coords.is_spherical() && ndim > 1) {
             for (auto rc : md->GetAllBlockData()) {
                 auto pmb = rc->GetBlockPointer();
                 auto desc =
                     parthenon::MakePackDescriptor<var_t>(rc.get(), {}, {PDOpt::WithFluxes});
                 auto pack = desc.GetPack(rc.get());
-                const IndexRange3 bc = KDomain::GetRange(md, IndexDomain::entire, F2);
+                const IndexRange3 bc = KDomain::GetRange(md, IndexDomain::entire, F2, 1, 0);
                 const IndexRange3 bi2 = KDomain::GetRange(md, IndexDomain::interior, F2);
                 if (pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::user) {
-                    pmb->par_for("dB_boundary", bc.ks, bc.ke, bc.js, bi2.js, bc.is, bc.ie,
+                    pmb->par_for("dB_boundary", bc.ks, bc.ke, bi2.js, bi2.js, bc.is, bc.ie,
                         KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-                            pack.flux(0, X2DIR, var_t(), k, j, i) = 0.;
+                            const auto &coords = pack.GetCoordinates(0);
+                            const Real dx1 = coords.template Dxc<X1DIR>(k, j, i);
+                            const Real dx2 = coords.template Dxc<X2DIR>(k, j, i);
+                            pack.flux(0, X2DIR, var_t(), k, j, i) = (j == bi2.js) ? 0. :
+                                (pack(0, te, var_t(), k, j - 1, i) - pack(0, te, var_t(), k, j, i)) / dx2;
+                            pack.flux(0, X1DIR, var_t(), k, j, i) =
+                                (pack(0, te, var_t(), k, j, i - 1) - pack(0, te, var_t(), k, j, i)) / dx1;
+                            if (ndim > 2) {
+                                const Real dx3 = coords.template Dxc<X3DIR>(k, j, i);
+                                pack.flux(0, X3DIR, var_t(), k, j, i) =
+                                    (pack(0, te, var_t(), k - 1, j, i) - pack(0, te, var_t(), k, j, i)) / dx3;
+                            }
+                            
                         }
                     );
                 }
                 if (pmb->boundary_flag[BoundaryFace::outer_x2] == BoundaryFlag::user) {
-                    pmb->par_for("dB_boundary", bc.ks, bc.ke, bi2.je, bc.je, bc.is, bc.ie,
+                    pmb->par_for("dB_boundary", bc.ks, bc.ke, bi2.je, bi2.je, bc.is, bc.ie,
                         KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-                            pack.flux(0, X2DIR, var_t(), k, j, i) = 0.;
+                            const auto &coords = pack.GetCoordinates(0);
+                            const Real dx1 = coords.template Dxc<X1DIR>(k, j, i);
+                            const Real dx2 = coords.template Dxc<X2DIR>(k, j, i);
+                            pack.flux(0, X2DIR, var_t(), k, j, i) = (j == bi2.je) ? 0. :
+                                (pack(0, te, var_t(), k, j - 1, i) - pack(0, te, var_t(), k, j, i)) / dx2;
+                            pack.flux(0, X1DIR, var_t(), k, j, i) =
+                                (pack(0, te, var_t(), k, j, i - 1) - pack(0, te, var_t(), k, j, i)) / dx1;
+                            if (ndim > 2) {
+                                const Real dx3 = coords.template Dxc<X3DIR>(k, j, i);
+                                pack.flux(0, X3DIR, var_t(), k, j, i) =
+                                    (pack(0, te, var_t(), k - 1, j, i) - pack(0, te, var_t(), k, j, i)) / dx3;
+                            }
                         }
                     );
                 }
