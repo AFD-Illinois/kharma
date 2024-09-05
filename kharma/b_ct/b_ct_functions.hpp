@@ -119,47 +119,6 @@ KOKKOS_INLINE_FUNCTION void edge_curl(const GRCoordinates& G, const GridVector& 
     }
 }
 
-KOKKOS_INLINE_FUNCTION Real upwind_diff(const VariableFluxPack<Real>& B_U, const VariablePack<Real>& emfc, const VariablePack<Real>& uvec,
-                                        const int& comp, const int& dir, const int& vdir,
-                                        const int& k, const int& j, const int& i, const bool& left_deriv)
-{
-    // See SG09 eq 23
-    // Upwind based on vel(vdir) at the left face in vdir (contact mode)
-    TopologicalElement face = (vdir == 1) ? F1 : ((vdir == 2) ? F2 : F3); //
-    const Real contact_vel = uvec(face, vdir-1, k, j, i);
-    // Upwind by one zone in dir
-    const int i_up = (vdir == 1) ? i - 1 : i;
-    const int j_up = (vdir == 2) ? j - 1 : j;
-    const int k_up = (vdir == 3) ? k - 1 : k;
-    // Sign for transforming the flux to EMF, based on directions
-    const int emf_sign = antisym(comp-1, dir-1, vdir-1);
-
-    // If we're actually taking the derivative at -3/4, back up which center we use,
-    // and reverse the overall sign
-    const int i_cent = (left_deriv && dir == 1) ? i - 1 : i;
-    const int j_cent = (left_deriv && dir == 2) ? j - 1 : j;
-    const int k_cent = (left_deriv && dir == 3) ? k - 1 : k;
-    const int i_cent_up = (left_deriv && dir == 1) ? i_up - 1 : i_up;
-    const int j_cent_up = (left_deriv && dir == 2) ? j_up - 1 : j_up;
-    const int k_cent_up = (left_deriv && dir == 3) ? k_up - 1 : k_up;
-    const int return_sign = (left_deriv) ? -1 : 1;
-
-
-    // TODO calculate offsets once somehow?
-
-    if (contact_vel > 0) {
-        // Forward: difference at i
-        return return_sign * (emfc(comp-1, k_cent, j_cent, i_cent) + emf_sign * B_U.flux(dir, vdir-1, k, j, i));
-    } else if (contact_vel < 0) {
-        // Back: difference at i-1
-        return return_sign * (emfc(comp-1, k_cent_up, j_cent_up, i_cent_up) + emf_sign * B_U.flux(dir, vdir-1, k_up, j_up, i_up));
-    } else {
-        // Half and half
-        return return_sign*0.5*(emfc(comp-1, k_cent, j_cent, i_cent) + emf_sign * B_U.flux(dir, vdir-1, k, j, i) +
-                    emfc(comp-1, k_cent_up, j_cent_up, i_cent_up) + emf_sign * B_U.flux(dir, vdir-1, k_up, j_up, i_up));
-    }
-}
-
 // Only through formatting has the following been made even a little comprehensible.
 // TODO move it into Parthenon!
 
