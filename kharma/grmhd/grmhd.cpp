@@ -112,6 +112,7 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
                           (pin->GetBoolean("emhd", "on") || pin->GetOrAddBoolean("GRMHD", "implicit", false));
     params.Add("implicit", implicit_grmhd);
     // Explicitly-evolved ideal MHD variables as guess for Extended MHD runs
+    // TODO move to EMHD package, guard reads on package presence
     const bool ideal_guess = pin->GetOrAddBoolean("emhd", "ideal_guess", false);
     params.Add("ideal_guess", ideal_guess);
 
@@ -197,8 +198,7 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
 
     // AMR-related
     pkg->CheckRefinementBlock    = GRMHD::CheckRefinement;
-    pkg->EstimateTimestepBlock   = GRMHD::EstimateTimestep;
-    pkg->EstimateTimestepMesh    = GRMHD::MeshEstimateTimestep;
+    pkg->EstimateTimestepMesh    = GRMHD::EstimateTimestep;
     pkg->PostStepDiagnosticsMesh = GRMHD::PostStepDiagnostics;
 
     // List (vector) of HistoryOutputVars that will all be enrolled as output variables
@@ -249,32 +249,26 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     return pkg;
 }
 
-Real EstimateTimestep(MeshBlockData<Real> *rc)
+Real EstimateTimestep(MeshData<Real> *md)
 {
     // Normally the caller would place this flag before calling us, but this is from Parthenon
     // This function is a nice demo of why client-side flagging
     // like this is inadvisable: you have to EndFlag() at every different return
     Flag("EstimateTimestep");
-    auto pmb = rc->GetBlockPointer();
-    IndexRange ib = pmb->cellbounds.GetBoundsI(IndexDomain::interior);
-    IndexRange jb = pmb->cellbounds.GetBoundsJ(IndexDomain::interior);
-    IndexRange kb = pmb->cellbounds.GetBoundsK(IndexDomain::interior);
-    const auto& G = pmb->coords;
-    auto& cmax = rc->Get("Flux.cmax").data;
-    auto& cmin = rc->Get("Flux.cmin").data;
+    auto pmesh = md->GetMeshPointer();
+    auto& globals = pmesh->packages.Get("Globals")->AllParams();
+    const auto& grmhd_pars = pmesh->packages.Get("GRMHD")->AllParams();
 
-    // TODO: move timestep limiters into KHARMADriver::SetGlobalTimestep
-    // TODO: option to keep location (in embedding coords) of zone which sets step.
-    //       (this will likely be very slow, but we should do it anyway)
+    // If we have to recompute ctop anywhere, we do it now
+    UpdateAveragedCtop(md);
 
-    auto& globals = pmb->packages.Get("Globals")->AllParams();
-    const auto& grmhd_pars = pmb->packages.Get("GRMHD")->AllParams();
-
+    // Other things we might have to return (light-crossing, pre-set timestep, etc.)
+    // TODO move these options to SetGlobalTimestep
     if (!globals.Get<bool>("in_loop")) {
         if (grmhd_pars.Get<bool>("start_dt_light") ||
             grmhd_pars.Get<bool>("use_dt_light")) {
             // Estimate based on light crossing time
-            double dt = EstimateRadiativeTimestep(rc);
+            double dt = EstimateRadiativeTimestep(md);
             // This records a per-rank minimum,
             // but Parthenon finds the global minimum anyway
             if (globals.hasKey("dt_light")) {
@@ -300,7 +294,8 @@ Real EstimateTimestep(MeshBlockData<Real> *rc)
         return globals.Get<double>("dt_light");
     }
 
-    ParArray1D<Real> min_loc("min_loc", 3);
+    // Actually compute the timestep if we have to
+    const IndexRange3 b = KDomain::GetRange(md, IndexDomain::interior);
 
     // Added by Hyerin (03/07/24)
     // Internal SMR adds a factor to dx3 at poles based on larger cell width
@@ -311,81 +306,76 @@ Real EstimateTimestep(MeshBlockData<Real> *rc)
     const uint ismr_nlevels = (ismr_poles) ? pmb->packages.Get("ISMR")->Param<uint>("nlevels") : 0;
 
     // TODO version preserving location, with switch to keep this fast one
-    // TODO if ISMR, split w/simple kernel over regular zones here, kernel over just ISMR in that pkg?
-    // std::tuple doesn't work device-side, Kokkos::pair is 2D.  pair of pairs?
-    Real min_ndt = 0.;
-    pmb->par_reduce("ndt_min", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-        KOKKOS_LAMBDA (const int k, const int j, const int i,
-                      Real &local_result) {
-            int ismr_factor = 1;
-            double courant_limit = 1.0;
-            if (ismr_poles && polar_inner_x2 && j < (jb.s + ismr_nlevels)) {
-                ismr_factor = m::pow(2, ismr_nlevels - (j - jb.s));
-                courant_limit = 0.5;
+    // TODO maybe split normal, ISMR timesteps? Excised pole/recalculated ctop too?
+    double min_ndt = std::numeric_limits<double>::max();
+    for (auto &pmb : pmesh->block_list) {
+        auto rc = pmb->meshblock_data.Get().get();
+        // We only need this block-wise to check boundary flags for ISMR, could special-case that
+        const bool polar_inner_x2 = pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::user;
+        const bool polar_outer_x2 = pmb->boundary_flag[BoundaryFace::outer_x2] == BoundaryFlag::user;
+
+        const auto& cmax  = rc->PackVariables(std::vector<std::string>{"Flux.cmax"});
+        const auto& cmin  = rc->PackVariables(std::vector<std::string>{"Flux.cmin"});
+
+        double block_min_ndt = 0.;
+        pmb->par_reduce("ndt_min", b.ks, b.ke, b.js, b.je, b.is, b.ie,
+            KOKKOS_LAMBDA (const int k, const int j, const int i,
+                        double &local_result) {
+                const auto& G = cmax.GetCoords();
+                int ismr_factor = 1;
+                double courant_limit = 1.0;
+
+                double ndt_zone = courant_limit / (1 / (G.Dxc<1>(i) /  m::max(cmax(V1, k, j, i), cmin(V1, k, j, i))) +
+                                    1 / (G.Dxc<2>(j) /  m::max(cmax(V2, k, j, i), cmin(V2, k, j, i))) +
+                                    1 / (G.Dxc<3>(k) * ismr_factor /  m::max(cmax(V3, k, j, i), cmin(V3, k, j, i))));
+
+                if (!m::isnan(ndt_zone) && (ndt_zone < local_result)) {
+                    local_result = ndt_zone;
+                }
             }
-            if (ismr_poles && polar_outer_x2 && j > (jb.e - ismr_nlevels)) {
-                ismr_factor = m::pow(2, ismr_nlevels - (jb.e - j));
-                courant_limit = 0.5;
-            }
+        , Kokkos::Min<double>(block_min_ndt));
+        if (block_min_ndt < min_ndt) min_ndt = block_min_ndt;
+        //std::cerr << "Got block timestep: " << block_min_ndt << std::endl;
+    }
+    //std::cerr << "Got min timestep: " << min_ndt << std::endl;
 
-            double ndt_zone = courant_limit / (1 / (G.Dxc<1>(i) /  m::max(cmax(0, k, j, i), cmin(0, k, j, i))) +
-                                   1 / (G.Dxc<2>(j) /  m::max(cmax(1, k, j, i), cmin(1, k, j, i))) +
-                                   1 / (G.Dxc<3>(k) * ismr_factor /  m::max(cmax(2, k, j, i), cmin(2, k, j, i))));
-
-            if (!m::isnan(ndt_zone) && (ndt_zone < local_result)) {
-                local_result = ndt_zone;
-            }
-        }
-    , Kokkos::Min<Real>(min_ndt));
-    // TODO(BSP) this would need work for non-rectangular grids.
-    const double nctop = m::min(G.Dxc<1>(0), m::min(G.Dxc<2>(0), G.Dxc<3>(0))) / min_ndt;
-
-    // TODO print location
-    //std::cout << "New min timestep: " << min_ndt << std::endl;
-
-    // Apply limits
+    // Apply limits (TODO move into KHARMADriver::SetGlobalTimestep)
     const double cfl = grmhd_pars.Get<double>("cfl");
     const double dt_min = grmhd_pars.Get<double>("dt_min");
     const double dt_last = globals.Get<double>("dt_last");
     const double dt_max = grmhd_pars.Get<double>("max_dt_increase") * dt_last;
     const double ndt = clip(min_ndt * cfl, dt_min, dt_max);
 
-    // Record max ctop, for constraint damping
-    // TODO could probably use generic Max inside B_CD package
-    if (pmb->packages.AllPackages().count("B_CD")) {
-        auto& b_cd_params = pmb->packages.Get("B_CD")->AllParams();
-        if (nctop > b_cd_params.Get<Real>("ctop_max"))
-            b_cd_params.Update<Real>("ctop_max", nctop);
-    }
-
     EndFlag();
     return ndt;
 }
 
-Real EstimateRadiativeTimestep(MeshBlockData<Real> *rc)
+Real EstimateRadiativeTimestep(MeshData<Real> *md)
 {
     Flag("EstimateRadiativeTimestep");
-    auto pmb = rc->GetBlockPointer();
-    IndexRange ib = pmb->cellbounds.GetBoundsI(IndexDomain::interior);
-    IndexRange jb = pmb->cellbounds.GetBoundsJ(IndexDomain::interior);
-    IndexRange kb = pmb->cellbounds.GetBoundsK(IndexDomain::interior);
-    const auto& G = pmb->coords;
+    auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
 
-    const auto& grmhd_pars = pmb->packages.Get("GRMHD")->AllParams();
+    const auto& grmhd_pars = pmb0->packages.Get("GRMHD")->AllParams();
     const bool phase_speed = grmhd_pars.Get<bool>("use_dt_light_phase_speed");
 
-    const Real dx[GR_DIM] = {0., G.Dxc<1>(0), G.Dxc<2>(0), G.Dxc<3>(0)};
+    // Doesn't actually matter what we pack here, we're just pulling G
+    const auto& dummy  = md->PackVariables(std::vector<std::string>{});
+
+    const IndexRange3 b = KDomain::GetRange(md, IndexDomain::interior);
+    const IndexRange block = IndexRange{0, dummy.GetDim(5)-1};
 
     // Leaving minmax in case the max phase speed is useful
     typename Kokkos::MinMax<Real>::value_type minmax;
-    pmb->par_reduce("ndt_min", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-        KOKKOS_LAMBDA(const int& k, const int& j, const int& i,
+    pmb0->par_reduce("ndt_min", block.s, block.e, b.ks, b.ke, b.js, b.je, b.is, b.ie,
+        KOKKOS_LAMBDA(const int& b, const int& k, const int& j, const int& i,
                       typename Kokkos::MinMax<Real>::value_type& lminmax) {
+            const auto& G = dummy.GetCoords(b);
 
             double light_phase_speed = SMALL_NUM;
             double dt_light_local = 0.;
 
             if (phase_speed) {
+                double local_phase_speed[GR_DIM];
                 for (int mu = 1; mu < GR_DIM; mu++) {
                     if(SQR(G.gcon(Loci::center, j, i, 0, mu)) -
                         G.gcon(Loci::center, j, i, mu, mu)*G.gcon(Loci::center, j, i, 0, 0) >= 0.) {
@@ -400,16 +390,19 @@ Real EstimateRadiativeTimestep(MeshBlockData<Real> *rc)
                                                 G.gcon(Loci::center, j, i, mu, mu)*G.gcon(Loci::center, j, i, 0, 0)))/
                                             G.gcon(Loci::center, j, i, 0, 0));
 
-                        light_phase_speed = m::max(cplus,cminus);
+                        local_phase_speed[mu] = m::max(cplus,cminus);
                     } else {
-                        light_phase_speed = SMALL_NUM;
+                        local_phase_speed[mu] = SMALL_NUM;
                     }
-
-                    dt_light_local += 1./(dx[mu]/light_phase_speed);
                 }
+                dt_light_local = 1./(G.Dxc<1>(0)/local_phase_speed[1]) +
+                                 1./(G.Dxc<2>(0)/local_phase_speed[2]) +
+                                 1./(G.Dxc<3>(0)/local_phase_speed[3]);
+                light_phase_speed = m::max(local_phase_speed[1], m::max(local_phase_speed[2], local_phase_speed[3]));
             } else {
-                for (int mu = 1; mu < GR_DIM; mu++)
-                    dt_light_local += 1./dx[mu];
+                dt_light_local = 1./G.Dxc<1>(0) +
+                                 1./G.Dxc<2>(0) +
+                                 1./G.Dxc<3>(0);
             }
             dt_light_local = 1/dt_light_local;
 
@@ -504,6 +497,8 @@ void CancelBoundaryU3(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     const BoundaryFace bface = KBoundaries::BoundaryFaceOf(domain);
     const bool binner = KBoundaries::BoundaryIsInner(bface);
     const auto bname = KBoundaries::BoundaryName(bface);
+    const auto bdir = KBoundaries::BoundaryDirection(bface);
+    if (bdir != 2) throw std::runtime_error("T3 Cancellation is only implemented for polar X2 boundaries!");
 
     // Pull variables (TODO take packs & maps, see boundaries.cpp)
     PackIndexMap prims_map, cons_map;
@@ -515,23 +510,27 @@ void CancelBoundaryU3(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
 
+    const bool sync_prims = pmb->packages.Get("Driver")->Param<bool>("sync_prims");
+
     const Floors::Prescription floors = pmb->packages.Get("Floors")->Param<Floors::Prescription>("prescription");
     const EMHD::EMHD_parameters& emhd_params = EMHD::GetEMHDParameters(pmb->packages);
 
-    // Subtract the average B3 as "reconnection"
+    // Subtract the average B3 as "reconnection" through the pole
     IndexRange3 b = KDomain::GetRange(rc, domain, coarse);
     IndexRange3 bi = KDomain::GetRange(rc, IndexDomain::interior, coarse);
     const int jf = (binner) ? bi.js : bi.je; // j index of last zone next to pole
     parthenon::par_for_outer(DEFAULT_OUTER_LOOP_PATTERN, "reduce_U3_" + bname, pmb->exec_space,
         0, 1, b.is, b.ie,
         KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int& i) {
-            // Recover primitive GRMHD variables from our modified U
-            parthenon::par_for_inner(member, bi.ks, bi.ke,
-                [&](const int& k) {
-                Inverter::u_to_p<Inverter::Type::kastaun>(G, U, m_u, gam, k, jf, i, P, m_p, Loci::center,
-                                                            floors, 8, 1e-8);
-                }
-            );
+            if (!sync_prims) {
+                // Recover primitive GRMHD variables to sync them
+                parthenon::par_for_inner(member, bi.ks, bi.ke,
+                    [&](const int& k) {
+                    Inverter::u_to_p<Inverter::Type::kastaun>(G, U, m_u, gam, k, jf, i, P, m_p, Loci::center,
+                                                                floors, 8, 1e-8);
+                    }
+                );
+            }
 
             // Sum the first rank of U3
             Real U3_sum = 0.;
@@ -542,14 +541,16 @@ void CancelBoundaryU3(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
                 }
             , sum_reducer);
 
-            // Calculate the average and subtract it
+            // Subtract the average, floor, restore conserved vars, update ctop
             const Real U3_avg = U3_sum / (bi.ke - bi.ks + 1);
             parthenon::par_for_inner(member, b.ks, b.ke,
                 [&](const int& k) {
                     P(m_p.U3, k, jf, i) -= U3_avg;
+
                     // Apply floors
                     Floors::apply_geo_floors(G, P, m_p, gam, k, jf, i, floors, floors, Loci::center);
-                    // Always PtoU, we modified P.  Accomodate EMHD
+
+                    // Always PtoU, we modified P.  Accommodate EMHD
                     Flux::p_to_u_mhd(G, P, m_p, emhd_params, gam, k, jf, i, U, m_u);
                 }
             );
@@ -569,6 +570,8 @@ void CancelBoundaryT3(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     const BoundaryFace bface = KBoundaries::BoundaryFaceOf(domain);
     const bool binner = KBoundaries::BoundaryIsInner(bface);
     const auto bname = KBoundaries::BoundaryName(bface);
+    const auto bdir = KBoundaries::BoundaryDirection(bface);
+    if (bdir != 2) throw std::runtime_error("T3 Cancellation is only implemented for polar X2 boundaries!");
 
     // Pull variables (TODO take packs & maps, see boundaries.cpp)
     PackIndexMap prims_map, cons_map;
@@ -580,7 +583,11 @@ void CancelBoundaryT3(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
 
     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
 
+    const bool sync_prims = pmb->packages.Get("Driver")->Param<bool>("sync_prims");
+
     const Floors::Prescription floors = pmb->packages.Get("Floors")->Param<Floors::Prescription>("prescription");
+    // Don't be fooled, this function does *not* support/preserve EMHD values
+    const EMHD::EMHD_parameters& emhd_params = EMHD::GetEMHDParameters(pmb->packages);
 
     // Subtract the average B3 as "reconnection"
     IndexRange3 b = KDomain::GetRange(rc, domain, coarse);
@@ -589,6 +596,14 @@ void CancelBoundaryT3(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     parthenon::par_for_outer(DEFAULT_OUTER_LOOP_PATTERN, "reduce_T3_" + bname, pmb->exec_space,
         0, 1, b.is, b.ie,
         KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int& i) {
+            if (sync_prims) {
+                parthenon::par_for_inner(member, bi.ks, bi.ke,
+                    [&](const int& k) {
+                        p_to_u(G, P, m_p, gam, k, jf, i, U, m_u, Loci::center);
+                    }
+                );
+            }
+
             // Sum the first rank of the angular momentum T3
             Real T3_sum = 0.;
             Kokkos::Sum<Real> sum_reducer(T3_sum);
@@ -615,6 +630,82 @@ void CancelBoundaryT3(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
             );
         }
     );
+}
+
+void UpdateAveragedCtop(MeshData<Real> *md)
+{
+    auto pmesh = md->GetMeshPointer();
+    auto& params = pmesh->packages.Get<KHARMAPackage>("Boundaries")->AllParams();
+    for (auto &pmb : pmesh->block_list) {
+        auto &rc = pmb->meshblock_data.Get();
+        for (int i = 0; i < BOUNDARY_NFACES; i++) {
+            BoundaryFace bface = (BoundaryFace)i;
+            auto bname = KBoundaries::BoundaryName(bface);
+            const auto bdir = KBoundaries::BoundaryDirection(bface);
+            const auto binner = KBoundaries::BoundaryIsInner(bface);
+            const auto bdomain = KBoundaries::BoundaryDomain(bface);
+
+            if (bdir > pmesh->ndim) continue;
+
+            bool b3_is_reconnected = (pmesh->packages.AllPackages().count("B_CT")) ?
+                                      params.Get<bool>("reconnect_B3_" + bname) :
+                                      false;
+
+            // If we've modified values on the pole...
+            if (params.Get<bool>("cancel_T3_" + bname) ||
+                params.Get<bool>("cancel_U3_" + bname) ||
+                b3_is_reconnected) {
+                // ...and if this face of the block corresponds to a global boundary...
+                if (pmb->boundary_flag[bface] == BoundaryFlag::user) {
+                    PackIndexMap prims_map, cons_map;
+                    auto P = rc->PackVariables({Metadata::GetUserFlag("Primitive"), Metadata::Cell}, prims_map);
+                    const VarMap m_p(prims_map, false);
+                    const auto& cmax  = rc->PackVariables(std::vector<std::string>{"Flux.cmax"});
+                    const auto& cmin  = rc->PackVariables(std::vector<std::string>{"Flux.cmin"});
+
+                    const auto& G = pmb->coords;
+                    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
+                    const Floors::Prescription floors = pmb->packages.Get("Floors")->Param<Floors::Prescription>("prescription");
+                    const EMHD::EMHD_parameters& emhd_params = EMHD::GetEMHDParameters(pmb->packages);
+
+                    // If we calculated the flux assuming half-size cells,
+                    // we modify ctop rather than special-case in EstimateTimestep
+                    const bool half_cells = params.Get<bool>("excise_flux_" + bname);
+
+                    // Recompute ctop in zones affected by averaging
+                    IndexRange3 b = KDomain::GetRange(rc, bdomain);
+                    IndexRange3 bi = KDomain::GetRange(rc, IndexDomain::interior);
+                    // TODO this part wouldn't be hard to generalize if polar boundary moves
+                    const int jf = (binner) ? bi.js : bi.je;
+                    pmb->par_for("update_ctop_in_averaged", b.ks, b.ke, b.is, b.ie,
+                        KOKKOS_LAMBDA(const int& k, const int& i) {
+                            FourVectors Dtmp;
+                            GRMHD::calc_4vecs(G, P, m_p, k, jf, i, Loci::center, Dtmp);
+                            // Remember our 'cmin' array stores *positive* values!
+                            Real cmin_minus;
+                            Flux::vchar_global(G, P, m_p, Dtmp, gam, emhd_params, k, jf, i, Loci::center, X1DIR,
+                                        cmax(V1, k, jf, i), cmin_minus);
+                            cmin(V1, k, jf, i) = -cmin_minus;
+                            Flux::vchar_global(G, P, m_p, Dtmp, gam, emhd_params, k, jf, i, Loci::center, X2DIR,
+                                        cmax(V2, k, jf, i), cmin_minus);
+                            cmin(V2, k, jf, i) = -cmin_minus;
+                            Flux::vchar_global(G, P, m_p, Dtmp, gam, emhd_params, k, jf, i, Loci::center, X3DIR,
+                                        cmax(V3, k, jf, i), cmin_minus);
+                            cmin(V3, k, jf, i) = -cmin_minus;
+                            if (half_cells) {
+                                cmin(bdir-1, k, jf, i) *= 0.5;
+                                cmax(bdir-1, k, jf, i) *= 0.5;
+                            }
+                        }
+                    );
+
+                    if (params.Get<bool>("excise_flux_" + bname)) {
+
+                    }
+                }
+            }
+        }
+    }
 }
 
 } // namespace GRMHD

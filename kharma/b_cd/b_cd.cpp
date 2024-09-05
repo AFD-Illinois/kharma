@@ -42,6 +42,12 @@ using namespace parthenon;
 // The code is here so that we can ensure it keeps compiling,
 // which should make it easier to reintroduce if we want to later
 
+// It at least needs:
+// 1. Special-casing in magnetic field initialization
+// 2. Implementation of below function to update maximum 'ctop' each step
+// 3. Ripping out a bunch of experiments toward GR support which didn't work
+// 4. Proper GR support instead
+
 namespace B_CD
 {
 

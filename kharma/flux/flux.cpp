@@ -424,12 +424,10 @@ void Flux::AddGeoSource(MeshData<Real> *md, MeshData<Real> *mdudt, IndexDomain d
     const EMHD::EMHD_parameters& emhd_params = EMHD::GetEMHDParameters(pmb0->packages);
     
     // Get sizes
-    auto ib = md->GetBoundsI(domain);
-    auto jb = md->GetBoundsJ(domain);
-    auto kb = md->GetBoundsK(domain);
+    IndexRange3 bd = KDomain::GetRange(md, domain);
     auto block = IndexRange{0, P.GetDim(5)-1};
 
-    pmb0->par_for("tmunu_source", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+    pmb0->par_for("tmunu_source", block.s, block.e, bd.ks, bd.ke, bd.js, bd.je, bd.is, bd.ie,
         KOKKOS_LAMBDA (const int& b, const int &k, const int &j, const int &i) {
             const auto& G = dUdt.GetCoords(b);
             FourVectors D;

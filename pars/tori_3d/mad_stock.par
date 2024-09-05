@@ -1,0 +1,94 @@
+# This is a normal large-disk (20/41 r_g) MAD,
+# see e.g. EHT MAD code comparison
+# It uses KHARMA's features such as transmitting
+# boundary conditions, Kastaun inverter,
+# first-order flux corrections,
+# and polar reconnection, in order to evolve
+# the same setup with practically no floors
+# and no observed instability in tests.
+
+<parthenon/job>
+problem_id = torus
+archive_parameters = timestamp
+
+<parthenon/mesh>
+nx1 = 288
+nx2 = 128
+nx3 = 128
+
+<parthenon/meshblock>
+nx1 = 288
+nx2 = 64
+nx3 = 128
+
+<coordinates>
+base = spherical_ks
+# FMKS coordinates and transmitting polar bounds
+# are not compatible
+transform = mks
+r_out = 1000
+a = 0.9375
+
+<parthenon/time>
+tlim = 60000.0
+nlim = -1
+
+<debug>
+verbose = 1
+extra_checks = 1
+flag_verbose = 2
+
+<torus>
+rin = 20.0
+rmax = 41.0
+
+<perturbation>
+u_jitter = 0.04
+
+<b_field>
+solver = face_ct
+ct_scheme = sg07
+type = mad
+beta_min = 100.
+
+<GRMHD>
+cfl = 0.7
+gamma = 1.666667
+
+<flux>
+type = llf
+reconstruction = weno5
+
+<driver>
+type = kharma
+two_sync = true
+
+<boundaries>
+inner_x2 = transmitting
+outer_x2 = transmitting
+
+<floors>
+frame        = drift
+rho_min_geom = 1e-6
+u_min_geom   = 1e-8
+bsq_over_rho_max = 1e3
+bsq_over_u_max   = 1e4
+gamma_max    = 32
+
+<fofc>
+on = true
+consistent_face_b = false
+
+<parthenon/output0>
+file_type = hdf5
+dt = 5.0
+single_precision_output = true
+variables = prims, divB, jcon, fflag, pflag, fofcflag
+
+<parthenon/output1>
+file_type = rst
+dt = 100.0
+
+<parthenon/output2>
+file_type = hst
+dt = 0.1

@@ -39,6 +39,7 @@
 #include "boundaries.hpp"
 #include "coordinate_utils.hpp"
 #include "domain.hpp"
+#include "flux.hpp"
 #include "fm_torus.hpp"
 #include "grmhd_functions.hpp"
 

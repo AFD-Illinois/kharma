@@ -133,8 +133,8 @@ void init_GRCoordinates(GRCoordinates& G) {
                     // Get a square of points evenly across each cell,
                     // over both nontrivial geometry directions 1,2
                     // Note this never hits/passes the pole
-                    for (int k=-radius; k <= radius; k++) {
-                        for (int l=-radius; l <= radius; l++) {
+                    for (int k = -radius; k <= radius; k++) {
+                        for (int l = -radius; l <= radius; l++) {
                             GReal X[GR_DIM];
                             G.coord(0, j, i, loc, X);
                             GReal Xn1[GR_DIM], Xn2[GR_DIM];
@@ -185,7 +185,7 @@ void init_GRCoordinates(GRCoordinates& G) {
                             gcon_local(loc, j, i, mu, nu) += gcon_loc[mu][nu] / diameter;
                         }
                     }
-                } else { // corner
+                } else { // corner or exotic locations, no averaging
                     // Just one point
                     GReal X[GR_DIM];
                     G.coord(0, j, i, loc, X);
