@@ -289,31 +289,6 @@ KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::normal>(FLOOR_ONE_ARGS)
                                                      floor_tmp, 8, 1e-8);
 }
 
-template<>
-KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::mixed_fluid_normal>(FLOOR_ONE_ARGS)
-{
-    // TODO(BSP) thread through frame_switch option
-    if (G.r(k, j, i) > 50.) {
-        return apply_floors<InjectionFrame::fluid>(G, P, m_p, gam, k, j, i, rhoflr_max, uflr_max, U, m_u);
-    } else {
-        return apply_floors<InjectionFrame::normal>(G, P, m_p, gam, k, j, i, rhoflr_max, uflr_max, U, m_u);
-    }
-}
-
-template<>
-KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::mixed_fluid_drift>(FLOOR_ONE_ARGS)
-{
-    // TODO(BSP) thread through frame_switch option
-    FourVectors Dtmp;
-    GRMHD::calc_4vecs(G, P, m_p, k, j, i, Loci::center, Dtmp);
-    Real beta = dot(Dtmp.bcon, Dtmp.bcov) / (2 * (gam - 1.) * P(m_p.UU, k, j, i));
-    if (beta > 10.) {
-        return apply_floors<InjectionFrame::drift>(G, P, m_p, gam, k, j, i, rhoflr_max, uflr_max, U, m_u);
-    } else {
-        return apply_floors<InjectionFrame::normal>(G, P, m_p, gam, k, j, i, rhoflr_max, uflr_max, U, m_u);
-    }
-}
-
 /**
  * Apply just the geometric floors to a set of local primitives.
  * Specifically called after reconstruction when using non-TVD schemes, e.g. WENO5.
