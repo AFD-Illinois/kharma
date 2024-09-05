@@ -52,13 +52,7 @@ std::shared_ptr<KHARMAPackage> B_CT::Initialize(ParameterInput *pin, std::shared
     auto pkg = std::make_shared<KHARMAPackage>("B_CT");
     Params &params = pkg->AllParams();
 
-    // Diagnostic & inadvisable flags
-
-    // KHARMA requires some kind of field transport if there is a magnetic field allocated.
-    // Use this flag if you actually want to disable all magnetic field flux corrections,
-    // and allow a field divergence to grow unchecked, usually for debugging or comparison reasons
-    bool disable_ct = pin->GetOrAddBoolean("b_field", "disable_ct", false);
-    params.Add("disable_ct", disable_ct);
+    // Diagnostic flags
 
     // Default to stopping execution when divB is large, which generally indicates something
     // has gone wrong.  As always, can be disabled by the brave.

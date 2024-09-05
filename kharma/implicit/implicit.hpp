@@ -41,12 +41,6 @@
 #include "flux_functions.hpp"
 #include "grmhd_functions.hpp"
 
-
-// This class calls EMHD stuff a bunch,
-// since that's the only package with specific
-// implicit solver stuff
-using namespace EMHD;
-
 // And an odd but useful loop for ex-iharm3d code
 // This requires nvar to be defined in caller!
 // It is not a const/global anymore.  So, use this loop carefully
@@ -139,8 +133,8 @@ template<typename Local>
 KOKKOS_INLINE_FUNCTION void calc_residual(const GRCoordinates& G, const Local& P_test,
                                           const Local& Pi, const Local& Ui, const Local& Ps,
                                           const Local& dudt_explicit, const Local& dUi, const Local& tmp, 
-                                          const VarMap& m_p, const VarMap& m_u, const EMHD_parameters& emhd_params,
-                                          const EMHD_parameters& emhd_params_s,const int& nfvar, 
+                                          const VarMap& m_p, const VarMap& m_u, const EMHD::EMHD_parameters& emhd_params,
+                                          const EMHD::EMHD_parameters& emhd_params_s,const int& nfvar, 
                                           const int& k, const int& j, const int& i, 
                                           const Real& gam, const double& dt, Local& residual)
 {
@@ -199,8 +193,8 @@ template<typename Local, typename Local2>
 KOKKOS_INLINE_FUNCTION void calc_jacobian(const GRCoordinates& G, const Local& P_solver,
                                           const Local& P_full_step_init, const Local& U_full_step_init, const Local& P_sub_step_init,
                                           const Local& flux_src, const Local& dU_implicit, Local& tmp1, Local& tmp2, Local& tmp3,
-                                          const VarMap& m_p, const VarMap& m_u, const EMHD_parameters& emhd_params_solver,
-                                          const EMHD_parameters& emhd_params_sub_step_init, const int& nvar, const int& nfvar,
+                                          const VarMap& m_p, const VarMap& m_u, const EMHD::EMHD_parameters& emhd_params_solver,
+                                          const EMHD::EMHD_parameters& emhd_params_sub_step_init, const int& nvar, const int& nfvar,
                                           const int& k, const int& j, const int& i,
                                           const Real& jac_delta, const Real& gam, const double& dt,
                                           Local2& jacobian, Local& residual)

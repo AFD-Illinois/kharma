@@ -112,6 +112,7 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
                           (pin->GetBoolean("emhd", "on") || pin->GetOrAddBoolean("GRMHD", "implicit", false));
     params.Add("implicit", implicit_grmhd);
     // Explicitly-evolved ideal MHD variables as guess for Extended MHD runs
+    // TODO move to EMHD package, guard reads on package presence
     const bool ideal_guess = pin->GetOrAddBoolean("emhd", "ideal_guess", false);
     params.Add("ideal_guess", ideal_guess);
 
@@ -506,7 +507,7 @@ void CancelBoundaryU3(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     const Floors::Prescription floors = pmb->packages.Get("Floors")->Param<Floors::Prescription>("prescription");
     const EMHD::EMHD_parameters& emhd_params = EMHD::GetEMHDParameters(pmb->packages);
 
-    // Subtract the average B3 as "reconnection"
+    // Subtract the average B3 as "reconnection" through the pole
     IndexRange3 b = KDomain::GetRange(rc, domain, coarse);
     IndexRange3 bi = KDomain::GetRange(rc, IndexDomain::interior, coarse);
     const int jf = (binner) ? bi.js : bi.je; // j index of last zone next to pole
@@ -668,7 +669,7 @@ void UpdateAveragedCtop(MeshData<Real> *md)
                     IndexRange3 bi = KDomain::GetRange(rc, IndexDomain::interior);
                     // TODO this part wouldn't be hard to generalize if polar boundary moves
                     const int jf = (binner) ? bi.js : bi.je;
-                    pmb->par_for("check_refinement", b.ks, b.ke, b.is, b.ie,
+                    pmb->par_for("update_ctop_in_averaged", b.ks, b.ke, b.is, b.ie,
                         KOKKOS_LAMBDA(const int& k, const int& i) {
                             FourVectors Dtmp;
                             GRMHD::calc_4vecs(G, P, m_p, k, jf, i, Loci::center, Dtmp);

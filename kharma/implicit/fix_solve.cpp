@@ -118,7 +118,7 @@ TaskStatus Implicit::FixSolve(MeshBlockData<Real> *mbd) {
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
 
     // Need emhd_params object
-    EMHD_parameters emhd_params = EMHD::GetEMHDParameters(pmb->packages);
+    const EMHD::EMHD_parameters emhd_params = EMHD::GetEMHDParameters(pmb->packages);
 
     pmb->par_for("fix_solver_failures_PtoU", b.ks, b.ke, b.js, b.je, b.is, b.ie,
         KOKKOS_LAMBDA (const int& k, const int& j, const int& i) {
