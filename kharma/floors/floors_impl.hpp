@@ -80,7 +80,8 @@ TaskStatus ApplyFloorsInFrame(MeshData<Real> *md, IndexDomain domain)
                 const auto& G = P.GetCoords(b);
                 // apply_floors can involve another U_to_P call.  Hide the pflag in bottom 5 bits and retrieve both
                 int pflag_l = 0;
-                if constexpr (frame == InjectionFrame::mixed_fluid_normal) {
+                // These would be constexpr except Nvidia doesn't like lambda-capture in constexpr ifs
+                if (frame == InjectionFrame::mixed_fluid_normal) {
                     if (G.r(k, j, i) > switch_r) {
                         pflag_l = apply_floors<InjectionFrame::fluid>(G, P(b), m_p, gam, k, j, i,
                                             floor_vals(b, rhofi, k, j, i), floor_vals(b, ufi, k, j, i),
@@ -90,7 +91,7 @@ TaskStatus ApplyFloorsInFrame(MeshData<Real> *md, IndexDomain domain)
                                             floor_vals(b, rhofi, k, j, i), floor_vals(b, ufi, k, j, i),
                                             U(b), m_u);
                     }
-                } else if constexpr (frame == InjectionFrame::mixed_normal_drift) {
+                } else if (frame == InjectionFrame::mixed_normal_drift) {
                     FourVectors Dtmp;
                     GRMHD::calc_4vecs(G, P(b), m_p, k, j, i, Loci::center, Dtmp);
                     Real mag_switch = m::min(P(b, m_p.RHO, k, j, i), P(b, m_p.UU, k, j, i)) /
