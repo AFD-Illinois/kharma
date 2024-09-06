@@ -22,10 +22,9 @@ nx2 = 1
 nx3 = 1
 
 <boundaries>
-# The problem itself sets the boundary functions,
-# these lines are just documentation
-inner_x1 = hubble
-outer_x1 = hubble
+# The problem itself sets the boundary functions
+#inner_x1 = hubble
+#outer_x1 = hubble
 check_inflow_inner_x1 = false
 check_inflow_outer_x1 = false
 
