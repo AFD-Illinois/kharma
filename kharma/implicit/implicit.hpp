@@ -140,8 +140,8 @@ template<typename Global>
 KOKKOS_INLINE_FUNCTION void calc_residual(const GRCoordinates& G, const Global& P_test,
                                           const Global& Pi, const Global& Ui, const Global& Ps,
                                           const Global& dudt_explicit, const Global& dUi,
-                                          const VarMap& m_p, const VarMap& m_u, const EMHD_parameters& emhd_params,
-                                          const EMHD_parameters& emhd_params_s,const int& nfvar, 
+                                          const VarMap& m_p, const VarMap& m_u, const EMHD::EMHD_parameters& emhd_params,
+                                          const EMHD::EMHD_parameters& emhd_params_s,const int& nfvar, 
                                           const int& k, const int& j, const int& i, 
                                           const Real& gam, const double& dt, Global& residual)
 {
@@ -209,8 +209,8 @@ template<typename Global>
 KOKKOS_INLINE_FUNCTION void calc_jacobian(const GRCoordinates& G, const Global& P_solver,
                                           const Global& P_full_step_init, const Global& U_full_step_init, const Global& P_sub_step_init,
                                           const Global& flux_src, const Global& dU_implicit,
-                                          const VarMap& m_p, const VarMap& m_u, const EMHD_parameters& emhd_params_solver,
-                                          const EMHD_parameters& emhd_params_sub_step_init, const int& nvar, const int& nfvar,
+                                          const VarMap& m_p, const VarMap& m_u, const EMHD::EMHD_parameters& emhd_params_solver,
+                                          const EMHD::EMHD_parameters& emhd_params_sub_step_init, const int& nvar, const int& nfvar,
                                           const int& k, const int& j, const int& i,
                                           const Real& jac_delta, const Real& gam, const double& dt,
                                           Global& jacobian, Global& residual)
