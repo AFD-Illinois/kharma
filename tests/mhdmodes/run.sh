@@ -123,10 +123,10 @@ conv_2d slow_kharma_ct_gs05_c   "mhdmodes/nmode=1 driver/type=kharma b_field/sol
 conv_2d alfven_kharma_ct_gs05_c "mhdmodes/nmode=2 driver/type=kharma b_field/solver=face_ct b_field/ct_scheme=gs05_c" "Alfven mode in 2D, KHARMA driver w/epsilon_c flux"
 conv_2d fast_kharma_ct_gs05_c   "mhdmodes/nmode=3 driver/type=kharma b_field/solver=face_ct b_field/ct_scheme=gs05_c" "fast mode in 2D, KHARMA driver w/epsilon_c flux"
 
-# Kastaun primitive recovery
-conv_2d slow_kastaun   "mhdmodes/nmode=1 inverter/type=kastaun" "slow mode in 2D, Kastaun inversion"
-conv_2d alfven_kastaun "mhdmodes/nmode=2 inverter/type=kastaun" "Alfven mode in 2D, Kastaun inversion"
-conv_2d fast_kastaun   "mhdmodes/nmode=3 inverter/type=kastaun" "fast mode in 2D, Kastaun inversion"
+# Test old 1Dw primitive recovery
+conv_2d slow_onedw   "mhdmodes/nmode=1 inverter/type=onedw" "slow mode in 2D, 1Dw inversion"
+conv_2d alfven_onedw "mhdmodes/nmode=2 inverter/type=onedw" "Alfven mode in 2D, 1Dw inversion"
+conv_2d fast_onedw   "mhdmodes/nmode=3 inverter/type=onedw" "fast mode in 2D, 1Dw inversion"
 
 
 # simple driver, high res

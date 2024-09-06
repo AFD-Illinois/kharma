@@ -1,14 +1,10 @@
-# Bondi flow problem
-# Model a spherically symmetric, unmagnetized inflow
-# Uses more MeshBlocks than necessary, for debugging
+# Bondi flow problemin just 1D
+# Mostly a regression test that we can still do 1D spherical
 
 <parthenon/job>
 problem_id = bondi
 
 <parthenon/mesh>
-# Full mesh size, no refinement
-# Don't bother with xN boundaries for spherical coordinate systems
-# KHARMA will automatically place ~5 zones inside the EH
 nx1 = 128
 nx2 = 1
 nx3 = 1
@@ -19,19 +15,12 @@ nx2 = 1
 nx3 = 1
 
 <coordinates>
-# Spherical Kerr-Schild coords
 base = spherical_ks
-# MKS of Gammie '03
-transform = mks
-# BH spin
+transform = eks
 a = 0.0
-# MKS parameter
 hslope = 0.3
-# Radial domain in r_g
 r_in = 3.0
 r_out = 30.0
-# If using "Funky" MKS later, where is "startx1"?
-fmks_zero_point = 0.0
 
 <parthenon/time>
 tlim = 50.0
@@ -71,7 +60,7 @@ solver = none
 #B10 = 1
 # Or
 #type = vertical
-#bz = 0.1
+#A0 = 0.1
 
 <debug>
 verbose = 0
@@ -83,7 +72,7 @@ file_type = hdf5
 dt = 5.0
 single_precision_output = true
 # Fields not present are silently ignored
-variables = prims.rho, prims.u, prims.uvec, prims.B, pflag
+variables = prims, pflag
 
 <parthenon/output1>
 file_type = hst
