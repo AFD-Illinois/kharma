@@ -267,6 +267,15 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
     const IndexRange kb      = bounds.GetBoundsK(domain);
     const IndexRange block   = IndexRange{0, nblock - 1};
 
+    // Allocate scratch space
+    // Only needed for the Kokkos-kernels solve, anymore
+    // Otherwise we pull a bad hack and allocate constant temporaries
+    const int scratch_level = 1; // 0 is actual scratch (tiny); 1 is HBM
+    const size_t tensor_size_in_bytes = parthenon::ScratchPad3D<Real>::shmem_size(n1, nfvar, nfvar);
+    const size_t fvar_size_in_bytes   = parthenon::ScratchPad2D<Real>::shmem_size(n1, nfvar);
+    const size_t fvar_int_size_in_bytes = parthenon::ScratchPad2D<int>::shmem_size(n1, nfvar);
+    const size_t total_scratch_bytes = tensor_size_in_bytes + 4 * fvar_size_in_bytes + fvar_int_size_in_bytes;
+
     // Iterate.  This loop is outside the kokkos kernel in order to print max_norm
     // There are generally a low and similar number of iterations between
     // different zones, so probably acceptable speed loss.
@@ -274,9 +283,17 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
         // Flags per iter, since debugging here will be rampant
         Flag("ImplicitIteration_"+std::to_string(iter));
 
+#if SPLIT_IMPLICIT_SOLVE
         pmb_solver->par_for("implicit_jacobian",
             block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
             KOKKOS_LAMBDA(const int& b, const int& k, const int& j, const int& i) {
+#else
+        parthenon::par_for_outer(DEFAULT_OUTER_LOOP_PATTERN, "implicit_solve", pmb_sub_step_init->exec_space,
+            total_scratch_bytes, scratch_level, block.s, block.e, kb.s, kb.e, jb.s, jb.e,
+            KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int& b, const int& k, const int& j) {
+                parthenon::par_for_inner(member, ib.s, ib.e,
+                    [&](const int& i) {
+#endif
                 const auto& G = U_full_step_init_all.GetCoords(b);
 
                 // Solver performance diagnostics
@@ -304,23 +321,17 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
                                 flux_src_all(b), dU_implicit_all(b), m_p, m_u, emhd_params_solver, emhd_params_sub_step_init,
                                 nvar, nfvar, k, j, i, delta, gam, dt,
                                 jacobian_all(b), residual_all(b));
-
                 }
-            }
-        );
-
-        // Allocate scratch space
-        // Only needed for the Kokkos-kernels solve, anymore
-        // Otherwise we pull a bad hack and allocate constant temporaries
-        const int scratch_level = 1; // 0 is actual scratch (tiny); 1 is HBM
-        const size_t tensor_size_in_bytes = parthenon::ScratchPad3D<Real>::shmem_size(n1, nfvar, nfvar);
-        const size_t fvar_size_in_bytes   = parthenon::ScratchPad2D<Real>::shmem_size(n1, nfvar);
-        const size_t fvar_int_size_in_bytes = parthenon::ScratchPad2D<int>::shmem_size(n1, nfvar);
-        const size_t total_scratch_bytes = tensor_size_in_bytes + 4 * fvar_size_in_bytes + fvar_int_size_in_bytes;
+#if SPLIT_IMPLICIT_SOLVE
+            } // End lambda
+        ); // End par_for
 
         parthenon::par_for_outer(DEFAULT_OUTER_LOOP_PATTERN, "implicit_solve", pmb_sub_step_init->exec_space,
             total_scratch_bytes, scratch_level, block.s, block.e, kb.s, kb.e, jb.s, jb.e,
             KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int& b, const int& k, const int& j) {
+#else
+                }); // End par_for_inner
+#endif
                 const auto& G = U_full_step_init_all.GetCoords(b);
                 // Scratchpads for implicit vars
                 ScratchPad3D<Real> jacobian_s(member.team_scratch(scratch_level), n1, nfvar, nfvar);
@@ -399,12 +410,17 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
                         }
                     );
                 }
-            }
-        );
+#if SPLIT_IMPLICIT_SOLVE
+            } // End lambda
+        ); // End par_for
 
         pmb_solver->par_for("implicit_set_step",
             block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
             KOKKOS_LAMBDA(const int& b, const int& k, const int& j, const int& i) {
+#else
+                parthenon::par_for_inner(member, ib.s, ib.e,
+                    [&](const int& i) {
+#endif
                 const auto& G = U_full_step_init_all.GetCoords(b);
 
                 // Solver performance diagnostics
@@ -495,9 +511,14 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
                 } else if (solve_norm > rootfind_tol) {
                     solve_fail = SolverStatusR::beyond_tol; // TODO was changed from +=. Valid?
                 }
-            }
-        );
-
+#if SPLIT_IMPLICIT_SOLVE
+            } // End lambda
+        ); // End par_for
+#else
+                }); // End par_for_inner
+            } // End lambda
+        ); // End par_for
+#endif
         // If we need to print or exit on the max norm...
         if (iter >= iter_min || verbose >= 1) {
             // Take the maximum L2 norm on this rank

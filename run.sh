@@ -38,23 +38,6 @@ export CUDA_LAUNCH_BLOCKING=0
 
 # Choose the kharma binary from compiled options in order of preference
 KHARMA_DIR="$(dirname "${BASH_SOURCE[0]}")"
-if [ -f $KHARMA_DIR/kharma.cuda ]; then
-  EXE_NAME=kharma.cuda
-elif [ -f $KHARMA_DIR/kharma.sycl ]; then
-  EXE_NAME=kharma.sycl
-elif [ -f $KHARMA_DIR/kharma.hip ]; then
-  EXE_NAME=kharma.hip
-elif [ -f $KHARMA_DIR/kharma.host ]; then
-  EXE_NAME=kharma.host
-  # Enable OpenMP to use all threads only where not counterproductive
-  #export OMP_PROC_BIND=${OMP_PROC_BIND:-spread}
-  #export OMP_PLACES=${OMP_PLACES:-threads}
-  # Force a number of OpenMP threads if it doesn't autodetect
-  #export OMP_NUM_THREADS=${OMP_NUM_THREADS:-28}
-else
-  echo "KHARMA executable not found!"
-  exit
-fi
 
 # Load environment from the same files as the compile process
 HOST=$(hostname -f)
@@ -98,7 +81,7 @@ if [[ "$1" == "ncu_basic" ]]; then
 fi
 if [[ "$1" == "ncu_full" ]]; then
   PROF_EXE="ncu"
-  PROF_OPTS=${PROF_OPTS:-"--set basic --replay-mode application -k regex:cuda_parallel_launch_constant_memory"}
+  PROF_OPTS=${PROF_OPTS:-"--set full --replay-mode application -k regex:cuda_parallel_launch_constant_memory"}
   PROF_OPTS="$PROF_OPTS -o $2"
   # We want short runs, no MPI ever under ncu
   KHARMA_PROF_OPTS="parthenon/time/nlim=1"
@@ -126,6 +109,27 @@ if [[ "$1" == "-b" ]]; then
   EXE_NAME="$2"
   shift
   shift
+fi
+
+# Set default exe only if we didn't specify it
+if [ -z "$EXE_NAME" ]; then
+  if [ -f $KHARMA_DIR/kharma.cuda ]; then
+    EXE_NAME=kharma.cuda
+  elif [ -f $KHARMA_DIR/kharma.sycl ]; then
+    EXE_NAME=kharma.sycl
+  elif [ -f $KHARMA_DIR/kharma.hip ]; then
+    EXE_NAME=kharma.hip
+  elif [ -f $KHARMA_DIR/kharma.host ]; then
+    EXE_NAME=kharma.host
+    # Enable OpenMP to use all threads only where not counterproductive
+    #export OMP_PROC_BIND=${OMP_PROC_BIND:-spread}
+    #export OMP_PLACES=${OMP_PLACES:-threads}
+    # Force a number of OpenMP threads if it doesn't autodetect
+    #export OMP_NUM_THREADS=${OMP_NUM_THREADS:-28}
+  else
+    echo "KHARMA executable not found!"
+    exit
+  fi
 fi
 
 # Run based on preferences
