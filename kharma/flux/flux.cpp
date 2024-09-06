@@ -170,14 +170,6 @@ std::shared_ptr<KHARMAPackage> Flux::Initialize(ParameterInput *pin, std::shared
     pkg->AddField("Flux.cmax", m);
     pkg->AddField("Flux.cmin", m);
 
-    // Preserve all velocities at faces, for upwinded constrained transport
-    if (packages->AllPackages().count("B_CT")) { // TODO & GS05_c
-        std::vector<MetadataFlag> flags_vel = {Metadata::Real, Metadata::Face, Metadata::Derived, Metadata::OneCopy};
-        m = Metadata(flags_vel, s_vector);
-        pkg->AddField("Flux.vr", m);
-        pkg->AddField("Flux.vl", m);
-    }
-
     // PROCESS FOFC
     // Accept this a bunch of places, maybe we'll trim this...
     bool default_fofc = false;
