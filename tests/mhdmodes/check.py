@@ -135,10 +135,16 @@ for k in range(NVAR):
         powerfits[k] = np.polyfit(np.log(RES), np.log(L1[:,k]), 1)[0]
 
         print("Power fit {}: {} {}".format(VARS[k], powerfits[k], L1[:,k]))
-        # These bounds were chosen heuristically: fast u2/u3 converge fast
-        if powerfits[k] > -1.9 or ("entropy" not in SHORT and powerfits[k] < -2.1):
-            # Allow entropy wave to converge fast, otherwise everything is ~2
-            fail = 1
+        # These bounds were chosen heuristically
+        # entropy wave is spatial & converges fast with spatial order
+        # Most runs all variables are between 1.95-2.05
+        # But w/Face-CT and upwinding, u2/u3 converge at 2.3, rho/u at 2.15
+        if VARS[k] == 'u2' or VARS[k] == 'u3':
+            if powerfits[k] > -1.94 or ("entropy" not in SHORT and powerfits[k] < -2.3):
+                fail = 1
+        else:
+            if powerfits[k] > -1.94 or ("entropy" not in SHORT and powerfits[k] < -2.15):
+                fail = 1
 
 # MAKE PLOTS
 fig = plt.figure(figsize=(3,3))

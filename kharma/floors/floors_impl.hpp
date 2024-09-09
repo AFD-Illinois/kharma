@@ -61,6 +61,10 @@ TaskStatus ApplyFloorsInFrame(MeshData<Real> *md, IndexDomain domain)
 
     const Real gam = pmb0->packages.Get("GRMHD")->Param<Real>("gamma");
     const EMHD::EMHD_parameters& emhd_params = EMHD::GetEMHDParameters(pmb0->packages);
+    const Real switch_r = (frame == InjectionFrame::mixed_fluid_normal) ?
+                            pmb0->packages.Get("Floors")->Param<Real>("frame_switch_r") : 0;
+    const Real switch_beta = (frame == InjectionFrame::mixed_normal_drift) ?
+                            pmb0->packages.Get("Floors")->Param<Real>("frame_switch_beta") : 0;
     // Still needed for ceilings and determining floors
     const Floors::Prescription floors = pmb0->packages.Get("Floors")->Param<Floors::Prescription>("prescription");
     const Floors::Prescription floors_inner = pmb0->packages.Get("Floors")->Param<Floors::Prescription>("prescription_inner");
@@ -75,9 +79,37 @@ TaskStatus ApplyFloorsInFrame(MeshData<Real> *md, IndexDomain domain)
             if (static_cast<int>(fflag(b, 0, k, j, i))) {
                 const auto& G = P.GetCoords(b);
                 // apply_floors can involve another U_to_P call.  Hide the pflag in bottom 5 bits and retrieve both
-                int pflag_l = apply_floors<frame>(G, P(b), m_p, gam, k, j, i,
-                                                floor_vals(b, rhofi, k, j, i), floor_vals(b, ufi, k, j, i),
-                                                U(b), m_u);
+                int pflag_l = 0;
+                // These would be constexpr except Nvidia doesn't like lambda-capture in constexpr ifs
+                if (frame == InjectionFrame::mixed_fluid_normal) {
+                    if (G.r(k, j, i) > switch_r) {
+                        pflag_l = apply_floors<InjectionFrame::fluid>(G, P(b), m_p, gam, k, j, i,
+                                            floor_vals(b, rhofi, k, j, i), floor_vals(b, ufi, k, j, i),
+                                            U(b), m_u);
+                    } else {
+                        pflag_l = apply_floors<InjectionFrame::normal>(G, P(b), m_p, gam, k, j, i,
+                                            floor_vals(b, rhofi, k, j, i), floor_vals(b, ufi, k, j, i),
+                                            U(b), m_u);
+                    }
+                } else if (frame == InjectionFrame::mixed_normal_drift) {
+                    FourVectors Dtmp;
+                    GRMHD::calc_4vecs(G, P(b), m_p, k, j, i, Loci::center, Dtmp);
+                    Real mag_switch = m::min(P(b, m_p.RHO, k, j, i), P(b, m_p.UU, k, j, i)) /
+                                        dot(Dtmp.bcon, Dtmp.bcov);
+                    if (mag_switch < switch_beta) {
+                        pflag_l = apply_floors<InjectionFrame::drift>(G, P(b), m_p, gam, k, j, i,
+                                            floor_vals(b, rhofi, k, j, i), floor_vals(b, ufi, k, j, i),
+                                            U(b), m_u);
+                    } else {
+                        pflag_l = apply_floors<InjectionFrame::normal>(G, P(b), m_p, gam, k, j, i,
+                                            floor_vals(b, rhofi, k, j, i), floor_vals(b, ufi, k, j, i),
+                                            U(b), m_u);
+                    }
+                } else {
+                    pflag_l = apply_floors<frame>(G, P(b), m_p, gam, k, j, i,
+                                        floor_vals(b, rhofi, k, j, i), floor_vals(b, ufi, k, j, i),
+                                        U(b), m_u);
+                }
 
                 // Record the pflag if nonzero, that is, if *either* the initial inversion or
                 // post-floor inversion failed.

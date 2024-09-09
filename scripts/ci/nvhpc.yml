@@ -71,5 +71,6 @@ tests:
     - ./run.sh
   parallel:
     matrix:
-      - TEST: [bondi, bondi_viscous, bz_monopole, emhdmodes, mhdmodes, mhdmodes_smr,
-               noh, regrid, reinit, restart, tilt_init, torus_sanity]
+      # This should mirror the CPU tests *except* no driven turbulence test!
+      - TEST: [all_pars, anisotropic_conduction, bondi, bondi_viscous, bz_monopole, conducting_atmosphere,
+               emhdmodes, mhdmodes, mhdmodes_smr, noh, regrid, reinit, resize, restart, tilt_init, torus_sanity]

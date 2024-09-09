@@ -1,6 +1,4 @@
 
-# INCITE resources
-
 # ALCF: Polaris
 if [[ $HOST == *".polaris.alcf.anl.gov" ]]; then
   HOST_ARCH=ZEN3

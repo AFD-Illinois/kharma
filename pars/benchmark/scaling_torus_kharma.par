@@ -6,8 +6,6 @@ problem_id = torus
 
 # Mesh is defined at runtime!
 <parthenon/mesh>
-refinement = none
-numlevel = 1
 nx1 = 1
 nx2 = 1
 nx3 = 1
@@ -19,7 +17,7 @@ nx3 = 1
 
 <coordinates>
 base = spherical_ks
-transform = fmks
+transform = mks
 r_out = 1000
 a = 0.9375
 hslope = 0.3
@@ -45,11 +43,18 @@ rmax = 20.0
 u_jitter = 0.04
 
 <b_field>
+solver = face_ct
 type = sane
 beta_min = 100.
+
+<inverter>
+type = kastaun
 
 <floors>
 rho_min_geom = 1e-6
 u_min_geom = 1e-8
-bsq_over_rho_max = 100
-u_over_rho_max = 1
+bsq_over_rho_max = 1e3
+gamma_max = 32
+
+<fofc>
+on = true

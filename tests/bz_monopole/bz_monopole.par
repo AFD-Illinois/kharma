@@ -35,6 +35,9 @@ flag_verbose = 2
 <GRMHD>
 cfl = 0.7
 gamma = 1.444444
+
+<flux>
+type = llf
 reconstruction = weno5
 
 <b_field>

@@ -170,14 +170,6 @@ std::shared_ptr<KHARMAPackage> Flux::Initialize(ParameterInput *pin, std::shared
     pkg->AddField("Flux.cmax", m);
     pkg->AddField("Flux.cmin", m);
 
-    // Preserve all velocities at faces, for upwinded constrained transport
-    if (packages->AllPackages().count("B_CT")) { // TODO & GS05_c
-        std::vector<MetadataFlag> flags_vel = {Metadata::Real, Metadata::Face, Metadata::Derived, Metadata::OneCopy};
-        m = Metadata(flags_vel, s_vector);
-        pkg->AddField("Flux.vr", m);
-        pkg->AddField("Flux.vl", m);
-    }
-
     // PROCESS FOFC
     // Accept this a bunch of places, maybe we'll trim this...
     bool default_fofc = false;
@@ -424,12 +416,10 @@ void Flux::AddGeoSource(MeshData<Real> *md, MeshData<Real> *mdudt, IndexDomain d
     const EMHD::EMHD_parameters& emhd_params = EMHD::GetEMHDParameters(pmb0->packages);
     
     // Get sizes
-    auto ib = md->GetBoundsI(domain);
-    auto jb = md->GetBoundsJ(domain);
-    auto kb = md->GetBoundsK(domain);
+    IndexRange3 bd = KDomain::GetRange(md, domain);
     auto block = IndexRange{0, P.GetDim(5)-1};
 
-    pmb0->par_for("tmunu_source", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+    pmb0->par_for("tmunu_source", block.s, block.e, bd.ks, bd.ke, bd.js, bd.je, bd.is, bd.ie,
         KOKKOS_LAMBDA (const int& b, const int &k, const int &j, const int &i) {
             const auto& G = dUdt.GetCoords(b);
             FourVectors D;

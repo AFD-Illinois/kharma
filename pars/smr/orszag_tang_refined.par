@@ -53,8 +53,7 @@ reconstruction = weno5
 
 <b_field>
 solver = face_ct
-ct_scheme = bs99
-#ct_scheme = gs05_0
+ct_scheme = gs05_c
 
 <debug>
 verbose = 1
@@ -73,9 +72,3 @@ variables = prims, divB, jcon
 <parthenon/output1>
 file_type = hst
 dt = 0.1
-
-# This problem is generally much too short to need
-# checkpointing.  However, we have a test which uses it.
-#<parthenon/output2>
-#file_type = rst
-#dt = 10.0

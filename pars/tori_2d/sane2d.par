@@ -1,4 +1,4 @@
-# SANE model mirroring the simulation library
+# SANE model in 2D
 # Overall simulation size 50M, to allow
 # running at small scale on e.g. a laptop
 # Uses MKS coordinates, not Funky variant
@@ -7,8 +7,6 @@
 problem_id = torus
 
 <parthenon/mesh>
-refinement = none
-numlevel = 1
 nx1 = 128
 nx2 = 128
 nx3 = 1
@@ -43,6 +41,9 @@ cfl = 0.9
 gamma = 1.666667
 reconstruction = weno5
 
+<b_field>
+solver = flux_ct
+
 <driver>
 type = kharma
 
@@ -60,20 +61,8 @@ beta_min = 100.
 <floors>
 rho_min_geom = 1e-5
 u_min_geom = 1e-7
-ktot_max = 1500
 u_over_rho_max = 100
 bsq_over_rho_max = 100
-
-<electrons>
-on = false
-howes = true
-kawazura = true
-werner = true
-rowan = true
-sharma = true
-
-<wind>
-on = false
 
 <parthenon/output0>
 file_type = hdf5
@@ -87,11 +76,11 @@ variables = prims, jcon, pflag, fflag
 <parthenon/output1>
 file_type = rst
 dt = 100.0
-ghost_zones = true
 
 <parthenon/output2>
 file_type = hst
 dt = 0.1
+variables = all_reductions
 
 # This outputs a geometry file, similar to iharm3d's old 'grid.h5'
 # Not needed for pyharm analysis in Kerr metrics, but useful in

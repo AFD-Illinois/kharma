@@ -1,15 +1,12 @@
-# SANE model mirroring the simulation library
-# Quite small to run for more than 10kM, 6M/12M F-M torus,
-# Overall simulation size 1000M
-# Uses the IMEX solver
+# SANE model like sane.par,
+# but evolves the ideal GRMHD semi-implicitly.
+# Used for testing
 
 <parthenon/job>
 archive_parameters_timestamp = true
 problem_id = torus
 
 <parthenon/mesh>
-refinement = none
-numlevel = 1
 nx1 = 128
 nx2 = 64
 nx3 = 64
@@ -54,10 +51,9 @@ gamma          = 1.666667
 reconstruction = weno5
 
 <b_field>
-implicit        = false
-type            = sane
-beta_min        = 100.
-initial_cleanup = true
+implicit = false
+type = sane
+beta_min = 100.
 
 <torus>
 rin  = 6.0
@@ -81,21 +77,17 @@ verbose            = 1
 extra_checks       = 1
 flag_verbose       = 0
 
-<wind>
-on = false
-ne = 1.e-4
-Tp = 10
-
 <parthenon/output0>
 file_type = hdf5
 dt = 5.0
 single_precision_output = true
-variables = prims.rho, prims.u, prims.uvec, prims.B, jcon, fflag, pflag, solve_norm, solve_fail
+variables = prims, jcon, fflag, pflag, solve_norm, solve_fail
 
 <parthenon/output1>
 file_type = rst
-dt        = 5.0
+dt        = 100.0
 
 <parthenon/output2>
 file_type = hst
 dt        = 0.1
+variables = all_reductions
