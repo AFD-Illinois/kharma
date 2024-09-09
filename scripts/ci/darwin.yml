@@ -4,10 +4,6 @@
 # See .gitlab-ci-docker.yml for a generic version,
 # which can be run on any Docker runner w/GPUs
 
-id_tokens:
-  SITE_ID_TOKEN:
-    aud: https://re-git.lanl.gov
-
 variables:
   GIT_SUBMODULE_STRATEGY: recursive
   SCHEDULER_PARAMETERS: "-N 1 --qos=debug -p volta-x86"
@@ -26,6 +22,9 @@ variables:
 
 ### DEFAULT TEST BEHAVIOR ###
 default:
+  id_tokens:
+    SITE_ID_TOKEN:
+      aud: https://re-git.lanl.gov
   tags:
     - darwin-slurm-shared
   # Load Python
