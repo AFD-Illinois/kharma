@@ -331,6 +331,7 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
             KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int& b, const int& k, const int& j) {
 #else
                 }); // End par_for_inner
+                member.team_barrier();
 #endif
                 const auto& G = U_full_step_init_all.GetCoords(b);
                 // Scratchpads for implicit vars
@@ -384,7 +385,6 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
                         }
                     );
                 } else {
-
                     parthenon::par_for_inner(member, ib.s, ib.e,
                         [&](const int& i) {
                             // Solver variables
@@ -418,6 +418,7 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
             block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
             KOKKOS_LAMBDA(const int& b, const int& k, const int& j, const int& i) {
 #else
+                member.team_barrier();
                 parthenon::par_for_inner(member, ib.s, ib.e,
                     [&](const int& i) {
 #endif

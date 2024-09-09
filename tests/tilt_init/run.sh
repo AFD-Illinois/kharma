@@ -5,7 +5,8 @@ exit_code=0
 
 tilt_init() {
     # Run default tilted problem to 5 steps
-    ../../run.sh -i ../../pars/tori_3d/mad_tilt.par parthenon/time/nlim=5 debug/verbose=1 \
+    ../../run.sh -i ../../pars/tori_3d/mad.par parthenon/time/nlim=5 debug/verbose=1 \
+                    parthenon/job/archive_parameters=false \
                     parthenon/output0/single_precision_output=false \
                     parthenon/output0/variables=prims,jcon,fflag,pflag,divB \
                     $2 >log_tilt_init_${1}.txt 2>&1
@@ -25,7 +26,7 @@ tilt_init() {
     fi
 }
 
-tilt_init cell "b_field/solver=flux_ct" "Cell-centered B"
-tilt_init face "b_field/solver=face_ct" "Face-centered B"
+tilt_init cell "b_field/solver=flux_ct torus/tilt=10" "Cell-centered B"
+tilt_init face "b_field/solver=face_ct torus/tilt=30" "Face-centered B"
 
 exit $exit_code
