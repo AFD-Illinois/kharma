@@ -18,7 +18,7 @@ exit_code=0
 test_restart() {
     $KHARMADIR/run.sh -i $KHARMADIR/pars/tori_3d/sane.par parthenon/time/nlim=5 \
                          parthenon/mesh/nx1=128 parthenon/mesh/nx2=64 parthenon/mesh/nx3=64 \
-                         parthenon/meshblock/nx1=128 parthenon/meshblock/nx2=64 parthenon/meshblock/nx3=64 \
+                         parthenon/meshblock/nx1=128 parthenon/meshblock/nx2=32 parthenon/meshblock/nx3=64 \
                          parthenon/output0/single_precision_output=false \
                          $2 >log_restart_${1}_first.txt 2>&1
 

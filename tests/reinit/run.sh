@@ -8,7 +8,7 @@ KHARMADIR=../..
 
 $KHARMADIR/run.sh -i $KHARMADIR/pars/tori_3d/sane.par perturbation/u_jitter=0 parthenon/time/nlim=5 \
                      parthenon/mesh/nx1=128 parthenon/mesh/nx2=64 parthenon/mesh/nx3=64 \
-                     parthenon/meshblock/nx1=128 parthenon/meshblock/nx2=64 parthenon/meshblock/nx3=64 \
+                     parthenon/meshblock/nx1=128 parthenon/meshblock/nx2=32 parthenon/meshblock/nx3=64 \
                      >log_reinit_1.txt 2>&1
 
 mv torus.out1.final.rhdf torus.out1.final.first.rhdf
@@ -16,7 +16,7 @@ mv torus.out1.final.rhdf torus.out1.final.first.rhdf
 #$KHARMADIR/run.sh -r torus.out1.00000.rhdf parthenon/time/nlim=5
 $KHARMADIR/run.sh -i $KHARMADIR/pars/tori_3d/sane.par perturbation/u_jitter=0 parthenon/time/nlim=5 \
                      parthenon/mesh/nx1=128 parthenon/mesh/nx2=64 parthenon/mesh/nx3=64 \
-                     parthenon/meshblock/nx1=128 parthenon/meshblock/nx2=64 parthenon/meshblock/nx3=64 \
+                     parthenon/meshblock/nx1=128 parthenon/meshblock/nx2=32 parthenon/meshblock/nx3=64 \
                      >log_reinit_2.txt 2>&1
 
 mv torus.out1.final.rhdf torus.out1.final.second.rhdf
