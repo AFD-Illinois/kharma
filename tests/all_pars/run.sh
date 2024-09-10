@@ -8,11 +8,12 @@ if [ -f ../../kharma.host ]; then
 else
   # driven_turbulence problem needs FFTW, which is not on GPU
   # Also Noh shock requests too much shmem for some reason
-  FOLDERS="bondi emhd shocks smr tests tori_2d tori_3d"
+  # 3D Tori take up too much memory for one little test GPU
+  FOLDERS="bondi emhd shocks smr tests tori_2d"
 fi
 
 # Skip testing the restarting & benchmark scripts
-for folder in bondi electrons emhd shocks smr tests tori_2d tori_3d
+for folder in $FOLDERS
 do
   for fil in ../../pars/$folder/*.par
   do

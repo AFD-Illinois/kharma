@@ -4,11 +4,8 @@ set -euo pipefail
 # Bash script testing initialization vs restart of a torus problem
 # Require similarity to round-off after 5 steps
 
-# TODO current tol is 1e-9 but it's been lower in the past
-# Big thing seems to be velocities, which we must rely on
-# recovering correctly...
-# Recovery is O(1e-12) and we're taking 5 steps, so not bad
-# getting some O(1e-10) differences.
+# TODO figure out why I need the following.  Sure smells like a Parthenon bug
+export MPI_NUM_PROCS=1
 
 # Set paths
 KHARMADIR=../..
