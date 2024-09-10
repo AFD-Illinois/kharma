@@ -1,4 +1,10 @@
 # Monopole in vacuum
+# Useful for testing floor values, since the whole domain will be
+# set to whatever the floor values are
+
+# The current values are very conservative, try it with `fofc/on=true`
+# and remove the ceiling on sigma to exercise KHARMA a bit more.
+# Hard mode: gamma=5/3, weno5 reconstruction
 
 <parthenon/job>
 problem_id = bz_monopole
