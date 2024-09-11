@@ -286,7 +286,10 @@ TaskCollection KHARMADriver::MakeMultizoneTaskCollection(BlockList_t &blocks, in
             uint nlevels = grmhd_pkg.Get<uint>("ismr_nlevels");
             if (nlevels > 0) {
                 auto t_derefine_poles = tl.AddTask(t_ptou, B_CT::DerefinePoles, md_sub_step_final.get(), nlevels);
-                t_step_done = tl.AddTask(t_derefine_poles, Packages::MeshUtoP, md_sub_step_final.get(), IndexDomain::entire, false);
+                //t_step_done = t_derefine_poles;
+                //t_step_done = tl.AddTask(t_derefine_poles, Packages::MeshUtoP, md_sub_step_final.get(), IndexDomain::entire, false);
+                auto t_floors_2 = tl.AddTask(t_derefine_poles, Packages::MeshApplyFloors, md_sub_step_final.get(), IndexDomain::entire);
+                t_step_done = tl.AddTask(t_floors_2, Inverter::MeshFixUtoP, md_sub_step_final.get());
             } else {
                 printf("WARNING: internal SMR near the poles is requested, but the number of levels should be >= 1. Not operating internal SMR.\n");
             }

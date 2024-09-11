@@ -61,13 +61,13 @@ KOKKOS_INLINE_FUNCTION void apply_ceilings(const GRCoordinates& G, const Variabl
     Real gamma      = GRMHD::lorentz_calc(G, P, m_p, k, j, i, loc);
     Real ktot       = (gam - 1.) * P(m_p.UU, k, j, i) / m::pow(P(m_p.RHO, k, j, i), gam);
     Real u_over_rho = P(m_p.UU, k, j, i) / P(m_p.RHO, k, j, i);
-    const GReal r_eh = G.coords.get_horizon(); // TODO: test this
-    printf("HYERIN: r_eh = %.3g\n", r_eh);
+    const GReal r_eh = G.coords.get_horizon();
 
     // 1. Limit gamma with respect to normal observer
     if (floors.radius_dependent_gamma_max && G.r(k, j, i) > 1.5 * r_eh) {
         Real V02 = SQR(myfloors.gamma_max);
-        Real betagamma2_max = V02 * (1. / G.r(k, j, i) + 1. / Multizone::CalcRB(gam, floors.rs_bondi));
+        Real vchar2 = 1. / G.r(k, j, i) + 1. / Multizone::CalcRB(gam, floors.rs_bondi);
+        Real betagamma2_max = V02 * vchar2;
         Real betagamma2 = SQR(gamma) - 1.;
         EMHD::EMHD_parameters emhd_params = {0}; // temporary, we are not using emhd yet
         FourVectors Dtmp_old, Dtmp_new;
@@ -87,7 +87,21 @@ KOKKOS_INLINE_FUNCTION void apply_ceilings(const GRCoordinates& G, const Variabl
 
             // reduce velocities
             Real f = m::sqrt(betagamma2_max / betagamma2);
-            VLOOP P(m_p.U1+v, k, j, i) *= f;
+            Real ucon_tmp[GR_DIM] = {0}, u_prim[NVEC] = {0};
+            DLOOP1 ucon_tmp[mu] = f * Dtmp_old.ucon[mu];
+            //VLOOP P(m_p.U1+v, k, j, i) *= f;
+
+            GReal gcov[GR_DIM][GR_DIM], gcon[GR_DIM][GR_DIM];
+            G.gcov(loc, j, i, gcov);
+            G.gcon(loc, j, i, gcon);
+            set_ut(gcov, ucon_tmp); // TODO: check with Ben: I can do this in native coordinates right?
+            fourvel_to_prim(gcon, ucon_tmp, u_prim);
+            VLOOP P(m_p.U1 + v, k, j, i) = u_prim[v];
+
+            // testing if betagamma is under the desired level
+            gamma = GRMHD::lorentz_calc(G, P, m_p, k, j, i, loc);
+            Real betagamma2_after = SQR(gamma) - 1.;
+            //if (betagamma2_after / vchar2 > V02) printf("before and after: betagamma/vchar =  %.5g -> %.5g\n", m::sqrt(betagamma2 / vchar2), m::sqrt(betagamma2_after / vchar2));
             
             // (T^r_t + rho * u^r) new after changing velocities
             GRMHD::calc_4vecs(G, P, m_p, k, j, i, loc, Dtmp_new);
@@ -96,13 +110,13 @@ KOKKOS_INLINE_FUNCTION void apply_ceilings(const GRCoordinates& G, const Variabl
             
             // determine how much rho to add
             // old prescription, doesn't control final resulting sound speed below beta*gamma max
-            del_rho = (FE_old - FE_new) / ((1. + Dtmp_new.ucov[0]) * Dtmp_new.ucon[1]
-                                            + betagamma2_max * Dtmp_new.ucon[1] * Dtmp_new.ucov[0] / (gam - 1.));
+            del_rho = (FE_old - FE_new) / ((1. + Dtmp_new.ucov[0]) * Dtmp_new.ucon[1]);
+                                            //+ betagamma2_max * Dtmp_new.ucon[1] * Dtmp_new.ucov[0] / (gam - 1.)); // don't add u
             //  new prescription (12/13/23): always set the final sound speed equal to beta*gamma_max
             //del_rho = (FE_old - FE_new - (betagamma2_max * rho_temp / (gam - 1.) - gam * u_temp) * Dtmp_new.ucon[1] * Dtmp_new.ucov[0]) / 
             //            (Dtmp_new.ucon[1] + (1. + betagamma2_max / (gam - 1.)) * Dtmp_new.ucon[1] * Dtmp_new.ucov[0]);
             if (del_rho < 0) {
-                printf("HYERIN: r=%.3g f=%.5g frac_rho=%.5g betagamma2=%.3g betagamma2_max=%.3g before: u_t=%.3g, u^r=%.3g, U^1=%.3g, gamma*u*u^r*u_t=%.3g, b^2*u^r*u_t=%.3g, -b^r*b_t=%.3g, after: u_t=%.3g, u^r=%.3g, U^1=%.3g, gamma*u*u^r*u_t=%.3g, b^2*u^r*u_t=%.3g, -b^r*b_t=%.3g\n", G.r(k, j, i), f, del_rho / rho_temp, betagamma2, betagamma2_max,
+                printf("HYERIN: r=%.3g f=%.5g frac_rho=%.5g betagamma2=%.3g betagamma2_max=%.3g before: u_t=%.3g, u^r=%.3g, U^1=%.5g, gamma*u*u^r*u_t=%.3g, b^2*u^r*u_t=%.3g, -b^r*b_t=%.3g, after: u_t=%.3g, u^r=%.3g, U^1=%.5g, gamma*u*u^r*u_t=%.3g, b^2*u^r*u_t=%.3g, -b^r*b_t=%.3g\n", G.r(k, j, i), f, del_rho / rho_temp, betagamma2, betagamma2_max,
                         Dtmp_old.ucov[0], Dtmp_old.ucon[1], P(m_p.U1, k, j, i) / f, gamma * u_temp * Dtmp_old.ucon[1] * Dtmp_old.ucov[0],
                         dot(Dtmp_old.bcon, Dtmp_old.bcov) * Dtmp_old.ucon[1] * Dtmp_old.ucov[0], -Dtmp_old.bcon[1] * Dtmp_old.bcov[0],
                         Dtmp_new.ucov[0], Dtmp_new.ucon[1], P(m_p.U1, k, j, i), m::sqrt(1. + betagamma2_max) * u_temp * Dtmp_new.ucon[1] * Dtmp_new.ucov[0],
@@ -119,7 +133,7 @@ KOKKOS_INLINE_FUNCTION void apply_ceilings(const GRCoordinates& G, const Variabl
             if (del_rho < 0) printf("HYERIN: del_rho still negative!\n");
             P(m_p.RHO, k, j, i) += del_rho;
             // old prescription
-            P(m_p.UU, k, j, i) += del_rho * betagamma2_max / (gam * (gam - 1.));
+            //P(m_p.UU, k, j, i) += del_rho * betagamma2_max / (gam * (gam - 1.)); //don't add u
             // new prescription (12/13/23)
             //if (frac_rho > 0) P(m_p.UU, k, j, i) = betagamma2_max * P(m_p.RHO, k, j, i) / (gam * (gam - 1.));
 

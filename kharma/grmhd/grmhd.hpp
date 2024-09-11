@@ -95,4 +95,10 @@ TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *rc);
  */
 void CancelBoundaryU3(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse);
 
+/**
+ * Update the signal speeds in zones affected by the above operations.
+ * This is important to stay under the Courant limit at times
+ */
+void UpdateAveragedCtop(MeshBlockData<Real> *rc);
 }
+

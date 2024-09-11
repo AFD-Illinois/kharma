@@ -38,6 +38,7 @@
 #include "grmhd.hpp"
 #include "grmhd_functions.hpp"
 #include "kharma.hpp"
+#include "inverter.hpp"
 
 #include <parthenon/parthenon.hpp>
 #include <prolong_restrict/pr_ops.hpp>
@@ -677,6 +678,9 @@ TaskStatus B_CT::DerefinePoles(MeshData<Real> *md, uint nlevels)
         auto u_avg = rc->PackVariables(std::vector<std::string>{"ismr_u_avg"});
         auto uvec_U = rc->PackVariables(std::vector<std::string>{"cons.uvec"});
         auto uvec_avg = rc->PackVariables(std::vector<std::string>{"ismr_uvec_avg"});
+        // TODO: eventually merge with the ismr branch like this
+        PackIndexMap cons_map;
+        auto vars = rc->PackVariables(std::vector<MetadataFlag>{Metadata::Conserved, Metadata::Cell}, cons_map);
         for (int i = 0; i < BOUNDARY_NFACES; i++) {
             BoundaryFace bface = (BoundaryFace) i;
             auto bname = KBoundaries::BoundaryName(bface);
@@ -855,8 +859,31 @@ TaskStatus B_CT::DerefinePoles(MeshData<Real> *md, uint nlevels)
                         VLOOP uvec_U(v, k, j_c, i) = uvec_avg(v, k, j_c, i);
                     }
                 );
+                // UtoP for the GRMHD variables
+                PackIndexMap prims_map;
+                auto P = rc->PackVariables(std::vector<MetadataFlag>{Metadata::GetUserFlag("Primitive"), Metadata::Cell}, prims_map);
+                VarMap m_u(cons_map, true), m_p(prims_map, false);
+                const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
+                const Floors::Prescription floors = pmb->packages.Get("Floors")->Param<Floors::Prescription>("prescription");
+                pmb->par_for("DerefinePoles_UtoP", bCC.ks, bCC.ke, j_p.s, j_p.e, bCC.is, bCC.ie,
+                    KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+                        const int j_c = j + ((binner) ? 0 : -1); // cell center
+                        // The usual inverter is not EMHD-aware, so it's going to dump all of T into the
+                        // ideal GRMHD fluid variables
+                        Inverter::u_to_p<Inverter::Type::onedw>(G, vars, m_u, gam, k, j_c, i, P, m_p, Loci::center,
+                                            floors, 8, 1e-8);
+                        // Consistent with that, we zero out the EMHD extra variables.  This switches theories to
+                        // evolving ideal GRMHD in ISMR region, but conserves the components of T themselves
+                        if (m_u.Q >= 0) vars(m_u.Q, k, j_c, i) = 0.;
+                        if (m_p.Q >= 0) P(m_p.Q, k, j_c, i) = 0.;
+                        if (m_u.DP >= 0) vars(m_u.DP, k, j_c, i) = 0.;
+                        if (m_p.DP >= 0) P(m_p.DP, k, j_c, i) = 0.;
+                    }
+                );
             }
         }
     }
+
+    // TODO: u_to_p with floor application
     return TaskStatus::complete;
 }

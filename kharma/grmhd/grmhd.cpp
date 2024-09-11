@@ -233,6 +233,10 @@ Real EstimateTimestep(MeshBlockData<Real> *rc)
     IndexRange jb = pmb->cellbounds.GetBoundsJ(IndexDomain::interior);
     IndexRange kb = pmb->cellbounds.GetBoundsK(IndexDomain::interior);
     const auto& G = pmb->coords;
+	
+	// If we have to recompute ctop anywhere, we do it now
+    UpdateAveragedCtop(rc);
+
     auto& cmax = rc->Get("Flux.cmax").data;
     auto& cmin = rc->Get("Flux.cmin").data;
 
@@ -247,6 +251,8 @@ Real EstimateTimestep(MeshBlockData<Real> *rc)
     // Added by Hyerin (03/07/24)
     bool ismr_poles = grmhd_pars.Get<bool>("ismr_poles");
     uint ismr_nlevels = (ismr_poles) ? grmhd_pars.Get<uint>("ismr_nlevels") : 0;
+    const bool polar_inner_x2 = pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::user;
+    const bool polar_outer_x2 = pmb->boundary_flag[BoundaryFace::outer_x2] == BoundaryFlag::user;
 
     if (!globals.Get<bool>("in_loop")) {
         if (grmhd_pars.Get<bool>("start_dt_light") ||
@@ -289,8 +295,8 @@ Real EstimateTimestep(MeshBlockData<Real> *rc)
             //bool take_larger_steps = (ismr_poles) && ((j == jb.s) || (j == jb.e));
             int ismr_factor = 1;
             if (ismr_poles) {
-                if (j < jb.s + ismr_nlevels) ismr_factor = m::pow(2, jb.s + ismr_nlevels - j);
-                if (j > jb.e - ismr_nlevels) ismr_factor = m::pow(2, j - jb.e + ismr_nlevels);
+                if (polar_inner_x2 && j < jb.s + ismr_nlevels) ismr_factor = m::pow(2, jb.s + ismr_nlevels - j);
+                if (polar_outer_x2 && j > jb.e - ismr_nlevels) ismr_factor = m::pow(2, j - jb.e + ismr_nlevels);
             }
             double ndt_zone = 1 / (1 / (G.Dxc<1>(i) /  m::max(cmax(0, k, j, i), cmin(0, k, j, i))) +
                                    1 / (G.Dxc<2>(j) /  m::max(cmax(1, k, j, i), cmin(1, k, j, i))) +
@@ -514,6 +520,59 @@ void CancelBoundaryU3(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
             );
         }
     );
+}
+
+// (09/04/24) copied from feature/ismr branch, but with meshblock as an argument
+void UpdateAveragedCtop(MeshBlockData<Real> *rc)
+{
+    auto pmb = rc->GetBlockPointer();
+    auto& params = pmb->packages.Get<KHARMAPackage>("Boundaries")->AllParams();
+    auto& grmhd_pars = pmb->packages.Get("GRMHD")->AllParams();
+    bool ismr_poles = grmhd_pars.Get<bool>("ismr_poles");
+    uint nlevels = (ismr_poles) ? grmhd_pars.Get<uint>("ismr_nlevels") : 0;
+
+	for (int i = 0; i < BOUNDARY_NFACES; i++) {
+		BoundaryFace bface = (BoundaryFace)i;
+		const auto bdir = KBoundaries::BoundaryDirection(bface);
+        const auto binner = KBoundaries::BoundaryIsInner(bface);
+
+
+		// If we've derefined on the pole...
+		// ...and if this face of the block corresponds to a global boundary...
+		if (bdir == X2DIR && ismr_poles && (pmb->boundary_flag[bface] == BoundaryFlag::user)) {
+            PackIndexMap prims_map, cons_map;
+            auto P = rc->PackVariables({Metadata::GetUserFlag("Primitive"), Metadata::Cell}, prims_map);
+            const VarMap m_p(prims_map, false);
+            const auto& cmax  = rc->PackVariables(std::vector<std::string>{"Flux.cmax"});
+            const auto& cmin  = rc->PackVariables(std::vector<std::string>{"Flux.cmin"});
+
+            const auto& G = pmb->coords;
+            const Real gam = grmhd_pars.Get<Real>("gamma");
+            const EMHD::EMHD_parameters& emhd_params = EMHD::GetEMHDParameters(pmb->packages);
+
+            // Recompute ctop in zones affected by averaging
+            IndexRange3 bi = KDomain::GetRange(rc, IndexDomain::interior);
+            // ismr applied zones
+            const IndexRange j_p = IndexRange{(binner) ? bi.js : bi.je - (nlevels - 1), (binner) ? bi.js + (nlevels - 1) : bi.je};
+            pmb->par_for("check_refinement", bi.ks, bi.ke, j_p.s, j_p.e, bi.is, bi.ie,
+                KOKKOS_LAMBDA(const int& k, const int& j, const int& i) {
+                    FourVectors Dtmp;
+                    GRMHD::calc_4vecs(G, P, m_p, k, j, i, Loci::center, Dtmp);
+                    // Remember our 'cmin' array stores *positive* values!
+                    Real cmin_minus;
+                    Flux::vchar_global(G, P, m_p, Dtmp, gam, emhd_params, k, j, i, Loci::center, X1DIR,
+                                cmax(V1, k, j, i), cmin_minus);
+                    cmin(V1, k, j, i) = -cmin_minus;
+                    Flux::vchar_global(G, P, m_p, Dtmp, gam, emhd_params, k, j, i, Loci::center, X2DIR,
+                                cmax(V2, k, j, i), cmin_minus);
+                    cmin(V2, k, j, i) = -cmin_minus;
+                    Flux::vchar_global(G, P, m_p, Dtmp, gam, emhd_params, k, j, i, Loci::center, X3DIR,
+                                cmax(V3, k, j, i), cmin_minus);
+                    cmin(V3, k, j, i) = -cmin_minus;
+                }
+            );
+		}
+    }
 }
 
 } // namespace GRMHD
