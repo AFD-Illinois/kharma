@@ -31,7 +31,7 @@ test_restart() {
     check_code=0
     # Compare to some high degree of accuracy
     pyharm diff --rel_tol 1e-9 restart_${1}_first.phdf restart_${1}_second.phdf --no_plot || check_code=$?
-    # Compare binary. For someday (remember to exclude divb)
+    # Compare binary. For someday
     #h5diff --exclude-path=/Info --exclude-path=/Input --exclude-path=/divB \
     #       --relative=1e-5 \
     #       restart_${1}_first.phdf restart_${1}_second.phdf || check_code=$?
@@ -60,10 +60,9 @@ test_restart_smr() {
     # Compare to some high degree of accuracy
     pyharm diff --rel_tol 1e-9 restart_${1}_first.phdf restart_${1}_second.phdf --no_plot || check_code=$?
     # Compare binary. For someday
-    #h5diff --exclude-path=/Info \
-    #       --exclude-path=/Input \
+    #h5diff --exclude-path=/Info --exclude-path=/Input --exclude-path=/divB \
     #       --relative=1e-5 \
-    #       restart_${1}_first.rhdf restart_${1}_second.rhdf || check_code=$?
+    #       restart_${1}_first.phdf restart_${1}_second.phdf || check_code=$?
     if [[ $check_code != 0 ]]; then
         echo Restart test \"$3\" FAIL: $check_code
         exit_code=1
@@ -77,8 +76,9 @@ test_restart imex "driver/type=imex" "ImEx driver"
 #test_restart imex_emhd "driver/type=imex emhd/on=true" "ImEx driver, EMHD"
 test_restart kharma_face "driver/type=kharma b_field/solver=face_ct" "KHARMA driver, face CT"
 test_restart imex_face "driver/type=imex b_field/solver=face_ct" "ImEx driver, face CT"
-test_restart kharma_face_2d "driver/type=kharma b_field/solver=face_ct parthenon/mesh/nx3=1 parthenon/meshblock/nx3=1" "KHARMA driver, face CT, 2D"
-test_restart imex_face_2d "driver/type=imex b_field/solver=face_ct parthenon/mesh/nx3=1 parthenon/meshblock/nx3=1" "ImEx driver, face CT, 2D"
+TWO_D="boundaries/inner_x2=reflecting boundaries/outer_x2=reflecting parthenon/mesh/nx3=1 parthenon/meshblock/nx3=1"
+test_restart kharma_face_2d "driver/type=kharma b_field/solver=face_ct $TWO_D" "KHARMA driver, face CT, 2D"
+test_restart imex_face_2d   "driver/type=imex b_field/solver=face_ct $TWO_D" "ImEx driver, face CT, 2D"
 # SMR
 test_restart_smr kharma_face_smr "driver/type=kharma b_field/solver=face_ct" "KHARMA driver, face CT, SMR"
 test_restart_smr imex_face_smr "driver/type=imex b_field/solver=face_ct" "ImEx driver, face CT, SMR"

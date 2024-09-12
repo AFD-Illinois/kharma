@@ -123,41 +123,4 @@ KOKKOS_INLINE_FUNCTION int apply_instability_limits(const GRCoordinates& G, cons
     return eflag;
 }    
 
-/**
- * Apply limits on the Extended MHD variables q & dP based on instabilities.
- * 
- * LOCKSTEP: this function respects P and returns consistent P<->U
- */
-inline void ApplyEMHDLimits(MeshBlockData<Real> *mbd, IndexDomain domain)
-{
-    auto pmb                 = mbd->GetBlockPointer();
-    auto packages            = pmb->packages;
-
-    PackIndexMap prims_map, cons_map;
-    auto P = mbd->PackVariables({Metadata::GetUserFlag("Primitive")}, prims_map);
-    auto U = mbd->PackVariables(std::vector<MetadataFlag>{Metadata::Conserved}, cons_map);
-    const VarMap m_u(cons_map, true), m_p(prims_map, false);
-
-    const auto& G = pmb->coords;
-
-    GridScalar eflag = mbd->Get("eflag").data;
-
-    const EMHD::EMHD_parameters& emhd_params = EMHD::GetEMHDParameters(packages);
-
-    const Real gam = packages.Get("GRMHD")->Param<Real>("gamma");
-
-    // Apply the EMHD instability limits in q, deltaP
-    // The user-specified limit values are in the FloorPrescription struct,
-    // but the EMHD closure parameters are in the emhd_params struct
-    const IndexRange ib = mbd->GetBoundsI(domain);
-    const IndexRange jb = mbd->GetBoundsJ(domain);
-    const IndexRange kb = mbd->GetBoundsK(domain);
-    pmb->par_for("apply_emhd_limits", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
-        KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
-            // Apply limits to the Extended MHD variables
-            eflag(k, j, i) = apply_instability_limits(G, P, m_p, gam, emhd_params, k, j, i, U, m_u);
-        }
-    );
-}
-
 } // EMHD
