@@ -18,7 +18,7 @@ tilt_init() {
 
     check_code=0
     # Check some basics (divB) of the first dump
-    pyharm check-basics torus.out0.final.phdf || check_code=$?
+    pyharm check-basics --allowed_divb=${4} torus.out0.final.phdf || check_code=$?
 
     if [[ $check_code != 0 ]]; then
         echo Tilt init test \"$3\" FAIL: $check_code
@@ -28,7 +28,7 @@ tilt_init() {
     fi
 }
 
-tilt_init cell "b_field/solver=flux_ct torus/tilt=10" "Cell-centered B"
-tilt_init face "b_field/solver=face_ct torus/tilt=30" "Face-centered B"
+tilt_init cell "b_field/solver=flux_ct torus/tilt=10" "Cell-centered B" "1e-6"
+tilt_init face "b_field/solver=face_ct torus/tilt=30" "Face-centered B" "1e-9"
 
 exit $exit_code

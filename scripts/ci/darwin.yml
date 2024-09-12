@@ -59,7 +59,7 @@ build:
   before_script:
     - echo "Skipping pyharm install in build."
   script:
-    - ./make.sh clean cuda volta
+    - ./make.sh clean cuda gcc volta
   artifacts:
     paths:
       - kharma.*

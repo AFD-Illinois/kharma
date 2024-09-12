@@ -222,6 +222,7 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
             auto t_copy_guess       = t_explicit;
             auto t_copy_emhd_vars   = t_explicit;
             if (use_ideal_guess) {
+                // This copies only q, dP for which we don't already have a guess
                 t_copy_emhd_vars = tl.AddTask(t_sources, Copy<MeshData<Real>>, std::vector<MetadataFlag>({Metadata::GetUserFlag("EMHDVar")}),
                                         md_sub_step_init.get(), md_solver.get());
                 t_copy_guess = t_copy_emhd_vars;

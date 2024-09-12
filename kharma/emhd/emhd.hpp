@@ -111,6 +111,25 @@ void MeshUtoP(MeshData<Real> *md, IndexDomain domain, bool coarse=false);
 void BlockPtoU(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse);
 
 /**
+ * Add EGRMHD explicit source terms: anything which can be calculated once
+ * and added to the general dU/dt term along with e.g. GRMHD source, wind, etc
+ */
+TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt, IndexDomain domain);
+
+/**
+ * Set q and dP to sensible starting values if they are not initialized by the problem.
+ * Currently a no-op as sensible values are zeros.
+ */
+void InitEMHDVariables(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin);
+
+/**
+ * Apply limits on the Extended MHD variables q & dP based on instabilities.
+ *
+ * LOCKSTEP: this function respects P and returns consistent P<->U
+ */
+void ApplyEMHDLimits(MeshBlockData<Real> *mbd, IndexDomain domain);
+
+/**
  * Get the EMHD parameters needed on the device side.
  * This function exists to be able to easily return a null
  * EMHD_parameters object even if the "EMHD" package is not loaded.
@@ -123,18 +142,6 @@ inline EMHD_parameters GetEMHDParameters(Packages_t& packages)
     }
     return emhd_params_tmp;
 }
-
-/**
- * Add EGRMHD explicit source terms: anything which can be calculated once
- * and added to the general dU/dt term along with e.g. GRMHD source, wind, etc
- */
-TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt, IndexDomain domain);
-
-/**
- * Set q and dP to sensible starting values if they are not initialized by the problem.
- * Currently a no-op as sensible values are zeros.
- */
-void InitEMHDVariables(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin);
 
 #if DISABLE_EMHD
 
