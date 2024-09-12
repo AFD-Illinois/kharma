@@ -71,14 +71,15 @@ test_restart_smr() {
     fi
 }
 
-test_restart kharma "driver/type=kharma" "KHARMA driver"
-test_restart imex "driver/type=imex" "ImEx driver"
+test_restart kharma "driver/type=kharma b_field/solver=flux_ct" "KHARMA driver"
+test_restart imex "driver/type=imex b_field/solver=flux_ct" "ImEx driver"
 #test_restart imex_emhd "driver/type=imex emhd/on=true" "ImEx driver, EMHD"
 test_restart kharma_face "driver/type=kharma b_field/solver=face_ct" "KHARMA driver, face CT"
 test_restart imex_face "driver/type=imex b_field/solver=face_ct" "ImEx driver, face CT"
-TWO_D="boundaries/inner_x2=reflecting boundaries/outer_x2=reflecting parthenon/mesh/nx3=1 parthenon/meshblock/nx3=1"
-test_restart kharma_face_2d "driver/type=kharma b_field/solver=face_ct $TWO_D" "KHARMA driver, face CT, 2D"
-test_restart imex_face_2d   "driver/type=imex b_field/solver=face_ct $TWO_D" "ImEx driver, face CT, 2D"
+TWO_D="parthenon/mesh/nx3=1 parthenon/meshblock/nx3=1"
+REFLECTING="boundaries/inner_x2=reflecting boundaries/outer_x2=reflecting boundaries/excise_polar_flux=false"
+test_restart kharma_face_2d "driver/type=kharma b_field/solver=face_ct $TWO_D $REFLECTING" "KHARMA driver, face CT, 2D"
+test_restart imex_face_2d   "driver/type=imex b_field/solver=face_ct $TWO_D $REFLECTING" "ImEx driver, face CT, 2D"
 # SMR
 test_restart_smr kharma_face_smr "driver/type=kharma b_field/solver=face_ct" "KHARMA driver, face CT, SMR"
 test_restart_smr imex_face_smr "driver/type=imex b_field/solver=face_ct" "ImEx driver, face CT, SMR"
