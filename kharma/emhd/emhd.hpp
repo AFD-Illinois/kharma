@@ -65,9 +65,6 @@ class EMHD_parameters {
         ClosureType type;
         Real tau;
 
-        bool conduction;
-        bool viscosity;
-
         Real conduction_alpha;
         Real viscosity_alpha;
 
@@ -77,8 +74,8 @@ class EMHD_parameters {
         void print() const
         {
             printf("EMHD Parameters:\n");
-            printf("higher order: %d feedback: %d conduction: %d viscosity: %d\n",
-                    higher_order_terms, feedback, conduction, viscosity);
+            printf("higher order: %d feedback: %d \n",
+                    higher_order_terms, feedback);
             printf("kappa: %g eta: %g tau: %g conduction_a: %g viscosity_a: %g \n",
                     kappa, eta, tau, conduction_alpha, viscosity_alpha);
             // TODO closuretype
@@ -114,6 +111,25 @@ void MeshUtoP(MeshData<Real> *md, IndexDomain domain, bool coarse=false);
 void BlockPtoU(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse);
 
 /**
+ * Add EGRMHD explicit source terms: anything which can be calculated once
+ * and added to the general dU/dt term along with e.g. GRMHD source, wind, etc
+ */
+TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt, IndexDomain domain);
+
+/**
+ * Set q and dP to sensible starting values if they are not initialized by the problem.
+ * Currently a no-op as sensible values are zeros.
+ */
+void InitEMHDVariables(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin);
+
+/**
+ * Apply limits on the Extended MHD variables q & dP based on instabilities.
+ *
+ * LOCKSTEP: this function respects P and returns consistent P<->U
+ */
+void ApplyEMHDLimits(MeshBlockData<Real> *mbd, IndexDomain domain);
+
+/**
  * Get the EMHD parameters needed on the device side.
  * This function exists to be able to easily return a null
  * EMHD_parameters object even if the "EMHD" package is not loaded.
@@ -126,18 +142,6 @@ inline EMHD_parameters GetEMHDParameters(Packages_t& packages)
     }
     return emhd_params_tmp;
 }
-
-/**
- * Add EGRMHD explicit source terms: anything which can be calculated once
- * and added to the general dU/dt term along with e.g. GRMHD source, wind, etc
- */
-TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt, IndexDomain domain);
-
-/**
- * Set q and dP to sensible starting values if they are not initialized by the problem.
- * Currently a no-op as sensible values are zeros.
- */
-void InitEMHDVariables(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin);
 
 #if DISABLE_EMHD
 
@@ -178,30 +182,26 @@ KOKKOS_INLINE_FUNCTION void set_parameters(const GRCoordinates& G, const Real& r
                                             const int& j, const int& i,
                                             Real& tau, Real& chi_e, Real& nu_e)
 {
+    // Formerly chi_e was only set if conduction was present, nu_e only if viscosity
+    // Now assumes these will simply be unused if set when these effects are disabled
     if (emhd_params.type == ClosureType::constant) {
         // Set tau, nu, chi to constants
         tau = emhd_params.tau;
-        if (emhd_params.conduction)
-            chi_e = emhd_params.conduction_alpha;
-        if (emhd_params.viscosity)
-            nu_e = emhd_params.viscosity_alpha;
+        chi_e = emhd_params.conduction_alpha;
+        nu_e = emhd_params.viscosity_alpha;
 
     } else if (emhd_params.type == ClosureType::soundspeed) {
         // Set tau=const, chi/nu prop. to sound speed squared
         const Real cs2 = (gam * (gam - 1.) * u) / (rho + (gam * u));
         tau = emhd_params.tau;
-        if (emhd_params.conduction)
-            chi_e = emhd_params.conduction_alpha * cs2 * tau;
-        if (emhd_params.viscosity)
-            nu_e = emhd_params.viscosity_alpha * cs2 * tau;
+        chi_e = emhd_params.conduction_alpha * cs2 * tau;
+        nu_e = emhd_params.viscosity_alpha * cs2 * tau;
 
     } else if (emhd_params.type == ClosureType::kappa_eta){
         // Set tau = const, chi = kappa / rho, nu = eta / rho
         tau = emhd_params.tau;
-        if (emhd_params.conduction)
-            chi_e = emhd_params.kappa / m::max(rho, SMALL);
-        if (emhd_params.viscosity)
-            nu_e = emhd_params.eta / m::max(rho, SMALL);
+        chi_e = emhd_params.kappa / m::max(rho, SMALL);
+        nu_e = emhd_params.eta / m::max(rho, SMALL);
 
     } else if (emhd_params.type == ClosureType::torus) {
         GReal Xembed[GR_DIM];
@@ -221,7 +221,7 @@ KOKKOS_INLINE_FUNCTION void set_parameters(const GRCoordinates& G, const Real& r
         constexpr Real lambda = 0.01;
 
         // Correction due to heat conduction
-        if (emhd_params.conduction) {
+        {
             const Real q = (emhd_params.higher_order_terms)
                         ? qtilde * m::sqrt(rho * emhd_params.conduction_alpha * cs2 * Theta * Theta)
                         : qtilde;
@@ -234,7 +234,7 @@ KOKKOS_INLINE_FUNCTION void set_parameters(const GRCoordinates& G, const Real& r
         }
 
         // Correction due to pressure anisotropy
-        if (emhd_params.viscosity) {
+        {
             const Real dP = (emhd_params.higher_order_terms)
                         ? dPtilde * sqrt(rho * emhd_params.viscosity_alpha * cs2 * Theta)
                         : dPtilde;
@@ -253,10 +253,8 @@ KOKKOS_INLINE_FUNCTION void set_parameters(const GRCoordinates& G, const Real& r
 
         // Update thermal diffusivity and kinematic viscosity
         Real max_alpha = (1 - cs2) / (2 * cs2 + 1.e-12);
-        if (emhd_params.conduction)
-            chi_e = m::min(max_alpha, emhd_params.conduction_alpha) * cs2 * tau;
-        if (emhd_params.viscosity)
-            nu_e = m::min(max_alpha, emhd_params.viscosity_alpha) * cs2 * tau;
+        chi_e = m::min(max_alpha, emhd_params.conduction_alpha) * cs2 * tau;
+        nu_e = m::min(max_alpha, emhd_params.viscosity_alpha) * cs2 * tau;
     }
 }
 template<typename Local>
@@ -296,7 +294,6 @@ KOKKOS_INLINE_FUNCTION void set_parameters(const GRCoordinates& G, const Variabl
  * Entirely local!
  */
 KOKKOS_INLINE_FUNCTION void calc_tensor(const Real& rho, const Real& u, const Real& pgas,
-                                        const EMHD::EMHD_parameters& emhd_params, 
                                         const Real& q, const Real& dP,
                                         const FourVectors& D, const int& dir,
                                         Real emhd[GR_DIM])
@@ -306,16 +303,9 @@ KOKKOS_INLINE_FUNCTION void calc_tensor(const Real& rho, const Real& u, const Re
     const Real eta  = pgas + rho + u + bsq;
     const Real ptot = pgas + 0.5 * bsq;
 
-    DLOOP1 emhd[mu] = eta * D.ucon[dir] * D.ucov[mu] + ptot * (dir == mu) - D.bcon[dir] * D.bcov[mu];
-
-    if (emhd_params.feedback) {
-        if (emhd_params.conduction)
-            DLOOP1
-                emhd[mu] += (q / b_mag) * ((D.ucon[dir] * D.bcov[mu]) + (D.bcon[dir] * D.ucov[mu]));
-        if (emhd_params.viscosity)                
-            DLOOP1
-                emhd[mu] -= dP * ((D.bcon[dir] * D.bcov[mu] / bsq) - (1./3.) * ((dir == mu) + D.ucon[dir] * D.ucov[mu]));
-    }
+    DLOOP1 emhd[mu] = eta * D.ucon[dir] * D.ucov[mu] + ptot * (dir == mu) - D.bcon[dir] * D.bcov[mu]
+                    + (q / b_mag) * ((D.ucon[dir] * D.bcov[mu]) + (D.bcon[dir] * D.ucov[mu]))
+                    - dP * ((D.bcon[dir] * D.bcov[mu] / bsq) - (1./3.) * ((dir == mu) + D.ucon[dir] * D.ucov[mu]));
 }
 
 // Convert q_tilde and dP_tilde (which are primitives) to q and dP
@@ -324,28 +314,20 @@ KOKKOS_INLINE_FUNCTION void convert_prims_to_q_dP(const Real& q_tilde, const Rea
                                         const Real& rho, const Real& Theta, const Real& cs2, 
                                         const EMHD_parameters& emhd_params, Real& q, Real& dP)
 {
-    if (emhd_params.conduction) {
-        q = q_tilde;
-        if (emhd_params.higher_order_terms) {
-            if (emhd_params.type == ClosureType::kappa_eta)
-                q *= m::sqrt(emhd_params.kappa * Theta * Theta / emhd_params.tau);
-            else
-                q *= m::sqrt(rho * emhd_params.conduction_alpha * cs2 * Theta * Theta);
-        }
-    } else {
-        q = 0.;
+    q = q_tilde;
+    if (emhd_params.higher_order_terms) {
+        if (emhd_params.type == ClosureType::kappa_eta)
+            q *= m::sqrt(emhd_params.kappa * Theta * Theta / emhd_params.tau);
+        else
+            q *= m::sqrt(rho * emhd_params.conduction_alpha * cs2 * Theta * Theta);
     }
 
-    if (emhd_params.viscosity) {
-        dP = dP_tilde;
-        if (emhd_params.higher_order_terms) {
-            if (emhd_params.type == ClosureType::kappa_eta)
-                dP *= m::sqrt(emhd_params.eta * Theta / emhd_params.tau);
-            else
-                dP *= m::sqrt(rho * emhd_params.viscosity_alpha * cs2 * Theta);
-        }
-    } else {
-        dP = 0.;
+    dP = dP_tilde;
+    if (emhd_params.higher_order_terms) {
+        if (emhd_params.type == ClosureType::kappa_eta)
+            dP *= m::sqrt(emhd_params.eta * Theta / emhd_params.tau);
+        else
+            dP *= m::sqrt(rho * emhd_params.viscosity_alpha * cs2 * Theta);
     }
 }
 #endif

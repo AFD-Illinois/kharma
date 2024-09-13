@@ -11,8 +11,6 @@ problem_id = torus
 # Pretty representative size for a long simulation
 # Larger simulations have smaller in-simulation timesteps
 <parthenon/mesh>
-refinement = none
-numlevel = 1
 nx1 = 256
 nx2 = 128
 nx3 = 128
@@ -39,7 +37,7 @@ gamma = 1.666667
 reconstruction = weno5
 
 <driver>
-type = kharma
+type = imex
 two_sync = true
 
 <torus>
@@ -50,8 +48,12 @@ rmax = 12.0
 u_jitter = 0.04
 
 <b_field>
+solver = flux_ct
 type = sane
 beta_min = 100.
+
+<solver>
+type = onedw
 
 <floors>
 rho_min_geom = 1e-6

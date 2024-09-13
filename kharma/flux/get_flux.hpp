@@ -368,22 +368,6 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
     }
     EndFlag();
 
-    // Save the face velocities for upwinding/CT later
-    // TODO Probably a few reasons to do this, maybe make it a Flux parameter
-    if (packages.AllPackages().count("B_CT") && packages.Get("B_CT")->Param<std::string>("ct_scheme") == "gs05_c") {
-        Flag("GetFlux_"+std::to_string(dir)+"_store_vel");
-        const auto& vl_all = md->PackVariables(std::vector<std::string>{"Flux.vl"});
-        const auto& vr_all = md->PackVariables(std::vector<std::string>{"Flux.vr"});
-        const TopologicalElement face = FaceOf(dir);
-        pmb0->par_for("flux_llf", block.s, block.e, 0, NVEC-1, b.ks, b.ke, b.js, b.je, b.is, b.ie,
-            KOKKOS_LAMBDA(const int& bl, const int& v, const int& k, const int& j, const int& i) {
-                vl_all(bl, face, v, k, j, i) = Pl_all(bl, m_p.U1+v, k, j, i);
-                vr_all(bl, face, v, k, j, i) = Pr_all(bl, m_p.U1+v, k, j, i);
-            }
-        );
-        EndFlag();
-    }
-
     EndFlag();
     return TaskStatus::complete;
 }

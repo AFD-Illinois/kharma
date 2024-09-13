@@ -211,6 +211,16 @@ KOKKOS_INLINE_FUNCTION void GRCoordinates::coord(const int& k, const int& j, con
         X[2] = Xf<2>(j);
         X[3] = Xf<3>(k);
         break;
+    case Loci::outer_half:
+        X[1] = Xc<1>(i);
+        X[2] = (Xc<2>(j) + Xf<2>(j+1)) / 2;
+        X[3] = Xc<3>(k);
+        break;
+    case Loci::inner_half:
+        X[1] = Xc<1>(i);
+        X[2] = (Xc<2>(j) + Xf<2>(j)) / 2;
+        X[3] = Xc<3>(k);
+        break;
     }
 }
 

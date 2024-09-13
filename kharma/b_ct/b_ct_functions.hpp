@@ -47,12 +47,31 @@ namespace B_CT {
 template<typename Global>
 KOKKOS_INLINE_FUNCTION Real face_div(const GRCoordinates &G, Global &v, const int &ndim, const int &k, const int &j, const int &i)
 {
-    Real du = (v(F1, 0, k, j, i + 1) * G.Volume<F1>(k, j, i + 1) - v(F1, 0, k, j, i) * G.Volume<F1>(k, j, i));
+    Real du = (v(F1, 0, k, j, i + 1) - v(F1, 0, k, j, i)) / G.Dxc<1>(k, j, i);
     if (ndim > 1)
-        du += (v(F2, 0, k, j + 1, i) * G.Volume<F2>(k, j + 1, i) - v(F2, 0, k, j, i) * G.Volume<F2>(k, j, i));
+        du += (v(F2, 0, k, j + 1, i) - v(F2, 0, k, j, i)) / G.Dxc<2>(k, j, i);
     if (ndim > 2)
-        du += (v(F3, 0, k + 1, j, i) * G.Volume<F3>(k + 1, j, i) - v(F3, 0, k, j, i) * G.Volume<F3>(k, j, i));
-    return du / G.Volume<CC>(k, j, i);
+        du += (v(F3, 0, k + 1, j, i) - v(F3, 0, k, j, i)) / G.Dxc<3>(k, j, i);
+    return du;
+}
+
+/**
+ * Gradient on one face, denoted by DIR. Split vs Flux-CT version because generally
+ * this will be needed in separate loops setting F1, F2, F3, with separate bounds
+ * Note this is backward-difference: face N borders cells N-1 & N
+ */
+template<CoordinateDirection DIR>
+KOKKOS_FORCEINLINE_FUNCTION double face_grad(const GRCoordinates& G, const VariablePack<Real>& P,
+                                          const int& k, const int& j, const int& i)
+{
+    // Backward gradient to cell faces
+    if constexpr (DIR == X1DIR) {
+        return (P(0, k, j, i) - P(0, k, j, i-1)) / G.Dxc<1>(k, j, i);
+    } else if constexpr (DIR == X2DIR) {
+        return (P(0, k, j, i) - P(0, k, j-1, i)) / G.Dxc<2>(k, j, i);
+    } else if constexpr (DIR == X3DIR) {
+        return (P(0, k, j, i) - P(0, k-1, j, i)) / G.Dxc<3>(k, j, i);
+    }
 }
 
 template<TE el, int NDIM>
@@ -97,47 +116,6 @@ KOKKOS_INLINE_FUNCTION void edge_curl(const GRCoordinates& G, const GridVector& 
             const Real A1c2b = (A(V1, k, j, i)     + A(V1, k, j, i + 1)) / 2;
             B_U(F3, 0, k, j, i) = (A2c1f - A2c1b) / G.Dxc<1>(i) - (A1c2f - A1c2b) / G.Dxc<2>(j);
         }
-    }
-}
-
-KOKKOS_INLINE_FUNCTION Real upwind_diff(const VariableFluxPack<Real>& B_U, const VariablePack<Real>& emfc, const VariablePack<Real>& uvec,
-                                        const int& comp, const int& dir, const int& vdir,
-                                        const int& k, const int& j, const int& i, const bool& left_deriv)
-{
-    // See SG09 eq 23
-    // Upwind based on vel(vdir) at the left face in vdir (contact mode)
-    TopologicalElement face = (vdir == 1) ? F1 : ((vdir == 2) ? F2 : F3); //
-    const Real contact_vel = uvec(face, vdir-1, k, j, i);
-    // Upwind by one zone in dir
-    const int i_up = (vdir == 1) ? i - 1 : i;
-    const int j_up = (vdir == 2) ? j - 1 : j;
-    const int k_up = (vdir == 3) ? k - 1 : k;
-    // Sign for transforming the flux to EMF, based on directions
-    const int emf_sign = antisym(comp-1, dir-1, vdir-1);
-
-    // If we're actually taking the derivative at -3/4, back up which center we use,
-    // and reverse the overall sign
-    const int i_cent = (left_deriv && dir == 1) ? i - 1 : i;
-    const int j_cent = (left_deriv && dir == 2) ? j - 1 : j;
-    const int k_cent = (left_deriv && dir == 3) ? k - 1 : k;
-    const int i_cent_up = (left_deriv && dir == 1) ? i_up - 1 : i_up;
-    const int j_cent_up = (left_deriv && dir == 2) ? j_up - 1 : j_up;
-    const int k_cent_up = (left_deriv && dir == 3) ? k_up - 1 : k_up;
-    const int return_sign = (left_deriv) ? -1 : 1;
-
-
-    // TODO calculate offsets once somehow?
-
-    if (contact_vel > 0) {
-        // Forward: difference at i
-        return return_sign * (emfc(comp-1, k_cent, j_cent, i_cent) + emf_sign * B_U.flux(dir, vdir-1, k, j, i));
-    } else if (contact_vel < 0) {
-        // Back: difference at i-1
-        return return_sign * (emfc(comp-1, k_cent_up, j_cent_up, i_cent_up) + emf_sign * B_U.flux(dir, vdir-1, k_up, j_up, i_up));
-    } else {
-        // Half and half
-        return return_sign*0.5*(emfc(comp-1, k_cent, j_cent, i_cent) + emf_sign * B_U.flux(dir, vdir-1, k, j, i) +
-                    emfc(comp-1, k_cent_up, j_cent_up, i_cent_up) + emf_sign * B_U.flux(dir, vdir-1, k_up, j_up, i_up));
     }
 }
 

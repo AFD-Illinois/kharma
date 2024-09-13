@@ -40,6 +40,7 @@
 #include "b_flux_ct.hpp"
 #include "blob.hpp"
 #include "boundaries.hpp"
+#include "electrons.hpp"
 #include "emhd.hpp"
 #include "floors.hpp"
 #include "flux.hpp"
@@ -124,8 +125,11 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart)
             if (pkgs.count("B_FluxCT")) {
                 B_FluxCT::MeshPtoU(md.get(), IndexDomain::entire);
             } else if (pkgs.count("B_CT")) {
-                // TODO this is only true if not cleaning, amend when cleaning supports B_CT
-                throw std::runtime_error("Cannot restart face-centered field from iharm3d!");
+                // This is dangerous: we're interpolating cell-centered data
+                // to faces, even for identical grids
+                B_CT::DangerousPtoU(md.get(), IndexDomain::interior, false);
+                // TODO always force B field cleanup if we do this
+                // (Generally we're resizing so it gets triggered anyway)
             }
         }
     }
@@ -165,6 +169,15 @@ void KHARMA::PostInitialize(ParameterInput *pin, Mesh *pmesh, bool is_restart)
             pouts->MakeOutputs(pmesh, pin, &tm, SignalHandler::OutputSignal::now);
         }
 
+    }
+
+    // The e- initialization is called during problem initialization, but we want an option
+    // to force it -- for example, if restarting an ideal GRMHD run, 
+    if (pkgs.count("Electrons") && pin->GetOrAddBoolean("electrons", "reinitialize", false)) {
+        std::cout << "Reinitializing electron temperatures!" << std::endl;
+        Electrons::MeshInitElectrons(md.get(), pin);
+        // We probably don't want to do this again next time we restart
+        pin->SetBoolean("electrons", "reinitialize", false);
     }
 
     // If PtoU was called before the B field was initialized or corrected,

@@ -52,7 +52,7 @@ gamma = 1.666667
 
 <b_field>
 solver = face_ct
-#type = wave
+ct_scheme = gs05_c
 
 <floors>
 # Disable all floor applications in this problem
