@@ -42,7 +42,6 @@ TaskStatus InitializeHubble(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterI
 
     const Real mach = pin->GetOrAddReal("hubble", "mach", 1.);
     const Real v0 = pin->GetOrAddReal("hubble", "v0", 1.e-3);
-    const Real gam = pin->GetOrAddReal("GRMHD", "gamma", 1.666667);
     // Whether to stop after "dyn_times" dynamical time L/max(v0*x)
     bool set_tlim = pin->GetOrAddBoolean("hubble", "set_tlim", false);
     bool cooling = pin->GetOrAddBoolean("hubble", "cooling", true);
@@ -52,6 +51,7 @@ TaskStatus InitializeHubble(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterI
     // Add everything to package parameters, since they continue to be needed on boundaries
     int counter = -5.0;
     Params& g_params = pmb->packages.Get("GRMHD")->AllParams();
+    const Real gam = g_params.Get<Real>("gamma");
     if(!g_params.hasKey("counter")) g_params.Add("counter", counter, true);
     Real rho0 = (mach/v0) * sqrt(gam*(gam-1));
     Real ug0  = (v0/mach) / sqrt(gam*(gam-1));

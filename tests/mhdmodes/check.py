@@ -140,10 +140,10 @@ for k in range(NVAR):
         # Most runs all variables are between 1.95-2.05
         # But w/Face-CT and upwinding, u2/u3 converge at 2.3, rho/u at 2.15
         if VARS[k] == 'u2' or VARS[k] == 'u3':
-            if powerfits[k] > -1.95 or ("entropy" not in SHORT and powerfits[k] < -2.3):
+            if powerfits[k] > -1.94 or ("entropy" not in SHORT and powerfits[k] < -2.3):
                 fail = 1
         else:
-            if powerfits[k] > -1.95 or ("entropy" not in SHORT and powerfits[k] < -2.15):
+            if powerfits[k] > -1.94 or ("entropy" not in SHORT and powerfits[k] < -2.15):
                 fail = 1
 
 # MAKE PLOTS

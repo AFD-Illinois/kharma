@@ -159,8 +159,7 @@ KOKKOS_INLINE_FUNCTION int determine_floors(const GRCoordinates& G, const Variab
     return fflag;
 }
 
-#define FLOOR_ONE_ARGS const GRCoordinates& G, const VariablePack<Real>& P, const VarMap& m_p, \
-                        const Real& gam, \
+#define FLOOR_ONE_ARGS const GRCoordinates& G, const VariablePack<Real>& P, const VarMap& m_p, const Real& gam, \
                         const int& k, const int& j, const int& i, const Real& rhoflr_max, const Real& uflr_max, \
                         const VariablePack<Real>& U, const VarMap& m_u
 
