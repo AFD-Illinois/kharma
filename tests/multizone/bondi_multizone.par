@@ -34,8 +34,10 @@ dt_min = 0.00001
 <GRMHD>
 cfl = 0.9
 gamma = 1.666667
+
+<flux>
+type = llf
 reconstruction = weno5
-implicit = false
 
 <bondi>
 mdot = 1.0

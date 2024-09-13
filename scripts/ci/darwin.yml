@@ -22,6 +22,9 @@ variables:
 
 ### DEFAULT TEST BEHAVIOR ###
 default:
+  id_tokens:
+    SITE_ID_TOKEN:
+      aud: https://re-git.lanl.gov
   tags:
     - darwin-slurm-shared
   # Load Python
@@ -56,7 +59,7 @@ build:
   before_script:
     - echo "Skipping pyharm install in build."
   script:
-    - ./make.sh clean cuda volta
+    - ./make.sh clean cuda gcc volta
   artifacts:
     paths:
       - kharma.*

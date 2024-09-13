@@ -114,19 +114,19 @@ conv_2d fast_kharma_ct   "mhdmodes/nmode=3 driver/type=kharma b_field/solver=fac
 conv_2d slow_imex_ct   "mhdmodes/nmode=1 driver/type=imex b_field/solver=face_ct b_field/ct_scheme=bs99" "slow mode in 2D, ImEx explicit w/face CT"
 conv_2d alfven_imex_ct "mhdmodes/nmode=2 driver/type=imex b_field/solver=face_ct b_field/ct_scheme=bs99" "Alfven mode in 2D, ImEx explicit w/face CT"
 conv_2d fast_imex_ct   "mhdmodes/nmode=3 driver/type=imex b_field/solver=face_ct b_field/ct_scheme=bs99" "fast mode in 2D, ImEx explicit w/face CT"
-# Upwinded fluxes
+# Fake upwinded fluxes
 conv_2d slow_kharma_ct_gs05_0   "mhdmodes/nmode=1 driver/type=kharma b_field/solver=face_ct b_field/ct_scheme=gs05_0" "slow mode in 2D, KHARMA driver w/epsilon_0 flux"
 conv_2d alfven_kharma_ct_gs05_0 "mhdmodes/nmode=2 driver/type=kharma b_field/solver=face_ct b_field/ct_scheme=gs05_0" "Alfven mode in 2D, KHARMA driver w/epsilon_0 flux"
-# TODO this barely doesn't work. Boundaries?
-#conv_2d fast_kharma_ct_gs05_0   "mhdmodes/nmode=3 driver/type=kharma b_field/solver=face_ct b_field/ct_scheme=gs05_0" "fast mode in 2D, KHARMA driver w/epsilon_0 flux"
+conv_2d fast_kharma_ct_gs05_0   "mhdmodes/nmode=3 driver/type=kharma b_field/solver=face_ct b_field/ct_scheme=gs05_0" "fast mode in 2D, KHARMA driver w/epsilon_0 flux"
+# Real upwinded fluxes (note this is now equivalent to sg07/gs07)
 conv_2d slow_kharma_ct_gs05_c   "mhdmodes/nmode=1 driver/type=kharma b_field/solver=face_ct b_field/ct_scheme=gs05_c" "slow mode in 2D, KHARMA driver w/epsilon_c flux"
 conv_2d alfven_kharma_ct_gs05_c "mhdmodes/nmode=2 driver/type=kharma b_field/solver=face_ct b_field/ct_scheme=gs05_c" "Alfven mode in 2D, KHARMA driver w/epsilon_c flux"
 conv_2d fast_kharma_ct_gs05_c   "mhdmodes/nmode=3 driver/type=kharma b_field/solver=face_ct b_field/ct_scheme=gs05_c" "fast mode in 2D, KHARMA driver w/epsilon_c flux"
 
-# Kastaun primitive recovery
-conv_2d slow_kastaun   "mhdmodes/nmode=1 inverter/type=kastaun" "slow mode in 2D, Kastaun inversion"
-conv_2d alfven_kastaun "mhdmodes/nmode=2 inverter/type=kastaun" "Alfven mode in 2D, Kastaun inversion"
-conv_2d fast_kastaun   "mhdmodes/nmode=3 inverter/type=kastaun" "fast mode in 2D, Kastaun inversion"
+# Test old 1Dw primitive recovery
+conv_2d slow_onedw   "mhdmodes/nmode=1 inverter/type=onedw" "slow mode in 2D, 1Dw inversion"
+conv_2d alfven_onedw "mhdmodes/nmode=2 inverter/type=onedw" "Alfven mode in 2D, 1Dw inversion"
+conv_2d fast_onedw   "mhdmodes/nmode=3 inverter/type=onedw" "fast mode in 2D, 1Dw inversion"
 
 
 # simple driver, high res

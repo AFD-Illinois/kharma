@@ -5,7 +5,10 @@ exit_code=0
 
 tilt_init() {
     # Run default tilted problem to 5 steps
-    ../../run.sh -i ../../pars/tori_3d/mad_tilt.par parthenon/time/nlim=5 debug/verbose=1 \
+    ../../run.sh -i ../../pars/tori_3d/mad.par parthenon/time/nlim=5 debug/verbose=1 \
+                    parthenon/mesh/nx1=128 parthenon/mesh/nx2=64 parthenon/mesh/nx3=64 \
+                    parthenon/meshblock/nx1=128 parthenon/meshblock/nx2=32 parthenon/meshblock/nx3=64 \
+                    parthenon/job/archive_parameters=false \
                     parthenon/output0/single_precision_output=false \
                     parthenon/output0/variables=prims,jcon,fflag,pflag,divB \
                     $2 >log_tilt_init_${1}.txt 2>&1
@@ -15,7 +18,7 @@ tilt_init() {
 
     check_code=0
     # Check some basics (divB) of the first dump
-    pyharm check-basics torus.out0.final.phdf || check_code=$?
+    pyharm check-basics --allowed_divb=${4} torus.out0.final.phdf || check_code=$?
 
     if [[ $check_code != 0 ]]; then
         echo Tilt init test \"$3\" FAIL: $check_code
@@ -25,7 +28,7 @@ tilt_init() {
     fi
 }
 
-tilt_init cell "b_field/solver=flux_ct" "Cell-centered B"
-tilt_init face "b_field/solver=face_ct" "Face-centered B"
+tilt_init cell "b_field/solver=flux_ct torus/tilt=10" "Cell-centered B" "1e-6"
+tilt_init face "b_field/solver=face_ct torus/tilt=30" "Face-centered B" "1e-9"
 
 exit $exit_code

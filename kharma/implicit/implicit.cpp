@@ -191,14 +191,14 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
     // We need two sets of emhd_params because we need the relaxation scale
     // at the same state in the implicit source terms
     // Need an object of `EMHD_parameters` for the `linesearch` state
-    EMHD_parameters emhd_params_sub_step_init, emhd_params_solver, emhd_params_linesearch;
+    EMHD::EMHD_parameters emhd_params_sub_step_init, emhd_params_solver, emhd_params_linesearch;
     if (pmb_sub_step_init->packages.AllPackages().count("EMHD")) {
         const auto& pars_sub_step_init  = pmb_sub_step_init->packages.Get("EMHD")->AllParams();
         const auto& pars_solver         = pmb_solver->packages.Get("EMHD")->AllParams();
         const auto& pars_linesearch     = pmb_linesearch->packages.Get("EMHD")->AllParams();
-        emhd_params_sub_step_init       = pars_sub_step_init.Get<EMHD_parameters>("emhd_params");
-        emhd_params_solver              = pars_solver.Get<EMHD_parameters>("emhd_params");
-        emhd_params_linesearch          = pars_linesearch.Get<EMHD_parameters>("emhd_params");
+        emhd_params_sub_step_init       = pars_sub_step_init.Get<EMHD::EMHD_parameters>("emhd_params");
+        emhd_params_solver              = pars_solver.Get<EMHD::EMHD_parameters>("emhd_params");
+        emhd_params_linesearch          = pars_linesearch.Get<EMHD::EMHD_parameters>("emhd_params");
     }
 
     // I don't normally do this, but we *really* care about variable ordering here.
@@ -331,6 +331,7 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
             KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int& b, const int& k, const int& j) {
 #else
                 }); // End par_for_inner
+                member.team_barrier();
 #endif
                 const auto& G = U_full_step_init_all.GetCoords(b);
                 // Scratchpads for implicit vars
@@ -384,7 +385,6 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
                         }
                     );
                 } else {
-
                     parthenon::par_for_inner(member, ib.s, ib.e,
                         [&](const int& i) {
                             // Solver variables
@@ -418,6 +418,7 @@ TaskStatus Implicit::Step(MeshData<Real> *md_full_step_init, MeshData<Real> *md_
             block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
             KOKKOS_LAMBDA(const int& b, const int& k, const int& j, const int& i) {
 #else
+                member.team_barrier();
                 parthenon::par_for_inner(member, ib.s, ib.e,
                     [&](const int& i) {
 #endif
