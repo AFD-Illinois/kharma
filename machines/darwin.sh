@@ -56,7 +56,13 @@ if [[ ($HOSTNAME == "cn"* || $HOSTNAME == "darwin"*) &&
 
   # 2. Load accelerator libraries
   if [[ "$ARGS" == *"cuda"* ]]; then
-    module load cuda/12.3.1
+    if [[ "$ARGS" == *"cuda11"* ]]; then
+      module load cuda/11.8.0
+    elif [[ "$ARGS" == *"cuda120"* ]]; then
+      module load cuda/12.0.0
+    else
+      module load cuda/12.3.1
+    fi
     # Host MPI for CUDA w/o NVHPC
     if [[ "$C_NATIVE" != "nvc" ]]; then
       module load openmpi
@@ -141,7 +147,7 @@ if [[ ($HOSTNAME == "cn"* || $HOSTNAME == "darwin"*) &&
   MPI_NUM_PROCS=${MPI_NUM_PROCS:-$MPI_NUM_PROCS_D}
 
   # Runtime
-  MPI_EXE="mpirun"
+  #MPI_EXE="mpirun"
   # Lead MPI to water
-  MPI_EXTRA_ARGS="--map-by ppr:${MPI_NUM_PROCS}:node:pe=$(($NPROC / $MPI_NUM_PROCS / $NODE_SLICE))"
+  #MPI_EXTRA_ARGS="--map-by ppr:${MPI_NUM_PROCS}:node:pe=$(($NPROC / $MPI_NUM_PROCS / $NODE_SLICE))"
 fi

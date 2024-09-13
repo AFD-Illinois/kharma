@@ -59,7 +59,8 @@ build:
   before_script:
     - echo "Skipping pyharm install in build."
   script:
-    - ./make.sh clean cuda gcc volta
+    # CUDA 12.2+ doesn't like EMHD
+    - ./make.sh clean cuda120 gcc volta
   artifacts:
     paths:
       - kharma.*
@@ -74,6 +75,6 @@ tests:
     - ./run.sh
   parallel:
     matrix:
-      - TEST: [bondi, bondi_viscous, bz_monopole, emhdmodes, mhdmodes, mhdmodes_smr,
-               noh, regrid, reinit, restart, tilt_init, torus_sanity]
+      - TEST: [all_pars, anisotropic_conduction, bondi, bondi_viscous, bz_monopole, conducting_atmosphere,
+               emhdmodes, mhdmodes, mhdmodes_smr, noh, regrid, reinit, resize, restart, tilt_init, torus_sanity]
 
