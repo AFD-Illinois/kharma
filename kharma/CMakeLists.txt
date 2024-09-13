@@ -99,11 +99,17 @@ endif()
 # These are almost universally performance trade-offs,
 # or disabling features that need dependencies.
 # TODO is there any way to make compile options less painful in CMake?
+option(KHARMA_SPLIT_IMPLICIT_SOLVE "Split the implicit solver kernel into three. Only faster on Frontier, so far" OFF)
 option(FAST_CARTESIAN "Break operation in curved spacetimes to make Cartesian Minkowski space computations faster" OFF)
 option(KHARMA_DISABLE_IMPLICIT "Disable the implicit solver, which requires bundled kokkos-kernels. Default false" OFF)
 option(KHARMA_DISABLE_CLEANUP "Disable the magnetic field cleanup module, which requires recent Parthenon. Default false" OFF)
 option(KHARMA_TRACE "Compile with tracing: print entry and exit of important functions. Default false" OFF)
 
+if(KHARMA_SPLIT_IMPLICIT_SOLVE)
+    target_compile_definitions(${EXE_NAME} PUBLIC SPLIT_IMPLICIT_SOLVE=1)
+else()
+    target_compile_definitions(${EXE_NAME} PUBLIC SPLIT_IMPLICIT_SOLVE=0)
+endif()
 if(FAST_CARTESIAN)
     message("Compiling for Cartesian coordinates only. GRMHD will be disabled!")
     target_compile_definitions(${EXE_NAME} PUBLIC FAST_CARTESIAN=1)

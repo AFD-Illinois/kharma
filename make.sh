@@ -69,9 +69,13 @@ fi
 if [[ "$ARGS" == *"noimplicit"* ]]; then
   EXTRA_FLAGS="-DKHARMA_DISABLE_IMPLICIT=1 $EXTRA_FLAGS"
 fi
+# Always disable the OLD cleanup for now
 #if [[ "$ARGS" == *"nocleanup"* ]]; then
 EXTRA_FLAGS="-DKHARMA_DISABLE_CLEANUP=1 $EXTRA_FLAGS"
 #fi
+if [[ "$ARGS" == *"split_implicit"* ]]; then
+  EXTRA_FLAGS="-DKHARMA_SPLIT_IMPLICIT_SOLVE=1 $EXTRA_FLAGS"
+fi
 
 ### Enivoronment Prep ###
 if [[ "$(which python3 2>/dev/null)" == *"conda"* ]]; then
