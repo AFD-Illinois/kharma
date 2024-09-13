@@ -74,5 +74,5 @@ tests:
       # This should mirror the CPU tests *except* no driven turbulence test!
       # However, NVC++ mis-compiles our EMHD kernels so we do not test the following:
       # anisotropic_conduction, bondi_viscous, conducting_atmosphere, emhdmodes,
-      - TEST: [all_pars, bondi, bz_monopole, conducting_atmosphere, mhdmodes,
-               mhdmodes_smr, noh, regrid, reinit, resize, restart, tilt_init, torus_sanity]
+      - TEST: [all_pars, bondi, bz_monopole, mhdmodes, mhdmodes_smr, noh,
+               regrid, reinit, resize, restart, tilt_init, torus_sanity]
