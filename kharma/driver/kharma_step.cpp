@@ -1,25 +1,25 @@
-/* 
+/*
  *  File: kharma_step.cpp
- *  
+ *
  *  BSD 3-Clause License
- *  
+ *
  *  Copyright (c) 2020, AFD Group at UIUC
  *  All rights reserved.
- *  
+ *
  *  Redistribution and use in source and binary forms, with or without
  *  modification, are permitted provided that the following conditions are met:
- *  
+ *
  *  1. Redistributions of source code must retain the above copyright notice, this
  *     list of conditions and the following disclaimer.
- *  
+ *
  *  2. Redistributions in binary form must reproduce the above copyright notice,
  *     this list of conditions and the following disclaimer in the documentation
  *     and/or other materials provided with the distribution.
- *  
+ *
  *  3. Neither the name of the copyright holder nor the names of its
  *     contributors may be used to endorse or promote products derived from
  *     this software without specific prior written permission.
- *  
+ *
  *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
  *  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  *  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -54,6 +54,8 @@
 #include <parthenon/parthenon.hpp>
 #include <interface/update.hpp>
 #include <amr_criteria/refinement_package.hpp>
+
+using FC = Metadata::FlagCollection;
 
 TaskCollection KHARMADriver::MakeTaskCollection(BlockList_t &blocks, int stage)
 {
@@ -106,8 +108,21 @@ TaskCollection KHARMADriver::MakeDefaultTaskCollection(BlockList_t &blocks, int 
             pmesh->mesh_data.Add(integrator->stage_name[i], base);
         // Preserve state for time derivatives if we need to output current
         if (use_jcon) {
+            // Pick out the variables we need, to allocate and copy less
+            static std::vector<std::string> preserve_vars;
+            if (preserve_vars.size() == 0) {
+                auto preserve_flags = FC({Metadata::GetUserFlag("MHD"), Metadata::GetUserFlag("Primitive")});
+                preserve_vars = KHARMA::GetVariableNames(&(pmesh->packages), preserve_flags);
+            }
+            // Ensure we copy the MHD variables every step with a task
             // "Add" returns either the newly added or existing member of the mesh_data collection
-            Copy<MeshData<Real>>({Metadata::Cell}, base.get(), pmesh->mesh_data.Add("preserve", base).get());
+            const int num_partitions = pmesh->DefaultNumPartitions();
+            TaskRegion &copy_region = tc.AddRegion(num_partitions);
+            for (int i = 0; i < num_partitions; i++) {
+                auto &tl = copy_region[i];
+                tl.AddTask(t_none, Copy<MeshData<Real>>, preserve_vars,
+                            base.get(), pmesh->mesh_data.Add("preserve", base, preserve_vars).get());
+            }
         }
         // FOFC needs to determine whether the "real" U-divF will violate floors, and needs a safe place to do it.
         // We populate it later, with each *sub-step*'s initial state
@@ -124,7 +139,6 @@ TaskCollection KHARMADriver::MakeDefaultTaskCollection(BlockList_t &blocks, int 
         // Build the universe of variables to let Parthenon see when exchanging boundaries.
         // This is built to exclude incidental variables like B field initialization stuff, EMFs, etc.
         // "Boundaries" packs in buffers e.g. Dirichlet boundaries
-        using FC = Metadata::FlagCollection;
         auto sync_flags = FC({Metadata::GetUserFlag("Primitive"), Metadata::Conserved,
                               Metadata::Face, Metadata::GetUserFlag("Boundaries")}, true);
         sync_vars = KHARMA::GetVariableNames(&(pmesh->packages), sync_flags);
@@ -135,7 +149,7 @@ TaskCollection KHARMADriver::MakeDefaultTaskCollection(BlockList_t &blocks, int 
     TaskRegion &flux_region = tc.AddRegion(num_partitions);
     for (int i = 0; i < num_partitions; i++) {
         auto &tl = flux_region[i];
-        // Container names: 
+        // Container names:
         // '_full_step_init' refers to the fluid state at the start of the full time step (Si in iharm3d)
         // '_sub_step_init' refers to the fluid state at the start of the sub step (Ss in iharm3d)
         // '_sub_step_final' refers to the fluid state at the end of the sub step (Sf in iharm3d)
@@ -246,7 +260,7 @@ TaskCollection KHARMADriver::MakeDefaultTaskCollection(BlockList_t &blocks, int 
         // and this must be calculated from the fluid primitive variables rho,u (and for stability, obey floors!).
         // Only now do we have the end-of-step primitives in consistent, corrected forms.
         // Luckily, ApplyElectronHeating should *not* need another synchronization of the ghost zones, as it is applied to
-        // all zones and has a stencil of only one zone.  As with UtoP, this trusts that evaluations 
+        // all zones and has a stencil of only one zone.  As with UtoP, this trusts that evaluations
         // of the same zone match between MeshBlocks.
 
         // Any package- (likely, problem-) specific source terms which must be applied to primitive variables

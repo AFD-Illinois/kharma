@@ -1,25 +1,25 @@
-/* 
+/*
  *  File: imex_step.cpp
- *  
+ *
  *  BSD 3-Clause License
- *  
+ *
  *  Copyright (c) 2020, AFD Group at UIUC
  *  All rights reserved.
- *  
+ *
  *  Redistribution and use in source and binary forms, with or without
  *  modification, are permitted provided that the following conditions are met:
- *  
+ *
  *  1. Redistributions of source code must retain the above copyright notice, this
  *     list of conditions and the following disclaimer.
- *  
+ *
  *  2. Redistributions in binary form must reproduce the above copyright notice,
  *     this list of conditions and the following disclaimer in the documentation
  *     and/or other materials provided with the distribution.
- *  
+ *
  *  3. Neither the name of the copyright holder nor the names of its
  *     contributors may be used to endorse or promote products derived from
  *     this software without specific prior written permission.
- *  
+ *
  *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
  *  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  *  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -56,6 +56,8 @@
 #include <interface/update.hpp>
 #include <amr_criteria/refinement_package.hpp>
 
+using FC = Metadata::FlagCollection;
+
 TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int stage)
 {
     // Reminder that this list is created BEFORE any of the list contents are run!
@@ -88,8 +90,21 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
             pmesh->mesh_data.Add(integrator->stage_name[i], base);
         // Preserve state for time derivatives if we need to output current
         if (use_jcon) {
+            // Pick out the variables we need, to allocate and copy less
+            static std::vector<std::string> preserve_vars;
+            if (preserve_vars.size() == 0) {
+                auto preserve_flags = FC({Metadata::GetUserFlag("MHD"), Metadata::GetUserFlag("Primitive")});
+                preserve_vars = KHARMA::GetVariableNames(&(pmesh->packages), preserve_flags);
+            }
+            // Ensure we copy the MHD variables every step with a task
             // "Add" returns either the newly added or existing member of the mesh_data collection
-            Copy<MeshData<Real>>({Metadata::Cell}, base.get(), pmesh->mesh_data.Add("preserve", base).get());
+            const int num_partitions = pmesh->DefaultNumPartitions();
+            TaskRegion &copy_region = tc.AddRegion(num_partitions);
+            for (int i = 0; i < num_partitions; i++) {
+                auto &tl = copy_region[i];
+                tl.AddTask(t_none, Copy<MeshData<Real>>, preserve_vars,
+                            base.get(), pmesh->mesh_data.Add("preserve", base, preserve_vars).get());
+            }
         }
         // FOFC needs to determine whether the "real" U-divF will violate floors, and needs a safe place to do it.
         // We populate it later, with each *sub-step*'s initial state
@@ -113,7 +128,6 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
         // Build the universe of variables to let Parthenon see when exchanging boundaries.
         // This is built to exclude incidental variables like B field initialization stuff, EMFs, etc.
         // "Boundaries" packs in buffers e.g. Dirichlet boundaries
-        using FC = Metadata::FlagCollection;
         auto sync_flags = FC({Metadata::GetUserFlag("Primitive"), Metadata::Conserved,
                               Metadata::Face, Metadata::GetUserFlag("Boundaries")}, true);
         sync_vars = KHARMA::GetVariableNames(&(pmesh->packages), sync_flags);
@@ -124,7 +138,7 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
     TaskRegion &flux_region = tc.AddRegion(num_partitions);
     for (int i = 0; i < num_partitions; i++) {
         auto &tl = flux_region[i];
-        // Container names: 
+        // Container names:
         // '_full_step_init' refers to the fluid state at the start of the full time step (Si in iharm3d)
         // '_sub_step_init' refers to the fluid state at the start of the sub step (Ss in iharm3d)
         // '_sub_step_final' refers to the fluid state at the end of the sub step (Sf in iharm3d)
@@ -146,7 +160,7 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
         auto t_start_recv_flux = t_start_recv_bound;
         if (pmesh->multilevel || use_b_ct)
             t_start_recv_flux = tl.AddTask(t_none, parthenon::StartReceiveFluxCorrections, md_sub_step_init);
-        
+
         // Calculate the flux of each variable through each face
         // This reconstructs the primitives (P) at faces and uses them to calculate fluxes
         // of the conserved variables (U) through each face.
@@ -162,7 +176,7 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
         // Any package modifications to the fluxes.  e.g.:
         // 1. CT calculations for B field transport
         // 2. Zero fluxes through poles
-        // etc 
+        // etc
         auto t_fix_flux = tl.AddTask(t_fluxes, Packages::FixFlux, md_sub_step_init.get());
 
         // If we're in AMR, correct fluxes from neighbors
@@ -244,7 +258,7 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
             // Time-step implicit variables by root-finding the residual.
             // This calculates the primitive values after the substep for all "isImplicit" variables --
             // no need for separately adding the flux divergence or calling UtoP
-            auto t_implicit_step = tl.AddTask(t_copy_linesearch, Implicit::Step, md_full_step_init.get(), md_sub_step_init.get(), 
+            auto t_implicit_step = tl.AddTask(t_copy_linesearch, Implicit::Step, md_full_step_init.get(), md_sub_step_init.get(),
                                          md_flux_src.get(), md_linesearch.get(), md_solver.get(), integrator->beta[stage-1] * integrator->dt);
 
             // Copy the entire solver state (everything defined on the grid, incl. our new Face variables) into the final state md_sub_step_final
