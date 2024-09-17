@@ -106,22 +106,25 @@ TaskCollection KHARMADriver::MakeDefaultTaskCollection(BlockList_t &blocks, int 
         pmesh->mesh_data.Add("dUdt", base);
         for (int i = 1; i < integrator->nstages; i++)
             pmesh->mesh_data.Add(integrator->stage_name[i], base);
-        // Preserve state for time derivatives if we need to output current
+
         if (use_jcon) {
+            // Preserve state for time derivatives if we need to output current
             // Pick out the variables we need, to allocate and copy less
+            static parthenon::Metadata::FlagVec preserve_flags;
             static std::vector<std::string> preserve_vars;
             if (preserve_vars.size() == 0) {
-                auto preserve_flags = FC({Metadata::GetUserFlag("MHD"), Metadata::GetUserFlag("Primitive")});
-                preserve_vars = KHARMA::GetVariableNames(&(pmesh->packages), preserve_flags);
+                preserve_flags = {Metadata::GetUserFlag("MHD"), Metadata::GetUserFlag("Primitive")};
+                preserve_vars = KHARMA::GetVariableNames(&(pmesh->packages), FC(preserve_flags));
             }
+            // Add the container once to avoid re-adding if we have lots of partitions
+            pmesh->mesh_data.Add("preserve", base, preserve_vars);
             // Ensure we copy the MHD variables every step with a task
-            // "Add" returns either the newly added or existing member of the mesh_data collection
             const int num_partitions = pmesh->DefaultNumPartitions();
             TaskRegion &copy_region = tc.AddRegion(num_partitions);
             for (int i = 0; i < num_partitions; i++) {
                 auto &tl = copy_region[i];
-                tl.AddTask(t_none, Copy<MeshData<Real>>, preserve_vars,
-                            base.get(), pmesh->mesh_data.Add("preserve", base, preserve_vars).get());
+                tl.AddTask(t_none, Copy<MeshData<Real>>, preserve_flags,
+                            base.get(), pmesh->mesh_data.Get("preserve").get());
             }
         }
         // FOFC needs to determine whether the "real" U-divF will violate floors, and needs a safe place to do it.
