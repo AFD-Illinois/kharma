@@ -68,7 +68,6 @@ namespace m = std;
 #include <parthenon_arrays.hpp>
 #include <parthenon_mpi.hpp>
 #include <globals.hpp>
-#include <bvals/bvals_interfaces.hpp>
 #include <mesh/domain.hpp>
 
 // KHARMA DEFINITIONS
@@ -79,7 +78,7 @@ using parthenon::Real;
 using GReal = double;
 
 // A small number, compared to the grid or problem scale
-#define SMALL 1e-20
+#define SMALL_NUM 1e-20
 
 // GEOMETRY
 // This stuff needs to be in decs.h as it's used by functions in coordinates/,
