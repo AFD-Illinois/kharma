@@ -117,14 +117,14 @@ TaskCollection KHARMADriver::MakeDefaultTaskCollection(BlockList_t &blocks, int 
                 preserve_vars = KHARMA::GetVariableNames(&(pmesh->packages), FC(preserve_flags));
             }
             // Add the container once to avoid re-adding if we have lots of partitions
-            pmesh->mesh_data.Add("preserve", base, preserve_vars);
+            //pmesh->mesh_data.Add("preserve", base, preserve_vars);
             // Ensure we copy the MHD variables every step with a task
             const int num_partitions = pmesh->DefaultNumPartitions();
             TaskRegion &copy_region = tc.AddRegion(num_partitions);
             for (int i = 0; i < num_partitions; i++) {
                 auto &tl = copy_region[i];
                 tl.AddTask(t_none, Copy<MeshData<Real>>, preserve_flags,
-                            base.get(), pmesh->mesh_data.Get("preserve").get());
+                            base.get(), pmesh->mesh_data.Add("preserve", base, preserve_vars).get());
             }
         }
         // FOFC needs to determine whether the "real" U-divF will violate floors, and needs a safe place to do it.
