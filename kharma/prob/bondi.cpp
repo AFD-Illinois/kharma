@@ -59,7 +59,6 @@ void AddBondiParameters(ParameterInput *pin, Packages_t &packages)
     const Real rin_bondi = rin_bondi_tmp;
 
     const bool fill_interior = pin->GetOrAddBoolean("bondi", "fill_interior", false);
-    const bool zero_velocity = pin->GetOrAddBoolean("bondi", "zero_velocity", false);
     const bool diffinit = pin->GetOrAddBoolean("bondi", "diffinit", false); // uses r^-1 density initialization instead
 
     // Add these to package properties, since they continue to be needed on boundaries
@@ -72,8 +71,6 @@ void AddBondiParameters(ParameterInput *pin, Packages_t &packages)
         packages.Get("GRMHD")->AddParam<Real>("rin_bondi", rin_bondi);
     if(! packages.Get("GRMHD")->AllParams().hasKey("fill_interior_bondi"))
         packages.Get("GRMHD")->AddParam<Real>("fill_interior_bondi", fill_interior);
-    if(! packages.Get("GRMHD")->AllParams().hasKey("zero_velocity_bondi"))
-        packages.Get("GRMHD")->AddParam<Real>("zero_velocity_bondi", zero_velocity);
     if(! packages.Get("GRMHD")->AllParams().hasKey("diffinit_bondi"))
         packages.Get("GRMHD")->AddParam<Real>("diffinit_bondi", diffinit);
     if(! (packages.Get("GRMHD")->AllParams().hasKey("ur_frac")))
@@ -158,7 +155,6 @@ TaskStatus SetBondiImpl(std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain do
     const Real uphi = pmb->packages.Get("GRMHD")->Param<Real>("uphi");
     const Real rin_bondi = pmb->packages.Get("GRMHD")->Param<Real>("rin_bondi");
     const bool fill_interior = pmb->packages.Get("GRMHD")->Param<Real>("fill_interior_bondi");
-    const bool zero_velocity = pmb->packages.Get("GRMHD")->Param<Real>("zero_velocity_bondi");
     const bool diffinit = pmb->packages.Get("GRMHD")->Param<Real>("diffinit_bondi");
 
     const EMHD::EMHD_parameters& emhd_params = EMHD::GetEMHDParameters(pmb->packages);

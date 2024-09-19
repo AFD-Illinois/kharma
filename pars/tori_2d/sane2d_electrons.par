@@ -1,7 +1,5 @@
-# SANE model mirroring the simulation library
-# Overall simulation size 50M, to allow
-# running at small scale on e.g. a laptop
-# Uses MKS coordinates, not Funky variant
+# 2D SANE model w/electron heating
+# Compares a bunch of heating models
 
 <parthenon/job>
 problem_id = torus
@@ -59,12 +57,6 @@ ktot_max = 1500
 u_over_rho_max = 100
 bsq_over_rho_max = 100
 
-<units>
-MBH = 3.9e6, 4.3e6, 6.5e9
-M_unit_1 = 1e17, 1e18, 1e19
-M_unit_2 = 1e17, 1e18, 1e19
-M_unit_3 = 1e20, 1e21, 1e22
-
 <electrons>
 on = true
 howes = false
@@ -73,24 +65,15 @@ werner = true
 rowan = true
 sharma = true
 
-<wind>
-on = false
-
 <parthenon/output0>
 file_type = hdf5
 dt = 10.0
 single_precision_output = true
-# Any fields listed here which are not present (e.g. electrons if disabled)
-# will be silently skipped. '&' character is a line continuation, like '\'
-# Remember that the commas are still necessary, and unknown fields will silently fail!
-variables = prims.rho, prims.u, prims.uvec, prims.B, prims.Ktot, &
-            prims.Kel_Howes, prims.Kel_Kawazura, prims.Kel_Werner, prims.Kel_Rowan, prims.Kel_Sharma, &
-            pflag, fflag
+variables = prims, pflag, fflag
 
 <parthenon/output1>
 file_type = rst
 dt = 100.0
-ghost_zones = true
 
 <parthenon/output2>
 file_type = hst

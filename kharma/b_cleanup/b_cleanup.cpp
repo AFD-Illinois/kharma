@@ -35,6 +35,7 @@
 
 // For a bunch of utility functions
 #include "b_flux_ct.hpp"
+#include "b_ct.hpp"
 
 #include "boundaries.hpp"
 #include "decs.hpp"
@@ -43,6 +44,7 @@
 #include "kharma_driver.hpp"
 #include "grmhd.hpp"
 #include "kharma.hpp"
+#include "types.hpp"
 
 #if DISABLE_CLEANUP
 
@@ -67,7 +69,8 @@ std::shared_ptr<KHARMAPackage> B_Cleanup::Initialize(ParameterInput *pin, std::s
     auto pkg = std::make_shared<KHARMAPackage>("B_Cleanup");
     Params &params = pkg->AllParams();
 
-    // TODO also support face divB!!
+    // If face centered fields...
+    const bool use_b_ct = packages->AllPackages().count("B_CT");
 
     // Solver options
     // Allow setting tolerance relative to starting value
@@ -89,7 +92,7 @@ std::shared_ptr<KHARMAPackage> B_Cleanup::Initialize(ParameterInput *pin, std::s
     bool use_normalized_divb = pin->GetOrAddBoolean("b_cleanup", "use_normalized_divb", false);
     params.Add("use_normalized_divb", use_normalized_divb);
 
-    // Finally, initialize the solver
+    // Initialize the solver
     // Translate parameters
     params.Add("bicgstab_max_iterations", max_iterations);
     params.Add("bicgstab_check_interval", check_interval);
@@ -109,7 +112,11 @@ std::shared_ptr<KHARMAPackage> B_Cleanup::Initialize(ParameterInput *pin, std::s
     BiCGStabSolver<int> solver(pkg.get(), rel_tolerance, abs_tolerance,
                                 SparseMatrixAccessor(), {}, {Metadata::GetUserFlag("StartupOnly")});
     // Set callback
-    solver.user_MatVec = B_Cleanup::CornerLaplacian;
+    if (use_b_ct) {
+        solver.user_MatVec = B_Cleanup::CenterLaplacian;
+    } else {
+        solver.user_MatVec = B_Cleanup::CornerLaplacian;
+    }
 
     params.Add("solver", solver);
 
@@ -117,17 +124,33 @@ std::shared_ptr<KHARMAPackage> B_Cleanup::Initialize(ParameterInput *pin, std::s
     std::vector<int> s_vector({NVEC});
     std::vector<MetadataFlag> cleanup_flags({Metadata::Real, Metadata::Derived, Metadata::OneCopy,
                                              Metadata::GetUserFlag("StartupOnly")});
-    auto cleanup_flags_node = cleanup_flags;
-    cleanup_flags_node.push_back(Metadata::FillGhost);
-    cleanup_flags_node.push_back(Metadata::Node);
-    auto cleanup_flags_cell = cleanup_flags;
-    cleanup_flags_cell.push_back(Metadata::Cell);
-    // Scalar potential, solution to del^2 p = div B
-    pkg->AddField("p", Metadata(cleanup_flags_node));
-    // Gradient of potential; temporary for gradient calc
-    pkg->AddField("dB", Metadata(cleanup_flags_cell, s_vector));
-    // Field divergence as RHS, i.e. including boundary sync
-    pkg->AddField("RHS_divB", Metadata(cleanup_flags_node));
+    if (use_b_ct) {
+        auto cleanup_flags_cell = cleanup_flags;
+        cleanup_flags_cell.push_back(Metadata::FillGhost);
+        cleanup_flags_cell.push_back(Metadata::Cell);
+        auto cleanup_flags_face = cleanup_flags;
+        cleanup_flags_face.push_back(Metadata::Face);
+        //cleanup_flags_face.push_back(Metadata::FillGhost);
+        //cleanup_flags_face.push_back(Metadata::GetUserFlag("SplitVector"));
+        // Scalar potential, solution to del^2 p = div B
+        pkg->AddField("p", Metadata(cleanup_flags_cell));
+        // Gradient of potential; temporary for gradient calc
+        pkg->AddField("dB", Metadata(cleanup_flags_face));
+        // Field divergence as RHS, i.e. including boundary sync
+        pkg->AddField("RHS_divB", Metadata(cleanup_flags_cell));
+    } else {
+        auto cleanup_flags_node = cleanup_flags;
+        cleanup_flags_node.push_back(Metadata::FillGhost);
+        cleanup_flags_node.push_back(Metadata::Node);
+        auto cleanup_flags_cell = cleanup_flags;
+        cleanup_flags_cell.push_back(Metadata::Cell);
+        // Scalar potential, solution to del^2 p = div B
+        pkg->AddField("p", Metadata(cleanup_flags_node));
+        // Gradient of potential; temporary for gradient calc
+        pkg->AddField("dB", Metadata(cleanup_flags_cell, s_vector));
+        // Field divergence as RHS, i.e. including boundary sync
+        pkg->AddField("RHS_divB", Metadata(cleanup_flags_node));
+    }
 
 
     // Optionally take care of B field transport ourselves.  Inadvisable.
@@ -166,8 +189,10 @@ TaskStatus B_Cleanup::CleanupDivergence(std::shared_ptr<MeshData<Real>>& md)
     auto warn_flag = pkg->Param<bool>("warn_without_convergence");
     auto always_solve = pkg->Param<bool>("always_solve");
     auto solver = pkg->Param<BiCGStabSolver<int>>("solver");
-    auto verbose = pmesh->packages.Get("Globals")->Param<int>("verbose");
     auto use_normalized = pkg->Param<bool>("use_normalized_divb");
+
+    auto verbose = pmesh->packages.Get("Globals")->Param<int>("verbose");
+    const bool use_b_ct = pmesh->packages.AllPackages().count("B_CT");
 
     if (MPIRank0() && verbose > 0) {
         std::cout << "Cleaning divB to absolute tolerance " << abs_tolerance <<
@@ -177,7 +202,12 @@ TaskStatus B_Cleanup::CleanupDivergence(std::shared_ptr<MeshData<Real>>& md)
     }
 
     // Calculate/print inital max divB exactly as we would during run
-    const double divb_start = B_FluxCT::GlobalMaxDivB(md.get(), true);
+    double divb_start; 
+    if (use_b_ct) {
+        divb_start = B_CT::GlobalMaxDivB(md.get());
+    } else {
+        divb_start = B_FluxCT::GlobalMaxDivB(md.get(), true);
+    }
     if ((divb_start < abs_tolerance  || divb_start < rel_tolerance) && !always_solve) {
         // If divB is "pretty good" and we allow not solving...
         if (MPIRank0())
@@ -194,8 +224,12 @@ TaskStatus B_Cleanup::CleanupDivergence(std::shared_ptr<MeshData<Real>>& md)
     auto &msolve = pmesh->mesh_data.AddShallow("solve", names);
 
     // Initialize the divB variable, which we'll be solving against.
-    // This gets signed divB on all physical corners (total (N+1)^3)
-    B_FluxCT::CalcDivB(md.get(), "RHS_divB"); // this fn draws from cons.B, which is not in msolve
+    if (use_b_ct) {
+        B_CT::CalcDivB(md.get(), "RHS_divB"); // this fn draws from cons.fB, which is not in msolve
+    } else {
+        // This gets signed divB on all physical corners (total (N+1)^3)
+        B_FluxCT::CalcDivB(md.get(), "RHS_divB"); // this fn draws from cons.B, which is not in msolve
+    }
     if (use_normalized) {
         // Normalize divB by local metric determinant for fairer weighting of errors
         // Note that laplacian operator will also have to be normalized ofc
@@ -207,7 +241,11 @@ TaskStatus B_Cleanup::CleanupDivergence(std::shared_ptr<MeshData<Real>>& md)
         pmb0->par_for("normalize_divB", 0, divb_rhs.GetDim(5)-1, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
             KOKKOS_LAMBDA (const int& b, const int &k, const int &j, const int &i) {
                 const auto& G = divb_rhs.GetCoords(b);
-                divb_rhs(b, NN, 0, k, j, i) /= G.gdet(Loci::corner, j, i);
+                if (use_b_ct) {
+                    divb_rhs(b, CC, 0, k, j, i) /= G.gdet(Loci::center, j, i);
+                } else {
+                    divb_rhs(b, NN, 0, k, j, i) /= G.gdet(Loci::corner, j, i);
+                }
             }
         );
     }
@@ -228,15 +266,28 @@ TaskStatus B_Cleanup::CleanupDivergence(std::shared_ptr<MeshData<Real>>& md)
     if (MPIRank0() && verbose > 0) {
         std::cout << "Applying magnetic field correction" << std::endl;
     }
-    // Update the (conserved) magnetic field on physical zones using our solution
-    B_Cleanup::ApplyP(md.get(), md.get());
-    // Synchronize to update cons.B's ghost zones
-    KHARMADriver::SyncAllBounds(md);
-    // Make sure prims.B reflects solution
-    B_FluxCT::MeshUtoP(md.get(), IndexDomain::entire, false);
 
-    // Recalculate divB max for one last check
-    const double divb_end = B_FluxCT::GlobalMaxDivB(md.get());
+    double divb_end;
+    if (use_b_ct) {
+        // Update the (conserved) magnetic field on physical zones using our solution
+        B_Cleanup::ApplyPFace(md.get(), md.get());
+        // Synchronize to update cons.B's ghost zones
+        KHARMADriver::SyncAllBounds(md);
+        // Make sure prims.B reflects solution
+        B_CT::MeshUtoP(md.get(), IndexDomain::entire, false);
+        // Recalculate divB max for one last check
+        divb_end = B_CT::GlobalMaxDivB(md.get());
+    } else {
+        // Update the (conserved) magnetic field on physical zones using our solution
+        B_Cleanup::ApplyPCenter(md.get(), md.get());
+        // Synchronize to update cons.B's ghost zones
+        KHARMADriver::SyncAllBounds(md);
+        // Make sure prims.B reflects solution
+        B_FluxCT::MeshUtoP(md.get(), IndexDomain::entire, false);
+        // Recalculate divB max for one last check
+        divb_end = B_FluxCT::GlobalMaxDivB(md.get());
+    }
+
     if (MPIRank0()) {
         std::cout << "Magnetic field divergence after cleanup: " << divb_end << std::endl;
     }
@@ -244,7 +295,7 @@ TaskStatus B_Cleanup::CleanupDivergence(std::shared_ptr<MeshData<Real>>& md)
     return TaskStatus::complete;
 }
 
-TaskStatus B_Cleanup::ApplyP(MeshData<Real> *msolve, MeshData<Real> *md)
+TaskStatus B_Cleanup::ApplyPCenter(MeshData<Real> *msolve, MeshData<Real> *md)
 {
     // Apply on physical zones only, we'll be syncing/updating ghosts
     const IndexRange3 b = KDomain::GetRange(msolve, IndexDomain::interior, 0, 1);
@@ -260,10 +311,33 @@ TaskStatus B_Cleanup::ApplyP(MeshData<Real> *msolve, MeshData<Real> *md)
         KOKKOS_LAMBDA (const int& b, const int &k, const int &j, const int &i) {
             const auto& G = P.GetCoords(b);
             double b1, b2, b3;
-            B_FluxCT::center_grad(G, P, b, k, j, i, ndim > 2, b1, b2, b3);
+            B_FluxCT::center_grad(G, P(b), k, j, i, ndim > 2, b1, b2, b3);
             B(b, V1, k, j, i) -= b1;
             B(b, V2, k, j, i) -= b2;
             B(b, V3, k, j, i) -= b3;
+        }
+    );
+
+    return TaskStatus::complete;
+}
+TaskStatus B_Cleanup::ApplyPFace(MeshData<Real> *msolve, MeshData<Real> *md)
+{
+    auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
+
+    auto P = msolve->PackVariables(std::vector<std::string>{"p"});
+    auto B = md->PackVariables(std::vector<std::string>{"cons.fB"});
+
+    const int ndim = P.GetNdim();
+
+    // dB = grad(p), defined at cell centers, subtract to make field divergence-free
+    // Apply on all physical faces, we'll be syncing/updating ghosts
+    const IndexRange3 b = KDomain::GetRange(msolve, IndexDomain::interior, 0, 1);
+    pmb0->par_for("gradient_P", 0, P.GetDim(5) - 1, b.ks, b.ke, b.js, b.je, b.is, b.ie,
+        KOKKOS_LAMBDA (const int& b, const int &k, const int &j, const int &i) {
+            const auto& G = P.GetCoords(b);
+            B(b, F1, 0, k, j, i) -= B_CT::face_grad<X1DIR>(G, P(b), k, j, i);
+            B(b, F2, 0, k, j, i) -= B_CT::face_grad<X2DIR>(G, P(b), k, j, i);
+            B(b, F3, 0, k, j, i) -= B_CT::face_grad<X3DIR>(G, P(b), k, j, i);
         }
     );
 
@@ -302,7 +376,7 @@ TaskStatus B_Cleanup::CornerLaplacian(MeshData<Real>* md, const std::string& p_v
         KOKKOS_LAMBDA (const int& b, const int &k, const int &j, const int &i) {
             const auto& G = P.GetCoords(b);
             double b1, b2, b3;
-            B_FluxCT::center_grad(G, P, b, k, j, i, ndim > 2, b1, b2, b3);
+            B_FluxCT::center_grad(G, P(b), k, j, i, ndim > 2, b1, b2, b3);
             dB(b, V1, k, j, i) = b1;
             dB(b, V2, k, j, i) = b2;
             dB(b, V3, k, j, i) = b3;
@@ -310,28 +384,30 @@ TaskStatus B_Cleanup::CornerLaplacian(MeshData<Real>* md, const std::string& p_v
     );
 
     // Replace ghost zone calculations with strict boundary conditions
-    // Only necessary in j so far, but there's no reason it shouldn't be done in i,k
-    for (int i=0; i < md->GetMeshPointer()->GetNumMeshBlocksThisRank(); i++) {
-        auto rc = md->GetBlockData(i);
-        auto pmb = rc->GetBlockPointer();
-        auto dB_block = rc->PackVariables(std::vector<std::string>{"dB"});
-        if (pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::user) {
-            pmb->par_for("dB_boundary", kb_l.s, kb_l.e, ib_l.s, ib_l.e,
-                KOKKOS_LAMBDA (const int &k, const int &i) {
-                    dB_block(V1, k, jb.s-1, i) = dB_block(V1, k, jb.s, i);
-                    dB_block(V2, k, jb.s-1, i) = -dB_block(V2, k, jb.s, i);
-                    dB_block(V3, k, jb.s-1, i) = dB_block(V3, k, jb.s, i);
-                }
-            );
-        }
-        if (pmb->boundary_flag[BoundaryFace::outer_x2] == BoundaryFlag::user) {
-            pmb->par_for("dB_boundary", kb_l.s, kb_l.e, ib_l.s, ib_l.e,
-                KOKKOS_LAMBDA (const int &k, const int &i) {
-                    dB_block(V1, k, jb.e+1, i) = dB_block(V1, k, jb.e, i);
-                    dB_block(V2, k, jb.e+1, i) = -dB_block(V2, k, jb.e, i);
-                    dB_block(V3, k, jb.e+1, i) = dB_block(V3, k, jb.e, i);
-                }
-            );
+    // Only necessary in j for poles so far, but maybe this should be the condition for outflow too?
+    if (pmb0->coords.coords.is_spherical()) {
+        for (int i=0; i < md->GetMeshPointer()->GetNumMeshBlocksThisRank(); i++) {
+            auto rc = md->GetBlockData(i);
+            auto pmb = rc->GetBlockPointer();
+            auto dB_block = rc->PackVariables(std::vector<std::string>{"dB"});
+            if (pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::user) {
+                pmb->par_for("dB_boundary", kb_l.s, kb_l.e, ib_l.s, ib_l.e,
+                    KOKKOS_LAMBDA (const int &k, const int &i) {
+                        dB_block(V1, k, jb.s-1, i) = dB_block(V1, k, jb.s, i);
+                        dB_block(V2, k, jb.s-1, i) = -dB_block(V2, k, jb.s, i);
+                        dB_block(V3, k, jb.s-1, i) = dB_block(V3, k, jb.s, i);
+                    }
+                );
+            }
+            if (pmb->boundary_flag[BoundaryFace::outer_x2] == BoundaryFlag::user) {
+                pmb->par_for("dB_boundary", kb_l.s, kb_l.e, ib_l.s, ib_l.e,
+                    KOKKOS_LAMBDA (const int &k, const int &i) {
+                        dB_block(V1, k, jb.e+1, i) = dB_block(V1, k, jb.e, i);
+                        dB_block(V2, k, jb.e+1, i) = -dB_block(V2, k, jb.e, i);
+                        dB_block(V3, k, jb.e+1, i) = dB_block(V3, k, jb.e, i);
+                    }
+                );
+            }
         }
     }
 
@@ -340,12 +416,126 @@ TaskStatus B_Cleanup::CornerLaplacian(MeshData<Real>* md, const std::string& p_v
         KOKKOS_LAMBDA (const int& b, const int &k, const int &j, const int &i) {
             const auto& G = lap.GetCoords(b);
             // This is the inverse diagonal element of a fictional a_ij Laplacian operator
-            lap(b, 0, k, j, i) = B_FluxCT::corner_div(G, dB, b, k, j, i, ndim > 2);
+            lap(b, 0, k, j, i) = B_FluxCT::corner_div(G, dB(b), k, j, i, ndim > 2);
             if (use_normalized) {
                 lap(b, 0, k, j, i) /= G.gdet(Loci::corner, j, i);
             }
         }
     );
+
+    return TaskStatus::complete;
+}
+
+TaskStatus B_Cleanup::CenterLaplacian(MeshData<Real>* md, const std::string& p_var, MeshData<Real>* md_again, const std::string& lap_var)
+{
+    auto pkg = md->GetMeshPointer()->packages.Get("B_Cleanup");
+    const auto use_normalized = pkg->Param<bool>("use_normalized_divb");
+
+    auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
+
+    auto P = md->PackVariables(std::vector<std::string>{p_var});
+    auto lap = md->PackVariables(std::vector<std::string>{lap_var});
+    auto dB = md->PackVariables(std::vector<std::string>{"dB"}); // Temp
+
+    const int ndim = P.GetNdim();
+    const IndexRange block = IndexRange{0, P.GetDim(5) - 1};
+
+    // dB = grad(p), interpolating to faces
+    // Do I know why these have to be ::entire?  No.  Does it work?  Yes.
+    // TODO separate gradient functions since we're calculating directions separately anyway
+    const IndexRange3 b1 = KDomain::GetRange(md, IndexDomain::entire, F1, 1, -1, false);
+    pmb0->par_for("gradient_P", block.s, block.e, b1.ks, b1.ke, b1.js, b1.je, b1.is, b1.ie,
+        KOKKOS_LAMBDA (const int& b, const int &k, const int &j, const int &i) {
+            const auto& G = P.GetCoords(b);
+            dB(b, F1, 0, k, j, i) = B_CT::face_grad<X1DIR>(G, P(b), k, j, i);
+        }
+    );
+    const IndexRange3 b2 = KDomain::GetRange(md, IndexDomain::entire, F2, 1, -1, false);
+    pmb0->par_for("gradient_P", block.s, block.e, b2.ks, b2.ke, b2.js, b2.je, b2.is, b2.ie,
+        KOKKOS_LAMBDA (const int& b, const int &k, const int &j, const int &i) {
+            const auto& G = P.GetCoords(b);
+            dB(b, F2, 0, k, j, i) = B_CT::face_grad<X2DIR>(G, P(b), k, j, i);
+        }
+    );
+    if (ndim > 2) {
+        const IndexRange3 b3 = KDomain::GetRange(md, IndexDomain::entire, F3, 1, -1, false);
+        pmb0->par_for("gradient_P", block.s, block.e, b3.ks, b3.ke, b3.js, b3.je, b3.is, b3.ie,
+            KOKKOS_LAMBDA (const int& b, const int &k, const int &j, const int &i) {
+                const auto& G = P.GetCoords(b);
+                dB(b, F3, 0, k, j, i) = B_CT::face_grad<X3DIR>(G, P(b), k, j, i);
+            }
+        );
+    }
+
+    // Make sure B on poles is zero
+    if (pmb0->coords.coords.is_spherical()) {
+        for (int i=0; i < md->GetMeshPointer()->GetNumMeshBlocksThisRank(); i++) {
+            auto rc = md->GetBlockData(i);
+            auto pmb = rc->GetBlockPointer();
+            auto dB_block = rc->PackVariables(std::vector<std::string>{"dB"});
+            const IndexRange3 bi2 = KDomain::GetRange(md, IndexDomain::interior, F2);
+            if (pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::user) {
+                pmb->par_for("dB_boundary", b2.ks, b2.ke, bi2.js, bi2.js, b2.is, b2.ie,
+                    KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+                        dB_block(F2, 0, k, j, i) = 0.;
+                    }
+                );
+            }
+            if (pmb->boundary_flag[BoundaryFace::outer_x2] == BoundaryFlag::user) {
+                pmb->par_for("dB_boundary", b2.ks, b2.ke, bi2.je, bi2.je, b2.is, b2.ie,
+                    KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+                        dB_block(F2, 0, k, j, i) = 0.;
+                    }
+                );
+            }
+        }
+    }
+
+    // lap = div(dB), interpolating back to cell centers
+    const IndexRange3 bc = KDomain::GetRange(md, IndexDomain::entire, CC, false);
+    pmb0->par_for("laplacian_dB", block.s, block.e, bc.ks, bc.ke, bc.js, bc.je, bc.is, bc.ie,
+        KOKKOS_LAMBDA (const int& b, const int &k, const int &j, const int &i) {
+            const auto& G = lap.GetCoords(b);
+            // This is the inverse diagonal element of a fictional a_ij Laplacian operator
+            lap(b, 0, k, j, i) = B_CT::face_div(G, dB(b), ndim, k, j, i);
+            if (use_normalized) {
+                lap(b, 0, k, j, i) /= G.gdet(Loci::corner, j, i);
+            }
+        }
+    );
+
+    // Make sure divB on outflows is 0
+    // Our outflow conditions guarantee divergence-free last zones, so we shouldn't clean for them
+    if (pmb0->packages.Get("Boundaries")->Param<std::string>("inner_x1") == "outflow") {
+        for (int i=0; i < md->GetMeshPointer()->GetNumMeshBlocksThisRank(); i++) {
+            auto rc = md->GetBlockData(i);
+            auto pmb = rc->GetBlockPointer();
+            auto lap_block = rc->PackVariables(std::vector<std::string>{lap_var});
+            const IndexRange3 bic = KDomain::GetRange(md, IndexDomain::interior);
+            if (pmb->boundary_flag[BoundaryFace::inner_x1] == BoundaryFlag::user) {
+                pmb->par_for("lap_boundary", bc.ks, bc.ke, bc.js, bc.je, bc.is, bic.is,
+                    KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+                        lap_block(0, k, j, i) = 0.;
+                    }
+                );
+            }
+        }
+    }
+    if (pmb0->packages.Get("Boundaries")->Param<std::string>("outer_x1") == "outflow") {
+        for (int i=0; i < md->GetMeshPointer()->GetNumMeshBlocksThisRank(); i++) {
+            auto rc = md->GetBlockData(i);
+            auto pmb = rc->GetBlockPointer();
+            auto lap_block = rc->PackVariables(std::vector<std::string>{lap_var});
+            const IndexRange3 bic = KDomain::GetRange(md, IndexDomain::interior);
+            if (pmb->boundary_flag[BoundaryFace::outer_x1] == BoundaryFlag::user) {
+                pmb->par_for("lap_boundary", bc.ks, bc.ke, bc.js, bc.je, bic.ie, bc.ie,
+                    KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+                        lap_block(0, k, j, i) = 0.;
+                    }
+                );
+            }
+        }
+    }
 
     return TaskStatus::complete;
 }

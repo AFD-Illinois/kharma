@@ -217,6 +217,11 @@ class VarMap {
         }
 };
 
+// Reasonable maximum number of fluid primitive or conserved variables being evolved
+// e.g. 8 for GRMHD, 10 for EMHD, and additional vars for e-/passives
+// TODO(BSP) make configurable.  Currently only used for implicit kernel temporaries
+#define MAX_VARS 20
+
 #if DEBUG
 /**
  * Function to generate outputs wherever, whenever.

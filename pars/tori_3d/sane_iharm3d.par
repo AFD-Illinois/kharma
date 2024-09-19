@@ -1,26 +1,23 @@
-# SANE model mirroring the simulation library
-# Quite small to run for more than 10kM, 6M/12M F-M torus,
-# Overall simulation size 1000M
+# SANE model mirroring the "Illinois v3" library parameters.
+# Very small (6/12 r_g) disk, gamma=4/3
 
 <parthenon/job>
 problem_id = torus
 
 <parthenon/mesh>
-refinement = none
-numlevel = 1
-nx1 = 128
-nx2 = 128
-nx3 = 1
-
-<parthenon/meshblock>
 nx1 = 128
 nx2 = 64
-nx3 = 1
+nx3 = 64
+
+<parthenon/meshblock>
+nx1 = 64
+nx2 = 64
+nx3 = 32
 
 <coordinates>
 base = spherical_ks
 transform = fmks
-r_out = 1000
+r_out = 100
 a = 0.9375
 hslope = 0.3
 mks_smooth = 0.5
@@ -28,14 +25,23 @@ poly_xt = 0.82
 poly_alpha = 14.0
 
 <parthenon/time>
-tlim = 3000.0
+tlim = 10000.0
 nlim = -1
+
+<flux>
+type = llf
+reconstruction = weno5
+
+<inverter>
+type = onedw
 
 <GRMHD>
 cfl = 0.9
-gamma = 1.666667
-reconstruction = weno5
-implicit = false
+gamma = 1.333333
+
+<driver>
+type = kharma
+two_sync = true
 
 <torus>
 rin = 6.0
@@ -45,32 +51,32 @@ rmax = 12.0
 u_jitter = 0.04
 
 <b_field>
+solver = flux_ct
 type = sane
 beta_min = 100.
-implicit = false
 
 <floors>
 rho_min_geom = 1e-6
 u_min_geom = 1e-8
 bsq_over_rho_max = 100
 u_over_rho_max = 2
-frame = fluid
 
 <debug>
 verbose = 1
 extra_checks = 1
-flag_verbose = 0
+flag_verbose = 2
 
 <parthenon/output0>
 file_type = hdf5
-dt = 100.0
-variables = prims.rho, prims.u, prims.uvec, prims.B, jcon, fflag, pflag, divB
+dt = 5.0
+single_precision_output = true
+variables = prims, jcon, divB
 
 <parthenon/output1>
 file_type = rst
 dt = 100.0
-ghost_zones = true
 
 <parthenon/output2>
 file_type = hst
 dt = 0.1
+variables = all_reductions

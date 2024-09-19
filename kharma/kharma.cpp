@@ -52,6 +52,7 @@
 #include "implicit.hpp"
 #include "inverter.hpp"
 #include "floors.hpp"
+#include "flux.hpp"
 #include "grmhd.hpp"
 #include "reductions.hpp"
 #include "emhd.hpp"
@@ -353,9 +354,12 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput> &pin)
     auto t_grmhd = tl.AddTask(t_globals | t_driver, KHARMA::AddPackage, packages, GRMHD::Initialize, pin.get());
     // Only load the inverter if GRMHD/EMHD isn't being evolved implicitly
     // Unless we want to use the explicitly-evolved ideal MHD variables as a guess for the solver
+    // Or we want first-order flux corrections, which rely on a UtoP guess
+    // Note we only accept fofc/on here, not legacy versions/defaults --
+    // FOFC should be explicitly enabled in EMHD!
     auto t_inverter = t_grmhd;
     if (!pin->GetOrAddBoolean("GRMHD", "implicit", pin->GetOrAddBoolean("emhd", "on", false)) ||
-        pin->GetOrAddBoolean("emhd", "ideal_guess", false)) {
+        pin->GetOrAddBoolean("emhd", "ideal_guess", false) || pin->GetOrAddBoolean("fofc", "on", false)) {
         t_inverter = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages, Inverter::Initialize, pin.get());
     }
     // Floors package is only loaded if floors aren't disabled
