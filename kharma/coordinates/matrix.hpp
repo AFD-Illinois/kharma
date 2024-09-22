@@ -166,3 +166,54 @@ KOKKOS_INLINE_FUNCTION int antisym(int a, int b, int c)
 
   return pp<3>(p);
 }
+
+/**
+ * Multiply two 4x4 matrices.
+*/
+KOKKOS_INLINE_FUNCTION void matrix_multiply(const GReal A[GR_DIM][GR_DIM], const GReal B[GR_DIM][GR_DIM], GReal result[GR_DIM][GR_DIM])
+{
+  for (int i = 0; i < GR_DIM; ++i) {
+    for (int j = 0; j < GR_DIM; ++j) {
+      for (int k = 0; k < GR_DIM; ++k) {
+          result[i][j] += A[i][k] * B[k][j];
+      }
+    }
+  }
+}
+
+/**
+ * Compute matrix exponential (4x4) to second order.
+ * Needed to apply similarity transformation to modified gravity metrics
+*/
+KOKKOS_INLINE_FUNCTION void exp_taylor_series_second_order(const GReal M[GR_DIM][GR_DIM],  GReal expM[GR_DIM][GR_DIM])
+{
+    // Identity matrix
+    double I[GR_DIM][GR_DIM] = { {1, 0, 0, 0},
+                       {0, 1, 0, 0},
+                       {0, 0, 1, 0},
+                       {0, 0, 0, 1} };
+
+    // Compute M^2
+    // Matrix to hold M^2
+    double M2[GR_DIM][GR_DIM] = {0};
+    // Perform matrix multiplication
+    matrix_multiply(M, M, M2);
+
+    // expM = I + M + (1/2) * M^2
+    for (int i = 0; i < GR_DIM; ++i) {
+        for (int j = 0; j < GR_DIM; ++j) {
+            expM[i][j] = I[i][j] + M[i][j] + 0.5 * M2[i][j];
+        }
+    }
+}
+
+/**
+ * Compute transpose of a 4x4 matrix
+*/
+KOKKOS_INLINE_FUNCTION void transpose_matrix(const double X[4][4], double transX[4][4]) {
+    for (int i = 0; i < GR_DIM; ++i) {
+        for (int j = 0; j < GR_DIM; ++j) {
+            transX[j][i] = X[i][j];
+        }
+    }
+}

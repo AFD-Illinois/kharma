@@ -314,24 +314,20 @@ class CoordinateEmbedding {
                 const GReal a = get_a();
                 return 1 + m::sqrt(1 - a * a);
             } 
-            
             else if (mpark::holds_alternative<DCSKSCoords>(base) || // Changes Made. 
                 mpark::holds_alternative<DCSBLCoords>(base)) 
             {
                 const GReal a = get_a();
                 const GReal zeta = get_zeta();
-                return (1 + sqrt(1 - pow(a,2))) + (-((915*pow(a,2))/28672) - (351479*pow(a,4))/13762560) * zeta ;
+                return (1 + m::sqrt(1 - a * a)) + ((72185 * m::pow(a,2) / 96096) + (189049321 * m::pow(a,4) / 931170240)) * zeta;
             }
-
             else if (mpark::holds_alternative<EDGBKSCoords>(base) || // Changes Made. 
                 mpark::holds_alternative<EDGBBLCoords>(base))
             {
                 const GReal a = get_a();
                 const GReal zeta = get_zeta();
-                return ((1 + sqrt(1 - pow(a,2))) + (-(49./40.) - (277. *pow(a,2))/960. - (145711.* pow(a,4))/3225600.)* zeta);
-                
+                return (1 + m::sqrt(1 - a * a)) + ((-1117. / 2310.) - (3697. * m::pow(a,2) / 5850) + (211270219. * m::pow(a,4) / 1018467450)) * zeta;
             }
-
             else 
             {
                 return 0.0;
@@ -348,7 +344,7 @@ class CoordinateEmbedding {
             }, base);
         }
 
-        //Changes made. a get zeta function 
+        //Changes made. get zeta function 
         KOKKOS_INLINE_FUNCTION GReal get_zeta() const
         {
             if (mpark::holds_alternative<DCSKSCoords>(base)) {
@@ -699,35 +695,19 @@ class CoordinateEmbedding {
             // Set u^t to make u a velocity 4-vector in BL
             GReal gcov_bl[GR_DIM][GR_DIM];
 
-            // // TRYING 
-
             if (mpark::holds_alternative<SphKSCoords>(base) ||
-                mpark::holds_alternative<SphBLCoords>(base)) {
-                SphBLCoords(get_a()).gcov_embed(Xembed, gcov_bl);
-
+                    mpark::holds_alternative<SphBLCoords>(base)) {
+                    SphBLCoords(get_a()).gcov_embed(Xembed, gcov_bl);
             } else if (mpark::holds_alternative<SphKSExtG>(base) ||
-                       mpark::holds_alternative<SphBLExtG>(base)) {
-                SphBLExtG(get_a()).gcov_embed(Xembed, gcov_bl);
-
-            } else if (mpark::holds_alternative<DCSKSCoords>(base)){
-                GReal zeta = mpark::get<DCSKSCoords>(base).zeta;
-                DCSBLCoords dcsblcoords(get_a(), zeta);
-                dcsblcoords.gcov_embed(Xembed, gcov_bl);       // Changes Made. Find out how the zeta value gets called.
-        
-            } else if (mpark::holds_alternative<DCSBLCoords>(base)){
-                GReal zeta = mpark::get<DCSBLCoords>(base).zeta;
-                DCSBLCoords(get_a(), zeta).gcov_embed(Xembed, gcov_bl);       // Changes Made. Find out how the zeta value gets called.
-                
-            } else if (mpark::holds_alternative<EDGBKSCoords>(base)){
-                GReal zeta = mpark::get<EDGBKSCoords>(base).zeta;
-                EDGBBLCoords edgbblcoords(get_a(), zeta);
-                edgbblcoords.gcov_embed(Xembed, gcov_bl);       // Changes Made. Find out how the zeta value gets called.
-        
-            } else if (mpark::holds_alternative<EDGBBLCoords>(base)){
-                GReal zeta = mpark::get<EDGBBLCoords>(base).zeta;
-                EDGBBLCoords(get_a(), zeta).gcov_embed(Xembed, gcov_bl);   
-            }
-    
+                    mpark::holds_alternative<SphBLExtG>(base)) {
+                    SphBLExtG(get_a()).gcov_embed(Xembed, gcov_bl);
+            } else if (mpark::holds_alternative<DCSKSCoords>(base) || 
+                    mpark::holds_alternative<DCSBLCoords>(base)){
+                    DCSBLCoords(get_a(), get_zeta()).gcov_embed(Xembed, gcov_bl);
+            } else if (mpark::holds_alternative<EDGBKSCoords>(base) ||
+                    mpark::holds_alternative<EDGBBLCoords>(base)){
+                    EDGBBLCoords(get_a(), get_zeta()).gcov_embed(Xembed, gcov_bl);
+            } 
 
             Real ucon_bl_fourv[GR_DIM];
             DLOOP1 ucon_bl_fourv[mu] = ucon_bl[mu];

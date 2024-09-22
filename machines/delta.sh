@@ -32,6 +32,7 @@ then
 
     if [[ $ARGS == *"gcc"* ]]; then
       module load gcc/11.4.0 cuda/11.8.0 openmpi/4.1.5+cuda
+      module list
       C_NATIVE=gcc
       CXX_NATIVE=g++
     elif [[ $ARGS == *"cray"* ]]; then
@@ -48,7 +49,8 @@ then
     fi
   else
     # CPU Compile
-    module load modtree/cpu gcc
+    module load gcc/11.4.0 openmpi
+    module list
     MPI_NUM_PROCS=1
   fi
 fi

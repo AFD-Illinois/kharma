@@ -22,21 +22,14 @@ nx2 = 64
 nx3 = 128
 
 <coordinates>
-<<<<<<< HEAD
 base = dcs_ks
 theory = dcs # valid strings - 'gr', 'dcs', 'edgb'
 zeta = 0.1
 transform = fmks
 r_out = 100
 a = 0.5
-=======
-base = spherical_ks
-# FMKS coordinates and transmitting polar bounds
-# are not compatible
-transform = mks
 r_out = 1000
 a = 0.9375
->>>>>>> upstream/feature/mod_gravity
 hslope = 0.3
 
 <parthenon/time>
