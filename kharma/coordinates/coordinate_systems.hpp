@@ -378,8 +378,10 @@ class DCSKSCoords {
             transpose_matrix(metric_corr, metric_corr_trans);
             GReal exp_metric_corr[GR_DIM][GR_DIM] = {0};
             GReal exp_metric_corr_trans[GR_DIM][GR_DIM] = {0};
-            exp_taylor_series_second_order(metric_corr, exp_metric_corr);
-            exp_taylor_series_second_order(metric_corr_trans, exp_metric_corr_trans);
+            // exp_taylor_series_second_order(metric_corr, exp_metric_corr);
+            // exp_taylor_series_second_order(metric_corr_trans, exp_metric_corr_trans);
+            exp_taylor_series_fourth_order(metric_corr, exp_metric_corr);
+            exp_taylor_series_fourth_order(metric_corr_trans, exp_metric_corr_trans);
 
             // Matrix multiply to obtain metric
             GReal temp_matrix_mul[GR_DIM][GR_DIM] = {0};

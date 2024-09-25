@@ -208,6 +208,36 @@ KOKKOS_INLINE_FUNCTION void exp_taylor_series_second_order(const GReal M[GR_DIM]
 }
 
 /**
+ * Compute matrix exponential (4x4) to fourth order.
+ * Needed to apply similarity transformation to modified gravity metrics
+*/
+KOKKOS_INLINE_FUNCTION void exp_taylor_series_fourth_order(const GReal M[GR_DIM][GR_DIM],  GReal expM[GR_DIM][GR_DIM])
+{
+    // Identity matrix
+    double I[GR_DIM][GR_DIM] = { {1, 0, 0, 0},
+                       {0, 1, 0, 0},
+                       {0, 0, 1, 0},
+                       {0, 0, 0, 1} };
+
+    // Compute M^2
+    // Matrices to hold M^2, M^3, and M^4
+    double M2[GR_DIM][GR_DIM] = {0};
+    double M3[GR_DIM][GR_DIM] = {0};
+    double M4[GR_DIM][GR_DIM] = {0};
+    // Perform matrix multiplication
+    matrix_multiply(M, M, M2);
+    matrix_multiply(M2, M, M3);
+    matrix_multiply(M3, M, M4);
+
+    // expM = I + M + (1/2) * M^2
+    for (int i = 0; i < GR_DIM; ++i) {
+        for (int j = 0; j < GR_DIM; ++j) {
+            expM[i][j] = I[i][j] + M[i][j] + ((1./2.) * M2[i][j]) + ((1./6.) * M3[i][j]) + ((1./24.) * M4[i][j]);
+        }
+    }
+}
+
+/**
  * Compute transpose of a 4x4 matrix
 */
 KOKKOS_INLINE_FUNCTION void transpose_matrix(const double X[4][4], double transX[4][4]) {
