@@ -100,7 +100,7 @@ KOKKOS_INLINE_FUNCTION void apply_ceilings(const GRCoordinates& G, const Variabl
 
             // testing if betagamma is under the desired level
             gamma = GRMHD::lorentz_calc(G, P, m_p, k, j, i, loc);
-            Real betagamma2_after = SQR(gamma) - 1.;
+            //Real betagamma2_after = SQR(gamma) - 1.;
             //if (betagamma2_after / vchar2 > V02) printf("before and after: betagamma/vchar =  %.5g -> %.5g\n", m::sqrt(betagamma2 / vchar2), m::sqrt(betagamma2_after / vchar2));
             
             // (T^r_t + rho * u^r) new after changing velocities
@@ -225,7 +225,20 @@ KOKKOS_INLINE_FUNCTION int determine_floors(const GRCoordinates& G, const Variab
     }
 
     // Then ceilings, need to record these for FOFC. See real implementation for details
-    if (GRMHD::lorentz_calc(G, P, m_p, k, j, i, Loci::center) > myfloors.gamma_max)
+    Real gamma = GRMHD::lorentz_calc(G, P, m_p, k, j, i, Loci::center);
+    const GReal r_eh = G.coords.get_horizon();
+    if (myfloors.radius_dependent_gamma_max && G.r(k, j, i) > 1.5 * r_eh) {
+        Real V02 = SQR(myfloors.gamma_max);
+        Real vchar2 = 1. / G.r(k, j, i) + 1. / Multizone::CalcRB(gam, myfloors.rs_bondi);
+        Real betagamma2_max = V02 * vchar2;
+        Real betagamma2 = SQR(gamma) - 1.;
+        EMHD::EMHD_parameters emhd_params = {0}; // temporary, we are not using emhd yet
+        FourVectors Dtmp_old, Dtmp_new;
+        GRMHD::calc_4vecs(G, P, m_p, k, j, i, Loci::center, Dtmp_old);
+        if (betagamma2 > betagamma2_max && Dtmp_old.ucon[1] > 0)
+            fflag |= FFlag::GAMMA;
+    }
+    else if (gamma  > myfloors.gamma_max)
         fflag |= FFlag::GAMMA;
 
     if ((gam - 1.) * P(m_p.UU, k, j, i) / m::pow(P(m_p.RHO, k, j, i), gam) > myfloors.ktot_max)
