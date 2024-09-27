@@ -256,7 +256,7 @@ TaskCollection KHARMADriver::MakeMultizoneTaskCollection(BlockList_t &blocks, in
         auto &tl = fix_region[i];
         auto &md_sub_step_init  = pmesh->mesh_data.GetOrAdd(integrator->stage_name[stage-1], i);
         auto &md_sub_step_final = pmesh->mesh_data.GetOrAdd(integrator->stage_name[stage], i);
-        //auto &md_sync = pmesh->mesh_data.AddShallow("sync"+integrator->stage_name[stage]+std::to_string(i), md_sub_step_final, sync_vars);
+        auto &md_sync = pmesh->mesh_data.AddShallow("sync"+integrator->stage_name[stage]+std::to_string(i), md_sub_step_final, sync_vars);
 
         auto t_utop = tl.AddTask(t_none, Packages::MeshUtoP, md_sub_step_final.get(), IndexDomain::entire, false);
 
@@ -264,11 +264,11 @@ TaskCollection KHARMADriver::MakeMultizoneTaskCollection(BlockList_t &blocks, in
 
         auto t_fix_p = tl.AddTask(t_floors, Inverter::MeshFixUtoP, md_sub_step_final.get());
 
-        //auto t_set_bc = tl.AddTask(t_fix_p, parthenon::ApplyBoundaryConditionsOnCoarseOrFineMD, md_sync, false);
+        auto t_set_bc = tl.AddTask(t_fix_p, parthenon::ApplyBoundaryConditionsOnCoarseOrFineMD, md_sync, false);
 
-        auto t_prim_source = t_fix_p;
+        auto t_prim_source = t_set_bc; //t_fix_p;
         if (stage == integrator->nstages) {
-            t_prim_source = tl.AddTask(t_fix_p, Packages::MeshApplyPrimSource, md_sub_step_final.get());
+            t_prim_source = tl.AddTask(t_set_bc, Packages::MeshApplyPrimSource, md_sub_step_final.get()); //t_fix_p
         }
         // Electron heating goes where it does in HARMDriver, for the same reasons
         auto t_heat_electrons = t_prim_source;

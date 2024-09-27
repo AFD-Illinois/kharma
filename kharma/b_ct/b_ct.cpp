@@ -658,6 +658,7 @@ void B_CT::FillOutput(MeshBlock *pmb, ParameterInput *pin)
 
 TaskStatus B_CT::DerefinePoles(MeshData<Real> *md, uint nlevels)
 {
+    Flag("DerefinePoles");
     // HYERIN (01/17/24) this routine is not general yet and only applies to polar boundaries for now.
     //const IndexRange block = IndexRange{0, B_U.GetDim(5)-1};
     auto pmesh = md->GetMeshPointer();
@@ -883,7 +884,7 @@ TaskStatus B_CT::DerefinePoles(MeshData<Real> *md, uint nlevels)
             }
         }
     }
+    EndFlag();
 
-    // TODO: u_to_p with floor application
     return TaskStatus::complete;
 }
