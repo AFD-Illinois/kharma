@@ -1,5 +1,5 @@
 /* 
- *  File: hubble.hpp
+ *  File: ismr.hpp
  *  
  *  BSD 3-Clause License
  *  
@@ -33,25 +33,37 @@
  */
 #pragma once
 
-#include <complex>
-
 #include "decs.hpp"
+#include "types.hpp"
 
 #include <parthenon/parthenon.hpp>
 
-using namespace std;
-using namespace parthenon;
-
 /**
- * Test of electron entropy/temperature evolution in 1D Hubble-type flow
- * Test of "Electrons" package
- * See Ressler+ 2015
- */
-TaskStatus InitializeHubble(MeshBlockData<Real> *rc, ParameterInput *pin);
-
-/**
- * Set all values on a given domain to the Hubble flow solution
+ * This package implements internal static mesh de-refinement by averaging variables next to the coordinate
+ * poles, creating effective "larger zones" and allowing increases to the timestep, without any modification
+ * to the existing data structures or block layout.
+ * Currently it is limited to spherical coordinates: use Parthenon's block-based refinement otherwise.
+ * Also note that the averaging operation corresponds to a first-order refinement/derefinement, possibly
+ * compromising overall second-order convergence in the very near-polar region.
  * 
- * Used for initialization and boundary conditions
+ * The operator averages variables only in the phi-direction nearing the pole, mapping 1:2 zones
+ * for each of several levels.  In this way, zones near the pole can be much wider in phi without losing
+ * resolution in r, theta.
+ * 
+ * Idea is taken from Matthew Liska/H-AMR (Liska+ 2022)
+ * Implementation credit Hyerin Cho, please cite Cho+ 2024b (in prep) with description and first
+ * use of this implementation.
  */
-TaskStatus SetHubble(MeshBlockData<Real> *rc, IndexDomain domain=IndexDomain::entire, bool coarse=false);
+namespace ISMR {
+
+/**
+ * Initialize ISMR parameters
+ */
+std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages);
+
+/**
+ * Derefinement operation for fluid/cell-centered variables 
+ */
+TaskStatus DerefinePoles(MeshData<Real> *md);
+
+}

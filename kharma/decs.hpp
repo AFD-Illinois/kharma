@@ -100,8 +100,8 @@ using GReal = double;
 // Useful enum to avoid lots of #defines
 // See following functions and coord() in gr_coordinates.hpp to
 // get an idea of these locations.  All faces/corner are *left* of center
-#define NLOC 5
-enum class Loci{face1=0, face2, face3, center, corner};
+#define NLOC 7
+enum class Loci{face1=0, face2, face3, center, corner, outer_half, inner_half};
 
 // Return the face location corresponding to the direction 'dir'
 KOKKOS_FORCEINLINE_FUNCTION Loci loc_of(const int& dir)

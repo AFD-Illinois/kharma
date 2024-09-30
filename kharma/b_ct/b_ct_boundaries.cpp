@@ -262,7 +262,7 @@ void B_CT::DestructiveBoundaryClean(MeshBlockData<Real> *rc, IndexDomain domain,
                 KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
                     Real new_face = - (-outward_sign) * fpack(F3, 0, last_rank_f, j, i) * G.Volume<F3>(last_rank_f, j, i)
                                     - (fpack(F1, 0, last_rank_c, j, i + 1) * G.Volume<F1>(last_rank_c, j, i + 1)
-                                        - fpack(F1, 0, last_rank_c, j, i) * G.Volume<F1>(last_rank_c, j, i));
+                                        - fpack(F1, 0, last_rank_c, j, i) * G.Volume<F1>(last_rank_c, j, i))
                                     - (fpack(F2, 0, last_rank_c, j + 1, i) * G.Volume<F2>(last_rank_c, j + 1, i)
                                         - fpack(F2, 0, last_rank_c, j, i) * G.Volume<F2>(last_rank_c, j, i));
 
@@ -272,42 +272,6 @@ void B_CT::DestructiveBoundaryClean(MeshBlockData<Real> *rc, IndexDomain domain,
         }
     }
 }
-
-// Reducer class for unused MinAbs B below
-// template <class Space>
-// struct MinAbsReducer {
-//  public:
-//   // Required
-//   typedef MinAbsReducer reducer;
-//   typedef double value_type;
-// //   typedef Kokkos::View<value_type*, Space, Kokkos::MemoryUnmanaged>
-// //       result_view_type;
-
-//  private:
-//   value_type& value;
-
-//  public:
-//   KOKKOS_INLINE_FUNCTION
-//   MinAbsReducer(value_type& value_) : value(value_) {}
-
-//   // Required
-//   KOKKOS_INLINE_FUNCTION
-//   void join(value_type& dest, const value_type& src) const {
-//     dest = (m::abs(src) < m::abs(dest)) ? src : dest;
-//   }
-
-//   KOKKOS_INLINE_FUNCTION
-//   void init(value_type& val) const { val = 0; }
-
-//   KOKKOS_INLINE_FUNCTION
-//   value_type& reference() const { return value; }
-
-//   //KOKKOS_INLINE_FUNCTION
-//   //result_view_type view() const { return result_view_type(&value, 1); }
-
-//   KOKKOS_INLINE_FUNCTION
-//   bool references_scalar() const { return true; }
-// };
 
 void B_CT::ReconnectBoundaryB3(MeshBlockData<Real> *rc, IndexDomain domain, const VariablePack<Real> &fpack, bool coarse)
 {
@@ -322,6 +286,12 @@ void B_CT::ReconnectBoundaryB3(MeshBlockData<Real> *rc, IndexDomain domain, cons
     const bool binner = KBoundaries::BoundaryIsInner(bface);
     const int bdir = KBoundaries::BoundaryDirection(bface);
     const auto bname = KBoundaries::BoundaryName(bface);
+
+    // TODO standardize on passing Packs or Datas...
+    auto B_U = rc->PackVariables(std::vector<std::string>{"cons.B"});
+    auto B_P = rc->PackVariables(std::vector<std::string>{"prims.B"});
+
+    const auto& G = pmb->coords;
 
     // Subtract the average B3 as "reconnection"
     IndexRange3 b = KDomain::GetRange(rc, domain, F3, coarse);
@@ -338,6 +308,7 @@ void B_CT::ReconnectBoundaryB3(MeshBlockData<Real> *rc, IndexDomain domain, cons
                     local_result += fpack(F3, v, k, jf, i);
                 }
             , sum_reducer);
+            member.team_barrier();
 
             // Calculate the average and modify all B3 identically
             // This will preserve their differences->divergence
@@ -347,32 +318,16 @@ void B_CT::ReconnectBoundaryB3(MeshBlockData<Real> *rc, IndexDomain domain, cons
                     fpack(F3, v, k, jf, i) -= B3_av;
                 }
             );
+            member.team_barrier();
+
+            // Update cell-centered conserved & primitive B3. Not worth a separate BlockUtoP call
+            parthenon::par_for_inner(member, b.ks, b.ke-1,
+                [&](const int& k) {
+                    B_P(V3, k, jf, i) =  (fpack(F3, 0, k, jf, i) / G.gdet(Loci::face3, jf, i)
+                                        + fpack(F3, 0, k + 1, jf, i) / G.gdet(Loci::face3, jf, i)) / 2;
+                    B_U(V3, k, jf, i) = B_P(V3, k, jf, i) * G.gdet(Loci::center, jf, i);
+                }
+            );
         }
     );
-    // Option for subtracting minimum by absolute value, much less stable
-    // parthenon::par_for_outer(DEFAULT_OUTER_LOOP_PATTERN, "reduce_B3_" + bname, pmb->exec_space,
-    //     0, 1, 0, fpack.GetDim(4)-1, b.is, b.ie,
-    //     KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int &v, const int& i) {
-    //         // Sum the first rank of B3
-    //         double B3_min = 0.;
-    //         MinAbsReducer<double> min_abs_reducer(B3_min);
-    //         parthenon::par_reduce_inner(member, bi.ks, bi.ke - 1,
-    //             [&](const int& k, double& local_result) {
-    //                 // Compare unsigned
-    //                 if (m::abs(fpack(F3, v, k, jf, i)) < m::abs(local_result)) {
-    //                     // Assign signed, reducer will compare unsigned
-    //                     local_result = fpack(F3, v, k, jf, i);
-    //                 }
-    //             }
-    //         , min_abs_reducer);
-
-    //         // Subtract from all B3 identically
-    //         // This will preserve their differences->divergence
-    //         parthenon::par_for_inner(member, b.ks, b.ke,
-    //             [&](const int& k) {
-    //                 fpack(F3, v, k, jf, i) -= B3_min;
-    //             }
-    //         );
-    //     }
-    // );
 }

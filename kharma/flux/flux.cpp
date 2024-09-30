@@ -73,7 +73,7 @@ std::shared_ptr<KHARMAPackage> Flux::Initialize(ParameterInput *pin, std::shared
         default_recon_s = pin->GetString("GRMHD", "reconstruction");
     }
     std::vector<std::string> recon_allowed_vals = {"donor_cell", "donor_cell_c", "linear_vl", "linear_mc",
-                                             "weno5", "weno5_linear", "ppm", "ppmx", "mp5", "weno5_ismr"};
+                                             "weno5", "weno5_linear", "ppm", "ppmx", "mp5"};
     std::string recon = pin->GetOrAddString("flux", "reconstruction", default_recon_s, recon_allowed_vals);
     bool lower_edges = pin->GetOrAddBoolean("flux", "low_order_edges", false);
     bool lower_poles = pin->GetOrAddBoolean("flux", "low_order_poles", false);
@@ -83,12 +83,7 @@ std::shared_ptr<KHARMAPackage> Flux::Initialize(ParameterInput *pin, std::shared
         throw std::runtime_error("Lowered reconstructions can only be enabled with weno5!");
 
     int stencil = 0;
-    if (pin->DoesParameterExist("GRMHD", "ismr_poles") && pin->GetBoolean("GRMHD", "ismr_poles")) {
-        // Override for ismr
-        params.Add("recon", KReconstruction::Type::weno5_ismr);
-        pin->SetString("flux", "reconstruction", "weno5_ismr");
-        stencil = 5;
-    } else if (recon == "donor_cell") {
+    if (recon == "donor_cell") {
         params.Add("recon", KReconstruction::Type::donor_cell);
         stencil = 1;
     } else if (recon == "donor_cell_c") {
@@ -174,14 +169,6 @@ std::shared_ptr<KHARMAPackage> Flux::Initialize(ParameterInput *pin, std::shared
     m = Metadata(flags_speed, s_vector);
     pkg->AddField("Flux.cmax", m);
     pkg->AddField("Flux.cmin", m);
-
-    // Preserve all velocities at faces, for upwinded constrained transport
-    if (packages->AllPackages().count("B_CT")) { // TODO & GS05_c
-        std::vector<MetadataFlag> flags_vel = {Metadata::Real, Metadata::Face, Metadata::Derived, Metadata::OneCopy};
-        m = Metadata(flags_vel, s_vector);
-        pkg->AddField("Flux.vr", m);
-        pkg->AddField("Flux.vl", m);
-    }
 
     // PROCESS FOFC
     // Accept this a bunch of places, maybe we'll trim this...
@@ -429,12 +416,10 @@ void Flux::AddGeoSource(MeshData<Real> *md, MeshData<Real> *mdudt, IndexDomain d
     const EMHD::EMHD_parameters& emhd_params = EMHD::GetEMHDParameters(pmb0->packages);
     
     // Get sizes
-    auto ib = md->GetBoundsI(domain);
-    auto jb = md->GetBoundsJ(domain);
-    auto kb = md->GetBoundsK(domain);
+    IndexRange3 bd = KDomain::GetRange(md, domain);
     auto block = IndexRange{0, P.GetDim(5)-1};
 
-    pmb0->par_for("tmunu_source", block.s, block.e, kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+    pmb0->par_for("tmunu_source", block.s, block.e, bd.ks, bd.ke, bd.js, bd.je, bd.is, bd.ie,
         KOKKOS_LAMBDA (const int& b, const int &k, const int &j, const int &i) {
             const auto& G = dUdt.GetCoords(b);
             FourVectors D;

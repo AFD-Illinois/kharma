@@ -53,6 +53,7 @@ enum class DriverType{kharma, imex, simple, multizone};
  * a static member function Initialize(), which returns a StateDescriptor.
  * Many things in that list are referenced by other packages dependent on this one.
  * 
+ * Documentation on this thing: https://github.com/AFD-Illinois/kharma/wiki/The-Driver
  */
 class KHARMADriver : public MultiStageDriver {
     public:
@@ -70,41 +71,28 @@ class KHARMADriver : public MultiStageDriver {
         void PostExecute(DriverStatus status) override;
 
         /**
-         * A Driver object orchestrates everything that has to be done to a mesh to take a step.
-         * The function MakeTaskCollection outlines everything to be done in one sub-step,
-         * so that the driver can repeat calls to create a predictor-corrector, RK2/4, etc.
-         * 
-         * Unlike MHD, GRMHD must keep two forms of the variables: the conserved variables, and a set of
-         * "primitive" variables more amenable to reconstruction.  To evolve the fluid, the code must:
-         * 1. Reconstruct the right- and left-going components at zone faces, given the primitive variables
-         * 2. Calculate the fluxes of conserved quantities through the faces
-         * 2a. Apply any fixes to fluxes (e.g., for the magnetic field)
-         * 3. Update conserved variables using their prior values the divergence of conserved fluxes
-         * 3a. Apply any source terms (e.g., the geometric term in GRMHD)
-         * 4. Recover primtive variables
-         * 4a. Apply any stability limits (floors)
-         * 4b. Fix any errors in recovering the primitives, re-apply floors
-         * 5. Apply any source terms (KEL), or calculate outputs (jcon) which use the primitive variables
-         * 
-         * This is before any synchronization between different blocks, etc, etc.
-         * All task lists proceed roughly in this order, but differ in which variables they synchronize via MPI,
-         * or whether they synchronize at all.
+         * Make a TaskCollection according to which step type was chosen (kharma, imex, simple).
+         * This represents all tasks to be done in this sub-step (i.e., one TaskList per
+         * stage of the integrator)
          */
         TaskCollection MakeTaskCollection(BlockList_t &blocks, int stage) override;
 
         /**
          * The default step, synchronizing conserved variables and then recovering primitive variables in the ghost zones.
+         * See https://github.com/AFD-Illinois/kharma/wiki/The-Driver#kharma-step
          */
         TaskCollection MakeDefaultTaskCollection(BlockList_t &blocks, int stage);
 
         /**
          * This step syncs primitive variables and treats them as fundamental
          * This accommodates semi-implicit stepping, allowing evolving theories with implicit source terms such as extended MHD
+         * See https://github.com/AFD-Illinois/kharma/wiki/The-Driver#imex-step
          */
         TaskCollection MakeImExTaskCollection(BlockList_t &blocks, int stage);
 
         /**
-         * A simple step for experimentation/new implementations.  Does NOT support MPI, or much of anything optional.
+         * A simple step for experimentation/new implementations.  Does NOT support Face-CT, or much of anything optional.
+         * See https://github.com/AFD-Illinois/kharma/wiki/The-Driver#simple-step
          */
         TaskCollection MakeSimpleTaskCollection(BlockList_t &blocks, int stage);
 
@@ -180,16 +168,8 @@ class KHARMADriver : public MultiStageDriver {
             return Update::WeightedSumData<std::vector<MetadataFlag>, T>(flags, source, source, 1., 0., dest);
         }
 
-        /**
-         * Scale a variable by 'norm'.
-         * Mostly makes things easier to read.
-         */
-        static TaskStatus Scale(std::vector<std::string> flags,  MeshBlockData<Real>* source, Real norm)
-        {
-            return Update::WeightedSumData<std::vector<std::string>, MeshBlockData<Real>>(flags, source, source, norm, 0., source);
-        }
-
-        static TaskStatus WeightedSumDataFace(const std::vector<MetadataFlag> &flags, MeshData<Real> *in1, MeshData<Real> *in2, const Real w1, const Real w2,
+        template<typename MDType>
+        static TaskStatus WeightedSumDataFace(const std::vector<MDType> &flags, MeshData<Real> *in1, MeshData<Real> *in2, const Real w1, const Real w2,
                                 MeshData<Real> *out)
         {
             Kokkos::Profiling::pushRegion("Task_WeightedSumDataFace");
@@ -218,6 +198,23 @@ class KHARMADriver : public MultiStageDriver {
             return WeightedSumDataFace(flags, source, source, 1., 0., dest);
         }
 
+        /**
+         * Scale a variable by 'norm'.
+         * Mostly makes things easier to read.
+         */
+        static TaskStatus Scale(std::vector<std::string> vars,  MeshData<Real>* source, Real norm)
+        {
+            return Update::WeightedSumData<std::vector<std::string>, MeshData<Real>>(vars, source, source, norm, 0., source);
+        }
+        static TaskStatus ScaleFace(std::vector<std::string> vars,  MeshData<Real>* source, Real norm)
+        {
+            return WeightedSumDataFace(vars, source, source, norm, 0., source);
+        }
+
+        /**
+         * Replace Parthenon's `FluxDivergence` with a more adaptable version: pack on a customizable set
+         * of flags, optionally include a halo around physical zones (useful for predicting bad zones in FOFC)
+         */
         static TaskStatus FluxDivergence(MeshData<Real> *in_obj, MeshData<Real> *dudt_obj,
                                   std::vector<MetadataFlag> flags = {Metadata::WithFluxes, Metadata::Cell},
                                   int halo=0)

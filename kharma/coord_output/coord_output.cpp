@@ -169,8 +169,6 @@ TaskStatus CoordinateOutput::BlockUserWorkBeforeOutput(MeshBlock *pmb, Parameter
                 Geom(mgdet_embed, k, j, i) = gdet;
             }
         );
-
-
     }
 
     return TaskStatus::complete;

@@ -65,6 +65,9 @@ std::shared_ptr<KHARMAPackage> Reductions::Initialize(ParameterInput *pin, std::
     std::vector<AllReduce<Real>> allreduce_pool;
     params.Add("allreduce_pool", allreduce_pool, true);
 
+    // Reductions sometimes need global elements of the simulation we don't otherwise keep
+    params.Add("domain_r_in", (GReal) pin->GetReal("coordinates", "r_in"));
+
     return pkg;
 }
 

@@ -250,8 +250,7 @@ KOKKOS_INLINE_FUNCTION int determine_floors(const GRCoordinates& G, const Variab
     return fflag;
 }
 
-#define FLOOR_ONE_ARGS const GRCoordinates& G, const VariablePack<Real>& P, const VarMap& m_p, \
-                        const Real& gam, \
+#define FLOOR_ONE_ARGS const GRCoordinates& G, const VariablePack<Real>& P, const VarMap& m_p, const Real& gam, \
                         const int& k, const int& j, const int& i, const Real& rhoflr_max, const Real& uflr_max, \
                         const VariablePack<Real>& U, const VarMap& m_u
 
@@ -378,31 +377,6 @@ KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::normal>(FLOOR_ONE_ARGS)
     const Floors::Prescription floor_tmp = {0}; 
     return Inverter::u_to_p<Inverter::Type::onedw>(G, U, m_u, gam, k, j, i, P, m_p, Loci::center,
                                                      floor_tmp, 8, 1e-8);
-}
-
-template<>
-KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::mixed_fluid_normal>(FLOOR_ONE_ARGS)
-{
-    // TODO(BSP) thread through frame_switch option
-    if (G.r(k, j, i) > 50.) {
-        return apply_floors<InjectionFrame::fluid>(G, P, m_p, gam, k, j, i, rhoflr_max, uflr_max, U, m_u);
-    } else {
-        return apply_floors<InjectionFrame::normal>(G, P, m_p, gam, k, j, i, rhoflr_max, uflr_max, U, m_u);
-    }
-}
-
-template<>
-KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::mixed_fluid_drift>(FLOOR_ONE_ARGS)
-{
-    // TODO(BSP) thread through frame_switch option
-    FourVectors Dtmp;
-    GRMHD::calc_4vecs(G, P, m_p, k, j, i, Loci::center, Dtmp);
-    Real beta = dot(Dtmp.bcon, Dtmp.bcov) / (2 * (gam - 1.) * P(m_p.UU, k, j, i));
-    if (beta > 10.) {
-        return apply_floors<InjectionFrame::drift>(G, P, m_p, gam, k, j, i, rhoflr_max, uflr_max, U, m_u);
-    } else {
-        return apply_floors<InjectionFrame::normal>(G, P, m_p, gam, k, j, i, rhoflr_max, uflr_max, U, m_u);
-    }
 }
 
 /**

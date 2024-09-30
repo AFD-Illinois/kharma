@@ -42,6 +42,12 @@ using namespace parthenon;
 // The code is here so that we can ensure it keeps compiling,
 // which should make it easier to reintroduce if we want to later
 
+// It at least needs:
+// 1. Special-casing in magnetic field initialization
+// 2. Implementation of below function to update maximum 'ctop' each step
+// 3. Ripping out a bunch of experiments toward GR support which didn't work
+// 4. Proper GR support instead
+
 namespace B_CD
 {
 
@@ -124,7 +130,7 @@ void BlockUtoP(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse)
     IndexRange ib = bounds.GetBoundsI(domain);
     IndexRange jb = bounds.GetBoundsJ(domain);
     IndexRange kb = bounds.GetBoundsK(domain);
-    pmb->par_for("UtoP_B", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+    pmb->par_for("UtoP_B_CD", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
         KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
             // Update the primitive B-fields
             Real gdet = G.gdet(Loci::center, j, i);

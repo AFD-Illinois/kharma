@@ -76,7 +76,7 @@ TaskStatus AddPackage(std::shared_ptr<Packages_t>& packages,
  * This includes boundaries in spherical coordinates, coordinate system translations, etc.
  * This function also handles setting parameters from restart files
  */
-void FixParameters(ParameterInput *pin);
+void FixParameters(ParameterInput *pin, bool is_parthenon_restart);
 
 /**
  * Load any packages specified in the input parameters

@@ -1,5 +1,6 @@
 # SANE model, but refined
-# Needs new B field init
+# Included to show example of a mesh
+# refinement prescription
 
 <parthenon/job>
 problem_id = torus
@@ -50,7 +51,7 @@ cfl = 0.9
 gamma = 1.666667
 
 <flux>
-type = hlle
+type = llf
 reconstruction = weno5
 
 <torus>
@@ -72,8 +73,6 @@ u_min_geom = 1e-8
 
 <fofc>
 on = true
-rho_min_geom = 1e-6
-u_min_geom = 1e-8
 
 <parthenon/output0>
 file_type = hdf5
@@ -88,3 +87,4 @@ dt = 100.0
 <parthenon/output2>
 file_type = hst
 dt = 0.1
+variables = all_reductions

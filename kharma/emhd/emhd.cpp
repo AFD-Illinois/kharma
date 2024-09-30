@@ -99,8 +99,6 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     } else if (closure_type == "torus") {
         emhd_params.type = ClosureType::torus;
     }
-    emhd_params.conduction       = conduction;
-    emhd_params.viscosity        = viscosity;
     emhd_params.tau              = tau;
     emhd_params.conduction_alpha = conduction_alpha;
     emhd_params.viscosity_alpha  = viscosity_alpha;
@@ -365,7 +363,7 @@ TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt, IndexDomain doma
             const Real& Theta = Temps(b)(m_theta, k, j, i);
 
 
-            if (emhd_params.conduction) {
+            if (m_s.Q >= 0) {
                 const Real& qtilde = P(b)(m_p.Q, k, j, i);
                 const double inv_mag_b = 1. / m::sqrt(bsq);
                 Real q0            = 0;
@@ -380,7 +378,7 @@ TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt, IndexDomain doma
                     dUdt(b, m_s.Q, k, j, i)  += G.gdet(Loci::center, j, i) * (qtilde / 2.) * div_ucon;
             }
 
-            if (emhd_params.viscosity) {
+            if (m_s.DP >= 0) {
                 const Real& dPtilde = P(b)(m_p.DP, k, j, i);
                 Real dP0            = -rho * nu_e * div_ucon;
                 DLOOP2  dP0        += 3. * rho * nu_e * (D.bcon[mu] * D.bcon[nu] / bsq) * grad_ucov[mu][nu];
@@ -396,6 +394,38 @@ TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt, IndexDomain doma
     );
 
     return TaskStatus::complete;
+}
+
+void ApplyEMHDLimits(MeshBlockData<Real> *mbd, IndexDomain domain)
+{
+    auto pmb                 = mbd->GetBlockPointer();
+    auto packages            = pmb->packages;
+
+    PackIndexMap prims_map, cons_map;
+    auto P = mbd->PackVariables({Metadata::GetUserFlag("Primitive")}, prims_map);
+    auto U = mbd->PackVariables(std::vector<MetadataFlag>{Metadata::Conserved}, cons_map);
+    const VarMap m_u(cons_map, true), m_p(prims_map, false);
+
+    const auto& G = pmb->coords;
+
+    GridScalar eflag = mbd->Get("eflag").data;
+
+    const EMHD::EMHD_parameters& emhd_params = EMHD::GetEMHDParameters(packages);
+
+    const Real gam = packages.Get("GRMHD")->Param<Real>("gamma");
+
+    // Apply the EMHD instability limits in q, deltaP
+    // The user-specified limit values are in the FloorPrescription struct,
+    // but the EMHD closure parameters are in the emhd_params struct
+    const IndexRange ib = mbd->GetBoundsI(domain);
+    const IndexRange jb = mbd->GetBoundsJ(domain);
+    const IndexRange kb = mbd->GetBoundsK(domain);
+    pmb->par_for("apply_emhd_limits", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+        KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
+            // Apply limits to the Extended MHD variables
+            eflag(k, j, i) = apply_instability_limits(G, P, m_p, gam, emhd_params, k, j, i, U, m_u);
+        }
+    );
 }
 
 } // namespace EMHD

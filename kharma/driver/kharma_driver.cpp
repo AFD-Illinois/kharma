@@ -299,11 +299,6 @@ TaskID KHARMADriver::AddFluxCalculations(const TaskID& t_start, TaskList& tl, Me
         t_calculate_flux2 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::mp5, X2DIR>, md);
         t_calculate_flux3 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::mp5, X3DIR>, md);
         break;
-    case RType::weno5_ismr:
-        t_calculate_flux1 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::weno5_ismr, X1DIR>, md);
-        t_calculate_flux2 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::weno5_ismr, X2DIR>, md);
-        t_calculate_flux3 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::weno5_ismr, X3DIR>, md);
-        break;
     default:
         std::cerr << "Reconstruction type not supported!  Main supported reconstructions:" << std::endl
                   << "donor_cell, linear_mc, weno5" << std::endl;
@@ -382,7 +377,7 @@ TaskID KHARMADriver::AddStateUpdate(TaskID& t_start, TaskList& tl, MeshData<Real
                                 md_update);
     auto t_avg_data = t_avg_data_c;
     if (update_face) {
-        t_avg_data = tl.AddTask(t_start, WeightedSumDataFace,
+        t_avg_data = tl.AddTask(t_start, WeightedSumDataFace<MetadataFlag>,
                                 std::vector<MetadataFlag>(flags_face),
                                 md_sub_step_init, md_full_step_init,
                                 integrator->gam0[stage-1], integrator->gam1[stage-1],
@@ -396,7 +391,7 @@ TaskID KHARMADriver::AddStateUpdate(TaskID& t_start, TaskList& tl, MeshData<Real
                                 md_update);
     auto t_update = t_update_c;
     if (update_face) {
-        t_update = tl.AddTask(t_avg_data, WeightedSumDataFace,
+        t_update = tl.AddTask(t_avg_data, WeightedSumDataFace<MetadataFlag>,
                                 std::vector<MetadataFlag>(flags_face),
                                 md_update, md_flux_src,
                                 1.0, integrator->beta[stage-1] * integrator->dt,
@@ -432,7 +427,7 @@ TaskID KHARMADriver::AddStateUpdateIdealGuess(TaskID& t_start, TaskList& tl, Mes
                                 md_update);
     auto t_avg_data = t_avg_data_c;
     if (update_face) {
-        t_avg_data = tl.AddTask(t_start, WeightedSumDataFace,
+        t_avg_data = tl.AddTask(t_start, WeightedSumDataFace<MetadataFlag>,
                                 std::vector<MetadataFlag>(flags_face),
                                 md_sub_step_init, md_full_step_init,
                                 integrator->gam0[stage-1], integrator->gam1[stage-1],
@@ -446,7 +441,7 @@ TaskID KHARMADriver::AddStateUpdateIdealGuess(TaskID& t_start, TaskList& tl, Mes
                                 md_update);
     auto t_update = t_update_c;
     if (update_face) {
-        t_update = tl.AddTask(t_avg_data, WeightedSumDataFace,
+        t_update = tl.AddTask(t_avg_data, WeightedSumDataFace<MetadataFlag>,
                                 std::vector<MetadataFlag>(flags_face),
                                 md_update, md_flux_src,
                                 1.0, integrator->beta[stage-1] * integrator->dt,

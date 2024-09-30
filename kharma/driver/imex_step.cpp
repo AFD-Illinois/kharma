@@ -42,6 +42,7 @@
 #include "b_flux_ct.hpp"
 #include "electrons.hpp"
 #include "inverter.hpp"
+#include "ismr.hpp"
 #include "grmhd.hpp"
 #include "wind.hpp"
 // Other headers
@@ -221,6 +222,7 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
             auto t_copy_guess       = t_explicit;
             auto t_copy_emhd_vars   = t_explicit;
             if (use_ideal_guess) {
+                // This copies only q, dP for which we don't already have a guess
                 t_copy_emhd_vars = tl.AddTask(t_sources, Copy<MeshData<Real>>, std::vector<MetadataFlag>({Metadata::GetUserFlag("EMHDVar")}),
                                         md_sub_step_init.get(), md_solver.get());
                 t_copy_guess = t_copy_emhd_vars;
@@ -250,7 +252,7 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
             // If we're entirely explicit, we just declare these equal
             auto t_implicit_c = tl.AddTask(t_implicit_step, Copy<MeshData<Real>>, std::vector<MetadataFlag>({Metadata::Cell}),
                                     md_solver.get(), md_sub_step_final.get());
-            t_implicit = tl.AddTask(t_implicit_step, WeightedSumDataFace, std::vector<MetadataFlag>({Metadata::Face}),
+            t_implicit = tl.AddTask(t_implicit_step, WeightedSumDataFace<MetadataFlag>, std::vector<MetadataFlag>({Metadata::Face}),
                                     md_solver.get(), md_solver.get(), 1.0, 0.0, md_sub_step_final.get());
         }
 
@@ -306,6 +308,12 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t &blocks, int sta
         auto t_ptou = tl.AddTask(t_heat_electrons, Flux::MeshPtoU, md_sub_step_final.get(), IndexDomain::entire, false);
 
         auto t_step_done = t_ptou;
+        if (pkgs.count("ISMR")) {
+            auto t_derefine_b = t_ptou;
+            if (pkgs.count("B_CT"))
+                t_derefine_b = tl.AddTask(t_ptou, B_CT::DerefinePoles, md_sub_step_final.get());
+            t_step_done = tl.AddTask(t_derefine_b, ISMR::DerefinePoles, md_sub_step_final.get());
+        }
 
         // Estimate next time step based on ctop
         if (stage == integrator->nstages) {

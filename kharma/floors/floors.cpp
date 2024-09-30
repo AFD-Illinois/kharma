@@ -64,7 +64,7 @@ std::shared_ptr<KHARMAPackage> Floors::Initialize(ParameterInput *pin, std::shar
     // the implicit solver to avoid UtoP calls.
     // TODO(BSP) automate/standardize parsing enums like this: classes w/tables like the flags?
     std::vector<std::string> allowed_floor_frames = {"normal", "fluid", "mixed",
-                                                     "mixed_fluid_normal", "mixed_fluid_drift", "drift"};
+                                                     "mixed_fluid_normal", "mixed_normal_drift", "drift"};
     std::string frame_s = pin->GetOrAddString("floors", "frame", "drift", allowed_floor_frames);
     InjectionFrame frame;
     if (frame_s == "normal") {
@@ -73,18 +73,19 @@ std::shared_ptr<KHARMAPackage> Floors::Initialize(ParameterInput *pin, std::shar
         frame = InjectionFrame::fluid;
     } else if (frame_s == "mixed" || frame_s == "mixed_fluid_normal") {
         frame = InjectionFrame::mixed_fluid_normal;
-    } else if (frame_s == "mixed_fluid_drift") {
-        frame = InjectionFrame::mixed_fluid_drift;
+    } else if (frame_s == "mixed_normal_drift") {
+        frame = InjectionFrame::mixed_normal_drift;
     } else if (frame_s == "drift") {
         frame = InjectionFrame::drift;
     }
     params.Add("frame", frame);
 
     // Switch points for "mixed" frames
+    // TODO no-ops under new floors
     if (frame == InjectionFrame::mixed_fluid_normal) {
         GReal frame_switch_r = pin->GetOrAddReal("floors", "frame_switch_r", 50.);
         params.Add("frame_switch_r", frame_switch_r);
-    } else if (frame == InjectionFrame::mixed_fluid_drift) {
+    } else if (frame == InjectionFrame::mixed_normal_drift) {
         GReal frame_switch_beta = pin->GetOrAddReal("floors", "frame_switch_beta", 10.);
         params.Add("frame_switch_beta", frame_switch_beta);
     }
@@ -122,7 +123,7 @@ std::shared_ptr<KHARMAPackage> Floors::Initialize(ParameterInput *pin, std::shar
     // List (vector) of HistoryOutputVars that will all be enrolled as output variables
     parthenon::HstVar_list hst_vars = {};
     // Count total floors as a history item
-    hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::max, CountFFlags, "FFlags"));
+    hst_vars.emplace_back(parthenon::HistoryOutputVar(UserHistoryOperation::sum, CountFFlags, "FFlags"));
     // TODO Domain::entire version?
     // TODO entries for each individual flag?
     // add callbacks for HST output to the Params struct, identified by the `hist_param_key`
@@ -239,8 +240,8 @@ TaskStatus Floors::ApplyGRMHDFloors(MeshData<Real> *md, IndexDomain domain)
         return ApplyFloorsInFrame<InjectionFrame::fluid>(md, domain);
     } else if (pars.Get<InjectionFrame>("frame") == InjectionFrame::mixed_fluid_normal) {
         return ApplyFloorsInFrame<InjectionFrame::mixed_fluid_normal>(md, domain);
-    } else if (pars.Get<InjectionFrame>("frame") == InjectionFrame::mixed_fluid_drift) {
-        return ApplyFloorsInFrame<InjectionFrame::mixed_fluid_drift>(md, domain);
+    } else if (pars.Get<InjectionFrame>("frame") == InjectionFrame::mixed_normal_drift) {
+        return ApplyFloorsInFrame<InjectionFrame::mixed_normal_drift>(md, domain);
     } else if (pars.Get<InjectionFrame>("frame") == InjectionFrame::drift) {
         return ApplyFloorsInFrame<InjectionFrame::drift>(md, domain);
     } else {

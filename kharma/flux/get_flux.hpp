@@ -93,15 +93,14 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
     const bool reconstruction_fallback = pars.Get<bool>("reconstruction_fallback");
 
     const Real gam = mhd_pars.Get<Real>("gamma");
-    // Added by Hyerin (03/07/24)
-    bool ismr_poles = mhd_pars.Get<bool>("ismr_poles");
-    uint ismr_nlevels = (ismr_poles) ? mhd_pars.Get<uint>("ismr_nlevels") : 0;
-    int ng = Globals::nghost;
 
     // Check whether we're using constraint-damping
     // (which requires that a variable be propagated at ctop_max)
     const bool use_b_cd = packages.AllPackages().count("B_CD");
     const double ctop_max = (use_b_cd) ? packages.Get("B_CD")->Param<Real>("ctop_max_last") : 0.0;
+
+    const bool use_ismr = packages.AllPackages().count("ISMR");
+    const int ng_plus_nlevels = use_ismr ? packages.Get("ISMR")->Param<uint>("nlevels") + Globals::nghost : 0;
 
     const EMHD::EMHD_parameters& emhd_params = EMHD::GetEMHDParameters(packages);
 
@@ -166,9 +165,8 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
             // We template on reconstruction type to avoid a big switch statement here.
             // Instead, a version of GetFlux() is generated separately for each reconstruction/direction pair.
             // See reconstruction.hpp for all the implementations.
-            // Except internal SMR.  That's potentially its own whole group of schemes
-            if (ismr_poles) {
-                KReconstruction::ReconstructRowIsmr<Recon, dir>(member, P_all(bl), k, j, b.is, b.ie, Pl_s, Pr_s, ismr_nlevels, ng);
+            if (use_ismr) {
+                KReconstruction::ReconstructRowIsmr<Recon, dir>(member, P_all(bl), k, j, b.is, b.ie, ng_plus_nlevels, Pl_s, Pr_s);
             } else {
                 KReconstruction::ReconstructRow<Recon, dir>(member, P_all(bl), k, j, b.is, b.ie, Pl_s, Pr_s);
             }
@@ -376,22 +374,6 @@ inline TaskStatus GetFlux(MeshData<Real> *md)
         );
     }
     EndFlag();
-
-    // Save the face velocities for upwinding/CT later
-    // TODO Probably a few reasons to do this, maybe make it a Flux parameter
-    if (packages.AllPackages().count("B_CT") && packages.Get("B_CT")->Param<std::string>("ct_scheme") == "gs05_c") {
-        Flag("GetFlux_"+std::to_string(dir)+"_store_vel");
-        const auto& vl_all = md->PackVariables(std::vector<std::string>{"Flux.vl"});
-        const auto& vr_all = md->PackVariables(std::vector<std::string>{"Flux.vr"});
-        const TopologicalElement face = FaceOf(dir);
-        pmb0->par_for("flux_llf", block.s, block.e, 0, NVEC-1, b.ks, b.ke, b.js, b.je, b.is, b.ie,
-            KOKKOS_LAMBDA(const int& bl, const int& v, const int& k, const int& j, const int& i) {
-                vl_all(bl, face, v, k, j, i) = Pl_all(bl, m_p.U1+v, k, j, i);
-                vr_all(bl, face, v, k, j, i) = Pr_all(bl, m_p.U1+v, k, j, i);
-            }
-        );
-        EndFlag();
-    }
 
     EndFlag();
     return TaskStatus::complete;

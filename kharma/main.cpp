@@ -86,19 +86,11 @@ int kharma_debug_trace_mutex = 0;
 using namespace parthenon;
 
 /**
- * Main function for KHARMA.  Basically a wrapper calling a particular driver class to
- * handle fluid evolution.
- *
- * Different driver classes can be switched out to implement different algorithms or
- * sets of physical processes, while re-using particular physics packages to mix and match
- *
- * Currently available drivers:
- * HARM: GRMHD using LLF with zone-centered fields, conserved variables are synchronized
- * Imex: same functionality HARM but primitive variables are synchronized,
- *       optionally uses per-zone implicit solve for some variables, for e.g. Extended GRMHD
- *
- * Future drivers?
- * bhlight: GRMHD with Monte Carlo particle transport
+ * Main function for KHARMA.  Parses parameters, prints basics,
+ * constructs the `Mesh`, calls the Driver.
+ * 
+ * Most physics functionality is in the `KHARMADriver` class, over
+ * in the `driver/` folder.
  */
 int main(int argc, char *argv[])
 {
@@ -107,7 +99,7 @@ int main(int argc, char *argv[])
     // A couple of callbacks are KHARMA-wide single functions
     pman.app_input->ProcessPackages = KHARMA::ProcessPackages;
     pman.app_input->ProblemGenerator = KHARMA::ProblemGenerator;
-    // A few are passed on to be implemented by packages as they see fit
+    // Most are passed on to be implemented by packages as they see fit
     pman.app_input->MeshBlockUserWorkBeforeOutput = Packages::UserWorkBeforeOutput;
     pman.app_input->PreStepMeshUserWorkInLoop = Packages::PreStepWork;
     pman.app_input->PostStepMeshUserWorkInLoop = Packages::PostStepWork;
@@ -154,8 +146,9 @@ int main(int argc, char *argv[])
         return 1;
     }
     auto pin = pman.pinput.get(); // All parameters in the input file or command line
-    // Modify input parameters as we need
-    KHARMA::FixParameters(pin);
+    // Modify input parameters as we need. Needs to know if Parthenon set parameters
+    // from our restart file, or whether we need to read them from a file here
+    KHARMA::FixParameters(pin, pman.IsRestart());
     // InitPackagesEtc calls ProcessPackages, then constructs the Mesh
     pman.ParthenonInitPackagesAndMesh();
     // Now pull out the mesh and app_input as well for below
@@ -196,7 +189,7 @@ int main(int argc, char *argv[])
         std::cout << "Running with " << pmesh->nbtotal << " total meshblocks, " << MPINumRanks() << " MPI ranks." << std::endl;
         std::cout << "Blocks on rank " << MPIRank() << ": " << pmesh->block_list.size() << "\n" << std::endl;
     }
-    // If very verbose, print # meshblocks on every rank
+    // If very verbose, print # meshblocks on *every* rank, not just rank 0
     if (verbose > 1) {
         //MPIBarrier();
         if (MPIRank() > 0)

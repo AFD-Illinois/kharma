@@ -104,4 +104,4 @@ ghost_zones = true
 
 <parthenon/output2>
 file_type = hst
-dn = 100
+dn = 1000000
