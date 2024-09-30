@@ -83,6 +83,11 @@ TaskStatus CalculateEMF(MeshData<Real> *md);
 TaskStatus AddSource(MeshData<Real> *md, MeshData<Real> *mdudt, IndexDomain domain);
 
 /**
+ * Derefine face-centered B at poles without introducing divergence
+ */
+TaskStatus DerefinePoles(MeshData<Real> *md);
+
+/**
  * Calculate maximum corner-centered divergence of magnetic field,
  * to check it is being preserved ~=0
  * Used as a Parthenon History function, so must take exactly the
@@ -115,10 +120,6 @@ inline TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *md)
  * Fill fields which are calculated only for output to file, i.e., divB
  */
 void FillOutput(MeshBlock *pmb, ParameterInput *pin);
-/**
- * Added by Hyerin (01/17/24) for de-refining the cells near the poles for a speed-up
- */
-TaskStatus DerefinePoles(MeshData<Real> *md, uint nlevels);
 /**
  * Fill field "name" with divB
  */
