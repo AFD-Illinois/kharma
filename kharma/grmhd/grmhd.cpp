@@ -1,25 +1,25 @@
-/* 
+/*
  *  File: grmhd.cpp
- *  
+ *
  *  BSD 3-Clause License
- *  
+ *
  *  Copyright (c) 2020, AFD Group at UIUC
  *  All rights reserved.
- *  
+ *
  *  Redistribution and use in source and binary forms, with or without
  *  modification, are permitted provided that the following conditions are met:
- *  
+ *
  *  1. Redistributions of source code must retain the above copyright notice, this
  *     list of conditions and the following disclaimer.
- *  
+ *
  *  2. Redistributions in binary form must reproduce the above copyright notice,
  *     this list of conditions and the following disclaimer in the documentation
  *     and/or other materials provided with the distribution.
- *  
+ *
  *  3. Neither the name of the copyright holder nor the names of its
  *     contributors may be used to endorse or promote products derived from
  *     this software without specific prior written permission.
- *  
+ *
  *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
  *  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  *  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -294,11 +294,16 @@ Real EstimateTimestep(MeshData<Real> *md)
         return globals.Get<double>("dt_light");
     }
 
-    // Actually compute the timestep if we have to
+    // Now actually compute the timestep if we have to
+
+    auto& params = pmesh->packages.Get<KHARMAPackage>("Boundaries")->AllParams();
+    const bool excise_inner_x2 = params.Get<bool>("excise_flux_inner_x2");
+    const bool excise_outer_x2 = params.Get<bool>("excise_flux_outer_x2");
+
     const IndexRange3 b = KDomain::GetRange(md, IndexDomain::interior);
 
     // TODO version preserving location, with switch to keep this fast one
-    // TODO maybe split normal, ISMR timesteps? Excised pole/recalculated ctop too?
+    // TODO maybe split normal vs ISMR timesteps?
     double min_ndt = std::numeric_limits<double>::max();
     for (auto &pmb : pmesh->block_list) {
         auto rc = pmb->meshblock_data.Get().get();
@@ -309,16 +314,22 @@ Real EstimateTimestep(MeshData<Real> *md)
         const auto& cmax  = rc->PackVariables(std::vector<std::string>{"Flux.cmax"});
         const auto& cmin  = rc->PackVariables(std::vector<std::string>{"Flux.cmin"});
 
-        double block_min_ndt = 0.;
+        double block_min_ndt = std::numeric_limits<double>::max();
         pmb->par_reduce("ndt_min", b.ks, b.ke, b.js, b.je, b.is, b.ie,
             KOKKOS_LAMBDA (const int k, const int j, const int i,
                         double &local_result) {
                 const auto& G = cmax.GetCoords();
                 int ismr_factor = 1;
+                double excision_factor = 1.0;
                 double courant_limit = 1.0;
 
+                if (excise_inner_x2 && polar_inner_x2 && j == b.js)
+                    excision_factor = 0.5;
+                if (excise_outer_x2 && polar_outer_x2 && j == b.je)
+                    excision_factor = 0.5;
+
                 double ndt_zone = courant_limit / (1 / (G.Dxc<1>(i) /  m::max(cmax(V1, k, j, i), cmin(V1, k, j, i))) +
-                                    1 / (G.Dxc<2>(j) /  m::max(cmax(V2, k, j, i), cmin(V2, k, j, i))) +
+                                    1 / (G.Dxc<2>(j) * excision_factor /  m::max(cmax(V2, k, j, i), cmin(V2, k, j, i))) +
                                     1 / (G.Dxc<3>(k) * ismr_factor /  m::max(cmax(V3, k, j, i), cmin(V3, k, j, i))));
 
                 if (!m::isnan(ndt_zone) && (ndt_zone < local_result)) {
