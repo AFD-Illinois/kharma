@@ -42,6 +42,7 @@
 #include "electrons.hpp"
 #include "grmhd.hpp"
 #include "inverter.hpp"
+#include "ismr.hpp"
 #include "multizone.hpp"
 #include "wind.hpp"
 // Other headers

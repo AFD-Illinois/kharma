@@ -50,10 +50,9 @@ std::shared_ptr<KHARMAPackage> ISMR::Initialize(ParameterInput *pin, std::shared
     // ISMR cache: not evolved, immediately copied to fluid state after averaging
     // Must be total size of variable list
     using FC = Metadata::FlagCollection;
-    FC fluid_vars = FC({Metadata::Conserved, Metadata::Cell, Metadata::HD});
+    FC fluid_vars = FC({Metadata::Conserved, Metadata::Cell, Metadata::Independent});
     int nvar = KHARMA::PackDimension(packages.get(), fluid_vars);
     std::vector<int> s_avg({nvar});
-    printf("HYERIN: ISMR 1 nvar is %d\n", nvar);
     auto m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy}, s_avg);
     pkg->AddField("ismr.vars_avg", m);
 
@@ -76,6 +75,7 @@ std::shared_ptr<KHARMAPackage> ISMR::Initialize(ParameterInput *pin, std::shared
 
 TaskStatus ISMR::DerefinePoles(MeshData<Real> *md)
 {
+    Flag("ISMR_DerefinePoles");
     // TODO this routine only applies to polar boundaries for now.
     auto pmesh = md->GetMeshPointer();
     const uint nlevels = pmesh->packages.Get("ISMR")->Param<uint>("nlevels");
@@ -85,10 +85,9 @@ TaskStatus ISMR::DerefinePoles(MeshData<Real> *md)
     for (auto &pmb : pmesh->block_list) {
         auto& rc = pmb->meshblock_data.Get();
         PackIndexMap cons_map;
-        auto vars = rc->PackVariables(std::vector<MetadataFlag>{Metadata::Conserved, Metadata::Cell, Metadata::HD}, cons_map);
+        auto vars = rc->PackVariables(std::vector<MetadataFlag>{Metadata::Conserved, Metadata::Cell, Metadata::Independent}, cons_map);
         auto vars_avg = rc->PackVariables(std::vector<std::string>{"ismr.vars_avg"});
         const int nvar = vars.GetDim(4);
-        printf("HYERIN: ISMR 2 nvar is %d\n", nvar);
         for (int i = 0; i < BOUNDARY_NFACES; i++) {
             BoundaryFace bface = (BoundaryFace) i;
             auto bdir = KBoundaries::BoundaryDirection(bface);
@@ -97,9 +96,9 @@ TaskStatus ISMR::DerefinePoles(MeshData<Real> *md)
             if (bdir == X2DIR && pmb->boundary_flag[bface] == BoundaryFlag::user) {
                 // indices
                 IndexRange3 bCC = KDomain::GetRange(rc, IndexDomain::interior, CC);
-                IndexRange3 bF2 = KDomain::GetBoundaryRange(rc, domain, F2);
+                //IndexRange3 bF2 = KDomain::GetBoundaryRange(rc, domain, F2);
                 // last physical face
-                const int j_f = (binner) ? bF2.je + 1 : bF2.js - 1;
+                const int j_f = (binner) ? bCC.js : bCC.je + 1; //bF2.je : bF2.js;
                 // start of the lowest level of derefinement
                 const int jps = (binner) ? j_f + (nlevels - 1) : j_f - (nlevels - 1);
                 // Range of x2 to be de-refined
@@ -146,7 +145,7 @@ TaskStatus ISMR::DerefinePoles(MeshData<Real> *md)
                         const int j_c = j + ((binner) ? 0 : -1); // cell center
                         // The usual inverter is not EMHD-aware, so it's going to dump all of T into the
                         // ideal GRMHD fluid variables
-                        Inverter::u_to_p<Inverter::Type::kastaun>(G, vars, m_u, gam, k, j_c, i, P, m_p, Loci::center,
+                        Inverter::u_to_p<Inverter::Type::onedw>(G, vars, m_u, gam, k, j_c, i, P, m_p, Loci::center,
                                             floors, 8, 1e-8);
                         // Consistent with that, we zero out the EMHD extra variables.  This switches theories to
                         // evolving ideal GRMHD in ISMR region, but conserves the components of T themselves
@@ -160,5 +159,6 @@ TaskStatus ISMR::DerefinePoles(MeshData<Real> *md)
             }
         }
     }
+    EndFlag();
     return TaskStatus::complete;
 }

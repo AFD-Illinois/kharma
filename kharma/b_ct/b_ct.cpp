@@ -481,7 +481,7 @@ TaskStatus B_CT::AddSource(MeshData<Real> *md, MeshData<Real> *mdudt, IndexDomai
 
 TaskStatus B_CT::DerefinePoles(MeshData<Real> *md)
 {
-    Flag("DerefinePoles");
+    Flag("B_CT_DerefinePoles");
     // HYERIN (01/17/24) this routine is not general yet and only applies to polar boundaries for now.
     auto pmesh = md->GetMeshPointer();
     const uint nlevels = pmesh->packages.Get("ISMR")->Param<uint>("nlevels");
@@ -503,14 +503,13 @@ TaskStatus B_CT::DerefinePoles(MeshData<Real> *md)
                 // TODO also get ranges in cells from the beginning rather than using j_p & calculating j_c
                 IndexRange3 bCC = KDomain::GetRange(rc, IndexDomain::interior, CC);
                 IndexRange3 bF1 = KDomain::GetRange(rc, domain, F1, ng, -ng);
-                IndexRange3 bF2 = KDomain::GetRange(rc, domain, F2, (binner) ? 0 : -1, (binner) ? 1 : 0, false);
+                //IndexRange3 bF2 = KDomain::GetRange(rc, domain, F2, (binner) ? 0 : -1, (binner) ? 1 : 0, false);
                 IndexRange3 bF3 = KDomain::GetRange(rc, domain, F3, ng, -ng);
-                const int j_f = (binner) ? bF2.je : bF2.js; // last physical face
+                const int j_f = (binner) ? bCC.js : bCC.je + 1; //bF2.je : bF2.js; // last physical face
                 const int jps = (binner) ? j_f + (nlevels - 1) : j_f - (nlevels - 1); // start of the lowest level of derefinement
                 const IndexRange j_p = IndexRange{(binner) ? j_f : jps, (binner) ? jps : j_f};  // Range of x2 to be de-refined
                 const int offset = (binner) ? 1 : -1; // offset to read the physical face values
                 const int point_out = offset; // if F2 B field at j_f + offset face is positive when pointing out of the cell, +1.
-                // TODO Hyerin (09/30/24) multiplying by G.Volume<F1,2,3> not needed because its independent in x3 direction - remove
                 
                 // F1 average
                 pmb->par_for("B_CT_derefine_poles_avg_F1", bCC.ks, bCC.ke, j_p.s, j_p.e, bF1.is, bF1.ie,
