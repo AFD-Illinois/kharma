@@ -302,12 +302,18 @@ Real EstimateTimestep(MeshData<Real> *md)
 
     const IndexRange3 b = KDomain::GetRange(md, IndexDomain::interior);
 
+    // Added by Hyerin (03/07/24)
+    // Internal SMR adds a factor to dx3 at poles based on larger cell width
+    // TODO distinguish polar from other ISMR if more modes are added
+    const bool ismr_poles = pmesh->packages.AllPackages().count("ISMR");
+    const uint ismr_nlevels = (ismr_poles) ? pmesh->packages.Get("ISMR")->Param<uint>("nlevels") : 0;
+
     // TODO version preserving location, with switch to keep this fast one
-    // TODO maybe split normal vs ISMR timesteps?
+    // TODO maybe split normal vs ISMR (/Excised pole/etc) timesteps? Make normal calculation mesh-wise?
     double min_ndt = std::numeric_limits<double>::max();
     for (auto &pmb : pmesh->block_list) {
         auto rc = pmb->meshblock_data.Get().get();
-        // We only need this block-wise to check boundary flags for ISMR, could special-case that
+
         const bool polar_inner_x2 = pmb->boundary_flag[BoundaryFace::inner_x2] == BoundaryFlag::user;
         const bool polar_outer_x2 = pmb->boundary_flag[BoundaryFace::outer_x2] == BoundaryFlag::user;
 
@@ -322,6 +328,14 @@ Real EstimateTimestep(MeshData<Real> *md)
                 int ismr_factor = 1;
                 double excision_factor = 1.0;
                 double courant_limit = 1.0;
+                if (ismr_poles && polar_inner_x2 && j < (b.js + ismr_nlevels)) {
+                    ismr_factor = m::pow(2, ismr_nlevels - (j - b.js));
+                    courant_limit = 0.5;
+                }
+                if (ismr_poles && polar_outer_x2 && j > (b.je - ismr_nlevels)) {
+                    ismr_factor = m::pow(2, ismr_nlevels - (b.je - j));
+                    courant_limit = 0.5;
+                }
 
                 if (excise_inner_x2 && polar_inner_x2 && j == b.js)
                     excision_factor = 0.5;
@@ -701,10 +715,6 @@ void UpdateAveragedCtop(MeshData<Real> *md)
                             }
                         }
                     );
-
-                    if (params.Get<bool>("excise_flux_" + bname)) {
-
-                    }
                 }
             }
         }
