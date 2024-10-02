@@ -499,9 +499,8 @@ TaskStatus B_CT::DerefinePoles(MeshData<Real> *md)
                 // TODO also get ranges in cells from the beginning rather than using j_p & calculating j_c
                 IndexRange3 bCC = KDomain::GetRange(rc, IndexDomain::interior, CC);
                 IndexRange3 bF1 = KDomain::GetRange(rc, domain, F1, ng, -ng);
-                IndexRange3 bF2 = KDomain::GetRange(rc, domain, F2, (binner) ? 0 : -1, (binner) ? 1 : 0, false);
                 IndexRange3 bF3 = KDomain::GetRange(rc, domain, F3, ng, -ng);
-                const int j_f = (binner) ? bF2.je : bF2.js; // last physical face
+                const int j_f = (binner) ? bCC.js : bCC.je + 1; // last physical face
                 const int jps = (binner) ? j_f + (nlevels - 1) : j_f - (nlevels - 1); // start of the lowest level of derefinement
                 const IndexRange j_p = IndexRange{(binner) ? j_f : jps, (binner) ? jps : j_f};  // Range of x2 to be de-refined
                 const int offset = (binner) ? 1 : -1; // offset to read the physical face values
