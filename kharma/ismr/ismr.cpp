@@ -49,7 +49,9 @@ std::shared_ptr<KHARMAPackage> ISMR::Initialize(ParameterInput *pin, std::shared
 
     // ISMR cache: not evolved, immediately copied to fluid state after averaging
     // Must be total size of variable list
-    int nvar = KHARMA::PackDimension(packages.get(), Metadata::WithFluxes);
+    using FC = Metadata::FlagCollection;
+    FC fluid_vars = FC({Metadata::Conserved, Metadata::Cell, Metadata::Independent});
+    int nvar = KHARMA::PackDimension(packages.get(), fluid_vars);
     std::vector<int> s_avg({nvar});
     auto m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy}, s_avg);
     pkg->AddField("ismr.vars_avg", m);
@@ -73,6 +75,7 @@ std::shared_ptr<KHARMAPackage> ISMR::Initialize(ParameterInput *pin, std::shared
 
 TaskStatus ISMR::DerefinePoles(MeshData<Real> *md)
 {
+    Flag("ISMR_DerefinePoles");
     // TODO this routine only applies to polar boundaries for now.
     auto pmesh = md->GetMeshPointer();
     const uint nlevels = pmesh->packages.Get("ISMR")->Param<uint>("nlevels");
@@ -82,7 +85,7 @@ TaskStatus ISMR::DerefinePoles(MeshData<Real> *md)
     for (auto &pmb : pmesh->block_list) {
         auto& rc = pmb->meshblock_data.Get();
         PackIndexMap cons_map;
-        auto vars = rc->PackVariables(std::vector<MetadataFlag>{Metadata::Conserved, Metadata::Cell}, cons_map);
+        auto vars = rc->PackVariables(std::vector<MetadataFlag>{Metadata::Conserved, Metadata::Cell, Metadata::Independent}, cons_map);
         auto vars_avg = rc->PackVariables(std::vector<std::string>{"ismr.vars_avg"});
         const int nvar = vars.GetDim(4);
         for (int i = 0; i < BOUNDARY_NFACES; i++) {
@@ -93,9 +96,8 @@ TaskStatus ISMR::DerefinePoles(MeshData<Real> *md)
             if (bdir == X2DIR && pmb->boundary_flag[bface] == BoundaryFlag::user) {
                 // indices
                 IndexRange3 bCC = KDomain::GetRange(rc, IndexDomain::interior, CC);
-                IndexRange3 bF2 = KDomain::GetBoundaryRange(rc, domain, F2);
                 // last physical face
-                const int j_f = (binner) ? bF2.je : bF2.js;
+                const int j_f = (binner) ? bCC.js : bCC.je + 1;
                 // start of the lowest level of derefinement
                 const int jps = (binner) ? j_f + (nlevels - 1) : j_f - (nlevels - 1);
                 // Range of x2 to be de-refined
@@ -156,5 +158,6 @@ TaskStatus ISMR::DerefinePoles(MeshData<Real> *md)
             }
         }
     }
+    EndFlag();
     return TaskStatus::complete;
 }
