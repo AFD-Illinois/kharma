@@ -23,7 +23,7 @@ nx3 = 64
 <coordinates>
 base = ks
 transform = eks
-a = 0.0
+a = 0.5
 r_out = 32768
 r_in = 1
 
@@ -31,10 +31,12 @@ r_in = 1
 tlim = 10000000000
 
 <GRMHD>
-cfl = 0.5
+cfl = 0.45
 gamma = 1.6666666666666667
-ismr_poles = 1
-ismr_nlevels = 4
+
+<ismr>
+on = 1
+nlevels = 4
 
 <bondi>
 mdot = 1.832747665572202
@@ -52,9 +54,10 @@ rho_min_geom = 1e-6
 u_min_geom = 1e-8
 bsq_over_u_max = 1000
 u_over_rho_max = 100
-bsq_over_rho_max = 100
-gamma_max = 10
+bsq_over_rho_max = 20
+gamma_max = 5
 adjust_k = 0
+radius_dependent_gamma_max = 1
 
 # We'll be adding material, and that's okay
 <boundaries>
@@ -69,7 +72,7 @@ u_jitter = 0.1
 
 <b_field>
 solver = face_ct
-ct_scheme = bs99 #sg07
+ct_scheme = sg07
 # Constant pure-vertical field
 type = r1s2
 A0 = 0.0005
@@ -89,13 +92,20 @@ reconstruction = weno5
 on = 1
 nzones = 4
 loc_tchar = 0
+ncycle_per_zone = 200
+one_trun = 1
+combine_out = true
+long_t_in = 10
+bflux_const = 1
+move_rin = 1
 
 <parthenon/output0>
 file_type = hdf5
-dn = 1000
+dn = -1
 single_precision_output = true
 variables = prims, cons.fB, fflag, pflag, divB
 ghost_zones = true
+analysis_output = 1
 
 <parthenon/output1>
 file_type = rst
@@ -105,3 +115,9 @@ ghost_zones = true
 <parthenon/output2>
 file_type = hst
 dn = 1000000
+
+<inverter>
+type = onedw
+
+<flux>
+consistent_face_b = 1
