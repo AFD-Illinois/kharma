@@ -704,10 +704,6 @@ void UpdateAveragedCtop(MeshData<Real> *md)
                             }
                         }
                     );
-
-                    if (params.Get<bool>("excise_flux_" + bname)) {
-
-                    }
                 }
             }
         }
