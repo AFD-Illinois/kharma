@@ -10,7 +10,7 @@ archive_parameters = true
 # Full mesh size, no refinement
 # Don't bother with xN boundaries for spherical coordinate systems
 # KHARMA will automatically place ~5 zones inside the EH
-nx1 = 96
+nx1 = 288
 nx2 = 64
 nx3 = 64
 
@@ -22,39 +22,62 @@ nx3 = 64
 
 <coordinates>
 base = ks
-transform = mks
-a = 0.0
-hslope = 0.3
-r_out = 512
+transform = eks
+a = 0.5
+r_out = 134217728
 r_in = 1
 
 <parthenon/time>
-tlim = 2000.0
+tlim = 10000000000
 
 <GRMHD>
-cfl = 0.9
-gamma = 1.666667
-reconstruction = weno5
+cfl = 0.45
+gamma = 1.6666666666666667
+
+<ismr>
+on = 1
+nlevels = 4
 
 <bondi>
-mdot = 1.0
-rs = 8.0
+mdot = 1.832747665572202
+rs = 316.22776601683796
+ur_frac = 1.0
+uphi = 0.0
+diffinit = true
+set_outer_bound = 0
+r_in_bondi = 2.0
 
 # Disable floors
 <floors>
-disable_floors = true
+disable_floors = false
+rho_min_geom = 1e-6
+u_min_geom = 1e-8
+bsq_over_u_max = 1000
+u_over_rho_max = 100
+bsq_over_rho_max = 100
+gamma_max = 5
+adjust_k = 0
+radius_dependent_gamma_max = 1
 
 # We'll be adding material, and that's okay
 <boundaries>
+inner_x1 = outflow
+outer_x1 = outflow
 check_inflow_outer_x1 = false
+check_inflow_inner_x1 = true
+
+<perturbation>
+jitter_above_rho = 0 # always apply perturbation when u_jitter > 0
+u_jitter = 0.1
 
 <b_field>
 solver = face_ct
 ct_scheme = sg07
 # Constant pure-vertical field
 type = r1s2
-A0 = 0.005
+A0 = 2e-07
 norm = false
+kill_on_large_divb = 0
 
 <debug>
 verbose = 1
@@ -64,24 +87,38 @@ extra_checks = 1
 <driver>
 type = multizone
 two_sync = true
+reconstruction = weno5
 
 <multizone>
 on = 1
-nzones = 2
+nzones = 8
+loc_tchar = 1
+ncycle_per_zone = 200
+one_trun = 1
+combine_out = false
+long_t_in = 10
+bflux_const = 1
+move_rin = 1
 
 <parthenon/output0>
 file_type = hdf5
-#dt = 5.0
-single_precision_output = false
-# Fields not present are silently ignored
-variables = prims, pflag, fflag, divB, cons.fB
+dn = -1
+single_precision_output = true
+variables = prims, cons.fB, fflag, pflag, divB
 ghost_zones = true
+analysis_output = 1
 
 <parthenon/output1>
 file_type = rst
-dn = 1000
+dn = 10000
 ghost_zones = true
 
 <parthenon/output2>
 file_type = hst
-dt = 0.1
+dn = 1000000
+
+<inverter>
+type = onedw
+
+<flux>
+consistent_face_b = 1

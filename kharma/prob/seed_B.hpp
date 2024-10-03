@@ -54,7 +54,7 @@ TaskStatus NormalizeBField(MeshData<Real> *md, ParameterInput *pin);
 enum BSeedType{constant, monopole, orszag_tang, orszag_tang_a, wave, shock_tube,
                 sane, mad, mad_quadrupole, r3s3, r5s5, gaussian, bz_monopole, vertical, r1s2, r1gizmo};
 
-#define SEEDA_ARGS GReal *x, const GReal *dxc, double rho, double rin, double min_A, double A0, double arg1, double rb
+#define SEEDA_ARGS GReal *x, const GReal *dxc, double rho, double rin, double min_A, double A0, double arg1, double rb, double r_mag
 
 // This will also act as the default implementation for unspecified types,
 // which should all be filled as B field by seed_b below.
@@ -81,7 +81,7 @@ template<>
 KOKKOS_INLINE_FUNCTION Real seed_a<BSeedType::mad>(SEEDA_ARGS)
 {
     return m::max(m::pow(x[1] / rin, 3) * m::pow(sin(x[2]), 3) *
-            m::exp(-x[1] / 400) * rho - min_A, 0.);
+            m::exp(-x[1] / r_mag) * rho - min_A, 0.);
 }
 
 // MAD, but turned into a quadrupole
