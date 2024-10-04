@@ -325,7 +325,7 @@ Real EstimateTimestep(MeshData<Real> *md)
             KOKKOS_LAMBDA (const int k, const int j, const int i,
                         double &local_result) {
                 const auto& G = cmax.GetCoords();
-                int ismr_factor = 1;
+                double ismr_factor = 1.0;
                 double excision_factor = 1.0;
                 double courant_limit = 1.0;
                 if (ismr_poles && polar_inner_x2 && j < (b.js + ismr_nlevels)) {
@@ -337,10 +337,14 @@ Real EstimateTimestep(MeshData<Real> *md)
                     courant_limit = 0.5;
                 }
 
-                if (excise_inner_x2 && polar_inner_x2 && j == b.js)
+                if (excise_inner_x2 && polar_inner_x2 && j == b.js) {
                     excision_factor = 0.5;
-                if (excise_outer_x2 && polar_outer_x2 && j == b.je)
+                    courant_limit = 0.5;
+                }
+                if (excise_outer_x2 && polar_outer_x2 && j == b.je) {
                     excision_factor = 0.5;
+                    courant_limit = 0.5;
+                }
 
                 double ndt_zone = courant_limit / (1 / (G.Dxc<1>(i) /  m::max(cmax(V1, k, j, i), cmin(V1, k, j, i))) +
                                     1 / (G.Dxc<2>(j) * excision_factor /  m::max(cmax(V2, k, j, i), cmin(V2, k, j, i))) +
@@ -685,10 +689,6 @@ void UpdateAveragedCtop(MeshData<Real> *md)
                     const Floors::Prescription floors = pmb->packages.Get("Floors")->Param<Floors::Prescription>("prescription");
                     const EMHD::EMHD_parameters& emhd_params = EMHD::GetEMHDParameters(pmb->packages);
 
-                    // If we calculated the flux assuming half-size cells,
-                    // we modify ctop rather than special-case in EstimateTimestep
-                    const bool half_cells = params.Get<bool>("excise_flux_" + bname);
-
                     // Recompute ctop in zones affected by averaging
                     IndexRange3 b = KDomain::GetRange(rc, bdomain);
                     IndexRange3 bi = KDomain::GetRange(rc, IndexDomain::interior);
@@ -709,10 +709,6 @@ void UpdateAveragedCtop(MeshData<Real> *md)
                             Flux::vchar_global(G, P, m_p, Dtmp, gam, emhd_params, k, jf, i, Loci::center, X3DIR,
                                         cmax(V3, k, jf, i), cmin_minus);
                             cmin(V3, k, jf, i) = -cmin_minus;
-                            if (half_cells) {
-                                cmin(bdir-1, k, jf, i) *= 0.5;
-                                cmax(bdir-1, k, jf, i) *= 0.5;
-                            }
                         }
                     );
                 }

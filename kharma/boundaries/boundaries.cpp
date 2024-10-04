@@ -800,28 +800,39 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
                     const int n1 = pmb0->cellbounds.ncellsi(IndexDomain::entire);
                     const int scratch_level = 1; // 0 is actual scratch (tiny); 1 is HBM
                     const size_t var_size_in_bytes = parthenon::ScratchPad2D<Real>::shmem_size(nvar, n1);
-                    const size_t recon_scratch_bytes = 3 * var_size_in_bytes;
+                    const size_t recon_scratch_bytes = 2 * var_size_in_bytes;
+
+                    // Interpolate the last row to the outer half-cell (once, before below loop over dirs)
+                    // We won't be needing the cell-centered P again (right?)
+                    // This is a local update since j_cell != jn
+                    const int jn = (binner) ? j_cell + 1 : j_cell - 1;
+                    pmb->par_for(
+                        "excise_flux_" + bname, 0, nvar-1, b.ks, b.ke, b.is, b.ie,
+                        KOKKOS_LAMBDA(const int &ip, const int &k, const int &i) {
+                            P_all(ip, k, j_cell, i) = 0.75 * P_all(ip, k, j_cell, i) + 0.25 * P_all(ip, k, jn, i);
+                        }
+                    );
 
                     for (auto dir : OrthogonalDirs(bdir)) {
-                        // Reconstruct using outer-half values
+
+                        // Reconstruct using the outer-half values
                         parthenon::par_for_outer(DEFAULT_OUTER_LOOP_PATTERN, "excise_flux_" + bname + "_recon", pmb0->exec_space,
                             recon_scratch_bytes, scratch_level, b.ks, b.ke, j_cell, j_cell,
                             KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int& k, const int& j) {
-                                ScratchPad2D<Real> P_save(member.team_scratch(scratch_level), nvar, n1);
                                 ScratchPad2D<Real> Pl_s(member.team_scratch(scratch_level), nvar, n1);
                                 ScratchPad2D<Real> Pr_s(member.team_scratch(scratch_level), nvar, n1);
 
                                 // Interpolate linearly to outer half-zone but save centered value
-                                const int jn = (binner) ? j+1 : j-1;
-                                parthenon::par_for_inner(member, b.is, b.ie,
-                                    [&](const int& i) {
-                                        PLOOP {
-                                            P_save(ip, i) = P_all(ip, k, j, i);
-                                            P_all(ip, k, j, i) = 0.75 * P_save(ip, i) + 0.25 * P_all(ip, k, jn, i);
-                                        }
-                                    }
-                                );
-                                member.team_barrier();
+                                // TODO would need whole plane, not row.  Multi-D inner?
+                                // parthenon::par_for_inner(member, b.is, b.ie,
+                                //     [&](const int& i) {
+                                //         PLOOP {
+                                //             P_save(ip, i) = P_all(ip, k, j, i);
+                                //             P_all(ip, k, j, i) = 0.75 * P_save(ip, i) + 0.25 * P_all(ip, k, jn, i);
+                                //         }
+                                //     }
+                                // );
+                                // member.team_barrier();
 
                                 // Chosen to not require additional floors.  Could bump order and floor/fallback like in GetFlux
                                 if (dir == X1DIR) {
@@ -833,11 +844,11 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
                                 }
                                 member.team_barrier();
 
-                                // Restore centered value.  We were never here...
+                                // Assign local temporaries back to global arrays for the next kernel
                                 parthenon::par_for_inner(member, b.is, b.ie,
                                     [&](const int& i) {
                                         PLOOP {
-                                            P_all(ip, k, j, i) = P_save(ip, i);
+                                            // P_all(ip, k, j, i) = P_save(ip, i);
                                             Pl_all(ip, k, j, i) = Pl_s(ip, i);
                                             Pr_all(ip, k, j, i) = Pr_s(ip, i);
                                         }
