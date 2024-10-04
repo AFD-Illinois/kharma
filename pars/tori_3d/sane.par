@@ -64,8 +64,9 @@ two_sync = false
 <boundaries>
 inner_x2 = transmitting
 outer_x2 = transmitting
-# This reduces the polar "wake," but may shrink timestep
-excise_polar_flux = true
+# This reduces the polar "wake," but shrinks the timestep,
+# and has caused instabilities. YMMV.
+#excise_polar_flux = true
 
 <floors>
 # Now with FOFC it might work to set "frame = normal",
