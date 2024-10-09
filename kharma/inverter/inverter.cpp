@@ -1,25 +1,25 @@
-/* 
+/*
  *  File: inverter.cpp
- *  
+ *
  *  BSD 3-Clause License
- *  
+ *
  *  Copyright (c) 2020, AFD Group at UIUC
  *  All rights reserved.
- *  
+ *
  *  Redistribution and use in source and binary forms, with or without
  *  modification, are permitted provided that the following conditions are met:
- *  
+ *
  *  1. Redistributions of source code must retain the above copyright notice, this
  *     list of conditions and the following disclaimer.
- *  
+ *
  *  2. Redistributions in binary form must reproduce the above copyright notice,
  *     this list of conditions and the following disclaimer in the documentation
  *     and/or other materials provided with the distribution.
- *  
+ *
  *  3. Neither the name of the copyright holder nor the names of its
  *     contributors may be used to endorse or promote products derived from
  *     this software without specific prior written permission.
- *  
+ *
  *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
  *  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  *  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -156,10 +156,10 @@ inline void BlockPerformInversion(MeshBlockData<Real> *rc, IndexDomain domain, b
     const auto& G = pmb->coords;
 
     // Get the primitives from our conserved versions
-    // Notice we recover variables for only the physical (interior or interior-ghost)
+    // Notice by default, we recover variables for only the physical (interior or interior-ghost)
     // zones!  These are the only ones which are filled at our point in the step
-    auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
-    const IndexRange3 b = KDomain::GetPhysicalRange(rc);
+    const IndexRange3 b = (domain == IndexDomain::entire)
+                          ? KDomain::GetPhysicalRange(rc) : KDomain::GetRange(rc, domain, coarse);
     pmb->par_for("U_to_P", b.ks, b.ke, b.js, b.je, b.is, b.ie,
         KOKKOS_LAMBDA (const int &k, const int &j, const int &i) {
             const Floors::Prescription& myfloors = (inverter_floors.radius_dependent_floors
