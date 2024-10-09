@@ -107,9 +107,17 @@ std::shared_ptr<KHARMAPackage> Inverter::Initialize(ParameterInput *pin, std::sh
     m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy, Metadata::Overridable});
     pkg->AddField("fflag", m);
 
-    // We exist basically to do this
-    pkg->BlockUtoP = Inverter::BlockUtoP;
-    pkg->BoundaryUtoP = Inverter::BlockUtoP;
+    // This package may be loaded even when evolving implicitly, e.g. for FOFC
+    // Only register our callbacks if they're needed for explicit evolution or a guess
+    if (!pin->GetBoolean("GRMHD", "implicit") || pin->GetBoolean("emhd", "ideal_guess")) {
+        // We exist basically to do this
+        pkg->BlockUtoP = Inverter::BlockUtoP;
+        // We want to run U->P on most boundaries when we're synchronizing conserved variables
+        pkg->BoundaryUtoP = Inverter::BlockUtoP;
+        // However, we apply domain boundaries to primitives.
+        // Registering this additional function conveys that to the callers in `Packages` and `Boundaries`
+        pkg->DomainBoundaryPtoU = Flux::BlockPtoUMHD;
+    }
 
     pkg->PostStepDiagnosticsMesh = Inverter::PostStepDiagnostics;
 

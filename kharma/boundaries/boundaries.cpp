@@ -562,7 +562,7 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
     // There are two modes of operation here:
     if (sync_prims) {
         // 1. Exchange/prolongate/restrict PRIMITIVE variables: (ImEx driver)
-        //    Primitive variables and conserved B field are marked FillGhost
+        //    Primitive variables (except B field!) are marked FillGhost
         //    Explicitly run UtoP on B field, then PtoU on everything
         // TODO there should be a set of B field wrappers that dispatch this
         auto pkgs = pmb->packages.AllPackages();
