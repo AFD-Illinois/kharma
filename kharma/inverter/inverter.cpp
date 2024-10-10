@@ -36,6 +36,7 @@
 // inverter.hpp includes the template and instantiations in the correct order
 
 #include "domain.hpp"
+#include "flux.hpp"
 #include "reductions.hpp"
 
 int Inverter::CountPFlags(MeshData<Real> *md)
