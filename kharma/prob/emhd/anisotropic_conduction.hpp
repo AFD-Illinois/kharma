@@ -45,12 +45,16 @@ using namespace parthenon;
 TaskStatus InitializeAnisotropicConduction(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin)
 {
     auto pmb = rc->GetBlockPointer();
-    GridScalar rho = rc->Get("prims.rho").data;
-    GridScalar u = rc->Get("prims.u").data;
-    GridVector uvec = rc->Get("prims.uvec").data;
+    // GridScalar rho = rc->Get("prims.rho").data;
+    // GridScalar u = rc->Get("prims.u").data;
+    // GridVector uvec = rc->Get("prims.uvec").data;
+    PackIndexMap prims_map, cons_map;
+    auto P = GRMHD::PackMHDPrims(rc.get(), prims_map);
+    auto U = GRMHD::PackMHDCons(rc.get(), cons_map);
+    const VarMap m_u(cons_map, true), m_p(prims_map, false);
     // It is well and good this problem should cry if EMHD is disabled.
-    GridVector q = rc->Get("prims.q").data;
-    GridVector dP = rc->Get("prims.dP").data;
+    // GridVector q = rc->Get("prims.q").data;
+    // GridVector dP = rc->Get("prims.dP").data;
 
     const auto& G = pmb->coords;
 
@@ -79,13 +83,15 @@ TaskStatus InitializeAnisotropicConduction(std::shared_ptr<MeshBlockData<Real>>&
             GReal r = m::sqrt(m::pow((X[1] - 0.5), 2) + m::pow((X[2] - 0.5), 2));
 
             // Initialize primitives
-            rho(k, j, i) = 1 - (A * m::exp(-m::pow(r, 2) / m::pow(R, 2)));
-            u(k, j, i) = 1.;
-            uvec(0, k, j, i) = 0.;
-            uvec(1, k, j, i) = 0.;
-            uvec(2, k, j, i) = 0.;
-            q(k, j, i) = 0.;
-            dP(k, j, i) = 0.;
+            P(m_p.RHO, k, j, i) = 1 - (A * m::exp(-m::pow(r, 2) / m::pow(R, 2)));
+            P(m_p.UU, k, j, i) = 1.;
+            P(m_p.U1, k, j, i) = 0.;
+            P(m_p.U2, k, j, i) = 0.;
+            P(m_p.U3, k, j, i) = 0.;
+            if (m_p.Q >= 0)
+                P(m_p.Q, k, j, i) = 0.;
+            if (m_p.DP >= 0)
+                P(m_p.DP, k, j, i) = 0.;
         }
     );
 
