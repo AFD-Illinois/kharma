@@ -53,7 +53,7 @@ on = true
 closure_type = constant
 higher_order_terms = true
 tau = 0.1
-conduction_alpha = 0.01
+conduction_alpha = 0.1
 viscosity_alpha = 0.0
 
 # Implicit driver is auto-selected for emhd
