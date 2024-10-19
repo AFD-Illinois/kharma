@@ -1,4 +1,4 @@
-### Plot density and norm of 4-current ###
+# PLOT ORSZAG TANG VORTEX
 
 import numpy as np
 import sys, glob, psutil, os

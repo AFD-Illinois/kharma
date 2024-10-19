@@ -1,5 +1,4 @@
-# FOR 2D RUNS!!
-# COMPUTES HORIZON-PENETRATING FLUXES, PLOTS SLICES OF RHO, UU, Q, DP AND TIME SERIES OF FLUXES
+# PLOT 2D TORUS
 
 import numpy as np
 import os, h5py, psutil, glob
