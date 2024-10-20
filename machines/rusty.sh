@@ -36,7 +36,7 @@ then
         echo "GPU build"
         # Load required modules
         module --force purge
-        module load modules/2.3-20240529 slurm cmake gcc/11.4.0 cuda gsl openmpi/cuda-4.0.7 hdf5 openblas
+        module load modules/2.3-20240529 slurm cmake gcc/11.4.0 cuda gsl openmpi hdf5 openblas
         module list
         # 8-way compile for H100s
         if [[ $ARGS == *"h100"* ]]; then
