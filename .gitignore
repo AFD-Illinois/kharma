@@ -7,7 +7,7 @@ out-*.txt
 *.json
 convergence.txt
 *.h5
-*.png
+# *.png
 *.mp4
 *.webm
 frames_*/
