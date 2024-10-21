@@ -58,7 +58,12 @@ viscosity_alpha = 0.0
 
 # Implicit driver is auto-selected for emhd
 <implicit>
-max_nonlinear_iter = 3
+min_nonlinear_iter  = 1
+max_nonlinear_iter  = 3
+jacobian_delta      = 4.e-8
+rootfind_tol        = 1.e-12
+linesearch          = true
+max_linesearch_iter = 3
 
 <parthenon/output0>
 file_type = hdf5
