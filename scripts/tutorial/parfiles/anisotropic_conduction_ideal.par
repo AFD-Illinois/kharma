@@ -68,5 +68,9 @@ single_precision_output = true
 variables = prims
 
 <parthenon/output1>
+file_type = rst
+dt = 5.
+
+<parthenon/output2>
 file_type = hst
 dt = 0.1
