@@ -71,8 +71,6 @@ def plot(dumpno):
 
     # load dump
     dump = pyharm.load_dump(os.path.join(dumpsdir, 'torus.out0.{:05d}.phdf'.format(dumpno)))
-
-    bsq = np.maximum(dump['bsq'], SMALL)
   
     x_slice   = xz_slice(np.squeeze(dump['x']), dump, patch_pole=True)
     z_slice   = xz_slice(np.squeeze(dump['z']), dump)
