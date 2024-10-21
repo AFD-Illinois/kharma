@@ -54,7 +54,7 @@ def run_parallel(function, dlist,	nthreads):
 
 
 # Function to overlay field lines
-# Argument must be axes object, B1, B2 and 'nlines' -> a parameter to account for density of field lines
+# Argument must be axes object, dump, and 'nlines' -> a parameter to account for density of field lines
 def plotting_bfield_lines(ax, dump, nlines=20):
   B1 = np.squeeze(dump['B1'])
   B2 = np.squeeze(dump['B2'])
@@ -95,8 +95,8 @@ def plot(dumpno):
   ax1.set_xticklabels([0,0.25,0.5,0.75,1])
   ax1.set_yticks([0,0.25,0.5,0.75,1])
   ax1.set_yticklabels([0,0.25,0.5,0.75,1])
-  ax1.set_xlabel('$x (GM/c^2)$')
-  ax1.set_ylabel('$y (GM/c^2)$')
+  ax1.set_xlabel('$x$')
+  ax1.set_ylabel('$y$')
   ax1.set_aspect('equal')
   divider = make_axes_locatable(ax1)
   cax = divider.append_axes("right", size="5%", pad=0.05)
