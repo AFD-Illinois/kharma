@@ -1,0 +1,44 @@
+#!/bin/bash
+# Admin stuff
+#SBATCH -J KHARMA
+#SBATCH -t 00:30:00
+#SBATCH -N 1
+#SBATCH -o "out-%j.txt"
+
+# Partitions and constraints
+#SBATCH --partition=gpu
+#SBATCH --constraint=h100
+#SBATCH --gpus-per-task=1
+#SBATCH --ntasks=1 
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=64G
+
+# If using 8 A100s, uncomment these lines
+##SBATCH --ntasks=8 
+##SBATCH --cpus-per-task=8
+##SBATCH --exclusive
+##SBATCH --mem=0
+
+# OpenMP directives: use all available threads
+# Currently this slows things down on many machines
+# TODO properly assign to particular cores
+#export OMP_PROC_BIND=spread
+#export OMP_PLACES=threads
+
+# If you see weird GPU race conditions, setting this
+# to 1 *might* fix them. Maybe.
+export CUDA_LAUNCH_BLOCKING=0
+
+#  Choose the kharma from compiled options in order of preference
+KHARMA_DIR="$HOME/kharma"
+
+# Load any defaults/modules from the machine file
+HOST=$(hostname -f)
+ARGS=$(cat $KHARMA_DIR/make_args)
+for machine in $KHARMA_DIR/machines/*.sh
+do
+  source $machine
+done
+
+# Run with srun
+srun --cpu-bind=cores $KHARMA_DIR/kharma.cuda -t 00:29:00 -d dumps_kharma "$@"

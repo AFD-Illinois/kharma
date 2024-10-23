@@ -9,16 +9,15 @@
 #SBATCH --partition=gpu
 #SBATCH --constraint=a100
 #SBATCH --gpus-per-task=1
-
-# If using 1 A100
-##SBATCH --ntasks=1 
-##SBATCH --cpus-per-task=16
-##SBATCH --mem=64G
+#SBATCH --ntasks=1 
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=64G
 
 # If using 4 A100s, uncomment these lines
-#SBATCH --ntasks=4
-#SBATCH --cpus-per-task=16
-#SBATCH --mem=512G
+##SBATCH --ntasks=4 
+##SBATCH --cpus-per-task=16
+##SBATCH --exclusive
+##SBATCH --mem=0
 
 # OpenMP directives: use all available threads
 # Currently this slows things down on many machines

@@ -26,8 +26,7 @@ then
     elif [[ $ARGS == *"v100"* ]]; then
         HOST_ARCH="SKX"
         DEVICE_ARCH="VOLTA70"
-    elif [[ $ARGS == *"cpu"* ]]
-    then
+    else
         HOST_ARCH="ICX"
     fi
 
@@ -68,7 +67,7 @@ then
             NPROC=128
         else
             # Default to Icelake
-            HOST_ARCH="SKX"
+            HOST_ARCH="ICX"
             NPROC=64
         fi
         C_NATIVE=gcc
