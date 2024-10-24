@@ -59,12 +59,12 @@ then
         module --force purge
         module load modules/2.3-20240529 slurm gcc/11.4.0 cmake gsl openmpi openblas hdf5
         module list
-        if [[ "$ARGS" == *"skx"* ]]; then
-            HOST_ARCH="SKX"
-            NPROC=64
+        if [[ "$ARGS" == *"genoa"* ]]; then
+            HOST_ARCH="ZEN3"
+            NPROC=96
         elif [[ "$ARGS" == *"rome"* ]]; then
             HOST_ARCH="ZEN2"
-            NPROC=128
+            NPROC=64
         else
             # Default to Icelake
             HOST_ARCH="ICX"

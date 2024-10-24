@@ -9,6 +9,7 @@
 #SBATCH --partition=cca
 #SBATCH --constraint=ib-icelake
 ##SBATCH --constraint=ib-rome
+##SBATCH --constraint=ib-genoa
 
 # Node options
 #SBATCH --ntasks=1

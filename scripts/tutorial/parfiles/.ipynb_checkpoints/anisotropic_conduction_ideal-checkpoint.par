@@ -6,11 +6,11 @@
 problem_id = anisotropic_conduction
 
 <parthenon/mesh>
-nx1 = 256
+nx1 = 512
 x1min = 0.0
 x1max = 1.0
 
-nx2 = 256
+nx2 = 512
 x2min = 0.0
 x2max = 1.0
 
@@ -19,8 +19,8 @@ x3min = 0.0
 x3max = 1.0
 
 <parthenon/meshblock>
-nx1 = 256
-nx2 = 256
+nx1 = 512
+nx2 = 512
 nx3 = 1
 
 <coordinates>
@@ -49,21 +49,17 @@ extra_checks = 1
 # This block must be present and values filled
 # in all EGRMHD simulations
 <emhd>
-on = true
+on = false
 closure_type = constant
 higher_order_terms = true
 tau = 0.1
-conduction_alpha = 0.1
+conduction_alpha = 0.01
 viscosity_alpha = 0.0
 
 # Implicit driver is auto-selected for emhd
 <implicit>
-min_nonlinear_iter  = 1
-max_nonlinear_iter  = 3
-jacobian_delta      = 4.e-8
-rootfind_tol        = 1.e-12
-linesearch          = true
-max_linesearch_iter = 3
+on = false
+max_nonlinear_iter = 3
 
 <parthenon/output0>
 file_type = hdf5
@@ -73,7 +69,7 @@ variables = prims
 
 <parthenon/output1>
 file_type = rst
-dt = 100.0
+dt = 5.
 
 <parthenon/output2>
 file_type = hst
