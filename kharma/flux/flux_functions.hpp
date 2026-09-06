@@ -367,7 +367,7 @@ KOKKOS_FORCEINLINE_FUNCTION void vchar_rad(const GRCoordinates& G, const Global&
     GReal cms2 = cs2;
 
     Real ucon_rad[GR_DIM];
-    RadM1::calc_ucon_rad(G, P, m, j, i, loc, ucon_rad);
+    RadM1::calc_ucon_rad(G, P, m, k, j, i, loc, ucon_rad);
     // Require that speed of wave measured by observer q.ucon is cms2
     Real A, B, C;
     {

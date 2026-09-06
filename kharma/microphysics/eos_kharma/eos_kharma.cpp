@@ -86,9 +86,11 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
     } else {
       gamma1 = pin->GetReal(block_name, std::string("gamma"));
     }
+    
 
     const Real gm1 = gamma1 - 1.0;
-    const Real Cv = pin->GetOrAddReal(block_name, "Cv", 1.0);
+    //const Real Cv = pin->GetOrAddReal(block_name, "Cv", 1.0);
+    const Real Cv = 1./(gm1);
     params.Add("gm1", gm1);
     params.Add("Cv", Cv);
 

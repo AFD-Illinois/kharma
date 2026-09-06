@@ -35,6 +35,10 @@
 
 #include "decs.hpp"
 #include "microphysics/opac_kharma/opac_kharma.hpp"
+// phoebus includes
+#include "microphysics/eos_kharma/eos_kharma.hpp"
+#include "phoebus_utils/unit_conversions.hpp"
+#include "phoebus_utils/variables.hpp"
 
 #include "gr_coordinates.hpp"
 #include "grmhd_functions.hpp"
@@ -178,20 +182,6 @@ KOKKOS_INLINE_FUNCTION Real lorentz_calc_rad(const GRCoordinates& G, const Globa
     return m::sqrt(1. + qsq);
 }
 
-// Local Lorentz Factor for Radiation
-template<typename Local>
-KOKKOS_INLINE_FUNCTION Real lorentz_calc_rad(const GRCoordinates& G, const Local& P,
-    const VarMap& m, const int& j, const int& i, const Loci loc)
-{
-    Real qsq = G.gcov(loc, j, i, 1, 1) * P(m.U1_RAD) * P(m.U1_RAD) +
-               G.gcov(loc, j, i, 2, 2) * P(m.U2_RAD) * P(m.U2_RAD) +
-               G.gcov(loc, j, i, 3, 3) * P(m.U3_RAD) * P(m.U3_RAD) +
-               2. * (G.gcov(loc, j, i, 1, 2) * P(m.U1_RAD) * P(m.U2_RAD) +
-                        G.gcov(loc, j, i, 1, 3) * P(m.U1_RAD) * P(m.U3_RAD) +
-                        G.gcov(loc, j, i, 2, 3) * P(m.U2_RAD) * P(m.U3_RAD));
-    return m::sqrt(1. + qsq);
-}
-
 // Global ucon for Radiation
 template<typename Global>
 KOKKOS_INLINE_FUNCTION void calc_ucon_rad(const GRCoordinates& G, const Global& P,
@@ -206,17 +196,6 @@ KOKKOS_INLINE_FUNCTION void calc_ucon_rad(const GRCoordinates& G, const Global& 
             P(m.U1_RAD + v, k, j, i) - gamma * alpha * G.gcon(loc, j, i, 0, v + 1);
 }
 
-// Local ucon for Radiation
-template<typename Local>
-KOKKOS_INLINE_FUNCTION void calc_ucon_rad(const GRCoordinates& G, const Local& P,
-    const VarMap& m, const int& j, const int& i, const Loci loc, Real ucon[GR_DIM])
-{
-    const Real gamma = lorentz_calc_rad(G, P, m, j, i, loc);
-    const Real alpha = 1. / m::sqrt(-G.gcon(loc, j, i, 0, 0));
-    ucon[0] = gamma / alpha;
-    VLOOP
-        ucon[v + 1] = P(m.U1_RAD + v) - gamma * alpha * G.gcon(loc, j, i, 0, v + 1);
-}
 
 KOKKOS_INLINE_FUNCTION Real lorentz_calc_rad(
     const GRCoordinates& G, const Real P[4], const int& j, const int& i)
@@ -278,25 +257,6 @@ KOKKOS_INLINE_FUNCTION void calc_tensor(const GRCoordinates& G,
     G.lower(R_con_dir, R_dir_mu, k, j, i, loc);
 }
 
-// M1 Tensor construction (Local)
-// This will give you R^mu_dir
-template<typename Local>
-KOKKOS_INLINE_FUNCTION void calc_tensor(const GRCoordinates& G, const Local& P,
-    const VarMap& m_p, const int& dir, const int& j, const int& i, const Loci loc,
-    Real R_dir_mu[GR_DIM])
-{
-    Real Erf = P(m_p.UU_RAD);
-    Real ucon_rad[GR_DIM];
-    calc_ucon_rad(G, P, m_p, j, i, loc, ucon_rad);
-
-    Real R_con_dir[GR_DIM];
-    for (int nu = 0; nu < 4; ++nu) {
-        R_con_dir[nu] = (4.0 / 3.0) * Erf * ucon_rad[dir] * ucon_rad[nu] +
-                        (1.0 / 3.0) * Erf * G.gcon(loc, j, i, dir, nu);
-    }
-
-    G.lower(R_con_dir, R_dir_mu, 0, j, i, loc); // Note: Assuming k=0 for local slices
-}
 
 KOKKOS_INLINE_FUNCTION void initialize_radiation_pressure(Real UU, Real& UU_rad)
 {

@@ -42,7 +42,8 @@ class Opacities {
   using MeanNonCGSUnits = singularity::photons::MeanNonCGSUnits<MeanOpacity>;
   using SOpacity = singularity::photons::SOpacity;
   using MeanSOpacityBase = singularity::photons::MeanSOpacityBase;
-  using MeanSOpacity = singularity::photons::impl::MeanSVariant<MeanSOpacityBase, singularity::photons::MeanNonCGSUnitsS<MeanSOpacityBase>>;
+  using MeanSOpacity = singularity::photons::impl::MeanSVariant<
+      MeanSOpacityBase, singularity::photons::MeanNonCGSUnitsS<MeanSOpacityBase>>;
   using MeanNonCGSUnitsS = singularity::photons::MeanNonCGSUnitsS<MeanSOpacity>;
 
  public:
@@ -107,18 +108,18 @@ class Opacities {
   
   KOKKOS_INLINE_FUNCTION
   Real PlanckMeanAbsorptionCoefficient(const Real &rho, const Real &T) const {
-    return m_opac_.PlanckMeanAbsorptionCoefficient(rho, T);
+    return m_opac_.PlanckGroupAbsorptionCoefficient(rho, T, 0);
   }
 
   KOKKOS_INLINE_FUNCTION
   Real RosselandMeanAbsorptionCoefficient(const Real &rho, const Real &T) const {
-    return m_opac_.RosselandMeanAbsorptionCoefficient(rho, T);
+    return m_opac_.RosselandGroupAbsorptionCoefficient(rho, T, 0);
   }
 
   /// Mean scattering opacities
   KOKKOS_INLINE_FUNCTION
   Real RosselandMeanScatteringCoefficient(const Real &rho, const Real &T) const {
-    return m_s_opac_.RosselandMeanTotalScatteringCoefficient(rho, T);
+    return m_s_opac_.RosselandGroupScatteringCoefficient(rho, T, 0);
   }
 
  private:

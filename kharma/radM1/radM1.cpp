@@ -294,7 +294,8 @@ TaskStatus RadM1::Step(MeshData<Real>* md_sub_init,
         const Real src_rootfind_eps = params.Get<Real>("src_rootfind_eps");
         const Real src_rootfind_tol = params.Get<Real>("src_rootfind_tol");
         const int src_rootfind_maxiter = params.Get<int>("src_rootfind_maxiter");
-        const Real gam = pmb->packages.Get("GRMHD")->AllParams().Get<Real>("gamma");
+        const auto& eos_params = pmb->packages.Get("eos")->AllParams();
+        auto eos = eos_params.Get<Microphysics::EOS::EOS>("d.EOS");
         const int opacity_model = params.Get<int>("opacity_model");
         const Real shocktube_sigma_rad = params.Get<Real>("shocktube_sigma_rad");
         const Real shocktube_kappa_rho = params.Get<Real>("shocktube_kappa_rho");
@@ -339,7 +340,7 @@ TaskStatus RadM1::Step(MeshData<Real>* md_sub_init,
             {
                 int rflagl =
                     solve_radiation_4d(G, U_init, P_init, P_new, U_new, m_p, m_u, k, j, i,
-                        dt, gam, src_rootfind_eps, src_rootfind_tol, src_rootfind_maxiter,
+                        dt, eos, src_rootfind_eps, src_rootfind_tol, src_rootfind_maxiter,
                         opacity_model, shocktube_sigma_rad, shocktube_kappa_rho,
                         shocktube_kappa_scat, units_cgs, opacities, pflag, rinvflag);
                 rimplflag(0, k, j, i) = rflagl;
