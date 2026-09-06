@@ -338,12 +338,52 @@ TaskStatus RadM1::Step(MeshData<Real>* md_sub_init,
         pmb->par_for("RadM1_Implicit_Solver4D", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
             KOKKOS_LAMBDA (const int &k, const int &j, const int &i)
             {
-                int rflagl =
-                    solve_radiation_4d(G, U_init, P_init, P_new, U_new, m_p, m_u, k, j, i,
+                const Real U_entry[8] = {
+                    U_new(m_u.UU, k, j, i), U_new(m_u.U1, k, j, i),
+                    U_new(m_u.U2, k, j, i), U_new(m_u.U3, k, j, i),
+                    U_new(m_u.UU_RAD, k, j, i), U_new(m_u.U1_RAD, k, j, i),
+                    U_new(m_u.U2_RAD, k, j, i), U_new(m_u.U3_RAD, k, j, i)
+                };
+                int rflagl;
+
+                rflagl =
+                    solve_4d_pmhd(G, U_init, P_init, P_new, U_new, m_p, m_u, k, j, i,
                         dt, eos, src_rootfind_eps, src_rootfind_tol, src_rootfind_maxiter,
                         opacity_model, shocktube_sigma_rad, shocktube_kappa_rho,
-                        shocktube_kappa_scat, units_cgs, opacities, pflag, rinvflag);
-                rimplflag(0, k, j, i) = rflagl;
+                        shocktube_kappa_scat, units_cgs, opacities, pflag, rinvflag, U_entry);
+
+                if (rflagl == static_cast<int>(StatusImplicitStep::success)) {
+                    rimplflag(0, k, j, i) = rflagl;
+                    return;
+                }
+
+                rflagl = solve_4d_prad(G, U_init, P_init, P_new, U_new, m_p, m_u, k,
+                    j, i, dt, eos, src_rootfind_eps, src_rootfind_tol,
+                    src_rootfind_maxiter, opacity_model, shocktube_sigma_rad,
+                    shocktube_kappa_rho, shocktube_kappa_scat, units_cgs,
+                    opacities, pflag, rinvflag, U_entry);
+
+                if (rflagl == static_cast<int>(StatusImplicitStep::success)) {
+                    rimplflag(0, k, j, i) = static_cast<int>(StatusImplicitStep::pradfallback_success);
+                    return;
+                }
+
+                auto status_1d = solve_radiation_1d(G, U_init, P_init, m_p, m_u, U_new, P_new, eos,
+                    opacity_model, shocktube_sigma_rad, shocktube_kappa_rho,
+                    shocktube_kappa_scat, units_cgs, opacities, k, j, i, dt,
+                    src_rootfind_tol, src_rootfind_maxiter, pflag, rinvflag, U_entry);
+
+                if (status_1d == StatusImplicitStep::success) {
+                    rimplflag(0, k, j, i) = static_cast<int>(StatusImplicitStep::onedfallback_success);
+                    return;
+                }
+
+                rimplflag(0, k, j, i) = static_cast<int>(StatusImplicitStep::onedfallback_failure);
+
+                assume_no_interaction(G, U_init, P_init, m_p, m_u, U_new, P_new, eos,
+                    opacity_model, shocktube_sigma_rad, shocktube_kappa_rho,
+                    shocktube_kappa_scat, units_cgs, opacities, k, j, i, dt, src_rootfind_tol,
+                    src_rootfind_maxiter, pflag, rinvflag, U_entry);
             });
     }
 

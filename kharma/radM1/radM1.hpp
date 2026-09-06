@@ -64,14 +64,15 @@ struct UnitScales {
 
 // Denote implicit solve failures (rflags)
 // This enum should grow to cover any potential flags
-enum class StatusImplicitStep { success = 0, mhdsolve, radsolve, bothsolve, failure, onedfallback_success, onedfallback_failure };
+enum class StatusImplicitStep { success = 0, mhdsolve, radsolve, bothsolve, failure, onedfallback_success, onedfallback_failure, pradfallback_success };
 
 static const std::map<int, std::string> status_names_implicit = {
     {(int)StatusImplicitStep::mhdsolve, "RadM1 MHD Solve Failure"}, // flag that means that the MHD inversion failed (but rad solve worked)
     {(int)StatusImplicitStep::radsolve, "RadM1 Radiation Solve Failure"}, // flag that means that the radiation solve failed (but mhd solve worked)
     {(int)StatusImplicitStep::failure, "RadM1 Step Failure"},
     {(int)StatusImplicitStep::onedfallback_success, "RadM1 4D Solver Fell Back to 1D and succeeded"}, // flag that means the 4D Newton solve didn't converge/failed and the 1D fallback solver was used instead and it succeeded
-    {(int)StatusImplicitStep::onedfallback_failure, "RadM1 4D Solver Fell Back to 1D and Failed"} // flag that means the 4D Newton solve didn't converge/failed and the 1D fallback solver was used instead and it also failed
+    {(int)StatusImplicitStep::onedfallback_failure, "RadM1 4D Solver Fell Back to 1D and Failed"}, // flag that means the 4D Newton solve didn't converge/failed and the 1D fallback solver was used instead and it also failed
+    {(int)StatusImplicitStep::pradfallback_success, "RadM1 4D Solver Fell Back to P_rad iteration and succeeded"}
 };
 
 
