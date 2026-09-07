@@ -124,12 +124,11 @@ std::shared_ptr<KHARMAPackage> RadM1::Initialize(
         default_opacity_model = "thermal_equilibrium";
     }
 
-    // fallback to the default if no input
-    // TODO (PNM): add a vector of strings as the last parameter here to yell at the user
-    // what the options are
+    // user can override the default opacity model in the input file, but if not, we use the default based on the problem ID.
     std::string opacity_model_str =
         pin->GetOrAddString("radM1", "opacity_model", default_opacity_model);
 
+    
     int opacity_model = (int)OpacityModel::Default;
     if (opacity_model_str == "shocktube_constant") {
         opacity_model = (int)OpacityModel::ShocktubeConstant;
@@ -141,18 +140,19 @@ std::shared_ptr<KHARMAPackage> RadM1::Initialize(
         opacity_model = (int)OpacityModel::ThermalEquilibrium;
     }
 
-    // Read Shocktube constants
+
     // TODO(PNM): Make these parameters part of the shocktube problem. Important!
-    Real shocktube_sigma_rad = pin->GetOrAddReal("radM1", "sigma_rad", 3.470e7);
-    Real shocktube_kappa_rho = pin->GetOrAddReal("radM1", "kappa_rho", 0.08);
-    Real shocktube_kappa_scat = pin->GetOrAddReal("radM1", "kappa_scat", 0.0);
+    // Actually, I don't know if this is useful. Other problems use constant sigma and kappas.
+    Real const_sigma    = pin->GetOrAddReal("radM1", "sigma_rad", 3.470e7);
+    Real const_kappa_a  = pin->GetOrAddReal("radM1", "kappa_rho", 0.08);
+    Real const_kappa_sc = pin->GetOrAddReal("radM1", "kappa_sc", 0.0);
 
     // Add everything to the package parameters
     pkg->AllParams().Add("opacity_model", opacity_model);
 
-    pkg->AllParams().Add("shocktube_sigma_rad", shocktube_sigma_rad);
-    pkg->AllParams().Add("shocktube_kappa_rho", shocktube_kappa_rho);
-    pkg->AllParams().Add("shocktube_kappa_scat", shocktube_kappa_scat);
+    pkg->AllParams().Add("const_sigma", const_sigma);
+    pkg->AllParams().Add("const_kappa_a", const_kappa_a);
+    pkg->AllParams().Add("const_kappa_sc", const_kappa_sc);
 
     // Initialize units needed for radm1
     // TODO (PNM): Use a proper units package to bundle these together.
@@ -300,17 +300,15 @@ TaskStatus RadM1::Step(
         const int src_rootfind_maxiter = params.Get<int>("src_rootfind_maxiter");
         const auto& eos_params = pmb->packages.Get("eos")->AllParams();
         auto eos = eos_params.Get<Microphysics::EOS::EOS>("d.EOS");
-        const int opacity_model = params.Get<int>("opacity_model");
-        const Real shocktube_sigma_rad = params.Get<Real>("shocktube_sigma_rad");
-        const Real shocktube_kappa_rho = params.Get<Real>("shocktube_kappa_rho");
-        const Real shocktube_kappa_scat = params.Get<Real>("shocktube_kappa_scat");
-        const UnitScales units_cgs = params.Get<UnitScales>("units_cgs");
-
-        Microphysics::Opacities opacities;
+        RadOpac rad_opac;
+        rad_opac.opacity_model  = params.Get<int>("opacity_model");
+        rad_opac.const_sigma    = params.Get<Real>("const_sigma");
+        rad_opac.const_kappa_a  = params.Get<Real>("const_kappa_a");
+        rad_opac.const_kappa_sc = params.Get<Real>("const_kappa_sc");
+        rad_opac.units_cgs      = params.Get<UnitScales>("units_cgs");
         if (pmb->packages.AllPackages().count("opacity")) {
-            opacities =
-                pmb->packages.Get("opacity")->AllParams().Get<Microphysics::Opacities>(
-                    "opacities");
+            rad_opac.table_opacities =
+                pmb->packages.Get("opacity")->AllParams().Get<Microphysics::Opacities>("opacities");
         }
 
         const auto& G = pmb->coords;
@@ -353,8 +351,7 @@ TaskStatus RadM1::Step(
 
                 rflagl = solve_4d_pmhd(G, U_init, P_init, P_new, U_new, m_p, m_u, k, j, i,
                     dt, eos, src_rootfind_eps, src_rootfind_tol, src_rootfind_maxiter,
-                    opacity_model, shocktube_sigma_rad, shocktube_kappa_rho,
-                    shocktube_kappa_scat, units_cgs, opacities, pflag, rinvflag, U_entry);
+                    rad_opac, pflag, rinvflag, U_entry);
 
                 if (rflagl == static_cast<int>(StatusImplicitStep::success)) {
                     rimplflag(0, k, j, i) = rflagl;
@@ -363,8 +360,7 @@ TaskStatus RadM1::Step(
 
                 rflagl = solve_4d_prad(G, U_init, P_init, P_new, U_new, m_p, m_u, k, j, i,
                     dt, eos, src_rootfind_eps, src_rootfind_tol, src_rootfind_maxiter,
-                    opacity_model, shocktube_sigma_rad, shocktube_kappa_rho,
-                    shocktube_kappa_scat, units_cgs, opacities, pflag, rinvflag, U_entry);
+                    rad_opac, pflag, rinvflag, U_entry);
 
                 if (rflagl == static_cast<int>(StatusImplicitStep::success)) {
                     rimplflag(0, k, j, i) =
@@ -373,8 +369,7 @@ TaskStatus RadM1::Step(
                 }
 
                 auto status_1d = solve_radiation_1d(G, U_init, P_init, m_p, m_u, U_new,
-                    P_new, eos, opacity_model, shocktube_sigma_rad, shocktube_kappa_rho,
-                    shocktube_kappa_scat, units_cgs, opacities, k, j, i, dt,
+                    P_new, eos, rad_opac, k, j, i, dt,
                     src_rootfind_tol, src_rootfind_maxiter, pflag, rinvflag, U_entry);
 
                 if (status_1d == StatusImplicitStep::success) {
@@ -387,8 +382,7 @@ TaskStatus RadM1::Step(
                     static_cast<int>(StatusImplicitStep::onedfallback_failure);
 
                 assume_no_interaction(G, U_init, P_init, m_p, m_u, U_new, P_new, eos,
-                    opacity_model, shocktube_sigma_rad, shocktube_kappa_rho,
-                    shocktube_kappa_scat, units_cgs, opacities, k, j, i, dt,
+                    rad_opac, k, j, i, dt,
                     src_rootfind_tol, src_rootfind_maxiter, pflag, rinvflag, U_entry);
             });
     }

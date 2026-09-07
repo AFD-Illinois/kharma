@@ -46,6 +46,7 @@
 #include "types.hpp"
 #include "utils/constants.hpp"
 
+
 #include <parthenon/parthenon.hpp>
 
 using pc = parthenon::constants::PhysicalConstants<parthenon::constants::CGS>;
@@ -121,6 +122,7 @@ static const std::map<int, std::string> status_names_inversion = {
 
 };
 
+
 TaskStatus BlockPtoU(MeshBlockData<Real>* rc, IndexDomain domain, bool coarse = false);
 /**
  * Initialize the radM1 package with several options from the input deck
@@ -157,58 +159,16 @@ enum class OpacityModel : int {
     Transparent = 3,
     ThermalEquilibrium = 4
 };
+#include "microphysics/opac_kharma/rad_opacities.hpp"
 
-KOKKOS_INLINE_FUNCTION Real calc_kabs(Real rho, Real T, int opacity_model,
-    Real shocktube_kappa_rho, const UnitScales& units_cgs,
-    const Microphysics::Opacities& opacities)
+KOKKOS_INLINE_FUNCTION Real calc_kabs(Real rho, Real T, const RadOpac& rad_opac)
 {
-    if (opacity_model == (int)OpacityModel::ShocktubeConstant) {
-        return rho * shocktube_kappa_rho;
-    } else if (opacity_model == (int)OpacityModel::Bondi) {
-        // Thermal bremsstrahlung, McKinney et al. 2014 eq. 91.
-        // Mckinney makes no reference to mu at all, but mu is present in Fragile 2012.
-        const Real T_cgs = m::abs(T) * units_cgs.mu * pc::mp * pc::c * pc::c / pc::kb;
-        const Real rho_cgs =
-            rho * units_cgs.mass_cgs /
-            (units_cgs.length_cgs * units_cgs.length_cgs * units_cgs.length_cgs);
-        // 1.0e23 to match harmrad
-        const Real kappa_a_cgs = 1.0e23 * m::pow(T_cgs, -3.5) * rho_cgs * rho_cgs;
-        // make it scale free
-        return kappa_a_cgs * units_cgs.length_cgs;
-    } else if (opacity_model == (int)OpacityModel::Transparent) {
-        return 0.0;
-    } else if (opacity_model == (int)OpacityModel::ThermalEquilibrium) {
-        const Real rho_cgs =
-            rho * units_cgs.mass_cgs /
-            (units_cgs.length_cgs * units_cgs.length_cgs * units_cgs.length_cgs);
-        return 0.4 * rho_cgs * units_cgs.length_cgs;
-    } else {
-        const Real temp_arg = m::abs(T) * units_cgs.mu * pc::mp * pc::c * pc::c;
-        return opacities.PlanckMeanAbsorptionCoefficient(rho, temp_arg);
-    }
+    return rad_opac.kappa_a(rho, T);
 }
 
-KOKKOS_INLINE_FUNCTION Real calc_kscattering(Real rho, Real T, int opacity_model,
-    Real shocktube_kappa_scat, const UnitScales& units_cgs,
-    const Microphysics::Opacities& opacities)
+KOKKOS_INLINE_FUNCTION Real calc_kscattering(Real rho, Real T, const RadOpac& rad_opac)
 {
-    if (opacity_model == (int)OpacityModel::ShocktubeConstant) {
-        return shocktube_kappa_scat;
-    } else if (opacity_model == (int)OpacityModel::Transparent) {
-        return 0.0;
-    } else if (opacity_model == (int)OpacityModel::Bondi) {
-        const Real rho_cgs =
-            rho * units_cgs.mass_cgs /
-            (units_cgs.length_cgs * units_cgs.length_cgs * units_cgs.length_cgs);
-        const Real kappa_sc_cgs = 0.4 * rho_cgs;
-        // make it scale free
-        return kappa_sc_cgs * units_cgs.length_cgs;
-    } else if (opacity_model == (int)OpacityModel::ThermalEquilibrium) {
-        return 0.0;
-    } else {
-        const Real temp_arg = m::abs(T) * units_cgs.mu * pc::mp * pc::c * pc::c;
-        return opacities.RosselandMeanScatteringCoefficient(rho, temp_arg);
-    }
+    return rad_opac.kappa_sc(rho, T);
 }
 
 // Global Lorentz Factor for Radiation

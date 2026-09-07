@@ -90,20 +90,17 @@ inline TaskStatus GetFlux(MeshData<Real>* md)
     // Out of the Package modification RADM1.
     const bool use_rad = packages.AllPackages().count("RadM1");
 
-    int opacity_model = 0;
-    Real shocktube_kappa_rho = 0.0;
-    Real shocktube_kappa_scat = 0.0;
-    RadM1::UnitScales units_cgs{};
-    Microphysics::Opacities opacities;
+    RadM1::RadOpac rad_opac{};
     if (use_rad) {
         const auto& rad_pars = packages.Get("RadM1")->AllParams();
-        opacity_model = rad_pars.Get<int>("opacity_model");
-        shocktube_kappa_rho = rad_pars.Get<Real>("shocktube_kappa_rho");
-        shocktube_kappa_scat = rad_pars.Get<Real>("shocktube_kappa_scat");
-        units_cgs = rad_pars.Get<RadM1::UnitScales>("units_cgs");
+        rad_opac.opacity_model  = rad_pars.Get<int>("opacity_model");
+        rad_opac.const_sigma    = rad_pars.Get<Real>("const_sigma");
+        rad_opac.const_kappa_a  = rad_pars.Get<Real>("const_kappa_a");
+        rad_opac.const_kappa_sc = rad_pars.Get<Real>("const_kappa_sc");
+        rad_opac.units_cgs      = rad_pars.Get<RadM1::UnitScales>("units_cgs");
         if (packages.AllPackages().count("opacity")) {
-            opacities = packages.Get("opacity")->AllParams().Get<Microphysics::Opacities>(
-                "opacities");
+            rad_opac.table_opacities =
+                packages.Get("opacity")->AllParams().Get<Microphysics::Opacities>("opacities");
         }
     }
 
@@ -424,8 +421,7 @@ inline TaskStatus GetFlux(MeshData<Real>* md)
             // characteristic speeds.
             if (use_rad) {
                 Real cmaxL_rad, cminL_rad;
-                Flux::vchar_rad(G, Pl_all(bl), m_p, Dtmp, eos, emhd_params, opacity_model,
-                    shocktube_kappa_rho, shocktube_kappa_scat, units_cgs, opacities, k, j,
+                Flux::vchar_rad(G, Pl_all(bl), m_p, Dtmp, eos, emhd_params, rad_opac, k, j,
                     i, loc, dir, cmaxL_rad, cminL_rad);
                 cmax_rad(bl, dir - 1, k, j, i) = m::max(0., cmaxL_rad);
                 cmin_rad(bl, dir - 1, k, j, i) = m::min(0., cminL_rad);
@@ -466,8 +462,7 @@ inline TaskStatus GetFlux(MeshData<Real>* md)
             // speeds.
             if (use_rad) {
                 Real cmaxR_rad, cminR_rad;
-                Flux::vchar_rad(G, Pr_all(bl), m_p, Dtmp, eos, emhd_params, opacity_model,
-                    shocktube_kappa_rho, shocktube_kappa_scat, units_cgs, opacities, k, j,
+                Flux::vchar_rad(G, Pr_all(bl), m_p, Dtmp, eos, emhd_params, rad_opac, k, j,
                     i, loc, dir, cmaxR_rad, cminR_rad);
                 cmax_rad(bl, dir - 1, k, j, i) =
                     m::max(cmax_rad(bl, dir - 1, k, j, i), cmaxR_rad);
