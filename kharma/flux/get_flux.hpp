@@ -81,7 +81,7 @@ inline TaskStatus GetFlux(MeshData<Real>* md)
     const auto& pars = packages.Get("Fluxes")->AllParams();
     const auto& mhd_pars = packages.Get("GRMHD")->AllParams();
     const auto& globals = packages.Get("Globals")->AllParams();
-    
+
     const auto& eos_params = packages.Get("eos")->AllParams();
     auto eos = eos_params.Get<Microphysics::EOS::EOS>("d.EOS");
 
@@ -102,7 +102,8 @@ inline TaskStatus GetFlux(MeshData<Real>* md)
         shocktube_kappa_scat = rad_pars.Get<Real>("shocktube_kappa_scat");
         units_cgs = rad_pars.Get<RadM1::UnitScales>("units_cgs");
         if (packages.AllPackages().count("opacity")) {
-            opacities = packages.Get("opacity")->AllParams().Get<Microphysics::Opacities>("opacities");
+            opacities = packages.Get("opacity")->AllParams().Get<Microphysics::Opacities>(
+                "opacities");
         }
     }
 
@@ -424,8 +425,8 @@ inline TaskStatus GetFlux(MeshData<Real>* md)
             if (use_rad) {
                 Real cmaxL_rad, cminL_rad;
                 Flux::vchar_rad(G, Pl_all(bl), m_p, Dtmp, eos, emhd_params, opacity_model,
-                    shocktube_kappa_rho, shocktube_kappa_scat, units_cgs, opacities, k, j, i,
-                    loc, dir, cmaxL_rad, cminL_rad);
+                    shocktube_kappa_rho, shocktube_kappa_scat, units_cgs, opacities, k, j,
+                    i, loc, dir, cmaxL_rad, cminL_rad);
                 cmax_rad(bl, dir - 1, k, j, i) = m::max(0., cmaxL_rad);
                 cmin_rad(bl, dir - 1, k, j, i) = m::min(0., cminL_rad);
             }
@@ -461,12 +462,13 @@ inline TaskStatus GetFlux(MeshData<Real>* md)
                 cmaxR, cminR);
 
             // Calculate radiation characteristic speeds
-            // Out of the Package modification RADM1. Calculate radiation characteristic speeds.
+            // Out of the Package modification RADM1. Calculate radiation characteristic
+            // speeds.
             if (use_rad) {
                 Real cmaxR_rad, cminR_rad;
                 Flux::vchar_rad(G, Pr_all(bl), m_p, Dtmp, eos, emhd_params, opacity_model,
-                    shocktube_kappa_rho, shocktube_kappa_scat, units_cgs, opacities, k, j, i,
-                    loc, dir, cmaxR_rad, cminR_rad);
+                    shocktube_kappa_rho, shocktube_kappa_scat, units_cgs, opacities, k, j,
+                    i, loc, dir, cmaxR_rad, cminR_rad);
                 cmax_rad(bl, dir - 1, k, j, i) =
                     m::max(cmax_rad(bl, dir - 1, k, j, i), cmaxR_rad);
                 cmin_rad(bl, dir - 1, k, j, i) =
@@ -486,8 +488,8 @@ inline TaskStatus GetFlux(MeshData<Real>* md)
 
     if (use_rad) {
         if (use_hlle) {
-            pmb0->par_for("flux_hlle", block.s, block.e, 0, nvar - 1, b.ks, b.ke, b.js, b.je,
-                b.is, b.ie,
+            pmb0->par_for("flux_hlle", block.s, block.e, 0, nvar - 1, b.ks, b.ke, b.js,
+                b.je, b.is, b.ie,
                 KOKKOS_LAMBDA(const int& bl,
                               const int& p,
                               const int& k,
@@ -500,7 +502,7 @@ inline TaskStatus GetFlux(MeshData<Real>* md)
 
                     // Override with Radiation Speeds if 'p' is a radiation variable
                     if (use_rad && (p == m_u.UU_RAD || p == m_u.U1_RAD ||
-                                    p == m_u.U2_RAD || p == m_u.U3_RAD)) {
+                                       p == m_u.U2_RAD || p == m_u.U3_RAD)) {
                         cmax_val = cmax_rad(bl, dir - 1, k, j, i);
                         cmin_val = cmin_rad(bl, dir - 1, k, j, i);
                     }
@@ -511,8 +513,8 @@ inline TaskStatus GetFlux(MeshData<Real>* md)
                             cmin_val, Ul_all(bl, p, k, j, i), Ur_all(bl, p, k, j, i));
                 });
         } else {
-            pmb0->par_for("flux_llf", block.s, block.e, 0, nvar - 1, b.ks, b.ke, b.js, b.je,
-                b.is, b.ie,
+            pmb0->par_for("flux_llf", block.s, block.e, 0, nvar - 1, b.ks, b.ke, b.js,
+                b.je, b.is, b.ie,
                 KOKKOS_LAMBDA(const int& bl,
                               const int& p,
                               const int& k,
@@ -525,7 +527,7 @@ inline TaskStatus GetFlux(MeshData<Real>* md)
 
                     // Override with Radiation Speeds
                     if (use_rad && (p == m_u.UU_RAD || p == m_u.U1_RAD ||
-                                    p == m_u.U2_RAD || p == m_u.U3_RAD)) {
+                                       p == m_u.U2_RAD || p == m_u.U3_RAD)) {
                         cmax_val = cmax_rad(bl, dir - 1, k, j, i);
                         cmin_val = cmin_rad(bl, dir - 1, k, j, i);
                     }
@@ -538,8 +540,8 @@ inline TaskStatus GetFlux(MeshData<Real>* md)
         }
     } else {
         if (use_hlle) { // More fluxes would need a template
-            pmb0->par_for("flux_hlle", block.s, block.e, 0, nvar - 1, b.ks, b.ke, b.js, b.je,
-                b.is, b.ie,
+            pmb0->par_for("flux_hlle", block.s, block.e, 0, nvar - 1, b.ks, b.ke, b.js,
+                b.je, b.is, b.ie,
                 KOKKOS_LAMBDA(const int& bl,
                               const int& p,
                               const int& k,
@@ -552,8 +554,8 @@ inline TaskStatus GetFlux(MeshData<Real>* md)
                             Ul_all(bl, p, k, j, i), Ur_all(bl, p, k, j, i));
                 });
         } else {
-            pmb0->par_for("flux_llf", block.s, block.e, 0, nvar - 1, b.ks, b.ke, b.js, b.je,
-                b.is, b.ie,
+            pmb0->par_for("flux_llf", block.s, block.e, 0, nvar - 1, b.ks, b.ke, b.js,
+                b.je, b.is, b.ie,
                 KOKKOS_LAMBDA(const int& bl,
                               const int& p,
                               const int& k,

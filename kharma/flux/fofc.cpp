@@ -244,8 +244,8 @@ TaskStatus Flux::FOFC(MeshData<Real>* md, MeshData<Real>* guess)
                         dir, Fl_all(b), m_u, loc);
                     // Magnetosonic speeds
                     Real cmaxL, cminL;
-                    Flux::vchar(G, Pl_all(b), m_p, Dtmp, eos, emhd_params, k, j, i,
-                        loc, dir, cmaxL, cminL);
+                    Flux::vchar(G, Pl_all(b), m_p, Dtmp, eos, emhd_params, k, j, i, loc,
+                        dir, cmaxL, cminL);
                     // Record speeds
                     cmax(b, dir - 1, k, j, i) = m::max(0., cmaxL);
                     cmin(b, dir - 1, k, j, i) = m::min(0., cminL);

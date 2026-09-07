@@ -2,8 +2,8 @@
 #include "floors.hpp"
 
 #include "boundaries.hpp"
-#include "utils/constants.hpp"
 #include "phoebus_utils/unit_conversions.hpp"
+#include "utils/constants.hpp"
 
 using pc = parthenon::constants::PhysicalConstants<parthenon::constants::CGS>;
 
@@ -22,7 +22,8 @@ void AddBondiRadParameters(ParameterInput* pin, Packages_t& packages)
         // Mdot_Edd = L_Edd/c^2 = 4*pi*G*M_BH*m_p/(sigma_T*c)  [g/s]
         const Real mdot_edd_cgs =
             4.0 * M_PI * pc::g_newt * M_BH_cgs * pc::mp / (sigma_thomson_cgs * pc::c);
-        mdot_edd = mdot_edd_cgs * unit_conv.GetTimeCodeToCGS() / unit_conv.GetMassCodeToCGS();
+        mdot_edd =
+            mdot_edd_cgs * unit_conv.GetTimeCodeToCGS() / unit_conv.GetMassCodeToCGS();
     }
     const Real mdot = mdot_per_edd * mdot_edd;
 
@@ -66,7 +67,7 @@ TaskStatus InitializeRadiativeBondi(
     // Add parameters we'll need throughout the run to 'GRMHD' package
     AddBondiRadParameters(pin, pmb->packages);
 
-    //PostInitialize will fill all ghosts
+    // PostInitialize will fill all ghosts
     SetBondiRad<IndexDomain::interior>(rc);
     const Real r_in = pin->GetReal("coordinates", "r_in");
     const Real rin_bondi = pin->GetOrAddReal("bondi_rad", "r_in_bondi", 1.2 * r_in);
@@ -82,7 +83,6 @@ TaskStatus InitializeRadiativeBondi(
             SetBondiRad<IndexDomain::outer_x1>;
     }
 
-
     return TaskStatus::complete;
 }
 
@@ -96,11 +96,11 @@ TaskStatus SetBondiRadImpl(
     GridVector uvec = rc->Get("prims.uvec").data;
     const bool use_rad = pmb->packages.AllPackages().count("RadM1");
 
-    //Initialize u_rad and uvec_rad to anything just so it won't scream.
+    // Initialize u_rad and uvec_rad to anything just so it won't scream.
     GridScalar u_rad;
     GridVector uvec_rad;
 
-    if(use_rad){
+    if (use_rad) {
         u_rad = rc->Get("prims.u_rad").data;
         uvec_rad = rc->Get("prims.uvec_rad").data;
     }
@@ -110,7 +110,8 @@ TaskStatus SetBondiRadImpl(
     const Real fp = pmb->packages.Get("GRMHD")->Param<Real>("fp_rad");
     const Real r_out = pmb->packages.Get("GRMHD")->Param<Real>("r_out_rad");
     const Real r_in_bondi = pmb->packages.Get("GRMHD")->Param<Real>("r_in_bondi_rad");
-    const bool fill_interior = pmb->packages.Get("GRMHD")->Param<bool>("fill_interior_rad");
+    const bool fill_interior =
+        pmb->packages.Get("GRMHD")->Param<bool>("fill_interior_rad");
 
     // Gamma is *derived* from fp (eq. 95), not read from <GRMHD> gamma.
     const Real gam = 1. + (1. / 3.) * ((2. + 2. * fp) / (1. + 2. * fp));
@@ -120,7 +121,6 @@ TaskStatus SetBondiRadImpl(
     const Real rho0_out = -mdot / (4. * M_PI * r_out * r_out * ur_out);
 
     const GRCoordinates& G = pmb->coords;
-
 
     auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
     const IndexRange ib = bounds.GetBoundsI(domain);
@@ -144,7 +144,7 @@ TaskStatus SetBondiRadImpl(
                     uvec(0, k, j, i) = 0.;
                     uvec(1, k, j, i) = 0.;
                     uvec(2, k, j, i) = 0.;
-                    if(use_rad){
+                    if (use_rad) {
                         u_rad(k, j, i) = 0.;
                         uvec_rad(0, k, j, i) = 0.;
                         uvec_rad(1, k, j, i) = 0.;
@@ -166,10 +166,10 @@ TaskStatus SetBondiRadImpl(
 
             // Then transform that 4-vector to KS (or not, if we're using BL base coords)
             Real ucon_base[GR_DIM];
-            PortsOfCall::get<SphKSCoords>(G.coords.base).vec_from_bl(Xembed, ucon_bl, ucon_base);
+            PortsOfCall::get<SphKSCoords>(G.coords.base)
+                .vec_from_bl(Xembed, ucon_bl, ucon_base);
 
-            
-            //const Real rho0 = -mdot / (4. * M_PI * r * r * ucon_base[1]) * 1./1.5;
+            // const Real rho0 = -mdot / (4. * M_PI * r * r * ucon_base[1]) * 1./1.5;
             const Real rho0 = -mdot / (4. * M_PI * gdet_bl * ucon_base[1]);
 
             const Real T = T_out * m::pow(rho0 / rho0_out, gam - 1.);
@@ -190,7 +190,7 @@ TaskStatus SetBondiRadImpl(
             uvec(1, k, j, i) = u_prim[1];
             uvec(2, k, j, i) = u_prim[2];
 
-            if(use_rad){
+            if (use_rad) {
                 u_rad(k, j, i) = 3. * fp * pgas;
                 uvec_rad(0, k, j, i) = u_prim[0];
                 uvec_rad(1, k, j, i) = u_prim[1];

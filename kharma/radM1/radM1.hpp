@@ -53,7 +53,8 @@ using pc = parthenon::constants::PhysicalConstants<parthenon::constants::CGS>;
 namespace RadM1
 {
 
-struct UnitScales {
+struct UnitScales
+{
     Real length_cgs;
     Real time_cgs;
     Real mass_cgs;
@@ -64,26 +65,59 @@ struct UnitScales {
 
 // Denote implicit solve failures (rflags)
 // This enum should grow to cover any potential flags
-enum class StatusImplicitStep { success = 0, mhdsolve, radsolve, bothsolve, failure, onedfallback_success, onedfallback_failure, pradfallback_success };
-
-static const std::map<int, std::string> status_names_implicit = {
-    {(int)StatusImplicitStep::mhdsolve, "RadM1 MHD Solve Failure"}, // flag that means that the MHD inversion failed (but rad solve worked)
-    {(int)StatusImplicitStep::radsolve, "RadM1 Radiation Solve Failure"}, // flag that means that the radiation solve failed (but mhd solve worked)
-    {(int)StatusImplicitStep::failure, "RadM1 Step Failure"},
-    {(int)StatusImplicitStep::onedfallback_success, "RadM1 4D Solver Fell Back to 1D and succeeded"}, // flag that means the 4D Newton solve didn't converge/failed and the 1D fallback solver was used instead and it succeeded
-    {(int)StatusImplicitStep::onedfallback_failure, "RadM1 4D Solver Fell Back to 1D and Failed"}, // flag that means the 4D Newton solve didn't converge/failed and the 1D fallback solver was used instead and it also failed
-    {(int)StatusImplicitStep::pradfallback_success, "RadM1 4D Solver Fell Back to P_rad iteration and succeeded"}
+enum class StatusImplicitStep {
+    success = 0,
+    mhdsolve,
+    radsolve,
+    bothsolve,
+    failure,
+    onedfallback_success,
+    onedfallback_failure,
+    pradfallback_success
 };
 
+static const std::map<int, std::string> status_names_implicit = {
+    {(int)StatusImplicitStep::mhdsolve,
+        "RadM1 MHD Solve Failure"}, // flag that means that the MHD inversion failed (but
+                                    // rad solve worked)
+    {(int)StatusImplicitStep::radsolve,
+        "RadM1 Radiation Solve Failure"}, // flag that means that the radiation solve
+                                          // failed (but mhd solve worked)
+    {(int)StatusImplicitStep::failure, "RadM1 Step Failure"},
+    {(int)StatusImplicitStep::onedfallback_success,
+        "RadM1 4D Solver Fell Back to 1D and succeeded"}, // flag that means the 4D Newton
+                                                          // solve didn't converge/failed
+                                                          // and the 1D fallback solver
+                                                          // was used instead and it
+                                                          // succeeded
+    {(int)StatusImplicitStep::onedfallback_failure,
+        "RadM1 4D Solver Fell Back to 1D and Failed"}, // flag that means the 4D Newton
+                                                       // solve didn't converge/failed and
+                                                       // the 1D fallback solver was used
+                                                       // instead and it also failed
+    {(int)StatusImplicitStep::pradfallback_success,
+        "RadM1 4D Solver Fell Back to P_rad iteration and succeeded"}};
 
-enum class StatusRadiationInversion {success = 0, urad_below_floor, gammarel2_low, gammarel2_high, division_nonfinite, cold_closure_nonfinite};
+enum class StatusRadiationInversion {
+    success = 0,
+    urad_below_floor,
+    gammarel2_low,
+    gammarel2_high,
+    division_nonfinite,
+    cold_closure_nonfinite
+};
 
 static const std::map<int, std::string> status_names_inversion = {
-    {(int)StatusRadiationInversion::urad_below_floor, "RadM1 Radiation Inversion Failure: Negative Radiation Energy"},
-    {(int)StatusRadiationInversion::gammarel2_low, "RadM1 Radiation Inversion Failure: Low Lorentz Factor"},
-    {(int)StatusRadiationInversion::gammarel2_high, "RadM1 Radiation Inversion Failure: High Lorentz Factor"},
-    {(int)StatusRadiationInversion::division_nonfinite, "RadM1 Radiation Inversion Failure: Non-finite Division"},
-    {(int)StatusRadiationInversion::cold_closure_nonfinite, "RadM1 Radiation Inversion Failure: Non-finite Result from Cold Closure"}
+    {(int)StatusRadiationInversion::urad_below_floor,
+        "RadM1 Radiation Inversion Failure: Negative Radiation Energy"},
+    {(int)StatusRadiationInversion::gammarel2_low,
+        "RadM1 Radiation Inversion Failure: Low Lorentz Factor"},
+    {(int)StatusRadiationInversion::gammarel2_high,
+        "RadM1 Radiation Inversion Failure: High Lorentz Factor"},
+    {(int)StatusRadiationInversion::division_nonfinite,
+        "RadM1 Radiation Inversion Failure: Non-finite Division"},
+    {(int)StatusRadiationInversion::cold_closure_nonfinite,
+        "RadM1 Radiation Inversion Failure: Non-finite Result from Cold Closure"}
 
 };
 
@@ -98,8 +132,7 @@ std::shared_ptr<KHARMAPackage> Initialize(
  * Perform the implicit solve for radiation and plasma coupled. For now, only 4D
  * implemented.
  */
-TaskStatus Step(MeshData<Real>* md_sub_init,
-    MeshData<Real>* md_sub_final, const Real dt);
+TaskStatus Step(MeshData<Real>* md_sub_init, MeshData<Real>* md_sub_final, const Real dt);
 
 /**
  * Convert from conserved to primitive variables for the radiation field.
@@ -117,8 +150,13 @@ void ApplyRadM1Floors(MeshBlockData<Real>* rc, IndexDomain domain);
 TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real>* md);
 
 // Opacity model selector for calc_kabs/calc_kscattering/compute_covariant_fourforce.
-enum class OpacityModel : int { Default = 0, ShocktubeConstant = 1, Bondi = 2, Transparent = 3, ThermalEquilibrium = 4};
-
+enum class OpacityModel : int {
+    Default = 0,
+    ShocktubeConstant = 1,
+    Bondi = 2,
+    Transparent = 3,
+    ThermalEquilibrium = 4
+};
 
 KOKKOS_INLINE_FUNCTION Real calc_kabs(Real rho, Real T, int opacity_model,
     Real shocktube_kappa_rho, const UnitScales& units_cgs,
@@ -130,16 +168,19 @@ KOKKOS_INLINE_FUNCTION Real calc_kabs(Real rho, Real T, int opacity_model,
         // Thermal bremsstrahlung, McKinney et al. 2014 eq. 91.
         // Mckinney makes no reference to mu at all, but mu is present in Fragile 2012.
         const Real T_cgs = m::abs(T) * units_cgs.mu * pc::mp * pc::c * pc::c / pc::kb;
-        const Real rho_cgs = rho * units_cgs.mass_cgs / (units_cgs.length_cgs * units_cgs.length_cgs * units_cgs.length_cgs);
-        //1.0e23 to match harmrad
-        const Real kappa_a_cgs =
-           1.0e23 * m::pow(T_cgs, -3.5) * rho_cgs * rho_cgs;
-        //make it scale free
+        const Real rho_cgs =
+            rho * units_cgs.mass_cgs /
+            (units_cgs.length_cgs * units_cgs.length_cgs * units_cgs.length_cgs);
+        // 1.0e23 to match harmrad
+        const Real kappa_a_cgs = 1.0e23 * m::pow(T_cgs, -3.5) * rho_cgs * rho_cgs;
+        // make it scale free
         return kappa_a_cgs * units_cgs.length_cgs;
     } else if (opacity_model == (int)OpacityModel::Transparent) {
         return 0.0;
     } else if (opacity_model == (int)OpacityModel::ThermalEquilibrium) {
-        const Real rho_cgs = rho * units_cgs.mass_cgs / (units_cgs.length_cgs * units_cgs.length_cgs * units_cgs.length_cgs);
+        const Real rho_cgs =
+            rho * units_cgs.mass_cgs /
+            (units_cgs.length_cgs * units_cgs.length_cgs * units_cgs.length_cgs);
         return 0.4 * rho_cgs * units_cgs.length_cgs;
     } else {
         const Real temp_arg = m::abs(T) * units_cgs.mu * pc::mp * pc::c * pc::c;
@@ -156,9 +197,11 @@ KOKKOS_INLINE_FUNCTION Real calc_kscattering(Real rho, Real T, int opacity_model
     } else if (opacity_model == (int)OpacityModel::Transparent) {
         return 0.0;
     } else if (opacity_model == (int)OpacityModel::Bondi) {
-        const Real rho_cgs = rho * units_cgs.mass_cgs / (units_cgs.length_cgs * units_cgs.length_cgs * units_cgs.length_cgs);
+        const Real rho_cgs =
+            rho * units_cgs.mass_cgs /
+            (units_cgs.length_cgs * units_cgs.length_cgs * units_cgs.length_cgs);
         const Real kappa_sc_cgs = 0.4 * rho_cgs;
-        //make it scale free
+        // make it scale free
         return kappa_sc_cgs * units_cgs.length_cgs;
     } else if (opacity_model == (int)OpacityModel::ThermalEquilibrium) {
         return 0.0;
@@ -196,7 +239,6 @@ KOKKOS_INLINE_FUNCTION void calc_ucon_rad(const GRCoordinates& G, const Global& 
         ucon[v + 1] =
             P(m.U1_RAD + v, k, j, i) - gamma * alpha * G.gcon(loc, j, i, 0, v + 1);
 }
-
 
 KOKKOS_INLINE_FUNCTION Real lorentz_calc_rad(
     const GRCoordinates& G, const Real P[4], const int& j, const int& i)
@@ -257,7 +299,6 @@ KOKKOS_INLINE_FUNCTION void calc_tensor(const GRCoordinates& G,
 
     G.lower(R_con_dir, R_dir_mu, k, j, i, loc);
 }
-
 
 KOKKOS_INLINE_FUNCTION void initialize_radiation_pressure(Real UU, Real& UU_rad)
 {

@@ -64,13 +64,14 @@ std::shared_ptr<KHARMAPackage> Inverter::Initialize(
         params.Add("inverter_type", Type::none);
     }
 
-
-    // An option that exits when someone use onedw with an equation of state that is not ideal gas.
-    // eos_kharma is solely responsible for setting/defaulting "eos"/"type"; we only ever read it here.
+    // An option that exits when someone use onedw with an equation of state that is not
+    // ideal gas. eos_kharma is solely responsible for setting/defaulting "eos"/"type"; we
+    // only ever read it here.
     if (inverter_name == "onedw") {
         const std::string eos_name = pin->GetString("eos", "type");
         if (eos_name != singularity::IdealGas::EosType()) {
-            throw std::invalid_argument("onedw inverter only works with ideal gas equation of state");
+            throw std::invalid_argument(
+                "onedw inverter only works with ideal gas equation of state");
         }
     }
 

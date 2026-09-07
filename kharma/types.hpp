@@ -239,7 +239,8 @@ class VarMap
             T3ADD = -1;
         }
 
-        // if U1_RAD is present, we assume the rest of the RAD_M1 variables are too.  If not, we assume none of them are. Out of the package modification RADM1.
+        // if U1_RAD is present, we assume the rest of the RAD_M1 variables are too.  If
+        // not, we assume none of them are. Out of the package modification RADM1.
         if (U1_RAD >= 0) {
             U2_RAD = U1_RAD + 1;
             U3_RAD = U1_RAD + 2;

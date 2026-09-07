@@ -7,7 +7,7 @@
 #include "utils/constants.hpp"
 #include <parthenon/package.hpp>
 
-//Include neutrinos opacities
+// Include neutrinos opacities
 #include <singularity-opac/neutrinos/mean_opacity_neutrinos.hpp>
 #include <singularity-opac/neutrinos/mean_s_opacity_neutrinos.hpp>
 #include <singularity-opac/neutrinos/opac_neutrinos.hpp>
@@ -15,8 +15,8 @@
 
 // singularity includes photon opacities
 #include <singularity-opac/photons/mean_opacity_photons.hpp>
-#include <singularity-opac/photons/mean_s_opacity_photons.hpp>
 #include <singularity-opac/photons/mean_photon_s_variant.hpp>
+#include <singularity-opac/photons/mean_s_opacity_photons.hpp>
 #include <singularity-opac/photons/opac_photons.hpp>
 #include <singularity-opac/photons/s_opac_photons.hpp>
 
@@ -28,192 +28,197 @@
 
 using pc = parthenon::constants::PhysicalConstants<parthenon::constants::CGS>;
 
-namespace Microphysics {
-namespace Opacity {
-std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages) {
-  using namespace singularity::photons;
-  using MeanSOpacityBase = singularity::photons::MeanSOpacityBase;
-  using MeanSOpacity = singularity::photons::impl::MeanSVariant<
-      MeanSOpacityBase, singularity::photons::MeanNonCGSUnitsS<MeanSOpacityBase>>;
+namespace Microphysics
+{
+namespace Opacity
+{
+std::shared_ptr<KHARMAPackage> Initialize(
+    ParameterInput* pin, std::shared_ptr<Packages_t>& packages)
+{
+    using namespace singularity::photons;
+    using MeanSOpacityBase = singularity::photons::MeanSOpacityBase;
+    using MeanSOpacity = singularity::photons::impl::MeanSVariant<MeanSOpacityBase,
+        singularity::photons::MeanNonCGSUnitsS<MeanSOpacityBase>>;
 
-  auto pkg = std::make_shared<KHARMAPackage>("opacity");
-  Params &params = pkg->AllParams();
+    auto pkg = std::make_shared<KHARMAPackage>("opacity");
+    Params& params = pkg->AllParams();
 
-  bool do_rad = pin->GetOrAddBoolean("radM1", "on", false);
-  if (!do_rad) {
-    params.Add("opacities", Opacities());
+    bool do_rad = pin->GetOrAddBoolean("radM1", "on", false);
+    if (!do_rad) {
+        params.Add("opacities", Opacities());
+        return pkg;
+    }
+
+    const bool scale_free = pin->GetOrAddBoolean("units", "scale_free", true);
+
+    const std::string block_name = "opac";
+
+    auto unit_conv = phoebus::UnitConversions(pin);
+    double time_unit = unit_conv.GetTimeCodeToCGS();
+    double mass_unit = unit_conv.GetMassCodeToCGS();
+    double length_unit = unit_conv.GetLengthCodeToCGS();
+    double temp_unit = unit_conv.GetTemperatureCodeToCGS();
+
+    std::string opacity_type = pin->GetOrAddString(block_name, "type", "none");
+    std::set<std::string> known_opacity_types = {
+        "none", "gray", "tabular", "bremsstrahlung"};
+    if (!known_opacity_types.count(opacity_type)) {
+        std::stringstream msg;
+        msg << "Opacity model \"" << opacity_type << "\" not recognized!";
+        PARTHENON_FAIL(msg);
+    }
+
+    params.Add("type", opacity_type);
+
+    if (opacity_type == "none") {
+        // Just return 0 for everything. Still have units vs scale-free because we use the
+        // distribution function provided by this class for example if we have a definite
+        // scattering opacity.
+        const Real kappa = 0.;
+        if (scale_free) {
+            singularity::photons::Opacity opacity_host = ScaleFree(kappa);
+            auto opacity_device = opacity_host.GetOnDevice();
+            params.Add("h.opacity_baseunits", opacity_host);
+            params.Add("h.opacity", opacity_host);
+            params.Add("d.opacity", opacity_device);
+        } else {
+            singularity::photons::Opacity opacity_host = NonCGSUnits<Gray>(
+                Gray(kappa), time_unit, mass_unit, length_unit, temp_unit);
+            auto opacity_device = opacity_host.GetOnDevice();
+            singularity::photons::Opacity opacity_host_baseunits = Gray(kappa);
+            params.Add("h.opacity_baseunits", opacity_host_baseunits);
+            params.Add("h.opacity", opacity_host);
+            params.Add("d.opacity", opacity_device);
+        }
+    } else if (opacity_type == "gray") {
+        const Real kappa = pin->GetReal(block_name, "gray_kappa");
+        params.Add("gray_kappa", kappa);
+
+        if (scale_free) {
+            singularity::photons::Opacity opacity_host = ScaleFree(kappa);
+            auto opacity_device = opacity_host.GetOnDevice();
+            params.Add("h.opacity_baseunits", opacity_host);
+            params.Add("h.opacity", opacity_host);
+            params.Add("d.opacity", opacity_device);
+        } else {
+            singularity::photons::Opacity opacity_host = NonCGSUnits<Gray>(
+                Gray(kappa), time_unit, mass_unit, length_unit, temp_unit);
+            auto opacity_device = opacity_host.GetOnDevice();
+            singularity::photons::Opacity opacity_host_baseunits = Gray(kappa);
+            params.Add("h.opacity_baseunits", opacity_host_baseunits);
+            params.Add("h.opacity", opacity_host);
+            params.Add("d.opacity", opacity_device);
+        }
+    } else if (opacity_type == "bremsstrahlung") {
+        PARTHENON_REQUIRE(
+            !scale_free, "Must have CGS scaling for bremsstrahlung opacities!");
+
+        singularity::photons::Opacity opacity_host =
+            NonCGSUnits<EPBremss>(EPBremss(PlanckDistribution<>()), time_unit, mass_unit,
+                length_unit, temp_unit);
+        auto opacity_device = opacity_host.GetOnDevice();
+        singularity::photons::Opacity opacity_host_baseunits =
+            EPBremss(PlanckDistribution<>());
+        params.Add("h.opacity_baseunits", opacity_host_baseunits);
+        params.Add("h.opacity", opacity_host);
+        params.Add("d.opacity", opacity_device);
+    } else if (opacity_type == "tabular") {
+        PARTHENON_FAIL("Tabular photon opacities are not supported by this "
+                       "singularity-opac version!");
+    }
+
+    {
+        MeanOpacity mean_opac_host;
+        MeanOpacity mean_opac_device = mean_opac_host.GetOnDevice();
+        params.Add("h.mean_opacity", mean_opac_host);
+        params.Add("d.mean_opacity", mean_opac_device);
+    }
+
+    const std::string s_block_name = "opac";
+    std::string s_opacity_type = pin->GetOrAddString(s_block_name, "s_type", "none");
+    std::set<std::string> known_s_opacity_types = {"none", "gray", "thomson"};
+    if (!known_s_opacity_types.count(s_opacity_type)) {
+        std::stringstream msg;
+        msg << "Scattering opacity model \"" << s_opacity_type << "\" not recognized!";
+        PARTHENON_FAIL(msg);
+    }
+
+    PARTHENON_REQUIRE(!(s_opacity_type == "scalefree" && !unit_conv.IsScaleFree()),
+        "Scale free opacity only supported for scale-free phoebus simulations!");
+
+    params.Add("s_type", s_opacity_type);
+
+    const Real avg_particle_mass = pc::mp;
+
+    if (s_opacity_type == "none") {
+        const Real kappa = 0.;
+        if (scale_free) {
+            SOpacity opacity_host = ScaleFreeS(kappa, 1.);
+            auto opacity_device = opacity_host.GetOnDevice();
+            params.Add("h.s_opacity_baseunits", opacity_host);
+            params.Add("h.s_opacity", opacity_host);
+            params.Add("d.s_opacity", opacity_device);
+        } else {
+            SOpacity opacity_host =
+                NonCGSUnitsS<GrayS>(GrayS(kappa * avg_particle_mass, avg_particle_mass),
+                    time_unit, mass_unit, length_unit, temp_unit);
+            SOpacity opacity_host_baseunits =
+                GrayS(kappa * avg_particle_mass, avg_particle_mass);
+            auto opacity_device = opacity_host.GetOnDevice();
+            params.Add("h.s_opacity_baseunits", opacity_host_baseunits);
+            params.Add("h.s_opacity", opacity_host);
+            params.Add("d.s_opacity", opacity_device);
+        }
+    } else if (s_opacity_type == "gray") {
+        const Real kappa = pin->GetReal(s_block_name, "s_gray_kappa");
+        params.Add("s_gray_kappa", kappa);
+
+        if (scale_free) {
+            SOpacity opacity_host = ScaleFreeS(kappa, 1.);
+            auto opacity_device = opacity_host.GetOnDevice();
+            params.Add("h.s_opacity_baseunits", opacity_host);
+            params.Add("h.s_opacity", opacity_host);
+            params.Add("d.s_opacity", opacity_device);
+        } else {
+            SOpacity opacity_host =
+                NonCGSUnitsS<GrayS>(GrayS(kappa * avg_particle_mass, avg_particle_mass),
+                    time_unit, mass_unit, length_unit, temp_unit);
+            SOpacity opacity_host_baseunits =
+                GrayS(kappa * avg_particle_mass, avg_particle_mass);
+            auto opacity_device = opacity_host.GetOnDevice();
+            params.Add("h.s_opacity_baseunits", opacity_host_baseunits);
+            params.Add("h.s_opacity", opacity_host);
+            params.Add("d.s_opacity", opacity_device);
+        }
+    } else if (s_opacity_type == "thomson") {
+        // Thermal electron (Thomson) scattering.
+        PARTHENON_REQUIRE(!scale_free, "Must have CGS scaling for Thomson scattering!");
+
+        SOpacity opacity_host = NonCGSUnitsS<ThomsonS>(
+            ThomsonS(avg_particle_mass), time_unit, mass_unit, length_unit, temp_unit);
+        SOpacity opacity_host_baseunits = ThomsonS(avg_particle_mass);
+        auto opacity_device = opacity_host.GetOnDevice();
+        params.Add("h.s_opacity_baseunits", opacity_host_baseunits);
+        params.Add("h.s_opacity", opacity_host);
+        params.Add("d.s_opacity", opacity_device);
+    }
+
+    {
+        MeanSOpacity mean_opac_host;
+        auto mean_opac_device = mean_opac_host.GetOnDevice();
+        params.Add("h.mean_s_opacity", mean_opac_host);
+        params.Add("d.mean_s_opacity", mean_opac_device);
+    }
+
+    auto opacity_device = params.Get<singularity::photons::Opacity>("d.opacity");
+    auto& mean_opac_device = params.Get<MeanOpacity>("d.mean_opacity");
+    auto& s_opacity_device = params.Get<SOpacity>("d.s_opacity");
+    auto& mean_s_opac_device = params.Get<MeanSOpacity>("d.mean_s_opacity");
+    Opacities opacities(
+        opacity_device, mean_opac_device, s_opacity_device, mean_s_opac_device);
+    params.Add("opacities", opacities);
+
     return pkg;
-  }
-
-  const bool scale_free = pin->GetOrAddBoolean("units", "scale_free", true);
-
-  const std::string block_name = "opac";
-
-  auto unit_conv = phoebus::UnitConversions(pin);
-  double time_unit = unit_conv.GetTimeCodeToCGS();
-  double mass_unit = unit_conv.GetMassCodeToCGS();
-  double length_unit = unit_conv.GetLengthCodeToCGS();
-  double temp_unit = unit_conv.GetTemperatureCodeToCGS();
-
-
-  std::string opacity_type = pin->GetOrAddString(block_name, "type", "none");
-  std::set<std::string> known_opacity_types = {"none", "gray", "tabular",
-                                                "bremsstrahlung"};
-  if (!known_opacity_types.count(opacity_type)) {
-    std::stringstream msg;
-    msg << "Opacity model \"" << opacity_type << "\" not recognized!";
-    PARTHENON_FAIL(msg);
-  }
-
-  params.Add("type", opacity_type);
-
-  if (opacity_type == "none") {
-    // Just return 0 for everything. Still have units vs scale-free because we use the
-    // distribution function provided by this class for example if we have a definite
-    // scattering opacity.
-    const Real kappa = 0.;
-    if (scale_free) {
-      singularity::photons::Opacity opacity_host = ScaleFree(kappa);
-      auto opacity_device = opacity_host.GetOnDevice();
-      params.Add("h.opacity_baseunits", opacity_host);
-      params.Add("h.opacity", opacity_host);
-      params.Add("d.opacity", opacity_device);
-    } else {
-      singularity::photons::Opacity opacity_host =
-          NonCGSUnits<Gray>(Gray(kappa), time_unit, mass_unit, length_unit, temp_unit);
-      auto opacity_device = opacity_host.GetOnDevice();
-      singularity::photons::Opacity opacity_host_baseunits = Gray(kappa);
-      params.Add("h.opacity_baseunits", opacity_host_baseunits);
-      params.Add("h.opacity", opacity_host);
-      params.Add("d.opacity", opacity_device);
-    }
-  } else if (opacity_type == "gray") {
-    const Real kappa = pin->GetReal(block_name, "gray_kappa");
-    params.Add("gray_kappa", kappa);
-
-    if (scale_free) {
-      singularity::photons::Opacity opacity_host = ScaleFree(kappa);
-      auto opacity_device = opacity_host.GetOnDevice();
-      params.Add("h.opacity_baseunits", opacity_host);
-      params.Add("h.opacity", opacity_host);
-      params.Add("d.opacity", opacity_device);
-    } else {
-      singularity::photons::Opacity opacity_host =
-          NonCGSUnits<Gray>(Gray(kappa), time_unit, mass_unit, length_unit, temp_unit);
-      auto opacity_device = opacity_host.GetOnDevice();
-      singularity::photons::Opacity opacity_host_baseunits = Gray(kappa);
-      params.Add("h.opacity_baseunits", opacity_host_baseunits);
-      params.Add("h.opacity", opacity_host);
-      params.Add("d.opacity", opacity_device);
-    }
-  } else if (opacity_type == "bremsstrahlung") {
-    PARTHENON_REQUIRE(!scale_free, "Must have CGS scaling for bremsstrahlung opacities!");
-
-    singularity::photons::Opacity opacity_host = NonCGSUnits<EPBremss>(EPBremss(PlanckDistribution<>()),
-                                                 time_unit, mass_unit, length_unit,
-                                                 temp_unit);
-    auto opacity_device = opacity_host.GetOnDevice();
-    singularity::photons::Opacity opacity_host_baseunits = EPBremss(PlanckDistribution<>());
-    params.Add("h.opacity_baseunits", opacity_host_baseunits);
-    params.Add("h.opacity", opacity_host);
-    params.Add("d.opacity", opacity_device);
-  } else if (opacity_type == "tabular") {
-    PARTHENON_FAIL("Tabular photon opacities are not supported by this singularity-opac version!");
-  }
-
-  {
-    MeanOpacity mean_opac_host;
-    MeanOpacity mean_opac_device = mean_opac_host.GetOnDevice();
-    params.Add("h.mean_opacity", mean_opac_host);
-    params.Add("d.mean_opacity", mean_opac_device);
-  }
-
-  const std::string s_block_name = "opac";
-  std::string s_opacity_type = pin->GetOrAddString(s_block_name, "s_type", "none");
-  std::set<std::string> known_s_opacity_types = {"none", "gray", "thomson"};
-  if (!known_s_opacity_types.count(s_opacity_type)) {
-    std::stringstream msg;
-    msg << "Scattering opacity model \"" << s_opacity_type << "\" not recognized!";
-    PARTHENON_FAIL(msg);
-  }
-
-  PARTHENON_REQUIRE(
-      !(s_opacity_type == "scalefree" && !unit_conv.IsScaleFree()),
-      "Scale free opacity only supported for scale-free phoebus simulations!");
-
-  params.Add("s_type", s_opacity_type);
-
-  const Real avg_particle_mass = pc::mp;
-
-  if (s_opacity_type == "none") {
-    const Real kappa = 0.;
-    if (scale_free) {
-      SOpacity opacity_host = ScaleFreeS(kappa, 1.);
-      auto opacity_device = opacity_host.GetOnDevice();
-      params.Add("h.s_opacity_baseunits", opacity_host);
-      params.Add("h.s_opacity", opacity_host);
-      params.Add("d.s_opacity", opacity_device);
-    } else {
-      SOpacity opacity_host =
-          NonCGSUnitsS<GrayS>(GrayS(kappa * avg_particle_mass, avg_particle_mass),
-                              time_unit, mass_unit, length_unit, temp_unit);
-      SOpacity opacity_host_baseunits =
-          GrayS(kappa * avg_particle_mass, avg_particle_mass);
-      auto opacity_device = opacity_host.GetOnDevice();
-      params.Add("h.s_opacity_baseunits", opacity_host_baseunits);
-      params.Add("h.s_opacity", opacity_host);
-      params.Add("d.s_opacity", opacity_device);
-    }
-  } else if (s_opacity_type == "gray") {
-    const Real kappa = pin->GetReal(s_block_name, "s_gray_kappa");
-    params.Add("s_gray_kappa", kappa);
-
-    if (scale_free) {
-      SOpacity opacity_host = ScaleFreeS(kappa, 1.);
-      auto opacity_device = opacity_host.GetOnDevice();
-      params.Add("h.s_opacity_baseunits", opacity_host);
-      params.Add("h.s_opacity", opacity_host);
-      params.Add("d.s_opacity", opacity_device);
-    } else {
-      SOpacity opacity_host =
-          NonCGSUnitsS<GrayS>(GrayS(kappa * avg_particle_mass, avg_particle_mass),
-                              time_unit, mass_unit, length_unit, temp_unit);
-      SOpacity opacity_host_baseunits =
-          GrayS(kappa * avg_particle_mass, avg_particle_mass);
-      auto opacity_device = opacity_host.GetOnDevice();
-      params.Add("h.s_opacity_baseunits", opacity_host_baseunits);
-      params.Add("h.s_opacity", opacity_host);
-      params.Add("d.s_opacity", opacity_device);
-    }
-  } else if (s_opacity_type == "thomson") {
-    // Thermal electron (Thomson) scattering. 
-    PARTHENON_REQUIRE(!scale_free, "Must have CGS scaling for Thomson scattering!");
-
-    SOpacity opacity_host = NonCGSUnitsS<ThomsonS>(
-        ThomsonS(avg_particle_mass), time_unit, mass_unit, length_unit, temp_unit);
-    SOpacity opacity_host_baseunits = ThomsonS(avg_particle_mass);
-    auto opacity_device = opacity_host.GetOnDevice();
-    params.Add("h.s_opacity_baseunits", opacity_host_baseunits);
-    params.Add("h.s_opacity", opacity_host);
-    params.Add("d.s_opacity", opacity_device);
-  }
-
-  {
-    MeanSOpacity mean_opac_host;
-    auto mean_opac_device = mean_opac_host.GetOnDevice();
-    params.Add("h.mean_s_opacity", mean_opac_host);
-    params.Add("d.mean_s_opacity", mean_opac_device);
-  }
-
-  auto opacity_device = params.Get<singularity::photons::Opacity>("d.opacity");
-  auto &mean_opac_device = params.Get<MeanOpacity>("d.mean_opacity");
-  auto &s_opacity_device = params.Get<SOpacity>("d.s_opacity");
-  auto &mean_s_opac_device = params.Get<MeanSOpacity>("d.mean_s_opacity");
-  Opacities opacities(opacity_device, mean_opac_device, s_opacity_device,
-                      mean_s_opac_device);
-  params.Add("opacities", opacities);
-
-  return pkg;
 }
 
 } // namespace Opacity

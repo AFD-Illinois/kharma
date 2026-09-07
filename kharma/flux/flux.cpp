@@ -48,7 +48,6 @@
 #include "phoebus_utils/unit_conversions.hpp"
 #include "phoebus_utils/variables.hpp"
 
-
 using namespace parthenon;
 
 // GetFlux is in the header file get_flux.hpp, as it is templated on reconstruction scheme
@@ -381,7 +380,6 @@ TaskStatus Flux::BlockPtoU_Send(MeshBlockData<Real>* rc, IndexDomain domain, boo
     const int ndim = pmb->pmy_mesh->ndim;
     // Options
 
-
     const auto& eos_params = pmb->packages.Get("eos")->AllParams();
     auto eos = eos_params.Get<Microphysics::EOS::EOS>("d.EOS");
 
@@ -459,7 +457,6 @@ void Flux::AddGeoSource(MeshData<Real>* md, MeshData<Real>* mdudt, IndexDomain d
     // Options
     const auto& eos_params = pkgs.Get("eos")->AllParams();
     auto eos = eos_params.Get<Microphysics::EOS::EOS>("d.EOS");
-
 
     // Out of the package modification RADM1.
     const bool use_rad = pmb0->packages.AllPackages().count("RadM1");

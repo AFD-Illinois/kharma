@@ -39,7 +39,6 @@
 #include "flux.hpp"
 #include "flux_functions.hpp"
 
-
 void AddBondiParameters(ParameterInput* pin, Packages_t& packages)
 {
     const Real mdot = pin->GetOrAddReal("bondi", "mdot", 1.0);
@@ -152,7 +151,6 @@ TaskStatus SetBondiImpl(
     if (P.GetDim(4) == 0) {
         return TaskStatus::complete;
     }
-
 
     const Real mdot = pmb->packages.Get("GRMHD")->Param<Real>("mdot");
     const Real rs = pmb->packages.Get("GRMHD")->Param<Real>("rs");

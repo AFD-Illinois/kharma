@@ -19,118 +19,135 @@
 
 using namespace parthenon::package::prelude;
 
-
 #include "kharma_package.hpp"
-//Include neutrinos opacities
+// Include neutrinos opacities
 #include <singularity-opac/neutrinos/mean_opacity_neutrinos.hpp>
 #include <singularity-opac/neutrinos/mean_s_opacity_neutrinos.hpp>
 #include <singularity-opac/neutrinos/opac_neutrinos.hpp>
 #include <singularity-opac/neutrinos/s_opac_neutrinos.hpp>
 
 #include <singularity-opac/photons/mean_opacity_photons.hpp>
-#include <singularity-opac/photons/mean_s_opacity_photons.hpp>
 #include <singularity-opac/photons/mean_photon_s_variant.hpp>
+#include <singularity-opac/photons/mean_s_opacity_photons.hpp>
 #include <singularity-opac/photons/opac_photons.hpp>
 #include <singularity-opac/photons/s_opac_photons.hpp>
 
-namespace Microphysics {
+namespace Microphysics
+{
 
+class Opacities
+{
+    using Opacity = singularity::photons::Opacity;
+    using MeanOpacity = singularity::photons::MeanOpacity;
+    using MeanNonCGSUnits = singularity::photons::MeanNonCGSUnits<MeanOpacity>;
+    using SOpacity = singularity::photons::SOpacity;
+    using MeanSOpacityBase = singularity::photons::MeanSOpacityBase;
+    using MeanSOpacity = singularity::photons::impl::MeanSVariant<MeanSOpacityBase,
+        singularity::photons::MeanNonCGSUnitsS<MeanSOpacityBase>>;
+    using MeanNonCGSUnitsS = singularity::photons::MeanNonCGSUnitsS<MeanSOpacity>;
 
-class Opacities {
-  using Opacity = singularity::photons::Opacity;
-  using MeanOpacity = singularity::photons::MeanOpacity;
-  using MeanNonCGSUnits = singularity::photons::MeanNonCGSUnits<MeanOpacity>;
-  using SOpacity = singularity::photons::SOpacity;
-  using MeanSOpacityBase = singularity::photons::MeanSOpacityBase;
-  using MeanSOpacity = singularity::photons::impl::MeanSVariant<
-      MeanSOpacityBase, singularity::photons::MeanNonCGSUnitsS<MeanSOpacityBase>>;
-  using MeanNonCGSUnitsS = singularity::photons::MeanNonCGSUnitsS<MeanSOpacity>;
+  public:
+    Opacities() = default;
+    KOKKOS_FUNCTION
+    Opacities(const Opacity& opac, const MeanOpacity& m_opac, const SOpacity& s_opac,
+        const MeanSOpacity& m_s_opac)
+        : opac_(opac)
+        , m_opac_(m_opac)
+        , s_opac_(s_opac)
+        , m_s_opac_(m_s_opac)
+    {}
 
- public:
-  Opacities() = default;
-  KOKKOS_FUNCTION
-  Opacities(const Opacity &opac, const MeanOpacity &m_opac, const SOpacity &s_opac,
-            const MeanSOpacity &m_s_opac)
-      : opac_(opac), m_opac_(m_opac), s_opac_(s_opac), m_s_opac_(m_s_opac) {}
+    /// Radiation equation of state calls
+    KOKKOS_INLINE_FUNCTION
+    Real EnergyDensityFromTemperature(const Real& T) const
+    {
+        return opac_.EnergyDensityFromTemperature(T);
+    }
 
-  /// Radiation equation of state calls
-  KOKKOS_INLINE_FUNCTION
-  Real EnergyDensityFromTemperature(const Real &T) const {
-    return opac_.EnergyDensityFromTemperature(T);
-  }
+    KOKKOS_INLINE_FUNCTION
+    Real TemperatureFromEnergyDensity(const Real& E) const
+    {
+        return opac_.TemperatureFromEnergyDensity(E);
+    }
 
-  KOKKOS_INLINE_FUNCTION
-  Real TemperatureFromEnergyDensity(const Real &E) const {
-    return opac_.TemperatureFromEnergyDensity(E);
-  }
+    KOKKOS_INLINE_FUNCTION
+    Real ThermalDistributionOfTNu(const Real& T, const Real& nu) const
+    {
+        return opac_.ThermalDistributionOfTNu(T, nu);
+    }
 
-  KOKKOS_INLINE_FUNCTION
-  Real ThermalDistributionOfTNu(const Real &T, const Real &nu) const {
-    return opac_.ThermalDistributionOfTNu(T, nu);
-  }
+    /// Absorption/emission quantities
+    KOKKOS_INLINE_FUNCTION
+    Real Emissivity(const Real& rho, const Real& T, Real* lambda = nullptr) const
+    {
+        return opac_.Emissivity(rho, T, lambda);
+    }
 
-  /// Absorption/emission quantities
-  KOKKOS_INLINE_FUNCTION
-  Real Emissivity(const Real &rho, const Real &T, Real *lambda = nullptr) const {
-    return opac_.Emissivity(rho, T, lambda);
-  }
+    KOKKOS_INLINE_FUNCTION
+    Real NumberEmissivity(const Real& rho, const Real& T, Real* lambda = nullptr) const
+    {
+        return opac_.NumberEmissivity(rho, T, lambda);
+    }
 
-  KOKKOS_INLINE_FUNCTION
-  Real NumberEmissivity(const Real &rho, const Real &T, Real *lambda = nullptr) const {
-    return opac_.NumberEmissivity(rho, T, lambda);
-  }
+    KOKKOS_INLINE_FUNCTION
+    Real EmissivityPerNu(
+        const Real& rho, const Real& T, const Real nu, Real* lambda = nullptr) const
+    {
+        return opac_.EmissivityPerNu(rho, T, nu, lambda);
+    }
 
-  KOKKOS_INLINE_FUNCTION
-  Real EmissivityPerNu(const Real &rho, const Real &T, const Real nu,
-                       Real *lambda = nullptr) const {
-    return opac_.EmissivityPerNu(rho, T, nu, lambda);
-  }
+    KOKKOS_INLINE_FUNCTION
+    Real AbsorptionCoefficient(
+        const Real& rho, const Real& T, const Real nu, Real* lambda = nullptr) const
+    {
+        return opac_.AbsorptionCoefficient(rho, T, nu, lambda);
+    }
 
-  KOKKOS_INLINE_FUNCTION
-  Real AbsorptionCoefficient(const Real &rho, const Real &T, const Real nu,
-                             Real *lambda = nullptr) const {
-    return opac_.AbsorptionCoefficient(rho, T, nu, lambda);
-  }
+    KOKKOS_INLINE_FUNCTION
+    Real AngleAveragedAbsorptionCoefficient(
+        const Real& rho, const Real& T, const Real nu, Real* lambda = nullptr) const
+    {
+        return opac_.AngleAveragedAbsorptionCoefficient(rho, T, nu, lambda);
+    }
 
-  KOKKOS_INLINE_FUNCTION
-  Real AngleAveragedAbsorptionCoefficient(const Real &rho, const Real &T, const Real nu,
-                                          Real *lambda = nullptr) const {
-    return opac_.AngleAveragedAbsorptionCoefficient(rho, T, nu, lambda);
-  }
+    // Scattering quantities
+    KOKKOS_INLINE_FUNCTION
+    Real TotalScatteringCoefficient(
+        const Real& rho, const Real& T, const Real nu, Real* lambda = nullptr) const
+    {
+        return s_opac_.TotalScatteringCoefficient(rho, T, nu, lambda);
+    }
 
-  // Scattering quantities
-  KOKKOS_INLINE_FUNCTION
-  Real TotalScatteringCoefficient(const Real &rho, const Real &T, const Real nu,
-                                  Real *lambda = nullptr) const {
-    return s_opac_.TotalScatteringCoefficient(rho, T, nu, lambda);
-  }
+    KOKKOS_INLINE_FUNCTION
+    Real PlanckMeanAbsorptionCoefficient(const Real& rho, const Real& T) const
+    {
+        return m_opac_.PlanckGroupAbsorptionCoefficient(rho, T, 0);
+    }
 
-  
-  KOKKOS_INLINE_FUNCTION
-  Real PlanckMeanAbsorptionCoefficient(const Real &rho, const Real &T) const {
-    return m_opac_.PlanckGroupAbsorptionCoefficient(rho, T, 0);
-  }
+    KOKKOS_INLINE_FUNCTION
+    Real RosselandMeanAbsorptionCoefficient(const Real& rho, const Real& T) const
+    {
+        return m_opac_.RosselandGroupAbsorptionCoefficient(rho, T, 0);
+    }
 
-  KOKKOS_INLINE_FUNCTION
-  Real RosselandMeanAbsorptionCoefficient(const Real &rho, const Real &T) const {
-    return m_opac_.RosselandGroupAbsorptionCoefficient(rho, T, 0);
-  }
+    /// Mean scattering opacities
+    KOKKOS_INLINE_FUNCTION
+    Real RosselandMeanScatteringCoefficient(const Real& rho, const Real& T) const
+    {
+        return m_s_opac_.RosselandGroupScatteringCoefficient(rho, T, 0);
+    }
 
-  /// Mean scattering opacities
-  KOKKOS_INLINE_FUNCTION
-  Real RosselandMeanScatteringCoefficient(const Real &rho, const Real &T) const {
-    return m_s_opac_.RosselandGroupScatteringCoefficient(rho, T, 0);
-  }
-
- private:
-  Opacity opac_;
-  MeanOpacity m_opac_;
-  SOpacity s_opac_;
-  MeanSOpacity m_s_opac_;
+  private:
+    Opacity opac_;
+    MeanOpacity m_opac_;
+    SOpacity s_opac_;
+    MeanSOpacity m_s_opac_;
 };
 
-namespace Opacity {
-std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<Packages_t>& packages);
+namespace Opacity
+{
+std::shared_ptr<KHARMAPackage> Initialize(
+    ParameterInput* pin, std::shared_ptr<Packages_t>& packages);
 } // namespace Opacity
 
 } // namespace Microphysics

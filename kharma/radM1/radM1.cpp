@@ -64,15 +64,16 @@ std::shared_ptr<KHARMAPackage> RadM1::Initialize(
     auto flags_prim = driver.Get<std::vector<MetadataFlag>>("prim_flags");
     flags_prim.insert(flags_prim.end(), flags_radm1.begin(), flags_radm1.end());
 
-    //Save primitive variables to restart files
-    //TODO (PNM): Is this really necessary? Kharma only restarts using conserved variables.
+    // Save primitive variables to restart files
+    // TODO (PNM): Is this really necessary? Kharma only restarts using conserved
+    // variables.
     flags_prim.push_back(Metadata::Restart);
 
     auto flags_cons = driver.Get<std::vector<MetadataFlag>>("cons_flags");
     flags_cons.insert(flags_cons.end(), flags_radm1.begin(), flags_radm1.end());
 
-    //TODO (PNM): Eventually, just collapse all the conserved and prim variables on a single vector, instead of dividing t component
-    //from spatial components.
+    // TODO (PNM): Eventually, just collapse all the conserved and prim variables on a
+    // single vector, instead of dividing t component from spatial components.
     auto m_prim_scalar = Metadata(flags_prim);
     pkg->AddField("prims.u_rad", m_prim_scalar);
 
@@ -124,18 +125,20 @@ std::shared_ptr<KHARMAPackage> RadM1::Initialize(
     }
 
     // fallback to the default if no input
-    // TODO (PNM): add a vector of strings as the last parameter here to yell at the user what the options are
-    std::string opacity_model_str = pin->GetOrAddString("radM1", "opacity_model", default_opacity_model);
+    // TODO (PNM): add a vector of strings as the last parameter here to yell at the user
+    // what the options are
+    std::string opacity_model_str =
+        pin->GetOrAddString("radM1", "opacity_model", default_opacity_model);
 
-    int opacity_model = (int) OpacityModel::Default;
+    int opacity_model = (int)OpacityModel::Default;
     if (opacity_model_str == "shocktube_constant") {
-        opacity_model = (int) OpacityModel::ShocktubeConstant;
+        opacity_model = (int)OpacityModel::ShocktubeConstant;
     } else if (opacity_model_str == "bondi_opacs") {
-        opacity_model = (int) OpacityModel::Bondi;
+        opacity_model = (int)OpacityModel::Bondi;
     } else if (opacity_model_str == "transparent") {
-        opacity_model = (int) OpacityModel::Transparent;
+        opacity_model = (int)OpacityModel::Transparent;
     } else if (opacity_model_str == "thermal_equilibrium") {
-        opacity_model = (int) OpacityModel::ThermalEquilibrium;
+        opacity_model = (int)OpacityModel::ThermalEquilibrium;
     }
 
     // Read Shocktube constants
@@ -155,17 +158,18 @@ std::shared_ptr<KHARMAPackage> RadM1::Initialize(
     // TODO (PNM): Use a proper units package to bundle these together.
     auto unit_conv = phoebus::UnitConversions(pin);
     UnitScales units_cgs;
-    units_cgs.length_cgs      = unit_conv.GetLengthCodeToCGS();
+    units_cgs.length_cgs = unit_conv.GetLengthCodeToCGS();
     printf("RadM1: length_cgs = %e\n", units_cgs.length_cgs);
-    units_cgs.time_cgs        = unit_conv.GetTimeCodeToCGS();
+    units_cgs.time_cgs = unit_conv.GetTimeCodeToCGS();
     printf("RadM1: time_cgs = %e\n", units_cgs.time_cgs);
-    units_cgs.mass_cgs        = unit_conv.GetMassCodeToCGS();
+    units_cgs.mass_cgs = unit_conv.GetMassCodeToCGS();
     printf("RadM1: mass_cgs = %e\n", units_cgs.mass_cgs);
-    units_cgs.energy_cgs      = unit_conv.GetEnergyCodeToCGS();
+    units_cgs.energy_cgs = unit_conv.GetEnergyCodeToCGS();
     printf("RadM1: energy_cgs = %e\n", units_cgs.energy_cgs);
 
     // Tg = mp * c^2 * 1/kb * 1/m_scale (gamma -1) * ug */(rho)
-    units_cgs.temperature_cgs = unit_conv.GetTemperatureCodeToCGS() * pc::mp * pc::c * pc::c;
+    units_cgs.temperature_cgs =
+        unit_conv.GetTemperatureCodeToCGS() * pc::mp * pc::c * pc::c;
     printf("RadM1: temperature_cgs = %e\n", units_cgs.temperature_cgs);
 
     // Mean molecular weight, used only by OpacityModel::Default (see the comment on
@@ -176,8 +180,8 @@ std::shared_ptr<KHARMAPackage> RadM1::Initialize(
     printf("RadM1: mu = %e\n", units_cgs.mu);
     pkg->AllParams().Add("units_cgs", units_cgs);
 
-
-    // TODO (PNM): Currently attached to the floors package. Make this a separate option only for radiation package.
+    // TODO (PNM): Currently attached to the floors package. Make this a separate option
+    // only for radiation package.
     bool floors_on_default = true;
     if (pin->DoesParameterExist("floors", "disable_floors")) {
         floors_on_default = !pin->GetBoolean("floors", "disable_floors");
@@ -215,10 +219,10 @@ void RadM1::ApplyRadM1Floors(MeshBlockData<Real>* rc, IndexDomain domain)
             if (P(m_p.UU_RAD, k, j, i) < erad_floor) {
                 P(m_p.UU_RAD, k, j, i) = erad_floor;
 
-                // Flooring Erf here without also resetting the associated radiation-frame velocity leaves a cell that looks
-                // "floored" (tiny Erf) but, if it had a large Lorentz factor before
-                // hitting the floor, still reconverts (BlockPtoU) to a large conserved
-                // energy via that gamma^2 factor.
+                // Flooring Erf here without also resetting the associated radiation-frame
+                // velocity leaves a cell that looks "floored" (tiny Erf) but, if it had a
+                // large Lorentz factor before hitting the floor, still reconverts
+                // (BlockPtoU) to a large conserved energy via that gamma^2 factor.
                 P(m_p.U1_RAD, k, j, i) = 0.0;
                 P(m_p.U2_RAD, k, j, i) = 0.0;
                 P(m_p.U3_RAD, k, j, i) = 0.0;
@@ -282,8 +286,8 @@ TaskStatus RadM1::BlockPtoU(MeshBlockData<Real>* rc, IndexDomain domain, bool co
     return TaskStatus::complete;
 }
 
-TaskStatus RadM1::Step(MeshData<Real>* md_sub_init,
-    MeshData<Real>* md_sub_final, const Real dt)
+TaskStatus RadM1::Step(
+    MeshData<Real>* md_sub_init, MeshData<Real>* md_sub_final, const Real dt)
 {
     for (int b = 0; b < md_sub_final->NumBlocks(); ++b) {
         auto pmb_data = md_sub_final->GetBlockData(b);
@@ -304,7 +308,9 @@ TaskStatus RadM1::Step(MeshData<Real>* md_sub_init,
 
         Microphysics::Opacities opacities;
         if (pmb->packages.AllPackages().count("opacity")) {
-            opacities = pmb->packages.Get("opacity")->AllParams().Get<Microphysics::Opacities>("opacities");
+            opacities =
+                pmb->packages.Get("opacity")->AllParams().Get<Microphysics::Opacities>(
+                    "opacities");
         }
 
         const auto& G = pmb->coords;
@@ -326,64 +332,64 @@ TaskStatus RadM1::Step(MeshData<Real>* md_sub_init,
 
         auto P_init =
             pmb_init_data->PackVariables({Metadata::GetUserFlag("Primitive")}, prims_map);
-        auto U_init =
-            pmb_init_data->PackVariables({Metadata::WithFluxes, Metadata::Cell}, cons_map);
+        auto U_init = pmb_init_data->PackVariables(
+            {Metadata::WithFluxes, Metadata::Cell}, cons_map);
 
         auto bounds = pmb->cellbounds;
         const IndexRange ib = bounds.GetBoundsI(IndexDomain::interior);
         const IndexRange jb = bounds.GetBoundsJ(IndexDomain::interior);
         const IndexRange kb = bounds.GetBoundsK(IndexDomain::interior);
 
-        //TODO (PNM): Split it, Cora thinks this is too large to be good. Probably too slow.
+        // TODO (PNM): Split it, Cora thinks this is too large to be good. Probably too
+        // slow.
         pmb->par_for("RadM1_Implicit_Solver4D", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
             KOKKOS_LAMBDA (const int &k, const int &j, const int &i)
             {
-                const Real U_entry[8] = {
-                    U_new(m_u.UU, k, j, i), U_new(m_u.U1, k, j, i),
+                const Real U_entry[8] = {U_new(m_u.UU, k, j, i), U_new(m_u.U1, k, j, i),
                     U_new(m_u.U2, k, j, i), U_new(m_u.U3, k, j, i),
                     U_new(m_u.UU_RAD, k, j, i), U_new(m_u.U1_RAD, k, j, i),
-                    U_new(m_u.U2_RAD, k, j, i), U_new(m_u.U3_RAD, k, j, i)
-                };
+                    U_new(m_u.U2_RAD, k, j, i), U_new(m_u.U3_RAD, k, j, i)};
                 int rflagl;
 
-                rflagl =
-                    solve_4d_pmhd(G, U_init, P_init, P_new, U_new, m_p, m_u, k, j, i,
-                        dt, eos, src_rootfind_eps, src_rootfind_tol, src_rootfind_maxiter,
-                        opacity_model, shocktube_sigma_rad, shocktube_kappa_rho,
-                        shocktube_kappa_scat, units_cgs, opacities, pflag, rinvflag, U_entry);
+                rflagl = solve_4d_pmhd(G, U_init, P_init, P_new, U_new, m_p, m_u, k, j, i,
+                    dt, eos, src_rootfind_eps, src_rootfind_tol, src_rootfind_maxiter,
+                    opacity_model, shocktube_sigma_rad, shocktube_kappa_rho,
+                    shocktube_kappa_scat, units_cgs, opacities, pflag, rinvflag, U_entry);
 
                 if (rflagl == static_cast<int>(StatusImplicitStep::success)) {
                     rimplflag(0, k, j, i) = rflagl;
                     return;
                 }
 
-                rflagl = solve_4d_prad(G, U_init, P_init, P_new, U_new, m_p, m_u, k,
-                    j, i, dt, eos, src_rootfind_eps, src_rootfind_tol,
-                    src_rootfind_maxiter, opacity_model, shocktube_sigma_rad,
-                    shocktube_kappa_rho, shocktube_kappa_scat, units_cgs,
-                    opacities, pflag, rinvflag, U_entry);
+                rflagl = solve_4d_prad(G, U_init, P_init, P_new, U_new, m_p, m_u, k, j, i,
+                    dt, eos, src_rootfind_eps, src_rootfind_tol, src_rootfind_maxiter,
+                    opacity_model, shocktube_sigma_rad, shocktube_kappa_rho,
+                    shocktube_kappa_scat, units_cgs, opacities, pflag, rinvflag, U_entry);
 
                 if (rflagl == static_cast<int>(StatusImplicitStep::success)) {
-                    rimplflag(0, k, j, i) = static_cast<int>(StatusImplicitStep::pradfallback_success);
+                    rimplflag(0, k, j, i) =
+                        static_cast<int>(StatusImplicitStep::pradfallback_success);
                     return;
                 }
 
-                auto status_1d = solve_radiation_1d(G, U_init, P_init, m_p, m_u, U_new, P_new, eos,
-                    opacity_model, shocktube_sigma_rad, shocktube_kappa_rho,
+                auto status_1d = solve_radiation_1d(G, U_init, P_init, m_p, m_u, U_new,
+                    P_new, eos, opacity_model, shocktube_sigma_rad, shocktube_kappa_rho,
                     shocktube_kappa_scat, units_cgs, opacities, k, j, i, dt,
                     src_rootfind_tol, src_rootfind_maxiter, pflag, rinvflag, U_entry);
 
                 if (status_1d == StatusImplicitStep::success) {
-                    rimplflag(0, k, j, i) = static_cast<int>(StatusImplicitStep::onedfallback_success);
+                    rimplflag(0, k, j, i) =
+                        static_cast<int>(StatusImplicitStep::onedfallback_success);
                     return;
                 }
 
-                rimplflag(0, k, j, i) = static_cast<int>(StatusImplicitStep::onedfallback_failure);
+                rimplflag(0, k, j, i) =
+                    static_cast<int>(StatusImplicitStep::onedfallback_failure);
 
                 assume_no_interaction(G, U_init, P_init, m_p, m_u, U_new, P_new, eos,
                     opacity_model, shocktube_sigma_rad, shocktube_kappa_rho,
-                    shocktube_kappa_scat, units_cgs, opacities, k, j, i, dt, src_rootfind_tol,
-                    src_rootfind_maxiter, pflag, rinvflag, U_entry);
+                    shocktube_kappa_scat, units_cgs, opacities, k, j, i, dt,
+                    src_rootfind_tol, src_rootfind_maxiter, pflag, rinvflag, U_entry);
             });
     }
 
@@ -399,21 +405,20 @@ TaskStatus RadM1::PostStepDiagnostics(const SimTime& tm, MeshData<Real>* md)
     const auto& pars = pmesh->packages.Get("Globals")->AllParams();
     const int flag_verbose = pars.Get<int>("flag_verbose");
 
-
     if (flag_verbose >= 1) {
-        Reductions::StartFlagReduce(
-            md, "rimplflag", RadM1::status_names_implicit, IndexDomain::interior, false, 3);
-        auto total_flag_counts = Reductions::CheckFlagReduceAndPrintHits(
-            md, "rimplflag", RadM1::status_names_implicit, IndexDomain::interior, false, 3);
-        Reductions::PrintFlagPercentages(
-            md, "rimplflag", RadM1::status_names_implicit, IndexDomain::interior, total_flag_counts);
+        Reductions::StartFlagReduce(md, "rimplflag", RadM1::status_names_implicit,
+            IndexDomain::interior, false, 3);
+        auto total_flag_counts = Reductions::CheckFlagReduceAndPrintHits(md, "rimplflag",
+            RadM1::status_names_implicit, IndexDomain::interior, false, 3);
+        Reductions::PrintFlagPercentages(md, "rimplflag", RadM1::status_names_implicit,
+            IndexDomain::interior, total_flag_counts);
         // Radiation inversion flags
-        Reductions::StartFlagReduce(
-            md, "rinvflag", RadM1::status_names_inversion, IndexDomain::interior, false, 4);
-        auto rad_inv_counts = Reductions::CheckFlagReduceAndPrintHits(
-            md, "rinvflag", RadM1::status_names_inversion, IndexDomain::interior, false, 4);
-        Reductions::PrintFlagPercentages(
-            md, "rinvflag", RadM1::status_names_inversion, IndexDomain::interior, rad_inv_counts);
+        Reductions::StartFlagReduce(md, "rinvflag", RadM1::status_names_inversion,
+            IndexDomain::interior, false, 4);
+        auto rad_inv_counts = Reductions::CheckFlagReduceAndPrintHits(md, "rinvflag",
+            RadM1::status_names_inversion, IndexDomain::interior, false, 4);
+        Reductions::PrintFlagPercentages(md, "rinvflag", RadM1::status_names_inversion,
+            IndexDomain::interior, rad_inv_counts);
     }
 
     return TaskStatus::complete;

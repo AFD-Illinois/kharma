@@ -31,7 +31,8 @@ TaskStatus InitializeThermalEquilibrium(
     const RadM1::UnitScales units_cgs =
         pmb->packages.Get("RadM1")->AllParams().Get<RadM1::UnitScales>("units_cgs");
     const Real mass_density_scale =
-        units_cgs.mass_cgs / (units_cgs.length_cgs * units_cgs.length_cgs * units_cgs.length_cgs);
+        units_cgs.mass_cgs /
+        (units_cgs.length_cgs * units_cgs.length_cgs * units_cgs.length_cgs);
     const Real energy_density_scale = mass_density_scale * pc::c * pc::c;
 
     // Parameters as depicted in pluto paper is the standard values used here.

@@ -330,9 +330,8 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t& blocks, int sta
             // Out of the package modification for RADM1.
             t_implicit = t_explicit;
 
-            t_implicit = tl.AddTask(t_explicit, RadM1::Step,
-                md_sub_step_init.get(), md_sub_step_final.get(),
-                integrator->beta[stage - 1] * integrator->dt);
+            t_implicit = tl.AddTask(t_explicit, RadM1::Step, md_sub_step_init.get(),
+                md_sub_step_final.get(), integrator->beta[stage - 1] * integrator->dt);
         }
 
         // Apply all floors & limits (GRMHD,EMHD,etc), but do *not* immediately correct

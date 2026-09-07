@@ -63,9 +63,9 @@
 
 // Out of the Package RadM1 modification
 // RadM1 problem headers
-#include "radm1/rad_pulse.hpp"
-#include "radm1/bondi_rad.hpp"
 #include "radm1/beam_of_light.hpp"
+#include "radm1/bondi_rad.hpp"
+#include "radm1/rad_pulse.hpp"
 #include "radm1/thermal_equilibrium.hpp"
 
 // Electron problem headers

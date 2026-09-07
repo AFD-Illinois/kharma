@@ -11,12 +11,10 @@
 
 #include <parthenon/parthenon.hpp>
 
-
 TaskStatus InitializeBeamOfLight(
     std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput* pin);
 
 void AddBeamOfLightParameters(ParameterInput* pin, Packages_t& packages);
-
 
 TaskStatus SetBeamOfLightImpl(
     std::shared_ptr<MeshBlockData<Real>>& rc, IndexDomain domain, bool coarse);

@@ -45,7 +45,6 @@
 #include "phoebus_utils/unit_conversions.hpp"
 #include "phoebus_utils/variables.hpp"
 
-
 // Version of "PLOOP" guaranteeing specifically the 5 GRMHD fixup-amenable primitive vars
 #define NPRIM 5
 #define PRIMLOOP for (int p = 0; p < NPRIM; ++p)
@@ -73,8 +72,8 @@ TaskStatus Inverter::FixUtoP(MeshBlockData<Real>* rc)
     GridScalar pflag = rc->Get("pflag").data;
 
     const auto& pars = pmb->packages.Get("GRMHD")->AllParams();
-    //const Real gam = pars.Get<Real>("gamma");
-        
+    // const Real gam = pars.Get<Real>("gamma");
+
     const auto& eos_params = pmb->packages.Get("eos")->AllParams();
     auto eos = eos_params.Get<Microphysics::EOS::EOS>("d.EOS");
 

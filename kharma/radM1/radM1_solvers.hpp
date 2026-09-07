@@ -37,11 +37,9 @@
 
 #include "inverter.hpp"
 
-
 #define RAD_LARGE (0.1 * std::numeric_limits<Real>::max())
 #define RAD_SMALL (10.0 * std::numeric_limits<Real>::min())
 #define RAD_EPS (10.0 * std::numeric_limits<Real>::epsilon())
-
 
 namespace RadM1
 {
@@ -80,8 +78,8 @@ KOKKOS_INLINE_FUNCTION void ApplyColdClosureFix(const GRCoordinates& G,
     Erf = 0.75 * radical / (utsq * (gcon_tt + utsq) * (gcon_tt + 4.0 * utsq));
 }
 
-KOKKOS_INLINE_FUNCTION double calculate_gamma_rel2(const GRCoordinates& G,
-    const Real R_t_cov[GR_DIM], const int& j, const int& i)
+KOKKOS_INLINE_FUNCTION double calculate_gamma_rel2(
+    const GRCoordinates& G, const Real R_t_cov[GR_DIM], const int& j, const int& i)
 {
     Real gcon_tt = G.gcon(Loci::center, j, i, 0, 0);
     Real R_t_t = R_t_cov[0];
@@ -100,15 +98,14 @@ KOKKOS_INLINE_FUNCTION double calculate_gamma_rel2(const GRCoordinates& G,
         2.0 * G.gcon(Loci::center, j, i, 2, 3) * (R_t_cov[2] * R_t_cov[3]) +
         G.gcon(Loci::center, j, i, 3, 3) * (R_t_cov[3] * R_t_cov[3]);
 
-
-    Real invariant_scalar = gcon_tt * (R_t_t * R_t_t) + 2.0 * R_t_t * dot_t_i + dot_spatial;
+    Real invariant_scalar =
+        gcon_tt * (R_t_t * R_t_t) + 2.0 * R_t_t * dot_t_i + dot_spatial;
 
     // Calculate Roots for (u^t_R)^2
     Real radical_inside = 4.0 * (gcon_tt * gcon_tt) * (R_t_t * R_t_t) +
                           (dot_t_i * dot_t_i) +
                           gcon_tt * (8.0 * R_t_t * dot_t_i + 3.0 * dot_spatial);
     Real radical = m::sqrt(m::max(0.0, radical_inside));
-
 
     Real num_b = -2.0 * (gcon_tt * gcon_tt) * (R_t_t * R_t_t) -
                  gcon_tt * (4.0 * R_t_t * dot_t_i + dot_spatial) +
@@ -145,9 +142,10 @@ KOKKOS_INLINE_FUNCTION StatusRadiationInversion u_to_p_rad(const GRCoordinates& 
 {
     Real gdet = G.gdet(Loci::center, j, i);
 
-
-    // Exact-zero radiation field: for testing cases. We don't wanna go down this entire path, otherwise, it will break due to division by 0.
-    // Sometimes we might want to run with radM1 on, but no source term just to check if something is broken, it's nice to have the possibility to do so.
+    // Exact-zero radiation field: for testing cases. We don't wanna go down this entire
+    // path, otherwise, it will break due to division by 0. Sometimes we might want to run
+    // with radM1 on, but no source term just to check if something is broken, it's nice
+    // to have the possibility to do so.
     if (U_rad[0] == 0.0 && U_rad[1] == 0.0 && U_rad[2] == 0.0 && U_rad[3] == 0.0) {
         P_rad[0] = 0.0;
         P_rad[1] = 0.0;
@@ -162,7 +160,6 @@ KOKKOS_INLINE_FUNCTION StatusRadiationInversion u_to_p_rad(const GRCoordinates& 
     Real R_t_cov[4] = {
         U_rad[0] / gdet, U_rad[1] / gdet, U_rad[2] / gdet, U_rad[3] / gdet};
 
-
     // Raise index to get R^{t\mu}
     Real R_t_con[4];
     G.raise(R_t_cov, R_t_con, k, j, i, Loci::center);
@@ -170,12 +167,10 @@ KOKKOS_INLINE_FUNCTION StatusRadiationInversion u_to_p_rad(const GRCoordinates& 
     // Calculate gamma^2 for the radiation frame
     Real gammarel2 = calculate_gamma_rel2(G, R_t_cov, j, i);
 
-
     // Pre-calculate alpha bounds and rest-frame energy E_rf
     Real alpha_sq = -1.0 / G.gcon(Loci::center, j, i, 0, 0);
     Real alpha = m::sqrt(alpha_sq);
     Real E_rf = (3.0 * R_t_con[0] * alpha_sq) / (4.0 * gammarel2 - 1.0);
-
 
     // Limits
     const Real min_erad = 1.e-30;
@@ -196,27 +191,40 @@ KOKKOS_INLINE_FUNCTION StatusRadiationInversion u_to_p_rad(const GRCoordinates& 
     int flag4 = 1;
     if (nonfailure) {
         for (int mu = 0; mu < 4; ++mu) {
-            uvec_radframe_con[mu] = alpha * (R_t_con[mu] + 1. / 3. * E_rf * G.gcon(Loci::center, j, i, 0, mu) * (4.0 * gammarel2 - 1.0)) / (4. / 3. * E_rf * m::sqrt(gammarel2));
+            uvec_radframe_con[mu] =
+                alpha *
+                (R_t_con[mu] + 1. / 3. * E_rf * G.gcon(Loci::center, j, i, 0, mu) *
+                                   (4.0 * gammarel2 - 1.0)) /
+                (4. / 3. * E_rf * m::sqrt(gammarel2));
         }
 
-        // After calculating uvec_radframe_con, we can still have trouble with gamma > gammamax, so let's recheck
-        Real qsq = G.gcov(Loci::center, j, i, 1, 1) * uvec_radframe_con[1] * uvec_radframe_con[1]
-             + G.gcov(Loci::center, j, i, 2, 2) * uvec_radframe_con[2] * uvec_radframe_con[2]
-             + G.gcov(Loci::center, j, i, 3, 3) * uvec_radframe_con[3] * uvec_radframe_con[3]
-             + 2.0 * G.gcov(Loci::center, j, i, 1, 2) * uvec_radframe_con[1] * uvec_radframe_con[2]
-             + 2.0 * G.gcov(Loci::center, j, i, 1, 3) * uvec_radframe_con[1] * uvec_radframe_con[3]
-             + 2.0 * G.gcov(Loci::center, j, i, 2, 3) * uvec_radframe_con[2] * uvec_radframe_con[3];
+        // After calculating uvec_radframe_con, we can still have trouble with gamma >
+        // gammamax, so let's recheck
+        Real qsq = G.gcov(Loci::center, j, i, 1, 1) * uvec_radframe_con[1] *
+                       uvec_radframe_con[1] +
+                   G.gcov(Loci::center, j, i, 2, 2) * uvec_radframe_con[2] *
+                       uvec_radframe_con[2] +
+                   G.gcov(Loci::center, j, i, 3, 3) * uvec_radframe_con[3] *
+                       uvec_radframe_con[3] +
+                   2.0 * G.gcov(Loci::center, j, i, 1, 2) * uvec_radframe_con[1] *
+                       uvec_radframe_con[2] +
+                   2.0 * G.gcov(Loci::center, j, i, 1, 3) * uvec_radframe_con[1] *
+                       uvec_radframe_con[3] +
+                   2.0 * G.gcov(Loci::center, j, i, 2, 3) * uvec_radframe_con[2] *
+                       uvec_radframe_con[3];
         Real gammarel2_out = 1.0 + qsq;
 
         // self consistent is comparing the gammarel2 we obtained with the gmmarel2_out
-        // They should match I think, but we are checking here 1e-6 is hard coded, we should get rid of this
+        // They should match I think, but we are checking here 1e-6 is hard coded, we
+        // should get rid of this
         // TODO (PNM): Maybe get rid of this?
         const bool self_consistent =
             m::abs(gammarel2_out - gammarel2) <= 1.e-6 * (gammarel2_out + gammarel2);
 
         flag4 = gammarel2_out <= (GAMMAMAX * GAMMAMAX) / (GAMMA_TOL * GAMMA_TOL);
-        used_normal = std::isfinite(E_rf) && std::isfinite(uvec_radframe_con[1]) && std::isfinite(uvec_radframe_con[2]) && std::isfinite(uvec_radframe_con[3])
-        && flag4 && self_consistent;
+        used_normal = std::isfinite(E_rf) && std::isfinite(uvec_radframe_con[1]) &&
+                      std::isfinite(uvec_radframe_con[2]) &&
+                      std::isfinite(uvec_radframe_con[3]) && flag4 && self_consistent;
     }
 
     // Report which case the inversion took in order to calculate the jacobian.
@@ -224,7 +232,7 @@ KOKKOS_INLINE_FUNCTION StatusRadiationInversion u_to_p_rad(const GRCoordinates& 
 
     if (!used_normal) {
         // Attempt Cold Closure
-        //gammarel2_slow should definitely not be this, should be way smaller
+        // gammarel2_slow should definitely not be this, should be way smaller
         // TODO (PNM): See if this is necessary
         Real gammarel2_slow = m::pow(1.0 + 1.0e-4, 2.0);
         Real gammarel2_fast = GAMMAMAX * GAMMAMAX;
@@ -253,13 +261,13 @@ KOKKOS_INLINE_FUNCTION StatusRadiationInversion u_to_p_rad(const GRCoordinates& 
             P_rad[1] = 0.0;
             P_rad[2] = 0.0;
             P_rad[3] = 0.0;
-            if (!flag1){
+            if (!flag1) {
                 return StatusRadiationInversion::gammarel2_low;
-            }else if(!flag2){
+            } else if (!flag2) {
                 return StatusRadiationInversion::urad_below_floor;
-            }else if(!flag3 || !flag4){
+            } else if (!flag3 || !flag4) {
                 return StatusRadiationInversion::gammarel2_high;
-            }else{
+            } else {
                 return StatusRadiationInversion::division_nonfinite;
             }
         }
@@ -269,12 +277,17 @@ KOKKOS_INLINE_FUNCTION StatusRadiationInversion u_to_p_rad(const GRCoordinates& 
         G.raise(R_t_cov_new, R_t_con_new, k, j, i, Loci::center);
 
         for (int mu = 0; mu < 4; ++mu) {
-            uvec_radframe_con[mu] = alpha * (R_t_con_new[mu] + 1. / 3. * E_rf * G.gcon(Loci::center, j, i, 0, mu) * (4.0 * gammarel2_new - 1.0)) / (4. / 3. * E_rf * m::sqrt(gammarel2_new));
+            uvec_radframe_con[mu] =
+                alpha *
+                (R_t_con_new[mu] + 1. / 3. * E_rf * G.gcon(Loci::center, j, i, 0, mu) *
+                                       (4.0 * gammarel2_new - 1.0)) /
+                (4. / 3. * E_rf * m::sqrt(gammarel2_new));
         }
-        
 
         // The cold-closure fallback also divides by E_rf, so check it too.
-        if (!std::isfinite(E_rf) || !std::isfinite(uvec_radframe_con[1]) || !std::isfinite(uvec_radframe_con[2]) || !std::isfinite(uvec_radframe_con[3])) {
+        if (!std::isfinite(E_rf) || !std::isfinite(uvec_radframe_con[1]) ||
+            !std::isfinite(uvec_radframe_con[2]) ||
+            !std::isfinite(uvec_radframe_con[3])) {
             P_rad[0] = min_erad;
             P_rad[1] = 0.0;
             P_rad[2] = 0.0;
@@ -288,16 +301,16 @@ KOKKOS_INLINE_FUNCTION StatusRadiationInversion u_to_p_rad(const GRCoordinates& 
     P_rad[2] = uvec_radframe_con[2];
     P_rad[3] = uvec_radframe_con[3];
 
-
     return StatusRadiationInversion::success;
 }
 
 KOKKOS_INLINE_FUNCTION void compute_covariant_fourforce(const GRCoordinates& G,
-    const Real P_mhd[4], const Real P_rad[4], const Real rho, const Microphysics::EOS::EOS& eos,
-    const int opacity_model, const Real shocktube_sigma_rad,
-    const Real shocktube_kappa_rho, const Real shocktube_kappa_scat,
-    const UnitScales& units_cgs, const Microphysics::Opacities& opacities, const int k, const int j,
-    const int i, Real dS[4])
+    const Real P_mhd[4], const Real P_rad[4], const Real rho,
+    const Microphysics::EOS::EOS& eos, const int opacity_model,
+    const Real shocktube_sigma_rad, const Real shocktube_kappa_rho,
+    const Real shocktube_kappa_scat, const UnitScales& units_cgs,
+    const Microphysics::Opacities& opacities, const int k, const int j, const int i,
+    Real dS[4])
 {
 
     Real uvec_mhd[3] = {P_mhd[1], P_mhd[2], P_mhd[3]};
@@ -310,7 +323,6 @@ KOKKOS_INLINE_FUNCTION void compute_covariant_fourforce(const GRCoordinates& G,
     Real ucon_rad[4], ucov_rad[4];
     RadM1::calc_ucon_rad(G, P_rad, j, i, ucon_rad);
     G.lower(ucon_rad, ucov_rad, k, j, i, Loci::center);
-
 
     Real gamma_rel = -(ucon_rad[0] * ucov_mhd[0] + ucon_rad[1] * ucov_mhd[1] +
                        ucon_rad[2] * ucov_mhd[2] + ucon_rad[3] * ucov_mhd[3]);
@@ -333,9 +345,11 @@ KOKKOS_INLINE_FUNCTION void compute_covariant_fourforce(const GRCoordinates& G,
         Real sigma_rad = shocktube_sigma_rad;
         JBB = 4.0 * sigma_rad * (Tg * Tg * Tg * Tg);
     } else if (opacity_model == (int)RadM1::OpacityModel::Bondi) {
-        const Real energy_density_scale = units_cgs.energy_cgs /
+        const Real energy_density_scale =
+            units_cgs.energy_cgs /
             (units_cgs.length_cgs * units_cgs.length_cgs * units_cgs.length_cgs);
-        const Real sigma_rad = 5.670374419e-5 / pc::c /
+        const Real sigma_rad =
+            5.670374419e-5 / pc::c /
             (energy_density_scale /
                 m::pow(units_cgs.mu * pc::mp * pc::c * pc::c / pc::kb, 4.0));
         JBB = 4.0 * sigma_rad * (Tg * Tg * Tg * Tg);
@@ -344,13 +358,13 @@ KOKKOS_INLINE_FUNCTION void compute_covariant_fourforce(const GRCoordinates& G,
         JBB = 4.0 * sigma_rad * (Tg * Tg * Tg * Tg);
     } else {
         const Real temp_arg = m::abs(Tg) * units_cgs.mu * pc::mp * pc::c * pc::c / pc::kb;
-        const Real energy_density_scale = units_cgs.energy_cgs /
+        const Real energy_density_scale =
+            units_cgs.energy_cgs /
             (units_cgs.length_cgs * units_cgs.length_cgs * units_cgs.length_cgs);
         JBB = opacities.EnergyDensityFromTemperature(temp_arg) / energy_density_scale;
     }
 
     Real kappa_tot = kappa_a + kappa_sc;
-
 
     if (kappa_tot == 0.0) {
         dS[0] = 0.0;
@@ -370,18 +384,18 @@ KOKKOS_INLINE_FUNCTION void compute_covariant_fourforce(const GRCoordinates& G,
 
 KOKKOS_INLINE_FUNCTION Real calculate_energy_residual(const GRCoordinates& G,
     const Real u_trial, const Real uvec_frozen[NVEC], const Real B_P[NVEC],
-    const Real U_mhd_0[4], const Real U_rad_0[4], const Real rho, const Microphysics::EOS::EOS& eos,
-    const int opacity_model, const Real shocktube_sigma_rad,
-    const Real shocktube_kappa_rho, const Real shocktube_kappa_scat,
-    const UnitScales& units_cgs, const Microphysics::Opacities& opacities, const Real dt,
-    const Real gdet, const int k,
+    const Real U_mhd_0[4], const Real U_rad_0[4], const Real rho,
+    const Microphysics::EOS::EOS& eos, const int opacity_model,
+    const Real shocktube_sigma_rad, const Real shocktube_kappa_rho,
+    const Real shocktube_kappa_scat, const UnitScales& units_cgs,
+    const Microphysics::Opacities& opacities, const Real dt, const Real gdet, const int k,
     const int j, const int i, Real U_mhd_trial_out[4], Real U_rad_trial_out[4],
     Real P_rad_trial_out[4], Real dS_trial_out[4], bool& rad_recovery_ok)
 {
     Real uvec[NVEC] = {uvec_frozen[0], uvec_frozen[1], uvec_frozen[2]};
     Real rho_new;
-    GRMHD::p_to_u_mhd(G, rho, u_trial, uvec, B_P, eos, k, j, i, rho_new,
-        U_mhd_trial_out, Loci::center);
+    GRMHD::p_to_u_mhd(
+        G, rho, u_trial, uvec, B_P, eos, k, j, i, rho_new, U_mhd_trial_out, Loci::center);
 
     for (int n = 0; n < 4; n++) {
         U_rad_trial_out[n] = U_rad_0[n] - (U_mhd_trial_out[n] - U_mhd_0[n]);
@@ -389,15 +403,15 @@ KOKKOS_INLINE_FUNCTION Real calculate_energy_residual(const GRCoordinates& G,
 
     FourVectors Dtmp;
     GRMHD::calc_4vecs(G, uvec, B_P, k, j, i, Loci::center, Dtmp);
-    rho_new = rho_new/(gdet * Dtmp.ucon[0]);
-
+    rho_new = rho_new / (gdet * Dtmp.ucon[0]);
 
     auto status = u_to_p_rad(G, U_rad_trial_out, P_rad_trial_out, k, j, i);
     rad_recovery_ok = (status == StatusRadiationInversion::success);
 
     Real P_mhd_trial[4] = {u_trial, uvec_frozen[0], uvec_frozen[1], uvec_frozen[2]};
     compute_covariant_fourforce(G, P_mhd_trial, P_rad_trial_out, rho_new, eos,
-        opacity_model, shocktube_sigma_rad, shocktube_kappa_rho, shocktube_kappa_scat, units_cgs, opacities, k, j, i, dS_trial_out);
+        opacity_model, shocktube_sigma_rad, shocktube_kappa_rho, shocktube_kappa_scat,
+        units_cgs, opacities, k, j, i, dS_trial_out);
     for (int n = 0; n < 4; n++) dS_trial_out[n] = gdet * dS_trial_out[n];
 
     Real resid = (U_mhd_trial_out[0] - U_mhd_0[0]) + dt * dS_trial_out[0];
@@ -406,14 +420,15 @@ KOKKOS_INLINE_FUNCTION Real calculate_energy_residual(const GRCoordinates& G,
     return resid / scale;
 }
 
-KOKKOS_INLINE_FUNCTION StatusImplicitStep assume_no_interaction(const GRCoordinates& G, const VariablePack<Real> U_init,
-    const VariablePack<Real> P_init, const VarMap m_p, const VarMap m_u,
-    const VariablePack<Real> U_new, const VariablePack<Real> P_new,
+KOKKOS_INLINE_FUNCTION StatusImplicitStep assume_no_interaction(const GRCoordinates& G,
+    const VariablePack<Real> U_init, const VariablePack<Real> P_init, const VarMap m_p,
+    const VarMap m_u, const VariablePack<Real> U_new, const VariablePack<Real> P_new,
     const Microphysics::EOS::EOS& eos, const int opacity_model,
     const Real shocktube_sigma_rad, const Real shocktube_kappa_rho,
-    const Real shocktube_kappa_scat, const UnitScales& units_cgs, const Microphysics::Opacities& opacities, const int k,
-    const int j, const int i, const Real dt, const double tol, const int maxiter,
-    const VariablePack<Real> pflag, const VariablePack<Real> rinvflag, const Real U_entry[8])
+    const Real shocktube_kappa_scat, const UnitScales& units_cgs,
+    const Microphysics::Opacities& opacities, const int k, const int j, const int i,
+    const Real dt, const double tol, const int maxiter, const VariablePack<Real> pflag,
+    const VariablePack<Real> rinvflag, const Real U_entry[8])
 {
     U_new(m_u.UU, k, j, i) = U_entry[0];
     U_new(m_u.U1, k, j, i) = U_entry[1];
@@ -430,7 +445,8 @@ KOKKOS_INLINE_FUNCTION StatusImplicitStep assume_no_interaction(const GRCoordina
     pflag(0, k, j, i) = static_cast<int>(mhd_inverter_status);
     rinvflag(0, k, j, i) = static_cast<int>(StatusRadiationInversion::success);
 
-    if (mhd_inverter_status != static_cast<int>(Inverter::Status::success)) return StatusImplicitStep::mhdsolve;
+    if (mhd_inverter_status != static_cast<int>(Inverter::Status::success))
+        return StatusImplicitStep::mhdsolve;
 
     Real U_rad_final[4] = {U_new(m_u.UU_RAD, k, j, i), U_new(m_u.U1_RAD, k, j, i),
         U_new(m_u.U2_RAD, k, j, i), U_new(m_u.U3_RAD, k, j, i)};
@@ -455,20 +471,25 @@ KOKKOS_INLINE_FUNCTION StatusImplicitStep solve_radiation_1d(const GRCoordinates
     const VarMap m_u, const VariablePack<Real> U_new, const VariablePack<Real> P_new,
     const Microphysics::EOS::EOS& eos, const int opacity_model,
     const Real shocktube_sigma_rad, const Real shocktube_kappa_rho,
-    const Real shocktube_kappa_scat, const UnitScales& units_cgs, const Microphysics::Opacities& opacities, const int k,
-    const int j, const int i, const Real dt, const double tol, const int maxiter, const VariablePack<Real> pflag, const VariablePack<Real> rinvflag, const Real U_entry[8])
+    const Real shocktube_kappa_scat, const UnitScales& units_cgs,
+    const Microphysics::Opacities& opacities, const int k, const int j, const int i,
+    const Real dt, const double tol, const int maxiter, const VariablePack<Real> pflag,
+    const VariablePack<Real> rinvflag, const Real U_entry[8])
 {
 
     const Real gdet = G.gdet(Loci::center, j, i);
-    const Real uvec_frozen[NVEC] = {P_init(m_p.U1, k, j, i), P_init(m_p.U2, k, j, i), P_init(m_p.U3, k, j, i)};
+    const Real uvec_frozen[NVEC] = {
+        P_init(m_p.U1, k, j, i), P_init(m_p.U2, k, j, i), P_init(m_p.U3, k, j, i)};
     Real B_P[NVEC] = {0.};
-    if(m_p.B1 >= 0){
+    if (m_p.B1 >= 0) {
         B_P[0] = P_init(m_p.B1, k, j, i);
         B_P[1] = P_init(m_p.B2, k, j, i);
         B_P[2] = P_init(m_p.B3, k, j, i);
     }
-    const Real U_mhd_0[4] = {U_init(m_u.UU, k, j, i), U_init(m_u.U1, k, j, i), U_init(m_u.U2, k, j, i), U_init(m_u.U3, k, j, i)};
-    const Real U_rad_0[4] = {U_init(m_u.UU_RAD, k, j, i), U_init(m_u.U1_RAD, k, j, i), U_init(m_u.U2_RAD, k, j, i), U_init(m_u.U3_RAD, k, j, i)};
+    const Real U_mhd_0[4] = {U_init(m_u.UU, k, j, i), U_init(m_u.U1, k, j, i),
+        U_init(m_u.U2, k, j, i), U_init(m_u.U3, k, j, i)};
+    const Real U_rad_0[4] = {U_init(m_u.UU_RAD, k, j, i), U_init(m_u.U1_RAD, k, j, i),
+        U_init(m_u.U2_RAD, k, j, i), U_init(m_u.U3_RAD, k, j, i)};
     const Real rho_init = P_init(m_p.RHO, k, j, i);
     const Real u_init = P_init(m_p.UU, k, j, i);
 
@@ -478,11 +499,13 @@ KOKKOS_INLINE_FUNCTION StatusImplicitStep solve_radiation_1d(const GRCoordinates
     Real u_lo = 1.e-2 * u_init;
     Real u_hi = 1.e2 * u_init;
     Real f_lo = calculate_energy_residual(G, u_lo, uvec_frozen, B_P, U_mhd_0, U_rad_0,
-        rho_init, eos, opacity_model, shocktube_sigma_rad, shocktube_kappa_rho, shocktube_kappa_scat, units_cgs, opacities, dt, gdet,
-        k, j, i, U_mhd_trial, U_rad_trial, P_rad_trial, dS_trial, rad_ok);
+        rho_init, eos, opacity_model, shocktube_sigma_rad, shocktube_kappa_rho,
+        shocktube_kappa_scat, units_cgs, opacities, dt, gdet, k, j, i, U_mhd_trial,
+        U_rad_trial, P_rad_trial, dS_trial, rad_ok);
     Real f_hi = calculate_energy_residual(G, u_hi, uvec_frozen, B_P, U_mhd_0, U_rad_0,
-        rho_init, eos, opacity_model, shocktube_sigma_rad, shocktube_kappa_rho, shocktube_kappa_scat, units_cgs, opacities, dt, gdet,
-        k, j, i, U_mhd_trial, U_rad_trial, P_rad_trial, dS_trial, rad_ok);
+        rho_init, eos, opacity_model, shocktube_sigma_rad, shocktube_kappa_rho,
+        shocktube_kappa_scat, units_cgs, opacities, dt, gdet, k, j, i, U_mhd_trial,
+        U_rad_trial, P_rad_trial, dS_trial, rad_ok);
 
     bool bracketed = (f_lo * f_hi < 0.0);
     Real rebracket_fac = 10.0;
@@ -492,11 +515,13 @@ KOKKOS_INLINE_FUNCTION StatusImplicitStep solve_radiation_1d(const GRCoordinates
         u_lo = (1.e-1 / rebracket_fac) * u_init;
         u_hi = (1.e1 * rebracket_fac) * u_init;
         f_lo = calculate_energy_residual(G, u_lo, uvec_frozen, B_P, U_mhd_0, U_rad_0,
-            rho_init, eos, opacity_model, shocktube_sigma_rad, shocktube_kappa_rho, shocktube_kappa_scat, units_cgs, opacities, dt,
-            gdet, k, j, i, U_mhd_trial, U_rad_trial, P_rad_trial, dS_trial, rad_ok);
+            rho_init, eos, opacity_model, shocktube_sigma_rad, shocktube_kappa_rho,
+            shocktube_kappa_scat, units_cgs, opacities, dt, gdet, k, j, i, U_mhd_trial,
+            U_rad_trial, P_rad_trial, dS_trial, rad_ok);
         f_hi = calculate_energy_residual(G, u_hi, uvec_frozen, B_P, U_mhd_0, U_rad_0,
-            rho_init, eos, opacity_model, shocktube_sigma_rad, shocktube_kappa_rho, shocktube_kappa_scat, units_cgs, opacities, dt,
-            gdet, k, j, i, U_mhd_trial, U_rad_trial, P_rad_trial, dS_trial, rad_ok);
+            rho_init, eos, opacity_model, shocktube_sigma_rad, shocktube_kappa_rho,
+            shocktube_kappa_scat, units_cgs, opacities, dt, gdet, k, j, i, U_mhd_trial,
+            U_rad_trial, P_rad_trial, dS_trial, rad_ok);
         bracketed = (f_lo * f_hi < 0.0);
         rebracket_fac *= 10.0;
         n_rebracket++;
@@ -512,11 +537,10 @@ KOKKOS_INLINE_FUNCTION StatusImplicitStep solve_radiation_1d(const GRCoordinates
     int stuck_lo = 0, stuck_hi = 0;
     for (int iter = 0; iter < maxiter; iter++) {
         u_root = (u_lo * f_hi - u_hi * f_lo) / (f_hi - f_lo);
-        Real f_root =
-            calculate_energy_residual(G, u_root, uvec_frozen, B_P, U_mhd_0, U_rad_0,
-                rho_init, eos, opacity_model, shocktube_sigma_rad, shocktube_kappa_rho, shocktube_kappa_scat, units_cgs, opacities, dt,
-                gdet, k, j, i, U_mhd_trial, U_rad_trial, P_rad_trial, dS_trial, rad_ok);
-
+        Real f_root = calculate_energy_residual(G, u_root, uvec_frozen, B_P, U_mhd_0,
+            U_rad_0, rho_init, eos, opacity_model, shocktube_sigma_rad,
+            shocktube_kappa_rho, shocktube_kappa_scat, units_cgs, opacities, dt, gdet, k,
+            j, i, U_mhd_trial, U_rad_trial, P_rad_trial, dS_trial, rad_ok);
 
         if (!rad_ok) {
             if (f_root * f_lo > 0.0) {
@@ -563,9 +587,10 @@ KOKKOS_INLINE_FUNCTION StatusImplicitStep solve_radiation_1d(const GRCoordinates
         return StatusImplicitStep::onedfallback_failure;
     }
 
-    calculate_energy_residual(G, u_root, uvec_frozen, B_P, U_mhd_0, U_rad_0, rho_init, eos,
-        opacity_model, shocktube_sigma_rad, shocktube_kappa_rho, shocktube_kappa_scat, units_cgs, opacities, dt, gdet, k, j, i,
-        U_mhd_trial, U_rad_trial, P_rad_trial, dS_trial, rad_ok);
+    calculate_energy_residual(G, u_root, uvec_frozen, B_P, U_mhd_0, U_rad_0, rho_init,
+        eos, opacity_model, shocktube_sigma_rad, shocktube_kappa_rho,
+        shocktube_kappa_scat, units_cgs, opacities, dt, gdet, k, j, i, U_mhd_trial,
+        U_rad_trial, P_rad_trial, dS_trial, rad_ok);
     if (!rad_ok) {
         return StatusImplicitStep::onedfallback_failure;
     }
@@ -598,7 +623,8 @@ KOKKOS_INLINE_FUNCTION StatusImplicitStep solve_radiation_1d(const GRCoordinates
     pflag(0, k, j, i) = static_cast<int>(mhd_inverter_status);
     rinvflag(0, k, j, i) = static_cast<int>(StatusRadiationInversion::success);
 
-    if (mhd_inverter_status != static_cast<int>(Inverter::Status::success)) return StatusImplicitStep::mhdsolve;
+    if (mhd_inverter_status != static_cast<int>(Inverter::Status::success))
+        return StatusImplicitStep::mhdsolve;
 
     Real U_rad_final[4] = {U_new(m_u.UU_RAD, k, j, i), U_new(m_u.U1_RAD, k, j, i),
         U_new(m_u.U2_RAD, k, j, i), U_new(m_u.U3_RAD, k, j, i)};
@@ -615,10 +641,8 @@ KOKKOS_INLINE_FUNCTION StatusImplicitStep solve_radiation_1d(const GRCoordinates
         P_new(m_p.U3_RAD, k, j, i) = P_rad_final[3];
     }
 
-
     return StatusImplicitStep::success;
 }
-
 
 KOKKOS_INLINE_FUNCTION Real calculate_error(const Real resid[4],
     const Real U_mhd_guess[4], const Real U_mhd_0[4], const Real dtdS[4])
@@ -631,7 +655,7 @@ KOKKOS_INLINE_FUNCTION Real calculate_error(const Real resid[4],
     // err[0] = |f[0]| / (|uu[UU]| + |uu0[UU]| + |dt*gdetu*Gi[0]|)
     if (m::abs(resid[0]) > KORAL_SMALL) {
         err[0] = m::abs(resid[0]) /
-            (m::abs(U_mhd_guess[0]) + m::abs(U_mhd_0[0]) + m::abs(dtdS[0]));
+                 (m::abs(U_mhd_guess[0]) + m::abs(U_mhd_0[0]) + m::abs(dtdS[0]));
     } else {
         err[0] = 0.0;
     }
@@ -642,8 +666,8 @@ KOKKOS_INLINE_FUNCTION Real calculate_error(const Real resid[4],
     for (int n = 1; n < 4; n++) {
         if (m::abs(resid[n]) > KORAL_SMALL) {
             err[n] = m::abs(resid[n]) /
-                (1.e-20 * m::abs(U_mhd_guess[0]) + m::abs(U_mhd_guess[n]) +
-                 m::abs(U_mhd_0[n]) + m::abs(dtdS[n]));
+                     (1.e-20 * m::abs(U_mhd_guess[0]) + m::abs(U_mhd_guess[n]) +
+                         m::abs(U_mhd_0[n]) + m::abs(dtdS[n]));
         } else {
             err[n] = 0.0;
         }
@@ -660,11 +684,13 @@ KOKKOS_INLINE_FUNCTION int solve_4d_pmhd(const GRCoordinates& G,
     const VariablePack<Real> U_init, const VariablePack<Real> P_init,
     VariablePack<Real> P_new, VariablePack<Real> U_new, const VarMap m_p,
     const VarMap m_u, const int k, const int j, const int i, const Real dt,
-    const Microphysics::EOS::EOS& eos, const double src_rootfind_eps, const double src_rootfind_tol,
-    const int src_rootfind_maxiter, const int opacity_model,
-    const Real shocktube_sigma_rad, const Real shocktube_kappa_rho,
-    const Real shocktube_kappa_scat, const UnitScales& units_cgs, const Microphysics::Opacities& opacities,
-    const VariablePack<Real> pflag, const VariablePack<Real> rinvflag, const Real U_entry[8])
+    const Microphysics::EOS::EOS& eos, const double src_rootfind_eps,
+    const double src_rootfind_tol, const int src_rootfind_maxiter,
+    const int opacity_model, const Real shocktube_sigma_rad,
+    const Real shocktube_kappa_rho, const Real shocktube_kappa_scat,
+    const UnitScales& units_cgs, const Microphysics::Opacities& opacities,
+    const VariablePack<Real> pflag, const VariablePack<Real> rinvflag,
+    const Real U_entry[8])
 {
     const Real rho_init = P_init(m_p.RHO, k, j, i);
 
@@ -687,13 +713,12 @@ KOKKOS_INLINE_FUNCTION int solve_4d_pmhd(const GRCoordinates& G,
     Real uvec[NVEC] = {
         P_init(m_p.U1, k, j, i), P_init(m_p.U2, k, j, i), P_init(m_p.U3, k, j, i)};
 
-
     Real U_mhd_guess[4];
     Real U_rad_guess[4];
     Real P_rad_guess[4];
     Real dS_guess[4];
     Real dcov_rad[4] = {0., 0., 0., 0.};
-    
+
     U_mhd_0[0] = U_init(m_u.UU, k, j, i);
     U_mhd_0[1] = U_init(m_u.U1, k, j, i);
     U_mhd_0[2] = U_init(m_u.U2, k, j, i);
@@ -706,7 +731,8 @@ KOKKOS_INLINE_FUNCTION int solve_4d_pmhd(const GRCoordinates& G,
     U_mhd_guess[3] = U_mhd_0[3];
 
     // Conservation law: Delta U_rad = - Delta U_mhd
-    DLOOP1 U_rad_guess[mu] = U_rad_0[mu];
+    DLOOP1
+        U_rad_guess[mu] = U_rad_0[mu];
     Real gdet = G.gdet(Loci::center, j, i);
 
     // Convert the newly guessed U_rad to P_rad
@@ -716,15 +742,16 @@ KOKKOS_INLINE_FUNCTION int solve_4d_pmhd(const GRCoordinates& G,
     bool used_normal_guess = true;
     u_to_p_rad(G, U_rad_guess, P_rad_guess, k, j, i, &used_normal_guess);
     compute_covariant_fourforce(G, P_mhd_guess, P_rad_guess, rho_init, eos, opacity_model,
-        shocktube_sigma_rad, shocktube_kappa_rho, shocktube_kappa_scat, units_cgs, opacities, k, j, i, dS_guess);
+        shocktube_sigma_rad, shocktube_kappa_rho, shocktube_kappa_scat, units_cgs,
+        opacities, k, j, i, dS_guess);
 
     for (int n = 0; n < 4; n++) dS_guess[n] = gdet * dS_guess[n];
 
-    DLOOP1{
+    DLOOP1 {
         resid[mu] = U_mhd_guess[mu] - U_mhd_0[mu] + dt * dS_guess[mu];
     }
 
-    //Compute err here and do a convergence check
+    // Compute err here and do a convergence check
     Real dtdS_0[4];
     for (int n = 0; n < 4; n++) dtdS_0[n] = dt * dS_guess[n];
 
@@ -779,16 +806,15 @@ KOKKOS_INLINE_FUNCTION int solve_4d_pmhd(const GRCoordinates& G,
             uvec[1] = P_mhd_m[2];
             uvec[2] = P_mhd_m[3];
 
-            
-            GRMHD::p_to_u_mhd(G, rho_iter, P_mhd_m[0], uvec, B_P, eos, k, j, i,
-                rho_m, U_mhd_m, Loci::center);
+            GRMHD::p_to_u_mhd(G, rho_iter, P_mhd_m[0], uvec, B_P, eos, k, j, i, rho_m,
+                U_mhd_m, Loci::center);
 
-            //The rho output from p_to_u is rho_ut_gdet;
+            // The rho output from p_to_u is rho_ut_gdet;
             FourVectors Dtmp;
             GRMHD::calc_4vecs(G, uvec, B_P, k, j, i, Loci::center, Dtmp);
-            rho_m = rho_m/(gdet * Dtmp.ucon[0]);
+            rho_m = rho_m / (gdet * Dtmp.ucon[0]);
             // Conservation law: Delta U_rad = - Delta U_mhd
-            
+
             for (int n = 0; n < 4; n++) {
                 U_rad_m[n] = U_rad_0[n] - (U_mhd_m[n] - U_mhd_0[n]);
             }
@@ -804,11 +830,14 @@ KOKKOS_INLINE_FUNCTION int solve_4d_pmhd(const GRCoordinates& G,
                 bad_guess_m = true;
             }
 
-            // If a bad guess has already been found before, we can't really skip the whole Jacobian evaluation.
-            // We need to keep evaluating the other blocks to figure out if, during the next m's, the other side (plus/minus) will also go bad, trigerring a bad_guess_m == true && bad_guess_p == true
+            // If a bad guess has already been found before, we can't really skip the
+            // whole Jacobian evaluation. We need to keep evaluating the other blocks to
+            // figure out if, during the next m's, the other side (plus/minus) will also
+            // go bad, trigerring a bad_guess_m == true && bad_guess_p == true
             if (!bad_guess_m && !bad_guess_p) {
-                compute_covariant_fourforce(G, P_mhd_m, P_rad_m, rho_m, eos, opacity_model,
-                    shocktube_sigma_rad, shocktube_kappa_rho, shocktube_kappa_scat, units_cgs, opacities, k, j, i, dS_m);
+                compute_covariant_fourforce(G, P_mhd_m, P_rad_m, rho_m, eos,
+                    opacity_model, shocktube_sigma_rad, shocktube_kappa_rho,
+                    shocktube_kappa_scat, units_cgs, opacities, k, j, i, dS_m);
                 for (int n = 0; n < 4; n++) dS_m[n] = gdet * dS_m[n];
             }
             // Evaluate plus perturbation
@@ -819,16 +848,16 @@ KOKKOS_INLINE_FUNCTION int solve_4d_pmhd(const GRCoordinates& G,
 
             GRMHD::calc_4vecs(G, uvec, B_P, k, j, i, Loci::center, Dtmp);
 
-            GRMHD::p_to_u_mhd(G, rho_iter, P_mhd_p[0], uvec, B_P, eos, k, j, i,
-                rho_p, U_mhd_p, Loci::center);
+            GRMHD::p_to_u_mhd(G, rho_iter, P_mhd_p[0], uvec, B_P, eos, k, j, i, rho_p,
+                U_mhd_p, Loci::center);
 
             // The rho output from p_to_u is rho_ut_gdet;
-            rho_p = rho_p/(gdet * Dtmp.ucon[0]);
+            rho_p = rho_p / (gdet * Dtmp.ucon[0]);
 
             for (int n = 0; n < 4; n++) {
                 U_rad_p[n] = U_rad_0[n] - (U_mhd_p[n] - U_mhd_0[n]);
             }
-            //TODO (PNM): Change name of KOKKOS kernel to lower snake case
+            // TODO (PNM): Change name of KOKKOS kernel to lower snake case
             bool used_normal_p;
             auto status_p = u_to_p_rad(G, U_rad_p, P_rad_p, k, j, i, &used_normal_p);
             if (status_p != StatusRadiationInversion::success) {
@@ -838,11 +867,14 @@ KOKKOS_INLINE_FUNCTION int solve_4d_pmhd(const GRCoordinates& G,
                 bad_guess_p = true;
             }
 
-            // If a bad guess has already been found before, we can't really skip the whole Jacobian evaluation.
-            // We need to keep evaluating the other blocks to figure out if, during the next m's, the other side (plus/minus) will also go bad, trigerring a bad_guess_m == true && bad_guess_p == true
+            // If a bad guess has already been found before, we can't really skip the
+            // whole Jacobian evaluation. We need to keep evaluating the other blocks to
+            // figure out if, during the next m's, the other side (plus/minus) will also
+            // go bad, trigerring a bad_guess_m == true && bad_guess_p == true
             if (!bad_guess_m && !bad_guess_p) {
-                compute_covariant_fourforce(G, P_mhd_p, P_rad_p, rho_p, eos, opacity_model,
-                    shocktube_sigma_rad, shocktube_kappa_rho, shocktube_kappa_scat, units_cgs, opacities, k, j, i, dS_p);
+                compute_covariant_fourforce(G, P_mhd_p, P_rad_p, rho_p, eos,
+                    opacity_model, shocktube_sigma_rad, shocktube_kappa_rho,
+                    shocktube_kappa_scat, units_cgs, opacities, k, j, i, dS_p);
                 for (int n = 0; n < 4; n++) dS_p[n] = gdet * dS_p[n];
 
                 // Populate Jacobian
@@ -875,24 +907,26 @@ KOKKOS_INLINE_FUNCTION int solve_4d_pmhd(const GRCoordinates& G,
                 uvec[0] = P_mhd_p[1];
                 uvec[1] = P_mhd_p[2];
                 uvec[2] = P_mhd_p[3];
-                // TODO (PNM): This is stupid since we have already computed the plus perturbation above.
-                // PNM: Actually, I don't know if that's actually stupid, we would need to save a lot of 4x4 matrices to get this working. it's a trade-off between register pressure and doing a few more calculations, which
-                // I think would be more efficient.
-                GRMHD::p_to_u_mhd(G, rho_iter, P_mhd_p[0], uvec, B_P, eos, k, j, i,
-                    rho_p, U_mhd_p, Loci::center);
+                // TODO (PNM): This is stupid since we have already computed the plus
+                // perturbation above. PNM: Actually, I don't know if that's actually
+                // stupid, we would need to save a lot of 4x4 matrices to get this
+                // working. it's a trade-off between register pressure and doing a few
+                // more calculations, which I think would be more efficient.
+                GRMHD::p_to_u_mhd(G, rho_iter, P_mhd_p[0], uvec, B_P, eos, k, j, i, rho_p,
+                    U_mhd_p, Loci::center);
                 FourVectors Dtmp;
                 GRMHD::calc_4vecs(G, uvec, B_P, k, j, i, Loci::center, Dtmp);
 
-                rho_p = rho_p/(gdet * Dtmp.ucon[0]);
-                
+                rho_p = rho_p / (gdet * Dtmp.ucon[0]);
+
                 for (int n = 0; n < 4; n++) {
                     U_rad_p[n] = U_rad_0[n] - (U_mhd_p[n] - U_mhd_0[n]);
                 }
                 bool used_normal_p;
                 auto status_p = u_to_p_rad(G, U_rad_p, P_rad_p, k, j, i, &used_normal_p);
                 compute_covariant_fourforce(G, P_mhd_p, P_rad_p, rho_p, eos,
-                    opacity_model, shocktube_sigma_rad, shocktube_kappa_rho, shocktube_kappa_scat, units_cgs, opacities, k, j, i,
-                    dS_p);
+                    opacity_model, shocktube_sigma_rad, shocktube_kappa_rho,
+                    shocktube_kappa_scat, units_cgs, opacities, k, j, i, dS_p);
                 for (int n = 0; n < 4; n++) dS_p[n] = gdet * dS_p[n];
 
                 PARTHENON_REQUIRE(status_p == StatusRadiationInversion::success,
@@ -931,11 +965,11 @@ KOKKOS_INLINE_FUNCTION int solve_4d_pmhd(const GRCoordinates& G,
                 uvec[0] = P_mhd_m[1];
                 uvec[1] = P_mhd_m[2];
                 uvec[2] = P_mhd_m[3];
-                GRMHD::p_to_u_mhd(G, rho_iter, P_mhd_m[0], uvec, B_P, eos, k, j, i,
-                    rho_m, U_mhd_m, Loci::center);
+                GRMHD::p_to_u_mhd(G, rho_iter, P_mhd_m[0], uvec, B_P, eos, k, j, i, rho_m,
+                    U_mhd_m, Loci::center);
                 FourVectors Dtmp;
                 GRMHD::calc_4vecs(G, uvec, B_P, k, j, i, Loci::center, Dtmp);
-                rho_m = rho_m/(gdet * Dtmp.ucon[0]);
+                rho_m = rho_m / (gdet * Dtmp.ucon[0]);
 
                 for (int n = 0; n < 4; n++) {
                     U_rad_m[n] = U_rad_0[n] - (U_mhd_m[n] - U_mhd_0[n]);
@@ -943,8 +977,8 @@ KOKKOS_INLINE_FUNCTION int solve_4d_pmhd(const GRCoordinates& G,
                 bool used_normal_m;
                 auto status_m = u_to_p_rad(G, U_rad_m, P_rad_m, k, j, i, &used_normal_m);
                 compute_covariant_fourforce(G, P_mhd_m, P_rad_m, rho_m, eos,
-                    opacity_model, shocktube_sigma_rad, shocktube_kappa_rho, shocktube_kappa_scat, units_cgs, opacities, k, j, i,
-                    dS_m);
+                    opacity_model, shocktube_sigma_rad, shocktube_kappa_rho,
+                    shocktube_kappa_scat, units_cgs, opacities, k, j, i, dS_m);
                 for (int n = 0; n < 4; n++) dS_m[n] = gdet * dS_m[n];
                 PARTHENON_REQUIRE(status_m == StatusRadiationInversion::success,
                     "This inversion should have already worked!");
@@ -982,7 +1016,8 @@ KOKKOS_INLINE_FUNCTION int solve_4d_pmhd(const GRCoordinates& G,
             }
         }
 
-        // Check if the new gas energy is negative, if it is, do a reflect positivity divided by 1/2
+        // Check if the new gas energy is negative, if it is, do a reflect positivity
+        // divided by 1/2
         if (P_mhd_guess[0] < 0.0) {
             P_mhd_guess[0] = 0.5 * m::abs(P_mhd_guess[0]);
         }
@@ -995,25 +1030,26 @@ KOKKOS_INLINE_FUNCTION int solve_4d_pmhd(const GRCoordinates& G,
         GRMHD::p_to_u_mhd(G, rho_iter, P_mhd_guess[0], uvec, B_P, eos, k, j, i,
             rho_iter_next, U_mhd_guess, Loci::center);
 
-
-        //Recompute rho_iter for next step. We don't update rho_iter immediately because this might be a failed state.
+        // Recompute rho_iter for next step. We don't update rho_iter immediately because
+        // this might be a failed state.
         FourVectors Dtmp;
         GRMHD::calc_4vecs(G, uvec, B_P, k, j, i, Loci::center, Dtmp);
-        rho_iter_next = rho_iter_next/(gdet * Dtmp.ucon[0]);
-        
+        rho_iter_next = rho_iter_next / (gdet * Dtmp.ucon[0]);
+
         for (int n = 0; n < 4; n++) {
             U_rad_guess[n] = U_rad_0[n] - (U_mhd_guess[n] - U_mhd_0[n]);
         }
 
-        auto status = u_to_p_rad(G, U_rad_guess, P_rad_guess, k, j, i, &used_normal_guess);
+        auto status =
+            u_to_p_rad(G, U_rad_guess, P_rad_guess, k, j, i, &used_normal_guess);
         compute_covariant_fourforce(G, P_mhd_guess, P_rad_guess, rho_iter_next, eos,
-            opacity_model, shocktube_sigma_rad, shocktube_kappa_rho, shocktube_kappa_scat, units_cgs, opacities, k, j, i,
-            dS_guess);
+            opacity_model, shocktube_sigma_rad, shocktube_kappa_rho, shocktube_kappa_scat,
+            units_cgs, opacities, k, j, i, dS_guess);
 
         for (int n = 0; n < 4; n++) dS_guess[n] = gdet * dS_guess[n];
 
-
-        // Line search if rad prim had a bad inversion (after applying jacobian). Maybe reducing the step will help.
+        // Line search if rad prim had a bad inversion (after applying jacobian). Maybe
+        // reducing the step will help.
         if (status != StatusRadiationInversion::success) {
             constexpr Real umin = 1.e-12;
             constexpr Real Emin = 1.e-60;
@@ -1024,14 +1060,14 @@ KOKKOS_INLINE_FUNCTION int solve_4d_pmhd(const GRCoordinates& G,
             // Check Gas Internal Energy Violation
             if (P_mhd_guess[0] < umin) {
                 // If it went negative or too small, calculate relative overstep
-                scaling_factor = m::max(
-                    scaling_factor, (ug0 - umin) / (ug0 - P_mhd_guess[0] + 1e-20));
+                scaling_factor =
+                    m::max(scaling_factor, (ug0 - umin) / (ug0 - P_mhd_guess[0] + 1e-20));
             }
 
             // Check Radiation Rest-Frame Energy Violation
             if (P_rad_guess[0] < Emin) {
-                scaling_factor = m::max(
-                    scaling_factor, (ur0 - Emin) / (ur0 - P_rad_guess[0] + 1e-20));
+                scaling_factor =
+                    m::max(scaling_factor, (ur0 - Emin) / (ur0 - P_rad_guess[0] + 1e-20));
             }
 
             // Check Velocity / Lorentz Factor Violation
@@ -1040,8 +1076,7 @@ KOKKOS_INLINE_FUNCTION int solve_4d_pmhd(const GRCoordinates& G,
             Real R_t_cov_guess[4] = {U_rad_guess[0] / gdet, U_rad_guess[1] / gdet,
                 U_rad_guess[2] / gdet, U_rad_guess[3] / gdet};
 
-            Real gamma_sq_guess =
-                calculate_gamma_rel2(G, R_t_cov_guess, j, i);
+            Real gamma_sq_guess = calculate_gamma_rel2(G, R_t_cov_guess, j, i);
 
             if (gamma_sq_guess > gamma_max_sq || gamma_sq_guess < 1.0) {
                 // If velocity exploded, aggressively damp the step (e.g., cut it in
@@ -1049,12 +1084,11 @@ KOKKOS_INLINE_FUNCTION int solve_4d_pmhd(const GRCoordinates& G,
                 scaling_factor = m::max(scaling_factor, 0.5);
             }
 
-
             // Verify the scaling factor is sane
             if (!(scaling_factor > 0.0 && scaling_factor <= 1.0)) {
                 bad_guess = true;
                 break; // Step is completely unrecoverable, abort to avoid NaN
-                        // cascading
+                       // cascading
             }
 
             // Retain a 50% safety buffer away from the boundary edge
@@ -1064,8 +1098,7 @@ KOKKOS_INLINE_FUNCTION int solve_4d_pmhd(const GRCoordinates& G,
             for (int m = 0; m < 4; m++) {
                 for (int n = 0; n < 4; n++) {
                     // Notice the += here!
-                    P_mhd_guess[m] +=
-                        (1.0 - scaling_factor) * jacinv[m][n] * resid[n];
+                    P_mhd_guess[m] += (1.0 - scaling_factor) * jacinv[m][n] * resid[n];
                 }
             }
 
@@ -1083,16 +1116,15 @@ KOKKOS_INLINE_FUNCTION int solve_4d_pmhd(const GRCoordinates& G,
 
             FourVectors Dtmp;
             GRMHD::calc_4vecs(G, uvec, B_P, k, j, i, Loci::center, Dtmp);
-            rho_iter_next = rho_iter_next/(gdet * Dtmp.ucon[0]);
-            
-            
+            rho_iter_next = rho_iter_next / (gdet * Dtmp.ucon[0]);
+
             for (int n = 0; n < 4; n++)
                 U_rad_guess[n] = U_rad_0[n] - (U_mhd_guess[n] - U_mhd_0[n]);
 
             status = u_to_p_rad(G, U_rad_guess, P_rad_guess, k, j, i, &used_normal_guess);
             compute_covariant_fourforce(G, P_mhd_guess, P_rad_guess, rho_iter_next, eos,
-                opacity_model, shocktube_sigma_rad, shocktube_kappa_rho, shocktube_kappa_scat, units_cgs, opacities, k, j, i,
-                dS_guess);
+                opacity_model, shocktube_sigma_rad, shocktube_kappa_rho,
+                shocktube_kappa_scat, units_cgs, opacities, k, j, i, dS_guess);
             for (int n = 0; n < 4; n++) dS_guess[n] = gdet * dS_guess[n];
 
             // If the scaled step lands in a physically valid regime, we cleared the
@@ -1113,11 +1145,11 @@ KOKKOS_INLINE_FUNCTION int solve_4d_pmhd(const GRCoordinates& G,
             }
         }
 
-        // This is needed since the previous bad_guess = true would only break out of the for loop
+        // This is needed since the previous bad_guess = true would only break out of the
+        // for loop
         if (bad_guess) {
             break;
         }
-
 
         // Calculate error now
         Real dtdS_iter[4];
@@ -1128,30 +1160,36 @@ KOKKOS_INLINE_FUNCTION int solve_4d_pmhd(const GRCoordinates& G,
         niter++;
     } while (err > src_rootfind_tol && niter < src_rootfind_maxiter);
 
-    // isnan is no-ops for GPU code and for fast-math cpu code (default intel compiler). Careful, these isnans might not trigger.
+    // isnan is no-ops for GPU code and for fast-math cpu code (default intel compiler).
+    // Careful, these isnans might not trigger.
     if (niter == src_rootfind_maxiter || err > src_rootfind_tol ||
         m::isnan(U_rad_guess[0]) || m::isnan(U_rad_guess[1]) ||
         m::isnan(U_rad_guess[2]) || m::isnan(U_rad_guess[3]) || bad_guess) {
 
         // used_1d_fallback = true;
-        // Real P_mhd_init[4] = {P_init(m_p.UU, k, j, i), P_init(m_p.U1, k, j, i), P_init(m_p.U2, k, j, i), P_init(m_p.U3, k, j, i)};
+        // Real P_mhd_init[4] = {P_init(m_p.UU, k, j, i), P_init(m_p.U1, k, j, i),
+        // P_init(m_p.U2, k, j, i), P_init(m_p.U3, k, j, i)};
 
         // // TODO (PNM): Make P_mhd_new_1d just a scalar
-        // // Currently, we don't need P_mhd_new_1d at all, since from here, we will only make a u_to_p transf for the fluid.
-        // //However, eventually, I hope we add an option to use oned solver only, that would make it require a P_mhd_new_1d, so I will leave it here for now.
-        // Real P_mhd_new_1d[4];
+        // // Currently, we don't need P_mhd_new_1d at all, since from here, we will only
+        // make a u_to_p transf for the fluid.
+        // //However, eventually, I hope we add an option to use oned solver only, that
+        // would make it require a P_mhd_new_1d, so I will leave it here for now. Real
+        // P_mhd_new_1d[4];
 
-        // auto status_1d = solve_radiation_1d(G, U_mhd_0, U_rad_0, P_mhd_init, B_P, rho_init,
-        //     eos, opacity_model, shocktube_sigma_rad, shocktube_kappa_rho, shocktube_kappa_scat, units_cgs, opacities, k, j, i, dt,
-        //     src_rootfind_tol, src_rootfind_maxiter, P_mhd_new_1d, dcov_rad);
+        // auto status_1d = solve_radiation_1d(G, U_mhd_0, U_rad_0, P_mhd_init, B_P,
+        // rho_init,
+        //     eos, opacity_model, shocktube_sigma_rad, shocktube_kappa_rho,
+        //     shocktube_kappa_scat, units_cgs, opacities, k, j, i, dt, src_rootfind_tol,
+        //     src_rootfind_maxiter, P_mhd_new_1d, dcov_rad);
 
         return static_cast<int>(StatusImplicitStep::failure);
 
         // if (status_1d != StatusImplicitStep::success) {
         //     // It failed the 1d too!
-        //     //Let's try reverting to the initial state and assume that the source term was zero for this step;
-        //     U_new(m_u.UU_RAD, k , j, i) = U_init(m_u.UU_RAD, k , j, i);
-        //     U_new(m_u.U1_RAD, k , j, i) = U_init(m_u.U1_RAD, k , j, i);
+        //     //Let's try reverting to the initial state and assume that the source term
+        //     was zero for this step; U_new(m_u.UU_RAD, k , j, i) = U_init(m_u.UU_RAD, k
+        //     , j, i); U_new(m_u.U1_RAD, k , j, i) = U_init(m_u.U1_RAD, k , j, i);
         //     U_new(m_u.U2_RAD, k , j, i) = U_init(m_u.U2_RAD, k , j, i);
         //     U_new(m_u.U3_RAD, k , j, i) = U_init(m_u.U3_RAD, k , j, i);
         //     U_new(m_u.UU, k , j, i) = U_init(m_u.UU, k , j, i);
@@ -1164,7 +1202,8 @@ KOKKOS_INLINE_FUNCTION int solve_4d_pmhd(const GRCoordinates& G,
         //     G, U_new, m_u, eos, k, j, i, P_new, m_p, Loci::center, 25, 1e-12);
         //     pflag(0, k, j, i) = mhd_inverter_status;
         //     // Now since the u2p for MHD was successful, do it for radiation:
-        //     Real U_rad_final[4] = {U_new(m_u.UU_RAD, k, j, i), U_new(m_u.U1_RAD, k, j, i),
+        //     Real U_rad_final[4] = {U_new(m_u.UU_RAD, k, j, i), U_new(m_u.U1_RAD, k, j,
+        //     i),
         //         U_new(m_u.U2_RAD, k, j, i), U_new(m_u.U3_RAD, k, j, i)};
         //     Real P_rad_final[4];
 
@@ -1183,7 +1222,6 @@ KOKKOS_INLINE_FUNCTION int solve_4d_pmhd(const GRCoordinates& G,
         dcov_rad[2] = U_rad_guess[2] - U_rad_0[2];
         dcov_rad[3] = U_rad_guess[3] - U_rad_0[3];
     }
-
 
     U_new(m_u.UU_RAD, k, j, i) = U_entry[4] + dcov_rad[0];
     U_new(m_u.U1_RAD, k, j, i) = U_entry[5] + dcov_rad[1];
@@ -1207,8 +1245,8 @@ KOKKOS_INLINE_FUNCTION int solve_4d_pmhd(const GRCoordinates& G,
         // the gas variables via its own neighbor-averaging/backstop.
         // pflag(0, k, j, i) = mhd_inverter_status;
 
-        // //Let's try reverting to the initial state and assume that the source term was zero for this step;
-        // U_new(m_u.UU_RAD, k , j, i) = U_init(m_u.UU_RAD, k , j, i);
+        // //Let's try reverting to the initial state and assume that the source term was
+        // zero for this step; U_new(m_u.UU_RAD, k , j, i) = U_init(m_u.UU_RAD, k , j, i);
         // U_new(m_u.U1_RAD, k , j, i) = U_init(m_u.U1_RAD, k , j, i);
         // U_new(m_u.U2_RAD, k , j, i) = U_init(m_u.U2_RAD, k , j, i);
         // U_new(m_u.U3_RAD, k , j, i) = U_init(m_u.U3_RAD, k , j, i);
@@ -1234,8 +1272,7 @@ KOKKOS_INLINE_FUNCTION int solve_4d_pmhd(const GRCoordinates& G,
         // P_new(m_p.U3_RAD, k, j, i) = P_rad_final[3];
 
         return static_cast<int>(StatusImplicitStep::mhdsolve);
-
-    } 
+    }
     // Now since the u2p for MHD was successful, do it for radiation:
     Real U_rad_final[4] = {U_new(m_u.UU_RAD, k, j, i), U_new(m_u.U1_RAD, k, j, i),
         U_new(m_u.U2_RAD, k, j, i), U_new(m_u.U3_RAD, k, j, i)};
@@ -1255,19 +1292,17 @@ KOKKOS_INLINE_FUNCTION int solve_4d_pmhd(const GRCoordinates& G,
     return static_cast<int>(StatusImplicitStep::success);
 }
 
-
-
-
-
 KOKKOS_INLINE_FUNCTION int solve_4d_prad(const GRCoordinates& G,
     const VariablePack<Real> U_init, const VariablePack<Real> P_init,
     VariablePack<Real> P_new, VariablePack<Real> U_new, const VarMap m_p,
     const VarMap m_u, const int k, const int j, const int i, const Real dt,
-    const Microphysics::EOS::EOS& eos, const double src_rootfind_eps, const double src_rootfind_tol,
-    const int src_rootfind_maxiter, const int opacity_model,
-    const Real shocktube_sigma_rad, const Real shocktube_kappa_rho,
-    const Real shocktube_kappa_scat, const UnitScales& units_cgs, const Microphysics::Opacities& opacities,
-    const VariablePack<Real> pflag, const VariablePack<Real> rinvflag, const Real U_entry[8])
+    const Microphysics::EOS::EOS& eos, const double src_rootfind_eps,
+    const double src_rootfind_tol, const int src_rootfind_maxiter,
+    const int opacity_model, const Real shocktube_sigma_rad,
+    const Real shocktube_kappa_rho, const Real shocktube_kappa_scat,
+    const UnitScales& units_cgs, const Microphysics::Opacities& opacities,
+    const VariablePack<Real> pflag, const VariablePack<Real> rinvflag,
+    const Real U_entry[8])
 {
     const Real rho_init = P_init(m_p.RHO, k, j, i);
 
@@ -1284,11 +1319,9 @@ KOKKOS_INLINE_FUNCTION int solve_4d_prad(const GRCoordinates& G,
         U_init(m_u.U2_RAD, k, j, i), U_init(m_u.U3_RAD, k, j, i)};
 
     Real resid[4];
-    
 
     Real U_mhd_0[4] = {U_init(m_u.UU, k, j, i), U_init(m_u.U1, k, j, i),
         U_init(m_u.U2, k, j, i), U_init(m_u.U3, k, j, i)};
-
 
     Real U_mhd_guess[4];
     Real U_rad_guess[4];
@@ -1303,7 +1336,8 @@ KOKKOS_INLINE_FUNCTION int solve_4d_prad(const GRCoordinates& G,
     U_mhd_guess[3] = U_mhd_0[3];
 
     // Conservation law: Delta U_rad = - Delta U_mhd
-    DLOOP1 U_rad_guess[mu] = U_rad_0[mu];
+    DLOOP1
+        U_rad_guess[mu] = U_rad_0[mu];
     Real gdet = G.gdet(Loci::center, j, i);
 
     // Convert the newly guessed U_rad to P_rad
@@ -1313,15 +1347,16 @@ KOKKOS_INLINE_FUNCTION int solve_4d_prad(const GRCoordinates& G,
     bool used_normal_guess = true;
     u_to_p_rad(G, U_rad_guess, P_rad_guess, k, j, i, &used_normal_guess);
     compute_covariant_fourforce(G, P_mhd_guess, P_rad_guess, rho_init, eos, opacity_model,
-        shocktube_sigma_rad, shocktube_kappa_rho, shocktube_kappa_scat, units_cgs, opacities, k, j, i, dS_guess);
+        shocktube_sigma_rad, shocktube_kappa_rho, shocktube_kappa_scat, units_cgs,
+        opacities, k, j, i, dS_guess);
 
     for (int n = 0; n < 4; n++) dS_guess[n] = gdet * dS_guess[n];
 
-    DLOOP1{
+    DLOOP1 {
         resid[mu] = U_rad_guess[mu] - U_rad_0[mu] - dt * dS_guess[mu];
     }
 
-    //Compute err here and do a convergence check
+    // Compute err here and do a convergence check
     Real dtdS_0[4];
     for (int n = 0; n < 4; n++) dtdS_0[n] = dt * dS_guess[n];
 
@@ -1374,7 +1409,7 @@ KOKKOS_INLINE_FUNCTION int solve_4d_prad(const GRCoordinates& G,
             // Evaluate minus perturbation
             RadM1::calc_tensor(G, P_rad_m, 0, j, i, U_rad_m);
 
-            //set U_mhd from U_rad
+            // set U_mhd from U_rad
             for (int n = 0; n < 4; n++) {
                 U_mhd_m[n] = U_mhd_0[n] - (U_rad_m[n] - U_rad_0[n]);
             }
@@ -1385,8 +1420,8 @@ KOKKOS_INLINE_FUNCTION int solve_4d_prad(const GRCoordinates& G,
             U_new(m_u.U2, k, j, i) = U_mhd_m[2];
             U_new(m_u.U3, k, j, i) = U_mhd_m[3];
             auto mhd_inverter_status = Inverter::u_to_p<Inverter::Type::kastaun>(
-            G, U_new, m_u, eos, k, j, i, P_new, m_p, Loci::center, 25, 1e-12);
-            
+                G, U_new, m_u, eos, k, j, i, P_new, m_p, Loci::center, 25, 1e-12);
+
             P_mhd_m[0] = P_new(m_p.UU, k, j, i);
             P_mhd_m[1] = P_new(m_p.U1, k, j, i);
             P_mhd_m[2] = P_new(m_p.U2, k, j, i);
@@ -1396,18 +1431,21 @@ KOKKOS_INLINE_FUNCTION int solve_4d_prad(const GRCoordinates& G,
                 bad_guess_m = true;
             }
 
-            // If a bad guess has already been found before, we can't really skip the whole Jacobian evaluation.
-            // We need to keep evaluating the other blocks to figure out if, during the next m's, the other side (plus/minus) will also go bad, trigerring a bad_guess_m == true && bad_guess_p == true
+            // If a bad guess has already been found before, we can't really skip the
+            // whole Jacobian evaluation. We need to keep evaluating the other blocks to
+            // figure out if, during the next m's, the other side (plus/minus) will also
+            // go bad, trigerring a bad_guess_m == true && bad_guess_p == true
             if (!bad_guess_m && !bad_guess_p) {
                 Real rho_m = P_new(m_p.RHO, k, j, i);
-                compute_covariant_fourforce(G, P_mhd_m, P_rad_m, rho_m, eos, opacity_model,
-                    shocktube_sigma_rad, shocktube_kappa_rho, shocktube_kappa_scat, units_cgs, opacities, k, j, i, dS_m);
+                compute_covariant_fourforce(G, P_mhd_m, P_rad_m, rho_m, eos,
+                    opacity_model, shocktube_sigma_rad, shocktube_kappa_rho,
+                    shocktube_kappa_scat, units_cgs, opacities, k, j, i, dS_m);
                 for (int n = 0; n < 4; n++) dS_m[n] = gdet * dS_m[n];
             }
 
             // Evaluate plus perturbation
             RadM1::calc_tensor(G, P_rad_p, 0, j, i, U_rad_p);
-            //set U_mhd from U_rad
+            // set U_mhd from U_rad
             for (int n = 0; n < 4; n++) {
                 U_mhd_p[n] = U_mhd_0[n] - (U_rad_p[n] - U_rad_0[n]);
             }
@@ -1418,7 +1456,7 @@ KOKKOS_INLINE_FUNCTION int solve_4d_prad(const GRCoordinates& G,
             U_new(m_u.U2, k, j, i) = U_mhd_p[2];
             U_new(m_u.U3, k, j, i) = U_mhd_p[3];
             auto mhd_inverter_status_p = Inverter::u_to_p<Inverter::Type::kastaun>(
-            G, U_new, m_u, eos, k, j, i, P_new, m_p, Loci::center, 25, 1e-12);
+                G, U_new, m_u, eos, k, j, i, P_new, m_p, Loci::center, 25, 1e-12);
 
             P_mhd_p[0] = P_new(m_p.UU, k, j, i);
             P_mhd_p[1] = P_new(m_p.U1, k, j, i);
@@ -1429,12 +1467,15 @@ KOKKOS_INLINE_FUNCTION int solve_4d_prad(const GRCoordinates& G,
                 bad_guess_p = true;
             }
 
-            // If a bad guess has already been found before, we can't really skip the whole Jacobian evaluation.
-            // We need to keep evaluating the other blocks to figure out if, during the next m's, the other side (plus/minus) will also go bad, trigerring a bad_guess_m == true && bad_guess_p == true
+            // If a bad guess has already been found before, we can't really skip the
+            // whole Jacobian evaluation. We need to keep evaluating the other blocks to
+            // figure out if, during the next m's, the other side (plus/minus) will also
+            // go bad, trigerring a bad_guess_m == true && bad_guess_p == true
             if (!bad_guess_m && !bad_guess_p) {
                 Real rho_p = P_new(m_p.RHO, k, j, i);
-                compute_covariant_fourforce(G, P_mhd_p, P_rad_p, rho_p, eos, opacity_model,
-                    shocktube_sigma_rad, shocktube_kappa_rho, shocktube_kappa_scat, units_cgs, opacities, k, j, i, dS_p);
+                compute_covariant_fourforce(G, P_mhd_p, P_rad_p, rho_p, eos,
+                    opacity_model, shocktube_sigma_rad, shocktube_kappa_rho,
+                    shocktube_kappa_scat, units_cgs, opacities, k, j, i, dS_p);
                 for (int n = 0; n < 4; n++) dS_p[n] = gdet * dS_p[n];
 
                 // Populate Jacobian
@@ -1463,18 +1504,18 @@ KOKKOS_INLINE_FUNCTION int solve_4d_prad(const GRCoordinates& G,
                     src_rootfind_eps * m::abs(P_rad_p[m]));
 
                 RadM1::calc_tensor(G, P_rad_p, 0, j, i, U_rad_p);
-                
+
                 for (int n = 0; n < 4; n++) {
                     U_mhd_p[n] = U_mhd_0[n] - (U_rad_p[n] - U_rad_0[n]);
                 }
 
-                //invert
+                // invert
                 U_new(m_u.UU, k, j, i) = U_mhd_p[0];
                 U_new(m_u.U1, k, j, i) = U_mhd_p[1];
                 U_new(m_u.U2, k, j, i) = U_mhd_p[2];
                 U_new(m_u.U3, k, j, i) = U_mhd_p[3];
                 auto mhd_inverter_status = Inverter::u_to_p<Inverter::Type::kastaun>(
-                G, U_new, m_u, eos, k, j, i, P_new, m_p, Loci::center, 25, 1e-12);
+                    G, U_new, m_u, eos, k, j, i, P_new, m_p, Loci::center, 25, 1e-12);
 
                 P_mhd_p[0] = P_new(m_p.UU, k, j, i);
                 P_mhd_p[1] = P_new(m_p.U1, k, j, i);
@@ -1484,13 +1525,13 @@ KOKKOS_INLINE_FUNCTION int solve_4d_prad(const GRCoordinates& G,
                 Real rho_p = P_new(m_p.RHO, k, j, i);
 
                 compute_covariant_fourforce(G, P_mhd_p, P_rad_p, rho_p, eos,
-                    opacity_model, shocktube_sigma_rad, shocktube_kappa_rho, shocktube_kappa_scat, units_cgs, opacities, k, j, i,
-                    dS_p);
+                    opacity_model, shocktube_sigma_rad, shocktube_kappa_rho,
+                    shocktube_kappa_scat, units_cgs, opacities, k, j, i, dS_p);
                 for (int n = 0; n < 4; n++) dS_p[n] = gdet * dS_p[n];
 
-                PARTHENON_REQUIRE(mhd_inverter_status == static_cast<int>(Inverter::Status::success),
+                PARTHENON_REQUIRE(
+                    mhd_inverter_status == static_cast<int>(Inverter::Status::success),
                     "This inversion should have already worked!");
-
 
                 for (int n = 0; n < 4; n++) {
                     Real fp = U_rad_p[n] - U_rad_0[n] - dt * dS_p[n];
@@ -1522,7 +1563,7 @@ KOKKOS_INLINE_FUNCTION int solve_4d_prad(const GRCoordinates& G,
                 U_new(m_u.U2, k, j, i) = U_mhd_m[2];
                 U_new(m_u.U3, k, j, i) = U_mhd_m[3];
                 auto mhd_inverter_status = Inverter::u_to_p<Inverter::Type::kastaun>(
-                G, U_new, m_u, eos, k, j, i, P_new, m_p, Loci::center, 25, 1e-12);
+                    G, U_new, m_u, eos, k, j, i, P_new, m_p, Loci::center, 25, 1e-12);
                 P_mhd_m[0] = P_new(m_p.UU, k, j, i);
                 P_mhd_m[1] = P_new(m_p.U1, k, j, i);
                 P_mhd_m[2] = P_new(m_p.U2, k, j, i);
@@ -1530,11 +1571,12 @@ KOKKOS_INLINE_FUNCTION int solve_4d_prad(const GRCoordinates& G,
                 Real rho_m = P_new(m_p.RHO, k, j, i);
 
                 compute_covariant_fourforce(G, P_mhd_m, P_rad_m, rho_m, eos,
-                    opacity_model, shocktube_sigma_rad, shocktube_kappa_rho, shocktube_kappa_scat, units_cgs, opacities, k, j, i,
-                    dS_m);
+                    opacity_model, shocktube_sigma_rad, shocktube_kappa_rho,
+                    shocktube_kappa_scat, units_cgs, opacities, k, j, i, dS_m);
                 for (int n = 0; n < 4; n++) dS_m[n] = gdet * dS_m[n];
 
-                PARTHENON_REQUIRE(mhd_inverter_status == static_cast<int>(Inverter::Status::success),
+                PARTHENON_REQUIRE(
+                    mhd_inverter_status == static_cast<int>(Inverter::Status::success),
                     "This inversion should have already worked!");
 
                 for (int n = 0; n < 4; n++) {
@@ -1560,11 +1602,11 @@ KOKKOS_INLINE_FUNCTION int solve_4d_prad(const GRCoordinates& G,
             }
         }
 
-        // Check if the new gas energy is negative, if it is, do a reflect positivity divided by 1/2
+        // Check if the new gas energy is negative, if it is, do a reflect positivity
+        // divided by 1/2
         if (P_rad_guess[0] < 0.0) {
             P_rad_guess[0] = 0.5 * m::abs(P_rad_guess[0]);
         }
-
 
         RadM1::calc_tensor(G, P_rad_guess, 0, j, i, U_rad_guess);
 
@@ -1578,22 +1620,22 @@ KOKKOS_INLINE_FUNCTION int solve_4d_prad(const GRCoordinates& G,
         U_new(m_u.U3, k, j, i) = U_mhd_guess[3];
 
         auto mhd_inverter_status = Inverter::u_to_p<Inverter::Type::kastaun>(
-        G, U_new, m_u, eos, k, j, i, P_new, m_p, Loci::center, 25, 1e-12);
-        
+            G, U_new, m_u, eos, k, j, i, P_new, m_p, Loci::center, 25, 1e-12);
+
         P_mhd_guess[0] = P_new(m_p.UU, k, j, i);
         P_mhd_guess[1] = P_new(m_p.U1, k, j, i);
         P_mhd_guess[2] = P_new(m_p.U2, k, j, i);
         P_mhd_guess[3] = P_new(m_p.U3, k, j, i);
         rho_iter_next = P_new(m_p.RHO, k, j, i);
-        
+
         compute_covariant_fourforce(G, P_mhd_guess, P_rad_guess, rho_iter_next, eos,
-            opacity_model, shocktube_sigma_rad, shocktube_kappa_rho, shocktube_kappa_scat, units_cgs, opacities, k, j, i,
-            dS_guess);
+            opacity_model, shocktube_sigma_rad, shocktube_kappa_rho, shocktube_kappa_scat,
+            units_cgs, opacities, k, j, i, dS_guess);
 
         for (int n = 0; n < 4; n++) dS_guess[n] = gdet * dS_guess[n];
 
-
-        // Line search if rad prim had a bad inversion (after applying jacobian). Maybe reducing the step will help.
+        // Line search if rad prim had a bad inversion (after applying jacobian). Maybe
+        // reducing the step will help.
         if (mhd_inverter_status != static_cast<int>(Inverter::Status::success)) {
             constexpr Real umin = 1.e-12;
             constexpr Real Emin = 1.e-60;
@@ -1604,21 +1646,21 @@ KOKKOS_INLINE_FUNCTION int solve_4d_prad(const GRCoordinates& G,
             // Check Gas Internal Energy Violation
             if (P_mhd_guess[0] < umin) {
                 // If it went negative or too small, calculate relative overstep
-                scaling_factor = m::max(
-                    scaling_factor, (ug0 - umin) / (ug0 - P_mhd_guess[0] + 1e-20));
+                scaling_factor =
+                    m::max(scaling_factor, (ug0 - umin) / (ug0 - P_mhd_guess[0] + 1e-20));
             }
 
             if (P_rad_guess[0] < Emin) {
                 // If it went negative or too small, calculate relative overstep
-                scaling_factor = m::max(
-                    scaling_factor, (ur0 - Emin) / (ur0 - P_rad_guess[0] + 1e-20));
+                scaling_factor =
+                    m::max(scaling_factor, (ur0 - Emin) / (ur0 - P_rad_guess[0] + 1e-20));
             }
 
             // Verify the scaling factor is sane
             if (!(scaling_factor > 0.0 && scaling_factor <= 1.0)) {
                 bad_guess = true;
                 break; // Step is completely unrecoverable, abort to avoid NaN
-                        // cascading
+                       // cascading
             }
 
             // Retain a 50% safety buffer away from the boundary edge
@@ -1627,8 +1669,7 @@ KOKKOS_INLINE_FUNCTION int solve_4d_prad(const GRCoordinates& G,
             // Roll back to old guess, then take the scaled/damped step
             for (int m = 0; m < 4; m++) {
                 for (int n = 0; n < 4; n++) {
-                    P_rad_guess[m] +=
-                        (1.0 - scaling_factor) * jacinv[m][n] * resid[n];
+                    P_rad_guess[m] += (1.0 - scaling_factor) * jacinv[m][n] * resid[n];
                 }
             }
 
@@ -1637,10 +1678,9 @@ KOKKOS_INLINE_FUNCTION int solve_4d_prad(const GRCoordinates& G,
                 P_rad_guess[0] = 0.5 * m::abs(P_rad_guess[0]);
             }
 
-
             RadM1::calc_tensor(G, P_rad_guess, 0, j, i, U_rad_guess);
 
-             for (int n = 0; n < 4; n++) {
+            for (int n = 0; n < 4; n++) {
                 U_mhd_guess[n] = U_mhd_0[n] - (U_rad_guess[n] - U_rad_0[n]);
             }
 
@@ -1651,23 +1691,23 @@ KOKKOS_INLINE_FUNCTION int solve_4d_prad(const GRCoordinates& G,
             U_new(m_u.U2, k, j, i) = U_mhd_guess[2];
             U_new(m_u.U3, k, j, i) = U_mhd_guess[3];
             auto mhd_inverter_status = Inverter::u_to_p<Inverter::Type::kastaun>(
-            G, U_new, m_u, eos, k, j, i, P_new, m_p, Loci::center, 25, 1e-12);
+                G, U_new, m_u, eos, k, j, i, P_new, m_p, Loci::center, 25, 1e-12);
 
             P_mhd_guess[0] = P_new(m_p.UU, k, j, i);
             P_mhd_guess[1] = P_new(m_p.U1, k, j, i);
             P_mhd_guess[2] = P_new(m_p.U2, k, j, i);
             P_mhd_guess[3] = P_new(m_p.U3, k, j, i);
             rho_iter_next = P_new(m_p.RHO, k, j, i);
-            
-            
+
             compute_covariant_fourforce(G, P_mhd_guess, P_rad_guess, rho_iter_next, eos,
-                opacity_model, shocktube_sigma_rad, shocktube_kappa_rho, shocktube_kappa_scat, units_cgs, opacities, k, j, i,
-                dS_guess);
+                opacity_model, shocktube_sigma_rad, shocktube_kappa_rho,
+                shocktube_kappa_scat, units_cgs, opacities, k, j, i, dS_guess);
             for (int n = 0; n < 4; n++) dS_guess[n] = gdet * dS_guess[n];
 
             // If the scaled step lands in a physically valid regime, we cleared the
             // error flag!
-            if (mhd_inverter_status != static_cast<int>(Inverter::Status::success) || P_mhd_guess[0] < umin) {
+            if (mhd_inverter_status != static_cast<int>(Inverter::Status::success) ||
+                P_mhd_guess[0] < umin) {
                 bad_guess = true;
                 break;
             }
@@ -1683,11 +1723,11 @@ KOKKOS_INLINE_FUNCTION int solve_4d_prad(const GRCoordinates& G,
             }
         }
 
-        // This is needed since the previous bad_guess = true would only break out of the for loop
+        // This is needed since the previous bad_guess = true would only break out of the
+        // for loop
         if (bad_guess) {
             break;
         }
-
 
         // Calculate error now
         Real dtdS_iter[4];
@@ -1698,7 +1738,8 @@ KOKKOS_INLINE_FUNCTION int solve_4d_prad(const GRCoordinates& G,
         niter++;
     } while (err > src_rootfind_tol && niter < src_rootfind_maxiter);
 
-    // isnan is no-ops for GPU code and for fast-math cpu code (default intel compiler). Careful, these isnans might not trigger.
+    // isnan is no-ops for GPU code and for fast-math cpu code (default intel compiler).
+    // Careful, these isnans might not trigger.
     if (niter == src_rootfind_maxiter || err > src_rootfind_tol ||
         m::isnan(U_mhd_guess[0]) || m::isnan(U_mhd_guess[1]) ||
         m::isnan(U_mhd_guess[2]) || m::isnan(U_mhd_guess[3]) || bad_guess) {
@@ -1710,7 +1751,6 @@ KOKKOS_INLINE_FUNCTION int solve_4d_prad(const GRCoordinates& G,
         dcov_rad[2] = U_mhd_guess[2] - U_mhd_0[2];
         dcov_rad[3] = U_mhd_guess[3] - U_mhd_0[3];
     }
-
 
     U_new(m_u.UU_RAD, k, j, i) = U_entry[4] + dcov_rad[0];
     U_new(m_u.U1_RAD, k, j, i) = U_entry[5] + dcov_rad[1];
@@ -1749,8 +1789,5 @@ KOKKOS_INLINE_FUNCTION int solve_4d_prad(const GRCoordinates& G,
     }
     return static_cast<int>(StatusImplicitStep::success);
 }
-
-
-
 
 } // namespace RadM1
