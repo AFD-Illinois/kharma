@@ -128,6 +128,8 @@ std::shared_ptr<KHARMAPackage> Inverter::Initialize(
     bool backstop_recover_u =
         pin->GetOrAddBoolean("inverter", "backstop_recover_u", false);
     params.Add("backstop_recover_u", backstop_recover_u);
+    int backstop_iter_max = pin->GetOrAddInteger("inverter", "backstop_iter_max", 100);
+    params.Add("backstop_iter_max", backstop_iter_max);
     if (backstop && backstop_recover_vel && backstop_recover_u) {
         throw std::runtime_error(
             "Inverter parameters error: cannot recover with backstop_recover_vel and "

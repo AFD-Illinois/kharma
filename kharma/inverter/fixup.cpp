@@ -187,6 +187,7 @@ TaskStatus Inverter::Backstop(MeshBlockData<Real>* rc)
     const Real tol = pars.Get<Real>("err_tol");
     const bool backstop_recover_vel = pars.Get<bool>("backstop_recover_vel");
     const bool backstop_recover_u = pars.Get<bool>("backstop_recover_u");
+    const int iter_max = pars.Get<int>("backstop_iter_max");
 
     const auto& eos_params = pmb->packages.Get("eos")->AllParams();
     auto eos = eos_params.Get<Microphysics::EOS::EOS>("d.EOS");
@@ -296,7 +297,8 @@ TaskStatus Inverter::Backstop(MeshBlockData<Real>* rc)
                         fflagl |= Floors::FFlag::FIXUP_U_RANGE;
                     } else {
                         Real uc = (up + um) / 2.;
-                        while (1) {
+                        int iter = 0;
+                        for (iter = 0; iter < iter_max; iter++) {
                             Real resv = m::abs(f(uc));
                             if ((resv < tol) || (m::abs((up - um) / 2) < tol / 10)) {
                                 uu = uc;
@@ -309,6 +311,10 @@ TaskStatus Inverter::Backstop(MeshBlockData<Real>* rc)
                             else // default to shifting window up -> slower
                                 um = uc;
                             uc = (um + up) / 2.;
+                        }
+                        if (iter == iter_max) {
+                            uu = uc;
+                            e_solve_failed = true;
                         }
                     }
 
@@ -358,7 +364,8 @@ TaskStatus Inverter::Backstop(MeshBlockData<Real>* rc)
                         fflagl |= Floors::FFlag::FIXUP_VEL_RANGE;
                     } else {
                         Real iWc = (iWp + iWm) / 2.;
-                        while (1) {
+                        int iter = 0;
+                        for (iter = 0; iter < iter_max; iter++) {
                             Real resv = m::abs(f(iWc));
                             if ((resv < tol) || (m::abs((iWp - iWm) / 2) < tol / 10)) {
                                 iW = iWc;
@@ -371,6 +378,10 @@ TaskStatus Inverter::Backstop(MeshBlockData<Real>* rc)
                             else // default to shifting window up -> slower
                                 iWm = iWc;
                             iWc = (iWm + iWp) / 2.;
+                        }
+                        if (iter == iter_max) {
+                            iW = iWc;
+                            e_solve_failed = true;
                         }
                     }
 
