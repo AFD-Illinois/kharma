@@ -41,6 +41,8 @@
 #include "kharma_driver.hpp"
 #include "reductions.hpp"
 
+#include <singularity-eos/eos/eos_ideal.hpp>
+
 std::shared_ptr<KHARMAPackage> Inverter::Initialize(
     ParameterInput* pin, std::shared_ptr<Packages_t>& packages)
 {
@@ -64,9 +66,10 @@ std::shared_ptr<KHARMAPackage> Inverter::Initialize(
 
 
     // An option that exits when someone use onedw with an equation of state that is not ideal gas.
+    // eos_kharma is solely responsible for setting/defaulting "eos"/"type"; we only ever read it here.
     if (inverter_name == "onedw") {
-        const std::string eos_name = pin->GetOrAddString("eos", "type", "ideal");
-        if (eos_name != "ideal") {
+        const std::string eos_name = pin->GetString("eos", "type");
+        if (eos_name != singularity::IdealGas::EosType()) {
             throw std::invalid_argument("onedw inverter only works with ideal gas equation of state");
         }
     }
@@ -125,6 +128,8 @@ std::shared_ptr<KHARMAPackage> Inverter::Initialize(
     bool backstop_recover_u =
         pin->GetOrAddBoolean("inverter", "backstop_recover_u", false);
     params.Add("backstop_recover_u", backstop_recover_u);
+    int backstop_iter_max = pin->GetOrAddInteger("inverter", "backstop_iter_max", 100);
+    params.Add("backstop_iter_max", backstop_iter_max);
     if (backstop && backstop_recover_vel && backstop_recover_u) {
         throw std::runtime_error(
             "Inverter parameters error: cannot recover with backstop_recover_vel and "
