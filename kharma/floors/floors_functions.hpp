@@ -382,7 +382,7 @@ KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::normal_kastaun_eenough>(
                     ? P(m_p.KTOT, k, j, i) * m::pow(P(m_p.RHO, k, j, i), gam) / (gam - 1.)
                     : P(m_p.UU, k, j, i);
     const Real uvec[NVEC] = {P(m_p.U1, k, j, i), P(m_p.U2, k, j, i), P(m_p.U3, k, j, i)};
-    const Real B[NVEC] = {0.}
+    Real B[NVEC] = {0.};
     if (m_p.B1 >= 0) {
         B[V1] = P(m_p.B1, k, j, i);
         B[V2] = P(m_p.B2, k, j, i);
