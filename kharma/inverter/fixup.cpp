@@ -231,7 +231,7 @@ TaskStatus Inverter::Backstop(MeshBlockData<Real>* rc)
                     ? P(m_p.KTOT, k, j, i) * m::pow(P(m_p.RHO, k, j, i), gam) / (gam - 1.)
                     : umin_geom;
 
-            if (failed(pflag(k, j, i)) && (P(m_p.UU, k, j, i) < umin)) {
+            if (failed(pflag(k, j, i))) {
                 // const Real rho = P(m_p.RHO, k, j, i);
                 // const Real u = P(m_p.UU, k, j, i);
                 const Real uvec[NVEC] = {
@@ -248,9 +248,8 @@ TaskStatus Inverter::Backstop(MeshBlockData<Real>* rc)
                 int fflagl = fflag(0, k, j, i);
 
                 // Calculate P->U on the inverted values
-                const Real D =
-                    U(m_u.RHO, k, j, i) / (m::sqrt(-G.gcon(Loci::center, j, i, 0, 0)) *
-                                              G.gdet(Loci::center, j, i));
+                const Real D = m::max(rhomin_geom, U(m_u.RHO, k, j, i) /
+                                    (m::sqrt(-G.gcon(Loci::center, j, i, 0, 0)) * G.gdet(Loci::center, j, i)));
                 const Real W = GRMHD::lorentz_calc(G, uvec, k, j, i, Loci::center);
 
                 // Calculate the total energy of the fluid at rest

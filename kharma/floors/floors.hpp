@@ -119,6 +119,7 @@ enum class InjectionFrame {
     fluid = 0,
     normal_onedw,
     normal_kastaun,
+    normal_kastaun_eenough,
     mixed_fluid_normal,
     mixed_normal_drift,
     drift
@@ -209,7 +210,7 @@ inline Prescription MakePrescription(
 
     p.use_rho_to_slow = pin->GetOrAddBoolean("floors", "use_rho_to_slow", false);
 
-    p.use_u_min_entropy = pin->GetOrAddBoolean("floors", "u_min_from_entropy", true);
+    p.use_u_min_entropy = pin->GetOrAddBoolean("floors", "u_min_from_entropy", false);
 
     return p;
 }

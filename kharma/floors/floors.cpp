@@ -72,7 +72,11 @@ std::shared_ptr<KHARMAPackage> Floors::Initialize(
             frame = InjectionFrame::normal_onedw;
         } else {
             // Use Kastaun unless we specified onedw inverter
-            frame = InjectionFrame::normal_kastaun;
+            if (pin->GetOrAddBoolean("floors", "enough_e", true) == false) {
+                frame = InjectionFrame::normal_kastaun;
+            } else {
+                frame = InjectionFrame::normal_kastaun_eenough;
+            }
         }
     } else if (frame_s == "fluid") {
         frame = InjectionFrame::fluid;
@@ -345,6 +349,8 @@ TaskStatus Floors::ApplyGRMHDFloors(MeshData<Real>* md, IndexDomain domain)
 
     if (pars.Get<InjectionFrame>("frame") == InjectionFrame::normal_kastaun) {
         return ApplyFloorsInFrame<InjectionFrame::normal_kastaun>(md, domain);
+    } else if (pars.Get<InjectionFrame>("frame") == InjectionFrame::normal_kastaun_eenough) {
+        return ApplyFloorsInFrame<InjectionFrame::normal_kastaun_eenough>(md, domain);
     } else if (pars.Get<InjectionFrame>("frame") == InjectionFrame::normal_onedw) {
         return ApplyFloorsInFrame<InjectionFrame::normal_onedw>(md, domain);
     } else if (pars.Get<InjectionFrame>("frame") == InjectionFrame::fluid) {
