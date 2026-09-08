@@ -2,23 +2,27 @@ name: Regression tests (CPU)
 
 on:
   push:
-    branches: [ main, dev ]
+    branches: [ stable, dev ]
   pull_request:
-    branches: [ main, dev ]
+    branches: [ stable, dev ]
 
 env:
-  NPROC: 12
+  NPROC: 4
   MPI_NUM_PROCS: 4
   OMP_NUM_THREADS: 1
 
 jobs:
   # Job 1: Compilation
   build:
-    runs-on: [self-hosted, kharma]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
           submodules: 'recursive'
+      - name: Install prereqs
+        run: |
+          sudo apt-get update
+          sudo apt-get install build-essential libmpich-dev libhdf5-mpich-dev hdf5-tools git cmake
       - name: Run compilation
         run: bash -i ./make.sh clean noopenmp
       - uses: actions/upload-artifact@v7
@@ -30,7 +34,7 @@ jobs:
   # Job 2: Test Matrix
   test:
     needs: build
-    runs-on: [self-hosted, kharma]
+    runs-on: ubuntu-latest
     continue-on-error: true
     strategy:
       fail-fast: false
@@ -61,8 +65,9 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: build-artifacts
-      - name: install pyharm
-        run: pip install git+https://github.com/c-prather/pyharm@dev
+      - name: Install Prereqs
+        run: |
+          pip install git+https://github.com/c-prather/pyharm@dev
       - name: Run ${{ matrix.test_name }}
         working-directory: tests/${{ matrix.test_name }}
         run: bash -i ./run.sh
