@@ -377,10 +377,10 @@ KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::normal_kastaun_eenough>(
     // Add the material in the normal observer frame.
     // 1. Calculate our minimum primitive variable state
     const Real rho    = m::max(rhoflr_max, P(m_p.RHO, k, j, i));
-    // If entropy is present & u dips below a floor, use it as a minimum instead of the floor
+    // If entropy is present & u dips below a floor, use it as a minimum in addition to the floor
     const Real u = ((m_p.KTOT >= 0) && (P(m_p.UU, k, j, i) < uflr_max))
-                    ? P(m_p.KTOT, k, j, i) * m::pow(P(m_p.RHO, k, j, i), gam) / (gam - 1.)
-                    : P(m_p.UU, k, j, i);
+                    ? m::max(P(m_p.KTOT, k, j, i) * m::pow(P(m_p.RHO, k, j, i), gam) / (gam - 1.), uflr_max)
+                    : m::max(uflr_max, P(m_p.UU, k, j, i));
     const Real uvec[NVEC] = {P(m_p.U1, k, j, i), P(m_p.U2, k, j, i), P(m_p.U3, k, j, i)};
     Real B[NVEC] = {0.};
     if (m_p.B1 >= 0) {
