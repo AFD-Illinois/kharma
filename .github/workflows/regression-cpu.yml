@@ -14,6 +14,7 @@ env:
   NPROC: 4
   MPI_NUM_PROCS: 4
   OMP_NUM_THREADS: 1
+  HOST_ARCH: "HSW"
 
 jobs:
   # Job 1: Compilation
