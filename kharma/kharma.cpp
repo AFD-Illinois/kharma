@@ -83,7 +83,8 @@ std::shared_ptr<KHARMAPackage> KHARMA::InitializeGlobals(
     // KHARMADriver::MakeTaskCollection.  Use this rather than reconstructing it from
     // "time" and "dt_last". Also, note that dt_last is DBL_MAX before the loop starts.
     params.Add("time_substep_end", 0.0, true);
-    // Whether we are computing initial outputs/timestep, or versions in the execution loop
+    // Whether we are computing initial outputs/timestep, or versions in the execution
+    // loop
     params.Add("in_loop", false, true);
 
     // Log levels, the other acceptable global
