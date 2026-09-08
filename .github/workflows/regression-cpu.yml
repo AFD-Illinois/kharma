@@ -15,7 +15,7 @@ env:
   MPI_NUM_PROCS: 4
   OMP_NUM_THREADS: 1
   HOST_ARCH: "HSW"
-  MPI_EXTRA_ARGS="--oversubscribe"
+  MPI_EXTRA_ARGS: "--oversubscribe"
 
 jobs:
   # Job 1: Compilation
