@@ -110,6 +110,9 @@ KOKKOS_INLINE_FUNCTION int determine_floors(const GRCoordinates& G,
             ? floors_inner
             : floors;
 
+    Real sie = P(m_p.UU, k, j, i) / P(m_p.RHO, k, j, i);
+    Real gamma1 = eos.BulkModulusFromDensityInternalEnergy(P(m_p.RHO, k, j, i), sie) /
+                      eos.PressureFromDensityInternalEnergy(P(m_p.RHO, k, j, i), sie);
     // Calculate the different floor values in play:
     // 1. Geometric hard floors, not based on fluid relationships
     // TODO(CEP) can this be cached if it's slow?
@@ -120,9 +123,6 @@ KOKKOS_INLINE_FUNCTION int determine_floors(const GRCoordinates& G,
         Real rhoscal = (myfloors.use_r_char) ? 1. / ((r * r) * (1 + r / myfloors.r_char))
                                              : 1. / m::sqrt(r * r * r);
         rhoflr_geom = m::max(myfloors.rho_min_geom * rhoscal, myfloors.rho_min_const);
-        Real sie = P(m_p.UU, k, j, i) / P(m_p.RHO, k, j, i);
-        Real gamma1 = eos.BulkModulusFromDensityInternalEnergy(P(m_p.RHO, k, j, i), sie) /
-                      eos.PressureFromDensityInternalEnergy(P(m_p.RHO, k, j, i), sie);
         uflr_geom =
             m::max(myfloors.u_min_geom * m::pow(rhoscal, gamma1), myfloors.u_min_const);
     } else {
@@ -143,6 +143,11 @@ KOKKOS_INLINE_FUNCTION int determine_floors(const GRCoordinates& G,
 
     // Evaluate max U floor, needed for temp ceiling below
     uflr_max = m::max(uflr_geom, uflr_b);
+
+    // Entropy floor on U, experimental
+    if (m_p.KTOT >= 0 && myfloors.use_u_min_entropy)
+        uflr_max = m::max(uflr_max,
+            P(m_p.KTOT, k, j, i) * m::pow(P(m_p.RHO, k, j, i), gamma1) / (gamma1 - 1.));
 
     const auto& rho = P(m_p.RHO, k, j, i);
     const auto& u = P(m_p.UU, k, j, i);
@@ -359,7 +364,7 @@ KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::normal_kastaun>(FLOOR_ON
 
     // Recover new primitive variables
     return Inverter::u_to_p<Inverter::Type::kastaun>(
-        G, U, m_u, eos, k, j, i, P, m_p, Loci::center, 25, 1e-14);
+        G, U, m_u, eos, k, j, i, P, m_p, Loci::center, 25, 1e-12);
 }
 
 // These are implemented as special cases in the kernel in floors_impl.hpp
@@ -375,6 +380,45 @@ KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::mixed_normal_drift>(
     FLOOR_ONE_ARGS)
 {
     return -1;
+}
+
+template<>
+KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::normal_kastaun_eenough>(FLOOR_ONE_ARGS)
+{
+    // Add the material in the normal observer frame.
+
+    Real sie = P(m_p.UU, k, j, i) / P(m_p.RHO, k, j, i);
+    Real gamma1 = eos.BulkModulusFromDensityInternalEnergy(P(m_p.RHO, k, j, i), sie) /
+                      eos.PressureFromDensityInternalEnergy(P(m_p.RHO, k, j, i), sie);
+
+    // 1. Calculate our minimum primitive variable state
+    const Real rho    = m::max(rhoflr_max, P(m_p.RHO, k, j, i));
+    // If entropy is present & u dips below a floor, use it as a minimum in addition to the floor
+    const Real u = ((m_p.KTOT >= 0) && (P(m_p.UU, k, j, i) < uflr_max))
+                    ? m::max(P(m_p.KTOT, k, j, i) * m::pow(P(m_p.RHO, k, j, i), gamma1) / (gamma1 - 1.), uflr_max)
+                    : m::max(uflr_max, P(m_p.UU, k, j, i));
+    const Real uvec[NVEC] = {P(m_p.U1, k, j, i), P(m_p.U2, k, j, i), P(m_p.U3, k, j, i)};
+    Real B[NVEC] = {0.};
+    if (m_p.B1 >= 0) {
+        B[V1] = P(m_p.B1, k, j, i);
+        B[V2] = P(m_p.B2, k, j, i);
+        B[V3] = P(m_p.B3, k, j, i);
+    }
+
+    // 2. Calculate the corresponding conserved state
+    Real rho_ut, T[GR_DIM];
+    GRMHD::p_to_u_mhd(G, rho, u, uvec, B, eos, k, j, i, rho_ut, T, Loci::center);
+
+    // 3. Add new conserved mass/energy to the current "conserved" state.
+    // (no need to modify the guess for Kastaun, esp once we sync mu)
+    U(m_u.RHO, k, j, i) = rho_ut;
+    U(m_u.UU, k, j, i)  = T[0]; // Actually T^0_0 + rho u^t
+
+    // TODO Nothing I do which modifies T[1-3] here is stable...
+
+    // Recover new primitive variables
+    return Inverter::u_to_p<Inverter::Type::kastaun>(G, U, m_u, eos, k, j, i, P, m_p, Loci::center,
+                                                     25, 1e-12);
 }
 
 // KOKKOS_INLINE_FUNCTION rho_to_slow()

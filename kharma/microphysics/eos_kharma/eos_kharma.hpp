@@ -20,6 +20,7 @@
 #include "kharma_package.hpp"
 
 #include <singularity-eos/eos/eos_ideal.hpp>
+#include <singularity-eos/eos/eos_stellar_collapse.hpp>
 #include <singularity-eos/eos/eos_variant.hpp>
 #include <singularity-eos/eos/modifiers/eos_unitsystem.hpp>
 
