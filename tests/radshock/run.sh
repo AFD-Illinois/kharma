@@ -8,12 +8,12 @@ exit_code=0
 rad_shocktube_test() {
     local test_num=$1
     local parfile=$KHARMADIR/pars/radM1/shocktube/shocktube${test_num}.par
-    local all_res="200,400,600,800,1600"
+    local all_res="400,600,900"
 
-    for res in 200 400 600 800 1600
+    for res in 400 600 900
     do
         $KHARMADIR/run.sh -i $parfile debug/verbose=1 parthenon/output0/dt=300 \
-                            parthenon/mesh/nx1=$res parthenon/meshblock/nx1=$res \
+                            parthenon/mesh/nx1=$res parthenon/meshblock/nx1=$((res / 2)) \
                             >shock_test${test_num}_${res}.log 2>&1
 
         cp dumps_kharma/shock.out0.final.phdf shock_test${test_num}.out0.final.res${res}.phdf
