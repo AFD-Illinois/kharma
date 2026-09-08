@@ -22,7 +22,9 @@ jobs:
       - name: Install prereqs
         run: |
           sudo apt-get update
-          sudo apt-get install build-essential libmpich-dev libhdf5-mpich-dev hdf5-tools git cmake
+          sudo apt-get install build-essential
+          sudo apt-get install libmpich-dev libhdf5-mpich-dev libfftw3-dev
+          sudo apt-get install hdf5-tools cmake
       - name: Run compilation
         run: bash -i ./make.sh clean noopenmp
       - uses: actions/upload-artifact@v7
@@ -65,8 +67,11 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: build-artifacts
-      - name: Install Prereqs
+      - name: Install prereqs
         run: |
+          sudo apt-get update
+          sudo apt-get install libmpich-dev libhdf5-mpich-dev libfftw3-dev
+          sudo apt-get install hdf5-tools
           pip install git+https://github.com/c-prather/pyharm@dev
       - name: Run ${{ matrix.test_name }}
         working-directory: tests/${{ matrix.test_name }}
