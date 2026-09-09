@@ -260,7 +260,9 @@ TaskStatus Inverter::Backstop(MeshBlockData<Real>* rc)
                 GRMHD::p_to_u_mhd(G, D, umin, uvec0, B_P, gam, k, j, i, rho_ut, Trest);
                 // If we're below the at-rest energy (within tolerance),
                 // just bump it to that and kill all kinetic energy
+                // Also use this if v=0.
                 if ((Trest[0] - U(m_u.UU, k, j, i)) / U(m_u.UU, k, j, i) > -tol ||
+                    W <= 1.0 ||
                     (!backstop_recover_vel && !backstop_recover_u)) {
                     // W = 1
                     P(m_p.RHO, k, j, i) = D;
@@ -371,7 +373,7 @@ TaskStatus Inverter::Backstop(MeshBlockData<Real>* rc)
 
                     // Compute what we really need
                     Real gamma_fac = m::sqrt((SQR(1. / iW) - 1.) / (SQR(W) - 1.));
-                    if (gamma_fac > 1 && !e_solve_failed) {
+                    if (!(gamma_fac < 1) && !e_solve_failed) {
                         fflagl |= Floors::FFlag::FIXUP_VEL_GAMMA;
                         e_solve_failed = true;
                         // TO PRINT (for verifying this only happens via round-off error)
