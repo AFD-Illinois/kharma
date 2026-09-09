@@ -349,18 +349,22 @@ TaskStatus RadM1::Step(
                     U_new(m_u.U2_RAD, k, j, i), U_new(m_u.U3_RAD, k, j, i)};
                 int rflagl;
 
-                rflagl = solve_4d_pmhd(G, U_init, P_init, P_new, U_new, m_p, m_u, k, j, i,
-                    dt, eos, src_rootfind_eps, src_rootfind_tol, src_rootfind_maxiter,
-                    rad_opac, pflag, rinvflag, U_entry);
+                // rflagl = solve_4d_pmhd(G, U_init, P_init, P_new, U_new, m_p, m_u, k, j, i,
+                //     dt, eos, src_rootfind_eps, src_rootfind_tol, src_rootfind_maxiter,
+                //     rad_opac, pflag, rinvflag, U_entry);
 
-                if (rflagl == static_cast<int>(StatusImplicitStep::success)) {
-                    rimplflag(0, k, j, i) = rflagl;
-                    return;
-                }
+                // update_ktot_from_gas(G, P_new, U_new, m_p, m_u, eos, k, j, i);
+
+                // if (rflagl == static_cast<int>(StatusImplicitStep::success)) {
+                //     rimplflag(0, k, j, i) = rflagl;
+                //     return;
+                // }
 
                 rflagl = solve_4d_prad(G, U_init, P_init, P_new, U_new, m_p, m_u, k, j, i,
                     dt, eos, src_rootfind_eps, src_rootfind_tol, src_rootfind_maxiter,
                     rad_opac, pflag, rinvflag, U_entry);
+
+                update_ktot_from_gas(G, P_new, U_new, m_p, m_u, eos, k, j, i);
 
                 if (rflagl == static_cast<int>(StatusImplicitStep::success)) {
                     rimplflag(0, k, j, i) =
@@ -372,6 +376,7 @@ TaskStatus RadM1::Step(
                     P_new, eos, rad_opac, k, j, i, dt,
                     src_rootfind_tol, src_rootfind_maxiter, pflag, rinvflag, U_entry);
 
+                update_ktot_from_gas(G, P_new, U_new, m_p, m_u, eos, k, j, i);
                 if (status_1d == StatusImplicitStep::success) {
                     rimplflag(0, k, j, i) =
                         static_cast<int>(StatusImplicitStep::onedfallback_success);

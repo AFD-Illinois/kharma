@@ -35,6 +35,7 @@
 
 #include "radM1.hpp"
 
+#include "entropy.hpp"
 #include "inverter.hpp"
 
 #define RAD_LARGE (0.1 * std::numeric_limits<Real>::max())
@@ -43,6 +44,30 @@
 
 namespace RadM1
 {
+
+
+KOKKOS_INLINE_FUNCTION void update_ktot_from_gas(const GRCoordinates& G,
+    const VariablePack<Real> P_new, const VariablePack<Real> U_new,
+    const VarMap m_p, const VarMap m_u, const Microphysics::EOS::EOS& eos,
+    const int k, const int j, const int i)
+{
+    if (m_p.KTOT < 0) return;
+
+    Real sie = P_new(m_p.UU, k, j, i) / P_new(m_p.RHO, k, j, i);
+    Real gamma1 = eos.BulkModulusFromDensityInternalEnergy(P_new(m_p.RHO, k, j, i), sie) /
+                      eos.PressureFromDensityInternalEnergy(P_new(m_p.RHO, k, j, i), sie);
+                      
+    P_new(m_p.KTOT, k, j, i) = Entropy::CalcEntropy(
+        P_new(m_p.RHO, k, j, i), P_new(m_p.UU, k, j, i), gamma1);
+
+    Real uvec_f[3] = {P_new(m_p.U1, k, j, i), P_new(m_p.U2, k, j, i),
+        P_new(m_p.U3, k, j, i)};
+    Real ucon_f[4];
+    GRMHD::calc_ucon(G, uvec_f, k, j, i, Loci::center, ucon_f);
+
+    U_new(m_u.KTOT, k, j, i) = G.gdet(Loci::center, j, i)
+        * P_new(m_p.RHO, k, j, i) * ucon_f[0] * P_new(m_p.KTOT, k, j, i);
+}
 
 KOKKOS_INLINE_FUNCTION void ApplyColdClosureFix(const GRCoordinates& G,
     const Real R_t_cov_orig[GR_DIM], const double gammarel2_fixed, const int& j,
@@ -1609,10 +1634,10 @@ KOKKOS_INLINE_FUNCTION int solve_4d_prad(const GRCoordinates& G,
 
         return static_cast<int>(StatusImplicitStep::failure);
     } else {
-        dcov_rad[0] = U_mhd_guess[0] - U_mhd_0[0];
-        dcov_rad[1] = U_mhd_guess[1] - U_mhd_0[1];
-        dcov_rad[2] = U_mhd_guess[2] - U_mhd_0[2];
-        dcov_rad[3] = U_mhd_guess[3] - U_mhd_0[3];
+        dcov_rad[0] = U_rad_guess[0] - U_rad_0[0];
+        dcov_rad[1] = U_rad_guess[1] - U_rad_0[1];
+        dcov_rad[2] = U_rad_guess[2] - U_rad_0[2];
+        dcov_rad[3] = U_rad_guess[3] - U_rad_0[3];
     }
 
     U_new(m_u.UU_RAD, k, j, i) = U_entry[4] + dcov_rad[0];
