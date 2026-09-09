@@ -157,7 +157,8 @@ enum class OpacityModel : int {
     ShocktubeConstant = 1,
     Bondi = 2,
     Transparent = 3,
-    ThermalEquilibrium = 4
+    ThermalEquilibrium = 4,
+    Constant = 5
 };
 #include "microphysics/opac_kharma/rad_opacities.hpp"
 

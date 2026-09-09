@@ -1,0 +1,304 @@
+/*
+ *  File: radmhdmodes.hpp
+ *
+ *  BSD 3-Clause License
+ *
+ *  Copyright (c) 2020, AFD Group at UIUC
+ *  All rights reserved.
+ *
+ *  Redistribution and use in source and binary forms, with or without
+ *  modification, are permitted provided that the following conditions are met:
+ *
+ *  1. Redistributions of source code must retain the above copyright notice, this
+ *     list of conditions and the following disclaimer.
+ *
+ *  2. Redistributions in binary form must reproduce the above copyright notice,
+ *     this list of conditions and the following disclaimer in the documentation
+ *     and/or other materials provided with the distribution.
+ *
+ *  3. Neither the name of the copyright holder nor the names of its
+ *     contributors may be used to endorse or promote products derived from
+ *     this software without specific prior written permission.
+ *
+ *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ *  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ *  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ *  DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ *  FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ *  DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ *  SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ *  CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ *  OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+#pragma once
+
+#include <complex>
+
+#include "decs.hpp"
+#include "radM1_solvers.hpp"
+using namespace std::literals::complex_literals;
+using namespace parthenon;
+
+/**
+ * Initialization for different analytic wave modes in magnetized plasma.
+ * Note this assumes ideal EOS with gamma=4/3!
+ *
+ * @param nmode: type of linear wave, from:
+ * 0. Entropy, static mode
+ * 1. Slow mode
+ * 2. Alfven wave
+ * 3. Fast mode
+ *
+ * @param dir: direction of wave. 0 = components of each
+ *
+ * Note this SETS the stopping time corresponding to advection by 1 wavelength.
+ * Generally this is what we want for tests (run by 1 cycle and compare).
+ * Modify function or reset tlim after to override.
+ */
+TaskStatus InitializeRadMHDModes(
+    std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput* pin)
+{
+    auto pmb = rc->GetBlockPointer();
+    GridScalar rho = rc->Get("prims.rho").data;
+    GridScalar u = rc->Get("prims.u").data;
+    GridVector uvec = rc->Get("prims.uvec").data;
+
+    GridScalar Erad = rc->Get("prims.u_rad").data;
+    GridVector Frad = rc->Get("prims.uvec_rad").data;
+
+    const bool use_radm1 = pin -> GetOrAddBoolean("radM1", "on", false);
+
+    const Real gam = pmb->packages.Get("eos")->Param<Real>("gm1") + 1.0;
+
+    
+    const auto& G = pmb->coords;
+
+    const int nmode = pin->GetOrAddInteger("mhdmodes", "nmode", 1);
+    const bool one_period = pin->GetOrAddBoolean("mhdmodes", "one_period", nmode != 0);
+
+    // Plasma mean gas state taken from file
+    const Real rho0 = pin->GetOrAddReal("mhdmodes", "rho0", 1.);
+    const Real u0 = pin->GetOrAddReal("mhdmodes", "u0", 9.13706e-3);
+    const Real u10 = pin->GetOrAddReal("mhdmodes", "u10", 0.);
+    const Real u20 = pin->GetOrAddReal("mhdmodes", "u20", 0.);
+    const Real u30 = pin->GetOrAddReal("mhdmodes", "u30", 0.);
+
+    const Real u10rad = pin->GetOrAddReal("mhdmodes", "u10rad", 0.);
+    const Real u20rad = pin->GetOrAddReal("mhdmodes", "u20rad", 0.);
+    const Real u30rad = pin->GetOrAddReal("mhdmodes", "u30rad", 0.);
+
+
+    const std::string wavetype = pin->GetOrAddString("mhdmodes", "wavetype", "sonic");
+    const std::string regime = pin->GetOrAddString("mhdmodes", "regime", "puremhd");
+
+    const Real k1 = pin->GetOrAddReal("mhdmodes", "k1", 2. * M_PI);
+    const Real k2 = pin->GetOrAddReal("mhdmodes", "k2", 0.);
+    const Real k3 = pin->GetOrAddReal("mhdmodes", "k3", 0.);
+    const Real phase = pin->GetOrAddReal("mhdmodes", "phase", 0.);
+
+    Real B10 = pin->GetOrAddReal("mhdmodes", "B10", 0.100759);
+    Real B20 = pin->GetOrAddReal("mhdmodes", "B20", 0.100759);
+    Real B30 = pin->GetOrAddReal("mhdmodes", "B30", 0.);
+
+    std::complex<Real> omega;
+    std::complex<Real> drho = 0, du = 0;
+    std::complex<Real> du1 = 0, du2 = 0, du3 = 0;
+    std::complex<Real> dB1 = 0, dB2 = 0, dB3 = 0;
+    std::complex<Real> dErad = 0, dF1rad = 0, dF2rad = 0, dF3rad = 0;
+
+    Real P = 0.0;
+    if (regime == "thin") P = 0.1;
+    else if (regime == "thick") P = 10;
+
+
+    if (wavetype == "sonic") {
+        B10 = 0.; 
+        B20 = 0.;
+        B30 = 0.;
+        if (regime == "puremhd") {
+            drho = 1.e-6;
+            du = 1.52284e-8;
+            du1 = 1.0e-7;
+            du2 = 0.0;
+            dB2 = 0.0;
+            omega = 0.628319;
+        } else if (regime == "thin") {
+            drho = 1.e-6;
+            du = 1.51557e-8 + 7.69693e-10i;
+            du1 = 9.97992e-8 + 2.55207e-9i;
+            du2 = 0.0;
+            dB2 = 0.0;
+            dErad = 1.33148e-13 + 3.60017e-11i;
+            dF1rad = -2.52471e-10 + 7.40041e-11i;
+            dF2rad = 0.0;
+            omega = 0.627057 + 0.0160351i;
+        } else if (regime == "thick") {
+            drho = 1.e-6;
+            du = 1.17070e-8 + 1.88153e-9i;
+            du1 = 2.66251e-7 + 6.33514e-8i;
+            du2 = 0.0;
+            dB2 = 0.0;
+            dErad = 2.05419e-7 + 1.49859e-7i;
+            dF1rad = -2.07308e-8 + 3.77556e-8i;
+            dF2rad = 0.0;
+            omega = 1.6729 + 0.398049i;
+        }
+    } else if (wavetype == "fast") {
+        if (regime == "puremhd") {
+            drho = 1.e-6;
+            du = 1.52284e-8;
+            du1 = 1.60294e-7;
+            du2 = -9.79087e-8;
+            dB2 = 1.62303e-7;
+            omega = 1.00716;
+        } else if (regime == "thin") {
+            drho = 1.e-6;
+            du = 1.51984e-8 + 4.81575e-10i;
+            du1 = 1.60251e-7 + 7.23831e-10i;
+            du2 = -9.79544e-8 + 9.83679e-10i;
+            dB2 = 1.62344e-7 - 8.96662e-10i;
+            dErad = 1.48421e-12 + 6.06322e-11i;
+            dF1rad = -3.95433e-10 + 8.51051e-11i;
+            dF2rad = 2.36680e-10 + 2.11182e-11i;
+            omega = 1.00689 + 0.00454797i;
+        } else if (regime == "thick") {
+            drho = 1.e-6;
+            du = 1.17305e-8 + 1.71290e-9i;
+            du1 = 2.78499e-7 + 5.23804e-8i;
+            du2 = -2.81093e-8 + 6.25588e-9i;
+            dB2 = 1.10170e-7 - 4.03337e-9i;
+            dErad = 2.07294e-7 + 1.36364e-7i;
+            dF1rad = -1.83331e-8 + 3.63664e-8i;
+            dF2rad = 2.67581e-10 + 1.24272e-9i;
+            omega = 1.74986 + 0.329116i;
+        }
+    } else if (wavetype == "slow") {
+        if (regime == "puremhd") {
+            drho = 1.e-6;
+            du = 1.52284e-8;
+            du1 = 6.17707e-8;
+            du2 = 1.00118e-7;
+            dB2 = -6.25516e-8;
+            omega = 0.388117;
+        } else if (regime == "thin") {
+            drho = 1.e-6;
+            du = 1.50174e-8 + 1.22299e-9i;
+            du1 = 6.15333e-8 + 1.83144e-9i;
+            du2 = 9.89772e-8 + 6.54186e-9i;
+            dB2 = -6.14882e-8 - 5.88315e-9i;
+            dErad = 1.91703e-13 + 2.18721e-11i;
+            dF1rad = -1.65181e-12 + 7.17520e-11i;
+            dF2rad = -2.23679e-10 - 7.43141e-11i;
+            omega = 0.386625 + 0.011507i;
+        } else if (regime == "thick") {
+            drho = 1.e-6;
+            du = 9.46189e-9 + 1.21376e-9i;
+            du1 = 8.34269e-8 + 1.20829e-8i;
+            du2 = 1.13633e-7 + 2.72697e-7i;
+            dB2 = -8.03823e-8 + 3.03114e-7i;
+            dErad = 2.59666e-8 + 9.67891e-8i;
+            dF1rad = -1.98263e-8 + 5.47610e-9i;
+            dF2rad = 3.66075e-9 - 1.14750e-9i;
+            omega = 0.524187 + 0.075919i;
+        }
+    }
+  
+
+    // Record the parameters we set via nmode
+    // This might be useful to read when checking, too...
+    pin->SetReal("mhdmodes", "omega_real", omega.real());
+    pin->SetReal("mhdmodes", "omega_imag", omega.imag());
+    pin->SetReal("mhdmodes", "drho_real", drho.real());
+    pin->SetReal("mhdmodes", "drho_imag", drho.imag());
+    pin->SetReal("mhdmodes", "du_real", du.real());
+    pin->SetReal("mhdmodes", "du_imag", du.imag());
+    pin->SetReal("mhdmodes", "du1_real", du1.real());
+    pin->SetReal("mhdmodes", "du1_imag", du1.imag());
+    pin->SetReal("mhdmodes", "du2_real", du2.real());
+    pin->SetReal("mhdmodes", "du2_imag", du2.imag());
+    pin->SetReal("mhdmodes", "du3_real", du3.real());
+    pin->SetReal("mhdmodes", "du3_imag", du3.imag());
+    pin->SetReal("mhdmodes", "dB1_real", dB1.real());
+    pin->SetReal("mhdmodes", "dB1_imag", dB1.imag());
+    pin->SetReal("mhdmodes", "dB2_real", dB2.real());
+    pin->SetReal("mhdmodes", "dB2_imag", dB2.imag());
+    pin->SetReal("mhdmodes", "dB3_real", dB3.real());
+    pin->SetReal("mhdmodes", "dB3_imag", dB3.imag());
+
+    // Set B field parameters for our mode
+    pin->GetOrAddString("b_field", "type", "wave");
+    pin->GetOrAddReal("b_field", "B10", B10);
+    pin->GetOrAddReal("b_field", "B20", B20);
+    pin->GetOrAddReal("b_field", "B30", B30);
+    pin->GetOrAddReal("b_field", "amp_B1", dB1.real());
+    pin->GetOrAddReal("b_field", "amp_B2", dB2.real());
+    pin->GetOrAddReal("b_field", "amp_B3", dB3.real());
+    pin->GetOrAddReal("b_field", "k1", k1);
+    pin->GetOrAddReal("b_field", "k2", k2);
+    pin->GetOrAddReal("b_field", "k3", k3);
+    pin->GetOrAddReal("b_field", "phase", phase);
+
+    Real Erad0 =  3 * P * (gam - 1.0) * u0;
+    IndexDomain domain = IndexDomain::interior;
+    IndexRange ib = pmb->cellbounds.GetBoundsI(domain);
+    IndexRange jb = pmb->cellbounds.GetBoundsJ(domain);
+    IndexRange kb = pmb->cellbounds.GetBoundsK(domain);
+    pmb->par_for("radmhdmodes_init", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+                KOKKOS_LAMBDA(const int& k, const int& j, const int& i)
+        {
+            Real X[GR_DIM];
+            G.coord_embed(k, j, i, Loci::center, X);
+            Real phase = k1 * X[1] + k2 * X[2] + k3 * X[3];
+            m::complex<Real> emode = m::exp(m::complex<Real>(0, -phase));
+
+            rho(k, j, i) = rho0 + (drho * emode).real();
+            u(k, j, i) = u0 + (du   * emode).real();
+            uvec(V1, k, j, i) = u10 + (du1 * emode).real();
+            uvec(V2, k, j, i) = u20 + (du2 * emode).real();
+            uvec(V3, k, j, i) = u30 + (du3 * emode).real();
+
+            if (use_radm1) {
+                // This is in fluid frame, not in the frame used for our primitives (M1 rest frame). So, we need to change it
+                Real E_hat = Erad0 + (dErad * emode).real();
+                Real F_hat[GR_DIM] = {0.,(dF1rad * emode).real(), (dF2rad * emode).real(), (dF3rad * emode).real()};
+
+
+                // I think this fails if non cartesian metric. Be careful! In cartesian minkowski coordinate basis IS the orthonormal tetrad.
+                Real uvec_gas[NVEC] = {u10 + (du1 * emode).real(), u20 + (du2 * emode).real(), u30 + (du3 * emode).real()};
+                Real ucon_gas[GR_DIM];
+                GRMHD::calc_ucon(G, uvec_gas, k, j, i, Loci::center, ucon_gas);
+                
+
+
+                Real R_con_t[GR_DIM];
+                for (int nu = 0; nu < 4; ++nu) {
+                    R_con_t[nu] = (4./3.) * E_hat * ucon_gas[0] * ucon_gas[nu]
+                                + (1./3.) * E_hat * G.gcon(Loci::center, j, i, 0, nu)
+                                + ucon_gas[0] * F_hat[nu]
+                                + F_hat[0] * ucon_gas[nu];
+                }
+                Real R_t_mu[GR_DIM];
+                G.lower(R_con_t, R_t_mu, k, j, i, Loci::center);
+
+                const Real gdet = G.gdet(Loci::center, j, i);
+                Real U_rad_init[GR_DIM] = {
+                    gdet * R_t_mu[0], gdet * R_t_mu[1], gdet * R_t_mu[2], gdet * R_t_mu[3]};
+
+                Real P_rad_init[GR_DIM];
+                RadM1::u_to_p_rad(G, U_rad_init, P_rad_init, k, j, i);
+
+                Erad(k, j, i) = P_rad_init[0];
+                Frad(V1, k, j, i) = P_rad_init[1];
+                Frad(V2, k, j, i) = P_rad_init[2];
+                Frad(V3, k, j, i) = P_rad_init[3];
+            }
+    });
+
+    // Override end time to be exactly 1 period for moving modes, unless we set otherwise
+    if (one_period) {
+        pin->SetReal("parthenon/time", "tlim", 2. * M_PI / m::abs(omega.real()));
+    }
+
+    return TaskStatus::complete;
+}

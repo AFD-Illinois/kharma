@@ -80,10 +80,6 @@ fix_average_neighbors = true
 
 <radM1>
 on = true
-opacity_model = shocktube_constant
-sigma_rad = 0.0
-kappa_rho = 0.0
-kappa_sc = 0.0
 src_rootfind_eps = 1e-8
 src_rootfind_tol = 1e-8
 src_rootfind_maxiter = 50

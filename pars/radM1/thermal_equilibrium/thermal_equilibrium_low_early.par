@@ -3,7 +3,7 @@
 # Every cell independently reproduces the single-cell test.
 #
 # Units chosen so rho_code = 1 exactly:
-# kappa_rho = kappa_cgs * rho_cgs * length_cgs = 0.4 * 1e-7 * 1.0 = 4e-8
+# kappa_a = kappa_cgs * rho_cgs * length_cgs = 0.4 * 1e-7 * 1.0 = 4e-8
 # sigma_rad = (sigma_SB/c) * temperature_cgs^4 / energy_density_scale ~= 2.958e23
 
 <parthenon/job>
@@ -81,7 +81,7 @@ fix_average_neighbors = true
 on = true
 opacity_model = shocktube_constant
 sigma_rad = 3.833e22
-kappa_rho = 4.e-8
+kappa_a = 4.e-8
 kappa_sc = 0.0
 src_rootfind_eps = 1e-8
 src_rootfind_tol = 1e-8

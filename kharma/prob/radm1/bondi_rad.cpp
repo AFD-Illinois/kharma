@@ -91,6 +91,10 @@ TaskStatus SetBondiRadImpl(
 {
     auto pmb = rc->GetBlockPointer();
 
+    // Running bondi_rad with a mag field was failing here, so I added: if the
+    // variable is not defined, just don't go down this path.
+    if (!rc->Contains("prims.rho")) return TaskStatus::complete;
+
     GridScalar rho = rc->Get("prims.rho").data;
     GridScalar u = rc->Get("prims.u").data;
     GridVector uvec = rc->Get("prims.uvec").data;

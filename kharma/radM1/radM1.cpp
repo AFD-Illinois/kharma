@@ -122,6 +122,8 @@ std::shared_ptr<KHARMAPackage> RadM1::Initialize(
         default_opacity_model = "transparent";
     } else if (problem_id == "thermal_equilibrium") {
         default_opacity_model = "thermal_equilibrium";
+    } else if (problem_id == "radmhdmodes"){
+        default_opacity_model = "constant";
     }
 
     // user can override the default opacity model in the input file, but if not, we use the default based on the problem ID.
@@ -138,13 +140,17 @@ std::shared_ptr<KHARMAPackage> RadM1::Initialize(
         opacity_model = (int)OpacityModel::Transparent;
     } else if (opacity_model_str == "thermal_equilibrium") {
         opacity_model = (int)OpacityModel::ThermalEquilibrium;
+    } else if (opacity_model_str == "constant") {
+        opacity_model = (int)OpacityModel::Constant;
+    } else if (opacity_model_str != "default") {
+        PARTHENON_FAIL("Unknown opacity model: " + opacity_model_str);
     }
 
 
     // TODO(PNM): Make these parameters part of the shocktube problem. Important!
     // Actually, I don't know if this is useful. Other problems use constant sigma and kappas.
     Real const_sigma    = pin->GetOrAddReal("radM1", "sigma_rad", 3.470e7);
-    Real const_kappa_a  = pin->GetOrAddReal("radM1", "kappa_rho", 0.08);
+    Real const_kappa_a  = pin->GetOrAddReal("radM1", "kappa_a", 0.08);
     Real const_kappa_sc = pin->GetOrAddReal("radM1", "kappa_sc", 0.0);
 
     // Add everything to the package parameters
@@ -172,10 +178,6 @@ std::shared_ptr<KHARMAPackage> RadM1::Initialize(
         unit_conv.GetTemperatureCodeToCGS() * pc::mp * pc::c * pc::c;
     printf("RadM1: temperature_cgs = %e\n", units_cgs.temperature_cgs);
 
-    // Mean molecular weight, used only by OpacityModel::Default (see the comment on
-    // UnitScales::mu) to get a real temperature in Kelvin: T_K = Tg * mu *
-    // units_cgs.temperature_cgs. Existing branches (Bondi, ThermalEquilibrium, ...)
-    // are untouched and keep their original (implicit mu=1) behavior.
     units_cgs.mu = pin->GetOrAddReal("radM1", "mu", 0.6);
     printf("RadM1: mu = %e\n", units_cgs.mu);
     pkg->AllParams().Add("units_cgs", units_cgs);

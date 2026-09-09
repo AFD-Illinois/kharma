@@ -47,6 +47,8 @@ class RadOpac
     Real kappa_a(Real rho, Real Tg) const
     {
         switch (static_cast<OpacityModel>(opacity_model)) {
+            case OpacityModel::Constant:
+                return const_kappa_a;
             case OpacityModel::ShocktubeConstant:
                 return rho * const_kappa_a;
             case OpacityModel::Bondi: {
@@ -80,6 +82,8 @@ class RadOpac
     Real kappa_sc(Real rho, Real Tg) const
     {
         switch (static_cast<OpacityModel>(opacity_model)) {
+            case OpacityModel::Constant:
+                return const_kappa_sc;
             case OpacityModel::ShocktubeConstant:
                 return const_kappa_sc;
             case OpacityModel::Transparent:
