@@ -80,21 +80,19 @@ inline TaskStatus GetFlux(MeshData<Real>* md)
 
     const bool reconstruction_floors = pars.Get<bool>("reconstruction_floors");
     const bool reconstruction_fallback = pars.Get<bool>("reconstruction_fallback");
-    Floors::Prescription floors_temp;
-    Floors::Prescription floors_inner_temp;
-    if (reconstruction_floors || reconstruction_fallback) {
-        // Apply post-reconstruction floors.
-        // Only enabled for WENO since it is not TVD, and only when other
-        // floors are enabled.
-        floors_temp = packages.Get("Floors")->Param<Floors::Prescription>("prescription");
-        floors_inner_temp =
-            packages.Get("Floors")->Param<Floors::Prescription>("prescription_inner");
-        if (reconstruction_fallback) {
-            floors_temp.rho_min_const = 0.;
-            floors_temp.u_min_const = 0.;
-            floors_temp.rho_min_geom = 0.;
-            floors_temp.u_min_geom = 0.;
-        }
+    Floors::Prescription floors_temp =
+        packages.Get("Floors")->Param<Floors::Prescription>("prescription");
+    Floors::Prescription floors_inner_temp =
+        packages.Get("Floors")->Param<Floors::Prescription>("prescription_inner");
+    if (reconstruction_fallback) {
+        floors_temp.rho_min_const = 0.;
+        floors_temp.u_min_const = 0.;
+        floors_temp.rho_min_geom = 0.;
+        floors_temp.u_min_geom = 0.;
+        floors_inner_temp.rho_min_const = 0.;
+        floors_inner_temp.u_min_const = 0.;
+        floors_inner_temp.rho_min_geom = 0.;
+        floors_inner_temp.u_min_geom = 0.;
     }
     const Floors::Prescription& floors = floors_temp;
     const Floors::Prescription& floors_inner = floors_inner_temp;
@@ -253,7 +251,7 @@ inline TaskStatus GetFlux(MeshData<Real>* md)
             }
         });
 
-    if (reconstruction_floors || reconstruction_fallback) {
+    if (reconstruction_floors) {
         pmb0->par_for("calc_flux_reconfloor", block.s, block.e, b.ks, b.ke, b.js, b.je,
             b.is, b.ie,
             KOKKOS_LAMBDA(const int& bl,
@@ -284,10 +282,23 @@ inline TaskStatus GetFlux(MeshData<Real>* md)
                         const int& j,
                         const int& i)
             {
-                if ((static_cast<int>(fflag(bl, 0, k, j, i)) &
-                        static_cast<int>(Floors::FFlag::GEOM_RHO_FLUX)) ||
-                    (static_cast<int>(fflag(bl, 0, k, j, i)) &
-                        static_cast<int>(Floors::FFlag::GEOM_U_FLUX))) {
+                const auto& G = U_all.GetCoords(bl);
+                // Determine cells that would hit the floor
+                Real tmp1, tmp2;
+                int fflag_dir = 0;
+                fflag_dir |= Floors::determine_geo_floors(G, Pl_all(bl), m_p, gam, k, j,
+                    i, floors, floors_inner, tmp1, tmp2, loc);
+                fflag_dir |= Floors::determine_geo_floors(G, Pr_all(bl), m_p, gam, k, j,
+                    i, floors, floors_inner, tmp1, tmp2, loc);
+
+                // Preserve (but do not respect) existing flags
+                int fflagl = fflag(bl, 0, k, j, i);
+                fflagl |= fflag_dir;
+                fflag(bl, 0, k, j, i) = fflagl;
+
+                // Use PPM reconstruction on them
+                if ((fflag_dir & static_cast<int>(Floors::FFlag::GEOM_RHO_FLUX)) ||
+                    (fflag_dir & static_cast<int>(Floors::FFlag::GEOM_U_FLUX))) {
 #ifdef KOKKOS_ENABLE_CUDA
                     if (dir == 1) {
 #else
@@ -338,6 +349,8 @@ inline TaskStatus GetFlux(MeshData<Real>* md)
     // If we have B field on faces, we "must" replace reconstructed version with that
     // Override at user option due to unreasonable effectiveness
     // (https://github.com/AFD-Illinois/kharma/issues/79)
+    // TODO(CEP) integrate above: if(p == m_p.B && consistent_face_b) and see if that's
+    // faster
     if (pmb0->packages.AllPackages().count("B_CT") &&
         packages.Get("Fluxes")->Param<bool>("consistent_face_b")) {
         const auto& Bf = md->PackVariables(std::vector<std::string>{"cons.fB"});
@@ -382,8 +395,8 @@ inline TaskStatus GetFlux(MeshData<Real>* md)
 
             // Magnetosonic speeds
             Real cmaxL, cminL;
-            Flux::vchar_global(G, Pl_all(bl), m_p, Dtmp, gam, emhd_params, k, j, i, loc,
-                dir, cmaxL, cminL);
+            Flux::vchar(G, Pl_all(bl), m_p, Dtmp, gam, emhd_params, k, j, i, loc, dir,
+                cmaxL, cminL);
 
             // Record speeds
             cmax(bl, dir - 1, k, j, i) = m::max(0., cmaxL);
@@ -412,8 +425,8 @@ inline TaskStatus GetFlux(MeshData<Real>* md)
 
             // Magnetosonic speeds
             Real cmaxR, cminR;
-            Flux::vchar_global(G, Pr_all(bl), m_p, Dtmp, gam, emhd_params, k, j, i, loc,
-                dir, cmaxR, cminR);
+            Flux::vchar(G, Pr_all(bl), m_p, Dtmp, gam, emhd_params, k, j, i, loc, dir,
+                cmaxR, cminR);
 
             // Calculate cmax/min based on comparison with cached values
             cmax(bl, dir - 1, k, j, i) = m::max(cmax(bl, dir - 1, k, j, i), cmaxR);
