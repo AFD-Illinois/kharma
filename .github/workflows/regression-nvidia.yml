@@ -8,7 +8,7 @@ on:
     types: [auto_merge_enabled]
 
 env:
-  NPROC: 6
+  NPROC: 12
   MPI_NUM_PROCS: 1
   OMP_NUM_THREADS: 1
   MODULEPATH: '/opt/nvidia/hpc_sdk/modulefiles:/usr/share/modulefiles'
@@ -16,6 +16,8 @@ env:
 jobs:
   # Job 1: Compilation
   build-nvidia:
+    concurrency:
+      group: nvidia-compile
     runs-on: [self-hosted, kharma-gpu-nv]
     steps:
       - uses: actions/checkout@v7
