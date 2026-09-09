@@ -1,9 +1,6 @@
 name: Regression tests (AMD)
 
 on:
-  # If someone has to push to stable/dev.  Shouldn't happen
-  push:
-    branches: [ stable, dev ]
   # when triggered manually
   workflow_dispatch:
   # when auto merge is enabled (hack to make sure it's run before merging)
