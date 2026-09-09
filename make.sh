@@ -33,6 +33,7 @@ NPROC=${NPROC:-8}
 
 # Set variables we expect to use to satisfy bash
 EXTRA_FLAGS=${EXTRA_FLAGS:-}
+CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH:-}
 CFLAGS=${CFLAGS:-}
 CXXFLAGS=${CXXFLAGS:-}
 PREFIX_PATH=${PREFIX_PATH:-}
