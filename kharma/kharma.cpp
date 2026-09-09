@@ -467,10 +467,10 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
         }
     }
 
-    // Sometimes things we otherwise want by default aren't compatible with the simple driver
-    // This lets us silently disable them if we need.
+    // Sometimes things we otherwise want by default aren't compatible with the simple
+    // driver This lets us silently disable them if we need.
     bool simple_driver = pin->DoesParameterExist("driver", "type") &&
-                        pin->GetString("driver", "type") == "simple";
+                         pin->GetString("driver", "type") == "simple";
 
     // Optional standalone packages
     // Entropy tracking (Ktot, & optionally idealized/advected Ktot_adv) is independent of
