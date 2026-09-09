@@ -142,12 +142,12 @@ std::shared_ptr<KHARMAPackage> Inverter::Initialize(
         m = Metadata(
             {Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
     }
-    pkg->AddField("pflag", m);
+    pkg->AddField("flags.inverter", m);
 
     // When not using floors, we need to declare fflag for ourselves
     m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy,
         Metadata::Overridable});
-    pkg->AddField("fflag", m);
+    pkg->AddField("flags.floors", m);
 
     // This package may be loaded even when evolving implicitly, e.g. for FOFC
     // Only register our callbacks if they're needed for explicit evolution or a guess
@@ -195,8 +195,8 @@ inline void BlockPerformInversion(
     auto P = GRMHD::PackMHDPrims(rc, prims_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
 
-    // auto fflag = rc->PackVariables(std::vector<std::string>{"fflag"});
-    auto pflag = rc->PackVariables(std::vector<std::string>{"pflag"});
+    // auto fflag = rc->PackVariables(std::vector<std::string>{"flags.floors"});
+    auto pflag = rc->PackVariables(std::vector<std::string>{"flags.inverter"});
 
     if (U.GetDim(4) == 0 || pflag.GetDim(4) == 0) return;
 
@@ -254,14 +254,14 @@ void Inverter::BlockUtoP(MeshBlockData<Real>* rc, IndexDomain domain, bool coars
 int Inverter::CountPFlags(MeshData<Real>* md)
 {
     return Reductions::CountFlags(
-        md, "pflag", Inverter::status_names, IndexDomain::interior, false)[0];
+        md, "flags.inverter", Inverter::status_names, IndexDomain::interior, false)[0];
 }
 
 void Inverter::PreStepWork(Mesh* pmesh, ParameterInput* pin, const SimTime& tm)
 {
     // Clear all floor flags before each step
     auto md = pmesh->mesh_data.Get().get();
-    KHARMADriver::Scale(std::vector<std::string>{"pflag"}, md, 0.);
+    KHARMADriver::Scale(std::vector<std::string>{"flags.inverter"}, md, 0.);
 }
 
 TaskStatus Inverter::PostStepDiagnostics(const SimTime& tm, MeshData<Real>* md)
@@ -277,9 +277,9 @@ TaskStatus Inverter::PostStepDiagnostics(const SimTime& tm, MeshData<Real>* md)
 
     // Debugging/diagnostic info about inversion flags
     Reductions::StartFlagReduce(
-        md, "pflag", Inverter::status_names, IndexDomain::interior, false, 1);
+        md, "flags.inverter", Inverter::status_names, IndexDomain::interior, false, 1);
     auto totals = Reductions::CheckFlagReduceAndPrintHits(
-        md, "pflag", Inverter::status_names, IndexDomain::interior, false, 1);
+        md, "flags.inverter", Inverter::status_names, IndexDomain::interior, false, 1);
 
     IndexRange ib = md->GetBoundsI(IndexDomain::interior);
     IndexRange jb = md->GetBoundsJ(IndexDomain::interior);
@@ -290,7 +290,7 @@ TaskStatus Inverter::PostStepDiagnostics(const SimTime& tm, MeshData<Real>* md)
     Real pflags_pct = ((Real)totals[0]) / n_cells * 100.;
     if ((kill_on_pflags_pct > 0.) && (pflags_pct > kill_on_pflags_pct)) {
         throw std::runtime_error(
-            string_format("Too many pflags to continue! (%d, %f %) Quitting...",
+            string_format("Too many inversion failures to continue! (%d, %f %) Quitting...",
                 totals[0], pflags_pct));
     }
 
