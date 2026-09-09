@@ -1,7 +1,7 @@
 name: Regression tests (CPU)
 
 on:
-  # If someone has to push to stable/dev.  Shouldn't happen
+  # Oh push to stable/dev incl. automated merge after branch tests
   push:
     branches: [ stable, dev ]
   # On every push of pull requests to stable/dev. Frequent!
@@ -59,6 +59,7 @@ jobs:
         - conducting_atmosphere
         - emhdmodes
         - emhdshock
+        - entropy_wave
         - hubble_flow
         - mhdmodes
         - mhdmodes_smr
