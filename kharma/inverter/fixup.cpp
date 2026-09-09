@@ -232,7 +232,9 @@ TaskStatus Inverter::Backstop(MeshBlockData<Real>* rc)
 
             const Real umin =
                 (m_p.KTOT >= 0)
-                    ? m::max(P(m_p.KTOT, k, j, i) * m::pow(P(m_p.RHO, k, j, i), gam) / (gam - 1.), umin_geom)
+                    ? m::max(P(m_p.KTOT, k, j, i) * m::pow(P(m_p.RHO, k, j, i), gam) /
+                                 (gam - 1.),
+                          umin_geom)
                     : umin_geom;
 
             FourVectors Dtmp;
@@ -240,17 +242,20 @@ TaskStatus Inverter::Backstop(MeshBlockData<Real>* rc)
             Real sigma = dot(Dtmp.bcon, Dtmp.bcov) / P(m_p.RHO, k, j, i);
 
             // Don't *trigger* on umin from KTOT, just use it if we need
-            // Also these are for high magnetization, for unmagnetized just use fluid frame
-            if ((failed(pflag(k, j, i)) ||
-                P(m_p.RHO, k, j, i) < rhomin_geom ||
-                P(m_p.UU, k, j, i) < umin_geom) && sigma > 1) {
+            // Also these are for high magnetization, for unmagnetized just use fluid
+            // frame
+            if ((failed(pflag(k, j, i)) || P(m_p.RHO, k, j, i) < rhomin_geom ||
+                    P(m_p.UU, k, j, i) < umin_geom) &&
+                sigma > 1) {
                 const Real uvec[NVEC] = {
                     P(m_p.U1, k, j, i), P(m_p.U2, k, j, i), P(m_p.U3, k, j, i)};
                 // We can assume B is nonzero
-                Real B_P[NVEC] = {P(m_p.B1, k, j, i), P(m_p.B2, k, j, i), P(m_p.B3, k, j, i)};
+                Real B_P[NVEC] = {
+                    P(m_p.B1, k, j, i), P(m_p.B2, k, j, i), P(m_p.B3, k, j, i)};
 
-                const Real D = m::max(rhomin_geom, U(m_u.RHO, k, j, i) /
-                                    (m::sqrt(-G.gcon(Loci::center, j, i, 0, 0)) * G.gdet(Loci::center, j, i)));
+                const Real D = m::max(rhomin_geom,
+                    U(m_u.RHO, k, j, i) / (m::sqrt(-G.gcon(Loci::center, j, i, 0, 0)) *
+                                              G.gdet(Loci::center, j, i)));
                 const Real W = GRMHD::lorentz_calc(G, uvec, k, j, i, Loci::center);
 
                 // Calculate the total energy of the fluid at rest
@@ -262,8 +267,7 @@ TaskStatus Inverter::Backstop(MeshBlockData<Real>* rc)
                 // just bump it to that and kill all kinetic energy
                 // Also use this if v=0.
                 if ((Trest[0] - U(m_u.UU, k, j, i)) / U(m_u.UU, k, j, i) > -tol ||
-                    W <= 1.0 ||
-                    (!backstop_recover_vel && !backstop_recover_u)) {
+                    W <= 1.0 || (!backstop_recover_vel && !backstop_recover_u)) {
                     // W = 1
                     P(m_p.RHO, k, j, i) = D;
                     P(m_p.UU, k, j, i) = umin;
@@ -293,9 +297,10 @@ TaskStatus Inverter::Backstop(MeshBlockData<Real>* rc)
                         fflagl |= Floors::FFlag::FIXUP_U_RANGE;
                     } else {
                         Real uc = (up + um) / 2.;
-                        for (int i=0; i < 100; i++) {
+                        for (int i = 0; i < 100; i++) {
                             Real resv = m::abs(f(uc));
-                            if ((resv < tol) || (m::abs((up - um) / 2) < tol / 10) || i > 90) {
+                            if ((resv < tol) || (m::abs((up - um) / 2) < tol / 10) ||
+                                i > 90) {
                                 uu = uc;
                                 e_solve_failed = (resv > tol);
                                 break;
@@ -355,9 +360,10 @@ TaskStatus Inverter::Backstop(MeshBlockData<Real>* rc)
                         fflagl |= Floors::FFlag::FIXUP_VEL_RANGE;
                     } else {
                         Real iWc = (iWp + iWm) / 2.;
-                        for (int i=0; i < 100; i++) {
+                        for (int i = 0; i < 100; i++) {
                             Real resv = m::abs(f(iWc));
-                            if ((resv < tol) || (m::abs((iWp - iWm) / 2) < tol / 10) || i > 90) {
+                            if ((resv < tol) || (m::abs((iWp - iWm) / 2) < tol / 10) ||
+                                i > 90) {
                                 iW = iWc;
                                 e_solve_failed = (resv > tol);
                                 break;

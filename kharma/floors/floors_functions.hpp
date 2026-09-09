@@ -372,15 +372,19 @@ KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::mixed_normal_drift>(
 }
 
 template<>
-KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::normal_kastaun_eenough>(FLOOR_ONE_ARGS)
+KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::normal_kastaun_eenough>(
+    FLOOR_ONE_ARGS)
 {
     // Add the material in the normal observer frame.
     // 1. Calculate our minimum primitive variable state
-    const Real rho    = m::max(rhoflr_max, P(m_p.RHO, k, j, i));
-    // If entropy is present & u dips below a floor, use it as a minimum in addition to the floor
-    const Real u = ((m_p.KTOT >= 0) && (P(m_p.UU, k, j, i) < uflr_max))
-                    ? m::max(P(m_p.KTOT, k, j, i) * m::pow(P(m_p.RHO, k, j, i), gam) / (gam - 1.), uflr_max)
-                    : m::max(uflr_max, P(m_p.UU, k, j, i));
+    const Real rho = m::max(rhoflr_max, P(m_p.RHO, k, j, i));
+    // If entropy is present & u dips below a floor, use it as a minimum in addition to
+    // the floor
+    const Real u =
+        ((m_p.KTOT >= 0) && (P(m_p.UU, k, j, i) < uflr_max))
+            ? m::max(P(m_p.KTOT, k, j, i) * m::pow(P(m_p.RHO, k, j, i), gam) / (gam - 1.),
+                  uflr_max)
+            : m::max(uflr_max, P(m_p.UU, k, j, i));
     const Real uvec[NVEC] = {P(m_p.U1, k, j, i), P(m_p.U2, k, j, i), P(m_p.U3, k, j, i)};
     Real B[NVEC] = {0.};
     if (m_p.B1 >= 0) {
@@ -396,13 +400,13 @@ KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::normal_kastaun_eenough>(
     // 3. Add new conserved mass/energy to the current "conserved" state.
     // (no need to modify the guess for Kastaun, esp once we sync mu)
     U(m_u.RHO, k, j, i) = rho_ut;
-    U(m_u.UU, k, j, i)  = T[0]; // Actually T^0_0 + rho u^t
+    U(m_u.UU, k, j, i) = T[0]; // Actually T^0_0 + rho u^t
 
     // TODO Nothing I do which modifies T[1-3] here is stable...
 
     // Recover new primitive variables
-    return Inverter::u_to_p<Inverter::Type::kastaun>(G, U, m_u, gam, k, j, i, P, m_p, Loci::center,
-                                                     25, 1e-12);
+    return Inverter::u_to_p<Inverter::Type::kastaun>(
+        G, U, m_u, gam, k, j, i, P, m_p, Loci::center, 25, 1e-12);
 }
 
 // KOKKOS_INLINE_FUNCTION rho_to_slow()

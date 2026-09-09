@@ -363,12 +363,12 @@ KOKKOS_INLINE_FUNCTION int u_to_p<Type::kastaun>(const GRCoordinates& G,
     P(m_p.UU, k, j, i) = m::max(u, 0.);
     // Latter part is a vector/signed quantity, don't set a minimum at 0
     Real mag_vel = W * mu * x;
-    SPACELOOP(ii) {
+    SPACELOOP(ii)
+    {
         const Real dir_vel = (rcon[ii] + mu * bdotr * bu[ii]);
         // Test for NaN or related madness, without isnan since that's often a no-op
-        P(m_p.U1 + ii, k, j, i) = (dir_vel < 0. || dir_vel > 0.) ?
-                                    std::max(mag_vel, 0.) * dir_vel :
-                                    0.;
+        P(m_p.U1 + ii, k, j, i) =
+            (dir_vel < 0. || dir_vel > 0.) ? std::max(mag_vel, 0.) * dir_vel : 0.;
     }
 
     // Mark for fix if the solution is obviously unusable
@@ -376,7 +376,8 @@ KOKKOS_INLINE_FUNCTION int u_to_p<Type::kastaun>(const GRCoordinates& G,
         return static_cast<int>(Status::neg_rho);
     } else if (u <= 0.) {
         return static_cast<int>(Status::neg_u);
-    } else if (mag_vel <= 0.) { // TODO or gamma > 50?  Currently we solve that with floors
+    } else if (mag_vel <=
+               0.) { // TODO or gamma > 50?  Currently we solve that with floors
         return static_cast<int>(Status::bad_gamma);
     } else if (returncode) {
         return returncode;

@@ -349,7 +349,8 @@ TaskStatus Floors::ApplyGRMHDFloors(MeshData<Real>* md, IndexDomain domain)
 
     if (pars.Get<InjectionFrame>("frame") == InjectionFrame::normal_kastaun) {
         return ApplyFloorsInFrame<InjectionFrame::normal_kastaun>(md, domain);
-    } else if (pars.Get<InjectionFrame>("frame") == InjectionFrame::normal_kastaun_eenough) {
+    } else if (pars.Get<InjectionFrame>("frame") ==
+               InjectionFrame::normal_kastaun_eenough) {
         return ApplyFloorsInFrame<InjectionFrame::normal_kastaun_eenough>(md, domain);
     } else if (pars.Get<InjectionFrame>("frame") == InjectionFrame::normal_onedw) {
         return ApplyFloorsInFrame<InjectionFrame::normal_onedw>(md, domain);
