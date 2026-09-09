@@ -17,7 +17,7 @@ env:
 
 jobs:
   # Job 1: Compilation
-  build:
+  build-amd:
     runs-on: [self-hosted, kharma-gpu-amd]
     steps:
       - uses: actions/checkout@v7
@@ -39,8 +39,8 @@ jobs:
           if-no-files-found: 'error'
 
   # Job 2: Test Matrix
-  test:
-    needs: build
+  test-amd:
+    needs: build-amd
     runs-on: [self-hosted, kharma-gpu-amd]
     continue-on-error: true
     strategy:

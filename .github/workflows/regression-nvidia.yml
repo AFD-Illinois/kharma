@@ -18,7 +18,7 @@ env:
 
 jobs:
   # Job 1: Compilation
-  build:
+  build-nvidia:
     runs-on: [self-hosted, kharma-gpu-nv]
     steps:
       - uses: actions/checkout@v7
@@ -35,8 +35,8 @@ jobs:
           if-no-files-found: 'error'
 
   # Job 2: Test Matrix
-  test:
-    needs: build
+  test-nvidia:
+    needs: build-nvidia
     runs-on: [self-hosted, kharma-gpu-nv]
     continue-on-error: true
     strategy:
