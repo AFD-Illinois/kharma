@@ -213,6 +213,9 @@ elif option "cuda"; then
     export CXXFLAGS="-dryrun $CXXFLAGS"
     echo "Dry-running the nvcc wrapper with $CXXFLAGS"
   fi
+  if [[ "$CXX_NATIVE" == "nvc++" ]]; then
+    export CXXFLAGS="--diag_suppress code_is_unreachable $CXXFLAGS"
+  fi
   export NVCC_WRAPPER_DEFAULT_COMPILER="$CXX_NATIVE"
   EXTRA_FLAGS="$EXTRA_FLAGS -DKokkos_ENABLE_CUDA_CONSTEXPR=ON"
   OUTER_LAYOUT="MANUAL1D_LOOP"
