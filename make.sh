@@ -41,6 +41,7 @@ C_NATIVE=${C_NATIVE:-}
 CXX_NATIVE=${CXX_NATIVE:-}
 HOST_ARCH=${HOST_ARCH:-NATIVE}
 # No default DEVICE_ARCH, only set if defined
+MPI_EXTRA_ARGS=${MPI_EXTRA_ARGS:-}
 
 ### Load basic stuff ###
 HOST=$(hostname -f)
