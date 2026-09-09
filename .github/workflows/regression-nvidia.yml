@@ -1,10 +1,14 @@
 name: Regression tests (Nvidia)
 
 on:
+  # If someone has to push to stable/dev.  Shouldn't happen
   push:
-    branches: [ main, dev ]
+    branches: [ stable, dev ]
+  # when triggered manually
+  workflow_dispatch:
+  # when auto merge is enabled (hack to make sure it's run before merging)
   pull_request:
-    branches: [ main, dev ]
+    types: [auto_merge_enabled]
 
 env:
   NPROC: 6
@@ -25,7 +29,9 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: build-artifacts
-          path: kharma.cuda
+          path: |
+            kharma.cuda
+            make_args
           if-no-files-found: 'error'
 
   # Job 2: Test Matrix
@@ -71,7 +77,7 @@ jobs:
         with:
           name: ${{ matrix.test_name }}-artifacts
           path: |
-            .
+            tests/${{ matrix.test_name }}
             !*.phdf
             !*.rhdf
             !*.xdmf
