@@ -36,6 +36,10 @@ EXTRA_FLAGS=${EXTRA_FLAGS:-}
 CFLAGS=${CFLAGS:-}
 CXXFLAGS=${CXXFLAGS:-}
 PREFIX_PATH=${PREFIX_PATH:-}
+C_NATIVE=${C_NATIVE:-}
+CXX_NATIVE=${CXX_NATIVE:-}
+HOST_ARCH=${HOST_ARCH:-NATIVE}
+# No default DEVICE_ARCH, only set if defined
 
 ### Load basic stuff ###
 HOST=$(hostname -f)
@@ -65,7 +69,7 @@ fi
 
 # Default to compiling for the host architecture
 # Always better to specify, though, for cross-compile/older Kokkos support
-EXTRA_FLAGS="-DKokkos_ARCH_${HOST_ARCH:-NATIVE}=ON $EXTRA_FLAGS"
+EXTRA_FLAGS="-DKokkos_ARCH_${HOST_ARCH}=ON $EXTRA_FLAGS"
 
 # Kokkos does *not* support compiling for multiple devices!
 # But if they ever do, you can separate a list of DEVICE_ARCH
