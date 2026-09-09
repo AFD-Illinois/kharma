@@ -23,8 +23,9 @@ run_convergence() {
     tag=$1; shift
     for res in ${ALL_RES//,/ }
     do
+        eighth=$(( $res / 8 ))
         $KHARMADIR/run.sh -d . -i $KHARMADIR/pars/electrons/hubble.par debug/verbose=1 \
-                            parthenon/mesh/nx1=$res parthenon/meshblock/nx1=$res \
+                            parthenon/mesh/nx1=$res parthenon/meshblock/nx1=$eighth \
                             parthenon/output0/dt=1e5 "$@" \
                             >log_hubble_${tag}_${res}.txt 2>&1
 
