@@ -45,6 +45,7 @@ jobs:
         - conducting_atmosphere
         - emhdmodes
         - emhdshock
+        - entropy_wave
         - hubble_flow
         - mhdmodes
         - mhdmodes_smr
