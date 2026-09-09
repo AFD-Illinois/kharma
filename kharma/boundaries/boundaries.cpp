@@ -37,6 +37,7 @@
 #include "boundary_types.hpp"
 #include "decs.hpp"
 #include "domain.hpp"
+#include "elec/hubble.hpp"
 #include "flux_functions.hpp"
 #include "grmhd_functions.hpp"
 #include "kharma.hpp"
@@ -402,6 +403,20 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(
                         break;
                     default:
                         break;
+                }
+            } else if (btype == "hubble") {
+                // Analytic Hubble-flow solution, see InitializeHubble for the parameters
+                // it needs (added there, as this is only ever used with that problem)
+                switch (bface) {
+                    case BoundaryFace::inner_x1:
+                        pkg->KBoundaries[bface] = SetHubble<IndexDomain::inner_x1>;
+                        break;
+                    case BoundaryFace::outer_x1:
+                        pkg->KBoundaries[bface] = SetHubble<IndexDomain::outer_x1>;
+                        break;
+                    default:
+                        throw std::runtime_error(
+                            "Hubble boundary conditions are only defined in X1!");
                 }
             } else {
                 throw std::runtime_error("Unknown boundary type: " + btype);
@@ -864,8 +879,8 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real>* md)
                                 j, i, dir, Fl_all, m_u, loc);
                             // Magnetosonic speeds
                             Real cmaxL, cminL;
-                            Flux::vchar_global(G, Pl_all, m_p, Dtmp, gam, emhd_params, k,
-                                j, i, loc, dir, cmaxL, cminL);
+                            Flux::vchar(G, Pl_all, m_p, Dtmp, gam, emhd_params, k, j, i,
+                                loc, dir, cmaxL, cminL);
                             // Record speeds
                             cmax(dir - 1, k, j, i) = m::max(0., cmaxL);
                             cmin(dir - 1, k, j, i) = m::min(0., cminL);
@@ -878,8 +893,8 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real>* md)
                                 j, i, dir, Fr_all, m_u, loc);
                             // Magnetosonic speeds
                             Real cmaxR, cminR;
-                            Flux::vchar_global(G, Pr_all, m_p, Dtmp, gam, emhd_params, k,
-                                j, i, loc, dir, cmaxR, cminR);
+                            Flux::vchar(G, Pr_all, m_p, Dtmp, gam, emhd_params, k, j, i,
+                                loc, dir, cmaxR, cminR);
 
                             // Reset cmax/cmin based on our flux
                             cmax(dir - 1, k, j, i) =
@@ -928,8 +943,8 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real>* md)
                                 j, i, bdir, Fl_all, m_u, Loci::center);
                             // Magnetosonic speeds
                             Real cmaxL, cminL;
-                            Flux::vchar_global(G, Pl_all, m_p, Dtmp, gam, emhd_params, k,
-                                j, i, Loci::center, bdir, cmaxL, cminL);
+                            Flux::vchar(G, Pl_all, m_p, Dtmp, gam, emhd_params, k, j, i,
+                                Loci::center, bdir, cmaxL, cminL);
                             // Record speeds
                             cmax(bdir - 1, k, j, i) = m::max(0., cmaxL);
                             cmin(bdir - 1, k, j, i) = m::min(0., cminL);
@@ -943,8 +958,8 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real>* md)
                                 j, i, bdir, Fr_all, m_u, Loci::center);
                             // Magnetosonic speeds
                             Real cmaxR, cminR;
-                            Flux::vchar_global(G, Pr_all, m_p, Dtmp, gam, emhd_params, k,
-                                j, i, Loci::center, bdir, cmaxR, cminR);
+                            Flux::vchar(G, Pr_all, m_p, Dtmp, gam, emhd_params, k, j, i,
+                                Loci::center, bdir, cmaxR, cminR);
 
                             // Reset cmax/cmin based on our flux
                             cmax(bdir - 1, k, j, i) =
