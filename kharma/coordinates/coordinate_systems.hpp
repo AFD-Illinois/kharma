@@ -35,16 +35,12 @@
 
 // See note in coordintate_embedding
 #include <ports-of-call/variant.hpp>
-// #include <variant>
-// namespace mpark = std;
 
 #include "decs.hpp"
 
 #include "kharma_utils.hpp"
 #include "matrix.hpp"
 #include "root_find.hpp"
-
-#define LEGACY_TH 1
 
 /**
  * Embedding/Base systems implemented:
@@ -58,11 +54,9 @@
  *
  * TODO Cartesian KS base
  * TODO snake coordinate transform for Cartesian Minkowski
- * TODO CMKS, MKS3 transforms, proper Cartesian<->Spherical functions stolen from e.g.
+ * TODO CMKS, MKS3 transforms
+ * proper Cartesian<->Spherical functions stolen from e.g.
  * coordinate_utils.hpp
- * TODO overhaul the LEGACY_TH stuff
- * TODO currently avoids returning gcov which might be singular,
- *      is this the correct play vs handling in inversions?
  */
 
 /**
@@ -472,11 +466,7 @@ class ExponentialTransform
     {
         Xembed[0] = Xnative[0];
         Xembed[1] = m::exp(Xnative[1]);
-#if LEGACY_TH
         Xembed[2] = excise(excise(Xnative[2], 0.0, SMALL_NUM), M_PI, SMALL_NUM);
-#else
-        Xembed[2] = Xnative[2];
-#endif
         Xembed[3] = Xnative[3];
     }
     KOKKOS_INLINE_FUNCTION void coord_to_native(
@@ -546,11 +536,7 @@ class SuperExponentialTransform
         const GReal super_dist = Xnative[1] - xn1br;
         Xembed[1] =
             m::exp(Xnative[1] + (super_dist > 0) * cpow2 * m::pow(super_dist, npow2));
-#if LEGACY_TH
         Xembed[2] = excise(excise(Xnative[2], 0.0, SMALL_NUM), M_PI, SMALL_NUM);
-#else
-        Xembed[2] = Xnative[2];
-#endif
         Xembed[3] = Xnative[3];
     }
     KOKKOS_INLINE_FUNCTION void coord_to_native(
@@ -621,14 +607,9 @@ class ModifyTransform
     {
         Xembed[0] = Xnative[0];
         Xembed[1] = m::exp(Xnative[1]);
-#if LEGACY_TH
         const GReal th =
             M_PI * Xnative[2] + ((1. - hslope) / 2.) * m::sin(2. * M_PI * Xnative[2]);
         Xembed[2] = excise(excise(th, 0.0, SMALL_NUM), M_PI, SMALL_NUM);
-#else
-        Xembed[2] =
-            M_PI * Xnative[2] + ((1. - hslope) / 2.) * m::sin(2. * M_PI * Xnative[2]);
-#endif
         Xembed[3] = Xnative[3];
     }
     KOKKOS_INLINE_FUNCTION void coord_to_native(
@@ -672,10 +653,128 @@ class ModifyTransform
  * "Funky" Modified Kerr-Schild coordinates
  * Make sense only for spherical base systems!
  */
-class FunkyTransform
+class NewFunkyTransform
 {
   public:
     static constexpr char name[] = "FunkyTransform";
+    static constexpr GReal startx[3] = {-1, 0., 0.};
+    static constexpr GReal stopx[3] = {-1, 1., 2 * M_PI};
+
+    const GReal startx1;
+    const GReal hslope, poly_xt, poly_alpha, mks_smooth;
+    // Must be *defined* afterward to use constructor below
+    const GReal poly_norm;
+
+    // Constructor
+    KOKKOS_FUNCTION NewFunkyTransform(GReal startx1_in, GReal hslope_in,
+        GReal mks_smooth_in, GReal poly_xt_in, GReal poly_alpha_in)
+        : startx1(startx1_in)
+        , hslope(hslope_in)
+        , mks_smooth(mks_smooth_in)
+        , poly_xt(poly_xt_in)
+        , poly_alpha(poly_alpha_in)
+        , poly_norm(0.5 * M_PI * 1. /
+                    (1. + 1. / (poly_alpha + 1.) * 1. / m::pow(poly_xt, poly_alpha)))
+    {}
+
+    // Coordinate transformations
+    KOKKOS_INLINE_FUNCTION void coord_to_embed(
+        const GReal Xnative[GR_DIM], GReal Xembed[GR_DIM]) const
+    {
+        Xembed[0] = Xnative[0];
+        Xembed[1] = m::exp(Xnative[1]);
+
+        const GReal Xn2_norm = (Xnative[2] < 0.)
+                                   ? -Xnative[2]
+                                   : ((Xnative[2] > 1.0) ? 2.0 - Xnative[2] : Xnative[2]);
+        const GReal thG =
+            M_PI * Xn2_norm + ((1. - hslope) / 2.) * m::sin(M_2_PI * Xn2_norm);
+        const GReal y = 2. * Xn2_norm - 1.;
+        const GReal thJ =
+            poly_norm * y * (1. + m::pow(y / poly_xt, poly_alpha) / (poly_alpha + 1.)) +
+            M_PI_2;
+
+        const GReal th_norm =
+            thG + m::exp(mks_smooth * (startx1 - Xnative[1])) * (thJ - thG);
+        const GReal th = (Xnative[2] < 0.)
+                             ? -th_norm
+                             : ((Xnative[2] > 1.0) ? M_2_PI - th_norm : th_norm);
+        Xembed[2] = excise(excise(th, 0.0, SMALL_NUM), M_PI, SMALL_NUM);
+
+        Xembed[3] = Xnative[3];
+    }
+    // Note that this is valid only for coordinates Xembed[2] inside (0.,PI),
+    // as it does not include symmetrization
+    KOKKOS_INLINE_FUNCTION void coord_to_native(
+        const GReal Xembed[GR_DIM], GReal Xnative[GR_DIM]) const
+    {
+        Xnative[0] = Xembed[0];
+        Xnative[1] = m::log(Xembed[1]);
+        Xnative[3] = Xembed[3];
+        // Treat the special case with a macro
+        ROOT_FIND
+    }
+    /**
+     * Transformation matrix for contravariant vectors to embedding, or covariant vectors
+     * to native
+     */
+    KOKKOS_INLINE_FUNCTION void dxdX(
+        const GReal Xnative[GR_DIM], Real dxdX[GR_DIM][GR_DIM]) const
+    {
+        gzero2(dxdX);
+        const GReal Xn2_norm = (Xnative[2] < 0.)
+                                   ? -Xnative[2]
+                                   : ((Xnative[2] > 1.0) ? 2.0 - Xnative[2] : Xnative[2]);
+
+        dxdX[0][0] = 1.;
+        dxdX[1][1] = m::exp(Xnative[1]);
+
+        const GReal dx21 =
+            -exp(mks_smooth * (startx1 - Xnative[1])) * mks_smooth *
+            (M_PI / 2. - M_PI * Xn2_norm +
+                poly_norm * (2. * Xn2_norm - 1.) *
+                    (1 + (m::pow((-1. + 2 * Xn2_norm) / poly_xt, poly_alpha)) /
+                             (1 + poly_alpha)) -
+                1. / 2. * (1. - hslope) * m::sin(2. * M_PI * Xn2_norm));
+        dxdX[2][1] = (Xnative[2] < 0.) ? -dx21 : ((Xnative[2] > 1.0) ? -dx21 : dx21);
+        const GReal dx22 =
+            M_PI + (1. - hslope) * M_PI * m::cos(2. * M_PI * Xn2_norm) +
+            m::exp(mks_smooth * (startx1 - Xnative[1])) *
+                (-M_PI +
+                    2. * poly_norm *
+                        (1. + m::pow((2. * Xn2_norm - 1.) / poly_xt, poly_alpha) /
+                                  (poly_alpha + 1.)) +
+                    (2. * poly_alpha * poly_norm * (2. * Xn2_norm - 1.) *
+                        m::pow((2. * Xn2_norm - 1.) / poly_xt, poly_alpha - 1.)) /
+                        ((1. + poly_alpha) * poly_xt) -
+                    (1. - hslope) * M_PI * m::cos(2. * M_PI * Xn2_norm));
+        dxdX[2][2] = (Xnative[2] < 0.) ? -dx22 : ((Xnative[2] > 1.0) ? -dx22 : dx22);
+
+        dxdX[3][3] = 1.;
+    }
+    /**
+     * Transformation matrix for contravariant vectors to native, or covariant vectors to
+     * embedding
+     */
+    KOKKOS_INLINE_FUNCTION void dXdx(
+        const GReal Xnative[GR_DIM], Real dXdx[GR_DIM][GR_DIM]) const
+    {
+        // Okay this one should probably stay numerical
+        Real dxdX_tmp[GR_DIM][GR_DIM];
+        dxdX(Xnative, dxdX_tmp);
+        invert(&dxdX_tmp[0][0], &dXdx[0][0]);
+    }
+};
+
+/**
+ * "Funky" Modified Kerr-Schild coordinates
+ * Not symmetrized about the pole, so has problems with transmitting polar
+ * boundary conditions!
+ */
+class FunkyTransform
+{
+  public:
+    static constexpr char name[] = "OldFunkyTransform";
     static constexpr GReal startx[3] = {-1, 0., 0.};
     static constexpr GReal stopx[3] = {-1, 1., 2 * M_PI};
 
@@ -702,19 +801,14 @@ class FunkyTransform
     {
         Xembed[0] = Xnative[0];
         Xembed[1] = m::exp(Xnative[1]);
-
         const GReal thG =
-            M_PI * Xnative[2] + ((1. - hslope) / 2.) * m::sin(2. * M_PI * Xnative[2]);
-        const GReal y = 2 * Xnative[2] - 1.;
+            M_PI * Xnative[2] + ((1. - hslope) / 2.) * m::sin(M_2_PI * Xnative[2]);
+        const GReal y = 2. * Xnative[2] - 1.;
         const GReal thJ =
             poly_norm * y * (1. + m::pow(y / poly_xt, poly_alpha) / (poly_alpha + 1.)) +
-            0.5 * M_PI;
-#if LEGACY_TH
+            M_PI_2;
         const GReal th = thG + m::exp(mks_smooth * (startx1 - Xnative[1])) * (thJ - thG);
         Xembed[2] = excise(excise(th, 0.0, SMALL_NUM), M_PI, SMALL_NUM);
-#else
-        Xembed[2] = thG + m::exp(mks_smooth * (startx1 - Xnative[1])) * (thJ - thG);
-#endif
         Xembed[3] = Xnative[3];
     }
     KOKKOS_INLINE_FUNCTION void coord_to_native(
