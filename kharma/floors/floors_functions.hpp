@@ -357,7 +357,7 @@ KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::normal_kastaun>(FLOOR_ON
 
     // Recover new primitive variables
     return Inverter::u_to_p<Inverter::Type::kastaun>(
-        G, U, m_u, gam, k, j, i, P, m_p, Loci::center, 25, 1e-12);
+        G, U, m_u, gam, k, j, i, P, m_p, Loci::center, 25, 1e-14);
 }
 
 template<>
@@ -385,7 +385,7 @@ KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::normal_kastaun_eenough>(
     // If the velocity is a guess because the solve failed...
     if (P(m_p.RHO, k, j, i) <= 0. || P(m_p.UU, k, j, i) <= 0.) {
         // 1a. What velocity conserves momentum?  Calculate it.
-        const Real tol = 1e-12;
+        const Real tol = 1e-14;
         const Real W = GRMHD::lorentz_calc(G, uvec, k, j, i, Loci::center);
         auto f = [&](Real iW)
         {
@@ -410,7 +410,7 @@ KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::normal_kastaun_eenough>(
             Real iWc = (iWp + iWm) / 2.;
             for (int i = 0; i < 100; i++) {
                 Real resv = m::abs(f(iWc));
-                if ((resv < tol) || (m::abs((iWp - iWm) / 2) < tol / 10) || i > 90) {
+                if ((resv < tol) || (m::abs((iWp - iWm) / 2) < tol) || i > 90) {
                     iW = iWc;
                     e_solve_failed = (resv > tol);
                     break;
@@ -442,7 +442,7 @@ KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::normal_kastaun_eenough>(
 
     // 4. Attempt to recover new primitive variables
     return Inverter::u_to_p<Inverter::Type::kastaun>(
-        G, U, m_u, gam, k, j, i, P, m_p, Loci::center, 25, 1e-12);
+        G, U, m_u, gam, k, j, i, P, m_p, Loci::center, 25, 1e-14);
 }
 
 // These are implemented as special cases in the kernel in floors_impl.hpp

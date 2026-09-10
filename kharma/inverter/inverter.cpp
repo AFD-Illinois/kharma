@@ -66,7 +66,7 @@ std::shared_ptr<KHARMAPackage> Inverter::Initialize(
     // Solver options
     // Any other Noble et al. implemented for fun should use lower tol/iter count, see
     // Noble+06
-    Real err_tol = pin->GetOrAddReal("inverter", "err_tol", (use_kastaun) ? 1e-12 : 1e-8);
+    Real err_tol = pin->GetOrAddReal("inverter", "err_tol", (use_kastaun) ? 1e-14 : 1e-8);
     params.Add("err_tol", err_tol);
     int iter_max = pin->GetOrAddInteger("inverter", "iter_max", (use_kastaun) ? 25 : 8);
     params.Add("iter_max", iter_max);

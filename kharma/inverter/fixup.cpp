@@ -294,8 +294,7 @@ TaskStatus Inverter::Backstop(MeshBlockData<Real>* rc)
                         Real uc = (up + um) / 2.;
                         for (int i = 0; i < 100; i++) {
                             Real resv = m::abs(f(uc));
-                            if ((resv < tol) || (m::abs((up - um) / 2) < tol / 10) ||
-                                i > 90) {
+                            if ((resv < tol) || (m::abs((up - um) / 2) < tol) || i > 90) {
                                 uu = uc;
                                 e_solve_failed = (resv > tol);
                                 break;
@@ -357,7 +356,7 @@ TaskStatus Inverter::Backstop(MeshBlockData<Real>* rc)
                         Real iWc = (iWp + iWm) / 2.;
                         for (int i = 0; i < 100; i++) {
                             Real resv = m::abs(f(iWc));
-                            if ((resv < tol) || (m::abs((iWp - iWm) / 2) < tol / 10) ||
+                            if ((resv < tol) || (m::abs((iWp - iWm) / 2) < tol) ||
                                 i > 90) {
                                 iW = iWc;
                                 e_solve_failed = (resv > tol);
