@@ -108,6 +108,8 @@ class RadOpac
     Real JBB(Real Tg) const
     {
         switch (static_cast<OpacityModel>(opacity_model)) {
+            case OpacityModel::Constant:
+                return 4.0 * const_sigma * (Tg * Tg * Tg * Tg);
             case OpacityModel::ShocktubeConstant:
                 return 4.0 * const_sigma * (Tg * Tg * Tg * Tg);
             case OpacityModel::Bondi: {

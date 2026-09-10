@@ -123,7 +123,7 @@ std::shared_ptr<KHARMAPackage> RadM1::Initialize(
     } else if (problem_id == "thermal_equilibrium") {
         default_opacity_model = "thermal_equilibrium";
     } else if (problem_id == "radmhdmodes"){
-        default_opacity_model = "constant";
+        default_opacity_model = "shocktube_constant";
     }
 
     // user can override the default opacity model in the input file, but if not, we use the default based on the problem ID.
@@ -156,9 +156,9 @@ std::shared_ptr<KHARMAPackage> RadM1::Initialize(
     // Add everything to the package parameters
     pkg->AllParams().Add("opacity_model", opacity_model);
 
-    pkg->AllParams().Add("const_sigma", const_sigma);
-    pkg->AllParams().Add("const_kappa_a", const_kappa_a);
-    pkg->AllParams().Add("const_kappa_sc", const_kappa_sc);
+    pkg->AllParams().Add("const_sigma", const_sigma, true);
+    pkg->AllParams().Add("const_kappa_a", const_kappa_a, true);
+    pkg->AllParams().Add("const_kappa_sc", const_kappa_sc, true);
 
     // Initialize units needed for radm1
     // TODO (PNM): Use a proper units package to bundle these together.

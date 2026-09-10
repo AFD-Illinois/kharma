@@ -79,7 +79,7 @@ TaskStatus InitializeRadMHDModes(
 
     // Plasma mean gas state taken from file
     const Real rho0 = pin->GetOrAddReal("mhdmodes", "rho0", 1.);
-    const Real u0 = pin->GetOrAddReal("mhdmodes", "u0", 9.13706e-3);
+    const Real u0 = pin->GetOrAddReal("mhdmodes", "u0", 0.009137055837563452);
     const Real u10 = pin->GetOrAddReal("mhdmodes", "u10", 0.);
     const Real u20 = pin->GetOrAddReal("mhdmodes", "u20", 0.);
     const Real u30 = pin->GetOrAddReal("mhdmodes", "u30", 0.);
@@ -97,8 +97,8 @@ TaskStatus InitializeRadMHDModes(
     const Real k3 = pin->GetOrAddReal("mhdmodes", "k3", 0.);
     const Real phase = pin->GetOrAddReal("mhdmodes", "phase", 0.);
 
-    Real B10 = pin->GetOrAddReal("mhdmodes", "B10", 0.100759);
-    Real B20 = pin->GetOrAddReal("mhdmodes", "B20", 0.100759);
+    Real B10 = pin->GetOrAddReal("mhdmodes", "B10", 0.10075854437197568);
+    Real B20 = pin->GetOrAddReal("mhdmodes", "B20", 0.10075854437197568);
     Real B30 = pin->GetOrAddReal("mhdmodes", "B30", 0.);
 
     std::complex<Real> omega;
@@ -110,6 +110,16 @@ TaskStatus InitializeRadMHDModes(
     Real P = 0.0;
     if (regime == "thin") P = 0.1;
     else if (regime == "thick") P = 10;
+
+
+    if (use_radm1) {
+        const Real T0 = (gam - 1.0) * u0;
+        const Real sigma_rad = 3.0 * P * (gam - 1.0) * u0 / (4.0 * T0 * T0 * T0 * T0);
+        auto& radm1_pkg = pmb->packages.Get("RadM1");
+        radm1_pkg->UpdateParam<Real>("const_sigma", sigma_rad);
+        radm1_pkg->UpdateParam<Real>("const_kappa_a", P);
+        radm1_pkg->UpdateParam<Real>("const_kappa_sc", 0.0);
+    }
 
 
     if (wavetype == "sonic") {
@@ -154,14 +164,14 @@ TaskStatus InitializeRadMHDModes(
             omega = 1.00716;
         } else if (regime == "thin") {
             drho = 1.e-6;
-            du = 1.51984e-8 + 4.81575e-10i;
-            du1 = 1.60251e-7 + 7.23831e-10i;
-            du2 = -9.79544e-8 + 9.83679e-10i;
-            dB2 = 1.62344e-7 - 8.96662e-10i;
-            dErad = 1.48421e-12 + 6.06322e-11i;
-            dF1rad = -3.95433e-10 + 8.51051e-11i;
-            dF2rad = 2.36680e-10 + 2.11182e-11i;
-            omega = 1.00689 + 0.00454797i;
+            du = 1.5198360895974991e-8 + 4.815752909936621e-10i;
+            du1 = 1.6025131429328265e-7 + 7.238312005077197e-10i;
+            du2 = -9.795442630848571e-8 + 9.836789501779977e-10i;
+            dB2 = 1.6234366410161697e-7 - 8.96662164240542e-10i;
+            dErad = 1.4842118188293356e-12 + 6.063223162955078e-11i;
+            dF1rad = -3.9543271084234507e-10 + 8.51051304663626e-11i;
+            dF2rad = 2.3667952154599258e-10 + 2.1118238693659835e-11i;
+            omega = 1.0068887034237715 + 0.004547965563908265i;
         } else if (regime == "thick") {
             drho = 1.e-6;
             du = 1.17305e-8 + 1.71290e-9i;
@@ -183,20 +193,20 @@ TaskStatus InitializeRadMHDModes(
             omega = 0.388117;
         } else if (regime == "thin") {
             drho = 1.e-6;
-            du = 1.50174e-8 + 1.22299e-9i;
-            du1 = 6.15333e-8 + 1.83144e-9i;
-            du2 = 9.89772e-8 + 6.54186e-9i;
-            dB2 = -6.14882e-8 - 5.88315e-9i;
-            dErad = 1.91703e-13 + 2.18721e-11i;
-            dF1rad = -1.65181e-12 + 7.17520e-11i;
-            dF2rad = -2.23679e-10 - 7.43141e-11i;
-            omega = 0.386625 + 0.011507i;
+            du = 1.50174235106495e-8 + 1.22298943455801e-9i;
+            du1 = 6.15332754996702e-8 + 1.83139801648519e-9i;
+            du2 = 9.89772118301622e-8 + 6.54185791061938e-9i;
+            dB2 = -6.14882091832378e-8 - 5.88315338295397e-9i;
+            dErad = 1.9170283012363e-13 + 2.18721458210053e-11i;
+            dF1rad = -1.65180532693438e-12 + 7.1752041819694e-11i;
+            dF2rad = -2.23678888272661e-10 - 7.43141463935117e-11i;
+            omega = 0.386624972522161 + 0.0115070131087776i;
         } else if (regime == "thick") {
             drho = 1.e-6;
             du = 9.46189e-9 + 1.21376e-9i;
             du1 = 8.34269e-8 + 1.20829e-8i;
             du2 = 1.13633e-7 + 2.72697e-7i;
-            dB2 = -8.03823e-8 + 3.03114e-7i;
+            dB2 = -8.03823e-8 - 3.03114e-7i;
             dErad = 2.59666e-8 + 9.67891e-8i;
             dF1rad = -1.98263e-8 + 5.47610e-9i;
             dF2rad = 3.66075e-9 - 1.14750e-9i;
@@ -234,6 +244,9 @@ TaskStatus InitializeRadMHDModes(
     pin->GetOrAddReal("b_field", "amp_B1", dB1.real());
     pin->GetOrAddReal("b_field", "amp_B2", dB2.real());
     pin->GetOrAddReal("b_field", "amp_B3", dB3.real());
+    pin->GetOrAddReal("b_field", "amp2_B1", dB1.imag());
+    pin->GetOrAddReal("b_field", "amp2_B2", dB2.imag());
+    pin->GetOrAddReal("b_field", "amp2_B3", dB3.imag());
     pin->GetOrAddReal("b_field", "k1", k1);
     pin->GetOrAddReal("b_field", "k2", k2);
     pin->GetOrAddReal("b_field", "k3", k3);

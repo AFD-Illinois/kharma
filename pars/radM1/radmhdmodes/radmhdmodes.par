@@ -8,14 +8,14 @@ problem_id = radmhdmodes
 
 <mhdmodes>
 # can be sonic, slow or fast.
-wavetype = sonic
+wavetype = slow
 # can be puremhd, thin or thick.
-regime = thin
+regime = thick
 
 
 # Size and parameters of the full mesh
 <parthenon/mesh>
-nx1 = 64
+nx1 = 512
 x1min = 0.0
 x1max = 1.0
 
@@ -49,17 +49,22 @@ dt_min = 0.0001
 
 <GRMHD>
 # Courant number, where limit of 2o scheme is 1.0 regardless of dimensionality
-cfl = 0.9
+cfl = 0.5
 implicit = false
 
 <radM1>
 on = true
 src_rootfind_eps = 1e-8
-src_rootfind_tol = 1e-8
+src_rootfind_tol = 1e-14
 src_rootfind_maxiter = 100
-sigma_rad = 0.0
-kappa_a = 0.0
+kappa_a = 0.1
 kappa_sc = 0.0
+#sigma_rad here won't have any effect. it is rewritten in radmhdmodes.hpp.
+
+<units> 
+on = true
+M_BH = 100
+rho_scale = 1e-4
 
 <eos>
 gamma = 1.6666667;
