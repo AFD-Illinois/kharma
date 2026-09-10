@@ -237,8 +237,8 @@ TaskStatus Inverter::Backstop(MeshBlockData<Real>* rc)
                     : umin_geom;
 
             // Don't *trigger* on umin from KTOT, just use it if we need
-            if ((failed(pflag(k, j, i)) || P(m_p.RHO, k, j, i) < rhomin_geom ||
-                    P(m_p.UU, k, j, i) < umin_geom)) {
+            if ((failed(pflag(k, j, i)) || P(m_p.RHO, k, j, i) < rhomin_geom / 10. ||
+                    P(m_p.UU, k, j, i) < umin_geom / 10.)) {
                 const Real uvec[NVEC] = {
                     P(m_p.U1, k, j, i), P(m_p.U2, k, j, i), P(m_p.U3, k, j, i)};
                 Real B_P[NVEC] = {0.};
