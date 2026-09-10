@@ -280,9 +280,9 @@ TaskStatus Floors::ApplyInitialFloors(
             int fflag = determine_floors(
                 G, P, m_p, gam, k, j, i, floors, floors, rhoflr_max, uflr_max);
             if (fflag) {
+                apply_ceilings(G, P, m_p, gam, k, j, i, floors, floors, U, m_u);
                 apply_floors<InjectionFrame::fluid>(
                     G, P, m_p, gam, k, j, i, rhoflr_max, uflr_max, U, m_u);
-                apply_ceilings(G, P, m_p, gam, k, j, i, floors, floors, U, m_u);
                 // P->U for any modified zones
                 Flux::p_to_u_mhd(
                     G, P, m_p, emhd_params, gam, k, j, i, U, m_u, Loci::center);

@@ -86,6 +86,12 @@ TaskStatus ApplyFloorsInFrame(MeshData<Real>* md, IndexDomain domain)
             if (static_cast<int>(fflag(b, 0, k, j, i)) ||
                 static_cast<int>(pflag(b, 0, k, j, i))) {
                 const auto& G = P.GetCoords(b);
+
+                // Apply ceilings *before* floors, they are less important
+                // Generally we only use the gamma ceiling, which can help raise rho/u
+                apply_ceilings(
+                    G, P(b), m_p, gam, k, j, i, floors, floors_inner, U(b), m_u);
+
                 // apply_floors can involve another U_to_P call, capture that flag
                 // this is the default return for "no inversion"
                 int pflag_l = -1;
@@ -127,11 +133,6 @@ TaskStatus ApplyFloorsInFrame(MeshData<Real>* md, IndexDomain domain)
 
                 // Record the pflag if we applied normal floors -- successful or not
                 if (pflag_l >= 0) pflag(b, 0, k, j, i) = pflag_l;
-
-                // Apply ceilings *after* floors, to make the temperature ceiling
-                // better-behaved
-                apply_ceilings(
-                    G, P(b), m_p, gam, k, j, i, floors, floors_inner, U(b), m_u);
 
                 // P->U if we inverted *correctly* (or didn't invert)
                 if (pflag_l <= 0)

@@ -226,7 +226,6 @@ TaskStatus Inverter::Backstop(MeshBlockData<Real>* rc)
             // If the solve failed, because we reconstructed a
             // negative or zero internal energy (even after floors!)
             Real rhomin_geom, umin_geom;
-            // TODO all floors instead?
             determine_geo_floors(
                 G, P, m_p, gam, k, j, i, floors, floors_inner, rhomin_geom, umin_geom);
 
@@ -237,21 +236,17 @@ TaskStatus Inverter::Backstop(MeshBlockData<Real>* rc)
                           umin_geom)
                     : umin_geom;
 
-            FourVectors Dtmp;
-            GRMHD::calc_4vecs(G, P, m_p, k, j, i, Loci::center, Dtmp);
-            Real sigma = dot(Dtmp.bcon, Dtmp.bcov) / P(m_p.RHO, k, j, i);
-
             // Don't *trigger* on umin from KTOT, just use it if we need
-            // Also these are for high magnetization, for unmagnetized just use fluid
-            // frame
             if ((failed(pflag(k, j, i)) || P(m_p.RHO, k, j, i) < rhomin_geom ||
-                    P(m_p.UU, k, j, i) < umin_geom) &&
-                sigma > 1) {
+                    P(m_p.UU, k, j, i) < umin_geom)) {
                 const Real uvec[NVEC] = {
                     P(m_p.U1, k, j, i), P(m_p.U2, k, j, i), P(m_p.U3, k, j, i)};
-                // We can assume B is nonzero
-                Real B_P[NVEC] = {
-                    P(m_p.B1, k, j, i), P(m_p.B2, k, j, i), P(m_p.B3, k, j, i)};
+                Real B_P[NVEC] = {0.};
+                if (m_p.B1 >= 0) {
+                    B_P[V1] = P(m_p.B1, k, j, i);
+                    B_P[V2] = P(m_p.B2, k, j, i);
+                    B_P[V3] = P(m_p.B3, k, j, i);
+                }
 
                 const Real D = m::max(rhomin_geom,
                     U(m_u.RHO, k, j, i) / (m::sqrt(-G.gcon(Loci::center, j, i, 0, 0)) *
@@ -351,7 +346,7 @@ TaskStatus Inverter::Backstop(MeshBlockData<Real>* rc)
                         return (T[0] - U(m_u.UU, k, j, i)) / U(m_u.UU, k, j, i);
                     };
 
-                    // Rootfind for iW that would have produced the current u
+                    // Rootfind for iW that would have produced the current T00
                     bool e_solve_failed = false;
                     Real iWm = 1 / m::min(W, 50.), iWp = 1.;
                     Real iW;
