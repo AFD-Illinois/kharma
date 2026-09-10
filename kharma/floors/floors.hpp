@@ -209,7 +209,7 @@ inline Prescription MakePrescription(
 
     p.use_rho_to_slow = pin->GetOrAddBoolean("floors", "use_rho_to_slow", false);
 
-    p.use_u_min_entropy = pin->GetOrAddBoolean("floors", "u_min_from_entropy", true);
+    p.use_u_min_entropy = pin->GetOrAddBoolean("floors", "u_min_from_entropy", false);
 
     return p;
 }
