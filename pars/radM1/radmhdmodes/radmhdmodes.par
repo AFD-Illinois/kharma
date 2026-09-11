@@ -15,7 +15,7 @@ regime = thick
 
 # Size and parameters of the full mesh
 <parthenon/mesh>
-nx1 = 512
+nx1 = 64
 x1min = 0.0
 x1max = 1.0
 
@@ -43,7 +43,7 @@ transform = null
 <parthenon/time>
 # tlim will be overridden depending on the problem
 tlim = 5.0
-integrator = rk2
+integrator = vl2
 # Minimum is also the starting timestep
 dt_min = 0.0001
 
@@ -61,10 +61,6 @@ kappa_a = 0.1
 kappa_sc = 0.0
 #sigma_rad here won't have any effect. it is rewritten in radmhdmodes.hpp.
 
-<units> 
-on = true
-M_BH = 100
-rho_scale = 1e-4
 
 <eos>
 gamma = 1.6666667;

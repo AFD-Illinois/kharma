@@ -37,9 +37,9 @@
 #include "microphysics/opac_kharma/opac_kharma.hpp"
 // phoebus includes
 #include "microphysics/eos_kharma/eos_kharma.hpp"
-#include "phoebus_utils/unit_conversions.hpp"
 #include "phoebus_utils/variables.hpp"
 
+#include "units.hpp"
 #include "gr_coordinates.hpp"
 #include "grmhd_functions.hpp"
 #include "kharma_utils.hpp"
@@ -53,16 +53,6 @@ using pc = parthenon::constants::PhysicalConstants<parthenon::constants::CGS>;
 
 namespace RadM1
 {
-
-struct UnitScales
-{
-    Real length_cgs;
-    Real time_cgs;
-    Real mass_cgs;
-    Real energy_cgs;
-    Real temperature_cgs;
-    Real mu;
-};
 
 // Denote implicit solve failures (rflags)
 // This enum should grow to cover any potential flags
@@ -152,7 +142,7 @@ void ApplyRadM1Floors(MeshBlockData<Real>* rc, IndexDomain domain);
 TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real>* md);
 
 // Opacity model selector for calc_kabs/calc_kscattering/compute_covariant_fourforce.
-enum class OpacityModel : int {
+enum class OpacityType : int {
     Default = 0,
     ShocktubeConstant = 1,
     Bondi = 2,

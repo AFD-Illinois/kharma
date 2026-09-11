@@ -302,9 +302,7 @@ TaskStatus Floors::ApplyInitialFloors(
     if (use_rad) {
         RadM1::ApplyRadM1Floors(mbd, domain);
 
-        // Because ApplyRadM1Floors only modifies Primitive variables (P),
-        // you MUST sync the modified Primitives back to Conserved variables (U) here.
-        // If you have a function like RadM1::BlockPtoU, call it now!
+        // Because ApplyRadM1Floors only modifies Primitive variables (P).
         RadM1::BlockPtoU(mbd, domain, false);
     }
 

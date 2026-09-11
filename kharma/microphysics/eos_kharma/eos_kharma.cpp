@@ -22,8 +22,9 @@
 
 // phoebus includes
 #include "microphysics/eos_kharma/eos_kharma.hpp"
-#include "phoebus_utils/unit_conversions.hpp"
 #include "phoebus_utils/variables.hpp"
+
+#include "units.hpp"
 
 using namespace singularity;
 
@@ -50,11 +51,11 @@ std::shared_ptr<KHARMAPackage> Initialize(
 
     const std::string block_name = "eos";
 
-    phoebus::UnitConversions unit_conv(pin);
+    Units::UnitConversions unit_conv(pin);
     const Real time_unit = unit_conv.GetTimeCodeToCGS();
     const Real mass_unit = unit_conv.GetMassCodeToCGS();
     const Real length_unit = unit_conv.GetLengthCodeToCGS();
-    const Real temp_unit = unit_conv.GetTemperatureCodeToCGS();
+    const Real temp_unit = pc.c * pc.c;
 
     // If using StellarCollapse, we need additional variables.
     // We also need table max and min values, regardless of the EOS.

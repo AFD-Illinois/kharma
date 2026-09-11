@@ -37,7 +37,6 @@
 
 // phoebus includes
 #include "microphysics/eos_kharma/eos_kharma.hpp"
-#include "phoebus_utils/unit_conversions.hpp"
 #include "phoebus_utils/variables.hpp"
 
 #include "domain.hpp"
@@ -93,13 +92,13 @@ inline TaskStatus GetFlux(MeshData<Real>* md)
     RadM1::RadOpac rad_opac{};
     if (use_rad) {
         const auto& rad_pars = packages.Get("RadM1")->AllParams();
-        rad_opac.opacity_model  = rad_pars.Get<int>("opacity_model");
+        rad_opac.opacity_type  = rad_pars.Get<int>("opacity_type");
         rad_opac.const_sigma    = rad_pars.Get<Real>("const_sigma");
         rad_opac.const_kappa_a  = rad_pars.Get<Real>("const_kappa_a");
         rad_opac.const_kappa_sc = rad_pars.Get<Real>("const_kappa_sc");
-        rad_opac.units_cgs      = rad_pars.Get<RadM1::UnitScales>("units_cgs");
+        rad_opac.units_cgs = packages.Get("Units")->AllParams().Get<Units::UnitConversions>("unit_conv");
         if (packages.AllPackages().count("opacity")) {
-            rad_opac.table_opacities =
+            rad_opac.sing_opac =
                 packages.Get("opacity")->AllParams().Get<Microphysics::Opacities>("opacities");
         }
     }

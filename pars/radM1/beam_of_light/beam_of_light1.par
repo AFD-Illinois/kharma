@@ -83,10 +83,12 @@ fix_average_neighbors = true
 
 <radM1>
 on = true
-opacity_model = transparent
 src_rootfind_eps = 1e-8
 src_rootfind_tol = 1e-8
 src_rootfind_maxiter = 50
+
+<opac> 
+type = transparent
 
 <parthenon/output0>
 file_type = hdf5

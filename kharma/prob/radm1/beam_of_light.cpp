@@ -32,11 +32,8 @@ void AddBeamOfLightParameters(ParameterInput* pin, Packages_t& packages)
     const Real u_theta_beam_ortho = gamma_beam * f_target;
 
     // This block is actually not necessary. The units are arbitrary.
-    const RadM1::UnitScales units_cgs =
-        packages.Get("RadM1")->AllParams().Get<RadM1::UnitScales>("units_cgs");
-    const Real energy_density_scale =
-        units_cgs.energy_cgs /
-        (units_cgs.length_cgs * units_cgs.length_cgs * units_cgs.length_cgs);
+    const Units::UnitConversions unit_conv = packages.Get("Units")->AllParams().Get<Units::UnitConversions>("unit_conv");
+    const Real energy_density_scale = unit_conv.GetEnergyCodeToCGS();
     constexpr Real sigma_sb_cgs = 5.670374419e-5;
     constexpr Real c_cgs = 2.99792458e10;
     constexpr Real arad_cgs = 4.0 * sigma_sb_cgs / c_cgs;
@@ -49,7 +46,7 @@ void AddBeamOfLightParameters(ParameterInput* pin, Packages_t& packages)
     // Temperature of the gas needed to find ug (which doesn't really matter, but we do it
     // anyway).
     //  The gas in this problem does not interact with the radiation at all, so.
-    const Real T_ambient = T_ambient_K / units_cgs.temperature_cgs;
+    const Real T_ambient = T_ambient_K / unit_conv.GetTemperatureCodeToCGS();
 
     if (!packages.Get("GRMHD")->AllParams().hasKey("beam_r"))
         packages.Get("GRMHD")->AddParam<Real>("beam_r", r_beam);

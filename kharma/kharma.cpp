@@ -529,9 +529,12 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
 
     // Enable radiation package. Out of the package modification RADM1.
     bool use_radm1 = pin->GetOrAddBoolean("radM1", "on", false);
+    
     if (use_radm1) {
         auto t_radM1 = tl.AddTask(
             t_grmhd, KHARMA::AddPackage, packages, RadM1::Initialize, pin.get());
+        auto t_opac = tl.AddTask(t_radM1, KHARMA::AddPackage, packages,
+            Microphysics::Opacity::Initialize, pin.get());
     }
     // Enable calculating jcon iff it is in any list of outputs (and there's even B to
     // calculate it). Since it is never required to restart, this is the only time we'd
@@ -543,11 +546,6 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
             t_b_field, KHARMA::AddPackage, packages, Current::Initialize, pin.get());
     }
 
-    // Enable opac package
-    if (pin->GetOrAddBoolean("opac", "on", false)) {
-        auto t_opac = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages,
-            Microphysics::Opacity::Initialize, pin.get());
-    }
     // Execute the whole collection (just in case we do something fancy?)
     tc.Execute(); // TODO check return if Exe ever returns errors
 

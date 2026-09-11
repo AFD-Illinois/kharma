@@ -2,7 +2,6 @@
 #include "floors.hpp"
 
 #include "boundaries.hpp"
-#include "phoebus_utils/unit_conversions.hpp"
 #include "utils/constants.hpp"
 
 using pc = parthenon::constants::PhysicalConstants<parthenon::constants::CGS>;
@@ -15,7 +14,7 @@ void AddBondiRadParameters(ParameterInput* pin, Packages_t& packages)
     Real mdot_edd = 1.0; // code units; stays 1 if scale_free (no physical mass scale)
     const bool scale_free = pin->GetOrAddBoolean("units", "scale_free", true);
     if (!scale_free) {
-        phoebus::UnitConversions unit_conv(pin);
+        Units::UnitConversions unit_conv(pin);
         const Real length_cgs = unit_conv.GetLengthCodeToCGS();
         const Real M_BH_cgs = length_cgs * pc::c * pc::c / pc::g_newt;
         constexpr Real sigma_thomson_cgs = 6.6524587158e-25;

@@ -76,9 +76,4 @@ src_rootfind_eps = 1e-8
 src_rootfind_tol = 1e-8
 src_rootfind_maxiter = 10
 
-<units> 
-on = true
-M_BH = 100
-rho_scale = 1e-4
-
 

@@ -28,12 +28,10 @@ TaskStatus InitializeThermalEquilibrium(
     if (!pmb->packages.AllPackages().count("RadM1"))
         PARTHENON_FAIL("RadM1 package not loaded.");
 
-    const RadM1::UnitScales units_cgs =
-        pmb->packages.Get("RadM1")->AllParams().Get<RadM1::UnitScales>("units_cgs");
-    const Real mass_density_scale =
-        units_cgs.mass_cgs /
-        (units_cgs.length_cgs * units_cgs.length_cgs * units_cgs.length_cgs);
-    const Real energy_density_scale = mass_density_scale * pc::c * pc::c;
+    const Units::UnitConversions unit_conv =
+    pmb->packages.Get("Units")->AllParams().Get<Units::UnitConversions>("unit_conv");
+    const Real mass_density_scale = unit_conv.GetMassDensityCodeToCGS();
+    const Real energy_density_scale = unit_conv.GetEnergyCodeToCGS();
 
     // Parameters as depicted in pluto paper is the standard values used here.
     // u_gas is set above or below the ~7e7 erg/cm^3 equilibrium value.

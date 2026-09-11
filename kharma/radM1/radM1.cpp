@@ -35,10 +35,10 @@
 #include "radM1_solvers.hpp"
 
 #include "domain.hpp"
+#include "units.hpp"
 #include "inverter.hpp"
 #include "kharma.hpp"
 #include "kharma_driver.hpp"
-#include "phoebus_utils/unit_conversions.hpp"
 #include <limits>
 #include <stdexcept>
 
@@ -108,79 +108,67 @@ std::shared_ptr<KHARMAPackage> RadM1::Initialize(
     pkg->AllParams().Add("src_rootfind_tol", src_rootfind_tol);
     pkg->AllParams().Add("src_rootfind_maxiter", src_rootfind_maxiter);
 
-    // Opacity model selector (see RadM1::OpacityModel in radM1.hpp).
+    // Opacity model selector (see rad_opacities.hpp).
     // Determine the problem ID
     std::string problem_id = pin->GetString("parthenon/job", "problem_id");
 
     // Set the default opacity model based on the problem ID using an if/else chain
-    std::string default_opacity_model = "default";
+    // Default here will be handled by singularity opac
+    std::string default_opacity_type = "default";
     if (problem_id == "shock") {
-        default_opacity_model = "shocktube_constant";
+        default_opacity_type = "shocktube_constant";
     } else if (problem_id == "bondi_rad") {
-        default_opacity_model = "bondi_opacs";
+        default_opacity_type = "bondi_opacs";
     } else if (problem_id == "beam_of_light") {
-        default_opacity_model = "transparent";
+        default_opacity_type = "transparent";
     } else if (problem_id == "thermal_equilibrium") {
-        default_opacity_model = "thermal_equilibrium";
+        default_opacity_type = "thermal_equilibrium";
     } else if (problem_id == "radmhdmodes"){
-        default_opacity_model = "shocktube_constant";
+        default_opacity_type = "shocktube_constant";
     }
 
     // user can override the default opacity model in the input file, but if not, we use the default based on the problem ID.
-    std::string opacity_model_str =
-        pin->GetOrAddString("radM1", "opacity_model", default_opacity_model);
+    std::string opacity_type_str =
+        pin->GetOrAddString("opac", "type", default_opacity_type);
+
+    std::set<std::string> known_opacity_types = {"default", "bondi_opacs", "transparent",
+                                                "thermal_equilibrium", "shocktube_constant", "constant"};
+
+
+    if (!known_opacity_types.count(opacity_type_str)) {
+        std::stringstream msg;
+        msg << "Opacity type \"" << opacity_type_str << "\" not recognized!";
+        PARTHENON_FAIL(msg);
+    }
 
     
-    int opacity_model = (int)OpacityModel::Default;
-    if (opacity_model_str == "shocktube_constant") {
-        opacity_model = (int)OpacityModel::ShocktubeConstant;
-    } else if (opacity_model_str == "bondi_opacs") {
-        opacity_model = (int)OpacityModel::Bondi;
-    } else if (opacity_model_str == "transparent") {
-        opacity_model = (int)OpacityModel::Transparent;
-    } else if (opacity_model_str == "thermal_equilibrium") {
-        opacity_model = (int)OpacityModel::ThermalEquilibrium;
-    } else if (opacity_model_str == "constant") {
-        opacity_model = (int)OpacityModel::Constant;
-    } else if (opacity_model_str != "default") {
-        PARTHENON_FAIL("Unknown opacity model: " + opacity_model_str);
+    int opacity_type = (int)OpacityType::Default;
+    if (opacity_type_str == "shocktube_constant") {
+        opacity_type = (int)OpacityType::ShocktubeConstant;
+    } else if (opacity_type_str == "bondi_opacs") {
+        opacity_type = (int)OpacityType::Bondi;
+    } else if (opacity_type_str == "transparent") {
+        opacity_type = (int)OpacityType::Transparent;
+    } else if (opacity_type_str == "thermal_equilibrium") {
+        opacity_type = (int)OpacityType::ThermalEquilibrium;
+    } else if (opacity_type_str == "constant") {
+        opacity_type = (int)OpacityType::Constant;
     }
 
 
-    // TODO(PNM): Make these parameters part of the shocktube problem. Important!
-    // Actually, I don't know if this is useful. Other problems use constant sigma and kappas.
-    Real const_sigma    = pin->GetOrAddReal("radM1", "sigma_rad", 3.470e7);
-    Real const_kappa_a  = pin->GetOrAddReal("radM1", "kappa_a", 0.08);
-    Real const_kappa_sc = pin->GetOrAddReal("radM1", "kappa_sc", 0.0);
+
+    // These parameters are only valid when singularity-opac is not in use! When it's in use, we just pass the responsability of handling opacities to it. Check rad_opacities.hpp
+    Real const_sigma    = pin->GetOrAddReal("opac", "sigma_rad", 0.0);
+    Real const_kappa_a  = pin->GetOrAddReal("opac", "kappa_a", 0.0);
+    Real const_kappa_sc = pin->GetOrAddReal("opac", "kappa_sc", 0.0);
 
     // Add everything to the package parameters
-    pkg->AllParams().Add("opacity_model", opacity_model);
+    pkg->AllParams().Add("opacity_type", opacity_type);
 
     pkg->AllParams().Add("const_sigma", const_sigma, true);
     pkg->AllParams().Add("const_kappa_a", const_kappa_a, true);
     pkg->AllParams().Add("const_kappa_sc", const_kappa_sc, true);
 
-    // Initialize units needed for radm1
-    // TODO (PNM): Use a proper units package to bundle these together.
-    auto unit_conv = phoebus::UnitConversions(pin);
-    UnitScales units_cgs;
-    units_cgs.length_cgs = unit_conv.GetLengthCodeToCGS();
-    printf("RadM1: length_cgs = %e\n", units_cgs.length_cgs);
-    units_cgs.time_cgs = unit_conv.GetTimeCodeToCGS();
-    printf("RadM1: time_cgs = %e\n", units_cgs.time_cgs);
-    units_cgs.mass_cgs = unit_conv.GetMassCodeToCGS();
-    printf("RadM1: mass_cgs = %e\n", units_cgs.mass_cgs);
-    units_cgs.energy_cgs = unit_conv.GetEnergyCodeToCGS();
-    printf("RadM1: energy_cgs = %e\n", units_cgs.energy_cgs);
-
-    // Tg = mp * c^2 * 1/kb * 1/m_scale (gamma -1) * ug */(rho)
-    units_cgs.temperature_cgs =
-        unit_conv.GetTemperatureCodeToCGS() * pc::mp * pc::c * pc::c;
-    printf("RadM1: temperature_cgs = %e\n", units_cgs.temperature_cgs);
-
-    units_cgs.mu = pin->GetOrAddReal("radM1", "mu", 0.6);
-    printf("RadM1: mu = %e\n", units_cgs.mu);
-    pkg->AllParams().Add("units_cgs", units_cgs);
 
     // TODO (PNM): Currently attached to the floors package. Make this a separate option
     // only for radiation package.
@@ -303,13 +291,13 @@ TaskStatus RadM1::Step(
         const auto& eos_params = pmb->packages.Get("eos")->AllParams();
         auto eos = eos_params.Get<Microphysics::EOS::EOS>("d.EOS");
         RadOpac rad_opac;
-        rad_opac.opacity_model  = params.Get<int>("opacity_model");
-        rad_opac.const_sigma    = params.Get<Real>("const_sigma");
-        rad_opac.const_kappa_a  = params.Get<Real>("const_kappa_a");
+        rad_opac.opacity_type = params.Get<int>("opacity_type");
+        rad_opac.const_sigma = params.Get<Real>("const_sigma");
+        rad_opac.const_kappa_a = params.Get<Real>("const_kappa_a");
         rad_opac.const_kappa_sc = params.Get<Real>("const_kappa_sc");
-        rad_opac.units_cgs      = params.Get<UnitScales>("units_cgs");
+        rad_opac.units_cgs  = pmb->packages.Get("Units")->AllParams().Get<Units::UnitConversions>("unit_conv");
         if (pmb->packages.AllPackages().count("opacity")) {
-            rad_opac.table_opacities =
+            rad_opac.sing_opac =
                 pmb->packages.Get("opacity")->AllParams().Get<Microphysics::Opacities>("opacities");
         }
 

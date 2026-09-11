@@ -40,7 +40,6 @@
 
 // phoebus includes
 #include "microphysics/eos_kharma/eos_kharma.hpp"
-#include "phoebus_utils/unit_conversions.hpp"
 #include "phoebus_utils/variables.hpp"
 
 /**
@@ -111,8 +110,10 @@ KOKKOS_INLINE_FUNCTION int determine_floors(const GRCoordinates& G,
             : floors;
 
     Real sie = P(m_p.UU, k, j, i) / P(m_p.RHO, k, j, i);
-    Real gamma1 = eos.BulkModulusFromDensityInternalEnergy(P(m_p.RHO, k, j, i), sie) /
-                      eos.PressureFromDensityInternalEnergy(P(m_p.RHO, k, j, i), sie);
+    // Real gamma1 = eos.BulkModulusFromDensityInternalEnergy(P(m_p.RHO, k, j, i), sie) /
+    //                   eos.PressureFromDensityInternalEnergy(P(m_p.RHO, k, j, i), sie);
+
+    Real gamma1 = 5./3.;
     // Calculate the different floor values in play:
     // 1. Geometric hard floors, not based on fluid relationships
     // TODO(CEP) can this be cached if it's slow?

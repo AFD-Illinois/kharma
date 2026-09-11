@@ -335,8 +335,8 @@ KOKKOS_INLINE_FUNCTION void compute_covariant_fourforce(const GRCoordinates& G,
     Real dS[4])
 {
 
-    if (static_cast<RadM1::OpacityModel>(rad_opac.opacity_model) ==
-        RadM1::OpacityModel::Transparent) {
+    if (static_cast<RadM1::OpacityType>(rad_opac.opacity_type) ==
+        RadM1::OpacityType::Transparent) {
         dS[0] = 0.0;
         dS[1] = 0.0;
         dS[2] = 0.0;
@@ -366,13 +366,14 @@ KOKKOS_INLINE_FUNCTION void compute_covariant_fourforce(const GRCoordinates& G,
                         ((1.0 / 3.0) * Erf + E_hat) * ucov_mhd[mu];
     }
 
-    Real Tg = eos.TemperatureFromDensityInternalEnergy(rho, P_mhd[0] / rho);
+    // Real Tg = eos.TemperatureFromDensityInternalEnergy(rho, P_mhd[0] / rho);
+    Real Tg = (5./3. - 1) * P_mhd[0] / rho; // TODO: This is a hack, we need to get the temperature from the EOS
     Real kappa_a = RadM1::calc_kabs(
         rho, Tg, rad_opac);
     Real kappa_sc = RadM1::calc_kscattering(
         rho, Tg, rad_opac);
     Real JBB = rad_opac.JBB(Tg);
-    
+
 
     Real kappa_tot = kappa_a + kappa_sc;
 
