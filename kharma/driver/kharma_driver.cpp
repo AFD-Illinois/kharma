@@ -353,7 +353,7 @@ TaskID KHARMADriver::AddFOFC(TaskID& t_start, TaskList& tl, MeshData<Real>* md,
     // Populate guess source term with divergence of the existing fluxes
     // NOTE this does not include source terms!  Though, could call them here tbh
     auto t_guess_divergence = tl.AddTask(t_start, FluxDivergence, md, guess_src,
-        std::vector<MetadataFlag>{Metadata::Cell, Metadata::WithFluxes}, 3);
+        std::vector<MetadataFlag>{Metadata::WithFluxes, Metadata::Cell}, 3);
     // Add geometric source term to more accurately predict floor hits.
     // Could add everything here with Packages::AddSource but would be slower
     // also would need to deal with B_CT::AddSource == flux update, which we don't

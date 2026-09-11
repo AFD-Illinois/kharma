@@ -158,6 +158,9 @@ TaskCollection KHARMADriver::MakeDefaultTaskCollection(BlockList_t& blocks, int 
             pmesh->mesh_data.Add("fofc_source", base);
             pmesh->mesh_data.Add("fofc_guess", base);
         }
+        if (track_additions) {
+            pmesh->mesh_data.Add("pre_fix", base);
+        }
     }
 
     EndFlag();

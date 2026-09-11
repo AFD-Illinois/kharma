@@ -266,7 +266,7 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t& blocks, int sta
         auto t_flux_div = tl.AddTask(t_flux_bounds, FluxDivergence,
             md_sub_step_init.get(), md_flux_src.get(),
             std::vector<MetadataFlag>{
-                Metadata::Independent, Metadata::Cell, Metadata::WithFluxes},
+                Metadata::Independent, Metadata::WithFluxes, Metadata::Cell},
             0);
 
         // Add any source terms: geometric \Gamma * T, wind, damping, etc etc

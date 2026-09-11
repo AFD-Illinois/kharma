@@ -115,7 +115,7 @@ inline TaskStatus GetFlux(MeshData<Real>* md)
         std::vector<MetadataFlag>{Metadata::GetUserFlag("Primitive"), Metadata::Cell},
         prims_map);
     const auto& U_all = md->PackVariablesAndFluxes(
-        std::vector<MetadataFlag>{Metadata::Conserved, Metadata::Cell}, cons_map);
+        std::vector<MetadataFlag>{Metadata::WithFluxes, Metadata::Cell}, cons_map);
     const VarMap m_u(cons_map, true), m_p(prims_map, false);
 
     const auto& Pl_all = md->PackVariables(std::vector<std::string>{"Flux.Pl"});
