@@ -442,7 +442,7 @@ TaskStatus B_CT::CalculateEMF(MeshData<Real>* md)
                         emf_pack(bl, E1, 0, k, j, i) =
                             2 * emf_pack(bl, E1, 0, k, j, i) -
                             0.25 * (emfc(bl, V1, k, j, i) + emfc(bl, V1, k, j - 1, i) +
-                                       emfc(bl, V1, k, j - 1, i) +
+                                       emfc(bl, V1, k - 1, j, i) +
                                        emfc(bl, V1, k - 1, j - 1, i));
                         emf_pack(bl, E2, 0, k, j, i) =
                             2 * emf_pack(bl, E2, 0, k, j, i) -
