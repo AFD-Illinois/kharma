@@ -229,27 +229,6 @@ std::shared_ptr<KHARMAPackage> Flux::Initialize(
             params.Add("fofc_consistent_face_b", fofc_consistent_face_b);
         }
 
-        // Use a custom block for fofc floors.  We now do the same for Kastaun, where we
-        // can *also* have floors
-        // TODO even post-reconstruction/reconstruction fallback?
-        if (!pin->DoesBlockExist("fofc_floors")) {
-            params.Add("fofc_prescription", Floors::MakePrescription(pin, "floors"));
-            if (pin->DoesBlockExist("floors_inner"))
-                params.Add("fofc_prescription_inner",
-                    Floors::MakePrescriptionInner(
-                        pin, Floors::MakePrescription(pin, "floors"), "floors_inner"));
-            else
-                params.Add("fofc_prescription_inner",
-                    Floors::MakePrescriptionInner(
-                        pin, Floors::MakePrescription(pin, "floors"), "floors"));
-        } else {
-            // Override inner and outer floors with `fofc_floors` block
-            params.Add("fofc_prescription", Floors::MakePrescription(pin, "fofc_floors"));
-            params.Add("fofc_prescription_inner",
-                Floors::MakePrescriptionInner(
-                    pin, Floors::MakePrescription(pin, "fofc_floors"), "fofc_floors"));
-        }
-
         // Flag for whether FOFC was applied, for diagnostics
         // This could be another bitflag in fflag, but that would be really confusing...
         Metadata m = Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived,

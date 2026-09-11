@@ -75,8 +75,6 @@ TaskStatus ApplyFloorsInFrame(MeshData<Real>* md, IndexDomain domain)
     // Still needed for ceilings and determining floors
     const Floors::Prescription floors =
         pmb0->packages.Get("Floors")->Param<Floors::Prescription>("prescription");
-    const Floors::Prescription floors_inner =
-        pmb0->packages.Get("Floors")->Param<Floors::Prescription>("prescription_inner");
 
     const IndexRange3 b = KDomain::GetRange(md, domain);
     const IndexRange block = IndexRange{0, P.GetDim(5) - 1};
@@ -131,7 +129,7 @@ TaskStatus ApplyFloorsInFrame(MeshData<Real>* md, IndexDomain domain)
                 // Apply ceilings *after* floors, to make the temperature ceiling
                 // better-behaved
                 apply_ceilings(
-                    G, P(b), m_p, gam, k, j, i, floors, floors_inner, U(b), m_u);
+                    G, P(b), m_p, gam, k, j, i, floors, U(b), m_u);
 
                 // P->U if we inverted *correctly* (or didn't invert)
                 if (pflag_l <= 0)

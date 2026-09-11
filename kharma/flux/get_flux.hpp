@@ -82,20 +82,13 @@ inline TaskStatus GetFlux(MeshData<Real>* md)
     const bool reconstruction_fallback = pars.Get<bool>("reconstruction_fallback");
     Floors::Prescription floors_temp =
         packages.Get("Floors")->Param<Floors::Prescription>("prescription");
-    Floors::Prescription floors_inner_temp =
-        packages.Get("Floors")->Param<Floors::Prescription>("prescription_inner");
     if (reconstruction_fallback) {
         floors_temp.rho_min_const = 0.;
         floors_temp.u_min_const = 0.;
         floors_temp.rho_min_geom = 0.;
         floors_temp.u_min_geom = 0.;
-        floors_inner_temp.rho_min_const = 0.;
-        floors_inner_temp.u_min_const = 0.;
-        floors_inner_temp.rho_min_geom = 0.;
-        floors_inner_temp.u_min_geom = 0.;
     }
     const Floors::Prescription& floors = floors_temp;
-    const Floors::Prescription& floors_inner = floors_inner_temp;
 
     const Real gam = mhd_pars.Get<Real>("gamma");
 
@@ -266,9 +259,9 @@ inline TaskStatus GetFlux(MeshData<Real>* md)
                 // zero (as intended)
                 int fflagl = fflag(bl, 0, k, j, i);
                 fflagl |= Floors::apply_geo_floors(
-                    G, Pl_all(bl), m_p, gam, k, j, i, floors, floors_inner, loc);
+                    G, Pl_all(bl), m_p, gam, k, j, i, floors, loc);
                 fflagl |= Floors::apply_geo_floors(
-                    G, Pr_all(bl), m_p, gam, k, j, i, floors, floors_inner, loc);
+                    G, Pr_all(bl), m_p, gam, k, j, i, floors, loc);
                 fflag(bl, 0, k, j, i) = fflagl;
             });
     }
@@ -286,9 +279,9 @@ inline TaskStatus GetFlux(MeshData<Real>* md)
                 Real tmp1, tmp2;
                 int fflag_dir = 0;
                 fflag_dir |= Floors::determine_geo_floors(G, Pl_all(bl), m_p, gam, k, j,
-                    i, floors, floors_inner, tmp1, tmp2, loc);
+                    i, floors, tmp1, tmp2, loc);
                 fflag_dir |= Floors::determine_geo_floors(G, Pr_all(bl), m_p, gam, k, j,
-                    i, floors, floors_inner, tmp1, tmp2, loc);
+                    i, floors, tmp1, tmp2, loc);
 
                 // Preserve (but do not respect) existing flags
                 int fflagl = fflag(bl, 0, k, j, i);
