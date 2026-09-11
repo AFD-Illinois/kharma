@@ -46,12 +46,7 @@ cfl = 0.7
 
 <eos>
 type = IdealGas
-gamma = 5./3.
-
-<inverter>
-backstop = true
-fix_average_neighbors = true
-fix_atmosphere = true
+gamma = 1.666667
 
 <flux>
 type = llf
@@ -78,14 +73,15 @@ u_min_geom   = 1e-8
 on = false
 
 <radM1>
-on = false
+on = true
+mu = 0.6
 #Solver quantities
 # this is the step size of the jacobian
 src_rootfind_eps = 1e-8
 #This is the tolerance of the solver
 src_rootfind_tol = 1e-8
 #Max number of iterations the solver can take.
-src_rootfind_maxiter = 50
+src_rootfind_maxiter = 20
 
 <units>
 on = true

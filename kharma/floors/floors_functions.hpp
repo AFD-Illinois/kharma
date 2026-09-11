@@ -112,7 +112,7 @@ KOKKOS_INLINE_FUNCTION int determine_floors(const GRCoordinates& G,
     Real sie = P(m_p.UU, k, j, i) / P(m_p.RHO, k, j, i);
     // Real gamma1 = eos.BulkModulusFromDensityInternalEnergy(P(m_p.RHO, k, j, i), sie) /
     //                   eos.PressureFromDensityInternalEnergy(P(m_p.RHO, k, j, i), sie);
-
+    // TODO_EOS (PNM): This has to be replaced eventually
     Real gamma1 = 5./3.;
     // Calculate the different floor values in play:
     // 1. Geometric hard floors, not based on fluid relationships
@@ -130,7 +130,6 @@ KOKKOS_INLINE_FUNCTION int determine_floors(const GRCoordinates& G,
         rhoflr_geom = myfloors.rho_min_const;
         uflr_geom = myfloors.u_min_const;
     }
-
     // 2. Magnetization ceilings: impose maximum magnetization sigma = bsq/rho, and
     // inverse beta prop. to bsq/U
     FourVectors Dtmp;
@@ -389,8 +388,10 @@ KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::normal_kastaun_eenough>(
     // Add the material in the normal observer frame.
 
     Real sie = P(m_p.UU, k, j, i) / P(m_p.RHO, k, j, i);
-    Real gamma1 = eos.BulkModulusFromDensityInternalEnergy(P(m_p.RHO, k, j, i), sie) /
-                      eos.PressureFromDensityInternalEnergy(P(m_p.RHO, k, j, i), sie);
+    // Real gamma1 = eos.BulkModulusFromDensityInternalEnergy(P(m_p.RHO, k, j, i), sie) /
+    //                   eos.PressureFromDensityInternalEnergy(P(m_p.RHO, k, j, i), sie);
+    // TODO_EOS (PNM): This has to be replaced eventually
+    Real gamma1 = 5./3.;
 
     // 1. Calculate our minimum primitive variable state
     const Real rho    = m::max(rhoflr_max, P(m_p.RHO, k, j, i));
@@ -554,8 +555,10 @@ KOKKOS_INLINE_FUNCTION int apply_geo_floors(const GRCoordinates& G, Global& P,
         // TODO_EOS: check with cora what she's trying to do here.
         //  For now make it gam1
         Real sie = P(m.UU, k, j, i) / P(m.RHO, k, j, i);
-        Real gamma1 = eos.BulkModulusFromDensityInternalEnergy(P(m.RHO, k, j, i), sie) /
-                      eos.PressureFromDensityInternalEnergy(P(m.RHO, k, j, i), sie);
+        // Real gamma1 = eos.BulkModulusFromDensityInternalEnergy(P(m.RHO, k, j, i), sie) /
+        //               eos.PressureFromDensityInternalEnergy(P(m.RHO, k, j, i), sie);
+        // TODO_EOS (PNM): This has to be replaced eventually
+        Real gamma1 = 5./3.;
         uflr_geom =
             m::max(myfloors.u_min_geom * m::pow(rhoscal, gamma1), myfloors.u_min_const);
     } else {
@@ -610,8 +613,11 @@ KOKKOS_INLINE_FUNCTION int determine_geo_floors(const GRCoordinates& G, Global& 
         rhoflr_geom = m::max(myfloors.rho_min_geom * rhoscal, myfloors.rho_min_const);
 
         Real sie = P(m.UU, k, j, i) / P(m.RHO, k, j, i);
-        Real gamma1 = eos.BulkModulusFromDensityInternalEnergy(P(m.RHO, k, j, i), sie) /
-                      eos.PressureFromDensityInternalEnergy(P(m.RHO, k, j, i), sie);
+        // Real gamma1 = eos.BulkModulusFromDensityInternalEnergy(P(m.RHO, k, j, i), sie) /
+        //               eos.PressureFromDensityInternalEnergy(P(m.RHO, k, j, i), sie);
+
+        // TODO_EOS (PNM): This has to be replaced eventually
+        Real gamma1 = 5./3.;
         uflr_geom =
             m::max(myfloors.u_min_geom * m::pow(rhoscal, gamma1), myfloors.u_min_const);
     } else {
