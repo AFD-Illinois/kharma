@@ -384,7 +384,7 @@ void B_CT::ReconnectBoundaryB3(MeshBlockData<Real>* rc, IndexDomain domain,
 
                     // Recover primitive GRMHD variables from our modified U
                     Inverter::u_to_p<Inverter::Type::kastaun>(
-                        G, U, m_u, eos, k, jf, i, P, m_p, Loci::center, 25, 1e-12);
+                        G, U, m_u, eos, k, jf, i, P, m_p, Loci::center, 25, 1e-14);
                     // Floor them
                     // TODO THIS IS IN FLUID FRAME
                     int fflag = Floors::apply_geo_floors(

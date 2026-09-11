@@ -80,6 +80,10 @@ KOKKOS_INLINE_FUNCTION void apply_ceilings(const GRCoordinates& G,
         Real f = m::sqrt((SQR(myfloors.gamma_max) - 1.) / (SQR(gamma) - 1.));
         VLOOP
             P(m_p.U1 + v, k, j, i) *= f;
+        // This should be here even though it will be checked & possibly replaced.
+        // TODO recalculate direct?  This should preserve existing D...
+        P(m_p.RHO, k, j, i) *= gamma / myfloors.gamma_max;
+        P(m_p.UU, k, j, i) *= gamma / myfloors.gamma_max;
     }
 
     // 2. Limit the entropy by controlling u, to avoid anomalous cooling from funnel wall
@@ -364,7 +368,95 @@ KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::normal_kastaun>(FLOOR_ON
 
     // Recover new primitive variables
     return Inverter::u_to_p<Inverter::Type::kastaun>(
-        G, U, m_u, eos, k, j, i, P, m_p, Loci::center, 25, 1e-12);
+        G, U, m_u, eos, k, j, i, P, m_p, Loci::center, 25, 1e-14);
+}
+
+template<>
+KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::normal_kastaun_eenough>(
+    FLOOR_ONE_ARGS)
+{
+    // Add the material in the normal observer frame.
+    // 1. Calculate our minimum viable primitive variable state
+    const Real rho = m::max(rhoflr_max, P(m_p.RHO, k, j, i));
+
+    // TODO_EOS (PNM): Temporary fix! I don't want to use singularity-eos pars to get floors. This is very bad but I don't see any other quick workaround here.
+    Real gam = 5./3.;
+    // If entropy is present & u dips below a floor, use it as a minimum in addition to
+    // the floor
+    const Real u =
+        ((m_p.KTOT >= 0) && (P(m_p.UU, k, j, i) < uflr_max))
+            ? m::max(P(m_p.KTOT, k, j, i) * m::pow(P(m_p.RHO, k, j, i), gam) / (gam - 1.),
+                  uflr_max)
+            : m::max(uflr_max, P(m_p.UU, k, j, i));
+    Real uvec[NVEC] = {P(m_p.U1, k, j, i), P(m_p.U2, k, j, i), P(m_p.U3, k, j, i)};
+    Real B[NVEC] = {0.};
+    if (m_p.B1 >= 0) {
+        B[V1] = P(m_p.B1, k, j, i);
+        B[V2] = P(m_p.B2, k, j, i);
+        B[V3] = P(m_p.B3, k, j, i);
+    }
+
+    // If the velocity is a guess because the solve failed...
+    if (P(m_p.RHO, k, j, i) <= 0. || P(m_p.UU, k, j, i) <= 0.) {
+        // 1a. What velocity conserves momentum?  Calculate it.
+        const Real tol = 1e-14;
+        const Real W = GRMHD::lorentz_calc(G, uvec, k, j, i, Loci::center);
+        auto f = [&](Real iW)
+        {
+            // Rescale velocity
+            Real gamma_fac = m::sqrt((SQR(1. / iW) - 1.) / (SQR(W) - 1.));
+            const Real uv[NVEC] = {
+                gamma_fac * uvec[0], gamma_fac * uvec[1], gamma_fac * uvec[2]};
+            // Calculate tensor (we only need T1)
+            Real rho_ut, T[GR_DIM];
+            GRMHD::p_to_u_mhd(G, rho, u, uv, B, eos, k, j, i, rho_ut, T);
+            // Check that it matches
+            return (T[1] - U(m_u.U1, k, j, i)) / U(m_u.U1, k, j, i);
+        };
+
+        // Rootfind for iW that would have produced the current T01
+        bool e_solve_failed = false;
+        Real iWm = 1 / m::min(W, 50.), iWp = 1.;
+        Real iW;
+        if (f(iWp) * f(iWm) > 0.) {
+            e_solve_failed = true;
+        } else {
+            Real iWc = (iWp + iWm) / 2.;
+            for (int i = 0; i < 100; i++) {
+                Real resv = m::abs(f(iWc));
+                if ((resv < tol) || (m::abs((iWp - iWm) / 2) < tol) || i > 90) {
+                    iW = iWc;
+                    e_solve_failed = (resv > tol);
+                    break;
+                }
+                // Same sign as right side -> center now right side
+                if (f(iWc) * f(iWp) > 0.)
+                    iWp = iWc;
+                else // default to shifting window up -> slower
+                    iWm = iWc;
+                iWc = (iWm + iWp) / 2.;
+            }
+        }
+        if (!e_solve_failed) {
+            const Real gamma_fac = m::sqrt((SQR(1. / iW) - 1.) / (SQR(W) - 1.));
+            uvec[0] *= gamma_fac;
+            uvec[1] *= gamma_fac;
+            uvec[2] *= gamma_fac;
+        } // otherwise we just leave it.  TODO zero?
+    }
+
+    // 2. Calculate the corresponding conserved state
+    Real rho_ut, T[GR_DIM];
+    GRMHD::p_to_u_mhd(G, rho, u, uvec, B, eos, k, j, i, rho_ut, T, Loci::center);
+
+    // 3. Add new conserved mass/energy to the current "conserved" state.
+    // (no need to modify the guess for Kastaun, esp once we sync mu)
+    U(m_u.RHO, k, j, i) = rho_ut;
+    U(m_u.UU, k, j, i) = T[0]; // Actually T^0_0 + rho u^t
+
+    // 4. Attempt to recover new primitive variables
+    return Inverter::u_to_p<Inverter::Type::kastaun>(
+        G, U, m_u, eos, k, j, i, P, m_p, Loci::center, 25, 1e-14);
 }
 
 // These are implemented as special cases in the kernel in floors_impl.hpp
@@ -380,47 +472,6 @@ KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::mixed_normal_drift>(
     FLOOR_ONE_ARGS)
 {
     return -1;
-}
-
-template<>
-KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::normal_kastaun_eenough>(FLOOR_ONE_ARGS)
-{
-    // Add the material in the normal observer frame.
-
-    Real sie = P(m_p.UU, k, j, i) / P(m_p.RHO, k, j, i);
-    // Real gamma1 = eos.BulkModulusFromDensityInternalEnergy(P(m_p.RHO, k, j, i), sie) /
-    //                   eos.PressureFromDensityInternalEnergy(P(m_p.RHO, k, j, i), sie);
-    // TODO_EOS (PNM): This has to be replaced eventually
-    Real gamma1 = 5./3.;
-
-    // 1. Calculate our minimum primitive variable state
-    const Real rho    = m::max(rhoflr_max, P(m_p.RHO, k, j, i));
-    // If entropy is present & u dips below a floor, use it as a minimum in addition to the floor
-    const Real u = ((m_p.KTOT >= 0) && (P(m_p.UU, k, j, i) < uflr_max))
-                    ? m::max(P(m_p.KTOT, k, j, i) * m::pow(P(m_p.RHO, k, j, i), gamma1) / (gamma1 - 1.), uflr_max)
-                    : m::max(uflr_max, P(m_p.UU, k, j, i));
-    const Real uvec[NVEC] = {P(m_p.U1, k, j, i), P(m_p.U2, k, j, i), P(m_p.U3, k, j, i)};
-    Real B[NVEC] = {0.};
-    if (m_p.B1 >= 0) {
-        B[V1] = P(m_p.B1, k, j, i);
-        B[V2] = P(m_p.B2, k, j, i);
-        B[V3] = P(m_p.B3, k, j, i);
-    }
-
-    // 2. Calculate the corresponding conserved state
-    Real rho_ut, T[GR_DIM];
-    GRMHD::p_to_u_mhd(G, rho, u, uvec, B, eos, k, j, i, rho_ut, T, Loci::center);
-
-    // 3. Add new conserved mass/energy to the current "conserved" state.
-    // (no need to modify the guess for Kastaun, esp once we sync mu)
-    U(m_u.RHO, k, j, i) = rho_ut;
-    U(m_u.UU, k, j, i)  = T[0]; // Actually T^0_0 + rho u^t
-
-    // TODO Nothing I do which modifies T[1-3] here is stable...
-
-    // Recover new primitive variables
-    return Inverter::u_to_p<Inverter::Type::kastaun>(G, U, m_u, eos, k, j, i, P, m_p, Loci::center,
-                                                     25, 1e-12);
 }
 
 // KOKKOS_INLINE_FUNCTION rho_to_slow()

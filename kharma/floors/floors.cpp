@@ -288,9 +288,9 @@ TaskStatus Floors::ApplyInitialFloors(
             int fflag = determine_floors(
                 G, P, m_p, eos, k, j, i, floors, floors, rhoflr_max, uflr_max);
             if (fflag) {
+                apply_ceilings(G, P, m_p, eos, k, j, i, floors, floors, U, m_u);
                 apply_floors<InjectionFrame::fluid>(
                     G, P, m_p, eos, k, j, i, rhoflr_max, uflr_max, U, m_u);
-                apply_ceilings(G, P, m_p, eos, k, j, i, floors, floors, U, m_u);
                 // P->U for any modified zones
                 Flux::p_to_u_mhd(
                     G, P, m_p, emhd_params, eos, k, j, i, U, m_u, Loci::center);
@@ -367,7 +367,8 @@ TaskStatus Floors::ApplyGRMHDFloors(MeshData<Real>* md, IndexDomain domain)
 
     if (pars.Get<InjectionFrame>("frame") == InjectionFrame::normal_kastaun) {
         return ApplyFloorsInFrame<InjectionFrame::normal_kastaun>(md, domain);
-    } else if (pars.Get<InjectionFrame>("frame") == InjectionFrame::normal_kastaun_eenough) {
+    } else if (pars.Get<InjectionFrame>("frame") ==
+               InjectionFrame::normal_kastaun_eenough) {
         return ApplyFloorsInFrame<InjectionFrame::normal_kastaun_eenough>(md, domain);
     } else if (pars.Get<InjectionFrame>("frame") == InjectionFrame::normal_onedw) {
         return ApplyFloorsInFrame<InjectionFrame::normal_onedw>(md, domain);
