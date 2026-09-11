@@ -95,9 +95,9 @@ TaskStatus Inverter::FixUtoP(MeshBlockData<Real>* rc)
                                 int ii = i + l, jj = j + m, kk = k + n;
                                 // If we haven't overstepped array bounds...
                                 if (KDomain::inside(kk, jj, ii, b)) {
-                                    // Count only the good cells (not failed AND not
-                                    // corner), if we can Note interpolated "fixed" cells
-                                    // stay flagged
+                                    // Count only the good cells (not failed/fixed AND not
+                                    // corner). Note that interpolated "fixed" cells
+                                    // stay flagged, so there is not a race cond. here
                                     if (!failed(pflag(kk, jj, ii))) {
                                         // Weight by distance
                                         double w =
