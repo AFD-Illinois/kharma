@@ -272,8 +272,8 @@ void B_CT::DestructiveBoundaryClean(MeshBlockData<Real>* rc, IndexDomain domain,
                 });
         }
     } else {
-        const int k_face = (binner) ? b.ie : b.is;
-        for (int kadd = 0; kadd <= (b.ie - b.is); kadd++) {
+        const int k_face = (binner) ? b.ke : b.ks;
+        for (int kadd = 0; kadd <= (b.ke - b.ks); kadd++) {
             const int k = (binner) ? k_face - kadd : k_face + kadd;
             const int last_rank_f = (binner) ? k + 1 : k - 1;
             const int last_rank_c = (binner) ? k : k - 1;
