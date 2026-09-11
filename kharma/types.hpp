@@ -137,8 +137,6 @@ class VarMap
     // Use int8. 127 values ought to be enough for anybody, right?
     // Basic primitive variables
     int8_t RHO, UU, U1, U2, U3, B1, B2, B3, Bf1, Bf2, Bf3;
-    // Tracker variables
-    int8_t RHO_ADDED, UU_ADDED, PASSIVE;
     // Total/idealized (advected, no-dissipation) fluid entropy tracking
     int8_t KTOT, KTOT_ADV;
     // Electron entropy/energy tracking
@@ -160,9 +158,6 @@ class VarMap
             B1 = name_map["cons.B"].first;
             Bf1 = name_map["cons.fB"].first;
             PSI = name_map["cons.psi_cd"].first;
-            // Floors
-            RHO_ADDED = name_map["cons.rho_added"].first;
-            UU_ADDED = name_map["cons.u_added"].first;
             // Entropy tracking
             KTOT = name_map["cons.Ktot"].first;
             KTOT_ADV = name_map["cons.Ktot_adv"].first;
@@ -190,9 +185,6 @@ class VarMap
             B1 = name_map["prims.B"].first;
             Bf1 = name_map["prims.fB"].first;
             PSI = name_map["prims.psi_cd"].first;
-            // Floors (TODO cons only?)
-            RHO_ADDED = name_map["prims.rho_added"].first;
-            UU_ADDED = name_map["prims.u_added"].first;
             // Entropy tracking
             KTOT = name_map["prims.Ktot"].first;
             KTOT_ADV = name_map["prims.Ktot_adv"].first;
@@ -206,6 +198,10 @@ class VarMap
             // Extended MHD
             Q = name_map["prims.q"].first;
             DP = name_map["prims.dP"].first;
+
+            // Never present in prims
+            RHOADD = -1;
+            T0ADD = -1;
         }
         if (U1 >= 0) {
             U2 = U1 + 1;

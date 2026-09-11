@@ -71,28 +71,6 @@ std::shared_ptr<KHARMAPackage> Inverter::Initialize(
     int iter_max = pin->GetOrAddInteger("inverter", "iter_max", (use_kastaun) ? 25 : 8);
     params.Add("iter_max", iter_max);
 
-    // TODO only need these if Floors aren't loaded
-    // Floor options
-    // Use a custom block for inverter floors to allow customization.  Not sure anyone
-    // *wants* that but...
-    if (!pin->DoesBlockExist("inverter_floors")) {
-        params.Add("inverter_prescription", Floors::MakePrescription(pin, "floors"));
-        if (pin->DoesBlockExist("floors_inner"))
-            params.Add("inverter_prescription_inner",
-                Floors::MakePrescriptionInner(
-                    pin, Floors::MakePrescription(pin, "floors"), "floors_inner"));
-        else
-            params.Add("inverter_prescription_inner",
-                Floors::MakePrescriptionInner(
-                    pin, Floors::MakePrescription(pin, "floors"), "floors"));
-    } else {
-        params.Add(
-            "inverter_prescription", Floors::MakePrescription(pin, "inverter_floors"));
-        params.Add("inverter_prescription_inner",
-            Floors::MakePrescriptionInner(pin,
-                Floors::MakePrescription(pin, "inverter_floors"), "inverter_floors"));
-    }
-
     // Fixup options
     // Fix by averaging neighboring cells.  Enabled by default for 1Dw, but (magnetized!)
     // Kastaun failures are more dire
