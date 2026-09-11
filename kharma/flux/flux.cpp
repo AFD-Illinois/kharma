@@ -102,12 +102,12 @@ std::shared_ptr<KHARMAPackage> Flux::Initialize(
     } else if (recon == "linear_mc") {
         params.Add("recon", KReconstruction::Type::linear_mc);
         stencil = 3;
-    // } else if (recon == "weno5" && lower_edges) {
-    //     params.Add("recon", KReconstruction::Type::weno5_lower_edges);
-    //     stencil = 5;
-    // } else if (recon == "weno5" && lower_poles) {
-    //     params.Add("recon", KReconstruction::Type::weno5_lower_poles);
-    //     stencil = 5;
+        // } else if (recon == "weno5" && lower_edges) {
+        //     params.Add("recon", KReconstruction::Type::weno5_lower_edges);
+        //     stencil = 5;
+        // } else if (recon == "weno5" && lower_poles) {
+        //     params.Add("recon", KReconstruction::Type::weno5_lower_poles);
+        //     stencil = 5;
     } else if (recon == "weno5") {
         params.Add("recon", KReconstruction::Type::weno5);
         stencil = 5;
@@ -130,7 +130,8 @@ std::shared_ptr<KHARMAPackage> Flux::Initialize(
     // Warn if using less than 3 ghost zones w/WENO etc, 2 w/Linear, etc.
     // SMR/AMR independently requires an even number of zones, so we usually use 4
     if (Globals::nghost < 4) {
-        throw std::runtime_error("Not enough ghost zones!  KHARMA currently requires 4 ghosts to avoid OOB");
+        throw std::runtime_error(
+            "Not enough ghost zones!  KHARMA currently requires 4 ghosts to avoid OOB");
     }
 
     // Fallback to TVD reconstruction when these algorithms reconstruct something outside

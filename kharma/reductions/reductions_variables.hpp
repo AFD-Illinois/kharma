@@ -42,9 +42,8 @@
 // Arguments to computing any variable defined below
 #define REDUCE_FUNCTION_ARGS                                                             \
     const GRCoordinates &G, const VariablePack<Real>&P, const VarMap &m_p,               \
-        const VariablePack<Real>&U, const VarMap &m_u,                                   \
-        const VariableFluxPack<Real>&F, const VarMap &m_f,                               \
-        const VariablePack<Real>&cmax, const VariablePack<Real>&cmin,                    \
+        const VariablePack<Real>&U, const VarMap &m_u, const VariableFluxPack<Real>&F,   \
+        const VarMap &m_f, const VariablePack<Real>&cmax, const VariablePack<Real>&cmin, \
         const EMHD::EMHD_parameters &emhd_params, const Real &gam, const int &k,         \
         const int &j, const int &i
 // Call for passing a particular block's values

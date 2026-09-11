@@ -55,8 +55,7 @@ namespace Floors
 KOKKOS_INLINE_FUNCTION void apply_ceilings(const GRCoordinates& G,
     const VariablePack<Real>& P, const VarMap& m_p, const Real& gam, const int& k,
     const int& j, const int& i, const Floors::Prescription& floors,
-    const VariablePack<Real>& U,
-    const VarMap& m_u, const Loci loc = Loci::center)
+    const VariablePack<Real>& U, const VarMap& m_u, const Loci loc = Loci::center)
 {
     // Compute max values for ceilings
     Real gamma = GRMHD::lorentz_calc(G, P, m_p, k, j, i, loc);
@@ -89,8 +88,8 @@ KOKKOS_INLINE_FUNCTION void apply_ceilings(const GRCoordinates& G,
 
 KOKKOS_INLINE_FUNCTION int determine_floors(const GRCoordinates& G,
     const VariablePack<Real>& P, const VarMap& m_p, const Real& gam, const int& k,
-    const int& j, const int& i, const Floors::Prescription& floors,
-    Real& rhoflr_max, Real& uflr_max)
+    const int& j, const int& i, const Floors::Prescription& floors, Real& rhoflr_max,
+    Real& uflr_max)
 {
     // Calculate the different floor values in play:
     // 1. Geometric hard floors, not based on fluid relationships
@@ -100,10 +99,9 @@ KOKKOS_INLINE_FUNCTION int determine_floors(const GRCoordinates& G,
         const GReal r = G.r(k, j, i);
         // r_char sets more aggressive floor close to EH but backs off
         Real rhoscal = (floors.use_r_char) ? 1. / ((r * r) * (1 + r / floors.r_char))
-                                             : 1. / m::sqrt(r * r * r);
+                                           : 1. / m::sqrt(r * r * r);
         rhoflr_geom = m::max(floors.rho_min_geom * rhoscal, floors.rho_min_const);
-        uflr_geom =
-            m::max(floors.u_min_geom * m::pow(rhoscal, gam), floors.u_min_const);
+        uflr_geom = m::max(floors.u_min_geom * m::pow(rhoscal, gam), floors.u_min_const);
     } else {
         rhoflr_geom = floors.rho_min_const;
         uflr_geom = floors.u_min_const;
@@ -469,8 +467,7 @@ KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::mixed_normal_drift>(
 template<typename Global>
 KOKKOS_INLINE_FUNCTION int apply_geo_floors(const GRCoordinates& G, Global& P,
     const VarMap& m, const Real& gam, const int& k, const int& j, const int& i,
-    const Floors::Prescription& floors,
-    const Loci loc = Loci::center)
+    const Floors::Prescription& floors, const Loci loc = Loci::center)
 {
     // Apply only the geometric floors
     Real rhoflr_geom, uflr_geom;
@@ -478,10 +475,9 @@ KOKKOS_INLINE_FUNCTION int apply_geo_floors(const GRCoordinates& G, Global& P,
         const GReal r = G.r(0, j, i);
         // r_char sets more aggressive floor close to EH but backs off
         Real rhoscal = (floors.use_r_char) ? 1. / ((r * r) * (1 + r / floors.r_char))
-                                             : 1. / m::sqrt(r * r * r);
+                                           : 1. / m::sqrt(r * r * r);
         rhoflr_geom = m::max(floors.rho_min_geom * rhoscal, floors.rho_min_const);
-        uflr_geom =
-            m::max(floors.u_min_geom * m::pow(rhoscal, gam), floors.u_min_const);
+        uflr_geom = m::max(floors.u_min_geom * m::pow(rhoscal, gam), floors.u_min_const);
     } else {
         rhoflr_geom = floors.rho_min_const;
         uflr_geom = floors.u_min_const;
@@ -515,18 +511,17 @@ KOKKOS_INLINE_FUNCTION int apply_geo_floors(const GRCoordinates& G, Global& P,
 template<typename Global>
 KOKKOS_INLINE_FUNCTION int determine_geo_floors(const GRCoordinates& G, Global& P,
     const VarMap& m, const Real& gam, const int& k, const int& j, const int& i,
-    const Floors::Prescription& floors,
-    Real& rhoflr_geom, Real& uflr_geom, const Loci loc = Loci::center)
+    const Floors::Prescription& floors, Real& rhoflr_geom, Real& uflr_geom,
+    const Loci loc = Loci::center)
 {
     // Apply only the geometric floors
     if (G.coords.is_spherical()) {
         const GReal r = G.r(0, j, i);
         // r_char sets more aggressive floor close to EH but backs off
         Real rhoscal = (floors.use_r_char) ? 1. / ((r * r) * (1 + r / floors.r_char))
-                                             : 1. / m::sqrt(r * r * r);
+                                           : 1. / m::sqrt(r * r * r);
         rhoflr_geom = m::max(floors.rho_min_geom * rhoscal, floors.rho_min_const);
-        uflr_geom =
-            m::max(floors.u_min_geom * m::pow(rhoscal, gam), floors.u_min_const);
+        uflr_geom = m::max(floors.u_min_geom * m::pow(rhoscal, gam), floors.u_min_const);
     } else {
         rhoflr_geom = floors.rho_min_const;
         uflr_geom = floors.u_min_const;

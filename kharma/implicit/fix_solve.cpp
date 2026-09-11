@@ -56,7 +56,8 @@ TaskStatus Implicit::FixSolve(MeshBlockData<Real>* mbd)
 
     // Get number of implicit variables
     PackIndexMap implicit_prims_map;
-    // TODO this packs B if it is being evolved implicitly, which we definitely do not want
+    // TODO this packs B if it is being evolved implicitly, which we definitely do not
+    // want
     auto implicit_vars =
         Implicit::GetOrderedNames(mbd, Metadata::GetUserFlag("Primitive"), true);
     auto& P = mbd->PackVariables(implicit_vars, implicit_prims_map);
@@ -83,7 +84,7 @@ TaskStatus Implicit::FixSolve(MeshBlockData<Real>* mbd)
             // Remember "failed" here has a different implementation
             if (failed(solve_fail(k, j, i))) {
                 // printf("Fixing zone %d %d %d!\n", i, j, k);
-                double wsum = 0.; //, wsum_x = 0.;
+                double wsum = 0.;             //, wsum_x = 0.;
                 double sum[NFVAR_MAX] = {0.}; //, sum_x[NFVAR_MAX] = {0.};
                 // For all neighboring cells...
                 for (int n = -1; n <= 1; n++) {
@@ -115,14 +116,10 @@ TaskStatus Implicit::FixSolve(MeshBlockData<Real>* mbd)
 
                 if (wsum < 1.e-10) {
                     // TODO probably should crash here.
-                    if (m_pi.RHO >= 0)
-                        P(m_pi.RHO, k, j, i) = floors.rho_min_geom;
-                    if (m_pi.UU >= 0)
-                        P(m_pi.UU, k, j, i) = floors.u_min_geom;
-                    if (m_pi.Q >= 0)
-                        P(m_pi.Q, k, j, i) = 0.;
-                    if (m_pi.DP >= 0)
-                        P(m_pi.DP, k, j, i) = 0.;
+                    if (m_pi.RHO >= 0) P(m_pi.RHO, k, j, i) = floors.rho_min_geom;
+                    if (m_pi.UU >= 0) P(m_pi.UU, k, j, i) = floors.u_min_geom;
+                    if (m_pi.Q >= 0) P(m_pi.Q, k, j, i) = 0.;
+                    if (m_pi.DP >= 0) P(m_pi.DP, k, j, i) = 0.;
                     if (m_pi.U1 >= 0) {
                         P(m_pi.U1, k, j, i) = 0.;
                         P(m_pi.U2, k, j, i) = 0.;

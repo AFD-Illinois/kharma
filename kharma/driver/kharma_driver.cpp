@@ -376,8 +376,8 @@ TaskID KHARMADriver::AddFOFC(TaskID& t_start, TaskList& tl, MeshData<Real>* md,
     auto t_guess_prims =
         tl.AddTask(t_guess_Bp, Inverter::MeshUtoP, guess, IndexDomain::entire, false);
     // Check and mark floors
-    auto t_mark_floors = tl.AddTask(t_guess_prims, Floors::DetermineGRMHDFloors, guess,
-        IndexDomain::entire, floors);
+    auto t_mark_floors = tl.AddTask(
+        t_guess_prims, Floors::DetermineGRMHDFloors, guess, IndexDomain::entire, floors);
     // Determine which cells are FOFC in our block
     auto t_mark_fofc = tl.AddTask(t_mark_floors, Flux::MarkFOFC, guess);
     // Sync the FOFC flag with neighbors
@@ -424,9 +424,10 @@ TaskID KHARMADriver::AddStateUpdate(TaskID& t_start, TaskList& tl,
         integrator->beta[stage - 1] * integrator->dt, md_update);
     auto t_update_f = t_update_c;
     if (update_face) {
-        t_update_f = tl.AddTask(t_avg_data_c | t_avg_data_f, WeightedSumDataFace<MetadataFlag>,
-            std::vector<MetadataFlag>(flags_face), md_update, md_flux_src, 1.0,
-            integrator->beta[stage - 1] * integrator->dt, md_update);
+        t_update_f =
+            tl.AddTask(t_avg_data_c | t_avg_data_f, WeightedSumDataFace<MetadataFlag>,
+                std::vector<MetadataFlag>(flags_face), md_update, md_flux_src, 1.0,
+                integrator->beta[stage - 1] * integrator->dt, md_update);
     }
 
     // We'll be running UtoP after this, which needs a guess in order to converge, so we
@@ -476,9 +477,10 @@ TaskID KHARMADriver::AddStateUpdateIdealGuess(TaskID& t_start, TaskList& tl,
         integrator->beta[stage - 1] * integrator->dt, md_update);
     auto t_update_f = t_update_c;
     if (update_face) {
-        t_update_f = tl.AddTask(t_avg_data_c | t_avg_data_f, WeightedSumDataFace<MetadataFlag>,
-            std::vector<MetadataFlag>(flags_face), md_update, md_flux_src, 1.0,
-            integrator->beta[stage - 1] * integrator->dt, md_update);
+        t_update_f =
+            tl.AddTask(t_avg_data_c | t_avg_data_f, WeightedSumDataFace<MetadataFlag>,
+                std::vector<MetadataFlag>(flags_face), md_update, md_flux_src, 1.0,
+                integrator->beta[stage - 1] * integrator->dt, md_update);
     }
 
     // We'll be running UtoP after this, which needs a guess in order to converge, so we

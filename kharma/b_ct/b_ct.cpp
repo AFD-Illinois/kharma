@@ -279,7 +279,9 @@ TaskStatus B_CT::DangerousPtoU(MeshData<Real>* md, IndexDomain domain, bool coar
         KOKKOS_LAMBDA(const int& b, const int& k, const int& j, const int& i)
         {
             const auto& G = B_Uf.GetCoords(b);
-            const Real avg = (ndim > 1) ? (B_P(b, V2, k, j - 1, i) + B_P(b, V2, k, j, i)) / 2 : B_P(b, V2, k, j, i);
+            const Real avg = (ndim > 1)
+                                 ? (B_P(b, V2, k, j - 1, i) + B_P(b, V2, k, j, i)) / 2
+                                 : B_P(b, V2, k, j, i);
             B_Uf(b, F2, 0, k, j, i) = G.gdet(Loci::face2, j, i) * avg;
         });
     const IndexRange3 bf3 = (domain == IndexDomain::interior)
@@ -290,7 +292,9 @@ TaskStatus B_CT::DangerousPtoU(MeshData<Real>* md, IndexDomain domain, bool coar
         KOKKOS_LAMBDA(const int& b, const int& k, const int& j, const int& i)
         {
             const auto& G = B_Uf.GetCoords(b);
-            const Real avg = (ndim > 2) ? (B_P(b, V3, k - 1, j, i) + B_P(b, V3, k, j, i)) / 2 : B_P(b, V3, k, j, i);
+            const Real avg = (ndim > 2)
+                                 ? (B_P(b, V3, k - 1, j, i) + B_P(b, V3, k, j, i)) / 2
+                                 : B_P(b, V3, k, j, i);
             B_Uf(b, F3, 0, k, j, i) = G.gdet(Loci::face3, j, i) * avg;
         });
 

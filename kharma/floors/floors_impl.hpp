@@ -128,8 +128,7 @@ TaskStatus ApplyFloorsInFrame(MeshData<Real>* md, IndexDomain domain)
 
                 // Apply ceilings *after* floors, to make the temperature ceiling
                 // better-behaved
-                apply_ceilings(
-                    G, P(b), m_p, gam, k, j, i, floors, U(b), m_u);
+                apply_ceilings(G, P(b), m_p, gam, k, j, i, floors, U(b), m_u);
 
                 // P->U if we inverted *correctly* (or didn't invert)
                 if (pflag_l <= 0)

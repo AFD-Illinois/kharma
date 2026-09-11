@@ -80,7 +80,8 @@ GRCoordinates::GRCoordinates(const RegionSize& rs, ParameterInput* pin)
     connection_average_points =
         pin->GetOrAddInteger("coordinates", "connection_average_points", 1);
     if (connection_average_points % 2 == 0 || connection_average_points < 1)
-        throw std::invalid_argument("connection_average_points must be positive and odd!");
+        throw std::invalid_argument(
+            "connection_average_points must be positive and odd!");
     correct_connections =
         pin->GetOrAddBoolean("coordinates", "correct_connections", false);
 
@@ -90,9 +91,9 @@ GRCoordinates::GRCoordinates(const RegionSize& rs, ParameterInput* pin)
 GRCoordinates::GRCoordinates(const GRCoordinates& src, int coarsen)
     : UniformCartesian(src, coarsen)
     , coords(src.coords)
-    , n1(src.n1 > 1 ? (src.n1 - 2*Globals::nghost) / coarsen + 2*Globals::nghost : 1)
-    , n2(src.n2 > 1 ? (src.n2 - 2*Globals::nghost) / coarsen + 2*Globals::nghost : 1)
-    , n3(src.n3 > 1 ? (src.n3 - 2*Globals::nghost) / coarsen + 2*Globals::nghost : 1)
+    , n1(src.n1 > 1 ? (src.n1 - 2 * Globals::nghost) / coarsen + 2 * Globals::nghost : 1)
+    , n2(src.n2 > 1 ? (src.n2 - 2 * Globals::nghost) / coarsen + 2 * Globals::nghost : 1)
+    , n3(src.n3 > 1 ? (src.n3 - 2 * Globals::nghost) / coarsen + 2 * Globals::nghost : 1)
     , connection_average_points(src.connection_average_points)
     , correct_connections(src.correct_connections)
 {

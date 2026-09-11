@@ -267,8 +267,8 @@ inline TaskStatus GetFlux(MeshData<Real>* md)
     }
 
     if (reconstruction_fallback) {
-        pmb0->par_for("calc_flux_reconfallback", block.s, block.e,
-            b.ks, b.ke, b.js, b.je, b.is, b.ie,
+        pmb0->par_for("calc_flux_reconfallback", block.s, block.e, b.ks, b.ke, b.js, b.je,
+            b.is, b.ie,
             KOKKOS_LAMBDA(const int& bl,
                         const int& k,
                         const int& j,
@@ -278,10 +278,10 @@ inline TaskStatus GetFlux(MeshData<Real>* md)
                 // Determine cells that would hit the floor
                 Real tmp1, tmp2;
                 int fflag_dir = 0;
-                fflag_dir |= Floors::determine_geo_floors(G, Pl_all(bl), m_p, gam, k, j,
-                    i, floors, tmp1, tmp2, loc);
-                fflag_dir |= Floors::determine_geo_floors(G, Pr_all(bl), m_p, gam, k, j,
-                    i, floors, tmp1, tmp2, loc);
+                fflag_dir |= Floors::determine_geo_floors(
+                    G, Pl_all(bl), m_p, gam, k, j, i, floors, tmp1, tmp2, loc);
+                fflag_dir |= Floors::determine_geo_floors(
+                    G, Pr_all(bl), m_p, gam, k, j, i, floors, tmp1, tmp2, loc);
 
                 // Preserve (but do not respect) existing flags
                 int fflagl = fflag(bl, 0, k, j, i);

@@ -260,8 +260,8 @@ TaskStatus Floors::ApplyInitialFloors(
         {
             Real rhoflr_max, uflr_max;
             // Initial floors, so the radius-dependence of floors don't matter that much.
-            int fflag = determine_floors(
-                G, P, m_p, gam, k, j, i, floors, rhoflr_max, uflr_max);
+            int fflag =
+                determine_floors(G, P, m_p, gam, k, j, i, floors, rhoflr_max, uflr_max);
             if (fflag) {
                 apply_floors<InjectionFrame::fluid>(
                     G, P, m_p, gam, k, j, i, rhoflr_max, uflr_max, U, m_u);
@@ -276,8 +276,8 @@ TaskStatus Floors::ApplyInitialFloors(
     return TaskStatus::complete;
 }
 
-TaskStatus Floors::DetermineGRMHDFloors(MeshData<Real>* md, IndexDomain domain,
-    const Floors::Prescription& floors)
+TaskStatus Floors::DetermineGRMHDFloors(
+    MeshData<Real>* md, IndexDomain domain, const Floors::Prescription& floors)
 {
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
 

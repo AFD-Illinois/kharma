@@ -148,8 +148,8 @@ inline IndexRange3 GetRange(T data, IndexDomain domain, TopologicalElement el,
         m::min(jl.e, jbe.e), m::max(kl.s, kbe.s), m::min(kl.e, kbe.e)};
 }
 template<typename T>
-inline IndexRange3 GetRange(T data, IndexDomain domain, TopologicalElement el = CC,
-    bool coarse = false)
+inline IndexRange3 GetRange(
+    T data, IndexDomain domain, TopologicalElement el = CC, bool coarse = false)
 {
     return GetRange(data, domain, el, 0, 0, coarse);
 }

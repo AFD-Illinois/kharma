@@ -232,8 +232,8 @@ TaskStatus ApplyGRMHDFloors(MeshData<Real>* md, IndexDomain domain);
  * 2. fflag, which floors were hit by the current state
  * This is what ApplyFloors uses to determine the floor values/locations
  */
-TaskStatus DetermineGRMHDFloors(MeshData<Real>* md, IndexDomain domain,
-    const Floors::Prescription& floors);
+TaskStatus DetermineGRMHDFloors(
+    MeshData<Real>* md, IndexDomain domain, const Floors::Prescription& floors);
 
 /**
  * Apply the same floors as above, in the same way, except:
