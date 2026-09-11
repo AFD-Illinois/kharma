@@ -79,6 +79,8 @@ GRCoordinates::GRCoordinates(const RegionSize& rs, ParameterInput* pin)
 
     connection_average_points =
         pin->GetOrAddInteger("coordinates", "connection_average_points", 1);
+    if (connection_average_points % 2 == 0 || connection_average_points < 1)
+        throw std::invalid_argument("connection_average_points must be positive odd!");
     correct_connections =
         pin->GetOrAddBoolean("coordinates", "correct_connections", false);
 
@@ -259,7 +261,7 @@ void init_GRCoordinates(GRCoordinates& G)
                             sum_portions += portions[mu];
                         }
                         DLOOP1
-                            portions[mu] /= sum_portions;
+                            portions[mu] /= m::max(sum_portions, VSMALL_NUM);
                         // printf("Zone %d %d target: %.3g test_sum: %.3g correction:
                         // %.3g\n", i, j, target, test_sum, diff);
 
