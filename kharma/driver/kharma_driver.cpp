@@ -363,7 +363,7 @@ TaskID KHARMADriver::AddFOFC(TaskID& t_start, TaskList& tl, MeshData<Real>* md,
     // want/need
     auto t_guess_sources = t_guess_divergence;
     if (pmb0->packages.Get("Fluxes")->Param<bool>("fofc_use_source_term")) {
-        auto t_guess_sources = tl.AddTask(t_guess_divergence, Flux::AddGeoSourceTask, md,
+        t_guess_sources = tl.AddTask(t_guess_divergence, Flux::AddGeoSourceTask, md,
             guess_src, IndexDomain::entire);
     }
     // Update the guess state with the guess source term, and our existing state
@@ -414,27 +414,27 @@ TaskID KHARMADriver::AddStateUpdate(TaskID& t_start, TaskList& tl,
         Update::WeightedSumData<std::vector<MetadataFlag>, MeshData<Real>>,
         std::vector<MetadataFlag>(flags_cell), md_sub_step_init, md_full_step_init,
         integrator->gam0[stage - 1], integrator->gam1[stage - 1], md_update);
-    auto t_avg_data = t_avg_data_c;
+    auto t_avg_data_f = t_avg_data_c;
     if (update_face) {
-        t_avg_data = tl.AddTask(t_start, WeightedSumDataFace<MetadataFlag>,
+        t_avg_data_f = tl.AddTask(t_start, WeightedSumDataFace<MetadataFlag>,
             std::vector<MetadataFlag>(flags_face), md_sub_step_init, md_full_step_init,
             integrator->gam0[stage - 1], integrator->gam1[stage - 1], md_update);
     }
     // apply du/dt to the result
-    auto t_update_c = tl.AddTask(t_avg_data,
+    auto t_update_c = tl.AddTask(t_avg_data_c | t_avg_data_f,
         Update::WeightedSumData<std::vector<MetadataFlag>, MeshData<Real>>,
         std::vector<MetadataFlag>(flags_cell), md_update, md_flux_src, 1.0,
         integrator->beta[stage - 1] * integrator->dt, md_update);
-    auto t_update = t_update_c;
+    auto t_update_f = t_update_c;
     if (update_face) {
-        t_update = tl.AddTask(t_avg_data, WeightedSumDataFace<MetadataFlag>,
+        t_update_f = tl.AddTask(t_avg_data_c | t_avg_data_f, WeightedSumDataFace<MetadataFlag>,
             std::vector<MetadataFlag>(flags_face), md_update, md_flux_src, 1.0,
             integrator->beta[stage - 1] * integrator->dt, md_update);
     }
 
     // We'll be running UtoP after this, which needs a guess in order to converge, so we
     // copy in md_sub_step_init
-    auto t_copy_prims = t_update;
+    auto t_copy_prims = t_update_c | t_update_f;
     auto pmb0 = md_full_step_init->GetBlockData(0)->GetBlockPointer();
     auto& pkgs = pmb0->packages.AllPackages();
 
@@ -447,7 +447,7 @@ TaskID KHARMADriver::AddStateUpdate(TaskID& t_start, TaskList& tl,
             md_sub_step_init, md_update);
     }
 
-    return t_copy_prims | t_update;
+    return t_copy_prims | t_update_c | t_update_f;
 }
 
 TaskID KHARMADriver::AddStateUpdateIdealGuess(TaskID& t_start, TaskList& tl,
@@ -466,27 +466,27 @@ TaskID KHARMADriver::AddStateUpdateIdealGuess(TaskID& t_start, TaskList& tl,
         Update::WeightedSumData<std::vector<MetadataFlag>, MeshData<Real>>,
         std::vector<MetadataFlag>(flags_cell), md_sub_step_init, md_full_step_init,
         integrator->gam0[stage - 1], integrator->gam1[stage - 1], md_update);
-    auto t_avg_data = t_avg_data_c;
+    auto t_avg_data_f = t_avg_data_c;
     if (update_face) {
-        t_avg_data = tl.AddTask(t_start, WeightedSumDataFace<MetadataFlag>,
+        t_avg_data_f = tl.AddTask(t_start, WeightedSumDataFace<MetadataFlag>,
             std::vector<MetadataFlag>(flags_face), md_sub_step_init, md_full_step_init,
             integrator->gam0[stage - 1], integrator->gam1[stage - 1], md_update);
     }
     // apply du/dt to the result
-    auto t_update_c = tl.AddTask(t_avg_data,
+    auto t_update_c = tl.AddTask(t_avg_data_c | t_avg_data_f,
         Update::WeightedSumData<std::vector<MetadataFlag>, MeshData<Real>>,
         std::vector<MetadataFlag>(flags_cell), md_update, md_flux_src, 1.0,
         integrator->beta[stage - 1] * integrator->dt, md_update);
-    auto t_update = t_update_c;
+    auto t_update_f = t_update_c;
     if (update_face) {
-        t_update = tl.AddTask(t_avg_data, WeightedSumDataFace<MetadataFlag>,
+        t_update_f = tl.AddTask(t_avg_data_c | t_avg_data_f, WeightedSumDataFace<MetadataFlag>,
             std::vector<MetadataFlag>(flags_face), md_update, md_flux_src, 1.0,
             integrator->beta[stage - 1] * integrator->dt, md_update);
     }
 
     // We'll be running UtoP after this, which needs a guess in order to converge, so we
     // copy in md_sub_step_init
-    auto t_copy_prims = t_update;
+    auto t_copy_prims = t_update_c | t_update_f;
     auto pmb0 = md_full_step_init->GetBlockData(0)->GetBlockPointer();
     auto& pkgs = pmb0->packages.AllPackages();
     if (pkgs.at("GRMHD")->Param<bool>("ideal_guess")) {
@@ -496,7 +496,7 @@ TaskID KHARMADriver::AddStateUpdateIdealGuess(TaskID& t_start, TaskList& tl,
             md_sub_step_init, md_update);
     }
 
-    return t_copy_prims | t_update;
+    return t_copy_prims | t_update_c | t_update_f;
 }
 
 // TODO(CEP) bring back as extra prints/limits only, calling up to
