@@ -163,7 +163,7 @@ TaskStatus Inverter::FixUtoP(MeshBlockData<Real>* rc)
                 // TODO Full floors instead of just geo?
                 int fflagl = fflag(0, k, j, i);
                 fflagl |= Floors::apply_geo_floors(
-                    G, P, m_p, eos, k, j, i, floors, floors_inner);
+                    G, P, m_p, k, j, i, floors, floors_inner);
                 fflag(0, k, j, i) = fflagl;
 
                 // Make sure to keep lockstep
@@ -236,15 +236,13 @@ TaskStatus Inverter::Backstop(MeshBlockData<Real>* rc)
             // negative or zero internal energy (even after floors!)
             Real rhomin_geom, umin_geom;
             determine_geo_floors(
-                G, P, m_p, eos, k, j, i, floors, floors_inner, rhomin_geom, umin_geom);
+                G, P, m_p, k, j, i, floors, floors_inner, rhomin_geom, umin_geom);
             
-            Real sie = P(m_p.UU, k, j, i) / P(m_p.RHO, k, j, i);
-            Real gamma1 = eos.BulkModulusFromDensityInternalEnergy(P(m_p.RHO, k, j, i), sie) /
-                      eos.PressureFromDensityInternalEnergy(P(m_p.RHO, k, j, i), sie);
+            
             const Real umin =
                 (m_p.KTOT >= 0)
-                    ? m::max(P(m_p.KTOT, k, j, i) * m::pow(P(m_p.RHO, k, j, i), gamma1) /
-                                 (gamma1 - 1.),
+                    ? m::max(P(m_p.KTOT, k, j, i) * m::pow(P(m_p.RHO, k, j, i), floors.gamma_floor) /
+                                 (floors.gamma_floor - 1.),
                           umin_geom)
                     : umin_geom;
 

@@ -382,8 +382,6 @@ TaskStatus RadM1::Step(
             });
     }
 
-    std::cerr << "Took RadM1 Step!" << std::endl;
-
     return TaskStatus::complete;
 }
 

@@ -50,8 +50,9 @@ std::shared_ptr<KHARMAPackage> Floors::Initialize(
     auto pkg = std::make_shared<KHARMAPackage>("Floors");
     Params& params = pkg->AllParams();
 
+    Real gamma_floor = pin->GetOrAddReal("floors", "gamma_floor", packages->Get("eos")->AllParams().Get<Real>("gm1") + 1);
     // Parse all the particular floor values into a nice struct we can pass device-side
-    params.Add("prescription", MakePrescription(pin));
+    params.Add("prescription", MakePrescription(pin, gamma_floor));
 
     // Frame to apply floors: usually we use normal observer frame, but
     // the option exists to use the fluid frame exclusively 'fluid' or outside a
@@ -123,10 +124,10 @@ std::shared_ptr<KHARMAPackage> Floors::Initialize(
     // Avoids a bunch of if (radius_dependent_floors) else while determining floors.
     if (pin->DoesBlockExist("floors_inner"))
         params.Add(
-            "prescription_inner", MakePrescriptionInner(pin, MakePrescription(pin)));
+            "prescription_inner", MakePrescriptionInner(pin, MakePrescription(pin, gamma_floor)));
     else
         params.Add("prescription_inner",
-            MakePrescriptionInner(pin, MakePrescription(pin)), "floors");
+            MakePrescriptionInner(pin, MakePrescription(pin, gamma_floor)), "floors");
 
     // All of these are now the same option: disable the *call* only.
     // This lets us assume that the floors package is loaded, which is convenient many
@@ -286,9 +287,9 @@ TaskStatus Floors::ApplyInitialFloors(
             Real rhoflr_max, uflr_max;
             // Initial floors, so the radius-dependence of floors don't matter that much.
             int fflag = determine_floors(
-                G, P, m_p, eos, k, j, i, floors, floors, rhoflr_max, uflr_max);
+                G, P, m_p, k, j, i, floors, floors, rhoflr_max, uflr_max);
             if (fflag) {
-                apply_ceilings(G, P, m_p, eos, k, j, i, floors, floors, U, m_u);
+                apply_ceilings(G, P, m_p, k, j, i, floors, floors, U, m_u);
                 apply_floors<InjectionFrame::fluid>(
                     G, P, m_p, eos, k, j, i, rhoflr_max, uflr_max, U, m_u);
                 // P->U for any modified zones
@@ -343,7 +344,7 @@ TaskStatus Floors::DetermineGRMHDFloors(MeshData<Real>* md, IndexDomain domain,
             // non-destructively
             fflag(b, 0, k, j, i) =
                 static_cast<int>(fflag(b, 0, k, j, i)) |
-                determine_floors(G, P(b), m_p, eos, k, j, i, floors, floors_inner,
+                determine_floors(G, P(b), m_p, k, j, i, floors, floors_inner,
                     floor_vals(b, rhofi, k, j, i), floor_vals(b, ufi, k, j, i));
         });
 

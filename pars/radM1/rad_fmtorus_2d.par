@@ -103,7 +103,7 @@ flag_verbose = 2
 
 <parthenon/output0>
 file_type = hdf5
-dt = 10.0
+dt = 5.0
 single_precision_output = true
 variables = prims, divB, jcon, fflag, pflag, rimplflag, rinvflag, fofcflag
 
