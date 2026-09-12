@@ -24,7 +24,7 @@ r_in = 2.5
 r_out = 2.e4
 
 <parthenon/time>
-tlim = 5.e4
+tlim = 2.5e4
 
 <driver>
 type = imex
@@ -38,7 +38,7 @@ gamma = 1.6665866858620597
 <eos>
 type = IdealGas
 gamma = 1.6665866858620597
-Cv = 1.50017
+Cv = 1.0
 
 <bondi_rad>
 mdot = 1.0
