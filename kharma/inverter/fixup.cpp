@@ -242,7 +242,7 @@ TaskStatus Inverter::Backstop(MeshBlockData<Real>* rc)
                 // just bump it to that and kill all kinetic energy
                 // Also use this if v=0.
                 if ((Trest[0] - U(m_u.UU, k, j, i)) / U(m_u.UU, k, j, i) > -tol ||
-                    W <= 1.0 || (!backstop_recover_vel && !backstop_recover_u)) {
+                    !(W > 1.0) || (!backstop_recover_vel && !backstop_recover_u)) {
                     // W = 1
                     P(m_p.RHO, k, j, i) = D;
                     P(m_p.UU, k, j, i) = umin;
