@@ -366,8 +366,8 @@ KOKKOS_INLINE_FUNCTION void compute_covariant_fourforce(const GRCoordinates& G,
                         ((1.0 / 3.0) * Erf + E_hat) * ucov_mhd[mu];
     }
 
-    // Real Tg = eos.TemperatureFromDensityInternalEnergy(rho, P_mhd[0] / rho);
-    Real Tg = (5./3. - 1) * P_mhd[0] / rho; // TODO: This is a hack, we need to get the temperature from the EOS
+    Real Tg = eos.TemperatureFromDensityInternalEnergy(rho, P_mhd[0] / rho);
+    //Real Tg = (5./3. - 1) * P_mhd[0] / rho; // TODO: This is a hack, we need to get the temperature from the EOS
     Real kappa_a = RadM1::calc_kabs(
         rho, Tg, rad_opac);
     Real kappa_sc = RadM1::calc_kscattering(

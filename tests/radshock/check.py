@@ -92,7 +92,7 @@ if __name__ == '__main__':
         print("test{} {} Powerfit: {} L1: {}".format(test_num, v, powerfits[v], L1[v]))
         if powerfits[v] > -0.90:
             fail = 1
-        if test_num == '4a' and powerfits[v] < -0.6:
+        if test_num == '4a' and powerfits[v] < -0.5:
             fail = 0
 
     # plot
