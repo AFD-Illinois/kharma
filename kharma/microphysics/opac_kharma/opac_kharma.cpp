@@ -12,6 +12,7 @@
 #include <singularity-opac/photons/mean_s_opacity_photons.hpp>
 #include <singularity-opac/photons/opac_photons.hpp>
 #include <singularity-opac/photons/s_opac_photons.hpp>
+#include <spiner/databox.hpp>
 
 // phoebus includes
 #include "microphysics/eos_kharma/eos_kharma.hpp"
@@ -25,6 +26,19 @@ namespace Microphysics
 {
 namespace Opacity
 {
+Real TopsTableTMax(const std::string& file, const std::string& material,
+    const std::string& dataset)
+{
+    hid_t h5file = H5Fopen(file.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT);
+    PARTHENON_REQUIRE(h5file >= 0, "Could not open opac/tops_table_file!");
+    Spiner::DataBox<Real> table;
+    table.loadHDF(h5file, material + "/" + dataset);
+    const Real T_max = std::pow(10.0, table.range(1).max());
+    table.finalize();
+    H5Fclose(h5file);
+    return T_max;
+}
+
 std::shared_ptr<KHARMAPackage> Initialize(
     ParameterInput* pin, std::shared_ptr<Packages_t>& packages)
 {
@@ -127,6 +141,7 @@ std::shared_ptr<KHARMAPackage> Initialize(
 
     const std::string tops_table_file = pin->GetOrAddString(block_name, "tops_table_file", "");
     const std::string tops_table_material = pin->GetOrAddString(block_name, "tops_table_material", "");
+    Real tops_abs_T_max = 0.0;
    if (use_tops_table) {
         PARTHENON_REQUIRE(!tops_table_file.empty(),
             "opac/tops_table_file must be set when opac_kind includes tops_table!");
@@ -139,6 +154,8 @@ std::shared_ptr<KHARMAPackage> Initialize(
         MeanOpacity mean_opac_tops_device = mean_opac_tops_host.GetOnDevice();
         params.Add("h.mean_opacity_tops", mean_opac_tops_host);
         params.Add("d.mean_opacity_tops", mean_opac_tops_device);
+        tops_abs_T_max =
+            TopsTableTMax(tops_table_file, tops_table_material, "Planck group opacity");
     }
 
     if (use_bremsstrahlung) {
@@ -194,7 +211,7 @@ std::shared_ptr<KHARMAPackage> Initialize(
     // Pick which scattering opacity the user wants
     const std::string s_block_name = "opac";
     std::string s_opacity_kind = pin->GetOrAddString(s_block_name, "s_opac_kind", "none");
-    std::set<std::string> known_s_opacity_kinds = {"thomson"};
+    std::set<std::string> known_s_opacity_kinds = {"thomson", "tops_table"};
 
     // Currently just thompson.
     if ((RadM1::OpacityType)opacity_type == RadM1::OpacityType::Default && s_opacity_kind == "none") {
@@ -259,10 +276,28 @@ std::shared_ptr<KHARMAPackage> Initialize(
             params.Add("h.mean_s_opacity", mean_opac_host);
             params.Add("d.mean_s_opacity", mean_opac_device);
         }
-    }   else {
+    } else if (s_opacity_kind == "tops_table") {
+        PARTHENON_REQUIRE(!tops_table_file.empty(),
+            "opac/tops_table_file must be set when s_opac_kind is tops_table!");
+        PARTHENON_REQUIRE(!scale_free, "Must have CGS scaling for tabulated opacities!");
+        MeanSOpacity mean_opac_host = MeanNonCGSUnitsS<MeanSOpacityBase>(
+            MeanSOpacityBase(tops_table_file, tops_table_material), time_unit, mass_unit,
+            length_unit, temp_unit);
+        auto mean_opac_device = mean_opac_host.GetOnDevice();
+        params.Add("h.mean_s_opacity", mean_opac_host);
+        params.Add("d.mean_s_opacity", mean_opac_device);
+    } else {
         params.Add("h.mean_s_opacity", MeanSOpacityBase());
         params.Add("d.mean_s_opacity", MeanSOpacity());
     }
+
+    const bool use_tops_scattering = s_opacity_kind == "tops_table";
+    const Real tops_sca_T_max = use_tops_scattering
+        ? TopsTableTMax(tops_table_file, tops_table_material,
+              "Rosseland group scattering opacity")
+        : 0.0;
+    const Real X = pin->GetOrAddReal(block_name, "X", 0.7);
+    const Real Z = pin->GetOrAddReal(block_name, "Z", 0.02);
 
     auto opacity_device = params.Get<singularity::photons::Opacity>("d.opacity");
     auto& mean_opac_device = params.Get<MeanOpacity>("d.mean_opacity");
@@ -273,9 +308,9 @@ std::shared_ptr<KHARMAPackage> Initialize(
     auto mean_opac_tops_device = use_tops_table
         ? params.Get<MeanOpacity>("d.mean_opacity_tops")
         : MeanOpacity();
-    Opacities opacities(
-        opacity_device, mean_opac_device, s_opacity_device, mean_s_opac_device,
-        mean_opac_tops_device);
+    Opacities opacities(opacity_device, mean_opac_device, s_opacity_device,
+        mean_s_opac_device, mean_opac_tops_device, use_tops_scattering, tops_abs_T_max,
+        tops_sca_T_max, X, Z);
     params.Add("opacities", opacities);
 
     

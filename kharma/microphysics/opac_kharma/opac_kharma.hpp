@@ -50,12 +50,19 @@ class Opacities
     Opacities() = default;
     KOKKOS_FUNCTION
     Opacities(const Opacity& opac, const MeanOpacity& m_opac, const SOpacity& s_opac,
-        const MeanSOpacity& m_s_opac, const MeanOpacity& m_opac_tops)
+        const MeanSOpacity& m_s_opac, const MeanOpacity& m_opac_tops,
+        const bool tops_scattering, const Real tops_abs_T_max, const Real tops_sca_T_max,
+        const Real X, const Real Z)
         : opac_(opac)
         , m_opac_(m_opac)
         , s_opac_(s_opac)
         , m_s_opac_(m_s_opac)
         , m_opac_tops_(m_opac_tops)
+        , tops_scattering_(tops_scattering)
+        , tops_abs_T_max_(tops_abs_T_max)
+        , tops_sca_T_max_(tops_sca_T_max)
+        , X_(X)
+        , Z_(Z)
     {}
 
     /// Radiation equation of state calls
@@ -144,12 +151,23 @@ class Opacities
         return m_s_opac_.RosselandGroupScatteringCoefficient(rho, T, 0);
     }
 
+    KOKKOS_INLINE_FUNCTION bool UseTopsScattering() const { return tops_scattering_; }
+    KOKKOS_INLINE_FUNCTION Real TopsAbsorptionTMax() const { return tops_abs_T_max_; }
+    KOKKOS_INLINE_FUNCTION Real TopsScatteringTMax() const { return tops_sca_T_max_; }
+    KOKKOS_INLINE_FUNCTION Real HydrogenMassFraction() const { return X_; }
+    KOKKOS_INLINE_FUNCTION Real MetalMassFraction() const { return Z_; }
+
   private:
     Opacity opac_;
     MeanOpacity m_opac_;
     SOpacity s_opac_;
     MeanSOpacity m_s_opac_;
     MeanOpacity m_opac_tops_;
+    bool tops_scattering_ = false;
+    Real tops_abs_T_max_ = 0.0;
+    Real tops_sca_T_max_ = 0.0;
+    Real X_ = 0.7;
+    Real Z_ = 0.02;
 };
 
 namespace Opacity

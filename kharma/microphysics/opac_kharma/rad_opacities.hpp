@@ -72,9 +72,16 @@ class RadOpac
             }
             default: {
                 Real kappa = 0.0;
-                if (use_bremsstrahlung && !use_tops_table) kappa += sing_opac.PlanckMeanAbsorptionCoefficient(rho, Tg);
+                if (use_tops_table) {
+                    const Real Tg_cgs = m::abs(Tg) * units_cgs.GetTemperatureCodeToCGS();
+                    if (Tg_cgs <= sing_opac.TopsAbsorptionTMax())
+                        kappa += sing_opac.TopsTableAbsorptionCoefficient(rho, Tg);
+                    else
+                        kappa += bremsstrahlung(rho, Tg, Trad);
+                } else if (use_bremsstrahlung) {
+                    kappa += sing_opac.PlanckMeanAbsorptionCoefficient(rho, Tg);
+                }
                 if (use_synchrotron)    kappa += synchrotron(rho, Tg, Trad, bsq);
-                if (use_tops_table)     kappa += sing_opac.TopsTableAbsorptionCoefficient(rho, Tg);
                 return kappa;
             }
         }
@@ -98,6 +105,14 @@ class RadOpac
             case OpacityType::ThermalEquilibrium:
                 return 0.0;
             default: {
+                if (sing_opac.UseTopsScattering()) {
+                    const Real T_unit = units_cgs.GetTemperatureCodeToCGS();
+                    const Real Tg_cgs = m::abs(Tg) * T_unit;
+                    const Real T_max = sing_opac.TopsScatteringTMax();
+                    if (Tg_cgs > T_max)
+                        return sing_opac.RosselandMeanScatteringCoefficient(rho, T_max / T_unit) *
+                               klein_nishina(Tg_cgs) / klein_nishina(T_max);
+                }
                 return sing_opac.RosselandMeanScatteringCoefficient(rho, Tg);
             }
         }
@@ -157,6 +172,46 @@ class RadOpac
     }
 
   private:
+    KOKKOS_INLINE_FUNCTION
+    Real klein_nishina(const Real T_cgs) const
+    {
+        return 1.0 / (1.0 + m::pow(T_cgs / 4.5e8, 0.86));
+    }
+
+    KOKKOS_INLINE_FUNCTION
+    Real bremsstrahlung(const Real rho, const Real Tg, const Real Trad) const
+    {
+        const Real rho_cgs = rho * units_cgs.GetMassDensityCodeToCGS();
+        const Real Tg_cgs = m::abs(Tg) * units_cgs.GetTemperatureCodeToCGS();
+        const Real Trad_cgs = m::abs(Trad) * units_cgs.GetTemperatureCodeToCGS();
+        if (Tg_cgs <= 0.0) return 0.0;
+        const Real X = sing_opac.HydrogenMassFraction();
+        const Real Z = sing_opac.MetalMassFraction();
+        const Real Theta_e = pc::kb * Tg_cgs / (pc::me * pc::c * pc::c);
+
+        Real R_ei, R_ee;
+        if (Theta_e <= 1.0) {
+            R_ei = 1.0 + 1.76 * m::pow(Theta_e, 1.34);
+            R_ee = 1.7 * Theta_e *
+                   (1.0 + 1.1 * Theta_e + Theta_e * Theta_e - 1.06 * m::pow(Theta_e, 2.5));
+        } else {
+            R_ei = 1.4 * m::sqrt(Theta_e) * (m::log(1.12 * Theta_e + 0.48) + 1.5);
+            R_ee = 1.7 * m::sqrt(Theta_e) * 1.46 * (1.28 + m::log(1.12 * Theta_e));
+        }
+
+        const Real zeta = m::min(m::max(Trad_cgs / Tg_cgs, 1.0e-5), 1.0e5);
+        const Real a = 0.532, b = 3.14, c = 4.52;
+        const Real kappa_ei_cgs = 1.2e24 * m::pow(Tg_cgs, -3.5) * rho_cgs * rho_cgs *
+                                  (1.0 + X) * (1.0 - Z) * R_ei * a * m::pow(zeta, -b) *
+                                  m::log(1.0 + c * zeta);
+        const Real kappa_ee_cgs =
+            kappa_ei_cgs * (1.0 + X) / (2.0 * (1.0 - Z)) * R_ee / R_ei;
+
+        Real kappa = (kappa_ei_cgs + kappa_ee_cgs) * units_cgs.GetLengthCodeToCGS();
+        if (!isfinite(kappa)) kappa = 0.0;
+        return kappa;
+    }
+
     KOKKOS_INLINE_FUNCTION
     Real synchrotron(const Real rho, const Real Tg, const Real Trad, const Real bsq) const
     {
