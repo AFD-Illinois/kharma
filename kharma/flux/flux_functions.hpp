@@ -338,9 +338,19 @@ KOKKOS_FORCEINLINE_FUNCTION void vchar_rad(const GRCoordinates& G, const Global&
 
     // Out of the package modification RADM1.
     const Real bsq = dot(D.bcon, D.bcov);
-    // TODO PNM: This is an approximation, we should be using Tgas and T_rad. I guess it's
-    // fine for now
-    GReal kappa_abs = RadM1::calc_kabs(P(m.RHO, k, j, i), Tgas, Tgas, bsq, rad_opac);
+    const Real Erf = P(m.UU_RAD, k, j, i);
+    Real ucon_rad[GR_DIM], ucov_rad[GR_DIM];
+    RadM1::calc_ucon_rad(G, P, m, k, j, i, loc, ucon_rad);
+    G.lower(ucon_rad, ucov_rad, k, j, i, loc);
+
+    Real gamma_rel = -(ucon_rad[0] * D.ucov[0] + ucon_rad[1] * D.ucov[1] +
+                    ucon_rad[2] * D.ucov[2] + ucon_rad[3] * D.ucov[3]);
+    gamma_rel = m::max(gamma_rel, 1.0);
+
+    Real E_hat = Erf * ((4.0 / 3.0) * gamma_rel * gamma_rel - (1.0 / 3.0));
+    Real Trad = rad_opac.Trad(E_hat, P(m.RHO, k, j, i), bsq);
+
+    GReal kappa_abs = RadM1::calc_kabs(P(m.RHO, k, j, i), Tgas, Trad, bsq, rad_opac);
     GReal kappa_s = RadM1::calc_kscattering(P(m.RHO, k, j, i), Tgas, bsq, rad_opac);
 
     GReal kappa_tot = kappa_abs + kappa_s;
@@ -366,8 +376,6 @@ KOKKOS_FORCEINLINE_FUNCTION void vchar_rad(const GRCoordinates& G, const Global&
 
     GReal cms2 = cs2;
 
-    Real ucon_rad[GR_DIM];
-    RadM1::calc_ucon_rad(G, P, m, k, j, i, loc, ucon_rad);
     // Require that speed of wave measured by observer q.ucon is cms2
     Real A, B, C;
     {

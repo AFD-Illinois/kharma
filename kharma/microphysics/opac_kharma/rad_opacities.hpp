@@ -72,7 +72,7 @@ class RadOpac
             }
             default: {
                 Real kappa = 0.0;
-                if (use_bremsstrahlung) kappa += sing_opac.PlanckMeanAbsorptionCoefficient(rho, Tg);
+                if (use_bremsstrahlung && !use_tops_table) kappa += sing_opac.PlanckMeanAbsorptionCoefficient(rho, Tg);
                 if (use_synchrotron)    kappa += synchrotron(rho, Tg, Trad, bsq);
                 if (use_tops_table)     kappa += sing_opac.TopsTableAbsorptionCoefficient(rho, Tg);
                 return kappa;

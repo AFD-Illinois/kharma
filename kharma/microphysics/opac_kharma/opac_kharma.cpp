@@ -120,6 +120,9 @@ std::shared_ptr<KHARMAPackage> Initialize(
         params.Add("h.opacity_baseunits", opacity_host_baseunits);
         params.Add("h.opacity", opacity_host);
         params.Add("d.opacity", opacity_device);
+    } else {
+        params.Add("h.opacity", singularity::photons::Opacity());
+        params.Add("d.opacity", singularity::photons::Opacity());
     }
 
     const std::string tops_table_file = pin->GetOrAddString(block_name, "tops_table_file", "");
@@ -182,6 +185,9 @@ std::shared_ptr<KHARMAPackage> Initialize(
             params.Add("h.mean_opacity", mean_opac_host);
             params.Add("d.mean_opacity", mean_opac_device);
         }
+    } else {
+        params.Add("h.mean_opacity", MeanOpacity());
+        params.Add("d.mean_opacity", MeanOpacity());
     }
 
     const Real avg_particle_mass = pc::mp;
@@ -191,9 +197,9 @@ std::shared_ptr<KHARMAPackage> Initialize(
     std::set<std::string> known_s_opacity_kinds = {"thomson"};
 
     // Currently just thompson.
-    if (!known_s_opacity_kinds.count(s_opacity_kind)) {
+    if ((RadM1::OpacityType)opacity_type == RadM1::OpacityType::Default && s_opacity_kind == "none") {
         std::stringstream msg;
-        msg << "Scattering opacity model \"" << s_opacity_kind << "\" not recognized!";
+        msg << "Scattering opacity kind is set to \"none\" but opacity type is set to default!";
         PARTHENON_FAIL(msg);
     }
 
@@ -211,7 +217,7 @@ std::shared_ptr<KHARMAPackage> Initialize(
     }
 
     // Declaring mean opacities..
-    {
+    if (s_opacity_kind == "thomson") {
         auto opacity_host = params.Get<SOpacity>("h.s_opacity_baseunits");
         const std::vector<Real> group_bounds = {
             0., std::numeric_limits<Real>::infinity()};
@@ -253,6 +259,9 @@ std::shared_ptr<KHARMAPackage> Initialize(
             params.Add("h.mean_s_opacity", mean_opac_host);
             params.Add("d.mean_s_opacity", mean_opac_device);
         }
+    }   else {
+        params.Add("h.mean_s_opacity", MeanSOpacityBase());
+        params.Add("d.mean_s_opacity", MeanSOpacity());
     }
 
     auto opacity_device = params.Get<singularity::photons::Opacity>("d.opacity");
