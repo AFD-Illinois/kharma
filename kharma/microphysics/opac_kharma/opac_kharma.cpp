@@ -134,6 +134,12 @@ std::shared_ptr<KHARMAPackage> Initialize(
         params.Add("h.opacity_baseunits", opacity_host_baseunits);
         params.Add("h.opacity", opacity_host);
         params.Add("d.opacity", opacity_device);
+    } else if (!scale_free) {
+        singularity::photons::Opacity opacity_host =
+            NonCGSUnits<EPBremss>(EPBremss(PlanckDistribution<>()), time_unit, mass_unit,
+                length_unit, temp_unit);
+        params.Add("h.opacity", opacity_host);
+        params.Add("d.opacity", opacity_host.GetOnDevice());
     } else {
         params.Add("h.opacity", singularity::photons::Opacity());
         params.Add("d.opacity", singularity::photons::Opacity());
