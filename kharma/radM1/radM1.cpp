@@ -109,6 +109,8 @@ std::shared_ptr<KHARMAPackage> RadM1::Initialize(
     pkg->AllParams().Add("src_rootfind_maxiter", src_rootfind_maxiter);
 
     pkg->AllParams().Add("current_stage_dt", 0.0, true);
+    pkg->AllParams().Add("current_stage_gam0", 0.0, true);
+    pkg->AllParams().Add("current_stage_gam1", 1.0, true);
 
     // Opacity model selector (see rad_opacities.hpp).
     // Determine the problem ID
@@ -349,6 +351,8 @@ void RadM1::AddSourceImplicitly(
 
         // Fetch parameters
         const Real dt = pmb->packages.Get("RadM1")->Param<Real>("current_stage_dt");
+        const Real gam0 = pmb->packages.Get("RadM1")->Param<Real>("current_stage_gam0");
+        const Real gam1 = pmb->packages.Get("RadM1")->Param<Real>("current_stage_gam1");
         const Real src_rootfind_eps = params.Get<Real>("src_rootfind_eps");
         const Real src_rootfind_tol = params.Get<Real>("src_rootfind_tol");
         const int src_rootfind_maxiter = params.Get<int>("src_rootfind_maxiter");
@@ -381,11 +385,14 @@ void RadM1::AddSourceImplicitly(
         auto U_init_substep =
             pmb_data->PackVariables({Metadata::WithFluxes, Metadata::Cell}, cons_map);
 
-        // Is this declaration correct? ASK CORA
         auto dU_substep = md_flux_src->GetBlockData(b)->PackVariables(
             {Metadata::WithFluxes, Metadata::Cell}, cons_map);
         const VarMap m_p(prims_map, false);
         const VarMap m_u(cons_map, true);
+        PackIndexMap cons_map_base;
+        auto U_base = pmb->meshblock_data.Get()->PackVariables(
+            {Metadata::WithFluxes, Metadata::Cell}, cons_map_base);
+        const VarMap m_ub(cons_map_base, true);
 
         auto rimplflag = pmb_data->PackVariables(std::vector<std::string>{"rimplflag"});
         auto pflag = pmb_data->PackVariables(std::vector<std::string>{"pflag"});
@@ -424,6 +431,43 @@ void RadM1::AddSourceImplicitly(
                     P_init_substep(m_p.U1, k, j, i) == 0.0) {
                     rimplflag(0, k, j, i) = static_cast<int>(StatusImplicitStep::success);
                     return;
+                }
+
+                const int iu[9] = {m_u.RHO, m_u.UU, m_u.U1, m_u.U2, m_u.U3, m_u.UU_RAD,
+                    m_u.U1_RAD, m_u.U2_RAD, m_u.U3_RAD};
+                const int iub[9] = {m_ub.RHO, m_ub.UU, m_ub.U1, m_ub.U2, m_ub.U3,
+                    m_ub.UU_RAD, m_ub.U1_RAD, m_ub.U2_RAD, m_ub.U3_RAD};
+                const int ip[9] = {m_p.RHO, m_p.UU, m_p.U1, m_p.U2, m_p.U3, m_p.UU_RAD,
+                    m_p.U1_RAD, m_p.U2_RAD, m_p.U3_RAD};
+                Real U_save[9], P_save[9];
+                for (int n = 0; n < 9; n++) {
+                    U_save[n] = U_init_substep(iu[n], k, j, i);
+                    P_save[n] = P_init_substep(ip[n], k, j, i);
+                }
+                for (int n = 0; n < 9; n++)
+                    U_init_substep(iu[n], k, j, i) = gam0 * U_save[n] +
+                                                     gam1 * U_base(iub[n], k, j, i) +
+                                                     dt * dU_substep(iu[n], k, j, i);
+                const int status_star = Inverter::u_to_p<Inverter::Type::kastaun>(G,
+                    U_init_substep, m_u, eos, k, j, i, P_init_substep, m_p, Loci::center,
+                    25, 1e-12);
+                const Real Urad_star[4] = {U_init_substep(m_u.UU_RAD, k, j, i),
+                    U_init_substep(m_u.U1_RAD, k, j, i), U_init_substep(m_u.U2_RAD, k, j, i),
+                    U_init_substep(m_u.U3_RAD, k, j, i)};
+                Real Prad_star[4];
+                const auto rad_status_star = u_to_p_rad(G, Urad_star, Prad_star, k, j, i);
+                if (status_star == static_cast<int>(Inverter::Status::success) &&
+                    rad_status_star == StatusRadiationInversion::success &&
+                    P_init_substep(m_p.UU, k, j, i) > 0.0) {
+                    P_init_substep(m_p.UU_RAD, k, j, i) = Prad_star[0];
+                    P_init_substep(m_p.U1_RAD, k, j, i) = Prad_star[1];
+                    P_init_substep(m_p.U2_RAD, k, j, i) = Prad_star[2];
+                    P_init_substep(m_p.U3_RAD, k, j, i) = Prad_star[3];
+                } else {
+                    for (int n = 0; n < 9; n++) {
+                        U_init_substep(iu[n], k, j, i) = U_save[n];
+                        P_init_substep(ip[n], k, j, i) = P_save[n];
+                    }
                 }
 
                 const Real U_entry[8] = {U_init_substep(m_u.UU, k, j, i),
@@ -471,6 +515,10 @@ void RadM1::AddSourceImplicitly(
                             (gm1) / m::pow(P_init_substep(m_p.RHO, k, j, i), gm1) *
                             dS_subinit[4];
                     rimplflag(0, k, j, i) = rflagl;
+                    for (int n = 0; n < 9; n++) {
+                        U_init_substep(iu[n], k, j, i) = U_save[n];
+                        P_init_substep(ip[n], k, j, i) = P_save[n];
+                    }
                     return;
                 }
 
@@ -505,6 +553,10 @@ void RadM1::AddSourceImplicitly(
 
                     rimplflag(0, k, j, i) =
                         static_cast<int>(StatusImplicitStep::pradfallback_success);
+                    for (int n = 0; n < 9; n++) {
+                        U_init_substep(iu[n], k, j, i) = U_save[n];
+                        P_init_substep(ip[n], k, j, i) = P_save[n];
+                    }
                     return;
                 }
 
@@ -539,6 +591,10 @@ void RadM1::AddSourceImplicitly(
                 //     exit(666);
                 // }
                 rimplflag(0, k, j, i) = static_cast<int>(StatusImplicitStep::failure);
+                for (int n = 0; n < 9; n++) {
+                    U_init_substep(iu[n], k, j, i) = U_save[n];
+                    P_init_substep(ip[n], k, j, i) = P_save[n];
+                }
             });
     }
 }

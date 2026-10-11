@@ -290,6 +290,10 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t& blocks, int sta
         if (use_radm1) {
             blocks[0]->packages.Get("RadM1")->UpdateParam(
                 "current_stage_dt", integrator->beta[stage - 1] * integrator->dt);
+            blocks[0]->packages.Get("RadM1")->UpdateParam(
+                "current_stage_gam0", integrator->gam0[stage - 1]);
+            blocks[0]->packages.Get("RadM1")->UpdateParam(
+                "current_stage_gam1", integrator->gam1[stage - 1]);
         }
         // Add any source terms: geometric \Gamma * T, wind, damping, etc etc
         auto t_sources = tl.AddTask(t_flux_div, Packages::AddSource,
