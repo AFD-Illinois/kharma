@@ -74,10 +74,15 @@ class RadOpac
                 Real kappa = 0.0;
                 if (use_tops_table) {
                     const Real Tg_cgs = m::abs(Tg) * units_cgs.GetTemperatureCodeToCGS();
-                    if (Tg_cgs <= sing_opac.TopsAbsorptionTMax())
+                    if (Tg_cgs <= sing_opac.TopsAbsorptionTMax()) {
                         kappa += sing_opac.TopsTableAbsorptionCoefficient(rho, Tg);
-                    else
-                        kappa += bremsstrahlung(rho, Tg, Trad);
+                    } else {
+                        const Real Tm = sing_opac.TopsAbsorptionTMax() /
+                                        units_cgs.GetTemperatureCodeToCGS();
+                        kappa += bremsstrahlung(rho, Tg, Tg) *
+                                 sing_opac.TopsTableAbsorptionCoefficient(rho, Tm) /
+                                 bremsstrahlung(rho, Tm, Tm);
+                    }
                 } else if (use_bremsstrahlung) {
                     kappa += sing_opac.PlanckMeanAbsorptionCoefficient(rho, Tg);
                 }
