@@ -119,7 +119,20 @@ std::shared_ptr<KHARMAPackage> Initialize(
     params.Add("use_bremsstrahlung", use_bremsstrahlung);
     params.Add("use_synchrotron", use_synchrotron);
     params.Add("use_tops_table", use_tops_table);
-    
+
+    std::string regime_str = "AGN";
+    if (pin->DoesParameterExist(block_name, "regime")) {
+        regime_str = pin->GetString(block_name, "regime");
+    } else if (!scale_free) {
+        const Real m_bh_msun =
+            length_unit * pc::c * pc::c / (pc::g_newt * Units::solar_mass);
+        if (m_bh_msun < 1.e3) regime_str = "XRB";
+    }
+    pin->SetString(block_name, "regime", regime_str);
+    printf("Opacity fit regime: %s\n", regime_str.c_str());
+    params.Add("regime", (regime_str == "XRB") ? RadM1::RadOpac::FitType::XRB
+                                               : RadM1::RadOpac::FitType::AGN);
+
 
     if (use_bremsstrahlung) {
         PARTHENON_REQUIRE(

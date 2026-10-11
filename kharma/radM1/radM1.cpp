@@ -172,11 +172,6 @@ std::shared_ptr<KHARMAPackage> RadM1::Initialize(
     pkg->AllParams().Add("const_kappa_a", const_kappa_a, true);
     pkg->AllParams().Add("const_kappa_sc", const_kappa_sc, true);
 
-    std::string regime_str = pin->GetOrAddString("opac", "regime", "AGN");
-    RadOpac::FitType regime = RadOpac::FitType::AGN;
-    if (regime_str == "XRB") regime = RadOpac::FitType::XRB;
-    pkg->AllParams().Add("regime", regime);
-
     // TODO (PNM): Currently attached to the floors package. Make this a separate option
     // only for radiation package.
     bool floors_on_default = true;
@@ -364,7 +359,8 @@ void RadM1::AddSourceImplicitly(
         rad_opac.const_kappa_a = params.Get<Real>("const_kappa_a");
         rad_opac.const_kappa_sc = params.Get<Real>("const_kappa_sc");
         rad_opac.mean_molecular_weight = params.Get<Real>("mean_molecular_weight");
-        rad_opac.regime = params.Get<RadOpac::FitType>("regime");
+        rad_opac.regime =
+            pmb->packages.Get("opacity")->AllParams().Get<RadOpac::FitType>("regime");
         rad_opac.use_bremsstrahlung = pmb->packages.Get("opacity")->AllParams().Get<bool>("use_bremsstrahlung");
         rad_opac.use_synchrotron = pmb->packages.Get("opacity")->AllParams().Get<bool>("use_synchrotron");
         rad_opac.use_tops_table = pmb->packages.Get("opacity")->AllParams().Get<bool>("use_tops_table");
