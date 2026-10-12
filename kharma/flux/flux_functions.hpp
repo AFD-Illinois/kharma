@@ -344,7 +344,7 @@ KOKKOS_FORCEINLINE_FUNCTION void vchar_rad(const GRCoordinates& G, const Global&
     G.lower(ucon_rad, ucov_rad, k, j, i, loc);
 
     Real gamma_rel = -(ucon_rad[0] * D.ucov[0] + ucon_rad[1] * D.ucov[1] +
-                    ucon_rad[2] * D.ucov[2] + ucon_rad[3] * D.ucov[3]);
+                       ucon_rad[2] * D.ucov[2] + ucon_rad[3] * D.ucov[3]);
     gamma_rel = m::max(gamma_rel, 1.0);
 
     Real E_hat = Erf * ((4.0 / 3.0) * gamma_rel * gamma_rel - (1.0 / 3.0));

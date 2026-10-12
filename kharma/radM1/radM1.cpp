@@ -371,9 +371,12 @@ void RadM1::AddSourceImplicitly(
         rad_opac.mean_molecular_weight = params.Get<Real>("mean_molecular_weight");
         rad_opac.regime =
             pmb->packages.Get("opacity")->AllParams().Get<RadOpac::FitType>("regime");
-        rad_opac.use_bremsstrahlung = pmb->packages.Get("opacity")->AllParams().Get<bool>("use_bremsstrahlung");
-        rad_opac.use_synchrotron = pmb->packages.Get("opacity")->AllParams().Get<bool>("use_synchrotron");
-        rad_opac.use_tops_table = pmb->packages.Get("opacity")->AllParams().Get<bool>("use_tops_table");
+        rad_opac.use_bremsstrahlung =
+            pmb->packages.Get("opacity")->AllParams().Get<bool>("use_bremsstrahlung");
+        rad_opac.use_synchrotron =
+            pmb->packages.Get("opacity")->AllParams().Get<bool>("use_synchrotron");
+        rad_opac.use_tops_table =
+            pmb->packages.Get("opacity")->AllParams().Get<bool>("use_tops_table");
         rad_opac.units_cgs =
             pmb->packages.Get("Units")->AllParams().Get<Units::UnitConversions>(
                 "unit_conv");
@@ -561,11 +564,12 @@ void RadM1::AddSourceImplicitly(
                         }
                     }
                 }
-                const int status_star = Inverter::u_to_p<Inverter::Type::kastaun>(G,
-                    U_init_substep, m_u, eos, k, j, i, P_init_substep, m_p, Loci::center,
-                    25, 1e-12);
+                const int status_star =
+                    Inverter::u_to_p<Inverter::Type::kastaun>(G, U_init_substep, m_u, eos,
+                        k, j, i, P_init_substep, m_p, Loci::center, 25, 1e-12);
                 const Real Urad_star[4] = {U_init_substep(m_u.UU_RAD, k, j, i),
-                    U_init_substep(m_u.U1_RAD, k, j, i), U_init_substep(m_u.U2_RAD, k, j, i),
+                    U_init_substep(m_u.U1_RAD, k, j, i),
+                    U_init_substep(m_u.U2_RAD, k, j, i),
                     U_init_substep(m_u.U3_RAD, k, j, i)};
                 Real Prad_star[4];
                 const auto rad_status_star = u_to_p_rad(G, Urad_star, Prad_star, k, j, i);

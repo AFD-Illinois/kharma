@@ -86,7 +86,7 @@ class RadOpac
                 } else if (use_bremsstrahlung) {
                     kappa += sing_opac.PlanckMeanAbsorptionCoefficient(rho, Tg);
                 }
-                if (use_synchrotron)    kappa += synchrotron(rho, Tg, Trad, bsq);
+                if (use_synchrotron) kappa += synchrotron(rho, Tg, Trad, bsq);
                 return kappa;
             }
         }
@@ -115,7 +115,8 @@ class RadOpac
                     const Real Tg_cgs = m::abs(Tg) * T_unit;
                     const Real T_max = sing_opac.TopsScatteringTMax();
                     if (Tg_cgs > T_max)
-                        return sing_opac.RosselandMeanScatteringCoefficient(rho, T_max / T_unit) *
+                        return sing_opac.RosselandMeanScatteringCoefficient(
+                                   rho, T_max / T_unit) *
                                klein_nishina(Tg_cgs) / klein_nishina(T_max);
                 }
                 return sing_opac.RosselandMeanScatteringCoefficient(rho, Tg);
@@ -197,8 +198,9 @@ class RadOpac
         Real R_ei, R_ee;
         if (Theta_e <= 1.0) {
             R_ei = 1.0 + 1.76 * m::pow(Theta_e, 1.34);
-            R_ee = 1.7 * Theta_e *
-                   (1.0 + 1.1 * Theta_e + Theta_e * Theta_e - 1.06 * m::pow(Theta_e, 2.5));
+            R_ee =
+                1.7 * Theta_e *
+                (1.0 + 1.1 * Theta_e + Theta_e * Theta_e - 1.06 * m::pow(Theta_e, 2.5));
         } else {
             R_ei = 1.4 * m::sqrt(Theta_e) * (m::log(1.12 * Theta_e + 0.48) + 1.5);
             R_ee = 1.7 * m::sqrt(Theta_e) * 1.46 * (1.28 + m::log(1.12 * Theta_e));
