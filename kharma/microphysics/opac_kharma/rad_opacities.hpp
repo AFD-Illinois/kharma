@@ -230,8 +230,8 @@ class RadOpac
             units_cgs.GetEnergyCodeToCGS() / m::pow(units_cgs.GetLengthCodeToCGS(), 3.0);
         const Real B_cgs = m::sqrt(4.0 * M_PI * bsq * energy_density_scale); // Gauss
 
-        const Real n_e = rho_cgs / (mean_molecular_weight *
-                                       pc::mp); // mu: mean molecular weight per electron
+        const Real n_e =
+            rho_cgs * (1.0 + sing_opac.HydrogenMassFraction()) / (2.0 * pc::mp);
         const Real Theta_e = pc::kb * Tg_cgs / (pc::me * pc::c * pc::c);
         const Real nu_B =
             pc::qe * B_cgs / (2.0 * M_PI * pc::me * pc::c); // cyclotron frequency

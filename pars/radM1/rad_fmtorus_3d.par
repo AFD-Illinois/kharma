@@ -111,7 +111,7 @@ fluid_density_cgs = 1.e-3
 type = default
 opac_kind = synchrotron, tops_table
 s_opac_kind = tops_table
-tops_table_file = /data/pedro/opacities/final/solar_opac.sp5
+tops_table_file = opac_table/solar_opac.sp5
 tops_table_material = solar
 
 <debug>
