@@ -12,7 +12,7 @@ import pyharm
 WAVETYPES = ['sonic', 'slow', 'fast']
 REGIMES = ['puremhd', 'thin', 'thick']
 REGIME_LABEL = {'puremhd': 'pure', 'thin': 'thin', 'thick': 'thick'}
-EXPECTED_SLOPE = {'puremhd': -2.0, 'thin': -2.0, 'thick': -1.0}
+EXPECTED_SLOPE = {'puremhd': -2.0, 'thin': -2.0, 'thick': -2.0}
 SLOPE_TOL = 0.3
 
 

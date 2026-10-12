@@ -72,7 +72,6 @@ u_min_geom   = 1e-8
 <fofc>
 on = false
 
-
 <entropy>
 advect_entropy = true
 
@@ -92,7 +91,7 @@ u_rad_floor = 1e-20
 on = true
 scale_free = false
 geom_mass_msun = 1e6
-fluid_density_cgs = 1.e2
+fluid_density_cgs = 1.e-3
 
 <opac>
 # type here sets if you wanna handle the opacities yourself or give it to singularity opac
@@ -120,4 +119,4 @@ dt = 1.0
 
 <parthenon/output2>
 file_type = hst
-dt = 0.1
+dt = 1.0

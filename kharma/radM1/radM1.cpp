@@ -98,6 +98,9 @@ std::shared_ptr<KHARMAPackage> RadM1::Initialize(
         Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy});
     pkg->AddField("rimplflag", m);
     pkg->AddField("rinvflag", m);
+    pkg->AddField("rad_imex_src",
+        Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy},
+            std::vector<int>{5}));
     Real u_rad_floor = pin->GetOrAddReal("radM1", "u_rad_floor", 1.e-40);
     pkg->AllParams().Add("u_rad_floor", u_rad_floor);
 
@@ -111,6 +114,8 @@ std::shared_ptr<KHARMAPackage> RadM1::Initialize(
     pkg->AllParams().Add("current_stage_dt", 0.0, true);
     pkg->AllParams().Add("current_stage_gam0", 0.0, true);
     pkg->AllParams().Add("current_stage_gam1", 1.0, true);
+    pkg->AllParams().Add("current_stage", 1, true);
+    pkg->AllParams().Add("current_dt_full", 0.0, true);
 
     // Opacity model selector (see rad_opacities.hpp).
     // Determine the problem ID
@@ -348,6 +353,11 @@ void RadM1::AddSourceImplicitly(
         const Real dt = pmb->packages.Get("RadM1")->Param<Real>("current_stage_dt");
         const Real gam0 = pmb->packages.Get("RadM1")->Param<Real>("current_stage_gam0");
         const Real gam1 = pmb->packages.Get("RadM1")->Param<Real>("current_stage_gam1");
+        const int stage = pmb->packages.Get("RadM1")->Param<int>("current_stage");
+        const Real dt_full = pmb->packages.Get("RadM1")->Param<Real>("current_dt_full");
+        const Real dt_impl = (1.0 - 1.0 / std::sqrt(2.0)) * dt_full;
+        const Real w_solve = dt_impl / dt;
+        const Real w_hist = (stage == 2) ? std::sqrt(2.0) * dt_full / dt : 0.0;
         const Real src_rootfind_eps = params.Get<Real>("src_rootfind_eps");
         const Real src_rootfind_tol = params.Get<Real>("src_rootfind_tol");
         const int src_rootfind_maxiter = params.Get<int>("src_rootfind_maxiter");
@@ -394,6 +404,23 @@ void RadM1::AddSourceImplicitly(
         auto pflag = pmb_data->PackVariables(std::vector<std::string>{"pflag"});
 
         auto rinvflag = pmb_data->PackVariables(std::vector<std::string>{"rinvflag"});
+        auto imex_src = pmb_data->PackVariables(std::vector<std::string>{"rad_imex_src"});
+        auto Bf_sub = pmb_data->PackVariables(std::vector<std::string>{"cons.fB"});
+        auto Bf_base =
+            pmb->meshblock_data.Get()->PackVariables(std::vector<std::string>{"cons.fB"});
+        auto dBf = md_flux_src->GetBlockData(b)->PackVariables(
+            std::vector<std::string>{"cons.fB"});
+        const bool face_b = Bf_sub.GetDim(4) > 0;
+        const Real ars_d1 =
+            (stage == 2) ? (1.0 - 1.0 / (2.0 * (1.0 - 1.0 / std::sqrt(2.0)))) * dt_full
+                         : 0.0;
+        PackIndexMap cons_map_d1;
+        auto dU1 = pmb->meshblock_data.Get("dUdt_s1")->PackVariables(
+            {Metadata::WithFluxes, Metadata::Cell}, cons_map_d1);
+        const VarMap m_d1(cons_map_d1, true);
+        auto dBf1 = pmb->meshblock_data.Get("dUdt_s1")->PackVariables(
+            std::vector<std::string>{"cons.fB"});
+        const int ndim = pmb->pmy_mesh->ndim;
 
         const Real gm1 = eos_params.Get<Real>("gm1");
         auto bounds = pmb->cellbounds;
@@ -406,6 +433,14 @@ void RadM1::AddSourceImplicitly(
         pmb->par_for("RadM1_Implicit_Solver4D", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
             KOKKOS_LAMBDA (const int &k, const int &j, const int &i)
             {
+                const int iug[4] = {m_u.UU, m_u.U1, m_u.U2, m_u.U3};
+                const int iur[4] = {m_u.UU_RAD, m_u.U1_RAD, m_u.U2_RAD, m_u.U3_RAD};
+                Real G2[5];
+                for (int n = 0; n < 5; n++) {
+                    G2[n] = (stage == 2) ? imex_src(n, k, j, i) : 0.0;
+                    if (stage == 1) imex_src(n, k, j, i) = 0.0;
+                }
+
                 // Check if it's within the horizon, if it is, just assume no interaction
                 // and dU_subinit = 0; PNM: I've been having some trouble getting it to
                 // stay controled within the horizon.
@@ -425,6 +460,14 @@ void RadM1::AddSourceImplicitly(
                 // we shouldn't bother to try to solve this
                 if (P_init_substep(m_p.U1_RAD, k, j, i) == 0.0 ||
                     P_init_substep(m_p.U1, k, j, i) == 0.0) {
+                    for (int n = 0; n < 4; n++) {
+                        dU_substep(iug[n], k, j, i) -= w_hist * G2[n];
+                        dU_substep(iur[n], k, j, i) += w_hist * G2[n];
+                    }
+                    if (m_u.KTOT_ADV >= 0)
+                        dU_substep(m_u.KTOT_ADV, k, j, i) +=
+                            (gm1) / m::pow(P_init_substep(m_p.RHO, k, j, i), gm1) *
+                            w_hist * G2[4];
                     rimplflag(0, k, j, i) = static_cast<int>(StatusImplicitStep::success);
                     return;
                 }
@@ -440,10 +483,84 @@ void RadM1::AddSourceImplicitly(
                     U_save[n] = U_init_substep(iu[n], k, j, i);
                     P_save[n] = P_init_substep(ip[n], k, j, i);
                 }
+                const int iud1[9] = {m_d1.RHO, m_d1.UU, m_d1.U1, m_d1.U2, m_d1.U3,
+                    m_d1.UU_RAD, m_d1.U1_RAD, m_d1.U2_RAD, m_d1.U3_RAD};
                 for (int n = 0; n < 9; n++)
-                    U_init_substep(iu[n], k, j, i) = gam0 * U_save[n] +
-                                                     gam1 * U_base(iub[n], k, j, i) +
-                                                     dt * dU_substep(iu[n], k, j, i);
+                    U_init_substep(iu[n], k, j, i) =
+                        gam0 * U_save[n] + gam1 * U_base(iub[n], k, j, i) +
+                        dt * dU_substep(iu[n], k, j, i) +
+                        ((ars_d1 != 0.0) ? ars_d1 * dU1(iud1[n], k, j, i) : 0.0);
+                for (int n = 0; n < 4; n++) {
+                    U_init_substep(iug[n], k, j, i) -= w_hist * dt * G2[n];
+                    U_init_substep(iur[n], k, j, i) += w_hist * dt * G2[n];
+                }
+                Real B_save[3] = {0., 0., 0.}, PB_save[3] = {0., 0., 0.};
+                if (m_u.B1 >= 0 && m_p.B1 >= 0) {
+                    const Real gdet_c = G.gdet(Loci::center, j, i);
+                    for (int v = 0; v < 3; v++) {
+                        B_save[v] = U_init_substep(m_u.B1 + v, k, j, i);
+                        PB_save[v] = P_init_substep(m_p.B1 + v, k, j, i);
+                        U_init_substep(m_u.B1 + v, k, j, i) =
+                            gam0 * B_save[v] + gam1 * U_base(m_ub.B1 + v, k, j, i) +
+                            dt * dU_substep(m_u.B1 + v, k, j, i) +
+                            ((ars_d1 != 0.0) ? ars_d1 * dU1(m_d1.B1 + v, k, j, i) : 0.0);
+                        P_init_substep(m_p.B1 + v, k, j, i) =
+                            U_init_substep(m_u.B1 + v, k, j, i) / gdet_c;
+                    }
+                    if (face_b) {
+                        const Real b1l =
+                            gam0 * Bf_sub(F1, 0, k, j, i) +
+                            gam1 * Bf_base(F1, 0, k, j, i) + dt * dBf(F1, 0, k, j, i) +
+                            ((ars_d1 != 0.0) ? ars_d1 * dBf1(F1, 0, k, j, i) : 0.0);
+                        const Real b1r =
+                            gam0 * Bf_sub(F1, 0, k, j, i + 1) +
+                            gam1 * Bf_base(F1, 0, k, j, i + 1) +
+                            dt * dBf(F1, 0, k, j, i + 1) +
+                            ((ars_d1 != 0.0) ? ars_d1 * dBf1(F1, 0, k, j, i + 1) : 0.0);
+                        const Real b2l =
+                            gam0 * Bf_sub(F2, 0, k, j, i) +
+                            gam1 * Bf_base(F2, 0, k, j, i) + dt * dBf(F2, 0, k, j, i) +
+                            ((ars_d1 != 0.0) ? ars_d1 * dBf1(F2, 0, k, j, i) : 0.0);
+                        const Real b3l =
+                            gam0 * Bf_sub(F3, 0, k, j, i) +
+                            gam1 * Bf_base(F3, 0, k, j, i) + dt * dBf(F3, 0, k, j, i) +
+                            ((ars_d1 != 0.0) ? ars_d1 * dBf1(F3, 0, k, j, i) : 0.0);
+                        Real Bc[3];
+                        Bc[0] = (b1l / G.gdet(Loci::face1, j, i) +
+                                    b1r / G.gdet(Loci::face1, j, i + 1)) /
+                                2;
+                        if (ndim > 1) {
+                            const Real b2r =
+                                gam0 * Bf_sub(F2, 0, k, j + 1, i) +
+                                gam1 * Bf_base(F2, 0, k, j + 1, i) +
+                                dt * dBf(F2, 0, k, j + 1, i) +
+                                ((ars_d1 != 0.0) ? ars_d1 * dBf1(F2, 0, k, j + 1, i)
+                                                 : 0.0);
+                            Bc[1] = (b2l / G.gdet(Loci::face2, j, i) +
+                                        b2r / G.gdet(Loci::face2, j + 1, i)) /
+                                    2;
+                        } else {
+                            Bc[1] = b2l / G.gdet(Loci::face2, j, i);
+                        }
+                        if (ndim > 2) {
+                            const Real b3r =
+                                gam0 * Bf_sub(F3, 0, k + 1, j, i) +
+                                gam1 * Bf_base(F3, 0, k + 1, j, i) +
+                                dt * dBf(F3, 0, k + 1, j, i) +
+                                ((ars_d1 != 0.0) ? ars_d1 * dBf1(F3, 0, k + 1, j, i)
+                                                 : 0.0);
+                            Bc[2] = (b3l / G.gdet(Loci::face3, j, i) +
+                                        b3r / G.gdet(Loci::face3, j, i)) /
+                                    2;
+                        } else {
+                            Bc[2] = b3l / G.gdet(Loci::face3, j, i);
+                        }
+                        for (int v = 0; v < 3; v++) {
+                            P_init_substep(m_p.B1 + v, k, j, i) = Bc[v];
+                            U_init_substep(m_u.B1 + v, k, j, i) = Bc[v] * gdet_c;
+                        }
+                    }
+                }
                 const int status_star = Inverter::u_to_p<Inverter::Type::kastaun>(G,
                     U_init_substep, m_u, eos, k, j, i, P_init_substep, m_p, Loci::center,
                     25, 1e-12);
@@ -460,10 +577,17 @@ void RadM1::AddSourceImplicitly(
                     P_init_substep(m_p.U2_RAD, k, j, i) = Prad_star[2];
                     P_init_substep(m_p.U3_RAD, k, j, i) = Prad_star[3];
                 } else {
-                    for (int n = 0; n < 9; n++) {
-                        U_init_substep(iu[n], k, j, i) = U_save[n];
+                    for (int n = 0; n < 9; n++)
                         P_init_substep(ip[n], k, j, i) = P_save[n];
-                    }
+                }
+                {
+                    Real uvec_s[NVEC] = {P_init_substep(m_p.U1, k, j, i),
+                        P_init_substep(m_p.U2, k, j, i), P_init_substep(m_p.U3, k, j, i)};
+                    Real ucon_s[GR_DIM];
+                    GRMHD::calc_ucon(G, uvec_s, k, j, i, Loci::center, ucon_s);
+                    P_init_substep(m_p.RHO, k, j, i) =
+                        U_init_substep(m_u.RHO, k, j, i) /
+                        (G.gdet(Loci::center, j, i) * ucon_s[0]);
                 }
 
                 const Real U_entry[8] = {U_init_substep(m_u.UU, k, j, i),
@@ -484,7 +608,7 @@ void RadM1::AddSourceImplicitly(
                 Real dS_subinit[5] = {0., 0., 0., 0., 0.};
                 int rflagl;
 
-                rflagl = solve_4d_pmhd(G, P_init_substep, m_p, m_u, k, j, i, dt, eos,
+                rflagl = solve_4d_pmhd(G, P_init_substep, m_p, m_u, k, j, i, dt_impl, eos,
                     src_rootfind_eps, src_rootfind_tol, src_rootfind_maxiter, rad_opac,
                     pflag, rinvflag, U_entry, dS_subinit);
 
@@ -492,6 +616,10 @@ void RadM1::AddSourceImplicitly(
                 // should not be dealing with this, just accept this as it worked and send
                 // straight to fixup.
                 if (rflagl == static_cast<int>(StatusImplicitStep::success)) {
+                    for (int n = 0; n < 5; n++) {
+                        if (stage == 1) imex_src(n, k, j, i) = dS_subinit[n];
+                        dS_subinit[n] = w_solve * dS_subinit[n] + w_hist * G2[n];
+                    }
                     dU_substep(m_u.UU, k, j, i) -= dS_subinit[0];
                     dU_substep(m_u.U1, k, j, i) -= dS_subinit[1];
                     dU_substep(m_u.U2, k, j, i) -= dS_subinit[2];
@@ -515,12 +643,18 @@ void RadM1::AddSourceImplicitly(
                         U_init_substep(iu[n], k, j, i) = U_save[n];
                         P_init_substep(ip[n], k, j, i) = P_save[n];
                     }
+                    if (m_u.B1 >= 0 && m_p.B1 >= 0) {
+                        for (int v = 0; v < 3; v++) {
+                            U_init_substep(m_u.B1 + v, k, j, i) = B_save[v];
+                            P_init_substep(m_p.B1 + v, k, j, i) = PB_save[v];
+                        }
+                    }
                     return;
                 }
 
                 rflagl = solve_4d_prad(G, U_init_substep, P_init_substep, m_p, m_u, k, j,
-                    i, dt, eos, src_rootfind_eps, src_rootfind_tol, src_rootfind_maxiter,
-                    rad_opac, pflag, rinvflag, U_entry, dS_subinit);
+                    i, dt_impl, eos, src_rootfind_eps, src_rootfind_tol,
+                    src_rootfind_maxiter, rad_opac, pflag, rinvflag, U_entry, dS_subinit);
 
                 // Prad alters the P_init. So we gotta revert it back.
                 U_init_substep(m_u.UU, k, j, i) = U_entry[0];
@@ -534,6 +668,10 @@ void RadM1::AddSourceImplicitly(
                 P_init_substep(m_p.U3, k, j, i) = P_entry[4];
 
                 if (rflagl == static_cast<int>(StatusImplicitStep::success)) {
+                    for (int n = 0; n < 5; n++) {
+                        if (stage == 1) imex_src(n, k, j, i) = dS_subinit[n];
+                        dS_subinit[n] = w_solve * dS_subinit[n] + w_hist * G2[n];
+                    }
                     dU_substep(m_u.UU, k, j, i) -= dS_subinit[0];
                     dU_substep(m_u.U1, k, j, i) -= dS_subinit[1];
                     dU_substep(m_u.U2, k, j, i) -= dS_subinit[2];
@@ -552,6 +690,12 @@ void RadM1::AddSourceImplicitly(
                     for (int n = 0; n < 9; n++) {
                         U_init_substep(iu[n], k, j, i) = U_save[n];
                         P_init_substep(ip[n], k, j, i) = P_save[n];
+                    }
+                    if (m_u.B1 >= 0 && m_p.B1 >= 0) {
+                        for (int v = 0; v < 3; v++) {
+                            U_init_substep(m_u.B1 + v, k, j, i) = B_save[v];
+                            P_init_substep(m_p.B1 + v, k, j, i) = PB_save[v];
+                        }
                     }
                     return;
                 }
@@ -586,10 +730,24 @@ void RadM1::AddSourceImplicitly(
                 // if(P_init_substep(m_p.U1, k, j, i) != 0.0) {
                 //     exit(666);
                 // }
+                for (int n = 0; n < 4; n++) {
+                    dU_substep(iug[n], k, j, i) -= w_hist * G2[n];
+                    dU_substep(iur[n], k, j, i) += w_hist * G2[n];
+                }
+                if (m_u.KTOT_ADV >= 0)
+                    dU_substep(m_u.KTOT_ADV, k, j, i) +=
+                        (gm1) / m::pow(P_init_substep(m_p.RHO, k, j, i), gm1) * w_hist *
+                        G2[4];
                 rimplflag(0, k, j, i) = static_cast<int>(StatusImplicitStep::failure);
                 for (int n = 0; n < 9; n++) {
                     U_init_substep(iu[n], k, j, i) = U_save[n];
                     P_init_substep(ip[n], k, j, i) = P_save[n];
+                }
+                if (m_u.B1 >= 0 && m_p.B1 >= 0) {
+                    for (int v = 0; v < 3; v++) {
+                        U_init_substep(m_u.B1 + v, k, j, i) = B_save[v];
+                        P_init_substep(m_p.B1 + v, k, j, i) = PB_save[v];
+                    }
                 }
             });
     }

@@ -920,7 +920,21 @@ KOKKOS_INLINE_FUNCTION int solve_4d_pmhd(const GRCoordinates& G,
         return static_cast<int>(StatusImplicitStep::failure);
     }
 
-    for (int n = 0; n < 4; n++) dS_final[n] = (U_rad_guess[n] - U_rad_0[n]) / dt;
+    {
+        Real uvec_g[NVEC] = {P_mhd_guess[1], P_mhd_guess[2], P_mhd_guess[3]};
+        FourVectors D_g;
+        GRMHD::calc_4vecs(G, uvec_g, B_P, k, j, i, Loci::center, D_g);
+        const Real w_gas =
+            rho_iter + P_mhd_guess[0] +
+            eos.PressureFromDensityInternalEnergy(rho_iter, P_mhd_guess[0] / rho_iter) +
+            dot(D_g.bcon, D_g.bcov);
+        const bool e_rad = P_rad_guess[0] > P_mhd_guess[0];
+        const bool m_rad = (4.0 / 3.0) * P_rad_guess[0] > w_gas;
+        for (int n = 0; n < 4; n++) {
+            const bool solved_state = (n == 0) ? e_rad : m_rad;
+            dS_final[n] = solved_state ? (U_rad_guess[n] - U_rad_0[n]) / dt : dS_guess[n];
+        }
+    }
 
     {
         Real uvec_final[NVEC] = {P_mhd_guess[1], P_mhd_guess[2], P_mhd_guess[3]};
@@ -1067,7 +1081,8 @@ KOKKOS_INLINE_FUNCTION int solve_4d_prad(const GRCoordinates& G,
     // loop below can detect when a perturbed sample has crossed onto a
     // different (maybe discontinuous) branch relative to the guess itself.
     bool used_normal_guess = true;
-    u_to_p_rad(G, U_rad_guess, P_rad_guess, k, j, i, &used_normal_guess);
+    const auto rad_status_entry =
+        u_to_p_rad(G, U_rad_guess, P_rad_guess, k, j, i, &used_normal_guess);
     Real kappa_tot_entry = 0.0;
     compute_covariant_fourforce(G, P_mhd_guess, P_rad_guess, rho_init, B_P, eos, rad_opac,
         k, j, i, dS_guess, &kappa_tot_entry);
@@ -1075,7 +1090,8 @@ KOKKOS_INLINE_FUNCTION int solve_4d_prad(const GRCoordinates& G,
         10.0 * std::numeric_limits<Real>::epsilon() * kappa_tot_entry * dt);
 
     bool comoving_guess = false;
-    if (kappa_tot_entry * dt > 1.0) {
+    if (kappa_tot_entry * dt > 1.0 ||
+        rad_status_entry != StatusRadiationInversion::success) {
         Real uvec_gas[NVEC] = {P_mhd_guess[1], P_mhd_guess[2], P_mhd_guess[3]};
         Real ucon_gas[GR_DIM], ucov_gas[GR_DIM];
         GRMHD::calc_ucon(G, uvec_gas, k, j, i, Loci::center, ucon_gas);
@@ -1104,14 +1120,15 @@ KOKKOS_INLINE_FUNCTION int solve_4d_prad(const GRCoordinates& G,
                              ((4.0 / 3.0) * gamma_rel_com * gamma_rel_com - 1.0 / 3.0);
         const Real Erf_gas =
             U_rad_0[0] / gdet / ((4.0 / 3.0) * ucon_gas[0] * ucov_gas[0] + 1.0 / 3.0);
-        const Real candidates[2][4] = {
-            {Erf_com, uvec_com[0], uvec_com[1], uvec_com[2]},
-            {Erf_gas, uvec_gas[0], uvec_gas[1], uvec_gas[2]}};
+        const Real candidates[3][4] = {{Erf_com, uvec_com[0], uvec_com[1], uvec_com[2]},
+            {Erf_gas, uvec_gas[0], uvec_gas[1], uvec_gas[2]},
+            {P_init(m_p.UU_RAD, k, j, i), P_init(m_p.U1_RAD, k, j, i),
+                P_init(m_p.U2_RAD, k, j, i), P_init(m_p.U3_RAD, k, j, i)}};
         const Real P_save[5] = {P_init(m_p.RHO, k, j, i), P_init(m_p.UU, k, j, i),
             P_init(m_p.U1, k, j, i), P_init(m_p.U2, k, j, i), P_init(m_p.U3, k, j, i)};
         const Real U_save[4] = {U_init(m_u.UU, k, j, i), U_init(m_u.U1, k, j, i),
             U_init(m_u.U2, k, j, i), U_init(m_u.U3, k, j, i)};
-        for (int c = 0; c < 2; c++) {
+        for (int c = 0; c < 3; c++) {
             if (!(candidates[c][0] > 0.0) || !m::isfinite(candidates[c][0])) continue;
             Real P_rad_c[4] = {candidates[c][0], candidates[c][1], candidates[c][2],
                 candidates[c][3]};
