@@ -73,16 +73,7 @@ class RadOpac
             default: {
                 Real kappa = 0.0;
                 if (use_tops_table) {
-                    const Real Tg_cgs = m::abs(Tg) * units_cgs.GetTemperatureCodeToCGS();
-                    if (Tg_cgs <= sing_opac.TopsAbsorptionTMax()) {
-                        kappa += sing_opac.TopsTableAbsorptionCoefficient(rho, Tg);
-                    } else {
-                        const Real Tm = sing_opac.TopsAbsorptionTMax() /
-                                        units_cgs.GetTemperatureCodeToCGS();
-                        kappa += bremsstrahlung(rho, Tg, Tg) *
-                                 sing_opac.TopsTableAbsorptionCoefficient(rho, Tm) /
-                                 bremsstrahlung(rho, Tm, Tm);
-                    }
+                    kappa += tops_absorption(rho, Tg);
                 } else if (use_bremsstrahlung) {
                     kappa += sing_opac.PlanckMeanAbsorptionCoefficient(rho, Tg);
                 }
@@ -110,15 +101,7 @@ class RadOpac
             case OpacityType::ThermalEquilibrium:
                 return 0.0;
             default: {
-                if (sing_opac.UseTopsScattering()) {
-                    const Real T_unit = units_cgs.GetTemperatureCodeToCGS();
-                    const Real Tg_cgs = m::abs(Tg) * T_unit;
-                    const Real T_max = sing_opac.TopsScatteringTMax();
-                    if (Tg_cgs > T_max)
-                        return sing_opac.RosselandMeanScatteringCoefficient(
-                                   rho, T_max / T_unit) *
-                               klein_nishina(Tg_cgs) / klein_nishina(T_max);
-                }
+                if (sing_opac.UseTopsScattering()) return tops_scattering(rho, Tg);
                 return sing_opac.RosselandMeanScatteringCoefficient(rho, Tg);
             }
         }
@@ -184,6 +167,52 @@ class RadOpac
         return 1.0 / (1.0 + m::pow(T_cgs / 4.5e8, 0.86));
     }
 
+    // Spiner extrapolates log(kappa) linearly from the edge cells of a table, which
+    // can give unphysical opacities elsewhere. So the TOPS lookups are clamped to the table, and outside it:
+    //  - T > T_max: absorption from the McKinney et al. 2017 free-free fit.
+    //  - T < T_min: hold the T_min value.
+    //  - rho > rho_max: hold kappa = alpha/rho at the edge,
+    //  - rho < rho_min: absorption kappa ~ rho (free-free, as gas only gets more
+    //    ionized), scattering kappa held at the edge (stays below Thomson).
+
+    // TOPS Planck-mean absorption coefficient (code units)
+    KOKKOS_INLINE_FUNCTION
+    Real tops_absorption(const Real rho, const Real Tg) const
+    {
+        const Microphysics::TableBounds bounds = sing_opac.TopsAbsorptionBounds();
+        const Real rho_unit = units_cgs.GetMassDensityCodeToCGS();
+        const Real T_unit = units_cgs.GetTemperatureCodeToCGS();
+        const Real T_max = bounds.T_max / T_unit;
+        const Real T = m::abs(Tg);
+        if (T > T_max) return bremsstrahlung(rho, T, T);
+
+        const Real rho_min = bounds.rho_min / rho_unit;
+        const Real rho_q = m::min(m::max(rho, rho_min), bounds.rho_max / rho_unit);
+        const Real T_q = m::max(T, bounds.T_min / T_unit);
+
+        Real fac = rho / rho_q;
+        if (rho < rho_min) fac *= rho / rho_min;
+        return fac * sing_opac.TopsTableAbsorptionCoefficient(rho_q, T_q);
+    }
+
+    // TOPS Rosseland-mean scattering coefficient (code units)
+    KOKKOS_INLINE_FUNCTION
+    Real tops_scattering(const Real rho, const Real Tg) const
+    {
+        const Microphysics::TableBounds bounds = sing_opac.TopsScatteringBounds();
+        const Real rho_unit = units_cgs.GetMassDensityCodeToCGS();
+        const Real T_unit = units_cgs.GetTemperatureCodeToCGS();
+        const Real T_max = bounds.T_max / T_unit;
+        const Real T = m::abs(Tg);
+        const Real rho_q =
+            m::min(m::max(rho, bounds.rho_min / rho_unit), bounds.rho_max / rho_unit);
+        const Real T_q = m::min(m::max(T, bounds.T_min / T_unit), T_max);
+
+        Real fac = rho / rho_q;
+        if (T > T_max) fac *= klein_nishina(T * T_unit) / klein_nishina(bounds.T_max);
+        return fac * sing_opac.RosselandMeanScatteringCoefficient(rho_q, T_q);
+    }
+
     KOKKOS_INLINE_FUNCTION
     Real bremsstrahlung(const Real rho, const Real Tg, const Real Trad) const
     {
@@ -238,8 +267,7 @@ class RadOpac
         const Real nu_mu = 1.5 * nu_B * Theta_e * Theta_e;  // thermal synchrotron peak
 
         // Eventually, we will want to evolve photon number, therefore chi will be used,
-        // for now, chi = 0 returns the fit for no photon number. const Real chi =
-        // mu/(pc::kb * T_cgs);
+        // for now, chi = 0 .
         const Real chi = 0;
 
         const Real phi = m::max(pc::kb * Trad_cgs / (pc::h * nu_mu), 1.0e-5);
@@ -247,8 +275,9 @@ class RadOpac
 
         // AGN coefficients
         Real a, b, c, d, e;
-        // (the 0.99 cap is the one McKinney et al. 2017, Sec. 3.3, use for synchrotron)
-        const Real xc = m::min(m::max(exp_chi, 0.), 0.99);
+        // No photon number is evolved, so the radiation is Planck: use the e^{-xi} = 1
+        // fit for both emission and absorption.
+        const Real xc = m::min(m::max(exp_chi, 0.), 1.0);
         const Real omx = 1. - xc;
         if (regime == FitType::AGN) {
             // McKinney et al. 2017, eq. D8

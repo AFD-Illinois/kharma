@@ -35,6 +35,14 @@ using namespace parthenon::package::prelude;
 namespace Microphysics
 {
 
+// Density and temperature range (CGS) covered by a tabulated opacity
+struct TableBounds {
+    Real rho_min = 0.0;
+    Real rho_max = 0.0;
+    Real T_min = 0.0;
+    Real T_max = 0.0;
+};
+
 class Opacities
 {
     using Opacity = singularity::photons::Opacity;
@@ -51,16 +59,16 @@ class Opacities
     KOKKOS_FUNCTION
     Opacities(const Opacity& opac, const MeanOpacity& m_opac, const SOpacity& s_opac,
         const MeanSOpacity& m_s_opac, const MeanOpacity& m_opac_tops,
-        const bool tops_scattering, const Real tops_abs_T_max, const Real tops_sca_T_max,
-        const Real X, const Real Z)
+        const bool tops_scattering, const TableBounds& tops_abs_bounds,
+        const TableBounds& tops_sca_bounds, const Real X, const Real Z)
         : opac_(opac)
         , m_opac_(m_opac)
         , s_opac_(s_opac)
         , m_s_opac_(m_s_opac)
         , m_opac_tops_(m_opac_tops)
         , tops_scattering_(tops_scattering)
-        , tops_abs_T_max_(tops_abs_T_max)
-        , tops_sca_T_max_(tops_sca_T_max)
+        , tops_abs_bounds_(tops_abs_bounds)
+        , tops_sca_bounds_(tops_sca_bounds)
         , X_(X)
         , Z_(Z)
     {}
@@ -152,8 +160,14 @@ class Opacities
     }
 
     KOKKOS_INLINE_FUNCTION bool UseTopsScattering() const { return tops_scattering_; }
-    KOKKOS_INLINE_FUNCTION Real TopsAbsorptionTMax() const { return tops_abs_T_max_; }
-    KOKKOS_INLINE_FUNCTION Real TopsScatteringTMax() const { return tops_sca_T_max_; }
+    KOKKOS_INLINE_FUNCTION TableBounds TopsAbsorptionBounds() const
+    {
+        return tops_abs_bounds_;
+    }
+    KOKKOS_INLINE_FUNCTION TableBounds TopsScatteringBounds() const
+    {
+        return tops_sca_bounds_;
+    }
     KOKKOS_INLINE_FUNCTION Real HydrogenMassFraction() const { return X_; }
     KOKKOS_INLINE_FUNCTION Real MetalMassFraction() const { return Z_; }
 
@@ -164,8 +178,8 @@ class Opacities
     MeanSOpacity m_s_opac_;
     MeanOpacity m_opac_tops_;
     bool tops_scattering_ = false;
-    Real tops_abs_T_max_ = 0.0;
-    Real tops_sca_T_max_ = 0.0;
+    TableBounds tops_abs_bounds_;
+    TableBounds tops_sca_bounds_;
     Real X_ = 0.7;
     Real Z_ = 0.02;
 };

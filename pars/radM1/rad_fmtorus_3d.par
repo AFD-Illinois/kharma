@@ -52,7 +52,7 @@ type = llf
 reconstruction = ppm
 
 <driver>
-type = kharma
+type = imex
 # Second sync at the end of each step
 # Can skip this with the robust inverter & face_ct B fields
 two_sync = false
