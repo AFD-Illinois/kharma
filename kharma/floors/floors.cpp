@@ -257,7 +257,7 @@ TaskStatus Floors::ApplyInitialFloors(
         floors_tmp.bsq_over_u_max = 1e20;
         floors_tmp.u_over_rho_max = 1e20;
         floors_tmp.ktot_max = 1e20;
-        floors_tmp.gamma_max = 1e20;
+        floors_tmp.lfac_max = 1e20;
 
         floors_tmp.use_r_char = false;
         floors_tmp.r_char = 0.; // unused

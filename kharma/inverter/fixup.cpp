@@ -36,6 +36,7 @@
 
 #include "domain.hpp"
 #include "floors.hpp"
+#include "floors_constants.hpp"
 #include "floors_functions.hpp"
 #include "flux_functions.hpp"
 #include "pack.hpp"
@@ -397,9 +398,9 @@ TaskStatus Inverter::Backstop(MeshBlockData<Real>* rc)
                     auto f = [&](Real iW)
                     {
                         // Rescale velocity
-                        Real gamma_fac = m::sqrt((SQR(1. / iW) - 1.) / (SQR(W) - 1.));
-                        const Real uv[NVEC] = {gamma_fac * uvec[0], gamma_fac * uvec[1],
-                            gamma_fac * uvec[2]};
+                        Real uvec_fac = m::sqrt((SQR(1. / iW) - 1.) / (SQR(W) - 1.));
+                        const Real uv[NVEC] = {uvec_fac * uvec[0], uvec_fac * uvec[1],
+                            uvec_fac * uvec[2]};
                         // Calculate tensor (we only need T0)
                         Real rho_ut, T[GR_DIM];
                         GRMHD::p_to_u_mhd(
@@ -410,7 +411,7 @@ TaskStatus Inverter::Backstop(MeshBlockData<Real>* rc)
 
                     // Rootfind for iW that would have produced the current T00
                     bool e_solve_failed = false;
-                    Real iWm = 1 / m::min(W, 50.), iWp = 1.;
+                    Real iWm = 1 / m::min(W, (Real)Floors::LFAC_CAP), iWp = 1.;
                     Real iW;
                     if (f(iWp) * f(iWm) > 0.) {
                         e_solve_failed = true;
@@ -435,9 +436,9 @@ TaskStatus Inverter::Backstop(MeshBlockData<Real>* rc)
                     }
 
                     // Compute what we really need
-                    Real gamma_fac = m::sqrt((SQR(1. / iW) - 1.) / (SQR(W) - 1.));
-                    if (!(gamma_fac < 1) && !e_solve_failed) {
-                        fflagl |= Floors::FFlag::FIXUP_VEL_GAMMA;
+                    Real uvec_fac = m::sqrt((SQR(1. / iW) - 1.) / (SQR(W) - 1.));
+                    if (!(uvec_fac < 1) && !e_solve_failed) {
+                        fflagl |= Floors::FFlag::FIXUP_VEL_LFAC;
                         e_solve_failed = true;
                         // TO PRINT (for verifying this only happens via round-off error)
                         // Refresh initial T, we used it in solve
@@ -446,16 +447,16 @@ TaskStatus Inverter::Backstop(MeshBlockData<Real>* rc)
                         //                     uvec, B_P, gam, k, j, i, rho_ut, T);
                         // Compute T from solved vals to compare
                         // Real Tsolved[GR_DIM] = {0.};
-                        // const Real uvecr[NDIM] = {uvec[0]*gamma_fac, uvec[1]*gamma_fac,
-                        // uvec[2]*gamma_fac}; GRMHD::p_to_u_mhd(G, D * iW, umin, uvecr,
+                        // const Real uvecr[NDIM] = {uvec[0]*uvec_fac, uvec[1]*uvec_fac,
+                        // uvec[2]*uvec_fac}; GRMHD::p_to_u_mhd(G, D * iW, umin, uvecr,
                         // B_P, gam, k, j, i, rho_ut, Tsolved); printf("bad gamma
                         // recovery: total deficit %g rest deficit %g remaining deficit
-                        // %g\nfinal gamma_fac: %g rho %g u %g uvec %g %g %g B %g %g
+                        // %g\nfinal uvec_fac: %g rho %g u %g uvec %g %g %g B %g %g
                         // %g\n",
                         //         (T[0] - U(m_u.UU, k, j, i)) / U(m_u.UU, k, j, i),
                         //         (Trest[0] - U(m_u.UU, k, j, i)) / U(m_u.UU, k, j, i),
                         //         (Tsolved[0] - U(m_u.UU, k, j, i)) / U(m_u.UU, k, j, i),
-                        //         gamma_fac, D * iW, umin, uvecr[0], uvecr[1], uvecr[2],
+                        //         uvec_fac, D * iW, umin, uvecr[0], uvecr[1], uvecr[2],
                         //         B_P[0], B_P[1], B_P[2]);
                     }
                     if (!e_solve_failed) {
@@ -463,9 +464,9 @@ TaskStatus Inverter::Backstop(MeshBlockData<Real>* rc)
                         // TODO(CEP) still limit iW >= etc
                         P(m_p.RHO, k, j, i) = D * iW;
                         P(m_p.UU, k, j, i) = umin;
-                        P(m_p.U1, k, j, i) *= gamma_fac;
-                        P(m_p.U2, k, j, i) *= gamma_fac;
-                        P(m_p.U3, k, j, i) *= gamma_fac;
+                        P(m_p.U1, k, j, i) *= uvec_fac;
+                        P(m_p.U2, k, j, i) *= uvec_fac;
+                        P(m_p.U3, k, j, i) *= uvec_fac;
                         fflagl |= Floors::FFlag::FIXUP_VEL;
                     } else {
                         P(m_p.RHO, k, j, i) = D;

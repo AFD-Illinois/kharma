@@ -56,7 +56,7 @@ enum class Status {
     neg_input,
     max_iter,
     bad_ut,
-    bad_gamma,
+    bad_lfac,
     neg_rho,
     neg_u,
     neg_rhou,
@@ -66,7 +66,8 @@ enum class Status {
 
 static const std::map<int, std::string> status_names = {
     {(int)Status::neg_input, "Negative input"}, {(int)Status::max_iter, "Hit max iter"},
-    {(int)Status::bad_ut, "Velocity invalid"}, {(int)Status::bad_gamma, "Gamma invalid"},
+    {(int)Status::bad_ut, "Velocity invalid"},
+    {(int)Status::bad_lfac, "Lorentz factor invalid"},
     {(int)Status::neg_rho, "Negative rho"}, {(int)Status::neg_u, "Negative U"},
     {(int)Status::neg_rhou, "Negative rho & U"},
     {(int)Status::floor, "Floor during inversion"},

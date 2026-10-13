@@ -62,6 +62,7 @@
 #include "invert_template.hpp"
 
 #include "coordinate_utils.hpp"
+#include "floors_constants.hpp"
 // #include "floors_functions.hpp"
 #include "grmhd_functions.hpp"
 #include "kharma_utils.hpp"
@@ -267,7 +268,9 @@ KOKKOS_INLINE_FUNCTION int u_to_p<Type::kastaun>(const GRCoordinates& G,
     }
     // const Real zsq = rsq / h0sq_; // h0sq_ normalization set to 1 in Phoebus
     const Real zsq = rsq;
-    const Real v0sq = std::min(zsq / (1.0 + zsq), 1.0 - 1.0 / SQR(51.));
+    // Cap the solve just past LFAC_CAP, so capped solutions always fail the W check below
+    const Real v0sq =
+        std::min(zsq / (1.0 + zsq), 1.0 - 1.0 / SQR(Floors::LFAC_CAP + 1.));
 
     // residual object. Caches most arguments/floors so calls are single-argument
     KastaunResidual res(D, q, bsq, bsq_rpsq, rsq, rbsq, v0sq, eos);
@@ -400,8 +403,8 @@ KOKKOS_INLINE_FUNCTION int u_to_p<Type::kastaun>(const GRCoordinates& G,
         return static_cast<int>(Status::neg_rho);
     } else if (u <= 0.) {
         return static_cast<int>(Status::neg_u);
-    } else if (mag_vel < 0. || !(W < 50.)) {
-        return static_cast<int>(Status::bad_gamma);
+    } else if (mag_vel < 0. || !(W < Floors::LFAC_CAP)) {
+        return static_cast<int>(Status::bad_lfac);
     } else if (returncode) {
         return returncode;
     } else {

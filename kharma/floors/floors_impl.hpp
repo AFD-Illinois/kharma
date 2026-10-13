@@ -90,7 +90,8 @@ TaskStatus ApplyFloorsInFrame(MeshData<Real>* md, IndexDomain domain)
                 const auto& G = P.GetCoords(b);
 
                 // Apply ceilings *before* floors, they are less important
-                // Generally we only use the gamma ceiling, which can help raise rho/u
+                // Generally we only use the Lorentz factor ceiling, which can help
+                // raise rho/u
                 apply_ceilings(G, P(b), m_p, k, j, i, floors, U(b), m_u);
 
                 // apply_floors can involve another U_to_P call, capture that flag
