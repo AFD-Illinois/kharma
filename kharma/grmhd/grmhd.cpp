@@ -441,7 +441,8 @@ Real EstimateTimestep(MeshData<Real>* md)
 
         // Out of the Package modification RADM1.
         // With radiation, the step must satisfy the CFL condition of both the MHD and
-        // the radiation fluxes, so we gotta be careful since in optically thick zones the radiation speeds can be below the fast magnetosonic speed.
+        // the radiation fluxes, so we gotta be careful since in optically thick zones the
+        // radiation speeds can be below the fast magnetosonic speed.
         const bool use_rad = pmesh->packages.AllPackages().count("RadM1");
 
         const auto& cmax_rad =
@@ -486,9 +487,10 @@ Real EstimateTimestep(MeshData<Real>* md)
                 const Real c3 = m::max(m::max(cmax(V3, k, j, i), cmin(V3, k, j, i)),
                     m::max(cmax_rad(V3, k, j, i), cmin_rad(V3, k, j, i)));
 
-                double ndt_zone = courant_limit / ((c1 / G.Dxc<1>(i)) +
-                                                      (c2 / (G.Dxc<2>(j) * excise_factor)) +
-                                                      (c3 / (G.Dxc<3>(k) * ismr_factor)));
+                double ndt_zone =
+                    courant_limit /
+                    ((c1 / G.Dxc<1>(i)) + (c2 / (G.Dxc<2>(j) * excise_factor)) +
+                        (c3 / (G.Dxc<3>(k) * ismr_factor)));
 
                 if (!m::isnan(ndt_zone) && (ndt_zone < local_result)) {
                     local_result = ndt_zone;

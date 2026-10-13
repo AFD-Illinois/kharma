@@ -331,7 +331,8 @@ TaskStatus RadM1::BlockUtoP(MeshBlockData<Real>* rc, IndexDomain domain, bool co
             Real Prad[4];
             Real Urad[4] = {U(m_u.UU_RAD, k, j, i), U(m_u.U1_RAD, k, j, i),
                 U(m_u.U2_RAD, k, j, i), U(m_u.U3_RAD, k, j, i)};
-            const auto status = RadM1::u_to_p_rad(G, Urad, Prad, k, j, i, nullptr, RadLimiterType::BASIC);
+            const auto status =
+                RadM1::u_to_p_rad(G, Urad, Prad, k, j, i, nullptr, RadLimiterType::BASIC);
             rinvflag(0, k, j, i) = static_cast<int>(status);
             P(m_p.UU_RAD, k, j, i) = Prad[0];
             P(m_p.U1_RAD, k, j, i) = Prad[1];
@@ -368,10 +369,9 @@ TaskStatus RadM1::FixRadiation(MeshBlockData<Real>* rc)
             const bool inside_horizon = r_hor > 0.0 && Xembed[1] < r_hor;
 
             const bool bad =
-                !inside_horizon &&
-                (rad_inversion_failed(rinvflag(0, k, j, i)) ||
-                    rimplflag(0, k, j, i) ==
-                        static_cast<int>(StatusImplicitStep::failure));
+                !inside_horizon && (rad_inversion_failed(rinvflag(0, k, j, i)) ||
+                                       rimplflag(0, k, j, i) ==
+                                           static_cast<int>(StatusImplicitStep::failure));
             if (bad) {
                 double wsum = 0.;
                 double sum[4] = {0.};
@@ -390,7 +390,8 @@ TaskStatus RadM1::FixRadiation(MeshBlockData<Real>* rc)
                                     rimplflag(0, kk, jj, ii) ==
                                         static_cast<int>(StatusImplicitStep::failure);
                                 if (!nbad) {
-                                    double w = 1. / (m::abs(l) + m::abs(m) + m::abs(n) + 1);
+                                    double w =
+                                        1. / (m::abs(l) + m::abs(m) + m::abs(n) + 1);
                                     wsum += w;
                                     sum[0] += w * Prad(m_prad.UU_RAD, kk, jj, ii);
                                     sum[1] += w * Prad(m_prad.U1_RAD, kk, jj, ii);
@@ -542,8 +543,10 @@ void RadM1::AddSourceImplicitly(
 
                 // if U1_rad == 0 or U1 == 0 it means that it fell badly on floors
                 // we shouldn't bother to try to solve this
-                if ((P_init_substep(m_p.U1_RAD, k, j, i) == 0.0 && P_init_substep(m_p.U3_RAD, k, j, i) == 0.0) ||
-                    P_init_substep(m_p.U1, k, j, i) == 0.0 && P_init_substep(m_p.U3, k, j, i) == 0.0) {
+                if ((P_init_substep(m_p.U1_RAD, k, j, i) == 0.0 &&
+                        P_init_substep(m_p.U3_RAD, k, j, i) == 0.0) ||
+                    P_init_substep(m_p.U1, k, j, i) == 0.0 &&
+                        P_init_substep(m_p.U3, k, j, i) == 0.0) {
                     for (int n = 0; n < 4; n++) {
                         dU_substep(iug[n], k, j, i) -= w_hist * G2[n];
                         dU_substep(iur[n], k, j, i) += w_hist * G2[n];

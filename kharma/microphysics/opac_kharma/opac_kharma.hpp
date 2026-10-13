@@ -36,7 +36,8 @@ namespace Microphysics
 {
 
 // Density and temperature range (CGS) covered by a tabulated opacity
-struct TableBounds {
+struct TableBounds
+{
     Real rho_min = 0.0;
     Real rho_max = 0.0;
     Real T_min = 0.0;

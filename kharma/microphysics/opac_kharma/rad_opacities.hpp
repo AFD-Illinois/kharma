@@ -168,7 +168,8 @@ class RadOpac
     }
 
     // Spiner extrapolates log(kappa) linearly from the edge cells of a table, which
-    // can give unphysical opacities elsewhere. So the TOPS lookups are clamped to the table, and outside it:
+    // can give unphysical opacities elsewhere. So the TOPS lookups are clamped to the
+    // table, and outside it:
     //  - T > T_max: absorption from the McKinney et al. 2017 free-free fit.
     //  - T < T_min: hold the T_min value.
     //  - rho > rho_max: hold kappa = alpha/rho at the edge,
