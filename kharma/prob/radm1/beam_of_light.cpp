@@ -2,6 +2,7 @@
 #include "floors.hpp"
 
 #include "boundaries.hpp"
+#include "kharma_constants.hpp"
 #include "radM1.hpp"
 
 #include <cmath>
@@ -35,9 +36,8 @@ void AddBeamOfLightParameters(ParameterInput* pin, Packages_t& packages)
     const Units::UnitConversions unit_conv =
         packages.Get("Units")->AllParams().Get<Units::UnitConversions>("unit_conv");
     const Real energy_density_scale = unit_conv.GetEnergyCodeToCGS();
-    constexpr Real sigma_sb_cgs = 5.670374419e-5;
-    constexpr Real c_cgs = 2.99792458e10;
-    constexpr Real arad_cgs = 4.0 * sigma_sb_cgs / c_cgs;
+    constexpr Real c_cgs = pc::c;
+    constexpr Real arad_cgs = 4.0 * Units::SIGMA_SB_CGS / c_cgs;
 
     // Find out the beam temperature to set E, by using E = a * T^4.
     const Real T_beam_K = T_beam_over_Ta * T_ambient_K;

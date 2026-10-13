@@ -41,6 +41,7 @@
 
 #include "gr_coordinates.hpp"
 #include "grmhd_functions.hpp"
+#include "kharma_constants.hpp"
 #include "kharma_utils.hpp"
 #include "types.hpp"
 #include "units.hpp"

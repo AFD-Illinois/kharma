@@ -49,6 +49,7 @@
 #include "grmhd_functions.hpp"
 #include "inverter.hpp"
 #include "kharma.hpp"
+#include "kharma_constants.hpp"
 #include "kharma_driver.hpp"
 
 // phoebus includes
@@ -694,7 +695,8 @@ void CancelBoundaryU3(MeshBlockData<Real>* rc, IndexDomain domain, bool coarse)
                     [&](const int& k)
                     {
                         Inverter::u_to_p<Inverter::Type::kastaun>(
-                            G, U, m_u, eos, k, jf, i, P, m_p, Loci::center, 25, 1e-14);
+                            G, U, m_u, eos, k, jf, i, P, m_p, Loci::center,
+                            Inverter::KASTAUN_ITER_MAX, Inverter::KASTAUN_ERR_TOL);
                     });
             }
             member.team_barrier();
@@ -802,7 +804,8 @@ void CancelBoundaryT3(MeshBlockData<Real>* rc, IndexDomain domain, bool coarse)
                     U(m_u.U3, k, jf, i) -= T3_avg;
                     // Recover primitive GRMHD variables from our modified U
                     Inverter::u_to_p<Inverter::Type::kastaun>(
-                        G, U, m_u, eos, k, jf, i, P, m_p, Loci::center, 25, 1e-14);
+                        G, U, m_u, eos, k, jf, i, P, m_p, Loci::center,
+                        Inverter::KASTAUN_ITER_MAX, Inverter::KASTAUN_ERR_TOL);
                     // Floor them
                     int fflag = Floors::apply_geo_floors(
                         G, P, m_p, k, jf, i, floors, Loci::center);

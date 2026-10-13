@@ -36,9 +36,9 @@
 
 #include "domain.hpp"
 #include "floors.hpp"
-#include "floors_constants.hpp"
 #include "floors_functions.hpp"
 #include "flux_functions.hpp"
+#include "kharma_constants.hpp"
 #include "pack.hpp"
 #include "radM1/radM1.hpp"
 
@@ -121,7 +121,7 @@ TaskStatus Inverter::FixUtoP(MeshBlockData<Real>* rc)
 
                 // Set to atmosphere/floors, zero velocity
                 // Fallback fix if we're averaging, only fix if not
-                if (wsum < 1.e-10) {
+                if (wsum < NEIGHBOR_WSUM_MIN) {
                     // We fill this with floor values below
                     PRIMLOOP P(p, k, j, i) = 0.;
                 } else {
@@ -220,7 +220,7 @@ TaskStatus Inverter::FixUtoP(MeshBlockData<Real>* rc)
                         }
                     }
 
-                    if (wsum < 1.e-10) {
+                    if (wsum < NEIGHBOR_WSUM_MIN) {
                         Prad(m_prad.UU_RAD, k, j, i) = erad_floor;
                         Prad(m_prad.U1_RAD, k, j, i) = 0.;
                         Prad(m_prad.U2_RAD, k, j, i) = 0.;
@@ -356,9 +356,10 @@ TaskStatus Inverter::Backstop(MeshBlockData<Real>* rc)
                         fflagl |= Floors::FFlag::FIXUP_U_RANGE;
                     } else {
                         Real uc = (up + um) / 2.;
-                        for (int i = 0; i < 100; i++) {
+                        for (int i = 0; i < iter_max; i++) {
                             Real resv = m::abs(f(uc));
-                            if ((resv < tol) || (m::abs((up - um) / 2) < tol) || i > 90) {
+                            if ((resv < tol) || (m::abs((up - um) / 2) < tol) ||
+                                i >= iter_max - 1) {
                                 uu = uc;
                                 e_solve_failed = (resv > tol);
                                 break;
@@ -418,10 +419,10 @@ TaskStatus Inverter::Backstop(MeshBlockData<Real>* rc)
                         fflagl |= Floors::FFlag::FIXUP_VEL_RANGE;
                     } else {
                         Real iWc = (iWp + iWm) / 2.;
-                        for (int i = 0; i < 100; i++) {
+                        for (int i = 0; i < iter_max; i++) {
                             Real resv = m::abs(f(iWc));
                             if ((resv < tol) || (m::abs((iWp - iWm) / 2) < tol) ||
-                                i > 90) {
+                                i >= iter_max - 1) {
                                 iW = iWc;
                                 e_solve_failed = (resv > tol);
                                 break;

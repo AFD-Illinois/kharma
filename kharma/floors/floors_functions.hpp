@@ -34,7 +34,7 @@
 #pragma once
 
 #include "floors.hpp"
-#include "floors_constants.hpp"
+#include "kharma_constants.hpp"
 // For template specializations since inverter needs floors too
 #include "kastaun.hpp"
 #include "onedw.hpp"
@@ -321,7 +321,8 @@ KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::normal_onedw>(FLOOR_ONE_
 
     // Recover primitive variables from conserved versions
     return Inverter::u_to_p<Inverter::Type::onedw>(
-        G, U, m_u, eos, k, j, i, P, m_p, Loci::center, 8, 1e-8);
+        G, U, m_u, eos, k, j, i, P, m_p, Loci::center,
+        Inverter::ONEDW_ITER_MAX, Inverter::ONEDW_ERR_TOL);
 }
 
 template<>
@@ -352,7 +353,8 @@ KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::normal_kastaun>(FLOOR_ON
 
     // Recover new primitive variables
     return Inverter::u_to_p<Inverter::Type::kastaun>(
-        G, U, m_u, eos, k, j, i, P, m_p, Loci::center, 25, 1e-14);
+        G, U, m_u, eos, k, j, i, P, m_p, Loci::center,
+        Inverter::KASTAUN_ITER_MAX, Inverter::KASTAUN_ERR_TOL);
 }
 
 template<>
@@ -381,7 +383,7 @@ KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::normal_kastaun_eenough>(
     // If the velocity is a guess because the solve failed...
     if (P(m_p.RHO, k, j, i) <= 0. || P(m_p.UU, k, j, i) <= 0.) {
         // 1a. What velocity conserves momentum?  Calculate it.
-        const Real tol = 1e-14;
+        const Real tol = Inverter::KASTAUN_ERR_TOL;
         const Real W = GRMHD::lorentz_calc(G, uvec, k, j, i, Loci::center);
         auto f = [&](Real iW)
         {
@@ -407,9 +409,10 @@ KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::normal_kastaun_eenough>(
             e_solve_failed = true;
         } else {
             Real iWc = (iWp + iWm) / 2.;
-            for (int i = 0; i < 100; i++) {
+            for (int i = 0; i < Inverter::BACKSTOP_ITER_MAX; i++) {
                 Real resv = m::abs(f(iWc));
-                if ((resv < tol) || (m::abs((iWp - iWm) / 2) < tol) || i > 90) {
+                if ((resv < tol) || (m::abs((iWp - iWm) / 2) < tol) ||
+                    i >= Inverter::BACKSTOP_ITER_MAX - 1) {
                     iW = iWc;
                     e_solve_failed = (resv > tol);
                     break;
@@ -441,7 +444,8 @@ KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::normal_kastaun_eenough>(
 
     // 4. Attempt to recover new primitive variables
     return Inverter::u_to_p<Inverter::Type::kastaun>(
-        G, U, m_u, eos, k, j, i, P, m_p, Loci::center, 25, 1e-14);
+        G, U, m_u, eos, k, j, i, P, m_p, Loci::center,
+        Inverter::KASTAUN_ITER_MAX, Inverter::KASTAUN_ERR_TOL);
 }
 
 // These are implemented as special cases in the kernel in floors_impl.hpp

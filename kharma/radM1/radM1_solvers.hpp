@@ -36,8 +36,8 @@
 #include "radM1.hpp"
 
 #include "entropy.hpp"
-#include "floors_constants.hpp"
 #include "inverter.hpp"
+#include "kharma_constants.hpp"
 
 #define RAD_LARGE (0.1 * std::numeric_limits<Real>::max())
 #define RAD_SMALL (10.0 * std::numeric_limits<Real>::min())
@@ -89,7 +89,7 @@ KOKKOS_INLINE_FUNCTION StatusRadiationInversion u_to_p_rad(const GRCoordinates& 
 
     if (!m::isfinite(Ucov_zamo[0]) || !m::isfinite(Ucov_zamo[1]) ||
         !m::isfinite(Ucov_zamo[2]) || !m::isfinite(Ucov_zamo[3])) {
-        P_rad[0] = 1.e-300;
+        P_rad[0] = ERAD_FALLBACK;
         P_rad[1] = 0.0;
         P_rad[2] = 0.0;
         P_rad[3] = 0.0;
@@ -148,14 +148,14 @@ KOKKOS_INLINE_FUNCTION StatusRadiationInversion u_to_p_rad(const GRCoordinates& 
         if (type == RadLimiterType::BASIC) {
             if (U_dot_eta > 0.0) {
                 // Erad <= 0
-                P_rad[0] = 1.e-300;
+                P_rad[0] = ERAD_FALLBACK;
                 P_rad[1] = 0.0;
                 P_rad[2] = 0.0;
                 P_rad[3] = 0.0;
                 return StatusRadiationInversion::urad_negative;
             } else if (y < 0.0 && y > -RAD_EPS) {
                 // 0 > y > -m: zero the velocity only, leave Erf as already computed above
-                if (!m::isfinite(Erf)) Erf = 1.e-300;
+                if (!m::isfinite(Erf)) Erf = ERAD_FALLBACK;
                 P_rad[0] = Erf;
                 P_rad[1] = 0.0;
                 P_rad[2] = 0.0;
@@ -173,7 +173,7 @@ KOKKOS_INLINE_FUNCTION StatusRadiationInversion u_to_p_rad(const GRCoordinates& 
                     uvec_rad[mu] = m::sqrt(lfac_rad_sq_basic) * Utilde_con[mu] /
                                    (4.0 * p_rad_basic * lfac_rad_sq_basic);
 
-                if (!m::isfinite(Erf)) Erf = 1.e-300;
+                if (!m::isfinite(Erf)) Erf = ERAD_FALLBACK;
                 if (!m::isfinite(uvec_rad[1])) uvec_rad[1] = 0.0;
                 if (!m::isfinite(uvec_rad[2])) uvec_rad[2] = 0.0;
                 if (!m::isfinite(uvec_rad[3])) uvec_rad[3] = 0.0;
@@ -213,7 +213,7 @@ KOKKOS_INLINE_FUNCTION StatusRadiationInversion u_to_p_rad(const GRCoordinates& 
             for (int mu = 1; mu < 4; ++mu)
                 uvec_rad[mu] = m::sqrt(lfac_rad_sq_tp2) * Utilde_con[mu] /
                                (4.0 * p_rad_tp2 * lfac_rad_sq_tp2);
-            if (!m::isfinite(Erf)) Erf = 1.e-300;
+            if (!m::isfinite(Erf)) Erf = ERAD_FALLBACK;
             if (!m::isfinite(uvec_rad[1])) uvec_rad[1] = 0.0;
             if (!m::isfinite(uvec_rad[2])) uvec_rad[2] = 0.0;
             if (!m::isfinite(uvec_rad[3])) uvec_rad[3] = 0.0;
@@ -225,7 +225,7 @@ KOKKOS_INLINE_FUNCTION StatusRadiationInversion u_to_p_rad(const GRCoordinates& 
         }
     }
 
-    if (!m::isfinite(Erf)) Erf = 1.e-300;
+    if (!m::isfinite(Erf)) Erf = ERAD_FALLBACK;
     if (!m::isfinite(uvec_rad[1])) uvec_rad[1] = 0.0;
     if (!m::isfinite(uvec_rad[2])) uvec_rad[2] = 0.0;
     if (!m::isfinite(uvec_rad[3])) uvec_rad[3] = 0.0;
@@ -1045,7 +1045,8 @@ KOKKOS_INLINE_FUNCTION int solve_4d_prad(const GRCoordinates& G,
             U_init(m_u.U2, k, j, i) = U_mhd_m[2];
             U_init(m_u.U3, k, j, i) = U_mhd_m[3];
             auto mhd_inverter_status = Inverter::u_to_p<Inverter::Type::kastaun>(
-                G, U_init, m_u, eos, k, j, i, P_init, m_p, Loci::center, 25, 1e-12);
+                G, U_init, m_u, eos, k, j, i, P_init, m_p, Loci::center,
+                Inverter::KASTAUN_ITER_MAX, IMPLICIT_KASTAUN_ERR_TOL);
 
             P_mhd_m[0] = P_init(m_p.UU, k, j, i);
             P_mhd_m[1] = P_init(m_p.U1, k, j, i);
@@ -1081,7 +1082,8 @@ KOKKOS_INLINE_FUNCTION int solve_4d_prad(const GRCoordinates& G,
             U_init(m_u.U2, k, j, i) = U_mhd_p[2];
             U_init(m_u.U3, k, j, i) = U_mhd_p[3];
             auto mhd_inverter_status_p = Inverter::u_to_p<Inverter::Type::kastaun>(
-                G, U_init, m_u, eos, k, j, i, P_init, m_p, Loci::center, 25, 1e-12);
+                G, U_init, m_u, eos, k, j, i, P_init, m_p, Loci::center,
+                Inverter::KASTAUN_ITER_MAX, IMPLICIT_KASTAUN_ERR_TOL);
 
             P_mhd_p[0] = P_init(m_p.UU, k, j, i);
             P_mhd_p[1] = P_init(m_p.U1, k, j, i);
@@ -1145,7 +1147,8 @@ KOKKOS_INLINE_FUNCTION int solve_4d_prad(const GRCoordinates& G,
                 U_init(m_u.U2, k, j, i) = U_mhd_p[2];
                 U_init(m_u.U3, k, j, i) = U_mhd_p[3];
                 auto mhd_inverter_status = Inverter::u_to_p<Inverter::Type::kastaun>(
-                    G, U_init, m_u, eos, k, j, i, P_init, m_p, Loci::center, 25, 1e-12);
+                    G, U_init, m_u, eos, k, j, i, P_init, m_p, Loci::center,
+                    Inverter::KASTAUN_ITER_MAX, IMPLICIT_KASTAUN_ERR_TOL);
 
                 P_mhd_p[0] = P_init(m_p.UU, k, j, i);
                 P_mhd_p[1] = P_init(m_p.U1, k, j, i);
@@ -1203,7 +1206,8 @@ KOKKOS_INLINE_FUNCTION int solve_4d_prad(const GRCoordinates& G,
                 U_init(m_u.U2, k, j, i) = U_mhd_m[2];
                 U_init(m_u.U3, k, j, i) = U_mhd_m[3];
                 auto mhd_inverter_status = Inverter::u_to_p<Inverter::Type::kastaun>(
-                    G, U_init, m_u, eos, k, j, i, P_init, m_p, Loci::center, 25, 1e-12);
+                    G, U_init, m_u, eos, k, j, i, P_init, m_p, Loci::center,
+                    Inverter::KASTAUN_ITER_MAX, IMPLICIT_KASTAUN_ERR_TOL);
                 P_mhd_m[0] = P_init(m_p.UU, k, j, i);
                 P_mhd_m[1] = P_init(m_p.U1, k, j, i);
                 P_mhd_m[2] = P_init(m_p.U2, k, j, i);
@@ -1265,7 +1269,8 @@ KOKKOS_INLINE_FUNCTION int solve_4d_prad(const GRCoordinates& G,
             U_init(m_u.U3, k, j, i) = U_mhd_guess[3];
 
             auto mhd_inverter_status = Inverter::u_to_p<Inverter::Type::kastaun>(
-                G, U_init, m_u, eos, k, j, i, P_init, m_p, Loci::center, 25, 1e-12);
+                G, U_init, m_u, eos, k, j, i, P_init, m_p, Loci::center,
+                Inverter::KASTAUN_ITER_MAX, IMPLICIT_KASTAUN_ERR_TOL);
 
             if (mhd_inverter_status != static_cast<int>(Inverter::Status::success)) {
                 scaling_factor /= 3.0;

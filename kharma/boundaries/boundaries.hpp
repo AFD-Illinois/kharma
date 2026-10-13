@@ -37,8 +37,8 @@
 
 #include "boundary_types.hpp"
 #include "dirichlet.hpp"
-#include "floors_constants.hpp"
 #include "grmhd_functions.hpp"
+#include "kharma_constants.hpp"
 #include "one_block_transmit.hpp"
 
 /**

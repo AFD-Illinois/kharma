@@ -37,8 +37,8 @@
 // We define a specialization based on the Inverter::Type parameter
 #include "invert_template.hpp"
 
-#include "floors_constants.hpp"
 #include "grmhd_functions.hpp"
+#include "kharma_constants.hpp"
 #include "kharma_utils.hpp"
 
 // phoebus includes
@@ -97,7 +97,7 @@ template<>
 KOKKOS_INLINE_FUNCTION int u_to_p<Type::onedw>(const GRCoordinates& G,
     const VariablePack<Real>& U, const VarMap& m_u, const Microphysics::EOS::EOS& eos,
     const int& k, const int& j, const int& i, const VariablePack<Real>& P,
-    const VarMap& m_p, const Loci& loc, const int& max_iterations, const Real& tol)
+    const VarMap& m_p, const Loci& loc, const int max_iterations, const Real tol)
 {
     // TODO try inline floors in the old 1Dw?  Probably not relevant anymore
     // Catch negative density

@@ -62,9 +62,9 @@
 #include "invert_template.hpp"
 
 #include "coordinate_utils.hpp"
-#include "floors_constants.hpp"
 // #include "floors_functions.hpp"
 #include "grmhd_functions.hpp"
+#include "kharma_constants.hpp"
 #include "kharma_utils.hpp"
 
 // phoebus includes
@@ -184,7 +184,7 @@ template<>
 KOKKOS_INLINE_FUNCTION int u_to_p<Type::kastaun>(const GRCoordinates& G,
     const VariablePack<Real>& U, const VarMap& m_u, const Microphysics::EOS::EOS& eos,
     const int& k, const int& j, const int& i, const VariablePack<Real>& P,
-    const VarMap& m_p, const Loci& loc, const int& max_iterations, const Real& tol)
+    const VarMap& m_p, const Loci& loc, const int max_iterations, const Real tol)
 {
     // Shouldn't need this, KHARMA should die on NaN
     // But it's here for debugging
