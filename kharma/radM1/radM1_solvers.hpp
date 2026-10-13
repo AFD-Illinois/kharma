@@ -487,9 +487,8 @@ KOKKOS_INLINE_FUNCTION Real calculate_error(const Real resid[4],
         err[0] = 0.0;
     }
 
-    // Momentum components each normalized only by its
-    // own history, plus a small floor tied to the energy component's own
-    // magnitude (1e-20*uu[UU])
+    /// Momentum components normalized by their own history plus the energy
+    // component, so near-zero momentum does not turn round-off into large errors
     for (int n = 1; n < 4; n++) {
         if (m::abs(resid[n]) > KORAL_SMALL) {
             err[n] = m::abs(resid[n]) / (m::abs(U_mhd_guess[0]) + m::abs(U_mhd_guess[n]) +

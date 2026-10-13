@@ -107,6 +107,14 @@ static const std::map<int, std::string> status_names_inversion = {
 
 };
 
+// maximum_gamma leaves a usable state, so only these count as failures
+KOKKOS_INLINE_FUNCTION bool rad_inversion_failed(const Real flag)
+{
+    const int f = static_cast<int>(flag);
+    return f == static_cast<int>(StatusRadiationInversion::urad_negative) ||
+           f == static_cast<int>(StatusRadiationInversion::not_finite);
+}
+
 TaskStatus BlockPtoU(MeshBlockData<Real>* rc, IndexDomain domain, bool coarse = false);
 /**
  * Initialize the radM1 package with several options from the input deck
@@ -125,6 +133,11 @@ void AddSourceImplicitly(
  * Convert from conserved to primitive variables for the radiation field.
  */
 TaskStatus BlockUtoP(MeshBlockData<Real>* rc, IndexDomain domain, bool coarse = false);
+
+/**
+ * Fix radiation primitives where the inversion or the implicit solve failed.
+ */
+TaskStatus FixRadiation(MeshBlockData<Real>* rc);
 
 /**
  * Apply floors to the radiation energy variables.

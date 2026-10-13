@@ -323,7 +323,7 @@ TaskStatus RadM1::BlockUtoP(MeshBlockData<Real>* rc, IndexDomain domain, bool co
 
     // Get Loop Bounds
     IndexRange3 b = KDomain::GetRange(rc, domain, coarse);
-
+    auto rinvflag = rc->PackVariables(std::vector<std::string>{"rinvflag"});
     // Parallel Loop
     pmb->par_for("RadM1_UtoP", b.ks, b.ke, b.js, b.je, b.is, b.ie,
         KOKKOS_LAMBDA (const int &k, const int &j, const int &i)
@@ -331,13 +331,94 @@ TaskStatus RadM1::BlockUtoP(MeshBlockData<Real>* rc, IndexDomain domain, bool co
             Real Prad[4];
             Real Urad[4] = {U(m_u.UU_RAD, k, j, i), U(m_u.U1_RAD, k, j, i),
                 U(m_u.U2_RAD, k, j, i), U(m_u.U3_RAD, k, j, i)};
-            RadM1::u_to_p_rad(G, Urad, Prad, k, j, i, nullptr, RadLimiterType::BASIC);
-
+            const auto status = RadM1::u_to_p_rad(G, Urad, Prad, k, j, i, nullptr, RadLimiterType::BASIC);
+            rinvflag(0, k, j, i) = static_cast<int>(status);
             P(m_p.UU_RAD, k, j, i) = Prad[0];
             P(m_p.U1_RAD, k, j, i) = Prad[1];
             P(m_p.U2_RAD, k, j, i) = Prad[2];
             P(m_p.U3_RAD, k, j, i) = Prad[3];
         });
+    return TaskStatus::complete;
+}
+
+TaskStatus RadM1::FixRadiation(MeshBlockData<Real>* rc)
+{
+    Flag("RadM1::FixRadiation");
+    auto pmb = rc->GetBlockPointer();
+    const auto& G = pmb->coords;
+
+    PackIndexMap rad_prims_map;
+    auto Prad = rc->PackVariables(
+        std::vector<std::string>{"prims.u_rad", "prims.uvec_rad"}, rad_prims_map);
+    const VarMap m_prad(rad_prims_map, false);
+
+    GridScalar rinvflag = rc->Get("rinvflag").data;
+    GridScalar rimplflag = rc->Get("rimplflag").data;
+
+    const Real erad_floor = pmb->packages.Get("RadM1")->Param<Real>("u_rad_floor");
+    const GReal r_hor = G.coords.get_horizon();
+
+    const IndexRange3 b = KDomain::GetPhysicalRange(rc);
+
+    pmb->par_for("fix_radiation", b.ks, b.ke, b.js, b.je, b.is, b.ie,
+        KOKKOS_LAMBDA (const int &k, const int &j, const int &i)
+        {
+            GReal Xembed[GR_DIM];
+            G.coord_embed(k, j, i, Loci::center, Xembed);
+            const bool inside_horizon = r_hor > 0.0 && Xembed[1] < r_hor;
+
+            const bool bad =
+                !inside_horizon &&
+                (rad_inversion_failed(rinvflag(0, k, j, i)) ||
+                    rimplflag(0, k, j, i) ==
+                        static_cast<int>(StatusImplicitStep::failure));
+            if (bad) {
+                double wsum = 0.;
+                double sum[4] = {0.};
+                for (int n = -1; n <= 1; n++) {
+                    for (int m = -1; m <= 1; m++) {
+                        for (int l = -1; l <= 1; l++) {
+                            int ii = i + l, jj = j + m, kk = k + n;
+                            if (KDomain::inside(kk, jj, ii, b)) {
+                                GReal Xembed_n[GR_DIM];
+                                G.coord_embed(kk, jj, ii, Loci::center, Xembed_n);
+                                const bool n_inside_horizon =
+                                    r_hor > 0.0 && Xembed_n[1] < r_hor;
+                                const bool nbad =
+                                    n_inside_horizon ||
+                                    rad_inversion_failed(rinvflag(0, kk, jj, ii)) ||
+                                    rimplflag(0, kk, jj, ii) ==
+                                        static_cast<int>(StatusImplicitStep::failure);
+                                if (!nbad) {
+                                    double w = 1. / (m::abs(l) + m::abs(m) + m::abs(n) + 1);
+                                    wsum += w;
+                                    sum[0] += w * Prad(m_prad.UU_RAD, kk, jj, ii);
+                                    sum[1] += w * Prad(m_prad.U1_RAD, kk, jj, ii);
+                                    sum[2] += w * Prad(m_prad.U2_RAD, kk, jj, ii);
+                                    sum[3] += w * Prad(m_prad.U3_RAD, kk, jj, ii);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (wsum < 1.e-10) {
+                    Prad(m_prad.UU_RAD, k, j, i) = erad_floor;
+                    Prad(m_prad.U1_RAD, k, j, i) = 0.;
+                    Prad(m_prad.U2_RAD, k, j, i) = 0.;
+                    Prad(m_prad.U3_RAD, k, j, i) = 0.;
+                } else {
+                    Prad(m_prad.UU_RAD, k, j, i) = sum[0] / wsum;
+                    Prad(m_prad.U1_RAD, k, j, i) = sum[1] / wsum;
+                    Prad(m_prad.U2_RAD, k, j, i) = sum[2] / wsum;
+                    Prad(m_prad.U3_RAD, k, j, i) = sum[3] / wsum;
+                }
+            }
+        });
+
+    RadM1::BlockPtoU(rc, IndexDomain::entire);
+
+    EndFlag();
     return TaskStatus::complete;
 }
 
