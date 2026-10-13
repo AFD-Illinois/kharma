@@ -461,8 +461,8 @@ void RadM1::AddSourceImplicitly(
 
                 // if U1_rad == 0 or U1 == 0 it means that it fell badly on floors
                 // we shouldn't bother to try to solve this
-                if (P_init_substep(m_p.U1_RAD, k, j, i) == 0.0 ||
-                    P_init_substep(m_p.U1, k, j, i) == 0.0) {
+                if ((P_init_substep(m_p.U1_RAD, k, j, i) == 0.0 && P_init_substep(m_p.U3_RAD, k, j, i) == 0.0) ||
+                    P_init_substep(m_p.U1, k, j, i) == 0.0 && P_init_substep(m_p.U3, k, j, i) == 0.0) {
                     for (int n = 0; n < 4; n++) {
                         dU_substep(iug[n], k, j, i) -= w_hist * G2[n];
                         dU_substep(iur[n], k, j, i) += w_hist * G2[n];
