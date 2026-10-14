@@ -529,8 +529,8 @@ KOKKOS_INLINE_FUNCTION bool u_to_p_entropy(const GRCoordinates& G, const Real Ur
     for (int a = 0; a < NVEC; a++) {
         rcon[a] = 0.;
         for (int b = 0; b < NVEC; b++)
-            rcon[a] += (gup[a + 1][b + 1] - gup[0][a + 1] * gup[0][b + 1] / gup[0][0]) *
-                       rcov[b];
+            rcon[a] +=
+                (gup[a + 1][b + 1] - gup[0][a + 1] * gup[0][b + 1] / gup[0][0]) * rcov[b];
         rsq += rcon[a] * rcov[a];
         bu[a] = Bcons[a] * alpha / G.gdet(Loci::center, j, i) / m::sqrt(D);
         bdotr += bu[a] * rcov[a];
@@ -553,7 +553,10 @@ KOKKOS_INLINE_FUNCTION bool u_to_p_entropy(const GRCoordinates& G, const Real Ur
     Real lo = 0., hi = 1., x, iW;
     for (int it = 0; it < 60; it++) {
         const Real mid = 0.5 * (lo + hi);
-        if (resid(mid, x, iW) < 0.) lo = mid; else hi = mid;
+        if (resid(mid, x, iW) < 0.)
+            lo = mid;
+        else
+            hi = mid;
     }
     const Real mu = 0.5 * (lo + hi);
     resid(mu, x, iW);
@@ -1041,12 +1044,12 @@ KOKKOS_INLINE_FUNCTION int solve_4d_pmhd_ff(const GRCoordinates& G,
         errm = 0.;
         for (int n = 1; n < 4; n++) {
             f[n] = U_mhd[n] - U_mhd_0[n] + dt * dS[n];
-            errm = m::max(errm, m::abs(f[n]) / (m::abs(U_mhd[0]) + m::abs(U_mhd[n]) +
-                                                   m::abs(U_mhd_0[n]) +
-                                                   m::abs(dt * dS[n])));
+            errm =
+                m::max(errm, m::abs(f[n]) / (m::abs(U_mhd[0]) + m::abs(U_mhd[n]) +
+                                                m::abs(U_mhd_0[n]) + m::abs(dt * dS[n])));
         }
-        err = m::max(
-            errm, m::abs(f[0]) / (m::abs(xx[0]) + m::abs(u_star) + m::abs(heat)));
+        err =
+            m::max(errm, m::abs(f[0]) / (m::abs(xx[0]) + m::abs(u_star) + m::abs(heat)));
         return m::isfinite(err);
     };
 
@@ -1081,8 +1084,8 @@ KOKKOS_INLINE_FUNCTION int solve_4d_pmhd_ff(const GRCoordinates& G,
         // Forward differences, flipped to backward if the perturbed state is invalid
         Real jac[4][4], jacinv[4][4];
         for (int m = 0; m < 4; m++) {
-            const Real del = (m == 0) ? 1.e-6 * x[0]
-                                      : 1.e-6 * m::max(vel_min[m - 1], m::abs(x[m]));
+            const Real del =
+                (m == 0) ? 1.e-6 * x[0] : 1.e-6 * m::max(vel_min[m - 1], m::abs(x[m]));
             bool ok = false;
             Real fp[4], ep, emp, rp, Pp[4], dSp[4], Gp;
             for (int side = 0; side < 2 && !ok; side++) {
@@ -1124,8 +1127,8 @@ KOKKOS_INLINE_FUNCTION int solve_4d_pmhd_ff(const GRCoordinates& G,
         bisect = m::abs(fn[0]) > 0.5 * m::abs(f[0]);
         Real relchange = m::abs(xn[0] - x[0]) / x[0];
         for (int m = 1; m < 4; m++)
-            relchange = m::max(relchange,
-                m::abs(xn[m] - x[m]) / m::max(vel_min[m - 1], m::abs(x[m])));
+            relchange = m::max(
+                relchange, m::abs(xn[m] - x[m]) / m::max(vel_min[m - 1], m::abs(x[m])));
         for (int m = 0; m < 4; m++) {
             x[m] = xn[m];
             f[m] = fn[m];

@@ -385,7 +385,8 @@ TaskStatus RadM1::FixRadiation(MeshBlockData<Real>* rc)
                                        rimplflag(0, k, j, i) ==
                                            static_cast<int>(StatusImplicitStep::failure));
             if (bad) {
-                // Implicit failures also average u, u^i (not rho, B). I took this from Koral Lite, previously I was just avg rad variables.
+                // Implicit failures also average u, u^i (not rho, B). I took this from
+                // Koral Lite, previously I was just avg rad variables.
                 const bool gas_bad =
                     !inside_horizon && rimplflag(0, k, j, i) == impl_fail;
                 double gsum = 0.;
@@ -732,8 +733,8 @@ void RadM1::AddSourceImplicitly(
                     if (!u_to_p_entropy(G, Ustar[0], Ucov, Bcons, Kent, gam, k, j, i,
                             rho_f, u_f, uvec_f)) {
                         for (int v = 0; v < NVEC; v++) uvec_f[v] = P_save[2 + v];
-                        rho_f = rho_from_D(G, Ustar[0] / G.gdet(Loci::center, j, i),
-                            uvec_f, k, j, i);
+                        rho_f = rho_from_D(
+                            G, Ustar[0] / G.gdet(Loci::center, j, i), uvec_f, k, j, i);
                         if (!(rho_f > 0.)) rho_f = P_save[0];
                         u_f = (Kent > 0.) ? Kent * m::pow(rho_f, gam) / gm1 : P_save[1];
                     }
