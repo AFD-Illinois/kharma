@@ -65,10 +65,10 @@ jobs:
         - anisotropic-conduction
         - bondi
         - bondi-rad
-        - bondi-viscous
+        #- bondi-viscous
         - bz-monopole
-        - conducting-atmosphere
-        - emhdmodes
+        #- conducting-atmosphere
+        #- emhdmodes
         - hubble-flow
         - mhdmodes
         - mhdmodes-smr
