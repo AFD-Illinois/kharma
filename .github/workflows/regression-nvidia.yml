@@ -3,9 +3,6 @@ name: Regression tests (Nvidia)
 on:
   # when triggered manually
   workflow_dispatch:
-  # when auto merge is enabled (hack to make sure it's run before merging)
-  pull_request:
-    types: [auto_merge_enabled]
 
 env:
   NPROC: 12
@@ -37,7 +34,7 @@ jobs:
   test-nvidia:
     needs: build-nvidia
     runs-on: [self-hosted, kharma-gpu-nv]
-    continue-on-error: true
+    continue-on-error: false
     strategy:
       fail-fast: false
       matrix:

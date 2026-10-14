@@ -45,7 +45,7 @@ jobs:
   test:
     needs: build
     runs-on: ubuntu-latest
-    continue-on-error: true
+    continue-on-error: false
     strategy:
       fail-fast: false
       # add conducting_atmosphere? Long, currently GPU-only
