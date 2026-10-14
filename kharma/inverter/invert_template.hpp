@@ -119,7 +119,8 @@ KOKKOS_INLINE_FUNCTION int u_to_p(const GRCoordinates& G, const VariablePack<Rea
  * same type, and keep the defaults otherwise
  * (no Inverter package, or Kastaun inversions under 1Dw)
  */
-struct SolverSettings {
+struct SolverSettings
+{
     Real err_tol;
     Real backstop_tol;
     int iter_max;
@@ -128,8 +129,8 @@ struct SolverSettings {
 
 inline SolverSettings GetSolverSettings(const Packages_t& packages, const Type type)
 {
-    SolverSettings s {.backstop_iter_max = BACKSTOP_ITER_MAX};
-    switch (type){
+    SolverSettings s{.backstop_iter_max = BACKSTOP_ITER_MAX};
+    switch (type) {
         case Type::kastaun:
             s.err_tol = KASTAUN_ERR_TOL;
             s.backstop_tol = KASTAUN_ERR_TOL;
@@ -147,9 +148,9 @@ inline SolverSettings GetSolverSettings(const Packages_t& packages, const Type t
     if (packages.AllPackages().count("Inverter")) {
         auto& pars = packages.Get("Inverter")->AllParams();
         if (pars.Get<Type>("inverter_type") == type) {
-            s.err_tol           = pars.Get<Real>("err_tol");
-            s.backstop_tol      = pars.Get<Real>("backstop_tol");
-            s.iter_max          = pars.Get<int>("iter_max");
+            s.err_tol = pars.Get<Real>("err_tol");
+            s.backstop_tol = pars.Get<Real>("backstop_tol");
+            s.iter_max = pars.Get<int>("iter_max");
             s.backstop_iter_max = pars.Get<int>("backstop_iter_max");
         }
     }

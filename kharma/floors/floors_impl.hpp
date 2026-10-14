@@ -83,9 +83,10 @@ TaskStatus ApplyFloorsInFrame(MeshData<Real>* md, IndexDomain domain)
     // Iterations & tolerances for the inversions and velocity solve inside the floors
     const Inverter::SolverSettings kastaun_solve =
         Inverter::GetSolverSettings(pmb0->packages, Inverter::Type::kastaun);
-    const Inverter::SolverSettings frame_solve = (frame == InjectionFrame::normal_onedw)
-        ? Inverter::GetSolverSettings(pmb0->packages, Inverter::Type::onedw)
-        : kastaun_solve;
+    const Inverter::SolverSettings frame_solve =
+        (frame == InjectionFrame::normal_onedw)
+            ? Inverter::GetSolverSettings(pmb0->packages, Inverter::Type::onedw)
+            : kastaun_solve;
 
     const IndexRange3 b = KDomain::GetRange(md, domain);
     const IndexRange block = IndexRange{0, P.GetDim(5) - 1};

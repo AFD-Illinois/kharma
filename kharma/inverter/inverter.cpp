@@ -114,10 +114,9 @@ std::shared_ptr<KHARMAPackage> Inverter::Initialize(
     int backstop_iter_max =
         pin->GetOrAddInteger("inverter", "backstop_iter_max", BACKSTOP_ITER_MAX);
     params.Add("backstop_iter_max", backstop_iter_max);
-    
+
     // Residual tolerance of the backstop solves.
-    Real backstop_tol =
-        pin->GetOrAddReal("inverter", "backstop_tol", err_tol);
+    Real backstop_tol = pin->GetOrAddReal("inverter", "backstop_tol", err_tol);
     params.Add("backstop_tol", backstop_tol);
     if (backstop && backstop_recover_vel && backstop_recover_u) {
         throw std::runtime_error(

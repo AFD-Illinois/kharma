@@ -1044,8 +1044,8 @@ KOKKOS_INLINE_FUNCTION int solve_4d_prad(const GRCoordinates& G,
             U_init(m_u.U1, k, j, i) = U_mhd_m[1];
             U_init(m_u.U2, k, j, i) = U_mhd_m[2];
             U_init(m_u.U3, k, j, i) = U_mhd_m[3];
-            auto mhd_inverter_status = Inverter::u_to_p<Inverter::Type::kastaun>(
-                G, U_init, m_u, eos, k, j, i, P_init, m_p, Loci::center,
+            auto mhd_inverter_status = Inverter::u_to_p<Inverter::Type::kastaun>(G,
+                U_init, m_u, eos, k, j, i, P_init, m_p, Loci::center,
                 Inverter::KASTAUN_ITER_MAX, IMPLICIT_KASTAUN_ERR_TOL);
 
             P_mhd_m[0] = P_init(m_p.UU, k, j, i);
@@ -1081,8 +1081,8 @@ KOKKOS_INLINE_FUNCTION int solve_4d_prad(const GRCoordinates& G,
             U_init(m_u.U1, k, j, i) = U_mhd_p[1];
             U_init(m_u.U2, k, j, i) = U_mhd_p[2];
             U_init(m_u.U3, k, j, i) = U_mhd_p[3];
-            auto mhd_inverter_status_p = Inverter::u_to_p<Inverter::Type::kastaun>(
-                G, U_init, m_u, eos, k, j, i, P_init, m_p, Loci::center,
+            auto mhd_inverter_status_p = Inverter::u_to_p<Inverter::Type::kastaun>(G,
+                U_init, m_u, eos, k, j, i, P_init, m_p, Loci::center,
                 Inverter::KASTAUN_ITER_MAX, IMPLICIT_KASTAUN_ERR_TOL);
 
             P_mhd_p[0] = P_init(m_p.UU, k, j, i);
@@ -1146,8 +1146,8 @@ KOKKOS_INLINE_FUNCTION int solve_4d_prad(const GRCoordinates& G,
                 U_init(m_u.U1, k, j, i) = U_mhd_p[1];
                 U_init(m_u.U2, k, j, i) = U_mhd_p[2];
                 U_init(m_u.U3, k, j, i) = U_mhd_p[3];
-                auto mhd_inverter_status = Inverter::u_to_p<Inverter::Type::kastaun>(
-                    G, U_init, m_u, eos, k, j, i, P_init, m_p, Loci::center,
+                auto mhd_inverter_status = Inverter::u_to_p<Inverter::Type::kastaun>(G,
+                    U_init, m_u, eos, k, j, i, P_init, m_p, Loci::center,
                     Inverter::KASTAUN_ITER_MAX, IMPLICIT_KASTAUN_ERR_TOL);
 
                 P_mhd_p[0] = P_init(m_p.UU, k, j, i);
@@ -1205,8 +1205,8 @@ KOKKOS_INLINE_FUNCTION int solve_4d_prad(const GRCoordinates& G,
                 U_init(m_u.U1, k, j, i) = U_mhd_m[1];
                 U_init(m_u.U2, k, j, i) = U_mhd_m[2];
                 U_init(m_u.U3, k, j, i) = U_mhd_m[3];
-                auto mhd_inverter_status = Inverter::u_to_p<Inverter::Type::kastaun>(
-                    G, U_init, m_u, eos, k, j, i, P_init, m_p, Loci::center,
+                auto mhd_inverter_status = Inverter::u_to_p<Inverter::Type::kastaun>(G,
+                    U_init, m_u, eos, k, j, i, P_init, m_p, Loci::center,
                     Inverter::KASTAUN_ITER_MAX, IMPLICIT_KASTAUN_ERR_TOL);
                 P_mhd_m[0] = P_init(m_p.UU, k, j, i);
                 P_mhd_m[1] = P_init(m_p.U1, k, j, i);
@@ -1268,8 +1268,8 @@ KOKKOS_INLINE_FUNCTION int solve_4d_prad(const GRCoordinates& G,
             U_init(m_u.U2, k, j, i) = U_mhd_guess[2];
             U_init(m_u.U3, k, j, i) = U_mhd_guess[3];
 
-            auto mhd_inverter_status = Inverter::u_to_p<Inverter::Type::kastaun>(
-                G, U_init, m_u, eos, k, j, i, P_init, m_p, Loci::center,
+            auto mhd_inverter_status = Inverter::u_to_p<Inverter::Type::kastaun>(G,
+                U_init, m_u, eos, k, j, i, P_init, m_p, Loci::center,
                 Inverter::KASTAUN_ITER_MAX, IMPLICIT_KASTAUN_ERR_TOL);
 
             if (mhd_inverter_status != static_cast<int>(Inverter::Status::success)) {

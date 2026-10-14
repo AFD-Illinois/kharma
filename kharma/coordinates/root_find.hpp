@@ -58,7 +58,8 @@
     Xc[0] = Xnative[0];                                                                  \
     Xc[1] = Xnative[1];                                                                  \
     Xc[3] = Xnative[3];                                                                  \
-    auto resid = [&](const GReal x2) {                                                   \
+    auto resid = [&](const GReal x2)                                                     \
+    {                                                                                    \
         Xc[2] = x2;                                                                      \
         coord_to_embed(Xc, Xtmp);                                                        \
         return Xtmp[2] - th;                                                             \
@@ -78,7 +79,8 @@
     Xc[0] = Xnative[0];                                                                  \
     Xc[2] = Xnative[2];                                                                  \
     Xc[3] = Xnative[3];                                                                  \
-    auto resid = [&](const GReal x1) {                                                   \
+    auto resid = [&](const GReal x1)                                                     \
+    {                                                                                    \
         Xc[1] = x1;                                                                      \
         coord_to_embed(Xc, Xtmp);                                                        \
         return Xtmp[1] - r;                                                              \

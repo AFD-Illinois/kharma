@@ -270,8 +270,7 @@ KOKKOS_INLINE_FUNCTION int u_to_p<Type::kastaun>(const GRCoordinates& G,
     // const Real zsq = rsq / h0sq_; // h0sq_ normalization set to 1 in Phoebus
     const Real zsq = rsq;
     // Cap the solve just past LFAC_CAP, so capped solutions always fail the W check below
-    const Real v0sq =
-        std::min(zsq / (1.0 + zsq), 1.0 - 1.0 / SQR(Floors::LFAC_CAP + 1.));
+    const Real v0sq = std::min(zsq / (1.0 + zsq), 1.0 - 1.0 / SQR(Floors::LFAC_CAP + 1.));
 
     // residual object. Caches most arguments/floors so calls are single-argument
     KastaunResidual res(D, q, bsq, bsq_rpsq, rsq, rbsq, v0sq, eos);
@@ -287,22 +286,22 @@ KOKKOS_INLINE_FUNCTION int u_to_p<Type::kastaun>(const GRCoordinates& G,
         // for the master root (up to round-off, see the NotBracketed case below)
         Roots::bisect_illinois<Roots::RootEval::Positive>(
             mu_plus,
-            [&](const Real z) {
+            [&](const Real z)
+            {
                 return res.aux_func(z);
             },
-            (Real)0., (Real)1.,
-            tol, tol, max_iterations);
+            (Real)0., (Real)1., tol, tol, max_iterations);
     }
 
     // Now find the solution of the master function in [0, mu_plus]
     Real mu = mu_plus;
     Roots::RootStatus solve_status = Roots::bisect_illinois<Roots::RootEval::Any>(
         mu,
-        [&](const Real z) {
+        [&](const Real z)
+        {
             return res(z);
         },
-        (Real)0., mu_plus, tol, tol,
-        max_iterations);
+        (Real)0., mu_plus, tol, tol, max_iterations);
     if (solve_status == Roots::RootStatus::NotBracketed) {
         // The master function is negative at mu_plus only by round-off, where the bound
         // is exact (cold gas, ehat clamped to 0): the root sits at mu_plus

@@ -697,9 +697,8 @@ void CancelBoundaryU3(MeshBlockData<Real>* rc, IndexDomain domain, bool coarse)
                 parthenon::par_for_inner(member, bi.ks, bi.ke,
                     [&](const int& k)
                     {
-                        Inverter::u_to_p<Inverter::Type::kastaun>(
-                            G, U, m_u, eos, k, jf, i, P, m_p, Loci::center,
-                            solve.iter_max, solve.err_tol);
+                        Inverter::u_to_p<Inverter::Type::kastaun>(G, U, m_u, eos, k, jf,
+                            i, P, m_p, Loci::center, solve.iter_max, solve.err_tol);
                     });
             }
             member.team_barrier();
@@ -809,9 +808,8 @@ void CancelBoundaryT3(MeshBlockData<Real>* rc, IndexDomain domain, bool coarse)
                 {
                     U(m_u.U3, k, jf, i) -= T3_avg;
                     // Recover primitive GRMHD variables from our modified U
-                    Inverter::u_to_p<Inverter::Type::kastaun>(
-                        G, U, m_u, eos, k, jf, i, P, m_p, Loci::center,
-                        solve.iter_max, solve.err_tol);
+                    Inverter::u_to_p<Inverter::Type::kastaun>(G, U, m_u, eos, k, jf, i, P,
+                        m_p, Loci::center, solve.iter_max, solve.err_tol);
                     // Floor them
                     int fflag = Floors::apply_geo_floors(
                         G, P, m_p, k, jf, i, floors, Loci::center);

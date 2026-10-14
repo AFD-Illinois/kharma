@@ -249,9 +249,9 @@ KOKKOS_INLINE_FUNCTION void set_parameters(const GRCoordinates& G, const Real& r
             const Real dP_comp_ratio = m::max(pg - 2. / 3. * dP, SMALL_NUM) /
                                        m::max(pg + 1. / 3. * dP, SMALL_NUM);
             const Real dP_max =
-                (dP > 0.) ? m::min(0.5 * bsq * dP_comp_ratio,
-                                DP_MAX_OVER_P * pg / LIMIT_MARGIN)
-                          : m::max(-bsq, DP_MIN_OVER_P * pg / LIMIT_MARGIN);
+                (dP > 0.)
+                    ? m::min(0.5 * bsq * dP_comp_ratio, DP_MAX_OVER_P * pg / LIMIT_MARGIN)
+                    : m::max(-bsq, DP_MIN_OVER_P * pg / LIMIT_MARGIN);
 
             const Real dP_ratio = m::abs(dP) / (m::abs(dP_max) + SMALL_NUM);
             const Real inv_exp_g = m::exp((1. - dP_ratio) / lambda);

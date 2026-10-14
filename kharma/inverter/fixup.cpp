@@ -353,9 +353,8 @@ TaskStatus Inverter::Backstop(MeshBlockData<Real>* rc)
                     bool e_solve_failed = false;
                     Real uu = umin;
                     // Bisect until the midpoint is within backstop_tol of both ends.
-                    const auto u_status = Roots::bisect<Roots::RootEval::Any>(
-                        uu, f, umin, (Real)1., backstop_tol, 2 * backstop_tol,
-                        backstop_iter_max);
+                    const auto u_status = Roots::bisect<Roots::RootEval::Any>(uu, f, umin,
+                        (Real)1., backstop_tol, 2 * backstop_tol, backstop_iter_max);
                     if (u_status == Roots::RootStatus::NotBracketed) {
                         e_solve_failed = true;
                         fflagl |= Floors::FFlag::FIXUP_U_RANGE;
@@ -391,8 +390,8 @@ TaskStatus Inverter::Backstop(MeshBlockData<Real>* rc)
                     {
                         // Rescale velocity
                         Real uvec_fac = m::sqrt((SQR(1. / iW) - 1.) / (SQR(W) - 1.));
-                        const Real uv[NVEC] = {uvec_fac * uvec[0], uvec_fac * uvec[1],
-                            uvec_fac * uvec[2]};
+                        const Real uv[NVEC] = {
+                            uvec_fac * uvec[0], uvec_fac * uvec[1], uvec_fac * uvec[2]};
                         // Calculate tensor (we only need T0)
                         Real rho_ut, T[GR_DIM];
                         GRMHD::p_to_u_mhd(
@@ -406,9 +405,8 @@ TaskStatus Inverter::Backstop(MeshBlockData<Real>* rc)
                     const Real iWm = 1 / m::min(W, (Real)Floors::LFAC_CAP);
                     Real iW = 1.;
                     // Bisect until the midpoint is within backstop_tol of both ends.
-                    const auto vel_status = Roots::bisect<Roots::RootEval::Any>(
-                        iW, f, iWm, (Real)1., backstop_tol, 2 * backstop_tol,
-                        backstop_iter_max);
+                    const auto vel_status = Roots::bisect<Roots::RootEval::Any>(iW, f,
+                        iWm, (Real)1., backstop_tol, 2 * backstop_tol, backstop_iter_max);
                     if (vel_status == Roots::RootStatus::NotBracketed) {
                         e_solve_failed = true;
                         fflagl |= Floors::FFlag::FIXUP_VEL_RANGE;

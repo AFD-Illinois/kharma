@@ -38,14 +38,15 @@
 
 // Bracketed root finders for functions of one variable, usable inside kernels
 
-namespace Roots {
+namespace Roots
+{
 
 // Returned after a bisection algorithm
 enum class RootStatus : uint8_t {
-    Success, // Converged within the iteration budget
-    MaxIter, // Root detected within an interval but ran out of iterations
+    Success,      // Converged within the iteration budget
+    MaxIter,      // Root detected within an interval but ran out of iterations
     NotBracketed, // No root found (for bisection algorithms)
-    Failure, // Did not find a root (general)
+    Failure,      // Did not find a root (general)
 };
 
 /*
@@ -58,20 +59,12 @@ such that the function value is slightly positive or negative.
 enum class RootEval : uint8_t {
     Positive, // f(root) = 0+
     Negative, // f(root) = 0-
-    Any, // No preference
+    Any,      // No preference
 };
 
-
 template<RootEval RP, typename T, typename Callable>
-KOKKOS_INLINE_FUNCTION
-RootStatus bisect_illinois(
-    T&          out,
-    Callable&&  f,
-    const T     low,
-    const T     high,
-    const T     ftol,
-    const T     xtol,
-    const int   max_iter)
+KOKKOS_INLINE_FUNCTION RootStatus bisect_illinois(T& out, Callable&& f, const T low,
+    const T high, const T ftol, const T xtol, const int max_iter)
 {
     // Uses false position method with Illinois algorithm for acceleration.
     /**
@@ -92,13 +85,14 @@ RootStatus bisect_illinois(
     T b = high;
     T fa = f(a);
     T fb = f(b);
-    T z = 0.5*(a+b);
+    T z = 0.5 * (a + b);
 
     // The bracket end on the requested side of the root, or z for Any
-    auto side_end = [&]() -> T {
-        if constexpr (RP == RootEval::Positive){
+    auto side_end = [&]() -> T
+    {
+        if constexpr (RP == RootEval::Positive) {
             return fa > 0 ? a : b;
-        } else if constexpr (RP == RootEval::Negative){
+        } else if constexpr (RP == RootEval::Negative) {
             return fa > 0 ? b : a;
         } else {
             // Round-off can put z just outside
@@ -107,15 +101,15 @@ RootStatus bisect_illinois(
     };
 
     // Initial checks before entering the main loop
-    if (fa * fb > 0){
+    if (fa * fb > 0) {
         return RootStatus::NotBracketed;
-    } else if (fa == 0){
+    } else if (fa == 0) {
         out = a;
         return RootStatus::Success;
-    } else if (fb == 0){
+    } else if (fb == 0) {
         out = b;
         return RootStatus::Success;
-    } else if (m::abs(b - a) <= xtol){
+    } else if (m::abs(b - a) <= xtol) {
         out = side_end();
         return RootStatus::Success;
     }
@@ -123,15 +117,15 @@ RootStatus bisect_illinois(
     // Loop until convergence is met
     // or brackets collapse to machine precision
     for (int iter = 0; iter < max_iter; iter++) {
-        z = (a*fb - b*fa)/(fb-fa);  // linear interpolation to point f(z)=0
+        z = (a * fb - b * fa) / (fb - fa); // linear interpolation to point f(z)=0
         if constexpr (RP != RootEval::Any) {
             // Round-off put z on the bracket: one end is at the root, but the end on
             // the requested side may not be. Bisect instead, so that end converges too
-            if ((z-a) * (z-b) >= 0) {
-                z = 0.5*(a + b);
+            if ((z - a) * (z - b) >= 0) {
+                z = 0.5 * (a + b);
             }
         }
-        if ((z-a) * (z-b) >= 0) {
+        if ((z - a) * (z - b) >= 0) {
             // Bracket collapsed to machine precision.
             out = side_end();
             return RootStatus::Success;
@@ -141,24 +135,23 @@ RootStatus bisect_illinois(
         // Depending on RP, this branch will be compiled away
         // so no need to bloat the code with trivial constexpr branches
         if ((m::abs(fz) <= ftol) &&
-                   (RP == RootEval::Any ||
-                    (RP == RootEval::Positive ? fz >= 0 : fz <= 0))) {
+            (RP == RootEval::Any || (RP == RootEval::Positive ? fz >= 0 : fz <= 0))) {
             // Converged on the requested side of the root
             out = z;
             return RootStatus::Success;
-        } else if (fz*fb < 0.0) {
+        } else if (fz * fb < 0.0) {
             // Root bracketed by z and b: b becomes the kept end
             a = b;
             fa = fb;
         } else {
             // Root bracketed by a and z: a is kept again
             // Illinois: halve its f to accelerate convergence
-            fa = 0.5*fa;
+            fa = 0.5 * fa;
         }
         b = z;
         fb = fz;
         // Converged in x. Tested after the update, so the last iteration still counts
-        if (m::abs(b - a) <= xtol){
+        if (m::abs(b - a) <= xtol) {
             out = side_end();
             return RootStatus::Success;
         }
@@ -169,15 +162,8 @@ RootStatus bisect_illinois(
 }
 
 template<RootEval RP, typename T, typename Callable>
-KOKKOS_INLINE_FUNCTION
-RootStatus bisect(
-    T&          out,
-    Callable&&  f,
-    const T     low,
-    const T     high,
-    const T     ftol,
-    const T     xtol,
-    const int   max_iter)
+KOKKOS_INLINE_FUNCTION RootStatus bisect(T& out, Callable&& f, const T low, const T high,
+    const T ftol, const T xtol, const int max_iter)
 {
     // Plain bisection. Slower than bisect_illinois, but each step halves the bracket
     // whatever the size of f, so it also suits an f that spans many orders of magnitude
@@ -192,33 +178,34 @@ RootStatus bisect(
     T fb = f(b);
 
     // The bracket end on the requested side of the root, or the midpoint for Any
-    auto side_end = [&]() -> T {
-        if constexpr (RP == RootEval::Positive){
+    auto side_end = [&]() -> T
+    {
+        if constexpr (RP == RootEval::Positive) {
             return fa > 0 ? a : b;
-        } else if constexpr (RP == RootEval::Negative){
+        } else if constexpr (RP == RootEval::Negative) {
             return fa > 0 ? b : a;
         } else {
-            return 0.5*(a + b);
+            return 0.5 * (a + b);
         }
     };
 
     // Initial checks before entering the main loop
-    if (fa * fb > 0){
+    if (fa * fb > 0) {
         return RootStatus::NotBracketed;
-    } else if (fa == 0){
+    } else if (fa == 0) {
         out = a;
         return RootStatus::Success;
-    } else if (fb == 0){
+    } else if (fb == 0) {
         out = b;
         return RootStatus::Success;
-    } else if (m::abs(b - a) <= xtol){
+    } else if (m::abs(b - a) <= xtol) {
         out = side_end();
         return RootStatus::Success;
     }
 
     for (int iter = 0; iter < max_iter; iter++) {
-        const T z = 0.5*(a + b);
-        if ((z-a) * (z-b) >= 0) {
+        const T z = 0.5 * (a + b);
+        if ((z - a) * (z - b) >= 0) {
             // Bracket collapsed to machine precision
             out = side_end();
             return RootStatus::Success;
@@ -226,12 +213,11 @@ RootStatus bisect(
         const T fz = f(z);
 
         if ((m::abs(fz) <= ftol) &&
-                   (RP == RootEval::Any ||
-                    (RP == RootEval::Positive ? fz >= 0 : fz <= 0))) {
+            (RP == RootEval::Any || (RP == RootEval::Positive ? fz >= 0 : fz <= 0))) {
             // Converged on the requested side of the root
             out = z;
             return RootStatus::Success;
-        } else if (fz*fb < 0.0) {
+        } else if (fz * fb < 0.0) {
             // Root bracketed by z and b
             a = z;
             fa = fz;
@@ -241,7 +227,7 @@ RootStatus bisect(
             fb = fz;
         }
         // Converged in x. Tested after the update, so the last iteration still counts
-        if (m::abs(b - a) <= xtol){
+        if (m::abs(b - a) <= xtol) {
             out = side_end();
             return RootStatus::Success;
         }

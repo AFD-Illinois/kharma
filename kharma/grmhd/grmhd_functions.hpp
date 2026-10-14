@@ -206,8 +206,7 @@ KOKKOS_INLINE_FUNCTION void calc_4vecs(const GRCoordinates& G,
 
     D.ucon[0] = lfac / alpha;
     VLOOP
-        D.ucon[v + 1] =
-            P(m.U1 + v, k, j, i) - lfac * alpha * G.gcon(loc, j, i, 0, v + 1);
+        D.ucon[v + 1] = P(m.U1 + v, k, j, i) - lfac * alpha * G.gcon(loc, j, i, 0, v + 1);
 
     G.lower(D.ucon, D.ucov, k, j, i, loc);
 

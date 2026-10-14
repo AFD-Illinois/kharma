@@ -323,8 +323,7 @@ KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::normal_onedw>(FLOOR_ONE_
 
     // Recover primitive variables from conserved versions
     return Inverter::u_to_p<Inverter::Type::onedw>(
-        G, U, m_u, eos, k, j, i, P, m_p, Loci::center,
-        solve.iter_max, solve.err_tol);
+        G, U, m_u, eos, k, j, i, P, m_p, Loci::center, solve.iter_max, solve.err_tol);
 }
 
 template<>
@@ -355,8 +354,7 @@ KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::normal_kastaun>(FLOOR_ON
 
     // Recover new primitive variables
     return Inverter::u_to_p<Inverter::Type::kastaun>(
-        G, U, m_u, eos, k, j, i, P, m_p, Loci::center,
-        solve.iter_max, solve.err_tol);
+        G, U, m_u, eos, k, j, i, P, m_p, Loci::center, solve.iter_max, solve.err_tol);
 }
 
 template<>
@@ -408,9 +406,8 @@ KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::normal_kastaun_eenough>(
         const Real iWm = 1 / m::min(W, (Real)LFAC_CAP);
         Real iW = 1.;
         // Bisect until the midpoint is within tol of both ends.
-        if (Roots::bisect<Roots::RootEval::Any>(
-            iW, f, iWm, (Real)1., tol, 2 * tol, solve.backstop_iter_max)
-            == Roots::RootStatus::NotBracketed) {
+        if (Roots::bisect<Roots::RootEval::Any>(iW, f, iWm, (Real)1., tol, 2 * tol,
+                solve.backstop_iter_max) == Roots::RootStatus::NotBracketed) {
             e_solve_failed = true;
         } else {
             // Succeed only if the residual itself is within tol
@@ -435,8 +432,7 @@ KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::normal_kastaun_eenough>(
 
     // 4. Attempt to recover new primitive variables
     return Inverter::u_to_p<Inverter::Type::kastaun>(
-        G, U, m_u, eos, k, j, i, P, m_p, Loci::center,
-        solve.iter_max, solve.err_tol);
+        G, U, m_u, eos, k, j, i, P, m_p, Loci::center, solve.iter_max, solve.err_tol);
 }
 
 // These are implemented as special cases in the kernel in floors_impl.hpp
