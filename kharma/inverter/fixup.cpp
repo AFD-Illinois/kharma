@@ -248,10 +248,10 @@ TaskStatus Inverter::Backstop(MeshBlockData<Real>* rc)
     auto pmb = rc->GetBlockPointer();
 
     auto& pars = pmb->packages.Get("Inverter")->AllParams();
-    const Real tol = pars.Get<Real>("err_tol");
+    const Real backstop_tol = pars.Get<Real>("backstop_tol");
     const bool backstop_recover_vel = pars.Get<bool>("backstop_recover_vel");
     const bool backstop_recover_u = pars.Get<bool>("backstop_recover_u");
-    const int iter_max = pars.Get<int>("backstop_iter_max");
+    const int backstop_iter_max = pars.Get<int>("backstop_iter_max");
 
     const auto& eos_params = pmb->packages.Get("eos")->AllParams();
     auto eos = eos_params.Get<Microphysics::EOS::EOS>("d.EOS");
@@ -326,7 +326,8 @@ TaskStatus Inverter::Backstop(MeshBlockData<Real>* rc)
                 // If we're below the at-rest energy (within tolerance),
                 // just bump it to that and kill all kinetic energy
                 // Also use this if v=0.
-                if ((Trest[0] - U(m_u.UU, k, j, i)) / U(m_u.UU, k, j, i) > -tol ||
+                if ((Trest[0] - U(m_u.UU, k, j, i)) / U(m_u.UU, k, j, i) >
+                        -backstop_tol ||
                     !(W > 1.0) || (!backstop_recover_vel && !backstop_recover_u)) {
                     // W = 1
                     P(m_p.RHO, k, j, i) = D;
@@ -351,15 +352,16 @@ TaskStatus Inverter::Backstop(MeshBlockData<Real>* rc)
                     // Rootfind for u that gives us T00
                     bool e_solve_failed = false;
                     Real uu = umin;
-                    // Bisect until the midpoint is within tol of both ends.
+                    // Bisect until the midpoint is within backstop_tol of both ends.
                     const auto u_status = Roots::bisect<Roots::RootEval::Any>(
-                        uu, f, umin, (Real)1., tol, 2 * tol, iter_max);
+                        uu, f, umin, (Real)1., backstop_tol, 2 * backstop_tol,
+                        backstop_iter_max);
                     if (u_status == Roots::RootStatus::NotBracketed) {
                         e_solve_failed = true;
                         fflagl |= Floors::FFlag::FIXUP_U_RANGE;
                     } else {
-                        // Succeed only if the residual itself is within tol
-                        e_solve_failed = (m::abs(f(uu)) > tol);
+                        // Succeed only if the residual itself is within backstop_tol
+                        e_solve_failed = (m::abs(f(uu)) > backstop_tol);
                     }
 
                     if (!e_solve_failed) {
@@ -403,15 +405,16 @@ TaskStatus Inverter::Backstop(MeshBlockData<Real>* rc)
                     bool e_solve_failed = false;
                     const Real iWm = 1 / m::min(W, (Real)Floors::LFAC_CAP);
                     Real iW = 1.;
-                    // Bisect until the midpoint is within tol of both ends.
+                    // Bisect until the midpoint is within backstop_tol of both ends.
                     const auto vel_status = Roots::bisect<Roots::RootEval::Any>(
-                        iW, f, iWm, (Real)1., tol, 2 * tol, iter_max);
+                        iW, f, iWm, (Real)1., backstop_tol, 2 * backstop_tol,
+                        backstop_iter_max);
                     if (vel_status == Roots::RootStatus::NotBracketed) {
                         e_solve_failed = true;
                         fflagl |= Floors::FFlag::FIXUP_VEL_RANGE;
                     } else {
-                        // Succeed only if the residual itself is within tol
-                        e_solve_failed = (m::abs(f(iW)) > tol);
+                        // Succeed only if the residual itself is within backstop_tol
+                        e_solve_failed = (m::abs(f(iW)) > backstop_tol);
                     }
 
                     // Compute what we really need

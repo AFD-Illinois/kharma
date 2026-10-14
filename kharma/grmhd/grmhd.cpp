@@ -685,6 +685,9 @@ void CancelBoundaryU3(MeshBlockData<Real>* rc, IndexDomain domain, bool coarse)
     IndexRange3 b = KDomain::GetRange(rc, domain, coarse);
     IndexRange3 bi = KDomain::GetRange(rc, IndexDomain::interior, coarse);
     const int jf = (binner) ? bi.js : bi.je; // j index of last zone next to pole
+    // These inversions always use Kastaun: follow its settings when it is the inverter
+    const Inverter::SolverSettings solve =
+        Inverter::GetSolverSettings(pmb->packages, Inverter::Type::kastaun);
     parthenon::par_for_outer(DEFAULT_OUTER_LOOP_PATTERN, "reduce_U3_" + bname,
         pmb->exec_space, 0, 1, b.is, b.ie,
         KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int& i)
@@ -696,7 +699,7 @@ void CancelBoundaryU3(MeshBlockData<Real>* rc, IndexDomain domain, bool coarse)
                     {
                         Inverter::u_to_p<Inverter::Type::kastaun>(
                             G, U, m_u, eos, k, jf, i, P, m_p, Loci::center,
-                            Inverter::KASTAUN_ITER_MAX, Inverter::KASTAUN_ERR_TOL);
+                            solve.iter_max, solve.err_tol);
                     });
             }
             member.team_barrier();
@@ -770,6 +773,9 @@ void CancelBoundaryT3(MeshBlockData<Real>* rc, IndexDomain domain, bool coarse)
     IndexRange3 b = KDomain::GetRange(rc, domain, coarse);
     IndexRange3 bi = KDomain::GetRange(rc, IndexDomain::interior, coarse);
     const int jf = (binner) ? bi.js : bi.je; // j index of last zone next to pole
+    // These inversions always use Kastaun: follow its settings when it is the inverter
+    const Inverter::SolverSettings solve =
+        Inverter::GetSolverSettings(pmb->packages, Inverter::Type::kastaun);
     parthenon::par_for_outer(DEFAULT_OUTER_LOOP_PATTERN, "reduce_T3_" + bname,
         pmb->exec_space, 0, 1, b.is, b.ie,
         KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int& i)
@@ -805,7 +811,7 @@ void CancelBoundaryT3(MeshBlockData<Real>* rc, IndexDomain domain, bool coarse)
                     // Recover primitive GRMHD variables from our modified U
                     Inverter::u_to_p<Inverter::Type::kastaun>(
                         G, U, m_u, eos, k, jf, i, P, m_p, Loci::center,
-                        Inverter::KASTAUN_ITER_MAX, Inverter::KASTAUN_ERR_TOL);
+                        solve.iter_max, solve.err_tol);
                     // Floor them
                     int fflag = Floors::apply_geo_floors(
                         G, P, m_p, k, jf, i, floors, Loci::center);

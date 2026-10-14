@@ -282,8 +282,9 @@ TaskStatus Floors::ApplyInitialFloors(
                 // the fluid frame apply_floors So instead of pulling gamma here
                 // unnecesarilly, I'm just passing 0.0 In case you don't agree, complain
                 // with Cora.
-                apply_floors<InjectionFrame::fluid>(
-                    G, P, m_p, eos, 0.0, k, j, i, rhoflr_max, uflr_max, U, m_u);
+                // Same for the solver settings, which only the normal frames use
+                apply_floors<InjectionFrame::fluid>(G, P, m_p, eos, 0.0, k, j, i,
+                    rhoflr_max, uflr_max, U, m_u, Inverter::SolverSettings{});
                 // P->U for any modified zones
                 Flux::p_to_u_mhd(
                     G, P, m_p, emhd_params, eos, k, j, i, U, m_u, Loci::center);

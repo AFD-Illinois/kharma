@@ -186,7 +186,8 @@ KOKKOS_INLINE_FUNCTION int determine_floors(const GRCoordinates& G,
     const GRCoordinates &G, const VariablePack<Real>&P, const VarMap &m_p,               \
         const Microphysics::EOS::EOS &eos, const Real gam, const int &k, const int &j,   \
         const int &i, const Real &rhoflr_max, const Real &uflr_max,                      \
-        const VariablePack<Real>&U, const VarMap &m_u
+        const VariablePack<Real>&U, const VarMap &m_u,                                   \
+        const Inverter::SolverSettings &solve
 
 /**
  * Apply floors of several types in determining how to add mass and internal energy to
@@ -323,7 +324,7 @@ KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::normal_onedw>(FLOOR_ONE_
     // Recover primitive variables from conserved versions
     return Inverter::u_to_p<Inverter::Type::onedw>(
         G, U, m_u, eos, k, j, i, P, m_p, Loci::center,
-        Inverter::ONEDW_ITER_MAX, Inverter::ONEDW_ERR_TOL);
+        solve.iter_max, solve.err_tol);
 }
 
 template<>
@@ -355,7 +356,7 @@ KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::normal_kastaun>(FLOOR_ON
     // Recover new primitive variables
     return Inverter::u_to_p<Inverter::Type::kastaun>(
         G, U, m_u, eos, k, j, i, P, m_p, Loci::center,
-        Inverter::KASTAUN_ITER_MAX, Inverter::KASTAUN_ERR_TOL);
+        solve.iter_max, solve.err_tol);
 }
 
 template<>
@@ -384,7 +385,7 @@ KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::normal_kastaun_eenough>(
     // If the velocity is a guess because the solve failed...
     if (P(m_p.RHO, k, j, i) <= 0. || P(m_p.UU, k, j, i) <= 0.) {
         // 1a. What velocity conserves momentum?  Calculate it.
-        const Real tol = Inverter::KASTAUN_ERR_TOL;
+        const Real tol = solve.backstop_tol;
         const Real W = GRMHD::lorentz_calc(G, uvec, k, j, i, Loci::center);
         auto f = [&](Real iW)
         {
@@ -408,7 +409,7 @@ KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::normal_kastaun_eenough>(
         Real iW = 1.;
         // Bisect until the midpoint is within tol of both ends.
         if (Roots::bisect<Roots::RootEval::Any>(
-            iW, f, iWm, (Real)1., tol, 2 * tol, Inverter::BACKSTOP_ITER_MAX)
+            iW, f, iWm, (Real)1., tol, 2 * tol, solve.backstop_iter_max)
             == Roots::RootStatus::NotBracketed) {
             e_solve_failed = true;
         } else {
@@ -435,7 +436,7 @@ KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::normal_kastaun_eenough>(
     // 4. Attempt to recover new primitive variables
     return Inverter::u_to_p<Inverter::Type::kastaun>(
         G, U, m_u, eos, k, j, i, P, m_p, Loci::center,
-        Inverter::KASTAUN_ITER_MAX, Inverter::KASTAUN_ERR_TOL);
+        solve.iter_max, solve.err_tol);
 }
 
 // These are implemented as special cases in the kernel in floors_impl.hpp
