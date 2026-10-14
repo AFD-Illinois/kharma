@@ -64,7 +64,9 @@ enum class StatusImplicitStep {
     radsolve,
     bothsolve,
     failure,
-    onedfallback_failure
+    onedfallback_failure,
+    starfix_success,
+    ufluid_success
 };
 
 static const std::map<int, std::string> status_names_implicit = {
@@ -80,6 +82,10 @@ static const std::map<int, std::string> status_names_implicit = {
     {(int)StatusImplicitStep::mhdfinalsolve,
         "PMHD solver converged but UtoP failed. Sending it to fixup."},
     {(int)StatusImplicitStep::failure, "RadM1 implicit step update failure."},
+    {(int)StatusImplicitStep::starfix_success,
+        "RadM1 star state repaired from entropy and solve succeeded"},
+    {(int)StatusImplicitStep::ufluid_success,
+        "RadM1 4D Solver Fell Back to energy in fluid frame and succeeded"},
 };
 
 enum class RadLimiterType { BASIC, TYPE2 };

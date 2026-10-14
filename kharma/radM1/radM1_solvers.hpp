@@ -514,6 +514,56 @@ KOKKOS_INLINE_FUNCTION Real rho_from_D(const GRCoordinates& G, const Real D,
     return D / ucon[0];
 }
 
+// Ideal-gas inversion keeping D, S_i and entropy Kent (Kastaun master function in mu)
+KOKKOS_INLINE_FUNCTION bool u_to_p_entropy(const GRCoordinates& G, const Real Urho,
+    const Real Ucov[NVEC], const Real Bcons[NVEC], const Real Kent, const Real gam,
+    const int k, const int j, const int i, Real& rho, Real& u, Real uvec[NVEC])
+{
+    if (!(Urho > 0.) || !(Kent > 0.) || !m::isfinite(Kent)) return false;
+    const Real alpha = 1. / m::sqrt(-G.gcon(Loci::center, j, i, 0, 0));
+    const Real D = Urho * alpha / G.gdet(Loci::center, j, i);
+    const Real rcov[NVEC] = {Ucov[0] / Urho, Ucov[1] / Urho, Ucov[2] / Urho};
+    Real gup[GR_DIM][GR_DIM];
+    G.gcon(Loci::center, j, i, gup);
+    Real rcon[NVEC], bu[NVEC], rsq = 0., bsq = 0., bdotr = 0.;
+    for (int a = 0; a < NVEC; a++) {
+        rcon[a] = 0.;
+        for (int b = 0; b < NVEC; b++)
+            rcon[a] += (gup[a + 1][b + 1] - gup[0][a + 1] * gup[0][b + 1] / gup[0][0]) *
+                       rcov[b];
+        rsq += rcon[a] * rcov[a];
+        bu[a] = Bcons[a] * alpha / G.gdet(Loci::center, j, i) / m::sqrt(D);
+        bdotr += bu[a] * rcov[a];
+    }
+    for (int a = 0; a < NVEC; a++)
+        for (int b = 0; b < NVEC; b++)
+            bsq += G.gcov(Loci::center, j, i, a + 1, b + 1) * bu[a] * bu[b];
+    bsq = m::max(bsq, 0.);
+    const Real rbsq = bdotr * bdotr;
+    const Real v0sq = m::min(rsq / (1. + rsq), 1. - 1. / (51. * 51.));
+    auto resid = [&](const Real mu, Real& x, Real& iW)
+    {
+        x = 1. / (1. + mu * bsq);
+        const Real rbarsq = x * (x * rsq + mu * (1. + x) * rbsq);
+        iW = m::sqrt(1. - m::min(mu * mu * rbarsq, v0sq));
+        const Real eps = Kent * m::pow(D * iW, gam - 1.) / (gam - 1.);
+        return mu - 1. / ((1. + gam * eps) * iW + mu * rbarsq);
+    };
+    // f(0) < 0 <= f(1) for any h >= 1, so bisect on [0, 1]
+    Real lo = 0., hi = 1., x, iW;
+    for (int it = 0; it < 60; it++) {
+        const Real mid = 0.5 * (lo + hi);
+        if (resid(mid, x, iW) < 0.) lo = mid; else hi = mid;
+    }
+    const Real mu = 0.5 * (lo + hi);
+    resid(mu, x, iW);
+    rho = D * iW;
+    u = Kent * m::pow(rho, gam) / (gam - 1.);
+    for (int a = 0; a < NVEC; a++) uvec[a] = mu * x / iW * (rcon[a] + mu * bdotr * bu[a]);
+    return m::isfinite(rho) && m::isfinite(u) && m::isfinite(uvec[0]) &&
+           m::isfinite(uvec[1]) && m::isfinite(uvec[2]) && rho > 0. && u > 0.;
+}
+
 KOKKOS_INLINE_FUNCTION int solve_4d_pmhd(const GRCoordinates& G,
     const VariablePack<Real> P_init, const VarMap m_p, const VarMap m_u, const int k,
     const int j, const int i, const Real dt, const Microphysics::EOS::EOS& eos,
@@ -942,6 +992,161 @@ KOKKOS_INLINE_FUNCTION int solve_4d_pmhd(const GRCoordinates& G,
         dS_final[4] = Gdotu;
     }
 
+    return static_cast<int>(StatusImplicitStep::success);
+}
+
+// Fallback for solve_4d_pmhd: fluid-frame gas energy residual normalized by u (KORAL)
+KOKKOS_INLINE_FUNCTION int solve_4d_pmhd_ff(const GRCoordinates& G,
+    const VariablePack<Real> P_init, const VarMap m_p, const int k, const int j,
+    const int i, const Real dt, const Microphysics::EOS::EOS& eos,
+    const double src_rootfind_tol, const int src_rootfind_maxiter,
+    const RadOpac& rad_opac, const Real U_entry[8], Real dS_final[5])
+{
+    const Real gdet = G.gdet(Loci::center, j, i);
+    Real B_P[NVEC] = {0.};
+    if (m_p.B1 >= 0)
+        for (int v = 0; v < NVEC; v++) B_P[v] = P_init(m_p.B1 + v, k, j, i);
+    const Real u_star = P_init(m_p.UU, k, j, i);
+    Real x[4] = {u_star, P_init(m_p.U1, k, j, i), P_init(m_p.U2, k, j, i),
+        P_init(m_p.U3, k, j, i)};
+    if (!(u_star > 0.)) return static_cast<int>(StatusImplicitStep::failure);
+    const Real D_rho = P_init(m_p.RHO, k, j, i) / rho_from_D(G, 1.0, &x[1], k, j, i);
+    const Real U_mhd_0[4] = {U_entry[0], U_entry[1], U_entry[2], U_entry[3]};
+    const Real U_rad_0[4] = {U_entry[4], U_entry[5], U_entry[6], U_entry[7]};
+    const Real vel_min[3] = {1.e-8 / m::sqrt(G.gcov(Loci::center, j, i, 1, 1)),
+        1.e-8 / m::sqrt(G.gcov(Loci::center, j, i, 2, 2)),
+        1.e-8 / m::sqrt(G.gcov(Loci::center, j, i, 3, 3))};
+
+    // Residuals at x; also returns momentum error, rho, P_rad, dS (gdet-weighted), dS.u
+    auto eval = [&](const Real xx[4], Real f[4], Real& err, Real& errm, Real& rho,
+                    Real P_rad[4], Real dS[4], Real& Gu)
+    {
+        Real uvec[NVEC] = {xx[1], xx[2], xx[3]};
+        rho = rho_from_D(G, D_rho, uvec, k, j, i);
+        Real rho_ut, U_mhd[4], U_rad[4];
+        GRMHD::p_to_u_mhd(G, rho, xx[0], uvec, B_P, eos, k, j, i, rho_ut, U_mhd);
+        for (int n = 0; n < 4; n++) U_rad[n] = U_rad_0[n] - (U_mhd[n] - U_mhd_0[n]);
+        if (u_to_p_rad(G, U_rad, P_rad, k, j, i) != StatusRadiationInversion::success)
+            return false;
+        compute_covariant_fourforce(G, xx, P_rad, rho, B_P, eos, rad_opac, k, j, i, dS);
+        Real ucon[GR_DIM];
+        GRMHD::calc_ucon(G, uvec, k, j, i, Loci::center, ucon);
+        Gu = 0.;
+        for (int n = 0; n < 4; n++) {
+            dS[n] *= gdet;
+            Gu += dS[n] * ucon[n];
+        }
+        const Real heat = dt / ucon[0] * Gu / gdet;
+        f[0] = xx[0] - u_star - heat;
+        errm = 0.;
+        for (int n = 1; n < 4; n++) {
+            f[n] = U_mhd[n] - U_mhd_0[n] + dt * dS[n];
+            errm = m::max(errm, m::abs(f[n]) / (m::abs(U_mhd[0]) + m::abs(U_mhd[n]) +
+                                                   m::abs(U_mhd_0[n]) +
+                                                   m::abs(dt * dS[n])));
+        }
+        err = m::max(
+            errm, m::abs(f[0]) / (m::abs(xx[0]) + m::abs(u_star) + m::abs(heat)));
+        return m::isfinite(err);
+    };
+
+    Real f[4], err, errm, rho, P_rad[4], dS[4], Gu;
+    if (!eval(x, f, err, errm, rho, P_rad, dS, Gu))
+        return static_cast<int>(StatusImplicitStep::failure);
+    bool converged = err <= src_rootfind_tol;
+    // f0(u) can be non-monotonic (opacities): bracket its root by x10 steps from u*
+    Real u_lo = (f[0] < 0.) ? x[0] : 0., u_hi = (f[0] >= 0.) ? x[0] : 0.;
+    for (int nb = 0; nb < 30 && !converged && !(u_lo > 0. && u_hi > 0.); nb++) {
+        Real xb[4] = {(u_hi > 0.) ? 0.1 * u_hi : 10. * u_lo, x[1], x[2], x[3]};
+        Real fb[4], eb, emb, rb, Pb[4], dSb[4], Gb;
+        if (!eval(xb, fb, eb, emb, rb, Pb, dSb, Gb))
+            return static_cast<int>(StatusImplicitStep::failure);
+        if (fb[0] >= 0.)
+            u_hi = xb[0];
+        else
+            u_lo = xb[0];
+    }
+    if (!converged && !(u_lo > 0. && u_hi > 0.))
+        return static_cast<int>(StatusImplicitStep::failure);
+    // Restart from the bracket end nearest u*, so damped steps stay inside the bracket
+    if (!converged && (x[0] < u_lo || x[0] > u_hi)) {
+        x[0] = (x[0] > u_hi) ? u_hi : u_lo;
+        if (!eval(x, f, err, errm, rho, P_rad, dS, Gu))
+            return static_cast<int>(StatusImplicitStep::failure);
+        converged = err <= src_rootfind_tol;
+    }
+    bool bisect = false;
+    const int maxit = m::max(src_rootfind_maxiter, 100);
+    for (int niter = 0; niter < maxit && !converged; niter++) {
+        // Forward differences, flipped to backward if the perturbed state is invalid
+        Real jac[4][4], jacinv[4][4];
+        for (int m = 0; m < 4; m++) {
+            const Real del = (m == 0) ? 1.e-6 * x[0]
+                                      : 1.e-6 * m::max(vel_min[m - 1], m::abs(x[m]));
+            bool ok = false;
+            Real fp[4], ep, emp, rp, Pp[4], dSp[4], Gp;
+            for (int side = 0; side < 2 && !ok; side++) {
+                Real xp[4] = {x[0], x[1], x[2], x[3]};
+                xp[m] += (side == 0) ? del : -del;
+                ok = eval(xp, fp, ep, emp, rp, Pp, dSp, Gp);
+                if (ok)
+                    for (int n = 0; n < 4; n++)
+                        jac[n][m] = (fp[n] - f[n]) / (xp[m] - x[m]);
+            }
+            if (!ok) return static_cast<int>(StatusImplicitStep::failure);
+        }
+        const Real det = invert(&jac[0][0], &jacinv[0][0]);
+        if (!m::isfinite(det) || det == 0.)
+            return static_cast<int>(StatusImplicitStep::failure);
+        Real dx[4];
+        for (int m = 0; m < 4; m++) {
+            dx[m] = 0.;
+            for (int n = 0; n < 4; n++) dx[m] -= jacinv[m][n] * f[n];
+        }
+        // Geometric bisection if Newton leaves the bracket or did not halve |f0|
+        if (bisect || !(x[0] + dx[0] > u_lo && x[0] + dx[0] < u_hi))
+            dx[0] = m::sqrt(u_lo * u_hi) - x[0];
+        // Damp by 3 until T_gas and E_rad each change by at most x10
+        Real scale = 1., xn[4], fn[4], errn, errmn, rhon, P_radn[4], dSn[4], Gun;
+        bool step_ok = false;
+        for (int track = 0; track <= 15 && !step_ok; track++, scale /= 3.) {
+            for (int m = 0; m < 4; m++) xn[m] = x[m] + scale * dx[m];
+            if (!eval(xn, fn, errn, errmn, rhon, P_radn, dSn, Gun)) continue;
+            const Real Tr = (xn[0] / rhon) / (x[0] / rho);
+            const Real Er = P_radn[0] / P_rad[0];
+            step_ok = Tr > 0.1 && Tr < 10. && Er > 0.1 && Er < 10.;
+        }
+        if (!step_ok) return static_cast<int>(StatusImplicitStep::failure);
+        if (fn[0] >= 0.)
+            u_hi = m::min(u_hi, xn[0]);
+        else
+            u_lo = m::max(u_lo, xn[0]);
+        bisect = m::abs(fn[0]) > 0.5 * m::abs(f[0]);
+        Real relchange = m::abs(xn[0] - x[0]) / x[0];
+        for (int m = 1; m < 4; m++)
+            relchange = m::max(relchange,
+                m::abs(xn[m] - x[m]) / m::max(vel_min[m - 1], m::abs(x[m])));
+        for (int m = 0; m < 4; m++) {
+            x[m] = xn[m];
+            f[m] = fn[m];
+            P_rad[m] = P_radn[m];
+            dS[m] = dSn[m];
+        }
+        err = errn;
+        errm = errmn;
+        rho = rhon;
+        Gu = Gun;
+        // Converged, stagnated with a small residual, or the u bracket has collapsed
+        converged = err <= src_rootfind_tol || (relchange < 1.e-6 && err <= 1.e-5) ||
+                    (u_hi - u_lo <= 1.e-10 * u_hi && errm <= src_rootfind_tol);
+    }
+    if (!converged) return static_cast<int>(StatusImplicitStep::failure);
+
+    // Exchange exactly the solved change, so the updated gas is the solved state
+    Real uvec[NVEC] = {x[1], x[2], x[3]}, rho_ut, U_mhd[4];
+    GRMHD::p_to_u_mhd(G, rho, x[0], uvec, B_P, eos, k, j, i, rho_ut, U_mhd);
+    for (int n = 0; n < 4; n++) dS_final[n] = -(U_mhd[n] - U_mhd_0[n]) / dt;
+    dS_final[4] = Gu;
     return static_cast<int>(StatusImplicitStep::success);
 }
 
