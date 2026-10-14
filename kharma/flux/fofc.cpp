@@ -288,7 +288,7 @@ KOKKOS_FORCEINLINE_FUNCTION Real ipow<2>(Real x)
     return x * x;
 }
 
-TaskStatus Flux::FOFC_PCP(MeshData<Real>* md, MeshData<Real>* guess, const Real dt)
+TaskStatus Flux::FOFC_PCP(MeshData<Real>* md, MeshData<Real>* guess, const double dt)
 {
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
     auto& packages = pmb0->packages;
@@ -320,12 +320,14 @@ TaskStatus Flux::FOFC_PCP(MeshData<Real>* md, MeshData<Real>* guess, const Real 
 
     // Parameters
     const auto& pars = packages.Get("Fluxes")->AllParams();
-    const bool all_components = pars.Get<int>("fofc_pcp_all");
+    const bool all_components = pars.Get<bool>("fofc_pcp_all");
     // const int chi = pars.Get<int>("fofc_pcp_chi");
     // const Real umin = pars.Get<Real>("fofc_pcp_umin");
 
     const IndexRange3 b = KDomain::GetRange(md, IndexDomain::interior);
     const IndexRange block = IndexRange{0, P_all.GetDim(5) - 1};
+
+    const double inv_dt = 1 / dt; // save some computation
 
     // utilde -> w -> normalize -> alpha
     pmb0->par_for("fix_FOFC_PCP", block.s, block.e, b.ks, b.ke, b.js, b.je, b.is, b.ie,
@@ -415,9 +417,9 @@ TaskStatus Flux::FOFC_PCP(MeshData<Real>* md, MeshData<Real>* guess, const Real 
                     // different than the PCP value (T0_cell), we need to adjust our
                     // energy to reality
                     DLOOP1
-                        alpha_norm(bl, mu, k, j, i) = (T_face[mu] - T_cell[mu]) *
-                                                      G.gdet(Loci::center, j, i) *
-                                                      G.CellVolume(k, j, i) / dt;
+                        alpha_norm(bl, mu, k, j, i) =
+                            (T_face[mu] - T_cell[mu]) / wsum_local *
+                            G.gdet(Loci::center, j, i) * G.CellVolume(k, j, i) * inv_dt;
 
                     // TODO bring back print on debug build?
                     // if (m::abs(alpha / T0_face) > 1e-3) {
@@ -428,55 +430,51 @@ TaskStatus Flux::FOFC_PCP(MeshData<Real>* md, MeshData<Real>* guess, const Real 
                     // }
                 }
             } else {
-                alpha_norm(bl, 0, k, j, i) = 0.;
+                DLOOP1
+                    alpha_norm(bl, mu, k, j, i) = 0.;
             }
         });
 
     // Now revise F
-    const int mu_max = (all_components) ? GR_DIM - 1 : 0;
-    const IndexRange3 bf = KDomain::GetRange(md, IndexDomain::interior, 0, 1);
-    pmb0->par_for("fix_FOFC_PCP_flux", block.s, block.e, 0, mu_max, bf.ks, bf.ke, bf.js,
-        bf.je, bf.is, bf.ie,
-        KOKKOS_LAMBDA (const int &bl, const int &mu, const int &k, const int &j, const int &i)
-        {
-        const auto& G = U_all.GetCoords(bl);
+    for (int dir = 1; dir <= ndim; dir++) { // TODO if(trivial_direction) etc
+        const TE el = FaceOf(dir);
+        const IndexRange3 bf = KDomain::GetRange(md, IndexDomain::interior, el);
+        const int mu_max = (all_components) ? GR_DIM - 1 : 0;
+        pmb0->par_for("fix_FOFC_PCP_flux", block.s, block.e, 0, mu_max, bf.ks, bf.ke,
+            bf.js, bf.je, bf.is, bf.ie,
+            KOKKOS_LAMBDA (const int &bl, const int &mu, const int &k, const int &j, const int &i)
+            {
+                const auto& G = U_all.GetCoords(bl);
 
-        // Face i,j,k borders cell with same index and 1 left with
-        // index:
-        int kk = (dir == 3) ? k - 1 : k;
-        int jj = (dir == 2) ? j - 1 : j;
-        int ii = (dir == 1) ? i - 1 : i;
-        // If either bordering cell is marked (TODO test flag instead?)
-        if (alpha_norm(bl, 0, k, j, i) != 0. || alpha_norm(bl, 0, kk, jj, ii) != 0.) {
+                const int vu = (mu == 0) ? m_u.UU : m_u.U1 + mu - 1;
 
-            // Flux corrections to satisfy neighbors of this face.
-            // This recalculates & must match some of the weights wts[N] for each cell
-            const int vu = (mu == 0) ? m_u.UU : m_u.U1 + mu - 1;
-            const int vp = (mu == 0) ? m_p.UU : m_p.U1 + mu - 1;
-            U_all(bl).flux(1, vu, k, j, i) +=
-                (ipow<2>(m::max(P_all(bl, vp, k, j, i - 1) - umin, 0.)) /
-                        wsum(bl, 0, k, j, i - 1) * alpha_norm(bl, mu, k, j, i) -
-                    ipow<2>(m::max(P_all(bl, vp, k, j, i) - umin, 0.)) /
-                        wsum(bl, 0, k, j, i) * alpha_norm(bl, mu, k, j, i - 1)) /
-                G.FaceArea<X1DIR>(k, j, i);
+                // Face i,j,k borders cell with same index and 1 left with
+                // index:
+                int kk = (dir == 3) ? k - 1 : k;
+                int jj = (dir == 2) ? j - 1 : j;
+                int ii = (dir == 1) ? i - 1 : i;
+                // If either bordering cell is marked (TODO test flag instead?)
+                if (alpha_norm(bl, mu, k, j, i) != 0. ||
+                    alpha_norm(bl, mu, kk, jj, ii) != 0.) {
 
-            if (ndim > 1) {
-                U_all(bl).flux(2, vu, k, j, i) +=
-                    (ipow<2>(m::max(P_all(bl, vp, k, j - 1, i) - umin, 0.)) /
-                            wsum(bl, 0, k, j - 1, i) * alpha_norm(bl, mu, k, j, i) -
-                        ipow<2>(m::max(P_all(bl, vp, k, j, i) - umin, 0.)) /
-                            wsum(bl, 0, k, j, i) * alpha_norm(bl, mu, k, j - 1, i)) /
-                    G.FaceArea<X2DIR>(k, j, i);
-            }
-            if (ndim > 2) {
-                U_all(bl).flux(3, vu, k, j, i) +=
-                    (ipow<2>(m::max(P_all(bl, vp, k - 1, j, i) - umin, 0.)) /
-                            wsum(bl, 0, k - 1, j, i) * alpha_norm(bl, mu, k, j, i) -
-                        ipow<2>(m::max(P_all(bl, vp, k, j, i) - umin, 0.)) /
-                            wsum(bl, 0, k, j, i) * alpha_norm(bl, mu, k - 1, j, i)) /
-                    G.FaceArea<X3DIR>(k, j, i);
-            }
-        });
+                    Real rhomin_geom, umin_geom;
+                    determine_geo_floors(
+                        G, P_all(bl), m_p, k, j, i, floors, rhomin_geom, umin_geom);
+                    const Real& umin = umin_geom; // Keep flexibility
 
-        return TaskStatus::complete;
+                    // Flux corrections to satisfy neighbors of this face.
+                    // This recalculates & must match some of the weights wts[N] for each
+                    // cell Rightward flux from left/offset cell to our same-index cell,
+                    // minus leftward flux from us to the offset/left cell
+                    U_all(bl).flux(dir, vu, k, j, i) +=
+                        (ipow<2>(m::max(P_all(bl, m_p.UU, kk, jj, ii) - umin, 0.)) *
+                                alpha_norm(bl, mu, k, j, i) -
+                            ipow<2>(m::max(P_all(bl, m_p.UU, k, j, i) - umin, 0.)) *
+                                alpha_norm(bl, mu, kk, jj, ii)) /
+                        G.FaceArea(dir, k, j, i);
+                }
+            });
+    }
+
+    return TaskStatus::complete;
 }
