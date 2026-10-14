@@ -304,7 +304,7 @@ TaskStatus Flux::FOFC_PCP(MeshData<Real>* md, MeshData<Real>* guess, const Real 
     // Temporary for amount to adjust
     auto alpha_norm =
         guess->PackVariables(std::vector<std::string>{"Flux.fofc_pcp_alpha"});
-    auto wsum = guess->PackVariables(std::vector<std::string>{"Flux.fofc_pcp_wsum"});
+    // auto wsum = guess->PackVariables(std::vector<std::string>{"Flux.fofc_pcp_wsum"});
 
     // We want to update fluxes in md, based on prims from guess
     PackIndexMap cons_map, prims_map;
@@ -336,7 +336,7 @@ TaskStatus Flux::FOFC_PCP(MeshData<Real>* md, MeshData<Real>* guess, const Real 
             Real rhomin_geom, umin_geom;
             determine_geo_floors(
                 G, P_all(bl), m_p, k, j, i, floors, rhomin_geom, umin_geom);
-            const Real umin = umin_geom; // Keep flexibility
+            const Real& umin = umin_geom; // Keep flexibility
 
             if (static_cast<int>(fofcflag(bl, 0, k, j, i)) &&
                 (P_all(bl, m_p.UU, k, j, i) < umin)) { // ||
@@ -368,7 +368,7 @@ TaskStatus Flux::FOFC_PCP(MeshData<Real>* md, MeshData<Real>* guess, const Real 
                 // If we have available neighbors...
                 if (wsum_local > 0.) {
                     // Preserve the sum for reweighting fluxes later
-                    wsum(bl, 0, k, j, i) = wsum_local;
+                    // wsum(bl, 0, k, j, i) = wsum_local;
 
                     // Compute bsq in proper frame
                     const Real uvec[NVEC] = {P_all(bl, m_p.U1, k, j, i),
@@ -427,6 +427,8 @@ TaskStatus Flux::FOFC_PCP(MeshData<Real>* md, MeshData<Real>* guess, const Real 
                     //         j, i + 1), wts[0] * alpha_norm);
                     // }
                 }
+            } else {
+                alpha_norm(bl, 0, k, j, i) = 0.;
             }
         });
 
@@ -437,13 +439,15 @@ TaskStatus Flux::FOFC_PCP(MeshData<Real>* md, MeshData<Real>* guess, const Real 
         bf.je, bf.is, bf.ie,
         KOKKOS_LAMBDA (const int &bl, const int &mu, const int &k, const int &j, const int &i)
         {
-            const auto& G = U_all.GetCoords(bl);
+        const auto& G = U_all.GetCoords(bl);
 
-            // TODO duplicated...
-            Real rhomin_geom, umin_geom;
-            determine_geo_floors(
-                G, P_all(bl), m_p, k, j, i, floors, rhomin_geom, umin_geom);
-            const Real umin = umin_geom; // Keep flexibility
+        // Face i,j,k borders cell with same index and 1 left with
+        // index:
+        int kk = (dir == 3) ? k - 1 : k;
+        int jj = (dir == 2) ? j - 1 : j;
+        int ii = (dir == 1) ? i - 1 : i;
+        // If either bordering cell is marked (TODO test flag instead?)
+        if (alpha_norm(bl, 0, k, j, i) != 0. || alpha_norm(bl, 0, kk, jj, ii) != 0.) {
 
             // Flux corrections to satisfy neighbors of this face.
             // This recalculates & must match some of the weights wts[N] for each cell
@@ -474,5 +478,5 @@ TaskStatus Flux::FOFC_PCP(MeshData<Real>* md, MeshData<Real>* guess, const Real 
             }
         });
 
-    return TaskStatus::complete;
+        return TaskStatus::complete;
 }
