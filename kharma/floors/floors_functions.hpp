@@ -35,6 +35,7 @@
 
 #include "floors.hpp"
 #include "kharma_constants.hpp"
+#include "roots.hpp"
 // For template specializations since inverter needs floors too
 #include "kastaun.hpp"
 #include "onedw.hpp"
@@ -403,27 +404,16 @@ KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::normal_kastaun_eenough>(
 
         // Making a temporary copy with (Real)LFAC_CAP
         // because nvcc rejects const& to static constexpr variables.
-        Real iWm = 1 / m::min(W, (Real)LFAC_CAP), iWp = 1.;
-        Real iW;
-        if (f(iWp) * f(iWm) > 0.) {
+        const Real iWm = 1 / m::min(W, (Real)LFAC_CAP);
+        Real iW = 1.;
+        // Bisect until the midpoint is within tol of both ends.
+        if (Roots::bisect<Roots::RootEval::Any>(
+            iW, f, iWm, (Real)1., tol, 2 * tol, Inverter::BACKSTOP_ITER_MAX)
+            == Roots::RootStatus::NotBracketed) {
             e_solve_failed = true;
         } else {
-            Real iWc = (iWp + iWm) / 2.;
-            for (int i = 0; i < Inverter::BACKSTOP_ITER_MAX; i++) {
-                Real resv = m::abs(f(iWc));
-                if ((resv < tol) || (m::abs((iWp - iWm) / 2) < tol) ||
-                    i >= Inverter::BACKSTOP_ITER_MAX - 1) {
-                    iW = iWc;
-                    e_solve_failed = (resv > tol);
-                    break;
-                }
-                // Same sign as right side -> center now right side
-                if (f(iWc) * f(iWp) > 0.)
-                    iWp = iWc;
-                else // default to shifting window up -> slower
-                    iWm = iWc;
-                iWc = (iWm + iWp) / 2.;
-            }
+            // Succeed only if the residual itself is within tol
+            e_solve_failed = (m::abs(f(iW)) > tol);
         }
         if (!e_solve_failed) {
             const Real uvec_fac = m::sqrt((SQR(1. / iW) - 1.) / (SQR(W) - 1.));

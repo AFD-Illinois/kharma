@@ -41,6 +41,7 @@
 #include "kharma_constants.hpp"
 #include "pack.hpp"
 #include "radM1/radM1.hpp"
+#include "roots.hpp"
 
 // phoebus includes
 #include "microphysics/eos_kharma/eos_kharma.hpp"
@@ -349,28 +350,16 @@ TaskStatus Inverter::Backstop(MeshBlockData<Real>* rc)
 
                     // Rootfind for u that gives us T00
                     bool e_solve_failed = false;
-                    Real um = umin, up = 1.;
-                    Real uu;
-                    if (f(up) * f(um) > 0.) {
+                    Real uu = umin;
+                    // Bisect until the midpoint is within tol of both ends.
+                    const auto u_status = Roots::bisect<Roots::RootEval::Any>(
+                        uu, f, umin, (Real)1., tol, 2 * tol, iter_max);
+                    if (u_status == Roots::RootStatus::NotBracketed) {
                         e_solve_failed = true;
                         fflagl |= Floors::FFlag::FIXUP_U_RANGE;
                     } else {
-                        Real uc = (up + um) / 2.;
-                        for (int i = 0; i < iter_max; i++) {
-                            Real resv = m::abs(f(uc));
-                            if ((resv < tol) || (m::abs((up - um) / 2) < tol) ||
-                                i >= iter_max - 1) {
-                                uu = uc;
-                                e_solve_failed = (resv > tol);
-                                break;
-                            }
-                            // Same sign as right side -> center now right side
-                            if (f(uc) * f(up) > 0.)
-                                up = uc;
-                            else // default to shifting window up -> slower
-                                um = uc;
-                            uc = (um + up) / 2.;
-                        }
+                        // Succeed only if the residual itself is within tol
+                        e_solve_failed = (m::abs(f(uu)) > tol);
                     }
 
                     if (!e_solve_failed) {
@@ -412,28 +401,17 @@ TaskStatus Inverter::Backstop(MeshBlockData<Real>* rc)
 
                     // Rootfind for iW that would have produced the current T00
                     bool e_solve_failed = false;
-                    Real iWm = 1 / m::min(W, (Real)Floors::LFAC_CAP), iWp = 1.;
-                    Real iW;
-                    if (f(iWp) * f(iWm) > 0.) {
+                    const Real iWm = 1 / m::min(W, (Real)Floors::LFAC_CAP);
+                    Real iW = 1.;
+                    // Bisect until the midpoint is within tol of both ends.
+                    const auto vel_status = Roots::bisect<Roots::RootEval::Any>(
+                        iW, f, iWm, (Real)1., tol, 2 * tol, iter_max);
+                    if (vel_status == Roots::RootStatus::NotBracketed) {
                         e_solve_failed = true;
                         fflagl |= Floors::FFlag::FIXUP_VEL_RANGE;
                     } else {
-                        Real iWc = (iWp + iWm) / 2.;
-                        for (int i = 0; i < iter_max; i++) {
-                            Real resv = m::abs(f(iWc));
-                            if ((resv < tol) || (m::abs((iWp - iWm) / 2) < tol) ||
-                                i >= iter_max - 1) {
-                                iW = iWc;
-                                e_solve_failed = (resv > tol);
-                                break;
-                            }
-                            // Same sign as right side -> center now right side
-                            if (f(iWc) * f(iWp) > 0.)
-                                iWp = iWc;
-                            else // default to shifting window up -> slower
-                                iWm = iWc;
-                            iWc = (iWm + iWp) / 2.;
-                        }
+                        // Succeed only if the residual itself is within tol
+                        e_solve_failed = (m::abs(f(iW)) > tol);
                     }
 
                     // Compute what we really need
