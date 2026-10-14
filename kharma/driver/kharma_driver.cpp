@@ -366,7 +366,8 @@ TaskID KHARMADriver::AddFluxCalculations(
 
 TaskID KHARMADriver::AddFOFC(TaskID& t_start, TaskList& tl, MeshData<Real>* md,
     MeshData<Real>* md_full_step_init, MeshData<Real>* md_sub_step_init,
-    MeshData<Real>* guess_src, MeshData<Real>* guess, int stage)
+    MeshData<Real>* guess_src, MeshData<Real>* guess, int stage,
+    std::vector<std::string> sync_vars)
 {
     Flag("AddFOFC");
     // Pull reconstruction option to simplify use. TODO shorten?
@@ -429,16 +430,26 @@ TaskID KHARMADriver::AddFOFC(TaskID& t_start, TaskList& tl, MeshData<Real>* md,
 
     auto t_derefine = t_reconnect;
     if (use_ismr) {
-        if (pkgs.at("ISMR")->Param<uint>("nlevels") > 0) {
+        if (pkgs.at("ISMR")->Param<int>("nlevels") > 0) {
             auto t_derefine_b = t_reconnect;
             if (use_b_ct)
                 t_derefine_b = tl.AddTask(t_reconnect, B_CT::DerefinePoles, guess);
             t_derefine = tl.AddTask(t_derefine_b, ISMR::DerefinePoles, guess,
-                std::vector<MetadataFlag>{Metadata::WithFluxes});
+                std::vector<MetadataFlag>{Metadata::WithFluxes, Metadata::Independent});
         }
     }
 
-    // END FAKE STEP: RESULT IN 'GUESS'
+    // Sync, now we have conserved guess state in zones and neighbors
+    std::shared_ptr<MeshData<Real>> guess_shr{guess, [](MeshData<Real>*)
+        {
+        } /*No-Op Deleter*/};
+    auto& guess_sync = pmesh->mesh_data.AddShallow(
+        "gsync" + integrator->stage_name[stage] + std::to_string(0), guess_shr,
+        sync_vars);
+    auto t_start_recv_bound = tl.AddTask(t_start,
+        parthenon::StartReceiveBoundBufs<parthenon::BoundaryType::any>, guess_sync);
+    auto t_guess_sync =
+        KHARMADriver::AddBoundarySync(t_derefine | t_start_recv_bound, tl, guess_sync);
 
     // Recover primitive variables of the guess From faces
     auto t_guess_Bp =
@@ -451,6 +462,8 @@ TaskID KHARMADriver::AddFOFC(TaskID& t_start, TaskList& tl, MeshData<Real>* md,
         t_derefinep = tl.AddTask(t_guess_prims, ISMR::DerefinePoles, guess,
             std::vector<MetadataFlag>{Metadata::GetUserFlag("Primitive")});
     }
+
+    // END FAKE STEP: RESULT IN 'GUESS'
 
     // Check and mark floors
     auto t_mark_floors = tl.AddTask(
@@ -466,13 +479,12 @@ TaskID KHARMADriver::AddFOFC(TaskID& t_start, TaskList& tl, MeshData<Real>* md,
             std::vector<std::string>{"pflag"}, md, 0.);
     // Sync the FOFC flag with neighbors
     // TODO this shouldn't be necessary, eliminate ASAP
-    // std::shared_ptr<MeshData<Real>> md_shr{md, [](MeshData<Real> *) {}/*No-Op
-    // Deleter*/};
-    auto& md_fofc =
-        pmesh->mesh_data.AddShallow("FOFC", md_shr, std::vector<std::string>{"fofcflag"});
-    auto t_sync_fofc = KHARMADriver::AddBoundarySync(t_mark_fofc, tl, md_fofc);
+    // auto& md_fofc =
+    //     pmesh->mesh_data.AddShallow("FOFC", md_shr,
+    //     std::vector<std::string>{"fofcflag"});
+    // auto t_sync_fofc = KHARMADriver::AddBoundarySync(t_mark_fofc, tl, md_fofc);
     // Finally, replace any fluxes bordering marked zones with donor-cell/LLF versions
-    auto t_fofc = tl.AddTask(t_sync_fofc, Flux::FOFC, md, guess);
+    auto t_fofc = tl.AddTask(t_mark_fofc, Flux::FOFC, md, guess);
 
     EndFlag();
     return t_fofc;
@@ -488,7 +500,7 @@ TaskID KHARMADriver::AddFOFC_PCP(TaskID& t_start, TaskList& tl, MeshData<Real>* 
     auto& pkgs = pmb0->packages.AllPackages();
     const bool use_b_ct = pkgs.count("B_CT");
     const bool use_ismr =
-        (pkgs.count("ISMR")) ? pkgs.at("ISMR")->Param<uint>("nlevels") > 0 : false;
+        (pkgs.count("ISMR")) ? pkgs.at("ISMR")->Param<int>("nlevels") > 0 : false;
     bool reconnect_b3 = false;
     if (use_b_ct) {
         reconnect_b3 = pkgs.at("Boundaries")->Param<bool>("reconnect_B3_inner_x2");
@@ -552,12 +564,12 @@ TaskID KHARMADriver::AddFOFC_PCP(TaskID& t_start, TaskList& tl, MeshData<Real>* 
 
     auto t_derefine = t_reconnect;
     if (use_ismr) {
-        if (pkgs.at("ISMR")->Param<uint>("nlevels") > 0) {
+        if (pkgs.at("ISMR")->Param<int>("nlevels") > 0) {
             auto t_derefine_b = t_reconnect;
             if (use_b_ct)
                 t_derefine_b = tl.AddTask(t_reconnect, B_CT::DerefinePoles, guess);
             t_derefine = tl.AddTask(t_derefine_b, ISMR::DerefinePoles, guess,
-                std::vector<MetadataFlag>{Metadata::WithFluxes});
+                std::vector<MetadataFlag>{Metadata::WithFluxes, Metadata::Independent});
         }
     }
 

@@ -74,7 +74,7 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t& blocks, int sta
     const bool use_b_cleanup = pkgs.count("B_Cleanup");
     const bool use_b_ct = pkgs.count("B_CT");
     const bool use_ismr =
-        (pkgs.count("ISMR")) ? pkgs.at("ISMR")->Param<uint>("nlevels") > 0 : false;
+        (pkgs.count("ISMR")) ? pkgs.at("ISMR")->Param<int>("nlevels") > 0 : false;
     const bool use_electrons = pkgs.count("Electrons");
     const bool use_entropy = pkgs.count("Entropy");
     // Whether anything needs the Strang-split primitive-source half-steps at all
@@ -246,7 +246,7 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t& blocks, int sta
             auto& guess = pmesh->mesh_data.GetOrAdd("fofc_guess", i);
             t_fluxes = KHARMADriver::AddFOFC(t_flux_calc, tl, md_sub_step_init.get(),
                 md_full_step_init.get(), md_sub_step_init.get(), guess_src.get(),
-                guess.get(), stage);
+                guess.get(), stage, sync_vars);
             if (use_fofc_pcp) {
                 t_fluxes = KHARMADriver::AddFOFC_PCP(t_fluxes, tl, md_sub_step_init.get(),
                     md_full_step_init.get(), md_sub_step_init.get(), guess_src.get(),
@@ -333,7 +333,7 @@ TaskCollection KHARMADriver::MakeImExTaskCollection(BlockList_t& blocks, int sta
                 t_derefine_b =
                     tl.AddTask(t_reconnect, B_CT::DerefinePoles, md_solver.get());
             t_derefine = tl.AddTask(t_derefine_b, ISMR::DerefinePoles, md_solver.get(),
-                std::vector<MetadataFlag>{Metadata::WithFluxes});
+                std::vector<MetadataFlag>{Metadata::WithFluxes, Metadata::Independent});
         }
 
         // Make sure the primitive values of *explicitly-evolved* variables are updated.

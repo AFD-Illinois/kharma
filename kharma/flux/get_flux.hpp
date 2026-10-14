@@ -127,7 +127,7 @@ inline TaskStatus GetFlux(MeshData<Real>* md)
 
     const bool use_ismr = packages.AllPackages().count("ISMR");
     const int ng_plus_nlevels =
-        use_ismr ? packages.Get("ISMR")->Param<uint>("nlevels") + Globals::nghost : 0;
+        use_ismr ? packages.Get("ISMR")->Param<int>("nlevels") + Globals::nghost : 0;
 
     const EMHD::EMHD_parameters& emhd_params = EMHD::GetEMHDParameters(packages);
 
