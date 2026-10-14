@@ -83,7 +83,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          submodules: 'recursive'
+          submodules: false
       - uses: actions/download-artifact@v8
         with:
           name: build-artifacts
