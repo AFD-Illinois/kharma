@@ -328,32 +328,11 @@ KOKKOS_FORCEINLINE_FUNCTION void p_to_u_mhd(const GRCoordinates& G, const Global
  */
 template<typename Global>
 KOKKOS_FORCEINLINE_FUNCTION void vchar_rad(const GRCoordinates& G, const Global& P,
-    const VarMap& m, const FourVectors& D, const Microphysics::EOS::EOS& eos,
-    const EMHD::EMHD_parameters& emhd_params, const RadM1::RadOpac& rad_opac,
-    const int& k, const int& j, const int& i, const Loci& loc, const int& dir, Real& cmax,
-    Real& cmin)
+    const VarMap& m, const Real& kappa_tot, const int& k, const int& j, const int& i,
+    const Loci& loc, const int& dir, Real& cmax, Real& cmin)
 {
-    GReal Tgas = eos.TemperatureFromDensityInternalEnergy(
-        P(m.RHO, k, j, i), P(m.UU, k, j, i) / P(m.RHO, k, j, i));
-
-    // Out of the package modification RADM1.
-    const Real bsq = dot(D.bcon, D.bcov);
-    const Real Erf = P(m.UU_RAD, k, j, i);
-    Real ucon_rad[GR_DIM], ucov_rad[GR_DIM];
+    Real ucon_rad[GR_DIM];
     RadM1::calc_ucon_rad(G, P, m, k, j, i, loc, ucon_rad);
-    G.lower(ucon_rad, ucov_rad, k, j, i, loc);
-
-    Real gamma_rel = -(ucon_rad[0] * D.ucov[0] + ucon_rad[1] * D.ucov[1] +
-                       ucon_rad[2] * D.ucov[2] + ucon_rad[3] * D.ucov[3]);
-    gamma_rel = m::max(gamma_rel, 1.0);
-
-    Real E_hat = Erf * ((4.0 / 3.0) * gamma_rel * gamma_rel - (1.0 / 3.0));
-    Real Trad = rad_opac.Trad(E_hat, P(m.RHO, k, j, i), bsq);
-
-    GReal kappa_abs = RadM1::calc_kabs(P(m.RHO, k, j, i), Tgas, Trad, bsq, rad_opac);
-    GReal kappa_s = RadM1::calc_kscattering(P(m.RHO, k, j, i), Tgas, bsq, rad_opac);
-
-    GReal kappa_tot = kappa_abs + kappa_s;
 
     GReal dx;
     if (dir == 0) {

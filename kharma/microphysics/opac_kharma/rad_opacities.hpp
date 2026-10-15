@@ -83,6 +83,22 @@ class RadOpac
         }
     }
 
+    // Absorption with phi at Trad (k_rad) and at Tg (k_gas, Kirchhoff emission): only
+    // synchrotron depends on Trad, so the rest (a table lookup) is evaluated once
+    KOKKOS_INLINE_FUNCTION
+    void kappa_a_rad_gas(
+        Real rho, Real Tg, Real bsq, Real Trad, Real& k_rad, Real& k_gas) const
+    {
+        const bool sync = use_synchrotron &&
+                          static_cast<OpacityType>(opacity_type) == OpacityType::Default;
+        k_rad = kappa_a(rho, Tg, sync ? 0.0 : bsq, Trad); // synchrotron is 0 at bsq = 0
+        k_gas = k_rad;
+        if (sync) {
+            k_rad += synchrotron(rho, Tg, Trad, bsq);
+            k_gas += synchrotron(rho, Tg, Tg, bsq);
+        }
+    }
+
     KOKKOS_INLINE_FUNCTION
     Real kappa_sc(Real rho, Real Tg, Real bsq) const
     {
@@ -256,8 +272,8 @@ class RadOpac
         const Real rho_cgs = rho * units_cgs.GetMassDensityCodeToCGS();
         const Real Tg_cgs = m::abs(Tg) * units_cgs.GetTemperatureCodeToCGS();
         const Real Trad_cgs = m::abs(Trad) * units_cgs.GetTemperatureCodeToCGS();
-        const Real energy_density_scale =
-            units_cgs.GetEnergyCodeToCGS() / m::pow(units_cgs.GetLengthCodeToCGS(), 3.0);
+        const Real L = units_cgs.GetLengthCodeToCGS();
+        const Real energy_density_scale = units_cgs.GetEnergyCodeToCGS() / (L * L * L);
         const Real B_cgs = m::sqrt(4.0 * M_PI * bsq * energy_density_scale); // Gauss
 
         const Real n_e =
@@ -266,35 +282,14 @@ class RadOpac
         const Real nu_B =
             pc::qe * B_cgs / (2.0 * M_PI * pc::me * pc::c); // cyclotron frequency
         const Real nu_mu = 1.5 * nu_B * Theta_e * Theta_e;  // thermal synchrotron peak
-
-        // Eventually, we will want to evolve photon number, therefore chi will be used,
-        // for now, chi = 0 .
-        const Real chi = 0;
-
         const Real phi = m::max(pc::kb * Trad_cgs / (pc::h * nu_mu), 1.0e-5);
-        const Real exp_chi = m::exp(-chi);
 
-        // AGN coefficients
-        Real a, b, c, d, e;
-        // No photon number is evolved, so the radiation is Planck: use the e^{-xi} = 1
-        // fit for both emission and absorption.
-        const Real xc = m::min(m::max(exp_chi, 0.), 1.0);
-        const Real omx = 1. - xc;
-        if (regime == FitType::AGN) {
-            // McKinney et al. 2017, eq. D8
-            a = -0.0295 * m::pow(xc, 2.29) - 0.143 * m::pow(omx, 0.251) + 0.236;
-            b = 0.00977 * m::pow(xc, 730.) + 0.0291 * m::pow(omx, 0.48) + 2.58;
-            c = 1.29 * m::pow(xc, 1.59) + 3.46 * m::pow(omx, 0.234) + 2.15;
-            d = -78.1 * m::pow(xc, 66.) - 40.3 * m::pow(omx, 0.899) + 87.4;
-            e = 0.415 * m::pow(xc, 0.399) + 1.04 * m::pow(omx, 0.252) + 2.68;
-        } else if (regime == FitType::XRB) {
-            // McKinney et al. 2017, eq. D10
-            a = -2.31e-8 * m::pow(xc, 34.) - 8.24e-9 * m::pow(omx, 2.42) + 1.27;
-            b = -0.0261 * m::pow(xc, 738.) - 0.00475 * m::pow(omx, 1.55) + 1.06;
-            c = 0.000179 * m::pow(xc, 432.) + 0.0000411 * m::pow(omx, 0.372) + 0.000584;
-            d = -17.7 * m::pow(xc, 49.4) - 3.33 * m::pow(omx, 2.76) + 18.3;
-            e = 0.427 * m::pow(xc, 0.654) + 1.23 * m::pow(omx, 0.214) + 2.49;
-        }
+        // McKinney et al. 2017 eq. D8 (AGN) / D10 (XRB) at e^{-xi} = 1: no photon number
+        // is evolved, so the radiation is Planck
+        const bool agn = (regime == FitType::AGN);
+        const Real a = agn ? 0.2065 : 1.2699999769, b = agn ? 2.58977 : 1.0339;
+        const Real c = agn ? 3.44 : 0.000763, d = agn ? 9.3 : 0.6;
+        const Real e = agn ? 3.095 : 2.917;
 
         Real kappa_cgs =
             5.85374e-14 * n_e * phi / (Theta_e * Theta_e * Theta_e * Trad_cgs) / rho_cgs;
