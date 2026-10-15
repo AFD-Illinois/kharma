@@ -102,6 +102,9 @@ std::shared_ptr<KHARMAPackage> RadM1::Initialize(
     pkg->AddField("rad_imex_src",
         Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy},
             std::vector<int>{5}));
+    // Cell-centered total opacity, for the radiation signal speeds in the fluxes
+    pkg->AddField("rad_kappa",
+        Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy}));
     // Stage-1 star-state repair rate, cancelled from the dUdt_s1 reuse in stage 2
     pkg->AddField("rad_imex_fix",
         Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy},
@@ -456,6 +459,60 @@ TaskStatus RadM1::FixRadiation(MeshBlockData<Real>* rc)
     return TaskStatus::complete;
 }
 
+RadM1::RadOpac RadM1::GetRadOpac(Packages_t& packages)
+{
+    const auto& params = packages.Get("RadM1")->AllParams();
+    const auto& opac_pars = packages.Get("opacity")->AllParams();
+    RadOpac rad_opac;
+    rad_opac.opacity_type = params.Get<int>("opacity_type");
+    rad_opac.const_sigma = params.Get<Real>("const_sigma");
+    rad_opac.const_kappa_a = params.Get<Real>("const_kappa_a");
+    rad_opac.const_kappa_sc = params.Get<Real>("const_kappa_sc");
+    rad_opac.mean_molecular_weight = params.Get<Real>("mean_molecular_weight");
+    rad_opac.regime = opac_pars.Get<RadOpac::FitType>("regime");
+    rad_opac.use_bremsstrahlung = opac_pars.Get<bool>("use_bremsstrahlung");
+    rad_opac.use_synchrotron = opac_pars.Get<bool>("use_synchrotron");
+    rad_opac.use_tops_table = opac_pars.Get<bool>("use_tops_table");
+    rad_opac.units_cgs =
+        packages.Get("Units")->AllParams().Get<Units::UnitConversions>("unit_conv");
+    rad_opac.sing_opac = opac_pars.Get<Microphysics::Opacities>("opacities");
+    return rad_opac;
+}
+
+TaskStatus RadM1::CalcKappa(MeshData<Real>* md)
+{
+    auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
+    const RadOpac rad_opac = GetRadOpac(pmb0->packages);
+    const auto& eos_params = pmb0->packages.Get("eos")->AllParams();
+    auto eos = eos_params.Get<Microphysics::EOS::EOS>("d.EOS");
+    PackIndexMap prims_map;
+    const auto& P = md->PackVariables(
+        std::vector<MetadataFlag>{Metadata::GetUserFlag("Primitive")}, prims_map);
+    const VarMap m_p(prims_map, false);
+    const auto& kappa = md->PackVariables(std::vector<std::string>{"rad_kappa"});
+    const IndexRange3 b = KDomain::GetRange(md, IndexDomain::entire);
+    pmb0->par_for("rad_kappa", 0, P.GetDim(5) - 1, b.ks, b.ke, b.js, b.je, b.is, b.ie,
+        KOKKOS_LAMBDA(const int& bl, const int& k, const int& j, const int& i)
+        {
+            const auto& G = P.GetCoords(bl);
+            FourVectors D;
+            GRMHD::calc_4vecs(G, P(bl), m_p, k, j, i, Loci::center, D);
+            const Real rho = P(bl, m_p.RHO, k, j, i);
+            const Real Tg = eos.TemperatureFromDensityInternalEnergy(
+                rho, P(bl, m_p.UU, k, j, i) / rho);
+            const Real bsq = dot(D.bcon, D.bcov);
+            Real ucon_rad[GR_DIM];
+            calc_ucon_rad(G, P(bl), m_p, k, j, i, Loci::center, ucon_rad);
+            const Real gamma_rel = m::max(-dot(ucon_rad, D.ucov), 1.0);
+            const Real E_hat = P(bl, m_p.UU_RAD, k, j, i) *
+                               ((4.0 / 3.0) * gamma_rel * gamma_rel - (1.0 / 3.0));
+            const Real Trad = rad_opac.Trad(E_hat, rho, bsq);
+            kappa(bl, 0, k, j, i) = calc_kabs(rho, Tg, Trad, bsq, rad_opac) +
+                                    calc_kscattering(rho, Tg, bsq, rad_opac);
+        });
+    return TaskStatus::complete;
+}
+
 void RadM1::AddSourceImplicitly(
     MeshData<Real>* md_sub_init, MeshData<Real>* md_flux_src, IndexDomain domain)
 {
@@ -478,28 +535,7 @@ void RadM1::AddSourceImplicitly(
         const int src_rootfind_maxiter = params.Get<int>("src_rootfind_maxiter");
         const auto& eos_params = pmb->packages.Get("eos")->AllParams();
         auto eos = eos_params.Get<Microphysics::EOS::EOS>("d.EOS");
-        RadOpac rad_opac;
-        rad_opac.opacity_type = params.Get<int>("opacity_type");
-        rad_opac.const_sigma = params.Get<Real>("const_sigma");
-        rad_opac.const_kappa_a = params.Get<Real>("const_kappa_a");
-        rad_opac.const_kappa_sc = params.Get<Real>("const_kappa_sc");
-        rad_opac.mean_molecular_weight = params.Get<Real>("mean_molecular_weight");
-        rad_opac.regime =
-            pmb->packages.Get("opacity")->AllParams().Get<RadOpac::FitType>("regime");
-        rad_opac.use_bremsstrahlung =
-            pmb->packages.Get("opacity")->AllParams().Get<bool>("use_bremsstrahlung");
-        rad_opac.use_synchrotron =
-            pmb->packages.Get("opacity")->AllParams().Get<bool>("use_synchrotron");
-        rad_opac.use_tops_table =
-            pmb->packages.Get("opacity")->AllParams().Get<bool>("use_tops_table");
-        rad_opac.units_cgs =
-            pmb->packages.Get("Units")->AllParams().Get<Units::UnitConversions>(
-                "unit_conv");
-        if (pmb->packages.AllPackages().count("opacity")) {
-            rad_opac.sing_opac =
-                pmb->packages.Get("opacity")->AllParams().Get<Microphysics::Opacities>(
-                    "opacities");
-        }
+        const RadOpac rad_opac = GetRadOpac(pmb->packages);
 
         const auto& G = pmb->coords;
 
@@ -555,7 +591,7 @@ void RadM1::AddSourceImplicitly(
 
         // TODO (PNM): Split it, Cora thinks this is too large to be good. Probably too
         // slow.
-        pmb->par_for("RadM1_Implicit_Solver4D", kb.s, kb.e, jb.s, jb.e, ib.s, ib.e,
+        auto solve_cell =
             KOKKOS_LAMBDA (const int &k, const int &j, const int &i)
             {
                 const int iug[4] = {m_u.UU, m_u.U1, m_u.U2, m_u.U3};
@@ -947,6 +983,15 @@ void RadM1::AddSourceImplicitly(
                         P_init_substep(m_p.B1 + v, k, j, i) = PB_save[v];
                     }
                 }
+            };
+        // Dynamic schedule: the solve cost per cell varies a lot (thin vs thick cells)
+        const int nj = jb.e - jb.s + 1, ni = ib.e - ib.s + 1;
+        Kokkos::parallel_for("RadM1_Implicit_Solver4D",
+            Kokkos::RangePolicy<Kokkos::Schedule<Kokkos::Dynamic>>(
+                pmb->exec_space, 0, (kb.e - kb.s + 1) * nj * ni),
+            KOKKOS_LAMBDA (const int idx) {
+                solve_cell(
+                    kb.s + idx / (nj * ni), jb.s + (idx / ni) % nj, ib.s + idx % ni);
             });
     }
 }

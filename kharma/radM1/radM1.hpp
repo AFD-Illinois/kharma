@@ -166,6 +166,11 @@ enum class OpacityType : int {
 };
 #include "microphysics/opac_kharma/rad_opacities.hpp"
 
+// Opacity parameters from the RadM1, opacity and Units packages
+RadOpac GetRadOpac(Packages_t& packages);
+// Cell-centered total opacity "rad_kappa", for the radiation signal speeds
+TaskStatus CalcKappa(MeshData<Real>* md);
+
 KOKKOS_INLINE_FUNCTION Real calc_kabs(
     Real rho, Real T, Real Trad, Real bsq, const RadOpac& rad_opac)
 {

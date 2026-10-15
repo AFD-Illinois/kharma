@@ -240,7 +240,8 @@ KOKKOS_INLINE_FUNCTION StatusRadiationInversion u_to_p_rad(const GRCoordinates& 
 KOKKOS_INLINE_FUNCTION void compute_covariant_fourforce(const GRCoordinates& G,
     const Real P_mhd[4], const Real P_rad[4], const Real rho, const Real B_P[NVEC],
     const Microphysics::EOS::EOS& eos, const RadOpac& rad_opac, const int k, const int j,
-    const int i, Real dS[4], Real* kappa_tot_out = nullptr, Real* coupling_out = nullptr)
+    const int i, Real dS[4], Real* kappa_tot_out = nullptr, Real* coupling_out = nullptr,
+    Real kap[3] = nullptr, const bool kap_frozen = false)
 {
 
     if (static_cast<RadM1::OpacityType>(rad_opac.opacity_type) ==
@@ -274,21 +275,33 @@ KOKKOS_INLINE_FUNCTION void compute_covariant_fourforce(const GRCoordinates& G,
     }
 
     Real Tg = eos.TemperatureFromDensityInternalEnergy(rho, P_mhd[0] / rho);
-    Real bcon[4] = {0., 0., 0., 0.};
-    Real bcov[4] = {0., 0., 0., 0.};
-    VLOOP
-        bcon[0] += B_P[v] * ucov_mhd[v + 1];
-    VLOOP
-        bcon[v + 1] = (B_P[v] + bcon[0] * ucon_mhd[v + 1]) / ucon_mhd[0];
 
-    G.lower(bcon, bcov, k, j, i, Loci::center);
-    Real bsq = dot(bcov, bcon);
-    Real Trad = rad_opac.Trad(E_hat, rho, bsq);
-
-    Real kappa_abs_rad = RadM1::calc_kabs(rho, Tg, Trad, bsq, rad_opac); // phi uses Trad
-    Real kappa_emit_gas =
-        RadM1::calc_kabs(rho, Tg, Tg, bsq, rad_opac); // phi uses Tg (Kirchhoff)
-    Real kappa_sc = RadM1::calc_kscattering(rho, Tg, bsq, rad_opac);
+    // kap = {absorption (phi at Trad), emission (phi at Tg, Kirchhoff), scattering}: used
+    // as given if kap_frozen (Jacobian columns), else computed and returned
+    Real kappa_abs_rad, kappa_emit_gas, kappa_sc, bsq = 0.;
+    if (kap_frozen) {
+        kappa_abs_rad = kap[0];
+        kappa_emit_gas = kap[1];
+        kappa_sc = kap[2];
+    } else {
+        // b^2 and Trad only enter through the opacities
+        Real bcon[4] = {0., 0., 0., 0.};
+        Real bcov[4] = {0., 0., 0., 0.};
+        VLOOP
+            bcon[0] += B_P[v] * ucov_mhd[v + 1];
+        VLOOP
+            bcon[v + 1] = (B_P[v] + bcon[0] * ucon_mhd[v + 1]) / ucon_mhd[0];
+        G.lower(bcon, bcov, k, j, i, Loci::center);
+        bsq = dot(bcov, bcon);
+        const Real Trad = rad_opac.Trad(E_hat, rho, bsq);
+        rad_opac.kappa_a_rad_gas(rho, Tg, bsq, Trad, kappa_abs_rad, kappa_emit_gas);
+        kappa_sc = RadM1::calc_kscattering(rho, Tg, bsq, rad_opac);
+        if (kap != nullptr) {
+            kap[0] = kappa_abs_rad;
+            kap[1] = kappa_emit_gas;
+            kap[2] = kappa_sc;
+        }
+    }
     Real JBB_val = rad_opac.JBB(Tg, rho, bsq);
 
     Real kappa_tot = kappa_abs_rad + kappa_sc;
@@ -620,8 +633,10 @@ KOKKOS_INLINE_FUNCTION int solve_4d_pmhd(const GRCoordinates& G,
     bool used_normal_guess = true;
     u_to_p_rad(G, U_rad_guess, P_rad_guess, k, j, i, &used_normal_guess);
     Real kappa_tot_entry = 0.0;
+    // Opacities at the current iterate, frozen in the Jacobian columns
+    Real kap_guess[3];
     compute_covariant_fourforce(G, P_mhd_guess, P_rad_guess, rho_init, B_P, eos, rad_opac,
-        k, j, i, dS_guess, &kappa_tot_entry);
+        k, j, i, dS_guess, &kappa_tot_entry, nullptr, kap_guess);
     const Real tol_eff = m::max(static_cast<Real>(src_rootfind_tol),
         10.0 * std::numeric_limits<Real>::epsilon() * kappa_tot_entry * dt);
 
@@ -641,21 +656,13 @@ KOKKOS_INLINE_FUNCTION int solve_4d_pmhd(const GRCoordinates& G,
 
     Real rho_iter = rho_init;
 
+    // FD Jacobian when needed, else a Broyden update from the last step
+    Real jac[4][4], P_prev[4], resid_prev[4], err_prev = err;
+    bool fresh_jac = true;
     do {
         if (err <= tol_eff) {
             break;
         }
-
-        Real P_rad_m[4];
-        Real P_rad_p[4];
-        Real U_mhd_m[4];
-        Real U_mhd_p[4];
-        Real U_rad_m[4];
-        Real U_rad_p[4];
-        Real dS_m[4];
-        Real dS_p[4];
-
-        Real jac[4][4] = {0};
 
         // Find minimum non-zero magnitude from P_mhd_guess to scale FD step safely
         Real P_mhd_mag_min = RAD_LARGE;
@@ -665,212 +672,58 @@ KOKKOS_INLINE_FUNCTION int solve_4d_pmhd(const GRCoordinates& G,
             }
         }
 
-        bool bad_guess_m = false;
-        bool bad_guess_p = false;
-
-        // Loop over the 4 fluid variables to perturb each one
-        for (int m = 0; m < 4; m++) {
-            Real P_mhd_m[4] = {
-                P_mhd_guess[0], P_mhd_guess[1], P_mhd_guess[2], P_mhd_guess[3]};
-            Real P_mhd_p[4] = {
-                P_mhd_guess[0], P_mhd_guess[1], P_mhd_guess[2], P_mhd_guess[3]};
-
-            const Real fd_step = m::max(src_rootfind_eps * P_mhd_mag_min,
-                src_rootfind_eps * m::abs(P_mhd_guess[m]));
-            P_mhd_m[m] -= fd_step;
-            P_mhd_p[m] += fd_step;
-
-            // Evaluate minus perturbation
-            Real rho_m;
-            uvec[0] = P_mhd_m[1];
-            uvec[1] = P_mhd_m[2];
-            uvec[2] = P_mhd_m[3];
-
-            GRMHD::p_to_u_mhd(G, rho_from_D(G, D_rho, uvec, k, j, i), P_mhd_m[0], uvec,
-                B_P, eos, k, j, i, rho_m, U_mhd_m, Loci::center);
-
-            // The rho output from p_to_u is rho_ut_gdet;
-            FourVectors Dtmp;
-            GRMHD::calc_4vecs(G, uvec, B_P, k, j, i, Loci::center, Dtmp);
-            rho_m = rho_m / (gdet * Dtmp.ucon[0]);
-            // Conservation law: Delta U_rad = - Delta U_mhd
-
+        // Broyden in variables scaled by their magnitude, so u and u^i weigh alike
+        if (!fresh_jac) {
+            Real dP[4], Jdp[4], dPsq = 0.;
+            for (int m = 0; m < 4; m++) {
+                const Real sc = m::max(m::abs(P_prev[m]), P_mhd_mag_min);
+                dP[m] = (P_mhd_guess[m] - P_prev[m]) / (sc * sc);
+                dPsq += (P_mhd_guess[m] - P_prev[m]) * dP[m];
+            }
             for (int n = 0; n < 4; n++) {
-                U_rad_m[n] = U_rad_0[n] - (U_mhd_m[n] - U_mhd_0[n]);
-            }
-
-            // Recover rad primitives
-            bool used_normal_m;
-            auto status_m = u_to_p_rad(G, U_rad_m, P_rad_m, k, j, i, &used_normal_m);
-            if (status_m != StatusRadiationInversion::success) {
-                bad_guess_m = true;
-            }
-
-            if (used_normal_m != used_normal_guess) {
-                bad_guess_m = true;
-            }
-
-            // If a bad guess has already been found before, we can't really skip the
-            // whole Jacobian evaluation. We need to keep evaluating the other blocks to
-            // figure out if, during the next m's, the other side (plus/minus) will also
-            // go bad, trigerring a bad_guess_m == true && bad_guess_p == true
-            if (!bad_guess_m && !bad_guess_p) {
-                compute_covariant_fourforce(
-                    G, P_mhd_m, P_rad_m, rho_m, B_P, eos, rad_opac, k, j, i, dS_m);
-                for (int n = 0; n < 4; n++) dS_m[n] = gdet * dS_m[n];
-            }
-            // Evaluate plus perturbation
-            Real rho_p;
-            uvec[0] = P_mhd_p[1];
-            uvec[1] = P_mhd_p[2];
-            uvec[2] = P_mhd_p[3];
-
-            GRMHD::calc_4vecs(G, uvec, B_P, k, j, i, Loci::center, Dtmp);
-
-            GRMHD::p_to_u_mhd(G, rho_from_D(G, D_rho, uvec, k, j, i), P_mhd_p[0], uvec,
-                B_P, eos, k, j, i, rho_p, U_mhd_p, Loci::center);
-
-            // The rho output from p_to_u is rho_ut_gdet;
-            rho_p = rho_p / (gdet * Dtmp.ucon[0]);
-
-            for (int n = 0; n < 4; n++) {
-                U_rad_p[n] = U_rad_0[n] - (U_mhd_p[n] - U_mhd_0[n]);
-            }
-            // TODO (PNM): Change name of KOKKOS kernel to lower snake case
-            bool used_normal_p;
-            auto status_p = u_to_p_rad(G, U_rad_p, P_rad_p, k, j, i, &used_normal_p);
-            if (status_p != StatusRadiationInversion::success) {
-                bad_guess_p = true;
-            }
-            if (used_normal_p != used_normal_guess) {
-                bad_guess_p = true;
-            }
-
-            // If a bad guess has already been found before, we can't really skip the
-            // whole Jacobian evaluation. We need to keep evaluating the other blocks to
-            // figure out if, during the next m's, the other side (plus/minus) will also
-            // go bad, trigerring a bad_guess_m == true && bad_guess_p == true
-            if (!bad_guess_m && !bad_guess_p) {
-                compute_covariant_fourforce(
-                    G, P_mhd_p, P_rad_p, rho_p, B_P, eos, rad_opac, k, j, i, dS_p);
-                for (int n = 0; n < 4; n++) dS_p[n] = gdet * dS_p[n];
-
-                // Populate Jacobian
-                for (int n = 0; n < 4; n++) {
-                    Real fp = U_mhd_p[n] - U_mhd_0[n] + dt * dS_p[n];
-                    Real fm = U_mhd_m[n] - U_mhd_0[n] + dt * dS_m[n];
-                    // Jacobian here is dU_rad/dP_mhd
-                    // Since div R^mu_nu = G_nu
-                    // and div T^mu_nu = -G_nu
-                    jac[n][m] = (fp - fm) / (P_mhd_p[m] - P_mhd_m[m]);
-                }
+                Jdp[n] = 0.;
+                for (int m = 0; m < 4; m++)
+                    Jdp[n] += jac[n][m] * (P_mhd_guess[m] - P_prev[m]);
+                for (int m = 0; m < 4; m++)
+                    jac[n][m] += (resid[n] - resid_prev[n] - Jdp[n]) * dP[m] / dPsq;
             }
         }
-        // TODO (PNM): Separate these if/elses into different kernels.
-        if (bad_guess_m == true && bad_guess_p == true) {
-            bad_guess = true;
-            break; // Exit the iteration loop if both perturbations yield bad guesses
-        } else if (bad_guess_m == true) {
-            // If only - finite difference support point is bad, do one-sided
-            // difference with + support point
-            bool onesided_mismatch = false;
 
-            for (int m = 0; m < 4; m++) {
+        // One-sided differences (as accurate as central at this step size): forward,
+        // or backward if the forward support point is invalid
+        for (int m = 0; m < 4 && fresh_jac && !bad_guess; m++) {
+            const Real fd_step = m::max(src_rootfind_eps * P_mhd_mag_min,
+                src_rootfind_eps * m::abs(P_mhd_guess[m]));
+            bool ok = false;
+            for (int side = 1; side >= -1 && !ok; side -= 2) {
                 Real P_mhd_p[4] = {
                     P_mhd_guess[0], P_mhd_guess[1], P_mhd_guess[2], P_mhd_guess[3]};
-                P_mhd_p[m] += std::max(src_rootfind_eps * P_mhd_mag_min,
-                    src_rootfind_eps * m::abs(P_mhd_p[m]));
-
-                Real rho_p;
+                P_mhd_p[m] += side * fd_step;
                 uvec[0] = P_mhd_p[1];
                 uvec[1] = P_mhd_p[2];
                 uvec[2] = P_mhd_p[3];
-                // TODO (PNM): This is stupid since we have already computed the plus
-                // perturbation above. PNM: Actually, I don't know if that's actually
-                // stupid, we would need to save a lot of 4x4 matrices to get this
-                // working. it's a trade-off between register pressure and doing a few
-                // more calculations, which I think would be more efficient.
-                GRMHD::p_to_u_mhd(G, rho_from_D(G, D_rho, uvec, k, j, i), P_mhd_p[0],
-                    uvec, B_P, eos, k, j, i, rho_p, U_mhd_p, Loci::center);
-                FourVectors Dtmp;
-                GRMHD::calc_4vecs(G, uvec, B_P, k, j, i, Loci::center, Dtmp);
-
-                rho_p = rho_p / (gdet * Dtmp.ucon[0]);
-
-                for (int n = 0; n < 4; n++) {
+                const Real rho_p = rho_from_D(G, D_rho, uvec, k, j, i);
+                Real rho_ut, U_mhd_p[4], U_rad_p[4], P_rad_p[4], dS_p[4];
+                GRMHD::p_to_u_mhd(G, rho_p, P_mhd_p[0], uvec, B_P, eos, k, j, i, rho_ut,
+                    U_mhd_p, Loci::center);
+                // Conservation law: Delta U_rad = - Delta U_mhd
+                for (int n = 0; n < 4; n++)
                     U_rad_p[n] = U_rad_0[n] - (U_mhd_p[n] - U_mhd_0[n]);
-                }
                 bool used_normal_p;
-                auto status_p = u_to_p_rad(G, U_rad_p, P_rad_p, k, j, i, &used_normal_p);
-                compute_covariant_fourforce(
-                    G, P_mhd_p, P_rad_p, rho_p, B_P, eos, rad_opac, k, j, i, dS_p);
-                for (int n = 0; n < 4; n++) dS_p[n] = gdet * dS_p[n];
-
-                if (used_normal_p != used_normal_guess) {
-                    onesided_mismatch = true;
-                    break;
-                }
-
-                for (int n = 0; n < 4; n++) {
-                    Real fp = U_mhd_p[n] - U_mhd_0[n] + dt * dS_p[n];
-                    Real fguess = U_mhd_guess[n] - U_mhd_0[n] + dt * dS_guess[n];
-                    // Jacobian here is dU_rad/dP_mhd
-                    // Since div R^mu_nu = G_nu
-                    // and div T^mu_nu = -G_nu
-                    jac[n][m] = (fp - fguess) / (P_mhd_p[m] - P_mhd_guess[m]);
-                }
+                ok = u_to_p_rad(G, U_rad_p, P_rad_p, k, j, i, &used_normal_p) ==
+                         StatusRadiationInversion::success &&
+                     used_normal_p == used_normal_guess;
+                if (!ok) continue;
+                compute_covariant_fourforce(G, P_mhd_p, P_rad_p, rho_p, B_P, eos,
+                    rad_opac, k, j, i, dS_p, nullptr, nullptr, kap_guess, true);
+                for (int n = 0; n < 4; n++)
+                    jac[n][m] = (U_mhd_p[n] - U_mhd_0[n] + dt * gdet * dS_p[n] -
+                                    resid[n]) /
+                                (P_mhd_p[m] - P_mhd_guess[m]);
             }
-            if (onesided_mismatch) {
-                bad_guess = true;
-                break;
-            }
-        } else if (bad_guess_p == true) {
-            // If only + finite difference support point is bad, do one-sided
-            // difference with - support point
-            bool onesided_mismatch = false;
-
-            for (int m = 0; m < 4; m++) {
-                Real P_mhd_m[4] = {
-                    P_mhd_guess[0], P_mhd_guess[1], P_mhd_guess[2], P_mhd_guess[3]};
-                P_mhd_m[m] -= std::max(src_rootfind_eps * P_mhd_mag_min,
-                    src_rootfind_eps * m::abs(P_mhd_m[m]));
-
-                Real rho_m;
-                uvec[0] = P_mhd_m[1];
-                uvec[1] = P_mhd_m[2];
-                uvec[2] = P_mhd_m[3];
-                GRMHD::p_to_u_mhd(G, rho_from_D(G, D_rho, uvec, k, j, i), P_mhd_m[0],
-                    uvec, B_P, eos, k, j, i, rho_m, U_mhd_m, Loci::center);
-                FourVectors Dtmp;
-                GRMHD::calc_4vecs(G, uvec, B_P, k, j, i, Loci::center, Dtmp);
-                rho_m = rho_m / (gdet * Dtmp.ucon[0]);
-
-                for (int n = 0; n < 4; n++) {
-                    U_rad_m[n] = U_rad_0[n] - (U_mhd_m[n] - U_mhd_0[n]);
-                }
-                bool used_normal_m;
-                auto status_m = u_to_p_rad(G, U_rad_m, P_rad_m, k, j, i, &used_normal_m);
-                compute_covariant_fourforce(
-                    G, P_mhd_m, P_rad_m, rho_m, B_P, eos, rad_opac, k, j, i, dS_m);
-                for (int n = 0; n < 4; n++) dS_m[n] = gdet * dS_m[n];
-
-                // See the mirror-image comment in the bad_guess_m branch above.
-                if (used_normal_m != used_normal_guess) {
-                    onesided_mismatch = true;
-                    break;
-                }
-
-                for (int n = 0; n < 4; n++) {
-                    Real fm = U_mhd_m[n] - U_mhd_0[n] + dt * dS_m[n];
-                    Real fguess = U_mhd_guess[n] - U_mhd_0[n] + dt * dS_guess[n];
-                    jac[n][m] = (fguess - fm) / (P_mhd_guess[m] - P_mhd_m[m]);
-                }
-            }
-            if (onesided_mismatch) {
-                bad_guess = true;
-                break;
-            }
+            if (!ok) bad_guess = true;
         }
+        if (bad_guess) break;
 
         Real jacinv[4][4];
         // Inverting the 4x4 matrix;
@@ -905,12 +758,10 @@ KOKKOS_INLINE_FUNCTION int solve_4d_pmhd(const GRCoordinates& G,
             uvec[0] = P_mhd_guess[1];
             uvec[1] = P_mhd_guess[2];
             uvec[2] = P_mhd_guess[3];
-            GRMHD::p_to_u_mhd(G, rho_from_D(G, D_rho, uvec, k, j, i), P_mhd_guess[0],
-                uvec, B_P, eos, k, j, i, rho_iter_next, U_mhd_guess, Loci::center);
-
-            FourVectors Dtmp;
-            GRMHD::calc_4vecs(G, uvec, B_P, k, j, i, Loci::center, Dtmp);
-            rho_iter_next = rho_iter_next / (gdet * Dtmp.ucon[0]);
+            rho_iter_next = rho_from_D(G, D_rho, uvec, k, j, i);
+            Real rho_ut;
+            GRMHD::p_to_u_mhd(G, rho_iter_next, P_mhd_guess[0], uvec, B_P, eos, k, j, i,
+                rho_ut, U_mhd_guess, Loci::center);
 
             for (int n = 0; n < 4; n++) {
                 U_rad_guess[n] = U_rad_0[n] - (U_mhd_guess[n] - U_mhd_0[n]);
@@ -918,17 +769,15 @@ KOKKOS_INLINE_FUNCTION int solve_4d_pmhd(const GRCoordinates& G,
 
             auto status =
                 u_to_p_rad(G, U_rad_guess, P_rad_guess, k, j, i, &used_normal_guess);
-            compute_covariant_fourforce(G, P_mhd_guess, P_rad_guess, rho_iter_next, B_P,
-                eos, rad_opac, k, j, i, dS_guess);
-
-            for (int n = 0; n < 4; n++) dS_guess[n] = gdet * dS_guess[n];
-
             if (status != StatusRadiationInversion::success) {
                 scaling_factor /= 3.0;
                 track++;
                 if (track > 15 || scaling_factor < 1.e-8) break;
                 continue;
             }
+            compute_covariant_fourforce(G, P_mhd_guess, P_rad_guess, rho_iter_next, B_P,
+                eos, rad_opac, k, j, i, dS_guess, nullptr, nullptr, kap_guess);
+            for (int n = 0; n < 4; n++) dS_guess[n] = gdet * dS_guess[n];
 
             step_ok = true;
             rho_iter = rho_iter_next;
@@ -941,6 +790,8 @@ KOKKOS_INLINE_FUNCTION int solve_4d_pmhd(const GRCoordinates& G,
 
         // Update residuals
         for (int n = 0; n < 4; n++) {
+            P_prev[n] = P_mhd_pre[n];
+            resid_prev[n] = resid[n];
             resid[n] = U_mhd_guess[n] - U_mhd_0[n] + dt * dS_guess[n];
 
             if (!m::isfinite(resid[n])) {
@@ -960,6 +811,9 @@ KOKKOS_INLINE_FUNCTION int solve_4d_pmhd(const GRCoordinates& G,
         for (int n = 0; n < 4; n++) dtdS_iter[n] = dt * dS_guess[n];
 
         err = calculate_error(resid, U_mhd_guess, U_mhd_0, dtdS_iter);
+        // Fresh FD Jacobian next time unless this step at least halved the error
+        fresh_jac = !(err < 0.5 * err_prev);
+        err_prev = err;
 
         niter++;
     } while (err > tol_eff && niter < src_rootfind_maxiter);
