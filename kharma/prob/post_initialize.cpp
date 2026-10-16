@@ -51,7 +51,6 @@
 #include "kharma_driver.hpp"
 #include "reductions.hpp"
 #include "seed_B.hpp"
-#include "temperature.hpp"
 #include "types.hpp"
 
 void KHARMA::PostInitialize(ParameterInput* pin, Mesh* pmesh, bool is_restart)
@@ -214,10 +213,4 @@ void KHARMA::PostInitialize(ParameterInput* pin, Mesh* pmesh, bool is_restart)
     KBoundaries::FreezeDirichlet(md);
     // This is the first sync if there is no B field
     KHARMADriver::SyncAllBounds(md);
-
-    // Seed the cached temperature (and its EOS guess) from the final initial state,
-    // on fresh starts and restarts alike
-    if (pkgs.count("Temperature")) {
-        Temperature::MeshUpdateTemperature(md.get());
-    }
 }

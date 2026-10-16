@@ -1,9 +1,6 @@
 #!/bin/bash
 set -euo pipefail
 
-ZSH_VERSION=${ZSH_VERSION:-}
-[ -n "$ZSH_VERSION" ] && setopt SH_WORD_SPLIT
-
 # Make script for KHARMA
 # Used to set sensible default flags and call cmake/make
 # Usage:
@@ -43,8 +40,6 @@ PREFIX_PATH=${PREFIX_PATH:-}
 C_NATIVE=${C_NATIVE:-}
 CXX_NATIVE=${CXX_NATIVE:-}
 HOST_ARCH=${HOST_ARCH:-NATIVE}
-LDFLAGS=${LDFLAGS:-}
-OMP_FLAG=${OMP_FLAG:-}
 # No default DEVICE_ARCH, only set if defined
 MPI_EXTRA_ARGS=${MPI_EXTRA_ARGS:-}
 
@@ -99,9 +94,6 @@ fi
 if option "nocleanup"; then
   EXTRA_FLAGS="-DKHARMA_DISABLE_CLEANUP=1 $EXTRA_FLAGS"
 fi
-#if option "norad"; then
-EXTRA_FLAGS="-DKHARMA_DISABLE_RADM1=1 $EXTRA_FLAGS"
-#fi
 if option "split_implicit"; then
   EXTRA_FLAGS="-DKHARMA_SPLIT_IMPLICIT_SOLVE=1 $EXTRA_FLAGS"
 fi

@@ -56,7 +56,6 @@
 // AthenaK: https://gitlab.com/theias/hpc/jmstone/athena-parthenon/athenak
 // (ideal_c2p_mhd.hpp) They have been lightly adapted to fit into KHARMA, and hopefully
 // original authors should be clear from comments
-// Note: lambda is now passed to the KastaunResidual constructor and stored as lambda_
 
 // General template
 // We define a specialization based on the Inverter::Type parameter
@@ -90,7 +89,7 @@ class KastaunResidual
     KOKKOS_FUNCTION
     KastaunResidual(const Real& D, const Real& q, const Real& bsq, const Real& bsq_rpsq,
         const Real& rsq, const Real& rbsq, const Real& v0sq,
-        const Microphysics::EOS::EOS& eos, const Real lambda[2])
+        const Microphysics::EOS::EOS& eos)
         : D_(D)
         , q_(q)
         , bsq_(bsq)
@@ -99,7 +98,6 @@ class KastaunResidual
         , rbsq_(rbsq)
         , v0sq_(v0sq)
         , eos_(eos)
-        , lambda_{lambda[0], lambda[1]}
     {}
 
     KOKKOS_FORCEINLINE_FUNCTION
@@ -145,8 +143,7 @@ class KastaunResidual
         // TODO technically we should only limit P>0, and allow returning negative u
         const Real rhohat = std::max(rhohat_mu(iWhat), 0.);
         const Real ehat = std::max(ehat_mu(mu, qbar, rbarsq, vhatsq, What), 0.);
-
-        const Real Phat = eos_.PressureFromDensityInternalEnergy(rhohat, ehat, lambda_);
+        const Real Phat = eos_.PressureFromDensityInternalEnergy(rhohat, ehat);
         // TODO_EOS: ahat general or ideal-only?
         const Real ahat = Phat / (rhohat * (1.0 + ehat));
 
@@ -171,7 +168,6 @@ class KastaunResidual
   private:
     const Real D_, q_, bsq_, bsq_rpsq_, rsq_, rbsq_, v0sq_;
     const Microphysics::EOS::EOS& eos_;
-    Real lambda_[2];
 };
 
 /**
@@ -209,7 +205,6 @@ KOKKOS_INLINE_FUNCTION int u_to_p<Type::kastaun>(const GRCoordinates& G,
 
     const Real& Urho = U(m_u.RHO, k, j, i);
     const Real D = Urho * a_over_g;
-    const Real Ye = (m_u.YE >= 0) ? U(m_u.YE, k, j, i) / Urho : 0.0;
 
     Real Qcov[GR_DIM] = {(U(m_u.UU, k, j, i) - Urho) * a_over_g,
         U(m_u.U1, k, j, i) * a_over_g, U(m_u.U2, k, j, i) * a_over_g,
@@ -275,10 +270,7 @@ KOKKOS_INLINE_FUNCTION int u_to_p<Type::kastaun>(const GRCoordinates& G,
     const Real v0sq = std::min(zsq / (1.0 + zsq), 1.0 - 1.0 / SQR(51.));
 
     // residual object. Caches most arguments/floors so calls are single-argument
-    Real lambda[2];
-    lambda[0] = Ye;
-    lambda[1] = (m_p.LT_GUESS >= 0) ? P(m_p.LT_GUESS, k, j, i) : 0.0;
-    KastaunResidual res(D, q, bsq, bsq_rpsq, rsq, rbsq, v0sq, eos, lambda);
+    KastaunResidual res(D, q, bsq, bsq_rpsq, rsq, rbsq, v0sq, eos);
 
     // SOLVE
     // Need to find initial bracket. Requires separate solve
