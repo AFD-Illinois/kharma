@@ -53,6 +53,7 @@ std::shared_ptr<KHARMAPackage> Floors::Initialize(
     Params& params = pkg->AllParams();
     const bool is_ideal =
         pin->GetString("eos", "type") == singularity::IdealGas::EosType();
+    // TODO(CEP) Still don't love the hard-code of 5/3 here but it's toothless right now
     Real gamma1 = is_ideal ? packages->Get("eos")->Param<Real>("gm1") + 1. : 5. / 3.;
     // Parse all the particular floor values into a nice struct we can pass device-side
     params.Add("prescription", MakePrescription(pin, gamma1));
@@ -280,8 +281,12 @@ TaskStatus Floors::ApplyInitialFloors(
                 determine_floors(G, P, m_p, k, j, i, floors, rhoflr_max, uflr_max);
             if (fflag) {
                 apply_ceilings(G, P, m_p, k, j, i, floors, U, m_u);
+                // It should take gamma here in the place of 0.0. But it is not needed for
+                // the fluid frame apply_floors So instead of pulling gamma here
+                // unnecesarilly, I'm just passing 0.0 In case you don't agree, complain
+                // with Cora.
                 apply_floors<InjectionFrame::fluid>(
-                    G, P, m_p, eos, k, j, i, rhoflr_max, uflr_max, U, m_u);
+                    G, P, m_p, eos, 0.0, k, j, i, rhoflr_max, uflr_max, U, m_u);
                 // P->U for any modified zones
                 Flux::p_to_u_mhd(
                     G, P, m_p, emhd_params, eos, k, j, i, U, m_u, Loci::center);
@@ -411,9 +416,22 @@ int Floors::CountFFlags(MeshData<Real>* md)
 
 void Floors::PreStepWork(Mesh* pmesh, ParameterInput* pin, const SimTime& tm)
 {
+    PARTHENON_INSTRUMENT
     // Clear all floor flags before each step
     auto md = pmesh->mesh_data.Get().get();
-    KHARMADriver::Scale(std::vector<std::string>{"fflag"}, md, 0.);
+    auto fflag = md->PackVariables(std::vector<std::string>{"fflag"});
+
+    const IndexRange3 b = KDomain::GetRange(md, IndexDomain::entire, false);
+    const IndexRange block = IndexRange{0, fflag.GetDim(5) - 1};
+
+    // For some reason 'SetDataToConstant' and 'WeightedSum' don't
+    // play nice with CUDA 12.8, which we use for regression tests...
+    // TODO could still abstract with like a ResetFlag function or something?
+    parthenon::par_for("ResetFflag", block.s, block.e, b.ks, b.ke, b.js, b.je, b.is, b.ie,
+        KOKKOS_LAMBDA (const int &bl, const int &k, const int &j, const int &i)
+        {
+            fflag(bl, 0, k, j, i) = 0.;
+        });
 }
 
 TaskStatus Floors::PostStepDiagnostics(const SimTime& tm, MeshData<Real>* md)

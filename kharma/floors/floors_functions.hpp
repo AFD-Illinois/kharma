@@ -184,9 +184,9 @@ KOKKOS_INLINE_FUNCTION int determine_floors(const GRCoordinates& G,
 
 #define FLOOR_ONE_ARGS                                                                   \
     const GRCoordinates &G, const VariablePack<Real>&P, const VarMap &m_p,               \
-        const Microphysics::EOS::EOS &eos, const int &k, const int &j, const int &i,     \
-        const Real &rhoflr_max, const Real &uflr_max, const VariablePack<Real>&U,        \
-        const VarMap &m_u
+        const Microphysics::EOS::EOS &eos, const Real gam, const int &k, const int &j,   \
+        const int &i, const Real &rhoflr_max, const Real &uflr_max,                      \
+        const VariablePack<Real>&U, const VarMap &m_u
 
 /**
  * Apply floors of several types in determining how to add mass and internal energy to
@@ -376,9 +376,6 @@ KOKKOS_INLINE_FUNCTION int apply_floors<InjectionFrame::normal_kastaun_eenough>(
     Real lambda[2];
     fill_eos_lambda(P, m_p, k, j, i, lambda);
 
-    // TODO_EOS (PNM): Temporary fix! I don't want to use singularity-eos pars to get
-    // floors. This is very bad but I don't see any other quick workaround here.
-    Real gam = 5. / 3.;
     // If entropy is present & u dips below a floor, use it as a minimum in addition to
     // the floor
     const Real u =
