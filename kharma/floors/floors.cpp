@@ -42,6 +42,8 @@
 #include "kharma_driver.hpp"
 #include "pack.hpp"
 
+#include <singularity-eos/eos/eos_ideal.hpp>
+
 // Floors.  Apply limits to fluid values to maintain integrable state
 
 std::shared_ptr<KHARMAPackage> Floors::Initialize(
@@ -49,9 +51,10 @@ std::shared_ptr<KHARMAPackage> Floors::Initialize(
 {
     auto pkg = std::make_shared<KHARMAPackage>("Floors");
     Params& params = pkg->AllParams();
-
-    Real gamma1 = pin->GetOrAddReal(
-        "floors", "gamma1", packages->Get("eos")->AllParams().Get<Real>("gm1") + 1);
+    const bool is_ideal =
+        pin->GetString("eos", "type") == singularity::IdealGas::EosType();
+    // TODO(CEP) Still don't love the hard-code of 5/3 here but it's toothless right now
+    Real gamma1 = is_ideal ? packages->Get("eos")->Param<Real>("gm1") + 1. : 5. / 3.;
     // Parse all the particular floor values into a nice struct we can pass device-side
     params.Add("prescription", MakePrescription(pin, gamma1));
 
