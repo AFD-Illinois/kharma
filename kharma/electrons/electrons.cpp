@@ -362,7 +362,7 @@ TaskStatus ApplyElectronHeating(
             // this runs; it still needs the pre-update value here.
             // Denotes the solution corresponding to entropy conservation.
             const Real k_energy_conserving = Entropy::CalcIdealEntropy(
-                P(m_p.RHO, k, j, i), P(m_p.UU, k, j, i), gamma1);
+                P_new(m_p.RHO, k, j, i), P_new(m_p.UU, k, j, i), gamma1);
             Real diss_fluid_tmp = k_energy_conserving - P_new(m_p.KTOT, k, j, i);
 
             // Under the flag "suppress_highb_heat", we set all dissipation to zero at
