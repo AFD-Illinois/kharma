@@ -64,7 +64,9 @@ enum class StatusImplicitStep {
     radsolve,
     bothsolve,
     failure,
-    onedfallback_failure
+    onedfallback_failure,
+    starfix_success,
+    ufluid_success
 };
 
 static const std::map<int, std::string> status_names_implicit = {
@@ -80,6 +82,10 @@ static const std::map<int, std::string> status_names_implicit = {
     {(int)StatusImplicitStep::mhdfinalsolve,
         "PMHD solver converged but UtoP failed. Sending it to fixup."},
     {(int)StatusImplicitStep::failure, "RadM1 implicit step update failure."},
+    {(int)StatusImplicitStep::starfix_success,
+        "RadM1 star state repaired from entropy and solve succeeded"},
+    {(int)StatusImplicitStep::ufluid_success,
+        "RadM1 4D Solver Fell Back to energy in fluid frame and succeeded"},
 };
 
 enum class RadLimiterType { BASIC, TYPE2 };
@@ -107,6 +113,14 @@ static const std::map<int, std::string> status_names_inversion = {
 
 };
 
+// maximum_gamma leaves a usable state, so only these count as failures
+KOKKOS_INLINE_FUNCTION bool rad_inversion_failed(const Real flag)
+{
+    const int f = static_cast<int>(flag);
+    return f == static_cast<int>(StatusRadiationInversion::urad_negative) ||
+           f == static_cast<int>(StatusRadiationInversion::not_finite);
+}
+
 TaskStatus BlockPtoU(MeshBlockData<Real>* rc, IndexDomain domain, bool coarse = false);
 /**
  * Initialize the radM1 package with several options from the input deck
@@ -125,6 +139,11 @@ void AddSourceImplicitly(
  * Convert from conserved to primitive variables for the radiation field.
  */
 TaskStatus BlockUtoP(MeshBlockData<Real>* rc, IndexDomain domain, bool coarse = false);
+
+/**
+ * Fix radiation primitives where the inversion or the implicit solve failed.
+ */
+TaskStatus FixRadiation(MeshBlockData<Real>* rc);
 
 /**
  * Apply floors to the radiation energy variables.
@@ -146,6 +165,11 @@ enum class OpacityType : int {
     Constant = 5
 };
 #include "microphysics/opac_kharma/rad_opacities.hpp"
+
+// Opacity parameters from the RadM1, opacity and Units packages
+RadOpac GetRadOpac(Packages_t& packages);
+// Cell-centered total opacity "rad_kappa", for the radiation signal speeds
+TaskStatus CalcKappa(MeshData<Real>* md);
 
 KOKKOS_INLINE_FUNCTION Real calc_kabs(
     Real rho, Real T, Real Trad, Real bsq, const RadOpac& rad_opac)

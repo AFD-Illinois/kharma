@@ -257,6 +257,7 @@ TaskID KHARMADriver::AddFluxCalculations(
 
     // Pre-calculate B field cell-center values
     auto t_start_fluxes = t_start;
+    if (pkgs.count("RadM1")) t_start_fluxes = tl.AddTask(t_start, RadM1::CalcKappa, md);
     // if (md->GetMeshPointer()->packages.AllPackages().count("B_CT"))
     //     t_start_fluxes =
     //         tl.AddTask(t_start, B_CT::MeshUtoP, md, IndexDomain::entire, false);
