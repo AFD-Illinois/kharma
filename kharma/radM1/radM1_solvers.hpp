@@ -581,13 +581,17 @@ KOKKOS_INLINE_FUNCTION bool u_to_p_entropy(const GRCoordinates& G, const Real Ur
 }
 
 KOKKOS_INLINE_FUNCTION int solve_4d_pmhd(const GRCoordinates& G,
-    const VariablePack<Real> P_init, const VarMap m_p, const VarMap m_u, const int k,
+    const VariablePack<Real>& P_init, const VarMap m_p, const VarMap m_u, const int k,
     const int j, const int i, const Real dt, const Microphysics::EOS::EOS& eos,
     const double src_rootfind_eps, const double src_rootfind_tol,
     const int src_rootfind_maxiter, const RadOpac& rad_opac,
-    const VariablePack<Real> pflag, const VariablePack<Real> rinvflag,
-    const Real U_entry[8], Real dS_final[5])
+    const VariablePack<Real>& pflag, const VariablePack<Real>& rinvflag,
+    const Real U_entry[8], Real dS_final[5], int* niter_out = nullptr)
 {
+    // Read the entry state from U_entry instead of copying it (fewer live registers)
+    const Real* U_mhd_0 = U_entry;
+    const Real* U_rad_0 = U_entry + 4;
+
     const Real rho_init = P_init(m_p.RHO, k, j, i);
 
     Real B_P[NVEC] = {0.};
@@ -599,58 +603,45 @@ KOKKOS_INLINE_FUNCTION int solve_4d_pmhd(const GRCoordinates& G,
     Real P_mhd_guess[4] = {P_init(m_p.UU, k, j, i), P_init(m_p.U1, k, j, i),
         P_init(m_p.U2, k, j, i), P_init(m_p.U3, k, j, i)};
 
-    Real U_rad_0[4] = {U_entry[4], U_entry[5], U_entry[6], U_entry[7]};
-
-    Real resid[4];
-
-    Real U_mhd_0[4];
-
     Real uvec[NVEC] = {
         P_init(m_p.U1, k, j, i), P_init(m_p.U2, k, j, i), P_init(m_p.U3, k, j, i)};
     const Real D_rho = rho_init / rho_from_D(G, 1.0, uvec, k, j, i);
-
-    Real U_mhd_guess[4];
-    Real U_rad_guess[4];
-    Real P_rad_guess[4];
-    Real dS_guess[4];
-
-    U_mhd_0[0] = U_entry[0];
-    U_mhd_0[1] = U_entry[1];
-    U_mhd_0[2] = U_entry[2];
-    U_mhd_0[3] = U_entry[3];
+    const Real gdet = G.gdet(Loci::center, j, i);
 
     // Iteration 0
-    U_mhd_guess[0] = U_mhd_0[0];
-    U_mhd_guess[1] = U_mhd_0[1];
-    U_mhd_guess[2] = U_mhd_0[2];
-    U_mhd_guess[3] = U_mhd_0[3];
-
-    // Conservation law: Delta U_rad = - Delta U_mhd
-    DLOOP1
-        U_rad_guess[mu] = U_rad_0[mu];
-    Real gdet = G.gdet(Loci::center, j, i);
-
-    bool used_normal_guess = true;
-    u_to_p_rad(G, U_rad_guess, P_rad_guess, k, j, i, &used_normal_guess);
-    Real kappa_tot_entry = 0.0;
+    Real U_mhd_guess[4] = {U_mhd_0[0], U_mhd_0[1], U_mhd_0[2], U_mhd_0[3]};
+    Real dS_guess[4];
     // Opacities at the current iterate, frozen in the Jacobian columns
     Real kap_guess[3];
-    compute_covariant_fourforce(G, P_mhd_guess, P_rad_guess, rho_init, B_P, eos, rad_opac,
-        k, j, i, dS_guess, &kappa_tot_entry, nullptr, kap_guess);
-    const Real tol_eff = m::max(static_cast<Real>(src_rootfind_tol),
-        10.0 * std::numeric_limits<Real>::epsilon() * kappa_tot_entry * dt);
+    bool used_normal_guess = true;
+    // Only E_rad of the radiation primitives is needed after the loop
+    Real E_rad_guess;
+    Real tol_eff;
+    {
+        Real P_rad_guess[4];
+        u_to_p_rad(G, U_rad_0, P_rad_guess, k, j, i, &used_normal_guess);
+        Real kappa_tot_entry = 0.0;
+        compute_covariant_fourforce(G, P_mhd_guess, P_rad_guess, rho_init, B_P, eos,
+            rad_opac, k, j, i, dS_guess, &kappa_tot_entry, nullptr, kap_guess);
+        E_rad_guess = P_rad_guess[0];
+        tol_eff = m::max(static_cast<Real>(src_rootfind_tol),
+            10.0 * std::numeric_limits<Real>::epsilon() * kappa_tot_entry * dt);
+    }
 
     for (int n = 0; n < 4; n++) dS_guess[n] = gdet * dS_guess[n];
 
+    Real resid[4];
     DLOOP1 {
         resid[mu] = U_mhd_guess[mu] - U_mhd_0[mu] + dt * dS_guess[mu];
     }
 
     // Compute err here and do a convergence check
-    Real dtdS_0[4];
-    for (int n = 0; n < 4; n++) dtdS_0[n] = dt * dS_guess[n];
-
-    Real err = calculate_error(resid, U_mhd_guess, U_mhd_0, dtdS_0);
+    Real err;
+    {
+        Real dtdS_0[4];
+        for (int n = 0; n < 4; n++) dtdS_0[n] = dt * dS_guess[n];
+        err = calculate_error(resid, U_mhd_guess, U_mhd_0, dtdS_0);
+    }
     int niter = 0;
     bool bad_guess = false;
 
@@ -663,6 +654,8 @@ KOKKOS_INLINE_FUNCTION int solve_4d_pmhd(const GRCoordinates& G,
         if (err <= tol_eff) {
             break;
         }
+        // Iterations started, for the solver_count diagnostic
+        if (niter_out != nullptr) ++*niter_out;
 
         // Find minimum non-zero magnitude from P_mhd_guess to scale FD step safely
         Real P_mhd_mag_min = RAD_LARGE;
@@ -725,27 +718,27 @@ KOKKOS_INLINE_FUNCTION int solve_4d_pmhd(const GRCoordinates& G,
         }
         if (bad_guess) break;
 
-        Real jacinv[4][4];
-        // Inverting the 4x4 matrix;
-        invert(&jac[0][0], &jacinv[0][0]);
+        // Newton direction J^-1 resid, so jacinv is dead before the step evaluations
+        Real delta[4];
+        {
+            Real jacinv[4][4];
+            invert(&jac[0][0], &jacinv[0][0]);
+            for (int m = 0; m < 4; m++) {
+                delta[m] = 0.;
+                for (int n = 0; n < 4; n++) delta[m] += jacinv[m][n] * resid[n];
+            }
+        }
 
-        // Update guess via a damped Newton step, e.g, we take the full step, and if
-        // it violates any of the checks below, shrink the step and retry.
-        // Currently we just shrink it by 3 with a max of 15 iterations or if
-        // scailing_factor < 1.e-8;
+        // Damped Newton step: take the full step, and if it violates any of the checks
+        // below, shrink it by 3 and retry, at most 15 times or to scaling_factor 1.e-8
         Real P_mhd_pre[4] = {
             P_mhd_guess[0], P_mhd_guess[1], P_mhd_guess[2], P_mhd_guess[3]};
         Real scaling_factor = 1.0;
         int track = 0;
         bool step_ok = false;
-        Real rho_iter_next;
         do {
-            for (int m = 0; m < 4; m++) {
-                P_mhd_guess[m] = P_mhd_pre[m];
-                for (int n = 0; n < 4; n++) {
-                    P_mhd_guess[m] -= scaling_factor * jacinv[m][n] * resid[n];
-                }
-            }
+            for (int m = 0; m < 4; m++)
+                P_mhd_guess[m] = P_mhd_pre[m] - scaling_factor * delta[m];
 
             if (P_mhd_guess[0] <= 0.0) {
                 scaling_factor /= 3.0;
@@ -758,11 +751,12 @@ KOKKOS_INLINE_FUNCTION int solve_4d_pmhd(const GRCoordinates& G,
             uvec[0] = P_mhd_guess[1];
             uvec[1] = P_mhd_guess[2];
             uvec[2] = P_mhd_guess[3];
-            rho_iter_next = rho_from_D(G, D_rho, uvec, k, j, i);
+            const Real rho_iter_next = rho_from_D(G, D_rho, uvec, k, j, i);
             Real rho_ut;
             GRMHD::p_to_u_mhd(G, rho_iter_next, P_mhd_guess[0], uvec, B_P, eos, k, j, i,
                 rho_ut, U_mhd_guess, Loci::center);
 
+            Real U_rad_guess[4], P_rad_guess[4];
             for (int n = 0; n < 4; n++) {
                 U_rad_guess[n] = U_rad_0[n] - (U_mhd_guess[n] - U_mhd_0[n]);
             }
@@ -779,6 +773,7 @@ KOKKOS_INLINE_FUNCTION int solve_4d_pmhd(const GRCoordinates& G,
                 eos, rad_opac, k, j, i, dS_guess, nullptr, nullptr, kap_guess);
             for (int n = 0; n < 4; n++) dS_guess[n] = gdet * dS_guess[n];
 
+            E_rad_guess = P_rad_guess[0];
             step_ok = true;
             rho_iter = rho_iter_next;
         } while (!step_ok && track <= 15);
@@ -807,16 +802,21 @@ KOKKOS_INLINE_FUNCTION int solve_4d_pmhd(const GRCoordinates& G,
         }
 
         // Calculate error now
-        Real dtdS_iter[4];
-        for (int n = 0; n < 4; n++) dtdS_iter[n] = dt * dS_guess[n];
-
-        err = calculate_error(resid, U_mhd_guess, U_mhd_0, dtdS_iter);
+        {
+            Real dtdS_iter[4];
+            for (int n = 0; n < 4; n++) dtdS_iter[n] = dt * dS_guess[n];
+            err = calculate_error(resid, U_mhd_guess, U_mhd_0, dtdS_iter);
+        }
         // Fresh FD Jacobian next time unless this step at least halved the error
         fresh_jac = !(err < 0.5 * err_prev);
         err_prev = err;
 
         niter++;
     } while (err > tol_eff && niter < src_rootfind_maxiter);
+
+    // U_rad of the last iterate, from the conservation law
+    Real U_rad_guess[4];
+    for (int n = 0; n < 4; n++) U_rad_guess[n] = U_rad_0[n] - (U_mhd_guess[n] - U_mhd_0[n]);
 
     if (err > tol_eff || !m::isfinite(U_rad_guess[0]) || !m::isfinite(U_rad_guess[1]) ||
         !m::isfinite(U_rad_guess[2]) || !m::isfinite(U_rad_guess[3]) || bad_guess) {
@@ -832,8 +832,8 @@ KOKKOS_INLINE_FUNCTION int solve_4d_pmhd(const GRCoordinates& G,
             rho_iter + P_mhd_guess[0] +
             eos.PressureFromDensityInternalEnergy(rho_iter, P_mhd_guess[0] / rho_iter) +
             dot(D_g.bcon, D_g.bcov);
-        const bool e_rad = P_rad_guess[0] > P_mhd_guess[0];
-        const bool m_rad = (4.0 / 3.0) * P_rad_guess[0] > w_gas;
+        const bool e_rad = E_rad_guess > P_mhd_guess[0];
+        const bool m_rad = (4.0 / 3.0) * E_rad_guess > w_gas;
         for (int n = 0; n < 4; n++) {
             const bool solved_state = (n == 0) ? e_rad : m_rad;
             dS_final[n] = solved_state ? (U_rad_guess[n] - U_rad_0[n]) / dt : dS_guess[n];
@@ -857,7 +857,8 @@ KOKKOS_INLINE_FUNCTION int solve_4d_pmhd_ff(const GRCoordinates& G,
     const VariablePack<Real> P_init, const VarMap m_p, const int k, const int j,
     const int i, const Real dt, const Microphysics::EOS::EOS& eos,
     const double src_rootfind_tol, const int src_rootfind_maxiter,
-    const RadOpac& rad_opac, const Real U_entry[8], Real dS_final[5])
+    const RadOpac& rad_opac, const Real U_entry[8], Real dS_final[5],
+    int* niter_out = nullptr)
 {
     const Real gdet = G.gdet(Loci::center, j, i);
     Real B_P[NVEC] = {0.};
@@ -933,8 +934,8 @@ KOKKOS_INLINE_FUNCTION int solve_4d_pmhd_ff(const GRCoordinates& G,
         converged = err <= src_rootfind_tol;
     }
     bool bisect = false;
-    const int maxit = m::max(src_rootfind_maxiter, 100);
-    for (int niter = 0; niter < maxit && !converged; niter++) {
+    for (int niter = 0; niter < src_rootfind_maxiter && !converged; niter++) {
+        if (niter_out != nullptr) ++*niter_out;
         // Forward differences, flipped to backward if the perturbed state is invalid
         Real jac[4][4], jacinv[4][4];
         for (int m = 0; m < 4; m++) {
@@ -1096,14 +1097,49 @@ KOKKOS_INLINE_FUNCTION int prad_residual_at(const GRCoordinates& G,
     return status;
 }
 
+
+
+// Residual at a Jacobian support point of solve_4d_prad; false if the gas inversion fails
+KOKKOS_INLINE_FUNCTION bool prad_fd_point(const GRCoordinates& G,
+    const VariablePack<Real>& U_init, const VariablePack<Real>& P_init, const VarMap m_p,
+    const VarMap m_u, const int k, const int j, const int i,
+    const Microphysics::EOS::EOS& eos, const RadOpac& rad_opac, const Real B_P[NVEC],
+    const Real dt, const Real gdet, const Real U_mhd_0[4], const Real U_rad_0[4],
+    const Real P_rad[4], Real f[4])
+{
+    Real U_rad[4];
+    RadM1::calc_tensor(G, P_rad, 0, j, i, U_rad);
+    for (int n = 0; n < 4; n++) U_rad[n] *= gdet;
+    U_init(m_u.UU, k, j, i) = U_mhd_0[0] - (U_rad[0] - U_rad_0[0]);
+    U_init(m_u.U1, k, j, i) = U_mhd_0[1] - (U_rad[1] - U_rad_0[1]);
+    U_init(m_u.U2, k, j, i) = U_mhd_0[2] - (U_rad[2] - U_rad_0[2]);
+    U_init(m_u.U3, k, j, i) = U_mhd_0[3] - (U_rad[3] - U_rad_0[3]);
+    if (Inverter::u_to_p<Inverter::Type::kastaun>(G, U_init, m_u, eos, k, j, i, P_init,
+            m_p, Loci::center, 25,
+            1e-12) != static_cast<int>(Inverter::Status::success))
+        return false;
+    const Real P_mhd[4] = {P_init(m_p.UU, k, j, i), P_init(m_p.U1, k, j, i),
+        P_init(m_p.U2, k, j, i), P_init(m_p.U3, k, j, i)};
+    Real dS[4];
+    compute_covariant_fourforce(
+        G, P_mhd, P_rad, P_init(m_p.RHO, k, j, i), B_P, eos, rad_opac, k, j, i, dS);
+    for (int n = 0; n < 4; n++) f[n] = U_rad[n] - U_rad_0[n] - dt * (gdet * dS[n]);
+    return true;
+}
+
 KOKKOS_INLINE_FUNCTION int solve_4d_prad(const GRCoordinates& G,
-    const VariablePack<Real> U_init, const VariablePack<Real> P_init, const VarMap m_p,
+    const VariablePack<Real>& U_init, const VariablePack<Real>& P_init, const VarMap m_p,
     const VarMap m_u, const int k, const int j, const int i, const Real dt,
     const Microphysics::EOS::EOS& eos, const double src_rootfind_eps,
     const double src_rootfind_tol, const int src_rootfind_maxiter,
-    const RadOpac& rad_opac, const VariablePack<Real> pflag,
-    const VariablePack<Real> rinvflag, const Real U_entry[8], Real dS_final[5])
+    const RadOpac& rad_opac, const VariablePack<Real>& pflag,
+    const VariablePack<Real>& rinvflag, const Real U_entry[8], Real dS_final[5],
+    int* niter_out = nullptr)
 {
+    // Read the entry state from U_entry instead of copying it (fewer live registers)
+    const Real* U_mhd_0 = U_entry;
+    const Real* U_rad_0 = U_entry + 4;
+
     const Real rho_init = P_init(m_p.RHO, k, j, i);
 
     Real B_P[NVEC] = {0.};
@@ -1112,247 +1148,80 @@ KOKKOS_INLINE_FUNCTION int solve_4d_prad(const GRCoordinates& G,
         B_P[V2] = P_init(m_p.B2, k, j, i);
         B_P[V3] = P_init(m_p.B3, k, j, i);
     }
-    Real P_mhd_guess[4] = {P_init(m_p.UU, k, j, i), P_init(m_p.U1, k, j, i),
-        P_init(m_p.U2, k, j, i), P_init(m_p.U3, k, j, i)};
+    const Real gdet = G.gdet(Loci::center, j, i);
 
-    Real U_rad_0[4] = {U_entry[4], U_entry[5], U_entry[6], U_entry[7]};
+    // State carried into the Newton loop
+    Real P_rad_guess[4], U_rad_guess[4], dS_guess[4], resid[4];
+    Real err, tol_eff;
+    // Gas internal energy of the current iterate (FD step limit)
+    Real u_gas_guess;
 
-    Real resid[4];
+    // Initial guess. Everything declared in here is dead before the Newton loop.
+    {
+        Real P_mhd_guess[4] = {P_init(m_p.UU, k, j, i), P_init(m_p.U1, k, j, i),
+            P_init(m_p.U2, k, j, i), P_init(m_p.U3, k, j, i)};
+        for (int n = 0; n < 4; n++) U_rad_guess[n] = U_rad_0[n];
 
-    Real U_mhd_0[4] = {U_entry[0], U_entry[1], U_entry[2], U_entry[3]};
+        // Convert the newly guessed U_rad to P_rad
+        // This will determine which closure branch the inversion took
+        bool used_normal_guess = true;
+        const auto rad_status_entry =
+            u_to_p_rad(G, U_rad_guess, P_rad_guess, k, j, i, &used_normal_guess);
+        Real kappa_tot_entry = 0.0;
+        compute_covariant_fourforce(G, P_mhd_guess, P_rad_guess, rho_init, B_P, eos,
+            rad_opac, k, j, i, dS_guess, &kappa_tot_entry);
+        tol_eff = m::max(static_cast<Real>(src_rootfind_tol),
+            10.0 * std::numeric_limits<Real>::epsilon() * kappa_tot_entry * dt);
 
-    Real U_mhd_guess[4];
-    Real U_rad_guess[4];
-    Real P_rad_guess[4];
-    Real dS_guess[4];
-
-    // Iteration 0
-    U_mhd_guess[0] = U_mhd_0[0];
-    U_mhd_guess[1] = U_mhd_0[1];
-    U_mhd_guess[2] = U_mhd_0[2];
-    U_mhd_guess[3] = U_mhd_0[3];
-
-    // Conservation law: Delta U_rad = - Delta U_mhd
-    DLOOP1
-        U_rad_guess[mu] = U_rad_0[mu];
-    Real gdet = G.gdet(Loci::center, j, i);
-
-    // Convert the newly guessed U_rad to P_rad
-    // This will determine which closure branch the inversion took, so the Jacobian FD
-    // loop below can detect when a perturbed sample has crossed onto a
-    // different (maybe discontinuous) branch relative to the guess itself.
-    bool used_normal_guess = true;
-    const auto rad_status_entry =
-        u_to_p_rad(G, U_rad_guess, P_rad_guess, k, j, i, &used_normal_guess);
-    Real kappa_tot_entry = 0.0;
-    compute_covariant_fourforce(G, P_mhd_guess, P_rad_guess, rho_init, B_P, eos, rad_opac,
-        k, j, i, dS_guess, &kappa_tot_entry);
-    const Real tol_eff = m::max(static_cast<Real>(src_rootfind_tol),
-        10.0 * std::numeric_limits<Real>::epsilon() * kappa_tot_entry * dt);
-
-    bool comoving_guess = false;
-    if (kappa_tot_entry * dt > 1.0 ||
-        rad_status_entry != StatusRadiationInversion::success) {
-        Real uvec_gas[NVEC] = {P_mhd_guess[1], P_mhd_guess[2], P_mhd_guess[3]};
-        Real ucon_gas[GR_DIM], ucov_gas[GR_DIM];
-        GRMHD::calc_ucon(G, uvec_gas, k, j, i, Loci::center, ucon_gas);
-        G.lower(ucon_gas, ucov_gas, k, j, i, Loci::center);
-        Real ucon_rad_in[GR_DIM];
-        RadM1::calc_ucon_rad(G, P_rad_guess, j, i, ucon_rad_in);
-        FourVectors D_gas;
-        GRMHD::calc_4vecs(G, uvec_gas, B_P, k, j, i, Loci::center, D_gas);
-        const Real w_gas =
-            rho_init + P_mhd_guess[0] +
-            eos.PressureFromDensityInternalEnergy(rho_init, P_mhd_guess[0] / rho_init) +
-            dot(D_gas.bcon, D_gas.bcov);
-        const Real lw_gas =
-            w_gas * GRMHD::lorentz_calc(G, uvec_gas, k, j, i, Loci::center);
-        const Real lw_rad =
-            (4.0 / 3.0) * P_rad_guess[0] * RadM1::lorentz_calc_rad(G, P_rad_guess, j, i);
-        Real uvec_com[NVEC];
-        for (int v = 0; v < NVEC; v++)
-            uvec_com[v] =
-                (lw_gas * uvec_gas[v] + lw_rad * P_rad_guess[v + 1]) / (lw_gas + lw_rad);
-        Real ucon_com[GR_DIM], ucov_com[GR_DIM];
-        GRMHD::calc_ucon(G, uvec_com, k, j, i, Loci::center, ucon_com);
-        G.lower(ucon_com, ucov_com, k, j, i, Loci::center);
-        Real gamma_rel_com = 0.0;
-        for (int mu = 0; mu < GR_DIM; mu++)
-            gamma_rel_com -= ucon_rad_in[mu] * ucov_com[mu];
-        const Real Erf_com =
-            P_rad_guess[0] * ((4.0 / 3.0) * gamma_rel_com * gamma_rel_com - 1.0 / 3.0);
-        const Real Erf_gas =
-            U_rad_0[0] / gdet / ((4.0 / 3.0) * ucon_gas[0] * ucov_gas[0] + 1.0 / 3.0);
-        const Real candidates[3][4] = {{Erf_com, uvec_com[0], uvec_com[1], uvec_com[2]},
-            {Erf_gas, uvec_gas[0], uvec_gas[1], uvec_gas[2]},
-            {P_init(m_p.UU_RAD, k, j, i), P_init(m_p.U1_RAD, k, j, i),
-                P_init(m_p.U2_RAD, k, j, i), P_init(m_p.U3_RAD, k, j, i)}};
-        const Real P_save[5] = {P_init(m_p.RHO, k, j, i), P_init(m_p.UU, k, j, i),
-            P_init(m_p.U1, k, j, i), P_init(m_p.U2, k, j, i), P_init(m_p.U3, k, j, i)};
-        const Real U_save[4] = {U_init(m_u.UU, k, j, i), U_init(m_u.U1, k, j, i),
-            U_init(m_u.U2, k, j, i), U_init(m_u.U3, k, j, i)};
-        for (int c = 0; c < 3; c++) {
-            if (!(candidates[c][0] > 0.0) || !m::isfinite(candidates[c][0])) continue;
-            Real P_rad_c[4] = {
-                candidates[c][0], candidates[c][1], candidates[c][2], candidates[c][3]};
-            Real U_rad_c[4], U_mhd_c[4];
-            RadM1::calc_tensor(G, P_rad_c, 0, j, i, U_rad_c);
-            for (int n = 0; n < 4; n++) {
-                U_rad_c[n] *= gdet;
-                U_mhd_c[n] = U_mhd_0[n] - (U_rad_c[n] - U_rad_0[n]);
-            }
-            U_init(m_u.UU, k, j, i) = U_mhd_c[0];
-            U_init(m_u.U1, k, j, i) = U_mhd_c[1];
-            U_init(m_u.U2, k, j, i) = U_mhd_c[2];
-            U_init(m_u.U3, k, j, i) = U_mhd_c[3];
-            auto status_c = Inverter::u_to_p<Inverter::Type::kastaun>(
-                G, U_init, m_u, eos, k, j, i, P_init, m_p, Loci::center, 25, 1e-12);
-            if (status_c == static_cast<int>(Inverter::Status::success)) {
-                for (int n = 0; n < 4; n++) {
-                    P_rad_guess[n] = P_rad_c[n];
-                    U_rad_guess[n] = U_rad_c[n];
-                    U_mhd_guess[n] = U_mhd_c[n];
-                }
-                P_mhd_guess[0] = P_init(m_p.UU, k, j, i);
-                P_mhd_guess[1] = P_init(m_p.U1, k, j, i);
-                P_mhd_guess[2] = P_init(m_p.U2, k, j, i);
-                P_mhd_guess[3] = P_init(m_p.U3, k, j, i);
-                used_normal_guess = true;
-                compute_covariant_fourforce(G, P_mhd_guess, P_rad_guess,
-                    P_init(m_p.RHO, k, j, i), B_P, eos, rad_opac, k, j, i, dS_guess);
-                comoving_guess = true;
-                break;
-            }
-            P_init(m_p.RHO, k, j, i) = P_save[0];
-            P_init(m_p.UU, k, j, i) = P_save[1];
-            P_init(m_p.U1, k, j, i) = P_save[2];
-            P_init(m_p.U2, k, j, i) = P_save[3];
-            P_init(m_p.U3, k, j, i) = P_save[4];
-            U_init(m_u.UU, k, j, i) = U_save[0];
-            U_init(m_u.U1, k, j, i) = U_save[1];
-            U_init(m_u.U2, k, j, i) = U_save[2];
-            U_init(m_u.U3, k, j, i) = U_save[3];
-        }
-    }
-    for (int n = 0; n < 4; n++) dS_guess[n] = gdet * dS_guess[n];
-
-    DLOOP1 {
-        resid[mu] = U_rad_guess[mu] - U_rad_0[mu] - dt * dS_guess[mu];
-    }
-
-    // Compute err here and do a convergence check
-    Real dtdS_0[4];
-    for (int n = 0; n < 4; n++) dtdS_0[n] = dt * dS_guess[n];
-
-    Real err = calculate_error(resid, U_rad_guess, U_rad_0, dtdS_0);
-
-    // Here, if the comoving guess was used (in case of very optically thick gas) and err
-    // is still large, we can make a better gas by trying to improve the initial guess,
-    // this is done by checking the sign of the energy transfer, and increase/decrease
-    // radiation and gas energy's initial guess. The search works in s = ln (E). We do a
-    // bracket method.
-    if (comoving_guess && err > 1.e-3) {
-
-        // We save the gas state because this will overwrite P_init/U_init while testing.
-        const Real P_keep[5] = {P_init(m_p.RHO, k, j, i), P_init(m_p.UU, k, j, i),
-            P_init(m_p.U1, k, j, i), P_init(m_p.U2, k, j, i), P_init(m_p.U3, k, j, i)};
-        const Real U_keep[4] = {U_init(m_u.UU, k, j, i), U_init(m_u.U1, k, j, i),
-            U_init(m_u.U2, k, j, i), U_init(m_u.U3, k, j, i)};
-
-        constexpr Real LN10 = 2.302585092994046;
-        const int ok = static_cast<int>(Inverter::Status::success);
-        Real Pr[4] = {P_rad_guess[0], P_rad_guess[1], P_rad_guess[2], P_rad_guess[3]};
-        Real v_last[3] = {Pr[1], Pr[2], Pr[3]};
-        Real f_a, sc;
-        Real s_a = m::log(P_rad_guess[0]);
-        bool have_bracket = false;
-        Real s_lo = 0., s_hi = 0., f_lo = 0., f_hi = 0.;
-
-        // Bracket search branch. the sign of f at the current E says whether E should go
-        // up or down. Step E by x10 (or /10) until f changes sign. If the gas inversion
-        // fails, decrease the step. v_last keeps the last converged velocity.
-        if (prad_comoving_energy_residual(G, U_init, P_init, m_p, m_u, k, j, i, eos,
-                rad_opac, B_P, dt, gdet, U_mhd_0, U_rad_0, Pr, f_a, sc) == ok) {
-            for (int v = 0; v < 3; v++) v_last[v] = Pr[v + 1];
-            const Real dir = (f_a > 0.0) ? 1.0 : -1.0;
-            Real step = LN10;
-            for (int b = 0; b < 60 && !have_bracket; b++) {
-                const Real s_b = s_a + dir * step;
-                Pr[0] = m::exp(s_b);
-                for (int v = 0; v < 3; v++) Pr[v + 1] = v_last[v];
-                Real f_b;
-                const int st_b =
-                    prad_comoving_energy_residual(G, U_init, P_init, m_p, m_u, k, j, i,
-                        eos, rad_opac, B_P, dt, gdet, U_mhd_0, U_rad_0, Pr, f_b, sc);
-                if (st_b != ok) {
-                    step *= 0.5;
-                    if (step < 1.e-6) break;
-                    continue;
-                }
-                for (int v = 0; v < 3; v++) v_last[v] = Pr[v + 1];
-                if (f_b * f_a <= 0.0) {
-                    have_bracket = true;
-                    if (s_a < s_b) {
-                        s_lo = s_a;
-                        f_lo = f_a;
-                        s_hi = s_b;
-                        f_hi = f_b;
-                    } else {
-                        s_lo = s_b;
-                        f_lo = f_b;
-                        s_hi = s_a;
-                        f_hi = f_a;
-                    }
-                } else {
-                    s_a = s_b;
-                    f_a = f_b;
-                }
-            }
-        }
-
-        // Once we find the bracket, we can just approximate them by a line, with the
-        // slope and point values, we can approximate which point it will cross E = 0.
-        if (have_bracket) {
-            Real s_c = s_lo;
-            int side = 0;
-            for (int it = 0; it < 60; it++) {
-                s_c = (s_lo * f_hi - s_hi * f_lo) / (f_hi - f_lo);
-                if (!(s_c > s_lo && s_c < s_hi)) s_c = 0.5 * (s_lo + s_hi);
-                Pr[0] = m::exp(s_c);
-                for (int v = 0; v < 3; v++) Pr[v + 1] = v_last[v];
-                Real f_c;
-                const int st_c =
-                    prad_comoving_energy_residual(G, U_init, P_init, m_p, m_u, k, j, i,
-                        eos, rad_opac, B_P, dt, gdet, U_mhd_0, U_rad_0, Pr, f_c, sc);
-                if (st_c != ok) {
-                    s_hi = s_c;
-                    f_hi = -m::abs(f_lo);
-                    continue;
-                }
-                for (int v = 0; v < 3; v++) v_last[v] = Pr[v + 1];
-                if (m::abs(f_c) <= 1.e-3 * tol_eff * sc || s_hi - s_lo < 1.e-13) break;
-                if (f_c * f_lo > 0.0) {
-                    s_lo = s_c;
-                    f_lo = f_c;
-                    if (side == -1) f_hi *= 0.5;
-                    side = -1;
-                } else {
-                    s_hi = s_c;
-                    f_hi = f_c;
-                    if (side == 1) f_lo *= 0.5;
-                    side = 1;
-                }
-            }
-            // Check the result in the full 4D problem, use it as Newton's starting
-            // point only if the error is smaller than before.
-            Real f_c;
-            Pr[0] = m::exp(s_c);
-            for (int v = 0; v < 3; v++) Pr[v + 1] = v_last[v];
-            const int st_f = prad_comoving_energy_residual(G, U_init, P_init, m_p, m_u, k,
-                j, i, eos, rad_opac, B_P, dt, gdet, U_mhd_0, U_rad_0, Pr, f_c, sc);
-            if (st_f == ok) {
-                Real U_rad_c[4], U_mhd_c[4], dS_c[4], res_c[4], dtdS_c[4];
-                RadM1::calc_tensor(G, Pr, 0, j, i, U_rad_c);
+        bool comoving_guess = false;
+        if (kappa_tot_entry * dt > 1.0 ||
+            rad_status_entry != StatusRadiationInversion::success) {
+            Real uvec_gas[NVEC] = {P_mhd_guess[1], P_mhd_guess[2], P_mhd_guess[3]};
+            Real ucon_gas[GR_DIM], ucov_gas[GR_DIM];
+            GRMHD::calc_ucon(G, uvec_gas, k, j, i, Loci::center, ucon_gas);
+            G.lower(ucon_gas, ucov_gas, k, j, i, Loci::center);
+            Real ucon_rad_in[GR_DIM];
+            RadM1::calc_ucon_rad(G, P_rad_guess, j, i, ucon_rad_in);
+            FourVectors D_gas;
+            GRMHD::calc_4vecs(G, uvec_gas, B_P, k, j, i, Loci::center, D_gas);
+            const Real w_gas =
+                rho_init + P_mhd_guess[0] +
+                eos.PressureFromDensityInternalEnergy(rho_init, P_mhd_guess[0] / rho_init) +
+                dot(D_gas.bcon, D_gas.bcov);
+            const Real lw_gas =
+                w_gas * GRMHD::lorentz_calc(G, uvec_gas, k, j, i, Loci::center);
+            const Real lw_rad = (4.0 / 3.0) * P_rad_guess[0] *
+                                RadM1::lorentz_calc_rad(G, P_rad_guess, j, i);
+            Real uvec_com[NVEC];
+            for (int v = 0; v < NVEC; v++)
+                uvec_com[v] = (lw_gas * uvec_gas[v] + lw_rad * P_rad_guess[v + 1]) /
+                              (lw_gas + lw_rad);
+            Real ucon_com[GR_DIM], ucov_com[GR_DIM];
+            GRMHD::calc_ucon(G, uvec_com, k, j, i, Loci::center, ucon_com);
+            G.lower(ucon_com, ucov_com, k, j, i, Loci::center);
+            Real gamma_rel_com = 0.0;
+            for (int mu = 0; mu < GR_DIM; mu++)
+                gamma_rel_com -= ucon_rad_in[mu] * ucov_com[mu];
+            const Real Erf_com = P_rad_guess[0] *
+                                 ((4.0 / 3.0) * gamma_rel_com * gamma_rel_com - 1.0 / 3.0);
+            const Real Erf_gas =
+                U_rad_0[0] / gdet / ((4.0 / 3.0) * ucon_gas[0] * ucov_gas[0] + 1.0 / 3.0);
+            const Real candidates[3][4] = {
+                {Erf_com, uvec_com[0], uvec_com[1], uvec_com[2]},
+                {Erf_gas, uvec_gas[0], uvec_gas[1], uvec_gas[2]},
+                {P_init(m_p.UU_RAD, k, j, i), P_init(m_p.U1_RAD, k, j, i),
+                    P_init(m_p.U2_RAD, k, j, i), P_init(m_p.U3_RAD, k, j, i)}};
+            const Real P_save[5] = {P_init(m_p.RHO, k, j, i), P_init(m_p.UU, k, j, i),
+                P_init(m_p.U1, k, j, i), P_init(m_p.U2, k, j, i),
+                P_init(m_p.U3, k, j, i)};
+            const Real U_save[4] = {U_init(m_u.UU, k, j, i), U_init(m_u.U1, k, j, i),
+                U_init(m_u.U2, k, j, i), U_init(m_u.U3, k, j, i)};
+            for (int c = 0; c < 3; c++) {
+                if (!(candidates[c][0] > 0.0) || !m::isfinite(candidates[c][0])) continue;
+                Real P_rad_c[4] = {
+                    candidates[c][0], candidates[c][1], candidates[c][2], candidates[c][3]};
+                Real U_rad_c[4], U_mhd_c[4];
+                RadM1::calc_tensor(G, P_rad_c, 0, j, i, U_rad_c);
                 for (int n = 0; n < 4; n++) {
                     U_rad_c[n] *= gdet;
                     U_mhd_c[n] = U_mhd_0[n] - (U_rad_c[n] - U_rad_0[n]);
@@ -1361,47 +1230,207 @@ KOKKOS_INLINE_FUNCTION int solve_4d_prad(const GRCoordinates& G,
                 U_init(m_u.U1, k, j, i) = U_mhd_c[1];
                 U_init(m_u.U2, k, j, i) = U_mhd_c[2];
                 U_init(m_u.U3, k, j, i) = U_mhd_c[3];
-                const int st_c = Inverter::u_to_p<Inverter::Type::kastaun>(
+                auto status_c = Inverter::u_to_p<Inverter::Type::kastaun>(
                     G, U_init, m_u, eos, k, j, i, P_init, m_p, Loci::center, 25, 1e-12);
-                if (st_c == ok) {
-                    Real P_mhd_c[4] = {P_init(m_p.UU, k, j, i), P_init(m_p.U1, k, j, i),
-                        P_init(m_p.U2, k, j, i), P_init(m_p.U3, k, j, i)};
-                    compute_covariant_fourforce(G, P_mhd_c, Pr, P_init(m_p.RHO, k, j, i),
-                        B_P, eos, rad_opac, k, j, i, dS_c);
+                if (status_c == static_cast<int>(Inverter::Status::success)) {
                     for (int n = 0; n < 4; n++) {
-                        dS_c[n] *= gdet;
-                        dtdS_c[n] = dt * dS_c[n];
-                        res_c[n] = U_rad_c[n] - U_rad_0[n] - dtdS_c[n];
+                        P_rad_guess[n] = P_rad_c[n];
+                        U_rad_guess[n] = U_rad_c[n];
                     }
-                    const Real err_c = calculate_error(res_c, U_rad_c, U_rad_0, dtdS_c);
-                    if (err_c < err) {
-                        for (int n = 0; n < 4; n++) {
-                            P_rad_guess[n] = Pr[n];
-                            U_rad_guess[n] = U_rad_c[n];
-                            U_mhd_guess[n] = U_mhd_c[n];
-                            dS_guess[n] = dS_c[n];
-                            dtdS_0[n] = dtdS_c[n];
-                            resid[n] = res_c[n];
-                            P_mhd_guess[n] = P_mhd_c[n];
+                    P_mhd_guess[0] = P_init(m_p.UU, k, j, i);
+                    P_mhd_guess[1] = P_init(m_p.U1, k, j, i);
+                    P_mhd_guess[2] = P_init(m_p.U2, k, j, i);
+                    P_mhd_guess[3] = P_init(m_p.U3, k, j, i);
+                    compute_covariant_fourforce(G, P_mhd_guess, P_rad_guess,
+                        P_init(m_p.RHO, k, j, i), B_P, eos, rad_opac, k, j, i, dS_guess);
+                    comoving_guess = true;
+                    break;
+                }
+                P_init(m_p.RHO, k, j, i) = P_save[0];
+                P_init(m_p.UU, k, j, i) = P_save[1];
+                P_init(m_p.U1, k, j, i) = P_save[2];
+                P_init(m_p.U2, k, j, i) = P_save[3];
+                P_init(m_p.U3, k, j, i) = P_save[4];
+                U_init(m_u.UU, k, j, i) = U_save[0];
+                U_init(m_u.U1, k, j, i) = U_save[1];
+                U_init(m_u.U2, k, j, i) = U_save[2];
+                U_init(m_u.U3, k, j, i) = U_save[3];
+            }
+        }
+        for (int n = 0; n < 4; n++) dS_guess[n] = gdet * dS_guess[n];
+
+        DLOOP1 {
+            resid[mu] = U_rad_guess[mu] - U_rad_0[mu] - dt * dS_guess[mu];
+        }
+
+        // Compute err here and do a convergence check
+        {
+            Real dtdS_0[4];
+            for (int n = 0; n < 4; n++) dtdS_0[n] = dt * dS_guess[n];
+            err = calculate_error(resid, U_rad_guess, U_rad_0, dtdS_0);
+        }
+
+        // Here, if the comoving guess was used (in case of very optically thick gas) and
+        // err is still large, we can make a better gas by trying to improve the initial
+        // guess, this is done by checking the sign of the energy transfer, and
+        // increase/decrease radiation and gas energy's initial guess. The search works in
+        // s = ln (E). We do a bracket method.
+        if (comoving_guess && err > 1.e-3) {
+
+            // We save the gas state because this will overwrite P_init/U_init while
+            // testing.
+            const Real P_keep[5] = {P_init(m_p.RHO, k, j, i), P_init(m_p.UU, k, j, i),
+                P_init(m_p.U1, k, j, i), P_init(m_p.U2, k, j, i),
+                P_init(m_p.U3, k, j, i)};
+            const Real U_keep[4] = {U_init(m_u.UU, k, j, i), U_init(m_u.U1, k, j, i),
+                U_init(m_u.U2, k, j, i), U_init(m_u.U3, k, j, i)};
+
+            constexpr Real LN10 = 2.302585092994046;
+            const int ok = static_cast<int>(Inverter::Status::success);
+            Real Pr[4] = {P_rad_guess[0], P_rad_guess[1], P_rad_guess[2], P_rad_guess[3]};
+            Real v_last[3] = {Pr[1], Pr[2], Pr[3]};
+            Real f_a, sc;
+            Real s_a = m::log(P_rad_guess[0]);
+            bool have_bracket = false;
+            Real s_lo = 0., s_hi = 0., f_lo = 0., f_hi = 0.;
+
+            // Bracket search branch. the sign of f at the current E says whether E should
+            // go up or down. Step E by x10 (or /10) until f changes sign. If the gas
+            // inversion fails, decrease the step. v_last keeps the last converged
+            // velocity.
+            if (prad_comoving_energy_residual(G, U_init, P_init, m_p, m_u, k, j, i, eos,
+                    rad_opac, B_P, dt, gdet, U_mhd_0, U_rad_0, Pr, f_a, sc) == ok) {
+                for (int v = 0; v < 3; v++) v_last[v] = Pr[v + 1];
+                const Real dir = (f_a > 0.0) ? 1.0 : -1.0;
+                Real step = LN10;
+                for (int b = 0; b < 60 && !have_bracket; b++) {
+                    const Real s_b = s_a + dir * step;
+                    Pr[0] = m::exp(s_b);
+                    for (int v = 0; v < 3; v++) Pr[v + 1] = v_last[v];
+                    Real f_b;
+                    const int st_b = prad_comoving_energy_residual(G, U_init, P_init, m_p,
+                        m_u, k, j, i, eos, rad_opac, B_P, dt, gdet, U_mhd_0, U_rad_0, Pr,
+                        f_b, sc);
+                    if (st_b != ok) {
+                        step *= 0.5;
+                        if (step < 1.e-6) break;
+                        continue;
+                    }
+                    for (int v = 0; v < 3; v++) v_last[v] = Pr[v + 1];
+                    if (f_b * f_a <= 0.0) {
+                        have_bracket = true;
+                        if (s_a < s_b) {
+                            s_lo = s_a;
+                            f_lo = f_a;
+                            s_hi = s_b;
+                            f_hi = f_b;
+                        } else {
+                            s_lo = s_b;
+                            f_lo = f_b;
+                            s_hi = s_a;
+                            f_hi = f_a;
                         }
-                        err = err_c;
+                    } else {
+                        s_a = s_b;
+                        f_a = f_b;
                     }
                 }
             }
+
+            // Once we find the bracket, we can just approximate them by a line, with the
+            // slope and point values, we can approximate which point it will cross E = 0.
+            if (have_bracket) {
+                Real s_c = s_lo;
+                int side = 0;
+                for (int it = 0; it < 60; it++) {
+                    s_c = (s_lo * f_hi - s_hi * f_lo) / (f_hi - f_lo);
+                    if (!(s_c > s_lo && s_c < s_hi)) s_c = 0.5 * (s_lo + s_hi);
+                    Pr[0] = m::exp(s_c);
+                    for (int v = 0; v < 3; v++) Pr[v + 1] = v_last[v];
+                    Real f_c;
+                    const int st_c = prad_comoving_energy_residual(G, U_init, P_init, m_p,
+                        m_u, k, j, i, eos, rad_opac, B_P, dt, gdet, U_mhd_0, U_rad_0, Pr,
+                        f_c, sc);
+                    if (st_c != ok) {
+                        s_hi = s_c;
+                        f_hi = -m::abs(f_lo);
+                        continue;
+                    }
+                    for (int v = 0; v < 3; v++) v_last[v] = Pr[v + 1];
+                    if (m::abs(f_c) <= 1.e-3 * tol_eff * sc || s_hi - s_lo < 1.e-13) break;
+                    if (f_c * f_lo > 0.0) {
+                        s_lo = s_c;
+                        f_lo = f_c;
+                        if (side == -1) f_hi *= 0.5;
+                        side = -1;
+                    } else {
+                        s_hi = s_c;
+                        f_hi = f_c;
+                        if (side == 1) f_lo *= 0.5;
+                        side = 1;
+                    }
+                }
+                // Check the result in the full 4D problem, use it as Newton's starting
+                // point only if the error is smaller than before.
+                Real f_c;
+                Pr[0] = m::exp(s_c);
+                for (int v = 0; v < 3; v++) Pr[v + 1] = v_last[v];
+                const int st_f = prad_comoving_energy_residual(G, U_init, P_init, m_p, m_u,
+                    k, j, i, eos, rad_opac, B_P, dt, gdet, U_mhd_0, U_rad_0, Pr, f_c, sc);
+                if (st_f == ok) {
+                    Real U_rad_c[4], U_mhd_c[4], dS_c[4], res_c[4], dtdS_c[4];
+                    RadM1::calc_tensor(G, Pr, 0, j, i, U_rad_c);
+                    for (int n = 0; n < 4; n++) {
+                        U_rad_c[n] *= gdet;
+                        U_mhd_c[n] = U_mhd_0[n] - (U_rad_c[n] - U_rad_0[n]);
+                    }
+                    U_init(m_u.UU, k, j, i) = U_mhd_c[0];
+                    U_init(m_u.U1, k, j, i) = U_mhd_c[1];
+                    U_init(m_u.U2, k, j, i) = U_mhd_c[2];
+                    U_init(m_u.U3, k, j, i) = U_mhd_c[3];
+                    const int st_c = Inverter::u_to_p<Inverter::Type::kastaun>(G, U_init,
+                        m_u, eos, k, j, i, P_init, m_p, Loci::center, 25, 1e-12);
+                    if (st_c == ok) {
+                        Real P_mhd_c[4] = {P_init(m_p.UU, k, j, i),
+                            P_init(m_p.U1, k, j, i), P_init(m_p.U2, k, j, i),
+                            P_init(m_p.U3, k, j, i)};
+                        compute_covariant_fourforce(G, P_mhd_c, Pr,
+                            P_init(m_p.RHO, k, j, i), B_P, eos, rad_opac, k, j, i, dS_c);
+                        for (int n = 0; n < 4; n++) {
+                            dS_c[n] *= gdet;
+                            dtdS_c[n] = dt * dS_c[n];
+                            res_c[n] = U_rad_c[n] - U_rad_0[n] - dtdS_c[n];
+                        }
+                        const Real err_c =
+                            calculate_error(res_c, U_rad_c, U_rad_0, dtdS_c);
+                        if (err_c < err) {
+                            for (int n = 0; n < 4; n++) {
+                                P_rad_guess[n] = Pr[n];
+                                U_rad_guess[n] = U_rad_c[n];
+                                dS_guess[n] = dS_c[n];
+                                resid[n] = res_c[n];
+                                P_mhd_guess[n] = P_mhd_c[n];
+                            }
+                            err = err_c;
+                        }
+                    }
+                }
+            }
+            // If the improved guess was not kept, restore the saved gas state
+            if (P_init(m_p.UU, k, j, i) != P_mhd_guess[0] ||
+                P_init(m_p.U1, k, j, i) != P_mhd_guess[1]) {
+                P_init(m_p.RHO, k, j, i) = P_keep[0];
+                P_init(m_p.UU, k, j, i) = P_keep[1];
+                P_init(m_p.U1, k, j, i) = P_keep[2];
+                P_init(m_p.U2, k, j, i) = P_keep[3];
+                P_init(m_p.U3, k, j, i) = P_keep[4];
+                U_init(m_u.UU, k, j, i) = U_keep[0];
+                U_init(m_u.U1, k, j, i) = U_keep[1];
+                U_init(m_u.U2, k, j, i) = U_keep[2];
+                U_init(m_u.U3, k, j, i) = U_keep[3];
+            }
         }
-        // If the improved guess was not kept, restore the saved gas state
-        if (P_init(m_p.UU, k, j, i) != P_mhd_guess[0] ||
-            P_init(m_p.U1, k, j, i) != P_mhd_guess[1]) {
-            P_init(m_p.RHO, k, j, i) = P_keep[0];
-            P_init(m_p.UU, k, j, i) = P_keep[1];
-            P_init(m_p.U1, k, j, i) = P_keep[2];
-            P_init(m_p.U2, k, j, i) = P_keep[3];
-            P_init(m_p.U3, k, j, i) = P_keep[4];
-            U_init(m_u.UU, k, j, i) = U_keep[0];
-            U_init(m_u.U1, k, j, i) = U_keep[1];
-            U_init(m_u.U2, k, j, i) = U_keep[2];
-            U_init(m_u.U3, k, j, i) = U_keep[3];
-        }
+        u_gas_guess = P_mhd_guess[0];
     }
 
     Real best_err = err;
@@ -1413,259 +1442,66 @@ KOKKOS_INLINE_FUNCTION int solve_4d_prad(const GRCoordinates& G,
         if (err <= tol_eff) {
             break;
         }
+        if (niter_out != nullptr) ++*niter_out;
 
-        Real P_mhd_m[4];
-        Real P_mhd_p[4];
-        Real U_mhd_m[4];
-        Real U_mhd_p[4];
-        Real U_rad_m[4];
-        Real U_rad_p[4];
-        Real dS_m[4];
-        Real dS_p[4];
-        Real rho_iter_next;
-
-        Real jac[4][4] = {0};
-
-        // Find minimum non-zero magnitude from P_mhd_guess to scale FD step safely
-        Real P_rad_mag_min = RAD_LARGE;
-        for (int m = 0; m < 4; m++) {
-            if (m::abs(P_rad_guess[m]) > 0.) {
-                P_rad_mag_min = m::min(P_rad_mag_min, m::abs(P_rad_guess[m]));
-            }
-        }
-
-        bool bad_guess_m = false;
-        bool bad_guess_p = false;
-
-        // Loop over the 4 fluid variables to perturb each one
-        for (int m = 0; m < 4; m++) {
-            Real P_rad_m[4] = {
-                P_rad_guess[0], P_rad_guess[1], P_rad_guess[2], P_rad_guess[3]};
-            Real P_rad_p[4] = {
-                P_rad_guess[0], P_rad_guess[1], P_rad_guess[2], P_rad_guess[3]};
-
-            Real fd_step = m::max(src_rootfind_eps * P_rad_mag_min,
-                src_rootfind_eps * m::abs(P_rad_guess[m]));
-            if (m == 0)
-                fd_step = m::max(fd_step, src_rootfind_eps * m::abs(U_mhd_0[0]) / gdet);
-            {
-                const Real gas_energy_margin = 0.1 * m::abs(P_mhd_guess[0]);
-                fd_step = m::min(fd_step, m::max(gas_energy_margin, RAD_SMALL));
-            }
-            P_rad_m[m] -= fd_step;
-            P_rad_p[m] += fd_step;
-
-            // Evaluate minus perturbation
-            RadM1::calc_tensor(G, P_rad_m, 0, j, i, U_rad_m);
-            for (int n = 0; n < 4; n++) U_rad_m[n] *= gdet;
-
-            // set U_mhd from U_rad
-            for (int n = 0; n < 4; n++) {
-                U_mhd_m[n] = U_mhd_0[n] - (U_rad_m[n] - U_rad_0[n]);
-            }
-
-            // Invert to get fluid primitives
-            U_init(m_u.UU, k, j, i) = U_mhd_m[0];
-            U_init(m_u.U1, k, j, i) = U_mhd_m[1];
-            U_init(m_u.U2, k, j, i) = U_mhd_m[2];
-            U_init(m_u.U3, k, j, i) = U_mhd_m[3];
-            auto mhd_inverter_status = Inverter::u_to_p<Inverter::Type::kastaun>(
-                G, U_init, m_u, eos, k, j, i, P_init, m_p, Loci::center, 25, 1e-12);
-
-            P_mhd_m[0] = P_init(m_p.UU, k, j, i);
-            P_mhd_m[1] = P_init(m_p.U1, k, j, i);
-            P_mhd_m[2] = P_init(m_p.U2, k, j, i);
-            P_mhd_m[3] = P_init(m_p.U3, k, j, i);
-
-            if (mhd_inverter_status != static_cast<int>(Inverter::Status::success)) {
-                bad_guess_m = true;
-            }
-
-            // If a bad guess has already been found before, we can't really skip the
-            // whole Jacobian evaluation. We need to keep evaluating the other blocks to
-            // figure out if, during the next m's, the other side (plus/minus) will also
-            // go bad, trigerring a bad_guess_m == true && bad_guess_p == true
-            if (!bad_guess_m && !bad_guess_p) {
-                Real rho_m = P_init(m_p.RHO, k, j, i);
-                compute_covariant_fourforce(
-                    G, P_mhd_m, P_rad_m, rho_m, B_P, eos, rad_opac, k, j, i, dS_m);
-                for (int n = 0; n < 4; n++) dS_m[n] = gdet * dS_m[n];
-            }
-
-            // Evaluate plus perturbation
-            RadM1::calc_tensor(G, P_rad_p, 0, j, i, U_rad_p);
-            for (int n = 0; n < 4; n++) U_rad_p[n] *= gdet;
-            // set U_mhd from U_rad
-            for (int n = 0; n < 4; n++) {
-                U_mhd_p[n] = U_mhd_0[n] - (U_rad_p[n] - U_rad_0[n]);
-            }
-
-            // Invert to get fluid primitives
-            U_init(m_u.UU, k, j, i) = U_mhd_p[0];
-            U_init(m_u.U1, k, j, i) = U_mhd_p[1];
-            U_init(m_u.U2, k, j, i) = U_mhd_p[2];
-            U_init(m_u.U3, k, j, i) = U_mhd_p[3];
-            auto mhd_inverter_status_p = Inverter::u_to_p<Inverter::Type::kastaun>(
-                G, U_init, m_u, eos, k, j, i, P_init, m_p, Loci::center, 25, 1e-12);
-
-            P_mhd_p[0] = P_init(m_p.UU, k, j, i);
-            P_mhd_p[1] = P_init(m_p.U1, k, j, i);
-            P_mhd_p[2] = P_init(m_p.U2, k, j, i);
-            P_mhd_p[3] = P_init(m_p.U3, k, j, i);
-
-            if (mhd_inverter_status_p != static_cast<int>(Inverter::Status::success)) {
-                bad_guess_p = true;
-            }
-
-            // If a bad guess has already been found before, we can't really skip the
-            // whole Jacobian evaluation. We need to keep evaluating the other blocks to
-            // figure out if, during the next m's, the other side (plus/minus) will also
-            // go bad, trigerring a bad_guess_m == true && bad_guess_p == true
-            if (!bad_guess_m && !bad_guess_p) {
-                Real rho_p = P_init(m_p.RHO, k, j, i);
-                compute_covariant_fourforce(
-                    G, P_mhd_p, P_rad_p, rho_p, B_P, eos, rad_opac, k, j, i, dS_p);
-                for (int n = 0; n < 4; n++) dS_p[n] = gdet * dS_p[n];
-
-                // Populate Jacobian
-                for (int n = 0; n < 4; n++) {
-                    Real fp = U_rad_p[n] - U_rad_0[n] - dt * dS_p[n];
-                    Real fm = U_rad_m[n] - U_rad_0[n] - dt * dS_m[n];
-                    // Jacobian here is dU_mhd/dP_rad
-                    // Since div R^mu_nu = G_nu
-                    // and div T^mu_nu = -G_nu
-                    jac[n][m] = (fp - fm) / (P_rad_p[m] - P_rad_m[m]);
-                }
-            }
-        }
-        // TODO (PNM): Separate these if/elses into different kernels.
-        if (bad_guess_m == true && bad_guess_p == true) {
-            bad_guess = true;
-            break; // Exit the iteration loop if both perturbations yield bad guesses
-        } else if (bad_guess_m == true) {
-            // If only - finite difference support point is bad, do one-sided
-            // difference with + support point
-
+        // FD Jacobian dU_rad/dP_rad: central differences, or one-sided from the guess
+        // when one support point's gas inversion fails
+        Real jac[4][4];
+        {
+            // Find minimum non-zero magnitude from P_rad_guess to scale FD step safely
+            Real P_rad_mag_min = RAD_LARGE;
             for (int m = 0; m < 4; m++) {
-                Real P_rad_p[4] = {
-                    P_rad_guess[0], P_rad_guess[1], P_rad_guess[2], P_rad_guess[3]};
-                Real fd_step_p = std::max(src_rootfind_eps * P_rad_mag_min,
-                    src_rootfind_eps * m::abs(P_rad_p[m]));
-                if (m == 0)
-                    fd_step_p =
-                        m::max(fd_step_p, src_rootfind_eps * m::abs(U_mhd_0[0]) / gdet);
-                {
-                    const Real gas_energy_margin = 0.1 * m::abs(P_mhd_guess[0]);
-                    fd_step_p = m::min(fd_step_p, m::max(gas_energy_margin, RAD_SMALL));
-                }
-                P_rad_p[m] += fd_step_p;
-
-                RadM1::calc_tensor(G, P_rad_p, 0, j, i, U_rad_p);
-                for (int n = 0; n < 4; n++) U_rad_p[n] *= gdet;
-
-                for (int n = 0; n < 4; n++) {
-                    U_mhd_p[n] = U_mhd_0[n] - (U_rad_p[n] - U_rad_0[n]);
-                }
-
-                // invert
-                U_init(m_u.UU, k, j, i) = U_mhd_p[0];
-                U_init(m_u.U1, k, j, i) = U_mhd_p[1];
-                U_init(m_u.U2, k, j, i) = U_mhd_p[2];
-                U_init(m_u.U3, k, j, i) = U_mhd_p[3];
-                auto mhd_inverter_status = Inverter::u_to_p<Inverter::Type::kastaun>(
-                    G, U_init, m_u, eos, k, j, i, P_init, m_p, Loci::center, 25, 1e-12);
-
-                P_mhd_p[0] = P_init(m_p.UU, k, j, i);
-                P_mhd_p[1] = P_init(m_p.U1, k, j, i);
-                P_mhd_p[2] = P_init(m_p.U2, k, j, i);
-                P_mhd_p[3] = P_init(m_p.U3, k, j, i);
-
-                Real rho_p = P_init(m_p.RHO, k, j, i);
-                Real B_P[NVEC] = {0.};
-                if (m_p.B1 >= 0) {
-                    B_P[V1] = P_init(m_p.B1, k, j, i);
-                    B_P[V2] = P_init(m_p.B2, k, j, i);
-                    B_P[V3] = P_init(m_p.B3, k, j, i);
-                }
-                compute_covariant_fourforce(
-                    G, P_mhd_p, P_rad_p, rho_p, B_P, eos, rad_opac, k, j, i, dS_p);
-                for (int n = 0; n < 4; n++) dS_p[n] = gdet * dS_p[n];
-
-                PARTHENON_REQUIRE(
-                    mhd_inverter_status == static_cast<int>(Inverter::Status::success),
-                    "This inversion should have already worked!");
-
-                for (int n = 0; n < 4; n++) {
-                    Real fp = U_rad_p[n] - U_rad_0[n] - dt * dS_p[n];
-                    Real fguess = U_rad_guess[n] - U_rad_0[n] - dt * dS_guess[n];
-                    // Jacobian here is dU_rad/dP_mhd
-                    // Since div R^mu_nu = G_nu
-                    // and div T^mu_nu = -G_nu
-                    jac[n][m] = (fp - fguess) / (P_rad_p[m] - P_rad_guess[m]);
+                if (m::abs(P_rad_guess[m]) > 0.) {
+                    P_rad_mag_min = m::min(P_rad_mag_min, m::abs(P_rad_guess[m]));
                 }
             }
-        } else if (bad_guess_p == true) {
-            // If only + finite difference support point is bad, do one-sided
-            // difference with - support point
-
-            for (int m = 0; m < 4; m++) {
-                Real P_rad_m[4] = {
-                    P_rad_guess[0], P_rad_guess[1], P_rad_guess[2], P_rad_guess[3]};
-                Real fd_step_m = std::max(src_rootfind_eps * P_rad_mag_min,
-                    src_rootfind_eps * m::abs(P_rad_m[m]));
+            for (int m = 0; m < 4 && !bad_guess; m++) {
+                Real fd_step = m::max(src_rootfind_eps * P_rad_mag_min,
+                    src_rootfind_eps * m::abs(P_rad_guess[m]));
                 if (m == 0)
-                    fd_step_m =
-                        m::max(fd_step_m, src_rootfind_eps * m::abs(U_mhd_0[0]) / gdet);
+                    fd_step =
+                        m::max(fd_step, src_rootfind_eps * m::abs(U_mhd_0[0]) / gdet);
                 {
-                    const Real gas_energy_margin = 0.1 * m::abs(P_mhd_guess[0]);
-                    fd_step_m = m::min(fd_step_m, m::max(gas_energy_margin, RAD_SMALL));
+                    const Real gas_energy_margin = 0.1 * m::abs(u_gas_guess);
+                    fd_step = m::min(fd_step, m::max(gas_energy_margin, RAD_SMALL));
                 }
-                P_rad_m[m] -= fd_step_m;
-
-                RadM1::calc_tensor(G, P_rad_m, 0, j, i, U_rad_m);
-                for (int n = 0; n < 4; n++) U_rad_m[n] *= gdet;
-
-                for (int n = 0; n < 4; n++) {
-                    U_mhd_m[n] = U_mhd_0[n] - (U_rad_m[n] - U_rad_0[n]);
-                }
-
-                U_init(m_u.UU, k, j, i) = U_mhd_m[0];
-                U_init(m_u.U1, k, j, i) = U_mhd_m[1];
-                U_init(m_u.U2, k, j, i) = U_mhd_m[2];
-                U_init(m_u.U3, k, j, i) = U_mhd_m[3];
-                auto mhd_inverter_status = Inverter::u_to_p<Inverter::Type::kastaun>(
-                    G, U_init, m_u, eos, k, j, i, P_init, m_p, Loci::center, 25, 1e-12);
-                P_mhd_m[0] = P_init(m_p.UU, k, j, i);
-                P_mhd_m[1] = P_init(m_p.U1, k, j, i);
-                P_mhd_m[2] = P_init(m_p.U2, k, j, i);
-                P_mhd_m[3] = P_init(m_p.U3, k, j, i);
-                Real rho_m = P_init(m_p.RHO, k, j, i);
-                Real B_P[NVEC] = {0.};
-                if (m_p.B1 >= 0) {
-                    B_P[V1] = P_init(m_p.B1, k, j, i);
-                    B_P[V2] = P_init(m_p.B2, k, j, i);
-                    B_P[V3] = P_init(m_p.B3, k, j, i);
-                }
-
-                compute_covariant_fourforce(
-                    G, P_mhd_m, P_rad_m, rho_m, B_P, eos, rad_opac, k, j, i, dS_m);
-                for (int n = 0; n < 4; n++) dS_m[n] = gdet * dS_m[n];
-
-                PARTHENON_REQUIRE(
-                    mhd_inverter_status == static_cast<int>(Inverter::Status::success),
-                    "This inversion should have already worked!");
-
-                for (int n = 0; n < 4; n++) {
-                    Real fm = U_rad_m[n] - U_rad_0[n] - dt * dS_m[n];
-                    Real fguess = U_rad_guess[n] - U_rad_0[n] - dt * dS_guess[n];
-                    jac[n][m] = (fguess - fm) / (P_rad_guess[m] - P_rad_m[m]);
+                Real P_rad_s[4] = {
+                    P_rad_guess[0], P_rad_guess[1], P_rad_guess[2], P_rad_guess[3]};
+                P_rad_s[m] -= fd_step;
+                const Real p_m = P_rad_s[m];
+                Real f_m[4];
+                const bool ok_m = prad_fd_point(G, U_init, P_init, m_p, m_u, k, j, i, eos,
+                    rad_opac, B_P, dt, gdet, U_mhd_0, U_rad_0, P_rad_s, f_m);
+                P_rad_s[m] = P_rad_guess[m] + fd_step;
+                const Real p_p = P_rad_s[m];
+                Real f_p[4];
+                const bool ok_p = prad_fd_point(G, U_init, P_init, m_p, m_u, k, j, i, eos,
+                    rad_opac, B_P, dt, gdet, U_mhd_0, U_rad_0, P_rad_s, f_p);
+                if (ok_m && ok_p) {
+                    for (int n = 0; n < 4; n++) jac[n][m] = (f_p[n] - f_m[n]) / (p_p - p_m);
+                } else if (ok_p) {
+                    for (int n = 0; n < 4; n++)
+                        jac[n][m] = (f_p[n] - resid[n]) / (p_p - P_rad_guess[m]);
+                } else if (ok_m) {
+                    for (int n = 0; n < 4; n++)
+                        jac[n][m] = (resid[n] - f_m[n]) / (P_rad_guess[m] - p_m);
+                } else {
+                    bad_guess = true;
                 }
             }
         }
+        if (bad_guess) break;
 
-        Real jacinv[4][4];
-        // Inverting the 4x4 matrix;
-        invert(&jac[0][0], &jacinv[0][0]);
+        // Newton direction J^-1 resid, so jacinv is dead before the step evaluations
+        Real delta[4];
+        {
+            Real jacinv[4][4];
+            invert(&jac[0][0], &jacinv[0][0]);
+            for (int m = 0; m < 4; m++) {
+                delta[m] = 0.;
+                for (int n = 0; n < 4; n++) delta[m] += jacinv[m][n] * resid[n];
+            }
+        }
 
         // Update guess via a damped/backtracking Newton step: take the full step, and if
         // it violates either check below, shrink the step (Koral's fixed factor of 3)
@@ -1676,12 +1512,8 @@ KOKKOS_INLINE_FUNCTION int solve_4d_prad(const GRCoordinates& G,
         int track = 0;
         bool step_ok = false;
         do {
-            for (int m = 0; m < 4; m++) {
-                P_rad_guess[m] = P_rad_pre[m];
-                for (int n = 0; n < 4; n++) {
-                    P_rad_guess[m] -= scaling_factor * jacinv[m][n] * resid[n];
-                }
-            }
+            for (int m = 0; m < 4; m++)
+                P_rad_guess[m] = P_rad_pre[m] - scaling_factor * delta[m];
 
             if (P_rad_guess[0] <= 0.0) {
                 scaling_factor /= 3.0;
@@ -1693,14 +1525,10 @@ KOKKOS_INLINE_FUNCTION int solve_4d_prad(const GRCoordinates& G,
             RadM1::calc_tensor(G, P_rad_guess, 0, j, i, U_rad_guess);
             for (int n = 0; n < 4; n++) U_rad_guess[n] *= gdet;
 
-            for (int n = 0; n < 4; n++) {
-                U_mhd_guess[n] = U_mhd_0[n] - (U_rad_guess[n] - U_rad_0[n]);
-            }
-
-            U_init(m_u.UU, k, j, i) = U_mhd_guess[0];
-            U_init(m_u.U1, k, j, i) = U_mhd_guess[1];
-            U_init(m_u.U2, k, j, i) = U_mhd_guess[2];
-            U_init(m_u.U3, k, j, i) = U_mhd_guess[3];
+            U_init(m_u.UU, k, j, i) = U_mhd_0[0] - (U_rad_guess[0] - U_rad_0[0]);
+            U_init(m_u.U1, k, j, i) = U_mhd_0[1] - (U_rad_guess[1] - U_rad_0[1]);
+            U_init(m_u.U2, k, j, i) = U_mhd_0[2] - (U_rad_guess[2] - U_rad_0[2]);
+            U_init(m_u.U3, k, j, i) = U_mhd_0[3] - (U_rad_guess[3] - U_rad_0[3]);
 
             auto mhd_inverter_status = Inverter::u_to_p<Inverter::Type::kastaun>(
                 G, U_init, m_u, eos, k, j, i, P_init, m_p, Loci::center, 25, 1e-12);
@@ -1720,14 +1548,13 @@ KOKKOS_INLINE_FUNCTION int solve_4d_prad(const GRCoordinates& G,
             break;
         }
 
-        P_mhd_guess[0] = P_init(m_p.UU, k, j, i);
-        P_mhd_guess[1] = P_init(m_p.U1, k, j, i);
-        P_mhd_guess[2] = P_init(m_p.U2, k, j, i);
-        P_mhd_guess[3] = P_init(m_p.U3, k, j, i);
-        rho_iter_next = P_init(m_p.RHO, k, j, i);
-
-        compute_covariant_fourforce(G, P_mhd_guess, P_rad_guess, rho_iter_next, B_P, eos,
-            rad_opac, k, j, i, dS_guess);
+        {
+            const Real P_mhd_guess[4] = {P_init(m_p.UU, k, j, i), P_init(m_p.U1, k, j, i),
+                P_init(m_p.U2, k, j, i), P_init(m_p.U3, k, j, i)};
+            u_gas_guess = P_mhd_guess[0];
+            compute_covariant_fourforce(G, P_mhd_guess, P_rad_guess,
+                P_init(m_p.RHO, k, j, i), B_P, eos, rad_opac, k, j, i, dS_guess);
+        }
 
         for (int n = 0; n < 4; n++) dS_guess[n] = gdet * dS_guess[n];
 
@@ -1748,10 +1575,11 @@ KOKKOS_INLINE_FUNCTION int solve_4d_prad(const GRCoordinates& G,
         }
 
         // Calculate error now
-        Real dtdS_iter[4];
-        for (int n = 0; n < 4; n++) dtdS_iter[n] = dt * dS_guess[n];
-
-        err = calculate_error(resid, U_rad_guess, U_rad_0, dtdS_iter);
+        {
+            Real dtdS_iter[4];
+            for (int n = 0; n < 4; n++) dtdS_iter[n] = dt * dS_guess[n];
+            err = calculate_error(resid, U_rad_guess, U_rad_0, dtdS_iter);
+        }
 
         niter++;
         if (err < best_err) {
@@ -1760,9 +1588,10 @@ KOKKOS_INLINE_FUNCTION int solve_4d_prad(const GRCoordinates& G,
         }
     } while (err > tol_eff && niter < src_rootfind_maxiter);
 
-    bool failed = err > tol_eff || !m::isfinite(U_mhd_guess[0]) ||
-                  !m::isfinite(U_mhd_guess[1]) || !m::isfinite(U_mhd_guess[2]) ||
-                  !m::isfinite(U_mhd_guess[3]) || bad_guess;
+    // U_mhd of the last iterate, from the conservation law
+    bool failed = err > tol_eff || bad_guess;
+    for (int n = 0; n < 4; n++)
+        failed = failed || !m::isfinite(U_mhd_0[n] - (U_rad_guess[n] - U_rad_0[n]));
 
     // Newton failed, but its best attempt may already be as accurate as double
     // precision allows. Accept it if its error is no bigger than the round-off noise
@@ -1802,14 +1631,9 @@ KOKKOS_INLINE_FUNCTION int solve_4d_prad(const GRCoordinates& G,
                     ds0) == static_cast<int>(Inverter::Status::success)) {
                 // Use best attempt as the solution.
                 for (int n = 0; n < 4; n++) {
-                    P_rad_guess[n] = best_P[n];
                     U_rad_guess[n] = ur0[n];
-                    U_mhd_guess[n] = U_mhd_0[n] - (ur0[n] - U_rad_0[n]);
-                    P_mhd_guess[n] = pm0[n];
                     dS_guess[n] = ds0[n];
-                    resid[n] = r0[n];
                 }
-                err = err0;
                 failed = false;
             }
         }
@@ -1823,7 +1647,9 @@ KOKKOS_INLINE_FUNCTION int solve_4d_prad(const GRCoordinates& G,
     for (int n = 0; n < 4; n++) dS_final[n] = (U_rad_guess[n] - U_rad_0[n]) / dt;
 
     {
-        Real uvec_final[NVEC] = {P_mhd_guess[1], P_mhd_guess[2], P_mhd_guess[3]};
+        // P_init holds the accepted gas state here
+        Real uvec_final[NVEC] = {
+            P_init(m_p.U1, k, j, i), P_init(m_p.U2, k, j, i), P_init(m_p.U3, k, j, i)};
         Real ucon_final[4];
         GRMHD::calc_ucon(G, uvec_final, k, j, i, Loci::center, ucon_final);
         Real Gdotu = dS_guess[0] * ucon_final[0] + dS_guess[1] * ucon_final[1] +
