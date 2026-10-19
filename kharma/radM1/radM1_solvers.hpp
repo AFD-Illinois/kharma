@@ -586,7 +586,8 @@ KOKKOS_INLINE_FUNCTION int solve_4d_pmhd(const GRCoordinates& G,
     const double src_rootfind_eps, const double src_rootfind_tol,
     const int src_rootfind_maxiter, const RadOpac& rad_opac,
     const VariablePack<Real>& pflag, const VariablePack<Real>& rinvflag,
-    const Real U_entry[8], Real dS_final[5], int* niter_out = nullptr)
+    const Real U_entry[8], Real dS_final[5], int* niter_out = nullptr,
+    const bool star_guess = false)
 {
     // Read the entry state from U_entry instead of copying it (fewer live registers)
     const Real* U_mhd_0 = U_entry;
@@ -607,9 +608,18 @@ KOKKOS_INLINE_FUNCTION int solve_4d_pmhd(const GRCoordinates& G,
         P_init(m_p.U1, k, j, i), P_init(m_p.U2, k, j, i), P_init(m_p.U3, k, j, i)};
     const Real D_rho = rho_init / rho_from_D(G, 1.0, uvec, k, j, i);
     const Real gdet = G.gdet(Loci::center, j, i);
+    // Radiation beamed past the Lorentz cap (not negative energy) is valid, so we should allow the
+    // limited branch, or a cell that starts on it can't take a single Newton step
+    const bool beam_ok = static_cast<int>(rinvflag(0, k, j, i)) ==
+                         static_cast<int>(StatusRadiationInversion::maximum_gamma);
 
-    // Iteration 0
+    // Iteration 0. A star-repair guess doesn't invert U_mhd_0, so use its own U
     Real U_mhd_guess[4] = {U_mhd_0[0], U_mhd_0[1], U_mhd_0[2], U_mhd_0[3]};
+    if (star_guess) {
+        Real rho_ut;
+        GRMHD::p_to_u_mhd(G, rho_init, P_mhd_guess[0], uvec, B_P, eos, k, j, i, rho_ut,
+            U_mhd_guess, Loci::center);
+    }
     Real dS_guess[4];
     // Opacities at the current iterate, frozen in the Jacobian columns
     Real kap_guess[3];
@@ -618,8 +628,10 @@ KOKKOS_INLINE_FUNCTION int solve_4d_pmhd(const GRCoordinates& G,
     Real E_rad_guess;
     Real tol_eff;
     {
-        Real P_rad_guess[4];
-        u_to_p_rad(G, U_rad_0, P_rad_guess, k, j, i, &used_normal_guess);
+        Real P_rad_guess[4], U_rad_e[4];
+        for (int n = 0; n < 4; n++)
+            U_rad_e[n] = U_rad_0[n] - (U_mhd_guess[n] - U_mhd_0[n]);
+        u_to_p_rad(G, U_rad_e, P_rad_guess, k, j, i, &used_normal_guess);
         Real kappa_tot_entry = 0.0;
         compute_covariant_fourforce(G, P_mhd_guess, P_rad_guess, rho_init, B_P, eos,
             rad_opac, k, j, i, dS_guess, &kappa_tot_entry, nullptr, kap_guess);
@@ -703,8 +715,10 @@ KOKKOS_INLINE_FUNCTION int solve_4d_pmhd(const GRCoordinates& G,
                 for (int n = 0; n < 4; n++)
                     U_rad_p[n] = U_rad_0[n] - (U_mhd_p[n] - U_mhd_0[n]);
                 bool used_normal_p;
-                ok = u_to_p_rad(G, U_rad_p, P_rad_p, k, j, i, &used_normal_p) ==
-                         StatusRadiationInversion::success &&
+                const auto st_p =
+                    u_to_p_rad(G, U_rad_p, P_rad_p, k, j, i, &used_normal_p);
+                ok = (st_p == StatusRadiationInversion::success ||
+                         (beam_ok && st_p == StatusRadiationInversion::type2)) &&
                      used_normal_p == used_normal_guess;
                 if (!ok) continue;
                 compute_covariant_fourforce(G, P_mhd_p, P_rad_p, rho_p, B_P, eos,
@@ -763,7 +777,8 @@ KOKKOS_INLINE_FUNCTION int solve_4d_pmhd(const GRCoordinates& G,
 
             auto status =
                 u_to_p_rad(G, U_rad_guess, P_rad_guess, k, j, i, &used_normal_guess);
-            if (status != StatusRadiationInversion::success) {
+            if (status != StatusRadiationInversion::success &&
+                !(beam_ok && status == StatusRadiationInversion::type2)) {
                 scaling_factor /= 3.0;
                 track++;
                 if (track > 15 || scaling_factor < 1.e-8) break;

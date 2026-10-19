@@ -105,10 +105,6 @@ std::shared_ptr<KHARMAPackage> RadM1::Initialize(
     // Cell-centered total opacity, for the radiation signal speeds in the fluxes
     pkg->AddField("rad_kappa",
         Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy}));
-    // Stage-1 star-state repair rate, cancelled from the dUdt_s1 reuse in stage 2
-    pkg->AddField("rad_imex_fix",
-        Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy},
-            std::vector<int>{5}));
     // Newton iterations per cell in the last implicit call: pmhd, prad, ff (diagnostic)
     pkg->AddField("solver_count",
         Metadata({Metadata::Real, Metadata::Cell, Metadata::Derived, Metadata::OneCopy},
@@ -415,7 +411,10 @@ TaskStatus RadM1::FixRadiation(MeshBlockData<Real>* rc)
                                     const double w =
                                         1. / (m::abs(l) + m::abs(m) + m::abs(n) + 1);
                                     gsum += w;
-                                    gas[0] += w * Pg(m_pg.UU, kk, jj, ii);
+                                    // u/rho, so a low-density cell gets its neighbors'
+                                    // temperature rather than their energy density
+                                    const Real rho_n = Pg(m_pg.RHO, kk, jj, ii);
+                                    gas[0] += w * Pg(m_pg.UU, kk, jj, ii) / rho_n;
                                     for (int v = 0; v < NVEC; v++)
                                         gas[1 + v] += w * Pg(m_pg.U1 + v, kk, jj, ii);
                                 }
@@ -423,10 +422,15 @@ TaskStatus RadM1::FixRadiation(MeshBlockData<Real>* rc)
                                     double w =
                                         1. / (m::abs(l) + m::abs(m) + m::abs(n) + 1);
                                     wsum += w;
-                                    sum[0] += w * Prad(m_prad.UU_RAD, kk, jj, ii);
-                                    sum[1] += w * Prad(m_prad.U1_RAD, kk, jj, ii);
-                                    sum[2] += w * Prad(m_prad.U2_RAD, kk, jj, ii);
-                                    sum[3] += w * Prad(m_prad.U3_RAD, kk, jj, ii);
+                                    // Average T^t_mu, not E_rf and u^i
+                                    const Real Pn[4] = {Prad(m_prad.UU_RAD, kk, jj, ii),
+                                        Prad(m_prad.U1_RAD, kk, jj, ii),
+                                        Prad(m_prad.U2_RAD, kk, jj, ii),
+                                        Prad(m_prad.U3_RAD, kk, jj, ii)};
+                                    Real Tn[GR_DIM];
+                                    RadM1::calc_tensor(G, Pn, 0, jj, ii, Tn);
+                                    for (int mu = 0; mu < GR_DIM; mu++)
+                                        sum[mu] += w * Tn[mu];
                                 }
                             }
                         }
@@ -439,13 +443,22 @@ TaskStatus RadM1::FixRadiation(MeshBlockData<Real>* rc)
                     Prad(m_prad.U2_RAD, k, j, i) = 0.;
                     Prad(m_prad.U3_RAD, k, j, i) = 0.;
                 } else {
-                    Prad(m_prad.UU_RAD, k, j, i) = sum[0] / wsum;
-                    Prad(m_prad.U1_RAD, k, j, i) = sum[1] / wsum;
-                    Prad(m_prad.U2_RAD, k, j, i) = sum[2] / wsum;
-                    Prad(m_prad.U3_RAD, k, j, i) = sum[3] / wsum;
+                    const Real gdet = G.gdet(Loci::center, j, i);
+                    Real U_avg[4], P_avg[4];
+                    for (int mu = 0; mu < GR_DIM; mu++) U_avg[mu] = sum[mu] / wsum * gdet;
+                    const auto st = RadM1::u_to_p_rad(
+                        G, U_avg, P_avg, k, j, i, nullptr, RadLimiterType::BASIC);
+                    if (rad_inversion_failed(static_cast<int>(st))) {
+                        P_avg[0] = erad_floor;
+                        P_avg[1] = P_avg[2] = P_avg[3] = 0.;
+                    }
+                    Prad(m_prad.UU_RAD, k, j, i) = P_avg[0];
+                    Prad(m_prad.U1_RAD, k, j, i) = P_avg[1];
+                    Prad(m_prad.U2_RAD, k, j, i) = P_avg[2];
+                    Prad(m_prad.U3_RAD, k, j, i) = P_avg[3];
                 }
                 if (gas_bad && gsum > 1.e-10) {
-                    Pg(m_pg.UU, k, j, i) = gas[0] / gsum;
+                    Pg(m_pg.UU, k, j, i) = Pg(m_pg.RHO, k, j, i) * gas[0] / gsum;
                     for (int v = 0; v < NVEC; v++)
                         Pg(m_pg.U1 + v, k, j, i) = gas[1 + v] / gsum;
                     GRMHD::p_to_u(G, Pg, m_pg, eos, k, j, i, Ug, m_ug);
@@ -561,7 +574,6 @@ void RadM1::AddSourceImplicitly(
 
         auto rinvflag = pmb_data->PackVariables(std::vector<std::string>{"rinvflag"});
         auto imex_src = pmb_data->PackVariables(std::vector<std::string>{"rad_imex_src"});
-        auto imex_fix = pmb_data->PackVariables(std::vector<std::string>{"rad_imex_fix"});
         auto solver_count =
             pmb_data->PackVariables(std::vector<std::string>{"solver_count"});
         const bool use_floors = pmb->packages.AllPackages().count("Floors");
@@ -656,10 +668,10 @@ void RadM1::AddSourceImplicitly(
         };
 
         // Builds the star state in U_init/P_init and saves the originals. Returns
-        // star_fixed. add_fix: add the star-repair rate to dU (only the first time).
+        // star_fixed.
         auto build_star =
-            KOKKOS_LAMBDA(const int k, const int j, const int i, const bool add_fix,
-                Real U_save[9], Real P_save[9], Real B_save[3], Real PB_save[3])
+            KOKKOS_LAMBDA(const int k, const int j, const int i, Real U_save[9],
+                Real P_save[9], Real B_save[3], Real PB_save[3])
                 -> bool
         {
             const int iug[4] = {m_u.UU, m_u.U1, m_u.U2, m_u.U3};
@@ -762,7 +774,8 @@ void RadM1::AddSourceImplicitly(
                 U_init_substep(m_u.U3_RAD, k, j, i)};
             Real Prad_star[4];
             const auto rad_status_star = u_to_p_rad(G, Urad_star, Prad_star, k, j, i);
-            // Non-invertible star gas: entropy inversion + geo floors, change into dU
+            // Non-invertible star gas: entropy inversion + geo floors, as the Newton
+            // guess only. The star U is kept, so the exchange stays conservative
             const bool star_fixed =
                 !(status_star == static_cast<int>(Inverter::Status::success) &&
                     P_init_substep(m_p.UU, k, j, i) > 0.0);
@@ -805,15 +818,6 @@ void RadM1::AddSourceImplicitly(
                 P_init_substep(m_p.UU, k, j, i) = u_f;
                 for (int v = 0; v < NVEC; v++)
                     P_init_substep(m_p.U1 + v, k, j, i) = uvec_f[v];
-                GRMHD::p_to_u(G, P_init_substep, m_p, eos, k, j, i, U_init_substep, m_u);
-                if (add_fix) {
-                    for (int n = 0; n < 5; n++) {
-                        const Real rate =
-                            (U_init_substep(ifx[n], k, j, i) - Ustar[n]) / dt;
-                        dU_substep(ifx[n], k, j, i) += rate;
-                        if (stage == 1) imex_fix(n, k, j, i) = rate;
-                    }
-                }
             }
             
             if (rad_status_star == StatusRadiationInversion::success) {
@@ -862,14 +866,6 @@ void RadM1::AddSourceImplicitly(
                 for (int n = 0; n < 3; n++) solver_count(n, k, j, i) = 0.;
                 for (int n = 0; n < 5; n++)
                     if (stage == 1) imex_src(n, k, j, i) = 0.0;
-                // Undo the stage-1 star repair carried into this stage through dUdt_s1
-                const int ifx[5] = {m_u.RHO, m_u.UU, m_u.U1, m_u.U2, m_u.U3};
-                for (int n = 0; n < 5; n++) {
-                    if (stage == 1)
-                        imex_fix(n, k, j, i) = 0.0;
-                    else if (ars_d1 != 0.0)
-                        dU_substep(ifx[n], k, j, i) -= ars_d1 / dt * imex_fix(n, k, j, i);
-                }
 
                 // Inside the horizon: no interaction. If there is no horizon, r_hor = 0.
                 GReal Xembed[GR_DIM];
@@ -903,7 +899,7 @@ void RadM1::AddSourceImplicitly(
                     return;
                 Real U_save[9], P_save[9], B_save[3], PB_save[3];
                 const bool star_fixed =
-                    build_star(k, j, i, true, U_save, P_save, B_save, PB_save);
+                    build_star(k, j, i, U_save, P_save, B_save, PB_save);
                 Real U_entry[8], P_entry[9];
                 get_entry(k, j, i, U_entry, P_entry);
 
@@ -911,7 +907,8 @@ void RadM1::AddSourceImplicitly(
                 int nit = 0;
                 const int rflagl = solve_4d_pmhd(G, P_init_substep, m_p, m_u, k, j, i,
                     dt_impl, eos, src_rootfind_eps, src_rootfind_tol,
-                    src_rootfind_maxiter, rad_opac, pflag, rinvflag, U_entry, dS, &nit);
+                    src_rootfind_maxiter, rad_opac, pflag, rinvflag, U_entry, dS, &nit,
+                    star_fixed);
                 solver_count(0, k, j, i) = nit;
 
                 if (rflagl == static_cast<int>(SIS::success)) {
@@ -956,8 +953,7 @@ void RadM1::AddSourceImplicitly(
             const bool star_fixed =
                 (flag == static_cast<int>(SIS::pending_prad_starfix));
             Real U_save[9], P_save[9], B_save[3], PB_save[3];
-            // The star-repair rate is already in dU from K2: don't add it again
-            build_star(k, j, i, false, U_save, P_save, B_save, PB_save);
+            build_star(k, j, i, U_save, P_save, B_save, PB_save);
             Real U_entry[8], P_entry[9];
             get_entry(k, j, i, U_entry, P_entry);
 
