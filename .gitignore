@@ -25,12 +25,18 @@ log_*.txt
 bondi_analytic_*.txt
 atmosphere_soln_*.txt
 shock_soln_*.txt
+parthinput.*
+
+# Downloaded/bins
+bin/clang-format-19
 
 # Editor documents
 .project
 .cproject
 .ptp-sync
 .vscode/
+.cache/
+*~
 
 # C++ excludes
 # Build directory
@@ -38,6 +44,8 @@ build/
 
 # External directories
 external/hdf5*
+# Leftover clone of mpark/variant, replaced by singularity-eos' ports-of-call
+external/variant/
 
 # Prerequisites
 *.d

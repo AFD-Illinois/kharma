@@ -1,4 +1,4 @@
-# Bondi flow problemin just 1D
+# Bondi flow problem in 1D
 # Mostly a regression test that we can still do 1D spherical
 
 <parthenon/job>
@@ -30,6 +30,10 @@ cfl = 0.9
 gamma = 1.666667
 reconstruction = weno5
 
+<eos>
+type = IdealGas
+Cv = 1.0
+
 <bondi>
 # Bondi problem parameters:
 # density scaling/accretion rate
@@ -41,11 +45,10 @@ rs = 8.0
 # Disable floors
 disable_floors = true
 # If using B field, enable w/:
-rho_min_geom = 1e-6
-u_min_geom = 1e-8
-bsq_over_rho_max = 100
-u_over_rho_max = 100
-gamma_max = 10
+#rho_min_geom = 1e-6
+#u_min_geom = 1e-8
+#gamma_max = 10
+
 
 <boundaries>
 # We'll be adding material, and that's okay
@@ -53,22 +56,21 @@ check_inflow_outer_x1 = false
 
 <b_field>
 # No field
-type = none
-solver = none
+#solver = none
 # To add magnetic field
-#type = monopole_cube
-#B10 = 1
-# Or
-#type = vertical
-#A0 = 0.1
+# note only flux_ct/cell-centered B is supported in 1D!
+solver = flux_ct
+type = monopole_cube
+B10 = 1
 
 <debug>
-verbose = 0
-flag_verbose = 0
+verbose = 1
+flag_verbose = 2
 extra_checks = 1
 
 <parthenon/output0>
 file_type = hdf5
+write_xdmf = false
 dt = 5.0
 single_precision_output = true
 # Fields not present are silently ignored
