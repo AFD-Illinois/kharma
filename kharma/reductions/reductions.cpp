@@ -71,13 +71,36 @@ std::shared_ptr<KHARMAPackage> Reductions::Initialize(
         params.Add("domain_r_in", (GReal)pin->GetReal("coordinates", "r_in"));
         params.Add("domain_r_eh", (GReal)pin->GetReal("coordinates", "r_eh"));
         params.Add("domain_r_out", (GReal)pin->GetReal("coordinates", "r_out"));
+        // Radius of the shell for the "Jet_Lum" history variable
+        params.Add("jet_lum_r", (GReal)pin->GetOrAddReal("reductions", "jet_lum_r", 50.));
     } else {
         params.Add("domain_r_in", 0.);
         params.Add("domain_r_eh", 0.);
         params.Add("domain_r_out", 0.);
+        params.Add("jet_lum_r", 0.);
     }
 
     return pkg;
+}
+
+Real Reductions::JetLumAtEH(MeshData<Real>* md)
+{
+    return ShellReduction<Var::jet_lum, UserHistoryOperation::sum, Real>(md,
+        md->GetMeshPointer()->packages.Get("Reductions")->Param<GReal>("domain_r_eh"));
+}
+Real Reductions::JetLumAtR(MeshData<Real>* md)
+{
+    return ShellReduction<Var::jet_lum, UserHistoryOperation::sum, Real>(
+        md, md->GetMeshPointer()->packages.Get("Reductions")->Param<GReal>("jet_lum_r"));
+}
+Real Reductions::EHTLumProxy(MeshData<Real>* md)
+{
+    const GReal r_eh =
+        md->GetMeshPointer()->packages.Get("Reductions")->Param<GReal>("domain_r_eh");
+    const GReal startx[3] = {r_eh, M_PI / 3., -real_max};
+    const GReal stopx[3] = {50., 2. * M_PI / 3., real_max};
+    return DomainReduction<Var::eht_lum, UserHistoryOperation::sum, Real>(
+        md, startx, stopx);
 }
 
 // Flag reductions: local
@@ -225,4 +248,38 @@ std::vector<int> Reductions::CheckFlagReduceAndPrintHits(MeshData<Real>* md,
 
     EndFlag();
     return total_flag_counts;
+}
+
+// Out of the package modification RADM1
+// Print out which flags were hit with what % for radm1 package.
+// This should work for other packages too?
+void Reductions::PrintFlagPercentages(MeshData<Real>* md, std::string field_name,
+    const std::map<int, std::string>& flag_values, IndexDomain domain,
+    const std::vector<int>& total_flag_counts)
+{
+    if (total_flag_counts.empty() || total_flag_counts[0] == 0) return;
+
+    if (MPIRank0()) {
+        const auto& pmesh = md->GetMeshPointer();
+
+        IndexRange ib = md->GetBoundsI(domain);
+        IndexRange jb = md->GetBoundsJ(domain);
+        IndexRange kb = md->GetBoundsK(domain);
+        int n_cells =
+            pmesh->nbtotal * (kb.e - kb.s + 1) * (jb.e - jb.s + 1) * (ib.e - ib.s + 1);
+
+        std::cout << "Flags breakdown: " << field_name << std::endl;
+
+        int i = 1;
+        for (const auto& status : flag_values) {
+            if (total_flag_counts[i] > 0) {
+                // Calculate percentage for this specific flag using floating-point math
+                double flag_pct = ((double)total_flag_counts[i] / n_cells) * 100.0;
+
+                std::cout << "  * " << status.second << ": " << total_flag_counts[i]
+                          << " cells (" << (int)flag_pct << "%)" << std::endl;
+            }
+            ++i;
+        }
+    }
 }

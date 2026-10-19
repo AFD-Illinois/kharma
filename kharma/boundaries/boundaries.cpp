@@ -37,16 +37,22 @@
 #include "boundary_types.hpp"
 #include "decs.hpp"
 #include "domain.hpp"
+#include "elec/hubble.hpp"
 #include "flux_functions.hpp"
 #include "grmhd_functions.hpp"
 #include "kharma.hpp"
 #include "pack.hpp"
+#include "radm1/bondi_rad.hpp"
 #include "reductions.hpp"
 #include "types.hpp"
 
 #include "b_ct.hpp"
 #include "b_flux_ct.hpp"
 #include "flux.hpp"
+
+// phoebus includes
+#include "microphysics/eos_kharma/eos_kharma.hpp"
+#include "phoebus_utils/variables.hpp"
 
 // Parthenon's boundaries
 #include <bvals/boundary_conditions.hpp>
@@ -110,8 +116,7 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(
     // We can't use GetVariablesByFlag yet, so ask the packages
     // These flags get anything that needs a physical boundary during the run
     using FC = Metadata::FlagCollection;
-    FC ghost_vars = FC({Metadata::FillGhost, Metadata::Conserved}) +
-                    FC({Metadata::FillGhost, Metadata::GetUserFlag("Primitive")}) -
+    FC ghost_vars = FC({Metadata::FillGhost, Metadata::Cell}) -
                     FC({Metadata::GetUserFlag("StartupOnly")});
     auto res_state = StateDescriptor::CreateResolvedStateDescriptor(*packages);
     int nvar = res_state->GetPackDimension(ghost_vars);
@@ -350,10 +355,13 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(
                         break;
                 }
                 if (pin->GetString("coordinates", "transform") == "fmks" ||
-                    pin->GetString("coordinates", "transform") == "funky")
-                    throw std::runtime_error(
-                        "Transmitting polar boundary conditions require coordinates "
-                        "symmetric about theta=0!");
+                    pin->GetString("coordinates", "transform") == "funky") {
+                    // TODO colors?
+                    std::cerr << "WARNING: Transmitting polar boundary conditions "
+                                 "require coordinates "
+                                 "symmetric about theta=0! Proceed at your own risk!"
+                              << std::endl;
+                }
                 // TODO also check for wedge simulations x3<2pi
             } else if (btype == "outflow") {
                 switch (bface) {
@@ -402,6 +410,30 @@ std::shared_ptr<KHARMAPackage> KBoundaries::Initialize(
                         break;
                     default:
                         break;
+                }
+            } else if (btype == "bondi_rad") {
+                AddBondiRadParameters(pin, *packages);
+                switch (bface) {
+                    case BoundaryFace::outer_x1:
+                        pkg->KBoundaries[bface] = SetBondiRad<IndexDomain::outer_x1>;
+                        break;
+                    default:
+                        throw std::runtime_error(
+                            "bondi_rad boundary type is only valid on outer_x1");
+                }
+            } else if (btype == "hubble") {
+                // Analytic Hubble-flow solution, see InitializeHubble for the parameters
+                // it needs (added there, as this is only ever used with that problem)
+                switch (bface) {
+                    case BoundaryFace::inner_x1:
+                        pkg->KBoundaries[bface] = SetHubble<IndexDomain::inner_x1>;
+                        break;
+                    case BoundaryFace::outer_x1:
+                        pkg->KBoundaries[bface] = SetHubble<IndexDomain::outer_x1>;
+                        break;
+                    default:
+                        throw std::runtime_error(
+                            "Hubble boundary conditions are only defined in X1!");
                 }
             } else {
                 throw std::runtime_error("Unknown boundary type: " + btype);
@@ -475,15 +507,7 @@ void KBoundaries::ApplyBoundary(
 
     // Averaging ops on *physical* cells must be done before computing boundaries
     // We should do a PreBoundaries callback...
-    if (pmb->packages.AllPackages().count("B_CT")) {
-        auto bfpack = rc->PackVariables(
-            {Metadata::Face, Metadata::FillGhost, Metadata::GetUserFlag("B_CT")});
-        if (params.Get<bool>("reconnect_B3_" + bname) && bfpack.GetDim(4) > 0) {
-            Flag("ReconnectFaceB_" + bname);
-            B_CT::ReconnectBoundaryB3(rc.get(), domain, bfpack, coarse);
-            EndFlag();
-        }
-    }
+    // TODO(CEP) cancelT3 should be handled with reconnectB3!!
     if (pmb->packages.AllPackages().count("GRMHD")) {
         if (params.Get<bool>("cancel_U3_" + bname) && full_grmhd_boundary) {
             GRMHD::CancelBoundaryU3(rc.get(), domain, coarse);
@@ -494,9 +518,11 @@ void KBoundaries::ApplyBoundary(
     }
 
     // Always call through to the registered boundary function
-    Flag("Apply " + bname + " boundary: " + btype_name);
-    pkg->KBoundaries[bface](rc, coarse);
-    EndFlag();
+    if (pkg->KBoundaries[bface] != nullptr) {
+        Flag("Apply " + bname + " boundary: " + btype_name);
+        pkg->KBoundaries[bface](rc, coarse);
+        EndFlag();
+    }
 
     // Then a bunch of common boundary "touchups"
     // Nothing below is designed, nor necessary, for coarse buffers
@@ -599,8 +625,9 @@ void KBoundaries::ApplyBoundary(
                                 : (bdir == 2 ? bounds.GetBoundsJ(IndexDomain::interior)
                                              : bounds.GetBoundsK(IndexDomain::interior));
         const int ref = binner ? range.s : range.e;
-        pmb->par_for_bndry("outflow_EMHD", IndexRange{0, EMHDg.GetDim(4) - 1}, domain, CC,
-            coarse, false,
+        auto b = KDomain::GetBoundaryRange(rc, domain, CC, coarse);
+        pmb->par_for("outflow_EMHD", 0, EMHDg.GetDim(4) - 1, b.ks, b.ke, b.js, b.je, b.is,
+            b.ie,
             KOKKOS_LAMBDA(const int& v, const int& k, const int& j, const int& i)
             {
                 EMHDg(v, k, j, i) = EMHDg(v, (bdir == 3) ? ref : k, (bdir == 2) ? ref : j,
@@ -656,7 +683,8 @@ void KBoundaries::ApplyBoundary(
         } else {
             B_FluxCT::BlockUtoP(rc.get(), domain, coarse);
         }
-        Flux::BlockPtoU(rc.get(), domain, coarse);
+        Flux::BlockPtoU(
+            rc.get(), domain, coarse); // TODO(CEP) U on ghosts should not matter?
     } else {
         // 2. Exchange/prolongate/restrict CONSERVED variables: (KHARMA driver)
         //    Conserved variables are marked FillGhost, plus FLUID PRIMITIVES.
@@ -679,7 +707,6 @@ void KBoundaries::CheckInflow(
 {
     auto pmb = rc->GetBlockPointer();
     const auto& G = pmb->coords;
-    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
 
     PackIndexMap prims_map;
     auto P = GRMHD::PackMHDPrims(rc.get(), prims_map, coarse);
@@ -701,6 +728,9 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real>* md)
     auto pmb0 = md->GetBlockData(0)->GetBlockPointer();
 
     auto& params = pmb0->packages.Get("Boundaries")->AllParams();
+
+    const auto& eos_params = pmb0->packages.Get("eos")->AllParams();
+    auto eos = eos_params.Get<Microphysics::EOS::EOS>("d.EOS");
 
     // Fluxes are defined at faces, so there is one more valid flux than
     // valid cell in the face direction.  That is, e.g. F1 is valid on
@@ -827,7 +857,6 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real>* md)
 
                     const EMHD::EMHD_parameters& emhd_params =
                         EMHD::GetEMHDParameters(pmb->packages);
-                    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
                     const auto& G = pmb->coords;
                     const int nvar = F.GetDim(4);
                     // Loci "outer" and "inner" refer to right and left.
@@ -858,13 +887,13 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real>* md)
                             FourVectors Dtmp;
                             // Left
                             GRMHD::calc_4vecs(G, Pl_all, m_p, k, j, i, loc, Dtmp);
-                            Flux::prim_to_flux(G, Pl_all, m_p, Dtmp, emhd_params, gam, k,
+                            Flux::prim_to_flux(G, Pl_all, m_p, Dtmp, emhd_params, eos, k,
                                 j, i, 0, Ul_all, m_u, loc);
-                            Flux::prim_to_flux(G, Pl_all, m_p, Dtmp, emhd_params, gam, k,
+                            Flux::prim_to_flux(G, Pl_all, m_p, Dtmp, emhd_params, eos, k,
                                 j, i, dir, Fl_all, m_u, loc);
                             // Magnetosonic speeds
                             Real cmaxL, cminL;
-                            Flux::vchar(G, Pl_all, m_p, Dtmp, gam, emhd_params, k, j, i,
+                            Flux::vchar(G, Pl_all, m_p, Dtmp, eos, emhd_params, k, j, i,
                                 loc, dir, cmaxL, cminL);
                             // Record speeds
                             cmax(dir - 1, k, j, i) = m::max(0., cmaxL);
@@ -872,13 +901,13 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real>* md)
 
                             // Right
                             GRMHD::calc_4vecs(G, Pr_all, m_p, k, j, i, loc, Dtmp);
-                            Flux::prim_to_flux(G, Pr_all, m_p, Dtmp, emhd_params, gam, k,
+                            Flux::prim_to_flux(G, Pr_all, m_p, Dtmp, emhd_params, eos, k,
                                 j, i, 0, Ur_all, m_u, loc);
-                            Flux::prim_to_flux(G, Pr_all, m_p, Dtmp, emhd_params, gam, k,
+                            Flux::prim_to_flux(G, Pr_all, m_p, Dtmp, emhd_params, eos, k,
                                 j, i, dir, Fr_all, m_u, loc);
                             // Magnetosonic speeds
                             Real cmaxR, cminR;
-                            Flux::vchar(G, Pr_all, m_p, Dtmp, gam, emhd_params, k, j, i,
+                            Flux::vchar(G, Pr_all, m_p, Dtmp, eos, emhd_params, k, j, i,
                                 loc, dir, cmaxR, cminR);
 
                             // Reset cmax/cmin based on our flux
@@ -922,13 +951,13 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real>* md)
                             // Left
                             GRMHD::calc_4vecs(
                                 G, Pl_all, m_p, k, j, i, Loci::center, Dtmp);
-                            Flux::prim_to_flux(G, Pl_all, m_p, Dtmp, emhd_params, gam, k,
+                            Flux::prim_to_flux(G, Pl_all, m_p, Dtmp, emhd_params, eos, k,
                                 j, i, 0, Ul_all, m_u, Loci::center);
-                            Flux::prim_to_flux(G, Pl_all, m_p, Dtmp, emhd_params, gam, k,
+                            Flux::prim_to_flux(G, Pl_all, m_p, Dtmp, emhd_params, eos, k,
                                 j, i, bdir, Fl_all, m_u, Loci::center);
                             // Magnetosonic speeds
                             Real cmaxL, cminL;
-                            Flux::vchar(G, Pl_all, m_p, Dtmp, gam, emhd_params, k, j, i,
+                            Flux::vchar(G, Pl_all, m_p, Dtmp, eos, emhd_params, k, j, i,
                                 Loci::center, bdir, cmaxL, cminL);
                             // Record speeds
                             cmax(bdir - 1, k, j, i) = m::max(0., cmaxL);
@@ -937,13 +966,13 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real>* md)
                             // Right
                             GRMHD::calc_4vecs(
                                 G, Pr_all, m_p, k, j, i, Loci::center, Dtmp);
-                            Flux::prim_to_flux(G, Pr_all, m_p, Dtmp, emhd_params, gam, k,
+                            Flux::prim_to_flux(G, Pr_all, m_p, Dtmp, emhd_params, eos, k,
                                 j, i, 0, Ur_all, m_u, Loci::center);
-                            Flux::prim_to_flux(G, Pr_all, m_p, Dtmp, emhd_params, gam, k,
+                            Flux::prim_to_flux(G, Pr_all, m_p, Dtmp, emhd_params, eos, k,
                                 j, i, bdir, Fr_all, m_u, Loci::center);
                             // Magnetosonic speeds
                             Real cmaxR, cminR;
-                            Flux::vchar(G, Pr_all, m_p, Dtmp, gam, emhd_params, k, j, i,
+                            Flux::vchar(G, Pr_all, m_p, Dtmp, eos, emhd_params, k, j, i,
                                 Loci::center, bdir, cmaxR, cminR);
 
                             // Reset cmax/cmin based on our flux

@@ -46,7 +46,7 @@ std::shared_ptr<KHARMAPackage> ISMR::Initialize(
 
     // Parameters
     // TODO add "poles" specifically if we ever support other areas
-    uint nlevels = (uint)pin->GetOrAddInteger("ismr", "nlevels", 1);
+    int nlevels = pin->GetOrAddInteger("ismr", "nlevels", 1);
     params.Add("nlevels", nlevels);
     if (nlevels < 1)
         throw std::runtime_error("Internal SMR requires a positive number of levels!");
@@ -82,26 +82,25 @@ std::shared_ptr<KHARMAPackage> ISMR::Initialize(
     return pkg;
 }
 
-TaskStatus ISMR::DerefinePoles(MeshData<Real>* md)
+TaskStatus ISMR::DerefinePoles(MeshData<Real>* md, std::vector<MetadataFlag> flags)
 {
     Flag("ISMR_DerefinePoles");
     // TODO this routine only applies to polar boundaries for now.
     auto pmesh = md->GetMeshPointer();
-    const uint nlevels = pmesh->packages.Get("ISMR")->Param<uint>("nlevels");
+    const int nlevels = pmesh->packages.Get("ISMR")->Param<int>("nlevels");
 
     // Figure out indices
     int ng = Globals::nghost;
     for (int iblock = 0; iblock < md->NumBlocks(); iblock++) {
         auto& rc = md->GetBlockData(iblock);
         auto pmb = rc->GetBlockPointer();
-        PackIndexMap cons_map, cons_map_utop;
-        auto vars = rc->PackVariables(std::vector<MetadataFlag>{Metadata::Conserved,
-                                          Metadata::Cell, Metadata::Independent},
-            cons_map);
+        using FC = Metadata::FlagCollection;
+        auto flags_nob = FC(flags) - FC({Metadata::GetUserFlag("B_CT"),
+                                            Metadata::GetUserFlag("StartupOnly")},
+                                         true);
+        auto vars = rc->PackVariables(flags_nob);
         auto vars_avg = rc->PackVariables(std::vector<std::string>{"ismr.vars_avg"});
-        auto vars_utop = rc->PackVariables(
-            std::vector<MetadataFlag>{Metadata::Conserved, Metadata::Cell},
-            cons_map_utop);
+
         const int nvar = vars.GetDim(4);
         for (int i = 0; i < BOUNDARY_NFACES; i++) {
             BoundaryFace bface = (BoundaryFace)i;
@@ -121,8 +120,8 @@ TaskStatus ISMR::DerefinePoles(MeshData<Real>* md)
 
                 // TODO the following could be done in 1 kernel w/nested parallelism
                 // fluid variables average
-                pmb->par_for("DerefinePoles_avg_fluid", 0, nvar - 1, bCC.ks, bCC.ke,
-                    j_p.s, j_p.e, bCC.is, bCC.ie,
+                pmb->par_for("DerefinePoles_avg", 0, nvar - 1, bCC.ks, bCC.ke, j_p.s,
+                    j_p.e, bCC.is, bCC.ie,
                     KOKKOS_LAMBDA (const int &v, const int &k, const int &j, const int &i)
                     {
                         const int coarse_cell_len =
@@ -144,45 +143,13 @@ TaskStatus ISMR::DerefinePoles(MeshData<Real>* md)
                         vars_avg(v, k, j_c, i) = avg;
                     });
                 // fluid variables write
-                pmb->par_for("DerefinePoles_write_fluid", 0, nvar - 1, bCC.ks, bCC.ke,
-                    j_p.s, j_p.e, bCC.is, bCC.ie,
+                pmb->par_for("DerefinePoles_write", 0, nvar - 1, bCC.ks, bCC.ke, j_p.s,
+                    j_p.e, bCC.is, bCC.ie,
                     KOKKOS_LAMBDA (const int &v, const int &k, const int &j, const int &i)
                     {
                         const int j_c = j + ((binner) ? 0 : -1); // cell center
                         vars(v, k, j_c, i) = vars_avg(v, k, j_c, i);
                     });
-
-                // UtoP for the GRMHD variables
-                PackIndexMap prims_map;
-                auto P = rc->PackVariables(
-                    std::vector<MetadataFlag>{
-                        Metadata::GetUserFlag("Primitive"), Metadata::Cell},
-                    prims_map);
-                VarMap m_u(cons_map_utop, true), m_p(prims_map, false);
-                const auto& G = pmb->coords;
-                const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
-                const Floors::Prescription floors =
-                    pmb->packages.Get("Floors")->Param<Floors::Prescription>(
-                        "prescription");
-                pmb->par_for("DerefinePoles_UtoP", bCC.ks, bCC.ke, j_p.s, j_p.e, bCC.is,
-                    bCC.ie,
-                    KOKKOS_LAMBDA (const int &k, const int &j, const int &i)
-                    {
-                        const int j_c = j + ((binner) ? 0 : -1); // cell center
-                        // The usual inverter is not EMHD-aware, so it's going to dump all
-                        // of T into the ideal GRMHD fluid variables
-                        Inverter::u_to_p<Inverter::Type::kastaun>(G, vars_utop, m_u, gam,
-                            k, j_c, i, P, m_p, Loci::center, 25, 1e-12);
-                        // Consistent with that, we zero out the EMHD extra variables.
-                        // This switches theories to evolving ideal GRMHD in ISMR region,
-                        // but conserves the components of T themselves
-                        if (m_u.Q >= 0) vars_utop(m_u.Q, k, j_c, i) = 0.;
-                        if (m_p.Q >= 0) P(m_p.Q, k, j_c, i) = 0.;
-                        if (m_u.DP >= 0) vars_utop(m_u.DP, k, j_c, i) = 0.;
-                        if (m_p.DP >= 0) P(m_p.DP, k, j_c, i) = 0.;
-                    });
-                // TODO there SHOULD be no need for floors here. Should test or prove this
-                // is always true
             }
         }
     }

@@ -85,7 +85,7 @@ T ConeReduction(
     MeshData<Real>* md, GReal th, int channel = -1, bool plane_outward = false)
 {
     const GReal startx[3] = {-real_max, th, -real_max};
-    const GReal stopx[3] = {-real_max, th, real_max};
+    const GReal stopx[3] = {real_max, th, real_max};
     return DomainReduction<var, op, T>(md, startx, stopx, channel, plane_outward);
 }
 template<Var var, UserHistoryOperation op, typename T>
@@ -93,7 +93,7 @@ T PlaneReduction(
     MeshData<Real>* md, GReal phi, int channel = -1, bool plane_outward = false)
 {
     const GReal startx[3] = {-real_max, -real_max, phi};
-    const GReal stopx[3] = {-real_max, real_max, phi};
+    const GReal stopx[3] = {real_max, real_max, phi};
     return DomainReduction<var, op, T>(md, startx, stopx, channel, plane_outward);
 }
 // TODO(CEP) alternate names for XYZ?  Or just don't bother
@@ -121,6 +121,12 @@ Real Total(MeshData<Real>* md)
 {
     return Reductions::DomainReduction<var, UserHistoryOperation::sum, Real>(md);
 }
+
+// Jet power through a shell at the EH, or at the radius set by reductions/jet_lum_r
+Real JetLumAtEH(MeshData<Real>* md);
+Real JetLumAtR(MeshData<Real>* md);
+// Luminosity proxy as defined in Porth et al 2019, integrated over the region given there
+Real EHTLumProxy(MeshData<Real>* md);
 
 // Values gained/lost through faces
 // TODO(CEP) SPHERICAL ONLY RIGHT NOW
@@ -251,6 +257,14 @@ void StartFlagReduce(MeshData<Real>* md, std::string field_name,
 std::vector<int> CheckFlagReduceAndPrintHits(MeshData<Real>* md, std::string field_name,
     const std::map<int, std::string>& flag_values, IndexDomain domain, bool is_bitflag,
     int channel);
+
+/**
+ * Out of the package modification RADM1
+ * Print out which flags were hit with what % for radm1 package.
+ */
+void PrintFlagPercentages(MeshData<Real>* md, std::string field_name,
+    const std::map<int, std::string>& flag_values, IndexDomain domain,
+    const std::vector<int>& total_flag_counts);
 
 } // namespace Reductions
 

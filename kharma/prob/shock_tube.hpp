@@ -1,6 +1,7 @@
 #pragma once
 
 #include "decs.hpp"
+#include "eos_kharma.hpp"
 
 using namespace parthenon;
 
@@ -14,18 +15,32 @@ TaskStatus InitializeShockTube(
     std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput* pin)
 {
     auto pmb = rc->GetBlockPointer();
+    auto eos = pmb->packages.Get("eos")->Param<Microphysics::EOS::EOS>("d.EOS");
+    // Only necessary if we're using kharma's SieFromDensityPressure
+    //  which was a temporary fix since eos.InternalEnergyFromDensityPressure
+    //  was not working.
+    // const auto& eos_pars = pmb->packages.Get("eos")->AllParams();
+    // const bool is_ideal = eos_pars.Get<std::string>("type") == "IdealGas";
+    // const Real T_min = eos_pars.Get<Real>("T_min");
+    // const Real T_max = eos_pars.Get<Real>("T_max");
+
     GridScalar rho = rc->Get("prims.rho").data;
     GridScalar u = rc->Get("prims.u").data;
     GridVector uvec = rc->Get("prims.uvec").data;
-
+    const bool use_ye = rc->Contains("prims.Ye");
+    GridScalar Ye;
+    if (use_ye) {
+        Ye = rc->Get("prims.Ye").data;
+    }
     const auto& G = pmb->coords;
 
-    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
     // TODO some particular default shock
     const Real rhoL = pin->GetOrAddReal("shock", "rhoL", 0.0);
     const Real rhoR = pin->GetOrAddReal("shock", "rhoR", 0.0);
     const Real PL = pin->GetOrAddReal("shock", "PL", 0.0);
     const Real PR = pin->GetOrAddReal("shock", "PR", 0.0);
+    const Real YeL = pin->GetOrAddReal("shock", "YeL", 0.0);
+    const Real YeR = pin->GetOrAddReal("shock", "YeR", 0.0);
     const Real u1L = pin->GetOrAddReal("shock", "u1L", 0.0);
     const Real u1R = pin->GetOrAddReal("shock", "u1R", 0.0);
     const Real u2L = pin->GetOrAddReal("shock", "u2L", 0.0);
@@ -40,6 +55,23 @@ TaskStatus InitializeShockTube(
     const Real B3L = pin->GetOrAddReal("shock", "B3L", 0.0);
     const Real B3R = pin->GetOrAddReal("shock", "B3R", 0.0);
 
+    // Out of the package modification RADM1.
+    const bool use_rad = pmb->packages.AllPackages().count("RadM1");
+
+    // Setup initial EL and ER for the radiation energy density
+    GridScalar erad = rc->Get("prims.rho").data;
+    const Real EL = pin->GetOrAddReal("shock", "EL", 0.0);
+    const Real ER = pin->GetOrAddReal("shock", "ER", 0.0);
+    // Following Melon Fuksman & Mignone 2019 (PLUTO M1 module), initialize urad as a
+    // fraction of Erad:
+    const bool rad_comoving_ic = pin->GetOrAddBoolean("shock", "rad_comoving_ic", false);
+    const Real rad_seed_frac = pin->GetOrAddReal("shock", "rad_seed_frac", 0.01);
+    // placeholder (same type/shape as uvec), reset below if use_rad
+    GridVector uvec_rad = uvec;
+    if (use_rad) {
+        erad = rc->Get("prims.u_rad").data;
+        uvec_rad = rc->Get("prims.uvec_rad").data;
+    }
     IndexDomain domain = IndexDomain::entire;
     IndexRange ib = pmb->cellbounds.GetBoundsI(domain);
     IndexRange jb = pmb->cellbounds.GetBoundsJ(domain);
@@ -66,10 +98,51 @@ TaskStatus InitializeShockTube(
 
             const bool lhs = X[1] < center;
             rho(k, j, i) = (lhs) ? rhoL : rhoR;
-            u(k, j, i) = ((lhs) ? PL : PR) / (gam - 1.);
+            const Real Ye_val = use_ye ? ((lhs) ? YeL : YeR) : 0.0;
+            if (use_ye) Ye(k, j, i) = Ye_val;
+            const Real Pval = (lhs) ? PL : PR;
+            Real lambda[2] = {Ye_val, 0.0};
+            Real sie = 0.0;
+            eos.InternalEnergyFromDensityPressure(rho(k, j, i), Pval, sie, lambda);
+            // Real sie = Microphysics::EOS::SieFromDensityPressure(eos, is_ideal, rho(k,
+            // j, i), Pval, lambda, T_min, T_max);
+            u(k, j, i) = sie * rho(k, j, i);
             uvec(0, k, j, i) = (lhs) ? u1L : u1R;
             uvec(1, k, j, i) = (lhs) ? u2L : u2R;
             uvec(2, k, j, i) = (lhs) ? u3L : u3R;
+            if (use_rad) {
+                const Real E0 = (lhs) ? EL : ER;
+                if (!rad_comoving_ic) {
+                    // Radiation isotropic at rest in the LAB frame.
+                    erad(k, j, i) = E0;
+                    uvec_rad(0, k, j, i) = 0.;
+                    uvec_rad(1, k, j, i) = 0.;
+                    uvec_rad(2, k, j, i) = 0.;
+                } else {
+                    // Melon Fuksman & Mignone 2019 (PLUTO M1 module) IC
+                    const Real u1_gas = (lhs) ? u1L : u1R;
+                    const Real gamma2_gas = 1.0 + u1_gas * u1_gas;
+                    const Real v_gas = u1_gas / m::sqrt(gamma2_gas);
+                    const Real Fr0 = rad_seed_frac * E0;
+
+                    const Real E_lab =
+                        ((1.0 + (1.0 / 3.0) * v_gas * v_gas) * E0 + 2.0 * Fr0 * v_gas) *
+                        gamma2_gas;
+                    const Real F_lab =
+                        ((1.0 + v_gas * v_gas) * Fr0 + (4.0 / 3.0) * E0 * v_gas) *
+                        gamma2_gas;
+
+                    const Real f = F_lab / E_lab;
+                    const Real v_rad = 3.0 * f / (2.0 + m::sqrt(4.0 - 3.0 * f * f));
+                    const Real gamma_rad = 1.0 / m::sqrt(1.0 - v_rad * v_rad);
+
+                    erad(k, j, i) =
+                        E_lab / ((4.0 / 3.0) * gamma_rad * gamma_rad - 1.0 / 3.0);
+                    uvec_rad(0, k, j, i) = gamma_rad * v_rad;
+                    uvec_rad(1, k, j, i) = 0.0;
+                    uvec_rad(2, k, j, i) = 0.0;
+                }
+            }
         });
 
     return TaskStatus::complete;

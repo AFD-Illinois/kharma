@@ -148,13 +148,11 @@ TaskStatus SetBondiImpl(
 
     // This gets called in different places with various packs (syncing EMFs, etc)
     // Exit if the pack has no primitive vars
-    if (P.GetDim(4) == 0) {
-        return TaskStatus::complete;
-    }
+    if (P.GetDim(4) == 0 || U.GetDim(4) == 0) return TaskStatus::complete;
 
     const Real mdot = pmb->packages.Get("GRMHD")->Param<Real>("mdot");
     const Real rs = pmb->packages.Get("GRMHD")->Param<Real>("rs");
-    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
+    const Real gam = pmb->packages.Get("eos")->Param<Real>("gm1") + 1.0;
     const Real ur_frac = pmb->packages.Get("GRMHD")->Param<Real>("ur_frac");
     const Real uphi = pmb->packages.Get("GRMHD")->Param<Real>("uphi");
     const Real rin_bondi = pmb->packages.Get("GRMHD")->Param<Real>("rin_bondi");

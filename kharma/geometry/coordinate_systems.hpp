@@ -53,7 +53,7 @@
 namespace Geometry
 {
 
-// TODO(JMM): THis should have some concepts to ensure these are PortsOfCall::Variants
+// TODO(JMM): This should have some concepts to ensure these are PortsOfCall::Variants
 template<typename BaseCoordinatesVariant_t, typename TransformsVariant_t>
 class CoordinateEmbedding
 {

@@ -43,13 +43,12 @@
 // Packages
 #include "b_cd.hpp"
 #include "b_cleanup.hpp"
-#include "b_cleanup_gmg.hpp"
 #include "b_ct.hpp"
 #include "b_flux_ct.hpp"
 #include "coord_output.hpp"
 #include "current.hpp"
 #include "electrons.hpp"
-#include "emhd.hpp"
+#include "entropy.hpp"
 #include "floors.hpp"
 #include "flux.hpp"
 #include "grmhd.hpp"
@@ -58,12 +57,22 @@
 #include "ismr.hpp"
 #include "kharma_driver.hpp"
 #include "reductions.hpp"
+#include "temperature.hpp"
+
+// Out of the package modification units.
+#include "units.hpp"
+// Out of the package modification RADM1.
+#include "radM1.hpp"
 #include "wind.hpp"
+#include "ye.hpp"
 
 #include "bondi.hpp"
 #include "boundaries.hpp"
 #include "resize_restart.hpp"
 #include "resize_restart_kharma.hpp"
+
+#include "microphysics/eos_kharma/eos_kharma.hpp"
+#include "microphysics/opac_kharma/opac_kharma.hpp"
 
 std::shared_ptr<KHARMAPackage> KHARMA::InitializeGlobals(
     ParameterInput* pin, std::shared_ptr<Packages_t>& packages)
@@ -78,6 +87,11 @@ std::shared_ptr<KHARMAPackage> KHARMA::InitializeGlobals(
     // Also sets max step increase, so we initialize it to max value to allow any first
     // step size
     params.Add("dt_last", std::numeric_limits<double>::max(), true);
+    // Time the current sub-step's *output* state represents, i.e. what time-dependent
+    // boundaries should be set to.  Written by the driver at the top of each stage, see
+    // KHARMADriver::MakeTaskCollection.  Use this rather than reconstructing it from
+    // "time" and "dt_last". Also, note that dt_last is DBL_MAX before the loop starts.
+    params.Add("time_substep_end", 0.0, true);
     // Whether we are computing initial outputs/timestep, or versions in the execution
     // loop
     params.Add("in_loop", false, true);
@@ -344,6 +358,21 @@ void KHARMA::FixParameters(ParameterInput* pin, bool is_parthenon_restart)
         }
     }
 
+    // Required configuration for the rest of the code, from M1
+    if (pin->GetOrAddBoolean("radM1", "on", false)) {
+        // Require units package
+        pin->SetBoolean("units", "on", true);
+        // Force corrected connection coeffs, they are necessary for M1
+        // pin->SetBoolean("coordinates", "correct_connections", true);
+        // Mark GRMHD variables as implicitly evolved if RadM1 interaction is enabled
+        // (but note we're not using the Implicit package to do it!)
+        // if (pin->GetOrAddBoolean("RadM1", "implicit", true)) {
+        //     pin->SetBoolean("GRMHD", "implicit", true);
+        // }
+        // Force light crossing timestep
+        // pin->SetBoolean("parthenon/time", "use_dt_light", true);
+    }
+
     EndFlag();
 }
 
@@ -386,9 +415,27 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
     // Driver package is the foundation
     auto t_driver = tl.AddTask(
         t_none, KHARMA::AddPackage, packages, KHARMADriver::Initialize, pin.get());
+
+    // Enable eos package
+    auto t_eos = tl.AddTask(
+        t_driver, KHARMA::AddPackage, packages, Microphysics::EOS::Initialize, pin.get());
+    // Ye/composition tracking, needed by tabulated EOS (stellarcollapse)
+    bool ye_on = pin->GetOrAddBoolean("fluid", "Ye", false);
+    auto t_ye = t_eos;
+    if (ye_on) {
+        t_ye = tl.AddTask(t_eos, KHARMA::AddPackage, packages, Ye::Initialize, pin.get());
+    }
+    // Cached temperature / EOS root-find guess. Only useful with a tabulated EOS,
+    // so it's tied to the same flag as Ye
+    auto t_temperature = t_eos;
+    if (ye_on) {
+        t_temperature = tl.AddTask(
+            t_eos, KHARMA::AddPackage, packages, Temperature::Initialize, pin.get());
+    }
+
     // GRMHD needs globals to mark packages
     auto t_grmhd = tl.AddTask(
-        t_globals | t_driver, KHARMA::AddPackage, packages, GRMHD::Initialize, pin.get());
+        t_globals | t_eos, KHARMA::AddPackage, packages, GRMHD::Initialize, pin.get());
     // Only load the inverter if GRMHD/EMHD isn't being evolved implicitly
     // Unless we want to use the explicitly-evolved ideal MHD variables as a guess for the
     // solver Or we want first-order flux corrections, which rely on a UtoP guess Note we
@@ -414,8 +461,7 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
     bool have_b_transport = false;
     bool face_centered_b = false;
     std::string b_field_solver = pin->GetOrAddString("b_field", "solver", "face_ct");
-    if (b_field_solver == "none" || b_field_solver == "cleanup" ||
-        b_field_solver == "b_cleanup") {
+    if (b_field_solver == "none" || b_field_solver == "cleanup") {
         // Don't add a B field here
     } else if (b_field_solver == "constrained_transport" || b_field_solver == "face_ct") {
         t_b_field = tl.AddTask(
@@ -440,7 +486,7 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
     // Almost always loaded explicitly in addition to another transport, just for cleaning
     // at simulation start Enable b_cleanup package if we want it explicitly
     bool b_cleanup_package =
-        pin->GetOrAddBoolean("b_cleanup", "on", (b_field_solver == "b_cleanup"));
+        pin->GetOrAddBoolean("b_cleanup", "on", (b_field_solver == "cleanup"));
     // OR if we need it for resizing a dump
     bool is_resize = pin->GetString("parthenon/job", "problem_id") == "resize_restart" &&
                      !pin->GetOrAddBoolean("resize_restart", "skip_b_cleanup", false);
@@ -452,21 +498,45 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
     // Load GMG cleanup only if we're using face-centered fields, that's all it supports
     if (use_b_cleanup) {
         if (face_centered_b) {
-            t_b_cleanup = tl.AddTask(t_grmhd, KHARMA::AddPackage, packages,
-                B_CleanupGMG::Initialize, pin.get());
-        } else {
             t_b_cleanup = tl.AddTask(
                 t_grmhd, KHARMA::AddPackage, packages, B_Cleanup::Initialize, pin.get());
-            // If we're the transport, assign us to the transport setup task too
+        } else {
+            throw std::runtime_error(
+                "Cannot clean B field for a simulation using Flux-CT!");
+            // If we're the transport, mark us as such for the dependent tasks/packages
+            // later
             if (!have_b_transport) t_b_field = t_b_cleanup;
         }
     }
 
+    // Sometimes things we otherwise want by default aren't compatible with the simple
+    // driver This lets us silently disable them if we need.
+    bool simple_driver = pin->DoesParameterExist("driver", "type") &&
+                         pin->GetString("driver", "type") == "simple";
+
     // Optional standalone packages
+    // Entropy tracking (Ktot, & optionally idealized/advected Ktot_adv) is independent of
+    // any package that might use it, but Electrons relies on it to get the fluid's
+    // current & purely-advected entropy, so it's forced on whenever Electrons is.
+    const bool is_ideal = pin->GetOrAddString("eos", "type", "IdealGas") == "IdealGas";
+    bool entropy_on = pin->GetOrAddBoolean("entropy", "on", !simple_driver && is_ideal);
+    if (pin->GetOrAddBoolean("electrons", "on", false)) {
+        PARTHENON_REQUIRE(is_ideal, "Electron heating requires the IdealGas EOS!");
+        entropy_on = true;
+        pin->SetBoolean("entropy", "on", true);
+    }
+    PARTHENON_REQUIRE(
+        !entropy_on || is_ideal, "Entropy tracking requires the IdealGas EOS!");
+
+    auto t_entropy = t_grmhd;
+    if (entropy_on) {
+        t_entropy = tl.AddTask(
+            t_grmhd, KHARMA::AddPackage, packages, Entropy::Initialize, pin.get());
+    }
     // Electrons are boring but not impossible without a B field (TODO add a test?)
     if (pin->GetOrAddBoolean("electrons", "on", false)) {
         auto t_electrons = tl.AddTask(
-            t_grmhd, KHARMA::AddPackage, packages, Electrons::Initialize, pin.get());
+            t_entropy, KHARMA::AddPackage, packages, Electrons::Initialize, pin.get());
     }
     if (pin->GetBoolean("emhd", "on")) { // Set above when deciding to load inverter
         auto t_emhd = tl.AddTask(
@@ -476,9 +546,27 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
         auto t_wind = tl.AddTask(
             t_grmhd, KHARMA::AddPackage, packages, Wind::Initialize, pin.get());
     }
+
+    // Enable radiation package. Out of the package modification units.
+    if (pin->GetOrAddBoolean("units", "on", false)) {
+        auto t_units = tl.AddTask(
+            t_grmhd, KHARMA::AddPackage, packages, Units::Initialize, pin.get());
+    }
+
+    // Enable radiation package. Out of the package modification RADM1.
+    bool use_radm1 = pin->GetOrAddBoolean("radM1", "on", false);
+
+    if (use_radm1) {
+        auto t_radM1 = tl.AddTask(
+            t_grmhd, KHARMA::AddPackage, packages, RadM1::Initialize, pin.get());
+        auto t_opac = tl.AddTask(t_radM1, KHARMA::AddPackage, packages,
+            Microphysics::Opacity::Initialize, pin.get());
+    }
     // Enable calculating jcon iff it is in any list of outputs (and there's even B to
     // calculate it). Since it is never required to restart, this is the only time we'd
-    // write (hence, need) it
+    // write (hence, need) it Enable calculating jcon iff it is in any list of outputs
+    // (and there's even B to calculate it). Since it is never required to restart, this
+    // is the only time we'd write (hence, need) it
     if (FieldIsOutput(pin.get(), "jcon") && have_b_transport) {
         auto t_current = tl.AddTask(
             t_b_field, KHARMA::AddPackage, packages, Current::Initialize, pin.get());
@@ -486,6 +574,17 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
 
     // Execute the whole collection (just in case we do something fancy?)
     tc.Execute(); // TODO check return if Exe ever returns errors
+
+    // Load the implicit package last of the physics, if there are *any* variables that
+    // need implicit evolution. This lets us just count by flag, rather than checking all
+    // the possible parameters that would trigger this
+    // TODO(CEP) add to task list?
+    int n_implicit =
+        StateDescriptor::CreateResolvedStateDescriptor(*packages)->GetPackDimension(
+            Metadata::GetUserFlag("Implicit"));
+    if (n_implicit > 0 && !use_radm1) {
+        KHARMA::AddPackage(packages, Implicit::Initialize, pin.get());
+    }
 
     // There are some packages which must be loaded after all physics
     // Easier to load them separately than list dependencies
@@ -509,16 +608,6 @@ Packages_t KHARMA::ProcessPackages(std::unique_ptr<ParameterInput>& pin)
     // And any dirichlet/constant boundaries
     // TODO avoid init if Parthenon will be handling all boundaries?
     KHARMA::AddPackage(packages, KBoundaries::Initialize, pin.get());
-
-    // Load the implicit package last, if there are *any* variables that need implicit
-    // evolution This lets us just count by flag, rather than checking all the possible
-    // parameters that would trigger this
-    int n_implicit =
-        StateDescriptor::CreateResolvedStateDescriptor(*packages)->GetPackDimension(
-            Metadata::GetUserFlag("Implicit"));
-    if (n_implicit > 0) {
-        KHARMA::AddPackage(packages, Implicit::Initialize, pin.get());
-    }
 
 #if DEBUG
     // Carry the ParameterInput with us, for generating outputs whenever we want

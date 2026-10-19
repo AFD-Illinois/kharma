@@ -36,6 +36,7 @@
 
 #include "boundaries.hpp"
 #include "electrons.hpp"
+#include "entropy.hpp"
 #include "floors.hpp"
 #include "flux.hpp"
 #include "gr_coordinates.hpp"
@@ -46,6 +47,7 @@
 
 // Problem initialization headers
 #include "bondi.hpp"
+#include "entropy_wave.hpp"
 #include "explosion.hpp"
 #include "fm_torus.hpp"
 #include "gizmo.hpp"
@@ -60,6 +62,15 @@
 #include "emhd/conducting_atmosphere.hpp"
 #include "emhd/emhdmodes.hpp"
 #include "emhd/emhdshock.hpp"
+
+// Out of the Package RadM1 modification
+// RadM1 problem headers
+#include "radm1/beam_of_light.hpp"
+#include "radm1/bondi_rad.hpp"
+#include "radm1/rad_pulse.hpp"
+#include "radm1/radmhdmodes.hpp"
+#include "radm1/thermal_equilibrium.hpp"
+
 // Electron problem headers
 #include "elec/driven_turbulence.hpp"
 #include "elec/hubble.hpp"
@@ -90,6 +101,8 @@ void KHARMA::ProblemGenerator(MeshBlock* pmb, ParameterInput* pin)
         status = InitializeOrszagTang(rc, pin);
     } else if (prob == "explosion") {
         status = InitializeExplosion(rc, pin);
+    } else if (prob == "entropy_wave") {
+        status = InitializeEntropyWave(rc, pin);
     } else if (prob == "kelvin_helmholtz") {
         status = InitializeKelvinHelmholtz(rc, pin);
     } else if (prob == "shock") {
@@ -113,6 +126,17 @@ void KHARMA::ProblemGenerator(MeshBlock* pmb, ParameterInput* pin)
         status = InitializeEMHDShock(rc, pin);
     } else if (prob == "conducting_atmosphere") {
         status = InitializeAtmosphere(rc, pin);
+        // RadM1
+    } else if (prob == "rad_pulse") {
+        status = InitializeRadiationPulse(rc, pin);
+    } else if (prob == "bondi_rad") {
+        status = InitializeRadiativeBondi(rc, pin);
+    } else if (prob == "beam_of_light") {
+        status = InitializeBeamOfLight(rc, pin);
+    } else if (prob == "thermal_equilibrium") {
+        status = InitializeThermalEquilibrium(rc, pin);
+    } else if (prob == "radmhdmodes") {
+        status = InitializeRadMHDModes(rc, pin);
         // Everything
     } else if (prob == "torus") {
         status = InitializeFMTorus(rc, pin);
@@ -133,11 +157,16 @@ void KHARMA::ProblemGenerator(MeshBlock* pmb, ParameterInput* pin)
     }
 
     // If we're not restarting, do any grooming of the initial conditions
-    if ((prob != "resize_restart")) {
+    if ((prob != "resize_restart" && prob != "resize_restart_kharma")) {
         // Perturb the internal energy a bit to encourage accretion
         // Note this defaults to zero & is basically turned on only for torii
         if (pin->GetOrAddReal("perturbation", "u_jitter", 0.0) > 0.0) {
             PerturbU(rc, pin);
+        }
+
+        // Initialize tracked total (& idealized) entropy to defaults if enabled
+        if (pmb->packages.AllPackages().count("Entropy")) {
+            Entropy::InitEntropy(rc.get(), pin);
         }
 
         // Initialize electron entropies to defaults if enabled

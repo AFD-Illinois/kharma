@@ -1,4 +1,8 @@
 #!/bin/bash
+set -euo pipefail
+
+ZSH_VERSION=${ZSH_VERSION:-}
+[ -n "$ZSH_VERSION" ] && setopt SH_WORD_SPLIT
 
 # Make script for KHARMA
 # Used to set sensible default flags and call cmake/make
@@ -29,6 +33,20 @@
 # Set conservatively as nvcc/nvc++ uses a *lot* of memory
 # Set in environment or override in machine file
 NPROC=${NPROC:-8}
+# Set variables we expect to use to satisfy bash
+EXTRA_FLAGS=${EXTRA_FLAGS:-}
+CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH:-}
+CFLAGS=${CFLAGS:-}
+CXXFLAGS=${CXXFLAGS:-}
+CPLUS_INCLUDE_PATH=${CPLUS_INCLUDE_PATH:-}
+PREFIX_PATH=${PREFIX_PATH:-}
+C_NATIVE=${C_NATIVE:-}
+CXX_NATIVE=${CXX_NATIVE:-}
+HOST_ARCH=${HOST_ARCH:-NATIVE}
+LDFLAGS=${LDFLAGS:-}
+OMP_FLAG=${OMP_FLAG:-}
+# No default DEVICE_ARCH, only set if defined
+MPI_EXTRA_ARGS=${MPI_EXTRA_ARGS:-}
 
 ### Load basic stuff ###
 HOST=$(hostname -f)
@@ -58,7 +76,7 @@ fi
 
 # Default to compiling for the host architecture
 # Always better to specify, though, for cross-compile/older Kokkos support
-EXTRA_FLAGS="-DKokkos_ARCH_${HOST_ARCH:-NATIVE}=ON $EXTRA_FLAGS"
+EXTRA_FLAGS="-DKokkos_ARCH_${HOST_ARCH}=ON $EXTRA_FLAGS"
 
 # Kokkos does *not* support compiling for multiple devices!
 # But if they ever do, you can separate a list of DEVICE_ARCH
@@ -78,9 +96,11 @@ fi
 if option "noimplicit"; then
   EXTRA_FLAGS="-DKHARMA_DISABLE_IMPLICIT=1 $EXTRA_FLAGS"
 fi
-# Always disable old resizing, it's broken w/new tasking
-#if option "nocleanup"; then
-EXTRA_FLAGS="-DKHARMA_DISABLE_CLEANUP=1 $EXTRA_FLAGS"
+if option "nocleanup"; then
+  EXTRA_FLAGS="-DKHARMA_DISABLE_CLEANUP=1 $EXTRA_FLAGS"
+fi
+#if option "norad"; then
+EXTRA_FLAGS="-DKHARMA_DISABLE_RADM1=1 $EXTRA_FLAGS"
 #fi
 if option "split_implicit"; then
   EXTRA_FLAGS="-DKHARMA_SPLIT_IMPLICIT_SOLVE=1 $EXTRA_FLAGS"
@@ -90,7 +110,8 @@ if option "test"; then
 fi
 
 ### Enivoronment Prep ###
-if [[ "$(which python3 2>/dev/null)" == *"conda"* ]]; then
+pythonbin="$(which python3 2>/dev/null)"
+if [[ "$pythonbin" == *"conda"* || "$pythonbin" == *"mamba"* ]]; then
   echo "make.sh note:"
   echo "It looks like you have Anaconda loaded."
   echo "This is usually okay, but double-check the line 'Found MPI_CXX:' below!"
@@ -200,6 +221,9 @@ elif option "cuda"; then
     export CXXFLAGS="-dryrun $CXXFLAGS"
     echo "Dry-running the nvcc wrapper with $CXXFLAGS"
   fi
+  if [[ "$CXX_NATIVE" == "nvc++" ]]; then
+    export CXXFLAGS="--diag_suppress code_is_unreachable $CXXFLAGS"
+  fi
   export NVCC_WRAPPER_DEFAULT_COMPILER="$CXX_NATIVE"
   EXTRA_FLAGS="$EXTRA_FLAGS -DKokkos_ENABLE_CUDA_CONSTEXPR=ON"
   OUTER_LAYOUT="MANUAL1D_LOOP"
@@ -246,7 +270,8 @@ if option "hdf5" && option "clean" && ! option "dryrun"; then
   H5VER=1.14.2
   H5VERU=1_14_2
 
-  cd external
+  # Download, blow away existing dir on option
+  cd $SOURCE_DIR/external
   # Allow complete reconfigure (for switching compilers, takes longer)
   if option "cleanhdf5"; then
     rm -rf hdf5-${H5VER}/
@@ -259,9 +284,11 @@ if option "hdf5" && option "clean" && ! option "dryrun"; then
   if [ ! -d hdf5-${H5VER}/ ]; then
     tar xf hdf5-${H5VER}.tar.gz
   fi
-  cd hdf5-${H5VER}/
+
+  # Configure and compile
+  cd $SOURCE_DIR/external/hdf5-${H5VER}/
   # TODO better ensure we're using C_NATIVE underneath.  e.g. MPI_CFLAGS with -cc
-  if  option "nompi"; then
+  if option "nompi"; then
     HDF_CC=$C_NATIVE
     HDF_EXTRA=""
   else
@@ -281,8 +308,8 @@ if option "hdf5" && option "clean" && ! option "dryrun"; then
   echo Configuring HDF5...
 
   export CFLAGS="-fPIC $CFLAGS"
-  CC=$HDF_CC sh configure -C $HDF_EXTRA --prefix=$SOURCE_DIR/external/hdf5 --enable-build-mode=production \
-  --disable-dependency-tracking --disable-tests --disable-tools --disable-shared --disable-deprecated-symbols > build-hdf5.log
+  CC=$HDF_CC sh ./configure -C $HDF_EXTRA --prefix=$SOURCE_DIR/external/hdf5 --enable-build-mode=production \
+  --disable-dependency-tracking --disable-tests --disable-tools --disable-deprecated-symbols > build-hdf5.log
   sleep 1
 
   echo "Building HDF5 (probably 30s-2min)"
@@ -294,7 +321,7 @@ if option "hdf5" && option "clean" && ! option "dryrun"; then
   fi
   make install >> build-hdf5.log 2>&1
   make clean >> build-hdf5.log 2>&1
-  cd ../..
+  cd $SOURCE_DIR
 
   echo Built HDF5 version $H5VER
 fi
@@ -302,7 +329,7 @@ fi
 # Compile against our hdf5 if specified
 if option "hdf5"; then
   PREFIX_PATH="$SOURCE_DIR/external/hdf5;$PREFIX_PATH"
-  EXTRA_FLAGS="$EXTRA_FLAGS -DHDF5_USE_STATIC_LIBRARIES=ON"
+  #EXTRA_FLAGS="$EXTRA_FLAGS -DHDF5_USE_STATIC_LIBRARIES=ON"
 fi
 
 ### Build KHARMA ###
@@ -319,10 +346,10 @@ if option "clean"; then
   # Patch parthenon to use KHARMA's coordinates, anything incidental
   cd external/parthenon
   if [[ $(( $(git --version | cut -d '.' -f 2) > 35 )) == "1" ]]; then
-    git apply --quiet ../patches/parthenon-*.patch
+    git apply --quiet ../patches/parthenon-*.patch || true
   else
     echo "make.sh note: You may see errors applying patches below. These are normal."
-    git apply ../patches/parthenon-*.patch
+    git apply ../patches/parthenon-*.patch || true
   fi
   cd -
 
@@ -348,6 +375,9 @@ if option "clean"; then
     set -x
   fi
 
+  # Currently we ignore output: cmake can error on "prefixed on source dir"
+  # if we build hdf5 for ourselves, but make still works fine.
+  # If it was a real error, make will yell anyway
   cmake ..\
     -DCMAKE_C_COMPILER="$CC" \
     -DCMAKE_CXX_COMPILER="$CXX" \
@@ -359,7 +389,7 @@ if option "clean"; then
     -DKokkos_ENABLE_CUDA=$ENABLE_CUDA \
     -DKokkos_ENABLE_SYCL=$ENABLE_SYCL \
     -DKokkos_ENABLE_HIP=$ENABLE_HIP \
-    $EXTRA_FLAGS
+    $EXTRA_FLAGS || true
 
   # Stop printing
   if option "dryrun"; then

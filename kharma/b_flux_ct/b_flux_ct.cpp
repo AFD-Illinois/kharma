@@ -116,6 +116,7 @@ std::shared_ptr<KHARMAPackage> Initialize(
     // Flags for B fields
     // We always mark conserved B to be sync'd for consistency, since it's strictly
     // required for B_CT/AMR
+    // TODO(CEP) phrase these in terms of driver's cons_flags/prims_flags
     std::vector<MetadataFlag> flags_prim = {Metadata::Real, Metadata::Derived,
         Metadata::GetUserFlag("Primitive"), Metadata::Cell, Metadata::GetUserFlag("MHD"),
         areWeImplicit, Metadata::Vector};
@@ -234,6 +235,8 @@ TaskStatus BlockUtoP(MeshBlockData<Real>* rc, IndexDomain domain, bool coarse)
     auto B_U = rc->PackVariables(std::vector<std::string>{"cons.B"});
     auto B_P = rc->PackVariables(std::vector<std::string>{"prims.B"});
 
+    if (B_U.GetDim(4) == 0 || B_P.GetDim(4) == 0) return TaskStatus::complete;
+
     const auto& G = pmb->coords;
 
     auto bounds = coarse ? pmb->c_cellbounds : pmb->cellbounds;
@@ -334,7 +337,7 @@ void FixFlux(MeshData<Real>* md)
     }
     if (params.Get<bool>("fix_flux_outer_x2")) {
         if (params.Get<bool>("use_old_flux_fix")) {
-            ZeroBoundaryFlux(md, IndexDomain::inner_x2, false);
+            ZeroBoundaryFlux(md, IndexDomain::outer_x2, false);
         } else {
             Bflux0(md, IndexDomain::outer_x2, false);
         }
