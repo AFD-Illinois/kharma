@@ -118,12 +118,6 @@ inline TaskStatus GetFlux(MeshData<Real>* md)
     }
     const Floors::Prescription& floors = floors_temp;
 
-    // Check whether we're using constraint-damping
-    // (which requires that a variable be propagated at ctop_max)
-    const bool use_b_cd = packages.AllPackages().count("B_CD");
-    const double ctop_max =
-        (use_b_cd) ? packages.Get("B_CD")->Param<Real>("ctop_max_last") : 0.0;
-
     const bool use_ismr = packages.AllPackages().count("ISMR");
     const int ng_plus_nlevels =
         use_ismr ? packages.Get("ISMR")->Param<int>("nlevels") + Globals::nghost : 0;
