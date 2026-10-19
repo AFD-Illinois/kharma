@@ -526,7 +526,6 @@ TaskStatus RadM1::CalcKappa(MeshData<Real>* md)
     return TaskStatus::complete;
 }
 
-
 void RadM1::AddSourceImplicitly(
     MeshData<Real>* md_sub_init, MeshData<Real>* md_flux_src, IndexDomain domain)
 {
@@ -605,7 +604,6 @@ void RadM1::AddSourceImplicitly(
         const IndexRange jb = bounds.GetBoundsJ(IndexDomain::interior);
         const IndexRange kb = bounds.GetBoundsK(IndexDomain::interior);
 
-
         // Stage-2 history term only (skipped or failed cells)
         auto apply_history = KOKKOS_LAMBDA(const int k, const int j, const int i)
         {
@@ -669,10 +667,8 @@ void RadM1::AddSourceImplicitly(
 
         // Builds the star state in U_init/P_init and saves the originals. Returns
         // star_fixed.
-        auto build_star =
-            KOKKOS_LAMBDA(const int k, const int j, const int i, Real U_save[9],
-                Real P_save[9], Real B_save[3], Real PB_save[3])
-                -> bool
+        auto build_star = KOKKOS_LAMBDA(const int k, const int j, const int i,
+            Real U_save[9], Real P_save[9], Real B_save[3], Real PB_save[3]) -> bool
         {
             const int iug[4] = {m_u.UU, m_u.U1, m_u.U2, m_u.U3};
             const int iur[4] = {m_u.UU_RAD, m_u.U1_RAD, m_u.U2_RAD, m_u.U3_RAD};
@@ -819,7 +815,7 @@ void RadM1::AddSourceImplicitly(
                 for (int v = 0; v < NVEC; v++)
                     P_init_substep(m_p.U1 + v, k, j, i) = uvec_f[v];
             }
-            
+
             if (rad_status_star == StatusRadiationInversion::success) {
                 P_init_substep(m_p.UU_RAD, k, j, i) = Prad_star[0];
                 P_init_substep(m_p.U1_RAD, k, j, i) = Prad_star[1];
@@ -905,10 +901,10 @@ void RadM1::AddSourceImplicitly(
 
                 Real dS[5] = {0., 0., 0., 0., 0.};
                 int nit = 0;
-                const int rflagl = solve_4d_pmhd(G, P_init_substep, m_p, m_u, k, j, i,
-                    dt_impl, eos, src_rootfind_eps, src_rootfind_tol,
-                    src_rootfind_maxiter, rad_opac, pflag, rinvflag, U_entry, dS, &nit,
-                    star_fixed);
+                const int rflagl =
+                    solve_4d_pmhd(G, P_init_substep, m_p, m_u, k, j, i, dt_impl, eos,
+                        src_rootfind_eps, src_rootfind_tol, src_rootfind_maxiter,
+                        rad_opac, pflag, rinvflag, U_entry, dS, &nit, star_fixed);
                 solver_count(0, k, j, i) = nit;
 
                 if (rflagl == static_cast<int>(SIS::success)) {
@@ -924,14 +920,15 @@ void RadM1::AddSourceImplicitly(
         // fallbacks (P_rad Newton, then fluid-frame solver), then failure handling
         // List the cells K2 left pending, so K3's warps only hold fallback cells
         Kokkos::View<int*> todo(
-            Kokkos::view_alloc(Kokkos::WithoutInitializing, "RadM1_fallback_cells"), ncells);
+            Kokkos::view_alloc(Kokkos::WithoutInitializing, "RadM1_fallback_cells"),
+            ncells);
         int nfall = 0;
-        Kokkos::parallel_scan("RadM1_Implicit_Compact",
-            Kokkos::RangePolicy<>(pmb->exec_space, 0, ncells),
-            KOKKOS_LAMBDA (const int idx, int& n, const bool final)
+        Kokkos::parallel_scan(
+            "RadM1_Implicit_Compact", Kokkos::RangePolicy<>(pmb->exec_space, 0, ncells),
+            KOKKOS_LAMBDA(const int idx, int& n, const bool final)
             {
                 const int k = kb.s + idx / (nj * ni), j = jb.s + (idx / ni) % nj,
-                        i = ib.s + idx % ni;
+                          i = ib.s + idx % ni;
                 const int flag = static_cast<int>(rimplflag(0, k, j, i));
                 if (flag == static_cast<int>(SIS::pending_prad) ||
                     flag == static_cast<int>(SIS::pending_prad_starfix)) {
@@ -948,52 +945,52 @@ void RadM1::AddSourceImplicitly(
             {
                 const int idx = todo(t);
                 const int k = kb.s + idx / (nj * ni), j = jb.s + (idx / ni) % nj,
-                        i = ib.s + idx % ni;
+                          i = ib.s + idx % ni;
                 const int flag = static_cast<int>(rimplflag(0, k, j, i));
-            const bool star_fixed =
-                (flag == static_cast<int>(SIS::pending_prad_starfix));
-            Real U_save[9], P_save[9], B_save[3], PB_save[3];
-            build_star(k, j, i, U_save, P_save, B_save, PB_save);
-            Real U_entry[8], P_entry[9];
-            get_entry(k, j, i, U_entry, P_entry);
+                const bool star_fixed =
+                    (flag == static_cast<int>(SIS::pending_prad_starfix));
+                Real U_save[9], P_save[9], B_save[3], PB_save[3];
+                build_star(k, j, i, U_save, P_save, B_save, PB_save);
+                Real U_entry[8], P_entry[9];
+                get_entry(k, j, i, U_entry, P_entry);
 
-            Real dS[5] = {0., 0., 0., 0., 0.};
-            int nit = 0;
-            int rflagl = solve_4d_prad(G, U_init_substep, P_init_substep, m_p, m_u, k,
-                j, i, dt_impl, eos, src_rootfind_eps, src_rootfind_tol,
-                src_rootfind_maxiter, rad_opac, pflag, rinvflag, U_entry, dS, &nit);
-            solver_count(1, k, j, i) = nit;
+                Real dS[5] = {0., 0., 0., 0., 0.};
+                int nit = 0;
+                int rflagl = solve_4d_prad(G, U_init_substep, P_init_substep, m_p, m_u, k,
+                    j, i, dt_impl, eos, src_rootfind_eps, src_rootfind_tol,
+                    src_rootfind_maxiter, rad_opac, pflag, rinvflag, U_entry, dS, &nit);
+                solver_count(1, k, j, i) = nit;
 
-            // Prad alters the P_init. So we gotta revert it back.
-            U_init_substep(m_u.UU, k, j, i) = U_entry[0];
-            U_init_substep(m_u.U1, k, j, i) = U_entry[1];
-            U_init_substep(m_u.U2, k, j, i) = U_entry[2];
-            U_init_substep(m_u.U3, k, j, i) = U_entry[3];
-            P_init_substep(m_p.RHO, k, j, i) = P_entry[0];
-            P_init_substep(m_p.UU, k, j, i) = P_entry[1];
-            P_init_substep(m_p.U1, k, j, i) = P_entry[2];
-            P_init_substep(m_p.U2, k, j, i) = P_entry[3];
-            P_init_substep(m_p.U3, k, j, i) = P_entry[4];
+                // Prad alters the P_init. So we gotta revert it back.
+                U_init_substep(m_u.UU, k, j, i) = U_entry[0];
+                U_init_substep(m_u.U1, k, j, i) = U_entry[1];
+                U_init_substep(m_u.U2, k, j, i) = U_entry[2];
+                U_init_substep(m_u.U3, k, j, i) = U_entry[3];
+                P_init_substep(m_p.RHO, k, j, i) = P_entry[0];
+                P_init_substep(m_p.UU, k, j, i) = P_entry[1];
+                P_init_substep(m_p.U1, k, j, i) = P_entry[2];
+                P_init_substep(m_p.U2, k, j, i) = P_entry[3];
+                P_init_substep(m_p.U3, k, j, i) = P_entry[4];
 
-            int ok_status = static_cast<int>(
-                star_fixed ? SIS::starfix_success : SIS::pradfallback_success);
-            if (rflagl != static_cast<int>(SIS::success)) {
-                nit = 0;
-                rflagl = solve_4d_pmhd_ff(G, P_init_substep, m_p, k, j, i, dt_impl,
-                    eos, src_rootfind_tol, src_rootfind_maxiter, rad_opac, U_entry,
-                    dS, &nit);
-                solver_count(2, k, j, i) = nit;
-                ok_status = static_cast<int>(SIS::ufluid_success);
-            }
+                int ok_status = static_cast<int>(
+                    star_fixed ? SIS::starfix_success : SIS::pradfallback_success);
+                if (rflagl != static_cast<int>(SIS::success)) {
+                    nit = 0;
+                    rflagl = solve_4d_pmhd_ff(G, P_init_substep, m_p, k, j, i, dt_impl,
+                        eos, src_rootfind_tol, src_rootfind_maxiter, rad_opac, U_entry,
+                        dS, &nit);
+                    solver_count(2, k, j, i) = nit;
+                    ok_status = static_cast<int>(SIS::ufluid_success);
+                }
 
-            if (rflagl == static_cast<int>(SIS::success)) {
-                apply_source(k, j, i, dS, ok_status);
-            } else {
-                apply_history(k, j, i);
-                rimplflag(0, k, j, i) = static_cast<int>(SIS::failure);
-            }
-            restore(k, j, i, U_save, P_save, B_save, PB_save);
-        });
+                if (rflagl == static_cast<int>(SIS::success)) {
+                    apply_source(k, j, i, dS, ok_status);
+                } else {
+                    apply_history(k, j, i);
+                    rimplflag(0, k, j, i) = static_cast<int>(SIS::failure);
+                }
+                restore(k, j, i, U_save, P_save, B_save, PB_save);
+            });
     }
 }
 

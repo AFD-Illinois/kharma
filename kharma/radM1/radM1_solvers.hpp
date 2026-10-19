@@ -608,8 +608,9 @@ KOKKOS_INLINE_FUNCTION int solve_4d_pmhd(const GRCoordinates& G,
         P_init(m_p.U1, k, j, i), P_init(m_p.U2, k, j, i), P_init(m_p.U3, k, j, i)};
     const Real D_rho = rho_init / rho_from_D(G, 1.0, uvec, k, j, i);
     const Real gdet = G.gdet(Loci::center, j, i);
-    // Radiation beamed past the Lorentz cap (not negative energy) is valid, so we should allow the
-    // limited branch, or a cell that starts on it can't take a single Newton step
+    // Radiation beamed past the Lorentz cap (not negative energy) is valid, so we should
+    // allow the limited branch, or a cell that starts on it can't take a single Newton
+    // step
     const bool beam_ok = static_cast<int>(rinvflag(0, k, j, i)) ==
                          static_cast<int>(StatusRadiationInversion::maximum_gamma);
 
@@ -724,9 +725,9 @@ KOKKOS_INLINE_FUNCTION int solve_4d_pmhd(const GRCoordinates& G,
                 compute_covariant_fourforce(G, P_mhd_p, P_rad_p, rho_p, B_P, eos,
                     rad_opac, k, j, i, dS_p, nullptr, nullptr, kap_guess, true);
                 for (int n = 0; n < 4; n++)
-                    jac[n][m] = (U_mhd_p[n] - U_mhd_0[n] + dt * gdet * dS_p[n] -
-                                    resid[n]) /
-                                (P_mhd_p[m] - P_mhd_guess[m]);
+                    jac[n][m] =
+                        (U_mhd_p[n] - U_mhd_0[n] + dt * gdet * dS_p[n] - resid[n]) /
+                        (P_mhd_p[m] - P_mhd_guess[m]);
             }
             if (!ok) bad_guess = true;
         }
@@ -831,7 +832,8 @@ KOKKOS_INLINE_FUNCTION int solve_4d_pmhd(const GRCoordinates& G,
 
     // U_rad of the last iterate, from the conservation law
     Real U_rad_guess[4];
-    for (int n = 0; n < 4; n++) U_rad_guess[n] = U_rad_0[n] - (U_mhd_guess[n] - U_mhd_0[n]);
+    for (int n = 0; n < 4; n++)
+        U_rad_guess[n] = U_rad_0[n] - (U_mhd_guess[n] - U_mhd_0[n]);
 
     if (err > tol_eff || !m::isfinite(U_rad_guess[0]) || !m::isfinite(U_rad_guess[1]) ||
         !m::isfinite(U_rad_guess[2]) || !m::isfinite(U_rad_guess[3]) || bad_guess) {
@@ -1112,8 +1114,6 @@ KOKKOS_INLINE_FUNCTION int prad_residual_at(const GRCoordinates& G,
     return status;
 }
 
-
-
 // Residual at a Jacobian support point of solve_4d_prad; false if the gas inversion fails
 KOKKOS_INLINE_FUNCTION bool prad_fd_point(const GRCoordinates& G,
     const VariablePack<Real>& U_init, const VariablePack<Real>& P_init, const VarMap m_p,
@@ -1130,8 +1130,7 @@ KOKKOS_INLINE_FUNCTION bool prad_fd_point(const GRCoordinates& G,
     U_init(m_u.U2, k, j, i) = U_mhd_0[2] - (U_rad[2] - U_rad_0[2]);
     U_init(m_u.U3, k, j, i) = U_mhd_0[3] - (U_rad[3] - U_rad_0[3]);
     if (Inverter::u_to_p<Inverter::Type::kastaun>(G, U_init, m_u, eos, k, j, i, P_init,
-            m_p, Loci::center, 25,
-            1e-12) != static_cast<int>(Inverter::Status::success))
+            m_p, Loci::center, 25, 1e-12) != static_cast<int>(Inverter::Status::success))
         return false;
     const Real P_mhd[4] = {P_init(m_p.UU, k, j, i), P_init(m_p.U1, k, j, i),
         P_init(m_p.U2, k, j, i), P_init(m_p.U3, k, j, i)};
@@ -1199,10 +1198,10 @@ KOKKOS_INLINE_FUNCTION int solve_4d_prad(const GRCoordinates& G,
             RadM1::calc_ucon_rad(G, P_rad_guess, j, i, ucon_rad_in);
             FourVectors D_gas;
             GRMHD::calc_4vecs(G, uvec_gas, B_P, k, j, i, Loci::center, D_gas);
-            const Real w_gas =
-                rho_init + P_mhd_guess[0] +
-                eos.PressureFromDensityInternalEnergy(rho_init, P_mhd_guess[0] / rho_init) +
-                dot(D_gas.bcon, D_gas.bcov);
+            const Real w_gas = rho_init + P_mhd_guess[0] +
+                               eos.PressureFromDensityInternalEnergy(
+                                   rho_init, P_mhd_guess[0] / rho_init) +
+                               dot(D_gas.bcon, D_gas.bcov);
             const Real lw_gas =
                 w_gas * GRMHD::lorentz_calc(G, uvec_gas, k, j, i, Loci::center);
             const Real lw_rad = (4.0 / 3.0) * P_rad_guess[0] *
@@ -1217,8 +1216,9 @@ KOKKOS_INLINE_FUNCTION int solve_4d_prad(const GRCoordinates& G,
             Real gamma_rel_com = 0.0;
             for (int mu = 0; mu < GR_DIM; mu++)
                 gamma_rel_com -= ucon_rad_in[mu] * ucov_com[mu];
-            const Real Erf_com = P_rad_guess[0] *
-                                 ((4.0 / 3.0) * gamma_rel_com * gamma_rel_com - 1.0 / 3.0);
+            const Real Erf_com =
+                P_rad_guess[0] *
+                ((4.0 / 3.0) * gamma_rel_com * gamma_rel_com - 1.0 / 3.0);
             const Real Erf_gas =
                 U_rad_0[0] / gdet / ((4.0 / 3.0) * ucon_gas[0] * ucov_gas[0] + 1.0 / 3.0);
             const Real candidates[3][4] = {
@@ -1233,8 +1233,8 @@ KOKKOS_INLINE_FUNCTION int solve_4d_prad(const GRCoordinates& G,
                 U_init(m_u.U2, k, j, i), U_init(m_u.U3, k, j, i)};
             for (int c = 0; c < 3; c++) {
                 if (!(candidates[c][0] > 0.0) || !m::isfinite(candidates[c][0])) continue;
-                Real P_rad_c[4] = {
-                    candidates[c][0], candidates[c][1], candidates[c][2], candidates[c][3]};
+                Real P_rad_c[4] = {candidates[c][0], candidates[c][1], candidates[c][2],
+                    candidates[c][3]};
                 Real U_rad_c[4], U_mhd_c[4];
                 RadM1::calc_tensor(G, P_rad_c, 0, j, i, U_rad_c);
                 for (int n = 0; n < 4; n++) {
@@ -1372,7 +1372,8 @@ KOKKOS_INLINE_FUNCTION int solve_4d_prad(const GRCoordinates& G,
                         continue;
                     }
                     for (int v = 0; v < 3; v++) v_last[v] = Pr[v + 1];
-                    if (m::abs(f_c) <= 1.e-3 * tol_eff * sc || s_hi - s_lo < 1.e-13) break;
+                    if (m::abs(f_c) <= 1.e-3 * tol_eff * sc || s_hi - s_lo < 1.e-13)
+                        break;
                     if (f_c * f_lo > 0.0) {
                         s_lo = s_c;
                         f_lo = f_c;
@@ -1390,8 +1391,9 @@ KOKKOS_INLINE_FUNCTION int solve_4d_prad(const GRCoordinates& G,
                 Real f_c;
                 Pr[0] = m::exp(s_c);
                 for (int v = 0; v < 3; v++) Pr[v + 1] = v_last[v];
-                const int st_f = prad_comoving_energy_residual(G, U_init, P_init, m_p, m_u,
-                    k, j, i, eos, rad_opac, B_P, dt, gdet, U_mhd_0, U_rad_0, Pr, f_c, sc);
+                const int st_f =
+                    prad_comoving_energy_residual(G, U_init, P_init, m_p, m_u, k, j, i,
+                        eos, rad_opac, B_P, dt, gdet, U_mhd_0, U_rad_0, Pr, f_c, sc);
                 if (st_f == ok) {
                     Real U_rad_c[4], U_mhd_c[4], dS_c[4], res_c[4], dtdS_c[4];
                     RadM1::calc_tensor(G, Pr, 0, j, i, U_rad_c);
@@ -1493,7 +1495,8 @@ KOKKOS_INLINE_FUNCTION int solve_4d_prad(const GRCoordinates& G,
                 const bool ok_p = prad_fd_point(G, U_init, P_init, m_p, m_u, k, j, i, eos,
                     rad_opac, B_P, dt, gdet, U_mhd_0, U_rad_0, P_rad_s, f_p);
                 if (ok_m && ok_p) {
-                    for (int n = 0; n < 4; n++) jac[n][m] = (f_p[n] - f_m[n]) / (p_p - p_m);
+                    for (int n = 0; n < 4; n++)
+                        jac[n][m] = (f_p[n] - f_m[n]) / (p_p - p_m);
                 } else if (ok_p) {
                     for (int n = 0; n < 4; n++)
                         jac[n][m] = (f_p[n] - resid[n]) / (p_p - P_rad_guess[m]);

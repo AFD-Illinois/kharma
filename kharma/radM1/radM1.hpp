@@ -68,7 +68,8 @@ enum class StatusImplicitStep {
     starfix_success,
     ufluid_success,
     // Internal to AddSourceImplicitly, never left in rimplflag after it
-    // Used to split it into the different kernels. I think this might be the best way to do i
+    // Used to split it into the different kernels. I think this might be the best way to
+    // do i
     pending_pmhd,
     pending_prad,
     pending_prad_starfix
