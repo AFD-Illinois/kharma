@@ -2,7 +2,6 @@
 #include "floors.hpp"
 
 #include "boundaries.hpp"
-#include "kharma_constants.hpp"
 #include "utils/constants.hpp"
 
 using pc = parthenon::constants::PhysicalConstants<parthenon::constants::CGS>;
@@ -20,7 +19,7 @@ void AddBondiRadParameters(ParameterInput* pin, Packages_t& packages)
         const Real M_BH_cgs = length_cgs * pc::c * pc::c / pc::g_newt;
         // Mdot_Edd = L_Edd/c^2 = 4*pi*G*M_BH*m_p/(sigma_T*c)  [g/s]
         const Real mdot_edd_cgs = 4.0 * M_PI * pc::g_newt * M_BH_cgs * pc::mp /
-                                  (Units::SIGMA_THOMSON_CGS * pc::c);
+                                  (Units::sigma_thomson_cgs * pc::c);
         mdot_edd =
             mdot_edd_cgs * unit_conv.GetTimeCodeToCGS() / unit_conv.GetMassCodeToCGS();
     }

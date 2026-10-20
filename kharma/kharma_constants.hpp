@@ -69,8 +69,6 @@ static constexpr Real DP_MIN_OVER_P = -2.99;
 // Ratio of the hard limits (emhd_limits.hpp) to the soft limits that shorten the
 // relaxation time (emhd.hpp)
 static constexpr Real LIMIT_MARGIN = 1.07;
-// Minimum relaxation time, as a fraction of the dynamical time
-static constexpr Real TAU_MIN_FRAC = 1.e-5;
 } // namespace EMHD
 
 namespace RadM1
@@ -81,16 +79,3 @@ static constexpr Real ERAD_FALLBACK = 1.e-300;
 // Inverter::KASTAUN_ERR_TOL
 static constexpr Real IMPLICIT_KASTAUN_ERR_TOL = 1.e-12;
 } // namespace RadM1
-
-namespace Units
-{
-// Physical constants in CGS
-static constexpr Real SIGMA_SB_CGS = 5.670374419e-5;
-static constexpr Real SIGMA_THOMSON_CGS = 6.6524587158e-25;
-// Electron and proton masses
-static constexpr Real ME_CGS = 9.1093826e-28;
-static constexpr Real MP_CGS = 1.67262171e-24;
-static constexpr Real MSUN_CGS = 1.989e33;
-// Electron scattering opacity of fully ionized hydrogen, cm^2/g
-static constexpr Real KAPPA_ES_CGS = 0.4;
-} // namespace Units

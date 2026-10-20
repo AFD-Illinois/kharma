@@ -40,8 +40,8 @@
 #include "gaussian.hpp"
 #include "grmhd.hpp"
 #include "kharma.hpp"
-#include "kharma_constants.hpp"
 #include "kharma_driver.hpp"
+#include "units.hpp"
 
 // phoebus includes
 #include "microphysics/eos_kharma/eos_kharma.hpp"
@@ -445,7 +445,7 @@ TaskStatus ApplyElectronHeating(
                 const Real beta_pow = m::pow(beta, mbeta);
                 const Real qrat = 0.92 * (c2 * c2 + beta_pow) / (c3 * c3 + beta_pow) *
                                   m::exp(-1. / beta) *
-                                  m::sqrt(Units::MP_CGS / Units::ME_CGS * Trat);
+                                  m::sqrt(Units::mp_cgs / Units::me_cgs * Trat);
                 const Real fel = 1. / (1. + qrat);
                 P_new(m_p.K_HOWES, k, j, i) =
                     clip(P_new(m_p.K_HOWES, k, j, i) + fel * diss, kel_min, kel_max);

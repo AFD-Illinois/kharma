@@ -235,7 +235,7 @@ KOKKOS_INLINE_FUNCTION void set_parameters(const GRCoordinates& G, const Real& r
             const Real q_max = emhd_params.conduction_alpha * rho * cs2 * m::sqrt(cs2);
             const Real q_ratio = m::abs(q) / q_max;
             const Real inv_exp_g = m::exp(-(q_ratio - 1.) / lambda);
-            const Real f_fmin = inv_exp_g / (inv_exp_g + 1.) + TAU_MIN_FRAC;
+            const Real f_fmin = inv_exp_g / (inv_exp_g + 1.) + 1.e-5;
 
             tau = m::min(tau, f_fmin * tau_dyn);
         }
@@ -255,7 +255,7 @@ KOKKOS_INLINE_FUNCTION void set_parameters(const GRCoordinates& G, const Real& r
 
             const Real dP_ratio = m::abs(dP) / (m::abs(dP_max) + SMALL_NUM);
             const Real inv_exp_g = m::exp((1. - dP_ratio) / lambda);
-            const Real f_fmin = inv_exp_g / (inv_exp_g + 1.) + TAU_MIN_FRAC;
+            const Real f_fmin = inv_exp_g / (inv_exp_g + 1.) + 1.e-5;
 
             tau = m::min(tau, f_fmin * tau_dyn);
         }
