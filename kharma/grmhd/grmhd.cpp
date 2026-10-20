@@ -78,22 +78,6 @@ std::shared_ptr<KHARMAPackage> Initialize(
     auto pkg = std::make_shared<KHARMAPackage>("GRMHD");
     Params& params = pkg->AllParams();
 
-    // GRMHD PARAMETERS
-    // Fluid gamma for ideal EOS.  Don't guess this.
-    // Only ideal EOS are supported, though modifying gamma based on
-    // local temperatures would be straightforward.
-    // Prefer <eos>/gamma; fall back to <GRMHD>/gamma for backward compatibility.
-    double gamma;
-    if (pin->DoesParameterExist("eos", "gamma")) {
-        gamma = pin->GetReal("eos", "gamma");
-    } else if (pin->DoesParameterExist("GRMHD", "gamma")) {
-        gamma = pin->GetReal("GRMHD", "gamma");
-    } else {
-        throw std::runtime_error(
-            "GRMHD requires that gamma be specified in <eos> or <GRMHD> block!");
-    }
-    params.Add("gamma", gamma);
-
     // Proportion of courant condition for timesteps
     double cfl = pin->GetOrAddReal("GRMHD", "cfl", 0.9);
     params.Add("cfl", cfl);
@@ -425,7 +409,7 @@ Real EstimateTimestep(MeshData<Real>* md)
     // TODO distinguish polar from other ISMR if more modes are added
     const bool ismr_poles = pmesh->packages.AllPackages().count("ISMR");
     const uint ismr_nlevels =
-        (ismr_poles) ? pmesh->packages.Get("ISMR")->Param<uint>("nlevels") : 0;
+        (ismr_poles) ? pmesh->packages.Get("ISMR")->Param<int>("nlevels") : 0;
 
     // TODO version preserving location, with switch to keep this fast one
     // TODO maybe split normal vs funky/additional timesteps (ISMR, excised polar)?
@@ -723,8 +707,9 @@ void CancelBoundaryU3(MeshBlockData<Real>* rc, IndexDomain domain, bool coarse)
                 {
                     P(m_p.U3, k, jf, i) -= U3_avg;
 
-                    // Apply floors
-                    Floors::apply_geo_floors(G, P, m_p, k, jf, i, floors, Loci::center);
+                    // Apply floors TODO reintroduce if necessary
+                    // Floors::apply_geo_floors(G, P, m_p, k, jf, i, floors,
+                    // Loci::center);
 
                     // Always PtoU, we modified P.  Accommodate EMHD
                     Flux::p_to_u_mhd(G, P, m_p, emhd_params, eos, k, jf, i, U, m_u);
@@ -772,9 +757,6 @@ void CancelBoundaryT3(MeshBlockData<Real>* rc, IndexDomain domain, bool coarse)
     IndexRange3 b = KDomain::GetRange(rc, domain, coarse);
     IndexRange3 bi = KDomain::GetRange(rc, IndexDomain::interior, coarse);
     const int jf = (binner) ? bi.js : bi.je; // j index of last zone next to pole
-    // These inversions always use Kastaun: follow its settings when it is the inverter
-    const Inverter::SolverSettings solve =
-        Inverter::GetSolverSettings(pmb->packages, Inverter::Type::kastaun);
     parthenon::par_for_outer(DEFAULT_OUTER_LOOP_PATTERN, "reduce_T3_" + bname,
         pmb->exec_space, 0, 1, b.is, b.ie,
         KOKKOS_LAMBDA(parthenon::team_mbr_t member, const int& i)
@@ -807,14 +789,6 @@ void CancelBoundaryT3(MeshBlockData<Real>* rc, IndexDomain domain, bool coarse)
                 [&](const int& k)
                 {
                     U(m_u.U3, k, jf, i) -= T3_avg;
-                    // Recover primitive GRMHD variables from our modified U
-                    Inverter::u_to_p<Inverter::Type::kastaun>(G, U, m_u, eos, k, jf, i, P,
-                        m_p, Loci::center, solve.iter_max, solve.err_tol);
-                    // Floor them
-                    int fflag = Floors::apply_geo_floors(
-                        G, P, m_p, k, jf, i, floors, Loci::center);
-                    // Recalculate U on anything we floored
-                    if (fflag) p_to_u(G, P, m_p, eos, k, jf, i, U, m_u, Loci::center);
                 });
         });
 }
