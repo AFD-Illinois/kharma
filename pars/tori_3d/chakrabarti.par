@@ -6,7 +6,6 @@
 <parthenon/job>
 archive_parameters_timestamp = true
 problem_id = torus
-torus_type = chakrabarti
 
 <parthenon/mesh>
 refinement = none
@@ -43,6 +42,7 @@ type     = imex
 two_sync = true
 
 <torus>
+type = chakrabarti
 rin  = 20.0
 rmax = 41.0
 

@@ -38,6 +38,8 @@
 #include "floors.hpp"
 #include "types.hpp"
 
+using namespace ChakrabartiTorus;
+
 TaskStatus InitializeChakrabartiTorus(
     std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput* pin)
 {
@@ -51,8 +53,8 @@ TaskStatus InitializeChakrabartiTorus(
     const GReal rho_max = pin->GetOrAddReal("torus", "rho_max", 1.0);
     const GReal tilt_deg = pin->GetOrAddReal("torus", "tilt", 0.0);
     const GReal tilt = tilt_deg / 180. * M_PI;
-    const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
-    const Real gm1 = gam - 1.0;
+    const Real gm1 = pmb->packages.Get("eos")->Param<Real>("gm1");
+    const Real gamma1 = gm1 + 1.0;
 
     IndexDomain domain = IndexDomain::interior;
     const int is = pmb->cellbounds.is(domain), ie = pmb->cellbounds.ie(domain);
@@ -66,16 +68,17 @@ TaskStatus InitializeChakrabartiTorus(
     // rebuild copies of both based on the BH spin "a"
     const auto& G = pmb->coords;
     const GReal a = G.coords.get_a();
+    const SphBLCoords bl(a);
 
     // Chakrabarti torus parameters
     GReal cc, nn;
     cn_calc(a, rin, rmax, &cc, &nn);
-    const Real l_max = l_calc(a, rmax, 1.0, cc, nn);
+    const Real l_max = l_calc(bl, rmax, M_PI_2, cc, nn);
 
     // Thermodynamic quantities at rin, rmax
-    const Real lnh_in = lnh_calc(a, rin, rin, 1.0, cc, nn);
-    const Real lnh_peak = lnh_calc(a, rin, rmax, 1.0, cc, nn) - lnh_in;
-    const Real pgas_over_rho_peak = gm1 / gam * (m::exp(lnh_peak) - 1.0);
+    const Real lnh_in = lnh_calc(bl, rin, rin, M_PI_2, cc, nn);
+    const Real lnh_peak = lnh_calc(bl, rin, rmax, M_PI_2, cc, nn) - lnh_in;
+    const Real pgas_over_rho_peak = gm1 / gamma1 * (m::exp(lnh_peak) - 1.0);
     const Real rho_peak = m::pow(pgas_over_rho_peak, 1.0 / gm1) / rho_max;
 
     pmb->par_for("chakrabarti_torus_init", ks, ke, js, je, is, ie,
@@ -88,27 +91,17 @@ TaskStatus InitializeChakrabartiTorus(
             rotate_polar(Xembed, tilt, Xmidplane);
 
             GReal r = Xmidplane[1], th = Xmidplane[2];
-            GReal sth = sin(th);
-            GReal cth = cos(th);
-
-            // Boyer-Lindquist metric components
-            Real r2 = r * r;
-            Real a2 = a * a;
-            Real DD = r2 - 2. * r + a2;
-            Real AA = m::pow(r2 + a2, 2) - DD * a2 * sth * sth;
-            Real SS = r2 + a2 * cth * cth;
-
-            Real gcov_tt = -(1.0 - (2.0 * r / SS));
-            Real gcov_tphi = -2.0 * a * r / SS * sth * sth;
-            Real gcov_phiphi = (SS + (1.0 + (2.0 * r / SS)) * a2 * sth * sth) * sth * sth;
-            Real gcon_tt = -AA / (DD * SS);
-            Real gcon_tphi = -2.0 * a * r / (DD * SS);
+            Real gcov[GR_DIM][GR_DIM];
+            bl.gcov_embed(Xmidplane, gcov);
+            const Real tphi_det = gcov[0][0] * gcov[3][3] - gcov[0][3] * gcov[0][3];
+            const Real gcon_tt = gcov[3][3] / tphi_det;
+            const Real gcon_tphi = -gcov[0][3] / tphi_det;
 
             // Compute logarithm of enthalpy and check if we're inside the torus
             Real lnh;
             bool in_torus = false;
             if (r >= rin) {
-                lnh = lnh_calc(a, rin, r, sth, cc, nn) - lnh_in;
+                lnh = lnh_calc(bl, rin, r, th, cc, nn) - lnh_in;
                 if (lnh >= 0.0) {
                     in_torus = true;
                 }
@@ -120,17 +113,17 @@ TaskStatus InitializeChakrabartiTorus(
             if (in_torus) {
 
                 // Calculate rho and u
-                Real pg_over_rho = gm1 / gam * (m::exp(lnh) - 1.0);
+                Real pg_over_rho = gm1 / gamma1 * (m::exp(lnh) - 1.0);
                 Real rho_l = m::pow(pg_over_rho, 1. / gm1) / rho_peak;
                 Real u_l = (pg_over_rho * rho_l) / gm1;
 
                 // Calculate four velocity in Boyer-Lindquist coordinates
-                Real l = l_calc(a, r, sth, cc, nn);
-                Real u_t = u_t_calc(a, r, sth, l);
+                Real l = l_calc(bl, r, th, cc, nn);
+                Real u_t = u_t_calc(bl, r, th, l);
                 Real omega =
-                    -(gcov_tphi + (l * gcov_tt)) / (gcov_phiphi + (l * gcov_tphi));
+                    -(gcov[0][3] + (l * gcov[0][0])) / (gcov[3][3] + (l * gcov[0][3]));
                 Real ucon_t = (gcon_tt - (l * gcon_tphi)) * u_t;
-                Real ucon_phi = omega * u_t;
+                Real ucon_phi = omega * ucon_t;
 
                 const Real ucon_tilt[GR_DIM] = {ucon_t, 0., 0., ucon_phi};
                 Real ucon_bl[GR_DIM];
