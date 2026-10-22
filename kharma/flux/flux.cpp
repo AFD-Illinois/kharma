@@ -256,7 +256,7 @@ std::shared_ptr<KHARMAPackage> Flux::Initialize(
                 pin->GetOrAddBoolean("fofc", "consistent_face_b", consistent_face_b);
             params.Add("fofc_consistent_face_b", fofc_consistent_face_b);
 
-            fofc_pcp = pin->GetOrAddBoolean("fofc", "pcp", true);
+            fofc_pcp = pin->GetOrAddBoolean("fofc", "pcp", false);
             params.Add("fofc_pcp", fofc_pcp);
         } else {
             // PCP update in FOFC relies on face-centered B w/CT
