@@ -13,6 +13,9 @@
 TaskStatus InitializeFMTorus(
     std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput* pin);
 
+namespace FMTorus
+{
+
 /**
  * Torus solution for ln h, See Fishbone and Moncrief eqn. 3.6.
  */
@@ -96,3 +99,5 @@ KOKKOS_INLINE_FUNCTION Real fm_torus_rho(const GReal a, const GReal rin, const G
         return 0;
     }
 }
+
+} // FMTorus
